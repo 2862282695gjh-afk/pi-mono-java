@@ -1,0 +1,31 @@
+# Gradle
+.gradle
+build/
+!**/src/main/resources/**/META-INF/.gitkeep
+!**/src/test/resources/**/META-INF/.gitkeep
+
+# IDE
+.idea/
+.vscode/
+*.iml
+*.ipr
+*.iws
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project specific
+.pi-dev/
+local.properties
+*.log
+*.tmp
+test-results/
+reports/
+
+# CLI
+!gradlew
+!gradlew.bat
+!/gradle/wrapper/gradle-wrapper.jar
