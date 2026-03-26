@@ -12,6 +12,9 @@ dependencies {
     implementation("com.fasterxml.jackson.core:jackson-databind")
     implementation("com.fasterxml.jackson.core:jackson-core")
 
+    // Spring context - DI annotations (@Service, @Component, @Autowired)
+    implementation("org.springframework:spring-context")
+
     // HTTP client - Spring WebClient for SSE streaming
     implementation("org.springframework:spring-webflux")
     implementation("io.projectreactor.netty:reactor-netty-http")
