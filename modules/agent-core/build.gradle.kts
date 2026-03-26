@@ -6,6 +6,7 @@ dependencies {
 
     // JSON processing
     implementation("com.fasterxml.jackson.core:jackson-databind")
+    implementation("com.networknt:json-schema-validator:1.5.2")
 
     // Spring context for DI
     implementation("org.springframework:spring-context")
