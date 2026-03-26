@@ -1,6 +1,7 @@
 package com.mariozechner.pi.codingagent.prompt;
 
 import com.mariozechner.pi.agent.tool.AgentTool;
+import com.mariozechner.pi.codingagent.skill.SkillPromptFormatter;
 import org.springframework.stereotype.Service;
 
 /**
@@ -45,16 +46,10 @@ public class SystemPromptBuilder {
         }
 
         // 3. Skills
-        if (!config.skills().isEmpty()) {
+        String skillsBlock = SkillPromptFormatter.format(config.skills());
+        if (!skillsBlock.isEmpty()) {
             sb.append("\n\n# Skills\n\n");
-            sb.append("<skills>\n");
-            for (Skill skill : config.skills()) {
-                sb.append("  <skill name=\"").append(escapeXml(skill.name())).append("\"");
-                sb.append(" location=\"").append(escapeXml(skill.location())).append("\">");
-                sb.append(escapeXml(skill.description()));
-                sb.append("</skill>\n");
-            }
-            sb.append("</skills>");
+            sb.append(skillsBlock);
         }
 
         // 4. Environment info
@@ -84,13 +79,5 @@ public class SystemPromptBuilder {
         String javaVersion = config.env().getOrDefault("JAVA_VERSION",
                 System.getProperty("java.version", "unknown"));
         sb.append("- Java version: ").append(javaVersion);
-    }
-
-    private static String escapeXml(String s) {
-        if (s == null) return "";
-        return s.replace("&", "&amp;")
-                .replace("<", "&lt;")
-                .replace(">", "&gt;")
-                .replace("\"", "&quot;");
     }
 }

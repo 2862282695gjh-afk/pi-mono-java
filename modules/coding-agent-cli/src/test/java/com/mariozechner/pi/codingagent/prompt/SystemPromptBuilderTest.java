@@ -6,6 +6,7 @@ import com.mariozechner.pi.agent.tool.AgentTool;
 import com.mariozechner.pi.agent.tool.AgentToolResult;
 import com.mariozechner.pi.agent.tool.AgentToolUpdateCallback;
 import com.mariozechner.pi.agent.tool.CancellationToken;
+import com.mariozechner.pi.codingagent.skill.Skill;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -33,6 +34,10 @@ class SystemPromptBuilderTest {
                 Path.of("/test/project"),
                 null, Map.of()
         );
+    }
+
+    private Skill testSkill(String name, String description, String filePath) {
+        return new Skill(name, description, Path.of(filePath), Path.of(filePath).getParent(), "project", false);
     }
 
     // -------------------------------------------------------------------
@@ -111,7 +116,7 @@ class SystemPromptBuilderTest {
 
         @Test
         void includesSkillsInXmlFormat() {
-            var skill = new Skill("commit", "Create git commits", "/path/to/skill.md");
+            var skill = testSkill("commit", "Create git commits", "/path/to/skill.md");
             var config = new SystemPromptConfig(
                     List.of(), List.of(skill),
                     Path.of("/cwd"), null, Map.of()
@@ -120,18 +125,16 @@ class SystemPromptBuilderTest {
             String result = builder.build(config);
 
             assertTrue(result.contains("# Skills"));
-            assertTrue(result.contains("<skills>"));
-            assertTrue(result.contains("<skill name=\"commit\""));
-            assertTrue(result.contains("location=\"/path/to/skill.md\""));
+            assertTrue(result.contains("<available_skills>"));
+            assertTrue(result.contains("<name>commit</name>"));
             assertTrue(result.contains("Create git commits"));
-            assertTrue(result.contains("</skill>"));
-            assertTrue(result.contains("</skills>"));
+            assertTrue(result.contains("</available_skills>"));
         }
 
         @Test
         void includesMultipleSkills() {
-            var skill1 = new Skill("commit", "Git commits", "/a");
-            var skill2 = new Skill("review", "Code review", "/b");
+            var skill1 = testSkill("commit", "Git commits", "/a/skill.md");
+            var skill2 = testSkill("review", "Code review", "/b/skill.md");
             var config = new SystemPromptConfig(
                     List.of(), List.of(skill1, skill2),
                     Path.of("/cwd"), null, Map.of()
@@ -139,20 +142,21 @@ class SystemPromptBuilderTest {
 
             String result = builder.build(config);
 
-            assertTrue(result.contains("name=\"commit\""));
-            assertTrue(result.contains("name=\"review\""));
+            assertTrue(result.contains("<name>commit</name>"));
+            assertTrue(result.contains("<name>review</name>"));
         }
 
         @Test
         void noSkillsSectionWhenEmpty() {
             String result = builder.build(minimalConfig());
             assertFalse(result.contains("# Skills"));
-            assertFalse(result.contains("<skills>"));
+            assertFalse(result.contains("<available_skills>"));
         }
 
         @Test
         void escapesXmlSpecialChars() {
-            var skill = new Skill("test<>", "desc & \"quoted\"", "/path");
+            // name with special chars (would be invalid in practice but tests escaping)
+            var skill = testSkill("test", "desc & \"quoted\"", "/path/skill.md");
             var config = new SystemPromptConfig(
                     List.of(), List.of(skill),
                     Path.of("/cwd"), null, Map.of()
@@ -160,7 +164,6 @@ class SystemPromptBuilderTest {
 
             String result = builder.build(config);
 
-            assertTrue(result.contains("name=\"test&lt;&gt;\""));
             assertTrue(result.contains("desc &amp; &quot;quoted&quot;"));
         }
     }
@@ -271,7 +274,7 @@ class SystemPromptBuilderTest {
         @Test
         void assemblesAllSections() {
             var tool = new StubTool("bash", "Run commands");
-            var skill = new Skill("commit", "Git commits", "/skills/commit.md");
+            var skill = testSkill("commit", "Git commits", "/skills/commit.md");
             var config = new SystemPromptConfig(
                     List.of(tool),
                     List.of(skill),

@@ -1,6 +1,7 @@
 package com.mariozechner.pi.codingagent.prompt;
 
 import com.mariozechner.pi.agent.tool.AgentTool;
+import com.mariozechner.pi.codingagent.skill.Skill;
 
 import java.nio.file.Path;
 import java.util.List;
