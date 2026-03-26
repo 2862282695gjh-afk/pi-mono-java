@@ -1,0 +1,12 @@
+spring:
+  main:
+    banner-mode: off
+    lazy-initialization: true
+    web-application-type: none
+  application:
+    name: pi-coding-agent
+
+logging:
+  level:
+    root: INFO
+    com.mariozechner.pi: DEBUG

@@ -1,15 +1,10 @@
 plugins {
-    kotlin("jvm") version "1.9.25" apply false
-    kotlin("plugin.serialization") version "1.9.25" apply false
-    application
-    id("com.gradle.shadow") version "8.1.1" apply false
-    idea
-    eclipse
+    java
+    id("org.springframework.boot") version "3.4.1" apply false
+    id("io.spring.dependency-management") version "1.1.7" apply false
 }
 
-// Java toolchain
-val javaVersion by extra(JavaVersion.VERSION_11)
-val toolchainVersion by extra("11")
+val javaVersion = 21
 
 allprojects {
     group = "com.mariozechner.pi"
@@ -17,58 +12,51 @@ allprojects {
 
     repositories {
         mavenCentral()
-        gradlePluginPortal()
-        google()
     }
 }
 
 subprojects {
     apply(plugin = "java-library")
-    apply(plugin = "kotlin")
-    apply(plugin = "kotlin-spring")
+    apply(plugin = "io.spring.dependency-management")
+
+    the<io.spring.gradle.dependencymanagement.dsl.DependencyManagementExtension>().apply {
+        imports {
+            mavenBom("org.springframework.boot:spring-boot-dependencies:3.4.1")
+        }
+    }
 
     java {
         toolchain {
-            languageVersion.set(JavaLanguageVersion.of(toolchainVersion))
+            languageVersion.set(JavaLanguageVersion.of(javaVersion))
         }
         withSourcesJar()
     }
 
-    tasks {
-        compileJava {
-            options.encoding = "UTF-8"
-            options.compilerArgs.add("-parameters")
-        }
-
-        compileKotlin {
-            kotlinOptions {
-                jvmTarget = "11"
-                apiVersion = "1.9"
-                languageVersion = "1.9"
-                freeCompilerArgs = listOf(
-                    "-Xjsr305=strict",
-                    "-Xjdk-enum-compare=true"
-                )
-            }
-        }
+    tasks.compileJava {
+        options.encoding = "UTF-8"
+        options.compilerArgs.addAll(listOf("-parameters"))
+        options.release.set(javaVersion)
     }
 
-    // Common dependencies
+    tasks.compileTestJava {
+        options.encoding = "UTF-8"
+        options.compilerArgs.addAll(listOf("-parameters"))
+        options.release.set(javaVersion)
+    }
+
+    tasks.test {
+        useJUnitPlatform()
+        jvmArgs("-XX:+EnableDynamicAgentLoading")
+    }
+
     dependencies {
-        implementation(platform("org.jetbrains.kotlin:kotlin-bom:1.9.25"))
-        implementation("org.jetbrains.kotlin:kotlin-stdlib-jdk8")
-        testImplementation(kotlin("test"))
-        testImplementation(kotlin("test-junit"))
+        // Logging (managed by Spring Boot BOM)
+        implementation("org.slf4j:slf4j-api")
+        implementation("ch.qos.logback:logback-classic")
+
+        // Testing (managed by Spring Boot BOM)
+        testImplementation("org.junit.jupiter:junit-jupiter")
+        testImplementation("org.mockito:mockito-core")
+        testImplementation("org.mockito:mockito-junit-jupiter")
     }
-}
-
-// Root project configuration
-dependencies {
-    testImplementation(platform("org.junit:junit-bom:5.10.3"))
-    testImplementation("org.junit.jupiter:junit-jupiter-api")
-    testRuntimeOnly("org.junit.jupiter:junit-jupiter-engine")
-}
-
-tasks.test {
-    useJUnitPlatform()
 }
