@@ -1,15 +1,40 @@
 package com.mariozechner.pi.codingagent;
 
+import com.mariozechner.pi.codingagent.cli.PiCommand;
+import org.springframework.boot.CommandLineRunner;
+import org.springframework.boot.ExitCodeGenerator;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import picocli.CommandLine;
+import picocli.CommandLine.IFactory;
 
 /**
- * Pi-Coding-Agent - Spring Boot CLI application.
+ * Pi-Coding-Agent — Spring Boot CLI application.
+ * Bridges Picocli with Spring Boot via the picocli-spring-boot-starter.
  */
 @SpringBootApplication(scanBasePackages = "com.mariozechner.pi")
-public class PiCodingAgentApplication {
+public class PiCodingAgentApplication implements CommandLineRunner, ExitCodeGenerator {
+
+    private final PiCommand piCommand;
+    private final IFactory factory;
+    private int exitCode;
+
+    public PiCodingAgentApplication(PiCommand piCommand, IFactory factory) {
+        this.piCommand = piCommand;
+        this.factory = factory;
+    }
 
     public static void main(String[] args) {
-        SpringApplication.run(PiCodingAgentApplication.class, args);
+        System.exit(SpringApplication.exit(SpringApplication.run(PiCodingAgentApplication.class, args)));
+    }
+
+    @Override
+    public void run(String... args) {
+        exitCode = new CommandLine(piCommand, factory).execute(args);
+    }
+
+    @Override
+    public int getExitCode() {
+        return exitCode;
     }
 }
