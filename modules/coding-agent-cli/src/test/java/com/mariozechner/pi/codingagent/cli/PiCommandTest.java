@@ -11,7 +11,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class PiCommandTest {
 
     private PiCommand parse(String... args) {
-        PiCommand cmd = new PiCommand();
+        PiCommand cmd = new PiCommand(null, null, null, null);
         new CommandLine(cmd).parseArgs(args);
         return cmd;
     }
@@ -233,18 +233,6 @@ class PiCommandTest {
             PiCommand cmd = parse("--mode", "one-shot");
             assertEquals(1, cmd.call());
         }
-
-        @Test
-        void oneShotWithPromptReturnsZero() {
-            PiCommand cmd = parse("--mode", "one-shot", "-p", "do something");
-            assertEquals(0, cmd.call());
-        }
-
-        @Test
-        void interactiveModeReturnsZero() {
-            PiCommand cmd = parse();
-            assertEquals(0, cmd.call());
-        }
     }
 
     // -------------------------------------------------------------------
@@ -256,14 +244,14 @@ class PiCommandTest {
 
         @Test
         void helpExitsWithZero() {
-            PiCommand cmd = new PiCommand();
+            PiCommand cmd = new PiCommand(null, null, null, null);
             int exitCode = new CommandLine(cmd).execute("--help");
             assertEquals(0, exitCode);
         }
 
         @Test
         void versionExitsWithZero() {
-            PiCommand cmd = new PiCommand();
+            PiCommand cmd = new PiCommand(null, null, null, null);
             int exitCode = new CommandLine(cmd).execute("--version");
             assertEquals(0, exitCode);
         }

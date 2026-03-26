@@ -1,5 +1,17 @@
 package com.mariozechner.pi.codingagent.cli;
 
+import com.mariozechner.pi.agent.tool.AgentTool;
+import com.mariozechner.pi.ai.PiAiService;
+import com.mariozechner.pi.ai.model.ModelRegistry;
+import com.mariozechner.pi.codingagent.mode.InteractiveMode;
+import com.mariozechner.pi.codingagent.mode.OneShotMode;
+import com.mariozechner.pi.codingagent.prompt.SystemPromptBuilder;
+import com.mariozechner.pi.codingagent.session.AgentSession;
+import com.mariozechner.pi.codingagent.session.SessionConfig;
+import com.mariozechner.pi.codingagent.skill.SkillExpander;
+import com.mariozechner.pi.codingagent.skill.SkillLoader;
+import com.mariozechner.pi.tui.terminal.JLineTerminal;
+import com.mariozechner.pi.tui.terminal.Terminal;
 import org.springframework.stereotype.Component;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
@@ -22,6 +34,19 @@ import java.util.concurrent.Callable;
 @Component
 public class PiCommand implements Callable<Integer> {
 
+    private final PiAiService piAiService;
+    private final ModelRegistry modelRegistry;
+    private final SystemPromptBuilder promptBuilder;
+    private final List<AgentTool> tools;
+
+    public PiCommand(PiAiService piAiService, ModelRegistry modelRegistry,
+                     SystemPromptBuilder promptBuilder, List<AgentTool> tools) {
+        this.piAiService = piAiService;
+        this.modelRegistry = modelRegistry;
+        this.promptBuilder = promptBuilder;
+        this.tools = tools;
+    }
+
     @Option(names = {"-m", "--model"}, description = "AI model to use (e.g. claude-sonnet-4-20250514)")
     String model;
 
@@ -43,14 +68,9 @@ public class PiCommand implements Callable<Integer> {
 
     @Override
     public Integer call() {
-        // Resolve effective prompt: -p flag takes precedence, then positional args
         String effectivePrompt = resolvePrompt();
-
-        // Resolve cwd
         Path effectiveCwd = cwd != null ? cwd : Path.of(System.getProperty("user.dir"));
 
-        // For now, print the resolved configuration. The full agent session wiring
-        // (AgentLoop + tools + prompt builder) will be connected in a later task.
         if ("print".equals(mode)) {
             System.out.println("Model: " + model);
             System.out.println("Mode: " + mode);
@@ -64,8 +84,25 @@ public class PiCommand implements Callable<Integer> {
             return 1;
         }
 
-        // Placeholder: agent session wiring will be added when AgentSession is implemented
-        System.out.println("Pi Coding Agent started (mode=" + mode + ")");
+        // Build session
+        AgentSession session = new AgentSession(
+                piAiService, modelRegistry, promptBuilder,
+                new SkillLoader(), new SkillExpander(), tools
+        );
+        SessionConfig config = new SessionConfig(model, effectiveCwd, systemPrompt, mode);
+        session.initialize(config);
+
+        if ("one-shot".equals(mode)) {
+            return new OneShotMode().run(session, effectivePrompt);
+        }
+
+        // Interactive mode (default)
+        Terminal terminal = new JLineTerminal();
+        try {
+            new InteractiveMode().run(session, terminal);
+        } finally {
+            terminal.close();
+        }
         return 0;
     }
 
