@@ -5,6 +5,9 @@ dependencies {
     implementation("com.google.cloud:google-cloud-aiplatform:3.79.0")
     implementation("software.amazon.awssdk:bedrockruntime:2.41.34")
 
+    // Nullability annotations
+    implementation("jakarta.annotation:jakarta.annotation-api")
+
     // JSON processing
     implementation("com.fasterxml.jackson.core:jackson-databind")
     implementation("com.fasterxml.jackson.core:jackson-core")
