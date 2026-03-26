@@ -1,0 +1,23 @@
+package com.mariozechner.pi.codingagent.tool.bash;
+
+import com.mariozechner.pi.agent.tool.CancellationToken;
+
+import java.time.Duration;
+import java.util.Map;
+
+/**
+ * Options for {@link BashExecutor} command execution.
+ *
+ * @param timeout maximum execution duration (may be null for no timeout)
+ * @param signal  cancellation token for cooperative cancellation (may be null)
+ * @param env     additional environment variables (may be null or empty)
+ */
+public record BashExecutorOptions(
+        Duration timeout,
+        CancellationToken signal,
+        Map<String, String> env
+) {
+    public BashExecutorOptions {
+        env = env == null ? Map.of() : Map.copyOf(env);
+    }
+}
