@@ -35,6 +35,7 @@ public class ToolStatusComponent implements Component {
     private boolean complete;
     private boolean error;
     private String resultSummary;
+    private String partialResultSummary;
 
     public ToolStatusComponent(String toolName) {
         this.toolName = toolName;
@@ -44,10 +45,16 @@ public class ToolStatusComponent implements Component {
         this.args = args;
     }
 
+    /** Update with partial result (live progress during tool execution). */
+    public void updatePartialResult(Object partialResult) {
+        this.partialResultSummary = summarizeResult(partialResult);
+    }
+
     public void setComplete(boolean error, Object result) {
         this.complete = true;
         this.error = error;
         this.resultSummary = summarizeResult(result);
+        this.partialResultSummary = null;
         invalidate();
     }
 
@@ -73,12 +80,23 @@ public class ToolStatusComponent implements Component {
         }
         lines.add(statusText);
 
-        // Args summary (when running or done)
+        // Args summary — tool-specific formatting
         if (args != null) {
-            String argSummary = summarizeArgs(args);
+            String argSummary = formatToolArgs(toolName, args);
             if (!argSummary.isEmpty()) {
                 int contentWidth = Math.max(1, width - 4);
                 String truncated = truncateText(argSummary, contentWidth);
+                lines.add(ANSI_DIM + "    " + truncated + ANSI_RESET);
+            }
+        }
+
+        // Partial result (while running)
+        if (!complete && partialResultSummary != null && !partialResultSummary.isEmpty()) {
+            int contentWidth = Math.max(1, width - 4);
+            String[] partialLines = partialResultSummary.split("\n");
+            int linesToShow = Math.min(partialLines.length, MAX_RESULT_DISPLAY_LINES);
+            for (int i = 0; i < linesToShow; i++) {
+                String truncated = truncateText(partialLines[i], contentWidth);
                 lines.add(ANSI_DIM + "    " + truncated + ANSI_RESET);
             }
         }
@@ -104,6 +122,58 @@ public class ToolStatusComponent implements Component {
     @Override
     public void invalidate() {
         // No cache
+    }
+
+    /**
+     * Formats tool arguments with tool-specific highlighting.
+     * Shows the most relevant parameter for each tool type.
+     */
+    private static String formatToolArgs(String toolName, Object args) {
+        if (args instanceof Map<?, ?> map) {
+            return switch (toolName) {
+                case "bash" -> {
+                    Object cmd = map.get("command");
+                    yield cmd != null ? "$ " + truncateValue(cmd.toString(), 100) : summarizeArgs(args);
+                }
+                case "read" -> {
+                    Object path = map.get("file_path");
+                    yield path != null ? path.toString() : summarizeArgs(args);
+                }
+                case "write" -> {
+                    Object path = map.get("file_path");
+                    yield path != null ? path.toString() : summarizeArgs(args);
+                }
+                case "edit" -> {
+                    Object path = map.get("file_path");
+                    yield path != null ? path.toString() : summarizeArgs(args);
+                }
+                case "grep" -> {
+                    Object pattern = map.get("pattern");
+                    Object path = map.get("path");
+                    String s = pattern != null ? "pattern: " + pattern : "";
+                    if (path != null) s += (s.isEmpty() ? "" : ", ") + "path: " + path;
+                    yield s.isEmpty() ? summarizeArgs(args) : s;
+                }
+                case "glob" -> {
+                    Object pattern = map.get("pattern");
+                    Object path = map.get("path");
+                    String s = pattern != null ? pattern.toString() : "";
+                    if (path != null) s += (s.isEmpty() ? "" : " in ") + path;
+                    yield s.isEmpty() ? summarizeArgs(args) : s;
+                }
+                case "ls" -> {
+                    Object path = map.get("path");
+                    yield path != null ? path.toString() : summarizeArgs(args);
+                }
+                default -> summarizeArgs(args);
+            };
+        }
+        return summarizeArgs(args);
+    }
+
+    private static String truncateValue(String value, int max) {
+        if (value.length() > max) return value.substring(0, max - 3) + "...";
+        return value;
     }
 
     @SuppressWarnings("unchecked")

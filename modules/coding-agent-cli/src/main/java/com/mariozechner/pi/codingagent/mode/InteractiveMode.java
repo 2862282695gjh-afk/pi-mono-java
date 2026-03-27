@@ -91,22 +91,33 @@ public class InteractiveMode {
         editorContainer = new EditorContainer();
         footer = new FooterComponent();
 
-        // Welcome text with keybinding hints (matching pi-mono TS startup)
-        var welcomeText = new StringBuilder();
-        welcomeText.append("\033[1m\033[36mPi Coding Agent\033[0m").append(modelInfo(session)).append("\n");
-        welcomeText.append("\n");
-        welcomeText.append("\033[2m  Tips:\033[0m\n");
-        welcomeText.append("\033[2m    Enter           submit message\033[0m\n");
-        welcomeText.append("\033[2m    Shift+Enter     new line (or type \\ before Enter)\033[0m\n");
-        welcomeText.append("\033[2m    Alt+Enter       queue follow-up message\033[0m\n");
-        welcomeText.append("\033[2m    ↑/↓             navigate command history\033[0m\n");
-        welcomeText.append("\033[2m    Ctrl+C          interrupt / clear input\033[0m\n");
-        welcomeText.append("\033[2m    Ctrl+D          exit\033[0m\n");
-        welcomeText.append("\033[2m    !               run bash command\033[0m\n");
-        welcomeText.append("\033[2m    !!              run bash (excluded from context)\033[0m\n");
-        welcomeText.append("\033[2m    /               slash commands (/help for list)\033[0m");
-        var welcome = new Text(welcomeText.toString());
-        chatContainer.addChild(welcome);
+        // Welcome text with keybinding hints and resource info
+        var wb = new StringBuilder();
+        wb.append("\033[1m\033[36mPi Coding Agent\033[0m").append(modelInfo(session)).append("\n");
+
+        // Show loaded resources
+        int skillCount = session.getSkillRegistry().getAll().size();
+        int templateCount = session.getPromptTemplates().size();
+        if (skillCount > 0 || templateCount > 0) {
+            wb.append("\033[2m  Loaded: ");
+            if (skillCount > 0) wb.append(skillCount).append(" skill(s)");
+            if (skillCount > 0 && templateCount > 0) wb.append(", ");
+            if (templateCount > 0) wb.append(templateCount).append(" template(s)");
+            wb.append("\033[0m\n");
+        }
+
+        wb.append("\n");
+        wb.append("\033[2m  Tips:\033[0m\n");
+        wb.append("\033[2m    Enter           submit message\033[0m\n");
+        wb.append("\033[2m    Shift+Enter     new line (or type \\ before Enter)\033[0m\n");
+        wb.append("\033[2m    Alt+Enter       queue follow-up message\033[0m\n");
+        wb.append("\033[2m    ↑/↓             navigate command history\033[0m\n");
+        wb.append("\033[2m    Ctrl+C          interrupt / clear input\033[0m\n");
+        wb.append("\033[2m    Ctrl+D          exit\033[0m\n");
+        wb.append("\033[2m    !               run bash command\033[0m\n");
+        wb.append("\033[2m    !!              run bash (excluded from context)\033[0m\n");
+        wb.append("\033[2m    /               slash commands (/help for list)\033[0m");
+        chatContainer.addChild(new Text(wb.toString()));
 
         // Set model/footer info
         var model = session.getAgent().getState().getModel();
@@ -420,6 +431,12 @@ public class InteractiveMode {
                 tool.setArgs(e.args());
                 pendingTools.put(e.toolCallId(), tool);
                 chatContainer.addChild(tool);
+            }
+            case ToolExecutionUpdateEvent e -> {
+                var tool = pendingTools.get(e.toolCallId());
+                if (tool != null) {
+                    tool.updatePartialResult(e.partialResult());
+                }
             }
             case ToolExecutionEndEvent e -> {
                 var tool = pendingTools.get(e.toolCallId());
