@@ -1,0 +1,626 @@
+package com.mariozechner.pi.ai.provider.bedrock;
+
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.mariozechner.pi.ai.provider.ApiProvider;
+import com.mariozechner.pi.ai.stream.AssistantMessageEvent;
+import com.mariozechner.pi.ai.stream.AssistantMessageEventStream;
+import com.mariozechner.pi.ai.types.Api;
+import com.mariozechner.pi.ai.types.AssistantMessage;
+import com.mariozechner.pi.ai.types.ContentBlock;
+import com.mariozechner.pi.ai.types.Context;
+import com.mariozechner.pi.ai.types.Cost;
+import com.mariozechner.pi.ai.types.ImageContent;
+import com.mariozechner.pi.ai.types.Message;
+import com.mariozechner.pi.ai.types.Model;
+import com.mariozechner.pi.ai.types.ModelCost;
+import com.mariozechner.pi.ai.types.Provider;
+import com.mariozechner.pi.ai.types.SimpleStreamOptions;
+import com.mariozechner.pi.ai.types.StopReason;
+import com.mariozechner.pi.ai.types.StreamOptions;
+import com.mariozechner.pi.ai.types.TextContent;
+import com.mariozechner.pi.ai.types.ThinkingContent;
+import com.mariozechner.pi.ai.types.ToolCall;
+import com.mariozechner.pi.ai.types.ToolResultMessage;
+import com.mariozechner.pi.ai.types.Usage;
+import com.mariozechner.pi.ai.types.UserMessage;
+import jakarta.annotation.Nullable;
+import org.springframework.stereotype.Component;
+import software.amazon.awssdk.core.document.Document;
+import software.amazon.awssdk.regions.Region;
+import software.amazon.awssdk.services.bedrockruntime.BedrockRuntimeAsyncClient;
+import software.amazon.awssdk.services.bedrockruntime.model.ContentBlockDeltaEvent;
+import software.amazon.awssdk.services.bedrockruntime.model.ContentBlockStartEvent;
+import software.amazon.awssdk.services.bedrockruntime.model.ContentBlockStopEvent;
+import software.amazon.awssdk.services.bedrockruntime.model.ConversationRole;
+import software.amazon.awssdk.services.bedrockruntime.model.ConverseStreamMetadataEvent;
+import software.amazon.awssdk.services.bedrockruntime.model.ConverseStreamRequest;
+import software.amazon.awssdk.services.bedrockruntime.model.ConverseStreamResponseHandler;
+import software.amazon.awssdk.services.bedrockruntime.model.InferenceConfiguration;
+import software.amazon.awssdk.services.bedrockruntime.model.MessageStopEvent;
+import software.amazon.awssdk.services.bedrockruntime.model.SystemContentBlock;
+import software.amazon.awssdk.services.bedrockruntime.model.TokenUsage;
+import software.amazon.awssdk.services.bedrockruntime.model.Tool;
+import software.amazon.awssdk.services.bedrockruntime.model.ToolConfiguration;
+import software.amazon.awssdk.services.bedrockruntime.model.ToolInputSchema;
+import software.amazon.awssdk.services.bedrockruntime.model.ToolResultBlock;
+import software.amazon.awssdk.services.bedrockruntime.model.ToolResultContentBlock;
+import software.amazon.awssdk.services.bedrockruntime.model.ToolSpecification;
+import software.amazon.awssdk.services.bedrockruntime.model.ToolUseBlock;
+
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+
+/**
+ * {@link ApiProvider} implementation for the AWS Bedrock Converse Stream API.
+ *
+ * <p>Uses the official {@code software.amazon.awssdk:bedrockruntime} SDK with
+ * {@link BedrockRuntimeAsyncClient#converseStream} for streaming requests,
+ * mapping Bedrock SSE events to the unified {@link AssistantMessageEvent} protocol.
+ *
+ * <p>Supports Anthropic models (Claude on Bedrock) as well as other Bedrock
+ * foundation models. AWS credentials are resolved from the default credential
+ * chain unless overridden via environment variables.
+ */
+@Component
+public class BedrockProvider implements ApiProvider {
+
+    private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final String ENV_AWS_REGION = "AWS_REGION";
+    private static final String DEFAULT_REGION = "us-east-1";
+
+    @Override
+    public Api getApi() {
+        return Api.BEDROCK_CONVERSE_STREAM;
+    }
+
+    @Override
+    public AssistantMessageEventStream stream(
+            Model model, Context context, @Nullable StreamOptions options) {
+        return doStream(model, context,
+                options != null ? options.maxTokens() : null,
+                options != null ? options.temperature() : null);
+    }
+
+    @Override
+    public AssistantMessageEventStream streamSimple(
+            Model model, Context context, @Nullable SimpleStreamOptions options) {
+        return doStream(model, context,
+                options != null ? options.maxTokens() : null,
+                options != null ? options.temperature() : null);
+    }
+
+    private AssistantMessageEventStream doStream(
+            Model model, Context context,
+            @Nullable Integer maxTokens,
+            @Nullable Double temperature) {
+
+        var eventStream = new AssistantMessageEventStream();
+
+        Thread.ofVirtual().start(() -> {
+            try {
+                executeStream(model, context, maxTokens, temperature, eventStream);
+            } catch (Exception e) {
+                eventStream.error(e);
+            }
+        });
+
+        return eventStream;
+    }
+
+    void executeStream(
+            Model model, Context context,
+            @Nullable Integer maxTokens,
+            @Nullable Double temperature,
+            AssistantMessageEventStream eventStream) {
+
+        BedrockRuntimeAsyncClient client = buildClient();
+
+        try {
+            ConverseStreamRequest request = buildRequest(model, context, maxTokens, temperature);
+            processStream(client, request, model, eventStream);
+        } catch (Exception e) {
+            eventStream.error(e);
+        } finally {
+            client.close();
+        }
+    }
+
+    BedrockRuntimeAsyncClient buildClient() {
+        String region = System.getenv(ENV_AWS_REGION);
+        if (region == null || region.isBlank()) {
+            region = DEFAULT_REGION;
+        }
+        return BedrockRuntimeAsyncClient.builder()
+                .region(Region.of(region))
+                .build();
+    }
+
+    ConverseStreamRequest buildRequest(
+            Model model, Context context,
+            @Nullable Integer maxTokens,
+            @Nullable Double temperature) {
+
+        int resolvedMaxTokens = maxTokens != null ? maxTokens
+                : Math.min(model.maxTokens(), 32000);
+
+        var builder = ConverseStreamRequest.builder()
+                .modelId(model.id())
+                .messages(convertMessages(context.messages()))
+                .inferenceConfig(InferenceConfiguration.builder()
+                        .maxTokens(resolvedMaxTokens)
+                        .temperature(temperature != null ? temperature.floatValue() : null)
+                        .build());
+
+        // System prompt
+        if (context.systemPrompt() != null && !context.systemPrompt().isBlank()) {
+            builder.system(SystemContentBlock.fromText(context.systemPrompt()));
+        }
+
+        // Tools
+        if (context.tools() != null && !context.tools().isEmpty()) {
+            builder.toolConfig(ToolConfiguration.builder()
+                    .tools(convertTools(context.tools()))
+                    .build());
+        }
+
+        return builder.build();
+    }
+
+    private void processStream(
+            BedrockRuntimeAsyncClient client, ConverseStreamRequest request,
+            Model model, AssistantMessageEventStream eventStream) {
+
+        var contentBlocks = new ArrayList<ContentBlock>();
+        var accumulatedUsage = new long[]{0, 0, 0, 0}; // input, output, cacheRead, cacheWrite
+        StopReason[] stopReason = {null};
+
+        // Track content blocks by their Bedrock contentBlockIndex
+        var textAccumulators = new HashMap<Integer, StringBuilder>();
+        var thinkingAccumulators = new HashMap<Integer, StringBuilder>();
+        var toolAccumulators = new HashMap<Integer, ToolCallAccumulator>();
+        var blockIndexToContentIndex = new HashMap<Integer, Integer>();
+        // Track block types: "text", "thinking", "tool"
+        var blockTypes = new HashMap<Integer, String>();
+
+        var visitor = ConverseStreamResponseHandler.Visitor.builder()
+                .onContentBlockStart(e -> handleContentBlockStart(
+                        e, model, contentBlocks, accumulatedUsage,
+                        textAccumulators, thinkingAccumulators, toolAccumulators,
+                        blockIndexToContentIndex, blockTypes, eventStream))
+                .onContentBlockDelta(e -> handleContentBlockDelta(
+                        e, model, contentBlocks, accumulatedUsage,
+                        textAccumulators, thinkingAccumulators, toolAccumulators,
+                        blockIndexToContentIndex, blockTypes, eventStream))
+                .onContentBlockStop(e -> handleContentBlockStop(
+                        e, model, contentBlocks, accumulatedUsage,
+                        textAccumulators, thinkingAccumulators, toolAccumulators,
+                        blockIndexToContentIndex, blockTypes, eventStream))
+                .onMessageStop(e ->
+                        stopReason[0] = mapStopReason(e.stopReasonAsString()))
+                .onMetadata(e -> {
+                    TokenUsage usage = e.usage();
+                    if (usage != null) {
+                        parseUsage(usage, accumulatedUsage);
+                    }
+                })
+                .build();
+
+        var handler = ConverseStreamResponseHandler.builder()
+                .subscriber(visitor)
+                .build();
+
+        CompletableFuture<Void> future = client.converseStream(request, handler);
+
+        try {
+            future.join();
+        } catch (Exception e) {
+            Throwable cause = e.getCause() != null ? e.getCause() : e;
+            eventStream.error(cause instanceof Exception ex
+                    ? ex : new RuntimeException(cause));
+            return;
+        }
+
+        // Emit final done event
+        var finalStopReason = stopReason[0] != null ? stopReason[0] : StopReason.STOP;
+        var finalMessage = buildPartialMessage(model, null,
+                contentBlocks, accumulatedUsage, finalStopReason);
+        eventStream.pushDone(finalStopReason, finalMessage);
+    }
+
+    private void handleContentBlockStart(
+            ContentBlockStartEvent e, Model model,
+            List<ContentBlock> contentBlocks, long[] usage,
+            Map<Integer, StringBuilder> textAccumulators,
+            Map<Integer, StringBuilder> thinkingAccumulators,
+            Map<Integer, ToolCallAccumulator> toolAccumulators,
+            Map<Integer, Integer> blockIndexToContentIndex,
+            Map<Integer, String> blockTypes,
+            AssistantMessageEventStream eventStream) {
+
+        int blockIdx = e.contentBlockIndex();
+        var start = e.start();
+
+        if (start != null && start.toolUse() != null) {
+            // Tool use block
+            var toolStart = start.toolUse();
+            var acc = new ToolCallAccumulator();
+            acc.id = toolStart.toolUseId();
+            acc.name = toolStart.name();
+            toolAccumulators.put(blockIdx, acc);
+            blockTypes.put(blockIdx, "tool");
+
+            contentBlocks.add(new ToolCall(acc.id, acc.name, Map.of(), null));
+            int contentIdx = contentBlocks.size() - 1;
+            blockIndexToContentIndex.put(blockIdx, contentIdx);
+            eventStream.push(new AssistantMessageEvent.ToolCallStartEvent(contentIdx,
+                    buildPartialMessage(model, null, contentBlocks, usage, null)));
+        }
+        // Text and reasoning blocks don't have a start payload in Bedrock;
+        // we detect them on the first delta event.
+    }
+
+    private void handleContentBlockDelta(
+            ContentBlockDeltaEvent e, Model model,
+            List<ContentBlock> contentBlocks, long[] usage,
+            Map<Integer, StringBuilder> textAccumulators,
+            Map<Integer, StringBuilder> thinkingAccumulators,
+            Map<Integer, ToolCallAccumulator> toolAccumulators,
+            Map<Integer, Integer> blockIndexToContentIndex,
+            Map<Integer, String> blockTypes,
+            AssistantMessageEventStream eventStream) {
+
+        int blockIdx = e.contentBlockIndex();
+        var delta = e.delta();
+        if (delta == null) return;
+
+        // Reasoning content delta
+        if (delta.reasoningContent() != null && delta.reasoningContent().text() != null) {
+            String thinkingText = delta.reasoningContent().text();
+            if (!blockTypes.containsKey(blockIdx)) {
+                // First thinking delta — create the block
+                blockTypes.put(blockIdx, "thinking");
+                thinkingAccumulators.put(blockIdx, new StringBuilder());
+                contentBlocks.add(new ThinkingContent("", null, false));
+                int contentIdx = contentBlocks.size() - 1;
+                blockIndexToContentIndex.put(blockIdx, contentIdx);
+                eventStream.push(new AssistantMessageEvent.ThinkingStartEvent(contentIdx,
+                        buildPartialMessage(model, null, contentBlocks, usage, null)));
+            }
+            var acc = thinkingAccumulators.get(blockIdx);
+            if (acc != null) {
+                acc.append(thinkingText);
+                Integer contentIdx = blockIndexToContentIndex.get(blockIdx);
+                if (contentIdx != null) {
+                    contentBlocks.set(contentIdx,
+                            new ThinkingContent(acc.toString(), null, false));
+                    eventStream.push(new AssistantMessageEvent.ThinkingDeltaEvent(
+                            contentIdx, thinkingText,
+                            buildPartialMessage(model, null, contentBlocks, usage, null)));
+                }
+            }
+            return;
+        }
+
+        // Text content delta
+        if (delta.text() != null) {
+            String text = delta.text();
+            if (!blockTypes.containsKey(blockIdx)) {
+                // First text delta — create the block
+                blockTypes.put(blockIdx, "text");
+                textAccumulators.put(blockIdx, new StringBuilder());
+                contentBlocks.add(new TextContent("", null));
+                int contentIdx = contentBlocks.size() - 1;
+                blockIndexToContentIndex.put(blockIdx, contentIdx);
+                eventStream.push(new AssistantMessageEvent.TextStartEvent(contentIdx,
+                        buildPartialMessage(model, null, contentBlocks, usage, null)));
+            }
+            var acc = textAccumulators.get(blockIdx);
+            if (acc != null) {
+                acc.append(text);
+                Integer contentIdx = blockIndexToContentIndex.get(blockIdx);
+                if (contentIdx != null) {
+                    contentBlocks.set(contentIdx,
+                            new TextContent(acc.toString(), null));
+                    eventStream.push(new AssistantMessageEvent.TextDeltaEvent(
+                            contentIdx, text,
+                            buildPartialMessage(model, null, contentBlocks, usage, null)));
+                }
+            }
+            return;
+        }
+
+        // Tool use input delta
+        if (delta.toolUse() != null && delta.toolUse().input() != null) {
+            var acc = toolAccumulators.get(blockIdx);
+            if (acc != null) {
+                String inputDelta = delta.toolUse().input();
+                acc.arguments.append(inputDelta);
+                Integer contentIdx = blockIndexToContentIndex.get(blockIdx);
+                if (contentIdx != null) {
+                    eventStream.push(new AssistantMessageEvent.ToolCallDeltaEvent(
+                            contentIdx, inputDelta,
+                            buildPartialMessage(model, null, contentBlocks, usage, null)));
+                }
+            }
+        }
+    }
+
+    private void handleContentBlockStop(
+            ContentBlockStopEvent e, Model model,
+            List<ContentBlock> contentBlocks, long[] usage,
+            Map<Integer, StringBuilder> textAccumulators,
+            Map<Integer, StringBuilder> thinkingAccumulators,
+            Map<Integer, ToolCallAccumulator> toolAccumulators,
+            Map<Integer, Integer> blockIndexToContentIndex,
+            Map<Integer, String> blockTypes,
+            AssistantMessageEventStream eventStream) {
+
+        int blockIdx = e.contentBlockIndex();
+        Integer contentIdx = blockIndexToContentIndex.get(blockIdx);
+        if (contentIdx == null) return;
+        String type = blockTypes.get(blockIdx);
+        if (type == null) return;
+
+        switch (type) {
+            case "text" -> {
+                String text = textAccumulators.containsKey(blockIdx)
+                        ? textAccumulators.get(blockIdx).toString() : "";
+                contentBlocks.set(contentIdx, new TextContent(text, null));
+                eventStream.push(new AssistantMessageEvent.TextEndEvent(contentIdx, text,
+                        buildPartialMessage(model, null, contentBlocks, usage, null)));
+            }
+            case "thinking" -> {
+                String thinking = thinkingAccumulators.containsKey(blockIdx)
+                        ? thinkingAccumulators.get(blockIdx).toString() : "";
+                contentBlocks.set(contentIdx, new ThinkingContent(thinking, null, false));
+                eventStream.push(new AssistantMessageEvent.ThinkingEndEvent(contentIdx, thinking,
+                        buildPartialMessage(model, null, contentBlocks, usage, null)));
+            }
+            case "tool" -> {
+                var acc = toolAccumulators.get(blockIdx);
+                Map<String, Object> args = acc != null
+                        ? parseToolArguments(acc.arguments.toString()) : Map.of();
+                String id = acc != null && acc.id != null ? acc.id : "";
+                String name = acc != null && acc.name != null ? acc.name : "";
+                var toolCall = new ToolCall(id, name, args, null);
+                contentBlocks.set(contentIdx, toolCall);
+                eventStream.push(new AssistantMessageEvent.ToolCallEndEvent(contentIdx, toolCall,
+                        buildPartialMessage(model, null, contentBlocks, usage, null)));
+            }
+        }
+    }
+
+    // -- Message conversion --
+
+    static List<software.amazon.awssdk.services.bedrockruntime.model.Message>
+    convertMessages(List<Message> messages) {
+        List<software.amazon.awssdk.services.bedrockruntime.model.Message> result = new ArrayList<>();
+        for (Message message : messages) {
+            if (message instanceof UserMessage um) {
+                result.add(convertUserMessage(um));
+            } else if (message instanceof AssistantMessage am) {
+                result.add(convertAssistantMessage(am));
+            } else if (message instanceof ToolResultMessage tr) {
+                result.add(convertToolResult(tr));
+            }
+        }
+        return result;
+    }
+
+    private static software.amazon.awssdk.services.bedrockruntime.model.Message
+    convertUserMessage(UserMessage um) {
+        var blocks = new ArrayList<software.amazon.awssdk.services.bedrockruntime.model.ContentBlock>();
+        for (ContentBlock cb : um.content()) {
+            if (cb instanceof TextContent tc) {
+                blocks.add(software.amazon.awssdk.services.bedrockruntime.model.ContentBlock
+                        .fromText(tc.text()));
+            }
+            // Image support can be added via ImageBlock when needed
+        }
+        return software.amazon.awssdk.services.bedrockruntime.model.Message.builder()
+                .role(ConversationRole.USER)
+                .content(blocks)
+                .build();
+    }
+
+    private static software.amazon.awssdk.services.bedrockruntime.model.Message
+    convertAssistantMessage(AssistantMessage am) {
+        var blocks = new ArrayList<software.amazon.awssdk.services.bedrockruntime.model.ContentBlock>();
+        for (ContentBlock cb : am.content()) {
+            if (cb instanceof TextContent tc) {
+                blocks.add(software.amazon.awssdk.services.bedrockruntime.model.ContentBlock
+                        .fromText(tc.text()));
+            } else if (cb instanceof ToolCall tc) {
+                blocks.add(software.amazon.awssdk.services.bedrockruntime.model.ContentBlock
+                        .fromToolUse(ToolUseBlock.builder()
+                                .toolUseId(tc.id())
+                                .name(tc.name())
+                                .input(mapToDocument(tc.arguments()))
+                                .build()));
+            }
+            // ThinkingContent is dropped for cross-provider compatibility
+        }
+        return software.amazon.awssdk.services.bedrockruntime.model.Message.builder()
+                .role(ConversationRole.ASSISTANT)
+                .content(blocks)
+                .build();
+    }
+
+    private static software.amazon.awssdk.services.bedrockruntime.model.Message
+    convertToolResult(ToolResultMessage tr) {
+        var contentBlocks = new ArrayList<ToolResultContentBlock>();
+        for (ContentBlock cb : tr.content()) {
+            if (cb instanceof TextContent tc) {
+                contentBlocks.add(ToolResultContentBlock.fromText(tc.text()));
+            }
+        }
+
+        var toolResult = ToolResultBlock.builder()
+                .toolUseId(tr.toolCallId())
+                .content(contentBlocks)
+                .build();
+
+        return software.amazon.awssdk.services.bedrockruntime.model.Message.builder()
+                .role(ConversationRole.USER)
+                .content(software.amazon.awssdk.services.bedrockruntime.model.ContentBlock
+                        .fromToolResult(toolResult))
+                .build();
+    }
+
+    // -- Tool conversion --
+
+    static List<Tool> convertTools(List<com.mariozechner.pi.ai.types.Tool> tools) {
+        List<Tool> result = new ArrayList<>();
+        for (var tool : tools) {
+            Document schemaDoc = tool.parameters() != null
+                    ? jsonNodeToDocument(tool.parameters()) : Document.fromMap(Map.of());
+
+            result.add(Tool.builder()
+                    .toolSpec(ToolSpecification.builder()
+                            .name(tool.name())
+                            .description(tool.description())
+                            .inputSchema(ToolInputSchema.builder()
+                                    .json(schemaDoc)
+                                    .build())
+                            .build())
+                    .build());
+        }
+        return result;
+    }
+
+    // -- Stop reason mapping --
+
+    static StopReason mapStopReason(String reason) {
+        if (reason == null) return StopReason.STOP;
+        return switch (reason) {
+            case "end_turn", "stop_sequence" -> StopReason.STOP;
+            case "tool_use" -> StopReason.TOOL_USE;
+            case "max_tokens", "model_context_window_exceeded" -> StopReason.LENGTH;
+            case "content_filtered", "guardrail_intervened",
+                 "malformed_model_output", "malformed_tool_use" -> StopReason.ERROR;
+            default -> StopReason.STOP;
+        };
+    }
+
+    // -- Usage parsing --
+
+    static void parseUsage(TokenUsage usage, long[] accumulated) {
+        int inputTokens = usage.inputTokens() != null ? usage.inputTokens() : 0;
+        int outputTokens = usage.outputTokens() != null ? usage.outputTokens() : 0;
+        int cacheRead = usage.cacheReadInputTokens() != null ? usage.cacheReadInputTokens() : 0;
+        int cacheWrite = usage.cacheWriteInputTokens() != null ? usage.cacheWriteInputTokens() : 0;
+
+        // Bedrock includes cached tokens in inputTokens, subtract
+        accumulated[0] = Math.max(inputTokens - cacheRead, 0);
+        accumulated[1] = outputTokens;
+        accumulated[2] = cacheRead;
+        accumulated[3] = cacheWrite;
+    }
+
+    // -- Utility methods --
+
+    private AssistantMessage buildPartialMessage(
+            Model model, @Nullable String responseId,
+            List<ContentBlock> contentBlocks, long[] usage,
+            @Nullable StopReason stopReason) {
+
+        var piUsage = new Usage(
+                (int) usage[0], (int) usage[1],
+                (int) usage[2], (int) usage[3],
+                (int) (usage[0] + usage[1] + usage[2]),
+                computeCost(model.cost(), usage));
+
+        return new AssistantMessage(
+                List.copyOf(contentBlocks),
+                Api.BEDROCK_CONVERSE_STREAM.value(),
+                Provider.AMAZON_BEDROCK.value(),
+                model.id(),
+                responseId,
+                piUsage,
+                stopReason != null ? stopReason : StopReason.STOP,
+                null,
+                System.currentTimeMillis());
+    }
+
+    static Cost computeCost(ModelCost modelCost, long[] usage) {
+        double inputCost = usage[0] * modelCost.input() / 1_000_000.0;
+        double outputCost = usage[1] * modelCost.output() / 1_000_000.0;
+        double cacheReadCost = usage[2] * modelCost.cacheRead() / 1_000_000.0;
+        double cacheWriteCost = usage[3] * modelCost.cacheWrite() / 1_000_000.0;
+        return new Cost(inputCost, outputCost, cacheReadCost, cacheWriteCost,
+                inputCost + outputCost + cacheReadCost + cacheWriteCost);
+    }
+
+    @SuppressWarnings("unchecked")
+    static Map<String, Object> parseToolArguments(String json) {
+        if (json == null || json.isBlank()) return Map.of();
+        try {
+            return MAPPER.readValue(json, new TypeReference<Map<String, Object>>() {});
+        } catch (Exception e) {
+            return Map.of();
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    static Document mapToDocument(Map<String, Object> map) {
+        if (map == null || map.isEmpty()) return Document.fromMap(Map.of());
+        Map<String, Document> docMap = new LinkedHashMap<>();
+        for (var entry : map.entrySet()) {
+            docMap.put(entry.getKey(), objectToDocument(entry.getValue()));
+        }
+        return Document.fromMap(docMap);
+    }
+
+    @SuppressWarnings("unchecked")
+    static Document objectToDocument(Object value) {
+        if (value == null) return Document.fromNull();
+        if (value instanceof String s) return Document.fromString(s);
+        if (value instanceof Boolean b) return Document.fromBoolean(b);
+        if (value instanceof Integer i) return Document.fromNumber(i);
+        if (value instanceof Long l) return Document.fromNumber(l);
+        if (value instanceof Double d) return Document.fromNumber(d);
+        if (value instanceof Float f) return Document.fromNumber(f);
+        if (value instanceof Number n) return Document.fromNumber(n.doubleValue());
+        if (value instanceof Map<?, ?> m) {
+            Map<String, Document> docMap = new LinkedHashMap<>();
+            for (var entry : ((Map<String, Object>) m).entrySet()) {
+                docMap.put(entry.getKey(), objectToDocument(entry.getValue()));
+            }
+            return Document.fromMap(docMap);
+        }
+        if (value instanceof List<?> list) {
+            List<Document> docs = new ArrayList<>();
+            for (Object item : list) {
+                docs.add(objectToDocument(item));
+            }
+            return Document.fromList(docs);
+        }
+        return Document.fromString(value.toString());
+    }
+
+    @SuppressWarnings("unchecked")
+    static Document jsonNodeToDocument(JsonNode node) {
+        if (node == null || node.isNull()) return Document.fromNull();
+        try {
+            Map<String, Object> map = MAPPER.treeToValue(node, Map.class);
+            return mapToDocument(map);
+        } catch (Exception e) {
+            return Document.fromMap(Map.of());
+        }
+    }
+
+    /**
+     * Mutable accumulator for streaming tool call deltas.
+     */
+    private static class ToolCallAccumulator {
+        String id;
+        String name;
+        final StringBuilder arguments = new StringBuilder();
+    }
+}
