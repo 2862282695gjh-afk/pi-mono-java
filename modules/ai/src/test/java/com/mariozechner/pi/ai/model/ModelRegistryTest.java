@@ -258,7 +258,7 @@ class ModelRegistryTest {
         @Test
         void builtInProviderCount() {
             var providers = registry.getProviders();
-            assertEquals(15, providers.size());
+            assertEquals(17, providers.size());
             assertTrue(providers.contains(Provider.ANTHROPIC));
             assertTrue(providers.contains(Provider.OPENAI));
             assertTrue(providers.contains(Provider.ZAI));
@@ -274,6 +274,8 @@ class ModelRegistryTest {
             assertTrue(providers.contains(Provider.OPENROUTER));
             assertTrue(providers.contains(Provider.OPENAI_CODEX));
             assertTrue(providers.contains(Provider.GITHUB_COPILOT));
+            assertTrue(providers.contains(Provider.CEREBRAS));
+            assertTrue(providers.contains(Provider.HUGGINGFACE));
         }
 
         @Test

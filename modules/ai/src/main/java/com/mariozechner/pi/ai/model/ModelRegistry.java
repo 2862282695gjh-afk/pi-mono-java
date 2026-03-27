@@ -337,7 +337,23 @@ public class ModelRegistry {
                 new ModelCost(0, 0, 0, 0), 200000, 16000, null, null),
             new Model("gpt-4o", "GPT-4o (Copilot)", Api.OPENAI_COMPLETIONS, Provider.GITHUB_COPILOT,
                 "https://api.githubcopilot.com", false, List.of(InputModality.TEXT, InputModality.IMAGE),
-                new ModelCost(0, 0, 0, 0), 128000, 16384, null, null)
+                new ModelCost(0, 0, 0, 0), 128000, 16384, null, null),
+
+            // --- Cerebras ---
+            new Model("llama-4-scout-17b-16e-instruct", "Llama 4 Scout (Cerebras)", Api.OPENAI_COMPLETIONS, Provider.CEREBRAS,
+                "https://api.cerebras.ai/v1", false, List.of(InputModality.TEXT),
+                new ModelCost(0, 0, 0, 0), 131072, 16384, null, null),
+            new Model("llama-3.3-70b", "Llama 3.3 70B (Cerebras)", Api.OPENAI_COMPLETIONS, Provider.CEREBRAS,
+                "https://api.cerebras.ai/v1", false, List.of(InputModality.TEXT),
+                new ModelCost(0, 0, 0, 0), 131072, 16384, null, null),
+
+            // --- HuggingFace ---
+            new Model("Qwen/Qwen3-235B-A22B", "Qwen3 235B (HF)", Api.OPENAI_COMPLETIONS, Provider.HUGGINGFACE,
+                "https://router.huggingface.co/v1", true, List.of(InputModality.TEXT),
+                new ModelCost(0, 0, 0, 0), 131072, 32768, null, null),
+            new Model("meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8", "Llama 4 Maverick (HF)", Api.OPENAI_COMPLETIONS, Provider.HUGGINGFACE,
+                "https://router.huggingface.co/v1", false, List.of(InputModality.TEXT),
+                new ModelCost(0, 0, 0, 0), 131072, 32768, null, null)
         );
     }
 }
