@@ -3,6 +3,7 @@ package com.mariozechner.pi.codingagent.command.builtin;
 import com.mariozechner.pi.ai.PiAiService;
 import com.mariozechner.pi.codingagent.command.SlashCommandRegistry;
 import com.mariozechner.pi.codingagent.compaction.Compactor;
+import com.mariozechner.pi.codingagent.settings.SettingsManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Lazy;
@@ -18,21 +19,23 @@ public class BuiltinCommandRegistrar {
 
     private final SlashCommandRegistry registry;
     private final PiAiService piAiService;
+    private final SettingsManager settingsManager;
 
-    public BuiltinCommandRegistrar(SlashCommandRegistry registry, PiAiService piAiService) {
+    public BuiltinCommandRegistrar(SlashCommandRegistry registry, PiAiService piAiService,
+                                   SettingsManager settingsManager) {
         this.registry = registry;
         this.piAiService = piAiService;
+        this.settingsManager = settingsManager;
     }
 
     @PostConstruct
     void registerBuiltins() {
-        log.info("Registering built-in slash commands");
         registry.register(new HelpCommand(registry));
         registry.register(new ModelCommand());
         registry.register(new CompactCommand(new Compactor(piAiService)));
         registry.register(new NewCommand());
         registry.register(new QuitCommand());
-        registry.register(new SettingsCommand());
+        registry.register(new SettingsCommand(settingsManager));
         registry.register(new ExportCommand());
         registry.register(new CopyCommand());
         registry.register(new HotkeysCommand());
