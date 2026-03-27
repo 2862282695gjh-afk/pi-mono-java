@@ -13,6 +13,7 @@ import com.mariozechner.pi.codingagent.tool.bash.BashExecutionResult;
 import com.mariozechner.pi.codingagent.tool.bash.BashExecutor;
 import com.mariozechner.pi.codingagent.tool.bash.BashExecutorOptions;
 import com.mariozechner.pi.codingagent.util.PathUtils;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
@@ -76,6 +77,7 @@ public class GrepTool implements AgentTool {
     private final Path cwd;
     private volatile Boolean rgAvailable;
 
+    @Autowired
     public GrepTool(BashExecutor bashExecutor) {
         this(bashExecutor, Path.of(System.getProperty("user.dir")));
     }

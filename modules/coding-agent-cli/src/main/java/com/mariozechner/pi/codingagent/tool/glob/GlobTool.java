@@ -10,6 +10,7 @@ import com.mariozechner.pi.agent.tool.CancellationToken;
 import com.mariozechner.pi.ai.types.ContentBlock;
 import com.mariozechner.pi.ai.types.TextContent;
 import com.mariozechner.pi.codingagent.util.PathUtils;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
@@ -48,6 +49,7 @@ public class GlobTool implements AgentTool {
 
     private final Path cwd;
 
+    @Autowired
     public GlobTool() {
         this(Path.of(System.getProperty("user.dir")));
     }

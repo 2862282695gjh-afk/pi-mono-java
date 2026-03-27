@@ -12,6 +12,7 @@ import com.mariozechner.pi.ai.types.TextContent;
 import com.mariozechner.pi.codingagent.tool.ops.EditOperations;
 import com.mariozechner.pi.codingagent.util.FileMutationQueue;
 import com.mariozechner.pi.codingagent.util.PathUtils;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.nio.charset.StandardCharsets;
@@ -33,6 +34,7 @@ public class EditTool implements AgentTool {
     private final FileMutationQueue mutationQueue;
     private final Path cwd;
 
+    @Autowired
     public EditTool(EditOperations editOperations, FileMutationQueue mutationQueue) {
         this(editOperations, mutationQueue, Path.of(System.getProperty("user.dir")));
     }

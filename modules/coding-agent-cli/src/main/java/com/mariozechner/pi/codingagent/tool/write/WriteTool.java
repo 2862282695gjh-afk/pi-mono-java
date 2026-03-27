@@ -12,6 +12,7 @@ import com.mariozechner.pi.ai.types.TextContent;
 import com.mariozechner.pi.codingagent.tool.ops.WriteOperations;
 import com.mariozechner.pi.codingagent.util.FileMutationQueue;
 import com.mariozechner.pi.codingagent.util.PathUtils;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.nio.file.Path;
@@ -32,6 +33,7 @@ public class WriteTool implements AgentTool {
     private final FileMutationQueue mutationQueue;
     private final Path cwd;
 
+    @Autowired
     public WriteTool(WriteOperations writeOperations, FileMutationQueue mutationQueue) {
         this(writeOperations, mutationQueue, Path.of(System.getProperty("user.dir")));
     }

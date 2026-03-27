@@ -13,6 +13,7 @@ import com.mariozechner.pi.ai.types.TextContent;
 import com.mariozechner.pi.codingagent.tool.ops.ReadOperations;
 import com.mariozechner.pi.codingagent.util.PathUtils;
 import com.mariozechner.pi.codingagent.util.TruncationUtils;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
@@ -38,6 +39,7 @@ public class ReadTool implements AgentTool {
     private final ReadOperations readOperations;
     private final Path cwd;
 
+    @Autowired
     public ReadTool(ReadOperations readOperations) {
         this(readOperations, Path.of(System.getProperty("user.dir")));
     }

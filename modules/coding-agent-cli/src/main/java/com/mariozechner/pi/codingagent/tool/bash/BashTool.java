@@ -10,6 +10,7 @@ import com.mariozechner.pi.agent.tool.CancellationToken;
 import com.mariozechner.pi.ai.types.ContentBlock;
 import com.mariozechner.pi.ai.types.TextContent;
 import com.mariozechner.pi.codingagent.util.TruncationUtils;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
@@ -36,6 +37,7 @@ public class BashTool implements AgentTool {
     private final BashExecutor bashExecutor;
     private final Path cwd;
 
+    @Autowired
     public BashTool(BashExecutor bashExecutor) {
         this(bashExecutor, Path.of(System.getProperty("user.dir")));
     }
