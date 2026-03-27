@@ -17,7 +17,6 @@ import com.mariozechner.pi.agent.tool.CancellationToken;
 import com.mariozechner.pi.agent.tool.ToolCallWithTool;
 import com.mariozechner.pi.agent.tool.ToolExecutionMode;
 import com.mariozechner.pi.agent.tool.ToolExecutionPipeline;
-import com.mariozechner.pi.ai.PiAiService;
 import com.mariozechner.pi.ai.stream.AssistantMessageEvent;
 import com.mariozechner.pi.ai.types.AssistantMessage;
 import com.mariozechner.pi.ai.types.Context;
@@ -39,7 +38,7 @@ import java.util.Objects;
  */
 public class AgentLoop {
 
-    private final PiAiService piAiService;
+    private final StreamFunction streamFunction;
     private final Model model;
     private final MessageConverter convertToLlm;
     private final ContextTransformer transformContext;
@@ -48,10 +47,12 @@ public class AgentLoop {
     private final MessageQueue steeringQueue;
     private final MessageQueue followUpQueue;
     private final SimpleStreamOptions streamOptions;
+    private final SteeringMessageSupplier getSteeringMessages;
+    private final SteeringMessageSupplier getFollowUpMessages;
 
     public AgentLoop(AgentLoopConfig config) {
         Objects.requireNonNull(config, "config");
-        this.piAiService = config.piAiService();
+        this.streamFunction = config.effectiveStreamFunction();
         this.model = config.model();
         this.convertToLlm = config.convertToLlm();
         this.transformContext = config.transformContext();
@@ -60,6 +61,8 @@ public class AgentLoop {
         this.steeringQueue = config.steeringQueue();
         this.followUpQueue = config.followUpQueue();
         this.streamOptions = config.streamOptions();
+        this.getSteeringMessages = config.getSteeringMessages();
+        this.getFollowUpMessages = config.getFollowUpMessages();
     }
 
     public List<Message> run(
@@ -119,7 +122,7 @@ public class AgentLoop {
                     );
                     context.appendMessages(toolResults);
 
-                    var steeringMessages = steeringQueue.drain();
+                    var steeringMessages = drainSteeringMessages();
                     if (!steeringMessages.isEmpty()) {
                         context.appendMessages(steeringMessages);
                     }
@@ -129,7 +132,7 @@ public class AgentLoop {
                     continue;
                 }
 
-                var followUpMessages = followUpQueue.drain();
+                var followUpMessages = drainFollowUpMessages();
                 eventListener.onEvent(new TurnEndEvent(assistantMessage, List.of()));
                 if (!followUpMessages.isEmpty()) {
                     context.appendMessages(followUpMessages);
@@ -166,7 +169,7 @@ public class AgentLoop {
             toLlmTools(context.tools())
         );
 
-        var stream = piAiService.streamSimple(model, llmContext, streamOptions);
+        var stream = streamFunction.stream(model, llmContext, streamOptions);
         AssistantMessage assistantMessage = null;
         var assistantStarted = false;
 
@@ -243,6 +246,22 @@ public class AgentLoop {
             resolved.add(new ToolCallWithTool(toolCall, tool, toolCall.arguments()));
         }
         return List.copyOf(resolved);
+    }
+
+    private List<Message> drainSteeringMessages() {
+        if (getSteeringMessages != null) {
+            var msgs = getSteeringMessages.get();
+            if (msgs != null && !msgs.isEmpty()) return msgs;
+        }
+        return steeringQueue.drain();
+    }
+
+    private List<Message> drainFollowUpMessages() {
+        if (getFollowUpMessages != null) {
+            var msgs = getFollowUpMessages.get();
+            if (msgs != null && !msgs.isEmpty()) return msgs;
+        }
+        return followUpQueue.drain();
     }
 
     private AssistantMessage extractAssistantMessage(AssistantMessageEvent event) {

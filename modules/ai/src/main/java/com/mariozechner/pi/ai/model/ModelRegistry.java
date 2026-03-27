@@ -240,7 +240,47 @@ public class ModelRegistry {
                 new ModelCost(0.3, 1.2, 0.06, 0.375), 204800, 131072, null, null),
             new Model("MiniMax-M2.7-highspeed", "MiniMax-M2.7-highspeed", Api.ANTHROPIC_MESSAGES, Provider.MINIMAX_CN,
                 "https://api.minimaxi.com/anthropic", true, List.of(InputModality.TEXT),
-                new ModelCost(0.6, 2.4, 0.06, 0.375), 204800, 131072, null, null)
+                new ModelCost(0.6, 2.4, 0.06, 0.375), 204800, 131072, null, null),
+
+            // --- Google Generative AI ---
+            new Model("gemini-2.5-pro", "Gemini 2.5 Pro", Api.GOOGLE_GENERATIVE_AI, Provider.GOOGLE,
+                "https://generativelanguage.googleapis.com/v1beta", true,
+                List.of(InputModality.TEXT, InputModality.IMAGE),
+                new ModelCost(1.25, 10.0, 0.31, 2.5), 1048576, 65536, null, null),
+            new Model("gemini-2.5-flash", "Gemini 2.5 Flash", Api.GOOGLE_GENERATIVE_AI, Provider.GOOGLE,
+                "https://generativelanguage.googleapis.com/v1beta", true,
+                List.of(InputModality.TEXT, InputModality.IMAGE),
+                new ModelCost(0.15, 0.6, 0.04, 0.15), 1048576, 65536, null, null),
+            new Model("gemini-2.0-flash", "Gemini 2.0 Flash", Api.GOOGLE_GENERATIVE_AI, Provider.GOOGLE,
+                "https://generativelanguage.googleapis.com/v1beta", false,
+                List.of(InputModality.TEXT, InputModality.IMAGE),
+                new ModelCost(0.1, 0.4, 0.025, 0.1), 1048576, 8192, null, null),
+
+            // --- Google Vertex AI ---
+            new Model("gemini-2.5-pro", "Gemini 2.5 Pro (Vertex)", Api.GOOGLE_VERTEX, Provider.GOOGLE_VERTEX,
+                null, true, List.of(InputModality.TEXT, InputModality.IMAGE),
+                new ModelCost(1.25, 10.0, 0.31, 2.5), 1048576, 65536, null, null),
+            new Model("gemini-2.5-flash", "Gemini 2.5 Flash (Vertex)", Api.GOOGLE_VERTEX, Provider.GOOGLE_VERTEX,
+                null, true, List.of(InputModality.TEXT, InputModality.IMAGE),
+                new ModelCost(0.15, 0.6, 0.04, 0.15), 1048576, 65536, null, null),
+
+            // --- Mistral ---
+            new Model("mistral-large-latest", "Mistral Large", Api.MISTRAL_CONVERSATIONS, Provider.MISTRAL,
+                "https://api.mistral.ai/v1", true,
+                List.of(InputModality.TEXT, InputModality.IMAGE),
+                new ModelCost(2.0, 6.0, 0.5, 1.5), 131072, 8192, null, null),
+            new Model("mistral-medium-latest", "Mistral Medium", Api.MISTRAL_CONVERSATIONS, Provider.MISTRAL,
+                "https://api.mistral.ai/v1", false,
+                List.of(InputModality.TEXT),
+                new ModelCost(0.4, 2.0, 0.1, 0.5), 131072, 8192, null, null),
+            new Model("mistral-small-latest", "Mistral Small", Api.MISTRAL_CONVERSATIONS, Provider.MISTRAL,
+                "https://api.mistral.ai/v1", false,
+                List.of(InputModality.TEXT),
+                new ModelCost(0.1, 0.3, 0.025, 0.075), 131072, 8192, null, null),
+            new Model("codestral-latest", "Codestral", Api.MISTRAL_CONVERSATIONS, Provider.MISTRAL,
+                "https://api.mistral.ai/v1", false,
+                List.of(InputModality.TEXT),
+                new ModelCost(0.3, 0.9, 0.075, 0.225), 262144, 8192, null, null)
         );
     }
 }
