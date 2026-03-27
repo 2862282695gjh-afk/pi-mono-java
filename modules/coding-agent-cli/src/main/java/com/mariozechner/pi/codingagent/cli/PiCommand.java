@@ -13,6 +13,8 @@ import com.mariozechner.pi.codingagent.session.AgentSession;
 import com.mariozechner.pi.codingagent.session.SessionConfig;
 import com.mariozechner.pi.codingagent.skill.SkillExpander;
 import com.mariozechner.pi.codingagent.skill.SkillLoader;
+import com.mariozechner.pi.codingagent.settings.Settings;
+import com.mariozechner.pi.codingagent.settings.SettingsManager;
 import com.mariozechner.pi.codingagent.tool.bash.BashExecutor;
 import com.mariozechner.pi.tui.terminal.JLineTerminal;
 import com.mariozechner.pi.tui.terminal.Terminal;
@@ -48,16 +50,19 @@ public class PiCommand implements Callable<Integer> {
     private final List<AgentTool> tools;
     private final SlashCommandRegistry commandRegistry;
     private final BashExecutor bashExecutor;
+    private final SettingsManager settingsManager;
 
     public PiCommand(PiAiService piAiService, ModelRegistry modelRegistry,
                      SystemPromptBuilder promptBuilder, List<AgentTool> tools,
-                     SlashCommandRegistry commandRegistry, BashExecutor bashExecutor) {
+                     SlashCommandRegistry commandRegistry, BashExecutor bashExecutor,
+                     SettingsManager settingsManager) {
         this.piAiService = piAiService;
         this.modelRegistry = modelRegistry;
         this.promptBuilder = promptBuilder;
         this.tools = tools;
         this.commandRegistry = commandRegistry;
         this.bashExecutor = bashExecutor;
+        this.settingsManager = settingsManager;
     }
 
     @Option(names = {"-m", "--model"}, description = "AI model to use (e.g. claude-sonnet-4-20250514)")
@@ -97,12 +102,23 @@ public class PiCommand implements Callable<Integer> {
         String effectivePrompt = resolvePrompt();
         Path effectiveCwd = cwd != null ? cwd : Path.of(System.getProperty("user.dir"));
 
+        // Load settings and apply defaults for model and thinking level
+        Settings settings = settingsManager != null ? settingsManager.load() : Settings.empty();
+        String effectiveModel = model;
+        if (effectiveModel == null && settings.defaultModel() != null) {
+            effectiveModel = settings.defaultModel();
+        }
+        String effectiveThinking = thinking;
+        if (effectiveThinking == null && settings.defaultThinkingLevel() != null) {
+            effectiveThinking = settings.defaultThinkingLevel();
+        }
+
         if ("print".equals(mode)) {
-            System.out.println("Model: " + model);
+            System.out.println("Model: " + effectiveModel);
             System.out.println("Mode: " + mode);
             System.out.println("CWD: " + effectiveCwd);
             System.out.println("Prompt: " + effectivePrompt);
-            if (thinking != null) System.out.println("Thinking: " + thinking);
+            if (effectiveThinking != null) System.out.println("Thinking: " + effectiveThinking);
             if (toolsFilter != null) System.out.println("Tools: " + toolsFilter);
             return 0;
         }
@@ -135,16 +151,16 @@ public class PiCommand implements Callable<Integer> {
                 piAiService, modelRegistry, promptBuilder,
                 new SkillLoader(), new SkillExpander(), effectiveTools
         );
-        SessionConfig config = new SessionConfig(model, effectiveCwd, effectiveSystemPrompt, mode);
+        SessionConfig config = new SessionConfig(effectiveModel, effectiveCwd, effectiveSystemPrompt, mode);
         session.initialize(config);
 
-        // Apply thinking level
-        if (thinking != null) {
+        // Apply thinking level from CLI flag or settings default
+        if (effectiveThinking != null) {
             try {
-                ThinkingLevel level = ThinkingLevel.fromValue(thinking);
+                ThinkingLevel level = ThinkingLevel.fromValue(effectiveThinking);
                 session.getAgent().setThinkingLevel(level);
             } catch (IllegalArgumentException e) {
-                System.err.println("Warning: Unknown thinking level '" + thinking
+                System.err.println("Warning: Unknown thinking level '" + effectiveThinking
                         + "'. Valid: off, minimal, low, medium, high, xhigh");
             }
         }

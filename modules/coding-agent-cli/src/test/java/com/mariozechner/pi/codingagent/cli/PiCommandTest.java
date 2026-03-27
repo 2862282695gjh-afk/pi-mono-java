@@ -11,7 +11,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class PiCommandTest {
 
     private PiCommand parse(String... args) {
-        PiCommand cmd = new PiCommand(null, null, null, null, null, null);
+        PiCommand cmd = new PiCommand(null, null, null, null, null, null, null);
         new CommandLine(cmd).parseArgs(args);
         return cmd;
     }
@@ -314,14 +314,14 @@ class PiCommandTest {
 
         @Test
         void helpExitsWithZero() {
-            PiCommand cmd = new PiCommand(null, null, null, null, null, null);
+            PiCommand cmd = new PiCommand(null, null, null, null, null, null, null);
             int exitCode = new CommandLine(cmd).execute("--help");
             assertEquals(0, exitCode);
         }
 
         @Test
         void versionExitsWithZero() {
-            PiCommand cmd = new PiCommand(null, null, null, null, null, null);
+            PiCommand cmd = new PiCommand(null, null, null, null, null, null, null);
             int exitCode = new CommandLine(cmd).execute("--version");
             assertEquals(0, exitCode);
         }
