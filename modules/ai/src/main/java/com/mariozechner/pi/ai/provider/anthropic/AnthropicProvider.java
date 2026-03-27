@@ -72,6 +72,8 @@ public class AnthropicProvider implements ApiProvider {
             case KIMI_CODING -> System.getenv("KIMI_API_KEY");
             case MINIMAX -> System.getenv("MINIMAX_API_KEY");
             case MINIMAX_CN -> System.getenv("MINIMAX_CN_API_KEY");
+            case GITHUB_COPILOT -> System.getenv("COPILOT_GITHUB_TOKEN");
+            case AZURE_OPENAI -> System.getenv("AZURE_OPENAI_API_KEY");
             default -> null;
         };
         if (providerKey != null && !providerKey.isBlank()) return providerKey;
@@ -141,6 +143,8 @@ public class AnthropicProvider implements ApiProvider {
                 case KIMI_CODING -> "KIMI_API_KEY";
                 case MINIMAX -> "MINIMAX_API_KEY";
                 case MINIMAX_CN -> "MINIMAX_CN_API_KEY";
+                case GITHUB_COPILOT -> "COPILOT_GITHUB_TOKEN";
+                case AZURE_OPENAI -> "AZURE_OPENAI_API_KEY";
                 default -> "ANTHROPIC_API_KEY";
             };
             eventStream.error(new IllegalStateException(

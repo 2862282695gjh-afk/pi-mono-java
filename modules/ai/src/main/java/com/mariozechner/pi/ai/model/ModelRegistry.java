@@ -280,7 +280,64 @@ public class ModelRegistry {
             new Model("codestral-latest", "Codestral", Api.MISTRAL_CONVERSATIONS, Provider.MISTRAL,
                 "https://api.mistral.ai/v1", false,
                 List.of(InputModality.TEXT),
-                new ModelCost(0.3, 0.9, 0.075, 0.225), 262144, 8192, null, null)
+                new ModelCost(0.3, 0.9, 0.075, 0.225), 262144, 8192, null, null),
+
+            // --- Azure OpenAI ---
+            new Model("gpt-4o", "GPT-4o (Azure)", Api.OPENAI_RESPONSES, Provider.AZURE_OPENAI,
+                null, false, List.of(InputModality.TEXT, InputModality.IMAGE),
+                new ModelCost(2.5, 10.0, 1.25, 2.5), 128000, 16384, null, null),
+            new Model("gpt-4o-mini", "GPT-4o Mini (Azure)", Api.OPENAI_RESPONSES, Provider.AZURE_OPENAI,
+                null, false, List.of(InputModality.TEXT, InputModality.IMAGE),
+                new ModelCost(0.15, 0.6, 0.075, 0.15), 128000, 16384, null, null),
+            new Model("o3", "o3 (Azure)", Api.OPENAI_RESPONSES, Provider.AZURE_OPENAI,
+                null, true, List.of(InputModality.TEXT, InputModality.IMAGE),
+                new ModelCost(10.0, 40.0, 2.5, 10.0), 200000, 100000, null, null),
+
+            // --- xAI ---
+            new Model("grok-3", "Grok 3", Api.OPENAI_COMPLETIONS, Provider.XAI,
+                "https://api.x.ai/v1", true, List.of(InputModality.TEXT),
+                new ModelCost(3.0, 15.0, 0.75, 3.75), 131072, 131072, null, null),
+            new Model("grok-3-mini", "Grok 3 Mini", Api.OPENAI_COMPLETIONS, Provider.XAI,
+                "https://api.x.ai/v1", true, List.of(InputModality.TEXT),
+                new ModelCost(0.3, 0.5, 0.075, 0.125), 131072, 131072, null, null),
+            new Model("grok-3-fast", "Grok 3 Fast", Api.OPENAI_COMPLETIONS, Provider.XAI,
+                "https://api.x.ai/v1", false, List.of(InputModality.TEXT),
+                new ModelCost(5.0, 25.0, 1.25, 6.25), 131072, 131072, null, null),
+
+            // --- Groq ---
+            new Model("llama-3.3-70b-versatile", "Llama 3.3 70B (Groq)", Api.OPENAI_COMPLETIONS, Provider.GROQ,
+                "https://api.groq.com/openai/v1", false, List.of(InputModality.TEXT),
+                new ModelCost(0.59, 0.79, 0, 0), 131072, 32768, null, null),
+            new Model("llama-4-maverick-17b-128e-instruct", "Llama 4 Maverick (Groq)", Api.OPENAI_COMPLETIONS, Provider.GROQ,
+                "https://api.groq.com/openai/v1", false, List.of(InputModality.TEXT),
+                new ModelCost(0.2, 0.6, 0, 0), 131072, 32768, null, null),
+            new Model("deepseek-r1-distill-llama-70b", "DeepSeek R1 70B (Groq)", Api.OPENAI_COMPLETIONS, Provider.GROQ,
+                "https://api.groq.com/openai/v1", true, List.of(InputModality.TEXT),
+                new ModelCost(0.59, 0.79, 0, 0), 131072, 16384, null, null),
+
+            // --- OpenRouter ---
+            new Model("anthropic/claude-sonnet-4", "Claude Sonnet 4 (OpenRouter)", Api.OPENAI_COMPLETIONS, Provider.OPENROUTER,
+                "https://openrouter.ai/api/v1", true, List.of(InputModality.TEXT, InputModality.IMAGE),
+                new ModelCost(3.0, 15.0, 0.3, 3.75), 200000, 16000, null, null),
+            new Model("openai/gpt-4o", "GPT-4o (OpenRouter)", Api.OPENAI_COMPLETIONS, Provider.OPENROUTER,
+                "https://openrouter.ai/api/v1", false, List.of(InputModality.TEXT, InputModality.IMAGE),
+                new ModelCost(2.5, 10.0, 1.25, 2.5), 128000, 16384, null, null),
+            new Model("google/gemini-2.5-pro", "Gemini 2.5 Pro (OpenRouter)", Api.OPENAI_COMPLETIONS, Provider.OPENROUTER,
+                "https://openrouter.ai/api/v1", true, List.of(InputModality.TEXT, InputModality.IMAGE),
+                new ModelCost(1.25, 10.0, 0.31, 2.5), 1048576, 65536, null, null),
+
+            // --- OpenAI Codex ---
+            new Model("codex-mini-latest", "Codex Mini", Api.OPENAI_RESPONSES, Provider.OPENAI_CODEX,
+                "https://api.openai.com", true, List.of(InputModality.TEXT),
+                new ModelCost(1.5, 6.0, 0.375, 1.5), 192000, 100000, null, null),
+
+            // --- GitHub Copilot ---
+            new Model("claude-sonnet-4", "Claude Sonnet 4 (Copilot)", Api.ANTHROPIC_MESSAGES, Provider.GITHUB_COPILOT,
+                "https://api.githubcopilot.com", true, List.of(InputModality.TEXT, InputModality.IMAGE),
+                new ModelCost(0, 0, 0, 0), 200000, 16000, null, null),
+            new Model("gpt-4o", "GPT-4o (Copilot)", Api.OPENAI_COMPLETIONS, Provider.GITHUB_COPILOT,
+                "https://api.githubcopilot.com", false, List.of(InputModality.TEXT, InputModality.IMAGE),
+                new ModelCost(0, 0, 0, 0), 128000, 16384, null, null)
         );
     }
 }

@@ -79,6 +79,7 @@ public class OpenAICompletionsProvider implements ApiProvider {
             case CEREBRAS -> System.getenv("CEREBRAS_API_KEY");
             case OPENROUTER -> System.getenv("OPENROUTER_API_KEY");
             case HUGGINGFACE -> System.getenv("HF_TOKEN");
+            case GITHUB_COPILOT -> System.getenv("COPILOT_GITHUB_TOKEN");
             default -> null;
         };
         if (providerKey != null && !providerKey.isBlank()) return providerKey;
@@ -148,6 +149,7 @@ public class OpenAICompletionsProvider implements ApiProvider {
                 case CEREBRAS -> "CEREBRAS_API_KEY";
                 case OPENROUTER -> "OPENROUTER_API_KEY";
                 case HUGGINGFACE -> "HF_TOKEN";
+                case GITHUB_COPILOT -> "COPILOT_GITHUB_TOKEN";
                 default -> "OPENAI_API_KEY";
             };
             eventStream.error(new IllegalStateException(
