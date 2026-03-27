@@ -19,6 +19,8 @@ public class MarkdownTheme {
     private final UnaryOperator<String> linkUrl;
     private final UnaryOperator<String> listBullet;
     private final UnaryOperator<String> hr;
+    private final UnaryOperator<String> strikethrough;
+    private final UnaryOperator<String> quoteBorder;
 
     private MarkdownTheme(Builder b) {
         this.heading1 = b.heading1;
@@ -33,6 +35,8 @@ public class MarkdownTheme {
         this.linkUrl = b.linkUrl;
         this.listBullet = b.listBullet;
         this.hr = b.hr;
+        this.strikethrough = b.strikethrough;
+        this.quoteBorder = b.quoteBorder;
     }
 
     public String heading1(String text) { return heading1.apply(text); }
@@ -47,6 +51,8 @@ public class MarkdownTheme {
     public String linkUrl(String text) { return linkUrl.apply(text); }
     public String listBullet(String text) { return listBullet.apply(text); }
     public String hr(String text) { return hr.apply(text); }
+    public String strikethrough(String text) { return strikethrough.apply(text); }
+    public String quoteBorder(String text) { return quoteBorder.apply(text); }
 
     /**
      * Returns the default theme with standard terminal colors.
@@ -83,7 +89,10 @@ public class MarkdownTheme {
         private UnaryOperator<String> link = s -> CYAN + UNDERLINE + s + RESET;
         private UnaryOperator<String> linkUrl = s -> DIM + s + RESET;
         private UnaryOperator<String> listBullet = s -> CYAN + s + RESET;
+        private static final String STRIKETHROUGH_STYLE = "\033[9m";
         private UnaryOperator<String> hr = s -> DIM + s + RESET;
+        private UnaryOperator<String> strikethrough = s -> STRIKETHROUGH_STYLE + s + RESET;
+        private UnaryOperator<String> quoteBorder = s -> DIM + CYAN + s + RESET;
 
         public Builder heading1(UnaryOperator<String> fn) { this.heading1 = fn; return this; }
         public Builder heading2(UnaryOperator<String> fn) { this.heading2 = fn; return this; }
@@ -97,6 +106,8 @@ public class MarkdownTheme {
         public Builder linkUrl(UnaryOperator<String> fn) { this.linkUrl = fn; return this; }
         public Builder listBullet(UnaryOperator<String> fn) { this.listBullet = fn; return this; }
         public Builder hr(UnaryOperator<String> fn) { this.hr = fn; return this; }
+        public Builder strikethrough(UnaryOperator<String> fn) { this.strikethrough = fn; return this; }
+        public Builder quoteBorder(UnaryOperator<String> fn) { this.quoteBorder = fn; return this; }
 
         public MarkdownTheme build() {
             return new MarkdownTheme(this);

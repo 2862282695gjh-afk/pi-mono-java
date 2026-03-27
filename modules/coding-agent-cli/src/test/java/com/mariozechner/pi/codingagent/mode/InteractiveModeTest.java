@@ -5,7 +5,12 @@ import com.mariozechner.pi.agent.event.*;
 import com.mariozechner.pi.agent.state.AgentState;
 import com.mariozechner.pi.ai.stream.AssistantMessageEvent;
 import com.mariozechner.pi.ai.types.*;
+import com.mariozechner.pi.codingagent.command.SlashCommandRegistry;
+import com.mariozechner.pi.codingagent.command.builtin.HelpCommand;
+import com.mariozechner.pi.codingagent.command.builtin.QuitCommand;
 import com.mariozechner.pi.codingagent.session.AgentSession;
+import com.mariozechner.pi.codingagent.skill.SkillRegistry;
+import com.mariozechner.pi.codingagent.tool.bash.BashExecutor;
 import com.mariozechner.pi.tui.terminal.TestTerminal;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
@@ -19,7 +24,6 @@ import org.mockito.quality.Strictness;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -30,235 +34,37 @@ class InteractiveModeTest {
 
     @Mock AgentSession session;
     @Mock Agent agent;
+    @Mock BashExecutor bashExecutor;
 
     TestTerminal terminal;
     AgentState state;
+    SlashCommandRegistry registry;
     InteractiveMode mode;
 
     @BeforeEach
     void setUp() {
         terminal = new TestTerminal(80, 24);
         state = new AgentState();
-        mode = new InteractiveMode();
+        registry = new SlashCommandRegistry();
+        registry.register(new HelpCommand(registry));
+        registry.register(new QuitCommand());
+        mode = new InteractiveMode(registry, bashExecutor, null);
 
         when(session.getAgent()).thenReturn(agent);
         when(agent.getState()).thenReturn(state);
+        when(session.getSkillRegistry()).thenReturn(new SkillRegistry());
+        when(session.getPromptTemplates()).thenReturn(List.of());
     }
 
     // -------------------------------------------------------------------
-    // Input reading
-    // -------------------------------------------------------------------
-
-    @Nested
-    class ReadInput {
-
-        @Test
-        void readsInputUntilEnter() {
-            // Schedule input after the listener is registered
-            var thread = new Thread(() -> {
-                sleep(50);
-                terminal.simulateInput("hello\n");
-            });
-            thread.start();
-
-            String result = mode.readInput(terminal);
-
-            assertEquals("hello", result);
-        }
-
-        @Test
-        void handlesBackspace() {
-            var thread = new Thread(() -> {
-                sleep(50);
-                terminal.simulateInput("helloo");
-                sleep(20);
-                terminal.simulateInput("\u007f"); // backspace
-                sleep(20);
-                terminal.simulateInput("\n");
-            });
-            thread.start();
-
-            String result = mode.readInput(terminal);
-
-            assertEquals("hello", result);
-        }
-
-        @Test
-        void ctrlCReturnsEmpty() {
-            var thread = new Thread(() -> {
-                sleep(50);
-                terminal.simulateInput("partial");
-                sleep(20);
-                terminal.simulateInput("\u0003"); // Ctrl+C
-            });
-            thread.start();
-
-            String result = mode.readInput(terminal);
-
-            assertEquals("", result);
-        }
-
-        @Test
-        void ctrlDReturnsNull() {
-            var thread = new Thread(() -> {
-                sleep(50);
-                terminal.simulateInput("\u0004"); // Ctrl+D
-            });
-            thread.start();
-
-            String result = mode.readInput(terminal);
-
-            assertNull(result);
-        }
-
-        @Test
-        void showsPromptPrefix() {
-            var thread = new Thread(() -> {
-                sleep(50);
-                terminal.simulateInput("\n");
-            });
-            thread.start();
-
-            mode.readInput(terminal);
-
-            assertTrue(terminal.getFullOutput().contains("> "));
-        }
-    }
-
-    // -------------------------------------------------------------------
-    // REPL lifecycle
-    // -------------------------------------------------------------------
-
-    @Nested
-    class ReplLifecycle {
-
-        @Test
-        void exitCommandStopsLoop() {
-            var thread = new Thread(() -> {
-                sleep(50);
-                terminal.simulateInput("/exit\n");
-            });
-            thread.start();
-
-            mode.run(session, terminal);
-
-            assertTrue(terminal.getFullOutput().contains("Goodbye"));
-        }
-
-        @Test
-        void ctrlDStopsLoop() {
-            var thread = new Thread(() -> {
-                sleep(50);
-                terminal.simulateInput("\u0004"); // Ctrl+D = EOF
-            });
-            thread.start();
-
-            mode.run(session, terminal);
-
-            // Should exit cleanly without error
-            assertFalse(terminal.getFullOutput().contains("Error"));
-        }
-
-        @Test
-        void showsWelcomeMessage() {
-            var thread = new Thread(() -> {
-                sleep(50);
-                terminal.simulateInput("/exit\n");
-            });
-            thread.start();
-
-            mode.run(session, terminal);
-
-            assertTrue(terminal.getFullOutput().contains("Pi Coding Agent"));
-        }
-
-        @Test
-        void entersAndExitsRawMode() {
-            var thread = new Thread(() -> {
-                sleep(50);
-                terminal.simulateInput("/exit\n");
-            });
-            thread.start();
-
-            mode.run(session, terminal);
-
-            // After run completes, raw mode should be exited
-            assertFalse(terminal.isRawMode());
-        }
-
-        @Test
-        void emptyInputIsIgnored() {
-            when(session.prompt(anyString())).thenReturn(CompletableFuture.completedFuture(null));
-            when(session.getHistory()).thenReturn(List.of());
-
-            var thread = new Thread(() -> {
-                sleep(50);
-                terminal.simulateInput("\n"); // empty input
-                sleep(30);
-                terminal.simulateInput("/exit\n");
-            });
-            thread.start();
-
-            mode.run(session, terminal);
-
-            verify(session, never()).prompt(anyString());
-        }
-    }
-
-    // -------------------------------------------------------------------
-    // Prompt execution
-    // -------------------------------------------------------------------
-
-    @Nested
-    class PromptExecution {
-
-        @Test
-        void sendsInputToSession() {
-            when(session.prompt("build the project"))
-                    .thenReturn(CompletableFuture.completedFuture(null));
-
-            var thread = new Thread(() -> {
-                sleep(50);
-                terminal.simulateInput("build the project\n");
-                sleep(100);
-                terminal.simulateInput("/exit\n");
-            });
-            thread.start();
-
-            mode.run(session, terminal);
-
-            verify(session).prompt("build the project");
-        }
-
-        @Test
-        void displaysErrorOnFailure() {
-            CompletableFuture<Void> failed = new CompletableFuture<>();
-            failed.completeExceptionally(new RuntimeException("connection failed"));
-            when(session.prompt("test")).thenReturn(failed);
-
-            var thread = new Thread(() -> {
-                sleep(50);
-                terminal.simulateInput("test\n");
-                sleep(100);
-                terminal.simulateInput("/exit\n");
-            });
-            thread.start();
-
-            mode.run(session, terminal);
-
-            assertTrue(terminal.getFullOutput().contains("Error"));
-        }
-    }
-
-    // -------------------------------------------------------------------
-    // Event handling
+    // Event handling (unit tests — no TUI needed)
     // -------------------------------------------------------------------
 
     @Nested
     class EventHandling {
 
         @Test
-        void textDeltaIsWrittenToTerminal() {
+        void textDeltaUpdatesAssistantComponent() {
             var partial = new AssistantMessage(
                     List.of(new TextContent("Hello", null)),
                     "messages", "anthropic", "model",
@@ -267,93 +73,228 @@ class InteractiveModeTest {
             var delta = new AssistantMessageEvent.TextDeltaEvent(0, "Hello", partial);
             var event = new MessageUpdateEvent(partial, delta);
 
-            mode.handleEvent(event, terminal);
+            var component = new com.mariozechner.pi.codingagent.mode.tui.AssistantMessageComponent();
+            component.appendText("Hello");
+            assertTrue(component.hasContent());
 
-            assertTrue(terminal.getFullOutput().contains("Hello"));
+            var lines = component.render(80);
+            assertTrue(lines.stream().anyMatch(l -> l.contains("Hello")));
         }
 
         @Test
-        void toolStartShowsToolName() {
-            var event = new ToolExecutionStartEvent("tc-1", "bash", Map.of("command", "ls"));
+        void thinkingDeltaRendersInItalic() {
+            var component = new com.mariozechner.pi.codingagent.mode.tui.AssistantMessageComponent();
+            component.appendThinking("Let me think...");
 
-            mode.handleEvent(event, terminal);
-
-            String output = terminal.getFullOutput();
-            assertTrue(output.contains("[bash]"));
-            assertTrue(output.contains("running"));
+            var lines = component.render(80);
+            String output = String.join("\n", lines);
+            assertTrue(output.contains("Let me think"));
+            assertTrue(output.contains("\033[3m")); // italic
         }
 
         @Test
-        void toolEndShowsDone() {
-            var event = new ToolExecutionEndEvent("tc-1", "bash", null, false);
+        void toolStatusShowsRunningThenDone() {
+            var tool = new com.mariozechner.pi.codingagent.mode.tui.ToolStatusComponent("bash");
+            var running = tool.render(80);
+            assertTrue(String.join("", running).contains("running"));
 
-            mode.handleEvent(event, terminal);
-
-            assertTrue(terminal.getFullOutput().contains("done"));
+            tool.setComplete(false);
+            var done = tool.render(80);
+            assertTrue(String.join("", done).contains("done"));
         }
 
         @Test
-        void toolEndShowsFailedOnError() {
-            var event = new ToolExecutionEndEvent("tc-1", "bash", null, true);
-
-            mode.handleEvent(event, terminal);
-
-            assertTrue(terminal.getFullOutput().contains("failed"));
-        }
-
-        @Test
-        void unrecognizedEventIsIgnored() {
-            var event = new TurnStartEvent();
-
-            assertDoesNotThrow(() -> mode.handleEvent(event, terminal));
+        void toolStatusShowsFailed() {
+            var tool = new com.mariozechner.pi.codingagent.mode.tui.ToolStatusComponent("bash");
+            tool.setComplete(true);
+            var lines = tool.render(80);
+            assertTrue(String.join("", lines).contains("failed"));
         }
     }
 
     // -------------------------------------------------------------------
-    // Ctrl+C abort
+    // Footer component
     // -------------------------------------------------------------------
 
     @Nested
-    class AbortHandling {
+    class FooterTests {
 
         @Test
-        void ctrlCDuringExecutionCallsAbort() {
-            // Capture the event listener
-            var listenerRef = new AtomicReference<AgentEventListener>();
-            when(agent.subscribe(any())).thenAnswer(invocation -> {
-                listenerRef.set(invocation.getArgument(0));
-                return (Runnable) () -> {};
-            });
+        void rendersModelInfo() {
+            var footer = new com.mariozechner.pi.codingagent.mode.tui.FooterComponent();
+            footer.setModel("zai", "glm-5", 200000);
+            var lines = footer.render(80);
 
-            // Create a slow-completing future
-            CompletableFuture<Void> slowFuture = new CompletableFuture<>();
-            when(session.prompt("long task")).thenReturn(slowFuture);
+            String output = String.join("\n", lines);
+            assertTrue(output.contains("glm-5"));
+            assertTrue(output.contains("zai"));
+        }
 
+        @Test
+        void rendersTokenStats() {
+            var footer = new com.mariozechner.pi.codingagent.mode.tui.FooterComponent();
+            footer.setModel("zai", "glm-5", 200000);
+            footer.updateUsage(1500, 200, 0, 0, 0.001);
+            var lines = footer.render(80);
+
+            String output = String.join("\n", lines);
+            assertTrue(output.contains("1.5k")); // input tokens
+            assertTrue(output.contains("200")); // output tokens
+        }
+
+        @Test
+        void rendersPwdAndStatsLines() {
+            var footer = new com.mariozechner.pi.codingagent.mode.tui.FooterComponent();
+            footer.setModel("zai", "glm-5", 200000);
+            footer.setCwd("/Users/z/project");
+            var lines = footer.render(80);
+            assertEquals(2, lines.size()); // pwd + stats
+            assertTrue(lines.get(0).contains("~")); // pwd with ~ substitution
+        }
+
+        @Test
+        void contextPercentageColorCoding() {
+            var footer = new com.mariozechner.pi.codingagent.mode.tui.FooterComponent();
+            footer.setModel("zai", "glm-5", 1000);
+            // 95% usage — should be red
+            footer.updateUsage(950, 0, 0, 0, 0);
+            var lines = footer.render(120);
+            String output = String.join("\n", lines);
+            assertTrue(output.contains("\033[31m")); // red
+        }
+
+        @Test
+        void tokenFormattingMillions() {
+            assertEquals("1.5M", com.mariozechner.pi.codingagent.mode.tui.FooterComponent.formatTokens(1500000));
+            assertEquals("15M", com.mariozechner.pi.codingagent.mode.tui.FooterComponent.formatTokens(15000000));
+            assertEquals("200k", com.mariozechner.pi.codingagent.mode.tui.FooterComponent.formatTokens(200000));
+            assertEquals("1.5k", com.mariozechner.pi.codingagent.mode.tui.FooterComponent.formatTokens(1500));
+            assertEquals("500", com.mariozechner.pi.codingagent.mode.tui.FooterComponent.formatTokens(500));
+        }
+    }
+
+    // -------------------------------------------------------------------
+    // Bash execution component
+    // -------------------------------------------------------------------
+
+    @Nested
+    class BashExecutionTests {
+
+        @Test
+        void rendersCommandAndOutput() {
+            var comp = new com.mariozechner.pi.codingagent.mode.tui.BashExecutionComponent("ls -la", false);
+            comp.setResult("file1.txt\nfile2.txt", 0);
+            var lines = comp.render(80);
+            String output = String.join("\n", lines);
+            String stripped = output.replaceAll("\033\\[[;\\d]*[a-zA-Z]", "");
+            assertTrue(stripped.contains("$ ls -la"));
+            assertTrue(stripped.contains("file1.txt"));
+        }
+
+        @Test
+        void excludedCommandShowsDollarDollar() {
+            var comp = new com.mariozechner.pi.codingagent.mode.tui.BashExecutionComponent("pwd", true);
+            comp.setResult("/home/user", 0);
+            var lines = comp.render(80);
+            String output = String.join("\n", lines);
+            String stripped = output.replaceAll("\033\\[[;\\d]*[a-zA-Z]", "");
+            assertTrue(stripped.contains("$$ pwd"));
+            assertTrue(stripped.contains("no context"));
+        }
+
+        @Test
+        void showsExitCodeOnError() {
+            var comp = new com.mariozechner.pi.codingagent.mode.tui.BashExecutionComponent("bad-cmd", false);
+            comp.setResult("command not found", 127);
+            var lines = comp.render(80);
+            String output = String.join("\n", lines);
+            assertTrue(output.contains("exit code: 127"));
+        }
+
+        @Test
+        void showsRunningWhenIncomplete() {
+            var comp = new com.mariozechner.pi.codingagent.mode.tui.BashExecutionComponent("sleep 10", false);
+            var lines = comp.render(80);
+            String output = String.join("\n", lines);
+            assertTrue(output.contains("running..."));
+        }
+    }
+
+    // -------------------------------------------------------------------
+    // REPL integration (full run with TUI)
+    // -------------------------------------------------------------------
+
+    @Nested
+    class ReplIntegration {
+
+        @Test
+        void ctrlDExitsCleanly() {
             var thread = new Thread(() -> {
-                sleep(50);
-                terminal.simulateInput("long task\n");
-                sleep(100);
-                // Send Ctrl+C during execution
-                terminal.simulateInput("\u0003");
-                sleep(50);
-                // Complete the future after abort
-                slowFuture.completeExceptionally(new RuntimeException("aborted"));
+                sleep(200);
+                terminal.simulateInput("\u0004");
             });
             thread.start();
 
-            // Run in a separate thread so we don't block
-            var modeThread = new Thread(() -> {
-                // Run just the prompt execution, not the full REPL
-                mode.executePrompt(session, terminal, "long task");
-            });
-            modeThread.start();
-            try {
-                modeThread.join(3000);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            }
+            mode.run(session, terminal);
+            assertFalse(terminal.getFullOutput().contains("Error"));
+        }
 
-            verify(session).abort();
+        @Test
+        void showsWelcomeMessage() {
+            var thread = new Thread(() -> {
+                sleep(200);
+                terminal.simulateInput("\u0004");
+            });
+            thread.start();
+
+            mode.run(session, terminal);
+            assertTrue(terminal.getFullOutput().contains("Pi Coding Agent"));
+        }
+
+        @Test
+        void welcomeMessageShowsBashHints() {
+            var thread = new Thread(() -> {
+                sleep(200);
+                terminal.simulateInput("\u0004");
+            });
+            thread.start();
+
+            mode.run(session, terminal);
+            String output = terminal.getFullOutput();
+            assertTrue(output.contains("run bash"));
+        }
+
+        @Test
+        void slashHelpShowsCommands() {
+            var thread = new Thread(() -> {
+                sleep(200);
+                typeChars("/help");
+                terminal.simulateInput("\r");
+                sleep(200);
+                terminal.simulateInput("\u0004");
+            });
+            thread.start();
+
+            mode.run(session, terminal);
+            assertTrue(terminal.getFullOutput().contains("Available commands"));
+        }
+
+        @Test
+        void promptIsSentToSession() {
+            when(session.prompt("hello"))
+                    .thenReturn(CompletableFuture.completedFuture(null));
+
+            var thread = new Thread(() -> {
+                sleep(200);
+                typeChars("hello");
+                terminal.simulateInput("\r");
+                sleep(500);
+                terminal.simulateInput("\u0004");
+            });
+            thread.start();
+
+            mode.run(session, terminal);
+            verify(session).prompt("hello");
         }
     }
 
@@ -366,14 +307,17 @@ class InteractiveModeTest {
 
         @Test
         void throwsOnNullSession() {
-            assertThrows(NullPointerException.class,
-                    () -> mode.run(null, terminal));
+            assertThrows(NullPointerException.class, () -> mode.run(null, terminal));
         }
 
         @Test
         void throwsOnNullTerminal() {
-            assertThrows(NullPointerException.class,
-                    () -> mode.run(session, null));
+            assertThrows(NullPointerException.class, () -> mode.run(session, null));
+        }
+
+        @Test
+        void throwsOnNullRegistry() {
+            assertThrows(NullPointerException.class, () -> new InteractiveMode(null, null, null));
         }
     }
 
@@ -381,11 +325,14 @@ class InteractiveModeTest {
     // Helpers
     // -------------------------------------------------------------------
 
-    private static void sleep(long ms) {
-        try {
-            Thread.sleep(ms);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
+    private void typeChars(String text) {
+        for (char c : text.toCharArray()) {
+            terminal.simulateInput(String.valueOf(c));
+            sleep(5);
         }
+    }
+
+    private static void sleep(long ms) {
+        try { Thread.sleep(ms); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
     }
 }

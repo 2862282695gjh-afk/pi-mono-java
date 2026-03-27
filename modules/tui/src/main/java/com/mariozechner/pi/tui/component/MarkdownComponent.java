@@ -91,6 +91,8 @@ public class MarkdownComponent implements Component {
     private static final Pattern ORDERED_LIST_PATTERN = Pattern.compile("^(\\s*)(\\d+)\\.\\s+(.+)$");
     private static final Pattern HR_PATTERN = Pattern.compile("^\\s*([-*_])\\1{2,}\\s*$");
     private static final Pattern CODE_FENCE_PATTERN = Pattern.compile("^```(.*)$");
+    private static final Pattern BLOCKQUOTE_PATTERN = Pattern.compile("^>\\s?(.*)$");
+    private static final Pattern TABLE_SEPARATOR_PATTERN = Pattern.compile("^\\|?[\\s-:|]+\\|?$");
 
     private List<String> renderMarkdown(String markdown, int width) {
         String[] rawLines = markdown.split("\n", -1);
@@ -133,6 +135,20 @@ public class MarkdownComponent implements Component {
                 continue;
             }
 
+            // --- Blockquote ---
+            Matcher bq = BLOCKQUOTE_PATTERN.matcher(line);
+            if (bq.matches()) {
+                i = renderBlockquote(rawLines, i, width, output);
+                continue;
+            }
+
+            // --- Table (detect: line with |, followed by separator line) ---
+            if (line.contains("|") && i + 1 < rawLines.length
+                    && TABLE_SEPARATOR_PATTERN.matcher(rawLines[i + 1]).matches()) {
+                i = renderTable(rawLines, i, width, output);
+                continue;
+            }
+
             // --- Unordered list ---
             Matcher ul = UNORDERED_LIST_PATTERN.matcher(line);
             if (ul.matches()) {
@@ -163,7 +179,10 @@ public class MarkdownComponent implements Component {
                         || HR_PATTERN.matcher(pLine).matches()
                         || CODE_FENCE_PATTERN.matcher(pLine).matches()
                         || UNORDERED_LIST_PATTERN.matcher(pLine).matches()
-                        || ORDERED_LIST_PATTERN.matcher(pLine).matches()) {
+                        || ORDERED_LIST_PATTERN.matcher(pLine).matches()
+                        || BLOCKQUOTE_PATTERN.matcher(pLine).matches()
+                        || (pLine.contains("|") && i + 1 < rawLines.length
+                            && TABLE_SEPARATOR_PATTERN.matcher(rawLines[i + 1]).matches())) {
                     break;
                 }
                 if (para.length() > 0) para.append(' ');
@@ -272,6 +291,193 @@ public class MarkdownComponent implements Component {
         out.addAll(wrapped);
     }
 
+    /**
+     * Renders a contiguous run of blockquote lines (> ...).
+     * Returns the index after the last consumed line.
+     */
+    private int renderBlockquote(String[] rawLines, int startIdx, int width, List<String> out) {
+        // Collect blockquote content
+        var quoteContent = new ArrayList<String>();
+        int i = startIdx;
+        while (i < rawLines.length) {
+            Matcher bq = BLOCKQUOTE_PATTERN.matcher(rawLines[i]);
+            if (bq.matches()) {
+                quoteContent.add(bq.group(1));
+                i++;
+            } else {
+                break;
+            }
+        }
+
+        // Render content within the blockquote (recursive markdown)
+        String innerMarkdown = String.join("\n", quoteContent);
+        int quoteContentWidth = Math.max(1, width - 2); // "│ " = 2 chars
+        List<String> innerLines = renderMarkdown(innerMarkdown, quoteContentWidth);
+
+        // Remove trailing empty lines
+        while (!innerLines.isEmpty() && innerLines.getLast().isEmpty()) {
+            innerLines.removeLast();
+        }
+
+        // Prefix each line with "│ " border and apply italic styling
+        for (String line : innerLines) {
+            String styledLine = theme.italic(line);
+            out.add(theme.quoteBorder("│ ") + styledLine);
+        }
+
+        return i;
+    }
+
+    /**
+     * Renders a markdown table with box-drawing borders.
+     * Returns the index after the last consumed line.
+     */
+    private int renderTable(String[] rawLines, int startIdx, int width, List<String> out) {
+        int i = startIdx;
+
+        // Parse header
+        String headerLine = rawLines[i++];
+        List<String> headers = parseTableRow(headerLine);
+        int numCols = headers.size();
+        if (numCols == 0) return i;
+
+        // Skip separator line
+        if (i < rawLines.length && TABLE_SEPARATOR_PATTERN.matcher(rawLines[i]).matches()) {
+            i++;
+        }
+
+        // Parse data rows
+        var rows = new ArrayList<List<String>>();
+        while (i < rawLines.length) {
+            String line = rawLines[i];
+            if (!line.contains("|") || line.isBlank()) break;
+            List<String> row = parseTableRow(line);
+            // Pad or truncate to match header column count
+            while (row.size() < numCols) row.add("");
+            if (row.size() > numCols) row = row.subList(0, numCols);
+            rows.add(row);
+            i++;
+        }
+
+        // Calculate border overhead: "│ " + (n-1) * " │ " + " │" = 3n + 1
+        int borderOverhead = 3 * numCols + 1;
+        int availableForCells = width - borderOverhead;
+        if (availableForCells < numCols) {
+            // Too narrow — fall back to raw text
+            for (int j = startIdx; j < i; j++) {
+                out.addAll(AnsiUtils.wrapTextWithAnsi(rawLines[j], width));
+            }
+            return i;
+        }
+
+        // Calculate column widths
+        int[] naturalWidths = new int[numCols];
+        for (int c = 0; c < numCols; c++) {
+            naturalWidths[c] = AnsiUtils.visibleWidth(renderInline(headers.get(c)));
+        }
+        for (var row : rows) {
+            for (int c = 0; c < numCols; c++) {
+                naturalWidths[c] = Math.max(naturalWidths[c],
+                        AnsiUtils.visibleWidth(renderInline(row.get(c))));
+            }
+        }
+
+        int totalNatural = 0;
+        for (int w : naturalWidths) totalNatural += w;
+
+        int[] colWidths;
+        if (totalNatural + borderOverhead <= width) {
+            colWidths = naturalWidths;
+        } else {
+            // Distribute available space proportionally
+            colWidths = new int[numCols];
+            for (int c = 0; c < numCols; c++) {
+                colWidths[c] = Math.max(1, (int) ((double) naturalWidths[c] / totalNatural * availableForCells));
+            }
+            // Distribute leftover
+            int allocated = 0;
+            for (int w : colWidths) allocated += w;
+            int leftover = availableForCells - allocated;
+            for (int c = 0; leftover > 0 && c < numCols; c++) {
+                colWidths[c]++;
+                leftover--;
+            }
+        }
+
+        // Render top border
+        var topParts = new ArrayList<String>();
+        for (int c = 0; c < numCols; c++) topParts.add("─".repeat(colWidths[c]));
+        out.add("┌─" + String.join("─┬─", topParts) + "─┐");
+
+        // Render header row (bold)
+        renderTableRow(headers, colWidths, numCols, true, out);
+
+        // Render separator
+        var sepParts = new ArrayList<String>();
+        for (int c = 0; c < numCols; c++) sepParts.add("─".repeat(colWidths[c]));
+        String separator = "├─" + String.join("─┼─", sepParts) + "─┤";
+        out.add(separator);
+
+        // Render data rows
+        for (int r = 0; r < rows.size(); r++) {
+            renderTableRow(rows.get(r), colWidths, numCols, false, out);
+            if (r < rows.size() - 1) {
+                out.add(separator);
+            }
+        }
+
+        // Render bottom border
+        var bottomParts = new ArrayList<String>();
+        for (int c = 0; c < numCols; c++) bottomParts.add("─".repeat(colWidths[c]));
+        out.add("└─" + String.join("─┴─", bottomParts) + "─┘");
+
+        return i;
+    }
+
+    private void renderTableRow(List<String> cells, int[] colWidths, int numCols,
+                                boolean bold, List<String> out) {
+        // Wrap each cell and find max lines
+        var wrappedCells = new ArrayList<List<String>>();
+        int maxLines = 1;
+        for (int c = 0; c < numCols; c++) {
+            String styled = renderInline(cells.get(c));
+            List<String> wrapped = AnsiUtils.wrapTextWithAnsi(styled, colWidths[c]);
+            if (wrapped.isEmpty()) wrapped = List.of("");
+            wrappedCells.add(wrapped);
+            maxLines = Math.max(maxLines, wrapped.size());
+        }
+
+        for (int lineIdx = 0; lineIdx < maxLines; lineIdx++) {
+            var sb = new StringBuilder("│ ");
+            for (int c = 0; c < numCols; c++) {
+                if (c > 0) sb.append(" │ ");
+                List<String> cellLines = wrappedCells.get(c);
+                String text = lineIdx < cellLines.size() ? cellLines.get(lineIdx) : "";
+                int pad = Math.max(0, colWidths[c] - AnsiUtils.visibleWidth(text));
+                if (bold) {
+                    sb.append(theme.bold(text + " ".repeat(pad)));
+                } else {
+                    sb.append(text).append(" ".repeat(pad));
+                }
+            }
+            sb.append(" │");
+            out.add(sb.toString());
+        }
+    }
+
+    private static List<String> parseTableRow(String line) {
+        // Remove leading/trailing |
+        String trimmed = line.strip();
+        if (trimmed.startsWith("|")) trimmed = trimmed.substring(1);
+        if (trimmed.endsWith("|")) trimmed = trimmed.substring(0, trimmed.length() - 1);
+        String[] parts = trimmed.split("\\|");
+        var result = new ArrayList<String>();
+        for (String part : parts) {
+            result.add(part.strip());
+        }
+        return result;
+    }
+
     // -------------------------------------------------------------------
     // Inline rendering
     // -------------------------------------------------------------------
@@ -279,6 +485,7 @@ public class MarkdownComponent implements Component {
     // Patterns for inline elements — ordered by precedence
     private static final Pattern INLINE_CODE = Pattern.compile("`([^`]+)`");
     private static final Pattern LINK = Pattern.compile("\\[([^\\]]+)]\\(([^)]+)\\)");
+    private static final Pattern STRIKETHROUGH = Pattern.compile("~~(.+?)~~");
     private static final Pattern BOLD = Pattern.compile("\\*\\*(.+?)\\*\\*");
     private static final Pattern ITALIC = Pattern.compile("(?<!\\*)\\*(?!\\*)(.+?)(?<!\\*)\\*(?!\\*)");
 
@@ -308,13 +515,20 @@ public class MarkdownComponent implements Component {
             return placeholder;
         }, placeholders);
 
-        // 3. Bold (before italic to avoid ** matching as two *)
+        // 3. Strikethrough
+        text = replaceAll(text, STRIKETHROUGH, m -> {
+            String placeholder = "\0PH" + placeholders.size() + "\0";
+            placeholders.add(theme.strikethrough(m.group(1)));
+            return placeholder;
+        }, placeholders);
+
+        // 4. Bold (before italic to avoid ** matching as two *)
         text = replaceAll(text, BOLD, m -> {
             String inner = m.group(1);
             return theme.bold(inner);
         }, placeholders);
 
-        // 4. Italic
+        // 5. Italic
         text = replaceAll(text, ITALIC, m -> {
             String inner = m.group(1);
             return theme.italic(inner);

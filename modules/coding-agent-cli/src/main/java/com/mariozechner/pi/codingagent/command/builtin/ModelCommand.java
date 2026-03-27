@@ -12,7 +12,7 @@ public class ModelCommand implements SlashCommand {
 
     @Override
     public String description() {
-        return "Print or set the current model";
+        return "Print or switch the current model";
     }
 
     @Override
@@ -21,7 +21,13 @@ public class ModelCommand implements SlashCommand {
             var model = context.session().getAgent().getState().getModel();
             context.output().println("Current model: " + (model != null ? model.id() : "unknown"));
         } else {
-            context.output().println("Model switching not yet implemented. Requested: " + arguments);
+            try {
+                context.session().setModel(arguments.trim());
+                var model = context.session().getAgent().getState().getModel();
+                context.output().println("Switched to model: " + (model != null ? model.id() : arguments.trim()));
+            } catch (IllegalArgumentException e) {
+                context.output().println("Unknown model: " + arguments.trim());
+            }
         }
     }
 }

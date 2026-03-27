@@ -1,29 +1,42 @@
 package com.mariozechner.pi.codingagent.prompt;
 
 import com.mariozechner.pi.agent.tool.AgentTool;
+import com.mariozechner.pi.codingagent.context.ContextFileLoader.ContextFile;
 import com.mariozechner.pi.codingagent.skill.SkillPromptFormatter;
 import org.springframework.stereotype.Service;
 
+import java.util.LinkedHashSet;
+import java.util.Set;
+
 /**
  * Builds the system prompt from base instructions, tool descriptions,
- * skill listings, environment info, and user customizations.
+ * skill listings, environment info, context files, and user customizations.
+ *
+ * <p>Generates conditional guidelines based on available tools,
+ * matching the pi-mono TS system prompt builder.
  */
 @Service
 public class SystemPromptBuilder {
 
     static final String BASE_PROMPT = """
-            You are an interactive agent that helps users with software engineering tasks.
-            You have access to a set of tools that you can use to answer the user's question.
+            You are an expert coding assistant operating inside pi, a coding agent harness. \
+            You help users by reading files, executing commands, editing code, and writing new files.
 
-            You are an expert software engineer. You can read, write, and edit files, \
-            search codebases, and execute shell commands.
-
-            Always prefer editing existing files over creating new ones. \
-            Understand existing code before suggesting modifications. \
-            Be careful not to introduce security vulnerabilities.""";
+            Key guidelines:
+            - Be concise in your responses
+            - Show file paths clearly when working with files
+            - Prefer editing existing files over creating new ones
+            - Understand existing code before suggesting modifications
+            - Do not introduce security vulnerabilities
+            - Do not list available tools or commands in your response — \
+            the user already has access to /help for that
+            - Keep responses focused and actionable""";
 
     /**
      * Builds the complete system prompt from the given configuration.
+     *
+     * <p>If {@code config.systemPromptOverride()} is set (from SYSTEM.md),
+     * it replaces the default base prompt entirely.
      *
      * @param config the prompt configuration
      * @return the assembled system prompt string
@@ -31,17 +44,27 @@ public class SystemPromptBuilder {
     public String build(SystemPromptConfig config) {
         var sb = new StringBuilder();
 
-        // 1. Base role definition
-        sb.append(BASE_PROMPT);
+        // 1. Base role definition (or SYSTEM.md override)
+        if (config.systemPromptOverride() != null && !config.systemPromptOverride().isBlank()) {
+            sb.append(config.systemPromptOverride());
+        } else {
+            sb.append(BASE_PROMPT);
+
+            // Conditional guidelines only apply to default prompt
+            String conditionalGuidelines = buildConditionalGuidelines(config);
+            if (!conditionalGuidelines.isEmpty()) {
+                sb.append('\n').append(conditionalGuidelines);
+            }
+        }
 
         // 2. Tool descriptions
         if (!config.tools().isEmpty()) {
             sb.append("\n\n# Tools\n\n");
-            sb.append("You have access to the following tools:\n");
             for (AgentTool tool : config.tools()) {
-                sb.append("\n## ").append(tool.name()).append('\n');
-                sb.append(tool.description()).append('\n');
-                sb.append("Parameters: ").append(tool.parameters().toString()).append('\n');
+                sb.append("## ").append(tool.name()).append("\n\n");
+                sb.append(tool.description()).append("\n\n");
+                sb.append("Parameters:\n");
+                sb.append(tool.parameters().toPrettyString()).append("\n");
             }
         }
 
@@ -52,17 +75,66 @@ public class SystemPromptBuilder {
             sb.append(skillsBlock);
         }
 
-        // 4. Environment info
+        // 4. Context files (AGENTS.md / CLAUDE.md)
+        if (!config.contextFiles().isEmpty()) {
+            sb.append("\n\n# Project Context\n\n");
+            for (ContextFile cf : config.contextFiles()) {
+                sb.append("## ").append(cf.path().getFileName()).append("\n\n");
+                sb.append(cf.content().strip()).append("\n\n");
+            }
+        }
+
+        // 5. Environment info
         sb.append("\n\n# Environment\n\n");
         appendEnvironmentInfo(sb, config);
 
-        // 5. User custom prompt
+        // 6. APPEND_SYSTEM.md
+        if (config.appendSystemPrompt() != null && !config.appendSystemPrompt().isBlank()) {
+            sb.append("\n\n").append(config.appendSystemPrompt());
+        }
+
+        // 7. User custom prompt (from CLI --system-prompt / --append-system-prompt)
         if (config.customPrompt() != null && !config.customPrompt().isBlank()) {
             sb.append("\n\n# User Instructions\n\n");
             sb.append(config.customPrompt());
         }
 
         return sb.toString();
+    }
+
+    /**
+     * Generates conditional guidelines based on which tools are available.
+     * Matches pi-mono TS conditional guideline generation.
+     */
+    String buildConditionalGuidelines(SystemPromptConfig config) {
+        Set<String> toolNames = new LinkedHashSet<>();
+        for (var tool : config.tools()) {
+            toolNames.add(tool.name());
+        }
+
+        var guidelines = new StringBuilder();
+
+        boolean hasBash = toolNames.contains("bash");
+        boolean hasGrep = toolNames.contains("grep");
+        boolean hasGlob = toolNames.contains("glob");
+        boolean hasLs = toolNames.contains("ls");
+        boolean hasFind = hasGlob; // glob serves as find equivalent
+
+        if (hasBash && (hasGrep || hasFind || hasLs)) {
+            guidelines.append("\n- Prefer grep/glob/ls tools over bash for file exploration (faster, respects .gitignore)");
+        } else if (hasBash) {
+            guidelines.append("\n- Use bash for file operations like ls, rg, find");
+        }
+
+        if (toolNames.contains("edit") && toolNames.contains("write")) {
+            guidelines.append("\n- Use edit for modifying existing files, write for creating new ones");
+        }
+
+        if (toolNames.contains("read")) {
+            guidelines.append("\n- Read files before making changes to understand existing code");
+        }
+
+        return guidelines.toString();
     }
 
     private void appendEnvironmentInfo(StringBuilder sb, SystemPromptConfig config) {

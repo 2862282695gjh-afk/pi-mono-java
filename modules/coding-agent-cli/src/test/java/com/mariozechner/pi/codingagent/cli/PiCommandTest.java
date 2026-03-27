@@ -11,7 +11,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class PiCommandTest {
 
     private PiCommand parse(String... args) {
-        PiCommand cmd = new PiCommand(null, null, null, null);
+        PiCommand cmd = new PiCommand(null, null, null, null, null, null);
         new CommandLine(cmd).parseArgs(args);
         return cmd;
     }
@@ -126,6 +126,72 @@ class PiCommandTest {
             PiCommand cmd = parse("--system-prompt", "Be concise.");
             assertEquals("Be concise.", cmd.getSystemPrompt());
         }
+
+        @Test
+        void appendSystemPrompt() {
+            PiCommand cmd = parse("--append-system-prompt", "Extra instructions");
+            assertEquals("Extra instructions", cmd.getAppendSystemPrompt());
+        }
+    }
+
+    // -------------------------------------------------------------------
+    // Thinking option
+    // -------------------------------------------------------------------
+
+    @Nested
+    class ThinkingOption {
+
+        @Test
+        void parsesThinkingLevel() {
+            PiCommand cmd = parse("--thinking", "high");
+            assertEquals("high", cmd.getThinking());
+        }
+
+        @Test
+        void defaultIsNull() {
+            PiCommand cmd = parse();
+            assertNull(cmd.getThinking());
+        }
+    }
+
+    // -------------------------------------------------------------------
+    // Tools filter option
+    // -------------------------------------------------------------------
+
+    @Nested
+    class ToolsOption {
+
+        @Test
+        void parsesToolsList() {
+            PiCommand cmd = parse("--tools", "read,bash,edit");
+            assertEquals("read,bash,edit", cmd.getToolsFilter());
+        }
+
+        @Test
+        void defaultIsNull() {
+            PiCommand cmd = parse();
+            assertNull(cmd.getToolsFilter());
+        }
+    }
+
+    // -------------------------------------------------------------------
+    // Verbose option
+    // -------------------------------------------------------------------
+
+    @Nested
+    class VerboseOption {
+
+        @Test
+        void parsesVerboseFlag() {
+            PiCommand cmd = parse("--verbose");
+            assertTrue(cmd.isVerbose());
+        }
+
+        @Test
+        void defaultIsFalse() {
+            PiCommand cmd = parse();
+            assertFalse(cmd.isVerbose());
+        }
     }
 
     // -------------------------------------------------------------------
@@ -197,7 +263,9 @@ class PiCommandTest {
                     "-p", "refactor auth",
                     "--mode", "one-shot",
                     "--cwd", "/tmp/work",
-                    "--system-prompt", "Use Java 21"
+                    "--system-prompt", "Use Java 21",
+                    "--thinking", "high",
+                    "--tools", "read,bash"
             );
 
             assertEquals("claude-sonnet-4-20250514", cmd.getModel());
@@ -205,6 +273,8 @@ class PiCommandTest {
             assertEquals("one-shot", cmd.getMode());
             assertEquals(Path.of("/tmp/work"), cmd.getCwd());
             assertEquals("Use Java 21", cmd.getSystemPrompt());
+            assertEquals("high", cmd.getThinking());
+            assertEquals("read,bash", cmd.getToolsFilter());
         }
 
         @Test
@@ -244,14 +314,14 @@ class PiCommandTest {
 
         @Test
         void helpExitsWithZero() {
-            PiCommand cmd = new PiCommand(null, null, null, null);
+            PiCommand cmd = new PiCommand(null, null, null, null, null, null);
             int exitCode = new CommandLine(cmd).execute("--help");
             assertEquals(0, exitCode);
         }
 
         @Test
         void versionExitsWithZero() {
-            PiCommand cmd = new PiCommand(null, null, null, null);
+            PiCommand cmd = new PiCommand(null, null, null, null, null, null);
             int exitCode = new CommandLine(cmd).execute("--version");
             assertEquals(0, exitCode);
         }

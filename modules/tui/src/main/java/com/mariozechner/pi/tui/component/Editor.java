@@ -68,11 +68,19 @@ public class Editor implements Component, Focusable {
     private static final String KEY_ALT_D = "\033d";
     private static final String KEY_ALT_Y = "\033y";
 
+    // Shift+Enter / Alt+Enter sequences for newline in submit mode
+    private static final String KEY_SHIFT_ENTER_KITTY = "\033[13;2u";
+    private static final String KEY_ALT_ENTER = "\033\r";
+    private static final String KEY_ALT_NEWLINE = "\033\n";
+
     // Internal state
     private List<String> lines;
     private int cursorLine;
     private int cursorCol;
     private boolean focused;
+
+    // Submit mode: when true, Enter submits and Shift+Enter/Alt+Enter inserts newline
+    private boolean submitOnEnter;
 
     // Undo/Redo
     private final UndoStack<EditorSnapshot> undoStack;
@@ -86,6 +94,15 @@ public class Editor implements Component, Focusable {
 
     // Last render width for word-wrap calculations
     private int lastWidth = 80;
+
+    // History
+    private final List<String> history = new ArrayList<>();
+    private int historyIndex = -1; // -1 = current (not browsing history)
+    private String savedCurrentText = ""; // text before entering history
+    private static final int MAX_HISTORY = 100;
+
+    // Placeholder text when empty
+    private String placeholder;
 
     // Callbacks
     private Consumer<String> onChange;
@@ -150,6 +167,24 @@ public class Editor implements Component, Focusable {
         this.onSubmit = onSubmit;
     }
 
+    /** When true, Enter submits and Shift+Enter/Alt+Enter inserts newline. */
+    public void setSubmitOnEnter(boolean submitOnEnter) {
+        this.submitOnEnter = submitOnEnter;
+    }
+
+    public void setPlaceholder(String placeholder) {
+        this.placeholder = placeholder;
+    }
+
+    /** Adds an entry to the command history. Deduplicates consecutive entries. */
+    public void addToHistory(String text) {
+        if (text == null || text.isBlank()) return;
+        if (!history.isEmpty() && history.getLast().equals(text)) return;
+        history.add(text);
+        if (history.size() > MAX_HISTORY) history.removeFirst();
+        historyIndex = -1;
+    }
+
     // -------------------------------------------------------------------
     // Component interface
     // -------------------------------------------------------------------
@@ -163,6 +198,14 @@ public class Editor implements Component, Focusable {
     public List<String> render(int width) {
         int contentWidth = Math.max(1, width);
         lastWidth = contentWidth;
+
+        // Show placeholder when empty and not focused
+        if (getText().isEmpty() && placeholder != null && !placeholder.isEmpty() && !focused) {
+            String ph = "\033[2m" + placeholder + "\033[0m";
+            int visLen = AnsiUtils.visibleWidth(ph);
+            int pad = Math.max(0, contentWidth - visLen);
+            return List.of(ph + " ".repeat(pad));
+        }
 
         List<LayoutLine> layoutLines = layoutText(contentWidth);
 
@@ -249,12 +292,52 @@ public class Editor implements Component, Focusable {
             return;
         }
 
+        // --- Newline in submit mode: Shift+Enter or Alt+Enter ---
+        if (submitOnEnter && (KEY_SHIFT_ENTER_KITTY.equals(data)
+                || KEY_ALT_ENTER.equals(data) || KEY_ALT_NEWLINE.equals(data))) {
+            addNewLine();
+            return;
+        }
+
+        // --- Enter handling ---
+        if (KEY_ENTER.equals(data) || KEY_NEWLINE.equals(data)) {
+            if (submitOnEnter) {
+                // Backslash+Enter workaround: if char before cursor is \, delete it and insert newline
+                String line = lines.get(cursorLine);
+                if (cursorCol > 0 && line.charAt(cursorCol - 1) == '\\') {
+                    pushUndoSnapshot();
+                    lines.set(cursorLine, line.substring(0, cursorCol - 1) + line.substring(cursorCol));
+                    cursorCol--;
+                    addNewLine();
+                    return;
+                }
+                // Submit
+                if (onSubmit != null) {
+                    String text = getText();
+                    onSubmit.accept(text);
+                }
+            } else {
+                addNewLine();
+            }
+            return;
+        }
+
         // --- Cursor movement ---
         if (KEY_UP.equals(data)) {
+            if (submitOnEnter && cursorLine == 0) {
+                // Navigate history when at first line
+                navigateHistory(-1);
+                return;
+            }
             moveCursorVertical(-1);
             return;
         }
         if (KEY_DOWN.equals(data)) {
+            if (submitOnEnter && cursorLine == lines.size() - 1) {
+                // Navigate history when at last line
+                navigateHistory(1);
+                return;
+            }
             moveCursorVertical(1);
             return;
         }
@@ -297,9 +380,22 @@ public class Editor implements Component, Focusable {
             return;
         }
 
-        // --- Enter (new line) ---
-        if (KEY_ENTER.equals(data) || KEY_NEWLINE.equals(data)) {
-            addNewLine();
+        // --- Bracketed paste ---
+        if (data.startsWith("\033[200~")) {
+            String pasteContent = data;
+            // Strip paste markers
+            if (pasteContent.startsWith("\033[200~")) {
+                pasteContent = pasteContent.substring(6);
+            }
+            if (pasteContent.endsWith("\033[201~")) {
+                pasteContent = pasteContent.substring(0, pasteContent.length() - 6);
+            }
+            if (!pasteContent.isEmpty()) {
+                pushUndoSnapshot();
+                insertTextInternal(pasteContent);
+                lastAction = null;
+                fireOnChange();
+            }
             return;
         }
 
@@ -321,6 +417,36 @@ public class Editor implements Component, Focusable {
     @Override
     public void setFocused(boolean focused) {
         this.focused = focused;
+    }
+
+    // -------------------------------------------------------------------
+    // History navigation
+    // -------------------------------------------------------------------
+
+    private void navigateHistory(int direction) {
+        if (history.isEmpty()) return;
+
+        if (historyIndex == -1) {
+            // Starting to browse history — save current text
+            savedCurrentText = getText();
+            if (direction < 0) {
+                historyIndex = history.size() - 1;
+            } else {
+                return; // Already at newest
+            }
+        } else {
+            int newIndex = historyIndex + direction;
+            if (newIndex < 0) return; // Already at oldest
+            if (newIndex >= history.size()) {
+                // Return to current text
+                historyIndex = -1;
+                setText(savedCurrentText);
+                return;
+            }
+            historyIndex = newIndex;
+        }
+
+        setText(history.get(historyIndex));
     }
 
     // -------------------------------------------------------------------

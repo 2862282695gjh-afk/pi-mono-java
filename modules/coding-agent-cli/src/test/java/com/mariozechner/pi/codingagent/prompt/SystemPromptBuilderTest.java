@@ -50,8 +50,8 @@ class SystemPromptBuilderTest {
         @Test
         void includesBaseRoleDefinition() {
             String result = builder.build(minimalConfig());
-            assertTrue(result.contains("interactive agent"));
-            assertTrue(result.contains("software engineering"));
+            assertTrue(result.contains("expert coding assistant"));
+            assertTrue(result.contains("coding agent"));
         }
 
         @Test

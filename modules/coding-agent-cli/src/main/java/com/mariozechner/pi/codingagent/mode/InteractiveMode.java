@@ -1,161 +1,373 @@
 package com.mariozechner.pi.codingagent.mode;
 
 import com.mariozechner.pi.agent.event.*;
+import com.mariozechner.pi.ai.PiAiService;
 import com.mariozechner.pi.ai.stream.AssistantMessageEvent;
 import com.mariozechner.pi.ai.types.AssistantMessage;
-import com.mariozechner.pi.ai.types.ContentBlock;
-import com.mariozechner.pi.ai.types.TextContent;
+import com.mariozechner.pi.ai.types.Message;
+import com.mariozechner.pi.ai.types.UserMessage;
+import com.mariozechner.pi.codingagent.command.SlashCommand;
+import com.mariozechner.pi.codingagent.command.SlashCommandContext;
+import com.mariozechner.pi.codingagent.command.SlashCommandRegistry;
+import com.mariozechner.pi.codingagent.compaction.Compactor;
+import com.mariozechner.pi.codingagent.mode.tui.*;
+import com.mariozechner.pi.codingagent.mode.tui.EditorContainer.CommandSuggestion;
+import com.mariozechner.pi.codingagent.prompt.PromptTemplateEntry;
+import com.mariozechner.pi.codingagent.skill.Skill;
 import com.mariozechner.pi.codingagent.session.AgentSession;
+import com.mariozechner.pi.codingagent.tool.bash.BashExecutionResult;
+import com.mariozechner.pi.codingagent.tool.bash.BashExecutor;
+import com.mariozechner.pi.codingagent.tool.bash.BashExecutorOptions;
+import com.mariozechner.pi.tui.Tui;
+import com.mariozechner.pi.tui.component.Container;
+import com.mariozechner.pi.tui.component.Text;
 import com.mariozechner.pi.tui.terminal.Terminal;
 
-import java.util.Objects;
+import java.io.IOException;
+import java.nio.file.Path;
+import java.time.Duration;
+import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
- * Runs an interactive REPL loop that reads user input from the terminal,
- * sends it to the agent, and streams the response back in real time.
+ * Full-screen interactive REPL using TUI component tree rendering.
  *
- * <p>Supports:
+ * <p>Layout (top to bottom):
  * <ul>
- *   <li>Real-time streaming of LLM text output via {@code TextDeltaEvent}</li>
- *   <li>Tool call status display</li>
- *   <li>{@code /exit} command to quit</li>
- *   <li>Ctrl+C to abort current agent execution</li>
- *   <li>{@code /skill:name} command expansion (handled by AgentSession)</li>
+ *   <li>Chat area — scrollable list of user messages, assistant messages, tool statuses</li>
+ *   <li>Editor — input area with cyan separator, always at bottom</li>
+ *   <li>Footer — token stats and model info</li>
  * </ul>
+ *
+ * <p>Components are rendered by the {@link Tui} engine which handles differential
+ * updates and synchronized output for flicker-free display.
  */
 public class InteractiveMode {
 
-    static final String PROMPT_PREFIX = "> ";
-    static final String EXIT_COMMAND = "/exit";
-    static final String ANSI_RESET = "\033[0m";
-    static final String ANSI_BOLD = "\033[1m";
-    static final String ANSI_DIM = "\033[2m";
-    static final String ANSI_CYAN = "\033[36m";
-    static final String ANSI_YELLOW = "\033[33m";
-    static final String ANSI_RED = "\033[31m";
+    private final SlashCommandRegistry commandRegistry;
+    private final BashExecutor bashExecutor;
+    private final Compactor compactor;
+
+    // TUI components
+    private Tui tui;
+    private Container root;
+    private Container chatContainer;
+    private EditorContainer editorContainer;
+    private FooterComponent footer;
+
+    // Streaming state
+    private AssistantMessageComponent currentAssistantMessage;
+    private final Map<String, ToolStatusComponent> pendingTools = new LinkedHashMap<>();
+
+    // Bash mode state
+    private boolean bashMode;
+
+    // Follow-up / steering queues during compaction
+    private final List<QueuedMessage> compactionQueue = new ArrayList<>();
+
+    private record QueuedMessage(String text, String mode) {}
+
+    public InteractiveMode(SlashCommandRegistry commandRegistry,
+                           BashExecutor bashExecutor,
+                           Compactor compactor) {
+        this.commandRegistry = Objects.requireNonNull(commandRegistry, "commandRegistry");
+        this.bashExecutor = bashExecutor;
+        this.compactor = compactor;
+    }
 
     /**
-     * Runs the interactive REPL. Blocks until the user types {@code /exit}
-     * or the terminal is closed.
-     *
-     * @param session    an initialized {@link AgentSession}
-     * @param terminal   the terminal for I/O
+     * Runs the full-screen interactive REPL.
      */
     public void run(AgentSession session, Terminal terminal) {
         Objects.requireNonNull(session, "session");
         Objects.requireNonNull(terminal, "terminal");
 
-        terminal.enterRawMode();
-        try {
-            writeWelcome(terminal);
-            replLoop(session, terminal);
-        } finally {
-            terminal.exitRawMode();
+        // Build component tree
+        root = new Container();
+        chatContainer = new Container();
+        editorContainer = new EditorContainer();
+        footer = new FooterComponent();
+
+        // Welcome text with keybinding hints (matching pi-mono TS startup)
+        var welcomeText = new StringBuilder();
+        welcomeText.append("\033[1m\033[36mPi Coding Agent\033[0m").append(modelInfo(session)).append("\n");
+        welcomeText.append("\n");
+        welcomeText.append("\033[2m  Tips:\033[0m\n");
+        welcomeText.append("\033[2m    Enter           submit message\033[0m\n");
+        welcomeText.append("\033[2m    Shift+Enter     new line (or type \\ before Enter)\033[0m\n");
+        welcomeText.append("\033[2m    Alt+Enter       queue follow-up message\033[0m\n");
+        welcomeText.append("\033[2m    ↑/↓             navigate command history\033[0m\n");
+        welcomeText.append("\033[2m    Ctrl+C          interrupt / clear input\033[0m\n");
+        welcomeText.append("\033[2m    Ctrl+D          exit\033[0m\n");
+        welcomeText.append("\033[2m    !               run bash command\033[0m\n");
+        welcomeText.append("\033[2m    !!              run bash (excluded from context)\033[0m\n");
+        welcomeText.append("\033[2m    /               slash commands (/help for list)\033[0m");
+        var welcome = new Text(welcomeText.toString());
+        chatContainer.addChild(welcome);
+
+        // Set model/footer info
+        var model = session.getAgent().getState().getModel();
+        if (model != null) {
+            footer.setModel(
+                    model.provider().name().toLowerCase(),
+                    model.id(),
+                    model.contextWindow() > 0 ? model.contextWindow() : 200000);
         }
-    }
+        // Set cwd and thinking level
+        String cwd = System.getProperty("user.dir", "");
+        footer.setCwd(cwd);
 
-    private void replLoop(AgentSession session, Terminal terminal) {
-        while (true) {
-            String input = readInput(terminal);
-            if (input == null) {
-                // Terminal closed / EOF
-                break;
-            }
+        var thinkingLevel = session.getAgent().getState().getThinkingLevel();
+        footer.setThinkingLevel(thinkingLevel != null ? thinkingLevel.value() : "medium");
 
-            String trimmed = input.trim();
-            if (trimmed.isEmpty()) {
-                continue;
-            }
+        // Register slash command autocomplete suggestions
+        buildCommandSuggestions(session);
 
-            if (EXIT_COMMAND.equals(trimmed)) {
-                writeLine(terminal, ANSI_DIM + "Goodbye." + ANSI_RESET);
-                break;
-            }
+        root.addChild(chatContainer);
+        root.addChild(editorContainer);
+        root.addChild(footer);
 
-            executePrompt(session, terminal, trimmed);
-        }
-    }
+        // Setup TUI
+        tui = new Tui(terminal);
+        tui.setRoot(root);
 
-    /**
-     * Reads a line of input from the terminal by collecting characters until
-     * Enter is pressed. Supports Ctrl+C to return empty, and basic backspace.
-     */
-    String readInput(Terminal terminal) {
-        var inputBuffer = new StringBuilder();
-        var latch = new CountDownLatch(1);
-        var cancelled = new AtomicBoolean(false);
-        var eof = new AtomicBoolean(false);
+        // Set terminal title
+        terminal.write("\033]0;pi — " + cwd + "\007");
 
-        terminal.write(PROMPT_PREFIX);
+        // Input routing — dispatch characters to editor, handle Ctrl+C/D globally
+        var submitLatch = new AtomicReference<CountDownLatch>();
+        var submitValue = new AtomicReference<String>();
+        var eofFlag = new AtomicBoolean(false);
+        var executingPrompt = new AtomicBoolean(false);
+        var abortedFlag = new AtomicBoolean(false);
+        var sessionRef = new AtomicReference<>(session);
+        var followUpFlag = new AtomicBoolean(false);
 
-        terminal.onInput(data -> {
-            if (latch.getCount() == 0) return;
-
-            for (int i = 0; i < data.length(); i++) {
-                char ch = data.charAt(i);
-                if (ch == '\r' || ch == '\n') {
-                    terminal.write("\r\n");
-                    latch.countDown();
-                    return;
-                } else if (ch == 3) { // Ctrl+C
-                    cancelled.set(true);
-                    terminal.write("\r\n");
-                    latch.countDown();
-                    return;
-                } else if (ch == 4) { // Ctrl+D (EOF)
-                    eof.set(true);
-                    latch.countDown();
-                    return;
-                } else if (ch == 127 || ch == 8) { // Backspace
-                    if (!inputBuffer.isEmpty()) {
-                        inputBuffer.deleteCharAt(inputBuffer.length() - 1);
-                        terminal.write("\b \b");
-                    }
-                } else if (ch >= 32) { // Printable character
-                    inputBuffer.append(ch);
-                    terminal.write(String.valueOf(ch));
-                }
+        editorContainer.setOnSubmit(value -> {
+            var latch = submitLatch.get();
+            if (latch != null) {
+                submitValue.set(value);
+                latch.countDown();
             }
         });
 
-        try {
-            latch.await();
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            return null;
-        }
+        tui.setInputHandler(data -> {
+            int i = 0;
+            while (i < data.length()) {
+                char ch = data.charAt(i);
 
-        if (eof.get()) {
-            return null;
-        }
-        if (cancelled.get()) {
-            return "";
-        }
-        return inputBuffer.toString();
-    }
-
-    void executePrompt(AgentSession session, Terminal terminal, String input) {
-        var unsubscribe = new AtomicReference<Runnable>();
-        var aborted = new AtomicBoolean(false);
-
-        // Subscribe to agent events for streaming output
-        Runnable unsub = session.getAgent().subscribe(event ->
-                handleEvent(event, terminal));
-        unsubscribe.set(unsub);
-
-        // Set up Ctrl+C handler during execution
-        terminal.onInput(data -> {
-            for (int i = 0; i < data.length(); i++) {
-                if (data.charAt(i) == 3) { // Ctrl+C
-                    aborted.set(true);
-                    session.abort();
+                // Global: Ctrl+D = exit
+                if (ch == 4) {
+                    eofFlag.set(true);
+                    var latch = submitLatch.get();
+                    if (latch != null) latch.countDown();
                     return;
                 }
+
+                // Global: Ctrl+C
+                if (ch == 3) {
+                    if (executingPrompt.get()) {
+                        abortedFlag.set(true);
+                        sessionRef.get().abort();
+                    } else {
+                        // Clear input
+                        editorContainer.clear();
+                        bashMode = false;
+                        editorContainer.setBorderColor(EditorContainer.CYAN);
+                        tui.render();
+                    }
+                    i++;
+                    continue;
+                }
+
+                // Detect Alt+Enter for follow-up: ESC [ 1 3 ; 2 u (Kitty) or ESC CR
+                if (ch == '\033' && i + 1 < data.length()) {
+                    // Kitty protocol: \033[13;2u
+                    if (data.startsWith("\033[13;2u", i)) {
+                        followUpFlag.set(true);
+                        var latch = submitLatch.get();
+                        String text = editorContainer.getEditor().getText();
+                        if (latch != null && text != null && !text.trim().isEmpty()) {
+                            submitValue.set(text);
+                            latch.countDown();
+                        }
+                        i += 7;
+                        continue;
+                    }
+                    // Alt+Enter: ESC CR
+                    if (data.charAt(i + 1) == '\r') {
+                        followUpFlag.set(true);
+                        var latch = submitLatch.get();
+                        String text = editorContainer.getEditor().getText();
+                        if (latch != null && text != null && !text.trim().isEmpty()) {
+                            submitValue.set(text);
+                            latch.countDown();
+                        }
+                        i += 2;
+                        continue;
+                    }
+
+                    // Route escape sequence to editor
+                    int seqEnd = findEscapeSequenceEnd(data, i);
+                    editorContainer.handleInput(data.substring(i, seqEnd));
+                    i = seqEnd;
+                } else {
+                    // Route to editor
+                    editorContainer.handleInput(String.valueOf(ch));
+                    i++;
+                }
             }
+
+            // Detect bash mode from editor content
+            String editorText = editorContainer.getEditor().getText();
+            boolean wasBashMode = bashMode;
+            bashMode = editorText != null && editorText.stripLeading().startsWith("!");
+            if (wasBashMode != bashMode) {
+                editorContainer.setBorderColor(bashMode ? EditorContainer.YELLOW : EditorContainer.CYAN);
+            }
+
+            tui.render();
+        });
+
+        tui.start();
+        tui.render();
+
+        // REPL loop
+        try {
+            while (!eofFlag.get()) {
+                // Wait for user input
+                var latch = new CountDownLatch(1);
+                submitLatch.set(latch);
+                submitValue.set(null);
+                abortedFlag.set(false);
+                followUpFlag.set(false);
+
+                try {
+                    latch.await();
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    break;
+                }
+
+                if (eofFlag.get()) break;
+
+                String input = submitValue.get();
+                if (input == null || input.trim().isEmpty()) {
+                    tui.render();
+                    continue;
+                }
+
+                String trimmed = input.trim();
+                editorContainer.addToHistory(trimmed);
+                editorContainer.clear();
+                bashMode = false;
+                editorContainer.setBorderColor(EditorContainer.CYAN);
+
+                // Slash commands
+                if (trimmed.startsWith("/")) {
+                    if (handleSlashCommand(trimmed, session)) {
+                        tui.render();
+                        continue;
+                    }
+                }
+
+                // Bash mode: ! or !! prefix
+                if (trimmed.startsWith("!")) {
+                    boolean excluded = trimmed.startsWith("!!");
+                    String command = excluded ? trimmed.substring(2).trim() : trimmed.substring(1).trim();
+                    if (!command.isEmpty()) {
+                        handleBashCommand(command, excluded, cwd);
+                        tui.render();
+                        continue;
+                    }
+                }
+
+                // Follow-up: queue message while streaming
+                if (followUpFlag.get() && session.isStreaming()) {
+                    session.getAgent().followUp(new UserMessage(trimmed, System.currentTimeMillis()));
+                    chatContainer.addChild(new Text(
+                            "\033[2m  ↳ Follow-up queued: " + truncateDisplay(trimmed, 60) + "\033[0m"));
+                    tui.render();
+                    continue;
+                }
+
+                // Steering: if agent is streaming, steer instead of new prompt
+                if (session.isStreaming()) {
+                    session.steer(trimmed);
+                    chatContainer.addChild(new UserMessageComponent(trimmed));
+                    tui.render();
+                    continue;
+                }
+
+                // Execute prompt
+                executingPrompt.set(true);
+                executePrompt(session, trimmed, abortedFlag);
+                executingPrompt.set(false);
+
+                // Auto-compaction check after prompt completes
+                checkAutoCompaction(session);
+            }
+        } finally {
+            tui.stop();
+        }
+    }
+
+    private boolean handleSlashCommand(String input, AgentSession session) {
+        var outputLines = new ArrayList<String>();
+        SlashCommandContext context = new SlashCommandContext(
+                session,
+                outputLines::add
+        );
+        boolean handled = commandRegistry.execute(input, context);
+        if (handled) {
+            chatContainer.addChild(new UserMessageComponent(input));
+            if (!outputLines.isEmpty()) {
+                chatContainer.addChild(new CommandOutputComponent(String.join("\n", outputLines)));
+            }
+        }
+        return handled;
+    }
+
+    private void handleBashCommand(String command, boolean excluded, String cwd) {
+        var component = new BashExecutionComponent(command, excluded);
+        chatContainer.addChild(component);
+        tui.render();
+
+        try {
+            var options = new BashExecutorOptions(Duration.ofSeconds(120), null, Map.of());
+            BashExecutionResult result = bashExecutor.execute(command, Path.of(cwd), options);
+
+            // Combine stdout and stderr
+            var output = new StringBuilder();
+            if (result.stdout() != null && !result.stdout().isEmpty()) {
+                output.append(result.stdout());
+            }
+            if (result.stderr() != null && !result.stderr().isEmpty()) {
+                if (!output.isEmpty()) output.append("\n");
+                output.append(result.stderr());
+            }
+
+            component.setResult(output.toString(), result.exitCode());
+        } catch (IOException e) {
+            component.setResult("Error: " + e.getMessage(), 1);
+        }
+    }
+
+    private void executePrompt(AgentSession session, String input, AtomicBoolean aborted) {
+        chatContainer.addChild(new UserMessageComponent(input));
+
+        currentAssistantMessage = new AssistantMessageComponent();
+        chatContainer.addChild(currentAssistantMessage);
+        pendingTools.clear();
+
+        tui.render();
+
+        Runnable unsub = session.getAgent().subscribe(event -> {
+            handleEvent(event);
+            tui.render();
         });
 
         CompletableFuture<Void> future = session.prompt(input);
@@ -165,69 +377,148 @@ public class InteractiveMode {
         } catch (Exception e) {
             String error = session.getAgent().getState().getError();
             if (aborted.get()) {
-                writeLine(terminal, ANSI_DIM + "\nAborted." + ANSI_RESET);
+                chatContainer.addChild(new Text("\033[2m  Aborted.\033[0m"));
             } else {
-                writeLine(terminal,
-                        ANSI_RED + "\nError: " + (error != null ? error : e.getMessage()) + ANSI_RESET);
+                chatContainer.addChild(new Text(
+                        "\033[31m  Error: " + (error != null ? error : e.getMessage()) + "\033[0m"));
             }
         }
 
-        // Check for errors not from exceptions
         String error = session.getAgent().getState().getError();
         if (error != null && !aborted.get()) {
-            writeLine(terminal, ANSI_RED + "\nError: " + error + ANSI_RESET);
+            chatContainer.addChild(new Text("\033[31m  Error: " + error + "\033[0m"));
         }
 
-        // Unsubscribe from events
-        var unsub2 = unsubscribe.get();
-        if (unsub2 != null) {
-            unsub2.run();
+        if (currentAssistantMessage != null) {
+            currentAssistantMessage.setComplete(true);
         }
+        currentAssistantMessage = null;
 
-        terminal.write("\n");
+        if (unsub != null) unsub.run();
+        tui.render();
     }
 
-    void handleEvent(AgentEvent event, Terminal terminal) {
+    void handleEvent(AgentEvent event) {
         switch (event) {
-            case MessageUpdateEvent e -> handleMessageUpdate(e, terminal);
-            case MessageEndEvent e -> handleMessageEnd(terminal);
-            case ToolExecutionStartEvent e -> handleToolStart(e, terminal);
-            case ToolExecutionEndEvent e -> handleToolEnd(e, terminal);
-            case AgentEndEvent ignored -> { }
+            case MessageUpdateEvent e -> {
+                if (currentAssistantMessage == null) return;
+                if (e.assistantMessageEvent() instanceof AssistantMessageEvent.TextDeltaEvent delta) {
+                    currentAssistantMessage.appendText(delta.delta());
+                } else if (e.assistantMessageEvent() instanceof AssistantMessageEvent.ThinkingDeltaEvent thinking) {
+                    currentAssistantMessage.appendThinking(thinking.delta());
+                }
+            }
+            case MessageEndEvent e -> {
+                if (e.message() instanceof AssistantMessage msg && msg.usage() != null) {
+                    double cost = msg.usage().cost() != null ? msg.usage().cost().total() : 0;
+                    footer.updateUsage(msg.usage().input(), msg.usage().output(),
+                            msg.usage().cacheRead(), msg.usage().cacheWrite(), cost);
+                }
+            }
+            case ToolExecutionStartEvent e -> {
+                var tool = new ToolStatusComponent(e.toolName());
+                tool.setArgs(e.args());
+                pendingTools.put(e.toolCallId(), tool);
+                chatContainer.addChild(tool);
+            }
+            case ToolExecutionEndEvent e -> {
+                var tool = pendingTools.get(e.toolCallId());
+                if (tool != null) {
+                    tool.setComplete(e.isError(), e.result());
+                }
+            }
             default -> { }
         }
     }
 
-    private void handleMessageUpdate(MessageUpdateEvent event, Terminal terminal) {
-        if (event.assistantMessageEvent() instanceof AssistantMessageEvent.TextDeltaEvent delta) {
-            terminal.write(delta.delta());
+    private void checkAutoCompaction(AgentSession session) {
+        if (compactor == null) return;
+
+        var model = session.getAgent().getState().getModel();
+        if (model == null || model.contextWindow() <= 0) return;
+
+        var messages = session.getHistory();
+        if (compactor.needsCompaction(messages, model.contextWindow())) {
+            chatContainer.addChild(new Text("\033[2m  Auto-compacting context...\033[0m"));
+            tui.render();
+
+            try {
+                var result = compactor.compact(new ArrayList<>(messages), model);
+                var newMessages = new ArrayList<Message>();
+                if (!result.summary().isEmpty()) {
+                    newMessages.add(new UserMessage(
+                            "[Context compaction summary]\n" + result.summary(),
+                            System.currentTimeMillis()));
+                }
+                newMessages.addAll(result.retainedMessages());
+                session.getAgent().replaceMessages(newMessages);
+
+                int removed = messages.size() - result.retainedMessages().size();
+                chatContainer.addChild(new Text(
+                        "\033[2m  Compacted " + removed + " messages.\033[0m"));
+            } catch (Exception e) {
+                chatContainer.addChild(new Text(
+                        "\033[31m  Auto-compaction failed: " + e.getMessage() + "\033[0m"));
+            }
+            tui.render();
         }
     }
 
-    private void handleMessageEnd(Terminal terminal) {
-        // Ensure we end on a new line after assistant text
-    }
-
-    private void handleToolStart(ToolExecutionStartEvent event, Terminal terminal) {
-        terminal.write("\n" + ANSI_YELLOW + ANSI_BOLD + "  [" + event.toolName() + "]"
-                + ANSI_RESET + ANSI_DIM + " running..." + ANSI_RESET);
-    }
-
-    private void handleToolEnd(ToolExecutionEndEvent event, Terminal terminal) {
-        if (event.isError()) {
-            terminal.write(" " + ANSI_RED + "failed" + ANSI_RESET + "\n");
-        } else {
-            terminal.write(" " + ANSI_CYAN + "done" + ANSI_RESET + "\n");
+    private String modelInfo(AgentSession session) {
+        var model = session.getAgent().getState().getModel();
+        if (model != null) {
+            return "\033[2m (" + model.id() + ")\033[0m";
         }
+        return "";
     }
 
-    private void writeWelcome(Terminal terminal) {
-        writeLine(terminal, ANSI_BOLD + ANSI_CYAN + "Pi Coding Agent" + ANSI_RESET
-                + ANSI_DIM + " — type /exit to quit" + ANSI_RESET);
-        terminal.write("\n");
+    private static String truncateDisplay(String s, int max) {
+        if (s.length() <= max) return s;
+        return s.substring(0, max - 3) + "...";
     }
 
-    private void writeLine(Terminal terminal, String text) {
-        terminal.write(text + "\r\n");
+    /**
+     * Builds the full list of slash command suggestions for autocomplete,
+     * combining built-in commands, skills, and prompt templates.
+     */
+    private void buildCommandSuggestions(AgentSession session) {
+        var suggestions = new ArrayList<CommandSuggestion>();
+
+        // 1. Built-in slash commands
+        for (var cmd : commandRegistry.getAll()) {
+            suggestions.add(new CommandSuggestion(cmd.name(), cmd.description()));
+        }
+
+        // 2. Skills as /skill:name commands
+        for (Skill skill : session.getSkillRegistry().getAll()) {
+            suggestions.add(new CommandSuggestion(
+                    "skill:" + skill.name(),
+                    "[" + skill.source() + "] " + skill.description()));
+        }
+
+        // 3. Prompt templates as /templatename commands
+        for (PromptTemplateEntry template : session.getPromptTemplates()) {
+            suggestions.add(new CommandSuggestion(
+                    template.name(),
+                    "[" + template.source() + "] " + template.description()));
+        }
+
+        // Sort alphabetically
+        suggestions.sort(Comparator.comparing(CommandSuggestion::name, String.CASE_INSENSITIVE_ORDER));
+        editorContainer.setCommands(suggestions);
+    }
+
+    static int findEscapeSequenceEnd(String data, int start) {
+        if (start + 1 >= data.length()) return start + 1;
+        char second = data.charAt(start + 1);
+        if (second == '[') {
+            int j = start + 2;
+            while (j < data.length()) {
+                if (data.charAt(j) >= 0x40 && data.charAt(j) <= 0x7E) return j + 1;
+                j++;
+            }
+            return data.length();
+        }
+        return start + 2;
     }
 }

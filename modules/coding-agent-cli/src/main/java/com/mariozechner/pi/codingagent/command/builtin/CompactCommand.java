@@ -1,9 +1,21 @@
 package com.mariozechner.pi.codingagent.command.builtin;
 
+import com.mariozechner.pi.ai.types.Message;
+import com.mariozechner.pi.ai.types.UserMessage;
 import com.mariozechner.pi.codingagent.command.SlashCommand;
 import com.mariozechner.pi.codingagent.command.SlashCommandContext;
+import com.mariozechner.pi.codingagent.compaction.Compactor;
+
+import java.util.ArrayList;
+import java.util.List;
 
 public class CompactCommand implements SlashCommand {
+
+    private final Compactor compactor;
+
+    public CompactCommand(Compactor compactor) {
+        this.compactor = compactor;
+    }
 
     @Override
     public String name() {
@@ -12,11 +24,39 @@ public class CompactCommand implements SlashCommand {
 
     @Override
     public String description() {
-        return "Trigger context compaction";
+        return "Compact session context";
     }
 
     @Override
     public void execute(SlashCommandContext context, String arguments) {
-        context.output().println("Context compaction is not yet implemented.");
+        var session = context.session();
+        var agent = session.getAgent();
+        var model = agent.getState().getModel();
+        var messages = session.getHistory();
+
+        if (messages.isEmpty()) {
+            context.output().println("No messages to compact.");
+            return;
+        }
+
+        context.output().println("Compacting context...");
+        try {
+            var result = compactor.compact(new ArrayList<>(messages), model);
+            // Build new message list with summary
+            var newMessages = new ArrayList<Message>();
+            if (!result.summary().isEmpty()) {
+                newMessages.add(new UserMessage(
+                        "[Context compaction summary]\n" + result.summary(),
+                        System.currentTimeMillis()));
+            }
+            newMessages.addAll(result.retainedMessages());
+            agent.replaceMessages(newMessages);
+
+            int removed = messages.size() - result.retainedMessages().size();
+            context.output().println("Compacted " + removed + " messages into summary, "
+                    + result.retainedMessages().size() + " recent messages kept.");
+        } catch (Exception e) {
+            context.output().println("Compaction failed: " + e.getMessage());
+        }
     }
 }

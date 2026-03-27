@@ -12,11 +12,12 @@ public class NewCommand implements SlashCommand {
 
     @Override
     public String description() {
-        return "Create a new session";
+        return "Start a new session";
     }
 
     @Override
     public void execute(SlashCommandContext context, String arguments) {
-        context.output().println("New session creation is not yet implemented.");
+        context.session().newSession();
+        context.output().println("Started new session. Conversation history cleared.");
     }
 }

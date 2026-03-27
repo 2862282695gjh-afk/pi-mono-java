@@ -3,6 +3,9 @@ package com.mariozechner.pi.codingagent.cli;
 import com.mariozechner.pi.agent.tool.AgentTool;
 import com.mariozechner.pi.ai.PiAiService;
 import com.mariozechner.pi.ai.model.ModelRegistry;
+import com.mariozechner.pi.ai.types.ThinkingLevel;
+import com.mariozechner.pi.codingagent.command.SlashCommandRegistry;
+import com.mariozechner.pi.codingagent.compaction.Compactor;
 import com.mariozechner.pi.codingagent.mode.InteractiveMode;
 import com.mariozechner.pi.codingagent.mode.OneShotMode;
 import com.mariozechner.pi.codingagent.prompt.SystemPromptBuilder;
@@ -10,6 +13,7 @@ import com.mariozechner.pi.codingagent.session.AgentSession;
 import com.mariozechner.pi.codingagent.session.SessionConfig;
 import com.mariozechner.pi.codingagent.skill.SkillExpander;
 import com.mariozechner.pi.codingagent.skill.SkillLoader;
+import com.mariozechner.pi.codingagent.tool.bash.BashExecutor;
 import com.mariozechner.pi.tui.terminal.JLineTerminal;
 import com.mariozechner.pi.tui.terminal.Terminal;
 import org.springframework.stereotype.Component;
@@ -17,9 +21,13 @@ import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
 import picocli.CommandLine.Parameters;
 
+import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Callable;
+import java.util.stream.Collectors;
 
 /**
  * Main CLI command for Pi Coding Agent.
@@ -38,13 +46,18 @@ public class PiCommand implements Callable<Integer> {
     private final ModelRegistry modelRegistry;
     private final SystemPromptBuilder promptBuilder;
     private final List<AgentTool> tools;
+    private final SlashCommandRegistry commandRegistry;
+    private final BashExecutor bashExecutor;
 
     public PiCommand(PiAiService piAiService, ModelRegistry modelRegistry,
-                     SystemPromptBuilder promptBuilder, List<AgentTool> tools) {
+                     SystemPromptBuilder promptBuilder, List<AgentTool> tools,
+                     SlashCommandRegistry commandRegistry, BashExecutor bashExecutor) {
         this.piAiService = piAiService;
         this.modelRegistry = modelRegistry;
         this.promptBuilder = promptBuilder;
         this.tools = tools;
+        this.commandRegistry = commandRegistry;
+        this.bashExecutor = bashExecutor;
     }
 
     @Option(names = {"-m", "--model"}, description = "AI model to use (e.g. claude-sonnet-4-20250514)")
@@ -60,10 +73,23 @@ public class PiCommand implements Callable<Integer> {
     @Option(names = {"--cwd"}, description = "Working directory (defaults to current directory)")
     Path cwd;
 
-    @Option(names = {"--system-prompt"}, description = "Additional system prompt text")
+    @Option(names = {"--system-prompt"}, description = "Custom system prompt (replaces default)")
     String systemPrompt;
 
-    @Parameters(description = "Prompt arguments (joined with spaces if no -p given)", arity = "0..*")
+    @Option(names = {"--append-system-prompt"}, description = "Text appended to the system prompt")
+    String appendSystemPrompt;
+
+    @Option(names = {"--thinking"}, description = "Thinking level: off, minimal, low, medium, high, xhigh")
+    String thinking;
+
+    @Option(names = {"--tools"}, description = "Comma-separated list of tools to enable (e.g. read,bash,edit)")
+    String toolsFilter;
+
+    @Option(names = {"--verbose"}, description = "Enable verbose startup output")
+    boolean verbose;
+
+    @Parameters(description = "Prompt arguments (joined with spaces if no -p given). " +
+            "Prefix with @ to include file contents.", arity = "0..*")
     List<String> promptArgs;
 
     @Override
@@ -76,6 +102,8 @@ public class PiCommand implements Callable<Integer> {
             System.out.println("Mode: " + mode);
             System.out.println("CWD: " + effectiveCwd);
             System.out.println("Prompt: " + effectivePrompt);
+            if (thinking != null) System.out.println("Thinking: " + thinking);
+            if (toolsFilter != null) System.out.println("Tools: " + toolsFilter);
             return 0;
         }
 
@@ -85,12 +113,41 @@ public class PiCommand implements Callable<Integer> {
         }
 
         // Build session
+        String effectiveSystemPrompt = systemPrompt;
+        if (appendSystemPrompt != null && !appendSystemPrompt.isBlank()) {
+            if (effectiveSystemPrompt == null) {
+                effectiveSystemPrompt = appendSystemPrompt;
+            } else {
+                effectiveSystemPrompt = effectiveSystemPrompt + "\n\n" + appendSystemPrompt;
+            }
+        }
+
+        // Filter tools if --tools specified
+        List<AgentTool> effectiveTools = tools;
+        if (toolsFilter != null && !toolsFilter.isBlank()) {
+            var allowed = List.of(toolsFilter.split(","));
+            effectiveTools = tools.stream()
+                    .filter(t -> allowed.contains(t.name()))
+                    .collect(Collectors.toList());
+        }
+
         AgentSession session = new AgentSession(
                 piAiService, modelRegistry, promptBuilder,
-                new SkillLoader(), new SkillExpander(), tools
+                new SkillLoader(), new SkillExpander(), effectiveTools
         );
-        SessionConfig config = new SessionConfig(model, effectiveCwd, systemPrompt, mode);
+        SessionConfig config = new SessionConfig(model, effectiveCwd, effectiveSystemPrompt, mode);
         session.initialize(config);
+
+        // Apply thinking level
+        if (thinking != null) {
+            try {
+                ThinkingLevel level = ThinkingLevel.fromValue(thinking);
+                session.getAgent().setThinkingLevel(level);
+            } catch (IllegalArgumentException e) {
+                System.err.println("Warning: Unknown thinking level '" + thinking
+                        + "'. Valid: off, minimal, low, medium, high, xhigh");
+            }
+        }
 
         if ("one-shot".equals(mode)) {
             return new OneShotMode().run(session, effectivePrompt);
@@ -99,7 +156,8 @@ public class PiCommand implements Callable<Integer> {
         // Interactive mode (default)
         Terminal terminal = new JLineTerminal();
         try {
-            new InteractiveMode().run(session, terminal);
+            new InteractiveMode(commandRegistry, bashExecutor, new Compactor(piAiService))
+                    .run(session, terminal);
         } finally {
             terminal.close();
         }
@@ -108,13 +166,28 @@ public class PiCommand implements Callable<Integer> {
 
     /**
      * Resolves the effective prompt from the -p flag or positional arguments.
+     * Supports @file syntax to include file contents.
      */
     String resolvePrompt() {
         if (prompt != null && !prompt.isBlank()) {
             return prompt;
         }
         if (promptArgs != null && !promptArgs.isEmpty()) {
-            return String.join(" ", promptArgs);
+            var parts = new ArrayList<String>();
+            for (String arg : promptArgs) {
+                if (arg.startsWith("@") && arg.length() > 1) {
+                    // @file syntax: read file content
+                    Path filePath = Path.of(arg.substring(1));
+                    try {
+                        parts.add(Files.readString(filePath));
+                    } catch (IOException e) {
+                        parts.add("[Error reading " + arg + ": " + e.getMessage() + "]");
+                    }
+                } else {
+                    parts.add(arg);
+                }
+            }
+            return String.join(" ", parts);
         }
         return null;
     }
@@ -127,4 +200,8 @@ public class PiCommand implements Callable<Integer> {
     Path getCwd() { return cwd; }
     String getSystemPrompt() { return systemPrompt; }
     List<String> getPromptArgs() { return promptArgs; }
+    String getThinking() { return thinking; }
+    String getToolsFilter() { return toolsFilter; }
+    boolean isVerbose() { return verbose; }
+    String getAppendSystemPrompt() { return appendSystemPrompt; }
 }

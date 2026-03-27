@@ -9,6 +9,11 @@ import com.mariozechner.pi.ai.types.Model;
 import com.mariozechner.pi.ai.types.Provider;
 import com.mariozechner.pi.ai.types.UserMessage;
 import com.mariozechner.pi.agent.tool.AgentTool;
+import com.mariozechner.pi.codingagent.context.ContextFileLoader;
+import com.mariozechner.pi.codingagent.context.ContextFileLoader.ContextFile;
+import com.mariozechner.pi.codingagent.prompt.PromptTemplate;
+import com.mariozechner.pi.codingagent.prompt.PromptTemplateEntry;
+import com.mariozechner.pi.codingagent.prompt.PromptTemplateLoader;
 import com.mariozechner.pi.codingagent.prompt.SystemPromptBuilder;
 import com.mariozechner.pi.codingagent.prompt.SystemPromptConfig;
 import com.mariozechner.pi.codingagent.skill.Skill;
@@ -34,7 +39,8 @@ import java.util.concurrent.CompletableFuture;
 public class AgentSession {
 
     static final String DEFAULT_MODEL = "claude-sonnet-4-20250514";
-    static final Path USER_SKILLS_DIR = Path.of(System.getProperty("user.home"), ".pi", "agent", "skills");
+    static final Path USER_AGENT_DIR = Path.of(System.getProperty("user.home"), ".pi", "agent");
+    static final Path USER_SKILLS_DIR = USER_AGENT_DIR.resolve("skills");
     static final String PROJECT_SKILLS_SUBDIR = ".pi/skills";
 
     private final PiAiService piAiService;
@@ -43,8 +49,11 @@ public class AgentSession {
     private final SkillLoader skillLoader;
     private final SkillExpander skillExpander;
     private final List<AgentTool> tools;
+    private final ContextFileLoader contextFileLoader;
+    private final PromptTemplateLoader promptTemplateLoader;
 
     private final SkillRegistry skillRegistry = new SkillRegistry();
+    private List<PromptTemplateEntry> promptTemplates = List.of();
     private Agent agent;
     private boolean initialized;
 
@@ -62,6 +71,8 @@ public class AgentSession {
         this.skillLoader = Objects.requireNonNull(skillLoader, "skillLoader");
         this.skillExpander = Objects.requireNonNull(skillExpander, "skillExpander");
         this.tools = Objects.requireNonNull(tools, "tools");
+        this.contextFileLoader = new ContextFileLoader();
+        this.promptTemplateLoader = new PromptTemplateLoader();
     }
 
     /**
@@ -86,16 +97,27 @@ public class AgentSession {
         Path cwd = config.cwd() != null ? config.cwd() : Path.of(System.getProperty("user.dir"));
         loadSkills(cwd);
 
-        // 3. Build system prompt
+        // 3. Load context files (AGENTS.md / CLAUDE.md)
+        List<ContextFile> contextFiles = contextFileLoader.loadProjectContextFiles(cwd, USER_AGENT_DIR);
+
+        // 4. Discover SYSTEM.md and APPEND_SYSTEM.md
+        String systemPromptOverride = contextFileLoader.loadSystemPrompt(cwd, USER_AGENT_DIR);
+        String appendSystemPrompt = contextFileLoader.loadAppendSystemPrompt(cwd, USER_AGENT_DIR);
+
+        // 5. Load prompt templates
+        promptTemplates = promptTemplateLoader.load(cwd, USER_AGENT_DIR);
+
+        // 6. Build system prompt
         List<Skill> visibleSkills = skillRegistry.getVisibleSkills();
         Map<String, String> env = buildEnvironmentMap();
 
         SystemPromptConfig promptConfig = new SystemPromptConfig(
-                tools, visibleSkills, cwd, config.customPrompt(), env
+                tools, visibleSkills, cwd, config.customPrompt(), env,
+                contextFiles, systemPromptOverride, appendSystemPrompt
         );
         String systemPrompt = promptBuilder.build(promptConfig);
 
-        // 4. Create and configure Agent
+        // 7. Create and configure Agent
         agent = createAgent(piAiService);
         agent.setModel(model);
         agent.setSystemPrompt(systemPrompt);
@@ -116,7 +138,10 @@ public class AgentSession {
         requireInitialized();
         Objects.requireNonNull(userInput, "userInput");
 
-        String expanded = skillExpander.expand(userInput, skillRegistry);
+        // Expand prompt templates first (/templatename args...)
+        String expanded = expandPromptTemplate(userInput);
+        // Then expand skill commands (/skill:name args...)
+        expanded = skillExpander.expand(expanded, skillRegistry);
         return agent.prompt(expanded);
     }
 
@@ -235,6 +260,74 @@ public class AgentSession {
     public void newSession() {
         requireInitialized();
         agent.clearMessages();
+    }
+
+    /**
+     * Returns the loaded prompt templates for this session.
+     */
+    public List<PromptTemplateEntry> getPromptTemplates() {
+        return promptTemplates;
+    }
+
+    /**
+     * Reloads skills and prompt templates from disk.
+     * Useful for the /reload command.
+     */
+    public void reload() {
+        requireInitialized();
+        var model = agent.getState().getModel();
+        Path cwd = Path.of(System.getProperty("user.dir"));
+        loadSkills(cwd);
+        promptTemplates = promptTemplateLoader.load(cwd, USER_AGENT_DIR);
+    }
+
+    /**
+     * Expands a prompt template command like "/templatename arg1 arg2".
+     */
+    String expandPromptTemplate(String input) {
+        if (!input.startsWith("/")) return input;
+
+        int spaceIdx = input.indexOf(' ');
+        String name = spaceIdx >= 0 ? input.substring(1, spaceIdx) : input.substring(1);
+        String argsStr = spaceIdx >= 0 ? input.substring(spaceIdx + 1) : "";
+
+        for (PromptTemplateEntry template : promptTemplates) {
+            if (template.name().equals(name)) {
+                List<String> args = parseCommandArgs(argsStr);
+                return PromptTemplate.expand(template.content(), args);
+            }
+        }
+        return input;
+    }
+
+    static List<String> parseCommandArgs(String argsString) {
+        List<String> args = new java.util.ArrayList<>();
+        StringBuilder current = new StringBuilder();
+        Character inQuote = null;
+
+        for (int i = 0; i < argsString.length(); i++) {
+            char ch = argsString.charAt(i);
+            if (inQuote != null) {
+                if (ch == inQuote) {
+                    inQuote = null;
+                } else {
+                    current.append(ch);
+                }
+            } else if (ch == '"' || ch == '\'') {
+                inQuote = ch;
+            } else if (ch == ' ' || ch == '\t') {
+                if (!current.isEmpty()) {
+                    args.add(current.toString());
+                    current.setLength(0);
+                }
+            } else {
+                current.append(ch);
+            }
+        }
+        if (!current.isEmpty()) {
+            args.add(current.toString());
+        }
+        return args;
     }
 
     // -- package-private for testing --
