@@ -32,7 +32,8 @@ public class Tui {
     private Container root;
     private Consumer<String> inputHandler;
     private volatile boolean running = false;
-    private int lastHeight = 0;
+    private int prevStartLine = 0;
+    private int prevHeight = 0;
 
     public Tui(Terminal terminal) {
         this.terminal = Objects.requireNonNull(terminal);
@@ -50,7 +51,7 @@ public class Tui {
     public void start() {
         running = true;
         terminal.enterRawMode();
-        terminal.write(HIDE_CURSOR + ERASE_SCROLLBACK + ERASE_SCREEN + HOME);
+        terminal.write(HIDE_CURSOR + ERASE_SCREEN + HOME);
 
         terminal.onInput(data -> {
             if (inputHandler != null) {
@@ -85,14 +86,26 @@ public class Tui {
         // Render component tree
         List<String> allLines = root.render(width);
 
-        // Build output buffer with synchronized output
-        var sb = new StringBuilder(allLines.size() * (width + 20));
-        sb.append(SYNC_START);
-        sb.append(HOME); // Move cursor to top-left
-
         // Show only the last `height` lines (viewport scrolling)
         int startLine = Math.max(0, allLines.size() - height);
         int visibleCount = Math.min(allLines.size(), height);
+
+        // Build output buffer with synchronized output
+        var sb = new StringBuilder(allLines.size() * (width + 20));
+        sb.append(SYNC_START);
+
+        // When viewport shifts down (new content pushes old off-screen),
+        // scroll the terminal to push old lines into scrollback buffer.
+        // This lets users scroll up in their terminal to see earlier content
+        // (matching pi-mono's behavior).
+        int shift = startLine - prevStartLine;
+        if (shift > 0 && prevHeight == height && prevHeight > 0) {
+            // Move cursor to bottom of screen, emit newlines to scroll
+            sb.append("\033[").append(height).append(";1H");
+            sb.append("\r\n".repeat(shift));
+        }
+
+        sb.append(HOME); // Move cursor to top-left of visible viewport
 
         for (int i = 0; i < visibleCount; i++) {
             sb.append(CLEAR_LINE);
@@ -109,7 +122,8 @@ public class Tui {
 
         sb.append(SYNC_END);
         terminal.write(sb.toString());
-        lastHeight = height;
+        prevStartLine = startLine;
+        prevHeight = height;
     }
 
     public Terminal getTerminal() {
