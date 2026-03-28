@@ -13,7 +13,10 @@ import com.anthropic.models.messages.RawContentBlockDeltaEvent;
 import com.anthropic.models.messages.RawContentBlockStartEvent;
 import com.anthropic.models.messages.RawMessageStreamEvent;
 import com.anthropic.models.messages.TextBlockParam;
+import com.anthropic.models.messages.OutputConfig;
+import com.anthropic.models.messages.RedactedThinkingBlockParam;
 import com.anthropic.models.messages.ThinkingBlockParam;
+import com.anthropic.models.messages.ThinkingConfigAdaptive;
 import com.anthropic.models.messages.ThinkingConfigEnabled;
 import com.anthropic.models.messages.ThinkingConfigParam;
 import com.anthropic.models.messages.ToolResultBlockParam;
@@ -201,16 +204,26 @@ public class AnthropicProvider implements ApiProvider {
             builder.tools(convertTools(context.tools()));
         }
 
-        // Temperature
-        if (temperature != null) {
-            builder.temperature(temperature);
+        // Extended thinking — adaptive for Opus 4.6/Sonnet 4.6, budget-based for older
+        boolean thinkingEnabled = reasoning != null && reasoning != ThinkingLevel.OFF && model.reasoning();
+        if (thinkingEnabled) {
+            if (supportsAdaptiveThinking(model.id())) {
+                builder.thinking(ThinkingConfigParam.ofAdaptive(
+                        ThinkingConfigAdaptive.builder().build()));
+                String effort = mapToAnthropicEffort(reasoning, model.id());
+                builder.outputConfig(OutputConfig.builder()
+                        .effort(OutputConfig.Effort.of(effort))
+                        .build());
+            } else {
+                long budget = resolveBudget(reasoning, thinkingBudgets, resolvedMaxTokens);
+                builder.thinking(ThinkingConfigParam.ofEnabled(
+                        ThinkingConfigEnabled.builder().budgetTokens(budget).build()));
+            }
         }
 
-        // Extended thinking
-        if (reasoning != null && reasoning != ThinkingLevel.OFF) {
-            long budget = resolveBudget(reasoning, thinkingBudgets, resolvedMaxTokens);
-            builder.thinking(ThinkingConfigParam.ofEnabled(
-                    ThinkingConfigEnabled.builder().budgetTokens(budget).build()));
+        // Temperature is incompatible with extended thinking
+        if (temperature != null && !thinkingEnabled) {
+            builder.temperature(temperature);
         }
 
         return builder.build();
@@ -229,6 +242,7 @@ public class AnthropicProvider implements ApiProvider {
         var toolJsonAccumulator = new HashMap<Integer, StringBuilder>();
         var blockTypes = new HashMap<Integer, String>();
         var toolMeta = new HashMap<Integer, String[]>(); // [id, name]
+        var signatureAcc = new HashMap<Integer, StringBuilder>();
         StopReason[] stopReason = {null};
 
         try (StreamResponse<RawMessageStreamEvent> response = client.messages().createStreaming(params)) {
@@ -254,13 +268,13 @@ public class AnthropicProvider implements ApiProvider {
                 } else if (event.isContentBlockDelta()) {
                     handleContentBlockDelta(event.asContentBlockDelta(), model, responseId[0],
                             contentBlocks, accumulatedUsage, blockTypes, textAccumulator,
-                            thinkingAccumulator, toolJsonAccumulator, eventStream);
+                            thinkingAccumulator, toolJsonAccumulator, signatureAcc, eventStream);
 
                 } else if (event.isContentBlockStop()) {
                     int idx = (int) event.asContentBlockStop().index();
                     handleContentBlockStop(idx, model, responseId[0],
                             contentBlocks, accumulatedUsage, blockTypes, textAccumulator,
-                            thinkingAccumulator, toolJsonAccumulator, toolMeta, eventStream);
+                            thinkingAccumulator, toolJsonAccumulator, toolMeta, signatureAcc, eventStream);
 
                 } else if (event.isMessageDelta()) {
                     var e = event.asMessageDelta();
@@ -304,6 +318,14 @@ public class AnthropicProvider implements ApiProvider {
             eventStream.push(new AssistantMessageEvent.ThinkingStartEvent(idx,
                     buildPartialMessage(model, responseId, contentBlocks, usage, null)));
 
+        } else if (cb.isRedactedThinking()) {
+            // Redacted thinking: encrypted payload stored as signature
+            var rt = cb.asRedactedThinking();
+            blockTypes.put(idx, "redacted_thinking");
+            contentBlocks.add(new ThinkingContent("[Reasoning redacted]", rt.data(), true));
+            eventStream.push(new AssistantMessageEvent.ThinkingStartEvent(idx,
+                    buildPartialMessage(model, responseId, contentBlocks, usage, null)));
+
         } else if (cb.isToolUse()) {
             var tu = cb.asToolUse();
             blockTypes.put(idx, "tool_use");
@@ -322,6 +344,7 @@ public class AnthropicProvider implements ApiProvider {
             Map<Integer, StringBuilder> textAcc,
             Map<Integer, StringBuilder> thinkingAcc,
             Map<Integer, StringBuilder> toolJsonAcc,
+            Map<Integer, StringBuilder> signatureAcc,
             AssistantMessageEventStream eventStream) {
 
         int idx = (int) e.index();
@@ -342,10 +365,21 @@ public class AnthropicProvider implements ApiProvider {
             var acc = thinkingAcc.get(idx);
             if (acc != null) acc.append(text);
             if (idx < contentBlocks.size()) {
-                contentBlocks.set(idx, new ThinkingContent(acc != null ? acc.toString() : text, null, false));
+                String sig = signatureAcc.containsKey(idx) ? signatureAcc.get(idx).toString() : null;
+                contentBlocks.set(idx, new ThinkingContent(acc != null ? acc.toString() : text, sig, false));
             }
             eventStream.push(new AssistantMessageEvent.ThinkingDeltaEvent(idx, text,
                     buildPartialMessage(model, responseId, contentBlocks, usage, null)));
+
+        } else if (delta.isSignature()) {
+            // Accumulate thinking signature
+            String sig = delta.asSignature().signature();
+            signatureAcc.computeIfAbsent(idx, k -> new StringBuilder()).append(sig);
+            // Update the ThinkingContent block with the accumulated signature
+            if (idx < contentBlocks.size() && contentBlocks.get(idx) instanceof ThinkingContent tc) {
+                String fullSig = signatureAcc.get(idx).toString();
+                contentBlocks.set(idx, new ThinkingContent(tc.thinking(), fullSig, tc.redacted()));
+            }
 
         } else if (delta.isInputJson()) {
             String json = delta.asInputJson().partialJson();
@@ -364,6 +398,7 @@ public class AnthropicProvider implements ApiProvider {
             Map<Integer, StringBuilder> thinkingAcc,
             Map<Integer, StringBuilder> toolJsonAcc,
             Map<Integer, String[]> toolMeta,
+            Map<Integer, StringBuilder> signatureAcc,
             AssistantMessageEventStream eventStream) {
 
         String type = blockTypes.get(idx);
@@ -376,7 +411,14 @@ public class AnthropicProvider implements ApiProvider {
 
         } else if ("thinking".equals(type)) {
             String content = thinkingAcc.containsKey(idx) ? thinkingAcc.get(idx).toString() : "";
-            contentBlocks.set(idx, new ThinkingContent(content, null, false));
+            String sig = signatureAcc.containsKey(idx) ? signatureAcc.get(idx).toString() : null;
+            contentBlocks.set(idx, new ThinkingContent(content, sig, false));
+            eventStream.push(new AssistantMessageEvent.ThinkingEndEvent(idx, content,
+                    buildPartialMessage(model, responseId, contentBlocks, usage, null)));
+
+        } else if ("redacted_thinking".equals(type)) {
+            // Redacted thinking block is already complete from start event
+            String content = contentBlocks.get(idx) instanceof ThinkingContent tc ? tc.thinking() : "";
             eventStream.push(new AssistantMessageEvent.ThinkingEndEvent(idx, content,
                     buildPartialMessage(model, responseId, contentBlocks, usage, null)));
 
@@ -438,11 +480,24 @@ public class AnthropicProvider implements ApiProvider {
                 blocks.add(ContentBlockParam.ofText(
                         TextBlockParam.builder().text(tc.text()).build()));
             } else if (cb instanceof ThinkingContent tc) {
-                blocks.add(ContentBlockParam.ofThinking(
-                        ThinkingBlockParam.builder()
-                                .thinking(tc.thinking())
-                                .signature(tc.thinkingSignature() != null ? tc.thinkingSignature() : "")
-                                .build()));
+                if (tc.redacted()) {
+                    // Replay redacted thinking as redacted_thinking block
+                    blocks.add(ContentBlockParam.ofRedactedThinking(
+                            RedactedThinkingBlockParam.builder()
+                                    .data(tc.thinkingSignature() != null ? tc.thinkingSignature() : "")
+                                    .build()));
+                } else if (tc.thinkingSignature() != null && !tc.thinkingSignature().isBlank()) {
+                    // Replay thinking with signature for multi-turn continuity
+                    blocks.add(ContentBlockParam.ofThinking(
+                            ThinkingBlockParam.builder()
+                                    .thinking(tc.thinking())
+                                    .signature(tc.thinkingSignature())
+                                    .build()));
+                } else if (!tc.thinking().isBlank()) {
+                    // No signature (e.g., aborted stream) — convert to plain text
+                    blocks.add(ContentBlockParam.ofText(
+                            TextBlockParam.builder().text(tc.thinking()).build()));
+                }
             } else if (cb instanceof ToolCall tc) {
                 blocks.add(ContentBlockParam.ofToolUse(
                         ToolUseBlockParam.builder()
@@ -569,6 +624,29 @@ public class AnthropicProvider implements ApiProvider {
             case "max_tokens" -> StopReason.LENGTH;
             case "tool_use" -> StopReason.TOOL_USE;
             default -> StopReason.STOP;
+        };
+    }
+
+    /**
+     * Check if a model supports adaptive thinking (Opus 4.6 and Sonnet 4.6).
+     */
+    private static boolean supportsAdaptiveThinking(String modelId) {
+        return modelId.contains("opus-4-6") || modelId.contains("opus-4.6")
+            || modelId.contains("sonnet-4-6") || modelId.contains("sonnet-4.6");
+    }
+
+    /**
+     * Map ThinkingLevel to Anthropic effort levels for adaptive thinking.
+     * "max" is only valid on Opus 4.6.
+     */
+    private static String mapToAnthropicEffort(ThinkingLevel level, String modelId) {
+        boolean isOpus = modelId.contains("opus");
+        return switch (level) {
+            case MINIMAL, LOW -> "low";
+            case MEDIUM -> "medium";
+            case HIGH -> "high";
+            case XHIGH -> isOpus ? "max" : "high";
+            default -> "high";
         };
     }
 

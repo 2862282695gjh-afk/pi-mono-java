@@ -239,8 +239,10 @@ public class OpenAICompletionsProvider implements ApiProvider {
 
         // Accumulators for streaming text and tool call arguments
         var textAccumulator = new StringBuilder();
+        var thinkingAccumulator = new StringBuilder();
         var toolAccumulators = new HashMap<Integer, ToolCallAccumulator>();
         boolean[] textBlockStarted = {false};
+        boolean[] thinkingBlockStarted = {false};
 
         try (StreamResponse<ChatCompletionChunk> response =
                      client.chat().completions().createStreaming(params)) {
@@ -283,6 +285,26 @@ public class OpenAICompletionsProvider implements ApiProvider {
                                         contentBlocks, accumulatedUsage, null)));
                     }
                 });
+
+                // Handle reasoning/thinking content from additional properties
+                // Various providers use different fields: reasoning_content, reasoning, reasoning_text
+                String reasoningDelta = extractReasoningDelta(delta);
+                if (reasoningDelta != null && !reasoningDelta.isEmpty()) {
+                    if (!thinkingBlockStarted[0]) {
+                        thinkingBlockStarted[0] = true;
+                        contentBlocks.add(new ThinkingContent("", null, false));
+                        int idx = contentBlocks.size() - 1;
+                        eventStream.push(new AssistantMessageEvent.ThinkingStartEvent(idx,
+                                buildPartialMessage(model, responseId[0],
+                                        contentBlocks, accumulatedUsage, null)));
+                    }
+                    thinkingAccumulator.append(reasoningDelta);
+                    int idx = contentBlocks.size() - 1;
+                    contentBlocks.set(idx, new ThinkingContent(thinkingAccumulator.toString(), null, false));
+                    eventStream.push(new AssistantMessageEvent.ThinkingDeltaEvent(idx, reasoningDelta,
+                            buildPartialMessage(model, responseId[0],
+                                    contentBlocks, accumulatedUsage, null)));
+                }
 
                 // Handle tool calls
                 delta.toolCalls().ifPresent(toolCalls -> {
@@ -341,6 +363,18 @@ public class OpenAICompletionsProvider implements ApiProvider {
                     }
                 });
             });
+        }
+
+        // Finish open thinking block
+        if (thinkingBlockStarted[0]) {
+            int thinkIdx = findBlockIndex(contentBlocks, ThinkingContent.class);
+            if (thinkIdx >= 0) {
+                contentBlocks.set(thinkIdx, new ThinkingContent(thinkingAccumulator.toString(), null, false));
+                eventStream.push(new AssistantMessageEvent.ThinkingEndEvent(
+                        thinkIdx, thinkingAccumulator.toString(),
+                        buildPartialMessage(model, responseId[0],
+                                contentBlocks, accumulatedUsage, null)));
+            }
         }
 
         // Finish open text block
@@ -604,6 +638,40 @@ public class OpenAICompletionsProvider implements ApiProvider {
      */
     private static boolean isProviderWithCustomThinking(Provider provider) {
         return provider == Provider.ZAI;
+    }
+
+    /**
+     * Extracts reasoning/thinking delta from OpenAI-compatible provider delta.
+     * Different providers use different fields: reasoning_content, reasoning, reasoning_text.
+     */
+    private static String extractReasoningDelta(
+            com.openai.models.chat.completions.ChatCompletionChunk.Choice.Delta delta) {
+        var additionalProps = delta._additionalProperties();
+        for (String field : new String[]{"reasoning_content", "reasoning", "reasoning_text"}) {
+            var value = additionalProps.get(field);
+            if (value != null) {
+                // JsonValue could be a string
+                try {
+                    String str = value.toString();
+                    // Remove surrounding quotes if present
+                    if (str.startsWith("\"") && str.endsWith("\"")) {
+                        str = str.substring(1, str.length() - 1)
+                            .replace("\\n", "\n")
+                            .replace("\\\"", "\"")
+                            .replace("\\\\", "\\");
+                    }
+                    if (!str.isEmpty() && !"null".equals(str)) return str;
+                } catch (Exception ignored) {}
+            }
+        }
+        return null;
+    }
+
+    private static <T> int findBlockIndex(List<ContentBlock> blocks, Class<T> type) {
+        for (int i = blocks.size() - 1; i >= 0; i--) {
+            if (type.isInstance(blocks.get(i))) return i;
+        }
+        return -1;
     }
 
     private static int findTextBlockIndex(List<ContentBlock> blocks) {

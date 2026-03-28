@@ -36,6 +36,13 @@ public final class GoogleShared {
                     for (var block : um.content()) {
                         if (block instanceof TextContent tc) {
                             parts.add(MAPPER.createObjectNode().put("text", tc.text()));
+                        } else if (block instanceof ImageContent ic) {
+                            var inlineData = MAPPER.createObjectNode();
+                            var data = MAPPER.createObjectNode();
+                            data.put("mimeType", ic.mimeType());
+                            data.put("data", ic.data());
+                            inlineData.set("inlineData", data);
+                            parts.add(inlineData);
                         }
                     }
                     content.set("parts", parts);
