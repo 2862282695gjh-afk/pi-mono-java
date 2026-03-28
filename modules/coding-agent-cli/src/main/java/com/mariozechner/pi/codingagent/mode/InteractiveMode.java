@@ -30,9 +30,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.*;
-import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -412,6 +410,18 @@ public class InteractiveMode {
 
         tui.render();
 
+        // Spinner animation timer — drives re-renders at 80ms for the "Working..." spinner
+        var spinnerTimer = Executors.newSingleThreadScheduledExecutor(r -> {
+            var t = new Thread(r, "spinner-timer");
+            t.setDaemon(true);
+            return t;
+        });
+        spinnerTimer.scheduleAtFixedRate(() -> {
+            if (currentAssistantMessage != null && !currentAssistantMessage.hasContent()) {
+                tui.render();
+            }
+        }, 80, 80, TimeUnit.MILLISECONDS);
+
         Runnable unsub = session.getAgent().subscribe(event -> {
             handleEvent(event);
             tui.render();
@@ -442,6 +452,9 @@ public class InteractiveMode {
         if (error != null && !aborted.get()) {
             chatContainer.addChild(new Text("\033[38;2;204;102;102m Error: " + error + "\033[0m"));
         }
+
+        // Stop spinner animation timer
+        spinnerTimer.shutdownNow();
 
         if (currentAssistantMessage != null) {
             currentAssistantMessage.setComplete(true);

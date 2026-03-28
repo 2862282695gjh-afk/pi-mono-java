@@ -16,8 +16,13 @@ public class AssistantMessageComponent implements Component {
     // Thinking style: italic + gray #808080 (matching pi-mono thinkingText color)
     private static final String ANSI_ITALIC = "\033[3m";
     private static final String ANSI_THINKING_COLOR = "\033[38;2;128;128;128m";
-    private static final String ANSI_DIM = "\033[2m";
+    // Spinner colors matching pi-mono: accent for spinner, muted for text
+    private static final String ANSI_ACCENT = "\033[38;2;138;190;183m";
+    private static final String ANSI_MUTED = "\033[38;2;128;128;128m";
     private static final String ANSI_RESET = "\033[0m";
+    private static final String[] SPINNER_FRAMES = {"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"};
+
+    private int spinnerFrame = 0;
 
     private final StringBuilder thinkingContent = new StringBuilder();
     private final StringBuilder textContent = new StringBuilder();
@@ -62,7 +67,9 @@ public class AssistantMessageComponent implements Component {
         String thinking = thinkingContent.toString();
         String text = textContent.toString();
 
-        if (cachedLines != null && cachedWidth == width
+        // Don't cache when showing animated spinner
+        boolean showingSpinner = !complete && text.isEmpty() && thinking.isEmpty();
+        if (!showingSpinner && cachedLines != null && cachedWidth == width
                 && cachedComplete == complete
                 && thinking.equals(cachedThinking)
                 && text.equals(cachedText)) {
@@ -93,9 +100,11 @@ public class AssistantMessageComponent implements Component {
             }
         }
 
-        // Streaming indicator — only when not complete AND no content yet
+        // Animated spinner — matching pi-mono "⠹ Working..." style
         if (!complete && text.isEmpty() && thinking.isEmpty()) {
-            lines.add(ANSI_DIM + " ..." + ANSI_RESET);
+            String frame = SPINNER_FRAMES[spinnerFrame % SPINNER_FRAMES.length];
+            spinnerFrame++;
+            lines.add(" " + ANSI_ACCENT + frame + ANSI_RESET + " " + ANSI_MUTED + "Working..." + ANSI_RESET);
         }
 
         cachedThinking = thinking;
