@@ -190,8 +190,8 @@ class MarkdownComponentTest {
         void inlineCodeWithDefaultTheme() {
             var md = new MarkdownComponent("Run `npm install`", defaultTheme);
             List<String> lines = md.render(80);
-            // Should contain yellow ANSI code
-            assertTrue(lines.get(0).contains("\033[33m"));
+            // Should contain accent color ANSI code (#8abeb7)
+            assertTrue(lines.get(0).contains("\033[38;2;138;190;183m"));
         }
 
         @Test
@@ -262,7 +262,7 @@ class MarkdownComponentTest {
             var md = new MarkdownComponent(input, plainTheme);
             List<String> lines = md.render(80);
             assertEquals(2, lines.size());
-            assertTrue(lines.get(0).contains("•"));
+            assertTrue(lines.get(0).contains("-"));
             assertTrue(lines.get(0).contains("item one"));
             assertTrue(lines.get(1).contains("item two"));
         }
