@@ -1,6 +1,7 @@
 package com.mariozechner.pi.codingagent.mode;
 
 import com.mariozechner.pi.agent.event.*;
+import com.mariozechner.pi.agent.tool.CancellationToken;
 import com.mariozechner.pi.ai.PiAiService;
 import com.mariozechner.pi.ai.stream.AssistantMessageEvent;
 import com.mariozechner.pi.ai.types.AssistantMessage;
@@ -65,6 +66,9 @@ public class InteractiveMode {
     // Streaming state
     private AssistantMessageComponent currentAssistantMessage;
     private final Map<String, ToolStatusComponent> pendingTools = new LinkedHashMap<>();
+
+    // Cancellation token for the currently running bash command
+    private volatile CancellationToken bashCancelToken;
 
     // Bash mode state
     private boolean bashMode;
@@ -185,6 +189,11 @@ public class InteractiveMode {
                         abortedFlag.set(true);
                         sessionRef.get().abort();
                     } else {
+                        // Cancel running bash command if any
+                        var token = bashCancelToken;
+                        if (token != null) {
+                            token.cancel();
+                        }
                         // Clear input
                         editorContainer.clear();
                         bashMode = false;
@@ -363,8 +372,10 @@ public class InteractiveMode {
         chatContainer.addChild(component);
         tui.render();
 
+        var signal = new CancellationToken();
+        bashCancelToken = signal;
         try {
-            var options = new BashExecutorOptions(Duration.ofSeconds(120), null, Map.of());
+            var options = new BashExecutorOptions(Duration.ofSeconds(120), signal, Map.of());
             BashExecutionResult result = bashExecutor.execute(command, Path.of(cwd), options);
 
             // Combine stdout and stderr
@@ -380,6 +391,8 @@ public class InteractiveMode {
             component.setResult(output.toString(), result.exitCode());
         } catch (IOException e) {
             component.setResult("Error: " + e.getMessage(), 1);
+        } finally {
+            bashCancelToken = null;
         }
     }
 
