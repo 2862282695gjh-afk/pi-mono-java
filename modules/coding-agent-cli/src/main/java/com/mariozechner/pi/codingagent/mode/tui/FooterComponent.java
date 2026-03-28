@@ -27,6 +27,7 @@ public class FooterComponent implements Component {
     private String thinkingLevel = "";
     private boolean modelSupportsReasoning;
     private String cwd = "";
+    private String sessionName = "";
     private int inputTokens;
     private int outputTokens;
     private int cacheRead;
@@ -56,6 +57,10 @@ public class FooterComponent implements Component {
         // Invalidate branch cache on cwd change
         this.cachedBranch = null;
         this.branchCacheTime = 0;
+    }
+
+    public void setSessionName(String name) {
+        this.sessionName = name != null ? name : "";
     }
 
     public void setAutoCompactEnabled(boolean enabled) {
@@ -98,6 +103,9 @@ public class FooterComponent implements Component {
             String branch = getGitBranch();
             if (branch != null && !branch.isEmpty()) {
                 displayPath = displayPath + " (" + branch + ")";
+            }
+            if (!sessionName.isEmpty()) {
+                displayPath = displayPath + " • " + sessionName;
             }
 
             lines.add(ANSI_DIM + truncate(displayPath, width) + ANSI_RESET);

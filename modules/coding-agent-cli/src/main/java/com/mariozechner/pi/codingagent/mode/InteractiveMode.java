@@ -10,6 +10,7 @@ import com.mariozechner.pi.ai.types.Message;
 import com.mariozechner.pi.ai.types.Model;
 import com.mariozechner.pi.ai.types.ThinkingLevel;
 import com.mariozechner.pi.ai.types.UserMessage;
+import com.mariozechner.pi.codingagent.PiCodingAgentApplication;
 import com.mariozechner.pi.codingagent.command.SlashCommand;
 import com.mariozechner.pi.codingagent.command.SlashCommandContext;
 import com.mariozechner.pi.codingagent.command.SlashCommandRegistry;
@@ -150,7 +151,10 @@ public class InteractiveMode {
         String MUTED = "\033[38;2;128;128;128m";
         String RST = "\033[0m";
         var wb = new StringBuilder();
-        wb.append("\033[1m\033[38;2;138;190;183mpi\033[0m").append(DIM).append(" v0.1.0").append(RST).append("\n");
+        String version = PiCodingAgentApplication.class.getPackage() != null
+                && PiCodingAgentApplication.class.getPackage().getImplementationVersion() != null
+                ? PiCodingAgentApplication.class.getPackage().getImplementationVersion() : "0.1.0";
+        wb.append("\033[1m\033[38;2;138;190;183mpi\033[0m").append(DIM).append(" v").append(version).append(RST).append("\n");
 
         // Keybinding hints (aligned with pi-mono) — key in dim, description in muted
         wb.append(DIM).append(" escape").append(RST).append(MUTED).append(" to interrupt").append(RST).append("\n");
@@ -522,6 +526,10 @@ public class InteractiveMode {
                                         newModel.contextWindow() > 0 ? newModel.contextWindow() : 200000,
                                         newModel.reasoning());
                             }
+                        }
+                        // Update footer session name after /name command
+                        if (trimmed.startsWith("/name ")) {
+                            footer.setSessionName(trimmed.substring(6).trim());
                         }
                         tui.render();
                         continue;

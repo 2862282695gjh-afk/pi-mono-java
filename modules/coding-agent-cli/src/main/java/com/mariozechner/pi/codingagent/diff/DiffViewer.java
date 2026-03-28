@@ -17,6 +17,7 @@ public class DiffViewer {
     private static final String RESET = "\033[0m";
     private static final String BG_RED = "\033[41m";
     private static final String BG_GREEN = "\033[42m";
+    private static final String INVERSE = "\033[7m";
 
     public enum LineType { SAME, ADDED, REMOVED, MODIFIED }
 
@@ -45,8 +46,9 @@ public class DiffViewer {
                 case REMOVED -> sb.append(RED).append("- ").append(line.oldText).append(RESET).append('\n');
                 case ADDED -> sb.append(GREEN).append("+ ").append(line.newText).append(RESET).append('\n');
                 case MODIFIED -> {
-                    sb.append(RED).append("- ").append(line.oldText).append(RESET).append('\n');
-                    sb.append(GREEN).append("+ ").append(line.newText).append(RESET).append('\n');
+                    // Intra-line word diff with inverse highlighting (matching pi-mono)
+                    sb.append(RED).append("- ").append(highlightWordDiff(line.oldText, line.newText, RED)).append(RESET).append('\n');
+                    sb.append(GREEN).append("+ ").append(highlightWordDiff(line.newText, line.oldText, GREEN)).append(RESET).append('\n');
                 }
             }
         }
@@ -113,6 +115,101 @@ public class DiffViewer {
     private static String truncate(String s, int maxLen) {
         if (s.length() <= maxLen) return s;
         return s.substring(0, maxLen - 1) + "…";
+    }
+
+    /**
+     * Highlights changed words within a line using inverse colors.
+     * Words present in 'line' but not in 'other' get INVERSE highlighting.
+     * Matching pi-mono's diffWords() intra-line highlighting behavior.
+     */
+    static String highlightWordDiff(String line, String other, String baseColor) {
+        if (line == null || line.isEmpty()) return "";
+        if (other == null || other.isEmpty()) return line;
+
+        // Split into words (preserving whitespace as separate tokens)
+        var lineTokens = tokenize(line);
+        var otherTokens = tokenize(other);
+
+        // Find common tokens via LCS
+        var common = wordLcs(lineTokens, otherTokens);
+        var commonSet = new java.util.HashSet<Integer>(); // indices in lineTokens that are common
+        int ci = 0;
+        for (int li = 0; li < lineTokens.size() && ci < common.size(); li++) {
+            if (lineTokens.get(li).equals(common.get(ci))) {
+                commonSet.add(li);
+                ci++;
+            }
+        }
+
+        // Build highlighted output
+        var sb = new StringBuilder();
+        boolean inHighlight = false;
+        for (int li = 0; li < lineTokens.size(); li++) {
+            boolean isChanged = !commonSet.contains(li);
+            if (isChanged && !inHighlight) {
+                sb.append(INVERSE);
+                inHighlight = true;
+            } else if (!isChanged && inHighlight) {
+                sb.append(RESET).append(baseColor);
+                inHighlight = false;
+            }
+            sb.append(lineTokens.get(li));
+        }
+        if (inHighlight) {
+            sb.append(RESET).append(baseColor);
+        }
+        return sb.toString();
+    }
+
+    /** Tokenize a string into words and whitespace tokens. */
+    private static List<String> tokenize(String text) {
+        var tokens = new ArrayList<String>();
+        var current = new StringBuilder();
+        boolean inWord = false;
+        for (int i = 0; i < text.length(); i++) {
+            char ch = text.charAt(i);
+            boolean isWs = Character.isWhitespace(ch);
+            if (inWord && isWs) {
+                tokens.add(current.toString());
+                current.setLength(0);
+                inWord = false;
+            } else if (!inWord && !isWs) {
+                if (!current.isEmpty()) tokens.add(current.toString());
+                current.setLength(0);
+                inWord = true;
+            }
+            current.append(ch);
+        }
+        if (!current.isEmpty()) tokens.add(current.toString());
+        return tokens;
+    }
+
+    /** LCS on word tokens. */
+    private static List<String> wordLcs(List<String> a, List<String> b) {
+        int m = a.size(), n = b.size();
+        int[][] dp = new int[m + 1][n + 1];
+        for (int i = m - 1; i >= 0; i--) {
+            for (int j = n - 1; j >= 0; j--) {
+                if (a.get(i).equals(b.get(j))) {
+                    dp[i][j] = dp[i + 1][j + 1] + 1;
+                } else {
+                    dp[i][j] = Math.max(dp[i + 1][j], dp[i][j + 1]);
+                }
+            }
+        }
+        var result = new ArrayList<String>();
+        int i = 0, j = 0;
+        while (i < m && j < n) {
+            if (a.get(i).equals(b.get(j))) {
+                result.add(a.get(i));
+                i++; j++;
+            } else if (dp[i + 1][j] >= dp[i][j + 1]) {
+                i++;
+            } else {
+                j++;
+            }
+        }
+        return result;
     }
 
     /** Simple LCS-based diff algorithm. */
