@@ -282,8 +282,9 @@ public class ToolStatusComponent implements Component {
     private static String bgLine(String content, int width, String bg) {
         int visLen = AnsiUtils.visibleWidth(content);
         int pad = Math.max(0, width - visLen);
-        // Re-apply bg before padding in case content contains ANSI_RESET
-        return bg + content + bg + " ".repeat(pad) + ANSI_RESET;
+        // Replace every ANSI_RESET in content with reset+bg so background stays continuous
+        String fixed = content.replace(ANSI_RESET, ANSI_RESET + bg);
+        return bg + fixed + bg + " ".repeat(pad) + ANSI_RESET;
     }
 
     private static String summarizeResult(Object result) {
