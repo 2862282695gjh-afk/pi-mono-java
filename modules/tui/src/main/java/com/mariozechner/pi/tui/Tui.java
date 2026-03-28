@@ -25,6 +25,7 @@ public class Tui {
     private static final String SHOW_CURSOR = "\033[?25h";
     private static final String HOME = "\033[H";
     private static final String ERASE_SCREEN = "\033[2J";
+    private static final String ERASE_SCROLLBACK = "\033[3J";
 
     private final Terminal terminal;
 
@@ -49,7 +50,7 @@ public class Tui {
     public void start() {
         running = true;
         terminal.enterRawMode();
-        terminal.write(HIDE_CURSOR + ERASE_SCREEN + HOME);
+        terminal.write(HIDE_CURSOR + ERASE_SCROLLBACK + ERASE_SCREEN + HOME);
 
         terminal.onInput(data -> {
             if (inputHandler != null) {

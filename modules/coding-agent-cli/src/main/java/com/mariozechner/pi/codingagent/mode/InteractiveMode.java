@@ -71,6 +71,9 @@ public class InteractiveMode {
     // Bash mode state
     private boolean bashMode;
 
+    // Tool output expand/collapse state (toggled by Ctrl+O)
+    private boolean toolsExpanded;
+
     // Follow-up / steering queues during compaction
     private final List<QueuedMessage> compactionQueue = new ArrayList<>();
 
@@ -187,6 +190,19 @@ public class InteractiveMode {
                     eofFlag.set(true);
                     submitQueue.add(""); // unblock the queue
                     return;
+                }
+
+                // Global: Ctrl+O — toggle tool output expand/collapse
+                if (ch == 15) { // 0x0F = Ctrl+O
+                    toolsExpanded = !toolsExpanded;
+                    for (var child : chatContainer.getChildren()) {
+                        if (child instanceof ToolStatusComponent tool) {
+                            tool.setExpanded(toolsExpanded);
+                        }
+                    }
+                    tui.render();
+                    i++;
+                    continue;
                 }
 
                 // Global: Ctrl+C
@@ -507,6 +523,7 @@ public class InteractiveMode {
             case ToolExecutionStartEvent e -> {
                 var tool = new ToolStatusComponent(e.toolName());
                 tool.setArgs(e.args());
+                tool.setExpanded(toolsExpanded);
                 pendingTools.put(e.toolCallId(), tool);
                 chatContainer.addChild(tool);
             }

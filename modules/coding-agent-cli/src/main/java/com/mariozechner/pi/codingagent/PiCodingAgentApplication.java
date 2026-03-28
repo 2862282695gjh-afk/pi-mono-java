@@ -25,6 +25,8 @@ public class PiCodingAgentApplication implements CommandLineRunner, ExitCodeGene
     }
 
     public static void main(String[] args) {
+        // Suppress jline deprecated provider warning
+        System.setProperty("org.jline.terminal.disableDeprecatedProviderWarning", "true");
         System.exit(SpringApplication.exit(SpringApplication.run(PiCodingAgentApplication.class, args)));
     }
 

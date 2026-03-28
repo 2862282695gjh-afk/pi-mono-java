@@ -17,27 +17,32 @@ import java.util.Map;
  * - Success: dark greenish-gray background (#283228)
  * - Error: dark reddish-gray background (#3c2828)
  * <p>
- * Title shows bold tool name + accent-colored file path.
- * Content shows file content or result summary with tool-specific formatting.
+ * Supports expand/collapse via Ctrl+O (matching pi-mono behavior).
+ * Collapsed: shows up to PREVIEW_LINES lines + "... (N more lines, ctrl+o to expand)"
+ * Expanded: shows all content + "(ctrl+o to collapse)"
  */
 public class ToolStatusComponent implements Component {
 
     private static final String ANSI_RESET = "\033[0m";
     private static final String ANSI_BOLD = "\033[1m";
-    // Tool output text color — gray #808080
     private static final String ANSI_TOOL_OUTPUT = "\033[38;2;128;128;128m";
-    // Accent color for file paths — #8abeb7
     private static final String ANSI_ACCENT = "\033[38;2;138;190;183m";
+    private static final String ANSI_DIM_KEY = "\033[38;2;102;102;102m";
     // Background colors matching pi-mono dark theme
-    private static final String BG_PENDING = "\033[48;2;40;40;50m";  // #282832
-    private static final String BG_SUCCESS = "\033[48;2;40;50;40m";  // #283228
-    private static final String BG_ERROR = "\033[48;2;60;40;40m";    // #3c2828
+    private static final String BG_PENDING = "\033[48;2;40;40;50m";
+    private static final String BG_SUCCESS = "\033[48;2;40;50;40m";
+    private static final String BG_ERROR = "\033[48;2;60;40;40m";
     // Diff colors
     private static final String ANSI_RED = "\033[31m";
     private static final String ANSI_GREEN = "\033[32m";
-    private static final String ANSI_DIM = "\033[38;2;128;128;128m";
 
-    private static final int MAX_CONTENT_LINES = 10;
+    // Preview line limits per tool type (matching pi-mono)
+    private static final int PREVIEW_BASH = 5;
+    private static final int PREVIEW_READ = 10;
+    private static final int PREVIEW_WRITE = 10;
+    private static final int PREVIEW_LS = 20;
+    private static final int PREVIEW_GREP = 15;
+    private static final int PREVIEW_DEFAULT = 10;
 
     private final String toolName;
     private Object args;
@@ -45,6 +50,7 @@ public class ToolStatusComponent implements Component {
     private boolean error;
     private String resultSummary;
     private String partialResultSummary;
+    private boolean expanded = false;
 
     public ToolStatusComponent(String toolName) {
         this.toolName = toolName;
@@ -54,7 +60,6 @@ public class ToolStatusComponent implements Component {
         this.args = args;
     }
 
-    /** Update with partial result (live progress during tool execution). */
     public void updatePartialResult(Object partialResult) {
         this.partialResultSummary = summarizeResult(partialResult);
     }
@@ -71,43 +76,75 @@ public class ToolStatusComponent implements Component {
         setComplete(error, null);
     }
 
+    /** Toggle expanded/collapsed state (for ctrl+o). */
+    public void setExpanded(boolean expanded) {
+        this.expanded = expanded;
+    }
+
+    public boolean isExpanded() {
+        return expanded;
+    }
+
     @Override
     public List<String> render(int width) {
         var lines = new ArrayList<String>();
 
-        // Select background color based on state
-        String bg;
-        if (!complete) {
-            bg = BG_PENDING;
-        } else if (error) {
-            bg = BG_ERROR;
-        } else {
-            bg = BG_SUCCESS;
-        }
-
-        int contentWidth = Math.max(1, width - 2); // 1-space padding each side
+        String bg = !complete ? BG_PENDING : error ? BG_ERROR : BG_SUCCESS;
+        int contentWidth = Math.max(1, width - 2);
 
         // Top padding line
         lines.add(bgLine("", width, bg));
 
-        // Title line: bold tool name + accent file path (or args summary)
+        // Title line
         String titleContent = buildTitle();
         lines.add(bgLine(" " + titleContent, width, bg));
 
-        // Content — show file content or result
+        // Content
         String content = getDisplayContent();
         if (content != null && !content.isEmpty()) {
-            lines.add(bgLine("", width, bg)); // spacer
+            lines.add(bgLine("", width, bg)); // spacer after title
             String[] contentLines = content.split("\n");
-            int linesToShow = Math.min(contentLines.length, MAX_CONTENT_LINES);
-            for (int i = 0; i < linesToShow; i++) {
-                String truncated = truncateText(contentLines[i], contentWidth);
-                lines.add(bgLine(" " + truncated, width, bg));
-            }
-            if (contentLines.length > MAX_CONTENT_LINES) {
-                String moreText = ANSI_TOOL_OUTPUT + "... (" + (contentLines.length - MAX_CONTENT_LINES)
-                        + " more lines)" + ANSI_RESET;
-                lines.add(bgLine(" " + moreText, width, bg));
+            int previewLimit = getPreviewLimit();
+            boolean isTailTruncated = isTailTruncatedTool();
+
+            if (expanded) {
+                // Show all lines
+                for (String line : contentLines) {
+                    lines.add(bgLine(" " + truncateText(line, contentWidth), width, bg));
+                }
+                // Collapse hint (only if there would be truncation)
+                if (contentLines.length > previewLimit) {
+                    String hint = ANSI_TOOL_OUTPUT + "("
+                            + ANSI_DIM_KEY + "ctrl+o" + ANSI_TOOL_OUTPUT + " to collapse)"
+                            + ANSI_RESET;
+                    lines.add(bgLine(" " + hint, width, bg));
+                }
+            } else if (contentLines.length <= previewLimit) {
+                // Fits within preview — show all
+                for (String line : contentLines) {
+                    lines.add(bgLine(" " + truncateText(line, contentWidth), width, bg));
+                }
+            } else if (isTailTruncated) {
+                // Bash: show LAST N lines, hint at top (matching pi-mono)
+                int hidden = contentLines.length - previewLimit;
+                String hint = ANSI_TOOL_OUTPUT + "... (" + hidden + " earlier lines, "
+                        + ANSI_DIM_KEY + "ctrl+o" + ANSI_TOOL_OUTPUT + " to expand)"
+                        + ANSI_RESET;
+                lines.add(bgLine(" " + hint, width, bg));
+                int startIdx = contentLines.length - previewLimit;
+                for (int i = startIdx; i < contentLines.length; i++) {
+                    lines.add(bgLine(" " + truncateText(contentLines[i], contentWidth), width, bg));
+                }
+            } else {
+                // Other tools: show FIRST N lines, hint at bottom (matching pi-mono)
+                for (int i = 0; i < previewLimit; i++) {
+                    lines.add(bgLine(" " + truncateText(contentLines[i], contentWidth), width, bg));
+                }
+                int hidden = contentLines.length - previewLimit;
+                String hint = ANSI_TOOL_OUTPUT + "... (" + hidden + " more lines, "
+                        + ANSI_DIM_KEY + "ctrl+o" + ANSI_TOOL_OUTPUT + " to expand)"
+                        + ANSI_RESET;
+                lines.add(bgLine(" " + hint, width, bg));
             }
         }
 
@@ -118,27 +155,20 @@ public class ToolStatusComponent implements Component {
     }
 
     @Override
-    public void invalidate() {
-        // No cache
-    }
+    public void invalidate() { }
 
-    /** Build the title line: bold tool name + accent-colored path or relevant info. */
     private String buildTitle() {
         var sb = new StringBuilder();
         sb.append(ANSI_BOLD).append(toolName).append(ANSI_RESET);
-
-        // Tool-specific title info
         String detail = extractTitleDetail();
         if (detail != null) {
             sb.append(" ").append(ANSI_ACCENT).append(detail).append(ANSI_RESET);
         } else if (!complete) {
             sb.append(" ").append(ANSI_TOOL_OUTPUT).append("...").append(ANSI_RESET);
         }
-
         return sb.toString();
     }
 
-    /** Extract the most relevant info for the title line based on tool type. */
     private String extractTitleDetail() {
         if (!(args instanceof Map<?, ?> map)) return null;
         return switch (toolName) {
@@ -173,21 +203,14 @@ public class ToolStatusComponent implements Component {
         };
     }
 
-    /** Get the content to display — file content for write, result for others. */
     private String getDisplayContent() {
-        // For write tool, show file content from args
         if ("write".equals(toolName) && args instanceof Map<?, ?> map) {
             Object content = map.get("content");
-            if (content != null) {
-                return colorizeContent(content.toString());
-            }
+            if (content != null) return colorizeContent(content.toString());
         }
-
-        // For bash tool, show command
         if ("bash".equals(toolName) && args instanceof Map<?, ?> map) {
             Object cmd = map.get("command");
             String display = cmd != null ? "$ " + cmd : null;
-            // Show result too if available
             if (complete && resultSummary != null) {
                 display = (display != null ? display + "\n" : "") + resultSummary;
             } else if (!complete && partialResultSummary != null) {
@@ -195,24 +218,15 @@ public class ToolStatusComponent implements Component {
             }
             return display;
         }
-
-        // Other tools: show result summary in gray
-        if (complete && resultSummary != null) {
-            return colorizeContent(resultSummary);
-        }
-        if (!complete && partialResultSummary != null) {
-            return colorizeContent(partialResultSummary);
-        }
-
+        if (complete && resultSummary != null) return colorizeContent(resultSummary);
+        if (!complete && partialResultSummary != null) return colorizeContent(partialResultSummary);
         return null;
     }
 
-    /** Colorize content for display in tool output (gray text, tabs replaced). */
     private String colorizeContent(String content) {
         var sb = new StringBuilder();
         for (String line : content.replace("\t", "    ").split("\n", -1)) {
             if (!sb.isEmpty()) sb.append("\n");
-            // Preserve diff coloring (lines starting with ANSI escape) but colorize plain lines
             if (line.startsWith("\033[")) {
                 sb.append(line);
             } else {
@@ -222,7 +236,23 @@ public class ToolStatusComponent implements Component {
         return sb.toString();
     }
 
-    /** Shorten a path by replacing home directory with ~. */
+    /** Whether this tool uses tail truncation (show last lines). */
+    private boolean isTailTruncatedTool() {
+        return "bash".equals(toolName);
+    }
+
+    /** Get preview line limit for this tool type (matching pi-mono per-tool limits). */
+    private int getPreviewLimit() {
+        return switch (toolName) {
+            case "bash" -> PREVIEW_BASH;
+            case "read" -> PREVIEW_READ;
+            case "write" -> PREVIEW_WRITE;
+            case "ls", "find" -> PREVIEW_LS;
+            case "grep" -> PREVIEW_GREP;
+            default -> PREVIEW_DEFAULT;
+        };
+    }
+
     private static String shortenPath(String path) {
         String home = System.getProperty("user.home", "");
         if (!home.isEmpty() && path.startsWith(home)) {
@@ -231,7 +261,6 @@ public class ToolStatusComponent implements Component {
         return path;
     }
 
-    /** Wrap content line with background color, padding to full width. */
     private static String bgLine(String content, int width, String bg) {
         int visLen = AnsiUtils.visibleWidth(content);
         int pad = Math.max(0, width - visLen);
@@ -249,7 +278,6 @@ public class ToolStatusComponent implements Component {
                     sb.append(tc.text());
                 }
             }
-            // Append diff from EditToolDetails if available
             if (atr.details() instanceof EditToolDetails details && details.diff() != null) {
                 if (!sb.isEmpty()) sb.append('\n');
                 sb.append(formatDiff(details.diff()));
@@ -259,27 +287,18 @@ public class ToolStatusComponent implements Component {
             s = result.toString();
         }
         if (s.isBlank()) return null;
-        if (s.length() > 2000) {
-            return s.substring(0, 2000) + "...";
-        }
+        if (s.length() > 5000) return s.substring(0, 5000) + "...";
         return s;
     }
 
-    /** Format a unified diff with red (-) and green (+) coloring. */
     private static String formatDiff(String diff) {
         var sb = new StringBuilder();
         for (String line : diff.split("\n")) {
-            if (line.startsWith("---") || line.startsWith("+++") || line.startsWith("@@")) {
-                continue;
-            }
+            if (line.startsWith("---") || line.startsWith("+++") || line.startsWith("@@")) continue;
             if (!sb.isEmpty()) sb.append('\n');
-            if (line.startsWith("-")) {
-                sb.append(ANSI_RED).append(line).append(ANSI_RESET);
-            } else if (line.startsWith("+")) {
-                sb.append(ANSI_GREEN).append(line).append(ANSI_RESET);
-            } else {
-                sb.append(ANSI_DIM).append(line).append(ANSI_RESET);
-            }
+            if (line.startsWith("-")) sb.append(ANSI_RED).append(line).append(ANSI_RESET);
+            else if (line.startsWith("+")) sb.append(ANSI_GREEN).append(line).append(ANSI_RESET);
+            else sb.append(ANSI_TOOL_OUTPUT).append(line).append(ANSI_RESET);
         }
         return sb.toString();
     }
