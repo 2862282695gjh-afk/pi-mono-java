@@ -87,7 +87,7 @@ public class MarkdownComponent implements Component {
     // -------------------------------------------------------------------
 
     private static final Pattern HEADING_PATTERN = Pattern.compile("^(#{1,3})\\s+(.+)$");
-    private static final Pattern UNORDERED_LIST_PATTERN = Pattern.compile("^(\\s*)[-*]\\s+(.+)$");
+    private static final Pattern UNORDERED_LIST_PATTERN = Pattern.compile("^(\\s*)[-*•]\\s+(.+)$");
     private static final Pattern ORDERED_LIST_PATTERN = Pattern.compile("^(\\s*)(\\d+)\\.\\s+(.+)$");
     private static final Pattern HR_PATTERN = Pattern.compile("^\\s*([-*_])\\1{2,}\\s*$");
     private static final Pattern CODE_FENCE_PATTERN = Pattern.compile("^```(.*)$");
@@ -229,7 +229,7 @@ public class MarkdownComponent implements Component {
     }
 
     private void renderHorizontalRule(int width, List<String> out) {
-        out.add(theme.hr("─".repeat(width)));
+        out.add(theme.hr("─".repeat(Math.min(width, 80))));
     }
 
     /**
@@ -247,7 +247,7 @@ public class MarkdownComponent implements Component {
                 String text = ul.group(2);
                 int depth = indent.length() / 2;
                 String prefix = "  ".repeat(depth);
-                String bullet = theme.listBullet("•") + " ";
+                String bullet = theme.listBullet("-") + " ";
                 renderListItem(prefix + bullet, text, width, prefix.length() + 2, out);
                 i++;
                 continue;
