@@ -144,7 +144,10 @@ public class InteractiveMode {
         footer.setCwd(cwd);
 
         var thinkingLevel = session.getAgent().getState().getThinkingLevel();
-        footer.setThinkingLevel(thinkingLevel != null ? thinkingLevel.value() : "medium");
+        String thinkingLevelStr = thinkingLevel != null ? thinkingLevel.value() : "medium";
+        footer.setThinkingLevel(thinkingLevelStr);
+        // Set border color based on thinking level (matching pi-mono dynamic border)
+        editorContainer.setBorderForThinkingLevel(thinkingLevelStr);
 
         // Register slash command autocomplete suggestions
         buildCommandSuggestions(session);
@@ -200,7 +203,9 @@ public class InteractiveMode {
                         // Clear input
                         editorContainer.clear();
                         bashMode = false;
-                        editorContainer.setBorderColor(EditorContainer.CYAN);
+                        editorContainer.setBorderForThinkingLevel(
+                                session.getAgent().getState().getThinkingLevel() != null
+                                        ? session.getAgent().getState().getThinkingLevel().value() : "medium");
                         tui.render();
                     }
                     i++;
@@ -246,7 +251,13 @@ public class InteractiveMode {
             boolean wasBashMode = bashMode;
             bashMode = editorText != null && editorText.stripLeading().startsWith("!");
             if (wasBashMode != bashMode) {
-                editorContainer.setBorderColor(bashMode ? EditorContainer.YELLOW : EditorContainer.CYAN);
+                if (bashMode) {
+                    editorContainer.setBorderColor(EditorContainer.BORDER_BASH);
+                } else {
+                    editorContainer.setBorderForThinkingLevel(
+                            session.getAgent().getState().getThinkingLevel() != null
+                                    ? session.getAgent().getState().getThinkingLevel().value() : "medium");
+                }
             }
 
             tui.render();
@@ -280,7 +291,9 @@ public class InteractiveMode {
                 editorContainer.addToHistory(trimmed);
                 editorContainer.clear();
                 bashMode = false;
-                editorContainer.setBorderColor(EditorContainer.CYAN);
+                editorContainer.setBorderForThinkingLevel(
+                                session.getAgent().getState().getThinkingLevel() != null
+                                        ? session.getAgent().getState().getThinkingLevel().value() : "medium");
 
                 // Slash commands — skip if it's a /skill: invocation or prompt template
                 if (trimmed.startsWith("/") && !isSkillOrTemplate(trimmed, session)) {

@@ -18,8 +18,20 @@ import java.util.function.Consumer;
  */
 public class EditorContainer implements Component, Focusable {
 
-    public static final String CYAN = "\033[38;2;95;135;255m";
-    public static final String YELLOW = "\033[38;2;181;189;104m";
+    // Default border is "border" blue from theme
+    public static final String BORDER_DEFAULT = "\033[38;2;95;135;255m";
+    // Bash mode border: green #b5bd68
+    public static final String BORDER_BASH = "\033[38;2;181;189;104m";
+    // Thinking level border colors (from pi-mono dark theme)
+    public static final String THINKING_OFF = "\033[38;2;80;80;80m";       // #505050
+    public static final String THINKING_MINIMAL = "\033[38;2;110;110;110m"; // #6e6e6e
+    public static final String THINKING_LOW = "\033[38;2;95;135;175m";     // #5f87af
+    public static final String THINKING_MEDIUM = "\033[38;2;129;162;190m"; // #81a2be
+    public static final String THINKING_HIGH = "\033[38;2;178;148;187m";   // #b294bb
+    public static final String THINKING_XHIGH = "\033[38;2;209;131;232m";  // #d183e8
+    // Legacy aliases
+    public static final String CYAN = BORDER_DEFAULT;
+    public static final String YELLOW = BORDER_BASH;
     private static final String ANSI_RESET = "\033[0m";
     private static final int MAX_SUGGESTIONS = 8;
     private static final String KEY_TAB = "\t";
@@ -84,6 +96,19 @@ public class EditorContainer implements Component, Focusable {
     /** Sets the border color ANSI code (e.g. CYAN for normal, YELLOW for bash mode). */
     public void setBorderColor(String color) {
         this.borderColor = color;
+    }
+
+    /** Sets the border color based on thinking level (matching pi-mono dynamic border). */
+    public void setBorderForThinkingLevel(String level) {
+        this.borderColor = switch (level != null ? level.toLowerCase() : "off") {
+            case "off" -> THINKING_OFF;
+            case "minimal" -> THINKING_MINIMAL;
+            case "low" -> THINKING_LOW;
+            case "medium" -> THINKING_MEDIUM;
+            case "high" -> THINKING_HIGH;
+            case "xhigh" -> THINKING_XHIGH;
+            default -> THINKING_OFF;
+        };
     }
 
     /**
