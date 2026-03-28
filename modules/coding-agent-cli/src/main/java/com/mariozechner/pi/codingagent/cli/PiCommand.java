@@ -142,6 +142,15 @@ public class PiCommand implements Callable<Integer> {
 
     @Override
     public Integer call() {
+        // Handle package subcommands: install, remove, uninstall, update, list, config
+        if (promptArgs != null && !promptArgs.isEmpty()) {
+            String first = promptArgs.get(0);
+            if ("install".equals(first) || "remove".equals(first) || "uninstall".equals(first)
+                    || "update".equals(first) || "list".equals(first) || "config".equals(first)) {
+                return handlePackageCommand(first, promptArgs.subList(1, promptArgs.size()));
+            }
+        }
+
         String effectivePrompt = resolvePrompt();
 
         // Read piped stdin if not a TTY
@@ -453,6 +462,116 @@ public class PiCommand implements Callable<Integer> {
      * - Provider prefix: "zai/*"
      * - Fuzzy substring: "sonnet" matches "claude-sonnet-4-20250514"
      */
+    /**
+     * Handles package management subcommands (install, remove, update, list, config).
+     * Aligned with pi-mono's package management system.
+     */
+    private Integer handlePackageCommand(String command, List<String> args) {
+        com.mariozechner.pi.codingagent.config.AppPaths.ensureUserDirs();
+
+        // Normalize "uninstall" → "remove"
+        if ("uninstall".equals(command)) command = "remove";
+
+        boolean local = args.contains("-l") || args.contains("--local");
+        var filteredArgs = args.stream()
+                .filter(a -> !"-l".equals(a) && !"--local".equals(a) && !"--help".equals(a))
+                .toList();
+
+        if (args.contains("--help")) {
+            printPackageCommandHelp(command);
+            return 0;
+        }
+
+        switch (command) {
+            case "install" -> {
+                if (filteredArgs.isEmpty()) {
+                    System.err.println("Usage: pi install <source> [-l]");
+                    return 1;
+                }
+                String source = filteredArgs.get(0);
+                System.out.println("Installing package: " + source + (local ? " (local)" : " (global)"));
+                // TODO: implement actual package installation (npm/git clone)
+                System.out.println("Package installation is not yet fully implemented.");
+                System.out.println("Add the source to your settings.json packages array manually:");
+                System.out.println("  \"packages\": [\"" + source + "\"]");
+                return 0;
+            }
+            case "remove" -> {
+                if (filteredArgs.isEmpty()) {
+                    System.err.println("Usage: pi remove <source> [-l]");
+                    return 1;
+                }
+                String source = filteredArgs.get(0);
+                System.out.println("Removing package: " + source);
+                System.out.println("Remove the source from your settings.json packages array manually.");
+                return 0;
+            }
+            case "update" -> {
+                String source = filteredArgs.isEmpty() ? null : filteredArgs.get(0);
+                if (source != null) {
+                    System.out.println("Updating package: " + source);
+                } else {
+                    System.out.println("Updating all packages...");
+                }
+                System.out.println("Package update is not yet fully implemented.");
+                return 0;
+            }
+            case "list" -> {
+                System.out.println("Installed packages:");
+                Settings settings = settingsManager != null ? settingsManager.load() : Settings.empty();
+                if (settings.packages() != null && !settings.packages().isEmpty()) {
+                    for (String pkg : settings.packages()) {
+                        System.out.println("  " + pkg);
+                    }
+                } else {
+                    System.out.println("  (none)");
+                }
+                return 0;
+            }
+            case "config" -> {
+                System.out.println("Package config TUI is not yet implemented.");
+                System.out.println("Edit settings.json manually to configure packages.");
+                return 0;
+            }
+            default -> {
+                System.err.println("Unknown package command: " + command);
+                return 1;
+            }
+        }
+    }
+
+    private void printPackageCommandHelp(String command) {
+        switch (command) {
+            case "install" -> System.out.println("""
+                    Usage: pi install <source> [-l]
+
+                    Install a package and add it to settings.
+
+                    Options:
+                      -l, --local    Install project-locally (.java-pi/settings.json)
+
+                    Examples:
+                      pi install npm:@foo/bar
+                      pi install git:github.com/user/repo
+                      pi install ./local/path""");
+            case "remove" -> System.out.println("""
+                    Usage: pi remove <source> [-l]
+
+                    Remove a package source from settings.
+                    Alias: pi uninstall <source> [-l]""");
+            case "update" -> System.out.println("""
+                    Usage: pi update [source]
+
+                    Update installed packages.
+                    If <source> is provided, only that package is updated.""");
+            case "list" -> System.out.println("""
+                    Usage: pi list
+
+                    List installed packages from user and project settings.""");
+            default -> System.out.println("No help available for: " + command);
+        }
+    }
+
     static boolean matchesModelPattern(String pattern, Model model) {
         String id = model.id().toLowerCase();
         String name = model.name().toLowerCase();
