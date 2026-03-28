@@ -1,5 +1,10 @@
 package com.mariozechner.pi.codingagent.config;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 
 /**
@@ -43,6 +48,33 @@ public final class AppPaths {
 
     /** Project-level prompts directory name. */
     public static final String PROMPTS_SUBDIR = "prompts";
+
+    /**
+     * Ensures the user-level directory structure exists.
+     * Call once at startup to create:
+     * <pre>
+     * ~/.java-pi/agent/
+     *   ├── skills/
+     *   ├── prompts/
+     *   ├── sessions/
+     * </pre>
+     */
+    public static void ensureUserDirs() {
+        Path[] dirs = {
+            USER_AGENT_DIR,
+            USER_SKILLS_DIR,
+            USER_AGENT_DIR.resolve(PROMPTS_SUBDIR),
+            SESSIONS_DIR
+        };
+        for (Path dir : dirs) {
+            try {
+                Files.createDirectories(dir);
+            } catch (IOException e) {
+                LoggerFactory.getLogger(AppPaths.class)
+                    .warn("Failed to create directory: {}", dir, e);
+            }
+        }
+    }
 
     private AppPaths() {}
 }

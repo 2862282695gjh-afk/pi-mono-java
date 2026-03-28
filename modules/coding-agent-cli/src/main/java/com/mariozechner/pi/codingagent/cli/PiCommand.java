@@ -102,6 +102,9 @@ public class PiCommand implements Callable<Integer> {
         String effectivePrompt = resolvePrompt();
         Path effectiveCwd = cwd != null ? cwd : Path.of(System.getProperty("user.dir"));
 
+        // Ensure user-level config directories exist
+        com.mariozechner.pi.codingagent.config.AppPaths.ensureUserDirs();
+
         // Load settings and apply defaults for model and thinking level
         Settings settings = settingsManager != null ? settingsManager.load() : Settings.empty();
         String effectiveModel = model;
