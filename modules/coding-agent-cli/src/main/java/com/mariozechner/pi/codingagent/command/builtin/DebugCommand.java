@@ -74,7 +74,7 @@ public class DebugCommand implements SlashCommand {
         }
 
         // Write to file
-        Path debugDir = Path.of(System.getProperty("user.home"), ".pi", "agent");
+        Path debugDir = com.mariozechner.pi.codingagent.config.AppPaths.USER_AGENT_DIR;
         try {
             Files.createDirectories(debugDir);
         } catch (IOException e) {

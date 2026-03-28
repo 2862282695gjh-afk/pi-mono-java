@@ -76,7 +76,7 @@ public class Diagnostics {
     private List<DiagnosticResult> checkConfigFiles(Path projectDir) {
         var results = new ArrayList<DiagnosticResult>();
         // Global config
-        Path globalDir = Path.of(System.getProperty("user.home", ""), ".pi", "agent");
+        Path globalDir = com.mariozechner.pi.codingagent.config.AppPaths.USER_AGENT_DIR;
         if (Files.isDirectory(globalDir)) {
             results.add(new DiagnosticResult("global-config", Severity.INFO,
                 "Global config directory exists: " + globalDir, null));
@@ -86,7 +86,7 @@ public class Diagnostics {
                 "Run the agent once to auto-create it"));
         }
         // Project config
-        Path projectConfig = projectDir.resolve(".pi");
+        Path projectConfig = projectDir.resolve(com.mariozechner.pi.codingagent.config.AppPaths.CONFIG_DIR_NAME);
         if (Files.isDirectory(projectConfig)) {
             results.add(new DiagnosticResult("project-config", Severity.INFO,
                 "Project config directory exists: " + projectConfig, null));

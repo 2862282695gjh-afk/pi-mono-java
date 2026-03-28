@@ -20,6 +20,7 @@ import com.mariozechner.pi.codingagent.skill.Skill;
 import com.mariozechner.pi.codingagent.skill.SkillExpander;
 import com.mariozechner.pi.codingagent.skill.SkillLoader;
 import com.mariozechner.pi.codingagent.skill.SkillRegistry;
+import com.mariozechner.pi.codingagent.config.AppPaths;
 
 import java.nio.file.Path;
 import java.util.HashMap;
@@ -39,9 +40,9 @@ import java.util.concurrent.CompletableFuture;
 public class AgentSession {
 
     static final String DEFAULT_MODEL = "claude-sonnet-4-20250514";
-    static final Path USER_AGENT_DIR = Path.of(System.getProperty("user.home"), ".pi", "agent");
-    static final Path USER_SKILLS_DIR = USER_AGENT_DIR.resolve("skills");
-    static final String PROJECT_SKILLS_SUBDIR = ".pi/skills";
+    static final Path USER_AGENT_DIR = AppPaths.USER_AGENT_DIR;
+    static final Path USER_SKILLS_DIR = AppPaths.USER_SKILLS_DIR;
+    static final String PROJECT_SKILLS_SUBDIR = AppPaths.PROJECT_SKILLS_SUBDIR;
 
     private final PiAiService piAiService;
     private final ModelRegistry modelRegistry;
@@ -374,11 +375,11 @@ public class AgentSession {
     void loadSkills(Path cwd) {
         skillRegistry.clear();
 
-        // User-level skills: ~/.pi/agent/skills/
+        // User-level skills: ~/.java-pi/agent/skills/
         List<Skill> userSkills = skillLoader.loadFromDirectory(USER_SKILLS_DIR, "user");
         skillRegistry.registerAll(userSkills);
 
-        // Project-level skills: {cwd}/.pi/skills/
+        // Project-level skills: {cwd}/.java-pi/skills/
         Path projectSkillsDir = cwd.resolve(PROJECT_SKILLS_SUBDIR);
         List<Skill> projectSkills = skillLoader.loadFromDirectory(projectSkillsDir, "project");
         skillRegistry.registerAll(projectSkills);

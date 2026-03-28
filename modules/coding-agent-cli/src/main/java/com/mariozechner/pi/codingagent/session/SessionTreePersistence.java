@@ -21,7 +21,7 @@ public class SessionTreePersistence {
     }
 
     public SessionTreePersistence() {
-        this(Path.of(System.getProperty("user.home"), ".pi", "agent", "sessions"));
+        this(com.mariozechner.pi.codingagent.config.AppPaths.SESSIONS_DIR);
     }
 
     /** Save a session tree to a JSONL file. */

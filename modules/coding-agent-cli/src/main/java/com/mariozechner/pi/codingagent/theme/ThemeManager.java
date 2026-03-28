@@ -13,7 +13,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Manages themes for the coding agent. Supports built-in themes and custom themes
- * loaded from ~/.pi/agent/themes/.
+ * loaded from ~/.java-pi/agent/themes/.
  */
 @Service
 public class ThemeManager {

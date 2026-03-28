@@ -16,7 +16,7 @@ import java.util.*;
 public class AuthStorage {
     private static final Logger log = LoggerFactory.getLogger(AuthStorage.class);
     private static final ObjectMapper MAPPER = new ObjectMapper();
-    private static final Path AUTH_FILE = Path.of(System.getProperty("user.home"), ".pi", "agent", "auth.json");
+    private static final Path AUTH_FILE = com.mariozechner.pi.codingagent.config.AppPaths.AUTH_FILE;
     private static final Set<PosixFilePermission> OWNER_ONLY = PosixFilePermissions.fromString("rw-------");
 
     /** Get credential for a provider. */

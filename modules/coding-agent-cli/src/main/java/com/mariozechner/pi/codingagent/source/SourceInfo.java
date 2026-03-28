@@ -13,8 +13,8 @@ public class SourceInfo {
 
     public enum SourceType {
         BUILTIN,       // Shipped with the application
-        GLOBAL_CONFIG, // From ~/.pi/agent/ directory
-        PROJECT_CONFIG,// From .pi/ in current project
+        GLOBAL_CONFIG, // From ~/.java-pi/agent/ directory
+        PROJECT_CONFIG,// From .java-pi/ in current project
         PACKAGE,       // From an installed package
         EXTENSION,     // From extension system
         CUSTOM         // User-provided custom resource

@@ -18,8 +18,8 @@ import java.util.stream.Stream;
  *
  * <p>Discovers resources from multiple layers in priority order:
  * <ol>
- *   <li>Project-level: {@code {cwd}/.pi/}</li>
- *   <li>User-level: {@code ~/.pi/agent/}</li>
+ *   <li>Project-level: {@code {cwd}/.java-pi/}</li>
+ *   <li>User-level: {@code ~/.java-pi/agent/}</li>
  *   <li>Built-in: classpath resources</li>
  * </ol>
  *
@@ -36,7 +36,7 @@ public class ResourceLoader {
      * Creates a new ResourceLoader.
      *
      * @param cwd     the current working directory (project root)
-     * @param userDir the user-level resource directory (e.g. ~/.pi/agent)
+     * @param userDir the user-level resource directory (e.g. ~/.java-pi/agent)
      */
     public ResourceLoader(Path cwd, Path userDir) {
         this.cwd = cwd;
@@ -53,7 +53,7 @@ public class ResourceLoader {
         Map<String, Resource> byName = new LinkedHashMap<>();
 
         // Project-level
-        Path projectDir = cwd.resolve(".pi").resolve(subPath);
+        Path projectDir = cwd.resolve(com.mariozechner.pi.codingagent.config.AppPaths.CONFIG_DIR_NAME).resolve(subPath);
         loadFromDir(projectDir, "project", byName);
 
         // User-level
@@ -72,7 +72,7 @@ public class ResourceLoader {
      */
     public Optional<String> load(String subPath, String resourceName) {
         // Project-level first
-        Path projectFile = cwd.resolve(".pi").resolve(subPath).resolve(resourceName);
+        Path projectFile = cwd.resolve(com.mariozechner.pi.codingagent.config.AppPaths.CONFIG_DIR_NAME).resolve(subPath).resolve(resourceName);
         if (Files.isRegularFile(projectFile)) {
             return readFile(projectFile);
         }

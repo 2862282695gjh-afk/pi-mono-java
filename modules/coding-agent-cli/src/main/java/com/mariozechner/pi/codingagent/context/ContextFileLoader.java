@@ -17,7 +17,7 @@ import java.util.Set;
  *
  * <p>Search order:
  * <ol>
- *   <li>Global: {@code ~/.pi/agent/AGENTS.md} or {@code ~/.pi/agent/CLAUDE.md}</li>
+ *   <li>Global: {@code ~/.java-pi/agent/AGENTS.md} or {@code ~/.java-pi/agent/CLAUDE.md}</li>
  *   <li>Ancestor directories: walks from cwd up to filesystem root</li>
  * </ol>
  *
@@ -32,7 +32,7 @@ public class ContextFileLoader {
      * Loads all context files from the global agent directory and the cwd ancestor chain.
      *
      * @param cwd      the current working directory
-     * @param agentDir the global agent config directory (e.g. ~/.pi/agent)
+     * @param agentDir the global agent config directory (e.g. ~/.java-pi/agent)
      * @return ordered list of context files (global first, then ancestors root-to-cwd)
      */
     public List<ContextFile> loadProjectContextFiles(Path cwd, Path agentDir) {
@@ -79,7 +79,7 @@ public class ContextFileLoader {
      */
     public String loadSystemPrompt(Path cwd, Path agentDir) {
         // Project-level first
-        Path projectPath = cwd.resolve(".pi").resolve("SYSTEM.md");
+        Path projectPath = cwd.resolve(com.mariozechner.pi.codingagent.config.AppPaths.CONFIG_DIR_NAME).resolve("SYSTEM.md");
         String content = readIfExists(projectPath);
         if (content != null) return content;
 
@@ -96,7 +96,7 @@ public class ContextFileLoader {
      * @return the content of APPEND_SYSTEM.md, or null if not found
      */
     public String loadAppendSystemPrompt(Path cwd, Path agentDir) {
-        Path projectPath = cwd.resolve(".pi").resolve("APPEND_SYSTEM.md");
+        Path projectPath = cwd.resolve(com.mariozechner.pi.codingagent.config.AppPaths.CONFIG_DIR_NAME).resolve("APPEND_SYSTEM.md");
         String content = readIfExists(projectPath);
         if (content != null) return content;
 

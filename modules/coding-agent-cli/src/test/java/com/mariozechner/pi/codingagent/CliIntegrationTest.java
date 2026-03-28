@@ -312,7 +312,7 @@ class CliIntegrationTest {
 
         @Test
         void loadsSkillsFromProjectDirectory() throws Exception {
-            Path skillDir = tempDir.resolve(".pi/skills/test-skill");
+            Path skillDir = tempDir.resolve(".java-pi/skills/test-skill");
             Files.createDirectories(skillDir);
             Files.writeString(skillDir.resolve("SKILL.md"), """
                     ---
@@ -330,7 +330,7 @@ class CliIntegrationTest {
 
         @Test
         void expandsSkillCommandInPrompt() throws Exception {
-            Path skillDir = tempDir.resolve(".pi/skills/greet");
+            Path skillDir = tempDir.resolve(".java-pi/skills/greet");
             Files.createDirectories(skillDir);
             Files.writeString(skillDir.resolve("SKILL.md"), """
                     ---
@@ -354,7 +354,7 @@ class CliIntegrationTest {
 
         @Test
         void disabledSkillNotVisibleInRegistry() throws Exception {
-            Path skillDir = tempDir.resolve(".pi/skills/hidden-skill");
+            Path skillDir = tempDir.resolve(".java-pi/skills/hidden-skill");
             Files.createDirectories(skillDir);
             Files.writeString(skillDir.resolve("SKILL.md"), """
                     ---

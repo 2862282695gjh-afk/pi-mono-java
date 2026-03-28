@@ -15,7 +15,7 @@ import java.util.*;
 public class KeyBindingRegistry {
     private static final Logger log = LoggerFactory.getLogger(KeyBindingRegistry.class);
     private static final ObjectMapper MAPPER = new ObjectMapper();
-    private static final Path KEYBINDINGS_FILE = Path.of(System.getProperty("user.home"), ".pi", "agent", "keybindings.json");
+    private static final Path KEYBINDINGS_FILE = com.mariozechner.pi.codingagent.config.AppPaths.KEYBINDINGS_FILE;
 
     private final Map<String, KeyBinding> bindings = new LinkedHashMap<>();
 

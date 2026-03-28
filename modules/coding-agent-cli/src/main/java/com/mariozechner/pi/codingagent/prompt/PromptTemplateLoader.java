@@ -24,8 +24,8 @@ import java.util.stream.Stream;
  *
  * <p>Search locations (in order):
  * <ol>
- *   <li>Global: {@code ~/.pi/agent/prompts/}</li>
- *   <li>Project: {@code {cwd}/.pi/prompts/}</li>
+ *   <li>Global: {@code ~/.java-pi/agent/prompts/}</li>
+ *   <li>Project: {@code {cwd}/.java-pi/prompts/}</li>
  * </ol>
  */
 public class PromptTemplateLoader {
@@ -40,7 +40,7 @@ public class PromptTemplateLoader {
      * Loads prompt templates from global and project directories.
      *
      * @param cwd      the current working directory
-     * @param agentDir the global agent config directory (e.g. ~/.pi/agent)
+     * @param agentDir the global agent config directory (e.g. ~/.java-pi/agent)
      * @return list of prompt templates (project templates override global ones with the same name)
      */
     public List<PromptTemplateEntry> load(Path cwd, Path agentDir) {
@@ -51,7 +51,7 @@ public class PromptTemplateLoader {
         loadFromDir(globalDir, "user", byName);
 
         // Project prompts override
-        Path projectDir = cwd.resolve(".pi").resolve("prompts");
+        Path projectDir = cwd.resolve(com.mariozechner.pi.codingagent.config.AppPaths.CONFIG_DIR_NAME).resolve("prompts");
         loadFromDir(projectDir, "project", byName);
 
         return List.copyOf(byName.values());

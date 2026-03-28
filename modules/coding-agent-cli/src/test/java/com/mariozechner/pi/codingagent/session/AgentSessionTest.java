@@ -233,7 +233,7 @@ class AgentSessionTest {
         @Test
         void loadsProjectSkills() throws IOException {
             // Create a project-level skill
-            Path skillDir = tempDir.resolve(".pi/skills/test-skill");
+            Path skillDir = tempDir.resolve(".java-pi/skills/test-skill");
             Files.createDirectories(skillDir);
             Files.writeString(skillDir.resolve("SKILL.md"), """
                     ---
@@ -253,7 +253,7 @@ class AgentSessionTest {
 
         @Test
         void includesVisibleSkillsInPromptConfig() throws IOException {
-            Path skillDir = tempDir.resolve(".pi/skills/visible-skill");
+            Path skillDir = tempDir.resolve(".java-pi/skills/visible-skill");
             Files.createDirectories(skillDir);
             Files.writeString(skillDir.resolve("SKILL.md"), """
                     ---
@@ -278,7 +278,7 @@ class AgentSessionTest {
 
         @Test
         void excludesHiddenSkillsFromPromptConfig() throws IOException {
-            Path skillDir = tempDir.resolve(".pi/skills/hidden-skill");
+            Path skillDir = tempDir.resolve(".java-pi/skills/hidden-skill");
             Files.createDirectories(skillDir);
             Files.writeString(skillDir.resolve("SKILL.md"), """
                     ---
@@ -349,7 +349,7 @@ class AgentSessionTest {
         @Test
         void expandsSkillCommands() throws IOException {
             // Set up a skill
-            Path skillDir = tempDir.resolve(".pi/skills/my-skill");
+            Path skillDir = tempDir.resolve(".java-pi/skills/my-skill");
             Files.createDirectories(skillDir);
             Files.writeString(skillDir.resolve("SKILL.md"), """
                     ---

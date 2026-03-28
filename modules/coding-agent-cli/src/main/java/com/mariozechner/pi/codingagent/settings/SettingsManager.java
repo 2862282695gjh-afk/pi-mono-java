@@ -17,8 +17,8 @@ public class SettingsManager {
     private static final Logger log = LoggerFactory.getLogger(SettingsManager.class);
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
-    private static final Path GLOBAL_SETTINGS = Path.of(System.getProperty("user.home"), ".pi", "agent", "settings.json");
-    private static final String PROJECT_SETTINGS = ".pi/settings.json";
+    private static final Path GLOBAL_SETTINGS = com.mariozechner.pi.codingagent.config.AppPaths.GLOBAL_SETTINGS;
+    private static final String PROJECT_SETTINGS = com.mariozechner.pi.codingagent.config.AppPaths.PROJECT_SETTINGS;
 
     private Path workingDir = Path.of(System.getProperty("user.dir"));
 
