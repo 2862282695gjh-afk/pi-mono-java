@@ -3,6 +3,7 @@ package com.mariozechner.pi.codingagent.mode.tui;
 import com.mariozechner.pi.agent.tool.AgentToolResult;
 import com.mariozechner.pi.ai.types.ContentBlock;
 import com.mariozechner.pi.ai.types.TextContent;
+import com.mariozechner.pi.codingagent.tool.edit.EditToolDetails;
 import com.mariozechner.pi.tui.Component;
 import com.mariozechner.pi.tui.ansi.AnsiUtils;
 
@@ -217,6 +218,11 @@ public class ToolStatusComponent implements Component {
                     sb.append(tc.text());
                 }
             }
+            // Append diff from EditToolDetails if available
+            if (atr.details() instanceof EditToolDetails details && details.diff() != null) {
+                if (!sb.isEmpty()) sb.append('\n');
+                sb.append(formatDiff(details.diff()));
+            }
             s = sb.toString();
         } else {
             s = result.toString();
@@ -227,6 +233,25 @@ public class ToolStatusComponent implements Component {
             return s.substring(0, 500) + "...";
         }
         return s;
+    }
+
+    /** Format a unified diff with red (-) and green (+) coloring. */
+    private static String formatDiff(String diff) {
+        var sb = new StringBuilder();
+        for (String line : diff.split("\n")) {
+            if (line.startsWith("---") || line.startsWith("+++") || line.startsWith("@@")) {
+                continue; // Skip diff headers
+            }
+            if (!sb.isEmpty()) sb.append('\n');
+            if (line.startsWith("-")) {
+                sb.append(ANSI_RED).append(line).append(ANSI_RESET);
+            } else if (line.startsWith("+")) {
+                sb.append(ANSI_GREEN).append(line).append(ANSI_RESET);
+            } else {
+                sb.append(ANSI_DIM).append(line).append(ANSI_RESET);
+            }
+        }
+        return sb.toString();
     }
 
     private static String truncateText(String text, int maxWidth) {
