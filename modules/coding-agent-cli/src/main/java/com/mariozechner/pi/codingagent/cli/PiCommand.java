@@ -29,6 +29,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.concurrent.Callable;
 import java.util.stream.Collectors;
@@ -67,8 +68,14 @@ public class PiCommand implements Callable<Integer> {
         this.settingsManager = settingsManager;
     }
 
+    @Option(names = {"--provider"}, description = "Provider name (e.g. anthropic, openai, zai, google)")
+    String provider;
+
     @Option(names = {"-m", "--model"}, description = "AI model to use (e.g. claude-sonnet-4-20250514)")
     String model;
+
+    @Option(names = {"--api-key"}, description = "API key (overrides env vars)")
+    String apiKey;
 
     @Option(names = {"-p", "--prompt"}, description = "Initial prompt to send to the agent")
     String prompt;
@@ -92,8 +99,24 @@ public class PiCommand implements Callable<Integer> {
     @Option(names = {"--tools"}, description = "Comma-separated list of tools to enable (e.g. read,bash,edit)")
     String toolsFilter;
 
+    @Option(names = {"--no-tools"}, description = "Disable all built-in tools")
+    boolean noTools;
+
+    @Option(names = {"--print"}, description = "Non-interactive mode: process prompt and exit")
+    boolean printMode;
+
     @Option(names = {"-c", "--continue"}, description = "Continue previous session")
     boolean continueSession;
+
+    @Option(names = {"--no-session"}, description = "Don't save session (ephemeral)")
+    boolean noSession;
+
+    @Option(names = {"--list-models"}, description = "List available models and exit", arity = "0..1",
+            fallbackValue = "")
+    String listModels;
+
+    @Option(names = {"--offline"}, description = "Disable startup network operations")
+    boolean offline;
 
     @Option(names = {"--verbose"}, description = "Enable verbose startup output")
     boolean verbose;
@@ -155,6 +178,28 @@ public class PiCommand implements Callable<Integer> {
             }
         }
 
+        // --list-models: print available models and exit
+        if (listModels != null) {
+            String search = listModels.isBlank() ? null : listModels;
+            var allModels = modelRegistry.getAllModels();
+            allModels.sort(Comparator.comparing((Model m) -> m.provider().value())
+                    .thenComparing(Model::id));
+            for (var m : allModels) {
+                if (search != null && !m.id().toLowerCase().contains(search.toLowerCase())
+                        && !m.name().toLowerCase().contains(search.toLowerCase())) {
+                    continue;
+                }
+                System.out.printf("  %-15s %-40s %s%n",
+                        m.provider().value(), m.id(), m.name());
+            }
+            return 0;
+        }
+
+        // --print flag makes this non-interactive (like pi-mono -p)
+        if (printMode && effectivePrompt != null) {
+            mode = "one-shot";
+        }
+
         if ("print".equals(mode)) {
             System.out.println("Model: " + effectiveModel);
             System.out.println("Mode: " + mode);
@@ -180,13 +225,17 @@ public class PiCommand implements Callable<Integer> {
             }
         }
 
-        // Filter tools if --tools specified
-        List<AgentTool> effectiveTools = tools;
-        if (toolsFilter != null && !toolsFilter.isBlank()) {
+        // Filter tools
+        List<AgentTool> effectiveTools;
+        if (noTools) {
+            effectiveTools = List.of();
+        } else if (toolsFilter != null && !toolsFilter.isBlank()) {
             var allowed = List.of(toolsFilter.split(","));
             effectiveTools = tools.stream()
                     .filter(t -> allowed.contains(t.name()))
                     .collect(Collectors.toList());
+        } else {
+            effectiveTools = tools;
         }
 
         AgentSession session = new AgentSession(
@@ -194,27 +243,31 @@ public class PiCommand implements Callable<Integer> {
                 new SkillLoader(), new SkillExpander(), effectiveTools
         );
 
-        // Session persistence
-        SessionManager sessionManager = new SessionManager();
-        session.setSessionManager(sessionManager);
+        // Session persistence (skip if --no-session)
+        SessionManager sessionManager = noSession ? null : new SessionManager();
+        if (sessionManager != null) {
+            session.setSessionManager(sessionManager);
+        }
 
         SessionConfig config = new SessionConfig(effectiveModel, effectiveCwd, effectiveSystemPrompt, mode);
         session.initialize(config);
 
         // Handle --continue: resume latest session or create new
-        if (continueSession) {
-            var messages = sessionManager.resumeLatestSession(effectiveCwd.toString());
-            if (!messages.isEmpty()) {
-                for (var msg : messages) {
-                    session.getAgent().getState().appendMessage(msg);
+        if (sessionManager != null) {
+            if (continueSession) {
+                var messages = sessionManager.resumeLatestSession(effectiveCwd.toString());
+                if (!messages.isEmpty()) {
+                    for (var msg : messages) {
+                        session.getAgent().getState().appendMessage(msg);
+                    }
+                    System.err.println("Resumed session " + sessionManager.getSessionId()
+                            + " (" + messages.size() + " messages)");
+                } else {
+                    sessionManager.createSession(effectiveCwd.toString());
                 }
-                System.err.println("Resumed session " + sessionManager.getSessionId()
-                        + " (" + messages.size() + " messages)");
             } else {
                 sessionManager.createSession(effectiveCwd.toString());
             }
-        } else {
-            sessionManager.createSession(effectiveCwd.toString());
         }
 
         // Apply thinking level from CLI flag or settings default
@@ -239,7 +292,7 @@ public class PiCommand implements Callable<Integer> {
                     .run(session, terminal);
         } finally {
             terminal.close();
-            sessionManager.close();
+            if (sessionManager != null) sessionManager.close();
         }
         return 0;
     }
