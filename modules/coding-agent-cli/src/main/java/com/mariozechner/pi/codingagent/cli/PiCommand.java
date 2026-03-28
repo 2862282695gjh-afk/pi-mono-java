@@ -11,6 +11,7 @@ import com.mariozechner.pi.codingagent.mode.OneShotMode;
 import com.mariozechner.pi.codingagent.prompt.SystemPromptBuilder;
 import com.mariozechner.pi.codingagent.session.AgentSession;
 import com.mariozechner.pi.codingagent.session.SessionConfig;
+import com.mariozechner.pi.codingagent.session.SessionManager;
 import com.mariozechner.pi.codingagent.skill.SkillExpander;
 import com.mariozechner.pi.codingagent.skill.SkillLoader;
 import com.mariozechner.pi.codingagent.config.ConfigValueResolver;
@@ -90,6 +91,9 @@ public class PiCommand implements Callable<Integer> {
 
     @Option(names = {"--tools"}, description = "Comma-separated list of tools to enable (e.g. read,bash,edit)")
     String toolsFilter;
+
+    @Option(names = {"-c", "--continue"}, description = "Continue previous session")
+    boolean continueSession;
 
     @Option(names = {"--verbose"}, description = "Enable verbose startup output")
     boolean verbose;
@@ -189,8 +193,29 @@ public class PiCommand implements Callable<Integer> {
                 piAiService, modelRegistry, promptBuilder,
                 new SkillLoader(), new SkillExpander(), effectiveTools
         );
+
+        // Session persistence
+        SessionManager sessionManager = new SessionManager();
+        session.setSessionManager(sessionManager);
+
         SessionConfig config = new SessionConfig(effectiveModel, effectiveCwd, effectiveSystemPrompt, mode);
         session.initialize(config);
+
+        // Handle --continue: resume latest session or create new
+        if (continueSession) {
+            var messages = sessionManager.resumeLatestSession(effectiveCwd.toString());
+            if (!messages.isEmpty()) {
+                for (var msg : messages) {
+                    session.getAgent().getState().appendMessage(msg);
+                }
+                System.err.println("Resumed session " + sessionManager.getSessionId()
+                        + " (" + messages.size() + " messages)");
+            } else {
+                sessionManager.createSession(effectiveCwd.toString());
+            }
+        } else {
+            sessionManager.createSession(effectiveCwd.toString());
+        }
 
         // Apply thinking level from CLI flag or settings default
         if (effectiveThinking != null) {
@@ -214,6 +239,7 @@ public class PiCommand implements Callable<Integer> {
                     .run(session, terminal);
         } finally {
             terminal.close();
+            sessionManager.close();
         }
         return 0;
     }

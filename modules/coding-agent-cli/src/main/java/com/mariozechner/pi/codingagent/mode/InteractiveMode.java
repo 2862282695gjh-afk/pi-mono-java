@@ -69,6 +69,9 @@ public class InteractiveMode {
     private AssistantMessageComponent currentAssistantMessage;
     private final Map<String, ToolStatusComponent> pendingTools = new LinkedHashMap<>();
 
+    // Session reference for persistence in event handler
+    private AgentSession currentSession;
+
     // Cancellation token for the currently running bash command
     private volatile CancellationToken bashCancelToken;
 
@@ -102,6 +105,7 @@ public class InteractiveMode {
     public void run(AgentSession session, Terminal terminal) {
         Objects.requireNonNull(session, "session");
         Objects.requireNonNull(terminal, "terminal");
+        this.currentSession = session;
 
         // Build component tree
         root = new Container();
@@ -500,6 +504,12 @@ public class InteractiveMode {
     private void executePrompt(AgentSession session, String input, AtomicBoolean aborted) {
         chatContainer.addChild(new UserMessageComponent(input));
 
+        // Persist user message to session file
+        var sm = session.getSessionManager();
+        if (sm != null) {
+            sm.appendMessage(new UserMessage(input, System.currentTimeMillis()));
+        }
+
         currentAssistantMessage = new AssistantMessageComponent();
         chatContainer.addChild(currentAssistantMessage);
         pendingTools.clear();
@@ -586,6 +596,9 @@ public class InteractiveMode {
         session.getAgent().setThinkingLevel(next);
         footer.setThinkingLevel(next.value());
         editorContainer.setBorderForThinkingLevel(next.value());
+        // Persist thinking level change
+        var sm = session.getSessionManager();
+        if (sm != null) sm.appendThinkingLevelChange(next.value());
         showStatus("Thinking: " + next.value());
     }
 
@@ -639,6 +652,10 @@ public class InteractiveMode {
                 session.getAgent().getState().getThinkingLevel() != null
                         ? session.getAgent().getState().getThinkingLevel().value() : "off");
 
+        // Persist model change
+        var sm = session.getSessionManager();
+        if (sm != null) sm.appendModelChange(newModel.provider().value(), newModel.id());
+
         String thinkingStr = newModel.reasoning()
                 ? " • " + session.getAgent().getState().getThinkingLevel().value()
                 : "";
@@ -686,10 +703,17 @@ public class InteractiveMode {
                 }
             }
             case MessageEndEvent e -> {
-                if (e.message() instanceof AssistantMessage msg && msg.usage() != null) {
-                    double cost = msg.usage().cost() != null ? msg.usage().cost().total() : 0;
-                    footer.updateUsage(msg.usage().input(), msg.usage().output(),
-                            msg.usage().cacheRead(), msg.usage().cacheWrite(), cost);
+                if (e.message() instanceof AssistantMessage msg) {
+                    if (msg.usage() != null) {
+                        double cost = msg.usage().cost() != null ? msg.usage().cost().total() : 0;
+                        footer.updateUsage(msg.usage().input(), msg.usage().output(),
+                                msg.usage().cacheRead(), msg.usage().cacheWrite(), cost);
+                    }
+                    // Persist assistant message to session file
+                    if (currentSession != null) {
+                        var sm = currentSession.getSessionManager();
+                        if (sm != null) sm.appendMessage(msg);
+                    }
                 }
             }
             case ToolExecutionStartEvent e -> {

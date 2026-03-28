@@ -52,6 +52,7 @@ public class AgentSession {
     private final List<AgentTool> tools;
     private final ContextFileLoader contextFileLoader;
     private final PromptTemplateLoader promptTemplateLoader;
+    private SessionManager sessionManager;
 
     private final SkillRegistry skillRegistry = new SkillRegistry();
     private List<PromptTemplateEntry> promptTemplates = List.of();
@@ -268,6 +269,20 @@ public class AgentSession {
      */
     public List<PromptTemplateEntry> getPromptTemplates() {
         return promptTemplates;
+    }
+
+    /**
+     * Sets the session manager for persistence. Must be called before initialize().
+     */
+    public void setSessionManager(SessionManager sessionManager) {
+        this.sessionManager = sessionManager;
+    }
+
+    /**
+     * Returns the session manager, or null if not set.
+     */
+    public SessionManager getSessionManager() {
+        return sessionManager;
     }
 
     /**
