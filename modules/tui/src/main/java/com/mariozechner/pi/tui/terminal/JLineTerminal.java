@@ -1,6 +1,7 @@
 package com.mariozechner.pi.tui.terminal;
 
 import org.jline.terminal.Attributes;
+import org.jline.terminal.Attributes.LocalFlag;
 import org.jline.terminal.Size;
 import org.jline.terminal.TerminalBuilder;
 import org.jline.utils.NonBlockingReader;
@@ -49,6 +50,9 @@ public class JLineTerminal implements Terminal {
                 listener.accept(size);
             }
         });
+
+        // Ignore SIGINT — Ctrl+C is handled as a regular character (0x03) in raw mode
+        jline.handle(org.jline.terminal.Terminal.Signal.INT, signal -> {});
     }
 
     /**
@@ -65,6 +69,9 @@ public class JLineTerminal implements Terminal {
                 listener.accept(size);
             }
         });
+
+        // Ignore SIGINT — Ctrl+C is handled as a regular character (0x03) in raw mode
+        jline.handle(org.jline.terminal.Terminal.Signal.INT, signal -> {});
     }
 
     @Override
@@ -110,6 +117,12 @@ public class JLineTerminal implements Terminal {
     public void enterRawMode() {
         savedAttributes = jline.getAttributes();
         jline.enterRawMode();
+        // JLine's enterRawMode() doesn't disable ISIG, so Ctrl+C still generates
+        // SIGINT and the 0x03 character is consumed by the OS. Disable ISIG so
+        // Ctrl+C is delivered as a regular character to the input reader.
+        Attributes attrs = jline.getAttributes();
+        attrs.setLocalFlag(LocalFlag.ISIG, false);
+        jline.setAttributes(attrs);
         startInputThread();
     }
 

@@ -1,5 +1,8 @@
 package com.mariozechner.pi.codingagent.mode.tui;
 
+import com.mariozechner.pi.agent.tool.AgentToolResult;
+import com.mariozechner.pi.ai.types.ContentBlock;
+import com.mariozechner.pi.ai.types.TextContent;
 import com.mariozechner.pi.tui.Component;
 import com.mariozechner.pi.tui.ansi.AnsiUtils;
 
@@ -205,7 +208,19 @@ public class ToolStatusComponent implements Component {
 
     private static String summarizeResult(Object result) {
         if (result == null) return null;
-        String s = result.toString();
+        String s;
+        if (result instanceof AgentToolResult atr && atr.content() != null) {
+            var sb = new StringBuilder();
+            for (ContentBlock block : atr.content()) {
+                if (block instanceof TextContent tc) {
+                    if (!sb.isEmpty()) sb.append('\n');
+                    sb.append(tc.text());
+                }
+            }
+            s = sb.toString();
+        } else {
+            s = result.toString();
+        }
         if (s.isBlank()) return null;
         // Limit to reasonable size
         if (s.length() > 500) {
