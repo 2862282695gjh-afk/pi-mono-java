@@ -51,9 +51,12 @@ public class ToolStatusComponent implements Component {
     private String resultSummary;
     private String partialResultSummary;
     private boolean expanded = false;
+    private long startTimeMs;
+    private long endTimeMs;
 
     public ToolStatusComponent(String toolName) {
         this.toolName = toolName;
+        this.startTimeMs = System.currentTimeMillis();
     }
 
     public void setArgs(Object args) {
@@ -67,6 +70,7 @@ public class ToolStatusComponent implements Component {
     public void setComplete(boolean error, Object result) {
         this.complete = true;
         this.error = error;
+        this.endTimeMs = System.currentTimeMillis();
         this.resultSummary = summarizeResult(result);
         this.partialResultSummary = null;
         invalidate();
@@ -148,8 +152,19 @@ public class ToolStatusComponent implements Component {
             }
         }
 
+        // "Took X.Xs" line when complete (matching pi-mono)
+        if (complete) {
+            double elapsed = (endTimeMs - startTimeMs) / 1000.0;
+            String took = ANSI_TOOL_OUTPUT + "Took " + String.format("%.1fs", elapsed) + ANSI_RESET;
+            lines.add(bgLine("", width, bg)); // spacer before Took
+            lines.add(bgLine(" " + took, width, bg));
+        }
+
         // Bottom padding line
         lines.add(bgLine("", width, bg));
+
+        // Blank spacer after tool box (gap between consecutive tool calls)
+        lines.add("");
 
         return lines;
     }
@@ -158,6 +173,13 @@ public class ToolStatusComponent implements Component {
     public void invalidate() { }
 
     private String buildTitle() {
+        // Bash: show "$ command" in bold white (matching pi-mono — command IS the title)
+        if ("bash".equals(toolName) && args instanceof Map<?, ?> map) {
+            Object cmd = map.get("command");
+            if (cmd != null) {
+                return ANSI_BOLD + "$ " + cmd + ANSI_RESET;
+            }
+        }
         var sb = new StringBuilder();
         sb.append(ANSI_BOLD).append(toolName).append(ANSI_RESET);
         String detail = extractTitleDetail();
@@ -208,15 +230,11 @@ public class ToolStatusComponent implements Component {
             Object content = map.get("content");
             if (content != null) return colorizeContent(content.toString());
         }
-        if ("bash".equals(toolName) && args instanceof Map<?, ?> map) {
-            Object cmd = map.get("command");
-            String display = cmd != null ? "$ " + cmd : null;
-            if (complete && resultSummary != null) {
-                display = (display != null ? display + "\n" : "") + resultSummary;
-            } else if (!complete && partialResultSummary != null) {
-                display = (display != null ? display + "\n" : "") + partialResultSummary;
-            }
-            return display;
+        // Bash: command is in the title, content is just the output
+        if ("bash".equals(toolName)) {
+            if (complete && resultSummary != null) return resultSummary;
+            if (!complete && partialResultSummary != null) return partialResultSummary;
+            return null;
         }
         if (complete && resultSummary != null) return colorizeContent(resultSummary);
         if (!complete && partialResultSummary != null) return colorizeContent(partialResultSummary);
