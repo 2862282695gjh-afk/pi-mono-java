@@ -103,7 +103,7 @@ public class InteractiveMode {
         String MUTED = "\033[38;2;128;128;128m";
         String RST = "\033[0m";
         var wb = new StringBuilder();
-        wb.append("\033[1m\033[36mpi\033[0m\033[2m v0.1.0\033[0m\n");
+        wb.append("\033[1m\033[38;2;138;190;183mpi\033[0m").append(DIM).append(" v0.1.0").append(RST).append("\n");
 
         // Keybinding hints (aligned with pi-mono) — key in dim, description in muted
         wb.append(DIM).append(" escape").append(RST).append(MUTED).append(" to interrupt").append(RST).append("\n");
