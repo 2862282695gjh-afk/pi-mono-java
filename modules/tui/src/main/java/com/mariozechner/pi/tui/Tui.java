@@ -51,7 +51,7 @@ public class Tui {
     public void start() {
         running = true;
         terminal.enterRawMode();
-        terminal.write(HIDE_CURSOR + ERASE_SCREEN + HOME);
+        terminal.write(HIDE_CURSOR + ERASE_SCROLLBACK + ERASE_SCREEN + HOME);
 
         terminal.onInput(data -> {
             if (inputHandler != null) {

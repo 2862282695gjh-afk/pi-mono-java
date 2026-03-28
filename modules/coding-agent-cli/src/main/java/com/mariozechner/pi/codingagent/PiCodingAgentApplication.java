@@ -8,6 +8,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 import picocli.CommandLine;
 import picocli.CommandLine.IFactory;
 
+
 /**
  * Pi-Coding-Agent — Spring Boot CLI application.
  * Bridges Picocli with Spring Boot via the picocli-spring-boot-starter.
@@ -25,8 +26,12 @@ public class PiCodingAgentApplication implements CommandLineRunner, ExitCodeGene
     }
 
     public static void main(String[] args) {
-        // Suppress jline deprecated provider warning
+        // Suppress JVM startup warnings that pollute terminal scrollback:
+        // - Netty: avoid sun.misc.Unsafe (eliminates JVM module access warnings)
+        // - JLine/Jansi: disable native library loading (eliminates restricted method warnings)
+        System.setProperty("io.netty.noUnsafe", "true");
         System.setProperty("org.jline.terminal.disableDeprecatedProviderWarning", "true");
+        System.setProperty("org.jline.terminal.jansi", "false");
         System.exit(SpringApplication.exit(SpringApplication.run(PiCodingAgentApplication.class, args)));
     }
 
