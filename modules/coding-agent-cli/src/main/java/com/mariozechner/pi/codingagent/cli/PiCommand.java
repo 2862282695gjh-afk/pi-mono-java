@@ -96,6 +96,9 @@ public class PiCommand implements Callable<Integer> {
     @Option(names = {"--thinking"}, description = "Thinking level: off, minimal, low, medium, high, xhigh")
     String thinking;
 
+    @Option(names = {"--models"}, description = "Comma-separated model patterns for Ctrl+P cycling")
+    String modelsFilter;
+
     @Option(names = {"--tools"}, description = "Comma-separated list of tools to enable (e.g. read,bash,edit)")
     String toolsFilter;
 
@@ -379,13 +382,80 @@ public class PiCommand implements Callable<Integer> {
         // Interactive mode (default)
         Terminal terminal = new JLineTerminal();
         try {
-            new InteractiveMode(commandRegistry, bashExecutor, new Compactor(piAiService), modelRegistry)
-                    .run(session, terminal);
+            var interactiveMode = new InteractiveMode(commandRegistry, bashExecutor, new Compactor(piAiService), modelRegistry);
+
+            // Resolve --models scoped models for Ctrl+P cycling
+            if (modelsFilter != null && !modelsFilter.isBlank()) {
+                var patterns = List.of(modelsFilter.split(","));
+                var scoped = new ArrayList<Model>();
+                var allRegistered = modelRegistry.getAllModels();
+                for (String pattern : patterns) {
+                    String p = pattern.trim().toLowerCase();
+                    for (var m : allRegistered) {
+                        if (matchesModelPattern(p, m) && scoped.stream().noneMatch(s -> ModelRegistry.modelsAreEqual(s, m))) {
+                            scoped.add(m);
+                        }
+                    }
+                }
+                if (!scoped.isEmpty()) {
+                    interactiveMode.setScopedModels(scoped);
+                }
+            } else if (settings.enabledModels() != null && !settings.enabledModels().isEmpty()) {
+                // Also support enabledModels from settings
+                var scoped = new ArrayList<Model>();
+                var allRegistered = modelRegistry.getAllModels();
+                for (String pattern : settings.enabledModels()) {
+                    String p = pattern.trim().toLowerCase();
+                    for (var m : allRegistered) {
+                        if (matchesModelPattern(p, m) && scoped.stream().noneMatch(s -> ModelRegistry.modelsAreEqual(s, m))) {
+                            scoped.add(m);
+                        }
+                    }
+                }
+                if (!scoped.isEmpty()) {
+                    interactiveMode.setScopedModels(scoped);
+                }
+            }
+
+            interactiveMode.run(session, terminal);
         } finally {
             terminal.close();
             if (sessionManager != null) sessionManager.close();
         }
         return 0;
+    }
+
+    /**
+     * Matches a model against a pattern. Supports:
+     * - Exact match: "glm-5"
+     * - Glob-style: "glm-*", "*sonnet*"
+     * - Provider prefix: "zai/*"
+     * - Fuzzy substring: "sonnet" matches "claude-sonnet-4-20250514"
+     */
+    static boolean matchesModelPattern(String pattern, Model model) {
+        String id = model.id().toLowerCase();
+        String name = model.name().toLowerCase();
+        String provider = model.provider().value().toLowerCase();
+
+        // Strip thinking level suffix (e.g., "sonnet:high" → "sonnet")
+        int colonIdx = pattern.indexOf(':');
+        String p = colonIdx >= 0 ? pattern.substring(0, colonIdx) : pattern;
+
+        // Provider/id format: "zai/glm-5"
+        if (p.contains("/")) {
+            String[] parts = p.split("/", 2);
+            if (!provider.contains(parts[0])) return false;
+            p = parts[1];
+        }
+
+        // Glob-style matching
+        if (p.contains("*")) {
+            String regex = p.replace("*", ".*");
+            return id.matches(regex) || name.matches(regex);
+        }
+
+        // Substring match
+        return id.contains(p) || name.contains(p);
     }
 
     /**

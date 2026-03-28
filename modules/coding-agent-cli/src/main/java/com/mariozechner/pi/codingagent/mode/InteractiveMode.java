@@ -57,6 +57,9 @@ public class InteractiveMode {
     private final Compactor compactor;
     private final ModelRegistry modelRegistry;
 
+    // Scoped models for Ctrl+P cycling (from --models flag)
+    private List<Model> scopedModels = List.of();
+
     // TUI components
     private Tui tui;
     private Container root;
@@ -91,6 +94,14 @@ public class InteractiveMode {
     private final List<QueuedMessage> compactionQueue = new ArrayList<>();
 
     private record QueuedMessage(String text, String mode) {}
+
+    /**
+     * Sets scoped models for Ctrl+P cycling (from --models flag).
+     * When set, Ctrl+P cycles only through these models instead of all registered ones.
+     */
+    public void setScopedModels(List<Model> models) {
+        this.scopedModels = models != null ? models : List.of();
+    }
 
     public InteractiveMode(SlashCommandRegistry commandRegistry,
                            BashExecutor bashExecutor,
@@ -429,6 +440,11 @@ public class InteractiveMode {
                     tui.render();
                     continue;
                 }
+                if ("/tree".equals(trimmed)) {
+                    showTreeSelector(session);
+                    tui.render();
+                    continue;
+                }
 
                 // Slash commands — skip if it's a /skill: invocation or prompt template
                 if (trimmed.startsWith("/") && !isSkillOrTemplate(trimmed, session)) {
@@ -657,15 +673,23 @@ public class InteractiveMode {
     private void cycleModel(AgentSession session, boolean forward) {
         if (modelRegistry == null) return;
 
-        var allModels = modelRegistry.getAllModels();
-        if (allModels.size() <= 1) {
-            showStatus("只有一个模型可用");
+        // Use scoped models if available, otherwise all models
+        List<Model> candidates;
+        if (!scopedModels.isEmpty()) {
+            candidates = new ArrayList<>(scopedModels);
+        } else {
+            candidates = modelRegistry.getAllModels();
+            // Sort models by provider then id for stable ordering
+            candidates.sort(Comparator.comparing((Model m) -> m.provider().value())
+                    .thenComparing(Model::id));
+        }
+
+        if (candidates.size() <= 1) {
+            showStatus(scopedModels.isEmpty() ? "只有一个模型可用" : "只有一个 scoped 模型");
             return;
         }
 
-        // Sort models by provider then id for stable ordering
-        allModels.sort(Comparator.comparing((Model m) -> m.provider().value())
-                .thenComparing(Model::id));
+        var allModels = candidates;
 
         var currentModel = session.getAgent().getState().getModel();
         int currentIdx = -1;
@@ -786,6 +810,62 @@ public class InteractiveMode {
             }
             dismissOverlay();
             showStatus("会话为空或加载失败");
+        });
+        overlay.setOnCancel(this::dismissOverlay);
+
+        showOverlay(overlay);
+    }
+
+    /**
+     * Shows the tree selector overlay for /tree command.
+     */
+    private void showTreeSelector(AgentSession session) {
+        var messages = session.getHistory();
+        var overlay = new TreeSelectorOverlay(messages);
+
+        if (overlay.isEmpty()) {
+            showStatus("当前会话没有消息");
+            return;
+        }
+
+        overlay.setOnSelect(item -> {
+            // Navigate to selected message — trim messages after it
+            var allMessages = session.getHistory();
+            if (item.index() < allMessages.size()) {
+                var trimmed = new ArrayList<>(allMessages.subList(0, item.index() + 1));
+                session.getAgent().getState().setMessages(trimmed);
+                dismissOverlay();
+
+                // Rebuild chat display
+                chatContainer.clear();
+                for (var msg : trimmed) {
+                    if (msg instanceof UserMessage um) {
+                        String text = "";
+                        for (var block : um.content()) {
+                            if (block instanceof com.mariozechner.pi.ai.types.TextContent tc) {
+                                text = tc.text();
+                                break;
+                            }
+                        }
+                        chatContainer.addChild(new UserMessageComponent(text));
+                    } else if (msg instanceof com.mariozechner.pi.ai.types.AssistantMessage am) {
+                        var comp = new AssistantMessageComponent();
+                        comp.setHideThinking(hideThinkingBlock);
+                        for (var block : am.content()) {
+                            if (block instanceof com.mariozechner.pi.ai.types.TextContent tc) {
+                                comp.appendText(tc.text());
+                            } else if (block instanceof com.mariozechner.pi.ai.types.ThinkingContent tc) {
+                                comp.appendThinking(tc.thinking());
+                            }
+                        }
+                        comp.setComplete(true);
+                        chatContainer.addChild(comp);
+                    }
+                }
+                showStatus("跳转到消息 #" + (item.index() + 1));
+            } else {
+                dismissOverlay();
+            }
         });
         overlay.setOnCancel(this::dismissOverlay);
 
