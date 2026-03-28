@@ -494,7 +494,7 @@ class BedrockProviderTest {
                     List.of(new UserMessage("Hello", 1L)), null);
 
             var request = provider.buildRequest(
-                    testModel(), context, null, null);
+                    testModel(), context, null, null, null, null);
 
             assertNotNull(request);
             assertEquals("anthropic.claude-sonnet-4-20250514-v1:0", request.modelId());
@@ -506,7 +506,7 @@ class BedrockProviderTest {
                     List.of(new UserMessage("Hello", 1L)), null);
 
             var request = provider.buildRequest(
-                    testModel(), context, 4096, null);
+                    testModel(), context, 4096, null, null, null);
 
             assertNotNull(request);
             assertEquals(4096, request.inferenceConfig().maxTokens());
@@ -518,7 +518,7 @@ class BedrockProviderTest {
                     List.of(new UserMessage("Hello", 1L)), null);
 
             var request = provider.buildRequest(
-                    testModel(), context, null, 0.7);
+                    testModel(), context, null, 0.7, null, null);
 
             assertNotNull(request);
             assertEquals(0.7f, request.inferenceConfig().temperature(), 0.01);
@@ -530,7 +530,7 @@ class BedrockProviderTest {
                     List.of(new UserMessage("Hello", 1L)), null);
 
             var request = provider.buildRequest(
-                    testModel(), context, null, null);
+                    testModel(), context, null, null, null, null);
 
             assertNotNull(request);
             assertFalse(request.system().isEmpty());
@@ -544,7 +544,7 @@ class BedrockProviderTest {
                     List.of(new UserMessage("Hello", 1L)), tools);
 
             var request = provider.buildRequest(
-                    testModel(), context, null, null);
+                    testModel(), context, null, null, null, null);
 
             assertNotNull(request);
             assertNotNull(request.toolConfig());
@@ -557,7 +557,7 @@ class BedrockProviderTest {
                     List.of(new UserMessage("Hello", 1L)), null);
 
             var request = provider.buildRequest(
-                    testModel(), context, null, null);
+                    testModel(), context, null, null, null, null);
 
             assertTrue(request.system().isEmpty());
         }
@@ -568,7 +568,7 @@ class BedrockProviderTest {
                     List.of(new UserMessage("Hello", 1L)), null);
 
             var request = provider.buildRequest(
-                    testModel(), context, null, null);
+                    testModel(), context, null, null, null, null);
 
             assertNull(request.toolConfig());
         }

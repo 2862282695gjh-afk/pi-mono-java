@@ -260,6 +260,12 @@ public class MistralProvider implements ApiProvider {
         if (options != null) {
             if (options.maxTokens() != null) body.put("max_tokens", options.maxTokens());
             if (options.temperature() != null) body.put("temperature", options.temperature());
+
+            // Reasoning / thinking mode
+            if (options.reasoning() != null && options.reasoning() != ThinkingLevel.OFF
+                    && model.reasoning()) {
+                body.put("promptMode", "reasoning");
+            }
         } else {
             body.put("max_tokens", model.maxTokens());
         }

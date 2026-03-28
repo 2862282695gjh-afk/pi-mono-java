@@ -83,7 +83,8 @@ public class GoogleGenerativeAIProvider implements ApiProvider {
             List<ContentBlock> blocks = new ArrayList<>();
             Usage[] usage = {Usage.empty()};
             StopReason[] stop = {StopReason.STOP};
-            int textIndex = 0;
+            int[] textIndex = {-1};
+            int[] thinkingIndex = {-1};
 
             try (var reader = new BufferedReader(new InputStreamReader(response.body()))) {
                 String line;
@@ -97,9 +98,27 @@ public class GoogleGenerativeAIProvider implements ApiProvider {
 
                     for (var block : parsed.blocks()) {
                         blocks.add(block);
-                        if (block instanceof TextContent tc) {
-                            var partial = buildMessage(model, blocks, usage[0], stop[0]);
-                            eventStream.pushTextDelta(textIndex, tc.text(), partial);
+                        int idx = blocks.size() - 1;
+                        if (block instanceof ThinkingContent tc) {
+                            if (thinkingIndex[0] < 0) {
+                                thinkingIndex[0] = idx;
+                                eventStream.push(new com.mariozechner.pi.ai.stream.AssistantMessageEvent.ThinkingStartEvent(
+                                    idx, buildMessage(model, blocks, usage[0], stop[0])));
+                            }
+                            eventStream.push(new com.mariozechner.pi.ai.stream.AssistantMessageEvent.ThinkingDeltaEvent(
+                                idx, tc.thinking(), buildMessage(model, blocks, usage[0], stop[0])));
+                        } else if (block instanceof TextContent tc) {
+                            // Close thinking block if transitioning
+                            if (thinkingIndex[0] >= 0 && textIndex[0] < 0) {
+                                eventStream.push(new com.mariozechner.pi.ai.stream.AssistantMessageEvent.ThinkingEndEvent(
+                                    thinkingIndex[0], "", buildMessage(model, blocks, usage[0], stop[0])));
+                            }
+                            if (textIndex[0] < 0) {
+                                textIndex[0] = idx;
+                                eventStream.push(new com.mariozechner.pi.ai.stream.AssistantMessageEvent.TextStartEvent(
+                                    idx, buildMessage(model, blocks, usage[0], stop[0])));
+                            }
+                            eventStream.pushTextDelta(idx, tc.text(), buildMessage(model, blocks, usage[0], stop[0]));
                         }
                         // ToolCalls handled at end
                     }
@@ -156,6 +175,19 @@ public class GoogleGenerativeAIProvider implements ApiProvider {
         if (options != null && options.temperature() != null) {
             genConfig.put("temperature", options.temperature());
         }
+
+        // Thinking / reasoning configuration
+        if (options != null && options.reasoning() != null
+                && options.reasoning() != ThinkingLevel.OFF && model.reasoning()) {
+            var thinkingConfig = MAPPER.createObjectNode();
+            thinkingConfig.put("includeThoughts", true);
+            int budget = resolveGoogleThinkingBudget(model, options.reasoning(), options.thinkingBudgets());
+            if (budget >= 0) {
+                thinkingConfig.put("thinkingBudget", budget);
+            }
+            genConfig.set("thinkingConfig", thinkingConfig);
+        }
+
         body.set("generationConfig", genConfig);
 
         return body;
@@ -174,6 +206,47 @@ public class GoogleGenerativeAIProvider implements ApiProvider {
         var mc = model.cost();
         double input = usage.input() * mc.input() / 1_000_000.0;
         double output = usage.output() * mc.output() / 1_000_000.0;
-        return new Cost(input, output, 0, 0, input + output);
+        double cacheRead = usage.cacheRead() * mc.cacheRead() / 1_000_000.0;
+        return new Cost(input, output, cacheRead, 0, input + output + cacheRead);
+    }
+
+    /**
+     * Resolves thinking budget tokens for Google models based on thinking level.
+     * Returns -1 for dynamic budget (let model decide).
+     */
+    static int resolveGoogleThinkingBudget(Model model, ThinkingLevel level, @Nullable ThinkingBudgets budgets) {
+        if (budgets != null) {
+            Integer custom = switch (level) {
+                case MINIMAL -> budgets.minimal();
+                case LOW -> budgets.low();
+                case MEDIUM -> budgets.medium();
+                case HIGH, XHIGH -> budgets.high();
+                default -> null;
+            };
+            if (custom != null) return custom;
+        }
+
+        ThinkingLevel clamped = level == ThinkingLevel.XHIGH ? ThinkingLevel.HIGH : level;
+
+        if (model.id().contains("2.5-pro")) {
+            return switch (clamped) {
+                case MINIMAL -> 128;
+                case LOW -> 2048;
+                case MEDIUM -> 8192;
+                case HIGH -> 32768;
+                default -> -1;
+            };
+        }
+        if (model.id().contains("2.5-flash")) {
+            return switch (clamped) {
+                case MINIMAL -> 128;
+                case LOW -> 2048;
+                case MEDIUM -> 8192;
+                case HIGH -> 24576;
+                default -> -1;
+            };
+        }
+
+        return -1; // dynamic
     }
 }

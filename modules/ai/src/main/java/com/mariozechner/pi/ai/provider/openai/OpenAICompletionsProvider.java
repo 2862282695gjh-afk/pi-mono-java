@@ -211,11 +211,18 @@ public class OpenAICompletionsProvider implements ApiProvider {
             builder.temperature(temperature);
         }
 
-        // ZAI thinking support
-        if ("zai".equals(model.thinkingFormat()) && model.reasoning()
-                && reasoning != null && reasoning != ThinkingLevel.OFF) {
-            builder.putAdditionalBodyProperty("enable_thinking",
-                    com.openai.core.JsonValue.from(true));
+        // Provider-specific reasoning/thinking support
+        if (reasoning != null && reasoning != ThinkingLevel.OFF && model.reasoning()) {
+            if ("zai".equals(model.thinkingFormat())) {
+                // ZAI uses enable_thinking boolean
+                builder.putAdditionalBodyProperty("enable_thinking",
+                        com.openai.core.JsonValue.from(true));
+            } else if (!isProviderWithCustomThinking(model.provider())) {
+                // Standard OpenAI-compatible reasoning_effort (OpenAI, xAI, Groq, etc.)
+                String effort = mapReasoningEffort(reasoning);
+                builder.putAdditionalBodyProperty("reasoning_effort",
+                        com.openai.core.JsonValue.from(effort));
+            }
         }
 
         return builder.build();
@@ -576,6 +583,27 @@ public class OpenAICompletionsProvider implements ApiProvider {
         } catch (Exception e) {
             return Map.of();
         }
+    }
+
+    /**
+     * Maps ThinkingLevel to OpenAI reasoning_effort string.
+     */
+    private static String mapReasoningEffort(ThinkingLevel level) {
+        return switch (level) {
+            case MINIMAL -> "low";
+            case LOW -> "low";
+            case MEDIUM -> "medium";
+            case HIGH -> "high";
+            case XHIGH -> "high";
+            default -> "medium";
+        };
+    }
+
+    /**
+     * Returns true for providers that use custom thinking formats (not standard reasoning_effort).
+     */
+    private static boolean isProviderWithCustomThinking(Provider provider) {
+        return provider == Provider.ZAI;
     }
 
     private static int findTextBlockIndex(List<ContentBlock> blocks) {

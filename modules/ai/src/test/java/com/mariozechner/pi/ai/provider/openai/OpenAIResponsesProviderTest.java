@@ -325,7 +325,7 @@ class OpenAIResponsesProviderTest {
                     List.of(new UserMessage("Hello", 1L)), null);
 
             var params = provider.buildParams(
-                    testModel(), context, null, null);
+                    testModel(), context, null, null, null);
 
             assertNotNull(params);
         }
@@ -336,7 +336,7 @@ class OpenAIResponsesProviderTest {
                     List.of(new UserMessage("Hello", 1L)), null);
 
             var params = provider.buildParams(
-                    testModel(), context, 4096, null);
+                    testModel(), context, 4096, null, null);
 
             assertNotNull(params);
         }
@@ -347,7 +347,7 @@ class OpenAIResponsesProviderTest {
                     List.of(new UserMessage("Hello", 1L)), null);
 
             var params = provider.buildParams(
-                    testModel(), context, null, 0.7);
+                    testModel(), context, null, 0.7, null);
 
             assertNotNull(params);
         }
@@ -360,7 +360,7 @@ class OpenAIResponsesProviderTest {
                     List.of(new UserMessage("Hello", 1L)), tools);
 
             var params = provider.buildParams(
-                    testModel(), context, null, null);
+                    testModel(), context, null, null, null);
 
             assertNotNull(params);
         }
@@ -371,7 +371,7 @@ class OpenAIResponsesProviderTest {
                     List.of(new UserMessage("Hello", 1L)), null);
 
             var params = provider.buildParams(
-                    testModel(), context, null, null);
+                    testModel(), context, null, null, null);
 
             assertNotNull(params);
             // Instructions should be set (verified by successful build)
@@ -392,7 +392,7 @@ class OpenAIResponsesProviderTest {
             var eventStream = new AssistantMessageEventStream();
 
             provider.executeStream(testModel(), context,
-                    null, null, null, eventStream);
+                    null, null, null, null, eventStream);
 
             assertThrows(Exception.class, () -> eventStream.result().block());
         }

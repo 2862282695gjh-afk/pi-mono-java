@@ -84,7 +84,8 @@ public class BedrockProvider implements ApiProvider {
             Model model, Context context, @Nullable StreamOptions options) {
         return doStream(model, context,
                 options != null ? options.maxTokens() : null,
-                options != null ? options.temperature() : null);
+                options != null ? options.temperature() : null,
+                null, null);
     }
 
     @Override
@@ -92,19 +93,23 @@ public class BedrockProvider implements ApiProvider {
             Model model, Context context, @Nullable SimpleStreamOptions options) {
         return doStream(model, context,
                 options != null ? options.maxTokens() : null,
-                options != null ? options.temperature() : null);
+                options != null ? options.temperature() : null,
+                options != null ? options.reasoning() : null,
+                options != null ? options.thinkingBudgets() : null);
     }
 
     private AssistantMessageEventStream doStream(
             Model model, Context context,
             @Nullable Integer maxTokens,
-            @Nullable Double temperature) {
+            @Nullable Double temperature,
+            @Nullable com.mariozechner.pi.ai.types.ThinkingLevel reasoning,
+            @Nullable com.mariozechner.pi.ai.types.ThinkingBudgets thinkingBudgets) {
 
         var eventStream = new AssistantMessageEventStream();
 
         Thread.ofVirtual().start(() -> {
             try {
-                executeStream(model, context, maxTokens, temperature, eventStream);
+                executeStream(model, context, maxTokens, temperature, reasoning, thinkingBudgets, eventStream);
             } catch (Exception e) {
                 eventStream.error(e);
             }
@@ -117,12 +122,14 @@ public class BedrockProvider implements ApiProvider {
             Model model, Context context,
             @Nullable Integer maxTokens,
             @Nullable Double temperature,
+            @Nullable com.mariozechner.pi.ai.types.ThinkingLevel reasoning,
+            @Nullable com.mariozechner.pi.ai.types.ThinkingBudgets thinkingBudgets,
             AssistantMessageEventStream eventStream) {
 
         BedrockRuntimeAsyncClient client = buildClient();
 
         try {
-            ConverseStreamRequest request = buildRequest(model, context, maxTokens, temperature);
+            ConverseStreamRequest request = buildRequest(model, context, maxTokens, temperature, reasoning, thinkingBudgets);
             processStream(client, request, model, eventStream);
         } catch (Exception e) {
             eventStream.error(e);
@@ -144,7 +151,9 @@ public class BedrockProvider implements ApiProvider {
     ConverseStreamRequest buildRequest(
             Model model, Context context,
             @Nullable Integer maxTokens,
-            @Nullable Double temperature) {
+            @Nullable Double temperature,
+            @Nullable com.mariozechner.pi.ai.types.ThinkingLevel reasoning,
+            @Nullable com.mariozechner.pi.ai.types.ThinkingBudgets thinkingBudgets) {
 
         int resolvedMaxTokens = maxTokens != null ? maxTokens
                 : Math.min(model.maxTokens(), 32000);
@@ -169,7 +178,90 @@ public class BedrockProvider implements ApiProvider {
                     .build());
         }
 
+        // Thinking / reasoning configuration via additionalModelRequestFields
+        if (reasoning != null && reasoning != com.mariozechner.pi.ai.types.ThinkingLevel.OFF
+                && model.reasoning()) {
+            Document thinkingDoc = buildThinkingConfig(model, reasoning, thinkingBudgets, resolvedMaxTokens);
+            if (thinkingDoc != null) {
+                builder.additionalModelRequestFields(thinkingDoc);
+            }
+        }
+
         return builder.build();
+    }
+
+    /**
+     * Builds the additionalModelRequestFields Document for Bedrock thinking/reasoning.
+     * Supports both adaptive thinking (Claude 4.6+) and budget-based thinking (older Claude).
+     */
+    private static Document buildThinkingConfig(
+            Model model, com.mariozechner.pi.ai.types.ThinkingLevel reasoning,
+            @Nullable com.mariozechner.pi.ai.types.ThinkingBudgets thinkingBudgets,
+            int maxTokens) {
+
+        boolean isClaude = model.id().contains("anthropic.claude") || model.id().contains("anthropic/claude");
+        if (!isClaude) return null;
+
+        boolean adaptive = supportsAdaptiveThinking(model.id());
+
+        if (adaptive) {
+            // Adaptive thinking: effort-based (Claude 4.6+)
+            String effort = mapBedrockThinkingEffort(reasoning, model.id());
+            return Document.fromMap(Map.of(
+                "thinking", Document.fromMap(Map.of("type", Document.fromString("adaptive"))),
+                "output_config", Document.fromMap(Map.of("effort", Document.fromString(effort)))
+            ));
+        } else {
+            // Budget-based thinking (older Claude models)
+            int budget = resolveBedrockBudget(reasoning, thinkingBudgets, maxTokens);
+            return Document.fromMap(Map.of(
+                "thinking", Document.fromMap(Map.of(
+                    "type", Document.fromString("enabled"),
+                    "budget_tokens", Document.fromNumber(budget)
+                ))
+            ));
+        }
+    }
+
+    private static boolean supportsAdaptiveThinking(String modelId) {
+        String lower = modelId.toLowerCase();
+        return lower.contains("opus-4") || lower.contains("sonnet-4")
+            || lower.contains("opus4") || lower.contains("sonnet4");
+    }
+
+    private static String mapBedrockThinkingEffort(com.mariozechner.pi.ai.types.ThinkingLevel level, String modelId) {
+        boolean isOpus = modelId.toLowerCase().contains("opus");
+        return switch (level) {
+            case MINIMAL, LOW -> "low";
+            case MEDIUM -> "medium";
+            case HIGH -> "high";
+            case XHIGH -> isOpus ? "max" : "high";
+            default -> "medium";
+        };
+    }
+
+    private static int resolveBedrockBudget(
+            com.mariozechner.pi.ai.types.ThinkingLevel level,
+            @Nullable com.mariozechner.pi.ai.types.ThinkingBudgets budgets,
+            int maxTokens) {
+        if (budgets != null) {
+            Integer custom = switch (level) {
+                case MINIMAL -> budgets.minimal();
+                case LOW -> budgets.low();
+                case MEDIUM -> budgets.medium();
+                case HIGH, XHIGH -> budgets.high();
+                default -> null;
+            };
+            if (custom != null) return custom;
+        }
+        return switch (level) {
+            case MINIMAL -> 1024;
+            case LOW -> 2048;
+            case MEDIUM -> 8192;
+            case HIGH -> 16384;
+            case XHIGH -> Math.max(maxTokens / 2, 16384);
+            default -> 8192;
+        };
     }
 
     private void processStream(

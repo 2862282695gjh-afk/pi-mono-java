@@ -86,7 +86,8 @@ public class OpenAIResponsesProvider implements ApiProvider {
         return doStream(model, context,
                 options != null ? options.apiKey() : null,
                 options != null ? options.maxTokens() : null,
-                options != null ? options.temperature() : null);
+                options != null ? options.temperature() : null,
+                null);
     }
 
     @Override
@@ -95,20 +96,22 @@ public class OpenAIResponsesProvider implements ApiProvider {
         return doStream(model, context,
                 options != null ? options.apiKey() : null,
                 options != null ? options.maxTokens() : null,
-                options != null ? options.temperature() : null);
+                options != null ? options.temperature() : null,
+                options != null ? options.reasoning() : null);
     }
 
     private AssistantMessageEventStream doStream(
             Model model, Context context,
             @Nullable String apiKey,
             @Nullable Integer maxTokens,
-            @Nullable Double temperature) {
+            @Nullable Double temperature,
+            @Nullable com.mariozechner.pi.ai.types.ThinkingLevel reasoning) {
 
         var eventStream = new AssistantMessageEventStream();
 
         Thread.ofVirtual().start(() -> {
             try {
-                executeStream(model, context, apiKey, maxTokens, temperature, eventStream);
+                executeStream(model, context, apiKey, maxTokens, temperature, reasoning, eventStream);
             } catch (Exception e) {
                 eventStream.error(e);
             }
@@ -122,6 +125,7 @@ public class OpenAIResponsesProvider implements ApiProvider {
             @Nullable String apiKey,
             @Nullable Integer maxTokens,
             @Nullable Double temperature,
+            @Nullable com.mariozechner.pi.ai.types.ThinkingLevel reasoning,
             AssistantMessageEventStream eventStream) {
 
         String resolvedApiKey = apiKey != null ? apiKey
@@ -136,7 +140,7 @@ public class OpenAIResponsesProvider implements ApiProvider {
         OpenAIClient client = buildClient(resolvedApiKey, model.baseUrl());
 
         try {
-            ResponseCreateParams params = buildParams(model, context, maxTokens, temperature);
+            ResponseCreateParams params = buildParams(model, context, maxTokens, temperature, reasoning);
             processStream(client, params, model, eventStream);
         } catch (Exception e) {
             eventStream.error(e);
@@ -154,7 +158,8 @@ public class OpenAIResponsesProvider implements ApiProvider {
     ResponseCreateParams buildParams(
             Model model, Context context,
             @Nullable Integer maxTokens,
-            @Nullable Double temperature) {
+            @Nullable Double temperature,
+            @Nullable com.mariozechner.pi.ai.types.ThinkingLevel reasoning) {
 
         int resolvedMaxTokens = maxTokens != null ? maxTokens
                 : Math.min(model.maxTokens(), 32000);
@@ -180,7 +185,31 @@ public class OpenAIResponsesProvider implements ApiProvider {
             builder.temperature(temperature);
         }
 
+        // Reasoning configuration via additional body properties
+        if (model.reasoning()) {
+            if (reasoning != null && reasoning != com.mariozechner.pi.ai.types.ThinkingLevel.OFF) {
+                String effort = mapReasoningEffort(reasoning);
+                var reasoningObj = Map.of("effort", (Object) effort, "summary", (Object) "auto");
+                builder.putAdditionalBodyProperty("reasoning",
+                        com.openai.core.JsonValue.from(reasoningObj));
+            } else {
+                builder.putAdditionalBodyProperty("reasoning",
+                        com.openai.core.JsonValue.from(Map.of("effort", "none")));
+            }
+        }
+
         return builder.build();
+    }
+
+    private static String mapReasoningEffort(com.mariozechner.pi.ai.types.ThinkingLevel level) {
+        return switch (level) {
+            case MINIMAL -> "low";
+            case LOW -> "low";
+            case MEDIUM -> "medium";
+            case HIGH -> "high";
+            case XHIGH -> "high";
+            default -> "medium";
+        };
     }
 
     private void processStream(

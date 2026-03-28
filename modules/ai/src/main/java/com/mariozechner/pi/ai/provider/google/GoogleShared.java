@@ -125,7 +125,14 @@ public final class GoogleShared {
         if (parts.isArray()) {
             for (var part : parts) {
                 if (part.has("text")) {
-                    blocks.add(new TextContent(part.get("text").asText()));
+                    boolean isThinking = part.path("thought").asBoolean(false);
+                    if (isThinking) {
+                        String thinkingSig = part.has("thoughtSignature")
+                            ? part.get("thoughtSignature").asText() : null;
+                        blocks.add(new ThinkingContent(part.get("text").asText(), thinkingSig, false));
+                    } else {
+                        blocks.add(new TextContent(part.get("text").asText()));
+                    }
                 } else if (part.has("functionCall")) {
                     var fc = part.get("functionCall");
                     String name = fc.get("name").asText();
@@ -147,9 +154,14 @@ public final class GoogleShared {
         Usage usage = null;
         var usageNode = chunk.path("usageMetadata");
         if (!usageNode.isMissingNode()) {
-            int inputTokens = usageNode.path("promptTokenCount").asInt(0);
-            int outputTokens = usageNode.path("candidatesTokenCount").asInt(0);
-            usage = new Usage(inputTokens, outputTokens, 0, 0, inputTokens + outputTokens, Cost.empty());
+            int promptTokens = usageNode.path("promptTokenCount").asInt(0);
+            int cachedTokens = usageNode.path("cachedContentTokenCount").asInt(0);
+            int candidatesTokens = usageNode.path("candidatesTokenCount").asInt(0);
+            int thoughtsTokens = usageNode.path("thoughtsTokenCount").asInt(0);
+            int inputTokens = promptTokens - cachedTokens;
+            int outputTokens = candidatesTokens + thoughtsTokens;
+            int totalTokens = usageNode.path("totalTokenCount").asInt(inputTokens + outputTokens);
+            usage = new Usage(inputTokens, outputTokens, cachedTokens, 0, totalTokens, Cost.empty());
         }
 
         return new ParsedChunk(blocks, finishReason, usage);

@@ -12,6 +12,8 @@ import com.mariozechner.pi.ai.types.ModelCost;
 import com.mariozechner.pi.ai.types.Provider;
 import com.mariozechner.pi.ai.types.StopReason;
 import com.mariozechner.pi.ai.types.TextContent;
+import com.mariozechner.pi.ai.types.ThinkingBudgets;
+import com.mariozechner.pi.ai.types.ThinkingLevel;
 import com.mariozechner.pi.ai.types.ToolCall;
 import com.mariozechner.pi.ai.types.ToolResultMessage;
 import com.mariozechner.pi.ai.types.Usage;
@@ -92,7 +94,7 @@ class BedrockProviderIntegrationTest {
                     List.of(new UserMessage("Hi", 1L)), null);
             var eventStream = new AssistantMessageEventStream();
 
-            provider.executeStream(testModel(), context, null, null, eventStream);
+            provider.executeStream(testModel(), context, null, null, null, null, eventStream);
 
             var events = collectEvents(eventStream);
             var finalMsg = eventStream.result().block();
@@ -115,7 +117,7 @@ class BedrockProviderIntegrationTest {
             var context = new Context("Be helpful.",
                     List.of(new UserMessage("Hello", 1L)), null);
 
-            var request = provider.buildRequest(testModel(), context, null, null);
+            var request = provider.buildRequest(testModel(), context, null, null, null, null);
 
             assertEquals("anthropic.claude-sonnet-4-20250514-v1:0", request.modelId());
             assertFalse(request.system().isEmpty());
@@ -129,7 +131,7 @@ class BedrockProviderIntegrationTest {
             var context = new Context(null,
                     List.of(new UserMessage("Hello", 1L)), tools);
 
-            var request = provider.buildRequest(testModel(), context, null, null);
+            var request = provider.buildRequest(testModel(), context, null, null, null, null);
 
             assertNotNull(request.toolConfig());
             assertEquals(1, request.toolConfig().tools().size());
@@ -140,7 +142,7 @@ class BedrockProviderIntegrationTest {
             var context = new Context(null,
                     List.of(new UserMessage("Hello", 1L)), null);
 
-            var request = provider.buildRequest(testModel(), context, 4096, 0.7);
+            var request = provider.buildRequest(testModel(), context, 4096, 0.7, null, null);
 
             assertEquals(4096, request.inferenceConfig().maxTokens());
             assertEquals(0.7f, request.inferenceConfig().temperature(), 0.01);
@@ -151,7 +153,7 @@ class BedrockProviderIntegrationTest {
             var context = new Context(null,
                     List.of(new UserMessage("Hello", 1L)), null);
 
-            var request = provider.buildRequest(testModel(), context, null, null);
+            var request = provider.buildRequest(testModel(), context, null, null, null, null);
 
             assertTrue(request.system().isEmpty());
         }
@@ -161,7 +163,7 @@ class BedrockProviderIntegrationTest {
             var context = new Context(null,
                     List.of(new UserMessage("Hello", 1L)), null);
 
-            var request = provider.buildRequest(testModel(), context, null, null);
+            var request = provider.buildRequest(testModel(), context, null, null, null, null);
 
             assertNull(request.toolConfig());
         }
@@ -176,7 +178,7 @@ class BedrockProviderIntegrationTest {
                     List.of(new UserMessage("Hello", 1L)), null);
             var eventStream = new AssistantMessageEventStream();
 
-            provider.executeStream(testModel(), context, null, null, eventStream);
+            provider.executeStream(testModel(), context, null, null, null, null, eventStream);
             eventStream.result().block();
 
             verify(mockClient).converseStream(any(ConverseStreamRequest.class),
@@ -307,7 +309,7 @@ class BedrockProviderIntegrationTest {
                     List.of(new UserMessage("Hello", 1L)), null);
             var eventStream = new AssistantMessageEventStream();
 
-            provider.executeStream(testModel(), context, null, null, eventStream);
+            provider.executeStream(testModel(), context, null, null, null, null, eventStream);
 
             assertThrows(Exception.class, () -> eventStream.result().block());
             verify(mockClient).close();
@@ -324,7 +326,7 @@ class BedrockProviderIntegrationTest {
                     List.of(new UserMessage("Hello", 1L)), null);
             var eventStream = new AssistantMessageEventStream();
 
-            provider.executeStream(testModel(), context, null, null, eventStream);
+            provider.executeStream(testModel(), context, null, null, null, null, eventStream);
 
             assertThrows(Exception.class, () -> eventStream.result().block());
         }
@@ -347,7 +349,7 @@ class BedrockProviderIntegrationTest {
                     List.of(new UserMessage("Hello", 1L)), null);
             var eventStream = new AssistantMessageEventStream();
 
-            provider.executeStream(testModel(), context, null, null, eventStream);
+            provider.executeStream(testModel(), context, null, null, null, null, eventStream);
 
             eventStream.result().block();
             verify(mockClient).close();
@@ -363,7 +365,7 @@ class BedrockProviderIntegrationTest {
                     List.of(new UserMessage("Hello", 1L)), null);
             var eventStream = new AssistantMessageEventStream();
 
-            provider.executeStream(testModel(), context, null, null, eventStream);
+            provider.executeStream(testModel(), context, null, null, null, null, eventStream);
 
             assertThrows(Exception.class, () -> eventStream.result().block());
             verify(mockClient).close();
