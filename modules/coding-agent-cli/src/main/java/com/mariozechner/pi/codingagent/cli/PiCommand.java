@@ -111,6 +111,9 @@ public class PiCommand implements Callable<Integer> {
     @Option(names = {"--no-session"}, description = "Don't save session (ephemeral)")
     boolean noSession;
 
+    @Option(names = {"--export"}, description = "Export session file to HTML", arity = "1..2")
+    List<String> exportArgs;
+
     @Option(names = {"--list-models"}, description = "List available models and exit", arity = "0..1",
             fallbackValue = "")
     String listModels;
@@ -189,6 +192,41 @@ public class PiCommand implements Callable<Integer> {
                 );
                 modelRegistry.register(customModel);
             }
+        }
+
+        // --export: export session file to HTML and exit
+        if (exportArgs != null && !exportArgs.isEmpty()) {
+            Path inputFile = Path.of(exportArgs.get(0));
+            if (!Files.exists(inputFile)) {
+                System.err.println("Session file not found: " + inputFile);
+                return 1;
+            }
+            // Determine output path
+            Path outputFile;
+            if (exportArgs.size() > 1) {
+                outputFile = Path.of(exportArgs.get(1));
+            } else {
+                String name = inputFile.getFileName().toString().replaceAll("\\.jsonl$", ".html");
+                outputFile = inputFile.resolveSibling(name);
+            }
+
+            var sm = new SessionManager();
+            var messages = sm.loadSession(inputFile);
+            if (messages.isEmpty()) {
+                System.err.println("No messages found in session file.");
+                return 1;
+            }
+
+            String html = com.mariozechner.pi.codingagent.export.HtmlExporter.export(
+                    messages, "Pi Session", sm.getSessionId());
+            try {
+                Files.writeString(outputFile, html);
+                System.out.println("Exported " + messages.size() + " messages to " + outputFile);
+            } catch (IOException e) {
+                System.err.println("Failed to write HTML: " + e.getMessage());
+                return 1;
+            }
+            return 0;
         }
 
         // --list-models: print available models and exit

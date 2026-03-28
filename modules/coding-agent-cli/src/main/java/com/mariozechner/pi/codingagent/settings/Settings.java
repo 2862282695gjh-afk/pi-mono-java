@@ -22,11 +22,36 @@ public record Settings(
     @JsonProperty("sessionDir") @Nullable String sessionDir,
     @JsonProperty("packages") @Nullable List<String> packages,
     @JsonProperty("extensions") @Nullable List<String> extensions,
-    @JsonProperty("customModels") @Nullable List<CustomModelConfig> customModels
+    @JsonProperty("customModels") @Nullable List<CustomModelConfig> customModels,
+    @JsonProperty("quietStartup") @Nullable Boolean quietStartup,
+    @JsonProperty("shellCommandPrefix") @Nullable String shellCommandPrefix,
+    @JsonProperty("enabledModels") @Nullable List<String> enabledModels,
+    @JsonProperty("doubleEscapeAction") @Nullable String doubleEscapeAction,
+    @JsonProperty("treeFilterMode") @Nullable String treeFilterMode,
+    @JsonProperty("collapseChangelog") @Nullable Boolean collapseChangelog,
+    @JsonProperty("branchSummary") @Nullable BranchSummarySettings branchSummary,
+    @JsonProperty("terminal") @Nullable TerminalSettings terminal,
+    @JsonProperty("images") @Nullable ImageSettings images
 ) {
     public static Settings empty() {
-        return new Settings(null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null);
+        return new Settings(null, null, null, null, null, null, null, null, null, null, null,
+                null, null, null, null, null, null, null, null, null, null, null, null, null, null);
     }
+
+    public record BranchSummarySettings(
+        @JsonProperty("reserveTokens") @Nullable Integer reserveTokens,
+        @JsonProperty("skipPrompt") @Nullable Boolean skipPrompt
+    ) {}
+
+    public record TerminalSettings(
+        @JsonProperty("showImages") @Nullable Boolean showImages,
+        @JsonProperty("clearOnShrink") @Nullable Boolean clearOnShrink
+    ) {}
+
+    public record ImageSettings(
+        @JsonProperty("autoResize") @Nullable Boolean autoResize,
+        @JsonProperty("blockImages") @Nullable Boolean blockImages
+    ) {}
 
     public record CompactionSettings(
         @JsonProperty("enabled") @Nullable Boolean enabled,
