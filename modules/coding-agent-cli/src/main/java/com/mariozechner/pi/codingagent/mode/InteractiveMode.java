@@ -90,6 +90,13 @@ public class InteractiveMode {
     // Overlay state — when non-null, input is routed to the overlay component
     private Component activeOverlay;
 
+    // Status message reuse (matches pi-mono behavior)
+    private Component lastStatusComponent;
+
+    // Double-tap tracking for Ctrl+C exit and double-escape
+    private long lastCtrlCTime;
+    private long lastEscapeTime;
+
     // Follow-up / steering queues during compaction
     private final List<QueuedMessage> compactionQueue = new ArrayList<>();
 
@@ -294,7 +301,7 @@ public class InteractiveMode {
                     continue;
                 }
 
-                // Global: Ctrl+C
+                // Global: Ctrl+C — clear input, or double-tap to exit
                 if (ch == 3) {
                     if (executingPrompt.get()) {
                         abortedFlag.set(true);
@@ -305,6 +312,16 @@ public class InteractiveMode {
                         if (token != null) {
                             token.cancel();
                         }
+
+                        // Double Ctrl+C within 500ms → exit
+                        long now = System.currentTimeMillis();
+                        if (now - lastCtrlCTime < 500) {
+                            eofFlag.set(true);
+                            submitQueue.add("");
+                            return;
+                        }
+                        lastCtrlCTime = now;
+
                         // Clear input
                         editorContainer.clear();
                         bashMode = false;
@@ -319,7 +336,7 @@ public class InteractiveMode {
 
                 // Escape and escape sequences
                 if (ch == '\033') {
-                    // Standalone Escape — abort streaming or cancel autocomplete
+                    // Standalone Escape — abort streaming, or double-escape → tree
                     if (i + 1 >= data.length()) {
                         if (executingPrompt.get()) {
                             abortedFlag.set(true);
@@ -329,6 +346,15 @@ public class InteractiveMode {
                             var token = bashCancelToken;
                             if (token != null) {
                                 token.cancel();
+                            }
+
+                            // Double-escape within 500ms → show tree
+                            long now = System.currentTimeMillis();
+                            if (now - lastEscapeTime < 500) {
+                                showTreeSelector(session);
+                                lastEscapeTime = 0;
+                            } else {
+                                lastEscapeTime = now;
                             }
                         }
                         i++;
@@ -988,10 +1014,19 @@ public class InteractiveMode {
 
     /**
      * Shows a temporary status message in the chat area.
+     * Reuses the last status line if it's at the bottom (matches pi-mono behavior).
      */
     private void showStatus(String message) {
-        chatContainer.addChild(new Text(
-                "\033[38;2;128;128;128m  " + message + "\033[0m", 1, 0));
+        var children = chatContainer.getChildren();
+        // Reuse last status component if it's the last child
+        if (lastStatusComponent != null && !children.isEmpty()
+                && children.get(children.size() - 1) == lastStatusComponent) {
+            // Replace with new text
+            chatContainer.removeChild(lastStatusComponent);
+        }
+        var text = new Text("\033[38;2;128;128;128m  " + message + "\033[0m", 1, 0);
+        chatContainer.addChild(text);
+        lastStatusComponent = text;
     }
 
     void handleEvent(AgentEvent event) {

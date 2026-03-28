@@ -49,5 +49,8 @@ public class BuiltinCommandRegistrar {
         registry.register(new ForkCommand());
         registry.register(new ShareCommand());
         registry.register(new TreeCommand());
+        registry.register(new ScopedModelsCommand());
+        registry.register(new LoginCommand());
+        registry.register(new LogoutCommand());
     }
 }
