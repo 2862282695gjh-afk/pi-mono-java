@@ -377,14 +377,58 @@ public class AgentSession {
         return new Agent(aiService);
     }
 
+    /**
+     * Resolves a model from a pattern string.
+     * Supports:
+     * - Exact ID: "glm-5"
+     * - Provider/ID: "zai/glm-5"
+     * - Fuzzy substring: "sonnet" matches "claude-sonnet-4-20250514"
+     * - Thinking suffix: "sonnet:high" (thinking level is stripped, not applied here)
+     */
     Model resolveModel(String modelId) {
-        for (Provider provider : modelRegistry.getProviders()) {
-            var model = modelRegistry.getModel(provider, modelId);
-            if (model.isPresent()) {
-                return model.get();
+        // Strip thinking level suffix (e.g., "sonnet:high" → "sonnet")
+        int colonIdx = modelId.indexOf(':');
+        String pattern = colonIdx >= 0 ? modelId.substring(0, colonIdx) : modelId;
+
+        // Check for provider/id prefix
+        Provider targetProvider = null;
+        if (pattern.contains("/")) {
+            String[] parts = pattern.split("/", 2);
+            String providerStr = parts[0].toLowerCase();
+            pattern = parts[1];
+            for (Provider p : modelRegistry.getProviders()) {
+                if (p.value().toLowerCase().contains(providerStr)) {
+                    targetProvider = p;
+                    break;
+                }
             }
         }
-        throw new IllegalArgumentException("Unknown model: " + modelId);
+
+        // 1. Exact match
+        for (Provider provider : modelRegistry.getProviders()) {
+            if (targetProvider != null && provider != targetProvider) continue;
+            var model = modelRegistry.getModel(provider, pattern);
+            if (model.isPresent()) return model.get();
+        }
+
+        // 2. Fuzzy substring match on id and name
+        String lowerPattern = pattern.toLowerCase();
+        Model bestMatch = null;
+        for (Provider provider : modelRegistry.getProviders()) {
+            if (targetProvider != null && provider != targetProvider) continue;
+            for (Model m : modelRegistry.getModels(provider)) {
+                if (m.id().toLowerCase().contains(lowerPattern)
+                        || m.name().toLowerCase().contains(lowerPattern)) {
+                    if (bestMatch == null || m.id().length() < bestMatch.id().length()) {
+                        bestMatch = m; // Prefer shorter ID (more specific match)
+                    }
+                }
+            }
+        }
+        if (bestMatch != null) return bestMatch;
+
+        throw new IllegalArgumentException("Unknown model: " + modelId
+                + ". Use --list-models to see available models.");
     }
 
     void loadSkills(Path cwd) {
