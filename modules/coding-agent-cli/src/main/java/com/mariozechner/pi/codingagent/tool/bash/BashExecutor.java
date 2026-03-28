@@ -28,6 +28,9 @@ public class BashExecutor {
     public BashExecutionResult execute(String command, Path cwd, BashExecutorOptions options) throws IOException {
         ProcessBuilder pb = new ProcessBuilder("/bin/bash", "-c", command);
         pb.directory(cwd.toFile());
+        // Redirect stdin from /dev/null so the child bash doesn't steal
+        // the parent's terminal input, which can break JLine's reader.
+        pb.redirectInput(ProcessBuilder.Redirect.from(new java.io.File("/dev/null")));
 
         if (!options.env().isEmpty()) {
             pb.environment().putAll(options.env());

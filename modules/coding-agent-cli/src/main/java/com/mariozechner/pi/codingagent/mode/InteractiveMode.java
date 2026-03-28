@@ -29,8 +29,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.*;
+import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -153,8 +154,7 @@ public class InteractiveMode {
         terminal.write("\033]0;pi — " + cwd + "\007");
 
         // Input routing — dispatch characters to editor, handle Ctrl+C/D globally
-        var submitLatch = new AtomicReference<CountDownLatch>();
-        var submitValue = new AtomicReference<String>();
+        BlockingQueue<String> submitQueue = new LinkedBlockingQueue<>();
         var eofFlag = new AtomicBoolean(false);
         var executingPrompt = new AtomicBoolean(false);
         var abortedFlag = new AtomicBoolean(false);
@@ -162,10 +162,8 @@ public class InteractiveMode {
         var followUpFlag = new AtomicBoolean(false);
 
         editorContainer.setOnSubmit(value -> {
-            var latch = submitLatch.get();
-            if (latch != null) {
-                submitValue.set(value);
-                latch.countDown();
+            if (value != null) {
+                submitQueue.add(value);
             }
         });
 
@@ -177,8 +175,7 @@ public class InteractiveMode {
                 // Global: Ctrl+D = exit
                 if (ch == 4) {
                     eofFlag.set(true);
-                    var latch = submitLatch.get();
-                    if (latch != null) latch.countDown();
+                    submitQueue.add(""); // unblock the queue
                     return;
                 }
 
@@ -203,11 +200,9 @@ public class InteractiveMode {
                     // Kitty protocol: \033[13;2u
                     if (data.startsWith("\033[13;2u", i)) {
                         followUpFlag.set(true);
-                        var latch = submitLatch.get();
                         String text = editorContainer.getEditor().getText();
-                        if (latch != null && text != null && !text.trim().isEmpty()) {
-                            submitValue.set(text);
-                            latch.countDown();
+                        if (text != null && !text.trim().isEmpty()) {
+                            submitQueue.add(text);
                         }
                         i += 7;
                         continue;
@@ -215,11 +210,9 @@ public class InteractiveMode {
                     // Alt+Enter: ESC CR
                     if (data.charAt(i + 1) == '\r') {
                         followUpFlag.set(true);
-                        var latch = submitLatch.get();
                         String text = editorContainer.getEditor().getText();
-                        if (latch != null && text != null && !text.trim().isEmpty()) {
-                            submitValue.set(text);
-                            latch.countDown();
+                        if (text != null && !text.trim().isEmpty()) {
+                            submitQueue.add(text);
                         }
                         i += 2;
                         continue;
@@ -254,22 +247,18 @@ public class InteractiveMode {
         try {
             while (!eofFlag.get()) {
                 // Wait for user input
-                var latch = new CountDownLatch(1);
-                submitLatch.set(latch);
-                submitValue.set(null);
                 abortedFlag.set(false);
                 followUpFlag.set(false);
 
+                String input;
                 try {
-                    latch.await();
+                    input = submitQueue.take(); // blocks until input available
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                     break;
                 }
 
                 if (eofFlag.get()) break;
-
-                String input = submitValue.get();
                 if (input == null || input.trim().isEmpty()) {
                     tui.render();
                     continue;

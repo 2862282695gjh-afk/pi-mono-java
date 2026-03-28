@@ -2,17 +2,19 @@ package com.mariozechner.pi.tui.component;
 
 import com.mariozechner.pi.tui.Component;
 
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.ArrayList;
 
 /**
  * Container component — arranges children vertically.
  * Each child is rendered at the full available width and the results are concatenated.
+ * Uses CopyOnWriteArrayList for thread-safe iteration during concurrent rendering.
  */
 public class Container implements Component {
 
-    private final List<Component> children = new ArrayList<>();
+    private final List<Component> children = new CopyOnWriteArrayList<>();
 
     public void addChild(Component component) {
         children.add(component);
