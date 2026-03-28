@@ -12,7 +12,8 @@ import java.util.List;
  */
 public class CommandOutputComponent implements Component {
 
-    private static final String ANSI_DIM = "\033[2m";
+    // Use dim gray matching pi-mono footer styling
+    private static final String ANSI_DIM = "\033[38;2;102;102;102m";
     private static final String ANSI_RESET = "\033[0m";
 
     private final String text;
@@ -32,10 +33,10 @@ public class CommandOutputComponent implements Component {
         var lines = new ArrayList<String>();
         lines.add(""); // spacer before
 
-        int contentWidth = Math.max(1, width - 4);
+        int contentWidth = Math.max(1, width - 2);
         List<String> wrapped = AnsiUtils.wrapTextWithAnsi(text, contentWidth);
         for (String line : wrapped) {
-            lines.add(ANSI_DIM + "  " + line + ANSI_RESET);
+            lines.add(ANSI_DIM + " " + line + ANSI_RESET);
         }
 
         lines.add(""); // spacer after

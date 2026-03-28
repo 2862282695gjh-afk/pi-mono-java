@@ -364,7 +364,7 @@ public class InteractiveMode {
         );
         boolean handled = commandRegistry.execute(input, context);
         if (handled) {
-            chatContainer.addChild(new UserMessageComponent(input));
+            // Don't echo slash commands as user messages (matching pi-mono behavior)
             if (!outputLines.isEmpty()) {
                 chatContainer.addChild(new CommandOutputComponent(String.join("\n", outputLines)));
             }
