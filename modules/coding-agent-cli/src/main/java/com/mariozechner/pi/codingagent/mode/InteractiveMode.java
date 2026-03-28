@@ -84,6 +84,9 @@ public class InteractiveMode {
     // Thinking block visibility state (toggled by Ctrl+T)
     private boolean hideThinkingBlock;
 
+    // Overlay state — when non-null, input is routed to the overlay component
+    private Component activeOverlay;
+
     // Follow-up / steering queues during compaction
     private final List<QueuedMessage> compactionQueue = new ArrayList<>();
 
@@ -194,6 +197,13 @@ public class InteractiveMode {
         });
 
         tui.setInputHandler(data -> {
+            // Route input to overlay when active
+            if (activeOverlay != null) {
+                activeOverlay.handleInput(data);
+                tui.render();
+                return;
+            }
+
             int i = 0;
             while (i < data.length()) {
                 char ch = data.charAt(i);
@@ -234,9 +244,9 @@ public class InteractiveMode {
                     continue;
                 }
 
-                // Global: Ctrl+L — select model (dispatch to /model)
+                // Global: Ctrl+L — open model selector overlay
                 if (ch == 12) { // 0x0C = Ctrl+L
-                    handleSlashCommand("/model", session);
+                    showModelSelector(session);
                     tui.render();
                     i++;
                     continue;
@@ -412,6 +422,13 @@ public class InteractiveMode {
                 editorContainer.setBorderForThinkingLevel(
                                 session.getAgent().getState().getThinkingLevel() != null
                                         ? session.getAgent().getState().getThinkingLevel().value() : "medium");
+
+                // Special overlay commands
+                if ("/resume".equals(trimmed)) {
+                    showSessionSelector(session);
+                    tui.render();
+                    continue;
+                }
 
                 // Slash commands — skip if it's a /skill: invocation or prompt template
                 if (trimmed.startsWith("/") && !isSkillOrTemplate(trimmed, session)) {
@@ -704,6 +721,98 @@ public class InteractiveMode {
             }
         }
         showStatus("Thinking: " + (hideThinkingBlock ? "隐藏" : "可见"));
+    }
+
+    /**
+     * Shows the model selector overlay. Replaces the chat area until dismissed.
+     */
+    private void showModelSelector(AgentSession session) {
+        if (modelRegistry == null) return;
+        var currentModel = session.getAgent().getState().getModel();
+        var overlay = new ModelSelectorOverlay(modelRegistry, currentModel);
+
+        overlay.setOnSelect(model -> {
+            // Apply model change
+            session.getAgent().setModel(model);
+            footer.setModel(
+                    model.provider().name().toLowerCase(),
+                    model.id(),
+                    model.contextWindow() > 0 ? model.contextWindow() : 200000,
+                    model.reasoning());
+            if (!model.reasoning()) {
+                session.getAgent().setThinkingLevel(ThinkingLevel.OFF);
+                footer.setThinkingLevel("off");
+            }
+            editorContainer.setBorderForThinkingLevel(
+                    session.getAgent().getState().getThinkingLevel() != null
+                            ? session.getAgent().getState().getThinkingLevel().value() : "off");
+            // Persist model change
+            var sm = session.getSessionManager();
+            if (sm != null) sm.appendModelChange(model.provider().value(), model.id());
+
+            dismissOverlay();
+            showStatus("切换到 " + model.name());
+        });
+        overlay.setOnCancel(this::dismissOverlay);
+
+        showOverlay(overlay);
+    }
+
+    /**
+     * Shows the session selector overlay for /resume.
+     */
+    private void showSessionSelector(AgentSession session) {
+        String cwd = System.getProperty("user.dir", "");
+        var overlay = new SessionSelectorOverlay(cwd);
+
+        if (overlay.isEmpty()) {
+            showStatus("当前目录没有历史会话");
+            return;
+        }
+
+        overlay.setOnSelect(item -> {
+            var sm = session.getSessionManager();
+            if (sm != null) {
+                var messages = sm.loadSession(item.path());
+                if (!messages.isEmpty()) {
+                    session.getAgent().clearMessages();
+                    for (var msg : messages) {
+                        session.getAgent().getState().appendMessage(msg);
+                    }
+                    dismissOverlay();
+                    showStatus("已恢复会话 " + item.id() + " (" + messages.size() + " 条消息)");
+                    return;
+                }
+            }
+            dismissOverlay();
+            showStatus("会话为空或加载失败");
+        });
+        overlay.setOnCancel(this::dismissOverlay);
+
+        showOverlay(overlay);
+    }
+
+    /**
+     * Shows an overlay component, replacing the chat area.
+     */
+    private void showOverlay(Component overlay) {
+        activeOverlay = overlay;
+        root.clear();
+        root.addChild(overlay);
+        root.addChild(footer);
+        tui.render();
+    }
+
+    /**
+     * Dismisses the active overlay and restores the normal chat view.
+     */
+    private void dismissOverlay() {
+        activeOverlay = null;
+        root.clear();
+        root.addChild(chatContainer);
+        root.addChild(editorContainer);
+        root.addChild(footer);
+        tui.render();
     }
 
     /**
