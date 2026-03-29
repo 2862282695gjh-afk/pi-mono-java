@@ -7,7 +7,7 @@ plugins {
 val javaVersion = 21
 
 allprojects {
-    group = "com.mariozechner.pi"
+    group = "com.campusclaw"
     version = "1.0.0-SNAPSHOT"
 
     repositories {

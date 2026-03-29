@@ -1,5 +1,5 @@
 dependencies {
-    api(project(":modules:pi-ai"))
+    api(project(":modules:campusclaw-ai"))
 
     // Reactive streams
     implementation("io.projectreactor:reactor-core")

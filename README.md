@@ -1,4 +1,4 @@
-# Pi Coding Agent
+# CampusClaw
 
 基于 Java 21 + Spring Boot 3.4.1 实现的终端 AI 编程助手，支持多模型供应商，提供交互式 TUI 界面和丰富的代码操作工具。
 
@@ -54,13 +54,13 @@ $env:ANTHROPIC_API_KEY = "sk-ant-..."
 **macOS / Linux：**
 
 ```bash
-./pi.sh -m glm-5
+./campusclaw.sh -m glm-5
 ```
 
 **Windows：**
 
 ```cmd
-pi.bat -m glm-5
+campusclaw.bat -m glm-5
 ```
 
 启动脚本会自动检测 JDK 21、首次运行时自动构建，源码变更后自动重新构建。
@@ -68,7 +68,7 @@ pi.bat -m glm-5
 传入 `--rebuild` 可强制重新构建：
 
 ```bash
-./pi.sh --rebuild -m glm-5
+./campusclaw.sh --rebuild -m glm-5
 ```
 
 > 如果系统安装了多个 JDK 版本且脚本无法自动找到 JDK 21，请手动设置 `JAVA_HOME`：
@@ -87,21 +87,21 @@ pi.bat -m glm-5
 
 ```bash
 # macOS / Linux
-./gradlew :modules:pi-coding-agent:bootRun --args='-m glm-5'
+./gradlew :modules:campusclaw-coding-agent:bootRun --args='-m glm-5'
 
 # Windows
-gradlew.bat :modules:pi-coding-agent:bootRun --args="-m glm-5"
+gradlew.bat :modules:campusclaw-coding-agent:bootRun --args="-m glm-5"
 ```
 
 **手动构建后运行：**
 
 ```bash
 # 构建（只需执行一次，代码没改就不用重新构建）
-./gradlew :modules:pi-coding-agent:bootJar          # macOS / Linux
-gradlew.bat :modules:pi-coding-agent:bootJar         # Windows
+./gradlew :modules:campusclaw-coding-agent:bootJar          # macOS / Linux
+gradlew.bat :modules:campusclaw-coding-agent:bootJar         # Windows
 
 # 运行
-java -jar modules/coding-agent-cli/build/libs/pi-coding-agent-1.0.0-SNAPSHOT.jar -m glm-5
+java -jar modules/coding-agent-cli/build/libs/campusclaw-agent-1.0.0-SNAPSHOT.jar -m glm-5
 ```
 
 > 如果 Gradle 报 JDK 版本不兼容，在命令前加上 `JAVA_HOME=...`（macOS/Linux）或 `set JAVA_HOME=...`（Windows CMD）。
@@ -109,7 +109,7 @@ java -jar modules/coding-agent-cli/build/libs/pi-coding-agent-1.0.0-SNAPSHOT.jar
 ## 用法
 
 ```
-pi [OPTIONS] [PROMPT...]
+campusclaw [OPTIONS] [PROMPT...]
 ```
 
 ### 核心选项
@@ -151,25 +151,25 @@ pi [OPTIONS] [PROMPT...]
 
 ```bash
 # 交互模式（默认）
-./pi.sh -m claude-sonnet-4
+./campusclaw.sh -m claude-sonnet-4
 
 # 单次提问
-./pi.sh -m glm-5 -p "这个项目的架构是什么？"
+./campusclaw.sh -m glm-5 -p "这个项目的架构是什么？"
 
 # 高级思考模式
-./pi.sh -m claude-sonnet-4 --thinking high
+./campusclaw.sh -m claude-sonnet-4 --thinking high
 
 # 继续上次会话
-./pi.sh -m glm-5 -c
+./campusclaw.sh -m glm-5 -c
 
 # 使用文件内容作为输入（@ 前缀）
-./pi.sh -m glm-5 "请审查这个文件 @src/main/java/App.java"
+./campusclaw.sh -m glm-5 "请审查这个文件 @src/main/java/App.java"
 
 # 列出所有可用模型
-./pi.sh --list-models
+./campusclaw.sh --list-models
 ```
 
-> Windows 用户将上述 `./pi.sh` 替换为 `pi.bat`。
+> Windows 用户将上述 `./campusclaw.sh` 替换为 `campusclaw.bat`。
 
 ## 内置工具
 
@@ -213,8 +213,8 @@ Agent 内置 8 个代码操作工具：
 
 | 操作系统 | 路径 |
 |----------|------|
-| macOS / Linux | `~/.java-pi/settings.json` |
-| Windows | `%USERPROFILE%\.java-pi\settings.json` |
+| macOS / Linux | `~/.campusclaw/settings.json` |
+| Windows | `%USERPROFILE%\.campusclaw\settings.json` |
 
 可设置项：
 
@@ -227,16 +227,16 @@ Agent 内置 8 个代码操作工具：
 ## 项目结构
 
 ```
-pi-mono-java/
+campusclaw/
 ├── modules/
-│   ├── ai/                  # pi-ai — 统一 LLM 调用层，多供应商适配
-│   ├── agent-core/          # pi-agent-core — Agent 循环、工具执行管线
-│   ├── coding-agent-cli/    # pi-coding-agent — CLI 入口 + TUI 界面
-│   └── tui/                 # pi-tui — 终端 UI 组件（JLine + Lanterna）
+│   ├── ai/                  # campusclaw-ai — 统一 LLM 调用层，多供应商适配
+│   ├── agent-core/          # campusclaw-agent-core — Agent 循环、工具执行管线
+│   ├── coding-agent-cli/    # campusclaw-coding-agent — CLI 入口 + TUI 界面
+│   └── tui/                 # campusclaw-tui — 终端 UI 组件（JLine + Lanterna）
 ├── build.gradle.kts         # 根构建配置
 ├── settings.gradle.kts      # 模块声明
-├── pi.sh                    # 启动脚本（macOS / Linux）
-├── pi.bat                   # 启动脚本（Windows）
+├── campusclaw.sh            # 启动脚本（macOS / Linux）
+├── campusclaw.bat           # 启动脚本（Windows）
 └── README.md
 ```
 
@@ -262,7 +262,7 @@ pi-mono-java/
 ./gradlew test
 
 # 仅构建 JAR
-./gradlew :modules:pi-coding-agent:bootJar
+./gradlew :modules:campusclaw-coding-agent:bootJar
 ```
 
 > Windows 用户将 `./gradlew` 替换为 `gradlew.bat`。
@@ -326,6 +326,6 @@ org.gradle.java.installations.auto-download=true
 **解决**：启动脚本会自动检测源码变更并重新构建。如果检测不准确，可手动强制：
 
 ```bash
-./pi.sh --rebuild -m glm-5      # macOS / Linux
-pi.bat --rebuild -m glm-5       # Windows
+./campusclaw.sh --rebuild -m glm-5      # macOS / Linux
+campusclaw.bat --rebuild -m glm-5       # Windows
 ```

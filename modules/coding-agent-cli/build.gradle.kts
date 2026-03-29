@@ -3,9 +3,9 @@ plugins {
 }
 
 dependencies {
-    api(project(":modules:pi-ai"))
-    api(project(":modules:pi-agent-core"))
-    api(project(":modules:pi-tui"))
+    api(project(":modules:campusclaw-ai"))
+    api(project(":modules:campusclaw-agent-core"))
+    api(project(":modules:campusclaw-tui"))
 
     // Spring Boot
     implementation("org.springframework.boot:spring-boot-starter")
@@ -31,9 +31,9 @@ dependencies {
 }
 
 springBoot {
-    mainClass.set("com.mariozechner.pi.codingagent.PiCodingAgentApplication")
+    mainClass.set("com.campusclaw.codingagent.CampusClawApplication")
 }
 
 tasks.bootJar {
-    archiveBaseName.set("pi-coding-agent")
+    archiveBaseName.set("campusclaw-agent")
 }

@@ -1,15 +1,15 @@
-rootProject.name = "pi-mono-java"
+rootProject.name = "campusclaw"
 
 enableFeaturePreview("TYPESAFE_PROJECT_ACCESSORS")
 
 include(
-    ":modules:pi-ai",
-    ":modules:pi-agent-core",
-    ":modules:pi-coding-agent",
-    ":modules:pi-tui"
+    ":modules:campusclaw-ai",
+    ":modules:campusclaw-agent-core",
+    ":modules:campusclaw-coding-agent",
+    ":modules:campusclaw-tui"
 )
 
-project(":modules:pi-ai").projectDir = file("modules/ai")
-project(":modules:pi-agent-core").projectDir = file("modules/agent-core")
-project(":modules:pi-coding-agent").projectDir = file("modules/coding-agent-cli")
-project(":modules:pi-tui").projectDir = file("modules/tui")
+project(":modules:campusclaw-ai").projectDir = file("modules/ai")
+project(":modules:campusclaw-agent-core").projectDir = file("modules/agent-core")
+project(":modules:campusclaw-coding-agent").projectDir = file("modules/coding-agent-cli")
+project(":modules:campusclaw-tui").projectDir = file("modules/tui")

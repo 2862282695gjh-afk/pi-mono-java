@@ -4,11 +4,11 @@ spring:
     lazy-initialization: true
     web-application-type: none
   application:
-    name: pi-coding-agent
+    name: campusclaw-agent
 
 logging:
   level:
     root: WARN
-    com.mariozechner.pi: WARN
+    com.campusclaw: WARN
     org.springframework: WARN
     io.netty: ERROR

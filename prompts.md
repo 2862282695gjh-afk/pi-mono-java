@@ -4,13 +4,13 @@
 **按依赖顺序排列**，从上到下依次执行。
 
 **通用前置说明**（每个 prompt 已包含，无需额外添加）：
-- 项目路径：`/Users/z/pi-mono-java/`
-- 参考文档：`pi-mono-java-review.md`（计划）、`pi-mono-typescript-architecture.md`（TS 架构）
+- 项目路径：`/Users/z/campusclaw/`
+- 参考文档：`campusclaw-review.md`（计划）、`pi-mono-typescript-architecture.md`（TS 架构）
 - 构建命令需带 JAVA_HOME：`JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew ...`
 
 ---
 
-## Phase 1: AI 核心类型（pi-ai）
+## Phase 1: AI 核心类型（campusclaw-ai）
 
 > 5 个需求可并行，但建议按以下顺序：AI-002 → AI-005 → AI-001 → AI-003 → AI-004
 
@@ -18,7 +18,7 @@
 
 ```
 请基于以下两个文档实现 AI-002 ContentBlock 类型需求：
-- pi-mono-java-review.md（项目计划）
+- campusclaw-review.md（项目计划）
 - pi-mono-typescript-architecture.md（TS 架构参考，重点看 1.2 ContentBlock 类型）
 
 要求：
@@ -33,7 +33,7 @@
 4. 添加 Jackson 序列化注解（@JsonTypeInfo + @JsonSubTypes），基于 type 字段做多态序列化
 5. 编写单元测试验证：创建实例、Jackson 序列化/反序列化、多态反序列化
 6. 完成后运行：
-   JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew :modules:pi-ai:compileJava :modules:pi-ai:test
+   JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew :modules:campusclaw-ai:compileJava :modules:campusclaw-ai:test
 7. 测试通过后 commit，消息格式：feat(ai): implement ContentBlock type hierarchy (AI-002)
 ```
 
@@ -41,7 +41,7 @@
 
 ```
 请基于以下两个文档实现 AI-005 Usage & Cost 类型需求：
-- pi-mono-java-review.md（项目计划）
+- campusclaw-review.md（项目计划）
 - pi-mono-typescript-architecture.md（TS 架构参考，重点看 1.3 Usage & Cost）
 
 要求：
@@ -53,7 +53,7 @@
 4. 添加 Jackson 序列化注解
 5. 编写单元测试验证：创建实例、empty() 工厂、序列化/反序列化
 6. 完成后运行：
-   JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew :modules:pi-ai:compileJava :modules:pi-ai:test
+   JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew :modules:campusclaw-ai:compileJava :modules:campusclaw-ai:test
 7. 测试通过后 commit，消息格式：feat(ai): implement Usage and Cost types (AI-005)
 ```
 
@@ -61,10 +61,10 @@
 
 ```
 请基于以下两个文档实现 AI-001 Message 类型体系需求：
-- pi-mono-java-review.md（项目计划）
+- campusclaw-review.md（项目计划）
 - pi-mono-typescript-architecture.md（TS 架构参考，重点看 1.1 Message 类型体系）
 
-前置条件：AI-002 ContentBlock 和 AI-005 Usage 已在 com.mariozechner.pi.ai.types 下实现。
+前置条件：AI-002 ContentBlock 和 AI-005 Usage 已在 com.campusclaw.ai.types 下实现。
 
 要求：
 1. 在 modules/ai/src/main/java/com/mariozechner/pi/ai/types/ 下创建
@@ -84,7 +84,7 @@
 3. 添加 Jackson 多态序列化注解（@JsonTypeInfo 基于 role 字段区分）
 4. 编写单元测试覆盖：创建、序列化/反序列化、UserMessage 便捷构造、多态反序列化
 5. 完成后运行：
-   JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew :modules:pi-ai:compileJava :modules:pi-ai:test
+   JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew :modules:campusclaw-ai:compileJava :modules:campusclaw-ai:test
 6. 测试通过后 commit，消息格式：feat(ai): implement Message type hierarchy (AI-001)
 ```
 
@@ -92,10 +92,10 @@
 
 ```
 请基于以下两个文档实现 AI-003 Tool 定义类型需求：
-- pi-mono-java-review.md（项目计划）
+- campusclaw-review.md（项目计划）
 - pi-mono-typescript-architecture.md（TS 架构参考，重点看 1.5 Tool 定义）
 
-前置条件：AI-001 Message 已在 com.mariozechner.pi.ai.types 下实现。
+前置条件：AI-001 Message 已在 com.campusclaw.ai.types 下实现。
 
 要求：
 1. 在 modules/ai/src/main/java/com/mariozechner/pi/ai/types/ 下创建
@@ -107,7 +107,7 @@
 3. 添加 Jackson 序列化注解
 4. 编写单元测试：构建带 JSON Schema 的 Tool 实例、Context 创建、序列化/反序列化
 5. 完成后运行：
-   JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew :modules:pi-ai:compileJava :modules:pi-ai:test
+   JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew :modules:campusclaw-ai:compileJava :modules:campusclaw-ai:test
 6. 测试通过后 commit，消息格式：feat(ai): implement Tool and Context types (AI-003)
 ```
 
@@ -115,7 +115,7 @@
 
 ```
 请基于以下两个文档实现 AI-004 Model 定义类型需求：
-- pi-mono-java-review.md（项目计划）
+- campusclaw-review.md（项目计划）
 - pi-mono-typescript-architecture.md（TS 架构参考，重点看 1.4 Model 定义、1.11 Provider 类型）
 
 要求：
@@ -141,13 +141,13 @@
 3. 枚举需要 @JsonCreator 反序列化支持（从 string → enum）
 4. 编写单元测试
 5. 完成后运行：
-   JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew :modules:pi-ai:compileJava :modules:pi-ai:test
+   JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew :modules:campusclaw-ai:compileJava :modules:campusclaw-ai:test
 6. 测试通过后 commit，消息格式：feat(ai): implement Model, Provider and Api types (AI-004)
 ```
 
 ---
 
-## Phase 2: AI 基础设施（pi-ai）
+## Phase 2: AI 基础设施（campusclaw-ai）
 
 > 建议顺序：AI-011 → AI-006 → AI-007 → AI-008 → AI-009 → AI-010 → AI-012 → AI-013
 
@@ -155,7 +155,7 @@
 
 ```
 请基于以下两个文档实现 AI-011 StreamOptions 类型需求：
-- pi-mono-java-review.md（项目计划，Phase 2）
+- campusclaw-review.md（项目计划，Phase 2）
 - pi-mono-typescript-architecture.md（TS 架构参考，重点看 1.9 StreamOptions）
 
 要求：
@@ -175,7 +175,7 @@
 3. 提供 Builder 模式构建 StreamOptions（字段太多不适合直接构造）
 4. 编写单元测试
 5. 完成后运行：
-   JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew :modules:pi-ai:compileJava :modules:pi-ai:test
+   JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew :modules:campusclaw-ai:compileJava :modules:campusclaw-ai:test
 6. 测试通过后 commit，消息格式：feat(ai): implement StreamOptions and related types (AI-011)
 ```
 
@@ -183,7 +183,7 @@
 
 ```
 请基于以下两个文档实现 AI-006 EventStream 泛型类需求：
-- pi-mono-java-review.md（项目计划，Phase 2）
+- campusclaw-review.md（项目计划，Phase 2）
 - pi-mono-typescript-architecture.md（TS 架构参考，重点看 1.6 EventStream 流式架构）
 
 这是流式架构的核心组件，复杂度大，请先设计再实现。
@@ -207,7 +207,7 @@
    - 错误传播
    - 多线程并发 push
 6. 完成后运行：
-   JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew :modules:pi-ai:compileJava :modules:pi-ai:test
+   JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew :modules:campusclaw-ai:compileJava :modules:campusclaw-ai:test
 7. 测试通过后 commit，消息格式：feat(ai): implement EventStream with Reactor Flux/Sinks (AI-006)
 ```
 
@@ -215,7 +215,7 @@
 
 ```
 请基于以下两个文档实现 AI-007 AssistantMessageEvent 协议需求：
-- pi-mono-java-review.md（项目计划，Phase 2）
+- campusclaw-review.md（项目计划，Phase 2）
 - pi-mono-typescript-architecture.md（TS 架构参考，重点看 1.7 AssistantMessageEvent 协议）
 
 前置条件：AI-001~005 类型已实现。
@@ -238,7 +238,7 @@
 3. 添加 Jackson 多态序列化注解（@JsonTypeInfo 基于 type 字段）
 4. 编写单元测试验证各事件类型的创建和序列化
 5. 完成后运行：
-   JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew :modules:pi-ai:compileJava :modules:pi-ai:test
+   JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew :modules:campusclaw-ai:compileJava :modules:campusclaw-ai:test
 6. 测试通过后 commit，消息格式：feat(ai): implement AssistantMessageEvent protocol (AI-007)
 ```
 
@@ -246,7 +246,7 @@
 
 ```
 请基于以下两个文档实现 AI-008 AssistantMessageEventStream 需求：
-- pi-mono-java-review.md（项目计划，Phase 2）
+- campusclaw-review.md（项目计划，Phase 2）
 - pi-mono-typescript-architecture.md（TS 架构参考，重点看 1.6 的特化流）
 
 前置条件：AI-006 EventStream 和 AI-007 AssistantMessageEvent 已实现。
@@ -263,7 +263,7 @@
      pushError(String reason, AssistantMessage error)
 3. 编写单元测试：模拟完整流式序列（start → text deltas → done）
 4. 完成后运行：
-   JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew :modules:pi-ai:compileJava :modules:pi-ai:test
+   JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew :modules:campusclaw-ai:compileJava :modules:campusclaw-ai:test
 5. 测试通过后 commit，消息格式：feat(ai): implement AssistantMessageEventStream (AI-008)
 ```
 
@@ -271,7 +271,7 @@
 
 ```
 请基于以下两个文档实现 AI-009 ApiProvider 接口需求：
-- pi-mono-java-review.md（项目计划，Phase 2）
+- campusclaw-review.md（项目计划，Phase 2）
 - pi-mono-typescript-architecture.md（TS 架构参考，重点看 1.8 ApiProvider 接口 & Registry）
 
 前置条件：AI-006~008 流式组件和 AI-011 StreamOptions 已实现。
@@ -291,7 +291,7 @@
 4. 编写一个 MockApiProvider 用于测试
 5. 编写单元测试验证 mock provider 的流式行为
 6. 完成后运行：
-   JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew :modules:pi-ai:compileJava :modules:pi-ai:test
+   JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew :modules:campusclaw-ai:compileJava :modules:campusclaw-ai:test
 7. 测试通过后 commit，消息格式：feat(ai): implement ApiProvider interface (AI-009)
 ```
 
@@ -299,7 +299,7 @@
 
 ```
 请基于以下两个文档实现 AI-010 ApiProviderRegistry 需求：
-- pi-mono-java-review.md（项目计划，Phase 2）
+- campusclaw-review.md（项目计划，Phase 2）
 - pi-mono-typescript-architecture.md（TS 架构参考，重点看 1.8 Registry 操作）
 
 前置条件：AI-009 ApiProvider 接口已实现。
@@ -321,7 +321,7 @@
 3. 内部用 Map<Api, ApiProvider> 索引，支持按 sourceId 分组注销
 4. 编写单元测试（使用 @SpringBootTest 或纯单元测试 + mock）
 5. 完成后运行：
-   JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew :modules:pi-ai:compileJava :modules:pi-ai:test
+   JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew :modules:campusclaw-ai:compileJava :modules:campusclaw-ai:test
 6. 测试通过后 commit，消息格式：feat(ai): implement ApiProviderRegistry with Spring DI (AI-010)
 ```
 
@@ -329,7 +329,7 @@
 
 ```
 请基于以下两个文档实现 AI-012 Model Registry 需求：
-- pi-mono-java-review.md（项目计划，Phase 2）
+- campusclaw-review.md（项目计划，Phase 2）
 - pi-mono-typescript-architecture.md（TS 架构参考，重点看 1.4 Model 定义中的注册表描述）
 
 前置条件：AI-004 Model/Provider/Api 类型已实现。
@@ -353,7 +353,7 @@
    - 每个模型填入合理的 cost、contextWindow、maxTokens
 5. 编写单元测试验证注册/查询
 6. 完成后运行：
-   JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew :modules:pi-ai:compileJava :modules:pi-ai:test
+   JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew :modules:campusclaw-ai:compileJava :modules:campusclaw-ai:test
 7. 测试通过后 commit，消息格式：feat(ai): implement ModelRegistry with built-in models (AI-012)
 ```
 
@@ -361,16 +361,16 @@
 
 ```
 请基于以下两个文档实现 AI-013 Top-Level API 需求：
-- pi-mono-java-review.md（项目计划，Phase 2）
+- campusclaw-review.md（项目计划，Phase 2）
 - pi-mono-typescript-architecture.md（TS 架构参考，重点看 1.10 顶层 API）
 
 前置条件：AI-006~012 全部已实现。
 
 要求：
 1. 在 modules/ai/src/main/java/com/mariozechner/pi/ai/ 下创建
-2. 使用 Spring @Service 实现 PiAiService（或叫 AiService）：
+2. 使用 Spring @Service 实现 CampusClawAiService（或叫 AiService）：
    @Service
-   public class PiAiService {
+   public class CampusClawAiService {
      // 注入 ApiProviderRegistry 和 ModelRegistry
 
      // 流式调用
@@ -388,13 +388,13 @@
 4. complete 方法消费 stream 的 Flux 直到 DoneEvent，返回 Mono<AssistantMessage>
 5. 编写单元测试（mock Provider，验证 stream → complete 流程）
 6. 完成后运行：
-   JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew :modules:pi-ai:compileJava :modules:pi-ai:test
-7. 测试通过后 commit，消息格式：feat(ai): implement top-level PiAiService (AI-013)
+   JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew :modules:campusclaw-ai:compileJava :modules:campusclaw-ai:test
+7. 测试通过后 commit，消息格式：feat(ai): implement top-level CampusClawAiService (AI-013)
 ```
 
 ---
 
-## Phase 3: 优先 Provider（pi-ai）
+## Phase 3: 优先 Provider（campusclaw-ai）
 
 > 4 个 Provider 可并行开发
 
@@ -402,7 +402,7 @@
 
 ```
 请基于以下两个文档实现 AI-014 Anthropic Provider 需求：
-- pi-mono-java-review.md（项目计划，Phase 3）
+- campusclaw-review.md（项目计划，Phase 3）
 - pi-mono-typescript-architecture.md（TS 架构参考）
 
 前置条件：Phase 2 全部完成，ApiProvider 接口和 Registry 已就绪。
@@ -425,7 +425,7 @@
    - Usage 统计映射（input/output tokens + cache tokens）
 4. 编写单元测试（MockWebServer 模拟 Anthropic SSE 响应）
 5. 完成后运行：
-   JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew :modules:pi-ai:compileJava :modules:pi-ai:test
+   JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew :modules:campusclaw-ai:compileJava :modules:campusclaw-ai:test
 6. 测试通过后 commit，消息格式：feat(ai): implement Anthropic provider with streaming (AI-014)
 ```
 
@@ -433,7 +433,7 @@
 
 ```
 请基于以下两个文档实现 AI-015 OpenAI Completions Provider 需求：
-- pi-mono-java-review.md（项目计划，Phase 3）
+- campusclaw-review.md（项目计划，Phase 3）
 - pi-mono-typescript-architecture.md（TS 架构参考）
 
 前置条件：Phase 2 全部完成。
@@ -453,7 +453,7 @@
    - Usage 统计（prompt_tokens / completion_tokens）
 4. 编写单元测试（MockWebServer 模拟 OpenAI SSE 响应）
 5. 完成后运行：
-   JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew :modules:pi-ai:compileJava :modules:pi-ai:test
+   JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew :modules:campusclaw-ai:compileJava :modules:campusclaw-ai:test
 6. 测试通过后 commit，消息格式：feat(ai): implement OpenAI Completions provider (AI-015)
 ```
 
@@ -461,7 +461,7 @@
 
 ```
 请基于以下两个文档实现 AI-016 OpenAI Responses Provider 需求：
-- pi-mono-java-review.md（项目计划，Phase 3）
+- campusclaw-review.md（项目计划，Phase 3）
 - pi-mono-typescript-architecture.md（TS 架构参考）
 
 前置条件：Phase 2 全部完成。
@@ -480,7 +480,7 @@
    - 与 Completions Provider 共享工具/消息转换逻辑
 4. 编写单元测试
 5. 完成后运行：
-   JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew :modules:pi-ai:compileJava :modules:pi-ai:test
+   JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew :modules:campusclaw-ai:compileJava :modules:campusclaw-ai:test
 6. 测试通过后 commit，消息格式：feat(ai): implement OpenAI Responses provider (AI-016)
 ```
 
@@ -488,7 +488,7 @@
 
 ```
 请基于以下两个文档实现 AI-017 AWS Bedrock Provider 需求：
-- pi-mono-java-review.md（项目计划，Phase 3）
+- campusclaw-review.md（项目计划，Phase 3）
 - pi-mono-typescript-architecture.md（TS 架构参考）
 
 前置条件：Phase 2 全部完成。
@@ -508,13 +508,13 @@
    - Usage 统计映射
 4. 编写单元测试
 5. 完成后运行：
-   JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew :modules:pi-ai:compileJava :modules:pi-ai:test
+   JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew :modules:campusclaw-ai:compileJava :modules:campusclaw-ai:test
 6. 测试通过后 commit，消息格式：feat(ai): implement AWS Bedrock provider (AI-017)
 ```
 
 ---
 
-## Phase 4: Agent Core（pi-agent-core）
+## Phase 4: Agent Core（campusclaw-agent-core）
 
 > 建议顺序：AC-002 → AC-003 → AC-001 → AC-007 → AC-008 → AC-004 → AC-005 → AC-006
 
@@ -522,10 +522,10 @@
 
 ```
 请基于以下两个文档实现 AC-002 AgentTool 接口需求：
-- pi-mono-java-review.md（项目计划，Phase 4）
+- campusclaw-review.md（项目计划，Phase 4）
 - pi-mono-typescript-architecture.md（TS 架构参考，重点看 2.2 AgentTool）
 
-前置条件：pi-ai 的 Tool、ContentBlock 类型已实现。
+前置条件：campusclaw-ai 的 Tool、ContentBlock 类型已实现。
 
 要求：
 1. 在 modules/agent-core/src/main/java/com/mariozechner/pi/agent/tool/ 下创建
@@ -553,7 +553,7 @@
    }
 3. 编写单元测试（mock tool 实现）
 4. 完成后运行：
-   JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew :modules:pi-agent-core:compileJava :modules:pi-agent-core:test
+   JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew :modules:campusclaw-agent-core:compileJava :modules:campusclaw-agent-core:test
 5. 测试通过后 commit，消息格式：feat(agent-core): implement AgentTool interface (AC-002)
 ```
 
@@ -561,7 +561,7 @@
 
 ```
 请基于以下两个文档实现 AC-003 AgentEvent 事件体系需求：
-- pi-mono-java-review.md（项目计划，Phase 4）
+- campusclaw-review.md（项目计划，Phase 4）
 - pi-mono-typescript-architecture.md（TS 架构参考，重点看 2.4 AgentEvent 事件体系）
 
 要求：
@@ -581,7 +581,7 @@
    }
 4. 编写单元测试
 5. 完成后运行：
-   JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew :modules:pi-agent-core:compileJava :modules:pi-agent-core:test
+   JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew :modules:campusclaw-agent-core:compileJava :modules:campusclaw-agent-core:test
 6. 测试通过后 commit，消息格式：feat(agent-core): implement AgentEvent hierarchy (AC-003)
 ```
 
@@ -589,7 +589,7 @@
 
 ```
 请基于以下两个文档实现 AC-001 AgentState 状态机需求：
-- pi-mono-java-review.md（项目计划，Phase 4）
+- campusclaw-review.md（项目计划，Phase 4）
 - pi-mono-typescript-architecture.md（TS 架构参考，重点看 2.1 AgentState）
 
 前置条件：AC-002 AgentTool 和 AC-003 AgentEvent 已实现。
@@ -613,7 +613,7 @@
 4. 提供 snapshot() 方法返回当前状态的不可变快照
 5. 编写单元测试验证状态变更和线程安全
 6. 完成后运行：
-   JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew :modules:pi-agent-core:compileJava :modules:pi-agent-core:test
+   JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew :modules:campusclaw-agent-core:compileJava :modules:campusclaw-agent-core:test
 7. 测试通过后 commit，消息格式：feat(agent-core): implement AgentState (AC-001)
 ```
 
@@ -621,7 +621,7 @@
 
 ```
 请基于以下两个文档实现 AC-007 Context 转换需求：
-- pi-mono-java-review.md（项目计划，Phase 4）
+- campusclaw-review.md（项目计划，Phase 4）
 - pi-mono-typescript-architecture.md（TS 架构参考，重点看 2.5 中的 convertToLlm 和 transformContext）
 
 要求：
@@ -639,7 +639,7 @@
 3. 提供默认实现 DefaultMessageConverter（直接透传）
 4. 编写单元测试
 5. 完成后运行：
-   JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew :modules:pi-agent-core:compileJava :modules:pi-agent-core:test
+   JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew :modules:campusclaw-agent-core:compileJava :modules:campusclaw-agent-core:test
 6. 测试通过后 commit，消息格式：feat(agent-core): implement context conversion interfaces (AC-007)
 ```
 
@@ -647,7 +647,7 @@
 
 ```
 请基于以下两个文档实现 AC-008 Steering & Follow-up 需求：
-- pi-mono-java-review.md（项目计划，Phase 4）
+- campusclaw-review.md（项目计划，Phase 4）
 - pi-mono-typescript-architecture.md（TS 架构参考，重点看 2.6 Agent 类的 steering/followUp 和 5.4 Steering & Follow-up）
 
 要求：
@@ -665,7 +665,7 @@
 3. 线程安全：Agent Loop 在工具执行期间可能有外部线程 enqueue steering 消息
 4. 编写单元测试覆盖：ALL 模式一次取完、ONE_AT_A_TIME 逐条取
 5. 完成后运行：
-   JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew :modules:pi-agent-core:compileJava :modules:pi-agent-core:test
+   JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew :modules:campusclaw-agent-core:compileJava :modules:campusclaw-agent-core:test
 6. 测试通过后 commit，消息格式：feat(agent-core): implement steering and follow-up queues (AC-008)
 ```
 
@@ -673,7 +673,7 @@
 
 ```
 请基于以下两个文档实现 AC-004 Tool 执行管道需求：
-- pi-mono-java-review.md（项目计划，Phase 4）
+- campusclaw-review.md（项目计划，Phase 4）
 - pi-mono-typescript-architecture.md（TS 架构参考，重点看 2.3 Tool 执行钩子、5.4 工具执行管道）
 
 前置条件：AC-002 AgentTool 和 AC-003 AgentEvent 已实现。
@@ -698,7 +698,7 @@
 5. 定义 BeforeToolCallContext/Result、AfterToolCallContext/Result（参考 TS 2.3 节）
 6. 编写单元测试覆盖：正常执行、beforeToolCall 阻止、afterToolCall 覆盖结果、并行执行
 7. 完成后运行：
-   JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew :modules:pi-agent-core:compileJava :modules:pi-agent-core:test
+   JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew :modules:campusclaw-agent-core:compileJava :modules:campusclaw-agent-core:test
 8. 测试通过后 commit，消息格式：feat(agent-core): implement tool execution pipeline (AC-004)
 ```
 
@@ -706,7 +706,7 @@
 
 ```
 请基于以下两个文档实现 AC-005 Agent Loop 需求：
-- pi-mono-java-review.md（项目计划，Phase 4）
+- campusclaw-review.md（项目计划，Phase 4）
 - pi-mono-typescript-architecture.md（TS 架构参考，重点看 2.5 Agent Loop 配置、2.7 Agent Loop 函数、2.8 事件发射序列）
 
 前置条件：AC-001~004、AC-007、AC-008 全部已实现。这是 Agent Core 最核心的组件。
@@ -735,7 +735,7 @@
    → 添加 prompt 到 context
    loop:
      emit turn_start → message_start
-     调用 PiAiService.stream() 获取 LLM 流式响应
+     调用 CampusClawAiService.stream() 获取 LLM 流式响应
      for each event: emit message_update
      emit message_end
      if has tool calls:
@@ -746,9 +746,9 @@
        check followUp queue → 如有则继续
        emit turn_end → break
    emit agent_end
-5. 编写单元测试（mock PiAiService，验证完整循环）
+5. 编写单元测试（mock CampusClawAiService，验证完整循环）
 6. 完成后运行：
-   JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew :modules:pi-agent-core:compileJava :modules:pi-agent-core:test
+   JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew :modules:campusclaw-agent-core:compileJava :modules:campusclaw-agent-core:test
 7. 测试通过后 commit，消息格式：feat(agent-core): implement AgentLoop (AC-005)
 ```
 
@@ -756,7 +756,7 @@
 
 ```
 请基于以下两个文档实现 AC-006 Agent 类需求：
-- pi-mono-java-review.md（项目计划，Phase 4）
+- campusclaw-review.md（项目计划，Phase 4）
 - pi-mono-typescript-architecture.md（TS 架构参考，重点看 2.6 Agent 类完整 API）
 
 前置条件：AC-001~005、AC-007、AC-008 全部已实现。
@@ -797,13 +797,13 @@
 5. subscribe 返回取消订阅的 Runnable
 6. 编写单元测试覆盖：prompt → 事件 → 完成、abort 取消、steering 注入
 7. 完成后运行：
-   JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew :modules:pi-agent-core:compileJava :modules:pi-agent-core:test
+   JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew :modules:campusclaw-agent-core:compileJava :modules:campusclaw-agent-core:test
 8. 测试通过后 commit，消息格式：feat(agent-core): implement Agent class (AC-006)
 ```
 
 ---
 
-## Phase 5: TUI 核心（pi-tui）
+## Phase 5: TUI 核心（campusclaw-tui）
 
 > 建议顺序：TU-007 → TU-001 → TU-002 → TU-003 → TU-004 → TU-006 → TU-005
 
@@ -811,7 +811,7 @@
 
 ```
 请基于以下两个文档实现 TU-007 ANSI 工具函数需求：
-- pi-mono-java-review.md（项目计划，Phase 5）
+- campusclaw-review.md（项目计划，Phase 5）
 - pi-mono-typescript-architecture.md（TS 架构参考，重点看 4.5 ANSI 工具函数）
 
 这是 TUI 的基础工具层，其他组件依赖它，优先实现。
@@ -827,7 +827,7 @@
    - String applyBackground(String line, int width, UnaryOperator<String> bgFn) — 应用背景色填充
 3. 编写充分的单元测试覆盖：纯文本、含 ANSI 码、含中文、混合、边界条件
 4. 完成后运行：
-   JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew :modules:pi-tui:compileJava :modules:pi-tui:test
+   JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew :modules:campusclaw-tui:compileJava :modules:campusclaw-tui:test
 5. 测试通过后 commit，消息格式：feat(tui): implement ANSI utility functions (TU-007)
 ```
 
@@ -835,7 +835,7 @@
 
 ```
 请基于以下两个文档实现 TU-001 Component 接口 + 差量渲染器需求：
-- pi-mono-java-review.md（项目计划，Phase 5）
+- campusclaw-review.md（项目计划，Phase 5）
 - pi-mono-typescript-architecture.md（TS 架构参考，重点看 4.1 Component 接口、4.6 差量渲染）
 
 前置条件：TU-007 ANSI 工具函数已实现。
@@ -861,7 +861,7 @@
    record FullRerender()
 4. 编写单元测试
 5. 完成后运行：
-   JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew :modules:pi-tui:compileJava :modules:pi-tui:test
+   JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew :modules:campusclaw-tui:compileJava :modules:campusclaw-tui:test
 6. 测试通过后 commit，消息格式：feat(tui): implement Component interface and DiffRenderer (TU-001)
 ```
 
@@ -869,7 +869,7 @@
 
 ```
 请基于以下两个文档实现 TU-002 Terminal 抽象需求：
-- pi-mono-java-review.md（项目计划，Phase 5）
+- campusclaw-review.md（项目计划，Phase 5）
 - pi-mono-typescript-architecture.md（TS 架构参考，重点看 4.3 Terminal 抽象）
 
 要求：
@@ -890,7 +890,7 @@
 4. 实现 TestTerminal（用于测试的内存 Terminal）
 5. 编写单元测试
 6. 完成后运行：
-   JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew :modules:pi-tui:compileJava :modules:pi-tui:test
+   JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew :modules:campusclaw-tui:compileJava :modules:campusclaw-tui:test
 7. 测试通过后 commit，消息格式：feat(tui): implement Terminal abstraction with JLine (TU-002)
 ```
 
@@ -898,7 +898,7 @@
 
 ```
 请基于以下两个文档实现 TU-003 基础组件需求：
-- pi-mono-java-review.md（项目计划，Phase 5）
+- campusclaw-review.md（项目计划，Phase 5）
 - pi-mono-typescript-architecture.md（TS 架构参考，重点看 4.2 内置组件中的 Text、Container、Box）
 
 前置条件：TU-001 Component 接口和 TU-007 ANSI 工具已实现。
@@ -912,7 +912,7 @@
 3. 每个组件实现 Component 接口的 render(width) 方法
 4. 编写单元测试验证渲染输出
 5. 完成后运行：
-   JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew :modules:pi-tui:compileJava :modules:pi-tui:test
+   JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew :modules:campusclaw-tui:compileJava :modules:campusclaw-tui:test
 6. 测试通过后 commit，消息格式：feat(tui): implement Text, Container and Box components (TU-003)
 ```
 
@@ -920,7 +920,7 @@
 
 ```
 请基于以下两个文档实现 TU-004 Markdown 渲染需求：
-- pi-mono-java-review.md（项目计划，Phase 5）
+- campusclaw-review.md（项目计划，Phase 5）
 - pi-mono-typescript-architecture.md（TS 架构参考，重点看 4.2 Markdown 组件）
 
 前置条件：TU-001 Component 和 TU-007 ANSI 工具已实现。
@@ -935,7 +935,7 @@
 3. 可使用简单的手写 parser 或引入轻量 Markdown 解析库
 4. 编写单元测试验证各种 Markdown 元素的渲染
 5. 完成后运行：
-   JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew :modules:pi-tui:compileJava :modules:pi-tui:test
+   JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew :modules:campusclaw-tui:compileJava :modules:campusclaw-tui:test
 6. 测试通过后 commit，消息格式：feat(tui): implement Markdown rendering component (TU-004)
 ```
 
@@ -943,7 +943,7 @@
 
 ```
 请基于以下两个文档实现 TU-006 SelectList 组件需求：
-- pi-mono-java-review.md（项目计划，Phase 5）
+- campusclaw-review.md（项目计划，Phase 5）
 - pi-mono-typescript-architecture.md（TS 架构参考，重点看 4.2 SelectList）
 
 前置条件：TU-001 Component 已实现。
@@ -958,7 +958,7 @@
    - 自定义主题：selectedBg、selectedFg、normalFg
 3. 编写单元测试验证导航和渲染
 4. 完成后运行：
-   JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew :modules:pi-tui:compileJava :modules:pi-tui:test
+   JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew :modules:campusclaw-tui:compileJava :modules:campusclaw-tui:test
 5. 测试通过后 commit，消息格式：feat(tui): implement SelectList component (TU-006)
 ```
 
@@ -966,7 +966,7 @@
 
 ```
 请基于以下两个文档实现 TU-005 Editor/Input 组件需求：
-- pi-mono-java-review.md（项目计划，Phase 5）
+- campusclaw-review.md（项目计划，Phase 5）
 - pi-mono-typescript-architecture.md（TS 架构参考，重点看 4.2 Editor/Input、4.7 输入处理、4.8 Word Wrap）
 
 前置条件：TU-001 Component、TU-002 Terminal、TU-007 ANSI 工具已实现。
@@ -983,13 +983,13 @@
 4. 实现辅助类：UndoStack<T>、KillRing
 5. 编写单元测试
 6. 完成后运行：
-   JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew :modules:pi-tui:compileJava :modules:pi-tui:test
+   JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew :modules:campusclaw-tui:compileJava :modules:campusclaw-tui:test
 7. 测试通过后 commit，消息格式：feat(tui): implement Editor and Input components (TU-005)
 ```
 
 ---
 
-## Phase 6: CLI + 内置工具（pi-coding-agent）
+## Phase 6: CLI + 内置工具（campusclaw-coding-agent）
 
 > 建议顺序：基础工具 → Operations → Executor → 各 Tool → 系统提示 → CLI 入口
 > CA-003/004 → CA-013 → CA-005 → CA-006 → CA-007~012（可并行）→ CA-002 → CA-001
@@ -998,7 +998,7 @@
 
 ```
 请基于以下两个文档实现 CA-003 截断工具需求：
-- pi-mono-java-review.md（项目计划，Phase 6）
+- campusclaw-review.md（项目计划，Phase 6）
 - pi-mono-typescript-architecture.md（TS 架构参考，重点看 3.5 截断工具）
 
 要求：
@@ -1012,7 +1012,7 @@
    - static String formatSize(long bytes) — "32KB"、"1.5MB"
 3. 编写单元测试覆盖各种截断场景
 4. 完成后运行：
-   JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew :modules:pi-coding-agent:compileJava :modules:pi-coding-agent:test
+   JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew :modules:campusclaw-coding-agent:compileJava :modules:campusclaw-coding-agent:test
 5. 测试通过后 commit，消息格式：feat(coding-agent): implement truncation utilities (CA-003)
 ```
 
@@ -1020,7 +1020,7 @@
 
 ```
 请基于以下两个文档实现 CA-004 路径解析工具需求：
-- pi-mono-java-review.md（项目计划，Phase 6）
+- campusclaw-review.md（项目计划，Phase 6）
 - pi-mono-typescript-architecture.md（TS 架构参考，重点看 3.7 路径解析）
 
 要求：
@@ -1031,7 +1031,7 @@
    - 防止目录遍历攻击：解析后的路径必须在 cwd 子树内，否则抛 SecurityException
 3. 编写单元测试覆盖：正常路径、../ 攻击、绝对路径、符号链接
 4. 完成后运行：
-   JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew :modules:pi-coding-agent:compileJava :modules:pi-coding-agent:test
+   JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew :modules:campusclaw-coding-agent:compileJava :modules:campusclaw-coding-agent:test
 5. 测试通过后 commit，消息格式：feat(coding-agent): implement path resolution utilities (CA-004)
 ```
 
@@ -1039,7 +1039,7 @@
 
 ```
 请基于以下两个文档实现 CA-013 Tool Operations 接口需求：
-- pi-mono-java-review.md（项目计划，Phase 6）
+- campusclaw-review.md（项目计划，Phase 6）
 - pi-mono-typescript-architecture.md（TS 架构参考，重点看 3.3 可插拔 Operations 模式）
 
 要求：
@@ -1064,7 +1064,7 @@
 3. 提供默认本地实现 LocalReadOperations、LocalWriteOperations、LocalBashOperations
 4. 编写单元测试
 5. 完成后运行：
-   JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew :modules:pi-coding-agent:compileJava :modules:pi-coding-agent:test
+   JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew :modules:campusclaw-coding-agent:compileJava :modules:campusclaw-coding-agent:test
 6. 测试通过后 commit，消息格式：feat(coding-agent): implement pluggable tool operations (CA-013)
 ```
 
@@ -1072,7 +1072,7 @@
 
 ```
 请基于以下两个文档实现 CA-005 文件变更队列需求：
-- pi-mono-java-review.md（项目计划，Phase 6）
+- campusclaw-review.md（项目计划，Phase 6）
 - pi-mono-typescript-architecture.md（TS 架构参考，重点看 3.6 文件变更队列）
 
 要求：
@@ -1085,7 +1085,7 @@
 4. 同一文件串行执行，不同文件可并行
 5. 编写单元测试验证：同文件串行、不同文件并行
 6. 完成后运行：
-   JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew :modules:pi-coding-agent:compileJava :modules:pi-coding-agent:test
+   JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew :modules:campusclaw-coding-agent:compileJava :modules:campusclaw-coding-agent:test
 7. 测试通过后 commit，消息格式：feat(coding-agent): implement file mutation queue (CA-005)
 ```
 
@@ -1093,7 +1093,7 @@
 
 ```
 请基于以下两个文档实现 CA-006 Bash Executor 需求：
-- pi-mono-java-review.md（项目计划，Phase 6）
+- campusclaw-review.md（项目计划，Phase 6）
 - pi-mono-typescript-architecture.md（TS 架构参考，重点看 3.9 Bash Executor）
 
 前置条件：CA-013 BashOperations 接口已实现。
@@ -1113,7 +1113,7 @@
    - 超时处理、CancellationToken 中断、环境变量合并
 4. 编写单元测试覆盖：正常执行、超时、取消、非零退出码
 5. 完成后运行：
-   JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew :modules:pi-coding-agent:compileJava :modules:pi-coding-agent:test
+   JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew :modules:campusclaw-coding-agent:compileJava :modules:campusclaw-coding-agent:test
 6. 测试通过后 commit，消息格式：feat(coding-agent): implement BashExecutor (CA-006)
 ```
 
@@ -1134,7 +1134,7 @@
    - details 包含 TruncationResult 和 fullOutputPath
 3. 编写单元测试
 4. 完成后运行：
-   JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew :modules:pi-coding-agent:compileJava :modules:pi-coding-agent:test
+   JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew :modules:campusclaw-coding-agent:compileJava :modules:campusclaw-coding-agent:test
 5. 测试通过后 commit，消息格式：feat(coding-agent): implement Bash tool (CA-007)
 ```
 
@@ -1152,7 +1152,7 @@
    - 文件读取 + 行号偏移 + 行数限制 + 图片检测 + 输出截断
    - 默认限制：32KB / 500 行
 3. 编写单元测试
-4. 构建测试：JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew :modules:pi-coding-agent:compileJava :modules:pi-coding-agent:test
+4. 构建测试：JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew :modules:campusclaw-coding-agent:compileJava :modules:campusclaw-coding-agent:test
 5. commit：feat(coding-agent): implement Read tool (CA-008)
 ```
 
@@ -1172,7 +1172,7 @@
    - FileMutationQueue 串行化
 3. 实现辅助：computeEditDiff()、fuzzyFindText()
 4. 编写单元测试覆盖：精确匹配、fuzzy、多次出现报错
-5. 构建测试：JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew :modules:pi-coding-agent:compileJava :modules:pi-coding-agent:test
+5. 构建测试：JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew :modules:campusclaw-coding-agent:compileJava :modules:campusclaw-coding-agent:test
 6. commit：feat(coding-agent): implement Edit tool (CA-009)
 ```
 
@@ -1189,7 +1189,7 @@
    - 参数：path (String), content (String)
    - 创建或覆写文件，自动创建父目录，FileMutationQueue 串行化
 3. 编写单元测试
-4. 构建测试：JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew :modules:pi-coding-agent:compileJava :modules:pi-coding-agent:test
+4. 构建测试：JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew :modules:campusclaw-coding-agent:compileJava :modules:campusclaw-coding-agent:test
 5. commit：feat(coding-agent): implement Write tool (CA-010)
 ```
 
@@ -1206,7 +1206,7 @@
    - Java fallback：Files.walkFileTree + Pattern.compile
    - glob 过滤 PathMatcher、type 过滤预定义扩展名映射
 3. 编写单元测试
-4. 构建测试：JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew :modules:pi-coding-agent:compileJava :modules:pi-coding-agent:test
+4. 构建测试：JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew :modules:campusclaw-coding-agent:compileJava :modules:campusclaw-coding-agent:test
 5. commit：feat(coding-agent): implement Grep tool (CA-011)
 ```
 
@@ -1223,7 +1223,7 @@
    - 排除 .git、node_modules、build 等
    - 按修改时间排序
 3. 编写单元测试
-4. 构建测试：JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew :modules:pi-coding-agent:compileJava :modules:pi-coding-agent:test
+4. 构建测试：JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew :modules:campusclaw-coding-agent:compileJava :modules:campusclaw-coding-agent:test
 5. commit：feat(coding-agent): implement Glob tool (CA-012)
 ```
 
@@ -1231,7 +1231,7 @@
 
 ```
 请基于以下两个文档实现 CA-002 系统提示构建器需求：
-- pi-mono-java-review.md（项目计划，Phase 6）
+- campusclaw-review.md（项目计划，Phase 6）
 - pi-mono-typescript-architecture.md（TS 架构参考，重点看 3.8 系统提示构建）
 
 前置条件：CA-007~012 工具已实现。
@@ -1253,7 +1253,7 @@
    - 追加用户自定义 prompt
 4. 编写单元测试验证各部分正确拼接
 5. 完成后运行：
-   JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew :modules:pi-coding-agent:compileJava :modules:pi-coding-agent:test
+   JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew :modules:campusclaw-coding-agent:compileJava :modules:campusclaw-coding-agent:test
 6. 测试通过后 commit，消息格式：feat(coding-agent): implement SystemPromptBuilder (CA-002)
 ```
 
@@ -1261,17 +1261,17 @@
 
 ```
 请基于以下两个文档实现 CA-001 CLI 入口 + 参数解析需求：
-- pi-mono-java-review.md（项目计划，Phase 6）
+- campusclaw-review.md（项目计划，Phase 6）
 - pi-mono-typescript-architecture.md（TS 架构参考，重点看 3.10 CLI 入口）
 
 前置条件：Phase 4 Agent 类和 Phase 6 工具/提示构建器已实现。
 
 要求：
-1. 修改 modules/coding-agent-cli/src/main/java/com/mariozechner/pi/codingagent/PiCodingAgentApplication.java
-2. 在 com.mariozechner.pi.codingagent.cli/ 下创建 Picocli 命令类：
+1. 修改 modules/coding-agent-cli/src/main/java/com/mariozechner/pi/codingagent/CampusClawApplication.java
+2. 在 com.campusclaw.codingagent.cli/ 下创建 Picocli 命令类：
    @Command(name = "pi", description = "Pi Coding Agent")
    @Component
-   public class PiCommand implements Callable<Integer> {
+   public class CampusClawCommand implements Callable<Integer> {
      @Option(names = {"-m", "--model"}) String model;
      @Option(names = {"-p", "--prompt"}) String prompt;
      @Option(names = {"--mode"}) String mode = "interactive";
@@ -1281,13 +1281,13 @@
 3. 通过 picocli-spring-boot-starter 桥接 Spring Boot
 4. 编写单元测试验证参数解析
 5. 完成后运行：
-   JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew :modules:pi-coding-agent:compileJava :modules:pi-coding-agent:test
+   JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew :modules:campusclaw-coding-agent:compileJava :modules:campusclaw-coding-agent:test
 6. 测试通过后 commit，消息格式：feat(coding-agent): implement CLI entry with Picocli (CA-001)
 ```
 
 ---
 
-## Phase 7: AgentSession + 运行模式 + Skill 系统（pi-coding-agent）
+## Phase 7: AgentSession + 运行模式 + Skill 系统（campusclaw-coding-agent）
 
 > 建议顺序：CA-018 → CA-014 → CA-017 → CA-016 → CA-015
 
@@ -1295,7 +1295,7 @@
 
 ```
 请基于以下文档实现 CA-018 Skill 系统需求：
-- pi-mono-java-review.md（项目计划，Phase 7）
+- campusclaw-review.md（项目计划，Phase 7）
 - pi-mono-typescript-architecture.md（TS 架构参考）
 - TS 参考实现路径：/Users/z/pi-mono/packages/coding-agent/src/core/skills.ts
 
@@ -1383,7 +1383,7 @@ Skill 系统是自包含的能力包，提供专用工作流和指令。遵循 A
    - disableModelInvocation 过滤
 
 10. 完成后运行：
-    JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew :modules:pi-coding-agent:compileJava :modules:pi-coding-agent:test
+    JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew :modules:campusclaw-coding-agent:compileJava :modules:campusclaw-coding-agent:test
 11. 测试通过后 commit，消息格式：feat(coding-agent): implement Skill system (CA-018)
 ```
 
@@ -1391,7 +1391,7 @@ Skill 系统是自包含的能力包，提供专用工作流和指令。遵循 A
 
 ```
 请基于以下文档实现 CA-014 AgentSession 需求：
-- pi-mono-java-review.md（项目计划，Phase 7）
+- campusclaw-review.md（项目计划，Phase 7）
 
 前置条件：Phase 4 Agent 类、Phase 6 工具和提示构建器、CA-018 Skill 系统全部已实现。
 
@@ -1416,14 +1416,14 @@ Skill 系统是自包含的能力包，提供专用工作流和指令。遵循 A
 4. prompt 时先通过 SkillExpander 展开 /skill:name 命令
 5. 编写单元测试
 6. 完成后运行：
-   JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew :modules:pi-coding-agent:compileJava :modules:pi-coding-agent:test
+   JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew :modules:campusclaw-coding-agent:compileJava :modules:campusclaw-coding-agent:test
 7. 测试通过后 commit，消息格式：feat(coding-agent): implement AgentSession (CA-014)
 ```
 
 ### 7.3 CA-017 会话持久化
 
 ```
-请基于 pi-mono-java-review.md 实现 CA-017 会话持久化需求。
+请基于 campusclaw-review.md 实现 CA-017 会话持久化需求。
 
 前置条件：CA-014 AgentSession 已实现。
 
@@ -1439,14 +1439,14 @@ Skill 系统是自包含的能力包，提供专用工作流和指令。遵循 A
 4. 使用 Jackson ObjectMapper，支持 Message 多态反序列化
 5. 编写单元测试覆盖：保存、加载、多态消息
 6. 完成后运行：
-   JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew :modules:pi-coding-agent:compileJava :modules:pi-coding-agent:test
+   JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew :modules:campusclaw-coding-agent:compileJava :modules:campusclaw-coding-agent:test
 7. 测试通过后 commit，消息格式：feat(coding-agent): implement session persistence (CA-017)
 ```
 
 ### 7.4 CA-016 One-shot 模式
 
 ```
-请基于 pi-mono-java-review.md 实现 CA-016 One-shot 模式需求。
+请基于 campusclaw-review.md 实现 CA-016 One-shot 模式需求。
 
 前置条件：CA-014 AgentSession 已实现。
 
@@ -1459,7 +1459,7 @@ Skill 系统是自包含的能力包，提供专用工作流和指令。遵循 A
 3. 发送 prompt → Agent 执行 → stdout 输出 → 退出（0=成功, 1=错误）
 4. 编写单元测试
 5. 完成后运行：
-   JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew :modules:pi-coding-agent:compileJava :modules:pi-coding-agent:test
+   JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew :modules:campusclaw-coding-agent:compileJava :modules:campusclaw-coding-agent:test
 6. 测试通过后 commit，消息格式：feat(coding-agent): implement one-shot mode (CA-016)
 ```
 
@@ -1467,7 +1467,7 @@ Skill 系统是自包含的能力包，提供专用工作流和指令。遵循 A
 
 ```
 请基于以下文档实现 CA-015 交互模式需求：
-- pi-mono-java-review.md（项目计划，Phase 7）
+- campusclaw-review.md（项目计划，Phase 7）
 
 前置条件：CA-014 AgentSession 和 Phase 5 TUI 组件已实现。
 
@@ -1486,7 +1486,7 @@ Skill 系统是自包含的能力包，提供专用工作流和指令。遵循 A
    - Ctrl+C 中断、/exit 退出
 4. 编写单元测试（使用 TestTerminal）
 5. 完成后运行：
-   JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew :modules:pi-coding-agent:compileJava :modules:pi-coding-agent:test
+   JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew :modules:campusclaw-coding-agent:compileJava :modules:campusclaw-coding-agent:test
 6. 测试通过后 commit，消息格式：feat(coding-agent): implement interactive mode with TUI (CA-015)
 ```
 
@@ -1499,7 +1499,7 @@ Skill 系统是自包含的能力包，提供专用工作流和指令。遵循 A
 ### 8.1 IT-001 Provider 集成测试
 
 ```
-请基于 pi-mono-java-review.md 实现 IT-001 Provider 集成测试。
+请基于 campusclaw-review.md 实现 IT-001 Provider 集成测试。
 
 要求：
 1. 在 modules/ai/src/test/java/com/mariozechner/pi/ai/provider/ 下创建
@@ -1509,14 +1509,14 @@ Skill 系统是自包含的能力包，提供专用工作流和指令。遵循 A
    - OpenAIResponsesProviderIntegrationTest
    - BedrockProviderIntegrationTest
 3. 验证：请求参数转换、SSE 事件映射、Usage 统计、错误处理
-4. 运行：JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew :modules:pi-ai:test
+4. 运行：JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew :modules:campusclaw-ai:test
 5. commit：test(ai): add provider integration tests (IT-001)
 ```
 
 ### 8.2 IT-002 Agent Loop 端到端测试
 
 ```
-请基于 pi-mono-java-review.md 实现 IT-002 Agent Loop 端到端测试。
+请基于 campusclaw-review.md 实现 IT-002 Agent Loop 端到端测试。
 
 要求：
 1. 在 modules/agent-core/src/test/java/com/mariozechner/pi/agent/ 下创建
@@ -1525,14 +1525,14 @@ Skill 系统是自包含的能力包，提供专用工作流和指令。遵循 A
    - 完整循环：prompt → LLM → tool → result → LLM → done
    - 多轮工具调用、steering 注入、follow-up、abort
    - 验证事件发射顺序
-3. 运行：JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew :modules:pi-agent-core:test
+3. 运行：JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew :modules:campusclaw-agent-core:test
 4. commit：test(agent-core): add agent loop integration tests (IT-002)
 ```
 
 ### 8.3 IT-003 CLI 端到端测试
 
 ```
-请基于 pi-mono-java-review.md 实现 IT-003 CLI 端到端测试。
+请基于 campusclaw-review.md 实现 IT-003 CLI 端到端测试。
 
 要求：
 1. 在 modules/coding-agent-cli/src/test/java/com/mariozechner/pi/codingagent/ 下创建
@@ -1542,7 +1542,7 @@ Skill 系统是自包含的能力包，提供专用工作流和指令。遵循 A
    - Skill 加载和展开
    - 会话持久化（保存 → 加载 → 验证）
    - MockApiProvider 模拟 LLM
-3. 运行：JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew :modules:pi-coding-agent:test
+3. 运行：JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew :modules:campusclaw-coding-agent:test
 4. commit：test(coding-agent): add CLI integration tests (IT-003)
 ```
 
@@ -1551,7 +1551,7 @@ Skill 系统是自包含的能力包，提供专用工作流和指令。遵循 A
 ## 全量验证
 
 ```
-请对 pi-mono-java 项目做全量验证：
+请对 campusclaw 项目做全量验证：
 
 1. 全量构建：
    JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ./gradlew clean build
