@@ -2,6 +2,7 @@ dependencies {
     // Terminal I/O
     implementation("org.jline:jline-terminal:3.26.2")
     implementation("org.jline:jline-terminal-jansi:3.26.2")
+    implementation("org.jline:jline-terminal-jna:3.26.2")
     implementation("org.jline:jline-reader:3.26.2")
     implementation("org.jline:jline-console:3.26.2")
 

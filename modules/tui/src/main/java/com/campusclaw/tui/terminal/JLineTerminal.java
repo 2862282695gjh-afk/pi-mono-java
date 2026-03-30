@@ -37,6 +37,7 @@ public class JLineTerminal implements Terminal {
             this.jline = TerminalBuilder.builder()
                     .name("campusclaw-tui")
                     .system(true)
+                    .jna(true)
                     .build();
         } catch (IOException e) {
             throw new UncheckedIOException("Failed to build JLine terminal", e);
