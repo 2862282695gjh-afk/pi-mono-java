@@ -12,6 +12,7 @@ if errorlevel 1 (
     echo Install options: >&2
     echo   winget install EclipseAdoptium.Temurin.21.JDK >&2
     echo   Or download from https://adoptium.net/ >&2
+    pause
     exit /b 1
 )
 
@@ -50,13 +51,18 @@ if "%REBUILD%"=="1" (
 
 if defined NEED_BUILD (
     call "%SCRIPT_DIR%gradlew.bat" -p "%SCRIPT_DIR%" :modules:campusclaw-coding-agent:bootJar -q
-    if errorlevel 1 exit /b 1
+    if errorlevel 1 (
+        echo Error: Build failed. >&2
+        pause
+        exit /b 1
+    )
     echo.> "%BUILD_MARKER%"
     call :find_jar
 )
 
 if not defined JAR (
     echo Error: Build failed, JAR not found. >&2
+    pause
     exit /b 1
 )
 
