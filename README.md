@@ -1,4 +1,4 @@
-# CampusClaw
+# XXXClaw
 
 基于 Java 21 + Spring Boot 3.4.1 实现的终端 AI 编程助手，支持多模型供应商，提供交互式 TUI 界面和丰富的代码操作工具。
 
