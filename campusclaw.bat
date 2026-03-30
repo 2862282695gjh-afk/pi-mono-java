@@ -1,6 +1,5 @@
 @echo off
 chcp 65001 >nul
-mode con: cols=220 lines=50
 setlocal enabledelayedexpansion
 
 set "SCRIPT_DIR=%~dp0"
