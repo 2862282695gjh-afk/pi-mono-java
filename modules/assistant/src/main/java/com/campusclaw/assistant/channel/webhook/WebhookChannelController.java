@@ -1,4 +1,4 @@
-package com.campusclaw.assistant.channel;
+package com.campusclaw.assistant.channel.webhook;
 
 import com.campusclaw.assistant.task.Task;
 import com.campusclaw.assistant.task.TaskManager;

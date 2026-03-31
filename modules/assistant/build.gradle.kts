@@ -25,5 +25,9 @@ dependencies {
 
     implementation("com.fasterxml.jackson.datatype:jackson-datatype-jsr310")
 
+    // WebSocket client (Reactor Netty)
+    implementation("io.projectreactor:reactor-core")
+    implementation("io.projectreactor.netty:reactor-netty-http")
+
     testImplementation("org.springframework.boot:spring-boot-starter-test")
 }

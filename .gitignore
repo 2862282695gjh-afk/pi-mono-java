@@ -33,3 +33,12 @@ reports/
 !gradlew.bat
 !/gradle/wrapper/gradle-wrapper.jar
 docs/agent-core-architecture.md
+
+# Data
+data/
+
+# Node modules
+node_modules/
+package.json
+package-lock.json
+

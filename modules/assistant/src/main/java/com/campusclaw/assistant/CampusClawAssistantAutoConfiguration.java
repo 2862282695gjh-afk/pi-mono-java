@@ -3,7 +3,8 @@ package com.campusclaw.assistant;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
-import com.campusclaw.assistant.channel.WebhookChannelProperties;
+import com.campusclaw.assistant.channel.webhook.WebhookChannelProperties;
+import com.campusclaw.assistant.channel.gateway.WebSocketGatewayProperties;
 import com.campusclaw.assistant.mapper.ChatMemoryMapper;
 import com.campusclaw.assistant.mapper.TaskMapper;
 import com.campusclaw.assistant.memory.ChatMemoryRepository;
@@ -19,7 +20,11 @@ import org.springframework.context.annotation.Configuration;
 
 @Configuration
 @ComponentScan
-@EnableConfigurationProperties({AssistantProperties.class, WebhookChannelProperties.class})
+@EnableConfigurationProperties({
+    AssistantProperties.class,
+    WebhookChannelProperties.class,
+    WebSocketGatewayProperties.class
+})
 @MapperScan("com.campusclaw.assistant.mapper")
 public class CampusClawAssistantAutoConfiguration {
 

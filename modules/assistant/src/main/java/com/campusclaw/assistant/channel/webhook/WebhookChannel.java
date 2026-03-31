@@ -1,4 +1,7 @@
-package com.campusclaw.assistant.channel;
+package com.campusclaw.assistant.channel.webhook;
+
+import com.campusclaw.assistant.channel.Channel;
+import com.campusclaw.assistant.channel.ChannelRegistry;
 
 import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;

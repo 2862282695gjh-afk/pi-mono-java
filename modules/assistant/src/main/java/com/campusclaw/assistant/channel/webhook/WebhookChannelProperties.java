@@ -1,4 +1,4 @@
-package com.campusclaw.assistant.channel;
+package com.campusclaw.assistant.channel.webhook;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
