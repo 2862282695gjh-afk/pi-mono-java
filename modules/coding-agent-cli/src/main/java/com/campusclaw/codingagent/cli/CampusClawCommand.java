@@ -685,6 +685,27 @@ public class CampusClawCommand implements Callable<Integer> {
                     return 1;
                 }
             }
+            case "import" -> {
+                if (actionArgs.isEmpty()) {
+                    System.err.println("Usage: campusclaw skill import <archive-path>");
+                    return 1;
+                }
+                Path archivePath = Path.of(actionArgs.get(0));
+                try {
+                    System.out.println("Importing skill from: " + archivePath);
+                    String name = manager.importArchive(archivePath);
+                    System.out.println("Skill imported: " + name);
+                    var skills = new SkillLoader().loadFromDirectory(
+                            com.campusclaw.codingagent.config.AppPaths.USER_SKILLS_DIR.resolve(name), "user");
+                    for (var skill : skills) {
+                        System.out.println("  - " + skill.name() + ": " + skill.description());
+                    }
+                    return 0;
+                } catch (SkillInstallException e) {
+                    System.err.println("Error: " + e.getMessage());
+                    return 1;
+                }
+            }
             case "update" -> {
                 if (actionArgs.isEmpty()) {
                     System.err.println("Usage: campusclaw skill update <name>");
@@ -716,6 +737,7 @@ public class CampusClawCommand implements Callable<Integer> {
 
                     Commands:
                       install <git-url>    Install a skill from a git repository
+                      import <archive>     Import a skill from a .zip or .tar.gz archive
                       list                 List installed skills
                       remove <name>        Remove an installed skill
                       link <path>          Symlink a local skill directory (for development)
@@ -723,6 +745,8 @@ public class CampusClawCommand implements Callable<Integer> {
 
                     Examples:
                       campusclaw skill install https://github.com/user/my-skill
+                      campusclaw skill import ./my-skill.zip
+                      campusclaw skill import ~/Downloads/skill-pack.tar.gz
                       campusclaw skill link ./my-local-skill
                       campusclaw skill list
                       campusclaw skill remove my-skill
@@ -739,6 +763,18 @@ public class CampusClawCommand implements Callable<Integer> {
                     Examples:
                       campusclaw skill install https://github.com/user/my-skill
                       campusclaw skill install git@github.com:user/skill-collection.git""");
+            case "import" -> System.out.println("""
+                    Usage: campusclaw skill import <archive-path>
+
+                    Extract a .zip or .tar.gz archive into ~/.campusclaw/agent/skills/.
+                    The archive must contain at least one SKILL.md file.
+                    If the archive contains a single top-level directory, it will be unwrapped.
+
+                    Supported formats: .zip, .tar.gz, .tgz
+
+                    Examples:
+                      campusclaw skill import ./my-skill.zip
+                      campusclaw skill import ~/Downloads/skill-collection.tar.gz""");
             case "list", "ls" -> System.out.println("""
                     Usage: campusclaw skill list
 

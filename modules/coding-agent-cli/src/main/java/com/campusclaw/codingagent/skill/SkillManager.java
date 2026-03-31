@@ -1,6 +1,8 @@
 package com.campusclaw.codingagent.skill;
 
+import java.io.BufferedInputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -15,6 +17,9 @@ import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.zip.GZIPInputStream;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -160,6 +165,165 @@ public class SkillManager {
         addToManifest(record);
 
         return linkName;
+    }
+
+    // -- Import from archive ------------------------------------------------
+
+    /**
+     * Extracts a ZIP or TAR.GZ archive into the skills directory.
+     * Supports: .zip, .tar.gz, .tgz
+     *
+     * @param archivePath path to the archive file
+     * @return the installed skill's directory name
+     */
+    public String importArchive(Path archivePath) throws SkillInstallException {
+        Path resolved = archivePath.toAbsolutePath().normalize();
+
+        if (!Files.isRegularFile(resolved)) {
+            throw new SkillInstallException("File not found: " + resolved);
+        }
+
+        String fileName = resolved.getFileName().toString().toLowerCase();
+        boolean isZip = fileName.endsWith(".zip");
+        boolean isTarGz = fileName.endsWith(".tar.gz") || fileName.endsWith(".tgz");
+
+        if (!isZip && !isTarGz) {
+            throw new SkillInstallException(
+                    "Unsupported archive format: " + fileName
+                            + "\nSupported formats: .zip, .tar.gz, .tgz");
+        }
+
+        // Derive skill name from archive filename (strip extension)
+        String baseName = fileName;
+        if (fileName.endsWith(".tar.gz")) {
+            baseName = fileName.substring(0, fileName.length() - 7);
+        } else if (fileName.endsWith(".tgz")) {
+            baseName = fileName.substring(0, fileName.length() - 4);
+        } else if (fileName.endsWith(".zip")) {
+            baseName = fileName.substring(0, fileName.length() - 4);
+        }
+        String skillName = baseName
+                .replaceAll("[^a-z0-9-]", "-")
+                .replaceAll("-+", "-")
+                .replaceAll("^-|-$", "");
+
+        if (skillName.isEmpty()) {
+            throw new SkillInstallException("Cannot derive a valid skill name from: " + fileName);
+        }
+
+        Path targetDir = skillsDir.resolve(skillName);
+        if (Files.exists(targetDir)) {
+            throw new SkillInstallException("Directory already exists: " + targetDir
+                    + "\nUse 'campusclaw skill remove " + skillName + "' first.");
+        }
+
+        // Extract to a temp directory first, then move
+        Path tempDir;
+        try {
+            tempDir = Files.createTempDirectory("campusclaw-skill-import-");
+        } catch (IOException e) {
+            throw new SkillInstallException("Failed to create temp directory: " + e.getMessage(), e);
+        }
+
+        try {
+            if (isZip) {
+                extractZip(resolved, tempDir);
+            } else {
+                extractTarGz(resolved, tempDir);
+            }
+
+            // If the archive has a single top-level directory, use its contents
+            Path extractRoot = unwrapSingleRoot(tempDir);
+
+            // Validate that it contains at least one SKILL.md
+            List<Skill> skills = skillLoader.loadFromDirectory(extractRoot, "user");
+            Path rootSkill = extractRoot.resolve(SkillLoader.SKILL_FILENAME);
+            if (skills.isEmpty() && !Files.isRegularFile(rootSkill)) {
+                throw new SkillInstallException(
+                        "No SKILL.md found in archive: " + resolved
+                                + "\nThe archive must contain at least one SKILL.md file.");
+            }
+
+            // Move to skills directory
+            Files.createDirectories(skillsDir);
+            Files.move(extractRoot, targetDir);
+        } catch (IOException e) {
+            deleteRecursively(targetDir);
+            throw new SkillInstallException("Failed to extract archive: " + e.getMessage(), e);
+        } finally {
+            deleteRecursively(tempDir);
+        }
+
+        // Record in manifest
+        var record = new InstalledSkillRecord(
+                skillName,
+                InstalledSkillRecord.SOURCE_ARCHIVE,
+                null,
+                resolved.toString(),
+                Instant.now().toString()
+        );
+        addToManifest(record);
+
+        return skillName;
+    }
+
+    private void extractZip(Path zipFile, Path destDir) throws IOException {
+        try (InputStream fis = Files.newInputStream(zipFile);
+             BufferedInputStream bis = new BufferedInputStream(fis);
+             ZipInputStream zis = new ZipInputStream(bis)) {
+
+            ZipEntry entry;
+            while ((entry = zis.getNextEntry()) != null) {
+                Path entryPath = destDir.resolve(entry.getName()).normalize();
+                // Guard against zip-slip
+                if (!entryPath.startsWith(destDir)) {
+                    throw new IOException("Zip entry outside target directory: " + entry.getName());
+                }
+                if (entry.isDirectory()) {
+                    Files.createDirectories(entryPath);
+                } else {
+                    Files.createDirectories(entryPath.getParent());
+                    Files.copy(zis, entryPath);
+                }
+                zis.closeEntry();
+            }
+        }
+    }
+
+    private void extractTarGz(Path tarGzFile, Path destDir) throws IOException {
+        // Use system tar command — available on macOS and Linux
+        try {
+            var pb = new ProcessBuilder("tar", "xzf", tarGzFile.toString(), "-C", destDir.toString())
+                    .redirectErrorStream(true);
+            var process = pb.start();
+            String output = new String(process.getInputStream().readAllBytes());
+            boolean completed = process.waitFor(GIT_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+            if (!completed) {
+                process.destroyForcibly();
+                throw new IOException("tar extraction timed out");
+            }
+            if (process.exitValue() != 0) {
+                throw new IOException("tar extraction failed:\n" + output);
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IOException("tar extraction interrupted", e);
+        }
+    }
+
+    /**
+     * If the extracted directory contains exactly one subdirectory and no files,
+     * return that subdirectory (common pattern: archive has a single root folder).
+     * Otherwise return the directory itself.
+     */
+    private Path unwrapSingleRoot(Path dir) throws IOException {
+        try (var entries = Files.list(dir)) {
+            List<Path> children = entries.toList();
+            if (children.size() == 1 && Files.isDirectory(children.get(0))) {
+                return children.get(0);
+            }
+        }
+        return dir;
     }
 
     // -- List ---------------------------------------------------------------

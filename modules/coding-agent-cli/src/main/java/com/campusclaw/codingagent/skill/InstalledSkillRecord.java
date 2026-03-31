@@ -22,4 +22,5 @@ public record InstalledSkillRecord(
 ) {
     public static final String SOURCE_GIT = "git";
     public static final String SOURCE_LINK = "link";
+    public static final String SOURCE_ARCHIVE = "archive";
 }
