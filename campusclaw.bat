@@ -51,7 +51,7 @@ if not defined JAR (
 )
 
 :: Launch
-java -Dfile.encoding=UTF-8 -Dstdout.encoding=UTF-8 -Dstderr.encoding=UTF-8 -jar "%JAR%" %ARGS%
+java -Dfile.encoding=UTF-8 -Dstdout.encoding=UTF-8 -Dstderr.encoding=UTF-8 -Djavax.net.ssl.trustStoreType=WINDOWS-ROOT -jar "%JAR%" %ARGS%
 pause
 exit /b %errorlevel%
 
