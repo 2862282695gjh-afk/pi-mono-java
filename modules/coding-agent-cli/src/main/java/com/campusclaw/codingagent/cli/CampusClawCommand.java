@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.concurrent.Callable;
 import java.util.stream.Collectors;
 
+import com.campusclaw.agent.proxy.ProxyConfig;
 import com.campusclaw.agent.tool.AgentTool;
 import com.campusclaw.ai.CampusClawAiService;
 import com.campusclaw.ai.model.ModelRegistry;
@@ -99,6 +100,9 @@ public class CampusClawCommand implements Callable<Integer> {
     @Option(names = {"--port"}, description = "HTTP server port (for server mode)")
     Integer port;
 
+    @Option(names = {"--proxy"}, description = "HTTP/SOCKS5 proxy URL (e.g. http://127.0.0.1:7890)")
+    String proxy;
+
     @Option(names = {"--cwd"}, description = "Working directory (defaults to current directory)")
     Path cwd;
 
@@ -160,6 +164,16 @@ public class CampusClawCommand implements Callable<Integer> {
 
     @Override
     public Integer call() {
+        // --proxy: explicit proxy overrides auto-detection from main()
+        if (proxy != null && !proxy.isBlank()) {
+            ProxyConfig proxyConfig = ProxyConfig.fromUrl(proxy);
+            if (proxyConfig.isConfigured()) {
+                proxyConfig.installAsDefault();
+            } else {
+                System.err.println("Warning: invalid proxy URL: " + proxy);
+            }
+        }
+
         // --cron-tick: execute due cron jobs and exit (for launchd/crontab)
         if (cronTick) {
             return executeCronTick();

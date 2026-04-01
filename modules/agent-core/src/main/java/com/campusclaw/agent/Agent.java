@@ -334,7 +334,7 @@ public class Agent {
         }
         // Append proxy hint for connection failures
         if (isConnectionError(current)) {
-            message += "\n  提示: 如需使用代理，请设置环境变量 HTTPS_PROXY=http://127.0.0.1:<端口号>";
+            message += "\n  提示: 如需使用代理，请添加 --proxy http://127.0.0.1:<端口号> 或设置环境变量 HTTPS_PROXY";
         }
         return message;
     }
