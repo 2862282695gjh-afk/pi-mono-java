@@ -1,5 +1,6 @@
 package com.campusclaw.assistant.channel.gateway;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelInitializer;
@@ -35,22 +36,25 @@ public class WebSocketGatewayConfig implements SmartLifecycle {
 
     private final WebSocketGatewayProperties properties;
     private final GatewayChannel gatewayChannel;
+    private final ObjectMapper objectMapper;
 
     private EventLoopGroup bossGroup;
     private EventLoopGroup workerGroup;
     private Channel serverChannel;
     private volatile boolean running = false;
 
-    public WebSocketGatewayConfig(WebSocketGatewayProperties properties, GatewayChannel gatewayChannel) {
+    public WebSocketGatewayConfig(WebSocketGatewayProperties properties, GatewayChannel gatewayChannel,
+                                  ObjectMapper objectMapper) {
         log.info("WebSocketGatewayConfig constructed with port {}", properties.getPort());
         this.properties = properties;
         this.gatewayChannel = gatewayChannel;
+        this.objectMapper = objectMapper;
     }
 
     @Bean
     public GatewayWebSocketHandler gatewayWebSocketHandler() {
         log.info("Creating GatewayWebSocketHandler bean");
-        return new GatewayWebSocketHandler(properties, gatewayChannel);
+        return new GatewayWebSocketHandler(properties, gatewayChannel, objectMapper);
     }
 
     @Override

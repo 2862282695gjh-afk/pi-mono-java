@@ -15,6 +15,10 @@ public class WebSocketGatewayProperties {
     private String path = "/";
     private String token;
     private int tickIntervalMs = 30000;
+    private int protocolVersion = 3;
+    private String serverVersion = "1.0.0";
+    private int maxPayload = 16777216;       // 16MB
+    private int maxBufferedBytes = 1048576;  // 1MB
 
     public boolean isEnabled() {
         return enabled;
@@ -62,5 +66,37 @@ public class WebSocketGatewayProperties {
 
     public void setTickIntervalMs(int tickIntervalMs) {
         this.tickIntervalMs = tickIntervalMs;
+    }
+
+    public int getProtocolVersion() {
+        return protocolVersion;
+    }
+
+    public void setProtocolVersion(int protocolVersion) {
+        this.protocolVersion = protocolVersion;
+    }
+
+    public String getServerVersion() {
+        return serverVersion;
+    }
+
+    public void setServerVersion(String serverVersion) {
+        this.serverVersion = serverVersion;
+    }
+
+    public int getMaxPayload() {
+        return maxPayload;
+    }
+
+    public void setMaxPayload(int maxPayload) {
+        this.maxPayload = maxPayload;
+    }
+
+    public int getMaxBufferedBytes() {
+        return maxBufferedBytes;
+    }
+
+    public void setMaxBufferedBytes(int maxBufferedBytes) {
+        this.maxBufferedBytes = maxBufferedBytes;
     }
 }

@@ -3,6 +3,8 @@ spring:
     banner-mode: off
     lazy-initialization: true
     web-application-type: none
+  lazy-initialization:
+    exclude: webSocketGatewayConfig,gatewayChannel
   application:
     name: campusclaw-agent
   datasource:
@@ -25,6 +27,12 @@ org:
       enabled: true
     dashboard:
       enabled: false
+
+pi:
+  assistant:
+    gateway:
+      enabled: false
+      token:
 
 logging:
   level:

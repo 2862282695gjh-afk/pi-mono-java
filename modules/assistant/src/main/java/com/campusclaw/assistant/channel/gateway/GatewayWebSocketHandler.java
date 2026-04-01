@@ -1,5 +1,9 @@
 package com.campusclaw.assistant.channel.gateway;
 
+import com.campusclaw.assistant.channel.gateway.protocol.*;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
 import io.netty.handler.codec.http.websocketx.TextWebSocketFrame;
@@ -7,9 +11,9 @@ import io.netty.handler.codec.http.websocketx.WebSocketServerProtocolHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.Map;
-import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.*;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Handles WebSocket messages from connected chat clients.
@@ -21,20 +25,43 @@ public class GatewayWebSocketHandler extends SimpleChannelInboundHandler<TextWeb
 
     private final WebSocketGatewayProperties properties;
     private final GatewayChannel gatewayChannel;
+    private final ObjectMapper objectMapper;
+
     private final Map<String, ChannelHandlerContext> sessions = new ConcurrentHashMap<>();
-
-    // Track authenticated sessions
     private final Map<String, Boolean> authenticatedSessions = new ConcurrentHashMap<>();
+    private final Map<String, AtomicInteger> sessionSeqCounters = new ConcurrentHashMap<>();
+    private final Map<String, ScheduledFuture<?>> tickFutures = new ConcurrentHashMap<>();
 
-    public GatewayWebSocketHandler(WebSocketGatewayProperties properties, GatewayChannel gatewayChannel) {
+    private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
+        Thread t = new Thread(r, "gateway-tick");
+        t.setDaemon(true);
+        return t;
+    });
+
+    public GatewayWebSocketHandler(WebSocketGatewayProperties properties, GatewayChannel gatewayChannel,
+                                   ObjectMapper objectMapper) {
         this.properties = properties;
         this.gatewayChannel = gatewayChannel;
+        this.objectMapper = objectMapper;
     }
 
     @Override
     public void userEventTriggered(ChannelHandlerContext ctx, Object evt) throws Exception {
         if (evt instanceof WebSocketServerProtocolHandler.HandshakeComplete) {
-            log.info("WebSocket handshake completed for channel: {}", ctx.channel().id());
+            String channelId = ctx.channel().id().asShortText();
+            log.info("WebSocket handshake completed for channel: {}", channelId);
+
+            // Send connect.challenge immediately after handshake
+            sendChallenge(ctx);
+
+            // Start periodic tick event
+            ScheduledFuture<?> tickFuture = scheduler.scheduleAtFixedRate(
+                () -> sendTickEvent(ctx),
+                properties.getTickIntervalMs(),
+                properties.getTickIntervalMs(),
+                TimeUnit.MILLISECONDS
+            );
+            tickFutures.put(channelId, tickFuture);
         }
         super.userEventTriggered(ctx, evt);
     }
@@ -47,18 +74,19 @@ public class GatewayWebSocketHandler extends SimpleChannelInboundHandler<TextWeb
         log.debug("Received message from {}: {} chars", channelId, text.length());
 
         try {
-            // Parse message to determine type
-            if (text.contains("\"type\":\"connect\"")) {
-                handleConnect(ctx, text);
-            } else if (text.contains("\"type\":\"req\"")) {
-                handleRequest(ctx, text);
-            } else {
-                log.warn("Unknown message type from {}: {}", channelId,
-                    text.substring(0, Math.min(100, text.length())));
+            GatewayFrame frameObj = objectMapper.readValue(text, GatewayFrame.class);
+
+            switch (frameObj.type()) {
+                case "req" -> handleRequest(ctx, frameObj);
+                case "event" -> handleClientEvent(ctx, frameObj);
+                default -> log.warn("Unknown frame type '{}' from {}", frameObj.type(), channelId);
             }
+        } catch (JsonProcessingException e) {
+            log.error("JSON parse error from {}: {}", channelId, e.getMessage());
+            sendError(ctx, null, "parseError", "Invalid JSON: " + e.getMessage());
         } catch (Exception e) {
             log.error("Error processing message from {}: {}", channelId, e.getMessage());
-            sendHelloError(ctx, "parseError", e.getMessage());
+            sendError(ctx, null, "processingError", e.getMessage());
         }
     }
 
@@ -66,6 +94,7 @@ public class GatewayWebSocketHandler extends SimpleChannelInboundHandler<TextWeb
     public void channelActive(ChannelHandlerContext ctx) throws Exception {
         String channelId = ctx.channel().id().asShortText();
         sessions.put(channelId, ctx);
+        sessionSeqCounters.put(channelId, new AtomicInteger(0));
         log.info("Client connected: {}", channelId);
         super.channelActive(ctx);
     }
@@ -75,6 +104,13 @@ public class GatewayWebSocketHandler extends SimpleChannelInboundHandler<TextWeb
         String channelId = ctx.channel().id().asShortText();
         sessions.remove(channelId);
         authenticatedSessions.remove(channelId);
+        sessionSeqCounters.remove(channelId);
+
+        ScheduledFuture<?> tickFuture = tickFutures.remove(channelId);
+        if (tickFuture != null) {
+            tickFuture.cancel(false);
+        }
+
         gatewayChannel.removeSession(channelId);
         log.info("Client disconnected: {}", channelId);
         super.channelInactive(ctx);
@@ -86,154 +122,230 @@ public class GatewayWebSocketHandler extends SimpleChannelInboundHandler<TextWeb
         ctx.close();
     }
 
-    private void handleConnect(ChannelHandlerContext ctx, String text) {
+    // ── Connect challenge ──────────────────────────────────────────
+
+    private void sendChallenge(ChannelHandlerContext ctx) {
+        String nonce = UUID.randomUUID().toString();
+        long ts = System.currentTimeMillis();
+
+        Map<String, Object> payload = Map.of("nonce", nonce, "ts", ts);
+        writeFrame(ctx, Map.of(
+            "type", "event",
+            "event", "connect.challenge",
+            "payload", payload
+        ));
+        log.debug("Sent connect.challenge to {}", ctx.channel().id().asShortText());
+    }
+
+    // ── Request handling ───────────────────────────────────────────
+
+    private void handleRequest(ChannelHandlerContext ctx, GatewayFrame frame) {
+        String channelId = ctx.channel().id().asShortText();
+        String reqId = frame.id();
+
+        // Connect method does not require prior authentication
+        if ("connect".equals(frame.method())) {
+            handleConnect(ctx, frame);
+            return;
+        }
+
+        // All other methods require authentication
+        if (!authenticatedSessions.containsKey(channelId)) {
+            log.warn("Unauthenticated request from {}", channelId);
+            sendError(ctx, reqId, "authRequired", "Not authenticated");
+            return;
+        }
+
+        switch (frame.method()) {
+            case "sessions.send" -> handleSessionsSend(ctx, frame);
+            case "policy.tick" -> sendResponse(ctx, reqId, Map.of("tick", true));
+            default -> {
+                log.warn("Unknown method '{}' from {}", frame.method(), channelId);
+                sendError(ctx, reqId, "unknownMethod", "Unknown method: " + frame.method());
+            }
+        }
+    }
+
+    private void handleConnect(ChannelHandlerContext ctx, GatewayFrame frame) {
+        String channelId = ctx.channel().id().asShortText();
+        String reqId = frame.id();
+
         try {
-            // Parse ConnectParams
-            // Expected format: {"type":"connect", "minProtocol":3, "maxProtocol":3, "client":{...}, "auth":{"token":"..."}}
-            String token = extractToken(text);
+            ConnectParams params = objectMapper.treeToValue(
+                objectMapper.valueToTree(frame.params()), ConnectParams.class);
 
             // Validate token
+            String token = params.auth() != null ? params.auth().token() : null;
             if (properties.getToken() != null && !properties.getToken().isEmpty()) {
                 if (token == null || !properties.getToken().equals(token)) {
-                    log.warn("Invalid token from {}", ctx.channel().id().asShortText());
-                    sendHelloError(ctx, "authFailed", "Invalid or missing token");
+                    log.warn("Invalid token from {}", channelId);
+                    sendError(ctx, reqId, "authFailed", "Invalid or missing token");
                     ctx.close();
                     return;
                 }
             }
 
             // Mark session as authenticated
-            String channelId = ctx.channel().id().asShortText();
             authenticatedSessions.put(channelId, true);
             gatewayChannel.registerSession(channelId, ctx);
 
-            // Send HelloOk
-            sendHelloOk(ctx);
-
+            // Send hello-ok response
+            sendHelloOk(ctx, reqId);
             log.info("Client {} authenticated successfully", channelId);
         } catch (Exception e) {
-            log.error("Error handling connect: {}", e.getMessage());
-            sendHelloError(ctx, "connectError", e.getMessage());
+            log.error("Error handling connect: {}", e.getMessage(), e);
+            sendError(ctx, reqId, "connectError", e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName());
         }
     }
 
-    private void handleRequest(ChannelHandlerContext ctx, String text) {
+    private void handleSessionsSend(ChannelHandlerContext ctx, GatewayFrame frame) {
         String channelId = ctx.channel().id().asShortText();
-
-        // Check if authenticated
-        if (!authenticatedSessions.containsKey(channelId)) {
-            log.warn("Unauthenticated request from {}", channelId);
-            sendResponse(ctx, extractRequestId(text), false, null, "Not authenticated");
-            return;
-        }
+        String reqId = frame.id();
 
         try {
-            // Parse request
-            String requestId = extractRequestId(text);
-            String method = extractMethod(text);
-            String sessionKey = extractSessionKey(text);
-            String messageContent = extractMessageContent(text);
+            SessionsSendParams params = objectMapper.treeToValue(
+                objectMapper.valueToTree(frame.params()), SessionsSendParams.class);
 
-            log.info("Request from {}: method={}, sessionKey={}, contentLength={}",
-                channelId, method, sessionKey, messageContent != null ? messageContent.length() : 0);
-
-            // Handle sessions.send
-            if ("sessions.send".equals(method)) {
-                if (sessionKey != null && messageContent != null) {
-                    // Send response first (acknowledgment)
-                    sendResponse(ctx, requestId, true, Map.of("status", "accepted"), null);
-
-                    // Create task for message processing
-                    gatewayChannel.handleIncomingMessage(channelId, sessionKey, messageContent);
-                } else {
-                    sendResponse(ctx, requestId, false, null, "Missing key or message");
-                }
-            } else if ("policy.tick".equals(method)) {
-                // Heartbeat tick - just respond
-                sendResponse(ctx, requestId, true, Map.of("tick", true), null);
-            } else {
-                log.warn("Unknown method: {}", method);
-                sendResponse(ctx, requestId, false, null, "Unknown method: " + method);
+            if (params.key() == null) {
+                sendError(ctx, reqId, "invalidParams", "Missing required field: key");
+                return;
             }
+
+            // Extract message content — could be string or object
+            String messageContent;
+            if (params.message() instanceof String s) {
+                messageContent = s;
+            } else if (params.message() != null) {
+                messageContent = objectMapper.writeValueAsString(params.message());
+            } else {
+                messageContent = "";
+            }
+
+            // Acknowledge the request
+            sendResponse(ctx, reqId, Map.of("status", "accepted"));
+
+            // Create task for message processing
+            gatewayChannel.handleIncomingMessage(channelId, params.key(), messageContent);
         } catch (Exception e) {
-            log.error("Error handling request: {}", e.getMessage());
-            sendResponse(ctx, extractRequestId(text), false, null, e.getMessage());
+            log.error("Error handling sessions.send: {}", e.getMessage());
+            sendError(ctx, reqId, "processingError", e.getMessage());
         }
     }
 
-    private void sendHelloOk(ChannelHandlerContext ctx) {
-        String json = String.format(
-            "{\"type\":\"helloOk\",\"protocol\":3,\"policy\":{\"tickIntervalMs\":%d}}",
-            properties.getTickIntervalMs()
+    private void handleClientEvent(ChannelHandlerContext ctx, GatewayFrame frame) {
+        // Client-initiated events (if any) — log and ignore for now
+        log.debug("Received client event '{}' from {}", frame.event(), ctx.channel().id().asShortText());
+    }
+
+    // ── Response sending ───────────────────────────────────────────
+
+    private void sendHelloOk(ChannelHandlerContext ctx, String reqId) {
+        String channelId = ctx.channel().id().asShortText();
+
+        HelloOkPayload payload = new HelloOkPayload(
+            "hello-ok",
+            properties.getProtocolVersion(),
+            new ServerInfo(properties.getServerVersion(), channelId),
+            new FeaturesInfo(
+                List.of("sessions.send", "sessions.list", "policy.tick"),
+                List.of("chat", "tick", "connect.challenge")
+            ),
+            new LinkedHashMap<>(Map.of(
+                "presence", List.of(),
+                "stateVersion", Map.of("presence", 0, "health", 0),
+                "uptimeMs", System.currentTimeMillis()
+            )) {{
+                put("health", null);
+            }},
+            new PolicyInfo(
+                properties.getMaxPayload(),
+                properties.getMaxBufferedBytes(),
+                properties.getTickIntervalMs()
+            )
         );
-        ctx.writeAndFlush(new TextWebSocketFrame(json));
-        log.debug("Sent HelloOk to {}", ctx.channel().id().asShortText());
+
+        writeFrame(ctx, Map.of(
+            "type", "res",
+            "id", reqId,
+            "ok", true,
+            "payload", payload
+        ));
+        log.debug("Sent hello-ok to {}", channelId);
     }
 
-    private void sendHelloError(ChannelHandlerContext ctx, String code, String message) {
-        String json = String.format(
-            "{\"type\":\"helloError\",\"code\":\"%s\",\"message\":\"%s\"}",
-            escapeJson(code), escapeJson(message)
-        );
-        ctx.writeAndFlush(new TextWebSocketFrame(json));
+    private void sendResponse(ChannelHandlerContext ctx, String reqId, Object payload) {
+        writeFrame(ctx, Map.of(
+            "type", "res",
+            "id", reqId,
+            "ok", true,
+            "payload", payload
+        ));
     }
 
-    private void sendResponse(ChannelHandlerContext ctx, String requestId, boolean ok, Object payload, String error) {
-        StringBuilder json = new StringBuilder();
-        json.append("{\"type\":\"res\",\"id\":\"").append(escapeJson(requestId)).append("\"");
-        json.append(",\"ok\":").append(ok);
-
-        if (payload != null) {
-            // Simple payload handling
-            if (payload instanceof Map) {
-                json.append(",\"payload\":{");
-                boolean first = true;
-                for (Map.Entry<?, ?> entry : ((Map<?, ?>) payload).entrySet()) {
-                    if (!first) json.append(",");
-                    json.append("\"").append(entry.getKey()).append("\":");
-                    if (entry.getValue() instanceof String) {
-                        json.append("\"").append(escapeJson(entry.getValue().toString())).append("\"");
-                    } else {
-                        json.append(entry.getValue());
-                    }
-                    first = false;
-                }
-                json.append("}");
-            } else {
-                json.append(",\"payload\":\"").append(escapeJson(payload.toString())).append("\"");
-            }
+    private void sendError(ChannelHandlerContext ctx, String reqId, String code, String message) {
+        Map<String, Object> frame = new LinkedHashMap<>();
+        frame.put("type", "res");
+        frame.put("ok", false);
+        frame.put("error", new ErrorBody(code, message));
+        if (reqId != null) {
+            frame.put("id", reqId);
         }
-
-        if (error != null) {
-            json.append(",\"error\":\"").append(escapeJson(error)).append("\"");
-        }
-
-        json.append("}");
-        ctx.writeAndFlush(new TextWebSocketFrame(json.toString()));
+        writeFrame(ctx, frame);
     }
+
+    // ── Event sending ──────────────────────────────────────────────
 
     /**
-     * Send an event frame to a client.
+     * Send a chat event with proper OpenClaw framing including seq.
      */
     public void sendEvent(ChannelHandlerContext ctx, String event, String runId, String sessionKey,
                           String state, String content) {
-        String messageId = UUID.randomUUID().toString();
-        long timestamp = System.currentTimeMillis();
+        String channelId = ctx.channel().id().asShortText();
+        int seq = sessionSeqCounters.computeIfAbsent(channelId, k -> new AtomicInteger(0)).getAndIncrement();
 
-        StringBuilder json = new StringBuilder();
-        json.append("{\"type\":\"event\",\"event\":\"").append(escapeJson(event)).append("\"");
-        json.append(",\"payload\":{\"runId\":\"").append(escapeJson(runId)).append("\"");
-        json.append(",\"sessionKey\":\"").append(escapeJson(sessionKey)).append("\"");
-        json.append(",\"state\":\"").append(escapeJson(state)).append("\"");
-        json.append(",\"message\":{\"id\":\"").append(escapeJson(messageId)).append("\"");
-        json.append(",\"content\":\"").append(escapeJson(content)).append("\"");
-        json.append(",\"senderId\":\"assistant\"");
-        json.append(",\"senderName\":\"Assistant\"");
-        json.append(",\"timestamp\":").append(timestamp);
-        json.append(",\"attachments\":[]}}}");
+        ChatEventPayload payload = new ChatEventPayload(
+            runId,
+            sessionKey,
+            seq,
+            state,
+            Map.of(
+                "id", UUID.randomUUID().toString(),
+                "content", content,
+                "role", "assistant",
+                "timestamp", System.currentTimeMillis()
+            ),
+            null,
+            null,
+            "final".equals(state) ? "endTurn" : null
+        );
 
-        ctx.writeAndFlush(new TextWebSocketFrame(json.toString()));
-        log.debug("Sent event to {}: event={}, state={}", ctx.channel().id().asShortText(), event, state);
+        writeFrame(ctx, Map.of(
+            "type", "event",
+            "event", event,
+            "payload", payload
+        ));
+        log.debug("Sent event to {}: event={}, state={}, seq={}", channelId, event, state, seq);
+    }
+
+    private void sendTickEvent(ChannelHandlerContext ctx) {
+        if (!ctx.channel().isActive()) return;
+
+        writeFrame(ctx, Map.of(
+            "type", "event",
+            "event", "tick",
+            "payload", Map.of("ts", System.currentTimeMillis())
+        ));
+    }
+
+    // ── Utilities ──────────────────────────────────────────────────
+
+    private void writeFrame(ChannelHandlerContext ctx, Object obj) {
+        try {
+            String json = objectMapper.writeValueAsString(obj);
+            ctx.writeAndFlush(new TextWebSocketFrame(json));
+        } catch (JsonProcessingException e) {
+            log.error("Failed to serialize frame: {}", e.getMessage());
+        }
     }
 
     /**
@@ -241,59 +353,5 @@ public class GatewayWebSocketHandler extends SimpleChannelInboundHandler<TextWeb
      */
     public ChannelHandlerContext getSession(String channelId) {
         return sessions.get(channelId);
-    }
-
-    // Simple JSON extraction methods (for performance, avoid full parsing)
-    private String extractToken(String text) {
-        return extractStringValue(text, "token");
-    }
-
-    private String extractRequestId(String text) {
-        return extractStringValue(text, "id");
-    }
-
-    private String extractMethod(String text) {
-        return extractStringValue(text, "method");
-    }
-
-    private String extractSessionKey(String text) {
-        return extractStringValue(text, "key");
-    }
-
-    private String extractMessageContent(String text) {
-        // Look for "content":"..." in the message field
-        int contentIdx = text.indexOf("\"content\"");
-        if (contentIdx == -1) return null;
-
-        int quoteStart = text.indexOf("\"", contentIdx + 9);
-        if (quoteStart == -1) return null;
-
-        int quoteEnd = text.indexOf("\"", quoteStart + 1);
-        if (quoteEnd == -1) return null;
-
-        return text.substring(quoteStart + 1, quoteEnd);
-    }
-
-    private String extractStringValue(String text, String key) {
-        String pattern = "\"" + key + "\"";
-        int idx = text.indexOf(pattern);
-        if (idx == -1) return null;
-
-        int quoteStart = text.indexOf("\"", idx + pattern.length());
-        if (quoteStart == -1) return null;
-
-        int quoteEnd = text.indexOf("\"", quoteStart + 1);
-        if (quoteEnd == -1) return null;
-
-        return text.substring(quoteStart + 1, quoteEnd);
-    }
-
-    private String escapeJson(String s) {
-        if (s == null) return "";
-        return s.replace("\\", "\\\\")
-                .replace("\"", "\\\"")
-                .replace("\n", "\\n")
-                .replace("\r", "\\r")
-                .replace("\t", "\\t");
     }
 }

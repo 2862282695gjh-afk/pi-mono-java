@@ -38,7 +38,7 @@ public class TaskCommand implements SlashCommand {
 
     @Override
     public String description() {
-        return "Manage tasks: /task create|schedule|list|recurring";
+        return "Manage tasks: /task create|schedule|delay|list|delete";
     }
 
     @Override
@@ -56,10 +56,8 @@ public class TaskCommand implements SlashCommand {
             case "create" -> handleCreate(context, args.substring("create".length()).trim());
             case "schedule" -> handleSchedule(context, parts);
             case "delay" -> handleDelay(context, args);
-            case "list" -> handleList(context);
-            case "recurring" -> handleRecurring(context);
+            case "list" -> handleList(context, parts.length > 1 ? parts[1] : "all");
             case "delete" -> handleDelete(context, args.substring("delete".length()).trim());
-            case "delete-recurring" -> handleDeleteRecurring(context, args.substring("delete-recurring".length()).trim());
             default -> {
                 context.output().println("Unknown subcommand: " + subcommand);
                 printUsage(context);
@@ -141,50 +139,62 @@ public class TaskCommand implements SlashCommand {
         context.output().println("  Cron: " + cron);
     }
 
-    private void handleList(SlashCommandContext context) {
-        List<Task> tasks = taskRepository.findAll();
-        if (tasks.isEmpty()) {
-            context.output().println("No tasks found.");
-            return;
-        }
+    private void handleList(SlashCommandContext context, String filter) {
+        boolean showOneOff = filter.equals("all") || filter.equals("once");
+        boolean showRecurring = filter.equals("all") || filter.equals("recurring");
 
-        context.output().println("Tasks:");
-        for (Task task : tasks) {
-            context.output().println("  [" + task.status() + "] " + task.id()
-                + " - " + truncate(task.prompt(), 60));
-        }
-    }
-
-    private void handleRecurring(SlashCommandContext context) {
-        List<RecurringTask> tasks = taskRepository.findRecurringTasks();
-        if (tasks.isEmpty()) {
-            context.output().println("No recurring tasks found.");
-            return;
-        }
-
-        context.output().println("Recurring tasks:");
-        for (RecurringTask task : tasks) {
-            context.output().println("  " + task.id() + " - " + task.name()
-                + " (" + task.cronExpression() + ")");
-            context.output().println("    Prompt: " + truncate(task.prompt(), 60));
-            if (task.lastStatus() != null) {
-                context.output().println("    Last status: " + task.lastStatus());
-                if (task.lastExecutionAt() != null) {
-                    String time = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
-                        .withZone(ZoneId.systemDefault()).format(task.lastExecutionAt());
-                    context.output().println("    Last executed: " + time);
+        if (showOneOff) {
+            List<Task> tasks = taskRepository.findAll();
+            if (tasks.isEmpty()) {
+                if (!showRecurring) context.output().println("No tasks found.");
+            } else {
+                context.output().println("Tasks:");
+                for (Task task : tasks) {
+                    context.output().println("  [" + task.status() + "] " + task.id()
+                        + " - " + truncate(task.prompt(), 60));
                 }
             }
-            if (task.executionResults() != null && !task.executionResults().isEmpty()) {
-                context.output().println("    Recent executions (" + task.executionResults().size() + " total):");
-                int start = Math.max(0, task.executionResults().size() - 3);
-                for (int i = start; i < task.executionResults().size(); i++) {
-                    ExecutionResult r = task.executionResults().get(i);
-                    String time = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
-                        .withZone(ZoneId.systemDefault()).format(r.executedAt());
-                    context.output().println("      [" + r.status() + "] " + time
-                        + " (" + r.durationMs() + "ms) " + truncate(r.result(), 60));
+        }
+
+        if (showRecurring) {
+            List<RecurringTask> recurringTasks = taskRepository.findRecurringTasks();
+            if (recurringTasks.isEmpty()) {
+                if (!showOneOff) context.output().println("No recurring tasks found.");
+            } else {
+                if (showOneOff) context.output().println("");
+                context.output().println("Recurring tasks:");
+                for (RecurringTask task : recurringTasks) {
+                    context.output().println("  " + task.id() + " - " + task.name()
+                        + " (" + task.cronExpression() + ")");
+                    context.output().println("    Prompt: " + truncate(task.prompt(), 60));
+                    if (task.lastStatus() != null) {
+                        context.output().println("    Last status: " + task.lastStatus());
+                        if (task.lastExecutionAt() != null) {
+                            String time = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+                                .withZone(ZoneId.systemDefault()).format(task.lastExecutionAt());
+                            context.output().println("    Last executed: " + time);
+                        }
+                    }
+                    if (task.executionResults() != null && !task.executionResults().isEmpty()) {
+                        context.output().println("    Recent executions (" + task.executionResults().size() + " total):");
+                        int start = Math.max(0, task.executionResults().size() - 3);
+                        for (int i = start; i < task.executionResults().size(); i++) {
+                            ExecutionResult r = task.executionResults().get(i);
+                            String time = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+                                .withZone(ZoneId.systemDefault()).format(r.executedAt());
+                            context.output().println("      [" + r.status() + "] " + time
+                                + " (" + r.durationMs() + "ms) " + truncate(r.result(), 60));
+                        }
+                    }
                 }
+            }
+        }
+
+        if (filter.equals("all")) {
+            List<Task> tasks = taskRepository.findAll();
+            List<RecurringTask> recurringTasks = taskRepository.findRecurringTasks();
+            if (tasks.isEmpty() && recurringTasks.isEmpty()) {
+                context.output().println("No tasks found.");
             }
         }
     }
@@ -194,25 +204,15 @@ public class TaskCommand implements SlashCommand {
             context.output().println("Usage: /task delete <id>");
             return;
         }
-        if (taskRepository.findById(id).isEmpty()) {
+        if (taskRepository.findById(id).isPresent()) {
+            taskRepository.deleteTask(id);
+            context.output().println("Task deleted: " + id);
+        } else if (taskRepository.findRecurringTaskById(id).isPresent()) {
+            recurringTaskHandler.deleteRecurringTask(id);
+            context.output().println("Recurring task deleted: " + id);
+        } else {
             context.output().println("Task not found: " + id);
-            return;
         }
-        taskRepository.deleteTask(id);
-        context.output().println("Task deleted: " + id);
-    }
-
-    private void handleDeleteRecurring(SlashCommandContext context, String id) {
-        if (id.isEmpty()) {
-            context.output().println("Usage: /task delete-recurring <id>");
-            return;
-        }
-        if (taskRepository.findRecurringTaskById(id).isEmpty()) {
-            context.output().println("Recurring task not found: " + id);
-            return;
-        }
-        recurringTaskHandler.deleteRecurringTask(id);
-        context.output().println("Recurring task deleted: " + id);
     }
 
     private void handleDelay(SlashCommandContext context, String args) {
@@ -247,10 +247,8 @@ public class TaskCommand implements SlashCommand {
         context.output().println("  /task create <prompt>          Create and execute a one-off task");
         context.output().println("  /task schedule <name> <cron> <prompt>  Schedule a recurring task");
         context.output().println("  /task delay <minutes> <prompt> Schedule a one-time delayed task");
-        context.output().println("  /task list                    List all tasks");
-        context.output().println("  /task recurring               List recurring tasks");
-        context.output().println("  /task delete <id>             Delete a task");
-        context.output().println("  /task delete-recurring <id>   Delete a recurring task");
+        context.output().println("  /task list [all|once|recurring] List tasks (default: all)");
+        context.output().println("  /task delete <id>             Delete a task or recurring task");
     }
 
     private static String truncate(String s, int maxLen) {

@@ -43,10 +43,13 @@ public class RecurringTaskHandler {
         List<RecurringTask> recurringTasks = taskRepository.findRecurringTasks();
         for (RecurringTask recurringTask : recurringTasks) {
             try {
+                String taskName = "recurring-" + recurringTask.id();
+                // Delete any existing schedule first to avoid duplicates
+                BackgroundJob.deleteRecurringJob(taskName);
                 jobScheduler.scheduleRecurrently(
-                    "recurring-" + recurringTask.id(),
+                    taskName,
                     recurringTask.cronExpression(),
-                    () -> enqueueRecurringTask(recurringTask)
+                    () -> executeRecurringTask(recurringTask.id())
                 );
             } catch (Exception e) {
                 log.warn("Deleting recurring task with invalid cron '{}' ({}): {}",
@@ -60,7 +63,13 @@ public class RecurringTaskHandler {
     public void executeRecurringTask(String recurringTaskId) {
         Optional<RecurringTask> opt = taskRepository.findRecurringTaskById(recurringTaskId);
         if (opt.isEmpty()) {
-            log.warn("Recurring task not found: {}", recurringTaskId);
+            log.warn("Recurring task not found: {}, cancelling orphaned JobRunr schedule", recurringTaskId);
+            try {
+                BackgroundJob.deleteRecurringJob("recurring-" + recurringTaskId);
+                log.info("Cancelled orphaned JobRunr recurring job for: {}", recurringTaskId);
+            } catch (Exception e) {
+                log.debug("No JobRunr recurring job to cancel for: {}", recurringTaskId);
+            }
             return;
         }
         RecurringTask recurringTask = opt.get();
