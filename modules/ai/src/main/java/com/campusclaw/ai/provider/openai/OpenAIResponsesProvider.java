@@ -139,6 +139,8 @@ public class OpenAIResponsesProvider implements ApiProvider {
             processStream(client, params, model, eventStream);
         } catch (Exception e) {
             eventStream.error(e);
+        } finally {
+            client.close();
         }
     }
 

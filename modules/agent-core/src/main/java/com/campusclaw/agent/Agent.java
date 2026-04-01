@@ -308,11 +308,30 @@ public class Agent {
 
     private String messageForThrowable(Throwable throwable) {
         var current = throwable;
+        // Unwrap standard wrapper exceptions
         while (current.getCause() != null
             && (current instanceof java.util.concurrent.CompletionException
             || current instanceof java.util.concurrent.ExecutionException)) {
             current = current.getCause();
         }
-        return current.getMessage() != null ? current.getMessage() : current.getClass().getSimpleName();
+        // Build message including cause chain so the real error is visible
+        // (e.g. "Request failed" from SDK wrapping an actual IOException)
+        String message = current.getMessage() != null ? current.getMessage() : current.getClass().getSimpleName();
+        var cause = current.getCause();
+        if (cause != null && cause != current) {
+            String causeMsg = cause.getMessage();
+            if (causeMsg != null && !causeMsg.isBlank() && !message.contains(causeMsg)) {
+                message = message + ": " + causeMsg;
+            }
+            // One more level for deeply nested causes (e.g. SSLHandshakeException -> PKIX)
+            var rootCause = cause.getCause();
+            if (rootCause != null && rootCause != cause) {
+                String rootMsg = rootCause.getMessage();
+                if (rootMsg != null && !rootMsg.isBlank() && !message.contains(rootMsg)) {
+                    message = message + ": " + rootMsg;
+                }
+            }
+        }
+        return message;
     }
 }
