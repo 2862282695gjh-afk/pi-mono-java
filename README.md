@@ -129,7 +129,8 @@ campusclaw [OPTIONS] [PROMPT...]
 | `--api-key` | 覆盖 API Key | `--api-key sk-...` |
 | `--thinking` | 思考级别：off/minimal/low/medium/high/xhigh | `--thinking high` |
 | `-p, --print` | 非交互模式，输出后退出 | `-p "解释这段代码"` |
-| `--mode` | 执行模式：interactive/one-shot/print | `--mode one-shot` |
+| `--mode` | 执行模式：interactive/one-shot/rpc/server/print | `--mode server` |
+| `--port` | HTTP 服务端口（server 模式） | `--port 8080` |
 | `--tools` | 指定启用的工具（逗号分隔） | `--tools read,bash,edit` |
 | `--no-tools` | 禁用所有内置工具 | |
 
@@ -175,9 +176,17 @@ campusclaw [OPTIONS] [PROMPT...]
 
 # 列出所有可用模型
 ./campusclaw.sh --list-models
+
+# HTTP Server 模式（供 Web 前端 / IDE 插件调用）
+./campusclaw.sh --mode server --port 3000 -m glm-5
+
+# RPC 模式（stdin/stdout JSONL，供进程间通信）
+./campusclaw.sh --mode rpc -m glm-5
 ```
 
 > Windows 用户将上述 `./campusclaw.sh` 替换为 `campusclaw.bat`。
+>
+> Server / RPC 模式的详细接口文档见 [docs/server-api.md](docs/server-api.md)。
 
 ## 内置工具
 

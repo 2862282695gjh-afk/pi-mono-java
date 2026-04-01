@@ -18,6 +18,8 @@ import com.campusclaw.codingagent.compaction.Compactor;
 import com.campusclaw.codingagent.config.ConfigValueResolver;
 import com.campusclaw.codingagent.mode.InteractiveMode;
 import com.campusclaw.codingagent.mode.OneShotMode;
+import com.campusclaw.codingagent.mode.rpc.RpcMode;
+import com.campusclaw.codingagent.mode.server.ServerMode;
 import com.campusclaw.codingagent.prompt.SystemPromptBuilder;
 import com.campusclaw.codingagent.session.AgentSession;
 import com.campusclaw.codingagent.session.SessionConfig;
@@ -90,9 +92,12 @@ public class CampusClawCommand implements Callable<Integer> {
     @Option(names = {"--prompt"}, description = "Initial prompt to send to the agent (internal use)")
     String prompt;
 
-    @Option(names = {"--mode"}, description = "Execution mode: interactive, one-shot, or print",
+    @Option(names = {"--mode"}, description = "Execution mode: interactive, one-shot, rpc, server, or print",
             defaultValue = "interactive")
     String mode;
+
+    @Option(names = {"--port"}, description = "HTTP server port (for server mode)")
+    Integer port;
 
     @Option(names = {"--cwd"}, description = "Working directory (defaults to current directory)")
     Path cwd;
@@ -423,6 +428,16 @@ public class CampusClawCommand implements Callable<Integer> {
 
         if ("one-shot".equals(mode)) {
             return new OneShotMode().run(session, effectivePrompt);
+        }
+
+        if ("rpc".equals(mode)) {
+            new RpcMode(session).run();
+            return 0;
+        }
+
+        if ("server".equals(mode)) {
+            new ServerMode(session, port != null ? port : 3000).run();
+            return 0;
         }
 
         // Interactive mode (default)
