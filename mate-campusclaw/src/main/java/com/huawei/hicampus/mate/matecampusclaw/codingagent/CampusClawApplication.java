@@ -35,7 +35,15 @@ public class CampusClawApplication implements CommandLineRunner, ExitCodeGenerat
         System.setProperty("org.jline.terminal.disableDeprecatedProviderWarning", "true");
         System.setProperty("org.jline.terminal.jansi", "false");
 
-        System.exit(SpringApplication.exit(SpringApplication.run(CampusClawApplication.class, args)));
+        try {
+            var context = SpringApplication.run(CampusClawApplication.class, args);
+            System.err.println("[CampusClaw] Spring context loaded successfully");
+            System.exit(SpringApplication.exit(context));
+        } catch (Exception e) {
+            System.err.println("[CampusClaw] Spring Boot startup FAILED:");
+            e.printStackTrace(System.err);
+            System.exit(1);
+        }
     }
 
     @Override
