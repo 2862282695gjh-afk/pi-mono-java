@@ -35,6 +35,7 @@ import com.campusclaw.tui.Tui;
 import com.campusclaw.tui.component.Container;
 import com.campusclaw.tui.component.Text;
 import com.campusclaw.tui.terminal.Terminal;
+import org.springframework.context.ApplicationContext;
 
 /**
  * Full-screen interactive REPL using TUI component tree rendering.
@@ -57,6 +58,7 @@ public class InteractiveMode {
     private final ModelRegistry modelRegistry;
     private final com.campusclaw.cron.CronService cronService;
     private final com.campusclaw.codingagent.loop.LoopManager loopManager;
+    private final ApplicationContext applicationContext;
 
     // Scoped models for Ctrl+P cycling (from --models flag)
     private List<Model> scopedModels = List.of();
@@ -132,13 +134,15 @@ public class InteractiveMode {
                            Compactor compactor,
                            ModelRegistry modelRegistry,
                            com.campusclaw.cron.CronService cronService,
-                           com.campusclaw.codingagent.loop.LoopManager loopManager) {
+                           com.campusclaw.codingagent.loop.LoopManager loopManager,
+                           ApplicationContext applicationContext) {
         this.commandRegistry = Objects.requireNonNull(commandRegistry, "commandRegistry");
         this.bashExecutor = bashExecutor;
         this.compactor = compactor;
         this.modelRegistry = modelRegistry;
         this.cronService = cronService;
         this.loopManager = loopManager;
+        this.applicationContext = applicationContext;
     }
 
     /**
@@ -743,6 +747,19 @@ public class InteractiveMode {
 
         if (currentAssistantMessage != null) {
             currentAssistantMessage.setComplete(true);
+
+            // Publish agent response event for WebSocket gateway to relay back
+            if (applicationContext != null && currentAssistantMessage.hasContent()) {
+                String replyText = currentAssistantMessage.getTextContent();
+                if (replyText != null && !replyText.isEmpty()) {
+                    try {
+                        applicationContext.publishEvent(
+                            new com.campusclaw.assistant.channel.gateway.AgentResponseEvent(this, replyText));
+                    } catch (Exception e) {
+                        System.err.println("[InteractiveMode] Failed to publish AgentResponseEvent: " + e.getMessage());
+                    }
+                }
+            }
         }
         currentAssistantMessage = null;
 

@@ -11,6 +11,6 @@ public record HelloOkPayload(
     @JsonProperty("protocol") int protocol,
     @JsonProperty("server") ServerInfo server,
     @JsonProperty("features") FeaturesInfo features,
-    @JsonProperty("state") Map<String, Object> state,
+    @JsonProperty("snapshot") Map<String, Object> snapshot,
     @JsonProperty("policy") PolicyInfo policy
 ) {}

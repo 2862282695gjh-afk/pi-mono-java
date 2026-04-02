@@ -63,13 +63,15 @@ public class CampusClawCommand implements Callable<Integer> {
     private final SettingsManager settingsManager;
     private final com.campusclaw.cron.CronService cronService;
     private final com.campusclaw.codingagent.loop.LoopManager loopManager;
+    private final org.springframework.context.ApplicationContext applicationContext;
 
     public CampusClawCommand(CampusClawAiService piAiService, ModelRegistry modelRegistry,
                      SystemPromptBuilder promptBuilder, List<AgentTool> tools,
                      SlashCommandRegistry commandRegistry, BashExecutor bashExecutor,
                      SettingsManager settingsManager,
                      @org.springframework.lang.Nullable com.campusclaw.cron.CronService cronService,
-                     com.campusclaw.codingagent.loop.LoopManager loopManager) {
+                     com.campusclaw.codingagent.loop.LoopManager loopManager,
+                     org.springframework.context.ApplicationContext applicationContext) {
         this.piAiService = piAiService;
         this.modelRegistry = modelRegistry;
         this.promptBuilder = promptBuilder;
@@ -79,6 +81,7 @@ public class CampusClawCommand implements Callable<Integer> {
         this.settingsManager = settingsManager;
         this.cronService = cronService;
         this.loopManager = loopManager;
+        this.applicationContext = applicationContext;
     }
 
     @Option(names = {"--provider"}, description = "Provider name (e.g. anthropic, openai, zai, google)")
@@ -458,7 +461,7 @@ public class CampusClawCommand implements Callable<Integer> {
         // Interactive mode (default)
         Terminal terminal = new JLineTerminal();
         try {
-            var interactiveMode = new InteractiveMode(commandRegistry, bashExecutor, new Compactor(piAiService), modelRegistry, cronService, loopManager);
+            var interactiveMode = new InteractiveMode(commandRegistry, bashExecutor, new Compactor(piAiService), modelRegistry, cronService, loopManager, applicationContext);
 
             // Resolve --models scoped models for Ctrl+P cycling
             if (modelsFilter != null && !modelsFilter.isBlank()) {

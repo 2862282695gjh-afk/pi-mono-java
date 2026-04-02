@@ -6,5 +6,5 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record ServerInfo(
     @JsonProperty("version") String version,
-    @JsonProperty("channelId") String channelId
+    @JsonProperty("connId") String connId
 ) {}

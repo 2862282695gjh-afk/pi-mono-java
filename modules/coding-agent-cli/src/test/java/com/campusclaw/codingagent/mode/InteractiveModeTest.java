@@ -48,7 +48,7 @@ class InteractiveModeTest {
         registry = new SlashCommandRegistry();
         registry.register(new HelpCommand(registry));
         registry.register(new QuitCommand());
-        mode = new InteractiveMode(registry, bashExecutor, null, null, null, null);
+        mode = new InteractiveMode(registry, bashExecutor, null, null, null, null, null);
 
         when(session.getAgent()).thenReturn(agent);
         when(agent.getState()).thenReturn(state);

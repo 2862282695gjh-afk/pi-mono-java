@@ -10,6 +10,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Lazy;
+import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 
 import java.util.Map;
@@ -40,6 +41,11 @@ public class GatewayChannel implements Channel {
 
     // channelId -> current sessionKey (for tracking active sessions)
     private final Map<String, String> channelToSessionKey = new ConcurrentHashMap<>();
+
+    // reqId -> PendingRequest (for tracking sessions.send requests awaiting final response)
+    private final Map<String, PendingRequest> pendingSessionsSend = new ConcurrentHashMap<>();
+
+    record PendingRequest(String reqId, String channelId, String sessionKey) {}
 
     public GatewayChannel(
         WebSocketGatewayProperties properties,
@@ -91,7 +97,18 @@ public class GatewayChannel implements Channel {
         if (sessionKey != null) {
             sessionKeyToChannel.remove(sessionKey);
         }
+        // Clean up pending requests for this channel
+        pendingSessionsSend.entrySet().removeIf(entry -> entry.getValue().channelId().equals(channelId));
         log.debug("Removed session: {}", channelId);
+    }
+
+    /**
+     * Register a pending sessions.send request so the final result
+     * can be sent as a response frame with the original reqId.
+     */
+    public void registerPendingSessionsSend(String reqId, String channelId, String sessionKey) {
+        pendingSessionsSend.put(reqId, new PendingRequest(reqId, channelId, sessionKey));
+        log.debug("Registered pending sessions.send: reqId={}, channelId={}", reqId, channelId);
     }
 
     /**
@@ -118,13 +135,32 @@ public class GatewayChannel implements Channel {
             }
         }
 
-        // Fallback: send ACK if no session available
-        String runId = UUID.randomUUID().toString();
-        GatewayWebSocketHandler handler = getHandler(channelId);
-        if (handler != null) {
-            ChannelHandlerContext ctx = sessionContexts.get(channelId);
-            handler.sendEvent(ctx, "chat", runId, sessionKey, "final",
-                "[Gateway] No active session. Message not processed.");
+        // Fallback: send error if no session available
+        completePendingSessionsSendForChannel(channelId, sessionKey,
+            "[Gateway] No active session. Message not processed.");
+    }
+
+    /**
+     * Listen for AgentResponseEvent and send the result as a response frame
+     * to the pending sessions.send caller.
+     */
+    @EventListener
+    public void onAgentResponse(AgentResponseEvent event) {
+        String message = event.getMessage();
+        log.info("Received AgentResponseEvent, message length: {}", message.length());
+
+        if (pendingSessionsSend.isEmpty()) {
+            log.debug("No pending sessions.send requests, ignoring event");
+            return;
+        }
+
+        // Complete all pending requests for all channels with the agent response.
+        // Since the agent processes one message at a time, the response goes to
+        // whichever channel has a pending request.
+        for (Map.Entry<String, PendingRequest> entry : pendingSessionsSend.entrySet()) {
+            PendingRequest pending = entry.getValue();
+            completePendingSessionsSend(pending.reqId(), pending.channelId(),
+                pending.sessionKey(), message);
         }
     }
 
@@ -161,6 +197,61 @@ public class GatewayChannel implements Channel {
 
         String runId = UUID.randomUUID().toString();
         handler.sendEvent(ctx, "chat", runId, sessionKey, "delta", delta);
+    }
+
+    // ── Internal methods ──────────────────────────────────────────
+
+    /**
+     * Complete a pending sessions.send request by sending a response frame
+     * with the agent's result.
+     */
+    private void completePendingSessionsSend(String reqId, String channelId, String sessionKey,
+                                              String resultMessage) {
+        pendingSessionsSend.remove(reqId);
+
+        ChannelHandlerContext ctx = sessionContexts.get(channelId);
+        if (ctx == null || !ctx.channel().isActive()) {
+            log.warn("Channel {} no longer active for pending sessions.send {}", channelId, reqId);
+            return;
+        }
+
+        GatewayWebSocketHandler handler = getHandler(channelId);
+        if (handler == null) {
+            log.warn("No handler found for channel: {}", channelId);
+            return;
+        }
+
+        String runId = UUID.randomUUID().toString();
+        Map<String, Object> payload = Map.of(
+            "runId", runId,
+            "sessionKey", sessionKey,
+            "status", "final",
+            "message", Map.of(
+                "id", UUID.randomUUID().toString(),
+                "content", resultMessage,
+                "role", "assistant",
+                "timestamp", System.currentTimeMillis()
+            )
+        );
+
+        handler.sendResponseFrame(ctx, reqId, payload);
+        log.info("Completed pending sessions.send {} for channel {} ({} chars)",
+            reqId, channelId, resultMessage.length());
+    }
+
+    /**
+     * Complete all pending requests for a given channel (used for fallback/error cases).
+     */
+    private void completePendingSessionsSendForChannel(String channelId, String sessionKey,
+                                                        String resultMessage) {
+        pendingSessionsSend.entrySet().removeIf(entry -> {
+            PendingRequest pending = entry.getValue();
+            if (pending.channelId().equals(channelId)) {
+                completePendingSessionsSend(pending.reqId(), channelId, sessionKey, resultMessage);
+                return true;
+            }
+            return false;
+        });
     }
 
     private GatewayWebSocketHandler getHandler(String channelId) {

@@ -125,16 +125,20 @@ public class GatewayWebSocketHandler extends SimpleChannelInboundHandler<TextWeb
     // ── Connect challenge ──────────────────────────────────────────
 
     private void sendChallenge(ChannelHandlerContext ctx) {
+        String channelId = ctx.channel().id().asShortText();
         String nonce = UUID.randomUUID().toString();
         long ts = System.currentTimeMillis();
+        int seq = sessionSeqCounters.computeIfAbsent(channelId, k -> new AtomicInteger(0)).getAndIncrement();
 
         Map<String, Object> payload = Map.of("nonce", nonce, "ts", ts);
-        writeFrame(ctx, Map.of(
-            "type", "event",
-            "event", "connect.challenge",
-            "payload", payload
-        ));
-        log.debug("Sent connect.challenge to {}", ctx.channel().id().asShortText());
+        Map<String, Object> frame = new LinkedHashMap<>();
+        frame.put("type", "event");
+        frame.put("event", "connect.challenge");
+        frame.put("payload", payload);
+        frame.put("seq", seq);
+        frame.put("stateVersion", Map.of("presence", 0, "health", 0));
+        writeFrame(ctx, frame);
+        log.debug("Sent connect.challenge to {}", channelId);
     }
 
     // ── Request handling ───────────────────────────────────────────
@@ -221,7 +225,10 @@ public class GatewayWebSocketHandler extends SimpleChannelInboundHandler<TextWeb
                 messageContent = "";
             }
 
-            // Acknowledge the request
+            // Register pending request so the final result can be sent as a response frame
+            gatewayChannel.registerPendingSessionsSend(reqId, channelId, params.key());
+
+            // Acknowledge the request (client with expectFinal will ignore this)
             sendResponse(ctx, reqId, Map.of("status", "accepted"));
 
             // Create task for message processing
@@ -252,7 +259,6 @@ public class GatewayWebSocketHandler extends SimpleChannelInboundHandler<TextWeb
             ),
             new LinkedHashMap<>(Map.of(
                 "presence", List.of(),
-                "stateVersion", Map.of("presence", 0, "health", 0),
                 "uptimeMs", System.currentTimeMillis()
             )) {{
                 put("health", null);
@@ -282,11 +288,24 @@ public class GatewayWebSocketHandler extends SimpleChannelInboundHandler<TextWeb
         ));
     }
 
+    /**
+     * Send a response frame with the given id and payload.
+     * Called by GatewayChannel to complete pending sessions.send requests.
+     */
+    public void sendResponseFrame(ChannelHandlerContext ctx, String reqId, Object payload) {
+        writeFrame(ctx, Map.of(
+            "type", "res",
+            "id", reqId,
+            "ok", true,
+            "payload", payload
+        ));
+    }
+
     private void sendError(ChannelHandlerContext ctx, String reqId, String code, String message) {
         Map<String, Object> frame = new LinkedHashMap<>();
         frame.put("type", "res");
         frame.put("ok", false);
-        frame.put("error", new ErrorBody(code, message));
+        frame.put("error", new ErrorBody(code, message, null, false, 0));
         if (reqId != null) {
             frame.put("id", reqId);
         }
@@ -319,22 +338,29 @@ public class GatewayWebSocketHandler extends SimpleChannelInboundHandler<TextWeb
             "final".equals(state) ? "endTurn" : null
         );
 
-        writeFrame(ctx, Map.of(
-            "type", "event",
-            "event", event,
-            "payload", payload
-        ));
+        Map<String, Object> frame = new LinkedHashMap<>();
+        frame.put("type", "event");
+        frame.put("event", event);
+        frame.put("payload", payload);
+        frame.put("seq", seq);
+        frame.put("stateVersion", Map.of("presence", seq, "health", 0));
+        writeFrame(ctx, frame);
         log.debug("Sent event to {}: event={}, state={}, seq={}", channelId, event, state, seq);
     }
 
     private void sendTickEvent(ChannelHandlerContext ctx) {
         if (!ctx.channel().isActive()) return;
 
-        writeFrame(ctx, Map.of(
-            "type", "event",
-            "event", "tick",
-            "payload", Map.of("ts", System.currentTimeMillis())
-        ));
+        String channelId = ctx.channel().id().asShortText();
+        int seq = sessionSeqCounters.computeIfAbsent(channelId, k -> new AtomicInteger(0)).getAndIncrement();
+
+        Map<String, Object> frame = new LinkedHashMap<>();
+        frame.put("type", "event");
+        frame.put("event", "tick");
+        frame.put("payload", Map.of("ts", System.currentTimeMillis()));
+        frame.put("seq", seq);
+        frame.put("stateVersion", Map.of("presence", 0, "health", 0));
+        writeFrame(ctx, frame);
     }
 
     // ── Utilities ──────────────────────────────────────────────────

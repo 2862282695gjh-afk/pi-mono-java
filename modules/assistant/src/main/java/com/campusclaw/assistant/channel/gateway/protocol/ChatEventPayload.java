@@ -8,11 +8,11 @@ import java.util.Map;
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record ChatEventPayload(
     @JsonProperty("runId") String runId,
-    @JsonProperty("session") String session,
+    @JsonProperty("sessionKey") String sessionKey,
     @JsonProperty("seq") int seq,
     @JsonProperty("state") String state,
     @JsonProperty("message") Map<String, Object> message,
-    @JsonProperty("toolUse") Object toolUse,
-    @JsonProperty("toolResult") Object toolResult,
-    @JsonProperty("reason") String reason
+    @JsonProperty("errorMessage") String errorMessage,
+    @JsonProperty("usage") Map<String, Object> usage,
+    @JsonProperty("stopReason") String stopReason
 ) {}
