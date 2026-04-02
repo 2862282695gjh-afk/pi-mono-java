@@ -328,7 +328,7 @@ class InteractiveModeTest {
 
         @Test
         void throwsOnNullRegistry() {
-            assertThrows(NullPointerException.class, () -> new InteractiveMode(null, null, null, null, null, null));
+            assertThrows(NullPointerException.class, () -> new InteractiveMode(null, null, null, null, null, null, null));
         }
     }
 
