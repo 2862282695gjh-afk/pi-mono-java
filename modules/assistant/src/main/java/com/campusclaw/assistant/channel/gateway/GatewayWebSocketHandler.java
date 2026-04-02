@@ -157,7 +157,7 @@ public class GatewayWebSocketHandler extends SimpleChannelInboundHandler<TextWeb
         }
 
         switch (frame.method()) {
-            case "sessions.send" -> handleSessionsSend(ctx, frame);
+            case "sessions.send", "chat.send" -> handleSessionsSend(ctx, frame);
             case "policy.tick" -> sendResponse(ctx, reqId, Map.of("tick", true));
             default -> {
                 log.warn("Unknown method '{}' from {}", frame.method(), channelId);
@@ -247,7 +247,7 @@ public class GatewayWebSocketHandler extends SimpleChannelInboundHandler<TextWeb
             properties.getProtocolVersion(),
             new ServerInfo(properties.getServerVersion(), channelId),
             new FeaturesInfo(
-                List.of("sessions.send", "sessions.list", "policy.tick"),
+                List.of("sessions.send", "chat.send", "sessions.list", "policy.tick"),
                 List.of("chat", "tick", "connect.challenge")
             ),
             new LinkedHashMap<>(Map.of(
