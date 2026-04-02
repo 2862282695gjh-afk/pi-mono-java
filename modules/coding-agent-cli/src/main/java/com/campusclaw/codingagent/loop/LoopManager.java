@@ -7,6 +7,7 @@ import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import com.campusclaw.assistant.channel.MessageSubmitter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -17,7 +18,7 @@ import org.springframework.stereotype.Service;
  * Loops are session-scoped and do not survive application restart.
  */
 @Service
-public class LoopManager {
+public class LoopManager implements MessageSubmitter {
 
     private static final Logger log = LoggerFactory.getLogger(LoopManager.class);
 
@@ -99,19 +100,16 @@ public class LoopManager {
         return scheduler != null;
     }
 
-    /**
-     * Submit a message from an external source (e.g. WebSocket gateway)
-     * to the current interactive session's agent for processing.
-     * The agent will receive the message as if the user typed it, and can
-     * use any available tools (CronTool, LoopTool, etc.).
-     */
-    public void submitExternalMessage(String message) {
+    @Override
+    public boolean submitMessage(String message) {
         BlockingQueue<String> q = submitQueue;
         if (q != null) {
             q.add(message);
             log.info("External message submitted: {} chars", message.length());
+            return true;
         } else {
             log.warn("No active session for external message");
+            return false;
         }
     }
 

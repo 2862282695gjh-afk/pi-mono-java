@@ -2,6 +2,7 @@ package com.campusclaw.assistant.channel.gateway;
 
 import com.campusclaw.assistant.channel.Channel;
 import com.campusclaw.assistant.channel.ChannelRegistry;
+import com.campusclaw.assistant.channel.MessageSubmitter;
 import io.netty.channel.ChannelHandlerContext;
 import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
@@ -19,7 +20,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * Gateway Channel implementation.
  * Acts as a WebSocket server that chat tools can connect to directly.
  * Incoming messages are forwarded to the current interactive session's agent
- * via LoopManager.submitExternalMessage().
+ * via MessageSubmitter.submitMessage().
  */
 @Component
 @ConditionalOnProperty(prefix = "pi.assistant.gateway", name = "enabled", havingValue = "true")
@@ -29,7 +30,7 @@ public class GatewayChannel implements Channel {
 
     private final WebSocketGatewayProperties properties;
     private final ChannelRegistry channelRegistry;
-    private final Object loopManager; // LoopManager from coding-agent-cli, lazily resolved
+    private final MessageSubmitter messageSubmitter; // LoopManager from coding-agent-cli, lazily resolved
 
     // channelId -> ChannelHandlerContext (for sending responses)
     private final Map<String, ChannelHandlerContext> sessionContexts = new ConcurrentHashMap<>();
@@ -43,11 +44,11 @@ public class GatewayChannel implements Channel {
     public GatewayChannel(
         WebSocketGatewayProperties properties,
         ChannelRegistry channelRegistry,
-        @Lazy @Autowired(required = false) Object loopManager
+        @Lazy @Autowired(required = false) MessageSubmitter messageSubmitter
     ) {
         this.properties = properties;
         this.channelRegistry = channelRegistry;
-        this.loopManager = loopManager;
+        this.messageSubmitter = messageSubmitter;
     }
 
     @PostConstruct
@@ -107,14 +108,13 @@ public class GatewayChannel implements Channel {
         channelToSessionKey.put(channelId, sessionKey);
 
         // Forward to interactive session agent
-        if (loopManager != null) {
-            try {
-                var method = loopManager.getClass().getMethod("submitExternalMessage", String.class);
-                method.invoke(loopManager, content);
+        if (messageSubmitter != null) {
+            boolean submitted = messageSubmitter.submitMessage(content);
+            if (submitted) {
                 log.info("Message forwarded to agent session");
                 return;
-            } catch (ReflectiveOperationException e) {
-                log.warn("Failed to forward message to agent session: {}", e.getMessage());
+            } else {
+                log.warn("Failed to forward message to agent session (submit returned false)");
             }
         }
 
