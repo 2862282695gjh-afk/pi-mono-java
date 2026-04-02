@@ -1,0 +1,14 @@
+spring:
+  main:
+    banner-mode: off
+    lazy-initialization: true
+    web-application-type: none
+  application:
+    name: mate-campusclaw
+
+logging:
+  level:
+    root: WARN
+    com.huawei.hicampus.mate.matecampusclaw: WARN
+    org.springframework: WARN
+    io.netty: ERROR
