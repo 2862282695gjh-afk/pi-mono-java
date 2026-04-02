@@ -2,18 +2,15 @@ package com.campusclaw.assistant.channel.gateway;
 
 import com.campusclaw.assistant.channel.Channel;
 import com.campusclaw.assistant.channel.ChannelRegistry;
-import com.campusclaw.assistant.task.Task;
-import com.campusclaw.assistant.task.TaskManager;
-import com.campusclaw.assistant.task.TaskRepository;
-import com.campusclaw.assistant.task.TaskStatus;
 import io.netty.channel.ChannelHandlerContext;
 import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Component;
 
-import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -21,6 +18,8 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * Gateway Channel implementation.
  * Acts as a WebSocket server that chat tools can connect to directly.
+ * Incoming messages are forwarded to the current interactive session's agent
+ * via LoopManager.submitExternalMessage().
  */
 @Component
 @ConditionalOnProperty(prefix = "pi.assistant.gateway", name = "enabled", havingValue = "true")
@@ -30,8 +29,7 @@ public class GatewayChannel implements Channel {
 
     private final WebSocketGatewayProperties properties;
     private final ChannelRegistry channelRegistry;
-    private final TaskRepository taskRepository;
-    private final TaskManager taskManager;
+    private final Object loopManager; // LoopManager from coding-agent-cli, lazily resolved
 
     // channelId -> ChannelHandlerContext (for sending responses)
     private final Map<String, ChannelHandlerContext> sessionContexts = new ConcurrentHashMap<>();
@@ -45,13 +43,11 @@ public class GatewayChannel implements Channel {
     public GatewayChannel(
         WebSocketGatewayProperties properties,
         ChannelRegistry channelRegistry,
-        TaskRepository taskRepository,
-        TaskManager taskManager
+        @Lazy @Autowired(required = false) Object loopManager
     ) {
         this.properties = properties;
         this.channelRegistry = channelRegistry;
-        this.taskRepository = taskRepository;
-        this.taskManager = taskManager;
+        this.loopManager = loopManager;
     }
 
     @PostConstruct
@@ -67,17 +63,9 @@ public class GatewayChannel implements Channel {
 
     @Override
     public void sendMessage(String message) {
-        // This is called by TaskManager after task completion
-        // We need to find the appropriate session to send to
-
         log.info("sendMessage called with message length: {}", message.length());
-
-        // Find active sessions and send to them
-        // This could be enhanced to target specific sessions based on task metadata
         for (Map.Entry<String, ChannelHandlerContext> entry : sessionContexts.entrySet()) {
             String channelId = entry.getKey();
-            ChannelHandlerContext ctx = entry.getValue();
-
             String sessionKey = channelToSessionKey.get(channelId);
             if (sessionKey != null) {
                 sendMessageToSession(channelId, sessionKey, message);
@@ -107,6 +95,8 @@ public class GatewayChannel implements Channel {
 
     /**
      * Handle an incoming message from a client.
+     * Forwards the message to the current interactive session's agent via LoopManager,
+     * so the agent can process it using any available tools (CronTool, LoopTool, etc.).
      */
     public void handleIncomingMessage(String channelId, String sessionKey, String content) {
         log.info("Handling incoming message from channel {}, sessionKey {}: {} chars",
@@ -116,36 +106,26 @@ public class GatewayChannel implements Channel {
         sessionKeyToChannel.put(sessionKey, channelId);
         channelToSessionKey.put(channelId, sessionKey);
 
-        // Create a Task for this message
-        String taskId = UUID.randomUUID().toString();
-        String conversationId = sessionKey; // Use sessionKey as conversationId
+        // Forward to interactive session agent
+        if (loopManager != null) {
+            try {
+                var method = loopManager.getClass().getMethod("submitExternalMessage", String.class);
+                method.invoke(loopManager, content);
+                log.info("Message forwarded to agent session");
+                return;
+            } catch (ReflectiveOperationException e) {
+                log.warn("Failed to forward message to agent session: {}", e.getMessage());
+            }
+        }
 
-        Task task = new Task(
-            taskId,
-            conversationId,
-            content,
-            TaskStatus.TODO,
-            null,
-            getName(),
-            Instant.now(),
-            Instant.now()
-        );
-
-        taskRepository.save(task);
-        log.info("Created task {} for conversation {}", taskId, conversationId);
-
-        // Execute the task
-        taskManager.executeTask(taskId)
-            .thenAccept(result -> {
-                log.info("Task {} completed, result length: {}", taskId, result.length());
-                // Send result back to the session
-                sendMessageToSession(channelId, sessionKey, result);
-            })
-            .exceptionally(e -> {
-                log.error("Task {} failed: {}", taskId, e.getMessage());
-                sendMessageToSession(channelId, sessionKey, "Error: " + e.getMessage());
-                return null;
-            });
+        // Fallback: send ACK if no session available
+        String runId = UUID.randomUUID().toString();
+        GatewayWebSocketHandler handler = getHandler(channelId);
+        if (handler != null) {
+            ChannelHandlerContext ctx = sessionContexts.get(channelId);
+            handler.sendEvent(ctx, "chat", runId, sessionKey, "final",
+                "[Gateway] No active session. Message not processed.");
+        }
     }
 
     /**
@@ -158,17 +138,14 @@ public class GatewayChannel implements Channel {
             return;
         }
 
-        // Get the handler to send events
-        GatewayWebSocketHandler handler = getHandler(ctx);
+        GatewayWebSocketHandler handler = getHandler(channelId);
         if (handler == null) {
             log.warn("No handler found for channel: {}", channelId);
             return;
         }
 
-        // Send as event frame (chat event)
         String runId = UUID.randomUUID().toString();
         handler.sendEvent(ctx, "chat", runId, sessionKey, "final", message);
-
         log.info("Sent message to session {}: {} chars", sessionKey, message.length());
     }
 
@@ -179,15 +156,16 @@ public class GatewayChannel implements Channel {
         ChannelHandlerContext ctx = sessionContexts.get(channelId);
         if (ctx == null) return;
 
-        GatewayWebSocketHandler handler = getHandler(ctx);
+        GatewayWebSocketHandler handler = getHandler(channelId);
         if (handler == null) return;
 
         String runId = UUID.randomUUID().toString();
         handler.sendEvent(ctx, "chat", runId, sessionKey, "delta", delta);
     }
 
-    private GatewayWebSocketHandler getHandler(ChannelHandlerContext ctx) {
-        // The handler is added to the pipeline in WebSocketGatewayConfig
+    private GatewayWebSocketHandler getHandler(String channelId) {
+        ChannelHandlerContext ctx = sessionContexts.get(channelId);
+        if (ctx == null) return null;
         try {
             return (GatewayWebSocketHandler) ctx.pipeline().get("messageHandler");
         } catch (Exception e) {

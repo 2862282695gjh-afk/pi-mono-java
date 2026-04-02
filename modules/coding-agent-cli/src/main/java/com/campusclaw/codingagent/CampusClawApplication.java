@@ -34,6 +34,7 @@ public class CampusClawApplication implements CommandLineRunner, ExitCodeGenerat
         System.setProperty("io.netty.noUnsafe", "true");
         System.setProperty("org.jline.terminal.disableDeprecatedProviderWarning", "true");
         System.setProperty("org.jline.terminal.jansi", "false");
+
         System.exit(SpringApplication.exit(SpringApplication.run(CampusClawApplication.class, args)));
     }
 

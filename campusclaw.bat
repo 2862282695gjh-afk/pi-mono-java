@@ -1,19 +1,10 @@
 @echo off
+chcp 65001 >nul
 setlocal enabledelayedexpansion
 
 set "SCRIPT_DIR=%~dp0"
-set "JAR_DIR=%SCRIPT_DIR%modules\coding-agent-cli\build\libs"
+set "JAR_DIR=%SCRIPT_DIR%modules\coding-agent-cli\target"
 set "BUILD_MARKER=%JAR_DIR%\.build-timestamp"
-
-:: Auto-detect JDK 21
-call :detect_jdk21
-if errorlevel 1 (
-    echo Error: JDK 21 not found. >&2
-    echo Install options: >&2
-    echo   winget install EclipseAdoptium.Temurin.21.JDK >&2
-    echo   Or download from https://adoptium.net/ >&2
-    exit /b 1
-)
 
 :: Parse --rebuild flag
 set "REBUILD=0"
@@ -32,85 +23,61 @@ for %%a in (%*) do (
     )
 )
 
-:: Find JAR (avoid hardcoding version)
+:: Find JAR
 call :find_jar
-if not defined JAR set "NEED_BUILD=1"
 
-:: Check if rebuild needed
+:: Build if no JAR, --rebuild, or source changed
 if "%REBUILD%"=="1" (
-    echo Rebuilding campusclaw-agent...
-    set "NEED_BUILD=1"
+    echo 正在重新构建 campusclaw-agent...
+    call :build
 ) else if not defined JAR (
-    echo Building campusclaw-agent...
-    set "NEED_BUILD=1"
-) else if not exist "%BUILD_MARKER%" (
-    echo Building campusclaw-agent...
-    set "NEED_BUILD=1"
+    echo 正在构建 campusclaw-agent...
+    call :build
+) else (
+    call :check_needs_build
+    if "!NEEDS_BUILD!"=="1" (
+        echo 源代码已更新，正在重新构建 campusclaw-agent...
+        call :build
+    )
 )
 
-if defined NEED_BUILD (
-    call "%SCRIPT_DIR%gradlew.bat" -p "%SCRIPT_DIR%" :modules:campusclaw-coding-agent:bootJar -q
-    if errorlevel 1 exit /b 1
-    echo.> "%BUILD_MARKER%"
-    call :find_jar
-)
+:: Find JAR again after build
+call :find_jar
 
 if not defined JAR (
-    echo Error: Build failed, JAR not found. >&2
+    echo 错误：构建失败，找不到 JAR 文件。
+    pause
     exit /b 1
 )
 
-"%JAVA_HOME%\bin\java" -jar "%JAR%" %ARGS%
+:: Launch
+java -Dfile.encoding=UTF-8 -Dstdout.encoding=UTF-8 -Dstderr.encoding=UTF-8 -Djavax.net.ssl.trustStoreType=WINDOWS-ROOT -jar "%JAR%" %ARGS%
+pause
 exit /b %errorlevel%
+
+:build
+call "%SCRIPT_DIR%mvnw.cmd" -f "%SCRIPT_DIR%pom.xml" package -pl modules/coding-agent-cli -am -q -DskipTests
+if errorlevel 1 (
+    echo 错误：构建失败。
+    pause
+    exit /b 1
+)
+:: Update build marker
+echo.> "%BUILD_MARKER%"
+exit /b 0
 
 :find_jar
 set "JAR="
-for %%f in ("%JAR_DIR%\campusclaw-agent-*.jar") do (
-    echo %%~nf | findstr /v "\-plain" >nul 2>&1
-    if not errorlevel 1 set "JAR=%%f"
-)
+if exist "%JAR_DIR%\campusclaw-agent.jar" set "JAR=%JAR_DIR%\campusclaw-agent.jar"
 exit /b 0
 
-:detect_jdk21
-:: 1. Current JAVA_HOME already JDK 21?
-if defined JAVA_HOME (
-    for /f "tokens=3" %%v in ('"%JAVA_HOME%\bin\java" -version 2^>^&1 ^| findstr /r "\"21\."') do (
-        exit /b 0
-    )
+:check_needs_build
+set "NEEDS_BUILD=0"
+:: No build marker means never tracked — rebuild
+if not exist "%BUILD_MARKER%" (
+    set "NEEDS_BUILD=1"
+    exit /b 0
 )
-
-:: 2. Check common install paths
-for /d %%d in (
-    "C:\Program Files\Eclipse Adoptium\jdk-21*"
-    "C:\Program Files\Java\jdk-21*"
-    "C:\Program Files\Microsoft\jdk-21*"
-    "C:\Program Files\Zulu\zulu-21*"
-) do (
-    if exist "%%~d\bin\java.exe" (
-        set "JAVA_HOME=%%~d"
-        exit /b 0
-    )
-)
-
-:: 3. Check SDKMAN (Git Bash on Windows)
-if defined SDKMAN_DIR (
-    for /d %%d in ("%SDKMAN_DIR%\candidates\java\21*") do (
-        if exist "%%~d\bin\java.exe" (
-            set "JAVA_HOME=%%~d"
-            exit /b 0
-        )
-    )
-)
-
-:: 4. Default java is 21?
-where java >nul 2>&1
-if not errorlevel 1 (
-    for /f "tokens=3" %%v in ('java -version 2^>^&1 ^| findstr /r "\"21\."') do (
-        for /f "tokens=*" %%p in ('where java') do (
-            set "JAVA_HOME=%%~dpp.."
-            exit /b 0
-        )
-    )
-)
-
-exit /b 1
+:: Use PowerShell to check if any source file is newer than the build marker
+for /f %%r in ('powershell -NoProfile -Command "$m=(Get-Item '%BUILD_MARKER%').LastWriteTime; $n=Get-ChildItem -Path '%SCRIPT_DIR%modules' -Recurse -Include '*.java','*.xml','*.yml','*.properties' -ErrorAction SilentlyContinue | Where-Object {$_.LastWriteTime -gt $m} | Select-Object -First 1; if($n){'1'}else{'0'}" 2^>nul') do set "NEEDS_BUILD=%%r"
+exit /b 0
