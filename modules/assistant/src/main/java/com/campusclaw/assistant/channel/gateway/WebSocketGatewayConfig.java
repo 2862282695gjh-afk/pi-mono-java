@@ -45,7 +45,6 @@ public class WebSocketGatewayConfig implements SmartLifecycle {
 
     public WebSocketGatewayConfig(WebSocketGatewayProperties properties, GatewayChannel gatewayChannel,
                                   ObjectMapper objectMapper) {
-        log.info("WebSocketGatewayConfig constructed with port {}", properties.getPort());
         this.properties = properties;
         this.gatewayChannel = gatewayChannel;
         this.objectMapper = objectMapper;
@@ -53,7 +52,6 @@ public class WebSocketGatewayConfig implements SmartLifecycle {
 
     @Bean
     public GatewayWebSocketHandler gatewayWebSocketHandler() {
-        log.info("Creating GatewayWebSocketHandler bean");
         return new GatewayWebSocketHandler(properties, gatewayChannel, objectMapper);
     }
 
@@ -62,8 +60,6 @@ public class WebSocketGatewayConfig implements SmartLifecycle {
         if (running) {
             return;
         }
-
-        log.info("Starting WebSocket Gateway on port {}", properties.getPort());
 
         try {
             bossGroup = new NioEventLoopGroup(1);
@@ -102,7 +98,6 @@ public class WebSocketGatewayConfig implements SmartLifecycle {
             serverChannel = bootstrap.bind(new InetSocketAddress(properties.getPort())).sync().channel();
             running = true;
 
-            log.info("WebSocket Gateway started at ws://127.0.0.1:{}{}", properties.getPort(), properties.getPath());
         } catch (Exception e) {
             log.error("Failed to start WebSocket Gateway: {}", e.getMessage(), e);
             stop();
@@ -111,8 +106,6 @@ public class WebSocketGatewayConfig implements SmartLifecycle {
 
     @Override
     public void stop() {
-        log.info("Stopping WebSocket Gateway");
-
         running = false;
 
         if (serverChannel != null) {
@@ -129,8 +122,6 @@ public class WebSocketGatewayConfig implements SmartLifecycle {
             bossGroup.shutdownGracefully();
             bossGroup = null;
         }
-
-        log.info("WebSocket Gateway stopped");
     }
 
     @Override

@@ -60,7 +60,6 @@ public class GatewayChannel implements Channel {
     @PostConstruct
     public void register() {
         channelRegistry.register(this);
-        log.info("Gateway channel registered with name: {}", properties.getName());
     }
 
     @Override
@@ -70,7 +69,6 @@ public class GatewayChannel implements Channel {
 
     @Override
     public void sendMessage(String message) {
-        log.info("sendMessage called with message length: {}", message.length());
         for (Map.Entry<String, ChannelHandlerContext> entry : sessionContexts.entrySet()) {
             String channelId = entry.getKey();
             String sessionKey = channelToSessionKey.get(channelId);
@@ -85,7 +83,6 @@ public class GatewayChannel implements Channel {
      */
     public void registerSession(String channelId, ChannelHandlerContext ctx) {
         sessionContexts.put(channelId, ctx);
-        log.debug("Registered session: {}", channelId);
     }
 
     /**
@@ -99,7 +96,6 @@ public class GatewayChannel implements Channel {
         }
         // Clean up pending requests for this channel
         pendingSessionsSend.entrySet().removeIf(entry -> entry.getValue().channelId().equals(channelId));
-        log.debug("Removed session: {}", channelId);
     }
 
     /**
@@ -108,7 +104,6 @@ public class GatewayChannel implements Channel {
      */
     public void registerPendingSessionsSend(String reqId, String channelId, String sessionKey) {
         pendingSessionsSend.put(reqId, new PendingRequest(reqId, channelId, sessionKey));
-        log.debug("Registered pending sessions.send: reqId={}, channelId={}", reqId, channelId);
     }
 
     /**
@@ -117,9 +112,6 @@ public class GatewayChannel implements Channel {
      * so the agent can process it using any available tools (CronTool, LoopTool, etc.).
      */
     public void handleIncomingMessage(String channelId, String sessionKey, String content) {
-        log.info("Handling incoming message from channel {}, sessionKey {}: {} chars",
-            channelId, sessionKey, content.length());
-
         // Associate sessionKey with channel
         sessionKeyToChannel.put(sessionKey, channelId);
         channelToSessionKey.put(channelId, sessionKey);
@@ -128,7 +120,6 @@ public class GatewayChannel implements Channel {
         if (messageSubmitter != null) {
             boolean submitted = messageSubmitter.submitMessage(content);
             if (submitted) {
-                log.info("Message forwarded to agent session");
                 return;
             } else {
                 log.warn("Failed to forward message to agent session (submit returned false)");
@@ -147,10 +138,8 @@ public class GatewayChannel implements Channel {
     @EventListener
     public void onAgentResponse(AgentResponseEvent event) {
         String message = event.getMessage();
-        log.info("Received AgentResponseEvent, message length: {}", message.length());
 
         if (pendingSessionsSend.isEmpty()) {
-            log.debug("No pending sessions.send requests, ignoring event");
             return;
         }
 
@@ -182,7 +171,6 @@ public class GatewayChannel implements Channel {
 
         String runId = UUID.randomUUID().toString();
         handler.sendEvent(ctx, "chat", runId, sessionKey, "final", message);
-        log.info("Sent message to session {}: {} chars", sessionKey, message.length());
     }
 
     /**
@@ -235,8 +223,6 @@ public class GatewayChannel implements Channel {
         );
 
         handler.sendResponseFrame(ctx, reqId, payload);
-        log.info("Completed pending sessions.send {} for channel {} ({} chars)",
-            reqId, channelId, resultMessage.length());
     }
 
     /**

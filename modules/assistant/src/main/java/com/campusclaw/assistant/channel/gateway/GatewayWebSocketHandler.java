@@ -49,8 +49,6 @@ public class GatewayWebSocketHandler extends SimpleChannelInboundHandler<TextWeb
     public void userEventTriggered(ChannelHandlerContext ctx, Object evt) throws Exception {
         if (evt instanceof WebSocketServerProtocolHandler.HandshakeComplete) {
             String channelId = ctx.channel().id().asShortText();
-            log.info("WebSocket handshake completed for channel: {}", channelId);
-
             // Send connect.challenge immediately after handshake
             sendChallenge(ctx);
 
@@ -70,8 +68,6 @@ public class GatewayWebSocketHandler extends SimpleChannelInboundHandler<TextWeb
     protected void channelRead0(ChannelHandlerContext ctx, TextWebSocketFrame frame) throws Exception {
         String text = frame.text();
         String channelId = ctx.channel().id().asShortText();
-
-        log.debug("Received message from {}: {} chars", channelId, text.length());
 
         try {
             GatewayFrame frameObj = objectMapper.readValue(text, GatewayFrame.class);
@@ -95,7 +91,6 @@ public class GatewayWebSocketHandler extends SimpleChannelInboundHandler<TextWeb
         String channelId = ctx.channel().id().asShortText();
         sessions.put(channelId, ctx);
         sessionSeqCounters.put(channelId, new AtomicInteger(0));
-        log.info("Client connected: {}", channelId);
         super.channelActive(ctx);
     }
 
@@ -112,7 +107,6 @@ public class GatewayWebSocketHandler extends SimpleChannelInboundHandler<TextWeb
         }
 
         gatewayChannel.removeSession(channelId);
-        log.info("Client disconnected: {}", channelId);
         super.channelInactive(ctx);
     }
 
@@ -138,7 +132,6 @@ public class GatewayWebSocketHandler extends SimpleChannelInboundHandler<TextWeb
         frame.put("seq", seq);
         frame.put("stateVersion", Map.of("presence", 0, "health", 0));
         writeFrame(ctx, frame);
-        log.debug("Sent connect.challenge to {}", channelId);
     }
 
     // ── Request handling ───────────────────────────────────────────
@@ -195,7 +188,6 @@ public class GatewayWebSocketHandler extends SimpleChannelInboundHandler<TextWeb
 
             // Send hello-ok response
             sendHelloOk(ctx, reqId);
-            log.info("Client {} authenticated successfully", channelId);
         } catch (Exception e) {
             log.error("Error handling connect: {}", e.getMessage(), e);
             sendError(ctx, reqId, "connectError", e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName());
@@ -240,8 +232,7 @@ public class GatewayWebSocketHandler extends SimpleChannelInboundHandler<TextWeb
     }
 
     private void handleClientEvent(ChannelHandlerContext ctx, GatewayFrame frame) {
-        // Client-initiated events (if any) — log and ignore for now
-        log.debug("Received client event '{}' from {}", frame.event(), ctx.channel().id().asShortText());
+        // Client-initiated events (if any) — ignore for now
     }
 
     // ── Response sending ───────────────────────────────────────────
@@ -276,7 +267,6 @@ public class GatewayWebSocketHandler extends SimpleChannelInboundHandler<TextWeb
             "ok", true,
             "payload", payload
         ));
-        log.debug("Sent hello-ok to {}", channelId);
     }
 
     private void sendResponse(ChannelHandlerContext ctx, String reqId, Object payload) {
@@ -345,7 +335,6 @@ public class GatewayWebSocketHandler extends SimpleChannelInboundHandler<TextWeb
         frame.put("seq", seq);
         frame.put("stateVersion", Map.of("presence", seq, "health", 0));
         writeFrame(ctx, frame);
-        log.debug("Sent event to {}: event={}, state={}, seq={}", channelId, event, state, seq);
     }
 
     private void sendTickEvent(ChannelHandlerContext ctx) {
