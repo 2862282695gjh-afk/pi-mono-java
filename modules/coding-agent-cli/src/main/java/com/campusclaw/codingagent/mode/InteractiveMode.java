@@ -59,6 +59,7 @@ public class InteractiveMode {
     private final com.campusclaw.cron.CronService cronService;
     private final com.campusclaw.codingagent.loop.LoopManager loopManager;
     private final ApplicationContext applicationContext;
+    private com.campusclaw.assistant.memory.ChatMemoryStore chatMemoryStore;
 
     // Scoped models for Ctrl+P cycling (from --models flag)
     private List<Model> scopedModels = List.of();
@@ -152,6 +153,15 @@ public class InteractiveMode {
         Objects.requireNonNull(session, "session");
         Objects.requireNonNull(terminal, "terminal");
         this.currentSession = session;
+
+        // Resolve ChatMemoryStore from Spring context (optional — graceful if DB not configured)
+        if (applicationContext != null) {
+            try {
+                chatMemoryStore = applicationContext.getBean(com.campusclaw.assistant.memory.ChatMemoryStore.class);
+            } catch (Exception e) {
+                chatMemoryStore = null; // DB not configured, skip ChatMemory
+            }
+        }
 
         // Build component tree
         root = new Container();
@@ -689,6 +699,15 @@ public class InteractiveMode {
             sm.appendMessage(new UserMessage(input, System.currentTimeMillis()));
         }
 
+        // Persist user message to ChatMemory (GaussDB)
+        if (chatMemoryStore != null && sm != null) {
+            try {
+                chatMemoryStore.append(sm.getSessionId(), List.of(new UserMessage(input, System.currentTimeMillis())));
+            } catch (Exception e) {
+                System.err.println("[InteractiveMode] Failed to persist user message to ChatMemory: " + e.getMessage());
+            }
+        }
+
         currentAssistantMessage = new AssistantMessageComponent();
         chatContainer.addChild(currentAssistantMessage);
         pendingTools.clear();
@@ -1166,6 +1185,14 @@ public class InteractiveMode {
                     if (currentSession != null) {
                         var sm = currentSession.getSessionManager();
                         if (sm != null) sm.appendMessage(msg);
+                        // Persist assistant message to ChatMemory (GaussDB)
+                        if (chatMemoryStore != null) {
+                            try {
+                                chatMemoryStore.append(sm.getSessionId(), List.of(msg));
+                            } catch (Exception ex) {
+                                System.err.println("[InteractiveMode] Failed to persist assistant message to ChatMemory: " + ex.getMessage());
+                            }
+                        }
                     }
                 }
             }

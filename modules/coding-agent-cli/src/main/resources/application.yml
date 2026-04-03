@@ -7,6 +7,22 @@ spring:
     exclude: webSocketGatewayConfig,gatewayChannel
   application:
     name: campusclaw-agent
+  datasource:
+    url: ${GAUSSDB_URL:jdbc:postgresql://localhost:5432/pi_assistant}
+    username: ${GAUSSDB_USER:root}
+    password: ${GAUSSDB_PASSWORD:root}
+    driver-class-name: org.postgresql.Driver
+  sql:
+    init:
+      mode: never
+
+mybatis:
+  configuration:
+    map-underscore-to-camel-case: true
+
+mybatis:
+  configuration:
+    map-underscore-to-camel-case: true
 
 pi:
   assistant:

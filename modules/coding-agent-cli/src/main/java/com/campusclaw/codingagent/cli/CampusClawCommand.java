@@ -412,8 +412,27 @@ public class CampusClawCommand implements Callable<Integer> {
                             + sessionManager.getSessionId() + " (" + messages.size() + " messages)");
                 }
             } else if (continueSession) {
-                // --continue: resume latest session
-                var messages = sessionManager.resumeLatestSession(effectiveCwd.toString());
+                // --continue: resume latest session (prefer ChatMemory, fallback to JSONL)
+                List<com.campusclaw.ai.types.Message> messages = List.of();
+
+                // Try ChatMemory (GaussDB) first
+                if (applicationContext != null) {
+                    try {
+                        var store = applicationContext.getBean(com.campusclaw.assistant.memory.ChatMemoryStore.class);
+                        var dbMessages = store.load(sessionManager.getSessionId());
+                        if (!dbMessages.isEmpty()) {
+                            messages = dbMessages;
+                        }
+                    } catch (Exception ignored) {
+                        // ChatMemory not available, fall through
+                    }
+                }
+
+                // Fallback to JSONL session file
+                if (messages.isEmpty()) {
+                    messages = sessionManager.resumeLatestSession(effectiveCwd.toString());
+                }
+
                 if (!messages.isEmpty()) {
                     for (var msg : messages) {
                         session.getAgent().getState().appendMessage(msg);
