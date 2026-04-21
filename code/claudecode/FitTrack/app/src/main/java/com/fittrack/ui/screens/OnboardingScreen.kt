@@ -2,9 +2,9 @@ package com.fittrack.ui.screens
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.MutableTransitionState
-import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
+import com.fittrack.ui.navigation.ButtonSpring
+import com.fittrack.ui.navigation.IconSpring
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
@@ -90,7 +90,7 @@ fun OnboardingScreen(
                     // Logo 弹性入场
                     val logoScale by animateFloatAsState(
                         targetValue = if (step1Visible.currentState) 1f else 0.5f,
-                        animationSpec = spring(dampingRatio = 0.4f, stiffness = Spring.StiffnessMediumLow),
+                        animationSpec = IconSpring.press,
                         label = "logoScale"
                     )
                     Icon(
@@ -239,7 +239,7 @@ fun OnboardingScreen(
                     val isPressed by buttonInteraction.collectIsPressedAsState()
                     val buttonScale by animateFloatAsState(
                         targetValue = if (isPressed) 0.95f else 1f,
-                        animationSpec = spring(dampingRatio = 0.5f, stiffness = Spring.StiffnessMedium),
+                        animationSpec = ButtonSpring.press,
                         label = "buttonScale"
                     )
 

@@ -2,14 +2,14 @@ package com.fittrack.ui.screens
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.MutableTransitionState
-import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
+import com.fittrack.ui.navigation.ButtonSpring
+import com.fittrack.ui.navigation.IconSpring
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -59,7 +59,7 @@ fun PlanListScreen(
             val fabPressed by fabInteraction.collectIsPressedAsState()
             val fabScale by animateFloatAsState(
                 targetValue = if (fabPressed) 0.88f else 1f,
-                animationSpec = spring(dampingRatio = 0.4f, stiffness = Spring.StiffnessMedium),
+                animationSpec = IconSpring.press,
                 label = "fabScale"
             )
             FloatingActionButton(
@@ -114,8 +114,7 @@ fun PlanListScreen(
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                items(allPlans, key = { it.id }) { plan ->
-                    val index = allPlans.indexOf(plan)
+                itemsIndexed(allPlans, key = { _, item -> item.id }) { index, plan ->
                     AnimatedVisibility(
                         visibleState = listVisible,
                         enter = listItemEnter(delayMillis = index * STAGGER_DELAY),

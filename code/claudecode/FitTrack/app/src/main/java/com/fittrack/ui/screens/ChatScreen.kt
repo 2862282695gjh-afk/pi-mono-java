@@ -6,9 +6,8 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
+import com.fittrack.ui.navigation.IconSpring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
@@ -710,7 +709,7 @@ fun MessageInput(
                 val sendPressed by sendInteraction.collectIsPressedAsState()
                 val sendScale by animateFloatAsState(
                     targetValue = if (sendPressed) 0.85f else 1f,
-                    animationSpec = spring(dampingRatio = 0.4f, stiffness = Spring.StiffnessMedium),
+                    animationSpec = IconSpring.press,
                     label = "sendScale"
                 )
 

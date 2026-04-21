@@ -3,12 +3,11 @@ package com.fittrack.ui.screens
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.MutableTransitionState
-import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
+import com.fittrack.ui.navigation.ButtonSpring
+import com.fittrack.ui.navigation.IconSpring
+import com.fittrack.ui.navigation.CelebratorySpring
+import com.fittrack.ui.navigation.ProgressSpring
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
@@ -71,10 +70,10 @@ fun WorkoutScreen(
     // 进度条弹性动画值
     val progressAnimatable = remember { Animatable(0f) }
     LaunchedEffect(session?.currentExerciseIndex) {
-        if (session != null) {
+        session?.let {
             progressAnimatable.animateTo(
-                targetValue = (session!!.currentExerciseIndex + 1).toFloat() / session!!.exercises.size,
-                animationSpec = spring(dampingRatio = 0.6f, stiffness = Spring.StiffnessMediumLow)
+                targetValue = (it.currentExerciseIndex + 1).toFloat() / it.exercises.size,
+                animationSpec = ProgressSpring.animate
             )
         }
     }
@@ -125,12 +124,12 @@ fun WorkoutScreen(
                                 // 弹性数字动画
                                 val exerciseIndex by animateFloatAsState(
                                     targetValue = (workout.currentExerciseIndex + 1).toFloat(),
-                                    animationSpec = spring(dampingRatio = 0.6f, stiffness = Spring.StiffnessMedium),
+                                    animationSpec = ProgressSpring.animate,
                                     label = "exerciseIndex"
                                 )
                                 val totalExercises by animateFloatAsState(
                                     targetValue = workout.exercises.size.toFloat(),
-                                    animationSpec = spring(dampingRatio = 0.6f, stiffness = Spring.StiffnessMedium),
+                                    animationSpec = ProgressSpring.animate,
                                     label = "totalExercises"
                                 )
                                 Text(
@@ -224,7 +223,7 @@ fun WorkoutScreen(
                                     val savePressed by saveInteraction.collectIsPressedAsState()
                                     val saveScale by animateFloatAsState(
                                         targetValue = if (savePressed) 0.95f else 1f,
-                                        animationSpec = spring(dampingRatio = 0.5f, stiffness = Spring.StiffnessMedium),
+                                        animationSpec = ButtonSpring.press,
                                         label = "saveScale"
                                     )
 
@@ -316,7 +315,7 @@ fun WorkoutScreen(
             dialogVisible = true
             dialogAnimScale.animateTo(
                 targetValue = 1f,
-                animationSpec = spring(dampingRatio = 0.4f, stiffness = Spring.StiffnessMedium)
+                animationSpec = CelebratorySpring.bounce
             )
         }
 
@@ -327,7 +326,7 @@ fun WorkoutScreen(
                     // 庆祝图标弹性动画
                     val celebScale by animateFloatAsState(
                         targetValue = if (dialogVisible) 1f else 0f,
-                        animationSpec = spring(dampingRatio = 0.3f, stiffness = Spring.StiffnessMediumLow),
+                        animationSpec = CelebratorySpring.bounce,
                         label = "celebScale"
                     )
                     Icon(
@@ -438,7 +437,7 @@ private fun StarRatingRow(
             val starPressed by starInteraction.collectIsPressedAsState()
             val starScale by animateFloatAsState(
                 targetValue = if (starPressed) 0.7f else if (rating <= currentRating) 1.1f else 1f,
-                animationSpec = spring(dampingRatio = 0.4f, stiffness = Spring.StiffnessMedium),
+                animationSpec = IconSpring.press,
                 label = "starScale$index"
             )
             IconButton(

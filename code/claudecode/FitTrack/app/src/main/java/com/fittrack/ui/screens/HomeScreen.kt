@@ -2,9 +2,9 @@ package com.fittrack.ui.screens
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.MutableTransitionState
-import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
+import com.fittrack.ui.navigation.ButtonSpring
+import com.fittrack.ui.navigation.IconSpring
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
@@ -46,7 +46,7 @@ fun BouncyExtendedFloatingActionButton(
     val isPressed by interactionSource.collectIsPressedAsState()
     val scale by animateFloatAsState(
         targetValue = if (isPressed) 0.92f else 1f,
-        animationSpec = spring(dampingRatio = 0.5f, stiffness = Spring.StiffnessMedium),
+        animationSpec = ButtonSpring.press,
         label = "fabScale"
     )
 
@@ -56,8 +56,7 @@ fun BouncyExtendedFloatingActionButton(
         icon = icon,
         text = text,
         containerColor = containerColor,
-        contentColor = contentColor,
-        interactionSource = interactionSource
+        contentColor = contentColor
     )
 }
 
@@ -91,7 +90,7 @@ fun HomeScreen(
                     val chatPressed by chatInteraction.collectIsPressedAsState()
                     val chatScale by animateFloatAsState(
                         targetValue = if (chatPressed) 0.85f else 1f,
-                        animationSpec = spring(dampingRatio = 0.4f, stiffness = Spring.StiffnessMedium),
+                        animationSpec = IconSpring.press,
                         label = "chatIconScale"
                     )
                     IconButton(
@@ -328,7 +327,7 @@ private fun NavItem(
     val isPressed by interactionSource.collectIsPressedAsState()
     val scale by animateFloatAsState(
         targetValue = if (isPressed) 0.85f else 1f,
-        animationSpec = spring(dampingRatio = 0.4f, stiffness = Spring.StiffnessMedium),
+        animationSpec = IconSpring.press,
         label = "navScale"
     )
 
@@ -487,7 +486,7 @@ private fun AIGeneratorCard(onClick: () -> Unit) {
     val isPressed by interactionSource.collectIsPressedAsState()
     val cardScale by animateFloatAsState(
         targetValue = if (isPressed) 0.97f else 1f,
-        animationSpec = spring(dampingRatio = 0.5f, stiffness = Spring.StiffnessMedium),
+        animationSpec = ButtonSpring.press,
         label = "aiCardScale"
     )
 
