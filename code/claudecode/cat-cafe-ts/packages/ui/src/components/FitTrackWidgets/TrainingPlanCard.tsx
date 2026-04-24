@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import type { TrainingPlan, Exercise } from "./types";
 import { GOAL_LABELS, CATEGORY_COLORS, CATEGORY_BG_COLORS } from "./types";
 
@@ -86,6 +86,11 @@ function ExerciseItem({
 
 export function TrainingPlanCard({ plan, onComplete, onStartWorkout }: TrainingPlanCardProps) {
   const [exercises, setExercises] = useState(plan.exercises);
+
+  useEffect(() => {
+    setExercises(plan.exercises);
+  }, [plan.exercises]);
+
   const completedCount = exercises.filter((e) => e.completed).length;
   const totalCount = exercises.length;
   const progress = totalCount > 0 ? (completedCount / totalCount) * 100 : 0;
@@ -116,36 +121,47 @@ export function TrainingPlanCard({ plan, onComplete, onStartWorkout }: TrainingP
         </div>
       </div>
 
-      {/* 进度条 */}
-      <div className="duo-progress-section">
-        <div className="duo-progress-label">
-          <span>{completedCount}/{totalCount} 已完成</span>
-          <span>{Math.round(progress)}%</span>
+      {/* 空状态 */}
+      {totalCount === 0 ? (
+        <div className="duo-empty-state">
+          <span className="duo-empty-icon">📋</span>
+          <p className="duo-empty-text">暂无训练计划</p>
+          <p className="duo-empty-hint">完成一次训练后，数据将在此展示</p>
         </div>
-        <ProgressBar value={progress} color={allDone ? "#FFC800" : "#58CC02"} />
-      </div>
-
-      {/* 训练项目列表 */}
-      <div className="duo-exercise-list">
-        {exercises.map((exercise, i) => (
-          <ExerciseItem key={exercise.id} exercise={exercise} onToggle={handleToggle} index={i} />
-        ))}
-      </div>
-
-      {/* 底部按钮 */}
-      <div className="duo-card-footer">
-        {allDone ? (
-          <div className="duo-complete-banner">
-            <span>🎉</span>
-            <span>太棒了！今日训练全部完成！</span>
-            <span>+{plan.totalXP} XP</span>
+      ) : (
+        <>
+          {/* 进度条 */}
+          <div className="duo-progress-section">
+            <div className="duo-progress-label">
+              <span>{completedCount}/{totalCount} 已完成</span>
+              <span>{Math.round(progress)}%</span>
+            </div>
+            <ProgressBar value={progress} color={allDone ? "#FFC800" : "#58CC02"} />
           </div>
-        ) : (
-          <button className="duo-btn duo-btn-primary" onClick={onStartWorkout}>
-            开始训练
-          </button>
-        )}
-      </div>
+
+          {/* 训练项目列表 */}
+          <div className="duo-exercise-list">
+            {exercises.map((exercise, i) => (
+              <ExerciseItem key={exercise.id} exercise={exercise} onToggle={handleToggle} index={i} />
+            ))}
+          </div>
+
+          {/* 底部按钮 */}
+          <div className="duo-card-footer">
+            {allDone ? (
+              <div className="duo-complete-banner">
+                <span>🎉</span>
+                <span>太棒了！今日训练全部完成！</span>
+                <span>+{plan.totalXP} XP</span>
+              </div>
+            ) : (
+              <button className="duo-btn duo-btn-primary" onClick={onStartWorkout}>
+                开始训练
+              </button>
+            )}
+          </div>
+        </>
+      )}
     </div>
   );
 }

@@ -368,6 +368,37 @@
   font-weight: 600;
 }
 
+/* === 空状态 === */
+.duo-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 32px 16px;
+  color: #6B8A99;
+}
+
+.duo-empty-icon {
+  font-size: 32px;
+  margin-bottom: 4px;
+  opacity: 0.6;
+}
+
+.duo-empty-text {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: #8AA5B4;
+}
+
+.duo-empty-hint {
+  margin: 0;
+  font-size: 12px;
+  color: #4A6B7A;
+  font-weight: 500;
+}
+
 /* === 复选按钮 — 多邻国风格 === */
 .duo-check-btn {
   width: 28px;

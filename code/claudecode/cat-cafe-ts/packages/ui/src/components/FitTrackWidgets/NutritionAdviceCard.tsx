@@ -5,9 +5,11 @@ interface NutritionAdviceCardProps {
   advice: NutritionAdvice;
 }
 
+const MEAL_COLORS = ["#FFC800", "#FF9600", "#1CB0F6"];
+
 function MealCard({ meal, index }: { meal: MealSuggestion; index: number }) {
   const [expanded, setExpanded] = useState(false);
-  const color = index === 0 ? "#FFC800" : index === 1 ? "#FF9600" : "#1CB0F6";
+  const color = MEAL_COLORS[index % MEAL_COLORS.length];
 
   return (
     <div className="duo-meal-card" style={{ borderLeftColor: color }}>
@@ -63,18 +65,24 @@ export function NutritionAdviceCard({ advice }: NutritionAdviceCardProps) {
       </div>
 
       {/* 蛋白质推荐 */}
-      <div className="duo-protein-section">
-        <div className="duo-protein-header">
-          <span className="duo-section-icon">🥩</span>
-          <span className="duo-section-title">蛋白质补充</span>
+      {(proteinRecommendation || proteinSources.length > 0) && (
+        <div className="duo-protein-section">
+          <div className="duo-protein-header">
+            <span className="duo-section-icon">🥩</span>
+            <span className="duo-section-title">蛋白质补充</span>
+          </div>
+          {proteinRecommendation && (
+            <p className="duo-protein-recommendation">{proteinRecommendation}</p>
+          )}
+          {proteinSources.length > 0 && (
+            <div className="duo-protein-sources">
+              {proteinSources.map((source, i) => (
+                <ProteinSourceItem key={i} source={source} />
+              ))}
+            </div>
+          )}
         </div>
-        <p className="duo-protein-recommendation">{proteinRecommendation}</p>
-        <div className="duo-protein-sources">
-          {proteinSources.map((source, i) => (
-            <ProteinSourceItem key={i} source={source} />
-          ))}
-        </div>
-      </div>
+      )}
 
       {/* 推荐餐食 */}
       <div className="duo-meal-section">
