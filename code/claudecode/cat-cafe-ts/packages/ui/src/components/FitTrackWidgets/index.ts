@@ -1,10 +1,9 @@
 export { FitTrackWidgetPanel } from "./FitTrackWidgetPanel";
 export { TrainingPlanCard } from "./TrainingPlanCard";
-export { DietRecommendCard } from "./DietRecommendCard";
+export { NutritionAdviceCard } from "./NutritionAdviceCard";
 export type {
   Exercise,
   TrainingPlan,
-  MealItem,
-  NutritionSummary,
-  DietRecommendation,
+  MealSuggestion,
+  NutritionAdvice,
 } from "./types";

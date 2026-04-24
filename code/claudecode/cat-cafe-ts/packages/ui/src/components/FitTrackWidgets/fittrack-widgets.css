@@ -421,73 +421,111 @@
 }
 
 /* ========================================
-   饮食推荐 — 热量徽章
+   AI 标签
    ======================================== */
-.duo-calorie-badge {
+.duo-ai-tag {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 4px 10px;
-  background: rgba(28, 176, 246, 0.12);
-  color: #1CB0F6;
+  padding: 3px 10px;
+  background: rgba(206, 130, 255, 0.12);
+  color: #CE82FF;
   border-radius: 20px;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
-}
-
-.duo-calorie-icon {
-  font-size: 14px;
+  letter-spacing: 0.3px;
+  border: 1px solid rgba(206, 130, 255, 0.25);
 }
 
 /* ========================================
-   营养素进度条
+   分区通用样式
    ======================================== */
-.duo-nutrient-section {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.duo-nutrient-row {
+.duo-section-header {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
+  margin-bottom: 2px;
 }
 
-.duo-nutrient-label {
-  width: 36px;
-  font-size: 11px;
+.duo-section-icon {
+  font-size: 16px;
+}
+
+.duo-section-title {
+  font-size: 13px;
   font-weight: 700;
-  color: #6B8A99;
-  flex-shrink: 0;
+  color: #FFFFFF;
 }
 
-.duo-nutrient-track {
-  flex: 1;
-  height: 10px;
-  background: #233B45;
-  border-radius: 6px;
-  overflow: hidden;
-}
-
-.duo-nutrient-fill {
-  height: 100%;
-  border-radius: 6px;
-  transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.duo-nutrient-value {
-  width: 100px;
+.duo-section-count {
+  margin-left: auto;
   font-size: 11px;
   font-weight: 600;
   color: #6B8A99;
-  text-align: right;
-  flex-shrink: 0;
 }
 
 /* ========================================
-   三餐推荐卡片
+   蛋白质推荐区
    ======================================== */
+.duo-protein-section {
+  background: rgba(206, 130, 255, 0.06);
+  border: 1px solid rgba(206, 130, 255, 0.15);
+  border-radius: 12px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.duo-protein-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.duo-protein-recommendation {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: #E5E5E5;
+  line-height: 1.5;
+}
+
+.duo-protein-sources {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.duo-protein-source-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+}
+
+.duo-protein-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #CE82FF;
+  flex-shrink: 0;
+}
+
+.duo-protein-source-text {
+  font-size: 12px;
+  font-weight: 600;
+  color: #BFA0D9;
+}
+
+/* ========================================
+   推荐餐食
+   ======================================== */
+.duo-meal-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
 .duo-meal-list {
   display: flex;
   flex-direction: column;
@@ -520,8 +558,16 @@
   font-family: inherit;
 }
 
-.duo-meal-type-icon {
-  font-size: 20px;
+.duo-meal-rank {
+  width: 24px;
+  height: 24px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 800;
+  color: #FFFFFF;
   flex-shrink: 0;
 }
 
@@ -533,14 +579,6 @@
   min-width: 0;
 }
 
-.duo-meal-type {
-  font-size: 10px;
-  font-weight: 700;
-  color: #6B8A99;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
 .duo-meal-name {
   font-size: 13px;
   font-weight: 700;
@@ -550,33 +588,30 @@
   text-overflow: ellipsis;
 }
 
-.duo-meal-right {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-shrink: 0;
-}
-
-.duo-meal-cal {
-  font-size: 13px;
-  font-weight: 800;
-  color: #1CB0F6;
+.duo-meal-meta {
+  font-size: 11px;
+  color: #6B8A99;
+  font-weight: 600;
 }
 
 .duo-meal-expand {
   font-size: 12px;
   color: #4A6B7A;
   transition: transform 0.2s;
+  flex-shrink: 0;
 }
 
 .duo-meal-expand.open {
   transform: rotate(180deg);
 }
 
-/* === 三餐详情展开 === */
+/* === 餐食详情展开 === */
 .duo-meal-detail {
   padding: 0 12px 12px;
   animation: duo-expand 0.2s ease-out;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 @keyframes duo-expand {
@@ -586,131 +621,95 @@
   }
   to {
     opacity: 1;
-    max-height: 80px;
+    max-height: 100px;
   }
 }
 
-.duo-macro-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 8px;
-  padding: 8px;
-  background: #1A2C33;
-  border-radius: 10px;
+.duo-meal-desc {
+  margin: 0;
+  font-size: 12px;
+  color: #8AA5B4;
+  font-weight: 500;
+  line-height: 1.5;
 }
 
-.duo-macro-item {
+.duo-macro-inline {
   display: flex;
-  flex-direction: column;
+  gap: 8px;
+}
+
+.duo-macro-chip {
+  display: inline-flex;
   align-items: center;
-  gap: 2px;
-}
-
-.duo-macro-value {
-  font-size: 16px;
-  font-weight: 800;
-}
-
-.duo-macro-label {
-  font-size: 10px;
-  color: #6B8A99;
-  font-weight: 600;
+  gap: 4px;
+  padding: 3px 8px;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 700;
 }
 
 /* ========================================
-   饮水追踪
+   补充剂建议
    ======================================== */
-.duo-water-section {
-  background: #233B45;
-  border-radius: 12px;
-  padding: 12px;
+.duo-supplement-section {
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
 
-.duo-water-header {
+.duo-supplement-list {
   display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.duo-supplement-chip {
+  display: inline-flex;
   align-items: center;
+  gap: 4px;
+  padding: 6px 12px;
+  background: rgba(88, 204, 2, 0.08);
+  border: 1px solid rgba(88, 204, 2, 0.2);
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #58CC02;
+  transition: all 0.15s;
+}
+
+.duo-supplement-chip:hover {
+  background: rgba(88, 204, 2, 0.15);
+}
+
+/* ========================================
+   饮水提示
+   ======================================== */
+.duo-hydration-section {
+  background: linear-gradient(135deg, rgba(28, 176, 246, 0.08), rgba(46, 194, 255, 0.06));
+  border: 1px solid rgba(28, 176, 246, 0.2);
+  border-radius: 12px;
+  padding: 12px;
+}
+
+.duo-hydration-content {
+  display: flex;
+  align-items: flex-start;
   gap: 10px;
 }
 
-.duo-water-icon {
-  font-size: 24px;
+.duo-hydration-icon {
+  font-size: 20px;
+  flex-shrink: 0;
+  margin-top: 1px;
 }
 
-.duo-water-info {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-}
-
-.duo-water-title {
+.duo-hydration-text {
+  margin: 0;
   font-size: 13px;
-  font-weight: 700;
-  color: #FFFFFF;
-}
-
-.duo-water-detail {
-  font-size: 11px;
-  color: #6B8A99;
   font-weight: 600;
-}
-
-.duo-water-btn {
-  width: 36px;
-  height: 36px;
-  border-radius: 10px;
-  border: none;
-  background: #1CB0F6;
-  color: #FFFFFF;
-  font-size: 14px;
-  font-weight: 800;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 3px 0 #1498D4;
-  transition: all 0.1s;
-}
-
-.duo-water-btn:hover {
-  background: #2EC2FF;
-}
-
-.duo-water-btn:active {
-  box-shadow: none;
-  transform: translateY(3px);
-}
-
-.duo-water-btn.done {
-  background: #58CC02;
-  box-shadow: 0 3px 0 #46A302;
-  cursor: default;
-}
-
-.duo-water-track {
-  height: 8px;
-  background: #1A2C33;
-  border-radius: 4px;
-  overflow: hidden;
-}
-
-.duo-water-fill {
-  height: 100%;
-  background: linear-gradient(90deg, #1CB0F6, #2EC2FF);
-  border-radius: 4px;
-  transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-/* ========================================
-   卡片底部
-   ======================================== */
-.duo-card-footer {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+  color: #8AC8E8;
+  line-height: 1.5;
 }
 
 /* ========================================
@@ -726,13 +725,5 @@
     flex-direction: column;
     align-items: flex-start;
     gap: 8px;
-  }
-
-  .duo-nutrient-value {
-    width: 80px;
-  }
-
-  .duo-macro-grid {
-    gap: 4px;
   }
 }

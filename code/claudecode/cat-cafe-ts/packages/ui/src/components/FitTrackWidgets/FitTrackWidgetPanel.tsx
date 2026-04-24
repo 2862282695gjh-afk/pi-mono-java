@@ -1,6 +1,6 @@
 import { TrainingPlanCard } from "./TrainingPlanCard";
-import { DietRecommendCard } from "./DietRecommendCard";
-import type { TrainingPlan, DietRecommendation } from "./types";
+import { NutritionAdviceCard } from "./NutritionAdviceCard";
+import type { TrainingPlan, NutritionAdvice } from "./types";
 
 const MOCK_TRAINING_PLAN: TrainingPlan = {
   id: "plan-1",
@@ -19,25 +19,38 @@ const MOCK_TRAINING_PLAN: TrainingPlan = {
   ],
 };
 
-const MOCK_DIET_RECOMMENDATION: DietRecommendation = {
-  meals: [
-    { id: "m-1", name: "全麦面包 + 水煮蛋 + 牛奶", calories: 420, protein: 28, carbs: 45, fat: 15, icon: "🥪", mealType: "breakfast" },
-    { id: "m-2", name: "鸡胸肉沙拉 + 糙米饭", calories: 550, protein: 42, carbs: 55, fat: 12, icon: "🥗", mealType: "lunch" },
-    { id: "m-3", name: "三文鱼 + 西兰花 + 红薯", calories: 480, protein: 35, carbs: 40, fat: 18, icon: "🐟", mealType: "dinner" },
-    { id: "m-4", name: "希腊酸奶 + 混合坚果", calories: 200, protein: 15, carbs: 12, fat: 10, icon: "🥜", mealType: "snack" },
+const MOCK_NUTRITION_ADVICE: NutritionAdvice = {
+  proteinRecommendation: "建议补充 30g 蛋白质，促进肌肉修复与生长",
+  proteinSources: [
+    "鸡胸肉 150g",
+    "水煮鸡蛋 4 个",
+    "蛋白粉 1 勺",
   ],
-  nutrition: {
-    calories: 1650,
-    caloriesGoal: 2200,
-    protein: 120,
-    proteinGoal: 150,
-    carbs: 152,
-    carbsGoal: 250,
-    fat: 55,
-    fatGoal: 70,
-  },
-  waterIntake: 4,
-  waterGoal: 8,
+  hydrationTips: "训练后至少补充 1500ml 水分，分次小口饮用效果更佳",
+  mealSuggestions: [
+    {
+      name: "三文鱼藜麦沙拉",
+      description: "高蛋白低碳水，Omega-3 脂肪酸有助于减轻训练后炎症反应",
+      calories: 450,
+      protein: 35,
+    },
+    {
+      name: "牛肉西兰花炒饭",
+      description: "铁元素与维生素 C 搭配，均衡营养帮助体能恢复",
+      calories: 550,
+      protein: 30,
+    },
+    {
+      name: "希腊酸奶蓝莓碗",
+      description: "益生菌促进肠道吸收，蓝莓富含抗氧化物质",
+      calories: 280,
+      protein: 20,
+    },
+  ],
+  supplementRecommendations: [
+    "可考虑添加肌酸提升训练表现",
+    "维生素 D 有助于骨骼健康",
+  ],
 };
 
 interface FitTrackWidgetPanelProps {
@@ -70,7 +83,7 @@ export function FitTrackWidgetPanel({ onClose }: FitTrackWidgetPanelProps) {
           onComplete={(id) => console.log("Exercise completed:", id)}
           onStartWorkout={() => console.log("Workout started")}
         />
-        <DietRecommendCard recommendation={MOCK_DIET_RECOMMENDATION} />
+        <NutritionAdviceCard advice={MOCK_NUTRITION_ADVICE} />
       </div>
 
       {/* 底部信息 */}

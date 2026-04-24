@@ -20,33 +20,20 @@ export interface TrainingPlan {
   progress: number;
 }
 
-export interface MealItem {
-  id: string;
+/** 文藏后端提供的饮食建议数据结构 */
+export interface MealSuggestion {
   name: string;
+  description: string;
   calories: number;
   protein: number;
-  carbs: number;
-  fat: number;
-  icon: string;
-  mealType: "breakfast" | "lunch" | "dinner" | "snack";
 }
 
-export interface NutritionSummary {
-  calories: number;
-  caloriesGoal: number;
-  protein: number;
-  proteinGoal: number;
-  carbs: number;
-  carbsGoal: number;
-  fat: number;
-  fatGoal: number;
-}
-
-export interface DietRecommendation {
-  meals: MealItem[];
-  nutrition: NutritionSummary;
-  waterIntake: number;
-  waterGoal: number;
+export interface NutritionAdvice {
+  proteinRecommendation: string;
+  proteinSources: string[];
+  hydrationTips: string;
+  mealSuggestions: MealSuggestion[];
+  supplementRecommendations?: string[];
 }
 
 export const GOAL_LABELS: Record<TrainingPlan["goal"], string> = {
@@ -55,13 +42,6 @@ export const GOAL_LABELS: Record<TrainingPlan["goal"], string> = {
   fat_loss: "减脂燃脂",
   strength: "力量提升",
   endurance: "耐力训练",
-};
-
-export const MEAL_LABELS: Record<MealItem["mealType"], string> = {
-  breakfast: "早餐",
-  lunch: "午餐",
-  dinner: "晚餐",
-  snack: "加餐",
 };
 
 export const CATEGORY_COLORS: Record<Exercise["category"], string> = {
