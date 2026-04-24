@@ -8,7 +8,8 @@ import { ThemeProvider, useTheme } from "./themes";
 import { ramenTheme } from "./themes/ramen";
 import { useSocket } from "./hooks/useSocket";
 import { useAgents } from "./hooks/useAgents";
-import type { StreamEvent, AgentStatus } from "./types";
+import { useFitTrack } from "./hooks/useFitTrack";
+import type { StreamEvent, AgentStatus, TaskQueueItem } from "./types";
 
 function loadActiveThread(): string | null {
   try { return localStorage.getItem("catcafe:activeThread"); } catch { return null; }
@@ -28,6 +29,8 @@ function AppContent() {
   const [threadRefresh, setThreadRefresh] = useState(0);
 
   const { agents, refresh: refreshAgents, setFromSocket } = useAgents();
+  const [taskQueues, setTaskQueues] = useState<Record<string, { current: { from: string; summary: string } | null; pending: Array<{ from: string; summary: string }> }>>({});
+  const fitTrack = useFitTrack();
 
   const handleStreamEvent = useCallback((event: StreamEvent) => {
     setStreamEvents((prev) => [...prev, event]);
@@ -40,7 +43,7 @@ function AppContent() {
     refreshAgents();
   }, [refreshAgents]);
 
-  const handleAgentsStatus = useCallback((data: Record<string, { id: string; name: string; avatar?: string; status: string; message: string; statusMessage?: string }>) => {
+  const handleAgentsStatus = useCallback((data: Record<string, { id: string; name: string; avatar?: string; status: string; message: string; statusMessage?: string; currentTask?: string; pendingCount?: number }>) => {
     const mapped: Record<string, AgentStatus> = {};
     for (const [k, v] of Object.entries(data)) {
       mapped[k] = {
@@ -49,10 +52,16 @@ function AppContent() {
         avatar: v.avatar ?? v.name === "社珠子" ? "👩‍🦰" : "🐱",
         status: v.status,
         statusMessage: v.statusMessage ?? v.message,
+        currentTask: v.currentTask,
+        pendingCount: v.pendingCount,
       };
     }
     setFromSocket(mapped);
   }, [setFromSocket]);
+
+  const handleTaskQueue = useCallback((data: Record<string, { current: { from: string; summary: string } | null; pending: Array<{ from: string; summary: string }> }>) => {
+    setTaskQueues(data);
+  }, []);
 
   const handleDisconnect = useCallback(() => {
     setStreamEvents((prev) => [
@@ -69,6 +78,7 @@ function AppContent() {
     onEvent: handleStreamEvent,
     onAgentStatus: handleAgentStatus,
     onAgentsStatus: handleAgentsStatus,
+    onTaskQueue: handleTaskQueue,
     onDisconnect: handleDisconnect,
     onReconnect: handleReconnect,
   });
@@ -86,9 +96,9 @@ function AppContent() {
   }, []);
 
   return (
-    <div className="flex h-screen bg-theme text-theme">
+    <div className="flex h-screen min-h-0 bg-theme text-theme">
       {/* 左栏：招牌 + 对话列表 */}
-      <aside className="w-56 border-r border-theme flex flex-col bg-theme-sidebar">
+      <aside className="w-56 border-r border-theme flex flex-col min-h-0 bg-theme-sidebar">
         <div className="shop-sign p-3">
           <h1 className="text-base font-bold flex items-center gap-1.5" style={{ color: "var(--sign-text)" }}>
             <span>{theme.icon}</span>
@@ -121,11 +131,18 @@ function AppContent() {
       </aside>
 
       {/* 中栏：聊天 / FitTrack */}
-      <main className="flex-1 flex flex-col min-w-0">
+      <main className="flex-1 flex flex-col min-w-0 min-h-0">
         {showFitTrack ? (
-          <FitTrackWidgetPanel onClose={() => setShowFitTrack(false)} />
+          <FitTrackWidgetPanel
+            trainingPlan={fitTrack.trainingPlan ?? undefined}
+            nutritionAdvice={fitTrack.nutritionAdvice ?? undefined}
+            loading={fitTrack.loading}
+            error={fitTrack.error}
+            onCompleteExercise={(id, completed) => fitTrack.completeExercise(id, completed)}
+            onClose={() => setShowFitTrack(false)}
+          />
         ) : (
-          <div className="flex-1 flex flex-col min-w-0 chat-area">
+          <div className="flex-1 flex flex-col min-w-0 min-h-0 chat-area">
             <ChatView
               threadId={activeThread}
               onInvoke={invoke}
@@ -140,8 +157,8 @@ function AppContent() {
       </main>
 
       {/* 右栏：厨房看板 */}
-      <aside className="w-64 border-l border-theme flex flex-col bg-theme-sidebar kitchen-board">
-        <AgentPanel agents={agents} theme={theme} />
+      <aside className="w-64 border-l border-theme flex flex-col min-h-0 bg-theme-sidebar kitchen-board">
+        <AgentPanel agents={agents} theme={theme} taskQueues={taskQueues} />
       </aside>
     </div>
   );

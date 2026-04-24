@@ -4,7 +4,7 @@ import { GOAL_LABELS, CATEGORY_COLORS, CATEGORY_BG_COLORS } from "./types";
 
 interface TrainingPlanCardProps {
   plan: TrainingPlan;
-  onComplete?: (exerciseId: string) => void;
+  onComplete?: (exerciseId: string, completed: boolean) => void;
   onStartWorkout?: () => void;
 }
 
@@ -98,9 +98,13 @@ export function TrainingPlanCard({ plan, onComplete, onStartWorkout }: TrainingP
   const handleToggle = useCallback(
     (id: string) => {
       setExercises((prev) =>
-        prev.map((e) => (e.id === id ? { ...e, completed: !e.completed } : e))
+        prev.map((e) => {
+          if (e.id !== id) return e;
+          const next = !e.completed;
+          onComplete?.(id, next);
+          return { ...e, completed: next };
+        })
       );
-      onComplete?.(id);
     },
     [onComplete]
   );

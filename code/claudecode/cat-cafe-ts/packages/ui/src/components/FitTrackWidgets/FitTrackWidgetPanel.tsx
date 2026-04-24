@@ -24,7 +24,7 @@ interface FitTrackWidgetPanelProps {
   nutritionAdvice?: NutritionAdvice;
   loading?: boolean;
   error?: string | null;
-  onCompleteExercise?: (exerciseId: string) => void;
+  onCompleteExercise?: (exerciseId: string, completed: boolean) => void;
   onStartWorkout?: () => void;
   onClose?: () => void;
 }
