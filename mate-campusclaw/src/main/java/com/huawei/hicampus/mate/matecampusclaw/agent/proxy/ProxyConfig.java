@@ -179,7 +179,8 @@ public class ProxyConfig {
             if (pattern.equals("*")) {
                 return true;
             }
-            if (pattern.startsWith(".") && lowerHost.endsWith(pattern)) {
+            if (pattern.startsWith(".")
+                    && (lowerHost.equals(pattern.substring(1)) || lowerHost.endsWith(pattern))) {
                 return true;
             }
             if (lowerHost.equals(pattern)) {
