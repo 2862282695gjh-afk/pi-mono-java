@@ -2,7 +2,7 @@
  * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
  */
 
-package com.huawei.hicampus.mate.matecampusclaw.codingagent.mode.acp;
+package com.campusclaw.codingagent.mode.acp;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -21,16 +21,16 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
-import com.huawei.hicampus.mate.matecampusclaw.agent.event.AgentEndEvent;
-import com.huawei.hicampus.mate.matecampusclaw.agent.event.AgentEventListener;
-import com.huawei.hicampus.mate.matecampusclaw.agent.event.MessageEndEvent;
-import com.huawei.hicampus.mate.matecampusclaw.agent.event.MessageUpdateEvent;
-import com.huawei.hicampus.mate.matecampusclaw.agent.event.ToolExecutionEndEvent;
-import com.huawei.hicampus.mate.matecampusclaw.agent.event.ToolExecutionStartEvent;
-import com.huawei.hicampus.mate.matecampusclaw.ai.types.AssistantMessage;
-import com.huawei.hicampus.mate.matecampusclaw.ai.types.ContentBlock;
-import com.huawei.hicampus.mate.matecampusclaw.ai.types.TextContent;
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.session.AgentSession;
+import com.campusclaw.agent.event.AgentEndEvent;
+import com.campusclaw.agent.event.AgentEventListener;
+import com.campusclaw.agent.event.MessageEndEvent;
+import com.campusclaw.agent.event.MessageUpdateEvent;
+import com.campusclaw.agent.event.ToolExecutionEndEvent;
+import com.campusclaw.agent.event.ToolExecutionStartEvent;
+import com.campusclaw.ai.types.AssistantMessage;
+import com.campusclaw.ai.types.ContentBlock;
+import com.campusclaw.ai.types.TextContent;
+import com.campusclaw.codingagent.session.AgentSession;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 

@@ -167,7 +167,8 @@
             <!--
               JaCoCo override: exclude developer-only manual smoke tests that are invoked via
               `main(...)` rather than JUnit. They are not exercised by the test suite and would
-              otherwise drag down the coverage denominator. See CLAUDE.md for context.
+              otherwise drag down the coverage denominator. This mate-local pom is not overwritten
+              by the sync script, so this is a safe place to keep the override.
             -->
             <plugin>
                 <groupId>org.jacoco</groupId>

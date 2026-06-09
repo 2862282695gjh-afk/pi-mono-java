@@ -5,6 +5,7 @@
 package com.huawei.hicampus.mate.matecampusclaw.codingagent.auth;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
@@ -39,9 +40,9 @@ public class AuthStorage {
 
     /**
      * Reified map type so Jackson preserves the {@link Credential} polymorphic discriminator
-     * when serialising the persisted store. Writing the raw map directly loses the {@code type}
+     * on BOTH read and write. Writing the raw map without this reference loses the {@code type}
      * field (Jackson cannot statically see the element is polymorphic), which makes round-trips
-     * fail to deserialise.
+     * fail to deserialise — reading also uses it for symmetry.
      */
     private static final TypeReference<Map<String, Credential>> MAP_TYPE = new TypeReference<>() {};
 
@@ -55,7 +56,8 @@ public class AuthStorage {
     }
 
     /**
-     * Test seam — allows directing persistence at an arbitrary path.
+     * Test seam — allows directing persistence at an arbitrary path so tests can use a
+     * {@code @TempDir} location instead of the real user home.
      *
      * @param authFile path to the JSON file backing the store
      */
@@ -133,8 +135,8 @@ public class AuthStorage {
             return Optional.empty();
         }
         try {
-            String json = Files.readString(authFile);
-            Map<String, Credential> map = MAPPER.readValue(json, new TypeReference<>() {});
+            String json = Files.readString(authFile, StandardCharsets.UTF_8);
+            Map<String, Credential> map = MAPPER.readValue(json, MAP_TYPE);
             return Optional.of(new LinkedHashMap<>(map));
         } catch (Exception e) {
             log.warn("Failed to read auth file: {}", authFile, e);
