@@ -35,8 +35,33 @@ import org.springframework.stereotype.Service;
 public class AuthStorage {
     private static final Logger log = LoggerFactory.getLogger(AuthStorage.class);
     private static final ObjectMapper MAPPER = new ObjectMapper();
-    private static final Path AUTH_FILE = com.huawei.hicampus.mate.matecampusclaw.codingagent.config.AppPaths.AUTH_FILE;
     private static final Set<PosixFilePermission> OWNER_ONLY = PosixFilePermissions.fromString("rw-------");
+
+    /**
+     * Reified map type so Jackson preserves the {@link Credential} polymorphic discriminator
+     * when serialising the persisted store. Writing the raw map directly loses the {@code type}
+     * field (Jackson cannot statically see the element is polymorphic), which makes round-trips
+     * fail to deserialise.
+     */
+    private static final TypeReference<Map<String, Credential>> MAP_TYPE = new TypeReference<>() {};
+
+    private final Path authFile;
+
+    /**
+     * Production constructor — writes under {@code ~/.campusclaw/agent/auth.json}.
+     */
+    public AuthStorage() {
+        this(com.huawei.hicampus.mate.matecampusclaw.codingagent.config.AppPaths.AUTH_FILE);
+    }
+
+    /**
+     * Test seam — allows directing persistence at an arbitrary path.
+     *
+     * @param authFile path to the JSON file backing the store
+     */
+    AuthStorage(Path authFile) {
+        this.authFile = authFile;
+    }
 
     /**
      * Get credential for a provider.
@@ -104,34 +129,34 @@ public class AuthStorage {
     }
 
     private Optional<Map<String, Credential>> load() {
-        if (!Files.exists(AUTH_FILE)) {
+        if (!Files.exists(authFile)) {
             return Optional.empty();
         }
         try {
-            String json = Files.readString(AUTH_FILE);
+            String json = Files.readString(authFile);
             Map<String, Credential> map = MAPPER.readValue(json, new TypeReference<>() {});
             return Optional.of(new LinkedHashMap<>(map));
         } catch (Exception e) {
-            log.warn("Failed to read auth file: {}", AUTH_FILE, e);
+            log.warn("Failed to read auth file: {}", authFile, e);
             return Optional.empty();
         }
     }
 
     private void save(Map<String, Credential> map) {
         try {
-            Files.createDirectories(AUTH_FILE.getParent());
-            String json = MAPPER.writerWithDefaultPrettyPrinter().writeValueAsString(map);
-            Files.writeString(AUTH_FILE, json, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+            Files.createDirectories(authFile.getParent());
+            String json = MAPPER.writerFor(MAP_TYPE).withDefaultPrettyPrinter().writeValueAsString(map);
+            Files.writeString(authFile, json, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
 
             // Set owner-only permissions (600)
             try {
-                Files.setPosixFilePermissions(AUTH_FILE, OWNER_ONLY);
+                Files.setPosixFilePermissions(authFile, OWNER_ONLY);
             } catch (UnsupportedOperationException e) {
                 // Windows doesn't support POSIX permissions
-                log.debug("skipped owner-only chmod on {} (non-POSIX FS)", AUTH_FILE, e);
+                log.debug("skipped owner-only chmod on {} (non-POSIX FS)", authFile, e);
             }
         } catch (IOException e) {
-            log.error("Failed to save auth file: {}", AUTH_FILE, e);
+            log.error("Failed to save auth file: {}", authFile, e);
         }
     }
 }
