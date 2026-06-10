@@ -31,17 +31,53 @@ public class SystemSchedulerInstaller {
 
     private static final String LABEL = "com.huawei.hicampus.mate.matecampusclaw.cron";
     private static final String TASK_NAME = "CampusClaw-Cron";
-    private static final Path PLIST_PATH = Path.of(System.getProperty("user.home"))
+    private static final Path DEFAULT_PLIST_PATH = Path.of(System.getProperty("user.home"))
             .resolve("Library/LaunchAgents")
             .resolve(LABEL + ".plist");
     private static final String CRONTAB_MARKER = "# campusclaw-cron";
     private static final long PROC_TIMEOUT_SECONDS = 10L;
     private static final long ID_TIMEOUT_SECONDS = 5L;
 
+    /**
+     * Per-instance launchd plist path. Production uses the user-home default; tests inject a
+     * {@code TempDir} location so they never touch the real {@code ~/Library/LaunchAgents/}.
+     */
+    private final Path plistPath;
+
+    /**
+     * Optional OS override for tests so the {@link #install}/{@link #uninstall}/{@link #status}
+     * dispatch can be exercised without depending on which platform the suite is running on.
+     * {@code null} means "use the JVM's {@code os.name}".
+     */
+    private final Os osOverride;
+
     private final Path launcherScript;
 
+    /**
+     * OS dispatch enum used by tests to pin a specific platform branch.
+     */
+    enum Os {
+        WINDOWS,
+        MAC,
+        LINUX
+    }
+
     public SystemSchedulerInstaller(Path launcherScript) {
+        this(launcherScript, DEFAULT_PLIST_PATH, null);
+    }
+
+    /**
+     * Test seam: redirect the launchd plist target away from the user's real
+     * {@code ~/Library/LaunchAgents/} and optionally pin the OS branch.
+     *
+     * @param launcherScript path to the launcher script
+     * @param plistPath path to use for the launchd plist
+     * @param osOverride OS to dispatch as, or {@code null} to use the running JVM's OS
+     */
+    SystemSchedulerInstaller(Path launcherScript, Path plistPath, Os osOverride) {
         this.launcherScript = launcherScript.toAbsolutePath().normalize();
+        this.plistPath = plistPath;
+        this.osOverride = osOverride;
     }
 
     /**
@@ -127,11 +163,11 @@ public class SystemSchedulerInstaller {
     private String installLaunchd(int intervalSeconds) throws IOException {
         Path logDir = CampusClawHome.agentDir().resolve("cron");
         Files.createDirectories(logDir);
-        Files.createDirectories(PLIST_PATH.getParent());
+        Files.createDirectories(plistPath.getParent());
         String plist = PLIST_TEMPLATE.formatted(LABEL, launcherScript, intervalSeconds, logDir, logDir);
-        Files.writeString(PLIST_PATH, plist);
+        Files.writeString(plistPath, plist);
         reloadLaunchd();
-        return "Installed launchd agent: " + PLIST_PATH
+        return "Installed launchd agent: " + plistPath
                 + "\nInterval: every " + intervalSeconds + "s"
                 + "\nLogs: " + logDir + "/cron-tick.log";
     }
@@ -139,11 +175,11 @@ public class SystemSchedulerInstaller {
     // Stop an existing plist (if any) and reload the new one. Falls back to
     // the legacy `launchctl load` path if `bootstrap` is unavailable.
     private void reloadLaunchd() {
-        runDiscardingOutput("launchctl bootout", "launchctl", "bootout", "gui/" + getUid(), PLIST_PATH.toString());
+        runDiscardingOutput("launchctl bootout", "launchctl", "bootout", "gui/" + getUid(), plistPath.toString());
         Integer exit = runDiscardingOutput(
-                "launchctl bootstrap", "launchctl", "bootstrap", "gui/" + getUid(), PLIST_PATH.toString());
+                "launchctl bootstrap", "launchctl", "bootstrap", "gui/" + getUid(), plistPath.toString());
         if (exit == null || exit != 0) {
-            runDiscardingOutput("launchctl load", "launchctl", "load", PLIST_PATH.toString());
+            runDiscardingOutput("launchctl load", "launchctl", "load", plistPath.toString());
         }
     }
 
@@ -194,21 +230,21 @@ public class SystemSchedulerInstaller {
     }
 
     private String uninstallLaunchd() throws IOException {
-        if (!Files.exists(PLIST_PATH)) {
+        if (!Files.exists(plistPath)) {
             return "Not installed (no plist found)";
         }
         Integer exit = runDiscardingOutput(
-                "launchctl bootout", "launchctl", "bootout", "gui/" + getUid(), PLIST_PATH.toString());
+                "launchctl bootout", "launchctl", "bootout", "gui/" + getUid(), plistPath.toString());
         if (exit == null) {
             // Fallback to legacy unload
-            runDiscardingOutput("launchctl unload", "launchctl", "unload", PLIST_PATH.toString());
+            runDiscardingOutput("launchctl unload", "launchctl", "unload", plistPath.toString());
         }
-        Files.deleteIfExists(PLIST_PATH);
+        Files.deleteIfExists(plistPath);
         return "Uninstalled launchd agent: " + LABEL;
     }
 
     private String statusLaunchd() {
-        if (!Files.exists(PLIST_PATH)) {
+        if (!Files.exists(plistPath)) {
             return "Not installed";
         }
         Process proc = null;
@@ -222,22 +258,22 @@ public class SystemSchedulerInstaller {
             proc.getInputStream().readAllBytes();
             if (!proc.waitFor(PROC_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
                 proc.destroyForcibly();
-                return "Plist exists: " + PLIST_PATH + " (status check timed out)";
+                return "Plist exists: " + plistPath + " (status check timed out)";
             }
             if (proc.exitValue() == 0) {
-                return "Installed and active\nPlist: " + PLIST_PATH;
+                return "Installed and active\nPlist: " + plistPath;
             } else {
-                return "Plist exists but service not loaded\nPlist: " + PLIST_PATH + "\nRun: /cron install to reload";
+                return "Plist exists but service not loaded\nPlist: " + plistPath + "\nRun: /cron install to reload";
             }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             if (proc != null) {
                 proc.destroyForcibly();
             }
-            return "Plist exists: " + PLIST_PATH + " (interrupted)";
+            return "Plist exists: " + plistPath + " (interrupted)";
         } catch (IOException e) {
             log.debug("launchctl print failed", e);
-            return "Plist exists: " + PLIST_PATH + " (status check failed)";
+            return "Plist exists: " + plistPath + " (status check failed)";
         }
     }
 
@@ -426,11 +462,25 @@ public class SystemSchedulerInstaller {
 
     // --- Helpers ---
 
-    private static boolean isWindows() {
+    private boolean isWindows() {
+        if (osOverride != null) {
+            return osOverride == Os.WINDOWS;
+        }
+        return isWindowsHost();
+    }
+
+    private boolean isMacOS() {
+        if (osOverride != null) {
+            return osOverride == Os.MAC;
+        }
+        return isMacOSHost();
+    }
+
+    private static boolean isWindowsHost() {
         return System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("win");
     }
 
-    private static boolean isMacOS() {
+    private static boolean isMacOSHost() {
         return System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("mac");
     }
 
@@ -466,7 +516,7 @@ public class SystemSchedulerInstaller {
      * @return the result
      */
     public static Path detectLauncherScript() {
-        String scriptName = isWindows() ? "campusclaw.bat" : "campusclaw.sh";
+        String scriptName = isWindowsHost() ? "campusclaw.bat" : "campusclaw.sh";
         try {
             Path jarPath = Path.of(SystemSchedulerInstaller.class
                     .getProtectionDomain()
