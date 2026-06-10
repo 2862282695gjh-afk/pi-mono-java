@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -11,9 +12,41 @@ _SCRIPT_DIR = Path(__file__).resolve().parent
 if str(_SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPT_DIR))
 
-from _common import configure_stdio_utf8  # noqa: E402
+from _common import campusclaw_root, configure_stdio_utf8, default_rules_re_path  # noqa: E402
 from db_store import compute_alarm_stats_from_db, get_latest_run_id, query_alarms  # noqa: E402
 from openclaw_env import apply_openclaw_defaults, openclaw_workspace_root  # noqa: E402
+
+
+def _workspace_root() -> Path:
+    env = os.environ.get("OPENCLAW_WORKSPACE", "").strip()
+    if env:
+        return Path(env).expanduser().resolve()
+    cc = campusclaw_root()
+    if (cc / "skills" / "campus-device-ops").is_dir():
+        return cc
+    return openclaw_workspace_root()
+
+
+def _resolve_rules_path(ws: Path) -> Path:
+    try:
+        return default_rules_re_path()
+    except FileNotFoundError:
+        pass
+    env = os.environ.get("DEVICE_INSPECTION_RE_RULES_PATH", "").strip()
+    if env:
+        candidate = Path(env).expanduser().resolve()
+        if candidate.is_file():
+            return candidate
+    primary = ws / "rules" / "rules_re.json"
+    if primary.is_file():
+        return primary
+    pack = ws / "rule-engines-pack" / "02-rule-engine-pypi" / "rules" / "rules_re.json"
+    if pack.is_file():
+        return pack
+    raise FileNotFoundError(
+        "rules_re.json not found; compile via excel-antlr-to-rules-json or place at "
+        f"{primary}"
+    )
 
 
 def _run_json(cmd: List[str], *, cwd: Path) -> Dict[str, Any]:
@@ -32,8 +65,8 @@ def main() -> int:
     p.add_argument("--push-http", action="store_true", help="Also POST mock /notifications/push")
     args = p.parse_args()
 
-    applied = apply_openclaw_defaults(force=True)
-    ws = openclaw_workspace_root()
+    applied = apply_openclaw_defaults(force=False)
+    ws = _workspace_root()
     py = sys.executable
     campus_scripts = ws / "skills" / "campus-device-ops" / "scripts"
     di_scripts = ws / "skills" / "device-inspection-re" / "scripts"
@@ -46,8 +79,8 @@ def main() -> int:
     if not args.skip_inspection:
         judge = di_scripts / "judge_rules_re.py"
         if not judge.is_file():
-            judge = di_scripts / "judge_rules.py"
-        rules = ws / "rules" / "rules_re.json"
+            raise FileNotFoundError(f"judge_rules_re.py not found: {judge}")
+        rules = _resolve_rules_path(ws)
         print("1/4 device-inspection-re judge")
         _run_json([py, str(judge), "--rules", str(rules), "--json"], cwd=ws)
     else:

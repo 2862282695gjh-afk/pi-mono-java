@@ -7,7 +7,7 @@ These components belonged to the old **standalone inspection** flow. Default pro
 
 | File | Status |
 |------|--------|
-| `judge_rules.py` | Deprecated — do not use for persistence |
+| `judge_rules.py` | Removed (was duplicate); use `device-inspection-re/scripts/judge_rules_re.py` |
 | `fetch_api_server.py` | Deprecated — inspection uses device-inspection-re `:18081` |
 | `mock_fixtures/timeseries/` | Deprecated — fixtures live under device-inspection-re |
 | `mock_fixtures/campus_ops.db` | Deprecated — use shared `device_inspection_re.db` |

@@ -6,10 +6,14 @@ import socket
 import subprocess
 import sys
 import time
+import urllib.parse
 import urllib.error
 import urllib.request
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+
+_ASSIGNEES_BY_ID_CACHE: Optional[Dict[str, Dict[str, Any]]] = None
+_REGISTRY_BY_DEVICE_ID_CACHE: Optional[Dict[str, Dict[str, Any]]] = None
 
 
 DEFAULT_MOCK_API_BASE = "http://127.0.0.1:18082/api/v1"
@@ -58,12 +62,11 @@ def device_inspection_re_judge_script() -> Path:
         p = Path(env).expanduser().resolve()
         if p.is_file():
             return p
-    for name in ("judge_rules_re.py", "judge_rules.py"):
-        p = device_inspection_re_skill_root() / "scripts" / name
-        if p.is_file():
-            return p
+    p = device_inspection_re_skill_root() / "scripts" / "judge_rules_re.py"
+    if p.is_file():
+        return p
     raise FileNotFoundError(
-        "device-inspection-re judge script not found; set DEVICE_INSPECTION_RE_JUDGE_SCRIPT"
+        "device-inspection-re judge_rules_re.py not found; set DEVICE_INSPECTION_RE_JUDGE_SCRIPT"
     )
 
 
@@ -111,12 +114,10 @@ def timeseries_fixtures_dir() -> Path:
 
 
 def judge_rules_script() -> Path:
-    env = os.environ.get("CAMPUS_OPS_JUDGE_SCRIPT", "").strip()
-    if env:
-        p = Path(env).expanduser().resolve()
-        if p.is_file():
-            return p
-    return skill_root() / "scripts" / "judge_rules.py"
+    """Deprecated local judge; use device-inspection-re judge_rules_re.py instead."""
+    raise FileNotFoundError(
+        "campus-device-ops judge_rules.py removed; run device-inspection-re/scripts/judge_rules_re.py"
+    )
 
 
 def device_inspection_re_registry_path() -> Path:
@@ -163,6 +164,8 @@ def load_device_registry() -> Dict[str, Any]:
 
 def load_assignees() -> Dict[str, Any]:
     path = mock_fixtures_dir() / "contacts" / "assignees.json"
+    if not path.is_file():
+        return {"version": 1, "assignees": []}
     doc = load_json(path)
     if not isinstance(doc, dict):
         raise ValueError(f"assignees must be object: {path}")
@@ -170,6 +173,9 @@ def load_assignees() -> Dict[str, Any]:
 
 
 def registry_by_device_id() -> Dict[str, Dict[str, Any]]:
+    global _REGISTRY_BY_DEVICE_ID_CACHE
+    if _REGISTRY_BY_DEVICE_ID_CACHE is not None:
+        return _REGISTRY_BY_DEVICE_ID_CACHE
     doc = load_device_registry()
     out: Dict[str, Dict[str, Any]] = {}
     for d in doc.get("devices") or []:
@@ -183,6 +189,7 @@ def registry_by_device_id() -> Dict[str, Dict[str, Any]]:
             aid = str(alias).strip()
             if aid:
                 out[aid] = d
+    _REGISTRY_BY_DEVICE_ID_CACHE = out
     return out
 
 
@@ -195,6 +202,9 @@ def registry_lookup(device_id: str) -> Dict[str, Any]:
 
 
 def assignees_by_id() -> Dict[str, Dict[str, Any]]:
+    global _ASSIGNEES_BY_ID_CACHE
+    if _ASSIGNEES_BY_ID_CACHE is not None:
+        return _ASSIGNEES_BY_ID_CACHE
     doc = load_assignees()
     out: Dict[str, Dict[str, Any]] = {}
     for a in doc.get("assignees") or []:
@@ -202,6 +212,7 @@ def assignees_by_id() -> Dict[str, Dict[str, Any]]:
             aid = str(a.get("assigneeId", "")).strip()
             if aid:
                 out[aid] = a
+    _ASSIGNEES_BY_ID_CACHE = out
     return out
 
 
@@ -289,7 +300,7 @@ def http_get_json(path: str, *, query: Optional[Dict[str, str]] = None) -> Any:
     ensure_mock_api_server()
     url = f"{api_base_url()}{path}"
     if query:
-        qs = "&".join(f"{k}={urllib.request.quote(v)}" for k, v in query.items() if v is not None)
+        qs = "&".join(f"{k}={urllib.parse.quote(v)}" for k, v in query.items() if v is not None)
         if qs:
             url = f"{url}?{qs}"
     req = urllib.request.Request(url=url, method="GET", headers={"Accept": "application/json"})

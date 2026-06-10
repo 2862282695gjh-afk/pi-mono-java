@@ -1,3 +1,4 @@
+"""Create work orders. Synced with device-inspection-re/scripts/create_work_order.py — update both copies together."""
 from __future__ import annotations
 
 import argparse
@@ -22,12 +23,16 @@ from db_store import load_inspection_doc  # noqa: E402
 
 
 def _next_work_order_id() -> str:
-    import random
-    now = datetime.now(tz=timezone.utc)
-    day = now.strftime("%Y%m%d")
-    ts = now.strftime("%H%M%S")
-    suffix = f"{random.randint(0, 999):03d}"
-    return f"WO-{day}-{ts}{suffix}"
+    wo_dir = work_orders_dir()
+    wo_dir.mkdir(parents=True, exist_ok=True)
+    day = datetime.now(tz=timezone.utc).strftime("%Y%m%d")
+    prefix = f"WO-{day}-"
+    max_seq = 0
+    for path in wo_dir.glob(f"{prefix}*.json"):
+        suffix = path.stem[len(prefix) :]
+        if suffix.isdigit():
+            max_seq = max(max_seq, int(suffix))
+    return f"{prefix}{max_seq + 1:03d}"
 
 
 def _default_problem_analysis(alerts: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -116,6 +121,7 @@ def create_work_order(
         "id": wo_id,
         "status": "open",
         "createdAt": now,
+        "runId": inspection_doc.get("runId"),
         "deviceId": device_id,
         "deviceName": device.get("name", ""),
         "building": device.get("building", ""),

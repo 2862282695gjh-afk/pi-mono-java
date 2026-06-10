@@ -17,7 +17,8 @@ from db_store import load_inspection_doc, query_alarms  # noqa: E402
 
 def build_qa_context(doc: Dict[str, Any], *, max_alarms: int = 100) -> Dict[str, Any]:
     run_id = doc.get("runId")
-    alarms = query_alarms(run_id=run_id)[:max_alarms]
+    all_alarms = query_alarms(run_id=run_id)
+    alarms = all_alarms[:max_alarms]
     inspection = doc.get("inspection") or {}
 
     return {
@@ -26,10 +27,11 @@ def build_qa_context(doc: Dict[str, Any], *, max_alarms: int = 100) -> Dict[str,
         "generatedAt": datetime.now(tz=timezone.utc).isoformat(),
         "endTs": inspection.get("end_ts"),
         "summary": {
-            "alarmDeviceCount": len({a["deviceId"] for a in alarms}),
-            "totalAlertCount": len(alarms),
-            "byBuilding": _count_field(alarms, "building"),
-            "byDeviceType": _count_field(alarms, "deviceType"),
+            "alarmDeviceCount": len({a["deviceId"] for a in all_alarms}),
+            "totalAlertCount": len(all_alarms),
+            "contextAlertCount": len(alarms),
+            "byBuilding": _count_field(all_alarms, "building"),
+            "byDeviceType": _count_field(all_alarms, "deviceType"),
         },
         "alerts": alarms,
         "instructions": (

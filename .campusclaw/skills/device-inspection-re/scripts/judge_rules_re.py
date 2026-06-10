@@ -142,25 +142,54 @@ def _is_port_listening(host: str, port: int, *, timeout_s: float = 0.5) -> bool:
             pass
 
 
+def _mock_api_pid_path() -> Path:
+    return _default_fixtures_dir() / "state" / "mock_api_server.pid"
+
+
+def _kill_pid(pid: int) -> None:
+    if pid <= 0:
+        return
+    if sys.platform == "win32":
+        subprocess.run(
+            ["taskkill", "/F", "/PID", str(pid)],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+    else:
+        subprocess.run(
+            ["kill", "-TERM", str(pid)],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+
+
 def _stop_mock_api_server() -> None:
-    if not _is_port_listening("127.0.0.1", DEFAULT_FETCH_PORT):
-        return
-    try:
-        out = subprocess.check_output(["netstat", "-ano"], text=True, errors="replace")
-    except Exception:
-        return
-    suffix = f":{DEFAULT_FETCH_PORT}"
-    for line in out.splitlines():
-        if suffix not in line or "LISTENING" not in line:
-            continue
-        pid = line.split()[-1].strip()
-        if pid.isdigit():
-            subprocess.run(
-                ["taskkill", "/F", "/PID", pid],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                check=False,
-            )
+    pid_path = _mock_api_pid_path()
+    if pid_path.is_file():
+        try:
+            raw = pid_path.read_text(encoding="utf-8").strip()
+            if raw.isdigit():
+                _kill_pid(int(raw))
+        except Exception:
+            pass
+        try:
+            pid_path.unlink(missing_ok=True)
+        except Exception:
+            pass
+    if sys.platform == "win32" and _is_port_listening("127.0.0.1", DEFAULT_FETCH_PORT):
+        try:
+            out = subprocess.check_output(["netstat", "-ano"], text=True, errors="replace")
+        except Exception:
+            return
+        suffix = f":{DEFAULT_FETCH_PORT}"
+        for line in out.splitlines():
+            if suffix not in line or "LISTENING" not in line:
+                continue
+            pid = line.split()[-1].strip()
+            if pid.isdigit():
+                _kill_pid(int(pid))
 
 
 def _try_start_mock_api_server() -> None:
@@ -172,13 +201,16 @@ def _try_start_mock_api_server() -> None:
     if not script.is_file():
         return
     try:
-        subprocess.Popen(
+        proc = subprocess.Popen(
             [sys.executable, str(script)],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             stdin=subprocess.DEVNULL,
             creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0),
         )
+        pid_path = _mock_api_pid_path()
+        pid_path.parent.mkdir(parents=True, exist_ok=True)
+        pid_path.write_text(str(proc.pid), encoding="utf-8")
     except Exception:
         return
     deadline = time.time() + 3.0

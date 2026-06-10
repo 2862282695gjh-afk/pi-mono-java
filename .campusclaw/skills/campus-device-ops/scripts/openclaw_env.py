@@ -9,6 +9,9 @@ def openclaw_workspace_root() -> Path:
     env = os.environ.get("OPENCLAW_WORKSPACE", "").strip()
     if env:
         return Path(env).expanduser().resolve()
+    campusclaw = Path(__file__).resolve().parents[3]
+    if (campusclaw / "skills" / "campus-device-ops").is_dir():
+        return campusclaw
     return Path.home() / ".openclaw" / "workspace"
 
 
@@ -39,14 +42,12 @@ def apply_openclaw_defaults(*, force: bool = True) -> Dict[str, str]:
     if db.parent.is_dir():
         put("DEVICE_INSPECTION_RE_DB_PATH", str(db))
         put("CAMPUS_OPS_DB_PATH", str(db))
-    if rules.is_file():
-        put("DEVICE_INSPECTION_RE_RULES_PATH", str(rules))
+    pack_rules = Path(__file__).resolve().parents[3] / "rule-engines-pack" / "02-rule-engine-pypi" / "rules" / "rules_re.json"
+    rules_path = rules if rules.is_file() else pack_rules
+    if rules_path.is_file():
+        put("DEVICE_INSPECTION_RE_RULES_PATH", str(rules_path))
     if campus.is_dir():
         put("CAMPUS_OPS_FIXTURES_DIR", str(campus / "mock_fixtures"))
-
-    pack_rules = Path(__file__).resolve().parents[3] / "rule-engines-pack" / "02-rule-engine-pypi" / "rules" / "rules_re.json"
-    if rules.is_file() and os.environ.get("DEVICE_INSPECTION_RE_RULES_PATH", "") == str(pack_rules.resolve()):
-        put("DEVICE_INSPECTION_RE_RULES_PATH", str(rules))
 
     return applied
 

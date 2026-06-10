@@ -28,15 +28,7 @@ def render_ai_message(digest: Dict[str, Any], *, run_id: str = "") -> str:
     buildings = sorted({str(i.get("building", "")).strip() for i in items if i.get("building")})
     building_label = buildings[0] if len(buildings) == 1 else "、".join(buildings) if buildings else "园区"
 
-    role = ""
-    assignee_id = str(digest.get("assigneeId", ""))
-    if assignee_id == "ops_hvac_a":
-        role = "A栋暖通值班"
-    elif assignee_id == "ops_hvac_b":
-        role = "B栋暖通值班"
-    elif assignee_id == "ops_plant":
-        role = "能源中心设施主管"
-
+    role = str(digest.get("assigneeRole", "")).strip()
     header = f"【{building_label}-{role or assignee_name}】{alarm_count}条设施告警需处理"
     if run_id:
         header += f"（runId={run_id}）"

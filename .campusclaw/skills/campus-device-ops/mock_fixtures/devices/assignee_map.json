@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "description": "Ops-only overlay: assigneeId and status per canonical deviceId. Device facts come from device-inspection-re registry.",
+  "assigneesByDeviceId": {
+    "VAV-DMP-101": "ops_hvac_a",
+    "VAV-TMP-102": "ops_hvac_a",
+    "VAV-CO2-201": "ops_hvac_b",
+    "PAHU-INV-001": "ops_plant",
+    "AHU-PRS-001": "ops_plant",
+    "EF-001": "ops_plant",
+    "SF-001": "ops_plant"
+  },
+  "statusByDeviceId": {
+    "VAV-DMP-101": "online",
+    "VAV-TMP-102": "online",
+    "VAV-CO2-201": "online",
+    "PAHU-INV-001": "online",
+    "AHU-PRS-001": "online",
+    "EF-001": "online",
+    "SF-001": "online"
+  }
+}

@@ -1,4 +1,4 @@
-"""Close one or all open work orders in device-inspection-re."""
+"""Close work orders. Synced with campus-device-ops/scripts/close_work_order.py — update both copies together."""
 from __future__ import annotations
 
 import argparse

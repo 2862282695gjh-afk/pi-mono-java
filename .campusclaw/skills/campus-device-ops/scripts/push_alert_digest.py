@@ -70,6 +70,7 @@ def build_digests(doc: Dict[str, Any]) -> List[Dict[str, Any]]:
             "runId": run_id,
             "assigneeId": aid,
             "assigneeName": contact.get("name", aid),
+            "assigneeRole": contact.get("role", ""),
             "channels": contact.get("channels", ["file"]),
             "alarmCount": len(items),
             "items": items,
@@ -97,12 +98,15 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     written: List[str] = []
     push_results: List[Dict[str, Any]] = []
+    output_digests: List[Dict[str, Any]] = []
     for d in digests:
-        if not args.write_ai_message and "aiMessage" in d:
-            pass
+        payload = dict(d)
+        if not args.write_ai_message:
+            payload.pop("aiMessage", None)
         path = out_dir / f"{d['digestId']}.json"
-        write_json(path, d)
+        write_json(path, payload)
         written.append(str(path))
+        output_digests.append(payload)
         if args.push_http:
             body = {"runId": run_id, "assigneeId": d["assigneeId"], "aiMessage": d.get("aiMessage", "")}
             push_results.append(http_post_json("/notifications/push", body))
@@ -112,7 +116,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         "runId": run_id,
         "digestCount": len(digests),
         "files": written,
-        "digests": digests,
+        "digests": output_digests,
     }
     if push_results:
         result["pushResults"] = push_results

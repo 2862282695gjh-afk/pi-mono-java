@@ -6,6 +6,9 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List
 
+_ASSIGNEES_BY_ID_CACHE: Dict[str, Dict[str, Any]] | None = None
+_REGISTRY_BY_DEVICE_ID_CACHE: Dict[str, Dict[str, Any]] | None = None
+
 
 def configure_stdio_utf8() -> None:
     for stream in (sys.stdout, sys.stderr):
@@ -27,8 +30,6 @@ def campus_ops_skill_root() -> Path:
     if openclaw.is_dir():
         return openclaw
     sibling = skill_root().parent / "campus-device-ops"
-    if sibling.is_dir():
-        return sibling
     return sibling
 
 
@@ -62,6 +63,9 @@ def load_assignees() -> Dict[str, Any]:
 
 
 def assignees_by_id() -> Dict[str, Dict[str, Any]]:
+    global _ASSIGNEES_BY_ID_CACHE
+    if _ASSIGNEES_BY_ID_CACHE is not None:
+        return _ASSIGNEES_BY_ID_CACHE
     doc = load_assignees()
     out: Dict[str, Dict[str, Any]] = {}
     for row in doc.get("assignees") or []:
@@ -69,15 +73,20 @@ def assignees_by_id() -> Dict[str, Dict[str, Any]]:
             aid = str(row.get("assigneeId", "")).strip()
             if aid:
                 out[aid] = row
+    _ASSIGNEES_BY_ID_CACHE = out
     return out
 
 
 def registry_by_device_id() -> Dict[str, Dict[str, Any]]:
+    global _REGISTRY_BY_DEVICE_ID_CACHE
+    if _REGISTRY_BY_DEVICE_ID_CACHE is not None:
+        return _REGISTRY_BY_DEVICE_ID_CACHE
     from device_registry import load_device_registry
 
     doc = load_device_registry()
     overlay = load_assignee_map()
     by_device = overlay.get("assigneesByDeviceId") or {}
+    assignees = assignees_by_id()
     out: Dict[str, Dict[str, Any]] = {}
     for row in doc.get("devices") or []:
         if not isinstance(row, dict):
@@ -86,7 +95,7 @@ def registry_by_device_id() -> Dict[str, Dict[str, Any]]:
         did = str(item.get("deviceId", "")).strip()
         if did in by_device:
             item["assigneeId"] = by_device[did]
-        assignee = assignees_by_id().get(str(item.get("assigneeId", "")).strip(), {})
+        assignee = assignees.get(str(item.get("assigneeId", "")).strip(), {})
         if assignee.get("name"):
             item["assigneeName"] = assignee["name"]
         if did:
@@ -95,6 +104,7 @@ def registry_by_device_id() -> Dict[str, Dict[str, Any]]:
             aid = str(alias).strip()
             if aid:
                 out[aid] = item
+    _REGISTRY_BY_DEVICE_ID_CACHE = out
     return out
 
 

@@ -1,3 +1,4 @@
+"""Create work orders. Synced with campus-device-ops/scripts/create_work_order.py — update both copies together."""
 from __future__ import annotations
 
 import argparse

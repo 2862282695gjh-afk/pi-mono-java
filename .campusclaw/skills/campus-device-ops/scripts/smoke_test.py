@@ -29,7 +29,7 @@ def main() -> int:
     p.add_argument("--skip-inspection", action="store_true", help="Use existing DB run (faster)")
     args = p.parse_args()
 
-    apply_openclaw_defaults(force=True)
+    apply_openclaw_defaults(force=False)
     py = sys.executable
     scripts = _SCRIPT_DIR
     root = scripts.parents[2]
@@ -45,7 +45,11 @@ def main() -> int:
 
     print("2/6 query_alarms.py")
     alarms = _run_json([py, str(scripts / "query_alarms.py"), "--json"], cwd=root)
-    assert int(alarms.get("total", 0)) >= 0
+    total = int(alarms.get("total", 0))
+    if args.skip_inspection:
+        assert "alarms" in alarms, "query_alarms missing alarms key"
+    else:
+        assert total >= 1, f"expected alarms after inspection, got total={total}"
 
     print("3/6 alarm_stats.py + query_devices.py")
     _run_json([py, str(scripts / "alarm_stats.py"), "--json"], cwd=root)

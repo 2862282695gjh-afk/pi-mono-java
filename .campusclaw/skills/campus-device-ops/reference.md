@@ -116,7 +116,7 @@ python .campusclaw/skills/campus-device-ops/mock_api_server.py
 }
 ```
 
-内部流程：本 skill 的 `judge_rules.py` + `:18083/fetch` + `rules_re.json`。
+内部流程（已废弃）：历史 `:18083/fetch` + 本地 judge；现用 **device-inspection-re** `:18081/fetch` + `judge_rules_re.py`。
 
 持久化：`inspection_runs` + `inspection_alarms`（返回 `runId`）
 

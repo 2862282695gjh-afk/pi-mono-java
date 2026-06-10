@@ -38,21 +38,7 @@ def _connect() -> sqlite3.Connection:
     conn = sqlite3.connect(str(path))
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
-    _ensure_alarm_columns(conn)
-    conn.commit()
     return conn
-
-
-def _ensure_alarm_columns(conn: sqlite3.Connection) -> None:
-    existing = _table_columns(conn, "inspection_alarms")
-    for col, ddl in (
-        ("device_name", "ALTER TABLE inspection_alarms ADD COLUMN device_name TEXT"),
-        ("building", "ALTER TABLE inspection_alarms ADD COLUMN building TEXT"),
-        ("floor", "ALTER TABLE inspection_alarms ADD COLUMN floor TEXT"),
-        ("room", "ALTER TABLE inspection_alarms ADD COLUMN room TEXT"),
-    ):
-        if col not in existing:
-            conn.execute(ddl)
 
 
 def _assignee_for_device(device_id: str) -> tuple[str, str]:

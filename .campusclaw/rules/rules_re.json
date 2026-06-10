@@ -1,0 +1,741 @@
+{
+  "version": 1,
+  "rules": [
+    {
+      "id": "dev_rule_a1029126",
+      "name": "排风机故障",
+      "原因分析": "排风机继电器过载",
+      "专家处理建议": "1.更换与送风机功率适配的继电器。\\n2.更改正确的启动电流。\\n3.可适当调高热继电器的温度调节。",
+      "meta": {
+        "deviceType": "送排风",
+        "component": "排风机",
+        "points": [
+          "FaultAlarm"
+        ]
+      },
+      "window": {
+        "type": "rolling",
+        "durationSeconds": 60
+      },
+      "trigger": {
+        "rule_engine": "(FaultAlarm == 1)"
+      },
+      "effective": {
+        "metric": "ratio_true",
+        "threshold": 1.0,
+        "minSamples": 1
+      }
+    },
+    {
+      "id": "dev_rule_950f8f2a",
+      "name": "排风机变频故障",
+      "原因分析": "排风机变频器过载输出",
+      "专家处理建议": "1.按照变频器说明书进行面板操作。\\n2.重新设置，取消错误报警代码。",
+      "meta": {
+        "deviceType": "送排风",
+        "component": "排风机",
+        "points": [
+          "InverterFaultAlarm"
+        ]
+      },
+      "window": {
+        "type": "rolling",
+        "durationSeconds": 60
+      },
+      "trigger": {
+        "rule_engine": "(InverterFaultAlarm == 1)"
+      },
+      "effective": {
+        "metric": "ratio_true",
+        "threshold": 1.0,
+        "minSamples": 1
+      }
+    },
+    {
+      "id": "dev_rule_34ab8dfe",
+      "name": "排风机压差失效报警",
+      "原因分析": "开机后，60秒内排风机压差无状态",
+      "专家处理建议": "1.排风机皮带断了。\\n2.排风机反转。\\n3.检查压差传感器皮管安装。\\n4.调整压差传感器安装位置。",
+      "meta": {
+        "deviceType": "送排风",
+        "component": "排风机",
+        "points": [
+          "FailureAlarm"
+        ]
+      },
+      "window": {
+        "type": "rolling",
+        "durationSeconds": 60
+      },
+      "trigger": {
+        "rule_engine": "(FailureAlarm == 1)"
+      },
+      "effective": {
+        "metric": "ratio_true",
+        "threshold": 1.0,
+        "minSamples": 1
+      }
+    },
+    {
+      "id": "dev_rule_51748f0b",
+      "name": "低速故障",
+      "原因分析": "低速热继电器过载",
+      "专家处理建议": "1.更换与送风机功率适配的继电器。\\n2.更改正确的启动电流。\\n3.可适当调高热继电器的温度调节。",
+      "meta": {
+        "deviceType": "送排风",
+        "component": "排风机",
+        "points": [
+          "LowSpeedFaultAlarm"
+        ]
+      },
+      "window": {
+        "type": "rolling",
+        "durationSeconds": 60
+      },
+      "trigger": {
+        "rule_engine": "(LowSpeedFaultAlarm == 1)"
+      },
+      "effective": {
+        "metric": "ratio_true",
+        "threshold": 1.0,
+        "minSamples": 1
+      }
+    },
+    {
+      "id": "dev_rule_542957d1",
+      "name": "高速故障",
+      "原因分析": "低速热继电器过载",
+      "专家处理建议": "1.更换与送风机功率适配的继电器。\\n2.更改正确的启动电流。\\n3.可适当调高热继电器的温度调节。",
+      "meta": {
+        "deviceType": "送排风",
+        "component": "排风机",
+        "points": [
+          "HighSpeedFaultAlarm"
+        ]
+      },
+      "window": {
+        "type": "rolling",
+        "durationSeconds": 60
+      },
+      "trigger": {
+        "rule_engine": "(HighSpeedFaultAlarm == 1)"
+      },
+      "effective": {
+        "metric": "ratio_true",
+        "threshold": 1.0,
+        "minSamples": 1
+      }
+    },
+    {
+      "id": "dev_rule_08ac74fa",
+      "name": "一氧化碳浓度恒定",
+      "原因分析": "1、环境一氧化碳浓度稳定且较低\\n2、传感器故障\\n3、传感器线路故障",
+      "专家处理建议": "1、检查传感器接线。\\n2、用万用表测量传感器供电和信号输出。\\n3、更换传感器。",
+      "meta": {
+        "deviceType": "送排风",
+        "component": "排风机",
+        "points": [
+          "CO"
+        ]
+      },
+      "window": {
+        "type": "rolling",
+        "durationSeconds": 3600
+      },
+      "trigger": {
+        "rule_engine": "(CO == prev(CO))"
+      },
+      "effective": {
+        "metric": "ratio_true",
+        "threshold": 1.0,
+        "minSamples": 1
+      }
+    },
+    {
+      "id": "dev_rule_06e48af2",
+      "name": "一氧化碳浓度异常",
+      "原因分析": "1、传感器故障\\n2、传感器线路故障\\n3、CO浓度设定值偏离正常值较大",
+      "专家处理建议": "1、对比检测仪数值。\\n2、用万用表测量传感器信号接收。\\n3、检查内部电路，更换传感器。",
+      "meta": {
+        "deviceType": "送排风",
+        "component": "排风机",
+        "points": [
+          "CO",
+          "CO_setpoint"
+        ]
+      },
+      "window": {
+        "type": "rolling",
+        "durationSeconds": 1800
+      },
+      "trigger": {
+        "rule_engine": "(CO > (CO_setpoint * 1.1))"
+      },
+      "effective": {
+        "metric": "ratio_true",
+        "threshold": 0.9,
+        "minSamples": 1
+      }
+    },
+    {
+      "id": "dev_overlimit_f66e44d7",
+      "name": "一氧化碳浓度超限",
+      "原因分析": "一氧化碳浓度超过了其正常使用范围的高低限",
+      "专家处理建议": "1.检查一氧化碳传感器是否烧坏。\\n2.检查一氧化碳传感器是否断线。\\n3.检查传感器量程范围是否有误。",
+      "meta": {
+        "deviceType": "送排风",
+        "component": "排风机",
+        "points": [
+          "CO"
+        ]
+      },
+      "window": {
+        "type": "rolling",
+        "durationSeconds": 1800
+      },
+      "trigger": {
+        "rule_engine": "((CO < 0) or (CO > 500))"
+      },
+      "effective": {
+        "metric": "ratio_true",
+        "threshold": 0.9,
+        "minSamples": 1
+      }
+    },
+    {
+      "id": "dev_overlimit_c1eff5a1",
+      "name": "氢气浓度超限",
+      "原因分析": "氢气浓度超过了其正常使用范围的高低限",
+      "专家处理建议": "1.检查氢气传感器是否烧坏。\\n2.检查氢气传感器是否断线。\\n3.检查传感器量程范围是否有误。",
+      "meta": {
+        "deviceType": "送排风",
+        "component": "排风机",
+        "points": [
+          "Hydrogen"
+        ]
+      },
+      "window": {
+        "type": "rolling",
+        "durationSeconds": 1800
+      },
+      "trigger": {
+        "rule_engine": "((Hydrogen < 0) or (Hydrogen > 500))"
+      },
+      "effective": {
+        "metric": "ratio_true",
+        "threshold": 0.9,
+        "minSamples": 1
+      }
+    },
+    {
+      "id": "dev_rule_2e7f01b4",
+      "name": "氢气浓度异常",
+      "原因分析": "1、传感器故障\\n2、传感器线路故障\\n3、氢气浓度设定值偏离正常值较大",
+      "专家处理建议": "1、对比检测仪数值。\\n2、用万用表测量传感器信号。\\n3、检查内部电路，更换传感器。",
+      "meta": {
+        "deviceType": "送排风",
+        "component": "排风机",
+        "points": [
+          "Hydrogen",
+          "Hydrogen_setpoint"
+        ]
+      },
+      "window": {
+        "type": "rolling",
+        "durationSeconds": 1800
+      },
+      "trigger": {
+        "rule_engine": "(Hydrogen > (Hydrogen_setpoint * 1.1))"
+      },
+      "effective": {
+        "metric": "ratio_true",
+        "threshold": 0.9,
+        "minSamples": 1
+      }
+    },
+    {
+      "id": "dev_rule_cf2a4561",
+      "name": "氢气浓度恒定",
+      "原因分析": "1、环境氢气浓度稳定且较低\\n2、传感器故障\\n3、传感器线路故障",
+      "专家处理建议": "1、检查传感器接线。\\n2、用万用表测量传感器供电和信号。\\n3、更换传感器。",
+      "meta": {
+        "deviceType": "送排风",
+        "component": "排风机",
+        "points": [
+          "Hydrogen"
+        ]
+      },
+      "window": {
+        "type": "rolling",
+        "durationSeconds": 1800
+      },
+      "trigger": {
+        "rule_engine": "(Hydrogen == prev(Hydrogen))"
+      },
+      "effective": {
+        "metric": "ratio_true",
+        "threshold": 1.0,
+        "minSamples": 1
+      }
+    },
+    {
+      "id": "dev_rule_fd7241a5",
+      "name": "送风机故障",
+      "原因分析": "送风机继电器过载",
+      "专家处理建议": "1.更换与送风机功率适配的继电器。\\n2.更改正确的启动电流。\\n3.可适当调高热继电器的温度调节。",
+      "meta": {
+        "deviceType": "送排风",
+        "component": "送风机",
+        "points": [
+          "FaultAlarm"
+        ]
+      },
+      "window": {
+        "type": "rolling",
+        "durationSeconds": 60
+      },
+      "trigger": {
+        "rule_engine": "(FaultAlarm == 1)"
+      },
+      "effective": {
+        "metric": "ratio_true",
+        "threshold": 1.0,
+        "minSamples": 1
+      }
+    },
+    {
+      "id": "dev_rule_d7bb9dc0",
+      "name": "送风机变频故障",
+      "原因分析": "送风机变频器过载输出",
+      "专家处理建议": "1.按照变频器说明书进行面板操作。\\n2.重新设置，取消错误报警代码。",
+      "meta": {
+        "deviceType": "送排风",
+        "component": "送风机",
+        "points": [
+          "InverterFaultAlarm"
+        ]
+      },
+      "window": {
+        "type": "rolling",
+        "durationSeconds": 60
+      },
+      "trigger": {
+        "rule_engine": "(InverterFaultAlarm == 1)"
+      },
+      "effective": {
+        "metric": "ratio_true",
+        "threshold": 1.0,
+        "minSamples": 1
+      }
+    },
+    {
+      "id": "dev_rule_9cc3d1f7",
+      "name": "送风机压差失效报警",
+      "原因分析": "开机后，60秒内送风机压差无状态",
+      "专家处理建议": "1.送风机皮带断了。\\n2.送风机反转。\\n3.检查压差传感器皮管安装。\\n4.调整压差传感器安装位置。",
+      "meta": {
+        "deviceType": "送排风",
+        "component": "送风机",
+        "points": [
+          "FailureAlarm"
+        ]
+      },
+      "window": {
+        "type": "rolling",
+        "durationSeconds": 60
+      },
+      "trigger": {
+        "rule_engine": "(FailureAlarm == 1)"
+      },
+      "effective": {
+        "metric": "ratio_true",
+        "threshold": 1.0,
+        "minSamples": 1
+      }
+    },
+    {
+      "id": "dev_rule_3012529e",
+      "name": "低速故障",
+      "原因分析": "低速热继电器过载",
+      "专家处理建议": "1.更换与送风机功率适配的继电器。\\n2.更改正确的启动电流。\\n3.可适当调高热继电器的温度调节。",
+      "meta": {
+        "deviceType": "送排风",
+        "component": "送风机",
+        "points": [
+          "LowSpeedFaultAlarm"
+        ]
+      },
+      "window": {
+        "type": "rolling",
+        "durationSeconds": 60
+      },
+      "trigger": {
+        "rule_engine": "(LowSpeedFaultAlarm == 1)"
+      },
+      "effective": {
+        "metric": "ratio_true",
+        "threshold": 1.0,
+        "minSamples": 1
+      }
+    },
+    {
+      "id": "dev_rule_0aa98621",
+      "name": "高速故障",
+      "原因分析": "低速热继电器过载",
+      "专家处理建议": "1.更换与送风机功率适配的继电器。\\n2.更改正确的启动电流。\\n3.可适当调高热继电器的温度调节.",
+      "meta": {
+        "deviceType": "送排风",
+        "component": "送风机",
+        "points": [
+          "HighSpeedFaultAlarm"
+        ]
+      },
+      "window": {
+        "type": "rolling",
+        "durationSeconds": 60
+      },
+      "trigger": {
+        "rule_engine": "(HighSpeedFaultAlarm == 1)"
+      },
+      "effective": {
+        "metric": "ratio_true",
+        "threshold": 1.0,
+        "minSamples": 1
+      }
+    },
+    {
+      "id": "dev_rule_7d1889cb",
+      "name": "送风压力恒定",
+      "原因分析": "1、压力传感器故障\\n2、强制了送风机频率\\n3、阀门未开启\\n4、探测管损坏脱落",
+      "专家处理建议": "1、对比检测仪数值。\\n2、释放频率强制命令。\\n3、检查送风段阀门与探测管外观。",
+      "meta": {
+        "deviceType": "送排风",
+        "component": "送风机",
+        "points": [
+          "supplyAirPressure",
+          "supplyAirStatus"
+        ]
+      },
+      "window": {
+        "type": "rolling",
+        "durationSeconds": 3600
+      },
+      "trigger": {
+        "rule_engine": "((supplyAirStatus == 1) and (supplyAirPressure == prev(supplyAirPressure)))"
+      },
+      "effective": {
+        "metric": "ratio_true",
+        "threshold": 1.0,
+        "minSamples": 1
+      }
+    },
+    {
+      "id": "dev_overlimit_a9838a4d",
+      "name": "送风压力超限",
+      "原因分析": "送风压力传感器问题",
+      "专家处理建议": "1.检查压力传感器是否烧坏。\\n2.检查压力传感器是否断线。\\n3.检查压力传感器量程范围是否有误。",
+      "meta": {
+        "deviceType": "送排风",
+        "component": "送风机",
+        "points": [
+          "supplyAirPressure"
+        ]
+      },
+      "window": {
+        "type": "rolling",
+        "durationSeconds": 900
+      },
+      "trigger": {
+        "rule_engine": "((supplyAirPressure < 0) or (supplyAirPressure > 500))"
+      },
+      "effective": {
+        "metric": "ratio_true",
+        "threshold": 0.9,
+        "minSamples": 1
+      }
+    },
+    {
+      "id": "dev_rule_dd896567",
+      "name": "送风压力异常",
+      "原因分析": "1、压力传感器故障\\n2、压力传感器线路故障\\n3、送风压力设定值偏离变频器最小频率运行时的压力较大",
+      "专家处理建议": "1、检查压力传感器阻值。\\n2、检查接线是否松动。\\n3、更改设定值到变频器最小频率运行时的压力范围以上。",
+      "meta": {
+        "deviceType": "送排风",
+        "component": "送风机",
+        "points": [
+          "supplyAirPressure",
+          "supplyAirPressureSp",
+          "supplyAirStatus"
+        ]
+      },
+      "window": {
+        "type": "rolling",
+        "durationSeconds": 900
+      },
+      "trigger": {
+        "rule_engine": "((supplyAirStatus == 1) and ($abs((supplyAirPressure - supplyAirPressureSp)) > 20))"
+      },
+      "effective": {
+        "metric": "ratio_true",
+        "threshold": 0.9,
+        "minSamples": 1
+      }
+    },
+    {
+      "id": "dev_overlimit_a8647d2f",
+      "name": "氢气浓度超限",
+      "原因分析": "氢气浓度超过了其正常使用范围的高低限",
+      "专家处理建议": "1.检查氢气传感器是否烧坏。\\n2.检查氢气传感器是否断线。\\n3.检查传感器量程范围是否有误。",
+      "meta": {
+        "deviceType": "送排风",
+        "component": "送风机",
+        "points": [
+          "Hydrogen"
+        ]
+      },
+      "window": {
+        "type": "rolling",
+        "durationSeconds": 1800
+      },
+      "trigger": {
+        "rule_engine": "((Hydrogen < 0) or (Hydrogen > 500))"
+      },
+      "effective": {
+        "metric": "ratio_true",
+        "threshold": 0.9,
+        "minSamples": 1
+      }
+    },
+    {
+      "id": "dev_rule_d247ea38",
+      "name": "氢气浓度异常",
+      "原因分析": "1、传感器故障\\n2、传感器线路故障\\n3、氢气浓度设定值偏离正常值较大",
+      "专家处理建议": "1、对比检测仪数值。\\n2、用万用表测量传感器信号。\\n3、检查内部电路，更换传感器。",
+      "meta": {
+        "deviceType": "送排风",
+        "component": "送风机",
+        "points": [
+          "Hydrogen",
+          "Hydrogen_setpoint"
+        ]
+      },
+      "window": {
+        "type": "rolling",
+        "durationSeconds": 1800
+      },
+      "trigger": {
+        "rule_engine": "(Hydrogen > (Hydrogen_setpoint * 1.1))"
+      },
+      "effective": {
+        "metric": "ratio_true",
+        "threshold": 0.9,
+        "minSamples": 1
+      }
+    },
+    {
+      "id": "dev_rule_728b22a4",
+      "name": "氢气浓度恒定",
+      "原因分析": "1、环境氢气浓度稳定且较低\\n2、传感器故障\\n3、传感器线路故障",
+      "专家处理建议": "1、检查传感器接线。\\n2、用万用表测量传感器供电和信号。\\n3、更换传感器。",
+      "meta": {
+        "deviceType": "送排风",
+        "component": "送风机",
+        "points": [
+          "Hydrogen"
+        ]
+      },
+      "window": {
+        "type": "rolling",
+        "durationSeconds": 1800
+      },
+      "trigger": {
+        "rule_engine": "(Hydrogen == prev(Hydrogen))"
+      },
+      "effective": {
+        "metric": "ratio_true",
+        "threshold": 1.0,
+        "minSamples": 1
+      }
+    },
+    {
+      "id": "vav_damper_damper_control_error_overlimit_9e29c43b",
+      "name": "风阀控制误差超限",
+      "原因分析": "1、阀门现场安装问题\n2、风阀阀体卡住",
+      "专家处理建议": "1.风阀跟现场的风阀阀体连杆之间安装角度需要调整。\n2.重启VAV",
+      "meta": {
+        "deviceType": "VAV",
+        "component": "风阀",
+        "points": [
+          "damperPosition",
+          "damperPositionSetpoint"
+        ]
+      },
+      "window": {
+        "type": "rolling",
+        "durationSeconds": 1800
+      },
+      "trigger": {
+        "rule_engine": "($abs((damperPosition - damperPositionSetpoint)) > 5)"
+      },
+      "effective": {
+        "metric": "ratio_true",
+        "threshold": 0.95,
+        "minSamples": 1
+      }
+    },
+    {
+      "id": "vav_temp_sensor_temp_99779260",
+      "name": "检测温度恒定",
+      "原因分析": "1、温控器参数设置问题\n2、温控器/温度传感器问题",
+      "专家处理建议": "1、检查温控器温度参数设定。\n2、改变温控器/温度传感器环境的温度看数值是否有变化。\n3、拆开温控器/传感器盖板，检查内部电路是否有腐蚀、烧坏等现象\n4、如果以上都正常，则判断为温控器/温度传感器故障，建议更换",
+      "meta": {
+        "deviceType": "VAV",
+        "component": "温控器/温度传感器",
+        "points": [
+          "zoneTemperature",
+          "ahuSupplyFanStatus",
+          "boxOccupancyModeSetpoint"
+        ]
+      },
+      "window": {
+        "type": "rolling",
+        "durationSeconds": 3600
+      },
+      "trigger": {
+        "rule_engine": "(((zoneTemperature == prev(zoneTemperature)) and (ahuSupplyFanStatus == 1)) and (boxOccupancyModeSetpoint == 1))"
+      },
+      "effective": {
+        "metric": "ratio_true",
+        "threshold": 1.0,
+        "minSamples": 1
+      }
+    },
+    {
+      "id": "vav_temp_sensor_temp_sensor_over_range_f2e6d088",
+      "name": "检测温度超限",
+      "原因分析": "1、温控器/温度传感器问题\n2、温度传感器接线问题",
+      "专家处理建议": "1.检查温控器/温度传感器是否故障。\n2.检查温控器/温度传感器线路是否故障。\n3、更换温控器/温度传感器",
+      "meta": {
+        "deviceType": "VAV",
+        "component": "温控器/温度传感器",
+        "points": [
+          "zoneTemperature"
+        ]
+      },
+      "window": {
+        "type": "rolling",
+        "durationSeconds": 900
+      },
+      "trigger": {
+        "rule_engine": "((zoneTemperature < -5) or (zoneTemperature > 40))"
+      },
+      "effective": {
+        "metric": "ratio_true",
+        "threshold": 0.9,
+        "minSamples": 1
+      }
+    },
+    {
+      "id": "vav_co2_sensor_co2_8f11a2d8",
+      "name": "检测CO2浓度恒定",
+      "原因分析": "1、CO2传感器故障\n2、传感器线路故障",
+      "专家处理建议": "1、检查传感器接线是否松动。\n2、用万用表测量传感器侧和DDC侧供电电源是否在正常范围内\n3、用万用表测量传感器侧信号输出和DDC侧信号接收是否相同并在量程范围内\n4、拆开传感器盖板，检查内部电路是否有腐蚀、烧坏等现象\n5、对着传感器吹气，查看数值是否有变化，判断传感器是否故障\n6、如果以上都正常，则判断为传感器故障，建议更换",
+      "meta": {
+        "deviceType": "VAV",
+        "component": "CO2传感器",
+        "points": [
+          "zoneCO2"
+        ]
+      },
+      "window": {
+        "type": "rolling",
+        "durationSeconds": 1800
+      },
+      "trigger": {
+        "rule_engine": "(zoneCO2 == prev(zoneCO2))"
+      },
+      "effective": {
+        "metric": "ratio_true",
+        "threshold": 1.0,
+        "minSamples": 1
+      }
+    },
+    {
+      "id": "vav_co2_sensor_co2_sensor_a324b950",
+      "name": "CO2传感器故障",
+      "原因分析": "CO2传感器故障",
+      "专家处理建议": "1.检查CO2传感器线路是否故障。                                  2.更换传感器",
+      "meta": {
+        "deviceType": "VAV",
+        "component": "CO2传感器",
+        "points": [
+          "zoneCO2"
+        ]
+      },
+      "window": {
+        "type": "rolling",
+        "durationSeconds": 1800
+      },
+      "trigger": {
+        "rule_engine": "((zoneCO2 < 0) or (zoneCO2 > 2000))"
+      },
+      "effective": {
+        "metric": "ratio_true",
+        "threshold": 0.9,
+        "minSamples": 1
+      }
+    },
+    {
+      "id": "dev_rule_73b14d12",
+      "name": "新风机组送风机变频器故障",
+      "原因分析": "送风机变频器过载输出",
+      "专家处理建议": "1.送风机变频器过载，变频器面板显示过载有错误代码提示，有过载继电器输出。               \n2.需要按照变频器说明书或者厂家指导进行面板操作，重新设置，取消错误报警代码。",
+      "meta": {
+        "deviceType": "新风机",
+        "component": "送风机变频器",
+        "points": [
+          "SupplyFanInverterFaultAlarm"
+        ]
+      },
+      "window": {
+        "type": "rolling",
+        "durationSeconds": 60
+      },
+      "trigger": {
+        "rule_engine": "(SupplyFanInverterFaultAlarm == 1)"
+      },
+      "effective": {
+        "metric": "ratio_true",
+        "threshold": 1.0,
+        "minSamples": 1
+      }
+    },
+    {
+      "id": "ahu_sensor_0079ee02",
+      "name": "送风压力异常",
+      "原因分析": "1、压力传感器故障\n2、压力传感器线路故障\n3、送风压力设定值偏离变频器最小频率运行时的压力较大\n4、强制了送风机频率",
+      "专家处理建议": "1、对着传感器吹气，改变压力传感器环境的风压看数值是否有变化\n2、检查传感器接线是否松动\n3、用万用表测量传感器侧和DDC侧供电电源是否在正常范围内\n4、用万用表测量传感器侧信号输出和DDC侧信号接收是否相同并在量程范围内\n5、拆开传感器盖板，检查内部电路是否有腐蚀、烧坏等现象\n6、更改设定值到变频器最小频率运行时的压力范围以上\n7、释放送风机频率的强制命令",
+      "meta": {
+        "deviceType": "AHU",
+        "component": "送风压力传感器",
+        "points": [
+          "supplyAirStatus",
+          "supplyAirPressure",
+          "supplyAirPressureSp"
+        ]
+      },
+      "window": {
+        "type": "rolling",
+        "durationSeconds": 900
+      },
+      "trigger": {
+        "rule_engine": "((supplyAirStatus == 1) and ($abs((supplyAirPressure - supplyAirPressureSp)) > 20))"
+      },
+      "effective": {
+        "metric": "ratio_true",
+        "threshold": 0.9,
+        "minSamples": 1
+      }
+    }
+  ]
+}
