@@ -185,6 +185,9 @@ def parse_effective_data(raw: Any) -> Tuple[int, float]:
     s = str(raw).strip()
     if not s or s in ("无需设置", "无", "N/A", "-", "—"):
         return 60, 1.0
+    # Fuzzy match: strings containing "无需设置" (e.g. "无需设置诊断时间和延迟时间")
+    if "无需设置" in s:
+        return 60, 1.0
 
     minutes: int | None = None
     m_min = re.search(r"(\d+)\s*min", s, flags=re.IGNORECASE)

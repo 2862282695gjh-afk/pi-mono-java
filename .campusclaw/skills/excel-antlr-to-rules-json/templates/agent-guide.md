@@ -21,6 +21,11 @@
 
 别名映射见 `scripts/excel_io.py`（`触发条件`→`trigger_formula` 等）。
 
+**点位列格式**：
+- 英文 key（如 `zoneTemperature`）→ 直接使用
+- `[中文名](englishKey)`（如 `[室内温度](zoneTemperature)`）→ 提取 `englishKey` 写入点位列
+- 公式中的 `[中文名]` 会被 ANTLR 解析，但巡检系统用的是英文 key，两者必须对齐
+
 **另存（强制）**：禁止覆盖 `故障规则.xlsx` → 用 `故障规则_patched.xlsx` 或 `故障规则_编译用.xlsx`。
 
 ---
@@ -52,9 +57,12 @@
 | `AND` / `and` / 单元格换行 | 单行 `&&` |
 | 说明写进公式（`0-正常\|1-故障`） | 只留 `[CoolingTowerFanFault] == 1` |
 | 点位列写 `[x](englishKey)` | 点位列只留 `englishKey`，公式用 `[...]` 同名 |
+| `[送风机状态]=1 and`+换行 | 单行：`[supplyAirStatus]==1 && ...` |
+| `20Pa`、`2000PPM` | 去掉单位，只留数字：`> 20`、`> 2000` |
 
 ### 2.3 改表检查清单
 
+0. **先确认 Sheet 名和行号**：`compile_report.json` 每行有 `sheet` + `row` 字段，不同 Sheet 的行号独立计数，改表时必须对准 Sheet
 1. 点位列与公式 fact 一致  
 2. 告警用 `== 1`  
 3. 另存新 xlsx，不覆盖原表  
@@ -79,6 +87,8 @@ Next question: 行 N「有效数据」是否填「无需设置」？…
 | `15min内，90%` | 900s，0.9 |
 
 禁止长句：`无需设置诊断时间和延迟时间` → 改为 `无需设置`。
+
+脚本会自动识别包含「无需设置」的长句，但建议改表时统一为简洁写法。
 
 ---
 

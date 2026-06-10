@@ -1,8 +1,10 @@
 ---
 name: excel-antlr-to-rules-json
 description: >-
-  Excel 规则表 → rules_re.json（ANTLR + rule-engine）。失败时读 templates/agent-guide.md，
-  另存新 xlsx 后重跑。
+  将 Excel 故障规则表编译为 rules_re.json（ANTLR + rule-engine）。
+  处理触发条件中的语法错误（中文单位、绝对值符号、恒定判断等），
+  失败时自动读 agent-guide 改表并重跑。
+  当用户提到「转化规则」「Excel 转规则」「编译规则表」「规则报错」「触发条件」「rules_re」时触发。
 ---
 
 # Excel → ANTLR → `rules_re.json`
@@ -51,6 +53,9 @@ excel-antlr-to-rules-json/
     → verify_rules_re.py
     → 用户确认 → rules/rules_re.json
     → cleanup_rules_intermediates.py（删 rules 中间产物 + skills 下 patch xlsx）
+
+可选分支：
+rules_re.json → generate_mock_fixtures.py → mock_fixtures/（供 device-inspection-re 测试巡检）
 ```
 
 ## 中间产物（用后删除）
@@ -77,6 +82,10 @@ excel-antlr-to-rules-json/
 
 ## 命令
 
+**路径说明**：`...` 代表 `${OPENCLAW_WORKSPACE}/skills/excel-antlr-to-rules-json`（Unix）或 `%OPENCLAW_WORKSPACE%\skills\excel-antlr-to-rules-json`（Windows）。脚本参数接受 `/` 或 `\`。
+
+### Unix / macOS
+
 ```bash
 pip install -r ${OPENCLAW_WORKSPACE}/skills/excel-antlr-to-rules-json/requirements.txt
 
@@ -88,9 +97,27 @@ python .../scripts/excel_to_rules.py \
 python .../scripts/verify_rules_re.py \
   ${OPENCLAW_WORKSPACE}/rules/_candidate_rules_re.json
 
-# 确认无误后：候选 → 正式，再清理中间文件（Windows 用 copy，Unix 用 cp）
-copy ${OPENCLAW_WORKSPACE}\rules\_candidate_rules_re.json ${OPENCLAW_WORKSPACE}\rules\rules_re.json
+# 确认无误后：候选 → 正式，再清理中间文件
+cp ${OPENCLAW_WORKSPACE}/rules/_candidate_rules_re.json ${OPENCLAW_WORKSPACE}/rules/rules_re.json
 python .../scripts/cleanup_rules_intermediates.py ${OPENCLAW_WORKSPACE}
+```
+
+### Windows (PowerShell)
+
+```powershell
+pip install -r $env:OPENCLAW_WORKSPACE\skills\excel-antlr-to-rules-json\requirements.txt
+
+python ...\scripts\excel_to_rules.py `
+  path\to\故障规则_patched.xlsx `
+  $env:OPENCLAW_WORKSPACE\rules\_candidate_rules_re.json `
+  --report $env:OPENCLAW_WORKSPACE\rules\compile_report.json
+
+python ...\scripts\verify_rules_re.py `
+  $env:OPENCLAW_WORKSPACE\rules\_candidate_rules_re.json
+
+# 确认无误后
+copy $env:OPENCLAW_WORKSPACE\rules\_candidate_rules_re.json $env:OPENCLAW_WORKSPACE\rules\rules_re.json
+python ...\scripts\cleanup_rules_intermediates.py $env:OPENCLAW_WORKSPACE
 ```
 
 可选：按 `rules_re.json` 生成本地 mock 时序（**不入库**，输出目录自定）：
@@ -117,5 +144,6 @@ python .../scripts/apply_excel_patch.py \
 |----|------|
 | 设备 / 元器件 / 故障名称 | meta |
 | 点位 | 与公式一致；恒定用 `prev`，不要 `_last` |
-| 触发条件 | ANTLR 输入 |
-| 有效数据 | `30min内，90%` / `无需设置` |
+| 触发条件 | ANTLR 输入，详见 agent-guide §2 |
+| 有效数据 | `30min内，90%` / `无需设置`（长句如「无需设置诊断时间和延迟时间」也会自动识别） |
+| 原因分析 / 专家处理建议 | 可选，原样进 JSON |

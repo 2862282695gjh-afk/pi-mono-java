@@ -27,6 +27,32 @@ def _configure_stdio_utf8() -> None:
             pass
 
 
+_HINT_PATTERNS: list[tuple[str, str]] = [
+    (r"Ni-Ni-1", "恒定判断应写为 [点位名] == prev([点位名])，参见 agent-guide §2.1"),
+    (r"\|.*\|", "绝对值符号 |...| 应改为 abs(...)，参见 agent-guide §2.2"),
+    (r"[℃uSkPa]", "公式中不应包含单位符号（℃/uS/kPa 等），去掉即可"),
+    (r"或|并且", "中文逻辑运算符应改为 ||（或）或 &&（并且）"),
+    (r"\bAND\b|\bOR\b", "AND/OR 应改为 &&/||（小写也不行，必须是符号）"),
+    (r"\band\b|\bor\b", "and/or 应改为 &&/||"),
+    (r"PPM|ppm", "公式中不应包含单位 PPM，去掉即可"),
+    (r"_last", "不要用 _last 后缀，应使用 prev() 函数"),
+]
+
+
+def _generate_hint(formula: str, errors: list[dict]) -> str:
+    """Generate a human-readable hint based on common error patterns."""
+    import re as _re
+    hints: list[str] = []
+    for pattern, hint in _HINT_PATTERNS:
+        if _re.search(pattern, formula):
+            hints.append(hint)
+    for err in errors:
+        msg = str(err.get("message", ""))
+        if "token recognition error" in msg and "' '" in msg:
+            hints.append("公式中有多余空格或不可见字符，检查单元格是否有换行或 NBSP")
+    return "; ".join(dict.fromkeys(hints))  # dedupe preserving order
+
+
 def compile_excel_to_rules(xlsx_path: Path) -> tuple[Dict[str, Any], Dict[str, Any]]:
     """
     Read Excel, ANTLR-parse each trigger_formula, emit rules_re.json (trigger.rule_engine).
@@ -136,6 +162,11 @@ def compile_excel_to_rules(xlsx_path: Path) -> tuple[Dict[str, Any], Dict[str, A
             entry["status"] = "failed"
             if not entry["errors"]:
                 entry["errors"].append({"field": "*", "message": str(e)})
+            # Generate hint for common error patterns
+            formula = str(row.get("trigger_formula", "")).strip()
+            hint = _generate_hint(formula, entry["errors"])
+            if hint:
+                entry["hint"] = hint
             report["summary"]["failed"] += 1
             for sh in sheet_summaries:
                 if sh["name"] == excel_sheet:
@@ -149,23 +180,21 @@ def compile_excel_to_rules(xlsx_path: Path) -> tuple[Dict[str, Any], Dict[str, A
 
 
 def main(argv: List[str]) -> int:
-    _configure_stdio_utf8()
-    if len(argv) < 3:
-        print(
-            "usage: python excel_to_rules.py <input.xlsx> <output-rules_re.json> "
-            "[--report compile_report.json]"
-        )
-        return 2
+    import argparse
 
-    xlsx_path = Path(argv[1]).expanduser().resolve()
-    out_rules = Path(argv[2]).expanduser().resolve()
-    report_path: Path | None = None
-    if "--report" in argv:
-        idx = argv.index("--report")
-        if idx + 1 >= len(argv):
-            print("missing path after --report")
-            return 2
-        report_path = Path(argv[idx + 1]).expanduser().resolve()
+    _configure_stdio_utf8()
+    p = argparse.ArgumentParser(
+        description="Compile Excel fault rules table to rules_re.json (ANTLR + rule-engine)",
+        epilog="Exit codes: 0 = success, 2 = compile errors (see compile_report.json)",
+    )
+    p.add_argument("input", help="Path to Excel file (故障规则.xlsx or patched variant)")
+    p.add_argument("output", help="Output path for rules_re.json (e.g. rules/_candidate_rules_re.json)")
+    p.add_argument("--report", default=None, help="Compile report output path (default: <output>_compile_report.json)")
+    args = p.parse_args(argv[1:])
+
+    xlsx_path = Path(args.input).expanduser().resolve()
+    out_rules = Path(args.output).expanduser().resolve()
+    report_path = Path(args.report).expanduser().resolve() if args.report else None
 
     doc, report = compile_excel_to_rules(xlsx_path)
     if report_path is None:

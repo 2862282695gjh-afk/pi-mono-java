@@ -57,6 +57,13 @@ package-lock.json
 !.campusclaw/rule-engines-pack/
 !.campusclaw/rule-engines-pack/**
 
+# OpenClaw skills: mock fixtures and local API servers (runtime data, not for git)
+.campusclaw/skills/campus-device-ops/mock_fixtures/
+.campusclaw/skills/campus-device-ops/mock_api_server.py
+.campusclaw/skills/campus-device-ops/fetch_api_server.py
+.campusclaw/skills/device-inspection-re/mock_fixtures/
+.campusclaw/skills/device-inspection-re/mock_api_server.py
+
 # Python bytecode (skills/scripts may include python helpers)
 __pycache__/
 *.pyc
