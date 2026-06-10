@@ -33,7 +33,7 @@ Module dependency graph (from `docs/module-architecture.md`):
 ```
 ai ─────────────┐
                 ├──→ agent-core ──┬──→ cron ─────┐
-tui ────────────┤                 ├──→ assistant ┤
+tui ────────────┤                 │              │
                 └─────────────────┴──────────────┴──→ coding-agent-cli
 ```
 
@@ -42,7 +42,6 @@ tui ────────────┤                 ├──→ assista
 | `modules/ai` | `campusclaw-ai` | Unified LLM abstraction. Providers (Anthropic, OpenAI, Google GenAI/Vertex, Bedrock, Mistral, and ~18 OpenAI-compatible flavors) live under `provider/`; types under `types/`; model registry under `model/`. |
 | `modules/tui` | `campusclaw-tui` | Terminal UI primitives built on JLine + Lanterna — full-screen renderer, ANSI utilities, components. No internal deps. |
 | `modules/agent-core` | `campusclaw-agent-core` | Agent runtime. `Agent` is the façade; `AgentLoop` drives the LLM↔tool cycle; `ToolExecutionPipeline` runs tools with before/after hooks and JSON-schema validation; sealed `AgentEvent` hierarchy emits state transitions. |
-| `modules/assistant` | `campusclaw-assistant` | Conversation channel + memory persistence (MyBatis/PostgreSQL). |
 | `modules/cron` | `campusclaw-cron` | JobRunr-backed scheduled agent runs, exposed as an `AgentTool` for agents to self-schedule. |
 | `modules/coding-agent-cli` | `campusclaw-coding-agent` | Spring Boot + Picocli application integrating everything. Contains the tool implementations (`tool/{read,write,edit,editdiff,bash,glob,grep,ls}`), mode dispatch (`mode/{tui,server,rpc}`), skill loader, session JSONL persistence, slash commands. |
 
@@ -57,7 +56,7 @@ Key runtime concepts:
 - Java 21 features are in active use (records, sealed interfaces, pattern matching) — don't downgrade.
 - Spotless is enforced via `spotless-maven-plugin` with **palantirJavaFormat 2.66.0**; run `./mvnw spotless:apply` before committing or CI-equivalent checks will diverge. **Requires JDK 21** (palantir 不兼容 JDK 25 的 javac 内部 API)。
 - Tests use JUnit 5 + Mockito + OkHttp `MockWebServer` (for provider integration tests).
-- User config lives at `~/.campusclaw/settings.json` — not `~/.pi/` despite the legacy `.pi/` dir in the repo.
+- User config lives at `~/.campusclaw/agent/settings.json` — not `~/.pi/` despite the legacy `.pi/` dir in the repo.
 
 ## Coding conventions enforced by build
 
@@ -731,11 +730,11 @@ Stop 钩子会自动跑 `spotless:check` + `checkstyle:check`。主动修复：
 | `./scripts/sync-mate-campusclaw.sh --no-verify` | Skip the mvn compile step |
 
 Phases:
-1. **Stage** — copy `modules/{ai,tui,agent-core,assistant,cron,coding-agent-cli}` into `build/mate-campusclaw/`, rewriting the package in `.java/.yml/.properties/.imports/...`.
+1. **Stage** — copy `modules/{ai,tui,agent-core,cron,coding-agent-cli}` into `build/mate-campusclaw/`, rewriting the package in `.java/.yml/.properties/.imports/...`.
 2. **Apply** — `rsync --delete` from `build/` to in-tree `mate-campusclaw/`. Paths listed in `scripts/sync-mate-exclude.txt` are preserved (mate-side-only files that have no counterpart in `modules/*`).
 3. **Verify** — compile `mate-campusclaw/` with auto-detected JDK 21 (same lookup order as `campusclaw.sh`).
 
-When adding a new file directly under `mate-campusclaw/` that has no counterpart in `modules/*`, append its path to `scripts/sync-mate-exclude.txt`, otherwise the next `--delete` will remove it. Currently registered: `assistant/config/`, `codingagent/channel/`. Resources `application.properties` and `application-assistant.yml` are hand-tuned per environment — the script never touches them; only `schema.sql` and `META-INF/spring/*.imports` propagate from `modules/*`.
+When adding a new file directly under `mate-campusclaw/` that has no counterpart in `modules/*`, append its path to `scripts/sync-mate-exclude.txt`, otherwise the next `--delete` will remove it (currently none registered). The hand-tuned `application.properties` is environment-specific — the script never touches it; only `META-INF/spring/*.imports` propagate from `modules/*`.
 
 ### pre-push guard
 
@@ -758,6 +757,25 @@ The repo merges PRs with **Merge commit**（保留每个 commit 的真实 SHA �
 - **合并后清理**: `git checkout main && git pull && git branch -d <branch> && git push origin --delete <branch>`。Merge commit 策略下 git 能正确识别分支已合并，`-d` 即可删除（无需 `-D`）。
 - **Never force-push to main.** `--force-with-lease` 只用于自己的 feature 分支，且仅在用户明确要求时使用。
 
+## 决策记录与设计文档约定
+
+每个涉及实现的需求/特性、以及每个架构或设计决策，都必须留下两类可追溯产物。
+
+### 设计文档 — `docs/designs/`
+- 每个特性或模块在 `docs/designs/` 下创建或更新一份 markdown 设计文档。
+- 采用 gstack `/plan-eng-review` 工程评审结构：Context（为什么）/ 关键定义 / 架构与数据流 / 设计决策（链接到对应 ADR）/ 边界情况 / 性能(DFX) / 契约改动 / 测试 / 验证。
+- 文件名：模块级用 `<module>.md`；特性级用 `<feature-slug>.md`。
+
+### 决策记录（ADR）— `docs/decisions/`
+- 每个设计/架构决策记录为一个**自包含 HTML**：`docs/decisions/NNNN-<slug>.html`（`NNNN` 四位零填充、全局递增、不复用）。
+- 单文件可直接浏览器打开、内联 CSS，风格对齐已有 ADR（如 `docs/decisions/0001-list-models-usable-credentials.html`）。
+- 必含字段：Status（Proposed/Accepted/Superseded）、Date、Context、Decision、考虑过的选项及取舍（Pro/Con）、所选方案与理由、Consequences（正/负/后续）、Related（链接设计文档与关联 ADR）。
+- 决策被推翻：新建 ADR 并把旧 ADR Status 改 Superseded，双向链接。
+
+### 联动
+- 设计文档「设计决策」小节逐条链接到对应 `docs/decisions/*.html`。
+- `docs/` 与 `CLAUDE.md` 不在 mate-campusclaw 镜像范围，无需 sync。
+
 ## Reference
 
 - `README.md` — user-facing quickstart, CLI flags, supported providers.
@@ -766,4 +784,6 @@ The repo merges PRs with **Merge commit**（保留每个 commit 的真实 SHA �
 - `docs/openapi/campusclaw-api.yaml` — HTTP server mode API (OpenAPI 3, authoritative). `docs/server-api.md` is a deprecated historical snapshot.
 - `docs/asyncapi/chat-ws.yaml` — `/api/ws/chat` WebSocket contract (AsyncAPI).
 - `modules/*/`+`*-design.md` — per-module design docs (Story/AR format).
+- `docs/designs/*.md` — feature/module design docs (gstack `/plan-eng-review` format); see "决策记录与设计文档约定".
+- `docs/decisions/*.html` — ADR decision records (one self-contained HTML per decision).
 - `scripts/sync-mate-campusclaw.sh` + `scripts/sync-mate-exclude.txt` — sync `modules/*` → `mate-campusclaw/` (see "Mate-campusclaw mirror" section).

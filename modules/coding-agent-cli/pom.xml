@@ -31,10 +31,6 @@
         </dependency>
         <dependency>
             <groupId>com.campusclaw</groupId>
-            <artifactId>campusclaw-assistant</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>com.campusclaw</groupId>
             <artifactId>campusclaw-cron</artifactId>
         </dependency>
         <dependency>
@@ -104,6 +100,20 @@
     <build>
         <finalName>campusclaw-agent</finalName>
         <plugins>
+            <!--
+              JaCoCo override: exclude developer-only manual smoke tests that are invoked via
+              `main(...)` rather than JUnit. They are not exercised by the test suite and would
+              otherwise drag down the coverage denominator.
+            -->
+            <plugin>
+                <groupId>org.jacoco</groupId>
+                <artifactId>jacoco-maven-plugin</artifactId>
+                <configuration>
+                    <excludes>
+                        <exclude>com/campusclaw/codingagent/SandboxQuickTest*</exclude>
+                    </excludes>
+                </configuration>
+            </plugin>
             <!-- Spring Boot fat JAR -->
             <plugin>
                 <groupId>org.springframework.boot</groupId>

@@ -8,6 +8,8 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
+import com.huawei.hicampus.mate.matecampusclaw.ai.utils.CampusClawHome;
+
 import org.slf4j.LoggerFactory;
 
 /**
@@ -29,7 +31,7 @@ public final class AppPaths {
     /**
      * User-level agent directory: {@code ~/.campusclaw/agent/}.
      */
-    public static final Path USER_AGENT_DIR = Path.of(System.getProperty("user.home"), CONFIG_DIR_NAME, "agent");
+    public static final Path USER_AGENT_DIR = CampusClawHome.agentDir();
 
     /**
      * User-level settings file: {@code ~/.campusclaw/agent/settings.json}.

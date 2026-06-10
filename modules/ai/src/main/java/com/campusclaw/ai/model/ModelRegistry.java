@@ -21,6 +21,7 @@ import com.campusclaw.ai.types.Model;
 import com.campusclaw.ai.types.ModelCost;
 import com.campusclaw.ai.types.Provider;
 import com.campusclaw.ai.types.Usage;
+import com.campusclaw.ai.utils.CampusClawHome;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -282,11 +283,7 @@ public class ModelRegistry {
     }
 
     private int loadFromUserFile() {
-        String home = System.getProperty("user.home");
-        if (home == null || home.isBlank()) {
-            return 0;
-        }
-        Path file = Path.of(home, ".campusclaw", "agent", "models.json");
+        Path file = CampusClawHome.agentDir().resolve("models.json");
         return loadFromJsonFile(file);
     }
 

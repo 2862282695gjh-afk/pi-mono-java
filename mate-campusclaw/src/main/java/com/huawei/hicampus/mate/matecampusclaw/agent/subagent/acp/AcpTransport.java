@@ -13,13 +13,13 @@ import java.io.PrintWriter;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 
 import com.huawei.hicampus.mate.matecampusclaw.agent.subagent.SubAgentException;
 import com.huawei.hicampus.mate.matecampusclaw.agent.util.LoggingUncaughtExceptionHandler;
+import com.huawei.hicampus.mate.matecampusclaw.ai.utils.CampusClawHome;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import org.slf4j.Logger;
@@ -54,7 +54,7 @@ public class AcpTransport implements AutoCloseable {
             return null;
         }
         try {
-            Path dir = Paths.get(System.getProperty("user.home", "."), ".campusclaw");
+            Path dir = CampusClawHome.baseDir();
             Files.createDirectories(dir);
             Path file = dir.resolve("acp-trace.jsonl");
             PrintWriter writer = new PrintWriter(Files.newBufferedWriter(

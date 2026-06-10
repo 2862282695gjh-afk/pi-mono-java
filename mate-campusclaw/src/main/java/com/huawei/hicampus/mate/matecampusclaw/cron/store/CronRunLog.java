@@ -14,6 +14,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
+import com.huawei.hicampus.mate.matecampusclaw.ai.utils.CampusClawHome;
 import com.huawei.hicampus.mate.matecampusclaw.cron.model.CronRunRecord;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.databind.DeserializationFeature;
@@ -95,10 +96,6 @@ public class CronRunLog {
     }
 
     private static Path defaultRunsDir() {
-        return Path.of(System.getProperty("user.home"))
-                .resolve(".campusclaw")
-                .resolve("agent")
-                .resolve("cron")
-                .resolve("runs");
+        return CampusClawHome.agentDir().resolve("cron").resolve("runs");
     }
 }

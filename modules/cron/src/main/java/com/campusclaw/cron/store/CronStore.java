@@ -15,6 +15,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
+import com.campusclaw.ai.utils.CampusClawHome;
 import com.campusclaw.cron.model.CronJob;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.databind.DeserializationFeature;
@@ -189,11 +190,7 @@ public class CronStore {
     }
 
     private static Path defaultJobsPath() {
-        return Path.of(System.getProperty("user.home"))
-                .resolve(".campusclaw")
-                .resolve("agent")
-                .resolve("cron")
-                .resolve("jobs.json");
+        return CampusClawHome.agentDir().resolve("cron").resolve("jobs.json");
     }
 
     record JobsFile(int version, List<CronJob> jobs) {}
