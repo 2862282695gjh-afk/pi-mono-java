@@ -24,6 +24,13 @@
   <section><h2>Context</h2>
     <p>园区演示需要「巡检写入 → 运维查询/推送/工单」两段 Agent 能力。若各 skill 维护独立 DB，runId 与告警会分叉，OpenClaw 上无法连贯演示。</p></section>
 
+  <section><h2>Options considered</h2>
+    <ul>
+      <li><strong>Each skill owns its own DB</strong> (campus_ops.db + device_inspection_re.db) — rejected: runId and alarms diverge on OpenClaw; ops cannot read the latest inspection without custom sync.</li>
+      <li><strong>Shared PostgreSQL from day one</strong> — deferred: demo and fresh-clone UX need zero-infra SQLite; production path documented in <code>templates/schema.sql</code>.</li>
+      <li><strong>Shared SQLite, single writer</strong> (chosen) — device-inspection-re writes; campus-device-ops reads; schema migrations only on write path.</li>
+    </ul></section>
+
   <section><h2>Decision</h2>
     <ul>
       <li>唯一写入方：<code>device-inspection-re/scripts/judge_rules_re.py</code> → <code>device_inspection_re.db</code></li>

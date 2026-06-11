@@ -2,7 +2,7 @@
 Campus device ops mock API (port 18082).
 
 Implements the contract documented in reference.md.
-Time-series fetch for inspection uses this skill's fetch_api_server.py (:18083/fetch).
+Inspection time-series fetch is delegated to device-inspection-re (:18081/fetch).
 """
 from __future__ import annotations
 

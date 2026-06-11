@@ -15,7 +15,7 @@ def openclaw_workspace_root() -> Path:
     return Path.home() / ".openclaw" / "workspace"
 
 
-def apply_openclaw_defaults(*, force: bool = True) -> Dict[str, str]:
+def apply_openclaw_defaults(*, force: bool = False) -> Dict[str, str]:
     """
     Pin skill paths for OpenClaw workspace so ops reads the same DB/rules as device-inspection-re.
     Returns env keys that were set.

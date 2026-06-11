@@ -7,7 +7,7 @@
 | 服务 | 默认 URL | 说明 |
 |------|----------|------|
 | 园区运维 mock | `http://127.0.0.1:18082/api/v1` | 设备台账、巡检编排、告警统计、工单、推送 |
-| 时序取数 mock | `http://127.0.0.1:18083/fetch` | 本 skill 的 `fetch_api_server.py` |
+| 巡检时序取数 mock | `http://127.0.0.1:18081/fetch` | **device-inspection-re** 的 `mock_api_server.py`（本 skill 不承载取数） |
 
 环境变量：
 
@@ -279,11 +279,15 @@ Schema：`templates/work-order.schema.json`
 
 ---
 
-## 9. 时序取数（本 skill）
+## 9. 时序取数（device-inspection-re）
 
-`POST http://127.0.0.1:18083/fetch`（由 `fetch_api_server.py` 提供，与运维 API `:18082` 分离）
+巡检取数不在本 skill 实现。`run_inspection.py` / `judge_rules_re.py` 使用：
 
-请求体含 `endTs` + `queries[]`（由 rules_re 每条规则展开）。夹具目录：`mock_fixtures/timeseries/`。
+`POST http://127.0.0.1:18081/fetch`（**device-inspection-re** 的 `mock_api_server.py`）
+
+请求体含 `endTs` + `queries[]`（由 rules_re 每条规则展开）。夹具目录：`device-inspection-re/mock_fixtures/devices/`。
+
+历史 `:18083/fetch` 与 `fetch_api_server.py` 已移除，见 `DEPRECATED.md`。
 
 ---
 

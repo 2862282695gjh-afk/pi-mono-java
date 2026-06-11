@@ -162,10 +162,24 @@ def _process_cmdline(pid: int) -> str:
                 timeout=5,
             )
         except Exception:
+            pass
+        try:
+            ps_cmd = f"(Get-CimInstance Win32_Process -Filter \"ProcessId={pid}\").CommandLine"
+            return subprocess.check_output(
+                ["powershell", "-NoProfile", "-Command", ps_cmd],
+                text=True,
+                errors="replace",
+                timeout=5,
+            ).strip()
+        except Exception:
             return ""
     try:
-        raw = Path(f"/proc/{pid}/cmdline").read_bytes()
-        return raw.decode("utf-8", errors="replace").replace("\x00", " ")
+        return subprocess.check_output(
+            ["ps", "-p", str(pid), "-o", "args="],
+            text=True,
+            errors="replace",
+            timeout=5,
+        ).strip()
     except Exception:
         return ""
 
@@ -258,14 +272,14 @@ def _try_start_mock_api_server() -> None:
             stdin=subprocess.DEVNULL,
             creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0),
         )
-        pid_path = _mock_api_pid_path()
-        pid_path.parent.mkdir(parents=True, exist_ok=True)
-        pid_path.write_text(str(proc.pid), encoding="utf-8")
     except Exception:
         return
     deadline = time.time() + 3.0
     while time.time() < deadline:
         if _is_port_listening("127.0.0.1", DEFAULT_FETCH_PORT):
+            pid_path = _mock_api_pid_path()
+            pid_path.parent.mkdir(parents=True, exist_ok=True)
+            pid_path.write_text(str(proc.pid), encoding="utf-8")
             return
         time.sleep(0.1)
 

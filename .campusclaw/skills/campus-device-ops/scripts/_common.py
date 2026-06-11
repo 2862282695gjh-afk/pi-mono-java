@@ -18,9 +18,7 @@ _REGISTRY_BY_DEVICE_ID_CACHE: Optional[Dict[str, Dict[str, Any]]] = None
 
 
 DEFAULT_MOCK_API_BASE = "http://127.0.0.1:18082/api/v1"
-DEFAULT_FETCH_API_URL = "http://127.0.0.1:18083/fetch"
 DEFAULT_MOCK_PORT = 18082
-DEFAULT_FETCH_PORT = 18083
 
 
 def configure_stdio_utf8() -> None:
@@ -112,13 +110,6 @@ def timeseries_fixtures_dir() -> Path:
     if env:
         return Path(env).expanduser().resolve()
     return mock_fixtures_dir() / "timeseries"
-
-
-def judge_rules_script() -> Path:
-    """Deprecated local judge; use device-inspection-re judge_rules_re.py instead."""
-    raise FileNotFoundError(
-        "campus-device-ops judge_rules.py removed; run device-inspection-re/scripts/judge_rules_re.py"
-    )
 
 
 def device_inspection_re_registry_path() -> Path:
@@ -247,31 +238,6 @@ def is_port_listening(host: str, port: int, *, timeout_s: float = 0.5) -> bool:
             sock.close()
         except Exception:
             pass
-
-
-def ensure_fetch_api_running() -> None:
-    """Start campus-device-ops :18083/fetch mock if not already listening."""
-    if is_port_listening("127.0.0.1", DEFAULT_FETCH_PORT):
-        return
-    env_script = os.environ.get("CAMPUS_OPS_FETCH_API_SCRIPT", "").strip()
-    script = Path(env_script).expanduser() if env_script else skill_root() / "fetch_api_server.py"
-    if not script.is_file():
-        return
-    try:
-        subprocess.Popen(
-            [sys.executable, str(script)],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            stdin=subprocess.DEVNULL,
-            creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0),
-        )
-    except Exception:
-        return
-    deadline = time.time() + 3.0
-    while time.time() < deadline:
-        if is_port_listening("127.0.0.1", DEFAULT_FETCH_PORT):
-            return
-        time.sleep(0.1)
 
 
 def ensure_mock_api_server() -> None:
