@@ -2,6 +2,7 @@
 Read inspection results from device-inspection-re SQLite (shared DB).
 
 campus-device-ops does not own a separate inspection database in the default setup.
+query_alarms / compute_alarm_stats stay synced with device-inspection-re/scripts/db_store.py (read paths).
 Production: replace with PostgreSQL using templates/schema.sql as reference.
 """
 from __future__ import annotations
@@ -91,6 +92,7 @@ def query_alarms(
     building: Optional[str] = None,
     device_id: Optional[str] = None,
     rule_id: Optional[str] = None,
+    device_type: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     rid = resolve_run_id(run_id)
     if not rid:
@@ -166,6 +168,9 @@ def query_alarms(
     if building:
         want = building.strip()
         result = [a for a in result if str(a.get("building", "")).strip() == want]
+    if device_type:
+        want = device_type.strip()
+        result = [a for a in result if str(a.get("deviceType", "")).strip() == want]
     return result
 
 
@@ -230,15 +235,18 @@ def load_inspection_doc(*, run_id: Optional[str] = None) -> Dict[str, Any]:
 
 
 def compute_alarm_stats_from_db(*, run_id: Optional[str] = None) -> Dict[str, Any]:
+    from _common import enrich_alarm_row, infer_alert_priority
+
     doc = load_inspection_doc(run_id=run_id)
     inspection = doc.get("inspection") or {}
     rid = doc.get("runId")
-    alarms = query_alarms(run_id=rid)
+    alarms = [enrich_alarm_row(a) for a in query_alarms(run_id=rid)]
 
     by_building: Counter[str] = Counter()
     by_device_type: Counter[str] = Counter()
     by_rule: Counter[str] = Counter()
     by_assignee: Counter[str] = Counter()
+    by_level: Counter[str] = Counter()
     fault_devices_set: set[str] = set()
 
     for a in alarms:
@@ -248,6 +256,7 @@ def compute_alarm_stats_from_db(*, run_id: Optional[str] = None) -> Dict[str, An
         by_device_type[str(a.get("deviceType") or "unknown")] += 1
         by_rule[str(a.get("ruleId") or "")] += 1
         by_assignee[str(a.get("assigneeId") or "unassigned")] += 1
+        by_level[infer_alert_priority(str(a.get("ruleName") or ""))] += 1
 
     registry_total = len(load_device_registry().get("devices") or [])
 
@@ -262,6 +271,7 @@ def compute_alarm_stats_from_db(*, run_id: Optional[str] = None) -> Dict[str, An
         "byDeviceType": dict(by_device_type),
         "byRule": dict(by_rule),
         "byAssignee": dict(by_assignee),
+        "byLevel": dict(by_level),
         "faultDevices": sorted(fault_devices_set),
     }
 

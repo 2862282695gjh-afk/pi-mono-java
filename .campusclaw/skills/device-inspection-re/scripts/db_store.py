@@ -1,6 +1,7 @@
 """
 SQLite persistence for device-inspection-re (rules_re.json).
 
+query_alarms / compute_alarm_stats stay synced with campus-device-ops/scripts/db_store.py (read paths).
 Production: replace with PostgreSQL; see templates/schema.sql.
 """
 from __future__ import annotations
@@ -187,6 +188,7 @@ def list_inspection_runs(*, limit: int = 20) -> List[Dict[str, Any]]:
 def query_alarms(
     *,
     run_id: Optional[str] = None,
+    building: Optional[str] = None,
     device_id: Optional[str] = None,
     rule_id: Optional[str] = None,
     device_type: Optional[str] = None,
@@ -217,7 +219,7 @@ def query_alarms(
     """
     with _connect() as conn:
         rows = conn.execute(sql, params).fetchall()
-    return [
+    result = [
         {
             "deviceId": r["device_id"],
             "deviceName": r["device_name"] or "",
@@ -234,6 +236,10 @@ def query_alarms(
         }
         for r in rows
     ]
+    if building:
+        want = building.strip()
+        result = [a for a in result if str(a.get("building", "")).strip() == want]
+    return result
 
 
 def load_inspection_doc(*, run_id: Optional[str] = None) -> Dict[str, Any]:

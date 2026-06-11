@@ -1,3 +1,4 @@
+"""Alarm statistics. Synced with campus-device-ops/scripts/alarm_stats.py — update both copies together."""
 from __future__ import annotations
 
 import argparse
@@ -24,7 +25,7 @@ def _assignee_labels(by_assignee: dict) -> dict:
 
 def main(argv: Optional[list[str]] = None) -> int:
     configure_stdio_utf8()
-    parser = argparse.ArgumentParser(description="Alarm statistics from latest inspection run")
+    parser = argparse.ArgumentParser(description="Alarm statistics from inspection run")
     parser.add_argument("--run-id", default="latest")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
@@ -41,7 +42,9 @@ def main(argv: Optional[list[str]] = None) -> int:
         print("byBuilding:", stats.get("byBuilding"))
         print("byDeviceType:", stats.get("byDeviceType"))
         print("byLevel:", stats.get("byLevel"))
+        print("byRule:", stats.get("byRule"))
         print("byAssigneeNamed:", stats.get("byAssigneeNamed"))
+        print("faultDevices:", stats.get("faultDevices"))
     return 0
 
 

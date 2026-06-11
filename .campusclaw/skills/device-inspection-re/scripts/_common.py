@@ -1,3 +1,4 @@
+"""Shared helpers. Registry/assignee cache + alarm enrichment synced with campus-device-ops/scripts/_common.py."""
 from __future__ import annotations
 
 import json

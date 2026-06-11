@@ -1,3 +1,4 @@
+"""Shared helpers. Registry/assignee cache + alarm enrichment synced with device-inspection-re/scripts/_common.py."""
 from __future__ import annotations
 
 import json
@@ -320,6 +321,28 @@ def http_post_json(path: str, body: Dict[str, Any]) -> Any:
     )
     with urllib.request.urlopen(req, timeout=30) as resp:
         return json.loads(resp.read().decode("utf-8"))
+
+
+def infer_alert_priority(rule_name: str) -> str:
+    name = str(rule_name or "").lower()
+    if any(k in name for k in ("故障", "fault", "inverter", "压缩机")):
+        return "high"
+    if any(k in name for k in ("超限", "overlimit", "over_range")):
+        return "medium"
+    return "low"
+
+
+def enrich_alarm_row(alarm: Dict[str, Any]) -> Dict[str, Any]:
+    row = dict(alarm)
+    meta = registry_lookup(str(row.get("deviceId", "")))
+    aid = str(meta.get("assigneeId", "")).strip() or "unassigned"
+    assignee = assignees_by_id().get(aid, {})
+    row.setdefault("deviceName", meta.get("name", row.get("deviceName", "")))
+    row.setdefault("building", meta.get("building", row.get("building", "")))
+    row["assigneeId"] = aid
+    row["assigneeName"] = str(assignee.get("name", aid))
+    row["priority"] = infer_alert_priority(str(row.get("ruleName", "")))
+    return row
 
 
 def enrich_inspection_with_registry(inspection: Dict[str, Any]) -> Dict[str, Any]:

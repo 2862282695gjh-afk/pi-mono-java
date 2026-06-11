@@ -1,3 +1,4 @@
+"""Query alarms from shared DB. Synced with campus-device-ops/scripts/query_alarms.py — update both copies together."""
 from __future__ import annotations
 
 import argparse
@@ -12,16 +13,16 @@ if str(_SCRIPT_DIR) not in sys.path:
 from _common import configure_stdio_utf8  # noqa: E402
 from db_store import list_inspection_runs, query_alarms, resolve_run_id  # noqa: E402
 
-configure_stdio_utf8()
-
 
 def main(argv: Optional[list[str]] = None) -> int:
-    p = argparse.ArgumentParser(description="Query device-inspection-re alarms from database")
-    p.add_argument("--run-id", default="latest")
+    configure_stdio_utf8()
+    p = argparse.ArgumentParser(description="Query fault alarms from database")
+    p.add_argument("--run-id", default="latest", help="Inspection run_id or latest")
+    p.add_argument("--building", default=None)
+    p.add_argument("--device-type", default=None)
     p.add_argument("--device-id", default=None)
     p.add_argument("--rule-id", default=None)
-    p.add_argument("--device-type", default=None)
-    p.add_argument("--list-runs", action="store_true")
+    p.add_argument("--list-runs", action="store_true", help="List recent inspection runs")
     p.add_argument("--json", action="store_true")
     args = p.parse_args(argv)
 
@@ -33,13 +34,14 @@ def main(argv: Optional[list[str]] = None) -> int:
             for r in runs:
                 print(
                     f"{r['run_id']}\t{r['created_at']}\t"
-                    f"kind={r['rules_kind']}\tdevices={r['fault_device_count']}\t"
+                    f"kind={r.get('rules_kind', '')}\tdevices={r['fault_device_count']}\t"
                     f"alerts={r['total_alert_count']}"
                 )
         return 0
 
     alarms = query_alarms(
         run_id=args.run_id,
+        building=args.building,
         device_id=args.device_id,
         rule_id=args.rule_id,
         device_type=args.device_type,

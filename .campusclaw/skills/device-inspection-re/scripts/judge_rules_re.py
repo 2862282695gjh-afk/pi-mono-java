@@ -146,6 +146,59 @@ def _mock_api_pid_path() -> Path:
     return _default_fixtures_dir() / "state" / "mock_api_server.pid"
 
 
+def _mock_api_marker() -> str:
+    return "mock_api_server.py"
+
+
+def _process_cmdline(pid: int) -> str:
+    if pid <= 0:
+        return ""
+    if sys.platform == "win32":
+        try:
+            return subprocess.check_output(
+                ["wmic", "process", "where", f"ProcessId={pid}", "get", "CommandLine", "/VALUE"],
+                text=True,
+                errors="replace",
+                timeout=5,
+            )
+        except Exception:
+            return ""
+    try:
+        raw = Path(f"/proc/{pid}/cmdline").read_bytes()
+        return raw.decode("utf-8", errors="replace").replace("\x00", " ")
+    except Exception:
+        return ""
+
+
+def _pid_runs_mock_api(pid: int) -> bool:
+    return _mock_api_marker() in _process_cmdline(pid)
+
+
+def _listening_pids_on_port(port: int) -> List[int]:
+    pids: List[int] = []
+    if sys.platform == "win32":
+        try:
+            out = subprocess.check_output(["netstat", "-ano"], text=True, errors="replace")
+        except Exception:
+            return pids
+        suffix = f":{port}"
+        for line in out.splitlines():
+            if suffix not in line or "LISTENING" not in line:
+                continue
+            token = line.split()[-1].strip()
+            if token.isdigit():
+                pids.append(int(token))
+    else:
+        try:
+            out = subprocess.check_output(["lsof", "-ti", f"tcp:{port}"], text=True, errors="replace")
+        except Exception:
+            return pids
+        for token in out.split():
+            if token.strip().isdigit():
+                pids.append(int(token.strip()))
+    return sorted(set(pids))
+
+
 def _kill_pid(pid: int) -> None:
     if pid <= 0:
         return
@@ -167,29 +220,26 @@ def _kill_pid(pid: int) -> None:
 
 def _stop_mock_api_server() -> None:
     pid_path = _mock_api_pid_path()
+    stopped: set[int] = set()
     if pid_path.is_file():
         try:
             raw = pid_path.read_text(encoding="utf-8").strip()
             if raw.isdigit():
-                _kill_pid(int(raw))
+                pid = int(raw)
+                if _pid_runs_mock_api(pid):
+                    _kill_pid(pid)
+                    stopped.add(pid)
         except Exception:
             pass
         try:
             pid_path.unlink(missing_ok=True)
         except Exception:
             pass
-    if sys.platform == "win32" and _is_port_listening("127.0.0.1", DEFAULT_FETCH_PORT):
-        try:
-            out = subprocess.check_output(["netstat", "-ano"], text=True, errors="replace")
-        except Exception:
-            return
-        suffix = f":{DEFAULT_FETCH_PORT}"
-        for line in out.splitlines():
-            if suffix not in line or "LISTENING" not in line:
-                continue
-            pid = line.split()[-1].strip()
-            if pid.isdigit():
-                _kill_pid(int(pid))
+    for pid in _listening_pids_on_port(DEFAULT_FETCH_PORT):
+        if pid in stopped:
+            continue
+        if _pid_runs_mock_api(pid):
+            _kill_pid(pid)
 
 
 def _try_start_mock_api_server() -> None:

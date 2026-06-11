@@ -1,3 +1,4 @@
+"""Query alarms from shared DB. Synced with device-inspection-re/scripts/query_alarms.py — update both copies together."""
 from __future__ import annotations
 
 import argparse
@@ -18,10 +19,11 @@ def main(argv: Optional[list[str]] = None) -> int:
     p = argparse.ArgumentParser(description="Query fault alarms from database")
     p.add_argument("--run-id", default="latest", help="Inspection run_id or latest")
     p.add_argument("--building", default=None)
+    p.add_argument("--device-type", default=None)
     p.add_argument("--device-id", default=None)
     p.add_argument("--rule-id", default=None)
     p.add_argument("--list-runs", action="store_true", help="List recent inspection runs")
-    p.add_argument("--http", action="store_true")
+    p.add_argument("--http", action="store_true", help="GET mock /alarms (campus mock API only)")
     p.add_argument("--json", action="store_true")
     args = p.parse_args(argv)
 
@@ -33,7 +35,8 @@ def main(argv: Optional[list[str]] = None) -> int:
             for r in runs:
                 print(
                     f"{r['run_id']}\t{r['created_at']}\t"
-                    f"devices={r['fault_device_count']}\talerts={r['total_alert_count']}"
+                    f"kind={r.get('rules_kind', '')}\tdevices={r['fault_device_count']}\t"
+                    f"alerts={r['total_alert_count']}"
                 )
         return 0
 
@@ -41,6 +44,8 @@ def main(argv: Optional[list[str]] = None) -> int:
         query = {"runId": args.run_id}
         if args.building:
             query["building"] = args.building
+        if args.device_type:
+            query["deviceType"] = args.device_type
         if args.device_id:
             query["deviceId"] = args.device_id
         if args.rule_id:
@@ -52,6 +57,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             building=args.building,
             device_id=args.device_id,
             rule_id=args.rule_id,
+            device_type=args.device_type,
         )
         result = {
             "version": 1,
@@ -63,10 +69,10 @@ def main(argv: Optional[list[str]] = None) -> int:
     if args.json:
         print(json.dumps(result, ensure_ascii=False, indent=2))
     else:
-        print("deviceId\tbuilding\truleName\tassignee")
+        print("deviceId\tbuilding\tdeviceType\truleName\tassignee")
         for a in result.get("alarms") or []:
             print(
-                f"{a.get('deviceId', '')}\t{a.get('building', '')}\t"
+                f"{a.get('deviceId', '')}\t{a.get('building', '')}\t{a.get('deviceType', '')}\t"
                 f"{a.get('ruleName', '')}\t{a.get('assigneeName', '')}"
             )
     return 0

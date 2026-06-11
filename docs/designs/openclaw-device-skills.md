@@ -35,6 +35,8 @@ campus-device-ops/mock_fixtures/
 
 ## Verification
 
+See `.campusclaw/skills/SYNCED_SCRIPTS.md` for script pairs that must stay aligned across skills.
+
 ```bash
 # Full pipeline (includes judge / write DB)
 python .campusclaw/skills/campus-device-ops/scripts/verify_openclaw_pipeline.py
