@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "deviceId": "EF-001",
+  "deviceId": "EF_001",
   "deviceType": "送排风",
   "component": "排风机",
   "scenario": "fault",

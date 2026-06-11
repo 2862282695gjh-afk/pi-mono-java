@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "deviceId": "VAV-CO2-201",
+  "deviceId": "VAV_003",
   "deviceType": "VAV",
   "component": "CO2传感器",
   "scenario": "fault",

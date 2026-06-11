@@ -18,7 +18,7 @@ from fixture_store import (  # type: ignore  # noqa: E402
     project_points,
 )
 from judge_rules_re import JudgeError  # type: ignore  # noqa: E402
-from device_registry import resolve_device  # type: ignore  # noqa: E402
+from device_registry import canonical_device_id, resolve_device  # type: ignore  # noqa: E402
 
 try:
     if hasattr(sys.stdout, "reconfigure"):
@@ -43,7 +43,7 @@ def _read_json_body(handler: BaseHTTPRequestHandler) -> Dict[str, Any]:
 
 
 def _device_id(device_type: str, component: str) -> str:
-    return f"{(device_type or 'dev').strip()}_{(component or 'comp').strip()}"
+    return canonical_device_id(device_type, component)
 
 
 def _should_fault(*, device_id: str, request_id: str, end_ts: float) -> bool:

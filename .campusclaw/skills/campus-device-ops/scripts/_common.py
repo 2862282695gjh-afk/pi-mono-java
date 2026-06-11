@@ -86,23 +86,9 @@ def write_json(path: Path, obj: Any) -> None:
 
 
 def default_rules_re_path() -> Path:
-    env = os.environ.get("CAMPUS_OPS_RULES_PATH", "").strip()
-    if env:
-        p = Path(env).expanduser().resolve()
-        if p.is_file():
-            return p
-    root = campusclaw_root()
-    candidates = [
-        root / "rules" / "rules_re.json",
-        Path.home() / ".openclaw" / "workspace" / "rules" / "rules_re.json",
-        root / "rule-engines-pack" / "02-rule-engine-pypi" / "rules" / "rules_re.json",
-    ]
-    for c in candidates:
-        if c.is_file():
-            return c
-    raise FileNotFoundError(
-        "rules_re.json not found; set CAMPUS_OPS_RULES_PATH or place at .campusclaw/rules/rules_re.json"
-    )
+    from rules_re_paths import resolve_rules_re_path
+
+    return resolve_rules_re_path()
 
 
 def timeseries_fixtures_dir() -> Path:

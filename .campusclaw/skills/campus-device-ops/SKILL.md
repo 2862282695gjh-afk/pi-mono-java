@@ -3,7 +3,9 @@ name: campus-device-ops
 description: >-
   园区设备运维：查告警、按楼栋/设备统计故障、推送给负责人、生成维修工单、回答「某设备怎么了」。
   基于 device-inspection-re 巡检结果（DB 只读）。
-  当用户提到「园区」「设备」「告警」「巡检结果」「工单」「推送」「统计」「故障」时触发。
+  当用户提到「园区」「设备」「告警」「巡检结果」「工单」「推送」「统计」「故障」
+  「设备状态」「运维」「负责人」「通知」「设备清单」「楼栋」时触发。
+  即使用户只是说"某设备怎么了"、"帮我查一下告警"、"给负责人推送"也应该使用此技能。
 ---
 
 # 园区设备运维（campus-device-ops）
@@ -31,16 +33,36 @@ description: >-
 
 `run_inspection.py` 仅 **委托** `device-inspection-re` 再巡一轮并返回同一库中的 run；日常 follow-up **不要重复巡检**，直接 `query_alarms.py`（默认 `latest`）。
 
+## 快速参考
+
+| 场景 | 命令 |
+|------|------|
+| 安装依赖 | `pip install -r <skill-path>/requirements.txt` |
+| 查最新告警 | `python scripts/query_alarms.py --json` |
+| 按楼栋统计 | `python scripts/alarm_stats.py --json` |
+| 查单设备告警 | `python scripts/query_alarms.py --device-id <ID> --json` |
+| 按楼栋筛选 | `python scripts/query_alarms.py --building <楼栋> --json` |
+| 查设备清单 | `python scripts/query_devices.py --json` |
+| 生成推送文案 | `python scripts/push_alert_digest.py --write-ai-message --json` |
+| 创建工单 | `python scripts/create_work_order.py --device-id <ID> --rule-ids <ID> --json` |
+| 关闭工单 | `python scripts/close_work_order.py --work-order-id <ID> --json` |
+| 列出未关闭工单 | `python scripts/close_work_order.py --list-open --json` |
+| 问答上下文 | `python scripts/build_qa_context.py --json` |
+
+**路径说明**：`<skill-path>` = `${OPENCLAW_WORKSPACE}/skills/campus-device-ops`
+
 ## 数据流
 
-```text
-device-inspection-re/judge_rules_re.py  →  device_inspection_re.db
-campus-device-ops/query_alarms.py       →  读同一库（latest）
-campus-device-ops/alarm_stats.py        →  读同一库
-campus-device-ops/build_qa_context.py   →  读同一库
-campus-device-ops/push_alert_digest.py  →  读同一库
-campus-device-ops/create_work_order.py  →  读同一库
-```
+| 脚本 | 输入 | 输出 | 说明 |
+|------|------|------|------|
+| `judge_rules_re.py` | rules_re.json + API | `device_inspection_re.db` | 执行巡检并写库（device-inspection-re） |
+| `query_alarms.py` | `device_inspection_re.db` | JSON | 查询告警（默认 latest run） |
+| `alarm_stats.py` | `device_inspection_re.db` | JSON | 按楼栋/设备类型/负责人统计 |
+| `query_devices.py` | `registry.json` | JSON | 查询设备清单 |
+| `build_qa_context.py` | `device_inspection_re.db` | JSON | 生成问答上下文 |
+| `push_alert_digest.py` | `device_inspection_re.db` | 推送文案 | 生成告警推送文案 |
+| `create_work_order.py` | `device_inspection_re.db` | 工单 JSON | 生成维修工单 |
+| `close_work_order.py` | 工单 JSON | 更新状态 | 关闭工单 |
 
 ## 目录
 
@@ -84,7 +106,7 @@ python .campusclaw/skills/campus-device-ops/scripts/alarm_stats.py --json
 python .campusclaw/skills/campus-device-ops/scripts/build_qa_context.py --json
 python .campusclaw/skills/campus-device-ops/scripts/push_alert_digest.py --write-ai-message --json
 python .campusclaw/skills/campus-device-ops/scripts/create_work_order.py \
-  --device-id EF-001 --rule-ids dev_rule_a1029126 --json
+  --device-id EF_001 --rule-ids dev_rule_a1029126 --json
 
 # 5. 关闭工单
 python .campusclaw/skills/campus-device-ops/scripts/close_work_order.py --work-order-id WO-20260610-001 --json
@@ -119,28 +141,14 @@ python skills/campus-device-ops/scripts/verify_openclaw_pipeline.py --skip-inspe
 
 ## Agent 工作流
 
-```text
-用户：查最新告警 / 按楼栋统计
-  → query_alarms.py / alarm_stats.py（读 latest run，勿重跑巡检）
-
-用户：园区有几台设备 / 设备清单
-  → query_devices.py --json（或直接读 registry.json）
-
-用户：某设备数据为什么异常
-  → query_alarms.py --device-id XX（查告警规则）
-  → 读 mock_fixtures/devices/<deviceId>.json（查实际点位值）
-  → 对比规则阈值和实际值，解释异常原因
-
-用户：推送告警给负责人
-  → push_alert_digest.py --write-ai-message（生成文案）
-  → 展示给用户，由用户自行转发（当前为 mock，无真实推送通道）
-
-用户：重新巡检
-  → device-inspection-re/judge_rules_re.py（或 campus run_inspection.py 委托）
-
-用户：VAV-CO2-201 怎么回事？开工单
-  → build_qa_context.py → 问答 → create_work_order.py
-```
+| 用户意图 | 操作 | 说明 |
+|----------|------|------|
+| 查最新告警 / 按楼栋统计 | `query_alarms.py --json` / `alarm_stats.py --json` | 读 latest run，勿重跑巡检 |
+| 设备清单 | `query_devices.py --json` | 或直接读 registry.json |
+| 某设备数据异常 | `query_alarms.py --device-id XX` + 读 mock 数据 | 对比规则阈值和实际值，解释异常原因 |
+| 推送告警给负责人 | `push_alert_digest.py --write-ai-message` | 生成文案，由用户自行转发（当前为 mock） |
+| 重新巡检 | `device-inspection-re/judge_rules_re.py` | 仅当用户明确要求；若返回 `rules_not_found` 则向用户说明并**终止 skill** |
+| 开工单 | `build_qa_context.py` → 问答 → `create_work_order.py` | 完整流程 |
 
 ## 问答使用
 
@@ -169,7 +177,7 @@ Agent 应将生成的推送给用户展示，由用户自行转发给负责人�
 - 推送文案由 `push_message.py` 生成，Agent 不要自己编
 - 工单必须包含：工单号、设备信息、故障明细、原因分析、专家建议
 - 问答必须基于 DB 查询结果，禁止编造告警
-- 展示设备时使用正式 asset ID（如 `EF-001`），不要用 `送排风_排风机` 等伪 ID
+- 展示设备时使用正式 asset ID（如 `VAV_001`、`EF_001`），ASCII only
 - 原因分析、专家建议为空时展示 `—`
 
 Mock API 详见 **`reference.md`**。

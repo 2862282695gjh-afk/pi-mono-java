@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "deviceId": "SF-001",
+  "deviceId": "SF_001",
   "deviceType": "送排风",
   "component": "送风机",
   "scenario": "fault",

@@ -2,21 +2,31 @@
   "version": 1,
   "description": "Ops-only overlay: assigneeId and status per canonical deviceId. Device facts come from device-inspection-re registry.",
   "assigneesByDeviceId": {
-    "VAV-DMP-101": "ops_hvac_a",
-    "VAV-TMP-102": "ops_hvac_a",
-    "VAV-CO2-201": "ops_hvac_b",
-    "PAHU-INV-001": "ops_plant",
-    "AHU-PRS-001": "ops_plant",
-    "EF-001": "ops_plant",
-    "SF-001": "ops_plant"
+    "VAV_001": "ops_hvac_a",
+    "VAV_002": "ops_hvac_a",
+    "VAV_003": "ops_hvac_b",
+    "PAHU_001": "ops_plant",
+    "AHU_001": "ops_plant",
+    "EF_001": "ops_plant",
+    "SF_001": "ops_plant",
+    "FCU_001": "ops_hvac_b",
+    "CHW_001": "ops_plant",
+    "CT_001": "ops_plant",
+    "BOILER_001": "ops_plant",
+    "CHWP_001": "ops_plant"
   },
   "statusByDeviceId": {
-    "VAV-DMP-101": "online",
-    "VAV-TMP-102": "online",
-    "VAV-CO2-201": "online",
-    "PAHU-INV-001": "online",
-    "AHU-PRS-001": "online",
-    "EF-001": "online",
-    "SF-001": "online"
+    "VAV_001": "online",
+    "VAV_002": "online",
+    "VAV_003": "online",
+    "PAHU_001": "online",
+    "AHU_001": "online",
+    "EF_001": "online",
+    "SF_001": "online",
+    "FCU_001": "online",
+    "CHW_001": "online",
+    "CT_001": "online",
+    "BOILER_001": "online",
+    "CHWP_001": "online"
   }
 }

@@ -21,9 +21,7 @@
         "rule_engine": "(FaultAlarm == 1)"
       },
       "effective": {
-        "metric": "ratio_true",
-        "threshold": 1.0,
-        "minSamples": 1
+        "metric": "last_point"
       }
     },
     {
@@ -46,9 +44,7 @@
         "rule_engine": "(InverterFaultAlarm == 1)"
       },
       "effective": {
-        "metric": "ratio_true",
-        "threshold": 1.0,
-        "minSamples": 1
+        "metric": "last_point"
       }
     },
     {
@@ -71,9 +67,7 @@
         "rule_engine": "(FailureAlarm == 1)"
       },
       "effective": {
-        "metric": "ratio_true",
-        "threshold": 1.0,
-        "minSamples": 1
+        "metric": "last_point"
       }
     },
     {
@@ -96,9 +90,7 @@
         "rule_engine": "(LowSpeedFaultAlarm == 1)"
       },
       "effective": {
-        "metric": "ratio_true",
-        "threshold": 1.0,
-        "minSamples": 1
+        "metric": "last_point"
       }
     },
     {
@@ -121,9 +113,7 @@
         "rule_engine": "(HighSpeedFaultAlarm == 1)"
       },
       "effective": {
-        "metric": "ratio_true",
-        "threshold": 1.0,
-        "minSamples": 1
+        "metric": "last_point"
       }
     },
     {
@@ -298,9 +288,7 @@
         "rule_engine": "(FaultAlarm == 1)"
       },
       "effective": {
-        "metric": "ratio_true",
-        "threshold": 1.0,
-        "minSamples": 1
+        "metric": "last_point"
       }
     },
     {
@@ -323,9 +311,7 @@
         "rule_engine": "(InverterFaultAlarm == 1)"
       },
       "effective": {
-        "metric": "ratio_true",
-        "threshold": 1.0,
-        "minSamples": 1
+        "metric": "last_point"
       }
     },
     {
@@ -348,9 +334,7 @@
         "rule_engine": "(FailureAlarm == 1)"
       },
       "effective": {
-        "metric": "ratio_true",
-        "threshold": 1.0,
-        "minSamples": 1
+        "metric": "last_point"
       }
     },
     {
@@ -373,9 +357,7 @@
         "rule_engine": "(LowSpeedFaultAlarm == 1)"
       },
       "effective": {
-        "metric": "ratio_true",
-        "threshold": 1.0,
-        "minSamples": 1
+        "metric": "last_point"
       }
     },
     {
@@ -398,9 +380,7 @@
         "rule_engine": "(HighSpeedFaultAlarm == 1)"
       },
       "effective": {
-        "metric": "ratio_true",
-        "threshold": 1.0,
-        "minSamples": 1
+        "metric": "last_point"
       }
     },
     {
@@ -705,9 +685,7 @@
         "rule_engine": "(SupplyFanInverterFaultAlarm == 1)"
       },
       "effective": {
-        "metric": "ratio_true",
-        "threshold": 1.0,
-        "minSamples": 1
+        "metric": "last_point"
       }
     },
     {

@@ -4,7 +4,7 @@
     "row": "1-indexed，对应 Excel 行号（第 1 行是表头，数据从第 2 行开始）",
     "column": "中文列名（如「触发条件」「有效数据」「点位」），与 Excel 表头一致",
     "sheet": "可选。指定工作表名；省略时默认第一个含数据的工作表",
-    "new_or_value": "Patch entry uses key \"new\" or \"value\" (same semantics). Replaces the whole cell."
+    "new" / "value": "新值。替换该单元格的全部内容（两个字段名都支持）"
   },
   "patches": [
     {

@@ -156,10 +156,37 @@ def _route_get(path: str, query: Dict[str, str]) -> Tuple[int, Any]:
 
 def _route_post(path: str, body: Dict[str, Any]) -> Tuple[int, Any]:
     if path == "/api/v1/inspection/run":
-        rules_path = Path(str(body.get("rulesPath", "")).strip()) if body.get("rulesPath") else _common.default_rules_re_path()
+        try:
+            rules_path = (
+                Path(str(body.get("rulesPath", "")).strip())
+                if body.get("rulesPath")
+                else _common.default_rules_re_path()
+            )
+        except Exception as exc:
+            from rules_re_paths import RulesNotFoundError
+
+            if isinstance(exc, RulesNotFoundError):
+                return 404, {
+                    "error": "rules_not_found",
+                    "message": str(exc),
+                    "searchedPaths": exc.searched_paths,
+                    "action": "stop_skill",
+                }
+            raise
         end_ts = body.get("endTs")
         end_ts_str = str(end_ts).strip() if end_ts is not None else None
-        doc = run_inspection_local(rules_path=rules_path, end_ts=end_ts_str, output=None)
+        device_types_raw = body.get("deviceTypeFilter") or body.get("deviceTypes") or []
+        device_types = (
+            [str(x).strip() for x in device_types_raw if str(x).strip()]
+            if isinstance(device_types_raw, list)
+            else None
+        )
+        doc = run_inspection_local(
+            rules_path=rules_path,
+            end_ts=end_ts_str,
+            output=None,
+            device_types=device_types,
+        )
         return 200, doc
 
     if path == "/api/v1/work-orders":

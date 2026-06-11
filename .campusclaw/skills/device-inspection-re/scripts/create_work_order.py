@@ -1,4 +1,4 @@
-"""Create work orders. Synced with campus-device-ops/scripts/create_work_order.py — update both copies together."""
+"""Create work orders. Synced with device-inspection-re/scripts/create_work_order.py — update both copies together."""
 from __future__ import annotations
 
 import argparse
@@ -37,11 +37,11 @@ def _next_work_order_id() -> str:
 
 def _default_problem_analysis(alerts: List[Dict[str, Any]]) -> Dict[str, Any]:
     causes: List[Dict[str, Any]] = []
-    for alert in alerts:
-        reason = str(alert.get("reason_analysis", "") or "").strip()
-        if not reason or reason == "—":
+    for a in alerts:
+        ra = str(a.get("reason_analysis", "") or "").strip()
+        if not ra or ra == "—":
             continue
-        for line in reason.split("\n"):
+        for line in ra.split("\n"):
             line = line.strip()
             if not line:
                 continue
@@ -49,29 +49,29 @@ def _default_problem_analysis(alerts: List[Dict[str, Any]]) -> Dict[str, Any]:
                 {
                     "cause": line.lstrip("0123456789.").strip(),
                     "likelihood": "medium",
-                    "evidence": f"rule_id={alert.get('rule_id', '')}; from rules_re",
+                    "evidence": f"rule_id={a.get('rule_id', '')}; from rules_re 原因分析",
                 }
             )
     if not causes:
         causes.append(
             {
-                "cause": "Pending field inspection — no reason analysis in rules_re",
+                "cause": "Pending field inspection — no 原因分析 in rules_re for matched rule(s)",
                 "likelihood": "unknown",
-                "evidence": "rules_re.json empty reason analysis",
+                "evidence": "rules_re.json empty 原因分析",
             }
         )
     return {
-        "summary": "Auto skeleton from rules_re reason analysis; refine with inspection context.",
+        "summary": "Auto skeleton from rules_re 原因分析; Agent should refine with inspection context.",
         "possibleCauses": causes[:5],
     }
 
 
 def _default_disposal(alerts: List[Dict[str, Any]]) -> Dict[str, Any]:
     steps: List[str] = []
-    for alert in alerts:
-        advice = str(alert.get("expert_advice", "") or "").strip()
-        if advice and advice != "—":
-            for line in advice.split("\n"):
+    for a in alerts:
+        ea = str(a.get("expert_advice", "") or "").strip()
+        if ea and ea != "—":
+            for line in ea.split("\n"):
                 line = line.strip()
                 if line:
                     steps.append(line)
@@ -83,7 +83,7 @@ def _default_disposal(alerts: List[Dict[str, Any]]) -> Dict[str, Any]:
         ]
     return {
         "steps": steps[:10],
-        "expertAdviceRef": "rules_re.json expert advice",
+        "expertAdviceRef": "rules_re.json 专家处理建议",
         "note": "Agent may expand steps; must cite rule_id and original advice.",
     }
 
@@ -101,21 +101,22 @@ def create_work_order(
     reg = registry_by_device_id()
     device = reg.get(device_id, {})
     alerts_by_device = inspection.get("alerts_by_device") or {}
-    device_alerts = [row for row in (alerts_by_device.get(device_id) or []) if isinstance(row, dict)]
+    device_alerts = [a for a in (alerts_by_device.get(device_id) or []) if isinstance(a, dict)]
 
     if rule_ids:
-        wanted = {item.strip() for item in rule_ids if item.strip()}
-        device_alerts = [row for row in device_alerts if str(row.get("rule_id", "")).strip() in wanted]
+        rid_set = {r.strip() for r in rule_ids if r.strip()}
+        device_alerts = [a for a in device_alerts if str(a.get("rule_id", "")).strip() in rid_set]
 
     if not device_alerts:
         raise ValueError(f"no matching alerts for device {device_id!r} and rule ids {rule_ids!r}")
 
     aid = assignee_id or str(device.get("assigneeId", "")).strip() or "unassigned"
     assignee = assignees_by_id().get(aid, {})
+
     wo_id = _next_work_order_id()
     now = datetime.now(tz=timezone.utc).isoformat()
 
-    return {
+    wo: Dict[str, Any] = {
         "version": 1,
         "id": wo_id,
         "status": "open",
@@ -130,69 +131,64 @@ def create_work_order(
         "assigneeName": assignee.get("name", aid),
         "alarms": [
             {
-                "ruleId": row.get("rule_id", ""),
-                "ruleName": row.get("rule_name", ""),
-                "reasonAnalysis": row.get("reason_analysis", "") or "—",
-                "expertAdvice": row.get("expert_advice", "") or "—",
+                "ruleId": a.get("rule_id", ""),
+                "ruleName": a.get("rule_name", ""),
+                "reasonAnalysis": a.get("reason_analysis", "") or "—",
+                "expertAdvice": a.get("expert_advice", "") or "—",
             }
-            for row in device_alerts
+            for a in device_alerts
         ],
         "problemAnalysis": problem_analysis or _default_problem_analysis(device_alerts),
         "disposalSuggestions": disposal_suggestions or _default_disposal(device_alerts),
-        "priority": "high"
-        if any("fault" in str(row.get("rule_name", "")).lower() for row in device_alerts)
-        else "medium",
+        "priority": "high" if any("fault" in str(a.get("rule_name", "")).lower() for a in device_alerts) else "medium",
     }
+    return wo
 
 
 def main(argv: Optional[List[str]] = None) -> int:
     configure_stdio_utf8()
-    parser = argparse.ArgumentParser(description="Create maintenance work order from inspection run")
-    parser.add_argument("--device-id", required=True)
-    parser.add_argument("--rule-ids", default="", help="Comma-separated rule ids")
-    parser.add_argument("--assignee", default=None)
-    parser.add_argument("--run-id", default="latest")
-    parser.add_argument("--output", default=None)
-    parser.add_argument("--analysis-json", default=None)
-    parser.add_argument("--disposal-json", default=None)
-    parser.add_argument("--json", action="store_true")
-    args = parser.parse_args(argv)
+    p = argparse.ArgumentParser(
+        description="生成维修工单 JSON（mock 持久化）",
+        epilog="示例: python create_work_order.py --device-id EF_001 --rule-ids dev_rule_a1029126 --json"
+    )
+    p.add_argument("--device-id", required=True, help="设备 ID（如 EF_001）")
+    p.add_argument("--rule-ids", default="", help="规则 ID，逗号分隔（默认：该设备所有告警）")
+    p.add_argument("--assignee", default=None, help="指定负责人 ID（默认：自动匹配）")
+    p.add_argument("--run-id", default="latest", help="巡检 run_id 或 latest（默认）")
+    p.add_argument("--output", default=None, help="输出路径（默认：work_orders/WO-*.json）")
+    p.add_argument("--analysis-json", default=None, help="问题分析 JSON 文件（Agent 填充）")
+    p.add_argument("--disposal-json", default=None, help="处置建议 JSON 文件（Agent 填充）")
+    p.add_argument("--json", action="store_true", help="JSON 格式输出")
+    args = p.parse_args(argv)
 
     doc = load_inspection_doc(run_id=args.run_id)
-    rule_ids = [part.strip() for part in args.rule_ids.split(",") if part.strip()]
-    problem_analysis = (
-        json.loads(Path(args.analysis_json).read_text(encoding="utf-8")) if args.analysis_json else None
-    )
-    disposal_suggestions = (
-        json.loads(Path(args.disposal_json).read_text(encoding="utf-8")) if args.disposal_json else None
-    )
+    rule_ids = [x.strip() for x in args.rule_ids.split(",") if x.strip()]
 
-    work_order = create_work_order(
+    pa = json.loads(Path(args.analysis_json).read_text(encoding="utf-8")) if args.analysis_json else None
+    ds = json.loads(Path(args.disposal_json).read_text(encoding="utf-8")) if args.disposal_json else None
+
+    wo = create_work_order(
         device_id=args.device_id.strip(),
         rule_ids=rule_ids,
         inspection_doc=doc,
         assignee_id=args.assignee,
-        problem_analysis=problem_analysis,
-        disposal_suggestions=disposal_suggestions,
+        problem_analysis=pa,
+        disposal_suggestions=ds,
     )
 
-    output = (
-        Path(args.output).expanduser().resolve()
-        if args.output
-        else work_orders_dir() / f"{work_order['id']}.json"
-    )
-    write_json(output, work_order)
+    out = Path(args.output).expanduser().resolve() if args.output else work_orders_dir() / f"{wo['id']}.json"
+    write_json(out, wo)
 
     if args.json:
-        print(json.dumps(work_order, ensure_ascii=False, indent=2))
+        print(json.dumps(wo, ensure_ascii=False, indent=2))
     else:
-        print(f"created work order: {work_order['id']} -> {output}")
+        print(f"created work order: {wo['id']} -> {out}")
     return 0
 
 
 if __name__ == "__main__":
     try:
         raise SystemExit(main())
-    except Exception as exc:
-        print(str(exc), file=sys.stderr)
-        raise SystemExit(1) from exc
+    except Exception as e:
+        print(str(e), file=sys.stderr)
+        raise SystemExit(1) from e

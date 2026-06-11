@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "deviceId": "VAV-TMP-102",
+  "deviceId": "VAV_002",
   "deviceType": "VAV",
   "component": "温控器/温度传感器",
   "scenario": "fault",

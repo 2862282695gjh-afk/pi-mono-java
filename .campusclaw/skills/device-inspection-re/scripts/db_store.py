@@ -6,6 +6,7 @@ Production: replace with PostgreSQL; see templates/schema.sql.
 """
 from __future__ import annotations
 
+import json
 import os
 import sqlite3
 from collections import Counter
@@ -68,7 +69,42 @@ def init_schema(conn: sqlite3.Connection) -> None:
         """
     )
     _ensure_alarm_columns(conn)
+    _ensure_run_columns(conn)
     conn.commit()
+
+
+def _table_columns(conn: sqlite3.Connection, table: str) -> set[str]:
+    rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
+    return {str(r[1]) for r in rows}
+
+
+def _ensure_run_columns(conn: sqlite3.Connection) -> None:
+    existing = _table_columns(conn, "inspection_runs")
+    if "scope_device_types" not in existing:
+        conn.execute("ALTER TABLE inspection_runs ADD COLUMN scope_device_types TEXT")
+
+
+def _encode_scope_device_types(device_types: Optional[List[str]]) -> Optional[str]:
+    if not device_types:
+        return None
+    return json.dumps(device_types, ensure_ascii=False)
+
+
+def _decode_scope_device_types(raw: Optional[str]) -> Optional[List[str]]:
+    if raw is None:
+        return None
+    text = str(raw).strip()
+    if not text:
+        return None
+    parsed = json.loads(text)
+    if not isinstance(parsed, list):
+        return None
+    out: List[str] = []
+    for item in parsed:
+        token = str(item).strip()
+        if token and token not in out:
+            out.append(token)
+    return out or None
 
 
 def _ensure_alarm_columns(conn: sqlite3.Connection) -> None:
@@ -100,6 +136,7 @@ def save_inspection_run(
     inspection: Dict[str, Any],
     rules_by_id: Dict[str, Dict[str, Any]],
     rules_kind: str = "rules_re.json",
+    scope_device_types: Optional[List[str]] = None,
 ) -> str:
     end_ts = float(inspection.get("end_ts") or 0.0)
     alerts_by_device = dict(inspection.get("alerts_by_device") or {})
@@ -109,15 +146,38 @@ def save_inspection_run(
     run_id = _new_run_id()
     created_at = datetime.now(tz=timezone.utc).isoformat()
 
+    scope_json = _encode_scope_device_types(scope_device_types)
+
     with _connect() as conn:
-        conn.execute(
-            """
-            INSERT INTO inspection_runs
-            (run_id, rules_path, rules_kind, end_ts, fault_device_count, total_alert_count, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            """,
-            (run_id, rules_path, rules_kind, end_ts, len(fault_devices), total_alerts, created_at),
-        )
+        run_cols = _table_columns(conn, "inspection_runs")
+        if "scope_device_types" in run_cols:
+            conn.execute(
+                """
+                INSERT INTO inspection_runs
+                (run_id, rules_path, rules_kind, end_ts, fault_device_count, total_alert_count,
+                 created_at, scope_device_types)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    run_id,
+                    rules_path,
+                    rules_kind,
+                    end_ts,
+                    len(fault_devices),
+                    total_alerts,
+                    created_at,
+                    scope_json,
+                ),
+            )
+        else:
+            conn.execute(
+                """
+                INSERT INTO inspection_runs
+                (run_id, rules_path, rules_kind, end_ts, fault_device_count, total_alert_count, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (run_id, rules_path, rules_kind, end_ts, len(fault_devices), total_alerts, created_at),
+            )
         for did, alerts in alerts_by_device.items():
             for alert in alerts or []:
                 if not isinstance(alert, dict):
@@ -172,17 +232,25 @@ def get_latest_run_id() -> Optional[str]:
 
 def list_inspection_runs(*, limit: int = 20) -> List[Dict[str, Any]]:
     with _connect() as conn:
+        cols = _table_columns(conn, "inspection_runs")
+        scope_col = ", scope_device_types" if "scope_device_types" in cols else ""
         rows = conn.execute(
-            """
+            f"""
             SELECT run_id, rules_path, rules_kind, end_ts,
-                   fault_device_count, total_alert_count, created_at
+                   fault_device_count, total_alert_count, created_at{scope_col}
             FROM inspection_runs
             ORDER BY created_at DESC
             LIMIT ?
             """,
             (limit,),
         ).fetchall()
-    return [dict(r) for r in rows]
+    out: List[Dict[str, Any]] = []
+    for r in rows:
+        item = dict(r)
+        if "scope_device_types" in item:
+            item["deviceTypeFilter"] = _decode_scope_device_types(item.pop("scope_device_types"))
+        out.append(item)
+    return out
 
 
 def query_alarms(
@@ -274,7 +342,7 @@ def load_inspection_doc(*, run_id: Optional[str] = None) -> Dict[str, Any]:
         "alerts_by_device": alerts_by_device,
         "end_ts": run["end_ts"],
     }
-    return {
+    doc: Dict[str, Any] = {
         "version": 1,
         "runId": rid,
         "rulesPath": run["rules_path"],
@@ -282,6 +350,9 @@ def load_inspection_doc(*, run_id: Optional[str] = None) -> Dict[str, Any]:
         "inspection": inspection,
         "createdAt": run["created_at"],
     }
+    if "scope_device_types" in run.keys():
+        doc["deviceTypeFilter"] = _decode_scope_device_types(run["scope_device_types"])
+    return doc
 
 
 def compute_alarm_stats_from_db(*, run_id: Optional[str] = None) -> Dict[str, Any]:
@@ -311,19 +382,38 @@ def compute_alarm_stats_from_db(*, run_id: Optional[str] = None) -> Dict[str, An
 
     registry_total = len(load_device_registry().get("devices") or [])
 
+    from inspection_scope import build_inspection_scope_summary  # noqa: E402
+
+    scope_summary = build_inspection_scope_summary(
+        registry_doc=load_device_registry(),
+        fault_device_ids=sorted(fault_devices_set),
+        device_type_filter=doc.get("deviceTypeFilter"),
+        total_alert_count=len(alarms),
+    )
+
     return {
         "version": 1,
         "runId": rid,
         "endTs": inspection.get("end_ts"),
-        "registryDeviceCount": registry_total,
-        "alarmDeviceCount": len(fault_devices_set),
+        "deviceTypeFilter": doc.get("deviceTypeFilter"),
+        "scopeLabel": scope_summary.get("scopeLabel"),
+        "inspectedDeviceCount": scope_summary.get("inspectedDeviceCount"),
+        "faultDeviceCount": scope_summary.get("faultDeviceCount"),
+        "healthyDeviceCount": scope_summary.get("healthyDeviceCount"),
+        "healthScore": scope_summary.get("healthScore"),
+        "healthPercentage": scope_summary.get("healthPercentage"),
+        "registryDeviceCount": scope_summary.get("inspectedDeviceCount"),
+        "alarmDeviceCount": scope_summary.get("faultDeviceCount"),
         "totalAlertCount": len(alarms),
+        "campusRegistryDeviceCount": registry_total,
         "byBuilding": dict(by_building),
         "byDeviceType": dict(by_device_type),
         "byRule": dict(by_rule),
         "byAssignee": dict(by_assignee),
         "byLevel": dict(by_level),
-        "faultDevices": sorted(fault_devices_set),
+        "faultDevices": scope_summary.get("faultDevices"),
+        "healthyDevices": scope_summary.get("healthyDevices"),
+        "inspectionSummary": scope_summary,
     }
 
 

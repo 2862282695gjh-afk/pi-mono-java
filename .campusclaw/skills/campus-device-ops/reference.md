@@ -296,7 +296,7 @@ Schema：`templates/work-order.schema.json`
 | 脚本 | 本地模式 | HTTP 模式 |
 |------|----------|-----------|
 | `query_devices.py` | 读 inspection registry + assignee_map | `--http` |
-| `run_inspection.py` | 委托 device-inspection-re 写共享 DB | `--http` |
+| `run_inspection.py` | 委托 device-inspection-re 写共享 DB | `--http`；`--device-type VAV` 分类型巡检 |
 | `alarm_stats.py` | 读 `device_inspection_re.db` | GET `/alarms/stats` |
 | `build_qa_context.py` | 读共享 DB | GET `/qa/context` |
 | `push_alert_digest.py` | 写 outbox + `aiMessage`（`--write-ai-message`） | POST `/notifications/push`（`--push-http`） |

@@ -7,7 +7,8 @@ CREATE TABLE IF NOT EXISTS inspection_runs (
     end_ts DOUBLE PRECISION NOT NULL,
     fault_device_count INTEGER NOT NULL,
     total_alert_count INTEGER NOT NULL,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    scope_device_types TEXT
 );
 
 CREATE TABLE IF NOT EXISTS inspection_alarms (

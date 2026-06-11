@@ -16,15 +16,18 @@ from db_store import list_inspection_runs, query_alarms, resolve_run_id  # noqa:
 
 def main(argv: Optional[list[str]] = None) -> int:
     configure_stdio_utf8()
-    p = argparse.ArgumentParser(description="Query fault alarms from database")
-    p.add_argument("--run-id", default="latest", help="Inspection run_id or latest")
-    p.add_argument("--building", default=None)
-    p.add_argument("--device-type", default=None)
-    p.add_argument("--device-id", default=None)
-    p.add_argument("--rule-id", default=None)
-    p.add_argument("--list-runs", action="store_true", help="List recent inspection runs")
-    p.add_argument("--http", action="store_true", help="GET mock /alarms (campus mock API only)")
-    p.add_argument("--json", action="store_true")
+    p = argparse.ArgumentParser(
+        description="查询数据库中的故障告警",
+        epilog="示例: python query_alarms.py --device-id VAV_003 --json"
+    )
+    p.add_argument("--run-id", default="latest", help="巡检 run_id 或 latest（默认）")
+    p.add_argument("--building", default=None, help="按楼栋筛选")
+    p.add_argument("--device-type", default=None, help="按设备类型筛选")
+    p.add_argument("--device-id", default=None, help="按设备 ID 筛选")
+    p.add_argument("--rule-id", default=None, help="按规则 ID 筛选")
+    p.add_argument("--list-runs", action="store_true", help="列出最近的巡检记录")
+    p.add_argument("--http", action="store_true", help="通过 mock API 查询（默认直接读库）")
+    p.add_argument("--json", action="store_true", help="JSON 格式输出")
     args = p.parse_args(argv)
 
     if args.list_runs:

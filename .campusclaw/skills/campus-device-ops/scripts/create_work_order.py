@@ -147,15 +147,18 @@ def create_work_order(
 
 def main(argv: Optional[List[str]] = None) -> int:
     configure_stdio_utf8()
-    p = argparse.ArgumentParser(description="Create maintenance work order JSON (mock persistence)")
-    p.add_argument("--device-id", required=True)
-    p.add_argument("--rule-ids", default="", help="Comma-separated rule ids (default: all alerts on device)")
-    p.add_argument("--assignee", default=None, help="Override assigneeId")
-    p.add_argument("--run-id", default="latest", help="Inspection run_id in database")
-    p.add_argument("--output", default=None, help="Output path (default: work_orders/WO-*.json)")
-    p.add_argument("--analysis-json", default=None, help="LLM-filled problemAnalysis JSON file")
-    p.add_argument("--disposal-json", default=None, help="LLM-filled disposalSuggestions JSON file")
-    p.add_argument("--json", action="store_true")
+    p = argparse.ArgumentParser(
+        description="生成维修工单 JSON（mock 持久化）",
+        epilog="示例: python create_work_order.py --device-id EF_001 --rule-ids dev_rule_a1029126 --json"
+    )
+    p.add_argument("--device-id", required=True, help="设备 ID（如 EF_001）")
+    p.add_argument("--rule-ids", default="", help="规则 ID，逗号分隔（默认：该设备所有告警）")
+    p.add_argument("--assignee", default=None, help="指定负责人 ID（默认：自动匹配）")
+    p.add_argument("--run-id", default="latest", help="巡检 run_id 或 latest（默认）")
+    p.add_argument("--output", default=None, help="输出路径（默认：work_orders/WO-*.json）")
+    p.add_argument("--analysis-json", default=None, help="问题分析 JSON 文件（Agent 填充）")
+    p.add_argument("--disposal-json", default=None, help="处置建议 JSON 文件（Agent 填充）")
+    p.add_argument("--json", action="store_true", help="JSON 格式输出")
     args = p.parse_args(argv)
 
     doc = load_inspection_doc(run_id=args.run_id)

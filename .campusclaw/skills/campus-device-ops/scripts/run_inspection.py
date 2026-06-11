@@ -6,7 +6,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 _SCRIPT_DIR = Path(__file__).resolve().parent
 if str(_SCRIPT_DIR) not in sys.path:
@@ -14,16 +14,22 @@ if str(_SCRIPT_DIR) not in sys.path:
 
 from _common import (  # noqa: E402
     configure_stdio_utf8,
-    default_rules_re_path,
     device_inspection_re_judge_script,
     device_inspection_re_skill_root,
     http_post_json,
     write_json,
 )
 from db_store import load_inspection_doc  # noqa: E402
+from rules_re_paths import RulesNotFoundError, emit_rules_not_found, resolve_rules_re_path  # noqa: E402
 
 
-def run_inspection_local(*, rules_path: Path, end_ts: Optional[str], output: Optional[Path]) -> Dict[str, Any]:
+def run_inspection_local(
+    *,
+    rules_path: Path,
+    end_ts: Optional[str],
+    output: Optional[Path],
+    device_types: Optional[List[str]] = None,
+) -> Dict[str, Any]:
     """
     Delegate inspection to device-inspection-re (writes device_inspection_re.db).
     campus-device-ops reads that DB for stats / QA / push / work orders.
@@ -36,6 +42,10 @@ def run_inspection_local(*, rules_path: Path, end_ts: Optional[str], output: Opt
     cmd = [sys.executable, str(script), "--rules", str(rules_path), "--json"]
     if end_ts:
         cmd.extend(["--end-ts", end_ts])
+    for dt in device_types or []:
+        token = str(dt).strip()
+        if token:
+            cmd.extend(["--device-type", token])
 
     proc = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", env=env)
     if proc.returncode != 0:
@@ -62,21 +72,40 @@ def main(argv: Optional[list[str]] = None) -> int:
     )
     p.add_argument("--rules", default=None, help="rules_re.json path")
     p.add_argument("--end-ts", default=None, help="End timestamp (epoch or ISO8601)")
+    p.add_argument(
+        "--device-type",
+        action="append",
+        default=[],
+        help="Only inspect rules for these device types (repeatable or comma-separated)",
+    )
     p.add_argument("--output", default=None, help="Optional: also write snapshot JSON")
     p.add_argument("--http", action="store_true", help="POST /inspection/run on mock API :18082")
     p.add_argument("--json", action="store_true", help="Print JSON to stdout")
     args = p.parse_args(argv)
 
-    rules_path = Path(args.rules).expanduser().resolve() if args.rules else default_rules_re_path()
+    try:
+        rules_path = (
+            Path(args.rules).expanduser().resolve() if args.rules else resolve_rules_re_path()
+        )
+    except RulesNotFoundError as err:
+        emit_rules_not_found(err=err, json_mode=args.json)
+        return 1
 
     if args.http:
         body: Dict[str, Any] = {"rulesPath": str(rules_path)}
         if args.end_ts:
             body["endTs"] = args.end_ts
+        if args.device_type:
+            body["deviceTypeFilter"] = args.device_type
         doc = http_post_json("/inspection/run", body)
     else:
         out_path = Path(args.output).expanduser().resolve() if args.output else None
-        doc = run_inspection_local(rules_path=rules_path, end_ts=args.end_ts, output=out_path)
+        doc = run_inspection_local(
+            rules_path=rules_path,
+            end_ts=args.end_ts,
+            output=out_path,
+            device_types=args.device_type or None,
+        )
 
     if args.json or args.output is None:
         print(json.dumps(doc, ensure_ascii=False, indent=2))
@@ -88,6 +117,9 @@ def main(argv: Optional[list[str]] = None) -> int:
 if __name__ == "__main__":
     try:
         raise SystemExit(main())
+    except RulesNotFoundError as err:
+        emit_rules_not_found(err=err, json_mode="--json" in sys.argv)
+        raise SystemExit(1) from err
     except Exception as e:
         print(str(e), file=sys.stderr)
         raise SystemExit(1) from e

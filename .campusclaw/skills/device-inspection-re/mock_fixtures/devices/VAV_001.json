@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "deviceId": "VAV-DMP-101",
+  "deviceId": "VAV_001",
   "deviceType": "VAV",
   "component": "风阀",
   "scenario": "healthy",

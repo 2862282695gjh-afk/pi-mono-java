@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "deviceId": "AHU-PRS-001",
+  "deviceId": "AHU_001",
   "deviceType": "AHU",
   "component": "送风压力传感器",
   "scenario": "healthy",

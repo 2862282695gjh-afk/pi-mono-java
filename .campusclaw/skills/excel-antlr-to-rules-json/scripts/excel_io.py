@@ -2,8 +2,18 @@ from __future__ import annotations
 
 import hashlib
 import re
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+
+
+@dataclass(frozen=True)
+class EffectivePolicy:
+    """How judge_rules_re evaluates trigger against a timeseries."""
+
+    metric: str  # "ratio_true" | "last_point"
+    duration_seconds: int  # rolling window for ratio_true; fetch window for last_point
+    threshold: float = 1.0  # used only when metric == "ratio_true"
 
 # Standard Excel column names (one rule per row)
 STANDARD_COLUMNS = (
@@ -172,22 +182,20 @@ def read_xlsx_rows(path: Path) -> Tuple[str, List[str], List[Dict[str, Any]]]:
     return ",".join(sheet_names), primary_headers, all_rows
 
 
-def parse_effective_data(raw: Any) -> Tuple[int, float]:
+def parse_effective_data(raw: Any) -> EffectivePolicy:
     """
     Parse combined effective-data cells such as:
-      - 无需设置
-      - 30min内，90%
+      - 无需设置 → last_point (judge latest sample only)
+      - 30min内，90% → ratio_true rolling window + threshold
       - 60min内，100%
       - 1小时内，100%
       - 15分钟内，90%
-    Returns (durationSeconds, ratio_threshold).
     """
     s = str(raw).strip()
     if not s or s in ("无需设置", "无", "N/A", "-", "—"):
-        return 60, 1.0
-    # Fuzzy match: strings containing "无需设置" (e.g. "无需设置诊断时间和延迟时间")
+        return EffectivePolicy(metric="last_point", duration_seconds=60)
     if "无需设置" in s:
-        return 60, 1.0
+        return EffectivePolicy(metric="last_point", duration_seconds=60)
 
     minutes: int | None = None
     m_min = re.search(r"(\d+)\s*min", s, flags=re.IGNORECASE)
@@ -205,7 +213,7 @@ def parse_effective_data(raw: Any) -> Tuple[int, float]:
 
     if minutes is None:
         raise ValueError(f"cannot parse effective data column: {s!r}")
-    return minutes * 60, threshold
+    return EffectivePolicy(metric="ratio_true", duration_seconds=minutes * 60, threshold=threshold)
 
 
 def collect_point_keys(row: Dict[str, Any]) -> List[str]:

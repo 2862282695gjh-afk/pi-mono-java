@@ -31,13 +31,10 @@ class JudgeError(Exception):
 
 _SCRIPT_FILE = Path(__file__).resolve()
 _SKILL_ROOT = _SCRIPT_FILE.parents[1]
-_CAMPUSCLAW_ROOT = _SCRIPT_FILE.parents[3]
-DEFAULT_BUNDLED_RULES_PATH = _CAMPUSCLAW_ROOT / "rules" / "rules_re.json"
-FALLBACK_RULES_PATH = (
-    _CAMPUSCLAW_ROOT / "rule-engines-pack" / "02-rule-engine-pypi" / "rules" / "rules_re.json"
-)
 DEFAULT_MOCK_API_URL = "http://127.0.0.1:18081/fetch"
 DEFAULT_FETCH_PORT = 18081
+
+_PREV_RE = re.compile(r"\$?prev\s*\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*\)")
 
 _RE_KEYWORDS: Set[str] = {
     "and",
@@ -53,19 +50,6 @@ _RE_KEYWORDS: Set[str] = {
     "endswith",
 }
 
-
-def _default_rules_path() -> Path:
-    env = os.environ.get("DEVICE_INSPECTION_RE_RULES_PATH", "").strip()
-    if env:
-        p = Path(env).expanduser().resolve()
-        if p.is_file():
-            return p
-    if DEFAULT_BUNDLED_RULES_PATH.is_file():
-        return DEFAULT_BUNDLED_RULES_PATH
-    openclaw_rules = Path.home() / ".openclaw" / "workspace" / "rules" / "rules_re.json"
-    if openclaw_rules.is_file():
-        return openclaw_rules
-    return FALLBACK_RULES_PATH
 
 def _default_fixtures_dir() -> Path:
     env = os.environ.get("DEVICE_INSPECTION_RE_FIXTURES_DIR", "").strip()
@@ -332,19 +316,56 @@ class JudgeResult:
     min_samples: int
 
 
-def judge_rule(rule: Dict[str, Any], series: List[Dict[str, Any]], *, compiled: rule_engine.Rule) -> JudgeResult:
-    window_seconds = int(rule["window"]["durationSeconds"])
-    threshold = float(rule["effective"]["threshold"])
-    min_samples = int(rule["effective"].get("minSamples", 1))
+def _compile_rule_engine_text(text: str) -> rule_engine.Rule:
+    normalized = _PREV_RE.sub(r"__prev_\1__", text.strip())
+    return rule_engine.Rule(normalized)
 
-    now_ts = max(float(p["ts"]) for p in series)
+
+def _facts_for_sample(point: Dict[str, Any], *, prev_point: Dict[str, Any] | None) -> Dict[str, Any]:
+    facts = {k: v for k, v in point.items() if k != "ts"}
+    if prev_point is not None:
+        for k, v in prev_point.items():
+            if k == "ts":
+                continue
+            facts[f"__prev_{k}__"] = v
+    return facts
+
+
+def judge_rule(rule: Dict[str, Any], series: List[Dict[str, Any]], *, compiled: rule_engine.Rule) -> JudgeResult:
+    rid = str(rule.get("id", ""))
+    name = str(rule.get("name", ""))
+    effective = rule.get("effective") or {}
+    metric = str(effective.get("metric", "ratio_true")).strip() or "ratio_true"
+    norm = sorted(series, key=lambda p: float(p["ts"]))
+
+    if metric == "last_point":
+        if not norm:
+            return JudgeResult(rid, name, False, 0.0, 0, 1.0, 1)
+        last = norm[-1]
+        prev = norm[-2] if len(norm) >= 2 else None
+        facts = _facts_for_sample(last, prev_point=prev)
+        try:
+            matched = bool(compiled.matches(facts))
+        except Exception:
+            matched = False
+        ratio = 1.0 if matched else 0.0
+        return JudgeResult(rid, name, matched, ratio, 1, 1.0, 1)
+
+    window_seconds = int(rule["window"]["durationSeconds"])
+    threshold = float(effective["threshold"])
+    min_samples = int(effective.get("minSamples", 1))
+
+    now_ts = max(float(p["ts"]) for p in norm)
     start_ts = now_ts - window_seconds
-    window_points = [p for p in series if start_ts <= float(p["ts"]) <= now_ts]
+    window_points = [p for p in norm if start_ts <= float(p["ts"]) <= now_ts]
 
     hits = 0
     total = 0
-    for p in window_points:
-        facts = {k: v for k, v in p.items() if k != "ts"}
+    for idx, p in enumerate(window_points):
+        if _PREV_RE.search(str((rule.get("trigger") or {}).get("rule_engine", ""))) and idx == 0:
+            continue
+        prev_point = window_points[idx - 1] if idx > 0 else None
+        facts = _facts_for_sample(p, prev_point=prev_point)
         total += 1
         try:
             ok = bool(compiled.matches(facts))
@@ -354,15 +375,7 @@ def judge_rule(rule: Dict[str, Any], series: List[Dict[str, Any]], *, compiled: 
 
     ratio = (hits / total) if total else 0.0
     matched = (total >= min_samples) and (ratio >= threshold)
-    return JudgeResult(
-        rule_id=str(rule.get("id", "")),
-        rule_name=str(rule.get("name", "")),
-        matched=matched,
-        ratio_true=float(ratio),
-        samples=int(total),
-        threshold=threshold,
-        min_samples=min_samples,
-    )
+    return JudgeResult(rid, name, matched, ratio, total, threshold, min_samples)
 
 
 @dataclass(frozen=True)
@@ -384,18 +397,74 @@ def build_alert(rule: Dict[str, Any], jr: JudgeResult, *, device_id: str = "") -
     return Alert(device_id=str(device_id or "").strip(), rule_id=rid, rule_name=name, message=msg, reason_analysis=ra, expert_advice=ea)
 
 
+def device_types_in_rules(rules: List[Dict[str, Any]]) -> List[str]:
+    found: set[str] = set()
+    for rule in rules:
+        if not isinstance(rule, dict):
+            continue
+        dt = str((rule.get("meta") or {}).get("deviceType", "")).strip()
+        if dt:
+            found.add(dt)
+    return sorted(found)
+
+
+def parse_device_type_filters(raw: Optional[List[str]]) -> Optional[List[str]]:
+    if not raw:
+        return None
+    out: List[str] = []
+    for item in raw:
+        for part in str(item).split(","):
+            token = part.strip()
+            if token and token not in out:
+                out.append(token)
+    return out or None
+
+
+def filter_rules_by_device_types(
+    rules: List[Dict[str, Any]],
+    device_types: Optional[List[str]],
+) -> List[Dict[str, Any]]:
+    if not device_types:
+        return rules
+    allowed = set(device_types)
+    return [
+        r
+        for r in rules
+        if isinstance(r, dict) and str((r.get("meta") or {}).get("deviceType", "")).strip() in allowed
+    ]
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     os.environ.setdefault("DEVICE_INSPECTION_RE_FIXTURES_DIR", str(_default_fixtures_dir()))
 
     p = argparse.ArgumentParser(description="设备巡检（rules_re.json / rule-engine）")
-    p.add_argument("--rules", default=str(_default_rules_path()), help="rules_re.json 路径")
+    p.add_argument("--rules", default=None, help="rules_re.json 路径（默认自动搜索）")
     p.add_argument("--rules-extra", action="append", default=[], help="额外合并的 rules 文件（可多次）")
     p.add_argument("--end-ts", default=None, help="结束时间 Unix 秒或 ISO8601，默认当前 UTC")
     p.add_argument("--json", action="store_true", help="JSON 输出")
     p.add_argument("--no-save-db", action="store_true", help="不写入巡检数据库")
+    p.add_argument(
+        "--device-type",
+        action="append",
+        default=[],
+        help="只巡检指定设备类型（可多次或逗号分隔，如 VAV 或 送排风）；默认全部",
+    )
+    p.add_argument(
+        "--list-device-types",
+        action="store_true",
+        help="列出 rules 中的 deviceType 后退出",
+    )
+    p.add_argument(
+        "--include-healthy",
+        action="store_true",
+        help="输出中包含正常设备的健康度评分",
+    )
     args = p.parse_args(argv)
 
-    primary = Path(args.rules).expanduser().resolve()
+    from rules_re_paths import resolve_rules_re_path  # noqa: E402
+
+    explicit_rules = Path(args.rules).expanduser().resolve() if args.rules else None
+    primary = resolve_rules_re_path(explicit_rules)
     docs: List[Dict[str, Any]] = [_load_rules_doc(primary)]
     for extra in args.rules_extra or []:
         ep = Path(str(extra)).expanduser().resolve()
@@ -405,6 +474,24 @@ def main(argv: Optional[List[str]] = None) -> int:
     if not rules:
         raise JudgeError("merged rules must be non-empty")
 
+    if args.list_device_types:
+        types = device_types_in_rules(rules)
+        if args.json:
+            print(json.dumps({"version": 1, "deviceTypes": types}, ensure_ascii=False))
+        else:
+            for dt in types:
+                print(dt)
+        return 0
+
+    device_type_filter = parse_device_type_filters(args.device_type)
+    all_rule_count = len(rules)
+    if device_type_filter:
+        rules = filter_rules_by_device_types(rules, device_type_filter)
+        if not rules:
+            known = ", ".join(device_types_in_rules(_merge_rules_docs(*docs)))
+            want = ", ".join(device_type_filter)
+            raise JudgeError(f"no rules for device-type filter [{want}]; known types: {known}")
+
     compiled_by_id: Dict[str, rule_engine.Rule] = {}
     for r in rules:
         trig = r.get("trigger") or {}
@@ -413,7 +500,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         if not rid or not text:
             raise JudgeError(f"rule {rid!r} missing trigger.rule_engine")
         try:
-            compiled_by_id[rid] = rule_engine.Rule(text)
+            compiled_by_id[rid] = _compile_rule_engine_text(text)
         except Exception as e:
             raise JudgeError(f"rule {rid} rule_engine syntax error: {e}") from e
 
@@ -474,12 +561,30 @@ def main(argv: Optional[List[str]] = None) -> int:
         did = str(a.get("device_id", "")).strip() or "unknown"
         alerts_by_device.setdefault(did, []).append(a)
     fault_devices = sorted([d for d, arr in alerts_by_device.items() if arr and d != "unknown"])
+    total_alerts = sum(len(v) for v in alerts_by_device.values())
+
+    from device_registry import load_device_registry  # noqa: E402
+    from inspection_scope import build_inspection_scope_summary  # noqa: E402
+
+    inspection_summary = build_inspection_scope_summary(
+        registry_doc=load_device_registry(),
+        fault_device_ids=fault_devices,
+        device_type_filter=device_type_filter,
+        total_alert_count=total_alerts,
+    )
 
     results: Dict[str, Any] = {
         "fault_devices": fault_devices,
         "alerts_by_device": alerts_by_device,
         "end_ts": end_ts,
+        "deviceTypeFilter": device_type_filter,
+        "rulesJudged": len(rules),
+        "rulesTotal": all_rule_count,
+        "inspectionSummary": inspection_summary,
     }
+
+    if args.include_healthy:
+        results["healthy_devices"] = inspection_summary.get("healthyDevices") or []
 
     if not args.no_save_db:
         from db_store import db_path as inspection_db_path
@@ -490,6 +595,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             inspection=results,
             rules_by_id=rules_by_id,
             rules_kind="rules_re.json",
+            scope_device_types=device_type_filter,
         )
         results["runId"] = run_id
         print(f"saved inspection runId={run_id} db={inspection_db_path()}", file=sys.stderr)
@@ -497,8 +603,17 @@ def main(argv: Optional[List[str]] = None) -> int:
     if args.json:
         print(json.dumps(results, ensure_ascii=False))
     else:
+        summary = inspection_summary
+        scope_label = summary.get("scopeLabel", "全部设备")
+        inspected = summary.get("inspectedDeviceCount", 0)
+        fault_count = summary.get("faultDeviceCount", 0)
+        healthy_count = summary.get("healthyDeviceCount", 0)
+        print(
+            f"巡检范围：{scope_label}；共 {inspected} 台，故障 {fault_count} 台，正常 {healthy_count} 台，"
+            f"告警 {summary.get('totalAlertCount', 0)} 条"
+        )
         if not fault_devices:
-            print("OK：无告警")
+            print("OK：范围内无故障设备")
         else:
             print("设备\t故障\t原因分析\t专家处理建议")
 
@@ -518,8 +633,34 @@ def main(argv: Optional[List[str]] = None) -> int:
 
 
 if __name__ == "__main__":
+    from rules_re_paths import RulesNotFoundError, emit_rules_not_found  # noqa: E402
+
     try:
         raise SystemExit(main())
+    except RulesNotFoundError as e:
+        emit_rules_not_found(err=e, json_mode="--json" in sys.argv)
+        raise SystemExit(1) from e
     except JudgeError as e:
-        print(str(e), file=sys.stderr)
+        error_msg = str(e)
+        # 提供更友好的中文错误提示
+        if "no rules for device-type filter" in error_msg:
+            print(f"❌ 未找到匹配的设备类型规则。{error_msg}", file=sys.stderr)
+        elif "merged rules must be non-empty" in error_msg:
+            print("❌ 规则文件为空，请检查 rules_re.json 是否存在且内容正确。", file=sys.stderr)
+        elif "rule_engine syntax error" in error_msg:
+            print(f"❌ 规则语法错误：{error_msg}", file=sys.stderr)
+        elif "API response must be a JSON object" in error_msg:
+            print("❌ API 响应格式错误，请检查巡检服务是否正常运行。", file=sys.stderr)
+        elif "data must be a non-empty JSON array" in error_msg:
+            print("❌ 返回数据为空，请检查设备是否在线。", file=sys.stderr)
+        else:
+            print(f"❌ 巡检失败：{error_msg}", file=sys.stderr)
+        raise SystemExit(1) from e
+    except FileNotFoundError as e:
+        print(f"❌ 文件未找到：{e}", file=sys.stderr)
+        print("提示：请确认 rules_re.json 文件路径是否正确。", file=sys.stderr)
+        raise SystemExit(1) from e
+    except ConnectionError as e:
+        print(f"❌ 连接失败：{e}", file=sys.stderr)
+        print("提示：请确认巡检 API 服务是否已启动（默认 http://127.0.0.1:18081）。", file=sys.stderr)
         raise SystemExit(1) from e

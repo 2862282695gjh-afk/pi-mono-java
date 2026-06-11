@@ -1,0 +1,231 @@
+{
+  "requestId": "dev_rule_d247ea38",
+  "ruleName": "氢气浓度异常",
+  "deviceType": "送排风",
+  "component": "送风机",
+  "scenario": "fault",
+  "devices": [
+    {
+      "deviceId": "送排风_送风机",
+      "data": [
+        {
+          "ts": 1779953631.764896,
+          "points": {
+            "Hydrogen": 200.0,
+            "Hydrogen_setpoint": 100.0
+          }
+        },
+        {
+          "ts": 1779953691.764896,
+          "points": {
+            "Hydrogen": 200.0,
+            "Hydrogen_setpoint": 100.0
+          }
+        },
+        {
+          "ts": 1779953751.764896,
+          "points": {
+            "Hydrogen": 200.0,
+            "Hydrogen_setpoint": 100.0
+          }
+        },
+        {
+          "ts": 1779953811.764896,
+          "points": {
+            "Hydrogen": 200.0,
+            "Hydrogen_setpoint": 100.0
+          }
+        },
+        {
+          "ts": 1779953871.764896,
+          "points": {
+            "Hydrogen": 200.0,
+            "Hydrogen_setpoint": 100.0
+          }
+        },
+        {
+          "ts": 1779953931.764896,
+          "points": {
+            "Hydrogen": 200.0,
+            "Hydrogen_setpoint": 100.0
+          }
+        },
+        {
+          "ts": 1779953991.764896,
+          "points": {
+            "Hydrogen": 200.0,
+            "Hydrogen_setpoint": 100.0
+          }
+        },
+        {
+          "ts": 1779954051.764896,
+          "points": {
+            "Hydrogen": 200.0,
+            "Hydrogen_setpoint": 100.0
+          }
+        },
+        {
+          "ts": 1779954111.764896,
+          "points": {
+            "Hydrogen": 200.0,
+            "Hydrogen_setpoint": 100.0
+          }
+        },
+        {
+          "ts": 1779954171.764896,
+          "points": {
+            "Hydrogen": 200.0,
+            "Hydrogen_setpoint": 100.0
+          }
+        },
+        {
+          "ts": 1779954231.764896,
+          "points": {
+            "Hydrogen": 200.0,
+            "Hydrogen_setpoint": 100.0
+          }
+        },
+        {
+          "ts": 1779954291.764896,
+          "points": {
+            "Hydrogen": 200.0,
+            "Hydrogen_setpoint": 100.0
+          }
+        },
+        {
+          "ts": 1779954351.764896,
+          "points": {
+            "Hydrogen": 200.0,
+            "Hydrogen_setpoint": 100.0
+          }
+        },
+        {
+          "ts": 1779954411.764896,
+          "points": {
+            "Hydrogen": 200.0,
+            "Hydrogen_setpoint": 100.0
+          }
+        },
+        {
+          "ts": 1779954471.764896,
+          "points": {
+            "Hydrogen": 200.0,
+            "Hydrogen_setpoint": 100.0
+          }
+        },
+        {
+          "ts": 1779954531.764896,
+          "points": {
+            "Hydrogen": 200.0,
+            "Hydrogen_setpoint": 100.0
+          }
+        },
+        {
+          "ts": 1779954591.764896,
+          "points": {
+            "Hydrogen": 200.0,
+            "Hydrogen_setpoint": 100.0
+          }
+        },
+        {
+          "ts": 1779954651.764896,
+          "points": {
+            "Hydrogen": 200.0,
+            "Hydrogen_setpoint": 100.0
+          }
+        },
+        {
+          "ts": 1779954711.764896,
+          "points": {
+            "Hydrogen": 200.0,
+            "Hydrogen_setpoint": 100.0
+          }
+        },
+        {
+          "ts": 1779954771.764896,
+          "points": {
+            "Hydrogen": 200.0,
+            "Hydrogen_setpoint": 100.0
+          }
+        },
+        {
+          "ts": 1779954831.764896,
+          "points": {
+            "Hydrogen": 200.0,
+            "Hydrogen_setpoint": 100.0
+          }
+        },
+        {
+          "ts": 1779954891.764896,
+          "points": {
+            "Hydrogen": 200.0,
+            "Hydrogen_setpoint": 100.0
+          }
+        },
+        {
+          "ts": 1779954951.764896,
+          "points": {
+            "Hydrogen": 200.0,
+            "Hydrogen_setpoint": 100.0
+          }
+        },
+        {
+          "ts": 1779955011.764896,
+          "points": {
+            "Hydrogen": 200.0,
+            "Hydrogen_setpoint": 100.0
+          }
+        },
+        {
+          "ts": 1779955071.764896,
+          "points": {
+            "Hydrogen": 200.0,
+            "Hydrogen_setpoint": 100.0
+          }
+        },
+        {
+          "ts": 1779955131.764896,
+          "points": {
+            "Hydrogen": 200.0,
+            "Hydrogen_setpoint": 100.0
+          }
+        },
+        {
+          "ts": 1779955191.764896,
+          "points": {
+            "Hydrogen": 200.0,
+            "Hydrogen_setpoint": 100.0
+          }
+        },
+        {
+          "ts": 1779955251.764896,
+          "points": {
+            "Hydrogen": 200.0,
+            "Hydrogen_setpoint": 100.0
+          }
+        },
+        {
+          "ts": 1779955311.764896,
+          "points": {
+            "Hydrogen": 200.0,
+            "Hydrogen_setpoint": 100.0
+          }
+        },
+        {
+          "ts": 1779955371.764896,
+          "points": {
+            "Hydrogen": 200.0,
+            "Hydrogen_setpoint": 100.0
+          }
+        },
+        {
+          "ts": 1779955431.764896,
+          "points": {
+            "Hydrogen": 200.0,
+            "Hydrogen_setpoint": 100.0
+          }
+        }
+      ]
+    }
+  ]
+}

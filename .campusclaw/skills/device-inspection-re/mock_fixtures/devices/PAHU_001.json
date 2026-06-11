@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "deviceId": "PAHU-INV-001",
+  "deviceId": "PAHU_001",
   "deviceType": "新风机",
   "component": "送风机变频器",
   "scenario": "fault",

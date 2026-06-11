@@ -25,9 +25,12 @@ def _assignee_labels(by_assignee: dict) -> dict:
 
 def main(argv: Optional[list[str]] = None) -> int:
     configure_stdio_utf8()
-    parser = argparse.ArgumentParser(description="Alarm statistics from inspection run")
-    parser.add_argument("--run-id", default="latest")
-    parser.add_argument("--json", action="store_true")
+    parser = argparse.ArgumentParser(
+        description="巡检告警统计（按楼栋/设备类型/负责人）",
+        epilog="示例: python alarm_stats.py --json"
+    )
+    parser.add_argument("--run-id", default="latest", help="巡检 run_id 或 latest（默认）")
+    parser.add_argument("--json", action="store_true", help="JSON 格式输出")
     args = parser.parse_args(argv)
 
     stats = compute_alarm_stats_from_db(run_id=args.run_id)
@@ -36,8 +39,13 @@ def main(argv: Optional[list[str]] = None) -> int:
     if args.json:
         print(json.dumps(stats, ensure_ascii=False, indent=2))
     else:
+        scope_label = stats.get("scopeLabel", "全部设备")
         print(f"runId: {stats.get('runId')}")
-        print(f"alarm devices: {stats['alarmDeviceCount']} / registry: {stats['registryDeviceCount']}")
+        print(
+            f"巡检范围 {scope_label}：共 {stats.get('inspectedDeviceCount', 0)} 台，"
+            f"故障 {stats.get('faultDeviceCount', 0)} 台，"
+            f"正常 {stats.get('healthyDeviceCount', 0)} 台"
+        )
         print(f"total alerts: {stats['totalAlertCount']}")
         print("byBuilding:", stats.get("byBuilding"))
         print("byDeviceType:", stats.get("byDeviceType"))

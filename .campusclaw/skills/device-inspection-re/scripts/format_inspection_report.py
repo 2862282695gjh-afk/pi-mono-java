@@ -18,7 +18,7 @@ from db_store import (  # noqa: E402
 )
 
 
-def build_inspection_report(*, run_id: Optional[str] = None) -> Dict[str, Any]:
+def build_inspection_report(*, run_id: Optional[str] = None, include_healthy: bool = False) -> Dict[str, Any]:
     doc = load_inspection_doc(run_id=run_id)
     rid = str(doc.get("runId", ""))
     stats = compute_alarm_stats_from_db(run_id=rid)
@@ -30,15 +30,30 @@ def build_inspection_report(*, run_id: Optional[str] = None) -> Dict[str, Any]:
         label = contacts.get(aid, {}).get("name", aid)
         by_assignee_named[f"{label} ({aid})"] = count
 
-    return {
+    scope_summary = stats.get("inspectionSummary") or {}
+    inspected_count = int(stats.get("inspectedDeviceCount") or scope_summary.get("inspectedDeviceCount") or 0)
+    fault_count = int(stats.get("faultDeviceCount") or scope_summary.get("faultDeviceCount") or 0)
+    healthy_count = int(stats.get("healthyDeviceCount") or scope_summary.get("healthyDeviceCount") or 0)
+    health_score = str(stats.get("healthScore") or scope_summary.get("healthScore") or "N/A")
+    health_percentage = float(stats.get("healthPercentage") or scope_summary.get("healthPercentage") or 0.0)
+    scope_label = str(stats.get("scopeLabel") or scope_summary.get("scopeLabel") or "全部设备")
+
+    result = {
         "version": 1,
         "runId": rid,
         "createdAt": doc.get("createdAt"),
         "endTs": (doc.get("inspection") or {}).get("end_ts"),
+        "deviceTypeFilter": doc.get("deviceTypeFilter"),
         "summary": {
-            "registryDeviceCount": stats.get("registryDeviceCount"),
-            "alarmDeviceCount": stats.get("alarmDeviceCount"),
+            "scopeLabel": scope_label,
+            "inspectedDeviceCount": inspected_count,
+            "faultDeviceCount": fault_count,
+            "healthyDeviceCount": healthy_count,
+            "registryDeviceCount": inspected_count,
+            "alarmDeviceCount": fault_count,
             "totalAlertCount": stats.get("totalAlertCount"),
+            "healthScore": health_score,
+            "healthPercentage": health_percentage,
             "byBuilding": stats.get("byBuilding"),
             "byLevel": stats.get("byLevel"),
             "byAssigneeNamed": by_assignee_named,
@@ -46,21 +61,43 @@ def build_inspection_report(*, run_id: Optional[str] = None) -> Dict[str, Any]:
         "deviceSummaryTable": device_summary,
         "alarmDetailTable": alarms,
         "displayInstructions": (
-            "Present only fault devices. Include summary, device summary table, and full rule_name detail table. "
-            "Use formal deviceId values. Empty reasonAnalysis/expertAdvice show as dash. No disclaimer text."
+            "Lead with inspection scope totals: inspectedDeviceCount, faultDeviceCount, healthyDeviceCount "
+            "for this run (scoped by deviceTypeFilter when present). "
+            "Present only fault devices in tables. Use formal deviceId values. "
+            "Empty reasonAnalysis/expertAdvice show as dash. No disclaimer text."
         ),
     }
+
+    if include_healthy:
+        result["healthyDevices"] = stats.get("healthyDevices") or scope_summary.get("healthyDevices") or []
+
+    return result
 
 
 def _markdown_report(report: Dict[str, Any]) -> str:
     summary = report.get("summary") or {}
+    scope_label = summary.get("scopeLabel", "全部设备")
+    inspected_count = summary.get("inspectedDeviceCount", 0)
+    fault_count = summary.get("faultDeviceCount", summary.get("alarmDeviceCount", 0))
+    healthy_count = summary.get("healthyDeviceCount", 0)
+    health_score = summary.get("healthScore", "N/A")
+    health_percentage = summary.get("healthPercentage", 0.0)
+
     lines: List[str] = [
         "# Inspection report",
         "",
         f"- runId: {report.get('runId', '')}",
-        f"- fault devices: {summary.get('alarmDeviceCount', 0)}",
+        f"- scope: {scope_label}",
+        f"- inspected devices: {inspected_count}（此次巡检范围总台数）",
+        f"- fault devices: {fault_count}",
+        f"- healthy devices: {healthy_count}",
         f"- total alerts: {summary.get('totalAlertCount', 0)}",
         f"- by building: {summary.get('byBuilding', {})}",
+        "",
+        "## Inspection summary",
+        "",
+        f"- **{health_score}** healthy/total ({health_percentage}%)",
+        f"- 巡检 {inspected_count} 台，故障 {fault_count} 台，正常 {healthy_count} 台",
         "",
         "## Device summary",
         "",
@@ -90,6 +127,22 @@ def _markdown_report(report: Dict[str, Any]) -> str:
             f"| {row.get('deviceId', '')} | {row.get('building', '')} | {row.get('ruleName', '')} | "
             f"{reason} | {advice} |"
         )
+
+    # 如果有健康设备列表，添加健康设备部分
+    healthy_devices = report.get("healthyDevices")
+    if healthy_devices:
+        lines.extend(
+            [
+                "",
+                "## Healthy devices",
+                "",
+                "| deviceId |",
+                "| --- |",
+            ]
+        )
+        for did in healthy_devices:
+            lines.append(f"| {did} |")
+
     return "\n".join(lines)
 
 
@@ -99,9 +152,10 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser.add_argument("--run-id", default="latest")
     parser.add_argument("--markdown", action="store_true", help="Print markdown tables for Agent display")
     parser.add_argument("--json", action="store_true")
+    parser.add_argument("--include-healthy", action="store_true", help="Include healthy devices list in report")
     args = parser.parse_args(argv)
 
-    report = build_inspection_report(run_id=args.run_id)
+    report = build_inspection_report(run_id=args.run_id, include_healthy=args.include_healthy)
 
     if args.markdown and not args.json:
         print(_markdown_report(report))

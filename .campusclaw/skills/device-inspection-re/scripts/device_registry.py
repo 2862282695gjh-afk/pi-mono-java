@@ -53,7 +53,23 @@ def _index_registry(doc: Dict[str, Any]) -> Tuple[Dict[str, Dict[str, Any]], Dic
 
 
 def pseudo_device_id(device_type: str, component: str) -> str:
+    """Legacy mock alias (deviceType_component); resolve via registry for canonical id."""
     return f"{(device_type or 'dev').strip()}_{(component or 'comp').strip()}"
+
+
+def canonical_device_id(
+    device_type: str,
+    component: str,
+    *,
+    registry_doc: Optional[Dict[str, Any]] = None,
+) -> str:
+    """Return registry canonical id ({deviceType}_{seq}) or legacy pseudo alias."""
+    return resolve_device(
+        "",
+        device_type=device_type,
+        component=component,
+        registry_doc=registry_doc,
+    )["deviceId"]
 
 
 def resolve_device(

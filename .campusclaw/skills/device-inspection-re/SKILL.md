@@ -2,13 +2,14 @@
 name: device-inspection-re
 description: >-
   设备巡检（rules_re.json / rule-engine）：判规则、写库、展示巡检报告、告警统计、生成维修工单。
-  与 excel-antlr-to-rules-json 配套。当用户提到「巡检」「告警」「故障设备」「rules_re」
-  「统计」「工单」「巡检结果」时触发。
+  当用户提到「巡检」「告警」「故障」「设备异常」「检查设备」「设备状态」「rules_re」「统计」
+  「工单」「巡检结果」「设备健康」「故障排查」「设备诊断」时触发。
+  即使用户只是说"看看设备怎么了"、"有没有问题"、"设备正常吗"也应该使用此技能。
 ---
 
 # 设备巡检（rule-engine 版）
 
-本技能消费 **`rules_re.json`**，使用 PyPI `rule-engine` 判告警，结果写入 **`device_inspection_re.db`**。  
+本技能消费 **`rules_re.json`**，使用 PyPI `rule-engine` 判告警，结果写入 **`device_inspection_re.db`**。
 巡检完成后可在**本 skill 内**完成：告警展示、统计、维修工单（无需切换 skill）。
 
 ## 与 campus-device-ops 的关系
@@ -31,6 +32,24 @@ description: >-
 | 5 | **维修工单** | `create_work_order.py` |
 | 6 | **关闭工单** | `close_work_order.py` |
 
+## 快速参考
+
+| 场景 | 命令 |
+|------|------|
+| 全量巡检 | `python scripts/judge_rules_re.py --json` |
+| 只巡检 VAV | `python scripts/judge_rules_re.py --device-type VAV --json` |
+| 多类型巡检 | `python scripts/judge_rules_re.py --device-type VAV --device-type 新风机 --json` |
+| 列出设备类型 | `python scripts/judge_rules_re.py --list-device-types --json` |
+| 巡检 + 健康度 | `python scripts/judge_rules_re.py --json --include-healthy` |
+| 展示巡检报告 | `python scripts/format_inspection_report.py --markdown` |
+| 报告 + 健康设备 | `python scripts/format_inspection_report.py --markdown --include-healthy` |
+| 告警统计 | `python scripts/alarm_stats.py --json` |
+| 查单设备告警 | `python scripts/query_alarms.py --device-id VAV_003 --json` |
+| 查历史巡检 | `python scripts/query_alarms.py --list-runs` |
+| 创建工单 | `python scripts/create_work_order.py --device-id <ID> --rule-ids <ID> --json` |
+| 关闭工单 | `python scripts/close_work_order.py --work-order-id <ID> --json` |
+| 列出未关闭工单 | `python scripts/close_work_order.py --list-open --json` |
+
 ## 推荐 Agent 流程
 
 ```text
@@ -40,21 +59,27 @@ description: >-
   3. alarm_stats.py --json                      ← 需要聚合统计时
 
 用户：为某设备开工单
-  → create_work_order.py --device-id EF-001 --rule-ids <id> --json
+  → create_work_order.py --device-id EF_001 --rule-ids <id> --json
 
 用户：只要某台设备告警
-  → query_alarms.py --device-id VAV-CO2-201 --json
+  → query_alarms.py --device-id VAV_003 --json
+
+用户：只巡检某一类设备（如 VAV / 新风机）
+  → judge_rules_re.py --device-type VAV --json
+  → judge_rules_re.py --device-type VAV --device-type 新风机 --json   # 多类型
+  → judge_rules_re.py --list-device-types --json                      # 列出规则中的 deviceType
 ```
 
 ## 数据流
 
-```text
-judge_rules_re.py           →  judge + :18081/fetch  →  device_inspection_re.db
-format_inspection_report.py →  读库 → 展示用 Markdown / JSON
-alarm_stats.py              →  读库 → 按楼栋/等级/负责人统计
-create_work_order.py        →  读库 → mock_fixtures/work_orders/WO-*.json
-query_alarms.py             →  读库（默认 latest）
-```
+| 脚本 | 输入 | 输出 | 说明 |
+|------|------|------|------|
+| `judge_rules_re.py` | rules_re.json + API `:18081/fetch` | `device_inspection_re.db` | 执行巡检判定并写库 |
+| `format_inspection_report.py` | `device_inspection_re.db` | Markdown / JSON | 生成巡检展示报告 |
+| `alarm_stats.py` | `device_inspection_re.db` | JSON | 按楼栋/等级/负责人统计 |
+| `create_work_order.py` | `device_inspection_re.db` | `mock_fixtures/work_orders/WO-*.json` | 生成维修工单 |
+| `query_alarms.py` | `device_inspection_re.db` | JSON | 查询告警（默认 latest run） |
+| `close_work_order.py` | `mock_fixtures/work_orders/WO-*.json` | 更新工单状态 | 关闭工单 |
 
 ## 运行
 
@@ -63,6 +88,10 @@ pip install -r skills/device-inspection-re/requirements.txt
 
 # 1. 巡检（入库）
 python skills/device-inspection-re/scripts/judge_rules_re.py --json
+
+# 1b. 按设备类型巡检（只判选中类型的规则，结果仍写入同一 DB）
+python skills/device-inspection-re/scripts/judge_rules_re.py --device-type VAV --json
+python skills/device-inspection-re/scripts/judge_rules_re.py --list-device-types
 
 # 2. 展示巡检结果（Agent 向用户呈现此输出）
 python skills/device-inspection-re/scripts/format_inspection_report.py --markdown
@@ -76,7 +105,7 @@ python skills/device-inspection-re/scripts/query_alarms.py --list-runs
 
 # 5. 生成维修工单
 python skills/device-inspection-re/scripts/create_work_order.py \
-  --device-id EF-001 --rule-ids dev_rule_a1029126 --json
+  --device-id EF_001 --rule-ids dev_rule_a1029126 --json
 
 # 6. 关闭工单
 python skills/device-inspection-re/scripts/close_work_order.py --work-order-id WO-20260610-001 --json
@@ -89,6 +118,8 @@ python skills/device-inspection-re/scripts/close_work_order.py --list-open --jso
 1. `DEVICE_INSPECTION_RE_RULES_PATH`
 2. `workspace/rules/rules_re.json`
 3. `.campusclaw/rule-engines-pack/.../rules_re.json`
+
+**若以上路径均无 `rules_re.json`**：脚本以 exit code 1 退出，并输出 `rules_not_found`（`--json` 时为结构化 JSON）。Agent **必须向用户说明并终止本次 skill**，引导使用 **excel-antlr-to-rules-json** 从 Excel 编译规则，勿继续执行报告/统计/工单。
 
 ## 数据库
 
@@ -112,7 +143,7 @@ python skills/device-inspection-re/scripts/close_work_order.py --list-open --jso
 
 **巡检展示**（`format_inspection_report.py`）必须包含：
 
-1. **摘要**：故障设备数、告警总数、按楼栋/等级统计
+1. **摘要**：**此次巡检范围**总台数（`inspectedDeviceCount`）、故障台数（`faultDeviceCount`）、正常台数（`healthyDeviceCount`）、告警条数；分类型巡检时总台数仅统计该类型（如 VAV 3 台），全量巡检为 registry 全部设备
 2. **设备汇总表**：deviceId | deviceName | building | alertCount | ruleNames | assignee
 3. **告警明细表**：完整 `ruleName`（禁止用「风机/变频」等缩写）、原因分析、专家建议
 
@@ -120,7 +151,7 @@ python skills/device-inspection-re/scripts/close_work_order.py --list-open --jso
 
 - **只展示触发故障的设备**
 - 原因分析、专家建议为空时展示 `—`
-- 设备列使用正式 asset ID（如 `EF-001`）
+- 设备列使用正式 asset ID（如 `VAV_001`、`EF_001`），须为 ASCII
 - **禁止免责声明**
 
 ## 工单展示约束

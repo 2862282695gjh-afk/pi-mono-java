@@ -7,6 +7,7 @@ Production: replace with PostgreSQL using templates/schema.sql as reference.
 """
 from __future__ import annotations
 
+import json
 import sqlite3
 from collections import Counter
 from typing import Any, Dict, List, Optional, Set
@@ -27,6 +28,23 @@ def db_path():
 def _table_columns(conn: sqlite3.Connection, table: str) -> Set[str]:
     rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
     return {str(r[1]) for r in rows}
+
+
+def _decode_scope_device_types(raw: Optional[str]) -> Optional[List[str]]:
+    if raw is None:
+        return None
+    text = str(raw).strip()
+    if not text:
+        return None
+    parsed = json.loads(text)
+    if not isinstance(parsed, list):
+        return None
+    out: List[str] = []
+    for item in parsed:
+        token = str(item).strip()
+        if token and token not in out:
+            out.append(token)
+    return out or None
 
 
 def _connect() -> sqlite3.Connection:
@@ -67,10 +85,11 @@ def list_inspection_runs(*, limit: int = 20) -> List[Dict[str, Any]]:
     with _connect() as conn:
         cols = _table_columns(conn, "inspection_runs")
         kind_col = ", rules_kind" if "rules_kind" in cols else ""
+        scope_col = ", scope_device_types" if "scope_device_types" in cols else ""
         rows = conn.execute(
             f"""
             SELECT run_id, rules_path{kind_col}, end_ts,
-                   fault_device_count, total_alert_count, created_at
+                   fault_device_count, total_alert_count, created_at{scope_col}
             FROM inspection_runs
             ORDER BY created_at DESC
             LIMIT ?
@@ -82,6 +101,8 @@ def list_inspection_runs(*, limit: int = 20) -> List[Dict[str, Any]]:
         item = dict(r)
         if "rules_kind" not in item:
             item["rules_kind"] = "rules_re.json"
+        if "scope_device_types" in item:
+            item["deviceTypeFilter"] = _decode_scope_device_types(item.pop("scope_device_types"))
         out.append(item)
     return out
 
@@ -231,6 +252,8 @@ def load_inspection_doc(*, run_id: Optional[str] = None) -> Dict[str, Any]:
     }
     if "rules_kind" in run.keys():
         doc["rulesKind"] = run["rules_kind"]
+    if "scope_device_types" in run.keys():
+        doc["deviceTypeFilter"] = _decode_scope_device_types(run["scope_device_types"])
     return doc
 
 
@@ -260,19 +283,38 @@ def compute_alarm_stats_from_db(*, run_id: Optional[str] = None) -> Dict[str, An
 
     registry_total = len(load_device_registry().get("devices") or [])
 
+    from inspection_scope import build_inspection_scope_summary  # noqa: E402
+
+    scope_summary = build_inspection_scope_summary(
+        registry_doc=load_device_registry(),
+        fault_device_ids=sorted(fault_devices_set),
+        device_type_filter=doc.get("deviceTypeFilter"),
+        total_alert_count=len(alarms),
+    )
+
     return {
         "version": 1,
         "runId": rid,
         "endTs": inspection.get("end_ts"),
-        "registryDeviceCount": registry_total,
-        "alarmDeviceCount": len(fault_devices_set),
+        "deviceTypeFilter": doc.get("deviceTypeFilter"),
+        "scopeLabel": scope_summary.get("scopeLabel"),
+        "inspectedDeviceCount": scope_summary.get("inspectedDeviceCount"),
+        "faultDeviceCount": scope_summary.get("faultDeviceCount"),
+        "healthyDeviceCount": scope_summary.get("healthyDeviceCount"),
+        "healthScore": scope_summary.get("healthScore"),
+        "healthPercentage": scope_summary.get("healthPercentage"),
+        "registryDeviceCount": scope_summary.get("inspectedDeviceCount"),
+        "alarmDeviceCount": scope_summary.get("faultDeviceCount"),
         "totalAlertCount": len(alarms),
+        "campusRegistryDeviceCount": registry_total,
         "byBuilding": dict(by_building),
         "byDeviceType": dict(by_device_type),
         "byRule": dict(by_rule),
         "byAssignee": dict(by_assignee),
         "byLevel": dict(by_level),
-        "faultDevices": sorted(fault_devices_set),
+        "faultDevices": scope_summary.get("faultDevices"),
+        "healthyDevices": scope_summary.get("healthyDevices"),
+        "inspectionSummary": scope_summary,
     }
 
 

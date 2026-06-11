@@ -9,4 +9,4 @@
 
 **巡检数据库**：默认不在此目录。campus-device-ops **读取** device-inspection-re 的 `mock_fixtures/device_inspection_re.db`（可用 `CAMPUS_OPS_DB_PATH` 覆盖）。
 
-**deviceId 约定**：正式 asset ID（如 `EF-001`、`VAV-DMP-101`），与 device-inspection-re 注册表一致。
+**deviceId 约定**：ASCII `{typeCode}_{seq}`（如 `VAV_001`、`EF_001`），与 device-inspection-re 注册表一致。
