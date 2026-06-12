@@ -4,6 +4,8 @@
 
 package com.campusclaw.codingagent.mode.server;
 
+import java.io.IOException;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 
@@ -20,7 +22,9 @@ import com.campusclaw.codingagent.skill.SandboxSkillParser;
 import com.campusclaw.codingagent.skill.SkillLoader;
 import com.campusclaw.codingagent.skill.SkillManager;
 import com.campusclaw.codingagent.tool.catalog.ToolCatalog;
+import com.campusclaw.codingagent.tool.catalog.ToolCatalogWatcher;
 import com.campusclaw.codingagent.tool.catalog.ToolSelection;
+import com.campusclaw.codingagent.tool.catalog.ToolSourceContext;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -251,14 +255,51 @@ public class ServerMode {
         SettingsHandler settingsHandler = buildSettingsHandler();
         RouterFunction<ServerResponse> routes = buildRoutes(chatHandler, skillHandler, sessionPool, settingsHandler);
         var adapter = new ReactorHttpHandlerAdapter(RouterFunctions.toHttpHandler(routes));
-        var server = HttpServer.create()
-                .host(host)
-                .port(port)
-                .route(r -> wireServerRoutes(r, wsHandler, adapter))
-                .bindNow();
-        logStartupBanner();
-        server.onDispose().block();
-        sessionPool.shutdown();
+        try (var watcher = startToolWatcherIfEnabled(sessionPool)) {
+            var server = HttpServer.create()
+                    .host(host)
+                    .port(port)
+                    .route(r -> wireServerRoutes(r, wsHandler, adapter))
+                    .bindNow();
+            logStartupBanner();
+            server.onDispose().block();
+        } catch (IOException e) {
+            log.warn("Failed to close tool catalog watcher", e);
+        } finally {
+            sessionPool.shutdown();
+        }
+    }
+
+    ToolCatalogWatcher startToolWatcherIfEnabled(SessionPool sessionPool) {
+        if (toolCatalog == null || !toolWatchEnabled()) {
+            return null;
+        }
+        try {
+            Path cwd = baseConfig.cwd();
+            return ToolCatalogWatcher.start(
+                    new ToolSourceContext(cwd, null),
+                    List.of(AppPaths.GLOBAL_SETTINGS, cwd.resolve(AppPaths.PROJECT_SETTINGS)),
+                    () -> {
+                        try {
+                            sessionPool.reloadTools();
+                        } catch (RuntimeException e) {
+                            log.warn("Tool catalog watch reload failed", e);
+                        }
+                    });
+        } catch (IOException e) {
+            log.warn("Tool catalog watch disabled: {}", e.getMessage(), e);
+            return null;
+        }
+    }
+
+    private boolean toolWatchEnabled() {
+        if (settingsManager == null) {
+            return false;
+        }
+        var settings = settingsManager.load();
+        return settings.tools() != null
+                && settings.tools().watch() != null
+                && Boolean.TRUE.equals(settings.tools().watch().enabled());
     }
 
     private RouterFunction<ServerResponse> buildRoutes(

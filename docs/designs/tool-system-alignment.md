@@ -180,7 +180,8 @@ spec:
 
 - CLI `/reload`：复用现有 reload 入口，同时刷新 tools、skills、prompt templates。
 - Server API：新增 `POST /api/tools/reload`。
-- 配置文件监听：首版不实现自动监听；后续可通过 `tools.watch.enabled=true` 作为开关接入。
+- Server 自动监听：`tools.watch.enabled=true` 时监听 user/project 声明式工具目录、全局 settings
+  和项目 settings，变更后刷新 catalog 并 reload 活跃 session。
 
 一致性要求：
 

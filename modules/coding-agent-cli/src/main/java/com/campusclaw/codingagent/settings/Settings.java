@@ -167,7 +167,12 @@ public record Settings(
             @JsonProperty("include") @Nullable List<String> include,
             @JsonProperty("exclude") @Nullable List<String> exclude,
             @JsonProperty("noTools") @Nullable Boolean noTools,
+            @JsonProperty("watch") @Nullable ToolWatchSettings watch,
             @JsonProperty("mcpServers") @Nullable Map<String, McpServerSettings> mcpServers) {}
+
+    @SuppressWarnings("checkstyle:top_class_comment")
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record ToolWatchSettings(@JsonProperty("enabled") @Nullable Boolean enabled) {}
 
     @SuppressWarnings("checkstyle:top_class_comment")
     @JsonIgnoreProperties(ignoreUnknown = true)

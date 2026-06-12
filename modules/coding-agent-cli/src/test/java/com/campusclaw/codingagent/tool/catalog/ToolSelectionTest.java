@@ -53,6 +53,7 @@ class ToolSelectionTest {
                 List.of("read", "bash"),
                 List.of("bash"),
                 true,
+                null,
                 Map.of());
 
         ToolSelection selection = ToolSelection.fromSettings(tools);

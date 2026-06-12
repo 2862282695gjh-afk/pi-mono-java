@@ -8,5 +8,4 @@
 |---|---|---|---|---|
 | DEF-001 | coding-agent-cli | 将剪贴板粘贴的图片真正附到 LLM 消息上。当前 `InteractiveMode#pasteImage` 仅保存到 tmp 文件并通过状态栏告知用户路径。 | 当多模态输入接入 InteractiveMode、`Agent` 支持携带 image 内容块时 | — |
 | DEF-002 | coding-agent-cli | `pi install <source>` 真正执行 npm / git clone 安装。当前 `CampusClawCommand` 的 install 分支只打印提示，要求用户手动在 `settings.json` 的 `packages` 数组里追加。 | Skill 包远程安装能力（HTTP/git 拉取 + 校验）上线时 | — |
-| DEF-003 | coding-agent-cli | `tools.watch.enabled=true` 的文件监听刷新尚未实现。当前工具刷新通过 `/reload`、`POST /api/tools/reload` 或显式 `ToolCatalog.refresh(...)` 触发。 | 需要项目声明式工具或 MCP 配置变更自动热加载时 | tool-system-alignment |
 | DEF-004 | cron / coding-agent-cli | `CronJobExecutor` 尚未接入 `ToolCatalog`，仍使用 `List<AgentTool>` 注入与 job payload 的 `allowedTools` 过滤。直接让 cron 依赖 CLI catalog 会形成模块环，需要先把 catalog API 下沉到 `agent-core` 或拆出 shared module。 | 需要 cron 与交互/server 完全共享声明式工具、MCP 工具和 catalog diagnostics 时 | tool-system-alignment |

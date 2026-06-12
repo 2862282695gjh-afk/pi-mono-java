@@ -561,6 +561,7 @@ classDiagram
 | `tool.execution.sandbox-worker-cpu` | `1.0` | 容器 CPU 限额 |
 | `tool.execution.sandbox-timeout-seconds` | `120` | 沙箱执行超时 |
 | `tool.execution.local-timeout-seconds` | `60` | 本地执行超时 |
+| `tools.watch.enabled` | `false` | server 模式下监听 user/project 声明式工具目录与 settings 文件，变更后自动刷新工具并 reload 活跃 session |
 | `subagent.enabled` | `true` | 启用 sub-agent 框架 |
 | `subagent.backends.*` | 内置 `claude-code` / `codex` / `remote-http` 三例 | 每条目类型 acp 或 http |
 | `server.session.persistence.enabled` | `true` | server 模式下是否持久化 conversation JSONL |

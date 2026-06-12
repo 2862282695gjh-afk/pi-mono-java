@@ -40,7 +40,7 @@ class McpToolSourceSettingsTest {
         when(settingsManager.load()).thenReturn(new Settings(
                 null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null,
                 null, null, null, null, null, null, null, null, null, null, null,
-                new Settings.ToolsSettings(null, null, null, Map.of("filesystem", server))));
+                new Settings.ToolsSettings(null, null, null, null, Map.of("filesystem", server))));
         RecordingFactory factory = new RecordingFactory();
         var source = new McpToolSource(settingsManager, factory);
 
