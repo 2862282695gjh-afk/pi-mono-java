@@ -65,6 +65,7 @@ public class DeclarativeToolSource implements ToolSource {
         return switch (declaration.mergeStrategy()) {
             case ADD -> ToolContribution.add(tool, source, priority);
             case REPLACE -> ToolContribution.replace(tool, source, priority, declaration.replaces());
+            case WRAP -> throw new IllegalArgumentException("declarative tools do not support WRAP merge strategy");
             case DISABLE -> ToolContribution.disable(declaration.name(), source, priority);
         };
     }

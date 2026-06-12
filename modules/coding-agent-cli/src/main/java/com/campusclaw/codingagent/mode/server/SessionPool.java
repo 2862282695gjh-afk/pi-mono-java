@@ -203,6 +203,35 @@ public class SessionPool {
     }
 
     /**
+     * Returns diagnostic information for the active tool catalog snapshot.
+     *
+     * @return response payload for the server API
+     */
+    public Map<String, Object> toolStatus() {
+        if (toolCatalog == null) {
+            return Map.of(
+                    "status",
+                    "disabled",
+                    "activeSessions",
+                    size(),
+                    "tools",
+                    tools.stream().map(AgentTool::name).toList());
+        }
+        var snapshot = toolCatalog.snapshot();
+        return Map.of(
+                "status",
+                "ok",
+                "version",
+                snapshot.version(),
+                "diagnostics",
+                snapshot.diagnostics(),
+                "activeSessions",
+                size(),
+                "tools",
+                toolCatalog.resolve(toolSelection).stream().map(AgentTool::name).toList());
+    }
+
+    /**
      * Refreshes catalog-backed tools and updates active sessions.
      *
      * @return response payload for the server API

@@ -118,7 +118,7 @@ flowchart LR
 1. **Spring Boot + Picocli 双重启动器**：`CampusClawApplication` 是 `@SpringBootApplication`，通过 `picocli-spring-boot-starter` 把 Spring bean 注入到 `@Command` 注解的 `CampusClawCommand` 中；`SpringApplication.run` 完成包扫描后由 `CommandLineRunner` 把 args 交给 Picocli 解析，最终调用 `call()`；
 2. **模式分发**：`call()` 内 if/else 链按 `--mode` / `--print` / `--export` / `--list-models` / `--cron-tick` 等开关路由到对应 mode 类（`InteractiveMode` / `OneShotMode` / `RpcMode` / `ServerMode` / 直接出口）；
 3. **工具实现作为 `AgentTool` bean**：每个工具一个 `@Component`，靠 `ConditionalOnProperty(name = "tool.execution.hybrid-enabled", havingValue = "false")` 切换 LOCAL vs Hybrid 变体——同名工具二选一注入 `List<AgentTool>`；
-4. **生产工具入口统一到 `ToolCatalog`**：Spring 工具与 `ExtensionRegistry` 工具先汇聚为 catalog 快照，再由 `ToolSelection` 统一处理 `--tools` / `--no-tools`，`CampusClawCommand` 不再直接过滤 `List<AgentTool>`；后续声明式工具与 MCP 工具继续作为新的 `ToolSource` 接入；
+4. **生产工具入口统一到 `ToolCatalog`**：Spring 工具、`ExtensionRegistry` 工具、声明式进程工具与 MCP 工具先汇聚为 catalog 快照，再由 `ToolSelection` 统一处理 `--tools` / `--no-tools` / settings 中的 `tools.include` / `tools.exclude` / `tools.noTools`，`CampusClawCommand` 不再直接过滤 `List<AgentTool>`；
 5. **Reactor Netty 嵌入式 HTTP**：server 模式不走 spring-mvc tomcat，而是直接 `HttpServer.create(...)` + `RouterFunctions.toHttpHandler(...)` —— Webflux 的函数式路由更轻；同一 server 同时挂 `routes.get("/api/ws/chat", ...)` 走原生 reactor-netty WebSocket；
 6. **JSONL 会话**：消息序列化为 polymorphic Jackson JSON（`role` 字段作为 discriminator），按 `--<encoded-cwd>--/<id>.jsonl` 路径组织，每条消息一行，方便 grep / 增量追加；
 7. **Skill / Extension 双层扩展**：Skill 是**运行时**用户可装的 markdown 包（带 `SKILL.md` 元数据），主要内容是 prompt 片段；Extension 是**编译期**仓库内 Java 类实现，注册到 6 种 `ExtensionPoint`；
@@ -226,6 +226,8 @@ sequenceDiagram
 | 列出会话 | GET | `/api/conversations` | - | `{conversations: [...]}` | 列出 server pool 中的 conversation |
 | 删除会话 | DELETE | `/api/conversations/{id}` | path: id | `{removed: bool}` | 释放 server pool 槽位 |
 | WebSocket 对话 | GET (Upgrade) | `/api/ws/chat?conversation_id=...` | query: conversation_id | WebSocket text frame (AsyncAPI 契约) | 双向流，由 `ChatWebSocketHandler` 处理 |
+| 工具状态 | GET | `/api/tools` | - | `{status, version?, diagnostics?, activeSessions, tools}` | 读取当前 tool catalog 与 selection 后的工具名 |
+| 刷新工具 | POST | `/api/tools/reload` | - | `{status, version?, diagnostics?, tools}` | 触发 catalog refresh 并 reload 活跃 session |
 | 上传 skill | POST | `/api/skills` | multipart: `file=<archive>` (.zip/.tar.gz/.tgz) | `{name, packageName, installed}` | 上传后立即解压安装 |
 | 列出 skill | GET | `/api/skills` | - | `{skills: [...]}` | 含 enabled / disabled 状态 |
 | 删除 skill | DELETE | `/api/skills/{name}` | path: name | `{removed: bool}` | 按 package name 移除 |
@@ -376,6 +378,20 @@ sequenceDiagram
 - `ExecutionMode`：枚举 LOCAL / SANDBOX / AUTO
 - `ExecutionRouter`：按 mode 选 strategy
 - `ToolExecutionStrategy`：策略契约
+
+**`com.campusclaw.codingagent.tool.catalog`**
+- `ToolCatalog` / `DefaultToolCatalog`：生产工具汇聚入口，copy-on-write 快照，支持 refresh 与 listener 通知
+- `ToolCatalogSnapshot`：有效工具、来源与 diagnostics 的不可变快照
+- `ToolContribution` / `ToolMergeStrategy`：描述 ADD / REPLACE / WRAP / DISABLE 合并语义
+- `ToolSelection`：合并 CLI 与 settings 的 include / exclude / noTools 规则
+- `SpringAgentToolSource` / `ExtensionToolSource`：把 Spring bean 与编译期 extension 工具接入 catalog
+- `DeclarativeToolSource` / `ToolDeclarationLoader` / `ProcessAgentTool`：从 `<cwd>/.campusclaw/tools` 等目录加载 YAML/JSON 声明式进程工具
+
+**`com.campusclaw.codingagent.tool.mcp`**
+- `McpToolSource`：按 settings 中的 MCP server 配置执行 `tools/list` 并注册工具
+- `McpAgentTool`：把 `AgentTool.execute` 映射到 MCP `tools/call`
+- `McpClient` / `McpClientFactory` / transport 类：封装 stdio 与 HTTP JSON-RPC 调用
+- `McpContentMapper`：把 MCP content/result 映射为 `AgentToolResult`
 
 **`com.campusclaw.codingagent.tool.sandbox`**
 - `DockerSandboxClient`：Docker daemon 调用客户端

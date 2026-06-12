@@ -23,4 +23,6 @@ public interface ToolCatalog {
     ToolCatalogSnapshot refresh(ToolRefreshRequest request);
 
     List<AgentTool> resolve(ToolSelection selection);
+
+    Runnable addChangeListener(ToolChangeListener listener);
 }

@@ -5,14 +5,13 @@
 package com.campusclaw.codingagent.tool.catalog;
 
 /**
- * Merge strategy for a tool contribution.
+ * Listener notified after a tool catalog snapshot changes.
  *
  * @version [br_eCampusCore 25.1.0_Next, 2026/06/12]
  * @since [br_eCampusCore 25.1.0_Next]
  */
-public enum ToolMergeStrategy {
-    ADD,
-    REPLACE,
-    WRAP,
-    DISABLE
+@FunctionalInterface
+public interface ToolChangeListener {
+
+    void onToolsChanged(ToolCatalogSnapshot previous, ToolCatalogSnapshot current);
 }

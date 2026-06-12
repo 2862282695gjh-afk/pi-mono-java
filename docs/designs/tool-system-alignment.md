@@ -180,7 +180,7 @@ spec:
 
 - CLI `/reload`：复用现有 reload 入口，同时刷新 tools、skills、prompt templates。
 - Server API：新增 `POST /api/tools/reload`。
-- 配置文件监听：首版不默认启用，可通过 `tools.watch.enabled=true` 打开。
+- 配置文件监听：首版不实现自动监听；后续可通过 `tools.watch.enabled=true` 作为开关接入。
 
 一致性要求：
 
@@ -276,6 +276,7 @@ public record ToolSelection(
 modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/tool/catalog/
   ToolCatalog.java
   ToolCatalogSnapshot.java
+  ToolChangeListener.java
   ToolContribution.java
   ToolContributionSource.java
   ToolMergeStrategy.java
@@ -324,9 +325,13 @@ public record ToolContribution(
 public interface ToolCatalog {
     ToolCatalogSnapshot snapshot();
 
+    ToolCatalogSnapshot refresh();
+
     ToolCatalogSnapshot refresh(ToolRefreshRequest request);
 
     List<AgentTool> resolve(ToolSelection selection);
+
+    Runnable addChangeListener(ToolChangeListener listener);
 }
 ```
 
@@ -350,11 +355,12 @@ AgentSession.initialize() -> agent.setTools(effectiveToolsSnapshot)
 server 模式：
 
 - `ServerMode` / `SessionPool` 保存 `ToolCatalog`，每个 session 初始化时解析一次。
-- `POST /api/tools/reload` 刷新 catalog，并只影响后续新 session 或显式 reload 的 session。
+- `GET /api/tools` 返回当前 catalog version、diagnostics、activeSessions 和 selection 后的工具名。
+- `POST /api/tools/reload` 刷新 catalog，并对 `SessionPool` 中的活跃 session 执行 `reload()`；无 catalog 时返回 `status: disabled`。
 
 cron 模式：
 
-- `CronJobExecutor` 用 `ToolCatalog.resolve(allowedTools)` 替换当前按 `availableTools` 过滤逻辑。
+- `CronJobExecutor` 当前仍使用 `List<AgentTool>` 注入与 job payload 中的 `allowedTools` 过滤。`ToolCatalog` 位于 `coding-agent-cli` 模块，而 `cron` 是其上游依赖；直接让 cron 依赖 CLI 会形成模块环。该项需要先把 catalog API 下沉到 `agent-core` 或独立 shared module，再替换 cron executor 路径。
 
 ### 5.4 配置设计
 
@@ -439,13 +445,15 @@ tools:
 | `McpAgentToolTest` | `tools/call` 参数传递、content 映射、错误映射、取消 |
 | `ExtensionToolSourceTest` | `ExtensionRegistry.getAllTools()` 进入 catalog |
 | `CampusClawCommandToolCatalogTest` | CLI 使用 catalog resolve，不再直接过滤 Spring list |
+| `SessionPoolToolStatusTest` | server 工具状态输出、selection 后工具列表 |
+| `ServerModeTest` | `/api/tools` 与 `/api/tools/reload` 路由注册 |
 
 ### 8.2 集成测试
 
 1. 默认启动无 tools 配置，工具列表与当前内置工具一致。
 2. 项目声明新增 `hello_tool`，LLM context 中出现该工具。
 3. 项目声明替换 `read`，实际调用进入替换工具。
-4. `/reload` 后新增工具在下一轮可见。
+4. `/reload` 或 `POST /api/tools/reload` 后刷新 catalog，活跃 session reload 后可见。
 5. fake MCP server 暴露 `echo`，Agent 调用 `server__echo` 返回结果。
 6. untrusted MCP raw 名称试图替换 `bash` 时被拒绝。
 
@@ -473,9 +481,9 @@ tools:
 
 ## 10. 开放问题
 
-1. `settings.json` 当前结构是否允许直接加入 `tools` 顶层字段，还是需要先做 settings migration。
-2. MCP HTTP transport 采用 Streamable HTTP 还是先支持简单 JSON-RPC over HTTP。
+1. `settings.json` 已允许 `tools` 顶层字段，当前支持 `include` / `exclude` / `noTools` / `mcpServers`。
+2. MCP HTTP transport 当前采用简单 JSON-RPC over HTTP；Streamable HTTP 可作为后续兼容增强。
 3. untrusted process tool 是否必须强制 Docker 沙箱；如果用户无 Docker，是否直接禁用。
-4. 是否要把 `prepareArguments`、`defaultExecutionMode` 放入 `agent-core` 首版，还是先只在 catalog wrapper 中实现。
-5. server 模式的 tools reload 是否自动影响已存在 session，还是必须显式 session reload。
-
+4. `prepareArguments`、`defaultExecutionMode` 已进入 `agent-core` 的 `AgentTool` 默认方法与执行 pipeline。
+5. server 模式 `POST /api/tools/reload` 当前会刷新 catalog 并 reload `SessionPool` 活跃 session；单个 API session 级独立 tool selection 仍未建模。
+6. cron executor 接入 `ToolCatalog` 需要先解决模块边界：把 catalog API 下沉到 `agent-core` 或拆出 shared module。

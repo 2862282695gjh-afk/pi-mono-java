@@ -4,6 +4,8 @@
 
 package com.campusclaw.codingagent.tool.catalog;
 
+import java.util.function.Function;
+
 import com.campusclaw.agent.tool.AgentTool;
 
 /**
@@ -19,18 +21,24 @@ public record ToolContribution(
         int priority,
         ToolMergeStrategy mergeStrategy,
         String replaces,
+        Function<AgentTool, AgentTool> wrapper,
         boolean enabledByDefault) {
 
     public static ToolContribution add(AgentTool tool, ToolContributionSource source, int priority) {
-        return new ToolContribution(tool, tool.name(), source, priority, ToolMergeStrategy.ADD, null, true);
+        return new ToolContribution(tool, tool.name(), source, priority, ToolMergeStrategy.ADD, null, null, true);
     }
 
     public static ToolContribution replace(
             AgentTool tool, ToolContributionSource source, int priority, String replaces) {
-        return new ToolContribution(tool, tool.name(), source, priority, ToolMergeStrategy.REPLACE, replaces, true);
+        return new ToolContribution(tool, tool.name(), source, priority, ToolMergeStrategy.REPLACE, replaces, null, true);
+    }
+
+    public static ToolContribution wrap(
+            String targetName, Function<AgentTool, AgentTool> wrapper, ToolContributionSource source, int priority) {
+        return new ToolContribution(null, targetName, source, priority, ToolMergeStrategy.WRAP, targetName, wrapper, true);
     }
 
     public static ToolContribution disable(String targetName, ToolContributionSource source, int priority) {
-        return new ToolContribution(null, targetName, source, priority, ToolMergeStrategy.DISABLE, targetName, false);
+        return new ToolContribution(null, targetName, source, priority, ToolMergeStrategy.DISABLE, targetName, null, false);
     }
 }

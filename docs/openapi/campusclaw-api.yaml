@@ -16,6 +16,7 @@ info:
     | health | `GET /api/health` |
     | chat（SSE 流式对话） | `POST /api/chat` |
     | conversations | `GET /api/conversations`、`DELETE /api/conversations/{id}` |
+    | tools | `GET /api/tools`、`POST /api/tools/reload` |
     | skills | `GET\|POST /api/skills`、`DELETE /api/skills/{name}`、`POST /api/skills/{name}/{enable\|disable}` |
     | settings | `GET /api/settings/models`、`PUT /api/settings/models/default`、`PUT /api/settings/customModels` |
 
@@ -76,6 +77,13 @@ tags:
 
       列表本身不要求建立 WS 连接，所以前端可以"打开页面就看到所有历史会话
       并选择打开"，再用对应的 `conversation_id` 通过 `/api/ws/chat` 恢复。
+  - name: tools
+    description: |
+      读取和刷新 server 进程内的 agent tool catalog。该接口只反映当前
+      `SessionPool` 使用的 tool selection；不会修改用户 settings。
+
+      当 server 未接入 `ToolCatalog` 时，接口会返回 `status: disabled`，
+      并退回展示构造 `SessionPool` 时注入的静态工具列表。
   - name: skills
     description: |
       管理用户安装的技能（skill）包。每个 skill 是
@@ -332,6 +340,74 @@ paths:
                 type: object
                 properties:
                   error: { type: string }
+
+  /api/tools:
+    get:
+      tags: [tools]
+      summary: 读取当前工具目录状态
+      operationId: getToolStatus
+      description: |
+        返回当前 server 进程内可见的 agent tools、catalog 版本和加载诊断。
+        `tools` 数组已经应用 `tools.include` / `tools.exclude` / `tools.noTools`
+        选择规则，因此表示新会话会拿到的工具名集合。
+
+        已存在会话不会因为读取该端点而改变。
+      responses:
+        "200":
+          description: 当前工具状态。
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ToolStatus"
+              examples:
+                catalog:
+                  summary: 已启用 ToolCatalog
+                  value:
+                    status: ok
+                    version: 3
+                    diagnostics: []
+                    activeSessions: 2
+                    tools: [read_file, shell]
+                disabled:
+                  summary: 未启用 ToolCatalog
+                  value:
+                    status: disabled
+                    activeSessions: 1
+                    tools: [read_file, shell]
+
+  /api/tools/reload:
+    post:
+      tags: [tools]
+      summary: 刷新工具目录并 reload 活跃会话
+      operationId: reloadTools
+      description: |
+        触发 `ToolCatalog.refresh(...)`，然后对当前 `SessionPool` 中的活跃
+        `AgentSession` 执行 `reload()`。响应中的 `tools` 是刷新后、按当前
+        selection 过滤后的工具名列表。
+
+        当 server 未接入 `ToolCatalog` 时不会 reload 会话，返回
+        `status: disabled` 和说明消息。
+      responses:
+        "200":
+          description: 刷新结果。
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/ToolStatus"
+                  - $ref: "#/components/schemas/ToolReloadDisabled"
+              examples:
+                refreshed:
+                  value:
+                    status: ok
+                    version: 4
+                    diagnostics:
+                      - "project-tools replaced tool shell"
+                    tools: [read_file, shell]
+                disabled:
+                  value:
+                    status: disabled
+                    message: Tool catalog is not available
 
   /api/skills:
     post:
@@ -863,6 +939,64 @@ components:
           type: string
           format: date-time
           description: JSONL 文件最后修改时间，按此字段倒序排列结果。
+
+    ToolStatus:
+      type: object
+      description: "`GET /api/tools` 与成功 `POST /api/tools/reload` 的响应体。"
+      required: [status, tools]
+      properties:
+        status:
+          type: string
+          description: |
+            `ok` 表示 server 使用 `ToolCatalog`；`disabled` 表示当前进程仅使用
+            构造时注入的静态工具列表。
+          enum: [ok, disabled]
+          example: ok
+        version:
+          type: integer
+          format: int64
+          nullable: true
+          description: |
+            当前 `ToolCatalogSnapshot.version`。只有 `status: ok` 时存在；
+            每次成功 refresh 后递增。
+          example: 4
+        diagnostics:
+          type: array
+          nullable: true
+          description: |
+            当前 catalog snapshot 的加载/合并诊断。只有 `status: ok` 时存在。
+          items:
+            type: string
+          example: []
+        activeSessions:
+          type: integer
+          minimum: 0
+          nullable: true
+          description: |
+            当前 `SessionPool` 中活跃会话数量。`GET /api/tools` 返回该字段；
+            `POST /api/tools/reload` 成功响应当前不返回。
+          example: 2
+        tools:
+          type: array
+          description: |
+            当前 selection 下可见的工具名列表。`status: disabled` 时为静态
+            `AgentTool` 列表；`status: ok` 时来自 `ToolCatalog.resolve(...)`。
+          items:
+            type: string
+          example: [read_file, shell]
+
+    ToolReloadDisabled:
+      type: object
+      description: "`POST /api/tools/reload` 在 server 未接入 ToolCatalog 时的响应体。"
+      required: [status, message]
+      properties:
+        status:
+          type: string
+          enum: [disabled]
+          example: disabled
+        message:
+          type: string
+          example: Tool catalog is not available
 
     SkillInfo:
       type: object

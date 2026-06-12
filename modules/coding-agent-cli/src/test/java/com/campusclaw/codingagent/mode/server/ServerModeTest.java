@@ -134,9 +134,9 @@ class ServerModeTest {
             ServerMode server = buildServer(null, null, null);
 
             // Baseline routes: health, chat, list-conversations, delete-conversation,
-            // skills upload/list/delete/enable/disable, tools reload = 10 routes
+            // skills upload/list/delete/enable/disable, tools status/reload = 11 routes
             int routes = countRoutes(invokeBuildRoutes(server, null));
-            assertThat(routes).isEqualTo(10);
+            assertThat(routes).isEqualTo(11);
         }
 
         private static int countRoutes(RouterFunction<ServerResponse> routes) {

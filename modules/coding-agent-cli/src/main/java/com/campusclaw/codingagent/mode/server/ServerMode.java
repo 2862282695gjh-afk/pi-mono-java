@@ -288,6 +288,7 @@ public class ServerMode {
                 .DELETE("/api/skills/{name}", skillHandler::delete)
                 .POST("/api/skills/{name}/enable", skillHandler::enable)
                 .POST("/api/skills/{name}/disable", skillHandler::disable)
+                .GET("/api/tools", req -> ServerResponse.ok().bodyValue(sessionPool.toolStatus()))
                 .POST("/api/tools/reload", req -> ServerResponse.ok().bodyValue(sessionPool.reloadTools()));
         if (settingsHandler != null) {
             builder = builder.GET("/api/settings/models", settingsHandler::getModels)
@@ -343,6 +344,7 @@ public class ServerMode {
         banner.info("  DELETE /api/skills/{name}");
         banner.info("  POST   /api/skills/{name}/enable");
         banner.info("  POST   /api/skills/{name}/disable");
+        banner.info("  GET    /api/tools");
         banner.info("  POST   /api/tools/reload");
         if (settingsManager != null && customModelLoader != null && modelCatalog != null) {
             banner.info("  GET    /api/settings/models");
