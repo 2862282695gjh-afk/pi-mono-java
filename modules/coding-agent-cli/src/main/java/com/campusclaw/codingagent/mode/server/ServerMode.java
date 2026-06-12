@@ -19,6 +19,8 @@ import com.campusclaw.codingagent.settings.SettingsManager;
 import com.campusclaw.codingagent.skill.SandboxSkillParser;
 import com.campusclaw.codingagent.skill.SkillLoader;
 import com.campusclaw.codingagent.skill.SkillManager;
+import com.campusclaw.codingagent.tool.catalog.ToolCatalog;
+import com.campusclaw.codingagent.tool.catalog.ToolSelection;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -68,6 +70,8 @@ public class ServerMode {
     private final ModelRegistry modelRegistry;
     private final SystemPromptBuilder promptBuilder;
     private final List<AgentTool> tools;
+    private final ToolCatalog toolCatalog;
+    private final ToolSelection toolSelection;
     private final SessionConfig baseConfig;
     private final int port;
     private final String host;
@@ -90,6 +94,8 @@ public class ServerMode {
                 modelRegistry,
                 promptBuilder,
                 tools,
+                null,
+                ToolSelection.all(),
                 baseConfig,
                 port,
                 "localhost",
@@ -117,6 +123,8 @@ public class ServerMode {
                 modelRegistry,
                 promptBuilder,
                 tools,
+                null,
+                ToolSelection.all(),
                 baseConfig,
                 port,
                 host,
@@ -145,6 +153,8 @@ public class ServerMode {
                 modelRegistry,
                 promptBuilder,
                 tools,
+                null,
+                ToolSelection.all(),
                 baseConfig,
                 port,
                 host,
@@ -170,10 +180,46 @@ public class ServerMode {
             boolean sessionPersistenceEnabled,
             SettingsManager settingsManager,
             CustomModelLoader customModelLoader) {
+        this(
+                aiService,
+                modelRegistry,
+                promptBuilder,
+                tools,
+                null,
+                ToolSelection.all(),
+                baseConfig,
+                port,
+                host,
+                sandboxParser,
+                useSandbox,
+                modelCatalog,
+                sessionPersistenceEnabled,
+                settingsManager,
+                customModelLoader);
+    }
+
+    public ServerMode(
+            CampusClawAiService aiService,
+            ModelRegistry modelRegistry,
+            SystemPromptBuilder promptBuilder,
+            List<AgentTool> tools,
+            ToolCatalog toolCatalog,
+            ToolSelection toolSelection,
+            SessionConfig baseConfig,
+            int port,
+            String host,
+            SandboxSkillParser sandboxParser,
+            boolean useSandbox,
+            ModelCatalogService modelCatalog,
+            boolean sessionPersistenceEnabled,
+            SettingsManager settingsManager,
+            CustomModelLoader customModelLoader) {
         this.aiService = aiService;
         this.modelRegistry = modelRegistry;
         this.promptBuilder = promptBuilder;
         this.tools = tools;
+        this.toolCatalog = toolCatalog;
+        this.toolSelection = toolSelection != null ? toolSelection : ToolSelection.all();
         this.baseConfig = baseConfig;
         this.port = port;
         this.host = host;
@@ -191,6 +237,8 @@ public class ServerMode {
                 modelRegistry,
                 promptBuilder,
                 tools,
+                toolCatalog,
+                toolSelection,
                 baseConfig,
                 sandboxParser,
                 useSandbox,
@@ -239,7 +287,8 @@ public class ServerMode {
                 .GET("/api/skills", skillHandler::list)
                 .DELETE("/api/skills/{name}", skillHandler::delete)
                 .POST("/api/skills/{name}/enable", skillHandler::enable)
-                .POST("/api/skills/{name}/disable", skillHandler::disable);
+                .POST("/api/skills/{name}/disable", skillHandler::disable)
+                .POST("/api/tools/reload", req -> ServerResponse.ok().bodyValue(sessionPool.reloadTools()));
         if (settingsHandler != null) {
             builder = builder.GET("/api/settings/models", settingsHandler::getModels)
                     .PUT("/api/settings/models/default", settingsHandler::setDefaultModel)
@@ -294,6 +343,7 @@ public class ServerMode {
         banner.info("  DELETE /api/skills/{name}");
         banner.info("  POST   /api/skills/{name}/enable");
         banner.info("  POST   /api/skills/{name}/disable");
+        banner.info("  POST   /api/tools/reload");
         if (settingsManager != null && customModelLoader != null && modelCatalog != null) {
             banner.info("  GET    /api/settings/models");
             banner.info("  PUT    /api/settings/models/default");

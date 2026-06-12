@@ -34,6 +34,9 @@ import com.campusclaw.codingagent.skill.SkillExpander;
 import com.campusclaw.codingagent.skill.SkillLoader;
 import com.campusclaw.codingagent.skill.SkillRegistry;
 import com.campusclaw.codingagent.skill.SkillStateStore;
+import com.campusclaw.codingagent.tool.catalog.ToolCatalog;
+import com.campusclaw.codingagent.tool.catalog.ToolRefreshRequest;
+import com.campusclaw.codingagent.tool.catalog.ToolSelection;
 
 /**
  * Manages a single agent session lifecycle: initialization, prompt handling,
@@ -58,10 +61,13 @@ public class AgentSession {
     private final SystemPromptBuilder promptBuilder;
     private final SkillLoader skillLoader;
     private final SkillExpander skillExpander;
-    private final List<AgentTool> tools;
+    private List<AgentTool> tools;
     private final ContextFileLoader contextFileLoader;
     private final PromptTemplateLoader promptTemplateLoader;
     private SessionManager sessionManager;
+    private ToolCatalog toolCatalog;
+    private ToolSelection toolSelection = ToolSelection.all();
+    private Path initializedCwd;
 
     private final SkillRegistry skillRegistry = new SkillRegistry();
     private List<PromptTemplateEntry> promptTemplates = List.of();
@@ -81,9 +87,20 @@ public class AgentSession {
         this.promptBuilder = Objects.requireNonNull(promptBuilder, "promptBuilder");
         this.skillLoader = Objects.requireNonNull(skillLoader, "skillLoader");
         this.skillExpander = Objects.requireNonNull(skillExpander, "skillExpander");
-        this.tools = Objects.requireNonNull(tools, "tools");
+        this.tools = List.copyOf(Objects.requireNonNull(tools, "tools"));
         this.contextFileLoader = new ContextFileLoader();
         this.promptTemplateLoader = new PromptTemplateLoader();
+    }
+
+    /**
+     * Enables dynamic tool resolution for this session.
+     *
+     * @param toolCatalog the catalog to refresh and resolve
+     * @param toolSelection the visibility selection for this session
+     */
+    public void setToolCatalog(ToolCatalog toolCatalog, ToolSelection toolSelection) {
+        this.toolCatalog = toolCatalog;
+        this.toolSelection = toolSelection != null ? toolSelection : ToolSelection.all();
     }
 
     /**
@@ -106,6 +123,8 @@ public class AgentSession {
 
         // 2. Load skills (user-level + project-level)
         Path cwd = config.cwd() != null ? config.cwd() : Path.of(System.getProperty("user.dir"));
+        initializedCwd = cwd;
+        refreshTools(cwd);
         loadSkills(cwd);
 
         // 3. Load context files (AGENTS.md / CLAUDE.md)
@@ -336,7 +355,8 @@ public class AgentSession {
      */
     public void reload(String customPrompt) {
         requireInitialized();
-        Path cwd = Path.of(System.getProperty("user.dir"));
+        Path cwd = initializedCwd != null ? initializedCwd : Path.of(System.getProperty("user.dir"));
+        refreshTools(cwd);
 
         // Reload skills
         loadSkills(cwd);
@@ -356,6 +376,7 @@ public class AgentSession {
                 tools, visibleSkills, cwd, customPrompt, env, contextFiles, systemPromptOverride, appendSystemPrompt);
         String systemPrompt = promptBuilder.build(promptConfig);
         agent.setSystemPrompt(systemPrompt);
+        agent.setTools(tools);
     }
 
     /**
@@ -423,6 +444,14 @@ public class AgentSession {
 
     Agent createAgent(CampusClawAiService aiService) {
         return new Agent(aiService);
+    }
+
+    private void refreshTools(Path cwd) {
+        if (toolCatalog == null) {
+            return;
+        }
+        toolCatalog.refresh(new ToolRefreshRequest(cwd));
+        tools = List.copyOf(toolCatalog.resolve(toolSelection));
     }
 
     /**

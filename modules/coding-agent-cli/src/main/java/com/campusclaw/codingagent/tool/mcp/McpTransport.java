@@ -1,0 +1,21 @@
+/*
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
+ */
+
+package com.campusclaw.codingagent.tool.mcp;
+
+import com.fasterxml.jackson.databind.JsonNode;
+
+/**
+ * JSON-RPC transport used by MCP clients.
+ *
+ * @version [br_eCampusCore 25.1.0_Next, 2026/06/12]
+ * @since [br_eCampusCore 25.1.0_Next]
+ */
+public interface McpTransport extends AutoCloseable {
+
+    JsonNode request(String method, JsonNode params);
+
+    @Override
+    void close();
+}

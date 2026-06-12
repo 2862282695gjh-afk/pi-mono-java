@@ -118,11 +118,12 @@ flowchart LR
 1. **Spring Boot + Picocli 双重启动器**：`CampusClawApplication` 是 `@SpringBootApplication`，通过 `picocli-spring-boot-starter` 把 Spring bean 注入到 `@Command` 注解的 `CampusClawCommand` 中；`SpringApplication.run` 完成包扫描后由 `CommandLineRunner` 把 args 交给 Picocli 解析，最终调用 `call()`；
 2. **模式分发**：`call()` 内 if/else 链按 `--mode` / `--print` / `--export` / `--list-models` / `--cron-tick` 等开关路由到对应 mode 类（`InteractiveMode` / `OneShotMode` / `RpcMode` / `ServerMode` / 直接出口）；
 3. **工具实现作为 `AgentTool` bean**：每个工具一个 `@Component`，靠 `ConditionalOnProperty(name = "tool.execution.hybrid-enabled", havingValue = "false")` 切换 LOCAL vs Hybrid 变体——同名工具二选一注入 `List<AgentTool>`；
-4. **Reactor Netty 嵌入式 HTTP**：server 模式不走 spring-mvc tomcat，而是直接 `HttpServer.create(...)` + `RouterFunctions.toHttpHandler(...)` —— Webflux 的函数式路由更轻；同一 server 同时挂 `routes.get("/api/ws/chat", ...)` 走原生 reactor-netty WebSocket；
-5. **JSONL 会话**：消息序列化为 polymorphic Jackson JSON（`role` 字段作为 discriminator），按 `--<encoded-cwd>--/<id>.jsonl` 路径组织，每条消息一行，方便 grep / 增量追加；
-6. **Skill / Extension 双层扩展**：Skill 是**运行时**用户可装的 markdown 包（带 `SKILL.md` 元数据），主要内容是 prompt 片段；Extension 是**编译期**仓库内 Java 类实现，注册到 6 种 `ExtensionPoint`；
-7. **Hybrid 路由**：每个工具实现 `ToolExecutionStrategy`（local 策略）+ 对应的 `SandboxExecutionStrategy`（Docker 策略），`ExecutionRouter` 按 `ExecutionMode` 选一个执行；这套机制独立于 agent-core 的 `ToolExecutionPipeline`，只在工具内部生效；
-8. **配置外置**：`application.yml`（canonical 副本，仓库根曾经有第二份已删除）声明 `tool.execution.*` / `subagent.backends.*` / `server.session.persistence.enabled`。
+4. **生产工具入口统一到 `ToolCatalog`**：Spring 工具与 `ExtensionRegistry` 工具先汇聚为 catalog 快照，再由 `ToolSelection` 统一处理 `--tools` / `--no-tools`，`CampusClawCommand` 不再直接过滤 `List<AgentTool>`；后续声明式工具与 MCP 工具继续作为新的 `ToolSource` 接入；
+5. **Reactor Netty 嵌入式 HTTP**：server 模式不走 spring-mvc tomcat，而是直接 `HttpServer.create(...)` + `RouterFunctions.toHttpHandler(...)` —— Webflux 的函数式路由更轻；同一 server 同时挂 `routes.get("/api/ws/chat", ...)` 走原生 reactor-netty WebSocket；
+6. **JSONL 会话**：消息序列化为 polymorphic Jackson JSON（`role` 字段作为 discriminator），按 `--<encoded-cwd>--/<id>.jsonl` 路径组织，每条消息一行，方便 grep / 增量追加；
+7. **Skill / Extension 双层扩展**：Skill 是**运行时**用户可装的 markdown 包（带 `SKILL.md` 元数据），主要内容是 prompt 片段；Extension 是**编译期**仓库内 Java 类实现，注册到 6 种 `ExtensionPoint`；
+8. **Hybrid 路由**：每个工具实现 `ToolExecutionStrategy`（local 策略）+ 对应的 `SandboxExecutionStrategy`（Docker 策略），`ExecutionRouter` 按 `ExecutionMode` 选一个执行；这套机制独立于 agent-core 的 `ToolExecutionPipeline`，只在工具内部生效；
+9. **配置外置**：`application.yml`（canonical 副本，仓库根曾经有第二份已删除）声明 `tool.execution.*` / `subagent.backends.*` / `server.session.persistence.enabled`。
 
 设计取向：**保持上游 lib 的纯粹性，所有应用胶水（Spring 装配、bean 选择、容器交互、CLI flag）都收敛到本模块**——上游模块可在没有 Spring Boot / Picocli / Docker 的环境下独立测试。
 
@@ -136,7 +137,7 @@ flowchart LR
 4. `Picocli 解析`：填充 `@Option` / `@Parameters` 字段（含 `--mode` / `-m` 等），调用 `call()`；
 5. `applyProxyOverride`：若 `--proxy` 非空，`ProxyConfig.fromUrl(...).installAsDefault()` 装 JVM 全局 ProxySelector；
 6. `dispatchSubcommand`：先看是否走 export / list-models / cron-tick / print 短路出口；否则进入主路径；
-7. `构造 AgentSession`：装载 `Settings`、`ModelRegistry`、`SystemPromptBuilder`、`SkillLoader`、tools 列表；
+7. `构造 AgentSession`：装载 `Settings`、`ModelRegistry`、`SystemPromptBuilder`、`SkillLoader`，并通过 `ToolCatalog.resolve(ToolSelection)` 取得当前 tools 快照；
 8. `按 mode 路由`：`InteractiveMode` / `OneShotMode` / `RpcMode` / `ServerMode` 之一接管；
 9. `mode.run(session)`：mode 内部驱动 `Agent.prompt(...)`、订阅 `AgentEvent` 流、渲染输出 / 返回响应；
 10. `会话退出`：写回 JSONL session 文件、关闭 cron engine、关闭 sub-agent backend；

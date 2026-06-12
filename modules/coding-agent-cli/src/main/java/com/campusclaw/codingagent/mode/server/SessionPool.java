@@ -27,6 +27,9 @@ import com.campusclaw.codingagent.session.SessionManager;
 import com.campusclaw.codingagent.skill.SandboxSkillParser;
 import com.campusclaw.codingagent.skill.SkillExpander;
 import com.campusclaw.codingagent.skill.SkillLoader;
+import com.campusclaw.codingagent.tool.catalog.ToolCatalog;
+import com.campusclaw.codingagent.tool.catalog.ToolRefreshRequest;
+import com.campusclaw.codingagent.tool.catalog.ToolSelection;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -52,6 +55,8 @@ public class SessionPool {
     private final ModelRegistry modelRegistry;
     private final SystemPromptBuilder promptBuilder;
     private final List<AgentTool> tools;
+    private final ToolCatalog toolCatalog;
+    private final ToolSelection toolSelection;
     private final SessionConfig baseConfig;
     private final SandboxSkillParser sandboxParser;
     private final boolean useSandbox;
@@ -93,10 +98,27 @@ public class SessionPool {
             SandboxSkillParser sandboxParser,
             boolean useSandbox,
             boolean persistenceEnabled) {
+        this(aiService, modelRegistry, promptBuilder, tools, null, ToolSelection.all(), baseConfig, sandboxParser,
+                useSandbox, persistenceEnabled);
+    }
+
+    public SessionPool(
+            CampusClawAiService aiService,
+            ModelRegistry modelRegistry,
+            SystemPromptBuilder promptBuilder,
+            List<AgentTool> tools,
+            ToolCatalog toolCatalog,
+            ToolSelection toolSelection,
+            SessionConfig baseConfig,
+            SandboxSkillParser sandboxParser,
+            boolean useSandbox,
+            boolean persistenceEnabled) {
         this.aiService = aiService;
         this.modelRegistry = modelRegistry;
         this.promptBuilder = promptBuilder;
         this.tools = tools;
+        this.toolCatalog = toolCatalog;
+        this.toolSelection = toolSelection != null ? toolSelection : ToolSelection.all();
         this.baseConfig = baseConfig;
         this.sandboxParser = sandboxParser;
         this.useSandbox = useSandbox;
@@ -181,6 +203,28 @@ public class SessionPool {
     }
 
     /**
+     * Refreshes catalog-backed tools and updates active sessions.
+     *
+     * @return response payload for the server API
+     */
+    public Map<String, Object> reloadTools() {
+        if (toolCatalog == null) {
+            return Map.of("status", "disabled", "message", "Tool catalog is not available");
+        }
+        var snapshot = toolCatalog.refresh(new ToolRefreshRequest(baseConfig.cwd()));
+        sessions.values().forEach(entry -> entry.session().reload());
+        return Map.of(
+                "status",
+                "ok",
+                "version",
+                snapshot.version(),
+                "diagnostics",
+                snapshot.diagnostics(),
+                "tools",
+                toolCatalog.resolve(toolSelection).stream().map(AgentTool::name).toList());
+    }
+
+    /**
      * Attaches a {@link com.campusclaw.agent.subagent.SubAgentRegistry} so each session created
      * by this pool can cascade-cancel its sub-agents on abort.
      *
@@ -208,7 +252,10 @@ public class SessionPool {
                 promptBuilder,
                 new SkillLoader(sandboxParser, useSandbox),
                 new SkillExpander(sandboxParser, useSandbox),
-                tools);
+                resolveTools());
+        if (toolCatalog != null) {
+            session.setToolCatalog(toolCatalog, toolSelection);
+        }
         if (subAgentRegistry != null) {
             session.setSubAgentRegistry(subAgentRegistry);
         }
@@ -252,6 +299,14 @@ public class SessionPool {
     private Path sessionFilePath(String sessionId) {
         String safePath = "--" + serverCwd.replaceFirst("^[/\\\\]", "").replaceAll("[/\\\\:]", "-") + "--";
         return AppPaths.SESSIONS_DIR.resolve(safePath).resolve(sessionId + ".jsonl");
+    }
+
+    private List<AgentTool> resolveTools() {
+        if (toolCatalog == null) {
+            return tools;
+        }
+        toolCatalog.refresh(new ToolRefreshRequest(baseConfig.cwd()));
+        return toolCatalog.resolve(toolSelection);
     }
 
     private void evictIdle() {
