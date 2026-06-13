@@ -280,8 +280,9 @@ class AgentSessionTest {
 
             session.reload();
 
-            verify(catalog).refresh(org.mockito.ArgumentMatchers.argThat(
-                    (ToolRefreshRequest request) -> tempDir.equals(request.cwd())));
+            verify(catalog)
+                    .refresh(org.mockito.ArgumentMatchers.argThat(
+                            (ToolRefreshRequest request) -> tempDir.equals(request.cwd())));
             verify(session.getAgent()).setTools(List.of(replacement));
         }
     }

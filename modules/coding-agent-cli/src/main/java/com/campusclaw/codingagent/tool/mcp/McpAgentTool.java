@@ -54,10 +54,7 @@ public class McpAgentTool implements AgentTool {
 
     @Override
     public AgentToolResult execute(
-            String toolCallId,
-            Map<String, Object> params,
-            CancellationToken signal,
-            AgentToolUpdateCallback onUpdate) {
+            String toolCallId, Map<String, Object> params, CancellationToken signal, AgentToolUpdateCallback onUpdate) {
         var result = client.callTool(definition.name(), params, signal);
         return new AgentToolResult(McpContentMapper.toContentBlocks(result.content()), result.details());
     }

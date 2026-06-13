@@ -49,17 +49,22 @@ class ToolSelectionTest {
 
     @Test
     void fromSettingsUsesConfiguredIncludeExcludeAndNoTools() {
-        var tools = new Settings.ToolsSettings(
-                List.of("read", "bash"),
-                List.of("bash"),
-                true,
-                null,
-                Map.of());
+        var tools = new Settings.ToolsSettings(List.of("read", "bash"), List.of("bash"), true, null, Map.of());
 
         ToolSelection selection = ToolSelection.fromSettings(tools);
 
         assertThat(selection.include()).containsExactly("read", "bash");
         assertThat(selection.exclude()).containsExactly("bash");
+        assertThat(selection.noTools()).isTrue();
+    }
+
+    @Test
+    void disabledToolsSettingsDisablesEffectiveToolSelection() {
+        var tools = new Settings.ToolsSettings(false, List.of("read"), List.of(), false, null, Map.of());
+
+        ToolSelection selection = ToolSelection.fromSettings(tools);
+
+        assertThat(selection.include()).containsExactly("read");
         assertThat(selection.noTools()).isTrue();
     }
 

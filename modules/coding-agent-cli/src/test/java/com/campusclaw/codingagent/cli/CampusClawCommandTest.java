@@ -279,8 +279,9 @@ class CampusClawCommandTest {
 
             assertThat(invokeResolveEffectiveTools(cmd, cwd)).isEmpty();
 
-            verify(catalog).refresh(org.mockito.ArgumentMatchers.argThat(
-                    (ToolRefreshRequest request) -> cwd.equals(request.cwd())));
+            verify(catalog)
+                    .refresh(org.mockito.ArgumentMatchers.argThat(
+                            (ToolRefreshRequest request) -> cwd.equals(request.cwd())));
             verify(catalog).resolve(ToolSelection.all());
         }
     }

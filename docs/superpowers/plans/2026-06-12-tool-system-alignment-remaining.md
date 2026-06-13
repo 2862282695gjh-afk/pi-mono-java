@@ -21,10 +21,10 @@
 - Modify: `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/tool/catalog/DefaultToolCatalog.java`
 - Test: `modules/coding-agent-cli/src/test/java/com/campusclaw/codingagent/tool/catalog/DeclarativeToolSourceTest.java`
 
-- [ ] Write failing tests for YAML parsing, project tool discovery from `<cwd>/.campusclaw/tools`, process execution, timeout handling, and `REPLACE` metadata.
-- [ ] Add a context-aware catalog refresh request carrying cwd.
-- [ ] Implement the loader and process-backed `AgentTool`.
-- [ ] Run `./mvnw -pl modules/coding-agent-cli -am test -Dtest=DeclarativeToolSourceTest -Dsurefire.failIfNoSpecifiedTests=false`.
+- [x] Write failing tests for YAML parsing, project tool discovery from `<cwd>/.campusclaw/tools`, process execution, timeout handling, and `REPLACE` metadata.
+- [x] Add a context-aware catalog refresh request carrying cwd.
+- [x] Implement the loader and process-backed `AgentTool`.
+- [x] Run `./mvnw -pl modules/coding-agent-cli -am test -Dtest=DeclarativeToolSourceTest -Dsurefire.failIfNoSpecifiedTests=false`.
 
 ### Task 2: MCP Tool Adapter
 
@@ -34,11 +34,11 @@
 - Test: `modules/coding-agent-cli/src/test/java/com/campusclaw/codingagent/tool/mcp/McpToolSourceTest.java`
 - Test: `modules/coding-agent-cli/src/test/java/com/campusclaw/codingagent/tool/mcp/McpAgentToolTest.java`
 
-- [ ] Write failing tests for `tools/list` mapping, default `<server>__<tool>` naming, `tools/call` content mapping, error mapping, and untrusted raw-name replacement rejection.
-- [ ] Implement a JSON-RPC client abstraction with test fake support.
-- [ ] Implement stdio and simple HTTP transports.
-- [ ] Implement `McpToolSource`, `McpAgentTool`, and content mapper.
-- [ ] Run focused MCP tests.
+- [x] Write failing tests for `tools/list` mapping, default `<server>__<tool>` naming, `tools/call` content mapping, error mapping, and untrusted raw-name replacement rejection.
+- [x] Implement a JSON-RPC client abstraction with test fake support.
+- [x] Implement stdio and simple HTTP transports.
+- [x] Implement `McpToolSource`, `McpAgentTool`, and content mapper.
+- [x] Run focused MCP tests.
 
 ### Task 3: Refresh, CLI, Server, Cron Wiring
 
@@ -50,18 +50,18 @@
 - Modify: cron executor path as needed.
 - Test: focused tests near each modified class.
 
-- [ ] Write failing tests for CLI cwd refresh, `/reload` refreshing catalog, server `POST /api/tools/reload`, and new sessions using refreshed snapshots.
-- [ ] Wire `ToolRefreshRequest` through CLI and server construction.
-- [ ] Keep existing session snapshots stable unless explicitly reloaded.
-- [ ] Run focused CLI/server/reload tests.
+- [x] Write failing tests for CLI cwd refresh, `/reload` refreshing catalog, server `POST /api/tools/reload`, and new sessions using refreshed snapshots.
+- [x] Wire `ToolRefreshRequest` through CLI and server construction.
+- [x] Keep existing session snapshots stable unless explicitly reloaded.
+- [x] Run focused CLI/server/reload tests.
 
 ### Task 4: Final Verification
 
 **Files:**
 - Modify docs as needed.
 
-- [ ] Update design docs to describe declarative and MCP production paths.
-- [ ] Run `./mvnw spotless:apply`.
-- [ ] Run `./mvnw -pl modules/agent-core -am test -Dsurefire.failIfNoSpecifiedTests=false`.
-- [ ] Run `./mvnw -pl modules/coding-agent-cli -am test -Dsurefire.failIfNoSpecifiedTests=false`.
-- [ ] Audit `docs/designs/tool-system-alignment.md` requirement-by-requirement before marking the goal complete.
+- [x] Update design docs to describe declarative and MCP production paths.
+- [x] Run `./mvnw spotless:apply`.
+- [x] Run `./mvnw -pl modules/agent-core -am test -Dsurefire.failIfNoSpecifiedTests=false`.
+- [x] Run `./mvnw -pl modules/coding-agent-cli -am test -Dsurefire.failIfNoSpecifiedTests=false`.
+- [x] Audit `docs/designs/tool-system-alignment.md` requirement-by-requirement before marking the goal complete.

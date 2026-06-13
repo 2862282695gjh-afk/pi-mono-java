@@ -9,7 +9,10 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
 import java.nio.charset.StandardCharsets;
-import java.time.Duration;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicLong;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -28,9 +31,11 @@ public class StdioMcpTransport implements McpTransport {
     private final Process process;
     private final BufferedReader reader;
     private final OutputStreamWriter writer;
+    private final int callTimeoutSeconds;
 
     public StdioMcpTransport(ObjectMapper mapper, McpServerConfig config) {
         this.mapper = mapper;
+        this.callTimeoutSeconds = config.callTimeoutSeconds() > 0 ? config.callTimeoutSeconds() : 60;
         try {
             var processBuilder = new ProcessBuilder(config.command());
             processBuilder.environment().clear();
@@ -55,7 +60,7 @@ public class StdioMcpTransport implements McpTransport {
             writer.write(mapper.writeValueAsString(envelope));
             writer.write('\n');
             writer.flush();
-            return readMatchingResult(id);
+            return readMatchingResultWithTimeout(id);
         } catch (IOException e) {
             throw new McpException("MCP stdio request failed: " + e.getMessage(), e);
         }
@@ -66,9 +71,28 @@ public class StdioMcpTransport implements McpTransport {
         process.destroyForcibly();
     }
 
+    private JsonNode readMatchingResultWithTimeout(long id) {
+        try (var executor =
+                Executors.newThreadPerTaskExecutor(Thread.ofVirtual().factory())) {
+            var future = executor.submit(() -> readMatchingResult(id));
+            return future.get(callTimeoutSeconds, TimeUnit.SECONDS);
+        } catch (TimeoutException e) {
+            process.destroyForcibly();
+            throw new McpException("MCP stdio request timed out after " + callTimeoutSeconds + "s", e);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new McpException("MCP stdio request interrupted", e);
+        } catch (ExecutionException e) {
+            var cause = e.getCause();
+            if (cause instanceof McpException mcpException) {
+                throw mcpException;
+            }
+            throw new McpException("MCP stdio request failed: " + cause.getMessage(), cause);
+        }
+    }
+
     private JsonNode readMatchingResult(long id) throws IOException {
-        long deadline = System.nanoTime() + Duration.ofMinutes(5L).toNanos();
-        while (System.nanoTime() < deadline) {
+        while (true) {
             String line = reader.readLine();
             if (line == null) {
                 throw new McpException("MCP stdio server closed");
@@ -82,6 +106,5 @@ public class StdioMcpTransport implements McpTransport {
             }
             return envelope.path("result");
         }
-        throw new McpException("MCP stdio request timed out");
     }
 }

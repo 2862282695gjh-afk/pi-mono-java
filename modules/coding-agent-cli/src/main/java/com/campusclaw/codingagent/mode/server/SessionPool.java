@@ -98,8 +98,17 @@ public class SessionPool {
             SandboxSkillParser sandboxParser,
             boolean useSandbox,
             boolean persistenceEnabled) {
-        this(aiService, modelRegistry, promptBuilder, tools, null, ToolSelection.all(), baseConfig, sandboxParser,
-                useSandbox, persistenceEnabled);
+        this(
+                aiService,
+                modelRegistry,
+                promptBuilder,
+                tools,
+                null,
+                ToolSelection.all(),
+                baseConfig,
+                sandboxParser,
+                useSandbox,
+                persistenceEnabled);
     }
 
     public SessionPool(

@@ -164,11 +164,22 @@ public record Settings(
     @SuppressWarnings("checkstyle:top_class_comment")
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record ToolsSettings(
+            @JsonProperty("enabled") @Nullable Boolean enabled,
             @JsonProperty("include") @Nullable List<String> include,
             @JsonProperty("exclude") @Nullable List<String> exclude,
             @JsonProperty("noTools") @Nullable Boolean noTools,
             @JsonProperty("watch") @Nullable ToolWatchSettings watch,
-            @JsonProperty("mcpServers") @Nullable Map<String, McpServerSettings> mcpServers) {}
+            @JsonProperty("mcpServers") @Nullable Map<String, McpServerSettings> mcpServers) {
+
+        public ToolsSettings(
+                @Nullable List<String> include,
+                @Nullable List<String> exclude,
+                @Nullable Boolean noTools,
+                @Nullable ToolWatchSettings watch,
+                @Nullable Map<String, McpServerSettings> mcpServers) {
+            this(null, include, exclude, noTools, watch, mcpServers);
+        }
+    }
 
     @SuppressWarnings("checkstyle:top_class_comment")
     @JsonIgnoreProperties(ignoreUnknown = true)

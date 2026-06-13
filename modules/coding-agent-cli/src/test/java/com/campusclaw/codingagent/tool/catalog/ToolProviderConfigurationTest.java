@@ -57,9 +57,8 @@ class ToolProviderConfigurationTest {
 
         @Test
         void createsDefaultToolCatalogWithAutowiredToolSources() {
-            contextRunner
-                    .withBean(DefaultToolCatalog.class)
-                    .run(context -> assertThat(context).hasSingleBean(ToolCatalog.class));
+            contextRunner.withBean(DefaultToolCatalog.class).run(context -> assertThat(context)
+                    .hasSingleBean(ToolCatalog.class));
         }
     }
 }

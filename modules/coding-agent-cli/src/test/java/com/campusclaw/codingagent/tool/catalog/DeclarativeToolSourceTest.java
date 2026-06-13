@@ -88,7 +88,9 @@ class DeclarativeToolSourceTest {
                   merge:
                     strategy: ADD
                 """);
-        var contribution = new DeclarativeToolSource(new ToolDeclarationLoader()).load(context()).getFirst();
+        var contribution = new DeclarativeToolSource(new ToolDeclarationLoader())
+                .load(context())
+                .getFirst();
 
         AgentToolResult result =
                 contribution.tool().execute("call-1", Map.of(), new CancellationToken(), partial -> {});
@@ -119,7 +121,9 @@ class DeclarativeToolSourceTest {
                   merge:
                     strategy: ADD
                 """);
-        var contribution = new DeclarativeToolSource(new ToolDeclarationLoader()).load(context()).getFirst();
+        var contribution = new DeclarativeToolSource(new ToolDeclarationLoader())
+                .load(context())
+                .getFirst();
 
         assertThatThrownBy(
                         () -> contribution.tool().execute("call-1", Map.of(), new CancellationToken(), partial -> {}))
@@ -151,7 +155,9 @@ class DeclarativeToolSourceTest {
                     replaces: read
                 """);
 
-        var contribution = new DeclarativeToolSource(new ToolDeclarationLoader()).load(context()).getFirst();
+        var contribution = new DeclarativeToolSource(new ToolDeclarationLoader())
+                .load(context())
+                .getFirst();
 
         assertThat(contribution.mergeStrategy()).isEqualTo(ToolMergeStrategy.REPLACE);
         assertThat(contribution.replaces()).isEqualTo("read");

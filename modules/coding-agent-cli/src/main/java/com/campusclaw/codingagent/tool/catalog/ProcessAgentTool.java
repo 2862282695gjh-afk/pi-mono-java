@@ -63,10 +63,7 @@ public class ProcessAgentTool implements AgentTool {
 
     @Override
     public AgentToolResult execute(
-            String toolCallId,
-            Map<String, Object> params,
-            CancellationToken signal,
-            AgentToolUpdateCallback onUpdate)
+            String toolCallId, Map<String, Object> params, CancellationToken signal, AgentToolUpdateCallback onUpdate)
             throws Exception {
         var process = startProcess();
         if (signal != null) {
@@ -85,9 +82,8 @@ public class ProcessAgentTool implements AgentTool {
         if (!finished) {
             killProcessTree(process);
             joinDrainers(stdoutDrainer, stderrDrainer);
-            throw new IllegalStateException(
-                    "Declarative tool '" + name() + "' timed out after "
-                            + declaration.execution().timeoutSeconds() + " seconds");
+            throw new IllegalStateException("Declarative tool '" + name() + "' timed out after "
+                    + declaration.execution().timeoutSeconds() + " seconds");
         }
         joinDrainers(stdoutDrainer, stderrDrainer);
         int exitCode = process.exitValue();

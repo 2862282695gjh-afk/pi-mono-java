@@ -7,15 +7,14 @@ package com.campusclaw.codingagent.tool.catalog;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.List;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-
-import java.nio.file.Path;
 
 class ToolCatalogWatcherTest {
 
@@ -31,12 +30,10 @@ class ToolCatalogWatcherTest {
         var latch = new CountDownLatch(1);
         var refreshes = new AtomicInteger();
 
-        try (var watcher = ToolCatalogWatcher.start(
-                new ToolSourceContext(project, userTools),
-                () -> {
-                    refreshes.incrementAndGet();
-                    latch.countDown();
-                })) {
+        try (var watcher = ToolCatalogWatcher.start(new ToolSourceContext(project, userTools), () -> {
+            refreshes.incrementAndGet();
+            latch.countDown();
+        })) {
             Files.writeString(project.resolve(".campusclaw").resolve("tools").resolve("hello.yaml"), "name: hello\n");
 
             assertThat(latch.await(5, TimeUnit.SECONDS)).isTrue();
@@ -56,9 +53,7 @@ class ToolCatalogWatcherTest {
         var latch = new CountDownLatch(1);
 
         try (var watcher = ToolCatalogWatcher.start(
-                new ToolSourceContext(project, userTools),
-                List.of(settings),
-                latch::countDown)) {
+                new ToolSourceContext(project, userTools), List.of(settings), latch::countDown)) {
             Files.writeString(settings, "{\"tools\":{}}\n");
 
             assertThat(latch.await(5, TimeUnit.SECONDS)).isTrue();

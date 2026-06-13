@@ -21,10 +21,11 @@ public class DefaultMcpClientFactory implements McpClientFactory {
 
     @Override
     public McpClient create(McpServerConfig config) {
-        McpTransport transport = switch (config.transport()) {
-            case HTTP -> new HttpMcpTransport(mapper, config);
-            case STDIO -> new StdioMcpTransport(mapper, config);
-        };
+        McpTransport transport =
+                switch (config.transport()) {
+                    case HTTP -> new HttpMcpTransport(mapper, config);
+                    case STDIO -> new StdioMcpTransport(mapper, config);
+                };
         return new JsonRpcMcpClient(mapper, transport);
     }
 }

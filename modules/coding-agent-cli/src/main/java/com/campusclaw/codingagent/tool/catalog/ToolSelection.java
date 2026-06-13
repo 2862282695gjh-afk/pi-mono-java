@@ -42,10 +42,9 @@ public record ToolSelection(List<String> include, List<String> exclude, boolean 
         if (settings == null) {
             return all();
         }
+        boolean disabled = settings.enabled() != null && !settings.enabled();
         return new ToolSelection(
-                settings.include(),
-                settings.exclude(),
-                settings.noTools() != null && settings.noTools());
+                settings.include(), settings.exclude(), disabled || (settings.noTools() != null && settings.noTools()));
     }
 
     private static List<String> normalize(List<String> values) {

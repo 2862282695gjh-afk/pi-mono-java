@@ -59,13 +59,31 @@ public record McpServerConfig(
 
     public McpServerConfig withNamePrefix(String newPrefix) {
         return new McpServerConfig(
-                name, enabled, transport, command, url, env, trust, newPrefix, exposeNames, startupTimeoutSeconds,
+                name,
+                enabled,
+                transport,
+                command,
+                url,
+                env,
+                trust,
+                newPrefix,
+                exposeNames,
+                startupTimeoutSeconds,
                 callTimeoutSeconds);
     }
 
     public McpServerConfig withExposeNames(ExposeNames newExposeNames) {
         return new McpServerConfig(
-                name, enabled, transport, command, url, env, trust, namePrefix, newExposeNames, startupTimeoutSeconds,
+                name,
+                enabled,
+                transport,
+                command,
+                url,
+                env,
+                trust,
+                namePrefix,
+                newExposeNames,
+                startupTimeoutSeconds,
                 callTimeoutSeconds);
     }
 }

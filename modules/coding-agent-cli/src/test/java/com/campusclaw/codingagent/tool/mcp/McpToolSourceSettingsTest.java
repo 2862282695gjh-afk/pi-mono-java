@@ -37,10 +37,7 @@ class McpToolSourceSettingsTest {
                 Map.of("SAFE_ENV", "1"),
                 3,
                 4);
-        when(settingsManager.load()).thenReturn(new Settings(
-                null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null,
-                null, null, null, null, null, null, null, null, null, null, null,
-                new Settings.ToolsSettings(null, null, null, null, Map.of("filesystem", server))));
+        when(settingsManager.load()).thenReturn(settingsWithTools(server));
         RecordingFactory factory = new RecordingFactory();
         var source = new McpToolSource(settingsManager, factory);
 
@@ -51,6 +48,39 @@ class McpToolSourceSettingsTest {
                 .containsExactly("npx", "-y", "@modelcontextprotocol/server-filesystem", "/workspace");
         assertThat(factory.config.env()).containsEntry("SAFE_ENV", "1");
         assertThat(contributions).extracting(c -> c.tool().name()).containsExactly("fs_echo");
+    }
+
+    private Settings settingsWithTools(Settings.McpServerSettings server) {
+        return new Settings(
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                new Settings.ToolsSettings(null, null, null, null, Map.of("filesystem", server)));
     }
 
     private static final class RecordingFactory implements McpClientFactory {
@@ -68,7 +98,9 @@ class McpToolSourceSettingsTest {
 
                 @Override
                 public McpCallResult callTool(
-                        String name, Map<String, Object> arguments, com.campusclaw.agent.tool.CancellationToken signal) {
+                        String name,
+                        Map<String, Object> arguments,
+                        com.campusclaw.agent.tool.CancellationToken signal) {
                     return new McpCallResult(List.of(McpContent.text("ok")), null);
                 }
 

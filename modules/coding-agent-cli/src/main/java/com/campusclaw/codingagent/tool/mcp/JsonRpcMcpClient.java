@@ -38,7 +38,9 @@ public class JsonRpcMcpClient implements McpClient {
                 definitions.add(new McpToolDefinition(
                         tool.path("name").asText(),
                         tool.path("description").asText(""),
-                        tool.has("inputSchema") ? tool.get("inputSchema") : mapper.createObjectNode().put("type", "object")));
+                        tool.has("inputSchema")
+                                ? tool.get("inputSchema")
+                                : mapper.createObjectNode().put("type", "object")));
             }
         }
         return List.copyOf(definitions);
@@ -64,7 +66,8 @@ public class JsonRpcMcpClient implements McpClient {
         }
         var blocks = new ArrayList<McpContent>();
         for (JsonNode item : content) {
-            blocks.add(new McpContent(item.path("type").asText(), item.path("text").asText("")));
+            blocks.add(
+                    new McpContent(item.path("type").asText(), item.path("text").asText("")));
         }
         return List.copyOf(blocks);
     }

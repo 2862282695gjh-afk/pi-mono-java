@@ -19,11 +19,14 @@ public record ToolSourceContext(Path cwd, Path userToolsDir) {
 
     public ToolSourceContext {
         cwd = cwd != null ? cwd : Path.of(System.getProperty("user.dir"));
-        userToolsDir = userToolsDir != null ? userToolsDir : CampusClawHome.baseDir().resolve("tools");
+        userToolsDir =
+                userToolsDir != null ? userToolsDir : CampusClawHome.baseDir().resolve("tools");
     }
 
     public static ToolSourceContext defaults() {
-        return new ToolSourceContext(Path.of(System.getProperty("user.dir")), CampusClawHome.baseDir().resolve("tools"));
+        return new ToolSourceContext(
+                Path.of(System.getProperty("user.dir")),
+                CampusClawHome.baseDir().resolve("tools"));
     }
 
     public Path projectToolsDir() {

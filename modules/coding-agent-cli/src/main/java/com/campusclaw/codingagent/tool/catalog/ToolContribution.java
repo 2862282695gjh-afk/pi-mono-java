@@ -30,15 +30,18 @@ public record ToolContribution(
 
     public static ToolContribution replace(
             AgentTool tool, ToolContributionSource source, int priority, String replaces) {
-        return new ToolContribution(tool, tool.name(), source, priority, ToolMergeStrategy.REPLACE, replaces, null, true);
+        return new ToolContribution(
+                tool, tool.name(), source, priority, ToolMergeStrategy.REPLACE, replaces, null, true);
     }
 
     public static ToolContribution wrap(
             String targetName, Function<AgentTool, AgentTool> wrapper, ToolContributionSource source, int priority) {
-        return new ToolContribution(null, targetName, source, priority, ToolMergeStrategy.WRAP, targetName, wrapper, true);
+        return new ToolContribution(
+                null, targetName, source, priority, ToolMergeStrategy.WRAP, targetName, wrapper, true);
     }
 
     public static ToolContribution disable(String targetName, ToolContributionSource source, int priority) {
-        return new ToolContribution(null, targetName, source, priority, ToolMergeStrategy.DISABLE, targetName, null, false);
+        return new ToolContribution(
+                null, targetName, source, priority, ToolMergeStrategy.DISABLE, targetName, null, false);
     }
 }

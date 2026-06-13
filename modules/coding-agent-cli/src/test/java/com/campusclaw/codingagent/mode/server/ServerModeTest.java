@@ -234,8 +234,8 @@ class ServerModeTest {
         @Test
         void enabledToolWatchReloadsSessionPoolWhenToolDirectoryChanges() throws Exception {
             var settingsManager = mock(SettingsManager.class);
-            when(settingsManager.load()).thenReturn(MAPPER.readValue(
-                    "{\"tools\":{\"watch\":{\"enabled\":true}}}", Settings.class));
+            when(settingsManager.load())
+                    .thenReturn(MAPPER.readValue("{\"tools\":{\"watch\":{\"enabled\":true}}}", Settings.class));
             var server = new ServerMode(
                     mock(CampusClawAiService.class),
                     mock(ModelRegistry.class),
@@ -256,7 +256,8 @@ class ServerModeTest {
 
             try (var watcher = server.startToolWatcherIfEnabled(pool)) {
                 assertThat(watcher).isNotNull();
-                Files.writeString(tempDir.resolve(".campusclaw").resolve("tools").resolve("hello.yaml"), "name: hello\n");
+                Files.writeString(
+                        tempDir.resolve(".campusclaw").resolve("tools").resolve("hello.yaml"), "name: hello\n");
 
                 verify(pool, timeout(5000).atLeastOnce()).reloadTools();
             }
@@ -283,7 +284,8 @@ class ServerModeTest {
                     settingsManager,
                     null);
 
-            assertThat(server.startToolWatcherIfEnabled(mock(SessionPool.class))).isNull();
+            assertThat(server.startToolWatcherIfEnabled(mock(SessionPool.class)))
+                    .isNull();
         }
     }
 

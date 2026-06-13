@@ -545,10 +545,8 @@ public class CampusClawCommand implements Callable<Integer> {
             String effectiveThinking,
             Settings settings) {
         String effectiveSystemPrompt = mergeSystemPrompts();
-        ToolSelection toolSelection =
-                ToolSelection.fromCli(toolsFilter, noTools, ToolSelection.fromSettings(settings != null
-                        ? settings.tools()
-                        : null));
+        ToolSelection toolSelection = ToolSelection.fromCli(
+                toolsFilter, noTools, ToolSelection.fromSettings(settings != null ? settings.tools() : null));
         List<AgentTool> effectiveTools = resolveEffectiveTools(effectiveCwd, toolSelection);
         boolean useSandbox = Boolean.parseBoolean(System.getenv("SKILL_SANDBOX_PARSING"));
 

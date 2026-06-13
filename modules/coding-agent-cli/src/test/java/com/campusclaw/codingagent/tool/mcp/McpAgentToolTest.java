@@ -24,9 +24,7 @@ class McpAgentToolTest {
         var seenArguments = new AtomicReference<Map<String, Object>>();
         var client = new RecordingMcpClient(seenArguments, false);
         var definition = new McpToolDefinition(
-                "echo",
-                "Echo input",
-                new ObjectMapper().createObjectNode().put("type", "object"));
+                "echo", "Echo input", new ObjectMapper().createObjectNode().put("type", "object"));
         var tool = new McpAgentTool("server__echo", "server echo", definition, client);
 
         var result = tool.execute("call-1", Map.of("message", "hello"), new CancellationToken(), partial -> {});
@@ -40,9 +38,7 @@ class McpAgentToolTest {
     @Test
     void mapsMcpErrorsToToolExceptions() {
         var definition = new McpToolDefinition(
-                "echo",
-                "Echo input",
-                new ObjectMapper().createObjectNode().put("type", "object"));
+                "echo", "Echo input", new ObjectMapper().createObjectNode().put("type", "object"));
         var tool = new McpAgentTool("server__echo", "server echo", definition, new RecordingMcpClient(null, true));
 
         assertThatThrownBy(() -> tool.execute("call-1", Map.of(), new CancellationToken(), partial -> {}))
@@ -66,7 +62,8 @@ class McpAgentToolTest {
             if (seenArguments != null) {
                 seenArguments.set(arguments);
             }
-            return new McpCallResult(List.of(McpContent.text("hello from mcp")), Map.of("structured", Map.of("ok", true)));
+            return new McpCallResult(
+                    List.of(McpContent.text("hello from mcp")), Map.of("structured", Map.of("ok", true)));
         }
 
         @Override

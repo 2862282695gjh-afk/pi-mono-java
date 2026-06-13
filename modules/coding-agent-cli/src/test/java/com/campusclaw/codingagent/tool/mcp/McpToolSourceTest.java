@@ -40,8 +40,7 @@ class McpToolSourceTest {
     @Test
     void customPrefixOverridesDefaultServerPrefix() {
         var client = new FakeMcpClient(List.of(tool("echo")));
-        var source = new McpToolSource(
-                List.of(config("filesystem").withNamePrefix("fs_")), ignored -> client);
+        var source = new McpToolSource(List.of(config("filesystem").withNamePrefix("fs_")), ignored -> client);
 
         var contributions = source.load(com.campusclaw.codingagent.tool.catalog.ToolSourceContext.defaults());
 

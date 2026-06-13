@@ -101,7 +101,8 @@ class ToolCatalogTest {
     void refreshNotifiesChangeListenersAfterSuccessfulSnapshotSwap() {
         var first = new TestTool("read");
         var second = new TestTool("bash");
-        var source = new MutableSource(List.of(ToolContribution.add(first, ToolContributionSource.system("spring"), 100)));
+        var source =
+                new MutableSource(List.of(ToolContribution.add(first, ToolContributionSource.system("spring"), 100)));
         var catalog = new DefaultToolCatalog(List.of(source));
         var notification = new AtomicReference<ToolCatalogSnapshot>();
         catalog.addChangeListener((previous, current) -> notification.set(current));
@@ -195,7 +196,8 @@ class ToolCatalogTest {
                 String toolCallId,
                 Map<String, Object> params,
                 CancellationToken signal,
-                AgentToolUpdateCallback onUpdate) throws Exception {
+                AgentToolUpdateCallback onUpdate)
+                throws Exception {
             return delegate.execute(toolCallId, params, signal, onUpdate);
         }
     }
