@@ -69,6 +69,19 @@ class ToolSelectionTest {
     }
 
     @Test
+    void refreshRequestMapsToolSettingsToSourceContext() {
+        var tools = new Settings.ToolsSettings(null, null, null, false, false, false, false, null, false, Map.of());
+
+        var context = new ToolRefreshRequest(java.nio.file.Path.of("project"), tools)
+                .toSourceContext(ToolSourceContext.defaults());
+
+        assertThat(context.projectToolsEnabled()).isFalse();
+        assertThat(context.userToolsEnabled()).isFalse();
+        assertThat(context.replacementEnabled()).isFalse();
+        assertThat(context.mcpEnabled()).isFalse();
+    }
+
+    @Test
     void cliToolsOverrideSettingsDefaults() {
         ToolSelection settings = new ToolSelection(List.of("read"), List.of("bash"), false);
 

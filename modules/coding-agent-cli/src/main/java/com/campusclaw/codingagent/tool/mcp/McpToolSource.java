@@ -58,6 +58,9 @@ public class McpToolSource implements ToolSource {
 
     @Override
     public List<ToolContribution> load(ToolSourceContext context) {
+        if (context != null && !context.mcpEnabled()) {
+            return List.of();
+        }
         if (settingsManager != null && context != null) {
             settingsManager.setWorkingDir(context.cwd());
         }

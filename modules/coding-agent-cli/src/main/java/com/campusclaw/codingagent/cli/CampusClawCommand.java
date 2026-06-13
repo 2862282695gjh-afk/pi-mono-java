@@ -547,7 +547,8 @@ public class CampusClawCommand implements Callable<Integer> {
         String effectiveSystemPrompt = mergeSystemPrompts();
         ToolSelection toolSelection = ToolSelection.fromCli(
                 toolsFilter, noTools, ToolSelection.fromSettings(settings != null ? settings.tools() : null));
-        List<AgentTool> effectiveTools = resolveEffectiveTools(effectiveCwd, toolSelection);
+        List<AgentTool> effectiveTools =
+                resolveEffectiveTools(effectiveCwd, toolSelection, settings != null ? settings.tools() : null);
         boolean useSandbox = Boolean.parseBoolean(System.getenv("SKILL_SANDBOX_PARSING"));
 
         AgentSession session = new AgentSession(
@@ -640,6 +641,12 @@ public class CampusClawCommand implements Callable<Integer> {
 
     private List<AgentTool> resolveEffectiveTools(Path effectiveCwd, ToolSelection toolSelection) {
         toolCatalog.refresh(new ToolRefreshRequest(effectiveCwd));
+        return toolCatalog.resolve(toolSelection);
+    }
+
+    private List<AgentTool> resolveEffectiveTools(
+            Path effectiveCwd, ToolSelection toolSelection, Settings.ToolsSettings toolsSettings) {
+        toolCatalog.refresh(new ToolRefreshRequest(effectiveCwd, toolsSettings));
         return toolCatalog.resolve(toolSelection);
     }
 

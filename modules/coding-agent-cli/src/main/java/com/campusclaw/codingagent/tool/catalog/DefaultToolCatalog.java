@@ -101,7 +101,7 @@ public class DefaultToolCatalog implements ToolCatalog {
         var contributions = loadContributions(context, diagnostics);
         contributions.sort(Comparator.comparingInt(ToolContribution::priority));
         for (var contribution : contributions) {
-            applyContribution(contribution, toolsByName, sourcesByName, diagnostics);
+            applyContribution(contribution, context, toolsByName, sourcesByName, diagnostics);
         }
         return new ToolCatalogSnapshot(version, toolsByName, sourcesByName, diagnostics);
     }
@@ -124,9 +124,15 @@ public class DefaultToolCatalog implements ToolCatalog {
 
     private void applyContribution(
             ToolContribution contribution,
+            ToolSourceContext context,
             LinkedHashMap<String, AgentTool> toolsByName,
             LinkedHashMap<String, ToolContributionSource> sourcesByName,
             List<String> diagnostics) {
+        if (!context.replacementEnabled() && contribution.mergeStrategy() != ToolMergeStrategy.ADD) {
+            diagnostics.add("Tool '" + contribution.targetName() + "' " + contribution.mergeStrategy()
+                    + " contribution ignored because replacement is disabled");
+            return;
+        }
         if (contribution.mergeStrategy() == ToolMergeStrategy.DISABLE) {
             toolsByName.remove(contribution.targetName());
             sourcesByName.remove(contribution.targetName());

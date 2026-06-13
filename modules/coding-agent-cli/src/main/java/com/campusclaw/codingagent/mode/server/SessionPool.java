@@ -24,6 +24,7 @@ import com.campusclaw.codingagent.prompt.SystemPromptBuilder;
 import com.campusclaw.codingagent.session.AgentSession;
 import com.campusclaw.codingagent.session.SessionConfig;
 import com.campusclaw.codingagent.session.SessionManager;
+import com.campusclaw.codingagent.settings.SettingsManager;
 import com.campusclaw.codingagent.skill.SandboxSkillParser;
 import com.campusclaw.codingagent.skill.SkillExpander;
 import com.campusclaw.codingagent.skill.SkillLoader;
@@ -61,6 +62,7 @@ public class SessionPool {
     private final SandboxSkillParser sandboxParser;
     private final boolean useSandbox;
     private final boolean persistenceEnabled;
+    private final SettingsManager settingsManager;
     private final String serverCwd;
 
     private final Map<String, Entry> sessions = new ConcurrentHashMap<>();
@@ -108,7 +110,8 @@ public class SessionPool {
                 baseConfig,
                 sandboxParser,
                 useSandbox,
-                persistenceEnabled);
+                persistenceEnabled,
+                null);
     }
 
     public SessionPool(
@@ -122,6 +125,32 @@ public class SessionPool {
             SandboxSkillParser sandboxParser,
             boolean useSandbox,
             boolean persistenceEnabled) {
+        this(
+                aiService,
+                modelRegistry,
+                promptBuilder,
+                tools,
+                toolCatalog,
+                toolSelection,
+                baseConfig,
+                sandboxParser,
+                useSandbox,
+                persistenceEnabled,
+                null);
+    }
+
+    public SessionPool(
+            CampusClawAiService aiService,
+            ModelRegistry modelRegistry,
+            SystemPromptBuilder promptBuilder,
+            List<AgentTool> tools,
+            ToolCatalog toolCatalog,
+            ToolSelection toolSelection,
+            SessionConfig baseConfig,
+            SandboxSkillParser sandboxParser,
+            boolean useSandbox,
+            boolean persistenceEnabled,
+            SettingsManager settingsManager) {
         this.aiService = aiService;
         this.modelRegistry = modelRegistry;
         this.promptBuilder = promptBuilder;
@@ -132,6 +161,7 @@ public class SessionPool {
         this.sandboxParser = sandboxParser;
         this.useSandbox = useSandbox;
         this.persistenceEnabled = persistenceEnabled;
+        this.settingsManager = settingsManager;
         this.serverCwd = System.getProperty("user.dir");
 
         this.cleaner = Executors.newSingleThreadScheduledExecutor(r -> {
@@ -249,7 +279,7 @@ public class SessionPool {
         if (toolCatalog == null) {
             return Map.of("status", "disabled", "message", "Tool catalog is not available");
         }
-        var snapshot = toolCatalog.refresh(new ToolRefreshRequest(baseConfig.cwd()));
+        var snapshot = toolCatalog.refresh(new ToolRefreshRequest(baseConfig.cwd(), currentToolsSettings()));
         sessions.values().forEach(entry -> entry.session().reload());
         return Map.of(
                 "status",
@@ -260,6 +290,14 @@ public class SessionPool {
                 snapshot.diagnostics(),
                 "tools",
                 toolCatalog.resolve(toolSelection).stream().map(AgentTool::name).toList());
+    }
+
+    private com.campusclaw.codingagent.settings.Settings.ToolsSettings currentToolsSettings() {
+        if (settingsManager == null) {
+            return null;
+        }
+        var settings = settingsManager.load();
+        return settings != null ? settings.tools() : null;
     }
 
     /**

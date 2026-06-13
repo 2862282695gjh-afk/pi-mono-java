@@ -31,10 +31,14 @@ public class DeclarativeToolSource implements ToolSource {
     @Override
     public List<ToolContribution> load(ToolSourceContext context) {
         var contributions = new ArrayList<ToolContribution>();
-        contributions.addAll(
-                loadDirectory(context.userToolsDir(), ToolContributionSource.user("user-tools"), 300, context));
-        contributions.addAll(loadDirectory(
-                context.projectToolsDir(), ToolContributionSource.project("project-tools"), 400, context));
+        if (context.userToolsEnabled()) {
+            contributions.addAll(
+                    loadDirectory(context.userToolsDir(), ToolContributionSource.user("user-tools"), 300, context));
+        }
+        if (context.projectToolsEnabled()) {
+            contributions.addAll(loadDirectory(
+                    context.projectToolsDir(), ToolContributionSource.project("project-tools"), 400, context));
+        }
         return List.copyOf(contributions);
     }
 

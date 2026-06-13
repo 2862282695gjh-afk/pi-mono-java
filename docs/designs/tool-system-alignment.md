@@ -482,9 +482,9 @@ tools:
 
 ## 10. 开放问题
 
-1. `settings.json` 已允许 `tools` 顶层字段，当前支持 `include` / `exclude` / `noTools` / `mcpServers`。
+1. `settings.json` 已允许 `tools` 顶层字段，当前支持 `enabled` / `include` / `exclude` / `noTools` / `allowProjectTools` / `allowUserTools` / `allowToolReplacement` / `mcpEnabled` / `watch` / `mcpServers`。
 2. MCP HTTP transport 当前采用简单 JSON-RPC over HTTP；Streamable HTTP 可作为后续兼容增强。
 3. untrusted process tool 是否必须强制 Docker 沙箱；如果用户无 Docker，是否直接禁用。
 4. `prepareArguments`、`defaultExecutionMode` 已进入 `agent-core` 的 `AgentTool` 默认方法与执行 pipeline。
-5. server 模式 `POST /api/tools/reload` 当前会刷新 catalog 并 reload `SessionPool` 活跃 session；单个 API session 级独立 tool selection 仍未建模。
+5. server 模式 `POST /api/tools/reload` 当前会重新读取 settings、刷新 catalog 并 reload `SessionPool` 活跃 session；单个 API session 级独立 tool selection 仍未建模。
 6. cron executor 已通过 `agent-core` 的 `ToolProvider` 与 CLI `ToolCatalog` 对齐；cron 模块只依赖共享接口，CLI 负责提供 catalog-backed adapter。

@@ -15,7 +15,13 @@ import com.campusclaw.codingagent.config.AppPaths;
  * @version [br_eCampusCore 25.1.0_Next, 2026/06/12]
  * @since [br_eCampusCore 25.1.0_Next]
  */
-public record ToolSourceContext(Path cwd, Path userToolsDir) {
+public record ToolSourceContext(
+        Path cwd,
+        Path userToolsDir,
+        boolean userToolsEnabled,
+        boolean projectToolsEnabled,
+        boolean replacementEnabled,
+        boolean mcpEnabled) {
 
     public ToolSourceContext {
         cwd = cwd != null ? cwd : Path.of(System.getProperty("user.dir"));
@@ -23,10 +29,18 @@ public record ToolSourceContext(Path cwd, Path userToolsDir) {
                 userToolsDir != null ? userToolsDir : CampusClawHome.baseDir().resolve("tools");
     }
 
+    public ToolSourceContext(Path cwd, Path userToolsDir) {
+        this(cwd, userToolsDir, true, true, true, true);
+    }
+
     public static ToolSourceContext defaults() {
         return new ToolSourceContext(
                 Path.of(System.getProperty("user.dir")),
-                CampusClawHome.baseDir().resolve("tools"));
+                CampusClawHome.baseDir().resolve("tools"),
+                true,
+                true,
+                true,
+                true);
     }
 
     public Path projectToolsDir() {

@@ -5,6 +5,8 @@
 package com.campusclaw.codingagent.mode.server;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import java.nio.file.Path;
 import java.util.List;
@@ -16,8 +18,12 @@ import com.campusclaw.agent.tool.AgentToolUpdateCallback;
 import com.campusclaw.agent.tool.CancellationToken;
 import com.campusclaw.ai.types.TextContent;
 import com.campusclaw.codingagent.session.SessionConfig;
+import com.campusclaw.codingagent.settings.Settings;
+import com.campusclaw.codingagent.settings.SettingsManager;
 import com.campusclaw.codingagent.tool.catalog.DefaultToolCatalog;
 import com.campusclaw.codingagent.tool.catalog.SpringAgentToolSource;
+import com.campusclaw.codingagent.tool.catalog.ToolContribution;
+import com.campusclaw.codingagent.tool.catalog.ToolContributionSource;
 import com.campusclaw.codingagent.tool.catalog.ToolSelection;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -49,6 +55,65 @@ class SessionPoolToolStatusTest {
         assertThat(status).containsEntry("version", catalog.snapshot().version());
         assertThat(status.get("tools")).asList().containsExactly("read");
         assertThat(status.get("diagnostics")).asList().isEmpty();
+    }
+
+    @Test
+    void reloadToolsUsesLatestSettingsForCatalogContext() {
+        var projectTool = new TestTool("project_tool");
+        var catalog = new DefaultToolCatalog(List.of(context -> context.projectToolsEnabled()
+                ? List.of(ToolContribution.add(projectTool, ToolContributionSource.project("project-tools"), 400))
+                : List.of()));
+        var settingsManager = mock(SettingsManager.class);
+        when(settingsManager.load()).thenReturn(settingsWithProjectToolsDisabled());
+        var pool = new SessionPool(
+                null,
+                null,
+                null,
+                List.of(projectTool),
+                catalog,
+                ToolSelection.all(),
+                new SessionConfig(null, Path.of("/tmp/project"), null, "server"),
+                null,
+                false,
+                false,
+                settingsManager);
+
+        Map<String, Object> status = pool.reloadTools();
+
+        assertThat(status.get("tools")).asList().isEmpty();
+    }
+
+    private Settings settingsWithProjectToolsDisabled() {
+        return new Settings(
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                new Settings.ToolsSettings(null, null, null, null, false, true, true, null, true, Map.of()));
     }
 
     private record TestTool(String name) implements AgentTool {

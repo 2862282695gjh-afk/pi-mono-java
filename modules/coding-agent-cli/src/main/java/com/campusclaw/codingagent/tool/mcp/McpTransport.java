@@ -4,6 +4,7 @@
 
 package com.campusclaw.codingagent.tool.mcp;
 
+import com.campusclaw.agent.tool.CancellationToken;
 import com.fasterxml.jackson.databind.JsonNode;
 
 /**
@@ -15,6 +16,13 @@ import com.fasterxml.jackson.databind.JsonNode;
 public interface McpTransport extends AutoCloseable {
 
     JsonNode request(String method, JsonNode params);
+
+    default JsonNode request(String method, JsonNode params, CancellationToken signal) {
+        if (signal != null && signal.isCancelled()) {
+            throw new McpException("MCP request cancelled");
+        }
+        return request(method, params);
+    }
 
     @Override
     void close();

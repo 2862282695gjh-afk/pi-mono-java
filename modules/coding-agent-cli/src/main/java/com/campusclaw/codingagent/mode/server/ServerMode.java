@@ -246,7 +246,8 @@ public class ServerMode {
                 baseConfig,
                 sandboxParser,
                 useSandbox,
-                sessionPersistenceEnabled);
+                sessionPersistenceEnabled,
+                settingsManager);
         var chatHandler = new ChatHandler(sessionPool);
         var wsHandler = new ChatWebSocketHandler(sessionPool, modelCatalog);
         var skillHandler = new SkillHandler(

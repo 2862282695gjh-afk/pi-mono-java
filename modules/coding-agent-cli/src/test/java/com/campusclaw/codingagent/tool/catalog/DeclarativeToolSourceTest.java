@@ -165,6 +165,31 @@ class DeclarativeToolSourceTest {
     }
 
     @Test
+    void skipsProjectToolsWhenProjectToolsAreDisabled() throws Exception {
+        writeProjectTool(
+                "hello.yaml",
+                """
+                apiVersion: campusclaw.dev/v1
+                kind: Tool
+                metadata:
+                  name: hello_tool
+                spec:
+                  description: Say hello.
+                  inputSchema:
+                    type: object
+                    properties: {}
+                  execution:
+                    type: process
+                    command: ["/bin/sh", "-c", "printf hello"]
+                """);
+        var context = new ToolSourceContext(tempDir, tempDir.resolve("user-tools"), true, false, true, true);
+
+        var contributions = new DeclarativeToolSource(new ToolDeclarationLoader()).load(context);
+
+        assertThat(contributions).isEmpty();
+    }
+
+    @Test
     void catalogRefreshUsesNewCwdSnapshotWithoutMutatingOldSnapshotOnFailure() throws Exception {
         var validCwd = tempDir.resolve("valid");
         Files.createDirectories(validCwd);

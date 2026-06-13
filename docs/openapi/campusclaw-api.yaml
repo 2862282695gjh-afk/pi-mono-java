@@ -348,8 +348,10 @@ paths:
       operationId: getToolStatus
       description: |
         返回当前 server 进程内可见的 agent tools、catalog 版本和加载诊断。
-        `tools` 数组已经应用 `tools.include` / `tools.exclude` / `tools.noTools`
-        选择规则，因此表示新会话会拿到的工具名集合。
+        `tools` 数组已经应用 `tools.enabled` / `tools.include` /
+        `tools.exclude` / `tools.noTools` 选择规则，因此表示新会话会拿到的
+        工具名集合。catalog reload 还会重新读取并应用 `allowProjectTools` /
+        `allowUserTools` / `allowToolReplacement` / `mcpEnabled` 等来源开关。
 
         已存在会话不会因为读取该端点而改变。
       responses:

@@ -13,8 +13,10 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
+import com.campusclaw.agent.tool.CancellationToken;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -50,6 +52,21 @@ public class StdioMcpTransport implements McpTransport {
 
     @Override
     public synchronized JsonNode request(String method, JsonNode params) {
+        return request(method, params, null);
+    }
+
+    @Override
+    public synchronized JsonNode request(String method, JsonNode params, CancellationToken signal) {
+        if (signal != null && signal.isCancelled()) {
+            throw new McpException("MCP stdio request cancelled");
+        }
+        var cancelled = new AtomicBoolean(false);
+        if (signal != null) {
+            signal.onCancel(() -> {
+                cancelled.set(true);
+                process.destroyForcibly();
+            });
+        }
         long id = nextId.getAndIncrement();
         try {
             var envelope = mapper.createObjectNode();
@@ -60,8 +77,11 @@ public class StdioMcpTransport implements McpTransport {
             writer.write(mapper.writeValueAsString(envelope));
             writer.write('\n');
             writer.flush();
-            return readMatchingResultWithTimeout(id);
+            return readMatchingResultWithTimeout(id, cancelled);
         } catch (IOException e) {
+            if (cancelled.get()) {
+                throw new McpException("MCP stdio request cancelled", e);
+            }
             throw new McpException("MCP stdio request failed: " + e.getMessage(), e);
         }
     }
@@ -71,7 +91,7 @@ public class StdioMcpTransport implements McpTransport {
         process.destroyForcibly();
     }
 
-    private JsonNode readMatchingResultWithTimeout(long id) {
+    private JsonNode readMatchingResultWithTimeout(long id, AtomicBoolean cancelled) {
         try (var executor =
                 Executors.newThreadPerTaskExecutor(Thread.ofVirtual().factory())) {
             var future = executor.submit(() -> readMatchingResult(id));
@@ -83,6 +103,9 @@ public class StdioMcpTransport implements McpTransport {
             Thread.currentThread().interrupt();
             throw new McpException("MCP stdio request interrupted", e);
         } catch (ExecutionException e) {
+            if (cancelled.get()) {
+                throw new McpException("MCP stdio request cancelled", e);
+            }
             var cause = e.getCause();
             if (cause instanceof McpException mcpException) {
                 throw mcpException;

@@ -51,7 +51,7 @@ public class JsonRpcMcpClient implements McpClient {
         var params = mapper.createObjectNode();
         params.put("name", name);
         params.set("arguments", mapper.valueToTree(arguments != null ? arguments : Map.of()));
-        JsonNode result = transport.request("tools/call", params);
+        JsonNode result = transport.request("tools/call", params, signal);
         return new McpCallResult(readContent(result.path("content")), readDetails(result));
     }
 

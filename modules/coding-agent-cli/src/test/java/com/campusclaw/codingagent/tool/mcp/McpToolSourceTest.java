@@ -48,6 +48,18 @@ class McpToolSourceTest {
     }
 
     @Test
+    void skipsMcpServersWhenMcpToolsAreDisabled() {
+        var client = new FakeMcpClient(List.of(tool("echo")));
+        var source = new McpToolSource(List.of(config("filesystem")), ignored -> client);
+        var context = new com.campusclaw.codingagent.tool.catalog.ToolSourceContext(
+                java.nio.file.Path.of("."), java.nio.file.Path.of("user-tools"), true, true, true, false);
+
+        var contributions = source.load(context);
+
+        assertThat(contributions).isEmpty();
+    }
+
+    @Test
     void untrustedRawNameCannotReplaceProtectedBuiltInTool() {
         var bash = new TestTool("bash");
         var source = new McpToolSource(

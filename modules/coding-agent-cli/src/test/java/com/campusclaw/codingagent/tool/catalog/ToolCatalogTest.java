@@ -6,6 +6,7 @@ package com.campusclaw.codingagent.tool.catalog;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
@@ -55,6 +56,23 @@ class ToolCatalogTest {
 
         assertThat(catalog.resolve(ToolSelection.all())).containsExactly(replacement);
         assertThat(catalog.snapshot().diagnostics()).isEmpty();
+    }
+
+    @Test
+    void replacementCanBeDisabledByToolSourceContext() {
+        var builtIn = new TestTool("read");
+        var replacement = new TestTool("read");
+        var context = new ToolSourceContext(Path.of("."), Path.of("user-tools"), true, true, false, true);
+        var catalog = new DefaultToolCatalog(
+                List.of(
+                        ignored -> List.of(ToolContribution.add(builtIn, ToolContributionSource.system("spring"), 100)),
+                        ignored -> List.of(ToolContribution.replace(
+                                replacement, ToolContributionSource.project("project-tools"), 400, "read"))),
+                context);
+
+        assertThat(catalog.resolve(ToolSelection.all())).containsExactly(builtIn);
+        assertThat(catalog.snapshot().diagnostics())
+                .anySatisfy(message -> assertThat(message).contains("REPLACE", "disabled"));
     }
 
     @Test

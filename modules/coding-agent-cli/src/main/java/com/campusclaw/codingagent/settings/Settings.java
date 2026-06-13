@@ -168,7 +168,11 @@ public record Settings(
             @JsonProperty("include") @Nullable List<String> include,
             @JsonProperty("exclude") @Nullable List<String> exclude,
             @JsonProperty("noTools") @Nullable Boolean noTools,
+            @JsonProperty("allowProjectTools") @Nullable Boolean allowProjectTools,
+            @JsonProperty("allowUserTools") @Nullable Boolean allowUserTools,
+            @JsonProperty("allowToolReplacement") @Nullable Boolean allowToolReplacement,
             @JsonProperty("watch") @Nullable ToolWatchSettings watch,
+            @JsonProperty("mcpEnabled") @Nullable Boolean mcpEnabled,
             @JsonProperty("mcpServers") @Nullable Map<String, McpServerSettings> mcpServers) {
 
         public ToolsSettings(
@@ -177,7 +181,17 @@ public record Settings(
                 @Nullable Boolean noTools,
                 @Nullable ToolWatchSettings watch,
                 @Nullable Map<String, McpServerSettings> mcpServers) {
-            this(null, include, exclude, noTools, watch, mcpServers);
+            this(null, include, exclude, noTools, null, null, null, watch, null, mcpServers);
+        }
+
+        public ToolsSettings(
+                @Nullable Boolean enabled,
+                @Nullable List<String> include,
+                @Nullable List<String> exclude,
+                @Nullable Boolean noTools,
+                @Nullable ToolWatchSettings watch,
+                @Nullable Map<String, McpServerSettings> mcpServers) {
+            this(enabled, include, exclude, noTools, null, null, null, watch, null, mcpServers);
         }
     }
 
