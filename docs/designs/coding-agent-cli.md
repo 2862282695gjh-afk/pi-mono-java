@@ -118,7 +118,7 @@ flowchart LR
 1. **Spring Boot + Picocli 双重启动器**：`CampusClawApplication` 是 `@SpringBootApplication`，通过 `picocli-spring-boot-starter` 把 Spring bean 注入到 `@Command` 注解的 `CampusClawCommand` 中；`SpringApplication.run` 完成包扫描后由 `CommandLineRunner` 把 args 交给 Picocli 解析，最终调用 `call()`；
 2. **模式分发**：`call()` 内 if/else 链按 `--mode` / `--print` / `--export` / `--list-models` / `--cron-tick` 等开关路由到对应 mode 类（`InteractiveMode` / `OneShotMode` / `RpcMode` / `ServerMode` / 直接出口）；
 3. **工具实现作为 `AgentTool` bean**：每个工具一个 `@Component`，靠 `ConditionalOnProperty(name = "tool.execution.hybrid-enabled", havingValue = "false")` 切换 LOCAL vs Hybrid 变体——同名工具二选一注入 `List<AgentTool>`；
-4. **生产工具入口统一到 `ToolCatalog`**：Spring 工具、`ExtensionRegistry` 工具、声明式进程工具与 MCP 工具先汇聚为 catalog 快照，再由 `ToolSelection` 统一处理 `--tools` / `--no-tools` / settings 中的 `tools.include` / `tools.exclude` / `tools.noTools`，`CampusClawCommand` 不再直接过滤 `List<AgentTool>`；
+4. **生产工具入口统一到 `ToolCatalog`**：Spring 工具、`ExtensionRegistry` 工具、声明式进程工具与 MCP 工具先汇聚为 catalog 快照，再由 `ToolSelection` 统一处理 `--tools` / `--no-tools` / settings 中的 `tools.include` / `tools.exclude` / `tools.noTools`，`CampusClawCommand` 不再直接过滤 `List<AgentTool>`；cron 通过 `agent-core` 的 `ToolProvider` adapter 复用同一 catalog；
 5. **Reactor Netty 嵌入式 HTTP**：server 模式不走 spring-mvc tomcat，而是直接 `HttpServer.create(...)` + `RouterFunctions.toHttpHandler(...)` —— Webflux 的函数式路由更轻；同一 server 同时挂 `routes.get("/api/ws/chat", ...)` 走原生 reactor-netty WebSocket；
 6. **JSONL 会话**：消息序列化为 polymorphic Jackson JSON（`role` 字段作为 discriminator），按 `--<encoded-cwd>--/<id>.jsonl` 路径组织，每条消息一行，方便 grep / 增量追加；
 7. **Skill / Extension 双层扩展**：Skill 是**运行时**用户可装的 markdown 包（带 `SKILL.md` 元数据），主要内容是 prompt 片段；Extension 是**编译期**仓库内 Java 类实现，注册到 6 种 `ExtensionPoint`；
@@ -384,6 +384,7 @@ sequenceDiagram
 - `ToolCatalogSnapshot`：有效工具、来源与 diagnostics 的不可变快照
 - `ToolContribution` / `ToolMergeStrategy`：描述 ADD / REPLACE / WRAP / DISABLE 合并语义
 - `ToolSelection`：合并 CLI 与 settings 的 include / exclude / noTools 规则
+- `ToolProviderConfiguration`：把 `agent-core` 的 `ToolProvider` 绑定到 `ToolCatalog.resolve(ToolSelection)`，供 cron 等上游模块复用 catalog
 - `SpringAgentToolSource` / `ExtensionToolSource`：把 Spring bean 与编译期 extension 工具接入 catalog
 - `DeclarativeToolSource` / `ToolDeclarationLoader` / `ProcessAgentTool`：从 `<cwd>/.campusclaw/tools` 等目录加载 YAML/JSON 声明式进程工具
 

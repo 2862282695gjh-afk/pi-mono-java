@@ -13,6 +13,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 
 import com.campusclaw.agent.tool.AgentTool;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 /**
@@ -29,6 +30,7 @@ public class DefaultToolCatalog implements ToolCatalog {
     private volatile ToolSourceContext context;
     private volatile ToolCatalogSnapshot snapshot;
 
+    @Autowired
     public DefaultToolCatalog(List<ToolSource> sources) {
         this(sources, ToolSourceContext.defaults());
     }

@@ -361,7 +361,7 @@ server 模式：
 
 cron 模式：
 
-- `CronJobExecutor` 当前仍使用 `List<AgentTool>` 注入与 job payload 中的 `allowedTools` 过滤。`ToolCatalog` 位于 `coding-agent-cli` 模块，而 `cron` 是其上游依赖；直接让 cron 依赖 CLI 会形成模块环。该项需要先把 catalog API 下沉到 `agent-core` 或独立 shared module，再替换 cron executor 路径。
+- `CronJobExecutor` 通过 `agent-core` 的 `ToolProvider` 解析 job payload 中的 `allowedTools`。`coding-agent-cli` 提供 `ToolProvider` bean，并把调用委托给 `ToolCatalog.resolve(ToolSelection)`；cron 模块不依赖 CLI，避免模块环。未装配 `ToolProvider` 的独立 cron 上下文仍回退到 Spring 注入的 `List<AgentTool>`。
 
 ### 5.4 配置设计
 
@@ -487,4 +487,4 @@ tools:
 3. untrusted process tool 是否必须强制 Docker 沙箱；如果用户无 Docker，是否直接禁用。
 4. `prepareArguments`、`defaultExecutionMode` 已进入 `agent-core` 的 `AgentTool` 默认方法与执行 pipeline。
 5. server 模式 `POST /api/tools/reload` 当前会刷新 catalog 并 reload `SessionPool` 活跃 session；单个 API session 级独立 tool selection 仍未建模。
-6. cron executor 接入 `ToolCatalog` 需要先解决模块边界：把 catalog API 下沉到 `agent-core` 或拆出 shared module。
+6. cron executor 已通过 `agent-core` 的 `ToolProvider` 与 CLI `ToolCatalog` 对齐；cron 模块只依赖共享接口，CLI 负责提供 catalog-backed adapter。
