@@ -9,6 +9,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import com.campusclaw.agent.tool.AgentTool;
@@ -132,6 +136,22 @@ class ToolCatalogTest {
         assertThat(refreshed.toolsByName()).containsOnlyKeys("bash");
     }
 
+    @Test
+    void concurrentRefreshesAllocateDistinctVersions() throws Exception {
+        var source = new BlockingSource();
+        var catalog = new DefaultToolCatalog(List.of(source));
+
+        try (var executor = Executors.newFixedThreadPool(2)) {
+            var first = executor.submit(() -> catalog.refresh());
+            assertThat(source.awaitFirstRefresh()).isTrue();
+            var second = executor.submit(() -> catalog.refresh());
+            source.release();
+
+            assertThat(List.of(first.get().version(), second.get().version())).containsExactlyInAnyOrder(2L, 3L);
+            assertThat(catalog.snapshot().version()).isEqualTo(3L);
+        }
+    }
+
     private record TestExtension(String id, AgentTool tool) implements Extension {
 
         @Override
@@ -155,6 +175,34 @@ class ToolCatalogTest {
         @Override
         public List<ToolContribution> load(ToolSourceContext context) {
             return contributions;
+        }
+    }
+
+    private static final class BlockingSource implements ToolSource {
+        private final CountDownLatch firstRefreshStarted = new CountDownLatch(1);
+        private final CountDownLatch release = new CountDownLatch(1);
+        private final AtomicInteger calls = new AtomicInteger();
+
+        private boolean awaitFirstRefresh() throws InterruptedException {
+            return firstRefreshStarted.await(5, TimeUnit.SECONDS);
+        }
+
+        private void release() {
+            release.countDown();
+        }
+
+        @Override
+        public List<ToolContribution> load(ToolSourceContext context) {
+            if (calls.incrementAndGet() == 1) {
+                return List.of();
+            }
+            firstRefreshStarted.countDown();
+            try {
+                release.await(5, TimeUnit.SECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+            return List.of();
         }
     }
 

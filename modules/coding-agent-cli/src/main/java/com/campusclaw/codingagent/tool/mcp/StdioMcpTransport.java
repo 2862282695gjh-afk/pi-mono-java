@@ -56,6 +56,21 @@ public class StdioMcpTransport implements McpTransport {
     }
 
     @Override
+    public synchronized void notify(String method, JsonNode params) {
+        try {
+            var envelope = mapper.createObjectNode();
+            envelope.put("jsonrpc", "2.0");
+            envelope.put("method", method);
+            envelope.set("params", params);
+            writer.write(mapper.writeValueAsString(envelope));
+            writer.write('\n');
+            writer.flush();
+        } catch (IOException e) {
+            throw new McpException("MCP stdio notification failed: " + e.getMessage(), e);
+        }
+    }
+
+    @Override
     public synchronized JsonNode request(String method, JsonNode params, CancellationToken signal) {
         if (signal != null && signal.isCancelled()) {
             throw new McpException("MCP stdio request cancelled");

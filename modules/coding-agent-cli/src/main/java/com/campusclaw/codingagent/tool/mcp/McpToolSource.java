@@ -5,8 +5,10 @@
 package com.campusclaw.codingagent.tool.mcp;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.function.Supplier;
 
@@ -17,6 +19,8 @@ import com.campusclaw.codingagent.tool.catalog.ToolContributionSource;
 import com.campusclaw.codingagent.tool.catalog.ToolSource;
 import com.campusclaw.codingagent.tool.catalog.ToolSourceContext;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
@@ -29,6 +33,7 @@ import org.springframework.stereotype.Component;
 @Component
 public class McpToolSource implements ToolSource {
 
+    private static final Logger log = LoggerFactory.getLogger(McpToolSource.class);
     private static final Set<String> PROTECTED_BUILT_INS = Set.of("bash", "write", "edit", "read");
     private static final int MCP_PRIORITY = 250;
     private static final int DEFAULT_STARTUP_TIMEOUT_SECONDS = 10;
@@ -37,6 +42,7 @@ public class McpToolSource implements ToolSource {
     private final Supplier<List<McpServerConfig>> configSupplier;
     private final McpClientFactory clientFactory;
     private final SettingsManager settingsManager;
+    private final Map<McpServerConfig, McpClient> clients = new LinkedHashMap<>();
 
     public McpToolSource(DefaultMcpClientFactory clientFactory) {
         this(List.of(), clientFactory);
@@ -57,19 +63,20 @@ public class McpToolSource implements ToolSource {
     }
 
     @Override
-    public List<ToolContribution> load(ToolSourceContext context) {
+    public synchronized List<ToolContribution> load(ToolSourceContext context) {
         if (context != null && !context.mcpEnabled()) {
+            closeCachedClients();
             return List.of();
         }
         if (settingsManager != null && context != null) {
             settingsManager.setWorkingDir(context.cwd());
         }
+        var configs =
+                configSupplier.get().stream().filter(McpServerConfig::enabled).toList();
+        closeStaleClients(configs);
         var contributions = new ArrayList<ToolContribution>();
-        for (var config : configSupplier.get()) {
-            if (!config.enabled()) {
-                continue;
-            }
-            var client = clientFactory.create(config);
+        for (var config : configs) {
+            var client = clients.computeIfAbsent(config, clientFactory::create);
             for (var definition : client.listTools()) {
                 contributions.add(toContribution(config, definition, client));
             }
@@ -87,6 +94,31 @@ public class McpToolSource implements ToolSource {
         }
         var tool = new McpAgentTool(exposedName, config.name() + " " + definition.name(), definition, client);
         return ToolContribution.add(tool, ToolContributionSource.mcp(config.name()), MCP_PRIORITY);
+    }
+
+    private void closeStaleClients(List<McpServerConfig> activeConfigs) {
+        var active = Set.copyOf(activeConfigs);
+        var iterator = clients.entrySet().iterator();
+        while (iterator.hasNext()) {
+            var entry = iterator.next();
+            if (!active.contains(entry.getKey())) {
+                closeQuietly(entry.getValue());
+                iterator.remove();
+            }
+        }
+    }
+
+    private void closeCachedClients() {
+        clients.values().forEach(this::closeQuietly);
+        clients.clear();
+    }
+
+    private void closeQuietly(McpClient client) {
+        try {
+            client.close();
+        } catch (RuntimeException e) {
+            log.debug("failed to close MCP client", e);
+        }
     }
 
     private String exposedName(McpServerConfig config, String rawName) {

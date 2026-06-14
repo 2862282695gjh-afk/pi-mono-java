@@ -47,7 +47,7 @@ public class DefaultToolCatalog implements ToolCatalog {
     }
 
     @Override
-    public ToolCatalogSnapshot refresh() {
+    public synchronized ToolCatalogSnapshot refresh() {
         var previous = snapshot;
         var next = buildSnapshot(snapshot.version() + 1, context);
         snapshot = next;
@@ -56,7 +56,7 @@ public class DefaultToolCatalog implements ToolCatalog {
     }
 
     @Override
-    public ToolCatalogSnapshot refresh(ToolRefreshRequest request) {
+    public synchronized ToolCatalogSnapshot refresh(ToolRefreshRequest request) {
         var nextContext = request != null ? request.toSourceContext(context) : context;
         var next = buildSnapshot(snapshot.version() + 1, nextContext);
         if (hasSourceFailure(next)) {

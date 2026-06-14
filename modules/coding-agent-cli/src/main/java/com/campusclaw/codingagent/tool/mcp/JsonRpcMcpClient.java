@@ -20,8 +20,12 @@ import com.fasterxml.jackson.databind.ObjectMapper;
  */
 public class JsonRpcMcpClient implements McpClient {
 
+    private static final String PROTOCOL_VERSION = "2025-03-26";
+
     private final ObjectMapper mapper;
     private final McpTransport transport;
+    private final Object initializeLock = new Object();
+    private volatile boolean initialized;
 
     public JsonRpcMcpClient(ObjectMapper mapper, McpTransport transport) {
         this.mapper = mapper;
@@ -30,6 +34,7 @@ public class JsonRpcMcpClient implements McpClient {
 
     @Override
     public List<McpToolDefinition> listTools() {
+        ensureInitialized(null);
         JsonNode result = transport.request("tools/list", mapper.createObjectNode());
         JsonNode tools = result.path("tools");
         var definitions = new ArrayList<McpToolDefinition>();
@@ -48,6 +53,7 @@ public class JsonRpcMcpClient implements McpClient {
 
     @Override
     public McpCallResult callTool(String name, Map<String, Object> arguments, CancellationToken signal) {
+        ensureInitialized(signal);
         var params = mapper.createObjectNode();
         params.put("name", name);
         params.set("arguments", mapper.valueToTree(arguments != null ? arguments : Map.of()));
@@ -58,6 +64,30 @@ public class JsonRpcMcpClient implements McpClient {
     @Override
     public void close() {
         transport.close();
+    }
+
+    private void ensureInitialized(CancellationToken signal) {
+        if (initialized) {
+            return;
+        }
+        synchronized (initializeLock) {
+            if (initialized) {
+                return;
+            }
+            var params = mapper.createObjectNode();
+            params.put("protocolVersion", PROTOCOL_VERSION);
+            params.set("capabilities", mapper.createObjectNode());
+            params.set(
+                    "clientInfo",
+                    mapper.createObjectNode().put("name", "campusclaw").put("version", "1.0.0"));
+            JsonNode result = transport.request("initialize", params, signal);
+            String serverVersion = result.path("protocolVersion").asText(PROTOCOL_VERSION);
+            if (!PROTOCOL_VERSION.equals(serverVersion)) {
+                throw new McpException("unsupported MCP protocol version: " + serverVersion);
+            }
+            transport.notify("notifications/initialized", mapper.createObjectNode());
+            initialized = true;
+        }
     }
 
     private List<McpContent> readContent(JsonNode content) {

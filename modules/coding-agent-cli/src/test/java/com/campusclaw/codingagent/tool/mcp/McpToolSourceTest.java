@@ -8,6 +8,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import com.campusclaw.agent.tool.AgentTool;
 import com.campusclaw.agent.tool.AgentToolResult;
@@ -72,6 +73,26 @@ class McpToolSourceTest {
                 .anySatisfy(message -> assertThat(message).contains("untrusted", "bash"));
     }
 
+    @Test
+    void reusesMcpClientAcrossRefreshesAndClosesItWhenDisabled() {
+        var createdClients = new AtomicInteger();
+        var closedClients = new AtomicInteger();
+        var source = new McpToolSource(List.of(config("filesystem")), ignored -> {
+            createdClients.incrementAndGet();
+            return new FakeMcpClient(List.of(tool("echo")), closedClients);
+        });
+        var enabled = com.campusclaw.codingagent.tool.catalog.ToolSourceContext.defaults();
+        var disabled = new com.campusclaw.codingagent.tool.catalog.ToolSourceContext(
+                java.nio.file.Path.of("."), java.nio.file.Path.of("user-tools"), true, true, true, false);
+
+        source.load(enabled);
+        source.load(enabled);
+        source.load(disabled);
+
+        assertThat(createdClients).hasValue(1);
+        assertThat(closedClients).hasValue(1);
+    }
+
     private McpServerConfig config(String name) {
         return new McpServerConfig(
                 name,
@@ -97,7 +118,11 @@ class McpToolSourceTest {
                         .set("properties", new ObjectMapper().createObjectNode()));
     }
 
-    private record FakeMcpClient(List<McpToolDefinition> tools) implements McpClient {
+    private record FakeMcpClient(List<McpToolDefinition> tools, AtomicInteger closeCounter) implements McpClient {
+
+        private FakeMcpClient(List<McpToolDefinition> tools) {
+            this(tools, new AtomicInteger());
+        }
 
         @Override
         public List<McpToolDefinition> listTools() {
@@ -110,7 +135,9 @@ class McpToolSourceTest {
         }
 
         @Override
-        public void close() {}
+        public void close() {
+            closeCounter.incrementAndGet();
+        }
     }
 
     private record TestTool(String name) implements AgentTool {

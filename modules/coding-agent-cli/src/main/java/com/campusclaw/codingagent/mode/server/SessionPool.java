@@ -280,7 +280,7 @@ public class SessionPool {
             return Map.of("status", "disabled", "message", "Tool catalog is not available");
         }
         var snapshot = toolCatalog.refresh(new ToolRefreshRequest(baseConfig.cwd(), currentToolsSettings()));
-        sessions.values().forEach(entry -> entry.session().reload());
+        sessions.values().forEach(entry -> entry.session().reloadFromCatalogSnapshot());
         return Map.of(
                 "status",
                 "ok",

@@ -354,9 +354,24 @@ public class AgentSession {
      * @param customPrompt the user-supplied custom prompt (may be null)
      */
     public void reload(String customPrompt) {
+        reload(customPrompt, true);
+    }
+
+    /**
+     * Reloads session-facing state after the shared catalog has already been refreshed.
+     */
+    public void reloadFromCatalogSnapshot() {
+        reload(null, false);
+    }
+
+    private void reload(String customPrompt, boolean refreshCatalog) {
         requireInitialized();
         Path cwd = initializedCwd != null ? initializedCwd : Path.of(System.getProperty("user.dir"));
-        refreshTools(cwd);
+        if (refreshCatalog) {
+            refreshTools(cwd);
+        } else {
+            resolveToolsFromCatalogSnapshot();
+        }
 
         // Reload skills
         loadSkills(cwd);
@@ -451,6 +466,13 @@ public class AgentSession {
             return;
         }
         toolCatalog.refresh(new ToolRefreshRequest(cwd));
+        resolveToolsFromCatalogSnapshot();
+    }
+
+    private void resolveToolsFromCatalogSnapshot() {
+        if (toolCatalog == null) {
+            return;
+        }
         tools = List.copyOf(toolCatalog.resolve(toolSelection));
     }
 

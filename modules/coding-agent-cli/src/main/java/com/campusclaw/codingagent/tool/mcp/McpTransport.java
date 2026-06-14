@@ -17,6 +17,10 @@ public interface McpTransport extends AutoCloseable {
 
     JsonNode request(String method, JsonNode params);
 
+    default void notify(String method, JsonNode params) {
+        // Transports that support JSON-RPC notifications override this method.
+    }
+
     default JsonNode request(String method, JsonNode params, CancellationToken signal) {
         if (signal != null && signal.isCancelled()) {
             throw new McpException("MCP request cancelled");
