@@ -1,0 +1,26 @@
+{
+  "requestId": "dev_rule_fd7241a5",
+  "ruleName": "送风机故障",
+  "deviceType": "送排风",
+  "component": "送风机",
+  "scenario": "fault",
+  "devices": [
+    {
+      "deviceId": "送排风_送风机",
+      "data": [
+        {
+          "ts": 1779955371.749634,
+          "points": {
+            "FaultAlarm": 1.0
+          }
+        },
+        {
+          "ts": 1779955431.749634,
+          "points": {
+            "FaultAlarm": 1.0
+          }
+        }
+      ]
+    }
+  ]
+}

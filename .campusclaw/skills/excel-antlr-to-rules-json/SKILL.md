@@ -1,8 +1,12 @@
 ---
 name: excel-antlr-to-rules-json
 description: >-
-  Excel 规则表 → rules_re.json（ANTLR + rule-engine）。失败时读 templates/agent-guide.md，
-  另存新 xlsx 后重跑。
+  将 Excel 故障规则表编译为 rules_re.json（ANTLR + rule-engine）。
+  处理触发条件中的语法错误（中文单位、绝对值符号、恒定判断等），
+  失败时自动读 agent-guide 改表并重跑。
+  当用户提到「转化规则」「Excel 转规则」「编译规则表」「规则报错」「触发条件」「rules_re」
+  「Excel规则」「规则编译」「故障规则表」「编译失败」「语法错误」时触发。
+  即使用户只是说"这个Excel有问题"、"编译不过"、"规则报错了"也应该使用此技能。
 ---
 
 # Excel → ANTLR → `rules_re.json`
@@ -33,6 +37,19 @@ excel-antlr-to-rules-json/
 
 `故障规则.xlsx` → **`rules_re.json`**（`trigger.rule_engine` 仅由脚本生成）。
 
+## 快速参考
+
+| 场景 | 命令 |
+|------|------|
+| 安装依赖 | `pip install -r <skill-path>/requirements.txt` |
+| 编译 Excel | `python <skill-path>/scripts/excel_to_rules.py <xlsx> <output> --report <report>` |
+| 验证规则 | `python <skill-path>/scripts/verify_rules_re.py <rules_re.json>` |
+| 清理中间文件 | `python <skill-path>/scripts/cleanup_rules_intermediates.py <workspace>` |
+| 应用补丁 | `python <skill-path>/scripts/apply_excel_patch.py <patches.json> <xlsx>` |
+| 生成 mock 数据 | `python <skill-path>/scripts/generate_mock_fixtures.py <rules_re.json> <output_dir>` |
+
+**路径说明**：`<skill-path>` = `${OPENCLAW_WORKSPACE}/skills/excel-antlr-to-rules-json`
+
 ## 硬规则
 
 1. 禁止手写 `trigger.rule_engine`  
@@ -44,14 +61,20 @@ excel-antlr-to-rules-json/
 
 ## 流程
 
-```text
-故障规则.xlsx（只读）
-    → excel_to_rules.py（可用 故障规则_patched.xlsx）
-    → _candidate_rules_re.json + compile_report.json
-    → verify_rules_re.py
-    → 用户确认 → rules/rules_re.json
-    → cleanup_rules_intermediates.py（删 rules 中间产物 + skills 下 patch xlsx）
-```
+| 步骤 | 输入 | 输出 | 说明 |
+|------|------|------|------|
+| 1 | 故障规则.xlsx | - | 只读原表（或 `故障规则_patched.xlsx`） |
+| 2 | `excel_to_rules.py` | `_candidate_rules_re.json` + `compile_report.json` | ANTLR 编译 |
+| 3 | `verify_rules_re.py` | - | 验证规则格式 |
+| 4 | 用户确认 | `rules/rules_re.json` | 候选 → 正式 |
+| 5 | `cleanup_rules_intermediates.py` | - | 删除中间产物 |
+
+**可选分支**：
+
+| 输入 | 输出 | 说明 |
+|------|------|------|
+| `rules_re.json` | `mock_fixtures/` | 供 device-inspection-re 测试巡检 |
+| `patches.json` + xlsx | `*_patched.xlsx` | 应用补丁，不覆盖原表 |
 
 ## 中间产物（用后删除）
 
@@ -77,6 +100,10 @@ excel-antlr-to-rules-json/
 
 ## 命令
 
+**路径说明**：`...` 代表 `${OPENCLAW_WORKSPACE}/skills/excel-antlr-to-rules-json`（Unix）或 `%OPENCLAW_WORKSPACE%\skills\excel-antlr-to-rules-json`（Windows）。脚本参数接受 `/` 或 `\`。
+
+### Unix / macOS
+
 ```bash
 pip install -r ${OPENCLAW_WORKSPACE}/skills/excel-antlr-to-rules-json/requirements.txt
 
@@ -88,9 +115,27 @@ python .../scripts/excel_to_rules.py \
 python .../scripts/verify_rules_re.py \
   ${OPENCLAW_WORKSPACE}/rules/_candidate_rules_re.json
 
-# 确认无误后：候选 → 正式，再清理中间文件（Windows 用 copy，Unix 用 cp）
-copy ${OPENCLAW_WORKSPACE}\rules\_candidate_rules_re.json ${OPENCLAW_WORKSPACE}\rules\rules_re.json
+# 确认无误后：候选 → 正式，再清理中间文件
+cp ${OPENCLAW_WORKSPACE}/rules/_candidate_rules_re.json ${OPENCLAW_WORKSPACE}/rules/rules_re.json
 python .../scripts/cleanup_rules_intermediates.py ${OPENCLAW_WORKSPACE}
+```
+
+### Windows (PowerShell)
+
+```powershell
+pip install -r $env:OPENCLAW_WORKSPACE\skills\excel-antlr-to-rules-json\requirements.txt
+
+python ...\scripts\excel_to_rules.py `
+  path\to\故障规则_patched.xlsx `
+  $env:OPENCLAW_WORKSPACE\rules\_candidate_rules_re.json `
+  --report $env:OPENCLAW_WORKSPACE\rules\compile_report.json
+
+python ...\scripts\verify_rules_re.py `
+  $env:OPENCLAW_WORKSPACE\rules\_candidate_rules_re.json
+
+# 确认无误后
+copy $env:OPENCLAW_WORKSPACE\rules\_candidate_rules_re.json $env:OPENCLAW_WORKSPACE\rules\rules_re.json
+python ...\scripts\cleanup_rules_intermediates.py $env:OPENCLAW_WORKSPACE
 ```
 
 可选：按 `rules_re.json` 生成本地 mock 时序（**不入库**，输出目录自定）：
@@ -113,9 +158,12 @@ python .../scripts/apply_excel_patch.py \
 
 详见 `templates/agent-guide.md` §1–§3。
 
-| 列 | 说明 |
-|----|------|
-| 设备 / 元器件 / 故障名称 | meta |
-| 点位 | 与公式一致；恒定用 `prev`，不要 `_last` |
-| 触发条件 | ANTLR 输入 |
-| 有效数据 | `30min内，90%` / `无需设置` |
+| 列 | 必填 | 格式说明 |
+|----|------|----------|
+| 设备 / 元器件 / 故障名称 | 是 | 中文名称，写入 `rules_re` 的 meta |
+| 点位 | 是 | 英文 key，逗号分隔；或 `[中文名](englishKey)` 格式；恒定用 `prev`，不要 `_last` |
+| 触发条件 | 是 | ANTLR 表达式，详见 agent-guide §2 |
+| 有效数据 | 是 | `无需设置` → `last_point`；`30min内，90%` → `ratio_true` |
+| 原因分析 / 专家处理建议 | 否 | 原样进 JSON |
+
+**别名映射**：脚本会自动识别列名别名（如 `触发条件`→`trigger_formula`），详见 `scripts/excel_io.py`。
