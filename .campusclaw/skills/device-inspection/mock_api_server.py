@@ -14,6 +14,7 @@ _SKILL_DIR = Path(__file__).resolve().parent / "scripts"
 sys.path.insert(0, str(_SKILL_DIR))
 
 from judge_rules import JudgeError  # type: ignore  # noqa: E402
+from device_registry import resolve_device  # type: ignore  # noqa: E402
 
 
 FIXTURES_DIR = Path(os.environ.get("DEVICE_INSPECTION_FIXTURES_DIR", str(Path(__file__).resolve().parent / "mock_fixtures")))
@@ -77,7 +78,8 @@ def _load_fixture(*, request_id: str) -> Optional[List[Tuple[str, List[Dict[str,
             data = d.get("data")
             if not did or not isinstance(data, list) or not data:
                 continue
-            out.append((did, data))
+            resolved = resolve_device(did)
+            out.append((resolved["deviceId"], data))
         if not out:
             raise JudgeError(f"fixture.devices 必须包含至少 1 个有效设备：{path}")
         return out
@@ -86,7 +88,8 @@ def _load_fixture(*, request_id: str) -> Optional[List[Tuple[str, List[Dict[str,
     if not isinstance(data, list) or not data:
         raise JudgeError(f"fixture.data 必须是非空数组：{path}")
     device_id = str(obj.get("deviceId", "")).strip()
-    return [(device_id, data)]
+    resolved = resolve_device(device_id)
+    return [(resolved["deviceId"], data)]
 
 
 def _should_fault(*, device_id: str, request_id: str, fault_rate: int = 10, end_ts: float = 0.0) -> bool:
@@ -132,7 +135,9 @@ def _build_timeseries_for_query(query: Dict[str, Any], *, end_ts: float) -> List
     if fx is not None:
         out = []
         for fx_device_id, fx_data in fx:
-            out.append((fx_device_id or device_id, fx_data))
+            raw = fx_device_id or device_id
+            resolved = resolve_device(raw, device_type=device_type, component=component)
+            out.append((resolved["deviceId"], fx_data))
         return out
 
     fault = _should_fault(device_id=device_id, request_id=request_id, fault_rate=10, end_ts=end_ts)
@@ -167,7 +172,8 @@ def _build_timeseries_for_query(query: Dict[str, Any], *, end_ts: float) -> List
                 pv[p] = _value_for_point(p, i)
         data.append({"ts": ts, "points": pv})
 
-    return [(_device_id(device_type, component), data)]
+    resolved = resolve_device(device_id, device_type=device_type, component=component)
+    return [(resolved["deviceId"], data)]
 
 
 class Handler(BaseHTTPRequestHandler):

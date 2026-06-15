@@ -39,6 +39,8 @@ DEFAULT_RULES_PATH = HERE / "rules" / "rules_re.json"
 DEFAULT_OPENCLAW_UNIFIED = Path(r"C:\Users\Jason\.openclaw\workspace\rules\rules_re.json")
 DEFAULT_MOCK_API_URL = "http://127.0.0.1:18080/fetch"
 
+_PREV_RE = re.compile(r"\$?prev\s*\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*\)")
+
 # rule_engine 表达式中的保留字（不作为取数点位）
 _RE_KEYWORDS: Set[str] = {
     "and",
@@ -208,19 +210,56 @@ class JudgeResult:
     min_samples: int
 
 
-def judge_rule(rule: Dict[str, Any], series: List[Dict[str, Any]], *, compiled: rule_engine.Rule) -> JudgeResult:
-    window_seconds = int(rule["window"]["durationSeconds"])
-    threshold = float(rule["effective"]["threshold"])
-    min_samples = int(rule["effective"].get("minSamples", 1))
+def _compile_rule_engine_text(text: str) -> rule_engine.Rule:
+    normalized = _PREV_RE.sub(r"__prev_\1__", text.strip())
+    return rule_engine.Rule(normalized)
 
-    now_ts = max(float(p["ts"]) for p in series)
+
+def _facts_for_sample(point: Dict[str, Any], *, prev_point: Dict[str, Any] | None) -> Dict[str, Any]:
+    facts = {k: v for k, v in point.items() if k != "ts"}
+    if prev_point is not None:
+        for k, v in prev_point.items():
+            if k == "ts":
+                continue
+            facts[f"__prev_{k}__"] = v
+    return facts
+
+
+def judge_rule(rule: Dict[str, Any], series: List[Dict[str, Any]], *, compiled: rule_engine.Rule) -> JudgeResult:
+    rid = str(rule.get("id", ""))
+    name = str(rule.get("name", ""))
+    effective = rule.get("effective") or {}
+    metric = str(effective.get("metric", "ratio_true")).strip() or "ratio_true"
+    norm = sorted(series, key=lambda p: float(p["ts"]))
+
+    if metric == "last_point":
+        if not norm:
+            return JudgeResult(rid, name, False, 0.0, 0, 1.0, 1)
+        last = norm[-1]
+        prev = norm[-2] if len(norm) >= 2 else None
+        facts = _facts_for_sample(last, prev_point=prev)
+        try:
+            matched = bool(compiled.matches(facts))
+        except Exception:
+            matched = False
+        ratio = 1.0 if matched else 0.0
+        return JudgeResult(rid, name, matched, ratio, 1, 1.0, 1)
+
+    window_seconds = int(rule["window"]["durationSeconds"])
+    threshold = float(effective["threshold"])
+    min_samples = int(effective.get("minSamples", 1))
+
+    now_ts = max(float(p["ts"]) for p in norm)
     start_ts = now_ts - window_seconds
-    window_points = [p for p in series if start_ts <= float(p["ts"]) <= now_ts]
+    window_points = [p for p in norm if start_ts <= float(p["ts"]) <= now_ts]
 
     hits = 0
     total = 0
-    for p in window_points:
-        facts = {k: v for k, v in p.items() if k != "ts"}
+    for idx, p in enumerate(window_points):
+        if _PREV_RE.search(str((rule.get("trigger") or {}).get("rule_engine", ""))) and idx == 0:
+            continue
+        prev_point = window_points[idx - 1] if idx > 0 else None
+        facts = _facts_for_sample(p, prev_point=prev_point)
         total += 1
         try:
             ok = bool(compiled.matches(facts))
@@ -230,15 +269,7 @@ def judge_rule(rule: Dict[str, Any], series: List[Dict[str, Any]], *, compiled: 
 
     ratio = (hits / total) if total else 0.0
     matched = (total >= min_samples) and (ratio >= threshold)
-    return JudgeResult(
-        rule_id=str(rule.get("id", "")),
-        rule_name=str(rule.get("name", "")),
-        matched=matched,
-        ratio_true=float(ratio),
-        samples=int(total),
-        threshold=threshold,
-        min_samples=min_samples,
-    )
+    return JudgeResult(rid, name, matched, ratio, total, threshold, min_samples)
 
 
 @dataclass(frozen=True)
@@ -286,7 +317,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         if not rid or not text:
             raise JudgeError(f"rule {rid!r} missing trigger.rule_engine")
         try:
-            compiled_by_id[rid] = rule_engine.Rule(text)
+            compiled_by_id[rid] = _compile_rule_engine_text(text)
         except Exception as e:
             raise JudgeError(f"rule {rid} rule_engine syntax error: {e}") from e
 

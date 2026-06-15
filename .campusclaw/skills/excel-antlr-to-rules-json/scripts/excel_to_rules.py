@@ -8,6 +8,7 @@ from typing import Any, Dict, List
 from compile_trigger import compile_trigger_formula
 from emit_rule_engine import merge_points_with_expression
 from excel_io import (
+    EffectivePolicy,
     collect_point_keys,
     normalize_header_map,
     parse_duration_seconds,
@@ -25,6 +26,35 @@ def _configure_stdio_utf8() -> None:
             stream.reconfigure(encoding="utf-8")
         except Exception:
             pass
+
+
+_HINT_PATTERNS: list[tuple[str, str]] = [
+    (r"Ni-Ni-1", "恒定判断应写为 [点位名] == prev([点位名])，参见 agent-guide §2.1"),
+    (r"\|.*\|", "绝对值符号 |...| 应改为 abs(...)，参见 agent-guide §2.2"),
+    (r"[℃uSkPa]", "公式中不应包含单位符号（℃/uS/kPa 等），去掉即可"),
+    (r"或|并且", "中文逻辑运算符应改为 ||（或）或 &&（并且）"),
+    (r"\bAND\b|\bOR\b", "AND/OR 应改为 &&/||（小写也不行，必须是符号）"),
+    (r"\band\b|\bor\b", "and/or 应改为 &&/||"),
+    (r"PPM|ppm", "公式中不应包含单位 PPM，去掉即可"),
+    (r"_last", "不要用 _last 后缀，应使用 prev() 函数"),
+    (r"20Pa|2000PPM", "数字后的单位应去掉，只保留数字（如 20Pa → 20，2000PPM → 2000）"),
+    (r"送风机状态.*=.*1.*and", "多个条件应使用 && 连接，且确保在单行内"),
+    (r"0-正常|1-故障", "说明文字不应写在触发条件中，只保留公式"),
+]
+
+
+def _generate_hint(formula: str, errors: list[dict]) -> str:
+    """Generate a human-readable hint based on common error patterns."""
+    import re as _re
+    hints: list[str] = []
+    for pattern, hint in _HINT_PATTERNS:
+        if _re.search(pattern, formula):
+            hints.append(hint)
+    for err in errors:
+        msg = str(err.get("message", ""))
+        if "token recognition error" in msg and "' '" in msg:
+            hints.append("公式中有多余空格或不可见字符，检查单元格是否有换行或 NBSP")
+    return "; ".join(dict.fromkeys(hints))  # dedupe preserving order
 
 
 def compile_excel_to_rules(xlsx_path: Path) -> tuple[Dict[str, Any], Dict[str, Any]]:
@@ -75,13 +105,17 @@ def compile_excel_to_rules(xlsx_path: Path) -> tuple[Dict[str, Any], Dict[str, A
 
             effective_raw = row.get("effective_data")
             if effective_raw is not None and str(effective_raw).strip():
-                window_seconds, threshold = parse_effective_data(effective_raw)
+                policy = parse_effective_data(effective_raw)
             else:
                 window_raw = str(row.get("window", "")).strip()
                 if not window_raw:
                     raise ValueError("missing window or effective_data")
-                window_seconds = parse_duration_seconds(window_raw)
-                threshold = parse_ratio(row.get("effective_ratio"))
+                policy = EffectivePolicy(
+                    metric="ratio_true",
+                    duration_seconds=parse_duration_seconds(window_raw),
+                    threshold=parse_ratio(row.get("effective_ratio")),
+                )
+            window_seconds = policy.duration_seconds
 
             trigger_formula = str(row.get("trigger_formula", "")).strip()
             _ast, rule_engine_text, antlr_errors = compile_trigger_formula(trigger_formula, point_keys)
@@ -98,15 +132,14 @@ def compile_excel_to_rules(xlsx_path: Path) -> tuple[Dict[str, Any], Dict[str, A
 
             points_merged = merge_points_with_expression(point_keys, rule_engine_text)
 
-            effective: Dict[str, Any] = {
-                "metric": "ratio_true",
-                "threshold": float(threshold),
-            }
-            min_samples_raw = row.get("min_samples", None)
-            if min_samples_raw is not None and str(min_samples_raw).strip() != "":
-                effective["minSamples"] = int(min_samples_raw)
-            else:
-                effective["minSamples"] = 1
+            effective: Dict[str, Any] = {"metric": policy.metric}
+            if policy.metric == "ratio_true":
+                effective["threshold"] = float(policy.threshold)
+                min_samples_raw = row.get("min_samples", None)
+                if min_samples_raw is not None and str(min_samples_raw).strip() != "":
+                    effective["minSamples"] = int(min_samples_raw)
+                else:
+                    effective["minSamples"] = 1
 
             reason_analysis = str(row.get("reason_analysis", "") or "").strip()
             expert_advice = str(row.get("expert_advice", "") or "").strip()
@@ -136,6 +169,11 @@ def compile_excel_to_rules(xlsx_path: Path) -> tuple[Dict[str, Any], Dict[str, A
             entry["status"] = "failed"
             if not entry["errors"]:
                 entry["errors"].append({"field": "*", "message": str(e)})
+            # Generate hint for common error patterns
+            formula = str(row.get("trigger_formula", "")).strip()
+            hint = _generate_hint(formula, entry["errors"])
+            if hint:
+                entry["hint"] = hint
             report["summary"]["failed"] += 1
             for sh in sheet_summaries:
                 if sh["name"] == excel_sheet:
@@ -149,28 +187,38 @@ def compile_excel_to_rules(xlsx_path: Path) -> tuple[Dict[str, Any], Dict[str, A
 
 
 def main(argv: List[str]) -> int:
+    import argparse
+
     _configure_stdio_utf8()
-    if len(argv) < 3:
-        print(
-            "usage: python excel_to_rules.py <input.xlsx> <output-rules_re.json> "
-            "[--report compile_report.json]"
-        )
-        return 2
+    p = argparse.ArgumentParser(
+        description="将 Excel 故障规则表编译为 rules_re.json（ANTLR + rule-engine）",
+        epilog="退出码：0 = 成功，2 = 编译错误（见 compile_report.json）",
+    )
+    p.add_argument("input", help="Excel 文件路径（故障规则.xlsx 或 patched 变体）")
+    p.add_argument("output", help="rules_re.json 输出路径（如 rules/_candidate_rules_re.json）")
+    p.add_argument("--report", default=None, help="编译报告输出路径（默认：<output>_compile_report.json）")
+    args = p.parse_args(argv[1:])
 
-    xlsx_path = Path(argv[1]).expanduser().resolve()
-    out_rules = Path(argv[2]).expanduser().resolve()
-    report_path: Path | None = None
-    if "--report" in argv:
-        idx = argv.index("--report")
-        if idx + 1 >= len(argv):
-            print("missing path after --report")
-            return 2
-        report_path = Path(argv[idx + 1]).expanduser().resolve()
+    xlsx_path = Path(args.input).expanduser().resolve()
+    out_rules = Path(args.output).expanduser().resolve()
+    report_path = Path(args.report).expanduser().resolve() if args.report else None
 
-    doc, report = compile_excel_to_rules(xlsx_path)
+    if not xlsx_path.is_file():
+        print(f"❌ Excel 文件不存在：{xlsx_path}", file=sys.stderr)
+        print("提示：请确认文件路径是否正确。", file=sys.stderr)
+        return 1
+
+    try:
+        doc, report = compile_excel_to_rules(xlsx_path)
+    except Exception as e:
+        print(f"❌ 读取 Excel 文件失败：{e}", file=sys.stderr)
+        print("提示：请确认文件格式是否正确，且文件未被其他程序占用。", file=sys.stderr)
+        return 1
+
     if report_path is None:
         report_path = out_rules.with_name(out_rules.stem + "_compile_report.json")
 
+    report_path.parent.mkdir(parents=True, exist_ok=True)
     report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
 
     sheet_summaries = report.get("sheets") or []
@@ -183,17 +231,33 @@ def main(argv: List[str]) -> int:
 
     failed = int(report["summary"]["failed"])
     if failed > 0:
-        print(f"compile failed: {failed} row(s); see {report_path}")
+        print(f"\n❌ 编译失败：{failed} 行错误；详情见 {report_path}", file=sys.stderr)
+        
+        # 输出友好的错误提示
+        hints = []
+        for row in report.get("rows", []):
+            if row.get("status") == "failed":
+                hint = row.get("hint", "")
+                if hint and hint not in hints:
+                    hints.append(hint)
+        
+        if hints:
+            print("\n💡 常见问题修复建议：", file=sys.stderr)
+            for i, hint in enumerate(hints[:5], 1):  # 最多显示 5 条
+                print(f"  {i}. {hint}", file=sys.stderr)
+        
+        print(f"\n📖 详细改表指南：templates/agent-guide.md", file=sys.stderr)
         print(json.dumps(report, ensure_ascii=False, indent=2))
         return 2
 
     out_rules.parent.mkdir(parents=True, exist_ok=True)
     out_rules.write_text(json.dumps(doc, ensure_ascii=False, indent=2), encoding="utf-8")
     print(
-        f"wrote rules_re: {out_rules} ({len(doc.get('rules', []))} rules from "
-        f"{len(sheet_summaries)} worksheet(s))"
+        f"\n✅ 编译成功！"
+        f"\n   输出文件：{out_rules}"
+        f"\n   规则数量：{len(doc.get('rules', []))} 条（来自 {len(sheet_summaries)} 个工作表）"
+        f"\n   编译报告：{report_path}"
     )
-    print(f"report: {report_path}")
     return 0
 
 

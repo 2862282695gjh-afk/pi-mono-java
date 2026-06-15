@@ -1,0 +1,26 @@
+{
+  "requestId": "dev_rule_542957d1",
+  "ruleName": "高速故障",
+  "deviceType": "送排风",
+  "component": "排风机",
+  "scenario": "fault",
+  "devices": [
+    {
+      "deviceId": "送排风_排风机",
+      "data": [
+        {
+          "ts": 1779955371.732892,
+          "points": {
+            "HighSpeedFaultAlarm": 1.0
+          }
+        },
+        {
+          "ts": 1779955431.732892,
+          "points": {
+            "HighSpeedFaultAlarm": 1.0
+          }
+        }
+      ]
+    }
+  ]
+}

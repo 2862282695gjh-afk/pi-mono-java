@@ -48,11 +48,17 @@ def verify_rules_re_doc(doc: Dict[str, Any]) -> List[str]:
 
 
 def main(argv: List[str]) -> int:
+    import argparse
+
     _configure_stdio_utf8()
-    if len(argv) != 2:
-        print("usage: python verify_rules_re.py <rules_re.json>")
-        return 2
-    path = Path(argv[1]).expanduser().resolve()
+    p = argparse.ArgumentParser(
+        description="Verify rules_re.json compiles with rule-engine",
+        epilog="Exit codes: 0 = all rules valid, 2 = syntax errors found",
+    )
+    p.add_argument("rules", help="Path to rules_re.json")
+    args = p.parse_args(argv[1:])
+
+    path = Path(args.rules).expanduser().resolve()
     doc = json.loads(path.read_text(encoding="utf-8"))
     errors = verify_rules_re_doc(doc)
     if errors:

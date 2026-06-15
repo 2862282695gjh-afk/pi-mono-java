@@ -1,0 +1,266 @@
+{
+  "version": 2,
+  "deviceId": "CHW_001",
+  "deviceType": "CHILLER",
+  "component": "冷水机组",
+  "scenario": "healthy",
+  "data": [
+    {
+      "ts": 1779958409.0,
+      "points": {
+        "chwSupplyTemp": 7.0,
+        "chillerRunStatus": 1,
+        "chillerLoad": 62.0
+      }
+    },
+    {
+      "ts": 1779958469.0,
+      "points": {
+        "chwSupplyTemp": 7.0,
+        "chillerRunStatus": 1,
+        "chillerLoad": 63.0
+      }
+    },
+    {
+      "ts": 1779958529.0,
+      "points": {
+        "chwSupplyTemp": 7.0,
+        "chillerRunStatus": 1,
+        "chillerLoad": 64.0
+      }
+    },
+    {
+      "ts": 1779958589.0,
+      "points": {
+        "chwSupplyTemp": 7.0,
+        "chillerRunStatus": 1,
+        "chillerLoad": 65.0
+      }
+    },
+    {
+      "ts": 1779958649.0,
+      "points": {
+        "chwSupplyTemp": 7.0,
+        "chillerRunStatus": 1,
+        "chillerLoad": 66.0
+      }
+    },
+    {
+      "ts": 1779958709.0,
+      "points": {
+        "chwSupplyTemp": 7.0,
+        "chillerRunStatus": 1,
+        "chillerLoad": 67.0
+      }
+    },
+    {
+      "ts": 1779958769.0,
+      "points": {
+        "chwSupplyTemp": 7.0,
+        "chillerRunStatus": 1,
+        "chillerLoad": 68.0
+      }
+    },
+    {
+      "ts": 1779958829.0,
+      "points": {
+        "chwSupplyTemp": 7.0,
+        "chillerRunStatus": 1,
+        "chillerLoad": 62.0
+      }
+    },
+    {
+      "ts": 1779958889.0,
+      "points": {
+        "chwSupplyTemp": 7.0,
+        "chillerRunStatus": 1,
+        "chillerLoad": 63.0
+      }
+    },
+    {
+      "ts": 1779958949.0,
+      "points": {
+        "chwSupplyTemp": 7.0,
+        "chillerRunStatus": 1,
+        "chillerLoad": 64.0
+      }
+    },
+    {
+      "ts": 1779959009.0,
+      "points": {
+        "chwSupplyTemp": 7.0,
+        "chillerRunStatus": 1,
+        "chillerLoad": 65.0
+      }
+    },
+    {
+      "ts": 1779959069.0,
+      "points": {
+        "chwSupplyTemp": 7.0,
+        "chillerRunStatus": 1,
+        "chillerLoad": 66.0
+      }
+    },
+    {
+      "ts": 1779959129.0,
+      "points": {
+        "chwSupplyTemp": 7.0,
+        "chillerRunStatus": 1,
+        "chillerLoad": 67.0
+      }
+    },
+    {
+      "ts": 1779959189.0,
+      "points": {
+        "chwSupplyTemp": 7.0,
+        "chillerRunStatus": 1,
+        "chillerLoad": 68.0
+      }
+    },
+    {
+      "ts": 1779959249.0,
+      "points": {
+        "chwSupplyTemp": 7.0,
+        "chillerRunStatus": 1,
+        "chillerLoad": 62.0
+      }
+    },
+    {
+      "ts": 1779959309.0,
+      "points": {
+        "chwSupplyTemp": 7.0,
+        "chillerRunStatus": 1,
+        "chillerLoad": 63.0
+      }
+    },
+    {
+      "ts": 1779959369.0,
+      "points": {
+        "chwSupplyTemp": 7.0,
+        "chillerRunStatus": 1,
+        "chillerLoad": 64.0
+      }
+    },
+    {
+      "ts": 1779959429.0,
+      "points": {
+        "chwSupplyTemp": 7.0,
+        "chillerRunStatus": 1,
+        "chillerLoad": 65.0
+      }
+    },
+    {
+      "ts": 1779959489.0,
+      "points": {
+        "chwSupplyTemp": 7.0,
+        "chillerRunStatus": 1,
+        "chillerLoad": 66.0
+      }
+    },
+    {
+      "ts": 1779959549.0,
+      "points": {
+        "chwSupplyTemp": 7.0,
+        "chillerRunStatus": 1,
+        "chillerLoad": 67.0
+      }
+    },
+    {
+      "ts": 1779959609.0,
+      "points": {
+        "chwSupplyTemp": 7.0,
+        "chillerRunStatus": 1,
+        "chillerLoad": 68.0
+      }
+    },
+    {
+      "ts": 1779959669.0,
+      "points": {
+        "chwSupplyTemp": 7.0,
+        "chillerRunStatus": 1,
+        "chillerLoad": 62.0
+      }
+    },
+    {
+      "ts": 1779959729.0,
+      "points": {
+        "chwSupplyTemp": 7.0,
+        "chillerRunStatus": 1,
+        "chillerLoad": 63.0
+      }
+    },
+    {
+      "ts": 1779959789.0,
+      "points": {
+        "chwSupplyTemp": 7.0,
+        "chillerRunStatus": 1,
+        "chillerLoad": 64.0
+      }
+    },
+    {
+      "ts": 1779959849.0,
+      "points": {
+        "chwSupplyTemp": 7.0,
+        "chillerRunStatus": 1,
+        "chillerLoad": 65.0
+      }
+    },
+    {
+      "ts": 1779959909.0,
+      "points": {
+        "chwSupplyTemp": 7.0,
+        "chillerRunStatus": 1,
+        "chillerLoad": 66.0
+      }
+    },
+    {
+      "ts": 1779959969.0,
+      "points": {
+        "chwSupplyTemp": 7.0,
+        "chillerRunStatus": 1,
+        "chillerLoad": 67.0
+      }
+    },
+    {
+      "ts": 1779960029.0,
+      "points": {
+        "chwSupplyTemp": 7.0,
+        "chillerRunStatus": 1,
+        "chillerLoad": 68.0
+      }
+    },
+    {
+      "ts": 1779960089.0,
+      "points": {
+        "chwSupplyTemp": 7.0,
+        "chillerRunStatus": 1,
+        "chillerLoad": 62.0
+      }
+    },
+    {
+      "ts": 1779960149.0,
+      "points": {
+        "chwSupplyTemp": 7.0,
+        "chillerRunStatus": 1,
+        "chillerLoad": 63.0
+      }
+    },
+    {
+      "ts": 1779960209.0,
+      "points": {
+        "chwSupplyTemp": 7.0,
+        "chillerRunStatus": 1,
+        "chillerLoad": 64.0
+      }
+    },
+    {
+      "ts": 1779960269.0,
+      "points": {
+        "chwSupplyTemp": 7.0,
+        "chillerRunStatus": 1,
+        "chillerLoad": 65.0
+      }
+    }
+  ],
+  "ruleSeries": {}
+}

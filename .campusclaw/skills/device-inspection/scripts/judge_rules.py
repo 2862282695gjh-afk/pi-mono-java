@@ -441,6 +441,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         help="结束时间戳（epoch seconds 或 ISO8601）。默认：当前 UTC 时间",
     )
     p.add_argument("--json", action="store_true", help="输出 JSON")
+    p.add_argument("--no-save-db", action="store_true", help="不写入巡检数据库")
     args = p.parse_args(argv)
 
     primary_rules_path = Path(args.rules)
@@ -508,7 +509,9 @@ def main(argv: Optional[List[str]] = None) -> int:
 
         jr = judge_rule(rule, norm)
         if jr.matched:
-            alerts.append(asdict(build_alert(rule, jr, device_id=device_id)))
+            from device_registry import enrich_alert_dict  # noqa: E402
+
+            alerts.append(enrich_alert_dict(asdict(build_alert(rule, jr, device_id=device_id)), rule))
 
     alerts_by_device: Dict[str, List[Dict[str, Any]]] = {}
     for a in alerts:
@@ -516,11 +519,25 @@ def main(argv: Optional[List[str]] = None) -> int:
         alerts_by_device.setdefault(did, []).append(a)
     fault_devices = sorted([d for d, arr in alerts_by_device.items() if arr and d != "unknown"])
 
-    results = {
+    results: Dict[str, Any] = {
         "fault_devices": fault_devices,
         "alerts_by_device": alerts_by_device,
         "end_ts": end_ts,
     }
+
+    if not args.no_save_db:
+        from db_store import save_inspection_run
+
+        run_id = save_inspection_run(
+            rules_path=str(primary_rules_path.resolve()),
+            inspection=results,
+            rules_by_id=rules_by_id,
+            rules_kind="rules.json",
+        )
+        results["runId"] = run_id
+        from db_store import db_path as inspection_db_path
+
+        print(f"saved inspection runId={run_id} db={inspection_db_path()}", file=sys.stderr)
 
     if args.json:
         print(json.dumps(results, ensure_ascii=False))
@@ -528,7 +545,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         if not fault_devices:
             print("OK：无告警")
         else:
-            print("设备\t故障\t原因分析\t专家处理建议")
+            print("deviceId\tdeviceName\tbuilding\tdeviceType\tcomponent\truleId\truleName\treasonAnalysis\texpertAdvice")
 
             def _cell(x: Any) -> str:
                 s = str(x or "").strip()
@@ -539,11 +556,17 @@ def main(argv: Optional[List[str]] = None) -> int:
 
             for d in fault_devices:
                 for a in alerts_by_device.get(d, []):
-                    device = _cell(a.get("device_id", d))
-                    fault_name = _cell(a.get("rule_name", ""))
-                    reason = _cell(a.get("reason_analysis", ""))
-                    advice = _cell(a.get("expert_advice", ""))
-                    print(f"{device}\t{fault_name}\t{reason}\t{advice}")
+                    print(
+                        f"{_cell(a.get('device_id', d))}\t"
+                        f"{_cell(a.get('device_name', ''))}\t"
+                        f"{_cell(a.get('building', ''))}\t"
+                        f"{_cell(a.get('device_type', ''))}\t"
+                        f"{_cell(a.get('component', ''))}\t"
+                        f"{_cell(a.get('rule_id', ''))}\t"
+                        f"{_cell(a.get('rule_name', ''))}\t"
+                        f"{_cell(a.get('reason_analysis', ''))}\t"
+                        f"{_cell(a.get('expert_advice', ''))}"
+                    )
     return 0
 
 

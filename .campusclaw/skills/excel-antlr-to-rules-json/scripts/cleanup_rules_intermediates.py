@@ -112,19 +112,19 @@ def _resolve_workspace(args: list[str]) -> Path:
 
 
 def main(argv: list[str]) -> int:
-    dry_run = "--dry-run" in argv
-    args = [a for a in argv[1:] if a != "--dry-run"]
-    if len(args) > 1:
-        print(
-            "usage: python cleanup_rules_intermediates.py [workspace_dir] [--dry-run]\n"
-            "  default: cwd or OPENCLAW workspace (parent of rules/ and skills/)\n"
-            "  removes rules/*.json intermediates and skills/**/*_patched*.xlsx"
-        )
-        return 2
+    import argparse
 
-    workspace = _resolve_workspace(args)
+    p = argparse.ArgumentParser(
+        description="Delete excel-antlr-to-rules-json intermediate files (rules/ + skills/)",
+        epilog="Keeps rules_re.json and the original 故障规则.xlsx. Run after verifying rules_re.json.",
+    )
+    p.add_argument("workspace", nargs="?", default=None, help="Workspace dir (default: cwd or OPENCLAW workspace)")
+    p.add_argument("--dry-run", action="store_true", help="Show what would be deleted without deleting")
+    args = p.parse_args(argv[1:])
+
+    workspace = Path(args.workspace).expanduser().resolve() if args.workspace else _resolve_workspace([])
     try:
-        removed = cleanup_workspace(workspace, dry_run=dry_run)
+        removed = cleanup_workspace(workspace, dry_run=args.dry_run)
     except FileNotFoundError as e:
         print(str(e))
         return 2
