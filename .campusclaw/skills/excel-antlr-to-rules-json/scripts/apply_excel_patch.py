@@ -33,7 +33,7 @@ def apply_patches(xlsx_path: Path, patch_doc: Dict[str, Any], out_path: Path) ->
         sheet_name = str(p.get("sheet", wb.active.title))
         row = int(p["row"])
         column = str(p["column"]).strip()
-        new_value = p.get("new")
+        new_value = p.get("new") if "new" in p else p.get("value")
         if row < 2:
             raise ValueError(f"patches[{i}].row must be >= 2 (row 1 is header)")
         if sheet_name not in wb.sheetnames:

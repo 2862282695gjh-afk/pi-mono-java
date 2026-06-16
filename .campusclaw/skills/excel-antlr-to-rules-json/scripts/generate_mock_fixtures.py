@@ -147,19 +147,43 @@ def _build_series(
     return series
 
 
+def _facts_for_sample(point: Dict[str, Any], *, prev_point: Dict[str, Any] | None) -> Dict[str, Any]:
+    facts = {k: v for k, v in point.items() if k != "ts"}
+    if prev_point is not None:
+        for k, v in prev_point.items():
+            if k == "ts":
+                continue
+            facts[f"__prev_{k}__"] = v
+    return facts
+
+
 def _judge_series(rule: Dict[str, Any], series: List[Dict[str, Any]]) -> bool:
-    """Rolling ratio_true — mirrors device-inspection-re judge_rules.judge_rule."""
+    """Mirrors device-inspection-re judge_rules_re.judge_rule (last_point | ratio_true)."""
     text = str((rule.get("trigger") or {}).get("rule_engine", ""))
     compiled = rule_engine.Rule(_transform_prev(text))
-    window_seconds = int(rule["window"]["durationSeconds"])
-    threshold = float(rule["effective"]["threshold"])
-    min_samples = int(rule["effective"].get("minSamples", 1))
+    effective = rule.get("effective") or {}
+    metric = str(effective.get("metric", "ratio_true")).strip() or "ratio_true"
     uses_prev = "prev(" in text or "$prev(" in text
 
     norm = sorted(
         [{"ts": float(p["ts"]), **dict(p.get("points") or {})} for p in series],
         key=lambda x: float(x["ts"]),
     )
+
+    if metric == "last_point":
+        if not norm:
+            return False
+        last = norm[-1]
+        prev = norm[-2] if len(norm) >= 2 else None
+        facts = _facts_for_sample(last, prev_point=prev)
+        try:
+            return bool(compiled.matches(facts))
+        except Exception:
+            return False
+
+    window_seconds = int(rule["window"]["durationSeconds"])
+    threshold = float(effective["threshold"])
+    min_samples = int(effective.get("minSamples", 1))
     now_ts = max(float(p["ts"]) for p in norm)
     start_ts = now_ts - window_seconds
     window_points = [p for p in norm if start_ts <= float(p["ts"]) <= now_ts]
@@ -169,11 +193,8 @@ def _judge_series(rule: Dict[str, Any], series: List[Dict[str, Any]]) -> bool:
     for idx, p in enumerate(window_points):
         if uses_prev and idx == 0:
             continue
-        facts = {k: v for k, v in p.items() if k != "ts"}
-        prev_point = window_points[idx - 1]
-        for k in list(facts.keys()):
-            if k in prev_point:
-                facts[f"__prev_{k}__"] = prev_point[k]
+        prev_point = window_points[idx - 1] if idx > 0 else None
+        facts = _facts_for_sample(p, prev_point=prev_point)
         total += 1
         try:
             if compiled.matches(facts):

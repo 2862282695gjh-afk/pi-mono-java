@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "assignees": [
+    {
+      "assigneeId": "ops_hvac_a",
+      "name": "张工",
+      "role": "A栋暖通值班",
+      "phone": "13800001001",
+      "email": "zhang.hvac@demo-campus.local",
+      "buildings": ["A栋"],
+      "channels": ["file", "gateway"]
+    },
+    {
+      "assigneeId": "ops_hvac_b",
+      "name": "李工",
+      "role": "B栋暖通值班",
+      "phone": "13800001002",
+      "email": "li.hvac@demo-campus.local",
+      "buildings": ["B栋"],
+      "channels": ["file", "gateway"]
+    },
+    {
+      "assigneeId": "ops_plant",
+      "name": "王工",
+      "role": "冷冻站设施主管",
+      "phone": "13800001003",
+      "email": "wang.plant@demo-campus.local",
+      "buildings": ["能源中心"],
+      "channels": ["file", "gateway", "email"]
+    }
+  ]
+}

@@ -31,12 +31,12 @@ class _CollectErrors(ErrorListener):
 def normalize_logic_operators(formula: str) -> str:
     """Excel often uses single | / & ; grammar expects || and &&."""
     s = formula
-    s = s.replace("||", "\x00OR\x00")
-    s = s.replace("&&", "\x00AND\x00")
+    s = s.replace("||", "\x01OR\x01")
+    s = s.replace("&&", "\x01AND\x01")
     s = re.sub(r"\|(?!\|)", "||", s)
     s = re.sub(r"(?<![&])&(?![&])", "&&", s)
-    s = s.replace("\x00OR\x00", "||")
-    s = s.replace("\x00AND\x00", "&&")
+    s = s.replace("\x01OR\x01", "||")
+    s = s.replace("\x01AND\x01", "&&")
     return s
 
 
@@ -93,17 +93,23 @@ def compile_trigger_formula(
 
 
 def main(argv: List[str]) -> int:
-    if len(argv) != 3:
-        print("usage: python compile_trigger.py '<formula>' 'point1,point2'")
-        return 2
-    formula = argv[1]
-    points = [p.strip() for p in argv[2].split(",") if p.strip()]
-    ast, re_text, errs = compile_trigger_formula(formula, points)
+    import argparse
+    import json
+
+    p = argparse.ArgumentParser(
+        description="Compile a single trigger formula with ANTLR (debug tool)",
+        epilog="Example: python compile_trigger.py \"[PumpRunStatus]==1 && [PumpVibrationRms]>4.5\" \"PumpVibrationRms,PumpRunStatus\"",
+    )
+    p.add_argument("formula", help="Trigger formula to compile")
+    p.add_argument("points", help="Comma-separated point keys (e.g. 'PumpVibrationRms,PumpRunStatus')")
+    args = p.parse_args(argv[1:])
+
+    points = [p.strip() for p in args.points.split(",") if p.strip()]
+    ast, re_text, errs = compile_trigger_formula(args.formula, points)
     if errs:
         for e in errs:
             print(f"ERROR: {e}")
         return 2
-    import json
 
     print("rule_engine:", re_text)
     print("ast:", json.dumps(ast, ensure_ascii=False, indent=2))

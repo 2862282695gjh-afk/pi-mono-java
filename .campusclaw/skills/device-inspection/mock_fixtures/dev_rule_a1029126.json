@@ -1,0 +1,26 @@
+{
+  "requestId": "dev_rule_a1029126",
+  "ruleName": "排风机故障",
+  "deviceType": "送排风",
+  "component": "排风机",
+  "scenario": "fault",
+  "devices": [
+    {
+      "deviceId": "送排风_排风机",
+      "data": [
+        {
+          "ts": 1779955371.723499,
+          "points": {
+            "FaultAlarm": 1.0
+          }
+        },
+        {
+          "ts": 1779955431.723499,
+          "points": {
+            "FaultAlarm": 1.0
+          }
+        }
+      ]
+    }
+  ]
+}

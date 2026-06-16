@@ -5,7 +5,17 @@ description: 设备巡检：按 rules.json 调用取数接口获取时间序列�
 
 # 设备巡检（Device Inspection）
 
-本技能只做一件事：**根据规则 + 数据输出告警**（只输出触发的设备/规则，不展示正常设备）。
+本技能只做一件事：**根据 rules.json + 本 skill 取数 mock 输出告警**（不依赖其它 skill）。
+
+## 平行架构
+
+| Skill | 规则 | 取数端口 | 数据库 |
+|-------|------|----------|--------|
+| **device-inspection** | `rules.json` | `:18080` | `device_inspection.db` |
+| device-inspection-re | `rules_re.json` | `:18081` | `device_inspection_re.db` |
+| campus-device-ops | `rules_re.json` | `:18083` | `campus_ops.db` |
+
+每次巡检结果**自动写入本 skill 数据库**；查历史故障用 `query_alarms.py`（读库）。
 
 ## 规则来源（可移植，不绑定本机用户目录）
 
@@ -21,11 +31,19 @@ description: 设备巡检：按 rules.json 调用取数接口获取时间序列�
 
 - **只展示触发故障的设备**（不要展示正常设备）
 - 每条告警必须展示：
-  - **设备（deviceId）**
-  - **故障/规则名称**
-  - **原因分析**（为空也必须展示为 `—`）
-  - **专家处理建议**（为空也必须展示为 `—`）
+  - **deviceId**（资产编号，如 `EF-001`、`VAV-DMP-101`；禁止只写 `设备类型_部件`）
+  - **deviceName**（设备名称）
+  - **building**（楼栋，无则 `—`）
+  - **deviceType** / **component**（类型与部件）
+  - **ruleId** / **ruleName**（规则 ID 与故障名称）
+  - **原因分析**、**专家处理建议**（为空展示 `—`）
+- Mock 取数若返回 `送排风_排风机` 等伪 ID，脚本会通过 `mock_fixtures/devices/registry.json` 解析为正式 deviceId
 - **禁止输出任何免责声明/提示语**
+
+## 设备台账
+
+`mock_fixtures/devices/registry.json`：`deviceId` + `legacyIds`（mock 别名）+ 名称/楼栋/房间。  
+环境变量 `DEVICE_INSPECTION_REGISTRY_PATH` 可指向生产台账 JSON。
 
 ## 运行
 
@@ -43,11 +61,35 @@ python .campusclaw/skills/device-inspection/scripts/judge_rules.py
 python .campusclaw/skills/device-inspection/scripts/judge_rules.py --json
 ```
 
+### 查故障（读数据库，默认最近一次巡检）
+
+```bash
+python .campusclaw/skills/device-inspection/scripts/query_alarms.py --json
+python .campusclaw/skills/device-inspection/scripts/query_alarms.py --list-runs
+python .campusclaw/skills/device-inspection/scripts/query_alarms.py --device-id VAV_001 --json
+```
+
 可选参数：
 
 - `--rules`：显式指定规则文件路径（覆盖默认）
 - `--rules-extra`：额外要合并的 rules.json（可多次提供；后者覆盖前者）
 - `--end-ts`：结束时间戳（epoch seconds 或 ISO8601）。默认：当前 UTC 时间
+- `--no-save-db`：仅输出结果，不写入数据库
+- `query_alarms.py --run-id insp_YYYYMMDD_HHMMSS`：查指定批次
+
+## 数据库
+
+| 项目 | 说明 |
+|------|------|
+| mock | SQLite `mock_fixtures/device_inspection.db` |
+| 环境变量 | `DEVICE_INSPECTION_DB_PATH` |
+| 表 | `inspection_runs`、`inspection_alarms` |
+| 生产参考 | `templates/schema.sql` |
+
+```text
+judge_rules.py  →  判规则  →  写入 device_inspection.db
+query_alarms.py  →  读库查故障（默认 latest）
+```
 
 ## 取数接口（mock API）
 
