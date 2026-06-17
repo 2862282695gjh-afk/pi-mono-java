@@ -26,11 +26,15 @@ import com.campusclaw.agent.tool.AgentTool;
 import com.campusclaw.codingagent.config.CustomModelLoader;
 import com.campusclaw.codingagent.mode.server.ServerMode;
 import com.campusclaw.codingagent.session.SessionConfig;
+import com.campusclaw.codingagent.tool.catalog.ToolCatalog;
+import com.campusclaw.codingagent.tool.catalog.ToolRefreshRequest;
+import com.campusclaw.codingagent.tool.catalog.ToolSelection;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.mockito.MockedConstruction;
 import org.springframework.beans.factory.NoSuchBeanDefinitionException;
 import org.springframework.context.ApplicationContext;
@@ -44,6 +48,25 @@ class CampusClawCommandTest {
                 null, null, null, null, null, null, null, null, null, null, null, null, null, null);
         new CommandLine(cmd).parseArgs(args);
         return cmd;
+    }
+
+    private CampusClawCommand commandWithCatalog(ToolCatalog toolCatalog) {
+        return new CampusClawCommand(
+                null, null, null, null, toolCatalog, null, null, null, null, null, null, null, null, null, null);
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<AgentTool> invokeResolveEffectiveTools(CampusClawCommand cmd) throws Exception {
+        Method method = CampusClawCommand.class.getDeclaredMethod("resolveEffectiveTools");
+        method.setAccessible(true);
+        return (List<AgentTool>) method.invoke(cmd);
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<AgentTool> invokeResolveEffectiveTools(CampusClawCommand cmd, Path cwd) throws Exception {
+        Method method = CampusClawCommand.class.getDeclaredMethod("resolveEffectiveTools", Path.class);
+        method.setAccessible(true);
+        return (List<AgentTool>) method.invoke(cmd, cwd);
     }
 
     // -------------------------------------------------------------------
@@ -202,6 +225,64 @@ class CampusClawCommandTest {
         void defaultIsNull() {
             CampusClawCommand cmd = parse();
             assertNull(cmd.getToolsFilter());
+        }
+
+        @Test
+        void resolveEffectiveToolsDelegatesDefaultSelectionToCatalog() throws Exception {
+            var catalog = mock(ToolCatalog.class);
+            var read = mock(AgentTool.class);
+            when(catalog.resolve(ToolSelection.all())).thenReturn(List.of(read));
+            var cmd = commandWithCatalog(catalog);
+
+            assertThat(invokeResolveEffectiveTools(cmd)).containsExactly(read);
+            verify(catalog).resolve(ToolSelection.all());
+        }
+
+        @Test
+        void resolveEffectiveToolsDelegatesCliIncludeSelectionToCatalog() throws Exception {
+            var catalog = mock(ToolCatalog.class);
+            var read = mock(AgentTool.class);
+            when(catalog.resolve(org.mockito.ArgumentMatchers.any())).thenReturn(List.of(read));
+            var cmd = commandWithCatalog(catalog);
+            cmd.toolsFilter = "read, bash";
+
+            assertThat(invokeResolveEffectiveTools(cmd)).containsExactly(read);
+
+            var captor = ArgumentCaptor.forClass(ToolSelection.class);
+            verify(catalog).resolve(captor.capture());
+            assertThat(captor.getValue().include()).containsExactly("read", "bash");
+            assertThat(captor.getValue().noTools()).isFalse();
+        }
+
+        @Test
+        void resolveEffectiveToolsDelegatesNoToolsSelectionToCatalog() throws Exception {
+            var catalog = mock(ToolCatalog.class);
+            when(catalog.resolve(org.mockito.ArgumentMatchers.any())).thenReturn(List.of());
+            var cmd = commandWithCatalog(catalog);
+            cmd.toolsFilter = "read";
+            cmd.noTools = true;
+
+            assertThat(invokeResolveEffectiveTools(cmd)).isEmpty();
+
+            var captor = ArgumentCaptor.forClass(ToolSelection.class);
+            verify(catalog).resolve(captor.capture());
+            assertThat(captor.getValue().include()).containsExactly("read");
+            assertThat(captor.getValue().noTools()).isTrue();
+        }
+
+        @Test
+        void resolveEffectiveToolsWithCwdRefreshesCatalog() throws Exception {
+            var catalog = mock(ToolCatalog.class);
+            when(catalog.resolve(ToolSelection.all())).thenReturn(List.of());
+            var cmd = commandWithCatalog(catalog);
+            Path cwd = Path.of("/tmp/project");
+
+            assertThat(invokeResolveEffectiveTools(cmd, cwd)).isEmpty();
+
+            verify(catalog)
+                    .refresh(org.mockito.ArgumentMatchers.argThat(
+                            (ToolRefreshRequest request) -> cwd.equals(request.cwd())));
+            verify(catalog).resolve(ToolSelection.all());
         }
     }
 
