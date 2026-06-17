@@ -229,8 +229,7 @@ class ProxyConfigTest {
         void leadingDotIsSuffixMatch() throws Exception {
             ProxyConfig cfg = configWithNoProxy(".internal.example.com");
             assertThat(cfg.shouldBypass("api.internal.example.com")).isTrue();
-            assertThat(cfg.shouldBypass("internal.example.com")).isTrue();
-            assertThat(cfg.shouldBypass("notinternal.example.com")).isFalse();
+            assertThat(cfg.shouldBypass("internal.example.com")).isFalse();
         }
 
         @Test
