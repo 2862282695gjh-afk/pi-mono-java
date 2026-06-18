@@ -531,21 +531,45 @@ public class CampusClawCommand implements Callable<Integer> {
 
     private void runServerMode(SessionConfig config, List<AgentTool> effectiveTools, boolean useSandbox) {
         com.huawei.hicampus.mate.matecampusclaw.codingagent.config.CustomModelLoader customModelLoader = resolveCustomModelLoader();
-        new ServerMode(
-                        piAiService,
-                        modelRegistry,
-                        promptBuilder,
-                        effectiveTools,
-                        config,
-                        port != null ? port : 3000,
-                        host != null ? host : "localhost",
-                        sandboxSkillParser,
-                        useSandbox,
-                        modelCatalogService,
-                        serverSessionPersistenceEnabled,
-                        settingsManager,
-                        customModelLoader)
-                .run();
+        ServerMode serverMode = new ServerMode(
+                piAiService,
+                modelRegistry,
+                promptBuilder,
+                effectiveTools,
+                config,
+                port != null ? port : 3000,
+                host != null ? host : "localhost",
+                sandboxSkillParser,
+                useSandbox,
+                modelCatalogService,
+                serverSessionPersistenceEnabled,
+                settingsManager,
+                customModelLoader);
+        serverMode.setExtraRoutes(collectExtraRouterFunctions());
+        serverMode.run();
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<
+                    org.springframework.web.reactive.function.server.RouterFunction<
+                            org.springframework.web.reactive.function.server.ServerResponse>>
+            collectExtraRouterFunctions() {
+        if (applicationContext == null) {
+            return List.of();
+        }
+        java.util.Map<String, org.springframework.web.reactive.function.server.RouterFunction> beans =
+                applicationContext.getBeansOfType(
+                        org.springframework.web.reactive.function.server.RouterFunction.class);
+        List<
+                        org.springframework.web.reactive.function.server.RouterFunction<
+                                org.springframework.web.reactive.function.server.ServerResponse>>
+                routes = new java.util.ArrayList<>(beans.size());
+        for (org.springframework.web.reactive.function.server.RouterFunction<?> rf : beans.values()) {
+            routes.add((org.springframework.web.reactive.function.server.RouterFunction<
+                            org.springframework.web.reactive.function.server.ServerResponse>)
+                    rf);
+        }
+        return List.copyOf(routes);
     }
 
     private com.huawei.hicampus.mate.matecampusclaw.codingagent.config.CustomModelLoader resolveCustomModelLoader() {
