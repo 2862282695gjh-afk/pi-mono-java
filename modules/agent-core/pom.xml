@@ -43,6 +43,17 @@
             <groupId>org.springframework</groupId>
             <artifactId>spring-context</artifactId>
         </dependency>
+        <!--
+          spring-boot brings @ConfigurationProperties support so the in-process control
+          plane (com.campusclaw.agent.controlplane) can publish typed config classes
+          consumed by the main CampusClawApplication. We deliberately avoid pulling in a
+          full starter (-web/-webflux/-actuator) here because agent-core is a library
+          module — those concerns belong in coding-agent-cli's runtime classpath.
+        -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot</artifactId>
+        </dependency>
 
         <!-- Metrics -->
         <dependency>

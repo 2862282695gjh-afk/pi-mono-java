@@ -4,6 +4,7 @@
 
 package com.campusclaw.codingagent;
 
+import com.campusclaw.agent.controlplane.config.ControlPlaneProperties;
 import com.campusclaw.codingagent.cli.CampusClawCommand;
 import com.campusclaw.codingagent.config.ToolExecutionProperties;
 
@@ -24,7 +25,7 @@ import picocli.CommandLine.IFactory;
  * @since [br_eCampusCore 25.1.0_Next]
  */
 @SpringBootApplication(scanBasePackages = "com.campusclaw")
-@EnableConfigurationProperties(ToolExecutionProperties.class)
+@EnableConfigurationProperties({ToolExecutionProperties.class, ControlPlaneProperties.class})
 public class CampusClawApplication implements CommandLineRunner, ExitCodeGenerator {
 
     private final CampusClawCommand piCommand;
