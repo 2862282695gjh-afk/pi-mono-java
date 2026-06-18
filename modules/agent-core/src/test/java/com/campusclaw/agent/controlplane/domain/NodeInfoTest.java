@@ -22,6 +22,8 @@ class NodeInfoTest {
 
     @Test
     void factoryAcceptsValidPayload() {
+        Instant registeredAt = Instant.now();
+        Instant firstHeartbeat = registeredAt.plusSeconds(5L);
         NodeMetrics metrics = new NodeMetrics(2, 1, 0.5d, 256L);
         NodeInfo info = new NodeInfo(
                 "node-test",
@@ -30,13 +32,39 @@ class NodeInfoTest {
                 "1.0.0",
                 Set.of(RuntimeCapability.MODEL_OPENAI),
                 NodeStatus.ACTIVE,
-                Instant.now(),
-                Instant.now(),
+                registeredAt,
+                firstHeartbeat,
                 metrics);
 
         assertEquals(NodeStatus.ACTIVE, info.status());
         assertEquals(2, info.metrics().activeAgents());
         assertEquals(NodeStatus.STALE, info.withStatus(NodeStatus.STALE).status());
+    }
+
+    @Test
+    void heartbeatRefreshesMetricsAndMarksNodeActive() {
+        Instant registeredAt = Instant.parse("2026-06-18T00:00:00Z");
+        Instant staleHeartbeat = registeredAt.plusSeconds(10L);
+        Instant freshHeartbeat = registeredAt.plusSeconds(20L);
+        NodeMetrics oldMetrics = new NodeMetrics(2, 1, 0.5d, 256L);
+        NodeMetrics newMetrics = new NodeMetrics(4, 3, 0.75d, 512L);
+        NodeInfo stale = new NodeInfo(
+                "node-test",
+                "10.0.0.1",
+                9001,
+                "1.0.0",
+                Set.of(RuntimeCapability.MODEL_OPENAI),
+                NodeStatus.STALE,
+                registeredAt,
+                staleHeartbeat,
+                oldMetrics);
+
+        NodeInfo active = stale.withHeartbeat(freshHeartbeat, newMetrics);
+
+        assertEquals(NodeStatus.ACTIVE, active.status());
+        assertEquals(freshHeartbeat, active.lastHeartbeatAt());
+        assertEquals(newMetrics, active.metrics());
+        assertEquals(stale.registeredAt(), active.registeredAt());
     }
 
     @Test
