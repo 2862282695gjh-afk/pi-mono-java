@@ -86,6 +86,14 @@ public class ServerMode {
     private final SettingsManager settingsManager;
     private final CustomModelLoader customModelLoader;
 
+    /**
+     * Additional {@link RouterFunction}s contributed by other modules (e.g. the in-process
+     * control plane's {@code NodeRoutes} / {@code RuntimeRoutes}). Combined into the main
+     * router chain in {@link #buildRoutes} so out-of-tree handlers can serve under the same
+     * reactor-netty server.
+     */
+    private List<RouterFunction<ServerResponse>> extraRoutes = List.of();
+
     public ServerMode(
             CampusClawAiService aiService,
             ModelRegistry modelRegistry,
@@ -235,6 +243,19 @@ public class ServerMode {
         this.customModelLoader = customModelLoader;
     }
 
+    /**
+     * Registers additional {@link RouterFunction}s that should be served by this
+     * reactor-netty instance — typically the in-process control plane's {@code NodeRoutes}
+     * and {@code RuntimeRoutes} contributed by Spring beans. Routes are merged into the
+     * main router chain via {@code andOther}, so each contributed function still uses its
+     * own {@code RouterFunctions.route()} structure.
+     *
+     * @param routes additional router functions; {@code null} or empty is tolerated
+     */
+    public void setExtraRoutes(List<RouterFunction<ServerResponse>> routes) {
+        this.extraRoutes = routes == null ? List.of() : List.copyOf(routes);
+    }
+
     public void run() {
         var sessionPool = new SessionPool(
                 aiService,
@@ -337,7 +358,11 @@ public class ServerMode {
                     .PUT("/api/settings/models/default", settingsHandler::setDefaultModel)
                     .PUT("/api/settings/customModels", settingsHandler::setCustomModels);
         }
-        return builder.build();
+        RouterFunction<ServerResponse> base = builder.build();
+        for (RouterFunction<ServerResponse> extra : extraRoutes) {
+            base = base.and(extra);
+        }
+        return base;
     }
 
     private SettingsHandler buildSettingsHandler() {
