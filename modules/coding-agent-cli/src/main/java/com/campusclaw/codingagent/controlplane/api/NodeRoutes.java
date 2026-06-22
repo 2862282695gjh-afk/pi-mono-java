@@ -25,6 +25,8 @@ import org.springframework.http.MediaType;
 import org.springframework.web.reactive.function.server.RouterFunction;
 import org.springframework.web.reactive.function.server.ServerResponse;
 
+import reactor.core.publisher.Mono;
+
 /**
  * webflux {@link RouterFunction} bean exposing the data-plane node lifecycle endpoints.
  *
@@ -65,6 +67,7 @@ public class NodeRoutes {
     public RouterFunction<ServerResponse> nodeControlPlaneRoutes(
             NodeRegistry registry, ControlPlaneExceptionHandler errorFilter) {
         return route(POST("/api/v1/nodes"), req -> req.bodyToMono(RegisterNodeRequest.class)
+                        .switchIfEmpty(Mono.error(new IllegalArgumentException("request body is required")))
                         .flatMap(body -> {
                             NodeInfo created =
                                     registry.register(body.host(), body.port(), body.version(), body.capabilities());
@@ -74,26 +77,30 @@ public class NodeRoutes {
                         }))
                 .andRoute(POST("/api/v1/nodes/{nodeId}/heartbeat"), req -> {
                     String nodeId = req.pathVariable("nodeId");
-                    return req.bodyToMono(HeartbeatRequest.class).flatMap(body -> {
-                        NodeMetrics metrics = new NodeMetrics(
-                                body.activeAgents(), body.queuedTasks(), body.cpuLoad(), body.memoryUsedMb());
-                        NodeInfo updated = registry.heartbeat(nodeId, metrics);
-                        return ServerResponse.ok()
-                                .contentType(MediaType.APPLICATION_JSON)
-                                .bodyValue(updated);
-                    });
+                    return req.bodyToMono(HeartbeatRequest.class)
+                            .switchIfEmpty(Mono.error(new IllegalArgumentException("request body is required")))
+                            .flatMap(body -> {
+                                NodeMetrics metrics = new NodeMetrics(
+                                        body.activeAgents(), body.queuedTasks(), body.cpuLoad(), body.memoryUsedMb());
+                                NodeInfo updated = registry.heartbeat(nodeId, metrics);
+                                return ServerResponse.ok()
+                                        .contentType(MediaType.APPLICATION_JSON)
+                                        .bodyValue(updated);
+                            });
                 })
                 .andRoute(GET("/api/v1/nodes"), req -> ServerResponse.ok()
                         .contentType(MediaType.APPLICATION_JSON)
                         .bodyValue(registry.listAll()))
-                .andRoute(GET("/api/v1/nodes/{nodeId}"), req -> {
-                    String nodeId = req.pathVariable("nodeId");
-                    NodeInfo info = registry.findNode(nodeId)
-                            .orElseThrow(() -> new NoSuchElementException("node not registered: " + nodeId));
-                    return ServerResponse.ok()
-                            .contentType(MediaType.APPLICATION_JSON)
-                            .bodyValue(info);
-                })
+                .andRoute(
+                        GET("/api/v1/nodes/{nodeId}"),
+                        req -> Mono.defer(() -> {
+                            String nodeId = req.pathVariable("nodeId");
+                            NodeInfo info = registry.findNode(nodeId)
+                                    .orElseThrow(() -> new NoSuchElementException("node not registered: " + nodeId));
+                            return ServerResponse.ok()
+                                    .contentType(MediaType.APPLICATION_JSON)
+                                    .bodyValue(info);
+                        }))
                 .andRoute(DELETE("/api/v1/nodes/{nodeId}"), req -> {
                     String nodeId = req.pathVariable("nodeId");
                     boolean removed = registry.deregister(nodeId);

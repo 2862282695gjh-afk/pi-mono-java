@@ -105,6 +105,51 @@ class NodeRoutesTest {
     }
 
     @Test
+    void getUnknownNodeReturns404() {
+        client.get()
+                .uri("/api/v1/nodes/node-missing")
+                .exchange()
+                .expectStatus()
+                .isNotFound()
+                .expectBody()
+                .jsonPath("$.status")
+                .isEqualTo(404)
+                .jsonPath("$.message")
+                .value(msg -> assertThat((String) msg).contains("node-missing"));
+    }
+
+    @Test
+    void registerWithoutBodyReturns400() {
+        client.post()
+                .uri("/api/v1/nodes")
+                .exchange()
+                .expectStatus()
+                .isBadRequest()
+                .expectBody()
+                .jsonPath("$.status")
+                .isEqualTo(400)
+                .jsonPath("$.message")
+                .value(msg -> assertThat((String) msg).contains("request body is required"));
+    }
+
+    @Test
+    void heartbeatWithoutBodyReturns400() {
+        String nodeId = registerAndExtractId(
+                Map.of("host", "10.0.0.14", "port", 9004, "version", "1.0.0", "capabilities", Set.of()));
+
+        client.post()
+                .uri("/api/v1/nodes/{nodeId}/heartbeat", nodeId)
+                .exchange()
+                .expectStatus()
+                .isBadRequest()
+                .expectBody()
+                .jsonPath("$.status")
+                .isEqualTo(400)
+                .jsonPath("$.message")
+                .value(msg -> assertThat((String) msg).contains("request body is required"));
+    }
+
+    @Test
     void registerWithInvalidPortReturns400() {
         client.post()
                 .uri("/api/v1/nodes")
