@@ -70,6 +70,20 @@ class RuntimeSchedulerTest {
     }
 
     @Test
+    void scheduleFallsBackWhenPreferredNodeLacksRequiredCapability() {
+        NodeRegistry registry = new NodeRegistry(properties, Clock.systemUTC());
+        RuntimeScheduler scheduler = new RuntimeScheduler(registry);
+        NodeInfo preferred = registry.register("host-a", 9001, "1.0.0", Set.of(RuntimeCapability.TOOL_BASH));
+        NodeInfo fallback = registry.register("host-b", 9002, "1.0.0", Set.of(RuntimeCapability.MODEL_OPENAI));
+
+        ScheduleRequest req = new ScheduleRequest(Set.of(RuntimeCapability.MODEL_OPENAI), preferred.nodeId());
+        ScheduleDecision decision = scheduler.schedule(req);
+
+        assertEquals(fallback.nodeId(), decision.nodeId());
+        assertEquals("round-robin", decision.reason());
+    }
+
+    @Test
     void scheduleRaisesWhenNoEligibleNode() {
         NodeRegistry registry = new NodeRegistry(properties, Clock.systemUTC());
         RuntimeScheduler scheduler = new RuntimeScheduler(registry);

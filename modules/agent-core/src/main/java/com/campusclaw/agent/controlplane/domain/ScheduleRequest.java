@@ -7,7 +7,7 @@ package com.campusclaw.agent.controlplane.domain;
 import java.util.Set;
 
 /**
- * Request payload for {@link com.campusclaw.controlplane.service.RuntimeScheduler#schedule}.
+ * Request payload for {@link com.campusclaw.agent.controlplane.service.RuntimeScheduler#schedule}.
  *
  * <p>The scheduler intersects {@code requiredCapabilities} against each candidate node's
  * advertised capability set and returns the first match according to the active load

@@ -7,6 +7,7 @@ package com.huawei.hicampus.mate.matecampusclaw.codingagent.controlplane.api;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.time.Clock;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
 
@@ -141,17 +142,42 @@ class RuntimeRoutesTest {
                 .value(message -> assertThat((String) message).contains("request body is required"));
     }
 
+    @Test
+    void scheduleWithNullCapabilitiesReturns400() {
+        Map<String, Object> body = new HashMap<>();
+        body.put("requiredCapabilities", null);
+
+        client.post()
+                .uri("/api/v1/runtimes/schedule")
+                .bodyValue(body)
+                .exchange()
+                .expectStatus()
+                .isBadRequest()
+                .expectBody()
+                .jsonPath("$.status")
+                .isEqualTo(400)
+                .jsonPath("$.message")
+                .value(message -> assertThat((String) message).contains("requiredCapabilities must not be null"));
+    }
+
+    @Test
+    void scheduleWithInvalidCapabilityReturns400() {
+        client.post()
+                .uri("/api/v1/runtimes/schedule")
+                .bodyValue(Map.of("requiredCapabilities", Set.of("NOT_A_CAPABILITY")))
+                .exchange()
+                .expectStatus()
+                .isBadRequest()
+                .expectBody()
+                .jsonPath("$.status")
+                .isEqualTo(400);
+    }
+
     private String registerNode(String host, int port, Set<String> capabilities) {
-        java.util.Map<String, Object> body = new java.util.HashMap<>();
-        body.put("host", host);
-        body.put("port", port);
-        body.put("version", "1.0.0");
-        body.put("capabilities", capabilities);
         return registry.register(host, port, "1.0.0", toCapabilities(capabilities))
                 .nodeId();
     }
 
-    @SuppressWarnings("unchecked")
     private Set<com.huawei.hicampus.mate.matecampusclaw.agent.controlplane.domain.RuntimeCapability> toCapabilities(Set<String> names) {
         Set<com.huawei.hicampus.mate.matecampusclaw.agent.controlplane.domain.RuntimeCapability> out = new java.util.HashSet<>();
         for (String n : names) {

@@ -14,7 +14,7 @@ package com.campusclaw.agent.controlplane.domain;
  * @param host    host of the selected node, copied verbatim from the registry snapshot
  * @param port    port of the selected node, copied verbatim from the registry snapshot
  * @param reason  short machine-readable token describing why this node won
- *                (e.g. "affinity", "round-robin", "least-active")
+ *                (e.g. "affinity", "round-robin")
  * @version [br_eCampusCore 25.1.0_Next, 2026/06/18]
  * @since [br_eCampusCore 25.1.0_Next]
  */

@@ -7,7 +7,7 @@ package com.huawei.hicampus.mate.matecampusclaw.agent.controlplane.domain;
 import java.util.Set;
 
 /**
- * Request payload for {@link com.huawei.hicampus.mate.matecampusclaw.controlplane.service.RuntimeScheduler#schedule}.
+ * Request payload for {@link com.huawei.hicampus.mate.matecampusclaw.agent.controlplane.service.RuntimeScheduler#schedule}.
  *
  * <p>The scheduler intersects {@code requiredCapabilities} against each candidate node's
  * advertised capability set and returns the first match according to the active load
