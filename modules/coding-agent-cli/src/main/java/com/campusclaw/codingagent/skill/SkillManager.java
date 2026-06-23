@@ -677,7 +677,7 @@ public class SkillManager {
      * @param target the destination path, which must not already exist
      * @throws IOException if the directory can be neither moved nor copied
      */
-    private static void moveDirectory(Path source, Path target) throws IOException {
+    static void moveDirectory(Path source, Path target) throws IOException {
         try {
             Files.move(source, target);
         } catch (IOException renameFailed) {
@@ -693,7 +693,7 @@ public class SkillManager {
      * @param target the directory to copy into (created if absent)
      * @throws IOException if any entry cannot be copied
      */
-    private static void copyRecursively(Path source, Path target) throws IOException {
+    static void copyRecursively(Path source, Path target) throws IOException {
         Files.walkFileTree(source, new SimpleFileVisitor<>() {
             @Override
             public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) throws IOException {
