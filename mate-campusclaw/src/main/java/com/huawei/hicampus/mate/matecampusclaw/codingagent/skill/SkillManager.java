@@ -8,12 +8,9 @@ import java.io.BufferedInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.SimpleFileVisitor;
 import java.nio.file.StandardCopyOption;
-import java.nio.file.attribute.BasicFileAttributes;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -27,6 +24,7 @@ import java.util.regex.Pattern;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.util.FileTreeUtils;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -115,11 +113,11 @@ public class SkillManager {
             Files.createDirectories(skillsDir);
             int exitCode = runGitClone(gitUrl, targetDir);
             if (exitCode != 0) {
-                deleteRecursively(targetDir);
+                FileTreeUtils.deleteRecursively(targetDir);
                 throw new SkillInstallException("git clone failed (exit code " + exitCode + ") for: " + gitUrl);
             }
         } catch (IOException | InterruptedException e) {
-            deleteRecursively(targetDir);
+            FileTreeUtils.deleteRecursively(targetDir);
             throw new SkillInstallException("Failed to clone: " + gitUrl + " — " + e.getMessage(), e);
         }
 
@@ -129,7 +127,7 @@ public class SkillManager {
             // Maybe the repo root itself is a skill (has SKILL.md at root)
             Path rootSkill = targetDir.resolve(SkillLoader.SKILL_FILENAME);
             if (!Files.isRegularFile(rootSkill)) {
-                deleteRecursively(targetDir);
+                FileTreeUtils.deleteRecursively(targetDir);
                 throw new SkillInstallException("No SKILL.md found in repository: " + gitUrl
                         + "\nThe repository must contain at least one SKILL.md file.");
             }
@@ -303,12 +301,12 @@ public class SkillManager {
                 throw new SkillConflictException(conflicts);
             }
             Files.createDirectories(skillsDir);
-            moveDirectory(extractRoot, targetDir);
+            FileTreeUtils.moveDirectory(extractRoot, targetDir);
         } catch (IOException e) {
-            deleteRecursively(targetDir);
+            FileTreeUtils.deleteRecursively(targetDir);
             throw new SkillInstallException("Failed to extract archive: " + e.getMessage(), e);
         } finally {
-            deleteRecursively(tempDir);
+            FileTreeUtils.deleteRecursively(tempDir);
         }
     }
 
@@ -532,7 +530,7 @@ public class SkillManager {
                 throw new SkillInstallException("Failed to remove symlink: " + e.getMessage(), e);
             }
         } else {
-            deleteRecursively(targetDir);
+            FileTreeUtils.deleteRecursively(targetDir);
         }
 
         // Remove from manifest
@@ -660,75 +658,5 @@ public class SkillManager {
     private String resolveTopDir(Path baseDir) {
         Path relative = skillsDir.relativize(baseDir);
         return relative.getName(0).toString();
-    }
-
-    /**
-     * Moves a directory, falling back to a recursive copy when an atomic rename is not possible.
-     *
-     * <p>{@link Files#move(Path, Path, java.nio.file.CopyOption...)} performs a single
-     * {@code rename(2)} on Unix, which fails with {@code EXDEV} when source and target live on
-     * different filesystems (for example {@code /tmp} mounted as a separate tmpfs, or a service
-     * running with {@code PrivateTmp=true}). In that case the JDK refuses to move a non-empty
-     * directory across devices and throws {@link java.nio.file.DirectoryNotEmptyException}; we then
-     * copy the tree instead. The source is left in place for the caller to clean up (it lives under
-     * a temp directory that is always removed in a {@code finally} block).
-     *
-     * @param source the directory to move
-     * @param target the destination path, which must not already exist
-     * @throws IOException if the directory can be neither moved nor copied
-     */
-    static void moveDirectory(Path source, Path target) throws IOException {
-        try {
-            Files.move(source, target);
-        } catch (IOException renameFailed) {
-            log.debug("Atomic move {} -> {} failed, falling back to recursive copy", source, target, renameFailed);
-            copyRecursively(source, target);
-        }
-    }
-
-    /**
-     * Recursively copies the file tree rooted at {@code source} to {@code target}.
-     *
-     * @param source the directory to copy from
-     * @param target the directory to copy into (created if absent)
-     * @throws IOException if any entry cannot be copied
-     */
-    static void copyRecursively(Path source, Path target) throws IOException {
-        Files.walkFileTree(source, new SimpleFileVisitor<>() {
-            @Override
-            public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) throws IOException {
-                Files.createDirectories(target.resolve(source.relativize(dir)));
-                return FileVisitResult.CONTINUE;
-            }
-
-            @Override
-            public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
-                Files.copy(file, target.resolve(source.relativize(file)), StandardCopyOption.COPY_ATTRIBUTES);
-                return FileVisitResult.CONTINUE;
-            }
-        });
-    }
-
-    static void deleteRecursively(Path dir) {
-        if (dir == null || !Files.exists(dir)) {
-            return;
-        }
-        try {
-            Files.walkFileTree(dir, new SimpleFileVisitor<>() {
-                @Override
-                public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
-                    Files.delete(file);
-                    return FileVisitResult.CONTINUE;
-                }
-
-                @Override
-                public FileVisitResult postVisitDirectory(Path d, IOException exc) throws IOException {
-                    Files.delete(d);
-                    return FileVisitResult.CONTINUE;
-                }
-            });
-        } catch (IOException e) {
-            log.warn("Failed to delete directory: {}", dir, e);
-        }
     }
 }
