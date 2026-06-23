@@ -303,7 +303,7 @@ public class SkillManager {
                 throw new SkillConflictException(conflicts);
             }
             Files.createDirectories(skillsDir);
-            Files.move(extractRoot, targetDir);
+            moveDirectory(extractRoot, targetDir);
         } catch (IOException e) {
             deleteRecursively(targetDir);
             throw new SkillInstallException("Failed to extract archive: " + e.getMessage(), e);
@@ -660,6 +660,53 @@ public class SkillManager {
     private String resolveTopDir(Path baseDir) {
         Path relative = skillsDir.relativize(baseDir);
         return relative.getName(0).toString();
+    }
+
+    /**
+     * Moves a directory, falling back to a recursive copy when an atomic rename is not possible.
+     *
+     * <p>{@link Files#move(Path, Path, java.nio.file.CopyOption...)} performs a single
+     * {@code rename(2)} on Unix, which fails with {@code EXDEV} when source and target live on
+     * different filesystems (for example {@code /tmp} mounted as a separate tmpfs, or a service
+     * running with {@code PrivateTmp=true}). In that case the JDK refuses to move a non-empty
+     * directory across devices and throws {@link java.nio.file.DirectoryNotEmptyException}; we then
+     * copy the tree instead. The source is left in place for the caller to clean up (it lives under
+     * a temp directory that is always removed in a {@code finally} block).
+     *
+     * @param source the directory to move
+     * @param target the destination path, which must not already exist
+     * @throws IOException if the directory can be neither moved nor copied
+     */
+    private static void moveDirectory(Path source, Path target) throws IOException {
+        try {
+            Files.move(source, target);
+        } catch (IOException renameFailed) {
+            log.debug("Atomic move {} -> {} failed, falling back to recursive copy", source, target, renameFailed);
+            copyRecursively(source, target);
+        }
+    }
+
+    /**
+     * Recursively copies the file tree rooted at {@code source} to {@code target}.
+     *
+     * @param source the directory to copy from
+     * @param target the directory to copy into (created if absent)
+     * @throws IOException if any entry cannot be copied
+     */
+    private static void copyRecursively(Path source, Path target) throws IOException {
+        Files.walkFileTree(source, new SimpleFileVisitor<>() {
+            @Override
+            public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) throws IOException {
+                Files.createDirectories(target.resolve(source.relativize(dir)));
+                return FileVisitResult.CONTINUE;
+            }
+
+            @Override
+            public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
+                Files.copy(file, target.resolve(source.relativize(file)), StandardCopyOption.COPY_ATTRIBUTES);
+                return FileVisitResult.CONTINUE;
+            }
+        });
     }
 
     static void deleteRecursively(Path dir) {
