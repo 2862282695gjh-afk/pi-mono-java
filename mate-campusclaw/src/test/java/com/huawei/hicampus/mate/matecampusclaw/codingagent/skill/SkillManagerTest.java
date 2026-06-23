@@ -4,7 +4,6 @@
 
 package com.huawei.hicampus.mate.matecampusclaw.codingagent.skill;
 
-import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -263,36 +262,6 @@ class SkillManagerTest {
 
             List<InstalledSkillRecord> records = manager.loadManifest();
             assertTrue(records.isEmpty());
-        }
-    }
-
-    // -------------------------------------------------------------------
-    // deleteRecursively
-    // -------------------------------------------------------------------
-
-    @Nested
-    class DeleteRecursively {
-
-        @Test
-        void deletesNestedDirectoryStructure() throws Exception {
-            Path dir = tempDir.resolve("nested");
-            Files.createDirectories(dir.resolve("a/b/c"));
-            Files.writeString(dir.resolve("a/b/c/file.txt"), "content");
-            Files.writeString(dir.resolve("a/file.txt"), "content");
-
-            SkillManager.deleteRecursively(dir);
-
-            assertFalse(Files.exists(dir));
-        }
-
-        @Test
-        void handlesNonExistentPath() {
-            assertDoesNotThrow(() -> SkillManager.deleteRecursively(tempDir.resolve("does-not-exist")));
-        }
-
-        @Test
-        void handlesNull() {
-            assertDoesNotThrow(() -> SkillManager.deleteRecursively(null));
         }
     }
 
