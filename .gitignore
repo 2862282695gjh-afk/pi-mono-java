@@ -58,6 +58,8 @@ package-lock.json
 !.campusclaw/rule-engines-pack/**
 !.campusclaw/rules/
 !.campusclaw/rules/rules_re.json
+!.campusclaw/docs/
+!.campusclaw/docs/**
 
 # OpenClaw skills: runtime artifacts only (seed fixtures + API servers stay in repo)
 .campusclaw/skills/campus-device-ops/mock_fixtures/**/*.db
