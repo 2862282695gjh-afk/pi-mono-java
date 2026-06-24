@@ -8,7 +8,7 @@
 | Story 名称 | 设备巡检（rules_re.json / rule-engine）写库、报告与工单 |
 | 负责人 | 待开发者补充 |
 | 创建日期 | 2026-06-17 |
-| 版本 | v1.1 (code-derived, expanded) |
+| 版本 | v1.2 (业务流图 + 开发附录) |
 | 代码路径 | `.campusclaw/skills/device-inspection-re/` |
 | 上游 Skill | `excel-antlr-to-rules-json` → `rules_re.json` |
 | 下游 Skill | `campus-device-ops`（只读同一 DB，ADR-0006） |
@@ -72,46 +72,48 @@
 
 ### 2.1 Story 上下文
 
-#### 2.1.1 模块依赖图
+#### 2.1.1 业务流程图（大白话）
+
+> 下图给产品、评审、运维看：**谁干什么、数据往哪流**。脚本名、类名不在图里，对照见 §2.1.2 目录、§2.2 功能表、附录 A。
 
 ```mermaid
 flowchart TB
-  subgraph inputs [输入]
-    Rules[rules_re.json]
-    Registry[devices/registry.json]
-    Assignee[campus assignee_map.json]
+  subgraph prep [事前准备]
+    Excel[Excel 里的故障规则]
+    Excel -->|上游 skill 编译| Rules[规则文件 rules_re.json]
+    Ledger[园区设备台账]
   end
 
-  subgraph runtime [运行时]
-    Judge[judge_rules_re.py]
-    MockAPI[mock_api_server.py :18081]
-    Fixtures[devices/*.json]
-    RE[rule-engine PyPI]
+  subgraph run [一次巡检]
+    Start[用户或 Agent：开始巡检]
+    Start --> Load[读取规则 + 设备清单]
+    Load --> Check{规则文件有没有?}
+    Check -->|没有| Stop[提示先去生成规则，本次结束]
+    Check -->|有| Fetch[向监控系统要设备测点数据]
+    Fetch --> Judge[按规则逐台判断：正常还是告警]
+    Judge --> Summary[汇总：巡了几台、几台异常、几台正常]
+    Summary --> Save[(写入巡检数据库)]
   end
 
-  subgraph persist [持久化]
-    DB[(device_inspection_re.db)]
-    WO[work_orders/WO-*.json]
+  subgraph after [巡检之后能做什么]
+    Save --> Report[出巡检报告给用户看]
+    Save --> Stats[按楼栋 / 类型看统计]
+    Save --> Detail[查某一台报了什么警]
+    Save --> WO[可选：开维修工单]
   end
 
-  subgraph readpath [读路径脚本]
-    Report[format_inspection_report]
-    Stats[alarm_stats]
-    Query[query_alarms]
-    CWO[create_work_order]
-  end
-
-  Rules --> Judge
-  Registry --> Judge
-  Judge -->|POST queries| MockAPI
-  Fixtures --> MockAPI
-  MockAPI -->|items| Judge
-  Judge --> RE
-  Judge -->|save_inspection_run| DB
-  Assignee --> readpath
-  DB --> readpath
-  CWO --> WO
+  Rules --> Load
+  Ledger --> Load
 ```
+
+**读图要点：**
+
+| 环节 | 大白话 |
+|------|--------|
+| 事前 | 规则来自 Excel 编译；台账知道园区有哪些设备 |
+| 巡检 | 拉数据 → 对规则 → 出汇总 → **只有这一步会写数据库** |
+| 之后 | 报告、统计、查单台、开工单都是**读**同一份库里的最新结果 |
+| 演示环境 | 「监控系统」用本机 mock 接口 + 夹具数据代替真 BMS |
 
 #### 2.1.2 目录结构
 
@@ -195,58 +197,62 @@ device-inspection-re/
 - `query_alarms` / `alarm_stats` / `format_inspection_report` 均通过 `db_store` 读同一 SQLite 文件。
 - 与 campus-device-ops 的读逻辑在 `SYNCED_SCRIPTS.md` 所列文件中保持同步；**DDL 与 save 仅存在于本 skill 的 db_store**。
 
-#### 3.1.3 Agent 推荐流程
+#### 3.1.3 Agent 推荐流程（用户视角）
 
-```text
-用户：跑巡检
-  1. judge_rules_re.py --json
-  2. format_inspection_report.py --markdown
-  3. （可选）alarm_stats.py --json
+```mermaid
+flowchart LR
+  subgraph full [全量巡检]
+    U1[用户：跑一轮巡检] --> S1[执行巡检并写库]
+    S1 --> R1[生成文字报告]
+    R1 --> O1[可选：看统计]
+  end
 
-用户：只巡 VAV
-  1. judge_rules_re.py --device-type VAV --json
-  2. format_inspection_report.py --markdown
+  subgraph typed [按类型巡检]
+    U2[用户：只查 VAV] --> S2[只巡该类型设备]
+    S2 --> R2[生成报告]
+  end
 
-用户：开工单
-  → create_work_order.py --device-id <ID> --rule-ids <id> --json
+  subgraph wo [开工单]
+    U3[用户：给某台设备开工单] --> W1[根据最新告警创建工单]
+  end
 
-规则缺失
-  → 勿继续 report/stats/工单；引导 excel-antlr-to-rules-json
+  subgraph miss [规则还没准备好]
+    U4[开始巡检] --> X1{规则文件存在?}
+    X1 -->|否| X2[停止，引导去 Excel 转规则]
+    X1 -->|是| S1
+  end
 ```
+
+对应脚本见 §2.2；缺规则时**不要**继续出报告、统计或工单。
 
 ### 3.2 功能实现设计
 
-#### 3.2.1 巡检时序图
+#### 3.2.1 一次巡检怎么走（时序，大白话）
 
 ```mermaid
 sequenceDiagram
-  participant Agent
-  participant Judge as judge_rules_re.py
-  participant Paths as rules_re_paths
-  participant API as :18081/fetch
-  participant FS as fixture_store
-  participant RE as rule-engine
-  participant DB as db_store
+  actor User as 用户 / Agent
+  participant Skill as 设备巡检
+  participant Rules as 故障规则
+  participant BMS as 监控系统<br/>演示时为 mock 数据
+  participant DB as 巡检数据库
 
-  Agent->>Judge: --json [--device-type VAV]
-  Judge->>Paths: resolve_rules_re_path()
-  alt rules missing
-    Paths-->>Agent: rules_not_found + exit 1
+  User->>Skill: 开始巡检（可说「只巡 VAV」）
+  Skill->>Rules: 读取规则文件
+  alt 规则文件不存在
+    Skill-->>User: 告知缺规则，请先走 Excel 转规则
   end
-  Judge->>Judge: filter_rules + compile rules
-  Judge->>Judge: build queries[]
-  Judge->>API: POST { endTs, queries }
-  API->>FS: load_device_fixture / synthetic
-  FS-->>API: timeseries data
-  API-->>Judge: { items[] }
-  loop each item
-    Judge->>RE: judge_rule(compiled)
-    RE-->>Judge: matched?
+  Skill->>Skill: 按设备类型筛规则（若用户指定了类型）
+  Skill->>BMS: 拉取各设备测点历史/实时数据
+  BMS-->>Skill: 返回时序数据
+  loop 每台设备、每条规则
+    Skill->>Skill: 判断是否触发告警
   end
-  Judge->>Judge: build_inspection_scope_summary
-  Judge->>DB: save_inspection_run
-  DB-->>Judge: runId
-  Judge-->>Agent: JSON + runId
+  Skill->>Skill: 统计本次范围：巡了几台、异常几台
+  Skill->>DB: 保存本次巡检记录（生成巡检批次号）
+  Skill-->>User: 返回汇总 + 告警列表
+
+  Note over User,DB: 之后用户要看报告、统计、查单台、开工单，都只读数据库里「最近一次」结果
 ```
 
 #### 3.2.2 规则求值算法（`judge_rule`）
@@ -775,3 +781,48 @@ python ../campus-device-ops/scripts/verify_openclaw_pipeline.py
 | QA context | ❌ | ✅ |
 | Mock 运维 API :18082 | ❌ | ✅ |
 | 设备 assignee overlay | 读 campus 文件 | 拥有 assignee_map |
+
+---
+
+## 附录 C：模块与代码对照图（开发用）
+
+> 给开发对照实现用；评审看 §2.1.1、§3.2.1 即可。
+
+```mermaid
+flowchart TB
+  subgraph inputs [输入]
+    Rules[rules_re.json]
+    Registry[devices/registry.json]
+    Assignee[campus assignee_map.json]
+  end
+
+  subgraph runtime [运行时]
+    Judge[judge_rules_re.py]
+    MockAPI[mock_api_server.py :18081]
+    Fixtures[devices/*.json]
+    RE[rule-engine PyPI]
+  end
+
+  subgraph persist [持久化]
+    DB[(device_inspection_re.db)]
+    WO[work_orders/WO-*.json]
+  end
+
+  subgraph readpath [读路径脚本]
+    Report[format_inspection_report]
+    Stats[alarm_stats]
+    Query[query_alarms]
+    CWO[create_work_order]
+  end
+
+  Rules --> Judge
+  Registry --> Judge
+  Judge -->|POST queries| MockAPI
+  Fixtures --> MockAPI
+  MockAPI -->|items| Judge
+  Judge --> RE
+  Judge -->|save_inspection_run| DB
+  Assignee --> readpath
+  DB --> readpath
+  CWO --> WO
+```
