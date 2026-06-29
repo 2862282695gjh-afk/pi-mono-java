@@ -19,10 +19,7 @@ import com.fasterxml.jackson.annotation.JsonValue;
 public enum Provider {
     ANTHROPIC("anthropic"),
     OPENAI("openai"),
-    GOOGLE("google"),
-    GOOGLE_VERTEX("google-vertex"),
     MISTRAL("mistral"),
-    AMAZON_BEDROCK("amazon-bedrock"),
     AZURE_OPENAI("azure-openai-responses"),
     OPENAI_CODEX("openai-codex"),
     ZAI("zai"),
@@ -36,8 +33,6 @@ public enum Provider {
     OPENROUTER("openrouter"),
     VERCEL_AI_GATEWAY("vercel-ai-gateway"),
     HUGGINGFACE("huggingface"),
-    GOOGLE_GEMINI_CLI("google-gemini-cli"),
-    GOOGLE_ANTIGRAVITY("google-antigravity"),
     OPENCODE("opencode"),
     CUSTOM("custom");
 

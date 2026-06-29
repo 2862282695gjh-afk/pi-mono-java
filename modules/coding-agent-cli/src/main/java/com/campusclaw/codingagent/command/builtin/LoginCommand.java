@@ -44,7 +44,7 @@ public class LoginCommand implements SlashCommand {
         String args = arguments == null ? "" : arguments.trim();
         if (args.isEmpty()) {
             context.output().println("Usage: /login <provider> <api-key>");
-            context.output().println("Providers: anthropic, openai, zai, google, mistral, xai, groq, openrouter, ...");
+            context.output().println("Providers: anthropic, openai, zai, mistral, xai, groq, openrouter, ...");
             return;
         }
         String[] parts = args.split("\\s+", 2);

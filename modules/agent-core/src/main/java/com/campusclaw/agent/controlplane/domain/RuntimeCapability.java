@@ -17,8 +17,6 @@ package com.campusclaw.agent.controlplane.domain;
 public enum RuntimeCapability {
     MODEL_ANTHROPIC,
     MODEL_OPENAI,
-    MODEL_GOOGLE,
-    MODEL_BEDROCK,
     MODEL_MISTRAL,
     MODEL_CUSTOM,
     TOOL_BASH,

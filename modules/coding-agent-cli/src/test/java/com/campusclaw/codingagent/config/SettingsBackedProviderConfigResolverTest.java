@@ -152,10 +152,10 @@ class SettingsBackedProviderConfigResolverTest {
         void underscoreDashTolerant() {
             when(authStore.getApiKey(any(Provider.class))).thenReturn(Optional.empty());
             Settings.ProviderConfig pc = new Settings.ProviderConfig("k", null, null, null);
-            when(settingsManager.load()).thenReturn(settingsWithProvider(Map.of("amazon_bedrock", pc)));
+            when(settingsManager.load()).thenReturn(settingsWithProvider(Map.of("github_copilot", pc)));
             SettingsBackedProviderConfigResolver r =
                     new SettingsBackedProviderConfigResolver(settingsManager, envApiKeyResolver, authStore);
-            assertThat(r.resolve(Provider.AMAZON_BEDROCK, null).apiKey()).isEqualTo("k");
+            assertThat(r.resolve(Provider.GITHUB_COPILOT, null).apiKey()).isEqualTo("k");
         }
     }
 
