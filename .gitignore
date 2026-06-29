@@ -70,6 +70,12 @@ package-lock.json
 .campusclaw/skills/device-inspection-re/mock_fixtures/work_orders/
 .campusclaw/skills/device-inspection-re/mock_fixtures/state/
 
+# mate-campusclaw OpenClaw skills runtime (mirror .campusclaw)
+mate-campusclaw/src/main/java/com/huawei/hicampus/mate/matecampusclaw/skills/**/mock_fixtures/**/*.db
+mate-campusclaw/src/main/java/com/huawei/hicampus/mate/matecampusclaw/skills/**/mock_fixtures/work_orders/
+mate-campusclaw/src/main/java/com/huawei/hicampus/mate/matecampusclaw/skills/**/mock_fixtures/notifications/outbox/
+mate-campusclaw/src/main/java/com/huawei/hicampus/mate/matecampusclaw/skills/**/mock_fixtures/state/
+
 # Python bytecode (skills/scripts may include python helpers)
 __pycache__/
 *.pyc
