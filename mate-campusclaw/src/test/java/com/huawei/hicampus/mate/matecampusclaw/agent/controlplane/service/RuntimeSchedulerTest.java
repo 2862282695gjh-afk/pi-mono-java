@@ -89,7 +89,7 @@ class RuntimeSchedulerTest {
         RuntimeScheduler scheduler = new RuntimeScheduler(registry);
         registry.register("host-a", 9001, "1.0.0", Set.of(RuntimeCapability.TOOL_BASH));
 
-        ScheduleRequest req = new ScheduleRequest(Set.of(RuntimeCapability.MODEL_GOOGLE), null);
+        ScheduleRequest req = new ScheduleRequest(Set.of(RuntimeCapability.MODEL_MISTRAL), null);
 
         assertThrows(NoSuchElementException.class, () -> scheduler.schedule(req));
     }
