@@ -182,7 +182,7 @@ public class CampusClawCommand implements Callable<Integer> {
 
     @Option(
             names = {"--provider"},
-            description = "Provider name (e.g. anthropic, openai, zai, google)")
+            description = "Provider name (e.g. anthropic, openai, zai, mistral)")
     String provider;
 
     @Option(

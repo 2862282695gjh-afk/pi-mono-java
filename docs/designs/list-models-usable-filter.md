@@ -22,7 +22,7 @@ WS `list_models`（以及共享同一份逻辑的 REST `GET /api/settings/models
 | 2a | `auth.json` | `~/.campusclaw/agent/auth.json`（`/auth login` 写入） |
 | 2b | `settings.json` `provider.<id>.apiKey` | 支持 `${ENV}` 间接展开 |
 | 2c | 模型内嵌 `apiKey` | 与 #1 同 |
-| 2d | provider 专属环境变量 | `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `ZAI_API_KEY` / …；Google ADC；AWS Bedrock（`AWS_PROFILE` / IAM / bearer / container / IRSA）→ 命中返回 `<authenticated>` 哨兵 |
+| 2d | provider 专属环境变量 | `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `ZAI_API_KEY` / … 等各 provider 的环境变量回退 |
 
 测试旁路：`providerConfigResolver == null`（2-arg 构造）时 `hasCredentials` 返回 `true`，保证测试不会意外清空目录。
 
@@ -59,7 +59,6 @@ WS `list_models`（以及共享同一份逻辑的 REST `GET /api/settings/models
 | E1 | 全新安装、无任何 key | 默认列表可能为空（仅 custom）；`all:true` 兜底 |
 | E2 | custom 模型 | 永远可用、永远包含、永远置顶 |
 | E3 | `${ENV}` 指向空 | 不可用 |
-| E4 | Google ADC / AWS Bedrock | `<authenticated>` 哨兵，无字面 key 也算可用 |
 | E5 | `all:true` | 仍返回无凭证模型，`filtered:false`；每条仍带 `hasCredentials` |
 | E6 | 白名单内全无凭证 | 默认列表可能仅剩 custom |
 | E7 | current model 被过滤掉 | `get_state` 仍返回它；前端高亮需容错或退回 `all:true` |

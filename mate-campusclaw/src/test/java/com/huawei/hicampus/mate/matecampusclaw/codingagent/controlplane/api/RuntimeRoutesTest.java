@@ -119,7 +119,7 @@ class RuntimeRoutesTest {
 
         client.post()
                 .uri("/api/v1/runtimes/schedule")
-                .bodyValue(Map.of("requiredCapabilities", Set.of("MODEL_GOOGLE")))
+                .bodyValue(Map.of("requiredCapabilities", Set.of("MODEL_MISTRAL")))
                 .exchange()
                 .expectStatus()
                 .isNotFound()

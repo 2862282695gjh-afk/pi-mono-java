@@ -29,14 +29,6 @@
             <groupId>com.openai</groupId>
             <artifactId>openai-java</artifactId>
         </dependency>
-        <dependency>
-            <groupId>com.google.cloud</groupId>
-            <artifactId>google-cloud-aiplatform</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>software.amazon.awssdk</groupId>
-            <artifactId>bedrockruntime</artifactId>
-        </dependency>
 
         <!-- Terminal I/O -->
         <dependency>

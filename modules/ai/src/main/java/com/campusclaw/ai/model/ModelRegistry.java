@@ -313,8 +313,6 @@ public class ModelRegistry {
         all.addAll(kimiCodingModels());
         all.addAll(minimaxModels());
         all.addAll(minimaxCnModels());
-        all.addAll(googleGenerativeAiModels());
-        all.addAll(googleVertexAiModels());
         all.addAll(mistralModels());
         all.addAll(azureOpenaiModels());
         all.addAll(xaiModels());
@@ -536,86 +534,6 @@ public class ModelRegistry {
                         new ModelCost(0.6, 2.4, 0.06, 0.375),
                         204800,
                         131072,
-                        null,
-                        null,
-                        null));
-    }
-
-    private static List<Model> googleGenerativeAiModels() {
-        return List.of(
-                // --- Google Generative AI ---
-                new Model(
-                        "gemini-2.5-pro",
-                        "Gemini 2.5 Pro",
-                        Api.GOOGLE_GENERATIVE_AI,
-                        Provider.GOOGLE,
-                        "https://generativelanguage.googleapis.com/v1beta",
-                        true,
-                        List.of(InputModality.TEXT, InputModality.IMAGE),
-                        new ModelCost(1.25, 10.0, 0.31, 2.5),
-                        1048576,
-                        65536,
-                        null,
-                        null,
-                        null),
-                new Model(
-                        "gemini-2.5-flash",
-                        "Gemini 2.5 Flash",
-                        Api.GOOGLE_GENERATIVE_AI,
-                        Provider.GOOGLE,
-                        "https://generativelanguage.googleapis.com/v1beta",
-                        true,
-                        List.of(InputModality.TEXT, InputModality.IMAGE),
-                        new ModelCost(0.15, 0.6, 0.04, 0.15),
-                        1048576,
-                        65536,
-                        null,
-                        null,
-                        null),
-                new Model(
-                        "gemini-2.0-flash",
-                        "Gemini 2.0 Flash",
-                        Api.GOOGLE_GENERATIVE_AI,
-                        Provider.GOOGLE,
-                        "https://generativelanguage.googleapis.com/v1beta",
-                        false,
-                        List.of(InputModality.TEXT, InputModality.IMAGE),
-                        new ModelCost(0.1, 0.4, 0.025, 0.1),
-                        1048576,
-                        8192,
-                        null,
-                        null,
-                        null));
-    }
-
-    private static List<Model> googleVertexAiModels() {
-        return List.of(
-                // --- Google Vertex AI ---
-                new Model(
-                        "gemini-2.5-pro",
-                        "Gemini 2.5 Pro (Vertex)",
-                        Api.GOOGLE_VERTEX,
-                        Provider.GOOGLE_VERTEX,
-                        null,
-                        true,
-                        List.of(InputModality.TEXT, InputModality.IMAGE),
-                        new ModelCost(1.25, 10.0, 0.31, 2.5),
-                        1048576,
-                        65536,
-                        null,
-                        null,
-                        null),
-                new Model(
-                        "gemini-2.5-flash",
-                        "Gemini 2.5 Flash (Vertex)",
-                        Api.GOOGLE_VERTEX,
-                        Provider.GOOGLE_VERTEX,
-                        null,
-                        true,
-                        List.of(InputModality.TEXT, InputModality.IMAGE),
-                        new ModelCost(0.15, 0.6, 0.04, 0.15),
-                        1048576,
-                        65536,
                         null,
                         null,
                         null));
@@ -847,20 +765,6 @@ public class ModelRegistry {
                         new ModelCost(2.5, 10.0, 1.25, 2.5),
                         128000,
                         16384,
-                        null,
-                        null,
-                        null),
-                new Model(
-                        "google/gemini-2.5-pro",
-                        "Gemini 2.5 Pro (OpenRouter)",
-                        Api.OPENAI_COMPLETIONS,
-                        Provider.OPENROUTER,
-                        "https://openrouter.ai/api/v1",
-                        true,
-                        List.of(InputModality.TEXT, InputModality.IMAGE),
-                        new ModelCost(1.25, 10.0, 0.31, 2.5),
-                        1048576,
-                        65536,
                         null,
                         null,
                         null));

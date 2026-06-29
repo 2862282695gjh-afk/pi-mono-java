@@ -39,8 +39,8 @@ class ModelTest {
         void jsonValues() {
             assertEquals("anthropic", Provider.ANTHROPIC.value());
             assertEquals("openai", Provider.OPENAI.value());
-            assertEquals("google-vertex", Provider.GOOGLE_VERTEX.value());
-            assertEquals("amazon-bedrock", Provider.AMAZON_BEDROCK.value());
+            assertEquals("mistral", Provider.MISTRAL.value());
+            assertEquals("openrouter", Provider.OPENROUTER.value());
             assertEquals("azure-openai-responses", Provider.AZURE_OPENAI.value());
             assertEquals("openai-codex", Provider.OPENAI_CODEX.value());
         }
@@ -48,7 +48,7 @@ class ModelTest {
         @Test
         void fromValue() {
             assertEquals(Provider.ANTHROPIC, Provider.fromValue("anthropic"));
-            assertEquals(Provider.AMAZON_BEDROCK, Provider.fromValue("amazon-bedrock"));
+            assertEquals(Provider.MISTRAL, Provider.fromValue("mistral"));
         }
 
         @Test
@@ -59,7 +59,7 @@ class ModelTest {
         @Test
         void serialization() throws JsonProcessingException {
             assertEquals("\"anthropic\"", mapper.writeValueAsString(Provider.ANTHROPIC));
-            assertEquals("\"google-vertex\"", mapper.writeValueAsString(Provider.GOOGLE_VERTEX));
+            assertEquals("\"mistral\"", mapper.writeValueAsString(Provider.MISTRAL));
         }
 
         @Test
@@ -79,9 +79,6 @@ class ModelTest {
             assertEquals("anthropic-messages", Api.ANTHROPIC_MESSAGES.value());
             assertEquals("openai-responses", Api.OPENAI_RESPONSES.value());
             assertEquals("openai-completions", Api.OPENAI_COMPLETIONS.value());
-            assertEquals("bedrock-converse-stream", Api.BEDROCK_CONVERSE_STREAM.value());
-            assertEquals("google-generative-ai", Api.GOOGLE_GENERATIVE_AI.value());
-            assertEquals("google-vertex", Api.GOOGLE_VERTEX.value());
             assertEquals("mistral-conversations", Api.MISTRAL_CONVERSATIONS.value());
             assertEquals("azure-openai-responses", Api.AZURE_OPENAI_RESPONSES.value());
             assertEquals("openai-codex-responses", Api.OPENAI_CODEX_RESPONSES.value());
@@ -105,7 +102,7 @@ class ModelTest {
 
         @Test
         void deserialization() throws JsonProcessingException {
-            assertEquals(Api.BEDROCK_CONVERSE_STREAM, mapper.readValue("\"bedrock-converse-stream\"", Api.class));
+            assertEquals(Api.MISTRAL_CONVERSATIONS, mapper.readValue("\"mistral-conversations\"", Api.class));
         }
     }
 
