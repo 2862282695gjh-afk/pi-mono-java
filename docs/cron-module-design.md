@@ -158,12 +158,12 @@ public interface CronEventListener {
 核心执行流程：
 1. `new Agent(piAiService)` 创建隔离实例（公开构造器创建全新 AgentState/executionLock，线程安全）
 2. 通过 `ModelRegistry` 解析 modelId → Model（遍历 providers 精确匹配）
-3. 通过 `ToolProvider.resolve(allowedTools)` 解析有效工具；在 CLI 装配中该 provider 委托给 `ToolCatalog.resolve(ToolSelection)`
+3. 按 `allowedTools` 过滤注入的 `List<AgentTool>`
 4. 设置 system prompt / model / tools
 5. 调用 `agent.prompt(prompt)` 后 `waitForIdle().get(timeout, SECONDS)`
 6. 超时调 `agent.abort()`，默认 300 秒
 
-依赖注入：`CampusClawAiService`, `ModelRegistry`, `CronRunLog`, `List<AgentTool>`，可选 `ToolProvider`
+依赖注入：`CampusClawAiService`, `ModelRegistry`, `CronRunLog`, `List<AgentTool>`
 
 ### 4.3 CronEngine.java (`@Service`)
 
@@ -289,8 +289,7 @@ modules/cron/src/test/java/com/campusclaw/cron/
 ## 关键参考文件
 
 - `modules/agent-core/.../Agent.java` — 公开构造器 line 65-77，隔离实例创建
-- `modules/agent-core/.../tool/ToolProvider.java` — cron 与 CLI catalog 的共享工具解析接口
 - `modules/ai/.../CampusClawAiService.java` — 注入到 executor
 - `modules/ai/.../model/ModelRegistry.java` — 模型解析
-- `modules/coding-agent-cli/.../tool/catalog/ToolProviderConfiguration.java` — 将 `ToolProvider` 委托到 `ToolCatalog.resolve`
+- `modules/coding-agent-cli/.../cli/CampusClawCommand.java` — `List<AgentTool>` 注入模式 line 62-73
 - `modules/coding-agent-cli/.../mode/InteractiveMode.java` — start/stop 集成点 line 135, 576-578
