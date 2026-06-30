@@ -355,6 +355,7 @@ class AcpModeTest {
             sendLine("{\"jsonrpc\":\"2.0\",\"id\":21,\"method\":\"session/prompt\",\"params\":"
                     + "{\"sessionId\":\"" + sessionId + "\","
                     + "\"prompt\":[{\"type\":\"text\",\"text\":\"hi\"}]}}");
+            verify(session, timeout(IO_TIMEOUT_MS)).prompt("hi");
 
             // Listener was captured during run()'s subscribe(...) call. Wait for it.
             AgentEventListener listener = awaitListener();
@@ -399,6 +400,7 @@ class AcpModeTest {
             sendLine("{\"jsonrpc\":\"2.0\",\"id\":31,\"method\":\"session/prompt\",\"params\":"
                     + "{\"sessionId\":\"" + sessionId + "\","
                     + "\"prompt\":[{\"type\":\"text\",\"text\":\"hi\"}]}}");
+            verify(session, timeout(IO_TIMEOUT_MS)).prompt("hi");
 
             AgentEventListener listener = awaitListener();
             listener.onEvent(new MessageEndEvent(assistantMessageOf("final answer")));
@@ -476,6 +478,7 @@ class AcpModeTest {
                     + ",\"method\":\"session/prompt\",\"params\":"
                     + "{\"sessionId\":\"" + sessionId + "\","
                     + "\"prompt\":[{\"type\":\"text\",\"text\":\"hi\"}]}}");
+            verify(session, timeout(IO_TIMEOUT_MS)).prompt("hi");
             return awaitListener();
         }
 
