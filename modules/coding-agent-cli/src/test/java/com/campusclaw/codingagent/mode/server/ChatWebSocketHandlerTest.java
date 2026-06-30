@@ -58,6 +58,8 @@ import reactor.core.publisher.Mono;
 import reactor.netty.DisposableServer;
 import reactor.netty.http.client.HttpClient;
 import reactor.netty.http.server.HttpServer;
+import reactor.netty.resources.ConnectionProvider;
+import reactor.netty.resources.LoopResources;
 
 /**
  * Smoke test for {@link ChatWebSocketHandler} that starts a real Reactor Netty
@@ -71,6 +73,8 @@ class ChatWebSocketHandlerTest {
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private DisposableServer server;
+    private LoopResources loopResources;
+    private ConnectionProvider connectionProvider;
     private AgentSession session;
     private SessionPool pool;
     private AtomicReference<AgentEventListener> listenerRef;
@@ -81,6 +85,8 @@ class ChatWebSocketHandlerTest {
 
     @BeforeEach
     void setUp() {
+        loopResources = LoopResources.create("chat-websocket-test", 2, true);
+        connectionProvider = ConnectionProvider.newConnection();
         listenerRef = new AtomicReference<>();
         promptScript = null;
 
@@ -112,18 +118,22 @@ class ChatWebSocketHandlerTest {
 
         ChatWebSocketHandler wsHandler = new ChatWebSocketHandler(pool);
 
-        server = HttpServer.create()
-                .host("127.0.0.1")
-                .port(0)
-                .route(r -> r.get(
-                        "/api/ws/chat", (req, res) -> res.sendWebsocket((in, out) -> wsHandler.handle(in, out, null))))
-                .bindNow();
+        server = bindServer(wsHandler);
     }
 
     @AfterEach
     void tearDown() {
         if (server != null) {
             server.disposeNow();
+            server = null;
+        }
+        if (connectionProvider != null) {
+            connectionProvider.dispose();
+            connectionProvider = null;
+        }
+        if (loopResources != null) {
+            loopResources.disposeLater(Duration.ZERO, Duration.ofSeconds(5)).block(Duration.ofSeconds(5));
+            loopResources = null;
         }
     }
 
@@ -317,12 +327,7 @@ class ChatWebSocketHandlerTest {
         if (server != null) {
             server.disposeNow();
         }
-        server = HttpServer.create()
-                .host("127.0.0.1")
-                .port(0)
-                .route(r -> r.get(
-                        "/api/ws/chat", (req, res) -> res.sendWebsocket((in, out) -> handler.handle(in, out, null))))
-                .bindNow();
+        server = bindServer(handler);
 
         JsonNode response = runRequestResponse("{\"type\":\"list_models\",\"id\":\"lm1\"}", "lm1");
         assertEquals("response", response.path("type").asText());
@@ -361,12 +366,7 @@ class ChatWebSocketHandlerTest {
         if (server != null) {
             server.disposeNow();
         }
-        server = HttpServer.create()
-                .host("127.0.0.1")
-                .port(0)
-                .route(r -> r.get(
-                        "/api/ws/chat", (req, res) -> res.sendWebsocket((in, out) -> handler.handle(in, out, null))))
-                .bindNow();
+        server = bindServer(handler);
 
         // Default (all:false) → only the credentialed model is offered.
         JsonNode def = runRequestResponse("{\"type\":\"list_models\",\"id\":\"d\"}", "d");
@@ -467,12 +467,23 @@ class ChatWebSocketHandlerTest {
     // Helpers
     // =========================================================================
 
+    private DisposableServer bindServer(ChatWebSocketHandler handler) {
+        return HttpServer.create()
+                .runOn(loopResources)
+                .host("127.0.0.1")
+                .port(0)
+                .route(r -> r.get(
+                        "/api/ws/chat", (req, res) -> res.sendWebsocket((in, out) -> handler.handle(in, out, null))))
+                .bindNow();
+    }
+
     private JsonNode runRequestResponse(String cmd, String expectedId) throws Exception {
         Queue<String> raws = new ConcurrentLinkedQueue<>();
         AtomicReference<JsonNode> matched = new AtomicReference<>();
         CountDownLatch latch = new CountDownLatch(1);
 
-        HttpClient.create()
+        HttpClient.create(connectionProvider)
+                .runOn(loopResources)
                 .websocket()
                 .uri("ws://" + server.host() + ":" + server.port() + "/api/ws/chat")
                 .handle((in, out) -> {
@@ -518,7 +529,8 @@ class ChatWebSocketHandlerTest {
         Queue<String> raws = new ConcurrentLinkedQueue<>();
         CountDownLatch sawDone = new CountDownLatch(1);
 
-        HttpClient.create()
+        HttpClient.create(connectionProvider)
+                .runOn(loopResources)
                 .websocket()
                 .uri("ws://" + server.host() + ":" + server.port() + "/api/ws/chat")
                 .handle((in, out) -> {
