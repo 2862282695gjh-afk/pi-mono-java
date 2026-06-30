@@ -131,6 +131,36 @@ class ToolExecutionPipelineTest {
     }
 
     @Test
+    void preparesArgumentsBeforeSchemaValidationAndExecution() {
+        var pipeline = new ToolExecutionPipeline();
+        var tool = new PreparingAgentTool("search");
+        var toolCall = new ToolCall("call-1", "search", Map.of("legacyQuery", "java"));
+
+        var result = pipeline.execute(
+                tool, toolCall, Map.of("legacyQuery", "java"), sampleContext(), new CancellationToken(), null);
+
+        assertFalse(result.isError());
+        assertEquals("final:java", text(result.content().getFirst()));
+        assertEquals(Map.of("query", "java", "stage", "final"), result.details());
+    }
+
+    @Test
+    void beforeToolCallCanOverrideArgumentsBeforeExecution() {
+        var pipeline = new ToolExecutionPipeline();
+        var tool = new MockAgentTool("search", false, false, 0L);
+        var toolCall = new ToolCall("call-1", "search", Map.of("query", "java"));
+
+        pipeline.setBeforeToolCall(context -> BeforeToolCallResult.allow(Map.of("query", "kotlin")));
+
+        var result = pipeline.execute(
+                tool, toolCall, Map.of("query", "java"), sampleContext(), new CancellationToken(), null);
+
+        assertFalse(result.isError());
+        assertEquals("final:kotlin", text(result.content().getFirst()));
+        assertEquals(Map.of("query", "kotlin", "stage", "final"), result.details());
+    }
+
+    @Test
     void executesAllInParallelUsingVirtualThreads() {
         var pipeline = new ToolExecutionPipeline();
         var context = sampleContext();
@@ -162,6 +192,30 @@ class ToolExecutionPipelineTest {
                 results.stream().map(ToolResultMessage::toolCallId).toList());
     }
 
+    @Test
+    void executesSequentiallyWhenAnyParallelBatchToolRequiresSequentialMode() {
+        var pipeline = new ToolExecutionPipeline();
+        var context = sampleContext();
+        var signal = new CancellationToken();
+        var maxConcurrency = new AtomicInteger();
+        var currentConcurrency = new AtomicInteger();
+
+        var calls = List.of(
+                new ToolCallWithTool(
+                        new ToolCall("call-1", "search", Map.of("query", "one")),
+                        new SequentialAgentTool("search", currentConcurrency, maxConcurrency),
+                        Map.of("query", "one")),
+                new ToolCallWithTool(
+                        new ToolCall("call-2", "search", Map.of("query", "two")),
+                        new TrackingAgentTool("search", currentConcurrency, maxConcurrency),
+                        Map.of("query", "two")));
+
+        var results = pipeline.executeAll(calls, ToolExecutionMode.PARALLEL, context, signal, null);
+
+        assertEquals(2, results.size());
+        assertEquals(1, maxConcurrency.get());
+    }
+
     private AgentContext sampleContext() {
         var assistantMessage = new AssistantMessage(
                 List.of(new TextContent("assistant")),
@@ -180,7 +234,7 @@ class ToolExecutionPipelineTest {
         return ((TextContent) block).text();
     }
 
-    private static final class MockAgentTool implements AgentTool {
+    private static class MockAgentTool implements AgentTool {
 
         private final String name;
         private final boolean throwOnExecute;
@@ -192,11 +246,12 @@ class ToolExecutionPipelineTest {
         private final CountDownLatch ready;
         private final ObjectMapper mapper = new ObjectMapper();
 
-        private MockAgentTool(String name, boolean throwOnExecute, boolean coordinateForParallelism, long delayMillis) {
+        protected MockAgentTool(
+                String name, boolean throwOnExecute, boolean coordinateForParallelism, long delayMillis) {
             this(name, throwOnExecute, coordinateForParallelism, delayMillis, null, null, null);
         }
 
-        private MockAgentTool(
+        protected MockAgentTool(
                 String name,
                 boolean throwOnExecute,
                 boolean coordinateForParallelism,
@@ -275,6 +330,58 @@ class ToolExecutionPipelineTest {
                     currentConcurrency.decrementAndGet();
                 }
             }
+        }
+    }
+
+    private static class TrackingAgentTool extends MockAgentTool {
+
+        private final AtomicInteger currentConcurrency;
+        private final AtomicInteger maxConcurrency;
+
+        private TrackingAgentTool(String name, AtomicInteger currentConcurrency, AtomicInteger maxConcurrency) {
+            super(name, false, false, 20L);
+            this.currentConcurrency = currentConcurrency;
+            this.maxConcurrency = maxConcurrency;
+        }
+
+        @Override
+        public AgentToolResult execute(
+                String toolCallId,
+                Map<String, Object> params,
+                CancellationToken signal,
+                AgentToolUpdateCallback onUpdate)
+                throws Exception {
+            var concurrency = currentConcurrency.incrementAndGet();
+            maxConcurrency.accumulateAndGet(concurrency, Math::max);
+            try {
+                return super.execute(toolCallId, params, signal, onUpdate);
+            } finally {
+                currentConcurrency.decrementAndGet();
+            }
+        }
+    }
+
+    private static final class PreparingAgentTool extends MockAgentTool {
+
+        private PreparingAgentTool(String name) {
+            super(name, false, false, 0L);
+        }
+
+        @Override
+        public Map<String, Object> prepareArguments(Map<String, Object> rawArgs) {
+            return Map.of("query", rawArgs.get("legacyQuery"));
+        }
+    }
+
+    private static final class SequentialAgentTool extends TrackingAgentTool {
+
+        private SequentialAgentTool(String name, AtomicInteger currentConcurrency, AtomicInteger maxConcurrency) {
+            super(name, currentConcurrency, maxConcurrency);
+        }
+
+        @Override
+        public ToolExecutionMode defaultExecutionMode() {
+            return ToolExecutionMode.SEQUENTIAL;
         }
     }
 }

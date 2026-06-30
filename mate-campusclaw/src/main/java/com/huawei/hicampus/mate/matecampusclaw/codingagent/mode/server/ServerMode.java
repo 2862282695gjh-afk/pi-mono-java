@@ -4,6 +4,8 @@
 
 package com.huawei.hicampus.mate.matecampusclaw.codingagent.mode.server;
 
+import java.io.IOException;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 
@@ -19,6 +21,10 @@ import com.huawei.hicampus.mate.matecampusclaw.codingagent.settings.SettingsMana
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.skill.SandboxSkillParser;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.skill.SkillLoader;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.skill.SkillManager;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.catalog.ToolCatalog;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.catalog.ToolCatalogWatcher;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.catalog.ToolSelection;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.catalog.ToolSourceContext;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -68,6 +74,8 @@ public class ServerMode {
     private final ModelRegistry modelRegistry;
     private final SystemPromptBuilder promptBuilder;
     private final List<AgentTool> tools;
+    private final ToolCatalog toolCatalog;
+    private final ToolSelection toolSelection;
     private final SessionConfig baseConfig;
     private final int port;
     private final String host;
@@ -98,6 +106,8 @@ public class ServerMode {
                 modelRegistry,
                 promptBuilder,
                 tools,
+                null,
+                ToolSelection.all(),
                 baseConfig,
                 port,
                 "localhost",
@@ -125,6 +135,8 @@ public class ServerMode {
                 modelRegistry,
                 promptBuilder,
                 tools,
+                null,
+                ToolSelection.all(),
                 baseConfig,
                 port,
                 host,
@@ -153,6 +165,8 @@ public class ServerMode {
                 modelRegistry,
                 promptBuilder,
                 tools,
+                null,
+                ToolSelection.all(),
                 baseConfig,
                 port,
                 host,
@@ -178,10 +192,46 @@ public class ServerMode {
             boolean sessionPersistenceEnabled,
             SettingsManager settingsManager,
             CustomModelLoader customModelLoader) {
+        this(
+                aiService,
+                modelRegistry,
+                promptBuilder,
+                tools,
+                null,
+                ToolSelection.all(),
+                baseConfig,
+                port,
+                host,
+                sandboxParser,
+                useSandbox,
+                modelCatalog,
+                sessionPersistenceEnabled,
+                settingsManager,
+                customModelLoader);
+    }
+
+    public ServerMode(
+            CampusClawAiService aiService,
+            ModelRegistry modelRegistry,
+            SystemPromptBuilder promptBuilder,
+            List<AgentTool> tools,
+            ToolCatalog toolCatalog,
+            ToolSelection toolSelection,
+            SessionConfig baseConfig,
+            int port,
+            String host,
+            SandboxSkillParser sandboxParser,
+            boolean useSandbox,
+            ModelCatalogService modelCatalog,
+            boolean sessionPersistenceEnabled,
+            SettingsManager settingsManager,
+            CustomModelLoader customModelLoader) {
         this.aiService = aiService;
         this.modelRegistry = modelRegistry;
         this.promptBuilder = promptBuilder;
         this.tools = tools;
+        this.toolCatalog = toolCatalog;
+        this.toolSelection = toolSelection != null ? toolSelection : ToolSelection.all();
         this.baseConfig = baseConfig;
         this.port = port;
         this.host = host;
@@ -212,10 +262,13 @@ public class ServerMode {
                 modelRegistry,
                 promptBuilder,
                 tools,
+                toolCatalog,
+                toolSelection,
                 baseConfig,
                 sandboxParser,
                 useSandbox,
-                sessionPersistenceEnabled);
+                sessionPersistenceEnabled,
+                settingsManager);
         var chatHandler = new ChatHandler(sessionPool);
         var wsHandler = new ChatWebSocketHandler(sessionPool, modelCatalog);
         var skillHandler = new SkillHandler(
@@ -224,14 +277,51 @@ public class ServerMode {
         SettingsHandler settingsHandler = buildSettingsHandler();
         RouterFunction<ServerResponse> routes = buildRoutes(chatHandler, skillHandler, sessionPool, settingsHandler);
         var adapter = new ReactorHttpHandlerAdapter(RouterFunctions.toHttpHandler(routes));
-        var server = HttpServer.create()
-                .host(host)
-                .port(port)
-                .route(r -> wireServerRoutes(r, wsHandler, adapter))
-                .bindNow();
-        logStartupBanner();
-        server.onDispose().block();
-        sessionPool.shutdown();
+        try (var watcher = startToolWatcherIfEnabled(sessionPool)) {
+            var server = HttpServer.create()
+                    .host(host)
+                    .port(port)
+                    .route(r -> wireServerRoutes(r, wsHandler, adapter))
+                    .bindNow();
+            logStartupBanner();
+            server.onDispose().block();
+        } catch (IOException e) {
+            log.warn("Failed to close tool catalog watcher", e);
+        } finally {
+            sessionPool.shutdown();
+        }
+    }
+
+    ToolCatalogWatcher startToolWatcherIfEnabled(SessionPool sessionPool) {
+        if (toolCatalog == null || !toolWatchEnabled()) {
+            return null;
+        }
+        try {
+            Path cwd = baseConfig.cwd();
+            return ToolCatalogWatcher.start(
+                    new ToolSourceContext(cwd, null),
+                    List.of(AppPaths.GLOBAL_SETTINGS, cwd.resolve(AppPaths.PROJECT_SETTINGS)),
+                    () -> {
+                        try {
+                            sessionPool.reloadTools();
+                        } catch (RuntimeException e) {
+                            log.warn("Tool catalog watch reload failed", e);
+                        }
+                    });
+        } catch (IOException e) {
+            log.warn("Tool catalog watch disabled: {}", e.getMessage(), e);
+            return null;
+        }
+    }
+
+    private boolean toolWatchEnabled() {
+        if (settingsManager == null) {
+            return false;
+        }
+        var settings = settingsManager.load();
+        return settings.tools() != null
+                && settings.tools().watch() != null
+                && Boolean.TRUE.equals(settings.tools().watch().enabled());
     }
 
     private RouterFunction<ServerResponse> buildRoutes(
@@ -260,7 +350,9 @@ public class ServerMode {
                 .GET("/api/skills", skillHandler::list)
                 .DELETE("/api/skills/{name}", skillHandler::delete)
                 .POST("/api/skills/{name}/enable", skillHandler::enable)
-                .POST("/api/skills/{name}/disable", skillHandler::disable);
+                .POST("/api/skills/{name}/disable", skillHandler::disable)
+                .GET("/api/tools", req -> ServerResponse.ok().bodyValue(sessionPool.toolStatus()))
+                .POST("/api/tools/reload", req -> ServerResponse.ok().bodyValue(sessionPool.reloadTools()));
         if (settingsHandler != null) {
             builder = builder.GET("/api/settings/models", settingsHandler::getModels)
                     .PUT("/api/settings/models/default", settingsHandler::setDefaultModel)
@@ -319,6 +411,8 @@ public class ServerMode {
         banner.info("  DELETE /api/skills/{name}");
         banner.info("  POST   /api/skills/{name}/enable");
         banner.info("  POST   /api/skills/{name}/disable");
+        banner.info("  GET    /api/tools");
+        banner.info("  POST   /api/tools/reload");
         if (settingsManager != null && customModelLoader != null && modelCatalog != null) {
             banner.info("  GET    /api/settings/models");
             banner.info("  PUT    /api/settings/models/default");

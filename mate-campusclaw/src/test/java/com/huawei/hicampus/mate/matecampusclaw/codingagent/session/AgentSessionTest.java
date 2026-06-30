@@ -40,6 +40,9 @@ import com.huawei.hicampus.mate.matecampusclaw.ai.types.Provider;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.prompt.SystemPromptBuilder;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.skill.SkillExpander;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.skill.SkillLoader;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.catalog.ToolCatalog;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.catalog.ToolRefreshRequest;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.catalog.ToolSelection;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -254,6 +257,33 @@ class AgentSessionTest {
             // Agent#setTools should have been called with the wired tool list (verifies registration,
             // not just construction)
             verify(session.getAgent()).setTools(tools);
+        }
+    }
+
+    // -------------------------------------------------------------------
+    // reload
+    // -------------------------------------------------------------------
+
+    @Nested
+    class Reload {
+
+        @Test
+        void refreshesToolCatalogAndUpdatesAgentTools() {
+            when(promptBuilder.build(any())).thenReturn("prompt");
+            AgentTool replacement = new StubTool("jira_search", "Search Jira");
+            ToolCatalog catalog = mock(ToolCatalog.class);
+            when(catalog.resolve(ToolSelection.all())).thenReturn(tools, List.of(replacement));
+
+            session.setToolCatalog(catalog, ToolSelection.all());
+            session.initialize(config());
+            org.mockito.Mockito.clearInvocations(catalog);
+
+            session.reload();
+
+            verify(catalog)
+                    .refresh(org.mockito.ArgumentMatchers.argThat(
+                            (ToolRefreshRequest request) -> tempDir.equals(request.cwd())));
+            verify(session.getAgent()).setTools(List.of(replacement));
         }
     }
 
