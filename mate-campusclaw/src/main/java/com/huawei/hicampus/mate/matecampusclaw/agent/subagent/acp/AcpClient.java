@@ -146,7 +146,7 @@ public class AcpClient implements AutoCloseable {
     @Override
     public void close() {
         AcpTransport.note("AcpClient.close enter pendingCount=" + pending.size());
-        events.emitComplete(RETRY_NON_SERIALIZED);
+        events.tryEmitComplete();
         AcpTransport.note("AcpClient.close events.emitComplete done");
         transport.close();
         AcpTransport.note("AcpClient.close transport.close done");
@@ -300,11 +300,16 @@ public class AcpClient implements AutoCloseable {
     }
 
     private void onTransportError(Throwable cause) {
-        events.emitNext(
-                new SubAgentEvent.Error("ACP_TRANSPORT", String.valueOf(cause.getMessage()), false),
-                RETRY_NON_SERIALIZED);
-        events.emitComplete(RETRY_NON_SERIALIZED);
         pending.values().forEach(p -> p.future().completeExceptionally(cause));
         pending.clear();
+        var nextResult =
+                events.tryEmitNext(new SubAgentEvent.Error("ACP_TRANSPORT", String.valueOf(cause.getMessage()), false));
+        if (nextResult.isFailure()) {
+            log.debug("transport error event dropped because sink is not accepting signals: {}", nextResult);
+        }
+        var completeResult = events.tryEmitComplete();
+        if (completeResult.isFailure()) {
+            log.debug("transport error completion dropped because sink is not accepting signals: {}", completeResult);
+        }
     }
 }

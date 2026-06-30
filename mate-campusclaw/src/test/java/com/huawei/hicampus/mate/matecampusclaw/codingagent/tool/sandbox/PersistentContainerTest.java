@@ -52,10 +52,7 @@ public class PersistentContainerTest {
             log.info("   current worker id: {}", workerId);
 
             log.info("   manually removing container");
-            ProcessBuilder pb = new ProcessBuilder("docker", "rm", "-f", workerId);
-            pb.inheritIO();
-            Process p = pb.start();
-            p.waitFor();
+            removeContainer(workerId);
 
             log.info("   waiting for container removal");
             Thread.sleep(1000);
@@ -80,5 +77,13 @@ public class PersistentContainerTest {
         log.info("4. cleanup");
         client.shutdown();
         log.info("   done");
+    }
+
+    private static void removeContainer(String workerId) throws Exception {
+        ProcessBuilder pb = new ProcessBuilder("docker", "rm", "-f", workerId)
+                .redirectOutput(ProcessBuilder.Redirect.DISCARD)
+                .redirectError(ProcessBuilder.Redirect.DISCARD);
+        Process p = pb.start();
+        p.waitFor();
     }
 }

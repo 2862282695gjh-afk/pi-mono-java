@@ -130,8 +130,7 @@ public class Diagnostics {
                 "OPENAI_API_KEY", "OpenAI",
                 "ZAI_API_KEY", "ZAI (智谱)",
                 "KIMI_API_KEY", "Kimi Coding",
-                "MINIMAX_API_KEY", "MiniMax",
-                "GOOGLE_API_KEY", "Google");
+                "MINIMAX_API_KEY", "MiniMax");
         int found = 0;
         for (var entry : keyChecks.entrySet()) {
             String val = System.getenv(entry.getKey());

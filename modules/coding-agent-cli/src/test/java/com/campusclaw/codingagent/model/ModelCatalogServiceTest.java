@@ -267,7 +267,7 @@ class ModelCatalogServiceTest {
             assertThat(ModelCatalogService.matchesPattern("gpt", model("gpt-4", "GPT-4", Provider.OPENAI)))
                     .isTrue();
             assertThat(ModelCatalogService.matchesPattern(
-                            "flash", model("gemini-flash", "Gemini Flash", Provider.GOOGLE)))
+                            "flash", model("mistral-flash", "Mistral Flash", Provider.MISTRAL)))
                     .isTrue();
             assertThat(ModelCatalogService.matchesPattern("xyz", model("gpt-4", "GPT-4", Provider.OPENAI)))
                     .isFalse();

@@ -35,7 +35,6 @@ java -version
 ```bash
 export ANTHROPIC_API_KEY="sk-ant-..."   # Anthropic (Claude)
 export OPENAI_API_KEY="sk-..."          # OpenAI
-export GOOGLE_API_KEY="..."             # Google
 # 其他供应商见「支持的供应商」章节
 ```
 
@@ -205,13 +204,18 @@ Agent 内置 8 个代码操作工具：
 
 ## 支持的供应商
 
+<!-- supported-providers — SOURCE OF TRUTH: the Provider enum + ModelRegistry built-ins.
+     Pinned by SupportedProvidersDocTest (modules/ai); when that test fails, update BOTH
+     the canonical id list below AND the table that follows to match the code.
+     BEGIN supported-providers
+     anthropic, openai, mistral, azure-openai-responses, openai-codex, github-copilot,
+     zai, kimi-coding, minimax, minimax-cn, xai, groq, cerebras, openrouter, huggingface
+     END supported-providers -->
+
 | 供应商 | 环境变量 |
 |--------|----------|
 | Anthropic (Claude) | `ANTHROPIC_API_KEY` |
 | OpenAI | `OPENAI_API_KEY` |
-| Google Generative AI | `GOOGLE_API_KEY` |
-| Google Vertex AI | `GOOGLE_CLOUD_PROJECT` + `GOOGLE_CLOUD_API_KEY` |
-| AWS Bedrock | AWS 标准凭证链 |
 | Azure OpenAI | `AZURE_OPENAI_API_KEY` |
 | Mistral | `MISTRAL_API_KEY` |
 | ZAI | `ZAI_API_KEY` |

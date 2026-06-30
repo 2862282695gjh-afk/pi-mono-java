@@ -311,15 +311,13 @@ class ModelRegistryTest {
         @Test
         void builtInProviderCount() {
             var providers = registry.getProviders();
-            assertEquals(17, providers.size());
+            assertEquals(15, providers.size());
             assertTrue(providers.contains(Provider.ANTHROPIC));
             assertTrue(providers.contains(Provider.OPENAI));
             assertTrue(providers.contains(Provider.ZAI));
             assertTrue(providers.contains(Provider.KIMI_CODING));
             assertTrue(providers.contains(Provider.MINIMAX));
             assertTrue(providers.contains(Provider.MINIMAX_CN));
-            assertTrue(providers.contains(Provider.GOOGLE));
-            assertTrue(providers.contains(Provider.GOOGLE_VERTEX));
             assertTrue(providers.contains(Provider.MISTRAL));
             assertTrue(providers.contains(Provider.AZURE_OPENAI));
             assertTrue(providers.contains(Provider.XAI));

@@ -31,8 +31,6 @@
         <!-- Third-party versions -->
         <anthropic-java.version>2.18.0</anthropic-java.version>
         <openai-java.version>4.29.1</openai-java.version>
-        <google-cloud-aiplatform.version>3.79.0</google-cloud-aiplatform.version>
-        <bedrockruntime.version>2.41.34</bedrockruntime.version>
         <json-schema-validator.version>1.5.2</json-schema-validator.version>
         <picocli.version>4.7.6</picocli.version>
         <jline.version>3.26.2</jline.version>
@@ -89,16 +87,6 @@
                 <groupId>com.openai</groupId>
                 <artifactId>openai-java</artifactId>
                 <version>${openai-java.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>com.google.cloud</groupId>
-                <artifactId>google-cloud-aiplatform</artifactId>
-                <version>${google-cloud-aiplatform.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>software.amazon.awssdk</groupId>
-                <artifactId>bedrockruntime</artifactId>
-                <version>${bedrockruntime.version}</version>
             </dependency>
 
             <!-- JSON Schema -->

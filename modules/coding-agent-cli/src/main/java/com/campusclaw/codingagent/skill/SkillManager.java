@@ -8,12 +8,9 @@ import java.io.BufferedInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.SimpleFileVisitor;
 import java.nio.file.StandardCopyOption;
-import java.nio.file.attribute.BasicFileAttributes;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -27,6 +24,7 @@ import java.util.regex.Pattern;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
+import com.campusclaw.codingagent.util.FileTreeUtils;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -115,11 +113,11 @@ public class SkillManager {
             Files.createDirectories(skillsDir);
             int exitCode = runGitClone(gitUrl, targetDir);
             if (exitCode != 0) {
-                deleteRecursively(targetDir);
+                FileTreeUtils.deleteRecursively(targetDir);
                 throw new SkillInstallException("git clone failed (exit code " + exitCode + ") for: " + gitUrl);
             }
         } catch (IOException | InterruptedException e) {
-            deleteRecursively(targetDir);
+            FileTreeUtils.deleteRecursively(targetDir);
             throw new SkillInstallException("Failed to clone: " + gitUrl + " — " + e.getMessage(), e);
         }
 
@@ -129,7 +127,7 @@ public class SkillManager {
             // Maybe the repo root itself is a skill (has SKILL.md at root)
             Path rootSkill = targetDir.resolve(SkillLoader.SKILL_FILENAME);
             if (!Files.isRegularFile(rootSkill)) {
-                deleteRecursively(targetDir);
+                FileTreeUtils.deleteRecursively(targetDir);
                 throw new SkillInstallException("No SKILL.md found in repository: " + gitUrl
                         + "\nThe repository must contain at least one SKILL.md file.");
             }
@@ -303,12 +301,12 @@ public class SkillManager {
                 throw new SkillConflictException(conflicts);
             }
             Files.createDirectories(skillsDir);
-            Files.move(extractRoot, targetDir);
+            FileTreeUtils.moveDirectory(extractRoot, targetDir);
         } catch (IOException e) {
-            deleteRecursively(targetDir);
+            FileTreeUtils.deleteRecursively(targetDir);
             throw new SkillInstallException("Failed to extract archive: " + e.getMessage(), e);
         } finally {
-            deleteRecursively(tempDir);
+            FileTreeUtils.deleteRecursively(tempDir);
         }
     }
 
@@ -532,7 +530,7 @@ public class SkillManager {
                 throw new SkillInstallException("Failed to remove symlink: " + e.getMessage(), e);
             }
         } else {
-            deleteRecursively(targetDir);
+            FileTreeUtils.deleteRecursively(targetDir);
         }
 
         // Remove from manifest
@@ -660,28 +658,5 @@ public class SkillManager {
     private String resolveTopDir(Path baseDir) {
         Path relative = skillsDir.relativize(baseDir);
         return relative.getName(0).toString();
-    }
-
-    static void deleteRecursively(Path dir) {
-        if (dir == null || !Files.exists(dir)) {
-            return;
-        }
-        try {
-            Files.walkFileTree(dir, new SimpleFileVisitor<>() {
-                @Override
-                public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
-                    Files.delete(file);
-                    return FileVisitResult.CONTINUE;
-                }
-
-                @Override
-                public FileVisitResult postVisitDirectory(Path d, IOException exc) throws IOException {
-                    Files.delete(d);
-                    return FileVisitResult.CONTINUE;
-                }
-            });
-        } catch (IOException e) {
-            log.warn("Failed to delete directory: {}", dir, e);
-        }
     }
 }
