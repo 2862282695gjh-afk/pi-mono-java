@@ -59,22 +59,13 @@ public class ToolExecutionPipeline {
         Objects.requireNonNull(signal, "signal");
         AgentEventListener eventListener = listener != null ? listener : event -> {};
         var toolName = toolCall.name();
-        Map<String, Object> preparedArgs;
-        try {
-            preparedArgs = Map.copyOf(tool.prepareArguments(validatedArgs));
-        } catch (Exception e) {
-            return toToolResultMessage(toolCall, toolName, errorResult(messageForException(e)), true);
+        ToolResultMessage blocked = applyBeforeHook(tool, toolCall, validatedArgs, context, toolName);
+        if (blocked != null) {
+            return blocked;
         }
-
-        BeforeHookOutcome beforeOutcome = applyBeforeHook(toolCall, preparedArgs, context, toolName);
-        if (beforeOutcome.blocked() != null) {
-            return beforeOutcome.blocked();
-        }
-
-        var effectiveArgs = beforeOutcome.args();
-        eventListener.onEvent(new ToolExecutionStartEvent(toolCall.id(), toolName, effectiveArgs));
-        var outcome = invokeTool(tool, toolCall, effectiveArgs, signal, eventListener);
-        outcome = applyAfterHook(toolCall, effectiveArgs, context, outcome);
+        eventListener.onEvent(new ToolExecutionStartEvent(toolCall.id(), toolName, validatedArgs));
+        var outcome = invokeTool(tool, toolCall, validatedArgs, signal, eventListener);
+        outcome = applyAfterHook(toolCall, validatedArgs, context, outcome);
         eventListener.onEvent(new ToolExecutionEndEvent(toolCall.id(), toolName, outcome.result(), outcome.isError()));
         return toToolResultMessage(toolCall, toolName, outcome.result(), outcome.isError());
     }
@@ -84,28 +75,25 @@ public class ToolExecutionPipeline {
      */
     private record Outcome(AgentToolResult result, boolean isError) {}
 
-    private record BeforeHookOutcome(Map<String, Object> args, ToolResultMessage blocked) {}
-
     // Returns the synthesized blocking ToolResultMessage if the beforeToolCall hook rejected
     // the call (or threw); null when the call should proceed.
-    private BeforeHookOutcome applyBeforeHook(
-            ToolCall toolCall, Map<String, Object> validatedArgs, AgentContext context, String toolName) {
+    private ToolResultMessage applyBeforeHook(
+            AgentTool tool,
+            ToolCall toolCall,
+            Map<String, Object> validatedArgs,
+            AgentContext context,
+            String toolName) {
         try {
             var beforeResult = runBeforeHook(toolCall, validatedArgs, context);
             if (beforeResult != null && beforeResult.block()) {
                 String reason = beforeResult.reason() != null
                         ? beforeResult.reason()
                         : "Tool call blocked by beforeToolCall handler";
-                return new BeforeHookOutcome(
-                        validatedArgs, toToolResultMessage(toolCall, toolName, errorResult(reason), true));
+                return toToolResultMessage(toolCall, toolName, errorResult(reason), true);
             }
-            if (beforeResult != null && beforeResult.argsOverride() != null) {
-                return new BeforeHookOutcome(Map.copyOf(beforeResult.argsOverride()), null);
-            }
-            return new BeforeHookOutcome(validatedArgs, null);
+            return null;
         } catch (Exception e) {
-            return new BeforeHookOutcome(
-                    validatedArgs, toToolResultMessage(toolCall, toolName, errorResult(messageForException(e)), true));
+            return toToolResultMessage(toolCall, toolName, errorResult(messageForException(e)), true);
         }
     }
 
@@ -158,21 +146,10 @@ public class ToolExecutionPipeline {
             return List.of();
         }
 
-        var effectiveMode = effectiveExecutionMode(calls, mode);
-        return switch (effectiveMode) {
+        return switch (mode != null ? mode : ToolExecutionMode.SEQUENTIAL) {
             case SEQUENTIAL -> executeSequentially(calls, context, signal, listener);
             case PARALLEL -> executeInParallel(calls, context, signal, listener);
         };
-    }
-
-    private ToolExecutionMode effectiveExecutionMode(List<ToolCallWithTool> calls, ToolExecutionMode requestedMode) {
-        var mode = requestedMode != null ? requestedMode : ToolExecutionMode.SEQUENTIAL;
-        if (mode == ToolExecutionMode.PARALLEL
-                && calls.stream()
-                        .anyMatch(call -> call.tool().defaultExecutionMode() == ToolExecutionMode.SEQUENTIAL)) {
-            return ToolExecutionMode.SEQUENTIAL;
-        }
-        return mode;
     }
 
     private List<ToolResultMessage> executeSequentially(

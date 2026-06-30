@@ -12,7 +12,6 @@ import java.util.stream.Collectors;
 
 import com.huawei.hicampus.mate.matecampusclaw.agent.Agent;
 import com.huawei.hicampus.mate.matecampusclaw.agent.tool.AgentTool;
-import com.huawei.hicampus.mate.matecampusclaw.agent.tool.ToolProvider;
 import com.huawei.hicampus.mate.matecampusclaw.ai.CampusClawAiService;
 import com.huawei.hicampus.mate.matecampusclaw.ai.model.ModelRegistry;
 import com.huawei.hicampus.mate.matecampusclaw.ai.types.AssistantMessage;
@@ -28,7 +27,6 @@ import com.huawei.hicampus.mate.matecampusclaw.cron.store.CronRunLog;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 
@@ -49,7 +47,6 @@ public class CronJobExecutor {
     private final CronRunLog runLog;
     private final List<AgentTool> availableTools;
     private final com.huawei.hicampus.mate.matecampusclaw.cron.CronService cronService;
-    private ToolProvider toolProvider;
 
     public CronJobExecutor(
             CampusClawAiService aiService,
@@ -62,11 +59,6 @@ public class CronJobExecutor {
         this.runLog = runLog;
         this.availableTools = availableTools;
         this.cronService = cronService;
-    }
-
-    @Autowired(required = false)
-    public void setToolProvider(@Lazy ToolProvider toolProvider) {
-        this.toolProvider = toolProvider;
     }
 
     public CronRunRecord execute(CronJob job) {
@@ -186,9 +178,6 @@ public class CronJobExecutor {
     }
 
     private List<AgentTool> filterTools(List<String> allowedTools) {
-        if (toolProvider != null) {
-            return toolProvider.resolve(allowedTools);
-        }
         if (allowedTools == null || allowedTools.isEmpty()) {
             return availableTools;
         }
