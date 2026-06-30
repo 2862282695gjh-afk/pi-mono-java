@@ -78,6 +78,7 @@ class ChatWebSocketHandlerTest {
     private AgentSession session;
     private SessionPool pool;
     private AtomicReference<AgentEventListener> listenerRef;
+    private ChatWebSocketHandler wsHandler;
 
     // Test-supplied script that replays a specific event sequence through the
     // captured listener when session.prompt(...) is called.
@@ -116,9 +117,7 @@ class ChatWebSocketHandlerTest {
             return CompletableFuture.completedFuture(null);
         });
 
-        ChatWebSocketHandler wsHandler = new ChatWebSocketHandler(pool);
-
-        server = bindServer(wsHandler);
+        wsHandler = new ChatWebSocketHandler(pool);
     }
 
     @AfterEach
@@ -323,11 +322,7 @@ class ChatWebSocketHandlerTest {
         when(session.getModelId()).thenReturn("test-a");
         ChatWebSocketHandler handler = new ChatWebSocketHandler(pool, catalog);
 
-        // Replace the no-catalog server from setUp() with one wired up.
-        if (server != null) {
-            server.disposeNow();
-        }
-        server = bindServer(handler);
+        useHandler(handler);
 
         JsonNode response = runRequestResponse("{\"type\":\"list_models\",\"id\":\"lm1\"}", "lm1");
         assertEquals("response", response.path("type").asText());
@@ -363,10 +358,7 @@ class ChatWebSocketHandlerTest {
         when(session.getModelId()).thenReturn("keyed-a");
         ChatWebSocketHandler handler = new ChatWebSocketHandler(pool, catalog);
 
-        if (server != null) {
-            server.disposeNow();
-        }
-        server = bindServer(handler);
+        useHandler(handler);
 
         // Default (all:false) → only the credentialed model is offered.
         JsonNode def = runRequestResponse("{\"type\":\"list_models\",\"id\":\"d\"}", "d");
@@ -477,15 +469,31 @@ class ChatWebSocketHandlerTest {
                 .bindNow();
     }
 
+    private void useHandler(ChatWebSocketHandler handler) {
+        if (server != null) {
+            server.disposeNow();
+            server = null;
+        }
+        wsHandler = handler;
+    }
+
+    private DisposableServer ensureServer() {
+        if (server == null) {
+            server = bindServer(wsHandler);
+        }
+        return server;
+    }
+
     private JsonNode runRequestResponse(String cmd, String expectedId) throws Exception {
         Queue<String> raws = new ConcurrentLinkedQueue<>();
         AtomicReference<JsonNode> matched = new AtomicReference<>();
         CountDownLatch latch = new CountDownLatch(1);
+        DisposableServer currentServer = ensureServer();
 
         HttpClient.create(connectionProvider)
                 .runOn(loopResources)
                 .websocket()
-                .uri("ws://" + server.host() + ":" + server.port() + "/api/ws/chat")
+                .uri("ws://" + currentServer.host() + ":" + currentServer.port() + "/api/ws/chat")
                 .handle((in, out) -> {
                     Mono<Void> send = out.sendString(Mono.just(cmd)).then();
                     Mono<Void> recv = in.receive()
@@ -528,11 +536,12 @@ class ChatWebSocketHandlerTest {
     private List<JsonNode> runPromptRoundTrip(String cmd) throws Exception {
         Queue<String> raws = new ConcurrentLinkedQueue<>();
         CountDownLatch sawDone = new CountDownLatch(1);
+        DisposableServer currentServer = ensureServer();
 
         HttpClient.create(connectionProvider)
                 .runOn(loopResources)
                 .websocket()
-                .uri("ws://" + server.host() + ":" + server.port() + "/api/ws/chat")
+                .uri("ws://" + currentServer.host() + ":" + currentServer.port() + "/api/ws/chat")
                 .handle((in, out) -> {
                     Mono<Void> send = out.sendString(Mono.just(cmd)).then();
                     Mono<Void> recv = in.receive()
