@@ -92,7 +92,7 @@ class LocalBashOperationsTest {
         @Test
         void timeoutKillsLongRunningProcess() throws IOException {
             BashResult result =
-                    ops.exec("sleep 60", tempDir, new BashExecOptions(null, null, Duration.ofMillis(500), null));
+                    ops.exec("sleep 60", tempDir, new BashExecOptions(null, null, Duration.ofMillis(150), null));
 
             // Timeout should kill the process, returning null exit code
             assertNull(result.exitCode());
@@ -105,7 +105,7 @@ class LocalBashOperationsTest {
             // Cancel after a short delay in a separate thread
             Thread canceller = new Thread(() -> {
                 try {
-                    Thread.sleep(300);
+                    Thread.sleep(75);
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                 }
