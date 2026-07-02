@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ADR-0009 · RouterFunction bean 装配方式</title>
+  <style>
+    :root{--fg:#1a1a1a;--dim:#666;--accent:#2563eb;--ok:#16a34a;--bg:#fff;--card:#f6f7f9}
+    body{font:15px/1.6 -apple-system,Segoe UI,Roboto,"PingFang SC",sans-serif;color:var(--fg);
+         background:var(--bg);max-width:820px;margin:2rem auto;padding:0 1.2rem}
+    h1{font-size:1.5rem;margin:.2rem 0}
+    .meta{color:var(--dim);font-size:.9rem;margin-bottom:1.2rem}
+    .badge{display:inline-block;padding:.1rem .6rem;border-radius:1rem;font-size:.8rem;background:var(--ok);color:#fff}
+    section{margin:1.4rem 0}
+    h2{font-size:1.05rem;border-bottom:1px solid #eee;padding-bottom:.3rem}
+    a{color:var(--accent)} code{background:var(--card);padding:.1rem .3rem;border-radius:.3rem}
+  </style>
+</head>
+<body>
+  <h1>ADR-0009 · CampusClawCommand 用 getBeansOfType(RouterFunction.class) 收集路由 bean</h1>
+  <div class="meta">Status: <span class="badge">Accepted</span> · Date: 2026-06-18 ·
+    设计文档: <a href="../designs/control-plane.md">control-plane</a> ·
+    关联: <a href="0008-control-plane-webflux-routerfunction.html">ADR-0008</a></div>
+
+  <section><h2>Context</h2>
+    <p>控制面路由（<code>NodeRoutes</code> / <code>RuntimeRoutes</code>）声明为 <code>@Bean RouterFunction&lt;ServerResponse&gt;</code>。<code>ServerMode</code> 是非 Spring 管理的 POJO，在 <code>CampusClawCommand.runServerMode()</code> 中手工 <code>new</code> 出来。需要一种方式把 Spring 容器里的 RouterFunction bean 传递给 <code>ServerMode</code>。</p>
+    <p><code>CampusClawCommand</code> 是 <code>@Component</code>，已注入 <code>ApplicationContext</code>。</p></section>
+
+  <section><h2>Options considered</h2>
+    <ul>
+      <li><strong>逐个 @Autowired RouterFunction bean</strong> — rejected: 每加一个新路由（如 RuntimeRoutes）都要改 CampusClawCommand 构造器签名 + ServerMode 参数列表，侵入性高；且 Spring 按类型注入多个同类型 bean 需要额外 @Qualifier。</li>
+      <li><strong>@Autowired List&lt;RouterFunction&lt;ServerResponse&gt;&gt;</strong> — better, 但 Spring 对泛型擦除的 List 注入有时不稳定（取决于 Spring 版本和 bean 注册顺序），需要额外 @Order 才能控制合并顺序。</li>
+      <li><strong>getBeansOfType(RouterFunction.class) 收集全部</strong> (chosen) — 简洁、零侵入、新路由只需加 @Bean 自动纳入；缺点是收集面过宽（见下）。</li>
+      <li><strong>自定义 @ControlPlaneRoute 限定注解 + getBeansOfType with annotation</strong> — 最精确，但当前只有 2 个路由 bean，加注解 + 扫描逻辑的工程量不划算。推迟到路由数量增长时再引入（见 Consequences）。</li>
+    </ul></section>
+
+  <section><h2>Decision</h2>
+    <ul>
+      <li><code>CampusClawCommand.collectExtraRouterFunctions()</code> 通过 <code>applicationContext.getBeansOfType(RouterFunction.class)</code> 收集所有 RouterFunction bean，转型后传给 <code>ServerMode.setExtraRoutes()</code></li>
+      <li><code>ServerMode.buildRoutes()</code> 用 <code>base.and(extra)</code> 逐个合并到主 RouterFunction 链</li>
+      <li><code>applicationContext == null</code> 时返回空列表（测试场景兼容）</li>
+    </ul></section>
+
+  <section><h2>Consequences</h2>
+    <ul>
+      <li><strong>正面</strong>: 新增路由（如未来的 ManagementRoutes）只需写 <code>@Bean RouterFunction</code>，零改动 CampusClawCommand / ServerMode</li>
+      <li><strong>负面</strong>: <code>getBeansOfType(RouterFunction.class)</code> 按原始类型抓取，未来如果引入第三方 RouterFunction bean（如 springdoc-openapi 的 OpenAPI 路由），会被误合并到 ServerMode 主链</li>
+      <li><strong>缓解</strong>: 当第三方 RouterFunction bean 出现时，引入 <code>@ControlPlaneRoute</code> 限定注解，改 <code>getBeansOfType</code> 为带注解过滤——当前无第三方 bean，暂不引入</li>
+    </ul></section>
+
+  <section><h2>Related</h2>
+    <ul>
+      <li><a href="0008-control-plane-webflux-routerfunction.html">ADR-0008: webflux RouterFunction</a> — 本 ADR 是其装配实现</li>
+      <li><a href="../designs/control-plane.md">设计文档: control-plane</a></li>
+    </ul></section>
+</body>
+</html>

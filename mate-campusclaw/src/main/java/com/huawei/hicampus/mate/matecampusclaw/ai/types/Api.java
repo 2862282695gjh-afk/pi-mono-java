@@ -17,13 +17,9 @@ public enum Api {
     ANTHROPIC_MESSAGES("anthropic-messages"),
     OPENAI_RESPONSES("openai-responses"),
     OPENAI_COMPLETIONS("openai-completions"),
-    BEDROCK_CONVERSE_STREAM("bedrock-converse-stream"),
-    GOOGLE_GENERATIVE_AI("google-generative-ai"),
-    GOOGLE_VERTEX("google-vertex"),
     MISTRAL_CONVERSATIONS("mistral-conversations"),
     AZURE_OPENAI_RESPONSES("azure-openai-responses"),
-    OPENAI_CODEX_RESPONSES("openai-codex-responses"),
-    GOOGLE_GEMINI_CLI("google-gemini-cli");
+    OPENAI_CODEX_RESPONSES("openai-codex-responses");
 
     private final String value;
 

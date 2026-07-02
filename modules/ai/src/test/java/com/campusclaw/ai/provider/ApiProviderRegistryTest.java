@@ -107,11 +107,10 @@ class ApiProviderRegistryTest {
 
         @Test
         void registerAddsProvider() {
-            var provider = new MockApiProvider(Api.BEDROCK_CONVERSE_STREAM);
+            var provider = new MockApiProvider(Api.MISTRAL_CONVERSATIONS);
             registry.register(provider, "plugin-a");
 
-            assertSame(
-                    provider, registry.getProvider(Api.BEDROCK_CONVERSE_STREAM).orElse(null));
+            assertSame(provider, registry.getProvider(Api.MISTRAL_CONVERSATIONS).orElse(null));
             assertEquals(1, registry.getProviders().size());
         }
 
@@ -229,14 +228,14 @@ class ApiProviderRegistryTest {
         void clearRemovesAllProviders() {
             var registry = new ApiProviderRegistry(
                     List.of(new MockApiProvider(Api.ANTHROPIC_MESSAGES), new MockApiProvider(Api.OPENAI_RESPONSES)));
-            registry.register(new MockApiProvider(Api.BEDROCK_CONVERSE_STREAM), "plugin");
+            registry.register(new MockApiProvider(Api.MISTRAL_CONVERSATIONS), "plugin");
 
             registry.clear();
 
             assertTrue(registry.getProviders().isEmpty());
             assertTrue(registry.getProvider(Api.ANTHROPIC_MESSAGES).isEmpty());
             assertTrue(registry.getProvider(Api.OPENAI_RESPONSES).isEmpty());
-            assertTrue(registry.getProvider(Api.BEDROCK_CONVERSE_STREAM).isEmpty());
+            assertTrue(registry.getProvider(Api.MISTRAL_CONVERSATIONS).isEmpty());
         }
 
         @Test

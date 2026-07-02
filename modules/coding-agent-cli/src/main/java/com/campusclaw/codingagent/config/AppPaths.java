@@ -5,8 +5,11 @@
 package com.campusclaw.codingagent.config;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 
 import com.campusclaw.ai.utils.CampusClawHome;
 
@@ -79,6 +82,17 @@ public final class AppPaths {
     public static final String PROMPTS_SUBDIR = "prompts";
 
     /**
+     * Global context file loaded into the system prompt.
+     */
+    public static final String AGENTS_FILENAME = "AGENTS.md";
+
+    static final String DEFAULT_AGENTS_CONTENT =
+            """
+            Python3的解释器路径：/usr/local/python3/bin/python
+            Python3的库文件路径：/usr/local/python3/lib
+            """;
+
+    /**
      * Ensures the user-level directory structure exists.
      * Call once at startup to create:
      * <pre>
@@ -96,6 +110,23 @@ public final class AppPaths {
             } catch (IOException e) {
                 LoggerFactory.getLogger(AppPaths.class).warn("Failed to create directory: {}", dir, e);
             }
+        }
+        ensureDefaultAgentsFile(USER_AGENT_DIR);
+    }
+
+    static void ensureDefaultAgentsFile(Path agentDir) {
+        Path agentsFile = agentDir.resolve(AGENTS_FILENAME);
+        try {
+            Files.writeString(
+                    agentsFile,
+                    DEFAULT_AGENTS_CONTENT,
+                    StandardCharsets.UTF_8,
+                    StandardOpenOption.CREATE_NEW,
+                    StandardOpenOption.WRITE);
+        } catch (FileAlreadyExistsException e) {
+            LoggerFactory.getLogger(AppPaths.class).debug("Default context file already exists: {}", agentsFile, e);
+        } catch (IOException e) {
+            LoggerFactory.getLogger(AppPaths.class).warn("Failed to create default context file: {}", agentsFile, e);
         }
     }
 

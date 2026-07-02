@@ -4,6 +4,7 @@
 
 package com.huawei.hicampus.mate.matecampusclaw.codingagent;
 
+import com.huawei.hicampus.mate.matecampusclaw.agent.controlplane.config.ControlPlaneProperties;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.cli.CampusClawCommand;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.config.ToolExecutionProperties;
 
@@ -24,7 +25,7 @@ import picocli.CommandLine.IFactory;
  * @since [br_eCampusCore 25.1.0_Next]
  */
 @SpringBootApplication(scanBasePackages = "com.huawei.hicampus.mate.matecampusclaw")
-@EnableConfigurationProperties(ToolExecutionProperties.class)
+@EnableConfigurationProperties({ToolExecutionProperties.class, ControlPlaneProperties.class})
 public class CampusClawApplication implements CommandLineRunner, ExitCodeGenerator {
 
     private final CampusClawCommand piCommand;

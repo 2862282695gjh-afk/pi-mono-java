@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ADR-0008 · 控制面用 webflux RouterFunction 而非 @RestController</title>
+  <style>
+    :root{--fg:#1a1a1a;--dim:#666;--accent:#2563eb;--ok:#16a34a;--bg:#fff;--card:#f6f7f9}
+    body{font:15px/1.6 -apple-system,Segoe UI,Roboto,"PingFang SC",sans-serif;color:var(--fg);
+         background:var(--bg);max-width:820px;margin:2rem auto;padding:0 1.2rem}
+    h1{font-size:1.5rem;margin:.2rem 0}
+    .meta{color:var(--dim);font-size:.9rem;margin-bottom:1.2rem}
+    .badge{display:inline-block;padding:.1rem .6rem;border-radius:1rem;font-size:.8rem;background:var(--ok);color:#fff}
+    section{margin:1.4rem 0}
+    h2{font-size:1.05rem;border-bottom:1px solid #eee;padding-bottom:.3rem}
+    a{color:var(--accent)} code{background:var(--card);padding:.1rem .3rem;border-radius:.3rem}
+  </style>
+</head>
+<body>
+  <h1>ADR-0008 · 控制面 HTTP 端点用 webflux RouterFunction 而非 @RestController</h1>
+  <div class="meta">Status: <span class="badge">Accepted</span> · Date: 2026-06-18 ·
+    设计文档: <a href="../designs/control-plane.md">control-plane</a> ·
+    关联: <a href="0007-control-plane-merge-into-agent-core.html">ADR-0007</a></div>
+
+  <section><h2>Context</h2>
+    <p>CampusClaw 的 <code>application.yml</code> 设置 <code>spring.main.web-application-type: none</code>——CLI 默认不启动内嵌 web 服务器，只在 <code>--mode server</code> 时由 <code>ServerMode</code> 手动启动 reactor-netty <code>HttpServer</code>。</p>
+    <p>Spring Boot 的 <code>@RestController</code> 依赖 servlet 或 reactive web autoconfig 才能注册路由。在 <code>web-application-type: none</code> 下，autoconfig 不启动，<code>@RestController</code> bean 虽然被创建但**不会绑定到任何 HTTP 服务器**——端点静默不可达。</p>
+    <p>此外，<code>coding-agent-cli</code> 用的是 <code>spring-boot-starter-webflux</code>（reactive/Netty），如果控制面用 <code>spring-boot-starter-web</code>（servlet/Tomcat），两者 classpath 冲突——同一进程不能同时跑 Tomcat 和 Netty。</p></section>
+
+  <section><h2>Options considered</h2>
+    <ul>
+      <li><strong>@RestController + 改 web-application-type: reactive</strong> — rejected: 默认启动 8080 端口的 netty 服务器，interactive / one-shot 等非 server 模式也会启动 web server，资源浪费；需要额外 conditional 才能避免；servlet API 跟现有 webflux 不兼容。</li>
+      <li><strong>RouterFunction + HandlerFunction（webflux 函数式）</strong> (chosen) — 跟 <code>ServerMode</code> 现有 chat / skill / settings 路由风格一致；<code>RouterFunction</code> bean 由 <code>ServerMode.buildRoutes</code> 合并到 reactor-netty 主链；CLI 非 server 模式不启动 web 服务器，零开销。</li>
+      <li><strong>手工 HttpHandler（无 Spring 抽象）</strong> — rejected: 放弃 Spring 的内容协商 / 异常处理 / filter 链，所有功能要手写；跟 <code>ServerMode</code> 已有的 <code>RouterFunction</code> 架构不一致。</li>
+    </ul></section>
+
+  <section><h2>Decision</h2>
+    <ul>
+      <li>控制面 HTTP 端点用 <code>RouterFunction&lt;ServerResponse&gt;</code> 声明，注册为 Spring <code>@Bean</code></li>
+      <li><code>ServerMode</code> 通过 <code>setExtraRoutes(List&lt;RouterFunction&gt;)</code> 接收额外路由，用 <code>.and()</code> 合并到主 <code>RouterFunction</code> 链</li>
+      <li><code>CampusClawCommand</code> 通过 <code>ApplicationContext.getBeansOfType(RouterFunction.class)</code> 收集所有声明式路由 bean，传给 <code>ServerMode</code></li>
+      <li>异常翻译用 <code>HandlerFilterFunction</code>（<code>ControlPlaneExceptionHandler</code>），不依赖 <code>@RestControllerAdvice</code>（servlet 专属）</li>
+    </ul></section>
+
+  <section><h2>Consequences</h2>
+    <ul>
+      <li><strong>正面</strong>: 跟 coding-agent-cli webflux 栈完全一致；非 server 模式零 web 开销；新路由只需加 <code>@Bean RouterFunction</code> 即自动合并</li>
+      <li><strong>正面</strong>: <code>WebTestClient.bindToRouterFunction</code> 直接测路由，无需 <code>@SpringBootTest</code> 启动完整 context</li>
+      <li><strong>负面</strong>: <code>RouterFunction</code> 不支持 <code>jakarta.validation</code> 自动校验——DTO 校验改用 record compact constructor 抛 <code>IllegalArgumentException</code>，由 <code>ControlPlaneExceptionHandler</code> 翻译为 400</li>
+      <li><strong>负面</strong>: <code>getBeansOfType(RouterFunction.class)</code> 收集面较宽——未来第三方 RouterFunction bean 可能被误合并（见 <a href="0009-collect-routerfunction-beans.html">ADR-0009</a>）</li>
+    </ul></section>
+
+  <section><h2>Related</h2>
+    <ul>
+      <li><a href="0007-control-plane-merge-into-agent-core.html">ADR-0007: 合入 agent-core</a> — 合入的根因之一就是 servlet/webflux 不能共存</li>
+      <li><a href="0009-collect-routerfunction-beans.html">ADR-0009: RouterFunction bean 装配</a> — 本 ADR 决策的直接产物</li>
+      <li><a href="../designs/control-plane.md">设计文档: control-plane</a></li>
+    </ul></section>
+</body>
+</html>

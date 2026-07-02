@@ -16,7 +16,7 @@
 
 ### 1.1 需求来源
 
-待开发者补充。代码仓库未为本模块提供独立 README / `*-design.md`；从仓库根 `CLAUDE.md` 与 `docs/module-architecture.md` 可知 ai 模块的定位是 **CampusClaw 项目（前身 pi-mono-java）的"LLM 多供应商抽象层"**。多处源文件注释"Aligned with TypeScript campusclaw <foo>.ts" / "Corresponds to the top-level stream()/complete() functions in the TypeScript campusclaw-ai module"，可推断本模块系按 TypeScript 版 campusclaw-ai 的形状在 Java 侧对位实现，目标是把分散的 LLM SDK（Anthropic / OpenAI / Google / Bedrock / Mistral 等）以及若干 OpenAI 兼容 flavor（z.ai、Kimi、MiniMax、GitHub Copilot、xAI、Groq、Cerebras、OpenRouter 等）收敛到统一的 Java 抽象上，供 agent-core 及上游 cron / coding-agent-cli 复用。
+待开发者补充。代码仓库未为本模块提供独立 README / `*-design.md`；从仓库根 `CLAUDE.md` 与 `docs/module-architecture.md` 可知 ai 模块的定位是 **CampusClaw 项目（前身 pi-mono-java）的"LLM 多供应商抽象层"**。多处源文件注释"Aligned with TypeScript campusclaw <foo>.ts" / "Corresponds to the top-level stream()/complete() functions in the TypeScript campusclaw-ai module"，可推断本模块系按 TypeScript 版 campusclaw-ai 的形状在 Java 侧对位实现，目标是把分散的 LLM SDK（Anthropic / OpenAI / Mistral 等）以及若干 OpenAI 兼容 flavor（z.ai、Kimi、MiniMax、GitHub Copilot、xAI、Groq、Cerebras、OpenRouter 等）收敛到统一的 Java 抽象上，供 agent-core 及上游 cron / coding-agent-cli 复用。
 
 ### 1.2 需求背景/价值/详情
 
@@ -29,7 +29,7 @@
 - 统一的流式协议：sealed `AssistantMessageEvent` 12 种事件（start / text_* / thinking_* / toolcall_* / done / error），由 `AssistantMessageEventStream`（基于 Reactor `Sinks` 的 `EventStream<T,R>`）承载；
 - `ApiProviderRegistry` + `ModelRegistry`：可运行时注册 / 替换 / 按 sourceId 批量卸载 provider；模型目录支持 built-in、classpath 资源、`~/.campusclaw/agent/models.json` 三级覆盖；
 - `MessageTransformer`：跨 provider 消息归一化（tool call id 截断到 ≤ 64、跨模型剥离 textSignature/thoughtSignature、孤儿 tool_use 补合成 tool_result）；
-- `ProviderConfigResolver` SPI + 默认 `EnvProviderConfigResolver`：API key 解析（环境变量 + ADC / AWS 凭据自动嗅探），可被上游 `@Primary` 覆盖；
+- `ProviderConfigResolver` SPI + 默认 `EnvProviderConfigResolver`：API key 解析（环境变量回退），可被上游 `@Primary` 覆盖；
 - `ContextOverflowDetector`：18 种 provider 的"上下文溢出"错误信息正则匹配 + z.ai 风格的"静默溢出"判定；
 - `SurrogateSanitizer`：JSON 序列化前清理未配对的 UTF-16 代理对。
 
@@ -42,7 +42,7 @@
 | campusclaw-agent-core | 被依赖 | `AgentLoop` 通过 `StreamFunction`（默认包装 `CampusClawAiService::streamSimple`）消费本模块的 `AssistantMessageEventStream`；`Agent` / `AgentState` 直接引用 `Model` / `AssistantMessage` / `StopReason` |
 | campusclaw-cron | 被依赖（经 agent-core 间接） | `CronJobExecutor` / `CronTool` 通过 agent-core 间接调用本模块 |
 | campusclaw-coding-agent | 被依赖 | CLI 装配 `CampusClawAiService` / `ApiProviderRegistry` / `ModelRegistry`；override `ProviderConfigResolver` 以读取 `settings.json` |
-| anthropic-java / openai-java / google-cloud-aiplatform / aws bedrockruntime SDK | 依赖（外部） | 各 `*Provider` 的底层传输与协议实现 |
+| anthropic-java / openai-java SDK | 依赖（外部） | 各 `*Provider` 的底层传输与协议实现 |
 | reactor-core / spring-webflux / reactor-netty-http | 依赖（外部） | 流式抽象（`Mono` / `Flux` / `Sinks`）与 HTTP 客户端 |
 | jackson-databind / com.networknt:json-schema-validator | 依赖（外部） | JSON 多态序列化（`@JsonTypeInfo` 见 `Message` / `ContentBlock` / `AssistantMessageEvent`） |
 
@@ -60,14 +60,10 @@ flowchart LR
     cli["campusclaw-coding-agent"]
     anthropic_sdk["anthropic-java (外部)"]
     openai_sdk["openai-java (外部)"]
-    google_sdk["google-cloud-aiplatform (外部)"]
-    bedrock_sdk["aws bedrockruntime (外部)"]
     reactor["reactor-core / webflux (外部)"]
     jackson["jackson + json-schema (外部)"]
     anthropic_sdk --> ai
     openai_sdk --> ai
-    google_sdk --> ai
-    bedrock_sdk --> ai
     reactor --> ai
     jackson --> ai
     ai --> core
@@ -80,18 +76,18 @@ flowchart LR
 - **本模块 artifactId**：`campusclaw-ai`
 - **上游（pom 内项目依赖）**：无（本模块是依赖图叶子）
 - **下游（grep 反查 import）**：`campusclaw-agent-core`（一级消费者）；`campusclaw-cron` / `campusclaw-coding-agent` 经 agent-core 间接消费
-- **外部依赖（top）**：`anthropic-java`、`openai-java`、`google-cloud-aiplatform`、`software.amazon.awssdk:bedrockruntime`、`reactor-core` + `spring-webflux` + `reactor-netty-http`、`jackson-databind` + `jackson-core`、`com.networknt:json-schema-validator`、`spring-context`、`jakarta.annotation-api`
+- **外部依赖（top）**：`anthropic-java`、`openai-java`、`reactor-core` + `spring-webflux` + `reactor-netty-http`、`jackson-databind` + `jackson-core`、`com.networknt:json-schema-validator`、`spring-context`、`jakarta.annotation-api`
 
 ### 2.2 功能点分解
 
 | 序号 | 功能点 | 描述 | 优先级 | 预估工作量 |
 |---|---|---|---|---|
-| 1 | 多 Provider 统一抽象 | `ApiProvider` SPI + `ApiProviderRegistry` 自动收集 Spring 内 7 个 built-in provider，并支持运行时按 sourceId 注册/卸载 | 高 | - |
+| 1 | 多 Provider 统一抽象 | `ApiProvider` SPI + `ApiProviderRegistry` 自动收集 Spring 内 4 个 built-in provider，并支持运行时按 sourceId 注册/卸载 | 高 | - |
 | 2 | 流式协议归一化 | 各 SDK 的 SSE 增量翻译成 sealed `AssistantMessageEvent`（12 子类）；通过 `AssistantMessageEventStream` 暴露 `Flux<event>` + `Mono<result>` | 高 | - |
 | 3 | 统一消息/内容/工具类型 | sealed `Message` / `ContentBlock` / `Tool` / `Context` + `Model` + `Usage` + `Cost` + `StopReason` | 高 | - |
 | 4 | 跨模型消息变换 | `MessageTransformer` 处理 tool call id 长度、thinking signature 复用 / 跨模型降级为文本、孤儿 tool_use 补 tool_result | 高 | - |
-| 5 | 模型目录管理 | `ModelRegistry` 17 个 provider 族的 built-in 模型 + classpath `/campusclaw-models.json` + 用户 `~/.campusclaw/agent/models.json` 三级合并 | 高 | - |
-| 6 | Provider 配置解析 | `ProviderConfigResolver` SPI；默认 `EnvProviderConfigResolver` + `EnvApiKeyResolver` 覆盖 20+ provider 的环境变量与 ADC / AWS 凭据嗅探 | 中 | - |
+| 5 | 模型目录管理 | `ModelRegistry` 15 个 provider 族的 built-in 模型 + classpath `/campusclaw-models.json` + 用户 `~/.campusclaw/agent/models.json` 三级合并 | 高 | - |
+| 6 | Provider 配置解析 | `ProviderConfigResolver` SPI；默认 `EnvProviderConfigResolver` + `EnvApiKeyResolver` 覆盖 17 个 provider 的环境变量回退 | 中 | - |
 | 7 | 上下文溢出探测 | `ContextOverflowDetector` 用 18 条 provider 专属正则匹配错误信息 + z.ai 静默溢出判定 | 中 | - |
 | 8 | Unicode 安全 | `SurrogateSanitizer` 清理未配对的 UTF-16 surrogate，避免 provider 端 JSON 解码错误 | 低 | - |
 
@@ -105,8 +101,8 @@ ai 模块把"和任何 LLM 服务商对话"这件事抽象为单一接口 `ApiPr
 
 1. **types/**（数据形状）：sealed `Message` / `ContentBlock` / `Tool` / `Model`、枚举 `Api` / `Provider` / `StopReason` / `InputModality` / `Transport` / `CacheRetention` / `ThinkingLevel` 等。所有类型都是 `record` 或枚举，**Jackson 多态序列化** 通过 `@JsonTypeInfo(use=Id.NAME, property="role"/"type")` 完成；
 2. **stream/**（流式抽象）：通用 `EventStream<T, R>` 把命令式 `push(event)` 桥接到 Reactor 的 `Sinks.Many` + `Sinks.One`，并由 `isComplete` 谓词自动从终止事件抽取最终结果；`AssistantMessageEventStream` 是 `EventStream<AssistantMessageEvent, AssistantMessage>` 的具体化，把 `DoneEvent` / `ErrorEvent` 视为终止事件；
-3. **provider/**（SDK 适配器）：每个 `ApiProvider` 实现负责自己 API 协议的 SSE → `AssistantMessageEvent` 翻译。`Anthropic` / `OpenAIResponses` / `OpenAICompletions` / `GoogleGenerativeAI` / `GoogleVertexAI` / `Bedrock` / `Mistral` 7 个 provider 注册为 Spring `@Component`，`ApiProviderRegistry` 通过构造函数注入 `List<ApiProvider>` 自动收集；
-4. **model/** + **env/**（注册表 + 配置）：`ModelRegistry` 用两级 `Map<Provider, Map<String, Model>>` 索引模型；`EnvApiKeyResolver` 用 `switch(Provider)` 表达式覆盖 20+ provider 的环境变量回退顺序，遇到 Google ADC / AWS 多凭据源时返回 `<authenticated>` 哨兵让上层 SDK 自己拿凭据。
+3. **provider/**（SDK 适配器）：每个 `ApiProvider` 实现负责自己 API 协议的 SSE → `AssistantMessageEvent` 翻译。`Anthropic` / `OpenAIResponses` / `OpenAICompletions` / `Mistral` 4 个 provider 注册为 Spring `@Component`，`ApiProviderRegistry` 通过构造函数注入 `List<ApiProvider>` 自动收集；
+4. **model/** + **env/**（注册表 + 配置）：`ModelRegistry` 用两级 `Map<Provider, Map<String, Model>>` 索引模型；`EnvApiKeyResolver` 用 `switch(Provider)` 表达式覆盖各 provider 的环境变量回退顺序。
 
 整体取向：**对外只暴露稳定的 record / sealed / interface，provider 实现细节封死在包内；流式 IO 集中在每个 `*Provider.doStream(...)` 里启动一个虚拟线程，在虚拟线程里阻塞读 SDK 的 SSE 迭代器并往 `EventStream` 推事件**，调用方只需消费 `Flux` 或 `Mono` 即可。
 
@@ -117,9 +113,9 @@ ai 模块把"和任何 LLM 服务商对话"这件事抽象为单一接口 `ApiPr
 1. `stream(model, context, options)`：调用方传入 `Model` + `Context`（systemPrompt + List<Message> + List<Tool>） + `SimpleStreamOptions`；
 2. `resolveProvider(model)`：`CampusClawAiService` 用 `model.api()` 在 `ApiProviderRegistry` 里查 `ApiProvider`，缺失即抛 `IllegalArgumentException`；
 3. `streamSimple(...)`：把调用透传给具体 provider（如 `AnthropicProvider.streamSimple`）；
-4. `resolve(provider, model)`：provider 通过 `ProviderConfigResolver` 解析 apiKey / baseUrl / 自定义 headers（依次：`SimpleStreamOptions.apiKey` → `Model.apiKey` → 环境变量 → ADC/AWS 嗅探）；
+4. `resolve(provider, model)`：provider 通过 `ProviderConfigResolver` 解析 apiKey / baseUrl / 自定义 headers（依次：`SimpleStreamOptions.apiKey` → `Model.apiKey` → 环境变量）；
 5. `Thread.ofVirtual().start(...)`：provider 在虚拟线程里执行 `executeStream(...)`；同步路径返回空 `AssistantMessageEventStream` 给调用方；
-6. `SSE chunks`：虚拟线程里调用具体 SDK（`AnthropicClient.messages().createStreaming(...)`、`OpenAIClient.responses().createStreaming(...)`、`BedrockRuntimeAsyncClient.converseStream(...)` 等）拿到原生 SSE 迭代器；
+6. `SSE chunks`：虚拟线程里调用具体 SDK（`AnthropicClient.messages().createStreaming(...)`、`OpenAIClient.responses().createStreaming(...)` 等）拿到原生 SSE 迭代器；
 7. `push(event)`：对每个 SDK 原生增量，翻译成 `AssistantMessageEvent` 子类（含 partial `AssistantMessage` 累积态）push 到 `EventStream`，期间维护 contentIndex、tool call accumulator、thinking signature 等状态；
 8. `pushDone(reason, message)` / `pushError(reason, error)`：SDK 流终止后，根据最后 chunk 的 `stop_reason` 决定推 `DoneEvent` 还是 `ErrorEvent`；`EventStream` 内部 `isTerminal` 命中即自动 complete `Sinks`；
 9. `asFlux() / result()`：调用方（通常是 agent-core 的 `AgentLoop.consumeStream`）订阅 `Flux<AssistantMessageEvent>` 渲染增量，或拿 `Mono<AssistantMessage>` 等终态。
@@ -165,18 +161,14 @@ sequenceDiagram
 | `DoneEvent` | 流成功完成，携带 `StopReason` 和最终 `AssistantMessage` |
 | `ErrorEvent` | 流以错误终止（含 "error" / "aborted"） |
 
-**Provider 实现清单（7 个 `@Component`）：**
+**Provider 实现清单（4 个 `@Component`）：**
 
 | Provider 类 | 处理的 `Api` 值 | 主要协议 | 行数 |
 |---|---|---|---|
 | `AnthropicProvider` | `ANTHROPIC_MESSAGES` | Anthropic Messages SSE | 878 |
 | `OpenAICompletionsProvider` | `OPENAI_COMPLETIONS` | OpenAI Chat Completions SSE（兼容 Mistral / Groq / xAI 等 OpenAI flavor） | 721 |
 | `OpenAIResponsesProvider` | `OPENAI_RESPONSES` / `AZURE_OPENAI_RESPONSES` / `OPENAI_CODEX_RESPONSES` | OpenAI Responses SSE | 692 |
-| `GoogleGenerativeAIProvider` | `GOOGLE_GENERATIVE_AI` / `GOOGLE_GEMINI_CLI` | Google AI Studio Streaming | 412 |
-| `GoogleVertexAIProvider` | `GOOGLE_VERTEX` | Vertex AI Streaming | 379 |
-| `BedrockProvider` | `BEDROCK_CONVERSE_STREAM` | AWS Bedrock Converse Stream | 827 |
 | `MistralProvider` | `MISTRAL_CONVERSATIONS` | Mistral Conversations API | 524 |
-| `GoogleShared` | -（utility） | Google 两个 provider 共享的 chunk 解析（`ParsedChunk` record） | 267 |
 
 ### 3.3 GUI 前端设计
 
@@ -200,7 +192,7 @@ sequenceDiagram
 | `ModelRegistry` | `register` / `registerAll` / `loadFromJsonFile` / `clear` | - | `void` / `int` | 动态注册 |
 | `ModelRegistry` | `calculateCost` / `supportsXhigh` / `modelsAreEqual` | 静态工具 | `Cost` / `boolean` | 成本与能力查询 |
 | `ProviderConfigResolver` | `resolve` | `Provider, Model` | `ResolvedProviderConfig` | API key / baseUrl / headers 三合一解析 SPI |
-| `EnvApiKeyResolver` | `resolve` | `Provider` | `Optional<String>` | 环境变量回退表（含 Google ADC / AWS 凭据嗅探） |
+| `EnvApiKeyResolver` | `resolve` | `Provider` | `Optional<String>` | 环境变量回退表 |
 | `MessageTransformer` | `transform` | `List<Message>, Model` | `List<Message>` | 跨 provider 消息归一化（静态） |
 | `AssistantMessageEventStream` | `push` / `pushTextDelta` / `pushDone` / `pushError` / `end` / `error` | - | `void` | 命令式事件推送（由 provider 内部使用） |
 | `AssistantMessageEventStream` | `asFlux` / `result` | - | `Flux<AssistantMessageEvent>` / `Mono<AssistantMessage>` | 消费侧入口 |
@@ -221,7 +213,7 @@ sequenceDiagram
 
 | 来源 | 路径 | 是否必需 |
 |---|---|---|
-| 编译内置 | `ModelRegistry.builtInModels()` 静态表（17 个 provider 族） | 是 |
+| 编译内置 | `ModelRegistry.builtInModels()` 静态表（15 个 provider 族） | 是 |
 | classpath 资源 | `/campusclaw-models.json` | 否（缺省即跳过） |
 | 用户配置 | `~/.campusclaw/agent/models.json` | 否（缺省即跳过） |
 
@@ -260,14 +252,6 @@ sequenceDiagram
 - `OpenAICompletionsProvider`：Chat Completions SSE 适配器（兼容多家 OpenAI flavor）
 - `OpenAIResponsesProvider`：Responses SSE 适配器（OpenAI / Azure / Codex）
 
-**`com.campusclaw.ai.provider.google`**
-- `GoogleGenerativeAIProvider`：AI Studio Streaming 适配器
-- `GoogleVertexAIProvider`：Vertex AI Streaming 适配器
-- `GoogleShared`：两 Google provider 共享的 chunk 解析
-
-**`com.campusclaw.ai.provider.bedrock`**
-- `BedrockProvider`：AWS Bedrock Converse Stream 适配器
-
 **`com.campusclaw.ai.provider.mistral`**
 - `MistralProvider`：Mistral Conversations 适配器
 
@@ -299,10 +283,6 @@ classDiagram
     class AnthropicProvider
     class OpenAICompletionsProvider
     class OpenAIResponsesProvider
-    class GoogleGenerativeAIProvider
-    class GoogleVertexAIProvider
-    class GoogleShared
-    class BedrockProvider
     class MistralProvider
     class AssistantMessageEvent
     <<interface>> AssistantMessageEvent
@@ -324,12 +304,7 @@ classDiagram
     AnthropicProvider ..|> ApiProvider
     OpenAICompletionsProvider ..|> ApiProvider
     OpenAIResponsesProvider ..|> ApiProvider
-    GoogleGenerativeAIProvider ..|> ApiProvider
-    GoogleVertexAIProvider ..|> ApiProvider
-    BedrockProvider ..|> ApiProvider
     MistralProvider ..|> ApiProvider
-    GoogleGenerativeAIProvider ..> GoogleShared : parses with
-    GoogleVertexAIProvider ..> GoogleShared : parses with
     ApiProvider --> AssistantMessageEventStream : returns
     AssistantMessageEventStream *-- EventStream
     AssistantMessageEventStream ..> AssistantMessageEvent : pushes
@@ -348,7 +323,7 @@ classDiagram
 本模块作为 lib 由 `agent-core`（再向上 cli / cron / assistant）聚合，不单独部署，无 `application.yml`、无 `main`。Spring 装配点：
 
 - `CampusClawAiService`、`ApiProviderRegistry`、`ModelRegistry`、`EnvApiKeyResolver`、`EnvProviderConfigResolver` 标注 `@Service`；
-- 7 个 `*Provider` 标注 `@Component`，由 `ApiProviderRegistry` 构造时通过 `@Autowired List<ApiProvider>` 自动收集；
+- 4 个 `*Provider` 标注 `@Component`，由 `ApiProviderRegistry` 构造时通过 `@Autowired List<ApiProvider>` 自动收集；
 - 上游可注册 `@Primary ProviderConfigResolver` Bean 覆盖默认 env-only 行为（coding-agent-cli 即如此做以加入 settings 文件）。
 
 运行期外部依赖：JDK 21（虚拟线程 `Thread.ofVirtual()` 用于在每个 provider 内驱动 SDK 流）、reactor-core、jackson、各 LLM 厂商 SDK。
@@ -359,16 +334,12 @@ classDiagram
 |---|---|
 | ANTHROPIC | `ANTHROPIC_API_KEY` → `ANTHROPIC_OAUTH_TOKEN` |
 | OPENAI / OPENAI_CODEX | `OPENAI_API_KEY` |
-| GOOGLE | `GOOGLE_API_KEY` → `GOOGLE_CLOUD_API_KEY` → ADC（`GOOGLE_APPLICATION_CREDENTIALS` 或 `~/.config/gcloud/application_default_credentials.json`） |
-| GOOGLE_VERTEX | `GOOGLE_CLOUD_API_KEY` → ADC |
-| AMAZON_BEDROCK | `AWS_PROFILE` / `AWS_ACCESS_KEY_ID`+`AWS_SECRET_ACCESS_KEY` / `AWS_BEARER_TOKEN_BEDROCK` / `AWS_CONTAINER_CREDENTIALS_*` / `AWS_WEB_IDENTITY_TOKEN_FILE` 任一存在即返回 `<authenticated>` |
 | AZURE_OPENAI | `AZURE_OPENAI_API_KEY` |
 | MISTRAL | `MISTRAL_API_KEY` |
 | ZAI / KIMI_CODING / MINIMAX / MINIMAX_CN / XAI / GROQ / CEREBRAS / OPENROUTER / OPENCODE | `<NAME>_API_KEY` 直读 |
 | VERCEL_AI_GATEWAY | `AI_GATEWAY_API_KEY` |
 | HUGGINGFACE | `HF_TOKEN` |
 | GITHUB_COPILOT | `COPILOT_GITHUB_TOKEN` → `GH_TOKEN` → `GITHUB_TOKEN` |
-| GOOGLE_GEMINI_CLI / GOOGLE_ANTIGRAVITY | `GOOGLE_API_KEY` |
 
 外部文件（可选）：classpath `/campusclaw-models.json`、用户 `~/.campusclaw/agent/models.json`。
 
@@ -401,7 +372,7 @@ classDiagram
 - **日志**：全模块走 SLF4J（`LoggerFactory.getLogger(...)`），命中类有 `ApiProviderRegistry`、`ModelRegistry`；未发现 `System.out.println` / `e.printStackTrace()`；
 - **错误信息**：provider 内捕获 SDK 异常后调 `eventStream.error(e)`，让错误沿 Reactor 链向上抛；`ContextOverflowDetector` 把"上下文溢出"这一最常见但 provider 各异的错误归一到一个 boolean 判定，避免上游写 18 份正则；
 - **失败可观测**：`EventStream.push` 在 `done=true` 之后 silently drop——这意味着 provider 端在出错后多推的事件不会污染下游，但同时也可能掩盖"已 Done 又来事件"的协议异常；当前仅靠注释告知；
-- **未捕获异常**：本模块创建虚拟线程时（`AnthropicProvider`、`BedrockProvider` 等）**未显式设置 `UncaughtExceptionHandler`**——但 try-catch 包裹 `executeStream` 后异常被路由到 `eventStream.error(...)`，未捕获的只剩 `Throwable`（如 OOM），属于可接受降级。建议后续统一接入 `LoggingUncaughtExceptionHandler.INSTANCE`（参见仓库根 `CLAUDE.md` 的后台线程规范）；
+- **未捕获异常**：本模块创建虚拟线程时（`AnthropicProvider` 等）**未显式设置 `UncaughtExceptionHandler`**——但 try-catch 包裹 `executeStream` 后异常被路由到 `eventStream.error(...)`，未捕获的只剩 `Throwable`（如 OOM），属于可接受降级。建议后续统一接入 `LoggingUncaughtExceptionHandler.INSTANCE`（参见仓库根 `CLAUDE.md` 的后台线程规范）；
 - **指标 / 健康检查**：本模块无 `MeterRegistry` / `HealthIndicator`，由上游报告。
 
 ### 4.4 全球化设计
@@ -425,7 +396,7 @@ classDiagram
 
 | 序号 | 检查项 | 是否涉及 | 说明 |
 |---|---|---|---|
-| 5.1 | 是否有认证机制 | 是 | 本模块作为 lib 不暴露需鉴权的入口，但代表上游调用第三方 LLM API 时持有 API key / OAuth token / AWS 凭据：通过 `ProviderConfigResolver` 解析（默认 `EnvProviderConfigResolver`，读环境变量 + `EnvApiKeyResolver` 嗅探 ADC / AWS）；token 仅在 SDK 调用栈内传递，未持久化、未跨调用缓存到 `ApiProviderRegistry` |
+| 5.1 | 是否有认证机制 | 是 | 本模块作为 lib 不暴露需鉴权的入口，但代表上游调用第三方 LLM API 时持有 API key / OAuth token：通过 `ProviderConfigResolver` 解析（默认 `EnvProviderConfigResolver`，读环境变量 + `EnvApiKeyResolver`）；token 仅在 SDK 调用栈内传递，未持久化、未跨调用缓存到 `ApiProviderRegistry` |
 | 5.2 | 纵向/横向越权 | 不涉及 | 本模块无多租户 / 资源属主概念，调用上下文由上游传入 |
 | 5.3 | 记录操作日志 | 是 | `ApiProviderRegistry` 记录 provider 注册 / 替换 / 反注册（INFO + DEBUG）；`ModelRegistry` 记录加载条数与来源（INFO）；provider 异常由 `eventStream.error(...)` 路由到上游日志，本模块不直接落盘 |
 | 5.4 | SQL 注入 | 不涉及 | 本模块无数据库访问（无 `executeQuery` / JPQL / MyBatis） |
@@ -437,7 +408,7 @@ classDiagram
 | 5.10 | 加解密 | 不涉及 | 本模块无 `Cipher` / `MessageDigest` 使用；TLS 由各 LLM SDK 内置 HTTP 客户端负责 |
 | 5.11 | 文件上传下载 | 否 | `ModelRegistry.loadFromJsonFile` 读取本地 JSON，但**不是来自用户上传**而是来自固定路径（classpath 资源 + 用户家目录），属配置加载非上传；无 `MultipartFile` |
 | 5.12 | 硬编码 | 否 | 未发现硬编码密钥/口令；所有 API key 通过环境变量或注入式 `Model.apiKey` 获取；built-in 模型 JSON 表内的 `baseUrl` 是公开端点（如 `https://api.anthropic.com`），不构成敏感信息 |
-| 5.13 | 安全资料（通信矩阵/用户清单/个人数据说明/公网IP说明/命令清单） | 是 | 本模块产生大量出站 HTTPS 流量（目标含 anthropic.com / openai.com / generativelanguage.googleapis.com / bedrock-runtime.\<region\>.amazonaws.com / api.mistral.ai 以及各 OpenAI 兼容 flavor 域名）——通信矩阵应在上游产品资料中标明 |
+| 5.13 | 安全资料（通信矩阵/用户清单/个人数据说明/公网IP说明/命令清单） | 是 | 本模块产生大量出站 HTTPS 流量（目标含 anthropic.com / openai.com / api.mistral.ai 以及各 OpenAI 兼容 flavor 域名）——通信矩阵应在上游产品资料中标明 |
 | 5.14 | 不安全算法/协议 | 否 | 未使用 MD5 / SHA1 / DES；未自管 TLS（依赖 SDK 默认）；`new Random` / `Math.random` 未在主路径出现 |
 | 5.15 | 文件权限 | 不涉及 | 本模块不创建文件；仅读 `~/.campusclaw/agent/models.json` 与 classpath 资源 |
 | 5.16 | 权限最小化 | 不涉及 | lib 性质，进程权限由上游决定；本模块不要求 OS 特权 |
@@ -454,7 +425,7 @@ classDiagram
 | 6.3 | CodeChecker 是否清零 | 否 | 需跑 `./mvnw -pl modules/ai validate` 后填 |
 | 6.4 | 代码审视意见是否清零 | 否 | 待 review |
 | 6.5 | 接口是否已经归档 | 否 | 待归档（接口列表见 3.4） |
-| 6.6 | 是否完成开发自测用例输出并且用例和 US 关联 | 否 | 现有 `src/test/java` 覆盖 types / stream / provider 各包（含 5 个 provider 的 `*Test` + `*IntegrationTest`），待与 Story 关联 |
+| 6.6 | 是否完成开发自测用例输出并且用例和 US 关联 | 否 | 现有 `src/test/java` 覆盖 types / stream / provider 各包（含各 provider 的 `*Test` / `*IntegrationTest`），待与 Story 关联 |
 
 ---
 
@@ -463,3 +434,4 @@ classDiagram
 | 日期 | 提出人 | 角色 | 问题/议题 | 讨论过程 | 决策结论 | 状态 |
 |---|---|---|---|---|---|---|
 | 2026-05-14 | - | - | 设计文档由 codebase-module-design skill 基于代码逆向生成 v1 | - | 由开发者补充关键决策（如：为何选 Reactor 而非 RxJava？为何 provider 用虚拟线程而非 Reactor 原生 publishOn？） | 开放 |
+| 2026-06-29 | - | - | 精简 AI 模块：移除 Google（Generative AI / Vertex）与 Amazon Bedrock provider | `google-cloud-aiplatform` 实为未使用依赖，两类 provider 维护成本高；详见 [ADR 0007](../decisions/0007-remove-google-amazon-providers.html) | 移除两 provider、内置模型、SDK 依赖及 `Provider`/`Api`/`RuntimeCapability` 相关枚举值，并以 `SupportedProvidersDocTest` 把「支持的供应商」列表钉死到代码 | 已决 |

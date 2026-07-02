@@ -20,7 +20,7 @@ class ProviderTest {
         void exposesUnderlyingString() {
             assertEquals("anthropic", Provider.ANTHROPIC.value());
             assertEquals("openai", Provider.OPENAI.value());
-            assertEquals("amazon-bedrock", Provider.AMAZON_BEDROCK.value());
+            assertEquals("mistral", Provider.MISTRAL.value());
         }
     }
 
@@ -31,7 +31,7 @@ class ProviderTest {
         void exactMatch() {
             assertEquals(Provider.ANTHROPIC, Provider.fromValue("anthropic"));
             assertEquals(Provider.OPENAI, Provider.fromValue("openai"));
-            assertEquals(Provider.AMAZON_BEDROCK, Provider.fromValue("amazon-bedrock"));
+            assertEquals(Provider.MISTRAL, Provider.fromValue("mistral"));
         }
 
         @Test
@@ -57,11 +57,11 @@ class ProviderTest {
         @Test
         void underscoreDashTolerant() {
             assertEquals(
-                    Provider.AMAZON_BEDROCK,
-                    Provider.tryFromValue("amazon_bedrock").orElseThrow());
+                    Provider.GITHUB_COPILOT,
+                    Provider.tryFromValue("github_copilot").orElseThrow());
             assertEquals(
-                    Provider.AMAZON_BEDROCK,
-                    Provider.tryFromValue("AMAZON_BEDROCK").orElseThrow());
+                    Provider.GITHUB_COPILOT,
+                    Provider.tryFromValue("GITHUB_COPILOT").orElseThrow());
         }
 
         @Test
