@@ -99,7 +99,7 @@ flowchart LR
 
 `CronService` 作为门面汇聚三个服务：`CronStore`（持久化层）、`CronEngine`（调度层）、`CronRunLog`（运行日志）。创建任务时持久化到 JSON，立即（若 engine 已 `start()`）调用 `engine.scheduleJob()` 注册到调度器。`CronEngine` 内部按 `CronSchedule` 类型分别用 `scheduler.schedule()`（At）/手工链式（Every、CronExpr）注入 `ScheduledExecutorService`，触发后委托 `CronJobExecutor.execute()` 用 `new Agent(aiService)` 创建一次性 Agent 实例运行，结果写入 `CronRunLog` 并通过 `CronEvent` 通知监听者。
 
-关键设计取舍：**不用 `SmartLifecycle`**，避免 cron engine 在 `--list-models` 等非交互模式下被 Spring 自动拉起；由 `InteractiveMode` 显式 `cronService.start()` / `stop()` 控制。`CronJobExecutor` 通过 `agent-core` 的 `ToolProvider` 解析 `allowedTools`，在 `coding-agent-cli` 装配中该 provider 由 `ToolCatalog.resolve(ToolSelection)` 实现；未提供 `ToolProvider` 的独立 cron 上下文回退到 `@Lazy List<AgentTool>`。`@Lazy CronService` 继续用于打破 `CronTool` → `CronService` → `CronEngine` → `CronJobExecutor` 的循环。
+关键设计取舍：**不用 `SmartLifecycle`**，避免 cron engine 在 `--list-models` 等非交互模式下被 Spring 自动拉起；由 `InteractiveMode` 显式 `cronService.start()` / `stop()` 控制。`CronJobExecutor` 用 `@Lazy List<AgentTool>` 与 `@Lazy CronService` 打破循环依赖（`CronTool` → `CronService` → `CronEngine` → `CronJobExecutor` → `List<AgentTool>` ↩ `CronTool`）。
 
 ### 3.2 功能实现设计
 
@@ -302,7 +302,7 @@ classDiagram
 `com.campusclaw.cron.engine`
 
 - `CronEngine`（`@Service`）：调度引擎，持 `ScheduledExecutorService` + `tickLock` + `scheduledJobs` map，`start/stop/scheduleJob/unscheduleJob/triggerJob/tickOnce/computeNextDelay`
-- `CronJobExecutor`（`@Service`）：执行器，`execute(CronJob)` → `ToolProvider.resolve(allowedTools)` → `new Agent(aiService)` → `prompt().get(300s)` → 写 `CronRunLog`
+- `CronJobExecutor`（`@Service`）：执行器，`execute(CronJob)` → `new Agent(aiService)` → `prompt().get(300s)` → 写 `CronRunLog`
 - `CronEventListener`（`@FunctionalInterface`）：事件回调接口
 
 `com.campusclaw.cron.store`

@@ -7,13 +7,16 @@ package com.campusclaw.tui.terminal;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 
 import org.jline.terminal.Attributes;
 import org.jline.terminal.Size;
-import org.jline.terminal.TerminalBuilder;
+import org.jline.terminal.impl.DumbTerminal;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
@@ -33,17 +36,21 @@ class JLineTerminalTest {
 
     @BeforeEach
     void setUp() throws IOException {
-        dumbTerminal = TerminalBuilder.builder()
-                .name("test")
-                .dumb(true)
-                .size(new Size(80, 24))
-                .build();
+        dumbTerminal = new DumbTerminal(
+                "test",
+                "dumb",
+                new ByteArrayInputStream(new byte[0]),
+                new ByteArrayOutputStream(),
+                StandardCharsets.UTF_8);
+        dumbTerminal.setSize(new Size(80, 24));
         terminal = new JLineTerminal(dumbTerminal);
     }
 
     @AfterEach
     void tearDown() {
-        terminal.close();
+        if (terminal != null) {
+            terminal.close();
+        }
     }
 
     @Nested

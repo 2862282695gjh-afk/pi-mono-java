@@ -13,6 +13,10 @@ import static org.mockito.Mockito.when;
 
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 
 import com.campusclaw.agent.Agent;
 import com.campusclaw.agent.event.MessageUpdateEvent;
@@ -52,14 +56,14 @@ class InteractiveModeTest {
     @Mock
     BashExecutor bashExecutor;
 
-    TestTerminal terminal;
+    InputReadyTerminal terminal;
     AgentState state;
     SlashCommandRegistry registry;
     InteractiveMode mode;
 
     @BeforeEach
     void setUp() {
-        terminal = new TestTerminal(80, 24);
+        terminal = new InputReadyTerminal(80, 24);
         state = new AgentState();
         registry = new SlashCommandRegistry();
         registry.register(new HelpCommand(registry));
@@ -263,28 +267,24 @@ class InteractiveModeTest {
     class ReplIntegration {
 
         @Test
-        void ctrlDExitsCleanly() {
-            var thread = new Thread(() -> {
-                sleep(200);
+        void ctrlDExitsCleanly() throws InterruptedException {
+            InputDriver driver = startInputDriver(() -> {
                 terminal.simulateInput("\u0004");
             });
-            thread.setUncaughtExceptionHandler(LoggingUncaughtExceptionHandler.INSTANCE);
-            thread.start();
 
             mode.run(session, terminal);
+            joinInputDriver(driver);
             assertFalse(terminal.getFullOutput().contains("Error"));
         }
 
         @Test
-        void showsWelcomeMessage() {
-            var thread = new Thread(() -> {
-                sleep(200);
+        void showsWelcomeMessage() throws InterruptedException {
+            InputDriver driver = startInputDriver(() -> {
                 terminal.simulateInput("\u0004");
             });
-            thread.setUncaughtExceptionHandler(LoggingUncaughtExceptionHandler.INSTANCE);
-            thread.start();
 
             mode.run(session, terminal);
+            joinInputDriver(driver);
 
             // Welcome text may scroll off in small terminal; check for content that's visible
             String output = terminal.getFullOutput();
@@ -292,50 +292,48 @@ class InteractiveModeTest {
         }
 
         @Test
-        void welcomeMessageShowsBashHints() {
-            var thread = new Thread(() -> {
-                sleep(200);
+        void welcomeMessageShowsBashHints() throws InterruptedException {
+            InputDriver driver = startInputDriver(() -> {
                 terminal.simulateInput("\u0004");
             });
-            thread.setUncaughtExceptionHandler(LoggingUncaughtExceptionHandler.INSTANCE);
-            thread.start();
 
             mode.run(session, terminal);
+            joinInputDriver(driver);
             String output = terminal.getFullOutput();
             assertTrue(output.contains("run bash"));
         }
 
         @Test
-        void slashHelpShowsCommands() {
-            var thread = new Thread(() -> {
-                sleep(200);
+        void slashHelpShowsCommands() throws InterruptedException {
+            InputDriver driver = startInputDriver(() -> {
                 typeChars("/help");
                 terminal.simulateInput("\r");
-                sleep(200);
+                assertTrue(terminal.awaitOutputContains("Available commands"), "slash help output did not render");
                 terminal.simulateInput("\u0004");
             });
-            thread.setUncaughtExceptionHandler(LoggingUncaughtExceptionHandler.INSTANCE);
-            thread.start();
 
             mode.run(session, terminal);
+            joinInputDriver(driver);
             assertTrue(terminal.getFullOutput().contains("Available commands"));
         }
 
         @Test
-        void promptIsSentToSession() {
-            when(session.prompt("hello")).thenReturn(CompletableFuture.completedFuture(null));
+        void promptIsSentToSession() throws InterruptedException {
+            CountDownLatch promptCalled = new CountDownLatch(1);
+            when(session.prompt("hello")).thenAnswer(invocation -> {
+                promptCalled.countDown();
+                return CompletableFuture.completedFuture(null);
+            });
 
-            var thread = new Thread(() -> {
-                sleep(200);
+            InputDriver driver = startInputDriver(() -> {
                 typeChars("hello");
                 terminal.simulateInput("\r");
-                sleep(500);
+                promptCalled.await(TEST_TIMEOUT_MS, TimeUnit.MILLISECONDS);
                 terminal.simulateInput("\u0004");
             });
-            thread.setUncaughtExceptionHandler(LoggingUncaughtExceptionHandler.INSTANCE);
-            thread.start();
 
             mode.run(session, terminal);
+            joinInputDriver(driver);
             verify(session).prompt("hello");
         }
     }
@@ -367,18 +365,87 @@ class InteractiveModeTest {
     // Helpers
     // -------------------------------------------------------------------
 
+    private static final int TEST_TIMEOUT_MS = 2_000;
+
     private void typeChars(String text) {
         for (char c : text.toCharArray()) {
             terminal.simulateInput(String.valueOf(c));
-            sleep(5);
         }
     }
 
-    private static void sleep(long ms) {
-        try {
-            Thread.sleep(ms);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
+    private InputDriver startInputDriver(ThrowingRunnable action) {
+        AtomicReference<Throwable> failure = new AtomicReference<>();
+        Thread thread = new Thread(() -> {
+            try {
+                assertTrue(terminal.awaitInputReady(), "terminal input handler was not registered");
+                action.run();
+            } catch (Throwable e) {
+                failure.set(e);
+                terminal.simulateInput("\u0004");
+            }
+        });
+        thread.setUncaughtExceptionHandler(LoggingUncaughtExceptionHandler.INSTANCE);
+        thread.start();
+        return new InputDriver(thread, failure);
+    }
+
+    private static void joinInputDriver(InputDriver driver) throws InterruptedException {
+        driver.thread().join(TEST_TIMEOUT_MS);
+        assertFalse(driver.thread().isAlive(), "input driver did not finish");
+        Throwable failure = driver.failure().get();
+        if (failure != null) {
+            if (failure instanceof AssertionError assertionError) {
+                throw assertionError;
+            }
+            throw new AssertionError("input driver failed", failure);
+        }
+    }
+
+    private interface ThrowingRunnable {
+        void run() throws Exception;
+    }
+
+    private record InputDriver(Thread thread, AtomicReference<Throwable> failure) {}
+
+    private static final class InputReadyTerminal extends TestTerminal {
+
+        private final CountDownLatch inputReady = new CountDownLatch(1);
+
+        private InputReadyTerminal(int width, int height) {
+            super(width, height);
+        }
+
+        @Override
+        public void onInput(Consumer<String> listener) {
+            super.onInput(listener);
+            inputReady.countDown();
+        }
+
+        @Override
+        public synchronized void write(String data) {
+            super.write(data);
+            notifyAll();
+        }
+
+        @Override
+        public synchronized String getFullOutput() {
+            return super.getFullOutput();
+        }
+
+        private boolean awaitInputReady() throws InterruptedException {
+            return inputReady.await(TEST_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+        }
+
+        private synchronized boolean awaitOutputContains(String needle) throws InterruptedException {
+            long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(TEST_TIMEOUT_MS);
+            while (!super.getFullOutput().contains(needle)) {
+                long remaining = deadline - System.nanoTime();
+                if (remaining <= 0L) {
+                    return false;
+                }
+                TimeUnit.NANOSECONDS.timedWait(this, remaining);
+            }
+            return true;
         }
     }
 }

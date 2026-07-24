@@ -5,9 +5,11 @@
 package com.huawei.hicampus.mate.matecampusclaw.codingagent.mode.acp;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -18,6 +20,7 @@ import java.io.PipedOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -38,7 +41,6 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
-import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -60,23 +62,29 @@ class AcpModeTest {
     private static final int IO_TIMEOUT_MS = 2_000;
 
     private AgentSession session;
-    private ArgumentCaptor<AgentEventListener> listenerCaptor;
+    private CountDownLatch listenerReady;
+    private AtomicReference<AgentEventListener> listenerRef;
     private PipedOutputStream stdinWriter;
     private PipedInputStream stdin;
-    private ByteArrayOutputStream stdout;
+    private NotifyingByteArrayOutputStream stdout;
     private Thread runner;
     private AcpMode mode;
 
     @BeforeEach
     void setUpStreamsAndSession() throws IOException {
         session = Mockito.mock(AgentSession.class);
-        listenerCaptor = ArgumentCaptor.forClass(AgentEventListener.class);
-        when(session.subscribe(listenerCaptor.capture())).thenReturn(() -> {});
+        listenerReady = new CountDownLatch(1);
+        listenerRef = new AtomicReference<>();
+        when(session.subscribe(any(AgentEventListener.class))).thenAnswer(invocation -> {
+            listenerRef.set(invocation.getArgument(0));
+            listenerReady.countDown();
+            return (Runnable) () -> {};
+        });
 
         // newSession/abort default to no-op (void mocks)
         stdinWriter = new PipedOutputStream();
         stdin = new PipedInputStream(stdinWriter, 16 * 1024);
-        stdout = new ByteArrayOutputStream();
+        stdout = new NotifyingByteArrayOutputStream();
 
         mode = new AcpMode(session, MAPPER, stdin, stdout);
     }
@@ -113,7 +121,7 @@ class AcpModeTest {
     }
 
     /**
-     * Poll stdout for a response envelope matching {@code id} (or any envelope if id is null).
+     * Wait for a response envelope matching {@code id} (or any envelope if id is null).
      *
      * @param id the JSON-RPC request id to match, or null to match any response
      * @return the first matching envelope as parsed JSON, or null if none arrived in time
@@ -122,25 +130,22 @@ class AcpModeTest {
     private JsonNode awaitResponse(Long id) throws Exception {
         long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(IO_TIMEOUT_MS);
         while (System.nanoTime() < deadline) {
-            for (String line : stdout.toString(StandardCharsets.UTF_8).split("\n")) {
-                if (line.isBlank()) {
-                    continue;
-                }
-                JsonNode env = MAPPER.readTree(line);
+            long observedVersion = stdout.version();
+            for (JsonNode env : snapshotEnvelopes()) {
                 if (env.has("id") && !env.get("id").isNull() && (env.has("result") || env.has("error"))) {
                     if (id == null || env.get("id").asLong() == id) {
                         return env;
                     }
                 }
             }
-            Thread.sleep(20);
+            stdout.awaitWriteAfter(observedVersion, deadline);
         }
         return null;
     }
 
     private List<JsonNode> snapshotEnvelopes() throws Exception {
         java.util.ArrayList<JsonNode> out = new java.util.ArrayList<>();
-        for (String line : stdout.toString(StandardCharsets.UTF_8).split("\n")) {
+        for (String line : stdout.snapshot().split("\n")) {
             if (!line.isBlank()) {
                 out.add(MAPPER.readTree(line));
             }
@@ -320,9 +325,7 @@ class AcpModeTest {
             // Use a notification (no id) — handleNotification path.
             sendLine("{\"jsonrpc\":\"2.0\",\"method\":\"session/cancel\"," + "\"params\":{\"sessionId\":\"ignored\"}}");
 
-            // No response expected for notifications — give the reader a moment to process.
-            Thread.sleep(150);
-            verify(session).abort();
+            verify(session, timeout(IO_TIMEOUT_MS)).abort();
         }
 
         @Test
@@ -331,10 +334,9 @@ class AcpModeTest {
             startRunner();
 
             sendLine("{\"jsonrpc\":\"2.0\",\"method\":\"session/cancel\",\"params\":{}}");
-            Thread.sleep(150);
 
             // No exception escapes — confirmed by reaching this point and abort() being invoked.
-            verify(session).abort();
+            verify(session, timeout(IO_TIMEOUT_MS)).abort();
         }
     }
 
@@ -353,6 +355,7 @@ class AcpModeTest {
             sendLine("{\"jsonrpc\":\"2.0\",\"id\":21,\"method\":\"session/prompt\",\"params\":"
                     + "{\"sessionId\":\"" + sessionId + "\","
                     + "\"prompt\":[{\"type\":\"text\",\"text\":\"hi\"}]}}");
+            verify(session, timeout(IO_TIMEOUT_MS)).prompt("hi");
 
             // Listener was captured during run()'s subscribe(...) call. Wait for it.
             AgentEventListener listener = awaitListener();
@@ -364,19 +367,7 @@ class AcpModeTest {
             AssistantMessage m2 = assistantMessageOf("hello world");
             listener.onEvent(new MessageUpdateEvent(m2, null));
 
-            // Allow the transport thread to flush.
-            Thread.sleep(150);
-
-            List<JsonNode> envelopes = snapshotEnvelopes();
-            List<JsonNode> chunks = envelopes.stream()
-                    .filter(e -> e.has("method")
-                            && "session/update".equals(e.get("method").asText()))
-                    .filter(e -> "agent_message_chunk"
-                            .equals(e.get("params")
-                                    .get("update")
-                                    .get("sessionUpdate")
-                                    .asText()))
-                    .toList();
+            List<JsonNode> chunks = awaitSessionUpdates("agent_message_chunk", 2);
 
             assertThat(chunks).hasSizeGreaterThanOrEqualTo(2);
             String firstText = chunks.get(0)
@@ -409,20 +400,12 @@ class AcpModeTest {
             sendLine("{\"jsonrpc\":\"2.0\",\"id\":31,\"method\":\"session/prompt\",\"params\":"
                     + "{\"sessionId\":\"" + sessionId + "\","
                     + "\"prompt\":[{\"type\":\"text\",\"text\":\"hi\"}]}}");
+            verify(session, timeout(IO_TIMEOUT_MS)).prompt("hi");
 
             AgentEventListener listener = awaitListener();
             listener.onEvent(new MessageEndEvent(assistantMessageOf("final answer")));
-            Thread.sleep(150);
 
-            List<JsonNode> chunks = snapshotEnvelopes().stream()
-                    .filter(e -> e.has("method")
-                            && "session/update".equals(e.get("method").asText()))
-                    .filter(e -> "agent_message_chunk"
-                            .equals(e.get("params")
-                                    .get("update")
-                                    .get("sessionUpdate")
-                                    .asText()))
-                    .toList();
+            List<JsonNode> chunks = awaitSessionUpdates("agent_message_chunk", 1);
             assertThat(chunks).isNotEmpty();
             assertThat(chunks.get(0)
                             .get("params")
@@ -446,17 +429,8 @@ class AcpModeTest {
 
             // AgentEndEvent goes through handleAgentEnd — currently a no-op but covers the branch.
             listener.onEvent(new AgentEndEvent(List.of()));
-            Thread.sleep(150);
 
-            List<JsonNode> toolUpdates = snapshotEnvelopes().stream()
-                    .filter(e -> e.has("method")
-                            && "session/update".equals(e.get("method").asText()))
-                    .filter(e -> "tool_call"
-                            .equals(e.get("params")
-                                    .get("update")
-                                    .get("sessionUpdate")
-                                    .asText()))
-                    .toList();
+            List<JsonNode> toolUpdates = awaitSessionUpdates("tool_call", 2);
 
             assertToolCallSequence(toolUpdates);
 
@@ -473,8 +447,6 @@ class AcpModeTest {
 
             // No session/new called yet — currentSessionId is null, listener should bail.
             listener.onEvent(new MessageUpdateEvent(assistantMessageOf("ignored"), null));
-
-            Thread.sleep(80);
 
             // No envelopes should be written.
             assertThat(snapshotEnvelopes())
@@ -506,6 +478,7 @@ class AcpModeTest {
                     + ",\"method\":\"session/prompt\",\"params\":"
                     + "{\"sessionId\":\"" + sessionId + "\","
                     + "\"prompt\":[{\"type\":\"text\",\"text\":\"hi\"}]}}");
+            verify(session, timeout(IO_TIMEOUT_MS)).prompt("hi");
             return awaitListener();
         }
 
@@ -550,17 +523,36 @@ class AcpModeTest {
     // ---- helpers ----
 
     private AgentEventListener awaitListener() throws InterruptedException {
-        long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(IO_TIMEOUT_MS);
-        AtomicReference<AgentEventListener> ref = new AtomicReference<>();
-        while (System.nanoTime() < deadline) {
-            try {
-                ref.set(listenerCaptor.getValue());
-                return ref.get();
-            } catch (Exception ignored) {
-                Thread.sleep(20);
-            }
+        if (!listenerReady.await(IO_TIMEOUT_MS, TimeUnit.MILLISECONDS)) {
+            throw new IllegalStateException("session.subscribe was not invoked in time");
         }
-        throw new IllegalStateException("session.subscribe was not invoked in time");
+        AgentEventListener listener = listenerRef.get();
+        if (listener == null) {
+            throw new IllegalStateException("session.subscribe did not capture a listener");
+        }
+        return listener;
+    }
+
+    private List<JsonNode> awaitSessionUpdates(String updateType, int minCount) throws Exception {
+        long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(IO_TIMEOUT_MS);
+        while (System.nanoTime() < deadline) {
+            long observedVersion = stdout.version();
+            List<JsonNode> updates = sessionUpdates(updateType);
+            if (updates.size() >= minCount) {
+                return updates;
+            }
+            stdout.awaitWriteAfter(observedVersion, deadline);
+        }
+        return sessionUpdates(updateType);
+    }
+
+    private List<JsonNode> sessionUpdates(String updateType) throws Exception {
+        return snapshotEnvelopes().stream()
+                .filter(e -> e.has("method")
+                        && "session/update".equals(e.get("method").asText()))
+                .filter(e -> updateType.equals(
+                        e.get("params").get("update").get("sessionUpdate").asText()))
+                .toList();
     }
 
     private static AssistantMessage assistantMessageOf(String text) {
@@ -574,5 +566,44 @@ class AcpModeTest {
                 null,
                 null,
                 0L);
+    }
+
+    private static final class NotifyingByteArrayOutputStream extends ByteArrayOutputStream {
+
+        private long version;
+
+        @Override
+        public synchronized void write(int b) {
+            super.write(b);
+            version++;
+            notifyAll();
+        }
+
+        @Override
+        public synchronized void write(byte[] b, int off, int len) {
+            super.write(b, off, len);
+            version++;
+            notifyAll();
+        }
+
+        private synchronized String snapshot() {
+            return toString(StandardCharsets.UTF_8);
+        }
+
+        private synchronized long version() {
+            return version;
+        }
+
+        private synchronized long awaitWriteAfter(long observedVersion, long deadlineNanos)
+                throws InterruptedException {
+            while (version == observedVersion) {
+                long remaining = deadlineNanos - System.nanoTime();
+                if (remaining <= 0L) {
+                    return version;
+                }
+                TimeUnit.NANOSECONDS.timedWait(this, remaining);
+            }
+            return version;
+        }
     }
 }

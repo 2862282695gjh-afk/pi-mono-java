@@ -126,25 +126,4 @@ class SettingsManagerTest {
             assertThat(new SettingsManager().loadGlobal()).isNotNull();
         }
     }
-
-    @Test
-    void toolsSettingsReadsCatalogControlFlags() throws Exception {
-        Settings settings = MAPPER.readValue(
-                """
-                {
-                  "tools": {
-                    "allowProjectTools": false,
-                    "allowUserTools": false,
-                    "allowToolReplacement": false,
-                    "mcpEnabled": false
-                  }
-                }
-                """,
-                Settings.class);
-
-        assertThat(settings.tools().allowProjectTools()).isFalse();
-        assertThat(settings.tools().allowUserTools()).isFalse();
-        assertThat(settings.tools().allowToolReplacement()).isFalse();
-        assertThat(settings.tools().mcpEnabled()).isFalse();
-    }
 }

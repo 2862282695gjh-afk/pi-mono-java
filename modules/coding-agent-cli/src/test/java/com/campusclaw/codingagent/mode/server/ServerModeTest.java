@@ -6,14 +6,9 @@ package com.campusclaw.codingagent.mode.server;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.timeout;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
@@ -24,15 +19,10 @@ import com.campusclaw.codingagent.config.CustomModelLoader;
 import com.campusclaw.codingagent.model.ModelCatalogService;
 import com.campusclaw.codingagent.prompt.SystemPromptBuilder;
 import com.campusclaw.codingagent.session.SessionConfig;
-import com.campusclaw.codingagent.settings.Settings;
 import com.campusclaw.codingagent.settings.SettingsManager;
-import com.campusclaw.codingagent.tool.catalog.ToolCatalog;
-import com.campusclaw.codingagent.tool.catalog.ToolSelection;
-import com.fasterxml.jackson.databind.ObjectMapper;
 
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
 import org.springframework.core.io.Resource;
 import org.springframework.web.reactive.function.server.HandlerFunction;
 import org.springframework.web.reactive.function.server.RequestPredicate;
@@ -57,8 +47,6 @@ import reactor.core.publisher.Mono;
  * @since [br_eCampusCore 25.1.0_Next]
  */
 class ServerModeTest {
-
-    private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private static ServerMode buildServer(
             SettingsManager settingsManager, CustomModelLoader customModelLoader, ModelCatalogService modelCatalog) {
@@ -146,9 +134,9 @@ class ServerModeTest {
             ServerMode server = buildServer(null, null, null);
 
             // Baseline routes: health, chat, list-conversations, delete-conversation,
-            // skills upload/list/delete/enable/disable, tools status/reload = 11 routes
+            // skills upload/list/delete/enable/disable = 9 routes
             int routes = countRoutes(invokeBuildRoutes(server, null));
-            assertThat(routes).isEqualTo(11);
+            assertThat(routes).isEqualTo(9);
         }
 
         private static int countRoutes(RouterFunction<ServerResponse> routes) {
@@ -222,70 +210,6 @@ class ServerModeTest {
             Field f = ServerMode.class.getDeclaredField(name);
             f.setAccessible(true);
             return f.get(server);
-        }
-    }
-
-    @Nested
-    class ToolWatch {
-
-        @TempDir
-        Path tempDir;
-
-        @Test
-        void enabledToolWatchReloadsSessionPoolWhenToolDirectoryChanges() throws Exception {
-            var settingsManager = mock(SettingsManager.class);
-            when(settingsManager.load())
-                    .thenReturn(MAPPER.readValue("{\"tools\":{\"watch\":{\"enabled\":true}}}", Settings.class));
-            var server = new ServerMode(
-                    mock(CampusClawAiService.class),
-                    mock(ModelRegistry.class),
-                    mock(SystemPromptBuilder.class),
-                    List.of(),
-                    mock(ToolCatalog.class),
-                    ToolSelection.all(),
-                    new SessionConfig(null, tempDir, null, "server"),
-                    3000,
-                    "localhost",
-                    null,
-                    false,
-                    null,
-                    false,
-                    settingsManager,
-                    null);
-            var pool = mock(SessionPool.class);
-
-            try (var watcher = server.startToolWatcherIfEnabled(pool)) {
-                assertThat(watcher).isNotNull();
-                Files.writeString(
-                        tempDir.resolve(".campusclaw").resolve("tools").resolve("hello.yaml"), "name: hello\n");
-
-                verify(pool, timeout(5000).atLeastOnce()).reloadTools();
-            }
-        }
-
-        @Test
-        void disabledToolWatchDoesNotStartWatcher() throws Exception {
-            var settingsManager = mock(SettingsManager.class);
-            when(settingsManager.load()).thenReturn(MAPPER.readValue("{}", Settings.class));
-            var server = new ServerMode(
-                    mock(CampusClawAiService.class),
-                    mock(ModelRegistry.class),
-                    mock(SystemPromptBuilder.class),
-                    List.of(),
-                    mock(ToolCatalog.class),
-                    ToolSelection.all(),
-                    new SessionConfig(null, tempDir, null, "server"),
-                    3000,
-                    "localhost",
-                    null,
-                    false,
-                    null,
-                    false,
-                    settingsManager,
-                    null);
-
-            assertThat(server.startToolWatcherIfEnabled(mock(SessionPool.class)))
-                    .isNull();
         }
     }
 

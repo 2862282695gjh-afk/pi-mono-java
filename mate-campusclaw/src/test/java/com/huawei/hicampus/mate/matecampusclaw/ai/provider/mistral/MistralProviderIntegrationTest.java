@@ -13,6 +13,7 @@ import static org.mockito.Mockito.when;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 import com.huawei.hicampus.mate.matecampusclaw.ai.env.ProviderConfigResolver;
 import com.huawei.hicampus.mate.matecampusclaw.ai.env.ResolvedProviderConfig;
@@ -29,7 +30,9 @@ import com.huawei.hicampus.mate.matecampusclaw.ai.types.ThinkingContent;
 import com.huawei.hicampus.mate.matecampusclaw.ai.types.ToolCall;
 import com.huawei.hicampus.mate.matecampusclaw.ai.types.UserMessage;
 
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
@@ -52,7 +55,8 @@ class MistralProviderIntegrationTest {
     @Mock
     ProviderConfigResolver providerConfigResolver;
 
-    private MockWebServer server;
+    private static MockWebServer server;
+
     private MistralProvider provider;
 
     private Model testModel(String baseUrl) {
@@ -72,10 +76,14 @@ class MistralProviderIntegrationTest {
                 null);
     }
 
-    @BeforeEach
-    void setUp() throws IOException {
+    @BeforeAll
+    static void startServer() throws IOException {
         server = new MockWebServer();
         server.start();
+    }
+
+    @BeforeEach
+    void setUp() {
         provider = new MistralProvider(providerConfigResolver);
 
         // Strip trailing slash so baseUrl + "/chat/completions" works
@@ -85,7 +93,14 @@ class MistralProviderIntegrationTest {
     }
 
     @AfterEach
-    void tearDown() throws IOException {
+    void drainRequests() throws InterruptedException {
+        while (server.takeRequest(1, TimeUnit.MILLISECONDS) != null) {
+            // Drain requests so request-asserting tests do not see prior traffic.
+        }
+    }
+
+    @AfterAll
+    static void shutdownServer() throws IOException {
         server.shutdown();
     }
 
