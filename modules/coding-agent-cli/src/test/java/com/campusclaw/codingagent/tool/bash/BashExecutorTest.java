@@ -132,7 +132,7 @@ class BashExecutorTest {
 
         @Test
         void timeoutReturnsNullExitCode() throws IOException {
-            var options = new BashExecutorOptions(Duration.ofMillis(500), null, null);
+            var options = new BashExecutorOptions(Duration.ofMillis(150), null, null);
             var result = executor.execute("sleep 60", tempDir, options);
             assertNull(result.exitCode());
         }
@@ -160,7 +160,7 @@ class BashExecutorTest {
             // Cancel after a short delay
             Thread.ofVirtual().start(() -> {
                 try {
-                    Thread.sleep(300);
+                    Thread.sleep(75);
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                 }

@@ -24,14 +24,6 @@ public interface AgentTool {
 
     JsonNode parameters();
 
-    default Map<String, Object> prepareArguments(Map<String, Object> rawArgs) {
-        return rawArgs;
-    }
-
-    default ToolExecutionMode defaultExecutionMode() {
-        return ToolExecutionMode.PARALLEL;
-    }
-
     AgentToolResult execute(
             String toolCallId, Map<String, Object> params, CancellationToken signal, AgentToolUpdateCallback onUpdate)
             throws Exception;

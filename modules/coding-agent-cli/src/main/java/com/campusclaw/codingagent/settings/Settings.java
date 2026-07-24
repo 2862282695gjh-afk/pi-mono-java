@@ -60,76 +60,11 @@ public record Settings(
         /**
          * Per-agent overrides: e.g. {"summarizer": {"model": "..."}}.
          */
-        @JsonProperty("agent") @Nullable Map<String, AgentConfig> agent,
-        /**
-         * Tool-system settings such as MCP server definitions.
-         */
-        @JsonProperty("tools") @Nullable ToolsSettings tools) {
+        @JsonProperty("agent") @Nullable Map<String, AgentConfig> agent) {
     public static Settings empty() {
         return new Settings(
                 null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null,
-                null, null, null, null, null, null, null, null, null, null, null, null);
-    }
-
-    public Settings(
-            @Nullable String defaultProvider,
-            @Nullable String defaultModel,
-            @Nullable String model,
-            @Nullable String defaultThinkingLevel,
-            @Nullable String transport,
-            @Nullable String steeringMode,
-            @Nullable String followUpMode,
-            @Nullable CompactionSettings compaction,
-            @Nullable RetrySettings retry,
-            @Nullable String theme,
-            @Nullable Boolean hideThinkingBlock,
-            @Nullable String shellPath,
-            @Nullable Boolean enableSkillCommands,
-            @Nullable String sessionDir,
-            @Nullable List<String> packages,
-            @Nullable List<String> extensions,
-            @Nullable List<CustomModelConfig> customModels,
-            @Nullable Boolean quietStartup,
-            @Nullable String shellCommandPrefix,
-            @Nullable List<String> enabledModels,
-            @Nullable String doubleEscapeAction,
-            @Nullable String treeFilterMode,
-            @Nullable Boolean collapseChangelog,
-            @Nullable BranchSummarySettings branchSummary,
-            @Nullable TerminalSettings terminal,
-            @Nullable ImageSettings images,
-            @Nullable Map<String, ProviderConfig> provider,
-            @Nullable Map<String, AgentConfig> agent) {
-        this(
-                defaultProvider,
-                defaultModel,
-                model,
-                defaultThinkingLevel,
-                transport,
-                steeringMode,
-                followUpMode,
-                compaction,
-                retry,
-                theme,
-                hideThinkingBlock,
-                shellPath,
-                enableSkillCommands,
-                sessionDir,
-                packages,
-                extensions,
-                customModels,
-                quietStartup,
-                shellCommandPrefix,
-                enabledModels,
-                doubleEscapeAction,
-                treeFilterMode,
-                collapseChangelog,
-                branchSummary,
-                terminal,
-                images,
-                provider,
-                agent,
-                null);
+                null, null, null, null, null, null, null, null, null, null, null);
     }
 
     /**
@@ -160,59 +95,6 @@ public record Settings(
     public record ImageSettings(
             @JsonProperty("autoResize") @Nullable Boolean autoResize,
             @JsonProperty("blockImages") @Nullable Boolean blockImages) {}
-
-    @SuppressWarnings("checkstyle:top_class_comment")
-    @JsonIgnoreProperties(ignoreUnknown = true)
-    public record ToolsSettings(
-            @JsonProperty("enabled") @Nullable Boolean enabled,
-            @JsonProperty("include") @Nullable List<String> include,
-            @JsonProperty("exclude") @Nullable List<String> exclude,
-            @JsonProperty("noTools") @Nullable Boolean noTools,
-            @JsonProperty("allowProjectTools") @Nullable Boolean allowProjectTools,
-            @JsonProperty("allowUserTools") @Nullable Boolean allowUserTools,
-            @JsonProperty("allowToolReplacement") @Nullable Boolean allowToolReplacement,
-            @JsonProperty("watch") @Nullable ToolWatchSettings watch,
-            @JsonProperty("mcpEnabled") @Nullable Boolean mcpEnabled,
-            @JsonProperty("mcpServers") @Nullable Map<String, McpServerSettings> mcpServers) {
-
-        public ToolsSettings(
-                @Nullable List<String> include,
-                @Nullable List<String> exclude,
-                @Nullable Boolean noTools,
-                @Nullable ToolWatchSettings watch,
-                @Nullable Map<String, McpServerSettings> mcpServers) {
-            this(null, include, exclude, noTools, null, null, null, watch, null, mcpServers);
-        }
-
-        public ToolsSettings(
-                @Nullable Boolean enabled,
-                @Nullable List<String> include,
-                @Nullable List<String> exclude,
-                @Nullable Boolean noTools,
-                @Nullable ToolWatchSettings watch,
-                @Nullable Map<String, McpServerSettings> mcpServers) {
-            this(enabled, include, exclude, noTools, null, null, null, watch, null, mcpServers);
-        }
-    }
-
-    @SuppressWarnings("checkstyle:top_class_comment")
-    @JsonIgnoreProperties(ignoreUnknown = true)
-    public record ToolWatchSettings(@JsonProperty("enabled") @Nullable Boolean enabled) {}
-
-    @SuppressWarnings("checkstyle:top_class_comment")
-    @JsonIgnoreProperties(ignoreUnknown = true)
-    public record McpServerSettings(
-            @JsonProperty("transport") @Nullable String transport,
-            @JsonProperty("command") @Nullable String command,
-            @JsonProperty("args") @Nullable List<String> args,
-            @JsonProperty("url") @Nullable String url,
-            @JsonProperty("enabled") @Nullable Boolean enabled,
-            @JsonProperty("trust") @Nullable String trust,
-            @JsonProperty("namePrefix") @Nullable String namePrefix,
-            @JsonProperty("exposeNames") @Nullable String exposeNames,
-            @JsonProperty("env") @Nullable Map<String, String> env,
-            @JsonProperty("startupTimeoutSeconds") @Nullable Integer startupTimeoutSeconds,
-            @JsonProperty("callTimeoutSeconds") @Nullable Integer callTimeoutSeconds) {}
 
     @SuppressWarnings("checkstyle:top_class_comment")
     public record CompactionSettings(

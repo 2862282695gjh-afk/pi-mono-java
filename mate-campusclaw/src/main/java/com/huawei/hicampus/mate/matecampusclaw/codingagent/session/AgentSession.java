@@ -34,9 +34,6 @@ import com.huawei.hicampus.mate.matecampusclaw.codingagent.skill.SkillExpander;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.skill.SkillLoader;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.skill.SkillRegistry;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.skill.SkillStateStore;
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.catalog.ToolCatalog;
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.catalog.ToolRefreshRequest;
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.catalog.ToolSelection;
 
 /**
  * Manages a single agent session lifecycle: initialization, prompt handling,
@@ -61,13 +58,10 @@ public class AgentSession {
     private final SystemPromptBuilder promptBuilder;
     private final SkillLoader skillLoader;
     private final SkillExpander skillExpander;
-    private List<AgentTool> tools;
+    private final List<AgentTool> tools;
     private final ContextFileLoader contextFileLoader;
     private final PromptTemplateLoader promptTemplateLoader;
     private SessionManager sessionManager;
-    private ToolCatalog toolCatalog;
-    private ToolSelection toolSelection = ToolSelection.all();
-    private Path initializedCwd;
 
     private final SkillRegistry skillRegistry = new SkillRegistry();
     private List<PromptTemplateEntry> promptTemplates = List.of();
@@ -87,20 +81,9 @@ public class AgentSession {
         this.promptBuilder = Objects.requireNonNull(promptBuilder, "promptBuilder");
         this.skillLoader = Objects.requireNonNull(skillLoader, "skillLoader");
         this.skillExpander = Objects.requireNonNull(skillExpander, "skillExpander");
-        this.tools = List.copyOf(Objects.requireNonNull(tools, "tools"));
+        this.tools = Objects.requireNonNull(tools, "tools");
         this.contextFileLoader = new ContextFileLoader();
         this.promptTemplateLoader = new PromptTemplateLoader();
-    }
-
-    /**
-     * Enables dynamic tool resolution for this session.
-     *
-     * @param toolCatalog the catalog to refresh and resolve
-     * @param toolSelection the visibility selection for this session
-     */
-    public void setToolCatalog(ToolCatalog toolCatalog, ToolSelection toolSelection) {
-        this.toolCatalog = toolCatalog;
-        this.toolSelection = toolSelection != null ? toolSelection : ToolSelection.all();
     }
 
     /**
@@ -123,8 +106,6 @@ public class AgentSession {
 
         // 2. Load skills (user-level + project-level)
         Path cwd = config.cwd() != null ? config.cwd() : Path.of(System.getProperty("user.dir"));
-        initializedCwd = cwd;
-        refreshTools(cwd);
         loadSkills(cwd);
 
         // 3. Load context files (AGENTS.md / CLAUDE.md)
@@ -354,24 +335,8 @@ public class AgentSession {
      * @param customPrompt the user-supplied custom prompt (may be null)
      */
     public void reload(String customPrompt) {
-        reload(customPrompt, true);
-    }
-
-    /**
-     * Reloads session-facing state after the shared catalog has already been refreshed.
-     */
-    public void reloadFromCatalogSnapshot() {
-        reload(null, false);
-    }
-
-    private void reload(String customPrompt, boolean refreshCatalog) {
         requireInitialized();
-        Path cwd = initializedCwd != null ? initializedCwd : Path.of(System.getProperty("user.dir"));
-        if (refreshCatalog) {
-            refreshTools(cwd);
-        } else {
-            resolveToolsFromCatalogSnapshot();
-        }
+        Path cwd = Path.of(System.getProperty("user.dir"));
 
         // Reload skills
         loadSkills(cwd);
@@ -391,7 +356,6 @@ public class AgentSession {
                 tools, visibleSkills, cwd, customPrompt, env, contextFiles, systemPromptOverride, appendSystemPrompt);
         String systemPrompt = promptBuilder.build(promptConfig);
         agent.setSystemPrompt(systemPrompt);
-        agent.setTools(tools);
     }
 
     /**
@@ -459,21 +423,6 @@ public class AgentSession {
 
     Agent createAgent(CampusClawAiService aiService) {
         return new Agent(aiService);
-    }
-
-    private void refreshTools(Path cwd) {
-        if (toolCatalog == null) {
-            return;
-        }
-        toolCatalog.refresh(new ToolRefreshRequest(cwd));
-        resolveToolsFromCatalogSnapshot();
-    }
-
-    private void resolveToolsFromCatalogSnapshot() {
-        if (toolCatalog == null) {
-            return;
-        }
-        tools = List.copyOf(toolCatalog.resolve(toolSelection));
     }
 
     /**
