@@ -1,0 +1,263 @@
+# Agent 与 Skill 本地优先运行时设计
+
+> 本文记录 CampusClaw 的 Agent 目录发现、CampusMate 冷启动物化、Skill 选择、工具查询和动态工具装配流程。
+
+## 1. Context：背景、目标与边界
+
+CampusMateService 保存 Agent、Skill 绑定和工具权限，CampusClaw 执行 Agent 并从本地目录加载 Skill。过去由部署脚本静态复制目录，运行时启停和实际可执行内容彼此割裂。本设计把“选定 Agent 后如何发现 Skill、按需查询工具并执行”收敛到 CampusClaw 运行时，同时保持已经确定的本地优先规则。
+
+对应决策记录：[ADR-0007：Agent 与 Skill 运行时解析](../decisions/0007-agent-skill-runtime-resolution.html)。
+
+CampusClaw 负责决定运行哪个 Agent。选定 `agentId` 后，CampusClaw 优先使用本地目录；只有整个 Agent 目录不存在时才调用 CampusMateService。已存在但不完整的目录按配置漂移处理并拒绝加载，避免混合新旧版本：
+
+```text
+./agent/{agentId}/.campusclaw/agentId.json
+./agent/{agentId}/.campusclaw/skills/{skillName}/SKILL.md
+./agent/{agentId}/.campusclaw/skills/{skillName}/skill.json
+./agent/{agentId}/.campusclaw/skills/{skillName}/references/*
+./agent/{agentId}/.campusclaw/skills/{skillName}/templates/*
+```
+
+Agent 可由以下入口指定：
+
+- CLI：`--agent-id <agentId>`
+- REST：`POST /api/chat` 请求体中的 `agent_id`
+- WebSocket：`/api/ws/chat?agent_id=<agentId>`
+
+未指定 `agentId` 时保持原有非托管 Agent 行为。
+
+## 2. 关键定义与组件职责
+
+- **托管 Agent**：通过 `agentId` 选择、目录位于 `agents-root/{agentId}`、元数据来自 CampusMateService 的 Agent。
+- **Skill 发现**：只读取 `SKILL.md` frontmatter，把 `name`、`description` 暴露给模型，不等同于激活 Skill。
+- **Skill 激活**：选定 Skill 后读取本地生成的 `SKILL.md`、查询其工具并更新下一轮 LLM 可见工具集合。
+- **本地工具实现**：CampusMateService 返回授权元数据，实际执行对象始终来自当前 CampusClaw Pod 的 `ToolCatalog`。
+
+| 组件 | 职责 |
+|---|---|
+| `AgentRuntimeManager` | 校验 `agentId`、本地优先加载、解析直接绑定 Skill、冷启动物化 Agent 目录、合并 Agent 系统提示词和模型配置、查询 Skill 工具权限 |
+| `MateServiceClient` | 调用 GetAgentRuntime、querySkillInfo 和 querySkillTools，校验业务响应及 Agent/Skill 版本坐标 |
+| `AgentSession` | 只加载当前托管 Agent 的 Skill、构建模型上下文、注册 `activate_skill`、动态更新工具集合 |
+| `SessionPool` | 按 `(agentId, conversationId)` 隔离会话和持久化目录 |
+| `ToolCatalog` | 提供 CampusClaw Pod 内真实可执行的 `AgentTool` 实现，并以不改写共享快照的 scoped resolve 应用各 Agent cwd 与本地工具策略 |
+
+## 3. 架构与数据流
+
+入口先确定 `agentId`，`SessionPool` 再调用 `AgentRuntimeManager.prepare(agentId)`。Manager 返回不可变的 `PreparedAgentRuntime`，会话以 Agent 根目录作为 `cwd`，因此现有 SkillLoader 可直接读取 `.campusclaw/skills`。LLM 只能通过顺序执行的 `activate_skill` 激活 Skill；工具激活成功后，`AgentLoop` 在下一轮从共享 AgentState 重新生成工具 schema。
+
+会话键为 `(agentId, conversationId)`，相同 conversationId 在不同 Agent 下不会复用状态或持久化文件。
+会话列表和删除接口也接受 `agent_id`，分别定位该 Agent 的持久化 cwd 和内存会话键。
+
+## 4. 契约改动
+
+### 4.1 获取 Agent 运行信息
+
+```http
+GET /mate-service/v1/agents/{agentId}/runtime
+```
+
+响应使用附件中的 GetAgentRuntime 字段。实现将 `bindingSkills` 同时兼容单对象和数组，因为附件定义为单对象，而运行流程需要处理 `skill-1...n`。
+
+GetAgentRuntime 的 `bindingSkills` 只提供当前 Agent **直接绑定** Skill 的 `id`、`version` 坐标，不作为完整 Skill 定义使用。
+
+### 4.2 获取直接绑定 Skill 的定义
+
+```http
+GET /mate-service/v1/skill/query/{skillId}
+```
+
+CampusClaw 对 GetAgentRuntime 返回的每个直接绑定 `(skillId, version)` 各调用一次 querySkillInfo。响应必须成功且唯一，并且返回的 `id`、`version` 必须与绑定坐标精确一致。CampusClaw 使用返回的 name、description、useCases、bindingTools、bindingSkills、templates 和 references 构造本地 Skill 快照。
+
+querySkillInfo 中的 `bindingSkills` 仅作为该 Skill 的依赖元数据保存。本流程不递归查询这些依赖，不为其创建目录，也不把它们自动暴露为当前 Agent 可选择的 Skill。
+
+### 4.3 查询选中 Skill 的工具
+
+```http
+POST /mate-service/v1/skill/tools/query
+Content-Type: application/json
+
+{
+  "skillNames": ["skill-a"]
+}
+```
+
+CampusClaw 先用 `(toolId, toolVersion, toolName)` 将查询结果与本地 Skill 元数据快照中的工具权限精确匹配，再用 `toolName` 对接本地 `ToolCatalog`。当前本地 `AgentTool` 接口没有 ID/版本字段，因此远端授权与本地实现之间仍只能按名称衔接。
+
+### 4.4 CampusClaw 入口
+
+- CLI 新增 `--agent-id`。
+- REST `POST /api/chat` 新增可选字段 `agent_id`。
+- WebSocket 握手新增可选查询参数 `agent_id`。
+- REST `GET/DELETE /api/conversations` 新增可选查询参数 `agent_id`。
+- 新增配置前缀 `campusmate.runtime`，用于 CampusMate 地址、Agent 根目录、业务成功码和超时。
+
+## 5. 设计决策与运行规则
+
+### 5.1 Agent 本地发现与冷启动
+
+1. 安全解析 `./agent/{agentId}`，拒绝路径穿越和 Agent 路径中的符号链接。
+2. 同时存在规范文件 `agentId.json`、`skills/`，且目录集合与直接绑定 Skill 精确一致；每个 Skill 都有版本匹配的 `skill.json`、与元数据可重建内容完全一致的 `SKILL.md`、内容一致且无额外文件的 `references/` 与 `templates/` 时，直接加载本地缓存，不调用 CampusMateService。
+3. 整个 Agent 目录不存在时调用 GetAgentRuntime，取得 Agent 信息、Agent 工具权限和直接绑定 Skill 的 `(id, version)` 列表。
+4. 对每个直接绑定 Skill 调用 querySkillInfo；返回必须恰好一条且 `id/version` 与绑定坐标匹配。同一 Agent 内重复的 Skill id 或 name 均使物化失败，不能静默覆盖。
+5. 使用 querySkillInfo 顶层元数据生成带 `name`、`description` frontmatter 的基础 `SKILL.md`；将 references/templates 的文本内容分别写入固定的 `references/`、`templates/` 目录，并把完整 Skill 元数据写入 `skill.json`。资源名必须是安全的单路径段，fileType 只接受 `md` 或 `txt`，拒绝路径穿越、重复文件和符号链接。
+6. querySkillInfo 的 `bindingSkills` 只保存在 `skill.json`，不递归查询、不物化、不加入当前 Agent 的可见 Skill 列表。
+7. 首次创建使用同一文件系统中的临时目录完整写入，再以原子目录移动发布；文件系统不支持原子目录移动时 fail closed。
+8. 已存在但不完整的 Agent 目录不做原地修复，直接报告配置漂移，防止中断时形成“旧元数据 + 新 Skill”的混合版本。
+9. Agent 元数据最后写入临时目录，避免把半成品误判为完整缓存。
+
+### 5.2 Skill 发现
+
+托管 Agent 只扫描自身的 `.campusclaw/skills`，不会加载 `~/.campusclaw/agent/skills`，防止其他 Agent 或用户级 Skill 泄漏。初始系统提示词只包含各 Skill 的 `name`、`description`，不暴露文件位置。
+
+### 5.3 Skill 与工具激活
+
+初始工具集合为：
+
+```text
+baseTools = 本地工具策略 ∩ permission=allow 的 Agent 级工具
+            + activate_skill
+```
+
+LLM 根据 Skill 头信息调用 `activate_skill(skillName)`。显式 `/skill:skillName` 也先执行相同的查询与激活流程。CampusClaw 随后：
+
+1. 确认 Skill 已绑定当前 Agent 且已在本地 Registry 注册。
+2. 调用 querySkillTools。
+3. 将返回的 `(toolId, toolVersion, toolName)` 与本地 `skill.json` 中该 Skill 的 `bindingTools` 做精确权限交集。
+4. 只接受 `permission=allow`；`deny` 不暴露，`ask` 在主 Agent 审批器实现前按 fail-closed 处理。
+5. 再与本地 `ToolCatalog` 和 CLI 工具策略求交集；任何应加载但本地不存在的工具都会使本次激活整体失败。
+6. 读取本地生成的 `SKILL.md` 内容并作为 `activate_skill` 结果返回。当前接口没有真实 Skill 指令正文，因此这里只包含由元数据生成的基础内容。
+7. 一次性把 Skill 工具加入 `AgentState.tools`。`AgentLoop` 在下一轮模型调用时重新生成工具 schema，因此无需改动 AgentLoop。
+8. 当前 Agent turn 完成后恢复 `baseTools`。
+
+同一条 assistant 消息不能先调用 `activate_skill`，又立即调用刚加入的工具；新工具从下一轮 LLM 调用开始可见。
+
+## 6. 顺序图
+
+```mermaid
+sequenceDiagram
+    autonumber
+
+    participant Caller as 调用方/Agent路由
+    participant Claw as CampusClaw入口
+    participant Pool as SessionPool
+    participant Runtime as AgentRuntimeManager
+    participant Mate as CampusMateService
+    participant FS as ./agent文件目录
+    participant Session as AgentSession
+    participant Catalog as ToolCatalog
+    participant LLM as LLM
+
+    Caller->>Claw: 用户任务 + agentId
+    Claw->>Pool: getOrCreate(agentId, conversationId)
+    Pool->>Runtime: prepare(agentId)
+    Runtime->>FS: 检查agentId.json、skills目录和SKILL.md
+
+    alt 本地Agent结构完整
+        FS-->>Runtime: 返回本地Agent元数据和Skill文件
+    else 整个Agent目录不存在
+        Runtime->>Mate: GET /mate-service/v1/agents/{agentId}/runtime
+        Mate-->>Runtime: Agent信息、Agent工具、直接绑定Skill id/version
+        loop 每个直接绑定Skill
+            Runtime->>Mate: GET /mate-service/v1/skill/query/{skillId}
+            Mate-->>Runtime: Skill定义、工具权限、依赖元数据、templates/references
+            Runtime->>Runtime: 校验skill id/version、name、资源文件名和fileType
+        end
+        Runtime->>FS: 临时目录创建.campusclaw/skills/{skillName}
+        Runtime->>FS: 写入SKILL.md、skill.json、references/、templates/
+        Runtime->>FS: 最后写入.campusclaw/agentId.json
+        Runtime->>FS: 原子移动为./agent/{agentId}
+    else 本地目录存在但不完整
+        Runtime-->>Pool: 配置漂移错误（fail closed）
+    end
+
+    Runtime-->>Pool: PreparedAgentRuntime
+    Pool->>Session: initialize(agentRoot, Agent元数据)
+    Session->>FS: 循环读取skills/*/SKILL.md frontmatter
+    FS-->>Session: name、description等头信息
+    Session->>Catalog: 解析permission=allow的Agent级工具
+    Catalog-->>Session: 本地AgentTool实现
+    Session->>Session: 注册Agent工具 + activate_skill
+    Session->>LLM: 系统提示词、Skill名称/描述、基础工具schema
+
+    alt LLM自主选择Skill
+        LLM-->>Session: activate_skill(skillName)
+    else 用户显式选择Skill
+        Caller->>Session: /skill:skillName
+    end
+
+    Session->>Runtime: queryAllowedSkillToolNames(agent, skillName)
+    Runtime->>Mate: POST /mate-service/v1/skill/tools/query
+    Note right of Runtime: {"skillNames":["skillName"]}
+    Mate-->>Runtime: skillName + toolList
+    Runtime->>Runtime: 与skill.json按toolId/version/name和permission=allow求交集
+    Runtime-->>Session: 允许的toolName列表
+    Session->>Catalog: 按toolName解析本地工具并应用本地策略
+
+    alt 工具缺失或不允许
+        Catalog-->>Session: 缺失/拒绝
+        Session-->>LLM: activate_skill失败且不修改工具集合
+    else 激活成功
+        Catalog-->>Session: Skill AgentTool实现
+        Session->>FS: 读取指定Skill的本地SKILL.md
+        FS-->>Session: 元数据生成的基础Skill内容
+        Session->>Session: 原子更新AgentState.tools
+        Session-->>LLM: 返回Skill正文和激活结果
+        Note over Session,LLM: 新Skill工具从下一轮模型调用可见
+        LLM-->>Session: 调用选中的Skill工具
+        Session->>Catalog: 执行本地AgentTool
+        Catalog-->>Session: 工具结果
+        Session-->>LLM: 工具结果
+        LLM-->>Session: 最终回答
+    end
+
+    Session->>Session: turn结束后恢复Agent级工具 + activate_skill
+    Session-->>Caller: 返回结果
+```
+
+## 7. 边界情况与 DFX
+
+- **安全**：`agentId`、`conversationId`、Skill name 和资源文件名都采用受限单路径段格式；资源 `fileType` 仅允许 `md|txt`；非法值、路径穿越、重复目标文件和 Agent 缓存路径中的符号链接直接拒绝。绑定 Skill 数、资源文件数、单文件和累计字节数均有上限；本地 `SKILL.md` 与资源文件必须和 `skill.json` 快照完全一致。远端工具授权按 ID/版本/名称校验，实际工具仍须存在于本地策略允许的 ToolCatalog 中。
+- **一致性**：冷启动先验证 GetAgentRuntime 的直接绑定坐标与每个 querySkillInfo 响应的 id/version，再在临时目录写全并原子移动；既有半成品 fail closed，不做原地拼接。激活只有在本地 Skill 内容和全部本地工具解析成功后才一次性更新工具集合。
+- **并发**：同一 session 同时只允许一个 prompt 持有可变上下文。工具热重载在 turn 执行期间延迟，空闲时按各 Agent 的 cwd 分别解析；scoped resolve 不会把共享 ToolCatalog 留在另一个 Agent 的目录上下文。
+- **故障隔离**：CampusMate 超时、非 2xx、业务失败码、querySkillInfo 返回零条/多条/版本不匹配、资源非法或本地工具缺失均 fail closed；失败不会发布半成品目录，也不会改变当前工具集合。
+- **性能**：完整本地目录不产生 GetAgentRuntime 网络请求；querySkillTools 只在 Skill 被选中时调用。会话复用已加载的 frontmatter 和本地工具快照。
+- **可观测性**：工具重载响应包含 `deferredSessions` 和 `failedSessions`；接口异常保留操作名、HTTP/业务错误信息，目录漂移会明确失败。
+
+## 8. 当前接口限制
+
+当前实现严格适配已给出的接口，但契约本身还有以下限制：
+
+- querySkillInfo 提供 references/templates 文本内容，但仍没有真实 `SKILL.md` 指令正文。冷启动只能根据 Skill 元数据生成包含 frontmatter、description 和 useCases 的基础 `SKILL.md`；若要恢复完整 Skill 工作流指令，CampusMateService 仍需补充正文或制品包。
+- GetAgentRuntime 的直接绑定和 querySkillInfo 都没有明确的 Skill `enabled/status` 字段。本实现只能把 GetAgentRuntime 的直接 `bindingSkills` 视为当前有效 Skill。
+- querySkillInfo 的 `bindingSkills` 只保存为依赖元数据；本流程不递归解析依赖。如果未来需要执行依赖 Skill，必须另行定义依赖的授权、可见性和版本闭包规则。
+- 本地目录完整后不再请求 GetAgentRuntime，因而启停/解绑不会自动刷新本地缓存。需要后续增加 revision、TTL、显式刷新或失效推送。
+- querySkillTools 只传 `skillNames`，没有 `agentId` 或 revision，CampusMateService 无法在该接口上证明 Skill 仍绑定当前 Agent；这是当前契约的时间检查/使用竞态。
+- `ask` 权限需要主 Agent 的用户审批协议；在该协议接入前默认拒绝。
+
+## 9. 配置
+
+```yaml
+campusmate:
+  runtime:
+    base-url: ${CAMPUSMATE_RUNTIME_BASE_URL:http://campusmate-service:8080}
+    agents-root: ${CAMPUSCLAW_AGENTS_ROOT:agent}
+    connect-timeout: PT10S
+    request-timeout: PT30S
+    success-code: ${CAMPUSMATE_SUCCESS_CODE:0}
+```
+
+## 10. 测试与验证范围
+
+- GetAgentRuntime 同时兼容直接响应和 `result` 包装，`bindingSkills` 同时兼容单对象与数组，并只解释为直接绑定 Skill 的 id/version 坐标。
+- 冷启动对每个直接绑定 Skill 调用一次 querySkillInfo；零条、多条、重复 id/name 或绑定版本不匹配时 fail closed。
+- 完整本地目录命中时不访问 CampusMateService。
+- 冷启动创建 Agent 元数据、Skill 元数据快照、基础 SKILL.md，并写入 querySkillInfo 返回的 references/templates 文本文件。
+- 本地存在额外未绑定 Skill、SKILL.md 或资源遭修改、资源缺失或超出数量/大小上限时 fail closed。
+- `../` 等非法 Agent ID、非法 Skill/资源名、非 `md|txt` fileType、非法 conversation ID 和缓存路径中的符号链接被拒绝。
+- querySkillInfo 的依赖 `bindingSkills` 被保存但不会触发递归请求或自动成为 Agent 可见 Skill。
+- 已存在但不完整的 Agent 目录 fail closed，不产生混合版本。
+- Skill 工具必须同时匹配 tool ID、版本、名称及 `permission=allow`。
+- `allow/deny/ask` 只允许 `allow` 进入工具交集。
+- 托管 Agent 不加载全局用户 Skill。
+- `activate_skill` 成功后下一轮工具集合包含 Skill 工具；失败时不改变原工具集合。
+- 相同 conversationId 在不同 agentId 下不会复用同一个 Session。

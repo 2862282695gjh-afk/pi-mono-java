@@ -23,6 +23,7 @@ import com.huawei.hicampus.mate.matecampusclaw.codingagent.skill.Skill;
  * @param contextFiles       AGENTS.md/CLAUDE.md context files (may be null or empty)
  * @param systemPromptOverride  content of SYSTEM.md if found (replaces base prompt; may be null)
  * @param appendSystemPrompt content of APPEND_SYSTEM.md if found (may be null)
+ * @param skillActivationRequired whether Skills must be activated through {@code activate_skill}
  *
  * @version [br_eCampusCore 25.1.0_Next, 2026/05/06]
  * @since [br_eCampusCore 25.1.0_Next]
@@ -35,7 +36,8 @@ public record SystemPromptConfig(
         Map<String, String> env,
         List<ContextFile> contextFiles,
         String systemPromptOverride,
-        String appendSystemPrompt) {
+        String appendSystemPrompt,
+        boolean skillActivationRequired) {
     public SystemPromptConfig {
         tools = tools != null ? List.copyOf(tools) : List.of();
         skills = skills != null ? List.copyOf(skills) : List.of();
@@ -56,6 +58,30 @@ public record SystemPromptConfig(
      */
     public SystemPromptConfig(
             List<AgentTool> tools, List<Skill> skills, Path cwd, String customPrompt, Map<String, String> env) {
-        this(tools, skills, cwd, customPrompt, env, List.of(), null, null);
+        this(tools, skills, cwd, customPrompt, env, List.of(), null, null, false);
+    }
+
+    /**
+     * Backwards-compatible constructor for unmanaged Skill loading.
+     *
+     * @param tools registered Agent tools
+     * @param skills available Skills
+     * @param cwd working directory
+     * @param customPrompt additional prompt
+     * @param env environment snapshot
+     * @param contextFiles project context files
+     * @param systemPromptOverride replacement system prompt
+     * @param appendSystemPrompt appended system prompt
+     */
+    public SystemPromptConfig(
+            List<AgentTool> tools,
+            List<Skill> skills,
+            Path cwd,
+            String customPrompt,
+            Map<String, String> env,
+            List<ContextFile> contextFiles,
+            String systemPromptOverride,
+            String appendSystemPrompt) {
+        this(tools, skills, cwd, customPrompt, env, contextFiles, systemPromptOverride, appendSystemPrompt, false);
     }
 }

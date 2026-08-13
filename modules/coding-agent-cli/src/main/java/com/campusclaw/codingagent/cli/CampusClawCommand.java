@@ -34,6 +34,8 @@ import com.campusclaw.codingagent.mode.OneShotMode;
 import com.campusclaw.codingagent.mode.rpc.RpcMode;
 import com.campusclaw.codingagent.mode.server.ServerMode;
 import com.campusclaw.codingagent.prompt.SystemPromptBuilder;
+import com.campusclaw.codingagent.runtime.AgentRuntimeManager;
+import com.campusclaw.codingagent.runtime.PreparedAgentRuntime;
 import com.campusclaw.codingagent.session.AgentSession;
 import com.campusclaw.codingagent.session.SessionConfig;
 import com.campusclaw.codingagent.session.SessionManager;
@@ -180,6 +182,11 @@ public class CampusClawCommand implements Callable<Integer> {
             names = {"--cwd"},
             description = "Working directory (defaults to current directory)")
     Path cwd;
+
+    @Option(
+            names = {"--agent-id"},
+            description = "Managed Agent ID to load from ./agent/{agentId} or CampusMate")
+    String agentId;
 
     @Option(
             names = {"--system-prompt"},
@@ -493,25 +500,42 @@ public class CampusClawCommand implements Callable<Integer> {
     private Integer runAgentMode(
             String effectivePrompt, Path effectiveCwd, String effectiveModel, String effectiveThinking) {
         String effectiveSystemPrompt = mergeSystemPrompts();
-        List<AgentTool> effectiveTools = resolveEffectiveTools();
+        ToolSelection toolSelection = ToolSelection.fromCli(
+                toolsFilter, noTools, ToolSelection.fromSettings(settings != null ? settings.tools() : null));
         boolean useSandbox = Boolean.parseBoolean(System.getenv("SKILL_SANDBOX_PARSING"));
 
-        AgentSession session = new AgentSession(
-                piAiService,
-                modelRegistry,
-                promptBuilder,
-                new SkillLoader(sandboxSkillParser, useSandbox),
-                new SkillExpander(sandboxSkillParser, useSandbox),
-                effectiveTools);
+        SessionConfig baseConfig = new SessionConfig(effectiveModel, effectiveCwd, effectiveSystemPrompt, mode);
+        AgentRuntimeManager runtimeManager = resolveAgentRuntimeManager();
+        if ("server".equals(mode)) {
+            List<AgentTool> serverTools =
+                    resolveEffectiveTools(effectiveCwd, toolSelection, settings != null ? settings.tools() : null);
+            runServerMode(baseConfig, serverTools, toolSelection, useSandbox, runtimeManager);
+            return 0;
+        }
+
+        PreparedAgentRuntime preparedRuntime = null;
+        SessionConfig config = baseConfig;
+        if (agentId != null && !agentId.isBlank()) {
+            if (runtimeManager == null) {
+                err().println("Error: managed Agent runtime is not available");
+                return 1;
+            }
+            preparedRuntime = runtimeManager.prepare(agentId);
+            config = runtimeManager.sessionConfig(baseConfig, preparedRuntime);
+        }
+        List<AgentTool> effectiveTools =
+                resolveEffectiveTools(config.cwd(), toolSelection, settings != null ? settings.tools() : null);
+
+        AgentSession session =
+                createAgentSession(effectiveTools, toolSelection, useSandbox, preparedRuntime, runtimeManager);
         session.setSubAgentRegistry(subAgentRegistry);
         SessionManager sessionManager = noSession ? null : new SessionManager();
         if (sessionManager != null) {
             session.setSessionManager(sessionManager);
         }
-        SessionConfig config = new SessionConfig(effectiveModel, effectiveCwd, effectiveSystemPrompt, mode);
         session.initialize(config);
         if (sessionManager != null) {
-            applySessionLoading(sessionManager, session, effectiveCwd);
+            applySessionLoading(sessionManager, session, config.cwd());
         }
         applyThinkingLevel(session, effectiveThinking);
 
@@ -522,31 +546,78 @@ public class CampusClawCommand implements Callable<Integer> {
             new RpcMode(session).run();
             return 0;
         }
-        if ("server".equals(mode)) {
-            runServerMode(config, effectiveTools, useSandbox);
-            return 0;
-        }
         return runInteractiveMode(session, sessionManager, effectivePrompt);
     }
 
-    private void runServerMode(SessionConfig config, List<AgentTool> effectiveTools, boolean useSandbox) {
-        com.campusclaw.codingagent.config.CustomModelLoader customModelLoader = resolveCustomModelLoader();
-        ServerMode serverMode = new ServerMode(
+    private AgentSession createAgentSession(
+            List<AgentTool> effectiveTools,
+            ToolSelection toolSelection,
+            boolean useSandbox,
+            PreparedAgentRuntime preparedRuntime,
+            AgentRuntimeManager runtimeManager) {
+        AgentSession session = new AgentSession(
                 piAiService,
                 modelRegistry,
                 promptBuilder,
-                effectiveTools,
+                new SkillLoader(sandboxSkillParser, useSandbox),
+                new SkillExpander(sandboxSkillParser, useSandbox),
+                effectiveTools);
+        session.setToolCatalog(toolCatalog, toolSelection);
+        if (preparedRuntime != null) {
+            session.setAgentRuntime(preparedRuntime, runtimeManager);
+        }
+        return session;
+    }
+
+    private void runServerMode(
+            SessionConfig config,
+            List<AgentTool> effectiveTools,
+            ToolSelection toolSelection,
+            boolean useSandbox,
+            AgentRuntimeManager runtimeManager) {
+        com.campusclaw.codingagent.config.CustomModelLoader customModelLoader = resolveCustomModelLoader();
+        new ServerMode(
+                        piAiService,
+                        modelRegistry,
+                        promptBuilder,
+                        effectiveTools,
+                        toolCatalog,
+                        toolSelection,
+                        config,
+                        port != null ? port : 3000,
+                        host != null ? host : "localhost",
+                        sandboxSkillParser,
+                        useSandbox,
+                        modelCatalogService,
+                        serverSessionPersistenceEnabled,
+                        settingsManager,
+                        customModelLoader,
+                        runtimeManager,
+                        agentId,
+                        latestToolsSettings -> ToolSelection.fromCli(
+                                toolsFilter, noTools, ToolSelection.fromSettings(latestToolsSettings)))
+                .run();
+    }
+
+    private void runServerMode(SessionConfig config, List<AgentTool> effectiveTools, boolean useSandbox) {
+        runServerMode(
                 config,
-                port != null ? port : 3000,
-                host != null ? host : "localhost",
-                sandboxSkillParser,
+                effectiveTools,
+                ToolSelection.fromCli(toolsFilter, noTools),
                 useSandbox,
-                modelCatalogService,
-                serverSessionPersistenceEnabled,
-                settingsManager,
-                customModelLoader);
-        serverMode.setExtraRoutes(collectExtraRouterFunctions());
-        serverMode.run();
+                resolveAgentRuntimeManager());
+    }
+
+    private AgentRuntimeManager resolveAgentRuntimeManager() {
+        if (applicationContext == null) {
+            return null;
+        }
+        try {
+            return applicationContext.getBean(AgentRuntimeManager.class);
+        } catch (org.springframework.beans.BeansException e) {
+            log.warn("AgentRuntimeManager bean not available; managed Agents are disabled", e);
+            return null;
+        }
     }
 
     @SuppressWarnings("unchecked")

@@ -86,7 +86,7 @@ public class SystemPromptBuilder {
         }
 
         // 3. 技能
-        String skillsBlock = SkillPromptFormatter.format(config.skills());
+        String skillsBlock = SkillPromptFormatter.format(config.skills(), config.skillActivationRequired());
         if (!skillsBlock.isEmpty()) {
             sb.append("\n\n# 技能\n\n");
             sb.append(skillsBlock);

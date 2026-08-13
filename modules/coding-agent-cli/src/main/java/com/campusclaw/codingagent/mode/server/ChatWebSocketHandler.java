@@ -4,6 +4,7 @@
 
 package com.campusclaw.codingagent.mode.server;
 
+import java.nio.file.Path;
 import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -43,6 +44,7 @@ import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.Sinks;
+import reactor.core.scheduler.Schedulers;
 import reactor.netty.http.websocket.WebsocketInbound;
 import reactor.netty.http.websocket.WebsocketOutbound;
 
@@ -113,7 +115,29 @@ public class ChatWebSocketHandler {
      * @return the result
      */
     public Publisher<Void> handle(WebsocketInbound in, WebsocketOutbound out, String conversationIdHint) {
-        SessionPool.SessionRef ref = pool.getOrCreate(conversationIdHint);
+        return Mono.fromCallable(() -> pool.getOrCreate(conversationIdHint))
+                .subscribeOn(Schedulers.boundedElastic())
+                .flatMap(ref -> handlePrepared(in, out, null, ref));
+    }
+
+    /**
+     * Handles one Agent-scoped WebSocket connection.
+     *
+     * @param in inbound frame stream
+     * @param out outbound frame sink
+     * @param agentId selected managed Agent ID
+     * @param conversationIdHint conversation to resume, or {@code null}
+     * @return connection completion publisher
+     */
+    public Publisher<Void> handle(
+            WebsocketInbound in, WebsocketOutbound out, String agentId, String conversationIdHint) {
+        return Mono.fromCallable(() -> pool.getOrCreate(agentId, conversationIdHint))
+                .subscribeOn(Schedulers.boundedElastic())
+                .flatMap(ref -> handlePrepared(in, out, agentId, ref));
+    }
+
+    private Mono<Void> handlePrepared(
+            WebsocketInbound in, WebsocketOutbound out, String agentId, SessionPool.SessionRef ref) {
         AgentSession session = ref.session();
 
         // convIdRef is rotated by `new_session` when persistence is enabled so
@@ -126,7 +150,8 @@ public class ChatWebSocketHandler {
 
         Mono<Void> inboundPipeline = in.receive()
                 .asString()
-                .doOnNext(raw -> handleCommand(raw, session, convIdRef, outbound))
+                .publishOn(Schedulers.boundedElastic())
+                .doOnNext(raw -> handleCommand(raw, agentId, session, convIdRef, outbound))
                 .then();
         Flux<String> heartbeat = Flux.interval(HEARTBEAT_INTERVAL).map(i -> PONG_FRAME);
         Mono<Void> sendPipeline =
@@ -176,7 +201,7 @@ public class ChatWebSocketHandler {
                     String cid = convIdRef.get();
                     log.info("WebSocket closed: conversation={} signal={}", cid, sig);
                     unsubscribe.run();
-                    if (session.isInitialized() && session.isStreaming()) {
+                    if (session.isInitialized() && (session.isStreaming() || session.isRuntimePromptActive())) {
                         try {
                             session.abort();
                         } catch (Exception e) {
@@ -193,7 +218,11 @@ public class ChatWebSocketHandler {
     // =========================================================================
 
     private void handleCommand(
-            String raw, AgentSession session, AtomicReference<String> convIdRef, Sinks.Many<String> out) {
+            String raw,
+            String agentId,
+            AgentSession session,
+            AtomicReference<String> convIdRef,
+            Sinks.Many<String> out) {
         String id = null;
         String type = "unknown";
         try {
@@ -208,7 +237,7 @@ public class ChatWebSocketHandler {
                     session.abort();
                     emitResponse(out, id, true, null);
                 }
-                case "new_session" -> handleNewSession(id, session, convIdRef, out);
+                case "new_session" -> handleNewSession(id, agentId, session, convIdRef, out);
                 case "set_model" -> handleSetModel(cmd, id, session, out);
                 case "list_models" -> handleListModels(cmd, id, session, out);
                 case "set_thinking_level" -> handleSetThinkingLevel(cmd, id, session, out);
@@ -227,7 +256,11 @@ public class ChatWebSocketHandler {
     }
 
     private void handleNewSession(
-            String id, AgentSession session, AtomicReference<String> convIdRef, Sinks.Many<String> out) {
+            String id,
+            String agentId,
+            AgentSession session,
+            AtomicReference<String> convIdRef,
+            Sinks.Many<String> out) {
         session.newSession();
 
         SessionManager oldSm = session.getSessionManager();
@@ -242,9 +275,11 @@ public class ChatWebSocketHandler {
         String newId = UUID.randomUUID().toString().replace("-", "").substring(0, 12);
         oldSm.close();
         SessionManager freshSm = new SessionManager();
-        freshSm.createSession(System.getProperty("user.dir"), newId);
+        Path initializedCwd = session.getInitializedCwd();
+        String sessionCwd = initializedCwd != null ? initializedCwd.toString() : System.getProperty("user.dir");
+        freshSm.createSession(sessionCwd, newId);
         session.setSessionManager(freshSm);
-        pool.rekey(oldId, newId);
+        pool.rekey(agentId, oldId, newId);
         convIdRef.set(newId);
         emitResponse(out, id, true, Map.of("conversation_id", newId));
     }
@@ -256,7 +291,7 @@ public class ChatWebSocketHandler {
             emitResponse(out, id, false, "message is required");
             return;
         }
-        if (session.isStreaming()) {
+        if (session.isStreaming() || session.isRuntimePromptActive()) {
             emitResponse(out, id, false, "conversation is already processing a prompt");
             return;
         }

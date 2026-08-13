@@ -6,6 +6,8 @@ package com.huawei.hicampus.mate.matecampusclaw.codingagent.mode.server;
 
 import java.util.Map;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.huawei.hicampus.mate.matecampusclaw.agent.Agent;
 import com.huawei.hicampus.mate.matecampusclaw.agent.event.AgentEndEvent;
 import com.huawei.hicampus.mate.matecampusclaw.agent.event.AgentEvent;
@@ -16,8 +18,6 @@ import com.huawei.hicampus.mate.matecampusclaw.agent.event.ToolExecutionEndEvent
 import com.huawei.hicampus.mate.matecampusclaw.agent.event.ToolExecutionStartEvent;
 import com.huawei.hicampus.mate.matecampusclaw.ai.types.ThinkingLevel;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.session.AgentSession;
-import com.fasterxml.jackson.annotation.JsonProperty;
-import com.fasterxml.jackson.databind.ObjectMapper;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -29,6 +29,7 @@ import org.springframework.web.reactive.function.server.ServerResponse;
 
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 /**
  * Handles POST /api/chat — streams agent responses as Server-Sent Events.
@@ -52,6 +53,7 @@ public class ChatHandler {
 
     record ChatRequest(
             @JsonProperty("message") String message,
+            @JsonProperty("agent_id") @Nullable String agentId,
             @JsonProperty("conversation_id") @Nullable String conversationId,
             @JsonProperty("model") @Nullable String model,
             @JsonProperty("thinking") @Nullable String thinking) {}
@@ -59,6 +61,8 @@ public class ChatHandler {
     public Mono<ServerResponse> chat(ServerRequest request) {
         return request.bodyToMono(ChatRequest.class)
                 .flatMap(this::handleChat)
+                .onErrorResume(IllegalArgumentException.class, e -> ServerResponse.badRequest()
+                        .bodyValue(Map.of("error", Agent.formatError(e))))
                 .onErrorResume(Exception.class, e -> ServerResponse.status(500)
                         .bodyValue(Map.of("error", Agent.formatError(e))));
     }
@@ -67,10 +71,15 @@ public class ChatHandler {
         if (req.message() == null || req.message().isBlank()) {
             return ServerResponse.badRequest().bodyValue(Map.of("error", "message is required"));
         }
-        SessionPool.SessionRef ref = pool.getOrCreate(req.conversationId());
+        return Mono.fromCallable(() -> pool.getOrCreate(req.agentId(), req.conversationId()))
+                .subscribeOn(Schedulers.boundedElastic())
+                .flatMap(ref -> handlePreparedChat(req, ref));
+    }
+
+    private Mono<ServerResponse> handlePreparedChat(ChatRequest req, SessionPool.SessionRef ref) {
         AgentSession session = ref.session();
         String conversationId = ref.conversationId();
-        if (session.isStreaming()) {
+        if (session.isStreaming() || session.isRuntimePromptActive()) {
             return ServerResponse.status(409)
                     .bodyValue(Map.of(
                             "error",
@@ -114,7 +123,7 @@ public class ChatHandler {
         Runnable unsub = session.subscribe(event -> forwardEvent(sink, event, conversationId));
         sink.onDispose(unsub::run);
         sink.onCancel(() -> {
-            if (session.isStreaming()) {
+            if (session.isStreaming() || session.isRuntimePromptActive()) {
                 session.abort();
                 log.info("Aborted conversation {} due to client disconnect", conversationId);
             }

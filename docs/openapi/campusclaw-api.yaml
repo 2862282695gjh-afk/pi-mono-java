@@ -143,6 +143,11 @@ paths:
         请求会沿用对话历史。请求未带 `conversation_id` 时服务端会生成
         一个新的，并在每条事件的 JSON `data` 中携带回去。
 
+        请求带 `agent_id` 时，CampusClaw 先从 `./agent/{agentId}` 加载托管
+        Agent；整个 Agent 目录不存在时调用 CampusMate GetAgentRuntime 物化目录，
+        已存在但不完整的目录会 fail closed。
+        SessionPool 以 `(agent_id, conversation_id)` 隔离会话。
+
         **客户端中断**：关闭 SSE 连接会被服务端识别为「中断当前 turn」——
         若该会话还在 streaming，服务端会自动调用 `session.abort()`。
 
@@ -178,6 +183,7 @@ paths:
                 summary: 首次请求，不带 conversation_id
                 value:
                   message: 用 Java 写一个快速排序
+                  agent_id: campus-operator
               followUp:
                 summary: 继续既有会话
                 value:
@@ -272,7 +278,14 @@ paths:
           - `updatedAt` —— JSONL 文件的最后修改时间（ISO-8601）
 
         结果按 `updatedAt` 倒序排列。当持久化目录尚未创建（从未发过任何
-        prompt）时返回空数组。
+        prompt）时返回空数组。传入 `agent_id` 时扫描该托管 Agent 的 cwd；
+        未传时扫描服务端默认/legacy cwd。
+      parameters:
+        - in: query
+          name: agent_id
+          required: false
+          schema: { type: string }
+          description: 托管 Agent ID；用于列出该 Agent 根目录下的持久化会话。
       responses:
         "200":
           description: 当前 cwd 下的全部会话条目。
@@ -315,6 +328,11 @@ paths:
           required: true
           schema: { type: string }
           description: 会话 ID（即 JSONL 文件名）。
+        - in: query
+          name: agent_id
+          required: false
+          schema: { type: string }
+          description: 托管 Agent ID；用于只移除该 Agent 下的同名会话。
       responses:
         "200":
           description: 已从内存池中移除。
@@ -814,6 +832,15 @@ components:
             先按 prompt template 展开，`/skill:name args` 再按 skill 命令展开，
             然后才交给 agent。
           example: 用 Java 写一个快速排序
+        agent_id:
+          type: string
+          nullable: true
+          pattern: '^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$'
+          description: |
+            已由上游选定的托管 Agent ID。提供后会定位
+            `./agent/{agentId}/.campusclaw/agentId.json` 和该 Agent 的
+            `.campusclaw/skills`；未提供时保持原有非托管会话行为。
+          example: campus-operator
         conversation_id:
           type: string
           nullable: true
