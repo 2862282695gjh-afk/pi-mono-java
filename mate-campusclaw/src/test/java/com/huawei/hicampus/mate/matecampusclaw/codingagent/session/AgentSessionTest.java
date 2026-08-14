@@ -298,7 +298,7 @@ class AgentSessionTest {
             writeManagedSkill();
             PreparedAgentRuntime prepared = preparedRuntime();
             AgentRuntimeManager runtimeManager = mock(AgentRuntimeManager.class);
-            when(runtimeManager.loadAllowedSkillToolNames(prepared, "skill-a")).thenReturn(List.of("calendar"));
+            when(runtimeManager.loadSkillToolNames(prepared, "skill-a")).thenReturn(List.of("calendar"));
             when(promptBuilder.build(any())).thenReturn("prompt");
             session.setAgentRuntime(prepared, runtimeManager);
 
@@ -332,7 +332,7 @@ class AgentSessionTest {
             assertEquals(
                     List.of("bash", ActivateSkillTool.NAME, "calendar"),
                     activatedTools.stream().map(AgentTool::name).toList());
-            verify(runtimeManager).loadAllowedSkillToolNames(prepared, "skill-a");
+            verify(runtimeManager).loadSkillToolNames(prepared, "skill-a");
         }
 
         @Test
@@ -369,7 +369,7 @@ class AgentSessionTest {
             writeManagedSkill();
             PreparedAgentRuntime prepared = preparedRuntime();
             AgentRuntimeManager runtimeManager = mock(AgentRuntimeManager.class);
-            when(runtimeManager.loadAllowedSkillToolNames(prepared, "skill-a")).thenReturn(List.of("calendar"));
+            when(runtimeManager.loadSkillToolNames(prepared, "skill-a")).thenReturn(List.of("calendar"));
             when(promptBuilder.build(any())).thenReturn("prompt");
             session.setAgentRuntime(prepared, runtimeManager);
             session.initialize(

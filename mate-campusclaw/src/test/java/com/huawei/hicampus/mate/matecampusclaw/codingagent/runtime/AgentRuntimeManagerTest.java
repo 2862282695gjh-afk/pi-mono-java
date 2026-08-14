@@ -63,11 +63,15 @@ class AgentRuntimeManagerTest {
         assertEquals("Template body", Files.readString(skillRoot.resolve("templates/request.txt")));
         var toolsJson = new ObjectMapper()
                 .readTree(skillRoot.resolve("references/tools.json").toFile());
-        assertEquals(1, toolsJson.path("tools").size());
+        assertEquals(3, toolsJson.path("tools").size());
         assertEquals("calendar", toolsJson.path("tools").get(0).path("tool_id").asText());
         assertEquals("calendar", toolsJson.path("tools").get(0).path("name").asText());
         assertEquals(
                 "calendar", toolsJson.path("tools").get(0).path("description").asText());
+        assertEquals("delete", toolsJson.path("tools").get(1).path("tool_id").asText());
+        assertEquals("delete", toolsJson.path("tools").get(1).path("name").asText());
+        assertEquals("delete", toolsJson.path("tools").get(1).path("description").asText());
+        assertEquals("approval", toolsJson.path("tools").get(2).path("name").asText());
         assertTrue(Files.isRegularFile(skillRoot.resolve("skill.json")));
         assertTrue(Files.isRegularFile(prepared.agentRoot().resolve(".campusclaw/skills/skill-b/SKILL.md")));
         assertEquals("skill-a", prepared.skills().getFirst().name());
@@ -200,13 +204,13 @@ class AgentRuntimeManagerTest {
     }
 
     @Test
-    void loadsAllowedSkillToolsFromLocalSnapshot() {
+    void loadsAllSkillToolsFromLocalSnapshot() {
         when(client.getAgentRuntime("agent-a")).thenReturn(runtime(List.of(new SkillReference("skill-1", "1"))));
         when(client.querySkillInfo("skill-1")).thenReturn(List.of(skillInfo()));
 
         PreparedAgentRuntime prepared = manager.prepare("agent-a");
 
-        assertEquals(List.of("calendar"), manager.loadAllowedSkillToolNames(prepared, "skill-a"));
+        assertEquals(List.of("calendar", "delete", "approval"), manager.loadSkillToolNames(prepared, "skill-a"));
     }
 
     @Test
@@ -236,7 +240,7 @@ class AgentRuntimeManagerTest {
     }
 
     @Test
-    void excludesUnsafeSkillToolsFromLocalSnapshot() {
+    void includesAllSkillToolsRegardlessOfPermission() {
         List<String> names = List.of("calendar", "BASH", "write", "edit", "EditDiff", "spawn_agent");
         SkillInfo skill = new SkillInfo(
                 "skill-a",
@@ -244,7 +248,13 @@ class AgentRuntimeManagerTest {
                 "1",
                 "Calendar workflow",
                 "booking",
-                names.stream().map(name -> tool(name, "allow")).toList(),
+                List.of(
+                        tool("calendar", "allow"),
+                        tool("BASH", "deny"),
+                        tool("write", "ask"),
+                        tool("edit", "deny"),
+                        tool("EditDiff", "ask"),
+                        tool("spawn_agent", "allow")),
                 List.of(),
                 List.of(),
                 List.of());
@@ -253,11 +263,11 @@ class AgentRuntimeManagerTest {
 
         PreparedAgentRuntime prepared = manager.prepare("agent-a");
 
-        assertEquals(List.of("calendar"), manager.loadAllowedSkillToolNames(prepared, "skill-a"));
+        assertEquals(names, manager.loadSkillToolNames(prepared, "skill-a"));
     }
 
     @Test
-    void rejectsDuplicateAllowedSkillTools() {
+    void rejectsDuplicateSkillTools() {
         SkillInfo duplicate = new SkillInfo(
                 "skill-a",
                 "skill-1",

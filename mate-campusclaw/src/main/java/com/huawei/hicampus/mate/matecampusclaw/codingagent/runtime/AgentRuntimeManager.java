@@ -120,14 +120,14 @@ public class AgentRuntimeManager {
     }
 
     /**
-     * Loads the permitted tools persisted with a bound Skill.
+     * Loads all tools persisted with a bound Skill.
      *
      * @param runtime prepared Agent runtime
      * @param skillName bound Skill name
-     * @return permitted local tool names in snapshot order
+     * @return Skill tool names in snapshot order
      * @throws AgentRuntimeException when the Skill or its tools snapshot is invalid
      */
-    public List<String> loadAllowedSkillToolNames(PreparedAgentRuntime runtime, String skillName) {
+    public List<String> loadSkillToolNames(PreparedAgentRuntime runtime, String skillName) {
         SkillInfo skill = runtime.findSkill(skillName)
                 .orElseThrow(() -> new AgentRuntimeException(
                         "Skill is not bound to Agent " + runtime.agentId() + ": " + skillName));
@@ -399,9 +399,6 @@ public class AgentRuntimeManager {
         Set<String> ids = new HashSet<>();
         Set<String> names = new HashSet<>();
         for (BoundTool tool : skill.bindingTools()) {
-            if (!"allow".equalsIgnoreCase(tool.permission()) || PreparedAgentRuntime.isUnsafeManagedTool(tool.name())) {
-                continue;
-            }
             if (!hasText(tool.id())
                     || !tool.id().equals(tool.id().trim())
                     || !hasText(tool.name())

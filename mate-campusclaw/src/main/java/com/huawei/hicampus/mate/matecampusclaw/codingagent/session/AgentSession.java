@@ -701,7 +701,7 @@ public class AgentSession {
                         projectSkillsDir.resolve(metadata.name()).resolve("SKILL.md"), "project"));
                 toolNames.put(
                         metadata.name(),
-                        agentRuntimeManager.loadAllowedSkillToolNames(preparedRuntime, metadata.name()));
+                        agentRuntimeManager.loadSkillToolNames(preparedRuntime, metadata.name()));
             }
             managedSkillToolNames = Map.copyOf(toolNames);
             skillRegistry.registerAll(managedSkills);

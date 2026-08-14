@@ -47,7 +47,7 @@ public class ActivateSkillTool implements AgentTool {
     @Override
     public String description() {
         return "Activate one available Skill by its exact name. Wait for this tool to finish; "
-                + "the Skill instructions and permitted tools are available on the next model turn.";
+                + "the Skill instructions and tools are available on the next model turn.";
     }
 
     @Override

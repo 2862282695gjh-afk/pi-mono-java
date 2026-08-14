@@ -31,8 +31,8 @@ Agent 可由以下入口指定：
 
 - **托管 Agent**：通过 `agentId` 选择、目录位于 `agents-root/{agentId}`、元数据来自 CampusMateService 的 Agent。
 - **Skill 发现**：只读取 `SKILL.md` frontmatter，把 `name`、`description` 暴露给模型，不等同于激活 Skill。
-- **Skill 激活**：选定 Skill 后读取本地生成的 `SKILL.md`、查询其工具并更新下一轮 LLM 可见工具集合。
-- **本地工具实现**：CampusMateService 返回授权元数据，实际执行对象始终来自当前 CampusClaw Pod 的 `ToolCatalog`。
+- **Skill 激活**：选定 Skill 后读取本地生成的 `SKILL.md` 和已加载的工具快照，并更新下一轮 LLM 可见工具集合。
+- **本地工具实现**：CampusMateService 返回工具元数据，实际执行对象始终来自当前 CampusClaw Pod 的 `ToolCatalog`。
 
 | 组件 | 职责 |
 |---|---|
@@ -73,7 +73,7 @@ querySkillInfo 中的 `bindingSkills` 仅作为该 Skill 的依赖元数据保�
 
 ### 4.3 Skill 工具本地快照
 
-querySkillInfo 返回的 `bindingTools` 是 Skill 工具的唯一远端来源。CampusClaw 在冷启动物化 Skill 时，只保留 `permission=allow` 且不属于托管 Agent 禁止列表的工具，并写入：
+querySkillInfo 返回的 `bindingTools` 是 Skill 工具的唯一远端来源。CampusClaw 在冷启动物化 Skill 时，将全部工具写入：
 
 ```text
 ./agent/{agentId}/.campusclaw/skills/{skillName}/references/tools.json
@@ -93,7 +93,7 @@ querySkillInfo 返回的 `bindingTools` 是 Skill 工具的唯一远端来源。
 }
 ```
 
-`tools.json` 必须与同目录 `skill.json` 中允许使用的 `bindingTools` 完全一致。本地缓存加载时会重新校验该文件，缺失、被修改或包含额外工具都使整个 Agent Runtime fail closed。Skill 激活阶段不再调用 querySkillTools。
+`tools.json` 不按 `permission` 过滤，也不保存 `permission` 字段；每个 `bindingTools` 条目都映射为 `tool_id`、`name`、`description`。该文件必须与同目录 `skill.json` 中的全部 `bindingTools` 完全一致。本地缓存加载时会重新校验，缺失、被修改或包含额外工具都使整个 Agent Runtime fail closed。Skill 激活阶段不再调用 querySkillTools。
 
 ### 4.4 CampusClaw 入口
 
@@ -111,7 +111,7 @@ querySkillInfo 返回的 `bindingTools` 是 Skill 工具的唯一远端来源。
 2. 同时存在规范文件 `agentId.json`、`skills/`，且目录集合与直接绑定 Skill 精确一致；每个 Skill 都有版本匹配的 `skill.json`、与元数据可重建内容完全一致的 `SKILL.md`、内容一致且无额外文件的 `references/` 与 `templates/` 时，直接加载本地缓存，不调用 CampusMateService。
 3. 整个 Agent 目录不存在时调用 GetAgentRuntime，取得 Agent 信息、Agent 工具权限和直接绑定 Skill 的 `(id, version)` 列表。
 4. 对每个直接绑定 Skill 调用 querySkillInfo；返回必须恰好一条且 `id/version` 与绑定坐标匹配。同一 Agent 内重复的 Skill id 或 name 均使物化失败，不能静默覆盖。
-5. 使用 querySkillInfo 顶层元数据生成带 `name`、`description` frontmatter 的基础 `SKILL.md`；将 references/templates 的文本内容分别写入固定的 `references/`、`templates/` 目录，将 `permission=allow` 的安全工具写入 `references/tools.json`，并把完整 Skill 元数据写入 `skill.json`。资源名必须是安全的单路径段，fileType 只接受 `md` 或 `txt`，拒绝路径穿越、重复文件和符号链接。
+5. 使用 querySkillInfo 顶层元数据生成带 `name`、`description` frontmatter 的基础 `SKILL.md`；将 references/templates 的文本内容分别写入固定的 `references/`、`templates/` 目录，将全部 `bindingTools` 写入 `references/tools.json`，并把完整 Skill 元数据写入 `skill.json`。资源名必须是安全的单路径段，fileType 只接受 `md` 或 `txt`，拒绝路径穿越、重复文件和符号链接。
 6. querySkillInfo 的 `bindingSkills` 只保存在 `skill.json`，不递归查询、不物化、不加入当前 Agent 的可见 Skill 列表。
 7. 首次创建使用同一文件系统中的临时目录完整写入，再以原子目录移动发布；文件系统不支持原子目录移动时 fail closed。
 8. 已存在但不完整的 Agent 目录不做原地修复，直接报告配置漂移，防止中断时形成“旧元数据 + 新 Skill”的混合版本。
@@ -133,7 +133,7 @@ baseTools = 本地工具策略 ∩ permission=allow 的 Agent 级工具
 LLM 根据 Skill 头信息调用 `activate_skill(skillName)`。显式 `/skill:skillName` 也先执行相同的查询与激活流程。CampusClaw 随后：
 
 1. 确认 Skill 已绑定当前 Agent、已在本地 Registry 注册，并且会话初始化时已经加载对应 `tools.json`。
-2. 从会话中的 Skill 工具快照取得允许的 `toolName`；激活阶段不访问 CampusMateService。
+2. 从会话中的 Skill 工具快照取得全部 `toolName`；激活阶段不访问 CampusMateService。
 3. 将工具名与本地 `ToolCatalog` 和 CLI 工具策略求交集；任何应加载但本地不存在的工具都会使本次激活整体失败。
 4. 读取本地生成的 `SKILL.md` 内容并作为 `activate_skill` 结果返回。当前接口没有真实 Skill 指令正文，因此这里只包含由元数据生成的基础内容。
 5. 一次性把 Skill 工具加入 `AgentState.tools`。`AgentLoop` 在下一轮模型调用时重新生成工具 schema，因此无需改动 AgentLoop。
@@ -195,7 +195,7 @@ sequenceDiagram
         Caller->>Session: /skill:skillName
     end
 
-    Session->>Session: 从已加载的tools.json取得允许的toolName
+    Session->>Session: 从已加载的tools.json取得全部toolName
     Session->>Catalog: 按toolName解析本地工具并应用本地策略
 
     alt 工具缺失或不允许
@@ -221,7 +221,7 @@ sequenceDiagram
 
 ## 7. 边界情况与 DFX
 
-- **安全**：`agentId`、`conversationId`、Skill name 和资源文件名都采用受限单路径段格式；资源 `fileType` 仅允许 `md|txt`；非法值、路径穿越、重复目标文件和 Agent 缓存路径中的符号链接直接拒绝。绑定 Skill 数、资源文件数、单文件和累计字节数均有上限；本地 `SKILL.md` 与资源文件必须和 `skill.json` 快照完全一致。远端工具授权按 ID/版本/名称校验，实际工具仍须存在于本地策略允许的 ToolCatalog 中。
+- **安全**：`agentId`、`conversationId`、Skill name 和资源文件名都采用受限单路径段格式；资源 `fileType` 仅允许 `md|txt`；非法值、路径穿越、重复目标文件和 Agent 缓存路径中的符号链接直接拒绝。绑定 Skill 数、资源文件数、单文件和累计字节数均有上限；本地 `SKILL.md` 与资源文件必须和 `skill.json` 快照完全一致。Skill 工具元数据按 ID/名称校验，实际工具仍须同时存在于 CLI 可见范围和 Spring ToolCatalog 中。Agent 级基础工具继续应用 Agent 权限与禁止列表，Skill 级工具则按 `tools.json` 的完整列表解析；运行时缓存物化和会话持久化属于 CampusClaw 内部写入，不是 LLM 工具。
 - **一致性**：冷启动先验证 GetAgentRuntime 的直接绑定坐标与每个 querySkillInfo 响应的 id/version，再在临时目录写全并原子移动；既有半成品 fail closed，不做原地拼接。激活只有在本地 Skill 内容和全部本地工具解析成功后才一次性更新工具集合。
 - **并发**：同一 session 同时只允许一个 prompt 持有可变上下文。工具热重载在 turn 执行期间延迟，空闲时按各 Agent 的 cwd 分别解析；scoped resolve 不会把共享 ToolCatalog 留在另一个 Agent 的目录上下文。
 - **故障隔离**：CampusMate 超时、非 2xx、业务失败码、querySkillInfo 返回零条/多条/版本不匹配、资源非法或本地工具缺失均 fail closed；失败不会发布半成品目录，也不会改变当前工具集合。
@@ -236,8 +236,8 @@ sequenceDiagram
 - GetAgentRuntime 的直接绑定和 querySkillInfo 都没有明确的 Skill `enabled/status` 字段。本实现只能把 GetAgentRuntime 的直接 `bindingSkills` 视为当前有效 Skill。
 - querySkillInfo 的 `bindingSkills` 只保存为依赖元数据；本流程不递归解析依赖。如果未来需要执行依赖 Skill，必须另行定义依赖的授权、可见性和版本闭包规则。
 - 本地目录完整后不再请求 GetAgentRuntime，因而启停/解绑不会自动刷新本地缓存。需要后续增加 revision、TTL、显式刷新或失效推送。
-- `tools.json` 是冷启动时生成的权限快照，本地缓存有效期间不会重新查询 CampusMateService；工具绑定和权限变更仍依赖 revision、TTL、显式刷新或失效推送。
-- `ask` 权限需要主 Agent 的用户审批协议；在该协议接入前默认拒绝。
+- `tools.json` 是冷启动时生成的 Skill 工具元数据快照，本地缓存有效期间不会重新查询 CampusMateService；工具绑定变化仍依赖 revision、TTL、显式刷新或失效推送。
+- Agent 级 `ask` 权限需要主 Agent 的用户审批协议；在该协议接入前默认拒绝。Skill 级 `permission` 不参与 `tools.json` 的生成或加载。
 
 ## 9. 代码改动点（实现映射）
 
@@ -254,9 +254,9 @@ sequenceDiagram
 | 创建不可变运行时快照 | `PreparedAgentRuntime` | 保存 Agent 元数据、Agent 根目录和直接绑定 Skill 元数据，供单个会话使用，不让会话重新猜测绑定关系。 |
 | 发现 Skill | `AgentSession`、`SkillLoader`、`SkillPromptFormatter` | 同时加载当前 Agent 的 `SKILL.md` 和 `references/tools.json`，向模型暴露 `name/description`，不暴露文件路径，也不扫描用户级 Skill。 |
 | 让模型选择 Skill | `ActivateSkillTool`、`AgentSession` | 注册结构化 `activate_skill(skillName)`；显式 `/skill:name` 也进入同一激活流程。 |
-| 加载并授权 Skill 工具 | `AgentRuntimeManager`、`AgentSession`、`ToolCatalog` | 从 `references/tools.json` 加载 Skill 工具名，校验其与 `skill.json` 一致，再解析本地可执行工具；激活时不访问 CampusMateService。 |
+| 加载 Skill 工具 | `AgentRuntimeManager`、`AgentSession`、`ToolCatalog` | 从 `references/tools.json` 加载全部 Skill 工具名，校验其与 `skill.json` 一致，再解析本地可执行工具；激活时不访问 CampusMateService。 |
 | 使工具在下一轮可见 | `AgentSession`、`AgentLoop` | 激活成功后更新 `AgentState.tools`；`AgentLoop` 下一轮重新生成工具 schema，turn 结束恢复基础工具集合。 |
-| 删除不需要的执行层 | `ToolCatalog`、普通 Tool Bean、部署配置 | 保留静态 Spring ToolCatalog，删除 Docker sandbox、Hybrid Tool、动态 Process Tool、DinD 部署和相关脚本；托管 Agent 禁止 bash/write/edit 等变更工具。 |
+| 删除不需要的执行层 | `ToolCatalog`、普通 Tool Bean、部署配置 | 保留静态 Spring ToolCatalog，删除 Docker sandbox、Hybrid Tool、动态 Process Tool、DinD 部署和相关脚本；Agent 级基础工具保留禁止列表，Skill 级工具按完整 `tools.json` 加载。 |
 | 保持双实现一致 | `modules/coding-agent-cli`、`mate-campusclaw` | 两套 CampusClaw 实现同步包含 Runtime Client、Runtime Manager、Session 隔离、Skill 激活和安全校验。 |
 
 ### 9.1 运行时工具集合
@@ -276,7 +276,7 @@ activeSkillTools = baseTools
                       ∩ references/tools.json中的工具名)
 ```
 
-`activate_skill` 是唯一的运行时控制工具；`tools.json` 只保存授权元数据，Skill 的业务工具仍必须先在本地 `ToolCatalog` 中存在。
+`activate_skill` 是唯一的运行时控制工具；`tools.json` 保存全部 Skill 工具元数据，Skill 的业务工具仍必须先在本地 `ToolCatalog` 中存在。
 
 ### 9.2 与当前接口的边界
 
@@ -284,7 +284,7 @@ activeSkillTools = baseTools
 
 - `querySkillInfo` 需要提供真实 `SKILL.md` 正文或制品包，否则当前只能根据 description/useCases 生成基础正文。
 - `GetAgentRuntime` 需要提供 revision、TTL 或 enabled/status，才能让本地缓存感知 Skill 启停和解绑。
-- Agent/Skill Runtime 需要 revision 或失效通知，才能在 `tools.json` 生成后感知工具权限变化。
+- Agent/Skill Runtime 需要 revision 或失效通知，才能在 `tools.json` 生成后感知工具绑定变化。
 - 如果要支持 Skill 依赖的递归加载，需要明确依赖的可见性、版本闭包和工具授权规则。
 
 ## 10. 配置
@@ -309,7 +309,7 @@ campusmate:
 - `../` 等非法 Agent ID、非法 Skill/资源名、非 `md|txt` fileType、非法 conversation ID 和缓存路径中的符号链接被拒绝。
 - querySkillInfo 的依赖 `bindingSkills` 被保存但不会触发递归请求或自动成为 Agent 可见 Skill。
 - 已存在但不完整的 Agent 目录 fail closed，不产生混合版本。
-- tools.json 只写入 querySkillInfo 中 `permission=allow` 且不在托管 Agent 禁止列表中的 Skill 工具。
+- tools.json 写入 querySkillInfo 返回的全部 Skill 工具，不按 `permission` 或工具名称过滤。
 - 加载 Skill 时同步加载 tools.json；激活 Skill 时不调用 querySkillTools。
 - 托管 Agent 不加载全局用户 Skill。
 - `activate_skill` 成功后下一轮工具集合包含 Skill 工具；失败时不改变原工具集合。
