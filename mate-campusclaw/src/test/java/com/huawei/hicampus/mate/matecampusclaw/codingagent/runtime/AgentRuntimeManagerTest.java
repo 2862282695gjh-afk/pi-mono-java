@@ -61,6 +61,9 @@ class AgentRuntimeManagerTest {
                 .contains("name: skill-a"));
         assertEquals("Reference body", Files.readString(skillRoot.resolve("references/guide.md")));
         assertEquals("Template body", Files.readString(skillRoot.resolve("templates/request.txt")));
+        assertEquals(
+                "Agent system prompt",
+                Files.readString(prepared.agentRoot().resolve(".campusclaw/systemPrompt.md")));
         var toolsJson = new ObjectMapper()
                 .readTree(skillRoot.resolve("references/tools.json").toFile());
         assertEquals(3, toolsJson.path("tools").size());
@@ -112,6 +115,18 @@ class AgentRuntimeManagerTest {
         PreparedAgentRuntime prepared = manager.prepare("agent-a");
         Path skillFile = prepared.agentRoot().resolve(".campusclaw/skills/skill-a/SKILL.md");
         Files.writeString(skillFile, Files.readString(skillFile) + "\nUntrusted instruction\n");
+
+        AgentRuntimeException error = assertThrows(AgentRuntimeException.class, () -> manager.prepare("agent-a"));
+
+        assertTrue(error.getMessage().contains("incomplete"));
+    }
+
+    @Test
+    void rejectsLocalCacheWhenSystemPromptIsModified() throws Exception {
+        when(client.getAgentRuntime("agent-a")).thenReturn(runtime(List.of(new SkillReference("skill-1", "1"))));
+        when(client.querySkillInfo("skill-1")).thenReturn(List.of(skillInfo()));
+        PreparedAgentRuntime prepared = manager.prepare("agent-a");
+        Files.writeString(prepared.agentRoot().resolve(".campusclaw/systemPrompt.md"), "Modified prompt");
 
         AgentRuntimeException error = assertThrows(AgentRuntimeException.class, () -> manager.prepare("agent-a"));
 

@@ -50,6 +50,7 @@ public class AgentRuntimeManager {
     private static final Pattern RESOURCE_NAME_PATTERN = Pattern.compile("^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$");
     private static final Set<String> RESOURCE_FILE_TYPES = Set.of("md", "txt");
     private static final String AGENT_METADATA_FILE = "agentId.json";
+    private static final String SYSTEM_PROMPT_FILE = "systemPrompt.md";
     private static final String SKILL_METADATA_FILE = "skill.json";
     private static final String SKILL_TOOLS_FILE = "tools.json";
     private static final int MAX_BOUND_SKILLS = 128;
@@ -142,16 +143,22 @@ public class AgentRuntimeManager {
     private PreparedAgentRuntime loadIfComplete(String agentId, Path agentRoot) {
         Path campusClawDir = agentRoot.resolve(".campusclaw");
         Path metadataFile = campusClawDir.resolve(AGENT_METADATA_FILE);
+        Path systemPromptFile = campusClawDir.resolve(SYSTEM_PROMPT_FILE);
         Path skillsDir = campusClawDir.resolve("skills");
         rejectSymbolicLinks(properties.agentsRoot().toAbsolutePath().normalize(), skillsDir);
         if (!Files.isDirectory(agentRoot, LinkOption.NOFOLLOW_LINKS)
                 || !Files.isRegularFile(metadataFile, LinkOption.NOFOLLOW_LINKS)
+                || !Files.isRegularFile(systemPromptFile, LinkOption.NOFOLLOW_LINKS)
                 || !Files.isDirectory(skillsDir, LinkOption.NOFOLLOW_LINKS)) {
             return null;
         }
         AgentRuntime metadata;
         try {
             metadata = mapper.readValue(metadataFile.toFile(), AgentRuntime.class);
+            if (!Objects.equals(
+                    Files.readString(systemPromptFile, StandardCharsets.UTF_8), systemPromptContent(metadata))) {
+                return null;
+            }
         } catch (IOException e) {
             return null;
         }
@@ -330,7 +337,12 @@ public class AgentRuntimeManager {
             writeAtomically(skillDir.resolve("SKILL.md"), renderSkill(skill));
             writeAtomically(skillDir.resolve(SKILL_METADATA_FILE), mapper.writeValueAsString(skill));
         }
+        writeAtomically(campusClawDir.resolve(SYSTEM_PROMPT_FILE), systemPromptContent(runtime));
         writeAtomically(campusClawDir.resolve(AGENT_METADATA_FILE), mapper.writeValueAsString(runtime));
+    }
+
+    private static String systemPromptContent(AgentRuntime runtime) {
+        return runtime.systemPrompt() == null ? "" : runtime.systemPrompt();
     }
 
     private void writeResources(Path directory, List<SkillFile> resources) throws IOException {
