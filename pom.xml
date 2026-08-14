@@ -41,7 +41,7 @@
         <checkstyle-plugin.version>3.6.0</checkstyle-plugin.version>
         <checkstyle.version>10.20.2</checkstyle.version>
         <mybatis-spring-boot.version>3.0.4</mybatis-spring-boot.version>
-        <opengauss-jdbc.version>6.0.0-htrunks.csi.gaussdb_kernel.opengaussjdbc.r1</opengauss-jdbc.version>
+        <opengauss-jdbc.version>7.0.0-RC3-og</opengauss-jdbc.version>
         <jobrunr.version>7.3.1</jobrunr.version>
     </properties>
 
