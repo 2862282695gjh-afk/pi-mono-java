@@ -21,7 +21,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Component;
 
 /**
- * Minimal HTTP client for the three CampusMate runtime endpoints used by CampusClaw.
+ * Minimal HTTP client for the CampusMate Agent and Skill runtime endpoints.
  *
  * @version [br_eCampusCore 25.1.0_Next, 2026/08/10]
  * @since [br_eCampusCore 25.1.0_Next]
@@ -31,7 +31,6 @@ public class MateServiceClient {
 
     private static final String AGENT_RUNTIME_PATH = "/mate-service/v1/agents/%s/runtime";
     private static final String SKILL_INFO_PATH = "/mate-service/v1/skill/query/%s";
-    private static final String SKILL_TOOLS_PATH = "/mate-service/v1/skill/tools/query";
 
     private final AgentRuntimeProperties properties;
     private final ObjectMapper mapper;
@@ -99,40 +98,6 @@ public class MateServiceClient {
             return response.result();
         } catch (IOException e) {
             throw new AgentRuntimeException("Invalid querySkillInfo response", e);
-        }
-    }
-
-    /**
-     * Queries the locally activatable tools for one or more Skills.
-     *
-     * @param skillNames selected Skill names
-     * @return query response entries
-     * @throws AgentRuntimeException when the HTTP request or response is invalid
-     */
-    public List<SkillTools> querySkillTools(List<String> skillNames) {
-        byte[] body;
-        try {
-            body = mapper.writeValueAsBytes(new SkillToolsQuery(skillNames));
-        } catch (IOException e) {
-            throw new AgentRuntimeException("Failed to encode querySkillTools request", e);
-        }
-        HttpRequest request = HttpRequest.newBuilder(endpoint(SKILL_TOOLS_PATH))
-                .timeout(properties.requestTimeout())
-                .header("Accept", "application/json")
-                .header("Content-Type", "application/json; charset=UTF-8")
-                .POST(HttpRequest.BodyPublishers.ofByteArray(body))
-                .build();
-        JsonNode root = send(request, "querySkillTools");
-        try {
-            SkillToolsResponse response = mapper.treeToValue(root, SkillToolsResponse.class);
-            if (!properties.successCode().equals(response.resCode())) {
-                throw new AgentRuntimeException("querySkillTools failed with resCode "
-                        + response.resCode()
-                        + (response.resMsg() == null || response.resMsg().isBlank() ? "" : ": " + response.resMsg()));
-            }
-            return response.result();
-        } catch (IOException e) {
-            throw new AgentRuntimeException("Invalid querySkillTools response", e);
         }
     }
 
@@ -275,31 +240,4 @@ public class MateServiceClient {
             result = result == null ? List.of() : List.copyOf(result);
         }
     }
-
-    /** querySkillTools request. */
-    public record SkillToolsQuery(List<String> skillNames) {
-        public SkillToolsQuery {
-            skillNames = skillNames == null ? List.of() : List.copyOf(skillNames);
-        }
-    }
-
-    /** querySkillTools response envelope. */
-    @JsonIgnoreProperties(ignoreUnknown = true)
-    public record SkillToolsResponse(String resCode, String resMsg, List<SkillTools> result) {
-        public SkillToolsResponse {
-            result = result == null ? List.of() : List.copyOf(result);
-        }
-    }
-
-    /** Tools returned for one selected Skill. */
-    @JsonIgnoreProperties(ignoreUnknown = true)
-    public record SkillTools(String skillName, List<ToolReference> toolList) {
-        public SkillTools {
-            toolList = toolList == null ? List.of() : List.copyOf(toolList);
-        }
-    }
-
-    /** Tool reference returned by querySkillTools. */
-    @JsonIgnoreProperties(ignoreUnknown = true)
-    public record ToolReference(String toolId, String toolVersion, String toolName, String description) {}
 }

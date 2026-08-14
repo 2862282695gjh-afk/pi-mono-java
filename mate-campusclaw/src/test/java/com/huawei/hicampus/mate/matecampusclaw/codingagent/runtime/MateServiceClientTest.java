@@ -177,59 +177,6 @@ class MateServiceClientTest {
     }
 
     @Test
-    void postsSkillNamesAndReadsToolList() throws Exception {
-        server.enqueue(
-                new MockResponse()
-                        .setHeader("Content-Type", "application/json")
-                        .setBody(
-                                """
-                        {
-                          "resCode": "0",
-                          "resMsg": "ok",
-                          "result": [{
-                            "skillName": "skill-a",
-                            "toolList": [{
-                              "toolId": "tool-1",
-                              "toolVersion": "1.0.0",
-                              "toolName": "calendar",
-                              "description": "Calendar tool"
-                            }]
-                          }]
-                        }
-                        """));
-
-        var result = client.querySkillTools(List.of("skill-a"));
-
-        assertEquals("calendar", result.getFirst().toolList().getFirst().toolName());
-        RecordedRequest request = server.takeRequest();
-        assertEquals("POST", request.getMethod());
-        assertEquals("/mate-service/v1/skill/tools/query", request.getPath());
-        assertEquals(
-                new ObjectMapper().readTree("{\"skillNames\":[\"skill-a\"]}"),
-                new ObjectMapper().readTree(request.getBody().readUtf8()));
-    }
-
-    @Test
-    void rejectsBusinessErrorFromSkillToolQuery() {
-        server.enqueue(
-                new MockResponse()
-                        .setHeader("Content-Type", "application/json")
-                        .setBody(
-                                """
-                        {
-                          "resCode": "403",
-                          "resMsg": "skill disabled",
-                          "result": []
-                        }
-                        """));
-
-        AgentRuntimeException error =
-                assertThrows(AgentRuntimeException.class, () -> client.querySkillTools(List.of("skill-a")));
-
-        assertEquals("querySkillTools failed with resCode 403: skill disabled", error.getMessage());
-    }
-
-    @Test
     void rejectsResponseWhoseContentLengthExceedsLimit() {
         client = newClientWithMaxResponseBytes(32);
         server.enqueue(new MockResponse().setBody("x".repeat(33)));
@@ -237,8 +184,7 @@ class MateServiceClientTest {
         AgentRuntimeException error =
                 assertThrows(AgentRuntimeException.class, () -> client.getAgentRuntime("agent-a"));
 
-        assertEquals(
-                "GetAgentRuntime response exceeds campusmate.runtime.max-response-bytes (32)", error.getMessage());
+        assertEquals("GetAgentRuntime response exceeds campusmate.runtime.max-response-bytes (32)", error.getMessage());
     }
 
     @Test
@@ -249,8 +195,7 @@ class MateServiceClientTest {
         AgentRuntimeException error =
                 assertThrows(AgentRuntimeException.class, () -> client.getAgentRuntime("agent-a"));
 
-        assertEquals(
-                "GetAgentRuntime response exceeds campusmate.runtime.max-response-bytes (32)", error.getMessage());
+        assertEquals("GetAgentRuntime response exceeds campusmate.runtime.max-response-bytes (32)", error.getMessage());
     }
 
     private MateServiceClient newClientWithMaxResponseBytes(int maxResponseBytes) {

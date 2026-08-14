@@ -20,12 +20,13 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.regex.Pattern;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtime.MateServiceClient.AgentRuntime;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtime.MateServiceClient.BoundTool;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtime.MateServiceClient.SkillFile;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtime.MateServiceClient.SkillInfo;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtime.MateServiceClient.SkillReference;
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtime.MateServiceClient.SkillTools;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.session.SessionConfig;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.skill.Skill;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.skill.SkillLoadException;
@@ -50,6 +51,7 @@ public class AgentRuntimeManager {
     private static final Set<String> RESOURCE_FILE_TYPES = Set.of("md", "txt");
     private static final String AGENT_METADATA_FILE = "agentId.json";
     private static final String SKILL_METADATA_FILE = "skill.json";
+    private static final String SKILL_TOOLS_FILE = "tools.json";
     private static final int MAX_BOUND_SKILLS = 128;
     private static final int MAX_RESOURCES_PER_SKILL = 256;
     private static final int MAX_RESOURCE_BYTES = 1024 * 1024;
@@ -118,34 +120,23 @@ public class AgentRuntimeManager {
     }
 
     /**
-     * Queries CampusMate after a Skill is selected and intersects the response with the
-     * Skill's {@code permission=allow} metadata.
+     * Loads the permitted tools persisted with a bound Skill.
      *
      * @param runtime prepared Agent runtime
-     * @param skillName selected Skill name
-     * @return permitted tool names in response order
-     * @throws AgentRuntimeException when the Skill is not bound or the query result is invalid
+     * @param skillName bound Skill name
+     * @return permitted local tool names in snapshot order
+     * @throws AgentRuntimeException when the Skill or its tools snapshot is invalid
      */
-    public List<String> queryAllowedSkillToolNames(PreparedAgentRuntime runtime, String skillName) {
+    public List<String> loadAllowedSkillToolNames(PreparedAgentRuntime runtime, String skillName) {
         SkillInfo skill = runtime.findSkill(skillName)
                 .orElseThrow(() -> new AgentRuntimeException(
                         "Skill is not bound to Agent " + runtime.agentId() + ": " + skillName));
-        List<MateServiceClient.BoundTool> allowedByMetadata = skill.bindingTools().stream()
-                .filter(tool -> "allow".equalsIgnoreCase(tool.permission()))
-                .toList();
-        List<SkillTools> matches = mateServiceClient.querySkillTools(List.of(skillName)).stream()
-                .filter(entry -> skillName.equals(entry.skillName()))
-                .toList();
-        if (matches.size() != 1) {
-            throw new AgentRuntimeException(
-                    "querySkillTools must return exactly one entry for Skill: " + skillName);
+        Path skillDir = runtime.agentRoot().resolve(".campusclaw/skills").resolve(skillName);
+        try {
+            return readSkillTools(skillDir, skill).stream().map(SkillTool::name).toList();
+        } catch (IOException e) {
+            throw new AgentRuntimeException("Failed to load Skill tools snapshot: " + skillName, e);
         }
-        SkillTools queried = matches.getFirst();
-        return queried.toolList().stream()
-                .filter(reference -> allowedByMetadata.stream().anyMatch(tool -> sameTool(tool, reference)))
-                .map(MateServiceClient.ToolReference::toolName)
-                .distinct()
-                .toList();
     }
 
     private PreparedAgentRuntime loadIfComplete(String agentId, Path agentRoot) {
@@ -249,19 +240,23 @@ public class AgentRuntimeManager {
         }
         try {
             validateSkillInfo(metadata);
+            readSkillTools(skillDir, metadata);
             return Files.readString(skillFile, StandardCharsets.UTF_8).equals(renderSkill(metadata))
                     && metadata.name()
-                            .equals(skillLoader.loadFromFile(skillFile, "project").name())
-                    && hasCompleteResources(skillDir.resolve("references"), metadata.references())
-                    && hasCompleteResources(skillDir.resolve("templates"), metadata.templates());
+                            .equals(skillLoader
+                                    .loadFromFile(skillFile, "project")
+                                    .name())
+                    && hasCompleteResources(
+                            skillDir.resolve("references"), metadata.references(), Set.of(SKILL_TOOLS_FILE))
+                    && hasCompleteResources(skillDir.resolve("templates"), metadata.templates(), Set.of());
         } catch (IOException | SkillLoadException | AgentRuntimeException e) {
             return false;
         }
     }
 
-    private boolean hasCompleteResources(Path directory, List<SkillFile> resources) {
+    private boolean hasCompleteResources(Path directory, List<SkillFile> resources, Set<String> generatedFiles) {
         try {
-            Set<String> expected = new HashSet<>();
+            Set<String> expected = new HashSet<>(generatedFiles);
             for (SkillFile resource : resources) {
                 String fileName = resourceFileName(resource);
                 Path file = directory.resolve(fileName);
@@ -330,6 +325,7 @@ public class AgentRuntimeManager {
             Files.createDirectories(referencesDir);
             Files.createDirectories(templatesDir);
             writeResources(referencesDir, skill.references());
+            writeAtomically(referencesDir.resolve(SKILL_TOOLS_FILE), renderSkillTools(skill));
             writeResources(templatesDir, skill.templates());
             writeAtomically(skillDir.resolve("SKILL.md"), renderSkill(skill));
             writeAtomically(skillDir.resolve(SKILL_METADATA_FILE), mapper.writeValueAsString(skill));
@@ -379,6 +375,44 @@ public class AgentRuntimeManager {
             content.append("\n## Use cases\n\n").append(skill.useCases()).append('\n');
         }
         return content.toString();
+    }
+
+    private String renderSkillTools(SkillInfo skill) throws IOException {
+        return mapper.writerWithDefaultPrettyPrinter().writeValueAsString(new SkillToolsFile(skillTools(skill)));
+    }
+
+    private List<SkillTool> readSkillTools(Path skillDir, SkillInfo skill) throws IOException {
+        Path toolsFile = skillDir.resolve("references").resolve(SKILL_TOOLS_FILE);
+        if (!Files.isRegularFile(toolsFile, LinkOption.NOFOLLOW_LINKS)) {
+            throw new AgentRuntimeException("Skill tools snapshot is missing: " + skill.name());
+        }
+        SkillToolsFile snapshot = mapper.readValue(toolsFile.toFile(), SkillToolsFile.class);
+        List<SkillTool> expected = skillTools(skill);
+        if (!snapshot.tools().equals(expected)) {
+            throw new AgentRuntimeException("Skill tools snapshot does not match skill metadata: " + skill.name());
+        }
+        return snapshot.tools();
+    }
+
+    private static List<SkillTool> skillTools(SkillInfo skill) {
+        List<SkillTool> tools = new java.util.ArrayList<>();
+        Set<String> ids = new HashSet<>();
+        Set<String> names = new HashSet<>();
+        for (BoundTool tool : skill.bindingTools()) {
+            if (!"allow".equalsIgnoreCase(tool.permission()) || PreparedAgentRuntime.isUnsafeManagedTool(tool.name())) {
+                continue;
+            }
+            if (!hasText(tool.id())
+                    || !tool.id().equals(tool.id().trim())
+                    || !hasText(tool.name())
+                    || !tool.name().equals(tool.name().trim())
+                    || !ids.add(tool.id())
+                    || !names.add(tool.name())) {
+                throw new AgentRuntimeException("Invalid or duplicate Skill tool metadata: " + skill.name());
+            }
+            tools.add(new SkillTool(tool.id(), tool.name(), tool.description() == null ? "" : tool.description()));
+        }
+        return List.copyOf(tools);
     }
 
     private List<SkillInfo> resolveSkills(List<SkillReference> references) {
@@ -452,6 +486,7 @@ public class AgentRuntimeManager {
             throw new AgentRuntimeException("Invalid Skill metadata");
         }
         validateSkillName(skill.name());
+        skillTools(skill);
         if ((long) skill.references().size() + skill.templates().size() > MAX_RESOURCES_PER_SKILL) {
             throw new AgentRuntimeException("Skill has too many resource files: " + skill.name());
         }
@@ -544,23 +579,17 @@ public class AgentRuntimeManager {
         Files.move(source, target, StandardCopyOption.ATOMIC_MOVE);
     }
 
-    private static boolean sameTool(MateServiceClient.BoundTool metadata, MateServiceClient.ToolReference reference) {
-        if (!hasToolIdentity(metadata.id(), metadata.version(), metadata.name())
-                || !hasToolIdentity(reference.toolId(), reference.toolVersion(), reference.toolName())) {
-            return false;
-        }
-        return Objects.equals(metadata.id(), reference.toolId())
-                && Objects.equals(metadata.version(), reference.toolVersion())
-                && Objects.equals(metadata.name(), reference.toolName());
-    }
-
-    private static boolean hasToolIdentity(String id, String version, String name) {
-        return hasText(id) && hasText(version) && hasText(name);
-    }
-
     private static boolean hasText(String value) {
         return value != null && !value.isBlank();
     }
+
+    private record SkillToolsFile(List<SkillTool> tools) {
+        private SkillToolsFile {
+            tools = tools == null ? List.of() : List.copyOf(tools);
+        }
+    }
+
+    private record SkillTool(@JsonProperty("tool_id") String toolId, String name, String description) {}
 
     private static void rejectSymbolicLinks(Path root, Path candidate) {
         if (Files.isSymbolicLink(root)) {

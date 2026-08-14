@@ -25,8 +25,6 @@ import com.campusclaw.codingagent.runtime.MateServiceClient.BoundTool;
 import com.campusclaw.codingagent.runtime.MateServiceClient.SkillFile;
 import com.campusclaw.codingagent.runtime.MateServiceClient.SkillInfo;
 import com.campusclaw.codingagent.runtime.MateServiceClient.SkillReference;
-import com.campusclaw.codingagent.runtime.MateServiceClient.SkillTools;
-import com.campusclaw.codingagent.runtime.MateServiceClient.ToolReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -63,6 +61,13 @@ class AgentRuntimeManagerTest {
                 .contains("name: skill-a"));
         assertEquals("Reference body", Files.readString(skillRoot.resolve("references/guide.md")));
         assertEquals("Template body", Files.readString(skillRoot.resolve("templates/request.txt")));
+        var toolsJson = new ObjectMapper()
+                .readTree(skillRoot.resolve("references/tools.json").toFile());
+        assertEquals(1, toolsJson.path("tools").size());
+        assertEquals("calendar", toolsJson.path("tools").get(0).path("tool_id").asText());
+        assertEquals("calendar", toolsJson.path("tools").get(0).path("name").asText());
+        assertEquals(
+                "calendar", toolsJson.path("tools").get(0).path("description").asText());
         assertTrue(Files.isRegularFile(skillRoot.resolve("skill.json")));
         assertTrue(Files.isRegularFile(prepared.agentRoot().resolve(".campusclaw/skills/skill-b/SKILL.md")));
         assertEquals("skill-a", prepared.skills().getFirst().name());
@@ -103,6 +108,19 @@ class AgentRuntimeManagerTest {
         PreparedAgentRuntime prepared = manager.prepare("agent-a");
         Path skillFile = prepared.agentRoot().resolve(".campusclaw/skills/skill-a/SKILL.md");
         Files.writeString(skillFile, Files.readString(skillFile) + "\nUntrusted instruction\n");
+
+        AgentRuntimeException error = assertThrows(AgentRuntimeException.class, () -> manager.prepare("agent-a"));
+
+        assertTrue(error.getMessage().contains("incomplete"));
+    }
+
+    @Test
+    void rejectsLocalCacheWhenToolsSnapshotIsModified() throws Exception {
+        when(client.getAgentRuntime("agent-a")).thenReturn(runtime(List.of(new SkillReference("skill-1", "1"))));
+        when(client.querySkillInfo("skill-1")).thenReturn(List.of(skillInfo()));
+        PreparedAgentRuntime prepared = manager.prepare("agent-a");
+        Path toolsFile = prepared.agentRoot().resolve(".campusclaw/skills/skill-a/references/tools.json");
+        Files.writeString(toolsFile, "{\"tools\":[]}");
 
         AgentRuntimeException error = assertThrows(AgentRuntimeException.class, () -> manager.prepare("agent-a"));
 
@@ -182,28 +200,78 @@ class AgentRuntimeManagerTest {
     }
 
     @Test
-    void intersectsActivatedToolsByIdVersionAndName() {
-        PreparedAgentRuntime prepared = preparedRuntime();
-        when(client.querySkillTools(List.of("skill-a")))
-                .thenReturn(List.of(new SkillTools(
-                        "skill-a",
-                        List.of(
-                                new ToolReference("calendar", "1", "calendar", "allowed"),
-                                new ToolReference("other-id", "1", "calendar", "wrong id"),
-                                new ToolReference("calendar", "2", "calendar", "wrong version"),
-                                new ToolReference("calendar", "1", "other-name", "wrong name"),
-                                new ToolReference("delete", "1", "delete", "denied")))));
+    void loadsAllowedSkillToolsFromLocalSnapshot() {
+        when(client.getAgentRuntime("agent-a")).thenReturn(runtime(List.of(new SkillReference("skill-1", "1"))));
+        when(client.querySkillInfo("skill-1")).thenReturn(List.of(skillInfo()));
 
-        assertEquals(List.of("calendar"), manager.queryAllowedSkillToolNames(prepared, "skill-a"));
+        PreparedAgentRuntime prepared = manager.prepare("agent-a");
+
+        assertEquals(List.of("calendar"), manager.loadAllowedSkillToolNames(prepared, "skill-a"));
     }
 
     @Test
-    void rejectsDuplicateSkillToolEntries() {
-        PreparedAgentRuntime prepared = preparedRuntime();
-        SkillTools duplicate = new SkillTools("skill-a", List.of());
-        when(client.querySkillTools(List.of("skill-a"))).thenReturn(List.of(duplicate, duplicate));
+    void excludesUnsafeAgentToolsEvenWhenAllowedByMetadata() {
+        AgentRuntime metadata = new AgentRuntime(
+                "gpt-4o",
+                List.of(),
+                List.of(
+                        tool("read", "allow"),
+                        tool("BASH", "allow"),
+                        tool("write", "allow"),
+                        tool("edit", "allow"),
+                        tool("EditDiff", "allow"),
+                        tool("spawn_agent", "allow")),
+                "Agent description",
+                "Agent A",
+                "agent-a",
+                "agent-a",
+                "Agent system prompt",
+                List.of("campus"),
+                "1",
+                null);
 
-        assertThrows(AgentRuntimeException.class, () -> manager.queryAllowedSkillToolNames(prepared, "skill-a"));
+        PreparedAgentRuntime prepared = new PreparedAgentRuntime("agent-a", tempDir, metadata, List.of());
+
+        assertEquals(List.of("read"), prepared.allowedAgentToolNames());
+    }
+
+    @Test
+    void excludesUnsafeSkillToolsFromLocalSnapshot() {
+        List<String> names = List.of("calendar", "BASH", "write", "edit", "EditDiff", "spawn_agent");
+        SkillInfo skill = new SkillInfo(
+                "skill-a",
+                "skill-1",
+                "1",
+                "Calendar workflow",
+                "booking",
+                names.stream().map(name -> tool(name, "allow")).toList(),
+                List.of(),
+                List.of(),
+                List.of());
+        when(client.getAgentRuntime("agent-a")).thenReturn(runtime(List.of(new SkillReference("skill-1", "1"))));
+        when(client.querySkillInfo("skill-1")).thenReturn(List.of(skill));
+
+        PreparedAgentRuntime prepared = manager.prepare("agent-a");
+
+        assertEquals(List.of("calendar"), manager.loadAllowedSkillToolNames(prepared, "skill-a"));
+    }
+
+    @Test
+    void rejectsDuplicateAllowedSkillTools() {
+        SkillInfo duplicate = new SkillInfo(
+                "skill-a",
+                "skill-1",
+                "1",
+                "Calendar workflow",
+                "booking",
+                List.of(tool("calendar", "allow"), tool("calendar", "allow")),
+                List.of(),
+                List.of(),
+                List.of());
+        when(client.getAgentRuntime("agent-a")).thenReturn(runtime(List.of(new SkillReference("skill-1", "1"))));
+        when(client.querySkillInfo("skill-1")).thenReturn(List.of(duplicate));
+
+        assertThrows(AgentRuntimeException.class, () -> manager.prepare("agent-a"));
     }
 
     @Test
@@ -217,11 +285,6 @@ class AgentRuntimeManagerTest {
 
         assertThrows(AgentRuntimeException.class, () -> manager.prepare("agent-a"));
         verify(client, times(0)).getAgentRuntime("agent-a");
-    }
-
-    private PreparedAgentRuntime preparedRuntime() {
-        return new PreparedAgentRuntime(
-                "agent-a", tempDir, runtime(List.of(new SkillReference("skill-1", "1"))), List.of(skillInfo()));
     }
 
     private static AgentRuntime runtime(List<SkillReference> skills) {

@@ -79,6 +79,7 @@ public class AgentSession {
     private Path initializedCwd;
     private List<AgentTool> locallyVisibleTools = List.of();
     private List<AgentTool> baseTools = List.of();
+    private Map<String, List<String>> managedSkillToolNames = Map.of();
     private PreparedAgentRuntime preparedRuntime;
     private AgentRuntimeManager agentRuntimeManager;
     private String initializedCustomPrompt;
@@ -675,6 +676,7 @@ public class AgentSession {
 
     void loadSkills(Path cwd) {
         skillRegistry.clear();
+        managedSkillToolNames = Map.of();
 
         if (preparedRuntime == null) {
             // User-level skills: ~/.campusclaw/agent/skills/
@@ -689,10 +691,16 @@ public class AgentSession {
         // Project-level skills: {cwd}/.campusclaw/skills/
         Path projectSkillsDir = cwd.resolve(PROJECT_SKILLS_SUBDIR);
         if (preparedRuntime != null) {
-            List<Skill> managedSkills = preparedRuntime.skills().stream()
-                    .map(metadata -> skillLoader.loadFromFile(
-                            projectSkillsDir.resolve(metadata.name()).resolve("SKILL.md"), "project"))
-                    .toList();
+            List<Skill> managedSkills = new java.util.ArrayList<>();
+            Map<String, List<String>> toolNames = new LinkedHashMap<>();
+            for (var metadata : preparedRuntime.skills()) {
+                managedSkills.add(skillLoader.loadFromFile(
+                        projectSkillsDir.resolve(metadata.name()).resolve("SKILL.md"), "project"));
+                toolNames.put(
+                        metadata.name(),
+                        agentRuntimeManager.loadAllowedSkillToolNames(preparedRuntime, metadata.name()));
+            }
+            managedSkillToolNames = Map.copyOf(toolNames);
             skillRegistry.registerAll(managedSkills);
             return;
         }
@@ -725,7 +733,10 @@ public class AgentSession {
         Skill skill = skillRegistry
                 .getByName(skillName)
                 .orElseThrow(() -> new IllegalArgumentException("Unknown Skill: " + skillName));
-        List<String> requestedTools = agentRuntimeManager.queryAllowedSkillToolNames(preparedRuntime, skillName);
+        List<String> requestedTools = managedSkillToolNames.get(skillName);
+        if (requestedTools == null) {
+            throw new IllegalStateException("Skill tools were not loaded: " + skillName);
+        }
         Map<String, AgentTool> localTools = new LinkedHashMap<>();
         locallyVisibleTools.forEach(tool -> localTools.put(tool.name(), tool));
         List<String> missingTools = requestedTools.stream()
