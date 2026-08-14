@@ -234,7 +234,57 @@ sequenceDiagram
 - querySkillTools 只传 `skillNames`，没有 `agentId` 或 revision，CampusMateService 无法在该接口上证明 Skill 仍绑定当前 Agent；这是当前契约的时间检查/使用竞态。
 - `ask` 权限需要主 Agent 的用户审批协议；在该协议接入前默认拒绝。
 
-## 9. 配置
+## 9. 代码改动点（实现映射）
+
+本节把时序图中的每个运行时动作映射到实际代码，便于后续维护和接口演进。
+
+| 设计动作 | 主要代码 | 实现内容 |
+|---|---|---|
+| 接收已选定的 Agent | `CampusClawCommand`、`ChatHandler`、`ServerMode`、`ChatWebSocketHandler` | CLI、REST、WebSocket 都传递 `agentId`；未指定时保留原有非托管 Agent 流程。 |
+| 按 Agent 隔离会话 | `SessionPool` | 使用 `(agentId, conversationId)` 作为会话键；Agent 的 cwd、历史文件、删除和重命名操作均按 Agent 隔离。 |
+| 本地优先准备 Runtime | `AgentRuntimeManager.prepare` | 先校验 `./agent/{agentId}` 的完整缓存；完整时不访问 CampusMate，半成品直接 fail closed。 |
+| 获取 Agent 与 Skill 定义 | `MateServiceClient`、`AgentRuntimeManager` | 调用 `GetAgentRuntime` 获取 Agent 元数据和直接绑定的 `(skillId, version)`，再逐个调用 `querySkillInfo` 获取完整 Skill 快照。 |
+| 物化本地目录 | `AgentRuntimeManager` | 在临时目录写入 `agentId.json`、`skill.json`、`SKILL.md`、`references/`、`templates/`，完成校验后原子发布。 |
+| 校验缓存一致性 | `AgentRuntimeManager` | 校验绑定 id/version、目录集合、Skill 名称、SKILL.md 全文、资源内容、符号链接、路径和大小限制；拒绝额外未绑定 Skill。 |
+| 创建不可变运行时快照 | `PreparedAgentRuntime` | 保存 Agent 元数据、Agent 根目录和直接绑定 Skill 元数据，供单个会话使用，不让会话重新猜测绑定关系。 |
+| 发现 Skill | `AgentSession`、`SkillLoader`、`SkillPromptFormatter` | 只加载当前 Agent 的 `skills/{skillName}/SKILL.md`，向模型暴露 `name/description`，不暴露文件路径，也不扫描用户级 Skill。 |
+| 让模型选择 Skill | `ActivateSkillTool`、`AgentSession` | 注册结构化 `activate_skill(skillName)`；显式 `/skill:name` 也进入同一激活流程。 |
+| 查询并授权 Skill 工具 | `AgentRuntimeManager`、`MateServiceClient`、`ToolCatalog` | 调用 `querySkillTools`，按 toolId/version/name 与 `skill.json` 精确求交，只接受 `permission=allow`，再解析本地可执行工具。 |
+| 使工具在下一轮可见 | `AgentSession`、`AgentLoop` | 激活成功后更新 `AgentState.tools`；`AgentLoop` 下一轮重新生成工具 schema，turn 结束恢复基础工具集合。 |
+| 删除不需要的执行层 | `ToolCatalog`、普通 Tool Bean、部署配置 | 保留静态 Spring ToolCatalog，删除 Docker sandbox、Hybrid Tool、动态 Process Tool、DinD 部署和相关脚本；托管 Agent 禁止 bash/write/edit 等变更工具。 |
+| 保持双实现一致 | `modules/coding-agent-cli`、`mate-campusclaw` | 两套 CampusClaw 实现同步包含 Runtime Client、Runtime Manager、Session 隔离、Skill 激活和安全校验。 |
+
+### 9.1 运行时工具集合
+
+代码中的工具边界可以概括为：
+
+```text
+baseTools = 本地ToolCatalog
+            ∩ CLI/settings工具范围
+            ∩ Agent permission=allow
+            - 托管Agent禁止工具
+            + activate_skill
+
+activeSkillTools = baseTools
+                   + (本地ToolCatalog
+                      ∩ CLI/settings工具范围
+                      ∩ querySkillTools结果
+                      ∩ skill.json中permission=allow
+                      ∩ toolId/toolVersion/toolName精确匹配)
+```
+
+`activate_skill` 是唯一的运行时控制工具；Skill 的业务工具不能由远端元数据直接创建，必须先在本地 `ToolCatalog` 中存在。
+
+### 9.2 与当前接口的边界
+
+当前实现已经完成 Skill 加载、发现、激活和工具装配，但以下能力需要 CampusMateService 后续补充契约：
+
+- `querySkillInfo` 需要提供真实 `SKILL.md` 正文或制品包，否则当前只能根据 description/useCases 生成基础正文。
+- `GetAgentRuntime` 需要提供 revision、TTL 或 enabled/status，才能让本地缓存感知 Skill 启停和解绑。
+- `querySkillTools` 需要携带 `agentId` 和 revision，才能在激活时重新校验绑定关系。
+- 如果要支持 Skill 依赖的递归加载，需要明确依赖的可见性、版本闭包和工具授权规则。
+
+## 10. 配置
 
 ```yaml
 campusmate:
@@ -246,7 +296,7 @@ campusmate:
     success-code: ${CAMPUSMATE_SUCCESS_CODE:0}
 ```
 
-## 10. 测试与验证范围
+## 11. 测试与验证范围
 
 - GetAgentRuntime 同时兼容直接响应和 `result` 包装，`bindingSkills` 同时兼容单对象与数组，并只解释为直接绑定 Skill 的 id/version 坐标。
 - 冷启动对每个直接绑定 Skill 调用一次 querySkillInfo；零条、多条、重复 id/name 或绑定版本不匹配时 fail closed。
