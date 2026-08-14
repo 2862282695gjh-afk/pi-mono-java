@@ -116,8 +116,20 @@ public class AgentRuntimeManager {
     public SessionConfig sessionConfig(SessionConfig base, PreparedAgentRuntime runtime) {
         String runtimeModel = runtime.metadata().bindingModels();
         String model = runtimeModel != null && !runtimeModel.isBlank() ? runtimeModel : base.model();
-        String prompt = joinPrompts(runtime.metadata().systemPrompt(), base.customPrompt());
+        String prompt = joinPrompts(readSystemPrompt(runtime), base.customPrompt());
         return new SessionConfig(model, runtime.agentRoot(), prompt, base.mode());
+    }
+
+    private String readSystemPrompt(PreparedAgentRuntime runtime) {
+        Path systemPromptFile = runtime.agentRoot().resolve(".campusclaw").resolve(SYSTEM_PROMPT_FILE);
+        if (!Files.isRegularFile(systemPromptFile, LinkOption.NOFOLLOW_LINKS)) {
+            throw new AgentRuntimeException("Agent system prompt is missing: " + runtime.agentId());
+        }
+        try {
+            return Files.readString(systemPromptFile, StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            throw new AgentRuntimeException("Failed to load Agent system prompt: " + runtime.agentId(), e);
+        }
     }
 
     /**
@@ -155,10 +167,6 @@ public class AgentRuntimeManager {
         AgentRuntime metadata;
         try {
             metadata = mapper.readValue(metadataFile.toFile(), AgentRuntime.class);
-            if (!Objects.equals(
-                    Files.readString(systemPromptFile, StandardCharsets.UTF_8), systemPromptContent(metadata))) {
-                return null;
-            }
         } catch (IOException e) {
             return null;
         }

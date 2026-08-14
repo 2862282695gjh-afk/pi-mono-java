@@ -26,6 +26,7 @@ import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtime.MateServiceCl
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtime.MateServiceClient.SkillFile;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtime.MateServiceClient.SkillInfo;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtime.MateServiceClient.SkillReference;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.session.SessionConfig;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -122,15 +123,19 @@ class AgentRuntimeManagerTest {
     }
 
     @Test
-    void rejectsLocalCacheWhenSystemPromptIsModified() throws Exception {
+    void usesModifiedLocalSystemPromptWithoutRepeatingRemoteQueries() throws Exception {
         when(client.getAgentRuntime("agent-a")).thenReturn(runtime(List.of(new SkillReference("skill-1", "1"))));
         when(client.querySkillInfo("skill-1")).thenReturn(List.of(skillInfo()));
         PreparedAgentRuntime prepared = manager.prepare("agent-a");
         Files.writeString(prepared.agentRoot().resolve(".campusclaw/systemPrompt.md"), "Modified prompt");
 
-        AgentRuntimeException error = assertThrows(AgentRuntimeException.class, () -> manager.prepare("agent-a"));
+        PreparedAgentRuntime local = manager.prepare("agent-a");
+        SessionConfig config = manager.sessionConfig(
+                new SessionConfig("base-model", tempDir, "Base prompt", "interactive"), local);
 
-        assertTrue(error.getMessage().contains("incomplete"));
+        assertEquals("Modified prompt\n\nBase prompt", config.customPrompt());
+        verify(client, times(1)).getAgentRuntime("agent-a");
+        verify(client, times(1)).querySkillInfo("skill-1");
     }
 
     @Test
