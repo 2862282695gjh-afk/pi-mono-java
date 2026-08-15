@@ -54,21 +54,6 @@ package-lock.json
 .campusclaw/*
 !.campusclaw/skills/
 !.campusclaw/skills/**
-!.campusclaw/rule-engines-pack/
-!.campusclaw/rule-engines-pack/**
-!.campusclaw/rules/
-!.campusclaw/rules/rules_re.json
-!.campusclaw/docs/
-!.campusclaw/docs/**
-
-# OpenClaw skills: runtime artifacts only (seed fixtures + API servers stay in repo)
-.campusclaw/skills/campus-device-ops/mock_fixtures/**/*.db
-.campusclaw/skills/campus-device-ops/mock_fixtures/work_orders/
-.campusclaw/skills/campus-device-ops/mock_fixtures/notifications/outbox/
-.campusclaw/skills/campus-device-ops/mock_fixtures/state/
-.campusclaw/skills/device-inspection-re/mock_fixtures/device_inspection_re.db
-.campusclaw/skills/device-inspection-re/mock_fixtures/work_orders/
-.campusclaw/skills/device-inspection-re/mock_fixtures/state/
 
 # mate-campusclaw OpenClaw skills runtime (mirror .campusclaw)
 mate-campusclaw/src/main/java/com/huawei/hicampus/mate/matecampusclaw/skills/**/mock_fixtures/**/*.db
@@ -79,4 +64,3 @@ mate-campusclaw/src/main/java/com/huawei/hicampus/mate/matecampusclaw/skills/**/
 # Python bytecode (skills/scripts may include python helpers)
 __pycache__/
 *.pyc
-

@@ -1,2 +1,0 @@
-# device-inspection (rules.json / JSON AST) — stdlib only for judge_rules.py
-# No third-party packages required.
