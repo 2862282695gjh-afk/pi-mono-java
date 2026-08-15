@@ -1,0 +1,134 @@
+{
+  "version": 1,
+  "campus": "DemoChillerCampus",
+  "idFormat": "{typeCode}_{seq:03d} (ASCII only)",
+  "devices": [
+    {
+      "deviceId": "VAV_001",
+      "legacyIds": ["VAV-DMP-101", "VAV_006", "VAV_风阀", "VAV_风阀_001"],
+      "name": "A栋-101 VAV风阀",
+      "building": "A栋",
+      "floor": "1F",
+      "room": "101",
+      "deviceType": "VAV",
+      "component": "风阀"
+    },
+    {
+      "deviceId": "VAV_002",
+      "legacyIds": [
+        "VAV-TMP-102",
+        "VAV_005",
+        "VAV_温度传感器",
+        "VAV_温控器",
+        "VAV_温控器/温度传感器"
+      ],
+      "name": "A栋-102 VAV温度传感器",
+      "building": "A栋",
+      "floor": "1F",
+      "room": "102",
+      "deviceType": "VAV",
+      "component": "温度传感器",
+      "legacyComponents": ["温控器/温度传感器"]
+    },
+    {
+      "deviceId": "VAV_003",
+      "legacyIds": ["VAV-CO2-201", "VAV_004", "VAV_CO2传感器"],
+      "name": "B栋-201 VAV CO2传感器",
+      "building": "B栋",
+      "floor": "2F",
+      "room": "201",
+      "deviceType": "VAV",
+      "component": "CO2传感器"
+    },
+    {
+      "deviceId": "PAHU_001",
+      "legacyIds": ["PAHU-INV-001", "新风机_001", "新风机_送风机变频器"],
+      "name": "能源中心-1号新风机组变频器",
+      "building": "能源中心",
+      "floor": "B1",
+      "room": "机房-01",
+      "deviceType": "新风机",
+      "component": "送风机变频器"
+    },
+    {
+      "deviceId": "AHU_001",
+      "legacyIds": ["AHU-PRS-001", "AHU_002", "AHU_送风压力传感器"],
+      "name": "能源中心-AHU送风压力",
+      "building": "能源中心",
+      "floor": "B1",
+      "room": "机房-02",
+      "deviceType": "AHU",
+      "component": "送风压力传感器"
+    },
+    {
+      "deviceId": "EF_001",
+      "legacyIds": ["EF-001", "送排风_001", "送排风_排风机"],
+      "name": "能源中心-1号排风机",
+      "building": "能源中心",
+      "floor": "B1",
+      "room": "送排风间-01",
+      "deviceType": "送排风",
+      "component": "排风机"
+    },
+    {
+      "deviceId": "SF_001",
+      "legacyIds": ["SF-001", "送排风_002", "送排风_送风机"],
+      "name": "能源中心-1号送风机",
+      "building": "能源中心",
+      "floor": "B1",
+      "room": "送排风间-02",
+      "deviceType": "送排风",
+      "component": "送风机"
+    },
+    {
+      "deviceId": "FCU_001",
+      "legacyIds": ["FCU-001"],
+      "name": "C栋-301 风机盘管",
+      "building": "C栋",
+      "floor": "3F",
+      "room": "301",
+      "deviceType": "FCU",
+      "component": "风机盘管"
+    },
+    {
+      "deviceId": "CHW_001",
+      "legacyIds": ["CHILLER-001"],
+      "name": "能源中心-1号冷水机组",
+      "building": "能源中心",
+      "floor": "B1",
+      "room": "冷站-01",
+      "deviceType": "CHILLER",
+      "component": "冷水机组"
+    },
+    {
+      "deviceId": "CT_001",
+      "legacyIds": ["CT-001"],
+      "name": "能源中心-1号冷却塔",
+      "building": "能源中心",
+      "floor": "RF",
+      "room": "屋面-01",
+      "deviceType": "CT",
+      "component": "冷却塔"
+    },
+    {
+      "deviceId": "BOILER_001",
+      "legacyIds": ["BOILER-001"],
+      "name": "能源中心-1号锅炉",
+      "building": "能源中心",
+      "floor": "B1",
+      "room": "锅炉房-01",
+      "deviceType": "BOILER",
+      "component": "锅炉"
+    },
+    {
+      "deviceId": "CHWP_001",
+      "legacyIds": ["PUMP-001", "CHWP-001"],
+      "name": "能源中心-1号冷冻水泵",
+      "building": "能源中心",
+      "floor": "B1",
+      "room": "冷站-02",
+      "deviceType": "CHWP",
+      "component": "冷冻水泵"
+    }
+  ]
+}

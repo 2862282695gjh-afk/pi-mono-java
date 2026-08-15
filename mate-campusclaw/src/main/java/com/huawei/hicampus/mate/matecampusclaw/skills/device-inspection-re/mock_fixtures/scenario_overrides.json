@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "description": "Demo: rule fixtures listed under healthyRuleIds use non-triggering point values (scenario healthy).",
+  "healthyRuleIds": [
+    "vav_damper_damper_control_error_overlimit_9e29c43b",
+    "ahu_sensor_0079ee02"
+  ]
+}
