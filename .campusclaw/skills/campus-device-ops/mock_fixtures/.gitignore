@@ -1,4 +1,0 @@
-*.db
-work_orders/
-notifications/outbox/
-state/
