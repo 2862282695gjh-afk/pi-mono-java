@@ -48,8 +48,18 @@ package-lock.json
 !frontend/package.json
 !frontend/package-lock.json
 
-# CampusClaw project-local data and installed skills
-.campusclaw/
+# CampusClaw
+# - ignore runtime data
+# - keep skills in-repo for distribution
+.campusclaw/*
+!.campusclaw/skills/
+!.campusclaw/skills/**
+
+# mate-campusclaw OpenClaw skills runtime (mirror .campusclaw)
+mate-campusclaw/src/main/java/com/huawei/hicampus/mate/matecampusclaw/skills/**/mock_fixtures/**/*.db
+mate-campusclaw/src/main/java/com/huawei/hicampus/mate/matecampusclaw/skills/**/mock_fixtures/work_orders/
+mate-campusclaw/src/main/java/com/huawei/hicampus/mate/matecampusclaw/skills/**/mock_fixtures/notifications/outbox/
+mate-campusclaw/src/main/java/com/huawei/hicampus/mate/matecampusclaw/skills/**/mock_fixtures/state/
 
 # Python bytecode (skills/scripts may include python helpers)
 __pycache__/
