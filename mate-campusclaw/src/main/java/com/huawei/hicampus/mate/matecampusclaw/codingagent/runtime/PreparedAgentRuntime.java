@@ -21,8 +21,8 @@ import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtime.MateServiceCl
  * @param metadata  cached runtime metadata
  * @param skills    complete metadata snapshots for directly bound Skills
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/08/10]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/08/17]
+ * @since [br_eCampusCore 26.0.0]
  */
 public record PreparedAgentRuntime(String agentId, Path agentRoot, AgentRuntime metadata, List<SkillInfo> skills) {
 

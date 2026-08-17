@@ -7,8 +7,8 @@ package com.campusclaw.codingagent.tool.catalog;
 /**
  * Listener notified after a tool catalog snapshot changes.
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/06/12]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/08/17]
+ * @since [br_eCampusCore 26.0.0]
  */
 @FunctionalInterface
 public interface ToolChangeListener {

@@ -20,8 +20,8 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * @param successCode     CampusMate business success code
  * @param maxResponseBytes maximum accepted CampusMate response size in bytes
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/08/10]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/08/17]
+ * @since [br_eCampusCore 26.0.0]
  */
 @ConfigurationProperties(prefix = "campusmate.runtime")
 public record AgentRuntimeProperties(

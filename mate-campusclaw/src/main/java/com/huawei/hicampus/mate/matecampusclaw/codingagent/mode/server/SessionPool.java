@@ -49,8 +49,8 @@ import org.slf4j.LoggerFactory;
  * The JSONL filename equals the conversation ID, so reconnects with the same
  * {@code conversation_id} after eviction or process restart resume from disk.
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/05/06]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/08/17]
+ * @since [br_eCampusCore 26.0.0]
  */
 public class SessionPool {
 

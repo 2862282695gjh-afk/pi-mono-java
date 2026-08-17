@@ -14,8 +14,8 @@ import org.springframework.context.annotation.Configuration;
 /**
  * Bridges upstream runtime modules to the CLI tool catalog.
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/06/13]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/08/17]
+ * @since [br_eCampusCore 26.0.0]
  */
 @Configuration(proxyBeanMethods = false)
 public class ToolProviderConfiguration {

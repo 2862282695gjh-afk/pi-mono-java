@@ -20,8 +20,8 @@ import com.huawei.hicampus.mate.matecampusclaw.agent.tool.ToolExecutionMode;
  * Structured control tool used by the model to activate a managed Skill before its
  * business tools become visible.
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/08/10]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/08/17]
+ * @since [br_eCampusCore 26.0.0]
  */
 public class ActivateSkillTool implements AgentTool {
 

@@ -9,8 +9,8 @@ import java.util.List;
 /**
  * Formats a list of visible skills into an XML block suitable for inclusion in the system prompt.
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/05/06]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/08/17]
+ * @since [br_eCampusCore 26.0.0]
  */
 public class SkillPromptFormatter {
 

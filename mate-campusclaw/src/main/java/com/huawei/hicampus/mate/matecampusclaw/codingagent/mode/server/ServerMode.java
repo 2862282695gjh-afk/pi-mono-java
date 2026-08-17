@@ -57,8 +57,8 @@ import reactor.netty.http.server.HttpServerResponse;
  *   <li>PUT    /api/settings/customModels — replace customModels (refreshes ModelRegistry)</li>
  * </ul>
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/05/06]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/08/17]
+ * @since [br_eCampusCore 26.0.0]
  */
 public class ServerMode {
 

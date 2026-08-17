@@ -26,8 +26,8 @@ import org.slf4j.LoggerFactory;
 /**
  * {@link AgentTool} adapter for a declarative external process tool.
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/06/12]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/08/17]
+ * @since [br_eCampusCore 26.0.0]
  */
 public class ProcessAgentTool implements AgentTool {
 

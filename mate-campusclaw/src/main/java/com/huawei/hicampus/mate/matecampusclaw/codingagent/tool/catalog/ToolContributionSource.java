@@ -7,8 +7,8 @@ package com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.catalog;
 /**
  * Describes where a tool contribution came from.
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/06/12]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/08/17]
+ * @since [br_eCampusCore 26.0.0]
  */
 public record ToolContributionSource(String layer, String sourceId) {
 

@@ -14,8 +14,8 @@ import org.springframework.stereotype.Component;
 /**
  * Tool source backed by the in-process extension registry.
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/06/12]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/08/17]
+ * @since [br_eCampusCore 26.0.0]
  */
 @Component
 public class ExtensionToolSource implements ToolSource {

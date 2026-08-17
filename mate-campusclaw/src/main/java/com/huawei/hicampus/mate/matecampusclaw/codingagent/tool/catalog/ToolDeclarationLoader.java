@@ -21,8 +21,8 @@ import org.yaml.snakeyaml.Yaml;
 /**
  * Loads YAML/JSON declarative tool definitions.
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/06/12]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/08/17]
+ * @since [br_eCampusCore 26.0.0]
  */
 @Component
 public class ToolDeclarationLoader {

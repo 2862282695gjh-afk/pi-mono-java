@@ -38,8 +38,8 @@ import org.springframework.stereotype.Component;
  * Resolves managed Agent runtimes from the local cache or CampusMate and materializes
  * the directory structure expected by the existing Skill loader.
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/08/10]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/08/17]
+ * @since [br_eCampusCore 26.0.0]
  */
 @Component
 public class AgentRuntimeManager {

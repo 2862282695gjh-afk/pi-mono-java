@@ -23,8 +23,8 @@ import org.springframework.stereotype.Component;
 /**
  * Minimal HTTP client for the CampusMate Agent and Skill runtime endpoints.
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/08/10]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/08/17]
+ * @since [br_eCampusCore 26.0.0]
  */
 @Component
 public class MateServiceClient {

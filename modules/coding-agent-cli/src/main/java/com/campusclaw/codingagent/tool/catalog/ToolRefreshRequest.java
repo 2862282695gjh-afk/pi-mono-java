@@ -11,8 +11,8 @@ import com.campusclaw.codingagent.settings.Settings;
 /**
  * Request data for rebuilding a tool catalog snapshot.
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/06/12]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/08/17]
+ * @since [br_eCampusCore 26.0.0]
  */
 public record ToolRefreshRequest(Path cwd, Settings.ToolsSettings toolsSettings) {
 

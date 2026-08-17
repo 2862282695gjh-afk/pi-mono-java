@@ -25,8 +25,8 @@ import com.huawei.hicampus.mate.matecampusclaw.codingagent.skill.Skill;
  * @param appendSystemPrompt content of APPEND_SYSTEM.md if found (may be null)
  * @param skillActivationRequired whether Skills must be activated through {@code activate_skill}
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/05/06]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/08/17]
+ * @since [br_eCampusCore 26.0.0]
  */
 public record SystemPromptConfig(
         List<AgentTool> tools,

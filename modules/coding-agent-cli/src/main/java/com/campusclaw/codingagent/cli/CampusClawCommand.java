@@ -70,8 +70,8 @@ import picocli.CommandLine.Spec;
  * Main CLI command for CampusClaw.
  * Parses command-line arguments and launches the agent in the requested mode.
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/05/06]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/08/17]
+ * @since [br_eCampusCore 26.0.0]
  */
 @Command(
         name = "campusclaw",
