@@ -53,3 +53,6 @@ package-lock.json
 # Python bytecode (skills/scripts may include python helpers)
 __pycache__/
 *.pyc
+
+# SDD 工作目录（含 Supabase token，绝不入库）
+.superpowers/
