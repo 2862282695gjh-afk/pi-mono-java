@@ -32,13 +32,17 @@ CampusClaw 需要调用 Mate 平台管理的工具(agent/skill 授权的 tool)�
 
 分层与依赖方向(契约位于 `common/client/mate`,`HttpMateToolClient` 不反向依赖工具层):
 
-![分层图](diagrams/mate-tool-client-layers.svg)
+![分层图](mate-tool-client/mate_tool_client_layers.svg)
+
+[PlantUML 源码](mate-tool-client/diagram.puml#L76)
 
 调用时序:
 
-![数据流](diagrams/mate-tool-client.svg)
+![数据流](mate-tool-client/mate_tool_client_dataflow.svg)
 
-PlantUML 源文件:[diagrams/mate-tool-client.puml](diagrams/mate-tool-client.puml) / [diagrams/mate-tool-client-layers.puml](diagrams/mate-tool-client-layers.puml)(经 kroki 渲染为同名 SVG)。
+[PlantUML 源码](mate-tool-client/diagram.puml#L1)
+
+两图均为 `docs/designs/mate-tool-client/diagram.puml` 中的独立 `@startuml` 块,用 `plantuml -tsvg diagram.puml` 生成同名 SVG(依赖 Graphviz `dot`)。
 
 ```
 模型 emit tool_use("listMateTool", {agent_id | skill_id})
