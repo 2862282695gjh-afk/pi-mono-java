@@ -35,7 +35,7 @@ campusclaw:
       cursor-secret: ${CAMPUSCLAW_EVENT_CURSOR_SECRET:}
       cursor-ttl: ${CAMPUSCLAW_EVENT_CURSOR_TTL:PT24H}
 
-# 服务器模式（--mode server）下 /api/ws/chat 与 /api/chat 的会话持久化
+# 服务器模式（--mode server）下旧 /api/chat 的会话持久化
 # 开启后会把每个 conversation_id 的消息历史写入
 # ~/.campusclaw/agent/sessions/--<encoded-cwd>--/<id>.jsonl
 # 重连或进程重启后用同一个 conversation_id 可恢复历史

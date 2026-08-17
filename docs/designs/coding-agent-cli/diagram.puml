@@ -1,0 +1,125 @@
+@startuml module-context
+title Coding Agent CLI Module Context
+left to right direction
+skinparam componentStyle rectangle
+
+' Source evidence: modules/coding-agent-cli/pom.xml; CampusClawApplication; CampusClawCommand.
+' Analyzed source commit: cc2f58d9e24bae1d7c99b9f54e86b71940d86115.
+' Observed behavior: coding-agent-cli assembles four internal libraries and external runtime services.
+
+component "campusclaw-ai" as ai
+component "campusclaw-agent-core" as core
+component "campusclaw-tui" as tui
+component "campusclaw-cron" as cron
+component "campusclaw-coding-agent" as cli
+component "spring-boot + webflux" as spring
+component "picocli" as picocli
+component "Docker daemon" as docker
+
+ai --> cli
+core --> cli
+tui --> cli
+cron --> cli
+spring --> cli
+picocli --> cli
+cli ..> docker : optional
+@enduml
+
+@startuml startup-sequence
+title Coding Agent CLI Startup Sequence
+
+' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/CampusClawApplication.java.
+' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/cli/CampusClawCommand.java.
+' Observed behavior: Spring creates the application context before Picocli dispatches a selected mode.
+
+participant JVM
+participant CampusClawApplication
+participant SpringContext
+participant CampusClawCommand
+participant "Selected Mode" as Mode
+participant AgentSession
+participant Agent
+
+JVM -> CampusClawApplication : main(args)
+CampusClawApplication -> SpringContext : SpringApplication.run
+SpringContext --> CampusClawApplication : inject command and factory
+CampusClawApplication -> CampusClawCommand : execute(args)
+CampusClawCommand -> CampusClawCommand : apply proxy and dispatch
+CampusClawCommand -> AgentSession : construct model, tools, and skills
+CampusClawCommand -> Mode : run(session)
+Mode -> AgentSession : prompt(text)
+AgentSession -> Agent : prompt(...)
+Agent --> Mode : AgentEvent stream
+Mode --> JVM : render output or write SSE
+Mode --> CampusClawCommand : exit code
+CampusClawCommand --> JVM : exit
+@enduml
+
+@startuml core-classes
+title Coding Agent CLI Core Classes
+skinparam classAttributeIconSize 0
+
+' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/.
+' Source evidence: modules/agent-core/src/main/java/com/campusclaw/agent/.
+' Design reason: show the main assembly dependencies without protocol-specific WebSocket classes.
+
+class CampusClawApplication
+class CampusClawCommand
+class InteractiveMode
+class OneShotMode
+class RpcMode
+class ServerMode
+class AgentSession
+class SessionManager
+class SessionPersistence
+class SlashCommandRegistry
+interface SlashCommand
+class ExtensionRegistry
+class ExtensionPoint
+class SkillManager
+class SkillLoader
+class SkillExpander
+class BashTool
+class ReadTool
+class WriteTool
+class EditTool
+class ExecutionRouter
+interface ToolExecutionStrategy
+class DockerSandboxClient
+class HybridBashTool
+class SettingsManager
+class Compactor
+class SubAgentAutoConfiguration
+class RuntimeApiRoutes
+class RuntimeEventService
+class RuntimeSessionService
+
+CampusClawApplication --> CampusClawCommand : runs
+CampusClawCommand --> InteractiveMode : interactive
+CampusClawCommand --> OneShotMode : one-shot
+CampusClawCommand --> RpcMode : rpc
+CampusClawCommand --> ServerMode : server
+CampusClawCommand --> AgentSession : creates
+AgentSession --> SessionManager : persists via
+SessionManager --> SessionPersistence : uses
+InteractiveMode --> SlashCommandRegistry : dispatches
+SlashCommandRegistry o-- SlashCommand
+CampusClawCommand --> ExtensionRegistry : reads
+ExtensionRegistry --> ExtensionPoint : indexes
+AgentSession --> SkillLoader : loads
+SkillLoader --> SkillExpander : expands
+SkillManager --> SkillLoader : installs for
+HybridBashTool --> ExecutionRouter : delegates
+ExecutionRouter --> ToolExecutionStrategy : selects
+ToolExecutionStrategy <|.. BashTool
+ToolExecutionStrategy <|.. ReadTool
+ToolExecutionStrategy <|.. WriteTool
+ToolExecutionStrategy <|.. EditTool
+ExecutionRouter --> DockerSandboxClient : sandbox path
+CampusClawCommand --> SettingsManager : reads settings
+AgentSession --> Compactor : compacts
+CampusClawApplication --> SubAgentAutoConfiguration : wires
+ServerMode --> RuntimeApiRoutes : mounts
+RuntimeApiRoutes --> RuntimeSessionService : sessions
+RuntimeApiRoutes --> RuntimeEventService : events
+@enduml

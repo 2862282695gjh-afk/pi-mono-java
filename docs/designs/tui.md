@@ -1,4 +1,4 @@
-# tui 模块设计文档（基于代码 v1）
+# tui 模块设计文档（基于代码 v1.1）
 
 ## 文档信息
 
@@ -8,9 +8,13 @@
 | Story 名称 | tui 模块设计文档（基于代码 v1） |
 | 负责人 | 待补充 |
 | 创建日期 | 2026-05-14 |
-| 版本 | v1.0 (code-derived) |
+| 版本 | v1.1 (code-derived) |
 
 ---
+
+> 图表格式更新基于源码提交 `cc2f58d9e24bae1d7c99b9f54e86b71940d86115`；
+> 主要证据为 `modules/tui/pom.xml`、`Tui#render`、`JLineTerminal`、
+> `Component` 与 `AnsiUtils`。
 
 ## 1. Story 背景
 
@@ -48,18 +52,9 @@
 
 ### 2.1 Story 上下文
 
-```mermaid
-flowchart LR
-    jline[JLine 3]
-    lanterna[Lanterna]
-    jackson[Jackson databind]
-    tui["campusclaw-tui"]
-    cli["campusclaw-coding-agent"]
-    jline --> tui
-    lanterna --> tui
-    jackson --> tui
-    tui --> cli
-```
+![TUI 模块上下文](./tui/module-context.svg)
+
+[PlantUML 源文件](./tui/diagram.puml#L1)
 
 文字补充：
 
@@ -116,29 +111,9 @@ flowchart LR
 
 下面用 sequenceDiagram 描述一帧 render-flush 周期（actor 为真实类名）：
 
-```mermaid
-sequenceDiagram
-    participant Caller
-    participant Tui
-    participant Terminal
-    participant Container
-    participant AnsiUtils
-    Caller->>Tui: render()
-    Tui->>Terminal: getSize()
-    Terminal-->>Tui: TerminalSize(width,height)
-    Tui->>Container: render(width)
-    Container-->>Tui: newLines
-    alt 首帧 or 尺寸变化 or 收缩
-        Tui->>Tui: fullRender(newLines,width,height,clear)
-        Tui->>AnsiUtils: sliceByColumn(line,0,width)
-        AnsiUtils-->>Tui: 截断后的 line
-        Tui->>Terminal: write(SYNC_START + ERASE + lines + SYNC_END)
-    else 常规差分
-        Tui->>Tui: computeChangeRange(newLines)
-        Tui->>Tui: emitDiffFrame(range,newLines,width,height)
-        Tui->>Terminal: write(SYNC_START + 相对光标移动 + CLEAR_LINE + 改动行 + SYNC_END)
-    end
-```
+![TUI 渲染时序](./tui/render-sequence.svg)
+
+[PlantUML 源文件](./tui/diagram.puml#L22)
 
 图中 `render(width)`、`newLines`、`fullRender`、`computeChangeRange`、`emitDiffFrame`、`sliceByColumn`、`SYNC_START/SYNC_END`、`CLEAR_LINE` 等措辞均与上面正文 step 列表一致。
 
@@ -231,54 +206,9 @@ sequenceDiagram
 
 下面 classDiagram 给出关键类与关系（≤ 15 节点，类名集合 ⊆ 下方表中类名）：
 
-```mermaid
-classDiagram
-    class Component {
-        <<interface>>
-        +render(int width) List~String~
-        +handleInput(String data)
-        +invalidate()
-    }
-    class Focusable {
-        <<interface>>
-        +isFocused() boolean
-        +setFocused(boolean)
-    }
-    class Terminal {
-        <<interface>>
-    }
-    class Tui
-    class Container
-    class Box
-    class Text
-    class Input
-    class Editor
-    class SelectList
-    class MarkdownComponent
-    class FuzzyMatcher
-    class AnsiUtils
-    class JLineTerminal
-    class TestTerminal
+![TUI 模块核心类](./tui/core-classes.svg)
 
-    Container ..|> Component
-    Box ..|> Component
-    Text ..|> Component
-    Input ..|> Component
-    Input ..|> Focusable
-    Editor ..|> Component
-    Editor ..|> Focusable
-    SelectList ..|> Component
-    SelectList ..|> Focusable
-    MarkdownComponent ..|> Component
-    JLineTerminal ..|> Terminal
-    TestTerminal ..|> Terminal
-    Tui *-- Container
-    Tui --> Terminal : uses
-    Tui --> AnsiUtils : uses
-    Container o-- Component
-    Box *-- Component
-    Input --> FuzzyMatcher : optional
-```
+[PlantUML 源文件](./tui/diagram.puml#L52)
 
 正文表（按包组织，每个一级包列对外/入口/核心抽象，借用类的 javadoc 一行职责）：
 
@@ -419,3 +349,4 @@ classDiagram
 | 日期 | 提出人 | 角色 | 问题/议题 | 讨论过程 | 决策结论 | 状态 |
 |---|---|---|---|---|---|---|
 | 2026-05-14 | - | - | 设计文档由 codebase-module-design skill 基于代码逆向生成 v1 | 通过静态分析 `pom.xml` + 包结构 + 关键类 javadoc 完成 | 由开发者补充关键决策（如：为何手写差分渲染而不直接用 Lanterna 全屏画布；macOS Terminal 兼容策略的取舍） | 开放 |
+| 2026-08-18 | Codex | 文档维护 | 设计图格式不符合全局 PlantUML 规范 | 保持节点和关系语义不变，补充源码证据并生成 SVG | Mermaid 迁移为单一 `diagram.puml` 中的稳定命名图 | 已落实 |

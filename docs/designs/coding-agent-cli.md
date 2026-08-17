@@ -1,4 +1,4 @@
-# coding-agent-cli 模块实现设计文档（基于代码 v1）
+# coding-agent-cli 模块实现设计文档（基于代码 v1.1）
 
 ## 文档信息
 
@@ -8,9 +8,15 @@
 | Story 名称 | coding-agent-cli 设计文档（基于代码 v1） |
 | 负责人 | 待开发者补充 |
 | 创建日期 | 2026-05-14 |
-| 版本 | v1.0 (code-derived) |
+| 版本 | v1.1 (code-derived) |
 
-> 本文档基于 `modules/coding-agent-cli` 现有源码逆向生成。该模块是 CampusClaw 项目（前身 pi-mono-java）的最终装配层与 CLI 入口，artifact 为 `campusclaw-coding-agent`，打包产物 `campusclaw-agent.jar`（fat JAR）。
+> 本文档基于源码提交 `cc2f58d9e24bae1d7c99b9f54e86b71940d86115` 分析，并按
+> 2026-08-18 的 HTTP + SSE 目标设计更新。主要源码证据为
+> `ServerMode#run/wireServerRoutes`、`RuntimeApiRoutes#routes`、
+> `RuntimeEventService`、`RuntimeSessionService`、`RuntimeSessionControlService`、
+> `MyBatisRuntimeSessionRepository` 及 `Agent#abort/continueQueuedExecution`。
+> 该模块是 CampusClaw 项目（前身 pi-mono-java）的最终装配层与 CLI 入口，
+> artifact 为 `campusclaw-coding-agent`，打包产物 `campusclaw-agent.jar`（fat JAR）。
 
 ---
 
@@ -34,7 +40,8 @@
 - **CLI 入口**：Picocli `@Command` 解析参数；支持 `-m`/`--mode`/`--prompt`/`--cwd`/`--proxy`/`--session`/`--resume` 等 25+ 选项；
 - **多模式分发**：5 种主模式（interactive/one-shot/rpc/server/print）+ 隐藏 cron-tick 模式 + ACP 模式；
 - **工具实现**：14 个 LLM `AgentTool` 落地实现（包含 LOCAL/SANDBOX 双路由）；
-- **HTTP server**：Reactor Netty 暴露 REST + SSE + WebSocket（参考 `docs/openapi/campusclaw-api.yaml`）；
+- **HTTP server**：Reactor Netty 统一暴露 REST + SSE；旧 `/api/*` 供本地使用，
+  Runtime V1 使用 `/campusclaw-service/v1/*`；
 - **会话持久化**：JSONL 格式记录历史消息，跨进程恢复；
 - **Skill 扩展机制**：用户可在 `~/.campusclaw/packages` 安装 git/本地目录形式的 skill 包；
 - **Extension 扩展机制**：仓库内开发者可注册新 `AgentTool` / `SlashCommand` / `BeforeToolCallHandler` 等；
@@ -52,7 +59,7 @@
 | campusclaw-tui | 依赖 | 使用 `JLineTerminal` / `Terminal` 抽象、ANSI 工具、组件 |
 | campusclaw-cron | 依赖（可选 `@Nullable`） | 调用 `CronService` 创建/触发定时任务；本模块通过 `--cron-tick` 暴露给 launchd/crontab |
 | docs/openapi/campusclaw-api.yaml | 输出 | HTTP server 模式 API 契约文档（由本模块 `ServerMode` 实现） |
-| docs/asyncapi/chat-ws.yaml | 输出 | `/api/ws/chat` WebSocket 契约（由 `ChatWebSocketHandler` 实现） |
+| docs/plans/campusclaw-http-v1-implementation.md | 输出 | Runtime V1 实施边界、源码证据与真实验证记录 |
 
 ---
 
@@ -60,24 +67,9 @@
 
 ### 2.1 Story 上下文
 
-```mermaid
-flowchart LR
-    ai["campusclaw-ai"]
-    core["campusclaw-agent-core"]
-    tui["campusclaw-tui"]
-    cron["campusclaw-cron"]
-    cli["campusclaw-coding-agent"]
-    spring["spring-boot + webflux (外部)"]
-    picocli["picocli (外部)"]
-    docker["Docker daemon (外部, 可选)"]
-    ai --> cli
-    core --> cli
-    tui --> cli
-    cron --> cli
-    spring --> cli
-    picocli --> cli
-    cli -.可选.-> docker
-```
+![coding-agent-cli 模块上下文](./coding-agent-cli/module-context.svg)
+
+[PlantUML 源文件](./coding-agent-cli/diagram.puml#L1)
 
 文字补充：
 
@@ -95,7 +87,7 @@ flowchart LR
 | 2 | 工具实现（local） | `ReadTool` / `WriteTool` / `EditTool` / `EditDiffTool` / `BashTool` / `GlobTool` / `GrepTool` / `LsTool` 八个核心 + `LoopTool` / `SpawnAgentTool` 两个编排 | 高 | - |
 | 3 | 工具混合路由（hybrid） | `Hybrid*Tool` 六个变体通过 `ExecutionRouter` + `ToolExecutionStrategy` 在 LOCAL / SANDBOX / AUTO 间分派 | 中 | - |
 | 4 | Docker 沙箱执行 | `DockerSandboxClient` + `SandboxSecurityPolicy` + `ResourceLimits` 把工具操作封装在容器内 | 中 | - |
-| 5 | HTTP server 模式 | `ServerMode` 用 Reactor Netty 暴露 `/api/chat` (SSE)、`/api/skills` (CRUD)、`/api/ws/chat` (WS) | 高 | - |
+| 5 | HTTP server 模式 | `ServerMode` 用 Reactor Netty 暴露旧 `/api/*` 与 Runtime V1 HTTP + SSE | 高 | - |
 | 6 | RPC 模式 | `RpcMode` 通过 stdin/stdout JSONL 与外部 controller 通信 | 中 | - |
 | 7 | ACP 模式 | `AcpMode` 把本进程封装为 ACP stdio agent，供其它进程嵌入 | 低 | - |
 | 8 | 会话 JSONL 持久化 | `SessionPersistence` / `SessionManager` 把消息历史写入 `~/.campusclaw/agent/sessions/--<cwd>--/<id>.jsonl` | 高 | - |
@@ -118,7 +110,7 @@ flowchart LR
 1. **Spring Boot + Picocli 双重启动器**：`CampusClawApplication` 是 `@SpringBootApplication`，通过 `picocli-spring-boot-starter` 把 Spring bean 注入到 `@Command` 注解的 `CampusClawCommand` 中；`SpringApplication.run` 完成包扫描后由 `CommandLineRunner` 把 args 交给 Picocli 解析，最终调用 `call()`；
 2. **模式分发**：`call()` 内 if/else 链按 `--mode` / `--print` / `--export` / `--list-models` / `--cron-tick` 等开关路由到对应 mode 类（`InteractiveMode` / `OneShotMode` / `RpcMode` / `ServerMode` / 直接出口）；
 3. **工具实现作为 `AgentTool` bean**：每个工具一个 `@Component`，靠 `ConditionalOnProperty(name = "tool.execution.hybrid-enabled", havingValue = "false")` 切换 LOCAL vs Hybrid 变体——同名工具二选一注入 `List<AgentTool>`；
-4. **Reactor Netty 嵌入式 HTTP**：server 模式不走 spring-mvc tomcat，而是直接 `HttpServer.create(...)` + `RouterFunctions.toHttpHandler(...)` —— Webflux 的函数式路由更轻；同一 server 同时挂 `routes.get("/api/ws/chat", ...)` 走原生 reactor-netty WebSocket；
+4. **Reactor Netty 嵌入式 HTTP**：server 模式不走 spring-mvc tomcat，而是直接 `HttpServer.create(...)` + `RouterFunctions.toHttpHandler(...)`；旧 `/api/*` 和 Runtime V1 路由组合到同一个 `RouterFunction`，流式响应统一使用 SSE；
 5. **JSONL 会话**：消息序列化为 polymorphic Jackson JSON（`role` 字段作为 discriminator），按 `--<encoded-cwd>--/<id>.jsonl` 路径组织，每条消息一行，方便 grep / 增量追加；
 6. **Skill / Extension 双层扩展**：Skill 是**运行时**用户可装的 markdown 包（带 `SKILL.md` 元数据），主要内容是 prompt 片段；Extension 是**编译期**仓库内 Java 类实现，注册到 6 种 `ExtensionPoint`；
 7. **Hybrid 路由**：每个工具实现 `ToolExecutionStrategy`（local 策略）+ 对应的 `SandboxExecutionStrategy`（Docker 策略），`ExecutionRouter` 按 `ExecutionMode` 选一个执行；这套机制独立于 agent-core 的 `ToolExecutionPipeline`，只在工具内部生效；
@@ -142,29 +134,9 @@ flowchart LR
 10. `会话退出`：写回 JSONL session 文件、关闭 cron engine、关闭 sub-agent backend；
 11. `getExitCode`：把 Picocli 返回值作为 JVM exit code 退出。
 
-```mermaid
-sequenceDiagram
-    participant JVM
-    participant CampusClawApplication
-    participant SpringContext
-    participant CampusClawCommand
-    participant Mode as Mode (Interactive/OneShot/Rpc/Server)
-    participant AgentSession
-    participant Agent
-    JVM->>CampusClawApplication: main(args)
-    CampusClawApplication->>SpringContext: SpringApplication.run
-    SpringContext-->>CampusClawApplication: 注入 piCommand + factory
-    CampusClawApplication->>CampusClawCommand: execute(args)
-    CampusClawCommand->>CampusClawCommand: applyProxyOverride / dispatchSubcommand
-    CampusClawCommand->>AgentSession: 构造 (model/tools/skills)
-    CampusClawCommand->>Mode: run(session)
-    Mode->>AgentSession: prompt(text)
-    AgentSession->>Agent: prompt(...)
-    Agent-->>Mode: AgentEvent 流 (TurnStart/MessageUpdate/ToolExec.../TurnEnd)
-    Mode-->>JVM: 渲染输出 / 写 SSE / 写 JSONL
-    Mode-->>CampusClawCommand: exit code
-    CampusClawCommand-->>JVM: System.exit
-```
+![coding-agent-cli 启动时序](./coding-agent-cli/startup-sequence.svg)
+
+[PlantUML 源文件](./coding-agent-cli/diagram.puml#L28)
 
 **模式分派表（step 8 路由表）：**
 
@@ -224,12 +196,31 @@ sequenceDiagram
 | 流式对话 | POST | `/api/chat` | JSON: `{conversation_id, message, model?}` | SSE `event: message` / `event: tool_call` / `event: done` | 多 conversation 持久会话 |
 | 列出会话 | GET | `/api/conversations` | - | `{conversations: [...]}` | 列出 server pool 中的 conversation |
 | 删除会话 | DELETE | `/api/conversations/{id}` | path: id | `{removed: bool}` | 释放 server pool 槽位 |
-| WebSocket 对话 | GET (Upgrade) | `/api/ws/chat?conversation_id=...` | query: conversation_id | WebSocket text frame (AsyncAPI 契约) | 双向流，由 `ChatWebSocketHandler` 处理 |
 | 上传 skill | POST | `/api/skills` | multipart: `file=<archive>` (.zip/.tar.gz/.tgz) | `{name, packageName, installed}` | 上传后立即解压安装 |
 | 列出 skill | GET | `/api/skills` | - | `{skills: [...]}` | 含 enabled / disabled 状态 |
 | 删除 skill | DELETE | `/api/skills/{name}` | path: name | `{removed: bool}` | 按 package name 移除 |
 | 启用 skill | POST | `/api/skills/{name}/enable` | path: name | `{enabled: true}` | 影响下次新建 session |
 | 禁用 skill | POST | `/api/skills/{name}/disable` | path: name | `{enabled: false}` | 同上 |
+
+Runtime V1 的 11 个公开接口均使用 `/campusclaw-service/v1` 前缀：
+
+| 序号 | 方法与路径 | 作用 |
+|---:|---|---|
+| 1 | `POST /agents/{agent_id}/sessions` | 从已发布 Agent 快照创建 Session |
+| 2 | `GET /sessions/{session_id}` | 查询 Session 当前资源状态与强 ETag |
+| 3 | `DELETE /sessions/{session_id}` | 幂等删除 Session 并保留 tombstone |
+| 4 | `POST /sessions/{session_id}/events` | 接受用户消息并以 SSE 返回完整执行事件 |
+| 5 | `GET /sessions/{session_id}/events` | 按不透明游标分页查询当前分支对话 Entry |
+| 6 | `GET /sessions/{session_id}/models` | 查询当前模型与可用模型 ID 字符串数组 |
+| 7 | `PUT /sessions/{session_id}/model` | 在 idle 状态按强 `If-Match` 切换模型 |
+| 8 | `PUT /sessions/{session_id}/thinking` | 在 idle 状态开启或关闭深度思考 |
+| 9 | `POST /sessions/{session_id}/steers` | 向 active execution 的高优先级队列追加消息 |
+| 10 | `POST /sessions/{session_id}/follow-ups` | 向 active execution 的后续队列追加消息 |
+| 11 | `POST /sessions/{session_id}/abort` | 幂等中止执行并等待 Session 收敛到 idle |
+
+普通成功响应使用 `resCode/resMsg/result`；异常仅使用 `resCode/resMsg`；
+204 与 SSE 响应不套 ResultBean。JWT 是默认鉴权方式，APPKEY 作为兼容方式，
+两套凭据不可混用。
 
 #### LLM Tool 接口（`AgentTool` 实现，由 agent 在对话中自动调用）
 
@@ -295,9 +286,10 @@ sequenceDiagram
 
 ### 3.5 数据库及持久化设计
 
-本模块**自身**不直接操作数据库（无 `@Entity` / `@Mapper` / `executeQuery`）。持久化分两类：
+本模块同时保留本地文件会话与 Runtime V1 openGauss 会话，两者服务于不同接口，
+不共享 ID 或事务边界。
 
-**1. 文件持久化（本模块直接负责）：**
+**1. 文件持久化（旧 `/api/*` 与 CLI）：**
 
 | 路径 | 格式 | 写入类 | 说明 |
 |---|---|---|---|
@@ -311,7 +303,23 @@ sequenceDiagram
 | `~/.campusclaw/settings.json` | JSON | `SettingsManager` | 用户设置 |
 | `~/.campusclaw/auth/<provider>.json` | JSON | `AuthStorage` | provider 凭据（apiKey / refreshToken 等） |
 
-持久化均为本地文件，无数据库链路；会话历史只走上述 JSONL。
+**2. openGauss 持久化（Runtime V1）：**
+
+源码证据为 `db/gaussdb/install/session_schema.sql`、
+`mapper/session/RuntimeSessionMapper.xml` 与 `MyBatisRuntimeSessionRepository`。
+MyBatis 使用参数绑定，不拼接用户输入形成 SQL。
+
+| 表 | 作用 |
+|---|---|
+| `t_sessions` | Session 元数据、owner、模型、thinking、状态、版本和当前分支叶子 |
+| `t_session_entries` | 带 `parent_id` 与严格 `entry_seq` 的可分支对话 Entry |
+| `t_session_sequences` | 为每个 Session 分配严格递增的 Entry 序号 |
+| `t_session_materialized` | 当前路径与生命周期用量等物化汇总 |
+| `t_session_tombstone` | 永不复用的 `session_id` 与 `deleted_at` |
+| `t_session_cleanup_task` | 逻辑删除后的可重试异步物理清理任务 |
+
+Runtime Session 创建、状态切换、Entry 追加和配置 CAS 均由 Repository 事务完成；
+GET Events 只投影当前 `active_leaf_id` 回溯得到的分支。
 
 ### 3.6 代码设计
 
@@ -331,9 +339,17 @@ sequenceDiagram
 **`com.campusclaw.codingagent.mode.server`**
 - `ServerMode`：Reactor Netty HTTP server 启动器，注册路由
 - `ChatHandler`：`/api/chat` SSE handler
-- `ChatWebSocketHandler`：`/api/ws/chat` WebSocket handler
 - `SkillHandler`：`/api/skills/*` REST handler
 - `SessionPool`：server 模式下 conversation_id → `AgentSession` 复用池
+
+**`com.campusclaw.codingagent.runtimeapi`**
+- `RuntimeApiRoutes`：组合 Runtime V1 的 11 条函数式 HTTP 路由与鉴权 Filter
+- `RuntimeSessionService`：创建、查询、删除 Session
+- `RuntimeEventService`：用户消息接受、Agent 事件投影、SSE 生命周期和历史分页
+- `RuntimeSessionConfigurationService`：模型与深度思考的强 ETag/CAS 更新
+- `RuntimeSessionControlService`：Steer、FollowUp 与 Abort 的线性化控制
+- `RuntimeSessionEngineRegistry`：按 Session 管理进程内 Agent 与条带操作锁
+- `MyBatisRuntimeSessionRepository`：openGauss Session/Entry/删除事务适配器
 
 **`com.campusclaw.codingagent.mode.rpc`**
 - `RpcMode`：JSONL stdin/stdout 协议入口
@@ -445,64 +461,9 @@ sequenceDiagram
 **`com.campusclaw.codingagent.diff` / `diagnostic` / `export` / `footer` / `guard` / `keybinding` / `migration` / `model` / `pkg` / `resolver` / `resource` / `source` / `theme` / `util`**
 - 各类辅助包：diff 渲染、诊断、HTML 导出、键位绑定、目录迁移、模型目录、主题、通用工具等
 
-```mermaid
-classDiagram
-    class CampusClawApplication
-    class CampusClawCommand
-    class InteractiveMode
-    class OneShotMode
-    class RpcMode
-    class ServerMode
-    class AgentSession
-    class SessionManager
-    class SessionPersistence
-    class SlashCommandRegistry
-    class SlashCommand
-    <<interface>> SlashCommand
-    class ExtensionRegistry
-    class ExtensionPoint
-    class SkillManager
-    class SkillLoader
-    class SkillExpander
-    class BashTool
-    class ReadTool
-    class WriteTool
-    class EditTool
-    class ExecutionRouter
-    class ToolExecutionStrategy
-    <<interface>> ToolExecutionStrategy
-    class DockerSandboxClient
-    class HybridBashTool
-    class SettingsManager
-    class Compactor
-    class SubAgentAutoConfiguration
+![coding-agent-cli 核心类关系](./coding-agent-cli/core-classes.svg)
 
-    CampusClawApplication --> CampusClawCommand : runs
-    CampusClawCommand --> InteractiveMode : --mode interactive
-    CampusClawCommand --> OneShotMode : --mode one-shot
-    CampusClawCommand --> RpcMode : --mode rpc
-    CampusClawCommand --> ServerMode : --mode server
-    CampusClawCommand --> AgentSession : creates
-    AgentSession --> SessionManager : persists via
-    SessionManager --> SessionPersistence : uses
-    InteractiveMode --> SlashCommandRegistry : dispatches /commands
-    SlashCommandRegistry o-- SlashCommand
-    CampusClawCommand --> ExtensionRegistry : reads
-    ExtensionRegistry --> ExtensionPoint : indexed by
-    AgentSession --> SkillLoader : loads skills
-    SkillLoader --> SkillExpander : feeds
-    SkillManager --> SkillLoader : installs for
-    HybridBashTool --> ExecutionRouter : delegates
-    ExecutionRouter --> ToolExecutionStrategy : selects
-    ToolExecutionStrategy <|.. BashTool
-    ToolExecutionStrategy <|.. ReadTool
-    ToolExecutionStrategy <|.. WriteTool
-    ToolExecutionStrategy <|.. EditTool
-    ExecutionRouter --> DockerSandboxClient : SANDBOX path
-    CampusClawCommand --> SettingsManager : reads settings.json
-    AgentSession --> Compactor : on /compact
-    CampusClawApplication --> SubAgentAutoConfiguration : auto-wires
-```
+[PlantUML 源文件](./coding-agent-cli/diagram.puml#L58)
 
 ### 3.7 安装部署设计
 
@@ -620,8 +581,9 @@ classDiagram
 - **OS 兼容**：
   - shell：`ShellResolver` 在 Windows 上回退到 `/bin/bash`（Git Bash） → `which bash` → `sh`；
   - 调度器：`SystemSchedulerInstaller` 区分 macOS launchd / Linux crontab；
-- **HTTP 契约**：`docs/openapi/campusclaw-api.yaml` 是权威，`docs/server-api.md` 是历史遗留快照（已标 deprecated）；
-- **WebSocket 契约**：`docs/asyncapi/chat-ws.yaml`；
+- **HTTP 契约**：`docs/openapi/campusclaw-api.yaml` 只描述旧 `/api/*`；Runtime V1
+  的权威评审面是设计仓库 HTML，本仓以
+  `docs/plans/campusclaw-http-v1-implementation.md` 记录实现映射与证据；
 - **subagent 协议**：ACP 版本号在 `agent-core` 的 `AcpProtocol` 中固定，HTTP backend 通过 `HttpAgentConfig.protocolVersion` 暴露。
 
 ### 4.3 可维护性设计
@@ -634,11 +596,13 @@ classDiagram
 - **诊断**：`diagnostic/` 包提供运行时诊断信息（环境、模型、provider 连通性）；
 - **健康检查**：`/api/health` 暴露简单 `{"status":"ok"}` —— 由 reverse proxy / k8s liveness 用；
 - **后台线程**：所有 `new Thread(...)` 装 `LoggingUncaughtExceptionHandler`（如 `LocalBashOperations` 的 bash drainer）—— 仓库强约束；
-- **测试**：38 个测试类，覆盖 mode / session / skill / tool ops / cli 主要分支。
+- **测试**：Maven 单元、路由、Repository、并发和独立 JVM 进程测试覆盖 mode、
+  Session、Events、SSE、鉴权、openGauss、skill、tool ops 与 CLI 主要分支。
 
 ### 4.4 全球化设计
 
-本模块**不涉及**真正的多语言 i18n 资源束（`ResourceBundle` / `messages_*.properties`）。约束规则：
+旧本地接口和 CLI 主要使用英文；Runtime V1 的契约错误按 `Accept-Language`
+返回中英文消息。约束规则：
 
 - 所有日志消息走 SLF4J 且**不含中文**（仓库强约束 `no_chinese_in_log`）；
 - 所有大小写转换、数字格式化显式 `Locale.ROOT`（仓库强约束）；
@@ -653,8 +617,8 @@ classDiagram
 | `README.md`（仓库根） | 用户 quickstart、CLI flag 概览、provider 列表（面向本模块用户） |
 | `CLAUDE.md`（仓库根） | 全仓约束 + 本模块构建/部署说明 |
 | `docs/module-architecture.md` | 多模块依赖图，含本模块的角色 |
-| `docs/openapi/campusclaw-api.yaml` | HTTP server 模式 API 权威契约（本模块实现） |
-| `docs/asyncapi/chat-ws.yaml` | `/api/ws/chat` WebSocket 契约（本模块实现） |
+| `docs/openapi/campusclaw-api.yaml` | 旧 `/api/*` 本地 HTTP 接口契约 |
+| `docs/plans/campusclaw-http-v1-implementation.md` | Runtime V1 实施映射和验证证据 |
 | `ARCHITECTURE-HYBRID.md` / `IMPLEMENTATION-HYBRID.md` / `DOCKER-SANDBOX-GUIDE.md` | hybrid 执行 + sandbox 设计文档 |
 | `docs/server-api.md` | 历史快照，已 deprecated，新接口看 OpenAPI yaml |
 | `docs/DEFERRED.md` | 未完成项登记（按强约束 TODO/FIXME 禁止入代码） |
@@ -665,20 +629,20 @@ classDiagram
 
 | 序号 | 检查项 | 是否涉及 | 说明 |
 |---|---|---|---|
-| 5.1 | 是否有认证机制 | 是 | （a）本模块对外 HTTP server 当前**未实现**鉴权（`/api/chat` / `/api/skills` 路由无 `@PreAuthorize` / SecurityFilter，由部署侧通过反向代理添加鉴权）；（b）对**外部** provider 走 API key / OAuth，凭据由 `AuthStore` 持久化到 `~/.campusclaw/auth/<provider>.json`，`LoginCommand` / `LogoutCommand` 管理；（c）对 sub-agent HTTP backend 支持 `bearer` / `header` / `none` 三种鉴权（继承 `agent-core` 的 `HttpAgentConfig`），token 由 `subagent.backends.<id>.auth-token` 注入，支持 `${ENV}` 占位 |
-| 5.2 | 纵向/横向越权 | 否 | 本模块 server 模式为单租户本地服务，无多用户隔离；`SessionPool` 按 conversation_id 路由 session，但 conversation_id 本身不绑定 owner——**部署到公网必须前置鉴权代理** |
+| 5.1 | 是否有认证机制 | 是 | （a）Runtime V1 默认使用 `X-HW-ID + Authorization` JWT，兼容 `X-HW-ID + X-HW-APPKEY`，混用或不完整凭据直接拒绝；（b）旧 `/api/chat` / `/api/skills` 仍是本地接口，部署公网需前置鉴权；（c）外部 provider 走 API key / OAuth；（d）sub-agent HTTP backend 支持 `bearer` / `header` / `none` |
+| 5.2 | 纵向/横向越权 | 是 | Runtime V1 在 `t_sessions.owner_id` 固化创建者，并在每次读取、修改、事件和控制操作前校验所有权；Agent 创建另经 `RuntimeAgentAuthorizer`。旧 `SessionPool` conversation 不绑定 owner，只允许作为本地兼容接口 |
 | 5.3 | 记录操作日志 | 是 | SLF4J 全链路日志：mode 切换、session 加载、skill install/remove、bash 命令执行（命令本身不记录到 INFO，避免泄露 secret）、HTTP 请求由 reactor-netty 内置 access log |
-| 5.4 | SQL 注入 | 不涉及 | 本模块自身无 SQL 调用（grep 验证：无 `executeQuery` / `String.format` + SQL），且不含任何 DB 持久化链路（会话历史只走本地 JSONL） |
+| 5.4 | SQL 注入 | 是 | Runtime V1 使用 MyBatis Mapper 的 `#{...}` 参数绑定和固定 SQL，不把请求字段拼接为 SQL；真实 openGauss 集成测试覆盖创建、分页、并发 CAS 和删除事务 |
 | 5.5 | XSS 注入 | 是（导出 HTML 场景） | `/export` 把会话导出为 HTML（`export/` 包），消息文本来自 LLM / 用户输入；当前流程下导出文件供用户本地查看不上线公网，但导出器应对 user content 做 HTML escape。**待审计**：`ExportCommand` 链路是否对 message.text 做了 `StringEscapeUtils.escapeHtml4` 类处理 |
 | 5.6 | XML 注入 | 不涉及 | 全链路 JSON（Jackson）+ YAML（snakeyaml）；无 `DocumentBuilderFactory` / `SAXParserFactory` |
 | 5.7 | 命令注入 | **是（核心风险面）** | 多处 `ProcessBuilder` 调用：（a）`BashExecutor` / `LocalBashOperations.buildProcessBuilder` —— `bash` 工具是 LLM **设计要执行用户/agent 提供的命令**的能力，本质上属于"开放命令面"。防护策略：（i）`ProcessBuilder(List<String>)` 形式而非 `Runtime.exec(String)`——argv 不经 `/bin/sh -c` 拼接（避免 shell 元字符注入到 argv 边界），但 `command` 字符串本身确实通过 `bash -c <command>` 由 bash 解析，shell 元字符按设计有效；（ii）超时机制：`BashExecutor` 强制 `timeout` 参数与全局 `local-timeout-seconds`；（iii）进程树清理：`killProcessTree` 递归杀子进程，防止悬挂；（iv）输出截断：`BashTool.MAX_OUTPUT_BYTES=100_000` 防止巨型输出耗尽内存；（v）**沙箱**：当 `tool.execution.default-mode=SANDBOX` 或 hybrid 路由判定为高风险，命令在 `DockerSandboxClient` 拉起的临时容器（默认 alpine:3.19，512m / 1.0 CPU）中执行，配合 `SandboxSecurityPolicy`（capability drop / readonly fs / 网络隔离）——把命令注入降级为"容器内部行为"，逃逸需要 Docker 漏洞。（b）`ShellResolver.resolveBashPath` 调 `which bash` —— argv 固定，无外部输入。（c）`SkillManager.installFromGit` 调 `git clone <url>` —— URL 来自用户 `/skills install <url>`，argv 形式不经 shell，但 URL 本身仍流入 git，建议进一步白名单/校验协议（`https://` / `git@`）。**总体**：bash 工具的命令注入是**设计能力**，沙箱是核心防线；非 bash 路径（git / which / docker exec）走 argv list 形式避免拼接 |
-| 5.8 | 输入校验 | 是 | （a）所有 `AgentTool` 的入参由 `agent-core` 的 `ToolExecutionPipeline.validateArguments` 用 networknt JSON-Schema (2020-12) 校验，schema 在每个 tool 的 `parameters()` 方法中声明；（b）`SkillHandler.upload` 校验文件扩展名（`.zip` / `.tar.gz` / `.tgz`）；（c）Picocli 自动对 `--mode` / `--port` 等做类型校验；（d）`ChatHandler.chat` 反序列化 JSON 由 Jackson 校验类型 |
+| 5.8 | 输入校验 | 是 | （a）Runtime 请求 VO 使用 Jakarta Bean Validation，Jackson 拒绝未知字段，标识符使用公共正则；（b）所有 `AgentTool` 入参由 JSON Schema 校验；（c）`SkillHandler.upload` 校验归档扩展名；（d）Picocli 校验 CLI 类型；（e）旧 `ChatHandler.chat` 由 Jackson 校验类型 |
 | 5.9 | 敏感数据/个人隐私数据 | 是 | provider API key、sub-agent `auth-token` 是敏感凭据。处理：（a）`AuthStorage` 写入 `~/.campusclaw/auth/`，**未加密**（与 ssh / aws cli 行为一致，依赖 UNIX 文件权限保护）；（b）日志中**不输出** token（`HttpAgentConfig` 的 `toString` 排除 token，`ProxyConfig.toUrl()` 屏蔽 password）；（c）`application.yml` 的 secret 通过 `${ENV:default}` 占位，避免 commit 明文；（d）`/share` 命令上传会话需 review：会否携带 stack trace 中的环境变量 |
-| 5.10 | 加解密 | 不涉及 | 本模块无 `Cipher` / `MessageDigest` 调用。TLS 由 HttpClient 默认（JDK / OkHttp）负责；本模块未自管证书 |
+| 5.10 | 加解密 | 是 | Runtime Events 分页游标使用 AES-GCM，密文绑定 Session、方向、页大小和过期时间；生产必须通过 `CAMPUSCLAW_EVENT_CURSOR_SECRET` 提供稳定高熵密钥。TLS 仍由部署层终结 |
 | 5.11 | 文件上传下载 | 是 | （a）上传：`SkillHandler.upload` 用 webflux `FilePart.transferTo(tempFile)` 接 multipart，写入 `Files.createTempFile`，限定扩展名为压缩包，由 `SkillManager` 解压到 `~/.campusclaw/packages/`——zip 解压需防 zip slip（`SkillManager` 的 `Files.copy(zis, entryPath)` 应校验 `entryPath` 在 target dir 之内，**待审计**确认 path traversal 防护）；（b）下载：`/export` 把会话写到本地 HTML 文件，由用户指定路径（命令参数），路径越权风险由 OS 文件权限承担；（c）`MigrationManager.Files.copy` 在备份目录间复制——内部路径，受控 |
 | 5.12 | 硬编码 | 否 | secret 通过 `${ENV:default}` 占位（如 `CAMPUSCLAW_REMOTE_AGENT_TOKEN`、`GAUSSDB_PASSWORD`）或 `~/.campusclaw/auth/` 持久化获取；`application.yml` 默认数据库地址和用户仅作为本地开发占位，密码默认为空；常量如 `DEFAULT_MODEL="claude-sonnet-4-20250514"`、`alpine:3.19` 等是模型名/镜像名，非凭据 |
 | 5.13 | 安全资料 | 否 | 待补充：通信矩阵（server 模式默认 listen `localhost`，端口可配；sub-agent backend 出站到配置 URL；provider 出站到 SaaS LLM endpoint）、命令清单（26 个 slash 命令 + 14 个 LLM tool） |
-| 5.14 | 不安全算法/协议 | 否 | （a）未使用 MD5/SHA1/DES；（b）未发现 `new Random()` 主路径用法；（c）HTTP server 默认明文（部署侧加 TLS 终结）；（d）WebSocket 默认 ws://，部署侧应升级 wss |
+| 5.14 | 不安全算法/协议 | 否 | 未使用 MD5/SHA1/DES；分页游标使用 AES-GCM；HTTP server 默认明文，生产由部署侧终结 TLS |
 | 5.15 | 文件权限 | 是 | （a）`~/.campusclaw/auth/*.json` 含凭据应限制为 owner-only（0600）；当前代码在 `AuthStorage` 处**待审计**是否显式设置 POSIX 权限；（b）`SessionPersistence` 写 JSONL 用 JDK 默认权限（受 umask 控制）；（c）`SkillManager` 解压 zip 时若条目自带可执行位需谨慎 |
 | 5.16 | 权限最小化 | 是 | （a）sandbox 容器：`SandboxSecurityPolicy` 设计为 capability drop + readonly fs（详见 `tool/sandbox/`）；（b）进程：本进程以用户身份运行，无 setuid；（c）网络：server 模式默认 bind `localhost`，`--host` 显式才暴露 |
 | 5.17 | Sudo 提权 | 否 | 不需要 sudo；`SystemSchedulerInstaller` 安装到**当前用户** launchd / crontab，无 root 操作 |
@@ -690,11 +654,11 @@ classDiagram
 | 序号 | 检查项 | 是否完成 | 说明 |
 |---|---|---|---|
 | 6.1 | 串讲与反串讲是否完成 | 否 | 待执行 |
-| 6.2 | 设计文档是否齐全 | 是 | 本文档即设计文档 v1（基于代码逆向） |
+| 6.2 | 设计文档是否齐全 | 是 | 本文档 v1.1 与 Runtime V1 实施计划共同覆盖当前 HTTP + SSE 设计 |
 | 6.3 | CodeChecker 是否清零 | 否 | 需跑 `./mvnw -pl modules/coding-agent-cli validate` 后填 |
 | 6.4 | 代码审视意见是否清零 | 否 | 待 review |
-| 6.5 | 接口是否已经归档 | 否 | HTTP 接口已归档于 `docs/openapi/campusclaw-api.yaml`；slash / tool / SPI 待与 Story 关联 |
-| 6.6 | 是否完成开发自测用例输出并且用例和 US 关联 | 否 | 现有 `src/test/java` 共 38 个 `*Test.java`，待与 Story 关联 |
+| 6.5 | 接口是否已经归档 | 是 | 旧 `/api/*` 见 OpenAPI；Runtime V1 见权威 HTML 与本仓实施映射 |
+| 6.6 | 是否完成开发自测用例输出并且用例和 US 关联 | 是 | 实施计划逐批记录单元、路由、真实 openGauss 和独立进程测试证据 |
 
 ---
 
@@ -703,3 +667,4 @@ classDiagram
 | 日期 | 提出人 | 角色 | 问题/议题 | 讨论过程 | 决策结论 | 状态 |
 |---|---|---|---|---|---|---|
 | 2026-05-14 | - | - | 设计文档由 codebase-module-design skill 基于代码逆向生成 v1 | - | 由开发者补充关键决策（5.5 export HTML escape、5.11 zip slip 防护、5.15 auth 文件权限三处需安全 review） | 开放 |
+| 2026-08-18 | 用户 / Codex | API 评审 | Runtime 接口与旧 WebSocket 并存导致契约重复 | 已逐接口确认 11 条 Session HTTP + SSE 接口，并通过真实 JAR、openGauss 和模型协议桩验证 | 删除公开 WebSocket handler、路由、AsyncAPI 和测试资料；旧 `/api/chat` 仅作本地兼容，Runtime V1 为新集成入口 | 已落实 |

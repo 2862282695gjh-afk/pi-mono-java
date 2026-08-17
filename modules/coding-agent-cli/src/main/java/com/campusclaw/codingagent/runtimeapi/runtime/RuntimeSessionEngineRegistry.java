@@ -14,7 +14,6 @@ import java.util.concurrent.locks.ReentrantLock;
 
 import com.campusclaw.agent.Agent;
 import com.campusclaw.agent.queue.MessageQueue.DeliveryMode;
-import com.campusclaw.agent.subagent.SubAgentRegistry;
 import com.campusclaw.agent.tool.AgentTool;
 import com.campusclaw.ai.CampusClawAiService;
 import com.campusclaw.ai.types.Message;
@@ -47,13 +46,9 @@ public class RuntimeSessionEngineRegistry {
 
     private final List<AgentTool> tools;
 
-    private final SubAgentRegistry subAgentRegistry;
-
-    public RuntimeSessionEngineRegistry(
-            CampusClawAiService aiService, List<AgentTool> tools, SubAgentRegistry subAgentRegistry) {
+    public RuntimeSessionEngineRegistry(CampusClawAiService aiService, List<AgentTool> tools) {
         this.aiService = aiService;
         this.tools = List.copyOf(tools);
-        this.subAgentRegistry = subAgentRegistry;
     }
 
     public RuntimeSessionHolder initialize(
@@ -95,7 +90,6 @@ public class RuntimeSessionEngineRegistry {
             return;
         }
         holder.agent().abort();
-        subAgentRegistry.cancelAll("session-delete");
     }
 
     private Agent createAgent(

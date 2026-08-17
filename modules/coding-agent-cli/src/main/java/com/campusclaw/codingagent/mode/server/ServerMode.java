@@ -31,9 +31,9 @@ import reactor.netty.http.server.HttpServer;
 import reactor.netty.http.server.HttpServerResponse;
 
 /**
- * HTTP server mode: starts a Reactor Netty server exposing REST + SSE endpoints.
+ * HTTP 服务模式，启动提供 REST 与 SSE 接口的 Reactor Netty 服务。
  *
- * <p>Endpoints:
+ * <p>旧本地接口：
  * <ul>
  *   <li>GET    /api/health                — health check</li>
  *   <li>POST   /api/chat                  — streaming chat (SSE), multi-conversation</li>
@@ -56,11 +56,9 @@ public class ServerMode {
     private static final Logger log = LoggerFactory.getLogger(ServerMode.class);
 
     /*
-     * Dedicated logger for the startup banner. The category name is decoupled from
-     * the class's package so its level can be configured independently of
-     * `logging.level.com.campusclaw` (which we keep at WARN to avoid runtime noise).
-     * Pinned to INFO via application.yml so `pi --mode server` always shows the
-     * endpoint list to the operator who launched it.
+     * 启动横幅专用日志。日志分类名与类包名解耦，可独立于
+     * {@code logging.level.com.campusclaw} 配置级别；后者保持 WARN 以减少运行噪声。
+     * application.yml 将横幅固定为 INFO，使 {@code pi --mode server} 始终向操作者展示接口列表。
      */
     private static final Logger banner = LoggerFactory.getLogger("CampusClawStartupBanner");
 
@@ -79,10 +77,11 @@ public class ServerMode {
     private final CustomModelLoader customModelLoader;
 
     /**
-     * Additional {@link RouterFunction}s contributed by other modules (e.g. the in-process
-     * control plane's {@code NodeRoutes} / {@code RuntimeRoutes}). Combined into the main
-     * router chain in {@link #buildRoutes} so out-of-tree handlers can serve under the same
-     * reactor-netty server.
+     * 其他模块贡献的附加 {@link RouterFunction}，例如进程内控制面的
+     * {@code NodeRoutes} 与 {@code RuntimeRoutes}。
+     *
+     * <p>这些路由通过 {@link #buildRoutes} 合并到主路由链，使外部处理器复用同一
+     * Reactor Netty 服务。
      */
     private List<RouterFunction<ServerResponse>> extraRoutes = List.of();
 
@@ -194,13 +193,13 @@ public class ServerMode {
     }
 
     /**
-     * Registers additional {@link RouterFunction}s that should be served by this
-     * reactor-netty instance — typically the in-process control plane's {@code NodeRoutes}
-     * and {@code RuntimeRoutes} contributed by Spring beans. Routes are merged into the
-     * main router chain via {@code andOther}, so each contributed function still uses its
-     * own {@code RouterFunctions.route()} structure.
+     * 注册由当前 Reactor Netty 实例承载的附加 {@link RouterFunction}。
      *
-     * @param routes additional router functions; {@code null} or empty is tolerated
+     * <p>典型来源是 Spring Bean 提供的进程内控制面 {@code NodeRoutes} 与
+     * {@code RuntimeRoutes}。路由通过 {@code andOther} 合并，每个函数仍保留自身的
+     * {@code RouterFunctions.route()} 结构。
+     *
+     * @param routes 附加路由函数，允许为 {@code null} 或空集合
      */
     public void setExtraRoutes(List<RouterFunction<ServerResponse>> routes) {
         this.extraRoutes = routes == null ? List.of() : List.copyOf(routes);
@@ -217,7 +216,6 @@ public class ServerMode {
                 useSandbox,
                 sessionPersistenceEnabled);
         var chatHandler = new ChatHandler(sessionPool);
-        var wsHandler = new ChatWebSocketHandler(sessionPool, modelCatalog);
         var skillHandler = new SkillHandler(
                 new SkillManager(AppPaths.USER_SKILLS_DIR, sandboxParser, useSandbox),
                 new SkillLoader(sandboxParser, useSandbox));
@@ -227,7 +225,7 @@ public class ServerMode {
         var server = HttpServer.create()
                 .host(host)
                 .port(port)
-                .route(r -> wireServerRoutes(r, wsHandler, adapter))
+                .route(r -> wireServerRoutes(r, adapter))
                 .bindNow();
         logStartupBanner();
         server.onDispose().block();
@@ -283,24 +281,20 @@ public class ServerMode {
     }
 
     private static void wireServerRoutes(
-            reactor.netty.http.server.HttpServerRoutes routes,
-            ChatWebSocketHandler wsHandler,
-            ReactorHttpHandlerAdapter adapter) {
-        // CORS preflight — `fetch()` from the Vite dev server (a different
-        // origin than the API) sends OPTIONS for any non-simple request.
-        // Reply 204 with the allow headers; browsers cache for 1h.
+            reactor.netty.http.server.HttpServerRoutes routes, ReactorHttpHandlerAdapter adapter) {
+        // Vite 开发服务器与 API 不同源，fetch 对非简单请求会先发送 CORS OPTIONS 预检。
+        // 返回 204 和允许头，浏览器缓存一小时。
         routes.options("/api/**", (req, res) -> {
             applyCorsHeaders(res);
             return res.status(204).send();
         });
-        routes.get("/api/ws/chat", (req, res) -> {
-            String convId = extractQueryParam(req.uri(), "conversation_id");
-            return res.sendWebsocket((in, out) -> wsHandler.handle(in, out, convId));
+        routes.options("/campusclaw-service/**", (req, res) -> {
+            applyCorsHeaders(res);
+            return res.status(204).send();
         });
 
-        // All other routes (the WebFlux RouterFunctions adapter) go through
-        // here. We pre-stamp CORS headers on the response so even simple GETs
-        // from the browser pass the same-origin check.
+        // 其他路由统一交给 WebFlux RouterFunctions 适配器，并预先写入 CORS 响应头，
+        // 使浏览器发出的简单 GET 也能通过同源检查。
         routes.route(req -> true, (req, res) -> {
             applyCorsHeaders(res);
             return adapter.apply(req, res);
@@ -335,18 +329,14 @@ public class ServerMode {
         banner.info("  POST   /campusclaw-service/v1/sessions/{session_id}/steers");
         banner.info("  POST   /campusclaw-service/v1/sessions/{session_id}/follow-ups");
         banner.info("  POST   /campusclaw-service/v1/sessions/{session_id}/abort");
-        banner.info("  WS     /api/ws/chat");
     }
 
     /**
-     * Stamps the response with permissive CORS headers so the Vite dev server
-     * (a different origin than the API) can call the REST endpoints from JS.
+     * 写入宽松的 CORS 响应头，使不同源的 Vite 开发服务器可以从 JS 调用 REST 接口。
      *
-     * <p>Origin is wide-open ({@code *}) because the server is meant to be run
-     * on the developer's own machine; tightening this should be done by an
-     * operator deploying the server publicly.
+     * <p>服务主要在开发者本机运行，因此 Origin 使用 {@code *}；公开部署时应由运维人员收紧。
      *
-     * @param res the res
+     * @param res HTTP 服务响应
      */
     static void applyCorsHeaders(HttpServerResponse res) {
         res.header("Access-Control-Allow-Origin", "*")
@@ -355,35 +345,5 @@ public class ServerMode {
                         "Access-Control-Allow-Headers",
                         "Content-Type, Authorization, Accept, Accept-Language, X-HW-ID, X-HW-APPKEY, If-Match")
                 .header("Access-Control-Max-Age", "3600");
-    }
-
-    /**
-     * Extracts a query parameter value from a request URI.
-     * Returns null if the parameter is absent or empty.
-     *
-     * @param uri the uri
-     * @param name the name
-     * @return the result
-     */
-    static String extractQueryParam(String uri, String name) {
-        if (uri == null) {
-            return null;
-        }
-        int qIdx = uri.indexOf('?');
-        if (qIdx < 0 || qIdx == uri.length() - 1) {
-            return null;
-        }
-        String query = uri.substring(qIdx + 1);
-        String prefix = name + "=";
-        for (String pair : query.split("&")) {
-            if (pair.startsWith(prefix)) {
-                String value = pair.substring(prefix.length());
-                if (value.isEmpty()) {
-                    return null;
-                }
-                return java.net.URLDecoder.decode(value, java.nio.charset.StandardCharsets.UTF_8);
-            }
-        }
-        return null;
     }
 }

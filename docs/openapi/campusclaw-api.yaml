@@ -2,9 +2,9 @@ openapi: 3.0.3
 
 info:
   title: CampusClaw HTTP API
-  version: 1.0.0
+  version: 1.1.0
   description: |
-    `campusclaw --mode server` 模式下暴露的 REST + SSE + WebSocket 接口。
+    `campusclaw --mode server` 模式下保留的旧 `/api/*` REST + SSE 接口。
 
     CampusClaw 的 HTTP Server 模式对外提供一组 REST 端点，用于流式对话、会话
     管理、技能（skill）包管理以及 settings 写入。
@@ -19,13 +19,12 @@ info:
     | skills | `GET\|POST /api/skills`、`DELETE /api/skills/{name}`、`POST /api/skills/{name}/{enable\|disable}` |
     | settings | `GET /api/settings/models`、`PUT /api/settings/models/default`、`PUT /api/settings/customModels` |
 
-    **WebSocket 通道 `/api/ws/chat` 不在本文件**：它是消息 / 事件驱动的双向
-    通道，用 **AsyncAPI 3.0** 描述在 `docs/asyncapi/chat-ws.yaml` 中——OpenAPI
-    没有 WebSocket 语义，不强行塞进来。功能上 `POST /api/chat` 是
-    "fire-and-forget" 的 SSE，缺少 steer / abort / 模型切换等交互能力；需要
-    完整能力的客户端应走 WebSocket，并参考那份 AsyncAPI 契约。
+    CampusClaw Runtime V1 已统一为 HTTP + SSE，路径前缀为
+    `/campusclaw-service/v1`，并提供 Session、Events、Steer、FollowUp、Abort、
+    模型和深度思考接口。本文件不再承担 Runtime V1 的权威契约；实施边界与验证
+    证据见 `docs/plans/campusclaw-http-v1-implementation.md`。
 
-    **CORS**：所有 `/api/**` 路径都接受 `OPTIONS` 预检请求，服务端返回 204
+    **CORS**：所有 `/api/**` 与 `/campusclaw-service/**` 路径都接受 `OPTIONS` 预检请求，服务端返回 204
     并附 `Access-Control-Allow-Origin: *`、允许的方法 / 头部、`Max-Age: 3600`。
     本文件不再为每个端点单独罗列 OPTIONS。
 
@@ -63,10 +62,9 @@ tags:
       `tool_end`、`done`、`error`。每个事件的 `data:` 行是一段 JSON，
       具体 schema 见 `POST /api/chat` 的 200 响应描述。
 
-      **与 WebSocket 通道的关系**：SSE 是单向的，不支持 steer、abort 或
-      连接中切换模型。需要这些能力时改用 `/api/ws/chat`（见
-      `docs/asyncapi/chat-ws.yaml`）。两者底层共用 `SessionPool`，相同
-      `conversation_id` 在两个端点之间互通。
+      该端点是旧的本地 conversation 接口，不支持运行中 steer、follow-up
+      或独立 abort 请求。需要完整控制能力时使用 `/campusclaw-service/v1`
+      下的 Session HTTP + SSE 接口。
   - name: conversations
     description: |
       浏览服务端持久化的会话历史。每条会话对应
@@ -74,8 +72,7 @@ tags:
       JSONL 文件。**该列表是按服务进程的工作目录划分的** —— 不同
       `user.dir` 下启动的 server 看到的列表彼此独立。
 
-      列表本身不要求建立 WS 连接，所以前端可以"打开页面就看到所有历史会话
-      并选择打开"，再用对应的 `conversation_id` 通过 `/api/ws/chat` 恢复。
+      前端可先读取列表，再把对应 `conversation_id` 传给 `POST /api/chat` 恢复。
   - name: skills
     description: |
       管理用户安装的技能（skill）包。每个 skill 是
@@ -101,11 +98,10 @@ tags:
       project 级 `.campusclaw/settings.json` 不受影响。
 
       **生效时机**：`SettingsManager.load()` 每次都重新读盘 + 合并，所以
-      `defaultModel` 在写入后对**新的 WS 连接**立即生效；已经打开的连接
-      保留原值。`customModels` 的新增/删除会触发
+      `defaultModel` 在写入后对新 Session 生效；已经创建的 Agent 实例保留原值。
+      `customModels` 的新增/删除会触发
       `CustomModelLoader.refresh()`，即时刷新 `ModelRegistry` 中
-      `provider==custom` 的条目——下一次 `list_models` 命令或新 WS 连接
-      会读到最新目录。
+      `provider==custom` 的条目——后续模型列表请求会读到最新目录。
 
 paths:
   /api/health:
@@ -146,8 +142,8 @@ paths:
         **客户端中断**：关闭 SSE 连接会被服务端识别为「中断当前 turn」——
         若该会话还在 streaming，服务端会自动调用 `session.abort()`。
 
-        **每次请求级别的 override**：`model` / `thinking` 字段允许在不开
-        一个完整 WS 会话的情况下，临时切换当次 turn 的模型或思考等级。
+        **每次请求级别的 override**：`model` / `thinking` 字段允许在旧
+        conversation 上切换模型或思考等级。
         校验失败（model id 不存在、thinking level 不合法）会立即返回
         400，不进入 SSE。
 
@@ -157,16 +153,14 @@ paths:
             assistant Message（增量请前端自行 diff）
           - `message_end` — `{ message }`，assistant 消息最终值
           - `tool_start` — `{ toolName, toolCallId }`
-          - `tool_end` — `{ toolCallId }`（不携带具体 result，需要 result
-            请改用 WebSocket 的 `tool_end` 事件）
+          - `tool_end` — `{ toolCallId }`（旧端点不携带具体 result）
           - `done` — `{ conversation_id }`，turn 完成，紧随其后 server
             会关闭 SSE 流
           - `error` — `{ error, conversation_id }`，`session.prompt(...)`
             完成异常时发出，随后 server 关闭 SSE 流
 
-        SSE 端点的事件集合相对最小化；需要 `tool_update`、`agent_start`、
-        `done` 中携带 `finalText`/`usage`/`stopReason` 等更丰富的字段时
-        请改用 WebSocket（`/api/ws/chat`）。
+        SSE 端点的事件集合相对最小化；新集成应使用 Runtime V1 的
+        `POST /campusclaw-service/v1/sessions/{session_id}/events`。
       requestBody:
         required: true
         content:
@@ -236,7 +230,7 @@ paths:
         "409":
           description: |
             同一 `conversation_id` 已经在 streaming 中。客户端必须先等待
-            前一个 turn 完成（或调用 WebSocket 的 `abort` 命令）。
+            前一个 turn 完成，或关闭当前旧 SSE 请求触发中止。
           content:
             application/json:
               schema:
@@ -680,7 +674,7 @@ paths:
       description: |
         把 `defaultModel` 写入 `~/.campusclaw/agent/settings.json`。模型 id
         必须在当前 `ModelRegistry` 中存在（含内置 + customModels），否则返回
-        400。**对已经打开的 WS 连接不生效**；新 WS 连接会读到新值。
+        400。对已经创建的 Agent 实例不生效；新 Session 会读到新值。
       requestBody:
         required: true
         content:
@@ -732,8 +726,8 @@ paths:
         把请求体作为 **完整** `customModels` 数组写入
         `~/.campusclaw/agent/settings.json`，覆盖原值（**不是 patch**）。写入
         成功后立即调用 `CustomModelLoader.refresh()`：先从 `ModelRegistry`
-        中删掉所有 `provider==custom` 条目，再用新数组重新注册。下一个 WS
-        连接 / 下一次 `list_models` 命令就能看到新目录。
+        中删掉所有 `provider==custom` 条目，再用新数组重新注册。后续模型
+        列表请求会看到新目录。
 
         校验规则：
           - 数组每一项必须含非空 `id` 和 `api`
@@ -809,8 +803,8 @@ components:
           type: string
           minLength: 1
           description: |
-            用户输入文本。`null` 或全空白会被拒绝（400）。与 WebSocket `prompt`
-            命令一致，SSE 也走 `AgentSession.prompt(...)`：前导 `/<name> args`
+            用户输入文本。`null` 或全空白会被拒绝（400）。该 SSE 端点走
+            `AgentSession.prompt(...)`：前导 `/<name> args`
             先按 prompt template 展开，`/skill:name args` 再按 skill 命令展开，
             然后才交给 agent。
           example: 用 Java 写一个快速排序
@@ -826,8 +820,8 @@ components:
           nullable: true
           description: |
             本次 turn 临时切换的模型 id。**会改写 session 上的模型** ——
-            后续 turn 也会沿用，直到下次再传 `model` 或通过 WebSocket
-            `set_model` 改回。id 不在 ModelRegistry 中时返回 400。
+            后续 turn 也会沿用，直到下次再传 `model`。id 不在 ModelRegistry
+            中时返回 400。
           example: glm-5
         thinking:
           type: string
@@ -845,7 +839,7 @@ components:
       properties:
         id:
           type: string
-          description: 会话 ID。前端把这个值传给 `/api/ws/chat?conversation_id=<id>` 即可恢复。
+          description: 会话 ID。前端把这个值作为 `POST /api/chat` 的 `conversation_id` 即可恢复。
         title:
           type: string
           description: |
@@ -1095,8 +1089,7 @@ components:
           description: |
             UI 模型选择器应当展示的条目。等同于
             `ModelCatalogService.getAvailableModels()` + 同样的 wire 格式，
-            与 WS `list_models`（默认 `all:false`）返回的 `models` 字段一致：
-            仅含有凭证的可用模型，custom 置顶；要全量需走 WS `list_models all:true`。
+            仅含有凭证的可用模型，custom 置顶。
           items:
             type: object
             required: [id, name, provider, contextWindow, maxTokens, reasoning, hasCredentials]

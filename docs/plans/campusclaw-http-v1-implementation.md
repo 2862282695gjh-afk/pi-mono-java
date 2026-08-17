@@ -1,8 +1,8 @@
 # CampusClaw Runtime HTTP+SSE V1 实施计划
 
-- 计划版本：1.5.0
+- 计划版本：1.6.0
 - 更新日期：2026-08-18
-- 状态：实施中
+- 状态：已完成
 - 实际源码基线：`889dcb1b7dd5f47addd3b372ef31392c9044ca24`
 - 设计仓库基线：`ca03bc3898f4e0605ebf71e38367e77acc3f9391`
 - 实施分支：`codex/campusclaw-http-v1`
@@ -46,7 +46,7 @@
 | HTTP 运行方式 | `spring.main.web-application-type=none`，`ServerMode` 手工启动 Reactor Netty 并组合 `RouterFunction` | 使用函数式 Controller/路由，显式挂到现有服务器 | 这是当前启动模型；`@RestController` 不会自动形成服务端点 |
 | Session | `/api/chat` 使用 `SessionPool` 和调用方 `conversation_id`，本地 JSONL 持久化 | 新增服务端生成 `session_id` 的 Runtime Session 聚合 | 契约要求 Agent 绑定、版本、状态、模型和并发控制 |
 | 执行标识 | Agent 以一次 `prompt` 执行一轮，但无公开 Run 资源 | 仅保留内部 active execution，不公开 `run_id` | 已确认契约以 Session Events 表达执行 |
-| 流式协议 | `/api/chat` 使用旧 SSE 事件，断线触发 abort；另有 `/api/ws/chat` | 新路径使用请求范围 HTTP+SSE，断线不 abort，终止事件后断开 | 这是已确认的恢复与控制语义；属于架构变更 |
+| 流式协议 | 源码基线的 `/api/chat` 使用旧 SSE 事件，断线触发 abort，并公开 WebSocket 路径 | 新路径使用请求范围 HTTP+SSE，断线不 abort，终止事件后断开；旧公开 WebSocket 实现已删除 | 这是已确认的恢复与控制语义；属于架构变更 |
 | 队列控制 | `Agent` 已有 steer、follow-up 队列和 abort | 在 Session 级接口上复用并补充持久化、状态与错误语义 | 避免重复执行引擎并保持 pi 行为 |
 | 历史 | `SessionTree` 通过 `parentId` 重建当前分支 | 数据库按当前分支、`entry_seq` 升序分页投影三种持久化事件 | 保留 pi 分支语义，同时满足 HTTP 恢复 |
 | 数据库 | 已有 `t_sessions`、`t_session_entries`、序列表和物化表，无 Mapper | 演进表结构并新增 DTO、MyBatis Mapper 和事务 Service | 目标接口必须跨进程持久化且通过真实 openGauss 验证 |
@@ -62,8 +62,9 @@
 接口不引入公开 Run 资源、不接受 `Idempotency-Key`、不接受 `traceparent`，不在请求中
 覆盖 model/thinking。公司私服坐标、JWT 密钥、APPKEY 密钥和生产数据库凭据不进入仓库。
 
-旧 `/api/*` 本地开发接口只在不影响新契约的前提下保留；公开 WebSocket Runtime 语义、
-对应 AsyncAPI 和面向 WebSocket 的设计说明将在新 HTTP+SSE 路径具备等价能力并通过回归后清理。
+旧 `/api/*` 本地开发 HTTP 接口只在不影响新契约的前提下保留。公开 WebSocket Runtime
+处理器、路由、测试页面、AsyncAPI 和对应设计说明已经清理；AI Provider 层的
+`Transport.WEBSOCKET` 是模型供应商传输能力，不是 CampusClaw Runtime 公共接口，予以保留。
 
 ## 接口实施进度
 
@@ -236,6 +237,30 @@ Abort 关闭消息接受、清空未投递队列、取消当前 Agent，并等�
 条带操作锁和 `RuntimeActiveExecution.acceptingControls` 共同线性化：消息先入队就继续
 同一 execution，完成先发生则关闭接受并返回 `SESSION_NOT_RUNNING`，不会产生 202 后丢消息。
 
+## HTTP+SSE 收口与最终验证证据
+
+完成 11 个接口后，进一步删除旧公开 WebSocket Handler、路由、单元测试、AsyncAPI、
+测试客户端和 WebSocket 专项设计文档；README、Server API、现存旧 `/api/*` OpenAPI
+及模块设计均统一说明 CampusClaw Runtime 使用 HTTP+SSE。Runtime 路径增加 CORS
+预检进程级断言。删除 Session 的审计还发现旧实现会调用全局 `SubAgentRegistry.cancelAll`，
+可能误停其他 Session；现只依赖当前 Agent 的 `CancellationToken` 向其子 Agent 传播取消。
+
+全部 Mermaid 设计图已迁移为五个主题下 15 个具名 PlantUML 图，并生成、提交对应 SVG；
+每个 `.puml` 都记录源码基线、相对路径和设计理由，内容仅含 ASCII。最终真实验证如下：
+
+- 主仓 `./mvnw -B verify`：coding-agent 1335 个测试及全部上游模块测试通过，0 失败、
+  0 错误、0 跳过；测试数减少 17 是删除 10 个 WebSocket Handler 测试和 7 个只服务
+  WebSocket query 参数的测试。
+- `mate-campusclaw` 全量 `verify`：2806 个测试通过，0 失败、0 错误、0 跳过。
+- 主仓与 mate 可执行 Spring Boot JAR 分别连接官方 openGauss 7.0.0-RC3、启动真实
+  Reactor Netty，并执行完整 HTTP+SSE 进程测试，各 1 个测试，均为 0 失败、0 错误、
+  0 跳过；覆盖 11 个接口、SSE、CORS 预检、鉴权、ETag、控制队列和 Abort。
+- 主仓与 mate 的 `RuntimeSessionRepositoryOpenGaussIT` 分别执行 14 个测试，均为
+  0 失败、0 错误、0 跳过；使用真实数据库事务、锁、约束、分页与清理流程。
+- `plantuml -tsvg diagram.puml`、SVG XML 校验、Markdown 图路径与 PlantUML 行锚校验、
+  `.puml` ASCII 校验、无 Mermaid 扫描、OpenAPI YAML 解析、`spotless:check` 和
+  `git diff --check` 均纳入最终质量门禁。
+
 ## 推进日志
 
 - 2026-08-18：从最新 `origin/main` 创建独立工作树和
@@ -258,3 +283,6 @@ Abort 关闭消息接受、清空未投递队列、取消当前 Agent，并等�
   全量验证通过。
 - 2026-08-18：完成接口 9—11 的 Steer、FollowUp 和 Abort；消息接受/自然结束竞态、
   Abort/自然结束竞态、真实并发 HTTP+SSE 与 openGauss 持久化顺序均已验证。
+- 2026-08-18：清理公开 WebSocket Runtime 与相关文档，将 15 个 Mermaid 图迁移为
+  PlantUML/SVG；主仓、mate 全量回归、真实可执行 JAR 进程测试和真实 openGauss
+  仓储集成测试全部通过，11 个接口实施完成。
