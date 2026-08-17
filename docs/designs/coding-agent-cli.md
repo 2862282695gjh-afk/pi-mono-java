@@ -84,7 +84,7 @@ flowchart LR
 - **本模块 artifactId**：`campusclaw-coding-agent`，`<finalName>campusclaw-agent</finalName>`
 - **上游（pom `<dependency>`）**：`campusclaw-ai`、`campusclaw-agent-core`、`campusclaw-tui`、`campusclaw-cron`（全部 4 个内部模块）
 - **下游**：本模块是**应用层**，无 Java 模块依赖它——它产出的是 fat JAR / 二进制
-- **外部关键依赖**：`spring-boot-starter`、`spring-boot-starter-webflux`（server 模式）、`picocli-spring-boot-starter`、`jackson-databind`、`snakeyaml`、`micrometer-core`、`reactor-netty`（来自 webflux，server 模式用）；测试链路含 `okhttp3:mockwebserver`
+- **外部关键依赖**：`spring-boot-starter`、`spring-boot-starter-webflux`（server 模式）、`spring-boot-starter-jdbc`、`mybatis-spring-boot-starter`、`org.opengauss:opengauss-jdbc:7.0.0-RC3-og`、`picocli-spring-boot-starter`、`jackson-databind`、`snakeyaml`、`micrometer-core`、`reactor-netty`（来自 webflux，server 模式用）；依赖版本由根 POM 统一管理，openGauss JDBC 使用 Maven Central 可解析坐标；测试链路含 `okhttp3:mockwebserver`
 - **运行期可选**：Docker daemon（hybrid 模式 / sandbox 模式启用时）
 
 ### 2.2 功能点分解
@@ -556,7 +556,10 @@ classDiagram
 |---|---|
 | `JAVA_HOME` | 指向 JDK 21 |
 | `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY` | 由 `agent-core` 的 `ProxyConfig` 自动读取 |
-| `GAUSSDB_URL` / `GAUSSDB_USER` / `GAUSSDB_PASSWORD` | 覆盖 `spring.datasource.*` |
+| `GAUSSDB_URL` / `GAUSSDB_USER` / `GAUSSDB_PASSWORD` | 覆盖数据库连接地址、用户名和密码；默认仅用于本地开发，不包含生产凭据 |
+| `GAUSSDB_SCHEMA` / `GAUSSDB_SSL_MODE` | 覆盖当前 Schema 和 JDBC TLS 模式 |
+| `GAUSSDB_MIN_IDLE` / `GAUSSDB_MAX_POOL_SIZE` | 覆盖 HikariCP 最小空闲连接数和最大连接数 |
+| `GAUSSDB_CONNECTION_TIMEOUT_MS` / `GAUSSDB_VALIDATION_TIMEOUT_MS` / `GAUSSDB_INITIALIZATION_FAIL_TIMEOUT_MS` | 覆盖 HikariCP 连接、校验和初始化失败超时 |
 | `CAMPUSCLAW_REMOTE_AGENT_TOKEN` | `subagent.backends.remote-http.auth-token` 替换源 |
 | 各 provider API key（如 `ANTHROPIC_API_KEY`、`OPENAI_API_KEY` 等） | 由 `campusclaw-ai` 模块的 provider 实现读取 |
 
@@ -673,7 +676,7 @@ classDiagram
 | 5.9 | 敏感数据/个人隐私数据 | 是 | provider API key、sub-agent `auth-token` 是敏感凭据。处理：（a）`AuthStorage` 写入 `~/.campusclaw/auth/`，**未加密**（与 ssh / aws cli 行为一致，依赖 UNIX 文件权限保护）；（b）日志中**不输出** token（`HttpAgentConfig` 的 `toString` 排除 token，`ProxyConfig.toUrl()` 屏蔽 password）；（c）`application.yml` 的 secret 通过 `${ENV:default}` 占位，避免 commit 明文；（d）`/share` 命令上传会话需 review：会否携带 stack trace 中的环境变量 |
 | 5.10 | 加解密 | 不涉及 | 本模块无 `Cipher` / `MessageDigest` 调用。TLS 由 HttpClient 默认（JDK / OkHttp）负责；本模块未自管证书 |
 | 5.11 | 文件上传下载 | 是 | （a）上传：`SkillHandler.upload` 用 webflux `FilePart.transferTo(tempFile)` 接 multipart，写入 `Files.createTempFile`，限定扩展名为压缩包，由 `SkillManager` 解压到 `~/.campusclaw/packages/`——zip 解压需防 zip slip（`SkillManager` 的 `Files.copy(zis, entryPath)` 应校验 `entryPath` 在 target dir 之内，**待审计**确认 path traversal 防护）；（b）下载：`/export` 把会话写到本地 HTML 文件，由用户指定路径（命令参数），路径越权风险由 OS 文件权限承担；（c）`MigrationManager.Files.copy` 在备份目录间复制——内部路径，受控 |
-| 5.12 | 硬编码 | 否 | secret 通过 `${ENV:default}` 占位（如 `CAMPUSCLAW_REMOTE_AGENT_TOKEN`、`GAUSSDB_PASSWORD`）或 `~/.campusclaw/auth/` 持久化获取；`application.yml` 默认 `root/root` 仅本地开发占位；常量如 `DEFAULT_MODEL="claude-sonnet-4-20250514"`、`alpine:3.19` 等是模型名/镜像名，非凭据 |
+| 5.12 | 硬编码 | 否 | secret 通过 `${ENV:default}` 占位（如 `CAMPUSCLAW_REMOTE_AGENT_TOKEN`、`GAUSSDB_PASSWORD`）或 `~/.campusclaw/auth/` 持久化获取；`application.yml` 默认数据库地址和用户仅作为本地开发占位，密码默认为空；常量如 `DEFAULT_MODEL="claude-sonnet-4-20250514"`、`alpine:3.19` 等是模型名/镜像名，非凭据 |
 | 5.13 | 安全资料 | 否 | 待补充：通信矩阵（server 模式默认 listen `localhost`，端口可配；sub-agent backend 出站到配置 URL；provider 出站到 SaaS LLM endpoint）、命令清单（26 个 slash 命令 + 14 个 LLM tool） |
 | 5.14 | 不安全算法/协议 | 否 | （a）未使用 MD5/SHA1/DES；（b）未发现 `new Random()` 主路径用法；（c）HTTP server 默认明文（部署侧加 TLS 终结）；（d）WebSocket 默认 ws://，部署侧应升级 wss |
 | 5.15 | 文件权限 | 是 | （a）`~/.campusclaw/auth/*.json` 含凭据应限制为 owner-only（0600）；当前代码在 `AuthStorage` 处**待审计**是否显式设置 POSIX 权限；（b）`SessionPersistence` 写 JSONL 用 JDK 默认权限（受 umask 控制）；（c）`SkillManager` 解压 zip 时若条目自带可执行位需谨慎 |
