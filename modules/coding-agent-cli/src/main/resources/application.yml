@@ -5,6 +5,26 @@ spring:
     web-application-type: none
   application:
     name: campusclaw-agent
+  datasource:
+    url: ${GAUSSDB_URL:jdbc:opengauss://localhost:5432/campusclaw}
+    username: ${GAUSSDB_USER:campusclaw}
+    password: ${GAUSSDB_PASSWORD:}
+    driver-class-name: org.opengauss.Driver
+    hikari:
+      pool-name: campusclaw-session-pool
+      minimum-idle: ${GAUSSDB_MIN_IDLE:1}
+      maximum-pool-size: ${GAUSSDB_MAX_POOL_SIZE:10}
+      connection-timeout: ${GAUSSDB_CONNECTION_TIMEOUT_MS:10000}
+      validation-timeout: ${GAUSSDB_VALIDATION_TIMEOUT_MS:5000}
+      initialization-fail-timeout: ${GAUSSDB_INITIALIZATION_FAIL_TIMEOUT_MS:-1}
+      data-source-properties:
+        currentSchema: ${GAUSSDB_SCHEMA:campusclaw_session}
+        sslmode: ${GAUSSDB_SSL_MODE:verify-full}
+
+mybatis:
+  mapper-locations: classpath*:mapper/session/*.xml
+  configuration:
+    map-underscore-to-camel-case: true
 
 # 服务器模式（--mode server）下 /api/ws/chat 与 /api/chat 的会话持久化
 # 开启后会把每个 conversation_id 的消息历史写入
