@@ -1,6 +1,6 @@
 # CampusClaw Runtime HTTP+SSE V1 实施计划
 
-- 计划版本：1.3.0
+- 计划版本：1.4.0
 - 更新日期：2026-08-18
 - 状态：实施中
 - 实际源码基线：`889dcb1b7dd5f47addd3b372ef31392c9044ca24`
@@ -74,9 +74,9 @@
 | 3 | `DELETE /campusclaw-service/v1/sessions/{session_id}` | 幂等 204、异步清理、仅两字段 tombstone | 已实现并验证 |
 | 4 | `POST /campusclaw-service/v1/sessions/{session_id}/events` | user.message、完整 SSE 序列、断线不 abort | 已实现并验证 |
 | 5 | `GET /campusclaw-service/v1/sessions/{session_id}/events` | 当前分支、三种持久化事件、不透明游标 | 已实现并验证 |
-| 6 | `GET /campusclaw-service/v1/sessions/{session_id}/models` | `current_model_id` 与 `models` 字符串数组 | 待实施 |
-| 7 | `PUT /campusclaw-service/v1/sessions/{session_id}/model` | idle、强 If-Match、无操作不增版本 | 待实施 |
-| 8 | `PUT /campusclaw-service/v1/sessions/{session_id}/thinking` | 布尔深度思考、idle、强 If-Match | 待实施 |
+| 6 | `GET /campusclaw-service/v1/sessions/{session_id}/models` | `current_model_id` 与 `models` 字符串数组 | 已实现并验证 |
+| 7 | `PUT /campusclaw-service/v1/sessions/{session_id}/model` | idle、强 If-Match、无操作不增版本 | 已实现并验证 |
+| 8 | `PUT /campusclaw-service/v1/sessions/{session_id}/thinking` | 布尔深度思考、idle、强 If-Match | 已实现并验证 |
 | 9 | `POST /campusclaw-service/v1/sessions/{session_id}/steers` | running、文本、优先队列、202 | 待实施 |
 | 10 | `POST /campusclaw-service/v1/sessions/{session_id}/follow-ups` | running、文本、FIFO、202 | 待实施 |
 | 11 | `POST /campusclaw-service/v1/sessions/{session_id}/abort` | idle 幂等、运行中级联取消并清队列、204 | 待实施 |
@@ -173,6 +173,37 @@ abort 已接受的执行。`RuntimeFileResolver` 是可替换的公司文件服�
 可能遗留 `running` 状态、Mapper 更新行数未校验、底层查询错误未映射到契约错误码，
 以及恢复 Assistant Message 时 `Usage` 为空的问题。
 
+## 第三批接口验证证据
+
+接口 6—8 已完成调用身份感知的实时模型列表、稳定 `enabledModels` 顺序、模型切换、
+布尔深度思考开关、强 `If-Match`、资源版本 CAS、同值无操作以及模型能力归一。
+模型或 thinking 变更与用户事件恢复共用 Session 条带操作锁；数据库事务继续使用
+`SELECT ... FOR UPDATE`，因此内存 Agent 与持久化配置不会和新一轮执行交叉生效。
+
+已真实执行以下验证：
+
+- `RuntimeSessionConfigurationRoutesTest`、`RuntimeSessionConfigurationServiceTest`、
+  `CatalogRuntimeModelManagerTest` 及相关事件竞态测试：40 个测试，0 失败、0 错误、
+  0 跳过；覆盖字符串模型数组、JWT/APPKEY、严格 JSON 类型与未知字段、428/412、
+  422 能力错误、503 `Retry-After`、同值无操作、能力归一和操作锁顺序。
+- `RuntimeSessionRepositoryOpenGaussIT`：在官方 openGauss 7.0.0-RC3 中执行 14 个测试，
+  0 失败、0 错误、0 跳过；新增覆盖模型切换与 thinking 原子更新、无操作不更新时间和
+  版本，以及两个并发配置更新只有一个成功、另一个返回版本不匹配。
+- 扩展 `RuntimeHttpProcessOpenGaussIT` 后，以主仓可执行 JAR 和镜像可执行 JAR 分别启动
+  真实 Reactor Netty 进程；完成 GET 模型列表、开启深度思考、切换至不支持推理的模型
+  并自动归一 `thinking=false`、同模型无操作保持 ETag、旧 ETag 返回 412，且直接查询
+  openGauss 确认最终 `resource_version=5`。两个进程测试均为 1 个测试，0 失败、0 错误、
+  0 跳过。
+- 主仓完整 `./mvnw -B verify` 执行 1335 个 coding-agent 测试及所有上游模块测试，
+  0 失败、0 错误、0 跳过，并产出可执行 JAR。
+- 同步生成的 `mate-campusclaw` 首次 `mvn -B verify` 在无关的 TUI 自动补全竞态测试中
+  偶发失败 1 次；该测试单独重跑通过，随后完整重跑 2805 个测试全部通过，0 失败、
+  0 错误、0 跳过。未把首次失败隐藏或计为成功。
+
+本批的并发审计发现仅在已存在 `RuntimeSessionHolder` 上加锁会让“冷 Session 恢复执行”
+与配置变更产生窗口，因此把操作锁提升到 `RuntimeSessionEngineRegistry` 的固定条带锁；
+即使 Session 尚未恢复到内存，也能按 `session_id` 串行化恢复、配置和 Agent 同步。
+
 ## 推进日志
 
 - 2026-08-18：从最新 `origin/main` 创建独立工作树和
@@ -190,3 +221,6 @@ abort 已接受的执行。`RuntimeFileResolver` 是可替换的公司文件服�
 - 2026-08-18：完成接口 4—5 的事件事务、Agent 投影、SSE、当前分支分页与不透明
   游标；单元/路由、完整模块回归、真实 openGauss 并发与打包 JAR 跨进程 HTTP+SSE
   测试通过。
+- 2026-08-18：完成接口 6—8 的模型列表、模型切换和深度思考配置；强 ETag/CAS、
+  同值无操作、模型能力归一、Registry 条带锁、真实 openGauss 并发、主仓与镜像
+  可执行 JAR 进程测试以及两套完整回归均已通过。

@@ -275,6 +275,64 @@ class RuntimeSessionRepositoryOpenGaussIT {
                 .containsExactly("entry_root", "entry_current");
     }
 
+    @Test
+    void modelChangeAtomicallyNormalizesThinkingAndAdvancesVersion() {
+        RuntimeSessionDTO session = newSession("session_db_model_change");
+        session.setThinking(true);
+        repository.create(session);
+        OffsetDateTime updatedAt = session.getCreatedAt().plusMinutes(1);
+
+        SessionConfigurationUpdate update =
+                repository.updateModel(session.getId(), session.getOwnerId(), 1L, "model-next", false, updatedAt);
+
+        assertThat(update.status()).isEqualTo(SessionConfigurationUpdate.Status.UPDATED);
+        RuntimeSessionDTO stored = repository.find(session.getId()).orElseThrow();
+        assertThat(stored.getModelId()).isEqualTo("model-next");
+        assertThat(stored.isThinking()).isFalse();
+        assertThat(stored.getResourceVersion()).isEqualTo(2L);
+        assertThat(stored.getUpdatedAt()).isEqualTo(updatedAt);
+    }
+
+    @Test
+    void unchangedModelPreservesVersionTimestampAndThinking() {
+        RuntimeSessionDTO session = newSession("session_db_model_noop");
+        session.setThinking(true);
+        repository.create(session);
+
+        SessionConfigurationUpdate update = repository.updateModel(
+                session.getId(),
+                session.getOwnerId(),
+                1L,
+                session.getModelId(),
+                false,
+                session.getCreatedAt().plusHours(1));
+
+        assertThat(update.status()).isEqualTo(SessionConfigurationUpdate.Status.UNCHANGED);
+        RuntimeSessionDTO stored = repository.find(session.getId()).orElseThrow();
+        assertThat(stored.isThinking()).isTrue();
+        assertThat(stored.getResourceVersion()).isEqualTo(1L);
+        assertThat(stored.getUpdatedAt()).isEqualTo(session.getUpdatedAt());
+    }
+
+    @Test
+    void concurrentConfigurationChangesUseResourceVersionCas() throws Exception {
+        RuntimeSessionDTO session = newSession("session_db_config_race");
+        repository.create(session);
+        CountDownLatch start = new CountDownLatch(1);
+        try (var executor = Executors.newFixedThreadPool(2)) {
+            var model = executor.submit(() -> updateModelAfterLatch(start, session));
+            var thinking = executor.submit(() -> updateThinkingAfterLatch(start, session));
+            start.countDown();
+            assertThat(List.of(model.get(5, TimeUnit.SECONDS), thinking.get(5, TimeUnit.SECONDS)))
+                    .containsExactlyInAnyOrder(
+                            SessionConfigurationUpdate.Status.UPDATED,
+                            SessionConfigurationUpdate.Status.VERSION_MISMATCH);
+        }
+
+        assertThat(repository.find(session.getId()).orElseThrow().getResourceVersion())
+                .isEqualTo(2L);
+    }
+
     private int count(String table, String sessionId) {
         Integer result = jdbcTemplate.queryForObject(
                 "SELECT COUNT(1) FROM " + table + " WHERE session_id = ?", Integer.class, sessionId);
@@ -333,6 +391,33 @@ class RuntimeSessionRepositoryOpenGaussIT {
         assertThat(start.await(5, TimeUnit.SECONDS)).isTrue();
         return repository
                 .acceptUserEvent(session.getId(), session.getOwnerId(), entry, entry.getTimestamp())
+                .status();
+    }
+
+    private SessionConfigurationUpdate.Status updateModelAfterLatch(CountDownLatch start, RuntimeSessionDTO session)
+            throws InterruptedException {
+        assertThat(start.await(5, TimeUnit.SECONDS)).isTrue();
+        return repository
+                .updateModel(
+                        session.getId(),
+                        session.getOwnerId(),
+                        1L,
+                        "model-race",
+                        true,
+                        session.getUpdatedAt().plusMinutes(1))
+                .status();
+    }
+
+    private SessionConfigurationUpdate.Status updateThinkingAfterLatch(CountDownLatch start, RuntimeSessionDTO session)
+            throws InterruptedException {
+        assertThat(start.await(5, TimeUnit.SECONDS)).isTrue();
+        return repository
+                .updateThinking(
+                        session.getId(),
+                        session.getOwnerId(),
+                        1L,
+                        true,
+                        session.getUpdatedAt().plusMinutes(1))
                 .status();
     }
 

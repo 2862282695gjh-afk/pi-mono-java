@@ -10,6 +10,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.locks.ReentrantLock;
 
 import com.campusclaw.agent.Agent;
 import com.campusclaw.agent.subagent.SubAgentRegistry;
@@ -35,7 +36,11 @@ import org.springframework.stereotype.Component;
  */
 @Component
 public class RuntimeSessionEngineRegistry {
+    private static final int OPERATION_LOCK_STRIPES = 256;
+
     private final ConcurrentHashMap<String, RuntimeSessionHolder> sessions = new ConcurrentHashMap<>();
+
+    private final ReentrantLock[] operationLocks = createOperationLocks();
 
     private final CampusClawAiService aiService;
 
@@ -64,6 +69,14 @@ public class RuntimeSessionEngineRegistry {
 
     public Optional<RuntimeSessionHolder> find(String sessionId) {
         return Optional.ofNullable(sessions.get(sessionId));
+    }
+
+    public void lockOperation(String sessionId) {
+        operationLock(sessionId).lock();
+    }
+
+    public void unlockOperation(String sessionId) {
+        operationLock(sessionId).unlock();
     }
 
     public RuntimeSessionHolder restore(
@@ -105,5 +118,18 @@ public class RuntimeSessionEngineRegistry {
             throw new RuntimeApiException(
                     HttpStatus.INTERNAL_SERVER_ERROR, RuntimeErrorCode.SESSION_INITIALIZATION_FAILED, error);
         }
+    }
+
+    private ReentrantLock operationLock(String sessionId) {
+        int index = (sessionId.hashCode() & Integer.MAX_VALUE) % operationLocks.length;
+        return operationLocks[index];
+    }
+
+    private static ReentrantLock[] createOperationLocks() {
+        ReentrantLock[] locks = new ReentrantLock[OPERATION_LOCK_STRIPES];
+        for (int index = 0; index < locks.length; index++) {
+            locks[index] = new ReentrantLock();
+        }
+        return locks;
     }
 }

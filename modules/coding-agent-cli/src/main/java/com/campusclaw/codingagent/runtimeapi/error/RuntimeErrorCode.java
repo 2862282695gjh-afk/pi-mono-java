@@ -28,6 +28,14 @@ public enum RuntimeErrorCode {
     SESSION_EXECUTION_FAILED("Session 执行失败。", "Session execution failed."),
     INVALID_EVENT_LIST_QUERY("事件分页参数不符合约束。", "The event pagination parameters are invalid."),
     EVENT_LIST_FAILED("Session 持久化事件读取失败。", "Failed to list persisted events for the Session."),
+    INVALID_MODEL_REQUEST("模型切换请求不符合约束。", "The model change request is invalid."),
+    INVALID_THINKING_REQUEST("深度思考设置请求不符合约束。", "The deep-thinking setting request is invalid."),
+    MODEL_NOT_AVAILABLE("指定模型当前不可用于该 Session。", "The specified model is not available for this Session."),
+    THINKING_NOT_SUPPORTED("当前模型不支持深度思考。", "The current model does not support deep thinking."),
+    IF_MATCH_REQUIRED("修改 Session 配置必须携带 If-Match。", "If-Match is required to modify Session configuration."),
+    SESSION_VERSION_MISMATCH("Session 已发生变化，请刷新后重试。", "The Session has changed. Refresh it before retrying."),
+    SESSION_MODEL_UPDATE_FAILED("Session 模型更新失败。", "Failed to update the Session model."),
+    SESSION_THINKING_UPDATE_FAILED("Session 深度思考设置更新失败。", "Failed to update the Session deep-thinking setting."),
     MANAGER_UNAVAILABLE("Model Manager 暂时不可用，请稍后重试。", "Model Manager is temporarily unavailable. Try again later."),
     INTERNAL_ERROR("服务内部错误。", "Internal service error.");
 

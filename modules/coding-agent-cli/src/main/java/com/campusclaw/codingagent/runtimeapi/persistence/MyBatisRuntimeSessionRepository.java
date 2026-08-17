@@ -97,6 +97,45 @@ public class MyBatisRuntimeSessionRepository implements RuntimeSessionRepository
 
     @Override
     @Transactional
+    public SessionConfigurationUpdate updateModel(
+            String sessionId,
+            String ownerId,
+            long expectedVersion,
+            String modelId,
+            boolean modelSupportsThinking,
+            OffsetDateTime updatedAt) {
+        RuntimeSessionDTO session = mapper.lockSessionForUpdate(sessionId);
+        SessionConfigurationUpdate rejected = rejectConfigurationUpdate(session, ownerId, expectedVersion);
+        if (rejected != null || session.getModelId().equals(modelId)) {
+            return rejected != null ? rejected : unchanged(session);
+        }
+        boolean thinking = session.isThinking() && modelSupportsThinking;
+        requireOne(mapper.updateSessionModel(sessionId, modelId, thinking, updatedAt), "session model was not updated");
+        session.setModelId(modelId);
+        session.setThinking(thinking);
+        markConfigurationUpdated(session, updatedAt);
+        return updated(session);
+    }
+
+    @Override
+    @Transactional
+    public SessionConfigurationUpdate updateThinking(
+            String sessionId, String ownerId, long expectedVersion, boolean thinking, OffsetDateTime updatedAt) {
+        RuntimeSessionDTO session = mapper.lockSessionForUpdate(sessionId);
+        SessionConfigurationUpdate rejected = rejectConfigurationUpdate(session, ownerId, expectedVersion);
+        if (rejected != null || session.isThinking() == thinking) {
+            return rejected != null ? rejected : unchanged(session);
+        }
+        requireOne(
+                mapper.updateSessionThinking(sessionId, thinking, updatedAt),
+                "session thinking setting was not updated");
+        session.setThinking(thinking);
+        markConfigurationUpdated(session, updatedAt);
+        return updated(session);
+    }
+
+    @Override
+    @Transactional
     public boolean beginDeletion(String sessionId, OffsetDateTime deletedAt) {
         if (mapper.lockSession(sessionId) == null) {
             return false;
@@ -148,5 +187,35 @@ public class MyBatisRuntimeSessionRepository implements RuntimeSessionRepository
         if (affectedRows != 1) {
             throw new IllegalStateException(message);
         }
+    }
+
+    private static SessionConfigurationUpdate rejectConfigurationUpdate(
+            RuntimeSessionDTO session, String ownerId, long expectedVersion) {
+        if (session == null) {
+            return new SessionConfigurationUpdate(SessionConfigurationUpdate.Status.NOT_FOUND, null);
+        }
+        if (!session.getOwnerId().equals(ownerId)) {
+            return new SessionConfigurationUpdate(SessionConfigurationUpdate.Status.FORBIDDEN, session);
+        }
+        if (session.getResourceVersion() != expectedVersion) {
+            return new SessionConfigurationUpdate(SessionConfigurationUpdate.Status.VERSION_MISMATCH, session);
+        }
+        if (!"idle".equals(session.getState())) {
+            return new SessionConfigurationUpdate(SessionConfigurationUpdate.Status.BUSY, session);
+        }
+        return null;
+    }
+
+    private static void markConfigurationUpdated(RuntimeSessionDTO session, OffsetDateTime updatedAt) {
+        session.setResourceVersion(session.getResourceVersion() + 1);
+        session.setUpdatedAt(updatedAt);
+    }
+
+    private static SessionConfigurationUpdate updated(RuntimeSessionDTO session) {
+        return new SessionConfigurationUpdate(SessionConfigurationUpdate.Status.UPDATED, session);
+    }
+
+    private static SessionConfigurationUpdate unchanged(RuntimeSessionDTO session) {
+        return new SessionConfigurationUpdate(SessionConfigurationUpdate.Status.UNCHANGED, session);
     }
 }

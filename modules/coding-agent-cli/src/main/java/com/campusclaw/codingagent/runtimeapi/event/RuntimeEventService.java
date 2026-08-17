@@ -131,18 +131,25 @@ public class RuntimeEventService {
             String sessionId, CallerAuthContext caller, UserEventRequestVO request, boolean chinese) {
         ValidatedUserEvent validated = validate(request);
         RuntimeSessionDTO session = requireOwnedSession(sessionId, caller, true);
-        RuntimeSessionHolder holder = requireEngine(session);
         List<ContentBlock> fileContent = fileResolver.resolve(sessionId, validated.fileIds());
         UserMessage userMessage = toUserMessage(validated.message(), fileContent);
         RuntimeActiveExecution execution = new RuntimeActiveExecution(new RuntimeEventStream());
-        if (!holder.begin(execution)) {
-            throw new RuntimeApiException(HttpStatus.CONFLICT, RuntimeErrorCode.SESSION_BUSY);
-        }
+        RuntimeSessionHolder holder = null;
+        engineRegistry.lockOperation(sessionId);
         try {
+            RuntimeSessionDTO current = requireOwnedSession(sessionId, caller, true);
+            holder = requireEngine(current);
+            if (!holder.begin(execution)) {
+                throw new RuntimeApiException(HttpStatus.CONFLICT, RuntimeErrorCode.SESSION_BUSY);
+            }
             return acceptAndStart(sessionId, caller, validated, userMessage, chinese, holder, execution);
         } catch (RuntimeException error) {
-            holder.complete(execution);
+            if (holder != null) {
+                holder.complete(execution);
+            }
             throw error;
+        } finally {
+            engineRegistry.unlockOperation(sessionId);
         }
     }
 
