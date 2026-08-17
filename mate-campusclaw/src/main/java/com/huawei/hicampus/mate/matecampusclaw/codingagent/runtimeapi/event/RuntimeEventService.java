@@ -203,19 +203,84 @@ public class RuntimeEventService {
             Runnable unsubscribe,
             Throwable executionError,
             boolean chinese) {
+        engineRegistry.lockOperation(holder.sessionId());
         try {
-            Throwable failure = finishPersistence(holder, executionError, projector);
-            if (failure != null || projector.terminalReason() == StopReason.ERROR) {
-                emitStreamError(execution.eventStream(), chinese);
-            } else {
-                emitSuccessfulEnd(execution.eventStream(), projector.terminalReason());
+            if (continueQueuedExecution(holder, execution, projector, unsubscribe, executionError, chinese)) {
+                return;
             }
+            completeExecution(holder, execution, projector, unsubscribe, executionError, chinese);
         } finally {
+            engineRegistry.unlockOperation(holder.sessionId());
+        }
+    }
+
+    private boolean continueQueuedExecution(
+            RuntimeSessionHolder holder,
+            RuntimeActiveExecution execution,
+            RuntimeEventProjector projector,
+            Runnable unsubscribe,
+            Throwable executionError,
+            boolean chinese) {
+        if (executionError != null
+                || projector.failure() != null
+                || projector.terminalReason() == StopReason.ERROR
+                || projector.terminalReason() == StopReason.ABORTED
+                || !execution.acceptingControls()
+                || !holder.agent().hasQueuedControlMessages()) {
+            return false;
+        }
+        CompletableFuture<Void> future;
+        try {
+            future = holder.agent().continueQueuedExecution();
+        } catch (RuntimeException error) {
+            completeExecution(holder, execution, projector, unsubscribe, error, chinese);
+            return true;
+        }
+        future.whenComplete((unused, error) -> finishAgent(holder, execution, projector, unsubscribe, error, chinese));
+        return true;
+    }
+
+    private void completeExecution(
+            RuntimeSessionHolder holder,
+            RuntimeActiveExecution execution,
+            RuntimeEventProjector projector,
+            Runnable unsubscribe,
+            Throwable executionError,
+            boolean chinese) {
+        execution.closeControls();
+        Throwable failure = finishPersistence(holder, executionError, projector);
+        StopReason reason = execution.abortRequested() ? StopReason.ABORTED : projector.terminalReason();
+        failure = emitTerminalEvents(execution.eventStream(), reason, failure, chinese);
+        cleanupExecution(holder, execution, unsubscribe, failure);
+    }
+
+    private Throwable emitTerminalEvents(
+            RuntimeEventStream stream, StopReason reason, Throwable failure, boolean chinese) {
+        try {
+            if (failure != null || reason == StopReason.ERROR) {
+                emitStreamError(stream, chinese);
+            } else {
+                emitSuccessfulEnd(stream, reason);
+            }
+            return failure;
+        } catch (RuntimeException streamError) {
+            return failure != null ? failure : streamError;
+        }
+    }
+
+    private static void cleanupExecution(
+            RuntimeSessionHolder holder, RuntimeActiveExecution execution, Runnable unsubscribe, Throwable failure) {
+        Throwable terminalFailure = failure;
+        try {
+            unsubscribe.run();
+        } catch (RuntimeException unsubscribeError) {
+            terminalFailure = terminalFailure != null ? terminalFailure : unsubscribeError;
+        } finally {
+            holder.complete(execution);
             try {
-                unsubscribe.run();
-            } finally {
-                holder.complete(execution);
                 execution.eventStream().complete();
+            } finally {
+                execution.complete(terminalFailure);
             }
         }
     }

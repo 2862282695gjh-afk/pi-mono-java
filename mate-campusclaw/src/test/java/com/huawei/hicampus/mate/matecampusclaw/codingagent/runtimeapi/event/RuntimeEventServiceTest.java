@@ -22,6 +22,7 @@ import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -179,6 +180,66 @@ class RuntimeEventServiceTest {
                 .containsExactly("user.message", "stream.error")
                 .doesNotContain("session.status.idle", "stream.end");
         verify(repository).finishExecution(anyString(), any());
+        assertThat(holder.activeExecution()).isEmpty();
+    }
+
+    @Test
+    void queuedControlAtNaturalCompletionContinuesSameExecutionStream() {
+        RuntimeSessionRepository repository = mock(RuntimeSessionRepository.class);
+        RuntimeSessionDTO session = session();
+        when(repository.find(SESSION_ID)).thenReturn(Optional.of(session));
+        when(repository.acceptUserEvent(anyString(), anyString(), any(), any())).thenAnswer(invocation -> {
+            RuntimeEntryDTO entry = invocation.getArgument(2);
+            entry.setEntrySeq(1L);
+            return new UserEventAcceptance(Status.ACCEPTED, session);
+        });
+        Agent agent = mock(Agent.class);
+        CompletableFuture<Void> first = new CompletableFuture<>();
+        CompletableFuture<Void> second = new CompletableFuture<>();
+        when(agent.subscribe(any())).thenReturn(() -> {});
+        when(agent.prompt(any(com.huawei.hicampus.mate.matecampusclaw.ai.types.Message.class))).thenReturn(first);
+        when(agent.hasQueuedControlMessages()).thenReturn(true, false);
+        when(agent.continueQueuedExecution()).thenReturn(second);
+        RuntimeSessionEngineRegistry engines = mock(RuntimeSessionEngineRegistry.class);
+        RuntimeSessionHolder holder = new RuntimeSessionHolder(SESSION_ID, null, agent);
+        when(engines.find(SESSION_ID)).thenReturn(Optional.of(holder));
+        var events = service(repository, engines).submit(SESSION_ID, caller(), request("分析订单"), false);
+
+        first.complete(null);
+        verify(agent, timeout(2_000)).continueQueuedExecution();
+        assertThat(holder.activeExecution()).isPresent();
+        second.complete(null);
+
+        assertThat(events.map(event -> event.getEvent()).collectList().block(Duration.ofSeconds(2)))
+                .containsExactly("user.message", "session.status.idle", "stream.end");
+        verify(repository, times(1)).finishExecution(anyString(), any());
+        assertThat(holder.activeExecution()).isEmpty();
+    }
+
+    @Test
+    void abortRequestWinsRaceWithAlreadyCompletedAgentFuture() {
+        RuntimeSessionRepository repository = mock(RuntimeSessionRepository.class);
+        RuntimeSessionDTO session = session();
+        when(repository.find(SESSION_ID)).thenReturn(Optional.of(session));
+        when(repository.acceptUserEvent(anyString(), anyString(), any(), any())).thenAnswer(invocation -> {
+            RuntimeEntryDTO entry = invocation.getArgument(2);
+            entry.setEntrySeq(1L);
+            return new UserEventAcceptance(Status.ACCEPTED, session);
+        });
+        Agent agent = mock(Agent.class);
+        CompletableFuture<Void> future = new CompletableFuture<>();
+        when(agent.subscribe(any())).thenReturn(() -> {});
+        when(agent.prompt(any(com.huawei.hicampus.mate.matecampusclaw.ai.types.Message.class))).thenReturn(future);
+        RuntimeSessionEngineRegistry engines = mock(RuntimeSessionEngineRegistry.class);
+        RuntimeSessionHolder holder = new RuntimeSessionHolder(SESSION_ID, null, agent);
+        when(engines.find(SESSION_ID)).thenReturn(Optional.of(holder));
+        var events = service(repository, engines).submit(SESSION_ID, caller(), request("分析订单"), false);
+        holder.activeExecution().orElseThrow().requestAbort();
+
+        future.complete(null);
+
+        assertThat(events.collectList().block(Duration.ofSeconds(2)).getLast().getData())
+                .containsEntry("reason", "aborted");
         assertThat(holder.activeExecution()).isEmpty();
     }
 

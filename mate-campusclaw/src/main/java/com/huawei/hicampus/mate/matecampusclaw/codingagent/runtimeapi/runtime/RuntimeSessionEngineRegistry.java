@@ -13,6 +13,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantLock;
 
 import com.huawei.hicampus.mate.matecampusclaw.agent.Agent;
+import com.huawei.hicampus.mate.matecampusclaw.agent.queue.MessageQueue.DeliveryMode;
 import com.huawei.hicampus.mate.matecampusclaw.agent.subagent.SubAgentRegistry;
 import com.huawei.hicampus.mate.matecampusclaw.agent.tool.AgentTool;
 import com.huawei.hicampus.mate.matecampusclaw.ai.CampusClawAiService;
@@ -104,6 +105,8 @@ public class RuntimeSessionEngineRegistry {
         agent.setSystemPrompt(readSystemPrompt(snapshot.runtimeDirectory()));
         agent.setTools(tools);
         agent.setThinkingLevel(thinking ? ThinkingLevel.MEDIUM : ThinkingLevel.OFF);
+        agent.setSteeringMode(DeliveryMode.ONE_AT_A_TIME);
+        agent.setFollowUpMode(DeliveryMode.ONE_AT_A_TIME);
         return agent;
     }
 

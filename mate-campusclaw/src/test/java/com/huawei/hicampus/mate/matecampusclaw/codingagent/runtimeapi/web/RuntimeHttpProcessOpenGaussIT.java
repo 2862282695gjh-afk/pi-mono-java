@@ -19,6 +19,8 @@ import java.nio.file.Path;
 import java.sql.DriverManager;
 import java.time.Duration;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
@@ -70,11 +72,19 @@ class RuntimeHttpProcessOpenGaussIT {
             modelStub.start();
             awaitHealth(runtime, applicationPort);
             String sessionId = createSession(applicationPort);
-            String stream = submitUserEvent(applicationPort, sessionId);
+            ModelGate controlGate = modelStub.blockNextResponse();
+            CompletableFuture<HttpResponse<String>> streamResponse = submitUserEventAsync(applicationPort, sessionId);
+            controlGate.awaitRequest();
+            assertControlAccepted(applicationPort, sessionId, "steers", "先只分析异常订单");
+            assertControlAccepted(applicationPort, sessionId, "follow-ups", "完成后再给出摘要");
+            controlGate.release();
+            String stream = requireSuccessfulStream(streamResponse);
             assertStreamOrder(stream);
+            assertIdleControlRejected(applicationPort, sessionId);
             assertHistoryPagination(applicationPort, sessionId);
             assertSessionConfiguration(applicationPort, sessionId);
             assertDatabaseState(config, sessionId);
+            assertAbort(applicationPort, modelStub);
             assertThat(modelStub.requestPath()).isEqualTo("/v1/chat/completions");
         }
     }
@@ -205,19 +215,74 @@ class RuntimeHttpProcessOpenGaussIT {
                 .asText();
     }
 
-    private static String submitUserEvent(int port, String sessionId) throws Exception {
+    private static CompletableFuture<HttpResponse<String>> submitUserEventAsync(int port, String sessionId) {
         URI uri = eventsUri(port, sessionId, null);
         String body = "{\"type\":\"user.message\",\"message\":\"process smoke\",\"file_ids\":[]}";
-        HttpResponse<String> response = send(HttpRequest.newBuilder(uri)
+        HttpRequest request = HttpRequest.newBuilder(uri)
                 .header("X-HW-ID", CALLER_ID)
                 .header("Authorization", "Bearer " + JWT)
                 .header("Content-Type", "application/json")
                 .header("Accept", "text/event-stream")
                 .POST(HttpRequest.BodyPublishers.ofString(body))
-                .build());
+                .build();
+        return CLIENT.sendAsync(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+    }
+
+    private static String requireSuccessfulStream(CompletableFuture<HttpResponse<String>> future) throws Exception {
+        HttpResponse<String> response = future.get(10, TimeUnit.SECONDS);
         assertThat(response.statusCode()).isEqualTo(200);
         assertThat(response.headers().firstValue("Content-Type").orElse("")).startsWith("text/event-stream");
         return response.body();
+    }
+
+    private static void assertControlAccepted(int port, String sessionId, String resource, String message)
+            throws Exception {
+        HttpResponse<String> response = send(HttpRequest.newBuilder(sessionUri(port, sessionId, resource))
+                .header("X-HW-ID", CALLER_ID)
+                .header("Authorization", "Bearer " + JWT)
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString("{\"message\":\"" + message + "\"}"))
+                .build());
+        assertThat(response.statusCode()).isEqualTo(202);
+        JsonNode result = MAPPER.readTree(response.body()).path("result");
+        assertThat(result.path("session_id").asText()).isEqualTo(sessionId);
+        assertThat(result.path("accepted_at").asText()).isNotBlank();
+    }
+
+    private static void assertIdleControlRejected(int port, String sessionId) throws Exception {
+        HttpResponse<String> response = send(HttpRequest.newBuilder(sessionUri(port, sessionId, "steers"))
+                .header("X-HW-ID", CALLER_ID)
+                .header("Authorization", "Bearer " + JWT)
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString("{\"message\":\"too late\"}"))
+                .build());
+        assertThat(response.statusCode()).isEqualTo(409);
+        assertThat(MAPPER.readTree(response.body()).path("resCode").asText()).isEqualTo("SESSION_NOT_RUNNING");
+    }
+
+    private static void assertAbort(int port, ModelStub modelStub) throws Exception {
+        String sessionId = createSession(port);
+        ModelGate gate = modelStub.blockNextResponse();
+        CompletableFuture<HttpResponse<String>> streamResponse = submitUserEventAsync(port, sessionId);
+        gate.awaitRequest();
+        HttpRequest request = HttpRequest.newBuilder(sessionUri(port, sessionId, "abort"))
+                .header("X-HW-ID", CALLER_ID)
+                .header("X-HW-APPKEY", APP_KEY)
+                .POST(HttpRequest.BodyPublishers.noBody())
+                .build();
+        HttpResponse<String> response;
+        try {
+            response = CLIENT.sendAsync(request, HttpResponse.BodyHandlers.ofString())
+                    .get(10, TimeUnit.SECONDS);
+        } finally {
+            gate.release();
+        }
+        assertThat(response.statusCode()).isEqualTo(204);
+        assertThat(response.body()).isEmpty();
+        String stream = requireSuccessfulStream(streamResponse);
+        assertThat(stream).contains("event:session.status.idle", "event:stream.end", "\"reason\":\"aborted\"");
+        assertThat(getSession(port, sessionId).result().path("state").asText()).isEqualTo("idle");
+        assertThat(send(request).statusCode()).isEqualTo(204);
     }
 
     private static void assertStreamOrder(String stream) {
@@ -235,25 +300,47 @@ class RuntimeHttpProcessOpenGaussIT {
             previous = current;
         }
         assertThat(stream).contains("process-level answer").doesNotContain("event:stream.error");
+        assertThat(stream).contains("先只分析异常订单", "完成后再给出摘要");
+        assertThat(stream.indexOf("先只分析异常订单")).isLessThan(stream.indexOf("完成后再给出摘要"));
+        assertThat(countOccurrences(stream, "event:user.message")).isEqualTo(3);
+        assertThat(countOccurrences(stream, "event:assistant.message.completed"))
+                .isEqualTo(3);
+    }
+
+    private static int countOccurrences(String value, String token) {
+        return (value.length() - value.replace(token, "").length()) / token.length();
     }
 
     private static void assertHistoryPagination(int port, String sessionId) throws Exception {
-        JsonNode first = listEvents(port, sessionId, "limit=1");
-        assertThat(first.path("events").get(0).path("type").asText()).isEqualTo("user.message");
-        String cursor = first.path("next_page").asText();
-        assertThat(cursor).startsWith("page_").doesNotContain(sessionId);
-
-        JsonNode second = listEvents(port, sessionId, "limit=1&page=" + cursor);
-        assertThat(second.path("events").get(0).path("type").asText()).isEqualTo("assistant.message.completed");
-        assertThat(second.path("events")
-                        .get(0)
-                        .path("message")
-                        .path("content")
-                        .get(0)
-                        .path("text")
-                        .asText())
-                .isEqualTo("process-level answer");
-        assertThat(second.path("next_page").isNull()).isTrue();
+        List<String> expectedTypes = List.of(
+                "user.message",
+                "assistant.message.completed",
+                "user.message",
+                "assistant.message.completed",
+                "user.message",
+                "assistant.message.completed");
+        String cursor = null;
+        for (int index = 0; index < expectedTypes.size(); index++) {
+            String query = cursor == null ? "limit=1" : "limit=1&page=" + cursor;
+            JsonNode page = listEvents(port, sessionId, query);
+            JsonNode event = page.path("events").get(0);
+            assertThat(event.path("type").asText()).isEqualTo(expectedTypes.get(index));
+            if (index == 1) {
+                assertThat(event.path("message")
+                                .path("content")
+                                .get(0)
+                                .path("text")
+                                .asText())
+                        .isEqualTo("process-level answer");
+            }
+            cursor = page.path("next_page").isNull()
+                    ? null
+                    : page.path("next_page").asText();
+            if (index < expectedTypes.size() - 1) {
+                assertThat(cursor).startsWith("page_").doesNotContain(sessionId);
+            }
+        }
+        assertThat(cursor).isNull();
     }
 
     private static void assertSessionConfiguration(int port, String sessionId) throws Exception {
@@ -387,6 +474,14 @@ class RuntimeHttpProcessOpenGaussIT {
                 assertThat(rows.getString(1)).isEqualTo("user.message");
                 assertThat(rows.next()).isTrue();
                 assertThat(rows.getString(1)).isEqualTo("assistant.message.completed");
+                assertThat(rows.next()).isTrue();
+                assertThat(rows.getString(1)).isEqualTo("user.message");
+                assertThat(rows.next()).isTrue();
+                assertThat(rows.getString(1)).isEqualTo("assistant.message.completed");
+                assertThat(rows.next()).isTrue();
+                assertThat(rows.getString(1)).isEqualTo("user.message");
+                assertThat(rows.next()).isTrue();
+                assertThat(rows.getString(1)).isEqualTo("assistant.message.completed");
                 assertThat(rows.next()).isFalse();
             }
         }
@@ -423,6 +518,25 @@ class RuntimeHttpProcessOpenGaussIT {
 
     private record SessionView(JsonNode result, String etag) {}
 
+    private static final class ModelGate {
+        private final CountDownLatch entered = new CountDownLatch(1);
+
+        private final CountDownLatch release = new CountDownLatch(1);
+
+        private void awaitRequest() throws InterruptedException {
+            assertThat(entered.await(5, TimeUnit.SECONDS)).isTrue();
+        }
+
+        private void release() {
+            release.countDown();
+        }
+
+        private void blockResponse() throws InterruptedException {
+            entered.countDown();
+            assertThat(release.await(10, TimeUnit.SECONDS)).isTrue();
+        }
+    }
+
     private static final class RuntimeProcess implements AutoCloseable {
         private final Process process;
 
@@ -452,22 +566,13 @@ class RuntimeHttpProcessOpenGaussIT {
     }
 
     private static final class ModelStub implements AutoCloseable {
-        private static final byte[] RESPONSE = ("data: {\"id\":\"chatcmpl-process\",\"object\":"
-                        + "\"chat.completion.chunk\",\"created\":1786980000,\"model\":\"runtime-smoke-model\","
-                        + "\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"\"},"
-                        + "\"finish_reason\":null}]}\n\n"
-                        + "data: {\"id\":\"chatcmpl-process\",\"object\":\"chat.completion.chunk\","
-                        + "\"created\":1786980000,\"model\":\"runtime-smoke-model\",\"choices\":[{\"index\":0,"
-                        + "\"delta\":{\"content\":\"process-level answer\"},\"finish_reason\":null}]}\n\n"
-                        + "data: {\"id\":\"chatcmpl-process\",\"object\":\"chat.completion.chunk\","
-                        + "\"created\":1786980000,\"model\":\"runtime-smoke-model\",\"choices\":[{\"index\":0,"
-                        + "\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":4,"
-                        + "\"completion_tokens\":3,\"total_tokens\":7}}\n\ndata: [DONE]\n\n")
-                .getBytes(StandardCharsets.UTF_8);
-
         private final HttpServer server;
 
         private volatile String requestPath;
+
+        private ModelGate pendingGate;
+
+        private int responseCount;
 
         private ModelStub(int port) throws IOException {
             server = HttpServer.create(new InetSocketAddress("127.0.0.1", port), 0);
@@ -483,17 +588,64 @@ class RuntimeHttpProcessOpenGaussIT {
             return requestPath;
         }
 
+        private synchronized ModelGate blockNextResponse() {
+            if (pendingGate != null) {
+                throw new IllegalStateException("a model response is already blocked");
+            }
+            pendingGate = new ModelGate();
+            return pendingGate;
+        }
+
         private void respond(HttpExchange exchange) throws IOException {
             requestPath = exchange.getRequestURI().getPath();
             exchange.getRequestBody().readAllBytes();
+            awaitGate();
+            byte[] response = response(++responseCount);
             exchange.getResponseHeaders().set("Content-Type", "text/event-stream");
-            exchange.sendResponseHeaders(200, RESPONSE.length);
-            exchange.getResponseBody().write(RESPONSE);
+            exchange.sendResponseHeaders(200, response.length);
+            exchange.getResponseBody().write(response);
             exchange.close();
+        }
+
+        private void awaitGate() throws IOException {
+            ModelGate gate;
+            synchronized (this) {
+                gate = pendingGate;
+                pendingGate = null;
+            }
+            if (gate == null) {
+                return;
+            }
+            try {
+                gate.blockResponse();
+            } catch (InterruptedException error) {
+                Thread.currentThread().interrupt();
+                throw new IOException("model response gate interrupted", error);
+            }
+        }
+
+        private static byte[] response(int responseNumber) {
+            String text = responseNumber == 1 ? "process-level answer" : "process-level answer " + responseNumber;
+            return ("data: {\"id\":\"chatcmpl-process\",\"object\":\"chat.completion.chunk\","
+                            + "\"created\":1786980000,\"model\":\"runtime-smoke-model\",\"choices\":[{\"index\":0,"
+                            + "\"delta\":{\"role\":\"assistant\",\"content\":\"\"},\"finish_reason\":null}]}\n\n"
+                            + "data: {\"id\":\"chatcmpl-process\",\"object\":\"chat.completion.chunk\","
+                            + "\"created\":1786980000,\"model\":\"runtime-smoke-model\",\"choices\":[{\"index\":0,"
+                            + "\"delta\":{\"content\":\"" + text + "\"},\"finish_reason\":null}]}\n\n"
+                            + "data: {\"id\":\"chatcmpl-process\",\"object\":\"chat.completion.chunk\","
+                            + "\"created\":1786980000,\"model\":\"runtime-smoke-model\",\"choices\":[{\"index\":0,"
+                            + "\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":4,"
+                            + "\"completion_tokens\":3,\"total_tokens\":7}}\n\ndata: [DONE]\n\n")
+                    .getBytes(StandardCharsets.UTF_8);
         }
 
         @Override
         public void close() {
+            synchronized (this) {
+                if (pendingGate != null) {
+                    pendingGate.release();
+                }
+            }
             server.stop(0);
         }
     }
