@@ -2,16 +2,16 @@
  * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
  */
 
-package com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.call;
+package com.campusclaw.codingagent.tool.mate;
 
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.call.CallMateTool.MateCredentials;
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.call.CallMateTool.MateToolClient;
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.call.CallMateTool.MateToolMeta;
+import com.campusclaw.codingagent.tool.mate.CallMateTool.MateCredentials;
+import com.campusclaw.codingagent.tool.mate.CallMateTool.MateToolClient;
+import com.campusclaw.codingagent.tool.mate.CallMateTool.MateToolMeta;
 
 /**
  * In-memory mock of {@link MateToolClient} for unit tests.

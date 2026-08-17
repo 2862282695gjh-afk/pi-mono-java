@@ -15,11 +15,11 @@ import com.campusclaw.agent.tool.ToolExecutionMode;
 import com.campusclaw.agent.tool.ToolExecutionPipeline;
 import com.campusclaw.ai.types.ToolCall;
 import com.campusclaw.ai.types.ToolResultMessage;
-import com.campusclaw.codingagent.tool.call.CallMateTool;
-import com.campusclaw.codingagent.tool.call.CallMateTool.MateCredentials;
-import com.campusclaw.codingagent.tool.call.CallMateTool.MateToolMeta;
-import com.campusclaw.codingagent.tool.call.MockMateToolClient;
-import com.campusclaw.codingagent.tool.list.ListMateTool;
+import com.campusclaw.codingagent.tool.mate.CallMateTool;
+import com.campusclaw.codingagent.tool.mate.CallMateTool.MateCredentials;
+import com.campusclaw.codingagent.tool.mate.CallMateTool.MateToolMeta;
+import com.campusclaw.codingagent.tool.mate.ListMateTool;
+import com.campusclaw.codingagent.tool.mate.MockMateToolClient;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;

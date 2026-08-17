@@ -2,7 +2,7 @@
  * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
  */
 
-package com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.list;
+package com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.mate;
 
 import java.util.List;
 import java.util.Map;
@@ -13,7 +13,6 @@ import com.huawei.hicampus.mate.matecampusclaw.agent.tool.AgentToolUpdateCallbac
 import com.huawei.hicampus.mate.matecampusclaw.agent.tool.CancellationToken;
 import com.huawei.hicampus.mate.matecampusclaw.ai.types.ContentBlock;
 import com.huawei.hicampus.mate.matecampusclaw.ai.types.TextContent;
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.call.CallMateTool;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 

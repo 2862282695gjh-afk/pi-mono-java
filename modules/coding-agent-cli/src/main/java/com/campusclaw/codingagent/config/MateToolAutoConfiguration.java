@@ -5,8 +5,8 @@
 package com.campusclaw.codingagent.config;
 
 import com.campusclaw.codingagent.common.client.HttpMateToolClient;
-import com.campusclaw.codingagent.tool.call.CallMateTool;
-import com.campusclaw.codingagent.tool.list.ListMateTool;
+import com.campusclaw.codingagent.tool.mate.CallMateTool;
+import com.campusclaw.codingagent.tool.mate.ListMateTool;
 
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;

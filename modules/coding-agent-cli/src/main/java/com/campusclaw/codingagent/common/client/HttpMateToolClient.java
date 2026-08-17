@@ -7,9 +7,9 @@ package com.campusclaw.codingagent.common.client;
 import java.util.List;
 import java.util.Map;
 
-import com.campusclaw.codingagent.tool.call.CallMateTool.MateCredentials;
-import com.campusclaw.codingagent.tool.call.CallMateTool.MateToolClient;
-import com.campusclaw.codingagent.tool.call.CallMateTool.MateToolMeta;
+import com.campusclaw.codingagent.tool.mate.CallMateTool.MateCredentials;
+import com.campusclaw.codingagent.tool.mate.CallMateTool.MateToolClient;
+import com.campusclaw.codingagent.tool.mate.CallMateTool.MateToolMeta;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

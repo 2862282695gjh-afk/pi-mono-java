@@ -7,9 +7,9 @@ package com.huawei.hicampus.mate.matecampusclaw.codingagent.common.client;
 import java.util.List;
 import java.util.Map;
 
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.call.CallMateTool.MateCredentials;
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.call.CallMateTool.MateToolClient;
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.call.CallMateTool.MateToolMeta;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.mate.CallMateTool.MateCredentials;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.mate.CallMateTool.MateToolClient;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.mate.CallMateTool.MateToolMeta;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

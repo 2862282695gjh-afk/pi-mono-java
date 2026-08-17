@@ -5,8 +5,8 @@
 package com.huawei.hicampus.mate.matecampusclaw.codingagent.config;
 
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.common.client.HttpMateToolClient;
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.call.CallMateTool;
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.list.ListMateTool;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.mate.CallMateTool;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.mate.ListMateTool;
 
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;

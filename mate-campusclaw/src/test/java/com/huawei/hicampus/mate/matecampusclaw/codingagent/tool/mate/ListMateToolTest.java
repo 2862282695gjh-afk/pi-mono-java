@@ -2,7 +2,7 @@
  * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
  */
 
-package com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.list;
+package com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.mate;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -10,10 +10,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.util.List;
 import java.util.Map;
 
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.call.CallMateTool;
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.call.CallMateTool.MateCredentials;
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.call.CallMateTool.MateToolMeta;
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.call.MockMateToolClient;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.mate.CallMateTool.MateCredentials;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.mate.CallMateTool.MateToolMeta;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;

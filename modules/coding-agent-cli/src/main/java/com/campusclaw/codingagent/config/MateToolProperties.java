@@ -4,7 +4,7 @@
 
 package com.campusclaw.codingagent.config;
 
-import com.campusclaw.codingagent.tool.call.CallMateTool;
+import com.campusclaw.codingagent.tool.mate.CallMateTool;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 

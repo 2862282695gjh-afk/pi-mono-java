@@ -2,7 +2,7 @@
  * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
  */
 
-package com.campusclaw.codingagent.tool.call;
+package com.campusclaw.codingagent.tool.mate;
 
 import java.util.List;
 import java.util.Map;
