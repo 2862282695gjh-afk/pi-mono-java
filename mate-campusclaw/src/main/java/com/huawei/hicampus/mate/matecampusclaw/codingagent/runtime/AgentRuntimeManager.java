@@ -51,6 +51,7 @@ public class AgentRuntimeManager {
     private static final Set<String> RESOURCE_FILE_TYPES = Set.of("md", "txt");
     private static final String AGENT_METADATA_FILE = "agentId.json";
     private static final String SYSTEM_PROMPT_FILE = "systemPrompt.md";
+    private static final String AGENT_SETTINGS_FILE = "setting.json";
     private static final String SKILL_METADATA_FILE = "skill.json";
     private static final String SKILL_TOOLS_FILE = "tools.json";
     private static final int MAX_BOUND_SKILLS = 128;
@@ -114,8 +115,7 @@ public class AgentRuntimeManager {
      * @return per-Agent session configuration
      */
     public SessionConfig sessionConfig(SessionConfig base, PreparedAgentRuntime runtime) {
-        String runtimeModel = runtime.metadata().bindingModels();
-        String model = runtimeModel != null && !runtimeModel.isBlank() ? runtimeModel : base.model();
+        String model = runtime.metadata().defaultModel().orElse(base.model());
         String prompt = joinPrompts(readSystemPrompt(runtime), base.customPrompt());
         return new SessionConfig(model, runtime.agentRoot(), prompt, base.mode());
     }
@@ -156,11 +156,13 @@ public class AgentRuntimeManager {
         Path campusClawDir = agentRoot.resolve(".campusclaw");
         Path metadataFile = campusClawDir.resolve(AGENT_METADATA_FILE);
         Path systemPromptFile = campusClawDir.resolve(SYSTEM_PROMPT_FILE);
+        Path settingsFile = campusClawDir.resolve(AGENT_SETTINGS_FILE);
         Path skillsDir = campusClawDir.resolve("skills");
         rejectSymbolicLinks(properties.agentsRoot().toAbsolutePath().normalize(), skillsDir);
         if (!Files.isDirectory(agentRoot, LinkOption.NOFOLLOW_LINKS)
                 || !Files.isRegularFile(metadataFile, LinkOption.NOFOLLOW_LINKS)
                 || !Files.isRegularFile(systemPromptFile, LinkOption.NOFOLLOW_LINKS)
+                || !Files.isRegularFile(settingsFile, LinkOption.NOFOLLOW_LINKS)
                 || !Files.isDirectory(skillsDir, LinkOption.NOFOLLOW_LINKS)) {
             return null;
         }
@@ -346,6 +348,30 @@ public class AgentRuntimeManager {
         }
         writeAtomically(campusClawDir.resolve(SYSTEM_PROMPT_FILE), systemPromptContent(runtime));
         writeAtomically(campusClawDir.resolve(AGENT_METADATA_FILE), mapper.writeValueAsString(runtime));
+        writeAtomically(campusClawDir.resolve(AGENT_SETTINGS_FILE), renderModelSettings(runtime));
+    }
+
+    /**
+     * Renders the model-selection settings file persisted next to the Agent metadata.
+     * {@code agentVersion} keeps the numeric form when the version parses as a
+     * whole number, otherwise the raw string is preserved.
+     *
+     * @param runtime validated Agent metadata
+     * @return setting.json content
+     */
+    private String renderModelSettings(AgentRuntime runtime) {
+        var node = mapper.createObjectNode();
+        node.put("agentId", runtime.id() == null ? "" : runtime.id());
+        String version = runtime.version();
+        if (version != null && version.matches("-?\\d{1,18}")) {
+            node.put("agentVersion", Long.parseLong(version));
+        } else {
+            node.put("agentVersion", version == null ? "" : version);
+        }
+        runtime.defaultModel().ifPresent(model -> node.put("defaultModel", model));
+        var enabledModels = node.putArray("enabledModels");
+        runtime.bindingModels().forEach(enabledModels::add);
+        return node.toString();
     }
 
     private static String systemPromptContent(AgentRuntime runtime) {

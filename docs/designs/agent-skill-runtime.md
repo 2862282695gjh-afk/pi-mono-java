@@ -12,6 +12,7 @@ CampusClaw 负责决定运行哪个 Agent。选定 `agentId` 后，CampusClaw �
 
 ```text
 ./agent/{agentId}/.campusclaw/agentId.json
+./agent/{agentId}/.campusclaw/setting.json
 ./agent/{agentId}/.campusclaw/systemPrompt.md
 ./agent/{agentId}/.campusclaw/skills/{skillName}/SKILL.md
 ./agent/{agentId}/.campusclaw/skills/{skillName}/skill.json
@@ -19,6 +20,8 @@ CampusClaw 负责决定运行哪个 Agent。选定 `agentId` 后，CampusClaw �
 ./agent/{agentId}/.campusclaw/skills/{skillName}/references/tools.json
 ./agent/{agentId}/.campusclaw/skills/{skillName}/templates/*
 ```
+
+`setting.json` 记录模型选择信息，由 GetAgentRuntime 的 `bindingModels` 列表派生：首个非空白模型作为 `defaultModel`，全列表作为 `enabledModels`；`agentId` 与 `agentVersion` 来自响应同名属性（`agentVersion` 为纯数字时写成数字，否则保留字符串）。该文件与 `agentId.json` 一样参与本地完整性校验，缺失即视为不完整并 fail closed。
 
 Agent 可由以下入口指定：
 
@@ -109,7 +112,7 @@ querySkillInfo 返回的 `bindingTools` 是 Skill 工具的唯一远端来源。
 ### 5.1 Agent 本地发现与冷启动
 
 1. 安全解析 `./agent/{agentId}`，拒绝路径穿越和 Agent 路径中的符号链接。
-2. 同时存在规范文件 `agentId.json`、`systemPrompt.md`、`skills/`，且目录集合与直接绑定 Skill 精确一致；每个 Skill 都有版本匹配的 `skill.json`、与元数据可重建内容完全一致的 `SKILL.md`、内容一致且无额外文件的 `references/` 与 `templates/` 时，直接加载本地缓存，不调用 CampusMateService。`systemPrompt.md` 是本地会话系统提示词来源，不要求与 `agentId.json.systemPrompt` 比对。
+2. 同时存在规范文件 `agentId.json`、`setting.json`、`systemPrompt.md`、`skills/`，且目录集合与直接绑定 Skill 精确一致；每个 Skill 都有版本匹配的 `skill.json`、与元数据可重建内容完全一致的 `SKILL.md`、内容一致且无额外文件的 `references/` 与 `templates/` 时，直接加载本地缓存，不调用 CampusMateService。`systemPrompt.md` 是本地会话系统提示词来源，不要求与 `agentId.json.systemPrompt` 比对。
 3. 整个 Agent 目录不存在时调用 GetAgentRuntime，取得 Agent 信息、`systemPrompt`、Agent 工具权限和直接绑定 Skill 的 `(id, version)` 列表。
 4. 对每个直接绑定 Skill 调用 querySkillInfo；返回必须恰好一条且 `id/version` 与绑定坐标匹配。同一 Agent 内重复的 Skill id 或 name 均使物化失败，不能静默覆盖。
 5. 使用 querySkillInfo 顶层元数据生成带 `name`、`description` frontmatter 的基础 `SKILL.md`；将 references/templates 的文本内容分别写入固定的 `references/`、`templates/` 目录，将全部 `bindingTools` 写入 `references/tools.json`，并把完整 Skill 元数据写入 `skill.json`。资源名必须是安全的单路径段，fileType 只接受 `md` 或 `txt`，拒绝路径穿越、重复文件和符号链接。
@@ -161,7 +164,7 @@ sequenceDiagram
     Caller->>Claw: 用户任务 + agentId
     Claw->>Pool: getOrCreate(agentId, conversationId)
     Pool->>Runtime: prepare(agentId)
-    Runtime->>FS: 检查agentId.json、systemPrompt.md、skills目录和SKILL.md
+    Runtime->>FS: 检查agentId.json、setting.json、systemPrompt.md、skills目录和SKILL.md
 
     alt 本地Agent结构完整
         FS-->>Runtime: 返回本地Agent元数据、systemPrompt.md和Skill文件
@@ -175,7 +178,7 @@ sequenceDiagram
         end
         Runtime->>FS: 临时目录创建.campusclaw/skills/{skillName}
         Runtime->>FS: 写入SKILL.md、skill.json、references/、templates/
-        Runtime->>FS: 写入.campusclaw/systemPrompt.md和agentId.json
+        Runtime->>FS: 写入.campusclaw/systemPrompt.md、agentId.json和setting.json
         Runtime->>FS: 原子移动为./agent/{agentId}
     else 本地目录存在但不完整
         Runtime-->>Pool: 配置漂移错误（fail closed）
@@ -250,7 +253,7 @@ sequenceDiagram
 | 按 Agent 隔离会话 | `SessionPool` | 使用 `(agentId, conversationId)` 作为会话键；Agent 的 cwd、历史文件、删除和重命名操作均按 Agent 隔离。 |
 | 本地优先准备 Runtime | `AgentRuntimeManager.prepare` | 先校验 `./agent/{agentId}` 的完整缓存；完整时不访问 CampusMate，半成品直接 fail closed。 |
 | 获取 Agent 与 Skill 定义 | `MateServiceClient`、`AgentRuntimeManager` | 调用 `GetAgentRuntime` 获取 Agent 元数据和直接绑定的 `(skillId, version)`，再逐个调用 `querySkillInfo` 获取完整 Skill 快照。 |
-| 物化本地目录 | `AgentRuntimeManager` | 在临时目录写入 `agentId.json`、`systemPrompt.md`、`skill.json`、`SKILL.md`、`references/tools.json`、其他 references 和 templates，完成校验后原子发布。 |
+| 物化本地目录 | `AgentRuntimeManager` | 在临时目录写入 `agentId.json`、`setting.json`、`systemPrompt.md`、`skill.json`、`SKILL.md`、`references/tools.json`、其他 references 和 templates，完成校验后原子发布。 |
 | 校验缓存一致性 | `AgentRuntimeManager` | 校验 `systemPrompt.md` 存在且是普通文件，并校验绑定 id/version、目录集合、Skill 名称、SKILL.md 全文、tools.json、资源内容、符号链接、路径和大小限制；拒绝额外未绑定 Skill。 |
 | 创建不可变运行时快照 | `PreparedAgentRuntime` | 保存 Agent 元数据、Agent 根目录和直接绑定 Skill 元数据，供单个会话使用，不让会话重新猜测绑定关系。 |
 | 发现 Skill | `AgentSession`、`SkillLoader`、`SkillPromptFormatter` | 同时加载当前 Agent 的 `SKILL.md` 和 `references/tools.json`，向模型暴露 `name/description`，不暴露文件路径，也不扫描用户级 Skill。 |

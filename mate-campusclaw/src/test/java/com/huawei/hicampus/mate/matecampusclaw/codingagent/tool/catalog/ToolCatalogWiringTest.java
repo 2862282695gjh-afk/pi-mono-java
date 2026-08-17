@@ -4,6 +4,8 @@
 
 package com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.catalog;
 
+import static org.assertj.core.api.Assertions.assertThat;
+
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.extension.ExtensionRegistry;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtime.AgentRuntimeManager;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtime.AgentRuntimeProperties;
@@ -14,8 +16,6 @@ import org.junit.jupiter.api.Test;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 import org.springframework.context.annotation.Configuration;
-
-import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Component-scan wiring test for the tool catalog beans.
@@ -72,6 +72,5 @@ class ToolCatalogWiringTest {
     /** Registers {@link AgentRuntimeProperties} for binding in the test context. */
     @Configuration
     @EnableConfigurationProperties(AgentRuntimeProperties.class)
-    static class RuntimePropertiesConfig {
-    }
+    static class RuntimePropertiesConfig {}
 }

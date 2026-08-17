@@ -422,10 +422,10 @@ class AgentSessionTest {
                     List.of(),
                     List.of());
             AgentRuntime metadata = new AgentRuntime(
-                    "claude-sonnet-4-20250514",
+                    List.of("claude-sonnet-4-20250514"),
                     List.of(new SkillReference("skill-1", "1")),
                     List.of(bashBinding),
-                    "Agent",
+                    List.of("Agent"),
                     "Agent",
                     "agent-a",
                     "agent-a",

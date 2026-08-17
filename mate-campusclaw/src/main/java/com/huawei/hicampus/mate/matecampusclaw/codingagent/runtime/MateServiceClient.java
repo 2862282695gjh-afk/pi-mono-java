@@ -11,6 +11,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.util.List;
+import java.util.Optional;
 
 import com.fasterxml.jackson.annotation.JsonAlias;
 import com.fasterxml.jackson.annotation.JsonFormat;
@@ -175,10 +176,10 @@ public class MateServiceClient {
     /** CampusMate GetAgentRuntime response. */
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record AgentRuntime(
-            String bindingModels,
+            @JsonFormat(with = JsonFormat.Feature.ACCEPT_SINGLE_VALUE_AS_ARRAY) List<String> bindingModels,
             @JsonFormat(with = JsonFormat.Feature.ACCEPT_SINGLE_VALUE_AS_ARRAY) List<SkillReference> bindingSkills,
             List<BoundTool> bindingTools,
-            String description,
+            @JsonFormat(with = JsonFormat.Feature.ACCEPT_SINGLE_VALUE_AS_ARRAY) List<String> description,
             String displayName,
             String id,
             String name,
@@ -188,9 +189,22 @@ public class MateServiceClient {
             AgentReference bindingAgents) {
 
         public AgentRuntime {
+            bindingModels = bindingModels == null ? List.of() : List.copyOf(bindingModels);
             bindingSkills = bindingSkills == null ? List.of() : List.copyOf(bindingSkills);
             bindingTools = bindingTools == null ? List.of() : List.copyOf(bindingTools);
+            description = description == null ? List.of() : List.copyOf(description);
             userCases = userCases == null ? List.of() : List.copyOf(userCases);
+        }
+
+        /**
+         * Returns the first non-blank bound model, used as the session default.
+         *
+         * @return default model name, empty when the Agent binds no model
+         */
+        public Optional<String> defaultModel() {
+            return bindingModels.stream()
+                    .filter(model -> model != null && !model.isBlank())
+                    .findFirst();
         }
     }
 

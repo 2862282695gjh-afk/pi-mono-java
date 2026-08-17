@@ -19,6 +19,7 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
 import java.util.stream.IntStream;
+import java.util.stream.StreamSupport;
 
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtime.MateServiceClient.AgentRuntime;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtime.MateServiceClient.BoundTool;
@@ -98,6 +99,72 @@ class AgentRuntimeManagerTest {
     }
 
     @Test
+    void materializesModelSettingsFileWithDefaultModel() throws Exception {
+        when(client.getAgentRuntime("agent-a"))
+                .thenReturn(
+                        runtime(List.of(new SkillReference("skill-1", "1")), List.of("glm-5.2", "minimax-m2.5"), "3"));
+        when(client.querySkillInfo("skill-1")).thenReturn(List.of(skillInfo()));
+
+        PreparedAgentRuntime prepared = manager.prepare("agent-a");
+
+        var settings = new ObjectMapper()
+                .readTree(
+                        prepared.agentRoot().resolve(".campusclaw/setting.json").toFile());
+        assertEquals("agent-a", settings.path("agentId").asText());
+        assertTrue(settings.path("agentVersion").isNumber());
+        assertEquals(3, settings.path("agentVersion").asInt());
+        assertEquals("glm-5.2", settings.path("defaultModel").asText());
+        assertEquals(
+                List.of("glm-5.2", "minimax-m2.5"),
+                StreamSupport.stream(settings.path("enabledModels").spliterator(), false)
+                        .map(node -> node.asText())
+                        .toList());
+    }
+
+    @Test
+    void keepsNonNumericAgentVersionAsStringInSettingsFile() throws Exception {
+        when(client.getAgentRuntime("agent-a"))
+                .thenReturn(runtime(List.of(new SkillReference("skill-1", "1")), List.of(), "1.0.0"));
+        when(client.querySkillInfo("skill-1")).thenReturn(List.of(skillInfo()));
+
+        PreparedAgentRuntime prepared = manager.prepare("agent-a");
+
+        var settings = new ObjectMapper()
+                .readTree(
+                        prepared.agentRoot().resolve(".campusclaw/setting.json").toFile());
+        assertTrue(settings.path("agentVersion").isTextual());
+        assertEquals("1.0.0", settings.path("agentVersion").asText());
+        assertTrue(settings.path("enabledModels").isArray());
+        assertEquals(0, settings.path("enabledModels").size());
+        assertTrue(settings.path("defaultModel").isMissingNode());
+    }
+
+    @Test
+    void fallsBackToBaseModelWhenAgentBindsNoModel() throws Exception {
+        when(client.getAgentRuntime("agent-a"))
+                .thenReturn(runtime(List.of(new SkillReference("skill-1", "1")), List.of("  "), "1"));
+        when(client.querySkillInfo("skill-1")).thenReturn(List.of(skillInfo()));
+        PreparedAgentRuntime local = manager.prepare("agent-a");
+
+        SessionConfig config =
+                manager.sessionConfig(new SessionConfig("base-model", tempDir, "Base prompt", "interactive"), local);
+
+        assertEquals("base-model", config.model());
+    }
+
+    @Test
+    void rejectsLocalCacheWhenSettingsFileIsMissing() throws Exception {
+        when(client.getAgentRuntime("agent-a")).thenReturn(runtime(List.of(new SkillReference("skill-1", "1"))));
+        when(client.querySkillInfo("skill-1")).thenReturn(List.of(skillInfo()));
+        PreparedAgentRuntime prepared = manager.prepare("agent-a");
+        Files.delete(prepared.agentRoot().resolve(".campusclaw/setting.json"));
+
+        AgentRuntimeException error = assertThrows(AgentRuntimeException.class, () -> manager.prepare("agent-a"));
+
+        assertTrue(error.getMessage().contains("incomplete"));
+    }
+
+    @Test
     void rejectsLocalCacheWhenDeclaredResourceIsMissing() throws Exception {
         when(client.getAgentRuntime("agent-a")).thenReturn(runtime(List.of(new SkillReference("skill-1", "1"))));
         when(client.querySkillInfo("skill-1")).thenReturn(List.of(skillInfo()));
@@ -134,6 +201,7 @@ class AgentRuntimeManagerTest {
                 manager.sessionConfig(new SessionConfig("base-model", tempDir, "Base prompt", "interactive"), local);
 
         assertEquals("Modified prompt\n\nBase prompt", config.customPrompt());
+        assertEquals("gpt-4o", config.model());
         verify(client, times(1)).getAgentRuntime("agent-a");
         verify(client, times(1)).querySkillInfo("skill-1");
     }
@@ -292,17 +360,21 @@ class AgentRuntimeManagerTest {
     }
 
     private static AgentRuntime runtime(List<SkillReference> skills) {
+        return runtime(skills, List.of("gpt-4o"), "1");
+    }
+
+    private static AgentRuntime runtime(List<SkillReference> skills, List<String> bindingModels, String version) {
         return new AgentRuntime(
-                "gpt-4o",
+                bindingModels,
                 skills,
                 List.of(tool("read", "allow"), tool("bash", "deny")),
-                "Agent description",
+                List.of("Agent description"),
                 "Agent A",
                 "agent-a",
                 "agent-a",
                 "Agent system prompt",
                 List.of("campus"),
-                "1",
+                version,
                 null);
     }
 

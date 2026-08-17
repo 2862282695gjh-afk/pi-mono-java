@@ -72,6 +72,49 @@ class MateServiceClientTest {
     }
 
     @Test
+    void readsBindingModelsAndDescriptionLists() throws Exception {
+        server.enqueue(
+                new MockResponse()
+                        .setHeader("Content-Type", "application/json")
+                        .setBody(
+                                """
+                        {
+                          "id": "agent-a",
+                          "name": "Agent A",
+                          "bindingModels": ["glm-5.2", "minimax-m2.5"],
+                          "description": ["Diagnoses device faults", "Drafts reports"]
+                        }
+                        """));
+
+        var runtime = client.getAgentRuntime("agent-a");
+
+        assertEquals(List.of("glm-5.2", "minimax-m2.5"), runtime.bindingModels());
+        assertEquals(List.of("Diagnoses device faults", "Drafts reports"), runtime.description());
+        assertEquals("glm-5.2", runtime.defaultModel().orElseThrow());
+    }
+
+    @Test
+    void acceptsSingularBindingModelsAndDescription() throws Exception {
+        server.enqueue(
+                new MockResponse()
+                        .setHeader("Content-Type", "application/json")
+                        .setBody(
+                                """
+                        {
+                          "id": "agent-a",
+                          "name": "Agent A",
+                          "bindingModels": "glm-5.2",
+                          "description": "Diagnoses device faults"
+                        }
+                        """));
+
+        var runtime = client.getAgentRuntime("agent-a");
+
+        assertEquals(List.of("glm-5.2"), runtime.bindingModels());
+        assertEquals(List.of("Diagnoses device faults"), runtime.description());
+    }
+
+    @Test
     void queriesCompleteSkillInfoAndAcceptsBothVersionFieldNames() throws Exception {
         server.enqueue(
                 new MockResponse().setHeader("Content-Type", "application/json").setBody(skillInfoResponse()));
