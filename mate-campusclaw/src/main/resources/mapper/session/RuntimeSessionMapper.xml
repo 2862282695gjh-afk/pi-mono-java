@@ -127,6 +127,25 @@
         LIMIT #{limit}
     </select>
 
+    <update id="updateSessionModel">
+        UPDATE t_sessions
+        SET model_id = #{modelId},
+            thinking = #{thinking},
+            resource_version = resource_version + 1,
+            updated_at = #{updatedAt}
+        WHERE id = #{sessionId}
+          AND state = 'idle'
+    </update>
+
+    <update id="updateSessionThinking">
+        UPDATE t_sessions
+        SET thinking = #{thinking},
+            resource_version = resource_version + 1,
+            updated_at = #{updatedAt}
+        WHERE id = #{sessionId}
+          AND state = 'idle'
+    </update>
+
     <insert id="insertTombstone">
         INSERT INTO t_session_tombstone (session_id, deleted_at)
         VALUES (#{sessionId}, #{deletedAt})

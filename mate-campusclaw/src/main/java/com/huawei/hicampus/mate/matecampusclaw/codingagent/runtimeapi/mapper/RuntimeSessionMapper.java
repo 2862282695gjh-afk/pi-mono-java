@@ -51,6 +51,17 @@ public interface RuntimeSessionMapper {
     List<RuntimeEntryDTO> listCurrentBranch(
             @Param("sessionId") String sessionId, @Param("afterSeq") long afterSeq, @Param("limit") int limit);
 
+    int updateSessionModel(
+            @Param("sessionId") String sessionId,
+            @Param("modelId") String modelId,
+            @Param("thinking") boolean thinking,
+            @Param("updatedAt") OffsetDateTime updatedAt);
+
+    int updateSessionThinking(
+            @Param("sessionId") String sessionId,
+            @Param("thinking") boolean thinking,
+            @Param("updatedAt") OffsetDateTime updatedAt);
+
     int insertTombstone(@Param("sessionId") String sessionId, @Param("deletedAt") OffsetDateTime deletedAt);
 
     int insertCleanupTask(@Param("sessionId") String sessionId, @Param("createdAt") OffsetDateTime createdAt);

@@ -5,6 +5,8 @@
 package com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.model;
 
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 import com.huawei.hicampus.mate.matecampusclaw.ai.types.Model;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.model.ModelCatalogService;
@@ -54,10 +56,11 @@ public class CatalogRuntimeModelManager implements RuntimeModelManager {
     @Override
     public List<String> listAvailableModels(AgentRuntimeSnapshotDTO snapshot) {
         try {
-            var allowed = snapshot.enabledModelIds();
-            return modelCatalogService.getAvailableModels().stream()
+            Set<String> available = modelCatalogService.getAvailableModels().stream()
                     .map(Model::id)
-                    .filter(allowed::contains)
+                    .collect(Collectors.toSet());
+            return snapshot.enabledModelIds().stream()
+                    .filter(available::contains)
                     .toList();
         } catch (RuntimeException error) {
             throw new RuntimeApiException(HttpStatus.SERVICE_UNAVAILABLE, RuntimeErrorCode.MANAGER_UNAVAILABLE, error);

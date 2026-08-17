@@ -329,6 +329,9 @@ public class ServerMode {
         banner.info("  DELETE /campusclaw-service/v1/sessions/{session_id}");
         banner.info("  POST   /campusclaw-service/v1/sessions/{session_id}/events");
         banner.info("  GET    /campusclaw-service/v1/sessions/{session_id}/events");
+        banner.info("  GET    /campusclaw-service/v1/sessions/{session_id}/models");
+        banner.info("  PUT    /campusclaw-service/v1/sessions/{session_id}/model");
+        banner.info("  PUT    /campusclaw-service/v1/sessions/{session_id}/thinking");
         banner.info("  WS     /api/ws/chat");
     }
 

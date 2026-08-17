@@ -31,6 +31,17 @@ public interface RuntimeSessionRepository {
 
     List<RuntimeEntryDTO> listCurrentBranch(String sessionId, long afterSeq, int limit);
 
+    SessionConfigurationUpdate updateModel(
+            String sessionId,
+            String ownerId,
+            long expectedVersion,
+            String modelId,
+            boolean modelSupportsThinking,
+            OffsetDateTime updatedAt);
+
+    SessionConfigurationUpdate updateThinking(
+            String sessionId, String ownerId, long expectedVersion, boolean thinking, OffsetDateTime updatedAt);
+
     boolean beginDeletion(String sessionId, OffsetDateTime deletedAt);
 
     Optional<String> claimCleanupTask(OffsetDateTime now, OffsetDateTime staleBefore);

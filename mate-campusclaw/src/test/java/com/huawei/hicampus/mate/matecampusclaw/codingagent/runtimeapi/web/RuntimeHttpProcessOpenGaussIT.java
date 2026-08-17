@@ -45,6 +45,8 @@ class RuntimeHttpProcessOpenGaussIT {
 
     private static final String MODEL_ID = "runtime-smoke-model";
 
+    private static final String SECOND_MODEL_ID = "runtime-smoke-model-2";
+
     private static final String CALLER_ID = "mate-service";
 
     private static final String JWT = "process-jwt";
@@ -71,6 +73,7 @@ class RuntimeHttpProcessOpenGaussIT {
             String stream = submitUserEvent(applicationPort, sessionId);
             assertStreamOrder(stream);
             assertHistoryPagination(applicationPort, sessionId);
+            assertSessionConfiguration(applicationPort, sessionId);
             assertDatabaseState(config, sessionId);
             assertThat(modelStub.requestPath()).isEqualTo("/v1/chat/completions");
         }
@@ -135,26 +138,32 @@ class RuntimeHttpProcessOpenGaussIT {
     }
 
     private static String globalSettings(int modelPort) {
+        ObjectNode settings = MAPPER.createObjectNode();
+        settings.put("model", MODEL_ID);
+        settings.putArray("customModels")
+                .add(modelDefinition(MODEL_ID, "Runtime Smoke Model", modelPort, true))
+                .add(modelDefinition(SECOND_MODEL_ID, "Runtime Smoke Model 2", modelPort, false));
+        return settings.toString();
+    }
+
+    private static ObjectNode modelDefinition(String id, String name, int modelPort, boolean reasoning) {
         ObjectNode model = MAPPER.createObjectNode();
-        model.put("id", MODEL_ID);
-        model.put("name", "Runtime Smoke Model");
+        model.put("id", id);
+        model.put("name", name);
         model.put("api", "openai-completions");
         model.put("baseUrl", "http://127.0.0.1:" + modelPort + "/v1");
         model.put("apiKey", "process-smoke-key");
         model.put("contextWindow", 128_000);
         model.put("maxTokens", 4_096);
-        model.put("reasoning", false);
+        model.put("reasoning", reasoning);
         model.putArray("inputModalities").add("text");
-        ObjectNode settings = MAPPER.createObjectNode();
-        settings.put("model", MODEL_ID);
-        settings.putArray("customModels").add(model);
-        return settings.toString();
+        return model;
     }
 
     private static String agentSettings() {
         ObjectNode settings = MAPPER.createObjectNode();
         settings.put("defaultModel", MODEL_ID);
-        settings.putArray("enabledModels").add(MODEL_ID);
+        settings.putArray("enabledModels").add(MODEL_ID).add(SECOND_MODEL_ID);
         return settings.toString();
     }
 
@@ -247,6 +256,82 @@ class RuntimeHttpProcessOpenGaussIT {
         assertThat(second.path("next_page").isNull()).isTrue();
     }
 
+    private static void assertSessionConfiguration(int port, String sessionId) throws Exception {
+        SessionView initial = getSession(port, sessionId);
+        JsonNode models = listModels(port, sessionId);
+        assertThat(models.path("current_model_id").asText()).isEqualTo(MODEL_ID);
+        List<String> availableModels = MAPPER.readerForListOf(String.class).readValue(models.path("models"));
+        assertThat(availableModels).containsExactly(MODEL_ID, SECOND_MODEL_ID);
+
+        SessionView thinking = updateConfiguration(port, sessionId, "thinking", initial.etag(), "{\"thinking\":true}");
+        assertThat(thinking.result().path("thinking").asBoolean()).isTrue();
+        assertThat(thinking.etag()).isNotEqualTo(initial.etag());
+
+        SessionView changed = updateConfiguration(
+                port, sessionId, "model", thinking.etag(), "{\"model_id\":\"" + SECOND_MODEL_ID + "\"}");
+        assertThat(changed.result().path("model_id").asText()).isEqualTo(SECOND_MODEL_ID);
+        assertThat(changed.result().path("thinking").asBoolean()).isFalse();
+        SessionView unchanged = updateConfiguration(
+                port, sessionId, "model", changed.etag(), "{\"model_id\":\"" + SECOND_MODEL_ID + "\"}");
+        assertThat(unchanged.etag()).isEqualTo(changed.etag());
+        assertStaleConfigurationRejected(port, sessionId, thinking.etag());
+    }
+
+    private static SessionView getSession(int port, String sessionId) throws Exception {
+        HttpResponse<String> response = send(HttpRequest.newBuilder(sessionUri(port, sessionId, null))
+                .header("X-HW-ID", CALLER_ID)
+                .header("Authorization", "Bearer " + JWT)
+                .GET()
+                .build());
+        assertThat(response.statusCode()).isEqualTo(200);
+        return sessionView(response);
+    }
+
+    private static JsonNode listModels(int port, String sessionId) throws Exception {
+        HttpResponse<String> response = send(HttpRequest.newBuilder(sessionUri(port, sessionId, "models"))
+                .header("X-HW-ID", CALLER_ID)
+                .header("X-HW-APPKEY", APP_KEY)
+                .GET()
+                .build());
+        assertThat(response.statusCode()).isEqualTo(200);
+        return MAPPER.readTree(response.body()).path("result");
+    }
+
+    private static SessionView updateConfiguration(
+            int port, String sessionId, String resource, String etag, String body) throws Exception {
+        HttpResponse<String> response = send(HttpRequest.newBuilder(sessionUri(port, sessionId, resource))
+                .header("X-HW-ID", CALLER_ID)
+                .header("Authorization", "Bearer " + JWT)
+                .header("If-Match", etag)
+                .header("Content-Type", "application/json")
+                .PUT(HttpRequest.BodyPublishers.ofString(body))
+                .build());
+        assertThat(response.statusCode()).isEqualTo(200);
+        return sessionView(response);
+    }
+
+    private static void assertStaleConfigurationRejected(int port, String sessionId, String etag) throws Exception {
+        HttpResponse<String> response = send(HttpRequest.newBuilder(sessionUri(port, sessionId, "thinking"))
+                .header("X-HW-ID", CALLER_ID)
+                .header("Authorization", "Bearer " + JWT)
+                .header("If-Match", etag)
+                .header("Content-Type", "application/json")
+                .PUT(HttpRequest.BodyPublishers.ofString("{\"thinking\":false}"))
+                .build());
+        assertThat(response.statusCode()).isEqualTo(412);
+        assertThat(MAPPER.readTree(response.body()).path("resCode").asText()).isEqualTo("SESSION_VERSION_MISMATCH");
+    }
+
+    private static SessionView sessionView(HttpResponse<String> response) throws Exception {
+        String etag = response.headers().firstValue("ETag").orElseThrow();
+        return new SessionView(MAPPER.readTree(response.body()).path("result"), etag);
+    }
+
+    private static URI sessionUri(int port, String sessionId, String suffix) {
+        String base = "http://127.0.0.1:" + port + "/campusclaw-service/v1/sessions/" + sessionId;
+        return URI.create(suffix == null ? base : base + "/" + suffix);
+    }
+
     private static JsonNode listEvents(int port, String sessionId, String query) throws Exception {
         HttpResponse<String> response = send(HttpRequest.newBuilder(eventsUri(port, sessionId, query))
                 .header("X-HW-ID", CALLER_ID)
@@ -285,7 +370,7 @@ class RuntimeHttpProcessOpenGaussIT {
                 try (var rows = statement.executeQuery()) {
                     assertThat(rows.next()).isTrue();
                     assertThat(rows.getString(1)).isEqualTo("idle");
-                    assertThat(rows.getLong(2)).isEqualTo(3L);
+                    assertThat(rows.getLong(2)).isEqualTo(5L);
                     assertThat(rows.getString(3)).startsWith("entry_");
                 }
             }
@@ -335,6 +420,8 @@ class RuntimeHttpProcessOpenGaussIT {
             return "Set runtime.it.jar and gaussdb.it.url/username/password to run the process integration test";
         }
     }
+
+    private record SessionView(JsonNode result, String etag) {}
 
     private static final class RuntimeProcess implements AutoCloseable {
         private final Process process;

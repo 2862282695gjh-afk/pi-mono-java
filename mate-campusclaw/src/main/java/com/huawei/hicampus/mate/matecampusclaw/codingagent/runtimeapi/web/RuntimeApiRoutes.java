@@ -7,6 +7,7 @@ package com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.web;
 import static org.springframework.web.reactive.function.server.RequestPredicates.DELETE;
 import static org.springframework.web.reactive.function.server.RequestPredicates.GET;
 import static org.springframework.web.reactive.function.server.RequestPredicates.POST;
+import static org.springframework.web.reactive.function.server.RequestPredicates.PUT;
 import static org.springframework.web.reactive.function.server.RouterFunctions.route;
 
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.RuntimeApiConstants;
@@ -28,10 +29,13 @@ public class RuntimeApiRoutes {
 
     private static final String EVENTS = SESSIONS + "/events";
 
+    private static final String MODELS = SESSIONS + "/models";
+
     @Bean
     public RouterFunction<ServerResponse> runtimeSessionRoutes(
             RuntimeSessionController controller,
             RuntimeEventController eventController,
+            RuntimeSessionConfigurationController configurationController,
             RuntimeErrorFilter errorFilter,
             RuntimeAuthFilter authFilter) {
         String createPath = RuntimeApiConstants.BASE_PATH + "/agents/{agent_id}/sessions";
@@ -40,6 +44,9 @@ public class RuntimeApiRoutes {
                 .andRoute(DELETE(SESSIONS), controller::delete)
                 .andRoute(POST(EVENTS), eventController::submit)
                 .andRoute(GET(EVENTS), eventController::list)
+                .andRoute(GET(MODELS), configurationController::listModels)
+                .andRoute(PUT(SESSIONS + "/model"), configurationController::changeModel)
+                .andRoute(PUT(SESSIONS + "/thinking"), configurationController::changeThinking)
                 .filter(authFilter)
                 .filter(errorFilter);
     }

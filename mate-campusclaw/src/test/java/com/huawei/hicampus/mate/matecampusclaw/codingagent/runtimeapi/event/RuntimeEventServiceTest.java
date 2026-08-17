@@ -10,6 +10,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.timeout;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -122,6 +123,7 @@ class RuntimeEventServiceTest {
                 .extracting(RuntimeEntryDTO::getType)
                 .containsExactly("user.message", "assistant.message.completed");
         assertThat(holder.activeExecution()).isEmpty();
+        verify(repository, times(2)).find(SESSION_ID);
     }
 
     @Test
