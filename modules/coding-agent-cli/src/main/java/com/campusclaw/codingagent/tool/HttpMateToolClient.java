@@ -15,8 +15,9 @@ import org.slf4j.LoggerFactory;
 /**
  * HTTP implementation of {@link MateToolClient}.
  *
- * <p>Each Mate RPC endpoint is a separate protected method with a
- * {@code TODO} stub — internal development fills in the real Mate HTTP calls.
+ * <p>Each Mate RPC endpoint is a separate protected method with an
+ * {@code UnsupportedOperationException} stub — the internal Mate HTTP calls
+ * are tracked in {@code docs/DEFERRED.md}.
  *
  * @version [br_eCampusCore 25.1.0_Next, 2026/08/17]
  */
@@ -28,7 +29,6 @@ public class HttpMateToolClient implements MateToolClient {
     public List<MateToolMeta> listTools(String agentId, String skillId,
             MateCredentials credentials) {
         try {
-            // Step 1: query authorized tool_id list by agent_id or skill_id
             List<String> toolIds;
             if (agentId != null) {
                 toolIds = queryToolIdsByAgentId(agentId, credentials);
@@ -38,9 +38,9 @@ public class HttpMateToolClient implements MateToolClient {
                 log.warn("listTools called without agent_id or skill_id, returning empty list");
                 return List.of();
             }
-
-            // Step 2: query full tool metadata for those tool_ids
             return queryToolMetaByIds(toolIds, credentials);
+        } catch (UnsupportedOperationException e) {
+            throw e;
         } catch (Exception e) {
             log.error("listTools failed: agentId={} skillId={}", agentId, skillId, e);
             throw new IllegalStateException("listTools failed", e);
@@ -51,7 +51,6 @@ public class HttpMateToolClient implements MateToolClient {
     public ToolResult callTool(String tool, Map<String, Object> args,
             MateCredentials credentials) {
         try {
-            // Call the Mate tool server to execute the tool
             return invokeToolById(tool, args, credentials);
         } catch (Exception e) {
             log.error("callTool failed: tool={}", tool, e);
@@ -60,7 +59,7 @@ public class HttpMateToolClient implements MateToolClient {
     }
 
     // ====================================================================
-    // Mate RPC endpoints — TODO: internal development fills in real calls
+    // Mate RPC endpoints — stubs for internal development (see DEFERRED.md)
     // ====================================================================
 
     /**
@@ -69,10 +68,10 @@ public class HttpMateToolClient implements MateToolClient {
      * @param agentId the Mate agent ID
      * @param credentials Mate authentication credentials
      * @return authorized tool_id list
+     * @throws UnsupportedOperationException stub — real Mate call not yet wired
      */
     protected List<String> queryToolIdsByAgentId(String agentId, MateCredentials credentials) {
-        // TODO: internal development — call Mate agent-metadata endpoint
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("queryToolIdsByAgentId: stub (see DEFERRED.md)");
     }
 
     /**
@@ -81,10 +80,10 @@ public class HttpMateToolClient implements MateToolClient {
      * @param skillId the Mate skill ID
      * @param credentials Mate authentication credentials
      * @return authorized tool_id list
+     * @throws UnsupportedOperationException stub — real Mate call not yet wired
      */
     protected List<String> queryToolIdsBySkillId(String skillId, MateCredentials credentials) {
-        // TODO: internal development — call Mate skill-metadata endpoint
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("queryToolIdsBySkillId: stub (see DEFERRED.md)");
     }
 
     /**
@@ -93,11 +92,11 @@ public class HttpMateToolClient implements MateToolClient {
      * @param toolIds the tool_id list to query
      * @param credentials Mate authentication credentials
      * @return full tool metadata list
+     * @throws UnsupportedOperationException stub — real Mate call not yet wired
      */
     protected List<MateToolMeta> queryToolMetaByIds(List<String> toolIds,
             MateCredentials credentials) {
-        // TODO: internal development — call Mate tool-metadata endpoint
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("queryToolMetaByIds: stub (see DEFERRED.md)");
     }
 
     /**
@@ -107,10 +106,10 @@ public class HttpMateToolClient implements MateToolClient {
      * @param args the tool arguments
      * @param credentials Mate authentication credentials (id + input credit)
      * @return tool execution result
+     * @throws UnsupportedOperationException stub — real Mate call not yet wired
      */
     protected ToolResult invokeToolById(String toolId, Map<String, Object> args,
             MateCredentials credentials) {
-        // TODO: internal development — call Mate tool-invoke endpoint
-        throw new UnsupportedOperationException("Not yet implemented");
+        throw new UnsupportedOperationException("invokeToolById: stub (see DEFERRED.md)");
     }
 }
