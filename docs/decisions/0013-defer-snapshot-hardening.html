@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ADR-0013 · 暂缓托管 Agent 快照防篡改校验</title>
+  <style>
+    :root{--fg:#1a1a1a;--dim:#666;--accent:#2563eb;--accepted:#15803d;--bg:#fff;--card:#f6f7f9}
+    body{font:15px/1.6 -apple-system,Segoe UI,Roboto,"PingFang SC",sans-serif;color:var(--fg);
+         background:var(--bg);max-width:820px;margin:2rem auto;padding:0 1.2rem}
+    h1{font-size:1.5rem;margin:.2rem 0}
+    .meta{color:var(--dim);font-size:.9rem;margin-bottom:1.2rem}
+    .badge{display:inline-block;padding:.1rem .6rem;border-radius:1rem;font-size:.8rem;background:var(--accepted);color:#fff}
+    section{margin:1.4rem 0}
+    h2{font-size:1.05rem;border-bottom:1px solid #eee;padding-bottom:.3rem}
+    a{color:var(--accent)} code{background:var(--card);padding:.1rem .3rem;border-radius:.3rem}
+  </style>
+</head>
+<body>
+  <h1>ADR-0013 · 暂缓托管 Agent 快照九条防篡改校验</h1>
+  <div class="meta">Status: <span class="badge">Accepted</span> · Date: 2026-08-17 ·
+    设计文档: <a href="../designs/agent-skill-runtime.md">agent-skill-runtime</a> ·
+    部分暂缓: <a href="0011-agent-skill-runtime-resolution.html">ADR-0011</a> ·
+    登记条目: <a href="../DEFERRED.md">DEF-008</a></div>
+
+  <section><h2>Context</h2>
+    <p>ADR-0011 为本地优先加载选定了 fail closed 语义，实现中据此落地了九条快照防篡改/防漂移规则（路径穿越、符号链接、完整性比对、响应形状校验、资源白名单、SKILL.md 可重建比对、原子发布、物化后复验、元数据最后写入），约 290 行主代码 + 约 800 行测试，占 PR #131 modules 部分约 22%。评审反馈 PR 体量过大（5000+ 行），且其中安全加固在当前阶段（本地 CLI 试点、单信任域 CampusMate）收益有限。</p>
+  </section>
+
+  <section><h2>Options considered</h2>
+    <ul>
+      <li><strong>保留全部九条规则</strong><br>Pro：安全边界完整，与 ADR-0011 语义一致。<br>Con：PR 体量与评审成本维持现状。Rejected（评审明确要求缩减）。</li>
+      <li><strong>按部署形态裁剪（保留穿越/白名单，删其余）</strong><br>Pro：保留最关键的远程攻击面防线。<br>Con：规则间共享校验方法与测试基建，部分裁剪的拆分成本接近全量保留。Rejected。</li>
+      <li><strong>整体暂缓九条规则，语义降级为"无法加载即重新物化"</strong><br>Pro：净减约 1100 行（主代码 659→341，测试 25→12）；快照损坏/中断场景由重新物化自愈，功能等价；规则可从 git 历史（本 ADR 前一个提交）整体恢复。<br>Con：接受已知风险窗口（见 Consequences）。Chosen。</li>
+    </ul>
+    <p><strong>选择理由：</strong>当前阶段为本地 CLI 试点，攻击面主要在服务器模式，而服务器模式上线前有明确的恢复触发条件（见 DEF-008）；降级语义保持"本地优先 + 按需物化"的架构决策不变。</p>
+  </section>
+
+  <section><h2>Decision</h2>
+    <ul>
+      <li>九条规则的主代码与测试整体暂缓，登记 <a href="../DEFERRED.md">DEF-008</a>；ADR-0011 的本地优先架构决策不变，仅暂缓其 fail closed 加固部分。</li>
+      <li><code>AgentRuntimeManager</code> 语义降级：<code>prepare()</code> 仅做 agentId 非空检查；快照四要素（agentId.json/systemPrompt.md/skills 目录/可读的 skill.json）齐备即加载，否则重新拉取远程并<strong>原地覆盖物化</strong>（自愈，不再报"配置漂移"错误）。</li>
+      <li>远程响应仅保留最小健壮性：querySkillInfo 空结果报错；不再校验 id 匹配、版本坐标、数量/大小上限、重复检测。</li>
+      <li>物化改为直接写入目标目录（保留逐文件写入），移除临时目录 + 原子移动发布。</li>
+      <li>设计文档 <code>agent-skill-runtime.md</code> §5.1 同步降级为当前语义，完整九条规则移至本 ADR 附录留档。</li>
+    </ul>
+  </section>
+
+  <section><h2>Consequences</h2>
+    <ul>
+      <li><strong>正面：</strong>PR #131 modules 部分缩减约 1100 行；快照中断/损坏自愈（重新物化）而非卡死报错；评审焦点集中在功能本体。</li>
+      <li><strong>负面（已接受的风险窗口）：</strong>
+        <ul>
+          <li>无路径穿越防护：REST/WS 服务器模式下 <code>agent_id</code> 为远程入参，形如 <code>../../..</code> 的值可越出 agents-root 读写——<strong>服务器模式上线前必须恢复①</strong>；本地 CLI 模式下仅影响用户自己的目录。</li>
+          <li>无 SKILL.md/references 内容比对：能写缓存目录的进程可持久化注入系统提示词——单用户本地部署威胁模型下风险低，共享目录/跨信任域部署必须恢复③⑤⑥。</li>
+          <li>无原子发布：物化中断留下部分快照，下次启动自愈重新物化（功能不中断，但多一次远程拉取）。</li>
+          <li>无响应形状校验：CampusMate 返回畸形数据可能产生畸形快照（自愈兜底），或版本漂移静默生效。</li>
+        </ul>
+      </li>
+      <li><strong>后续：</strong>恢复时从本 ADR 的父提交（<code>138a4fb4</code>）检回 <code>AgentRuntimeManager</code> 及其测试整体还原，逐条对照 DEF-008 清单验收。</li>
+    </ul>
+  </section>
+
+  <section><h2>Related</h2>
+    <ul>
+      <li><a href="0011-agent-skill-runtime-resolution.html">ADR-0011</a>（被部分暂缓的 fail closed 语义）</li>
+      <li><a href="../DEFERRED.md">DEF-008</a>（恢复触发条件）</li>
+      <li>设计文档 <a href="../designs/agent-skill-runtime.md">agent-skill-runtime.md</a> §5.1</li>
+    </ul>
+  </section>
+</body>
+</html>

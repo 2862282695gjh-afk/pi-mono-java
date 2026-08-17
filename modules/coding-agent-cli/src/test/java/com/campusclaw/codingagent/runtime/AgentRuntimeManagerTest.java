@@ -18,7 +18,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
-import java.util.stream.IntStream;
 import java.util.stream.StreamSupport;
 
 import com.campusclaw.codingagent.runtime.MateServiceClient.AgentRuntime;
@@ -153,43 +152,6 @@ class AgentRuntimeManagerTest {
     }
 
     @Test
-    void rejectsLocalCacheWhenSettingsFileIsMissing() throws Exception {
-        when(client.getAgentRuntime("agent-a")).thenReturn(runtime(List.of(new SkillReference("skill-1", "1"))));
-        when(client.querySkillInfo("skill-1")).thenReturn(List.of(skillInfo()));
-        PreparedAgentRuntime prepared = manager.prepare("agent-a");
-        Files.delete(prepared.agentRoot().resolve(".campusclaw/setting.json"));
-
-        AgentRuntimeException error = assertThrows(AgentRuntimeException.class, () -> manager.prepare("agent-a"));
-
-        assertTrue(error.getMessage().contains("incomplete"));
-    }
-
-    @Test
-    void rejectsLocalCacheWhenDeclaredResourceIsMissing() throws Exception {
-        when(client.getAgentRuntime("agent-a")).thenReturn(runtime(List.of(new SkillReference("skill-1", "1"))));
-        when(client.querySkillInfo("skill-1")).thenReturn(List.of(skillInfo()));
-        PreparedAgentRuntime prepared = manager.prepare("agent-a");
-        Files.delete(prepared.agentRoot().resolve(".campusclaw/skills/skill-a/references/guide.md"));
-
-        AgentRuntimeException error = assertThrows(AgentRuntimeException.class, () -> manager.prepare("agent-a"));
-
-        assertTrue(error.getMessage().contains("incomplete"));
-    }
-
-    @Test
-    void rejectsLocalCacheWhenSkillInstructionsAreModified() throws Exception {
-        when(client.getAgentRuntime("agent-a")).thenReturn(runtime(List.of(new SkillReference("skill-1", "1"))));
-        when(client.querySkillInfo("skill-1")).thenReturn(List.of(skillInfo()));
-        PreparedAgentRuntime prepared = manager.prepare("agent-a");
-        Path skillFile = prepared.agentRoot().resolve(".campusclaw/skills/skill-a/SKILL.md");
-        Files.writeString(skillFile, Files.readString(skillFile) + "\nUntrusted instruction\n");
-
-        AgentRuntimeException error = assertThrows(AgentRuntimeException.class, () -> manager.prepare("agent-a"));
-
-        assertTrue(error.getMessage().contains("incomplete"));
-    }
-
-    @Test
     void usesModifiedLocalSystemPromptWithoutRepeatingRemoteQueries() throws Exception {
         when(client.getAgentRuntime("agent-a")).thenReturn(runtime(List.of(new SkillReference("skill-1", "1"))));
         when(client.querySkillInfo("skill-1")).thenReturn(List.of(skillInfo()));
@@ -207,85 +169,24 @@ class AgentRuntimeManagerTest {
     }
 
     @Test
-    void rejectsLocalCacheWhenToolsSnapshotIsModified() throws Exception {
+    void rematerializesWhenSnapshotCannotBeLoaded() throws Exception {
         when(client.getAgentRuntime("agent-a")).thenReturn(runtime(List.of(new SkillReference("skill-1", "1"))));
         when(client.querySkillInfo("skill-1")).thenReturn(List.of(skillInfo()));
         PreparedAgentRuntime prepared = manager.prepare("agent-a");
-        Path toolsFile = prepared.agentRoot().resolve(".campusclaw/skills/skill-a/references/tools.json");
-        Files.writeString(toolsFile, "{\"tools\":[]}");
+        Files.delete(prepared.agentRoot().resolve(".campusclaw/skills/skill-a/skill.json"));
 
-        AgentRuntimeException error = assertThrows(AgentRuntimeException.class, () -> manager.prepare("agent-a"));
+        PreparedAgentRuntime rematerialized = manager.prepare("agent-a");
 
-        assertTrue(error.getMessage().contains("incomplete"));
+        assertTrue(Files.isRegularFile(rematerialized.agentRoot().resolve(".campusclaw/skills/skill-a/skill.json")));
+        assertEquals(1, rematerialized.skills().size());
+        verify(client, times(2)).getAgentRuntime("agent-a");
+        verify(client, times(2)).querySkillInfo("skill-1");
     }
 
     @Test
-    void rejectsLocalCacheWithExtraSkillDirectory() throws Exception {
-        when(client.getAgentRuntime("agent-a")).thenReturn(runtime(List.of(new SkillReference("skill-1", "1"))));
-        when(client.querySkillInfo("skill-1")).thenReturn(List.of(skillInfo()));
-        PreparedAgentRuntime prepared = manager.prepare("agent-a");
-        Files.createDirectories(prepared.agentRoot().resolve(".campusclaw/skills/unbound-skill"));
-
-        AgentRuntimeException error = assertThrows(AgentRuntimeException.class, () -> manager.prepare("agent-a"));
-
-        assertTrue(error.getMessage().contains("incomplete"));
-    }
-
-    @Test
-    void failsClosedWhenSkillInfoResultIsEmpty() {
+    void rejectsEmptySkillInfoResult() {
         when(client.getAgentRuntime("agent-a")).thenReturn(runtime(List.of(new SkillReference("skill-1", "1"))));
         when(client.querySkillInfo("skill-1")).thenReturn(List.of());
-
-        assertThrows(AgentRuntimeException.class, () -> manager.prepare("agent-a"));
-        assertFalse(Files.exists(tempDir.resolve("agent/agent-a")));
-    }
-
-    @Test
-    void failsClosedWhenSkillInfoReturnsMultipleEntries() {
-        when(client.getAgentRuntime("agent-a")).thenReturn(runtime(List.of(new SkillReference("skill-1", "1"))));
-        when(client.querySkillInfo("skill-1")).thenReturn(List.of(skillInfo(), skillInfo()));
-
-        assertThrows(AgentRuntimeException.class, () -> manager.prepare("agent-a"));
-        assertFalse(Files.exists(tempDir.resolve("agent/agent-a")));
-    }
-
-    @Test
-    void failsClosedWhenSkillVersionDoesNotMatchBinding() {
-        when(client.getAgentRuntime("agent-a")).thenReturn(runtime(List.of(new SkillReference("skill-1", "2"))));
-        when(client.querySkillInfo("skill-1")).thenReturn(List.of(skillInfo()));
-
-        assertThrows(AgentRuntimeException.class, () -> manager.prepare("agent-a"));
-        assertFalse(Files.exists(tempDir.resolve("agent/agent-a")));
-    }
-
-    @Test
-    void rejectsResourcePathTraversal() {
-        SkillInfo unsafe = skillInfo(List.of(new SkillFile("reference-1", "../escape", "bad", "md")), List.of());
-        when(client.getAgentRuntime("agent-a")).thenReturn(runtime(List.of(new SkillReference("skill-1", "1"))));
-        when(client.querySkillInfo("skill-1")).thenReturn(List.of(unsafe));
-
-        assertThrows(AgentRuntimeException.class, () -> manager.prepare("agent-a"));
-        assertFalse(Files.exists(tempDir.resolve("escape.md")));
-        assertFalse(Files.exists(tempDir.resolve("agent/agent-a")));
-    }
-
-    @Test
-    void rejectsOversizedSkillResource() {
-        SkillInfo oversized =
-                skillInfo(List.of(new SkillFile("reference-1", "guide", "x".repeat(1024 * 1024 + 1), "md")), List.of());
-        when(client.getAgentRuntime("agent-a")).thenReturn(runtime(List.of(new SkillReference("skill-1", "1"))));
-        when(client.querySkillInfo("skill-1")).thenReturn(List.of(oversized));
-
-        assertThrows(AgentRuntimeException.class, () -> manager.prepare("agent-a"));
-        assertFalse(Files.exists(tempDir.resolve("agent/agent-a")));
-    }
-
-    @Test
-    void rejectsTooManyBoundSkills() {
-        List<SkillReference> skills = IntStream.range(0, 129)
-                .mapToObj(index -> new SkillReference("skill-" + index, "1"))
-                .toList();
-        when(client.getAgentRuntime("agent-a")).thenReturn(runtime(skills));
 
         assertThrows(AgentRuntimeException.class, () -> manager.prepare("agent-a"));
         assertFalse(Files.exists(tempDir.resolve("agent/agent-a")));
@@ -326,37 +227,6 @@ class AgentRuntimeManagerTest {
         PreparedAgentRuntime prepared = manager.prepare("agent-a");
 
         assertEquals(names, manager.loadSkillToolNames(prepared, "skill-a"));
-    }
-
-    @Test
-    void rejectsDuplicateSkillTools() {
-        SkillInfo duplicate = new SkillInfo(
-                "skill-a",
-                "skill-1",
-                "1",
-                "Calendar workflow",
-                "booking",
-                List.of(tool("calendar", "allow"), tool("calendar", "allow")),
-                List.of(),
-                List.of(),
-                List.of());
-        when(client.getAgentRuntime("agent-a")).thenReturn(runtime(List.of(new SkillReference("skill-1", "1"))));
-        when(client.querySkillInfo("skill-1")).thenReturn(List.of(duplicate));
-
-        assertThrows(AgentRuntimeException.class, () -> manager.prepare("agent-a"));
-    }
-
-    @Test
-    void rejectsAgentPathTraversal() {
-        assertThrows(IllegalArgumentException.class, () -> manager.prepare("../agent-a"));
-    }
-
-    @Test
-    void rejectsExistingIncompleteAgentInsteadOfMixingVersions() throws Exception {
-        Files.createDirectories(tempDir.resolve("agent/agent-a/.campusclaw/skills"));
-
-        assertThrows(AgentRuntimeException.class, () -> manager.prepare("agent-a"));
-        verify(client, times(0)).getAgentRuntime("agent-a");
     }
 
     private static AgentRuntime runtime(List<SkillReference> skills) {
