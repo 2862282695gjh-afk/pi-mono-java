@@ -4,13 +4,14 @@
 
 package com.campusclaw.codingagent.tool;
 
-import com.campusclaw.codingagent.tool.CallMateTool.MateCredentials;
-import com.campusclaw.codingagent.tool.CallMateTool.MateToolClient;
-import com.campusclaw.codingagent.tool.CallMateTool.MateToolMeta;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+
+import com.campusclaw.codingagent.tool.CallMateTool.MateCredentials;
+import com.campusclaw.codingagent.tool.CallMateTool.MateToolClient;
+import com.campusclaw.codingagent.tool.CallMateTool.MateToolMeta;
 
 /**
  * In-memory mock of {@link MateToolClient} for unit tests.
@@ -85,12 +86,9 @@ public class MockMateToolClient implements MateToolClient {
     }
 
     @Override
-    public List<MateToolMeta> listTools(String agentId, String skillId,
-            MateCredentials credentials) {
+    public List<MateToolMeta> listTools(String agentId, String skillId, MateCredentials credentials) {
         lastListCredentials = credentials;
-        List<String> ids = agentId != null
-                ? authorizedByAgent.get(agentId)
-                : authorizedBySkill.get(skillId);
+        List<String> ids = agentId != null ? authorizedByAgent.get(agentId) : authorizedBySkill.get(skillId);
         List<MateToolMeta> result = new ArrayList<>();
         if (ids != null) {
             for (String id : ids) {
@@ -104,8 +102,7 @@ public class MockMateToolClient implements MateToolClient {
     }
 
     @Override
-    public ToolResult callTool(String tool, Map<String, Object> args,
-            MateCredentials credentials) {
+    public ToolResult callTool(String tool, Map<String, Object> args, MateCredentials credentials) {
         lastCalledTool = tool;
         lastCallCredentials = credentials;
         MateToolMeta meta = toolsById.get(tool);

@@ -4,15 +4,17 @@
 
 package com.campusclaw.codingagent.tool;
 
-import com.campusclaw.codingagent.tool.CallMateTool.MateCredentials;
-import com.campusclaw.codingagent.tool.CallMateTool.MateToolMeta;
-import java.util.List;
-import java.util.Map;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import java.util.List;
+import java.util.Map;
+
+import com.campusclaw.codingagent.tool.CallMateTool.MateCredentials;
+import com.campusclaw.codingagent.tool.CallMateTool.MateToolMeta;
+
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 /**
  * Unit tests for {@link ListMateTool}: authorization filtering, cache refresh,
@@ -37,8 +39,7 @@ class ListMateToolTest {
         client.authorizeAgent("agent-1", List.of("query", "chart", "export"));
         client.authorizeSkill("skill-1", List.of("query", "chart"));
         approvalResult = true;
-        callMateTool = new CallMateTool(client, (t, a, d) -> approvalResult,
-                MateCredentials.appKey("id", "key"));
+        callMateTool = new CallMateTool(client, (t, a, d) -> approvalResult, MateCredentials.appKey("id", "key"));
         listMateTool = new ListMateTool(client, callMateTool);
     }
 
