@@ -5,8 +5,10 @@
 package com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.persistence;
 
 import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.Optional;
 
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.dto.RuntimeEntryDTO;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
 
 /**
@@ -19,6 +21,15 @@ public interface RuntimeSessionRepository {
     void create(RuntimeSessionDTO session);
 
     Optional<RuntimeSessionDTO> find(String sessionId);
+
+    UserEventAcceptance acceptUserEvent(
+            String sessionId, String ownerId, RuntimeEntryDTO entry, OffsetDateTime acceptedAt);
+
+    RuntimeEntryDTO appendEntry(RuntimeEntryDTO entry);
+
+    void finishExecution(String sessionId, OffsetDateTime finishedAt);
+
+    List<RuntimeEntryDTO> listCurrentBranch(String sessionId, long afterSeq, int limit);
 
     boolean beginDeletion(String sessionId, OffsetDateTime deletedAt);
 

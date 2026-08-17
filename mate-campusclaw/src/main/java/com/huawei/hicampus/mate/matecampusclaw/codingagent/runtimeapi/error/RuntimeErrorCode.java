@@ -20,8 +20,14 @@ public enum RuntimeErrorCode {
     AGENT_NOT_AVAILABLE("指定的 Agent 当前不可用。", "The specified Agent is currently unavailable."),
     AGENT_MODEL_NOT_CONFIGURED("该 Agent 未配置有效的默认模型。", "The Agent has no valid default model configured."),
     SESSION_NOT_FOUND("指定的 Session 不存在。", "The specified Session does not exist."),
+    SESSION_BUSY("该 Session 正在处理另一条用户消息。", "The Session is processing another user message."),
     SESSION_INITIALIZATION_FAILED("Session 初始化失败。", "Session initialization failed."),
     SESSION_DELETE_FAILED("Session 删除失败。", "Session deletion failed."),
+    INVALID_EVENT_REQUEST("用户事件请求内容不符合约束。", "The user event request does not satisfy the required constraints."),
+    EVENT_ACCEPTANCE_FAILED("用户事件接收失败。", "User event acceptance failed."),
+    SESSION_EXECUTION_FAILED("Session 执行失败。", "Session execution failed."),
+    INVALID_EVENT_LIST_QUERY("事件分页参数不符合约束。", "The event pagination parameters are invalid."),
+    EVENT_LIST_FAILED("Session 持久化事件读取失败。", "Failed to list persisted events for the Session."),
     MANAGER_UNAVAILABLE("Model Manager 暂时不可用，请稍后重试。", "Model Manager is temporarily unavailable. Try again later."),
     INTERNAL_ERROR("服务内部错误。", "Internal service error.");
 

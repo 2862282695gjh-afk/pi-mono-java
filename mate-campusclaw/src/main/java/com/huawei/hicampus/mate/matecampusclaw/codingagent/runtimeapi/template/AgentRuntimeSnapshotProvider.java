@@ -12,4 +12,6 @@ package com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.template;
  */
 public interface AgentRuntimeSnapshotProvider {
     AgentRuntimeSnapshotDTO resolveCurrent(String agentId);
+
+    AgentRuntimeSnapshotDTO resolveRevision(String agentId, String bundleRevision);
 }

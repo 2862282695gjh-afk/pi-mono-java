@@ -18,5 +18,7 @@ import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.template.A
 public interface RuntimeModelManager {
     Model resolveDefaultModel(AgentRuntimeSnapshotDTO snapshot);
 
+    Model resolveModel(AgentRuntimeSnapshotDTO snapshot, String modelId);
+
     List<String> listAvailableModels(AgentRuntimeSnapshotDTO snapshot);
 }

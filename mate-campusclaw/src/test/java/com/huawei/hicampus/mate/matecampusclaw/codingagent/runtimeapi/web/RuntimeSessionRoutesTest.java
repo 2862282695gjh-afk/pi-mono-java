@@ -51,7 +51,8 @@ class RuntimeSessionRoutesTest {
         var authFilter = new RuntimeAuthFilter(authenticator);
         var errorFilter = new RuntimeErrorFilter();
         var controller = new RuntimeSessionController(service);
-        var routes = new RuntimeApiRoutes().runtimeSessionRoutes(controller, errorFilter, authFilter);
+        var eventController = mock(RuntimeEventController.class);
+        var routes = new RuntimeApiRoutes().runtimeSessionRoutes(controller, eventController, errorFilter, authFilter);
         client = WebTestClient.bindToRouterFunction(routes).build();
     }
 

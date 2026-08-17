@@ -15,6 +15,7 @@ import com.huawei.hicampus.mate.matecampusclaw.agent.Agent;
 import com.huawei.hicampus.mate.matecampusclaw.agent.subagent.SubAgentRegistry;
 import com.huawei.hicampus.mate.matecampusclaw.agent.tool.AgentTool;
 import com.huawei.hicampus.mate.matecampusclaw.ai.CampusClawAiService;
+import com.huawei.hicampus.mate.matecampusclaw.ai.types.Message;
 import com.huawei.hicampus.mate.matecampusclaw.ai.types.Model;
 import com.huawei.hicampus.mate.matecampusclaw.ai.types.ThinkingLevel;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.error.RuntimeApiException;
@@ -63,6 +64,15 @@ public class RuntimeSessionEngineRegistry {
 
     public Optional<RuntimeSessionHolder> find(String sessionId) {
         return Optional.ofNullable(sessions.get(sessionId));
+    }
+
+    public RuntimeSessionHolder restore(
+            String sessionId, AgentRuntimeSnapshotDTO snapshot, Model model, boolean thinking, List<Message> messages) {
+        return sessions.computeIfAbsent(sessionId, ignored -> {
+            Agent agent = createAgent(aiService, snapshot, model, thinking);
+            agent.replaceMessages(messages);
+            return new RuntimeSessionHolder(sessionId, snapshot, agent);
+        });
     }
 
     public void abortAndRemove(String sessionId) {

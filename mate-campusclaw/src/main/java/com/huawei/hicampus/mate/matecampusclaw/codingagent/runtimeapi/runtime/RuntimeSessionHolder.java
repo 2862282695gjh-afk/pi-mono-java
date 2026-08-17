@@ -4,16 +4,54 @@
 
 package com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.runtime;
 
+import java.util.Optional;
+import java.util.concurrent.atomic.AtomicReference;
+
 import com.huawei.hicampus.mate.matecampusclaw.agent.Agent;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.template.AgentRuntimeSnapshotDTO;
 
 /**
  * 单个 Runtime Session 的进程内执行对象。
  *
- * @param sessionId Session 标识
- * @param snapshot 固定的 Agent 发布快照
- * @param agent 执行 Agent
  * @version [br_eCampusCore 25.1.0_Next, 2026/08/18]
  * @since [br_eCampusCore 25.1.0_Next]
  */
-public record RuntimeSessionHolder(String sessionId, AgentRuntimeSnapshotDTO snapshot, Agent agent) {}
+public class RuntimeSessionHolder {
+    private final String sessionId;
+
+    private final AgentRuntimeSnapshotDTO snapshot;
+
+    private final Agent agent;
+
+    private final AtomicReference<RuntimeActiveExecution> activeExecution = new AtomicReference<>();
+
+    public RuntimeSessionHolder(String sessionId, AgentRuntimeSnapshotDTO snapshot, Agent agent) {
+        this.sessionId = sessionId;
+        this.snapshot = snapshot;
+        this.agent = agent;
+    }
+
+    public String sessionId() {
+        return sessionId;
+    }
+
+    public AgentRuntimeSnapshotDTO snapshot() {
+        return snapshot;
+    }
+
+    public Agent agent() {
+        return agent;
+    }
+
+    public boolean begin(RuntimeActiveExecution execution) {
+        return activeExecution.compareAndSet(null, execution);
+    }
+
+    public void complete(RuntimeActiveExecution execution) {
+        activeExecution.compareAndSet(execution, null);
+    }
+
+    public Optional<RuntimeActiveExecution> activeExecution() {
+        return Optional.ofNullable(activeExecution.get());
+    }
+}

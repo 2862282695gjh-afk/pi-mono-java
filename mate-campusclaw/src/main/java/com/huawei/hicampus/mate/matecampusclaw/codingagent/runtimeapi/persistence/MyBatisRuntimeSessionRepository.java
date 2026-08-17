@@ -5,10 +5,13 @@
 package com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.persistence;
 
 import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.Optional;
 
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.dto.RuntimeEntryDTO;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.mapper.RuntimeSessionMapper;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.persistence.UserEventAcceptance.Status;
 
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
@@ -42,6 +45,54 @@ public class MyBatisRuntimeSessionRepository implements RuntimeSessionRepository
     @Transactional(readOnly = true)
     public Optional<RuntimeSessionDTO> find(String sessionId) {
         return Optional.ofNullable(mapper.findSession(sessionId));
+    }
+
+    @Override
+    @Transactional
+    public UserEventAcceptance acceptUserEvent(
+            String sessionId, String ownerId, RuntimeEntryDTO entry, OffsetDateTime acceptedAt) {
+        RuntimeSessionDTO session = mapper.lockSessionForUpdate(sessionId);
+        if (session == null) {
+            return new UserEventAcceptance(Status.NOT_FOUND, null);
+        }
+        if (!session.getOwnerId().equals(ownerId)) {
+            return new UserEventAcceptance(Status.FORBIDDEN, session);
+        }
+        if (!"idle".equals(session.getState())) {
+            return new UserEventAcceptance(Status.BUSY, session);
+        }
+        appendLocked(session, entry);
+        requireOne(
+                mapper.markSessionRunning(sessionId, entry.getId(), acceptedAt), "session did not enter running state");
+        session.setState("running");
+        session.setUpdatedAt(acceptedAt);
+        session.setResourceVersion(session.getResourceVersion() + 1);
+        session.setActiveLeafId(entry.getId());
+        return new UserEventAcceptance(Status.ACCEPTED, session);
+    }
+
+    @Override
+    @Transactional
+    public RuntimeEntryDTO appendEntry(RuntimeEntryDTO entry) {
+        RuntimeSessionDTO session = mapper.lockSessionForUpdate(entry.getSessionId());
+        if (session == null) {
+            throw new IllegalStateException("session disappeared during execution");
+        }
+        appendLocked(session, entry);
+        requireOne(mapper.updateActiveLeaf(entry.getSessionId(), entry.getId()), "session active leaf was not updated");
+        return entry;
+    }
+
+    @Override
+    @Transactional
+    public void finishExecution(String sessionId, OffsetDateTime finishedAt) {
+        requireOne(mapper.markSessionIdle(sessionId, finishedAt), "session did not return to idle state");
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<RuntimeEntryDTO> listCurrentBranch(String sessionId, long afterSeq, int limit) {
+        return mapper.listCurrentBranch(sessionId, afterSeq, limit);
     }
 
     @Override
@@ -80,5 +131,22 @@ public class MyBatisRuntimeSessionRepository implements RuntimeSessionRepository
     @Transactional
     public void retryCleanup(String sessionId, OffsetDateTime now, OffsetDateTime nextAttemptAt, String lastError) {
         mapper.markCleanupRetry(sessionId, now, nextAttemptAt, lastError);
+    }
+
+    private void appendLocked(RuntimeSessionDTO session, RuntimeEntryDTO entry) {
+        Long sequence = mapper.lockNextSequence(session.getId());
+        if (sequence == null) {
+            throw new IllegalStateException("session sequence is missing");
+        }
+        entry.setParentId(session.getActiveLeafId());
+        entry.setEntrySeq(sequence);
+        requireOne(mapper.insertEntry(entry), "runtime entry was not inserted");
+        requireOne(mapper.incrementSequence(session.getId()), "session sequence was not incremented");
+    }
+
+    private static void requireOne(int affectedRows, String message) {
+        if (affectedRows != 1) {
+            throw new IllegalStateException(message);
+        }
     }
 }
