@@ -15,11 +15,12 @@ import com.huawei.hicampus.mate.matecampusclaw.agent.tool.ToolExecutionMode;
 import com.huawei.hicampus.mate.matecampusclaw.agent.tool.ToolExecutionPipeline;
 import com.huawei.hicampus.mate.matecampusclaw.ai.types.ToolCall;
 import com.huawei.hicampus.mate.matecampusclaw.ai.types.ToolResultMessage;
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.CallMateTool;
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.CallMateTool.MateCredentials;
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.CallMateTool.MateToolMeta;
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.ListMateTool;
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.MockMateToolClient;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.common.client.mate.MateCredentials;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.common.client.mate.MateToolClient;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.common.client.mate.MateToolMeta;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.mate.CallMateTool;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.mate.ListMateTool;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.mate.MockMateToolClient;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
@@ -74,7 +75,7 @@ class MateToolAutoConfigurationTest {
     @Test
     void mateErrorPropagatesThroughPipelineAsIsError() {
         MockMateToolClient client = new MockMateToolClient();
-        client.overrideCallResult(new CallMateTool.MateToolClient.ToolResult("mate exploded", null, true));
+        client.overrideCallResult(new MateToolClient.ToolResult("mate exploded", null, true));
         CallMateTool callMateTool = new CallMateTool(client, (t, a, d) -> true, MateCredentials.appKey("id", "key"));
         callMateTool.updateMeta(List.of(new MateToolMeta("boom", "b", Map.of(), Map.of(), true, "allow")));
 
@@ -92,11 +93,6 @@ class MateToolAutoConfigurationTest {
         assertThat(results.get(0).isError()).isTrue();
     }
 
-    @SuppressWarnings("unused")
-    private void placeholder() {
-        // no-op kept for structural clarity
-    }
-
     /**
      * Support config providing a mock client bean (overrides the real HTTP stub).
      */
@@ -109,7 +105,7 @@ class MateToolAutoConfigurationTest {
          * @return the mock client
          */
         @Bean
-        CallMateTool.MateToolClient mateToolClient() {
+        MateToolClient mateToolClient() {
             return new MockMateToolClient();
         }
     }

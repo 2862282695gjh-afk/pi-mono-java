@@ -4,9 +4,11 @@
 
 package com.campusclaw.codingagent.config;
 
-import com.campusclaw.codingagent.tool.CallMateTool;
-import com.campusclaw.codingagent.tool.HttpMateToolClient;
-import com.campusclaw.codingagent.tool.ListMateTool;
+import com.campusclaw.codingagent.common.client.HttpMateToolClient;
+import com.campusclaw.codingagent.common.client.mate.MateCredentials;
+import com.campusclaw.codingagent.common.client.mate.MateToolClient;
+import com.campusclaw.codingagent.tool.mate.CallMateTool;
+import com.campusclaw.codingagent.tool.mate.ListMateTool;
 
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -34,8 +36,8 @@ public class MateToolAutoConfiguration {
      * @return the HTTP Mate tool client
      */
     @Bean
-    @ConditionalOnMissingBean(CallMateTool.MateToolClient.class)
-    public CallMateTool.MateToolClient mateToolClient(MateToolProperties properties) {
+    @ConditionalOnMissingBean(MateToolClient.class)
+    public MateToolClient mateToolClient(MateToolProperties properties) {
         return new HttpMateToolClient(properties.getBaseUrl());
     }
 
@@ -47,9 +49,8 @@ public class MateToolAutoConfiguration {
      * @return the CallMateTool bean
      */
     @Bean
-    public CallMateTool callMateTool(CallMateTool.MateToolClient client, MateToolProperties properties) {
-        CallMateTool.MateCredentials credentials =
-                CallMateTool.MateCredentials.appKey(properties.getXHwId(), properties.getXHwAppKey());
+    public CallMateTool callMateTool(MateToolClient client, MateToolProperties properties) {
+        MateCredentials credentials = MateCredentials.appKey(properties.getXHwId(), properties.getXHwAppKey());
         return new CallMateTool(client, properties.getApprovalUi(), credentials);
     }
 
@@ -62,7 +63,7 @@ public class MateToolAutoConfiguration {
      * @return the ListMateTool bean
      */
     @Bean
-    public ListMateTool listMateTool(CallMateTool.MateToolClient client, CallMateTool callMateTool) {
+    public ListMateTool listMateTool(MateToolClient client, CallMateTool callMateTool) {
         return new ListMateTool(client, callMateTool);
     }
 }

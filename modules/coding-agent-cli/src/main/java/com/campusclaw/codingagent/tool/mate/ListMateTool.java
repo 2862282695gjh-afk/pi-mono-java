@@ -2,7 +2,7 @@
  * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
  */
 
-package com.campusclaw.codingagent.tool;
+package com.campusclaw.codingagent.tool.mate;
 
 import java.util.List;
 import java.util.Map;
@@ -13,6 +13,8 @@ import com.campusclaw.agent.tool.AgentToolUpdateCallback;
 import com.campusclaw.agent.tool.CancellationToken;
 import com.campusclaw.ai.types.ContentBlock;
 import com.campusclaw.ai.types.TextContent;
+import com.campusclaw.codingagent.common.client.mate.MateToolClient;
+import com.campusclaw.codingagent.common.client.mate.MateToolMeta;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -30,7 +32,7 @@ public class ListMateTool implements AgentTool {
 
     private static final Logger log = LoggerFactory.getLogger(ListMateTool.class);
 
-    private final CallMateTool.MateToolClient client;
+    private final MateToolClient client;
     private final CallMateTool callMateTool;
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
@@ -57,7 +59,7 @@ public class ListMateTool implements AgentTool {
      * @param client the Mate tool service client (shared with CallMateTool)
      * @param callMateTool the CallMateTool whose meta cache will be updated
      */
-    public ListMateTool(CallMateTool.MateToolClient client, CallMateTool callMateTool) {
+    public ListMateTool(MateToolClient client, CallMateTool callMateTool) {
         this.client = client;
         this.callMateTool = callMateTool;
     }
@@ -97,7 +99,7 @@ public class ListMateTool implements AgentTool {
                 agentId != null ? agentId : "(none)",
                 skillId != null ? skillId : "(none)");
 
-        List<CallMateTool.MateToolMeta> tools = client.listTools(agentId, skillId, callMateTool.credentials());
+        List<MateToolMeta> tools = client.listTools(agentId, skillId, callMateTool.credentials());
 
         callMateTool.updateMeta(tools);
 
@@ -114,7 +116,7 @@ public class ListMateTool implements AgentTool {
 
         sb.append(": ").append(tools.size()).append(" tool(s)\n");
 
-        for (CallMateTool.MateToolMeta tool : tools) {
+        for (MateToolMeta tool : tools) {
             sb.append("  - ")
                     .append(tool.name())
                     .append(" [")

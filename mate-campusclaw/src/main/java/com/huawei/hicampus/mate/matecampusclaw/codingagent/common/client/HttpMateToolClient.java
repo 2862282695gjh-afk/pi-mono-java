@@ -2,14 +2,14 @@
  * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
  */
 
-package com.campusclaw.codingagent.tool;
+package com.huawei.hicampus.mate.matecampusclaw.codingagent.common.client;
 
 import java.util.List;
 import java.util.Map;
 
-import com.campusclaw.codingagent.tool.CallMateTool.MateCredentials;
-import com.campusclaw.codingagent.tool.CallMateTool.MateToolClient;
-import com.campusclaw.codingagent.tool.CallMateTool.MateToolMeta;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.common.client.mate.MateCredentials;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.common.client.mate.MateToolClient;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.common.client.mate.MateToolMeta;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

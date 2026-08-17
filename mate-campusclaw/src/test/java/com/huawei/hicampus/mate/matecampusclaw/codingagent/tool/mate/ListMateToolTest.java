@@ -2,7 +2,7 @@
  * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
  */
 
-package com.campusclaw.codingagent.tool;
+package com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.mate;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -10,8 +10,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.util.List;
 import java.util.Map;
 
-import com.campusclaw.codingagent.tool.CallMateTool.MateCredentials;
-import com.campusclaw.codingagent.tool.CallMateTool.MateToolMeta;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.common.client.mate.MateCredentials;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.common.client.mate.MateToolMeta;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -20,7 +20,7 @@ import org.junit.jupiter.api.Test;
  * Unit tests for {@link ListMateTool}: authorization filtering, cache refresh,
  * and credential passing.
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/08/17]
+ * @version [br_eCampusCore 26.0.0, 2026/08/17]
  */
 class ListMateToolTest {
 
@@ -79,10 +79,10 @@ class ListMateToolTest {
         assertEquals("id", client.lastListCredentials().xHwId());
     }
 
-    private static String asText(com.campusclaw.agent.tool.AgentToolResult r) {
+    private static String asText(com.huawei.hicampus.mate.matecampusclaw.agent.tool.AgentToolResult r) {
         var sb = new StringBuilder();
         for (var b : r.content()) {
-            if (b instanceof com.campusclaw.ai.types.TextContent t) {
+            if (b instanceof com.huawei.hicampus.mate.matecampusclaw.ai.types.TextContent t) {
                 sb.append(t.text());
             }
         }

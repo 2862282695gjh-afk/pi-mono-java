@@ -4,7 +4,7 @@
 
 package com.huawei.hicampus.mate.matecampusclaw.codingagent.config;
 
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.CallMateTool;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.mate.CallMateTool;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
@@ -52,12 +52,6 @@ public class MateToolProperties {
      * (fail-closed) so an unconfigured interactive UI never auto-approves.
      */
     private CallMateTool.MateApprovalUI approvalUi = (tool, args, description) -> false;
-
-    /**
-     * Approval callback for tools whose permission is "ask"; defaults to deny
-     * (fail-closed) so an unconfigured interactive UI never auto-approves.
-     */
-    private CallMateTool.MateApprovalUI approvalUI = (tool, args, description) -> false;
 
     /**
      * Returns whether the Mate tools are enabled.
@@ -137,7 +131,7 @@ public class MateToolProperties {
      * @return the approval UI callback
      */
     public CallMateTool.MateApprovalUI getApprovalUi() {
-        return approvalUI;
+        return approvalUi;
     }
 
     /**

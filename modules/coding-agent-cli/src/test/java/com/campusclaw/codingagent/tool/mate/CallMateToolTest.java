@@ -2,7 +2,7 @@
  * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
  */
 
-package com.campusclaw.codingagent.tool;
+package com.campusclaw.codingagent.tool.mate;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -11,8 +11,8 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import java.util.List;
 import java.util.Map;
 
-import com.campusclaw.codingagent.tool.CallMateTool.MateCredentials;
-import com.campusclaw.codingagent.tool.CallMateTool.MateToolMeta;
+import com.campusclaw.codingagent.common.client.mate.MateCredentials;
+import com.campusclaw.codingagent.common.client.mate.MateToolMeta;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
