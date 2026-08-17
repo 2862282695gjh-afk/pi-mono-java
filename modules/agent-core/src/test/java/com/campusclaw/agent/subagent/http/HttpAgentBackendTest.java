@@ -18,6 +18,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -37,6 +39,7 @@ import org.junit.jupiter.api.Test;
 class HttpAgentBackendTest {
 
     private HttpServer server;
+    private ExecutorService serverExecutor;
     private final ObjectMapper mapper = new ObjectMapper();
     private final ConcurrentLinkedQueue<String> requestLog = new ConcurrentLinkedQueue<>();
     private final AtomicReference<String> capturedAuth = new AtomicReference<>();
@@ -45,7 +48,8 @@ class HttpAgentBackendTest {
     void setUp() throws IOException {
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.createContext("/sessions", new RouteHandler());
-        server.setExecutor(java.util.concurrent.Executors.newCachedThreadPool());
+        serverExecutor = Executors.newCachedThreadPool();
+        server.setExecutor(serverExecutor);
         server.start();
     }
 
@@ -53,6 +57,11 @@ class HttpAgentBackendTest {
     void tearDown() {
         if (server != null) {
             server.stop(0);
+            server = null;
+        }
+        if (serverExecutor != null) {
+            serverExecutor.shutdownNow();
+            serverExecutor = null;
         }
     }
 

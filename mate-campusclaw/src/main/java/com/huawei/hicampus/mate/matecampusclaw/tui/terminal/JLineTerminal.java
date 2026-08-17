@@ -35,6 +35,7 @@ public class JLineTerminal implements Terminal {
     private final List<Consumer<TerminalSize>> resizeListeners = new CopyOnWriteArrayList<>();
     private Attributes savedAttributes;
     private volatile boolean reading;
+    private volatile boolean closed;
     private Thread inputThread;
 
     /**
@@ -155,10 +156,14 @@ public class JLineTerminal implements Terminal {
     }
 
     @Override
-    public void close() {
+    public synchronized void close() {
+        if (closed) {
+            return;
+        }
         stopInputThread();
         try {
             jline.close();
+            closed = true;
         } catch (IOException e) {
             throw new UncheckedIOException("Failed to close JLine terminal", e);
         }

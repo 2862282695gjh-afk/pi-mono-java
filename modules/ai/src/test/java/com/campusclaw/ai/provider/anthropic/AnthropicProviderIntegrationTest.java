@@ -13,6 +13,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 import com.campusclaw.ai.stream.AssistantMessageEvent;
 import com.campusclaw.ai.stream.AssistantMessageEventStream;
@@ -29,7 +30,9 @@ import com.campusclaw.ai.types.ThinkingLevel;
 import com.campusclaw.ai.types.ToolCall;
 import com.campusclaw.ai.types.UserMessage;
 
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -47,7 +50,8 @@ import okhttp3.mockwebserver.SocketPolicy;
 @Timeout(30)
 class AnthropicProviderIntegrationTest {
 
-    private MockWebServer server;
+    private static MockWebServer server;
+
     private AnthropicProvider provider;
 
     private Model testModel(String baseUrl) {
@@ -67,16 +71,27 @@ class AnthropicProviderIntegrationTest {
                 null);
     }
 
-    @BeforeEach
-    void setUp() throws IOException {
+    @BeforeAll
+    static void startServer() throws IOException {
         server = new MockWebServer();
         server.start();
+    }
+
+    @BeforeEach
+    void setUp() {
         provider = new AnthropicProvider(
                 new com.campusclaw.ai.env.EnvProviderConfigResolver(new com.campusclaw.ai.env.EnvApiKeyResolver()));
     }
 
     @AfterEach
-    void tearDown() throws IOException {
+    void drainRequests() throws InterruptedException {
+        while (server.takeRequest(1, TimeUnit.MILLISECONDS) != null) {
+            // Drain requests so request-asserting tests do not see prior traffic.
+        }
+    }
+
+    @AfterAll
+    static void shutdownServer() throws IOException {
         server.shutdown();
     }
 

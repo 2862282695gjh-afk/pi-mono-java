@@ -27,13 +27,13 @@ LLM 多供应商抽象层，提供统一的消息、工具、流式交互类型�
 | 包 | 职责 |
 |---|------|
 | `com.campusclaw.ai.types` | 核心领域对象：Message、ContentBlock、Tool、Provider 枚举等 |
-| `com.campusclaw.ai.provider` | 多 Provider 抽象与实现（anthropic、openai、google、bedrock、mistral） |
+| `com.campusclaw.ai.provider` | 多 Provider 抽象与实现（anthropic、openai、mistral 及多种 OpenAI 兼容 flavor） |
 | `com.campusclaw.ai.stream` | 流式消息处理 |
 | `com.campusclaw.ai.model` | 模型信息与费用配置 |
 | `com.campusclaw.ai.env` | 环境变量处理 |
 | `com.campusclaw.ai.utils` | 工具函数 |
 
-**关键依赖：** Anthropic SDK、OpenAI SDK、Google Cloud AI Platform、AWS Bedrock、Spring WebFlux、Reactor
+**关键依赖：** Anthropic SDK、OpenAI SDK、Spring WebFlux、Reactor
 
 ### tui (`campusclaw-tui`)
 
@@ -103,6 +103,6 @@ Spring Boot CLI 应用入口，整合所有模块，提供多种执行模式。
 
 - **分层解耦：** 底层模块（ai、tui）无内部依赖，可独立使用；上层模块按需组合
 - **响应式栈：** ai 和 agent-core 基于 Reactor 实现流式 LLM 交互
-- **多 Provider：** ai 模块支持 Anthropic、OpenAI、Google、Bedrock、Mistral 五个 LLM 供应商
+- **多 Provider：** ai 模块原生支持 Anthropic、OpenAI、Mistral 三个 LLM 供应商，并通过 OpenAI 兼容协议覆盖 z.ai、Kimi、xAI、Groq 等多种 flavor
 - **CLI 框架：** 顶层使用 Picocli + Spring Boot，支持交互式 TUI、单次执行、Server/RPC 等多种运行模式
 - **可扩展性：** coding-agent-cli 提供 Skill 和 Extension 两套扩展机制

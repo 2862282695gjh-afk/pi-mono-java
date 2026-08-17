@@ -19,7 +19,7 @@ class EnumsTest {
         void valueAndFromValue() {
             assertEquals("anthropic-messages", Api.ANTHROPIC_MESSAGES.value());
             assertEquals(Api.OPENAI_COMPLETIONS, Api.fromValue("openai-completions"));
-            assertEquals(Api.GOOGLE_VERTEX, Api.fromValue("google-vertex"));
+            assertEquals(Api.MISTRAL_CONVERSATIONS, Api.fromValue("mistral-conversations"));
         }
 
         @Test

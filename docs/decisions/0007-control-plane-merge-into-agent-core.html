@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ADR-0007 · 控制面合入 agent-core 而非独立 sidecar 模块</title>
+  <style>
+    :root{--fg:#1a1a1a;--dim:#666;--accent:#2563eb;--ok:#16a34a;--bg:#fff;--card:#f6f7f9}
+    body{font:15px/1.6 -apple-system,Segoe UI,Roboto,"PingFang SC",sans-serif;color:var(--fg);
+         background:var(--bg);max-width:820px;margin:2rem auto;padding:0 1.2rem}
+    h1{font-size:1.5rem;margin:.2rem 0}
+    .meta{color:var(--dim);font-size:.9rem;margin-bottom:1.2rem}
+    .badge{display:inline-block;padding:.1rem .6rem;border-radius:1rem;font-size:.8rem;background:var(--ok);color:#fff}
+    section{margin:1.4rem 0}
+    h2{font-size:1.05rem;border-bottom:1px solid #eee;padding-bottom:.3rem}
+    a{color:var(--accent)} code{background:var(--card);padding:.1rem .3rem;border-radius:.3rem}
+  </style>
+</head>
+<body>
+  <h1>ADR-0007 · 控制面合入 agent-core 而非独立 sidecar 模块</h1>
+  <div class="meta">Status: <span class="badge">Accepted</span> · Date: 2026-06-18 ·
+    设计文档: <a href="../designs/control-plane.md">control-plane</a></div>
+
+  <section><h2>Context</h2>
+    <p>控制面 v1 最初设计为独立 Spring Boot sidecar 进程（<code>modules/agent-control-plane/</code>），有自己的 <code>@SpringBootApplication</code>、<code>application.yml</code>、端口 8090。但 CampusClaw 的 mate-campusclaw 镜像是<strong>单模块</strong>结构——sync 脚本把 <code>modules/{ai,tui,agent-core,cron,coding-agent-cli}</code> 的 Java 源码合并到同一个 jar。如果 agent-control-plane 也进镜像，两个 <code>@SpringBootApplication</code> 类会被 Spring 同时扫到，产生 bean 定义冲突；两份 <code>application.yml</code> 也会互相覆盖。</p>
+    <p>此外，control-plane 原版用 <code>spring-boot-starter-web</code>（servlet/Tomcat），而 coding-agent-cli 用 <code>spring-boot-starter-webflux</code>（reactive/Netty）。同一 classpath 下 servlet 与 webflux autoconf 不能共存，Spring Boot 会拒绝启动或行为不确定。</p></section>
+
+  <section><h2>Options considered</h2>
+    <ul>
+      <li><strong>Keep agent-control-plane as standalone module, exclude from mate mirror</strong> — rejected: mate 镜像不含 control-plane 代码，公司 mate parent 项目无法集成控制面能力；sync 脚本需要永久维护黑名单；根 pom 的 sidecar 注释需要 ADR 才能移除。</li>
+      <li><strong>Keep standalone module, merge into mate with resource isolation</strong> — rejected: 需要改造 sync 脚本支持多模块资源隔离（application.yml 分文件、@SpringBootApplication 去重），工程量大且 sync 脚本变复杂；servlet vs webflux 冲突仍需解决。</li>
+      <li><strong>Merge control-plane code into agent-core + coding-agent-cli, drop standalone module</strong> (chosen) — domain/service 放 agent-core（库逻辑），controller/routes 放 coding-agent-cli（web 绑定），共用 coding-agent-cli 的 webflux stack 和 <code>CampusClawApplication</code> 主类。sync 脚本无需改动（agent-core 已在 MODULES 白名单）。</li>
+    </ul></section>
+
+  <section><h2>Decision</h2>
+    <ul>
+      <li>删除 <code>modules/agent-control-plane/</code> 整个模块</li>
+      <li>domain（NodeInfo / NodeStatus / NodeMetrics / RuntimeCapability / ScheduleRequest / ScheduleDecision）+ service（NodeRegistry / RuntimeScheduler / HealthCheckScheduler）+ config（ControlPlaneProperties / ControlPlaneConfiguration）放 <code>modules/agent-core/src/main/java/com/campusclaw/agent/controlplane/</code></li>
+      <li>web 层（NodeRoutes / RuntimeRoutes / HeartbeatRequest / RegisterNodeRequest / ControlPlaneExceptionHandler）放 <code>modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/controlplane/</code></li>
+      <li>control-plane 配置合并进 <code>modules/coding-agent-cli/src/main/resources/application.yml</code> 的 <code>controlplane.heartbeat.*</code> 块</li>
+      <li>sync 脚本 <code>MODULES</code> 列表不变（agent-core + coding-agent-cli 已在列表，control-plane 代码自动同步到 mate）</li>
+    </ul></section>
+
+  <section><h2>Consequences</h2>
+    <ul>
+      <li><strong>正面</strong>：mate 镜像自动包含 control-plane 代码，无需改 sync 脚本；单一 JVM 进程跑 coding-agent + control-plane endpoints，运维简化；webflux 技术栈统一</li>
+      <li><strong>正面</strong>：<code>CampusClawApplication</code> 的 <code>scanBasePackages = "com.campusclaw"</code> 自动扫到 control-plane bean，无需额外 <code>@ComponentScan</code></li>
+      <li><strong>负面</strong>：agent-core 引入了 <code>spring-boot</code> 主 artifact（为 <code>@ConfigurationProperties</code> 注解），不再是纯 spring-context 库</li>
+      <li><strong>负面</strong>：control-plane HTTP 端点只在 <code>--mode server</code> 时可用（reactor-netty 启动时），非 server 模式下 control-plane bean 存在但不监听端口</li>
+      <li><strong>后续</strong>：如果未来 control-plane 需要独立扩缩容（与 coding-agent 分开部署），需要重新拆分——但 v1 阶段单进程足够</li>
+    </ul></section>
+
+  <section><h2>Related</h2>
+    <ul>
+      <li>设计文档: <a href="../designs/control-plane.md">control-plane</a></li>
+      <li><a href="0008-control-plane-webflux-routerfunction.html">ADR-0008: webflux RouterFunction 而非 @RestController</a></li>
+    </ul></section>
+</body>
+</html>

@@ -120,3 +120,16 @@ subagent:
       # 仅当对端证书无法加入 JDK truststore（如 PoC 调内网自签 CA）时打开；
       # 生产请把公司 CA 导入 cacerts 或用 -Djavax.net.ssl.trustStore 指定独立 keystore。
       insecure-skip-verify: false
+
+# Control plane in-process configuration. Control plane runs as a set of beans inside
+# the main CampusClawApplication JVM (not a separate sidecar process), so it shares
+# spring/server/logging blocks with the main application above. Only control-plane-specific
+# tuning lives under this root.
+controlplane:
+  heartbeat:
+    # A node missing heartbeats for longer than `ttl` is marked STALE.
+    ttl: PT30S
+    # How often the cleanup task scans the registry.
+    sweep-interval: PT10S
+    # How long a STALE node lingers before being removed entirely.
+    grace-after-stale: PT5M

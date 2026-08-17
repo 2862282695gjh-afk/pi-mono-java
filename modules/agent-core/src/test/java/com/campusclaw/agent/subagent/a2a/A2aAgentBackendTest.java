@@ -18,6 +18,8 @@ import java.util.Map;
 import java.util.TreeMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -38,6 +40,7 @@ import org.junit.jupiter.api.Test;
 class A2aAgentBackendTest {
 
     private HttpServer server;
+    private ExecutorService serverExecutor;
     private final ObjectMapper mapper = new ObjectMapper();
     private final ConcurrentLinkedQueue<RecordedRequest> requestLog = new ConcurrentLinkedQueue<>();
     private final AtomicReference<ResponderFn> responder = new AtomicReference<>();
@@ -46,7 +49,8 @@ class A2aAgentBackendTest {
     void setUp() throws IOException {
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.createContext("/v1/a2a/request/", new RouteHandler());
-        server.setExecutor(java.util.concurrent.Executors.newCachedThreadPool());
+        serverExecutor = Executors.newCachedThreadPool();
+        server.setExecutor(serverExecutor);
         server.start();
     }
 
@@ -54,6 +58,11 @@ class A2aAgentBackendTest {
     void tearDown() {
         if (server != null) {
             server.stop(0);
+            server = null;
+        }
+        if (serverExecutor != null) {
+            serverExecutor.shutdownNow();
+            serverExecutor = null;
         }
     }
 
