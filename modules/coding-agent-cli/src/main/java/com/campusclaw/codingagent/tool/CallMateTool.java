@@ -104,7 +104,7 @@ public class CallMateTool implements AgentTool {
         Map<String, Object> toolArgs = (Map<String, Object>) params.get("args");
 
         if (tool == null) {
-            return errorResult("Missing required parameter: tool");
+            throw new IllegalArgumentException("Missing required parameter: tool");
         }
 
         // ---- permission check ----
@@ -114,18 +114,18 @@ public class CallMateTool implements AgentTool {
         log.info("callMateTool: tool={} permission={}", tool, permission);
 
         if (MateToolMeta.DENY.equals(permission)) {
-            return errorResult("Tool denied by metadata: " + tool);
+            throw new MateToolExecutionException(tool, "denied by metadata");
         }
 
         if (MateToolMeta.ASK.equals(permission)) {
             if (approvalUI == null) {
                 log.warn("Approval required but no UI in non-interactive mode, denying: {}", tool);
-                return errorResult("Cannot ask user in non-interactive mode: " + tool);
+                throw new MateToolExecutionException(tool, "cannot ask user in non-interactive mode");
             }
             String desc = meta != null ? meta.description() : "Mate tool requires approval";
             boolean approved = approvalUI.ask(tool, toolArgs, desc);
             if (!approved) {
-                return errorResult("User denied: " + tool);
+                throw new MateToolExecutionException(tool, "user denied");
             }
         }
 
@@ -133,6 +133,13 @@ public class CallMateTool implements AgentTool {
         log.info("Calling mate tool: {}", tool);
         MateToolClient.ToolResult result = client.callTool(tool, toolArgs, credentials);
 
+        if (result.isError()) {
+            // Propagate as an exception so ToolExecutionPipeline marks the
+            // ToolResultMessage with isError=true (it catches exceptions and
+            // builds an error Outcome). Returning normally would lose the
+            // error status because the pipeline defaults isError to false.
+            throw new MateToolExecutionException(tool, result.content());
+        }
         List<ContentBlock> blocks = List.of(new TextContent(result.content()));
         return new AgentToolResult(blocks, result.metadata());
     }
@@ -160,8 +167,25 @@ public class CallMateTool implements AgentTool {
         return credentials;
     }
 
-    private static AgentToolResult errorResult(String message) {
-        return new AgentToolResult(List.of(new TextContent(message)), null);
+    /**
+     * Thrown when the Mate server reports an execution error, so that
+     * {@code ToolExecutionPipeline} marks the resulting {@code ToolResultMessage}
+     * with {@code isError=true} via its exception catch path.
+     *
+     * @version [br_eCampusCore 26.0.0, 2026/08/17]
+     * @since [br_eCampusCore 26.0.0]
+     */
+    public static class MateToolExecutionException extends RuntimeException {
+
+        /**
+         * Creates the exception.
+         *
+         * @param tool the tool name that failed
+         * @param detail the error detail from the Mate server
+         */
+        public MateToolExecutionException(String tool, String detail) {
+            super("Mate tool '" + tool + "' failed: " + detail);
+        }
     }
 
     // ==================== Supporting types ====================

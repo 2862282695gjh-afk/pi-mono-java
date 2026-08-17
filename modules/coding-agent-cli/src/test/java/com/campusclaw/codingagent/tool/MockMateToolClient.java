@@ -28,6 +28,7 @@ public class MockMateToolClient implements MateToolClient {
     private MateCredentials lastListCredentials;
     private MateCredentials lastCallCredentials;
     private String lastCalledTool;
+    private CallMateTool.MateToolClient.ToolResult overriddenResult;
 
     /**
      * Registers a tool.
@@ -85,6 +86,16 @@ public class MockMateToolClient implements MateToolClient {
         return lastCalledTool;
     }
 
+    /**
+     * Overrides the result returned by the next callTool invocation regardless
+     * of the tool name (used to simulate Mate-side errors).
+     *
+     * @param result the result to return; null restores normal behavior
+     */
+    public void overrideCallResult(CallMateTool.MateToolClient.ToolResult result) {
+        this.overriddenResult = result;
+    }
+
     @Override
     public List<MateToolMeta> listTools(String agentId, String skillId, MateCredentials credentials) {
         lastListCredentials = credentials;
@@ -105,6 +116,9 @@ public class MockMateToolClient implements MateToolClient {
     public ToolResult callTool(String tool, Map<String, Object> args, MateCredentials credentials) {
         lastCalledTool = tool;
         lastCallCredentials = credentials;
+        if (overriddenResult != null) {
+            return overriddenResult;
+        }
         MateToolMeta meta = toolsById.get(tool);
         if (meta == null) {
             return new ToolResult("unknown tool: " + tool, null, true);

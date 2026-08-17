@@ -1,0 +1,69 @@
+/*
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
+ */
+
+package com.huawei.hicampus.mate.matecampusclaw.codingagent.config;
+
+import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+
+import com.huawei.hicampus.mate.matecampusclaw.agent.tool.AgentTool;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.CallMateTool;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.HttpMateToolClient;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.ListMateTool;
+
+/**
+ * Auto-configuration wiring the Mate tool client and the two Mate AgentTools.
+ * Enabled when {@code mate.tool.enabled=true} (default enabled); set to
+ * {@code false} to exclude {@code listMateTool}/{@code callMateTool} from the
+ * agent tool list.
+ *
+ * @version [br_eCampusCore 26.0.0, 2026/08/17]
+ * @since [br_eCampusCore 26.0.0]
+ */
+@Configuration(proxyBeanMethods = false)
+@ConditionalOnProperty(name = "mate.tool.enabled", havingValue = "true", matchIfMissing = true)
+@EnableConfigurationProperties(MateToolProperties.class)
+public class MateToolAutoConfiguration {
+
+    /**
+     * Creates the Mate HTTP client when no other bean provides one.
+     *
+     * @return the HTTP Mate tool client
+     */
+    @Bean
+    @ConditionalOnMissingBean(CallMateTool.MateToolClient.class)
+    public CallMateTool.MateToolClient mateToolClient(MateToolProperties properties) {
+        return new HttpMateToolClient(properties.getBaseUrl());
+    }
+
+    /**
+     * Creates the callMateTool AgentTool bean.
+     *
+     * @param client the Mate tool client
+     * @param properties Mate tool configuration properties
+     * @return the CallMateTool bean
+     */
+    @Bean
+    public CallMateTool callMateTool(CallMateTool.MateToolClient client, MateToolProperties properties) {
+        CallMateTool.MateCredentials credentials = CallMateTool.MateCredentials.appKey(
+                properties.getXHwId(), properties.getXHwAppKey());
+        return new CallMateTool(client, properties.getApprovalUi(), credentials);
+    }
+
+    /**
+     * Creates the listMateTool AgentTool bean sharing the client and cache with
+     * callMateTool.
+     *
+     * @param client the Mate tool client
+     * @param callMateTool the callMateTool bean (shares meta cache and credentials)
+     * @return the ListMateTool bean
+     */
+    @Bean
+    public ListMateTool listMateTool(CallMateTool.MateToolClient client, CallMateTool callMateTool) {
+        return new ListMateTool(client, callMateTool);
+    }
+}

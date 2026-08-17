@@ -4,9 +4,9 @@
 
 package com.campusclaw.codingagent.tool;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.util.List;
 import java.util.Map;
@@ -18,9 +18,12 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 /**
- * Unit tests for {@link CallMateTool} permission decisions.
+ * Unit tests for {@link CallMateTool} permission decisions: allow calls through,
+ * ask/deny throw {@link CallMateTool.MateToolExecutionException} so that
+ * ToolExecutionPipeline marks the result isError=true.
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/08/17]
+ * @version [br_eCampusCore 26.0.0, 2026/08/17]
+ * @since [br_eCampusCore 26.0.0]
  */
 class CallMateToolTest {
 
@@ -43,39 +46,38 @@ class CallMateToolTest {
     }
 
     @Test
-    void allowPermissionCallsThrough() throws Exception {
-        var r = tool.execute("t", Map.of("tool", "query", "args", Map.of()), null, null);
-        assertFalse(hasError(r));
+    void allowPermissionCallsThrough() {
+        var r = assertDoesNotThrow(() -> tool.execute("t", Map.of("tool", "query", "args", Map.of()), null, null));
         assertEquals("query", client.lastCalledTool());
     }
 
     @Test
-    void askPermissionApprovedCallsThrough() throws Exception {
+    void askPermissionApprovedCallsThrough() {
         approvalResult = true;
-        var r = tool.execute("t", Map.of("tool", "export"), null, null);
-        assertFalse(hasError(r));
+        assertDoesNotThrow(() -> tool.execute("t", Map.of("tool", "export"), null, null));
         assertEquals("export", client.lastCalledTool());
     }
 
     @Test
-    void askPermissionDeniedBlocksCall() throws Exception {
+    void askPermissionDeniedThrows() {
         approvalResult = false;
-        var r = tool.execute("t", Map.of("tool", "export"), null, null);
-        assertTrue(hasError(r));
+        assertThrows(
+                CallMateTool.MateToolExecutionException.class,
+                () -> tool.execute("t", Map.of("tool", "export"), null, null));
         assertEquals(null, client.lastCalledTool());
     }
 
     @Test
-    void denyPermissionBlocksCall() throws Exception {
-        var r = tool.execute("t", Map.of("tool", "delete"), null, null);
-        assertTrue(hasError(r));
+    void denyPermissionThrows() {
+        assertThrows(
+                CallMateTool.MateToolExecutionException.class,
+                () -> tool.execute("t", Map.of("tool", "delete"), null, null));
         assertEquals(null, client.lastCalledTool());
     }
 
     @Test
-    void missingToolParamReturnsError() throws Exception {
-        var r = tool.execute("t", Map.of(), null, null);
-        assertTrue(hasError(r));
+    void missingToolParamThrows() {
+        assertThrows(IllegalArgumentException.class, () -> tool.execute("t", Map.of(), null, null));
     }
 
     @Test
@@ -83,15 +85,5 @@ class CallMateToolTest {
         tool.execute("t", Map.of("tool", "query"), null, null);
         assertEquals("id", client.lastCallCredentials().xHwId());
         assertEquals("key", client.lastCallCredentials().xHwAppKey());
-    }
-
-    private static boolean hasError(com.campusclaw.agent.tool.AgentToolResult r) {
-        return r.content().stream()
-                .anyMatch(b -> b instanceof com.campusclaw.ai.types.TextContent t
-                                && t.text().startsWith("Tool denied")
-                        || b instanceof com.campusclaw.ai.types.TextContent t2
-                                && (t2.text().startsWith("User denied")
-                                        || t2.text().startsWith("Cannot ask")
-                                        || t2.text().startsWith("Missing required")));
     }
 }

@@ -28,6 +28,21 @@ public class HttpMateToolClient implements MateToolClient {
 
     private static final Logger log = LoggerFactory.getLogger(HttpMateToolClient.class);
 
+    /**
+     * Base URL of the Mate tool server; reserved for the internal Mate HTTP
+     * implementation of the four stub methods.
+     */
+    protected final String baseUrl;
+
+    /**
+     * Creates a client pointed at the given Mate tool server.
+     *
+     * @param baseUrl the Mate tool server base URL (no trailing slash required)
+     */
+    public HttpMateToolClient(String baseUrl) {
+        this.baseUrl = baseUrl != null && baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
+    }
+
     @Override
     public List<MateToolMeta> listTools(String agentId, String skillId, MateCredentials credentials) {
         try {
