@@ -6,7 +6,7 @@
 
 CampusMateService 保存 Agent、Skill 绑定和工具权限，CampusClaw 执行 Agent 并从本地目录加载 Skill。过去由部署脚本静态复制目录，运行时启停和实际可执行内容彼此割裂。本设计把“选定 Agent 后如何发现 Skill、按需查询工具并执行”收敛到 CampusClaw 运行时，同时保持已经确定的本地优先规则。
 
-对应决策记录：[ADR-0007：Agent 与 Skill 运行时解析](../decisions/0007-agent-skill-runtime-resolution.html)。
+对应决策记录：[ADR-0011：Agent 与 Skill 运行时解析](../decisions/0011-agent-skill-runtime-resolution.html)。
 
 CampusClaw 负责决定运行哪个 Agent。选定 `agentId` 后，CampusClaw 优先使用本地目录；只有整个 Agent 目录不存在时才调用 CampusMateService。已存在但不完整的目录按配置漂移处理并拒绝加载，避免混合新旧版本：
 
