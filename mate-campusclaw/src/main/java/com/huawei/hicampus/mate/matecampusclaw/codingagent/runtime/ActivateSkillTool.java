@@ -7,14 +7,13 @@ package com.huawei.hicampus.mate.matecampusclaw.codingagent.runtime;
 import java.util.Map;
 import java.util.function.Function;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.huawei.hicampus.mate.matecampusclaw.agent.tool.AgentTool;
 import com.huawei.hicampus.mate.matecampusclaw.agent.tool.AgentToolResult;
 import com.huawei.hicampus.mate.matecampusclaw.agent.tool.AgentToolUpdateCallback;
 import com.huawei.hicampus.mate.matecampusclaw.agent.tool.CancellationToken;
-import com.huawei.hicampus.mate.matecampusclaw.agent.tool.ToolExecutionMode;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 
 /**
  * Structured control tool used by the model to activate a managed Skill before its
@@ -62,11 +61,6 @@ public class ActivateSkillTool implements AgentTool {
                 .put("type", "object")
                 .<ObjectNode>set("properties", properties)
                 .set("required", MAPPER.createArrayNode().add("skillName"));
-    }
-
-    @Override
-    public ToolExecutionMode defaultExecutionMode() {
-        return ToolExecutionMode.SEQUENTIAL;
     }
 
     @Override

@@ -11,8 +11,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 /**
  * Executable tool contract used by the agent runtime.
  *
- * @version [br_eCampusCore 26.0.0, 2026/08/17]
- * @since [br_eCampusCore 26.0.0]
+ * @version [br_eCampusCore 25.1.0_Next, 2026/05/06]
+ * @since [br_eCampusCore 25.1.0_Next]
  */
 public interface AgentTool {
 
@@ -23,14 +23,6 @@ public interface AgentTool {
     String description();
 
     JsonNode parameters();
-
-    default Map<String, Object> prepareArguments(Map<String, Object> rawArgs) {
-        return rawArgs;
-    }
-
-    default ToolExecutionMode defaultExecutionMode() {
-        return ToolExecutionMode.PARALLEL;
-    }
 
     AgentToolResult execute(
             String toolCallId, Map<String, Object> params, CancellationToken signal, AgentToolUpdateCallback onUpdate)

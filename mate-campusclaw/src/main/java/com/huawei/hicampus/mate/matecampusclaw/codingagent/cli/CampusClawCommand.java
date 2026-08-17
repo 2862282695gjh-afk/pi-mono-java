@@ -627,8 +627,7 @@ public class CampusClawCommand implements Callable<Integer> {
             ToolSelection toolSelection,
             boolean useSandbox,
             AgentRuntimeManager runtimeManager) {
-        com.huawei.hicampus.mate.matecampusclaw.codingagent.config.CustomModelLoader customModelLoader =
-                resolveCustomModelLoader();
+        com.huawei.hicampus.mate.matecampusclaw.codingagent.config.CustomModelLoader customModelLoader = resolveCustomModelLoader();
         new ServerMode(
                         piAiService,
                         modelRegistry,
@@ -701,8 +700,7 @@ public class CampusClawCommand implements Callable<Integer> {
             return null;
         }
         try {
-            return applicationContext.getBean(
-                    com.huawei.hicampus.mate.matecampusclaw.codingagent.config.CustomModelLoader.class);
+            return applicationContext.getBean(com.huawei.hicampus.mate.matecampusclaw.codingagent.config.CustomModelLoader.class);
         } catch (org.springframework.beans.BeansException e) {
             log.warn("CustomModelLoader bean not available; settings/customModels endpoint disabled", e);
             return null;
@@ -780,8 +778,7 @@ public class CampusClawCommand implements Callable<Integer> {
     }
 
     private void continueLatestSession(SessionManager sessionManager, AgentSession session, Path effectiveCwd) {
-        List<com.huawei.hicampus.mate.matecampusclaw.ai.types.Message> messages =
-                sessionManager.resumeLatestSession(effectiveCwd.toString());
+        List<com.huawei.hicampus.mate.matecampusclaw.ai.types.Message> messages = sessionManager.resumeLatestSession(effectiveCwd.toString());
         if (messages.isEmpty()) {
             sessionManager.createSession(effectiveCwd.toString());
             return;
@@ -842,8 +839,7 @@ public class CampusClawCommand implements Callable<Integer> {
                     continue;
                 }
                 for (var m : allRegistered) {
-                    if (com.huawei.hicampus.mate.matecampusclaw.codingagent.model.ModelCatalogService.matchesPattern(
-                                    p, m)
+                    if (com.huawei.hicampus.mate.matecampusclaw.codingagent.model.ModelCatalogService.matchesPattern(p, m)
                             && scoped.stream().noneMatch(s -> ModelRegistry.modelsAreEqual(s, m))) {
                         scoped.add(m);
                     }
@@ -1001,9 +997,7 @@ public class CampusClawCommand implements Callable<Integer> {
         }
         boolean useSandbox = Boolean.parseBoolean(System.getenv("SKILL_SANDBOX_PARSING"));
         var manager = new SkillManager(
-                com.huawei.hicampus.mate.matecampusclaw.codingagent.config.AppPaths.USER_SKILLS_DIR,
-                sandboxSkillParser,
-                useSandbox);
+                com.huawei.hicampus.mate.matecampusclaw.codingagent.config.AppPaths.USER_SKILLS_DIR, sandboxSkillParser, useSandbox);
         return switch (action) {
             case "install" -> skillInstall(manager, useSandbox, actionArgs);
             case "list", "ls" -> skillList(manager);
@@ -1031,8 +1025,7 @@ public class CampusClawCommand implements Callable<Integer> {
             out().println("Skill installed: " + name);
             var skillLoader = new SkillLoader(sandboxSkillParser, useSandbox);
             var skills = skillLoader.loadFromDirectory(
-                    com.huawei.hicampus.mate.matecampusclaw.codingagent.config.AppPaths.USER_SKILLS_DIR.resolve(name),
-                    "user");
+                    com.huawei.hicampus.mate.matecampusclaw.codingagent.config.AppPaths.USER_SKILLS_DIR.resolve(name), "user");
             for (var skill : skills) {
                 out().println("  - " + skill.name() + ": " + skill.description());
             }
@@ -1108,9 +1101,7 @@ public class CampusClawCommand implements Callable<Integer> {
             out().println("Skill imported: " + name);
             var skills = new SkillLoader()
                     .loadFromDirectory(
-                            com.huawei.hicampus.mate.matecampusclaw.codingagent.config.AppPaths.USER_SKILLS_DIR.resolve(
-                                    name),
-                            "user");
+                            com.huawei.hicampus.mate.matecampusclaw.codingagent.config.AppPaths.USER_SKILLS_DIR.resolve(name), "user");
             for (var skill : skills) {
                 out().println("  - " + skill.name() + ": " + skill.description());
             }

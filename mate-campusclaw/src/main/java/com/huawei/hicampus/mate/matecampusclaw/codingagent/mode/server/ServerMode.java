@@ -4,7 +4,6 @@
 
 package com.huawei.hicampus.mate.matecampusclaw.codingagent.mode.server;
 
-import java.io.IOException;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
@@ -25,9 +24,7 @@ import com.huawei.hicampus.mate.matecampusclaw.codingagent.skill.SandboxSkillPar
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.skill.SkillLoader;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.skill.SkillManager;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.catalog.ToolCatalog;
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.catalog.ToolCatalogWatcher;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.catalog.ToolSelection;
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.catalog.ToolSourceContext;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -77,8 +74,6 @@ public class ServerMode {
     private final ModelRegistry modelRegistry;
     private final SystemPromptBuilder promptBuilder;
     private final List<AgentTool> tools;
-    private final ToolCatalog toolCatalog;
-    private final ToolSelection toolSelection;
     private final SessionConfig baseConfig;
     private final int port;
     private final String host;
@@ -90,6 +85,8 @@ public class ServerMode {
     private final CustomModelLoader customModelLoader;
     private final AgentRuntimeManager agentRuntimeManager;
     private final String defaultAgentId;
+    private final ToolCatalog toolCatalog;
+    private final ToolSelection toolSelection;
     private final Function<Settings.ToolsSettings, ToolSelection> toolSelectionResolver;
 
     /**
@@ -112,8 +109,6 @@ public class ServerMode {
                 modelRegistry,
                 promptBuilder,
                 tools,
-                null,
-                ToolSelection.all(),
                 baseConfig,
                 port,
                 "localhost",
@@ -141,8 +136,6 @@ public class ServerMode {
                 modelRegistry,
                 promptBuilder,
                 tools,
-                null,
-                ToolSelection.all(),
                 baseConfig,
                 port,
                 host,
@@ -171,8 +164,6 @@ public class ServerMode {
                 modelRegistry,
                 promptBuilder,
                 tools,
-                null,
-                ToolSelection.all(),
                 baseConfig,
                 port,
                 host,
@@ -314,8 +305,6 @@ public class ServerMode {
         this.modelRegistry = modelRegistry;
         this.promptBuilder = promptBuilder;
         this.tools = tools;
-        this.toolCatalog = toolCatalog;
-        this.toolSelection = toolSelection != null ? toolSelection : ToolSelection.all();
         this.baseConfig = baseConfig;
         this.port = port;
         this.host = host;
@@ -327,6 +316,8 @@ public class ServerMode {
         this.customModelLoader = customModelLoader;
         this.agentRuntimeManager = agentRuntimeManager;
         this.defaultAgentId = defaultAgentId;
+        this.toolCatalog = toolCatalog;
+        this.toolSelection = toolSelection != null ? toolSelection : ToolSelection.all();
         this.toolSelectionResolver =
                 toolSelectionResolver != null ? toolSelectionResolver : fixedSelectionResolver(this.toolSelection);
     }
@@ -368,51 +359,14 @@ public class ServerMode {
         SettingsHandler settingsHandler = buildSettingsHandler();
         RouterFunction<ServerResponse> routes = buildRoutes(chatHandler, skillHandler, sessionPool, settingsHandler);
         var adapter = new ReactorHttpHandlerAdapter(RouterFunctions.toHttpHandler(routes));
-        try (var watcher = startToolWatcherIfEnabled(sessionPool)) {
-            var server = HttpServer.create()
-                    .host(host)
-                    .port(port)
-                    .route(r -> wireServerRoutes(r, wsHandler, adapter))
-                    .bindNow();
-            logStartupBanner();
-            server.onDispose().block();
-        } catch (IOException e) {
-            log.warn("Failed to close tool catalog watcher", e);
-        } finally {
-            sessionPool.shutdown();
-        }
-    }
-
-    ToolCatalogWatcher startToolWatcherIfEnabled(SessionPool sessionPool) {
-        if (toolCatalog == null || !toolWatchEnabled()) {
-            return null;
-        }
-        try {
-            Path cwd = baseConfig.cwd();
-            return ToolCatalogWatcher.start(
-                    new ToolSourceContext(cwd, null),
-                    List.of(AppPaths.GLOBAL_SETTINGS, cwd.resolve(AppPaths.PROJECT_SETTINGS)),
-                    () -> {
-                        try {
-                            sessionPool.reloadTools();
-                        } catch (RuntimeException e) {
-                            log.warn("Tool catalog watch reload failed", e);
-                        }
-                    });
-        } catch (IOException e) {
-            log.warn("Tool catalog watch disabled: {}", e.getMessage(), e);
-            return null;
-        }
-    }
-
-    private boolean toolWatchEnabled() {
-        if (settingsManager == null) {
-            return false;
-        }
-        var settings = settingsManager.load();
-        return settings.tools() != null
-                && settings.tools().watch() != null
-                && Boolean.TRUE.equals(settings.tools().watch().enabled());
+        var server = HttpServer.create()
+                .host(host)
+                .port(port)
+                .route(r -> wireServerRoutes(r, wsHandler, adapter))
+                .bindNow();
+        logStartupBanner();
+        server.onDispose().block();
+        sessionPool.shutdown();
     }
 
     private static Function<Settings.ToolsSettings, ToolSelection> fixedSelectionResolver(ToolSelection selection) {
@@ -434,8 +388,8 @@ public class ServerMode {
                                     req.queryParam("agent_id").orElse(null));
                             return Map.of(
                                     "conversations",
-                                    com.huawei.hicampus.mate.matecampusclaw.codingagent.session.ConversationLister
-                                            .toWireFormat(conversationLister.list(cwd.toString())));
+                                    com.huawei.hicampus.mate.matecampusclaw.codingagent.session.ConversationLister.toWireFormat(
+                                            conversationLister.list(cwd.toString())));
                         })
                         .subscribeOn(reactor.core.scheduler.Schedulers.boundedElastic())
                         .flatMap(result -> ServerResponse.ok().bodyValue(result)))
@@ -516,8 +470,6 @@ public class ServerMode {
         banner.info("  DELETE /api/skills/{name}");
         banner.info("  POST   /api/skills/{name}/enable");
         banner.info("  POST   /api/skills/{name}/disable");
-        banner.info("  GET    /api/tools");
-        banner.info("  POST   /api/tools/reload");
         if (settingsManager != null && customModelLoader != null && modelCatalog != null) {
             banner.info("  GET    /api/settings/models");
             banner.info("  PUT    /api/settings/models/default");

@@ -20,8 +20,6 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.regex.Pattern;
 
-import com.fasterxml.jackson.annotation.JsonProperty;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtime.MateServiceClient.AgentRuntime;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtime.MateServiceClient.BoundTool;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtime.MateServiceClient.SkillFile;
@@ -31,6 +29,8 @@ import com.huawei.hicampus.mate.matecampusclaw.codingagent.session.SessionConfig
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.skill.Skill;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.skill.SkillLoadException;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.skill.SkillLoader;
+import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 import org.springframework.stereotype.Component;
 
@@ -276,8 +276,7 @@ public class AgentRuntimeManager {
                 String fileName = resourceFileName(resource);
                 Path file = directory.resolve(fileName);
                 if (!Files.isRegularFile(file, LinkOption.NOFOLLOW_LINKS)
-                        || !Objects.equals(
-                                Files.readString(file, StandardCharsets.UTF_8), resource.content())) {
+                        || !Objects.equals(Files.readString(file, StandardCharsets.UTF_8), resource.content())) {
                     return false;
                 }
                 expected.add(fileName.toLowerCase(Locale.ROOT));

@@ -20,13 +20,13 @@ import java.time.Duration;
 import java.util.List;
 import java.util.stream.IntStream;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtime.MateServiceClient.AgentRuntime;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtime.MateServiceClient.BoundTool;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtime.MateServiceClient.SkillFile;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtime.MateServiceClient.SkillInfo;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtime.MateServiceClient.SkillReference;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.session.SessionConfig;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -63,8 +63,7 @@ class AgentRuntimeManagerTest {
         assertEquals("Reference body", Files.readString(skillRoot.resolve("references/guide.md")));
         assertEquals("Template body", Files.readString(skillRoot.resolve("templates/request.txt")));
         assertEquals(
-                "Agent system prompt",
-                Files.readString(prepared.agentRoot().resolve(".campusclaw/systemPrompt.md")));
+                "Agent system prompt", Files.readString(prepared.agentRoot().resolve(".campusclaw/systemPrompt.md")));
         var toolsJson = new ObjectMapper()
                 .readTree(skillRoot.resolve("references/tools.json").toFile());
         assertEquals(3, toolsJson.path("tools").size());
@@ -74,7 +73,8 @@ class AgentRuntimeManagerTest {
                 "calendar", toolsJson.path("tools").get(0).path("description").asText());
         assertEquals("delete", toolsJson.path("tools").get(1).path("tool_id").asText());
         assertEquals("delete", toolsJson.path("tools").get(1).path("name").asText());
-        assertEquals("delete", toolsJson.path("tools").get(1).path("description").asText());
+        assertEquals(
+                "delete", toolsJson.path("tools").get(1).path("description").asText());
         assertEquals("approval", toolsJson.path("tools").get(2).path("name").asText());
         assertTrue(Files.isRegularFile(skillRoot.resolve("skill.json")));
         assertTrue(Files.isRegularFile(prepared.agentRoot().resolve(".campusclaw/skills/skill-b/SKILL.md")));
@@ -130,8 +130,8 @@ class AgentRuntimeManagerTest {
         Files.writeString(prepared.agentRoot().resolve(".campusclaw/systemPrompt.md"), "Modified prompt");
 
         PreparedAgentRuntime local = manager.prepare("agent-a");
-        SessionConfig config = manager.sessionConfig(
-                new SessionConfig("base-model", tempDir, "Base prompt", "interactive"), local);
+        SessionConfig config =
+                manager.sessionConfig(new SessionConfig("base-model", tempDir, "Base prompt", "interactive"), local);
 
         assertEquals("Modified prompt\n\nBase prompt", config.customPrompt());
         verify(client, times(1)).getAgentRuntime("agent-a");
@@ -203,8 +203,8 @@ class AgentRuntimeManagerTest {
 
     @Test
     void rejectsOversizedSkillResource() {
-        SkillInfo oversized = skillInfo(
-                List.of(new SkillFile("reference-1", "guide", "x".repeat(1024 * 1024 + 1), "md")), List.of());
+        SkillInfo oversized =
+                skillInfo(List.of(new SkillFile("reference-1", "guide", "x".repeat(1024 * 1024 + 1), "md")), List.of());
         when(client.getAgentRuntime("agent-a")).thenReturn(runtime(List.of(new SkillReference("skill-1", "1"))));
         when(client.querySkillInfo("skill-1")).thenReturn(List.of(oversized));
 

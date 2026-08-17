@@ -16,7 +16,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.huawei.hicampus.mate.matecampusclaw.agent.tool.AgentTool;
 import com.huawei.hicampus.mate.matecampusclaw.agent.tool.AgentToolResult;
 import com.huawei.hicampus.mate.matecampusclaw.agent.tool.AgentToolUpdateCallback;
@@ -24,6 +23,7 @@ import com.huawei.hicampus.mate.matecampusclaw.agent.tool.CancellationToken;
 import com.huawei.hicampus.mate.matecampusclaw.ai.types.TextContent;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.extension.Extension;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.extension.ExtensionRegistry;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 import org.junit.jupiter.api.Test;
 
