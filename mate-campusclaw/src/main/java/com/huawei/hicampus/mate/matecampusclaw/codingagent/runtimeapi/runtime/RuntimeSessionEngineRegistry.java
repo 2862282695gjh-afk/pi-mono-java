@@ -14,7 +14,6 @@ import java.util.concurrent.locks.ReentrantLock;
 
 import com.huawei.hicampus.mate.matecampusclaw.agent.Agent;
 import com.huawei.hicampus.mate.matecampusclaw.agent.queue.MessageQueue.DeliveryMode;
-import com.huawei.hicampus.mate.matecampusclaw.agent.subagent.SubAgentRegistry;
 import com.huawei.hicampus.mate.matecampusclaw.agent.tool.AgentTool;
 import com.huawei.hicampus.mate.matecampusclaw.ai.CampusClawAiService;
 import com.huawei.hicampus.mate.matecampusclaw.ai.types.Message;
@@ -47,13 +46,9 @@ public class RuntimeSessionEngineRegistry {
 
     private final List<AgentTool> tools;
 
-    private final SubAgentRegistry subAgentRegistry;
-
-    public RuntimeSessionEngineRegistry(
-            CampusClawAiService aiService, List<AgentTool> tools, SubAgentRegistry subAgentRegistry) {
+    public RuntimeSessionEngineRegistry(CampusClawAiService aiService, List<AgentTool> tools) {
         this.aiService = aiService;
         this.tools = List.copyOf(tools);
-        this.subAgentRegistry = subAgentRegistry;
     }
 
     public RuntimeSessionHolder initialize(
@@ -95,7 +90,6 @@ public class RuntimeSessionEngineRegistry {
             return;
         }
         holder.agent().abort();
-        subAgentRegistry.cancelAll("session-delete");
     }
 
     private Agent createAgent(

@@ -71,6 +71,7 @@ class RuntimeHttpProcessOpenGaussIT {
                 RuntimeProcess runtime = startRuntime(config, tempDir, applicationPort)) {
             modelStub.start();
             awaitHealth(runtime, applicationPort);
+            assertRuntimeCorsPreflight(applicationPort);
             String sessionId = createSession(applicationPort);
             ModelGate controlGate = modelStub.blockNextResponse();
             CompletableFuture<HttpResponse<String>> streamResponse = submitUserEventAsync(applicationPort, sessionId);
@@ -213,6 +214,19 @@ class RuntimeHttpProcessOpenGaussIT {
                 .path("result")
                 .path("session_id")
                 .asText();
+    }
+
+    private static void assertRuntimeCorsPreflight(int port) throws Exception {
+        URI uri = URI.create("http://127.0.0.1:" + port + "/campusclaw-service/v1/sessions/example/events");
+        HttpResponse<String> response = send(HttpRequest.newBuilder(uri)
+                .header("Origin", "http://localhost:5173")
+                .header("Access-Control-Request-Method", "POST")
+                .method("OPTIONS", HttpRequest.BodyPublishers.noBody())
+                .build());
+        assertThat(response.statusCode()).isEqualTo(204);
+        assertThat(response.headers().firstValue("Access-Control-Allow-Origin")).contains("*");
+        assertThat(response.headers().firstValue("Access-Control-Allow-Methods"))
+                .hasValueSatisfying(methods -> assertThat(methods).contains("POST"));
     }
 
     private static CompletableFuture<HttpResponse<String>> submitUserEventAsync(int port, String sessionId) {

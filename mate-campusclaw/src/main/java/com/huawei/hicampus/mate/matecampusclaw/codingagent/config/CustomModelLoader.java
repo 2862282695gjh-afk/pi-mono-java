@@ -24,10 +24,11 @@ import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
 
 /**
- * Registers user-defined models into the {@link ModelRegistry} once Spring is
- * ready: both {@code settings.customModels} entries and any catalog file at
- * {@code ~/.campusclaw/agent/models.json}. Runs once at startup so that the
- * model selector overlay and {@code -m} flag see the same catalog.
+ * Spring 就绪后将用户自定义模型注册到 {@link ModelRegistry}。
+ *
+ * <p>模型来源包括 {@code settings.customModels} 和
+ * {@code ~/.campusclaw/agent/models.json}；启动时执行一次，确保模型选择器与
+ * {@code -m} 参数使用同一份模型目录。
  *
  * @version [br_eCampusCore 25.1.0_Next, 2026/05/06]
  * @since [br_eCampusCore 25.1.0_Next]
@@ -51,14 +52,12 @@ public class CustomModelLoader {
     }
 
     /**
-     * Re-syncs the {@link Provider#CUSTOM} bucket of the registry with the
-     * current {@code settings.customModels} list. Removes any custom entries
-     * that are no longer present, then registers the freshly loaded set.
-     * Built-in models from other providers are not affected.
+     * 使用当前 {@code settings.customModels} 重新同步注册表中的
+     * {@link Provider#CUSTOM} 分组。
      *
-     * <p>Called by the {@code @EventListener} once at boot and by the
-     * {@code PUT /api/settings/customModels} endpoint after a write so the
-     * next WebSocket connection sees the updated catalogue.
+     * <p>先移除已经不存在的自定义模型，再注册最新集合，不影响其他供应商的内置模型。
+     * 启动时由 {@code @EventListener} 调用一次，写入
+     * {@code PUT /api/settings/customModels} 后也会调用，使后续模型列表请求读取到新目录。
      */
     public void refresh() {
         Settings settings;
@@ -100,7 +99,7 @@ public class CustomModelLoader {
                 try {
                     modalities.add(InputModality.valueOf(m.toUpperCase(Locale.ROOT)));
                 } catch (IllegalArgumentException e) {
-                    // skip unknown modality string from settings.json — falls back to TEXT below
+                    // 忽略 settings.json 中未知的模态字符串，后续回退为 TEXT。
                     log.debug("ignoring unknown input modality '{}' from custom model config", m, e);
                 }
             }

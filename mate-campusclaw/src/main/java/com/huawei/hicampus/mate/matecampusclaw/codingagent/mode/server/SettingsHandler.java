@@ -32,26 +32,21 @@ import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
 /**
- * Handles HTTP endpoints that mutate {@code ~/.campusclaw/agent/settings.json}
- * from a UI. Three endpoints today, all writing to the global file only:
+ * 处理 UI 读取或修改 {@code ~/.campusclaw/agent/settings.json} 的 HTTP 接口。
+ *
+ * <p>当前提供三个接口，写操作仅修改全局配置文件：
  *
  * <ul>
- *   <li>GET    /api/settings/models               — current {@code defaultModel} +
- *       {@code customModels} + the resolved list of available models the picker
- *       should display.</li>
- *   <li>PUT    /api/settings/models/default       — sets {@code defaultModel}.
- *       Request body: {@code {"model": "<id>"}}. Validates the id is present in
- *       the registry; 400 otherwise.</li>
- *   <li>PUT    /api/settings/customModels         — full idempotent replacement
- *       of the {@code customModels} array. Triggers
- *       {@link CustomModelLoader#refresh()} so the next WebSocket connection
- *       (or {@code list_models} command) sees the new catalogue.</li>
+ *   <li>GET /api/settings/models：返回当前 {@code defaultModel}、
+ *       {@code customModels} 与选择器应展示的可用模型列表。</li>
+ *   <li>PUT /api/settings/models/default：设置 {@code defaultModel}，请求体为
+ *       {@code {"model": "<id>"}}；模型不在注册表中时返回 400。</li>
+ *   <li>PUT /api/settings/customModels：幂等全量替换 {@code customModels} 数组，
+ *       并调用 {@link CustomModelLoader#refresh()}，使后续模型列表请求读取到新目录。</li>
  * </ul>
  *
- * <p>Persisted writes don't notify existing WebSocket connections — clients
- * that care should rely on a fresh connection to observe the change. This
- * matches the broader pattern of {@link SettingsManager#load()} re-reading
- * the file on every call rather than caching.
+ * <p>配置写入不会修改既有 Agent 实例。新 Session 和后续设置请求可以读取新值，
+ * 因为 {@link SettingsManager#load()} 每次调用都会重新读取文件。
  *
  * @version [br_eCampusCore 25.1.0_Next, 2026/05/22]
  * @since [br_eCampusCore 25.1.0_Next]
@@ -80,10 +75,10 @@ public class SettingsHandler {
     }
 
     /**
-     * GET /api/settings/models — snapshot for the configuration UI.
+     * 获取配置 UI 使用的模型快照。
      *
-     * @param request the request
-     * @return the response Mono
+     * @param request 服务端请求
+     * @return 响应 Mono
      */
     public Mono<ServerResponse> getModels(ServerRequest request) {
         return Mono.fromCallable(this::buildModelsSnapshot)
@@ -96,10 +91,10 @@ public class SettingsHandler {
     }
 
     /**
-     * PUT /api/settings/models/default — body {@code {"model": "<id>"}}.
+     * 设置默认模型，请求体为 {@code {"model": "<id>"}}。
      *
-     * @param request the request
-     * @return the response Mono
+     * @param request 服务端请求
+     * @return 响应 Mono
      */
     public Mono<ServerResponse> setDefaultModel(ServerRequest request) {
         return request.bodyToMono(DefaultModelRequest.class)
@@ -114,11 +109,10 @@ public class SettingsHandler {
     }
 
     /**
-     * PUT /api/settings/customModels — body is a JSON array of
-     * {@link Settings.CustomModelConfig}; replaces the existing list.
+     * 全量替换自定义模型，请求体是 {@link Settings.CustomModelConfig} 的 JSON 数组。
      *
-     * @param request the request
-     * @return the response Mono
+     * @param request 服务端请求
+     * @return 响应 Mono
      */
     public Mono<ServerResponse> setCustomModels(ServerRequest request) {
         return request.bodyToMono(JsonNode.class)
@@ -246,7 +240,7 @@ public class SettingsHandler {
     }
 
     /**
-     * Request payload for {@code PUT /api/settings/models/default}.
+     * {@code PUT /api/settings/models/default} 的请求体。
      */
     public record DefaultModelRequest(@JsonProperty("model") @Nullable String model) {}
 
