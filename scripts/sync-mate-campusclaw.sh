@@ -10,8 +10,8 @@
 #   2. APPLY  — rsync staged Java sources into mate-campusclaw/ with --delete
 #               (so renames/removals propagate), preserving paths listed in
 #               scripts/sync-mate-exclude.txt (mate-side-only files).
-#               Resources are handled with a small whitelist (schema.sql and
-#               AutoConfiguration.imports). Application config (.yml/.properties)
+#               Resources are handled with a small whitelist (database release
+#               scripts, schema.sql, and AutoConfiguration.imports). Application config (.yml/.properties)
 #               is hand-tuned and never touched.
 #
 # Workflow:
@@ -41,6 +41,7 @@ MODULES=(ai tui agent-core cron coding-agent-cli)
 # Resources we DO want to keep in sync from modules/* — anything else under
 # src/main/resources/ on the mate side is hand-tuned and skipped.
 SYNCED_RESOURCES=(
+  "db/gaussdb"
   "schema.sql"
   "META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports"
 )
@@ -157,11 +158,18 @@ if $SYNC_TESTS; then
 fi
 
 if $SYNC_RESOURCES; then
-  note "Applying whitelisted resources (schema.sql, AutoConfiguration.imports)"
+  note "Applying whitelisted resources (db/gaussdb, schema.sql, AutoConfiguration.imports)"
   for f in "${SYNCED_RESOURCES[@]}"; do
     src="$OUT/src/main/resources/$f"
     dst="$MATE/src/main/resources/$f"
-    if [ -f "$src" ]; then
+    if [ -d "$src" ]; then
+      if $DRY_RUN; then
+        rsync -an --delete --itemize-changes "$src/" "$dst/"
+      else
+        mkdir -p "$dst"
+        rsync -a --delete "$src/" "$dst/"
+      fi
+    elif [ -f "$src" ]; then
       if $DRY_RUN; then
         if ! cmp -s "$src" "$dst" 2>/dev/null; then
           echo "  [would update] src/main/resources/$f"
