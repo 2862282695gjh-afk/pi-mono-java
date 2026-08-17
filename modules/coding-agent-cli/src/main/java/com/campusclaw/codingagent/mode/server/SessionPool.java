@@ -33,6 +33,9 @@ import com.campusclaw.codingagent.settings.SettingsManager;
 import com.campusclaw.codingagent.skill.SandboxSkillParser;
 import com.campusclaw.codingagent.skill.SkillExpander;
 import com.campusclaw.codingagent.skill.SkillLoader;
+import com.campusclaw.codingagent.tool.catalog.ToolCatalog;
+import com.campusclaw.codingagent.tool.catalog.ToolRefreshRequest;
+import com.campusclaw.codingagent.tool.catalog.ToolSelection;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

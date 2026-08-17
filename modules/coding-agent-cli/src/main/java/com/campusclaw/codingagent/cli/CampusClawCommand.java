@@ -47,11 +47,17 @@ import com.campusclaw.codingagent.skill.SkillInstallException;
 import com.campusclaw.codingagent.skill.SkillLoader;
 import com.campusclaw.codingagent.skill.SkillManager;
 import com.campusclaw.codingagent.tool.bash.BashExecutor;
+import com.campusclaw.codingagent.tool.catalog.DefaultToolCatalog;
+import com.campusclaw.codingagent.tool.catalog.SpringAgentToolSource;
+import com.campusclaw.codingagent.tool.catalog.ToolCatalog;
+import com.campusclaw.codingagent.tool.catalog.ToolRefreshRequest;
+import com.campusclaw.codingagent.tool.catalog.ToolSelection;
 import com.campusclaw.tui.terminal.JLineTerminal;
 import com.campusclaw.tui.terminal.Terminal;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import picocli.CommandLine;
@@ -84,6 +90,7 @@ public class CampusClawCommand implements Callable<Integer> {
     private final ModelRegistry modelRegistry;
     private final SystemPromptBuilder promptBuilder;
     private final List<AgentTool> tools;
+    private final ToolCatalog toolCatalog;
     private final SlashCommandRegistry commandRegistry;
     private final BashExecutor bashExecutor;
     private final SettingsManager settingsManager;
@@ -113,10 +120,48 @@ public class CampusClawCommand implements Callable<Integer> {
             com.campusclaw.codingagent.resolver.AgentModelResolver agentModelResolver,
             com.campusclaw.codingagent.model.ModelCatalogService modelCatalogService,
             com.campusclaw.agent.subagent.SubAgentRegistry subAgentRegistry) {
+        this(
+                piAiService,
+                modelRegistry,
+                promptBuilder,
+                tools,
+                new DefaultToolCatalog(List.of(new SpringAgentToolSource(tools))),
+                commandRegistry,
+                bashExecutor,
+                settingsManager,
+                cronService,
+                loopManager,
+                applicationContext,
+                sandboxSkillParser,
+                agentModelResolver,
+                modelCatalogService,
+                subAgentRegistry);
+    }
+
+    @Autowired
+    public CampusClawCommand(
+            CampusClawAiService piAiService,
+            ModelRegistry modelRegistry,
+            SystemPromptBuilder promptBuilder,
+            List<AgentTool> tools,
+            ToolCatalog toolCatalog,
+            SlashCommandRegistry commandRegistry,
+            BashExecutor bashExecutor,
+            SettingsManager settingsManager,
+            @org.springframework.lang.Nullable com.campusclaw.cron.CronService cronService,
+            com.campusclaw.codingagent.loop.LoopManager loopManager,
+            org.springframework.context.ApplicationContext applicationContext,
+            @org.springframework.lang.Nullable SandboxSkillParser sandboxSkillParser,
+            com.campusclaw.codingagent.resolver.AgentModelResolver agentModelResolver,
+            com.campusclaw.codingagent.model.ModelCatalogService modelCatalogService,
+            com.campusclaw.agent.subagent.SubAgentRegistry subAgentRegistry) {
         this.piAiService = piAiService;
         this.modelRegistry = modelRegistry;
         this.promptBuilder = promptBuilder;
-        this.tools = tools;
+        this.tools = tools != null ? tools : List.of();
+        this.toolCatalog = toolCatalog != null
+                ? toolCatalog
+                : new DefaultToolCatalog(List.of(new SpringAgentToolSource(this.tools)));
         this.commandRegistry = commandRegistry;
         this.bashExecutor = bashExecutor;
         this.settingsManager = settingsManager;
@@ -296,6 +341,9 @@ public class CampusClawCommand implements Callable<Integer> {
         String effectivePrompt = resolveEffectivePrompt();
         Path effectiveCwd = cwd != null ? cwd : Path.of(System.getProperty("user.dir"));
         com.campusclaw.codingagent.config.AppPaths.ensureUserDirs();
+        if (settingsManager != null) {
+            settingsManager.setWorkingDir(effectiveCwd);
+        }
 
         Settings settings = settingsManager != null ? settingsManager.load() : Settings.empty();
         String effectiveModel = (model != null) ? model : settings.resolvedDefaultModel();
@@ -326,7 +374,7 @@ public class CampusClawCommand implements Callable<Integer> {
             err().println("Error: --mode one-shot requires a prompt (-p or positional args)");
             return 1;
         }
-        return runAgentMode(effectivePrompt, effectiveCwd, effectiveModel, effectiveThinking);
+        return runAgentMode(effectivePrompt, effectiveCwd, effectiveModel, effectiveThinking, settings);
     }
 
     private void applyProxyOverride() {
@@ -498,7 +546,11 @@ public class CampusClawCommand implements Callable<Integer> {
     }
 
     private Integer runAgentMode(
-            String effectivePrompt, Path effectiveCwd, String effectiveModel, String effectiveThinking) {
+            String effectivePrompt,
+            Path effectiveCwd,
+            String effectiveModel,
+            String effectiveThinking,
+            Settings settings) {
         String effectiveSystemPrompt = mergeSystemPrompts();
         ToolSelection toolSelection = ToolSelection.fromCli(
                 toolsFilter, noTools, ToolSelection.fromSettings(settings != null ? settings.tools() : null));
@@ -599,27 +651,6 @@ public class CampusClawCommand implements Callable<Integer> {
                 .run();
     }
 
-    private void runServerMode(SessionConfig config, List<AgentTool> effectiveTools, boolean useSandbox) {
-        runServerMode(
-                config,
-                effectiveTools,
-                ToolSelection.fromCli(toolsFilter, noTools),
-                useSandbox,
-                resolveAgentRuntimeManager());
-    }
-
-    private AgentRuntimeManager resolveAgentRuntimeManager() {
-        if (applicationContext == null) {
-            return null;
-        }
-        try {
-            return applicationContext.getBean(AgentRuntimeManager.class);
-        } catch (org.springframework.beans.BeansException e) {
-            log.warn("AgentRuntimeManager bean not available; managed Agents are disabled", e);
-            return null;
-        }
-    }
-
     @SuppressWarnings("unchecked")
     private List<
                     org.springframework.web.reactive.function.server.RouterFunction<
@@ -643,6 +674,27 @@ public class CampusClawCommand implements Callable<Integer> {
         return List.copyOf(routes);
     }
 
+    private void runServerMode(SessionConfig config, List<AgentTool> effectiveTools, boolean useSandbox) {
+        runServerMode(
+                config,
+                effectiveTools,
+                ToolSelection.fromCli(toolsFilter, noTools),
+                useSandbox,
+                resolveAgentRuntimeManager());
+    }
+
+    private AgentRuntimeManager resolveAgentRuntimeManager() {
+        if (applicationContext == null) {
+            return null;
+        }
+        try {
+            return applicationContext.getBean(AgentRuntimeManager.class);
+        } catch (org.springframework.beans.BeansException e) {
+            log.warn("AgentRuntimeManager bean not available; managed Agents are disabled", e);
+            return null;
+        }
+    }
+
     private com.campusclaw.codingagent.config.CustomModelLoader resolveCustomModelLoader() {
         if (applicationContext == null) {
             return null;
@@ -664,14 +716,22 @@ public class CampusClawCommand implements Callable<Integer> {
     }
 
     private List<AgentTool> resolveEffectiveTools() {
-        if (noTools) {
-            return List.of();
-        }
-        if (toolsFilter != null && !toolsFilter.isBlank()) {
-            var allowed = List.of(toolsFilter.split(","));
-            return tools.stream().filter(t -> allowed.contains(t.name())).collect(Collectors.toList());
-        }
-        return tools;
+        return toolCatalog.resolve(ToolSelection.fromCli(toolsFilter, noTools));
+    }
+
+    private List<AgentTool> resolveEffectiveTools(Path effectiveCwd) {
+        return resolveEffectiveTools(effectiveCwd, ToolSelection.fromCli(toolsFilter, noTools));
+    }
+
+    private List<AgentTool> resolveEffectiveTools(Path effectiveCwd, ToolSelection toolSelection) {
+        toolCatalog.refresh(new ToolRefreshRequest(effectiveCwd));
+        return toolCatalog.resolve(toolSelection);
+    }
+
+    private List<AgentTool> resolveEffectiveTools(
+            Path effectiveCwd, ToolSelection toolSelection, Settings.ToolsSettings toolsSettings) {
+        toolCatalog.refresh(new ToolRefreshRequest(effectiveCwd, toolsSettings));
+        return toolCatalog.resolve(toolSelection);
     }
 
     private void applySessionLoading(SessionManager sessionManager, AgentSession session, Path effectiveCwd) {

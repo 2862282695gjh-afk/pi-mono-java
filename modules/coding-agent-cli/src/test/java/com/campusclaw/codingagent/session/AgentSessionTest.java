@@ -51,6 +51,9 @@ import com.campusclaw.codingagent.runtime.MateServiceClient.SkillReference;
 import com.campusclaw.codingagent.runtime.PreparedAgentRuntime;
 import com.campusclaw.codingagent.skill.SkillExpander;
 import com.campusclaw.codingagent.skill.SkillLoader;
+import com.campusclaw.codingagent.tool.catalog.ToolCatalog;
+import com.campusclaw.codingagent.tool.catalog.ToolRefreshRequest;
+import com.campusclaw.codingagent.tool.catalog.ToolSelection;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 

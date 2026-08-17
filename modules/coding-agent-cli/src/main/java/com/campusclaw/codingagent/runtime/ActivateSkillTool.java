@@ -11,7 +11,6 @@ import com.campusclaw.agent.tool.AgentTool;
 import com.campusclaw.agent.tool.AgentToolResult;
 import com.campusclaw.agent.tool.AgentToolUpdateCallback;
 import com.campusclaw.agent.tool.CancellationToken;
-import com.campusclaw.agent.tool.ToolExecutionMode;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -62,11 +61,6 @@ public class ActivateSkillTool implements AgentTool {
                 .put("type", "object")
                 .<ObjectNode>set("properties", properties)
                 .set("required", MAPPER.createArrayNode().add("skillName"));
-    }
-
-    @Override
-    public ToolExecutionMode defaultExecutionMode() {
-        return ToolExecutionMode.SEQUENTIAL;
     }
 
     @Override

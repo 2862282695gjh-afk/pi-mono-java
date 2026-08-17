@@ -4,6 +4,7 @@
 
 package com.campusclaw.codingagent.mode.server;
 
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
@@ -22,6 +23,8 @@ import com.campusclaw.codingagent.settings.SettingsManager;
 import com.campusclaw.codingagent.skill.SandboxSkillParser;
 import com.campusclaw.codingagent.skill.SkillLoader;
 import com.campusclaw.codingagent.skill.SkillManager;
+import com.campusclaw.codingagent.tool.catalog.ToolCatalog;
+import com.campusclaw.codingagent.tool.catalog.ToolSelection;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -82,6 +85,8 @@ public class ServerMode {
     private final CustomModelLoader customModelLoader;
     private final AgentRuntimeManager agentRuntimeManager;
     private final String defaultAgentId;
+    private final ToolCatalog toolCatalog;
+    private final ToolSelection toolSelection;
     private final Function<Settings.ToolsSettings, ToolSelection> toolSelectionResolver;
 
     /**
@@ -311,6 +316,8 @@ public class ServerMode {
         this.customModelLoader = customModelLoader;
         this.agentRuntimeManager = agentRuntimeManager;
         this.defaultAgentId = defaultAgentId;
+        this.toolCatalog = toolCatalog;
+        this.toolSelection = toolSelection != null ? toolSelection : ToolSelection.all();
         this.toolSelectionResolver =
                 toolSelectionResolver != null ? toolSelectionResolver : fixedSelectionResolver(this.toolSelection);
     }
@@ -334,6 +341,8 @@ public class ServerMode {
                 modelRegistry,
                 promptBuilder,
                 tools,
+                toolCatalog,
+                toolSelection,
                 baseConfig,
                 sandboxParser,
                 useSandbox,

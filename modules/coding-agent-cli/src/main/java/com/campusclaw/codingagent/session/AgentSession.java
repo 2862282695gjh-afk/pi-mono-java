@@ -41,6 +41,9 @@ import com.campusclaw.codingagent.skill.SkillExpander;
 import com.campusclaw.codingagent.skill.SkillLoader;
 import com.campusclaw.codingagent.skill.SkillRegistry;
 import com.campusclaw.codingagent.skill.SkillStateStore;
+import com.campusclaw.codingagent.tool.catalog.ToolCatalog;
+import com.campusclaw.codingagent.tool.catalog.ToolRefreshRequest;
+import com.campusclaw.codingagent.tool.catalog.ToolSelection;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -70,7 +73,7 @@ public class AgentSession {
     private final SystemPromptBuilder promptBuilder;
     private final SkillLoader skillLoader;
     private final SkillExpander skillExpander;
-    private final List<AgentTool> tools;
+    private List<AgentTool> tools;
     private final ContextFileLoader contextFileLoader;
     private final PromptTemplateLoader promptTemplateLoader;
     private SessionManager sessionManager;
@@ -106,7 +109,7 @@ public class AgentSession {
         this.promptBuilder = Objects.requireNonNull(promptBuilder, "promptBuilder");
         this.skillLoader = Objects.requireNonNull(skillLoader, "skillLoader");
         this.skillExpander = Objects.requireNonNull(skillExpander, "skillExpander");
-        this.tools = Objects.requireNonNull(tools, "tools");
+        this.tools = List.copyOf(Objects.requireNonNull(tools, "tools"));
         this.contextFileLoader = new ContextFileLoader();
         this.promptTemplateLoader = new PromptTemplateLoader();
     }

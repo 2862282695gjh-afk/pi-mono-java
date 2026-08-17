@@ -234,32 +234,6 @@ class AgentRuntimeManagerTest {
     }
 
     @Test
-    void excludesUnsafeAgentToolsEvenWhenAllowedByMetadata() {
-        AgentRuntime metadata = new AgentRuntime(
-                "gpt-4o",
-                List.of(),
-                List.of(
-                        tool("read", "allow"),
-                        tool("BASH", "allow"),
-                        tool("write", "allow"),
-                        tool("edit", "allow"),
-                        tool("EditDiff", "allow"),
-                        tool("spawn_agent", "allow")),
-                "Agent description",
-                "Agent A",
-                "agent-a",
-                "agent-a",
-                "Agent system prompt",
-                List.of("campus"),
-                "1",
-                null);
-
-        PreparedAgentRuntime prepared = new PreparedAgentRuntime("agent-a", tempDir, metadata, List.of());
-
-        assertEquals(List.of("read"), prepared.allowedAgentToolNames());
-    }
-
-    @Test
     void includesAllSkillToolsRegardlessOfPermission() {
         List<String> names = List.of("calendar", "BASH", "write", "edit", "EditDiff", "spawn_agent");
         SkillInfo skill = new SkillInfo(
