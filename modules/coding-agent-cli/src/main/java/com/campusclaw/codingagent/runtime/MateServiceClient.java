@@ -179,19 +179,21 @@ public class MateServiceClient {
             @JsonFormat(with = JsonFormat.Feature.ACCEPT_SINGLE_VALUE_AS_ARRAY) List<String> bindingModels,
             @JsonFormat(with = JsonFormat.Feature.ACCEPT_SINGLE_VALUE_AS_ARRAY) List<SkillReference> bindingSkills,
             List<BoundTool> bindingTools,
+            @JsonFormat(with = JsonFormat.Feature.ACCEPT_SINGLE_VALUE_AS_ARRAY) List<AgentReference> bindingAgents,
             @JsonFormat(with = JsonFormat.Feature.ACCEPT_SINGLE_VALUE_AS_ARRAY) List<String> description,
             String displayName,
+            Boolean enabled,
             String id,
             String name,
             String systemPrompt,
             List<String> userCases,
-            String version,
-            AgentReference bindingAgents) {
+            String version) {
 
         public AgentRuntime {
             bindingModels = bindingModels == null ? List.of() : List.copyOf(bindingModels);
             bindingSkills = bindingSkills == null ? List.of() : List.copyOf(bindingSkills);
             bindingTools = bindingTools == null ? List.of() : List.copyOf(bindingTools);
+            bindingAgents = bindingAgents == null ? List.of() : List.copyOf(bindingAgents);
             description = description == null ? List.of() : List.copyOf(description);
             userCases = userCases == null ? List.of() : List.copyOf(userCases);
         }
@@ -206,15 +208,29 @@ public class MateServiceClient {
                     .filter(model -> model != null && !model.isBlank())
                     .findFirst();
         }
+
+        /**
+         * Returns whether CampusMate marked this Agent as enabled. Snapshots
+         * written before the field existed deserialize to {@code null}; they
+         * stay invocable, so absent defaults to enabled.
+         *
+         * @return enabled flag, {@code true} when unset
+         */
+        public boolean isEnabled() {
+            return enabled == null || enabled;
+        }
     }
 
     /** Skill reference embedded in GetAgentRuntime. */
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record SkillReference(String id, String version) {}
 
-    /** Agent binding metadata returned by GetAgentRuntime. */
+    /**
+     * Agent binding metadata returned by GetAgentRuntime. {@code description} lets
+     * the parent Agent present child candidates without loading their full runtime.
+     */
     @JsonIgnoreProperties(ignoreUnknown = true)
-    public record AgentReference(String id, String name, String displayName, String version) {}
+    public record AgentReference(String id, String name, String displayName, String description, String version) {}
 
     /** Complete Skill metadata returned by querySkillInfo. */
     @JsonIgnoreProperties(ignoreUnknown = true)

@@ -5,7 +5,9 @@
 package com.campusclaw.codingagent.runtime;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.file.Path;
 import java.time.Duration;
@@ -112,6 +114,73 @@ class MateServiceClientTest {
 
         assertEquals(List.of("glm-5.2"), runtime.bindingModels());
         assertEquals(List.of("Diagnoses device faults"), runtime.description());
+    }
+
+    @Test
+    void readsBindingAgentsArrayWithDescriptionAndEnabledFlag() throws Exception {
+        server.enqueue(
+                new MockResponse()
+                        .setHeader("Content-Type", "application/json")
+                        .setBody(
+                                """
+                        {
+                          "id": "agent-a",
+                          "name": "Agent A",
+                          "bindingAgents": [
+                            {
+                              "id": "agent-b",
+                              "name": "field-ops",
+                              "displayName": "Field Ops Agent",
+                              "description": "Handles on-site device operations",
+                              "version": "2.0.0"
+                            },
+                            {
+                              "id": "agent-c",
+                              "name": "reporting"
+                            }
+                          ],
+                          "enabled": false
+                        }
+                        """));
+
+        var runtime = client.getAgentRuntime("agent-a");
+
+        assertEquals(2, runtime.bindingAgents().size());
+        assertEquals("agent-b", runtime.bindingAgents().getFirst().id());
+        assertEquals(
+                "Handles on-site device operations",
+                runtime.bindingAgents().getFirst().description());
+        assertEquals("2.0.0", runtime.bindingAgents().getFirst().version());
+        assertEquals("agent-c", runtime.bindingAgents().get(1).id());
+        assertFalse(runtime.isEnabled());
+    }
+
+    @Test
+    void acceptsSingularBindingAgentAndDefaultsEnabledToTrue() throws Exception {
+        server.enqueue(
+                new MockResponse()
+                        .setHeader("Content-Type", "application/json")
+                        .setBody(
+                                """
+                        {
+                          "id": "agent-a",
+                          "name": "Agent A",
+                          "bindingAgents": {
+                            "id": "agent-b",
+                            "name": "field-ops",
+                            "description": "Handles on-site device operations"
+                          }
+                        }
+                        """));
+
+        var runtime = client.getAgentRuntime("agent-a");
+
+        assertEquals(1, runtime.bindingAgents().size());
+        assertEquals("agent-b", runtime.bindingAgents().getFirst().id());
+        assertEquals(
+                "Handles on-site device operations",
+                runtime.bindingAgents().getFirst().description());
+        assertTrue(runtime.isEnabled());
     }
 
     @Test

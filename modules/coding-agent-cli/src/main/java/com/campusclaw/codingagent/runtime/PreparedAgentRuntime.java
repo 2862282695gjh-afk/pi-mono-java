@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
 
+import com.campusclaw.codingagent.runtime.MateServiceClient.AgentReference;
 import com.campusclaw.codingagent.runtime.MateServiceClient.AgentRuntime;
 import com.campusclaw.codingagent.runtime.MateServiceClient.BoundTool;
 import com.campusclaw.codingagent.runtime.MateServiceClient.SkillInfo;
@@ -40,6 +41,27 @@ public record PreparedAgentRuntime(String agentId, Path agentRoot, AgentRuntime 
      */
     public List<String> allowedAgentToolNames() {
         return allowedToolNames(metadata.bindingTools());
+    }
+
+    /**
+     * Returns the direct child Agent bindings recorded in the local snapshot.
+     * Bindings are candidate metadata only; authorization, ancestry and depth
+     * filtering happen at delegation time, never here.
+     *
+     * @return immutable binding list, empty when the Agent delegates to no child
+     */
+    public List<AgentReference> bindingAgents() {
+        return metadata.bindingAgents();
+    }
+
+    /**
+     * Returns whether CampusMate marked this Agent enabled. Snapshots written
+     * before the flag existed stay invocable, so absent defaults to enabled.
+     *
+     * @return enabled flag, {@code true} when unset
+     */
+    public boolean isEnabled() {
+        return metadata.isEnabled();
     }
 
     /**

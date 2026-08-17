@@ -433,14 +433,15 @@ class AgentSessionTest {
                     List.of("claude-sonnet-4-20250514"),
                     List.of(new SkillReference("skill-1", "1")),
                     List.of(bashBinding),
+                    List.of(),
                     List.of("Agent"),
                     "Agent",
+                    null,
                     "agent-a",
                     "agent-a",
                     "Prompt",
                     List.of(),
-                    "1",
-                    null);
+                    "1");
             return new PreparedAgentRuntime("agent-a", tempDir, metadata, List.of(skill));
         }
     }
