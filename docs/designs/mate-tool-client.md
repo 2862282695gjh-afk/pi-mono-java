@@ -1,9 +1,10 @@
 # Mate Tool Client 设计文档
 
 > 模块:`coding-agent-cli`
-> 分支:`mate-tool-client`(PR #136)
-> 状态:Proposed
-> 日期:2026-08-17
+> 分支:`mate-tool-client`(PR #140;初版 PR #136)
+> 状态:Accepted
+> 日期:2026-08-17(初版),2026-08-17 更新(包结构调整 + 契约提取)
+> 源码基线:`e65b3826` 起,以 PR head 为准
 
 ---
 
@@ -15,17 +16,29 @@ CampusClaw 需要调用 Mate 平台管理的工具(agent/skill 授权的 tool)�
 
 ## 关键定义
 
-| 名称 | 类型 | 说明 |
+| 名称 | 类型 | 位置 |
 |---|---|---|
-| `ListMateTool` | AgentTool | 列出 agent/skill 授权的工具,刷新权限缓存 |
-| `CallMateTool` | AgentTool | 调用单个 Mate 工具,execute 内做 allow/ask/deny 决策 |
-| `MateToolClient` | 接口 | Mate 服务抽象(listTools / callTool) |
-| `HttpMateToolClient` | 实现 | 四个 protected stub(DEF-007),真实 HTTP 由内部填充 |
-| `MateToolMeta` | record | 工具元数据:name / description / inputScheme / outputScheme / isConcurrencySafe / permission |
-| `MateCredentials` | record | 凭据:AppKey(X-HW-ID + X-HW-APPKEY)或 JWT(X-HW-ID + Authorization Bearer) |
-| `MateApprovalUI` | 接口 | permission=ask 时的用户审批回调 |
+| `ListMateTool` | AgentTool | `tool/mate/` — 列出 agent/skill 授权的工具,刷新权限缓存 |
+| `CallMateTool` | AgentTool | `tool/mate/` — 调用单个 Mate 工具,execute 内做 allow/ask/deny 决策 |
+| `MateToolClient` | 接口 | `common/client/mate/` — Mate 服务契约(listTools / callTool / ToolResult) |
+| `MateToolMeta` | record | `common/client/mate/` — 工具元数据:name / description / inputSchema / outputSchema / isConcurrencySafe / permission |
+| `MateCredentials` | record | `common/client/mate/` — 凭据:AppKey(X-HW-ID + X-HW-APPKEY)或 JWT(X-HW-ID + Authorization Bearer) |
+| `HttpMateToolClient` | 实现 | `common/client/` — 四个 protected stub(DEF-007),真实 HTTP 由内部填充 |
+| `MateApprovalUI` | 接口 | `CallMateTool` 嵌套 — permission=ask 时的用户审批回调 |
+| `MateToolAutoConfiguration` | 配置 | `config/` — `mate.tool.enabled` 开关(默认开)装配三个 Bean |
+| `MateToolProperties` | 配置 | `config/` — enabled / baseUrl / xHwId / xHwAppKey / approvalUi(fail-closed 默认) |
 
 ## 架构与数据流
+
+分层与依赖方向(契约位于 `common/client/mate`,`HttpMateToolClient` 不反向依赖工具层):
+
+![分层图](diagrams/mate-tool-client-layers.svg)
+
+调用时序:
+
+![数据流](diagrams/mate-tool-client.svg)
+
+PlantUML 源文件:[diagrams/mate-tool-client.puml](diagrams/mate-tool-client.puml) / [diagrams/mate-tool-client-layers.puml](diagrams/mate-tool-client-layers.puml)(经 kroki 渲染为同名 SVG)。
 
 ```
 模型 emit tool_use("listMateTool", {agent_id | skill_id})
@@ -34,15 +47,17 @@ CampusClaw 需要调用 Mate 平台管理的工具(agent/skill 授权的 tool)�
       1. agent/skill 元数据接口 → 授权 tool_id 列表
       2. tool 元数据接口 → MateToolMeta 列表
     → callMateTool.updateMeta(tools)   ← 刷新权限缓存
-    → 返回工具列表(name + permission + description)给模型
+    → 返回工具列表(name + permission + description + inputSchema)给模型
 
 模型 emit tool_use("callMateTool", {tool, args})
   → CallMateTool.execute
     → 查 metaCache[tool].permission
-      deny  → 直接拒绝
+      deny  → 直接拒绝(MateToolExecutionException)
       ask   → MateApprovalUI.ask() → 用户 allow/deny
-      allow → MateToolClient.callTool(tool, args, credentials)
-    → 返回工具结果
+      allow → validateAgainstSchema(必填/类型本地校验)
+            → MateToolClient.callTool(tool, args, credentials)
+    → result.isError() → 抛 MateToolExecutionException(pipeline 转 isError=true)
+    → 成功 → AgentToolResult(content, metadata)
 ```
 
 ## 设计决策
@@ -63,11 +78,11 @@ CampusClaw 需要调用 Mate 平台管理的工具(agent/skill 授权的 tool)�
 
 **决策**:只新增 listMateTool + callMateTool 两个 AgentTool,Mate 工具不直接进 LLM API 的 tools 参数。
 
-**理由**:不改动 AgentLoop / ToolExecutionPipeline(setTools 动态注入需要改 core);tools 字段保持固定。代价:callMateTool 是元工具(Mate 工具的 inputSchema 不直接暴露给 API),由 listMateTool 返回的描述引导模型。
+**理由**:不改动 AgentLoop / ToolExecutionPipeline(setTools 动态注入需要改 core);tools 字段保持固定。代价:callMateTool 是元工具,由 listMateTool 返回的 inputSchema 引导模型构造 args。
 
 ### D4. 凭据构造期注入,不暴露给模型
 
-**决策**:MateCredentials 在构造 CallMateTool 时注入,execute 时传给 client;模型的 tool_use 参数只有 tool/args。
+**决策**:MateCredentials 在构造 CallMateTool 时注入(经 `MateToolProperties` 配置),execute 时传给 client;模型的 tool_use 参数只有 tool/args。
 
 **理由**:凭据是内部传输细节,模型不可见、不可伪造。
 
@@ -77,6 +92,18 @@ CampusClaw 需要调用 Mate 平台管理的工具(agent/skill 授权的 tool)�
 
 **理由**:内部 Mate HTTP 接口未定;签名与编排已冻结,内部开发只填方法体。受 `no_todo_fixme_in_delivery_code` checkstyle 规则约束,不能用 TODO 注释。
 
+### D6. 契约类型提取到 `common/client/mate`(PR #140 评审调整)
+
+**决策**:`MateToolClient` / `MateToolMeta` / `MateCredentials` 从 `CallMateTool` 嵌套类型提取为 `common/client/mate/` 包的顶层类型。
+
+**理由**:初版嵌套在工具类里,导致下移到通用包的 `HttpMateToolClient` 反向依赖 `tool.mate.CallMateTool`——分层方向与"客户端下移"目标相反,客户端也无法脱离具体工具实现复用。提取后依赖方向变为:`tool/mate` → 契约 ← `common/client`,两端都只依赖契约层。`MateApprovalUI` / `MateToolExecutionException` 保留在 `CallMateTool` 内(工具层概念:审批交互与错误语义,与 client 无关)。
+
+### D7. 目录按服务域聚合 `tool/mate/`(PR #140)
+
+**决策**:两个工具同放 `tool/mate/`,而非初版的 `tool/call/` + `tool/list/`。
+
+**理由**:`call`/`list` 是动作语义,未来 `CallSkillTool` / `ListSkillsTool` 等会撞名;`mate` 是服务域命名,与 `bash/read/write` 按工具、`hybrid` 按机制的维度并列。两个工具共享契约类型与 meta 缓存,放同一包内聚性最好。
+
 ## 边界情况
 
 | 场景 | 行为 |
@@ -84,8 +111,11 @@ CampusClaw 需要调用 Mate 平台管理的工具(agent/skill 授权的 tool)�
 | listMateTool 无 agent_id/skill_id | 返回空列表,log warn |
 | callMateTool 缓存未命中(未 listTool) | 默认 allow,直接调 client |
 | ask + 非交互模式(无 ApprovalUI) | fail-closed:拒绝 |
-| ask + 用户拒绝 | 返回 "User denied",不调 client |
+| ask + 用户拒绝 | 抛 MateToolExecutionException,不调 client |
 | client 抛异常 | callTool 包装为 isError 结果返回,不中断 agent |
+| args 缺必填/类型不符 | validateAgainstSchema 本地抛 IllegalArgumentException,不达 Mate 服务 |
+| Mate result.isError() | 抛 MateToolExecutionException,pipeline 转 ToolResultMessage.isError=true |
+| `mate.tool.enabled=false` | 两个 AgentTool 均不注册 |
 
 ## 性能(DFX)
 
@@ -99,12 +129,26 @@ LLM API tools 字段新增两个工具定义(listMateTool / callMateTool);Mate �
 
 ## 测试
 
-`CallMateToolTest`(6):allow 放行 / ask 批准 / ask 拒绝 / deny 拒绝 / 缺参 / 凭据传递
-`ListMateToolTest`(4):agent 过滤 / skill 过滤 / 缓存刷新生效 / 凭据共享
-共 10 个,使用内存 MockMateToolClient。
+| 测试类 | 数量 | 覆盖 |
+|---|---|---|
+| `CallMateToolTest` | 8 | allow 放行 / ask 批准 / ask 拒绝 / deny 拒绝 / 缺参 / 凭据传递 / 缺必填参(远程未调) / 类型不符(远程未调) |
+| `ListMateToolTest` | 4 | agent 过滤 / skill 过滤 / 缓存刷新生效 / 凭据共享 |
+| `MateToolAutoConfigurationTest` | 4 | 默认装配两工具 / enabled=false 排除 / 配置凭据达工具 / isError 经 pipeline 传播 |
+| `MateToolPropertiesTest` | 2 | approvalUi setter/getter 往返同一实例(重复字段回归) / 默认 fail-closed |
+
+共 18 个,使用内存 `MockMateToolClient`(位于 `tool/mate/` 测试目录)。
 
 ## 验证
 
-- `./mvnw verify -pl modules/coding-agent-cli -DskipTests=false -Dtest='CallMateToolTest,ListMateToolTest'` — BUILD SUCCESS,Tests run: 10, Failures: 0
+- `./mvnw -pl modules/coding-agent-cli -am test -Dtest='CallMateToolTest,ListMateToolTest,MateToolAutoConfigurationTest,MateToolPropertiesTest' -Dsurefire.failIfNoSpecifiedTests=false` — BUILD SUCCESS,18 tests, 0 failures
 - Checkstyle: 0 violations;Spotless: clean
-- CI(PR #136 build check):pass
+- `./scripts/sync-mate-campusclaw.sh` — mate-campusclaw 编译通过
+- CI(PR #140 build check):pass
+
+## 版本历史
+
+| 日期 | 版本 | 说明 |
+|---|---|---|
+| 2026-08-17 | 26.0.0(初版,PR #136) | ListMateTool + CallMateTool + MateToolClient 契约 + HttpMateToolClient stub |
+| 2026-08-17 | 26.0.0(PR #136 评审修复) | inputSchema 暴露与本地校验;MateToolAutoConfiguration 运行时装配;isError 经异常传播 |
+| 2026-08-17 | 26.0.0(PR #140) | 目录按域聚合 `tool/mate/`;契约类型提取 `common/client/mate/`;MateToolProperties 重复字段修复 + 回归测试 |

@@ -15,9 +15,10 @@ import com.campusclaw.agent.tool.ToolExecutionMode;
 import com.campusclaw.agent.tool.ToolExecutionPipeline;
 import com.campusclaw.ai.types.ToolCall;
 import com.campusclaw.ai.types.ToolResultMessage;
+import com.campusclaw.codingagent.common.client.mate.MateCredentials;
+import com.campusclaw.codingagent.common.client.mate.MateToolClient;
+import com.campusclaw.codingagent.common.client.mate.MateToolMeta;
 import com.campusclaw.codingagent.tool.mate.CallMateTool;
-import com.campusclaw.codingagent.tool.mate.CallMateTool.MateCredentials;
-import com.campusclaw.codingagent.tool.mate.CallMateTool.MateToolMeta;
 import com.campusclaw.codingagent.tool.mate.ListMateTool;
 import com.campusclaw.codingagent.tool.mate.MockMateToolClient;
 
@@ -74,7 +75,7 @@ class MateToolAutoConfigurationTest {
     @Test
     void mateErrorPropagatesThroughPipelineAsIsError() {
         MockMateToolClient client = new MockMateToolClient();
-        client.overrideCallResult(new CallMateTool.MateToolClient.ToolResult("mate exploded", null, true));
+        client.overrideCallResult(new MateToolClient.ToolResult("mate exploded", null, true));
         CallMateTool callMateTool = new CallMateTool(client, (t, a, d) -> true, MateCredentials.appKey("id", "key"));
         callMateTool.updateMeta(List.of(new MateToolMeta("boom", "b", Map.of(), Map.of(), true, "allow")));
 
@@ -104,7 +105,7 @@ class MateToolAutoConfigurationTest {
          * @return the mock client
          */
         @Bean
-        CallMateTool.MateToolClient mateToolClient() {
+        MateToolClient mateToolClient() {
             return new MockMateToolClient();
         }
     }

@@ -14,6 +14,9 @@ import com.campusclaw.agent.tool.AgentToolUpdateCallback;
 import com.campusclaw.agent.tool.CancellationToken;
 import com.campusclaw.ai.types.ContentBlock;
 import com.campusclaw.ai.types.TextContent;
+import com.campusclaw.codingagent.common.client.mate.MateCredentials;
+import com.campusclaw.codingagent.common.client.mate.MateToolClient;
+import com.campusclaw.codingagent.common.client.mate.MateToolMeta;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -250,98 +253,6 @@ public class CallMateTool implements AgentTool {
     }
 
     // ==================== Supporting types ====================
-
-    /**
-     * Metadata for a single Mate tool, returned by {@code list_tools}.
-     *
-     * @param name tool name
-     * @param description human-readable description
-     * @param inputSchema JSON schema for input
-     * @param outputSchema JSON schema for output
-     * @param isConcurrencySafe whether this tool is safe to run concurrently
-     * @param permission "allow", "ask", or "deny"
-     */
-    public record MateToolMeta(
-            String name,
-            String description,
-            Map<String, Object> inputSchema,
-            Map<String, Object> outputSchema,
-            boolean isConcurrencySafe,
-            String permission) {
-
-        public static final String ALLOW = "allow";
-        public static final String ASK = "ask";
-        public static final String DENY = "deny";
-    }
-
-    /**
-     * Credentials for authenticating with the Mate tool server. Two modes:
-     * AppKey (X-HW-ID + X-HW-APPKEY) or JWT (X-HW-ID + Authorization Bearer).
-     *
-     * @param xHwId X-HW-ID header (always required)
-     * @param xHwAppKey X-HW-APPKEY header (AppKey mode; null for JWT)
-     * @param authorization Authorization header (JWT mode; null for AppKey)
-     */
-    public record MateCredentials(String xHwId, String xHwAppKey, String authorization) {
-
-        /**
-         * Creates AppKey-mode credentials.
-         *
-         * @param xHwId the X-HW-ID header value
-         * @param xHwAppKey the X-HW-APPKEY header value
-         * @return AppKey-mode credentials
-         */
-        public static MateCredentials appKey(String xHwId, String xHwAppKey) {
-            return new MateCredentials(xHwId, xHwAppKey, null);
-        }
-
-        /**
-         * Creates JWT-mode credentials.
-         *
-         * @param xHwId the X-HW-ID header value
-         * @param bearerToken the raw JWT (without "Bearer " prefix)
-         * @return JWT-mode credentials
-         */
-        public static MateCredentials jwt(String xHwId, String bearerToken) {
-            return new MateCredentials(xHwId, null, "Bearer " + bearerToken);
-        }
-    }
-
-    /**
-     * Client for the Mate tool service. Every method receives
-     * {@link MateCredentials} for authentication.
-     */
-    public interface MateToolClient {
-
-        /**
-         * Lists tools authorized for the given agent or skill.
-         *
-         * @param agentId     optional agent ID; null = no filter
-         * @param skillId     optional skill ID; null = no filter
-         * @param credentials authentication credentials
-         * @return tool metadata list
-         */
-        List<MateToolMeta> listTools(String agentId, String skillId, MateCredentials credentials);
-
-        /**
-         * Calls a specific tool.
-         *
-         * @param tool        the tool name
-         * @param args        the tool arguments
-         * @param credentials authentication credentials
-         * @return tool execution result
-         */
-        ToolResult callTool(String tool, Map<String, Object> args, MateCredentials credentials);
-
-        /**
-         * Tool execution result.
-         *
-         * @param content the textual content returned by the tool
-         * @param metadata optional metadata map
-         * @param isError whether the result represents an error
-         */
-        record ToolResult(String content, Map<String, Object> metadata, boolean isError) {}
-    }
 
     /**
      * User-approval callback for tools whose permission is {@code ask}.

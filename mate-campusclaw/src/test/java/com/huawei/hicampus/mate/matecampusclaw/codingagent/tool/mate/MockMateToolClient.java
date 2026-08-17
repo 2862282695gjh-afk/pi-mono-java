@@ -9,9 +9,9 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.mate.CallMateTool.MateCredentials;
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.mate.CallMateTool.MateToolClient;
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.mate.CallMateTool.MateToolMeta;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.common.client.mate.MateCredentials;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.common.client.mate.MateToolClient;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.common.client.mate.MateToolMeta;
 
 /**
  * In-memory mock of {@link MateToolClient} for unit tests.
@@ -28,7 +28,7 @@ public class MockMateToolClient implements MateToolClient {
     private MateCredentials lastListCredentials;
     private MateCredentials lastCallCredentials;
     private String lastCalledTool;
-    private CallMateTool.MateToolClient.ToolResult overriddenResult;
+    private MateToolClient.ToolResult overriddenResult;
 
     /**
      * Registers a tool.
@@ -92,7 +92,7 @@ public class MockMateToolClient implements MateToolClient {
      *
      * @param result the result to return; null restores normal behavior
      */
-    public void overrideCallResult(CallMateTool.MateToolClient.ToolResult result) {
+    public void overrideCallResult(MateToolClient.ToolResult result) {
         this.overriddenResult = result;
     }
 

@@ -1,0 +1,78 @@
+@startuml mate-tool-client-layers
+title Mate Tool Client 分层与依赖方向
+
+skinparam backgroundColor #FEFEFE
+skinparam packageStyle rectangle
+
+package "tool/mate (AgentTool 层)" {
+  class CallMateTool {
+    - metaCache: ConcurrentHashMap
+    + execute()
+    + updateMeta(List<MateToolMeta>)
+    + credentials(): MateCredentials
+  }
+  class ListMateTool {
+    + execute()
+  }
+  interface MateApprovalUI {
+    + ask(tool, args, desc): boolean
+  }
+  class MateToolExecutionException
+}
+
+package "common/client (基础设施层)" {
+  class HttpMateToolClient {
+    # baseUrl: String
+    + listTools()
+    + callTool()
+    # queryToolIdsByAgentId() «stub DEF-007»
+    # queryToolIdsBySkillId() «stub DEF-007»
+    # queryToolMetaByIds() «stub DEF-007»
+    # invokeToolById() «stub DEF-007»
+  }
+}
+
+package "common/client/mate (契约层)" {
+  interface MateToolClient {
+    + listTools(agentId, skillId, credentials)
+    + callTool(tool, args, credentials)
+  }
+  class MateToolMeta <<record>> {
+    name / description
+    inputSchema / outputSchema
+    isConcurrencySafe / permission
+  }
+  class MateCredentials <<record>> {
+    xHwId / xHwAppKey / authorization
+    + appKey() / jwt()
+  }
+}
+
+package "config (装配层)" {
+  class MateToolAutoConfiguration {
+    + mateToolClient()
+    + callMateTool()
+    + listMateTool()
+  }
+  class MateToolProperties {
+    enabled / baseUrl / xHwId / xHwAppKey
+    approvalUi (fail-closed 默认)
+  }
+}
+
+CallMateTool ..> MateToolClient : 依赖契约
+ListMateTool ..> MateToolClient : 依赖契约
+HttpMateToolClient ..|> MateToolClient : 实现
+CallMateTool ..> MateApprovalUI : 审批回调
+CallMateTool ..> MateToolMeta : 权限缓存
+HttpMateToolClient ..> MateToolMeta : 返回类型
+HttpMateToolClient ..> MateCredentials : 携带凭据
+MateToolAutoConfiguration ..> HttpMateToolClient : @Bean 装配
+MateToolAutoConfiguration ..> MateToolProperties : 读取配置
+
+note bottom of MateToolClient
+  契约位于 common/client/mate,
+  依赖方向: tool/mate → 契约 ← common/client
+  (HttpMateToolClient 不再反向依赖工具层)
+end note
+@enduml
