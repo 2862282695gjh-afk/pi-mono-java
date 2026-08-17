@@ -12,5 +12,7 @@ For every version transition, add the applicable files in this order:
 Each release change must document its compatible application window, rollback procedure, lock impact,
 expected row counts, and batching strategy. Never edit an already released script; add a new transition.
 
-Version 1.0.0 is a new Schema installation. There is no prior CampusClaw GaussDB schema to upgrade, so
-this directory intentionally contains no migration SQL yet.
+The current full-install baseline is maintained in `../install/01_session_schema.sql`,
+`../install/02_session_initial_data.sql`, and `../install/03_session_privileges.sql`. It may destructively
+rebuild the Session schema and must never be used as an upgrade. There is no prior CampusClaw GaussDB
+schema to upgrade, so this directory intentionally contains no migration SQL yet.

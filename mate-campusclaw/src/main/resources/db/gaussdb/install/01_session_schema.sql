@@ -1,8 +1,15 @@
 -- CampusClaw Session storage full installation DDL for centralized GaussDB.
 -- The database release platform must connect with the target Session schema as current_schema.
 -- AgentService must never execute this file.
+-- WARNING: This script destructively rebuilds the complete Session schema baseline.
+-- Use upgrade scripts for an existing installation that must retain data.
 
 BEGIN;
+
+DROP TABLE IF EXISTS t_session_materialized;
+DROP TABLE IF EXISTS t_session_sequences;
+DROP TABLE IF EXISTS t_session_entries;
+DROP TABLE IF EXISTS t_sessions;
 
 CREATE TABLE t_sessions (
     id                 VARCHAR(128)   PRIMARY KEY,
@@ -13,6 +20,7 @@ CREATE TABLE t_sessions (
     active_leaf_id     VARCHAR(128)
 );
 
+COMMENT ON TABLE t_sessions IS '会话主表，保存会话元数据和当前路径末端';
 COMMENT ON COLUMN t_sessions.id IS '会话的唯一 ID，用于关联该会话的历史记录、序号和汇总数据';
 COMMENT ON COLUMN t_sessions.created_at IS '创建这个会话的时间';
 COMMENT ON COLUMN t_sessions.cwd IS '创建会话时使用的工作目录；可用于按工作目录筛选会话';
@@ -40,6 +48,7 @@ CREATE TABLE t_session_entries (
     PRIMARY KEY (session_id, id)
 );
 
+COMMENT ON TABLE t_session_entries IS '会话历史记录表，保存可分支回溯的事件数据';
 COMMENT ON COLUMN t_session_entries.session_id IS '这条历史记录属于哪个会话；对应 t_sessions.id';
 COMMENT ON COLUMN t_session_entries.id IS '这条历史记录的 ID；在同一个会话内唯一';
 COMMENT ON COLUMN t_session_entries.entry_seq IS '这条历史记录在会话中的持久化顺序号；从 1 开始且严格递增，不表示当前聊天路径';
@@ -62,6 +71,7 @@ CREATE TABLE t_session_sequences (
     next_seq    BIGINT       NOT NULL
 );
 
+COMMENT ON TABLE t_session_sequences IS '会话序号表，分配单个会话内严格递增的持久化顺序号';
 COMMENT ON COLUMN t_session_sequences.session_id IS '这行序号记录属于哪个会话；对应 t_sessions.id，每个会话一行';
 COMMENT ON COLUMN t_session_sequences.next_seq IS '下一条新历史记录要使用的 entry_seq；新建会话时为 1，每次成功追加后加 1';
 
@@ -70,6 +80,7 @@ CREATE TABLE t_session_materialized (
     payload     JSONB        NOT NULL
 );
 
+COMMENT ON TABLE t_session_materialized IS '会话汇总表，保存当前路径和生命周期用量等物化数据';
 COMMENT ON COLUMN t_session_materialized.session_id IS '这份汇总属于哪个会话；对应 t_sessions.id，每个会话一行';
 COMMENT ON COLUMN t_session_materialized.payload IS '会话汇总 JSON；activePath 保存当前路径的名称、消息数、模型和思考级别，lifetimeUsage 保存会话自创建以来的 Token 和费用总和';
 
