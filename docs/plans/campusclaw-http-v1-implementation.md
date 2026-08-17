@@ -147,3 +147,6 @@ Engine 改为构造器依赖，边界时间显式编码为 ISO-8601 字符串。
 - 2026-08-18：实施前 Spotless 与全量 Maven Verify 均通过。
 - 2026-08-18：完成接口 1—3、公共鉴权/ResultBean/错误国际化和 Session 数据库基础；
   单元契约测试、真实 openGauss Mapper/事务测试、V1 数据迁移测试和进程级 HTTP 测试通过。
+- 2026-08-18：同步接口 1—3 到 `mate-campusclaw`，补齐 MyBatis mapper 资源和标准
+  pgjdbc；镜像模块 `mvn -B verify` 共执行 2767 个测试，0 失败、0 错误、0 跳过，
+  镜像可执行 JAR 连接同一真实 openGauss 后创建 Session 返回 201。

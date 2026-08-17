@@ -11,7 +11,7 @@
 #               (so renames/removals propagate), preserving paths listed in
 #               scripts/sync-mate-exclude.txt (mate-side-only files).
 #               Resources are handled with a small whitelist (database release
-#               scripts, schema.sql, and AutoConfiguration.imports). Application config (.yml/.properties)
+#               scripts, MyBatis mapper XML, schema.sql, and AutoConfiguration.imports). Application config (.yml/.properties)
 #               is hand-tuned and never touched.
 #
 # Workflow:
@@ -42,6 +42,7 @@ MODULES=(ai tui agent-core cron coding-agent-cli)
 # src/main/resources/ on the mate side is hand-tuned and skipped.
 SYNCED_RESOURCES=(
   "db/gaussdb"
+  "mapper"
   "schema.sql"
   "META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports"
 )
@@ -158,7 +159,7 @@ if $SYNC_TESTS; then
 fi
 
 if $SYNC_RESOURCES; then
-  note "Applying whitelisted resources (db/gaussdb, schema.sql, AutoConfiguration.imports)"
+  note "Applying whitelisted resources (db/gaussdb, mapper, schema.sql, AutoConfiguration.imports)"
   for f in "${SYNCED_RESOURCES[@]}"; do
     src="$OUT/src/main/resources/$f"
     dst="$MATE/src/main/resources/$f"

@@ -324,6 +324,9 @@ public class ServerMode {
             banner.info("  PUT    /api/settings/models/default");
             banner.info("  PUT    /api/settings/customModels");
         }
+        banner.info("  POST   /campusclaw-service/v1/agents/{agent_id}/sessions");
+        banner.info("  GET    /campusclaw-service/v1/sessions/{session_id}");
+        banner.info("  DELETE /campusclaw-service/v1/sessions/{session_id}");
         banner.info("  WS     /api/ws/chat");
     }
 
@@ -340,7 +343,9 @@ public class ServerMode {
     static void applyCorsHeaders(HttpServerResponse res) {
         res.header("Access-Control-Allow-Origin", "*")
                 .header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-                .header("Access-Control-Allow-Headers", "Content-Type, Authorization, Accept")
+                .header(
+                        "Access-Control-Allow-Headers",
+                        "Content-Type, Authorization, Accept, Accept-Language, X-HW-ID, X-HW-APPKEY, If-Match")
                 .header("Access-Control-Max-Age", "3600");
     }
 
