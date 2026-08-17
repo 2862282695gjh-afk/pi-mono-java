@@ -1,5 +1,5 @@
 -- Replace ${SESSION_SCHEMA} and ${SESSION_RUNTIME_ROLE} through the database release platform.
--- Execute after 01_session_schema.sql and 02_session_initial_data.sql while connected to the target Session schema.
+-- Execute after session_schema.sql and session_initial_data.sql while connected to the target Session schema.
 
 BEGIN;
 
