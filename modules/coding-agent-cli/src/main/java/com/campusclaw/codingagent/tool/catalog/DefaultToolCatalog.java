@@ -26,28 +26,28 @@ import org.springframework.stereotype.Component;
 public class DefaultToolCatalog implements ToolCatalog {
 
     private final List<ToolSource> sources;
-    private final CopyOnWriteArrayList<ToolChangeListener> listeners = new CopyOnWriteArrayList<>();
-    private volatile ToolSourceContext context;
-    private volatile ToolCatalogSnapshot snapshot;
+    private final CopyOnWriteArrayList<ToolCatalog.ChangeListener> listeners = new CopyOnWriteArrayList<>();
+    private volatile ToolSource.Context context;
+    private volatile ToolCatalog.Snapshot snapshot;
 
     @Autowired
     public DefaultToolCatalog(List<ToolSource> sources) {
-        this(sources, ToolSourceContext.defaults());
+        this(sources, ToolSource.Context.defaults());
     }
 
-    public DefaultToolCatalog(List<ToolSource> sources, ToolSourceContext context) {
+    public DefaultToolCatalog(List<ToolSource> sources, ToolSource.Context context) {
         this.sources = List.copyOf(sources != null ? sources : List.of());
-        this.context = context != null ? context : ToolSourceContext.defaults();
+        this.context = context != null ? context : ToolSource.Context.defaults();
         this.snapshot = buildSnapshot(1L, this.context);
     }
 
     @Override
-    public ToolCatalogSnapshot snapshot() {
+    public ToolCatalog.Snapshot snapshot() {
         return snapshot;
     }
 
     @Override
-    public synchronized ToolCatalogSnapshot refresh() {
+    public synchronized ToolCatalog.Snapshot refresh() {
         var previous = snapshot;
         var next = buildSnapshot(snapshot.version() + 1, context);
         snapshot = next;
@@ -56,12 +56,12 @@ public class DefaultToolCatalog implements ToolCatalog {
     }
 
     @Override
-    public synchronized ToolCatalogSnapshot refresh(ToolRefreshRequest request) {
-        var defaults = new ToolSourceContext(context.cwd(), context.userToolsDir());
+    public synchronized ToolCatalog.Snapshot refresh(ToolRefreshRequest request) {
+        var defaults = new ToolSource.Context(context.cwd(), context.userToolsDir());
         var nextContext = request != null ? request.toSourceContext(defaults) : context;
         var next = buildSnapshot(snapshot.version() + 1, nextContext);
         if (hasSourceFailure(next)) {
-            return new ToolCatalogSnapshot(
+            return new ToolCatalog.Snapshot(
                     snapshot.version(), snapshot.toolsByName(), snapshot.sourcesByName(), next.diagnostics());
         }
         var previous = snapshot;
@@ -87,7 +87,7 @@ public class DefaultToolCatalog implements ToolCatalog {
         return resolve(scopedSnapshot, selection);
     }
 
-    private List<AgentTool> resolve(ToolCatalogSnapshot source, ToolSelection selection) {
+    private List<AgentTool> resolve(ToolCatalog.Snapshot source, ToolSelection selection) {
         var effectiveSelection = selection != null ? selection : ToolSelection.all();
         if (effectiveSelection.noTools()) {
             return List.of();
@@ -102,7 +102,7 @@ public class DefaultToolCatalog implements ToolCatalog {
     }
 
     @Override
-    public Runnable addChangeListener(ToolChangeListener listener) {
+    public Runnable addChangeListener(ToolCatalog.ChangeListener listener) {
         if (listener == null) {
             return () -> {};
         }
@@ -110,7 +110,7 @@ public class DefaultToolCatalog implements ToolCatalog {
         return () -> listeners.remove(listener);
     }
 
-    private ToolCatalogSnapshot buildSnapshot(long version, ToolSourceContext context) {
+    private ToolCatalog.Snapshot buildSnapshot(long version, ToolSource.Context context) {
         var toolsByName = new LinkedHashMap<String, AgentTool>();
         var sourcesByName = new LinkedHashMap<String, ToolContributionSource>();
         var diagnostics = new ArrayList<String>();
@@ -119,10 +119,10 @@ public class DefaultToolCatalog implements ToolCatalog {
         for (var contribution : contributions) {
             applyContribution(contribution, context, toolsByName, sourcesByName, diagnostics);
         }
-        return new ToolCatalogSnapshot(version, toolsByName, sourcesByName, diagnostics);
+        return new ToolCatalog.Snapshot(version, toolsByName, sourcesByName, diagnostics);
     }
 
-    private List<ToolContribution> loadContributions(ToolSourceContext context, List<String> diagnostics) {
+    private List<ToolContribution> loadContributions(ToolSource.Context context, List<String> diagnostics) {
         var contributions = new ArrayList<ToolContribution>();
         for (var source : sources) {
             try {
@@ -134,36 +134,36 @@ public class DefaultToolCatalog implements ToolCatalog {
         return contributions;
     }
 
-    private boolean hasSourceFailure(ToolCatalogSnapshot snapshot) {
+    private boolean hasSourceFailure(ToolCatalog.Snapshot snapshot) {
         return snapshot.diagnostics().stream().anyMatch(message -> message.startsWith("Failed to load tool source"));
     }
 
     private void applyContribution(
             ToolContribution contribution,
-            ToolSourceContext context,
+            ToolSource.Context context,
             LinkedHashMap<String, AgentTool> toolsByName,
             LinkedHashMap<String, ToolContributionSource> sourcesByName,
             List<String> diagnostics) {
-        if (!context.replacementEnabled() && contribution.mergeStrategy() != ToolMergeStrategy.ADD) {
+        if (!context.replacementEnabled() && contribution.mergeStrategy() != ToolContribution.MergeStrategy.ADD) {
             diagnostics.add("Tool '" + contribution.targetName() + "' " + contribution.mergeStrategy()
                     + " contribution ignored because replacement is disabled");
             return;
         }
-        if (contribution.mergeStrategy() == ToolMergeStrategy.DISABLE) {
+        if (contribution.mergeStrategy() == ToolContribution.MergeStrategy.DISABLE) {
             toolsByName.remove(contribution.targetName());
             sourcesByName.remove(contribution.targetName());
             return;
         }
-        if (contribution.mergeStrategy() == ToolMergeStrategy.WRAP) {
+        if (contribution.mergeStrategy() == ToolContribution.MergeStrategy.WRAP) {
             applyWrap(contribution, toolsByName, sourcesByName, diagnostics);
             return;
         }
         var toolName = contribution.tool().name();
-        if (contribution.mergeStrategy() == ToolMergeStrategy.ADD && toolsByName.containsKey(toolName)) {
+        if (contribution.mergeStrategy() == ToolContribution.MergeStrategy.ADD && toolsByName.containsKey(toolName)) {
             diagnostics.add("Tool '" + toolName + "' already exists; ADD contribution ignored");
             return;
         }
-        if (contribution.mergeStrategy() == ToolMergeStrategy.REPLACE
+        if (contribution.mergeStrategy() == ToolContribution.MergeStrategy.REPLACE
                 && contribution.replaces() != null
                 && !contribution.replaces().equals(toolName)) {
             toolsByName.remove(contribution.replaces());
@@ -201,7 +201,7 @@ public class DefaultToolCatalog implements ToolCatalog {
         sourcesByName.put(wrapped.name(), contribution.source());
     }
 
-    private void notifyListeners(ToolCatalogSnapshot previous, ToolCatalogSnapshot current) {
+    private void notifyListeners(ToolCatalog.Snapshot previous, ToolCatalog.Snapshot current) {
         for (var listener : listeners) {
             listener.onToolsChanged(previous, current);
         }

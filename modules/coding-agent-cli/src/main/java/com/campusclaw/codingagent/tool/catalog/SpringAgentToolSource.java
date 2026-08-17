@@ -26,7 +26,7 @@ public class SpringAgentToolSource implements ToolSource {
     }
 
     @Override
-    public List<ToolContribution> load(ToolSourceContext context) {
+    public List<ToolContribution> load(ToolSource.Context context) {
         return tools.stream()
                 .map(tool -> ToolContribution.add(tool, ToolContributionSource.system("spring"), 100))
                 .toList();

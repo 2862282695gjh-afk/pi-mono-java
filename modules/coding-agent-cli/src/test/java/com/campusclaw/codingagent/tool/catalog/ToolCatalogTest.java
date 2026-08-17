@@ -64,10 +64,10 @@ class ToolCatalogTest {
     }
 
     @Test
-    void replacementCanBeDisabledByToolSourceContext() {
+    void replacementCanBeDisabledBySourceContext() {
         var builtIn = new TestTool("read");
         var replacement = new TestTool("read");
-        var context = new ToolSourceContext(Path.of("."), Path.of("user-tools"), true, true, false, true);
+        var context = new ToolSource.Context(Path.of("."), Path.of("user-tools"), true, true, false, true);
         var catalog = new DefaultToolCatalog(
                 List.of(
                         ignored -> List.of(ToolContribution.add(builtIn, ToolContributionSource.system("spring"), 100)),
@@ -127,11 +127,11 @@ class ToolCatalogTest {
         var source =
                 new MutableSource(List.of(ToolContribution.add(first, ToolContributionSource.system("spring"), 100)));
         var catalog = new DefaultToolCatalog(List.of(source));
-        var notification = new AtomicReference<ToolCatalogSnapshot>();
+        var notification = new AtomicReference<ToolCatalog.Snapshot>();
         catalog.addChangeListener((previous, current) -> notification.set(current));
 
         source.contributions = List.of(ToolContribution.add(second, ToolContributionSource.system("spring"), 100));
-        ToolCatalogSnapshot refreshed = catalog.refresh();
+        ToolCatalog.Snapshot refreshed = catalog.refresh();
 
         assertThat(notification.get()).isSameAs(refreshed);
         assertThat(refreshed.toolsByName()).containsOnlyKeys("bash");
@@ -144,7 +144,7 @@ class ToolCatalogTest {
                 ToolContributionSource.project("project-tools"),
                 400));
         var catalog = new DefaultToolCatalog(
-                List.of(source), new ToolSourceContext(Path.of("/base"), Path.of("/user-tools")));
+                List.of(source), new ToolSource.Context(Path.of("/base"), Path.of("/user-tools")));
         long sharedVersion = catalog.snapshot().version();
 
         List<AgentTool> scoped = catalog.resolve(new ToolRefreshRequest(Path.of("/agent-a")), ToolSelection.all());
@@ -169,7 +169,7 @@ class ToolCatalogTest {
                 List.of(
                         context -> List.of(ToolContribution.add(read, ToolContributionSource.system("spring"), 100)),
                         policy),
-                new ToolSourceContext(Path.of("/base"), Path.of("/user-tools")));
+                new ToolSource.Context(Path.of("/base"), Path.of("/user-tools")));
 
         assertThatThrownBy(() -> catalog.resolve(new ToolRefreshRequest(Path.of("/agent-a")), ToolSelection.all()))
                 .isInstanceOf(IllegalStateException.class)
@@ -179,19 +179,19 @@ class ToolCatalogTest {
 
     @Test
     void globalRefreshResetsOmittedSourceSettingsToDefaults() {
-        var observed = new AtomicReference<ToolSourceContext>();
+        var observed = new AtomicReference<ToolSource.Context>();
         ToolSource source = context -> {
             observed.set(context);
             return List.of();
         };
         Path userToolsDir = Path.of("/custom-user-tools");
         var catalog = new DefaultToolCatalog(
-                List.of(source), new ToolSourceContext(Path.of("/base"), userToolsDir, false, false, false, false));
+                List.of(source), new ToolSource.Context(Path.of("/base"), userToolsDir, false, false, false, false));
 
         catalog.refresh(new ToolRefreshRequest(Path.of("/next")));
 
         assertThat(observed.get())
-                .isEqualTo(new ToolSourceContext(Path.of("/next"), userToolsDir, true, true, true, true));
+                .isEqualTo(new ToolSource.Context(Path.of("/next"), userToolsDir, true, true, true, true));
     }
 
     @Test
@@ -231,7 +231,7 @@ class ToolCatalogTest {
         }
 
         @Override
-        public List<ToolContribution> load(ToolSourceContext context) {
+        public List<ToolContribution> load(ToolSource.Context context) {
             return contributions;
         }
     }
@@ -250,7 +250,7 @@ class ToolCatalogTest {
         }
 
         @Override
-        public List<ToolContribution> load(ToolSourceContext context) {
+        public List<ToolContribution> load(ToolSource.Context context) {
             if (calls.incrementAndGet() == 1) {
                 return List.of();
             }

@@ -4,7 +4,10 @@
 
 package com.campusclaw.codingagent.tool.catalog;
 
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 import com.campusclaw.agent.tool.AgentTool;
 
@@ -16,11 +19,11 @@ import com.campusclaw.agent.tool.AgentTool;
  */
 public interface ToolCatalog {
 
-    ToolCatalogSnapshot snapshot();
+    Snapshot snapshot();
 
-    ToolCatalogSnapshot refresh();
+    Snapshot refresh();
 
-    ToolCatalogSnapshot refresh(ToolRefreshRequest request);
+    Snapshot refresh(ToolRefreshRequest request);
 
     List<AgentTool> resolve(ToolSelection selection);
 
@@ -39,5 +42,26 @@ public interface ToolCatalog {
         }
     }
 
-    Runnable addChangeListener(ToolChangeListener listener);
+    Runnable addChangeListener(ChangeListener listener);
+
+    /** Immutable snapshot of the effective tool catalog. */
+    record Snapshot(
+            long version,
+            Map<String, AgentTool> toolsByName,
+            Map<String, ToolContributionSource> sourcesByName,
+            List<String> diagnostics) {
+
+        public Snapshot {
+            toolsByName = Collections.unmodifiableMap(new LinkedHashMap<>(toolsByName));
+            sourcesByName = Collections.unmodifiableMap(new LinkedHashMap<>(sourcesByName));
+            diagnostics = List.copyOf(diagnostics);
+        }
+    }
+
+    /** Listener notified after a tool catalog snapshot changes. */
+    @FunctionalInterface
+    interface ChangeListener {
+
+        void onToolsChanged(Snapshot previous, Snapshot current);
+    }
 }

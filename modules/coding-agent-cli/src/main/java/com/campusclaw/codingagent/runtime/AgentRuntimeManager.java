@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.Set;
+import java.util.function.Function;
 import java.util.regex.Pattern;
 
 import com.campusclaw.codingagent.runtime.MateServiceClient.AgentRuntime;
@@ -187,22 +188,17 @@ public class AgentRuntimeManager {
     }
 
     private List<SkillInfo> loadBoundSkills(Path skillsDir, List<SkillReference> references) {
-        List<SkillInfo> skills = new java.util.ArrayList<>();
-        Set<String> ids = new HashSet<>();
-        Set<String> names = new HashSet<>();
-        long resourceBytes = 0L;
-        for (SkillReference reference : references) {
-            SkillInfo skill = findLocalSkill(skillsDir, reference);
-            if (skill == null || !ids.add(skill.id()) || !names.add(skill.name())) {
-                return null;
-            }
-            resourceBytes += validateSkillInfo(skill);
-            if (resourceBytes > MAX_AGENT_RESOURCE_BYTES) {
-                return null;
-            }
-            skills.add(skill);
+        List<SkillInfo> skills;
+        try {
+            skills = collectValidatedSkills(references, reference -> requireLocalSkill(skillsDir, reference));
+        } catch (AgentRuntimeException e) {
+            return null;
         }
-        return hasOnlyExpectedSkillDirectories(skillsDir, names) ? List.copyOf(skills) : null;
+        Set<String> names = new HashSet<>();
+        for (SkillInfo skill : skills) {
+            names.add(skill.name());
+        }
+        return hasOnlyExpectedSkillDirectories(skillsDir, names) ? skills : null;
     }
 
     private static boolean hasOnlyExpectedSkillDirectories(Path skillsDir, Set<String> expectedNames) {
@@ -220,7 +216,7 @@ public class AgentRuntimeManager {
         }
     }
 
-    private SkillInfo findLocalSkill(Path skillsDir, SkillReference reference) {
+    private SkillInfo requireLocalSkill(Path skillsDir, SkillReference reference) {
         try (var entries = Files.newDirectoryStream(skillsDir)) {
             SkillInfo match = null;
             for (Path skillDir : entries) {
@@ -234,14 +230,18 @@ public class AgentRuntimeManager {
                 SkillInfo skill = mapper.readValue(skillMetadataFile.toFile(), SkillInfo.class);
                 if (sameSkill(reference, skill)) {
                     if (match != null || !isCompleteSkill(skillDir, skill)) {
-                        return null;
+                        throw new AgentRuntimeException(
+                                "Local Skill runtime is ambiguous or incomplete: " + reference.id());
                     }
                     match = skill;
                 }
             }
+            if (match == null) {
+                throw new AgentRuntimeException("Skill is missing from local Agent runtime: " + reference.id());
+            }
             return match;
-        } catch (IOException | AgentRuntimeException e) {
-            return null;
+        } catch (IOException e) {
+            throw new AgentRuntimeException("Failed to scan local Skill runtime: " + reference.id(), e);
         }
     }
 
@@ -458,27 +458,45 @@ public class AgentRuntimeManager {
     }
 
     private List<SkillInfo> resolveSkills(List<SkillReference> references) {
-        List<SkillInfo> skills = new java.util.ArrayList<>();
+        validateSkillReferences(references);
+        return collectValidatedSkills(references, this::fetchSkill);
+    }
+
+    private SkillInfo fetchSkill(SkillReference reference) {
+        List<SkillInfo> result = mateServiceClient.querySkillInfo(reference.id());
+        if (result.size() != 1) {
+            throw new AgentRuntimeException("querySkillInfo must return exactly one Skill for id " + reference.id());
+        }
+        SkillInfo skill = result.getFirst();
+        if (!sameSkill(reference, skill)) {
+            throw new AgentRuntimeException("querySkillInfo returned mismatched Skill for id " + reference.id());
+        }
+        return skill;
+    }
+
+    private static void validateSkillReferences(List<SkillReference> references) {
+        if (references.size() > MAX_BOUND_SKILLS) {
+            throw new AgentRuntimeException("Agent binds too many Skills");
+        }
         Set<String> ids = new LinkedHashSet<>();
-        Set<String> names = new HashSet<>();
-        long resourceBytes = 0L;
         for (SkillReference reference : references) {
             validateSkillReference(reference);
             if (!ids.add(reference.id())) {
                 throw new AgentRuntimeException("Duplicate Skill id in Agent runtime: " + reference.id());
             }
-            List<SkillInfo> result = mateServiceClient.querySkillInfo(reference.id());
-            if (result.size() != 1) {
-                throw new AgentRuntimeException(
-                        "querySkillInfo must return exactly one Skill for id " + reference.id());
-            }
-            SkillInfo skill = result.getFirst();
+        }
+    }
+
+    private List<SkillInfo> collectValidatedSkills(
+            List<SkillReference> references, Function<SkillReference, SkillInfo> resolver) {
+        List<SkillInfo> skills = new java.util.ArrayList<>();
+        Set<String> names = new HashSet<>();
+        long resourceBytes = 0L;
+        for (SkillReference reference : references) {
+            SkillInfo skill = resolver.apply(reference);
             resourceBytes += validateSkillInfo(skill);
             if (resourceBytes > MAX_AGENT_RESOURCE_BYTES) {
                 throw new AgentRuntimeException("Agent Skill resources exceed the allowed size");
-            }
-            if (!sameSkill(reference, skill)) {
-                throw new AgentRuntimeException("querySkillInfo returned mismatched Skill for id " + reference.id());
             }
             if (!names.add(skill.name())) {
                 throw new AgentRuntimeException("Duplicate Skill name in Agent runtime: " + skill.name());
@@ -499,16 +517,7 @@ public class AgentRuntimeManager {
             throw new AgentRuntimeException(
                     "GetAgentRuntime returned Agent " + runtime.id() + " for requested id " + requestedAgentId);
         }
-        if (runtime.bindingSkills().size() > MAX_BOUND_SKILLS) {
-            throw new AgentRuntimeException("Agent binds too many Skills");
-        }
-        Set<String> ids = new HashSet<>();
-        for (SkillReference reference : runtime.bindingSkills()) {
-            validateSkillReference(reference);
-            if (!ids.add(reference.id())) {
-                throw new AgentRuntimeException("Duplicate Skill id in Agent runtime: " + reference.id());
-            }
-        }
+        validateSkillReferences(runtime.bindingSkills());
     }
 
     private static void validateSkillReference(SkillReference reference) {

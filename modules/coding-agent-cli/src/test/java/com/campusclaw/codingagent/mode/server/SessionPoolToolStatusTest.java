@@ -31,7 +31,6 @@ import com.campusclaw.codingagent.settings.SettingsManager;
 import com.campusclaw.codingagent.tool.catalog.DefaultToolCatalog;
 import com.campusclaw.codingagent.tool.catalog.SpringAgentToolSource;
 import com.campusclaw.codingagent.tool.catalog.ToolCatalog;
-import com.campusclaw.codingagent.tool.catalog.ToolCatalogSnapshot;
 import com.campusclaw.codingagent.tool.catalog.ToolContribution;
 import com.campusclaw.codingagent.tool.catalog.ToolContributionSource;
 import com.campusclaw.codingagent.tool.catalog.ToolRefreshRequest;
@@ -365,19 +364,19 @@ class SessionPoolToolStatusTest {
         }
 
         @Override
-        public ToolCatalogSnapshot snapshot() {
+        public ToolCatalog.Snapshot snapshot() {
             return snapshotForVersion(version);
         }
 
         @Override
-        public ToolCatalogSnapshot refresh() {
+        public ToolCatalog.Snapshot refresh() {
             refreshCount.incrementAndGet();
             version++;
             return snapshot();
         }
 
         @Override
-        public ToolCatalogSnapshot refresh(ToolRefreshRequest request) {
+        public ToolCatalog.Snapshot refresh(ToolRefreshRequest request) {
             return refresh();
         }
 
@@ -387,14 +386,14 @@ class SessionPoolToolStatusTest {
         }
 
         @Override
-        public Runnable addChangeListener(com.campusclaw.codingagent.tool.catalog.ToolChangeListener listener) {
+        public Runnable addChangeListener(com.campusclaw.codingagent.tool.catalog.ToolCatalog.ChangeListener listener) {
             return () -> {};
         }
 
-        private ToolCatalogSnapshot snapshotForVersion(long snapshotVersion) {
+        private ToolCatalog.Snapshot snapshotForVersion(long snapshotVersion) {
             var tools = new LinkedHashMap<String, AgentTool>();
             tools.put(tool.name(), tool);
-            return new ToolCatalogSnapshot(snapshotVersion, tools, Map.of(), List.of());
+            return new ToolCatalog.Snapshot(snapshotVersion, tools, Map.of(), List.of());
         }
     }
 }

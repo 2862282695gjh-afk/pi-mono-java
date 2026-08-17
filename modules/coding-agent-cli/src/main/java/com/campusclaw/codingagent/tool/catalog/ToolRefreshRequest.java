@@ -20,9 +20,9 @@ public record ToolRefreshRequest(Path cwd, Settings.ToolsSettings toolsSettings)
         this(cwd, null);
     }
 
-    public ToolSourceContext toSourceContext(ToolSourceContext previous) {
-        var fallback = previous != null ? previous : ToolSourceContext.defaults();
-        return new ToolSourceContext(
+    public ToolSource.Context toSourceContext(ToolSource.Context previous) {
+        var fallback = previous != null ? previous : ToolSource.Context.defaults();
+        return new ToolSource.Context(
                 cwd != null ? cwd : fallback.cwd(),
                 fallback.userToolsDir(),
                 settingOrFallback(

@@ -19,29 +19,34 @@ public record ToolContribution(
         String targetName,
         ToolContributionSource source,
         int priority,
-        ToolMergeStrategy mergeStrategy,
+        MergeStrategy mergeStrategy,
         String replaces,
         Function<AgentTool, AgentTool> wrapper,
         boolean enabledByDefault) {
 
+    /** Merge strategy for a tool contribution. */
+    enum MergeStrategy {
+        ADD,
+        REPLACE,
+        WRAP,
+        DISABLE
+    }
+
     public static ToolContribution add(AgentTool tool, ToolContributionSource source, int priority) {
-        return new ToolContribution(tool, tool.name(), source, priority, ToolMergeStrategy.ADD, null, null, true);
+        return new ToolContribution(tool, tool.name(), source, priority, MergeStrategy.ADD, null, null, true);
     }
 
     public static ToolContribution replace(
             AgentTool tool, ToolContributionSource source, int priority, String replaces) {
-        return new ToolContribution(
-                tool, tool.name(), source, priority, ToolMergeStrategy.REPLACE, replaces, null, true);
+        return new ToolContribution(tool, tool.name(), source, priority, MergeStrategy.REPLACE, replaces, null, true);
     }
 
     public static ToolContribution wrap(
             String targetName, Function<AgentTool, AgentTool> wrapper, ToolContributionSource source, int priority) {
-        return new ToolContribution(
-                null, targetName, source, priority, ToolMergeStrategy.WRAP, targetName, wrapper, true);
+        return new ToolContribution(null, targetName, source, priority, MergeStrategy.WRAP, targetName, wrapper, true);
     }
 
     public static ToolContribution disable(String targetName, ToolContributionSource source, int priority) {
-        return new ToolContribution(
-                null, targetName, source, priority, ToolMergeStrategy.DISABLE, targetName, null, false);
+        return new ToolContribution(null, targetName, source, priority, MergeStrategy.DISABLE, targetName, null, false);
     }
 }
