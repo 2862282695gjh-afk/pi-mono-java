@@ -6,10 +6,12 @@ spring:
   application:
     name: campusclaw-agent
   datasource:
-    url: ${GAUSSDB_URL:jdbc:opengauss://localhost:5432/campusclaw}
+    # openGauss 兼容 PostgreSQL wire/JDBC；标准 pgjdbc 可避免 openGauss 7.0.0-RC3
+    # Maven 制品在可执行包内嵌入第二套 SLF4J API。
+    url: ${GAUSSDB_URL:jdbc:postgresql://localhost:5432/campusclaw}
     username: ${GAUSSDB_USER:campusclaw}
     password: ${GAUSSDB_PASSWORD:}
-    driver-class-name: org.opengauss.Driver
+    driver-class-name: org.postgresql.Driver
     hikari:
       pool-name: campusclaw-session-pool
       minimum-idle: ${GAUSSDB_MIN_IDLE:1}

@@ -1,6 +1,6 @@
 # CampusClaw Runtime HTTP+SSE V1 实施计划
 
-- 计划版本：1.0.0
+- 计划版本：1.1.0
 - 更新日期：2026-08-18
 - 状态：实施中
 - 实际源码基线：`889dcb1b7dd5f47addd3b372ef31392c9044ca24`
@@ -31,6 +31,8 @@
 - `modules/agent-core/src/main/java/com/campusclaw/agent/queue/MessageQueue.java`
 - `modules/coding-agent-cli/src/main/resources/db/gaussdb/install/session_schema.sql`
 - `modules/coding-agent-cli/src/main/resources/application.yml`
+- `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/`
+- `modules/coding-agent-cli/src/main/resources/mapper/session/RuntimeSessionMapper.xml`
 
 设计文档记录的旧源码基线是
 `195746614096312d4e93afb029d387837db78e0b`。本次实施使用的实际源码基线更新为
@@ -67,9 +69,9 @@
 
 | 序号 | 方法与路径 | 主要验收点 | 状态 |
 |---:|---|---|---|
-| 1 | `POST /campusclaw-service/v1/agents/{agent_id}/sessions` | 生成 ID、默认模型、idle、thinking=false、201/Location | 待实施 |
-| 2 | `GET /campusclaw-service/v1/sessions/{session_id}` | 当前资源、强 ETag、no-store | 待实施 |
-| 3 | `DELETE /campusclaw-service/v1/sessions/{session_id}` | 幂等 204、异步清理、仅两字段 tombstone | 待实施 |
+| 1 | `POST /campusclaw-service/v1/agents/{agent_id}/sessions` | 生成 ID、默认模型、idle、thinking=false、201/Location | 已实现并验证 |
+| 2 | `GET /campusclaw-service/v1/sessions/{session_id}` | 当前资源、强 ETag、no-store | 已实现并验证 |
+| 3 | `DELETE /campusclaw-service/v1/sessions/{session_id}` | 幂等 204、异步清理、仅两字段 tombstone | 已实现并验证 |
 | 4 | `POST /campusclaw-service/v1/sessions/{session_id}/events` | user.message、完整 SSE 序列、断线不 abort | 待实施 |
 | 5 | `GET /campusclaw-service/v1/sessions/{session_id}/events` | 当前分支、三种持久化事件、不透明游标 | 待实施 |
 | 6 | `GET /campusclaw-service/v1/sessions/{session_id}/models` | `current_model_id` 与 `models` 字符串数组 | 待实施 |
@@ -102,6 +104,38 @@
 
 这两个结果仅证明实施前基线健康，不替代实施后的全部质量门禁。
 
+## 第一批接口验证证据
+
+接口 1—3 已完成公共 ResultBean、双凭据鉴权、Agent 授权 port、中英文错误、
+Session 所有权、MyBatis 持久化、强 ETag、tombstone、cleanup task 和可重试异步清理
+worker 的纵向实现。
+独立开发代码使用 `ResultBeanFactory.getFactory().normal(...)` 包装普通成功响应；公司
+ResultBean 和鉴权制品坐标仍未知，未臆造内部依赖，授权与凭据校验均保留可替换 Bean。
+
+已真实执行以下验证：
+
+- `RuntimeSessionRoutesTest`、`RuntimeSessionServiceTest` 与 `SessionCleanupWorkerTest`：
+  16 个测试，0 失败、0 错误、
+  0 跳过；覆盖 JWT、APPKEY、混用拒绝、国际化、ResultBean 字段、ISO-8601 时间、
+  Agent 创建权限、所有权、Retry-After、ETag 和幂等删除。
+- 官方 `opengauss/opengauss-server:latest` 容器实际运行
+  `openGauss 7.0.0-RC3 build 01b7e318`；完整安装 DDL 成功执行。
+- `RuntimeSessionRepositoryOpenGaussIT`：7 个测试，0 失败、0 错误、0 跳过；覆盖
+  Session/sequence/materialized 三表原子创建、查询映射、两字段 tombstone、cleanup
+  task 抢占/延期重试/物理清理、已删除 ID 永不复用、创建失败回滚和删除失败回滚。
+- 从源码基线提取 V1 建库 DDL，插入一条 legacy Session 后执行
+  `V1_0_0_to_V2_0_0__schema.sql` 与 verify；旧记录保留，`updated_at=created_at`，
+  新增字段回填值和约束均通过。
+- 以可执行 Spring Boot JAR 启动真实 Reactor Netty 进程并连接上述 openGauss：依次得到
+  `POST 201`、`GET 200`、跨调用方 `403`、`DELETE 204`、删除后 `GET 404`；查询数据库
+  确认 tombstone 存在且 cleanup task 为 `PENDING`。最终构建再次创建并删除 Session，
+  等待实际调度周期后确认 cleanup task 为 0、历史/序号/物化残留为 0、tombstone 仍为 1。
+
+进程测试先后发现并修复了三个仅靠 mock 不易暴露的问题：openGauss Maven JDBC 制品
+在可执行 JAR 中嵌入第二套 SLF4J API、lazy initialization 导致 Engine 初始化器未执行，
+以及 OffsetDateTime 默认被编码为数字。Runtime 现使用 openGauss 兼容的标准 pgjdbc，
+Engine 改为构造器依赖，边界时间显式编码为 ISO-8601 字符串。
+
 ## 推进日志
 
 - 2026-08-18：从最新 `origin/main` 创建独立工作树和
@@ -111,3 +145,5 @@
 - 2026-08-18：读取当前 Runtime、Session、Agent、队列、数据库与启动 wiring，
   确认函数式 WebFlux、现有队列能力及数据库缺口。
 - 2026-08-18：实施前 Spotless 与全量 Maven Verify 均通过。
+- 2026-08-18：完成接口 1—3、公共鉴权/ResultBean/错误国际化和 Session 数据库基础；
+  单元契约测试、真实 openGauss Mapper/事务测试、V1 数据迁移测试和进程级 HTTP 测试通过。

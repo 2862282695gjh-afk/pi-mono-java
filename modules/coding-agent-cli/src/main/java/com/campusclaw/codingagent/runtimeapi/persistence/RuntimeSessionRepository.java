@@ -1,0 +1,30 @@
+/*
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
+ */
+
+package com.campusclaw.codingagent.runtimeapi.persistence;
+
+import java.time.OffsetDateTime;
+import java.util.Optional;
+
+import com.campusclaw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
+
+/**
+ * Runtime Session 持久化的事务边界端口。
+ *
+ * @version [br_eCampusCore 25.1.0_Next, 2026/08/18]
+ * @since [br_eCampusCore 25.1.0_Next]
+ */
+public interface RuntimeSessionRepository {
+    void create(RuntimeSessionDTO session);
+
+    Optional<RuntimeSessionDTO> find(String sessionId);
+
+    boolean beginDeletion(String sessionId, OffsetDateTime deletedAt);
+
+    Optional<String> claimCleanupTask(OffsetDateTime now, OffsetDateTime staleBefore);
+
+    void completeCleanup(String sessionId);
+
+    void retryCleanup(String sessionId, OffsetDateTime now, OffsetDateTime nextAttemptAt, String lastError);
+}
