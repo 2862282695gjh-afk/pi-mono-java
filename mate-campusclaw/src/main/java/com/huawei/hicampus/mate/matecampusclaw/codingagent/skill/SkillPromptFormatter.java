@@ -9,8 +9,8 @@ import java.util.List;
 /**
  * Formats a list of visible skills into an XML block suitable for inclusion in the system prompt.
  *
- * @version [br_eCampusCore 26.0.0, 2026/08/17]
- * @since [br_eCampusCore 26.0.0]
+ * @version [br_eCampusCore 25.1.0_Next, 2026/05/06]
+ * @since [br_eCampusCore 25.1.0_Next]
  */
 public class SkillPromptFormatter {
 
@@ -22,32 +22,15 @@ public class SkillPromptFormatter {
      * @return XML-formatted skill listing, or empty string
      */
     public static String format(List<Skill> visibleSkills) {
-        return format(visibleSkills, false);
-    }
-
-    /**
-     * Formats visible Skills using either the legacy file-reading flow or the managed
-     * runtime activation flow.
-     *
-     * @param visibleSkills skills to include
-     * @param activationRequired whether the model must use {@code activate_skill}
-     * @return XML-formatted Skill listing, or empty string
-     */
-    public static String format(List<Skill> visibleSkills, boolean activationRequired) {
         if (visibleSkills == null || visibleSkills.isEmpty()) {
             return "";
         }
 
         StringBuilder sb = new StringBuilder();
         sb.append("The following skills provide specialized instructions for specific tasks.\n");
-        if (activationRequired) {
-            sb.append("When a task matches, call activate_skill with the exact skill name and wait for its result.\n");
-            sb.append("Only after activation may you use the Skill instructions and newly available tools.\n\n");
-        } else {
-            sb.append("Use the read tool to load a skill's file when the task matches its description.\n");
-            sb.append("When a skill file references a relative path, resolve it against the skill directory ");
-            sb.append("(parent of SKILL.md / dirname of the path) and use that absolute path in tool commands.\n\n");
-        }
+        sb.append("Use the read tool to load a skill's file when the task matches its description.\n");
+        sb.append("When a skill file references a relative path, resolve it against the skill directory ");
+        sb.append("(parent of SKILL.md / dirname of the path) and use that absolute path in tool commands.\n\n");
         sb.append("<available_skills>\n");
 
         for (Skill skill : visibleSkills) {
@@ -56,11 +39,9 @@ public class SkillPromptFormatter {
             sb.append("    <description>")
                     .append(escapeXml(skill.description()))
                     .append("</description>\n");
-            if (!activationRequired) {
-                sb.append("    <location>")
-                        .append(escapeXml(skill.filePath().toString()))
-                        .append("</location>\n");
-            }
+            sb.append("    <location>")
+                    .append(escapeXml(skill.filePath().toString()))
+                    .append("</location>\n");
             sb.append("  </skill>\n");
         }
 

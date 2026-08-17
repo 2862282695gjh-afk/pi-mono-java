@@ -13,8 +13,6 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
-import java.util.function.Function;
-import java.util.regex.Pattern;
 
 import com.huawei.hicampus.mate.matecampusclaw.agent.tool.AgentTool;
 import com.huawei.hicampus.mate.matecampusclaw.agent.util.LoggingUncaughtExceptionHandler;
@@ -23,19 +21,12 @@ import com.huawei.hicampus.mate.matecampusclaw.ai.model.ModelRegistry;
 import com.huawei.hicampus.mate.matecampusclaw.ai.types.Message;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.config.AppPaths;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.prompt.SystemPromptBuilder;
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtime.AgentRuntimeManager;
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtime.PreparedAgentRuntime;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.session.AgentSession;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.session.SessionConfig;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.session.SessionManager;
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.settings.Settings;
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.settings.SettingsManager;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.skill.SandboxSkillParser;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.skill.SkillExpander;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.skill.SkillLoader;
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.catalog.ToolCatalog;
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.catalog.ToolRefreshRequest;
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.catalog.ToolSelection;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -49,40 +40,29 @@ import org.slf4j.LoggerFactory;
  * The JSONL filename equals the conversation ID, so reconnects with the same
  * {@code conversation_id} after eviction or process restart resume from disk.
  *
- * @version [br_eCampusCore 26.0.0, 2026/08/17]
- * @since [br_eCampusCore 26.0.0]
+ * @version [br_eCampusCore 25.1.0_Next, 2026/05/06]
+ * @since [br_eCampusCore 25.1.0_Next]
  */
 public class SessionPool {
 
     private static final Logger log = LoggerFactory.getLogger(SessionPool.class);
     private static final long IDLE_TIMEOUT_MINUTES = 30L;
-    private static final Pattern CONVERSATION_ID_PATTERN = Pattern.compile("^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$");
 
     private final CampusClawAiService aiService;
     private final ModelRegistry modelRegistry;
     private final SystemPromptBuilder promptBuilder;
     private final List<AgentTool> tools;
-    private final ToolCatalog toolCatalog;
-    private volatile ToolSelection toolSelection;
-    private final Function<Settings.ToolsSettings, ToolSelection> toolSelectionResolver;
     private final SessionConfig baseConfig;
     private final SandboxSkillParser sandboxParser;
     private final boolean useSandbox;
     private final boolean persistenceEnabled;
-    private final SettingsManager settingsManager;
-    private final AgentRuntimeManager agentRuntimeManager;
-    private final String defaultAgentId;
+    private final String serverCwd;
 
     private final Map<String, Entry> sessions = new ConcurrentHashMap<>();
-    private final Object toolReloadLock = new Object();
     private final ScheduledExecutorService cleaner;
     private com.huawei.hicampus.mate.matecampusclaw.agent.subagent.SubAgentRegistry subAgentRegistry;
 
     record Entry(AgentSession session, long lastAccess) {}
-
-    private record ReloadCounts(int deferred, int failed) {}
-
-    private record ReloadedCatalog(long version, List<String> diagnostics, List<String> visibleToolNames) {}
 
     public SessionPool(
             CampusClawAiService aiService,
@@ -113,134 +93,15 @@ public class SessionPool {
             SandboxSkillParser sandboxParser,
             boolean useSandbox,
             boolean persistenceEnabled) {
-        this(
-                aiService,
-                modelRegistry,
-                promptBuilder,
-                tools,
-                null,
-                ToolSelection.all(),
-                baseConfig,
-                sandboxParser,
-                useSandbox,
-                persistenceEnabled,
-                null);
-    }
-
-    public SessionPool(
-            CampusClawAiService aiService,
-            ModelRegistry modelRegistry,
-            SystemPromptBuilder promptBuilder,
-            List<AgentTool> tools,
-            ToolCatalog toolCatalog,
-            ToolSelection toolSelection,
-            SessionConfig baseConfig,
-            SandboxSkillParser sandboxParser,
-            boolean useSandbox,
-            boolean persistenceEnabled) {
-        this(
-                aiService,
-                modelRegistry,
-                promptBuilder,
-                tools,
-                toolCatalog,
-                toolSelection,
-                baseConfig,
-                sandboxParser,
-                useSandbox,
-                persistenceEnabled,
-                null);
-    }
-
-    public SessionPool(
-            CampusClawAiService aiService,
-            ModelRegistry modelRegistry,
-            SystemPromptBuilder promptBuilder,
-            List<AgentTool> tools,
-            ToolCatalog toolCatalog,
-            ToolSelection toolSelection,
-            SessionConfig baseConfig,
-            SandboxSkillParser sandboxParser,
-            boolean useSandbox,
-            boolean persistenceEnabled,
-            SettingsManager settingsManager) {
-        this(
-                aiService,
-                modelRegistry,
-                promptBuilder,
-                tools,
-                toolCatalog,
-                toolSelection,
-                baseConfig,
-                sandboxParser,
-                useSandbox,
-                persistenceEnabled,
-                settingsManager,
-                null,
-                null);
-    }
-
-    public SessionPool(
-            CampusClawAiService aiService,
-            ModelRegistry modelRegistry,
-            SystemPromptBuilder promptBuilder,
-            List<AgentTool> tools,
-            ToolCatalog toolCatalog,
-            ToolSelection toolSelection,
-            SessionConfig baseConfig,
-            SandboxSkillParser sandboxParser,
-            boolean useSandbox,
-            boolean persistenceEnabled,
-            SettingsManager settingsManager,
-            AgentRuntimeManager agentRuntimeManager,
-            String defaultAgentId) {
-        this(
-                aiService,
-                modelRegistry,
-                promptBuilder,
-                tools,
-                toolCatalog,
-                toolSelection,
-                baseConfig,
-                sandboxParser,
-                useSandbox,
-                persistenceEnabled,
-                settingsManager,
-                agentRuntimeManager,
-                defaultAgentId,
-                fixedSelectionResolver(toolSelection));
-    }
-
-    public SessionPool(
-            CampusClawAiService aiService,
-            ModelRegistry modelRegistry,
-            SystemPromptBuilder promptBuilder,
-            List<AgentTool> tools,
-            ToolCatalog toolCatalog,
-            ToolSelection toolSelection,
-            SessionConfig baseConfig,
-            SandboxSkillParser sandboxParser,
-            boolean useSandbox,
-            boolean persistenceEnabled,
-            SettingsManager settingsManager,
-            AgentRuntimeManager agentRuntimeManager,
-            String defaultAgentId,
-            Function<Settings.ToolsSettings, ToolSelection> toolSelectionResolver) {
         this.aiService = aiService;
         this.modelRegistry = modelRegistry;
         this.promptBuilder = promptBuilder;
         this.tools = tools;
-        this.toolCatalog = toolCatalog;
-        this.toolSelection = toolSelection != null ? toolSelection : ToolSelection.all();
-        this.toolSelectionResolver =
-                toolSelectionResolver != null ? toolSelectionResolver : fixedSelectionResolver(this.toolSelection);
         this.baseConfig = baseConfig;
         this.sandboxParser = sandboxParser;
         this.useSandbox = useSandbox;
         this.persistenceEnabled = persistenceEnabled;
-        this.settingsManager = settingsManager;
-        this.agentRuntimeManager = agentRuntimeManager;
-        this.defaultAgentId = defaultAgentId;
+        this.serverCwd = System.getProperty("user.dir");
 
         this.cleaner = Executors.newSingleThreadScheduledExecutor(r -> {
             var t = new Thread(r, "session-pool-cleaner");
@@ -262,29 +123,21 @@ public class SessionPool {
      * @return the resolved session reference
      */
     public SessionRef getOrCreate(String conversationId) {
-        return getOrCreate(defaultAgentId, conversationId);
-    }
+        if (conversationId != null && !conversationId.isBlank()) {
+            var entry = sessions.get(conversationId);
+            if (entry != null) {
+                sessions.put(conversationId, new Entry(entry.session(), now()));
+                return new SessionRef(conversationId, entry.session());
+            }
+        }
 
-    /**
-     * Returns an existing session for an Agent/conversation pair, or creates one.
-     *
-     * @param agentId selected managed Agent ID; blank uses the server default/legacy session
-     * @param conversationId conversation ID; blank generates a new ID
-     * @return resolved session reference
-     */
-    public SessionRef getOrCreate(String agentId, String conversationId) {
-        String effectiveAgentId = normalizeAgentId(agentId);
         String id = (conversationId != null && !conversationId.isBlank())
                 ? conversationId
                 : UUID.randomUUID().toString().replace("-", "").substring(0, 12);
-        validateConversationId(id);
-        String key = sessionKey(effectiveAgentId, id);
-        Entry entry = sessions.compute(
-                key,
-                (ignored, existing) -> existing != null
-                        ? new Entry(existing.session(), now())
-                        : new Entry(createSessionWithPersistence(effectiveAgentId, id), now()));
-        return new SessionRef(id, entry.session());
+
+        AgentSession session = createSessionWithPersistence(id);
+        sessions.put(id, new Entry(session, now()));
+        return new SessionRef(id, session);
     }
 
     /**
@@ -294,26 +147,13 @@ public class SessionPool {
      * @return true if the conversation existed and was removed
      */
     public boolean remove(String conversationId) {
-        return remove(defaultAgentId, conversationId);
-    }
-
-    /**
-     * Removes one Agent-scoped conversation.
-     *
-     * @param agentId selected Agent ID, or {@code null} for the legacy/default Agent
-     * @param conversationId conversation ID to remove
-     * @return true if the scoped conversation existed
-     */
-    public boolean remove(String agentId, String conversationId) {
-        validateConversationId(conversationId);
-        String effectiveAgentId = normalizeAgentId(agentId);
-        Entry removed = sessions.remove(sessionKey(effectiveAgentId, conversationId));
-        if (removed == null) {
-            return false;
+        var removed = sessions.remove(conversationId);
+        if (removed != null) {
+            closeQuietly(removed.session());
+            log.info("Removed conversation: {}", conversationId);
+            return true;
         }
-        closeQuietly(removed.session());
-        log.info("Removed conversation {} for Agent {}", conversationId, effectiveAgentId);
-        return true;
+        return false;
     }
 
     /**
@@ -325,23 +165,9 @@ public class SessionPool {
      * @param newId the newId
      */
     public void rekey(String oldId, String newId) {
-        rekey(defaultAgentId, oldId, newId);
-    }
-
-    /**
-     * Re-keys one Agent-scoped conversation.
-     *
-     * @param agentId selected Agent ID
-     * @param oldId previous conversation ID
-     * @param newId replacement conversation ID
-     */
-    public void rekey(String agentId, String oldId, String newId) {
-        validateConversationId(oldId);
-        validateConversationId(newId);
-        String effectiveAgentId = normalizeAgentId(agentId);
-        var entry = sessions.remove(sessionKey(effectiveAgentId, oldId));
+        var entry = sessions.remove(oldId);
         if (entry != null) {
-            sessions.put(sessionKey(effectiveAgentId, newId), new Entry(entry.session(), now()));
+            sessions.put(newId, new Entry(entry.session(), now()));
         }
     }
 
@@ -352,141 +178,6 @@ public class SessionPool {
      */
     public int size() {
         return sessions.size();
-    }
-
-    /**
-     * Resolves the persistence cwd for an Agent-scoped conversation listing.
-     *
-     * @param agentId selected Agent ID, or {@code null} for the default/legacy runtime
-     * @return normalized session cwd
-     */
-    Path conversationCwd(String agentId) {
-        PreparedAgentRuntime prepared = prepareRuntime(normalizeAgentId(agentId));
-        Path configured = prepared != null ? prepared.agentRoot() : baseConfig.cwd();
-        return (configured != null ? configured : Path.of(System.getProperty("user.dir")))
-                .toAbsolutePath()
-                .normalize();
-    }
-
-    /**
-     * Returns diagnostic information for the active tool catalog snapshot.
-     *
-     * @return response payload for the server API
-     */
-    public Map<String, Object> toolStatus() {
-        if (toolCatalog == null) {
-            return Map.of(
-                    "status",
-                    "disabled",
-                    "activeSessions",
-                    size(),
-                    "tools",
-                    tools.stream().map(AgentTool::name).toList());
-        }
-        synchronized (toolCatalog) {
-            var snapshot = toolCatalog.snapshot();
-            return Map.of(
-                    "status",
-                    "ok",
-                    "version",
-                    snapshot.version(),
-                    "diagnostics",
-                    snapshot.diagnostics(),
-                    "activeSessions",
-                    size(),
-                    "tools",
-                    toolCatalog.resolve(toolSelection).stream()
-                            .map(AgentTool::name)
-                            .toList());
-        }
-    }
-
-    /**
-     * Refreshes catalog-backed tools and updates active sessions.
-     *
-     * @return response payload for the server API
-     */
-    public Map<String, Object> reloadTools() {
-        synchronized (toolReloadLock) {
-            return reloadToolsSerially();
-        }
-    }
-
-    private Map<String, Object> reloadToolsSerially() {
-        if (toolCatalog == null) {
-            return Map.of("status", "disabled", "message", "Tool catalog is not available");
-        }
-        var toolsSettings = currentToolsSettings();
-        ToolSelection effectiveSelection = resolveSelection(toolsSettings);
-        toolSelection = effectiveSelection;
-        var baseRequest = new ToolRefreshRequest(baseConfig.cwd(), toolsSettings);
-        synchronized (toolCatalog) {
-            toolCatalog.refresh(baseRequest);
-        }
-        ReloadCounts counts;
-        ReloadedCatalog reloadedCatalog;
-        try {
-            counts = reloadActiveSessions(effectiveSelection);
-        } finally {
-            reloadedCatalog = restoreBaseCatalog(baseRequest, effectiveSelection);
-        }
-        return Map.of(
-                "status",
-                counts.failed() == 0 ? "ok" : "partial",
-                "version",
-                reloadedCatalog.version(),
-                "diagnostics",
-                reloadedCatalog.diagnostics(),
-                "deferredSessions",
-                counts.deferred(),
-                "failedSessions",
-                counts.failed(),
-                "tools",
-                reloadedCatalog.visibleToolNames());
-    }
-
-    private ToolSelection resolveSelection(Settings.ToolsSettings toolsSettings) {
-        ToolSelection resolved = toolSelectionResolver.apply(toolsSettings);
-        return resolved != null ? resolved : ToolSelection.all();
-    }
-
-    private ReloadCounts reloadActiveSessions(ToolSelection selection) {
-        int deferred = 0;
-        int failed = 0;
-        for (Entry entry : sessions.values()) {
-            try {
-                entry.session().setToolSelection(selection);
-                if (!entry.session().reloadToolsWhenIdle()) {
-                    deferred++;
-                }
-            } catch (RuntimeException e) {
-                failed++;
-                log.warn("Failed to reload tools for an active session", e);
-            }
-        }
-        return new ReloadCounts(deferred, failed);
-    }
-
-    private ReloadedCatalog restoreBaseCatalog(ToolRefreshRequest request, ToolSelection selection) {
-        synchronized (toolCatalog) {
-            var snapshot = toolCatalog.refresh(request);
-            List<String> visibleNames =
-                    toolCatalog.resolve(selection).stream().map(AgentTool::name).toList();
-            return new ReloadedCatalog(snapshot.version(), snapshot.diagnostics(), visibleNames);
-        }
-    }
-
-    private com.huawei.hicampus.mate.matecampusclaw.codingagent.settings.Settings.ToolsSettings currentToolsSettings() {
-        if (settingsManager == null) {
-            return null;
-        }
-        var settings = settingsManager.load();
-        return settings != null ? settings.tools() : null;
-    }
-
-    private static Function<Settings.ToolsSettings, ToolSelection> fixedSelectionResolver(ToolSelection selection) {
-        ToolSelection fixed = selection != null ? selection : ToolSelection.all();
-        return ignored -> fixed;
     }
 
     /**
@@ -510,51 +201,37 @@ public class SessionPool {
 
     record SessionRef(String conversationId, AgentSession session) {}
 
-    private AgentSession createSessionWithPersistence(String agentId, String conversationId) {
-        PreparedAgentRuntime preparedRuntime = prepareRuntime(agentId);
-        SessionConfig sessionConfig =
-                preparedRuntime == null ? baseConfig : agentRuntimeManager.sessionConfig(baseConfig, preparedRuntime);
-        Path configuredCwd =
-                sessionConfig.cwd() != null ? sessionConfig.cwd() : Path.of(System.getProperty("user.dir"));
-        Path absoluteCwd = configuredCwd.toAbsolutePath().normalize();
-        sessionConfig = new SessionConfig(
-                sessionConfig.model(), absoluteCwd, sessionConfig.customPrompt(), sessionConfig.mode());
+    private AgentSession createSessionWithPersistence(String conversationId) {
         AgentSession session = new AgentSession(
                 aiService,
                 modelRegistry,
                 promptBuilder,
                 new SkillLoader(sandboxParser, useSandbox),
                 new SkillExpander(sandboxParser, useSandbox),
-                resolveTools(sessionConfig.cwd()));
-        if (toolCatalog != null) {
-            session.setToolCatalog(toolCatalog, toolSelection);
-        }
-        if (preparedRuntime != null) {
-            session.setAgentRuntime(preparedRuntime, agentRuntimeManager);
-        }
+                tools);
         if (subAgentRegistry != null) {
             session.setSubAgentRegistry(subAgentRegistry);
         }
 
         if (!persistenceEnabled) {
-            session.initialize(sessionConfig);
+            session.initialize(baseConfig);
             log.info("Created new conversation (in-memory only): {}", conversationId);
             return session;
         }
 
         SessionManager sm = new SessionManager();
-        Path file = sessionFilePath(conversationId, sessionConfig.cwd());
+        Path file = sessionFilePath(conversationId);
         List<Message> restored = List.of();
         if (Files.exists(file)) {
             restored = sm.loadSession(file);
             log.info("Resumed conversation {} from disk ({} messages)", conversationId, restored.size());
         } else {
-            sm.createSession(sessionConfig.cwd().toString(), conversationId);
+            sm.createSession(serverCwd, conversationId);
             log.info("Created new conversation: {}", conversationId);
         }
 
         session.setSessionManager(sm);
-        session.initialize(sessionConfig);
+        session.initialize(baseConfig);
 
         if (!restored.isEmpty()) {
             session.getAgent().clearMessages();
@@ -566,60 +243,21 @@ public class SessionPool {
         return session;
     }
 
-    private PreparedAgentRuntime prepareRuntime(String agentId) {
-        if (agentId == null) {
-            return null;
-        }
-        if (agentRuntimeManager == null) {
-            throw new IllegalStateException("Managed Agent runtime is not configured");
-        }
-        return agentRuntimeManager.prepare(agentId);
-    }
-
     /**
      * Returns the JSONL path that {@link SessionManager} would use for this id.
      *
      * @param sessionId the sessionId
-     * @param cwd session working directory
      * @return the result
      */
-    private Path sessionFilePath(String sessionId, Path cwd) {
-        String cwdText = cwd.toAbsolutePath().normalize().toString();
-        String safePath = "--" + cwdText.replaceFirst("^[/\\\\]", "").replaceAll("[/\\\\:]", "-") + "--";
+    private Path sessionFilePath(String sessionId) {
+        String safePath = "--" + serverCwd.replaceFirst("^[/\\\\]", "").replaceAll("[/\\\\:]", "-") + "--";
         return AppPaths.SESSIONS_DIR.resolve(safePath).resolve(sessionId + ".jsonl");
-    }
-
-    private List<AgentTool> resolveTools(Path cwd) {
-        if (toolCatalog == null) {
-            return tools;
-        }
-        return toolCatalog.resolve(new ToolRefreshRequest(cwd, currentToolsSettings()), toolSelection);
-    }
-
-    private String normalizeAgentId(String agentId) {
-        if (agentId != null && !agentId.isBlank()) {
-            return agentId;
-        }
-        return defaultAgentId != null && !defaultAgentId.isBlank() ? defaultAgentId : null;
-    }
-
-    private static String sessionKey(String agentId, String conversationId) {
-        return agentId == null ? conversationId : agentId + '\u0000' + conversationId;
-    }
-
-    private static void validateConversationId(String conversationId) {
-        if (conversationId == null
-                || !CONVERSATION_ID_PATTERN.matcher(conversationId).matches()) {
-            throw new IllegalArgumentException("Invalid conversationId: " + conversationId);
-        }
     }
 
     private void evictIdle() {
         long cutoff = now() - TimeUnit.MINUTES.toMillis(IDLE_TIMEOUT_MINUTES);
         sessions.entrySet().removeIf(e -> {
-            if (e.getValue().lastAccess() < cutoff
-                    && !e.getValue().session().isStreaming()
-                    && !e.getValue().session().isRuntimePromptActive()) {
+            if (e.getValue().lastAccess() < cutoff && !e.getValue().session().isStreaming()) {
                 closeQuietly(e.getValue().session());
                 log.info("Evicted idle conversation: {}", e.getKey());
                 return true;

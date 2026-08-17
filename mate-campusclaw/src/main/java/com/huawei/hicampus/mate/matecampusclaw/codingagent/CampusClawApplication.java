@@ -7,7 +7,6 @@ package com.huawei.hicampus.mate.matecampusclaw.codingagent;
 import com.huawei.hicampus.mate.matecampusclaw.agent.controlplane.config.ControlPlaneProperties;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.cli.CampusClawCommand;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.config.ToolExecutionProperties;
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtime.AgentRuntimeProperties;
 
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.boot.ExitCodeGenerator;
@@ -22,15 +21,11 @@ import picocli.CommandLine.IFactory;
  * CampusClaw — Spring Boot CLI application.
  * Bridges Picocli with Spring Boot via the picocli-spring-boot-starter.
  *
- * @version [br_eCampusCore 26.0.0, 2026/08/17]
- * @since [br_eCampusCore 26.0.0]
+ * @version [br_eCampusCore 25.1.0_Next, 2026/05/06]
+ * @since [br_eCampusCore 25.1.0_Next]
  */
 @SpringBootApplication(scanBasePackages = "com.huawei.hicampus.mate.matecampusclaw")
-@EnableConfigurationProperties({
-    ToolExecutionProperties.class,
-    ControlPlaneProperties.class,
-    AgentRuntimeProperties.class
-})
+@EnableConfigurationProperties({ToolExecutionProperties.class, ControlPlaneProperties.class})
 public class CampusClawApplication implements CommandLineRunner, ExitCodeGenerator {
 
     private final CampusClawCommand piCommand;

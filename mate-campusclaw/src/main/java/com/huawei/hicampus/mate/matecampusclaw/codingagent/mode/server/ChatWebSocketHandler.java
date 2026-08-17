@@ -4,7 +4,6 @@
 
 package com.huawei.hicampus.mate.matecampusclaw.codingagent.mode.server;
 
-import java.nio.file.Path;
 import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -44,7 +43,6 @@ import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.Sinks;
-import reactor.core.scheduler.Schedulers;
 import reactor.netty.http.websocket.WebsocketInbound;
 import reactor.netty.http.websocket.WebsocketOutbound;
 
@@ -58,8 +56,8 @@ import reactor.netty.http.websocket.WebsocketOutbound;
  * <p>Shares {@link SessionPool} with the SSE endpoint {@code /api/chat}, so
  * reconnecting with the same {@code conversation_id} resumes the same session.
  *
- * @version [br_eCampusCore 26.0.0, 2026/08/17]
- * @since [br_eCampusCore 26.0.0]
+ * @version [br_eCampusCore 25.1.0_Next, 2026/05/06]
+ * @since [br_eCampusCore 25.1.0_Next]
  */
 public class ChatWebSocketHandler {
 
@@ -115,29 +113,7 @@ public class ChatWebSocketHandler {
      * @return the result
      */
     public Publisher<Void> handle(WebsocketInbound in, WebsocketOutbound out, String conversationIdHint) {
-        return Mono.fromCallable(() -> pool.getOrCreate(conversationIdHint))
-                .subscribeOn(Schedulers.boundedElastic())
-                .flatMap(ref -> handlePrepared(in, out, null, ref));
-    }
-
-    /**
-     * Handles one Agent-scoped WebSocket connection.
-     *
-     * @param in inbound frame stream
-     * @param out outbound frame sink
-     * @param agentId selected managed Agent ID
-     * @param conversationIdHint conversation to resume, or {@code null}
-     * @return connection completion publisher
-     */
-    public Publisher<Void> handle(
-            WebsocketInbound in, WebsocketOutbound out, String agentId, String conversationIdHint) {
-        return Mono.fromCallable(() -> pool.getOrCreate(agentId, conversationIdHint))
-                .subscribeOn(Schedulers.boundedElastic())
-                .flatMap(ref -> handlePrepared(in, out, agentId, ref));
-    }
-
-    private Mono<Void> handlePrepared(
-            WebsocketInbound in, WebsocketOutbound out, String agentId, SessionPool.SessionRef ref) {
+        SessionPool.SessionRef ref = pool.getOrCreate(conversationIdHint);
         AgentSession session = ref.session();
 
         // convIdRef is rotated by `new_session` when persistence is enabled so
@@ -150,8 +126,7 @@ public class ChatWebSocketHandler {
 
         Mono<Void> inboundPipeline = in.receive()
                 .asString()
-                .publishOn(Schedulers.boundedElastic())
-                .doOnNext(raw -> handleCommand(raw, agentId, session, convIdRef, outbound))
+                .doOnNext(raw -> handleCommand(raw, session, convIdRef, outbound))
                 .then();
         Flux<String> heartbeat = Flux.interval(HEARTBEAT_INTERVAL).map(i -> PONG_FRAME);
         Mono<Void> sendPipeline =
@@ -201,7 +176,7 @@ public class ChatWebSocketHandler {
                     String cid = convIdRef.get();
                     log.info("WebSocket closed: conversation={} signal={}", cid, sig);
                     unsubscribe.run();
-                    if (session.isInitialized() && (session.isStreaming() || session.isRuntimePromptActive())) {
+                    if (session.isInitialized() && session.isStreaming()) {
                         try {
                             session.abort();
                         } catch (Exception e) {
@@ -218,11 +193,7 @@ public class ChatWebSocketHandler {
     // =========================================================================
 
     private void handleCommand(
-            String raw,
-            String agentId,
-            AgentSession session,
-            AtomicReference<String> convIdRef,
-            Sinks.Many<String> out) {
+            String raw, AgentSession session, AtomicReference<String> convIdRef, Sinks.Many<String> out) {
         String id = null;
         String type = "unknown";
         try {
@@ -237,7 +208,7 @@ public class ChatWebSocketHandler {
                     session.abort();
                     emitResponse(out, id, true, null);
                 }
-                case "new_session" -> handleNewSession(id, agentId, session, convIdRef, out);
+                case "new_session" -> handleNewSession(id, session, convIdRef, out);
                 case "set_model" -> handleSetModel(cmd, id, session, out);
                 case "list_models" -> handleListModels(cmd, id, session, out);
                 case "set_thinking_level" -> handleSetThinkingLevel(cmd, id, session, out);
@@ -256,11 +227,7 @@ public class ChatWebSocketHandler {
     }
 
     private void handleNewSession(
-            String id,
-            String agentId,
-            AgentSession session,
-            AtomicReference<String> convIdRef,
-            Sinks.Many<String> out) {
+            String id, AgentSession session, AtomicReference<String> convIdRef, Sinks.Many<String> out) {
         session.newSession();
 
         SessionManager oldSm = session.getSessionManager();
@@ -275,11 +242,9 @@ public class ChatWebSocketHandler {
         String newId = UUID.randomUUID().toString().replace("-", "").substring(0, 12);
         oldSm.close();
         SessionManager freshSm = new SessionManager();
-        Path initializedCwd = session.getInitializedCwd();
-        String sessionCwd = initializedCwd != null ? initializedCwd.toString() : System.getProperty("user.dir");
-        freshSm.createSession(sessionCwd, newId);
+        freshSm.createSession(System.getProperty("user.dir"), newId);
         session.setSessionManager(freshSm);
-        pool.rekey(agentId, oldId, newId);
+        pool.rekey(oldId, newId);
         convIdRef.set(newId);
         emitResponse(out, id, true, Map.of("conversation_id", newId));
     }
@@ -291,7 +256,7 @@ public class ChatWebSocketHandler {
             emitResponse(out, id, false, "message is required");
             return;
         }
-        if (session.isStreaming() || session.isRuntimePromptActive()) {
+        if (session.isStreaming()) {
             emitResponse(out, id, false, "conversation is already processing a prompt");
             return;
         }

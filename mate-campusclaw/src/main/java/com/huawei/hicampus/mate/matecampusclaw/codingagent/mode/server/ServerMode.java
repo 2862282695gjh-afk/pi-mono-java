@@ -4,10 +4,8 @@
 
 package com.huawei.hicampus.mate.matecampusclaw.codingagent.mode.server;
 
-import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
-import java.util.function.Function;
 
 import com.huawei.hicampus.mate.matecampusclaw.agent.tool.AgentTool;
 import com.huawei.hicampus.mate.matecampusclaw.ai.CampusClawAiService;
@@ -16,15 +14,11 @@ import com.huawei.hicampus.mate.matecampusclaw.codingagent.config.AppPaths;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.config.CustomModelLoader;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.model.ModelCatalogService;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.prompt.SystemPromptBuilder;
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtime.AgentRuntimeManager;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.session.SessionConfig;
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.settings.Settings;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.settings.SettingsManager;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.skill.SandboxSkillParser;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.skill.SkillLoader;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.skill.SkillManager;
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.catalog.ToolCatalog;
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.catalog.ToolSelection;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -54,8 +48,8 @@ import reactor.netty.http.server.HttpServerResponse;
  *   <li>PUT    /api/settings/customModels — replace customModels (refreshes ModelRegistry)</li>
  * </ul>
  *
- * @version [br_eCampusCore 26.0.0, 2026/08/17]
- * @since [br_eCampusCore 26.0.0]
+ * @version [br_eCampusCore 25.1.0_Next, 2026/05/06]
+ * @since [br_eCampusCore 25.1.0_Next]
  */
 public class ServerMode {
 
@@ -83,11 +77,6 @@ public class ServerMode {
     private final boolean sessionPersistenceEnabled;
     private final SettingsManager settingsManager;
     private final CustomModelLoader customModelLoader;
-    private final AgentRuntimeManager agentRuntimeManager;
-    private final String defaultAgentId;
-    private final ToolCatalog toolCatalog;
-    private final ToolSelection toolSelection;
-    private final Function<Settings.ToolsSettings, ToolSelection> toolSelectionResolver;
 
     /**
      * Additional {@link RouterFunction}s contributed by other modules (e.g. the in-process
@@ -189,118 +178,6 @@ public class ServerMode {
             boolean sessionPersistenceEnabled,
             SettingsManager settingsManager,
             CustomModelLoader customModelLoader) {
-        this(
-                aiService,
-                modelRegistry,
-                promptBuilder,
-                tools,
-                null,
-                ToolSelection.all(),
-                baseConfig,
-                port,
-                host,
-                sandboxParser,
-                useSandbox,
-                modelCatalog,
-                sessionPersistenceEnabled,
-                settingsManager,
-                customModelLoader);
-    }
-
-    public ServerMode(
-            CampusClawAiService aiService,
-            ModelRegistry modelRegistry,
-            SystemPromptBuilder promptBuilder,
-            List<AgentTool> tools,
-            ToolCatalog toolCatalog,
-            ToolSelection toolSelection,
-            SessionConfig baseConfig,
-            int port,
-            String host,
-            SandboxSkillParser sandboxParser,
-            boolean useSandbox,
-            ModelCatalogService modelCatalog,
-            boolean sessionPersistenceEnabled,
-            SettingsManager settingsManager,
-            CustomModelLoader customModelLoader) {
-        this(
-                aiService,
-                modelRegistry,
-                promptBuilder,
-                tools,
-                toolCatalog,
-                toolSelection,
-                baseConfig,
-                port,
-                host,
-                sandboxParser,
-                useSandbox,
-                modelCatalog,
-                sessionPersistenceEnabled,
-                settingsManager,
-                customModelLoader,
-                null,
-                null);
-    }
-
-    public ServerMode(
-            CampusClawAiService aiService,
-            ModelRegistry modelRegistry,
-            SystemPromptBuilder promptBuilder,
-            List<AgentTool> tools,
-            ToolCatalog toolCatalog,
-            ToolSelection toolSelection,
-            SessionConfig baseConfig,
-            int port,
-            String host,
-            SandboxSkillParser sandboxParser,
-            boolean useSandbox,
-            ModelCatalogService modelCatalog,
-            boolean sessionPersistenceEnabled,
-            SettingsManager settingsManager,
-            CustomModelLoader customModelLoader,
-            AgentRuntimeManager agentRuntimeManager,
-            String defaultAgentId) {
-        this(
-                aiService,
-                modelRegistry,
-                promptBuilder,
-                tools,
-                toolCatalog,
-                toolSelection,
-                baseConfig,
-                port,
-                host,
-                sandboxParser,
-                useSandbox,
-                modelCatalog,
-                sessionPersistenceEnabled,
-                settingsManager,
-                customModelLoader,
-                agentRuntimeManager,
-                defaultAgentId,
-                fixedSelectionResolver(toolSelection));
-    }
-
-    public ServerMode(
-            CampusClawAiService aiService,
-            ModelRegistry modelRegistry,
-            SystemPromptBuilder promptBuilder,
-            List<AgentTool> tools,
-            ToolCatalog toolCatalog,
-            ToolSelection toolSelection,
-            SessionConfig baseConfig,
-            int port,
-            String host,
-            SandboxSkillParser sandboxParser,
-            boolean useSandbox,
-            ModelCatalogService modelCatalog,
-            boolean sessionPersistenceEnabled,
-            SettingsManager settingsManager,
-            CustomModelLoader customModelLoader,
-            AgentRuntimeManager agentRuntimeManager,
-            String defaultAgentId,
-            Function<Settings.ToolsSettings, ToolSelection> toolSelectionResolver) {
         this.aiService = aiService;
         this.modelRegistry = modelRegistry;
         this.promptBuilder = promptBuilder;
@@ -314,12 +191,6 @@ public class ServerMode {
         this.sessionPersistenceEnabled = sessionPersistenceEnabled;
         this.settingsManager = settingsManager;
         this.customModelLoader = customModelLoader;
-        this.agentRuntimeManager = agentRuntimeManager;
-        this.defaultAgentId = defaultAgentId;
-        this.toolCatalog = toolCatalog;
-        this.toolSelection = toolSelection != null ? toolSelection : ToolSelection.all();
-        this.toolSelectionResolver =
-                toolSelectionResolver != null ? toolSelectionResolver : fixedSelectionResolver(this.toolSelection);
     }
 
     /**
@@ -341,16 +212,10 @@ public class ServerMode {
                 modelRegistry,
                 promptBuilder,
                 tools,
-                toolCatalog,
-                toolSelection,
                 baseConfig,
                 sandboxParser,
                 useSandbox,
-                sessionPersistenceEnabled,
-                settingsManager,
-                agentRuntimeManager,
-                defaultAgentId,
-                toolSelectionResolver);
+                sessionPersistenceEnabled);
         var chatHandler = new ChatHandler(sessionPool);
         var wsHandler = new ChatWebSocketHandler(sessionPool, modelCatalog);
         var skillHandler = new SkillHandler(
@@ -369,11 +234,6 @@ public class ServerMode {
         sessionPool.shutdown();
     }
 
-    private static Function<Settings.ToolsSettings, ToolSelection> fixedSelectionResolver(ToolSelection selection) {
-        ToolSelection fixed = selection != null ? selection : ToolSelection.all();
-        return ignored -> fixed;
-    }
-
     private RouterFunction<ServerResponse> buildRoutes(
             ChatHandler chatHandler,
             SkillHandler skillHandler,
@@ -383,20 +243,14 @@ public class ServerMode {
         var builder = RouterFunctions.route()
                 .GET("/api/health", req -> ServerResponse.ok().bodyValue(Map.of("status", "ok")))
                 .POST("/api/chat", chatHandler::chat)
-                .GET("/api/conversations", req -> reactor.core.publisher.Mono.fromCallable(() -> {
-                            Path cwd = sessionPool.conversationCwd(
-                                    req.queryParam("agent_id").orElse(null));
-                            return Map.of(
-                                    "conversations",
-                                    com.huawei.hicampus.mate.matecampusclaw.codingagent.session.ConversationLister.toWireFormat(
-                                            conversationLister.list(cwd.toString())));
-                        })
-                        .subscribeOn(reactor.core.scheduler.Schedulers.boundedElastic())
-                        .flatMap(result -> ServerResponse.ok().bodyValue(result)))
+                .GET("/api/conversations", req -> ServerResponse.ok()
+                        .bodyValue(Map.of(
+                                "conversations",
+                                com.huawei.hicampus.mate.matecampusclaw.codingagent.session.ConversationLister.toWireFormat(
+                                        conversationLister.listForServer()))))
                 .DELETE("/api/conversations/{id}", req -> {
                     String id = req.pathVariable("id");
-                    String agentId = req.queryParam("agent_id").orElse(null);
-                    boolean removed = sessionPool.remove(agentId, id);
+                    boolean removed = sessionPool.remove(id);
                     if (removed) {
                         return ServerResponse.ok().bodyValue(Map.of("message", "Removed conversation: " + id));
                     }
@@ -406,11 +260,7 @@ public class ServerMode {
                 .GET("/api/skills", skillHandler::list)
                 .DELETE("/api/skills/{name}", skillHandler::delete)
                 .POST("/api/skills/{name}/enable", skillHandler::enable)
-                .POST("/api/skills/{name}/disable", skillHandler::disable)
-                .GET("/api/tools", req -> ServerResponse.ok().bodyValue(sessionPool.toolStatus()))
-                .POST("/api/tools/reload", req -> reactor.core.publisher.Mono.fromCallable(sessionPool::reloadTools)
-                        .subscribeOn(reactor.core.scheduler.Schedulers.boundedElastic())
-                        .flatMap(result -> ServerResponse.ok().bodyValue(result)));
+                .POST("/api/skills/{name}/disable", skillHandler::disable);
         if (settingsHandler != null) {
             builder = builder.GET("/api/settings/models", settingsHandler::getModels)
                     .PUT("/api/settings/models/default", settingsHandler::setDefaultModel)
@@ -445,8 +295,7 @@ public class ServerMode {
         });
         routes.get("/api/ws/chat", (req, res) -> {
             String convId = extractQueryParam(req.uri(), "conversation_id");
-            String agentId = extractQueryParam(req.uri(), "agent_id");
-            return res.sendWebsocket((in, out) -> wsHandler.handle(in, out, agentId, convId));
+            return res.sendWebsocket((in, out) -> wsHandler.handle(in, out, convId));
         });
 
         // All other routes (the WebFlux RouterFunctions adapter) go through

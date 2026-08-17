@@ -21,8 +21,8 @@ import org.springframework.stereotype.Service;
  * <p>Generates conditional guidelines based on available tools,
  * matching the campusclaw TS system prompt builder.
  *
- * @version [br_eCampusCore 26.0.0, 2026/08/17]
- * @since [br_eCampusCore 26.0.0]
+ * @version [br_eCampusCore 25.1.0_Next, 2026/05/06]
+ * @since [br_eCampusCore 25.1.0_Next]
  */
 @Service
 public class SystemPromptBuilder {
@@ -86,7 +86,7 @@ public class SystemPromptBuilder {
         }
 
         // 3. 技能
-        String skillsBlock = SkillPromptFormatter.format(config.skills(), config.skillActivationRequired());
+        String skillsBlock = SkillPromptFormatter.format(config.skills());
         if (!skillsBlock.isEmpty()) {
             sb.append("\n\n# 技能\n\n");
             sb.append(skillsBlock);
