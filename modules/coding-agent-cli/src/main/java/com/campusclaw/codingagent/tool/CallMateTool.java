@@ -29,7 +29,8 @@ import org.slf4j.LoggerFactory;
  * <p>Permission check happens <strong>inside</strong> execute (not in a before-hook)
  * because Mate tools do not pass through {@code ToolExecutionPipeline}.
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/08/13]
+ * @version [br_eCampusCore 26.0.0, 2026/08/17]
+ * @since [br_eCampusCore 26.0.0]
  */
 public class CallMateTool implements AgentTool {
 

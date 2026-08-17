@@ -21,7 +21,8 @@ import org.slf4j.LoggerFactory;
  * {@code UnsupportedOperationException} stub — the internal Mate HTTP calls
  * are tracked in {@code docs/DEFERRED.md}.
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/08/17]
+ * @version [br_eCampusCore 26.0.0, 2026/08/17]
+ * @since [br_eCampusCore 26.0.0]
  */
 public class HttpMateToolClient implements MateToolClient {
 
