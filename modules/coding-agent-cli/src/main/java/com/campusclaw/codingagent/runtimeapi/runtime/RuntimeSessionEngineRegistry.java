@@ -13,6 +13,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantLock;
 
 import com.campusclaw.agent.Agent;
+import com.campusclaw.agent.queue.MessageQueue.DeliveryMode;
 import com.campusclaw.agent.subagent.SubAgentRegistry;
 import com.campusclaw.agent.tool.AgentTool;
 import com.campusclaw.ai.CampusClawAiService;
@@ -104,6 +105,8 @@ public class RuntimeSessionEngineRegistry {
         agent.setSystemPrompt(readSystemPrompt(snapshot.runtimeDirectory()));
         agent.setTools(tools);
         agent.setThinkingLevel(thinking ? ThinkingLevel.MEDIUM : ThinkingLevel.OFF);
+        agent.setSteeringMode(DeliveryMode.ONE_AT_A_TIME);
+        agent.setFollowUpMode(DeliveryMode.ONE_AT_A_TIME);
         return agent;
     }
 

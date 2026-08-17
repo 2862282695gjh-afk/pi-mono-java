@@ -36,6 +36,7 @@ public class RuntimeApiRoutes {
             RuntimeSessionController controller,
             RuntimeEventController eventController,
             RuntimeSessionConfigurationController configurationController,
+            RuntimeSessionControlController controlController,
             RuntimeErrorFilter errorFilter,
             RuntimeAuthFilter authFilter) {
         String createPath = RuntimeApiConstants.BASE_PATH + "/agents/{agent_id}/sessions";
@@ -47,6 +48,9 @@ public class RuntimeApiRoutes {
                 .andRoute(GET(MODELS), configurationController::listModels)
                 .andRoute(PUT(SESSIONS + "/model"), configurationController::changeModel)
                 .andRoute(PUT(SESSIONS + "/thinking"), configurationController::changeThinking)
+                .andRoute(POST(SESSIONS + "/steers"), controlController::steer)
+                .andRoute(POST(SESSIONS + "/follow-ups"), controlController::followUp)
+                .andRoute(POST(SESSIONS + "/abort"), controlController::abort)
                 .filter(authFilter)
                 .filter(errorFilter);
     }

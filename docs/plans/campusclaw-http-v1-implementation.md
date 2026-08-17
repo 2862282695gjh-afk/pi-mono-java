@@ -1,6 +1,6 @@
 # CampusClaw Runtime HTTP+SSE V1 实施计划
 
-- 计划版本：1.4.0
+- 计划版本：1.5.0
 - 更新日期：2026-08-18
 - 状态：实施中
 - 实际源码基线：`889dcb1b7dd5f47addd3b372ef31392c9044ca24`
@@ -77,9 +77,9 @@
 | 6 | `GET /campusclaw-service/v1/sessions/{session_id}/models` | `current_model_id` 与 `models` 字符串数组 | 已实现并验证 |
 | 7 | `PUT /campusclaw-service/v1/sessions/{session_id}/model` | idle、强 If-Match、无操作不增版本 | 已实现并验证 |
 | 8 | `PUT /campusclaw-service/v1/sessions/{session_id}/thinking` | 布尔深度思考、idle、强 If-Match | 已实现并验证 |
-| 9 | `POST /campusclaw-service/v1/sessions/{session_id}/steers` | running、文本、优先队列、202 | 待实施 |
-| 10 | `POST /campusclaw-service/v1/sessions/{session_id}/follow-ups` | running、文本、FIFO、202 | 待实施 |
-| 11 | `POST /campusclaw-service/v1/sessions/{session_id}/abort` | idle 幂等、运行中级联取消并清队列、204 | 待实施 |
+| 9 | `POST /campusclaw-service/v1/sessions/{session_id}/steers` | running、文本、优先队列、202 | 已实现并验证 |
+| 10 | `POST /campusclaw-service/v1/sessions/{session_id}/follow-ups` | running、文本、FIFO、202 | 已实现并验证 |
+| 11 | `POST /campusclaw-service/v1/sessions/{session_id}/abort` | idle 幂等、运行中级联取消并清队列、204 | 已实现并验证 |
 
 ## 验证矩阵
 
@@ -204,6 +204,38 @@ abort 已接受的执行。`RuntimeFileResolver` 是可替换的公司文件服�
 与配置变更产生窗口，因此把操作锁提升到 `RuntimeSessionEngineRegistry` 的固定条带锁；
 即使 Session 尚未恢复到内存，也能按 `session_id` 串行化恢复、配置和 Agent 同步。
 
+## 第四批接口验证证据
+
+接口 9—11 已完成 Session 级 Steer、FollowUp 与 Abort。两个消息接口只把文本放入
+当前 active execution 的进程内队列，返回 202 时不创建公共资源也不提前写 Entry；
+Agent 实际投递时才复用既有 `user.message` 持久化与 SSE。两个队列固定
+`ONE_AT_A_TIME`，Steer 在无工具自然结束和工具阶段之后都优先于 FollowUp。
+Abort 关闭消息接受、清空未投递队列、取消当前 Agent，并等待持久化状态和 SSE
+共同收敛到 idle 后返回 204。
+
+已真实执行以下验证：
+
+- `AgentLoopTest`、`RuntimeSessionControlRoutesTest`、
+  `RuntimeSessionControlServiceTest` 与 `RuntimeEventServiceTest`：24 个测试，
+  0 失败、0 错误、0 跳过；覆盖无工具 Turn 的 Steer 优先级、逐条投递、严格请求体、
+  JWT/APPKEY、端点专属错误码、202 ResultBean、idle 409、Abort 204、自然结束与消息
+  接受竞态，以及自然结束与 Abort 竞态。
+- 扩展后的 `RuntimeHttpProcessOpenGaussIT` 启动最终可执行 JAR、真实 Reactor Netty、
+  本地模型 SSE 协议桩和官方 openGauss 7.0.0-RC3。在首个模型响应保持打开时，另行发出
+  Steer 与 FollowUp HTTP 请求，验证同一 POST `/events` 流中三组
+  `user.message → assistant.message` 严格按 Steer、FollowUp 顺序输出，随后逐页读取
+  六条持久化 Entry；另一个 Session 在模型请求未完成时 Abort，原 SSE 以
+  `session.status.idle` 和 `stream.end(reason=aborted)` 收尾，重复 Abort 仍返回 204。
+  该进程测试 1 个测试，0 失败、0 错误、0 跳过。
+- 主仓完整 `./mvnw -B verify` 执行 1352 个 coding-agent 测试、271 个 Agent Core
+  测试及全部其他上游模块测试，0 失败、0 错误、0 跳过，并重新产出可执行 JAR。
+
+进程测试首次扩展后仍沿用“历史只有两条”的旧分页断言，因此在第二页仍有
+`next_page` 时失败；把断言改为逐页遍历六条 Entry 后，完整真实进程测试通过。
+并发审计同时发现消息可能在 Agent 自然结束与完成回调之间被接受，现由 Session
+条带操作锁和 `RuntimeActiveExecution.acceptingControls` 共同线性化：消息先入队就继续
+同一 execution，完成先发生则关闭接受并返回 `SESSION_NOT_RUNNING`，不会产生 202 后丢消息。
+
 ## 推进日志
 
 - 2026-08-18：从最新 `origin/main` 创建独立工作树和
@@ -223,4 +255,6 @@ abort 已接受的执行。`RuntimeFileResolver` 是可替换的公司文件服�
   测试通过。
 - 2026-08-18：完成接口 6—8 的模型列表、模型切换和深度思考配置；强 ETag/CAS、
   同值无操作、模型能力归一、Registry 条带锁、真实 openGauss 并发、主仓与镜像
-  可执行 JAR 进程测试以及两套完整回归均已通过。
+  全量验证通过。
+- 2026-08-18：完成接口 9—11 的 Steer、FollowUp 和 Abort；消息接受/自然结束竞态、
+  Abort/自然结束竞态、真实并发 HTTP+SSE 与 openGauss 持久化顺序均已验证。

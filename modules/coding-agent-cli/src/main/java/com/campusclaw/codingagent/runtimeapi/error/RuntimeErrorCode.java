@@ -36,6 +36,12 @@ public enum RuntimeErrorCode {
     SESSION_VERSION_MISMATCH("Session 已发生变化，请刷新后重试。", "The Session has changed. Refresh it before retrying."),
     SESSION_MODEL_UPDATE_FAILED("Session 模型更新失败。", "Failed to update the Session model."),
     SESSION_THINKING_UPDATE_FAILED("Session 深度思考设置更新失败。", "Failed to update the Session deep-thinking setting."),
+    INVALID_STEER_REQUEST("Steering Message 请求不符合约束。", "The Steering Message request is invalid."),
+    INVALID_FOLLOW_UP_REQUEST("FollowUp Message 请求不符合约束。", "The FollowUp Message request is invalid."),
+    SESSION_NOT_RUNNING("Session 当前没有正在执行的任务。", "The Session has no active execution."),
+    STEER_ACCEPTANCE_FAILED("Steering Message 接收失败。", "Failed to accept the Steering Message."),
+    FOLLOW_UP_ACCEPTANCE_FAILED("FollowUp Message 接收失败。", "Failed to accept the FollowUp Message."),
+    SESSION_ABORT_FAILED("Session 当前执行中止失败。", "Failed to abort the current Session execution."),
     MANAGER_UNAVAILABLE("Model Manager 暂时不可用，请稍后重试。", "Model Manager is temporarily unavailable. Try again later."),
     INTERNAL_ERROR("服务内部错误。", "Internal service error.");
 

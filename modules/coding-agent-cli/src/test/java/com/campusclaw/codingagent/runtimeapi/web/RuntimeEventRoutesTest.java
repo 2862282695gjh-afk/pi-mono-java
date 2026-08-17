@@ -58,6 +58,7 @@ class RuntimeEventRoutesTest {
                         mock(RuntimeSessionController.class),
                         eventController,
                         mock(RuntimeSessionConfigurationController.class),
+                        mock(RuntimeSessionControlController.class),
                         new RuntimeErrorFilter(),
                         new RuntimeAuthFilter(authenticator));
         client = WebTestClient.bindToRouterFunction(routes).build();
