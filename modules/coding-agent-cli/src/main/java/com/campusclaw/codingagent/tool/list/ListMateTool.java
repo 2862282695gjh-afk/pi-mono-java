@@ -2,17 +2,18 @@
  * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
  */
 
-package com.huawei.hicampus.mate.matecampusclaw.codingagent.tool;
+package com.campusclaw.codingagent.tool.list;
 
 import java.util.List;
 import java.util.Map;
 
-import com.huawei.hicampus.mate.matecampusclaw.agent.tool.AgentTool;
-import com.huawei.hicampus.mate.matecampusclaw.agent.tool.AgentToolResult;
-import com.huawei.hicampus.mate.matecampusclaw.agent.tool.AgentToolUpdateCallback;
-import com.huawei.hicampus.mate.matecampusclaw.agent.tool.CancellationToken;
-import com.huawei.hicampus.mate.matecampusclaw.ai.types.ContentBlock;
-import com.huawei.hicampus.mate.matecampusclaw.ai.types.TextContent;
+import com.campusclaw.agent.tool.AgentTool;
+import com.campusclaw.agent.tool.AgentToolResult;
+import com.campusclaw.agent.tool.AgentToolUpdateCallback;
+import com.campusclaw.agent.tool.CancellationToken;
+import com.campusclaw.ai.types.ContentBlock;
+import com.campusclaw.ai.types.TextContent;
+import com.campusclaw.codingagent.tool.call.CallMateTool;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 

@@ -4,7 +4,7 @@
 
 package com.huawei.hicampus.mate.matecampusclaw.codingagent.config;
 
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.CallMateTool;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.call.CallMateTool;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 

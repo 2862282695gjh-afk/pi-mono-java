@@ -15,11 +15,11 @@ import com.huawei.hicampus.mate.matecampusclaw.agent.tool.ToolExecutionMode;
 import com.huawei.hicampus.mate.matecampusclaw.agent.tool.ToolExecutionPipeline;
 import com.huawei.hicampus.mate.matecampusclaw.ai.types.ToolCall;
 import com.huawei.hicampus.mate.matecampusclaw.ai.types.ToolResultMessage;
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.CallMateTool;
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.CallMateTool.MateCredentials;
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.CallMateTool.MateToolMeta;
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.ListMateTool;
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.MockMateToolClient;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.call.CallMateTool;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.call.CallMateTool.MateCredentials;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.call.CallMateTool.MateToolMeta;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.call.MockMateToolClient;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.list.ListMateTool;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
