@@ -1,6 +1,0 @@
-.venv/
-__pycache__/
-*.pyc
-*.model_raw.txt
-rules.generated.json
-**/target/
