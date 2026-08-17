@@ -86,4 +86,54 @@ class CallMateToolTest {
         assertEquals("id", client.lastCallCredentials().xHwId());
         assertEquals("key", client.lastCallCredentials().xHwAppKey());
     }
+
+    @Test
+    void missingRequiredArgumentThrowsBeforeRemoteCall() {
+        client.addTool(new MateToolMeta(
+                "needArg",
+                "n",
+                Map.of(
+                        "type",
+                        "object",
+                        "required",
+                        List.of("query"),
+                        "properties",
+                        Map.of("query", Map.of("type", "string"))),
+                Map.of(),
+                true,
+                "allow"));
+        tool.updateMeta(List.of(new MateToolMeta(
+                "needArg",
+                "n",
+                Map.of(
+                        "type",
+                        "object",
+                        "required",
+                        List.of("query"),
+                        "properties",
+                        Map.of("query", Map.of("type", "string"))),
+                Map.of(),
+                true,
+                "allow")));
+        var ex = assertThrows(
+                IllegalArgumentException.class,
+                () -> tool.execute("t", Map.of("tool", "needArg", "args", Map.of()), null, null));
+        org.junit.jupiter.api.Assertions.assertTrue(ex.getMessage().contains("missing required"));
+        assertEquals(null, client.lastCalledTool());
+    }
+
+    @Test
+    void wrongArgumentTypeThrowsBeforeRemoteCall() {
+        Map<String, Object> schema = Map.of(
+                "type", "object",
+                "required", List.of("count"),
+                "properties", Map.of("count", Map.of("type", "integer")));
+        client.addTool(new MateToolMeta("typed", "t2", schema, Map.of(), true, "allow"));
+        tool.updateMeta(List.of(new MateToolMeta("typed", "t2", schema, Map.of(), true, "allow")));
+        var ex = assertThrows(
+                IllegalArgumentException.class,
+                () -> tool.execute("t", Map.of("tool", "typed", "args", Map.of("count", "not-a-number")), null, null));
+        org.junit.jupiter.api.Assertions.assertTrue(ex.getMessage().contains("expects integer"));
+        assertEquals(null, client.lastCalledTool());
+    }
 }

@@ -38,8 +38,7 @@ class CallMateToolTest {
         client.addTool(new MateToolMeta("export", "e", Map.of(), Map.of(), false, "ask"));
         client.addTool(new MateToolMeta("delete", "d", Map.of(), Map.of(), false, "deny"));
         approvalResult = true;
-        tool = new CallMateTool(client, (t, a, d) -> approvalResult,
-                MateCredentials.appKey("id", "key"));
+        tool = new CallMateTool(client, (t, a, d) -> approvalResult, MateCredentials.appKey("id", "key"));
         tool.updateMeta(List.of(
                 new MateToolMeta("query", "q", Map.of(), Map.of(), true, "allow"),
                 new MateToolMeta("export", "e", Map.of(), Map.of(), false, "ask"),
@@ -48,8 +47,7 @@ class CallMateToolTest {
 
     @Test
     void allowPermissionCallsThrough() {
-        var r = assertDoesNotThrow(() ->
-                tool.execute("t", Map.of("tool", "query", "args", Map.of()), null, null));
+        var r = assertDoesNotThrow(() -> tool.execute("t", Map.of("tool", "query", "args", Map.of()), null, null));
         assertEquals("query", client.lastCalledTool());
     }
 
@@ -63,22 +61,23 @@ class CallMateToolTest {
     @Test
     void askPermissionDeniedThrows() {
         approvalResult = false;
-        assertThrows(CallMateTool.MateToolExecutionException.class, () ->
-                tool.execute("t", Map.of("tool", "export"), null, null));
+        assertThrows(
+                CallMateTool.MateToolExecutionException.class,
+                () -> tool.execute("t", Map.of("tool", "export"), null, null));
         assertEquals(null, client.lastCalledTool());
     }
 
     @Test
     void denyPermissionThrows() {
-        assertThrows(CallMateTool.MateToolExecutionException.class, () ->
-                tool.execute("t", Map.of("tool", "delete"), null, null));
+        assertThrows(
+                CallMateTool.MateToolExecutionException.class,
+                () -> tool.execute("t", Map.of("tool", "delete"), null, null));
         assertEquals(null, client.lastCalledTool());
     }
 
     @Test
     void missingToolParamThrows() {
-        assertThrows(IllegalArgumentException.class, () ->
-                tool.execute("t", Map.of(), null, null));
+        assertThrows(IllegalArgumentException.class, () -> tool.execute("t", Map.of(), null, null));
     }
 
     @Test
@@ -86,5 +85,55 @@ class CallMateToolTest {
         tool.execute("t", Map.of("tool", "query"), null, null);
         assertEquals("id", client.lastCallCredentials().xHwId());
         assertEquals("key", client.lastCallCredentials().xHwAppKey());
+    }
+
+    @Test
+    void missingRequiredArgumentThrowsBeforeRemoteCall() {
+        client.addTool(new MateToolMeta(
+                "needArg",
+                "n",
+                Map.of(
+                        "type",
+                        "object",
+                        "required",
+                        List.of("query"),
+                        "properties",
+                        Map.of("query", Map.of("type", "string"))),
+                Map.of(),
+                true,
+                "allow"));
+        tool.updateMeta(List.of(new MateToolMeta(
+                "needArg",
+                "n",
+                Map.of(
+                        "type",
+                        "object",
+                        "required",
+                        List.of("query"),
+                        "properties",
+                        Map.of("query", Map.of("type", "string"))),
+                Map.of(),
+                true,
+                "allow")));
+        var ex = assertThrows(
+                IllegalArgumentException.class,
+                () -> tool.execute("t", Map.of("tool", "needArg", "args", Map.of()), null, null));
+        org.junit.jupiter.api.Assertions.assertTrue(ex.getMessage().contains("missing required"));
+        assertEquals(null, client.lastCalledTool());
+    }
+
+    @Test
+    void wrongArgumentTypeThrowsBeforeRemoteCall() {
+        Map<String, Object> schema = Map.of(
+                "type", "object",
+                "required", List.of("count"),
+                "properties", Map.of("count", Map.of("type", "integer")));
+        client.addTool(new MateToolMeta("typed", "t2", schema, Map.of(), true, "allow"));
+        tool.updateMeta(List.of(new MateToolMeta("typed", "t2", schema, Map.of(), true, "allow")));
+        var ex = assertThrows(
+                IllegalArgumentException.class,
+                () -> tool.execute("t", Map.of("tool", "typed", "args", Map.of("count", "not-a-number")), null, null));
+        org.junit.jupiter.api.Assertions.assertTrue(ex.getMessage().contains("expects integer"));
+        assertEquals(null, client.lastCalledTool());
     }
 }

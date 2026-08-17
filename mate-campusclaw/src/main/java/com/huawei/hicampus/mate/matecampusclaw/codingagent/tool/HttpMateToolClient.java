@@ -40,9 +40,7 @@ public class HttpMateToolClient implements MateToolClient {
      * @param baseUrl the Mate tool server base URL (no trailing slash required)
      */
     public HttpMateToolClient(String baseUrl) {
-        this.baseUrl = baseUrl != null && baseUrl.endsWith("/")
-                ? baseUrl.substring(0, baseUrl.length() - 1)
-                : baseUrl;
+        this.baseUrl = baseUrl != null && baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
     }
 
     @Override

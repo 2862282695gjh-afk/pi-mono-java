@@ -111,6 +111,11 @@ public class CallMateTool implements AgentTool {
         MateToolMeta meta = metaCache.get(tool);
         String permission = (meta != null && meta.permission() != null) ? meta.permission() : MateToolMeta.ALLOW;
 
+        // ---- validate args against the cached tool inputSchema ----
+        if (meta != null && meta.inputSchema() != null && !meta.inputSchema().isEmpty()) {
+            validateAgainstSchema(tool, toolArgs, meta.inputSchema());
+        }
+
         log.info("callMateTool: tool={} permission={}", tool, permission);
 
         if (MateToolMeta.DENY.equals(permission)) {
@@ -168,6 +173,62 @@ public class CallMateTool implements AgentTool {
     }
 
     /**
+     * Validates tool args against the tool's declared JSON Schema (required
+     * fields and basic type names). Fails fast before the permission check and
+     * the remote call so bad params surface locally, not at the Mate server.
+     *
+     * @param tool the tool name (for error messages)
+     * @param args the tool arguments (may be null, treated as empty)
+     * @param schema the tool's JSON Schema object
+     * @throws IllegalArgumentException when a required argument is missing or a
+     *         value does not match the declared type
+     */
+    private static void validateAgainstSchema(String tool, Map<String, Object> args, Map<String, Object> schema) {
+        Map<String, Object> effective = args != null ? args : Map.of();
+        Object requiredRaw = schema.get("required");
+        if (requiredRaw instanceof List<?> required) {
+            for (Object req : required) {
+                if (!effective.containsKey(String.valueOf(req))) {
+                    throw new IllegalArgumentException("Tool '" + tool + "' missing required argument: " + req);
+                }
+            }
+        }
+        Object propsRaw = schema.get("properties");
+        if (propsRaw instanceof Map<?, ?> properties) {
+            for (var entry : effective.entrySet()) {
+                Object propSchema = properties.get(entry.getKey());
+                if (propSchema instanceof Map<?, ?> prop) {
+                    Object type = prop.get("type");
+                    if (type != null && !matchesType(entry.getValue(), String.valueOf(type))) {
+                        throw new IllegalArgumentException("Tool '" + tool + "' argument '"
+                                + entry.getKey() + "' expects " + type + ", got "
+                                + typeName(entry.getValue()));
+                    }
+                }
+            }
+        }
+    }
+
+    private static boolean matchesType(Object value, String type) {
+        return switch (type) {
+            case "string" -> value instanceof String;
+            case "number" -> value instanceof Number;
+            case "integer" -> value instanceof Integer || value instanceof Long;
+            case "boolean" -> value instanceof Boolean;
+            case "object" -> value instanceof Map;
+            case "array" -> value instanceof List;
+            default -> true;
+        };
+    }
+
+    private static String typeName(Object value) {
+        if (value == null) {
+            return "null";
+        }
+        return value.getClass().getSimpleName().toLowerCase(java.util.Locale.ROOT);
+    }
+
+    /**
      * Thrown when the Mate server reports an execution error, so that
      * {@code ToolExecutionPipeline} marks the resulting {@code ToolResultMessage}
      * with {@code isError=true} via its exception catch path.
@@ -195,16 +256,16 @@ public class CallMateTool implements AgentTool {
      *
      * @param name tool name
      * @param description human-readable description
-     * @param inputScheme JSON schema for input
-     * @param outputScheme JSON schema for output
+     * @param inputSchema JSON schema for input
+     * @param outputSchema JSON schema for output
      * @param isConcurrencySafe whether this tool is safe to run concurrently
      * @param permission "allow", "ask", or "deny"
      */
     public record MateToolMeta(
             String name,
             String description,
-            Map<String, Object> inputScheme,
-            Map<String, Object> outputScheme,
+            Map<String, Object> inputSchema,
+            Map<String, Object> outputSchema,
             boolean isConcurrencySafe,
             String permission) {
 

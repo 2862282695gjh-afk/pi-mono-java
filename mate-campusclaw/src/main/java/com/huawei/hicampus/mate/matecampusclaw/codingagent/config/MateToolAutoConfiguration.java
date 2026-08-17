@@ -4,16 +4,15 @@
 
 package com.huawei.hicampus.mate.matecampusclaw.codingagent.config;
 
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.CallMateTool;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.HttpMateToolClient;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.ListMateTool;
+
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-
-import com.huawei.hicampus.mate.matecampusclaw.agent.tool.AgentTool;
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.CallMateTool;
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.HttpMateToolClient;
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.ListMateTool;
 
 /**
  * Auto-configuration wiring the Mate tool client and the two Mate AgentTools.
@@ -49,8 +48,8 @@ public class MateToolAutoConfiguration {
      */
     @Bean
     public CallMateTool callMateTool(CallMateTool.MateToolClient client, MateToolProperties properties) {
-        CallMateTool.MateCredentials credentials = CallMateTool.MateCredentials.appKey(
-                properties.getXHwId(), properties.getXHwAppKey());
+        CallMateTool.MateCredentials credentials =
+                CallMateTool.MateCredentials.appKey(properties.getXHwId(), properties.getXHwAppKey());
         return new CallMateTool(client, properties.getApprovalUi(), credentials);
     }
 

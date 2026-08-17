@@ -122,6 +122,11 @@ public class ListMateTool implements AgentTool {
                     .append("]: ")
                     .append(tool.description() != null ? tool.description() : "")
                     .append("\n");
+            if (tool.inputSchema() != null && !tool.inputSchema().isEmpty()) {
+                sb.append("      inputSchema: ")
+                        .append(MAPPER.writeValueAsString(tool.inputSchema()))
+                        .append("\n");
+            }
         }
 
         List<ContentBlock> blocks = List.of(new TextContent(sb.toString()));

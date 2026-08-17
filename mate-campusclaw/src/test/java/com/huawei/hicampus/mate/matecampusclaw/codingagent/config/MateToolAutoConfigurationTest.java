@@ -47,8 +47,7 @@ class MateToolAutoConfigurationTest {
         runner.run(context -> {
             assertThat(context).hasSingleBean(CallMateTool.class);
             assertThat(context).hasSingleBean(ListMateTool.class);
-            assertThat(context.getBeanNamesForType(AgentTool.class))
-                    .contains("callMateTool", "listMateTool");
+            assertThat(context.getBeanNamesForType(AgentTool.class)).contains("callMateTool", "listMateTool");
         });
     }
 
@@ -63,9 +62,8 @@ class MateToolAutoConfigurationTest {
 
     @Test
     void configuredCredentialsReachTheTool() {
-        runner.withPropertyValues(
-                "mate.tool.x-hw-id=hw-id-001",
-                "mate.tool.x-hw-appkey=hw-key-001").run(context -> {
+        runner.withPropertyValues("mate.tool.x-hw-id=hw-id-001", "mate.tool.x-hw-appkey=hw-key-001")
+                .run(context -> {
                     CallMateTool callMateTool = context.getBean(CallMateTool.class);
                     MateCredentials creds = callMateTool.credentials();
                     assertThat(creds.xHwId()).isEqualTo("hw-id-001");
@@ -76,21 +74,19 @@ class MateToolAutoConfigurationTest {
     @Test
     void mateErrorPropagatesThroughPipelineAsIsError() {
         MockMateToolClient client = new MockMateToolClient();
-        client.overrideCallResult(new CallMateTool.MateToolClient.ToolResult(
-                "mate exploded", null, true));
-        CallMateTool callMateTool = new CallMateTool(client,
-                (t, a, d) -> true, MateCredentials.appKey("id", "key"));
-        callMateTool.updateMeta(List.of(new MateToolMeta(
-                "boom", "b", Map.of(), Map.of(), true, "allow")));
+        client.overrideCallResult(new CallMateTool.MateToolClient.ToolResult("mate exploded", null, true));
+        CallMateTool callMateTool = new CallMateTool(client, (t, a, d) -> true, MateCredentials.appKey("id", "key"));
+        callMateTool.updateMeta(List.of(new MateToolMeta("boom", "b", Map.of(), Map.of(), true, "allow")));
 
         ToolCall toolCall = new ToolCall("call-1", "callMateTool", Map.of("tool", "boom"));
         ToolExecutionPipeline pipeline = new ToolExecutionPipeline();
 
         List<ToolResultMessage> results = pipeline.executeAll(
                 List.of(new ToolCallWithTool(toolCall, callMateTool, Map.of("tool", "boom"))),
-                ToolExecutionMode.SEQUENTIAL, new com.huawei.hicampus.mate.matecampusclaw.agent.tool.AgentContext(),
-                new com.huawei.hicampus.mate.matecampusclaw.agent.tool.CancellationToken(), event -> {
-                });
+                ToolExecutionMode.SEQUENTIAL,
+                new com.huawei.hicampus.mate.matecampusclaw.agent.tool.AgentContext(),
+                new com.huawei.hicampus.mate.matecampusclaw.agent.tool.CancellationToken(),
+                event -> {});
 
         assertThat(results).hasSize(1);
         assertThat(results.get(0).isError()).isTrue();
