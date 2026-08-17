@@ -18,6 +18,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 /**
@@ -36,6 +37,7 @@ public class MateServiceClient {
     private final ObjectMapper mapper;
     private final HttpClient httpClient;
 
+    @Autowired
     public MateServiceClient(AgentRuntimeProperties properties, ObjectMapper mapper) {
         this(
                 properties,
@@ -159,7 +161,15 @@ public class MateServiceClient {
             throw new AgentRuntimeException(
                     "campusmate.runtime.base-url is required when a managed Agent is not cached locally");
         }
-        return baseUrl.resolve(path);
+
+        // Concatenate instead of URI.resolve: the API paths are absolute-path
+        // segments (/mate-service/...) and resolve() would drop any base path
+        // such as http://host:port/mate-service, silently hitting the wrong URL.
+        String base = baseUrl.toString();
+        if (base.endsWith("/")) {
+            base = base.substring(0, base.length() - 1);
+        }
+        return URI.create(base + path);
     }
 
     /** CampusMate GetAgentRuntime response. */

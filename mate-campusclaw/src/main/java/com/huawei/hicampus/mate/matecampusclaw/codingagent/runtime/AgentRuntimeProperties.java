@@ -9,6 +9,7 @@ import java.nio.file.Path;
 import java.time.Duration;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.boot.context.properties.bind.ConstructorBinding;
 
 /**
  * CampusMate runtime API and local managed-agent cache settings.
@@ -50,6 +51,7 @@ public record AgentRuntimeProperties(
     /**
      * Applies local-cache and timeout defaults when configuration values are omitted.
      */
+    @ConstructorBinding
     public AgentRuntimeProperties {
         agentsRoot = agentsRoot == null ? DEFAULT_AGENTS_ROOT : agentsRoot;
         connectTimeout = connectTimeout == null ? DEFAULT_CONNECT_TIMEOUT : connectTimeout;
