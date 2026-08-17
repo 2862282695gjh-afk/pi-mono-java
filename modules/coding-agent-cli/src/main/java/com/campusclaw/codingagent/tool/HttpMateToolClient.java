@@ -4,11 +4,13 @@
 
 package com.campusclaw.codingagent.tool;
 
+import java.util.List;
+import java.util.Map;
+
 import com.campusclaw.codingagent.tool.CallMateTool.MateCredentials;
 import com.campusclaw.codingagent.tool.CallMateTool.MateToolClient;
 import com.campusclaw.codingagent.tool.CallMateTool.MateToolMeta;
-import java.util.List;
-import java.util.Map;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -26,8 +28,7 @@ public class HttpMateToolClient implements MateToolClient {
     private static final Logger log = LoggerFactory.getLogger(HttpMateToolClient.class);
 
     @Override
-    public List<MateToolMeta> listTools(String agentId, String skillId,
-            MateCredentials credentials) {
+    public List<MateToolMeta> listTools(String agentId, String skillId, MateCredentials credentials) {
         try {
             List<String> toolIds;
             if (agentId != null) {
@@ -48,8 +49,7 @@ public class HttpMateToolClient implements MateToolClient {
     }
 
     @Override
-    public ToolResult callTool(String tool, Map<String, Object> args,
-            MateCredentials credentials) {
+    public ToolResult callTool(String tool, Map<String, Object> args, MateCredentials credentials) {
         try {
             return invokeToolById(tool, args, credentials);
         } catch (Exception e) {
@@ -94,8 +94,7 @@ public class HttpMateToolClient implements MateToolClient {
      * @return full tool metadata list
      * @throws UnsupportedOperationException stub — real Mate call not yet wired
      */
-    protected List<MateToolMeta> queryToolMetaByIds(List<String> toolIds,
-            MateCredentials credentials) {
+    protected List<MateToolMeta> queryToolMetaByIds(List<String> toolIds, MateCredentials credentials) {
         throw new UnsupportedOperationException("queryToolMetaByIds: stub (see DEFERRED.md)");
     }
 
@@ -108,8 +107,7 @@ public class HttpMateToolClient implements MateToolClient {
      * @return tool execution result
      * @throws UnsupportedOperationException stub — real Mate call not yet wired
      */
-    protected ToolResult invokeToolById(String toolId, Map<String, Object> args,
-            MateCredentials credentials) {
+    protected ToolResult invokeToolById(String toolId, Map<String, Object> args, MateCredentials credentials) {
         throw new UnsupportedOperationException("invokeToolById: stub (see DEFERRED.md)");
     }
 }

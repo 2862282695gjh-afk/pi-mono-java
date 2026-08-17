@@ -4,6 +4,9 @@
 
 package com.campusclaw.codingagent.tool;
 
+import java.util.List;
+import java.util.Map;
+
 import com.campusclaw.agent.tool.AgentTool;
 import com.campusclaw.agent.tool.AgentToolResult;
 import com.campusclaw.agent.tool.AgentToolUpdateCallback;
@@ -12,8 +15,7 @@ import com.campusclaw.ai.types.ContentBlock;
 import com.campusclaw.ai.types.TextContent;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import java.util.List;
-import java.util.Map;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -33,9 +35,11 @@ public class ListMateTool implements AgentTool {
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private static final JsonNode PARAMETERS;
+
     static {
         try {
-            PARAMETERS = MAPPER.readTree("""
+            PARAMETERS = MAPPER.readTree(
+                    """
                     {"type":"object",
                      "properties":{
                        "agent_id":{"type":"string","description":"Agent ID to list authorized tools for"},
@@ -80,18 +84,19 @@ public class ListMateTool implements AgentTool {
     }
 
     @Override
-    public AgentToolResult execute(String toolCallId, Map<String, Object> params,
-            CancellationToken signal, AgentToolUpdateCallback onUpdate) throws Exception {
+    public AgentToolResult execute(
+            String toolCallId, Map<String, Object> params, CancellationToken signal, AgentToolUpdateCallback onUpdate)
+            throws Exception {
 
         String agentId = (String) params.get("agent_id");
         String skillId = (String) params.get("skill_id");
 
-        log.info("listMateTool: agent_id={} skill_id={}",
+        log.info(
+                "listMateTool: agent_id={} skill_id={}",
                 agentId != null ? agentId : "(none)",
                 skillId != null ? skillId : "(none)");
 
-        List<CallMateTool.MateToolMeta> tools = client.listTools(
-                agentId, skillId, callMateTool.credentials());
+        List<CallMateTool.MateToolMeta> tools = client.listTools(agentId, skillId, callMateTool.credentials());
 
         callMateTool.updateMeta(tools);
 
@@ -109,10 +114,13 @@ public class ListMateTool implements AgentTool {
         sb.append(": ").append(tools.size()).append(" tool(s)\n");
 
         for (CallMateTool.MateToolMeta tool : tools) {
-            sb.append("  - ").append(tool.name())
-              .append(" [").append(tool.permission() != null ? tool.permission() : "allow")
-              .append("]: ").append(tool.description() != null ? tool.description() : "")
-              .append("\n");
+            sb.append("  - ")
+                    .append(tool.name())
+                    .append(" [")
+                    .append(tool.permission() != null ? tool.permission() : "allow")
+                    .append("]: ")
+                    .append(tool.description() != null ? tool.description() : "")
+                    .append("\n");
         }
 
         List<ContentBlock> blocks = List.of(new TextContent(sb.toString()));

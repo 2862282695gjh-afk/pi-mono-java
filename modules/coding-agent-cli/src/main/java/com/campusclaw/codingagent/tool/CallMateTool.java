@@ -4,6 +4,10 @@
 
 package com.campusclaw.codingagent.tool;
 
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+
 import com.campusclaw.agent.tool.AgentTool;
 import com.campusclaw.agent.tool.AgentToolResult;
 import com.campusclaw.agent.tool.AgentToolUpdateCallback;
@@ -12,9 +16,7 @@ import com.campusclaw.ai.types.ContentBlock;
 import com.campusclaw.ai.types.TextContent;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import java.util.List;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -41,9 +43,11 @@ public class CallMateTool implements AgentTool {
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private static final JsonNode PARAMETERS;
+
     static {
         try {
-            PARAMETERS = MAPPER.readTree("""
+            PARAMETERS = MAPPER.readTree(
+                    """
                     {"type":"object",
                      "properties":{
                        "tool":{"type":"string","description":"Tool name to call"},
@@ -62,8 +66,7 @@ public class CallMateTool implements AgentTool {
      * @param approvalUI  user-approval callback; null for non-interactive
      * @param credentials credentials passed to the Mate server on every call
      */
-    public CallMateTool(MateToolClient client, MateApprovalUI approvalUI,
-            MateCredentials credentials) {
+    public CallMateTool(MateToolClient client, MateApprovalUI approvalUI, MateCredentials credentials) {
         this.client = client;
         this.approvalUI = approvalUI;
         this.credentials = credentials;
@@ -92,8 +95,9 @@ public class CallMateTool implements AgentTool {
 
     @SuppressWarnings("unchecked")
     @Override
-    public AgentToolResult execute(String toolCallId, Map<String, Object> params,
-            CancellationToken signal, AgentToolUpdateCallback onUpdate) throws Exception {
+    public AgentToolResult execute(
+            String toolCallId, Map<String, Object> params, CancellationToken signal, AgentToolUpdateCallback onUpdate)
+            throws Exception {
 
         String tool = (String) params.get("tool");
         Map<String, Object> toolArgs = (Map<String, Object>) params.get("args");
@@ -104,9 +108,7 @@ public class CallMateTool implements AgentTool {
 
         // ---- permission check ----
         MateToolMeta meta = metaCache.get(tool);
-        String permission = (meta != null && meta.permission() != null)
-                ? meta.permission()
-                : MateToolMeta.ALLOW;
+        String permission = (meta != null && meta.permission() != null) ? meta.permission() : MateToolMeta.ALLOW;
 
         log.info("callMateTool: tool={} permission={}", tool, permission);
 
@@ -194,10 +196,7 @@ public class CallMateTool implements AgentTool {
      * @param xHwAppKey X-HW-APPKEY header (AppKey mode; null for JWT)
      * @param authorization Authorization header (JWT mode; null for AppKey)
      */
-    public record MateCredentials(
-            String xHwId,
-            String xHwAppKey,
-            String authorization) {
+    public record MateCredentials(String xHwId, String xHwAppKey, String authorization) {
 
         /**
          * Creates AppKey-mode credentials.
@@ -236,8 +235,7 @@ public class CallMateTool implements AgentTool {
          * @param credentials authentication credentials
          * @return tool metadata list
          */
-        List<MateToolMeta> listTools(String agentId, String skillId,
-                MateCredentials credentials);
+        List<MateToolMeta> listTools(String agentId, String skillId, MateCredentials credentials);
 
         /**
          * Calls a specific tool.
@@ -247,8 +245,7 @@ public class CallMateTool implements AgentTool {
          * @param credentials authentication credentials
          * @return tool execution result
          */
-        ToolResult callTool(String tool, Map<String, Object> args,
-                MateCredentials credentials);
+        ToolResult callTool(String tool, Map<String, Object> args, MateCredentials credentials);
 
         /**
          * Tool execution result.
