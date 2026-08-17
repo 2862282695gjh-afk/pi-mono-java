@@ -1,0 +1,116 @@
+/*
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
+ */
+
+package com.campusclaw.codingagent.config;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+import java.util.List;
+import java.util.Map;
+
+import com.campusclaw.agent.tool.AgentTool;
+import com.campusclaw.agent.tool.ToolCallWithTool;
+import com.campusclaw.agent.tool.ToolExecutionMode;
+import com.campusclaw.agent.tool.ToolExecutionPipeline;
+import com.campusclaw.ai.types.ToolCall;
+import com.campusclaw.ai.types.ToolResultMessage;
+import com.campusclaw.codingagent.tool.CallMateTool;
+import com.campusclaw.codingagent.tool.CallMateTool.MateCredentials;
+import com.campusclaw.codingagent.tool.CallMateTool.MateToolMeta;
+import com.campusclaw.codingagent.tool.ListMateTool;
+import com.campusclaw.codingagent.tool.MockMateToolClient;
+
+import org.junit.jupiter.api.Test;
+import org.springframework.boot.autoconfigure.AutoConfigurations;
+import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+
+/**
+ * ApplicationContext tests for {@link MateToolAutoConfiguration}: verifies the
+ * enable/disable switch registers (or excludes) the two Mate AgentTools, and
+ * that a Mate-side error propagates through {@link ToolExecutionPipeline} with
+ * {@code isError=true}.
+ *
+ * @version [br_eCampusCore 26.0.0, 2026/08/17]
+ * @since [br_eCampusCore 26.0.0]
+ */
+class MateToolAutoConfigurationTest {
+
+    private final ApplicationContextRunner runner = new ApplicationContextRunner()
+            .withConfiguration(AutoConfigurations.of(MateToolAutoConfiguration.class))
+            .withUserConfiguration(MockClientSupport.class);
+
+    @Test
+    void enabledByDefaultRegistersBothTools() {
+        runner.run(context -> {
+            assertThat(context).hasSingleBean(CallMateTool.class);
+            assertThat(context).hasSingleBean(ListMateTool.class);
+            assertThat(context.getBeanNamesForType(AgentTool.class)).contains("callMateTool", "listMateTool");
+        });
+    }
+
+    @Test
+    void disabledExcludesBothTools() {
+        runner.withPropertyValues("mate.tool.enabled=false").run(context -> {
+            assertThat(context).doesNotHaveBean(CallMateTool.class);
+            assertThat(context).doesNotHaveBean(ListMateTool.class);
+            assertThat(context.getBeanNamesForType(AgentTool.class)).isEmpty();
+        });
+    }
+
+    @Test
+    void configuredCredentialsReachTheTool() {
+        runner.withPropertyValues("mate.tool.x-hw-id=hw-id-001", "mate.tool.x-hw-appkey=hw-key-001")
+                .run(context -> {
+                    CallMateTool callMateTool = context.getBean(CallMateTool.class);
+                    MateCredentials creds = callMateTool.credentials();
+                    assertThat(creds.xHwId()).isEqualTo("hw-id-001");
+                    assertThat(creds.xHwAppKey()).isEqualTo("hw-key-001");
+                });
+    }
+
+    @Test
+    void mateErrorPropagatesThroughPipelineAsIsError() {
+        MockMateToolClient client = new MockMateToolClient();
+        client.overrideCallResult(new CallMateTool.MateToolClient.ToolResult("mate exploded", null, true));
+        CallMateTool callMateTool = new CallMateTool(client, (t, a, d) -> true, MateCredentials.appKey("id", "key"));
+        callMateTool.updateMeta(List.of(new MateToolMeta("boom", "b", Map.of(), Map.of(), true, "allow")));
+
+        ToolCall toolCall = new ToolCall("call-1", "callMateTool", Map.of("tool", "boom"));
+        ToolExecutionPipeline pipeline = new ToolExecutionPipeline();
+
+        List<ToolResultMessage> results = pipeline.executeAll(
+                List.of(new ToolCallWithTool(toolCall, callMateTool, Map.of("tool", "boom"))),
+                ToolExecutionMode.SEQUENTIAL,
+                new com.campusclaw.agent.tool.AgentContext(),
+                new com.campusclaw.agent.tool.CancellationToken(),
+                event -> {});
+
+        assertThat(results).hasSize(1);
+        assertThat(results.get(0).isError()).isTrue();
+    }
+
+    @SuppressWarnings("unused")
+    private void placeholder() {
+        // no-op kept for structural clarity
+    }
+
+    /**
+     * Support config providing a mock client bean (overrides the real HTTP stub).
+     */
+    @Configuration(proxyBeanMethods = false)
+    static class MockClientSupport {
+
+        /**
+         * Provides a mock Mate client bean for tests.
+         *
+         * @return the mock client
+         */
+        @Bean
+        CallMateTool.MateToolClient mateToolClient() {
+            return new MockMateToolClient();
+        }
+    }
+}
