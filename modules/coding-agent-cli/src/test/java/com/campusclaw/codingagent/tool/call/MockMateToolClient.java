@@ -17,7 +17,7 @@ import com.campusclaw.codingagent.tool.call.CallMateTool.MateToolMeta;
  * In-memory mock of {@link MateToolClient} for unit tests.
  * Records the last credentials it received so tests can assert credential passing.
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/08/17]
+ * @version [br_eCampusCore 26.0.0, 2026/08/17]
  */
 public class MockMateToolClient implements MateToolClient {
 

@@ -10,6 +10,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.util.List;
 import java.util.Map;
 
+import com.campusclaw.codingagent.tool.call.CallMateTool;
 import com.campusclaw.codingagent.tool.call.CallMateTool.MateCredentials;
 import com.campusclaw.codingagent.tool.call.CallMateTool.MateToolMeta;
 import com.campusclaw.codingagent.tool.call.MockMateToolClient;
@@ -21,7 +22,7 @@ import org.junit.jupiter.api.Test;
  * Unit tests for {@link ListMateTool}: authorization filtering, cache refresh,
  * and credential passing.
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/08/17]
+ * @version [br_eCampusCore 26.0.0, 2026/08/17]
  */
 class ListMateToolTest {
 

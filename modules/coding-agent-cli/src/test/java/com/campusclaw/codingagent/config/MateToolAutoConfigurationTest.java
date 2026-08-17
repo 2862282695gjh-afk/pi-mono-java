@@ -92,11 +92,6 @@ class MateToolAutoConfigurationTest {
         assertThat(results.get(0).isError()).isTrue();
     }
 
-    @SuppressWarnings("unused")
-    private void placeholder() {
-        // no-op kept for structural clarity
-    }
-
     /**
      * Support config providing a mock client bean (overrides the real HTTP stub).
      */
