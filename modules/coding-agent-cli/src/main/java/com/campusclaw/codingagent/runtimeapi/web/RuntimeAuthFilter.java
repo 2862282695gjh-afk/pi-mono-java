@@ -32,11 +32,9 @@ public class RuntimeAuthFilter implements HandlerFilterFunction<ServerResponse, 
     public Mono<ServerResponse> filter(ServerRequest request, HandlerFunction<ServerResponse> next) {
         boolean chinese = acceptsChinese(request);
         var auth = authenticator.authenticate(request);
-        ServerRequest enriched = ServerRequest.from(request)
-                .attribute(RuntimeRequestContext.AUTH_ATTRIBUTE, auth)
-                .attribute(RuntimeRequestContext.CHINESE_ATTRIBUTE, chinese)
-                .build();
-        return next.handle(enriched);
+        request.attributes().put(RuntimeRequestContext.AUTH_ATTRIBUTE, auth);
+        request.attributes().put(RuntimeRequestContext.CHINESE_ATTRIBUTE, chinese);
+        return next.handle(request);
     }
 
     private static boolean acceptsChinese(ServerRequest request) {

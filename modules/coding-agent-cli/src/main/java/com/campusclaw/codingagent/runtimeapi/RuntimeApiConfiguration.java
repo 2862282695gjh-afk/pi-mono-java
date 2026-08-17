@@ -10,6 +10,11 @@ import com.campusclaw.codingagent.runtimeapi.auth.RuntimeAuthProperties;
 import com.campusclaw.codingagent.runtimeapi.auth.RuntimeCredentialVerifier;
 import com.campusclaw.codingagent.runtimeapi.auth.StandaloneCredentialVerifier;
 import com.campusclaw.codingagent.runtimeapi.auth.StandaloneRuntimeAgentAuthorizer;
+import com.campusclaw.codingagent.runtimeapi.event.RandomRuntimeEntryIdGenerator;
+import com.campusclaw.codingagent.runtimeapi.event.RuntimeEntryIdGenerator;
+import com.campusclaw.codingagent.runtimeapi.event.RuntimeEventProperties;
+import com.campusclaw.codingagent.runtimeapi.event.RuntimeFileResolver;
+import com.campusclaw.codingagent.runtimeapi.event.StandaloneRuntimeFileResolver;
 import com.campusclaw.codingagent.runtimeapi.model.CatalogRuntimeModelManager;
 import com.campusclaw.codingagent.runtimeapi.model.RuntimeModelManager;
 import com.campusclaw.codingagent.runtimeapi.session.RandomSessionIdGenerator;
@@ -37,7 +42,8 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 @EnableConfigurationProperties({
     RuntimeAuthProperties.class,
     RuntimeTemplateProperties.class,
-    RuntimeCleanupProperties.class
+    RuntimeCleanupProperties.class,
+    RuntimeEventProperties.class
 })
 public class RuntimeApiConfiguration {
     @Bean
@@ -69,5 +75,17 @@ public class RuntimeApiConfiguration {
     @ConditionalOnMissingBean(SessionIdGenerator.class)
     public SessionIdGenerator randomSessionIdGenerator() {
         return new RandomSessionIdGenerator();
+    }
+
+    @Bean
+    @ConditionalOnMissingBean(RuntimeEntryIdGenerator.class)
+    public RuntimeEntryIdGenerator randomRuntimeEntryIdGenerator() {
+        return new RandomRuntimeEntryIdGenerator();
+    }
+
+    @Bean
+    @ConditionalOnMissingBean(RuntimeFileResolver.class)
+    public RuntimeFileResolver standaloneRuntimeFileResolver() {
+        return new StandaloneRuntimeFileResolver();
     }
 }

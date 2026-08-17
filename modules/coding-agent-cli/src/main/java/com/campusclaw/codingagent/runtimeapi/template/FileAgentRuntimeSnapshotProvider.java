@@ -43,17 +43,37 @@ public class FileAgentRuntimeSnapshotProvider implements AgentRuntimeSnapshotPro
         try {
             String revision = requiredText(
                     objectMapper.readTree(agentDirectory.resolve("current.json").toFile()), "bundleRevision");
-            Path runtimeDirectory = safeRevisionDirectory(agentDirectory, revision);
-            JsonNode settings = objectMapper.readTree(
-                    runtimeDirectory.resolve(".campusagent/settings.json").toFile());
-            String defaultModel = requiredText(settings, "defaultModel");
-            List<String> enabledModels = readModels(settings, defaultModel);
-            return new AgentRuntimeSnapshotDTO(agentId, revision, defaultModel, enabledModels, runtimeDirectory);
+            return readRevision(agentId, agentDirectory, revision);
         } catch (RuntimeApiException error) {
             throw error;
         } catch (IOException | IllegalArgumentException error) {
             throw new RuntimeApiException(HttpStatus.UNPROCESSABLE_ENTITY, RuntimeErrorCode.AGENT_NOT_AVAILABLE, error);
         }
+    }
+
+    @Override
+    public AgentRuntimeSnapshotDTO resolveRevision(String agentId, String bundleRevision) {
+        Path agentDirectory = safeAgentDirectory(agentId);
+        if (!Files.isDirectory(agentDirectory, LinkOption.NOFOLLOW_LINKS)) {
+            throw new RuntimeApiException(HttpStatus.NOT_FOUND, RuntimeErrorCode.AGENT_NOT_FOUND);
+        }
+        try {
+            return readRevision(agentId, agentDirectory, bundleRevision);
+        } catch (RuntimeApiException error) {
+            throw error;
+        } catch (IOException | IllegalArgumentException error) {
+            throw new RuntimeApiException(HttpStatus.UNPROCESSABLE_ENTITY, RuntimeErrorCode.AGENT_NOT_AVAILABLE, error);
+        }
+    }
+
+    private AgentRuntimeSnapshotDTO readRevision(String agentId, Path agentDirectory, String revision)
+            throws IOException {
+        Path runtimeDirectory = safeRevisionDirectory(agentDirectory, revision);
+        JsonNode settings = objectMapper.readTree(
+                runtimeDirectory.resolve(".campusagent/settings.json").toFile());
+        String defaultModel = requiredText(settings, "defaultModel");
+        List<String> enabledModels = readModels(settings, defaultModel);
+        return new AgentRuntimeSnapshotDTO(agentId, revision, defaultModel, enabledModels, runtimeDirectory);
     }
 
     private Path safeAgentDirectory(String agentId) {

@@ -10,11 +10,16 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 import javax.sql.DataSource;
 
+import com.campusclaw.codingagent.runtimeapi.dto.RuntimeEntryDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
 import com.campusclaw.codingagent.runtimeapi.mapper.RuntimeSessionMapper;
+import com.campusclaw.codingagent.runtimeapi.persistence.UserEventAcceptance.Status;
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 
@@ -182,6 +187,94 @@ class RuntimeSessionRepositoryOpenGaussIT {
                 .contains(session.getId());
     }
 
+    @Test
+    void acceptsAndAppendsStrictlyOrderedCurrentBranchEntries() {
+        RuntimeSessionDTO session = newSession("session_db_events");
+        repository.create(session);
+        OffsetDateTime acceptedAt = session.getCreatedAt().plusSeconds(1);
+        RuntimeEntryDTO user = newEntry(
+                session.getId(), "entry_user", "user.message", acceptedAt, "{\"message\":\"hello\",\"file_ids\":[]}");
+
+        UserEventAcceptance acceptance =
+                repository.acceptUserEvent(session.getId(), session.getOwnerId(), user, acceptedAt);
+        RuntimeEntryDTO assistant = newEntry(
+                session.getId(),
+                "entry_assistant",
+                "assistant.message.completed",
+                acceptedAt.plusSeconds(1),
+                "{\"message\":{\"role\":\"assistant\",\"content\":[]},\"finish_reason\":\"stop\"}");
+        repository.appendEntry(assistant);
+        repository.finishExecution(session.getId(), acceptedAt.plusSeconds(2));
+
+        assertThat(acceptance.status()).isEqualTo(Status.ACCEPTED);
+        assertThat(user.getEntrySeq()).isEqualTo(1L);
+        assertThat(user.getParentId()).isNull();
+        assertThat(assistant.getEntrySeq()).isEqualTo(2L);
+        assertThat(assistant.getParentId()).isEqualTo(user.getId());
+        assertThat(repository.listCurrentBranch(session.getId(), 0, 10))
+                .extracting(RuntimeEntryDTO::getId)
+                .containsExactly("entry_user", "entry_assistant");
+        RuntimeSessionDTO finished = repository.find(session.getId()).orElseThrow();
+        assertThat(finished.getState()).isEqualTo("idle");
+        assertThat(finished.getResourceVersion()).isEqualTo(3L);
+        assertThat(finished.getActiveLeafId()).isEqualTo("entry_assistant");
+    }
+
+    @Test
+    void rollsBackEntryAppendWhenSessionIsNotRunning() {
+        RuntimeSessionDTO session = newSession("session_db_idle_append");
+        repository.create(session);
+        RuntimeEntryDTO entry = newEntry(
+                session.getId(),
+                "entry_invalid",
+                "assistant.message.completed",
+                session.getCreatedAt().plusSeconds(1),
+                "{\"message\":{\"role\":\"assistant\",\"content\":[]},\"finish_reason\":\"stop\"}");
+
+        assertThatThrownBy(() -> repository.appendEntry(entry))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("session active leaf was not updated");
+
+        assertThat(count("t_session_entries", session.getId())).isZero();
+        assertThat(jdbcTemplate.queryForObject(
+                        "SELECT next_seq FROM t_session_sequences WHERE session_id = ?", Long.class, session.getId()))
+                .isEqualTo(1L);
+    }
+
+    @Test
+    void onlyOneConcurrentUserEventCanBecomeActive() throws Exception {
+        RuntimeSessionDTO session = newSession("session_db_event_race");
+        repository.create(session);
+        OffsetDateTime acceptedAt = session.getCreatedAt().plusSeconds(1);
+        CountDownLatch start = new CountDownLatch(1);
+        try (var executor = Executors.newFixedThreadPool(2)) {
+            var first = executor.submit(() -> acceptAfterLatch(
+                    start, session, newEntry(session.getId(), "entry_race_1", "user.message", acceptedAt, "{}")));
+            var second = executor.submit(() -> acceptAfterLatch(
+                    start, session, newEntry(session.getId(), "entry_race_2", "user.message", acceptedAt, "{}")));
+            start.countDown();
+            assertThat(List.of(first.get(5, TimeUnit.SECONDS), second.get(5, TimeUnit.SECONDS)))
+                    .containsExactlyInAnyOrder(Status.ACCEPTED, Status.BUSY);
+        }
+
+        assertThat(count("t_session_entries", session.getId())).isOne();
+        assertThat(repository.find(session.getId()).orElseThrow().getState()).isEqualTo("running");
+    }
+
+    @Test
+    void currentBranchQueryExcludesAbandonedBranch() {
+        RuntimeSessionDTO session = newSession("session_db_branch");
+        repository.create(session);
+        insertBranchEntry(session.getId(), "entry_root", 1L, null);
+        insertBranchEntry(session.getId(), "entry_abandoned", 2L, "entry_root");
+        insertBranchEntry(session.getId(), "entry_current", 3L, "entry_root");
+        jdbcTemplate.update("UPDATE t_sessions SET active_leaf_id = ? WHERE id = ?", "entry_current", session.getId());
+
+        assertThat(repository.listCurrentBranch(session.getId(), 0, 10))
+                .extracting(RuntimeEntryDTO::getId)
+                .containsExactly("entry_root", "entry_current");
+    }
+
     private int count(String table, String sessionId) {
         Integer result = jdbcTemplate.queryForObject(
                 "SELECT COUNT(1) FROM " + table + " WHERE session_id = ?", Integer.class, sessionId);
@@ -219,6 +312,39 @@ class RuntimeSessionRepositoryOpenGaussIT {
                 "user.message",
                 OffsetDateTime.of(2026, 8, 18, 1, 15, 0, 0, ZoneOffset.UTC),
                 "{\"text\":\"hello\"}");
+    }
+
+    private void insertBranchEntry(String sessionId, String entryId, long sequence, String parentId) {
+        jdbcTemplate.update(
+                "INSERT INTO t_session_entries "
+                        + "(session_id, id, entry_seq, parent_id, type, timestamp, payload) "
+                        + "VALUES (?, ?, ?, ?, ?, ?, CAST(? AS JSONB))",
+                sessionId,
+                entryId,
+                sequence,
+                parentId,
+                "user.message",
+                OffsetDateTime.of(2026, 8, 18, 1, 15, 0, 0, ZoneOffset.UTC),
+                "{\"message\":\"hello\",\"file_ids\":[]}");
+    }
+
+    private Status acceptAfterLatch(CountDownLatch start, RuntimeSessionDTO session, RuntimeEntryDTO entry)
+            throws InterruptedException {
+        assertThat(start.await(5, TimeUnit.SECONDS)).isTrue();
+        return repository
+                .acceptUserEvent(session.getId(), session.getOwnerId(), entry, entry.getTimestamp())
+                .status();
+    }
+
+    private static RuntimeEntryDTO newEntry(
+            String sessionId, String entryId, String type, OffsetDateTime timestamp, String payload) {
+        RuntimeEntryDTO entry = new RuntimeEntryDTO();
+        entry.setSessionId(sessionId);
+        entry.setId(entryId);
+        entry.setType(type);
+        entry.setTimestamp(timestamp);
+        entry.setPayload(payload);
+        return entry;
     }
 
     private static RuntimeSessionDTO newSession(String sessionId) {

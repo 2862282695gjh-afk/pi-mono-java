@@ -26,13 +26,20 @@ import org.springframework.web.reactive.function.server.ServerResponse;
 public class RuntimeApiRoutes {
     private static final String SESSIONS = RuntimeApiConstants.BASE_PATH + "/sessions/{session_id}";
 
+    private static final String EVENTS = SESSIONS + "/events";
+
     @Bean
     public RouterFunction<ServerResponse> runtimeSessionRoutes(
-            RuntimeSessionController controller, RuntimeErrorFilter errorFilter, RuntimeAuthFilter authFilter) {
+            RuntimeSessionController controller,
+            RuntimeEventController eventController,
+            RuntimeErrorFilter errorFilter,
+            RuntimeAuthFilter authFilter) {
         String createPath = RuntimeApiConstants.BASE_PATH + "/agents/{agent_id}/sessions";
         return route(POST(createPath), controller::create)
                 .andRoute(GET(SESSIONS), controller::get)
                 .andRoute(DELETE(SESSIONS), controller::delete)
+                .andRoute(POST(EVENTS), eventController::submit)
+                .andRoute(GET(EVENTS), eventController::list)
                 .filter(authFilter)
                 .filter(errorFilter);
     }

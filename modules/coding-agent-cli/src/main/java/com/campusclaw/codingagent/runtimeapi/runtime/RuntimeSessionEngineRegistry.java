@@ -15,6 +15,7 @@ import com.campusclaw.agent.Agent;
 import com.campusclaw.agent.subagent.SubAgentRegistry;
 import com.campusclaw.agent.tool.AgentTool;
 import com.campusclaw.ai.CampusClawAiService;
+import com.campusclaw.ai.types.Message;
 import com.campusclaw.ai.types.Model;
 import com.campusclaw.ai.types.ThinkingLevel;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeApiException;
@@ -63,6 +64,15 @@ public class RuntimeSessionEngineRegistry {
 
     public Optional<RuntimeSessionHolder> find(String sessionId) {
         return Optional.ofNullable(sessions.get(sessionId));
+    }
+
+    public RuntimeSessionHolder restore(
+            String sessionId, AgentRuntimeSnapshotDTO snapshot, Model model, boolean thinking, List<Message> messages) {
+        return sessions.computeIfAbsent(sessionId, ignored -> {
+            Agent agent = createAgent(aiService, snapshot, model, thinking);
+            agent.replaceMessages(messages);
+            return new RuntimeSessionHolder(sessionId, snapshot, agent);
+        });
     }
 
     public void abortAndRemove(String sessionId) {

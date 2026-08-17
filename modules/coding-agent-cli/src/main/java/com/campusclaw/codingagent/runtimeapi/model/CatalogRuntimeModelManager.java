@@ -29,9 +29,18 @@ public class CatalogRuntimeModelManager implements RuntimeModelManager {
 
     @Override
     public Model resolveDefaultModel(AgentRuntimeSnapshotDTO snapshot) {
+        return resolveModel(snapshot, snapshot.defaultModelId());
+    }
+
+    @Override
+    public Model resolveModel(AgentRuntimeSnapshotDTO snapshot, String modelId) {
         try {
+            if (!snapshot.enabledModelIds().contains(modelId)) {
+                throw new RuntimeApiException(
+                        HttpStatus.UNPROCESSABLE_ENTITY, RuntimeErrorCode.AGENT_MODEL_NOT_CONFIGURED);
+            }
             return modelCatalogService.getAvailableModels().stream()
-                    .filter(model -> model.id().equals(snapshot.defaultModelId()))
+                    .filter(model -> model.id().equals(modelId))
                     .findFirst()
                     .orElseThrow(() -> new RuntimeApiException(
                             HttpStatus.UNPROCESSABLE_ENTITY, RuntimeErrorCode.AGENT_MODEL_NOT_CONFIGURED));

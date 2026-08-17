@@ -18,5 +18,7 @@ import com.campusclaw.codingagent.runtimeapi.template.AgentRuntimeSnapshotDTO;
 public interface RuntimeModelManager {
     Model resolveDefaultModel(AgentRuntimeSnapshotDTO snapshot);
 
+    Model resolveModel(AgentRuntimeSnapshotDTO snapshot, String modelId);
+
     List<String> listAvailableModels(AgentRuntimeSnapshotDTO snapshot);
 }

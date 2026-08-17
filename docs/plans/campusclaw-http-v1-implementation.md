@@ -1,6 +1,6 @@
 # CampusClaw Runtime HTTP+SSE V1 实施计划
 
-- 计划版本：1.1.0
+- 计划版本：1.3.0
 - 更新日期：2026-08-18
 - 状态：实施中
 - 实际源码基线：`889dcb1b7dd5f47addd3b372ef31392c9044ca24`
@@ -72,8 +72,8 @@
 | 1 | `POST /campusclaw-service/v1/agents/{agent_id}/sessions` | 生成 ID、默认模型、idle、thinking=false、201/Location | 已实现并验证 |
 | 2 | `GET /campusclaw-service/v1/sessions/{session_id}` | 当前资源、强 ETag、no-store | 已实现并验证 |
 | 3 | `DELETE /campusclaw-service/v1/sessions/{session_id}` | 幂等 204、异步清理、仅两字段 tombstone | 已实现并验证 |
-| 4 | `POST /campusclaw-service/v1/sessions/{session_id}/events` | user.message、完整 SSE 序列、断线不 abort | 待实施 |
-| 5 | `GET /campusclaw-service/v1/sessions/{session_id}/events` | 当前分支、三种持久化事件、不透明游标 | 待实施 |
+| 4 | `POST /campusclaw-service/v1/sessions/{session_id}/events` | user.message、完整 SSE 序列、断线不 abort | 已实现并验证 |
+| 5 | `GET /campusclaw-service/v1/sessions/{session_id}/events` | 当前分支、三种持久化事件、不透明游标 | 已实现并验证 |
 | 6 | `GET /campusclaw-service/v1/sessions/{session_id}/models` | `current_model_id` 与 `models` 字符串数组 | 待实施 |
 | 7 | `PUT /campusclaw-service/v1/sessions/{session_id}/model` | idle、强 If-Match、无操作不增版本 | 待实施 |
 | 8 | `PUT /campusclaw-service/v1/sessions/{session_id}/thinking` | 布尔深度思考、idle、强 If-Match | 待实施 |
@@ -136,6 +136,43 @@ ResultBean 和鉴权制品坐标仍未知，未臆造内部依赖，授权与凭
 以及 OffsetDateTime 默认被编码为数字。Runtime 现使用 openGauss 兼容的标准 pgjdbc，
 Engine 改为构造器依赖，边界时间显式编码为 ISO-8601 字符串。
 
+## 第二批接口验证证据
+
+接口 4—5 已完成 `user.message` 事务接受、Session 唯一 active execution、
+pi `AgentEvent` 到公共 SSE 的投影、三种公共 Entry 持久化、当前分支递归查询和
+AES-GCM 不透明分页游标。原始 thinking 块不对外暴露；客户端取消 SSE 订阅不会
+abort 已接受的执行。`RuntimeFileResolver` 是可替换的公司文件服务集成端口；
+由于内部制品和协议未提供，独立适配器对非空 `file_ids` 安全失败，未臆造调用。
+
+已真实执行以下验证：
+
+- `RuntimeEventRoutesTest`、`RuntimeEventServiceTest`、`RuntimeEventProjectorTest` 和
+  `RuntimeEventCursorCodecTest`：18 个测试，0 失败、0 错误、0 跳过；覆盖精确 HTTP/SSE
+  形状、未知字段和非法 JSON 拒绝、真实 pi Agent 工具事件序列、断线不 abort、
+  启动前同步失败、流内错误、Session 绑定/篡改/过期游标和分页响应。
+- `RuntimeSessionRepositoryOpenGaussIT`：在官方 openGauss 7.0.0-RC3 容器中
+  11 个测试，0 失败、0 错误、0 跳过；新增覆盖 Entry 严格序号、当前分支
+  排除废弃分支、两个并发用户事件只有一个成功占用 Session，以及 idle
+  Session 追加失败时的整体事务回滚。
+- 不使用 mock Controller 的 `RuntimeHttpProcessOpenGaussIT`：启动实际 85 MB Spring Boot
+  可执行 JAR、真实 Reactor Netty 端口、官方 openGauss 容器与本地 OpenAI SSE 协议桩；
+  从 HTTP 创建 Session，提交事件并收到
+  `user.message → assistant.message.started → assistant.message.delta →`
+  `assistant.message.completed → session.status.idle → stream.end`，然后用不透明游标
+  分两页读回持久化事件，并直接查询数据库确认 `state=idle`、`resource_version=3`
+  与两条父子 Entry。
+- 完整 `./mvnw -B verify` 执行 1315 个 coding-agent 测试及所有上游
+  模块测试，0 失败、0 错误、0 跳过，并产出可执行 JAR。
+- 同步生成的 `mate-campusclaw` 执行 `mvn -B verify`，共 2785 个测试，
+  0 失败、0 错误、0 跳过；镜像可执行 JAR 也通过同一进程级 HTTP+SSE
+  与真实 openGauss 集成测试。
+
+本批还在质量门禁中发现并修复了多个实现问题：`RuntimeAuthFilter`
+为写入认证上下文重建 `ServerRequest` 时丢失 POST body，以及加密游标测试将随机密文
+“偶然包含数字 19”误判为明文泄漏。进一步审计还修复了 Agent 同步启动失败
+可能遗留 `running` 状态、Mapper 更新行数未校验、底层查询错误未映射到契约错误码，
+以及恢复 Assistant Message 时 `Usage` 为空的问题。
+
 ## 推进日志
 
 - 2026-08-18：从最新 `origin/main` 创建独立工作树和
@@ -150,3 +187,6 @@ Engine 改为构造器依赖，边界时间显式编码为 ISO-8601 字符串。
 - 2026-08-18：同步接口 1—3 到 `mate-campusclaw`，补齐 MyBatis mapper 资源和标准
   pgjdbc；镜像模块 `mvn -B verify` 共执行 2767 个测试，0 失败、0 错误、0 跳过，
   镜像可执行 JAR 连接同一真实 openGauss 后创建 Session 返回 201。
+- 2026-08-18：完成接口 4—5 的事件事务、Agent 投影、SSE、当前分支分页与不透明
+  游标；单元/路由、完整模块回归、真实 openGauss 并发与打包 JAR 跨进程 HTTP+SSE
+  测试通过。

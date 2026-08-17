@@ -5,7 +5,9 @@
 package com.campusclaw.codingagent.runtimeapi.mapper;
 
 import java.time.OffsetDateTime;
+import java.util.List;
 
+import com.campusclaw.codingagent.runtimeapi.dto.RuntimeEntryDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
 
 import org.apache.ibatis.annotations.Mapper;
@@ -27,7 +29,27 @@ public interface RuntimeSessionMapper {
 
     RuntimeSessionDTO findSession(@Param("sessionId") String sessionId);
 
+    RuntimeSessionDTO lockSessionForUpdate(@Param("sessionId") String sessionId);
+
     Integer lockSession(@Param("sessionId") String sessionId);
+
+    Long lockNextSequence(@Param("sessionId") String sessionId);
+
+    int incrementSequence(@Param("sessionId") String sessionId);
+
+    int insertEntry(RuntimeEntryDTO entry);
+
+    int markSessionRunning(
+            @Param("sessionId") String sessionId,
+            @Param("activeLeafId") String activeLeafId,
+            @Param("updatedAt") OffsetDateTime updatedAt);
+
+    int updateActiveLeaf(@Param("sessionId") String sessionId, @Param("activeLeafId") String activeLeafId);
+
+    int markSessionIdle(@Param("sessionId") String sessionId, @Param("updatedAt") OffsetDateTime updatedAt);
+
+    List<RuntimeEntryDTO> listCurrentBranch(
+            @Param("sessionId") String sessionId, @Param("afterSeq") long afterSeq, @Param("limit") int limit);
 
     int insertTombstone(@Param("sessionId") String sessionId, @Param("deletedAt") OffsetDateTime deletedAt);
 

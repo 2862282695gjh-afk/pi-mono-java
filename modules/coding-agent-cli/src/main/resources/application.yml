@@ -28,6 +28,13 @@ mybatis:
   configuration:
     map-underscore-to-camel-case: true
 
+campusclaw:
+  runtime:
+    events:
+      # 生产和多实例部署必须设置稳定的高熵密钥；缺失时使用仅限当前进程的随机密钥。
+      cursor-secret: ${CAMPUSCLAW_EVENT_CURSOR_SECRET:}
+      cursor-ttl: ${CAMPUSCLAW_EVENT_CURSOR_TTL:PT24H}
+
 # 服务器模式（--mode server）下 /api/ws/chat 与 /api/chat 的会话持久化
 # 开启后会把每个 conversation_id 的消息历史写入
 # ~/.campusclaw/agent/sessions/--<encoded-cwd>--/<id>.jsonl
