@@ -83,27 +83,6 @@ class TransientAgentRunnerTest {
         assertTrue(error.getMessage().contains("provider down"));
     }
 
-    @Test
-    void failsWhenChildProducesNoAnswer() {
-        session = stubSession(List.of());
-
-        AgentRuntimeException error = assertThrows(
-                AgentRuntimeException.class, () -> runner.run(childRuntime(), childState(), "do it", "fallback"));
-
-        assertTrue(error.getMessage().contains("no answer"));
-    }
-
-    @Test
-    void failsWhenPromptFutureCompletesExceptionally() {
-        session = stubSession(List.of());
-        session.promptFailure = new IllegalStateException("loop crashed");
-
-        AgentRuntimeException error = assertThrows(
-                AgentRuntimeException.class, () -> runner.run(childRuntime(), childState(), "do it", "fallback"));
-
-        assertTrue(error.getMessage().contains("loop crashed"));
-    }
-
     private static AssistantMessage assistant(String text, StopReason stopReason) {
         return new AssistantMessage(
                 List.of(new TextContent(text)), "api", "provider", "m", null, null, stopReason, null, 0L);
@@ -154,7 +133,6 @@ class TransientAgentRunnerTest {
     private static final class StubSession extends AgentSession {
 
         private final List<com.campusclaw.ai.types.Message> history;
-        private RuntimeException promptFailure;
         private String receivedPrompt;
         private SessionConfig receivedConfig;
 
@@ -177,9 +155,7 @@ class TransientAgentRunnerTest {
         @Override
         public CompletableFuture<Void> prompt(String userInput) {
             this.receivedPrompt = userInput;
-            return promptFailure != null
-                    ? CompletableFuture.failedFuture(promptFailure)
-                    : CompletableFuture.completedFuture(null);
+            return CompletableFuture.completedFuture(null);
         }
 
         @Override

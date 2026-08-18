@@ -93,37 +93,6 @@ class LocalAgentDispatcherTest {
         assertTrue(error.getMessage().contains("DEPTH_EXCEEDED"));
     }
 
-    @Test
-    void resolveCandidatesReturnsEmptyForCappedSession() {
-        DelegationContext secondHop = DelegationContext.forEntry("agent-1", "agent-2", "conv", "inv-1")
-                .delegateTo("agent-3", "inv-2");
-        DelegationState secondLevel =
-                new DelegationState(dispatcher, "conv", new AgentPrincipal(null, null), secondHop, wiring());
-        PreparedAgentRuntime thirdAgent = runtime("agent-3", List.of(binding("agent-4")));
-
-        assertTrue(dispatcher.resolveCandidates(secondLevel, thirdAgent).isEmpty());
-    }
-
-    @Test
-    void resolveCandidatesListsBoundEnabledChildrenForEntry() {
-        DelegationState entry = entryState();
-        PreparedAgentRuntime parent = runtime("agent-1", List.of(binding("agent-2"), binding("agent-5")));
-
-        var candidates = dispatcher.resolveCandidates(entry, parent);
-
-        assertEquals(2, candidates.size());
-        assertEquals("agent-2", candidates.get(0).agentId());
-    }
-
-    @Test
-    void dispatchRejectsBlankArguments() {
-        DelegationState entry = entryState();
-        PreparedAgentRuntime parent = runtime("agent-1", List.of(binding("agent-2")));
-
-        assertThrows(AgentRuntimeException.class, () -> dispatcher.dispatch(entry, parent, " ", "do it", "m"));
-        assertThrows(AgentRuntimeException.class, () -> dispatcher.dispatch(entry, parent, "agent-2", " ", "m"));
-    }
-
     private DelegationState entryState() {
         return DelegationState.entry(dispatcher, "conv-1", new AgentPrincipal(null, null), wiring());
     }

@@ -35,8 +35,6 @@ import com.campusclaw.codingagent.mode.rpc.RpcMode;
 import com.campusclaw.codingagent.mode.server.ServerMode;
 import com.campusclaw.codingagent.prompt.SystemPromptBuilder;
 import com.campusclaw.codingagent.runtime.AgentRuntimeManager;
-import com.campusclaw.codingagent.runtime.DelegationState;
-import com.campusclaw.codingagent.runtime.DelegationWiring;
 import com.campusclaw.codingagent.runtime.LocalAgentDispatcher;
 import com.campusclaw.codingagent.runtime.PreparedAgentRuntime;
 import com.campusclaw.codingagent.session.AgentSession;
@@ -608,29 +606,16 @@ public class CampusClawCommand implements Callable<Integer> {
             boolean useSandbox,
             PreparedAgentRuntime preparedRuntime,
             AgentRuntimeManager runtimeManager) {
-        var skillLoader = new SkillLoader(sandboxSkillParser, useSandbox);
-        var skillExpander = new SkillExpander(sandboxSkillParser, useSandbox);
-        AgentSession session =
-                new AgentSession(piAiService, modelRegistry, promptBuilder, skillLoader, skillExpander, effectiveTools);
+        AgentSession session = new AgentSession(
+                piAiService,
+                modelRegistry,
+                promptBuilder,
+                new SkillLoader(sandboxSkillParser, useSandbox),
+                new SkillExpander(sandboxSkillParser, useSandbox),
+                effectiveTools);
         session.setToolCatalog(toolCatalog, toolSelection);
         if (preparedRuntime != null) {
             session.setAgentRuntime(preparedRuntime, runtimeManager);
-            LocalAgentDispatcher dispatcher = resolveLocalAgentDispatcher();
-            if (dispatcher != null) {
-                session.setDelegationState(DelegationState.entry(
-                        dispatcher,
-                        null,
-                        null,
-                        new DelegationWiring(
-                                piAiService,
-                                modelRegistry,
-                                promptBuilder,
-                                skillLoader,
-                                skillExpander,
-                                effectiveTools,
-                                toolCatalog,
-                                toolSelection)));
-            }
         }
         return session;
     }

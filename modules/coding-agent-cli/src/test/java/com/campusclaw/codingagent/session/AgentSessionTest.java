@@ -49,7 +49,6 @@ import com.campusclaw.ai.types.TextContent;
 import com.campusclaw.ai.types.ToolCall;
 import com.campusclaw.codingagent.prompt.SystemPromptBuilder;
 import com.campusclaw.codingagent.runtime.AgentBindingResolver.ChildAgentSummary;
-import com.campusclaw.codingagent.runtime.AgentRuntimeException;
 import com.campusclaw.codingagent.runtime.AgentRuntimeManager;
 import com.campusclaw.codingagent.runtime.DelegationState;
 import com.campusclaw.codingagent.runtime.DelegationWiring;
@@ -491,30 +490,17 @@ class AgentSessionTest {
         }
 
         @Test
-        void hidesInvokeAgentWithoutDelegationStateOrCandidates() throws Exception {
+        void hidesInvokeAgentWithoutDelegationState() throws Exception {
             tools = List.of(stubTool, new ActivateSkillTool(), new InvokeAgentTool());
-            LocalAgentDispatcher dispatcher = mock(LocalAgentDispatcher.class);
-            when(dispatcher.resolveCandidates(any(), any())).thenReturn(List.of());
-
-            // No delegation state at all.
             session = createSession();
             writeSkill("skill-a", "Calendar workflow");
             when(promptBuilder.build(any())).thenReturn("prompt");
             session.setAgentRuntime(preparedRuntime(), mock(AgentRuntimeManager.class));
             session.initialize(config());
-            var noStateCaptor = ArgumentCaptor.forClass(com.campusclaw.codingagent.prompt.SystemPromptConfig.class);
-            verify(promptBuilder, org.mockito.Mockito.times(1)).build(noStateCaptor.capture());
-            assertTrue(noStateCaptor.getValue().tools().stream()
-                    .noneMatch(tool -> InvokeAgentTool.NAME.equals(tool.name())));
 
-            // Delegation state but zero candidates.
-            session = createSession();
-            session.setAgentRuntime(preparedRuntime(), mock(AgentRuntimeManager.class));
-            session.setDelegationState(DelegationState.entry(dispatcher, "conv", null, wiring()));
-            session.initialize(config());
-            var emptyCaptor = ArgumentCaptor.forClass(com.campusclaw.codingagent.prompt.SystemPromptConfig.class);
-            verify(promptBuilder, org.mockito.Mockito.times(2)).build(emptyCaptor.capture());
-            assertTrue(emptyCaptor.getValue().tools().stream()
+            var noStateCaptor = ArgumentCaptor.forClass(com.campusclaw.codingagent.prompt.SystemPromptConfig.class);
+            verify(promptBuilder).build(noStateCaptor.capture());
+            assertTrue(noStateCaptor.getValue().tools().stream()
                     .noneMatch(tool -> InvokeAgentTool.NAME.equals(tool.name())));
         }
 
@@ -553,39 +539,6 @@ class AgentSessionTest {
             assertNull(override.isError());
             TextContent answer = (TextContent) override.content().getFirst();
             assertEquals("child answer", answer.text());
-        }
-
-        @Test
-        @SuppressWarnings({"rawtypes", "unchecked"})
-        void delegationHookSurfacesRejectionAsErrorResult() throws Exception {
-            tools = List.of(stubTool, new ActivateSkillTool(), new InvokeAgentTool());
-            session = createSession();
-            writeSkill("skill-a", "Calendar workflow");
-            LocalAgentDispatcher dispatcher = mock(LocalAgentDispatcher.class);
-            when(dispatcher.resolveCandidates(any(), any())).thenReturn(List.of());
-            when(dispatcher.dispatch(any(), any(), anyString(), anyString(), anyString()))
-                    .thenThrow(new AgentRuntimeException("Agent delegation rejected: NOT_DIRECTLY_BOUND (agent-x)"));
-            when(promptBuilder.build(any())).thenReturn("prompt");
-            session.setAgentRuntime(preparedRuntime(), mock(AgentRuntimeManager.class));
-            session.setDelegationState(DelegationState.entry(dispatcher, "conv", null, wiring()));
-
-            session.initialize(config());
-
-            ArgumentCaptor<AfterToolCallHandler> hookCaptor = ArgumentCaptor.forClass(AfterToolCallHandler.class);
-            verify(session.getAgent()).setAfterToolCall(hookCaptor.capture());
-            AfterToolCallResult override = hookCaptor
-                    .getValue()
-                    .handle(new AfterToolCallContext(
-                            null,
-                            new ToolCall("call-1", InvokeAgentTool.NAME, Map.of("agentId", "agent-x", "task", "t")),
-                            Map.of("agentId", "agent-x", "task", "t"),
-                            new AgentToolResult(List.of(), null),
-                            false,
-                            null));
-
-            assertEquals(Boolean.TRUE, override.isError());
-            TextContent rejection = (TextContent) override.content().getFirst();
-            assertTrue(rejection.text().contains("NOT_DIRECTLY_BOUND"));
         }
 
         private DelegationWiring wiring() {

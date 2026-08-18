@@ -59,16 +59,6 @@ class LocalChildAgentMetadataSourceTest {
     }
 
     @Test
-    void treatsNullEnabledFlagAsEnabled() throws Exception {
-        writeSnapshot("agent-3", "1", null);
-
-        Optional<ChildAgentMetadata> metadata = source.load("agent-3");
-
-        assertTrue(metadata.isPresent());
-        assertTrue(metadata.get().enabled());
-    }
-
-    @Test
     void fallsBackToRemoteReadWhenNoLocalSnapshot() {
         when(client.getAgentRuntime("agent-4")).thenReturn(runtime("agent-4", "3", false));
 
@@ -85,12 +75,6 @@ class LocalChildAgentMetadataSourceTest {
         when(client.getAgentRuntime(anyString())).thenThrow(new AgentRuntimeException("remote unavailable"));
 
         assertTrue(source.load("agent-5").isEmpty());
-    }
-
-    @Test
-    void rejectsBlankAgentIdWithoutAnyLookup() {
-        assertTrue(source.load(" ").isEmpty());
-        org.mockito.Mockito.verifyNoInteractions(client);
     }
 
     private void writeSnapshot(String agentId, String version, Boolean enabled) throws Exception {

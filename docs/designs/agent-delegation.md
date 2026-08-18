@@ -87,7 +87,7 @@ principal ────────────────────┤→ Age
 - **模型回退次序**：`dispatch(fallbackModel)` 传入口会话实际解析出的模型 id；子自身 `defaultModel()` 优先，未配置才落到 fallback——由 `runtimeManager.sessionConfig` 统一处理。
 - **子提示即任务**：`task` 参数作为子会话的完整用户提示；子系统提示来自其物化的 `systemPrompt.md`（sessionConfig customPrompt）。
 - **审计 = 结构化 INFO 日志**：每跳一行英文日志（parent/target/ancestry/depth/invocationId/conversationId）；正式审计事件流属后续 PR（组⑤）。
-- **入口接线点**：`SessionPool.createSessionWithPersistence`（server）与 `CampusClawCommand.createAgentSession`（CLI）在 `preparedRuntime != null` 且 dispatcher bean 可用时构造 `DelegationState.entry(...)`；dispatcher 缺失仅降级（不暴露工具），不报错。
+- **入口接线点（server-only）**：`SessionPool.createSessionWithPersistence` 在 `preparedRuntime != null` 且 dispatcher bean 可用时构造 `DelegationState.entry(...)`；dispatcher 缺失仅降级（不暴露工具），不报错。CLI 入口（interactive/one-shot/rpc）按评审意见暂不接线，委派能力当前仅 server 模式可用。
 
 ## 5. 边界情况
 
@@ -110,14 +110,15 @@ principal ────────────────────┤→ Age
 
 执行链路层（本 PR）：
 
-- `InvokeAgentToolTest`（5）：ack 内容、缺 agentId/空 task 拒绝、`describedWith` 候选枚举（含版本与空描述降级）、装饰视图执行委托不变。
-- `LocalChildAgentMetadataSourceTest`（5）：本地快照优先（零远程调用）、null enabled 视为启用、无快照回退远程、本地+远程双失败 fail closed、空白 id 不查。
-- `LocalAgentDispatcherTest`（6）：入口派发（子 state 深度/ancestry/conversationId 正确）、未绑定目标拒绝且不 prepare、深度上限第三跳拒绝、封顶会话候选为空、入口候选列表、空白参数拒绝。
-- `TransientAgentRunnerTest`（4）：末条 AssistantMessage 文本提取、ERROR stop 透传、无回答失败、prompt future 异常包装。
-- `AgentSessionTest$Delegation`（4）：有候选才暴露 invoke_agent 且描述含候选清单、无 delegationState/无候选均不暴露、委派钩子成功覆盖为子回答、拒绝转 isError。
+- `LocalChildAgentMetadataSourceTest`（3）：本地快照优先（零远程调用）、无快照回退远程、本地+远程双失败 fail closed。
+- `LocalAgentDispatcherTest`（3）：入口派发（子 state 深度/ancestry/conversationId 正确）、未绑定目标拒绝且不 prepare、深度上限第三跳拒绝。
+- `TransientAgentRunnerTest`（2）：末条 AssistantMessage 文本提取、ERROR stop 透传。
+- `AgentSessionTest$Delegation`（3）：有候选才暴露 invoke_agent 且描述含候选清单、无 delegationState 不暴露、委派钩子成功覆盖为子回答。
+
+（按评审意见测试较初版减半：`InvokeAgentToolTest` 整文件移除——工具 ack 与描述装饰行为由 `AgentSessionTest$Delegation` 间接覆盖；各文件仅保留核心行为用例。）
 
 ## 7. 验证
 
 静态校验 PR：`./mvnw -pl modules/coding-agent-cli -am test` 全量通过；本 PR 无运行时行为变化——resolver 尚无调用方。
 
-执行链路 PR：`./mvnw -pl modules/coding-agent-cli -am test` 全量通过（新增 24 个用例）；本地 mock CampusMate（七 Agent 拓扑）e2e 验证 agent 1 → agent 2 → agent 3 两层链路可通、第三跳被拒、未绑定/禁用目标被拒。
+执行链路 PR：`./mvnw -pl modules/coding-agent-cli -am test` 全量通过（11 个核心用例）；本地 mock CampusMate（七 Agent 拓扑）server 模式 e2e 验证 agent 1 → agent 2 两层链路可通、未绑定/跨级目标被拒。CLI 入口按评审意见未接线。
