@@ -311,7 +311,7 @@ ai 模块把"和任何 LLM 服务商对话"这件事抽象为单一接口 `ApiPr
 | `docs/module-architecture.md` | 包含 ai 模块说明段落（"LLM 多供应商抽象层"），需要随对外类型/Provider 列表变更同步 |
 | `CLAUDE.md`（仓库根） | 描述 ai 模块在整体依赖图与运行时中的角色 |
 | classpath `/campusclaw-models.json`（如有） + `~/.campusclaw/agent/models.json` | 用户级模型目录扩展约定 |
-| 上游 `docs/openapi/campusclaw-api.yaml` | HTTP server 模式 API（间接消费本模块的 AssistantMessage 形状），间接相关 |
+| `docs/plans/campusclaw-http-v1-implementation.md` | Runtime HTTP+SSE 实现会投影本模块的 AssistantMessage 形状，间接相关 |
 
 ---
 

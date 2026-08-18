@@ -75,7 +75,7 @@
 
 ## 7. 契约改动
 
-- OpenAPI `docs/openapi/campusclaw-api.yaml`：`getSettingsModels` 描述、`SettingsModelsSnapshot.availableModels` / `filtered` / `hasCredentials` 同步。
+- Runtime 实施文档：记录 `GET /campusclaw-service/v1/sessions/{session_id}/models` 的可用模型过滤语义；本仓不再维护 OpenAPI 副本。
 - Runtime V1：`GET /campusclaw-service/v1/sessions/{session_id}/models` 只返回当前 Session 可用的模型 ID 字符串数组。
 
 ## 8. 测试

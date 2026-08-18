@@ -286,7 +286,7 @@ agent-core 不内置具体 Tool 实现（read / write / bash 等在 `coding-agen
 | `docs/module-architecture.md` | 包含 agent-core 模块说明段落，需要随接口变更同步 |
 | `docs/agent-core-architecture.pdf` | 现有架构图（pdf） |
 | `CLAUDE.md`（仓库根） | 描述 agent-core 在整体依赖图与运行时中的角色 |
-| `docs/openapi/campusclaw-api.yaml` | HTTP server 模式 API（消费 agent-core 的事件），间接相关 |
+| `docs/plans/campusclaw-http-v1-implementation.md` | Runtime HTTP+SSE 实现消费并投影 agent-core 事件，间接相关 |
 
 ---
 

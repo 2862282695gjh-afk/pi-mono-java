@@ -1,125 +1,91 @@
 @startuml module-context
-title Coding Agent CLI Module Context
-left to right direction
+title Coding Agent Module Context
 skinparam componentStyle rectangle
 
-' Source evidence: modules/coding-agent-cli/pom.xml; CampusClawApplication; CampusClawCommand.
-' Analyzed source commit: cc2f58d9e24bae1d7c99b9f54e86b71940d86115.
-' Observed behavior: coding-agent-cli assembles four internal libraries and external runtime services.
+' Source evidence: implementation commit 8691e8800f05f28afe22499050c29220ef5b7475.
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/CampusClawApplication.java, CampusClawApplication#main.
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/web/RuntimeEventController.java.
+' Observed behavior: the default process is a Spring MVC HTTP service; CLI is an explicit subcommand.
 
-component "campusclaw-ai" as ai
-component "campusclaw-agent-core" as core
-component "campusclaw-tui" as tui
-component "campusclaw-cron" as cron
-component "campusclaw-coding-agent" as cli
-component "spring-boot + webflux" as spring
-component "picocli" as picocli
-component "Docker daemon" as docker
+actor "mate-service" as Mate
+actor "CLI user" as CliUser
+component "Spring Boot MVC\nHTTP + SSE" as Http
+component "CampusClaw CLI" as Cli
+component "Runtime services" as Runtime
+component "Control plane" as Control
+component "agent-core" as AgentCore
+component "ai" as Ai
+database "openGauss" as Db
+folder "Agent directory" as AgentDir
 
-ai --> cli
-core --> cli
-tui --> cli
-cron --> cli
-spring --> cli
-picocli --> cli
-cli ..> docker : optional
+Mate --> Http : Runtime V1
+Http --> Runtime
+Http --> Control
+Runtime --> AgentCore
+Runtime --> Db
+Runtime --> AgentDir : read-only
+AgentCore --> Ai
+CliUser --> Cli
+Cli --> AgentCore
 @enduml
 
 @startuml startup-sequence
-title Coding Agent CLI Startup Sequence
+title Default Server and Explicit CLI Startup
 
-' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/CampusClawApplication.java.
-' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/cli/CampusClawCommand.java.
-' Observed behavior: Spring creates the application context before Picocli dispatches a selected mode.
+' Source evidence: implementation commit 8691e8800f05f28afe22499050c29220ef5b7475.
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/CampusClawApplication.java, CampusClawApplication#main.
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/CampusClawCliLauncher.java, CampusClawCliLauncher#run.
+' Design reason: keep one executable JAR while separating web and CLI application contexts.
 
-participant JVM
-participant CampusClawApplication
-participant SpringContext
-participant CampusClawCommand
-participant "Selected Mode" as Mode
-participant AgentSession
-participant Agent
+actor Operator
+participant "CampusClawApplication" as App
+participant "Spring Boot MVC" as Web
+participant "CampusClawCliLauncher" as Launcher
+participant "Picocli" as Cli
 
-JVM -> CampusClawApplication : main(args)
-CampusClawApplication -> SpringContext : SpringApplication.run
-SpringContext --> CampusClawApplication : inject command and factory
-CampusClawApplication -> CampusClawCommand : execute(args)
-CampusClawCommand -> CampusClawCommand : apply proxy and dispatch
-CampusClawCommand -> AgentSession : construct model, tools, and skills
-CampusClawCommand -> Mode : run(session)
-Mode -> AgentSession : prompt(text)
-AgentSession -> Agent : prompt(...)
-Agent --> Mode : AgentEvent stream
-Mode --> JVM : render output or write SSE
-Mode --> CampusClawCommand : exit code
-CampusClawCommand --> JVM : exit
+Operator -> App : java -jar campusclaw-agent.jar [args]
+alt first argument is cli
+  App -> Launcher : run(args without cli)
+  Launcher -> Launcher : create non-web CLI context
+  Launcher -> Cli : execute command
+  Cli --> Operator : exit code
+else default startup
+  App -> Web : SpringApplication.run(args)
+  Web --> Operator : listen on configured port
+end
 @enduml
 
-@startuml core-classes
-title Coding Agent CLI Core Classes
-skinparam classAttributeIconSize 0
+@startuml runtime-http-components
+title Runtime HTTP Components
+left to right direction
 
-' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/.
-' Source evidence: modules/agent-core/src/main/java/com/campusclaw/agent/.
-' Design reason: show the main assembly dependencies without protocol-specific WebSocket classes.
+' Source evidence: implementation commit 8691e8800f05f28afe22499050c29220ef5b7475.
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/web, Controller classes.
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/event/RuntimeEventService.java.
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/persistence/MyBatisRuntimeSessionRepository.java.
+' Observed behavior: blocking MVC boundaries delegate execution to the agent engine and stream through bounded SSE subscribers.
 
-class CampusClawApplication
-class CampusClawCommand
-class InteractiveMode
-class OneShotMode
-class RpcMode
-class ServerMode
-class AgentSession
-class SessionManager
-class SessionPersistence
-class SlashCommandRegistry
-interface SlashCommand
-class ExtensionRegistry
-class ExtensionPoint
-class SkillManager
-class SkillLoader
-class SkillExpander
-class BashTool
-class ReadTool
-class WriteTool
-class EditTool
-class ExecutionRouter
-interface ToolExecutionStrategy
-class DockerSandboxClient
-class HybridBashTool
-class SettingsManager
-class Compactor
-class SubAgentAutoConfiguration
-class RuntimeApiRoutes
-class RuntimeEventService
-class RuntimeSessionService
+component "MVC Controllers" as Controllers
+component "Authentication\nInterceptor" as Auth
+component "Exception Handler" as Errors
+component "ResultBeanAdapter" as Result
+component "Session Services" as Sessions
+component "RuntimeEventService" as Events
+component "RuntimeSseDispatcher" as Sse
+component "Engine Registry" as Engine
+component "Agent Prompt Loader" as Prompt
+component "MyBatis Repository" as Repository
+database "openGauss" as Db
 
-CampusClawApplication --> CampusClawCommand : runs
-CampusClawCommand --> InteractiveMode : interactive
-CampusClawCommand --> OneShotMode : one-shot
-CampusClawCommand --> RpcMode : rpc
-CampusClawCommand --> ServerMode : server
-CampusClawCommand --> AgentSession : creates
-AgentSession --> SessionManager : persists via
-SessionManager --> SessionPersistence : uses
-InteractiveMode --> SlashCommandRegistry : dispatches
-SlashCommandRegistry o-- SlashCommand
-CampusClawCommand --> ExtensionRegistry : reads
-ExtensionRegistry --> ExtensionPoint : indexes
-AgentSession --> SkillLoader : loads
-SkillLoader --> SkillExpander : expands
-SkillManager --> SkillLoader : installs for
-HybridBashTool --> ExecutionRouter : delegates
-ExecutionRouter --> ToolExecutionStrategy : selects
-ToolExecutionStrategy <|.. BashTool
-ToolExecutionStrategy <|.. ReadTool
-ToolExecutionStrategy <|.. WriteTool
-ToolExecutionStrategy <|.. EditTool
-ExecutionRouter --> DockerSandboxClient : sandbox path
-CampusClawCommand --> SettingsManager : reads settings
-AgentSession --> Compactor : compacts
-CampusClawApplication --> SubAgentAutoConfiguration : wires
-ServerMode --> RuntimeApiRoutes : mounts
-RuntimeApiRoutes --> RuntimeSessionService : sessions
-RuntimeApiRoutes --> RuntimeEventService : events
+Auth --> Controllers
+Controllers --> Sessions
+Controllers --> Events
+Controllers --> Result
+Errors --> Result
+Sessions --> Repository
+Events --> Repository
+Events --> Engine
+Events --> Sse
+Engine --> Prompt
+Repository --> Db
 @enduml
