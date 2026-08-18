@@ -190,6 +190,8 @@ public class MateServiceClient {
             String version) {
 
         public AgentRuntime {
+            // 旧快照缺省 enabled 字段（反序列化为 null）视为启用；归一化保证 enabled() 永不返回 null
+            enabled = enabled == null ? Boolean.TRUE : enabled;
             bindingModels = bindingModels == null ? List.of() : List.copyOf(bindingModels);
             bindingSkills = bindingSkills == null ? List.of() : List.copyOf(bindingSkills);
             bindingTools = bindingTools == null ? List.of() : List.copyOf(bindingTools);
@@ -199,25 +201,14 @@ public class MateServiceClient {
         }
 
         /**
-         * Returns the first non-blank bound model, used as the session default.
+         * 返回绑定的第一个非空白模型名，作为会话缺省模型。
          *
-         * @return default model name, empty when the Agent binds no model
+         * @return 缺省模型名；Agent 未绑定任何模型时为空
          */
         public Optional<String> defaultModel() {
             return bindingModels.stream()
                     .filter(model -> model != null && !model.isBlank())
                     .findFirst();
-        }
-
-        /**
-         * Returns whether CampusMate marked this Agent as enabled. Snapshots
-         * written before the field existed deserialize to {@code null}; they
-         * stay invocable, so absent defaults to enabled.
-         *
-         * @return enabled flag, {@code true} when unset
-         */
-        public boolean isEnabled() {
-            return enabled == null || enabled;
         }
     }
 
@@ -226,8 +217,8 @@ public class MateServiceClient {
     public record SkillReference(String id, String version) {}
 
     /**
-     * Agent binding metadata returned by GetAgentRuntime. {@code description} lets
-     * the parent Agent present child candidates without loading their full runtime.
+     * GetAgentRuntime 返回的子 Agent 绑定元数据。携带 {@code description} 使父 Agent
+     * 呈现子候选时无需加载子 Agent 的完整运行时。
      */
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record AgentReference(String id, String name, String displayName, String description, String version) {}
