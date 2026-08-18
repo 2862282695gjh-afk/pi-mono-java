@@ -147,6 +147,40 @@ public class MateRestUtil {
         }
     }
 
+    /**
+     * GETs {@code gwAddress + path} and returns the raw response body.
+     *
+     * @param gwAddress Mate inner gateway base address
+     * @param path API path on the gateway (may contain path variables)
+     * @param headerInfo request header info (credentials not required)
+     * @return raw response body string
+     * @throws IllegalStateException when the call fails, is interrupted, or
+     *         returns an empty body
+     */
+    public String executeGetRawRequest(String gwAddress, String path, RequestHeaderInfo headerInfo) {
+        String url = joinUrl(gwAddress, path);
+        try {
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(url))
+                    .timeout(REQUEST_TIMEOUT)
+                    .header("Accept", "application/json")
+                    .GET()
+                    .build();
+            HttpResponse<String> response =
+                    http.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+            if (response.body() == null || response.body().isEmpty()) {
+                throw new IllegalStateException("Mate gateway returned empty body");
+            }
+            return response.body();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Mate gateway call interrupted: " + url, e);
+        } catch (Exception e) {
+            log.error("Mate gateway call failed: url={}", url, e);
+            throw new IllegalStateException("Mate gateway call failed: " + url, e);
+        }
+    }
+
     private <T> ResultInfoPair<T> decodeEnvelope(String body, Class<T> responseType) throws Exception {
         if (body == null || body.isEmpty()) {
             throw new IllegalStateException("Mate gateway returned empty body");

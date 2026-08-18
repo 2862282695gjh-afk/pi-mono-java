@@ -99,7 +99,7 @@ public class ListMateTool implements AgentTool {
                 agentId != null ? agentId : "(none)",
                 skillId != null ? skillId : "(none)");
 
-        List<MateToolMeta> tools = client.listTools(toolIdsOf(agentId, skillId));
+        List<MateToolMeta> tools = client.listTools(agentId, skillId);
 
         log.info("Listed mate tools: count={}", tools.size());
 
@@ -129,22 +129,5 @@ public class ListMateTool implements AgentTool {
 
         List<ContentBlock> blocks = List.of(new TextContent(sb.toString()));
         return new AgentToolResult(blocks, null);
-    }
-
-    /**
-     * Collects the tool IDs to query from the agent_id/skill_id parameters.
-     *
-     * @param agentId the agent_id parameter, treated as a tool ID source
-     * @param skillId the skill_id parameter, treated as a tool ID source
-     * @return the tool ID list to pass to QUERYTOOLS
-     */
-    private static List<String> toolIdsOf(String agentId, String skillId) {
-        if (agentId != null) {
-            return List.of(agentId);
-        }
-        if (skillId != null) {
-            return List.of(skillId);
-        }
-        return List.of();
     }
 }

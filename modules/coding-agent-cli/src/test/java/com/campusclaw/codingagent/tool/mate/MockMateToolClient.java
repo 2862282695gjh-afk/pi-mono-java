@@ -5,6 +5,7 @@
 package com.campusclaw.codingagent.tool.mate;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -14,16 +15,23 @@ import com.campusclaw.codingagent.common.client.mate.MateToolMeta;
 
 /**
  * In-memory mock of {@link MateToolClient} for unit tests. Registered tools
- * are returned when their name appears in the queried tool ID list.
+ * are resolved through per-agent/per-skill binding lists, mirroring the
+ * two-step query of the real client.
  *
  * @version [br_eCampusCore 26.0.0, 2026/08/18]
  * @since [br_eCampusCore 26.0.0]
  */
 public class MockMateToolClient implements MateToolClient {
 
-    private final Map<String, MateToolMeta> toolsByName = new java.util.HashMap<>();
+    private final Map<String, List<String>> toolsByAgent = new HashMap<>();
 
-    private List<String> lastQueriedToolIds;
+    private final Map<String, List<String>> toolsBySkill = new HashMap<>();
+
+    private final Map<String, MateToolMeta> toolsById = new HashMap<>();
+
+    private String lastListAgentId;
+
+    private String lastListSkillId;
 
     private String lastCalledTool;
 
@@ -37,16 +45,45 @@ public class MockMateToolClient implements MateToolClient {
      * @param meta the tool metadata
      */
     public void addTool(MateToolMeta meta) {
-        toolsByName.put(meta.name(), meta);
+        toolsById.put(meta.name(), meta);
     }
 
     /**
-     * Returns the tool ID list received by the last listTools call.
+     * Binds a tool ID list to an agent.
      *
-     * @return the tool IDs
+     * @param agentId the agent id
+     * @param toolIds the bound tool ids
      */
-    public List<String> lastQueriedToolIds() {
-        return lastQueriedToolIds;
+    public void bindAgent(String agentId, List<String> toolIds) {
+        toolsByAgent.put(agentId, toolIds);
+    }
+
+    /**
+     * Binds a tool ID list to a skill.
+     *
+     * @param skillId the skill id
+     * @param toolIds the bound tool ids
+     */
+    public void bindSkill(String skillId, List<String> toolIds) {
+        toolsBySkill.put(skillId, toolIds);
+    }
+
+    /**
+     * Returns the agent ID received by the last listTools call.
+     *
+     * @return the agent ID
+     */
+    public String lastListAgentId() {
+        return lastListAgentId;
+    }
+
+    /**
+     * Returns the skill ID received by the last listTools call.
+     *
+     * @return the skill ID
+     */
+    public String lastListSkillId() {
+        return lastListSkillId;
     }
 
     /**
@@ -78,12 +115,14 @@ public class MockMateToolClient implements MateToolClient {
     }
 
     @Override
-    public List<MateToolMeta> listTools(List<String> toolIds) {
-        lastQueriedToolIds = new ArrayList<>(toolIds);
+    public List<MateToolMeta> listTools(String agentId, String skillId) {
+        lastListAgentId = agentId;
+        lastListSkillId = skillId;
+        List<String> ids = agentId != null ? toolsByAgent.get(agentId) : toolsBySkill.get(skillId);
         List<MateToolMeta> result = new ArrayList<>();
-        if (toolIds != null) {
-            for (String id : toolIds) {
-                MateToolMeta meta = toolsByName.get(id);
+        if (ids != null) {
+            for (String id : ids) {
+                MateToolMeta meta = toolsById.get(id);
                 if (meta != null) {
                     result.add(meta);
                 }
@@ -99,7 +138,7 @@ public class MockMateToolClient implements MateToolClient {
         if (overriddenResult != null) {
             return overriddenResult;
         }
-        MateToolMeta meta = toolsByName.get(tool);
+        MateToolMeta meta = toolsById.get(tool);
         if (meta == null) {
             return new ToolResult("unknown tool: " + tool, null, true);
         }

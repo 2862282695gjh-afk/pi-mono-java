@@ -8,9 +8,10 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Client contract for the Mate tool service. {@code listTools} runs
- * credential-free (the inner gateway does not require credentials);
- * {@code callTool} carries {@link MateCredentials} handed down by the agent.
+ * Client contract for the Mate tool service. {@code listTools} resolves the
+ * bound tool IDs from agent/skill metadata and queries their details,
+ * credential-free; {@code callTool} carries {@link MateCredentials} handed
+ * down by the agent.
  *
  * @version [br_eCampusCore 26.0.0, 2026/08/18]
  * @since [br_eCampusCore 26.0.0]
@@ -18,13 +19,14 @@ import java.util.Map;
 public interface MateToolClient {
 
     /**
-     * Lists the tools identified by the given tool IDs (QUERYTOOLS on the
-     * Mate inner gateway).
+     * Lists tools bound to the given agent or skill: fetches the metadata
+     * (binding tool IDs) first, then queries tool details.
      *
-     * @param toolIds the tool IDs to query
+     * @param agentId optional agent ID; null = use skillId
+     * @param skillId optional skill ID; null = use agentId
      * @return tool metadata list
      */
-    List<MateToolMeta> listTools(List<String> toolIds);
+    List<MateToolMeta> listTools(String agentId, String skillId);
 
     /**
      * Calls a specific tool with agent-handed-down credentials.

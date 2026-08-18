@@ -11,10 +11,13 @@ import java.util.Map;
 import com.campusclaw.codingagent.common.client.mate.MateCredentials;
 import com.campusclaw.codingagent.common.client.mate.MateToolClient;
 import com.campusclaw.codingagent.common.client.mate.MateToolMeta;
+import com.campusclaw.codingagent.common.dto.AgentInfo;
+import com.campusclaw.codingagent.common.dto.QuerySkillToolsResult;
 import com.campusclaw.codingagent.common.dto.RequestHeaderInfo;
 import com.campusclaw.codingagent.common.dto.ToolInfo;
 import com.campusclaw.codingagent.common.util.MateRestUtil;
 import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import org.slf4j.Logger;
@@ -26,9 +29,10 @@ import org.slf4j.LoggerFactory;
  *
  * <p>Gateway address comes from the {@code mate.innerGWSerive}
  * property/environment variable; requests carry a credential-free
- * {@link RequestHeaderInfo}. {@link #listTools(List)} queries tool metadata via
- * QUERYTOOLS; the invoke RPC behind {@link #callTool(String, Map)} remains a
- * stub for internal development (see {@code docs/DEFERRED.md} DEF-007).
+ * {@link RequestHeaderInfo}. {@link #listTools(String, String)} is a two-step
+ * query: agent/skill metadata (binding tool IDs) first, then QUERYTOOLS for
+ * the tool details. The invoke RPC behind {@link #callTool} remains a stub
+ * for internal development (see {@code docs/DEFERRED.md} DEF-007).
  *
  * @version [br_eCampusCore 26.0.0, 2026/08/18]
  * @since [br_eCampusCore 26.0.0]
@@ -38,8 +42,19 @@ public class HttpMateToolClient implements MateToolClient {
     private static final Logger log = LoggerFactory.getLogger(HttpMateToolClient.class);
 
     /**
-     * QUERYTOOLS path on the Mate inner gateway: query tool metadata by a
-     * list of tool IDs.
+     * Agent metadata endpoint: {@code GET /mate-service/v1/agents/{agentId}}.
+     */
+    protected static final String AGENT_INFO = "/mate-service/v1/agents/";
+
+    /**
+     * Skill tool-query endpoint:
+     * {@code GET /mate-service/v1/skill/info/query/{skillId}}.
+     */
+    protected static final String SKILL_TOOLS_QUERY = "/mate-service/v1/skill/info/query/";
+
+    /**
+     * Tool details endpoint (QUERYTOOLS):
+     * {@code POST /mate-service/v1/runtime/tools/query}.
      */
     protected static final String QUERYTOOLS = "/mate-service/v1/runtime/tools/query";
 
@@ -74,26 +89,16 @@ public class HttpMateToolClient implements MateToolClient {
     }
 
     @Override
-    public List<MateToolMeta> listTools(List<String> toolIds) {
-        if (toolIds == null || toolIds.isEmpty()) {
-            log.warn("listTools called without tool ids, returning empty list");
+    public List<MateToolMeta> listTools(String agentId, String skillId) {
+        if (agentId == null && skillId == null) {
+            log.warn("listTools called without agent_id or skill_id, returning empty list");
             return List.of();
         }
         try {
-            RequestHeaderInfo headerInfo = RequestHeaderInfo.builder().build();
-            String body = mapper.writeValueAsString(Map.of("toolIds", toolIds));
-            String raw = mateRestUtil.executePostRawRequest(mateInnerGwAddress, QUERYTOOLS, headerInfo, body);
-            var root = mapper.readTree(raw);
-            if (!"0".equals(root.path("resCode").asText(""))) {
-                throw new IllegalStateException(
-                        "QUERYTOOLS failed: resCode=" + root.path("resCode").asText("") + " resMsg="
-                                + root.path("resMsg").asText(""));
-            }
-            List<ToolInfo> infos =
-                    mapper.convertValue(root.path("result").path("data"), new TypeReference<List<ToolInfo>>() {});
-            return toMeta(infos);
+            List<String> toolIds = agentId != null ? queryToolIdsByAgentId(agentId) : queryToolIdsBySkillId(skillId);
+            return queryToolMetaByIds(toolIds);
         } catch (Exception e) {
-            log.error("listTools failed: count={} ", toolIds.size(), e);
+            log.error("listTools failed: agentId={} skillId={}", agentId, skillId, e);
             throw new IllegalStateException("listTools failed", e);
         }
     }
@@ -106,6 +111,103 @@ public class HttpMateToolClient implements MateToolClient {
             log.error("callTool failed: tool={}", tool, e);
             return new ToolResult("callTool failed: " + e.getMessage(), null, true);
         }
+    }
+
+    /**
+     * Resolves the bound tool IDs for an agent: GET agent metadata and extract
+     * {@code bindingTools[].toolId}.
+     *
+     * @param agentId the Mate agent ID
+     * @return the bound tool ID list
+     * @throws Exception when the gateway call or decoding fails
+     */
+    protected List<String> queryToolIdsByAgentId(String agentId) throws Exception {
+        String raw = mateRestUtil.executeGetRawRequest(
+                mateInnerGwAddress,
+                AGENT_INFO + agentId,
+                RequestHeaderInfo.builder().build());
+        AgentInfo agentInfo = unwrapResult(raw, AgentInfo.class);
+        List<String> toolIds = new ArrayList<>();
+        if (agentInfo != null && agentInfo.getBindingTools() != null) {
+            for (AgentInfo.BindingTool binding : agentInfo.getBindingTools()) {
+                toolIds.add(binding.getToolId());
+            }
+        }
+        return toolIds;
+    }
+
+    /**
+     * Resolves the bound tool IDs for a skill: GET skill tool info and extract
+     * {@code bindingTools[].id}.
+     *
+     * @param skillId the Mate skill ID
+     * @return the bound tool ID list
+     * @throws Exception when the gateway call or decoding fails
+     */
+    protected List<String> queryToolIdsBySkillId(String skillId) throws Exception {
+        String raw = mateRestUtil.executeGetRawRequest(
+                mateInnerGwAddress,
+                SKILL_TOOLS_QUERY + skillId,
+                RequestHeaderInfo.builder().build());
+        QuerySkillToolsResult skillResult = unwrapResult(raw, QuerySkillToolsResult.class);
+        List<String> toolIds = new ArrayList<>();
+        if (skillResult != null && skillResult.getBindingTools() != null) {
+            for (var binding : skillResult.getBindingTools()) {
+                toolIds.add(binding.getId());
+            }
+        }
+        return toolIds;
+    }
+
+    /**
+     * Queries full tool metadata by tool ID list (QUERYTOOLS, POST).
+     *
+     * @param toolIds the tool ID list to query
+     * @return full tool metadata list
+     * @throws Exception when the gateway call or decoding fails
+     * @throws IllegalStateException when resCode is not "0"
+     */
+    protected List<MateToolMeta> queryToolMetaByIds(List<String> toolIds) throws Exception {
+        if (toolIds.isEmpty()) {
+            return List.of();
+        }
+        String body = mapper.writeValueAsString(Map.of("toolIds", toolIds));
+        String raw = mateRestUtil.executePostRawRequest(
+                mateInnerGwAddress, QUERYTOOLS, RequestHeaderInfo.builder().build(), body);
+        JsonNode root = mapper.readTree(raw);
+        String resCode = root.path("resCode").asText("");
+        if (!"0".equals(resCode)) {
+            throw new IllegalStateException("QUERYTOOLS failed: resCode=" + resCode + " resMsg="
+                    + root.path("resMsg").asText(""));
+        }
+        List<ToolInfo> infos =
+                mapper.convertValue(root.path("result").path("data"), new TypeReference<List<ToolInfo>>() {});
+        return toMeta(infos);
+    }
+
+    /**
+     * Decodes the standard {@code {resCode, resMsg, result}} envelope and
+     * returns the typed {@code result}; fails on a non-zero resCode.
+     *
+     * @param <T> expected result type
+     * @param raw the raw response body
+     * @param type the result class
+     * @return the decoded result, or null when absent
+     * @throws Exception when decoding fails
+     * @throws IllegalStateException when resCode is not "0"
+     */
+    protected <T> T unwrapResult(String raw, Class<T> type) throws Exception {
+        JsonNode root = mapper.readTree(raw);
+        String resCode = root.path("resCode").asText("");
+        if (!"0".equals(resCode)) {
+            throw new IllegalStateException("gateway call failed: resCode=" + resCode + " resMsg="
+                    + root.path("resMsg").asText(""));
+        }
+        JsonNode resultNode = root.path("result");
+        if (resultNode.isMissingNode() || resultNode.isNull()) {
+            return null;
+        }
+        return mapper.treeToValue(resultNode, type);
     }
 
     /**

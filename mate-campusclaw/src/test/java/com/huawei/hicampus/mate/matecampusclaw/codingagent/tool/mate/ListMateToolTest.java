@@ -16,7 +16,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 /**
- * Unit tests for {@link ListMateTool}: tool-id based querying.
+ * Unit tests for {@link ListMateTool}: agent/skill parameters flow through to
+ * the client's two-step query.
  *
  * @version [br_eCampusCore 26.0.0, 2026/08/18]
  * @since [br_eCampusCore 26.0.0]
@@ -30,28 +31,32 @@ class ListMateToolTest {
     void setUp() {
         client = new MockMateToolClient();
         client.addTool(new MateToolMeta("query", "q", Map.of(), Map.of(), true, "allow"));
-        client.addTool(new MateToolMeta("export", "e", Map.of(), Map.of(), false, "ask"));
+        client.addTool(new MateToolMeta("export", "e", Map.of(), Map.of(), false, "allow"));
+        client.bindAgent("agent-1", List.of("query", "export"));
+        client.bindSkill("skill-1", List.of("query"));
         listMateTool = new ListMateTool(client);
     }
 
     @Test
-    void agentIdIsPassedAsToolIdToQuery() throws Exception {
-        var r = listMateTool.execute("t", Map.of("agent_id", "query"), null, null);
+    void agentIdIsPassedThroughToClient() throws Exception {
+        var r = listMateTool.execute("t", Map.of("agent_id", "agent-1"), null, null);
         String text = asText(r);
         assertTrue(text.contains("query"));
-        assertEquals(List.of("query"), client.lastQueriedToolIds());
+        assertTrue(text.contains("export"));
+        assertEquals("agent-1", client.lastListAgentId());
     }
 
     @Test
-    void skillIdIsPassedAsToolIdToQuery() throws Exception {
-        listMateTool.execute("t", Map.of("skill_id", "export"), null, null);
-        assertEquals(List.of("export"), client.lastQueriedToolIds());
+    void skillIdIsPassedThroughToClient() throws Exception {
+        listMateTool.execute("t", Map.of("skill_id", "skill-1"), null, null);
+        assertEquals("skill-1", client.lastListSkillId());
     }
 
     @Test
-    void noIdsQueriesEmptyList() throws Exception {
+    void noIdsReturnsEmptyList() throws Exception {
         listMateTool.execute("t", Map.of(), null, null);
-        assertEquals(List.of(), client.lastQueriedToolIds());
+        assertEquals(null, client.lastListAgentId());
+        assertEquals(null, client.lastListSkillId());
     }
 
     private static String asText(com.huawei.hicampus.mate.matecampusclaw.agent.tool.AgentToolResult r) {
