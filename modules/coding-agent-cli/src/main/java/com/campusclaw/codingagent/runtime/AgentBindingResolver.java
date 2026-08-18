@@ -14,6 +14,8 @@ import java.util.Set;
 import com.campusclaw.codingagent.runtime.AgentAuthorizationPolicy.AgentPrincipal;
 import com.campusclaw.codingagent.runtime.MateServiceClient.AgentReference;
 
+import org.springframework.stereotype.Component;
+
 /**
  * 按 {@code mainagent-subagent-design.md} §2.3 与 §5.1 计算一个父 Agent 的有效子 Agent 集合：
  *
@@ -32,6 +34,7 @@ import com.campusclaw.codingagent.runtime.MateServiceClient.AgentReference;
  * @version [br_eCampusCore 26.0.0, 2026/08/17]
  * @since [br_eCampusCore 26.0.0]
  */
+@Component
 public final class AgentBindingResolver {
 
     private final ChildAgentMetadataSource metadataSource;
@@ -170,7 +173,8 @@ public final class AgentBindingResolver {
      * @param description 展示给模型的绑定描述
      * @param version     子 Agent 的实际版本
      */
-    record ChildAgentSummary(String agentId, String name, String displayName, String description, String version) {}
+    public record ChildAgentSummary(
+            String agentId, String name, String displayName, String description, String version) {}
 
     /** resolver 判定一个子 Agent 所需的元数据。 */
     record ChildAgentMetadata(String agentId, String version, boolean enabled) {}

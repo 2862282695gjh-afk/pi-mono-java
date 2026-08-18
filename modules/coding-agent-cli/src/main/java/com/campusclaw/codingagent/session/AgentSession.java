@@ -34,7 +34,9 @@ import com.campusclaw.codingagent.prompt.PromptTemplateEntry;
 import com.campusclaw.codingagent.prompt.PromptTemplateLoader;
 import com.campusclaw.codingagent.prompt.SystemPromptBuilder;
 import com.campusclaw.codingagent.prompt.SystemPromptConfig;
+import com.campusclaw.codingagent.runtime.AgentBindingResolver.ChildAgentSummary;
 import com.campusclaw.codingagent.runtime.AgentRuntimeManager;
+import com.campusclaw.codingagent.runtime.DelegationState;
 import com.campusclaw.codingagent.runtime.PreparedAgentRuntime;
 import com.campusclaw.codingagent.skill.Skill;
 import com.campusclaw.codingagent.skill.SkillExpander;
@@ -45,6 +47,7 @@ import com.campusclaw.codingagent.tool.catalog.ControlTool;
 import com.campusclaw.codingagent.tool.catalog.ToolCatalog;
 import com.campusclaw.codingagent.tool.catalog.ToolRefreshRequest;
 import com.campusclaw.codingagent.tool.catalog.ToolSelection;
+import com.campusclaw.codingagent.tool.delegation.InvokeAgentTool;
 import com.campusclaw.codingagent.tool.skill.ActivateSkillTool;
 
 import org.slf4j.Logger;
@@ -87,6 +90,8 @@ public class AgentSession {
     private Map<String, List<String>> managedSkillToolNames = Map.of();
     private PreparedAgentRuntime preparedRuntime;
     private AgentRuntimeManager agentRuntimeManager;
+    private DelegationState delegationState;
+    private String initializedModelId;
     private String initializedCustomPrompt;
     private final Object runtimeLifecycleLock = new Object();
     private boolean runtimePromptActive;
@@ -152,6 +157,22 @@ public class AgentSession {
     }
 
     /**
+     * Enables parent-to-child Agent delegation for this session. With state
+     * set, {@code invoke_agent} is exposed whenever the resolver finds valid
+     * child bindings and the depth cap allows another hop; execution runs
+     * through the session's after-tool-call handler.
+     *
+     * @param delegationState dispatcher, identity and wiring for the chain
+     * @throws IllegalStateException when called after initialization
+     */
+    public void setDelegationState(DelegationState delegationState) {
+        if (initialized) {
+            throw new IllegalStateException("Delegation state must be set before session initialization");
+        }
+        this.delegationState = Objects.requireNonNull(delegationState, "delegationState");
+    }
+
+    /**
      * Initializes the session: resolves the model, loads skills, builds the
      * system prompt, registers tools, and configures the agent.
      *
@@ -168,6 +189,7 @@ public class AgentSession {
         // 1. Resolve model
         String modelId = config.model() != null ? config.model() : DEFAULT_MODEL;
         Model model = resolveModel(modelId);
+        initializedModelId = model.id();
 
         // 2. Load skills (user-level + project-level)
         Path cwd = config.cwd() != null ? config.cwd() : Path.of(System.getProperty("user.dir"));
@@ -723,16 +745,41 @@ public class AgentSession {
             baseTools = List.copyOf(tools);
             return;
         }
+        List<ChildAgentSummary> delegationCandidates = delegationCandidates();
         Set<String> allowedAgentTools = Set.copyOf(preparedRuntime.allowedAgentToolNames());
         var configured = new LinkedHashMap<String, AgentTool>();
 
         // Control tools are exempt from the remote Agent allow list but still follow
-        // the local ToolSelection that produced locallyVisibleTools.
+        // the local ToolSelection that produced locallyVisibleTools. invoke_agent is
+        // additionally gated on resolver-approved child candidates.
         locallyVisibleTools.stream()
-                .filter(tool -> allowedAgentTools.contains(tool.name()) || tool instanceof ControlTool)
+                .filter(tool -> allowedAgentTools.contains(tool.name())
+                        || isSessionControlTool(tool, !delegationCandidates.isEmpty()))
+                .map(tool -> adornDelegationTool(tool, delegationCandidates))
                 .forEach(tool -> configured.put(tool.name(), tool));
         tools = List.copyOf(configured.values());
         baseTools = tools;
+    }
+
+    private List<ChildAgentSummary> delegationCandidates() {
+        if (delegationState == null) {
+            return List.of();
+        }
+        return delegationState.dispatcher().resolveCandidates(delegationState, preparedRuntime);
+    }
+
+    private static boolean isSessionControlTool(AgentTool tool, boolean delegationEnabled) {
+        if (tool instanceof ActivateSkillTool) {
+            return true;
+        }
+        return delegationEnabled && tool instanceof InvokeAgentTool;
+    }
+
+    private static AgentTool adornDelegationTool(AgentTool tool, List<ChildAgentSummary> candidates) {
+        if (tool instanceof InvokeAgentTool invoke && !candidates.isEmpty()) {
+            return invoke.describedWith(candidates);
+        }
+        return tool;
     }
 
     /**
@@ -746,17 +793,51 @@ public class AgentSession {
      *         {@link AfterToolCallResult#noOverride()} for unrelated calls
      */
     private AfterToolCallResult handleAfterToolCall(AfterToolCallContext context) {
-        if (preparedRuntime == null
-                || context.isError()
-                || !ActivateSkillTool.NAME.equals(context.toolCall().name())) {
+        if (preparedRuntime == null || context.isError()) {
             return AfterToolCallResult.noOverride();
         }
+        if (ActivateSkillTool.NAME.equals(context.toolCall().name())) {
+            return handleActivateSkillToolCall(context);
+        }
+        if (InvokeAgentTool.NAME.equals(context.toolCall().name())) {
+            return handleDelegationToolCall(context);
+        }
+        return AfterToolCallResult.noOverride();
+    }
+
+    private AfterToolCallResult handleActivateSkillToolCall(AfterToolCallContext context) {
         Object value = context.args().get("skillName");
         if (!(value instanceof String skillName) || skillName.isBlank()) {
             return AfterToolCallResult.noOverride();
         }
         String instructions = activateRuntimeSkill(skillName);
         return new AfterToolCallResult(List.of(new TextContent(instructions)), null, null);
+    }
+
+    private AfterToolCallResult handleDelegationToolCall(AfterToolCallContext context) {
+        if (delegationState == null) {
+            return delegationError("Agent delegation is not available in this session");
+        }
+        Object agentId = context.args().get("agentId");
+        Object task = context.args().get("task");
+        if (!(agentId instanceof String targetId) || targetId.isBlank()) {
+            return delegationError("invoke_agent requires an agentId");
+        }
+        if (!(task instanceof String taskText) || taskText.isBlank()) {
+            return delegationError("invoke_agent requires a task");
+        }
+        try {
+            String answer = delegationState
+                    .dispatcher()
+                    .dispatch(delegationState, preparedRuntime, targetId, taskText, initializedModelId);
+            return new AfterToolCallResult(List.of(new TextContent(answer)), null, null);
+        } catch (RuntimeException e) {
+            return delegationError("Agent delegation failed: " + e.getMessage());
+        }
+    }
+
+    private static AfterToolCallResult delegationError(String message) {
+        return new AfterToolCallResult(List.of(new TextContent(message)), null, true);
     }
 
     private String activateRuntimeSkill(String skillName) {

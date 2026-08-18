@@ -17,6 +17,7 @@ import com.campusclaw.codingagent.config.CustomModelLoader;
 import com.campusclaw.codingagent.model.ModelCatalogService;
 import com.campusclaw.codingagent.prompt.SystemPromptBuilder;
 import com.campusclaw.codingagent.runtime.AgentRuntimeManager;
+import com.campusclaw.codingagent.runtime.LocalAgentDispatcher;
 import com.campusclaw.codingagent.session.SessionConfig;
 import com.campusclaw.codingagent.settings.Settings;
 import com.campusclaw.codingagent.settings.SettingsManager;
@@ -84,6 +85,7 @@ public class ServerMode {
     private final SettingsManager settingsManager;
     private final CustomModelLoader customModelLoader;
     private final AgentRuntimeManager agentRuntimeManager;
+    private final LocalAgentDispatcher delegationDispatcher;
     private final String defaultAgentId;
     private final ToolCatalog toolCatalog;
     private final ToolSelection toolSelection;
@@ -301,6 +303,48 @@ public class ServerMode {
             AgentRuntimeManager agentRuntimeManager,
             String defaultAgentId,
             Function<Settings.ToolsSettings, ToolSelection> toolSelectionResolver) {
+        this(
+                aiService,
+                modelRegistry,
+                promptBuilder,
+                tools,
+                toolCatalog,
+                toolSelection,
+                baseConfig,
+                port,
+                host,
+                sandboxParser,
+                useSandbox,
+                modelCatalog,
+                sessionPersistenceEnabled,
+                settingsManager,
+                customModelLoader,
+                agentRuntimeManager,
+                defaultAgentId,
+                toolSelectionResolver,
+                null);
+    }
+
+    public ServerMode(
+            CampusClawAiService aiService,
+            ModelRegistry modelRegistry,
+            SystemPromptBuilder promptBuilder,
+            List<AgentTool> tools,
+            ToolCatalog toolCatalog,
+            ToolSelection toolSelection,
+            SessionConfig baseConfig,
+            int port,
+            String host,
+            SandboxSkillParser sandboxParser,
+            boolean useSandbox,
+            ModelCatalogService modelCatalog,
+            boolean sessionPersistenceEnabled,
+            SettingsManager settingsManager,
+            CustomModelLoader customModelLoader,
+            AgentRuntimeManager agentRuntimeManager,
+            String defaultAgentId,
+            Function<Settings.ToolsSettings, ToolSelection> toolSelectionResolver,
+            LocalAgentDispatcher delegationDispatcher) {
         this.aiService = aiService;
         this.modelRegistry = modelRegistry;
         this.promptBuilder = promptBuilder;
@@ -316,6 +360,7 @@ public class ServerMode {
         this.customModelLoader = customModelLoader;
         this.agentRuntimeManager = agentRuntimeManager;
         this.defaultAgentId = defaultAgentId;
+        this.delegationDispatcher = delegationDispatcher;
         this.toolCatalog = toolCatalog;
         this.toolSelection = toolSelection != null ? toolSelection : ToolSelection.all();
         this.toolSelectionResolver =
@@ -350,7 +395,8 @@ public class ServerMode {
                 settingsManager,
                 agentRuntimeManager,
                 defaultAgentId,
-                toolSelectionResolver);
+                toolSelectionResolver,
+                delegationDispatcher);
         var chatHandler = new ChatHandler(sessionPool);
         var wsHandler = new ChatWebSocketHandler(sessionPool, modelCatalog);
         var skillHandler = new SkillHandler(
