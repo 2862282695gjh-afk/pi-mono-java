@@ -19,8 +19,9 @@ import com.campusclaw.codingagent.runtime.MateServiceClient.SkillInfo;
  * @param agentId   selected Agent identifier
  * @param agentRoot local {@code ./agent/{agentId}} directory
  * @param metadata  cached runtime metadata
- * @param skills    identity snapshots (name/id/description) of directly bound Skills,
- *                  reconstructed from the materialized SKILL.md front-matter headers
+ * @param skills    identity snapshots (name/description) of the bound Skills, reconstructed
+ *                  from the materialized SKILL.md front-matter headers; the materialized
+ *                  {@code skills/} sub-directories themselves prove the binding
  *
  * @version [br_eCampusCore 26.0.0, 2026/08/17]
  * @since [br_eCampusCore 26.0.0]

@@ -98,7 +98,7 @@ querySkillInfo 返回的 `bindingTools` 是 Skill 工具的唯一远端来源。
 
 `tools.json` 不按 `permission` 过滤，也不保存 `permission` 字段；每个 `bindingTools` 条目都映射为 `tool_id`、`name`、`description`。Skill 激活阶段直接读取该文件，不再调用 querySkillTools，也不再与 SKILL.md 做一致性比对（暂缓项，见 DEF-008 ③）。
 
-Skill 不落任何独立元数据 JSON（无 `skill.json`）：`SKILL.md` 的 front-matter 头部（`name`、`id`、`description`）是 Skill 身份的唯一持久化来源，本地缓存加载时解析该头部重建名称与描述；`id` 仅用于与 `agentId.json` 中 `bindingSkills` 引用做绑定关联，防止半成品目录被误判为完整缓存。
+Skill 不落任何独立元数据 JSON（无 `skill.json`），也不持久化 Skill id：`SKILL.md` 的 front-matter 头部（`name`、`description`）是 Skill 身份的唯一持久化来源，本地缓存加载时解析该头部重建名称与描述。Agent 运行过程不需要 Skill id——`skills/` 目录下存在以 Skill 名称命名的子目录即证明 Agent 绑定了这些 Skill；`agentId.json` 的 `bindingSkills` 引用仅在物化阶段用于 querySkillInfo。缓存完整性只校验「可解析 SKILL.md 的子目录数量与声明绑定数一致」，不一致时重新物化并清空重建整个 `skills/` 目录（CampusMate 为权威源，覆写过时绑定）。
 
 ### 4.4 CampusClaw 入口
 
@@ -113,9 +113,9 @@ Skill 不落任何独立元数据 JSON（无 `skill.json`）：`SKILL.md` 的 fr
 ### 5.1 Agent 本地发现与冷启动
 
 1. 解析 `./agent/{agentId}` 路径（agentId 仅要求非空，穿越防护暂缓，见 DEF-008 ①）。
-2. 本地存在 `agentId.json`、`systemPrompt.md`、`skills/` 目录且每个直接绑定 Skill 的 `SKILL.md` 头部（name/id/description）可解析时，直接加载本地缓存，不调用 CampusMateService。
+2. 本地存在 `agentId.json`、`systemPrompt.md`、`skills/` 目录，且每个子目录的 `SKILL.md` 头部（name/description）可解析、数量与 `bindingSkills` 声明一致时，直接加载本地缓存，不调用 CampusMateService。
 3. 本地快照缺失或无法加载（含物化中断的半成品）时调用 GetAgentRuntime，取得 Agent 信息与直接绑定 Skill 的 `(id, version)` 列表；对每个绑定调用 querySkillInfo（返回为空报错，其余形状校验暂缓）。`systemPrompt.md` 是本地会话系统提示词来源，允许用户本地修改。
-4. 物化直接写入目标目录：基础 `SKILL.md`（name/id/description frontmatter）、`references/`、`templates/`、`references/tools.json`（全部 `bindingTools`）、`systemPrompt.md`、`agentId.json`、`setting.json`（原子发布与资源白名单暂缓）。
+4. 物化先清空重建 `skills/` 目录（权威覆写，过期绑定的 Skill 目录不会残留），再写入：基础 `SKILL.md`（name/description frontmatter）、`references/`、`templates/`、`references/tools.json`（全部 `bindingTools`）、`systemPrompt.md`、`agentId.json`、`setting.json`（原子发布与资源白名单暂缓）。
 
 ### 5.2 Skill 发现
 

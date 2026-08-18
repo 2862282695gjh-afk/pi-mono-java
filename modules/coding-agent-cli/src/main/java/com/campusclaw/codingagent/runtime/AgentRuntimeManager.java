@@ -9,9 +9,11 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.regex.Pattern;
@@ -199,13 +201,14 @@ public class AgentRuntimeManager {
     }
 
     /**
-     * Rebuilds the bound-Skill list from the materialized SKILL.md front-matter headers. The
-     * persisted {@code id} keeps the {@code agentId.json} binding references linked to their
-     * directories, so a partially materialized tree still falls through to re-materialization.
+     * Rebuilds the bound-Skill list from the materialized SKILL.md front-matter headers. A
+     * sub-directory with a parseable SKILL.md header is itself the proof that the Agent is
+     * bound to that Skill; the declared reference count only guards against partially
+     * materialized trees, which fall through to re-materialization.
      *
      * @param skillsDir directory containing one sub-directory per bound Skill
      * @param references binding references declared by the cached Agent metadata
-     * @return the bound Skills in reference order, or {@code null} when the snapshot is incomplete
+     * @return the bound Skills sorted by name, or {@code null} when the snapshot is incomplete
      */
     private List<SkillInfo> loadBoundSkills(Path skillsDir, List<SkillReference> references) {
         List<SkillInfo> available = new ArrayList<>();
@@ -213,24 +216,18 @@ public class AgentRuntimeManager {
             for (Path entry : entries) {
                 Path skillFile = entry.resolve(SKILL_FILE);
                 if (Files.isRegularFile(skillFile)) {
-                    available.add(parseMaterializedSkill(entry, Files.readString(skillFile, StandardCharsets.UTF_8)));
+                    SkillInfo skill = parseMaterializedSkill(Files.readString(skillFile, StandardCharsets.UTF_8));
+                    if (skill != null) {
+                        available.add(skill);
+                    }
                 }
             }
-            List<SkillInfo> bound = new ArrayList<>();
-            for (SkillReference reference : references) {
-                if (reference == null) {
-                    continue;
-                }
-                SkillInfo match = available.stream()
-                        .filter(skill -> reference.id().equals(skill.id()))
-                        .findFirst()
-                        .orElse(null);
-                if (match == null) {
-                    return null;
-                }
-                bound.add(match);
+            long declared = references.stream().filter(Objects::nonNull).count();
+            if (available.size() != declared) {
+                return null;
             }
-            return List.copyOf(bound);
+            available.sort(Comparator.comparing(SkillInfo::name));
+            return List.copyOf(available);
         } catch (IOException e) {
             return null;
         }
@@ -239,23 +236,24 @@ public class AgentRuntimeManager {
     /**
      * Reconstructs the minimal Skill identity snapshot from a SKILL.md front-matter header.
      *
-     * @param skillDir the materialized Skill directory
      * @param content the SKILL.md content
-     * @return Skill metadata carrying name, id and description only
+     * @return Skill metadata carrying name and description only, or {@code null} when the
+     *         header lacks a usable name or description
      */
-    private static SkillInfo parseMaterializedSkill(Path skillDir, String content) {
+    private static SkillInfo parseMaterializedSkill(String content) {
         Map<String, Object> frontmatter = SkillLoader.parseFrontmatter(content);
-        String dirName = skillDir.getFileName().toString();
-        String name = frontmatterString(frontmatter, "name", dirName);
-        String id = frontmatterString(frontmatter, "id", name);
-        String description = frontmatterString(frontmatter, "description", null);
-        return new SkillInfo(name, id, null, description, null, List.of(), List.of(), List.of(), List.of());
+        String name = frontmatterValue(frontmatter, "name");
+        String description = frontmatterValue(frontmatter, "description");
+        if (name == null || description == null) {
+            return null;
+        }
+        return new SkillInfo(name, null, null, description, null, List.of(), List.of(), List.of(), List.of());
     }
 
-    private static String frontmatterString(Map<String, Object> frontmatter, String key, String fallback) {
+    private static String frontmatterValue(Map<String, Object> frontmatter, String key) {
         Object value = frontmatter.get(key);
         if (value == null || String.valueOf(value).isBlank()) {
-            return fallback;
+            return null;
         }
         return String.valueOf(value);
     }
@@ -271,6 +269,10 @@ public class AgentRuntimeManager {
     private void writeRuntimeTree(Path agentRoot, AgentRuntime runtime, List<SkillInfo> skills) throws IOException {
         Path campusClawDir = agentRoot.resolve(".campusclaw");
         Path skillsDir = campusClawDir.resolve("skills");
+
+        // The skills directory is fully managed: re-materialization rewrites it from scratch
+        // so stale Skill directories from an older binding cannot survive a re-fetch.
+        deleteRecursively(skillsDir);
         Files.createDirectories(skillsDir);
         for (SkillInfo skill : skills) {
             Path skillDir = skillsDir.resolve(skillDirectoryName(skill));
@@ -335,7 +337,9 @@ public class AgentRuntimeManager {
 
     /**
      * Renders the SKILL.md whose front-matter header is the single persisted source of the
-     * Skill identity: {@code name}, {@code id} (binding linkage) and {@code description}.
+     * Skill identity: {@code name} and {@code description}. No Skill id is persisted — the
+     * materialized {@code skills/} sub-directories themselves prove which Skills the Agent
+     * is bound to.
      *
      * @param skill Skill metadata fetched from CampusMate
      * @return the SKILL.md content
@@ -344,11 +348,9 @@ public class AgentRuntimeManager {
     private String renderSkill(SkillInfo skill) throws IOException {
         String description = firstNonBlank(skill.description(), skill.name());
         StringBuilder content = new StringBuilder();
-        content.append("---\nname: ").append(skill.name());
-        if (skill.id() != null) {
-            content.append("\nid: ").append(mapper.writeValueAsString(skill.id()));
-        }
-        content.append("\ndescription: ")
+        content.append("---\nname: ")
+                .append(skill.name())
+                .append("\ndescription: ")
                 .append(mapper.writeValueAsString(description))
                 .append("\n---\n\n");
         content.append("# ").append(skill.name()).append("\n\n");
@@ -419,6 +421,17 @@ public class AgentRuntimeManager {
     private static void writeFile(Path target, String content) throws IOException {
         Files.createDirectories(target.getParent());
         Files.writeString(target, content == null ? "" : content, StandardCharsets.UTF_8);
+    }
+
+    private static void deleteRecursively(Path root) throws IOException {
+        if (!Files.exists(root)) {
+            return;
+        }
+        try (var paths = Files.walk(root)) {
+            for (Path path : paths.sorted(Comparator.reverseOrder()).toList()) {
+                Files.delete(path);
+            }
+        }
     }
 
     private static boolean hasText(String value) {

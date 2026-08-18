@@ -85,10 +85,11 @@ class AgentRuntimeManagerTest {
         assertEquals("approval", toolsJson.path("tools").get(2).path("name").asText());
         assertFalse(Files.exists(skillRoot.resolve("skill.json")));
         String skillFile = Files.readString(skillRoot.resolve("SKILL.md"), StandardCharsets.UTF_8);
-        assertTrue(skillFile.contains("id: \"skill-1\""));
+        assertFalse(skillFile.contains("id:"));
+        assertTrue(skillFile.contains("name: skill-a"));
         assertTrue(Files.isRegularFile(prepared.agentRoot().resolve(".campusclaw/skills/skill-b/SKILL.md")));
         assertEquals("skill-a", prepared.skills().getFirst().name());
-        assertEquals("skill-1", prepared.skills().getFirst().id());
+        assertNull(prepared.skills().getFirst().id());
         assertEquals("Calendar workflow", prepared.skills().getFirst().description());
         verify(client).querySkillInfo("skill-1");
         verify(client).querySkillInfo("skill-2");
@@ -192,6 +193,24 @@ class AgentRuntimeManagerTest {
         assertEquals(1, rematerialized.skills().size());
         verify(client, times(2)).getAgentRuntime("agent-a");
         verify(client, times(2)).querySkillInfo("skill-1");
+    }
+
+    @Test
+    void rematerializesAndCleansStaleSkillDirectories() throws Exception {
+        when(client.getAgentRuntime("agent-a")).thenReturn(runtime(List.of(new SkillReference("skill-1", "1"))));
+        when(client.querySkillInfo("skill-1")).thenReturn(List.of(skillInfo()));
+        PreparedAgentRuntime prepared = manager.prepare("agent-a");
+        Path rogueDir = prepared.agentRoot().resolve(".campusclaw/skills/rogue");
+        Files.createDirectories(rogueDir);
+        Files.writeString(rogueDir.resolve("SKILL.md"), "---\nname: rogue\ndescription: stale\n---\n");
+
+        PreparedAgentRuntime rematerialized = manager.prepare("agent-a");
+
+        assertFalse(Files.exists(rogueDir));
+        assertEquals(
+                List.of("skill-a"),
+                rematerialized.skills().stream().map(SkillInfo::name).toList());
+        verify(client, times(2)).getAgentRuntime("agent-a");
     }
 
     @Test
