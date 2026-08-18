@@ -8,6 +8,8 @@ import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.mate.CallMateToo
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
+import lombok.Data;
+
 /**
  * Configuration properties for the Mate tool client and AgentTools.
  *
@@ -21,9 +23,10 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  *     x-hw-appkey: hw-key-001
  * </pre>
  *
- * @version [br_eCampusCore 26.0.0, 2026/08/17]
+ * @version [br_eCampusCore 26.0.0, 2026/08/18]
  * @since [br_eCampusCore 26.0.0]
  */
+@Data
 @ConfigurationProperties(prefix = "mate.tool")
 public class MateToolProperties {
 
@@ -52,94 +55,4 @@ public class MateToolProperties {
      * (fail-closed) so an unconfigured interactive UI never auto-approves.
      */
     private CallMateTool.MateApprovalUI approvalUi = (tool, args, description) -> false;
-
-    /**
-     * Returns whether the Mate tools are enabled.
-     *
-     * @return true when enabled
-     */
-    public boolean getEnabled() {
-        return enabled;
-    }
-
-    /**
-     * Sets whether the Mate tools are enabled.
-     *
-     * @param enabled the enabled flag
-     */
-    public void setEnabled(boolean enabled) {
-        this.enabled = enabled;
-    }
-
-    /**
-     * Returns the Mate tool server base URL.
-     *
-     * @return the base URL
-     */
-    public String getBaseUrl() {
-        return baseUrl;
-    }
-
-    /**
-     * Sets the Mate tool server base URL.
-     *
-     * @param baseUrl the base URL
-     */
-    public void setBaseUrl(String baseUrl) {
-        this.baseUrl = baseUrl;
-    }
-
-    /**
-     * Returns the X-HW-ID credential.
-     *
-     * @return the X-HW-ID value
-     */
-    public String getXHwId() {
-        return xHwId;
-    }
-
-    /**
-     * Sets the X-HW-ID credential.
-     *
-     * @param xHwId the X-HW-ID value
-     */
-    public void setXHwId(String xHwId) {
-        this.xHwId = xHwId;
-    }
-
-    /**
-     * Returns the X-HW-APPKEY credential.
-     *
-     * @return the X-HW-APPKEY value
-     */
-    public String getXHwAppKey() {
-        return xHwAppKey;
-    }
-
-    /**
-     * Sets the X-HW-APPKEY credential.
-     *
-     * @param xHwAppKey the X-HW-APPKEY value
-     */
-    public void setXHwAppKey(String xHwAppKey) {
-        this.xHwAppKey = xHwAppKey;
-    }
-
-    /**
-     * Returns the approval callback for "ask" tools.
-     *
-     * @return the approval UI callback
-     */
-    public CallMateTool.MateApprovalUI getApprovalUi() {
-        return approvalUi;
-    }
-
-    /**
-     * Sets the approval callback for "ask" tools.
-     *
-     * @param approvalUi the approval UI callback
-     */
-    public void setApprovalUi(CallMateTool.MateApprovalUI approvalUi) {
-        this.approvalUi = approvalUi;
-    }
 }
