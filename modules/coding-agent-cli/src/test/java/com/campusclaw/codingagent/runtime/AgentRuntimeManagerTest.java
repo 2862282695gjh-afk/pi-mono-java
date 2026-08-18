@@ -4,13 +4,17 @@
 
 package com.campusclaw.codingagent.runtime;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import java.nio.charset.StandardCharsets;
@@ -18,6 +22,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.StreamSupport;
 
 import com.campusclaw.codingagent.runtime.MateServiceClient.AgentRuntime;
@@ -190,6 +197,57 @@ class AgentRuntimeManagerTest {
 
         assertThrows(AgentRuntimeException.class, () -> manager.prepare("agent-a"));
         assertFalse(Files.exists(tempDir.resolve("agent/agent-a")));
+    }
+
+    @Test
+    void rejectsAgentIdThatCouldEscapeTheAgentsRoot() {
+        String[] invalidIds = {
+            null, "", "   ", "..", "../sibling", "a/b", "/etc/passwd", "a\\b", ".hidden", "-dash", "_under", "a?b"
+        };
+        for (String invalidId : invalidIds) {
+            assertThrows(
+                    IllegalArgumentException.class,
+                    () -> manager.prepare(invalidId),
+                    "agentId must be rejected: " + invalidId);
+        }
+        verifyNoInteractions(client);
+    }
+
+    @Test
+    void prepareCachedReadsLocalSnapshotWithoutRemoteCalls() {
+        when(client.getAgentRuntime("agent-a")).thenReturn(runtime(List.of()));
+        manager.prepare("agent-a");
+
+        PreparedAgentRuntime cached = manager.prepareCached("agent-a");
+
+        assertEquals("agent-a", cached.agentId());
+        assertNull(manager.prepareCached("agent-b"));
+        verify(client, times(1)).getAgentRuntime("agent-a");
+        verify(client, never()).getAgentRuntime("agent-b");
+    }
+
+    @Test
+    void coldStartOfOneAgentDoesNotBlockAnotherAgent() throws Exception {
+        CountDownLatch agentAEntered = new CountDownLatch(1);
+        CountDownLatch releaseAgentA = new CountDownLatch(1);
+        when(client.getAgentRuntime("agent-a")).thenAnswer(invocation -> {
+            agentAEntered.countDown();
+            releaseAgentA.await();
+            return runtime(List.of());
+        });
+        when(client.getAgentRuntime("agent-b")).thenReturn(runtime(List.of()));
+
+        var agentAFuture = CompletableFuture.supplyAsync(() -> manager.prepare("agent-a"));
+        try {
+            assertThat(agentAEntered.await(5, TimeUnit.SECONDS)).isTrue();
+
+            PreparedAgentRuntime agentB = manager.prepare("agent-b");
+
+            assertEquals("agent-b", agentB.agentId());
+        } finally {
+            releaseAgentA.countDown();
+        }
+        assertEquals("agent-a", agentAFuture.get(5, TimeUnit.SECONDS).agentId());
     }
 
     @Test

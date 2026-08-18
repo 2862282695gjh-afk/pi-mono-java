@@ -62,9 +62,9 @@ public class DefaultToolCatalog implements ToolCatalog {
     public synchronized ToolCatalog.Snapshot refresh(ToolRefreshRequest request) {
         var nextContext = request != null ? request.toSourceContext(context) : context;
         var next = buildSnapshot(snapshot.version() + 1, nextContext);
-        if (hasSourceFailure(next)) {
+        if (next.degraded()) {
             return new ToolCatalog.Snapshot(
-                    snapshot.version(), snapshot.toolsByName(), snapshot.sourcesByName(), next.diagnostics());
+                    snapshot.version(), snapshot.toolsByName(), snapshot.sourcesByName(), next.diagnostics(), true);
         }
         context = nextContext;
         snapshot = next;
@@ -94,8 +94,16 @@ public class DefaultToolCatalog implements ToolCatalog {
         var toolsByName = new LinkedHashMap<String, AgentTool>();
         var sourcesByName = new LinkedHashMap<String, ToolContributionSource>();
         var diagnostics = new ArrayList<String>();
+        boolean degraded = false;
         for (var source : sources) {
-            var contributions = loadContributions(source, context, diagnostics);
+            List<ToolContribution> contributions;
+            try {
+                contributions = source.load(context);
+            } catch (RuntimeException e) {
+                degraded = true;
+                diagnostics.add("Failed to load tool source: " + e.getMessage());
+                continue;
+            }
             for (var contribution : contributions) {
                 var toolName = contribution.tool().name();
                 if (toolsByName.containsKey(toolName)) {
@@ -106,20 +114,6 @@ public class DefaultToolCatalog implements ToolCatalog {
                 sourcesByName.put(toolName, contribution.source());
             }
         }
-        return new ToolCatalog.Snapshot(version, toolsByName, sourcesByName, diagnostics);
-    }
-
-    private List<ToolContribution> loadContributions(
-            ToolSource source, ToolSource.Context context, List<String> diagnostics) {
-        try {
-            return source.load(context);
-        } catch (RuntimeException e) {
-            diagnostics.add("Failed to load tool source: " + e.getMessage());
-            return List.of();
-        }
-    }
-
-    private boolean hasSourceFailure(ToolCatalog.Snapshot snapshot) {
-        return snapshot.diagnostics().stream().anyMatch(message -> message.startsWith("Failed to load tool source"));
+        return new ToolCatalog.Snapshot(version, toolsByName, sourcesByName, diagnostics, degraded);
     }
 }

@@ -9,6 +9,8 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -74,6 +76,8 @@ public class SessionPool {
     private final String defaultAgentId;
 
     private final Map<String, Entry> sessions = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, CompletableFuture<AgentSession>> inFlightCreations =
+            new ConcurrentHashMap<>();
     private final Object toolReloadLock = new Object();
     private final ScheduledExecutorService cleaner;
     private com.campusclaw.agent.subagent.SubAgentRegistry subAgentRegistry;
@@ -268,6 +272,11 @@ public class SessionPool {
     /**
      * Returns an existing session for an Agent/conversation pair, or creates one.
      *
+     * <p>Session creation (which may perform remote Agent preparation with
+     * multi-second I/O) runs outside the sessions map lock; concurrent creation
+     * for the same key is deduplicated through an in-flight future, while
+     * creation for different keys proceeds in parallel.</p>
+     *
      * @param agentId selected managed Agent ID; blank uses the server default/legacy session
      * @param conversationId conversation ID; blank generates a new ID
      * @return resolved session reference
@@ -279,12 +288,45 @@ public class SessionPool {
                 : UUID.randomUUID().toString().replace("-", "").substring(0, 12);
         validateConversationId(id);
         String key = sessionKey(effectiveAgentId, id);
-        Entry entry = sessions.compute(
-                key,
-                (ignored, existing) -> existing != null
-                        ? new Entry(existing.session(), now())
-                        : new Entry(createSessionWithPersistence(effectiveAgentId, id), now()));
-        return new SessionRef(id, entry.session());
+        Entry existing = sessions.get(key);
+        if (existing != null) {
+            sessions.computeIfPresent(key, (ignored, current) -> new Entry(current.session(), now()));
+            return new SessionRef(id, existing.session());
+        }
+        return createOrAwaitSession(key, effectiveAgentId, id);
+    }
+
+    private SessionRef createOrAwaitSession(String key, String agentId, String conversationId) {
+        CompletableFuture<AgentSession> creation = new CompletableFuture<>();
+        CompletableFuture<AgentSession> inFlight = inFlightCreations.putIfAbsent(key, creation);
+        if (inFlight != null) {
+            return new SessionRef(conversationId, awaitSession(key, inFlight));
+        }
+        try {
+            AgentSession created = createSessionWithPersistence(agentId, conversationId);
+            sessions.put(key, new Entry(created, now()));
+            creation.complete(created);
+            return new SessionRef(conversationId, created);
+        } catch (RuntimeException e) {
+            creation.completeExceptionally(e);
+            throw e;
+        } finally {
+            inFlightCreations.remove(key, creation);
+        }
+    }
+
+    private AgentSession awaitSession(String key, CompletableFuture<AgentSession> inFlight) {
+        AgentSession session;
+        try {
+            session = inFlight.join();
+        } catch (CompletionException e) {
+            if (e.getCause() instanceof RuntimeException runtime) {
+                throw runtime;
+            }
+            throw e;
+        }
+        sessions.computeIfPresent(key, (ignored, current) -> new Entry(current.session(), now()));
+        return session;
     }
 
     /**
@@ -356,16 +398,29 @@ public class SessionPool {
 
     /**
      * Resolves the persistence cwd for an Agent-scoped conversation listing.
+     * Read-only: never fetches from CampusMate and never materializes a
+     * directory; Agents without a complete local snapshot fall back to the
+     * base cwd.
      *
      * @param agentId selected Agent ID, or {@code null} for the default/legacy runtime
      * @return normalized session cwd
      */
     Path conversationCwd(String agentId) {
-        PreparedAgentRuntime prepared = prepareRuntime(normalizeAgentId(agentId));
+        PreparedAgentRuntime prepared = prepareCachedRuntime(normalizeAgentId(agentId));
         Path configured = prepared != null ? prepared.agentRoot() : baseConfig.cwd();
         return (configured != null ? configured : Path.of(System.getProperty("user.dir")))
                 .toAbsolutePath()
                 .normalize();
+    }
+
+    private PreparedAgentRuntime prepareCachedRuntime(String agentId) {
+        if (agentId == null) {
+            return null;
+        }
+        if (agentRuntimeManager == null) {
+            throw new IllegalStateException("Managed Agent runtime is not configured");
+        }
+        return agentRuntimeManager.prepareCached(agentId);
     }
 
     /**
@@ -390,6 +445,8 @@ public class SessionPool {
                     "ok",
                     "version",
                     snapshot.version(),
+                    "degraded",
+                    snapshot.degraded(),
                     "diagnostics",
                     snapshot.diagnostics(),
                     "activeSessions",

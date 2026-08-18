@@ -38,8 +38,8 @@
 
   <section><h2>Decision</h2>
     <ul>
-      <li>九条规则的主代码与测试整体暂缓，登记 <a href="../DEFERRED.md">DEF-008</a>；ADR-0011 的本地优先架构决策不变，仅暂缓其 fail closed 加固部分。</li>
-      <li><code>AgentRuntimeManager</code> 语义降级：<code>prepare()</code> 仅做 agentId 非空检查；快照四要素（agentId.json/systemPrompt.md/skills 目录/可读的 skill.json）齐备即加载，否则重新拉取远程并<strong>原地覆盖物化</strong>（自愈，不再报"配置漂移"错误）。</li>
+      <li>九条规则的主代码与测试整体暂缓，登记 <a href="../DEFERRED.md">DEF-008</a>；ADR-0011 的本地优先架构决策不变，仅暂缓其 fail closed 加固部分。<strong>①的兜底已就位：</strong>评审（2026-08-18）指出本 PR 把 <code>agent_id</code> 接入 REST/WS 后已满足"必须恢复①"的触发条件，故 <code>prepare()/prepareCached()</code> 入口现按 <code>docs/openapi/campusclaw-api.yaml</code> 同款段格式正则（<code>^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$</code>，无路径分隔符、首字符字母数字）直接拒绝穿越值，符合格式的 ID 只能解析为 agents-root 内单段路径；②–⑨仍随 DEF-008 暂缓。</li>
+      <li><code>AgentRuntimeManager</code> 语义降级：<code>prepare()</code> 入口做 agentId 段格式校验（见上条）；快照四要素（agentId.json/systemPrompt.md/skills 目录/可读的 skill.json）齐备即加载，否则重新拉取远程并<strong>原地覆盖物化</strong>（自愈，不再报"配置漂移"错误）。</li>
       <li>远程响应仅保留最小健壮性：querySkillInfo 空结果报错；不再校验 id 匹配、版本坐标、数量/大小上限、重复检测。</li>
       <li>物化改为直接写入目标目录（保留逐文件写入），移除临时目录 + 原子移动发布。</li>
       <li>设计文档 <code>agent-skill-runtime.md</code> §5.1 同步降级为当前语义，完整九条规则移至本 ADR 附录留档。</li>
@@ -51,9 +51,9 @@
       <li><strong>正面：</strong>PR #131 modules 部分缩减约 1100 行；快照中断/损坏自愈（重新物化）而非卡死报错；评审焦点集中在功能本体。</li>
       <li><strong>负面（已接受的风险窗口）：</strong>
         <ul>
-          <li>无路径穿越防护：REST/WS 服务器模式下 <code>agent_id</code> 为远程入参，形如 <code>../../..</code> 的值可越出 agents-root 读写——<strong>服务器模式上线前必须恢复①</strong>；本地 CLI 模式下仅影响用户自己的目录。</li>
+          <li>路径穿越①的兜底已就位（入口段格式校验拒绝穿越值），但 agents-root 边界的完整校验（符号链接逃逸等，原①②覆盖范围）仍暂缓；本地 CLI 模式下仅影响用户自己的目录。</li>
           <li>无 SKILL.md/references 内容比对：能写缓存目录的进程可持久化注入系统提示词——单用户本地部署威胁模型下风险低，共享目录/跨信任域部署必须恢复③⑤⑥。</li>
-          <li>无原子发布：物化中断留下部分快照，下次启动自愈重新物化（功能不中断，但多一次远程拉取）。</li>
+          <li>无原子发布：物化中断留下部分快照，下次启动自愈重新物化（功能不中断，但多一次远程拉取）。<strong>备注：</strong>堆叠 PR #138 起 <code>rejectsEmptySkillInfoResult</code> 不再断言失败后目录不残留——直写物化允许半成品残留、由下次自愈覆盖，属接受行为，不再作为测试契约。</li>
           <li>无响应形状校验：CampusMate 返回畸形数据可能产生畸形快照（自愈兜底），或版本漂移静默生效。</li>
         </ul>
       </li>

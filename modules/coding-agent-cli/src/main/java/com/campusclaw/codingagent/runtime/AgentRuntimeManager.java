@@ -11,6 +11,9 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.locks.ReentrantLock;
+import java.util.regex.Pattern;
 
 import com.campusclaw.codingagent.runtime.MateServiceClient.AgentRuntime;
 import com.campusclaw.codingagent.runtime.MateServiceClient.BoundTool;
@@ -27,16 +30,23 @@ import org.springframework.stereotype.Component;
  * Resolves managed Agent runtimes from the local cache or CampusMate and materializes
  * the directory structure expected by the existing Skill loader.
  *
- * <p>Snapshot hardening is intentionally deferred (see {@code docs/DEFERRED.md} and
- * ADR-0013): path traversal, symlink, tamper and drift validation, response shape
- * validation and atomic publication are not enforced in this iteration. A local
- * snapshot that fails to load simply falls through to re-materialization.</p>
+ * <p>Agent identifiers are validated against the same segment pattern declared in
+ * {@code docs/openapi/campusclaw-api.yaml} before any path is resolved, so remote
+ * {@code agent_id} values cannot traverse outside the agents root (ADR-0013 item 1
+ * baseline). The remaining snapshot-hardening rules are still deferred (see
+ * {@code docs/DEFERRED.md} and ADR-0013): symlink, tamper and drift validation,
+ * response shape validation and atomic publication are not enforced in this
+ * iteration. A local snapshot that fails to load simply falls through to
+ * re-materialization.</p>
  *
- * @version [br_eCampusCore 26.0.0, 2026/08/17]
+ * @version [br_eCampusCore 26.0.0, 2026/08/18]
  * @since [br_eCampusCore 26.0.0]
  */
 @Component
 public class AgentRuntimeManager {
+
+    /** Single path segment: no separators, leading alphanumerics, same as the OpenAPI {@code agent_id} pattern. */
+    private static final Pattern AGENT_ID_PATTERN = Pattern.compile("^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$");
 
     private static final String AGENT_METADATA_FILE = "agentId.json";
     private static final String SYSTEM_PROMPT_FILE = "systemPrompt.md";
@@ -47,6 +57,7 @@ public class AgentRuntimeManager {
     private final AgentRuntimeProperties properties;
     private final MateServiceClient mateServiceClient;
     private final ObjectMapper mapper;
+    private final ConcurrentHashMap<String, ReentrantLock> prepareLocks = new ConcurrentHashMap<>();
 
     public AgentRuntimeManager(
             AgentRuntimeProperties properties, MateServiceClient mateServiceClient, ObjectMapper mapper) {
@@ -58,20 +69,44 @@ public class AgentRuntimeManager {
     /**
      * Loads the local Agent runtime when its snapshot files exist, otherwise fetches
      * it from CampusMate and materializes the directory. An unloadable snapshot
-     * falls through to re-materialization instead of failing closed.
+     * falls through to re-materialization instead of failing closed. Preparation
+     * is serialized per Agent ID only, so one Agent's cold start never blocks
+     * another Agent's (potentially cached) preparation.
      *
      * @param agentId selected Agent identifier
      * @return immutable prepared runtime
      * @throws AgentRuntimeException when the runtime cannot be fetched or materialized
-     * @throws IllegalArgumentException when {@code agentId} is blank
+     * @throws IllegalArgumentException when {@code agentId} is blank or violates the segment pattern
      */
-    public synchronized PreparedAgentRuntime prepare(String agentId) {
-        if (agentId == null || agentId.isBlank()) {
-            throw new IllegalArgumentException("agentId must not be blank");
+    public PreparedAgentRuntime prepare(String agentId) {
+        Path agentRoot = requireValidAgentId(agentId);
+        PreparedAgentRuntime cached = loadIfComplete(agentId, agentRoot);
+        if (cached != null) {
+            return cached;
         }
-        Path agentsRoot = properties.agentsRoot().toAbsolutePath().normalize();
-        Path agentRoot = agentsRoot.resolve(agentId).normalize();
+        ReentrantLock lock = prepareLocks.computeIfAbsent(agentId, ignored -> new ReentrantLock());
+        lock.lock();
+        try {
+            return prepareRemotely(agentId, agentRoot);
+        } finally {
+            lock.unlock();
+        }
+    }
 
+    /**
+     * Loads a locally cached Agent runtime without any remote call or directory
+     * materialization. Used by read-only endpoints that must not trigger fetches.
+     *
+     * @param agentId selected Agent identifier
+     * @return the cached runtime, or {@code null} when no complete local snapshot exists
+     * @throws IllegalArgumentException when {@code agentId} is blank or violates the segment pattern
+     */
+    public PreparedAgentRuntime prepareCached(String agentId) {
+        Path agentRoot = requireValidAgentId(agentId);
+        return loadIfComplete(agentId, agentRoot);
+    }
+
+    private PreparedAgentRuntime prepareRemotely(String agentId, Path agentRoot) {
         PreparedAgentRuntime local = loadIfComplete(agentId, agentRoot);
         if (local != null) {
             return local;
@@ -85,6 +120,14 @@ public class AgentRuntimeManager {
             throw new AgentRuntimeException("Agent runtime materialization failed: " + agentId);
         }
         return prepared;
+    }
+
+    private Path requireValidAgentId(String agentId) {
+        if (agentId == null || !AGENT_ID_PATTERN.matcher(agentId).matches()) {
+            throw new IllegalArgumentException("Invalid agentId: " + agentId);
+        }
+        Path agentsRoot = properties.agentsRoot().toAbsolutePath().normalize();
+        return agentsRoot.resolve(agentId).normalize();
     }
 
     /**

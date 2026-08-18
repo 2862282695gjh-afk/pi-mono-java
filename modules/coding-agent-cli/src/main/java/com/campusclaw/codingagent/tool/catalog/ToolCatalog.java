@@ -52,17 +52,42 @@ public interface ToolCatalog {
      */
     List<AgentTool> resolve(ToolSelection selection);
 
-    /** Immutable snapshot of the effective tool catalog. */
+    /**
+     * Immutable snapshot of the effective tool catalog.
+     *
+     * @param version monotonic snapshot version
+     * @param toolsByName tool index by name
+     * @param sourcesByName source attribution by tool name
+     * @param diagnostics non-fatal merge notes
+     * @param degraded whether any source failed to load during this snapshot build
+     */
     record Snapshot(
             long version,
             Map<String, AgentTool> toolsByName,
             Map<String, ToolContributionSource> sourcesByName,
-            List<String> diagnostics) {
+            List<String> diagnostics,
+            boolean degraded) {
 
         public Snapshot {
             toolsByName = Collections.unmodifiableMap(new LinkedHashMap<>(toolsByName));
             sourcesByName = Collections.unmodifiableMap(new LinkedHashMap<>(sourcesByName));
             diagnostics = List.copyOf(diagnostics);
+        }
+
+        /**
+         * Convenience constructor for snapshots built without source failures.
+         *
+         * @param version monotonic snapshot version
+         * @param toolsByName tool index by name
+         * @param sourcesByName source attribution by tool name
+         * @param diagnostics non-fatal merge notes
+         */
+        public Snapshot(
+                long version,
+                Map<String, AgentTool> toolsByName,
+                Map<String, ToolContributionSource> sourcesByName,
+                List<String> diagnostics) {
+            this(version, toolsByName, sourcesByName, diagnostics, false);
         }
     }
 }

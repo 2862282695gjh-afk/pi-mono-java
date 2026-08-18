@@ -83,11 +83,15 @@ class ToolCatalogTest {
         };
         var catalog = new DefaultToolCatalog(List.of(
                 context -> List.of(ToolContribution.add(read, ToolContributionSource.system("spring"))), failing));
+        assertThat(catalog.snapshot().degraded()).isTrue();
         long versionBefore = catalog.snapshot().version();
 
-        ToolCatalog.Snapshot failed = catalog.refresh();
+        ToolCatalog.Snapshot failed = catalog.refresh(new ToolRefreshRequest(java.nio.file.Path.of("/next")));
 
         assertThat(versionBefore).isEqualTo(1L);
+        assertThat(failed.version()).isEqualTo(1L);
+        assertThat(failed.degraded()).isTrue();
+        assertThat(catalog.snapshot().toolsByName()).containsEntry("read", read);
         assertThat(failed.diagnostics())
                 .anySatisfy(message -> assertThat(message).contains("broken source"));
         assertThat(catalog.resolve(ToolSelection.all())).containsExactly(read);

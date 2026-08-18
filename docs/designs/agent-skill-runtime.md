@@ -246,8 +246,8 @@ sequenceDiagram
 | 设计动作 | 主要代码 | 实现内容 |
 |---|---|---|
 | 接收已选定的 Agent | `CampusClawCommand`、`ChatHandler`、`ServerMode`、`ChatWebSocketHandler` | CLI、REST、WebSocket 都传递 `agentId`；未指定时保留原有非托管 Agent 流程。 |
-| 按 Agent 隔离会话 | `SessionPool` | 使用 `(agentId, conversationId)` 作为会话键；Agent 的 cwd、历史文件、删除和重命名操作均按 Agent 隔离。 |
-| 本地优先准备 Runtime | `AgentRuntimeManager.prepare` | 先校验 `./agent/{agentId}` 的完整缓存；完整时不访问 CampusMate，半成品直接 fail closed。 |
+| 按 Agent 隔离会话 | `SessionPool` | 使用 `(agentId, conversationId)` 作为会话键；Agent 的 cwd、历史文件、删除和重命名操作均按 Agent 隔离。会话创建在 map 锁外执行（含远程 prepare），同一会话并发创建经 in-flight future 去重；`GET /api/conversations` 只读解析 cwd（`prepareCached`，不触发远程拉取与目录物化，未缓存回退 base cwd）。 |
+| 本地优先准备 Runtime | `AgentRuntimeManager.prepare` | 入口先按 OpenAPI 同款段格式正则校验 `agentId`（穿越值直接拒绝，ADR-0013 ①兜底）；再校验 `./agent/{agentId}` 的完整缓存，完整时不访问 CampusMate，半成品重新物化。准备按 agentId 串行（不同 Agent 互不阻塞）。 |
 | 获取 Agent 与 Skill 定义 | `MateServiceClient`、`AgentRuntimeManager` | 调用 `GetAgentRuntime` 获取 Agent 元数据和直接绑定的 `(skillId, version)`，再逐个调用 `querySkillInfo` 获取完整 Skill 快照。 |
 | 物化本地目录 | `AgentRuntimeManager` | 直接写入 `agentId.json`、`setting.json`、`systemPrompt.md`、`skill.json`、`SKILL.md`、`references/tools.json`、其他 references 和 templates；无法加载的存量快照被重新物化覆盖。 |
 | 校验缓存一致性 | `AgentRuntimeManager` | 校验 `systemPrompt.md` 存在且是普通文件，并校验绑定 id/version、目录集合、Skill 名称、SKILL.md 全文、tools.json、资源内容、符号链接、路径和大小限制；拒绝额外未绑定 Skill。 |

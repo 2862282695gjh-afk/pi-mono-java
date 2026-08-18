@@ -392,7 +392,9 @@ public class ServerMode {
                                             conversationLister.list(cwd.toString())));
                         })
                         .subscribeOn(reactor.core.scheduler.Schedulers.boundedElastic())
-                        .flatMap(result -> ServerResponse.ok().bodyValue(result)))
+                        .flatMap(result -> ServerResponse.ok().bodyValue(result))
+                        .onErrorResume(IllegalArgumentException.class, e -> ServerResponse.badRequest()
+                                .bodyValue(Map.of("error", e.getMessage()))))
                 .DELETE("/api/conversations/{id}", req -> {
                     String id = req.pathVariable("id");
                     String agentId = req.queryParam("agent_id").orElse(null);

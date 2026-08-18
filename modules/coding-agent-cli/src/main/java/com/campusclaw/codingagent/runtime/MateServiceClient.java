@@ -221,6 +221,8 @@ public class MateServiceClient {
     public record SkillInfo(
             String name,
             String id,
+            // Leading-space alias is deliberate, not a typo: the production CampusMate
+            // querySkillInfo payload serializes this key as " version".
             @JsonAlias(" version") String version,
             String description,
             String useCases,
