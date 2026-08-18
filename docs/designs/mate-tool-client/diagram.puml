@@ -2,20 +2,24 @@
 ' Source evidence:
 ' - modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/tool/mate/:
 '   CallMateTool (resolveCredentials hook, MateToolExecutionException),
-'   ListMateTool (toolIdsOf)
+'   ListMateTool (agent/skill passthrough)
 ' - modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/common/client/mate/:
 '   MateToolClient (listTools/callTool contract), MateToolMeta, MateCredentials
 ' - modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/common/client/:
-'   HttpMateToolClient (QUERYTOOLS wiring, invokeTool stub DEF-007)
+'   HttpMateToolClient (two-step listTools wiring, invokeTool stub DEF-007)
 ' - modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/common/util/:
-'   MateRestUtil (executePostJsonRequest / executePostRawRequest, ResultInfoPair)
+'   MateRestUtil (executePostJsonRequest / executePostRawRequest /
+'   executeGetRawRequest, ResultInfoPair)
 ' - modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/common/dto/:
-'   RequestHeaderInfo (credential-free builder), ToolInfo (QUERYTOOLS result.data)
+'   RequestHeaderInfo (credential-free builder), ToolInfo (QUERYTOOLS result.data),
+'   AgentInfo (bindingTools[].toolId), QuerySkillToolsResult/SkillBindingTool
+'   (bindingTools[].id)
 ' - modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/config/:
 '   MateToolAutoConfiguration (@Value mate.innerGWSerive), MateToolProperties
 ' Source baseline: superheromeZzh/pi-mono-java main + this PR head
 ' Observed behavior: both AgentTools are stateless Spring singletons; listTools
-' calls QUERYTOOLS credential-free, callTool forwards agent-handed-down
+' resolves bound tool IDs from agent/skill metadata (GET) then calls
+' QUERYTOOLS credential-free; callTool forwards agent-handed-down
 ' credentials; the invoke RPC is still a DEF-007 stub.
 ' Design reason: process-wide singleton lifetime forbids per-session state on
 ' instances; permission (allow/ask/deny) enforcement stays on the Mate server.
@@ -40,10 +44,13 @@ package "tool/mate (AgentTool layer)" {
 
 package "common/client (infrastructure layer)" {
   class HttpMateToolClient {
-    # QUERYTOOLS: String
+    # AGENT_INFO / SKILL_TOOLS_QUERY / QUERYTOOLS
     # mateInnerGwAddress: String
-    + listTools(toolIds)
+    + listTools(agentId, skillId)
     + callTool(tool, args, credentials)
+    # queryToolIdsByAgentId(agentId)
+    # queryToolIdsBySkillId(skillId)
+    # queryToolMetaByIds(toolIds)
     # toMeta(List<ToolInfo>)
     # invokeTool(...) [stub DEF-007]
   }
@@ -51,7 +58,7 @@ package "common/client (infrastructure layer)" {
 
 package "common/client/mate (contract layer)" {
   interface MateToolClient {
-    + listTools(toolIds)
+    + listTools(agentId, skillId)
     + callTool(tool, args, credentials)
   }
   class MateToolMeta <<record>> {
@@ -69,6 +76,7 @@ package "common/util + common/dto" {
   class MateRestUtil {
     + executePostJsonRequest(...)
     + executePostRawRequest(...)
+    + executeGetRawRequest(...)
     + ResultInfoPair<T>
   }
   class RequestHeaderInfo <<DTO>> {
@@ -77,6 +85,12 @@ package "common/util + common/dto" {
   class ToolInfo <<DTO>> {
     toolId / toolName / description
     inputSchema / outputSchema / permission
+  }
+  class AgentInfo <<DTO>> {
+    bindingTools[].toolId
+  }
+  class QuerySkillToolsResult <<DTO>> {
+    bindingTools[].id
   }
 }
 
@@ -109,14 +123,16 @@ end note
 ' - modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/tool/mate/CallMateTool.java:
 '   execute (credential hook, error propagation)
 ' - modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/tool/mate/ListMateTool.java:
-'   execute (toolIdsOf, response formatting)
+'   execute (agent/skill passthrough, response formatting)
 ' - modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/common/client/HttpMateToolClient.java:
-'   listTools (QUERYTOOLS request/response handling), callTool (stub invoke)
+'   listTools (two-step: agent/skill metadata GET -> binding tool IDs,
+'   then QUERYTOOLS POST), callTool (stub invoke)
 ' - modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/common/util/MateRestUtil.java:
 '   executePostRawRequest, resCode/resMsg/result envelope
 ' Source baseline: superheromeZzh/pi-mono-java main + this PR head
-' Observed behavior: listMateTool maps agent_id/skill_id to a tool-ID list and
-' POSTs QUERYTOOLS credential-free; callMateTool forwards the call with
+' Observed behavior: listMateTool resolves bound tool IDs from agent/skill
+' metadata (GET), then POSTs QUERYTOOLS credential-free with those IDs;
+' callMateTool forwards the call with
 ' resolveCredentials() output; errors become exceptions so the pipeline marks
 ' isError=true.
 ' Design reason: stateless tools with per-call credential resolution avoid
@@ -140,12 +156,29 @@ participant "Mate inner GW\n(mate.innerGWSerive)" as gw
 == listMateTool ==
 llm -> loop: tool_use("listMateTool", {agent_id | skill_id})
 loop -> listTool: execute
-listTool -> http: listTools(List.of(id))
+listTool -> http: listTools(agentId, skillId)
+alt agentId
+  http -> rest: executeGetRawRequest(gw, /agents/{agentId})
+  rest -> gw: GET /mate-service/v1/agents/{agentId}
+  gw --> rest: {resCode, resMsg, result: AgentInfo}
+  rest --> http: raw body
+  http -> http: extract bindingTools[].toolId
+else skillId
+  http -> rest: executeGetRawRequest(gw, /skill/info/query/{skillId})
+  rest -> gw: GET /mate-service/v1/skill/info/query/{skillId}
+  gw --> rest: {resCode, resMsg, result: QuerySkillToolsResult}
+  rest --> http: raw body
+  http -> http: extract bindingTools[].id
+end
+note over http
+  empty ID list -> return empty tool list
+  (no QUERYTOOLS call)
+end note
 http -> rest: executePostRawRequest(gw, QUERYTOOLS, headerInfo, body)
 rest -> gw: POST /mate-service/v1/runtime/tools/query
 note right of rest
   header: RequestHeaderInfo.builder().build()
-  body: {"toolIds": [...]}
+  body: {"toolIds": [collected IDs]}
 end note
 gw --> rest: {resCode, resMsg, result:{data:[ToolInfo]}}
 rest --> http: raw body

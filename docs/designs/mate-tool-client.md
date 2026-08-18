@@ -16,15 +16,17 @@ CampusClaw 需要调用 Mate 平台管理的工具。这批工具由 Mate 工具
 
 | 名称 | 类型 | 位置 |
 |---|---|---|
-| `ListMateTool` | AgentTool | `tool/mate/` — agent_id/skill_id 作为 tool ID 查元数据并返回 |
+| `ListMateTool` | AgentTool | `tool/mate/` — 传 agent_id/skill_id 列出绑定的工具 |
 | `CallMateTool` | AgentTool | `tool/mate/` — 无状态转发工具调用,凭据经 `resolveCredentials` 钩子解析 |
-| `MateToolClient` | 接口 | `common/client/mate/` — `listTools(toolIds)` / `callTool(tool, args, credentials)` |
+| `MateToolClient` | 接口 | `common/client/mate/` — `listTools(agentId, skillId)` / `callTool(tool, args, credentials)` |
 | `MateToolMeta` | record | `common/client/mate/` — 工具元数据 |
 | `MateCredentials` | record | `common/client/mate/` — 凭据(AppKey / JWT 两模式),仅 callTool 携带 |
 | `HttpMateToolClient` | 实现 | `common/client/` — QUERYTOOLS 真实调用;invoke 仍为 stub(DEF-007) |
 | `MateRestUtil` | 工具类 | `common/util/` — 网关 REST 调用,解 `resCode/resMsg/result` 信封 |
 | `RequestHeaderInfo` | DTO | `common/dto/` — 请求头信息(内网网关无需凭据字段,`builder().build()` 即可) |
 | `ToolInfo` | DTO | `common/dto/` — QUERYTOOLS 返回的 `result.data` 数组元素 |
+| `AgentInfo` | DTO | `common/dto/` — agent 元数据,`bindingTools[].toolId` 是第一步的 tool ID 来源 |
+| `QuerySkillToolsResult` / `SkillBindingTool` | DTO | `common/dto/` — skill 工具查询结果,`bindingTools[].id` 是第一步的 tool ID 来源 |
 | `MateToolAutoConfiguration` | 配置 | `config/` — 装配 + `@Value("${mate.innerGWSerive:}")` 网关地址 |
 
 ## 架构与数据流
@@ -44,11 +46,18 @@ CampusClaw 需要调用 Mate 平台管理的工具。这批工具由 Mate 工具
 ```
 listMateTool({agent_id | skill_id})
   → ListMateTool.execute (无状态)
-    → MateToolClient.listTools(List.of(agentId或skillId))
-      → HttpMateToolClient
+    → MateToolClient.listTools(agentId, skillId)
+      → HttpMateToolClient 两步查询:
+        [第一步:tool ID 来源]
+        agentId: GET /mate-service/v1/agents/{agentId}
+                  → result: AgentInfo → 摘 bindingTools[].toolId
+        skillId: GET /mate-service/v1/skill/info/query/{skillId}
+                  → result: QuerySkillToolsResult → 摘 bindingTools[].id
+        (ID 列表为空 → 直接返回空工具列表,不发 QUERYTOOLS)
+        [第二步:工具元数据]
         POST {mate.innerGWSerive}/mate-service/v1/runtime/tools/query   (QUERYTOOLS)
         header: RequestHeaderInfo.builder().build()      ← 无凭据
-        body: {"toolIds": [...]}
+        body: {"toolIds": [第一步摘到的列表]}
         ← {"resCode":"0","resMsg":"...","result":{"data":[ToolInfo,...]}}
       → resCode != "0" 抛 IllegalStateException;result.data → List<ToolInfo>
       → toMeta() 转 MateToolMeta(name 取 toolName 兜底 toolId)
@@ -82,15 +91,15 @@ callMateTool({tool, args})
 
 **理由**:内网网关的查询接口不校验凭据;工具执行需要身份。凭据来源由 `CallMateTool.resolveCredentials()` 钩子解析(每次调用执行,不缓存——进程级单例上缓存会串凭据)。
 
-### D4. agent_id/skill_id 即 tool ID
+### D4. 两步查询:先元数据摘 tool ID,再 QUERYTOOLS 查详情
 
-**决策**:listMateTool 的 agent_id/skill_id 参数直接作为 QUERYTOOLS 的 tool ID 列表传入(单元素)。
+**决策**:`listTools(agentId, skillId)` 先 GET agent/skill 元数据摘绑定工具 ID(agent 路径 `bindingTools[].toolId`,skill 路径 `bindingTools[].id`),再把 ID 列表 POST 给 QUERYTOOLS 查完整元数据;ID 列表为空直接返回空列表。
 
-**理由**:当前网关契约按 tool ID 批量查询;授权关系(agent/skill → tool)的解析由调用方或服务端完成,客户端不猜。
+**理由**:授权关系(agent/skill → tool)由 Mate 元数据服务持有,客户端不自行推断;QUERYTOOLS 只按 ID 批量查详情,职责单一。三个 protected 编排方法(`queryToolIdsByAgentId`/`queryToolIdsBySkillId`/`queryToolMetaByIds`)可内网覆写。
 
 ### D5. QUERYTOOLS 真实调用,invoke 仍为 stub
 
-**决策**:`HttpMateToolClient.listTools` 完整实现(QUERYTOOLS);`invokeTool` 保持 `UnsupportedOperationException`(DEF-007)。
+**决策**:`HttpMateToolClient` 的两步查询完整实现;`invokeTool` 保持 `UnsupportedOperationException`(DEF-007)。
 
 **理由**:查询接口契约已定;执行接口(路径/入参/凭据放法)待内网确认后填,签名已冻结。
 
@@ -108,8 +117,9 @@ callMateTool({tool, args})
 
 | 场景 | 行为 |
 |---|---|
-| listMateTool 无 agent_id/skill_id | 查询空列表,返回 0 tool(s) |
-| QUERYTOOLS resCode != "0" | 抛 IllegalStateException(含 resCode/resMsg) |
+| listMateTool 无 agent_id/skill_id | 返回 0 tool(s),不发网关请求 |
+| agent/skill 元数据 bindingTools 为空 | 返回 0 tool(s),不发 QUERYTOOLS |
+| 任一网关调用 resCode != "0" | 抛 IllegalStateException(含 resCode/resMsg) |
 | QUERYTOOLS 返回空 data | 返回空工具列表 |
 | callTool 网关异常 | 包装为 isError=true 的 ToolResult 返回,不中断 agent |
 | Mate result.isError() | 抛 MateToolExecutionException,pipeline 转 ToolResultMessage.isError=true |
@@ -150,3 +160,4 @@ LLM API tools 字段新增 listMateTool / callMateTool 两个工具定义。网�
 | 2026-08-17 | 26.0.0(PR #136) | 初版:双工具 + 契约 + stub,含权限审批与 metaCache |
 | 2026-08-17 | 26.0.0(PR #140) | 目录按域聚合 tool/mate;契约提取 common/client/mate |
 | 2026-08-18 | 26.0.0(本 PR) | QUERYTOOLS 真实对接;MateRestUtil/RequestHeaderInfo/ToolInfo;无状态化;去 ask/deny 客户端执行;凭据仅 callTool 透传;MateToolProperties 改 lombok @Data |
+| 2026-08-18 | 26.0.0(本 PR 续) | listTools 两步查询:agent/skill 元数据摘 tool ID → QUERYTOOLS;新增 AgentInfo/QuerySkillToolsResult/SkillBindingTool DTO;MateRestUtil 加 GET 支持 |
