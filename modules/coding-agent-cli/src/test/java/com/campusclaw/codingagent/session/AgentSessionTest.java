@@ -29,6 +29,9 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
 import com.campusclaw.agent.Agent;
+import com.campusclaw.agent.tool.AfterToolCallContext;
+import com.campusclaw.agent.tool.AfterToolCallHandler;
+import com.campusclaw.agent.tool.AfterToolCallResult;
 import com.campusclaw.agent.tool.AgentTool;
 import com.campusclaw.agent.tool.AgentToolResult;
 import com.campusclaw.agent.tool.AgentToolUpdateCallback;
@@ -41,8 +44,9 @@ import com.campusclaw.ai.types.Message;
 import com.campusclaw.ai.types.Model;
 import com.campusclaw.ai.types.ModelCost;
 import com.campusclaw.ai.types.Provider;
+import com.campusclaw.ai.types.TextContent;
+import com.campusclaw.ai.types.ToolCall;
 import com.campusclaw.codingagent.prompt.SystemPromptBuilder;
-import com.campusclaw.codingagent.runtime.ActivateSkillTool;
 import com.campusclaw.codingagent.runtime.AgentRuntimeManager;
 import com.campusclaw.codingagent.runtime.MateServiceClient.AgentRuntime;
 import com.campusclaw.codingagent.runtime.MateServiceClient.BoundTool;
@@ -54,6 +58,7 @@ import com.campusclaw.codingagent.skill.SkillLoader;
 import com.campusclaw.codingagent.tool.catalog.ToolCatalog;
 import com.campusclaw.codingagent.tool.catalog.ToolRefreshRequest;
 import com.campusclaw.codingagent.tool.catalog.ToolSelection;
+import com.campusclaw.codingagent.tool.skill.ActivateSkillTool;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -291,7 +296,7 @@ class AgentSessionTest {
         @SuppressWarnings({"rawtypes", "unchecked"})
         void activatesSelectedSkillAndAddsPermittedTools() throws Exception {
             AgentTool calendarTool = new StubTool("calendar", "Manage calendar");
-            tools = List.of(stubTool, calendarTool);
+            tools = List.of(stubTool, calendarTool, new ActivateSkillTool());
             session = createSession();
             writeManagedSkill();
             PreparedAgentRuntime prepared = preparedRuntime();
@@ -311,19 +316,22 @@ class AgentSessionTest {
                             .map(AgentTool::name)
                             .toList());
 
-            ArgumentCaptor<List> toolCaptor = ArgumentCaptor.forClass(List.class);
-            verify(session.getAgent()).setTools(toolCaptor.capture());
-            List<AgentTool> initialTools = toolCaptor.getValue();
-            AgentTool activate = initialTools.stream()
-                    .filter(tool -> ActivateSkillTool.NAME.equals(tool.name()))
-                    .findFirst()
-                    .orElseThrow();
-            activate.execute(
-                    "call-1",
-                    Map.of("skillName", "skill-a"),
-                    mock(CancellationToken.class),
-                    mock(AgentToolUpdateCallback.class));
+            ArgumentCaptor<AfterToolCallHandler> hookCaptor = ArgumentCaptor.forClass(AfterToolCallHandler.class);
+            verify(session.getAgent()).setAfterToolCall(hookCaptor.capture());
+            AfterToolCallResult override = hookCaptor
+                    .getValue()
+                    .handle(new AfterToolCallContext(
+                            null,
+                            new ToolCall("call-1", ActivateSkillTool.NAME, Map.of("skillName", "skill-a")),
+                            Map.of("skillName", "skill-a"),
+                            new AgentToolResult(List.of(), null),
+                            false,
+                            null));
+            assertTrue(override.content() != null
+                    && override.content().getFirst() instanceof TextContent text
+                    && text.text().contains("Use the calendar tool"));
 
+            ArgumentCaptor<List> toolCaptor = ArgumentCaptor.forClass(List.class);
             verify(session.getAgent(), atLeast(2)).setTools(toolCaptor.capture());
             List<AgentTool> activatedTools = toolCaptor.getAllValues().getLast();
             assertEquals(
@@ -361,7 +369,7 @@ class AgentSessionTest {
         @SuppressWarnings({"rawtypes", "unchecked"})
         void reloadKeepsManagedSystemPromptAndFullLocalToolInventory() throws Exception {
             AgentTool calendarTool = new StubTool("calendar", "Manage calendar");
-            tools = List.of(stubTool, calendarTool);
+            tools = List.of(stubTool, calendarTool, new ActivateSkillTool());
             session = createSession();
             writeManagedSkill();
             PreparedAgentRuntime prepared = preparedRuntime();
@@ -378,21 +386,21 @@ class AgentSessionTest {
             var promptCaptor = ArgumentCaptor.forClass(com.campusclaw.codingagent.prompt.SystemPromptConfig.class);
             verify(promptBuilder).build(promptCaptor.capture());
             assertEquals("Managed Agent prompt", promptCaptor.getValue().customPrompt());
+            ArgumentCaptor<AfterToolCallHandler> hookCaptor = ArgumentCaptor.forClass(AfterToolCallHandler.class);
+            verify(session.getAgent()).setAfterToolCall(hookCaptor.capture());
+            hookCaptor
+                    .getValue()
+                    .handle(new AfterToolCallContext(
+                            null,
+                            new ToolCall("call-2", ActivateSkillTool.NAME, Map.of("skillName", "skill-a")),
+                            Map.of("skillName", "skill-a"),
+                            new AgentToolResult(List.of(), null),
+                            false,
+                            null));
             ArgumentCaptor<List> toolCaptor = ArgumentCaptor.forClass(List.class);
-            verify(session.getAgent(), atLeast(2)).setTools(toolCaptor.capture());
-            AgentTool activate = ((List<AgentTool>) toolCaptor.getAllValues().getLast())
-                    .stream()
-                            .filter(tool -> ActivateSkillTool.NAME.equals(tool.name()))
-                            .findFirst()
-                            .orElseThrow();
-            activate.execute(
-                    "call-2",
-                    Map.of("skillName", "skill-a"),
-                    mock(CancellationToken.class),
-                    mock(AgentToolUpdateCallback.class));
             verify(session.getAgent(), atLeast(3)).setTools(toolCaptor.capture());
-            assertTrue(((List<AgentTool>) toolCaptor.getAllValues().getLast())
-                    .stream().anyMatch(tool -> "calendar".equals(tool.name())));
+            List<AgentTool> reloadedTools = toolCaptor.getAllValues().getLast();
+            assertTrue(reloadedTools.stream().anyMatch(tool -> "calendar".equals(tool.name())));
         }
 
         private void writeManagedSkill() throws IOException {

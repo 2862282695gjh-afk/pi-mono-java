@@ -42,7 +42,7 @@ Agent 可由以下入口指定：
 |---|---|
 | `AgentRuntimeManager` | 校验 `agentId`、本地优先加载、解析直接绑定 Skill、冷启动物化 Agent 目录和 `systemPrompt.md`、加载本地 Agent 系统提示词和模型配置、生成并加载 Skill 工具快照 |
 | `MateServiceClient` | 调用 GetAgentRuntime 和 querySkillInfo，校验业务响应及 Agent/Skill 版本坐标 |
-| `AgentSession` | 同时加载当前托管 Agent 的 Skill 和 `references/tools.json`、构建模型上下文、注册 `activate_skill`、动态更新工具集合 |
+| `AgentSession` | 同时加载当前托管 Agent 的 Skill 和 `references/tools.json`、构建模型上下文、从统一发现链路选取 `activate_skill` 控制工具、动态更新工具集合 |
 | `SessionPool` | 按 `(agentId, conversationId)` 隔离会话和持久化目录 |
 | `ToolCatalog` | 提供 CampusClaw Pod 内真实可执行的 `AgentTool` 实现，并以不改写共享快照的 scoped resolve 应用各 Agent cwd 与本地工具策略 |
 
@@ -126,10 +126,12 @@ querySkillInfo 返回的 `bindingTools` 是 Skill 工具的唯一远端来源。
 
 ```text
 baseTools = 本地工具策略 ∩ permission=allow 的 Agent 级工具
-            + activate_skill
+            + 本地工具策略可见的控制工具（如 activate_skill，不受远端 allow 列表约束）
 ```
 
-LLM 根据 Skill 头信息调用 `activate_skill(skillName)`。显式 `/skill:skillName` 也先执行相同的查询与激活流程。CampusClaw 随后：
+`activate_skill` 是无状态的 Spring `@Component`（`codingagent/tool/skill`），经 `SpringAgentToolSource → ToolCatalog` 统一发现，随 include/exclude、`noTools`、替换/禁用与热刷新一起管理；非托管会话将其过滤掉。LLM 根据 Skill 头信息调用 `activate_skill(skillName)`。显式 `/skill:skillName` 也先执行相同的查询与激活流程。CampusClaw 随后：
+
+1. 无状态控制工具只校验参数并返回确认文本；真正的激活副作用由会话级 after-tool-call handler 执行——handler 挂在 `Agent.setAfterToolCall` 上，识别 `activate_skill` 调用后完成下述步骤，并用 Skill 指令覆盖工具结果内容。
 
 1. 确认 Skill 已绑定当前 Agent、已在本地 Registry 注册，并且会话初始化时已经加载对应 `tools.json`。
 2. 从会话中的 Skill 工具快照取得全部 `toolName`；激活阶段不访问 CampusMateService。

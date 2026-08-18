@@ -6,10 +6,14 @@ package com.campusclaw.codingagent.tool.catalog;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.util.List;
+
+import com.campusclaw.agent.tool.AgentTool;
 import com.campusclaw.codingagent.extension.ExtensionRegistry;
 import com.campusclaw.codingagent.runtime.AgentRuntimeManager;
 import com.campusclaw.codingagent.runtime.AgentRuntimeProperties;
 import com.campusclaw.codingagent.runtime.MateServiceClient;
+import com.campusclaw.codingagent.tool.skill.ActivateSkillTool;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import org.junit.jupiter.api.Test;
@@ -45,6 +49,28 @@ class ToolCatalogWiringTest {
             assertThat(context.getBean(ExtensionRegistry.class)).isNotNull();
             assertThat(context.getBean(ExtensionToolSource.class)).isNotNull();
             assertThat(context.getBean(DefaultToolCatalog.class)).isNotNull();
+        }
+    }
+
+    /**
+     * Scans the skill control-tool package together with the catalog packages
+     * and asserts {@code activate_skill} is discovered through the Spring
+     * source and resolved by the catalog, so sessions pick it up from the
+     * unified discovery chain instead of manual construction.
+     */
+    @Test
+    void activateSkillToolFlowsThroughCatalogDiscovery() {
+        try (AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext()) {
+            context.scan(
+                    ToolCatalogWiringTest.class.getPackage().getName(),
+                    ExtensionRegistry.class.getPackage().getName(),
+                    ActivateSkillTool.class.getPackage().getName());
+            context.refresh();
+
+            assertThat(context.getBean(ActivateSkillTool.class)).isNotNull();
+            DefaultToolCatalog catalog = context.getBean(DefaultToolCatalog.class);
+            List<AgentTool> resolved = catalog.resolve(ToolSelection.all());
+            assertThat(resolved).extracting(AgentTool::name).contains(ActivateSkillTool.NAME);
         }
     }
 

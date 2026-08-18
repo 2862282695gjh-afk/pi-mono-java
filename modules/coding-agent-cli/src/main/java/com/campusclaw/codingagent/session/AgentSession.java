@@ -16,8 +16,9 @@ import java.util.concurrent.CompletableFuture;
 
 import com.campusclaw.agent.Agent;
 import com.campusclaw.agent.event.AgentEventListener;
+import com.campusclaw.agent.tool.AfterToolCallContext;
+import com.campusclaw.agent.tool.AfterToolCallResult;
 import com.campusclaw.agent.tool.AgentTool;
-import com.campusclaw.agent.tool.AgentToolResult;
 import com.campusclaw.ai.CampusClawAiService;
 import com.campusclaw.ai.model.ModelRegistry;
 import com.campusclaw.ai.types.Message;
@@ -33,7 +34,6 @@ import com.campusclaw.codingagent.prompt.PromptTemplateEntry;
 import com.campusclaw.codingagent.prompt.PromptTemplateLoader;
 import com.campusclaw.codingagent.prompt.SystemPromptBuilder;
 import com.campusclaw.codingagent.prompt.SystemPromptConfig;
-import com.campusclaw.codingagent.runtime.ActivateSkillTool;
 import com.campusclaw.codingagent.runtime.AgentRuntimeManager;
 import com.campusclaw.codingagent.runtime.PreparedAgentRuntime;
 import com.campusclaw.codingagent.skill.Skill;
@@ -41,9 +41,11 @@ import com.campusclaw.codingagent.skill.SkillExpander;
 import com.campusclaw.codingagent.skill.SkillLoader;
 import com.campusclaw.codingagent.skill.SkillRegistry;
 import com.campusclaw.codingagent.skill.SkillStateStore;
+import com.campusclaw.codingagent.tool.catalog.ControlTool;
 import com.campusclaw.codingagent.tool.catalog.ToolCatalog;
 import com.campusclaw.codingagent.tool.catalog.ToolRefreshRequest;
 import com.campusclaw.codingagent.tool.catalog.ToolSelection;
+import com.campusclaw.codingagent.tool.skill.ActivateSkillTool;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -204,6 +206,7 @@ public class AgentSession {
 
         // 7. Create and configure Agent
         agent = createAgent(piAiService);
+        agent.setAfterToolCall(this::handleAfterToolCall);
         agent.setModel(model);
         agent.setSystemPrompt(systemPrompt);
         agent.setTools(baseTools);
@@ -712,23 +715,47 @@ public class AgentSession {
 
     private void configureRuntimeTools() {
         if (preparedRuntime == null) {
+            // Control tools only apply to managed runtimes; keep them out of plain sessions.
+            tools = tools.stream()
+                    .filter(tool -> !(tool instanceof ControlTool))
+                    .toList();
             baseTools = List.copyOf(tools);
             return;
         }
         Set<String> allowedAgentTools = Set.copyOf(preparedRuntime.allowedAgentToolNames());
         var configured = new LinkedHashMap<String, AgentTool>();
+
+        // Control tools are exempt from the remote Agent allow list but still follow
+        // the local ToolSelection that produced locallyVisibleTools.
         locallyVisibleTools.stream()
-                .filter(tool -> allowedAgentTools.contains(tool.name()))
+                .filter(tool -> allowedAgentTools.contains(tool.name()) || tool instanceof ControlTool)
                 .forEach(tool -> configured.put(tool.name(), tool));
-        AgentTool activationTool = new ActivateSkillTool(this::activateSkillFromTool);
-        configured.put(activationTool.name(), activationTool);
         tools = List.copyOf(configured.values());
         baseTools = tools;
     }
 
-    private AgentToolResult activateSkillFromTool(String skillName) {
+    /**
+     * Session-level handler invoked after every tool call. Completes a
+     * {@code activate_skill} control-tool call by attaching the Skill's bound
+     * tools to the agent and replacing the tool's acknowledgement with the
+     * Skill instructions, so the next model turn sees the activated runtime.
+     *
+     * @param context pipeline context of the finished tool call
+     * @return content override carrying the Skill instructions, or
+     *         {@link AfterToolCallResult#noOverride()} for unrelated calls
+     */
+    private AfterToolCallResult handleAfterToolCall(AfterToolCallContext context) {
+        if (preparedRuntime == null
+                || context.isError()
+                || !ActivateSkillTool.NAME.equals(context.toolCall().name())) {
+            return AfterToolCallResult.noOverride();
+        }
+        Object value = context.args().get("skillName");
+        if (!(value instanceof String skillName) || skillName.isBlank()) {
+            return AfterToolCallResult.noOverride();
+        }
         String instructions = activateRuntimeSkill(skillName);
-        return new AgentToolResult(List.of(new TextContent(instructions)), null);
+        return new AfterToolCallResult(List.of(new TextContent(instructions)), null, null);
     }
 
     private String activateRuntimeSkill(String skillName) {

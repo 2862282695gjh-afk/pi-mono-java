@@ -2,36 +2,36 @@
  * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
  */
 
-package com.campusclaw.codingagent.runtime;
+package com.campusclaw.codingagent.tool.skill;
 
+import java.util.List;
 import java.util.Map;
-import java.util.function.Function;
 
-import com.campusclaw.agent.tool.AgentTool;
 import com.campusclaw.agent.tool.AgentToolResult;
 import com.campusclaw.agent.tool.AgentToolUpdateCallback;
 import com.campusclaw.agent.tool.CancellationToken;
+import com.campusclaw.ai.types.TextContent;
+import com.campusclaw.codingagent.tool.catalog.ControlTool;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
+import org.springframework.stereotype.Component;
+
 /**
- * Structured control tool used by the model to activate a managed Skill before its
- * business tools become visible.
+ * Stateless control tool used by the model to activate a managed Skill before
+ * its business tools become visible. The tool itself only acknowledges the
+ * request; the session-level after-tool-call handler performs the actual
+ * activation and replaces the acknowledgement with the Skill instructions.
  *
  * @version [br_eCampusCore 26.0.0, 2026/08/17]
  * @since [br_eCampusCore 26.0.0]
  */
-public class ActivateSkillTool implements AgentTool {
+@Component
+public class ActivateSkillTool implements ControlTool {
 
     public static final String NAME = "activate_skill";
     private static final ObjectMapper MAPPER = new ObjectMapper();
-
-    private final Function<String, AgentToolResult> activator;
-
-    public ActivateSkillTool(Function<String, AgentToolResult> activator) {
-        this.activator = activator;
-    }
 
     @Override
     public String name() {
@@ -70,6 +70,6 @@ public class ActivateSkillTool implements AgentTool {
         if (!(value instanceof String skillName) || skillName.isBlank()) {
             throw new IllegalArgumentException("skillName is required");
         }
-        return activator.apply(skillName);
+        return new AgentToolResult(List.of(new TextContent("Skill activation requested: " + skillName)), null);
     }
 }
