@@ -8,15 +8,14 @@
 ' - modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/common/client/:
 '   HttpMateToolClient (two-step listTools wiring, invokeTool stub DEF-007)
 ' - modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/common/util/:
-'   MateRestUtil (executePostJsonRequest / executePostRawRequest /
-'   executeGetRawRequest, ResultInfoPair)
+'   MateRestUtil (executePostRawRequest / executeGetRawRequest)
 ' - modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/common/dto/:
 '   RequestHeaderInfo (credential-free builder), ToolInfo (QUERYTOOLS result.data),
 '   AgentInfo (bindingTools[].toolId), QuerySkillToolsResult/SkillBindingTool
 '   (bindingTools[].id)
 ' - modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/config/:
 '   MateToolAutoConfiguration (@Value mate.innerGWSerive), MateToolProperties
-' Source baseline: superheromeZzh/pi-mono-java main + this PR head
+' Source baseline: superheromeZzh/pi-mono-java PR #144 head (branch refactor/mate-tool-properties-lombok)
 ' Observed behavior: both AgentTools are stateless Spring singletons; listTools
 ' resolves bound tool IDs from agent/skill metadata (GET) then calls
 ' QUERYTOOLS credential-free; callTool forwards agent-handed-down
@@ -74,10 +73,8 @@ package "common/client/mate (contract layer)" {
 
 package "common/util + common/dto" {
   class MateRestUtil {
-    + executePostJsonRequest(...)
     + executePostRawRequest(...)
     + executeGetRawRequest(...)
-    + ResultInfoPair<T>
   }
   class RequestHeaderInfo <<DTO>> {
     builder().build() - credential-free
@@ -129,7 +126,7 @@ end note
 '   then QUERYTOOLS POST), callTool (stub invoke)
 ' - modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/common/util/MateRestUtil.java:
 '   executePostRawRequest, resCode/resMsg/result envelope
-' Source baseline: superheromeZzh/pi-mono-java main + this PR head
+' Source baseline: superheromeZzh/pi-mono-java PR #144 head (branch refactor/mate-tool-properties-lombok)
 ' Observed behavior: listMateTool resolves bound tool IDs from agent/skill
 ' metadata (GET), then POSTs QUERYTOOLS credential-free with those IDs;
 ' callMateTool forwards the call with

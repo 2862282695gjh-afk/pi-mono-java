@@ -9,29 +9,25 @@ import java.util.List;
 import lombok.Data;
 
 /**
- * Agent metadata returned in the {@code result} field of
- * {@code GET /mate-service/v1/agents/{agentId}} on the Mate inner gateway.
- * Only {@code bindingTools} is consumed by the tool client.
+ * Mate 内网网关 {@code GET /mate-service/v1/agents/{agentId}} 返回信封中
+ * {@code result} 字段的 Agent 元数据。工具客户端仅消费 {@code bindingTools}。
  *
  * @version [br_eCampusCore 26.0.0, 2026/08/18]
  * @since [br_eCampusCore 26.0.0]
  */
 @Data
 public class AgentInfo {
-
     private List<BindingTool> bindingTools;
 
     /**
-     * A tool bound to an agent, as declared in {@link AgentInfo#getBindingTools()}.
+     * {@link AgentInfo#getBindingTools()} 中声明的、绑定到 Agent 的工具。
      *
      * @version [br_eCampusCore 26.0.0, 2026/08/18]
      * @since [br_eCampusCore 26.0.0]
      */
     @Data
     public static class BindingTool {
-
         private String toolId;
-
         private String version;
     }
 }

@@ -12,12 +12,11 @@ import lombok.Data;
 import lombok.ToString;
 
 /**
- * Header information carried on every request to the Mate inner gateway.
+ * 每次请求 Mate 内网网关携带的 Header 信息。
  *
- * <p>Sensitive fields (tokens, credentials, cookies) are excluded from
- * {@link #toString()} so they never leak into logs. Internal Mate gateway
- * endpoints do not require credential headers; a default-built instance
- * ({@code RequestHeaderInfo.builder().build()}) is sufficient.
+ * <p>敏感字段(token、凭据、cookie)以 {@link ToString.Exclude} 排除在
+ * {@link #toString()} 之外,不会泄漏进日志。内网网关端点不要求凭据
+ * Header,默认构造实例({@code RequestHeaderInfo.builder().build()})即可。
  *
  * @version [br_eCampusCore 26.0.0, 2026/08/18]
  * @since [br_eCampusCore 26.0.0]
@@ -25,16 +24,12 @@ import lombok.ToString;
 @Data
 @Builder
 public class RequestHeaderInfo {
-
     @ToString.Exclude
     private String accessToken;
 
     private String clientIp;
-
     private String locale;
-
     private String xForward;
-
     private String appId;
 
     @ToString.Exclude
@@ -56,13 +51,9 @@ public class RequestHeaderInfo {
     private String roaRand;
 
     private String xAgentId;
-
     private String agentTenantId;
-
     private String agentUserId;
-
     private String a2aVersion;
-
     private String xPlaneType;
 
     @ToString.Exclude

@@ -128,6 +128,22 @@ class HttpMateToolClientTest {
     }
 
     @Test
+    void maliciousAgentIdIsRejectedBeforeAnyRequest() {
+        for (String bad : new String[] {"../admin", "a?x=1", "a%2Fb", "a b", ".hidden"}) {
+            assertThatThrownBy(() -> client.listTools(bad, null)).isInstanceOf(IllegalArgumentException.class);
+        }
+        assertThat(server.getRequestCount()).isZero();
+    }
+
+    @Test
+    void maliciousSkillIdIsRejectedBeforeAnyRequest() {
+        assertThatThrownBy(() -> client.listTools(null, "../etc/passwd"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("skill");
+        assertThat(server.getRequestCount()).isZero();
+    }
+
+    @Test
     void headerInfoFieldsAreSentAsHttpHeaders() throws Exception {
         server.enqueue(json("{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":{\"bindingTools\":[]}}"));
 

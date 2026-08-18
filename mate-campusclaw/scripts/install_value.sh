@@ -11,7 +11,7 @@
 #   ./scripts/install_value.sh --print           # print resolved values only
 #
 # Consumed by application.yml / application.properties:
-#   mate.innerGWSerive: ${MATE_INNERGWSerive:}   <- from CAMPUSINNERGWSERVICE_DOMAIN_NAME_URL
+#   mate.innerGWSerive=${MATE_INNERGWSERIVE:}   <- from CAMPUSINNERGWSERVICE_DOMAIN_NAME_URL
 #
 set -euo pipefail
 
@@ -28,13 +28,13 @@ fi
 # CAMPUSINNERGWSERVICE_DOMAIN_NAME_URL name follows the mate-service
 # deployment convention.
 if [ -n "${CAMPUSINNERGWSERVICE_DOMAIN_NAME_URL:-}" ]; then
-    export MATE_INNERGWSerive="$CAMPUSINNERGWSERVICE_DOMAIN_NAME_URL"
+    export MATE_INNERGWSERIVE="$CAMPUSINNERGWSERVICE_DOMAIN_NAME_URL"
 else
     echo "[install_value] Warning: CAMPUSINNERGWSERVICE_DOMAIN_NAME_URL not set in $PROFILE_FILE;" >&2
     echo "[install_value] mate.innerGWSerive will stay empty and Mate tool calls will fail." >&2
 fi
 
 if [ "${1:-}" = "--print" ]; then
-    echo "MATE_INNERGWSerive=${MATE_INNERGWSerive:-}"
+    echo "MATE_INNERGWSERIVE=${MATE_INNERGWSERIVE:-}"
     exit 0
 fi

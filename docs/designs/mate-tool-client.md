@@ -41,7 +41,7 @@ CampusClaw 需要调用 Mate 平台管理的工具。这批工具由 Mate 工具
 
 ![数据流](mate-tool-client/mate_tool_client_dataflow.svg)
 
-[PlantUML 源码](mate-tool-client/diagram.puml#L76)
+[PlantUML 源码](mate-tool-client/diagram.puml#L118)
 
 ```
 listMateTool({agent_id | skill_id})
@@ -117,19 +117,21 @@ callMateTool({tool, args})
         │
         ▼ source /etc/profile
 mate-campusclaw/scripts/install_value.sh     (mate 侧独有,已登记 sync-exclude)
-  export MATE_INNERGWSerive="$CAMPUSINNERGWSERVICE_DOMAIN_NAME_URL"
+  export MATE_INNERGWSERIVE="$CAMPUSINNERGWSERVICE_DOMAIN_NAME_URL"
         │
         ▼ 进程环境变量
-application.yml
-  mate.innerGWSerive: ${MATE_INNERGWSerive:}   ← 引用环境变量,默认空
-        │
+application.yml(外网仓) / application.properties(mate 侧)
+  mate.innerGWSerive=${MATE_INNERGWSERIVE:}    ← 引用全大写环境变量,默认空
+        │                                     (Spring 环境派生仅识别全大写)
         ▼
 MateToolAutoConfiguration
   @Value("${mate.innerGWSerive:}") → HttpMateToolClient.mateInnerGwAddress
 ```
 
 **理由**:
-- 占位符引用**独立环境变量** `MATE_INNERGWSerive` 而非属性自身——早期写法 `${mate.innerGWSerive:}` 自引用在环境变量未设置时触发 `Circular placeholder reference`,开箱启动即失败(PR #144 评审阻断项,已由 `ApplicationYmlLoadTest` 走 config-data 加载路径防回潮)
+- 占位符引用**独立环境变量** `MATE_INNERGWSERIVE` 而非属性自身——早期写法 `${mate.innerGWSerive:}` 自引用在环境变量未设置时触发 `Circular placeholder reference`,开箱启动即失败(PR #144 评审阻断项,已由 `ApplicationYmlLoadTest` 走 config-data 加载路径防回潮)
+- 环境变量必须**全大写**:Spring 的属性名→环境变量派生规则(去点、全大写)只识别 `MATE_INNERGWSERIVE`,混合大小写导出不生效(二审阻断项)
+- mate-campusclaw 模块加载的是 `application.properties`(非 yml),占位符条目必须写在该文件——已补 `mate.innerGWSerive=${MATE_INNERGWSERIVE:}`(mate 侧手工文件,sync 不触碰)
 - 值的来源遵循 mate 侧部署惯例(与 `GAUSSDB_URL` 等同体系):运维写 `/etc/profile`,脚本 source 后导出,应用只认环境变量
 - 默认空串:未配置的环境仍可启动,仅在真正调用 Mate 工具时于网关侧报错(fail-late 但报错清晰,不阻断无关功能)
 
@@ -148,7 +150,7 @@ MateToolAutoConfiguration
 
 ## 性能(DFX)
 
-- 无缓存无状态,每次调用一次网关往返
+- 无缓存无状态;listTools 为两次网关往返(元数据 GET + QUERYTOOLS POST),callTool 一次
 - MateRestUtil:连接超时 10s、请求超时 60s,JDK HttpClient
 - 无 AgentLoop 改动,对现有工具路径零开销
 

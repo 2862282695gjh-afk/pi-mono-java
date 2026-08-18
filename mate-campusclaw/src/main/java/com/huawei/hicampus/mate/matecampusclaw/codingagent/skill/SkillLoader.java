@@ -238,7 +238,7 @@ public class SkillLoader {
      * @return the result
      */
     @SuppressWarnings("unchecked")
-    static Map<String, Object> parseFrontmatter(String content) {
+    public static Map<String, Object> parseFrontmatter(String content) {
         if (content == null || !content.startsWith(FRONTMATTER_DELIMITER)) {
             return Map.of();
         }

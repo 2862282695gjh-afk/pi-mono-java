@@ -7,6 +7,7 @@ package com.campusclaw.codingagent.common.client;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Pattern;
 
 import com.campusclaw.codingagent.common.client.mate.MateCredentials;
 import com.campusclaw.codingagent.common.client.mate.MateToolClient;
@@ -59,6 +60,14 @@ public class HttpMateToolClient implements MateToolClient {
     protected static final String QUERYTOOLS = "/mate-service/v1/runtime/tools/query";
 
     /**
+     * Path-segment pattern for agent/skill IDs, same as the repo's
+     * {@code AgentRuntimeManager.AGENT_ID_PATTERN}: the value becomes a URL
+     * path segment, so {@code ..}, {@code ?}, encoded slashes etc. must be
+     * rejected before any request is sent.
+     */
+    private static final Pattern ID_SEGMENT_PATTERN = Pattern.compile("^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$");
+
+    /**
      * Address of the Mate inner gateway ({@code mate.innerGWSerive}).
      */
     protected final String mateInnerGwAddress;
@@ -93,6 +102,11 @@ public class HttpMateToolClient implements MateToolClient {
         if (agentId == null && skillId == null) {
             log.warn("listTools called without agent_id or skill_id, returning empty list");
             return List.of();
+        }
+        String scopedId = agentId != null ? agentId : skillId;
+        if (!ID_SEGMENT_PATTERN.matcher(scopedId).matches()) {
+            throw new IllegalArgumentException(
+                    "Invalid " + (agentId != null ? "agent" : "skill") + " id for path segment: " + scopedId);
         }
         try {
             List<String> toolIds = agentId != null ? queryToolIdsByAgentId(agentId) : queryToolIdsBySkillId(skillId);
