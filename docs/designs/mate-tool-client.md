@@ -22,7 +22,7 @@ CampusClaw 需要调用 Mate 平台管理的工具。这批工具由 Mate 工具
 | `MateToolMeta` | record | `common/client/mate/` — 工具元数据 |
 | `MateCredentials` | record | `common/client/mate/` — 凭据(AppKey / JWT 两模式),仅 callTool 携带 |
 | `HttpMateToolClient` | 实现 | `common/client/` — QUERYTOOLS 真实调用;invoke 仍为 stub(DEF-007) |
-| `MateRestUtil` | 工具类 | `common/util/` — 网关 REST 调用,解 `resCode/resMsg/result` 信封 |
+| `MateRestUtil` | 工具类 | `common/util/` — 网关 REST 调用(executePostRawRequest / executeGetRawRequest),返回原始 body 由调用方解信封;`RequestHeaderInfo.toHeaders()` 将 15 字段映射为真实 HTTP header |
 | `RequestHeaderInfo` | DTO | `common/dto/` — 请求头信息(内网网关无需凭据字段,`builder().build()` 即可) |
 | `ToolInfo` | DTO | `common/dto/` — QUERYTOOLS 返回的 `result.data` 数组元素 |
 | `AgentInfo` | DTO | `common/dto/` — agent 元数据,`bindingTools[].toolId` 是第一步的 tool ID 来源 |
@@ -89,7 +89,7 @@ callMateTool({tool, args})
 
 **决策**:`listTools(toolIds)` 不带凭据(RequestHeaderInfo 默认构造即可过网关);`callTool(tool, args, credentials)` 第三参数透传 agent 下发的 `MateCredentials`。
 
-**理由**:内网网关的查询接口不校验凭据;工具执行需要身份。凭据来源由 `CallMateTool.resolveCredentials()` 钩子解析(每次调用执行,不缓存——进程级单例上缓存会串凭据)。
+**理由**:内网网关的查询接口不校验凭据;工具执行需要身份。凭据来源由 `CallMateTool.resolveCredentials()` 钩子解析(每次调用执行,不缓存——进程级单例上缓存会串凭据)。钩子默认 `return null`(而非空字符串凭据):空 `appKey("","")` 是"看似有凭据实际为空"的最含糊状态,DEF-007 实现后会让 invokeTool 拿到明确判据(null=未接线)。
 
 ### D4. 两步查询:先元数据摘 tool ID,再 QUERYTOOLS 查详情
 
@@ -107,11 +107,31 @@ callMateTool({tool, args})
 
 `tool/mate`(AgentTool 层)→ `common/client/mate`(契约)← `common/client`(HTTP 实现);`HttpMateToolClient` 不依赖工具层。
 
-### D7. 网关地址经 @Value 注入
+### D7. 网关地址初始化链路(环境变量注入)
 
-**决策**:`MateToolAutoConfiguration` 用 `@Value("${mate.innerGWSerive:}")` 读网关地址,application.yml 提供 `mate.innerGWSerive: ${mate.innerGWSerive:}` 环境变量直通。
+**决策**:网关地址经三层链路注入,全部走标准 Spring 占位符:
 
-**理由**:与仓内 `@Value` 用法一致;默认空串,未配置时调用失败于网关侧,报错清晰。
+```
+部署机 /etc/profile                          (运维维护)
+  export CAMPUSINNERGWSERVICE_DOMAIN_NAME_URL="http://<ip>:<port>"
+        │
+        ▼ source /etc/profile
+mate-campusclaw/scripts/install_value.sh     (mate 侧独有,已登记 sync-exclude)
+  export MATE_INNERGWSerive="$CAMPUSINNERGWSERVICE_DOMAIN_NAME_URL"
+        │
+        ▼ 进程环境变量
+application.yml
+  mate.innerGWSerive: ${MATE_INNERGWSerive:}   ← 引用环境变量,默认空
+        │
+        ▼
+MateToolAutoConfiguration
+  @Value("${mate.innerGWSerive:}") → HttpMateToolClient.mateInnerGwAddress
+```
+
+**理由**:
+- 占位符引用**独立环境变量** `MATE_INNERGWSerive` 而非属性自身——早期写法 `${mate.innerGWSerive:}` 自引用在环境变量未设置时触发 `Circular placeholder reference`,开箱启动即失败(PR #144 评审阻断项,已由 `ApplicationYmlLoadTest` 走 config-data 加载路径防回潮)
+- 值的来源遵循 mate 侧部署惯例(与 `GAUSSDB_URL` 等同体系):运维写 `/etc/profile`,脚本 source 后导出,应用只认环境变量
+- 默认空串:未配置的环境仍可启动,仅在真正调用 Mate 工具时于网关侧报错(fail-late 但报错清晰,不阻断无关功能)
 
 ## 边界情况
 
@@ -142,14 +162,16 @@ LLM API tools 字段新增 listMateTool / callMateTool 两个工具定义。网�
 |---|---|---|
 | `CallMateToolTest` | 3 | 调用透传 / 未知工具错误传播 / 缺 tool 参数抛错 |
 | `ListMateToolTest` | 3 | agent_id 作 tool ID / skill_id 作 tool ID / 空参查空列表 |
-| `MateToolAutoConfigurationTest` | 4 | 默认装配 / enabled=false 排除 / client Bean 存在 / isError 经 pipeline 传播 |
+| `MateToolAutoConfigurationTest` | 4 | 默认装配 / enabled=false 排除 / 网关地址经属性到达 client / isError 经 pipeline 传播 |
 | `MateToolPropertiesTest` | 1 | enabled 默认值 |
+| `HttpMateToolClientTest` | 7 | MockWebServer 桩测试:agent 摘 toolId / skill 摘 id / 空 bindingTools 跳过 QUERYTOOLS / toolName 兜底 / 两步 resCode!=0 抛错 / 请求方法与路径 / header 发送 |
+| `ApplicationYmlLoadTest` | 2 | config-data 真加载 application.yml,占位符解析无循环引用(回归) |
 
-共 11 个,使用内存 `MockMateToolClient`。
+共 20 个:工具层使用内存 `MockMateToolClient`;HTTP 层使用 MockWebServer 桩服务(不依赖 mock client,直测 `HttpMateToolClient` 两步查询)。
 
 ## 验证
 
-- `./mvnw -pl modules/coding-agent-cli -am test -Dtest='CallMateToolTest,ListMateToolTest,MateToolAutoConfigurationTest,MateToolPropertiesTest' -Dsurefire.failIfNoSpecifiedTests=false` — **11 tests, 0 failures**
+- `./mvnw -pl modules/coding-agent-cli -am test -Dtest='CallMateToolTest,ListMateToolTest,MateToolAutoConfigurationTest,MateToolPropertiesTest,ApplicationYmlLoadTest,HttpMateToolClientTest' -Dsurefire.failIfNoSpecifiedTests=false` — **20 tests, 0 failures**
 - `checkstyle:check` → 0 violations;`spotless:check` → clean
 - `./scripts/sync-mate-campusclaw.sh` — mate-campusclaw 编译通过
 
@@ -161,3 +183,4 @@ LLM API tools 字段新增 listMateTool / callMateTool 两个工具定义。网�
 | 2026-08-17 | 26.0.0(PR #140) | 目录按域聚合 tool/mate;契约提取 common/client/mate |
 | 2026-08-18 | 26.0.0(本 PR) | QUERYTOOLS 真实对接;MateRestUtil/RequestHeaderInfo/ToolInfo;无状态化;去 ask/deny 客户端执行;凭据仅 callTool 透传;MateToolProperties 改 lombok @Data |
 | 2026-08-18 | 26.0.0(本 PR 续) | listTools 两步查询:agent/skill 元数据摘 tool ID → QUERYTOOLS;新增 AgentInfo/QuerySkillToolsResult/SkillBindingTool DTO;MateRestUtil 加 GET 支持 |
+| 2026-08-18 | 26.0.0(评审修复) | 占位符自引用改环境变量注入(D7 初始化链路);resolveCredentials 默认 null;MateRestUtil 删死代码、header 真发送;补 MockWebServer 桩测试与 yml 加载回归;DEF-007 收敛为仅剩 invokeTool |
