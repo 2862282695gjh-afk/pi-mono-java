@@ -5,7 +5,6 @@
 package com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.mate;
 
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -14,20 +13,22 @@ import com.huawei.hicampus.mate.matecampusclaw.codingagent.common.client.mate.Ma
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.common.client.mate.MateToolMeta;
 
 /**
- * In-memory mock of {@link MateToolClient} for unit tests.
- * Records the last credentials it received so tests can assert credential passing.
+ * In-memory mock of {@link MateToolClient} for unit tests. Registered tools
+ * are returned when their name appears in the queried tool ID list.
  *
- * @version [br_eCampusCore 26.0.0, 2026/08/17]
+ * @version [br_eCampusCore 26.0.0, 2026/08/18]
+ * @since [br_eCampusCore 26.0.0]
  */
 public class MockMateToolClient implements MateToolClient {
 
-    private final Map<String, List<String>> authorizedByAgent = new HashMap<>();
-    private final Map<String, List<String>> authorizedBySkill = new HashMap<>();
-    private final Map<String, MateToolMeta> toolsById = new HashMap<>();
+    private final Map<String, MateToolMeta> toolsByName = new java.util.HashMap<>();
 
-    private MateCredentials lastListCredentials;
-    private MateCredentials lastCallCredentials;
+    private List<String> lastQueriedToolIds;
+
     private String lastCalledTool;
+
+    private MateCredentials lastCallCredentials;
+
     private MateToolClient.ToolResult overriddenResult;
 
     /**
@@ -36,45 +37,16 @@ public class MockMateToolClient implements MateToolClient {
      * @param meta the tool metadata
      */
     public void addTool(MateToolMeta meta) {
-        toolsById.put(meta.name(), meta);
+        toolsByName.put(meta.name(), meta);
     }
 
     /**
-     * Authorizes a list of tool ids for an agent.
+     * Returns the tool ID list received by the last listTools call.
      *
-     * @param agentId the agent id
-     * @param toolIds the tool ids
+     * @return the tool IDs
      */
-    public void authorizeAgent(String agentId, List<String> toolIds) {
-        authorizedByAgent.put(agentId, toolIds);
-    }
-
-    /**
-     * Authorizes a list of tool ids for a skill.
-     *
-     * @param skillId the skill id
-     * @param toolIds the tool ids
-     */
-    public void authorizeSkill(String skillId, List<String> toolIds) {
-        authorizedBySkill.put(skillId, toolIds);
-    }
-
-    /**
-     * Returns the credentials received by the last listTools call.
-     *
-     * @return the credentials
-     */
-    public MateCredentials lastListCredentials() {
-        return lastListCredentials;
-    }
-
-    /**
-     * Returns the credentials received by the last callTool call.
-     *
-     * @return the credentials
-     */
-    public MateCredentials lastCallCredentials() {
-        return lastCallCredentials;
+    public List<String> lastQueriedToolIds() {
+        return lastQueriedToolIds;
     }
 
     /**
@@ -84,6 +56,15 @@ public class MockMateToolClient implements MateToolClient {
      */
     public String lastCalledTool() {
         return lastCalledTool;
+    }
+
+    /**
+     * Returns the credentials received by the last callTool call.
+     *
+     * @return the credentials
+     */
+    public MateCredentials lastCallCredentials() {
+        return lastCallCredentials;
     }
 
     /**
@@ -97,13 +78,12 @@ public class MockMateToolClient implements MateToolClient {
     }
 
     @Override
-    public List<MateToolMeta> listTools(String agentId, String skillId, MateCredentials credentials) {
-        lastListCredentials = credentials;
-        List<String> ids = agentId != null ? authorizedByAgent.get(agentId) : authorizedBySkill.get(skillId);
+    public List<MateToolMeta> listTools(List<String> toolIds) {
+        lastQueriedToolIds = new ArrayList<>(toolIds);
         List<MateToolMeta> result = new ArrayList<>();
-        if (ids != null) {
-            for (String id : ids) {
-                MateToolMeta meta = toolsById.get(id);
+        if (toolIds != null) {
+            for (String id : toolIds) {
+                MateToolMeta meta = toolsByName.get(id);
                 if (meta != null) {
                     result.add(meta);
                 }
@@ -119,7 +99,7 @@ public class MockMateToolClient implements MateToolClient {
         if (overriddenResult != null) {
             return overriddenResult;
         }
-        MateToolMeta meta = toolsById.get(tool);
+        MateToolMeta meta = toolsByName.get(tool);
         if (meta == null) {
             return new ToolResult("unknown tool: " + tool, null, true);
         }

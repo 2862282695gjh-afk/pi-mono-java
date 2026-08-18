@@ -4,24 +4,33 @@
 
 package com.campusclaw.codingagent.common.client;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
 import com.campusclaw.codingagent.common.client.mate.MateCredentials;
 import com.campusclaw.codingagent.common.client.mate.MateToolClient;
 import com.campusclaw.codingagent.common.client.mate.MateToolMeta;
+import com.campusclaw.codingagent.common.dto.RequestHeaderInfo;
+import com.campusclaw.codingagent.common.dto.ToolInfo;
+import com.campusclaw.codingagent.common.util.MateRestUtil;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * HTTP implementation of {@link MateToolClient}.
+ * HTTP implementation of {@link MateToolClient} calling through the Mate inner
+ * gateway via {@link MateRestUtil}.
  *
- * <p>Each Mate RPC endpoint is a separate protected method with an
- * {@code UnsupportedOperationException} stub — the internal Mate HTTP calls
- * are tracked in {@code docs/DEFERRED.md}.
+ * <p>Gateway address comes from the {@code mate.innerGWSerive}
+ * property/environment variable; requests carry a credential-free
+ * {@link RequestHeaderInfo}. {@link #listTools(List)} queries tool metadata via
+ * QUERYTOOLS; the invoke RPC behind {@link #callTool(String, Map)} remains a
+ * stub for internal development (see {@code docs/DEFERRED.md} DEF-007).
  *
- * @version [br_eCampusCore 26.0.0, 2026/08/17]
+ * @version [br_eCampusCore 26.0.0, 2026/08/18]
  * @since [br_eCampusCore 26.0.0]
  */
 public class HttpMateToolClient implements MateToolClient {
@@ -29,37 +38,62 @@ public class HttpMateToolClient implements MateToolClient {
     private static final Logger log = LoggerFactory.getLogger(HttpMateToolClient.class);
 
     /**
-     * Base URL of the Mate tool server; reserved for the internal Mate HTTP
-     * implementation of the four stub methods.
+     * QUERYTOOLS path on the Mate inner gateway: query tool metadata by a
+     * list of tool IDs.
      */
-    protected final String baseUrl;
+    protected static final String QUERYTOOLS = "/mate-service/v1/runtime/tools/query";
 
     /**
-     * Creates a client pointed at the given Mate tool server.
-     *
-     * @param baseUrl the Mate tool server base URL (no trailing slash required)
+     * Address of the Mate inner gateway ({@code mate.innerGWSerive}).
      */
-    public HttpMateToolClient(String baseUrl) {
-        this.baseUrl = baseUrl != null && baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
+    protected final String mateInnerGwAddress;
+
+    /**
+     * REST helper performing the actual gateway calls.
+     */
+    protected final MateRestUtil mateRestUtil;
+
+    /**
+     * Shared Jackson mapper for request/response DTO conversion.
+     */
+    protected final ObjectMapper mapper;
+
+    /**
+     * Creates a client pointed at the Mate inner gateway.
+     *
+     * @param mateInnerGwAddress the inner gateway base address
+     * @param mateRestUtil the REST helper for gateway calls
+     * @param mapper shared Jackson mapper
+     */
+    public HttpMateToolClient(String mateInnerGwAddress, MateRestUtil mateRestUtil, ObjectMapper mapper) {
+        this.mateInnerGwAddress = mateInnerGwAddress != null && mateInnerGwAddress.endsWith("/")
+                ? mateInnerGwAddress.substring(0, mateInnerGwAddress.length() - 1)
+                : mateInnerGwAddress;
+        this.mateRestUtil = mateRestUtil;
+        this.mapper = mapper;
     }
 
     @Override
-    public List<MateToolMeta> listTools(String agentId, String skillId, MateCredentials credentials) {
+    public List<MateToolMeta> listTools(List<String> toolIds) {
+        if (toolIds == null || toolIds.isEmpty()) {
+            log.warn("listTools called without tool ids, returning empty list");
+            return List.of();
+        }
         try {
-            List<String> toolIds;
-            if (agentId != null) {
-                toolIds = queryToolIdsByAgentId(agentId, credentials);
-            } else if (skillId != null) {
-                toolIds = queryToolIdsBySkillId(skillId, credentials);
-            } else {
-                log.warn("listTools called without agent_id or skill_id, returning empty list");
-                return List.of();
+            RequestHeaderInfo headerInfo = RequestHeaderInfo.builder().build();
+            String body = mapper.writeValueAsString(Map.of("toolIds", toolIds));
+            String raw = mateRestUtil.executePostRawRequest(mateInnerGwAddress, QUERYTOOLS, headerInfo, body);
+            var root = mapper.readTree(raw);
+            if (!"0".equals(root.path("resCode").asText(""))) {
+                throw new IllegalStateException(
+                        "QUERYTOOLS failed: resCode=" + root.path("resCode").asText("") + " resMsg="
+                                + root.path("resMsg").asText(""));
             }
-            return queryToolMetaByIds(toolIds, credentials);
-        } catch (UnsupportedOperationException e) {
-            throw e;
+            List<ToolInfo> infos =
+                    mapper.convertValue(root.path("result").path("data"), new TypeReference<List<ToolInfo>>() {});
+            return toMeta(infos);
         } catch (Exception e) {
-            log.error("listTools failed: agentId={} skillId={}", agentId, skillId, e);
+            log.error("listTools failed: count={} ", toolIds.size(), e);
             throw new IllegalStateException("listTools failed", e);
         }
     }
@@ -67,63 +101,46 @@ public class HttpMateToolClient implements MateToolClient {
     @Override
     public ToolResult callTool(String tool, Map<String, Object> args, MateCredentials credentials) {
         try {
-            return invokeToolById(tool, args, credentials);
+            return invokeTool(tool, args, credentials);
         } catch (Exception e) {
             log.error("callTool failed: tool={}", tool, e);
             return new ToolResult("callTool failed: " + e.getMessage(), null, true);
         }
     }
 
-    // ====================================================================
-    // Mate RPC endpoints — stubs for internal development (see DEFERRED.md)
-    // ====================================================================
-
     /**
-     * Queries the authorized tool_id list for an agent.
+     * Converts gateway {@link ToolInfo} entries to {@link MateToolMeta}.
      *
-     * @param agentId the Mate agent ID
-     * @param credentials Mate authentication credentials
-     * @return authorized tool_id list
-     * @throws UnsupportedOperationException stub — real Mate call not yet wired
+     * @param infos the gateway tool entries
+     * @return converted metadata list
      */
-    protected List<String> queryToolIdsByAgentId(String agentId, MateCredentials credentials) {
-        throw new UnsupportedOperationException("queryToolIdsByAgentId: stub (see DEFERRED.md)");
-    }
-
-    /**
-     * Queries the authorized tool_id list for a skill.
-     *
-     * @param skillId the Mate skill ID
-     * @param credentials Mate authentication credentials
-     * @return authorized tool_id list
-     * @throws UnsupportedOperationException stub — real Mate call not yet wired
-     */
-    protected List<String> queryToolIdsBySkillId(String skillId, MateCredentials credentials) {
-        throw new UnsupportedOperationException("queryToolIdsBySkillId: stub (see DEFERRED.md)");
-    }
-
-    /**
-     * Queries full tool metadata by tool_id list.
-     *
-     * @param toolIds the tool_id list to query
-     * @param credentials Mate authentication credentials
-     * @return full tool metadata list
-     * @throws UnsupportedOperationException stub — real Mate call not yet wired
-     */
-    protected List<MateToolMeta> queryToolMetaByIds(List<String> toolIds, MateCredentials credentials) {
-        throw new UnsupportedOperationException("queryToolMetaByIds: stub (see DEFERRED.md)");
+    protected List<MateToolMeta> toMeta(List<ToolInfo> infos) {
+        List<MateToolMeta> metas = new ArrayList<>();
+        if (infos == null) {
+            return metas;
+        }
+        for (ToolInfo info : infos) {
+            metas.add(new MateToolMeta(
+                    info.getToolName() != null ? info.getToolName() : info.getToolId(),
+                    info.getDescription(),
+                    info.getInputSchema(),
+                    info.getOutputSchema(),
+                    Boolean.TRUE.equals(info.getIsConcurrencySafe()),
+                    info.getPermission() != null ? info.getPermission() : "allow"));
+        }
+        return metas;
     }
 
     /**
      * Invokes a tool on the Mate server (the real call behind callMateTool).
      *
-     * @param toolId the tool ID to invoke
+     * @param tool the tool name to invoke
      * @param args the tool arguments
-     * @param credentials Mate authentication credentials (id + input credit)
+     * @param credentials agent-handed-down credentials forwarded to the server
      * @return tool execution result
      * @throws UnsupportedOperationException stub — real Mate call not yet wired
      */
-    protected ToolResult invokeToolById(String toolId, Map<String, Object> args, MateCredentials credentials) {
-        throw new UnsupportedOperationException("invokeToolById: stub (see DEFERRED.md)");
+    protected ToolResult invokeTool(String tool, Map<String, Object> args, MateCredentials credentials) {
+        throw new UnsupportedOperationException("invokeTool: stub (see DEFERRED.md)");
     }
 }

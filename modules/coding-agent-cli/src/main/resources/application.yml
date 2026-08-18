@@ -153,3 +153,10 @@ controlplane:
     sweep-interval: PT10S
     # How long a STALE node lingers before being removed entirely.
     grace-after-stale: PT5M
+
+# Mate inner gateway service address used by the Mate tool client
+# (listMateTool / callMateTool). Inner gateway endpoints do not require
+# credential headers. Set via property or environment variable:
+#   mate.innerGWSerive=http://inner-gw.example.com:9999
+mate:
+  innerGWSerive: ${mate.innerGWSerive:}

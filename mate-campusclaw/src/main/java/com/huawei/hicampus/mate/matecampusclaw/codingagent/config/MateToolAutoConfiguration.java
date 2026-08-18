@@ -5,11 +5,14 @@
 package com.huawei.hicampus.mate.matecampusclaw.codingagent.config;
 
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.common.client.HttpMateToolClient;
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.common.client.mate.MateCredentials;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.common.client.mate.MateToolClient;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.common.util.MateRestUtil;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.mate.CallMateTool;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.mate.ListMateTool;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -31,39 +34,59 @@ import org.springframework.context.annotation.Configuration;
 public class MateToolAutoConfiguration {
 
     /**
+     * Address of the Mate inner gateway service, from the
+     * {@code mate.innerGWSerive} property/environment variable.
+     */
+    @Value("${mate.innerGWSerive:}")
+    private String mateInnerGwAddress;
+
+    /**
+     * Creates the REST helper bean used by the Mate tool client to call the
+     * inner gateway.
+     *
+     * @param mapperProvider provider for a Jackson mapper; a new one when no
+     *        mapper bean exists in the context
+     * @return the MateRestUtil bean
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public MateRestUtil mateRestUtil(ObjectProvider<ObjectMapper> mapperProvider) {
+        return new MateRestUtil(mapperProvider.getIfAvailable(ObjectMapper::new));
+    }
+
+    /**
      * Creates the Mate HTTP client when no other bean provides one.
      *
+     * @param restUtil the Mate REST helper for real gateway calls
+     * @param mapperProvider provider for a Jackson mapper; a new one when no
+     *        mapper bean exists in the context
      * @return the HTTP Mate tool client
      */
     @Bean
     @ConditionalOnMissingBean(MateToolClient.class)
-    public MateToolClient mateToolClient(MateToolProperties properties) {
-        return new HttpMateToolClient(properties.getBaseUrl());
+    public MateToolClient mateToolClient(MateRestUtil restUtil, ObjectProvider<ObjectMapper> mapperProvider) {
+        return new HttpMateToolClient(mateInnerGwAddress, restUtil, mapperProvider.getIfAvailable(ObjectMapper::new));
     }
 
     /**
      * Creates the callMateTool AgentTool bean.
      *
      * @param client the Mate tool client
-     * @param properties Mate tool configuration properties
      * @return the CallMateTool bean
      */
     @Bean
-    public CallMateTool callMateTool(MateToolClient client, MateToolProperties properties) {
-        MateCredentials credentials = MateCredentials.appKey(properties.getXHwId(), properties.getXHwAppKey());
-        return new CallMateTool(client, properties.getApprovalUi(), credentials);
+    public CallMateTool callMateTool(MateToolClient client) {
+        return new CallMateTool(client);
     }
 
     /**
-     * Creates the listMateTool AgentTool bean sharing the client and cache with
-     * callMateTool.
+     * Creates the listMateTool AgentTool bean.
      *
      * @param client the Mate tool client
-     * @param callMateTool the callMateTool bean (shares meta cache and credentials)
      * @return the ListMateTool bean
      */
     @Bean
-    public ListMateTool listMateTool(MateToolClient client, CallMateTool callMateTool) {
-        return new ListMateTool(client, callMateTool);
+    public ListMateTool listMateTool(MateToolClient client) {
+        return new ListMateTool(client);
     }
 }

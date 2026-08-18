@@ -22,10 +22,14 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Lists tools available from the Mate tool service, filtered by agent or skill
- * authorization.
+ * Lists tools available from the Mate tool service. The agent_id/skill_id
+ * parameter is passed as the tool ID to query (QUERYTOOLS on the Mate inner
+ * gateway).
  *
- * @version [br_eCampusCore 26.0.0, 2026/08/17]
+ * <p>Stateless: query results are returned to the model only; nothing is
+ * cached between calls.
+ *
+ * @version [br_eCampusCore 26.0.0, 2026/08/18]
  * @since [br_eCampusCore 26.0.0]
  */
 public class ListMateTool implements AgentTool {
@@ -33,7 +37,6 @@ public class ListMateTool implements AgentTool {
     private static final Logger log = LoggerFactory.getLogger(ListMateTool.class);
 
     private final MateToolClient client;
-    private final CallMateTool callMateTool;
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
@@ -56,12 +59,10 @@ public class ListMateTool implements AgentTool {
     /**
      * Creates a ListMateTool.
      *
-     * @param client the Mate tool service client (shared with CallMateTool)
-     * @param callMateTool the CallMateTool whose meta cache will be updated
+     * @param client the Mate tool service client
      */
-    public ListMateTool(MateToolClient client, CallMateTool callMateTool) {
+    public ListMateTool(MateToolClient client) {
         this.client = client;
-        this.callMateTool = callMateTool;
     }
 
     @Override
@@ -77,8 +78,7 @@ public class ListMateTool implements AgentTool {
     @Override
     public String description() {
         return "List tools available from the Mate service, filtered by agent_id or "
-                + "skill_id authorization. Always call this before callMateTool so "
-                + "permissions are up to date.";
+                + "skill_id authorization. Always call this before callMateTool.";
     }
 
     @Override
@@ -99,9 +99,7 @@ public class ListMateTool implements AgentTool {
                 agentId != null ? agentId : "(none)",
                 skillId != null ? skillId : "(none)");
 
-        List<MateToolMeta> tools = client.listTools(agentId, skillId, callMateTool.credentials());
-
-        callMateTool.updateMeta(tools);
+        List<MateToolMeta> tools = client.listTools(toolIdsOf(agentId, skillId));
 
         log.info("Listed mate tools: count={}", tools.size());
 
@@ -119,9 +117,7 @@ public class ListMateTool implements AgentTool {
         for (MateToolMeta tool : tools) {
             sb.append("  - ")
                     .append(tool.name())
-                    .append(" [")
-                    .append(tool.permission() != null ? tool.permission() : "allow")
-                    .append("]: ")
+                    .append(": ")
                     .append(tool.description() != null ? tool.description() : "")
                     .append("\n");
             if (tool.inputSchema() != null && !tool.inputSchema().isEmpty()) {
@@ -133,5 +129,22 @@ public class ListMateTool implements AgentTool {
 
         List<ContentBlock> blocks = List.of(new TextContent(sb.toString()));
         return new AgentToolResult(blocks, null);
+    }
+
+    /**
+     * Collects the tool IDs to query from the agent_id/skill_id parameters.
+     *
+     * @param agentId the agent_id parameter, treated as a tool ID source
+     * @param skillId the skill_id parameter, treated as a tool ID source
+     * @return the tool ID list to pass to QUERYTOOLS
+     */
+    private static List<String> toolIdsOf(String agentId, String skillId) {
+        if (agentId != null) {
+            return List.of(agentId);
+        }
+        if (skillId != null) {
+            return List.of(skillId);
+        }
+        return List.of();
     }
 }

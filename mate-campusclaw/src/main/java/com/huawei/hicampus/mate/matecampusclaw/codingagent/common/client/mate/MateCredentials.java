@@ -5,13 +5,14 @@
 package com.huawei.hicampus.mate.matecampusclaw.codingagent.common.client.mate;
 
 /**
- * Credentials for authenticating with the Mate tool server. Two modes:
+ * Credentials for invoking a Mate tool, handed down by the agent. Two modes:
  * AppKey (X-HW-ID + X-HW-APPKEY) or JWT (X-HW-ID + Authorization Bearer).
+ * Only {@code callTool} carries them; {@code listTools} runs credential-free.
  *
  * @param xHwId X-HW-ID header (always required)
  * @param xHwAppKey X-HW-APPKEY header (AppKey mode; null for JWT)
  * @param authorization Authorization header (JWT mode; null for AppKey)
- * @version [br_eCampusCore 26.0.0, 2026/08/17]
+ * @version [br_eCampusCore 26.0.0, 2026/08/18]
  * @since [br_eCampusCore 26.0.0]
  */
 public record MateCredentials(String xHwId, String xHwAppKey, String authorization) {
