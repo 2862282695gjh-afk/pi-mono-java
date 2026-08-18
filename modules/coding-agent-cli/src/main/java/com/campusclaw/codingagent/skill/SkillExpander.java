@@ -21,8 +21,8 @@ import org.slf4j.LoggerFactory;
  * Supports sandbox mode: when {@link SandboxSkillParser} is available,
  * skill body content is loaded inside a Docker container for security.
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/05/06]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/08/17]
+ * @since [br_eCampusCore 26.0.0]
  */
 public class SkillExpander {
 
@@ -91,10 +91,26 @@ public class SkillExpander {
             return userInput;
         }
 
-        Skill skill = skillOpt.get();
+        try {
+            return expand(skillOpt.get(), args);
+        } catch (SkillLoadException e) {
+            return userInput;
+        }
+    }
+
+    /**
+     * Loads and expands one already-resolved Skill.
+     *
+     * @param skill selected Skill
+     * @param args optional user arguments
+     * @return Skill instructions wrapped for the model
+     * @throws SkillLoadException when the Skill body cannot be loaded
+     */
+    public String expand(Skill skill, String args) {
+        String skillName = skill.name();
         String body = loadSkillBody(skill);
         if (body == null) {
-            return userInput;
+            throw new SkillLoadException("Failed to load Skill body: " + skill.filePath());
         }
 
         StringBuilder sb = new StringBuilder();
@@ -115,6 +131,20 @@ public class SkillExpander {
         }
 
         return sb.toString();
+    }
+
+    /**
+     * Returns the selected Skill name when the whole input is a {@code /skill:name} command.
+     *
+     * @param userInput raw user input
+     * @return selected Skill name, when present
+     */
+    public static Optional<String> extractSkillName(String userInput) {
+        if (userInput == null) {
+            return Optional.empty();
+        }
+        Matcher matcher = SKILL_COMMAND.matcher(userInput.trim());
+        return matcher.matches() ? Optional.of(matcher.group(1)) : Optional.empty();
     }
 
     /**

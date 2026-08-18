@@ -10,6 +10,7 @@ info:
       - interactive abort without tearing the connection
       - in-session model / thinking-level switching
       - session resume via `conversation_id` handshake parameter
+      - managed Agent selection via `agent_id` handshake parameter
       - querying session state, history, prompt templates and installed skills
       - listing the model catalogue without going through the REST settings endpoint
 
@@ -58,7 +59,8 @@ channels:
     title: Chat channel
     description: |
       Single WebSocket channel carrying commands (client → server) and events
-      (server → client). Handshake accepts two optional query parameters:
+      (server → client). Handshake accepts three optional query parameters:
+        - `agent_id`        — selected managed Agent; omit for legacy mode
         - `conversation_id` — resume an existing conversation; omit to create one
         - `token`           — bearer token for production (see securitySchemes)
 
@@ -83,6 +85,10 @@ channels:
       commands, and the `error` event as the authoritative channel for
       runtime / model failures.
     parameters:
+      agent_id:
+        description: >-
+          Optional managed Agent ID. Sessions are isolated by the pair
+          (agent_id, conversation_id).
       conversation_id:
         description: >-
           Optional existing conversation ID to resume. Passed as query parameter
