@@ -15,7 +15,6 @@ CampusClaw 负责决定运行哪个 Agent。选定 `agentId` 后，CampusClaw �
 ./agent/{agentId}/.campusclaw/setting.json
 ./agent/{agentId}/.campusclaw/systemPrompt.md
 ./agent/{agentId}/.campusclaw/skills/{skillName}/SKILL.md
-./agent/{agentId}/.campusclaw/skills/{skillName}/skill.json
 ./agent/{agentId}/.campusclaw/skills/{skillName}/references/*
 ./agent/{agentId}/.campusclaw/skills/{skillName}/references/tools.json
 ./agent/{agentId}/.campusclaw/skills/{skillName}/templates/*
@@ -97,7 +96,9 @@ querySkillInfo 返回的 `bindingTools` 是 Skill 工具的唯一远端来源。
 }
 ```
 
-`tools.json` 不按 `permission` 过滤，也不保存 `permission` 字段；每个 `bindingTools` 条目都映射为 `tool_id`、`name`、`description`。Skill 激活阶段直接读取该文件，不再调用 querySkillTools，也不再与 `skill.json` 做一致性比对（暂缓项，见 DEF-008 ③）。
+`tools.json` 不按 `permission` 过滤，也不保存 `permission` 字段；每个 `bindingTools` 条目都映射为 `tool_id`、`name`、`description`。Skill 激活阶段直接读取该文件，不再调用 querySkillTools，也不再与 SKILL.md 做一致性比对（暂缓项，见 DEF-008 ③）。
+
+Skill 不落任何独立元数据 JSON（无 `skill.json`）：`SKILL.md` 的 front-matter 头部（`name`、`id`、`description`）是 Skill 身份的唯一持久化来源，本地缓存加载时解析该头部重建名称与描述；`id` 仅用于与 `agentId.json` 中 `bindingSkills` 引用做绑定关联，防止半成品目录被误判为完整缓存。
 
 ### 4.4 CampusClaw 入口
 
@@ -112,9 +113,9 @@ querySkillInfo 返回的 `bindingTools` 是 Skill 工具的唯一远端来源。
 ### 5.1 Agent 本地发现与冷启动
 
 1. 解析 `./agent/{agentId}` 路径（agentId 仅要求非空，穿越防护暂缓，见 DEF-008 ①）。
-2. 本地存在 `agentId.json`、`systemPrompt.md`、`skills/` 目录且每个直接绑定 Skill 的 `skill.json` 可读时，直接加载本地缓存，不调用 CampusMateService。
+2. 本地存在 `agentId.json`、`systemPrompt.md`、`skills/` 目录且每个直接绑定 Skill 的 `SKILL.md` 头部（name/id/description）可解析时，直接加载本地缓存，不调用 CampusMateService。
 3. 本地快照缺失或无法加载（含物化中断的半成品）时调用 GetAgentRuntime，取得 Agent 信息与直接绑定 Skill 的 `(id, version)` 列表；对每个绑定调用 querySkillInfo（返回为空报错，其余形状校验暂缓）。`systemPrompt.md` 是本地会话系统提示词来源，允许用户本地修改。
-4. 物化直接写入目标目录：基础 `SKILL.md`（name/description frontmatter）、`references/`、`templates/`、`references/tools.json`（全部 `bindingTools`）、`skill.json`、`systemPrompt.md`、`agentId.json`、`setting.json`（原子发布与资源白名单暂缓）。
+4. 物化直接写入目标目录：基础 `SKILL.md`（name/id/description frontmatter）、`references/`、`templates/`、`references/tools.json`（全部 `bindingTools`）、`systemPrompt.md`、`agentId.json`、`setting.json`（原子发布与资源白名单暂缓）。
 
 ### 5.2 Skill 发现
 
@@ -161,7 +162,7 @@ sequenceDiagram
     Caller->>Claw: 用户任务 + agentId
     Claw->>Pool: getOrCreate(agentId, conversationId)
     Pool->>Runtime: prepare(agentId)
-    Runtime->>FS: 检查agentId.json、systemPrompt.md、skills目录和skill.json
+    Runtime->>FS: 检查agentId.json、systemPrompt.md、skills目录和SKILL.md
 
     alt 本地Agent结构完整
         FS-->>Runtime: 返回本地Agent元数据、systemPrompt.md和Skill文件
@@ -173,7 +174,7 @@ sequenceDiagram
             Mate-->>Runtime: Skill定义、工具权限、依赖元数据、templates/references
         end
         Runtime->>FS: 临时目录创建.campusclaw/skills/{skillName}
-        Runtime->>FS: 写入SKILL.md、skill.json、references/、templates/
+        Runtime->>FS: 写入SKILL.md、references/、templates/
         Runtime->>FS: 直接写入.campusclaw/（含systemPrompt.md、agentId.json和setting.json）
         Runtime->>FS: 原子移动为./agent/{agentId}
     else 本地目录存在但不完整

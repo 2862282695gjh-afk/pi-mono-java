@@ -11,6 +11,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.regex.Pattern;
@@ -21,6 +22,7 @@ import com.campusclaw.codingagent.runtime.MateServiceClient.SkillFile;
 import com.campusclaw.codingagent.runtime.MateServiceClient.SkillInfo;
 import com.campusclaw.codingagent.runtime.MateServiceClient.SkillReference;
 import com.campusclaw.codingagent.session.SessionConfig;
+import com.campusclaw.codingagent.skill.SkillLoader;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -51,7 +53,7 @@ public class AgentRuntimeManager {
     private static final String AGENT_METADATA_FILE = "agentId.json";
     private static final String SYSTEM_PROMPT_FILE = "systemPrompt.md";
     private static final String AGENT_SETTINGS_FILE = "setting.json";
-    private static final String SKILL_METADATA_FILE = "skill.json";
+    private static final String SKILL_FILE = "SKILL.md";
     private static final String SKILL_TOOLS_FILE = "tools.json";
 
     private final AgentRuntimeProperties properties;
@@ -196,13 +198,22 @@ public class AgentRuntimeManager {
         return skills == null ? null : new PreparedAgentRuntime(agentId, agentRoot, metadata, skills);
     }
 
+    /**
+     * Rebuilds the bound-Skill list from the materialized SKILL.md front-matter headers. The
+     * persisted {@code id} keeps the {@code agentId.json} binding references linked to their
+     * directories, so a partially materialized tree still falls through to re-materialization.
+     *
+     * @param skillsDir directory containing one sub-directory per bound Skill
+     * @param references binding references declared by the cached Agent metadata
+     * @return the bound Skills in reference order, or {@code null} when the snapshot is incomplete
+     */
     private List<SkillInfo> loadBoundSkills(Path skillsDir, List<SkillReference> references) {
         List<SkillInfo> available = new ArrayList<>();
         try (var entries = Files.newDirectoryStream(skillsDir)) {
             for (Path entry : entries) {
-                Path skillMetadataFile = entry.resolve(SKILL_METADATA_FILE);
-                if (Files.isRegularFile(skillMetadataFile)) {
-                    available.add(mapper.readValue(skillMetadataFile.toFile(), SkillInfo.class));
+                Path skillFile = entry.resolve(SKILL_FILE);
+                if (Files.isRegularFile(skillFile)) {
+                    available.add(parseMaterializedSkill(entry, Files.readString(skillFile, StandardCharsets.UTF_8)));
                 }
             }
             List<SkillInfo> bound = new ArrayList<>();
@@ -223,6 +234,30 @@ public class AgentRuntimeManager {
         } catch (IOException e) {
             return null;
         }
+    }
+
+    /**
+     * Reconstructs the minimal Skill identity snapshot from a SKILL.md front-matter header.
+     *
+     * @param skillDir the materialized Skill directory
+     * @param content the SKILL.md content
+     * @return Skill metadata carrying name, id and description only
+     */
+    private static SkillInfo parseMaterializedSkill(Path skillDir, String content) {
+        Map<String, Object> frontmatter = SkillLoader.parseFrontmatter(content);
+        String dirName = skillDir.getFileName().toString();
+        String name = frontmatterString(frontmatter, "name", dirName);
+        String id = frontmatterString(frontmatter, "id", name);
+        String description = frontmatterString(frontmatter, "description", null);
+        return new SkillInfo(name, id, null, description, null, List.of(), List.of(), List.of(), List.of());
+    }
+
+    private static String frontmatterString(Map<String, Object> frontmatter, String key, String fallback) {
+        Object value = frontmatter.get(key);
+        if (value == null || String.valueOf(value).isBlank()) {
+            return fallback;
+        }
+        return String.valueOf(value);
     }
 
     private void materialize(Path agentRoot, AgentRuntime runtime, List<SkillInfo> skills) {
@@ -246,8 +281,7 @@ public class AgentRuntimeManager {
             writeResources(referencesDir, skill.references());
             writeFile(referencesDir.resolve(SKILL_TOOLS_FILE), renderSkillTools(skill));
             writeResources(templatesDir, skill.templates());
-            writeFile(skillDir.resolve("SKILL.md"), renderSkill(skill));
-            writeFile(skillDir.resolve(SKILL_METADATA_FILE), mapper.writeValueAsString(skill));
+            writeFile(skillDir.resolve(SKILL_FILE), renderSkill(skill));
         }
         writeFile(campusClawDir.resolve(SYSTEM_PROMPT_FILE), systemPromptContent(runtime));
         writeFile(campusClawDir.resolve(AGENT_METADATA_FILE), mapper.writeValueAsString(runtime));
@@ -299,12 +333,22 @@ public class AgentRuntimeManager {
         return resource.name() + "." + type;
     }
 
+    /**
+     * Renders the SKILL.md whose front-matter header is the single persisted source of the
+     * Skill identity: {@code name}, {@code id} (binding linkage) and {@code description}.
+     *
+     * @param skill Skill metadata fetched from CampusMate
+     * @return the SKILL.md content
+     * @throws IOException when the description cannot be JSON-escaped
+     */
     private String renderSkill(SkillInfo skill) throws IOException {
         String description = firstNonBlank(skill.description(), skill.name());
         StringBuilder content = new StringBuilder();
-        content.append("---\nname: ")
-                .append(skill.name())
-                .append("\ndescription: ")
+        content.append("---\nname: ").append(skill.name());
+        if (skill.id() != null) {
+            content.append("\nid: ").append(mapper.writeValueAsString(skill.id()));
+        }
+        content.append("\ndescription: ")
                 .append(mapper.writeValueAsString(description))
                 .append("\n---\n\n");
         content.append("# ").append(skill.name()).append("\n\n");
