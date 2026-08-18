@@ -17,7 +17,7 @@ services:
           sleep 2
         done
         echo "Docker sandbox is ready!"
-        java -jar modules/coding-agent-cli/target/campusclaw-agent.jar -m k2p5
+        java -jar modules/coding-agent-cli/target/campusclaw-agent.jar
     volumes:
       - /Users/simon/01.code/pi-mono-java:/workspace
       - /Users/simon/.campusclaw:/data

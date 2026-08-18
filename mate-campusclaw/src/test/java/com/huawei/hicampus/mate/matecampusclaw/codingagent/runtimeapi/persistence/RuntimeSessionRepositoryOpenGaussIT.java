@@ -88,7 +88,7 @@ class RuntimeSessionRepositoryOpenGaussIT {
         assertThat(repository.find(session.getId())).contains(session);
         assertThat(countSession(session.getId())).isOne();
         assertThat(count("t_session_sequences", session.getId())).isOne();
-        assertThat(count("t_session_materialized", session.getId())).isOne();
+        assertThat(count("t_session_materialized", session.getId())).isZero();
     }
 
     @Test
@@ -98,7 +98,7 @@ class RuntimeSessionRepositoryOpenGaussIT {
         insertEntry(session.getId());
         OffsetDateTime deletedAt = OffsetDateTime.of(2026, 8, 18, 1, 30, 0, 0, ZoneOffset.UTC);
 
-        assertThat(repository.beginDeletion(session.getId(), deletedAt)).isTrue();
+        assertThat(repository.beginDeletion(session.getId(), deletedAt)).isEqualTo(SessionDeletionStatus.DELETED);
 
         assertThat(repository.find(session.getId())).isEmpty();
         assertThat(count("t_session_tombstone", session.getId())).isOne();
@@ -119,9 +119,9 @@ class RuntimeSessionRepositoryOpenGaussIT {
     }
 
     @Test
-    void returnsFalseWhenDeletingUnknownSession() {
+    void reportsNotFoundWhenDeletingUnknownSession() {
         assertThat(repository.beginDeletion("session_missing", OffsetDateTime.now(ZoneOffset.UTC)))
-                .isFalse();
+                .isEqualTo(SessionDeletionStatus.NOT_FOUND);
 
         assertThat(count("t_session_tombstone", "session_missing")).isZero();
         assertThat(count("t_session_cleanup_task", "session_missing")).isZero();
@@ -195,8 +195,7 @@ class RuntimeSessionRepositoryOpenGaussIT {
         RuntimeEntryDTO user = newEntry(
                 session.getId(), "entry_user", "user.message", acceptedAt, "{\"message\":\"hello\",\"file_ids\":[]}");
 
-        UserEventAcceptance acceptance =
-                repository.acceptUserEvent(session.getId(), session.getOwnerId(), user, acceptedAt);
+        UserEventAcceptance acceptance = repository.acceptUserEvent(session.getId(), user, acceptedAt);
         RuntimeEntryDTO assistant = newEntry(
                 session.getId(),
                 "entry_assistant",
@@ -283,7 +282,7 @@ class RuntimeSessionRepositoryOpenGaussIT {
         OffsetDateTime updatedAt = session.getCreatedAt().plusMinutes(1);
 
         SessionConfigurationUpdate update =
-                repository.updateModel(session.getId(), session.getOwnerId(), 1L, "model-next", false, updatedAt);
+                repository.updateModel(session.getId(), 1L, "model-next", false, updatedAt);
 
         assertThat(update.status()).isEqualTo(SessionConfigurationUpdate.Status.UPDATED);
         RuntimeSessionDTO stored = repository.find(session.getId()).orElseThrow();
@@ -301,7 +300,6 @@ class RuntimeSessionRepositoryOpenGaussIT {
 
         SessionConfigurationUpdate update = repository.updateModel(
                 session.getId(),
-                session.getOwnerId(),
                 1L,
                 session.getModelId(),
                 false,
@@ -390,7 +388,7 @@ class RuntimeSessionRepositoryOpenGaussIT {
             throws InterruptedException {
         assertThat(start.await(5, TimeUnit.SECONDS)).isTrue();
         return repository
-                .acceptUserEvent(session.getId(), session.getOwnerId(), entry, entry.getTimestamp())
+                .acceptUserEvent(session.getId(), entry, entry.getTimestamp())
                 .status();
     }
 
@@ -400,7 +398,6 @@ class RuntimeSessionRepositoryOpenGaussIT {
         return repository
                 .updateModel(
                         session.getId(),
-                        session.getOwnerId(),
                         1L,
                         "model-race",
                         true,
@@ -414,7 +411,6 @@ class RuntimeSessionRepositoryOpenGaussIT {
         return repository
                 .updateThinking(
                         session.getId(),
-                        session.getOwnerId(),
                         1L,
                         true,
                         session.getUpdatedAt().plusMinutes(1))
@@ -437,8 +433,6 @@ class RuntimeSessionRepositoryOpenGaussIT {
         RuntimeSessionDTO session = new RuntimeSessionDTO();
         session.setId(sessionId);
         session.setAgentId("agent_0123456789ABCDEFGHJKMNP");
-        session.setOwnerId("caller-db-it");
-        session.setBundleRevision("revision-db-it");
         session.setModelId("model-db-it");
         session.setState("idle");
         session.setThinking(false);

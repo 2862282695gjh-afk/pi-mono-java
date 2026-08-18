@@ -57,7 +57,7 @@ public class CustomModelLoader {
      *
      * <p>先移除已经不存在的自定义模型，再注册最新集合，不影响其他供应商的内置模型。
      * 启动时由 {@code @EventListener} 调用一次，写入
-     * {@code PUT /api/settings/customModels} 后也会调用，使后续模型列表请求读取到新目录。
+     * CLI 配置刷新后也会调用，使后续模型解析读取到新目录。
      */
     public void refresh() {
         Settings settings;

@@ -28,6 +28,7 @@ public class UserEventRequestVO {
     @Pattern(regexp = USER_MESSAGE_TYPE_PATTERN)
     private String type;
 
+    @Size(max = 262144)
     private String message;
 
     @Size(max = 32)

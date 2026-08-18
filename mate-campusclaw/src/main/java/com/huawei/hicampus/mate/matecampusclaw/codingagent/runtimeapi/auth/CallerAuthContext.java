@@ -7,16 +7,16 @@ package com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.auth;
 import java.util.Objects;
 
 /**
- * 两套认证方式归一化后的调用方身份上下文。
+ * 两套凭据 Header 归一化后的请求上下文。
  *
- * @param callerId 公司调用方标识
- * @param credentialMode 已通过校验的凭据模式
+ * @param credentialId {@code X-HW-ID} 携带的凭据标识，不代表资源所有者
+ * @param credentialMode 请求选择的凭据模式
  * @version [br_eCampusCore 25.1.0_Next, 2026/08/18]
  * @since [br_eCampusCore 25.1.0_Next]
  */
-public record CallerAuthContext(String callerId, CredentialMode credentialMode) {
+public record CallerAuthContext(String credentialId, CredentialMode credentialMode) {
     public CallerAuthContext {
-        Objects.requireNonNull(callerId, "callerId");
+        Objects.requireNonNull(credentialId, "credentialId");
         Objects.requireNonNull(credentialMode, "credentialMode");
     }
 }

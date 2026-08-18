@@ -25,7 +25,6 @@ public record SessionConfigurationUpdate(Status status, RuntimeSessionDTO sessio
         UPDATED,
         UNCHANGED,
         NOT_FOUND,
-        FORBIDDEN,
         BUSY,
         VERSION_MISMATCH
     }

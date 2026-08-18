@@ -38,7 +38,6 @@ public class MyBatisRuntimeSessionRepository implements RuntimeSessionRepository
         }
         mapper.insertSession(session);
         mapper.insertSequence(session.getId());
-        mapper.insertMaterialized(session.getId());
     }
 
     @Override
@@ -50,13 +49,10 @@ public class MyBatisRuntimeSessionRepository implements RuntimeSessionRepository
     @Override
     @Transactional
     public UserEventAcceptance acceptUserEvent(
-            String sessionId, String ownerId, RuntimeEntryDTO entry, OffsetDateTime acceptedAt) {
+            String sessionId, RuntimeEntryDTO entry, OffsetDateTime acceptedAt) {
         RuntimeSessionDTO session = mapper.lockSessionForUpdate(sessionId);
         if (session == null) {
             return new UserEventAcceptance(Status.NOT_FOUND, null);
-        }
-        if (!session.getOwnerId().equals(ownerId)) {
-            return new UserEventAcceptance(Status.FORBIDDEN, session);
         }
         if (!"idle".equals(session.getState())) {
             return new UserEventAcceptance(Status.BUSY, session);
@@ -99,13 +95,12 @@ public class MyBatisRuntimeSessionRepository implements RuntimeSessionRepository
     @Transactional
     public SessionConfigurationUpdate updateModel(
             String sessionId,
-            String ownerId,
             long expectedVersion,
             String modelId,
             boolean modelSupportsThinking,
             OffsetDateTime updatedAt) {
         RuntimeSessionDTO session = mapper.lockSessionForUpdate(sessionId);
-        SessionConfigurationUpdate rejected = rejectConfigurationUpdate(session, ownerId, expectedVersion);
+        SessionConfigurationUpdate rejected = rejectConfigurationUpdate(session, expectedVersion);
         if (rejected != null || session.getModelId().equals(modelId)) {
             return rejected != null ? rejected : unchanged(session);
         }
@@ -120,9 +115,9 @@ public class MyBatisRuntimeSessionRepository implements RuntimeSessionRepository
     @Override
     @Transactional
     public SessionConfigurationUpdate updateThinking(
-            String sessionId, String ownerId, long expectedVersion, boolean thinking, OffsetDateTime updatedAt) {
+            String sessionId, long expectedVersion, boolean thinking, OffsetDateTime updatedAt) {
         RuntimeSessionDTO session = mapper.lockSessionForUpdate(sessionId);
-        SessionConfigurationUpdate rejected = rejectConfigurationUpdate(session, ownerId, expectedVersion);
+        SessionConfigurationUpdate rejected = rejectConfigurationUpdate(session, expectedVersion);
         if (rejected != null || session.isThinking() == thinking) {
             return rejected != null ? rejected : unchanged(session);
         }
@@ -136,14 +131,18 @@ public class MyBatisRuntimeSessionRepository implements RuntimeSessionRepository
 
     @Override
     @Transactional
-    public boolean beginDeletion(String sessionId, OffsetDateTime deletedAt) {
-        if (mapper.lockSession(sessionId) == null) {
-            return false;
+    public SessionDeletionStatus beginDeletion(String sessionId, OffsetDateTime deletedAt) {
+        RuntimeSessionDTO session = mapper.lockSessionForUpdate(sessionId);
+        if (session == null) {
+            return SessionDeletionStatus.NOT_FOUND;
+        }
+        if (!"idle".equals(session.getState())) {
+            return SessionDeletionStatus.BUSY;
         }
         mapper.insertTombstone(sessionId, deletedAt);
         mapper.insertCleanupTask(sessionId, deletedAt);
         mapper.deleteSession(sessionId);
-        return true;
+        return SessionDeletionStatus.DELETED;
     }
 
     @Override
@@ -190,12 +189,9 @@ public class MyBatisRuntimeSessionRepository implements RuntimeSessionRepository
     }
 
     private static SessionConfigurationUpdate rejectConfigurationUpdate(
-            RuntimeSessionDTO session, String ownerId, long expectedVersion) {
+            RuntimeSessionDTO session, long expectedVersion) {
         if (session == null) {
             return new SessionConfigurationUpdate(SessionConfigurationUpdate.Status.NOT_FOUND, null);
-        }
-        if (!session.getOwnerId().equals(ownerId)) {
-            return new SessionConfigurationUpdate(SessionConfigurationUpdate.Status.FORBIDDEN, session);
         }
         if (session.getResourceVersion() != expectedVersion) {
             return new SessionConfigurationUpdate(SessionConfigurationUpdate.Status.VERSION_MISMATCH, session);

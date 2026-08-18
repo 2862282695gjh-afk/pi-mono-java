@@ -14,11 +14,9 @@ import java.util.List;
 
 import com.huawei.hicampus.mate.matecampusclaw.ai.types.Model;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.model.ModelCatalogService;
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.auth.CallerAuthContext;
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.auth.CredentialMode;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.agent.AgentDirectorySnapshotDTO;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.template.AgentRuntimeSnapshotDTO;
 
 import org.junit.jupiter.api.Test;
 
@@ -48,10 +46,7 @@ class CatalogRuntimeModelManagerTest {
         when(catalog.getAvailableModels()).thenReturn(List.of(modelA));
         var manager = new CatalogRuntimeModelManager(catalog);
 
-        assertThatThrownBy(() -> manager.resolveAvailableModel(
-                        snapshot(List.of("model-a")),
-                        new CallerAuthContext("mate-service", CredentialMode.JWT),
-                        "model-secret"))
+        assertThatThrownBy(() -> manager.resolveAvailableModel(snapshot(List.of("model-a")), "model-secret"))
                 .isInstanceOfSatisfying(RuntimeApiException.class, error -> assertThat(error.errorCode())
                         .isEqualTo(RuntimeErrorCode.MODEL_NOT_AVAILABLE));
     }
@@ -62,8 +57,8 @@ class CatalogRuntimeModelManagerTest {
         return model;
     }
 
-    private static AgentRuntimeSnapshotDTO snapshot(List<String> models) {
-        return new AgentRuntimeSnapshotDTO(
-                "agent_011CZkYqphY8vELVzwCUpqiQ", "revision-1", "model-a", models, Path.of("/runtime/revision-1"));
+    private static AgentDirectorySnapshotDTO snapshot(List<String> models) {
+        return new AgentDirectorySnapshotDTO(
+                "agent_011CZkYqphY8vELVzwCUpqiQ", "model-a", models, Path.of("/runtime/agent"));
     }
 }

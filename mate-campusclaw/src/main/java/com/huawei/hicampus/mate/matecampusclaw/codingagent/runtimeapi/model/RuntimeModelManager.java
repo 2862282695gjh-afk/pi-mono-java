@@ -7,10 +7,9 @@ package com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.model;
 import java.util.List;
 
 import com.huawei.hicampus.mate.matecampusclaw.ai.types.Model;
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.auth.CallerAuthContext;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.agent.AgentDirectorySnapshotDTO;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.template.AgentRuntimeSnapshotDTO;
 
 import org.springframework.http.HttpStatus;
 
@@ -21,18 +20,14 @@ import org.springframework.http.HttpStatus;
  * @since [br_eCampusCore 25.1.0_Next]
  */
 public interface RuntimeModelManager {
-    Model resolveDefaultModel(AgentRuntimeSnapshotDTO snapshot);
+    Model resolveDefaultModel(AgentDirectorySnapshotDTO snapshot);
 
-    Model resolveModel(AgentRuntimeSnapshotDTO snapshot, String modelId);
+    Model resolveModel(AgentDirectorySnapshotDTO snapshot, String modelId);
 
-    List<String> listAvailableModels(AgentRuntimeSnapshotDTO snapshot);
+    List<String> listAvailableModels(AgentDirectorySnapshotDTO snapshot);
 
-    default List<String> listAvailableModels(AgentRuntimeSnapshotDTO snapshot, CallerAuthContext caller) {
-        return listAvailableModels(snapshot);
-    }
-
-    default Model resolveAvailableModel(AgentRuntimeSnapshotDTO snapshot, CallerAuthContext caller, String modelId) {
-        if (!listAvailableModels(snapshot, caller).contains(modelId)) {
+    default Model resolveAvailableModel(AgentDirectorySnapshotDTO snapshot, String modelId) {
+        if (!listAvailableModels(snapshot).contains(modelId)) {
             throw new RuntimeApiException(HttpStatus.UNPROCESSABLE_ENTITY, RuntimeErrorCode.MODEL_NOT_AVAILABLE);
         }
         try {

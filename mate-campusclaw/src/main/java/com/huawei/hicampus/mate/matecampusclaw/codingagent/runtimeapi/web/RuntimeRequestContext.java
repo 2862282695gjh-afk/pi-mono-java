@@ -6,10 +6,10 @@ package com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.web;
 
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.auth.CallerAuthContext;
 
-import org.springframework.web.reactive.function.server.ServerRequest;
+import jakarta.servlet.http.HttpServletRequest;
 
 /**
- * 从函数式 WebFlux 请求中读取认证和语言上下文。
+ * 从 Servlet 请求中读取认证和语言上下文。
  *
  * @version [br_eCampusCore 25.1.0_Next, 2026/08/18]
  * @since [br_eCampusCore 25.1.0_Next]
@@ -17,25 +17,22 @@ import org.springframework.web.reactive.function.server.ServerRequest;
 public final class RuntimeRequestContext {
     public static final String AUTH_ATTRIBUTE = RuntimeRequestContext.class.getName() + ".auth";
 
-    public static final String CHINESE_ATTRIBUTE = RuntimeRequestContext.class.getName() + ".chinese";
-
     private RuntimeRequestContext() {}
 
-    public static CallerAuthContext auth(ServerRequest request) {
-        return request.attribute(AUTH_ATTRIBUTE)
-                .filter(CallerAuthContext.class::isInstance)
-                .map(CallerAuthContext.class::cast)
-                .orElseThrow(() -> new IllegalStateException("authentication context is missing"));
+    public static CallerAuthContext auth(HttpServletRequest request) {
+        Object value = request.getAttribute(AUTH_ATTRIBUTE);
+        if (value instanceof CallerAuthContext context) {
+            return context;
+        }
+        throw new IllegalStateException("authentication context is missing");
     }
 
-    public static boolean chinese(ServerRequest request) {
-        return request.attribute(CHINESE_ATTRIBUTE)
-                .filter(Boolean.class::isInstance)
-                .map(Boolean.class::cast)
-                .orElse(false);
+    public static boolean chinese(HttpServletRequest request) {
+        String language = request.getHeader("Accept-Language");
+        return language != null && language.trim().toLowerCase(java.util.Locale.ROOT).startsWith("zh-cn");
     }
 
-    public static String language(ServerRequest request) {
+    public static String language(HttpServletRequest request) {
         return chinese(request) ? "zh-CN" : "en-US";
     }
 }

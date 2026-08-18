@@ -9,45 +9,29 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.timeout;
-import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
-import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import com.campusclaw.agent.Agent;
-import com.campusclaw.ai.CampusClawAiService;
-import com.campusclaw.ai.model.ModelRegistry;
-import com.campusclaw.ai.provider.ApiProvider;
-import com.campusclaw.ai.provider.ApiProviderRegistry;
-import com.campusclaw.ai.stream.AssistantMessageEvent;
-import com.campusclaw.ai.stream.AssistantMessageEventStream;
-import com.campusclaw.ai.types.Api;
-import com.campusclaw.ai.types.AssistantMessage;
-import com.campusclaw.ai.types.Context;
-import com.campusclaw.ai.types.InputModality;
 import com.campusclaw.ai.types.Model;
-import com.campusclaw.ai.types.ModelCost;
-import com.campusclaw.ai.types.Provider;
-import com.campusclaw.ai.types.SimpleStreamOptions;
-import com.campusclaw.ai.types.StopReason;
-import com.campusclaw.ai.types.StreamOptions;
 import com.campusclaw.ai.types.TextContent;
-import com.campusclaw.ai.types.Usage;
-import com.campusclaw.codingagent.runtimeapi.auth.CallerAuthContext;
-import com.campusclaw.codingagent.runtimeapi.auth.CredentialMode;
+import com.campusclaw.ai.types.UserMessage;
+import com.campusclaw.codingagent.runtimeapi.agent.AgentDirectoryResolver;
+import com.campusclaw.codingagent.runtimeapi.agent.AgentDirectorySnapshotDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.RuntimeEntryDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeApiException;
@@ -56,18 +40,24 @@ import com.campusclaw.codingagent.runtimeapi.model.RuntimeModelManager;
 import com.campusclaw.codingagent.runtimeapi.persistence.RuntimeSessionRepository;
 import com.campusclaw.codingagent.runtimeapi.persistence.UserEventAcceptance;
 import com.campusclaw.codingagent.runtimeapi.persistence.UserEventAcceptance.Status;
+import com.campusclaw.codingagent.runtimeapi.runtime.RuntimeActiveExecution;
+import com.campusclaw.codingagent.runtimeapi.runtime.RuntimeExecutionProperties;
+import com.campusclaw.codingagent.runtimeapi.runtime.RuntimeExecutionTimeoutScheduler;
 import com.campusclaw.codingagent.runtimeapi.runtime.RuntimeSessionEngineRegistry;
 import com.campusclaw.codingagent.runtimeapi.runtime.RuntimeSessionHolder;
-import com.campusclaw.codingagent.runtimeapi.template.AgentRuntimeSnapshotProvider;
+import com.campusclaw.codingagent.runtimeapi.vo.RuntimeSseEventVO;
 import com.campusclaw.codingagent.runtimeapi.vo.UserEventRequestVO;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
+import org.springframework.context.support.StaticMessageSource;
+import org.springframework.http.HttpStatus;
 
 import jakarta.validation.Validation;
 
 /**
- * Runtime Event Service 的执行生命周期与 SSE 断线语义测试。
+ * Runtime Event 接受边界、执行生命周期和流终止语义测试。
  *
  * @version [br_eCampusCore 25.1.0_Next, 2026/08/18]
  * @since [br_eCampusCore 25.1.0_Next]
@@ -75,386 +65,174 @@ import jakarta.validation.Validation;
 class RuntimeEventServiceTest {
     private static final String SESSION_ID = "session_event_service";
 
-    private static final String OWNER_ID = "mate-service";
+    private static final String AGENT_ID = "agent_event_service";
 
     @Test
-    void clientCancellationDoesNotAbortAcceptedExecution() throws Exception {
-        RuntimeSessionRepository repository = mock(RuntimeSessionRepository.class);
-        RuntimeSessionDTO session = session();
-        when(repository.find(SESSION_ID)).thenReturn(Optional.of(session));
-        List<RuntimeEntryDTO> persisted = new ArrayList<>();
-        AtomicInteger sequence = new AtomicInteger(1);
-        when(repository.acceptUserEvent(anyString(), anyString(), any(), any())).thenAnswer(invocation -> {
-            RuntimeEntryDTO entry = invocation.getArgument(2);
-            entry.setEntrySeq(sequence.getAndIncrement());
-            persisted.add(entry);
-            return new UserEventAcceptance(Status.ACCEPTED, session);
-        });
-        when(repository.appendEntry(any())).thenAnswer(invocation -> {
-            RuntimeEntryDTO entry = invocation.getArgument(0);
-            entry.setEntrySeq(sequence.getAndIncrement());
-            persisted.add(entry);
-            return entry;
-        });
-        BlockingTextProvider provider = new BlockingTextProvider();
-        Model model = sampleModel();
-        Agent agent = new Agent(aiService(model, provider));
-        agent.setModel(model);
-        RuntimeSessionEngineRegistry engines = mock(RuntimeSessionEngineRegistry.class);
-        RuntimeSessionHolder holder = new RuntimeSessionHolder(SESSION_ID, null, agent);
-        when(engines.find(SESSION_ID)).thenReturn(Optional.of(holder));
-        RuntimeEventService service = service(repository, engines);
+    void persistsRawFileIdsAndCompletesAcceptedStream() {
+        Fixture fixture = new Fixture();
+        UserEventRequestVO request = request("分析订单", List.of("file_a", "file_b"));
 
-        var events = service.submit(SESSION_ID, caller(), request("分析订单"), false);
-        assertThat(events.take(1).blockFirst(Duration.ofSeconds(2)).getEvent()).isEqualTo("user.message");
-        assertThat(provider.entered.await(2, TimeUnit.SECONDS)).isTrue();
-        provider.release.countDown();
-        agent.waitForIdle().get(2, TimeUnit.SECONDS);
-        verify(repository, timeout(2_000)).finishExecution(anyString(), any());
+        RuntimeEventStream stream = fixture.service.submit(SESSION_ID, request, false);
+        fixture.agentFuture.complete(null);
+        fixture.execution.completion().join();
 
-        assertThat(events.map(event -> event.getEvent()).collectList().block(Duration.ofSeconds(2)))
-                .containsExactly(
-                        "user.message",
-                        "assistant.message.started",
-                        "assistant.message.delta",
-                        "assistant.message.completed",
-                        "session.status.idle",
-                        "stream.end");
-        assertThat(persisted)
-                .extracting(RuntimeEntryDTO::getType)
-                .containsExactly("user.message", "assistant.message.completed");
-        assertThat(holder.activeExecution()).isEmpty();
-        verify(repository, times(2)).find(SESSION_ID);
-    }
-
-    @Test
-    void executionFailureEmitsStreamErrorWithoutSuccessfulEnd() throws Exception {
-        RuntimeSessionRepository repository = mock(RuntimeSessionRepository.class);
-        RuntimeSessionDTO session = session();
-        when(repository.find(SESSION_ID)).thenReturn(Optional.of(session));
-        when(repository.acceptUserEvent(anyString(), anyString(), any(), any())).thenAnswer(invocation -> {
-            RuntimeEntryDTO entry = invocation.getArgument(2);
-            entry.setEntrySeq(1L);
-            return new UserEventAcceptance(Status.ACCEPTED, session);
-        });
-        BlockingErrorProvider provider = new BlockingErrorProvider();
-        Model model = sampleModel();
-        Agent agent = new Agent(aiService(model, provider));
-        agent.setModel(model);
-        RuntimeSessionEngineRegistry engines = mock(RuntimeSessionEngineRegistry.class);
-        RuntimeSessionHolder holder = new RuntimeSessionHolder(SESSION_ID, null, agent);
-        when(engines.find(SESSION_ID)).thenReturn(Optional.of(holder));
-
-        var events = service(repository, engines).submit(SESSION_ID, caller(), request("分析订单"), false);
-        assertThat(provider.entered.await(2, TimeUnit.SECONDS)).isTrue();
-        provider.release.countDown();
-
-        assertThat(events.map(event -> event.getEvent()).collectList().block(Duration.ofSeconds(2)))
-                .containsExactly("user.message", "stream.error")
-                .doesNotContain("session.status.idle", "stream.end");
-        verify(repository, timeout(2_000)).finishExecution(anyString(), any());
-        assertThat(holder.activeExecution()).isEmpty();
-    }
-
-    @Test
-    void synchronousAgentStartFailureReturnsAcceptedStreamToIdle() {
-        RuntimeSessionRepository repository = mock(RuntimeSessionRepository.class);
-        RuntimeSessionDTO session = session();
-        when(repository.find(SESSION_ID)).thenReturn(Optional.of(session));
-        when(repository.acceptUserEvent(anyString(), anyString(), any(), any())).thenAnswer(invocation -> {
-            RuntimeEntryDTO entry = invocation.getArgument(2);
-            entry.setEntrySeq(1L);
-            return new UserEventAcceptance(Status.ACCEPTED, session);
-        });
-        Agent agent = mock(Agent.class);
-        when(agent.subscribe(any())).thenReturn(() -> {});
-        when(agent.prompt(any(com.campusclaw.ai.types.Message.class)))
-                .thenThrow(new IllegalStateException("simulated synchronous start failure"));
-        RuntimeSessionEngineRegistry engines = mock(RuntimeSessionEngineRegistry.class);
-        RuntimeSessionHolder holder = new RuntimeSessionHolder(SESSION_ID, null, agent);
-        when(engines.find(SESSION_ID)).thenReturn(Optional.of(holder));
-
-        var events = service(repository, engines).submit(SESSION_ID, caller(), request("分析订单"), false);
-
-        assertThat(events.map(event -> event.getEvent()).collectList().block(Duration.ofSeconds(2)))
-                .containsExactly("user.message", "stream.error")
-                .doesNotContain("session.status.idle", "stream.end");
-        verify(repository).finishExecution(anyString(), any());
-        assertThat(holder.activeExecution()).isEmpty();
-    }
-
-    @Test
-    void queuedControlAtNaturalCompletionContinuesSameExecutionStream() {
-        RuntimeSessionRepository repository = mock(RuntimeSessionRepository.class);
-        RuntimeSessionDTO session = session();
-        when(repository.find(SESSION_ID)).thenReturn(Optional.of(session));
-        when(repository.acceptUserEvent(anyString(), anyString(), any(), any())).thenAnswer(invocation -> {
-            RuntimeEntryDTO entry = invocation.getArgument(2);
-            entry.setEntrySeq(1L);
-            return new UserEventAcceptance(Status.ACCEPTED, session);
-        });
-        Agent agent = mock(Agent.class);
-        CompletableFuture<Void> first = new CompletableFuture<>();
-        CompletableFuture<Void> second = new CompletableFuture<>();
-        when(agent.subscribe(any())).thenReturn(() -> {});
-        when(agent.prompt(any(com.campusclaw.ai.types.Message.class))).thenReturn(first);
-        when(agent.hasQueuedControlMessages()).thenReturn(true, false);
-        when(agent.continueQueuedExecution()).thenReturn(second);
-        RuntimeSessionEngineRegistry engines = mock(RuntimeSessionEngineRegistry.class);
-        RuntimeSessionHolder holder = new RuntimeSessionHolder(SESSION_ID, null, agent);
-        when(engines.find(SESSION_ID)).thenReturn(Optional.of(holder));
-        var events = service(repository, engines).submit(SESSION_ID, caller(), request("分析订单"), false);
-
-        first.complete(null);
-        verify(agent, timeout(2_000)).continueQueuedExecution();
-        assertThat(holder.activeExecution()).isPresent();
-        second.complete(null);
-
-        assertThat(events.map(event -> event.getEvent()).collectList().block(Duration.ofSeconds(2)))
+        ArgumentCaptor<UserMessage> message = ArgumentCaptor.forClass(UserMessage.class);
+        verify(fixture.agent).prompt(message.capture());
+        String prompt = ((TextContent) message.getValue().content().getFirst()).text();
+        assertThat(prompt).isEqualTo("分析订单\n\n[File IDs]\n- file_id: file_a\n- file_id: file_b");
+        assertThat(fixture.acceptedEntry.getPayload()).contains("file_a", "file_b");
+        assertThat(collect(stream))
+                .extracting(RuntimeSseEventVO::getEvent)
                 .containsExactly("user.message", "session.status.idle", "stream.end");
-        verify(repository, times(1)).finishExecution(anyString(), any());
-        assertThat(holder.activeExecution()).isEmpty();
-    }
-
-    @Test
-    void abortRequestWinsRaceWithAlreadyCompletedAgentFuture() {
-        RuntimeSessionRepository repository = mock(RuntimeSessionRepository.class);
-        RuntimeSessionDTO session = session();
-        when(repository.find(SESSION_ID)).thenReturn(Optional.of(session));
-        when(repository.acceptUserEvent(anyString(), anyString(), any(), any())).thenAnswer(invocation -> {
-            RuntimeEntryDTO entry = invocation.getArgument(2);
-            entry.setEntrySeq(1L);
-            return new UserEventAcceptance(Status.ACCEPTED, session);
-        });
-        Agent agent = mock(Agent.class);
-        CompletableFuture<Void> future = new CompletableFuture<>();
-        when(agent.subscribe(any())).thenReturn(() -> {});
-        when(agent.prompt(any(com.campusclaw.ai.types.Message.class))).thenReturn(future);
-        RuntimeSessionEngineRegistry engines = mock(RuntimeSessionEngineRegistry.class);
-        RuntimeSessionHolder holder = new RuntimeSessionHolder(SESSION_ID, null, agent);
-        when(engines.find(SESSION_ID)).thenReturn(Optional.of(holder));
-        var events = service(repository, engines).submit(SESSION_ID, caller(), request("分析订单"), false);
-        holder.activeExecution().orElseThrow().requestAbort();
-
-        future.complete(null);
-
-        assertThat(events.collectList().block(Duration.ofSeconds(2)).getLast().getData())
-                .containsEntry("reason", "aborted");
-        assertThat(holder.activeExecution()).isEmpty();
     }
 
     @Test
     void rejectsDuplicateFileIdsBeforeReadingSession() {
-        RuntimeSessionRepository repository = mock(RuntimeSessionRepository.class);
-        UserEventRequestVO request = request(null);
-        request.setFileIds(List.of("file_same", "file_same"));
-        RuntimeEventService service = service(repository, mock(RuntimeSessionEngineRegistry.class));
+        Fixture fixture = new Fixture();
 
-        assertThatThrownBy(() -> service.submit(SESSION_ID, caller(), request, false))
+        assertThatThrownBy(() -> fixture.service.submit(
+                        SESSION_ID, request(null, List.of("file_same", "file_same")), false))
                 .isInstanceOfSatisfying(RuntimeApiException.class, error -> assertThat(error.errorCode())
                         .isEqualTo(RuntimeErrorCode.INVALID_EVENT_REQUEST));
+        verify(fixture.repository, never()).find(anyString());
     }
 
     @Test
-    void mapsSessionLookupFailureToAcceptanceErrorBeforeStream() {
-        RuntimeSessionRepository repository = mock(RuntimeSessionRepository.class);
-        when(repository.find(SESSION_ID)).thenThrow(new IllegalStateException("database unavailable"));
-        RuntimeEventService service = service(repository, mock(RuntimeSessionEngineRegistry.class));
+    void capacityFailureHappensBeforeUserEntryPersistence() {
+        Fixture fixture = new Fixture();
+        when(fixture.registry.register(anyString(), any(), any(), any(Boolean.class), any(), any()))
+                .thenThrow(new RuntimeApiException(
+                        HttpStatus.SERVICE_UNAVAILABLE, RuntimeErrorCode.RUNTIME_CAPACITY_EXCEEDED));
 
-        assertThatThrownBy(() -> service.submit(SESSION_ID, caller(), request("分析订单"), false))
+        assertThatThrownBy(() -> fixture.service.submit(SESSION_ID, request("分析订单", List.of()), false))
                 .isInstanceOfSatisfying(RuntimeApiException.class, error -> assertThat(error.errorCode())
-                        .isEqualTo(RuntimeErrorCode.EVENT_ACCEPTANCE_FAILED));
+                        .isEqualTo(RuntimeErrorCode.RUNTIME_CAPACITY_EXCEEDED));
+        verify(fixture.repository, never()).acceptUserEvent(anyString(), any(), any());
     }
 
-    @Test
-    void listsOnlyRequestedPageAndIssuesOpaqueCursor() {
-        RuntimeSessionRepository repository = mock(RuntimeSessionRepository.class);
-        when(repository.find(SESSION_ID)).thenReturn(Optional.of(session()));
-        RuntimeEntryDTO first = historyEntry("entry_1", 1L, "first");
-        RuntimeEntryDTO second = historyEntry("entry_2", 2L, "second");
-        when(repository.listCurrentBranch(SESSION_ID, 0L, 2)).thenReturn(List.of(first, second));
-        RuntimeEventService service = service(repository, mock(RuntimeSessionEngineRegistry.class));
+    private static List<RuntimeSseEventVO> collect(RuntimeEventStream stream) {
+        List<RuntimeSseEventVO> events = new ArrayList<>();
+        stream.attach(Runnable::run, new RuntimeEventSubscriber() {
+            @Override
+            public void onEvent(RuntimeSseEventVO event) {
+                events.add(event);
+            }
 
-        var page = service.list(SESSION_ID, caller(), "1", null);
+            @Override
+            public void onHeartbeat() {
+                throw new AssertionError("completed stream must not emit heartbeat");
+            }
 
-        assertThat(page.getEvents()).hasSize(1);
-        assertThat(page.getEvents().getFirst())
-                .containsEntry("type", "user.message")
-                .containsEntry("entry_id", "entry_1")
-                .containsEntry("entry_seq", 1L)
-                .containsEntry("message", "first");
-        assertThat(page.getNextPage()).startsWith("page_").doesNotContain(SESSION_ID);
+            @Override
+            public void onComplete() {
+                // 同步 drain 已完成，无需额外协调。
+            }
+
+            @Override
+            public void onError(Throwable error) {
+                throw new AssertionError(error);
+            }
+        });
+        return events;
     }
 
-    @Test
-    void mapsSessionLookupFailureToEventListError() {
-        RuntimeSessionRepository repository = mock(RuntimeSessionRepository.class);
-        when(repository.find(SESSION_ID)).thenThrow(new IllegalStateException("database unavailable"));
-        RuntimeEventService service = service(repository, mock(RuntimeSessionEngineRegistry.class));
-
-        assertThatThrownBy(() -> service.list(SESSION_ID, caller(), null, null))
-                .isInstanceOfSatisfying(RuntimeApiException.class, error -> assertThat(error.errorCode())
-                        .isEqualTo(RuntimeErrorCode.EVENT_LIST_FAILED));
-    }
-
-    private static RuntimeEventService service(
-            RuntimeSessionRepository repository, RuntimeSessionEngineRegistry engines) {
-        Clock clock = Clock.fixed(Instant.parse("2026-08-18T00:00:00Z"), ZoneOffset.UTC);
-        RuntimeEventProperties properties = new RuntimeEventProperties();
-        properties.setCursorSecret("runtime-event-service-test-secret");
-        RuntimeEntryCodec codec = new RuntimeEntryCodec(new ObjectMapper());
-        AtomicInteger ids = new AtomicInteger(1);
-        return new RuntimeEventService(
-                repository,
-                codec,
-                () -> "entry_" + ids.getAndIncrement(),
-                (sessionId, fileIds) -> List.of(),
-                mock(AgentRuntimeSnapshotProvider.class),
-                mock(RuntimeModelManager.class),
-                engines,
-                new RuntimeEventCursorCodec(properties, clock),
-                Validation.buildDefaultValidatorFactory().getValidator(),
-                clock);
-    }
-
-    private static UserEventRequestVO request(String message) {
+    private static UserEventRequestVO request(String message, List<String> fileIds) {
         UserEventRequestVO request = new UserEventRequestVO();
         request.setType("user.message");
         request.setMessage(message);
-        request.setFileIds(List.of());
+        request.setFileIds(fileIds);
         return request;
-    }
-
-    private static RuntimeEntryDTO historyEntry(String entryId, long sequence, String message) {
-        RuntimeEntryDTO entry = new RuntimeEntryDTO();
-        entry.setSessionId(SESSION_ID);
-        entry.setId(entryId);
-        entry.setEntrySeq(sequence);
-        entry.setType("user.message");
-        entry.setTimestamp(OffsetDateTime.parse("2026-08-18T00:00:00Z"));
-        entry.setPayload("{\"message\":\"" + message + "\",\"file_ids\":[]}");
-        return entry;
-    }
-
-    private static CallerAuthContext caller() {
-        return new CallerAuthContext(OWNER_ID, CredentialMode.JWT);
     }
 
     private static RuntimeSessionDTO session() {
         RuntimeSessionDTO session = new RuntimeSessionDTO();
         session.setId(SESSION_ID);
-        session.setAgentId("agent_0123456789ABCDEFGHJKMNP");
-        session.setOwnerId(OWNER_ID);
-        session.setBundleRevision("revision-test");
-        session.setModelId("test-model");
+        session.setAgentId(AGENT_ID);
+        session.setModelId("model_test");
         session.setState("idle");
-        session.setResourceVersion(1L);
-        session.setCreatedAt(OffsetDateTime.parse("2026-08-18T00:00:00Z"));
-        session.setUpdatedAt(session.getCreatedAt());
         return session;
     }
 
-    private static CampusClawAiService aiService(Model model, ApiProvider provider) {
-        ApiProviderRegistry providers = new ApiProviderRegistry(List.of(provider));
-        ModelRegistry models = new ModelRegistry();
-        models.register(model);
-        return new CampusClawAiService(providers, models);
+    private static StaticMessageSource messages() {
+        StaticMessageSource messages = new StaticMessageSource();
+        messages.addMessage("runtime.error.session_execution_failed", Locale.US, "Session execution failed.");
+        return messages;
     }
 
-    private static Model sampleModel() {
-        return new Model(
-                "test-model",
-                "Test Model",
-                Api.ANTHROPIC_MESSAGES,
-                Provider.ANTHROPIC,
-                "https://example.com",
-                true,
-                List.of(InputModality.TEXT),
-                new ModelCost(1.0, 2.0, 0.5, 0.25),
-                200_000,
-                4_096,
-                null,
-                null,
-                null);
-    }
+    private static final class Fixture {
+        private final RuntimeSessionRepository repository = mock(RuntimeSessionRepository.class);
 
-    private static final class BlockingTextProvider implements ApiProvider {
-        private final CountDownLatch entered = new CountDownLatch(1);
+        private final AgentDirectoryResolver resolver = mock(AgentDirectoryResolver.class);
 
-        private final CountDownLatch release = new CountDownLatch(1);
+        private final RuntimeModelManager modelManager = mock(RuntimeModelManager.class);
 
-        @Override
-        public Api getApi() {
-            return Api.ANTHROPIC_MESSAGES;
+        private final RuntimeSessionEngineRegistry registry = mock(RuntimeSessionEngineRegistry.class);
+
+        private final RuntimeExecutionTimeoutScheduler timeoutScheduler = mock(RuntimeExecutionTimeoutScheduler.class);
+
+        private final Agent agent = mock(Agent.class);
+
+        private final CompletableFuture<Void> agentFuture = new CompletableFuture<>();
+
+        private final AtomicInteger ids = new AtomicInteger(100);
+
+        private final RuntimeEventService service;
+
+        private RuntimeActiveExecution execution;
+
+        private RuntimeEntryDTO acceptedEntry;
+
+        private Fixture() {
+            RuntimeEventProperties eventProperties = new RuntimeEventProperties();
+            RuntimeExecutionProperties executionProperties = new RuntimeExecutionProperties();
+            RuntimeEventCursorCodec cursorCodec = mock(RuntimeEventCursorCodec.class);
+            RuntimeEntryCodec codec = new RuntimeEntryCodec(new ObjectMapper());
+            Clock clock = Clock.fixed(Instant.parse("2026-08-18T00:00:00Z"), ZoneOffset.UTC);
+            service = new RuntimeEventService(
+                    repository,
+                    codec,
+                    () -> "entry_" + ids.getAndIncrement(),
+                    resolver,
+                    modelManager,
+                    registry,
+                    timeoutScheduler,
+                    cursorCodec,
+                    eventProperties,
+                    executionProperties,
+                    Validation.buildDefaultValidatorFactory().getValidator(),
+                    messages(),
+                    clock);
+            prepareAcceptedExecution();
         }
 
-        @Override
-        public AssistantMessageEventStream stream(Model model, Context context, StreamOptions options) {
-            throw new UnsupportedOperationException("Agent uses streamSimple");
+        private void prepareAcceptedExecution() {
+            RuntimeSessionDTO session = session();
+            AgentDirectorySnapshotDTO snapshot = new AgentDirectorySnapshotDTO(
+                    AGENT_ID, "model_test", List.of("model_test"), Path.of("/tmp/agent"));
+            Model model = mock(Model.class);
+            when(repository.find(SESSION_ID)).thenReturn(Optional.of(session));
+            when(repository.listCurrentBranch(SESSION_ID, 0, 500)).thenReturn(List.of());
+            when(resolver.resolve(AGENT_ID)).thenReturn(snapshot);
+            when(modelManager.resolveModel(snapshot, "model_test")).thenReturn(model);
+            when(agent.subscribe(any())).thenReturn(() -> {});
+            when(agent.prompt(any(UserMessage.class))).thenReturn(agentFuture);
+            when(timeoutScheduler.schedule(any(), any(Duration.class))).thenReturn(mock(ScheduledFuture.class));
+            when(repository.acceptUserEvent(anyString(), any(), any())).thenAnswer(invocation -> {
+                acceptedEntry = invocation.getArgument(1);
+                acceptedEntry.setEntrySeq(1L);
+                session.setState("running");
+                return new UserEventAcceptance(Status.ACCEPTED, session);
+            });
+            when(registry.register(anyString(), any(), any(), any(Boolean.class), any(), any()))
+                    .thenAnswer(invocation -> registerHolder(snapshot, invocation.getArgument(5)));
         }
 
-        @Override
-        public AssistantMessageEventStream streamSimple(Model model, Context context, SimpleStreamOptions options) {
-            AssistantMessageEventStream stream = new AssistantMessageEventStream();
-            entered.countDown();
-            Thread.ofVirtual().start(() -> emitAfterRelease(stream, model));
-            return stream;
-        }
-
-        private void emitAfterRelease(AssistantMessageEventStream stream, Model model) {
-            try {
-                assertThat(release.await(2, TimeUnit.SECONDS)).isTrue();
-                AssistantMessage message = new AssistantMessage(
-                        List.of(new TextContent("分析完成")),
-                        model.api().value(),
-                        model.provider().value(),
-                        model.id(),
-                        null,
-                        Usage.empty(),
-                        StopReason.STOP,
-                        null,
-                        1L);
-                stream.push(new AssistantMessageEvent.StartEvent(message));
-                stream.push(new AssistantMessageEvent.TextDeltaEvent(0, "分析完成", message));
-                stream.push(new AssistantMessageEvent.DoneEvent(StopReason.STOP, message));
-            } catch (InterruptedException error) {
-                Thread.currentThread().interrupt();
-                stream.error(error);
-            }
-        }
-    }
-
-    private static final class BlockingErrorProvider implements ApiProvider {
-        private final CountDownLatch entered = new CountDownLatch(1);
-
-        private final CountDownLatch release = new CountDownLatch(1);
-
-        @Override
-        public Api getApi() {
-            return Api.ANTHROPIC_MESSAGES;
-        }
-
-        @Override
-        public AssistantMessageEventStream stream(Model model, Context context, StreamOptions options) {
-            throw new UnsupportedOperationException("Agent uses streamSimple");
-        }
-
-        @Override
-        public AssistantMessageEventStream streamSimple(Model model, Context context, SimpleStreamOptions options) {
-            AssistantMessageEventStream stream = new AssistantMessageEventStream();
-            entered.countDown();
-            Thread.ofVirtual().start(() -> failAfterRelease(stream));
-            return stream;
-        }
-
-        private void failAfterRelease(AssistantMessageEventStream stream) {
-            try {
-                assertThat(release.await(2, TimeUnit.SECONDS)).isTrue();
-                stream.error(new IllegalStateException("simulated model failure"));
-            } catch (InterruptedException error) {
-                Thread.currentThread().interrupt();
-                stream.error(error);
-            }
+        private RuntimeSessionHolder registerHolder(
+                AgentDirectorySnapshotDTO snapshot, RuntimeActiveExecution activeExecution) {
+            execution = activeExecution;
+            RuntimeSessionHolder holder = new RuntimeSessionHolder(SESSION_ID, snapshot, agent);
+            assertThat(holder.begin(activeExecution)).isTrue();
+            return holder;
         }
     }
 }

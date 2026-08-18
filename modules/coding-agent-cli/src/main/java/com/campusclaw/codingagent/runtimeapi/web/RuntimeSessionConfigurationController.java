@@ -4,120 +4,103 @@
 
 package com.campusclaw.codingagent.runtimeapi.web;
 
-import java.util.List;
 import java.util.regex.Pattern;
 
 import com.campusclaw.codingagent.runtimeapi.RuntimeApiConstants;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
-import com.campusclaw.codingagent.runtimeapi.result.ResultBeanFactory;
+import com.campusclaw.codingagent.runtimeapi.result.ResultBeanAdapter;
 import com.campusclaw.codingagent.runtimeapi.session.RuntimeSessionConfigurationService;
 import com.campusclaw.codingagent.runtimeapi.session.RuntimeSessionView;
 import com.campusclaw.codingagent.runtimeapi.vo.ChangeModelRequestVO;
 import com.campusclaw.codingagent.runtimeapi.vo.ChangeThinkingRequestVO;
 import com.campusclaw.codingagent.runtimeapi.vo.GetSessionResponseVO;
 
-import org.springframework.core.codec.DecodingException;
+import org.springframework.http.CacheControl;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.MediaType;
-import org.springframework.stereotype.Component;
-import org.springframework.web.reactive.function.UnsupportedMediaTypeException;
-import org.springframework.web.reactive.function.server.ServerRequest;
-import org.springframework.web.reactive.function.server.ServerResponse;
-import org.springframework.web.server.ServerWebInputException;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
 
-import reactor.core.publisher.Mono;
-import reactor.core.scheduler.Schedulers;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.Valid;
 
 /**
- * Session 模型列表、模型切换与深度思考开关的函数式 Controller。
+ * Session 模型列表、模型切换与深度思考开关接口。
  *
  * @version [br_eCampusCore 25.1.0_Next, 2026/08/18]
  * @since [br_eCampusCore 25.1.0_Next]
  */
-@Component
+@RestController
+@RequestMapping(RuntimeApiConstants.BASE_PATH + "/sessions/{session_id}")
 public class RuntimeSessionConfigurationController {
     private static final Pattern SESSION_ID = Pattern.compile(RuntimeApiConstants.SESSION_ID_PATTERN);
 
     private final RuntimeSessionConfigurationService service;
 
-    public RuntimeSessionConfigurationController(RuntimeSessionConfigurationService service) {
+    private final ResultBeanAdapter resultBeanAdapter;
+
+    public RuntimeSessionConfigurationController(
+            RuntimeSessionConfigurationService service, ResultBeanAdapter resultBeanAdapter) {
         this.service = service;
+        this.resultBeanAdapter = resultBeanAdapter;
     }
 
-    public Mono<ServerResponse> listModels(ServerRequest request) {
-        String sessionId = requireSessionId(request.pathVariable("session_id"));
-        return Mono.fromCallable(() -> service.listModels(sessionId, RuntimeRequestContext.auth(request)))
-                .subscribeOn(Schedulers.boundedElastic())
-                .flatMap(result -> success(request, result));
+    @GetMapping("/models")
+    public ResponseEntity<Object> listModels(
+            @PathVariable("session_id") String sessionId, HttpServletRequest request) {
+        requireSessionId(sessionId);
+        Object result = service.listModels(sessionId);
+        return success(result, request);
     }
 
-    public Mono<ServerResponse> changeModel(ServerRequest request) {
-        String sessionId = requireSessionId(request.pathVariable("session_id"));
-        String ifMatch = ifMatch(request);
-        return request.bodyToMono(ChangeModelRequestVO.class)
-                .onErrorMap(error -> invalidBody(error, RuntimeErrorCode.INVALID_MODEL_REQUEST))
-                .switchIfEmpty(Mono.error(invalidRequest(RuntimeErrorCode.INVALID_MODEL_REQUEST)))
-                .publishOn(Schedulers.boundedElastic())
-                .flatMap(body -> serviceResponse(
-                        request, service.changeModel(sessionId, RuntimeRequestContext.auth(request), ifMatch, body)));
+    @PutMapping("/model")
+    public ResponseEntity<Object> changeModel(
+            @PathVariable("session_id") String sessionId,
+            @RequestHeader(value = HttpHeaders.IF_MATCH, required = false) String ifMatch,
+            @Valid @RequestBody ChangeModelRequestVO body,
+            HttpServletRequest request) {
+        requireSessionId(sessionId);
+        var view = service.changeModel(sessionId, ifMatch, body);
+        return sessionResponse(view, request);
     }
 
-    public Mono<ServerResponse> changeThinking(ServerRequest request) {
-        String sessionId = requireSessionId(request.pathVariable("session_id"));
-        String ifMatch = ifMatch(request);
-        return request.bodyToMono(ChangeThinkingRequestVO.class)
-                .onErrorMap(error -> invalidBody(error, RuntimeErrorCode.INVALID_THINKING_REQUEST))
-                .switchIfEmpty(Mono.error(invalidRequest(RuntimeErrorCode.INVALID_THINKING_REQUEST)))
-                .publishOn(Schedulers.boundedElastic())
-                .flatMap(body -> serviceResponse(
-                        request,
-                        service.changeThinking(sessionId, RuntimeRequestContext.auth(request), ifMatch, body)));
+    @PutMapping("/thinking")
+    public ResponseEntity<Object> changeThinking(
+            @PathVariable("session_id") String sessionId,
+            @RequestHeader(value = HttpHeaders.IF_MATCH, required = false) String ifMatch,
+            @Valid @RequestBody ChangeThinkingRequestVO body,
+            HttpServletRequest request) {
+        requireSessionId(sessionId);
+        var view = service.changeThinking(sessionId, ifMatch, body);
+        return sessionResponse(view, request);
     }
 
-    private Mono<ServerResponse> success(ServerRequest request, Object result) {
-        return ServerResponse.ok()
-                .contentType(MediaType.APPLICATION_JSON)
-                .header("Cache-Control", "no-store")
-                .header("Content-Language", RuntimeRequestContext.language(request))
-                .bodyValue(ResultBeanFactory.getFactory().normal(result));
+    private ResponseEntity<Object> success(Object result, HttpServletRequest request) {
+        return ResponseEntity.ok()
+                .cacheControl(CacheControl.noStore())
+                .header(HttpHeaders.CONTENT_LANGUAGE, RuntimeRequestContext.language(request))
+                .body(resultBeanAdapter.normal(result));
     }
 
-    private Mono<ServerResponse> serviceResponse(ServerRequest request, RuntimeSessionView<GetSessionResponseVO> view) {
-        return ServerResponse.ok()
-                .contentType(MediaType.APPLICATION_JSON)
-                .header("Cache-Control", "no-store")
-                .header("Content-Language", RuntimeRequestContext.language(request))
+    private ResponseEntity<Object> sessionResponse(
+            RuntimeSessionView<GetSessionResponseVO> view, HttpServletRequest request) {
+        return ResponseEntity.ok()
+                .cacheControl(CacheControl.noStore())
                 .eTag(view.etag())
-                .bodyValue(ResultBeanFactory.getFactory().normal(view.resource()));
+                .header(HttpHeaders.CONTENT_LANGUAGE, RuntimeRequestContext.language(request))
+                .body(resultBeanAdapter.normal(view.resource()));
     }
 
-    private static String ifMatch(ServerRequest request) {
-        List<String> values = request.headers().header("If-Match");
-        return values.isEmpty() ? null : String.join(",", values);
-    }
-
-    private static Throwable invalidBody(Throwable error, RuntimeErrorCode errorCode) {
-        if (error instanceof RuntimeApiException) {
-            return error;
-        }
-        if (error instanceof DecodingException
-                || error instanceof UnsupportedMediaTypeException
-                || error instanceof ServerWebInputException
-                || error instanceof IllegalArgumentException) {
-            return invalidRequest(errorCode);
-        }
-        return error;
-    }
-
-    private static String requireSessionId(String sessionId) {
+    private static void requireSessionId(String sessionId) {
         if (!SESSION_ID.matcher(sessionId).matches()) {
             throw new RuntimeApiException(HttpStatus.BAD_REQUEST, RuntimeErrorCode.INVALID_SESSION_ID);
         }
-        return sessionId;
-    }
-
-    private static RuntimeApiException invalidRequest(RuntimeErrorCode errorCode) {
-        return new RuntimeApiException(HttpStatus.BAD_REQUEST, errorCode);
     }
 }

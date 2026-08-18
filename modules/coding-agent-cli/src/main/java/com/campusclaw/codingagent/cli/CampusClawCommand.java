@@ -32,7 +32,6 @@ import com.campusclaw.codingagent.config.ConfigValueResolver;
 import com.campusclaw.codingagent.mode.InteractiveMode;
 import com.campusclaw.codingagent.mode.OneShotMode;
 import com.campusclaw.codingagent.mode.rpc.RpcMode;
-import com.campusclaw.codingagent.mode.server.ServerMode;
 import com.campusclaw.codingagent.prompt.SystemPromptBuilder;
 import com.campusclaw.codingagent.session.AgentSession;
 import com.campusclaw.codingagent.session.SessionConfig;
@@ -87,14 +86,10 @@ public class CampusClawCommand implements Callable<Integer> {
     private final SettingsManager settingsManager;
     private final com.campusclaw.cron.CronService cronService;
     private final com.campusclaw.codingagent.loop.LoopManager loopManager;
-    private final org.springframework.context.ApplicationContext applicationContext;
     private final SandboxSkillParser sandboxSkillParser;
     private final com.campusclaw.codingagent.resolver.AgentModelResolver agentModelResolver;
     private final com.campusclaw.codingagent.model.ModelCatalogService modelCatalogService;
     private final com.campusclaw.agent.subagent.SubAgentRegistry subAgentRegistry;
-
-    @org.springframework.beans.factory.annotation.Value("${server.session.persistence.enabled:true}")
-    private boolean serverSessionPersistenceEnabled;
 
     public CampusClawCommand(
             CampusClawAiService piAiService,
@@ -106,7 +101,6 @@ public class CampusClawCommand implements Callable<Integer> {
             SettingsManager settingsManager,
             @org.springframework.lang.Nullable com.campusclaw.cron.CronService cronService,
             com.campusclaw.codingagent.loop.LoopManager loopManager,
-            org.springframework.context.ApplicationContext applicationContext,
             @org.springframework.lang.Nullable SandboxSkillParser sandboxSkillParser,
             com.campusclaw.codingagent.resolver.AgentModelResolver agentModelResolver,
             com.campusclaw.codingagent.model.ModelCatalogService modelCatalogService,
@@ -120,7 +114,6 @@ public class CampusClawCommand implements Callable<Integer> {
         this.settingsManager = settingsManager;
         this.cronService = cronService;
         this.loopManager = loopManager;
-        this.applicationContext = applicationContext;
         this.sandboxSkillParser = sandboxSkillParser;
         this.agentModelResolver = agentModelResolver;
         this.modelCatalogService = modelCatalogService;
@@ -157,19 +150,9 @@ public class CampusClawCommand implements Callable<Integer> {
 
     @Option(
             names = {"--mode"},
-            description = "Execution mode: interactive, one-shot, rpc, server, or print",
+            description = "Execution mode: interactive, one-shot, rpc, or print",
             defaultValue = "interactive")
     String mode;
-
-    @Option(
-            names = {"--port"},
-            description = "HTTP server port (for server mode)")
-    Integer port;
-
-    @Option(
-            names = {"--host"},
-            description = "HTTP server bind address (for server mode, default: localhost)")
-    String host;
 
     @Option(
             names = {"--proxy"},
@@ -358,7 +341,6 @@ public class CampusClawCommand implements Callable<Integer> {
         String effectivePrompt = resolvePrompt();
         if (effectivePrompt != null
                 || System.console() != null
-                || "server".equals(mode)
                 || "rpc".equals(mode)
                 || "print".equals(mode)) {
             return effectivePrompt;
@@ -508,8 +490,7 @@ public class CampusClawCommand implements Callable<Integer> {
         if (sessionManager != null) {
             session.setSessionManager(sessionManager);
         }
-        SessionConfig config = new SessionConfig(effectiveModel, effectiveCwd, effectiveSystemPrompt, mode);
-        session.initialize(config);
+        session.initialize(new SessionConfig(effectiveModel, effectiveCwd, effectiveSystemPrompt, mode));
         if (sessionManager != null) {
             applySessionLoading(sessionManager, session, effectiveCwd);
         }
@@ -522,66 +503,7 @@ public class CampusClawCommand implements Callable<Integer> {
             new RpcMode(session).run();
             return 0;
         }
-        if ("server".equals(mode)) {
-            runServerMode(config, effectiveTools, useSandbox);
-            return 0;
-        }
         return runInteractiveMode(session, sessionManager, effectivePrompt);
-    }
-
-    private void runServerMode(SessionConfig config, List<AgentTool> effectiveTools, boolean useSandbox) {
-        com.campusclaw.codingagent.config.CustomModelLoader customModelLoader = resolveCustomModelLoader();
-        ServerMode serverMode = new ServerMode(
-                piAiService,
-                modelRegistry,
-                promptBuilder,
-                effectiveTools,
-                config,
-                port != null ? port : 3000,
-                host != null ? host : "localhost",
-                sandboxSkillParser,
-                useSandbox,
-                modelCatalogService,
-                serverSessionPersistenceEnabled,
-                settingsManager,
-                customModelLoader);
-        serverMode.setExtraRoutes(collectExtraRouterFunctions());
-        serverMode.run();
-    }
-
-    @SuppressWarnings("unchecked")
-    private List<
-                    org.springframework.web.reactive.function.server.RouterFunction<
-                            org.springframework.web.reactive.function.server.ServerResponse>>
-            collectExtraRouterFunctions() {
-        if (applicationContext == null) {
-            return List.of();
-        }
-        java.util.Map<String, org.springframework.web.reactive.function.server.RouterFunction> beans =
-                applicationContext.getBeansOfType(
-                        org.springframework.web.reactive.function.server.RouterFunction.class);
-        List<
-                        org.springframework.web.reactive.function.server.RouterFunction<
-                                org.springframework.web.reactive.function.server.ServerResponse>>
-                routes = new java.util.ArrayList<>(beans.size());
-        for (org.springframework.web.reactive.function.server.RouterFunction<?> rf : beans.values()) {
-            routes.add((org.springframework.web.reactive.function.server.RouterFunction<
-                            org.springframework.web.reactive.function.server.ServerResponse>)
-                    rf);
-        }
-        return List.copyOf(routes);
-    }
-
-    private com.campusclaw.codingagent.config.CustomModelLoader resolveCustomModelLoader() {
-        if (applicationContext == null) {
-            return null;
-        }
-        try {
-            return applicationContext.getBean(com.campusclaw.codingagent.config.CustomModelLoader.class);
-        } catch (org.springframework.beans.BeansException e) {
-            log.warn("CustomModelLoader bean not available; settings/customModels endpoint disabled", e);
-            return null;
-        }
     }
 
     private String mergeSystemPrompts() {

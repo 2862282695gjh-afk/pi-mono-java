@@ -90,4 +90,4 @@ echo -e "${GREEN}启动 CampusClaw (沙箱模式)...${NC}"
 echo ""
 
 # 传递所有参数
-java -jar "$JAR_PATH" "$@"
+java -jar "$JAR_PATH" cli "$@"

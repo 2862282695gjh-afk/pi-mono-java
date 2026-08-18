@@ -25,13 +25,9 @@ public interface RuntimeSessionMapper {
 
     int insertSequence(@Param("sessionId") String sessionId);
 
-    int insertMaterialized(@Param("sessionId") String sessionId);
-
     RuntimeSessionDTO findSession(@Param("sessionId") String sessionId);
 
     RuntimeSessionDTO lockSessionForUpdate(@Param("sessionId") String sessionId);
-
-    Integer lockSession(@Param("sessionId") String sessionId);
 
     Long lockNextSequence(@Param("sessionId") String sessionId);
 

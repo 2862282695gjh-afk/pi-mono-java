@@ -10,6 +10,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
@@ -42,8 +43,11 @@ import com.campusclaw.ai.types.StreamOptions;
 import com.campusclaw.ai.types.TextContent;
 import com.campusclaw.ai.types.ToolCall;
 import com.campusclaw.ai.types.Usage;
+import com.campusclaw.ai.types.UserMessage;
 import com.campusclaw.codingagent.runtimeapi.dto.RuntimeEntryDTO;
 import com.campusclaw.codingagent.runtimeapi.persistence.RuntimeSessionRepository;
+import com.campusclaw.codingagent.runtimeapi.runtime.RuntimeActiveExecution;
+import com.campusclaw.codingagent.runtimeapi.vo.RuntimeSseEventVO;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import org.junit.jupiter.api.Test;
@@ -70,7 +74,10 @@ class RuntimeEventProjectorTest {
             persisted.add(entry);
             return entry;
         });
-        RuntimeEventStream stream = new RuntimeEventStream();
+        RuntimeEventStream stream = new RuntimeEventStream(
+                256, 1024L * 1024L, Duration.ofSeconds(15), event -> 1L);
+        RuntimeActiveExecution execution = new RuntimeActiveExecution(stream);
+        UserMessage initialMessage = new UserMessage("分析订单", 1L);
         AtomicInteger ids = new AtomicInteger(1);
         RuntimeEntryIdGenerator idGenerator = () -> "entry_" + ids.getAndIncrement();
         RuntimeEventProjector projector = new RuntimeEventProjector(
@@ -80,32 +87,60 @@ class RuntimeEventProjectorTest {
                 idGenerator,
                 stream,
                 Clock.fixed(Instant.parse("2026-08-18T00:00:00Z"), ZoneOffset.UTC),
-                agent::abort);
+                agent::abort,
+                execution,
+                initialMessage);
         agent.subscribe(projector::onEvent);
 
-        agent.prompt("分析订单").get(2, TimeUnit.SECONDS);
+        agent.prompt(initialMessage).get(2, TimeUnit.SECONDS);
+        stream.complete();
 
-        List<String> eventNames = stream.flux()
-                .take(8)
-                .map(event -> event.getEvent())
-                .collectList()
-                .block();
-        assertThat(eventNames)
-                .containsExactly(
-                        "assistant.message.started",
-                        "assistant.message.completed",
-                        "tool.execution.started",
-                        "tool.execution.completed",
-                        "tool.result",
-                        "assistant.message.started",
-                        "assistant.message.delta",
-                        "assistant.message.completed");
+        List<String> eventNames = collect(stream).stream().map(RuntimeSseEventVO::getEvent).toList();
+        assertConfirmedEventOrder(eventNames);
         assertThat(persisted)
                 .extracting(RuntimeEntryDTO::getType)
                 .containsExactly("assistant.message.completed", "tool.result", "assistant.message.completed");
         assertThat(persisted).extracting(RuntimeEntryDTO::getEntrySeq).containsExactly(2L, 3L, 4L);
         assertThat(projector.failure()).isNull();
         assertThat(projector.terminalReason()).isEqualTo(StopReason.STOP);
+    }
+
+    private static void assertConfirmedEventOrder(List<String> eventNames) {
+        assertThat(eventNames).containsExactly(
+                "assistant.message.started",
+                "assistant.message.completed",
+                "tool.execution.started",
+                "tool.execution.completed",
+                "tool.result",
+                "assistant.message.started",
+                "assistant.message.delta",
+                "assistant.message.completed");
+    }
+
+    private static List<RuntimeSseEventVO> collect(RuntimeEventStream stream) {
+        List<RuntimeSseEventVO> events = new ArrayList<>();
+        stream.attach(Runnable::run, new RuntimeEventSubscriber() {
+            @Override
+            public void onEvent(RuntimeSseEventVO event) {
+                events.add(event);
+            }
+
+            @Override
+            public void onHeartbeat() {
+                throw new AssertionError("completed stream must not emit heartbeat");
+            }
+
+            @Override
+            public void onComplete() {
+                // 同步 drain 已完成，无需额外协调。
+            }
+
+            @Override
+            public void onError(Throwable error) {
+                throw new AssertionError(error);
+            }
+        });
+        return events;
     }
 
     private static CampusClawAiService aiService(Model model, ApiProvider provider) {

@@ -54,7 +54,7 @@ echo "提示: 由于无法拉取 alpine 镜像，沙箱执行会失败，但会�
 echo ""
 
 # 运行（使用测试模式）
-java -jar "$JAR_PATH" \
+java -jar "$JAR_PATH" cli \
   --exec-mode sandbox \
   --verbose \
   -p "请执行命令: ls -la" 2>&1 | tee /tmp/sandbox-test.log | head -50

@@ -8,15 +8,14 @@ import java.time.Clock;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.auth.CallerAuthContext;
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.auth.RuntimeAgentAuthorizer;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.agent.AgentDirectoryResolver;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.agent.AgentDirectorySnapshotDTO;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.model.RuntimeModelManager;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.persistence.RuntimeSessionRepository;
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.runtime.RuntimeSessionEngineRegistry;
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.template.AgentRuntimeSnapshotProvider;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.persistence.SessionDeletionStatus;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.vo.CreateSessionResponseVO;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.vo.GetSessionResponseVO;
 
@@ -24,7 +23,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
 /**
- * Runtime Session 创建、读取与删除的业务编排 Service。
+ * Runtime Session 创建、读取与删除业务。
  *
  * @version [br_eCampusCore 25.1.0_Next, 2026/08/18]
  * @since [br_eCampusCore 25.1.0_Next]
@@ -33,13 +32,9 @@ import org.springframework.stereotype.Service;
 public class RuntimeSessionService {
     private final RuntimeSessionRepository repository;
 
-    private final RuntimeAgentAuthorizer agentAuthorizer;
-
-    private final AgentRuntimeSnapshotProvider snapshotProvider;
+    private final AgentDirectoryResolver agentDirectoryResolver;
 
     private final RuntimeModelManager modelManager;
-
-    private final RuntimeSessionEngineRegistry engineRegistry;
 
     private final SessionIdGenerator idGenerator;
 
@@ -49,90 +44,68 @@ public class RuntimeSessionService {
 
     public RuntimeSessionService(
             RuntimeSessionRepository repository,
-            RuntimeAgentAuthorizer agentAuthorizer,
-            AgentRuntimeSnapshotProvider snapshotProvider,
+            AgentDirectoryResolver agentDirectoryResolver,
             RuntimeModelManager modelManager,
-            RuntimeSessionEngineRegistry engineRegistry,
             SessionIdGenerator idGenerator,
             SessionEtagFactory etagFactory,
             Clock clock) {
         this.repository = repository;
-        this.agentAuthorizer = agentAuthorizer;
-        this.snapshotProvider = snapshotProvider;
+        this.agentDirectoryResolver = agentDirectoryResolver;
         this.modelManager = modelManager;
-        this.engineRegistry = engineRegistry;
         this.idGenerator = idGenerator;
         this.etagFactory = etagFactory;
         this.clock = clock;
     }
 
-    public RuntimeSessionView<CreateSessionResponseVO> create(String agentId, CallerAuthContext caller) {
-        requireCreateAllowed(agentId, caller);
-        var snapshot = snapshotProvider.resolveCurrent(agentId);
-        var model = modelManager.resolveDefaultModel(snapshot);
-        OffsetDateTime now = OffsetDateTime.ofInstant(clock.instant(), ZoneOffset.UTC);
-        RuntimeSessionDTO session = newSession(agentId, caller.callerId(), snapshot, model.id(), now);
+    public RuntimeSessionView<CreateSessionResponseVO> create(String agentId) {
+        AgentDirectorySnapshotDTO snapshot = agentDirectoryResolver.resolve(agentId);
+        String modelId = modelManager.resolveDefaultModel(snapshot).id();
+        OffsetDateTime now = now();
+        RuntimeSessionDTO session = newSession(snapshot, modelId, now);
         try {
-            engineRegistry.initialize(session.getId(), snapshot, model, false);
             repository.create(session);
             return createViewOf(session);
+        } catch (RuntimeApiException error) {
+            throw error;
         } catch (RuntimeException error) {
-            engineRegistry.abortAndRemove(session.getId());
-            if (error instanceof RuntimeApiException apiError) {
-                throw apiError;
-            }
             throw new RuntimeApiException(
                     HttpStatus.INTERNAL_SERVER_ERROR, RuntimeErrorCode.SESSION_INITIALIZATION_FAILED, error);
         }
     }
 
-    public RuntimeSessionView<GetSessionResponseVO> get(String sessionId, CallerAuthContext caller) {
+    public RuntimeSessionView<GetSessionResponseVO> get(String sessionId) {
         RuntimeSessionDTO session = repository
                 .find(sessionId)
                 .orElseThrow(() -> new RuntimeApiException(HttpStatus.NOT_FOUND, RuntimeErrorCode.SESSION_NOT_FOUND));
-        requireOwner(session, caller, "当前调用方无权访问该 Session。", "The caller is not allowed to access this Session.");
         return getViewOf(session);
     }
 
-    public void delete(String sessionId, CallerAuthContext caller) {
-        var existing = repository.find(sessionId);
-        if (existing.isEmpty()) {
-            return;
-        }
-        requireOwner(
-                existing.get(), caller, "当前调用方无权删除该 Session。", "The caller is not allowed to delete this Session.");
-        OffsetDateTime now = OffsetDateTime.ofInstant(clock.instant(), ZoneOffset.UTC);
+    public void delete(String sessionId) {
         try {
-            if (repository.beginDeletion(sessionId, now)) {
-                engineRegistry.abortAndRemove(sessionId);
+            SessionDeletionStatus status = repository.beginDeletion(sessionId, now());
+            if (status == SessionDeletionStatus.BUSY) {
+                throw new RuntimeApiException(HttpStatus.CONFLICT, RuntimeErrorCode.SESSION_BUSY);
             }
+        } catch (RuntimeApiException error) {
+            throw error;
         } catch (RuntimeException error) {
-            if (error instanceof RuntimeApiException apiError) {
-                throw apiError;
-            }
             throw new RuntimeApiException(
                     HttpStatus.INTERNAL_SERVER_ERROR, RuntimeErrorCode.SESSION_DELETE_FAILED, error);
         }
     }
 
     private RuntimeSessionDTO newSession(
-            String agentId,
-            String ownerId,
-            com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.template.AgentRuntimeSnapshotDTO snapshot,
-            String modelId,
-            OffsetDateTime now) {
+            AgentDirectorySnapshotDTO snapshot, String modelId, OffsetDateTime now) {
         RuntimeSessionDTO session = new RuntimeSessionDTO();
         session.setId(idGenerator.nextId());
-        session.setAgentId(agentId);
-        session.setOwnerId(ownerId);
-        session.setBundleRevision(snapshot.bundleRevision());
+        session.setAgentId(snapshot.agentId());
         session.setModelId(modelId);
         session.setState("idle");
         session.setThinking(false);
         session.setResourceVersion(1);
         session.setCreatedAt(now);
         session.setUpdatedAt(now);
-        session.setCwd(snapshot.runtimeDirectory().toString());
+        session.setCwd(snapshot.agentDirectory().toString());
         return session;
     }
 
@@ -144,7 +117,7 @@ public class RuntimeSessionService {
                 session.getState(),
                 session.isThinking(),
                 session.getCreatedAt());
-        return new RuntimeSessionView<>(resource, etagFactory.create(session.getId(), session.getResourceVersion()));
+        return new RuntimeSessionView<>(resource, etag(session));
     }
 
     private RuntimeSessionView<GetSessionResponseVO> getViewOf(RuntimeSessionDTO session) {
@@ -156,24 +129,14 @@ public class RuntimeSessionService {
                 session.isThinking(),
                 session.getCreatedAt(),
                 session.getUpdatedAt());
-        return new RuntimeSessionView<>(resource, etagFactory.create(session.getId(), session.getResourceVersion()));
+        return new RuntimeSessionView<>(resource, etag(session));
     }
 
-    private static void requireOwner(
-            RuntimeSessionDTO session, CallerAuthContext caller, String chineseMessage, String englishMessage) {
-        if (!session.getOwnerId().equals(caller.callerId())) {
-            throw new RuntimeApiException(
-                    HttpStatus.FORBIDDEN, RuntimeErrorCode.FORBIDDEN, chineseMessage, englishMessage);
-        }
+    private String etag(RuntimeSessionDTO session) {
+        return etagFactory.create(session.getId(), session.getResourceVersion());
     }
 
-    private void requireCreateAllowed(String agentId, CallerAuthContext caller) {
-        if (!agentAuthorizer.canCreateSession(agentId, caller)) {
-            throw new RuntimeApiException(
-                    HttpStatus.FORBIDDEN,
-                    RuntimeErrorCode.FORBIDDEN,
-                    "当前调用方无权为该 Agent 创建 Session。",
-                    "The caller is not allowed to create a Session for this Agent.");
-        }
+    private OffsetDateTime now() {
+        return OffsetDateTime.ofInstant(clock.instant(), ZoneOffset.UTC);
     }
 }

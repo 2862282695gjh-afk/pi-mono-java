@@ -1,10 +1,11 @@
 spring:
   main:
     banner-mode: off
-    lazy-initialization: true
-    web-application-type: none
   application:
     name: campusclaw-agent
+  threads:
+    virtual:
+      enabled: true
   datasource:
     # openGauss 兼容 PostgreSQL wire/JDBC；标准 pgjdbc 可避免 openGauss 7.0.0-RC3
     # Maven 制品在可执行包内嵌入第二套 SLF4J API。
@@ -18,7 +19,7 @@ spring:
       maximum-pool-size: ${GAUSSDB_MAX_POOL_SIZE:10}
       connection-timeout: ${GAUSSDB_CONNECTION_TIMEOUT_MS:10000}
       validation-timeout: ${GAUSSDB_VALIDATION_TIMEOUT_MS:5000}
-      initialization-fail-timeout: ${GAUSSDB_INITIALIZATION_FAIL_TIMEOUT_MS:-1}
+      initialization-fail-timeout: ${GAUSSDB_INITIALIZATION_FAIL_TIMEOUT_MS:1}
       data-source-properties:
         currentSchema: ${GAUSSDB_SCHEMA:campusclaw_session}
         sslmode: ${GAUSSDB_SSL_MODE:verify-full}
@@ -28,30 +29,38 @@ mybatis:
   configuration:
     map-underscore-to-camel-case: true
 
+server:
+  address: ${SERVER_ADDRESS:0.0.0.0}
+  port: ${SERVER_PORT:8080}
+
 campusclaw:
   runtime:
+    agent-directory:
+      root: ${CAMPUSCLAW_AGENT_ROOT:${user.home}/.campusclaw/runtime/agents}
+    execution:
+      max-active: ${CAMPUSCLAW_MAX_ACTIVE_EXECUTIONS:100}
+      max-duration: ${CAMPUSCLAW_MAX_EXECUTION_DURATION:PT30M}
+      max-control-messages: ${CAMPUSCLAW_MAX_CONTROL_MESSAGES:32}
+      max-control-bytes: ${CAMPUSCLAW_MAX_CONTROL_BYTES:1048576}
     events:
       # 生产和多实例部署必须设置稳定的高熵密钥；缺失时使用仅限当前进程的随机密钥。
       cursor-secret: ${CAMPUSCLAW_EVENT_CURSOR_SECRET:}
       cursor-ttl: ${CAMPUSCLAW_EVENT_CURSOR_TTL:PT24H}
-
-# 服务器模式（--mode server）下旧 /api/chat 的会话持久化
-# 开启后会把每个 conversation_id 的消息历史写入
-# ~/.campusclaw/agent/sessions/--<encoded-cwd>--/<id>.jsonl
-# 重连或进程重启后用同一个 conversation_id 可恢复历史
-server:
-  session:
-    persistence:
-      enabled: true
+      stream-buffer-events: ${CAMPUSCLAW_STREAM_BUFFER_EVENTS:256}
+      stream-buffer-bytes: ${CAMPUSCLAW_STREAM_BUFFER_BYTES:1048576}
+      heartbeat-interval: ${CAMPUSCLAW_SSE_HEARTBEAT_INTERVAL:PT15S}
+    cleanup:
+      enabled: ${CAMPUSCLAW_CLEANUP_ENABLED:true}
+      batch-size: ${CAMPUSCLAW_CLEANUP_BATCH_SIZE:10}
+      retry-delay: ${CAMPUSCLAW_CLEANUP_RETRY_DELAY:PT30S}
+      running-timeout: ${CAMPUSCLAW_CLEANUP_RUNNING_TIMEOUT:PT5M}
+      poll-interval-ms: ${CAMPUSCLAW_CLEANUP_POLL_INTERVAL_MS:5000}
 
 logging:
   level:
     root: WARN
     com.campusclaw: WARN
     io.netty: ERROR
-    # Banner logger 独立级别，让 `pi --mode server` 启动 endpoint 列表无论 root/包级
-    # 怎么调都能打出来——这是面向操作者的启动反馈，不该被生产噪音过滤策略误伤。
-    CampusClawStartupBanner: INFO
 
 # 工具执行配置 - 沙箱模式
 tool:

@@ -17,34 +17,14 @@ public class RuntimeApiException extends RuntimeException {
 
     private final RuntimeErrorCode errorCode;
 
-    private final String chineseMessage;
-
-    private final String englishMessage;
-
     public RuntimeApiException(HttpStatus status, RuntimeErrorCode errorCode) {
-        this(status, errorCode, null, null, null);
+        this(status, errorCode, null);
     }
 
     public RuntimeApiException(HttpStatus status, RuntimeErrorCode errorCode, Throwable cause) {
-        this(status, errorCode, null, null, cause);
-    }
-
-    public RuntimeApiException(
-            HttpStatus status, RuntimeErrorCode errorCode, String chineseMessage, String englishMessage) {
-        this(status, errorCode, chineseMessage, englishMessage, null);
-    }
-
-    private RuntimeApiException(
-            HttpStatus status,
-            RuntimeErrorCode errorCode,
-            String chineseMessage,
-            String englishMessage,
-            Throwable cause) {
         super(errorCode.name(), cause);
         this.status = status;
         this.errorCode = errorCode;
-        this.chineseMessage = chineseMessage;
-        this.englishMessage = englishMessage;
     }
 
     public HttpStatus status() {
@@ -53,10 +33,5 @@ public class RuntimeApiException extends RuntimeException {
 
     public RuntimeErrorCode errorCode() {
         return errorCode;
-    }
-
-    public String localizedMessage(boolean chinese) {
-        String message = chinese ? chineseMessage : englishMessage;
-        return message == null ? errorCode.message(chinese) : message;
     }
 }

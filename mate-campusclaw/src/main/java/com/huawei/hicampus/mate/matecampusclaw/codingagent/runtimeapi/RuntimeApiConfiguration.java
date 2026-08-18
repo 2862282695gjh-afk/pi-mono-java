@@ -5,26 +5,24 @@
 package com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi;
 
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.model.ModelCatalogService;
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.auth.RuntimeAgentAuthorizer;
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.auth.RuntimeAuthProperties;
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.auth.RuntimeCredentialVerifier;
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.auth.StandaloneCredentialVerifier;
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.auth.StandaloneRuntimeAgentAuthorizer;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.agent.AgentDirectoryResolver;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.agent.FileAgentDirectoryResolver;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.agent.RuntimeAgentDirectoryProperties;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.event.RandomRuntimeEntryIdGenerator;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.event.RuntimeEntryIdGenerator;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.event.RuntimeEventProperties;
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.event.RuntimeFileResolver;
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.event.StandaloneRuntimeFileResolver;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.mapper.RuntimeSessionMapper;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.model.CatalogRuntimeModelManager;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.model.RuntimeModelManager;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.result.ResultBeanAdapter;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.result.StandaloneResultBeanAdapter;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.runtime.RuntimeExecutionProperties;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.session.RandomSessionIdGenerator;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.session.RuntimeCleanupProperties;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.session.SessionIdGenerator;
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.template.AgentRuntimeSnapshotProvider;
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.template.FileAgentRuntimeSnapshotProvider;
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.template.RuntimeTemplateProperties;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import org.mybatis.spring.annotation.MapperScan;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
@@ -39,30 +37,25 @@ import org.springframework.scheduling.annotation.EnableScheduling;
  */
 @Configuration
 @EnableScheduling
+@MapperScan(basePackageClasses = RuntimeSessionMapper.class)
 @EnableConfigurationProperties({
-    RuntimeAuthProperties.class,
-    RuntimeTemplateProperties.class,
+    RuntimeAgentDirectoryProperties.class,
     RuntimeCleanupProperties.class,
+    RuntimeExecutionProperties.class,
     RuntimeEventProperties.class
 })
 public class RuntimeApiConfiguration {
     @Bean
-    @ConditionalOnMissingBean(RuntimeCredentialVerifier.class)
-    public RuntimeCredentialVerifier standaloneCredentialVerifier(RuntimeAuthProperties properties) {
-        return new StandaloneCredentialVerifier(properties);
+    @ConditionalOnMissingBean(ResultBeanAdapter.class)
+    public ResultBeanAdapter standaloneResultBeanAdapter() {
+        return new StandaloneResultBeanAdapter();
     }
 
     @Bean
-    @ConditionalOnMissingBean(RuntimeAgentAuthorizer.class)
-    public RuntimeAgentAuthorizer standaloneRuntimeAgentAuthorizer() {
-        return new StandaloneRuntimeAgentAuthorizer();
-    }
-
-    @Bean
-    @ConditionalOnMissingBean(AgentRuntimeSnapshotProvider.class)
-    public AgentRuntimeSnapshotProvider fileAgentRuntimeSnapshotProvider(
-            RuntimeTemplateProperties properties, ObjectMapper objectMapper) {
-        return new FileAgentRuntimeSnapshotProvider(properties, objectMapper);
+    @ConditionalOnMissingBean(AgentDirectoryResolver.class)
+    public AgentDirectoryResolver fileAgentDirectoryResolver(
+            RuntimeAgentDirectoryProperties properties, ObjectMapper objectMapper) {
+        return new FileAgentDirectoryResolver(properties, objectMapper);
     }
 
     @Bean
@@ -83,9 +76,4 @@ public class RuntimeApiConfiguration {
         return new RandomRuntimeEntryIdGenerator();
     }
 
-    @Bean
-    @ConditionalOnMissingBean(RuntimeFileResolver.class)
-    public RuntimeFileResolver standaloneRuntimeFileResolver() {
-        return new StandaloneRuntimeFileResolver();
-    }
 }

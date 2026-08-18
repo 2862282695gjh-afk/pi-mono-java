@@ -43,4 +43,4 @@ REM 运行 CampusClaw
 echo 启动 CampusClaw (沙箱模式)...
 echo.
 
-java -jar "%JAR_PATH%" --exec-mode sandbox %*
+java -jar "%JAR_PATH%" cli --exec-mode sandbox %*

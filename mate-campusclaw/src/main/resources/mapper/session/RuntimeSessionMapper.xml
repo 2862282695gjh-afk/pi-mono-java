@@ -8,11 +8,11 @@
 <mapper namespace="com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.mapper.RuntimeSessionMapper">
     <insert id="insertSession" parameterType="com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.dto.RuntimeSessionDTO">
         INSERT INTO t_sessions (
-            id, agent_id, owner_id, bundle_revision, model_id, state, thinking,
+            id, agent_id, model_id, state, thinking,
             resource_version, created_at, updated_at, cwd, parent_session_id,
             metadata, active_leaf_id
         ) VALUES (
-            #{id}, #{agentId}, #{ownerId}, #{bundleRevision}, #{modelId}, #{state}, #{thinking},
+            #{id}, #{agentId}, #{modelId}, #{state}, #{thinking},
             #{resourceVersion}, #{createdAt}, #{updatedAt}, #{cwd}, #{parentSessionId},
             CAST(#{metadata} AS JSONB), #{activeLeafId}
         )
@@ -23,13 +23,8 @@
         VALUES (#{sessionId}, 1)
     </insert>
 
-    <insert id="insertMaterialized">
-        INSERT INTO t_session_materialized (session_id, payload)
-        VALUES (#{sessionId}, CAST('{}' AS JSONB))
-    </insert>
-
     <select id="findSession" resultType="com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.dto.RuntimeSessionDTO">
-        SELECT id, agent_id, owner_id, bundle_revision, model_id, state, thinking,
+        SELECT id, agent_id, model_id, state, thinking,
                resource_version, created_at, updated_at, cwd, parent_session_id,
                metadata::text AS metadata, active_leaf_id
         FROM t_sessions
@@ -37,16 +32,9 @@
     </select>
 
     <select id="lockSessionForUpdate" resultType="com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.dto.RuntimeSessionDTO">
-        SELECT id, agent_id, owner_id, bundle_revision, model_id, state, thinking,
+        SELECT id, agent_id, model_id, state, thinking,
                resource_version, created_at, updated_at, cwd, parent_session_id,
                metadata::text AS metadata, active_leaf_id
-        FROM t_sessions
-        WHERE id = #{sessionId}
-        FOR UPDATE
-    </select>
-
-    <select id="lockSession" resultType="int">
-        SELECT 1
         FROM t_sessions
         WHERE id = #{sessionId}
         FOR UPDATE

@@ -71,7 +71,6 @@ class RuntimeHttpProcessOpenGaussIT {
                 RuntimeProcess runtime = startRuntime(config, tempDir, applicationPort)) {
             modelStub.start();
             awaitHealth(runtime, applicationPort);
-            assertRuntimeCorsPreflight(applicationPort);
             String sessionId = createSession(applicationPort);
             ModelGate controlGate = modelStub.blockNextResponse();
             CompletableFuture<HttpResponse<String>> streamResponse = submitUserEventAsync(applicationPort, sessionId);
@@ -85,6 +84,7 @@ class RuntimeHttpProcessOpenGaussIT {
             assertHistoryPagination(applicationPort, sessionId);
             assertSessionConfiguration(applicationPort, sessionId);
             assertDatabaseState(config, sessionId);
+            assertDelete(applicationPort, config, sessionId);
             assertAbort(applicationPort, modelStub);
             assertThat(modelStub.requestPath()).isEqualTo("/v1/chat/completions");
         }
@@ -96,12 +96,8 @@ class RuntimeHttpProcessOpenGaussIT {
                         Path.of(System.getProperty("java.home"), "bin", "java").toString(),
                         "-jar",
                         config.jar().toString(),
-                        "--mode",
-                        "server",
-                        "--host",
-                        "127.0.0.1",
-                        "--port",
-                        Integer.toString(port))
+                        "--server.address=127.0.0.1",
+                        "--server.port=" + port)
                 .directory(tempDir.toFile())
                 .redirectErrorStream(true)
                 .redirectOutput(log.toFile());
@@ -122,12 +118,7 @@ class RuntimeHttpProcessOpenGaussIT {
 
     private static String springConfiguration(Path tempDir) {
         ObjectNode runtime = MAPPER.createObjectNode();
-        runtime.putObject("auth")
-                .put("jwt-token", JWT)
-                .put("app-key", APP_KEY)
-                .putArray("allowed-callers")
-                .add(CALLER_ID);
-        runtime.putObject("template").put("root", tempDir.resolve("templates").toString());
+        runtime.putObject("agent-directory").put("root", tempDir.resolve("agents").toString());
         runtime.putObject("events").put("cursor-secret", "process-cursor-secret-at-least-32-bytes");
         ObjectNode root = MAPPER.createObjectNode();
         root.putObject("campusclaw").set("runtime", runtime);
@@ -136,16 +127,13 @@ class RuntimeHttpProcessOpenGaussIT {
 
     private static void prepareRuntimeFiles(Path tempDir, int modelPort) throws IOException {
         Path agentHome = tempDir.resolve("home/agent");
-        Path agentRoot = tempDir.resolve("templates").resolve(AGENT_ID);
-        Path revisionRoot = agentRoot.resolve("revisions/rev-smoke/.campusagent");
+        Path managedDirectory = tempDir.resolve("agents").resolve(AGENT_ID).resolve(".campusagent");
         Files.createDirectories(agentHome);
-        Files.createDirectories(revisionRoot);
+        Files.createDirectories(managedDirectory);
         Files.writeString(agentHome.resolve("settings.json"), globalSettings(modelPort), StandardCharsets.UTF_8);
+        Files.writeString(managedDirectory.resolve("settings.json"), agentSettings(), StandardCharsets.UTF_8);
         Files.writeString(
-                agentRoot.resolve("current.json"), "{\"bundleRevision\":\"rev-smoke\"}", StandardCharsets.UTF_8);
-        Files.writeString(revisionRoot.resolve("settings.json"), agentSettings(), StandardCharsets.UTF_8);
-        Files.writeString(
-                revisionRoot.resolve("SYSTEM.md"), "Deterministic process test agent.", StandardCharsets.UTF_8);
+                managedDirectory.resolve("SYSTEM.md"), "Deterministic process test agent.", StandardCharsets.UTF_8);
     }
 
     private static String globalSettings(int modelPort) {
@@ -179,7 +167,8 @@ class RuntimeHttpProcessOpenGaussIT {
     }
 
     private static void awaitHealth(RuntimeProcess runtime, int port) throws Exception {
-        URI health = URI.create("http://127.0.0.1:" + port + "/api/health");
+        URI probe = URI.create(
+                "http://127.0.0.1:" + port + "/campusclaw-service/v1/sessions/readiness-probe");
         long deadline = System.nanoTime() + Duration.ofSeconds(30).toNanos();
         while (System.nanoTime() < deadline) {
             if (!runtime.process().isAlive()) {
@@ -187,19 +176,21 @@ class RuntimeHttpProcessOpenGaussIT {
             }
             try {
                 HttpResponse<String> response = CLIENT.send(
-                        HttpRequest.newBuilder(health)
+                        HttpRequest.newBuilder(probe)
+                                .header("X-HW-ID", CALLER_ID)
+                                .header("Authorization", "Bearer " + JWT)
                                 .timeout(Duration.ofSeconds(1))
                                 .GET()
                                 .build(),
                         HttpResponse.BodyHandlers.ofString());
-                if (response.statusCode() == 200) {
+                if (response.statusCode() == 404) {
                     return;
                 }
             } catch (IOException ignored) {
                 Thread.sleep(100L);
             }
         }
-        throw new AssertionError("Runtime health check timed out:\n" + runtime.logContent());
+        throw new AssertionError("Runtime readiness probe timed out:\n" + runtime.logContent());
     }
 
     private static String createSession(int port) throws Exception {
@@ -214,19 +205,6 @@ class RuntimeHttpProcessOpenGaussIT {
                 .path("result")
                 .path("session_id")
                 .asText();
-    }
-
-    private static void assertRuntimeCorsPreflight(int port) throws Exception {
-        URI uri = URI.create("http://127.0.0.1:" + port + "/campusclaw-service/v1/sessions/example/events");
-        HttpResponse<String> response = send(HttpRequest.newBuilder(uri)
-                .header("Origin", "http://localhost:5173")
-                .header("Access-Control-Request-Method", "POST")
-                .method("OPTIONS", HttpRequest.BodyPublishers.noBody())
-                .build());
-        assertThat(response.statusCode()).isEqualTo(204);
-        assertThat(response.headers().firstValue("Access-Control-Allow-Origin")).contains("*");
-        assertThat(response.headers().firstValue("Access-Control-Allow-Methods"))
-                .hasValueSatisfying(methods -> assertThat(methods).contains("POST"));
     }
 
     private static CompletableFuture<HttpResponse<String>> submitUserEventAsync(int port, String sessionId) {
@@ -279,6 +257,7 @@ class RuntimeHttpProcessOpenGaussIT {
         ModelGate gate = modelStub.blockNextResponse();
         CompletableFuture<HttpResponse<String>> streamResponse = submitUserEventAsync(port, sessionId);
         gate.awaitRequest();
+        assertRunningDeleteRejected(port, sessionId);
         HttpRequest request = HttpRequest.newBuilder(sessionUri(port, sessionId, "abort"))
                 .header("X-HW-ID", CALLER_ID)
                 .header("X-HW-APPKEY", APP_KEY)
@@ -297,6 +276,53 @@ class RuntimeHttpProcessOpenGaussIT {
         assertThat(stream).contains("event:session.status.idle", "event:stream.end", "\"reason\":\"aborted\"");
         assertThat(getSession(port, sessionId).result().path("state").asText()).isEqualTo("idle");
         assertThat(send(request).statusCode()).isEqualTo(204);
+    }
+
+    private static void assertRunningDeleteRejected(int port, String sessionId) throws Exception {
+        HttpResponse<String> response = send(HttpRequest.newBuilder(sessionUri(port, sessionId, null))
+                .header("X-HW-ID", CALLER_ID)
+                .header("Authorization", "Bearer " + JWT)
+                .DELETE()
+                .build());
+        assertThat(response.statusCode()).isEqualTo(409);
+        assertThat(MAPPER.readTree(response.body()).path("resCode").asText()).isEqualTo("SESSION_BUSY");
+    }
+
+    private static void assertDelete(int port, ProcessTestConfig config, String sessionId) throws Exception {
+        HttpRequest request = HttpRequest.newBuilder(sessionUri(port, sessionId, null))
+                .header("X-HW-ID", CALLER_ID)
+                .header("X-HW-APPKEY", APP_KEY)
+                .DELETE()
+                .build();
+        HttpResponse<String> response = send(request);
+        assertThat(response.statusCode()).isEqualTo(204);
+        assertThat(response.body()).isEmpty();
+        assertThat(send(request).statusCode()).isEqualTo(204);
+        assertDeletedSessionIsHidden(port, sessionId);
+        assertTombstone(config, sessionId);
+    }
+
+    private static void assertDeletedSessionIsHidden(int port, String sessionId) throws Exception {
+        HttpResponse<String> response = send(HttpRequest.newBuilder(sessionUri(port, sessionId, null))
+                .header("X-HW-ID", CALLER_ID)
+                .header("Authorization", "Bearer " + JWT)
+                .GET()
+                .build());
+        assertThat(response.statusCode()).isEqualTo(404);
+        assertThat(MAPPER.readTree(response.body()).path("resCode").asText()).isEqualTo("SESSION_NOT_FOUND");
+    }
+
+    private static void assertTombstone(ProcessTestConfig config, String sessionId) throws Exception {
+        try (var connection =
+                        DriverManager.getConnection(config.databaseUrl(), config.databaseUser(), config.databasePassword());
+                var statement = connection.prepareStatement(
+                        "SELECT COUNT(*) FROM campusclaw_session.t_session_tombstone WHERE session_id = ?")) {
+            statement.setString(1, sessionId);
+            try (var rows = statement.executeQuery()) {
+                assertThat(rows.next()).isTrue();
+                assertThat(rows.getInt(1)).isOne();
+            }
+        }
     }
 
     private static void assertStreamOrder(String stream) {

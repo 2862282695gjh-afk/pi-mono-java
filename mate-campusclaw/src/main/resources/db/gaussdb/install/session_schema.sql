@@ -16,8 +16,6 @@ DROP TABLE IF EXISTS t_sessions;
 CREATE TABLE t_sessions (
     id                 VARCHAR(128)   PRIMARY KEY,
     agent_id           VARCHAR(30)    NOT NULL,
-    owner_id           VARCHAR(128)   NOT NULL,
-    bundle_revision    VARCHAR(128)   NOT NULL,
     model_id           VARCHAR(128)   NOT NULL,
     state              VARCHAR(16)    NOT NULL,
     thinking           BOOLEAN        NOT NULL,
@@ -33,8 +31,6 @@ CREATE TABLE t_sessions (
 COMMENT ON TABLE t_sessions IS '会话主表，保存会话元数据和当前路径末端';
 COMMENT ON COLUMN t_sessions.id IS '会话的唯一 ID，用于关联该会话的历史记录、序号和汇总数据';
 COMMENT ON COLUMN t_sessions.agent_id IS '创建会话时固定且不可变的 Agent 标识';
-COMMENT ON COLUMN t_sessions.owner_id IS '创建该会话的公司调用方标识，用于资源级授权';
-COMMENT ON COLUMN t_sessions.bundle_revision IS '创建会话时固定的 Agent 发布快照修订号';
 COMMENT ON COLUMN t_sessions.model_id IS '后续用户事件默认使用的当前模型标识';
 COMMENT ON COLUMN t_sessions.state IS '会话粗粒度运行状态，仅允许 idle 或 running';
 COMMENT ON COLUMN t_sessions.thinking IS '后续用户事件是否启用深度思考';
@@ -54,9 +50,6 @@ CREATE INDEX idx_t_sessions_cwd
 
 CREATE INDEX idx_t_sessions_parent
     ON t_sessions (parent_session_id);
-
-CREATE INDEX idx_t_sessions_owner
-    ON t_sessions (owner_id);
 
 ALTER TABLE t_sessions
     ADD CONSTRAINT ck_t_sessions_state CHECK (state IN ('idle', 'running'));

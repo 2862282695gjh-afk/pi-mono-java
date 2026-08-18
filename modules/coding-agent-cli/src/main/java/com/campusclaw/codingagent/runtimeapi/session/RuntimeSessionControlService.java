@@ -4,18 +4,19 @@
 
 package com.campusclaw.codingagent.runtimeapi.session;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.concurrent.CompletableFuture;
 
 import com.campusclaw.ai.types.UserMessage;
-import com.campusclaw.codingagent.runtimeapi.auth.CallerAuthContext;
 import com.campusclaw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
 import com.campusclaw.codingagent.runtimeapi.persistence.RuntimeSessionRepository;
 import com.campusclaw.codingagent.runtimeapi.runtime.RuntimeActiveExecution;
+import com.campusclaw.codingagent.runtimeapi.runtime.RuntimeExecutionProperties;
 import com.campusclaw.codingagent.runtimeapi.runtime.RuntimeSessionEngineRegistry;
 import com.campusclaw.codingagent.runtimeapi.runtime.RuntimeSessionHolder;
 import com.campusclaw.codingagent.runtimeapi.vo.ControlMessageAcceptedResponseVO;
@@ -42,30 +43,32 @@ public class RuntimeSessionControlService {
 
     private final Clock clock;
 
+    private final RuntimeExecutionProperties properties;
+
     public RuntimeSessionControlService(
             RuntimeSessionRepository repository,
             RuntimeSessionEngineRegistry engineRegistry,
             Validator validator,
-            Clock clock) {
+            Clock clock,
+            RuntimeExecutionProperties properties) {
         this.repository = repository;
         this.engineRegistry = engineRegistry;
         this.validator = validator;
         this.clock = clock;
+        this.properties = properties;
     }
 
-    public ControlMessageAcceptedResponseVO steer(
-            String sessionId, CallerAuthContext caller, ControlMessageRequestVO request) {
-        return accept(sessionId, caller, request, ControlKind.STEER);
+    public ControlMessageAcceptedResponseVO steer(String sessionId, ControlMessageRequestVO request) {
+        return accept(sessionId, request, ControlKind.STEER);
     }
 
-    public ControlMessageAcceptedResponseVO followUp(
-            String sessionId, CallerAuthContext caller, ControlMessageRequestVO request) {
-        return accept(sessionId, caller, request, ControlKind.FOLLOW_UP);
+    public ControlMessageAcceptedResponseVO followUp(String sessionId, ControlMessageRequestVO request) {
+        return accept(sessionId, request, ControlKind.FOLLOW_UP);
     }
 
-    public void abort(String sessionId, CallerAuthContext caller) {
+    public void abort(String sessionId) {
         try {
-            prepareAbort(sessionId, caller).join();
+            prepareAbort(sessionId).join();
         } catch (RuntimeApiException error) {
             throw error;
         } catch (RuntimeException error) {
@@ -75,19 +78,16 @@ public class RuntimeSessionControlService {
     }
 
     private ControlMessageAcceptedResponseVO accept(
-            String sessionId, CallerAuthContext caller, ControlMessageRequestVO request, ControlKind kind) {
+            String sessionId, ControlMessageRequestVO request, ControlKind kind) {
         requireValid(request, kind.invalidRequest());
         engineRegistry.lockOperation(sessionId);
         try {
-            RuntimeSessionDTO session = requireOwnedSession(sessionId, caller);
+            RuntimeSessionDTO session = requireSession(sessionId);
             RuntimeSessionHolder holder = requireRunningHolder(session);
-            requireAcceptingExecution(holder);
+            RuntimeActiveExecution execution = requireAcceptingExecution(holder);
             UserMessage message = new UserMessage(request.getMessage(), clock.millis());
-            if (kind == ControlKind.STEER) {
-                holder.agent().steer(message);
-            } else {
-                holder.agent().followUp(message);
-            }
+            long bytes = request.getMessage().getBytes(StandardCharsets.UTF_8).length;
+            queueControl(holder, execution, message, bytes, kind);
             return new ControlMessageAcceptedResponseVO(sessionId, now());
         } catch (RuntimeApiException error) {
             throw error;
@@ -98,10 +98,10 @@ public class RuntimeSessionControlService {
         }
     }
 
-    private CompletableFuture<Void> prepareAbort(String sessionId, CallerAuthContext caller) {
+    private CompletableFuture<Void> prepareAbort(String sessionId) {
         engineRegistry.lockOperation(sessionId);
         try {
-            RuntimeSessionDTO session = requireOwnedSession(sessionId, caller);
+            RuntimeSessionDTO session = requireSession(sessionId);
             if ("idle".equals(session.getState())) {
                 engineRegistry.find(sessionId).ifPresent(this::clearControlQueues);
                 return CompletableFuture.completedFuture(null);
@@ -118,18 +118,10 @@ public class RuntimeSessionControlService {
         }
     }
 
-    private RuntimeSessionDTO requireOwnedSession(String sessionId, CallerAuthContext caller) {
-        RuntimeSessionDTO session = repository
+    private RuntimeSessionDTO requireSession(String sessionId) {
+        return repository
                 .find(sessionId)
                 .orElseThrow(() -> new RuntimeApiException(HttpStatus.NOT_FOUND, RuntimeErrorCode.SESSION_NOT_FOUND));
-        if (!session.getOwnerId().equals(caller.callerId())) {
-            throw new RuntimeApiException(
-                    HttpStatus.FORBIDDEN,
-                    RuntimeErrorCode.FORBIDDEN,
-                    "当前调用方无权控制该 Session。",
-                    "The caller is not allowed to control this Session.");
-        }
-        return session;
     }
 
     private RuntimeSessionHolder requireRunningHolder(RuntimeSessionDTO session) {
@@ -150,6 +142,28 @@ public class RuntimeSessionControlService {
         return execution;
     }
 
+    private void queueControl(
+            RuntimeSessionHolder holder,
+            RuntimeActiveExecution execution,
+            UserMessage message,
+            long bytes,
+            ControlKind kind) {
+        if (!execution.queueControl(
+                message, bytes, properties.getMaxControlMessages(), properties.getMaxControlBytes())) {
+            throw new RuntimeApiException(HttpStatus.TOO_MANY_REQUESTS, RuntimeErrorCode.CONTROL_QUEUE_FULL);
+        }
+        try {
+            if (kind == ControlKind.STEER) {
+                holder.agent().steer(message);
+            } else {
+                holder.agent().followUp(message);
+            }
+        } catch (RuntimeException error) {
+            execution.removeQueuedControl(message);
+            throw error;
+        }
+    }
+
     private void requireValid(ControlMessageRequestVO request, RuntimeErrorCode errorCode) {
         if (request == null || !validator.validate(request).isEmpty()) {
             throw new RuntimeApiException(HttpStatus.BAD_REQUEST, errorCode);
@@ -159,6 +173,7 @@ public class RuntimeSessionControlService {
     private void clearControlQueues(RuntimeSessionHolder holder) {
         holder.agent().clearSteeringQueue();
         holder.agent().clearFollowUpQueue();
+        holder.activeExecution().ifPresent(RuntimeActiveExecution::clearQueuedControls);
     }
 
     private OffsetDateTime now() {

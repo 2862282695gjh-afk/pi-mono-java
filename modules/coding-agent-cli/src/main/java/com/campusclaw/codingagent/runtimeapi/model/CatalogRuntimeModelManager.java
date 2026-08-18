@@ -10,9 +10,9 @@ import java.util.stream.Collectors;
 
 import com.campusclaw.ai.types.Model;
 import com.campusclaw.codingagent.model.ModelCatalogService;
+import com.campusclaw.codingagent.runtimeapi.agent.AgentDirectorySnapshotDTO;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
-import com.campusclaw.codingagent.runtimeapi.template.AgentRuntimeSnapshotDTO;
 
 import org.springframework.http.HttpStatus;
 
@@ -30,12 +30,12 @@ public class CatalogRuntimeModelManager implements RuntimeModelManager {
     }
 
     @Override
-    public Model resolveDefaultModel(AgentRuntimeSnapshotDTO snapshot) {
+    public Model resolveDefaultModel(AgentDirectorySnapshotDTO snapshot) {
         return resolveModel(snapshot, snapshot.defaultModelId());
     }
 
     @Override
-    public Model resolveModel(AgentRuntimeSnapshotDTO snapshot, String modelId) {
+    public Model resolveModel(AgentDirectorySnapshotDTO snapshot, String modelId) {
         try {
             if (!snapshot.enabledModelIds().contains(modelId)) {
                 throw new RuntimeApiException(
@@ -54,7 +54,7 @@ public class CatalogRuntimeModelManager implements RuntimeModelManager {
     }
 
     @Override
-    public List<String> listAvailableModels(AgentRuntimeSnapshotDTO snapshot) {
+    public List<String> listAvailableModels(AgentDirectorySnapshotDTO snapshot) {
         try {
             Set<String> available = modelCatalogService.getAvailableModels().stream()
                     .map(Model::id)

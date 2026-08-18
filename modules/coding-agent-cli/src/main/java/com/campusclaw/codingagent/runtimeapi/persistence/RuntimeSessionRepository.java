@@ -22,8 +22,7 @@ public interface RuntimeSessionRepository {
 
     Optional<RuntimeSessionDTO> find(String sessionId);
 
-    UserEventAcceptance acceptUserEvent(
-            String sessionId, String ownerId, RuntimeEntryDTO entry, OffsetDateTime acceptedAt);
+    UserEventAcceptance acceptUserEvent(String sessionId, RuntimeEntryDTO entry, OffsetDateTime acceptedAt);
 
     RuntimeEntryDTO appendEntry(RuntimeEntryDTO entry);
 
@@ -33,16 +32,15 @@ public interface RuntimeSessionRepository {
 
     SessionConfigurationUpdate updateModel(
             String sessionId,
-            String ownerId,
             long expectedVersion,
             String modelId,
             boolean modelSupportsThinking,
             OffsetDateTime updatedAt);
 
     SessionConfigurationUpdate updateThinking(
-            String sessionId, String ownerId, long expectedVersion, boolean thinking, OffsetDateTime updatedAt);
+            String sessionId, long expectedVersion, boolean thinking, OffsetDateTime updatedAt);
 
-    boolean beginDeletion(String sessionId, OffsetDateTime deletedAt);
+    SessionDeletionStatus beginDeletion(String sessionId, OffsetDateTime deletedAt);
 
     Optional<String> claimCleanupTask(OffsetDateTime now, OffsetDateTime staleBefore);
 

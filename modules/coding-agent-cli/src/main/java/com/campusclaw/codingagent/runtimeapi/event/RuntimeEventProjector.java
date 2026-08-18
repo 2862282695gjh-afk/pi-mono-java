@@ -26,6 +26,7 @@ import com.campusclaw.ai.types.ToolResultMessage;
 import com.campusclaw.ai.types.UserMessage;
 import com.campusclaw.codingagent.runtimeapi.dto.RuntimeEntryDTO;
 import com.campusclaw.codingagent.runtimeapi.persistence.RuntimeSessionRepository;
+import com.campusclaw.codingagent.runtimeapi.runtime.RuntimeActiveExecution;
 import com.campusclaw.codingagent.runtimeapi.vo.RuntimeSseEventVO;
 
 /**
@@ -49,11 +50,13 @@ public class RuntimeEventProjector {
 
     private final Runnable abort;
 
+    private final RuntimeActiveExecution execution;
+
+    private final UserMessage initialUserMessage;
+
     private final AtomicReference<Throwable> failure = new AtomicReference<>();
 
     private String assistantEntryId;
-
-    private boolean initialUserMessage = true;
 
     private StopReason terminalReason = StopReason.STOP;
 
@@ -64,7 +67,9 @@ public class RuntimeEventProjector {
             RuntimeEntryIdGenerator idGenerator,
             RuntimeEventStream stream,
             Clock clock,
-            Runnable abort) {
+            Runnable abort,
+            RuntimeActiveExecution execution,
+            UserMessage initialUserMessage) {
         this.sessionId = sessionId;
         this.repository = repository;
         this.codec = codec;
@@ -72,6 +77,8 @@ public class RuntimeEventProjector {
         this.stream = stream;
         this.clock = clock;
         this.abort = abort;
+        this.execution = execution;
+        this.initialUserMessage = initialUserMessage;
     }
 
     public synchronized void onEvent(AgentEvent event) {
@@ -151,10 +158,10 @@ public class RuntimeEventProjector {
     }
 
     private void persistQueuedUser(UserMessage message) {
-        if (initialUserMessage) {
-            initialUserMessage = false;
+        if (message == initialUserMessage) {
             return;
         }
+        execution.controlDelivered(message);
         String text = message.content().stream()
                 .filter(TextContent.class::isInstance)
                 .map(TextContent.class::cast)

@@ -10,10 +10,14 @@ import com.campusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
-import org.springframework.web.reactive.function.server.ServerRequest;
+
+import jakarta.servlet.http.HttpServletRequest;
 
 /**
- * 按互斥规则解析并校验 JWT 或 APPKEY 请求头。
+ * 按互斥规则解析 JWT 或 APPKEY 请求头。
+ *
+ * <p>CampusClaw 位于受控内部网络中，仅校验凭据 Header 形状；JWT 与 APPKEY 的
+ * 真实性由上游 mate-service 负责，不在此处重复实现公司算法。
  *
  * @version [br_eCampusCore 25.1.0_Next, 2026/08/18]
  * @since [br_eCampusCore 25.1.0_Next]
@@ -24,50 +28,49 @@ public class RuntimeRequestAuthenticator {
 
     public static final String HEADER_HW_APPKEY = "X-HW-APPKEY";
 
-    private final RuntimeCredentialVerifier verifier;
-
-    public RuntimeRequestAuthenticator(RuntimeCredentialVerifier verifier) {
-        this.verifier = verifier;
-    }
-
-    public CallerAuthContext authenticate(ServerRequest request) {
-        String callerId = trim(request.headers().firstHeader(HEADER_HW_ID));
-        String authorization = trim(request.headers().firstHeader(HttpHeaders.AUTHORIZATION));
-        String appKey = trim(request.headers().firstHeader(HEADER_HW_APPKEY));
+    public CallerAuthContext authenticate(HttpServletRequest request) {
+        String credentialId = singleHeader(request, HEADER_HW_ID);
+        String authorization = singleHeader(request, HttpHeaders.AUTHORIZATION);
+        String appKey = singleHeader(request, HEADER_HW_APPKEY);
         if (authorization != null && appKey != null) {
             throw error(RuntimeErrorCode.AUTH_CREDENTIAL_CONFLICT);
         }
-        if (callerId == null) {
+        if (credentialId == null) {
             throw error(RuntimeErrorCode.UNAUTHENTICATED);
         }
         if (authorization != null) {
-            return authenticateJwt(callerId, authorization);
+            return authenticateJwt(credentialId, authorization);
         }
-        if (appKey != null && verifier.verifyAppKey(callerId, appKey)) {
-            return new CallerAuthContext(callerId, CredentialMode.APPKEY);
+        if (appKey != null) {
+            return new CallerAuthContext(credentialId, CredentialMode.APPKEY);
         }
         throw error(RuntimeErrorCode.UNAUTHENTICATED);
     }
 
-    private CallerAuthContext authenticateJwt(String callerId, String authorization) {
-        if (!authorization.startsWith("Bearer ") || authorization.length() == 7) {
+    private CallerAuthContext authenticateJwt(String credentialId, String authorization) {
+        if (authorization.length() <= 7 || !authorization.regionMatches(true, 0, "Bearer ", 0, 7)) {
             throw error(RuntimeErrorCode.UNAUTHENTICATED);
         }
         String token = authorization.substring(7).trim();
-        if (!verifier.verifyJwt(callerId, token)) {
+        if (token.isEmpty()) {
             throw error(RuntimeErrorCode.UNAUTHENTICATED);
         }
-        return new CallerAuthContext(callerId, CredentialMode.JWT);
+        return new CallerAuthContext(credentialId, CredentialMode.JWT);
     }
 
     private static RuntimeApiException error(RuntimeErrorCode code) {
         return new RuntimeApiException(HttpStatus.UNAUTHORIZED, code);
     }
 
-    private static String trim(String value) {
-        if (value == null || value.isBlank()) {
+    private static String singleHeader(HttpServletRequest request, String name) {
+        java.util.List<String> values = java.util.Collections.list(request.getHeaders(name));
+        if (values.size() > 1) {
+            throw error(RuntimeErrorCode.UNAUTHENTICATED);
+        }
+        if (values.isEmpty()) {
             return null;
         }
-        return value.trim();
+        String value = values.getFirst();
+        return value == null || value.isBlank() ? null : value.trim();
     }
 }

@@ -21,7 +21,6 @@ public record UserEventAcceptance(Status status, RuntimeSessionDTO session) {
     public enum Status {
         ACCEPTED,
         NOT_FOUND,
-        FORBIDDEN,
         BUSY
     }
 }

@@ -8,7 +8,7 @@ import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
 
 import com.huawei.hicampus.mate.matecampusclaw.agent.Agent;
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.template.AgentRuntimeSnapshotDTO;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.agent.AgentDirectorySnapshotDTO;
 
 /**
  * 单个 Runtime Session 的进程内执行对象。
@@ -19,13 +19,13 @@ import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.template.A
 public class RuntimeSessionHolder {
     private final String sessionId;
 
-    private final AgentRuntimeSnapshotDTO snapshot;
+    private final AgentDirectorySnapshotDTO snapshot;
 
     private final Agent agent;
 
     private final AtomicReference<RuntimeActiveExecution> activeExecution = new AtomicReference<>();
 
-    public RuntimeSessionHolder(String sessionId, AgentRuntimeSnapshotDTO snapshot, Agent agent) {
+    public RuntimeSessionHolder(String sessionId, AgentDirectorySnapshotDTO snapshot, Agent agent) {
         this.sessionId = sessionId;
         this.snapshot = snapshot;
         this.agent = agent;
@@ -35,7 +35,7 @@ public class RuntimeSessionHolder {
         return sessionId;
     }
 
-    public AgentRuntimeSnapshotDTO snapshot() {
+    public AgentDirectorySnapshotDTO snapshot() {
         return snapshot;
     }
 
@@ -47,8 +47,8 @@ public class RuntimeSessionHolder {
         return activeExecution.compareAndSet(null, execution);
     }
 
-    public void complete(RuntimeActiveExecution execution) {
-        activeExecution.compareAndSet(execution, null);
+    public boolean complete(RuntimeActiveExecution execution) {
+        return activeExecution.compareAndSet(execution, null);
     }
 
     public Optional<RuntimeActiveExecution> activeExecution() {

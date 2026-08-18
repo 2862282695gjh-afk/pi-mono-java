@@ -4,32 +4,30 @@
 
 package com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.runtime;
 
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.locks.ReentrantLock;
 
 import com.huawei.hicampus.mate.matecampusclaw.agent.Agent;
 import com.huawei.hicampus.mate.matecampusclaw.agent.queue.MessageQueue.DeliveryMode;
-import com.huawei.hicampus.mate.matecampusclaw.agent.tool.AgentTool;
 import com.huawei.hicampus.mate.matecampusclaw.ai.CampusClawAiService;
 import com.huawei.hicampus.mate.matecampusclaw.ai.types.Message;
 import com.huawei.hicampus.mate.matecampusclaw.ai.types.Model;
 import com.huawei.hicampus.mate.matecampusclaw.ai.types.ThinkingLevel;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.agent.AgentDirectorySnapshotDTO;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.agent.RuntimeAgentPromptLoader;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.template.AgentRuntimeSnapshotDTO;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.ops.ReadOperations;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.read.ReadTool;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 
 /**
- * 管理 Runtime Session 进程内 Agent 对象的注册表。
- *
- * <p>Spring 应用先创建该 Bean，ServerMode 启动前再注入实际 AI Service 和工具集合。
+ * 仅保存活动执行 Agent 的进程内注册表，不缓存 idle Session。
  *
  * @version [br_eCampusCore 25.1.0_Next, 2026/08/18]
  * @since [br_eCampusCore 25.1.0_Next]
@@ -44,27 +42,52 @@ public class RuntimeSessionEngineRegistry {
 
     private final CampusClawAiService aiService;
 
-    private final List<AgentTool> tools;
+    private final ReadOperations readOperations;
 
-    public RuntimeSessionEngineRegistry(CampusClawAiService aiService, List<AgentTool> tools) {
+    private final RuntimeAgentPromptLoader promptLoader;
+
+    private final Semaphore capacity;
+
+    public RuntimeSessionEngineRegistry(
+            CampusClawAiService aiService,
+            ReadOperations readOperations,
+            RuntimeAgentPromptLoader promptLoader,
+            RuntimeExecutionProperties properties) {
         this.aiService = aiService;
-        this.tools = List.copyOf(tools);
+        this.readOperations = readOperations;
+        this.promptLoader = promptLoader;
+        this.capacity = new Semaphore(properties.getMaxActive());
     }
 
-    public RuntimeSessionHolder initialize(
-            String sessionId, AgentRuntimeSnapshotDTO snapshot, Model model, boolean thinking) {
-        Agent agent = createAgent(aiService, snapshot, model, thinking);
-        var holder = new RuntimeSessionHolder(sessionId, snapshot, agent);
-        RuntimeSessionHolder existing = sessions.putIfAbsent(sessionId, holder);
-        if (existing != null) {
-            throw new RuntimeApiException(
-                    HttpStatus.INTERNAL_SERVER_ERROR, RuntimeErrorCode.SESSION_INITIALIZATION_FAILED);
+    public RuntimeSessionHolder register(
+            String sessionId,
+            AgentDirectorySnapshotDTO snapshot,
+            Model model,
+            boolean thinking,
+            List<Message> messages,
+            RuntimeActiveExecution execution) {
+        acquireCapacity();
+        try {
+            RuntimeSessionHolder holder = createHolder(sessionId, snapshot, model, thinking, messages, execution);
+            if (sessions.putIfAbsent(sessionId, holder) != null) {
+                throw new RuntimeApiException(HttpStatus.CONFLICT, RuntimeErrorCode.SESSION_BUSY);
+            }
+            return holder;
+        } catch (RuntimeException error) {
+            capacity.release();
+            throw error;
         }
-        return holder;
     }
 
     public Optional<RuntimeSessionHolder> find(String sessionId) {
         return Optional.ofNullable(sessions.get(sessionId));
+    }
+
+    public void complete(RuntimeSessionHolder holder, RuntimeActiveExecution execution) {
+        holder.complete(execution);
+        if (sessions.remove(holder.sessionId(), holder)) {
+            capacity.release();
+        }
     }
 
     public void lockOperation(String sessionId) {
@@ -75,45 +98,37 @@ public class RuntimeSessionEngineRegistry {
         operationLock(sessionId).unlock();
     }
 
-    public RuntimeSessionHolder restore(
-            String sessionId, AgentRuntimeSnapshotDTO snapshot, Model model, boolean thinking, List<Message> messages) {
-        return sessions.computeIfAbsent(sessionId, ignored -> {
-            Agent agent = createAgent(aiService, snapshot, model, thinking);
-            agent.replaceMessages(messages);
-            return new RuntimeSessionHolder(sessionId, snapshot, agent);
-        });
-    }
-
-    public void abortAndRemove(String sessionId) {
-        RuntimeSessionHolder holder = sessions.remove(sessionId);
-        if (holder == null) {
-            return;
+    private RuntimeSessionHolder createHolder(
+            String sessionId,
+            AgentDirectorySnapshotDTO snapshot,
+            Model model,
+            boolean thinking,
+            List<Message> messages,
+            RuntimeActiveExecution execution) {
+        Agent agent = createAgent(snapshot, model, thinking);
+        agent.replaceMessages(messages);
+        RuntimeSessionHolder holder = new RuntimeSessionHolder(sessionId, snapshot, agent);
+        if (!holder.begin(execution)) {
+            throw new IllegalStateException("new execution holder is already active");
         }
-        holder.agent().abort();
+        return holder;
     }
 
-    private Agent createAgent(
-            CampusClawAiService service, AgentRuntimeSnapshotDTO snapshot, Model model, boolean thinking) {
-        Agent agent = new Agent(service);
+    private Agent createAgent(AgentDirectorySnapshotDTO snapshot, Model model, boolean thinking) {
+        Agent agent = new Agent(aiService);
         agent.setModel(model);
-        agent.setSystemPrompt(readSystemPrompt(snapshot.runtimeDirectory()));
-        agent.setTools(tools);
+        agent.setSystemPrompt(promptLoader.load(snapshot.agentDirectory()));
+        agent.setTools(List.of(new ReadTool(readOperations, snapshot.agentDirectory())));
         agent.setThinkingLevel(thinking ? ThinkingLevel.MEDIUM : ThinkingLevel.OFF);
         agent.setSteeringMode(DeliveryMode.ONE_AT_A_TIME);
         agent.setFollowUpMode(DeliveryMode.ONE_AT_A_TIME);
         return agent;
     }
 
-    private static String readSystemPrompt(Path runtimeDirectory) {
-        Path promptFile = runtimeDirectory.resolve(".campusagent/SYSTEM.md");
-        if (!Files.isRegularFile(promptFile)) {
-            return "";
-        }
-        try {
-            return Files.readString(promptFile);
-        } catch (IOException error) {
+    private void acquireCapacity() {
+        if (!capacity.tryAcquire()) {
             throw new RuntimeApiException(
-                    HttpStatus.INTERNAL_SERVER_ERROR, RuntimeErrorCode.SESSION_INITIALIZATION_FAILED, error);
+                    HttpStatus.SERVICE_UNAVAILABLE, RuntimeErrorCode.RUNTIME_CAPACITY_EXCEEDED);
         }
     }
 

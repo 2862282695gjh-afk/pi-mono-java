@@ -17,10 +17,8 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 /**
- * Auto-configuration wiring the Mate tool client and the two Mate AgentTools.
- * Enabled when {@code mate.tool.enabled=true} (default enabled); set to
- * {@code false} to exclude {@code listMateTool}/{@code callMateTool} from the
- * agent tool list.
+ * 装配 Mate Tool 客户端及两个 AgentTool，保持默认启用语义，并允许通过
+ * {@code mate.tool.enabled=false} 显式关闭。
  *
  * @version [br_eCampusCore 26.0.0, 2026/08/17]
  * @since [br_eCampusCore 26.0.0]
@@ -31,9 +29,10 @@ import org.springframework.context.annotation.Configuration;
 public class MateToolAutoConfiguration {
 
     /**
-     * Creates the Mate HTTP client when no other bean provides one.
+     * 在容器没有自定义 Mate Tool 客户端时创建 HTTP 客户端。
      *
-     * @return the HTTP Mate tool client
+     * @param properties Mate Tool 配置
+     * @return Mate Tool HTTP 客户端
      */
     @Bean
     @ConditionalOnMissingBean(MateToolClient.class)
@@ -42,11 +41,11 @@ public class MateToolAutoConfiguration {
     }
 
     /**
-     * Creates the callMateTool AgentTool bean.
+     * 创建 callMateTool 工具。
      *
-     * @param client the Mate tool client
-     * @param properties Mate tool configuration properties
-     * @return the CallMateTool bean
+     * @param client Mate Tool 客户端
+     * @param properties Mate Tool 配置
+     * @return callMateTool 工具
      */
     @Bean
     public CallMateTool callMateTool(MateToolClient client, MateToolProperties properties) {
@@ -55,12 +54,11 @@ public class MateToolAutoConfiguration {
     }
 
     /**
-     * Creates the listMateTool AgentTool bean sharing the client and cache with
-     * callMateTool.
+     * 创建与 callMateTool 共享客户端和元数据缓存的 listMateTool 工具。
      *
-     * @param client the Mate tool client
-     * @param callMateTool the callMateTool bean (shares meta cache and credentials)
-     * @return the ListMateTool bean
+     * @param client Mate Tool 客户端
+     * @param callMateTool 共享缓存和凭据的 callMateTool 工具
+     * @return listMateTool 工具
      */
     @Bean
     public ListMateTool listMateTool(MateToolClient client, CallMateTool callMateTool) {

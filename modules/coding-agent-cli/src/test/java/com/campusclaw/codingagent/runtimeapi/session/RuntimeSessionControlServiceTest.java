@@ -16,18 +16,18 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.time.Duration;
 import java.util.Optional;
 
 import com.campusclaw.agent.Agent;
 import com.campusclaw.ai.types.UserMessage;
-import com.campusclaw.codingagent.runtimeapi.auth.CallerAuthContext;
-import com.campusclaw.codingagent.runtimeapi.auth.CredentialMode;
 import com.campusclaw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
 import com.campusclaw.codingagent.runtimeapi.event.RuntimeEventStream;
 import com.campusclaw.codingagent.runtimeapi.persistence.RuntimeSessionRepository;
 import com.campusclaw.codingagent.runtimeapi.runtime.RuntimeActiveExecution;
+import com.campusclaw.codingagent.runtimeapi.runtime.RuntimeExecutionProperties;
 import com.campusclaw.codingagent.runtimeapi.runtime.RuntimeSessionEngineRegistry;
 import com.campusclaw.codingagent.runtimeapi.runtime.RuntimeSessionHolder;
 import com.campusclaw.codingagent.runtimeapi.vo.ControlMessageRequestVO;
@@ -47,8 +47,6 @@ import jakarta.validation.Validation;
 class RuntimeSessionControlServiceTest {
     private static final String SESSION_ID = "session_control";
 
-    private static final String OWNER_ID = "mate-service";
-
     private RuntimeSessionRepository repository;
 
     private RuntimeSessionEngineRegistry engines;
@@ -59,6 +57,8 @@ class RuntimeSessionControlServiceTest {
 
     private RuntimeActiveExecution execution;
 
+    private RuntimeExecutionProperties properties;
+
     private RuntimeSessionControlService service;
 
     @BeforeEach
@@ -67,21 +67,24 @@ class RuntimeSessionControlServiceTest {
         engines = mock(RuntimeSessionEngineRegistry.class);
         agent = mock(Agent.class);
         holder = new RuntimeSessionHolder(SESSION_ID, null, agent);
-        execution = new RuntimeActiveExecution(new RuntimeEventStream());
+        execution = new RuntimeActiveExecution(new RuntimeEventStream(
+                256, 1024L * 1024L, Duration.ofSeconds(15), event -> 1L));
         assertThat(holder.begin(execution)).isTrue();
         when(engines.find(SESSION_ID)).thenReturn(Optional.of(holder));
+        properties = new RuntimeExecutionProperties();
         service = new RuntimeSessionControlService(
                 repository,
                 engines,
                 Validation.buildDefaultValidatorFactory().getValidator(),
-                Clock.fixed(Instant.parse("2026-08-18T07:10:00Z"), ZoneOffset.UTC));
+                Clock.fixed(Instant.parse("2026-08-18T07:10:00Z"), ZoneOffset.UTC),
+                properties);
     }
 
     @Test
     void acceptsSteerIntoCurrentExecutionWithoutPersistingIt() throws Exception {
         when(repository.find(SESSION_ID)).thenReturn(Optional.of(session("running")));
 
-        var result = service.steer(SESSION_ID, caller(), request("先只分析异常订单"));
+        var result = service.steer(SESSION_ID, request("先只分析异常订单"));
 
         assertThat(result.getSessionId()).isEqualTo(SESSION_ID);
         assertThat(result.getAcceptedAt()).isEqualTo(OffsetDateTime.parse("2026-08-18T07:10:00Z"));
@@ -93,7 +96,7 @@ class RuntimeSessionControlServiceTest {
     void acceptsFollowUpIntoLowerPriorityQueue() throws Exception {
         when(repository.find(SESSION_ID)).thenReturn(Optional.of(session("running")));
 
-        service.followUp(SESSION_ID, caller(), request("完成后再给出摘要"));
+        service.followUp(SESSION_ID, request("完成后再给出摘要"));
 
         verify(agent).followUp(any(UserMessage.class));
         verify(agent, never()).steer(any());
@@ -103,7 +106,7 @@ class RuntimeSessionControlServiceTest {
     void rejectsControlMessageWhenSessionIsIdle() throws Exception {
         when(repository.find(SESSION_ID)).thenReturn(Optional.of(session("idle")));
 
-        assertThatThrownBy(() -> service.steer(SESSION_ID, caller(), request("继续")))
+        assertThatThrownBy(() -> service.steer(SESSION_ID, request("继续")))
                 .isInstanceOfSatisfying(RuntimeApiException.class, error -> assertThat(error.errorCode())
                         .isEqualTo(RuntimeErrorCode.SESSION_NOT_RUNNING));
     }
@@ -113,7 +116,7 @@ class RuntimeSessionControlServiceTest {
         when(repository.find(SESSION_ID)).thenReturn(Optional.of(session("running")));
         execution.requestAbort();
 
-        assertThatThrownBy(() -> service.followUp(SESSION_ID, caller(), request("继续")))
+        assertThatThrownBy(() -> service.followUp(SESSION_ID, request("继续")))
                 .isInstanceOfSatisfying(RuntimeApiException.class, error -> assertThat(error.errorCode())
                         .isEqualTo(RuntimeErrorCode.SESSION_NOT_RUNNING));
     }
@@ -122,7 +125,7 @@ class RuntimeSessionControlServiceTest {
     void rejectsBlankSteerWithEndpointSpecificCode() throws Exception {
         when(repository.find(SESSION_ID)).thenReturn(Optional.of(session("running")));
 
-        assertThatThrownBy(() -> service.steer(SESSION_ID, caller(), request("   ")))
+        assertThatThrownBy(() -> service.steer(SESSION_ID, request("   ")))
                 .isInstanceOfSatisfying(RuntimeApiException.class, error -> assertThat(error.errorCode())
                         .isEqualTo(RuntimeErrorCode.INVALID_STEER_REQUEST));
 
@@ -130,11 +133,25 @@ class RuntimeSessionControlServiceTest {
     }
 
     @Test
+    void rejectsControlWhenExecutionQueueReachesConfiguredLimit() throws Exception {
+        when(repository.find(SESSION_ID)).thenReturn(Optional.of(session("running")));
+        properties.setMaxControlMessages(1);
+        service.steer(SESSION_ID, request("第一条"));
+
+        assertThatThrownBy(() -> service.followUp(SESSION_ID, request("第二条")))
+                .isInstanceOfSatisfying(RuntimeApiException.class, error -> {
+                    assertThat(error.errorCode()).isEqualTo(RuntimeErrorCode.CONTROL_QUEUE_FULL);
+                    assertThat(error.status().value()).isEqualTo(429);
+                });
+        verify(agent, never()).followUp(any());
+    }
+
+    @Test
     void mapsMissingRunningEngineToAcceptanceFailure() throws Exception {
         when(repository.find(SESSION_ID)).thenReturn(Optional.of(session("running")));
         when(engines.find(SESSION_ID)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> service.followUp(SESSION_ID, caller(), request("继续")))
+        assertThatThrownBy(() -> service.followUp(SESSION_ID, request("继续")))
                 .isInstanceOfSatisfying(RuntimeApiException.class, error -> assertThat(error.errorCode())
                         .isEqualTo(RuntimeErrorCode.FOLLOW_UP_ACCEPTANCE_FAILED));
     }
@@ -144,7 +161,7 @@ class RuntimeSessionControlServiceTest {
         when(repository.find(SESSION_ID)).thenReturn(Optional.of(session("running")));
         execution.complete(null);
 
-        service.abort(SESSION_ID, caller());
+        service.abort(SESSION_ID);
 
         assertThat(execution.abortRequested()).isTrue();
         verify(agent).clearSteeringQueue();
@@ -156,38 +173,20 @@ class RuntimeSessionControlServiceTest {
     void abortIsNoOpForIdleSession() {
         when(repository.find(SESSION_ID)).thenReturn(Optional.of(session("idle")));
 
-        service.abort(SESSION_ID, caller());
+        service.abort(SESSION_ID);
 
         verify(agent).clearSteeringQueue();
         verify(agent).clearFollowUpQueue();
         verify(agent, never()).abort();
     }
 
-    @Test
-    void usesControlSpecificForbiddenMessage() throws Exception {
-        RuntimeSessionDTO session = session("running");
-        session.setOwnerId("different-owner");
-        when(repository.find(SESSION_ID)).thenReturn(Optional.of(session));
-
-        assertThatThrownBy(() -> service.steer(SESSION_ID, caller(), request("继续")))
-                .isInstanceOfSatisfying(RuntimeApiException.class, error -> {
-                    assertThat(error.errorCode()).isEqualTo(RuntimeErrorCode.FORBIDDEN);
-                    assertThat(error.localizedMessage(true)).isEqualTo("当前调用方无权控制该 Session。");
-                });
-    }
-
     private static ControlMessageRequestVO request(String message) throws Exception {
         return new ObjectMapper().readValue("{\"message\":\"" + message + "\"}", ControlMessageRequestVO.class);
-    }
-
-    private static CallerAuthContext caller() {
-        return new CallerAuthContext(OWNER_ID, CredentialMode.JWT);
     }
 
     private static RuntimeSessionDTO session(String state) {
         RuntimeSessionDTO session = new RuntimeSessionDTO();
         session.setId(SESSION_ID);
-        session.setOwnerId(OWNER_ID);
         session.setState(state);
         return session;
     }

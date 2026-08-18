@@ -11,13 +11,15 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeoutException;
 
-import com.campusclaw.ai.types.ContentBlock;
+import com.campusclaw.ai.types.Message;
+import com.campusclaw.ai.types.Model;
 import com.campusclaw.ai.types.StopReason;
-import com.campusclaw.ai.types.TextContent;
 import com.campusclaw.ai.types.UserMessage;
-import com.campusclaw.codingagent.runtimeapi.auth.CallerAuthContext;
+import com.campusclaw.codingagent.runtimeapi.agent.AgentDirectoryResolver;
 import com.campusclaw.codingagent.runtimeapi.dto.RuntimeEntryDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeApiException;
@@ -26,18 +28,19 @@ import com.campusclaw.codingagent.runtimeapi.model.RuntimeModelManager;
 import com.campusclaw.codingagent.runtimeapi.persistence.RuntimeSessionRepository;
 import com.campusclaw.codingagent.runtimeapi.persistence.UserEventAcceptance;
 import com.campusclaw.codingagent.runtimeapi.runtime.RuntimeActiveExecution;
+import com.campusclaw.codingagent.runtimeapi.runtime.RuntimeExecutionProperties;
+import com.campusclaw.codingagent.runtimeapi.runtime.RuntimeExecutionTimeoutScheduler;
 import com.campusclaw.codingagent.runtimeapi.runtime.RuntimeSessionEngineRegistry;
 import com.campusclaw.codingagent.runtimeapi.runtime.RuntimeSessionHolder;
-import com.campusclaw.codingagent.runtimeapi.template.AgentRuntimeSnapshotProvider;
 import com.campusclaw.codingagent.runtimeapi.vo.EventPageResponseVO;
 import com.campusclaw.codingagent.runtimeapi.vo.RuntimeSseEventVO;
 import com.campusclaw.codingagent.runtimeapi.vo.UserEventRequestVO;
 
+import org.springframework.context.MessageSource;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
 import jakarta.validation.Validator;
-import reactor.core.publisher.Flux;
 
 /**
  * user.message 执行、公共事件投影与当前分支历史分页的业务 Service。
@@ -51,7 +54,7 @@ public class RuntimeEventService {
 
     private static final int MAX_LIMIT = 200;
 
-    private static final int RESTORE_LIMIT = 1_000_000;
+    private static final int RESTORE_BATCH_SIZE = 500;
 
     private final RuntimeSessionRepository repository;
 
@@ -59,17 +62,23 @@ public class RuntimeEventService {
 
     private final RuntimeEntryIdGenerator idGenerator;
 
-    private final RuntimeFileResolver fileResolver;
-
-    private final AgentRuntimeSnapshotProvider snapshotProvider;
+    private final AgentDirectoryResolver agentDirectoryResolver;
 
     private final RuntimeModelManager modelManager;
 
     private final RuntimeSessionEngineRegistry engineRegistry;
 
+    private final RuntimeExecutionTimeoutScheduler timeoutScheduler;
+
     private final RuntimeEventCursorCodec cursorCodec;
 
+    private final RuntimeEventProperties eventProperties;
+
+    private final RuntimeExecutionProperties executionProperties;
+
     private final Validator validator;
+
+    private final MessageSource messageSource;
 
     private final Clock clock;
 
@@ -77,49 +86,49 @@ public class RuntimeEventService {
             RuntimeSessionRepository repository,
             RuntimeEntryCodec codec,
             RuntimeEntryIdGenerator idGenerator,
-            RuntimeFileResolver fileResolver,
-            AgentRuntimeSnapshotProvider snapshotProvider,
+            AgentDirectoryResolver agentDirectoryResolver,
             RuntimeModelManager modelManager,
             RuntimeSessionEngineRegistry engineRegistry,
+            RuntimeExecutionTimeoutScheduler timeoutScheduler,
             RuntimeEventCursorCodec cursorCodec,
+            RuntimeEventProperties eventProperties,
+            RuntimeExecutionProperties executionProperties,
             Validator validator,
+            MessageSource messageSource,
             Clock clock) {
         this.repository = repository;
         this.codec = codec;
         this.idGenerator = idGenerator;
-        this.fileResolver = fileResolver;
-        this.snapshotProvider = snapshotProvider;
+        this.agentDirectoryResolver = agentDirectoryResolver;
         this.modelManager = modelManager;
         this.engineRegistry = engineRegistry;
+        this.timeoutScheduler = timeoutScheduler;
         this.cursorCodec = cursorCodec;
+        this.eventProperties = eventProperties;
+        this.executionProperties = executionProperties;
         this.validator = validator;
+        this.messageSource = messageSource;
         this.clock = clock;
     }
 
-    public Flux<RuntimeSseEventVO> submit(
-            String sessionId, CallerAuthContext caller, UserEventRequestVO request, boolean chinese) {
+    public RuntimeEventStream submit(String sessionId, UserEventRequestVO request, boolean chinese) {
         try {
-            return prepareAndSubmit(sessionId, caller, request, chinese);
+            return prepareAndSubmit(sessionId, validate(request), chinese);
         } catch (RuntimeApiException error) {
             throw error;
         } catch (RuntimeException error) {
-            throw mapAcceptanceError(error);
+            throw new RuntimeApiException(
+                    HttpStatus.INTERNAL_SERVER_ERROR, RuntimeErrorCode.EVENT_ACCEPTANCE_FAILED, error);
         }
     }
 
-    public EventPageResponseVO list(String sessionId, CallerAuthContext caller, String limitValue, String page) {
+    public EventPageResponseVO list(String sessionId, String limitValue, String page) {
         try {
             int limit = parseLimit(limitValue);
-            requireOwnedSession(sessionId, caller, false);
+            requireSession(sessionId);
             long afterSeq = page == null ? 0 : cursorCodec.decode(page, sessionId);
             List<RuntimeEntryDTO> entries = repository.listCurrentBranch(sessionId, afterSeq, limit + 1);
-            boolean more = entries.size() > limit;
-            List<RuntimeEntryDTO> pageEntries = more ? entries.subList(0, limit) : entries;
-            List<java.util.Map<String, Object>> events =
-                    pageEntries.stream().map(codec::toHistoryEvent).toList();
-            String nextPage =
-                    more ? cursorCodec.encode(sessionId, pageEntries.getLast().getEntrySeq()) : null;
-            return new EventPageResponseVO(events, nextPage);
+            return pageOf(sessionId, entries, limit);
         } catch (RuntimeApiException error) {
             throw error;
         } catch (RuntimeException error) {
@@ -127,55 +136,46 @@ public class RuntimeEventService {
         }
     }
 
-    private Flux<RuntimeSseEventVO> prepareAndSubmit(
-            String sessionId, CallerAuthContext caller, UserEventRequestVO request, boolean chinese) {
-        ValidatedUserEvent validated = validate(request);
-        RuntimeSessionDTO session = requireOwnedSession(sessionId, caller, true);
-        List<ContentBlock> fileContent = fileResolver.resolve(sessionId, validated.fileIds());
-        UserMessage userMessage = toUserMessage(validated.message(), fileContent);
-        RuntimeActiveExecution execution = new RuntimeActiveExecution(new RuntimeEventStream());
-        RuntimeSessionHolder holder = null;
+    private RuntimeEventStream prepareAndSubmit(
+            String sessionId, ValidatedUserEvent request, boolean chinese) {
         engineRegistry.lockOperation(sessionId);
+        RuntimeSessionHolder holder = null;
+        RuntimeActiveExecution execution = null;
         try {
-            RuntimeSessionDTO current = requireOwnedSession(sessionId, caller, true);
-            holder = requireEngine(current);
-            if (!holder.begin(execution)) {
-                throw new RuntimeApiException(HttpStatus.CONFLICT, RuntimeErrorCode.SESSION_BUSY);
-            }
-            return acceptAndStart(sessionId, caller, validated, userMessage, chinese, holder, execution);
+            RuntimeSessionDTO session = requireIdleSession(sessionId);
+            var snapshot = agentDirectoryResolver.resolve(session.getAgentId());
+            Model model = modelManager.resolveModel(snapshot, session.getModelId());
+            List<Message> history = restoreHistory(sessionId, model);
+            UserMessage message = codec.toUserMessage(request.message(), request.fileIds(), clock.millis());
+            execution = new RuntimeActiveExecution(newEventStream());
+            holder = engineRegistry.register(
+                    sessionId, snapshot, model, session.isThinking(), history, execution);
+            acceptUserEntry(sessionId, request, execution);
+            startAgent(holder, execution, message, chinese);
+            return execution.eventStream();
         } catch (RuntimeException error) {
-            if (holder != null) {
-                holder.complete(execution);
-            }
+            releaseUnacceptedExecution(holder, execution);
             throw error;
         } finally {
             engineRegistry.unlockOperation(sessionId);
         }
     }
 
-    private Flux<RuntimeSseEventVO> acceptAndStart(
-            String sessionId,
-            CallerAuthContext caller,
-            ValidatedUserEvent validated,
-            UserMessage message,
-            boolean chinese,
-            RuntimeSessionHolder holder,
-            RuntimeActiveExecution execution) {
-        OffsetDateTime now = now();
-        RuntimeEntryDTO userEntry =
-                codec.userEntry(sessionId, idGenerator.nextId(), validated.message(), validated.fileIds(), now);
-        UserEventAcceptance acceptance = repository.acceptUserEvent(sessionId, caller.callerId(), userEntry, now);
+    private void acceptUserEntry(
+            String sessionId, ValidatedUserEvent request, RuntimeActiveExecution execution) {
+        RuntimeEntryDTO entry = codec.userEntry(
+                sessionId, idGenerator.nextId(), request.message(), request.fileIds(), now());
+        UserEventAcceptance acceptance = repository.acceptUserEvent(sessionId, entry, now());
         requireAccepted(acceptance);
-        execution
-                .eventStream()
-                .emit(new RuntimeSseEventVO(
-                        Long.toString(userEntry.getEntrySeq()), userEntry.getType(), codec.toSseData(userEntry)));
-        startAgent(holder, execution, message, chinese);
-        return execution.eventStream().flux();
+        execution.eventStream().emit(new RuntimeSseEventVO(
+                Long.toString(entry.getEntrySeq()), entry.getType(), codec.toSseData(entry)));
     }
 
     private void startAgent(
-            RuntimeSessionHolder holder, RuntimeActiveExecution execution, UserMessage message, boolean chinese) {
+            RuntimeSessionHolder holder,
+            RuntimeActiveExecution execution,
+            UserMessage message,
+            boolean chinese) {
         RuntimeEventProjector projector = new RuntimeEventProjector(
                 holder.sessionId(),
                 repository,
@@ -183,10 +183,13 @@ public class RuntimeEventService {
                 idGenerator,
                 execution.eventStream(),
                 clock,
-                holder.agent()::abort);
+                holder.agent()::abort,
+                execution,
+                message);
         Runnable unsubscribe = () -> {};
         try {
             unsubscribe = holder.agent().subscribe(projector::onEvent);
+            scheduleTimeout(holder, execution);
             CompletableFuture<Void> future = holder.agent().prompt(message);
             Runnable finalUnsubscribe = unsubscribe;
             future.whenComplete(
@@ -194,6 +197,22 @@ public class RuntimeEventService {
         } catch (RuntimeException error) {
             finishAgent(holder, execution, projector, unsubscribe, error, chinese);
         }
+    }
+
+    private void scheduleTimeout(RuntimeSessionHolder holder, RuntimeActiveExecution execution) {
+        var task = timeoutScheduler.schedule(
+                () -> timeoutExecution(holder, execution), executionProperties.getMaxDuration());
+        execution.setTimeoutTask(task);
+    }
+
+    private void timeoutExecution(RuntimeSessionHolder holder, RuntimeActiveExecution execution) {
+        if (!holder.activeExecution().filter(active -> active == execution).isPresent()) {
+            return;
+        }
+        execution.requestTimeout();
+        holder.agent().clearSteeringQueue();
+        holder.agent().clearFollowUpQueue();
+        holder.agent().abort();
     }
 
     private void finishAgent(
@@ -205,10 +224,9 @@ public class RuntimeEventService {
             boolean chinese) {
         engineRegistry.lockOperation(holder.sessionId());
         try {
-            if (continueQueuedExecution(holder, execution, projector, unsubscribe, executionError, chinese)) {
-                return;
+            if (!continueQueuedExecution(holder, execution, projector, executionError, chinese, unsubscribe)) {
+                completeExecution(holder, execution, projector, unsubscribe, executionError, chinese);
             }
-            completeExecution(holder, execution, projector, unsubscribe, executionError, chinese);
         } finally {
             engineRegistry.unlockOperation(holder.sessionId());
         }
@@ -218,26 +236,34 @@ public class RuntimeEventService {
             RuntimeSessionHolder holder,
             RuntimeActiveExecution execution,
             RuntimeEventProjector projector,
-            Runnable unsubscribe,
             Throwable executionError,
-            boolean chinese) {
-        if (executionError != null
-                || projector.failure() != null
-                || projector.terminalReason() == StopReason.ERROR
-                || projector.terminalReason() == StopReason.ABORTED
-                || !execution.acceptingControls()
-                || !holder.agent().hasQueuedControlMessages()) {
+            boolean chinese,
+            Runnable unsubscribe) {
+        if (!canContinue(holder, execution, projector, executionError)) {
             return false;
         }
-        CompletableFuture<Void> future;
         try {
-            future = holder.agent().continueQueuedExecution();
+            holder.agent()
+                    .continueQueuedExecution()
+                    .whenComplete((unused, error) ->
+                            finishAgent(holder, execution, projector, unsubscribe, error, chinese));
         } catch (RuntimeException error) {
             completeExecution(holder, execution, projector, unsubscribe, error, chinese);
-            return true;
         }
-        future.whenComplete((unused, error) -> finishAgent(holder, execution, projector, unsubscribe, error, chinese));
         return true;
+    }
+
+    private static boolean canContinue(
+            RuntimeSessionHolder holder,
+            RuntimeActiveExecution execution,
+            RuntimeEventProjector projector,
+            Throwable executionError) {
+        return executionError == null
+                && projector.failure() == null
+                && projector.terminalReason() != StopReason.ERROR
+                && projector.terminalReason() != StopReason.ABORTED
+                && execution.acceptingControls()
+                && holder.agent().hasQueuedControlMessages();
     }
 
     private void completeExecution(
@@ -248,74 +274,114 @@ public class RuntimeEventService {
             Throwable executionError,
             boolean chinese) {
         execution.closeControls();
-        Throwable failure = finishPersistence(holder, executionError, projector);
-        StopReason reason = execution.abortRequested() ? StopReason.ABORTED : projector.terminalReason();
-        failure = emitTerminalEvents(execution.eventStream(), reason, failure, chinese);
-        cleanupExecution(holder, execution, unsubscribe, failure);
+        Throwable failure = executionFailure(execution, executionError, projector);
+        failure = finishPersistence(holder.sessionId(), failure);
+        failure = releaseExecution(holder, execution, unsubscribe, failure);
+        emitTerminalEvents(execution.eventStream(), execution, projector.terminalReason(), failure, chinese);
+        execution.eventStream().complete();
+        execution.complete(failure);
     }
 
-    private Throwable emitTerminalEvents(
-            RuntimeEventStream stream, StopReason reason, Throwable failure, boolean chinese) {
-        try {
-            if (failure != null || reason == StopReason.ERROR) {
-                emitStreamError(stream, chinese);
-            } else {
-                emitSuccessfulEnd(stream, reason);
-            }
-            return failure;
-        } catch (RuntimeException streamError) {
-            return failure != null ? failure : streamError;
+    private static Throwable executionFailure(
+            RuntimeActiveExecution execution, Throwable executionError, RuntimeEventProjector projector) {
+        if (execution.timedOut()) {
+            return new TimeoutException("runtime execution exceeded its maximum duration");
         }
+        return executionError != null ? executionError : projector.failure();
     }
 
-    private static void cleanupExecution(
-            RuntimeSessionHolder holder, RuntimeActiveExecution execution, Runnable unsubscribe, Throwable failure) {
-        Throwable terminalFailure = failure;
+    private Throwable finishPersistence(String sessionId, Throwable failure) {
         try {
-            unsubscribe.run();
-        } catch (RuntimeException unsubscribeError) {
-            terminalFailure = terminalFailure != null ? terminalFailure : unsubscribeError;
-        } finally {
-            holder.complete(execution);
-            try {
-                execution.eventStream().complete();
-            } finally {
-                execution.complete(terminalFailure);
-            }
-        }
-    }
-
-    private Throwable finishPersistence(
-            RuntimeSessionHolder holder, Throwable executionError, RuntimeEventProjector projector) {
-        Throwable failure = executionError != null ? executionError : projector.failure();
-        try {
-            repository.finishExecution(holder.sessionId(), now());
+            repository.finishExecution(sessionId, now());
             return failure;
         } catch (RuntimeException persistenceError) {
             return persistenceError;
         }
     }
 
-    private RuntimeSessionHolder requireEngine(RuntimeSessionDTO session) {
-        return engineRegistry.find(session.getId()).orElseGet(() -> {
-            var snapshot = snapshotProvider.resolveRevision(session.getAgentId(), session.getBundleRevision());
-            var model = modelManager.resolveModel(snapshot, session.getModelId());
-            var entries = repository.listCurrentBranch(session.getId(), 0, RESTORE_LIMIT);
-            var messages = codec.toAgentMessages(session.getId(), entries, model, fileResolver);
-            return engineRegistry.restore(session.getId(), snapshot, model, session.isThinking(), messages);
-        });
+    private Throwable releaseExecution(
+            RuntimeSessionHolder holder,
+            RuntimeActiveExecution execution,
+            Runnable unsubscribe,
+            Throwable failure) {
+        Throwable result = failure;
+        try {
+            unsubscribe.run();
+        } catch (RuntimeException unsubscribeError) {
+            result = result != null ? result : unsubscribeError;
+        } finally {
+            engineRegistry.complete(holder, execution);
+        }
+        return result;
     }
 
-    private RuntimeSessionDTO requireOwnedSession(String sessionId, CallerAuthContext caller, boolean submitOperation) {
-        RuntimeSessionDTO session = repository
+    private void emitTerminalEvents(
+            RuntimeEventStream stream,
+            RuntimeActiveExecution execution,
+            StopReason reason,
+            Throwable failure,
+            boolean chinese) {
+        if (failure != null || reason == StopReason.ERROR || execution.timedOut()) {
+            emitStreamError(stream, chinese);
+            return;
+        }
+        stream.emit(new RuntimeSseEventVO(null, "session.status.idle", java.util.Map.of("status", "idle")));
+        String value = execution.abortRequested() || reason == StopReason.ABORTED ? "aborted" : "completed";
+        stream.emit(new RuntimeSseEventVO(null, "stream.end", java.util.Map.of("reason", value)));
+    }
+
+    private void emitStreamError(RuntimeEventStream stream, boolean chinese) {
+        RuntimeErrorCode code = RuntimeErrorCode.SESSION_EXECUTION_FAILED;
+        Locale locale = chinese ? Locale.SIMPLIFIED_CHINESE : Locale.US;
+        LinkedHashMap<String, Object> data = new LinkedHashMap<>();
+        data.put("resCode", code.name());
+        data.put("resMsg", messageSource.getMessage(code.messageKey(), null, locale));
+        stream.emit(new RuntimeSseEventVO(null, "stream.error", data));
+    }
+
+    private List<Message> restoreHistory(String sessionId, Model model) {
+        List<RuntimeEntryDTO> entries = new ArrayList<>();
+        long afterSeq = 0L;
+        while (true) {
+            List<RuntimeEntryDTO> batch = repository.listCurrentBranch(
+                    sessionId, afterSeq, RESTORE_BATCH_SIZE);
+            entries.addAll(batch);
+            if (batch.size() < RESTORE_BATCH_SIZE) {
+                break;
+            }
+            afterSeq = batch.getLast().getEntrySeq();
+        }
+        return codec.toAgentMessages(entries, model);
+    }
+
+    private EventPageResponseVO pageOf(String sessionId, List<RuntimeEntryDTO> entries, int limit) {
+        boolean more = entries.size() > limit;
+        List<RuntimeEntryDTO> pageEntries = more ? entries.subList(0, limit) : entries;
+        List<java.util.Map<String, Object>> events = pageEntries.stream()
+                .map(codec::toHistoryEvent)
+                .toList();
+        String nextPage = more ? cursorCodec.encode(sessionId, pageEntries.getLast().getEntrySeq()) : null;
+        return new EventPageResponseVO(events, nextPage);
+    }
+
+    private RuntimeEventStream newEventStream() {
+        return new RuntimeEventStream(
+                eventProperties.getStreamBufferEvents(),
+                eventProperties.getStreamBufferBytes(),
+                eventProperties.getHeartbeatInterval(),
+                codec::encodedSseBytes);
+    }
+
+    private RuntimeSessionDTO requireSession(String sessionId) {
+        return repository
                 .find(sessionId)
                 .orElseThrow(() -> new RuntimeApiException(HttpStatus.NOT_FOUND, RuntimeErrorCode.SESSION_NOT_FOUND));
-        if (!session.getOwnerId().equals(caller.callerId())) {
-            String chinese = submitOperation ? "当前调用方无权向该 Session 提交用户事件。" : "当前调用方无权读取该 Session 的持久化事件。";
-            String english = submitOperation
-                    ? "The caller is not allowed to submit an event to this Session."
-                    : "The caller is not allowed to read this Session's persisted events.";
-            throw new RuntimeApiException(HttpStatus.FORBIDDEN, RuntimeErrorCode.FORBIDDEN, chinese, english);
+    }
+
+    private RuntimeSessionDTO requireIdleSession(String sessionId) {
+        RuntimeSessionDTO session = requireSession(sessionId);
+        if (!"idle".equals(session.getState())) {
+            throw new RuntimeApiException(HttpStatus.CONFLICT, RuntimeErrorCode.SESSION_BUSY);
         }
         return session;
     }
@@ -334,26 +400,20 @@ public class RuntimeEventService {
         return new ValidatedUserEvent(message, fileIds);
     }
 
-    private UserMessage toUserMessage(String message, List<ContentBlock> fileContent) {
-        List<ContentBlock> content = new ArrayList<>();
-        if (message != null) {
-            content.add(new TextContent(message));
-        }
-        content.addAll(fileContent);
-        return new UserMessage(List.copyOf(content), clock.millis());
-    }
-
     private static void requireAccepted(UserEventAcceptance acceptance) {
         switch (acceptance.status()) {
             case ACCEPTED -> {}
             case NOT_FOUND -> throw new RuntimeApiException(HttpStatus.NOT_FOUND, RuntimeErrorCode.SESSION_NOT_FOUND);
-            case FORBIDDEN ->
-                throw new RuntimeApiException(
-                        HttpStatus.FORBIDDEN,
-                        RuntimeErrorCode.FORBIDDEN,
-                        "当前调用方无权向该 Session 提交用户事件。",
-                        "The caller is not allowed to submit an event to this Session.");
             case BUSY -> throw new RuntimeApiException(HttpStatus.CONFLICT, RuntimeErrorCode.SESSION_BUSY);
+        }
+    }
+
+    private void releaseUnacceptedExecution(
+            RuntimeSessionHolder holder, RuntimeActiveExecution execution) {
+        if (holder != null && execution != null) {
+            engineRegistry.complete(holder, execution);
+            execution.eventStream().complete();
+            execution.complete(null);
         }
     }
 
@@ -374,27 +434,6 @@ public class RuntimeEventService {
 
     private static RuntimeApiException invalidEventRequest() {
         return new RuntimeApiException(HttpStatus.BAD_REQUEST, RuntimeErrorCode.INVALID_EVENT_REQUEST);
-    }
-
-    private static RuntimeApiException mapAcceptanceError(RuntimeException error) {
-        if (error instanceof RuntimeApiException apiError) {
-            return apiError;
-        }
-        return new RuntimeApiException(
-                HttpStatus.INTERNAL_SERVER_ERROR, RuntimeErrorCode.EVENT_ACCEPTANCE_FAILED, error);
-    }
-
-    private static void emitStreamError(RuntimeEventStream stream, boolean chinese) {
-        LinkedHashMap<String, Object> data = new LinkedHashMap<>();
-        data.put("resCode", RuntimeErrorCode.SESSION_EXECUTION_FAILED.name());
-        data.put("resMsg", RuntimeErrorCode.SESSION_EXECUTION_FAILED.message(chinese));
-        stream.emit(new RuntimeSseEventVO(null, "stream.error", data));
-    }
-
-    private static void emitSuccessfulEnd(RuntimeEventStream stream, StopReason reason) {
-        stream.emit(new RuntimeSseEventVO(null, "session.status.idle", java.util.Map.of("status", "idle")));
-        String value = reason == StopReason.ABORTED ? "aborted" : "completed";
-        stream.emit(new RuntimeSseEventVO(null, "stream.end", java.util.Map.of("reason", value)));
     }
 
     private OffsetDateTime now() {

@@ -20,10 +20,6 @@ public class RuntimeSessionDTO {
 
     private String agentId;
 
-    private String ownerId;
-
-    private String bundleRevision;
-
     private String modelId;
 
     private String state;

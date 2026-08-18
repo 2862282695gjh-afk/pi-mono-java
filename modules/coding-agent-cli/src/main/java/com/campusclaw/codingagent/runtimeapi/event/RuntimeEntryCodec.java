@@ -24,6 +24,7 @@ import com.campusclaw.ai.types.ToolResultMessage;
 import com.campusclaw.ai.types.Usage;
 import com.campusclaw.ai.types.UserMessage;
 import com.campusclaw.codingagent.runtimeapi.dto.RuntimeEntryDTO;
+import com.campusclaw.codingagent.runtimeapi.vo.RuntimeSseEventVO;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -101,38 +102,57 @@ public class RuntimeEntryCodec {
         return result;
     }
 
-    public List<Message> toAgentMessages(
-            String sessionId, List<RuntimeEntryDTO> entries, Model model, RuntimeFileResolver fileResolver) {
+    public long encodedSseBytes(RuntimeSseEventVO event) {
+        try {
+            return objectMapper.writeValueAsBytes(event).length;
+        } catch (Exception error) {
+            throw new IllegalStateException("failed to size runtime SSE event", error);
+        }
+    }
+
+    public UserMessage toUserMessage(String message, List<String> fileIds, long timestamp) {
+        return new UserMessage(List.of(new TextContent(toAgentPrompt(message, fileIds))), timestamp);
+    }
+
+    public List<Message> toAgentMessages(List<RuntimeEntryDTO> entries, Model model) {
         List<Message> messages = new ArrayList<>();
         for (RuntimeEntryDTO entry : entries) {
-            messages.add(toAgentMessage(sessionId, entry, model, fileResolver));
+            messages.add(toAgentMessage(entry, model));
         }
         return List.copyOf(messages);
     }
 
-    private Message toAgentMessage(
-            String sessionId, RuntimeEntryDTO entry, Model model, RuntimeFileResolver fileResolver) {
+    private Message toAgentMessage(RuntimeEntryDTO entry, Model model) {
         JsonNode payload = readPayload(entry.getPayload());
         return switch (entry.getType()) {
-            case "user.message" -> userMessage(sessionId, entry, payload, fileResolver);
+            case "user.message" -> userMessage(entry, payload);
             case "assistant.message.completed" -> assistantMessage(entry, payload, model);
             case "tool.result" -> toolResultMessage(entry, payload);
             default -> throw new IllegalArgumentException("unsupported runtime entry type: " + entry.getType());
         };
     }
 
-    private UserMessage userMessage(
-            String sessionId, RuntimeEntryDTO entry, JsonNode payload, RuntimeFileResolver fileResolver) {
-        List<ContentBlock> content = new ArrayList<>();
+    private UserMessage userMessage(RuntimeEntryDTO entry, JsonNode payload) {
         JsonNode message = payload.get("message");
-        if (message != null && message.isTextual()) {
-            content.add(new TextContent(message.asText()));
-        }
+        String text = message != null && message.isTextual() ? message.asText() : null;
         List<String> fileIds = new ArrayList<>();
         payload.path("file_ids").forEach(file -> fileIds.add(file.asText()));
-        content.addAll(fileResolver.resolve(sessionId, fileIds));
-        return new UserMessage(
-                List.copyOf(content), entry.getTimestamp().toInstant().toEpochMilli());
+        return toUserMessage(text, fileIds, entry.getTimestamp().toInstant().toEpochMilli());
+    }
+
+    private static String toAgentPrompt(String message, List<String> fileIds) {
+        StringBuilder prompt = new StringBuilder();
+        if (message != null) {
+            prompt.append(message);
+        }
+        if (!fileIds.isEmpty()) {
+            if (!prompt.isEmpty()) {
+                prompt.append("\n\n");
+            }
+            prompt.append("[File IDs]");
+            fileIds.forEach(fileId -> prompt.append("\n- file_id: ").append(fileId));
+        }
+        return prompt.toString();
     }
 
     private AssistantMessage assistantMessage(RuntimeEntryDTO entry, JsonNode payload, Model model) {
