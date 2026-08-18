@@ -26,6 +26,9 @@ import com.campusclaw.ai.types.Message;
 import com.campusclaw.codingagent.config.AppPaths;
 import com.campusclaw.codingagent.prompt.SystemPromptBuilder;
 import com.campusclaw.codingagent.runtime.AgentRuntimeManager;
+import com.campusclaw.codingagent.runtime.DelegationState;
+import com.campusclaw.codingagent.runtime.DelegationWiring;
+import com.campusclaw.codingagent.runtime.LocalAgentDispatcher;
 import com.campusclaw.codingagent.runtime.PreparedAgentRuntime;
 import com.campusclaw.codingagent.session.AgentSession;
 import com.campusclaw.codingagent.session.SessionConfig;
@@ -74,6 +77,7 @@ public class SessionPool {
     private final SettingsManager settingsManager;
     private final AgentRuntimeManager agentRuntimeManager;
     private final String defaultAgentId;
+    private final LocalAgentDispatcher delegationDispatcher;
 
     private final Map<String, Entry> sessions = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, CompletableFuture<AgentSession>> inFlightCreations =
@@ -230,6 +234,40 @@ public class SessionPool {
             AgentRuntimeManager agentRuntimeManager,
             String defaultAgentId,
             Function<Settings.ToolsSettings, ToolSelection> toolSelectionResolver) {
+        this(
+                aiService,
+                modelRegistry,
+                promptBuilder,
+                tools,
+                toolCatalog,
+                toolSelection,
+                baseConfig,
+                sandboxParser,
+                useSandbox,
+                persistenceEnabled,
+                settingsManager,
+                agentRuntimeManager,
+                defaultAgentId,
+                toolSelectionResolver,
+                null);
+    }
+
+    public SessionPool(
+            CampusClawAiService aiService,
+            ModelRegistry modelRegistry,
+            SystemPromptBuilder promptBuilder,
+            List<AgentTool> tools,
+            ToolCatalog toolCatalog,
+            ToolSelection toolSelection,
+            SessionConfig baseConfig,
+            SandboxSkillParser sandboxParser,
+            boolean useSandbox,
+            boolean persistenceEnabled,
+            SettingsManager settingsManager,
+            AgentRuntimeManager agentRuntimeManager,
+            String defaultAgentId,
+            Function<Settings.ToolsSettings, ToolSelection> toolSelectionResolver,
+            LocalAgentDispatcher delegationDispatcher) {
         this.aiService = aiService;
         this.modelRegistry = modelRegistry;
         this.promptBuilder = promptBuilder;
@@ -245,6 +283,7 @@ public class SessionPool {
         this.settingsManager = settingsManager;
         this.agentRuntimeManager = agentRuntimeManager;
         this.defaultAgentId = defaultAgentId;
+        this.delegationDispatcher = delegationDispatcher;
 
         this.cleaner = Executors.newSingleThreadScheduledExecutor(r -> {
             var t = new Thread(r, "session-pool-cleaner");
@@ -576,18 +615,16 @@ public class SessionPool {
         Path absoluteCwd = configuredCwd.toAbsolutePath().normalize();
         sessionConfig = new SessionConfig(
                 sessionConfig.model(), absoluteCwd, sessionConfig.customPrompt(), sessionConfig.mode());
+        var skillLoader = new SkillLoader(sandboxParser, useSandbox);
+        var skillExpander = new SkillExpander(sandboxParser, useSandbox);
         AgentSession session = new AgentSession(
-                aiService,
-                modelRegistry,
-                promptBuilder,
-                new SkillLoader(sandboxParser, useSandbox),
-                new SkillExpander(sandboxParser, useSandbox),
-                resolveTools(sessionConfig.cwd()));
+                aiService, modelRegistry, promptBuilder, skillLoader, skillExpander, resolveTools(sessionConfig.cwd()));
         if (toolCatalog != null) {
             session.setToolCatalog(toolCatalog, toolSelection);
         }
         if (preparedRuntime != null) {
             session.setAgentRuntime(preparedRuntime, agentRuntimeManager);
+            applyDelegationState(session, preparedRuntime, conversationId, skillLoader, skillExpander, sessionConfig);
         }
         if (subAgentRegistry != null) {
             session.setSubAgentRegistry(subAgentRegistry);
@@ -621,6 +658,31 @@ public class SessionPool {
         }
 
         return session;
+    }
+
+    private void applyDelegationState(
+            AgentSession session,
+            PreparedAgentRuntime preparedRuntime,
+            String conversationId,
+            SkillLoader skillLoader,
+            SkillExpander skillExpander,
+            SessionConfig sessionConfig) {
+        if (delegationDispatcher == null) {
+            return;
+        }
+        session.setDelegationState(DelegationState.entry(
+                delegationDispatcher,
+                conversationId,
+                null,
+                new DelegationWiring(
+                        aiService,
+                        modelRegistry,
+                        promptBuilder,
+                        skillLoader,
+                        skillExpander,
+                        resolveTools(sessionConfig.cwd()),
+                        toolCatalog,
+                        toolSelection)));
     }
 
     private PreparedAgentRuntime prepareRuntime(String agentId) {
