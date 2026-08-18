@@ -15,6 +15,7 @@ import com.campusclaw.agent.tool.ToolExecutionMode;
 import com.campusclaw.agent.tool.ToolExecutionPipeline;
 import com.campusclaw.ai.types.ToolCall;
 import com.campusclaw.ai.types.ToolResultMessage;
+import com.campusclaw.codingagent.common.client.HttpMateToolClient;
 import com.campusclaw.codingagent.common.client.mate.MateToolClient;
 import com.campusclaw.codingagent.tool.mate.CallMateTool;
 import com.campusclaw.codingagent.tool.mate.ListMateTool;
@@ -61,9 +62,16 @@ class MateToolAutoConfigurationTest {
 
     @Test
     void gatewayAddressReachesTheClient() {
-        runner.run(context -> {
-            assertThat(context).hasSingleBean(MateToolClient.class);
-        });
+        new ApplicationContextRunner()
+                .withConfiguration(AutoConfigurations.of(MateToolAutoConfiguration.class))
+                .withPropertyValues("mate.innerGWSerive=http://gw.example.com:9999")
+                .run(context -> {
+                    assertThat(context).hasSingleBean(MateToolClient.class);
+                    assertThat(context.getBean(MateToolClient.class))
+                            .isInstanceOf(HttpMateToolClient.class)
+                            .extracting("mateInnerGwAddress")
+                            .isEqualTo("http://gw.example.com:9999");
+                });
     }
 
     @Test

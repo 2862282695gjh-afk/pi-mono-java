@@ -5,6 +5,7 @@
 package com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.mate;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
@@ -54,9 +55,10 @@ class ListMateToolTest {
 
     @Test
     void noIdsReturnsEmptyList() throws Exception {
-        listMateTool.execute("t", Map.of(), null, null);
-        assertEquals(null, client.lastListAgentId());
-        assertEquals(null, client.lastListSkillId());
+        var r = listMateTool.execute("t", Map.of(), null, null);
+        assertNull(client.lastListAgentId());
+        assertNull(client.lastListSkillId());
+        assertTrue(asText(r).contains("0 tool(s)"));
     }
 
     private static String asText(com.huawei.hicampus.mate.matecampusclaw.agent.tool.AgentToolResult r) {
