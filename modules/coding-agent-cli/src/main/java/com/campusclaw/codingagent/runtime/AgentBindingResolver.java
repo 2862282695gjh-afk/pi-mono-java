@@ -136,6 +136,10 @@ public final class AgentBindingResolver {
             return new Rejected(Rejection.UNKNOWN_CHILD, targetAgentId);
         }
         ChildAgentMetadata child = metadata.get();
+
+        // CampusMate guarantees bindingAgents only references agents enabled at query
+        // time; this re-check of the child's CURRENT state defends cached parent
+        // snapshots whose child was disabled after materialization.
         if (!child.enabled()) {
             return new Rejected(Rejection.NOT_ENABLED, targetAgentId);
         }

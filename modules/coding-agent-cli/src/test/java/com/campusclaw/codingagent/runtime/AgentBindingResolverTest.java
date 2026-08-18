@@ -39,7 +39,9 @@ class AgentBindingResolverTest {
 
     @Test
     void resolveFiltersDisabledSelfAncestryAndUnknownChildren() {
-        // agent-1 binds enabled agent-2 and disabled agent-4
+        // agent-1 binds agent-2 and agent-4; agent-4's CURRENT snapshot says disabled,
+        // modeling the stale cached binding that NOT_ENABLED defends against
+        // (CampusMate guarantees enabled-only bindings at query time)
         PreparedAgentRuntime entry = agent("agent-1", List.of(binding("agent-2"), binding("agent-4")));
         assertEquals(
                 List.of(new ChildAgentSummary("agent-2", "field-ops", "Field Ops", "Runs field operations", "1.0.0")),
