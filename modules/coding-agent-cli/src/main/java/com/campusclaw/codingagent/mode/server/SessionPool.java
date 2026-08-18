@@ -419,7 +419,7 @@ public class SessionPool {
         var toolsSettings = currentToolsSettings();
         ToolSelection effectiveSelection = resolveSelection(toolsSettings);
         toolSelection = effectiveSelection;
-        var baseRequest = new ToolRefreshRequest(baseConfig.cwd(), toolsSettings);
+        var baseRequest = new ToolRefreshRequest(baseConfig.cwd());
         synchronized (toolCatalog) {
             toolCatalog.refresh(baseRequest);
         }
@@ -593,7 +593,8 @@ public class SessionPool {
         if (toolCatalog == null) {
             return tools;
         }
-        return toolCatalog.resolve(new ToolRefreshRequest(cwd, currentToolsSettings()), toolSelection);
+        toolCatalog.refresh(new ToolRefreshRequest(cwd));
+        return toolCatalog.resolve(toolSelection);
     }
 
     private String normalizeAgentId(String agentId) {

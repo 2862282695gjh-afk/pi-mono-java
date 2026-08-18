@@ -31,7 +31,7 @@ public class ExtensionToolSource implements ToolSource {
         var contributions = new ArrayList<ToolContribution>();
         for (var extension : extensionRegistry.getAll()) {
             for (var tool : extension.tools()) {
-                contributions.add(ToolContribution.add(tool, ToolContributionSource.extension(extension.id()), 200));
+                contributions.add(ToolContribution.add(tool, ToolContributionSource.extension(extension.id())));
             }
         }
         return List.copyOf(contributions);

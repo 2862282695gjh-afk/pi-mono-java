@@ -12,37 +12,45 @@ import java.util.Map;
 import com.campusclaw.agent.tool.AgentTool;
 
 /**
- * Production entry point for resolving effective tools.
+ * Name-index over the {@link AgentTool} beans registered in this process, with
+ * include/exclude/noTools visibility selection. The catalog only indexes Spring
+ * registered tools and in-tree extension contributions; it does not scan user
+ * directories and does not create tools from declarations (ADR-0011).
  *
- * @version [br_eCampusCore 26.0.0, 2026/08/17]
+ * @version [br_eCampusCore 26.0.0, 2026/08/18]
  * @since [br_eCampusCore 26.0.0]
  */
 public interface ToolCatalog {
 
+    /**
+     * Returns the current snapshot without reloading sources.
+     *
+     * @return immutable snapshot
+     */
     Snapshot snapshot();
 
+    /**
+     * Reloads all sources with the current context.
+     *
+     * @return the new snapshot
+     */
     Snapshot refresh();
 
+    /**
+     * Reloads all sources with a refreshed context.
+     *
+     * @param request refresh request carrying the working directory
+     * @return the new snapshot, or the previous snapshot with appended diagnostics when a source failed
+     */
     Snapshot refresh(ToolRefreshRequest request);
 
-    List<AgentTool> resolve(ToolSelection selection);
-
     /**
-     * Resolves tools for one cwd-specific context. Implementations may override this
-     * to avoid changing the shared catalog snapshot.
+     * Resolves visible tools from the current snapshot.
      *
-     * @param request scoped source context
-     * @param selection visibility selection
-     * @return tools resolved for the supplied context
+     * @param selection visibility selection; {@code null} selects all tools
+     * @return tools matching the selection, in registration order
      */
-    default List<AgentTool> resolve(ToolRefreshRequest request, ToolSelection selection) {
-        synchronized (this) {
-            refresh(request);
-            return resolve(selection);
-        }
-    }
-
-    Runnable addChangeListener(ChangeListener listener);
+    List<AgentTool> resolve(ToolSelection selection);
 
     /** Immutable snapshot of the effective tool catalog. */
     record Snapshot(
@@ -56,12 +64,5 @@ public interface ToolCatalog {
             sourcesByName = Collections.unmodifiableMap(new LinkedHashMap<>(sourcesByName));
             diagnostics = List.copyOf(diagnostics);
         }
-    }
-
-    /** Listener notified after a tool catalog snapshot changes. */
-    @FunctionalInterface
-    interface ChangeListener {
-
-        void onToolsChanged(Snapshot previous, Snapshot current);
     }
 }

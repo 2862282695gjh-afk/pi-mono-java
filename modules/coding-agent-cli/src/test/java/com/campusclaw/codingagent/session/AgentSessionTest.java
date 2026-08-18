@@ -457,8 +457,7 @@ class AgentSessionTest {
             when(promptBuilder.build(any())).thenReturn("prompt");
             AgentTool replacement = new StubTool("jira_search", "Search Jira");
             ToolCatalog catalog = mock(ToolCatalog.class);
-            when(catalog.resolve(any(ToolRefreshRequest.class), org.mockito.Mockito.eq(ToolSelection.all())))
-                    .thenReturn(tools, List.of(replacement));
+            when(catalog.resolve(ToolSelection.all())).thenReturn(tools, List.of(replacement));
 
             session.setToolCatalog(catalog, ToolSelection.all());
             session.initialize(config());
@@ -467,10 +466,8 @@ class AgentSessionTest {
             session.reload();
 
             verify(catalog)
-                    .resolve(
-                            org.mockito.ArgumentMatchers.argThat(
-                                    (ToolRefreshRequest request) -> tempDir.equals(request.cwd())),
-                            org.mockito.Mockito.eq(ToolSelection.all()));
+                    .refresh(org.mockito.ArgumentMatchers.argThat(
+                            (ToolRefreshRequest request) -> tempDir.equals(request.cwd())));
             verify(session.getAgent()).setTools(List.of(replacement));
         }
 

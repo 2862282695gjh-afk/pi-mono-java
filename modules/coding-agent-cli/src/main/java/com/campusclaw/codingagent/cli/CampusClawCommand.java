@@ -559,8 +559,7 @@ public class CampusClawCommand implements Callable<Integer> {
         SessionConfig baseConfig = new SessionConfig(effectiveModel, effectiveCwd, effectiveSystemPrompt, mode);
         AgentRuntimeManager runtimeManager = resolveAgentRuntimeManager();
         if ("server".equals(mode)) {
-            List<AgentTool> serverTools =
-                    resolveEffectiveTools(effectiveCwd, toolSelection, settings != null ? settings.tools() : null);
+            List<AgentTool> serverTools = resolveEffectiveTools(effectiveCwd, toolSelection);
             runServerMode(baseConfig, serverTools, toolSelection, useSandbox, runtimeManager);
             return 0;
         }
@@ -575,8 +574,7 @@ public class CampusClawCommand implements Callable<Integer> {
             preparedRuntime = runtimeManager.prepare(agentId);
             config = runtimeManager.sessionConfig(baseConfig, preparedRuntime);
         }
-        List<AgentTool> effectiveTools =
-                resolveEffectiveTools(config.cwd(), toolSelection, settings != null ? settings.tools() : null);
+        List<AgentTool> effectiveTools = resolveEffectiveTools(config.cwd(), toolSelection);
 
         AgentSession session =
                 createAgentSession(effectiveTools, toolSelection, useSandbox, preparedRuntime, runtimeManager);
@@ -725,12 +723,6 @@ public class CampusClawCommand implements Callable<Integer> {
 
     private List<AgentTool> resolveEffectiveTools(Path effectiveCwd, ToolSelection toolSelection) {
         toolCatalog.refresh(new ToolRefreshRequest(effectiveCwd));
-        return toolCatalog.resolve(toolSelection);
-    }
-
-    private List<AgentTool> resolveEffectiveTools(
-            Path effectiveCwd, ToolSelection toolSelection, Settings.ToolsSettings toolsSettings) {
-        toolCatalog.refresh(new ToolRefreshRequest(effectiveCwd, toolsSettings));
         return toolCatalog.resolve(toolSelection);
     }
 

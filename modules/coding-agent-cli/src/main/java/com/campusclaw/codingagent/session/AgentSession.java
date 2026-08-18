@@ -602,7 +602,8 @@ public class AgentSession {
         if (toolCatalog == null) {
             return;
         }
-        tools = List.copyOf(toolCatalog.resolve(new ToolRefreshRequest(cwd), toolSelection));
+        toolCatalog.refresh(new ToolRefreshRequest(cwd));
+        tools = List.copyOf(toolCatalog.resolve(toolSelection));
     }
 
     private void resolveToolsFromCatalogSnapshot() {

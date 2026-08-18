@@ -167,52 +167,13 @@ public record Settings(
             @JsonProperty("enabled") @Nullable Boolean enabled,
             @JsonProperty("include") @Nullable List<String> include,
             @JsonProperty("exclude") @Nullable List<String> exclude,
-            @JsonProperty("noTools") @Nullable Boolean noTools,
-            @JsonProperty("allowProjectTools") @Nullable Boolean allowProjectTools,
-            @JsonProperty("allowUserTools") @Nullable Boolean allowUserTools,
-            @JsonProperty("allowToolReplacement") @Nullable Boolean allowToolReplacement,
-            @JsonProperty("watch") @Nullable ToolWatchSettings watch,
-            @JsonProperty("mcpEnabled") @Nullable Boolean mcpEnabled,
-            @JsonProperty("mcpServers") @Nullable Map<String, McpServerSettings> mcpServers) {
+            @JsonProperty("noTools") @Nullable Boolean noTools) {
 
         public ToolsSettings(
-                @Nullable List<String> include,
-                @Nullable List<String> exclude,
-                @Nullable Boolean noTools,
-                @Nullable ToolWatchSettings watch,
-                @Nullable Map<String, McpServerSettings> mcpServers) {
-            this(null, include, exclude, noTools, null, null, null, watch, null, mcpServers);
-        }
-
-        public ToolsSettings(
-                @Nullable Boolean enabled,
-                @Nullable List<String> include,
-                @Nullable List<String> exclude,
-                @Nullable Boolean noTools,
-                @Nullable ToolWatchSettings watch,
-                @Nullable Map<String, McpServerSettings> mcpServers) {
-            this(enabled, include, exclude, noTools, null, null, null, watch, null, mcpServers);
+                @Nullable List<String> include, @Nullable List<String> exclude, @Nullable Boolean noTools) {
+            this(null, include, exclude, noTools);
         }
     }
-
-    @SuppressWarnings("checkstyle:top_class_comment")
-    @JsonIgnoreProperties(ignoreUnknown = true)
-    public record ToolWatchSettings(@JsonProperty("enabled") @Nullable Boolean enabled) {}
-
-    @SuppressWarnings("checkstyle:top_class_comment")
-    @JsonIgnoreProperties(ignoreUnknown = true)
-    public record McpServerSettings(
-            @JsonProperty("transport") @Nullable String transport,
-            @JsonProperty("command") @Nullable String command,
-            @JsonProperty("args") @Nullable List<String> args,
-            @JsonProperty("url") @Nullable String url,
-            @JsonProperty("enabled") @Nullable Boolean enabled,
-            @JsonProperty("trust") @Nullable String trust,
-            @JsonProperty("namePrefix") @Nullable String namePrefix,
-            @JsonProperty("exposeNames") @Nullable String exposeNames,
-            @JsonProperty("env") @Nullable Map<String, String> env,
-            @JsonProperty("startupTimeoutSeconds") @Nullable Integer startupTimeoutSeconds,
-            @JsonProperty("callTimeoutSeconds") @Nullable Integer callTimeoutSeconds) {}
 
     @SuppressWarnings("checkstyle:top_class_comment")
     public record CompactionSettings(

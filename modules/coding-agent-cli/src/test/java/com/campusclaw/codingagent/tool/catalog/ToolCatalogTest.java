@@ -5,9 +5,7 @@
 package com.campusclaw.codingagent.tool.catalog;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
@@ -51,42 +49,12 @@ class ToolCatalogTest {
     }
 
     @Test
-    void higherPriorityReplaceOverridesLowerPriorityTool() {
-        var builtIn = new TestTool("read");
-        var replacement = new TestTool("read");
-        var catalog = new DefaultToolCatalog(List.of(
-                context -> List.of(ToolContribution.add(builtIn, ToolContributionSource.system("spring"), 100)),
-                context -> List.of(ToolContribution.replace(
-                        replacement, ToolContributionSource.project("project-tools"), 400, "read"))));
-
-        assertThat(catalog.resolve(ToolSelection.all())).containsExactly(replacement);
-        assertThat(catalog.snapshot().diagnostics()).isEmpty();
-    }
-
-    @Test
-    void replacementCanBeDisabledBySourceContext() {
-        var builtIn = new TestTool("read");
-        var replacement = new TestTool("read");
-        var context = new ToolSource.Context(Path.of("."), Path.of("user-tools"), true, true, false, true);
-        var catalog = new DefaultToolCatalog(
-                List.of(
-                        ignored -> List.of(ToolContribution.add(builtIn, ToolContributionSource.system("spring"), 100)),
-                        ignored -> List.of(ToolContribution.replace(
-                                replacement, ToolContributionSource.project("project-tools"), 400, "read"))),
-                context);
-
-        assertThat(catalog.resolve(ToolSelection.all())).containsExactly(builtIn);
-        assertThat(catalog.snapshot().diagnostics())
-                .anySatisfy(message -> assertThat(message).contains("REPLACE", "disabled"));
-    }
-
-    @Test
-    void addConflictKeepsExistingToolAndReportsDiagnostic() {
+    void duplicateNameKeepsFirstToolAndReportsDiagnostic() {
         var first = new TestTool("read");
         var second = new TestTool("read");
         var catalog = new DefaultToolCatalog(List.of(
-                context -> List.of(ToolContribution.add(first, ToolContributionSource.system("spring"), 100)),
-                context -> List.of(ToolContribution.add(second, ToolContributionSource.user("user-tools"), 300))));
+                context -> List.of(ToolContribution.add(first, ToolContributionSource.system("spring"))),
+                context -> List.of(ToolContribution.add(second, ToolContributionSource.extension("dup")))));
 
         assertThat(catalog.resolve(ToolSelection.all())).containsExactly(first);
         assertThat(catalog.snapshot().diagnostics())
@@ -94,104 +62,35 @@ class ToolCatalogTest {
     }
 
     @Test
-    void disableHidesExistingTool() {
-        var read = new TestTool("read");
-        var catalog = new DefaultToolCatalog(List.of(
-                context -> List.of(ToolContribution.add(read, ToolContributionSource.system("spring"), 100)),
-                context -> List.of(
-                        ToolContribution.disable("read", ToolContributionSource.project("project-tools"), 400))));
-
-        assertThat(catalog.resolve(ToolSelection.all())).isEmpty();
-        assertThat(catalog.snapshot().toolsByName()).doesNotContainKey("read");
-    }
-
-    @Test
-    void wrapDecoratesExistingToolWithoutChangingToolNameOrSourceLayer() {
-        var read = new TestTool("read");
-        var catalog = new DefaultToolCatalog(List.of(
-                context -> List.of(ToolContribution.add(read, ToolContributionSource.system("spring"), 100)),
-                context -> List.of(ToolContribution.wrap(
-                        "read", tool -> new WrappedTool(tool), ToolContributionSource.project("project-tools"), 400))));
-
-        AgentTool wrapped = catalog.resolve(ToolSelection.all()).getFirst();
-
-        assertThat(wrapped.name()).isEqualTo("read");
-        assertThat(wrapped.description()).contains("wrapped");
-        assertThat(catalog.snapshot().sourcesByName().get("read").sourceId()).isEqualTo("project-tools");
-    }
-
-    @Test
-    void refreshNotifiesChangeListenersAfterSuccessfulSnapshotSwap() {
-        var first = new TestTool("read");
-        var second = new TestTool("bash");
-        var source =
-                new MutableSource(List.of(ToolContribution.add(first, ToolContributionSource.system("spring"), 100)));
-        var catalog = new DefaultToolCatalog(List.of(source));
-        var notification = new AtomicReference<ToolCatalog.Snapshot>();
-        catalog.addChangeListener((previous, current) -> notification.set(current));
-
-        source.contributions = List.of(ToolContribution.add(second, ToolContributionSource.system("spring"), 100));
-        ToolCatalog.Snapshot refreshed = catalog.refresh();
-
-        assertThat(notification.get()).isSameAs(refreshed);
-        assertThat(refreshed.toolsByName()).containsOnlyKeys("bash");
-    }
-
-    @Test
-    void scopedResolveDoesNotReplaceSharedSnapshotContext() {
-        ToolSource source = context -> List.of(ToolContribution.add(
-                new TestTool(context.cwd().getFileName().toString()),
-                ToolContributionSource.project("project-tools"),
-                400));
-        var catalog = new DefaultToolCatalog(
-                List.of(source), new ToolSource.Context(Path.of("/base"), Path.of("/user-tools")));
-        long sharedVersion = catalog.snapshot().version();
-
-        List<AgentTool> scoped = catalog.resolve(new ToolRefreshRequest(Path.of("/agent-a")), ToolSelection.all());
-
-        assertThat(scoped).extracting(AgentTool::name).containsExactly("agent-a");
-        assertThat(catalog.resolve(ToolSelection.all()))
-                .extracting(AgentTool::name)
-                .containsExactly("base");
-        assertThat(catalog.snapshot().version()).isEqualTo(sharedVersion);
-    }
-
-    @Test
-    void scopedResolveFailsClosedWhenAnySourceFails() {
-        var read = new TestTool("read");
-        ToolSource policy = context -> {
-            if ("agent-a".equals(context.cwd().getFileName().toString())) {
-                throw new IllegalStateException("broken project policy");
-            }
-            return List.of(ToolContribution.disable("read", ToolContributionSource.project("project-tools"), 400));
-        };
-        var catalog = new DefaultToolCatalog(
-                List.of(
-                        context -> List.of(ToolContribution.add(read, ToolContributionSource.system("spring"), 100)),
-                        policy),
-                new ToolSource.Context(Path.of("/base"), Path.of("/user-tools")));
-
-        assertThatThrownBy(() -> catalog.resolve(new ToolRefreshRequest(Path.of("/agent-a")), ToolSelection.all()))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("Scoped tool resolution failed", "broken project policy");
-        assertThat(catalog.resolve(ToolSelection.all())).isEmpty();
-    }
-
-    @Test
-    void globalRefreshResetsOmittedSourceSettingsToDefaults() {
+    void refreshWithRequestUpdatesContextForSources() {
         var observed = new AtomicReference<ToolSource.Context>();
         ToolSource source = context -> {
             observed.set(context);
             return List.of();
         };
-        Path userToolsDir = Path.of("/custom-user-tools");
-        var catalog = new DefaultToolCatalog(
-                List.of(source), new ToolSource.Context(Path.of("/base"), userToolsDir, false, false, false, false));
+        var catalog = new DefaultToolCatalog(List.of(source), new ToolSource.Context(java.nio.file.Path.of("/base")));
 
-        catalog.refresh(new ToolRefreshRequest(Path.of("/next")));
+        catalog.refresh(new ToolRefreshRequest(java.nio.file.Path.of("/next")));
 
-        assertThat(observed.get())
-                .isEqualTo(new ToolSource.Context(Path.of("/next"), userToolsDir, true, true, true, true));
+        assertThat(observed.get()).isEqualTo(new ToolSource.Context(java.nio.file.Path.of("/next")));
+    }
+
+    @Test
+    void sourceFailureKeepsPreviousSnapshotAndAppendsDiagnostic() {
+        var read = new TestTool("read");
+        ToolSource failing = context -> {
+            throw new IllegalStateException("broken source");
+        };
+        var catalog = new DefaultToolCatalog(List.of(
+                context -> List.of(ToolContribution.add(read, ToolContributionSource.system("spring"))), failing));
+        long versionBefore = catalog.snapshot().version();
+
+        ToolCatalog.Snapshot failed = catalog.refresh();
+
+        assertThat(versionBefore).isEqualTo(1L);
+        assertThat(failed.diagnostics())
+                .anySatisfy(message -> assertThat(message).contains("broken source"));
+        assertThat(catalog.resolve(ToolSelection.all())).containsExactly(read);
     }
 
     @Test
@@ -220,19 +119,6 @@ class ToolCatalogTest {
         @Override
         public List<AgentTool> tools() {
             return List.of(tool);
-        }
-    }
-
-    private static final class MutableSource implements ToolSource {
-        private List<ToolContribution> contributions;
-
-        private MutableSource(List<ToolContribution> contributions) {
-            this.contributions = contributions;
-        }
-
-        @Override
-        public List<ToolContribution> load(ToolSource.Context context) {
-            return contributions;
         }
     }
 
@@ -290,39 +176,6 @@ class ToolCatalogTest {
                 CancellationToken signal,
                 AgentToolUpdateCallback onUpdate) {
             return new AgentToolResult(List.of(new TextContent(name)), null);
-        }
-    }
-
-    private record WrappedTool(AgentTool delegate) implements AgentTool {
-
-        @Override
-        public String name() {
-            return delegate.name();
-        }
-
-        @Override
-        public String label() {
-            return delegate.label();
-        }
-
-        @Override
-        public String description() {
-            return "wrapped " + delegate.description();
-        }
-
-        @Override
-        public com.fasterxml.jackson.databind.JsonNode parameters() {
-            return delegate.parameters();
-        }
-
-        @Override
-        public AgentToolResult execute(
-                String toolCallId,
-                Map<String, Object> params,
-                CancellationToken signal,
-                AgentToolUpdateCallback onUpdate)
-                throws Exception {
-            return delegate.execute(toolCallId, params, signal, onUpdate);
         }
     }
 }

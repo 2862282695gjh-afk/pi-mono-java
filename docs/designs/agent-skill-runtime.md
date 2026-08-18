@@ -44,7 +44,7 @@ Agent 可由以下入口指定：
 | `MateServiceClient` | 调用 GetAgentRuntime 和 querySkillInfo，校验业务响应及 Agent/Skill 版本坐标 |
 | `AgentSession` | 同时加载当前托管 Agent 的 Skill 和 `references/tools.json`、构建模型上下文、从统一发现链路选取 `activate_skill` 控制工具、动态更新工具集合 |
 | `SessionPool` | 按 `(agentId, conversationId)` 隔离会话和持久化目录 |
-| `ToolCatalog` | 提供 CampusClaw Pod 内真实可执行的 `AgentTool` 实现，并以不改写共享快照的 scoped resolve 应用各 Agent cwd 与本地工具策略 |
+| `ToolCatalog` | 提供 CampusClaw Pod 内真实可执行的 `AgentTool` 实现：仅索引 Spring 注册的 `AgentTool` 与 in-tree extension 贡献（严格 ADD、首注册者得、无 replace/wrap/disable），配合 include/exclude、`noTools` 的 `ToolSelection` 应用本地工具策略；不扫描用户/项目目录、不接入 MCP、不从声明动态创建工具（ADR-0011） |
 
 ## 3. 架构与数据流
 
@@ -129,7 +129,7 @@ baseTools = 本地工具策略 ∩ permission=allow 的 Agent 级工具
             + 本地工具策略可见的控制工具（如 activate_skill，不受远端 allow 列表约束）
 ```
 
-`activate_skill` 是无状态的 Spring `@Component`（`codingagent/tool/skill`），经 `SpringAgentToolSource → ToolCatalog` 统一发现，随 include/exclude、`noTools`、替换/禁用与热刷新一起管理；非托管会话将其过滤掉。LLM 根据 Skill 头信息调用 `activate_skill(skillName)`。显式 `/skill:skillName` 也先执行相同的查询与激活流程。CampusClaw 随后：
+`activate_skill` 是无状态的 Spring `@Component`（`codingagent/tool/skill`），经 `SpringAgentToolSource → ToolCatalog` 统一发现，随 include/exclude、`noTools` 与热刷新一起管理；非托管会话将其过滤掉。LLM 根据 Skill 头信息调用 `activate_skill(skillName)`。显式 `/skill:skillName` 也先执行相同的查询与激活流程。CampusClaw 随后：
 
 1. 无状态控制工具只校验参数并返回确认文本；真正的激活副作用由会话级 after-tool-call handler 执行——handler 挂在 `Agent.setAfterToolCall` 上，识别 `activate_skill` 调用后完成下述步骤，并用 Skill 指令覆盖工具结果内容。
 
@@ -223,7 +223,7 @@ sequenceDiagram
 
 - **安全**：`agentId`、`conversationId`、Skill name 和资源文件名都采用受限单路径段格式；资源 `fileType` 仅允许 `md|txt`；非法值、路径穿越、重复目标文件和 Agent 缓存路径中的符号链接直接拒绝。绑定 Skill 数、资源文件数、单文件和累计字节数均有上限；本地 `SKILL.md` 与资源文件必须和 `skill.json` 快照完全一致。Skill 工具元数据按 ID/名称校验，实际工具仍须同时存在于 CLI 可见范围和 Spring ToolCatalog 中。Agent 级基础工具继续应用 Agent 权限与禁止列表，Skill 级工具则按 `tools.json` 的完整列表解析；运行时缓存物化和会话持久化属于 CampusClaw 内部写入，不是 LLM 工具。
 - **一致性**：冷启动先验证 GetAgentRuntime 的直接绑定坐标与每个 querySkillInfo 响应的 id/version，再在临时目录写全并原子移动；既有半成品 fail closed，不做原地拼接。激活只有在本地 Skill 内容和全部本地工具解析成功后才一次性更新工具集合。
-- **并发**：同一 session 同时只允许一个 prompt 持有可变上下文。工具热重载在 turn 执行期间延迟，空闲时按各 Agent 的 cwd 分别解析；scoped resolve 不会把共享 ToolCatalog 留在另一个 Agent 的目录上下文。
+- **并发**：同一 session 同时只允许一个 prompt 持有可变上下文。工具热重载在 turn 执行期间延迟，空闲时按各 Agent 的 cwd 刷新解析；两个生产 ToolSource（Spring/Extension）均不随 cwd 变化，刷新只保证快照上下文一致。
 - **故障隔离**：CampusMate 超时、非 2xx、业务失败码、querySkillInfo 返回零条/多条/版本不匹配、资源非法或本地工具缺失均 fail closed；失败不会发布半成品目录，也不会改变当前工具集合。
 - **性能**：完整本地目录不产生 GetAgentRuntime 网络请求；Skill 激活不产生远程请求。会话复用已加载的 frontmatter 和本地工具快照。
 - **可观测性**：工具重载响应包含 `deferredSessions` 和 `failedSessions`；接口异常保留操作名、HTTP/业务错误信息，目录漂移会明确失败。

@@ -31,8 +31,6 @@ import com.campusclaw.codingagent.settings.SettingsManager;
 import com.campusclaw.codingagent.tool.catalog.DefaultToolCatalog;
 import com.campusclaw.codingagent.tool.catalog.SpringAgentToolSource;
 import com.campusclaw.codingagent.tool.catalog.ToolCatalog;
-import com.campusclaw.codingagent.tool.catalog.ToolContribution;
-import com.campusclaw.codingagent.tool.catalog.ToolContributionSource;
 import com.campusclaw.codingagent.tool.catalog.ToolRefreshRequest;
 import com.campusclaw.codingagent.tool.catalog.ToolSelection;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -68,38 +66,11 @@ class SessionPoolToolStatusTest {
     }
 
     @Test
-    void reloadToolsUsesLatestSettingsForCatalogContext() {
-        var projectTool = new TestTool("project_tool");
-        var catalog = new DefaultToolCatalog(List.of(context -> context.projectToolsEnabled()
-                ? List.of(ToolContribution.add(projectTool, ToolContributionSource.project("project-tools"), 400))
-                : List.of()));
-        var settingsManager = mock(SettingsManager.class);
-        when(settingsManager.load()).thenReturn(settingsWithProjectToolsDisabled());
-        var pool = new SessionPool(
-                null,
-                null,
-                null,
-                List.of(projectTool),
-                catalog,
-                ToolSelection.all(),
-                new SessionConfig(null, Path.of("/tmp/project"), null, "server"),
-                null,
-                false,
-                false,
-                settingsManager);
-
-        Map<String, Object> status = pool.reloadTools();
-
-        assertThat(status.get("tools")).asList().isEmpty();
-    }
-
-    @Test
     void reloadToolsAppliesLatestSelectionToCatalogAndActiveSessions() throws Exception {
         var read = new TestTool("read");
         var bash = new TestTool("bash");
         var catalog = new DefaultToolCatalog(List.of(new SpringAgentToolSource(List.of(read, bash))));
-        var toolsSettings =
-                new Settings.ToolsSettings(true, List.of("read", "bash"), List.of("read"), false, null, Map.of());
+        var toolsSettings = new Settings.ToolsSettings(true, List.of("read", "bash"), List.of("read"), false);
         var settingsManager = mock(SettingsManager.class);
         when(settingsManager.load()).thenReturn(settingsWithTools(toolsSettings));
         var pool = new SessionPool(
@@ -134,7 +105,7 @@ class SessionPoolToolStatusTest {
         var read = new TestTool("read");
         var bash = new TestTool("bash");
         var catalog = new DefaultToolCatalog(List.of(new SpringAgentToolSource(List.of(read, bash))));
-        var toolsSettings = new Settings.ToolsSettings(true, List.of("read"), List.of(), false, null, Map.of());
+        var toolsSettings = new Settings.ToolsSettings(true, List.of("read"), List.of(), false);
         var settingsManager = mock(SettingsManager.class);
         when(settingsManager.load()).thenReturn(settingsWithTools(toolsSettings));
         var pool = new SessionPool(
@@ -226,7 +197,7 @@ class SessionPoolToolStatusTest {
     }
 
     private Settings settingsWithSelection(String toolName) {
-        return settingsWithTools(new Settings.ToolsSettings(true, List.of(toolName), List.of(), false, null, Map.of()));
+        return settingsWithTools(new Settings.ToolsSettings(true, List.of(toolName), List.of(), false));
     }
 
     @Test
@@ -285,11 +256,6 @@ class SessionPoolToolStatusTest {
         Field field = SessionPool.class.getDeclaredField("sessions");
         field.setAccessible(true);
         return (Map<String, SessionPool.Entry>) field.get(pool);
-    }
-
-    private Settings settingsWithProjectToolsDisabled() {
-        return settingsWithTools(
-                new Settings.ToolsSettings(null, null, null, null, false, true, true, null, true, Map.of()));
     }
 
     private Settings settingsWithTools(Settings.ToolsSettings toolsSettings) {
@@ -383,11 +349,6 @@ class SessionPoolToolStatusTest {
         @Override
         public List<AgentTool> resolve(ToolSelection selection) {
             return List.of(tool);
-        }
-
-        @Override
-        public Runnable addChangeListener(com.campusclaw.codingagent.tool.catalog.ToolCatalog.ChangeListener listener) {
-            return () -> {};
         }
 
         private ToolCatalog.Snapshot snapshotForVersion(long snapshotVersion) {
