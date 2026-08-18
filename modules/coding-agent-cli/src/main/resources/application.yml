@@ -35,6 +35,17 @@ server:
     persistence:
       enabled: true
 
+# CampusMate managed-Agent runtime. The HTTP endpoint is only used when an
+# agent_id is selected and ./agent/{agentId} does not exist locally.
+campusmate:
+  runtime:
+    base-url: ${CAMPUSMATE_RUNTIME_BASE_URL:http://campusmate-service:8080}
+    agents-root: ${CAMPUSCLAW_AGENTS_ROOT:agent}
+    connect-timeout: PT10S
+    request-timeout: PT30S
+    success-code: ${CAMPUSMATE_SUCCESS_CODE:0}
+    max-response-bytes: ${CAMPUSMATE_MAX_RESPONSE_BYTES:4194304}
+
 logging:
   level:
     root: WARN
