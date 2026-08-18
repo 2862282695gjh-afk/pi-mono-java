@@ -44,14 +44,12 @@ public class MateToolAutoConfiguration {
      * Creates the REST helper bean used by the Mate tool client to call the
      * inner gateway.
      *
-     * @param mapperProvider provider for a Jackson mapper; a new one when no
-     *        mapper bean exists in the context
      * @return the MateRestUtil bean
      */
     @Bean
     @ConditionalOnMissingBean
-    public MateRestUtil mateRestUtil(ObjectProvider<ObjectMapper> mapperProvider) {
-        return new MateRestUtil(mapperProvider.getIfAvailable(ObjectMapper::new));
+    public MateRestUtil mateRestUtil() {
+        return new MateRestUtil();
     }
 
     /**

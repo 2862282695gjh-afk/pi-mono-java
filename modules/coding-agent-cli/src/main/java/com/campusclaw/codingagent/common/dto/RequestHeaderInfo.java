@@ -4,6 +4,7 @@
 
 package com.campusclaw.codingagent.common.dto;
 
+import java.util.HashMap;
 import java.util.Map;
 
 import lombok.Builder;
@@ -66,4 +67,35 @@ public class RequestHeaderInfo {
 
     @ToString.Exclude
     private Map<String, String> customHeaders;
+
+    /**
+     * Maps the header-info fields onto HTTP header names as expected by the
+     * Mate inner gateway; null fields are omitted. {@code customHeaders}
+     * entries are merged in as-is.
+     *
+     * @return header name to value map (values may be null)
+     */
+    public Map<String, String> toHeaders() {
+        Map<String, String> headers = new HashMap<>();
+        headers.put("X-Access-Token", accessToken);
+        headers.put("X-Client-IP", clientIp);
+        headers.put("X-Locale", locale);
+        headers.put("X-Forward", xForward);
+        headers.put("X-App-Id", appId);
+        headers.put("X-App-Key", appKey);
+        headers.put("Cookie", cookie);
+        headers.put("X-Csrf-Token", csrfToken);
+        headers.put("Authorization", authorization);
+        headers.put("X-Auth-Token", xAuthToken);
+        headers.put("X-Roa-Rand", roaRand);
+        headers.put("X-Agent-Id", xAgentId);
+        headers.put("X-Agent-Tenant-Id", agentTenantId);
+        headers.put("X-Agent-User-Id", agentUserId);
+        headers.put("X-A2a-Version", a2aVersion);
+        headers.put("X-Plane-Type", xPlaneType);
+        if (customHeaders != null) {
+            customHeaders.forEach(headers::putIfAbsent);
+        }
+        return headers;
+    }
 }

@@ -77,7 +77,7 @@ public class CallMateTool implements AgentTool {
      * @return credentials forwarded to the Mate server; null means none
      */
     protected MateCredentials resolveCredentials(String tool) {
-        return MateCredentials.appKey("", "");
+        return null;
     }
 
     @Override

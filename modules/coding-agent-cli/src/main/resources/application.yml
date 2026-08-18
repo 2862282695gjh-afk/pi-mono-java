@@ -156,7 +156,8 @@ controlplane:
 
 # Mate inner gateway service address used by the Mate tool client
 # (listMateTool / callMateTool). Inner gateway endpoints do not require
-# credential headers. Set via property or environment variable:
-#   mate.innerGWSerive=http://inner-gw.example.com:9999
+# credential headers. Resolved from the MATE_INNERGWSerive environment
+# variable (see install-values.sh, which reads it from the mateservice
+# ClusterIP); empty by default so an unconfigured environment still boots.
 mate:
-  innerGWSerive: ${mate.innerGWSerive:}
+  innerGWSerive: ${MATE_INNERGWSerive:}
