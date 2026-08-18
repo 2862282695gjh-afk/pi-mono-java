@@ -21,18 +21,14 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.springframework.stereotype.Component;
 
 /**
- * Stateless control tool through which the model delegates a subtask to a
- * bound child Agent. The tool only validates parameters and acknowledges the
- * request; the session-level after-tool-call handler performs the actual
- * delegation through {@code LocalAgentDispatcher} and replaces the
- * acknowledgement with the child Agent's answer.
+ * 模型经其把子任务委派给已绑定子 Agent 的无状态控制工具。工具本身只做
+ * 参数校验并回执请求；会话级的工具调用后处理器经 {@code LocalAgentDispatcher}
+ * 执行实际委派，并用子 Agent 的答复替换回执。
  *
- * <p>Follows the same assembly pattern as {@code ActivateSkillTool}: a
- * stateless Spring bean discovered via {@code SpringAgentToolSource} and the
- * tool catalog, with the session-scoped side effect split into the session
- * handler. The tool is exposed only to managed runtimes whose resolver finds
- * at least one delegatable child binding, and never to agents already at the
- * delegation depth cap.
+ * <p>组装方式与 {@code ActivateSkillTool} 相同：经
+ * {@code SpringAgentToolSource} 与工具目录发现的无状态 Spring bean，
+ * 会话级副作用拆到会话处理器。该工具只暴露给 resolver 找到至少一个可
+ * 委派子绑定的受管运行时，绝不暴露给已达委派深度上限的 Agent。
  *
  * @version [br_eCampusCore 26.0.0, 2026/08/18]
  * @since [br_eCampusCore 26.0.0]
@@ -99,12 +95,11 @@ public class InvokeAgentTool implements ControlTool {
     }
 
     /**
-     * Returns a view of this tool whose description enumerates the currently
-     * delegatable child Agents, so the model sees the exact candidate set
-     * (id, name, description, actual version) without any extra lookup.
+     * 返回一个工具视图，其描述枚举当前可委派的子 Agent，使模型无需额外查询
+     * 即可看到精确候选集（id、name、description、实际 version）。
      *
-     * @param candidates resolver-approved child summaries for this session
-     * @return tool view with the enriched description
+     * @param candidates 本会话经 resolver 校验的子摘要
+     * @return 带增强描述的工具视图
      */
     public ControlTool describedWith(List<ChildAgentSummary> candidates) {
         return new CandidateDescribedTool(this, renderCandidateDescription(candidates));
@@ -130,7 +125,7 @@ public class InvokeAgentTool implements ControlTool {
         return sb.toString();
     }
 
-    /** Delegating view that only replaces the description. */
+    /** 仅替换描述的委派视图。 */
     private record CandidateDescribedTool(AgentTool delegate, String candidateDescription) implements ControlTool {
 
         @Override

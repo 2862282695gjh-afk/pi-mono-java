@@ -157,13 +157,12 @@ public class AgentSession {
     }
 
     /**
-     * Enables parent-to-child Agent delegation for this session. With state
-     * set, {@code invoke_agent} is exposed whenever the resolver finds valid
-     * child bindings and the depth cap allows another hop; execution runs
-     * through the session's after-tool-call handler.
+     * 为本会话启用父到子 Agent 委派。设置后，resolver 找到有效子绑定且深度
+     * 上限允许下一跳时即暴露 {@code invoke_agent}；执行经会话级的工具调用后
+     * 处理器进行。
      *
-     * @param delegationState dispatcher, identity and wiring for the chain
-     * @throws IllegalStateException when called after initialization
+     * @param delegationState 链路的调度器、身份与协作者
+     * @throws IllegalStateException 初始化之后调用时抛出
      */
     public void setDelegationState(DelegationState delegationState) {
         if (initialized) {
@@ -749,9 +748,8 @@ public class AgentSession {
         Set<String> allowedAgentTools = Set.copyOf(preparedRuntime.allowedAgentToolNames());
         var configured = new LinkedHashMap<String, AgentTool>();
 
-        // Control tools are exempt from the remote Agent allow list but still follow
-        // the local ToolSelection that produced locallyVisibleTools. invoke_agent is
-        // additionally gated on resolver-approved child candidates.
+        // 控制工具不受远端 Agent 允许列表约束，但仍遵循产出 locallyVisibleTools
+        // 的本地 ToolSelection。invoke_agent 额外受 resolver 校验通过的子候选门控。
         locallyVisibleTools.stream()
                 .filter(tool -> allowedAgentTools.contains(tool.name())
                         || isSessionControlTool(tool, !delegationCandidates.isEmpty()))

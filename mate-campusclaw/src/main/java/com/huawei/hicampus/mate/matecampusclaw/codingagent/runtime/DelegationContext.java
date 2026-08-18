@@ -11,41 +11,38 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * Trusted context injected by the runtime for exactly one parent-to-child
- * delegation, following {@code mainagent-subagent-design.md} section 5.4.
- * Identity, permissions, parentage, ancestry, depth, deadline and the
- * effective toolset are runtime-controlled; the LLM can never override them.
+ * 由运行时注入、仅作用于一次父到子委派的可信上下文，遵循
+ * {@code mainagent-subagent-design.md} §5.4。身份、权限、父缘、祖先链、
+ * 深度、截止时间与有效工具集均由运行时控制，LLM 无法覆盖。
  *
- * <p>Structural invariants enforced by the canonical constructor, which makes
- * an invalid delegation state unrepresentable:
+ * <p>canonical constructor 强制以下结构不变量，使非法委派状态无法被构造：
  *
  * <ul>
- *   <li>{@code delegationDepth} stays within {@code 1..MAX_DELEGATION_DEPTH};</li>
- *   <li>{@code ancestryAgentIds} is immutable, duplicate-free and exactly as
- *       long as the delegation depth, ending with {@code parentAgentId};</li>
- *   <li>{@code targetAgentId} never appears in the ancestry, which also rules
- *       out self-binding because the parent closes the chain.</li>
+ *   <li>{@code delegationDepth} 保持在 {@code 1..MAX_DELEGATION_DEPTH} 内；</li>
+ *   <li>{@code ancestryAgentIds} 不可变、无重复，且长度恰等于委派深度，
+ *       以 {@code parentAgentId} 结尾；</li>
+ *   <li>{@code targetAgentId} 绝不出现在祖先链中——由于父 Agent 已在链上
+ *       收尾，该约束同时排除了自绑定。</li>
  * </ul>
  *
- * <p>{@code tenantId}/{@code userId} may be {@code null} for local CLI runs.
- * The edge-scoped lifecycle identifiers ({@code parentAgentSessionId},
- * {@code parentRunId}, {@code subTaskId}, {@code idempotencyKey},
- * {@code deadline}) are {@code null} until the dispatcher and SubTask
- * lifecycle wire them in; the structural guarantees above already hold.
+ * <p>{@code tenantId}/{@code userId} 在本地 CLI 运行中可为 {@code null}。
+ * 边级生命周期标识（{@code parentAgentSessionId}、{@code parentRunId}、
+ * {@code subTaskId}、{@code idempotencyKey}、{@code deadline}）在调度器与
+ * SubTask 生命周期接入前为 {@code null}；上述结构保证届时已经成立。
  *
- * @param tenantId             invoking tenant, {@code null} in local CLI runs
- * @param userId               invoking user, {@code null} in local CLI runs
- * @param conversationId       conversation the whole chain serves
- * @param parentAgentSessionId session identifier of the delegating parent
- * @param parentRunId          run identifier of the delegating parent
- * @param subTaskId            SubTask this delegation executes
- * @param invocationId         unique identifier of this delegation edge
- * @param parentAgentId        delegating parent Agent identifier
- * @param targetAgentId        delegated child Agent identifier
- * @param ancestryAgentIds     Agent ids already active, entry first, parent last
- * @param delegationDepth      depth of the target, 1 for the first delegation
- * @param idempotencyKey       idempotency key of this delegation edge
- * @param deadline             deadline of this delegation edge
+ * @param tenantId             发起调用的租户，本地 CLI 运行为 {@code null}
+ * @param userId               发起调用的用户，本地 CLI 运行为 {@code null}
+ * @param conversationId       整条链所服务的会话
+ * @param parentAgentSessionId 发起委派的父 Agent 会话标识
+ * @param parentRunId          发起委派的父 Agent 运行标识
+ * @param subTaskId            本次委派执行的 SubTask
+ * @param invocationId         本委派边的唯一标识
+ * @param parentAgentId        发起委派的父 Agent id
+ * @param targetAgentId        被委派的子 Agent id
+ * @param ancestryAgentIds     已激活的 Agent id 列表，入口在前、父 Agent 在末尾
+ * @param delegationDepth      目标所处深度，首次委派为 1
+ * @param idempotencyKey       本委派边的幂等键
+ * @param deadline             本委派边的截止时间
  *
  * @version [br_eCampusCore 26.0.0, 2026/08/17]
  * @since [br_eCampusCore 26.0.0]
@@ -65,7 +62,7 @@ public record DelegationContext(
         String idempotencyKey,
         Instant deadline) {
 
-    /** Hard delegation cap: entry depth 0, first delegation 1, second 2. */
+    /** 硬性委派深度上限：入口深度 0，首次委派 1，二次委派 2。 */
     public static final int MAX_DELEGATION_DEPTH = 2;
 
     public DelegationContext {
@@ -96,13 +93,13 @@ public record DelegationContext(
     }
 
     /**
-     * Creates the context for the first delegation, made by the entry Agent.
+     * 构造入口 Agent 发起首次委派的上下文。
      *
-     * @param entryAgentId  entry Agent identifier, depth 0 by definition
-     * @param targetAgentId delegated child Agent identifier
-     * @param conversationId conversation the chain serves
-     * @param invocationId  unique identifier of this delegation edge
-     * @return context with ancestry {@code [entryAgentId]} and depth 1
+     * @param entryAgentId   入口 Agent id，按定义深度为 0
+     * @param targetAgentId  被委派的子 Agent id
+     * @param conversationId 本条链所服务的会话
+     * @param invocationId   本委派边的唯一标识
+     * @return 祖先链为 {@code [entryAgentId]}、深度为 1 的上下文
      */
     public static DelegationContext forEntry(
             String entryAgentId, String targetAgentId, String conversationId, String invocationId) {
@@ -123,14 +120,13 @@ public record DelegationContext(
     }
 
     /**
-     * Creates the context for the next delegation made by the Agent this
-     * context describes. Identity fields are carried over; edge-scoped
-     * lifecycle identifiers reset to {@code null} for the dispatcher to fill.
+     * 构造由本上下文所描述的 Agent 再次委派时的下一跳上下文。身份字段原样传递；
+     * 边级生命周期标识重置为 {@code null}，由调度器填充。
      *
-     * @param nextTargetAgentId delegated child Agent identifier
-     * @param nextInvocationId  unique identifier of the new delegation edge
-     * @return context with extended ancestry and incremented depth
-     * @throws IllegalStateException when the hard depth cap is already reached
+     * @param nextTargetAgentId 被委派的子 Agent id
+     * @param nextInvocationId  新委派边的唯一标识
+     * @return 祖先链延长、深度加一的上下文
+     * @throws IllegalStateException 已达硬性深度上限时抛出
      */
     public DelegationContext delegateTo(String nextTargetAgentId, String nextInvocationId) {
         if (!canDelegateFurther()) {
@@ -155,9 +151,9 @@ public record DelegationContext(
     }
 
     /**
-     * Returns whether the Agent described by this context may delegate again.
+     * 判定本上下文描述的 Agent 能否继续委派。
      *
-     * @return {@code true} while another delegation stays within the cap
+     * @return 再委派一次仍在深度上限内时为 {@code true}
      */
     public boolean canDelegateFurther() {
         return delegationDepth < MAX_DELEGATION_DEPTH;

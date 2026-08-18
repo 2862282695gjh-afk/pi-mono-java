@@ -19,16 +19,14 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 /**
- * Runs one delegated child invocation as a fully transient session: a fresh
- * {@link AgentSession} (own Agent, AgentState, SkillRegistry and tool
- * snapshot) is created for every invocation and released afterwards — there
- * is no per-agent worker, thread pool or shared mutable run state.
+ * 以完全瞬态的会话运行一次被委派的子调用：每次调用都新建一个
+ * {@link AgentSession}（独立 Agent、AgentState、SkillRegistry 与工具快照），
+ * 结束后即释放——没有按 Agent 常驻的 worker、线程池或共享可变运行状态。
  *
- * <p>The child session reuses the entry assembly chain (AI service, prompt
- * builder, skill loader/expander, tool catalog) through
- * {@link DelegationWiring}, loads the child runtime's system prompt and
- * managed skills, and exposes {@code activate_skill} plus — below the depth
- * cap with own valid bindings — {@code invoke_agent} for further delegation.
+ * <p>子会话经 {@link DelegationWiring} 复用入口组装链（AI 服务、提示词
+ * 构建器、Skill 加载/展开器、工具目录），加载子运行时的系统提示词与受管
+ * Skill，并暴露 {@code activate_skill}；深度上限之内且自身持有有效绑定时，
+ * 额外暴露 {@code invoke_agent} 供继续委派。
  *
  * @version [br_eCampusCore 26.0.0, 2026/08/18]
  * @since [br_eCampusCore 26.0.0]
@@ -39,15 +37,14 @@ public class TransientAgentRunner {
     private static final Logger log = LoggerFactory.getLogger(TransientAgentRunner.class);
 
     /**
-     * Executes one child invocation and returns the child's final answer.
+     * 执行一次子调用并返回子的最终答复。
      *
-     * @param childRuntime  prepared runtime of the delegated child Agent
-     * @param childState    delegation state of the child session
-     * @param task          self-contained task instructions for the child
-     * @param fallbackModel model used when the child binds no default model
-     * @return the child Agent's final assistant text
-     * @throws AgentRuntimeException when the child run fails or produces no
-     *         answer
+     * @param childRuntime 被委派子 Agent 的已准备运行时
+     * @param childState 子会话的委派状态
+     * @param task 交给子 Agent 的自包含任务指令
+     * @param fallbackModel 子 Agent 未绑定缺省模型时使用的模型
+     * @return 子 Agent 的最终助手文本
+     * @throws AgentRuntimeException 子运行失败或未产生答复时抛出
      */
     public String run(
             PreparedAgentRuntime childRuntime, DelegationState childState, String task, String fallbackModel) {
@@ -68,13 +65,12 @@ public class TransientAgentRunner {
     }
 
     /**
-     * Creates the transient child session; package-private so tests can
-     * substitute a controllable session.
+     * 创建瞬态子会话；包私有以便测试替换为可控会话。
      *
-     * @param wiring      entry collaborators
-     * @param childRuntime prepared child runtime
-     * @param childState  delegation state installed on the child session
-     * @return uninitialized child session
+     * @param wiring 入口协作者
+     * @param childRuntime 已准备的子运行时
+     * @param childState 安装到子会话上的委派状态
+     * @return 尚未初始化的子会话
      */
     AgentSession createSession(DelegationWiring wiring, PreparedAgentRuntime childRuntime, DelegationState childState) {
         AgentSession session = new AgentSession(

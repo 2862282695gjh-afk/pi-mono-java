@@ -19,13 +19,12 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 /**
- * Production {@link ChildAgentMetadataSource}: reads the child's local
- * {@code agentId.json} snapshot first and, when no local snapshot exists,
- * falls back to a read-only GetAgentRuntime call that does not materialize
- * the child's runtime tree.
+ * 生产环境 {@link ChildAgentMetadataSource} 实现：优先读取子 Agent 本地的
+ * {@code agentId.json} 快照；本地快照不存在时回退到只读的 GetAgentRuntime
+ * 调用，不物化子 Agent 的运行时目录树。
  *
- * <p>Any failure resolves to an empty Optional so the resolver fails closed
- * with {@code UNKNOWN_CHILD} instead of surfacing IO or protocol errors.
+ * <p>任何失败都返回空 Optional，使 resolver 以 {@code UNKNOWN_CHILD}
+ * fail closed，而不是把 IO 或协议错误抛给调用方。
  *
  * @version [br_eCampusCore 26.0.0, 2026/08/18]
  * @since [br_eCampusCore 26.0.0]
@@ -47,10 +46,10 @@ public class LocalChildAgentMetadataSource implements ChildAgentMetadataSource {
     }
 
     /**
-     * Loads child metadata, local snapshot first, remote read-only second.
+     * 加载子 Agent 元数据：先本地快照，后只读远端。
      *
-     * @param agentId child Agent identifier
-     * @return metadata, or empty when the child cannot be resolved anywhere
+     * @param agentId 子 Agent id
+     * @return 元数据；任何来源都无法解析该子 Agent 时为空
      */
     @Override
     public Optional<ChildAgentMetadata> load(String agentId) {
@@ -92,7 +91,7 @@ public class LocalChildAgentMetadataSource implements ChildAgentMetadataSource {
     }
 
     private static ChildAgentMetadata toMetadata(AgentRuntime runtime) {
-        boolean enabled = runtime.enabled() == null || runtime.enabled();
-        return new ChildAgentMetadata(runtime.id(), runtime.version(), enabled);
+        // enabled 已在 AgentRuntime 构造器归一化(null 视为启用),此处直接取用
+        return new ChildAgentMetadata(runtime.id(), runtime.version(), runtime.enabled());
     }
 }

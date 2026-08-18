@@ -44,31 +44,20 @@ public record PreparedAgentRuntime(String agentId, Path agentRoot, AgentRuntime 
     }
 
     /**
-     * Returns the direct child Agent bindings recorded in the local snapshot.
-     * Bindings are candidate metadata only; authorization, ancestry and depth
-     * filtering happen at delegation time, never here.
+     * 返回本地快照中记录的直接子 Agent 绑定。
+     * 绑定仅是候选元数据；鉴权、祖先链与深度过滤在委派时刻进行，绝不在本方法内过滤。
      *
-     * @return immutable binding list, empty when the Agent delegates to no child
+     * @return 不可变绑定列表；Agent 未委派任何子 Agent 时为空列表
      */
     public List<AgentReference> bindingAgents() {
         return metadata.bindingAgents();
     }
 
     /**
-     * Returns whether CampusMate marked this Agent enabled. Snapshots written
-     * before the flag existed stay invocable, so absent defaults to enabled.
+     * 按运行期名称查找已绑定的 Skill。
      *
-     * @return enabled flag, {@code true} when unset
-     */
-    public boolean isEnabled() {
-        return metadata.isEnabled();
-    }
-
-    /**
-     * Finds a bound Skill by its runtime name.
-     *
-     * @param skillName Skill name
-     * @return bound Skill metadata
+     * @param skillName Skill 名称
+     * @return 已绑定的 Skill 元数据
      */
     public Optional<SkillInfo> findSkill(String skillName) {
         return skills.stream().filter(skill -> skillName.equals(skill.name())).findFirst();

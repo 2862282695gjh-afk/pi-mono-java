@@ -17,16 +17,13 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 /**
- * Executes one parent-to-child delegation edge, unifying every hop of the
- * chain: re-validate the target, derive the trusted {@link DelegationContext},
- * prepare the child runtime, and run the child through
- * {@link TransientAgentRunner}.
+ * 执行一条父到子的委派边，统一链上每一跳：复查目标、推导可信的
+ * {@link DelegationContext}、准备子运行时，并经 {@link TransientAgentRunner}
+ * 运行子 Agent。
  *
- * <p>Validation always precedes execution and the context constructor
- * re-enforces the structural invariants (depth cap, ancestry, self-binding)
- * as defense in depth. Every hop is logged with parent, target, ancestry,
- * depth and invocationId so chains stay traceable before the audit-event
- * PR lands.
+ * <p>校验永远先于执行，上下文构造器再次强化结构不变量（深度上限、祖先链、
+ * 自绑定）作为纵深防御。每一跳都记录 parent、target、ancestry、depth 与
+ * invocationId 日志，保证审计事件 PR 落地之前链路可追溯。
  *
  * @version [br_eCampusCore 26.0.0, 2026/08/18]
  * @since [br_eCampusCore 26.0.0]
@@ -48,11 +45,11 @@ public class LocalAgentDispatcher {
     }
 
     /**
-     * Returns the delegatable child candidates for one session's Agent.
+     * 返回一个会话的 Agent 可委派的子候选。
      *
-     * @param state delegation state of the asking session
-     * @param parent delegating parent runtime
-     * @return resolver-approved child summaries, empty when delegation is off
+     * @param state 发起询问的会话的委派状态
+     * @param parent 发起委派的父运行时
+     * @return 通过 resolver 校验的子摘要；委派关闭时为空列表
      */
     public List<ChildAgentSummary> resolveCandidates(DelegationState state, PreparedAgentRuntime parent) {
         Objects.requireNonNull(state);
@@ -65,15 +62,15 @@ public class LocalAgentDispatcher {
     }
 
     /**
-     * Executes one delegation edge made by the asking session's Agent.
+     * 执行发起询问的会话的 Agent 发出的一条委派边。
      *
-     * @param state delegation state of the asking session
-     * @param parent delegating parent runtime
-     * @param targetAgentId requested child Agent identifier
-     * @param task self-contained task instructions for the child
-     * @param fallbackModel model used when the child binds no default model
-     * @return the child Agent's final answer text
-     * @throws AgentRuntimeException when the target is rejected or the run fails
+     * @param state 发起询问的会话的委派状态
+     * @param parent 发起委派的父运行时
+     * @param targetAgentId 请求委派的目标子 Agent id
+     * @param task 交给子 Agent 的自包含任务指令
+     * @param fallbackModel 子 Agent 未绑定缺省模型时使用的模型
+     * @return 子 Agent 的最终答复文本
+     * @throws AgentRuntimeException 目标被拒绝或运行失败时抛出
      */
     public String dispatch(
             DelegationState state,
@@ -111,9 +108,9 @@ public class LocalAgentDispatcher {
     }
 
     /**
-     * Returns the runtime manager shared by every session of the chain.
+     * 返回整条链所有会话共享的运行时管理器。
      *
-     * @return the single runtime manager instance
+     * @return 唯一的运行时管理器实例
      */
     public AgentRuntimeManager runtimeManager() {
         return runtimeManager;

@@ -178,7 +178,7 @@ class AgentRuntimeManagerTest {
 
         assertEquals(bindings, prepared.bindingAgents());
         assertEquals(bindings, local.bindingAgents());
-        assertTrue(local.isEnabled());
+        assertEquals(Boolean.TRUE, local.metadata().enabled());
         var persisted = new ObjectMapper()
                 .readTree(
                         prepared.agentRoot().resolve(".campusclaw/agentId.json").toFile());
@@ -198,7 +198,7 @@ class AgentRuntimeManagerTest {
 
         PreparedAgentRuntime prepared = manager.prepare("agent-a");
 
-        assertFalse(prepared.isEnabled());
+        assertEquals(Boolean.FALSE, prepared.metadata().enabled());
     }
 
     @Test

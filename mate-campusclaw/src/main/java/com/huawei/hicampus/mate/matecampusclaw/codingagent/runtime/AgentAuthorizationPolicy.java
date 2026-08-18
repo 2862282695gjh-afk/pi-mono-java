@@ -5,39 +5,35 @@
 package com.huawei.hicampus.mate.matecampusclaw.codingagent.runtime;
 
 /**
- * Decides whether an invoking principal may reach a target Agent. This is the
- * authorization term of {@code effectiveChildAgents} in
- * {@code mainagent-subagent-design.md} section 2.3 and is re-checked before
- * every delegation executes; it complements, never replaces, the direct
- * binding rule.
+ * 判定发起调用的主体能否访问目标 Agent。这是
+ * {@code mainagent-subagent-design.md} §2.3 中 {@code effectiveChildAgents}
+ * 的鉴权项，在每次委派执行前复查；它补充、绝不取代直接绑定规则。
  *
- * <p>Real tenant and user authorization is wired once principal propagation
- * reaches the managed Agent entrypoints. Local CLI runs stay on
- * {@link #PERMIT_ALL}, which keeps direct binding as the only gate.
+ * <p>真实的租户/用户鉴权在主体传播贯通受管 Agent 入口后接入。本地 CLI
+ * 运行保持 {@link #PERMIT_ALL}，即仅以直接绑定作为唯一门禁。
  *
  * @version [br_eCampusCore 26.0.0, 2026/08/17]
  * @since [br_eCampusCore 26.0.0]
  */
 public interface AgentAuthorizationPolicy {
 
-    /** Permits every principal; the placeholder used until real wiring lands. */
+    /** 放行所有主体；真实鉴权接入前的占位实现。 */
     AgentAuthorizationPolicy PERMIT_ALL = (principal, agentId) -> true;
 
     /**
-     * Returns whether the principal may invoke the target Agent.
+     * 判定主体能否调用目标 Agent。
      *
-     * @param principal identity of the invoking user
-     * @param agentId   target Agent identifier
-     * @return authorization decision
+     * @param principal 发起调用的用户身份
+     * @param agentId   目标 Agent id
+     * @return 鉴权裁决
      */
     boolean isAuthorized(AgentPrincipal principal, String agentId);
 
     /**
-     * Identity of the invoking user. Both fields are {@code null} for local
-     * CLI runs that carry no tenant context.
+     * 发起调用的用户身份。本地 CLI 运行不携带租户上下文时两个字段均为 {@code null}。
      *
-     * @param tenantId invoking tenant
-     * @param userId   invoking user
+     * @param tenantId 发起调用的租户
+     * @param userId   发起调用的用户
      */
     record AgentPrincipal(String tenantId, String userId) {}
 }

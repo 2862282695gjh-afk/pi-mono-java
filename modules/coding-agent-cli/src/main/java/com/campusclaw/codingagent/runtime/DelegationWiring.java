@@ -15,22 +15,20 @@ import com.campusclaw.codingagent.tool.catalog.ToolCatalog;
 import com.campusclaw.codingagent.tool.catalog.ToolSelection;
 
 /**
- * Entry-session collaborators a delegated child session must share so entry
- * and child Agents run through the same assembly chain (AI service, prompt
- * builder, skill loader/expander, tool catalog and visibility selection).
+ * 入口会话中必须与被委派子会话共享的协作者，使入口与子 Agent 走同一条
+ * 组装链（AI 服务、提示词构建器、Skill 加载/展开器、工具目录与可见性选择）。
  *
- * <p>The runtime-varying parts (sandbox-aware skill loader, per-run tool
- * selection, effective local tools) come from the entry site; Spring-static
- * parts are injected into {@link LocalAgentDispatcher} directly.
+ * <p>随运行变化的部分（感知沙箱的 Skill 加载器、按运行的工具选择、有效
+ * 本地工具）来自入口现场；Spring 静态部分直接注入 {@link LocalAgentDispatcher}。
  *
- * @param aiService     shared LLM service
- * @param modelRegistry shared model registry
- * @param promptBuilder shared system prompt builder
- * @param skillLoader   sandbox-aware skill loader of the entry run
- * @param skillExpander sandbox-aware skill expander of the entry run
- * @param localTools    locally visible tools of the entry run
- * @param toolCatalog   tool catalog, {@code null} when the entry run has none
- * @param toolSelection tool visibility selection of the entry run
+ * @param aiService 共享的 LLM 服务
+ * @param modelRegistry 共享的模型注册表
+ * @param promptBuilder 共享的系统提示词构建器
+ * @param skillLoader 入口运行的感知沙箱 Skill 加载器
+ * @param skillExpander 入口运行的感知沙箱 Skill 展开器
+ * @param localTools 入口运行的本地可见工具
+ * @param toolCatalog 工具目录，入口运行没有时为 {@code null}
+ * @param toolSelection 入口运行的工具可见性选择
  *
  * @version [br_eCampusCore 26.0.0, 2026/08/18]
  * @since [br_eCampusCore 26.0.0]

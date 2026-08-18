@@ -5,9 +5,7 @@
 package com.huawei.hicampus.mate.matecampusclaw.codingagent.runtime;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.file.Path;
 import java.time.Duration;
@@ -152,7 +150,7 @@ class MateServiceClientTest {
                 runtime.bindingAgents().getFirst().description());
         assertEquals("2.0.0", runtime.bindingAgents().getFirst().version());
         assertEquals("agent-c", runtime.bindingAgents().get(1).id());
-        assertFalse(runtime.isEnabled());
+        assertEquals(Boolean.FALSE, runtime.enabled());
     }
 
     @Test
@@ -180,7 +178,7 @@ class MateServiceClientTest {
         assertEquals(
                 "Handles on-site device operations",
                 runtime.bindingAgents().getFirst().description());
-        assertTrue(runtime.isEnabled());
+        assertEquals(Boolean.TRUE, runtime.enabled());
     }
 
     @Test
