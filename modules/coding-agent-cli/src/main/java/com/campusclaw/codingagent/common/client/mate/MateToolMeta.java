@@ -7,15 +7,17 @@ package com.campusclaw.codingagent.common.client.mate;
 import java.util.Map;
 
 /**
- * Metadata for a single Mate tool, returned by {@code list_tools}.
+ * Metadata for a single Mate tool, returned by QUERYTOOLS.
  *
  * @param name tool name
  * @param description human-readable description
  * @param inputSchema JSON schema for input
  * @param outputSchema JSON schema for output
  * @param isConcurrencySafe whether this tool is safe to run concurrently
- * @param permission "allow", "ask", or "deny"
- * @version [br_eCampusCore 26.0.0, 2026/08/17]
+ * @param permission permission declared by the Mate server; allow/ask/deny
+ *        enforcement is currently the server's responsibility (the client
+ *        passes calls through)
+ * @version [br_eCampusCore 26.0.0, 2026/08/18]
  * @since [br_eCampusCore 26.0.0]
  */
 public record MateToolMeta(
@@ -26,12 +28,6 @@ public record MateToolMeta(
         boolean isConcurrencySafe,
         String permission) {
 
-    /** Permission value: call allowed without asking. */
+    /** Default permission when the server does not declare one. */
     public static final String ALLOW = "allow";
-
-    /** Permission value: user approval required before calling. */
-    public static final String ASK = "ask";
-
-    /** Permission value: call always rejected. */
-    public static final String DENY = "deny";
 }

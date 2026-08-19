@@ -12,8 +12,12 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.any;
+import static org.mockito.Mockito.anyList;
 import static org.mockito.Mockito.anyString;
+import static org.mockito.Mockito.atLeast;
+import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -25,6 +29,9 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
 import com.huawei.hicampus.mate.matecampusclaw.agent.Agent;
+import com.huawei.hicampus.mate.matecampusclaw.agent.tool.AfterToolCallContext;
+import com.huawei.hicampus.mate.matecampusclaw.agent.tool.AfterToolCallHandler;
+import com.huawei.hicampus.mate.matecampusclaw.agent.tool.AfterToolCallResult;
 import com.huawei.hicampus.mate.matecampusclaw.agent.tool.AgentTool;
 import com.huawei.hicampus.mate.matecampusclaw.agent.tool.AgentToolResult;
 import com.huawei.hicampus.mate.matecampusclaw.agent.tool.AgentToolUpdateCallback;
@@ -37,9 +44,21 @@ import com.huawei.hicampus.mate.matecampusclaw.ai.types.Message;
 import com.huawei.hicampus.mate.matecampusclaw.ai.types.Model;
 import com.huawei.hicampus.mate.matecampusclaw.ai.types.ModelCost;
 import com.huawei.hicampus.mate.matecampusclaw.ai.types.Provider;
+import com.huawei.hicampus.mate.matecampusclaw.ai.types.TextContent;
+import com.huawei.hicampus.mate.matecampusclaw.ai.types.ToolCall;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.prompt.SystemPromptBuilder;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtime.AgentRuntimeManager;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtime.MateServiceClient.AgentRuntime;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtime.MateServiceClient.BoundTool;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtime.MateServiceClient.SkillInfo;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtime.MateServiceClient.SkillReference;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtime.PreparedAgentRuntime;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.skill.SkillExpander;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.skill.SkillLoader;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.catalog.ToolCatalog;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.catalog.ToolRefreshRequest;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.catalog.ToolSelection;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.skill.ActivateSkillTool;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -257,6 +276,217 @@ class AgentSessionTest {
         }
     }
 
+    @Nested
+    class ManagedSkillRuntime {
+
+        @Test
+        void loadsOnlySkillsInPreparedRuntime() throws Exception {
+            writeManagedSkill();
+            writeSkill("unbound-skill", "Must stay hidden");
+            when(promptBuilder.build(any())).thenReturn("prompt");
+            session.setAgentRuntime(preparedRuntime(), mock(AgentRuntimeManager.class));
+
+            session.initialize(config());
+
+            assertTrue(session.getSkillRegistry().getByName("skill-a").isPresent());
+            assertTrue(session.getSkillRegistry().getByName("unbound-skill").isEmpty());
+        }
+
+        @Test
+        @SuppressWarnings({"rawtypes", "unchecked"})
+        void activatesSelectedSkillAndAddsPermittedTools() throws Exception {
+            AgentTool calendarTool = new StubTool("calendar", "Manage calendar");
+            tools = List.of(stubTool, calendarTool, new ActivateSkillTool());
+            session = createSession();
+            writeManagedSkill();
+            PreparedAgentRuntime prepared = preparedRuntime();
+            AgentRuntimeManager runtimeManager = mock(AgentRuntimeManager.class);
+            when(runtimeManager.loadSkillToolNames(prepared, "skill-a")).thenReturn(List.of("calendar"));
+            when(promptBuilder.build(any())).thenReturn("prompt");
+            session.setAgentRuntime(prepared, runtimeManager);
+
+            session.initialize(config());
+
+            var promptCaptor = ArgumentCaptor.forClass(com.huawei.hicampus.mate.matecampusclaw.codingagent.prompt.SystemPromptConfig.class);
+            verify(promptBuilder).build(promptCaptor.capture());
+            assertTrue(promptCaptor.getValue().skillActivationRequired());
+            assertEquals(
+                    List.of("bash", ActivateSkillTool.NAME),
+                    promptCaptor.getValue().tools().stream()
+                            .map(AgentTool::name)
+                            .toList());
+
+            ArgumentCaptor<AfterToolCallHandler> hookCaptor = ArgumentCaptor.forClass(AfterToolCallHandler.class);
+            verify(session.getAgent()).setAfterToolCall(hookCaptor.capture());
+            AfterToolCallResult override = hookCaptor
+                    .getValue()
+                    .handle(new AfterToolCallContext(
+                            null,
+                            new ToolCall("call-1", ActivateSkillTool.NAME, Map.of("skillName", "skill-a")),
+                            Map.of("skillName", "skill-a"),
+                            new AgentToolResult(List.of(), null),
+                            false,
+                            null));
+            assertTrue(override.content() != null
+                    && override.content().getFirst() instanceof TextContent text
+                    && text.text().contains("Use the calendar tool"));
+
+            ArgumentCaptor<List> toolCaptor = ArgumentCaptor.forClass(List.class);
+            verify(session.getAgent(), atLeast(2)).setTools(toolCaptor.capture());
+            List<AgentTool> activatedTools = toolCaptor.getAllValues().getLast();
+            assertEquals(
+                    List.of("bash", ActivateSkillTool.NAME, "calendar"),
+                    activatedTools.stream().map(AgentTool::name).toList());
+            verify(runtimeManager).loadSkillToolNames(prepared, "skill-a");
+        }
+
+        @Test
+        void rejectsConcurrentPromptBeforeItCanChangeRuntimeTools() throws Exception {
+            writeManagedSkill();
+            PreparedAgentRuntime prepared = preparedRuntime();
+            AgentRuntimeManager runtimeManager = mock(AgentRuntimeManager.class);
+            when(promptBuilder.build(any())).thenReturn("prompt");
+            session.setAgentRuntime(prepared, runtimeManager);
+            session.initialize(
+                    new SessionConfig("claude-sonnet-4-20250514", tempDir, "Managed Agent prompt", "interactive"));
+            CompletableFuture<Void> firstExecution = new CompletableFuture<>();
+            when(session.getAgent().prompt(anyString())).thenReturn(firstExecution);
+
+            CompletableFuture<Void> first = session.prompt("first");
+            assertTrue(session.isRuntimePromptActive());
+            clearInvocations(session.getAgent());
+
+            CompletableFuture<Void> second = session.prompt("second");
+
+            assertThrows(java.util.concurrent.CompletionException.class, second::join);
+            verify(session.getAgent(), never()).setTools(anyList());
+            firstExecution.complete(null);
+            first.join();
+            assertFalse(session.isRuntimePromptActive());
+        }
+
+        @Test
+        @SuppressWarnings({"rawtypes", "unchecked"})
+        void reloadKeepsManagedSystemPromptAndFullLocalToolInventory() throws Exception {
+            AgentTool calendarTool = new StubTool("calendar", "Manage calendar");
+            tools = List.of(stubTool, calendarTool, new ActivateSkillTool());
+            session = createSession();
+            writeManagedSkill();
+            PreparedAgentRuntime prepared = preparedRuntime();
+            AgentRuntimeManager runtimeManager = mock(AgentRuntimeManager.class);
+            when(runtimeManager.loadSkillToolNames(prepared, "skill-a")).thenReturn(List.of("calendar"));
+            when(promptBuilder.build(any())).thenReturn("prompt");
+            session.setAgentRuntime(prepared, runtimeManager);
+            session.initialize(
+                    new SessionConfig("claude-sonnet-4-20250514", tempDir, "Managed Agent prompt", "interactive"));
+            clearInvocations(promptBuilder);
+
+            session.reloadFromCatalogSnapshot();
+
+            var promptCaptor = ArgumentCaptor.forClass(com.huawei.hicampus.mate.matecampusclaw.codingagent.prompt.SystemPromptConfig.class);
+            verify(promptBuilder).build(promptCaptor.capture());
+            assertEquals("Managed Agent prompt", promptCaptor.getValue().customPrompt());
+            ArgumentCaptor<AfterToolCallHandler> hookCaptor = ArgumentCaptor.forClass(AfterToolCallHandler.class);
+            verify(session.getAgent()).setAfterToolCall(hookCaptor.capture());
+            hookCaptor
+                    .getValue()
+                    .handle(new AfterToolCallContext(
+                            null,
+                            new ToolCall("call-2", ActivateSkillTool.NAME, Map.of("skillName", "skill-a")),
+                            Map.of("skillName", "skill-a"),
+                            new AgentToolResult(List.of(), null),
+                            false,
+                            null));
+            ArgumentCaptor<List> toolCaptor = ArgumentCaptor.forClass(List.class);
+            verify(session.getAgent(), atLeast(3)).setTools(toolCaptor.capture());
+            List<AgentTool> reloadedTools = toolCaptor.getAllValues().getLast();
+            assertTrue(reloadedTools.stream().anyMatch(tool -> "calendar".equals(tool.name())));
+        }
+
+        private void writeManagedSkill() throws IOException {
+            writeSkill("skill-a", "Calendar workflow");
+        }
+
+        private void writeSkill(String name, String description) throws IOException {
+            Path skillDir = tempDir.resolve(".campusclaw/skills").resolve(name);
+            Files.createDirectories(skillDir);
+            Files.writeString(
+                    skillDir.resolve("SKILL.md"),
+                    "---\nname: " + name + "\ndescription: " + description + "\n---\nUse the calendar tool.\n");
+        }
+
+        private PreparedAgentRuntime preparedRuntime() {
+            BoundTool bashBinding = new BoundTool("bash", "bash", "bash", "true", "bash", "allow", "local", "1");
+            BoundTool calendarBinding =
+                    new BoundTool("calendar", "calendar", "calendar", "true", "calendar", "allow", "local", "1");
+            SkillInfo skill = new SkillInfo(
+                    "skill-a",
+                    "skill-1",
+                    "1",
+                    "Calendar workflow",
+                    "booking",
+                    List.of(calendarBinding),
+                    List.of(),
+                    List.of(),
+                    List.of());
+            AgentRuntime metadata = new AgentRuntime(
+                    List.of("claude-sonnet-4-20250514"),
+                    List.of(new SkillReference("skill-1", "1")),
+                    List.of(bashBinding),
+                    List.of("Agent"),
+                    "Agent",
+                    "agent-a",
+                    "agent-a",
+                    "Prompt",
+                    List.of(),
+                    "1",
+                    null);
+            return new PreparedAgentRuntime("agent-a", tempDir, metadata, List.of(skill));
+        }
+    }
+
+    // -------------------------------------------------------------------
+    // reload
+    // -------------------------------------------------------------------
+
+    @Nested
+    class Reload {
+
+        @Test
+        void refreshesToolCatalogAndUpdatesAgentTools() {
+            when(promptBuilder.build(any())).thenReturn("prompt");
+            AgentTool replacement = new StubTool("jira_search", "Search Jira");
+            ToolCatalog catalog = mock(ToolCatalog.class);
+            when(catalog.resolve(ToolSelection.all())).thenReturn(tools, List.of(replacement));
+
+            session.setToolCatalog(catalog, ToolSelection.all());
+            session.initialize(config());
+            org.mockito.Mockito.clearInvocations(catalog);
+
+            session.reload();
+
+            verify(catalog)
+                    .refresh(org.mockito.ArgumentMatchers.argThat(
+                            (ToolRefreshRequest request) -> tempDir.equals(request.cwd())));
+            verify(session.getAgent()).setTools(List.of(replacement));
+        }
+
+        @Test
+        void defersReloadUntilUnmanagedPromptCompletes() {
+            when(promptBuilder.build(any())).thenReturn("prompt");
+            session.initialize(config());
+            CompletableFuture<Void> execution = new CompletableFuture<>();
+            when(session.getAgent().prompt(anyString())).thenReturn(execution);
+
+            CompletableFuture<Void> prompt = session.prompt("hello");
+            assertFalse(session.reloadToolsWhenIdle());
+
+            execution.complete(null);
+            prompt.join();
+            verify(promptBuilder, org.mockito.Mockito.times(2)).build(any());
+        }
+    }
+
     // -------------------------------------------------------------------
     // Skill loading
     // -------------------------------------------------------------------
@@ -378,7 +608,8 @@ class AgentSessionTest {
             when(mockAgent.prompt(anyString())).thenReturn(future);
 
             CompletableFuture<Void> result = session.prompt("hello world");
-            assertSame(future, result);
+            result.join();
+            assertFalse(session.isRuntimePromptActive());
             verify(mockAgent).prompt("hello world");
         }
 

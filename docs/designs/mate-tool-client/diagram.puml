@@ -1,96 +1,27 @@
-@startuml mate_tool_client_dataflow
-' Source evidence:
-' - modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/tool/mate/CallMateTool.java:
-'   execute (permission check, validateAgainstSchema, error propagation)
-' - modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/tool/mate/ListMateTool.java:
-'   execute (list + cache refresh)
-' - modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/common/client/mate/MateToolClient.java:
-'   listTools, callTool, ToolResult
-' - modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/common/client/HttpMateToolClient.java:
-'   listTools (two-step query), callTool (invokeToolById), four DEF-007 stubs
-' Source baseline: superheromeZzh/pi-mono-java PR #140 head (branch mate-tool-client)
-' Observed behavior: the model discovers Mate tools via listMateTool, which refreshes
-' the permission cache inside CallMateTool; each callMateTool enforces the cached
-' permission, validates args locally, then invokes the tool through MateToolClient.
-' Design reason: permission and validation run inside the AgentTool (not a
-' before-hook) because Mate tool calls bypass ToolExecutionPipeline's tool layer.
-
-skinparam backgroundColor white
-skinparam shadowing false
-skinparam ArrowColor #475569
-skinparam SequenceMessageAlignment center
-
-title Mate Tool Client Data Flow
-
-actor "Model (LLM)" as llm
-participant "AgentLoop" as loop
-participant "ListMateTool\ntool/mate" as listTool
-participant "CallMateTool\ntool/mate" as callTool
-participant "MateToolClient\ncommon/client/mate" as iface
-participant "HttpMateToolClient\ncommon/client" as http
-participant "Mate server" as mate
-
-== listMateTool ==
-llm -> loop: tool_use("listMateTool", {agent_id | skill_id})
-loop -> listTool: execute
-listTool -> iface: listTools(agentId, skillId, credentials)
-activate iface
-iface -> http: queryToolIdsByAgentId / queryToolIdsBySkillId
-http -> mate: authorized tool_id query
-mate --> http: tool_id list
-http -> mate: tool metadata query
-mate --> http: metadata list
-http --> iface: List<MateToolMeta>
-deactivate iface
-iface --> listTool: List<MateToolMeta>
-listTool -> callTool: updateMeta(tools) - refresh permission cache
-listTool --> llm: tool list (name + permission + description + inputSchema)
-
-== callMateTool ==
-llm -> loop: tool_use("callMateTool", {tool, args})
-loop -> callTool: execute
-callTool -> callTool: metaCache[tool].permission
-alt deny
-  callTool --> llm: MateToolExecutionException (pipeline marks isError)
-else ask
-  callTool -> callTool: MateApprovalUI.ask()
-  callTool --> llm: MateToolExecutionException (user denied)
-else allow (or ask approved)
-  callTool -> callTool: validateAgainstSchema (required + types)
-  callTool -> iface: callTool(tool, args, credentials)
-  activate iface
-  iface -> http: invokeToolById
-  http -> mate: tool execution (X-HW credentials)
-  mate --> http: execution result
-  http --> iface: ToolResult
-  deactivate iface
-  iface --> callTool: ToolResult
-  alt result.isError
-    callTool --> llm: MateToolExecutionException (pipeline marks isError)
-  else success
-    callTool --> llm: AgentToolResult(content, metadata)
-  end
-end
-@enduml
-
 @startuml mate_tool_client_layers
 ' Source evidence:
 ' - modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/tool/mate/:
-'   CallMateTool (MateApprovalUI, MateToolExecutionException, metaCache),
-'   ListMateTool
+'   CallMateTool (resolveCredentials hook, MateToolExecutionException),
+'   ListMateTool (agent/skill passthrough)
 ' - modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/common/client/mate/:
-'   MateToolClient, MateToolMeta, MateCredentials (top-level contract types)
+'   MateToolClient (listTools/callTool contract), MateToolMeta, MateCredentials
 ' - modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/common/client/:
-'   HttpMateToolClient (implements MateToolClient, four DEF-007 stubs)
+'   HttpMateToolClient (two-step listTools wiring, invokeTool stub DEF-007)
+' - modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/common/util/:
+'   MateRestUtil (executePostRawRequest / executeGetRawRequest)
+' - modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/common/dto/:
+'   RequestHeaderInfo (credential-free builder), ToolInfo (QUERYTOOLS result.data),
+'   AgentInfo (bindingTools[].toolId), QuerySkillToolsResult/SkillBindingTool
+'   (bindingTools[].id)
 ' - modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/config/:
-'   MateToolAutoConfiguration, MateToolProperties
-' Source baseline: superheromeZzh/pi-mono-java PR #140 head (branch mate-tool-client)
-' Observed behavior: the Mate contract types live in common/client/mate; both
-' AgentTools and HttpMateToolClient depend only on that contract package, and
-' config wires the beans behind the mate.tool.enabled switch.
-' Design reason: extracting the contract from CallMateTool removes the reverse
-' dependency of common/client on the tool layer, so the HTTP client stays a
-' reusable infrastructure component.
+'   MateToolAutoConfiguration (@Value mate.innerGWSerive), MateToolProperties
+' Source baseline: superheromeZzh/pi-mono-java PR #144 head (branch refactor/mate-tool-properties-lombok)
+' Observed behavior: both AgentTools are stateless Spring singletons; listTools
+' resolves bound tool IDs from agent/skill metadata (GET) then calls
+' QUERYTOOLS credential-free; callTool forwards agent-handed-down
+' credentials; the invoke RPC is still a DEF-007 stub.
+' Design reason: process-wide singleton lifetime forbids per-session state on
+' instances; permission (allow/ask/deny) enforcement stays on the Mate server.
 
 skinparam backgroundColor white
 skinparam shadowing false
@@ -101,35 +32,32 @@ title Mate Tool Client Layers and Dependency Direction
 
 package "tool/mate (AgentTool layer)" {
   class CallMateTool {
-    - metaCache: ConcurrentHashMap
     + execute()
-    + updateMeta(List<MateToolMeta>)
-    + credentials(): MateCredentials
+    # resolveCredentials(tool): MateCredentials
   }
   class ListMateTool {
     + execute()
-  }
-  interface MateApprovalUI {
-    + ask(tool, args, desc): boolean
   }
   class MateToolExecutionException
 }
 
 package "common/client (infrastructure layer)" {
   class HttpMateToolClient {
-    # baseUrl: String
-    + listTools()
-    + callTool()
-    # queryToolIdsByAgentId() [stub DEF-007]
-    # queryToolIdsBySkillId() [stub DEF-007]
-    # queryToolMetaByIds() [stub DEF-007]
-    # invokeToolById() [stub DEF-007]
+    # AGENT_INFO / SKILL_TOOLS_QUERY / QUERYTOOLS
+    # mateInnerGwAddress: String
+    + listTools(agentId, skillId)
+    + callTool(tool, args, credentials)
+    # queryToolIdsByAgentId(agentId)
+    # queryToolIdsBySkillId(skillId)
+    # queryToolMetaByIds(toolIds)
+    # toMeta(List<ToolInfo>)
+    # invokeTool(...) [stub DEF-007]
   }
 }
 
 package "common/client/mate (contract layer)" {
   interface MateToolClient {
-    + listTools(agentId, skillId, credentials)
+    + listTools(agentId, skillId)
     + callTool(tool, args, credentials)
   }
   class MateToolMeta <<record>> {
@@ -143,31 +71,137 @@ package "common/client/mate (contract layer)" {
   }
 }
 
+package "common/util + common/dto" {
+  class MateRestUtil {
+    + executePostRawRequest(...)
+    + executeGetRawRequest(...)
+  }
+  class RequestHeaderInfo <<DTO>> {
+    builder().build() - credential-free
+  }
+  class ToolInfo <<DTO>> {
+    toolId / toolName / description
+    inputSchema / outputSchema / permission
+  }
+  class AgentInfo <<DTO>> {
+    bindingTools[].toolId
+  }
+  class QuerySkillToolsResult <<DTO>> {
+    bindingTools[].id
+  }
+}
+
 package "config (wiring layer)" {
   class MateToolAutoConfiguration {
-    + mateToolClient()
-    + callMateTool()
-    + listMateTool()
-  }
-  class MateToolProperties {
-    enabled / baseUrl / xHwId / xHwAppKey
-    approvalUi (fail-closed default)
+    @Value mate.innerGWSerive
+    + mateRestUtil() / mateToolClient()
+    + callMateTool() / listMateTool()
   }
 }
 
 CallMateTool ..> MateToolClient : depends on contract
 ListMateTool ..> MateToolClient : depends on contract
 HttpMateToolClient ..|> MateToolClient : implements
-CallMateTool ..> MateApprovalUI : approval callback
-CallMateTool ..> MateToolMeta : permission cache
-HttpMateToolClient ..> MateToolMeta : return type
-HttpMateToolClient ..> MateCredentials : carries credentials
+HttpMateToolClient ..> MateRestUtil : gateway calls
+HttpMateToolClient ..> RequestHeaderInfo : credential-free header
+HttpMateToolClient ..> ToolInfo : decodes result.data
+HttpMateToolClient ..> MateCredentials : forwards on callTool
 MateToolAutoConfiguration ..> HttpMateToolClient : @Bean wiring
-MateToolAutoConfiguration ..> MateToolProperties : reads config
 
 note bottom of MateToolClient
   contract lives in common/client/mate;
   dependency direction: tool/mate -> contract <- common/client
-  (HttpMateToolClient no longer depends on the tool layer)
+  (HttpMateToolClient does not depend on the tool layer)
 end note
+@enduml
+
+@startuml mate_tool_client_dataflow
+' Source evidence:
+' - modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/tool/mate/CallMateTool.java:
+'   execute (credential hook, error propagation)
+' - modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/tool/mate/ListMateTool.java:
+'   execute (agent/skill passthrough, response formatting)
+' - modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/common/client/HttpMateToolClient.java:
+'   listTools (two-step: agent/skill metadata GET -> binding tool IDs,
+'   then QUERYTOOLS POST), callTool (stub invoke)
+' - modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/common/util/MateRestUtil.java:
+'   executePostRawRequest, resCode/resMsg/result envelope
+' Source baseline: superheromeZzh/pi-mono-java PR #144 head (branch refactor/mate-tool-properties-lombok)
+' Observed behavior: listMateTool resolves bound tool IDs from agent/skill
+' metadata (GET), then POSTs QUERYTOOLS credential-free with those IDs;
+' callMateTool forwards the call with
+' resolveCredentials() output; errors become exceptions so the pipeline marks
+' isError=true.
+' Design reason: stateless tools with per-call credential resolution avoid
+' cross-session leakage on the process-wide singleton client.
+
+skinparam backgroundColor white
+skinparam shadowing false
+skinparam ArrowColor #475569
+skinparam SequenceMessageAlignment center
+
+title Mate Tool Client Data Flow
+
+actor "Model (LLM)" as llm
+participant "AgentLoop" as loop
+participant "ListMateTool\ntool/mate" as listTool
+participant "CallMateTool\ntool/mate" as callTool
+participant "HttpMateToolClient\ncommon/client" as http
+participant "MateRestUtil\ncommon/util" as rest
+participant "Mate inner GW\n(mate.innerGWSerive)" as gw
+
+== listMateTool ==
+llm -> loop: tool_use("listMateTool", {agent_id | skill_id})
+loop -> listTool: execute
+listTool -> http: listTools(agentId, skillId)
+alt agentId
+  http -> rest: executeGetRawRequest(gw, /agents/{agentId})
+  rest -> gw: GET /mate-service/v1/agents/{agentId}
+  gw --> rest: {resCode, resMsg, result: AgentInfo}
+  rest --> http: raw body
+  http -> http: extract bindingTools[].toolId
+else skillId
+  http -> rest: executeGetRawRequest(gw, /skill/info/query/{skillId})
+  rest -> gw: GET /mate-service/v1/skill/info/query/{skillId}
+  gw --> rest: {resCode, resMsg, result: QuerySkillToolsResult}
+  rest --> http: raw body
+  http -> http: extract bindingTools[].id
+end
+note over http
+  empty ID list -> return empty tool list
+  (no QUERYTOOLS call)
+end note
+http -> rest: executePostRawRequest(gw, QUERYTOOLS, headerInfo, body)
+rest -> gw: POST /mate-service/v1/runtime/tools/query
+note right of rest
+  header: RequestHeaderInfo.builder().build()
+  body: {"toolIds": [collected IDs]}
+end note
+gw --> rest: {resCode, resMsg, result:{data:[ToolInfo]}}
+rest --> http: raw body
+http -> http: resCode != 0 -> throw
+http -> http: result.data -> List<ToolInfo> -> toMeta()
+http --> listTool: List<MateToolMeta>
+listTool --> llm: tool list (name + description + inputSchema)
+
+== callMateTool ==
+llm -> loop: tool_use("callMateTool", {tool, args})
+loop -> callTool: execute
+callTool -> callTool: resolveCredentials(tool)
+callTool -> http: callTool(tool, args, credentials)
+http -> http: invokeTool [DEF-007 stub]
+alt stub throws
+  http --> callTool: isError ToolResult
+  callTool --> llm: MateToolExecutionException (pipeline marks isError)
+else real invoke (internal)
+  http -> rest: executePostRawRequest(gw, CALLTOOL, headerInfo, body)
+  rest -> gw: POST tool invocation (credentials forwarded)
+  gw --> rest: {resCode, resMsg, result}
+  rest --> http: raw body
+  alt result error
+    callTool --> llm: MateToolExecutionException (pipeline marks isError)
+  else success
+    callTool --> llm: AgentToolResult(content, metadata)
+  end
+end
 @enduml

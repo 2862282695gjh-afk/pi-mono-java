@@ -15,9 +15,8 @@ import com.campusclaw.agent.tool.ToolExecutionMode;
 import com.campusclaw.agent.tool.ToolExecutionPipeline;
 import com.campusclaw.ai.types.ToolCall;
 import com.campusclaw.ai.types.ToolResultMessage;
-import com.campusclaw.codingagent.common.client.mate.MateCredentials;
+import com.campusclaw.codingagent.common.client.HttpMateToolClient;
 import com.campusclaw.codingagent.common.client.mate.MateToolClient;
-import com.campusclaw.codingagent.common.client.mate.MateToolMeta;
 import com.campusclaw.codingagent.tool.mate.CallMateTool;
 import com.campusclaw.codingagent.tool.mate.ListMateTool;
 import com.campusclaw.codingagent.tool.mate.MockMateToolClient;
@@ -62,13 +61,16 @@ class MateToolAutoConfigurationTest {
     }
 
     @Test
-    void configuredCredentialsReachTheTool() {
-        runner.withPropertyValues("mate.tool.x-hw-id=hw-id-001", "mate.tool.x-hw-appkey=hw-key-001")
+    void gatewayAddressReachesTheClient() {
+        new ApplicationContextRunner()
+                .withConfiguration(AutoConfigurations.of(MateToolAutoConfiguration.class))
+                .withPropertyValues("mate.innerGWSerive=http://gw.example.com:9999")
                 .run(context -> {
-                    CallMateTool callMateTool = context.getBean(CallMateTool.class);
-                    MateCredentials creds = callMateTool.credentials();
-                    assertThat(creds.xHwId()).isEqualTo("hw-id-001");
-                    assertThat(creds.xHwAppKey()).isEqualTo("hw-key-001");
+                    assertThat(context).hasSingleBean(MateToolClient.class);
+                    assertThat(context.getBean(MateToolClient.class))
+                            .isInstanceOf(HttpMateToolClient.class)
+                            .extracting("mateInnerGwAddress")
+                            .isEqualTo("http://gw.example.com:9999");
                 });
     }
 
@@ -76,8 +78,7 @@ class MateToolAutoConfigurationTest {
     void mateErrorPropagatesThroughPipelineAsIsError() {
         MockMateToolClient client = new MockMateToolClient();
         client.overrideCallResult(new MateToolClient.ToolResult("mate exploded", null, true));
-        CallMateTool callMateTool = new CallMateTool(client, (t, a, d) -> true, MateCredentials.appKey("id", "key"));
-        callMateTool.updateMeta(List.of(new MateToolMeta("boom", "b", Map.of(), Map.of(), true, "allow")));
+        CallMateTool callMateTool = new CallMateTool(client);
 
         ToolCall toolCall = new ToolCall("call-1", "callMateTool", Map.of("tool", "boom"));
         ToolExecutionPipeline pipeline = new ToolExecutionPipeline();

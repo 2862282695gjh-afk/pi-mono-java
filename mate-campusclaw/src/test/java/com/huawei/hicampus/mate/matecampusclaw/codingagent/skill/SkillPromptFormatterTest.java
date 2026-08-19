@@ -52,6 +52,17 @@ class SkillPromptFormatterTest {
         }
 
         @Test
+        void managedRuntimeRequiresActivationAndHidesFileLocation() {
+            List<Skill> skills = List.of(skill("commit", "Git commits", "/skills/commit/SKILL.md"));
+
+            String result = SkillPromptFormatter.format(skills, true);
+
+            assertTrue(result.contains("call activate_skill"));
+            assertTrue(result.contains("<name>commit</name>"));
+            assertTrue(!result.contains("<location>"));
+        }
+
+        @Test
         void returnsEmptyStringForEmptyList() {
             assertEquals("", SkillPromptFormatter.format(List.of()));
         }
