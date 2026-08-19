@@ -15,14 +15,13 @@ import com.campusclaw.codingagent.runtime.MateServiceClient.BoundTool;
 import com.campusclaw.codingagent.runtime.MateServiceClient.SkillInfo;
 
 /**
- * Immutable local snapshot used to initialize one managed Agent session.
+ * 用于初始化单个托管 Agent Session 的不可变本地快照。
  *
- * @param agentId   selected Agent identifier
- * @param agentRoot local {@code ./agent/{agentId}} directory
- * @param metadata  cached runtime metadata
- * @param skills    identity snapshots (name/description) of the bound Skills, reconstructed
- *                  from the materialized SKILL.md front-matter headers; the materialized
- *                  {@code skills/} sub-directories themselves prove the binding
+ * @param agentId 已选择的 Agent 标识
+ * @param agentRoot 本地 {@code ./agent/{agentId}} 目录
+ * @param metadata 缓存的运行时元数据
+ * @param skills 从已物化 SKILL.md frontmatter 重建的绑定 Skill 身份快照；
+ *               {@code skills/} 子目录本身表示绑定关系
  *
  * @version [br_eCampusCore 26.0.0, 2026/08/17]
  * @since [br_eCampusCore 26.0.0]
@@ -34,10 +33,10 @@ public record PreparedAgentRuntime(String agentId, Path agentRoot, AgentRuntime 
     }
 
     /**
-     * Returns Agent-level tools explicitly permitted with {@code permission=allow}.
-     * ASK is fail-closed until the main Agent has an interactive approval resolver.
+     * 返回显式配置 {@code permission=allow} 的 Agent 级工具。
+     * 在主 Agent 接入交互审批解析器之前，ASK 权限按 fail closed 处理。
      *
-     * @return allowed local tool names
+     * @return 允许的本地工具名
      */
     public List<String> allowedAgentToolNames() {
         return allowedToolNames(metadata.bindingTools());
@@ -54,7 +53,7 @@ public record PreparedAgentRuntime(String agentId, Path agentRoot, AgentRuntime 
     }
 
     /**
-     * 按运行期名称查找已绑定的 Skill。
+     * 按运行时名称查找已绑定的 Skill。
      *
      * @param skillName Skill 名称
      * @return 已绑定的 Skill 元数据

@@ -1,4 +1,4 @@
-# cron 模块设计文档（基于代码 v1）
+# cron 模块设计文档（基于代码 v1.1）
 
 ## 文档信息
 
@@ -8,9 +8,13 @@
 | Story 名称 | cron 模块设计文档（基于代码 v1） |
 | 负责人 | 待开发者补充 |
 | 创建日期 | 2026-05-14 |
-| 版本 | v1.0 (code-derived) |
+| 版本 | v1.1 (code-derived) |
 
 > 本文档基于 `modules/cron` 现有源码逆向生成，复用 `docs/cron-module-design.md` 中已沉淀的设计原文（架构对照表、Phase 列表、文件清单等），按 AR 七章模板补齐章节。
+> 图表格式更新分析源码提交为
+> `cc2f58d9e24bae1d7c99b9f54e86b71940d86115`，主要证据为
+> `CronService`、`CronEngine#executeAndReschedule`、`CronJobExecutor#execute`、
+> `CronStore` 与 `CronRunLog`。
 
 ---
 
@@ -53,21 +57,9 @@ CampusClaw 主进程是 TUI 交互式 Agent，对话生命周期 = 进程生命�
 
 ### 2.1 Story 上下文
 
-```mermaid
-flowchart LR
-    ai["campusclaw-ai"]
-    core["campusclaw-agent-core"]
-    cron["campusclaw-cron"]
-    cli["campusclaw-coding-agent"]
-    jackson(["jackson-databind"])
-    spring(["spring-context (CronExpression)"])
+![Cron 模块上下文](./cron/module-context.svg)
 
-    ai --> core
-    core --> cron
-    cron --> cli
-    jackson -.-> cron
-    spring -.-> cron
-```
+[PlantUML 源文件](./cron/diagram.puml#L1)
 
 文字补充：
 
@@ -105,30 +97,9 @@ flowchart LR
 
 核心流程：调度任务触发 → 加 tick 锁 → 检查 enabled & 未在跑 → executor 创建 Agent → prompt 执行 → 记录结果 → 重调度。
 
-```mermaid
-sequenceDiagram
-    participant Scheduler as ScheduledExecutorService
-    participant CronEngine
-    participant CronStore
-    participant CronJobExecutor
-    participant Agent
-    participant CronRunLog
+![Cron 任务执行时序](./cron/execution-sequence.svg)
 
-    Scheduler->>CronEngine: executeAndReschedule(jobId)
-    CronEngine->>CronEngine: tickLock.tryLock()
-    CronEngine->>CronStore: getJob(jobId)
-    CronStore-->>CronEngine: CronJob
-    CronEngine->>CronStore: markJobRunning
-    CronEngine->>CronJobExecutor: execute(job)
-    CronJobExecutor->>CronRunLog: appendRun(RUNNING)
-    CronJobExecutor->>Agent: new Agent(aiService) + setModel/Tools
-    CronJobExecutor->>Agent: prompt(text).get(300s)
-    Agent-->>CronJobExecutor: AssistantMessage
-    CronJobExecutor->>CronRunLog: appendRun(SUCCESS|FAILED)
-    CronJobExecutor-->>CronEngine: CronRunRecord
-    CronEngine->>CronStore: recordJobOutcome (errors, totalRuns)
-    CronEngine->>CronEngine: scheduleJob(updated)
-```
+[PlantUML 源文件](./cron/diagram.puml#L24)
 
 主流程 step（措辞与时序图节点对齐）：
 
@@ -203,7 +174,7 @@ sequenceDiagram
 
 **事件接口**——`CronEventListener` 单方法函数式接口 `void onCronEvent(CronEvent event)`。
 
-本模块不暴露 HTTP / WS / gRPC 接口。
+本模块不暴露 HTTP 或 gRPC 接口。
 
 ### 3.5 数据库及持久化设计
 
@@ -255,43 +226,9 @@ sequenceDiagram
 
 ### 3.6 代码设计
 
-```mermaid
-classDiagram
-    class CronService
-    class CronEngine
-    class CronJobExecutor
-    class CronEventListener
-    class CronStore
-    class CronRunLog
-    class CronTool
-    class CronJob
-    class CronJobState
-    class CronRunRecord
-    class CronSchedule
-    class CronPayload
-    class CronEvent
-    class AgentTool
+![Cron 模块核心类](./cron/core-classes.svg)
 
-    <<interface>> CronEventListener
-    <<sealed>> CronSchedule
-    <<sealed>> CronPayload
-    <<sealed>> CronEvent
-    <<interface>> AgentTool
-
-    CronService *-- CronStore
-    CronService *-- CronEngine
-    CronService *-- CronRunLog
-    CronEngine *-- CronJobExecutor
-    CronEngine --> CronStore : reads/writes
-    CronEngine ..> CronEventListener : emits
-    CronJobExecutor --> CronRunLog : appends
-    CronTool ..|> AgentTool
-    CronTool --> CronService : delegates
-    CronJob *-- CronJobState
-    CronJob --> CronSchedule
-    CronJob --> CronPayload
-    CronEngine ..> CronEvent : emits
-```
+[PlantUML 源文件](./cron/diagram.puml#L54)
 
 正文类清单（按包组织，与图严格对齐）：
 
@@ -388,7 +325,7 @@ classDiagram
 - `README.md` —— 顶部模块表 cron 行
 - 本文档 `cron-with-existing-design/with_skill/outputs/cron.md` —— v1 基于代码逆向产出
 
-无 `docs/openapi/*.yaml` 或 `docs/asyncapi/*.yaml` 关联（无 HTTP/WS 接口）。
+无公开接口契约文件关联（本模块没有 HTTP 服务端接口）。
 
 ---
 
@@ -433,6 +370,7 @@ classDiagram
 
 | 日期 | 提出人 | 角色 | 问题/议题 | 讨论过程 | 决策结论 | 状态 |
 |---|---|---|---|---|---|---|
-| 2026-05-14 | - | - | 设计文档由 codebase-module-design skill 基于代码逆向生成 v1 | 复用 `docs/cron-module-design.md` 中的依赖关系、并发控制矩阵、Phase 设计原文；按 AR 七章模板补齐 1.1 / 2.1 / 3.2 / 3.5 / 3.6 / 4.x / 5.x 章节，并按新规则在 2.1 / 3.2 / 3.6 三处补 Mermaid 图 | 由开发者补充 1.1 需求来源具体 Story 编号、1.2 业务背景描述、6.x 转测项勾选 | 开放 |
+| 2026-05-14 | - | - | 设计文档由 codebase-module-design skill 基于代码逆向生成 v1 | 复用 `docs/cron-module-design.md` 中的依赖关系、并发控制矩阵、Phase 设计原文；按 AR 七章模板补齐章节和三处设计图 | 由开发者补充 1.1 需求来源具体 Story 编号、1.2 业务背景描述、6.x 转测项勾选 | 开放 |
+| 2026-08-18 | Codex | 文档维护 | 设计图格式不符合全局 PlantUML 规范 | 保持节点和关系语义不变，补充源码证据并生成 SVG | Mermaid 迁移为单一 `diagram.puml` 中的稳定命名图 | 已落实 |
 | - | - | - | 是否将硬编码业务参数（`MAX_CONSECUTIVE_ERRORS=3`、`DEFAULT_TIMEOUT_SECONDS=300`、`STALE_THRESHOLD_MS=2h`）外置为 `@ConfigurationProperties` | - | 待评审 | 开放 |
 | - | - | - | `jobs.json` / `runs/*.jsonl` 是否设置 POSIX 0600 文件权限（5.15） | - | 待评审 | 开放 |

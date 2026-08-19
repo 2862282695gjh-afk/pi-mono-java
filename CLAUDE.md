@@ -46,7 +46,7 @@ tui ────────────┤                 │              │
 | `modules/coding-agent-cli` | `campusclaw-coding-agent` | Spring Boot + Picocli application integrating everything. Contains the tool implementations (`tool/{read,write,edit,editdiff,bash,glob,grep,ls}`), mode dispatch (`mode/{tui,server,rpc}`), skill loader, session JSONL persistence, slash commands. |
 
 Key runtime concepts:
-- **Execution modes**: `--mode interactive|one-shot|rpc|server|print` selects a handler under `codingagent/mode/`. Server exposes HTTP (see `docs/openapi/campusclaw-api.yaml`), RPC uses stdin/stdout JSONL.
+- **Startup model**: default `java -jar` starts the Spring Boot MVC HTTP+SSE service. The explicit `cli` subcommand starts a non-web context; inside it, `--mode interactive|one-shot|rpc|print` selects a handler under `codingagent/mode/`. RPC uses stdin/stdout JSONL.
 - **Hybrid tool execution** (see `ARCHITECTURE-HYBRID.md`): tools have a `Hybrid*` variant that routes between local JVM execution and a Docker sandbox sidecar based on risk. Controlled by `tool.execution.*` in `application.yml` (`default-mode: LOCAL|SANDBOX|AUTO`, `hybrid-enabled`). `LOCAL` is the default in the checked-in `application.yml`; set to `SANDBOX`/`AUTO` only when Docker is available.
 - **Extensibility**: two mechanisms layered in `coding-agent-cli` — `skill/` (user-installable skill packs under `~/.campusclaw/packages`) and `extension/` (in-tree `ExtensionPoint` registrations for tools / commands / hooks).
 - **Reactive stack**: `ai` and `agent-core` use Reactor `Mono/Flux` throughout for streaming LLM responses. Don't `.block()` on the event stream path.
@@ -781,8 +781,7 @@ The repo merges PRs with **Merge commit**（保留每个 commit 的真实 SHA �
 - `README.md` — user-facing quickstart, CLI flags, supported providers.
 - `docs/module-architecture.md` — authoritative module/package breakdown.
 - `ARCHITECTURE-HYBRID.md`, `IMPLEMENTATION-HYBRID.md`, `DOCKER-SANDBOX-GUIDE.md` — hybrid local/sandbox execution design.
-- `docs/openapi/campusclaw-api.yaml` — HTTP server mode API (OpenAPI 3, authoritative). `docs/server-api.md` is a deprecated historical snapshot.
-- `docs/asyncapi/chat-ws.yaml` — `/api/ws/chat` WebSocket contract (AsyncAPI).
+- `docs/plans/campusclaw-http-v1-implementation.md` — Runtime V1 implementation mapping, source baseline, and validation evidence. The field-level contract is maintained as the interactive HTML document in the dedicated design repository; this repository intentionally has no OpenAPI or public WebSocket contract copy.
 - `modules/*/`+`*-design.md` — per-module design docs (Story/AR format).
 - `docs/designs/*.md` — feature/module design docs (gstack `/plan-eng-review` format); see "决策记录与设计文档约定".
 - `docs/decisions/*.html` — ADR decision records (one self-contained HTML per decision).

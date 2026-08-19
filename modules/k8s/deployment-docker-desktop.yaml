@@ -41,7 +41,7 @@ spec:
               export DOCKER_HOST=tcp://localhost:2375
 
               # 运行 CampusClaw
-              exec java -jar modules/coding-agent-cli/target/campusclaw-agent.jar -m k2p5
+              exec java -jar modules/coding-agent-cli/target/campusclaw-agent.jar
           ports:
             - name: http
               containerPort: 8080

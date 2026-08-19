@@ -25,6 +25,7 @@ import com.huawei.hicampus.mate.matecampusclaw.agent.event.ToolExecutionStartEve
 import com.huawei.hicampus.mate.matecampusclaw.agent.loop.AgentLoop;
 import com.huawei.hicampus.mate.matecampusclaw.agent.loop.AgentLoopConfig;
 import com.huawei.hicampus.mate.matecampusclaw.agent.queue.MessageQueue;
+import com.huawei.hicampus.mate.matecampusclaw.agent.queue.MessageQueue.DeliveryMode;
 import com.huawei.hicampus.mate.matecampusclaw.agent.state.AgentState;
 import com.huawei.hicampus.mate.matecampusclaw.agent.tool.AfterToolCallHandler;
 import com.huawei.hicampus.mate.matecampusclaw.agent.tool.AgentContext;
@@ -172,6 +173,18 @@ public class Agent {
         followUpQueue.enqueue(message);
     }
 
+    public void setSteeringMode(DeliveryMode mode) {
+        steeringQueue.setMode(mode);
+    }
+
+    public void setFollowUpMode(DeliveryMode mode) {
+        followUpQueue.setMode(mode);
+    }
+
+    public boolean hasQueuedControlMessages() {
+        return steeringQueue.hasMessages() || followUpQueue.hasMessages();
+    }
+
     public void clearSteeringQueue() {
         steeringQueue.clear();
     }
@@ -192,6 +205,17 @@ public class Agent {
 
     public CompletableFuture<Void> continueExecution() {
         return startExecution(List.of(), true);
+    }
+
+    public CompletableFuture<Void> continueQueuedExecution() {
+        List<Message> messages = steeringQueue.drain();
+        if (messages.isEmpty()) {
+            messages = followUpQueue.drain();
+        }
+        if (messages.isEmpty()) {
+            return CompletableFuture.failedFuture(new IllegalStateException("No queued control message"));
+        }
+        return startExecution(messages, false);
     }
 
     public void abort() {

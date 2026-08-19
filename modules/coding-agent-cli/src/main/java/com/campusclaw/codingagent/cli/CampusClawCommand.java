@@ -32,9 +32,10 @@ import com.campusclaw.codingagent.config.ConfigValueResolver;
 import com.campusclaw.codingagent.mode.InteractiveMode;
 import com.campusclaw.codingagent.mode.OneShotMode;
 import com.campusclaw.codingagent.mode.rpc.RpcMode;
-import com.campusclaw.codingagent.mode.server.ServerMode;
 import com.campusclaw.codingagent.prompt.SystemPromptBuilder;
 import com.campusclaw.codingagent.runtime.AgentRuntimeManager;
+import com.campusclaw.codingagent.runtime.DelegationState;
+import com.campusclaw.codingagent.runtime.DelegationWiring;
 import com.campusclaw.codingagent.runtime.LocalAgentDispatcher;
 import com.campusclaw.codingagent.runtime.PreparedAgentRuntime;
 import com.campusclaw.codingagent.session.AgentSession;
@@ -68,10 +69,9 @@ import picocli.CommandLine.Parameters;
 import picocli.CommandLine.Spec;
 
 /**
- * Main CLI command for CampusClaw.
- * Parses command-line arguments and launches the agent in the requested mode.
+ * CampusClaw CLI 主命令，解析命令行参数并启动对应的 Agent 运行模式。
  *
- * @version [br_eCampusCore 26.0.0, 2026/08/17]
+ * @version [br_eCampusCore 26.0.0, 2026/08/19]
  * @since [br_eCampusCore 26.0.0]
  */
 @Command(
@@ -103,9 +103,6 @@ public class CampusClawCommand implements Callable<Integer> {
     private final com.campusclaw.codingagent.model.ModelCatalogService modelCatalogService;
     private final com.campusclaw.agent.subagent.SubAgentRegistry subAgentRegistry;
 
-    @org.springframework.beans.factory.annotation.Value("${server.session.persistence.enabled:true}")
-    private boolean serverSessionPersistenceEnabled;
-
     public CampusClawCommand(
             CampusClawAiService piAiService,
             ModelRegistry modelRegistry,
@@ -116,7 +113,6 @@ public class CampusClawCommand implements Callable<Integer> {
             SettingsManager settingsManager,
             @org.springframework.lang.Nullable com.campusclaw.cron.CronService cronService,
             com.campusclaw.codingagent.loop.LoopManager loopManager,
-            org.springframework.context.ApplicationContext applicationContext,
             @org.springframework.lang.Nullable SandboxSkillParser sandboxSkillParser,
             com.campusclaw.codingagent.resolver.AgentModelResolver agentModelResolver,
             com.campusclaw.codingagent.model.ModelCatalogService modelCatalogService,
@@ -132,7 +128,7 @@ public class CampusClawCommand implements Callable<Integer> {
                 settingsManager,
                 cronService,
                 loopManager,
-                applicationContext,
+                null,
                 sandboxSkillParser,
                 agentModelResolver,
                 modelCatalogService,
@@ -205,19 +201,9 @@ public class CampusClawCommand implements Callable<Integer> {
 
     @Option(
             names = {"--mode"},
-            description = "Execution mode: interactive, one-shot, rpc, server, or print",
+            description = "Execution mode: interactive, one-shot, rpc, or print",
             defaultValue = "interactive")
     String mode;
-
-    @Option(
-            names = {"--port"},
-            description = "HTTP server port (for server mode)")
-    Integer port;
-
-    @Option(
-            names = {"--host"},
-            description = "HTTP server bind address (for server mode, default: localhost)")
-    String host;
 
     @Option(
             names = {"--proxy"},
@@ -412,11 +398,7 @@ public class CampusClawCommand implements Callable<Integer> {
 
     private String resolveEffectivePrompt() {
         String effectivePrompt = resolvePrompt();
-        if (effectivePrompt != null
-                || System.console() != null
-                || "server".equals(mode)
-                || "rpc".equals(mode)
-                || "print".equals(mode)) {
+        if (effectivePrompt != null || System.console() != null || "rpc".equals(mode) || "print".equals(mode)) {
             return effectivePrompt;
         }
         try {
@@ -559,12 +541,6 @@ public class CampusClawCommand implements Callable<Integer> {
 
         SessionConfig baseConfig = new SessionConfig(effectiveModel, effectiveCwd, effectiveSystemPrompt, mode);
         AgentRuntimeManager runtimeManager = resolveAgentRuntimeManager();
-        if ("server".equals(mode)) {
-            List<AgentTool> serverTools = resolveEffectiveTools(effectiveCwd, toolSelection);
-            runServerMode(baseConfig, serverTools, toolSelection, useSandbox, runtimeManager);
-            return 0;
-        }
-
         PreparedAgentRuntime preparedRuntime = null;
         SessionConfig config = baseConfig;
         if (agentId != null && !agentId.isBlank()) {
@@ -606,81 +582,38 @@ public class CampusClawCommand implements Callable<Integer> {
             boolean useSandbox,
             PreparedAgentRuntime preparedRuntime,
             AgentRuntimeManager runtimeManager) {
-        AgentSession session = new AgentSession(
-                piAiService,
-                modelRegistry,
-                promptBuilder,
-                new SkillLoader(sandboxSkillParser, useSandbox),
-                new SkillExpander(sandboxSkillParser, useSandbox),
-                effectiveTools);
+        SkillLoader skillLoader = new SkillLoader(sandboxSkillParser, useSandbox);
+        SkillExpander skillExpander = new SkillExpander(sandboxSkillParser, useSandbox);
+        AgentSession session =
+                new AgentSession(piAiService, modelRegistry, promptBuilder, skillLoader, skillExpander, effectiveTools);
         session.setToolCatalog(toolCatalog, toolSelection);
         if (preparedRuntime != null) {
             session.setAgentRuntime(preparedRuntime, runtimeManager);
+            configureDelegation(session, effectiveTools, toolSelection, skillLoader, skillExpander);
         }
         return session;
     }
 
-    private void runServerMode(
-            SessionConfig config,
+    private void configureDelegation(
+            AgentSession session,
             List<AgentTool> effectiveTools,
             ToolSelection toolSelection,
-            boolean useSandbox,
-            AgentRuntimeManager runtimeManager) {
-        com.campusclaw.codingagent.config.CustomModelLoader customModelLoader = resolveCustomModelLoader();
-        new ServerMode(
-                        piAiService,
-                        modelRegistry,
-                        promptBuilder,
-                        effectiveTools,
-                        toolCatalog,
-                        toolSelection,
-                        config,
-                        port != null ? port : 3000,
-                        host != null ? host : "localhost",
-                        sandboxSkillParser,
-                        useSandbox,
-                        modelCatalogService,
-                        serverSessionPersistenceEnabled,
-                        settingsManager,
-                        customModelLoader,
-                        runtimeManager,
-                        agentId,
-                        latestToolsSettings -> ToolSelection.fromCli(
-                                toolsFilter, noTools, ToolSelection.fromSettings(latestToolsSettings)),
-                        resolveLocalAgentDispatcher())
-                .run();
-    }
-
-    @SuppressWarnings("unchecked")
-    private List<
-                    org.springframework.web.reactive.function.server.RouterFunction<
-                            org.springframework.web.reactive.function.server.ServerResponse>>
-            collectExtraRouterFunctions() {
-        if (applicationContext == null) {
-            return List.of();
+            SkillLoader skillLoader,
+            SkillExpander skillExpander) {
+        LocalAgentDispatcher dispatcher = resolveLocalAgentDispatcher();
+        if (dispatcher == null) {
+            return;
         }
-        java.util.Map<String, org.springframework.web.reactive.function.server.RouterFunction> beans =
-                applicationContext.getBeansOfType(
-                        org.springframework.web.reactive.function.server.RouterFunction.class);
-        List<
-                        org.springframework.web.reactive.function.server.RouterFunction<
-                                org.springframework.web.reactive.function.server.ServerResponse>>
-                routes = new java.util.ArrayList<>(beans.size());
-        for (org.springframework.web.reactive.function.server.RouterFunction<?> rf : beans.values()) {
-            routes.add((org.springframework.web.reactive.function.server.RouterFunction<
-                            org.springframework.web.reactive.function.server.ServerResponse>)
-                    rf);
-        }
-        return List.copyOf(routes);
-    }
-
-    private void runServerMode(SessionConfig config, List<AgentTool> effectiveTools, boolean useSandbox) {
-        runServerMode(
-                config,
+        DelegationWiring wiring = new DelegationWiring(
+                piAiService,
+                modelRegistry,
+                promptBuilder,
+                skillLoader,
+                skillExpander,
                 effectiveTools,
-                ToolSelection.fromCli(toolsFilter, noTools),
-                useSandbox,
-                resolveAgentRuntimeManager());
+                toolCatalog,
+                toolSelection);
+        session.setDelegationState(DelegationState.entry(dispatcher, null, null, wiring));
     }
 
     private AgentRuntimeManager resolveAgentRuntimeManager() {
@@ -703,18 +636,6 @@ public class CampusClawCommand implements Callable<Integer> {
             return applicationContext.getBean(LocalAgentDispatcher.class);
         } catch (org.springframework.beans.BeansException e) {
             log.warn("LocalAgentDispatcher bean not available; Agent delegation is disabled", e);
-            return null;
-        }
-    }
-
-    private com.campusclaw.codingagent.config.CustomModelLoader resolveCustomModelLoader() {
-        if (applicationContext == null) {
-            return null;
-        }
-        try {
-            return applicationContext.getBean(com.campusclaw.codingagent.config.CustomModelLoader.class);
-        } catch (org.springframework.beans.BeansException e) {
-            log.warn("CustomModelLoader bean not available; settings/customModels endpoint disabled", e);
             return null;
         }
     }

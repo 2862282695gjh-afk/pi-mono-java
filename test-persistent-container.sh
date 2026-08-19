@@ -29,7 +29,7 @@ echo "-----------------------------------"
 docker ps -aq --filter "name=campusclaw-worker" | xargs -r docker rm -f 2>/dev/null || true
 
 echo "启动 CampusClaw（5秒后自动退出）..."
-timeout 5 java -jar "$JAR_PATH" --verbose 2>&1 | grep -E "(Sandbox|worker|Docker)" || true
+timeout 5 java -jar "$JAR_PATH" cli --verbose 2>&1 | grep -E "(Sandbox|worker|Docker)" || true
 
 echo ""
 echo "检查容器状态:"
@@ -64,7 +64,7 @@ fi
 
 echo ""
 echo "重新启动 CampusClaw 测试自动恢复..."
-timeout 5 java -jar "$JAR_PATH" --verbose 2>&1 | grep -E "(recreat|recover|healthy)" || true
+timeout 5 java -jar "$JAR_PATH" cli --verbose 2>&1 | grep -E "(recreat|recover|healthy)" || true
 
 echo ""
 echo "检查新容器是否被创建:"

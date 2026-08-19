@@ -121,14 +121,14 @@ public class AgentLoop {
                             runToolPhaseTraced(turn, context, signal, eventListener, assistantMessage, toolCalls);
                     continue;
                 }
-                var followUpMessages = drainFollowUpMessages();
+                var controlMessages = drainNextControlMessages();
                 eventListener.onEvent(new TurnEndEvent(assistantMessage, List.of()));
-                if (followUpMessages.isEmpty()) {
-                    AcpTransport.note("AgentLoop.turn=" + turn + " end no-tools no-followup");
+                if (controlMessages.isEmpty()) {
+                    AcpTransport.note("AgentLoop.turn=" + turn + " end no-tools no-control-message");
                     break;
                 }
-                context.appendMessages(followUpMessages);
-                pendingTurnInputs = followUpMessages;
+                context.appendMessages(controlMessages);
+                pendingTurnInputs = controlMessages;
             }
             AcpTransport.note("AgentLoop.exit cancelled=" + signal.isCancelled() + " totalTurns=" + turn);
             return context.messages();
@@ -384,6 +384,11 @@ public class AgentLoop {
             }
         }
         return followUpQueue.drain();
+    }
+
+    private List<Message> drainNextControlMessages() {
+        List<Message> steeringMessages = drainSteeringMessages();
+        return steeringMessages.isEmpty() ? drainFollowUpMessages() : steeringMessages;
     }
 
     private AssistantMessage extractAssistantMessage(AssistantMessageEvent event) {

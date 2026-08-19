@@ -1,0 +1,105 @@
+@startuml module-context
+title Agent Core Module Context
+left to right direction
+skinparam componentStyle rectangle
+
+' Source evidence: modules/agent-core/pom.xml; Agent; AgentLoop.
+' Analyzed source commit: cc2f58d9e24bae1d7c99b9f54e86b71940d86115.
+' Observed behavior: agent-core consumes the AI library and serves cron and coding-agent-cli.
+
+component "campusclaw-ai" as ai
+component "campusclaw-agent-core" as core
+component "campusclaw-cron" as cron
+component "campusclaw-coding-agent" as cli
+component "reactor-core" as reactor
+component "jackson + json-schema" as jackson
+component "spring-context" as spring
+
+ai --> core
+reactor --> core
+jackson --> core
+spring --> core
+core --> cron
+core --> cli
+@enduml
+
+@startuml loop-sequence
+title Agent Execution Loop Sequence
+
+' Source evidence: modules/agent-core/src/main/java/com/campusclaw/agent/Agent.java.
+' Source evidence: modules/agent-core/src/main/java/com/campusclaw/agent/loop/AgentLoop.java.
+' Observed behavior: one Agent execution may contain multiple model and tool turns.
+
+participant Caller
+participant Agent
+participant AgentLoop
+participant "StreamFunction (LLM)" as LLM
+participant ToolExecutionPipeline
+
+Caller -> Agent : prompt(text)
+Agent -> AgentLoop : run()
+AgentLoop --> Caller : AgentStartEvent
+loop until stop or cancel
+  AgentLoop --> Caller : TurnStartEvent
+  AgentLoop -> LLM : stream request
+  LLM --> AgentLoop : text or tool calls
+  opt tool calls exist
+    AgentLoop -> ToolExecutionPipeline : execute(toolCalls)
+    ToolExecutionPipeline --> AgentLoop : tool results
+  end
+  AgentLoop --> Caller : TurnEndEvent
+end
+AgentLoop --> Agent : update AgentState
+Agent --> Caller : execution completes
+@enduml
+
+@startuml core-classes
+title Agent Core Classes
+skinparam classAttributeIconSize 0
+
+' Source evidence: modules/agent-core/src/main/java/com/campusclaw/agent/.
+' Design reason: show execution, event, tool, queue, cancellation, and sub-agent boundaries.
+
+class Agent
+class AgentLoop
+class AgentLoopConfig
+class AgentState
+interface AgentEvent
+interface AgentEventListener
+interface AgentTool
+class ToolExecutionPipeline
+class ToolExecutionMode
+interface BeforeToolCallHandler
+interface AfterToolCallHandler
+class CancellationToken
+class MessageQueue
+interface ContextTransformer
+interface MessageConverter
+class ProxyConfig
+interface SubAgentBackend
+class SubAgentRegistry
+class ProcessAcpBackend
+class HttpAgentBackend
+interface ApprovalPolicy
+interface StreamFunction
+
+Agent *-- AgentState
+Agent *-- AgentLoop : creates per execution
+Agent --> AgentEventListener : emits to
+AgentLoop --> AgentLoopConfig : configured by
+AgentLoop --> ToolExecutionPipeline : uses
+AgentLoop --> MessageQueue : drains controls
+AgentLoop --> ContextTransformer : transforms
+AgentLoop --> MessageConverter : converts
+AgentLoop --> StreamFunction : streams
+AgentLoop ..> AgentEvent : emits
+ToolExecutionPipeline --> AgentTool : invokes
+ToolExecutionPipeline --> BeforeToolCallHandler : applies
+ToolExecutionPipeline --> AfterToolCallHandler : applies
+ToolExecutionPipeline --> ToolExecutionMode : dispatches
+ToolExecutionPipeline --> CancellationToken : honors
+SubAgentRegistry o-- SubAgentBackend
+ProcessAcpBackend ..|> SubAgentBackend
+HttpAgentBackend ..|> SubAgentBackend
+ProcessAcpBackend --> ApprovalPolicy : asks
+@enduml

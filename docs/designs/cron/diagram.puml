@@ -1,0 +1,89 @@
+@startuml module-context
+title Cron Module Context
+left to right direction
+skinparam componentStyle rectangle
+
+' Source evidence: modules/cron/pom.xml; CronService; CronEngine.
+' Analyzed source commit: cc2f58d9e24bae1d7c99b9f54e86b71940d86115.
+' Observed behavior: cron consumes agent-core and is assembled by coding-agent-cli.
+
+component "campusclaw-ai" as ai
+component "campusclaw-agent-core" as core
+component "campusclaw-cron" as cron
+component "campusclaw-coding-agent" as cli
+component "jackson-databind" as jackson
+component "spring-context" as spring
+
+ai --> core
+core --> cron
+cron --> cli
+jackson ..> cron
+spring ..> cron
+@enduml
+
+@startuml execution-sequence
+title Cron Job Execution Sequence
+
+' Source evidence: modules/cron/src/main/java/com/campusclaw/cron/engine/CronEngine.java.
+' Source evidence: modules/cron/src/main/java/com/campusclaw/cron/engine/CronJobExecutor.java.
+' Observed behavior: the scheduler records running state before an isolated Agent executes the prompt.
+
+participant ScheduledExecutorService as Scheduler
+participant CronEngine
+participant CronStore
+participant CronJobExecutor
+participant Agent
+participant CronRunLog
+
+Scheduler -> CronEngine : executeAndReschedule(jobId)
+CronEngine -> CronEngine : tickLock.tryLock()
+CronEngine -> CronStore : getJob(jobId)
+CronStore --> CronEngine : CronJob
+CronEngine -> CronStore : markJobRunning
+CronEngine -> CronJobExecutor : execute(job)
+CronJobExecutor -> CronRunLog : append RUNNING
+CronJobExecutor -> Agent : create and configure
+CronJobExecutor -> Agent : prompt(text).get(timeout)
+Agent --> CronJobExecutor : AssistantMessage
+CronJobExecutor -> CronRunLog : append SUCCESS or FAILED
+CronJobExecutor --> CronEngine : CronRunRecord
+CronEngine -> CronStore : record outcome
+CronEngine -> CronEngine : schedule updated job
+@enduml
+
+@startuml core-classes
+title Cron Module Core Classes
+skinparam classAttributeIconSize 0
+
+' Source evidence: modules/cron/src/main/java/com/campusclaw/cron/.
+' Design reason: show service, scheduler, persistence, tool, and model relationships.
+
+class CronService
+class CronEngine
+class CronJobExecutor
+interface CronEventListener
+class CronStore
+class CronRunLog
+class CronTool
+class CronJob
+class CronJobState
+class CronRunRecord
+interface CronSchedule
+interface CronPayload
+interface CronEvent
+interface AgentTool
+
+CronService *-- CronStore
+CronService *-- CronEngine
+CronService *-- CronRunLog
+CronEngine *-- CronJobExecutor
+CronEngine --> CronStore : reads and writes
+CronEngine ..> CronEventListener : emits
+CronJobExecutor --> CronRunLog : appends
+CronTool ..|> AgentTool
+CronTool --> CronService : delegates
+CronJob *-- CronJobState
+CronJob --> CronSchedule
+CronJob --> CronPayload
+CronEngine ..> CronEvent : emits
+@enduml

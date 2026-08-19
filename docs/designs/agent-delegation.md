@@ -1,124 +1,122 @@
-# Agent 委派执行链路（AgentBindingResolver + LocalAgentDispatcher + TransientAgentRunner）
+# Agent 委派执行链路设计
+
+> 文档版本：2.1.0
+>
+> 更新日期：2026-08-19
+>
+> 状态：已实现；入口限定为显式托管 CLI `--agent-id`
 
 对应决策记录：[ADR-0012：Agent 委派静态校验与授权端口](../decisions/0012-agent-delegation-static-validation.html)、[ADR-0014：父 Agent 调用子 Agent 的瞬态执行链路](../decisions/0014-agent-delegation-transient-execution.html)。
 
-上游设计：`mainagent-subagent-design.md` §2.3（有效子 Agent 集合）、§5.1（候选发现）、§5.2（执行前二次校验）、§5.4（可信委派上下文）、§6（invoke_agent 工具与瞬态执行）。本文档描述两阶段落地：先纯函数式静态校验组件（已合入），再父 Agent 通过 `invoke_agent` 实际调用子 Agent 的瞬态执行链路（本 PR）。
+## 1. 源码基线与证据
 
-## 1. Context
+本次冲突整合分析的源码基线：
 
-PR #138 已把 `bindingAgents`（含 `description`）与 `enabled` 完整持久化到本地快照。本 PR 在其上补齐委派发生**之前**的全部静态规则，让后续 `invoke_agent` 工具（下一 PR）只需消费校验结果：
+- HTTP V1 分支基线：`1fae0a70ac0fd8c64d40d0c7dde0518f1cd9f28b`
+- 合入的 `origin/main` 基线：`5f4d81752acacaa219a92aa0b0b6a93427802e17`
 
-```text
-effectiveChildAgents = parentAgent.bindingAgents
-                      ∩ enabledAgents
-                      ∩ principalAuthorizedAgents
-                      - ancestryAgents
-```
+主要源码证据：
 
-## 2. 关键定义与组件职责
+- `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/cli/CampusClawCommand.java`：`runAgentMode()`、`createAgentSession()`、`configureDelegation()`
+- `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/session/AgentSession.java`：`configureRuntimeTools()`、`handleDelegationToolCall()`
+- `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtime/AgentBindingResolver.java`：`resolve()`、`validate()`
+- `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtime/LocalAgentDispatcher.java`：`resolveCandidates()`、`dispatch()`
+- `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtime/TransientAgentRunner.java`：`run()`、`createSession()`
+- `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/runtime/RuntimeSessionEngineRegistry.java`：HTTP V1 的独立执行引擎
 
-静态校验层（已合入）：
+`origin/main` 的观察行为是把委派状态装配到旧 `ServerMode/SessionPool`。HTTP V1 分支已经删除该入口。HTTP 现在与 CLI 共用 `agent/{agent_id}/.campusclaw/` 目录位置，但仍只读 Manager 预置文件，不调用 CampusMate 物化器。合并后的架构变更是：保留委派能力及全部校验规则，把入口迁移到显式 `cli --agent-id`；普通 CLI 和 HTTP V1 均不隐式启用委派。
+
+## 2. 能力边界
+
+| 入口 | 委派能力 | 原因 |
+|---|---|---|
+| `cli --agent-id <id>` | 有条件启用 | 已准备 `PreparedAgentRuntime`，可读取 `bindingAgents`，并可通过同一 `AgentRuntimeManager` 准备子 Agent |
+| 未传 `--agent-id` 的 CLI | 不启用 | 普通会话没有可信的父 Agent 绑定快照 |
+| Spring Boot HTTP V1 | 当前不启用 | HTTP 只读 Manager 预置的 `agent/{agent_id}/.campusclaw/`，不调用 CLI 的 CampusMate 物化器 |
+
+这是有意的产品与架构边界。HTTP Session 不会为了发现子 Agent 而隐式访问 CampusMate；若未来需要 HTTP 委派，必须先统一文件 Schema、身份来源和事件持久化语义。
+
+## 3. 组件职责
 
 | 组件 | 职责 |
 |---|---|
-| `AgentBindingResolver` | 基于父 Agent 本地快照 `bindingAgents` 计算候选摘要（`resolve`）并在执行前对单个目标给出带原因的裁决（`validate`） |
-| `DelegationContext` | §5.4 完整 13 字段可信上下文 record；深度、ancestry、自绑定等结构性不变量由 canonical constructor 强制，非法委派状态不可构造 |
-| `AgentAuthorizationPolicy` | 授权端口：`(AgentPrincipal, agentId) -> boolean`；`PERMIT_ALL` 为当前缺省实现，等待租户/用户身份贯通后替换 |
-| `ChildAgentMetadataSource` | 子 Agent 元数据端口：`agentId -> Optional<{version, enabled}>`；本地优先读取，不物化完整运行时 |
+| `AgentBindingResolver` | 从父快照的直接 `bindingAgents` 计算候选，并在每次执行前重新校验 |
+| `DelegationContext` | 固化深度、祖先链、父子关系等结构不变量，硬限制最大深度为 2 |
+| `AgentAuthorizationPolicy` | 提供 `(principal, agentId)` 鉴权端口；当前默认实现为 `PERMIT_ALL` |
+| `LocalChildAgentMetadataSource` | 本地 `.campusclaw/agentId.json` 优先，远端只读回退；全部失败时 fail closed |
+| `InvokeAgentTool` | 无状态控制工具；工具本体只返回确认，真实副作用由 Session after-tool-call 钩子执行 |
+| `LocalAgentDispatcher` | 重新校验、构造可信上下文、准备目标运行时并调度瞬态执行 |
+| `TransientAgentRunner` | 每次调用创建独立子 `AgentSession`，执行任务后提取最终 Assistant 文本 |
+| `DelegationState` / `DelegationWiring` | 在父子会话间传递调用链状态及创建子会话所需协作者 |
 
-执行链路层（本 PR）：
+## 4. 执行流程
 
-| 组件 | 职责 |
-|---|---|
-| `InvokeAgentTool` | 无状态 `@Component` 控制工具（`ControlTool`）：`execute` 只回 ack；会话层用 `describedWith(candidates)` 生成带候选清单描述的视图 |
-| `LocalAgentDispatcher` | 委派编排：候选解析（`resolveCandidates`）+ 每跳 `validate` → 构造 `DelegationContext` → `runtimeManager.prepare` → 交给 runner |
-| `TransientAgentRunner` | 为每次调用创建瞬态 `AgentSession`（新 Agent/AgentState/SkillRegistry/tools，无 worker 池），`prompt(task).join()` 后取末条 AssistantMessage 文本作为子回答 |
-| `DelegationState` | 入口会话携带的委派状态：dispatcher、conversationId、principal、自身 `DelegationContext`（入口为 null）与重建瞬态会话所需的 `DelegationWiring` |
-| `DelegationWiring` | 重建瞬态会话的协作对象集合（aiService、modelRegistry、promptBuilder、skillLoader/expander、localTools、toolCatalog、toolSelection） |
-| `LocalChildAgentMetadataSource` | `ChildAgentMetadataSource` 本地实现：`{agentsRoot}/{agentId}/.campusclaw/agentId.json` 优先，缺失时回退 `MateServiceClient` 只读查询；全部失败返回空（fail closed `UNKNOWN_CHILD`） |
-| `PermitAllAgentAuthorizationPolicy` | `AgentAuthorizationPolicy` 的 `PERMIT_ALL` Spring bean 形态 |
+![托管 CLI Agent 委派流程](agent-delegation/agent_delegation_cli_flow.svg)
 
-## 3. 架构与数据流
+[PlantUML 源文件](agent-delegation/diagram.puml#L1)
 
-```text
-父 Agent 快照 bindingAgents ──┐
-链上 Agent id 列表（含父）────┤
-principal ────────────────────┤→ AgentBindingResolver.resolve → invoke_agent 工具描述候选
-子 Agent 元数据（version/enabled）┘
-                                  AgentBindingResolver.validate(执行前) → Allowed | Rejected(reason)
-```
+观察到的执行顺序：
 
-校验顺序（廉价本地检查优先）：直接绑定 → 自绑定 → ancestry → 深度上限（仅 validate）→ 子元数据加载（未知即 fail closed）→ enabled → 版本钉 → 授权。
+1. 用户显式执行 `cli --agent-id <parent>`，CLI 准备父 Agent 的 `.campusclaw` 快照。
+2. `CampusClawCommand` 创建 `AgentSession`，注入 `PreparedAgentRuntime`，并在 `LocalAgentDispatcher` Bean 可用时安装入口 `DelegationState`。
+3. `AgentSession` 仅在 resolver 返回至少一个有效直接子 Agent、且本地 `ToolSelection` 允许时暴露 `invoke_agent`。
+4. 模型调用 `invoke_agent(agentId, task)`；after-tool-call 钩子把调用交给 dispatcher。
+5. dispatcher 在执行时再次校验绑定、祖先链、深度、enabled、版本钉和授权，然后才调用 `AgentRuntimeManager.prepare(target)`。
+6. `TransientAgentRunner` 创建全新的子 `AgentSession`。子默认模型优先，父模型仅作回退；子任务作为完整用户输入执行。
+7. 子会话最后一条非空 Assistant 文本覆盖父侧工具结果；拒绝或失败转成 `isError=true` 的工具结果，父循环继续处理。
 
-执行链路（本 PR 新增，单跳全流程）：
+## 5. 校验规则
+
+有效子 Agent 集合为：
 
 ```text
-模型调用 invoke_agent(agentId, task)
-  → AgentToolResult ack（无副作用）
-  → AgentSession.handleAfterToolCall 识别 InvokeAgentTool.NAME
-  → LocalAgentDispatcher.dispatch(state, parentRuntime, target, task, fallbackModel)
-      1. resolver.validate（每跳重新校验：直接绑定/自绑定/ancestry/深度/元数据/enabled/版本/授权）
-      2. Rejected → AgentRuntimeException("Agent delegation rejected: reason (detail)") → isError 工具结果
-      3. DelegationContext.forEntry(...) 或 selfContext.delegateTo(target, 新 invocationId)
-      4. INFO 审计日志（parent/target/ancestry/depth/invocationId/conversationId）
-      5. runtimeManager.prepare(target)（validate-before-execute）
-      6. DelegationState.childOf(parentState, context)
-  → TransientAgentRunner.run(childRuntime, childState, task, fallbackModel)
-      · sessionConfig = runtimeManager.sessionConfig(基础配置, childRuntime)（子默认模型优先）
-      · 瞬态 AgentSession + setDelegationState(childState)（深度 2 的子不再暴露 invoke_agent）
-      · prompt(task).join()；末条 AssistantMessage 文本即子回答（ERROR stop → 抛异常）
-  → 成功：覆盖工具结果内容为子回答；失败：isError=true + 英文错误消息
+effectiveChildAgents = parent.bindingAgents
+                      intersect enabledAgents
+                      intersect principalAuthorizedAgents
+                      minus ancestryAgents
 ```
 
-## 4. 设计决策
+执行前校验顺序为：直接绑定、自绑定、祖先链、深度上限、子元数据、enabled、版本钉、授权。
 
-- **候选只来自父快照直接绑定**（§2.3）：全局 Agent 目录不可枚举，`agentId` 存在且用户有权但未绑定也拒绝（`NOT_DIRECTLY_BOUND`）。见 ADR-0012。
-- **深度硬上限编码进类型**：`DelegationContext` canonical constructor 拒绝 `delegationDepth ∉ [1,2]` 且要求 `ancestry.size == depth`、`ancestry.last == parentAgentId`、`target ∉ ancestry`（同时排除自绑定）。`delegateTo` 在深度 2 上抛 `IllegalStateException`。
-- **版本钉语义**：绑定声明了 `version` 时，子元数据版本必须相等，未知（null）视为不兼容（fail closed）；绑定版本留空表示不钉。
-- **授权端口先行、实现后补**：`PERMIT_ALL` 缺省之下直接绑定仍是唯一安全边界；端口形状按 §2.3 固化，避免后续接入租户体系时改调用方。
-- **候选摘要版本取子元数据实际值**，不取父绑定钉值——呈现给模型的是子 Agent 真实状态。
+- 候选只能来自父快照中的直接绑定，不能枚举全局 Agent 目录。
+- 深度上限为 2；深度 2 的子会话不会再暴露 `invoke_agent`。
+- 绑定声明版本时，子元数据版本必须完全一致；未知版本按不兼容处理。
+- 子元数据无法从本地或远端取得时返回 `UNKNOWN_CHILD`，不会乐观放行。
+- resolver 生成工具描述时的候选结果不被执行链信任；dispatcher 每跳重新校验。
 
-执行链路决策（本 PR，见 ADR-0014）：
+## 6. 会话和并发语义
 
-- **`invoke_agent` 是无状态控制工具**：`execute` 仅回 ack 不执行委派；真正执行由会话层 after-tool-call 钩子完成（与 `activate_skill` 同构，复用 `ControlTool` 豁免远程 allow list 的通道）。候选清单通过 `describedWith` 装饰视图写入工具描述，模型据此选目标。
-- **暴露三重门**：`delegationState != null`（入口接线了 dispatcher 且会话是托管 Agent）∧ resolver 候选非空 ∧ 工具在本地 `ToolSelection` 可见。任何一条不满足就不注册 `invoke_agent`——普通（非托管）会话永远看不到它。
-- **每跳重新 validate**：设计 §5.2 要求执行前二次校验；dispatcher 不信任暴露时的候选快照，`dispatch` 现场再跑一遍完整规则。`DelegationContext` 构造不变量在 validate 之后仍作为 defense in depth。
-- **瞬态执行、无 worker 池**：每次调用新建 Agent/AgentState/SkillRegistry/tools，用完即弃；子 Agent 之间无共享状态，天然并发安全。子 cwd = 其 agentRoot（SkillLoader 按 cwd 找 `.campusclaw/skills`）。
-- **模型回退次序**：`dispatch(fallbackModel)` 传入口会话实际解析出的模型 id；子自身 `defaultModel()` 优先，未配置才落到 fallback——由 `runtimeManager.sessionConfig` 统一处理。
-- **子提示即任务**：`task` 参数作为子会话的完整用户提示；子系统提示来自其物化的 `systemPrompt.md`（sessionConfig customPrompt）。
-- **审计 = 结构化 INFO 日志**：每跳一行英文日志（parent/target/ancestry/depth/invocationId/conversationId）；正式审计事件流属后续 PR（组⑤）。
-- **入口接线点（server-only）**：`SessionPool.createSessionWithPersistence` 在 `preparedRuntime != null` 且 dispatcher bean 可用时构造 `DelegationState.entry(...)`；dispatcher 缺失仅降级（不暴露工具），不报错。CLI 入口（interactive/one-shot/rpc）按评审意见暂不接线，委派能力当前仅 server 模式可用。
+- 子 Agent 是瞬态会话，不进入常驻 worker 池，不与父或其他子会话共享 `AgentState`、消息历史或 SkillRegistry。
+- 同一条委派链共享 dispatcher、运行时管理器、调用主体和 `conversationId`；CLI 入口当前使用降级值 `local`。
+- `AgentRuntimeManager.prepare()` 仍按 Agent ID 串行冷启动，不同目标 Agent 可以并行准备。
+- 当前父侧同步等待 `childSession.prompt(task).join()`；异步 PendingDelegation 和正式审计事件流尚未实现。
+- 当前 `PermitAllAgentAuthorizationPolicy` 只保留鉴权扩展端口，真正的租户/用户级授权尚未接入。
 
-## 5. 边界情况
+## 7. 异常语义
 
-- 父绑定包含空/重复 `agentId`：静默跳过或去重（首个生效），`validate` 仍按精确 id 匹配。
-- `ChildAgentMetadataSource` 返回空（子不存在或本地不可解析）：`UNKNOWN_CHILD`，fail closed。
-- `tenantId`/`userId` 为 null：本地 CLI 场景，显式允许。
-- 边缘生命周期标识（`parentAgentSessionId`/`parentRunId`/`subTaskId`/`idempotencyKey`/`deadline`）：暂允许 null，由 Dispatcher 与 SubTask 生命周期 PR 填充；结构不变量已先行锁定。
-- 子回答为空/无 AssistantMessage：`AgentRuntimeException`（"produced no answer"），父侧转 isError 工具结果，模型可重试或换路。
-- 子 stopReason=ERROR：透传 errorMessage 到父侧错误工具结果。
-- dispatcher 调用抛任意 `RuntimeException`：`handleDelegationToolCall` 捕获并转 `delegationError(...)`，父循环不中断。
-- 深度 2 的子会话：`canDelegateFurther()` false → 不暴露 `invoke_agent`（模型无从发起第三跳）；即使伪造调用也会在 `resolveCandidates` 返回空后被拒。
-- `conversationId`：server 入口用真实会话 id，CLI 入口 null 时降级为 "local"。
+- 无效参数：返回 `invoke_agent requires an agentId/task` 的错误工具结果。
+- 静态校验拒绝：返回 `Agent delegation rejected: <reason> (<detail>)`。
+- 子执行失败或以 `StopReason.ERROR` 结束：返回带目标 Agent 的失败信息。
+- 子未产生非空 Assistant 文本：按执行失败处理。
+- 任意上述失败都不会直接中断父 Agent 循环，模型可以改写任务或选择其他候选。
 
-## 6. 测试
+## 8. 测试范围
 
-静态校验层（已合入）：
+现有测试覆盖：
 
-- `DelegationContextTest`（6）：入口工厂、`delegateTo` 链式推进、深度 2 硬上限、深度越界/ancestry 与父不一致/重复 ancestry/target 在 ancestry/空白身份的全部构造器拒绝路径。
-- `AgentBindingResolverTest`（8）：禁用/自绑定/环/未知子过滤、中间层候选、`NOT_DIRECTLY_BOUND`/`SELF_BINDING`/`IN_ANCESTRY`/`DEPTH_EXCEEDED`/`UNKNOWN_CHILD`/`NOT_ENABLED`/`VERSION_MISMATCH`/`NOT_AUTHORIZED` 八种拒绝、允许裁决携带子实际版本、重复绑定去重。场景与本地 mock CampusMate 七 Agent 拓扑（1→2→3 两层链、4 禁用、5 自绑定、6↔7 环）一一对应。
+- `AgentBindingResolverTest`：候选过滤、全部拒绝原因、版本钉、授权和重复绑定；
+- `DelegationContextTest`：深度、祖先链、自绑定与构造不变量；
+- `LocalChildAgentMetadataSourceTest`：本地优先、远端回退和双失败 fail closed；
+- `LocalAgentDispatcherTest`：入口派发、未绑定拒绝和第三跳拒绝；
+- `TransientAgentRunnerTest`：最终回答提取及子执行错误传播；
+- `AgentSessionTest$Delegation`：候选门控、工具描述和子回答覆盖。
 
-执行链路层（本 PR）：
+本次冲突整合额外验证显式 CLI 入口可以正常构建并装配上述 Spring Bean。真实 CampusMate 与真实模型的端到端委派不属于本地自动测试环境，不能因单元测试通过而宣称已验证。
 
-- `LocalChildAgentMetadataSourceTest`（3）：本地快照优先（零远程调用）、无快照回退远程、本地+远程双失败 fail closed。
-- `LocalAgentDispatcherTest`（3）：入口派发（子 state 深度/ancestry/conversationId 正确）、未绑定目标拒绝且不 prepare、深度上限第三跳拒绝。
-- `TransientAgentRunnerTest`（2）：末条 AssistantMessage 文本提取、ERROR stop 透传。
-- `AgentSessionTest$Delegation`（3）：有候选才暴露 invoke_agent 且描述含候选清单、无 delegationState 不暴露、委派钩子成功覆盖为子回答。
+## 9. 版本历史
 
-（按评审意见测试较初版减半：`InvokeAgentToolTest` 整文件移除——工具 ack 与描述装饰行为由 `AgentSessionTest$Delegation` 间接覆盖；各文件仅保留核心行为用例。）
-
-## 7. 验证
-
-静态校验 PR：`./mvnw -pl modules/coding-agent-cli -am test` 全量通过；本 PR 无运行时行为变化——resolver 尚无调用方。
-
-执行链路 PR：`./mvnw -pl modules/coding-agent-cli -am test` 全量通过（11 个核心用例）；本地 mock CampusMate（七 Agent 拓扑）server 模式 e2e 验证 agent 1 → agent 2 两层链路可通、未绑定/跨级目标被拒。CLI 入口按评审意见未接线。
+| 版本 | 日期 | 说明 |
+|---|---|---|
+| 2.1.0 | 2026-08-19 | HTTP V1 目录位置改为 `agent/{agent_id}/.campusclaw/`；保留“HTTP 不隐式访问 CampusMate、不进入 CLI 物化和委派链”的能力边界。 |
+| 2.0.0 | 2026-08-19 | 合并 HTTP V1 架构：删除旧 ServerMode/SessionPool 接线，把委派入口迁移到显式托管 CLI；补充源码证据和 PlantUML。 |
+| 1.x | 2026-08-18 | 委派组件初版，入口接在线程内旧 ServerMode/SessionPool。 |

@@ -20,12 +20,10 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 /**
- * Auto-configuration wiring the Mate tool client and the two Mate AgentTools.
- * Enabled when {@code mate.tool.enabled=true} (default enabled); set to
- * {@code false} to exclude {@code listMateTool}/{@code callMateTool} from the
- * agent tool list.
+ * 装配 Mate Tool 客户端及两个 AgentTool，保持默认启用语义，并允许通过
+ * {@code mate.tool.enabled=false} 显式关闭。
  *
- * @version [br_eCampusCore 26.0.0, 2026/08/17]
+ * @version [br_eCampusCore 26.0.0, 2026/08/19]
  * @since [br_eCampusCore 26.0.0]
  */
 @Configuration(proxyBeanMethods = false)
@@ -33,18 +31,14 @@ import org.springframework.context.annotation.Configuration;
 @EnableConfigurationProperties(MateToolProperties.class)
 public class MateToolAutoConfiguration {
 
-    /**
-     * Address of the Mate inner gateway service, from the
-     * {@code mate.innerGWSerive} property/environment variable.
-     */
+    /** Mate 内部网关地址，保持对公司既有 {@code mate.innerGWSerive} 配置名的兼容。 */
     @Value("${mate.innerGWSerive:}")
     private String mateInnerGwAddress;
 
     /**
-     * Creates the REST helper bean used by the Mate tool client to call the
-     * inner gateway.
+     * 创建访问 Mate 内部网关所需的 REST 工具。
      *
-     * @return the MateRestUtil bean
+     * @return Mate REST 工具
      */
     @Bean
     @ConditionalOnMissingBean
@@ -53,12 +47,11 @@ public class MateToolAutoConfiguration {
     }
 
     /**
-     * Creates the Mate HTTP client when no other bean provides one.
+     * 在容器没有自定义 Mate Tool 客户端时创建 HTTP 客户端。
      *
-     * @param restUtil the Mate REST helper for real gateway calls
-     * @param mapperProvider provider for a Jackson mapper; a new one when no
-     *        mapper bean exists in the context
-     * @return the HTTP Mate tool client
+     * @param restUtil Mate REST 工具
+     * @param mapperProvider Jackson ObjectMapper 提供器；容器没有实例时创建默认实例
+     * @return Mate Tool HTTP 客户端
      */
     @Bean
     @ConditionalOnMissingBean(MateToolClient.class)
@@ -67,10 +60,10 @@ public class MateToolAutoConfiguration {
     }
 
     /**
-     * Creates the callMateTool AgentTool bean.
+     * 创建 callMateTool 工具。
      *
-     * @param client the Mate tool client
-     * @return the CallMateTool bean
+     * @param client Mate Tool 客户端
+     * @return callMateTool 工具
      */
     @Bean
     public CallMateTool callMateTool(MateToolClient client) {
@@ -78,10 +71,10 @@ public class MateToolAutoConfiguration {
     }
 
     /**
-     * Creates the listMateTool AgentTool bean.
+     * 创建 listMateTool 工具。
      *
-     * @param client the Mate tool client
-     * @return the ListMateTool bean
+     * @param client Mate Tool 客户端
+     * @return listMateTool 工具
      */
     @Bean
     public ListMateTool listMateTool(MateToolClient client) {
