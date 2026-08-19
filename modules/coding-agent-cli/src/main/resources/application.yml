@@ -73,47 +73,6 @@ logging:
     com.campusclaw: WARN
     io.netty: ERROR
 
-# 工具执行配置 - 沙箱模式
-tool:
-  execution:
-    # 默认执行模式: LOCAL | SANDBOX | AUTO
-    # SANDBOX = 强制所有工具在沙箱中执行
-    # AUTO = 根据风险评估自动选择
-    # LOCAL = 强制本地执行
-    default-mode: LOCAL
-
-    # 启用混合路由
-    # 注意：启用混合工具会替换原工具，两者不能同时存在
-    # 默认 false：直接使用本地工具；改为 true 会启用 hybrid 路由并要求 Docker 可用
-    hybrid-enabled: false
-
-    # 允许本地执行
-    local-execution-enabled: true
-
-    # 允许沙箱执行（需要 Docker）
-    sandbox-execution-enabled: true
-
-    # Docker 守护进程地址（本地开发使用本地 Docker）
-    docker-host: unix:///var/run/docker.sock
-
-    # 沙箱工作目录
-    sandbox-workspace-path: /workspace
-
-    # 沙箱工作镜像
-    sandbox-worker-image: alpine:3.19
-
-    # 沙箱资源限制
-    sandbox-worker-memory: 512m
-    sandbox-worker-cpu: 1.0
-
-    # 超时配置
-    sandbox-timeout-seconds: 120
-    local-timeout-seconds: 60
-
-    # 使用临时容器模式（不需要常驻 worker 容器）
-    # 适用于无法拉取镜像的场景，每次执行创建新容器
-    use-ephemeral-containers: false
-
 # 子 agent 后端配置 (spawn_agent 工具)
 # 主 agent 通过 spawn_agent 工具调用其它 coding agent；下方每个 entry 是一种后端。
 # type=acp: 走 ACP 协议 + stdio (Claude Code, Codex/Gemini 等)

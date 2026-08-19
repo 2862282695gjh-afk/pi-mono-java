@@ -47,7 +47,7 @@ tui ────────────┤                 │              │
 
 Key runtime concepts:
 - **Startup model**: default `java -jar` starts the Spring Boot MVC HTTP+SSE service. The explicit `cli` subcommand starts a non-web context; inside it, `--mode interactive|one-shot|rpc|print` selects a handler under `codingagent/mode/`. RPC uses stdin/stdout JSONL.
-- **Hybrid tool execution** (see `ARCHITECTURE-HYBRID.md`): tools have a `Hybrid*` variant that routes between local JVM execution and a Docker sandbox sidecar based on risk. Controlled by `tool.execution.*` in `application.yml` (`default-mode: LOCAL|SANDBOX|AUTO`, `hybrid-enabled`). `LOCAL` is the default in the checked-in `application.yml`; set to `SANDBOX`/`AUTO` only when Docker is available.
+- **Tool management**: ordinary local tools are indexed by `ToolCatalog`; MateService-managed tools use `ListMateTool`, `CallMateTool`, and `MateToolClient`. Agent Core's `ToolExecutionMode` still controls sequential versus parallel tool calls and is unrelated to tool ownership or deployment. Local Docker Sandbox, Hybrid tools, and `tool.execution.*` configuration are no longer supported.
 - **Extensibility**: two mechanisms layered in `coding-agent-cli` — `skill/` (user-installable skill packs under `~/.campusclaw/packages`) and `extension/` (in-tree `ExtensionPoint` registrations for tools / commands / hooks).
 - **Reactive stack**: `ai` and `agent-core` use Reactor `Mono/Flux` throughout for streaming LLM responses. Don't `.block()` on the event stream path.
 
@@ -342,7 +342,6 @@ grep -rL 'assert\|verify\|fail(' modules/**/src/test/java --include='*.java'
 | ✅ 正例 | ❌ 反例 |
 |---|---|
 | `log.info("docker available: {}", available);` | `log.info("Docker 可用: {}", available);` |
-| `log.warn("sandbox unavailable");` | `log.warn("沙箱不可用！");` |
 | `log.error("auto-recovery test failed");` | `log.error("✗ 自动恢复测试失败!");` |
 | `log.info("worker container id: {}", id);` | `log.info("Worker 容器 ID: {}", id);` |
 
@@ -780,7 +779,8 @@ The repo merges PRs with **Merge commit**（保留每个 commit 的真实 SHA �
 
 - `README.md` — user-facing quickstart, CLI flags, supported providers.
 - `docs/module-architecture.md` — authoritative module/package breakdown.
-- `ARCHITECTURE-HYBRID.md`, `IMPLEMENTATION-HYBRID.md`, `DOCKER-SANDBOX-GUIDE.md` — hybrid local/sandbox execution design.
+- `docs/designs/sandbox-cleanup.md` — local Sandbox removal, MateService tool migration, and deletion record.
+- `docs/designs/mate-tool-client.md` — MateService tool metadata and invocation client design.
 - `docs/plans/campusclaw-http-v1-implementation.md` — Runtime V1 implementation mapping, source baseline, and validation evidence. The field-level contract is maintained as the interactive HTML document in the dedicated design repository; this repository intentionally has no OpenAPI or public WebSocket contract copy.
 - `modules/*/`+`*-design.md` — per-module design docs (Story/AR format).
 - `docs/designs/*.md` — feature/module design docs (gstack `/plan-eng-review` format); see "决策记录与设计文档约定".

@@ -1,8 +1,8 @@
 # Control Plane 设计
 
-> 文档版本：2.0.0
+> 文档版本：2.1.0
 >
-> 实现基线：`8691e8800f05f28afe22499050c29220ef5b7475`
+> 实现基线：`7811dc335fcb0125a1ecbddd63cd77baf120f21d`
 
 ## 1. 现状
 
@@ -46,6 +46,9 @@
 
 请求对象使用 Jakarta Bean Validation；输出使用专用 Response VO。控制面暂时保留自身错误结构，不复用 Runtime V1 的 ResultBean，这是既有控制面兼容性约束。
 
+`RuntimeCapability` 保留模型、本地 Bash/文件、ACP/HTTP/A2A/MCP 子 Agent 等粗粒度能力；
+本地 Docker Sandbox 能力已经删除，不再参与节点注册和调度。
+
 ## 4. 生命周期与并发
 
 `NodeRegistry` 是进程内状态源。注册产生节点 ID；心跳更新指标与时间；健康检查任务将超时节点标记为不可用。`RuntimeScheduler` 只在活动节点中筛选，先满足能力约束，再应用首选节点和负载规则。
@@ -66,5 +69,6 @@ Runtime V1 的双凭据 Header 形状校验不会覆盖控制面路径。历史�
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 2.1.0 | 2026-08-19 | 对齐最新主干并删除本地 Docker Sandbox 能力枚举说明 |
 | 2.0.0 | 2026-08-18 | 对齐 Spring MVC Controller 与默认 Web 进程，删除 WebFlux RouterFunction 和 ServerMode ADR |
 | 1.x | 2026-06-22 | 历史函数式 WebFlux 控制面设计，已废弃 |

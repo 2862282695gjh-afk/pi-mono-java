@@ -18,9 +18,3 @@ resources:
 commonLabels:
   app.kubernetes.io/name: campusclaw
   app.kubernetes.io/managed-by: kustomize
-
-images:
-  - name: eclipse-temurin
-    newTag: 21-jdk-alpine
-  - name: docker
-    newTag: 27-dind

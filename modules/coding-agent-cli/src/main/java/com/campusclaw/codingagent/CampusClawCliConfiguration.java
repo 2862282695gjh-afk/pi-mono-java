@@ -4,7 +4,6 @@
 
 package com.campusclaw.codingagent;
 
-import com.campusclaw.codingagent.config.ToolExecutionProperties;
 import com.campusclaw.codingagent.runtime.AgentRuntimeProperties;
 
 import org.mybatis.spring.boot.autoconfigure.MybatisAutoConfiguration;
@@ -25,7 +24,7 @@ import org.springframework.context.annotation.Profile;
  */
 @SpringBootConfiguration
 @Profile("campusclaw-cli")
-@EnableConfigurationProperties({ToolExecutionProperties.class, AgentRuntimeProperties.class})
+@EnableConfigurationProperties(AgentRuntimeProperties.class)
 @EnableAutoConfiguration(
         exclude = {
             DataSourceAutoConfiguration.class,

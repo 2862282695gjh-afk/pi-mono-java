@@ -8,7 +8,7 @@
 | Story 名称 | cron 模块设计文档（基于代码 v1） |
 | 负责人 | 待开发者补充 |
 | 创建日期 | 2026-05-14 |
-| 版本 | v1.1 (code-derived) |
+| 版本 | v1.2 (code-derived) |
 
 > 本文档基于 `modules/cron` 现有源码逆向生成，复用 `docs/cron-module-design.md` 中已沉淀的设计原文（架构对照表、Phase 列表、文件清单等），按 AR 七章模板补齐章节。
 > 图表格式更新分析源码提交为
@@ -339,7 +339,7 @@ CampusClaw 主进程是 TUI 交互式 Agent，对话生命周期 = 进程生命�
 | 5.4 | SQL 注入 | 不涉及 | 模块无任何数据库访问；grep `executeQuery` / `PreparedStatement` 全无命中 |
 | 5.5 | XSS 注入 | 不涉及 | 纯后端 lib，无 HTML 渲染；`CronTool` 输出为纯文本 `TextContent` 由 TUI 渲染 |
 | 5.6 | XML 注入 | 不涉及 | 仅 JSON 持久化（Jackson）；grep `DocumentBuilderFactory` / `SAXParserFactory` 无命中 |
-| 5.7 | 命令注入 | 不涉及 | 本模块自身**不**调 `ProcessBuilder` / `Runtime.exec`；执行体走 `new Agent(aiService).prompt(...)`，下游 `BashTool` 由 agent 自己的 `allowedTools` 决定，且其防护在 `coding-agent-cli` 的 `BashTool` / `HybridBashTool` 内（本模块不负责） |
+| 5.7 | 命令注入 | 不涉及 | 本模块自身**不**调 `ProcessBuilder` / `Runtime.exec`；执行体走 `new Agent(aiService).prompt(...)`，下游本地 `BashTool` 由 agent 自己的 `allowedTools` 决定，其路径、超时和输出限制在 `coding-agent-cli` 内实现（本模块不负责） |
 | 5.8 | 输入校验 | 是 | `CronTool.parseSchedule` 显式校验 `at` 必为 epoch millis 或 ISO instant、`every` 必为正整数 ms、`cron` 必通过 `CronExpression.parse`；`handleCreate` 检查 `name` / `prompt` 非空；非法 schedule 返回错误文本而非抛异常 |
 | 5.9 | 敏感数据/个人隐私数据 | 是 | `CronPayload.AgentPrompt.prompt` 可能包含用户输入文本，被持久化到 `jobs.json`；`CronRunRecord.output` 持久化 LLM 输出。当前未做脱敏；`jobs.json` 与 `runs/*.jsonl` 落在 `$HOME/.campusclaw/agent/cron/`，依赖文件系统权限保护 |
 | 5.10 | 加解密 | 不涉及 | 无 `Cipher` / `MessageDigest` / `SecretKey` 引用；任务定义与运行日志明文存储 |
@@ -372,5 +372,6 @@ CampusClaw 主进程是 TUI 交互式 Agent，对话生命周期 = 进程生命�
 |---|---|---|---|---|---|---|
 | 2026-05-14 | - | - | 设计文档由 codebase-module-design skill 基于代码逆向生成 v1 | 复用 `docs/cron-module-design.md` 中的依赖关系、并发控制矩阵、Phase 设计原文；按 AR 七章模板补齐章节和三处设计图 | 由开发者补充 1.1 需求来源具体 Story 编号、1.2 业务背景描述、6.x 转测项勾选 | 开放 |
 | 2026-08-18 | Codex | 文档维护 | 设计图格式不符合全局 PlantUML 规范 | 保持节点和关系语义不变，补充源码证据并生成 SVG | Mermaid 迁移为单一 `diagram.puml` 中的稳定命名图 | 已落实 |
+| 2026-08-19 | Codex | 文档维护 | 本地 Hybrid Bash 已随 Sandbox 清理删除 | 对齐 `coding-agent-cli` 的本地 `BashTool` 工具边界 | 删除对 `HybridBashTool` 的过期依赖说明 | 已落实 |
 | - | - | - | 是否将硬编码业务参数（`MAX_CONSECUTIVE_ERRORS=3`、`DEFAULT_TIMEOUT_SECONDS=300`、`STALE_THRESHOLD_MS=2h`）外置为 `@ConfigurationProperties` | - | 待评审 | 开放 |
 | - | - | - | `jobs.json` / `runs/*.jsonl` 是否设置 POSIX 0600 文件权限（5.15） | - | 待评审 | 开放 |

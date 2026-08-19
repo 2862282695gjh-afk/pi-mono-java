@@ -1,6 +1,6 @@
 # Agent 与 Skill 本地优先运行时设计
 
-> 文档版本：2.2.0
+> 文档版本：2.3.0
 >
 > 更新日期：2026-08-19
 >
@@ -11,7 +11,7 @@
 本次整合分析了两个源码基线：
 
 - HTTP V1 分支基线：`1fae0a70ac0fd8c64d40d0c7dde0518f1cd9f28b`
-- 合入的 `origin/main` 基线：`5f4d81752acacaa219a92aa0b0b6a93427802e17`
+- 合入的 `origin/main` 基线：`7811dc335fcb0125a1ecbddd63cd77baf120f21d`
 
 主要源码证据：
 
@@ -112,6 +112,10 @@ activeSkillTools = baseTools
 
 `activate_skill(skillName)` 是本地无状态控制工具。真正的会话状态变更由 `AgentSession` 的 after-tool-call handler 完成：读取本地 Skill 内容、解析全部本地工具，并在下一次模型调用前更新 `AgentState.tools`。本次用户执行完成后恢复 `baseTools`。
 
+`SkillLoader`、`SkillExpander` 与 `SkillManager` 直接读取本地文件；运行时不再创建
+`SandboxSkillParser`，也不读取 `SKILL_SANDBOX_PARSING`。这是 Sandbox 清理后的现行实现，
+不表示本地 Skill 内容获得了额外隔离能力。
+
 远端只提供工具元数据和授权输入；可执行实现必须已经存在于当前 Pod 的 `ToolCatalog`，运行时不会从声明动态创建进程工具。
 
 ## 6. 缓存与并发语义
@@ -173,6 +177,7 @@ campusmate:
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 2.3.0 | 2026-08-19 | 合入最新主干 Agent 委派与 HTTP V1 目录行为，并确认 Skill 只使用本地直接解析链路。 |
 | 2.2.0 | 2026-08-19 | 将 HTTP V1 目录改为 `agent/{agent_id}/.campusclaw/`；明确 HTTP 与 CLI 共用目录位置但仍保持独立文件契约和远程物化语义。 |
 | 2.1.0 | 2026-08-19 | 合入 Agent 委派能力并把旧 ServerMode 接线迁移到显式托管 CLI；HTTP V1 仍保持独立目录与执行链。 |
 | 2.0.0 | 2026-08-19 | 合并 HTTP V1 后收口为 CLI 专用托管 Agent 物化；删除旧 REST/WebSocket/SessionPool 描述；按实际代码重写缓存与安全语义；改用 PlantUML。 |

@@ -1,8 +1,8 @@
 # Coding Agent 启动与 Runtime HTTP 设计
 
-> 文档版本：2.2.0
+> 文档版本：2.3.0
 >
-> 实现分析基线：`f899547d120ce06aec27ecf5dbb448a7851a942a`
+> 实现分析基线：`7811dc335fcb0125a1ecbddd63cd77baf120f21d`
 >
 > 源码仓库：本仓库 `pi-mono-java`
 
@@ -27,6 +27,8 @@
 | 事件接受、历史查询和执行生命周期相互分离 | `RuntimeEventService`、`RuntimeEventQueryService`、`RuntimeExecutionCoordinator` |
 | SSE 使用有界请求级订阅 | `RuntimeEventStream`、`RuntimeSseDispatcher`、`RuntimeSseEmitterSubscriber` |
 | 公司响应包装保留适配点 | `runtimeapi/result/ResultBeanAdapter.java`、`StandaloneResultBeanAdapter.java` |
+| 本地工具由目录统一索引与筛选 | `tool/catalog/ToolCatalog.java`、`DefaultToolCatalog.java`、`ToolSelection.java` |
+| MateService 工具通过专用客户端查询和调用 | `common/client/mate/MateToolClient.java`、`tool/mate/ListMateTool.java`、`CallMateTool.java` |
 
 这些内容是实现基线的已观察行为，不是目标态推测。
 
@@ -132,6 +134,20 @@ SSE 流、事件投影器与终止事件分别由独立工厂创建，避免 Con
 服务返回 `503 SESSION_EXECUTION_UNAVAILABLE` 和 `Retry-After: 3`。这是对现有执行归属边界的显式表达；
 本次整改没有假设粘性路由或跨实例转发基础设施。
 
+### 6.7 工具所有权与沙箱边界
+
+CLI 的 `BashTool`、`ReadTool`、`WriteTool`、`EditTool`、`GlobTool` 和 `GrepTool`
+仍是当前 JVM 内的普通本地工具，由 `ToolCatalog` 发现并按 `ToolSelection` 筛选。
+需要集中查询、授权和执行的工具通过 `ListMateTool`、`CallMateTool` 与
+`MateToolClient` 交给 MateService。旧 Docker Sandbox、Hybrid Tool、
+`ToolExecutionProperties` 和 `tool.execution.*` 配置已经删除，不提供兼容入口。
+
+本地工具只保留各实现已有的路径校验、超时和输出截断能力，不构成 Docker 容器隔离承诺。
+Runtime V1 事件名 `tool.execution.started` 与 `tool.execution.completed` 是 HTTP/SSE
+事件类型，不是已删除的 Sandbox 配置项，必须继续保留。完整迁移记录见
+[Sandbox 清理设计](sandbox-cleanup.md)和
+[ADR-0015](../decisions/0015-sandbox-cleanup-tool-manager.html)。
+
 ## 7. 质量约束
 
 - Controller 只接收和返回 VO，Service 负责业务规则和 VO/DTO 转换，Mapper 使用 DTO；
@@ -145,6 +161,7 @@ SSE 流、事件投影器与终止事件分别由独立工厂创建，避免 Con
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 2.3.0 | 2026-08-19 | 合入最新 HTTP V1 启动与执行架构，并明确 ToolCatalog、MateService 工具和已删除本地 Sandbox 的边界 |
 | 2.2.0 | 2026-08-19 | 统一 `.campusclaw` 真实运行根目录，拆分事件职责，集中错误语义并明确非本机执行边界 |
 | 2.1.0 | 2026-08-19 | HTTP V1 的 Agent 根目录默认值改为 `agent`，受控子目录改为 `.campusclaw/` |
 | 2.0.0 | 2026-08-18 | 按实现提交 `8691e880` 重写；默认 Spring MVC 服务、显式 CLI、HTTP+SSE 和 11 个 Runtime 接口成为现行设计 |

@@ -4,7 +4,6 @@
 
 package com.huawei.hicampus.mate.matecampusclaw.codingagent;
 
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.config.ToolExecutionProperties;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtime.AgentRuntimeProperties;
 
 import org.mybatis.spring.boot.autoconfigure.MybatisAutoConfiguration;
@@ -25,7 +24,7 @@ import org.springframework.context.annotation.Profile;
  */
 @SpringBootConfiguration
 @Profile("campusclaw-cli")
-@EnableConfigurationProperties({ToolExecutionProperties.class, AgentRuntimeProperties.class})
+@EnableConfigurationProperties(AgentRuntimeProperties.class)
 @EnableAutoConfiguration(
         exclude = {
             DataSourceAutoConfiguration.class,

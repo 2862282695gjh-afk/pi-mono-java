@@ -43,7 +43,6 @@ import com.campusclaw.codingagent.session.SessionConfig;
 import com.campusclaw.codingagent.session.SessionManager;
 import com.campusclaw.codingagent.settings.Settings;
 import com.campusclaw.codingagent.settings.SettingsManager;
-import com.campusclaw.codingagent.skill.SandboxSkillParser;
 import com.campusclaw.codingagent.skill.SkillExpander;
 import com.campusclaw.codingagent.skill.SkillInstallException;
 import com.campusclaw.codingagent.skill.SkillLoader;
@@ -98,7 +97,6 @@ public class CampusClawCommand implements Callable<Integer> {
     private final com.campusclaw.cron.CronService cronService;
     private final com.campusclaw.codingagent.loop.LoopManager loopManager;
     private final org.springframework.context.ApplicationContext applicationContext;
-    private final SandboxSkillParser sandboxSkillParser;
     private final com.campusclaw.codingagent.resolver.AgentModelResolver agentModelResolver;
     private final com.campusclaw.codingagent.model.ModelCatalogService modelCatalogService;
     private final com.campusclaw.agent.subagent.SubAgentRegistry subAgentRegistry;
@@ -113,7 +111,6 @@ public class CampusClawCommand implements Callable<Integer> {
             SettingsManager settingsManager,
             @org.springframework.lang.Nullable com.campusclaw.cron.CronService cronService,
             com.campusclaw.codingagent.loop.LoopManager loopManager,
-            @org.springframework.lang.Nullable SandboxSkillParser sandboxSkillParser,
             com.campusclaw.codingagent.resolver.AgentModelResolver agentModelResolver,
             com.campusclaw.codingagent.model.ModelCatalogService modelCatalogService,
             com.campusclaw.agent.subagent.SubAgentRegistry subAgentRegistry) {
@@ -129,7 +126,6 @@ public class CampusClawCommand implements Callable<Integer> {
                 cronService,
                 loopManager,
                 null,
-                sandboxSkillParser,
                 agentModelResolver,
                 modelCatalogService,
                 subAgentRegistry);
@@ -148,7 +144,6 @@ public class CampusClawCommand implements Callable<Integer> {
             @org.springframework.lang.Nullable com.campusclaw.cron.CronService cronService,
             com.campusclaw.codingagent.loop.LoopManager loopManager,
             org.springframework.context.ApplicationContext applicationContext,
-            @org.springframework.lang.Nullable SandboxSkillParser sandboxSkillParser,
             com.campusclaw.codingagent.resolver.AgentModelResolver agentModelResolver,
             com.campusclaw.codingagent.model.ModelCatalogService modelCatalogService,
             com.campusclaw.agent.subagent.SubAgentRegistry subAgentRegistry) {
@@ -165,7 +160,6 @@ public class CampusClawCommand implements Callable<Integer> {
         this.cronService = cronService;
         this.loopManager = loopManager;
         this.applicationContext = applicationContext;
-        this.sandboxSkillParser = sandboxSkillParser;
         this.agentModelResolver = agentModelResolver;
         this.modelCatalogService = modelCatalogService;
         this.subAgentRegistry = subAgentRegistry;
@@ -537,8 +531,6 @@ public class CampusClawCommand implements Callable<Integer> {
         String effectiveSystemPrompt = mergeSystemPrompts();
         ToolSelection toolSelection = ToolSelection.fromCli(
                 toolsFilter, noTools, ToolSelection.fromSettings(settings != null ? settings.tools() : null));
-        boolean useSandbox = Boolean.parseBoolean(System.getenv("SKILL_SANDBOX_PARSING"));
-
         SessionConfig baseConfig = new SessionConfig(effectiveModel, effectiveCwd, effectiveSystemPrompt, mode);
         AgentRuntimeManager runtimeManager = resolveAgentRuntimeManager();
         PreparedAgentRuntime preparedRuntime = null;
@@ -553,8 +545,7 @@ public class CampusClawCommand implements Callable<Integer> {
         }
         List<AgentTool> effectiveTools = resolveEffectiveTools(config.cwd(), toolSelection);
 
-        AgentSession session =
-                createAgentSession(effectiveTools, toolSelection, useSandbox, preparedRuntime, runtimeManager);
+        AgentSession session = createAgentSession(effectiveTools, toolSelection, preparedRuntime, runtimeManager);
         session.setSubAgentRegistry(subAgentRegistry);
         SessionManager sessionManager = noSession ? null : new SessionManager();
         if (sessionManager != null) {
@@ -579,11 +570,10 @@ public class CampusClawCommand implements Callable<Integer> {
     private AgentSession createAgentSession(
             List<AgentTool> effectiveTools,
             ToolSelection toolSelection,
-            boolean useSandbox,
             PreparedAgentRuntime preparedRuntime,
             AgentRuntimeManager runtimeManager) {
-        SkillLoader skillLoader = new SkillLoader(sandboxSkillParser, useSandbox);
-        SkillExpander skillExpander = new SkillExpander(sandboxSkillParser, useSandbox);
+        SkillLoader skillLoader = new SkillLoader();
+        SkillExpander skillExpander = new SkillExpander();
         AgentSession session =
                 new AgentSession(piAiService, modelRegistry, promptBuilder, skillLoader, skillExpander, effectiveTools);
         session.setToolCatalog(toolCatalog, toolSelection);
@@ -922,11 +912,9 @@ public class CampusClawCommand implements Callable<Integer> {
             printSkillHelp(action);
             return 0;
         }
-        boolean useSandbox = Boolean.parseBoolean(System.getenv("SKILL_SANDBOX_PARSING"));
-        var manager = new SkillManager(
-                com.campusclaw.codingagent.config.AppPaths.USER_SKILLS_DIR, sandboxSkillParser, useSandbox);
+        var manager = new SkillManager(com.campusclaw.codingagent.config.AppPaths.USER_SKILLS_DIR);
         return switch (action) {
-            case "install" -> skillInstall(manager, useSandbox, actionArgs);
+            case "install" -> skillInstall(manager, actionArgs);
             case "list", "ls" -> skillList(manager);
             case "remove", "rm", "uninstall" -> skillRemove(manager, actionArgs);
             case "link" -> skillLink(manager, actionArgs);
@@ -940,7 +928,7 @@ public class CampusClawCommand implements Callable<Integer> {
         };
     }
 
-    private Integer skillInstall(SkillManager manager, boolean useSandbox, List<String> actionArgs) {
+    private Integer skillInstall(SkillManager manager, List<String> actionArgs) {
         if (actionArgs.isEmpty()) {
             err().println("Usage: campusclaw skill install <git-url>");
             return 1;
@@ -950,7 +938,7 @@ public class CampusClawCommand implements Callable<Integer> {
             out().println("Installing skill from: " + gitUrl);
             String name = manager.install(gitUrl);
             out().println("Skill installed: " + name);
-            var skillLoader = new SkillLoader(sandboxSkillParser, useSandbox);
+            var skillLoader = new SkillLoader();
             var skills = skillLoader.loadFromDirectory(
                     com.campusclaw.codingagent.config.AppPaths.USER_SKILLS_DIR.resolve(name), "user");
             for (var skill : skills) {
