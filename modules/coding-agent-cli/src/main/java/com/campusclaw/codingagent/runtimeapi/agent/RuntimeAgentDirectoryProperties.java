@@ -15,13 +15,15 @@ import lombok.Data;
 /**
  * Runtime Agent 只读目录配置。
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/08/18]
+ * @version [br_eCampusCore 25.1.0_Next, 2026/08/19]
  * @since [br_eCampusCore 25.1.0_Next]
  */
 @Data
 @Validated
 @ConfigurationProperties(prefix = "campusclaw.runtime.agent-directory")
 public class RuntimeAgentDirectoryProperties {
+    public static final String MANAGED_DIRECTORY_NAME = ".campusclaw";
+
     @NotNull
-    private Path root = Path.of(System.getProperty("user.home"), ".campusclaw", "runtime", "agents");
+    private Path root = Path.of("agent");
 }

@@ -1,8 +1,8 @@
 # Coding Agent 启动与 Runtime HTTP 设计
 
-> 文档版本：2.0.0
+> 文档版本：2.1.0
 >
-> 实现基线：`8691e8800f05f28afe22499050c29220ef5b7475`
+> 实现分析基线：`2e3962f408d81d03c00f533363ed1c09e455550f`
 >
 > 源码仓库：本仓库 `pi-mono-java`
 
@@ -109,7 +109,9 @@ Runtime 接受且只接受以下两种完整 Header 组合之一：
 
 Session、Entry、严格序号、物化数据、删除墓碑和异步清理任务持久化到 openGauss。删除活动 Session 返回 409；成功删除的墓碑只包含 `session_id` 与 `deleted_at`。
 
-Agent 配置直接读取 `<agent-root>/<agent_id>/.campusagent/` 下的 `settings.json`、`SYSTEM.md` 和 `skills/`。Runtime 工具集合只启用 `read`。`file_ids` 作为固定 `[File IDs]` 提示块传入，不在 Runtime 内解析或下载文件。
+Agent 配置默认直接读取 `agent/{agent_id}/.campusclaw/` 下的 `settings.json`、
+`SYSTEM.md` 和 `skills/`；部署可通过 `CAMPUSCLAW_AGENT_ROOT` 替换 `agent` 根目录。
+Runtime 工具集合只启用 `read`。`file_ids` 作为固定 `[File IDs]` 提示块传入，不在 Runtime 内解析或下载文件。
 
 ## 7. 质量约束
 
@@ -124,5 +126,6 @@ Agent 配置直接读取 `<agent-root>/<agent_id>/.campusagent/` 下的 `setting
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 2.1.0 | 2026-08-19 | HTTP V1 的 Agent 根目录默认值改为 `agent`，受控子目录改为 `.campusclaw/` |
 | 2.0.0 | 2026-08-18 | 按实现提交 `8691e880` 重写；默认 Spring MVC 服务、显式 CLI、HTTP+SSE 和 11 个 Runtime 接口成为现行设计 |
 | 1.x | 2026-08-18 以前 | 历史 ServerMode、WebFlux RouterFunction 与公开 WebSocket 设计，已废弃 |

@@ -5,7 +5,7 @@ title Managed Agent CLI Runtime Flow
 ' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtime/AgentRuntimeManager.java (prepare, materialize)
 ' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/session/AgentSession.java (initialize, setAgentRuntime, setDelegationState)
 ' Observed behavior: only the explicit CLI --agent-id path uses the CampusMate materializer.
-' Architecture change: the public HTTP V1 runtime uses its own read-only .campusagent directory contract.
+' Architecture change: HTTP V1 and managed CLI share the .campusclaw location but retain separate file contracts and loading flows.
 
 actor User
 participant "CampusClawCommand" as CLI
@@ -48,7 +48,7 @@ Session --> User: interactive or one-shot CLI
 
 note over CLI,Session
 The HTTP V1 controllers do not enter this flow.
-They read manager-provisioned .campusagent directories.
+They read manager-provisioned agent/{agent_id}/.campusclaw files.
 end note
 
 @enduml

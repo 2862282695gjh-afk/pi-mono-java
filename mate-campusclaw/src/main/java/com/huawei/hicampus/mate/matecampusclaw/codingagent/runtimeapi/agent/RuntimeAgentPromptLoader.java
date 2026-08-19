@@ -5,6 +5,7 @@
 package com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.agent;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
@@ -28,7 +29,7 @@ import org.springframework.stereotype.Component;
 /**
  * 从 Agent 当前只读目录安全装载 SYSTEM.md 和可见 Skill 摘要。
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/08/18]
+ * @version [br_eCampusCore 25.1.0_Next, 2026/08/19]
  * @since [br_eCampusCore 25.1.0_Next]
  */
 @Component
@@ -45,8 +46,9 @@ public class RuntimeAgentPromptLoader {
 
     public String load(Path agentDirectory) {
         Path root = realDirectory(agentDirectory);
-        String systemPrompt = readOptionalFile(root, root.resolve(".campusagent/SYSTEM.md"));
-        List<Skill> skills = loadSkills(root, root.resolve(".campusagent/skills"));
+        Path managedDirectory = root.resolve(RuntimeAgentDirectoryProperties.MANAGED_DIRECTORY_NAME);
+        String systemPrompt = readOptionalFile(root, managedDirectory.resolve("SYSTEM.md"));
+        List<Skill> skills = loadSkills(root, managedDirectory.resolve("skills"));
         String skillsPrompt = SkillPromptFormatter.format(skills);
         if (systemPrompt.isBlank()) {
             return skillsPrompt;
@@ -110,7 +112,7 @@ public class RuntimeAgentPromptLoader {
         Path realFile = safeRealPath(root, candidate);
         requireManagedSize(realFile);
         try {
-            return Files.readString(realFile);
+            return Files.readString(realFile, StandardCharsets.UTF_8);
         } catch (IOException error) {
             throw unavailable(error);
         }

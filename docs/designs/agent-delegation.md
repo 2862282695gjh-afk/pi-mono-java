@@ -1,6 +1,6 @@
 # Agent 委派执行链路设计
 
-> 文档版本：2.0.0
+> 文档版本：2.1.0
 >
 > 更新日期：2026-08-19
 >
@@ -24,7 +24,7 @@
 - `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtime/TransientAgentRunner.java`：`run()`、`createSession()`
 - `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/runtime/RuntimeSessionEngineRegistry.java`：HTTP V1 的独立执行引擎
 
-`origin/main` 的观察行为是把委派状态装配到旧 `ServerMode/SessionPool`。HTTP V1 分支已经删除该入口，并明确把公共 HTTP 的只读 `.campusagent` 与 CLI 的 CampusMate `.campusclaw` 物化链分离。合并后的架构变更是：保留委派能力及全部校验规则，把入口迁移到显式 `cli --agent-id`；普通 CLI 和 HTTP V1 均不隐式启用委派。
+`origin/main` 的观察行为是把委派状态装配到旧 `ServerMode/SessionPool`。HTTP V1 分支已经删除该入口。HTTP 现在与 CLI 共用 `agent/{agent_id}/.campusclaw/` 目录位置，但仍只读 Manager 预置文件，不调用 CampusMate 物化器。合并后的架构变更是：保留委派能力及全部校验规则，把入口迁移到显式 `cli --agent-id`；普通 CLI 和 HTTP V1 均不隐式启用委派。
 
 ## 2. 能力边界
 
@@ -32,9 +32,9 @@
 |---|---|---|
 | `cli --agent-id <id>` | 有条件启用 | 已准备 `PreparedAgentRuntime`，可读取 `bindingAgents`，并可通过同一 `AgentRuntimeManager` 准备子 Agent |
 | 未传 `--agent-id` 的 CLI | 不启用 | 普通会话没有可信的父 Agent 绑定快照 |
-| Spring Boot HTTP V1 | 当前不启用 | HTTP 使用 Manager 预置的只读 `.campusagent`，不调用 CLI 专用 `.campusclaw` 物化器 |
+| Spring Boot HTTP V1 | 当前不启用 | HTTP 只读 Manager 预置的 `agent/{agent_id}/.campusclaw/`，不调用 CLI 的 CampusMate 物化器 |
 
-这是有意的产品与架构边界。HTTP Session 不会为了发现子 Agent 而隐式访问 CampusMate；若未来需要 HTTP 委派，必须先统一两套目录契约、身份来源和事件持久化语义。
+这是有意的产品与架构边界。HTTP Session 不会为了发现子 Agent 而隐式访问 CampusMate；若未来需要 HTTP 委派，必须先统一文件 Schema、身份来源和事件持久化语义。
 
 ## 3. 组件职责
 
@@ -117,5 +117,6 @@ effectiveChildAgents = parent.bindingAgents
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 2.1.0 | 2026-08-19 | HTTP V1 目录位置改为 `agent/{agent_id}/.campusclaw/`；保留“HTTP 不隐式访问 CampusMate、不进入 CLI 物化和委派链”的能力边界。 |
 | 2.0.0 | 2026-08-19 | 合并 HTTP V1 架构：删除旧 ServerMode/SessionPool 接线，把委派入口迁移到显式托管 CLI；补充源码证据和 PlantUML。 |
 | 1.x | 2026-08-18 | 委派组件初版，入口接在线程内旧 ServerMode/SessionPool。 |

@@ -44,7 +44,7 @@
       <li><strong>每跳重新 validate</strong>（§5.2）：dispatcher 不信任暴露时的候选快照；<code>Rejected</code> 转 <code>AgentRuntimeException</code> → 父侧 isError 工具结果。</li>
       <li><strong>瞬态子会话：</strong><code>runtimeManager.sessionConfig</code> 令子默认模型优先、入口会话模型兜底；子 cwd = 其 agentRoot；task 即完整用户提示；子系统提示来自其物化 systemPrompt.md。</li>
       <li><strong>审计暂为结构化英文 INFO 日志</strong>（parent/target/ancestry/depth/invocationId/conversationId）；正式审计事件流与 PendingDelegation 续接属后续 PR（组⑤）。</li>
-      <li><strong>入口接线（显式托管 CLI）：</strong>HTTP V1 架构删除旧 <code>ServerMode/SessionPool</code> 后，<code>CampusClawCommand</code> 仅在显式 <code>cli --agent-id</code> 已准备托管运行时且 dispatcher bean 可用时注入 <code>DelegationState.entry(...)</code>；bean 缺失仅降级不报错。普通 CLI 和独立 <code>.campusagent</code> HTTP V1 均不启用该物化链。</li>
+      <li><strong>入口接线（显式托管 CLI）：</strong>HTTP V1 架构删除旧 <code>ServerMode/SessionPool</code> 后，<code>CampusClawCommand</code> 仅在显式 <code>cli --agent-id</code> 已准备托管运行时且 dispatcher bean 可用时注入 <code>DelegationState.entry(...)</code>；bean 缺失仅降级不报错。普通 CLI 和只读 Manager 预置 <code>agent/{agent_id}/.campusclaw/</code> 的 HTTP V1 均不启用该物化链。</li>
       <li><strong>本地元数据源：</strong><code>LocalChildAgentMetadataSource</code> 本地快照优先、远程只读回退、双失败 fail closed（<code>UNKNOWN_CHILD</code>）。</li>
     </ul>
   </section>

@@ -119,7 +119,7 @@ class RuntimeHttpProcessOpenGaussIT {
     private static String springConfiguration(Path tempDir) {
         ObjectNode runtime = MAPPER.createObjectNode();
         runtime.putObject("agent-directory")
-                .put("root", tempDir.resolve("agents").toString());
+                .put("root", tempDir.resolve("agent").toString());
         runtime.putObject("events").put("cursor-secret", "process-cursor-secret-at-least-32-bytes");
         ObjectNode root = MAPPER.createObjectNode();
         root.putObject("campusclaw").set("runtime", runtime);
@@ -128,7 +128,7 @@ class RuntimeHttpProcessOpenGaussIT {
 
     private static void prepareRuntimeFiles(Path tempDir, int modelPort) throws IOException {
         Path agentHome = tempDir.resolve("home/agent");
-        Path managedDirectory = tempDir.resolve("agents").resolve(AGENT_ID).resolve(".campusagent");
+        Path managedDirectory = tempDir.resolve("agent").resolve(AGENT_ID).resolve(".campusclaw");
         Files.createDirectories(agentHome);
         Files.createDirectories(managedDirectory);
         Files.writeString(agentHome.resolve("settings.json"), globalSettings(modelPort), StandardCharsets.UTF_8);

@@ -54,6 +54,6 @@ end
 
 note over CLI,ParentSession
 Plain CLI sessions do not receive DelegationState.
-HTTP V1 uses the separate .campusagent runtime path.
+HTTP V1 reads the shared .campusclaw location without entering this materialization flow.
 end note
 @enduml

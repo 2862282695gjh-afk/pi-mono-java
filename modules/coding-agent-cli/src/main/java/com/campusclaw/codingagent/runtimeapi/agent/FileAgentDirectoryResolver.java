@@ -21,7 +21,7 @@ import org.springframework.http.HttpStatus;
 /**
  * 从受控本地根目录解析 Agent 当前只读配置。
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/08/18]
+ * @version [br_eCampusCore 25.1.0_Next, 2026/08/19]
  * @since [br_eCampusCore 25.1.0_Next]
  */
 public class FileAgentDirectoryResolver implements AgentDirectoryResolver {
@@ -38,7 +38,8 @@ public class FileAgentDirectoryResolver implements AgentDirectoryResolver {
     public AgentDirectorySnapshotDTO resolve(String agentId) {
         Path agentDirectory = safeAgentDirectory(agentId);
         try {
-            Path settingsFile = requiredManagedFile(agentDirectory, ".campusagent/settings.json");
+            Path settingsFile = requiredManagedFile(
+                    agentDirectory, Path.of(RuntimeAgentDirectoryProperties.MANAGED_DIRECTORY_NAME, "settings.json"));
             JsonNode settings = objectMapper.readTree(settingsFile.toFile());
             String defaultModel = requiredText(settings, "defaultModel");
             List<String> enabledModels = readModels(settings, defaultModel);
@@ -50,7 +51,7 @@ public class FileAgentDirectoryResolver implements AgentDirectoryResolver {
         }
     }
 
-    private static Path requiredManagedFile(Path agentDirectory, String relativePath) {
+    private static Path requiredManagedFile(Path agentDirectory, Path relativePath) {
         Path candidate = agentDirectory.resolve(relativePath).normalize();
         if (!candidate.startsWith(agentDirectory) || !Files.isRegularFile(candidate, LinkOption.NOFOLLOW_LINKS)) {
             throw new RuntimeApiException(HttpStatus.UNPROCESSABLE_ENTITY, RuntimeErrorCode.AGENT_NOT_AVAILABLE);

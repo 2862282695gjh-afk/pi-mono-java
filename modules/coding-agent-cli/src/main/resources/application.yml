@@ -36,7 +36,7 @@ server:
 campusclaw:
   runtime:
     agent-directory:
-      root: ${CAMPUSCLAW_AGENT_ROOT:${user.home}/.campusclaw/runtime/agents}
+      root: ${CAMPUSCLAW_AGENT_ROOT:agent}
     execution:
       max-active: ${CAMPUSCLAW_MAX_ACTIVE_EXECUTIONS:100}
       max-duration: ${CAMPUSCLAW_MAX_EXECUTION_DURATION:PT30M}

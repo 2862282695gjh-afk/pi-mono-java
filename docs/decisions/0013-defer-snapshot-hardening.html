@@ -18,7 +18,7 @@
 </head>
 <body>
   <h1>ADR-0013 · 暂缓托管 Agent 快照九条防篡改校验</h1>
-  <div class="meta">Status: <span class="badge">Accepted</span> · Date: 2026-08-17 ·
+  <div class="meta">Status: <span class="badge">Accepted</span> · Date: 2026-08-17 · Amended: 2026-08-19 ·
     设计文档: <a href="../designs/agent-skill-runtime.md">agent-skill-runtime</a> ·
     部分暂缓: <a href="0011-agent-skill-runtime-resolution.html">ADR-0011</a> ·
     登记条目: <a href="../DEFERRED.md">DEF-008</a></div>
@@ -33,7 +33,7 @@
       <li><strong>按部署形态裁剪（保留穿越/白名单，删其余）</strong><br>Pro：保留最关键的远程攻击面防线。<br>Con：规则间共享校验方法与测试基建，部分裁剪的拆分成本接近全量保留。Rejected。</li>
       <li><strong>整体暂缓九条规则，语义降级为"无法加载即重新物化"</strong><br>Pro：净减约 1100 行（主代码 659→341，测试 25→12）；快照损坏/中断场景由重新物化自愈，功能等价；规则可从 git 历史（本 ADR 前一个提交）整体恢复。<br>Con：接受已知风险窗口（见 Consequences）。Chosen。</li>
     </ul>
-    <p><strong>选择理由：</strong>该物化器当前只用于显式托管 CLI 流程；公共 HTTP V1 使用独立的只读 <code>.campusagent</code> 目录解析，不调用本物化器。恢复条件见 DEF-008；降级语义保持"本地优先 + 按需物化"的架构决策不变。</p>
+    <p><strong>选择理由：</strong>该物化器当前只用于显式托管 CLI 流程；公共 HTTP V1 只读 Manager 预置的 <code>agent/{agent_id}/.campusclaw/</code> HTTP 文件契约，不调用本物化器。恢复条件见 DEF-008；降级语义保持"本地优先 + 按需物化"的架构决策不变。</p>
   </section>
 
   <section><h2>Decision</h2>

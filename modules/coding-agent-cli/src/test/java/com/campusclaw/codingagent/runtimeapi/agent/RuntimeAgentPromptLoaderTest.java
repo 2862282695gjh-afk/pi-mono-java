@@ -7,6 +7,7 @@ package com.campusclaw.codingagent.runtimeapi.agent;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
@@ -19,7 +20,7 @@ import org.junit.jupiter.api.io.TempDir;
 /**
  * Runtime Agent 系统提示词和 Skill 安全装载测试。
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/08/18]
+ * @version [br_eCampusCore 25.1.0_Next, 2026/08/19]
  * @since [br_eCampusCore 25.1.0_Next]
  */
 class RuntimeAgentPromptLoaderTest {
@@ -28,8 +29,8 @@ class RuntimeAgentPromptLoaderTest {
 
     @Test
     void combinesSystemPromptAndVisibleSkillsInStableOrder() throws Exception {
-        Path managed = Files.createDirectories(temporaryDirectory.resolve(".campusagent"));
-        Files.writeString(managed.resolve("SYSTEM.md"), "You are the campus assistant.");
+        Path managed = Files.createDirectories(temporaryDirectory.resolve(".campusclaw"));
+        Files.writeString(managed.resolve("SYSTEM.md"), "You are the campus assistant.", StandardCharsets.UTF_8);
         writeSkill(managed.resolve("skills/b-skill/SKILL.md"), "b-skill", false);
         writeSkill(managed.resolve("skills/a-skill/SKILL.md"), "a-skill", false);
         writeSkill(managed.resolve("skills/hidden/SKILL.md"), "hidden", true);
@@ -45,8 +46,9 @@ class RuntimeAgentPromptLoaderTest {
     @Test
     void rejectsSystemPromptSymlinkThatEscapesAgentDirectory() throws Exception {
         Path agent = Files.createDirectory(temporaryDirectory.resolve("agent"));
-        Path managed = Files.createDirectories(agent.resolve(".campusagent"));
-        Path outside = Files.writeString(temporaryDirectory.resolve("outside-system.md"), "outside");
+        Path managed = Files.createDirectories(agent.resolve(".campusclaw"));
+        Path outside =
+                Files.writeString(temporaryDirectory.resolve("outside-system.md"), "outside", StandardCharsets.UTF_8);
         Files.createSymbolicLink(managed.resolve("SYSTEM.md"), outside);
 
         assertThatThrownBy(() -> new RuntimeAgentPromptLoader().load(agent))
@@ -54,10 +56,21 @@ class RuntimeAgentPromptLoaderTest {
                         .isEqualTo(RuntimeErrorCode.AGENT_NOT_AVAILABLE));
     }
 
+    @Test
+    void ignoresLegacyCampusAgentPromptDirectory() throws Exception {
+        Path legacyDirectory = Files.createDirectories(temporaryDirectory.resolve(".campusagent"));
+        Files.writeString(
+                legacyDirectory.resolve("SYSTEM.md"), "Legacy prompt must not be loaded.", StandardCharsets.UTF_8);
+
+        String prompt = new RuntimeAgentPromptLoader().load(temporaryDirectory);
+
+        assertThat(prompt).isEmpty();
+    }
+
     private static void writeSkill(Path file, String name, boolean hidden) throws Exception {
         Files.createDirectories(file.getParent());
         String content = "---\nname: " + name + "\ndescription: Test skill\ndisable-model-invocation: " + hidden
                 + "\n---\n# Instructions\n";
-        Files.writeString(file, content);
+        Files.writeString(file, content, StandardCharsets.UTF_8);
     }
 }

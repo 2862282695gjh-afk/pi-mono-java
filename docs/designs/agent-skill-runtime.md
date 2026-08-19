@@ -1,6 +1,6 @@
 # Agent 与 Skill 本地优先运行时设计
 
-> 文档版本：2.1.0
+> 文档版本：2.2.0
 >
 > 更新日期：2026-08-19
 >
@@ -26,17 +26,21 @@
 
 ## 2. 当前边界
 
-仓库现在有两条有意分离的 Agent 目录链路：
+仓库现在有两条有意分离的 Agent 消费链路。两者默认都使用
+`agent/{agent_id}/.campusclaw/`，但并不因目录名相同而隐式共享物化、刷新和文件兼容语义：
 
 | 入口 | 目录契约 | 是否调用 CampusMate | 作用 |
 |---|---|---|---|
-| 正常 Spring Boot HTTP V1 | `campusclaw.runtime.agent-directory.root/{agent_id}/.campusagent` | 否 | 读取由 Manager 预先提供的只读 Agent 配置，创建和执行 Runtime Session |
+| 正常 Spring Boot HTTP V1 | `agent/{agent_id}/.campusclaw` | 否 | 读取由 Manager 预先提供的 `settings.json` / `SYSTEM.md` / `skills/`，创建和执行 Runtime Session |
 | 显式 `cli --agent-id <id>` | `campusmate.runtime.agents-root/{agentId}/.campusclaw` | 本地缓存缺失或不可读时调用 | 为本地 CLI 准备托管 Agent、Skill 与工具快照 |
 | 未传 `--agent-id` 的 CLI | 原有用户/项目目录 | 否 | 保持普通非托管 CLI 行为 |
 
 这是架构变更后的明确边界：旧 `ServerMode`、`SessionPool`、`ChatHandler` 和公开 WebSocket 接口已经删除。Managed Agent 物化器不再由 HTTP Controller、REST Chat 或 WebSocket 调用。
 
-HTTP V1 与 CLI 当前使用不同的受管目录结构，是产品约束而非同一快照的两个别名。若后续希望统一，必须先确定 Manager 交付格式、缓存所有权和刷新语义，不能让 HTTP 请求隐式触发远程物化。
+HTTP V1 与 CLI 当前共用 `.campusclaw` 目录位置，但文件契约仍不同：HTTP 读取
+`settings.json` 和 `SYSTEM.md`，CLI 物化器写入 `setting.json`、`systemPrompt.md` 和
+`agentId.json`。这是本次只调整目录而不扩大文件 Schema 的有意边界。Manager 必须保证
+HTTP 所需文件是完整快照；HTTP 请求不会因文件缺失而隐式触发 CampusMate 物化。
 
 ## 3. CLI 托管 Agent 流程
 
@@ -147,7 +151,8 @@ campusmate:
     max-response-bytes: ${CAMPUSMATE_MAX_RESPONSE_BYTES:4194304}
 ```
 
-该配置只控制 CLI 托管 Agent 物化。HTTP V1 使用 `campusclaw.runtime.agent-directory.root`，两者不可混用。
+该配置只控制 CLI 托管 Agent 物化。HTTP V1 仍使用独立配置键
+`campusclaw.runtime.agent-directory.root`；两个配置的默认值都为 `agent`，但只有 CLI 配置会触发远程物化。
 
 ## 9. 测试范围
 
@@ -168,6 +173,7 @@ campusmate:
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 2.2.0 | 2026-08-19 | 将 HTTP V1 目录改为 `agent/{agent_id}/.campusclaw/`；明确 HTTP 与 CLI 共用目录位置但仍保持独立文件契约和远程物化语义。 |
 | 2.1.0 | 2026-08-19 | 合入 Agent 委派能力并把旧 ServerMode 接线迁移到显式托管 CLI；HTTP V1 仍保持独立目录与执行链。 |
 | 2.0.0 | 2026-08-19 | 合并 HTTP V1 后收口为 CLI 专用托管 Agent 物化；删除旧 REST/WebSocket/SessionPool 描述；按实际代码重写缓存与安全语义；改用 PlantUML。 |
 | 1.x | 2026-08-18 以前 | 历史设计同时描述 CLI、旧 REST、ServerMode 和 WebSocket，已废弃。 |
