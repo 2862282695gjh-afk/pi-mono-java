@@ -1,23 +1,103 @@
-@startuml diagram
-title AI module overview
+@startuml module-context
+title AI Module Context
+left to right direction
+skinparam componentStyle rectangle
 
-package "AI module" {
-  [CampusClawAiService] as service
-  [Provider registry] as registry
-  [Provider adapters] as providers
-  [Message and stream types] as types
-  [Model registry] as models
-}
+' Source evidence: modules/ai/pom.xml; CampusClawAiService; ApiProviderRegistry.
+' Analyzed source commit: cc2f58d9e24bae1d7c99b9f54e86b71940d86115.
+' Observed behavior: the AI module adapts provider SDKs for agent-core consumers.
 
-service --> registry : resolve provider
-registry --> providers : select adapter
-service --> types : emit messages
-service --> models : resolve model
+component "campusclaw-ai" as ai
+component "campusclaw-agent-core" as core
+component "campusclaw-cron" as cron
+component "campusclaw-coding-agent" as cli
+component "anthropic-java" as anthropic
+component "openai-java" as openai
+component "reactor-core + webflux" as reactor
+component "jackson + json-schema" as jackson
 
-note right of service
-Source evidence:
-docs/designs/ai.md
-modules/ai/src/main/java/com/campusclaw/ai/
-Observed behavior: provider adapters feed a shared streaming service.
-end note
+anthropic --> ai
+openai --> ai
+reactor --> ai
+jackson --> ai
+ai --> core
+core --> cron
+core --> cli
+@enduml
+
+@startuml streaming-sequence
+title AI Provider Streaming Sequence
+
+' Source evidence: CampusClawAiService#streamSimple; ApiProviderRegistry#getProvider.
+' Source evidence: AnthropicProvider; AssistantMessageEventStream.
+' Observed behavior: a provider virtual thread translates SDK chunks into normalized events.
+
+participant Caller
+participant CampusClawAiService
+participant ApiProviderRegistry
+participant AnthropicProvider
+participant AssistantMessageEventStream
+participant "anthropic-java SDK" as SDK
+
+Caller -> CampusClawAiService : streamSimple(model, context, options)
+CampusClawAiService -> ApiProviderRegistry : getProvider(model.api)
+ApiProviderRegistry --> CampusClawAiService : AnthropicProvider
+CampusClawAiService -> AnthropicProvider : streamSimple(...)
+AnthropicProvider -> AssistantMessageEventStream : create
+AnthropicProvider --> Caller : event stream
+note over AnthropicProvider : run SDK stream on virtual thread
+AnthropicProvider -> SDK : messages.createStreaming(...)
+loop SSE chunks
+  SDK --> AnthropicProvider : raw stream event
+  AnthropicProvider -> AssistantMessageEventStream : push normalized delta
+end
+AnthropicProvider -> AssistantMessageEventStream : pushDone(reason, message)
+AssistantMessageEventStream --> Caller : Flux and Mono complete
+@enduml
+
+@startuml core-classes
+title AI Module Core Classes
+skinparam classAttributeIconSize 0
+
+' Source evidence: modules/ai/src/main/java/com/campusclaw/ai/.
+' Design reason: show provider, registry, event stream, and message type boundaries.
+
+class CampusClawAiService
+interface ApiProvider
+class ApiProviderRegistry
+class ModelRegistry
+interface ProviderConfigResolver
+class EnvProviderConfigResolver
+class EnvApiKeyResolver
+class ResolvedProviderConfig
+class AnthropicProvider
+class OpenAICompletionsProvider
+class OpenAIResponsesProvider
+class MistralProvider
+interface AssistantMessageEvent
+class AssistantMessageEventStream
+class EventStream
+interface Message
+interface ContentBlock
+class Model
+class Context
+class MessageTransformer
+
+CampusClawAiService --> ApiProviderRegistry : resolves via
+CampusClawAiService --> ModelRegistry : exposes
+ApiProviderRegistry o-- ApiProvider : indexes
+AnthropicProvider ..|> ApiProvider
+OpenAICompletionsProvider ..|> ApiProvider
+OpenAIResponsesProvider ..|> ApiProvider
+MistralProvider ..|> ApiProvider
+ApiProvider --> AssistantMessageEventStream : returns
+AssistantMessageEventStream *-- EventStream
+AssistantMessageEventStream ..> AssistantMessageEvent : pushes
+ApiProvider ..> ProviderConfigResolver : resolves config
+EnvProviderConfigResolver ..|> ProviderConfigResolver
+EnvProviderConfigResolver --> EnvApiKeyResolver
+ProviderConfigResolver --> ResolvedProviderConfig : returns
+ApiProvider ..> MessageTransformer : normalizes
+Context o-- Message
+ApiProvider ..> Model : reads
 @enduml

@@ -1,0 +1,150 @@
+/*
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
+ */
+
+package com.campusclaw.codingagent.runtimeapi.web;
+
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+import java.time.OffsetDateTime;
+
+import com.campusclaw.codingagent.runtimeapi.auth.RuntimeRequestAuthenticator;
+import com.campusclaw.codingagent.runtimeapi.error.RuntimeApiException;
+import com.campusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
+import com.campusclaw.codingagent.runtimeapi.result.StandaloneResultBeanAdapter;
+import com.campusclaw.codingagent.runtimeapi.session.RuntimeSessionService;
+import com.campusclaw.codingagent.runtimeapi.session.RuntimeSessionView;
+import com.campusclaw.codingagent.runtimeapi.vo.CreateSessionResponseVO;
+import com.campusclaw.codingagent.runtimeapi.vo.GetSessionResponseVO;
+import com.fasterxml.jackson.databind.json.JsonMapper;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.context.support.ResourceBundleMessageSource;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+
+/**
+ * 已确认的创建、读取和删除 Session HTTP 契约测试。
+ *
+ * @version [br_eCampusCore 25.1.0_Next, 2026/08/18]
+ * @since [br_eCampusCore 25.1.0_Next]
+ */
+class RuntimeSessionRoutesTest {
+    private static final String AGENT_ID = "agent_011CZkYqphY8vELVzwCUpqiQ";
+
+    private static final String SESSION_ID = "01JY8W6M8D9K4H2Q7P3V5N1R0T";
+
+    private RuntimeSessionService service;
+
+    private MockMvc mvc;
+
+    @BeforeEach
+    void setUp() {
+        service = mock(RuntimeSessionService.class);
+        var controller = new RuntimeSessionController(service, new StandaloneResultBeanAdapter());
+        var interceptor = new RuntimeAuthenticationInterceptor(new RuntimeRequestAuthenticator());
+        var messages = new ResourceBundleMessageSource();
+        messages.setBasename("messages");
+        var objectMapper = JsonMapper.builder().addModule(new JavaTimeModule()).build();
+        mvc = MockMvcBuilders.standaloneSetup(controller)
+                .addInterceptors(interceptor)
+                .setControllerAdvice(new RuntimeExceptionHandler(messages))
+                .setMessageConverters(new MappingJackson2HttpMessageConverter(objectMapper))
+                .build();
+    }
+
+    @Test
+    void createWithJwtReturnsConfirmedResultBean() throws Exception {
+        when(service.create(AGENT_ID)).thenReturn(createView());
+
+        mvc.perform(post("/campusclaw-service/v1/agents/{agentId}/sessions", AGENT_ID)
+                        .header("X-HW-ID", "credential-jwt")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer opaque-token"))
+                .andExpect(status().isCreated())
+                .andExpect(header().string(HttpHeaders.LOCATION, "/campusclaw-service/v1/sessions/" + SESSION_ID))
+                .andExpect(header().string(HttpHeaders.CONTENT_LANGUAGE, "en-US"))
+                .andExpect(jsonPath("$.resCode").value("0"))
+                .andExpect(jsonPath("$.resMsg").value("success"))
+                .andExpect(jsonPath("$.result.session_id").value(SESSION_ID))
+                .andExpect(jsonPath("$.result.agent_id").value(AGENT_ID))
+                .andExpect(jsonPath("$.result.updated_at").doesNotExist());
+    }
+
+    @Test
+    void getWithAppKeyReturnsEtagAndNoStore() throws Exception {
+        when(service.get(SESSION_ID)).thenReturn(getView());
+
+        mvc.perform(get("/campusclaw-service/v1/sessions/{sessionId}", SESSION_ID)
+                        .header("X-HW-ID", "credential-appkey")
+                        .header("X-HW-APPKEY", "opaque-appkey"))
+                .andExpect(status().isOk())
+                .andExpect(header().string(HttpHeaders.ETAG, "\"snp-resource\""))
+                .andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store"))
+                .andExpect(jsonPath("$.result.model_id").value("model-default"))
+                .andExpect(jsonPath("$.result.updated_at").value("2026-08-18T00:00:00Z"));
+    }
+
+    @Test
+    void deleteReturnsEmptyNoContent() throws Exception {
+        doNothing().when(service).delete(eq(SESSION_ID));
+
+        mvc.perform(delete("/campusclaw-service/v1/sessions/{sessionId}", SESSION_ID)
+                        .header("X-HW-ID", "credential-jwt")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer opaque-token"))
+                .andExpect(status().isNoContent())
+                .andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store"))
+                .andExpect(content().string(""));
+    }
+
+    @Test
+    void mixedCredentialsReturnErrorWithoutResult() throws Exception {
+        mvc.perform(get("/campusclaw-service/v1/sessions/{sessionId}", SESSION_ID)
+                        .header("X-HW-ID", "credential")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer opaque-token")
+                        .header("X-HW-APPKEY", "opaque-appkey"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.resCode").value("AUTH_CREDENTIAL_CONFLICT"))
+                .andExpect(jsonPath("$.result").doesNotExist());
+    }
+
+    @Test
+    void managerUnavailableAddsRetryAfterAndLocalizesError() throws Exception {
+        when(service.create(AGENT_ID)).thenThrow(new RuntimeApiException(RuntimeErrorCode.MANAGER_UNAVAILABLE));
+
+        mvc.perform(post("/campusclaw-service/v1/agents/{agentId}/sessions", AGENT_ID)
+                        .header("X-HW-ID", "credential")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer opaque-token")
+                        .header(HttpHeaders.ACCEPT_LANGUAGE, "zh-CN"))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(header().string(HttpHeaders.RETRY_AFTER, "3"))
+                .andExpect(header().string(HttpHeaders.CONTENT_LANGUAGE, "zh-CN"))
+                .andExpect(jsonPath("$.resCode").value("MANAGER_UNAVAILABLE"))
+                .andExpect(jsonPath("$.result").doesNotExist());
+    }
+
+    private static RuntimeSessionView<CreateSessionResponseVO> createView() {
+        OffsetDateTime time = OffsetDateTime.parse("2026-08-18T00:00:00Z");
+        var response = new CreateSessionResponseVO(SESSION_ID, AGENT_ID, "model-default", "idle", false, time);
+        return new RuntimeSessionView<>(response, "\"snp-create\"");
+    }
+
+    private static RuntimeSessionView<GetSessionResponseVO> getView() {
+        OffsetDateTime time = OffsetDateTime.parse("2026-08-18T00:00:00Z");
+        var response = new GetSessionResponseVO(SESSION_ID, AGENT_ID, "model-default", "idle", false, time, time);
+        return new RuntimeSessionView<>(response, "\"snp-resource\"");
+    }
+}

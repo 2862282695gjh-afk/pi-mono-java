@@ -1,9 +1,4 @@
-# tui 模块设计文档（基于代码 v1）
-
-![TUI module overview](tui/diagram.svg)
-
-PlantUML source: [tui/diagram.puml#L1](tui/diagram.puml#L1)
-
+# tui 模块设计文档（基于代码 v1.1）
 
 ## 文档信息
 
@@ -13,9 +8,13 @@ PlantUML source: [tui/diagram.puml#L1](tui/diagram.puml#L1)
 | Story 名称 | tui 模块设计文档（基于代码 v1） |
 | 负责人 | 待补充 |
 | 创建日期 | 2026-05-14 |
-| 版本 | v1.0 (code-derived) |
+| 版本 | v1.1 (code-derived) |
 
 ---
+
+> 图表格式更新基于源码提交 `cc2f58d9e24bae1d7c99b9f54e86b71940d86115`；
+> 主要证据为 `modules/tui/pom.xml`、`Tui#render`、`JLineTerminal`、
+> `Component` 与 `AnsiUtils`。
 
 ## 1. Story 背景
 
@@ -52,6 +51,10 @@ PlantUML source: [tui/diagram.puml#L1](tui/diagram.puml#L1)
 ## 2. Story 分析
 
 ### 2.1 Story 上下文
+
+![TUI 模块上下文](./tui/module-context.svg)
+
+[PlantUML 源文件](./tui/diagram.puml#L1)
 
 文字补充：
 
@@ -107,6 +110,10 @@ PlantUML source: [tui/diagram.puml#L1](tui/diagram.puml#L1)
 输入与 resize 是事件驱动：`start()` 时向 `terminal.onInput` 注册 `inputHandler`，向 `terminal.onResize` 注册 `size -> render()`。`JLineTerminal` 内部用 `Thread.ofVirtual().name("campusclaw-tui-input")` 守护虚拟线程阻塞读 `NonBlockingReader`，把字节拼成 escape sequence 后通过监听器分发。
 
 下面用 sequenceDiagram 描述一帧 render-flush 周期（actor 为真实类名）：
+
+![TUI 渲染时序](./tui/render-sequence.svg)
+
+[PlantUML 源文件](./tui/diagram.puml#L22)
 
 图中 `render(width)`、`newLines`、`fullRender`、`computeChangeRange`、`emitDiffFrame`、`sliceByColumn`、`SYNC_START/SYNC_END`、`CLEAR_LINE` 等措辞均与上面正文 step 列表一致。
 
@@ -198,6 +205,10 @@ PlantUML source: [tui/diagram.puml#L1](tui/diagram.puml#L1)
 ### 3.6 代码设计
 
 下面 classDiagram 给出关键类与关系（≤ 15 节点，类名集合 ⊆ 下方表中类名）：
+
+![TUI 模块核心类](./tui/core-classes.svg)
+
+[PlantUML 源文件](./tui/diagram.puml#L52)
 
 正文表（按包组织，每个一级包列对外/入口/核心抽象，借用类的 javadoc 一行职责）：
 
@@ -338,3 +349,4 @@ PlantUML source: [tui/diagram.puml#L1](tui/diagram.puml#L1)
 | 日期 | 提出人 | 角色 | 问题/议题 | 讨论过程 | 决策结论 | 状态 |
 |---|---|---|---|---|---|---|
 | 2026-05-14 | - | - | 设计文档由 codebase-module-design skill 基于代码逆向生成 v1 | 通过静态分析 `pom.xml` + 包结构 + 关键类 javadoc 完成 | 由开发者补充关键决策（如：为何手写差分渲染而不直接用 Lanterna 全屏画布；macOS Terminal 兼容策略的取舍） | 开放 |
+| 2026-08-18 | Codex | 文档维护 | 设计图格式不符合全局 PlantUML 规范 | 保持节点和关系语义不变，补充源码证据并生成 SVG | Mermaid 迁移为单一 `diagram.puml` 中的稳定命名图 | 已落实 |

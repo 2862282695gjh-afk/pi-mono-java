@@ -9,11 +9,19 @@ BEGIN;
 DROP TABLE IF EXISTS t_session_materialized;
 DROP TABLE IF EXISTS t_session_sequences;
 DROP TABLE IF EXISTS t_session_entries;
+DROP TABLE IF EXISTS t_session_cleanup_task;
+DROP TABLE IF EXISTS t_session_tombstone;
 DROP TABLE IF EXISTS t_sessions;
 
 CREATE TABLE t_sessions (
     id                 VARCHAR(128)   PRIMARY KEY,
+    agent_id           VARCHAR(30)    NOT NULL,
+    model_id           VARCHAR(128)   NOT NULL,
+    state              VARCHAR(16)    NOT NULL,
+    thinking           BOOLEAN        NOT NULL,
+    resource_version   BIGINT         NOT NULL,
     created_at         TIMESTAMPTZ(3) NOT NULL,
+    updated_at         TIMESTAMPTZ(3) NOT NULL,
     cwd                VARCHAR(512)   NOT NULL,
     parent_session_id  VARCHAR(128),
     metadata           JSONB,
@@ -22,7 +30,13 @@ CREATE TABLE t_sessions (
 
 COMMENT ON TABLE t_sessions IS '会话主表，保存会话元数据和当前路径末端';
 COMMENT ON COLUMN t_sessions.id IS '会话的唯一 ID，用于关联该会话的历史记录、序号和汇总数据';
+COMMENT ON COLUMN t_sessions.agent_id IS '创建会话时固定且不可变的 Agent 标识';
+COMMENT ON COLUMN t_sessions.model_id IS '后续用户事件默认使用的当前模型标识';
+COMMENT ON COLUMN t_sessions.state IS '会话粗粒度运行状态，仅允许 idle 或 running';
+COMMENT ON COLUMN t_sessions.thinking IS '后续用户事件是否启用深度思考';
+COMMENT ON COLUMN t_sessions.resource_version IS '配置资源版本号，用于生成强 ETag 和条件更新';
 COMMENT ON COLUMN t_sessions.created_at IS '创建这个会话的时间';
+COMMENT ON COLUMN t_sessions.updated_at IS '会话配置或运行状态最后更新时间';
 COMMENT ON COLUMN t_sessions.cwd IS '创建会话时使用的工作目录；可用于按工作目录筛选会话';
 COMMENT ON COLUMN t_sessions.parent_session_id IS '当前会话复制自哪个来源会话；没有来源时为空，复制内容只包含来源会话的当前路径';
 COMMENT ON COLUMN t_sessions.metadata IS '创建会话时由调用方提供的附加信息 JSON；未提供时为 SQL NULL';
@@ -36,6 +50,49 @@ CREATE INDEX idx_t_sessions_cwd
 
 CREATE INDEX idx_t_sessions_parent
     ON t_sessions (parent_session_id);
+
+ALTER TABLE t_sessions
+    ADD CONSTRAINT ck_t_sessions_state CHECK (state IN ('idle', 'running'));
+
+ALTER TABLE t_sessions
+    ADD CONSTRAINT ck_t_sessions_resource_version CHECK (resource_version > 0);
+
+CREATE TABLE t_session_tombstone (
+    session_id  VARCHAR(128)   PRIMARY KEY,
+    deleted_at  TIMESTAMPTZ(3) NOT NULL
+);
+
+COMMENT ON TABLE t_session_tombstone IS '会话永久删除墓碑表，只保留不可复用的会话标识和删除时间';
+COMMENT ON COLUMN t_session_tombstone.session_id IS '已删除且永不复用的会话 ID';
+COMMENT ON COLUMN t_session_tombstone.deleted_at IS '会话完成逻辑删除的时间';
+
+CREATE TABLE t_session_cleanup_task (
+    session_id      VARCHAR(128)   PRIMARY KEY,
+    state           VARCHAR(16)    NOT NULL,
+    attempt_count   INTEGER        NOT NULL,
+    created_at      TIMESTAMPTZ(3) NOT NULL,
+    updated_at      TIMESTAMPTZ(3) NOT NULL,
+    next_attempt_at TIMESTAMPTZ(3),
+    last_error      VARCHAR(512)
+);
+
+COMMENT ON TABLE t_session_cleanup_task IS '会话逻辑删除后用于异步物理清理的短期可重试任务表';
+COMMENT ON COLUMN t_session_cleanup_task.session_id IS '需要清理 Runtime 数据的会话 ID';
+COMMENT ON COLUMN t_session_cleanup_task.state IS '清理任务状态：PENDING、RUNNING 或 RETRY';
+COMMENT ON COLUMN t_session_cleanup_task.attempt_count IS '已经执行清理的次数';
+COMMENT ON COLUMN t_session_cleanup_task.created_at IS '清理任务创建时间';
+COMMENT ON COLUMN t_session_cleanup_task.updated_at IS '清理任务状态最后更新时间';
+COMMENT ON COLUMN t_session_cleanup_task.next_attempt_at IS '失败后允许再次执行的最早时间';
+COMMENT ON COLUMN t_session_cleanup_task.last_error IS '最近一次清理失败的脱敏摘要';
+
+ALTER TABLE t_session_cleanup_task
+    ADD CONSTRAINT ck_t_session_cleanup_state CHECK (state IN ('PENDING', 'RUNNING', 'RETRY'));
+
+ALTER TABLE t_session_cleanup_task
+    ADD CONSTRAINT ck_t_session_cleanup_attempt CHECK (attempt_count >= 0);
+
+CREATE INDEX idx_t_session_cleanup_due
+    ON t_session_cleanup_task (state, next_attempt_at, updated_at, created_at);
 
 CREATE TABLE t_session_entries (
     session_id  VARCHAR(128)   NOT NULL,

@@ -32,9 +32,10 @@ import com.huawei.hicampus.mate.matecampusclaw.codingagent.config.ConfigValueRes
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.mode.InteractiveMode;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.mode.OneShotMode;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.mode.rpc.RpcMode;
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.mode.server.ServerMode;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.prompt.SystemPromptBuilder;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtime.AgentRuntimeManager;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtime.DelegationState;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtime.DelegationWiring;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtime.LocalAgentDispatcher;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtime.PreparedAgentRuntime;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.session.AgentSession;
@@ -67,10 +68,9 @@ import picocli.CommandLine.Parameters;
 import picocli.CommandLine.Spec;
 
 /**
- * Main CLI command for CampusClaw.
- * Parses command-line arguments and launches the agent in the requested mode.
+ * CampusClaw CLI 主命令，解析命令行参数并启动对应的 Agent 运行模式。
  *
- * @version [br_eCampusCore 26.0.0, 2026/08/17]
+ * @version [br_eCampusCore 26.0.0, 2026/08/19]
  * @since [br_eCampusCore 26.0.0]
  */
 @Command(
@@ -101,9 +101,6 @@ public class CampusClawCommand implements Callable<Integer> {
     private final com.huawei.hicampus.mate.matecampusclaw.codingagent.model.ModelCatalogService modelCatalogService;
     private final com.huawei.hicampus.mate.matecampusclaw.agent.subagent.SubAgentRegistry subAgentRegistry;
 
-    @org.springframework.beans.factory.annotation.Value("${server.session.persistence.enabled:true}")
-    private boolean serverSessionPersistenceEnabled;
-
     public CampusClawCommand(
             CampusClawAiService piAiService,
             ModelRegistry modelRegistry,
@@ -114,7 +111,6 @@ public class CampusClawCommand implements Callable<Integer> {
             SettingsManager settingsManager,
             @org.springframework.lang.Nullable com.huawei.hicampus.mate.matecampusclaw.cron.CronService cronService,
             com.huawei.hicampus.mate.matecampusclaw.codingagent.loop.LoopManager loopManager,
-            org.springframework.context.ApplicationContext applicationContext,
             com.huawei.hicampus.mate.matecampusclaw.codingagent.resolver.AgentModelResolver agentModelResolver,
             com.huawei.hicampus.mate.matecampusclaw.codingagent.model.ModelCatalogService modelCatalogService,
             com.huawei.hicampus.mate.matecampusclaw.agent.subagent.SubAgentRegistry subAgentRegistry) {
@@ -129,7 +125,7 @@ public class CampusClawCommand implements Callable<Integer> {
                 settingsManager,
                 cronService,
                 loopManager,
-                applicationContext,
+                null,
                 agentModelResolver,
                 modelCatalogService,
                 subAgentRegistry);
@@ -199,19 +195,9 @@ public class CampusClawCommand implements Callable<Integer> {
 
     @Option(
             names = {"--mode"},
-            description = "Execution mode: interactive, one-shot, rpc, server, or print",
+            description = "Execution mode: interactive, one-shot, rpc, or print",
             defaultValue = "interactive")
     String mode;
-
-    @Option(
-            names = {"--port"},
-            description = "HTTP server port (for server mode)")
-    Integer port;
-
-    @Option(
-            names = {"--host"},
-            description = "HTTP server bind address (for server mode, default: localhost)")
-    String host;
 
     @Option(
             names = {"--proxy"},
@@ -406,11 +392,7 @@ public class CampusClawCommand implements Callable<Integer> {
 
     private String resolveEffectivePrompt() {
         String effectivePrompt = resolvePrompt();
-        if (effectivePrompt != null
-                || System.console() != null
-                || "server".equals(mode)
-                || "rpc".equals(mode)
-                || "print".equals(mode)) {
+        if (effectivePrompt != null || System.console() != null || "rpc".equals(mode) || "print".equals(mode)) {
             return effectivePrompt;
         }
         try {
@@ -549,15 +531,8 @@ public class CampusClawCommand implements Callable<Integer> {
         String effectiveSystemPrompt = mergeSystemPrompts();
         ToolSelection toolSelection = ToolSelection.fromCli(
                 toolsFilter, noTools, ToolSelection.fromSettings(settings != null ? settings.tools() : null));
-
         SessionConfig baseConfig = new SessionConfig(effectiveModel, effectiveCwd, effectiveSystemPrompt, mode);
         AgentRuntimeManager runtimeManager = resolveAgentRuntimeManager();
-        if ("server".equals(mode)) {
-            List<AgentTool> serverTools = resolveEffectiveTools(effectiveCwd, toolSelection);
-            runServerMode(baseConfig, serverTools, toolSelection, runtimeManager);
-            return 0;
-        }
-
         PreparedAgentRuntime preparedRuntime = null;
         SessionConfig config = baseConfig;
         if (agentId != null && !agentId.isBlank()) {
@@ -570,8 +545,7 @@ public class CampusClawCommand implements Callable<Integer> {
         }
         List<AgentTool> effectiveTools = resolveEffectiveTools(config.cwd(), toolSelection);
 
-        AgentSession session =
-                createAgentSession(effectiveTools, toolSelection, preparedRuntime, runtimeManager);
+        AgentSession session = createAgentSession(effectiveTools, toolSelection, preparedRuntime, runtimeManager);
         session.setSubAgentRegistry(subAgentRegistry);
         SessionManager sessionManager = noSession ? null : new SessionManager();
         if (sessionManager != null) {
@@ -598,69 +572,38 @@ public class CampusClawCommand implements Callable<Integer> {
             ToolSelection toolSelection,
             PreparedAgentRuntime preparedRuntime,
             AgentRuntimeManager runtimeManager) {
-        AgentSession session = new AgentSession(
-                piAiService,
-                modelRegistry,
-                promptBuilder,
-                new SkillLoader(),
-                new SkillExpander(),
-                effectiveTools);
+        SkillLoader skillLoader = new SkillLoader();
+        SkillExpander skillExpander = new SkillExpander();
+        AgentSession session =
+                new AgentSession(piAiService, modelRegistry, promptBuilder, skillLoader, skillExpander, effectiveTools);
         session.setToolCatalog(toolCatalog, toolSelection);
         if (preparedRuntime != null) {
             session.setAgentRuntime(preparedRuntime, runtimeManager);
+            configureDelegation(session, effectiveTools, toolSelection, skillLoader, skillExpander);
         }
         return session;
     }
 
-    private void runServerMode(
-            SessionConfig config,
+    private void configureDelegation(
+            AgentSession session,
             List<AgentTool> effectiveTools,
             ToolSelection toolSelection,
-            AgentRuntimeManager runtimeManager) {
-        com.huawei.hicampus.mate.matecampusclaw.codingagent.config.CustomModelLoader customModelLoader = resolveCustomModelLoader();
-        new ServerMode(
-                        piAiService,
-                        modelRegistry,
-                        promptBuilder,
-                        effectiveTools,
-                        toolCatalog,
-                        toolSelection,
-                        config,
-                        port != null ? port : 3000,
-                        host != null ? host : "localhost",
-                        modelCatalogService,
-                        serverSessionPersistenceEnabled,
-                        settingsManager,
-                        customModelLoader,
-                        runtimeManager,
-                        agentId,
-                        latestToolsSettings -> ToolSelection.fromCli(
-                                toolsFilter, noTools, ToolSelection.fromSettings(latestToolsSettings)),
-                        resolveLocalAgentDispatcher())
-                .run();
-    }
-
-    @SuppressWarnings("unchecked")
-    private List<
-                    org.springframework.web.reactive.function.server.RouterFunction<
-                            org.springframework.web.reactive.function.server.ServerResponse>>
-            collectExtraRouterFunctions() {
-        if (applicationContext == null) {
-            return List.of();
+            SkillLoader skillLoader,
+            SkillExpander skillExpander) {
+        LocalAgentDispatcher dispatcher = resolveLocalAgentDispatcher();
+        if (dispatcher == null) {
+            return;
         }
-        java.util.Map<String, org.springframework.web.reactive.function.server.RouterFunction> beans =
-                applicationContext.getBeansOfType(
-                        org.springframework.web.reactive.function.server.RouterFunction.class);
-        List<
-                        org.springframework.web.reactive.function.server.RouterFunction<
-                                org.springframework.web.reactive.function.server.ServerResponse>>
-                routes = new java.util.ArrayList<>(beans.size());
-        for (org.springframework.web.reactive.function.server.RouterFunction<?> rf : beans.values()) {
-            routes.add((org.springframework.web.reactive.function.server.RouterFunction<
-                            org.springframework.web.reactive.function.server.ServerResponse>)
-                    rf);
-        }
-        return List.copyOf(routes);
+        DelegationWiring wiring = new DelegationWiring(
+                piAiService,
+                modelRegistry,
+                promptBuilder,
+                skillLoader,
+                skillExpander,
+                effectiveTools,
+                toolCatalog,
+                toolSelection);
+        session.setDelegationState(DelegationState.entry(dispatcher, null, null, wiring));
     }
 
     private AgentRuntimeManager resolveAgentRuntimeManager() {
@@ -683,18 +626,6 @@ public class CampusClawCommand implements Callable<Integer> {
             return applicationContext.getBean(LocalAgentDispatcher.class);
         } catch (org.springframework.beans.BeansException e) {
             log.warn("LocalAgentDispatcher bean not available; Agent delegation is disabled", e);
-            return null;
-        }
-    }
-
-    private com.huawei.hicampus.mate.matecampusclaw.codingagent.config.CustomModelLoader resolveCustomModelLoader() {
-        if (applicationContext == null) {
-            return null;
-        }
-        try {
-            return applicationContext.getBean(com.huawei.hicampus.mate.matecampusclaw.codingagent.config.CustomModelLoader.class);
-        } catch (org.springframework.beans.BeansException e) {
-            log.warn("CustomModelLoader bean not available; settings/customModels endpoint disabled", e);
             return null;
         }
     }
@@ -981,8 +912,7 @@ public class CampusClawCommand implements Callable<Integer> {
             printSkillHelp(action);
             return 0;
         }
-        var manager = new SkillManager(
-                com.huawei.hicampus.mate.matecampusclaw.codingagent.config.AppPaths.USER_SKILLS_DIR);
+        var manager = new SkillManager(com.huawei.hicampus.mate.matecampusclaw.codingagent.config.AppPaths.USER_SKILLS_DIR);
         return switch (action) {
             case "install" -> skillInstall(manager, actionArgs);
             case "list", "ls" -> skillList(manager);

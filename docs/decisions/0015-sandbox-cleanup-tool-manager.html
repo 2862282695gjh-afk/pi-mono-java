@@ -20,7 +20,7 @@
   <h1>ADR-0015 · 移除本地沙箱并统一由工具管理器管理受管控工具</h1>
   <div class="meta">Status: <span class="badge">Accepted</span> · Date: 2026-08-19 ·
     设计文档: <a href="../designs/sandbox-cleanup.md">sandbox-cleanup</a> ·
-    基线: <code>origin/main@5f4d81752acacaa219a92aa0b0b6a93427802e17</code></div>
+    基线: <code>origin/main@7811dc335fcb0125a1ecbddd63cd77baf120f21d</code></div>
 
   <section><h2>Context</h2>
     <p>基线同时包含普通本地工具、Docker Sandbox、Hybrid Tool、本地执行路由和 Skill Sandbox Parser。Kubernetes 部署还依赖 Docker sidecar、Docker socket、特权容器及 Docker readiness。该组合使工具所有权、配置、Schema 与运行时隔离语义分散在 CampusClaw 和部署脚本两侧；基线已经提供 <code>ToolCatalog</code>、<code>MateToolClient</code>、<code>ListMateTool</code> 与 <code>CallMateTool</code>，因此继续维护本地 Docker 路由会形成两套工具管理权威。</p>

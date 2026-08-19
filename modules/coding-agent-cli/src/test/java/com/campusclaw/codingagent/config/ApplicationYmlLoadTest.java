@@ -11,11 +11,7 @@ import org.springframework.boot.test.context.ConfigDataApplicationContextInitial
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 
 /**
- * Loads the real {@code application.yml} (config-data path, unlike plain
- * {@code ApplicationContextRunner} which skips it) and asserts the Mate
- * gateway placeholder resolves without circular references. Regression test:
- * {@code mate.innerGWSerive: ${mate.innerGWSerive:}} self-reference made the
- * context fail with {@code Circular placeholder reference} at startup.
+ * 加载真实 {@code application.yml}，验证 Mate 网关占位符不会循环引用且支持外部覆盖。
  *
  * @version [br_eCampusCore 26.0.0, 2026/08/18]
  * @since [br_eCampusCore 26.0.0]
@@ -35,9 +31,8 @@ class ApplicationYmlLoadTest {
 
     @Test
     void mateGatewayPlaceholderPicksUpEnvironmentVariable() {
-        runner.withSystemProperties("mate.innerGWSerive.overridden:none").run(context -> {
-            String raw = context.getEnvironment().getProperty("mate.innerGWSerive");
-            assertThat(raw).isNotNull();
-        });
+        runner.withSystemProperties("MATE_INNERGWSERIVE=http://mate-gateway:8080")
+                .run(context -> assertThat(context.getEnvironment().getProperty("mate.innerGWSerive"))
+                        .isEqualTo("http://mate-gateway:8080"));
     }
 }

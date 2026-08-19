@@ -3,6 +3,13 @@ title Sandbox cleanup and Mate tool manager migration
 
 skinparam componentStyle rectangle
 
+' Analyzed source commit: 7811dc335fcb0125a1ecbddd63cd77baf120f21d.
+' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/tool/execution/ExecutionRouter.java:41.
+' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/tool/catalog/ToolCatalog.java:23.
+' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/tool/mate/ListMateTool.java:35.
+' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/tool/mate/CallMateTool.java:37.
+' Architecture change: remove local Docker routing while retaining local tools and Mate-managed calls.
+
 package "Observed baseline" {
   [Agent tools] as old_tools
   [Hybrid tools] as hybrid

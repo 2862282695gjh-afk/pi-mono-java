@@ -81,11 +81,15 @@ campusclaw.bat -m glm-5
 #### Maven 开发模式
 
 ```bash
+# 默认启动 Spring MVC HTTP 服务
+./mvnw -pl modules/coding-agent-cli spring-boot:run
+
+# 显式进入 CLI
 # macOS / Linux
-./mvnw -pl modules/coding-agent-cli spring-boot:run -Dspring-boot.run.arguments='-m glm-5'
+./mvnw -pl modules/coding-agent-cli spring-boot:run -Dspring-boot.run.arguments='cli -m glm-5'
 
 # Windows
-mvnw.cmd -pl modules/coding-agent-cli spring-boot:run -Dspring-boot.run.arguments="-m glm-5"
+mvnw.cmd -pl modules/coding-agent-cli spring-boot:run -Dspring-boot.run.arguments="cli -m glm-5"
 ```
 
 #### 手动构建后运行
@@ -95,8 +99,11 @@ mvnw.cmd -pl modules/coding-agent-cli spring-boot:run -Dspring-boot.run.argument
 ./mvnw package -pl modules/coding-agent-cli -am -DskipTests    # macOS / Linux
 mvnw.cmd package -pl modules/coding-agent-cli -am -DskipTests  # Windows
 
-# 运行
-java -jar modules/coding-agent-cli/target/campusclaw-agent.jar -m glm-5
+# 默认启动 Spring MVC HTTP 服务（0.0.0.0:8080）
+java -jar modules/coding-agent-cli/target/campusclaw-agent.jar
+
+# 以 CLI 运行
+java -jar modules/coding-agent-cli/target/campusclaw-agent.jar cli -m glm-5
 ```
 
 #### 常用 Maven 命令
@@ -128,8 +135,7 @@ campusclaw [OPTIONS] [PROMPT...]
 | `--api-key` | 覆盖 API Key | `--api-key sk-...` |
 | `--thinking` | 思考级别：off/minimal/low/medium/high/xhigh | `--thinking high` |
 | `-p, --print` | 非交互模式，输出后退出 | `-p "解释这段代码"` |
-| `--mode` | 执行模式：interactive/one-shot/rpc/server/print | `--mode server` |
-| `--port` | HTTP 服务端口（server 模式） | `--port 8080` |
+| `--mode` | CLI 执行模式：interactive/one-shot/rpc/print | `--mode rpc` |
 | `--tools` | 指定启用的工具（逗号分隔） | `--tools read,bash,edit` |
 | `--no-tools` | 禁用所有内置工具 | |
 
@@ -176,8 +182,8 @@ campusclaw [OPTIONS] [PROMPT...]
 # 列出所有可用模型
 ./campusclaw.sh --list-models
 
-# HTTP Server 模式（供 Web 前端 / IDE 插件调用）
-./campusclaw.sh --mode server --port 3000 -m glm-5
+# HTTP 服务（标准 Spring Boot 配置；此命令不走 CLI 包装脚本）
+SERVER_PORT=3000 java -jar modules/coding-agent-cli/target/campusclaw-agent.jar
 
 # RPC 模式（stdin/stdout JSONL，供进程间通信）
 ./campusclaw.sh --mode rpc -m glm-5
@@ -185,7 +191,7 @@ campusclaw [OPTIONS] [PROMPT...]
 
 > Windows 用户将上述 `./campusclaw.sh` 替换为 `campusclaw.bat`。
 >
-> Server 模式的接口文档见 [docs/openapi/campusclaw-api.yaml](docs/openapi/campusclaw-api.yaml)（REST，OpenAPI 3）与 [docs/asyncapi/chat-ws.yaml](docs/asyncapi/chat-ws.yaml)（WebSocket）。`docs/server-api.md` 已停止维护，仅作历史快照保留。
+> 不带 `cli` 子命令时，JAR 作为标准 Spring Boot MVC 服务启动；`campusclaw.sh` 和 `campusclaw.bat` 是 CLI 包装脚本，会自动补充 `cli`。Runtime V1 使用 HTTP + 请求范围 SSE，实施边界和验证证据见 [CampusClaw HTTP V1 实施记录](docs/plans/campusclaw-http-v1-implementation.md)。本仓不再维护 OpenAPI 副本。
 
 ## 内置工具
 
@@ -267,7 +273,8 @@ campusclaw/
 | 语言 | Java 21（Records, Sealed Interfaces, Pattern Matching） |
 | 框架 | Spring Boot 3.4.1 |
 | 异步 | Project Reactor (Mono/Flux) |
-| HTTP | Spring WebClient (SSE 流式) |
+| HTTP 服务端 | Spring MVC + Java 21 虚拟线程 + SSE |
+| 模型 HTTP 客户端 | Spring WebClient + Reactor 流式处理 |
 | CLI | Picocli 4.7.6 |
 | 终端 | JLine 3.26.2 + Lanterna 3.1.2 |
 | 构建 | Maven 3.9.11 |

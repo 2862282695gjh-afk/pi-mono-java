@@ -141,6 +141,40 @@ class AgentLoopTest {
         assertTrue(events.stream().anyMatch(MessageEndEvent.class::isInstance));
     }
 
+    @Test
+    void naturalTurnsDeliverOneSteerAtATimeBeforeFollowUps() {
+        var model = sampleModel();
+        var steeringQueue = new MessageQueue();
+        var followUpQueue = new MessageQueue();
+        steeringQueue.setMode(MessageQueue.DeliveryMode.ONE_AT_A_TIME);
+        followUpQueue.setMode(MessageQueue.DeliveryMode.ONE_AT_A_TIME);
+        steeringQueue.enqueue(new UserMessage("steer-one", 2L));
+        steeringQueue.enqueue(new UserMessage("steer-two", 3L));
+        followUpQueue.enqueue(new UserMessage("follow-up", 4L));
+        var state = new AgentState();
+        var context = new AgentContext(state);
+        var loop = new AgentLoop(new AgentLoopConfig(
+                piAiService(model, new ScenarioProvider()),
+                model,
+                new DefaultMessageConverter(),
+                null,
+                new ToolExecutionPipeline(),
+                ToolExecutionMode.SEQUENTIAL,
+                steeringQueue,
+                followUpQueue,
+                SimpleStreamOptions.empty()));
+
+        var result = loop.run(List.of(new UserMessage("initial", 1L)), context, event -> {}, new CancellationToken());
+
+        assertEquals(8, result.size());
+        assertEquals("initial", text((UserMessage) result.get(0)));
+        assertEquals("steer-one", text((UserMessage) result.get(2)));
+        assertEquals("steer-two", text((UserMessage) result.get(4)));
+        assertEquals("follow-up", text((UserMessage) result.get(6)));
+        assertTrue(steeringQueue.drain().isEmpty());
+        assertTrue(followUpQueue.drain().isEmpty());
+    }
+
     private CampusClawAiService piAiService(Model model, ApiProvider provider) {
         var providerRegistry = new ApiProviderRegistry(List.of(provider));
         var modelRegistry = new ModelRegistry();
@@ -242,6 +276,8 @@ class AgentLoopTest {
                     case "prompt" -> toolCallStream(model, "search", Map.of("query", "java"));
                     case "steer" -> textStream(model, "steered done");
                     case "initial" -> textStream(model, "first reply");
+                    case "steer-one" -> textStream(model, "first steer reply");
+                    case "steer-two" -> textStream(model, "second steer reply");
                     case "follow-up" -> textStream(model, "follow-up reply");
                     default -> textStream(model, "unknown");
                 };

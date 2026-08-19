@@ -1,4 +1,4 @@
-# cron 模块设计文档（基于代码 v1）
+# cron 模块设计文档（基于代码 v1.1）
 
 ## 文档信息
 
@@ -8,9 +8,13 @@
 | Story 名称 | cron 模块设计文档（基于代码 v1） |
 | 负责人 | 待开发者补充 |
 | 创建日期 | 2026-05-14 |
-| 版本 | v1.0 (code-derived) |
+| 版本 | v1.2 (code-derived) |
 
 > 本文档基于 `modules/cron` 现有源码逆向生成，复用 `docs/cron-module-design.md` 中已沉淀的设计原文（架构对照表、Phase 列表、文件清单等），按 AR 七章模板补齐章节。
+> 图表格式更新分析源码提交为
+> `cc2f58d9e24bae1d7c99b9f54e86b71940d86115`，主要证据为
+> `CronService`、`CronEngine#executeAndReschedule`、`CronJobExecutor#execute`、
+> `CronStore` 与 `CronRunLog`。
 
 ---
 
@@ -53,6 +57,10 @@ CampusClaw 主进程是 TUI 交互式 Agent，对话生命周期 = 进程生命�
 
 ### 2.1 Story 上下文
 
+![Cron 模块上下文](./cron/module-context.svg)
+
+[PlantUML 源文件](./cron/diagram.puml#L1)
+
 文字补充：
 
 - 本模块 artifactId：`campusclaw-cron`（`com.campusclaw:campusclaw-cron:1.0.0-SNAPSHOT`）
@@ -88,6 +96,10 @@ CampusClaw 主进程是 TUI 交互式 Agent，对话生命周期 = 进程生命�
 ### 3.2 功能实现设计
 
 核心流程：调度任务触发 → 加 tick 锁 → 检查 enabled & 未在跑 → executor 创建 Agent → prompt 执行 → 记录结果 → 重调度。
+
+![Cron 任务执行时序](./cron/execution-sequence.svg)
+
+[PlantUML 源文件](./cron/diagram.puml#L24)
 
 主流程 step（措辞与时序图节点对齐）：
 
@@ -162,7 +174,7 @@ CampusClaw 主进程是 TUI 交互式 Agent，对话生命周期 = 进程生命�
 
 **事件接口**——`CronEventListener` 单方法函数式接口 `void onCronEvent(CronEvent event)`。
 
-本模块不暴露 HTTP / WS / gRPC 接口。
+本模块不暴露 HTTP 或 gRPC 接口。
 
 ### 3.5 数据库及持久化设计
 
@@ -213,6 +225,10 @@ CampusClaw 主进程是 TUI 交互式 Agent，对话生命周期 = 进程生命�
 | turnCount | int | 当前实现固定写 0，预留 |
 
 ### 3.6 代码设计
+
+![Cron 模块核心类](./cron/core-classes.svg)
+
+[PlantUML 源文件](./cron/diagram.puml#L54)
 
 正文类清单（按包组织，与图严格对齐）：
 
@@ -309,7 +325,7 @@ CampusClaw 主进程是 TUI 交互式 Agent，对话生命周期 = 进程生命�
 - `README.md` —— 顶部模块表 cron 行
 - 本文档 `cron-with-existing-design/with_skill/outputs/cron.md` —— v1 基于代码逆向产出
 
-无 `docs/openapi/*.yaml` 或 `docs/asyncapi/*.yaml` 关联（无 HTTP/WS 接口）。
+无公开接口契约文件关联（本模块没有 HTTP 服务端接口）。
 
 ---
 
@@ -323,7 +339,7 @@ CampusClaw 主进程是 TUI 交互式 Agent，对话生命周期 = 进程生命�
 | 5.4 | SQL 注入 | 不涉及 | 模块无任何数据库访问；grep `executeQuery` / `PreparedStatement` 全无命中 |
 | 5.5 | XSS 注入 | 不涉及 | 纯后端 lib，无 HTML 渲染；`CronTool` 输出为纯文本 `TextContent` 由 TUI 渲染 |
 | 5.6 | XML 注入 | 不涉及 | 仅 JSON 持久化（Jackson）；grep `DocumentBuilderFactory` / `SAXParserFactory` 无命中 |
-| 5.7 | 命令注入 | 不涉及 | 本模块自身**不**调 `ProcessBuilder` / `Runtime.exec`；执行体走 `new Agent(aiService).prompt(...)`，下游 `BashTool` 由 agent 自己的 `allowedTools` 决定，且其防护在 `coding-agent-cli` 的本地 `BashTool` 内（本模块不负责） |
+| 5.7 | 命令注入 | 不涉及 | 本模块自身**不**调 `ProcessBuilder` / `Runtime.exec`；执行体走 `new Agent(aiService).prompt(...)`，下游本地 `BashTool` 由 agent 自己的 `allowedTools` 决定，其路径、超时和输出限制在 `coding-agent-cli` 内实现（本模块不负责） |
 | 5.8 | 输入校验 | 是 | `CronTool.parseSchedule` 显式校验 `at` 必为 epoch millis 或 ISO instant、`every` 必为正整数 ms、`cron` 必通过 `CronExpression.parse`；`handleCreate` 检查 `name` / `prompt` 非空；非法 schedule 返回错误文本而非抛异常 |
 | 5.9 | 敏感数据/个人隐私数据 | 是 | `CronPayload.AgentPrompt.prompt` 可能包含用户输入文本，被持久化到 `jobs.json`；`CronRunRecord.output` 持久化 LLM 输出。当前未做脱敏；`jobs.json` 与 `runs/*.jsonl` 落在 `$HOME/.campusclaw/agent/cron/`，依赖文件系统权限保护 |
 | 5.10 | 加解密 | 不涉及 | 无 `Cipher` / `MessageDigest` / `SecretKey` 引用；任务定义与运行日志明文存储 |
@@ -354,7 +370,8 @@ CampusClaw 主进程是 TUI 交互式 Agent，对话生命周期 = 进程生命�
 
 | 日期 | 提出人 | 角色 | 问题/议题 | 讨论过程 | 决策结论 | 状态 |
 |---|---|---|---|---|---|---|
-| 2026-05-14 | - | - | 设计文档由 codebase-module-design skill 基于代码逆向生成 v1 | 复用 `docs/cron-module-design.md` 中的依赖关系、并发控制矩阵、Phase 设计原文；按 AR 七章模板补齐 1.1 / 2.1 / 3.2 / 3.5 / 3.6 / 4.x / 5.x 章节，并按新规则在 2.1 / 3.2 / 3.6 三处补 Mermaid 图 | 由开发者补充 1.1 需求来源具体 Story 编号、1.2 业务背景描述、6.x 转测项勾选 | 开放 |
-| 2026-08-19 | - | - | 清理过期工具执行说明 | 删除 HybridBashTool 引用并移除旧 Mermaid 图块 | 本文档只描述本地 BashTool 作为下游能力 | 完成 |
+| 2026-05-14 | - | - | 设计文档由 codebase-module-design skill 基于代码逆向生成 v1 | 复用 `docs/cron-module-design.md` 中的依赖关系、并发控制矩阵、Phase 设计原文；按 AR 七章模板补齐章节和三处设计图 | 由开发者补充 1.1 需求来源具体 Story 编号、1.2 业务背景描述、6.x 转测项勾选 | 开放 |
+| 2026-08-18 | Codex | 文档维护 | 设计图格式不符合全局 PlantUML 规范 | 保持节点和关系语义不变，补充源码证据并生成 SVG | Mermaid 迁移为单一 `diagram.puml` 中的稳定命名图 | 已落实 |
+| 2026-08-19 | Codex | 文档维护 | 本地 Hybrid Bash 已随 Sandbox 清理删除 | 对齐 `coding-agent-cli` 的本地 `BashTool` 工具边界 | 删除对 `HybridBashTool` 的过期依赖说明 | 已落实 |
 | - | - | - | 是否将硬编码业务参数（`MAX_CONSECUTIVE_ERRORS=3`、`DEFAULT_TIMEOUT_SECONDS=300`、`STALE_THRESHOLD_MS=2h`）外置为 `@ConfigurationProperties` | - | 待评审 | 开放 |
 | - | - | - | `jobs.json` / `runs/*.jsonl` 是否设置 POSIX 0600 文件权限（5.15） | - | 待评审 | 开放 |

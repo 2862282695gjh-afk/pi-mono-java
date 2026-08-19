@@ -14,15 +14,18 @@ import java.util.List;
 import java.util.Map;
 import java.util.regex.Pattern;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import org.yaml.snakeyaml.Yaml;
 
 /**
- * Recursively scans directories to discover and load {@link Skill}s from SKILL.md files.
+ * 递归扫描目录，从 SKILL.md 文件发现并加载 {@link Skill}。
  * <p>
- * Discovery rules:
+ * 发现规则：
  * <ul>
- *   <li>If a directory contains SKILL.md, it is treated as a skill root (no further recursion)</li>
- *   <li>Otherwise, recurse into subdirectories to find SKILL.md files</li>
+ *   <li>目录包含 SKILL.md 时，将其视为 Skill 根目录，不再继续递归</li>
+ *   <li>否则递归扫描子目录并查找 SKILL.md</li>
  * </ul>
  *
  * @version [br_eCampusCore 25.1.0_Next, 2026/05/06]
@@ -30,16 +33,18 @@ import org.yaml.snakeyaml.Yaml;
  */
 public class SkillLoader {
 
+    private static final Logger log = LoggerFactory.getLogger(SkillLoader.class);
+
     static final String SKILL_FILENAME = "SKILL.md";
     private static final Pattern NAME_REGEX = Pattern.compile(Skill.NAME_PATTERN);
     private static final String FRONTMATTER_DELIMITER = "---";
 
     /**
-     * Loads all skills from the given directory by recursively scanning for SKILL.md files.
+     * 递归扫描指定目录中的 SKILL.md 并加载全部 Skill。
      *
-     * @param dir    the root directory to scan
-     * @param source the source label ("user" or "project")
-     * @return list of discovered skills (invalid files are silently skipped)
+     * @param dir 扫描根目录
+     * @param source 来源标识，例如 user 或 project
+     * @return 已发现的 Skill 列表；无效文件会被跳过
      */
     public List<Skill> loadFromDirectory(Path dir, String source) {
         List<Skill> skills = new ArrayList<>();
@@ -51,12 +56,12 @@ public class SkillLoader {
     }
 
     /**
-     * Loads a single skill from a SKILL.md file.
+     * 从 SKILL.md 文件加载单个 Skill。
      *
-     * @param filePath path to the SKILL.md file
-     * @param source   the source label ("user" or "project")
-     * @return the loaded skill
-     * @throws SkillLoadException if the file cannot be read or parsed, or if validation fails
+     * @param filePath SKILL.md 文件路径
+     * @param source 来源标识，例如 user 或 project
+     * @return 已加载的 Skill
+     * @throws SkillLoadException 文件无法读取、解析或校验失败时抛出
      */
     public Skill loadFromFile(Path filePath, String source) {
         return parseSkillFile(filePath, source);
@@ -65,17 +70,16 @@ public class SkillLoader {
     private void scanDirectory(Path dir, String source, List<Skill> skills) {
         Path skillFile = dir.resolve(SKILL_FILENAME);
         if (Files.isRegularFile(skillFile)) {
-            // This directory is a skill root — load it and do not recurse further.
+            // 当前目录是 Skill 根目录，加载后不再向下递归。
             try {
                 skills.add(loadSkillFile(skillFile, source));
             } catch (SkillLoadException e) {
-                // Skip invalid skill files during directory scanning.
-                // The caller receives the successfully parsed skills only.
+                log.debug("Skipping invalid skill file during directory scan: {}", skillFile, e);
             }
             return;
         }
 
-        // No SKILL.md here — recurse into subdirectories
+        // 当前目录没有 SKILL.md，继续递归扫描子目录。
         try (DirectoryStream<Path> stream = Files.newDirectoryStream(dir)) {
             for (Path entry : stream) {
                 if (Files.isDirectory(entry) && !entry.getFileName().toString().startsWith(".")) {
@@ -83,17 +87,16 @@ public class SkillLoader {
                 }
             }
         } catch (IOException e) {
-            // Skip unreadable directories
-            // Skip unreadable directories during discovery.
+            log.debug("Skipping unreadable skill directory: {}", dir, e);
         }
     }
 
     /**
-     * Loads a single skill file through the local parser.
+     * 使用本地解析器加载单个 Skill 文件。
      *
-     * @param skillFile the skillFile
-     * @param source the source
-     * @return the result
+     * @param skillFile Skill 文件
+     * @param source 来源标识
+     * @return 已加载的 Skill
      */
     private Skill loadSkillFile(Path skillFile, String source) {
         return parseSkillFile(skillFile, source);
@@ -112,12 +115,12 @@ public class SkillLoader {
         Path baseDir = filePath.getParent();
         String parentDirName = baseDir != null ? baseDir.getFileName().toString() : "";
 
-        // Resolve name: frontmatter > parent directory name
+        // 名称优先取 frontmatter，其次取父目录名。
         String name = frontmatter.containsKey("name") ? String.valueOf(frontmatter.get("name")) : parentDirName;
 
         validateName(name, filePath);
 
-        // Resolve description (required)
+        // 描述为必填字段。
         String description =
                 frontmatter.containsKey("description") ? String.valueOf(frontmatter.get("description")) : null;
 
@@ -129,7 +132,7 @@ public class SkillLoader {
                     "Skill description exceeds " + Skill.MAX_DESCRIPTION_LENGTH + " characters: " + filePath);
         }
 
-        // Resolve disableModelInvocation flag
+        // 解析禁止模型调用标记。
         boolean disableModelInvocation = Boolean.TRUE.equals(frontmatter.get("disable-model-invocation"));
 
         return new Skill(name, description, filePath, baseDir, source, disableModelInvocation);
@@ -149,12 +152,11 @@ public class SkillLoader {
     }
 
     /**
-     * Parses YAML frontmatter from content delimited by {@code ---} lines.
-     * Returns an empty map if no frontmatter is present.
+     * 解析由 {@code ---} 分隔的 YAML frontmatter；不存在时返回空 Map。
      *
-     * @param content the content
+     * @param content 文件内容
      *
-     * @return the result
+     * @return frontmatter 字段 Map
      */
     @SuppressWarnings("unchecked")
     public static Map<String, Object> parseFrontmatter(String content) {
@@ -190,10 +192,10 @@ public class SkillLoader {
     }
 
     /**
-     * Strips the YAML frontmatter from content, returning only the body.
+     * 移除 YAML frontmatter，仅返回正文。
      *
-     * @param content the content
-     * @return the result
+     * @param content 文件内容
+     * @return 正文内容
      */
     static String stripFrontmatter(String content) {
         if (content == null || !content.startsWith(FRONTMATTER_DELIMITER)) {
@@ -210,7 +212,7 @@ public class SkillLoader {
             return content;
         }
 
-        // Find the end of the closing delimiter line
+        // 查找结束分隔符所在行的末尾。
         int bodyStart = content.indexOf('\n', secondDelimStart + 1);
         if (bodyStart < 0) {
             return "";

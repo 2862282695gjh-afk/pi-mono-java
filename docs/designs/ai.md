@@ -1,9 +1,4 @@
-# ai 模块实现设计文档（基于代码 v1）
-
-![AI module overview](ai/diagram.svg)
-
-PlantUML source: [ai/diagram.puml#L1](ai/diagram.puml#L1)
-
+# ai 模块实现设计文档（基于代码 v1.1）
 
 ## 文档信息
 
@@ -13,9 +8,13 @@ PlantUML source: [ai/diagram.puml#L1](ai/diagram.puml#L1)
 | Story 名称 | ai 设计文档（基于代码 v1） |
 | 负责人 | （待补充） |
 | 创建日期 | 2026-05-14 |
-| 版本 | v1.0 (code-derived) |
+| 版本 | v1.1 (code-derived) |
 
 ---
+
+> 图表格式更新基于源码提交 `cc2f58d9e24bae1d7c99b9f54e86b71940d86115`；
+> 主要证据为 `modules/ai/pom.xml`、`CampusClawAiService`、
+> `ApiProviderRegistry`、`AnthropicProvider` 与 `AssistantMessageEventStream`。
 
 ## 1. Story 背景
 
@@ -56,6 +55,10 @@ PlantUML source: [ai/diagram.puml#L1](ai/diagram.puml#L1)
 ## 2. Story 分析
 
 ### 2.1 Story 上下文
+
+![AI 模块上下文](./ai/module-context.svg)
+
+[PlantUML 源文件](./ai/diagram.puml#L1)
 
 文字补充：
 
@@ -106,6 +109,10 @@ ai 模块把"和任何 LLM 服务商对话"这件事抽象为单一接口 `ApiPr
 8. `pushDone(reason, message)` / `pushError(reason, error)`：SDK 流终止后，根据最后 chunk 的 `stop_reason` 决定推 `DoneEvent` 还是 `ErrorEvent`；`EventStream` 内部 `isTerminal` 命中即自动 complete `Sinks`；
 9. `asFlux() / result()`：调用方（通常是 agent-core 的 `AgentLoop.consumeStream`）订阅 `Flux<AssistantMessageEvent>` 渲染增量，或拿 `Mono<AssistantMessage>` 等终态。
 
+![AI Provider 流式时序](./ai/streaming-sequence.svg)
+
+[PlantUML 源文件](./ai/diagram.puml#L28)
+
 **事件清单（sealed `AssistantMessageEvent` 子类型）：**
 
 | 事件类型 | 触发时机 |
@@ -134,7 +141,7 @@ ai 模块把"和任何 LLM 服务商对话"这件事抽象为单一接口 `ApiPr
 
 ### 3.3 GUI 前端设计
 
-本模块不涉及前端界面（纯 lib，由上游 `coding-agent-cli` / `assistant` 消费）。流式事件通过 `AssistantMessageEventStream.asFlux()` 暴露，由上游 TUI / WebSocket gateway 自行渲染。
+本模块不涉及前端界面（纯 lib，由上游 `coding-agent-cli` / `assistant` 消费）。流式事件通过 `AssistantMessageEventStream.asFlux()` 暴露，由上游 TUI 或 HTTP/SSE gateway 自行渲染。
 
 ### 3.4 接口描述
 
@@ -230,6 +237,10 @@ ai 模块把"和任何 LLM 服务商对话"这件事抽象为单一接口 `ApiPr
 - `ContextOverflowDetector`：18 条 provider 专属正则 + z.ai 静默溢出判定
 - `SurrogateSanitizer`：UTF-16 surrogate 清理
 
+![AI 模块核心类](./ai/core-classes.svg)
+
+[PlantUML 源文件](./ai/diagram.puml#L58)
+
 ### 3.7 安装部署设计
 
 本模块作为 lib 由 `agent-core`（再向上 cli / cron / assistant）聚合，不单独部署，无 `application.yml`、无 `main`。Spring 装配点：
@@ -300,7 +311,7 @@ ai 模块把"和任何 LLM 服务商对话"这件事抽象为单一接口 `ApiPr
 | `docs/module-architecture.md` | 包含 ai 模块说明段落（"LLM 多供应商抽象层"），需要随对外类型/Provider 列表变更同步 |
 | `CLAUDE.md`（仓库根） | 描述 ai 模块在整体依赖图与运行时中的角色 |
 | classpath `/campusclaw-models.json`（如有） + `~/.campusclaw/agent/models.json` | 用户级模型目录扩展约定 |
-| 上游 `docs/openapi/campusclaw-api.yaml` | HTTP server 模式 API（间接消费本模块的 AssistantMessage 形状），间接相关 |
+| `docs/plans/campusclaw-http-v1-implementation.md` | Runtime HTTP+SSE 实现会投影本模块的 AssistantMessage 形状，间接相关 |
 
 ---
 
@@ -347,3 +358,4 @@ ai 模块把"和任何 LLM 服务商对话"这件事抽象为单一接口 `ApiPr
 |---|---|---|---|---|---|---|
 | 2026-05-14 | - | - | 设计文档由 codebase-module-design skill 基于代码逆向生成 v1 | - | 由开发者补充关键决策（如：为何选 Reactor 而非 RxJava？为何 provider 用虚拟线程而非 Reactor 原生 publishOn？） | 开放 |
 | 2026-06-29 | - | - | 精简 AI 模块：移除 Google（Generative AI / Vertex）与 Amazon Bedrock provider | `google-cloud-aiplatform` 实为未使用依赖，两类 provider 维护成本高；详见 [ADR 0007](../decisions/0007-remove-google-amazon-providers.html) | 移除两 provider、内置模型、SDK 依赖及 `Provider`/`Api`/`RuntimeCapability` 相关枚举值，并以 `SupportedProvidersDocTest` 把「支持的供应商」列表钉死到代码 | 已决 |
+| 2026-08-18 | Codex | 文档维护 | 设计图格式不符合全局 PlantUML 规范 | 保持节点和关系语义不变，补充源码证据并生成 SVG | Mermaid 迁移为单一 `diagram.puml` 中的稳定命名图 | 已落实 |
