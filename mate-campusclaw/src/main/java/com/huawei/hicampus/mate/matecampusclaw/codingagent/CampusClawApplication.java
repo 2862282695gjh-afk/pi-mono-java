@@ -18,10 +18,7 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
  * @since [br_eCampusCore 26.0.0]
  */
 @SpringBootApplication(scanBasePackages = "com.huawei.hicampus.mate.matecampusclaw")
-@EnableConfigurationProperties({
-    ControlPlaneProperties.class,
-    AgentRuntimeProperties.class
-})
+@EnableConfigurationProperties({ControlPlaneProperties.class, AgentRuntimeProperties.class})
 public class CampusClawApplication {
 
     public static void main(String[] args) {
