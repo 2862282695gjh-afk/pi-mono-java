@@ -35,6 +35,7 @@ import com.campusclaw.codingagent.mode.rpc.RpcMode;
 import com.campusclaw.codingagent.mode.server.ServerMode;
 import com.campusclaw.codingagent.prompt.SystemPromptBuilder;
 import com.campusclaw.codingagent.runtime.AgentRuntimeManager;
+import com.campusclaw.codingagent.runtime.LocalAgentDispatcher;
 import com.campusclaw.codingagent.runtime.PreparedAgentRuntime;
 import com.campusclaw.codingagent.session.AgentSession;
 import com.campusclaw.codingagent.session.SessionConfig;
@@ -645,7 +646,8 @@ public class CampusClawCommand implements Callable<Integer> {
                         runtimeManager,
                         agentId,
                         latestToolsSettings -> ToolSelection.fromCli(
-                                toolsFilter, noTools, ToolSelection.fromSettings(latestToolsSettings)))
+                                toolsFilter, noTools, ToolSelection.fromSettings(latestToolsSettings)),
+                        resolveLocalAgentDispatcher())
                 .run();
     }
 
@@ -689,6 +691,18 @@ public class CampusClawCommand implements Callable<Integer> {
             return applicationContext.getBean(AgentRuntimeManager.class);
         } catch (org.springframework.beans.BeansException e) {
             log.warn("AgentRuntimeManager bean not available; managed Agents are disabled", e);
+            return null;
+        }
+    }
+
+    private LocalAgentDispatcher resolveLocalAgentDispatcher() {
+        if (applicationContext == null) {
+            return null;
+        }
+        try {
+            return applicationContext.getBean(LocalAgentDispatcher.class);
+        } catch (org.springframework.beans.BeansException e) {
+            log.warn("LocalAgentDispatcher bean not available; Agent delegation is disabled", e);
             return null;
         }
     }

@@ -179,27 +179,31 @@ public class MateServiceClient {
             @JsonFormat(with = JsonFormat.Feature.ACCEPT_SINGLE_VALUE_AS_ARRAY) List<String> bindingModels,
             @JsonFormat(with = JsonFormat.Feature.ACCEPT_SINGLE_VALUE_AS_ARRAY) List<SkillReference> bindingSkills,
             List<BoundTool> bindingTools,
+            @JsonFormat(with = JsonFormat.Feature.ACCEPT_SINGLE_VALUE_AS_ARRAY) List<AgentReference> bindingAgents,
             @JsonFormat(with = JsonFormat.Feature.ACCEPT_SINGLE_VALUE_AS_ARRAY) List<String> description,
             String displayName,
+            Boolean enabled,
             String id,
             String name,
             String systemPrompt,
             List<String> userCases,
-            String version,
-            AgentReference bindingAgents) {
+            String version) {
 
         public AgentRuntime {
+            // 旧快照缺省 enabled 字段（反序列化为 null）视为启用；归一化保证 enabled() 永不返回 null
+            enabled = enabled == null ? Boolean.TRUE : enabled;
             bindingModels = bindingModels == null ? List.of() : List.copyOf(bindingModels);
             bindingSkills = bindingSkills == null ? List.of() : List.copyOf(bindingSkills);
             bindingTools = bindingTools == null ? List.of() : List.copyOf(bindingTools);
+            bindingAgents = bindingAgents == null ? List.of() : List.copyOf(bindingAgents);
             description = description == null ? List.of() : List.copyOf(description);
             userCases = userCases == null ? List.of() : List.copyOf(userCases);
         }
 
         /**
-         * Returns the first non-blank bound model, used as the session default.
+         * 返回绑定的第一个非空白模型名，作为会话缺省模型。
          *
-         * @return default model name, empty when the Agent binds no model
+         * @return 缺省模型名；Agent 未绑定任何模型时为空
          */
         public Optional<String> defaultModel() {
             return bindingModels.stream()
@@ -212,9 +216,12 @@ public class MateServiceClient {
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record SkillReference(String id, String version) {}
 
-    /** Agent binding metadata returned by GetAgentRuntime. */
+    /**
+     * GetAgentRuntime 返回的子 Agent 绑定元数据。携带 {@code description} 使父 Agent
+     * 呈现子候选时无需加载子 Agent 的完整运行时。
+     */
     @JsonIgnoreProperties(ignoreUnknown = true)
-    public record AgentReference(String id, String name, String displayName, String version) {}
+    public record AgentReference(String id, String name, String displayName, String description, String version) {}
 
     /** Complete Skill metadata returned by querySkillInfo. */
     @JsonIgnoreProperties(ignoreUnknown = true)

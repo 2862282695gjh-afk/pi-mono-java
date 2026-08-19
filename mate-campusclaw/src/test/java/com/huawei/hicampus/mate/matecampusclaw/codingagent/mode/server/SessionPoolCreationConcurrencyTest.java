@@ -154,14 +154,15 @@ class SessionPoolCreationConcurrencyTest {
                 List.of("gpt-4o"),
                 List.of(),
                 List.of(),
+                List.of(),
                 List.of("Agent description"),
                 "Agent " + agentId,
+                Boolean.TRUE,
                 agentId,
                 agentId,
                 "Agent system prompt",
                 List.of(),
-                "1",
-                null);
+                "1");
         return new PreparedAgentRuntime(agentId, tempDir.resolve(agentId + "-root"), metadata, List.of());
     }
 }
