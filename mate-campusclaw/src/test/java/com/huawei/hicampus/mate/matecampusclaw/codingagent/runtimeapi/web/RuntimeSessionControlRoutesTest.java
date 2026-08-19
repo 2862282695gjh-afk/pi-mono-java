@@ -19,6 +19,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import java.time.OffsetDateTime;
 
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.auth.RuntimeRequestAuthenticator;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.error.RuntimeApiException;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.result.StandaloneResultBeanAdapter;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.session.RuntimeSessionControlService;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.vo.ControlMessageAcceptedResponseVO;
@@ -103,6 +105,20 @@ class RuntimeSessionControlRoutesTest {
                 .andExpect(jsonPath("$.resCode").value("INVALID_STEER_REQUEST"))
                 .andExpect(jsonPath("$.result").doesNotExist());
         verify(service, never()).steer(any(), any());
+    }
+
+    @Test
+    void nonLocalExecutionReturnsStableRetryableError() throws Exception {
+        when(service.steer(eq(SESSION_ID), any(ControlMessageRequestVO.class)))
+                .thenThrow(new RuntimeApiException(RuntimeErrorCode.SESSION_EXECUTION_UNAVAILABLE));
+
+        mvc.perform(authenticated(post("/campusclaw-service/v1/sessions/{id}/steers", SESSION_ID))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"message\":\"继续\"}"))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(header().string(HttpHeaders.RETRY_AFTER, "3"))
+                .andExpect(jsonPath("$.resCode").value("SESSION_EXECUTION_UNAVAILABLE"))
+                .andExpect(jsonPath("$.result").doesNotExist());
     }
 
     @Test

@@ -6,6 +6,7 @@ package com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.vo;
 
 import java.util.List;
 
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.RuntimeApiConstants;
 import com.fasterxml.jackson.annotation.JsonAnySetter;
 import com.fasterxml.jackson.annotation.JsonSetter;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -32,11 +33,11 @@ public class UserEventRequestVO {
     @Setter(AccessLevel.NONE)
     private String type;
 
-    @Size(max = 262144)
+    @Size(max = RuntimeApiConstants.MAX_MESSAGE_CHARACTERS)
     @Setter(AccessLevel.NONE)
     private String message;
 
-    @Size(max = 32)
+    @Size(max = RuntimeApiConstants.MAX_FILE_IDS)
     @Setter(AccessLevel.NONE)
     private List<@NotBlank String> fileIds;
 

@@ -14,16 +14,16 @@ import java.util.Objects;
  * @param agentId Agent 标识
  * @param defaultModelId 默认模型标识
  * @param enabledModelIds 可切换模型白名单
- * @param agentDirectory Agent 只读工作目录
+ * @param runtimeDirectory Agent 的 .campusclaw 只读运行目录
  * @version [br_eCampusCore 25.1.0_Next, 2026/08/18]
  * @since [br_eCampusCore 25.1.0_Next]
  */
 public record AgentDirectorySnapshotDTO(
-        String agentId, String defaultModelId, List<String> enabledModelIds, Path agentDirectory) {
+        String agentId, String defaultModelId, List<String> enabledModelIds, Path runtimeDirectory) {
     public AgentDirectorySnapshotDTO {
         Objects.requireNonNull(agentId, "agentId");
         Objects.requireNonNull(defaultModelId, "defaultModelId");
-        Objects.requireNonNull(agentDirectory, "agentDirectory");
+        Objects.requireNonNull(runtimeDirectory, "runtimeDirectory");
         enabledModelIds = List.copyOf(enabledModelIds);
     }
 }

@@ -36,8 +36,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import jakarta.validation.Validation;
-
 /**
  * Session 控制消息接受与中止收敛的业务测试。
  *
@@ -73,11 +71,7 @@ class RuntimeSessionControlServiceTest {
         when(engines.find(SESSION_ID)).thenReturn(Optional.of(holder));
         properties = new RuntimeExecutionProperties();
         service = new RuntimeSessionControlService(
-                repository,
-                engines,
-                Validation.buildDefaultValidatorFactory().getValidator(),
-                Clock.fixed(Instant.parse("2026-08-18T07:10:00Z"), ZoneOffset.UTC),
-                properties);
+                repository, engines, Clock.fixed(Instant.parse("2026-08-18T07:10:00Z"), ZoneOffset.UTC), properties);
     }
 
     @Test
@@ -147,13 +141,13 @@ class RuntimeSessionControlServiceTest {
     }
 
     @Test
-    void mapsMissingRunningEngineToAcceptanceFailure() throws Exception {
+    void reportsRunningExecutionOwnedByAnotherRuntimeInstance() throws Exception {
         when(repository.find(SESSION_ID)).thenReturn(Optional.of(session("running")));
         when(engines.find(SESSION_ID)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.followUp(SESSION_ID, request("继续")))
                 .isInstanceOfSatisfying(RuntimeApiException.class, error -> assertThat(error.errorCode())
-                        .isEqualTo(RuntimeErrorCode.FOLLOW_UP_ACCEPTANCE_FAILED));
+                        .isEqualTo(RuntimeErrorCode.SESSION_EXECUTION_UNAVAILABLE));
     }
 
     @Test

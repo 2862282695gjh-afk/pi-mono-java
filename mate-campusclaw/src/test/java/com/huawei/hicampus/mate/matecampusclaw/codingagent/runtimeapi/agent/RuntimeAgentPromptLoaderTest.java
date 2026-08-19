@@ -35,7 +35,7 @@ class RuntimeAgentPromptLoaderTest {
         writeSkill(managed.resolve("skills/a-skill/SKILL.md"), "a-skill", false);
         writeSkill(managed.resolve("skills/hidden/SKILL.md"), "hidden", true);
 
-        String prompt = new RuntimeAgentPromptLoader().load(temporaryDirectory);
+        String prompt = new RuntimeAgentPromptLoader().load(managed);
 
         assertThat(prompt).startsWith("You are the campus assistant.");
         assertThat(prompt).contains("<name>a-skill</name>", "<name>b-skill</name>");
@@ -51,18 +51,20 @@ class RuntimeAgentPromptLoaderTest {
                 Files.writeString(temporaryDirectory.resolve("outside-system.md"), "outside", StandardCharsets.UTF_8);
         Files.createSymbolicLink(managed.resolve("SYSTEM.md"), outside);
 
-        assertThatThrownBy(() -> new RuntimeAgentPromptLoader().load(agent))
+        assertThatThrownBy(() -> new RuntimeAgentPromptLoader().load(managed))
                 .isInstanceOfSatisfying(RuntimeApiException.class, error -> assertThat(error.errorCode())
                         .isEqualTo(RuntimeErrorCode.AGENT_NOT_AVAILABLE));
     }
 
     @Test
     void ignoresLegacyCampusAgentPromptDirectory() throws Exception {
-        Path legacyDirectory = Files.createDirectories(temporaryDirectory.resolve(".campusagent"));
+        Path agent = Files.createDirectories(temporaryDirectory.resolve("agent"));
+        Path runtimeDirectory = Files.createDirectories(agent.resolve(".campusclaw"));
+        Path legacyDirectory = Files.createDirectories(agent.resolve(".campusagent"));
         Files.writeString(
                 legacyDirectory.resolve("SYSTEM.md"), "Legacy prompt must not be loaded.", StandardCharsets.UTF_8);
 
-        String prompt = new RuntimeAgentPromptLoader().load(temporaryDirectory);
+        String prompt = new RuntimeAgentPromptLoader().load(runtimeDirectory);
 
         assertThat(prompt).isEmpty();
     }

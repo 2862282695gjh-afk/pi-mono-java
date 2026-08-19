@@ -12,6 +12,7 @@ import com.campusclaw.codingagent.runtimeapi.dto.RuntimeEntryDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
 import com.campusclaw.codingagent.runtimeapi.mapper.RuntimeSessionMapper;
 import com.campusclaw.codingagent.runtimeapi.persistence.UserEventAcceptance.Status;
+import com.campusclaw.codingagent.runtimeapi.session.RuntimeSessionState;
 
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
@@ -53,13 +54,13 @@ public class MyBatisRuntimeSessionRepository implements RuntimeSessionRepository
         if (session == null) {
             return new UserEventAcceptance(Status.NOT_FOUND, null);
         }
-        if (!"idle".equals(session.getState())) {
+        if (!RuntimeSessionState.IDLE.matches(session.getState())) {
             return new UserEventAcceptance(Status.BUSY, session);
         }
         appendLocked(session, entry);
         requireOne(
                 mapper.markSessionRunning(sessionId, entry.getId(), acceptedAt), "session did not enter running state");
-        session.setState("running");
+        session.setState(RuntimeSessionState.RUNNING.value());
         session.setUpdatedAt(acceptedAt);
         session.setResourceVersion(session.getResourceVersion() + 1);
         session.setActiveLeafId(entry.getId());
@@ -135,7 +136,7 @@ public class MyBatisRuntimeSessionRepository implements RuntimeSessionRepository
         if (session == null) {
             return SessionDeletionStatus.NOT_FOUND;
         }
-        if (!"idle".equals(session.getState())) {
+        if (!RuntimeSessionState.IDLE.matches(session.getState())) {
             return SessionDeletionStatus.BUSY;
         }
         mapper.insertTombstone(sessionId, deletedAt);
@@ -195,7 +196,7 @@ public class MyBatisRuntimeSessionRepository implements RuntimeSessionRepository
         if (session.getResourceVersion() != expectedVersion) {
             return new SessionConfigurationUpdate(SessionConfigurationUpdate.Status.VERSION_MISMATCH, session);
         }
-        if (!"idle".equals(session.getState())) {
+        if (!RuntimeSessionState.IDLE.matches(session.getState())) {
             return new SessionConfigurationUpdate(SessionConfigurationUpdate.Status.BUSY, session);
         }
         return null;

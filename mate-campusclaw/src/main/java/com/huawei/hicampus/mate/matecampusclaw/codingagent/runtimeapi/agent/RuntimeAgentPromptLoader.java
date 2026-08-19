@@ -23,7 +23,6 @@ import com.huawei.hicampus.mate.matecampusclaw.codingagent.skill.SkillPromptForm
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 
 /**
@@ -44,16 +43,19 @@ public class RuntimeAgentPromptLoader {
 
     private final SkillLoader skillLoader = new SkillLoader();
 
-    public String load(Path agentDirectory) {
-        Path root = realDirectory(agentDirectory);
-        Path managedDirectory = root.resolve(RuntimeAgentDirectoryProperties.MANAGED_DIRECTORY_NAME);
-        String systemPrompt = readOptionalFile(root, managedDirectory.resolve("SYSTEM.md"));
-        List<Skill> skills = loadSkills(root, managedDirectory.resolve("skills"));
+    public String load(Path runtimeDirectory) {
+        Path root = realDirectory(runtimeDirectory);
+        String systemPrompt = readOptionalFile(root, root.resolve("SYSTEM.md"));
+        List<Skill> skills = loadSkills(root, root.resolve("skills"));
         String skillsPrompt = SkillPromptFormatter.format(skills);
         if (systemPrompt.isBlank()) {
             return skillsPrompt;
         }
         return skillsPrompt.isBlank() ? systemPrompt : systemPrompt + "\n\n# Skills\n\n" + skillsPrompt;
+    }
+
+    public void validate(Path runtimeDirectory) {
+        load(runtimeDirectory);
     }
 
     private List<Skill> loadSkills(Path root, Path skillsDirectory) {
@@ -163,6 +165,6 @@ public class RuntimeAgentPromptLoader {
     }
 
     private static RuntimeApiException unavailable(Throwable cause) {
-        return new RuntimeApiException(HttpStatus.UNPROCESSABLE_ENTITY, RuntimeErrorCode.AGENT_NOT_AVAILABLE, cause);
+        return new RuntimeApiException(RuntimeErrorCode.AGENT_NOT_AVAILABLE, cause);
     }
 }

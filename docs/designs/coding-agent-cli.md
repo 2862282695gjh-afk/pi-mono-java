@@ -1,8 +1,8 @@
 # Coding Agent 启动与 Runtime HTTP 设计
 
-> 文档版本：2.1.0
+> 文档版本：2.2.0
 >
-> 实现分析基线：`2e3962f408d81d03c00f533363ed1c09e455550f`
+> 实现分析基线：`f899547d120ce06aec27ecf5dbb448a7851a942a`
 >
 > 源码仓库：本仓库 `pi-mono-java`
 
@@ -24,6 +24,7 @@
 | CLI 排除数据库、Runtime 与控制面 Bean | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/CampusClawCliConfiguration.java` |
 | Runtime 使用 Spring MVC Controller | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/web/*Controller.java` |
 | Session 与事件持久化使用 MyBatis | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/persistence/MyBatisRuntimeSessionRepository.java` |
+| 事件接受、历史查询和执行生命周期相互分离 | `RuntimeEventService`、`RuntimeEventQueryService`、`RuntimeExecutionCoordinator` |
 | SSE 使用有界请求级订阅 | `RuntimeEventStream`、`RuntimeSseDispatcher`、`RuntimeSseEmitterSubscriber` |
 | 公司响应包装保留适配点 | `runtimeapi/result/ResultBeanAdapter.java`、`StandaloneResultBeanAdapter.java` |
 
@@ -111,7 +112,25 @@ Session、Entry、严格序号、物化数据、删除墓碑和异步清理任�
 
 Agent 配置默认直接读取 `agent/{agent_id}/.campusclaw/` 下的 `settings.json`、
 `SYSTEM.md` 和 `skills/`；部署可通过 `CAMPUSCLAW_AGENT_ROOT` 替换 `agent` 根目录。
-Runtime 工具集合只启用 `read`。`file_ids` 作为固定 `[File IDs]` 提示块传入，不在 Runtime 内解析或下载文件。
+`.campusclaw/` 的真实路径同时作为 Session `cwd`、提示词根目录和 `ReadTool` 根目录，
+不会把 Agent 父目录暴露给 HTTP V1。Runtime 工具集合只启用 `read`。`file_ids` 作为固定
+`[File IDs]` 提示块传入，不在 Runtime 内解析或下载文件。
+
+### 6.5 事件执行职责
+
+`RuntimeEventService` 只负责接受 `user.message` 和提交前的原子边界；
+`RuntimeEventQueryService` 负责当前分支分页与 Agent 历史恢复；
+`RuntimeExecutionCoordinator` 负责 Agent 启动、控制消息续跑、超时、持久化收尾和资源释放。
+SSE 流、事件投影器与终止事件分别由独立工厂创建，避免 Controller 或单个 Service 同时承担完整执行生命周期。
+
+### 6.6 错误和多实例边界
+
+`RuntimeErrorCode` 是错误码、HTTP 状态、国际化 key 和可选 `Retry-After` 的唯一目录。
+错误消息资源 key 与枚举名称一致，异常调用点不能自行拼装 HTTP 状态。
+
+活动执行仍是进程内资源。如果数据库状态为 `running`，但 Steer、FollowUp 或 Abort 请求没有命中执行实例，
+服务返回 `503 SESSION_EXECUTION_UNAVAILABLE` 和 `Retry-After: 3`。这是对现有执行归属边界的显式表达；
+本次整改没有假设粘性路由或跨实例转发基础设施。
 
 ## 7. 质量约束
 
@@ -126,6 +145,7 @@ Runtime 工具集合只启用 `read`。`file_ids` 作为固定 `[File IDs]` 提�
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 2.2.0 | 2026-08-19 | 统一 `.campusclaw` 真实运行根目录，拆分事件职责，集中错误语义并明确非本机执行边界 |
 | 2.1.0 | 2026-08-19 | HTTP V1 的 Agent 根目录默认值改为 `agent`，受控子目录改为 `.campusclaw/` |
 | 2.0.0 | 2026-08-18 | 按实现提交 `8691e880` 重写；默认 Spring MVC 服务、显式 CLI、HTTP+SSE 和 11 个 Runtime 接口成为现行设计 |
 | 1.x | 2026-08-18 以前 | 历史 ServerMode、WebFlux RouterFunction 与公开 WebSocket 设计，已废弃 |

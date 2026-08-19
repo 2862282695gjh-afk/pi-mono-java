@@ -10,6 +10,8 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
+import com.campusclaw.agent.util.LoggingUncaughtExceptionHandler;
+
 import org.springframework.stereotype.Component;
 
 import jakarta.annotation.PreDestroy;
@@ -25,6 +27,7 @@ public class RuntimeExecutionTimeoutScheduler {
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(runnable -> {
         Thread thread = new Thread(runnable, "runtime-execution-timeout");
         thread.setDaemon(true);
+        thread.setUncaughtExceptionHandler(LoggingUncaughtExceptionHandler.INSTANCE);
         return thread;
     });
 

@@ -35,7 +35,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.context.support.ResourceBundleMessageSource;
 import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
 import org.springframework.test.web.servlet.MockMvc;
@@ -122,8 +121,7 @@ class RuntimeSessionConfigurationRoutesTest {
     @Test
     void missingIfMatchUsesConfirmed428Error() throws Exception {
         when(service.changeModel(eq(SESSION_ID), eq(null), any(ChangeModelRequestVO.class)))
-                .thenThrow(
-                        new RuntimeApiException(HttpStatus.PRECONDITION_REQUIRED, RuntimeErrorCode.IF_MATCH_REQUIRED));
+                .thenThrow(new RuntimeApiException(RuntimeErrorCode.IF_MATCH_REQUIRED));
 
         mvc.perform(authenticated(put("/campusclaw-service/v1/sessions/{id}/model", SESSION_ID))
                         .contentType(MediaType.APPLICATION_JSON)

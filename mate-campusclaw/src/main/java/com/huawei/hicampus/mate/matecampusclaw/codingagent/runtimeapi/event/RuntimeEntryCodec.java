@@ -56,7 +56,7 @@ public class RuntimeEntryCodec {
         }
         ArrayNode files = payload.putArray("file_ids");
         fileIds.forEach(files::add);
-        return entry(sessionId, entryId, "user.message", createdAt, payload);
+        return entry(sessionId, entryId, RuntimeEventType.USER_MESSAGE.value(), createdAt, payload);
     }
 
     public RuntimeEntryDTO assistantEntry(
@@ -70,7 +70,7 @@ public class RuntimeEntryCodec {
         return entry(
                 sessionId,
                 entryId,
-                "assistant.message.completed",
+                RuntimeEventType.ASSISTANT_MESSAGE_COMPLETED.value(),
                 eventTime(message.timestamp(), fallbackTime),
                 payload);
     }
@@ -83,7 +83,12 @@ public class RuntimeEntryCodec {
         ArrayNode content = payload.putArray("content");
         message.content().forEach(block -> appendPublicContent(content, block));
         payload.put("is_error", message.isError());
-        return entry(sessionId, entryId, "tool.result", eventTime(message.timestamp(), fallbackTime), payload);
+        return entry(
+                sessionId,
+                entryId,
+                RuntimeEventType.TOOL_RESULT.value(),
+                eventTime(message.timestamp(), fallbackTime),
+                payload);
     }
 
     public Map<String, Object> toSseData(RuntimeEntryDTO entry) {
@@ -124,11 +129,12 @@ public class RuntimeEntryCodec {
 
     private Message toAgentMessage(RuntimeEntryDTO entry, Model model) {
         JsonNode payload = readPayload(entry.getPayload());
-        return switch (entry.getType()) {
-            case "user.message" -> userMessage(entry, payload);
-            case "assistant.message.completed" -> assistantMessage(entry, payload, model);
-            case "tool.result" -> toolResultMessage(entry, payload);
-            default -> throw new IllegalArgumentException("unsupported runtime entry type: " + entry.getType());
+        return switch (RuntimeEventType.fromValue(entry.getType())) {
+            case USER_MESSAGE -> userMessage(entry, payload);
+            case ASSISTANT_MESSAGE_COMPLETED -> assistantMessage(entry, payload, model);
+            case TOOL_RESULT -> toolResultMessage(entry, payload);
+            default ->
+                throw new IllegalArgumentException("unsupported persisted runtime entry type: " + entry.getType());
         };
     }
 

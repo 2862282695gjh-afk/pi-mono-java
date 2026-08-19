@@ -13,22 +13,19 @@ import org.springframework.http.HttpStatus;
  * @since [br_eCampusCore 25.1.0_Next]
  */
 public class RuntimeApiException extends RuntimeException {
-    private final HttpStatus status;
-
     private final RuntimeErrorCode errorCode;
 
-    public RuntimeApiException(HttpStatus status, RuntimeErrorCode errorCode) {
-        this(status, errorCode, null);
+    public RuntimeApiException(RuntimeErrorCode errorCode) {
+        this(errorCode, null);
     }
 
-    public RuntimeApiException(HttpStatus status, RuntimeErrorCode errorCode, Throwable cause) {
+    public RuntimeApiException(RuntimeErrorCode errorCode, Throwable cause) {
         super(errorCode.name(), cause);
-        this.status = status;
         this.errorCode = errorCode;
     }
 
     public HttpStatus status() {
-        return status;
+        return errorCode.status();
     }
 
     public RuntimeErrorCode errorCode() {

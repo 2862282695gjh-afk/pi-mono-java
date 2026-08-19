@@ -36,7 +36,8 @@ class FileAgentDirectoryResolverTest {
 
         AgentDirectorySnapshotDTO snapshot = resolver().resolve(AGENT_ID);
 
-        assertThat(snapshot.agentDirectory()).isEqualTo(agent.toRealPath());
+        assertThat(snapshot.runtimeDirectory())
+                .isEqualTo(agent.resolve(".campusclaw").toRealPath());
         assertThat(snapshot.defaultModelId()).isEqualTo("model-a");
         assertThat(snapshot.enabledModelIds()).containsExactly("model-a", "model-b");
         assertThat(agent.resolve("current.json")).doesNotExist();

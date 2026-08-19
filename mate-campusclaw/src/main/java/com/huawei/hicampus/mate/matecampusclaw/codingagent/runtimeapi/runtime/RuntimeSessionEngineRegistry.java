@@ -23,7 +23,6 @@ import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.error.Runt
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.ops.ReadOperations;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.read.ReadTool;
 
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 
 /**
@@ -70,7 +69,7 @@ public class RuntimeSessionEngineRegistry {
         try {
             RuntimeSessionHolder holder = createHolder(sessionId, snapshot, model, thinking, messages, execution);
             if (sessions.putIfAbsent(sessionId, holder) != null) {
-                throw new RuntimeApiException(HttpStatus.CONFLICT, RuntimeErrorCode.SESSION_BUSY);
+                throw new RuntimeApiException(RuntimeErrorCode.SESSION_BUSY);
             }
             return holder;
         } catch (RuntimeException error) {
@@ -117,8 +116,8 @@ public class RuntimeSessionEngineRegistry {
     private Agent createAgent(AgentDirectorySnapshotDTO snapshot, Model model, boolean thinking) {
         Agent agent = new Agent(aiService);
         agent.setModel(model);
-        agent.setSystemPrompt(promptLoader.load(snapshot.agentDirectory()));
-        agent.setTools(List.of(new ReadTool(readOperations, snapshot.agentDirectory())));
+        agent.setSystemPrompt(promptLoader.load(snapshot.runtimeDirectory()));
+        agent.setTools(List.of(new ReadTool(readOperations, snapshot.runtimeDirectory())));
         agent.setThinkingLevel(thinking ? ThinkingLevel.MEDIUM : ThinkingLevel.OFF);
         agent.setSteeringMode(DeliveryMode.ONE_AT_A_TIME);
         agent.setFollowUpMode(DeliveryMode.ONE_AT_A_TIME);
@@ -127,7 +126,7 @@ public class RuntimeSessionEngineRegistry {
 
     private void acquireCapacity() {
         if (!capacity.tryAcquire()) {
-            throw new RuntimeApiException(HttpStatus.SERVICE_UNAVAILABLE, RuntimeErrorCode.RUNTIME_CAPACITY_EXCEEDED);
+            throw new RuntimeApiException(RuntimeErrorCode.RUNTIME_CAPACITY_EXCEEDED);
         }
     }
 

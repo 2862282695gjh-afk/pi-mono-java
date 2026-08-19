@@ -33,7 +33,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.context.support.ResourceBundleMessageSource;
 import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
@@ -124,9 +123,7 @@ class RuntimeSessionRoutesTest {
 
     @Test
     void managerUnavailableAddsRetryAfterAndLocalizesError() throws Exception {
-        when(service.create(AGENT_ID))
-                .thenThrow(
-                        new RuntimeApiException(HttpStatus.SERVICE_UNAVAILABLE, RuntimeErrorCode.MANAGER_UNAVAILABLE));
+        when(service.create(AGENT_ID)).thenThrow(new RuntimeApiException(RuntimeErrorCode.MANAGER_UNAVAILABLE));
 
         mvc.perform(post("/campusclaw-service/v1/agents/{agentId}/sessions", AGENT_ID)
                         .header("X-HW-ID", "credential")

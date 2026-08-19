@@ -24,7 +24,6 @@ import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.error.Runt
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 
 /**
@@ -145,6 +144,6 @@ public class RuntimeEventCursorCodec {
     }
 
     private static RuntimeApiException invalidCursor(Throwable cause) {
-        return new RuntimeApiException(HttpStatus.BAD_REQUEST, RuntimeErrorCode.INVALID_EVENT_LIST_QUERY, cause);
+        return new RuntimeApiException(RuntimeErrorCode.INVALID_EVENT_LIST_QUERY, cause);
     }
 }

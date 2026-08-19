@@ -14,8 +14,6 @@ import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.agent.Agen
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
 
-import org.springframework.http.HttpStatus;
-
 /**
  * 以当前模型目录充当独立开发环境 Model Manager 的适配器。
  *
@@ -38,18 +36,16 @@ public class CatalogRuntimeModelManager implements RuntimeModelManager {
     public Model resolveModel(AgentDirectorySnapshotDTO snapshot, String modelId) {
         try {
             if (!snapshot.enabledModelIds().contains(modelId)) {
-                throw new RuntimeApiException(
-                        HttpStatus.UNPROCESSABLE_ENTITY, RuntimeErrorCode.AGENT_MODEL_NOT_CONFIGURED);
+                throw new RuntimeApiException(RuntimeErrorCode.AGENT_MODEL_NOT_CONFIGURED);
             }
             return modelCatalogService.getAvailableModels().stream()
                     .filter(model -> model.id().equals(modelId))
                     .findFirst()
-                    .orElseThrow(() -> new RuntimeApiException(
-                            HttpStatus.UNPROCESSABLE_ENTITY, RuntimeErrorCode.AGENT_MODEL_NOT_CONFIGURED));
+                    .orElseThrow(() -> new RuntimeApiException(RuntimeErrorCode.AGENT_MODEL_NOT_CONFIGURED));
         } catch (RuntimeApiException error) {
             throw error;
         } catch (RuntimeException error) {
-            throw new RuntimeApiException(HttpStatus.SERVICE_UNAVAILABLE, RuntimeErrorCode.MANAGER_UNAVAILABLE, error);
+            throw new RuntimeApiException(RuntimeErrorCode.MANAGER_UNAVAILABLE, error);
         }
     }
 
@@ -63,7 +59,7 @@ public class CatalogRuntimeModelManager implements RuntimeModelManager {
                     .filter(available::contains)
                     .toList();
         } catch (RuntimeException error) {
-            throw new RuntimeApiException(HttpStatus.SERVICE_UNAVAILABLE, RuntimeErrorCode.MANAGER_UNAVAILABLE, error);
+            throw new RuntimeApiException(RuntimeErrorCode.MANAGER_UNAVAILABLE, error);
         }
     }
 }

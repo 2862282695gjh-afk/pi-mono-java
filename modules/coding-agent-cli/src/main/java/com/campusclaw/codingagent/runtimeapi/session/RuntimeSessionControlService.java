@@ -11,6 +11,7 @@ import java.time.ZoneOffset;
 import java.util.concurrent.CompletableFuture;
 
 import com.campusclaw.ai.types.UserMessage;
+import com.campusclaw.codingagent.runtimeapi.RuntimeApiConstants;
 import com.campusclaw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
@@ -22,10 +23,7 @@ import com.campusclaw.codingagent.runtimeapi.runtime.RuntimeSessionHolder;
 import com.campusclaw.codingagent.runtimeapi.vo.ControlMessageAcceptedResponseVO;
 import com.campusclaw.codingagent.runtimeapi.vo.ControlMessageRequestVO;
 
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
-
-import jakarta.validation.Validator;
 
 /**
  * Session 当前执行的 Steer、FollowUp 与 Abort 控制业务。
@@ -39,8 +37,6 @@ public class RuntimeSessionControlService {
 
     private final RuntimeSessionEngineRegistry engineRegistry;
 
-    private final Validator validator;
-
     private final Clock clock;
 
     private final RuntimeExecutionProperties properties;
@@ -48,12 +44,10 @@ public class RuntimeSessionControlService {
     public RuntimeSessionControlService(
             RuntimeSessionRepository repository,
             RuntimeSessionEngineRegistry engineRegistry,
-            Validator validator,
             Clock clock,
             RuntimeExecutionProperties properties) {
         this.repository = repository;
         this.engineRegistry = engineRegistry;
-        this.validator = validator;
         this.clock = clock;
         this.properties = properties;
     }
@@ -72,14 +66,13 @@ public class RuntimeSessionControlService {
         } catch (RuntimeApiException error) {
             throw error;
         } catch (RuntimeException error) {
-            throw new RuntimeApiException(
-                    HttpStatus.INTERNAL_SERVER_ERROR, RuntimeErrorCode.SESSION_ABORT_FAILED, error);
+            throw new RuntimeApiException(RuntimeErrorCode.SESSION_ABORT_FAILED, error);
         }
     }
 
     private ControlMessageAcceptedResponseVO accept(
             String sessionId, ControlMessageRequestVO request, ControlKind kind) {
-        requireValid(request, kind.invalidRequest());
+        requireRequest(request, kind.invalidRequest());
         engineRegistry.lockOperation(sessionId);
         try {
             RuntimeSessionDTO session = requireSession(sessionId);
@@ -92,7 +85,7 @@ public class RuntimeSessionControlService {
         } catch (RuntimeApiException error) {
             throw error;
         } catch (RuntimeException error) {
-            throw new RuntimeApiException(HttpStatus.INTERNAL_SERVER_ERROR, kind.acceptanceFailed(), error);
+            throw new RuntimeApiException(kind.acceptanceFailed(), error);
         } finally {
             engineRegistry.unlockOperation(sessionId);
         }
@@ -102,13 +95,13 @@ public class RuntimeSessionControlService {
         engineRegistry.lockOperation(sessionId);
         try {
             RuntimeSessionDTO session = requireSession(sessionId);
-            if ("idle".equals(session.getState())) {
+            if (RuntimeSessionState.IDLE.matches(session.getState())) {
                 engineRegistry.find(sessionId).ifPresent(this::clearControlQueues);
                 return CompletableFuture.completedFuture(null);
             }
             RuntimeSessionHolder holder = requireRunningHolder(session);
             RuntimeActiveExecution execution = holder.activeExecution()
-                    .orElseThrow(() -> new IllegalStateException("running Session has no active execution"));
+                    .orElseThrow(() -> new RuntimeApiException(RuntimeErrorCode.SESSION_EXECUTION_UNAVAILABLE));
             execution.requestAbort();
             clearControlQueues(holder);
             holder.agent().abort();
@@ -121,23 +114,23 @@ public class RuntimeSessionControlService {
     private RuntimeSessionDTO requireSession(String sessionId) {
         return repository
                 .find(sessionId)
-                .orElseThrow(() -> new RuntimeApiException(HttpStatus.NOT_FOUND, RuntimeErrorCode.SESSION_NOT_FOUND));
+                .orElseThrow(() -> new RuntimeApiException(RuntimeErrorCode.SESSION_NOT_FOUND));
     }
 
     private RuntimeSessionHolder requireRunningHolder(RuntimeSessionDTO session) {
-        if (!"running".equals(session.getState())) {
-            throw new RuntimeApiException(HttpStatus.CONFLICT, RuntimeErrorCode.SESSION_NOT_RUNNING);
+        if (!RuntimeSessionState.RUNNING.matches(session.getState())) {
+            throw new RuntimeApiException(RuntimeErrorCode.SESSION_NOT_RUNNING);
         }
         return engineRegistry
                 .find(session.getId())
-                .orElseThrow(() -> new IllegalStateException("running Session has no in-memory engine"));
+                .orElseThrow(() -> new RuntimeApiException(RuntimeErrorCode.SESSION_EXECUTION_UNAVAILABLE));
     }
 
     private static RuntimeActiveExecution requireAcceptingExecution(RuntimeSessionHolder holder) {
         RuntimeActiveExecution execution = holder.activeExecution()
-                .orElseThrow(() -> new RuntimeApiException(HttpStatus.CONFLICT, RuntimeErrorCode.SESSION_NOT_RUNNING));
+                .orElseThrow(() -> new RuntimeApiException(RuntimeErrorCode.SESSION_NOT_RUNNING));
         if (!execution.acceptingControls()) {
-            throw new RuntimeApiException(HttpStatus.CONFLICT, RuntimeErrorCode.SESSION_NOT_RUNNING);
+            throw new RuntimeApiException(RuntimeErrorCode.SESSION_NOT_RUNNING);
         }
         return execution;
     }
@@ -150,7 +143,7 @@ public class RuntimeSessionControlService {
             ControlKind kind) {
         if (!execution.queueControl(
                 message, bytes, properties.getMaxControlMessages(), properties.getMaxControlBytes())) {
-            throw new RuntimeApiException(HttpStatus.TOO_MANY_REQUESTS, RuntimeErrorCode.CONTROL_QUEUE_FULL);
+            throw new RuntimeApiException(RuntimeErrorCode.CONTROL_QUEUE_FULL);
         }
         try {
             if (kind == ControlKind.STEER) {
@@ -164,9 +157,12 @@ public class RuntimeSessionControlService {
         }
     }
 
-    private void requireValid(ControlMessageRequestVO request, RuntimeErrorCode errorCode) {
-        if (request == null || !validator.validate(request).isEmpty()) {
-            throw new RuntimeApiException(HttpStatus.BAD_REQUEST, errorCode);
+    private static void requireRequest(ControlMessageRequestVO request, RuntimeErrorCode errorCode) {
+        if (request == null
+                || request.getMessage() == null
+                || request.getMessage().isBlank()
+                || request.getMessage().length() > RuntimeApiConstants.MAX_MESSAGE_CHARACTERS) {
+            throw new RuntimeApiException(errorCode);
         }
     }
 

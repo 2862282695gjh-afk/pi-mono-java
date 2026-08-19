@@ -14,12 +14,12 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.MessageSource;
 import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.servlet.HandlerMapping;
 
 import jakarta.servlet.http.HttpServletRequest;
 
@@ -42,54 +42,45 @@ public class RuntimeExceptionHandler {
     @ExceptionHandler(RuntimeApiException.class)
     public ResponseEntity<ErrorResponseVO> handleRuntimeError(RuntimeApiException error, HttpServletRequest request) {
         logServerError(error, request);
-        return response(error.status(), error.errorCode(), request);
+        return response(error.errorCode(), request);
     }
 
     @ExceptionHandler({HttpMessageNotReadableException.class, MethodArgumentNotValidException.class})
     public ResponseEntity<ErrorResponseVO> handleInvalidBody(Exception error, HttpServletRequest request) {
         log.debug("Invalid Runtime request body: {} {}", request.getMethod(), request.getRequestURI(), error);
-        return response(HttpStatus.BAD_REQUEST, classifyInvalidBody(request), request);
+        return response(classifyInvalidBody(request), request);
     }
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponseVO> handleUnexpectedError(Exception error, HttpServletRequest request) {
         log.error("Runtime API request failed: {} {}", request.getMethod(), request.getRequestURI(), error);
-        return response(HttpStatus.INTERNAL_SERVER_ERROR, RuntimeErrorCode.INTERNAL_ERROR, request);
+        return response(RuntimeErrorCode.INTERNAL_ERROR, request);
     }
 
-    private ResponseEntity<ErrorResponseVO> response(
-            HttpStatus status, RuntimeErrorCode errorCode, HttpServletRequest request) {
+    private ResponseEntity<ErrorResponseVO> response(RuntimeErrorCode errorCode, HttpServletRequest request) {
         boolean chinese = RuntimeRequestContext.chinese(request);
         Locale locale = chinese ? Locale.SIMPLIFIED_CHINESE : Locale.US;
         String message = messageSource.getMessage(errorCode.messageKey(), null, locale);
         HttpHeaders headers = new HttpHeaders();
         headers.set(HttpHeaders.CONTENT_LANGUAGE, chinese ? "zh-CN" : "en-US");
-        if (requiresRetryAfter(errorCode)) {
-            headers.set(HttpHeaders.RETRY_AFTER, "3");
-        }
-        return new ResponseEntity<>(new ErrorResponseVO(errorCode.name(), message), headers, status);
+        errorCode
+                .retryAfterSeconds()
+                .ifPresent(seconds -> headers.set(HttpHeaders.RETRY_AFTER, Integer.toString(seconds)));
+        return new ResponseEntity<>(new ErrorResponseVO(errorCode.name(), message), headers, errorCode.status());
     }
 
     private static RuntimeErrorCode classifyInvalidBody(HttpServletRequest request) {
-        String path = request.getRequestURI();
-        if (path.endsWith("/events")) {
-            return RuntimeErrorCode.INVALID_EVENT_REQUEST;
-        }
-        if (path.endsWith("/model")) {
-            return RuntimeErrorCode.INVALID_MODEL_REQUEST;
-        }
-        if (path.endsWith("/thinking")) {
-            return RuntimeErrorCode.INVALID_THINKING_REQUEST;
-        }
-        if (path.endsWith("/steers")) {
-            return RuntimeErrorCode.INVALID_STEER_REQUEST;
-        }
-        return RuntimeErrorCode.INVALID_FOLLOW_UP_REQUEST;
-    }
-
-    private static boolean requiresRetryAfter(RuntimeErrorCode errorCode) {
-        return errorCode == RuntimeErrorCode.MANAGER_UNAVAILABLE
-                || errorCode == RuntimeErrorCode.RUNTIME_CAPACITY_EXCEEDED;
+        Object value = request.getAttribute(HandlerMapping.BEST_MATCHING_PATTERN_ATTRIBUTE);
+        String pattern = value instanceof String path ? path : "";
+        return switch (pattern) {
+            case "/campusclaw-service/v1/sessions/{session_id}/events" -> RuntimeErrorCode.INVALID_EVENT_REQUEST;
+            case "/campusclaw-service/v1/sessions/{session_id}/model" -> RuntimeErrorCode.INVALID_MODEL_REQUEST;
+            case "/campusclaw-service/v1/sessions/{session_id}/thinking" -> RuntimeErrorCode.INVALID_THINKING_REQUEST;
+            case "/campusclaw-service/v1/sessions/{session_id}/steers" -> RuntimeErrorCode.INVALID_STEER_REQUEST;
+            case "/campusclaw-service/v1/sessions/{session_id}/follow-ups" ->
+                RuntimeErrorCode.INVALID_FOLLOW_UP_REQUEST;
+            default -> RuntimeErrorCode.INTERNAL_ERROR;
+        };
     }
 
     private static void logServerError(RuntimeApiException error, HttpServletRequest request) {

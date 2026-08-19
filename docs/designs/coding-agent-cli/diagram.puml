@@ -2,7 +2,7 @@
 title Coding Agent Module Context
 skinparam componentStyle rectangle
 
-' Source evidence: implementation commit 8691e8800f05f28afe22499050c29220ef5b7475.
+' Source evidence baseline: implementation commit f899547d120ce06aec27ecf5dbb448a7851a942a.
 ' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/CampusClawApplication.java, CampusClawApplication#main.
 ' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/web/RuntimeEventController.java.
 ' Observed behavior: the default process is a Spring MVC HTTP service; CLI is an explicit subcommand.
@@ -32,7 +32,7 @@ Cli --> AgentCore
 @startuml startup-sequence
 title Default Server and Explicit CLI Startup
 
-' Source evidence: implementation commit 8691e8800f05f28afe22499050c29220ef5b7475.
+' Source evidence baseline: implementation commit f899547d120ce06aec27ecf5dbb448a7851a942a.
 ' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/CampusClawApplication.java, CampusClawApplication#main.
 ' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/CampusClawCliLauncher.java, CampusClawCliLauncher#run.
 ' Design reason: keep one executable JAR while separating web and CLI application contexts.
@@ -59,18 +59,26 @@ end
 title Runtime HTTP Components
 left to right direction
 
-' Source evidence: implementation commit 8691e8800f05f28afe22499050c29220ef5b7475.
+' Source evidence baseline: implementation commit f899547d120ce06aec27ecf5dbb448a7851a942a.
 ' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/web, Controller classes.
 ' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/event/RuntimeEventService.java.
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/event/RuntimeEventQueryService.java.
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/event/RuntimeExecutionCoordinator.java.
 ' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/persistence/MyBatisRuntimeSessionRepository.java.
 ' Observed behavior: blocking MVC boundaries delegate execution to the agent engine and stream through bounded SSE subscribers.
+' Design reason: separate request acceptance, history queries, and the asynchronous execution lifecycle.
 
 component "MVC Controllers" as Controllers
 component "Authentication\nInterceptor" as Auth
 component "Exception Handler" as Errors
 component "ResultBeanAdapter" as Result
+component "ErrorResponseVO" as ErrorBody
 component "Session Services" as Sessions
-component "RuntimeEventService" as Events
+component "Event Acceptance" as Events
+component "Event Query" as Queries
+component "Execution Context Factory" as Context
+component "Execution Coordinator" as Coordinator
+component "Event Projector" as Projector
 component "RuntimeSseDispatcher" as Sse
 component "Engine Registry" as Engine
 component "Agent Prompt Loader" as Prompt
@@ -80,12 +88,19 @@ database "openGauss" as Db
 Auth --> Controllers
 Controllers --> Sessions
 Controllers --> Events
+Controllers --> Queries
 Controllers --> Result
-Errors --> Result
+Errors --> ErrorBody
 Sessions --> Repository
 Events --> Repository
-Events --> Engine
-Events --> Sse
+Events --> Context
+Events --> Coordinator
+Context --> Queries
+Context --> Engine
+Coordinator --> Projector
+Coordinator --> Repository
+Projector --> Repository
+Projector --> Sse
 Engine --> Prompt
 Repository --> Db
 @enduml

@@ -69,7 +69,7 @@ class RuntimeSessionServiceTest {
                 modelManager,
                 promptLoader,
                 () -> SESSION_ID,
-                new SessionEtagFactory(),
+                new RuntimeSessionResponseAssembler(new SessionEtagFactory()),
                 clock);
     }
 
@@ -86,11 +86,11 @@ class RuntimeSessionServiceTest {
         assertThat(view.resource().getSessionId()).isEqualTo(SESSION_ID);
         assertThat(view.resource().getState()).isEqualTo("idle");
         assertThat(view.resource().isThinking()).isFalse();
-        verify(promptLoader).load(snapshot.agentDirectory());
+        verify(promptLoader).validate(snapshot.runtimeDirectory());
         verify(repository)
                 .create(org.mockito.ArgumentMatchers.argThat(session -> SESSION_ID.equals(session.getId())
                         && AGENT_ID.equals(session.getAgentId())
-                        && snapshot.agentDirectory().toString().equals(session.getCwd())));
+                        && snapshot.runtimeDirectory().toString().equals(session.getCwd())));
     }
 
     @Test
@@ -146,7 +146,7 @@ class RuntimeSessionServiceTest {
                 AGENT_ID,
                 "model-default",
                 List.of("model-default"),
-                Path.of("/runtime/agents").resolve(AGENT_ID));
+                Path.of("/runtime/agents").resolve(AGENT_ID).resolve(".campusclaw"));
     }
 
     private static RuntimeSessionDTO session() {

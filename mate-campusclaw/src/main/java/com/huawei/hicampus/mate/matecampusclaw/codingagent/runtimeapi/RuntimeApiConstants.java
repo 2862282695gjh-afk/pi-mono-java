@@ -19,5 +19,9 @@ public final class RuntimeApiConstants {
 
     public static final String MODEL_ID_PATTERN = "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$";
 
+    public static final int MAX_MESSAGE_CHARACTERS = 262144;
+
+    public static final int MAX_FILE_IDS = 32;
+
     private RuntimeApiConstants() {}
 }

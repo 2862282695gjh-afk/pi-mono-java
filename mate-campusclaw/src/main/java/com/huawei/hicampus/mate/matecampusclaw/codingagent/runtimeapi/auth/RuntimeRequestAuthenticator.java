@@ -8,7 +8,6 @@ import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.error.Runt
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
 
 import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 
 import jakarta.servlet.http.HttpServletRequest;
@@ -59,7 +58,7 @@ public class RuntimeRequestAuthenticator {
     }
 
     private static RuntimeApiException error(RuntimeErrorCode code) {
-        return new RuntimeApiException(HttpStatus.UNAUTHORIZED, code);
+        return new RuntimeApiException(code);
     }
 
     private static String singleHeader(HttpServletRequest request, String name) {

@@ -11,8 +11,6 @@ import com.campusclaw.codingagent.runtimeapi.agent.AgentDirectorySnapshotDTO;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
 
-import org.springframework.http.HttpStatus;
-
 /**
  * Runtime Session 使用的模型校验和解析端口。
  *
@@ -28,7 +26,7 @@ public interface RuntimeModelManager {
 
     default Model resolveAvailableModel(AgentDirectorySnapshotDTO snapshot, String modelId) {
         if (!listAvailableModels(snapshot).contains(modelId)) {
-            throw new RuntimeApiException(HttpStatus.UNPROCESSABLE_ENTITY, RuntimeErrorCode.MODEL_NOT_AVAILABLE);
+            throw new RuntimeApiException(RuntimeErrorCode.MODEL_NOT_AVAILABLE);
         }
         try {
             return resolveModel(snapshot, modelId);
@@ -36,7 +34,7 @@ public interface RuntimeModelManager {
             if (error.errorCode() == RuntimeErrorCode.MANAGER_UNAVAILABLE) {
                 throw error;
             }
-            throw new RuntimeApiException(HttpStatus.UNPROCESSABLE_ENTITY, RuntimeErrorCode.MODEL_NOT_AVAILABLE, error);
+            throw new RuntimeApiException(RuntimeErrorCode.MODEL_NOT_AVAILABLE, error);
         }
     }
 }

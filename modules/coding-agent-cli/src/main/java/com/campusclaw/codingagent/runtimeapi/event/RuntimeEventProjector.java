@@ -122,7 +122,7 @@ public class RuntimeEventProjector {
         LinkedHashMap<String, Object> data = new LinkedHashMap<>();
         data.put("entry_id", assistantEntryId);
         data.put("role", "assistant");
-        stream.emit(new RuntimeSseEventVO(null, "assistant.message.started", data));
+        stream.emit(new RuntimeSseEventVO(null, RuntimeEventType.ASSISTANT_MESSAGE_STARTED.value(), data));
     }
 
     private void projectMessageUpdate(MessageUpdateEvent event) {
@@ -136,7 +136,7 @@ public class RuntimeEventProjector {
             LinkedHashMap<String, Object> data = new LinkedHashMap<>();
             data.put("entry_id", assistantEntryId);
             data.put("delta", block);
-            stream.emit(new RuntimeSseEventVO(null, "assistant.message.delta", data));
+            stream.emit(new RuntimeSseEventVO(null, RuntimeEventType.ASSISTANT_MESSAGE_DELTA.value(), data));
         }
     }
 
@@ -176,7 +176,7 @@ public class RuntimeEventProjector {
         LinkedHashMap<String, Object> data = new LinkedHashMap<>();
         data.put("tool_call_id", event.toolCallId());
         data.put("tool_name", event.toolName());
-        stream.emit(new RuntimeSseEventVO(null, "tool.execution.started", data));
+        stream.emit(new RuntimeSseEventVO(null, RuntimeEventType.TOOL_EXECUTION_STARTED.value(), data));
     }
 
     private void projectToolEnd(ToolExecutionEndEvent event) {
@@ -184,7 +184,7 @@ public class RuntimeEventProjector {
         data.put("tool_call_id", event.toolCallId());
         data.put("tool_name", event.toolName());
         data.put("is_error", event.isError());
-        stream.emit(new RuntimeSseEventVO(null, "tool.execution.completed", data));
+        stream.emit(new RuntimeSseEventVO(null, RuntimeEventType.TOOL_EXECUTION_COMPLETED.value(), data));
     }
 
     private void projectToolResults(List<ToolResultMessage> results) {

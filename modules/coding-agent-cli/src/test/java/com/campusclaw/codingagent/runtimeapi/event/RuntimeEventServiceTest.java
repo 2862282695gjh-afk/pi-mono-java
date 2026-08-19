@@ -53,9 +53,6 @@ import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.context.support.StaticMessageSource;
-import org.springframework.http.HttpStatus;
-
-import jakarta.validation.Validation;
 
 /**
  * Runtime Event 接受边界、执行生命周期和流终止语义测试。
@@ -73,7 +70,7 @@ class RuntimeEventServiceTest {
         Fixture fixture = new Fixture();
         UserEventRequestVO request = request("分析订单", List.of("file_a", "file_b"));
 
-        RuntimeEventStream stream = fixture.service.submit(SESSION_ID, request, false);
+        RuntimeEventStream stream = fixture.service.submit(SESSION_ID, request, Locale.US);
         fixture.agentFuture.complete(null);
         fixture.execution.completion().join();
 
@@ -92,7 +89,7 @@ class RuntimeEventServiceTest {
         Fixture fixture = new Fixture();
 
         assertThatThrownBy(() ->
-                        fixture.service.submit(SESSION_ID, request(null, List.of("file_same", "file_same")), false))
+                        fixture.service.submit(SESSION_ID, request(null, List.of("file_same", "file_same")), Locale.US))
                 .isInstanceOfSatisfying(RuntimeApiException.class, error -> assertThat(error.errorCode())
                         .isEqualTo(RuntimeErrorCode.INVALID_EVENT_REQUEST));
         verify(fixture.repository, never()).find(anyString());
@@ -102,10 +99,9 @@ class RuntimeEventServiceTest {
     void capacityFailureHappensBeforeUserEntryPersistence() {
         Fixture fixture = new Fixture();
         when(fixture.registry.register(anyString(), any(), any(), any(Boolean.class), any(), any()))
-                .thenThrow(new RuntimeApiException(
-                        HttpStatus.SERVICE_UNAVAILABLE, RuntimeErrorCode.RUNTIME_CAPACITY_EXCEEDED));
+                .thenThrow(new RuntimeApiException(RuntimeErrorCode.RUNTIME_CAPACITY_EXCEEDED));
 
-        assertThatThrownBy(() -> fixture.service.submit(SESSION_ID, request("分析订单", List.of()), false))
+        assertThatThrownBy(() -> fixture.service.submit(SESSION_ID, request("分析订单", List.of()), Locale.US))
                 .isInstanceOfSatisfying(RuntimeApiException.class, error -> assertThat(error.errorCode())
                         .isEqualTo(RuntimeErrorCode.RUNTIME_CAPACITY_EXCEEDED));
         verify(fixture.repository, never()).acceptUserEvent(anyString(), any(), any());
@@ -159,7 +155,7 @@ class RuntimeEventServiceTest {
 
     private static StaticMessageSource messages() {
         StaticMessageSource messages = new StaticMessageSource();
-        messages.addMessage("runtime.error.session_execution_failed", Locale.US, "Session execution failed.");
+        messages.addMessage("SESSION_EXECUTION_FAILED", Locale.US, "Session execution failed.");
         return messages;
     }
 
@@ -192,27 +188,31 @@ class RuntimeEventServiceTest {
             RuntimeEventCursorCodec cursorCodec = mock(RuntimeEventCursorCodec.class);
             RuntimeEntryCodec codec = new RuntimeEntryCodec(new ObjectMapper());
             Clock clock = Clock.fixed(Instant.parse("2026-08-18T00:00:00Z"), ZoneOffset.UTC);
-            service = new RuntimeEventService(
-                    repository,
-                    codec,
-                    () -> "entry_" + ids.getAndIncrement(),
-                    resolver,
-                    modelManager,
+            RuntimeEntryIdGenerator idGenerator = () -> "entry_" + ids.getAndIncrement();
+            RuntimeEventQueryService queryService = new RuntimeEventQueryService(repository, codec, cursorCodec);
+            RuntimeEventProjectorFactory projectorFactory =
+                    new RuntimeEventProjectorFactory(repository, codec, idGenerator, clock);
+            RuntimeTerminalEventFactory terminalEventFactory = new RuntimeTerminalEventFactory(messages());
+            RuntimeExecutionCoordinator coordinator = new RuntimeExecutionCoordinator(
                     registry,
+                    repository,
+                    projectorFactory,
                     timeoutScheduler,
-                    cursorCodec,
-                    eventProperties,
                     executionProperties,
-                    Validation.buildDefaultValidatorFactory().getValidator(),
-                    messages(),
+                    terminalEventFactory,
                     clock);
+            RuntimeEventStreamFactory streamFactory = new RuntimeEventStreamFactory(eventProperties, codec);
+            RuntimeExecutionContextFactory contextFactory = new RuntimeExecutionContextFactory(
+                    resolver, modelManager, queryService, registry, codec, streamFactory, clock);
+            service = new RuntimeEventService(
+                    repository, codec, idGenerator, registry, contextFactory, coordinator, clock);
             prepareAcceptedExecution();
         }
 
         private void prepareAcceptedExecution() {
             RuntimeSessionDTO session = session();
-            AgentDirectorySnapshotDTO snapshot =
-                    new AgentDirectorySnapshotDTO(AGENT_ID, "model_test", List.of("model_test"), Path.of("/tmp/agent"));
+            AgentDirectorySnapshotDTO snapshot = new AgentDirectorySnapshotDTO(
+                    AGENT_ID, "model_test", List.of("model_test"), Path.of("/tmp/agent/.campusclaw"));
             Model model = mock(Model.class);
             when(repository.find(SESSION_ID)).thenReturn(Optional.of(session));
             when(repository.listCurrentBranch(SESSION_ID, 0, 500)).thenReturn(List.of());

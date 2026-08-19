@@ -22,8 +22,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.auth.RuntimeRequestAuthenticator;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.event.RuntimeEventQueryService;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.event.RuntimeEventService;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.event.RuntimeEventStream;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.event.RuntimeSseDispatcher;
@@ -56,6 +58,8 @@ class RuntimeEventRoutesTest {
 
     private RuntimeEventService service;
 
+    private RuntimeEventQueryService queryService;
+
     private RuntimeSseDispatcher dispatcher;
 
     private MockMvc mvc;
@@ -63,8 +67,10 @@ class RuntimeEventRoutesTest {
     @BeforeEach
     void setUp() {
         service = mock(RuntimeEventService.class);
+        queryService = mock(RuntimeEventQueryService.class);
         dispatcher = new RuntimeSseDispatcher();
-        var controller = new RuntimeEventController(service, new StandaloneResultBeanAdapter(), dispatcher);
+        var controller =
+                new RuntimeEventController(service, queryService, new StandaloneResultBeanAdapter(), dispatcher);
         var interceptor = new RuntimeAuthenticationInterceptor(new RuntimeRequestAuthenticator());
         var messages = new ResourceBundleMessageSource();
         messages.setBasename("messages");
@@ -84,7 +90,7 @@ class RuntimeEventRoutesTest {
     @Test
     void postStreamsNamedEventsWithoutResultBean() throws Exception {
         RuntimeEventStream stream = completedStream();
-        when(service.submit(eq(SESSION_ID), any(UserEventRequestVO.class), eq(false)))
+        when(service.submit(eq(SESSION_ID), any(UserEventRequestVO.class), eq(Locale.US)))
                 .thenReturn(stream);
 
         MvcResult initial = mvc.perform(authenticated(post("/campusclaw-service/v1/sessions/{id}/events", SESSION_ID))
@@ -112,7 +118,7 @@ class RuntimeEventRoutesTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.resCode").value("INVALID_EVENT_REQUEST"))
                 .andExpect(jsonPath("$.result").doesNotExist());
-        verify(service, never()).submit(any(), any(), eq(false));
+        verify(service, never()).submit(any(), any(), any(Locale.class));
     }
 
     @Test
@@ -130,7 +136,7 @@ class RuntimeEventRoutesTest {
                     .andExpect(status().isBadRequest())
                     .andExpect(jsonPath("$.resCode").value("INVALID_EVENT_REQUEST"));
         }
-        verify(service, never()).submit(any(), any(), eq(false));
+        verify(service, never()).submit(any(), any(), any(Locale.class));
     }
 
     @Test
@@ -139,7 +145,7 @@ class RuntimeEventRoutesTest {
         event.put("type", "user.message");
         event.put("entry_id", "entry_100");
         event.put("entry_seq", 17L);
-        when(service.list(SESSION_ID, "1", "page_opaque"))
+        when(queryService.list(SESSION_ID, "1", "page_opaque"))
                 .thenReturn(new EventPageResponseVO(List.of(event), "page_next"));
 
         mvc.perform(get("/campusclaw-service/v1/sessions/{id}/events", SESSION_ID)

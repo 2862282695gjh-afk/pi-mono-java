@@ -4,6 +4,7 @@
 
 package com.campusclaw.codingagent.runtimeapi.vo;
 
+import com.campusclaw.codingagent.runtimeapi.RuntimeApiConstants;
 import com.fasterxml.jackson.annotation.JsonAnySetter;
 import com.fasterxml.jackson.annotation.JsonSetter;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -23,7 +24,7 @@ import lombok.Setter;
 @Data
 public class ControlMessageRequestVO {
     @NotBlank
-    @Size(max = 262144)
+    @Size(max = RuntimeApiConstants.MAX_MESSAGE_CHARACTERS)
     @Setter(AccessLevel.NONE)
     private String message;
 

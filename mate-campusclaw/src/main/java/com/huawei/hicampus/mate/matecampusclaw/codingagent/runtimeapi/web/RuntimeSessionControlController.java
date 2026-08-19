@@ -4,11 +4,7 @@
 
 package com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.web;
 
-import java.util.regex.Pattern;
-
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.RuntimeApiConstants;
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.error.RuntimeApiException;
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.result.ResultBeanAdapter;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.session.RuntimeSessionControlService;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.vo.ControlMessageAcceptedResponseVO;
@@ -16,7 +12,6 @@ import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.vo.Control
 
 import org.springframework.http.CacheControl;
 import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -36,8 +31,6 @@ import jakarta.validation.Valid;
 @RestController
 @RequestMapping(RuntimeApiConstants.BASE_PATH + "/sessions/{session_id}")
 public class RuntimeSessionControlController {
-    private static final Pattern SESSION_ID = Pattern.compile(RuntimeApiConstants.SESSION_ID_PATTERN);
-
     private final RuntimeSessionControlService service;
 
     private final ResultBeanAdapter resultBeanAdapter;
@@ -52,7 +45,7 @@ public class RuntimeSessionControlController {
             @PathVariable("session_id") String sessionId,
             @Valid @RequestBody ControlMessageRequestVO body,
             HttpServletRequest request) {
-        requireSessionId(sessionId);
+        RuntimeIdentifierValidator.requireSessionId(sessionId);
         var result = service.steer(sessionId, body);
         return accepted(result, request);
     }
@@ -62,14 +55,14 @@ public class RuntimeSessionControlController {
             @PathVariable("session_id") String sessionId,
             @Valid @RequestBody ControlMessageRequestVO body,
             HttpServletRequest request) {
-        requireSessionId(sessionId);
+        RuntimeIdentifierValidator.requireSessionId(sessionId);
         var result = service.followUp(sessionId, body);
         return accepted(result, request);
     }
 
     @PostMapping("/abort")
     public ResponseEntity<Void> abort(@PathVariable("session_id") String sessionId) {
-        requireSessionId(sessionId);
+        RuntimeIdentifierValidator.requireSessionId(sessionId);
         service.abort(sessionId);
         return ResponseEntity.noContent().cacheControl(CacheControl.noStore()).build();
     }
@@ -79,11 +72,5 @@ public class RuntimeSessionControlController {
                 .cacheControl(CacheControl.noStore())
                 .header(HttpHeaders.CONTENT_LANGUAGE, RuntimeRequestContext.language(request))
                 .body(resultBeanAdapter.normal(result));
-    }
-
-    private static void requireSessionId(String sessionId) {
-        if (!SESSION_ID.matcher(sessionId).matches()) {
-            throw new RuntimeApiException(HttpStatus.BAD_REQUEST, RuntimeErrorCode.INVALID_SESSION_ID);
-        }
     }
 }

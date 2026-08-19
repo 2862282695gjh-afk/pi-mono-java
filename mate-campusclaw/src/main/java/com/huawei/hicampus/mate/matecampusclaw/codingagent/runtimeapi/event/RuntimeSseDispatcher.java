@@ -8,6 +8,8 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
+import com.huawei.hicampus.mate.matecampusclaw.agent.util.LoggingUncaughtExceptionHandler;
+
 import org.springframework.stereotype.Component;
 
 import jakarta.annotation.PreDestroy;
@@ -20,8 +22,10 @@ import jakarta.annotation.PreDestroy;
  */
 @Component
 public class RuntimeSseDispatcher implements Executor {
-    private final ExecutorService executor = Executors.newThreadPerTaskExecutor(
-            Thread.ofVirtual().name("runtime-sse-", 0).factory());
+    private final ExecutorService executor = Executors.newThreadPerTaskExecutor(Thread.ofVirtual()
+            .name("runtime-sse-", 0)
+            .uncaughtExceptionHandler(LoggingUncaughtExceptionHandler.INSTANCE)
+            .factory());
 
     @Override
     public void execute(Runnable command) {

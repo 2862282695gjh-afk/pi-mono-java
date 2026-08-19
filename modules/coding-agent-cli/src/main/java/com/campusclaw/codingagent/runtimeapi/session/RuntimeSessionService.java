@@ -20,7 +20,6 @@ import com.campusclaw.codingagent.runtimeapi.persistence.SessionDeletionStatus;
 import com.campusclaw.codingagent.runtimeapi.vo.CreateSessionResponseVO;
 import com.campusclaw.codingagent.runtimeapi.vo.GetSessionResponseVO;
 
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
 /**
@@ -41,7 +40,7 @@ public class RuntimeSessionService {
 
     private final SessionIdGenerator idGenerator;
 
-    private final SessionEtagFactory etagFactory;
+    private final RuntimeSessionResponseAssembler responseAssembler;
 
     private final Clock clock;
 
@@ -51,52 +50,50 @@ public class RuntimeSessionService {
             RuntimeModelManager modelManager,
             RuntimeAgentPromptLoader promptLoader,
             SessionIdGenerator idGenerator,
-            SessionEtagFactory etagFactory,
+            RuntimeSessionResponseAssembler responseAssembler,
             Clock clock) {
         this.repository = repository;
         this.agentDirectoryResolver = agentDirectoryResolver;
         this.modelManager = modelManager;
         this.promptLoader = promptLoader;
         this.idGenerator = idGenerator;
-        this.etagFactory = etagFactory;
+        this.responseAssembler = responseAssembler;
         this.clock = clock;
     }
 
     public RuntimeSessionView<CreateSessionResponseVO> create(String agentId) {
         AgentDirectorySnapshotDTO snapshot = agentDirectoryResolver.resolve(agentId);
-        promptLoader.load(snapshot.agentDirectory());
+        promptLoader.validate(snapshot.runtimeDirectory());
         String modelId = modelManager.resolveDefaultModel(snapshot).id();
         OffsetDateTime now = now();
         RuntimeSessionDTO session = newSession(snapshot, modelId, now);
         try {
             repository.create(session);
-            return createViewOf(session);
+            return responseAssembler.createView(session);
         } catch (RuntimeApiException error) {
             throw error;
         } catch (RuntimeException error) {
-            throw new RuntimeApiException(
-                    HttpStatus.INTERNAL_SERVER_ERROR, RuntimeErrorCode.SESSION_INITIALIZATION_FAILED, error);
+            throw new RuntimeApiException(RuntimeErrorCode.SESSION_INITIALIZATION_FAILED, error);
         }
     }
 
     public RuntimeSessionView<GetSessionResponseVO> get(String sessionId) {
         RuntimeSessionDTO session = repository
                 .find(sessionId)
-                .orElseThrow(() -> new RuntimeApiException(HttpStatus.NOT_FOUND, RuntimeErrorCode.SESSION_NOT_FOUND));
-        return getViewOf(session);
+                .orElseThrow(() -> new RuntimeApiException(RuntimeErrorCode.SESSION_NOT_FOUND));
+        return responseAssembler.getView(session);
     }
 
     public void delete(String sessionId) {
         try {
             SessionDeletionStatus status = repository.beginDeletion(sessionId, now());
             if (status == SessionDeletionStatus.BUSY) {
-                throw new RuntimeApiException(HttpStatus.CONFLICT, RuntimeErrorCode.SESSION_BUSY);
+                throw new RuntimeApiException(RuntimeErrorCode.SESSION_BUSY);
             }
         } catch (RuntimeApiException error) {
             throw error;
         } catch (RuntimeException error) {
-            throw new RuntimeApiException(
-                    HttpStatus.INTERNAL_SERVER_ERROR, RuntimeErrorCode.SESSION_DELETE_FAILED, error);
+            throw new RuntimeApiException(RuntimeErrorCode.SESSION_DELETE_FAILED, error);
         }
     }
 
@@ -105,40 +102,13 @@ public class RuntimeSessionService {
         session.setId(idGenerator.nextId());
         session.setAgentId(snapshot.agentId());
         session.setModelId(modelId);
-        session.setState("idle");
+        session.setState(RuntimeSessionState.IDLE.value());
         session.setThinking(false);
         session.setResourceVersion(1);
         session.setCreatedAt(now);
         session.setUpdatedAt(now);
-        session.setCwd(snapshot.agentDirectory().toString());
+        session.setCwd(snapshot.runtimeDirectory().toString());
         return session;
-    }
-
-    private RuntimeSessionView<CreateSessionResponseVO> createViewOf(RuntimeSessionDTO session) {
-        var resource = new CreateSessionResponseVO(
-                session.getId(),
-                session.getAgentId(),
-                session.getModelId(),
-                session.getState(),
-                session.isThinking(),
-                session.getCreatedAt());
-        return new RuntimeSessionView<>(resource, etag(session));
-    }
-
-    private RuntimeSessionView<GetSessionResponseVO> getViewOf(RuntimeSessionDTO session) {
-        var resource = new GetSessionResponseVO(
-                session.getId(),
-                session.getAgentId(),
-                session.getModelId(),
-                session.getState(),
-                session.isThinking(),
-                session.getCreatedAt(),
-                session.getUpdatedAt());
-        return new RuntimeSessionView<>(resource, etag(session));
-    }
-
-    private String etag(RuntimeSessionDTO session) {
-        return etagFactory.create(session.getId(), session.getResourceVersion());
     }
 
     private OffsetDateTime now() {

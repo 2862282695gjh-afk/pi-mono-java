@@ -4,11 +4,8 @@
 
 package com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.web;
 
-import java.util.regex.Pattern;
-
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.RuntimeApiConstants;
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.error.RuntimeApiException;
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.event.RuntimeEventQueryService;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.event.RuntimeEventService;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.event.RuntimeSseDispatcher;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.result.ResultBeanAdapter;
@@ -16,7 +13,6 @@ import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.vo.UserEve
 
 import org.springframework.http.CacheControl;
 import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -40,17 +36,21 @@ import jakarta.validation.Valid;
 @RestController
 @RequestMapping(RuntimeApiConstants.BASE_PATH + "/sessions/{session_id}/events")
 public class RuntimeEventController {
-    private static final Pattern SESSION_ID = Pattern.compile(RuntimeApiConstants.SESSION_ID_PATTERN);
-
     private final RuntimeEventService service;
+
+    private final RuntimeEventQueryService queryService;
 
     private final ResultBeanAdapter resultBeanAdapter;
 
     private final RuntimeSseDispatcher sseDispatcher;
 
     public RuntimeEventController(
-            RuntimeEventService service, ResultBeanAdapter resultBeanAdapter, RuntimeSseDispatcher sseDispatcher) {
+            RuntimeEventService service,
+            RuntimeEventQueryService queryService,
+            ResultBeanAdapter resultBeanAdapter,
+            RuntimeSseDispatcher sseDispatcher) {
         this.service = service;
+        this.queryService = queryService;
         this.resultBeanAdapter = resultBeanAdapter;
         this.sseDispatcher = sseDispatcher;
     }
@@ -60,9 +60,9 @@ public class RuntimeEventController {
             @PathVariable("session_id") String sessionId,
             @Valid @RequestBody UserEventRequestVO body,
             HttpServletRequest request) {
-        requireSessionId(sessionId);
+        RuntimeIdentifierValidator.requireSessionId(sessionId);
         SseEmitter emitter = new SseEmitter(0L);
-        var events = service.submit(sessionId, body, RuntimeRequestContext.chinese(request));
+        var events = service.submit(sessionId, body, RuntimeRequestContext.locale(request));
         emitter.onCompletion(events::detach);
         emitter.onTimeout(events::detach);
         emitter.onError(error -> events.detach());
@@ -79,17 +79,11 @@ public class RuntimeEventController {
             @RequestParam(required = false) String limit,
             @RequestParam(required = false) String page,
             HttpServletRequest request) {
-        requireSessionId(sessionId);
-        var result = service.list(sessionId, limit, page);
+        RuntimeIdentifierValidator.requireSessionId(sessionId);
+        var result = queryService.list(sessionId, limit, page);
         return ResponseEntity.ok()
                 .cacheControl(CacheControl.noStore())
                 .header(HttpHeaders.CONTENT_LANGUAGE, RuntimeRequestContext.language(request))
                 .body(resultBeanAdapter.normal(result));
-    }
-
-    private static void requireSessionId(String sessionId) {
-        if (!SESSION_ID.matcher(sessionId).matches()) {
-            throw new RuntimeApiException(HttpStatus.BAD_REQUEST, RuntimeErrorCode.INVALID_SESSION_ID);
-        }
     }
 }

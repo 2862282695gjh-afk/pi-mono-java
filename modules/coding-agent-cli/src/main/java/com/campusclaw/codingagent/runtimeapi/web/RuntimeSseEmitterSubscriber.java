@@ -10,6 +10,8 @@ import java.io.UncheckedIOException;
 import com.campusclaw.codingagent.runtimeapi.event.RuntimeEventSubscriber;
 import com.campusclaw.codingagent.runtimeapi.vo.RuntimeSseEventVO;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 /**
@@ -19,6 +21,8 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
  * @since [br_eCampusCore 25.1.0_Next]
  */
 public class RuntimeSseEmitterSubscriber implements RuntimeEventSubscriber {
+    private static final Logger log = LoggerFactory.getLogger(RuntimeSseEmitterSubscriber.class);
+
     private final SseEmitter emitter;
 
     public RuntimeSseEmitterSubscriber(SseEmitter emitter) {
@@ -47,6 +51,7 @@ public class RuntimeSseEmitterSubscriber implements RuntimeEventSubscriber {
 
     @Override
     public void onError(Throwable error) {
+        log.debug("Runtime SSE client disconnected while events were being written", error);
         emitter.complete();
     }
 

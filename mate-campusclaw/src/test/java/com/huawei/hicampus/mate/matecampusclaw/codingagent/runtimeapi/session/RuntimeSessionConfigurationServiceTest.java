@@ -40,8 +40,6 @@ import com.fasterxml.jackson.databind.node.TextNode;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import jakarta.validation.Validation;
-
 /**
  * Session 模型与深度思考配置状态机测试。
  *
@@ -72,14 +70,14 @@ class RuntimeSessionConfigurationServiceTest {
         modelManager = mock(RuntimeModelManager.class);
         etagFactory = new SessionEtagFactory();
         snapshot = new AgentDirectorySnapshotDTO(
-                AGENT_ID, "model-a", List.of("model-a", "model-b"), Path.of("/runtime/agent"));
+                AGENT_ID, "model-a", List.of("model-a", "model-b"), Path.of("/runtime/agent/.campusclaw"));
         when(directoryResolver.resolve(AGENT_ID)).thenReturn(snapshot);
         service = new RuntimeSessionConfigurationService(
                 repository,
                 directoryResolver,
                 modelManager,
                 etagFactory,
-                Validation.buildDefaultValidatorFactory().getValidator(),
+                new RuntimeSessionResponseAssembler(etagFactory),
                 Clock.fixed(Instant.parse("2026-08-18T02:00:00Z"), ZoneOffset.UTC));
     }
 

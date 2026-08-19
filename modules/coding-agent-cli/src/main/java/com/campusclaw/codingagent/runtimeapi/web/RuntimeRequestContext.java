@@ -4,6 +4,8 @@
 
 package com.campusclaw.codingagent.runtimeapi.web;
 
+import java.util.Locale;
+
 import com.campusclaw.codingagent.runtimeapi.auth.CallerAuthContext;
 
 import jakarta.servlet.http.HttpServletRequest;
@@ -28,9 +30,15 @@ public final class RuntimeRequestContext {
     }
 
     public static boolean chinese(HttpServletRequest request) {
+        return Locale.SIMPLIFIED_CHINESE.equals(locale(request));
+    }
+
+    public static Locale locale(HttpServletRequest request) {
         String language = request.getHeader("Accept-Language");
-        return language != null
-                && language.trim().toLowerCase(java.util.Locale.ROOT).startsWith("zh-cn");
+        if (language != null && language.trim().toLowerCase(Locale.ROOT).startsWith("zh-cn")) {
+            return Locale.SIMPLIFIED_CHINESE;
+        }
+        return Locale.US;
     }
 
     public static String language(HttpServletRequest request) {
