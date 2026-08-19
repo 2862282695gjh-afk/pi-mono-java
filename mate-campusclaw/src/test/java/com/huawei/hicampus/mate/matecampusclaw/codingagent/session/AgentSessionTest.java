@@ -16,6 +16,7 @@ import static org.mockito.Mockito.anyList;
 import static org.mockito.Mockito.anyString;
 import static org.mockito.Mockito.atLeast;
 import static org.mockito.Mockito.clearInvocations;
+import static org.mockito.Mockito.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -47,7 +48,12 @@ import com.huawei.hicampus.mate.matecampusclaw.ai.types.Provider;
 import com.huawei.hicampus.mate.matecampusclaw.ai.types.TextContent;
 import com.huawei.hicampus.mate.matecampusclaw.ai.types.ToolCall;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.prompt.SystemPromptBuilder;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtime.AgentBindingResolver.ChildAgentSummary;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtime.AgentRuntimeManager;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtime.DelegationState;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtime.DelegationWiring;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtime.LocalAgentDispatcher;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtime.MateServiceClient.AgentReference;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtime.MateServiceClient.AgentRuntime;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtime.MateServiceClient.BoundTool;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtime.MateServiceClient.SkillInfo;
@@ -58,6 +64,7 @@ import com.huawei.hicampus.mate.matecampusclaw.codingagent.skill.SkillLoader;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.catalog.ToolCatalog;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.catalog.ToolRefreshRequest;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.catalog.ToolSelection;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.delegation.InvokeAgentTool;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.skill.ActivateSkillTool;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -433,15 +440,136 @@ class AgentSessionTest {
                     List.of("claude-sonnet-4-20250514"),
                     List.of(new SkillReference("skill-1", "1")),
                     List.of(bashBinding),
+                    List.of(),
                     List.of("Agent"),
                     "Agent",
+                    null,
                     "agent-a",
                     "agent-a",
                     "Prompt",
                     List.of(),
-                    "1",
-                    null);
+                    "1");
             return new PreparedAgentRuntime("agent-a", tempDir, metadata, List.of(skill));
+        }
+    }
+
+    // -------------------------------------------------------------------
+    // 父到子委派
+    // -------------------------------------------------------------------
+
+    @Nested
+    class Delegation {
+
+        @Test
+        @SuppressWarnings({"rawtypes", "unchecked"})
+        void exposesInvokeAgentWithCandidateDescriptionOnlyWhenCandidatesExist() throws Exception {
+            tools = List.of(stubTool, new ActivateSkillTool(), new InvokeAgentTool());
+            session = createSession();
+            writeSkill("skill-a", "Calendar workflow");
+            LocalAgentDispatcher dispatcher = mock(LocalAgentDispatcher.class);
+            when(dispatcher.resolveCandidates(any(), any()))
+                    .thenReturn(
+                            List.of(new ChildAgentSummary("agent-b", "field-ops", "Field Ops", "On-site work", "2.0")));
+            when(promptBuilder.build(any())).thenReturn("prompt");
+            session.setAgentRuntime(preparedRuntime(), mock(AgentRuntimeManager.class));
+            session.setDelegationState(DelegationState.entry(dispatcher, "conv", null, wiring()));
+            session.initialize(config());
+
+            var promptCaptor = ArgumentCaptor.forClass(com.huawei.hicampus.mate.matecampusclaw.codingagent.prompt.SystemPromptConfig.class);
+            verify(promptBuilder).build(promptCaptor.capture());
+            List<AgentTool> exposed = promptCaptor.getValue().tools();
+            List<String> names = exposed.stream().map(AgentTool::name).toList();
+            assertTrue(names.contains(ActivateSkillTool.NAME));
+            assertTrue(names.contains(InvokeAgentTool.NAME));
+            AgentTool invokeAgent = exposed.stream()
+                    .filter(tool -> InvokeAgentTool.NAME.equals(tool.name()))
+                    .findFirst()
+                    .orElseThrow();
+            assertTrue(invokeAgent.description().contains("agent-b"));
+            assertTrue(invokeAgent.description().contains("On-site work"));
+        }
+
+        @Test
+        void hidesInvokeAgentWithoutDelegationState() throws Exception {
+            tools = List.of(stubTool, new ActivateSkillTool(), new InvokeAgentTool());
+            session = createSession();
+            writeSkill("skill-a", "Calendar workflow");
+            when(promptBuilder.build(any())).thenReturn("prompt");
+            session.setAgentRuntime(preparedRuntime(), mock(AgentRuntimeManager.class));
+            session.initialize(config());
+
+            var noStateCaptor = ArgumentCaptor.forClass(com.huawei.hicampus.mate.matecampusclaw.codingagent.prompt.SystemPromptConfig.class);
+            verify(promptBuilder).build(noStateCaptor.capture());
+            assertTrue(noStateCaptor.getValue().tools().stream()
+                    .noneMatch(tool -> InvokeAgentTool.NAME.equals(tool.name())));
+        }
+
+        @Test
+        @SuppressWarnings({"rawtypes", "unchecked"})
+        void delegationHookReturnsChildAnswerAsToolResult() throws Exception {
+            tools = List.of(stubTool, new ActivateSkillTool(), new InvokeAgentTool());
+            session = createSession();
+            writeSkill("skill-a", "Calendar workflow");
+            LocalAgentDispatcher dispatcher = mock(LocalAgentDispatcher.class);
+            when(dispatcher.resolveCandidates(any(), any()))
+                    .thenReturn(List.of(new ChildAgentSummary("agent-b", null, null, null, null)));
+            when(dispatcher.dispatch(any(), any(), eq("agent-b"), eq("diagnose E1001"), eq("claude-sonnet-4-20250514")))
+                    .thenReturn("child answer");
+            when(promptBuilder.build(any())).thenReturn("prompt");
+            session.setAgentRuntime(preparedRuntime(), mock(AgentRuntimeManager.class));
+            session.setDelegationState(DelegationState.entry(dispatcher, "conv", null, wiring()));
+
+            session.initialize(config());
+
+            ArgumentCaptor<AfterToolCallHandler> hookCaptor = ArgumentCaptor.forClass(AfterToolCallHandler.class);
+            verify(session.getAgent()).setAfterToolCall(hookCaptor.capture());
+            AfterToolCallResult override = hookCaptor
+                    .getValue()
+                    .handle(new AfterToolCallContext(
+                            null,
+                            new ToolCall(
+                                    "call-1",
+                                    InvokeAgentTool.NAME,
+                                    Map.of("agentId", "agent-b", "task", "diagnose E1001")),
+                            Map.of("agentId", "agent-b", "task", "diagnose E1001"),
+                            new AgentToolResult(List.of(), null),
+                            false,
+                            null));
+
+            assertNull(override.isError());
+            TextContent answer = (TextContent) override.content().getFirst();
+            assertEquals("child answer", answer.text());
+        }
+
+        private DelegationWiring wiring() {
+            return new DelegationWiring(
+                    piAiService, modelRegistry, promptBuilder, skillLoader, skillExpander, tools, null, null);
+        }
+
+        private void writeSkill(String name, String description) throws IOException {
+            Path skillDir = tempDir.resolve(".campusclaw/skills").resolve(name);
+            Files.createDirectories(skillDir);
+            Files.writeString(
+                    skillDir.resolve("SKILL.md"),
+                    "---\nname: " + name + "\ndescription: " + description + "\n---\nUse the calendar tool.\n");
+        }
+
+        private PreparedAgentRuntime preparedRuntime() {
+            BoundTool bashBinding = new BoundTool("bash", "bash", "bash", "true", "bash", "allow", "local", "1");
+            AgentRuntime metadata = new AgentRuntime(
+                    List.of("claude-sonnet-4-20250514"),
+                    List.of(),
+                    List.of(bashBinding),
+                    List.of(new AgentReference("agent-b", "field-ops", "Field Ops", "On-site work", null)),
+                    List.of("Agent"),
+                    "Agent",
+                    Boolean.TRUE,
+                    "agent-a",
+                    "agent-a",
+                    "Agent system prompt",
+                    List.of("campus"),
+                    "1");
+            return new PreparedAgentRuntime("agent-a", tempDir, metadata, List.of());
         }
     }
 

@@ -1,6 +1,6 @@
 # Agent 与 Skill 本地优先运行时设计
 
-> 文档版本：2.0.0
+> 文档版本：2.1.0
 >
 > 更新日期：2026-08-19
 >
@@ -10,15 +10,15 @@
 
 本次整合分析了两个源码基线：
 
-- HTTP V1 分支基线：`5226992687712e5a85bdeef09fe51784ca443d12`
-- 合入的 `origin/main` 基线：`e5c1af6ec8cc60632ac3e1b8ce8fc8d6a077e77e`
+- HTTP V1 分支基线：`1fae0a70ac0fd8c64d40d0c7dde0518f1cd9f28b`
+- 合入的 `origin/main` 基线：`5f4d81752acacaa219a92aa0b0b6a93427802e17`
 
 主要源码证据：
 
-- `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/cli/CampusClawCommand.java`：`--agent-id`、`call()`、`createSession()`
+- `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/cli/CampusClawCommand.java`：`--agent-id`、`call()`、`createAgentSession()`、`configureDelegation()`
 - `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtime/AgentRuntimeManager.java`：`prepare()`、`prepareCached()`、`materialize()`
 - `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtime/MateServiceClient.java`：GetAgentRuntime 与 querySkillInfo 客户端
-- `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/session/AgentSession.java`：`setAgentRuntime()`、`initialize()` 和 Skill 激活
+- `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/session/AgentSession.java`：`setAgentRuntime()`、`setDelegationState()`、`initialize()` 和 Skill/子 Agent 激活
 - `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/tool/catalog/DefaultToolCatalog.java`：本地可执行工具目录
 - `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/agent/FileAgentDirectoryResolver.java`：HTTP V1 的只读 Agent 目录解析
 
@@ -52,7 +52,8 @@ HTTP V1 与 CLI 当前使用不同的受管目录结构，是产品约束而非�
 4. 快照完整时直接返回，不访问 CampusMateService。
 5. 快照缺失或无法加载时，调用 GetAgentRuntime，并针对每个直接绑定 Skill 调用 querySkillInfo。
 6. Manager 原地物化 Agent 元数据、模型设置、系统提示词、Skill 文件和 `references/tools.json`，随后重新加载为不可变 `PreparedAgentRuntime`。
-7. CLI 以 Agent 根目录刷新 `ToolCatalog`，把 prepared runtime 注入 `AgentSession`，再用派生的 `SessionConfig` 初始化交互或单次执行。
+7. CLI 以 Agent 根目录刷新 `ToolCatalog`，把 prepared runtime 注入 `AgentSession`；当 dispatcher 可用时同时安装委派状态，再用派生的 `SessionConfig` 初始化交互或单次执行。
+8. 父快照存在有效直接 `bindingAgents` 时，会话按 [Agent 委派设计](agent-delegation.md) 有条件暴露 `invoke_agent`；普通 CLI 和 HTTP V1 不进入该链路。
 
 ## 4. 本地目录与数据来源
 
@@ -158,7 +159,8 @@ campusmate:
 - `bindingSkills` 单对象/数组和 `result` 包装兼容；
 - Skill 工具写入、托管 Skill 隔离、`activate_skill` 激活及执行结束恢复；
 - `ToolCatalog` 的 Spring/Extension 发现、工具筛选和刷新；
-- `--agent-id` CLI 与 Spring Bean 装配。
+- `--agent-id` CLI 与 Spring Bean 装配；
+- 子 Agent 候选过滤、每跳校验、深度上限和瞬态会话回答回填。
 
 未覆盖的加固项与第 7 节一致，不得因单测通过而宣称已实现。
 
@@ -166,5 +168,6 @@ campusmate:
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 2.1.0 | 2026-08-19 | 合入 Agent 委派能力并把旧 ServerMode 接线迁移到显式托管 CLI；HTTP V1 仍保持独立目录与执行链。 |
 | 2.0.0 | 2026-08-19 | 合并 HTTP V1 后收口为 CLI 专用托管 Agent 物化；删除旧 REST/WebSocket/SessionPool 描述；按实际代码重写缓存与安全语义；改用 PlantUML。 |
 | 1.x | 2026-08-18 以前 | 历史设计同时描述 CLI、旧 REST、ServerMode 和 WebSocket，已废弃。 |

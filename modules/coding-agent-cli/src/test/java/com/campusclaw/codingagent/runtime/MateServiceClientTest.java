@@ -115,6 +115,73 @@ class MateServiceClientTest {
     }
 
     @Test
+    void readsBindingAgentsArrayWithDescriptionAndEnabledFlag() throws Exception {
+        server.enqueue(
+                new MockResponse()
+                        .setHeader("Content-Type", "application/json")
+                        .setBody(
+                                """
+                        {
+                          "id": "agent-a",
+                          "name": "Agent A",
+                          "bindingAgents": [
+                            {
+                              "id": "agent-b",
+                              "name": "field-ops",
+                              "displayName": "Field Ops Agent",
+                              "description": "Handles on-site device operations",
+                              "version": "2.0.0"
+                            },
+                            {
+                              "id": "agent-c",
+                              "name": "reporting"
+                            }
+                          ],
+                          "enabled": false
+                        }
+                        """));
+
+        var runtime = client.getAgentRuntime("agent-a");
+
+        assertEquals(2, runtime.bindingAgents().size());
+        assertEquals("agent-b", runtime.bindingAgents().getFirst().id());
+        assertEquals(
+                "Handles on-site device operations",
+                runtime.bindingAgents().getFirst().description());
+        assertEquals("2.0.0", runtime.bindingAgents().getFirst().version());
+        assertEquals("agent-c", runtime.bindingAgents().get(1).id());
+        assertEquals(Boolean.FALSE, runtime.enabled());
+    }
+
+    @Test
+    void acceptsSingularBindingAgentAndDefaultsEnabledToTrue() throws Exception {
+        server.enqueue(
+                new MockResponse()
+                        .setHeader("Content-Type", "application/json")
+                        .setBody(
+                                """
+                        {
+                          "id": "agent-a",
+                          "name": "Agent A",
+                          "bindingAgents": {
+                            "id": "agent-b",
+                            "name": "field-ops",
+                            "description": "Handles on-site device operations"
+                          }
+                        }
+                        """));
+
+        var runtime = client.getAgentRuntime("agent-a");
+
+        assertEquals(1, runtime.bindingAgents().size());
+        assertEquals("agent-b", runtime.bindingAgents().getFirst().id());
+        assertEquals(
+                "Handles on-site device operations",
+                runtime.bindingAgents().getFirst().description());
+        assertEquals(Boolean.TRUE, runtime.enabled());
+    }
+
+    @Test
     void queriesCompleteSkillInfoAndAcceptsBothVersionFieldNames() throws Exception {
         server.enqueue(
                 new MockResponse().setHeader("Content-Type", "application/json").setBody(skillInfoResponse()));

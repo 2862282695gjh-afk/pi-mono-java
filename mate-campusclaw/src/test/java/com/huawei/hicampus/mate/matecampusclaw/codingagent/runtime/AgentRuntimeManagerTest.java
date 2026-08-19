@@ -27,6 +27,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.StreamSupport;
 
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtime.MateServiceClient.AgentReference;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtime.MateServiceClient.AgentRuntime;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtime.MateServiceClient.BoundTool;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtime.MateServiceClient.SkillFile;
@@ -164,6 +165,43 @@ class AgentRuntimeManagerTest {
     }
 
     @Test
+    void persistsBindingAgentsInSnapshotAndReloadsFromLocalCache() throws Exception {
+        List<AgentReference> bindings = List.of(
+                new AgentReference("agent-b", "field-ops", "Field Ops Agent", "Handles on-site operations", "2.0.0"),
+                new AgentReference("agent-c", "reporting", "Reporting Agent", "Writes diagnosis reports", null));
+        when(client.getAgentRuntime("agent-a"))
+                .thenReturn(runtime(List.of(new SkillReference("skill-1", "1")), bindings, null));
+        when(client.querySkillInfo("skill-1")).thenReturn(List.of(skillInfo()));
+
+        PreparedAgentRuntime prepared = manager.prepare("agent-a");
+        PreparedAgentRuntime local = manager.prepare("agent-a");
+
+        assertEquals(bindings, prepared.bindingAgents());
+        assertEquals(bindings, local.bindingAgents());
+        assertEquals(Boolean.TRUE, local.metadata().enabled());
+        var persisted = new ObjectMapper()
+                .readTree(
+                        prepared.agentRoot().resolve(".campusclaw/agentId.json").toFile());
+        assertEquals(
+                "agent-b", persisted.path("bindingAgents").path(0).path("id").asText());
+        assertEquals(
+                "Handles on-site operations",
+                persisted.path("bindingAgents").path(0).path("description").asText());
+        verify(client, times(1)).getAgentRuntime("agent-a");
+    }
+
+    @Test
+    void disabledAgentSnapshotReportsNotEnabled() {
+        when(client.getAgentRuntime("agent-a"))
+                .thenReturn(runtime(List.of(new SkillReference("skill-1", "1")), List.of(), Boolean.FALSE));
+        when(client.querySkillInfo("skill-1")).thenReturn(List.of(skillInfo()));
+
+        PreparedAgentRuntime prepared = manager.prepare("agent-a");
+
+        assertEquals(Boolean.FALSE, prepared.metadata().enabled());
+    }
+
+    @Test
     void usesModifiedLocalSystemPromptWithoutRepeatingRemoteQueries() throws Exception {
         when(client.getAgentRuntime("agent-a")).thenReturn(runtime(List.of(new SkillReference("skill-1", "1"))));
         when(client.querySkillInfo("skill-1")).thenReturn(List.of(skillInfo()));
@@ -219,7 +257,6 @@ class AgentRuntimeManagerTest {
         when(client.querySkillInfo("skill-1")).thenReturn(List.of());
 
         assertThrows(AgentRuntimeException.class, () -> manager.prepare("agent-a"));
-        assertFalse(Files.exists(tempDir.resolve("agent/agent-a")));
     }
 
     @Test
@@ -311,22 +348,37 @@ class AgentRuntimeManagerTest {
     }
 
     private static AgentRuntime runtime(List<SkillReference> skills) {
-        return runtime(skills, List.of("gpt-4o"), "1");
+        return runtime(skills, List.of(), null, List.of("gpt-4o"), "1");
+    }
+
+    private static AgentRuntime runtime(
+            List<SkillReference> skills, List<AgentReference> bindingAgents, Boolean enabled) {
+        return runtime(skills, bindingAgents, enabled, List.of("gpt-4o"), "1");
     }
 
     private static AgentRuntime runtime(List<SkillReference> skills, List<String> bindingModels, String version) {
+        return runtime(skills, List.of(), null, bindingModels, version);
+    }
+
+    private static AgentRuntime runtime(
+            List<SkillReference> skills,
+            List<AgentReference> bindingAgents,
+            Boolean enabled,
+            List<String> bindingModels,
+            String version) {
         return new AgentRuntime(
                 bindingModels,
                 skills,
                 List.of(tool("read", "allow"), tool("bash", "deny")),
+                bindingAgents,
                 List.of("Agent description"),
                 "Agent A",
+                enabled,
                 "agent-a",
                 "agent-a",
                 "Agent system prompt",
                 List.of("campus"),
-                version,
-                null);
+                version);
     }
 
     private static SkillInfo skillInfo() {

@@ -34,6 +34,9 @@ import com.campusclaw.codingagent.mode.OneShotMode;
 import com.campusclaw.codingagent.mode.rpc.RpcMode;
 import com.campusclaw.codingagent.prompt.SystemPromptBuilder;
 import com.campusclaw.codingagent.runtime.AgentRuntimeManager;
+import com.campusclaw.codingagent.runtime.DelegationState;
+import com.campusclaw.codingagent.runtime.DelegationWiring;
+import com.campusclaw.codingagent.runtime.LocalAgentDispatcher;
 import com.campusclaw.codingagent.runtime.PreparedAgentRuntime;
 import com.campusclaw.codingagent.session.AgentSession;
 import com.campusclaw.codingagent.session.SessionConfig;
@@ -579,18 +582,38 @@ public class CampusClawCommand implements Callable<Integer> {
             boolean useSandbox,
             PreparedAgentRuntime preparedRuntime,
             AgentRuntimeManager runtimeManager) {
-        AgentSession session = new AgentSession(
-                piAiService,
-                modelRegistry,
-                promptBuilder,
-                new SkillLoader(sandboxSkillParser, useSandbox),
-                new SkillExpander(sandboxSkillParser, useSandbox),
-                effectiveTools);
+        SkillLoader skillLoader = new SkillLoader(sandboxSkillParser, useSandbox);
+        SkillExpander skillExpander = new SkillExpander(sandboxSkillParser, useSandbox);
+        AgentSession session =
+                new AgentSession(piAiService, modelRegistry, promptBuilder, skillLoader, skillExpander, effectiveTools);
         session.setToolCatalog(toolCatalog, toolSelection);
         if (preparedRuntime != null) {
             session.setAgentRuntime(preparedRuntime, runtimeManager);
+            configureDelegation(session, effectiveTools, toolSelection, skillLoader, skillExpander);
         }
         return session;
+    }
+
+    private void configureDelegation(
+            AgentSession session,
+            List<AgentTool> effectiveTools,
+            ToolSelection toolSelection,
+            SkillLoader skillLoader,
+            SkillExpander skillExpander) {
+        LocalAgentDispatcher dispatcher = resolveLocalAgentDispatcher();
+        if (dispatcher == null) {
+            return;
+        }
+        DelegationWiring wiring = new DelegationWiring(
+                piAiService,
+                modelRegistry,
+                promptBuilder,
+                skillLoader,
+                skillExpander,
+                effectiveTools,
+                toolCatalog,
+                toolSelection);
+        session.setDelegationState(DelegationState.entry(dispatcher, null, null, wiring));
     }
 
     private AgentRuntimeManager resolveAgentRuntimeManager() {
@@ -601,6 +624,18 @@ public class CampusClawCommand implements Callable<Integer> {
             return applicationContext.getBean(AgentRuntimeManager.class);
         } catch (org.springframework.beans.BeansException e) {
             log.warn("AgentRuntimeManager bean not available; managed Agents are disabled", e);
+            return null;
+        }
+    }
+
+    private LocalAgentDispatcher resolveLocalAgentDispatcher() {
+        if (applicationContext == null) {
+            return null;
+        }
+        try {
+            return applicationContext.getBean(LocalAgentDispatcher.class);
+        } catch (org.springframework.beans.BeansException e) {
+            log.warn("LocalAgentDispatcher bean not available; Agent delegation is disabled", e);
             return null;
         }
     }

@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ADR-0014 · 父 Agent 调用子 Agent 的瞬态执行链路</title>
+  <style>
+    :root{--fg:#1a1a1a;--dim:#666;--accent:#2563eb;--accepted:#15803d;--bg:#fff;--card:#f6f7f9}
+    body{font:15px/1.6 -apple-system,Segoe UI,Roboto,"PingFang SC",sans-serif;color:var(--fg);
+         background:var(--bg);max-width:820px;margin:2rem auto;padding:0 1.2rem}
+    h1{font-size:1.5rem;margin:.2rem 0}
+    .meta{color:var(--dim);font-size:.9rem;margin-bottom:1.2rem}
+    .badge{display:inline-block;padding:.1rem .6rem;border-radius:1rem;font-size:.8rem;background:var(--accepted);color:#fff}
+    section{margin:1.4rem 0}
+    h2{font-size:1.05rem;border-bottom:1px solid #eee;padding-bottom:.3rem}
+    a{color:var(--accent)} code{background:var(--card);padding:.1rem .3rem;border-radius:.3rem}
+  </style>
+</head>
+<body>
+  <h1>ADR-0014 · 父 Agent 调用子 Agent 的瞬态执行链路</h1>
+  <div class="meta">Status: <span class="badge">Accepted</span> · Date: 2026-08-18 · Amended: 2026-08-19 ·
+    设计文档: <a href="../designs/agent-delegation.md">agent-delegation</a> ·
+    上游: <a href="0012-agent-delegation-static-validation.html">ADR-0012</a> ·
+    上游设计: mainagent-subagent-design.md §5–§6</div>
+
+  <section><h2>Context</h2>
+    <p>ADR-0012 落地了委派的静态校验组件（<code>AgentBindingResolver</code> / <code>DelegationContext</code> / 授权与元数据端口），但 resolver 尚无调用方——模型无法实际把任务交给子 Agent。本 PR 补齐执行链路：模型调用 <code>invoke_agent(agentId, task)</code> 后，进程内完成候选发现 → 每跳校验 → 瞬态子会话执行 → 子回答回填父循环。上游设计要求：候选只来自父直接 <code>bindingAgents</code>、深度硬上限 2、每跳 validate-before-execute、子 Agent 瞬态执行不共享状态。</p>
+  </section>
+
+  <section><h2>Options considered</h2>
+    <ul>
+      <li><strong>常驻子 Agent worker 池</strong><br>Pro：复用已初始化的会话与 SkillRegistry，单次委派延迟低。<br>Con：子 Agent 状态跨调用存活，深度/ancestry 语义难以隔离；快照热更新与池内状态一致性复杂；本地 CLI 单用户场景收益小。Rejected。</li>
+      <li><strong>子 Agent 作为独立进程 / 远程服务调用</strong><br>Pro：故障隔离最强。<br>Con：需要部署形态与传输协议（属后续 ToolClient/组④ 范畴）；当前阶段进程内直连即可满足。Rejected（现阶段）。</li>
+      <li><strong>进程内瞬态执行：每次调用新建 Agent/AgentState/tools，用完即弃</strong><br>Pro：无共享状态天然并发安全；深度封顶直接编码进 <code>DelegationContext</code> 构造不变量；与现有 <code>AgentSession</code> 基建零新增运行时设施。<br>Con：每跳有会话构建开销（本地 prepare 走快照，毫秒级，可接受）。Chosen。</li>
+    </ul>
+    <p><strong>选择理由：</strong>上游设计 §6 明确 transient 执行模型；本地 CLI 试点阶段吞吐要求低，正确性与可审计性优先。</p>
+  </section>
+
+  <section><h2>Decision</h2>
+    <ul>
+      <li><strong>组件分层：</strong><code>InvokeAgentTool</code>（无状态 <code>ControlTool</code>，仅 ack + 候选描述装饰）→ <code>LocalAgentDispatcher</code>（候选解析、每跳 validate、context 构造、审计日志、prepare）→ <code>TransientAgentRunner</code>（瞬态会话执行、末条 AssistantMessage 提取）。</li>
+      <li><strong>执行副作用放在会话 after-tool-call 钩子</strong>（与 <code>activate_skill</code> 同构）：工具本体无状态可被 Spring 目录发现；真实派发由 <code>AgentSession.handleDelegationToolCall</code> 完成并覆盖工具结果内容。</li>
+      <li><strong>暴露三重门：</strong><code>delegationState != null</code> ∧ resolver 候选非空 ∧ 本地 ToolSelection 可见；深度 2 的子会话候选恒空，自然不暴露 <code>invoke_agent</code>。</li>
+      <li><strong>每跳重新 validate</strong>（§5.2）：dispatcher 不信任暴露时的候选快照；<code>Rejected</code> 转 <code>AgentRuntimeException</code> → 父侧 isError 工具结果。</li>
+      <li><strong>瞬态子会话：</strong><code>runtimeManager.sessionConfig</code> 令子默认模型优先、入口会话模型兜底；子 cwd = 其 agentRoot；task 即完整用户提示；子系统提示来自其物化 systemPrompt.md。</li>
+      <li><strong>审计暂为结构化英文 INFO 日志</strong>（parent/target/ancestry/depth/invocationId/conversationId）；正式审计事件流与 PendingDelegation 续接属后续 PR（组⑤）。</li>
+      <li><strong>入口接线（显式托管 CLI）：</strong>HTTP V1 架构删除旧 <code>ServerMode/SessionPool</code> 后，<code>CampusClawCommand</code> 仅在显式 <code>cli --agent-id</code> 已准备托管运行时且 dispatcher bean 可用时注入 <code>DelegationState.entry(...)</code>；bean 缺失仅降级不报错。普通 CLI 和独立 <code>.campusagent</code> HTTP V1 均不启用该物化链。</li>
+      <li><strong>本地元数据源：</strong><code>LocalChildAgentMetadataSource</code> 本地快照优先、远程只读回退、双失败 fail closed（<code>UNKNOWN_CHILD</code>）。</li>
+    </ul>
+  </section>
+
+  <section><h2>Consequences</h2>
+    <ul>
+      <li><strong>正面：</strong>父 Agent 可按设计语义把自包含任务交给直接绑定的子 Agent，两级委派链（1→2→3 型拓扑）端到端可用；所有拒绝路径带原因回传模型可自行改道；无新增常驻线程/池。</li>
+      <li><strong>负面：</strong>每跳重建会话有毫秒级开销（可接受）；子回答提取只认末条 AssistantMessage 文本，多模态输出仅取文本部分；同步 <code>join()</code> 占用父循环线程——异步化与 PendingDelegation 续接（组⑤）留待后续。</li>
+      <li><strong>后续：</strong>ToolClient/权限公式收敛（组④）、审计事件流与续接（组⑤）按 roadmap 独立 PR；租户身份贯通后替换 <code>PermitAllAgentAuthorizationPolicy</code>。</li>
+    </ul>
+  </section>
+
+  <section><h2>Related</h2>
+    <ul>
+      <li><a href="../designs/agent-delegation.md">设计文档：agent-delegation</a></li>
+      <li><a href="0012-agent-delegation-static-validation.html">ADR-0012：Agent 委派静态校验与授权端口</a>（本 ADR 的校验基座）</li>
+      <li><a href="0011-agent-skill-runtime-resolution.html">ADR-0011：托管 Agent 本地优先解析</a>（prepare/快照语义）</li>
+    </ul>
+  </section>
+</body>
+</html>

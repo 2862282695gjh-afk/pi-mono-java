@@ -1,9 +1,9 @@
 @startuml managed_agent_cli_flow
 title Managed Agent CLI Runtime Flow
 
-' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/cli/CampusClawCommand.java (call, createSession)
+' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/cli/CampusClawCommand.java (call, createAgentSession, configureDelegation)
 ' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtime/AgentRuntimeManager.java (prepare, materialize)
-' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/session/AgentSession.java (initialize, setAgentRuntime)
+' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/session/AgentSession.java (initialize, setAgentRuntime, setDelegationState)
 ' Observed behavior: only the explicit CLI --agent-id path uses the CampusMate materializer.
 ' Architecture change: the public HTTP V1 runtime uses its own read-only .campusagent directory contract.
 
@@ -13,6 +13,7 @@ participant "AgentRuntimeManager" as Runtime
 participant "Local Agent Cache" as Cache
 participant "CampusMateService" as Mate
 participant "ToolCatalog" as Catalog
+participant "LocalAgentDispatcher" as Dispatcher
 participant "AgentSession" as Session
 
 User -> CLI: cli --agent-id agentId
@@ -36,6 +37,10 @@ end
 Runtime --> CLI: prepared runtime
 CLI -> Catalog: refresh(agentRoot)
 CLI -> Session: setAgentRuntime(runtime, manager)
+opt dispatcher bean is available
+  CLI -> Dispatcher: reuse managed runtime dispatcher
+  CLI -> Session: setDelegationState(entry)
+end
 CLI -> Session: initialize(derived SessionConfig)
 Session -> Cache: load system prompt and Skills
 Session -> Catalog: resolve allowed local tools
