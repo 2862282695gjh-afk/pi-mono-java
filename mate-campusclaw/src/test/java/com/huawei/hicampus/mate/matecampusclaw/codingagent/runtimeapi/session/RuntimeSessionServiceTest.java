@@ -24,6 +24,7 @@ import java.util.Optional;
 import com.huawei.hicampus.mate.matecampusclaw.ai.types.Model;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.agent.AgentDirectoryResolver;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.agent.AgentDirectorySnapshotDTO;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.agent.RuntimeAgentPromptLoader;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
@@ -51,6 +52,8 @@ class RuntimeSessionServiceTest {
 
     private RuntimeModelManager modelManager;
 
+    private RuntimeAgentPromptLoader promptLoader;
+
     private RuntimeSessionService service;
 
     @BeforeEach
@@ -58,11 +61,13 @@ class RuntimeSessionServiceTest {
         repository = mock(RuntimeSessionRepository.class);
         directoryResolver = mock(AgentDirectoryResolver.class);
         modelManager = mock(RuntimeModelManager.class);
+        promptLoader = mock(RuntimeAgentPromptLoader.class);
         Clock clock = Clock.fixed(Instant.parse("2026-08-18T00:00:00Z"), ZoneOffset.UTC);
         service = new RuntimeSessionService(
                 repository,
                 directoryResolver,
                 modelManager,
+                promptLoader,
                 () -> SESSION_ID,
                 new SessionEtagFactory(),
                 clock);
@@ -81,8 +86,9 @@ class RuntimeSessionServiceTest {
         assertThat(view.resource().getSessionId()).isEqualTo(SESSION_ID);
         assertThat(view.resource().getState()).isEqualTo("idle");
         assertThat(view.resource().isThinking()).isFalse();
-        verify(repository).create(org.mockito.ArgumentMatchers.argThat(session ->
-                SESSION_ID.equals(session.getId())
+        verify(promptLoader).load(snapshot.agentDirectory());
+        verify(repository)
+                .create(org.mockito.ArgumentMatchers.argThat(session -> SESSION_ID.equals(session.getId())
                         && AGENT_ID.equals(session.getAgentId())
                         && snapshot.agentDirectory().toString().equals(session.getCwd())));
     }
@@ -137,7 +143,10 @@ class RuntimeSessionServiceTest {
 
     private static AgentDirectorySnapshotDTO snapshot() {
         return new AgentDirectorySnapshotDTO(
-                AGENT_ID, "model-default", List.of("model-default"), Path.of("/runtime/agents").resolve(AGENT_ID));
+                AGENT_ID,
+                "model-default",
+                List.of("model-default"),
+                Path.of("/runtime/agents").resolve(AGENT_ID));
     }
 
     private static RuntimeSessionDTO session() {

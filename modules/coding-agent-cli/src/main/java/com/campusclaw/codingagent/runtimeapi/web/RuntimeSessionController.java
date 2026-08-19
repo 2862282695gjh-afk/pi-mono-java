@@ -49,19 +49,18 @@ public class RuntimeSessionController {
     }
 
     @PostMapping("/agents/{agent_id}/sessions")
-    public ResponseEntity<Object> create(
-            @PathVariable("agent_id") String agentId, HttpServletRequest request) {
+    public ResponseEntity<Object> create(@PathVariable("agent_id") String agentId, HttpServletRequest request) {
         requireIdentifier(agentId, AGENT_ID, RuntimeErrorCode.INVALID_AGENT_ID);
         var view = service.create(agentId);
-        URI location = URI.create(RuntimeApiConstants.BASE_PATH + "/sessions/" + view.resource().getSessionId());
+        URI location = URI.create(
+                RuntimeApiConstants.BASE_PATH + "/sessions/" + view.resource().getSessionId());
         return ResponseEntity.created(location)
                 .header(HttpHeaders.CONTENT_LANGUAGE, RuntimeRequestContext.language(request))
                 .body(resultBeanAdapter.normal(view.resource()));
     }
 
     @GetMapping("/sessions/{session_id}")
-    public ResponseEntity<Object> get(
-            @PathVariable("session_id") String sessionId, HttpServletRequest request) {
+    public ResponseEntity<Object> get(@PathVariable("session_id") String sessionId, HttpServletRequest request) {
         requireIdentifier(sessionId, SESSION_ID, RuntimeErrorCode.INVALID_SESSION_ID);
         var view = service.get(sessionId);
         return ResponseEntity.ok()

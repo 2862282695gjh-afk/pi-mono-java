@@ -75,5 +75,4 @@ public class RuntimeApiConfiguration {
     public RuntimeEntryIdGenerator randomRuntimeEntryIdGenerator() {
         return new RandomRuntimeEntryIdGenerator();
     }
-
 }

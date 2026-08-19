@@ -10,6 +10,7 @@ import java.time.ZoneOffset;
 
 import com.campusclaw.codingagent.runtimeapi.agent.AgentDirectoryResolver;
 import com.campusclaw.codingagent.runtimeapi.agent.AgentDirectorySnapshotDTO;
+import com.campusclaw.codingagent.runtimeapi.agent.RuntimeAgentPromptLoader;
 import com.campusclaw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
@@ -36,6 +37,8 @@ public class RuntimeSessionService {
 
     private final RuntimeModelManager modelManager;
 
+    private final RuntimeAgentPromptLoader promptLoader;
+
     private final SessionIdGenerator idGenerator;
 
     private final SessionEtagFactory etagFactory;
@@ -46,12 +49,14 @@ public class RuntimeSessionService {
             RuntimeSessionRepository repository,
             AgentDirectoryResolver agentDirectoryResolver,
             RuntimeModelManager modelManager,
+            RuntimeAgentPromptLoader promptLoader,
             SessionIdGenerator idGenerator,
             SessionEtagFactory etagFactory,
             Clock clock) {
         this.repository = repository;
         this.agentDirectoryResolver = agentDirectoryResolver;
         this.modelManager = modelManager;
+        this.promptLoader = promptLoader;
         this.idGenerator = idGenerator;
         this.etagFactory = etagFactory;
         this.clock = clock;
@@ -59,6 +64,7 @@ public class RuntimeSessionService {
 
     public RuntimeSessionView<CreateSessionResponseVO> create(String agentId) {
         AgentDirectorySnapshotDTO snapshot = agentDirectoryResolver.resolve(agentId);
+        promptLoader.load(snapshot.agentDirectory());
         String modelId = modelManager.resolveDefaultModel(snapshot).id();
         OffsetDateTime now = now();
         RuntimeSessionDTO session = newSession(snapshot, modelId, now);
@@ -94,8 +100,7 @@ public class RuntimeSessionService {
         }
     }
 
-    private RuntimeSessionDTO newSession(
-            AgentDirectorySnapshotDTO snapshot, String modelId, OffsetDateTime now) {
+    private RuntimeSessionDTO newSession(AgentDirectorySnapshotDTO snapshot, String modelId, OffsetDateTime now) {
         RuntimeSessionDTO session = new RuntimeSessionDTO();
         session.setId(idGenerator.nextId());
         session.setAgentId(snapshot.agentId());

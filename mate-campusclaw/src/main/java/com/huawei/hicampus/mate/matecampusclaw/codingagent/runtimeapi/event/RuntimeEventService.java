@@ -136,8 +136,7 @@ public class RuntimeEventService {
         }
     }
 
-    private RuntimeEventStream prepareAndSubmit(
-            String sessionId, ValidatedUserEvent request, boolean chinese) {
+    private RuntimeEventStream prepareAndSubmit(String sessionId, ValidatedUserEvent request, boolean chinese) {
         engineRegistry.lockOperation(sessionId);
         RuntimeSessionHolder holder = null;
         RuntimeActiveExecution execution = null;
@@ -148,8 +147,7 @@ public class RuntimeEventService {
             List<Message> history = restoreHistory(sessionId, model);
             UserMessage message = codec.toUserMessage(request.message(), request.fileIds(), clock.millis());
             execution = new RuntimeActiveExecution(newEventStream());
-            holder = engineRegistry.register(
-                    sessionId, snapshot, model, session.isThinking(), history, execution);
+            holder = engineRegistry.register(sessionId, snapshot, model, session.isThinking(), history, execution);
             acceptUserEntry(sessionId, request, execution);
             startAgent(holder, execution, message, chinese);
             return execution.eventStream();
@@ -161,21 +159,19 @@ public class RuntimeEventService {
         }
     }
 
-    private void acceptUserEntry(
-            String sessionId, ValidatedUserEvent request, RuntimeActiveExecution execution) {
-        RuntimeEntryDTO entry = codec.userEntry(
-                sessionId, idGenerator.nextId(), request.message(), request.fileIds(), now());
+    private void acceptUserEntry(String sessionId, ValidatedUserEvent request, RuntimeActiveExecution execution) {
+        RuntimeEntryDTO entry =
+                codec.userEntry(sessionId, idGenerator.nextId(), request.message(), request.fileIds(), now());
         UserEventAcceptance acceptance = repository.acceptUserEvent(sessionId, entry, now());
         requireAccepted(acceptance);
-        execution.eventStream().emit(new RuntimeSseEventVO(
-                Long.toString(entry.getEntrySeq()), entry.getType(), codec.toSseData(entry)));
+        execution
+                .eventStream()
+                .emit(new RuntimeSseEventVO(
+                        Long.toString(entry.getEntrySeq()), entry.getType(), codec.toSseData(entry)));
     }
 
     private void startAgent(
-            RuntimeSessionHolder holder,
-            RuntimeActiveExecution execution,
-            UserMessage message,
-            boolean chinese) {
+            RuntimeSessionHolder holder, RuntimeActiveExecution execution, UserMessage message, boolean chinese) {
         RuntimeEventProjector projector = new RuntimeEventProjector(
                 holder.sessionId(),
                 repository,
@@ -245,8 +241,8 @@ public class RuntimeEventService {
         try {
             holder.agent()
                     .continueQueuedExecution()
-                    .whenComplete((unused, error) ->
-                            finishAgent(holder, execution, projector, unsubscribe, error, chinese));
+                    .whenComplete(
+                            (unused, error) -> finishAgent(holder, execution, projector, unsubscribe, error, chinese));
         } catch (RuntimeException error) {
             completeExecution(holder, execution, projector, unsubscribe, error, chinese);
         }
@@ -300,10 +296,7 @@ public class RuntimeEventService {
     }
 
     private Throwable releaseExecution(
-            RuntimeSessionHolder holder,
-            RuntimeActiveExecution execution,
-            Runnable unsubscribe,
-            Throwable failure) {
+            RuntimeSessionHolder holder, RuntimeActiveExecution execution, Runnable unsubscribe, Throwable failure) {
         Throwable result = failure;
         try {
             unsubscribe.run();
@@ -343,8 +336,7 @@ public class RuntimeEventService {
         List<RuntimeEntryDTO> entries = new ArrayList<>();
         long afterSeq = 0L;
         while (true) {
-            List<RuntimeEntryDTO> batch = repository.listCurrentBranch(
-                    sessionId, afterSeq, RESTORE_BATCH_SIZE);
+            List<RuntimeEntryDTO> batch = repository.listCurrentBranch(sessionId, afterSeq, RESTORE_BATCH_SIZE);
             entries.addAll(batch);
             if (batch.size() < RESTORE_BATCH_SIZE) {
                 break;
@@ -357,10 +349,10 @@ public class RuntimeEventService {
     private EventPageResponseVO pageOf(String sessionId, List<RuntimeEntryDTO> entries, int limit) {
         boolean more = entries.size() > limit;
         List<RuntimeEntryDTO> pageEntries = more ? entries.subList(0, limit) : entries;
-        List<java.util.Map<String, Object>> events = pageEntries.stream()
-                .map(codec::toHistoryEvent)
-                .toList();
-        String nextPage = more ? cursorCodec.encode(sessionId, pageEntries.getLast().getEntrySeq()) : null;
+        List<java.util.Map<String, Object>> events =
+                pageEntries.stream().map(codec::toHistoryEvent).toList();
+        String nextPage =
+                more ? cursorCodec.encode(sessionId, pageEntries.getLast().getEntrySeq()) : null;
         return new EventPageResponseVO(events, nextPage);
     }
 
@@ -408,8 +400,7 @@ public class RuntimeEventService {
         }
     }
 
-    private void releaseUnacceptedExecution(
-            RuntimeSessionHolder holder, RuntimeActiveExecution execution) {
+    private void releaseUnacceptedExecution(RuntimeSessionHolder holder, RuntimeActiveExecution execution) {
         if (holder != null && execution != null) {
             engineRegistry.complete(holder, execution);
             execution.eventStream().complete();

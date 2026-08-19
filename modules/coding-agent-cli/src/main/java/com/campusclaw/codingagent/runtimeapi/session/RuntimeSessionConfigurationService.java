@@ -75,11 +75,7 @@ public class RuntimeSessionConfigurationService {
             RuntimeSessionDTO current = requireMutableSession(sessionId, ifMatch);
             Model model = modelManager.resolveAvailableModel(resolveAgent(current), request.getModelId());
             SessionConfigurationUpdate update = repository.updateModel(
-                    sessionId,
-                    current.getResourceVersion(),
-                    model.id(),
-                    model.reasoning(),
-                    now());
+                    sessionId, current.getResourceVersion(), model.id(), model.reasoning(), now());
             return viewOf(requireUpdated(update));
         } catch (RuntimeApiException error) {
             throw error;
@@ -95,8 +91,8 @@ public class RuntimeSessionConfigurationService {
         try {
             RuntimeSessionDTO current = requireMutableSession(sessionId, ifMatch);
             requireThinkingSupported(current, request.getThinking());
-            SessionConfigurationUpdate update = repository.updateThinking(
-                    sessionId, current.getResourceVersion(), request.getThinking(), now());
+            SessionConfigurationUpdate update =
+                    repository.updateThinking(sessionId, current.getResourceVersion(), request.getThinking(), now());
             return viewOf(requireUpdated(update));
         } catch (RuntimeApiException error) {
             throw error;

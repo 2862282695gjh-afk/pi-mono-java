@@ -23,8 +23,10 @@ class CampusClawApplicationTest {
 
     @Test
     void onlyLeadingCliTokenSelectsCliMode() {
-        assertThat(CampusClawCliLauncher.isCliInvocation(new String[] {"cli", "--help"})).isTrue();
-        assertThat(CampusClawCliLauncher.isCliInvocation(new String[] {"--help"})).isFalse();
+        assertThat(CampusClawCliLauncher.isCliInvocation(new String[] {"cli", "--help"}))
+                .isTrue();
+        assertThat(CampusClawCliLauncher.isCliInvocation(new String[] {"--help"}))
+                .isFalse();
         assertThat(CampusClawCliLauncher.isCliInvocation(new String[0])).isFalse();
     }
 }

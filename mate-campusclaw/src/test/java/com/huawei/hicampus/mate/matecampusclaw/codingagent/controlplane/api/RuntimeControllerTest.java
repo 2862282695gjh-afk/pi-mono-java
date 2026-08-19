@@ -70,8 +70,8 @@ class RuntimeControllerTest {
 
         mvc.perform(post("/api/v1/runtimes/schedule")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"requiredCapabilities\":[\"TOOL_BASH\"],\"preferredNodeId\":\""
-                                + preferred + "\"}"))
+                        .content(
+                                "{\"requiredCapabilities\":[\"TOOL_BASH\"],\"preferredNodeId\":\"" + preferred + "\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.nodeId").value(preferred))
                 .andExpect(jsonPath("$.reason").value("affinity"));
@@ -90,8 +90,7 @@ class RuntimeControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"requiredCapabilities\":null}"))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.message")
-                        .value(org.hamcrest.Matchers.containsString("requiredCapabilities")));
+                .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("requiredCapabilities")));
     }
 
     private String register(String host, int port, Set<RuntimeCapability> capabilities) {

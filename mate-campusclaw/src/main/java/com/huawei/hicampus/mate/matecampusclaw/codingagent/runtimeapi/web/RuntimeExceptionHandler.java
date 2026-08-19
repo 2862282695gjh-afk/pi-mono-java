@@ -40,8 +40,7 @@ public class RuntimeExceptionHandler {
     }
 
     @ExceptionHandler(RuntimeApiException.class)
-    public ResponseEntity<ErrorResponseVO> handleRuntimeError(
-            RuntimeApiException error, HttpServletRequest request) {
+    public ResponseEntity<ErrorResponseVO> handleRuntimeError(RuntimeApiException error, HttpServletRequest request) {
         logServerError(error, request);
         return response(error.status(), error.errorCode(), request);
     }

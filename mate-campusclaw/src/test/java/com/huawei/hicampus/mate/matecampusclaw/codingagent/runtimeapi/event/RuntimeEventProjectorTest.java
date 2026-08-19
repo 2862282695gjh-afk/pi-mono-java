@@ -74,8 +74,7 @@ class RuntimeEventProjectorTest {
             persisted.add(entry);
             return entry;
         });
-        RuntimeEventStream stream = new RuntimeEventStream(
-                256, 1024L * 1024L, Duration.ofSeconds(15), event -> 1L);
+        RuntimeEventStream stream = new RuntimeEventStream(256, 1024L * 1024L, Duration.ofSeconds(15), event -> 1L);
         RuntimeActiveExecution execution = new RuntimeActiveExecution(stream);
         UserMessage initialMessage = new UserMessage("分析订单", 1L);
         AtomicInteger ids = new AtomicInteger(1);
@@ -95,7 +94,8 @@ class RuntimeEventProjectorTest {
         agent.prompt(initialMessage).get(2, TimeUnit.SECONDS);
         stream.complete();
 
-        List<String> eventNames = collect(stream).stream().map(RuntimeSseEventVO::getEvent).toList();
+        List<String> eventNames =
+                collect(stream).stream().map(RuntimeSseEventVO::getEvent).toList();
         assertConfirmedEventOrder(eventNames);
         assertThat(persisted)
                 .extracting(RuntimeEntryDTO::getType)
@@ -106,15 +106,16 @@ class RuntimeEventProjectorTest {
     }
 
     private static void assertConfirmedEventOrder(List<String> eventNames) {
-        assertThat(eventNames).containsExactly(
-                "assistant.message.started",
-                "assistant.message.completed",
-                "tool.execution.started",
-                "tool.execution.completed",
-                "tool.result",
-                "assistant.message.started",
-                "assistant.message.delta",
-                "assistant.message.completed");
+        assertThat(eventNames)
+                .containsExactly(
+                        "assistant.message.started",
+                        "assistant.message.completed",
+                        "tool.execution.started",
+                        "tool.execution.completed",
+                        "tool.result",
+                        "assistant.message.started",
+                        "assistant.message.delta",
+                        "assistant.message.completed");
     }
 
     private static List<RuntimeSseEventVO> collect(RuntimeEventStream stream) {

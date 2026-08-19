@@ -29,7 +29,8 @@ public final class RuntimeRequestContext {
 
     public static boolean chinese(HttpServletRequest request) {
         String language = request.getHeader("Accept-Language");
-        return language != null && language.trim().toLowerCase(java.util.Locale.ROOT).startsWith("zh-cn");
+        return language != null
+                && language.trim().toLowerCase(java.util.Locale.ROOT).startsWith("zh-cn");
     }
 
     public static String language(HttpServletRequest request) {

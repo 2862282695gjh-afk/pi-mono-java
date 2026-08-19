@@ -118,7 +118,8 @@ class RuntimeHttpProcessOpenGaussIT {
 
     private static String springConfiguration(Path tempDir) {
         ObjectNode runtime = MAPPER.createObjectNode();
-        runtime.putObject("agent-directory").put("root", tempDir.resolve("agents").toString());
+        runtime.putObject("agent-directory")
+                .put("root", tempDir.resolve("agents").toString());
         runtime.putObject("events").put("cursor-secret", "process-cursor-secret-at-least-32-bytes");
         ObjectNode root = MAPPER.createObjectNode();
         root.putObject("campusclaw").set("runtime", runtime);
@@ -167,8 +168,7 @@ class RuntimeHttpProcessOpenGaussIT {
     }
 
     private static void awaitHealth(RuntimeProcess runtime, int port) throws Exception {
-        URI probe = URI.create(
-                "http://127.0.0.1:" + port + "/campusclaw-service/v1/sessions/readiness-probe");
+        URI probe = URI.create("http://127.0.0.1:" + port + "/campusclaw-service/v1/sessions/readiness-probe");
         long deadline = System.nanoTime() + Duration.ofSeconds(30).toNanos();
         while (System.nanoTime() < deadline) {
             if (!runtime.process().isAlive()) {
@@ -313,8 +313,8 @@ class RuntimeHttpProcessOpenGaussIT {
     }
 
     private static void assertTombstone(ProcessTestConfig config, String sessionId) throws Exception {
-        try (var connection =
-                        DriverManager.getConnection(config.databaseUrl(), config.databaseUser(), config.databasePassword());
+        try (var connection = DriverManager.getConnection(
+                        config.databaseUrl(), config.databaseUser(), config.databasePassword());
                 var statement = connection.prepareStatement(
                         "SELECT COUNT(*) FROM campusclaw_session.t_session_tombstone WHERE session_id = ?")) {
             statement.setString(1, sessionId);

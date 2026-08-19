@@ -53,8 +53,7 @@ public class RuntimeSessionConfigurationController {
     }
 
     @GetMapping("/models")
-    public ResponseEntity<Object> listModels(
-            @PathVariable("session_id") String sessionId, HttpServletRequest request) {
+    public ResponseEntity<Object> listModels(@PathVariable("session_id") String sessionId, HttpServletRequest request) {
         requireSessionId(sessionId);
         Object result = service.listModels(sessionId);
         return success(result, request);

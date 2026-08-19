@@ -106,8 +106,8 @@ class RuntimeSessionConfigurationServiceTest {
     void staleEtagDoesNotCallModelManager() {
         when(repository.find(SESSION_ID)).thenReturn(Optional.of(session("model-a", "idle", false, 2L)));
 
-        assertThatThrownBy(() -> service.changeModel(
-                        SESSION_ID, etagFactory.create(SESSION_ID, 1L), modelRequest("model-b")))
+        assertThatThrownBy(() ->
+                        service.changeModel(SESSION_ID, etagFactory.create(SESSION_ID, 1L), modelRequest("model-b")))
                 .isInstanceOfSatisfying(RuntimeApiException.class, error -> assertThat(error.errorCode())
                         .isEqualTo(RuntimeErrorCode.SESSION_VERSION_MISMATCH));
         verify(modelManager, never()).resolveAvailableModel(any(), any());
@@ -123,8 +123,7 @@ class RuntimeSessionConfigurationServiceTest {
         when(repository.updateModel(eq(SESSION_ID), eq(1L), eq("model-b"), eq(false), any()))
                 .thenReturn(update(SessionConfigurationUpdate.Status.UPDATED, updated));
 
-        var view = service.changeModel(
-                SESSION_ID, etagFactory.create(SESSION_ID, 1L), modelRequest("model-b"));
+        var view = service.changeModel(SESSION_ID, etagFactory.create(SESSION_ID, 1L), modelRequest("model-b"));
 
         assertThat(view.resource().getModelId()).isEqualTo("model-b");
         assertThat(view.resource().isThinking()).isFalse();
@@ -138,8 +137,8 @@ class RuntimeSessionConfigurationServiceTest {
         when(repository.find(SESSION_ID)).thenReturn(Optional.of(current));
         when(modelManager.resolveModel(snapshot, "model-a")).thenReturn(model);
 
-        assertThatThrownBy(() -> service.changeThinking(
-                        SESSION_ID, etagFactory.create(SESSION_ID, 1L), thinkingRequest(true)))
+        assertThatThrownBy(() ->
+                        service.changeThinking(SESSION_ID, etagFactory.create(SESSION_ID, 1L), thinkingRequest(true)))
                 .isInstanceOfSatisfying(RuntimeApiException.class, error -> assertThat(error.errorCode())
                         .isEqualTo(RuntimeErrorCode.THINKING_NOT_SUPPORTED));
         verify(repository, never()).updateThinking(any(), anyLong(), anyBoolean(), any());
@@ -153,8 +152,7 @@ class RuntimeSessionConfigurationServiceTest {
         when(repository.updateThinking(eq(SESSION_ID), eq(1L), eq(false), any()))
                 .thenReturn(update(SessionConfigurationUpdate.Status.UPDATED, updated));
 
-        var view = service.changeThinking(
-                SESSION_ID, etagFactory.create(SESSION_ID, 1L), thinkingRequest(false));
+        var view = service.changeThinking(SESSION_ID, etagFactory.create(SESSION_ID, 1L), thinkingRequest(false));
 
         assertThat(view.resource().isThinking()).isFalse();
         verify(modelManager, never()).resolveModel(any(), any());

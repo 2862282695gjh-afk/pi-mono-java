@@ -27,7 +27,8 @@ public class RuntimeSseEmitterSubscriber implements RuntimeEventSubscriber {
 
     @Override
     public void onEvent(RuntimeSseEventVO event) {
-        SseEmitter.SseEventBuilder builder = SseEmitter.event().name(event.getEvent()).data(event.getData());
+        SseEmitter.SseEventBuilder builder =
+                SseEmitter.event().name(event.getEvent()).data(event.getData());
         if (event.getId() != null) {
             builder.id(event.getId());
         }

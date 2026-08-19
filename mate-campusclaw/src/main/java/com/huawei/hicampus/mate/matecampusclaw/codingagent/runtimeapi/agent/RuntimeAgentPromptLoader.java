@@ -62,8 +62,12 @@ public class RuntimeAgentPromptLoader {
         List<Path> files = new ArrayList<>();
         scanSkillFiles(root, realSkills, 0, files);
         files.sort(Comparator.comparing(Path::toString));
-        return files.stream().limit(MAX_SKILLS).map(this::loadSkill).filter(java.util.Objects::nonNull)
-                .filter(skill -> !skill.disableModelInvocation()).toList();
+        return files.stream()
+                .limit(MAX_SKILLS)
+                .map(this::loadSkill)
+                .filter(java.util.Objects::nonNull)
+                .filter(skill -> !skill.disableModelInvocation())
+                .toList();
     }
 
     private void scanSkillFiles(Path root, Path directory, int depth, List<Path> files) {
@@ -157,7 +161,6 @@ public class RuntimeAgentPromptLoader {
     }
 
     private static RuntimeApiException unavailable(Throwable cause) {
-        return new RuntimeApiException(
-                HttpStatus.UNPROCESSABLE_ENTITY, RuntimeErrorCode.AGENT_NOT_AVAILABLE, cause);
+        return new RuntimeApiException(HttpStatus.UNPROCESSABLE_ENTITY, RuntimeErrorCode.AGENT_NOT_AVAILABLE, cause);
     }
 }

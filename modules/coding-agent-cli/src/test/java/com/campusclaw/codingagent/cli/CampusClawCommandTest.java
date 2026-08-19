@@ -4,7 +4,6 @@
 
 package com.campusclaw.codingagent.cli;
 
-import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -24,8 +23,8 @@ import picocli.CommandLine;
 class CampusClawCommandTest {
 
     private CampusClawCommand parse(String... args) {
-        CampusClawCommand cmd = new CampusClawCommand(
-                null, null, null, null, null, null, null, null, null, null, null, null, null);
+        CampusClawCommand cmd =
+                new CampusClawCommand(null, null, null, null, null, null, null, null, null, null, null, null, null);
         new CommandLine(cmd).parseArgs(args);
         return cmd;
     }
@@ -341,16 +340,16 @@ class CampusClawCommandTest {
 
         @Test
         void helpExitsWithZero() {
-            CampusClawCommand cmd = new CampusClawCommand(
-                    null, null, null, null, null, null, null, null, null, null, null, null, null);
+            CampusClawCommand cmd =
+                    new CampusClawCommand(null, null, null, null, null, null, null, null, null, null, null, null, null);
             int exitCode = new CommandLine(cmd).execute("--help");
             assertEquals(0, exitCode);
         }
 
         @Test
         void versionExitsWithZero() {
-            CampusClawCommand cmd = new CampusClawCommand(
-                    null, null, null, null, null, null, null, null, null, null, null, null, null);
+            CampusClawCommand cmd =
+                    new CampusClawCommand(null, null, null, null, null, null, null, null, null, null, null, null, null);
             int exitCode = new CommandLine(cmd).execute("--version");
             assertEquals(0, exitCode);
         }

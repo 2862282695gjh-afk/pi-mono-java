@@ -31,8 +31,7 @@ class FileAgentDirectoryResolverTest {
 
     @Test
     void resolvesDirectCurrentDirectoryWithoutRevisionFiles() throws Exception {
-        Path agent = createAgent(
-                "{\"defaultModel\":\"model-a\",\"enabledModels\":[\"model-a\",\"model-b\"]}");
+        Path agent = createAgent("{\"defaultModel\":\"model-a\",\"enabledModels\":[\"model-a\",\"model-b\"]}");
 
         AgentDirectorySnapshotDTO snapshot = resolver().resolve(AGENT_ID);
 

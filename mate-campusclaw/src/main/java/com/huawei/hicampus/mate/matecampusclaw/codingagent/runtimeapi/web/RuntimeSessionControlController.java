@@ -42,8 +42,7 @@ public class RuntimeSessionControlController {
 
     private final ResultBeanAdapter resultBeanAdapter;
 
-    public RuntimeSessionControlController(
-            RuntimeSessionControlService service, ResultBeanAdapter resultBeanAdapter) {
+    public RuntimeSessionControlController(RuntimeSessionControlService service, ResultBeanAdapter resultBeanAdapter) {
         this.service = service;
         this.resultBeanAdapter = resultBeanAdapter;
     }
@@ -75,8 +74,7 @@ public class RuntimeSessionControlController {
         return ResponseEntity.noContent().cacheControl(CacheControl.noStore()).build();
     }
 
-    private ResponseEntity<Object> accepted(
-            ControlMessageAcceptedResponseVO result, HttpServletRequest request) {
+    private ResponseEntity<Object> accepted(ControlMessageAcceptedResponseVO result, HttpServletRequest request) {
         return ResponseEntity.accepted()
                 .cacheControl(CacheControl.noStore())
                 .header(HttpHeaders.CONTENT_LANGUAGE, RuntimeRequestContext.language(request))

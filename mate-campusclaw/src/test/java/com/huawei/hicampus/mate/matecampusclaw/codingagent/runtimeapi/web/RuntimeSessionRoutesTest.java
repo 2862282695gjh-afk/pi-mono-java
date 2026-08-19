@@ -76,8 +76,7 @@ class RuntimeSessionRoutesTest {
                         .header("X-HW-ID", "credential-jwt")
                         .header(HttpHeaders.AUTHORIZATION, "Bearer opaque-token"))
                 .andExpect(status().isCreated())
-                .andExpect(header().string(
-                        HttpHeaders.LOCATION, "/campusclaw-service/v1/sessions/" + SESSION_ID))
+                .andExpect(header().string(HttpHeaders.LOCATION, "/campusclaw-service/v1/sessions/" + SESSION_ID))
                 .andExpect(header().string(HttpHeaders.CONTENT_LANGUAGE, "en-US"))
                 .andExpect(jsonPath("$.resCode").value("0"))
                 .andExpect(jsonPath("$.resMsg").value("success"))
@@ -126,7 +125,8 @@ class RuntimeSessionRoutesTest {
     @Test
     void managerUnavailableAddsRetryAfterAndLocalizesError() throws Exception {
         when(service.create(AGENT_ID))
-                .thenThrow(new RuntimeApiException(HttpStatus.SERVICE_UNAVAILABLE, RuntimeErrorCode.MANAGER_UNAVAILABLE));
+                .thenThrow(
+                        new RuntimeApiException(HttpStatus.SERVICE_UNAVAILABLE, RuntimeErrorCode.MANAGER_UNAVAILABLE));
 
         mvc.perform(post("/campusclaw-service/v1/agents/{agentId}/sessions", AGENT_ID)
                         .header("X-HW-ID", "credential")
@@ -141,15 +141,13 @@ class RuntimeSessionRoutesTest {
 
     private static RuntimeSessionView<CreateSessionResponseVO> createView() {
         OffsetDateTime time = OffsetDateTime.parse("2026-08-18T00:00:00Z");
-        var response = new CreateSessionResponseVO(
-                SESSION_ID, AGENT_ID, "model-default", "idle", false, time);
+        var response = new CreateSessionResponseVO(SESSION_ID, AGENT_ID, "model-default", "idle", false, time);
         return new RuntimeSessionView<>(response, "\"snp-create\"");
     }
 
     private static RuntimeSessionView<GetSessionResponseVO> getView() {
         OffsetDateTime time = OffsetDateTime.parse("2026-08-18T00:00:00Z");
-        var response = new GetSessionResponseVO(
-                SESSION_ID, AGENT_ID, "model-default", "idle", false, time, time);
+        var response = new GetSessionResponseVO(SESSION_ID, AGENT_ID, "model-default", "idle", false, time, time);
         return new RuntimeSessionView<>(response, "\"snp-resource\"");
     }
 }

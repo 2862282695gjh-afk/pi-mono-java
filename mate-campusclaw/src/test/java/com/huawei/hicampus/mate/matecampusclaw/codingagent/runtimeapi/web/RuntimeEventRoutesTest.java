@@ -64,8 +64,7 @@ class RuntimeEventRoutesTest {
     void setUp() {
         service = mock(RuntimeEventService.class);
         dispatcher = new RuntimeSseDispatcher();
-        var controller = new RuntimeEventController(
-                service, new StandaloneResultBeanAdapter(), dispatcher);
+        var controller = new RuntimeEventController(service, new StandaloneResultBeanAdapter(), dispatcher);
         var interceptor = new RuntimeAuthenticationInterceptor(new RuntimeRequestAuthenticator());
         var messages = new ResourceBundleMessageSource();
         messages.setBasename("messages");
@@ -85,7 +84,8 @@ class RuntimeEventRoutesTest {
     @Test
     void postStreamsNamedEventsWithoutResultBean() throws Exception {
         RuntimeEventStream stream = completedStream();
-        when(service.submit(eq(SESSION_ID), any(UserEventRequestVO.class), eq(false))).thenReturn(stream);
+        when(service.submit(eq(SESSION_ID), any(UserEventRequestVO.class), eq(false)))
+                .thenReturn(stream);
 
         MvcResult initial = mvc.perform(authenticated(post("/campusclaw-service/v1/sessions/{id}/events", SESSION_ID))
                         .contentType(MediaType.APPLICATION_JSON)
@@ -116,6 +116,24 @@ class RuntimeEventRoutesTest {
     }
 
     @Test
+    void postRejectsValuesWhoseJsonTypesDoNotMatchTheContract() throws Exception {
+        List<String> invalidBodies = List.of(
+                "{\"type\":1,\"message\":\"分析订单\"}",
+                "{\"type\":\"user.message\",\"message\":1}",
+                "{\"type\":\"user.message\",\"file_ids\":[1]}",
+                "{\"type\":\"user.message\",\"file_ids\":\"file_1\"}");
+
+        for (String body : invalidBodies) {
+            mvc.perform(authenticated(post("/campusclaw-service/v1/sessions/{id}/events", SESSION_ID))
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(body))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.resCode").value("INVALID_EVENT_REQUEST"));
+        }
+        verify(service, never()).submit(any(), any(), eq(false));
+    }
+
+    @Test
     void getReturnsResultBeanWithOpaqueNextPage() throws Exception {
         LinkedHashMap<String, Object> event = new LinkedHashMap<>();
         event.put("type", "user.message");
@@ -136,8 +154,7 @@ class RuntimeEventRoutesTest {
     }
 
     private static RuntimeEventStream completedStream() {
-        RuntimeEventStream stream = new RuntimeEventStream(
-                16, 4096, Duration.ofSeconds(15), event -> 1L);
+        RuntimeEventStream stream = new RuntimeEventStream(16, 4096, Duration.ofSeconds(15), event -> 1L);
         stream.emit(new RuntimeSseEventVO(
                 "17", "user.message", java.util.Map.of("entry_id", "entry_100", "entry_seq", 17L)));
         stream.emit(new RuntimeSseEventVO(null, "stream.end", java.util.Map.of("reason", "completed")));
@@ -147,7 +164,6 @@ class RuntimeEventRoutesTest {
 
     private static org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder authenticated(
             org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder request) {
-        return request.header("X-HW-ID", "credential")
-                .header(HttpHeaders.AUTHORIZATION, "Bearer opaque-token");
+        return request.header("X-HW-ID", "credential").header(HttpHeaders.AUTHORIZATION, "Bearer opaque-token");
     }
 }

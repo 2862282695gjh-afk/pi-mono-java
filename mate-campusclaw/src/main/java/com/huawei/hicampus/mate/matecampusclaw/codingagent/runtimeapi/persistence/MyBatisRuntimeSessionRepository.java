@@ -48,8 +48,7 @@ public class MyBatisRuntimeSessionRepository implements RuntimeSessionRepository
 
     @Override
     @Transactional
-    public UserEventAcceptance acceptUserEvent(
-            String sessionId, RuntimeEntryDTO entry, OffsetDateTime acceptedAt) {
+    public UserEventAcceptance acceptUserEvent(String sessionId, RuntimeEntryDTO entry, OffsetDateTime acceptedAt) {
         RuntimeSessionDTO session = mapper.lockSessionForUpdate(sessionId);
         if (session == null) {
             return new UserEventAcceptance(Status.NOT_FOUND, null);

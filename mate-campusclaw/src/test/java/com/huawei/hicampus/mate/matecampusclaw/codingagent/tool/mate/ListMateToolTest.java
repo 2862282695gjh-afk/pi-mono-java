@@ -5,78 +5,60 @@
 package com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.mate;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
 import java.util.Map;
 
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.common.client.mate.MateCredentials;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.common.client.mate.MateToolMeta;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 /**
- * Unit tests for {@link ListMateTool}: authorization filtering, cache refresh,
- * and credential passing.
+ * Unit tests for {@link ListMateTool}: agent/skill parameters flow through to
+ * the client's two-step query.
  *
- * @version [br_eCampusCore 26.0.0, 2026/08/17]
+ * @version [br_eCampusCore 26.0.0, 2026/08/18]
+ * @since [br_eCampusCore 26.0.0]
  */
 class ListMateToolTest {
 
     private MockMateToolClient client;
-    private CallMateTool callMateTool;
-    private boolean approvalResult;
     private ListMateTool listMateTool;
 
     @BeforeEach
     void setUp() {
         client = new MockMateToolClient();
         client.addTool(new MateToolMeta("query", "q", Map.of(), Map.of(), true, "allow"));
-        client.addTool(new MateToolMeta("chart", "c", Map.of(), Map.of(), true, "allow"));
-        client.addTool(new MateToolMeta("export", "e", Map.of(), Map.of(), false, "ask"));
-        client.addTool(new MateToolMeta("delete", "d", Map.of(), Map.of(), false, "deny"));
-        client.authorizeAgent("agent-1", List.of("query", "chart", "export"));
-        client.authorizeSkill("skill-1", List.of("query", "chart"));
-        approvalResult = true;
-        callMateTool = new CallMateTool(client, (t, a, d) -> approvalResult, MateCredentials.appKey("id", "key"));
-        listMateTool = new ListMateTool(client, callMateTool);
+        client.addTool(new MateToolMeta("export", "e", Map.of(), Map.of(), false, "allow"));
+        client.bindAgent("agent-1", List.of("query", "export"));
+        client.bindSkill("skill-1", List.of("query"));
+        listMateTool = new ListMateTool(client);
     }
 
     @Test
-    void agentFilterReturnsOnlyAuthorizedTools() throws Exception {
+    void agentIdIsPassedThroughToClient() throws Exception {
         var r = listMateTool.execute("t", Map.of("agent_id", "agent-1"), null, null);
         String text = asText(r);
         assertTrue(text.contains("query"));
-        assertTrue(text.contains("chart"));
         assertTrue(text.contains("export"));
-        assertTrue(!text.contains("delete"));
+        assertEquals("agent-1", client.lastListAgentId());
     }
 
     @Test
-    void skillFilterReturnsOnlyAuthorizedTools() throws Exception {
-        var r = listMateTool.execute("t", Map.of("skill_id", "skill-1"), null, null);
-        String text = asText(r);
-        assertTrue(text.contains("query"));
-        assertTrue(!text.contains("export"));
+    void skillIdIsPassedThroughToClient() throws Exception {
+        listMateTool.execute("t", Map.of("skill_id", "skill-1"), null, null);
+        assertEquals("skill-1", client.lastListSkillId());
     }
 
     @Test
-    void refreshesCallMateToolCache() throws Exception {
-        listMateTool.execute("t", Map.of("agent_id", "agent-1"), null, null);
-
-        // export IS in agent-1's authorized list → its "ask" meta is cached
-        // → approvalUI (auto-approve) fires → call goes through
-        approvalResult = true;
-        var r = callMateTool.execute("t", Map.of("tool", "export"), null, null);
-        assertTrue(asText(r).contains("mock:export"));
-        assertEquals("export", client.lastCalledTool());
-    }
-
-    @Test
-    void credentialsSharedWithCallMateTool() throws Exception {
-        listMateTool.execute("t", Map.of("agent_id", "agent-1"), null, null);
-        assertEquals("id", client.lastListCredentials().xHwId());
+    void noIdsReturnsEmptyList() throws Exception {
+        var r = listMateTool.execute("t", Map.of(), null, null);
+        assertNull(client.lastListAgentId());
+        assertNull(client.lastListSkillId());
+        assertTrue(asText(r).contains("0 tool(s)"));
     }
 
     private static String asText(com.huawei.hicampus.mate.matecampusclaw.agent.tool.AgentToolResult r) {

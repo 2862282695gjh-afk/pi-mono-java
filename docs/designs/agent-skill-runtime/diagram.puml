@@ -1,0 +1,49 @@
+@startuml managed_agent_cli_flow
+title Managed Agent CLI Runtime Flow
+
+' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/cli/CampusClawCommand.java (call, createSession)
+' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtime/AgentRuntimeManager.java (prepare, materialize)
+' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/session/AgentSession.java (initialize, setAgentRuntime)
+' Observed behavior: only the explicit CLI --agent-id path uses the CampusMate materializer.
+' Architecture change: the public HTTP V1 runtime uses its own read-only .campusagent directory contract.
+
+actor User
+participant "CampusClawCommand" as CLI
+participant "AgentRuntimeManager" as Runtime
+participant "Local Agent Cache" as Cache
+participant "CampusMateService" as Mate
+participant "ToolCatalog" as Catalog
+participant "AgentSession" as Session
+
+User -> CLI: cli --agent-id agentId
+CLI -> Runtime: prepare(agentId)
+Runtime -> Cache: load complete .campusclaw snapshot
+
+alt complete local snapshot
+  Cache --> Runtime: PreparedAgentRuntime
+else snapshot missing or unreadable
+  Runtime -> Mate: GetAgentRuntime(agentId)
+  Mate --> Runtime: Agent metadata and Skill coordinates
+  loop each directly bound Skill
+    Runtime -> Mate: querySkillInfo(skillId)
+    Mate --> Runtime: Skill metadata and bound tools
+  end
+  Runtime -> Cache: materialize Agent and Skill files
+  Runtime -> Cache: reload materialized snapshot
+  Cache --> Runtime: PreparedAgentRuntime
+end
+
+Runtime --> CLI: prepared runtime
+CLI -> Catalog: refresh(agentRoot)
+CLI -> Session: setAgentRuntime(runtime, manager)
+CLI -> Session: initialize(derived SessionConfig)
+Session -> Cache: load system prompt and Skills
+Session -> Catalog: resolve allowed local tools
+Session --> User: interactive or one-shot CLI
+
+note over CLI,Session
+The HTTP V1 controllers do not enter this flow.
+They read manager-provisioned .campusagent directories.
+end note
+
+@enduml

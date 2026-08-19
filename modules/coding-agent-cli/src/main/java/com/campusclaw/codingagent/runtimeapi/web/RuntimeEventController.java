@@ -49,9 +49,7 @@ public class RuntimeEventController {
     private final RuntimeSseDispatcher sseDispatcher;
 
     public RuntimeEventController(
-            RuntimeEventService service,
-            ResultBeanAdapter resultBeanAdapter,
-            RuntimeSseDispatcher sseDispatcher) {
+            RuntimeEventService service, ResultBeanAdapter resultBeanAdapter, RuntimeSseDispatcher sseDispatcher) {
         this.service = service;
         this.resultBeanAdapter = resultBeanAdapter;
         this.sseDispatcher = sseDispatcher;

@@ -56,8 +56,8 @@ class RuntimeAgentPromptLoaderTest {
 
     private static void writeSkill(Path file, String name, boolean hidden) throws Exception {
         Files.createDirectories(file.getParent());
-        String content = "---\nname: " + name + "\ndescription: Test skill\ndisable-model-invocation: "
-                + hidden + "\n---\n# Instructions\n";
+        String content = "---\nname: " + name + "\ndescription: Test skill\ndisable-model-invocation: " + hidden
+                + "\n---\n# Instructions\n";
         Files.writeString(file, content);
     }
 }

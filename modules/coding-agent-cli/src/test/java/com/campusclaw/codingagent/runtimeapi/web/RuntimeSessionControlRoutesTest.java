@@ -116,8 +116,7 @@ class RuntimeSessionControlRoutesTest {
 
     private static org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder authenticated(
             org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder request) {
-        return request.header("X-HW-ID", "credential")
-                .header(HttpHeaders.AUTHORIZATION, "Bearer opaque-token");
+        return request.header("X-HW-ID", "credential").header(HttpHeaders.AUTHORIZATION, "Bearer opaque-token");
     }
 
     private static ControlMessageAcceptedResponseVO acceptedAt(String value) {

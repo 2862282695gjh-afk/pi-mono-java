@@ -281,8 +281,7 @@ class RuntimeSessionRepositoryOpenGaussIT {
         repository.create(session);
         OffsetDateTime updatedAt = session.getCreatedAt().plusMinutes(1);
 
-        SessionConfigurationUpdate update =
-                repository.updateModel(session.getId(), 1L, "model-next", false, updatedAt);
+        SessionConfigurationUpdate update = repository.updateModel(session.getId(), 1L, "model-next", false, updatedAt);
 
         assertThat(update.status()).isEqualTo(SessionConfigurationUpdate.Status.UPDATED);
         RuntimeSessionDTO stored = repository.find(session.getId()).orElseThrow();
@@ -410,10 +409,7 @@ class RuntimeSessionRepositoryOpenGaussIT {
         assertThat(start.await(5, TimeUnit.SECONDS)).isTrue();
         return repository
                 .updateThinking(
-                        session.getId(),
-                        1L,
-                        true,
-                        session.getUpdatedAt().plusMinutes(1))
+                        session.getId(), 1L, true, session.getUpdatedAt().plusMinutes(1))
                 .status();
     }
 

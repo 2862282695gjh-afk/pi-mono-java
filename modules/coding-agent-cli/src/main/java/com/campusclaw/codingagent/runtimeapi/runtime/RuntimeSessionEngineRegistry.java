@@ -127,8 +127,7 @@ public class RuntimeSessionEngineRegistry {
 
     private void acquireCapacity() {
         if (!capacity.tryAcquire()) {
-            throw new RuntimeApiException(
-                    HttpStatus.SERVICE_UNAVAILABLE, RuntimeErrorCode.RUNTIME_CAPACITY_EXCEEDED);
+            throw new RuntimeApiException(HttpStatus.SERVICE_UNAVAILABLE, RuntimeErrorCode.RUNTIME_CAPACITY_EXCEEDED);
         }
     }
 

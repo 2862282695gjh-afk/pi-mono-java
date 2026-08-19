@@ -5,6 +5,7 @@
 package com.campusclaw.codingagent;
 
 import com.campusclaw.codingagent.config.ToolExecutionProperties;
+import com.campusclaw.codingagent.runtime.AgentRuntimeProperties;
 
 import org.mybatis.spring.boot.autoconfigure.MybatisAutoConfiguration;
 import org.springframework.boot.SpringBootConfiguration;
@@ -19,12 +20,12 @@ import org.springframework.context.annotation.Profile;
 /**
  * CampusClaw CLI 专用 Spring 配置，不加载 HTTP Runtime 和数据库组件。
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/08/18]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/08/19]
+ * @since [br_eCampusCore 26.0.0]
  */
 @SpringBootConfiguration
 @Profile("campusclaw-cli")
-@EnableConfigurationProperties(ToolExecutionProperties.class)
+@EnableConfigurationProperties({ToolExecutionProperties.class, AgentRuntimeProperties.class})
 @EnableAutoConfiguration(
         exclude = {
             DataSourceAutoConfiguration.class,
@@ -35,8 +36,12 @@ import org.springframework.context.annotation.Profile;
         basePackages = "com.campusclaw",
         excludeFilters = {
             @ComponentScan.Filter(type = FilterType.ASSIGNABLE_TYPE, classes = CampusClawApplication.class),
-            @ComponentScan.Filter(type = FilterType.REGEX, pattern = "com\\.campusclaw\\.codingagent\\.runtimeapi\\..*"),
-            @ComponentScan.Filter(type = FilterType.REGEX, pattern = "com\\.campusclaw\\.codingagent\\.controlplane\\..*"),
+            @ComponentScan.Filter(
+                    type = FilterType.REGEX,
+                    pattern = "com\\.campusclaw\\.codingagent\\.runtimeapi\\..*"),
+            @ComponentScan.Filter(
+                    type = FilterType.REGEX,
+                    pattern = "com\\.campusclaw\\.codingagent\\.controlplane\\..*"),
             @ComponentScan.Filter(type = FilterType.REGEX, pattern = "com\\.campusclaw\\.agent\\.controlplane\\..*")
         })
 public class CampusClawCliConfiguration {}

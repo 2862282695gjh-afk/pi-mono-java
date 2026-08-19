@@ -35,8 +35,7 @@ class RuntimeEventStreamTest {
 
         stream.attach(Runnable::run, subscriber);
 
-        assertThat(subscriber.events).extracting(RuntimeSseEventVO::getEvent)
-                .containsExactly("first", "second");
+        assertThat(subscriber.events).extracting(RuntimeSseEventVO::getEvent).containsExactly("first", "second");
         assertThat(subscriber.completed).isTrue();
     }
 

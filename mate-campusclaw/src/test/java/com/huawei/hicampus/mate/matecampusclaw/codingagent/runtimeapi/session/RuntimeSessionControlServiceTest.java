@@ -13,10 +13,10 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
-import java.time.Duration;
 import java.util.Optional;
 
 import com.huawei.hicampus.mate.matecampusclaw.agent.Agent;
@@ -67,8 +67,8 @@ class RuntimeSessionControlServiceTest {
         engines = mock(RuntimeSessionEngineRegistry.class);
         agent = mock(Agent.class);
         holder = new RuntimeSessionHolder(SESSION_ID, null, agent);
-        execution = new RuntimeActiveExecution(new RuntimeEventStream(
-                256, 1024L * 1024L, Duration.ofSeconds(15), event -> 1L));
+        execution = new RuntimeActiveExecution(
+                new RuntimeEventStream(256, 1024L * 1024L, Duration.ofSeconds(15), event -> 1L));
         assertThat(holder.begin(execution)).isTrue();
         when(engines.find(SESSION_ID)).thenReturn(Optional.of(holder));
         properties = new RuntimeExecutionProperties();

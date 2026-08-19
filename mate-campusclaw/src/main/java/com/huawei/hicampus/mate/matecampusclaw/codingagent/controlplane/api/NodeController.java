@@ -52,13 +52,9 @@ public class NodeController {
     }
 
     @PostMapping("/{nodeId}/heartbeat")
-    public NodeResponseVO heartbeat(
-            @PathVariable String nodeId, @Valid @RequestBody HeartbeatRequestVO request) {
+    public NodeResponseVO heartbeat(@PathVariable String nodeId, @Valid @RequestBody HeartbeatRequestVO request) {
         NodeMetrics metrics = new NodeMetrics(
-                request.getActiveAgents(),
-                request.getQueuedTasks(),
-                request.getCpuLoad(),
-                request.getMemoryUsedMb());
+                request.getActiveAgents(), request.getQueuedTasks(), request.getCpuLoad(), request.getMemoryUsedMb());
         return new NodeResponseVO(registry.heartbeat(nodeId, metrics));
     }
 

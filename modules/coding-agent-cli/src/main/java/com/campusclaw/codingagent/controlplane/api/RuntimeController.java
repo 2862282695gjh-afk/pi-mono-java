@@ -55,8 +55,7 @@ public class RuntimeController {
 
     @PostMapping("/schedule")
     public ScheduleRuntimeResponseVO schedule(@Valid @RequestBody ScheduleRuntimeRequestVO request) {
-        ScheduleRequest command = new ScheduleRequest(
-                request.getRequiredCapabilities(), request.getPreferredNodeId());
+        ScheduleRequest command = new ScheduleRequest(request.getRequiredCapabilities(), request.getPreferredNodeId());
         return new ScheduleRuntimeResponseVO(scheduler.schedule(command));
     }
 

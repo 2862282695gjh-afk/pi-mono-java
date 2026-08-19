@@ -8,30 +8,32 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Client contract for the Mate tool service. Every method receives
- * {@link MateCredentials} for authentication.
+ * Client contract for the Mate tool service. {@code listTools} resolves the
+ * bound tool IDs from agent/skill metadata and queries their details,
+ * credential-free; {@code callTool} carries {@link MateCredentials} handed
+ * down by the agent.
  *
- * @version [br_eCampusCore 26.0.0, 2026/08/17]
+ * @version [br_eCampusCore 26.0.0, 2026/08/18]
  * @since [br_eCampusCore 26.0.0]
  */
 public interface MateToolClient {
 
     /**
-     * Lists tools authorized for the given agent or skill.
+     * Lists tools bound to the given agent or skill: fetches the metadata
+     * (binding tool IDs) first, then queries tool details.
      *
-     * @param agentId     optional agent ID; null = no filter
-     * @param skillId     optional skill ID; null = no filter
-     * @param credentials authentication credentials
+     * @param agentId optional agent ID; null = use skillId
+     * @param skillId optional skill ID; null = use agentId
      * @return tool metadata list
      */
-    List<MateToolMeta> listTools(String agentId, String skillId, MateCredentials credentials);
+    List<MateToolMeta> listTools(String agentId, String skillId);
 
     /**
-     * Calls a specific tool.
+     * Calls a specific tool with agent-handed-down credentials.
      *
-     * @param tool        the tool name
-     * @param args        the tool arguments
-     * @param credentials authentication credentials
+     * @param tool the tool name
+     * @param args the tool arguments
+     * @param credentials credentials forwarded to the Mate server
      * @return tool execution result
      */
     ToolResult callTool(String tool, Map<String, Object> args, MateCredentials credentials);

@@ -122,8 +122,8 @@ class RuntimeSessionConfigurationRoutesTest {
     @Test
     void missingIfMatchUsesConfirmed428Error() throws Exception {
         when(service.changeModel(eq(SESSION_ID), eq(null), any(ChangeModelRequestVO.class)))
-                .thenThrow(new RuntimeApiException(
-                        HttpStatus.PRECONDITION_REQUIRED, RuntimeErrorCode.IF_MATCH_REQUIRED));
+                .thenThrow(
+                        new RuntimeApiException(HttpStatus.PRECONDITION_REQUIRED, RuntimeErrorCode.IF_MATCH_REQUIRED));
 
         mvc.perform(authenticated(put("/campusclaw-service/v1/sessions/{id}/model", SESSION_ID))
                         .contentType(MediaType.APPLICATION_JSON)
@@ -135,22 +135,14 @@ class RuntimeSessionConfigurationRoutesTest {
 
     private static org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder authenticated(
             org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder request) {
-        return request.header("X-HW-ID", "credential")
-                .header(HttpHeaders.AUTHORIZATION, "Bearer opaque-token");
+        return request.header("X-HW-ID", "credential").header(HttpHeaders.AUTHORIZATION, "Bearer opaque-token");
     }
 
-    private static RuntimeSessionView<GetSessionResponseVO> view(
-            String modelId, boolean thinking, String etag) {
+    private static RuntimeSessionView<GetSessionResponseVO> view(String modelId, boolean thinking, String etag) {
         OffsetDateTime created = OffsetDateTime.parse("2026-08-18T00:00:00Z");
         OffsetDateTime updated = OffsetDateTime.parse("2026-08-18T02:00:00Z");
         var response = new GetSessionResponseVO(
-                SESSION_ID,
-                "agent_011CZkYqphY8vELVzwCUpqiQ",
-                modelId,
-                "idle",
-                thinking,
-                created,
-                updated);
+                SESSION_ID, "agent_011CZkYqphY8vELVzwCUpqiQ", modelId, "idle", thinking, created, updated);
         return new RuntimeSessionView<>(response, etag);
     }
 }

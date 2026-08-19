@@ -52,21 +52,17 @@ public class FileAgentDirectoryResolver implements AgentDirectoryResolver {
 
     private static Path requiredManagedFile(Path agentDirectory, String relativePath) {
         Path candidate = agentDirectory.resolve(relativePath).normalize();
-        if (!candidate.startsWith(agentDirectory)
-                || !Files.isRegularFile(candidate, LinkOption.NOFOLLOW_LINKS)) {
-            throw new RuntimeApiException(
-                    HttpStatus.UNPROCESSABLE_ENTITY, RuntimeErrorCode.AGENT_NOT_AVAILABLE);
+        if (!candidate.startsWith(agentDirectory) || !Files.isRegularFile(candidate, LinkOption.NOFOLLOW_LINKS)) {
+            throw new RuntimeApiException(HttpStatus.UNPROCESSABLE_ENTITY, RuntimeErrorCode.AGENT_NOT_AVAILABLE);
         }
         try {
             Path realFile = candidate.toRealPath();
             if (!realFile.startsWith(agentDirectory)) {
-                throw new RuntimeApiException(
-                        HttpStatus.UNPROCESSABLE_ENTITY, RuntimeErrorCode.AGENT_NOT_AVAILABLE);
+                throw new RuntimeApiException(HttpStatus.UNPROCESSABLE_ENTITY, RuntimeErrorCode.AGENT_NOT_AVAILABLE);
             }
             return realFile;
         } catch (IOException error) {
-            throw new RuntimeApiException(
-                    HttpStatus.UNPROCESSABLE_ENTITY, RuntimeErrorCode.AGENT_NOT_AVAILABLE, error);
+            throw new RuntimeApiException(HttpStatus.UNPROCESSABLE_ENTITY, RuntimeErrorCode.AGENT_NOT_AVAILABLE, error);
         }
     }
 
@@ -91,8 +87,7 @@ public class FileAgentDirectoryResolver implements AgentDirectoryResolver {
     private static String requiredText(JsonNode node, String field) {
         String value = node.path(field).asText(null);
         if (value == null || value.isBlank()) {
-            throw new RuntimeApiException(
-                    HttpStatus.UNPROCESSABLE_ENTITY, RuntimeErrorCode.AGENT_MODEL_NOT_CONFIGURED);
+            throw new RuntimeApiException(HttpStatus.UNPROCESSABLE_ENTITY, RuntimeErrorCode.AGENT_MODEL_NOT_CONFIGURED);
         }
         return value;
     }
@@ -104,16 +99,14 @@ public class FileAgentDirectoryResolver implements AgentDirectoryResolver {
             enabled.forEach(item -> addModel(models, item));
         }
         if (models.isEmpty() || !models.contains(defaultModel)) {
-            throw new RuntimeApiException(
-                    HttpStatus.UNPROCESSABLE_ENTITY, RuntimeErrorCode.AGENT_MODEL_NOT_CONFIGURED);
+            throw new RuntimeApiException(HttpStatus.UNPROCESSABLE_ENTITY, RuntimeErrorCode.AGENT_MODEL_NOT_CONFIGURED);
         }
         return List.copyOf(models);
     }
 
     private static void addModel(LinkedHashSet<String> models, JsonNode item) {
         if (!item.isTextual() || item.asText().isBlank() || !models.add(item.asText())) {
-            throw new RuntimeApiException(
-                    HttpStatus.UNPROCESSABLE_ENTITY, RuntimeErrorCode.AGENT_MODEL_NOT_CONFIGURED);
+            throw new RuntimeApiException(HttpStatus.UNPROCESSABLE_ENTITY, RuntimeErrorCode.AGENT_MODEL_NOT_CONFIGURED);
         }
     }
 }

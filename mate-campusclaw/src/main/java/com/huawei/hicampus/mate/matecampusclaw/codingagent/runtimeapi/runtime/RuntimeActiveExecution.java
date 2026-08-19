@@ -79,11 +79,8 @@ public class RuntimeActiveExecution {
         }
     }
 
-    public synchronized boolean queueControl(
-            Message message, long bytes, int maxMessages, long maxBytes) {
-        if (!acceptingControls
-                || queuedControls.size() >= maxMessages
-                || queuedControlBytes + bytes > maxBytes) {
+    public synchronized boolean queueControl(Message message, long bytes, int maxMessages, long maxBytes) {
+        if (!acceptingControls || queuedControls.size() >= maxMessages || queuedControlBytes + bytes > maxBytes) {
             return false;
         }
         queuedControls.put(message, bytes);

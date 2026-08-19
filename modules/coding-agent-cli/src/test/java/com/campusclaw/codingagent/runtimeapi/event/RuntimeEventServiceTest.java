@@ -48,6 +48,7 @@ import com.campusclaw.codingagent.runtimeapi.runtime.RuntimeSessionHolder;
 import com.campusclaw.codingagent.runtimeapi.vo.RuntimeSseEventVO;
 import com.campusclaw.codingagent.runtimeapi.vo.UserEventRequestVO;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -90,8 +91,8 @@ class RuntimeEventServiceTest {
     void rejectsDuplicateFileIdsBeforeReadingSession() {
         Fixture fixture = new Fixture();
 
-        assertThatThrownBy(() -> fixture.service.submit(
-                        SESSION_ID, request(null, List.of("file_same", "file_same")), false))
+        assertThatThrownBy(() ->
+                        fixture.service.submit(SESSION_ID, request(null, List.of("file_same", "file_same")), false))
                 .isInstanceOfSatisfying(RuntimeApiException.class, error -> assertThat(error.errorCode())
                         .isEqualTo(RuntimeErrorCode.INVALID_EVENT_REQUEST));
         verify(fixture.repository, never()).find(anyString());
@@ -138,9 +139,12 @@ class RuntimeEventServiceTest {
 
     private static UserEventRequestVO request(String message, List<String> fileIds) {
         UserEventRequestVO request = new UserEventRequestVO();
-        request.setType("user.message");
-        request.setMessage(message);
-        request.setFileIds(fileIds);
+        request.readType(JsonNodeFactory.instance.textNode("user.message"));
+        request.readMessage(
+                message == null ? JsonNodeFactory.instance.nullNode() : JsonNodeFactory.instance.textNode(message));
+        var files = JsonNodeFactory.instance.arrayNode();
+        fileIds.forEach(files::add);
+        request.readFileIds(files);
         return request;
     }
 
@@ -207,8 +211,8 @@ class RuntimeEventServiceTest {
 
         private void prepareAcceptedExecution() {
             RuntimeSessionDTO session = session();
-            AgentDirectorySnapshotDTO snapshot = new AgentDirectorySnapshotDTO(
-                    AGENT_ID, "model_test", List.of("model_test"), Path.of("/tmp/agent"));
+            AgentDirectorySnapshotDTO snapshot =
+                    new AgentDirectorySnapshotDTO(AGENT_ID, "model_test", List.of("model_test"), Path.of("/tmp/agent"));
             Model model = mock(Model.class);
             when(repository.find(SESSION_ID)).thenReturn(Optional.of(session));
             when(repository.listCurrentBranch(SESSION_ID, 0, 500)).thenReturn(List.of());
