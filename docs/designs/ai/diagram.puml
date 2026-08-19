@@ -1,0 +1,23 @@
+@startuml diagram
+title AI module overview
+
+package "AI module" {
+  [CampusClawAiService] as service
+  [Provider registry] as registry
+  [Provider adapters] as providers
+  [Message and stream types] as types
+  [Model registry] as models
+}
+
+service --> registry : resolve provider
+registry --> providers : select adapter
+service --> types : emit messages
+service --> models : resolve model
+
+note right of service
+Source evidence:
+docs/designs/ai.md
+modules/ai/src/main/java/com/campusclaw/ai/
+Observed behavior: provider adapters feed a shared streaming service.
+end note
+@enduml

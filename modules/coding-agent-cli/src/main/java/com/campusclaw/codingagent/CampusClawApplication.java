@@ -6,7 +6,6 @@ package com.campusclaw.codingagent;
 
 import com.campusclaw.agent.controlplane.config.ControlPlaneProperties;
 import com.campusclaw.codingagent.cli.CampusClawCommand;
-import com.campusclaw.codingagent.config.ToolExecutionProperties;
 import com.campusclaw.codingagent.runtime.AgentRuntimeProperties;
 
 import org.springframework.boot.CommandLineRunner;
@@ -27,7 +26,6 @@ import picocli.CommandLine.IFactory;
  */
 @SpringBootApplication(scanBasePackages = "com.campusclaw")
 @EnableConfigurationProperties({
-    ToolExecutionProperties.class,
     ControlPlaneProperties.class,
     AgentRuntimeProperties.class
 })

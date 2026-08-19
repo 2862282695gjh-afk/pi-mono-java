@@ -1,0 +1,16 @@
+@startuml diagram
+title Agent core runtime overview
+
+[Agent] --> [AgentLoop] : prompt
+[AgentLoop] --> [ToolExecutionPipeline] : tool calls
+[ToolExecutionPipeline] --> [AgentTool] : execute
+[AgentLoop] --> [AgentEvent] : publish state
+[Agent] --> [ToolExecutionMode] : sequential or parallel
+
+note right of [Agent]
+Source evidence:
+docs/designs/agent-core.md
+modules/agent-core/src/main/java/com/campusclaw/agent/
+Observed behavior: execution mode controls scheduling, not sandbox ownership.
+end note
+@enduml

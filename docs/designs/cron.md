@@ -53,22 +53,6 @@ CampusClaw 主进程是 TUI 交互式 Agent，对话生命周期 = 进程生命�
 
 ### 2.1 Story 上下文
 
-```mermaid
-flowchart LR
-    ai["campusclaw-ai"]
-    core["campusclaw-agent-core"]
-    cron["campusclaw-cron"]
-    cli["campusclaw-coding-agent"]
-    jackson(["jackson-databind"])
-    spring(["spring-context (CronExpression)"])
-
-    ai --> core
-    core --> cron
-    cron --> cli
-    jackson -.-> cron
-    spring -.-> cron
-```
-
 文字补充：
 
 - 本模块 artifactId：`campusclaw-cron`（`com.campusclaw:campusclaw-cron:1.0.0-SNAPSHOT`）
@@ -104,31 +88,6 @@ flowchart LR
 ### 3.2 功能实现设计
 
 核心流程：调度任务触发 → 加 tick 锁 → 检查 enabled & 未在跑 → executor 创建 Agent → prompt 执行 → 记录结果 → 重调度。
-
-```mermaid
-sequenceDiagram
-    participant Scheduler as ScheduledExecutorService
-    participant CronEngine
-    participant CronStore
-    participant CronJobExecutor
-    participant Agent
-    participant CronRunLog
-
-    Scheduler->>CronEngine: executeAndReschedule(jobId)
-    CronEngine->>CronEngine: tickLock.tryLock()
-    CronEngine->>CronStore: getJob(jobId)
-    CronStore-->>CronEngine: CronJob
-    CronEngine->>CronStore: markJobRunning
-    CronEngine->>CronJobExecutor: execute(job)
-    CronJobExecutor->>CronRunLog: appendRun(RUNNING)
-    CronJobExecutor->>Agent: new Agent(aiService) + setModel/Tools
-    CronJobExecutor->>Agent: prompt(text).get(300s)
-    Agent-->>CronJobExecutor: AssistantMessage
-    CronJobExecutor->>CronRunLog: appendRun(SUCCESS|FAILED)
-    CronJobExecutor-->>CronEngine: CronRunRecord
-    CronEngine->>CronStore: recordJobOutcome (errors, totalRuns)
-    CronEngine->>CronEngine: scheduleJob(updated)
-```
 
 主流程 step（措辞与时序图节点对齐）：
 
@@ -255,44 +214,6 @@ sequenceDiagram
 
 ### 3.6 代码设计
 
-```mermaid
-classDiagram
-    class CronService
-    class CronEngine
-    class CronJobExecutor
-    class CronEventListener
-    class CronStore
-    class CronRunLog
-    class CronTool
-    class CronJob
-    class CronJobState
-    class CronRunRecord
-    class CronSchedule
-    class CronPayload
-    class CronEvent
-    class AgentTool
-
-    <<interface>> CronEventListener
-    <<sealed>> CronSchedule
-    <<sealed>> CronPayload
-    <<sealed>> CronEvent
-    <<interface>> AgentTool
-
-    CronService *-- CronStore
-    CronService *-- CronEngine
-    CronService *-- CronRunLog
-    CronEngine *-- CronJobExecutor
-    CronEngine --> CronStore : reads/writes
-    CronEngine ..> CronEventListener : emits
-    CronJobExecutor --> CronRunLog : appends
-    CronTool ..|> AgentTool
-    CronTool --> CronService : delegates
-    CronJob *-- CronJobState
-    CronJob --> CronSchedule
-    CronJob --> CronPayload
-    CronEngine ..> CronEvent : emits
-```
-
 正文类清单（按包组织，与图严格对齐）：
 
 `com.campusclaw.cron`
@@ -402,7 +323,7 @@ classDiagram
 | 5.4 | SQL 注入 | 不涉及 | 模块无任何数据库访问；grep `executeQuery` / `PreparedStatement` 全无命中 |
 | 5.5 | XSS 注入 | 不涉及 | 纯后端 lib，无 HTML 渲染；`CronTool` 输出为纯文本 `TextContent` 由 TUI 渲染 |
 | 5.6 | XML 注入 | 不涉及 | 仅 JSON 持久化（Jackson）；grep `DocumentBuilderFactory` / `SAXParserFactory` 无命中 |
-| 5.7 | 命令注入 | 不涉及 | 本模块自身**不**调 `ProcessBuilder` / `Runtime.exec`；执行体走 `new Agent(aiService).prompt(...)`，下游 `BashTool` 由 agent 自己的 `allowedTools` 决定，且其防护在 `coding-agent-cli` 的 `BashTool` / `HybridBashTool` 内（本模块不负责） |
+| 5.7 | 命令注入 | 不涉及 | 本模块自身**不**调 `ProcessBuilder` / `Runtime.exec`；执行体走 `new Agent(aiService).prompt(...)`，下游 `BashTool` 由 agent 自己的 `allowedTools` 决定，且其防护在 `coding-agent-cli` 的本地 `BashTool` 内（本模块不负责） |
 | 5.8 | 输入校验 | 是 | `CronTool.parseSchedule` 显式校验 `at` 必为 epoch millis 或 ISO instant、`every` 必为正整数 ms、`cron` 必通过 `CronExpression.parse`；`handleCreate` 检查 `name` / `prompt` 非空；非法 schedule 返回错误文本而非抛异常 |
 | 5.9 | 敏感数据/个人隐私数据 | 是 | `CronPayload.AgentPrompt.prompt` 可能包含用户输入文本，被持久化到 `jobs.json`；`CronRunRecord.output` 持久化 LLM 输出。当前未做脱敏；`jobs.json` 与 `runs/*.jsonl` 落在 `$HOME/.campusclaw/agent/cron/`，依赖文件系统权限保护 |
 | 5.10 | 加解密 | 不涉及 | 无 `Cipher` / `MessageDigest` / `SecretKey` 引用；任务定义与运行日志明文存储 |
@@ -434,5 +355,6 @@ classDiagram
 | 日期 | 提出人 | 角色 | 问题/议题 | 讨论过程 | 决策结论 | 状态 |
 |---|---|---|---|---|---|---|
 | 2026-05-14 | - | - | 设计文档由 codebase-module-design skill 基于代码逆向生成 v1 | 复用 `docs/cron-module-design.md` 中的依赖关系、并发控制矩阵、Phase 设计原文；按 AR 七章模板补齐 1.1 / 2.1 / 3.2 / 3.5 / 3.6 / 4.x / 5.x 章节，并按新规则在 2.1 / 3.2 / 3.6 三处补 Mermaid 图 | 由开发者补充 1.1 需求来源具体 Story 编号、1.2 业务背景描述、6.x 转测项勾选 | 开放 |
+| 2026-08-19 | - | - | 清理过期工具执行说明 | 删除 HybridBashTool 引用并移除旧 Mermaid 图块 | 本文档只描述本地 BashTool 作为下游能力 | 完成 |
 | - | - | - | 是否将硬编码业务参数（`MAX_CONSECUTIVE_ERRORS=3`、`DEFAULT_TIMEOUT_SECONDS=300`、`STALE_THRESHOLD_MS=2h`）外置为 `@ConfigurationProperties` | - | 待评审 | 开放 |
 | - | - | - | `jobs.json` / `runs/*.jsonl` 是否设置 POSIX 0600 文件权限（5.15） | - | 待评审 | 开放 |

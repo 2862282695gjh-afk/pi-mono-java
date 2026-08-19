@@ -23,9 +23,11 @@ import java.nio.file.Path;
 import java.util.List;
 
 import com.huawei.hicampus.mate.matecampusclaw.agent.tool.AgentTool;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtime.AgentRuntimeManager;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.config.CustomModelLoader;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.mode.server.ServerMode;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.session.SessionConfig;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.catalog.ToolSelection;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -41,7 +43,7 @@ class CampusClawCommandTest {
 
     private CampusClawCommand parse(String... args) {
         CampusClawCommand cmd = new CampusClawCommand(
-                null, null, null, null, null, null, null, null, null, null, null, null, null, null);
+                null, null, null, null, null, null, null, null, null, null, null, null, null);
         new CommandLine(cmd).parseArgs(args);
         return cmd;
     }
@@ -361,7 +363,7 @@ class CampusClawCommandTest {
 
         private CustomModelLoader invoke(ApplicationContext ctx) throws Exception {
             CampusClawCommand cmd = new CampusClawCommand(
-                    null, null, null, null, null, null, null, null, null, ctx, null, null, null, null);
+                    null, null, null, null, null, null, null, null, null, ctx, null, null, null);
             Method m = CampusClawCommand.class.getDeclaredMethod("resolveCustomModelLoader");
             m.setAccessible(true);
             return (CustomModelLoader) m.invoke(cmd);
@@ -420,9 +422,9 @@ class CampusClawCommandTest {
 
         private void invokeRunServerMode(CampusClawCommand cmd, SessionConfig config) throws Exception {
             Method m = CampusClawCommand.class.getDeclaredMethod(
-                    "runServerMode", SessionConfig.class, List.class, boolean.class);
+                    "runServerMode", SessionConfig.class, List.class, ToolSelection.class, AgentRuntimeManager.class);
             m.setAccessible(true);
-            m.invoke(cmd, config, List.<AgentTool>of(), false);
+            m.invoke(cmd, config, List.<AgentTool>of(), ToolSelection.all(), null);
         }
 
         @Test
@@ -432,7 +434,7 @@ class CampusClawCommandTest {
             when(ctx.getBean(CustomModelLoader.class)).thenReturn(loader);
 
             CampusClawCommand cmd = new CampusClawCommand(
-                    null, null, null, null, null, null, null, null, null, ctx, null, null, null, null);
+                    null, null, null, null, null, null, null, null, null, ctx, null, null, null);
             SessionConfig config = mock(SessionConfig.class);
 
             try (MockedConstruction<ServerMode> mc = mockConstruction(ServerMode.class)) {
@@ -450,7 +452,7 @@ class CampusClawCommandTest {
             when(ctx.getBean(CustomModelLoader.class)).thenReturn(loader);
 
             CampusClawCommand cmd = new CampusClawCommand(
-                    null, null, null, null, null, null, null, null, null, ctx, null, null, null, null);
+                    null, null, null, null, null, null, null, null, null, ctx, null, null, null);
 
             try (MockedConstruction<ServerMode> mc = mockConstruction(ServerMode.class)) {
                 invokeRunServerMode(cmd, mock(SessionConfig.class));
@@ -465,7 +467,7 @@ class CampusClawCommandTest {
         @Test
         void toleratesNullApplicationContext() throws Exception {
             CampusClawCommand cmd = new CampusClawCommand(
-                    null, null, null, null, null, null, null, null, null, null, null, null, null, null);
+                    null, null, null, null, null, null, null, null, null, null, null, null, null);
 
             try (MockedConstruction<ServerMode> mc = mockConstruction(ServerMode.class)) {
                 invokeRunServerMode(cmd, mock(SessionConfig.class));
@@ -485,7 +487,7 @@ class CampusClawCommandTest {
         @Test
         void helpExitsWithZero() {
             CampusClawCommand cmd = new CampusClawCommand(
-                    null, null, null, null, null, null, null, null, null, null, null, null, null, null);
+                    null, null, null, null, null, null, null, null, null, null, null, null, null);
             int exitCode = new CommandLine(cmd).execute("--help");
             assertEquals(0, exitCode);
         }
@@ -493,7 +495,7 @@ class CampusClawCommandTest {
         @Test
         void versionExitsWithZero() {
             CampusClawCommand cmd = new CampusClawCommand(
-                    null, null, null, null, null, null, null, null, null, null, null, null, null, null);
+                    null, null, null, null, null, null, null, null, null, null, null, null, null);
             int exitCode = new CommandLine(cmd).execute("--version");
             assertEquals(0, exitCode);
         }

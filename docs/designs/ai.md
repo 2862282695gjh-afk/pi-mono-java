@@ -1,5 +1,10 @@
 # ai 模块实现设计文档（基于代码 v1）
 
+![AI module overview](ai/diagram.svg)
+
+PlantUML source: [ai/diagram.puml#L1](ai/diagram.puml#L1)
+
+
 ## 文档信息
 
 | 项目 | 内容 |
@@ -52,25 +57,6 @@
 
 ### 2.1 Story 上下文
 
-```mermaid
-flowchart LR
-    ai["campusclaw-ai"]
-    core["campusclaw-agent-core"]
-    cron["campusclaw-cron"]
-    cli["campusclaw-coding-agent"]
-    anthropic_sdk["anthropic-java (外部)"]
-    openai_sdk["openai-java (外部)"]
-    reactor["reactor-core / webflux (外部)"]
-    jackson["jackson + json-schema (外部)"]
-    anthropic_sdk --> ai
-    openai_sdk --> ai
-    reactor --> ai
-    jackson --> ai
-    ai --> core
-    core --> cron
-    core --> cli
-```
-
 文字补充：
 
 - **本模块 artifactId**：`campusclaw-ai`
@@ -119,30 +105,6 @@ ai 模块把"和任何 LLM 服务商对话"这件事抽象为单一接口 `ApiPr
 7. `push(event)`：对每个 SDK 原生增量，翻译成 `AssistantMessageEvent` 子类（含 partial `AssistantMessage` 累积态）push 到 `EventStream`，期间维护 contentIndex、tool call accumulator、thinking signature 等状态；
 8. `pushDone(reason, message)` / `pushError(reason, error)`：SDK 流终止后，根据最后 chunk 的 `stop_reason` 决定推 `DoneEvent` 还是 `ErrorEvent`；`EventStream` 内部 `isTerminal` 命中即自动 complete `Sinks`；
 9. `asFlux() / result()`：调用方（通常是 agent-core 的 `AgentLoop.consumeStream`）订阅 `Flux<AssistantMessageEvent>` 渲染增量，或拿 `Mono<AssistantMessage>` 等终态。
-
-```mermaid
-sequenceDiagram
-    participant Caller
-    participant CampusClawAiService
-    participant ApiProviderRegistry
-    participant AnthropicProvider
-    participant AssistantMessageEventStream
-    participant SDK as anthropic-java SDK
-    Caller->>CampusClawAiService: streamSimple(model, context, options)
-    CampusClawAiService->>ApiProviderRegistry: getProvider(model.api)
-    ApiProviderRegistry-->>CampusClawAiService: AnthropicProvider
-    CampusClawAiService->>AnthropicProvider: streamSimple(...)
-    AnthropicProvider->>AssistantMessageEventStream: new()
-    AnthropicProvider-->>Caller: AssistantMessageEventStream
-    Note over AnthropicProvider: Thread.ofVirtual().start
-    AnthropicProvider->>SDK: messages.createStreaming(...)
-    loop SSE chunks
-        SDK-->>AnthropicProvider: RawMessageStreamEvent
-        AnthropicProvider->>AssistantMessageEventStream: push(TextDelta/ToolCallDelta/...)
-    end
-    AnthropicProvider->>AssistantMessageEventStream: pushDone(reason, message)
-    AssistantMessageEventStream-->>Caller: Flux/Mono complete
-```
 
 **事件清单（sealed `AssistantMessageEvent` 子类型）：**
 
@@ -267,56 +229,6 @@ sequenceDiagram
 **`com.campusclaw.ai.utils`**
 - `ContextOverflowDetector`：18 条 provider 专属正则 + z.ai 静默溢出判定
 - `SurrogateSanitizer`：UTF-16 surrogate 清理
-
-```mermaid
-classDiagram
-    class CampusClawAiService
-    class ApiProvider
-    <<interface>> ApiProvider
-    class ApiProviderRegistry
-    class ModelRegistry
-    class ProviderConfigResolver
-    <<interface>> ProviderConfigResolver
-    class EnvProviderConfigResolver
-    class EnvApiKeyResolver
-    class ResolvedProviderConfig
-    class AnthropicProvider
-    class OpenAICompletionsProvider
-    class OpenAIResponsesProvider
-    class MistralProvider
-    class AssistantMessageEvent
-    <<interface>> AssistantMessageEvent
-    class AssistantMessageEventStream
-    class EventStream
-    class Message
-    <<interface>> Message
-    class ContentBlock
-    <<interface>> ContentBlock
-    class Model
-    class Context
-    class MessageTransformer
-    class ContextOverflowDetector
-    class SurrogateSanitizer
-
-    CampusClawAiService --> ApiProviderRegistry : resolves via
-    CampusClawAiService --> ModelRegistry : exposes
-    ApiProviderRegistry o-- ApiProvider : indexes by Api
-    AnthropicProvider ..|> ApiProvider
-    OpenAICompletionsProvider ..|> ApiProvider
-    OpenAIResponsesProvider ..|> ApiProvider
-    MistralProvider ..|> ApiProvider
-    ApiProvider --> AssistantMessageEventStream : returns
-    AssistantMessageEventStream *-- EventStream
-    AssistantMessageEventStream ..> AssistantMessageEvent : pushes
-    ApiProvider ..> ProviderConfigResolver : resolves cfg
-    EnvProviderConfigResolver ..|> ProviderConfigResolver
-    EnvProviderConfigResolver --> EnvApiKeyResolver
-    ProviderConfigResolver --> ResolvedProviderConfig : returns
-    ApiProvider ..> MessageTransformer : normalizes
-    Context o-- Message
-    Message <|.. ContentBlock : (not really, kept for clarity)
-    ApiProvider ..> Model : reads
-```
 
 ### 3.7 安装部署设计
 

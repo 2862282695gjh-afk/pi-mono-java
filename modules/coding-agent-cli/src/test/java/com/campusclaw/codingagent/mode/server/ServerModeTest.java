@@ -58,8 +58,6 @@ class ServerModeTest {
                 mock(SessionConfig.class),
                 3000,
                 "localhost",
-                null,
-                false,
                 modelCatalog,
                 true,
                 settingsManager,
@@ -197,8 +195,6 @@ class ServerModeTest {
                     mock(SessionConfig.class),
                     3000,
                     "localhost",
-                    null,
-                    false,
                     mock(ModelCatalogService.class),
                     true);
 

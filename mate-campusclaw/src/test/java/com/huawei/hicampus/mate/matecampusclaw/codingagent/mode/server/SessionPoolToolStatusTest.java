@@ -52,8 +52,6 @@ class SessionPoolToolStatusTest {
                 catalog,
                 new ToolSelection(List.of("read"), List.of(), false),
                 new SessionConfig(null, Path.of("/tmp/project"), null, "server"),
-                null,
-                false,
                 false);
 
         Map<String, Object> status = pool.toolStatus();
@@ -81,8 +79,6 @@ class SessionPoolToolStatusTest {
                 catalog,
                 ToolSelection.all(),
                 new SessionConfig(null, Path.of("/tmp/project"), null, "server"),
-                null,
-                false,
                 false,
                 settingsManager,
                 null,
@@ -116,8 +112,6 @@ class SessionPoolToolStatusTest {
                 catalog,
                 ToolSelection.all(),
                 new SessionConfig(null, Path.of("/tmp/project"), null, "server"),
-                null,
-                false,
                 false,
                 settingsManager,
                 null,
@@ -147,8 +141,6 @@ class SessionPoolToolStatusTest {
                 catalog,
                 ToolSelection.all(),
                 new SessionConfig(null, Path.of("/tmp/project"), null, "server"),
-                null,
-                false,
                 false,
                 settingsManager,
                 null,
@@ -212,8 +204,6 @@ class SessionPoolToolStatusTest {
                 catalog,
                 ToolSelection.all(),
                 new SessionConfig(null, Path.of("/tmp/project"), null, "server"),
-                null,
-                false,
                 false);
         var session = mock(AgentSession.class);
         activeSessions(pool).put("conversation", new SessionPool.Entry(session, System.currentTimeMillis()));
@@ -237,8 +227,6 @@ class SessionPoolToolStatusTest {
                 catalog,
                 ToolSelection.all(),
                 new SessionConfig(null, Path.of("/tmp/project"), null, "server"),
-                null,
-                false,
                 false);
         var session = mock(AgentSession.class);
         when(session.reloadToolsWhenIdle()).thenReturn(false);

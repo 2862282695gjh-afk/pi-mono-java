@@ -1,0 +1,15 @@
+@startuml diagram
+title TUI module overview
+
+[Terminal] --> [Tui]
+[Tui] --> [Component tree]
+[Component tree] --> [ANSI renderer]
+[Agent events] --> [Tui]
+
+note right of [Tui]
+Source evidence:
+docs/designs/tui.md
+modules/tui/src/main/java/com/campusclaw/tui/
+Observed behavior: terminal components render agent events.
+end note
+@enduml

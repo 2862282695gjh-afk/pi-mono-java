@@ -21,7 +21,6 @@ import com.campusclaw.codingagent.runtime.LocalAgentDispatcher;
 import com.campusclaw.codingagent.session.SessionConfig;
 import com.campusclaw.codingagent.settings.Settings;
 import com.campusclaw.codingagent.settings.SettingsManager;
-import com.campusclaw.codingagent.skill.SandboxSkillParser;
 import com.campusclaw.codingagent.skill.SkillLoader;
 import com.campusclaw.codingagent.skill.SkillManager;
 import com.campusclaw.codingagent.tool.catalog.ToolCatalog;
@@ -78,8 +77,6 @@ public class ServerMode {
     private final SessionConfig baseConfig;
     private final int port;
     private final String host;
-    private final SandboxSkillParser sandboxParser;
-    private final boolean useSandbox;
     private final ModelCatalogService modelCatalog;
     private final boolean sessionPersistenceEnabled;
     private final SettingsManager settingsManager;
@@ -111,14 +108,18 @@ public class ServerMode {
                 modelRegistry,
                 promptBuilder,
                 tools,
+                null,
+                ToolSelection.all(),
                 baseConfig,
                 port,
                 "localhost",
                 null,
-                false,
-                null,
                 true,
                 null,
+                null,
+                null,
+                null,
+                fixedSelectionResolver(ToolSelection.all()),
                 null);
     }
 
@@ -130,19 +131,17 @@ public class ServerMode {
             SessionConfig baseConfig,
             int port,
             String host,
-            SandboxSkillParser sandboxParser,
-            boolean useSandbox,
             ModelCatalogService modelCatalog) {
         this(
                 aiService,
                 modelRegistry,
                 promptBuilder,
                 tools,
+                null,
+                ToolSelection.all(),
                 baseConfig,
                 port,
                 host,
-                sandboxParser,
-                useSandbox,
                 modelCatalog,
                 true,
                 null,
@@ -157,8 +156,6 @@ public class ServerMode {
             SessionConfig baseConfig,
             int port,
             String host,
-            SandboxSkillParser sandboxParser,
-            boolean useSandbox,
             ModelCatalogService modelCatalog,
             boolean sessionPersistenceEnabled) {
         this(
@@ -166,11 +163,11 @@ public class ServerMode {
                 modelRegistry,
                 promptBuilder,
                 tools,
+                null,
+                ToolSelection.all(),
                 baseConfig,
                 port,
                 host,
-                sandboxParser,
-                useSandbox,
                 modelCatalog,
                 sessionPersistenceEnabled,
                 null,
@@ -185,8 +182,6 @@ public class ServerMode {
             SessionConfig baseConfig,
             int port,
             String host,
-            SandboxSkillParser sandboxParser,
-            boolean useSandbox,
             ModelCatalogService modelCatalog,
             boolean sessionPersistenceEnabled,
             SettingsManager settingsManager,
@@ -201,8 +196,6 @@ public class ServerMode {
                 baseConfig,
                 port,
                 host,
-                sandboxParser,
-                useSandbox,
                 modelCatalog,
                 sessionPersistenceEnabled,
                 settingsManager,
@@ -219,8 +212,6 @@ public class ServerMode {
             SessionConfig baseConfig,
             int port,
             String host,
-            SandboxSkillParser sandboxParser,
-            boolean useSandbox,
             ModelCatalogService modelCatalog,
             boolean sessionPersistenceEnabled,
             SettingsManager settingsManager,
@@ -235,8 +226,6 @@ public class ServerMode {
                 baseConfig,
                 port,
                 host,
-                sandboxParser,
-                useSandbox,
                 modelCatalog,
                 sessionPersistenceEnabled,
                 settingsManager,
@@ -255,8 +244,6 @@ public class ServerMode {
             SessionConfig baseConfig,
             int port,
             String host,
-            SandboxSkillParser sandboxParser,
-            boolean useSandbox,
             ModelCatalogService modelCatalog,
             boolean sessionPersistenceEnabled,
             SettingsManager settingsManager,
@@ -273,8 +260,6 @@ public class ServerMode {
                 baseConfig,
                 port,
                 host,
-                sandboxParser,
-                useSandbox,
                 modelCatalog,
                 sessionPersistenceEnabled,
                 settingsManager,
@@ -294,8 +279,6 @@ public class ServerMode {
             SessionConfig baseConfig,
             int port,
             String host,
-            SandboxSkillParser sandboxParser,
-            boolean useSandbox,
             ModelCatalogService modelCatalog,
             boolean sessionPersistenceEnabled,
             SettingsManager settingsManager,
@@ -313,8 +296,6 @@ public class ServerMode {
                 baseConfig,
                 port,
                 host,
-                sandboxParser,
-                useSandbox,
                 modelCatalog,
                 sessionPersistenceEnabled,
                 settingsManager,
@@ -335,8 +316,6 @@ public class ServerMode {
             SessionConfig baseConfig,
             int port,
             String host,
-            SandboxSkillParser sandboxParser,
-            boolean useSandbox,
             ModelCatalogService modelCatalog,
             boolean sessionPersistenceEnabled,
             SettingsManager settingsManager,
@@ -352,8 +331,6 @@ public class ServerMode {
         this.baseConfig = baseConfig;
         this.port = port;
         this.host = host;
-        this.sandboxParser = sandboxParser;
-        this.useSandbox = useSandbox;
         this.modelCatalog = modelCatalog;
         this.sessionPersistenceEnabled = sessionPersistenceEnabled;
         this.settingsManager = settingsManager;
@@ -389,8 +366,6 @@ public class ServerMode {
                 toolCatalog,
                 toolSelection,
                 baseConfig,
-                sandboxParser,
-                useSandbox,
                 sessionPersistenceEnabled,
                 settingsManager,
                 agentRuntimeManager,
@@ -400,8 +375,8 @@ public class ServerMode {
         var chatHandler = new ChatHandler(sessionPool);
         var wsHandler = new ChatWebSocketHandler(sessionPool, modelCatalog);
         var skillHandler = new SkillHandler(
-                new SkillManager(AppPaths.USER_SKILLS_DIR, sandboxParser, useSandbox),
-                new SkillLoader(sandboxParser, useSandbox));
+                new SkillManager(AppPaths.USER_SKILLS_DIR),
+                new SkillLoader());
         SettingsHandler settingsHandler = buildSettingsHandler();
         RouterFunction<ServerResponse> routes = buildRoutes(chatHandler, skillHandler, sessionPool, settingsHandler);
         var adapter = new ReactorHttpHandlerAdapter(RouterFunctions.toHttpHandler(routes));

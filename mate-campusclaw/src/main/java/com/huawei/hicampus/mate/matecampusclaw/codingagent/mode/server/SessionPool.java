@@ -35,7 +35,6 @@ import com.huawei.hicampus.mate.matecampusclaw.codingagent.session.SessionConfig
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.session.SessionManager;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.settings.Settings;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.settings.SettingsManager;
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.skill.SandboxSkillParser;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.skill.SkillExpander;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.skill.SkillLoader;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.catalog.ToolCatalog;
@@ -71,8 +70,6 @@ public class SessionPool {
     private volatile ToolSelection toolSelection;
     private final Function<Settings.ToolsSettings, ToolSelection> toolSelectionResolver;
     private final SessionConfig baseConfig;
-    private final SandboxSkillParser sandboxParser;
-    private final boolean useSandbox;
     private final boolean persistenceEnabled;
     private final SettingsManager settingsManager;
     private final AgentRuntimeManager agentRuntimeManager;
@@ -98,7 +95,20 @@ public class SessionPool {
             SystemPromptBuilder promptBuilder,
             List<AgentTool> tools,
             SessionConfig baseConfig) {
-        this(aiService, modelRegistry, promptBuilder, tools, baseConfig, null, false, true);
+        this(
+                aiService,
+                modelRegistry,
+                promptBuilder,
+                tools,
+                null,
+                ToolSelection.all(),
+                baseConfig,
+                true,
+                null,
+                null,
+                null,
+                fixedSelectionResolver(ToolSelection.all()),
+                null);
     }
 
     public SessionPool(
@@ -107,19 +117,6 @@ public class SessionPool {
             SystemPromptBuilder promptBuilder,
             List<AgentTool> tools,
             SessionConfig baseConfig,
-            SandboxSkillParser sandboxParser,
-            boolean useSandbox) {
-        this(aiService, modelRegistry, promptBuilder, tools, baseConfig, sandboxParser, useSandbox, true);
-    }
-
-    public SessionPool(
-            CampusClawAiService aiService,
-            ModelRegistry modelRegistry,
-            SystemPromptBuilder promptBuilder,
-            List<AgentTool> tools,
-            SessionConfig baseConfig,
-            SandboxSkillParser sandboxParser,
-            boolean useSandbox,
             boolean persistenceEnabled) {
         this(
                 aiService,
@@ -129,8 +126,6 @@ public class SessionPool {
                 null,
                 ToolSelection.all(),
                 baseConfig,
-                sandboxParser,
-                useSandbox,
                 persistenceEnabled,
                 null);
     }
@@ -143,8 +138,6 @@ public class SessionPool {
             ToolCatalog toolCatalog,
             ToolSelection toolSelection,
             SessionConfig baseConfig,
-            SandboxSkillParser sandboxParser,
-            boolean useSandbox,
             boolean persistenceEnabled) {
         this(
                 aiService,
@@ -154,8 +147,6 @@ public class SessionPool {
                 toolCatalog,
                 toolSelection,
                 baseConfig,
-                sandboxParser,
-                useSandbox,
                 persistenceEnabled,
                 null);
     }
@@ -168,8 +159,6 @@ public class SessionPool {
             ToolCatalog toolCatalog,
             ToolSelection toolSelection,
             SessionConfig baseConfig,
-            SandboxSkillParser sandboxParser,
-            boolean useSandbox,
             boolean persistenceEnabled,
             SettingsManager settingsManager) {
         this(
@@ -180,8 +169,6 @@ public class SessionPool {
                 toolCatalog,
                 toolSelection,
                 baseConfig,
-                sandboxParser,
-                useSandbox,
                 persistenceEnabled,
                 settingsManager,
                 null,
@@ -196,8 +183,6 @@ public class SessionPool {
             ToolCatalog toolCatalog,
             ToolSelection toolSelection,
             SessionConfig baseConfig,
-            SandboxSkillParser sandboxParser,
-            boolean useSandbox,
             boolean persistenceEnabled,
             SettingsManager settingsManager,
             AgentRuntimeManager agentRuntimeManager,
@@ -210,8 +195,6 @@ public class SessionPool {
                 toolCatalog,
                 toolSelection,
                 baseConfig,
-                sandboxParser,
-                useSandbox,
                 persistenceEnabled,
                 settingsManager,
                 agentRuntimeManager,
@@ -227,8 +210,6 @@ public class SessionPool {
             ToolCatalog toolCatalog,
             ToolSelection toolSelection,
             SessionConfig baseConfig,
-            SandboxSkillParser sandboxParser,
-            boolean useSandbox,
             boolean persistenceEnabled,
             SettingsManager settingsManager,
             AgentRuntimeManager agentRuntimeManager,
@@ -242,8 +223,6 @@ public class SessionPool {
                 toolCatalog,
                 toolSelection,
                 baseConfig,
-                sandboxParser,
-                useSandbox,
                 persistenceEnabled,
                 settingsManager,
                 agentRuntimeManager,
@@ -260,8 +239,6 @@ public class SessionPool {
             ToolCatalog toolCatalog,
             ToolSelection toolSelection,
             SessionConfig baseConfig,
-            SandboxSkillParser sandboxParser,
-            boolean useSandbox,
             boolean persistenceEnabled,
             SettingsManager settingsManager,
             AgentRuntimeManager agentRuntimeManager,
@@ -277,8 +254,6 @@ public class SessionPool {
         this.toolSelectionResolver =
                 toolSelectionResolver != null ? toolSelectionResolver : fixedSelectionResolver(this.toolSelection);
         this.baseConfig = baseConfig;
-        this.sandboxParser = sandboxParser;
-        this.useSandbox = useSandbox;
         this.persistenceEnabled = persistenceEnabled;
         this.settingsManager = settingsManager;
         this.agentRuntimeManager = agentRuntimeManager;
@@ -615,8 +590,8 @@ public class SessionPool {
         Path absoluteCwd = configuredCwd.toAbsolutePath().normalize();
         sessionConfig = new SessionConfig(
                 sessionConfig.model(), absoluteCwd, sessionConfig.customPrompt(), sessionConfig.mode());
-        var skillLoader = new SkillLoader(sandboxParser, useSandbox);
-        var skillExpander = new SkillExpander(sandboxParser, useSandbox);
+        var skillLoader = new SkillLoader();
+        var skillExpander = new SkillExpander();
         AgentSession session = new AgentSession(
                 aiService, modelRegistry, promptBuilder, skillLoader, skillExpander, resolveTools(sessionConfig.cwd()));
         if (toolCatalog != null) {

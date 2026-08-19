@@ -1,5 +1,10 @@
 # tui 模块设计文档（基于代码 v1）
 
+![TUI module overview](tui/diagram.svg)
+
+PlantUML source: [tui/diagram.puml#L1](tui/diagram.puml#L1)
+
+
 ## 文档信息
 
 | 项目 | 内容 |
@@ -47,19 +52,6 @@
 ## 2. Story 分析
 
 ### 2.1 Story 上下文
-
-```mermaid
-flowchart LR
-    jline[JLine 3]
-    lanterna[Lanterna]
-    jackson[Jackson databind]
-    tui["campusclaw-tui"]
-    cli["campusclaw-coding-agent"]
-    jline --> tui
-    lanterna --> tui
-    jackson --> tui
-    tui --> cli
-```
 
 文字补充：
 
@@ -115,30 +107,6 @@ flowchart LR
 输入与 resize 是事件驱动：`start()` 时向 `terminal.onInput` 注册 `inputHandler`，向 `terminal.onResize` 注册 `size -> render()`。`JLineTerminal` 内部用 `Thread.ofVirtual().name("campusclaw-tui-input")` 守护虚拟线程阻塞读 `NonBlockingReader`，把字节拼成 escape sequence 后通过监听器分发。
 
 下面用 sequenceDiagram 描述一帧 render-flush 周期（actor 为真实类名）：
-
-```mermaid
-sequenceDiagram
-    participant Caller
-    participant Tui
-    participant Terminal
-    participant Container
-    participant AnsiUtils
-    Caller->>Tui: render()
-    Tui->>Terminal: getSize()
-    Terminal-->>Tui: TerminalSize(width,height)
-    Tui->>Container: render(width)
-    Container-->>Tui: newLines
-    alt 首帧 or 尺寸变化 or 收缩
-        Tui->>Tui: fullRender(newLines,width,height,clear)
-        Tui->>AnsiUtils: sliceByColumn(line,0,width)
-        AnsiUtils-->>Tui: 截断后的 line
-        Tui->>Terminal: write(SYNC_START + ERASE + lines + SYNC_END)
-    else 常规差分
-        Tui->>Tui: computeChangeRange(newLines)
-        Tui->>Tui: emitDiffFrame(range,newLines,width,height)
-        Tui->>Terminal: write(SYNC_START + 相对光标移动 + CLEAR_LINE + 改动行 + SYNC_END)
-    end
-```
 
 图中 `render(width)`、`newLines`、`fullRender`、`computeChangeRange`、`emitDiffFrame`、`sliceByColumn`、`SYNC_START/SYNC_END`、`CLEAR_LINE` 等措辞均与上面正文 step 列表一致。
 
@@ -230,55 +198,6 @@ sequenceDiagram
 ### 3.6 代码设计
 
 下面 classDiagram 给出关键类与关系（≤ 15 节点，类名集合 ⊆ 下方表中类名）：
-
-```mermaid
-classDiagram
-    class Component {
-        <<interface>>
-        +render(int width) List~String~
-        +handleInput(String data)
-        +invalidate()
-    }
-    class Focusable {
-        <<interface>>
-        +isFocused() boolean
-        +setFocused(boolean)
-    }
-    class Terminal {
-        <<interface>>
-    }
-    class Tui
-    class Container
-    class Box
-    class Text
-    class Input
-    class Editor
-    class SelectList
-    class MarkdownComponent
-    class FuzzyMatcher
-    class AnsiUtils
-    class JLineTerminal
-    class TestTerminal
-
-    Container ..|> Component
-    Box ..|> Component
-    Text ..|> Component
-    Input ..|> Component
-    Input ..|> Focusable
-    Editor ..|> Component
-    Editor ..|> Focusable
-    SelectList ..|> Component
-    SelectList ..|> Focusable
-    MarkdownComponent ..|> Component
-    JLineTerminal ..|> Terminal
-    TestTerminal ..|> Terminal
-    Tui *-- Container
-    Tui --> Terminal : uses
-    Tui --> AnsiUtils : uses
-    Container o-- Component
-    Box *-- Component
-    Input --> FuzzyMatcher : optional
-```
 
 正文表（按包组织，每个一级包列对外/入口/核心抽象，借用类的 javadoc 一行职责）：
 

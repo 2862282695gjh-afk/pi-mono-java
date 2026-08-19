@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ADR-0015 · 移除本地沙箱并统一由工具管理器管理受管控工具</title>
+  <style>
+    :root{--fg:#1a1a1a;--dim:#666;--accent:#2563eb;--accepted:#15803d;--bg:#fff;--card:#f6f7f9}
+    body{font:15px/1.6 -apple-system,Segoe UI,Roboto,"PingFang SC",sans-serif;color:var(--fg);
+         background:var(--bg);max-width:820px;margin:2rem auto;padding:0 1.2rem}
+    h1{font-size:1.5rem;margin:.2rem 0}
+    .meta{color:var(--dim);font-size:.9rem;margin-bottom:1.2rem}
+    .badge{display:inline-block;padding:.1rem .6rem;border-radius:1rem;font-size:.8rem;background:var(--accepted);color:#fff}
+    section{margin:1.4rem 0}
+    h2{font-size:1.05rem;border-bottom:1px solid #eee;padding-bottom:.3rem}
+    a{color:var(--accent)} code{background:var(--card);padding:.1rem .3rem;border-radius:.3rem}
+  </style>
+</head>
+<body>
+  <h1>ADR-0015 · 移除本地沙箱并统一由工具管理器管理受管控工具</h1>
+  <div class="meta">Status: <span class="badge">Accepted</span> · Date: 2026-08-19 ·
+    设计文档: <a href="../designs/sandbox-cleanup.md">sandbox-cleanup</a> ·
+    基线: <code>origin/main@5f4d81752acacaa219a92aa0b0b6a93427802e17</code></div>
+
+  <section><h2>Context</h2>
+    <p>基线同时包含普通本地工具、Docker Sandbox、Hybrid Tool、本地执行路由和 Skill Sandbox Parser。Kubernetes 部署还依赖 Docker sidecar、Docker socket、特权容器及 Docker readiness。该组合使工具所有权、配置、Schema 与运行时隔离语义分散在 CampusClaw 和部署脚本两侧；基线已经提供 <code>ToolCatalog</code>、<code>MateToolClient</code>、<code>ListMateTool</code> 与 <code>CallMateTool</code>，因此继续维护本地 Docker 路由会形成两套工具管理权威。</p>
+  </section>
+
+  <section><h2>Options considered</h2>
+    <ul>
+      <li><strong>继续保留本地 Docker Sandbox 与 Hybrid 路由</strong><br>Pro：保留既有本地隔离路径，迁移风险小。<br>Con：继续承担 DinD、Docker socket、特权权限和双套配置；工具 Schema 与远程管理器的所有权仍然分裂。Rejected。</li>
+      <li><strong>保留沙箱代码但默认关闭</strong><br>Pro：可以通过配置快速恢复旧实验能力。<br>Con：死代码仍会被测试、镜像、脚本和文档重新引用；配置兼容层延长迁移边界，无法保证单容器部署。Rejected。</li>
+      <li><strong>删除本地沙箱和 Hybrid，保留本地基础工具并把受管控工具交给 MateService</strong><br>Pro：本地路径、超时和输出截断语义保持稳定；工具元数据、授权和远程执行集中管理；Kubernetes 可以退化为单容器。<br>Con：本地 JVM 不再提供 Docker 容器隔离，旧沙箱配置和脚本不再兼容；运维必须单独清理历史 Docker 资源。Chosen。</li>
+    </ul>
+    <p><strong>选择理由：</strong>目标是收敛工具管理边界，而不是继续扩展本地隔离产品。删除属于架构迁移；本地安全能力仅保持既有路径校验、超时和输出截断，不构成新的沙箱保证。</p>
+  </section>
+
+  <section><h2>Decision</h2>
+    <ul>
+      <li>删除 <code>tool/sandbox</code>、<code>tool/hybrid</code>、<code>ExecutionRouter</code>、<code>ToolExecutionStrategy</code>、<code>SandboxSkillParser</code>、沙箱配置模型及实验脚本/镜像/Compose 文件。</li>
+      <li>保留 <code>BashTool</code>、<code>ReadTool</code>、<code>WriteTool</code>、<code>EditTool</code>、<code>GlobTool</code>、<code>GrepTool</code>，以及 <code>ToolCatalog</code>、<code>MateToolClient</code>、<code>ListMateTool</code>、<code>CallMateTool</code>。</li>
+      <li>保留 Agent Core 的 <code>ToolExecutionMode</code>，它只表示一次模型响应中的工具调用串行/并行调度，不表示沙箱或工具归属。</li>
+      <li>删除 <code>tool.execution.*</code>、<code>TOOL_EXECUTION_*</code>、<code>DOCKER_HOST</code> 与 <code>SKILL_SANDBOX_PARSING</code> 的运行时支持；不提供兼容别名。</li>
+      <li>将根 Dockerfile 和 Kubernetes 工作负载收敛为单应用容器；保留工作区/PVC、Service、HPA、PDB 和健康检查，删除 DinD sidecar、Docker socket、特权权限和 Docker readiness。</li>
+      <li>外部旧容器和 volume 只在发布运维确认后执行清理，本 ADR 不授权代码自动执行破坏性删除。</li>
+    </ul>
+  </section>
+
+  <section><h2>Consequences</h2>
+    <ul>
+      <li><strong>正面：</strong>工具管理边界清晰；构建镜像不再依赖 Docker CLI/daemon；Skill 加载链路更短；单容器部署不再需要 DinD 权限。</li>
+      <li><strong>负面：</strong>旧沙箱配置、脚本和实验文档失效；本地工具不具备 Docker 容器隔离；需要通过 MateService 提供受管控的远程工具执行。</li>
+      <li><strong>回滚：</strong>只能回滚到一个完整的旧版本，同时恢复源代码、配置、镜像、Docker daemon、sidecar、卷和权限；不支持只恢复单个沙箱类。</li>
+      <li><strong>数据：</strong>无数据库表、字段或迁移变化；历史 Docker 容器和 volume 不由应用启动或升级流程自动删除。</li>
+    </ul>
+  </section>
+
+  <section><h2>Related</h2>
+    <ul>
+      <li><a href="../designs/sandbox-cleanup.md">设计文档：pi-mono-java Sandbox 清理与工具管理器迁移</a></li>
+      <li><a href="../designs/coding-agent-cli.md">设计文档：coding-agent-cli</a></li>
+      <li><a href="../designs/mate-tool-client.md">设计文档：MateService 工具客户端</a></li>
+    </ul>
+  </section>
+</body>
+</html>

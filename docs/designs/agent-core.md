@@ -1,5 +1,10 @@
 # agent-core 模块实现设计文档（基于代码 v1）
 
+![Agent core runtime overview](agent-core/diagram.svg)
+
+PlantUML source: [agent-core/diagram.puml#L1](agent-core/diagram.puml#L1)
+
+
 ## 文档信息
 
 | 项目 | 内容 |
@@ -46,23 +51,6 @@
 ## 2. Story 分析
 
 ### 2.1 Story 上下文
-
-```mermaid
-flowchart LR
-    ai["campusclaw-ai"]
-    core["campusclaw-agent-core"]
-    cron["campusclaw-cron"]
-    cli["campusclaw-coding-agent"]
-    reactor["reactor-core (外部)"]
-    jackson["jackson + json-schema-validator (外部)"]
-    spring["spring-context (外部)"]
-    ai --> core
-    reactor --> core
-    jackson --> core
-    spring --> core
-    core --> cron
-    core --> cli
-```
 
 文字补充：
 
@@ -116,30 +104,6 @@ agent-core 把"如何与 LLM 聊天 + 调工具"这件事抽象成单一的事�
 9. `TurnEndEvent`：turn 收尾，附带本轮 `ToolResultMessage` 列表；
 10. `AgentState`：循环退出后写回最终 message 列表与 streaming 状态；
 11. `结果`：`Agent.prompt(...)` 返回的 `CompletableFuture<Void>` complete，调用方可取 `state.getMessages()`。
-
-```mermaid
-sequenceDiagram
-    participant Caller
-    participant Agent
-    participant AgentLoop
-    participant LLM as StreamFunction (LLM)
-    participant ToolExecutionPipeline
-    Caller->>Agent: prompt(text)
-    Agent->>AgentLoop: run()
-    AgentLoop-->>Caller: AgentStartEvent
-    loop until end_turn / cancel
-        AgentLoop-->>Caller: TurnStartEvent
-        AgentLoop->>LLM: 流式请求
-        LLM-->>AgentLoop: tool_use / text
-        opt 有 tool_use
-            AgentLoop->>ToolExecutionPipeline: execute(toolCalls)
-            ToolExecutionPipeline-->>AgentLoop: results
-        end
-        AgentLoop-->>Caller: TurnEndEvent
-    end
-    AgentLoop-->>Agent: AgentState
-    Agent-->>Caller: 结果
-```
 
 **事件清单（sealed `AgentEvent` 子类型）：**
 
@@ -252,62 +216,6 @@ agent-core 不内置具体 Tool 实现（read / write / bash 等在 `coding-agen
 - `ApprovalPolicy` / `ApprovalClassifier`：子代理操作审批策略
 - `ParentPermissionResolver` / `ParentPermissionRequest` / `ParentPermissionDecision`：父 agent 决策接口
 - `TimeoutDeniedResolver`：默认超时拒绝实现
-
-```mermaid
-classDiagram
-    class Agent
-    class AgentLoop
-    class AgentLoopConfig
-    class AgentState
-    class AgentEvent
-    <<interface>> AgentEvent
-    class AgentEventListener
-    <<interface>> AgentEventListener
-    class AgentTool
-    <<interface>> AgentTool
-    class ToolExecutionPipeline
-    class ToolExecutionMode
-    class BeforeToolCallHandler
-    <<interface>> BeforeToolCallHandler
-    class AfterToolCallHandler
-    <<interface>> AfterToolCallHandler
-    class CancellationToken
-    class MessageQueue
-    class ContextTransformer
-    <<interface>> ContextTransformer
-    class MessageConverter
-    <<interface>> MessageConverter
-    class ProxyConfig
-    class SubAgentBackend
-    <<interface>> SubAgentBackend
-    class SubAgentRegistry
-    class ProcessAcpBackend
-    class HttpAgentBackend
-    class ApprovalPolicy
-    <<interface>> ApprovalPolicy
-    class StreamFunction
-    <<interface>> StreamFunction
-
-    Agent *-- AgentState
-    Agent *-- AgentLoop : creates per run
-    Agent --> AgentEventListener : emits to
-    AgentLoop --> AgentLoopConfig : configured by
-    AgentLoop --> ToolExecutionPipeline : uses
-    AgentLoop --> MessageQueue : drains steering/followUp
-    AgentLoop --> ContextTransformer : pre-transform
-    AgentLoop --> MessageConverter : convert
-    AgentLoop --> StreamFunction : stream
-    AgentLoop ..> AgentEvent : emits
-    ToolExecutionPipeline --> AgentTool : invokes
-    ToolExecutionPipeline --> BeforeToolCallHandler : applies
-    ToolExecutionPipeline --> AfterToolCallHandler : applies
-    ToolExecutionPipeline --> ToolExecutionMode : dispatches by
-    ToolExecutionPipeline --> CancellationToken : honors
-    SubAgentRegistry o-- SubAgentBackend
-    ProcessAcpBackend ..|> SubAgentBackend
-    HttpAgentBackend ..|> SubAgentBackend
-    ProcessAcpBackend --> ApprovalPolicy : asks
-```
 
 ### 3.7 安装部署设计
 

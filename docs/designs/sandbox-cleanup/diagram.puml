@@ -1,0 +1,56 @@
+@startuml diagram
+title Sandbox cleanup and Mate tool manager migration
+
+skinparam componentStyle rectangle
+
+package "Observed baseline" {
+  [Agent tools] as old_tools
+  [Hybrid tools] as hybrid
+  [ExecutionRouter] as router
+  [Local JVM tools] as old_local
+  [DockerSandboxClient] as docker
+  [DinD sidecar] as dind
+
+  old_tools --> hybrid : tool schema
+  hybrid --> router : LOCAL or SANDBOX
+  router --> old_local : local path
+  router --> docker : sandbox path
+  docker --> dind : DOCKER_HOST
+}
+
+package "Target runtime" {
+  [AgentSession] as session
+  [ToolCatalog] as catalog
+  [Local base tools] as local
+  [ListMateTool] as list_mate
+  [CallMateTool] as call_mate
+  [MateToolClient] as client
+  [MateService tool manager] as mate
+
+  session --> catalog : select local tools
+  catalog --> local : executable AgentTool
+  session --> list_mate : metadata query
+  session --> call_mate : managed tool call
+  list_mate --> client
+  call_mate --> client
+  client --> mate : query and invoke
+}
+
+note right of router
+Observed behavior:
+tool.execution selects local or Docker execution.
+Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/tool/execution/ExecutionRouter.java
+end note
+
+note right of catalog
+Design reason:
+one local catalog plus MateService authority
+removes duplicate execution routing and DinD.
+Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/tool/catalog/
+end note
+
+note bottom of session
+Java divergence: Agent Core ToolExecutionMode remains for sequential or parallel tool calls.
+It is unrelated to the deleted local sandbox execution mode.
+end note
+@enduml

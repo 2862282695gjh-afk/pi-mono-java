@@ -24,7 +24,7 @@ CampusClaw 需要一个「控制面」来管理数据面节点（data-plane node
 | `NodeInfo` | agent-core / `agent.controlplane.domain` | 不可变快照：nodeId、host、port、version、capabilities、status、registeredAt、lastHeartbeatAt、metrics。compact constructor 校验 non-blank id / port 范围 / non-null 必填；`withHeartbeat` / `withStatus` 返回新拷贝 |
 | `NodeStatus` | agent-core / `agent.controlplane.domain` | 枚举：`ACTIVE` / `STALE` / `DEREGISTERED` |
 | `NodeMetrics` | agent-core / `agent.controlplane.domain` | 心跳上报的容量指标：activeAgents、queuedTasks、cpuLoad（拒绝 NaN / ±Infinity）、memoryUsedMb |
-| `RuntimeCapability` | agent-core / `agent.controlplane.domain` | 枚举：`MODEL_OPENAI` / `MODEL_ANTHROPIC` / `MODEL_GOOGLE` / `TOOL_BASH` / `SANDBOX_DOCKER` 等 |
+| `RuntimeCapability` | agent-core / `agent.controlplane.domain` | 枚举：模型能力、`TOOL_BASH`、`TOOL_FILE_IO` 和子 Agent 能力；Docker Sandbox 能力已删除 |
 | `ScheduleRequest` | agent-core / `agent.controlplane.domain` | 调度入参 record：requiredCapabilities（null 标准化为空集）+ preferredNodeId（可选亲和） |
 | `ScheduleDecision` | agent-core / `agent.controlplane.domain` | 调度出参 record：nodeId、host、port、reason（"affinity" / "round-robin" / "least-active"） |
 | `ControlPlaneProperties` | agent-core / `agent.controlplane.config` | `@ConfigurationProperties("controlplane")` record，绑定 `controlplane.heartbeat.{ttl,sweep-interval,grace-after-stale}` |
@@ -152,3 +152,9 @@ controlplane:
 - `./mvnw -f mate-campusclaw/pom.xml -B clean test`：2834 tests + coverage checks met
 - `./scripts/sync-mate-campusclaw.sh`：mate 镜像自动同步 controlplane 包，编译通过
 - checkstyle 0 violations（含 JavadocMethod / Javadoc 完整性 / CC ≤ 20 / NBNC ≤ 50）
+
+## 10. 版本历史
+
+| 版本 | 日期 | 说明 |
+|---|---|---|
+| v1.1 | 2026-08-19 | 移除已废弃的 Docker Sandbox 能力枚举说明 |

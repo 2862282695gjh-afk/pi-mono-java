@@ -141,8 +141,6 @@ class SessionPoolCreationConcurrencyTest {
                 null,
                 ToolSelection.all(),
                 new SessionConfig("gpt-4o", tempDir, null, "server"),
-                null,
-                false,
                 false,
                 null,
                 runtimeManager,

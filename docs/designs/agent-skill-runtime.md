@@ -145,81 +145,6 @@ baseTools = 本地工具策略 ∩ permission=allow 的 Agent 级工具
 
 ## 6. 顺序图
 
-```mermaid
-sequenceDiagram
-    autonumber
-
-    participant Caller as 调用方/Agent路由
-    participant Claw as CampusClaw入口
-    participant Pool as SessionPool
-    participant Runtime as AgentRuntimeManager
-    participant Mate as CampusMateService
-    participant FS as ./agent文件目录
-    participant Session as AgentSession
-    participant Catalog as ToolCatalog
-    participant LLM as LLM
-
-    Caller->>Claw: 用户任务 + agentId
-    Claw->>Pool: getOrCreate(agentId, conversationId)
-    Pool->>Runtime: prepare(agentId)
-    Runtime->>FS: 检查agentId.json、systemPrompt.md、skills目录和SKILL.md
-
-    alt 本地Agent结构完整
-        FS-->>Runtime: 返回本地Agent元数据、systemPrompt.md和Skill文件
-    else 整个Agent目录不存在
-        Runtime->>Mate: GET /mate-service/v1/agents/{agentId}/runtime
-        Mate-->>Runtime: Agent信息、systemPrompt、Agent工具、直接绑定Skill id/version
-        loop 每个直接绑定Skill
-            Runtime->>Mate: GET /mate-service/v1/skill/query/{skillId}
-            Mate-->>Runtime: Skill定义、工具权限、依赖元数据、templates/references
-        end
-        Runtime->>FS: 临时目录创建.campusclaw/skills/{skillName}
-        Runtime->>FS: 写入SKILL.md、references/、templates/
-        Runtime->>FS: 直接写入.campusclaw/（含systemPrompt.md、agentId.json和setting.json）
-        Runtime->>FS: 原子移动为./agent/{agentId}
-    else 本地目录存在但不完整
-        Runtime-->>Pool: 配置漂移错误（fail closed）
-    end
-
-    Runtime-->>Pool: PreparedAgentRuntime
-    Pool->>Session: initialize(agentRoot, Agent元数据)
-    Session->>FS: 循环读取SKILL.md和references/tools.json
-    FS-->>Session: name、description和Skill工具快照
-    Session->>Catalog: 解析permission=allow的Agent级工具
-    Catalog-->>Session: 本地AgentTool实现
-    Session->>Session: 注册Agent工具 + activate_skill
-    Session->>LLM: 系统提示词、Skill名称/描述、基础工具schema
-
-    alt LLM自主选择Skill
-        LLM-->>Session: activate_skill(skillName)
-    else 用户显式选择Skill
-        Caller->>Session: /skill:skillName
-    end
-
-    Session->>Session: 从已加载的tools.json取得全部toolName
-    Session->>Catalog: 按toolName解析本地工具并应用本地策略
-
-    alt 工具缺失或不允许
-        Catalog-->>Session: 缺失/拒绝
-        Session-->>LLM: activate_skill失败且不修改工具集合
-    else 激活成功
-        Catalog-->>Session: Skill AgentTool实现
-        Session->>FS: 读取指定Skill的本地SKILL.md
-        FS-->>Session: 元数据生成的基础Skill内容
-        Session->>Session: 原子更新AgentState.tools
-        Session-->>LLM: 返回Skill正文和激活结果
-        Note over Session,LLM: 新Skill工具从下一轮模型调用可见
-        LLM-->>Session: 调用选中的Skill工具
-        Session->>Catalog: 执行本地AgentTool
-        Catalog-->>Session: 工具结果
-        Session-->>LLM: 工具结果
-        LLM-->>Session: 最终回答
-    end
-
-    Session->>Session: turn结束后恢复Agent级工具 + activate_skill
-    Session-->>Caller: 返回结果
-```
-
 ## 7. 边界情况与 DFX
 
 - **安全**：`agentId`、`conversationId`、Skill name 和资源文件名都采用受限单路径段格式；资源 `fileType` 仅允许 `md|txt`；非法值、路径穿越、重复目标文件和 Agent 缓存路径中的符号链接直接拒绝。绑定 Skill 数、资源文件数、单文件和累计字节数均有上限；本地 `SKILL.md` 与资源文件必须和 `skill.json` 快照完全一致。Skill 工具元数据按 ID/名称校验，实际工具仍须同时存在于 CLI 可见范围和 Spring ToolCatalog 中。Agent 级基础工具继续应用 Agent 权限与禁止列表，Skill 级工具则按 `tools.json` 的完整列表解析；运行时缓存物化和会话持久化属于 CampusClaw 内部写入，不是 LLM 工具。
@@ -299,6 +224,12 @@ campusmate:
     request-timeout: PT30S
     success-code: ${CAMPUSMATE_SUCCESS_CODE:0}
 ```
+
+## 10.1 版本历史
+
+| 版本 | 日期 | 说明 |
+|---|---|---|
+| v1.1 | 2026-08-19 | 删除 Sandbox Parser、Hybrid Tool 和 DinD 运行时映射；保留本地 ToolCatalog 与 Skill 工具快照 |
 
 ## 11. 测试与验证范围
 
