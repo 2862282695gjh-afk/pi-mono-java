@@ -53,44 +53,51 @@ class HttpMateToolClientTest {
         server.enqueue(
                 json(
                         "{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":"
-                                + "{\"bindingTools\":[{\"toolId\":\"t-1\",\"version\":\"1\"},{\"toolId\":\"t-2\",\"version\":\"2\"}]}}"));
-        server.enqueue(json("{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":{\"data\":["
-                + "{\"toolId\":\"t-1\",\"toolName\":\"query\",\"description\":\"d1\",\"permission\":\"allow\"},"
-                + "{\"toolId\":\"t-2\",\"toolName\":\"chart\",\"description\":\"d2\",\"permission\":\"deny\"}]}}"));
+                                + "{\"bindingTools\":[{\"toolId\":\"tool-11111111111111111111111111111111\",\"version\":\"1\"},{\"toolId\":\"tool-22222222222222222222222222222222\",\"version\":\"2\"}]}}"));
+        server.enqueue(
+                json(
+                        "{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":{\"data\":["
+                                + "{\"toolId\":\"tool-11111111111111111111111111111111\",\"toolName\":\"query\",\"description\":\"d1\",\"permission\":\"allow\"},"
+                                + "{\"toolId\":\"tool-22222222222222222222222222222222\",\"toolName\":\"chart\",\"description\":\"d2\",\"permission\":\"deny\"}]}}"));
 
-        List<MateToolMeta> tools = client.listTools("agent-1", null);
+        List<MateToolMeta> tools = client.listTools("agent-11111111111111111111111111111111", null);
 
         assertThat(tools).extracting(MateToolMeta::name).containsExactly("query", "chart");
         assertThat(tools.get(1).permission()).isEqualTo("deny");
 
         var agentReq = server.takeRequest();
         assertThat(agentReq.getMethod()).isEqualTo("GET");
-        assertThat(agentReq.getPath()).isEqualTo("/mate-service/v1/agents/agent-1");
+        assertThat(agentReq.getPath()).isEqualTo("/mate-service/v1/agents/agent-11111111111111111111111111111111");
         var queryReq = server.takeRequest();
         assertThat(queryReq.getMethod()).isEqualTo("POST");
         assertThat(queryReq.getPath()).isEqualTo("/mate-service/v1/runtime/tools/query");
-        assertThat(queryReq.getBody().readUtf8()).contains("\"t-1\"").contains("\"t-2\"");
+        assertThat(queryReq.getBody().readUtf8())
+                .contains("\"tool-11111111111111111111111111111111\"")
+                .contains("\"tool-22222222222222222222222222222222\"");
     }
 
     @Test
     void skillPathExtractsIdFieldThenQueriesTools() throws Exception {
-        server.enqueue(json("{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":"
-                + "{\"bindingTools\":[{\"id\":\"s-1\",\"name\":\"query\",\"permission\":\"allow\"}]}}"));
+        server.enqueue(
+                json(
+                        "{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":"
+                                + "{\"bindingTools\":[{\"id\":\"tool-33333333333333333333333333333333\",\"name\":\"query\",\"permission\":\"allow\"}]}}"));
         server.enqueue(json("{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":{\"data\":["
-                + "{\"toolId\":\"s-1\",\"toolName\":\"query\"}]}}"));
+                + "{\"toolId\":\"tool-33333333333333333333333333333333\",\"toolName\":\"query\"}]}}"));
 
-        List<MateToolMeta> tools = client.listTools(null, "skill-1");
+        List<MateToolMeta> tools = client.listTools(null, "skill-11111111111111111111111111111111");
 
         assertThat(tools).extracting(MateToolMeta::name).containsExactly("query");
-        assertThat(server.takeRequest().getPath()).isEqualTo("/mate-service/v1/skill/info/query/skill-1");
-        assertThat(server.takeRequest().getBody().readUtf8()).contains("\"s-1\"");
+        assertThat(server.takeRequest().getPath())
+                .isEqualTo("/mate-service/v1/skill/info/query/skill-11111111111111111111111111111111");
+        assertThat(server.takeRequest().getBody().readUtf8()).contains("\"tool-33333333333333333333333333333333\"");
     }
 
     @Test
     void emptyBindingToolsSkipsQueryTools() throws Exception {
         server.enqueue(json("{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":{\"bindingTools\":[]}}"));
 
-        List<MateToolMeta> tools = client.listTools("agent-1", null);
+        List<MateToolMeta> tools = client.listTools("agent-11111111111111111111111111111111", null);
 
         assertThat(tools).isEmpty();
         assertThat(server.getRequestCount()).isEqualTo(1);
@@ -99,19 +106,22 @@ class HttpMateToolClientTest {
     @Test
     void missingToolNameFallsBackToToolId() throws Exception {
         server.enqueue(
-                json("{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":{\"bindingTools\":[{\"toolId\":\"raw-id\"}]}}"));
-        server.enqueue(json("{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":{\"data\":[{\"toolId\":\"raw-id\"}]}}"));
+                json(
+                        "{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":{\"bindingTools\":[{\"toolId\":\"tool-44444444444444444444444444444444\"}]}}"));
+        server.enqueue(
+                json(
+                        "{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":{\"data\":[{\"toolId\":\"tool-44444444444444444444444444444444\"}]}}"));
 
-        List<MateToolMeta> tools = client.listTools("agent-1", null);
+        List<MateToolMeta> tools = client.listTools("agent-11111111111111111111111111111111", null);
 
-        assertThat(tools).extracting(MateToolMeta::name).containsExactly("raw-id");
+        assertThat(tools).extracting(MateToolMeta::name).containsExactly("tool-44444444444444444444444444444444");
     }
 
     @Test
     void nonZeroResCodeOnMetadataThrows() {
         server.enqueue(json("{\"resCode\":\"500\",\"resMsg\":\"agent not found\",\"result\":null}"));
 
-        assertThatThrownBy(() -> client.listTools("agent-1", null))
+        assertThatThrownBy(() -> client.listTools("agent-11111111111111111111111111111111", null))
                 .isInstanceOf(IllegalStateException.class)
                 .hasRootCauseMessage("gateway call failed: resCode=500 resMsg=agent not found");
     }
@@ -119,12 +129,24 @@ class HttpMateToolClientTest {
     @Test
     void nonZeroResCodeOnQueryToolsThrows() {
         server.enqueue(
-                json("{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":{\"bindingTools\":[{\"toolId\":\"t-1\"}]}}"));
+                json(
+                        "{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":{\"bindingTools\":[{\"toolId\":\"tool-11111111111111111111111111111111\"}]}}"));
         server.enqueue(json("{\"resCode\":\"403\",\"resMsg\":\"forbidden\",\"result\":null}"));
 
-        assertThatThrownBy(() -> client.listTools("agent-1", null))
+        assertThatThrownBy(() -> client.listTools("agent-11111111111111111111111111111111", null))
                 .isInstanceOf(IllegalStateException.class)
                 .hasRootCauseMessage("QUERYTOOLS failed: resCode=403 resMsg=forbidden");
+    }
+
+    @Test
+    void invalidBoundToolIdIsRejectedBeforeQueryTools() {
+        server.enqueue(json(
+                "{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":{\"bindingTools\":[{\"toolId\":\"old-tool-id\"}]}}"));
+
+        assertThatThrownBy(() -> client.listTools("agent-11111111111111111111111111111111", null))
+                .isInstanceOf(IllegalStateException.class)
+                .hasRootCauseMessage("Invalid tool id: old-tool-id");
+        assertThat(server.getRequestCount()).isEqualTo(1);
     }
 
     @Test
@@ -147,7 +169,7 @@ class HttpMateToolClientTest {
     void headerInfoFieldsAreSentAsHttpHeaders() throws Exception {
         server.enqueue(json("{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":{\"bindingTools\":[]}}"));
 
-        client.listTools("agent-1", null);
+        client.listTools("agent-11111111111111111111111111111111", null);
 
         var request = server.takeRequest();
         assertThat(request.getHeader("Content-Type")).isEqualTo("application/json");

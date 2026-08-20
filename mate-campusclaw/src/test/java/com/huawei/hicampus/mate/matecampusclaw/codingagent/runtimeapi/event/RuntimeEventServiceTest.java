@@ -151,7 +151,6 @@ class RuntimeEventServiceTest {
 
     private static UserEventRequestVO request(String message, List<String> fileIds) {
         UserEventRequestVO request = new UserEventRequestVO();
-        request.readType(JsonNodeFactory.instance.textNode("user.message"));
         request.readMessage(
                 message == null ? JsonNodeFactory.instance.nullNode() : JsonNodeFactory.instance.textNode(message));
         var files = JsonNodeFactory.instance.arrayNode();
@@ -232,7 +231,7 @@ class RuntimeEventServiceTest {
                     AGENT_ID, "model_test", List.of("model_test"), Path.of("/tmp/agent/.campusclaw"));
             Model model = mock(Model.class);
             when(repository.find(SESSION_ID)).thenReturn(Optional.of(session));
-            when(repository.listCurrentBranch(SESSION_ID, 0, 500)).thenReturn(List.of());
+            when(repository.listCurrentBranch(SESSION_ID, 0, 500, false)).thenReturn(List.of());
             when(resolver.resolve(AGENT_ID)).thenReturn(snapshot);
             when(modelManager.resolveModel(snapshot, "model_test")).thenReturn(model);
             when(agent.subscribe(any())).thenReturn(() -> {});
@@ -251,7 +250,7 @@ class RuntimeEventServiceTest {
         private RuntimeSessionHolder registerHolder(
                 AgentDirectorySnapshotDTO snapshot, RuntimeActiveExecution activeExecution) {
             execution = activeExecution;
-            RuntimeSessionHolder holder = new RuntimeSessionHolder(SESSION_ID, snapshot, agent);
+            RuntimeSessionHolder holder = new RuntimeSessionHolder(SESSION_ID, snapshot, agent, false);
             assertThat(holder.begin(activeExecution)).isTrue();
             return holder;
         }

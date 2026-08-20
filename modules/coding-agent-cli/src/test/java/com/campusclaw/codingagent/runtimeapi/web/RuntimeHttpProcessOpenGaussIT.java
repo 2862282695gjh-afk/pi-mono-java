@@ -43,7 +43,7 @@ import org.junit.jupiter.api.io.TempDir;
 class RuntimeHttpProcessOpenGaussIT {
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
-    private static final String AGENT_ID = "agent_011CZkYqphY8vELVzwCUpqiQ";
+    private static final String AGENT_ID = "agent-0123456789abcdef0123456789abcdef";
 
     private static final String MODEL_ID = "runtime-smoke-model";
 
@@ -168,7 +168,8 @@ class RuntimeHttpProcessOpenGaussIT {
     }
 
     private static void awaitHealth(RuntimeProcess runtime, int port) throws Exception {
-        URI probe = URI.create("http://127.0.0.1:" + port + "/campusclaw-service/v1/sessions/readiness-probe");
+        URI probe = URI.create("http://127.0.0.1:" + port
+                + "/campusclaw-service/v1/sessions/session-00000000000000000000000000000000");
         long deadline = System.nanoTime() + Duration.ofSeconds(30).toNanos();
         while (System.nanoTime() < deadline) {
             if (!runtime.process().isAlive()) {
@@ -209,7 +210,7 @@ class RuntimeHttpProcessOpenGaussIT {
 
     private static CompletableFuture<HttpResponse<String>> submitUserEventAsync(int port, String sessionId) {
         URI uri = eventsUri(port, sessionId, null);
-        String body = "{\"type\":\"user.message\",\"message\":\"process smoke\",\"file_ids\":[]}";
+        String body = "{\"message\":\"process smoke\",\"file_ids\":[]}";
         HttpRequest request = HttpRequest.newBuilder(uri)
                 .header("X-HW-ID", CALLER_ID)
                 .header("Authorization", "Bearer " + JWT)
@@ -385,23 +386,24 @@ class RuntimeHttpProcessOpenGaussIT {
 
     private static void assertSessionConfiguration(int port, String sessionId) throws Exception {
         SessionView initial = getSession(port, sessionId);
+        assertThat(initial.result().path("thinking").asBoolean()).isTrue();
         JsonNode models = listModels(port, sessionId);
         assertThat(models.path("current_model_id").asText()).isEqualTo(MODEL_ID);
         List<String> availableModels = MAPPER.readerForListOf(String.class).readValue(models.path("models"));
         assertThat(availableModels).containsExactly(MODEL_ID, SECOND_MODEL_ID);
 
-        SessionView thinking = updateConfiguration(port, sessionId, "thinking", initial.etag(), "{\"thinking\":true}");
-        assertThat(thinking.result().path("thinking").asBoolean()).isTrue();
-        assertThat(thinking.etag()).isNotEqualTo(initial.etag());
+        SessionView disabled = updateConfiguration(port, sessionId, "thinking", initial.etag(), "{\"thinking\":false}");
+        assertThat(disabled.result().path("thinking").asBoolean()).isFalse();
+        assertThat(disabled.etag()).isNotEqualTo(initial.etag());
 
         SessionView changed = updateConfiguration(
-                port, sessionId, "model", thinking.etag(), "{\"model_id\":\"" + SECOND_MODEL_ID + "\"}");
+                port, sessionId, "model", disabled.etag(), "{\"model_id\":\"" + SECOND_MODEL_ID + "\"}");
         assertThat(changed.result().path("model_id").asText()).isEqualTo(SECOND_MODEL_ID);
         assertThat(changed.result().path("thinking").asBoolean()).isFalse();
         SessionView unchanged = updateConfiguration(
                 port, sessionId, "model", changed.etag(), "{\"model_id\":\"" + SECOND_MODEL_ID + "\"}");
         assertThat(unchanged.etag()).isEqualTo(changed.etag());
-        assertStaleConfigurationRejected(port, sessionId, thinking.etag());
+        assertStaleConfigurationRejected(port, sessionId, disabled.etag());
     }
 
     private static SessionView getSession(int port, String sessionId) throws Exception {

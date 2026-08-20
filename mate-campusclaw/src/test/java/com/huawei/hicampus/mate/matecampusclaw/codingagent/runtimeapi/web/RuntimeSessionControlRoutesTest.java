@@ -19,7 +19,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import java.time.OffsetDateTime;
 
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.RuntimeMessageSourceConfiguration;
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.auth.RuntimeRequestAuthenticator;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.result.StandaloneResultBeanAdapter;
@@ -44,7 +43,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
  * @since [br_eCampusCore 26.0.0]
  */
 class RuntimeSessionControlRoutesTest {
-    private static final String SESSION_ID = "01JY8W6M8D9K4H2Q7P3V5N1R0T";
+    private static final String SESSION_ID = "session-0123456789abcdef0123456789abcdef";
 
     private RuntimeSessionControlService service;
 
@@ -54,11 +53,9 @@ class RuntimeSessionControlRoutesTest {
     void setUp() {
         service = mock(RuntimeSessionControlService.class);
         var controller = new RuntimeSessionControlController(service, new StandaloneResultBeanAdapter());
-        var interceptor = new RuntimeAuthenticationInterceptor(new RuntimeRequestAuthenticator());
         var messages = new RuntimeMessageSourceConfiguration().messageSource();
         var objectMapper = JsonMapper.builder().addModule(new JavaTimeModule()).build();
         mvc = MockMvcBuilders.standaloneSetup(controller)
-                .addInterceptors(interceptor)
                 .setControllerAdvice(new RuntimeExceptionHandler(messages))
                 .setMessageConverters(new MappingJackson2HttpMessageConverter(objectMapper))
                 .build();

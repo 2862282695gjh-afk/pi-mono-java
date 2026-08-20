@@ -17,6 +17,7 @@ import com.campusclaw.codingagent.common.dto.QuerySkillToolsResult;
 import com.campusclaw.codingagent.common.dto.RequestHeaderInfo;
 import com.campusclaw.codingagent.common.dto.ToolInfo;
 import com.campusclaw.codingagent.common.util.MateRestUtil;
+import com.campusclaw.codingagent.runtimeapi.RuntimeApiConstants;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -59,13 +60,14 @@ public class HttpMateToolClient implements MateToolClient {
      */
     protected static final String QUERYTOOLS = "/mate-service/v1/runtime/tools/query";
 
-    /**
-     * Path-segment pattern for agent/skill IDs, same as the repo's
-     * {@code AgentRuntimeManager.AGENT_ID_PATTERN}: the value becomes a URL
-     * path segment, so {@code ..}, {@code ?}, encoded slashes etc. must be
-     * rejected before any request is sent.
-     */
-    private static final Pattern ID_SEGMENT_PATTERN = Pattern.compile("^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$");
+    /** Runtime HTTP 契约使用的类型化 Agent UUID 正则。 */
+    private static final Pattern AGENT_ID_PATTERN = Pattern.compile(RuntimeApiConstants.AGENT_ID_PATTERN);
+
+    /** Runtime HTTP 契约使用的类型化 Skill UUID 正则。 */
+    private static final Pattern SKILL_ID_PATTERN = Pattern.compile(RuntimeApiConstants.SKILL_ID_PATTERN);
+
+    /** Runtime HTTP 契约使用的类型化 Tool UUID 正则。 */
+    private static final Pattern TOOL_ID_PATTERN = Pattern.compile(RuntimeApiConstants.TOOL_ID_PATTERN);
 
     /**
      * Address of the Mate inner gateway ({@code mate.innerGWSerive}).
@@ -104,7 +106,8 @@ public class HttpMateToolClient implements MateToolClient {
             return List.of();
         }
         String scopedId = agentId != null ? agentId : skillId;
-        if (!ID_SEGMENT_PATTERN.matcher(scopedId).matches()) {
+        Pattern expectedPattern = agentId != null ? AGENT_ID_PATTERN : SKILL_ID_PATTERN;
+        if (!expectedPattern.matcher(scopedId).matches()) {
             throw new IllegalArgumentException(
                     "Invalid " + (agentId != null ? "agent" : "skill") + " id for path segment: " + scopedId);
         }
@@ -185,6 +188,7 @@ public class HttpMateToolClient implements MateToolClient {
         if (toolIds.isEmpty()) {
             return List.of();
         }
+        requireToolIds(toolIds);
         String body = mapper.writeValueAsString(Map.of("toolIds", toolIds));
         String raw = mateRestUtil.executePostRawRequest(
                 mateInnerGwAddress, QUERYTOOLS, RequestHeaderInfo.builder().build(), body);
@@ -197,6 +201,14 @@ public class HttpMateToolClient implements MateToolClient {
         List<ToolInfo> infos =
                 mapper.convertValue(root.path("result").path("data"), new TypeReference<List<ToolInfo>>() {});
         return toMeta(infos);
+    }
+
+    private static void requireToolIds(List<String> toolIds) {
+        for (String toolId : toolIds) {
+            if (toolId == null || !TOOL_ID_PATTERN.matcher(toolId).matches()) {
+                throw new IllegalArgumentException("Invalid tool id: " + toolId);
+            }
+        }
     }
 
     /**

@@ -103,7 +103,7 @@ public class RuntimeSessionService {
         session.setAgentId(snapshot.agentId());
         session.setModelId(modelId);
         session.setState(RuntimeSessionState.IDLE.value());
-        session.setThinking(false);
+        session.setThinking(true);
         session.setResourceVersion(1);
         session.setCreatedAt(now);
         session.setUpdatedAt(now);

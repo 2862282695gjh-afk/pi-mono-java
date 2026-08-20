@@ -12,7 +12,9 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.util.List;
 import java.util.Optional;
+import java.util.regex.Pattern;
 
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.RuntimeApiConstants;
 import com.fasterxml.jackson.annotation.JsonAlias;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
@@ -33,6 +35,10 @@ public class MateServiceClient {
 
     private static final String AGENT_RUNTIME_PATH = "/mate-service/v1/agents/%s/runtime";
     private static final String SKILL_INFO_PATH = "/mate-service/v1/skill/query/%s";
+
+    private static final Pattern AGENT_ID_PATTERN = Pattern.compile(RuntimeApiConstants.AGENT_ID_PATTERN);
+
+    private static final Pattern SKILL_ID_PATTERN = Pattern.compile(RuntimeApiConstants.SKILL_ID_PATTERN);
 
     private final AgentRuntimeProperties properties;
     private final ObjectMapper mapper;
@@ -59,9 +65,11 @@ public class MateServiceClient {
      *
      * @param agentId 已校验的 Agent 标识
      * @return 运行时定义
+     * @throws IllegalArgumentException Agent 标识不符合类型化 UUID 格式时抛出
      * @throws AgentRuntimeException HTTP 请求或响应无效时抛出
      */
     public AgentRuntime getAgentRuntime(String agentId) {
+        requireIdentifier(agentId, AGENT_ID_PATTERN, "agentId");
         HttpRequest request = HttpRequest.newBuilder(endpoint(AGENT_RUNTIME_PATH.formatted(agentId)))
                 .timeout(properties.requestTimeout())
                 .header("Accept", "application/json")
@@ -82,9 +90,11 @@ public class MateServiceClient {
      *
      * @param skillId GetAgentRuntime 返回的 Skill 标识
      * @return CampusMate 返回的 Skill 定义
+     * @throws IllegalArgumentException Skill 标识不符合类型化 UUID 格式时抛出
      * @throws AgentRuntimeException HTTP 请求或响应无效时抛出
      */
     public List<SkillInfo> querySkillInfo(String skillId) {
+        requireIdentifier(skillId, SKILL_ID_PATTERN, "skillId");
         HttpRequest request = HttpRequest.newBuilder(endpoint(SKILL_INFO_PATH.formatted(skillId)))
                 .timeout(properties.requestTimeout())
                 .header("Accept", "application/json")
@@ -101,6 +111,12 @@ public class MateServiceClient {
             return response.result();
         } catch (IOException e) {
             throw new AgentRuntimeException("Invalid querySkillInfo response", e);
+        }
+    }
+
+    private static void requireIdentifier(String value, Pattern pattern, String name) {
+        if (value == null || !pattern.matcher(value).matches()) {
+            throw new IllegalArgumentException("Invalid " + name + ": " + value);
         }
     }
 

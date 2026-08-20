@@ -12,7 +12,6 @@ import com.fasterxml.jackson.annotation.JsonSetter;
 import com.fasterxml.jackson.databind.JsonNode;
 
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import lombok.AccessLevel;
 import lombok.Data;
@@ -26,13 +25,6 @@ import lombok.Setter;
  */
 @Data
 public class UserEventRequestVO {
-    public static final String USER_MESSAGE_TYPE_PATTERN = "^user\\.message$";
-
-    @NotBlank
-    @Pattern(regexp = USER_MESSAGE_TYPE_PATTERN)
-    @Setter(AccessLevel.NONE)
-    private String type;
-
     @Size(max = RuntimeApiConstants.MAX_MESSAGE_CHARACTERS)
     @Setter(AccessLevel.NONE)
     private String message;
@@ -40,16 +32,6 @@ public class UserEventRequestVO {
     @Size(max = RuntimeApiConstants.MAX_FILE_IDS)
     @Setter(AccessLevel.NONE)
     private List<@NotBlank String> fileIds;
-
-    /**
-     * 仅接受 JSON 字符串类型的事件类型。
-     *
-     * @param value 原始 JSON 值
-     */
-    @JsonSetter("type")
-    public void readType(JsonNode value) {
-        type = readOptionalText(value, "type");
-    }
 
     /**
      * 仅接受 JSON 字符串或 null 类型的消息正文。

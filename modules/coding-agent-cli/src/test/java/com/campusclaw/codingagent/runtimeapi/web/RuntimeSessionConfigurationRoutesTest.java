@@ -20,7 +20,6 @@ import java.time.OffsetDateTime;
 import java.util.List;
 
 import com.campusclaw.codingagent.runtimeapi.RuntimeMessageSourceConfiguration;
-import com.campusclaw.codingagent.runtimeapi.auth.RuntimeRequestAuthenticator;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
 import com.campusclaw.codingagent.runtimeapi.result.StandaloneResultBeanAdapter;
@@ -47,7 +46,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
  * @since [br_eCampusCore 26.0.0]
  */
 class RuntimeSessionConfigurationRoutesTest {
-    private static final String SESSION_ID = "01JY8W6M8D9K4H2Q7P3V5N1R0T";
+    private static final String SESSION_ID = "session-0123456789abcdef0123456789abcdef";
 
     private RuntimeSessionConfigurationService service;
 
@@ -57,11 +56,9 @@ class RuntimeSessionConfigurationRoutesTest {
     void setUp() {
         service = mock(RuntimeSessionConfigurationService.class);
         var controller = new RuntimeSessionConfigurationController(service, new StandaloneResultBeanAdapter());
-        var interceptor = new RuntimeAuthenticationInterceptor(new RuntimeRequestAuthenticator());
         var messages = new RuntimeMessageSourceConfiguration().messageSource();
         var objectMapper = JsonMapper.builder().addModule(new JavaTimeModule()).build();
         mvc = MockMvcBuilders.standaloneSetup(controller)
-                .addInterceptors(interceptor)
                 .setControllerAdvice(new RuntimeExceptionHandler(messages))
                 .setMessageConverters(new MappingJackson2HttpMessageConverter(objectMapper))
                 .build();
@@ -139,7 +136,7 @@ class RuntimeSessionConfigurationRoutesTest {
         OffsetDateTime created = OffsetDateTime.parse("2026-08-18T00:00:00Z");
         OffsetDateTime updated = OffsetDateTime.parse("2026-08-18T02:00:00Z");
         var response = new GetSessionResponseVO(
-                SESSION_ID, "agent_011CZkYqphY8vELVzwCUpqiQ", modelId, "idle", thinking, created, updated);
+                SESSION_ID, "agent-0123456789abcdef0123456789abcdef", modelId, "idle", thinking, created, updated);
         return new RuntimeSessionView<>(response, etag);
     }
 }

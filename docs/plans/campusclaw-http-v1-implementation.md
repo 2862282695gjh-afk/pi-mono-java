@@ -1,10 +1,10 @@
 # CampusClaw HTTP V1 实施记录
 
-> 版本：2.2.0
+> 版本：3.0.0
 >
 > 状态：已实现并完成发布前验证
 >
-> 本轮整改分析基线：`f899547d120ce06aec27ecf5dbb448a7851a942a`
+> Runtime HTTP 1.37 对齐分析基线：`3d9b9c55569486f024d6a507ce004101a56dee3f`
 >
 > 国际化实现起点：`3a6358bc9dd5837cdf5ac866fc0761298372510a`
 >
@@ -32,11 +32,13 @@
 |---|---|
 | 启动 | `modules/coding-agent-cli/.../CampusClawApplication.java`、`CampusClawCliLauncher.java` |
 | HTTP 边界 | `modules/coding-agent-cli/.../runtimeapi/web/*Controller.java` |
-| 鉴权形状 | `runtimeapi/auth/RuntimeRequestAuthenticator.java`、`web/RuntimeAuthenticationInterceptor.java` |
+| 调用上下文 Header 边界 | Controller 路由测试；Runtime 不再包含认证器、认证拦截器或认证错误码 |
+| 类型化资源 ID | `RuntimeApiConstants`、`MateServiceClient`、`AgentRuntimeManager`、`HttpMateToolClient`、`RandomSessionIdGenerator` |
 | ResultBean / i18n | `runtimeapi/result/*`、`RuntimeMessageSourceConfiguration`、`RuntimeRequestContext`、`src/main/resources/i18n/messages_{en_US,zh_CN}.properties` |
 | Session 业务 | `runtimeapi/session/RuntimeSessionService.java`、`RuntimeSessionConfigurationService.java`、`RuntimeSessionControlService.java` |
 | 事件接受 | `runtimeapi/event/RuntimeEventService.java`、`RuntimeExecutionContextFactory.java` |
-| 事件查询 | `runtimeapi/event/RuntimeEventQueryService.java`、`RuntimeEventCursorCodec.java` |
+| thinking 事件投影 | `runtimeapi/event/RuntimeEventProjector.java`、`RuntimeEntryCodec#thinkingEntry` |
+| 事件查询 | `runtimeapi/event/RuntimeEventQueryService.java`、`RuntimeEventCursorCodec.java`、`RuntimeSessionMapper.xml#listCurrentBranch` |
 | 执行协调与 SSE | `RuntimeExecutionCoordinator.java`、`RuntimeEventStream.java`、`RuntimeSseDispatcher.java` |
 | 执行生命周期 | `runtimeapi/runtime/RuntimeSessionEngineRegistry.java`、`RuntimeActiveExecution.java`、`RuntimeExecutionTimeoutScheduler.java` |
 | 持久化 | `runtimeapi/persistence/MyBatisRuntimeSessionRepository.java`、`mapper/session/RuntimeSessionMapper.xml` |
@@ -48,11 +50,11 @@
 
 | 序号 | 方法与路径 | 核心语义 | 结果 |
 |---:|---|---|---|
-| 1 | `POST /campusclaw-service/v1/agents/{agent_id}/sessions` | 服务端生成 Session，创建时不要求 model | 已实现 |
+| 1 | `POST /campusclaw-service/v1/agents/{agent_id}/sessions` | 生成类型化 Session ID，创建时初始化 `thinking=true` | 已实现 |
 | 2 | `GET /campusclaw-service/v1/sessions/{session_id}` | 返回名称、state、model、thinking、版本等精简状态 | 已实现 |
 | 3 | `DELETE /campusclaw-service/v1/sessions/{session_id}` | running 返回 409；idle 幂等删除；墓碑仅两字段 | 已实现 |
-| 4 | `POST /campusclaw-service/v1/sessions/{session_id}/events` | 接收 `user.message`，直接返回完整 SSE 生命周期 | 已实现 |
-| 5 | `GET /campusclaw-service/v1/sessions/{session_id}/events` | 当前分支对话 Entry，不透明服务端游标 | 已实现 |
+| 4 | `POST /campusclaw-service/v1/sessions/{session_id}/events` | 请求体只含 `message/file_ids`；按执行快照投影 thinking 并直接返回 SSE | 已实现 |
+| 5 | `GET /campusclaw-service/v1/sessions/{session_id}/events` | 按当前 thinking 过滤持久化事件，page 绑定该状态 | 已实现 |
 | 6 | `GET /campusclaw-service/v1/sessions/{session_id}/models` | `current_model_id` + 模型 ID 字符串数组 | 已实现 |
 | 7 | `PUT /campusclaw-service/v1/sessions/{session_id}/model` | idle + 强 `If-Match`，同值不增版本 | 已实现 |
 | 8 | `PUT /campusclaw-service/v1/sessions/{session_id}/thinking` | 布尔深度思考 + 强 `If-Match` | 已实现 |
@@ -69,7 +71,11 @@
 | 流式连接 | 旧本地接口与公开 WebSocket 并存 | 单次 POST 建立 SSE，`stream.end` 后关闭 | 架构变更：协议唯一、断线可通过历史恢复 |
 | Session 与模型 | CLI 启动时先选模型 | Session 创建不要求模型，可在后续事件前切换 | 产品约束：Session 生命周期允许模型切换 |
 | 删除 | 历史方案曾计划自动 abort | active execution 返回 409；idle 才删除 | 安全加固：避免删除与执行副作用竞态 |
-| 鉴权 | 基线无 Runtime 鉴权 | 校验 JWT/APPKEY Header 组合形状 | 产品约束：真实性和授权由上游 mate-service 保证 |
+| 调用上下文 Header | 基线认证拦截器检查 Header 齐全、共存和 Bearer 形状 | 全接口保留集成 Header 契约，但 Runtime 不做本地检查 | 架构变更：真实性和动作授权由上游 mate-service 保证，Runtime 不建立凭据状态 |
+| 资源 ID | Agent 使用下划线短 ID，Session 使用无类型 Crockford Base32 | Agent/Tool/Skill/Session 使用类型前缀加 32 位无连字符 UUID | 产品约束：阻止无前缀、错误类型和旧格式进入边界 |
+| 创建默认值 | `RuntimeSessionService#newSession` 持久化 `thinking=false` | 创建时持久化 `thinking=true` | 产品约束：新 Session 默认启用深度思考 |
+| 用户事件请求 | `UserEventRequestVO` 要求冗余 `type=user.message` | 只接受 `message` 与 `file_ids`，`type` 作为未知字段拒绝 | 产品约束：operation 已固定消息类型 |
+| thinking 事件 | Provider thinking 事件未进入公共 Runtime SSE 或持久化历史 | 执行快照为 true 时开放三阶段事件并持久化 completed；GET 按当前状态过滤 | 架构变更：显式可见性策略和可恢复事件保持一致 |
 | Agent 来源 | 曾设计独立模板快照 | 直接读取 Agent 目录，只启用 read 工具 | 架构变更：去掉重复模板仓库和缓存 |
 | 文件 | 曾设计 Runtime 文件解析 port | `file_ids` 原样组成固定提示块 | 产品约束：文件内容不由 Runtime 下载 |
 | Agent 运行根目录 | 解析器返回 Agent 父目录，提示词加载器再追加 `.campusclaw` | 解析器直接返回 `.campusclaw` 真实路径，并统一用于 `cwd`、提示词和 `ReadTool` | 安全加固：避免 HTTP V1 工具读取 Agent 父目录 |
@@ -87,6 +93,9 @@
 ```text
 user.message
 assistant.message.started
+assistant.thinking.started       thinking=true 时可选
+assistant.thinking.delta         thinking=true 时可选
+assistant.thinking.completed     thinking=true 时可选、持久化
 assistant.message.delta
 assistant.message.completed     finish_reason=tool_call
 tool.execution.started
@@ -99,11 +108,13 @@ session.status.idle
 stream.end
 ```
 
-连接是请求范围的，不是永久长连接。Steer/FollowUp 被活动执行接收后，从原连接继续输出；客户端断线、超时或订阅溢出不等于 abort。
+连接是请求范围的，不是永久长连接。Steer/FollowUp 被活动执行接收后，从原连接继续输出；客户端断线、超时或订阅溢出不等于 abort。执行快照为 `thinking=false` 时三类 thinking 事件全部省略。
 
 ### 持久化
 
-DDL 使用 `t_` 前缀：`t_sessions`、`t_session_entries`、`t_session_sequences`、`t_session_materialized`、`t_session_tombstone`、`t_session_cleanup_task`。Entry 用 `parent_id` 保留分支结构，用 `entry_seq` 提供 Session 内严格持久化顺序；历史 API 只投影当前叶节点回溯得到的分支。
+DDL 使用 `t_` 前缀：`t_sessions`、`t_session_entries`、`t_session_sequences`、`t_session_materialized`、`t_session_tombstone`、`t_session_cleanup_task`。Entry 用 `parent_id` 保留分支结构，用 `entry_seq` 提供 Session 内严格持久化顺序；历史 API 只投影当前叶节点回溯得到的分支。`assistant.thinking.completed` 是第四类权威 Entry；关闭 thinking 只在查询中隐藏它，不删除记录。SQL 在分页 `LIMIT` 前应用过滤，保证每页数量和 next page 位置一致。
+
+事件 page 使用 AES-GCM 保护并绑定 Session、`afterSeq`、签发时 thinking 和有效期。Session thinking 切换后，旧 page 以 `INVALID_EVENT_LIST_QUERY` 失败，调用方必须从第一页重新读取。
 
 ### 容量
 
@@ -115,14 +126,15 @@ DDL 使用 `t_` 前缀：`t_sessions`、`t_session_entries`、`t_session_sequenc
 
 ## 6. 验证证据
 
-以下验证针对实现提交执行：
+以下验证针对 3.0.0 候选实现执行：
 
-- 主仓 `./mvnw test`：2855 个测试通过，0 失败、0 错误；
-- `mate-campusclaw` 全量测试：2840 个测试通过，0 失败、0 错误；
+- 主仓 `./mvnw clean test`：2767 个测试通过，0 失败、0 错误；
+- `mate-campusclaw` `clean test`：2767 个测试通过，0 失败、0 错误；
 - `RuntimeSessionRepositoryOpenGaussIT`：连接真实 `opengauss/opengauss-server:latest`，14 个测试通过；
-- `RuntimeHttpProcessOpenGaussIT`：启动打包后的真实 JVM 进程，连接真实 openGauss，覆盖创建、读取、SSE、409 删除、abort、204 删除、404 读取和墓碑；
-- `java -jar ... cli --version`：打包 JAR 真实 CLI 路径退出码 0；
-- 前端 `npm run build` 通过，`npm audit --audit-level=high` 为 0 个高危漏洞；
+- `RuntimeHttpProcessOpenGaussIT`：1 个跨进程测试通过；启动打包后的真实 JVM 进程并连接真实 openGauss，覆盖创建、读取、SSE、409 删除、abort、204 删除、404 读取和墓碑；
+- `./mvnw -pl modules/coding-agent-cli -am package -DskipTests`：可执行 JAR 打包通过；
+- `./scripts/sync-mate-campusclaw.sh`：镜像同步和编译验证通过；
+- `./mvnw spotless:apply`：格式化检查通过；
 - Checkstyle 为 0 个违规；
 - 编译器语法树审计确认本次修改的 Java 方法均不超过 50 个非空物理行；
 - `git diff --check` 通过。
@@ -141,6 +153,7 @@ DDL 使用 `t_` 前缀：`t_sessions`、`t_session_entries`、`t_session_sequenc
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 3.0.0 | 2026-08-20 | 对齐 HTTP 1.37 契约：类型化资源 ID、创建默认 thinking、移除 Runtime 本地 Header 认证、删除消息体 type，并实现 thinking 事件持久化、查询过滤和游标绑定 |
 | 2.2.0 | 2026-08-20 | 落地显式双 Locale 消息源、标准语言协商、HTTP/SSE 错误国际化和镜像资源迁移 |
 | 2.1.0 | 2026-08-19 | 基于 `f899547d` 整改目录边界、事件职责、错误目录、异步日志和多实例执行归属错误 |
 | 2.0.0 | 2026-08-18 | 以实现提交 `8691e880` 重写，修正 MVC、鉴权边界、删除语义、Agent 目录与 `file_ids` 行为 |

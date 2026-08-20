@@ -19,7 +19,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import java.time.OffsetDateTime;
 
 import com.campusclaw.codingagent.runtimeapi.RuntimeMessageSourceConfiguration;
-import com.campusclaw.codingagent.runtimeapi.auth.RuntimeRequestAuthenticator;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
 import com.campusclaw.codingagent.runtimeapi.result.StandaloneResultBeanAdapter;
@@ -44,9 +43,9 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
  * @since [br_eCampusCore 26.0.0]
  */
 class RuntimeSessionRoutesTest {
-    private static final String AGENT_ID = "agent_011CZkYqphY8vELVzwCUpqiQ";
+    private static final String AGENT_ID = "agent-0123456789abcdef0123456789abcdef";
 
-    private static final String SESSION_ID = "01JY8W6M8D9K4H2Q7P3V5N1R0T";
+    private static final String SESSION_ID = "session-0123456789abcdef0123456789abcdef";
 
     private RuntimeSessionService service;
 
@@ -56,11 +55,9 @@ class RuntimeSessionRoutesTest {
     void setUp() {
         service = mock(RuntimeSessionService.class);
         var controller = new RuntimeSessionController(service, new StandaloneResultBeanAdapter());
-        var interceptor = new RuntimeAuthenticationInterceptor(new RuntimeRequestAuthenticator());
         var messages = new RuntimeMessageSourceConfiguration().messageSource();
         var objectMapper = JsonMapper.builder().addModule(new JavaTimeModule()).build();
         mvc = MockMvcBuilders.standaloneSetup(controller)
-                .addInterceptors(interceptor)
                 .setControllerAdvice(new RuntimeExceptionHandler(messages))
                 .setMessageConverters(new MappingJackson2HttpMessageConverter(objectMapper))
                 .build();
@@ -80,6 +77,7 @@ class RuntimeSessionRoutesTest {
                 .andExpect(jsonPath("$.resMsg").value("success"))
                 .andExpect(jsonPath("$.result.session_id").value(SESSION_ID))
                 .andExpect(jsonPath("$.result.agent_id").value(AGENT_ID))
+                .andExpect(jsonPath("$.result.thinking").value(true))
                 .andExpect(jsonPath("$.result.updated_at").doesNotExist());
     }
 
@@ -101,23 +99,22 @@ class RuntimeSessionRoutesTest {
     void deleteReturnsEmptyNoContent() throws Exception {
         doNothing().when(service).delete(eq(SESSION_ID));
 
-        mvc.perform(delete("/campusclaw-service/v1/sessions/{sessionId}", SESSION_ID)
-                        .header("X-HW-ID", "credential-jwt")
-                        .header(HttpHeaders.AUTHORIZATION, "Bearer opaque-token"))
+        mvc.perform(delete("/campusclaw-service/v1/sessions/{sessionId}", SESSION_ID))
                 .andExpect(status().isNoContent())
                 .andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store"))
                 .andExpect(content().string(""));
     }
 
     @Test
-    void mixedCredentialsReturnErrorWithoutResult() throws Exception {
+    void mixedCredentialsAreNotValidatedInsideRuntime() throws Exception {
+        when(service.get(SESSION_ID)).thenReturn(getView());
+
         mvc.perform(get("/campusclaw-service/v1/sessions/{sessionId}", SESSION_ID)
                         .header("X-HW-ID", "credential")
                         .header(HttpHeaders.AUTHORIZATION, "Bearer opaque-token")
                         .header("X-HW-APPKEY", "opaque-appkey"))
-                .andExpect(status().isUnauthorized())
-                .andExpect(jsonPath("$.resCode").value("AUTH_CREDENTIAL_CONFLICT"))
-                .andExpect(jsonPath("$.result").doesNotExist());
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.session_id").value(SESSION_ID));
     }
 
     @Test
@@ -138,7 +135,7 @@ class RuntimeSessionRoutesTest {
 
     private static RuntimeSessionView<CreateSessionResponseVO> createView() {
         OffsetDateTime time = OffsetDateTime.parse("2026-08-18T00:00:00Z");
-        var response = new CreateSessionResponseVO(SESSION_ID, AGENT_ID, "model-default", "idle", false, time);
+        var response = new CreateSessionResponseVO(SESSION_ID, AGENT_ID, "model-default", "idle", true, time);
         return new RuntimeSessionView<>(response, "\"snp-create\"");
     }
 

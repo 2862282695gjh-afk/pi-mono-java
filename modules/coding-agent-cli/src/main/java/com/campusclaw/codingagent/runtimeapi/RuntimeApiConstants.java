@@ -13,9 +13,13 @@ package com.campusclaw.codingagent.runtimeapi;
 public final class RuntimeApiConstants {
     public static final String BASE_PATH = "/campusclaw-service/v1";
 
-    public static final String AGENT_ID_PATTERN = "^agent_[0-9A-Za-z]{24}$";
+    public static final String AGENT_ID_PATTERN = "^agent-[0-9a-fA-F]{32}$";
 
-    public static final String SESSION_ID_PATTERN = "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$";
+    public static final String TOOL_ID_PATTERN = "^tool-[0-9a-fA-F]{32}$";
+
+    public static final String SKILL_ID_PATTERN = "^skill-[0-9a-fA-F]{32}$";
+
+    public static final String SESSION_ID_PATTERN = "^session-[0-9a-fA-F]{32}$";
 
     public static final String MODEL_ID_PATTERN = "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$";
 

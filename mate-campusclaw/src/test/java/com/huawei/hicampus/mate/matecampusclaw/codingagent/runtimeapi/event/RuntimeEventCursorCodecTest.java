@@ -30,37 +30,46 @@ class RuntimeEventCursorCodecTest {
     void roundTripsEncryptedCursor() {
         RuntimeEventCursorCodec codec = codecAt("2026-08-18T00:00:00Z", Duration.ofHours(1));
 
-        String cursor = codec.encode(SESSION_ID, 19L);
+        String cursor = codec.encode(SESSION_ID, 19L, true);
 
         assertThat(cursor).startsWith("page_").doesNotContain(SESSION_ID);
-        assertThat(codec.decode(cursor, SESSION_ID)).isEqualTo(19L);
+        assertThat(codec.decode(cursor, SESSION_ID, true)).isEqualTo(19L);
     }
 
     @Test
     void rejectsCursorBoundToAnotherSession() {
         RuntimeEventCursorCodec codec = codecAt("2026-08-18T00:00:00Z", Duration.ofHours(1));
-        String cursor = codec.encode(SESSION_ID, 19L);
+        String cursor = codec.encode(SESSION_ID, 19L, true);
 
-        assertInvalid(() -> codec.decode(cursor, "session_other"));
+        assertInvalid(() -> codec.decode(cursor, "session_other", true));
+    }
+
+    @Test
+    void rejectsCursorWhenThinkingSettingHasChanged() {
+        RuntimeEventCursorCodec codec = codecAt("2026-08-18T00:00:00Z", Duration.ofHours(1));
+        String cursor = codec.encode(SESSION_ID, 19L, true);
+
+        assertInvalid(() -> codec.decode(cursor, SESSION_ID, false));
     }
 
     @Test
     void rejectsModifiedCursor() {
         RuntimeEventCursorCodec codec = codecAt("2026-08-18T00:00:00Z", Duration.ofHours(1));
-        String cursor = codec.encode(SESSION_ID, 19L);
-        char replacement = cursor.endsWith("A") ? 'B' : 'A';
-        String modified = cursor.substring(0, cursor.length() - 1) + replacement;
+        String cursor = codec.encode(SESSION_ID, 19L, true);
+        int position = cursor.length() / 2;
+        char replacement = cursor.charAt(position) == 'A' ? 'B' : 'A';
+        String modified = cursor.substring(0, position) + replacement + cursor.substring(position + 1);
 
-        assertInvalid(() -> codec.decode(modified, SESSION_ID));
+        assertInvalid(() -> codec.decode(modified, SESSION_ID, true));
     }
 
     @Test
     void rejectsExpiredCursor() {
         RuntimeEventCursorCodec issuer = codecAt("2026-08-18T00:00:00Z", Duration.ofMinutes(1));
-        String cursor = issuer.encode(SESSION_ID, 19L);
+        String cursor = issuer.encode(SESSION_ID, 19L, true);
         RuntimeEventCursorCodec reader = codecAt("2026-08-18T00:02:00Z", Duration.ofMinutes(1));
 
-        assertInvalid(() -> reader.decode(cursor, SESSION_ID));
+        assertInvalid(() -> reader.decode(cursor, SESSION_ID, true));
     }
 
     @Test

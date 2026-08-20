@@ -1,8 +1,8 @@
 # Coding Agent 启动与 Runtime HTTP 设计
 
-> 文档版本：2.5.0
+> 文档版本：2.6.0
 >
-> Runtime HTTP 与国际化分析基线：`3a6358bc9dd5837cdf5ac866fc0761298372510a`
+> Runtime HTTP 1.37 对齐分析基线：`3d9b9c55569486f024d6a507ce004101a56dee3f`
 >
 > 启动平台分析基线：`1f801dbb82bdda30478e3354e685e3153b179a0c`
 >
@@ -17,7 +17,7 @@
 
 历史 `--mode server`、手工 Reactor Netty `ServerMode`、函数式 WebFlux 路由和公开 WebSocket 接口均已删除。Runtime 对外协议统一为 HTTP + 请求范围 SSE。
 
-本版本同时记录国际化资源包的目标设计：英文和简体中文资源将显式放入 `i18n/` 目录，且不保留基础 `messages.properties`。该调整尚未在 Runtime HTTP 与国际化分析基线实现，属于目标态架构变更，并已由后续实现提交 `136baee952940e92b545b97103ed9bc44bfc7688` 落地。启动平台结论则以独立的平台分析基线为依据。
+Runtime HTTP 现已对齐独立设计仓库 1.37 契约：资源标识统一为类型前缀加去连字符 UUID，创建 Session 默认开启 thinking，提交用户消息不再携带冗余 `type`，集成 Header 不在 Runtime 本地检查，thinking 事件按执行快照投影并按查询时 Session 状态过滤。该行为是相对上述分析基线的实现变更，决策见 [ADR-0018](../decisions/0018-runtime-http-v137-contract-alignment.html)。
 
 ## 2. 源码证据
 
@@ -27,13 +27,16 @@
 | `cli` 子命令切换至 CLI 上下文 | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/CampusClawCliLauncher.java`，`isCliInvocation`、`run` |
 | CLI 排除数据库、Runtime 与控制面 Bean | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/CampusClawCliConfiguration.java` |
 | Runtime 使用 Spring MVC Controller | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/web/*Controller.java` |
+| Runtime 不安装入站认证拦截器 | `runtimeapi/web` 不再包含 `RuntimeAuthenticationInterceptor` 与 `RuntimeWebMvcConfiguration`；路由测试覆盖 Header 缺失与共存 |
+| 类型化资源 ID 与 Session 默认值 | `RuntimeApiConstants`、`MateServiceClient#getAgentRuntime`、`MateServiceClient#querySkillInfo`、`AgentRuntimeManager#prepare`、`HttpMateToolClient#listTools`、`RandomSessionIdGenerator#nextId`、`RuntimeSessionService#newSession` |
 | Session 与事件持久化使用 MyBatis | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/persistence/MyBatisRuntimeSessionRepository.java` |
 | 事件接受、历史查询和执行生命周期相互分离 | `RuntimeEventService`、`RuntimeEventQueryService`、`RuntimeExecutionCoordinator` |
+| thinking 实时投影、持久化和查询过滤 | `RuntimeEventProjector#projectThinking`、`RuntimeEntryCodec#thinkingEntry`、`RuntimeEventQueryService#list`、`RuntimeEventCursorCodec` |
 | SSE 使用有界请求级订阅 | `RuntimeEventStream`、`RuntimeSseDispatcher`、`RuntimeSseEmitterSubscriber` |
 | 公司响应包装保留适配点 | `runtimeapi/result/ResultBeanAdapter.java`、`StandaloneResultBeanAdapter.java` |
-| 国际化基线的错误消息依赖根目录资源包 | `modules/coding-agent-cli/src/main/resources/messages.properties`、`messages_zh_CN.properties` |
-| 国际化基线的语言选择手工检查请求头前缀 | `RuntimeRequestContext#locale`、`RuntimeRequestContext#language` |
-| 国际化基线的 HTTP 与 SSE 错误通过 MessageSource 取文案 | `RuntimeExceptionHandler#response`、`RuntimeTerminalEventFactory#emitError` |
+| 国际化资源显式区分两个 Locale | `modules/coding-agent-cli/src/main/resources/i18n/messages_{en_US,zh_CN}.properties`、`RuntimeMessageSourceConfiguration` |
+| 语言选择按范围和权重协商 | `RuntimeRequestContext#locale`、`RuntimeRequestContext#language` |
+| HTTP 与 SSE 错误通过 MessageSource 取文案 | `RuntimeExceptionHandler#response`、`RuntimeTerminalEventFactory#emitError` |
 | 本地工具由目录统一索引与筛选 | `tool/catalog/ToolCatalog.java`、`DefaultToolCatalog.java`、`ToolSelection.java` |
 | MateService 工具通过专用客户端查询和调用 | `common/client/mate/MateToolClient.java`、`tool/mate/ListMateTool.java`、`CallMateTool.java` |
 
@@ -45,7 +48,7 @@
 
 [PlantUML 源码](coding-agent-cli/diagram.puml#L1)
 
-Spring MVC 只负责 HTTP 边界、鉴权形状、校验、国际化和 SSE 连接。会话执行复用 `agent-core` 的 Agent 循环，模型调用复用 `ai` 模块；控制面与 Runtime V1 共享同一 Spring Boot 进程，但路径和业务模型相互独立。
+Spring MVC 只负责 HTTP 业务边界、资源校验、国际化和 SSE 连接，不在 Runtime 内认证集成 Header。会话执行复用 `agent-core` 的 Agent 循环，模型调用复用 `ai` 模块；控制面与 Runtime V1 共享同一 Spring Boot 进程，但路径和业务模型相互独立。
 
 ## 4. 启动时序
 
@@ -98,12 +101,12 @@ Runtime V1 固定前缀为 `/campusclaw-service/v1`，包含 11 个接口：
 
 ### 6.1 鉴权边界
 
-Runtime 接受且只接受以下两种完整 Header 组合之一：
+全部 11 项 Runtime operation 的集成契约均携带以下调用上下文 Header：
 
-- JWT：`X-HW-ID` + `Authorization`；
-- APPKEY：`X-HW-ID` + `X-HW-APPKEY`。
+- 首选：`X-HW-ID` + `Authorization`；
+- 兼容：`X-HW-ID` + `X-HW-APPKEY`。
 
-混用、缺失或不完整组合返回 401。当前服务只验证凭据形状，凭据真实性和业务授权由上游 `mate-service` 完成；`X-HW-ID` 不是 Session owner，也没有落库为所有者。这是当前部署边界下的产品约束，不应误写成服务内完成了 JWT 验签。
+这些 Header 由上游集成链路负责提供。Runtime 不在进入 Controller 前安装认证拦截器，也不在 Controller 内检查是否齐全、是否共存、Bearer 形状或凭据真实性；两种凭据 Header 同时出现也不会触发本地拒绝。凭据真实性与动作授权由上游 `mate-service` 完成；Header 不进入 Session、Prompt 或 Event，`X-HW-ID` 也不是 Session owner。Runtime 因而不定义 `UNAUTHENTICATED` 或 `AUTH_CREDENTIAL_CONFLICT`。这是认证边界架构变更，而不是取消集成 Header 契约，详见 [ADR-0018](../decisions/0018-runtime-http-v137-contract-alignment.html)。
 
 ### 6.2 响应包装
 
@@ -113,11 +116,17 @@ Runtime 接受且只接受以下两种完整 Header 组合之一：
 
 一次 `POST /events` 对应一个请求范围 SSE 连接。服务发出 `stream.end` 后关闭连接；下一次用户消息重新建立连接。Steer 与 FollowUp 在当前执行仍活动时进入其队列，事件继续从原 SSE 输出。客户端断线、订阅缓冲溢出只分离订阅，不中止 Agent。
 
+请求体只接受 `message` 与 `file_ids`，路径已经固定 `user.message` 语义，旧 `type` 字段作为未知字段返回 `INVALID_EVENT_REQUEST`。执行接受时固化 Session 的 thinking 值：快照为 `true` 时投影 `assistant.thinking.started/delta/completed`，其中 completed 作为独立 Entry 持久化；快照为 `false` 时不产生 thinking 事件。Assistant MessageEntry 本身仍过滤 `ThinkingContent`，防止同一内容重复进入消息正文。
+
+`GET /events` 每次读取 Session 当前 thinking。为 `true` 时返回四类持久化事件，为 `false` 时从当前分支隐藏 `assistant.thinking.completed`，但不删除数据库记录。加密 page 同时绑定 `session_id`、继续位置、thinking 状态和过期时间；开关变化后旧 page 返回 `INVALID_EVENT_LIST_QUERY`，调用方需从第一页重读。
+
 每个订阅的缓冲限制为 256 个事件或 1 MiB，心跳间隔 15 秒。执行上限为 100 个，默认 30 分钟超时。
 
 ### 6.4 数据和 Agent 目录
 
 Session、Entry、严格序号、物化数据、删除墓碑和异步清理任务持久化到 openGauss。删除活动 Session 返回 409；成功删除的墓碑只包含 `session_id` 与 `deleted_at`。
+
+Agent、Tool、Skill 和 Session ID 分别匹配 `agent-`、`tool-`、`skill-`、`session-` 加 32 位十六进制 UUID（UUID 内部连字符已移除）。`RandomSessionIdGenerator` 只生成该 Session 格式；创建 Session 持久化 `thinking=true`。`t_sessions.agent_id` 使用 `VARCHAR(64)`，可容纳完整类型化 Agent ID。
 
 Agent 配置默认直接读取 `agent/{agent_id}/.campusclaw/` 下的 `settings.json`、
 `SYSTEM.md` 和 `skills/`；部署可通过 `CAMPUSCLAW_AGENT_ROOT` 替换 `agent` 根目录。
@@ -143,23 +152,18 @@ SSE 流、事件投影器与终止事件分别由独立工厂创建，避免 Con
 
 ### 6.7 国际化资源与语言协商
 
-Runtime HTTP 与国际化分析基线中的英文资源位于根目录 `messages.properties`，中文资源位于根目录
-`messages_zh_CN.properties`，由 Spring Boot 默认 `MessageSource` 自动配置加载；
-`RuntimeRequestContext#locale` 通过字符串前缀手工识别 `zh-CN`。这些是已观察行为，
-不是本节的目标设计。
-
-目标设计仅保留以下两个显式 Locale 资源包：
+Runtime 只保留以下两个显式 Locale 资源包：
 
 ```text
 modules/coding-agent-cli/src/main/resources/i18n/messages_en_US.properties
 modules/coding-agent-cli/src/main/resources/i18n/messages_zh_CN.properties
 ```
 
-`mate-campusclaw` 镜像使用相同的 `src/main/resources/i18n/` 相对路径。目标态不创建
+`mate-campusclaw` 镜像使用相同的 `src/main/resources/i18n/` 相对路径。实现不创建
 `messages.properties`。由于 Spring Boot 的默认消息源自动配置要求基础资源包，Runtime
 必须通过独立配置显式注册名称为 `messageSource` 的 `ResourceBundleMessageSource`：
 basename 固定为 `i18n/messages`，编码固定为 UTF-8，默认 Locale 为 `Locale.US`，并关闭
-系统 Locale 回退。该配置只属于 Runtime 包，CLI 上下文继续通过现有包扫描排除规则隔离
+系统 Locale 回退。该配置只属于 Runtime 包，CLI 上下文通过现有包扫描排除规则隔离
 Runtime Bean。
 
 Runtime 只支持 `en-US` 和 `zh-CN`。语言协商必须按 `Accept-Language` 标准语义处理语言
@@ -202,6 +206,7 @@ Runtime V1 事件名 `tool.execution.started` 与 `tool.execution.completed` 是
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 2.6.0 | 2026-08-20 | 对齐 Runtime HTTP 1.37：类型化资源 ID、Session 默认 thinking、无本地 Header 认证、精简消息体及 thinking 事件可见性和游标绑定 |
 | 2.5.0 | 2026-08-20 | 整合并行设计更新，保留双 Locale 国际化和 macOS/Linux 平台收敛，并消除 ADR 编号冲突 |
 | 2.4.0 | 2026-08-20 | 分别明确无基础资源包的国际化边界，以及仅维护 macOS/Linux 的启动平台边界 |
 | 2.3.0 | 2026-08-19 | 合入最新 HTTP V1 启动与执行架构，并明确 ToolCatalog、MateService 工具和已删除本地 Sandbox 的边界 |

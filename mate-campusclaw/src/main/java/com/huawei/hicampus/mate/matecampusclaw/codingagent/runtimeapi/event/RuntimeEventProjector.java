@@ -30,7 +30,7 @@ import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.runtime.Ru
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.vo.RuntimeSseEventVO;
 
 /**
- * 把 pi AgentEvent 投影为已确认的公共 SSE 与三类持久化 Entry。
+ * 把 pi AgentEvent 投影为已确认的公共 SSE 与四类持久化 Entry。
  *
  * @version [br_eCampusCore 26.0.0, 2026/08/18]
  * @since [br_eCampusCore 26.0.0]
@@ -54,6 +54,8 @@ public class RuntimeEventProjector {
 
     private final UserMessage initialUserMessage;
 
+    private final boolean thinking;
+
     private final AtomicReference<Throwable> failure = new AtomicReference<>();
 
     private String assistantEntryId;
@@ -69,7 +71,8 @@ public class RuntimeEventProjector {
             Clock clock,
             Runnable abort,
             RuntimeActiveExecution execution,
-            UserMessage initialUserMessage) {
+            UserMessage initialUserMessage,
+            boolean thinking) {
         this.sessionId = sessionId;
         this.repository = repository;
         this.codec = codec;
@@ -79,6 +82,7 @@ public class RuntimeEventProjector {
         this.abort = abort;
         this.execution = execution;
         this.initialUserMessage = initialUserMessage;
+        this.thinking = thinking;
     }
 
     public synchronized void onEvent(AgentEvent event) {
@@ -129,7 +133,8 @@ public class RuntimeEventProjector {
         if (assistantEntryId == null) {
             return;
         }
-        if (event.assistantMessageEvent() instanceof AssistantMessageEvent.TextDeltaEvent delta) {
+        AssistantMessageEvent messageEvent = event.assistantMessageEvent();
+        if (messageEvent instanceof AssistantMessageEvent.TextDeltaEvent delta) {
             LinkedHashMap<String, Object> block = new LinkedHashMap<>();
             block.put("type", "text");
             block.put("text", delta.delta());
@@ -137,7 +142,46 @@ public class RuntimeEventProjector {
             data.put("entry_id", assistantEntryId);
             data.put("delta", block);
             stream.emit(new RuntimeSseEventVO(null, RuntimeEventType.ASSISTANT_MESSAGE_DELTA.value(), data));
+        } else if (thinking) {
+            projectThinking(messageEvent);
         }
+    }
+
+    private void projectThinking(AssistantMessageEvent event) {
+        switch (event) {
+            case AssistantMessageEvent.ThinkingStartEvent start -> emitThinkingStarted(start.contentIndex());
+            case AssistantMessageEvent.ThinkingDeltaEvent delta -> emitThinkingDelta(delta);
+            case AssistantMessageEvent.ThinkingEndEvent end -> persistThinking(end);
+            default -> {}
+        }
+    }
+
+    private void emitThinkingStarted(int contentIndex) {
+        LinkedHashMap<String, Object> data = thinkingData(contentIndex);
+        stream.emit(new RuntimeSseEventVO(null, RuntimeEventType.ASSISTANT_THINKING_STARTED.value(), data));
+    }
+
+    private void emitThinkingDelta(AssistantMessageEvent.ThinkingDeltaEvent event) {
+        LinkedHashMap<String, Object> block = new LinkedHashMap<>();
+        block.put("type", "thinking");
+        block.put("text", event.delta());
+        LinkedHashMap<String, Object> data = thinkingData(event.contentIndex());
+        data.put("delta", block);
+        stream.emit(new RuntimeSseEventVO(null, RuntimeEventType.ASSISTANT_THINKING_DELTA.value(), data));
+    }
+
+    private void persistThinking(AssistantMessageEvent.ThinkingEndEvent event) {
+        RuntimeEntryDTO entry = codec.thinkingEntry(
+                sessionId, idGenerator.nextId(), assistantEntryId, event.contentIndex(), event.content(), now());
+        repository.appendEntry(entry);
+        stream.emit(new RuntimeSseEventVO(Long.toString(entry.getEntrySeq()), entry.getType(), codec.toSseData(entry)));
+    }
+
+    private LinkedHashMap<String, Object> thinkingData(int contentIndex) {
+        LinkedHashMap<String, Object> data = new LinkedHashMap<>();
+        data.put("assistant_entry_id", assistantEntryId);
+        data.put("content_index", contentIndex);
+        return data;
     }
 
     private void projectMessageEnd(MessageEndEvent event) {

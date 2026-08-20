@@ -48,27 +48,28 @@ class MateServiceClientTest {
                         .setBody(
                                 """
                         {
-                          "id": "agent-a",
+                          "id": "agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
                           "name": "Agent A",
                           "bindingModels": "gpt-4o",
                           "bindingSkills": {
-                            "id": "skill-1",
+                            "id": "skill-11111111111111111111111111111111",
                             "version": "1.0.0"
                           },
                           "bindingTools": []
                         }
                         """));
 
-        var runtime = client.getAgentRuntime("agent-a");
+        var runtime = client.getAgentRuntime("agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
 
-        assertEquals("agent-a", runtime.id());
+        assertEquals("agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", runtime.id());
         assertEquals(
-                List.of("skill-1"),
+                List.of("skill-11111111111111111111111111111111"),
                 runtime.bindingSkills().stream()
                         .map(MateServiceClient.SkillReference::id)
                         .toList());
         assertEquals(
-                "/mate-service/v1/agents/agent-a/runtime", server.takeRequest().getPath());
+                "/mate-service/v1/agents/agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/runtime",
+                server.takeRequest().getPath());
     }
 
     @Test
@@ -79,14 +80,14 @@ class MateServiceClientTest {
                         .setBody(
                                 """
                         {
-                          "id": "agent-a",
+                          "id": "agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
                           "name": "Agent A",
                           "bindingModels": ["glm-5.2", "minimax-m2.5"],
                           "description": ["Diagnoses device faults", "Drafts reports"]
                         }
                         """));
 
-        var runtime = client.getAgentRuntime("agent-a");
+        var runtime = client.getAgentRuntime("agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
 
         assertEquals(List.of("glm-5.2", "minimax-m2.5"), runtime.bindingModels());
         assertEquals(List.of("Diagnoses device faults", "Drafts reports"), runtime.description());
@@ -101,14 +102,14 @@ class MateServiceClientTest {
                         .setBody(
                                 """
                         {
-                          "id": "agent-a",
+                          "id": "agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
                           "name": "Agent A",
                           "bindingModels": "glm-5.2",
                           "description": "Diagnoses device faults"
                         }
                         """));
 
-        var runtime = client.getAgentRuntime("agent-a");
+        var runtime = client.getAgentRuntime("agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
 
         assertEquals(List.of("glm-5.2"), runtime.bindingModels());
         assertEquals(List.of("Diagnoses device faults"), runtime.description());
@@ -122,18 +123,18 @@ class MateServiceClientTest {
                         .setBody(
                                 """
                         {
-                          "id": "agent-a",
+                          "id": "agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
                           "name": "Agent A",
                           "bindingAgents": [
                             {
-                              "id": "agent-b",
+                              "id": "agent-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
                               "name": "field-ops",
                               "displayName": "Field Ops Agent",
                               "description": "Handles on-site device operations",
                               "version": "2.0.0"
                             },
                             {
-                              "id": "agent-c",
+                              "id": "agent-cccccccccccccccccccccccccccccccc",
                               "name": "reporting"
                             }
                           ],
@@ -141,15 +142,19 @@ class MateServiceClientTest {
                         }
                         """));
 
-        var runtime = client.getAgentRuntime("agent-a");
+        var runtime = client.getAgentRuntime("agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
 
         assertEquals(2, runtime.bindingAgents().size());
-        assertEquals("agent-b", runtime.bindingAgents().getFirst().id());
+        assertEquals(
+                "agent-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                runtime.bindingAgents().getFirst().id());
         assertEquals(
                 "Handles on-site device operations",
                 runtime.bindingAgents().getFirst().description());
         assertEquals("2.0.0", runtime.bindingAgents().getFirst().version());
-        assertEquals("agent-c", runtime.bindingAgents().get(1).id());
+        assertEquals(
+                "agent-cccccccccccccccccccccccccccccccc",
+                runtime.bindingAgents().get(1).id());
         assertEquals(Boolean.FALSE, runtime.enabled());
     }
 
@@ -161,20 +166,22 @@ class MateServiceClientTest {
                         .setBody(
                                 """
                         {
-                          "id": "agent-a",
+                          "id": "agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
                           "name": "Agent A",
                           "bindingAgents": {
-                            "id": "agent-b",
+                            "id": "agent-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
                             "name": "field-ops",
                             "description": "Handles on-site device operations"
                           }
                         }
                         """));
 
-        var runtime = client.getAgentRuntime("agent-a");
+        var runtime = client.getAgentRuntime("agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
 
         assertEquals(1, runtime.bindingAgents().size());
-        assertEquals("agent-b", runtime.bindingAgents().getFirst().id());
+        assertEquals(
+                "agent-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                runtime.bindingAgents().getFirst().id());
         assertEquals(
                 "Handles on-site device operations",
                 runtime.bindingAgents().getFirst().description());
@@ -186,7 +193,7 @@ class MateServiceClientTest {
         server.enqueue(
                 new MockResponse().setHeader("Content-Type", "application/json").setBody(skillInfoResponse()));
 
-        var skills = client.querySkillInfo("skill-1");
+        var skills = client.querySkillInfo("skill-11111111111111111111111111111111");
 
         assertEquals(
                 List.of("1.0.0", "2.0.0"),
@@ -197,25 +204,25 @@ class MateServiceClientTest {
         assertEquals("reference body", skills.getFirst().references().getFirst().content());
         RecordedRequest request = server.takeRequest();
         assertEquals("GET", request.getMethod());
-        assertEquals("/mate-service/v1/skill/query/skill-1", request.getPath());
+        assertEquals("/mate-service/v1/skill/query/skill-11111111111111111111111111111111", request.getPath());
         assertEquals(0L, request.getBody().size());
     }
 
     private static String skillInfoResponse() {
         return """
                 {"resCode":"0","resMsg":"ok","result":[{
-                  "name":"skill-a","id":"skill-1"," version":"1.0.0",
+                  "name":"skill-a","id":"skill-11111111111111111111111111111111"," version":"1.0.0",
                   "description":"Skill A","useCases":"booking",
-                  "bindingTools":[{"id":"tool-1","version":"2.0.0","name":"calendar",
+                  "bindingTools":[{"id":"tool-11111111111111111111111111111111","version":"2.0.0","name":"calendar",
                     "description":"Calendar tool","permission":"allow","source":"local"}],
-                  "bindingSkills":[{"id":"skill-0","version":"0.9.0",
+                  "bindingSkills":[{"id":"skill-00000000000000000000000000000000","version":"0.9.0",
                     "name":"base-skill","description":"Base"}],
                   "templates":[{"id":"template-1","name":"request",
                     "content":"template body","fileType":"md"}],
                   "references":[{"id":"reference-1","name":"guide",
                     "content":"reference body","fileType":"txt"}]
                 },{
-                  "name":"skill-b","id":"skill-2","version":"2.0.0",
+                  "name":"skill-b","id":"skill-22222222222222222222222222222222","version":"2.0.0",
                   "description":"Skill B","useCases":"reporting","bindingTools":[],
                   "bindingSkills":[],"templates":[],"references":[]
                 }]}
@@ -236,7 +243,8 @@ class MateServiceClientTest {
                         }
                         """));
 
-        AgentRuntimeException error = assertThrows(AgentRuntimeException.class, () -> client.querySkillInfo("skill-1"));
+        AgentRuntimeException error = assertThrows(
+                AgentRuntimeException.class, () -> client.querySkillInfo("skill-11111111111111111111111111111111"));
 
         assertEquals("querySkillInfo failed with resCode 404: skill missing", error.getMessage());
     }
@@ -255,7 +263,7 @@ class MateServiceClientTest {
                           "resCode": "200",
                           "resMsg": "ok",
                           "result": {
-                            "id": "agent-a",
+                            "id": "agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
                             "name": "Agent A",
                             "bindingSkills": [],
                             "bindingTools": []
@@ -263,7 +271,9 @@ class MateServiceClientTest {
                         }
                         """));
 
-        assertEquals("agent-a", client.getAgentRuntime("agent-a").id());
+        assertEquals(
+                "agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                client.getAgentRuntime("agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa").id());
     }
 
     @Test
@@ -280,8 +290,8 @@ class MateServiceClientTest {
                         }
                         """));
 
-        AgentRuntimeException error =
-                assertThrows(AgentRuntimeException.class, () -> client.getAgentRuntime("agent-a"));
+        AgentRuntimeException error = assertThrows(
+                AgentRuntimeException.class, () -> client.getAgentRuntime("agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"));
 
         assertEquals("GetAgentRuntime failed with resCode 403: agent disabled", error.getMessage());
     }
@@ -291,8 +301,8 @@ class MateServiceClientTest {
         client = newClientWithMaxResponseBytes(32);
         server.enqueue(new MockResponse().setBody("x".repeat(33)));
 
-        AgentRuntimeException error =
-                assertThrows(AgentRuntimeException.class, () -> client.getAgentRuntime("agent-a"));
+        AgentRuntimeException error = assertThrows(
+                AgentRuntimeException.class, () -> client.getAgentRuntime("agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"));
 
         assertEquals("GetAgentRuntime response exceeds campusmate.runtime.max-response-bytes (32)", error.getMessage());
     }
@@ -302,10 +312,17 @@ class MateServiceClientTest {
         client = newClientWithMaxResponseBytes(32);
         server.enqueue(new MockResponse().setChunkedBody("x".repeat(33), 8));
 
-        AgentRuntimeException error =
-                assertThrows(AgentRuntimeException.class, () -> client.getAgentRuntime("agent-a"));
+        AgentRuntimeException error = assertThrows(
+                AgentRuntimeException.class, () -> client.getAgentRuntime("agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"));
 
         assertEquals("GetAgentRuntime response exceeds campusmate.runtime.max-response-bytes (32)", error.getMessage());
+    }
+
+    @Test
+    void rejectsUntypedResourceIdsBeforeSendingRequests() {
+        assertThrows(IllegalArgumentException.class, () -> client.getAgentRuntime("agent-a"));
+        assertThrows(IllegalArgumentException.class, () -> client.querySkillInfo("skill-1"));
+        assertEquals(0, server.getRequestCount());
     }
 
     private MateServiceClient newClientWithMaxResponseBytes(int maxResponseBytes) {

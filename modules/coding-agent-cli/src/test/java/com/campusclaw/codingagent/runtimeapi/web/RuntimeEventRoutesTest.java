@@ -25,7 +25,6 @@ import java.util.List;
 import java.util.Locale;
 
 import com.campusclaw.codingagent.runtimeapi.RuntimeMessageSourceConfiguration;
-import com.campusclaw.codingagent.runtimeapi.auth.RuntimeRequestAuthenticator;
 import com.campusclaw.codingagent.runtimeapi.event.RuntimeEventQueryService;
 import com.campusclaw.codingagent.runtimeapi.event.RuntimeEventService;
 import com.campusclaw.codingagent.runtimeapi.event.RuntimeEventStream;
@@ -54,7 +53,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
  * @since [br_eCampusCore 26.0.0]
  */
 class RuntimeEventRoutesTest {
-    private static final String SESSION_ID = "01JY8W6M8D9K4H2Q7P3V5N1R0T";
+    private static final String SESSION_ID = "session-0123456789abcdef0123456789abcdef";
 
     private RuntimeEventService service;
 
@@ -71,11 +70,9 @@ class RuntimeEventRoutesTest {
         dispatcher = new RuntimeSseDispatcher();
         var controller =
                 new RuntimeEventController(service, queryService, new StandaloneResultBeanAdapter(), dispatcher);
-        var interceptor = new RuntimeAuthenticationInterceptor(new RuntimeRequestAuthenticator());
         var messages = new RuntimeMessageSourceConfiguration().messageSource();
         var objectMapper = JsonMapper.builder().addModule(new JavaTimeModule()).build();
         mvc = MockMvcBuilders.standaloneSetup(controller)
-                .addInterceptors(interceptor)
                 .setControllerAdvice(new RuntimeExceptionHandler(messages))
                 .setMessageConverters(new MappingJackson2HttpMessageConverter(objectMapper))
                 .build();
@@ -94,7 +91,7 @@ class RuntimeEventRoutesTest {
 
         MvcResult initial = mvc.perform(authenticated(post("/campusclaw-service/v1/sessions/{id}/events", SESSION_ID))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"type\":\"user.message\",\"message\":\"分析订单\",\"file_ids\":[]}"))
+                        .content("{\"message\":\"分析订单\",\"file_ids\":[]}"))
                 .andExpect(status().isOk())
                 .andExpect(request().asyncStarted())
                 .andReturn();
@@ -113,7 +110,7 @@ class RuntimeEventRoutesTest {
     void postRejectsUnknownRequestFieldBeforeStartingStream() throws Exception {
         mvc.perform(authenticated(post("/campusclaw-service/v1/sessions/{id}/events", SESSION_ID))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"type\":\"user.message\",\"message\":\"分析订单\",\"model_id\":\"forbidden\"}"))
+                        .content("{\"message\":\"分析订单\",\"model_id\":\"forbidden\"}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.resCode").value("INVALID_EVENT_REQUEST"))
                 .andExpect(jsonPath("$.result").doesNotExist());
@@ -123,10 +120,10 @@ class RuntimeEventRoutesTest {
     @Test
     void postRejectsValuesWhoseJsonTypesDoNotMatchTheContract() throws Exception {
         List<String> invalidBodies = List.of(
-                "{\"type\":1,\"message\":\"分析订单\"}",
-                "{\"type\":\"user.message\",\"message\":1}",
-                "{\"type\":\"user.message\",\"file_ids\":[1]}",
-                "{\"type\":\"user.message\",\"file_ids\":\"file_1\"}");
+                "{\"type\":\"user.message\",\"message\":\"分析订单\"}",
+                "{\"message\":1}",
+                "{\"file_ids\":[1]}",
+                "{\"file_ids\":\"file_1\"}");
 
         for (String body : invalidBodies) {
             mvc.perform(authenticated(post("/campusclaw-service/v1/sessions/{id}/events", SESSION_ID))
@@ -139,7 +136,7 @@ class RuntimeEventRoutesTest {
     }
 
     @Test
-    void getReturnsResultBeanWithOpaqueNextPage() throws Exception {
+    void getAllowsIntegrationHeadersToCoexistWithoutLocalValidation() throws Exception {
         LinkedHashMap<String, Object> event = new LinkedHashMap<>();
         event.put("type", "user.message");
         event.put("entry_id", "entry_100");
@@ -151,6 +148,7 @@ class RuntimeEventRoutesTest {
                         .queryParam("limit", "1")
                         .queryParam("page", "page_opaque")
                         .header("X-HW-ID", "credential")
+                        .header(HttpHeaders.AUTHORIZATION, "not-locally-validated")
                         .header("X-HW-APPKEY", "opaque-appkey"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.resCode").value("0"))

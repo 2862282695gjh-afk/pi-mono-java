@@ -20,9 +20,11 @@ import java.util.regex.Pattern;
 
 import com.campusclaw.codingagent.runtime.MateServiceClient.AgentRuntime;
 import com.campusclaw.codingagent.runtime.MateServiceClient.BoundTool;
+import com.campusclaw.codingagent.runtime.MateServiceClient.DependentSkill;
 import com.campusclaw.codingagent.runtime.MateServiceClient.SkillFile;
 import com.campusclaw.codingagent.runtime.MateServiceClient.SkillInfo;
 import com.campusclaw.codingagent.runtime.MateServiceClient.SkillReference;
+import com.campusclaw.codingagent.runtimeapi.RuntimeApiConstants;
 import com.campusclaw.codingagent.session.SessionConfig;
 import com.campusclaw.codingagent.skill.SkillLoader;
 import com.fasterxml.jackson.annotation.JsonProperty;
@@ -33,9 +35,9 @@ import org.springframework.stereotype.Component;
 /**
  * 从本地缓存或 CampusMate 解析托管 CLI Agent，并物化现有 Skill 加载器需要的目录结构。
  *
- * <p>路径解析前先按单路径段规则校验 Agent ID，防止通过路径分隔符越出 agents-root。
- * 其余快照加固仍按 {@code docs/DEFERRED.md} 的 DEF-008 暂缓：当前不校验符号链接、
- * 本地篡改、配置漂移和完整响应形状，也不执行原子发布。无法读取的本地快照会重新物化。
+ * <p>路径解析和物化前校验 Agent、Skill、Tool 类型化资源 ID，防止旧格式或路径分隔符进入快照。
+ * 其余快照加固仍按 {@code docs/DEFERRED.md} 的 DEF-008 暂缓：当前不校验符号链接、本地篡改、
+ * 配置漂移和完整响应形状，也不执行原子发布。无法读取的本地快照会重新物化。
  *
  * @version [br_eCampusCore 26.0.0, 2026/08/18]
  * @since [br_eCampusCore 26.0.0]
@@ -43,8 +45,14 @@ import org.springframework.stereotype.Component;
 @Component
 public class AgentRuntimeManager {
 
-    /** 单路径段 Agent ID：首字符为字母或数字，并且不允许路径分隔符。 */
-    private static final Pattern AGENT_ID_PATTERN = Pattern.compile("^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$");
+    /** 类型化 Agent UUID，不允许路径分隔符或旧格式。 */
+    private static final Pattern AGENT_ID_PATTERN = Pattern.compile(RuntimeApiConstants.AGENT_ID_PATTERN);
+
+    /** 类型化 Skill UUID，不接受旧式短标识。 */
+    private static final Pattern SKILL_ID_PATTERN = Pattern.compile(RuntimeApiConstants.SKILL_ID_PATTERN);
+
+    /** 类型化 Tool UUID，不接受旧式短标识。 */
+    private static final Pattern TOOL_ID_PATTERN = Pattern.compile(RuntimeApiConstants.TOOL_ID_PATTERN);
 
     private static final String AGENT_METADATA_FILE = "agentId.json";
     private static final String SYSTEM_PROMPT_FILE = "systemPrompt.md";
@@ -107,6 +115,7 @@ public class AgentRuntimeManager {
             return local;
         }
         AgentRuntime remote = mateServiceClient.getAgentRuntime(agentId);
+        requireValidRuntimeIdentifiers(remote);
         List<SkillInfo> skills = resolveSkills(remote.bindingSkills());
         materialize(agentRoot, remote, skills);
 
@@ -185,6 +194,9 @@ public class AgentRuntimeManager {
         try {
             metadata = mapper.readValue(metadataFile.toFile(), AgentRuntime.class);
         } catch (IOException e) {
+            return null;
+        }
+        if (!hasValidRuntimeIdentifiers(metadata)) {
             return null;
         }
         List<SkillInfo> skills = loadBoundSkills(skillsDir, metadata.bindingSkills());
@@ -356,7 +368,12 @@ public class AgentRuntimeManager {
         if (!Files.isRegularFile(toolsFile)) {
             throw new AgentRuntimeException("Skill tools snapshot is missing: " + skill.name());
         }
-        return mapper.readValue(toolsFile.toFile(), SkillToolsFile.class).tools();
+        List<SkillTool> tools =
+                mapper.readValue(toolsFile.toFile(), SkillToolsFile.class).tools();
+        for (SkillTool tool : tools) {
+            requireIdentifier(tool.toolId(), TOOL_ID_PATTERN, "toolId");
+        }
+        return tools;
     }
 
     private static List<SkillTool> skillTools(SkillInfo skill) {
@@ -380,9 +397,50 @@ public class AgentRuntimeManager {
             if (result.isEmpty()) {
                 throw new AgentRuntimeException("querySkillInfo returned no Skill for id " + reference.id());
             }
-            skills.add(result.getFirst());
+            SkillInfo skill = result.getFirst();
+            requireValidSkillIdentifiers(skill);
+            skills.add(skill);
         }
         return List.copyOf(skills);
+    }
+
+    private static void requireValidRuntimeIdentifiers(AgentRuntime runtime) {
+        if (!hasValidRuntimeIdentifiers(runtime)) {
+            throw new AgentRuntimeException("GetAgentRuntime returned an invalid typed resource ID");
+        }
+    }
+
+    private static boolean hasValidRuntimeIdentifiers(AgentRuntime runtime) {
+        if (runtime == null || !matches(runtime.id(), AGENT_ID_PATTERN)) {
+            return false;
+        }
+        boolean skillsValid = runtime.bindingSkills().stream()
+                .allMatch(reference -> reference != null && matches(reference.id(), SKILL_ID_PATTERN));
+        boolean toolsValid =
+                runtime.bindingTools().stream().allMatch(tool -> tool != null && matches(tool.id(), TOOL_ID_PATTERN));
+        boolean agentsValid = runtime.bindingAgents().stream()
+                .allMatch(agent -> agent != null && matches(agent.id(), AGENT_ID_PATTERN));
+        return skillsValid && toolsValid && agentsValid;
+    }
+
+    private static void requireValidSkillIdentifiers(SkillInfo skill) {
+        requireIdentifier(skill == null ? null : skill.id(), SKILL_ID_PATTERN, "skillId");
+        for (BoundTool tool : skill.bindingTools()) {
+            requireIdentifier(tool == null ? null : tool.id(), TOOL_ID_PATTERN, "toolId");
+        }
+        for (DependentSkill dependency : skill.bindingSkills()) {
+            requireIdentifier(dependency == null ? null : dependency.id(), SKILL_ID_PATTERN, "skillId");
+        }
+    }
+
+    private static void requireIdentifier(String value, Pattern pattern, String name) {
+        if (!matches(value, pattern)) {
+            throw new AgentRuntimeException("Invalid " + name + ": " + value);
+        }
+    }
+
+    private static boolean matches(String value, Pattern pattern) {
+        return value != null && pattern.matcher(value).matches();
     }
 
     private static String joinPrompts(String runtimePrompt, String customPrompt) {

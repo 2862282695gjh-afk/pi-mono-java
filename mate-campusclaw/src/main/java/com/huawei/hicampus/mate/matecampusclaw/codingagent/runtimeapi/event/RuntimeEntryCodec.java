@@ -35,7 +35,7 @@ import org.springframework.stereotype.Component;
 /**
  * 在 pi Message、数据库 Entry 和公共事件 JSON 之间执行受控投影。
  *
- * <p>原始 ThinkingContent 不进入公共事件，避免把模型内部思考过程作为接口契约披露。
+ * <p>Assistant MessageEntry 过滤 ThinkingContent；公开 thinking completed 使用独立持久化 Entry。
  *
  * @version [br_eCampusCore 26.0.0, 2026/08/18]
  * @since [br_eCampusCore 26.0.0]
@@ -73,6 +73,20 @@ public class RuntimeEntryCodec {
                 RuntimeEventType.ASSISTANT_MESSAGE_COMPLETED.value(),
                 eventTime(message.timestamp(), fallbackTime),
                 payload);
+    }
+
+    public RuntimeEntryDTO thinkingEntry(
+            String sessionId,
+            String entryId,
+            String assistantEntryId,
+            int contentIndex,
+            String content,
+            OffsetDateTime createdAt) {
+        ObjectNode payload = objectMapper.createObjectNode();
+        payload.put("assistant_entry_id", assistantEntryId);
+        payload.put("content_index", contentIndex);
+        payload.putObject("content").put("type", "thinking").put("text", content);
+        return entry(sessionId, entryId, RuntimeEventType.ASSISTANT_THINKING_COMPLETED.value(), createdAt, payload);
     }
 
     public RuntimeEntryDTO toolResultEntry(
