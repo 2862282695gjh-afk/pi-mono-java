@@ -8,13 +8,17 @@
 | Story 名称 | cron 模块设计文档（基于代码 v1） |
 | 负责人 | 待开发者补充 |
 | 创建日期 | 2026-05-14 |
-| 版本 | v1.2 (code-derived) |
+| 版本 | v1.3 (code-derived) |
 
 > 本文档基于 `modules/cron` 现有源码逆向生成，复用 `docs/cron-module-design.md` 中已沉淀的设计原文（架构对照表、Phase 列表、文件清单等），按 AR 七章模板补齐章节。
 > 图表格式更新分析源码提交为
 > `cc2f58d9e24bae1d7c99b9f54e86b71940d86115`，主要证据为
 > `CronService`、`CronEngine#executeAndReschedule`、`CronJobExecutor#execute`、
 > `CronStore` 与 `CronRunLog`。
+> 外部调度器平台范围在源码提交 `3a6358bc9dd5837cdf5ac866fc0761298372510a`
+> 上重新分析，目标设计仅保留 macOS launchd 与 Linux crontab；详见
+> [启动平台支持设计](platform-support.md)和
+> [ADR-0016](../decisions/0016-macos-linux-launch-support.html)。
 
 ---
 
@@ -297,6 +301,7 @@ CampusClaw 主进程是 TUI 交互式 Agent，对话生命周期 = 进程生命�
 ### 4.2 兼容性设计
 
 - **JDK 版本**：JDK 21（父 pom），用了 `sealed interface`、`record`、`switch pattern matching` —— 不可降级
+- **操作系统**：外部调度器只支持 macOS launchd 与 Linux crontab；其他操作系统会明确拒绝安装、卸载和状态查询
 - **接口稳定性**：`CronService` / `CronTool` / `CronSchedule` / `CronPayload` / `CronEvent` 均无 `@Deprecated` 标记，目前视为内部稳定接口
 - **持久化兼容**：`jobs.json` 顶层带 `version=1` 字段，Jackson `FAIL_ON_UNKNOWN_PROPERTIES=false` 允许后续添加字段而不破坏旧版反序列化；`CronJobs` 删除字段是破坏性变更，需要迁移
 - **协议版本**：本模块不对外暴露 HTTP/RPC 协议

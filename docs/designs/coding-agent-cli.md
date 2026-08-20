@@ -1,8 +1,8 @@
 # Coding Agent 启动与 Runtime HTTP 设计
 
-> 文档版本：2.3.0
+> 文档版本：2.4.0
 >
-> 实现分析基线：`7811dc335fcb0125a1ecbddd63cd77baf120f21d`
+> 实现分析基线：`3a6358bc9dd5837cdf5ac866fc0761298372510a`
 >
 > 源码仓库：本仓库 `pi-mono-java`
 
@@ -61,7 +61,7 @@ java -jar modules/coding-agent-cli/target/campusclaw-agent.jar cli -m glm-5
 java -jar modules/coding-agent-cli/target/campusclaw-agent.jar cli --mode rpc -m glm-5
 ```
 
-仓库的 `campusclaw.sh` 与 `campusclaw.bat` 会自动补充 `cli`。CLI 上下文使用 `campusclaw-cli` profile，不启动 Web 容器，也不加载 Runtime 数据库组件。
+仓库仅维护 macOS/Linux 的 `campusclaw.sh`，脚本会校验操作系统并自动补充 `cli`。Windows 启动入口不属于产品支持范围。CLI 上下文使用 `campusclaw-cli` profile，不启动 Web 容器，也不加载 Runtime 数据库组件。平台支持决策见[启动平台支持设计](platform-support.md)和[ADR-0016](../decisions/0016-macos-linux-launch-support.html)。
 
 ## 5. Runtime HTTP 结构
 
@@ -161,6 +161,7 @@ Runtime V1 事件名 `tool.execution.started` 与 `tool.execution.completed` 是
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 2.4.0 | 2026-08-20 | 将本地启动平台收敛为 macOS/Linux，删除 Windows 启动入口并关联平台支持决策 |
 | 2.3.0 | 2026-08-19 | 合入最新 HTTP V1 启动与执行架构，并明确 ToolCatalog、MateService 工具和已删除本地 Sandbox 的边界 |
 | 2.2.0 | 2026-08-19 | 统一 `.campusclaw` 真实运行根目录，拆分事件职责，集中错误语义并明确非本机执行边界 |
 | 2.1.0 | 2026-08-19 | HTTP V1 的 Agent 根目录默认值改为 `agent`，受控子目录改为 `.campusclaw/` |
