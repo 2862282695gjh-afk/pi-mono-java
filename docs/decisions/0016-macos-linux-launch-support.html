@@ -30,9 +30,9 @@
     <ul>
       <li><strong>继续同时维护 macOS/Linux 与 Windows</strong><br>Pro：现有 Windows 用户无需迁移。<br>Con：继续承担 Batch、PowerShell、CMD Wrapper、Task Scheduler 和平台专属网络问题的维护与验证。Rejected。</li>
       <li><strong>文档标记 Windows 已弃用，但保留所有入口</strong><br>Pro：短期变更较小，旧命令仍可能运行。<br>Con：仓库文件仍会暗示支持，入口继续腐化，后续修改仍需判断是否同步更新。Rejected。</li>
-      <li><strong>删除 Windows 启动链路并在执行入口明确限制平台</strong><br>Pro：文档、脚本和系统调度器形成单一支持边界；不支持平台快速失败。<br>Con：Windows 用户无法继续使用仓库提供的启动、安装、构建或定时触发入口；没有兼容期。Chosen。</li>
+      <li><strong>删除 Windows 启动链路并在执行入口明确限制平台</strong><br>Pro：文档、脚本和系统调度器形成单一支持边界；不支持平台快速失败。<br>Con：Windows 用户无法继续使用仓库提供的启动、安装或定时触发入口；构建仅保留不受支持的 best-effort 路径。Chosen。</li>
     </ul>
-    <p><strong>选择理由：</strong>这是明确的产品支持范围收敛。仅修改说明而保留可执行入口会继续形成隐含承诺，因此必须同步删除 Windows 文件和运行时调度分支。</p>
+    <p><strong>选择理由：</strong>这是明确的产品支持范围收敛。仅修改说明而保留 Windows 启动和安装入口会继续形成隐含承诺，因此必须同步删除对应文件和运行时调度分支。通用构建工具的既有兼容路径不等同于产品支持，可以 best-effort 保留。</p>
   </section>
 
   <section><h2>Decision</h2>
@@ -40,6 +40,8 @@
       <li>macOS 和 Linux 是唯一受支持、受维护的本地启动与安装平台。</li>
       <li>删除 <code>campusclaw.bat</code>、<code>install.bat</code>、<code>mvnw.cmd</code> 和 Windows 网络排障文档。</li>
       <li><code>campusclaw.sh</code> 与 <code>install.sh</code> 仅接受 <code>Darwin</code> 或 <code>Linux</code>。</li>
+      <li><code>install.sh</code> 生成的全局命令委托给 <code>campusclaw.sh</code>，复用同一平台校验；旧包装脚本需要重新安装才能更新。</li>
+      <li>POSIX <code>mvnw</code> 可以保留上游 Cygwin/MinGW 兼容逻辑，允许 Windows 用户自行尝试构建，但项目不承诺适配、测试或修复该路径。</li>
       <li><code>SystemSchedulerInstaller</code> 只保留 macOS launchd 与 Linux crontab；其他系统明确拒绝操作，并且启动脚本检测只查找 <code>campusclaw.sh</code>。</li>
       <li>项目说明和代理工程规范不再提供 Windows 命令，并禁止无新决策时重新引入 Windows 启动入口。</li>
       <li>与归档输入安全或通用进程健壮性相关的既有防御不因本决策自动删除，它们不表示恢复 Windows 支持。</li>
@@ -49,10 +51,10 @@
   <section><h2>Consequences</h2>
     <ul>
       <li><strong>正面：</strong>本地启动链路统一为 POSIX Shell；文档和实现的支持范围一致；平台错误在入口处明确暴露。</li>
-      <li><strong>负面：</strong>Windows 启动、安装、Maven 包装和 Task Scheduler 集成立即停止；旧用户需要自行维护分支或迁移到受支持平台。</li>
-      <li><strong>兼容性：</strong>CLI 参数、JAR、HTTP API、配置文件与持久化格式均未变化；变化仅涉及受支持平台及其入口文件。</li>
+      <li><strong>负面：</strong>Windows 启动、安装、<code>mvnw.cmd</code> 和 Task Scheduler 集成立即停止；旧用户需要自行维护启动方式或迁移到受支持平台。</li>
+      <li><strong>兼容性：</strong>CLI 参数、JAR、HTTP API、配置文件与持久化格式均未变化；Windows Git Bash 仍可 best-effort 使用 <code>./mvnw</code> 构建，但不属于支持范围。</li>
       <li><strong>回滚：</strong>若未来恢复 Windows 支持，需要新 ADR，并重新建立脚本、调度器、CI、文档和平台验证，不能只恢复单个 Batch 文件。</li>
-      <li><strong>数据：</strong>无数据库或本地数据迁移；本次变更不自动删除旧 Windows 环境中已创建的 PATH 条目或系统任务。</li>
+      <li><strong>数据：</strong>无数据库或本地数据迁移；本次变更不自动删除旧 Windows 环境中已创建的 PATH 条目、全局包装脚本或系统任务。</li>
     </ul>
   </section>
 

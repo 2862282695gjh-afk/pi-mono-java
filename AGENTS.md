@@ -10,9 +10,11 @@
 - Follow more specific `AGENTS.md` or `AGENTS.override.md` files if they are
   added under a subdirectory.
 - Treat macOS and Linux as the only supported local launch and installation
-  platforms. Do not add or maintain Windows batch, PowerShell, Maven wrapper,
-  or Task Scheduler entry points unless a later user instruction changes the
-  platform policy.
+  platforms. Do not add or maintain Windows-specific batch, PowerShell,
+  `mvnw.cmd`, or Task Scheduler launch and installation entry points unless a
+  later user instruction changes the platform policy. The POSIX `mvnw` may
+  retain upstream Cygwin/MinGW compatibility for best-effort Windows builds;
+  that compatibility carries no Windows support or validation commitment.
 - Preserve unrelated user changes. Never stage, rewrite, stash, or discard
   them unless the user explicitly asks. Use a separate Git worktree when the
   current worktree is dirty or is needed for another task.
