@@ -20,7 +20,7 @@
   <h1>ADR-0016 · 仅维护 macOS/Linux 启动方式</h1>
   <div class="meta">Status: <span class="badge">Accepted</span> · Date: 2026-08-20 ·
     设计文档: <a href="../designs/platform-support.md">platform-support</a> ·
-    基线: <code>origin/main@3a6358bc9dd5837cdf5ac866fc0761298372510a</code></div>
+    基线: <code>origin/main@1f801dbb82bdda30478e3354e685e3153b179a0c</code></div>
 
   <section><h2>Context</h2>
     <p>基线同时维护 macOS/Linux Shell 与 Windows Batch 两套启动和安装实现，并额外分发 Windows Maven Wrapper、维护 Task Scheduler 集成及 Windows 网络排障资料。不同平台的 Shell、路径、证书库和系统调度器语义增加了每次启动相关变更的维护和验证成本。产品现阶段只需要 macOS 与 Linux 本地环境，因此需要把支持承诺、入口文件和运行时分派保持一致。</p>

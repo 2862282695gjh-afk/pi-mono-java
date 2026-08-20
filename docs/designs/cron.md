@@ -15,7 +15,7 @@
 > `cc2f58d9e24bae1d7c99b9f54e86b71940d86115`，主要证据为
 > `CronService`、`CronEngine#executeAndReschedule`、`CronJobExecutor#execute`、
 > `CronStore` 与 `CronRunLog`。
-> 外部调度器平台范围在源码提交 `3a6358bc9dd5837cdf5ac866fc0761298372510a`
+> 外部调度器平台范围在源码提交 `1f801dbb82bdda30478e3354e685e3153b179a0c`
 > 上重新分析，目标设计仅保留 macOS launchd 与 Linux crontab；详见
 > [启动平台支持设计](platform-support.md)和
 > [ADR-0016](../decisions/0016-macos-linux-launch-support.html)。
