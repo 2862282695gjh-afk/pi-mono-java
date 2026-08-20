@@ -30,8 +30,8 @@ import org.springframework.stereotype.Component;
  * Falls back to fuzzy matching when exact match fails.
  * Uses {@link FileMutationQueue} to serialize concurrent edits to the same file.
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/05/06]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/05/06]
+ * @since [br_eCampusCore 26.0.0]
  */
 @Component
 public class EditTool implements AgentTool {

@@ -19,8 +19,8 @@ import org.springframework.stereotype.Component;
 /**
  * 异步清理已删除 Session 的历史、序号和物化数据，同时永久保留 tombstone。
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/08/18]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/08/18]
+ * @since [br_eCampusCore 26.0.0]
  */
 @Component
 @ConditionalOnProperty(prefix = "campusclaw.runtime.cleanup", name = "enabled", matchIfMissing = true)

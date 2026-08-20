@@ -12,8 +12,8 @@ import org.junit.jupiter.api.Test;
  * Unit tests for {@link NodeMetrics} compact-constructor invariants — non-negative
  * counters and finite {@code cpuLoad}.
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/06/18]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/06/18]
+ * @since [br_eCampusCore 26.0.0]
  */
 class NodeMetricsTest {
 

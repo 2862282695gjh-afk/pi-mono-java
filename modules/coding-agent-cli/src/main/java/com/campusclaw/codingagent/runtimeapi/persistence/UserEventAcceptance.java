@@ -11,8 +11,8 @@ import com.campusclaw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
  *
  * @param status 接收状态
  * @param session 接收时锁定的 Session 快照；不存在时为空
- * @version [br_eCampusCore 25.1.0_Next, 2026/08/18]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/08/18]
+ * @since [br_eCampusCore 26.0.0]
  */
 public record UserEventAcceptance(Status status, RuntimeSessionDTO session) {
     /**

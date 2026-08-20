@@ -19,8 +19,8 @@ package com.campusclaw.agent.controlplane.domain;
  * @param queuedTasks tasks waiting in the local task queue
  * @param cpuLoad     normalised 1-minute CPU load average; {@code [0.0, n_cpu]}
  * @param memoryUsedMb resident set size in megabytes (best-effort)
- * @version [br_eCampusCore 25.1.0_Next, 2026/06/18]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/06/18]
+ * @since [br_eCampusCore 26.0.0]
  */
 public record NodeMetrics(int activeAgents, int queuedTasks, double cpuLoad, long memoryUsedMb) {
 

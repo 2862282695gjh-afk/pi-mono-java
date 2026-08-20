@@ -9,8 +9,8 @@ import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.vo.Runtime
 /**
  * 单次 Runtime SSE 请求的下游写入端口。
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/08/18]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/08/18]
+ * @since [br_eCampusCore 26.0.0]
  */
 public interface RuntimeEventSubscriber {
     void onEvent(RuntimeSseEventVO event);

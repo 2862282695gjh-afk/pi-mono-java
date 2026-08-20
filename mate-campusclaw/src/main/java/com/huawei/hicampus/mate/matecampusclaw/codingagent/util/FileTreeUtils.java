@@ -19,8 +19,8 @@ import org.slf4j.LoggerFactory;
  * File-tree operations: moving a directory with a cross-filesystem fallback, recursive copy, and
  * best-effort recursive delete. These are generic filesystem utilities, independent of any caller.
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/06/23]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/06/23]
+ * @since [br_eCampusCore 26.0.0]
  */
 public final class FileTreeUtils {
 

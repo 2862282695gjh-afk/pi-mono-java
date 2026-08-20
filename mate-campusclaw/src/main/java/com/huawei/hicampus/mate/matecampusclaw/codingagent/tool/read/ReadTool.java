@@ -36,8 +36,8 @@ import org.springframework.stereotype.Component;
  * Detects image files and returns them as {@link ImageContent}.
  * Text files are returned with line numbers and truncated if they exceed limits.
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/05/06]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/05/06]
+ * @since [br_eCampusCore 26.0.0]
  */
 @Component
 public class ReadTool implements AgentTool {

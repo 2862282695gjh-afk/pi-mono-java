@@ -9,7 +9,7 @@ package com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.ops;
  *
  * @param exitCode the process exit code, or null if the process was killed/cancelled
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/05/06]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/05/06]
+ * @since [br_eCampusCore 26.0.0]
  */
 public record BashResult(Integer exitCode) {}

@@ -31,8 +31,8 @@ import java.time.Duration;
  *     {@code $JAVA_HOME/lib/security/cacerts} or pointing {@code javax.net.ssl.trustStore} at a
  *     dedicated keystore
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/05/15]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/05/15]
+ * @since [br_eCampusCore 26.0.0]
  */
 public record A2aAgentConfig(
         String id,

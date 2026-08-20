@@ -117,6 +117,17 @@
         <property name="message" value="String.format 必须显式以 Locale.ROOT 或 Locale.ENGLISH 作为第一参数。"/>
     </module>
 
+    <!-- top_class_comment_since_required: JavadocType 能强制 public 顶层类型存在
+         @version，却没有对应的 @since 必填能力。这里以已校验的 @version 为锚点，
+         检查同一个 Javadoc 块内是否存在精确格式的 @since 行。缺失、其他格式或
+         带日期的 @since 都会命中。 -->
+    <module name="RegexpMultiline">
+        <property name="id" value="top_class_comment_since_required"/>
+        <property name="format" value="@version\s+\[br_eCampusCore 26\.0\.0,\s*\d{4}/\d{2}/\d{2}\](?!(?:(?!\*/)[\s\S])*\r?\n[ \t]*\*[ \t]+@since[ \t]+\[br_eCampusCore 26\.0\.0\][ \t]*\r?\n)(?:(?!\*/)[\s\S])*\*/"/>
+        <property name="fileExtensions" value="java"/>
+        <property name="message" value="public 顶层类型的 Javadoc 必须包含独立一行的 @since [br_eCampusCore 26.0.0]。"/>
+    </module>
+
     <module name="TreeWalker">
         <module name="SuppressWarningsHolder"/>
 
@@ -383,8 +394,9 @@
         </module>
 
         <!-- TopClassComment: public 类必须有 Javadoc 描述功能，且包含 @version 标签
-             记录版本+创建日期。@since 由配套 Javadoc 自带，不强制校验（Checkstyle 没有
-             标准 @since 校验项），但脚本会一同补齐。 -->
+             记录当前产品版本+创建日期。Checker 级 top_class_comment_since_required
+             补充校验同一 Javadoc 块内 @since 的存在性；下方两条格式规则分别对
+             @version 和 @since 做精确白名单校验。 -->
         <module name="MissingJavadocType">
             <property name="id" value="top_class_comment"/>
             <property name="scope" value="public"/>
@@ -392,9 +404,19 @@
         <module name="JavadocType">
             <property name="id" value="top_class_comment_version"/>
             <property name="scope" value="public"/>
-            <property name="versionFormat" value="\[br_eCampusCore [^,\]]+,\s*\d{4}/\d{2}/\d{2}\]"/>
+            <property name="versionFormat" value="\[br_eCampusCore 26\.0\.0,\s*\d{4}/\d{2}/\d{2}\]"/>
             <!-- 不强制每个泛型/record 组件都要 @param —— 那超出 TopClassComment 范围。 -->
             <property name="allowMissingParamTags" value="true"/>
+        </module>
+        <module name="RegexpSinglelineJava">
+            <property name="id" value="campuscore_version_format"/>
+            <property name="format" value="@version(?!\s+\[br_eCampusCore 26\.0\.0,\s*\d{4}/\d{2}/\d{2}\]\s*(?:\*/\s*)?$)"/>
+            <property name="message" value="@version must match [br_eCampusCore 26.0.0, YYYY/MM/DD]"/>
+        </module>
+        <module name="RegexpSinglelineJava">
+            <property name="id" value="campuscore_since_format"/>
+            <property name="format" value="@since(?!\s+\[br_eCampusCore 26\.0\.0\]\s*(?:\*/\s*)?$)"/>
+            <property name="message" value="@since must match [br_eCampusCore 26.0.0]"/>
         </module>
 
         <!-- JavaComponentOrder: 文件按 copyright / package / import / 类 顺序排列且空行分隔。

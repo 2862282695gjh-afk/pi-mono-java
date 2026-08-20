@@ -26,8 +26,8 @@ import jakarta.annotation.Nullable;
  * Manages application changelog entries.
  * Loads from bundled changelog.json and supports user-read tracking.
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/05/06]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/05/06]
+ * @since [br_eCampusCore 26.0.0]
  */
 public class Changelog {
     private static final Logger log = LoggerFactory.getLogger(Changelog.class);

@@ -11,8 +11,8 @@ import com.campusclaw.agent.subagent.SubAgentEvent;
 /**
  * ACP-wire stop reasons reported by {@code session/prompt}.
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/05/12]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/05/12]
+ * @since [br_eCampusCore 26.0.0]
  */
 public enum AcpStopReason {
     END_TURN,

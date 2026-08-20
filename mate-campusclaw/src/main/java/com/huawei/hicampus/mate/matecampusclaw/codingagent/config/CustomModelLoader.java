@@ -30,8 +30,8 @@ import org.springframework.stereotype.Service;
  * {@code ~/.campusclaw/agent/models.json}；启动时执行一次，确保模型选择器与
  * {@code -m} 参数使用同一份模型目录。
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/05/06]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/05/06]
+ * @since [br_eCampusCore 26.0.0]
  */
 @Service
 public class CustomModelLoader {

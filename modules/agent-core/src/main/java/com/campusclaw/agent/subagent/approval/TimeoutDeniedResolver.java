@@ -17,8 +17,8 @@ import org.springframework.stereotype.Component;
  * defaults beat silently auto-allowing risky operations. Interactive resolvers (TUI prompt, RPC
  * round-trip) can replace this bean by declaring a higher-precedence {@code @Component}.
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/05/12]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/05/12]
+ * @since [br_eCampusCore 26.0.0]
  */
 @Component
 public class TimeoutDeniedResolver implements ParentPermissionResolver {

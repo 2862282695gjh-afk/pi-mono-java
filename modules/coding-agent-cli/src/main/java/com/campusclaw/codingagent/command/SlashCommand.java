@@ -9,8 +9,8 @@ package com.campusclaw.codingagent.command;
  * Each command advertises a name and description and executes against the supplied
  * {@link SlashCommandContext} with the raw argument string.
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/05/13]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/05/13]
+ * @since [br_eCampusCore 26.0.0]
  */
 public interface SlashCommand {
     /**

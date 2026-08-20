@@ -27,8 +27,8 @@ import org.springframework.stereotype.Component;
 /**
  * 协调 Agent 执行、控制消息续跑、超时、持久化收尾和资源释放。
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/08/19]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/08/19]
+ * @since [br_eCampusCore 26.0.0]
  */
 @Component
 public class RuntimeExecutionCoordinator {

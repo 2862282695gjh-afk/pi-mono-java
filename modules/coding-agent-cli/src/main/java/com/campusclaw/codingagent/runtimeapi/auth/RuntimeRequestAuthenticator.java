@@ -18,8 +18,8 @@ import jakarta.servlet.http.HttpServletRequest;
  * <p>CampusClaw 位于受控内部网络中，仅校验凭据 Header 形状；JWT 与 APPKEY 的
  * 真实性由上游 mate-service 负责，不在此处重复实现公司算法。
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/08/18]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/08/18]
+ * @since [br_eCampusCore 26.0.0]
  */
 @Component
 public class RuntimeRequestAuthenticator {

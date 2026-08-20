@@ -24,8 +24,8 @@ import org.junit.jupiter.api.Test;
 /**
  * Runtime Session 异步清理任务的调度与重试单元测试。
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/08/18]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/08/18]
+ * @since [br_eCampusCore 26.0.0]
  */
 class SessionCleanupWorkerTest {
     private static final OffsetDateTime NOW = OffsetDateTime.parse("2026-08-18T00:00:00Z");

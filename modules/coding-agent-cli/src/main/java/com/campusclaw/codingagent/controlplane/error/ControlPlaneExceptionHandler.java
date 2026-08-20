@@ -23,8 +23,8 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 /**
  * 把控制面 MVC 异常转换为稳定的结构化 HTTP 错误响应。
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/08/18]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/08/18]
+ * @since [br_eCampusCore 26.0.0]
  */
 @RestControllerAdvice(basePackages = "com.campusclaw.codingagent.controlplane.api")
 public class ControlPlaneExceptionHandler {

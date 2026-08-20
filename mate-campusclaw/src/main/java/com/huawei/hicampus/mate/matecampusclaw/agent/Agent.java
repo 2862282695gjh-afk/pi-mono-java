@@ -50,8 +50,8 @@ import org.springframework.stereotype.Service;
 /**
  * Facade for configuring and running the phase-4 agent runtime.
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/05/06]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/05/06]
+ * @since [br_eCampusCore 26.0.0]
  */
 @Service
 public class Agent {

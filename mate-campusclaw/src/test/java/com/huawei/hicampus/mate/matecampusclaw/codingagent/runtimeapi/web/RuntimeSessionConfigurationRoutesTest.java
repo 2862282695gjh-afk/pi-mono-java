@@ -43,8 +43,8 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 /**
  * Session 模型列表、模型切换与深度思考开关 HTTP 契约测试。
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/08/18]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/08/18]
+ * @since [br_eCampusCore 26.0.0]
  */
 class RuntimeSessionConfigurationRoutesTest {
     private static final String SESSION_ID = "01JY8W6M8D9K4H2Q7P3V5N1R0T";

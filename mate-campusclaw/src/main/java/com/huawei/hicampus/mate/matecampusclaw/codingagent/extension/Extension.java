@@ -19,8 +19,8 @@ import com.huawei.hicampus.mate.matecampusclaw.codingagent.command.SlashCommand;
  * packages (npm/git/local directories). Each extension declares what it provides
  * via the getter methods below.
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/05/06]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/05/06]
+ * @since [br_eCampusCore 26.0.0]
  */
 public interface Extension {
 

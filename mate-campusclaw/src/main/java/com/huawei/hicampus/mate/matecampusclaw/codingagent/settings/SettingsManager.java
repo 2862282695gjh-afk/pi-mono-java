@@ -22,8 +22,8 @@ import org.springframework.stereotype.Service;
  * deep-merging project overrides on top of global defaults. Exposes both typed accessors
  * and JSON-key mutators used by the {@code /settings} slash command.
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/05/13]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/05/13]
+ * @since [br_eCampusCore 26.0.0]
  */
 @Service
 public class SettingsManager {

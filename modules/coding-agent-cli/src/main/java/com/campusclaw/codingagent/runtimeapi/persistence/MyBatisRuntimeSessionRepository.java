@@ -20,8 +20,8 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * 使用 MyBatis 和 openGauss 事务实现的 Runtime Session 仓库。
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/08/18]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/08/18]
+ * @since [br_eCampusCore 26.0.0]
  */
 @Repository
 public class MyBatisRuntimeSessionRepository implements RuntimeSessionRepository {

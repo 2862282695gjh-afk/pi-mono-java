@@ -31,8 +31,8 @@ import org.springframework.stereotype.Component;
  * <p>Failures are logged and swallowed: persistence is best-effort metadata, not a correctness
  * dependency for the prompt path.
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/05/12]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/05/12]
+ * @since [br_eCampusCore 26.0.0]
  */
 @Component
 public class FileSubAgentSessionStore implements SubAgentSessionStore {

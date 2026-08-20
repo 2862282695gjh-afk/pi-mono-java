@@ -17,8 +17,8 @@ import com.campusclaw.codingagent.compaction.Compactor;
  * session's history, replacing older messages with a summary plus the retained tail to reduce
  * context size for subsequent turns.
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/05/13]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/05/13]
+ * @since [br_eCampusCore 26.0.0]
  */
 public class CompactCommand implements SlashCommand {
 

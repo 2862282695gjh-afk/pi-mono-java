@@ -29,8 +29,8 @@ import java.util.Set;
  * @param registeredAt    instant the node first registered
  * @param lastHeartbeatAt instant of the most recent heartbeat
  * @param metrics         most recent metrics snapshot reported with the heartbeat
- * @version [br_eCampusCore 25.1.0_Next, 2026/06/18]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/06/18]
+ * @since [br_eCampusCore 26.0.0]
  */
 public record NodeInfo(
         String nodeId,

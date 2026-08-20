@@ -35,8 +35,8 @@ import reactor.core.publisher.Mono;
  * <p>Corresponds to the top-level {@code stream()} / {@code complete()} functions
  * in the TypeScript campusclaw-ai module (section 1.10 of the architecture doc).
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/05/06]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/05/06]
+ * @since [br_eCampusCore 26.0.0]
  */
 @Service
 public class CampusClawAiService {

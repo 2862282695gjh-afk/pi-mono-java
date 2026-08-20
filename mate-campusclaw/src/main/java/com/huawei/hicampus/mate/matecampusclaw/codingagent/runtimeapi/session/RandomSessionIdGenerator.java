@@ -9,8 +9,8 @@ import java.security.SecureRandom;
 /**
  * 使用 Crockford Base32 随机值生成 26 字符 Session 标识。
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/08/18]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/08/18]
+ * @since [br_eCampusCore 26.0.0]
  */
 public class RandomSessionIdGenerator implements SessionIdGenerator {
     private static final char[] ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ".toCharArray();

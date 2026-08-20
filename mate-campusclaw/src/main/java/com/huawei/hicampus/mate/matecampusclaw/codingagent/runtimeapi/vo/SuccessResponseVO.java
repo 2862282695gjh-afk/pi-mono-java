@@ -12,8 +12,8 @@ import lombok.Getter;
  * 公司普通成功响应的独立开发兼容 VO。
  *
  * @param <T> 结果类型
- * @version [br_eCampusCore 25.1.0_Next, 2026/08/18]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/08/18]
+ * @since [br_eCampusCore 26.0.0]
  */
 @Getter
 public class SuccessResponseVO<T> {

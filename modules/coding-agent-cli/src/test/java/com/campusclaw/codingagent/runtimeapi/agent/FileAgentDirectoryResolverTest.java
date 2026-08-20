@@ -21,8 +21,8 @@ import org.junit.jupiter.api.io.TempDir;
 /**
  * Agent 当前只读目录和模型白名单解析测试。
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/08/19]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/08/19]
+ * @since [br_eCampusCore 26.0.0]
  */
 class FileAgentDirectoryResolverTest {
     private static final String AGENT_ID = "agent_011CZkYqphY8vELVzwCUpqiQ";

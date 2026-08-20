@@ -37,8 +37,8 @@ import org.junit.jupiter.api.io.TempDir;
 /**
  * 打包 JAR、真实 HTTP/SSE、模型协议桩与 openGauss 的跨进程集成测试。
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/08/18]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/08/18]
+ * @since [br_eCampusCore 26.0.0]
  */
 class RuntimeHttpProcessOpenGaussIT {
     private static final ObjectMapper MAPPER = new ObjectMapper();

@@ -24,8 +24,8 @@ import org.springframework.stereotype.Component;
  *   <li>{@code deny} — every tool call DENY. Useful for drills / sandbox testing.</li>
  * </ul>
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/05/14]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/05/14]
+ * @since [br_eCampusCore 26.0.0]
  */
 @Component
 public class DefaultApprovalPolicy implements ApprovalPolicy {

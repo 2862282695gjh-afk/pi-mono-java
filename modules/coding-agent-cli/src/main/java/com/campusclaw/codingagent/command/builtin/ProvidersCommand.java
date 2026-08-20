@@ -26,8 +26,8 @@ import com.campusclaw.codingagent.settings.SettingsManager;
  *
  * <p>The opencode equivalent is roughly {@code opencode providers}.
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/05/06]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/05/06]
+ * @since [br_eCampusCore 26.0.0]
  */
 public class ProvidersCommand implements SlashCommand {
 

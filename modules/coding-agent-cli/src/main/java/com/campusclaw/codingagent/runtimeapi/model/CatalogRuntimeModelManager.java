@@ -17,8 +17,8 @@ import com.campusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
 /**
  * 以当前模型目录充当独立开发环境 Model Manager 的适配器。
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/08/18]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/08/18]
+ * @since [br_eCampusCore 26.0.0]
  */
 public class CatalogRuntimeModelManager implements RuntimeModelManager {
     private final ModelCatalogService modelCatalogService;

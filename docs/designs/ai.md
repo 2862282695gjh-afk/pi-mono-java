@@ -1,4 +1,4 @@
-# ai 模块实现设计文档（基于代码 v1.1）
+# ai 模块实现设计文档（基于代码 v1.2）
 
 ## 文档信息
 
@@ -8,13 +8,15 @@
 | Story 名称 | ai 设计文档（基于代码 v1） |
 | 负责人 | （待补充） |
 | 创建日期 | 2026-05-14 |
-| 版本 | v1.1 (code-derived) |
+| 版本 | v1.2 (code-derived) |
 
 ---
 
 > 图表格式更新基于源码提交 `cc2f58d9e24bae1d7c99b9f54e86b71940d86115`；
 > 主要证据为 `modules/ai/pom.xml`、`CampusClawAiService`、
 > `ApiProviderRegistry`、`AnthropicProvider` 与 `AssistantMessageEventStream`。
+> 产品版本标记统一基于源码提交 `9e7cc8952937a697fe2c16ff0de287b32bc4c891`，
+> 证据路径为 `CLAUDE.md`、`codecheck.xml` 与 `modules/ai/src`。
 
 ## 1. Story 背景
 
@@ -285,7 +287,7 @@ ai 模块把"和任何 LLM 服务商对话"这件事抽象为单一接口 `ApiPr
 ### 4.2 兼容性设计
 
 - **JDK 版本**：21（root pom `<java.version>21</java.version>`、`<release>21</release>`）；使用 sealed interface（`Message`、`ContentBlock`、`AssistantMessageEvent`）、record、pattern matching switch（如 `EnvApiKeyResolver.resolve`）、虚拟线程；
-- **接口稳定性**：所有对外 record / interface 标注 `@version [br_eCampusCore 25.1.0_Next, YYYY/MM/DD]` + `@since`；`MessageTransformer.transform(messages, targetApi, sourceApi)` 保留作为 legacy 重载以向后兼容；
+- **接口稳定性**：所有对外 record / interface 标注 `@version [br_eCampusCore 26.0.0, YYYY/MM/DD]` + `@since`；`MessageTransformer.transform(messages, targetApi, sourceApi)` 保留作为 legacy 重载以向后兼容；
 - **未发现 `@Deprecated` 标记**；
 - **协议兼容**：`Api` 与 `Provider` 用 `@JsonCreator` + `@JsonValue` 暴露字符串别名，新增 provider 不破坏旧 JSON；`MessageTransformer` 主动剥离跨模型不可复用的 `thinkingSignature` / `textSignature` / `thoughtSignature`，让消息历史在模型间漂移仍可被新 provider 接受；
 - **TS 镜像**：多处源码注释 "Aligned with TypeScript campusclaw-ai..." 暗示与上游 TS 实现保持形状一致——任何破坏变更建议同步评估 TS 侧。
@@ -359,3 +361,4 @@ ai 模块把"和任何 LLM 服务商对话"这件事抽象为单一接口 `ApiPr
 | 2026-05-14 | - | - | 设计文档由 codebase-module-design skill 基于代码逆向生成 v1 | - | 由开发者补充关键决策（如：为何选 Reactor 而非 RxJava？为何 provider 用虚拟线程而非 Reactor 原生 publishOn？） | 开放 |
 | 2026-06-29 | - | - | 精简 AI 模块：移除 Google（Generative AI / Vertex）与 Amazon Bedrock provider | `google-cloud-aiplatform` 实为未使用依赖，两类 provider 维护成本高；详见 [ADR 0007](../decisions/0007-remove-google-amazon-providers.html) | 移除两 provider、内置模型、SDK 依赖及 `Provider`/`Api`/`RuntimeCapability` 相关枚举值，并以 `SupportedProvidersDocTest` 把「支持的供应商」列表钉死到代码 | 已决 |
 | 2026-08-18 | Codex | 文档维护 | 设计图格式不符合全局 PlantUML 规范 | 保持节点和关系语义不变，补充源码证据并生成 SVG | Mermaid 迁移为单一 `diagram.puml` 中的稳定命名图 | 已落实 |
+| 2026-08-20 | Codex | 文档维护 | 产品版本标记需要统一 | 基于 `9e7cc895` 盘点 Java Javadoc 与规则配置 | 对外类型统一使用 `br_eCampusCore 26.0.0` | 已落实 |

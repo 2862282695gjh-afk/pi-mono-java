@@ -13,8 +13,8 @@ import com.campusclaw.ai.types.Message;
  * to the agent loop. Replaces the simple MessageQueue.drain() pattern
  * with a pluggable callback.
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/05/06]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/05/06]
+ * @since [br_eCampusCore 26.0.0]
  */
 @FunctionalInterface
 public interface SteeringMessageSupplier {

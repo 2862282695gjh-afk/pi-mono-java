@@ -20,8 +20,8 @@ import com.campusclaw.ai.types.Message;
  * In-memory representation of a session as a tree of entries.
  * Supports forking (branching) and navigating between branches.
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/05/06]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/05/06]
+ * @since [br_eCampusCore 26.0.0]
  */
 public class SessionTree {
     private final List<SessionEntry> entries = new ArrayList<>();

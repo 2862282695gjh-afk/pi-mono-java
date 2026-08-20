@@ -16,8 +16,8 @@ import org.springframework.stereotype.Component;
 /**
  * 使用统一持久化依赖创建单次执行的 Agent 事件投影器。
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/08/19]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/08/19]
+ * @since [br_eCampusCore 26.0.0]
  */
 @Component
 public class RuntimeEventProjectorFactory {

@@ -16,8 +16,8 @@ import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.runtime.Ru
  * @param holder 活动 Session 引擎句柄
  * @param execution 活动执行状态
  * @param userMessage 交给 Agent 的初始用户消息
- * @version [br_eCampusCore 25.1.0_Next, 2026/08/19]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/08/19]
+ * @since [br_eCampusCore 26.0.0]
  */
 public record RuntimeExecutionContext(
         RuntimeSessionHolder holder, RuntimeActiveExecution execution, UserMessage userMessage) {

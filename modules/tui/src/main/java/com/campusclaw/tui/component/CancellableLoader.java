@@ -15,8 +15,8 @@ import com.campusclaw.tui.Component;
  * and tracking cancellation state. The parent component should check
  * {@link #isCancelled()} and act accordingly.
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/05/06]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/05/06]
+ * @since [br_eCampusCore 26.0.0]
  */
 public class CancellableLoader implements Component {
 

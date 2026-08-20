@@ -18,8 +18,8 @@ import com.fasterxml.jackson.databind.JsonNode;
  * params bag) are kept as {@link JsonNode} / {@link Map} so a wire-spec bump does not require a
  * code change here.
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/05/12]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/05/12]
+ * @since [br_eCampusCore 26.0.0]
  */
 public final class AcpProtocol {
 

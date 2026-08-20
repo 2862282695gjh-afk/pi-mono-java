@@ -20,8 +20,8 @@ import org.springframework.stereotype.Component;
 /**
  * 统一生成 Session 执行结束时的公共 SSE 事件。
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/08/19]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/08/19]
+ * @since [br_eCampusCore 26.0.0]
  */
 @Component
 public class RuntimeTerminalEventFactory {

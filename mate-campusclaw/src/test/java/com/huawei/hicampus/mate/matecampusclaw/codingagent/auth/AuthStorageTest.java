@@ -24,8 +24,8 @@ import org.junit.jupiter.api.io.TempDir;
  * {@code AppPaths.AUTH_FILE}; the package-private constructor accepts an explicit path so
  * tests can redirect persistence to a {@link TempDir} without touching the real user home.
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/06/09]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/06/09]
+ * @since [br_eCampusCore 26.0.0]
  */
 class AuthStorageTest {
 

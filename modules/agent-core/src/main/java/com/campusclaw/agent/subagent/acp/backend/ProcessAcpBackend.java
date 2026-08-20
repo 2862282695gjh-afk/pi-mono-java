@@ -48,8 +48,8 @@ import reactor.core.publisher.Sinks.EmitFailureHandler;
  * Generic {@link SubAgentBackend} that launches an ACP server as a child process and speaks the
  * protocol over its stdio.
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/05/12]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/05/12]
+ * @since [br_eCampusCore 26.0.0]
  */
 public class ProcessAcpBackend implements SubAgentBackend {
 

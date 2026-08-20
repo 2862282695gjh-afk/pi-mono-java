@@ -37,8 +37,8 @@ import jakarta.annotation.PostConstruct;
  * an {@link HttpAgentBackend} that gets registered against the singleton {@link SubAgentRegistry}.
  * Entries with {@code disabled: true} are skipped.
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/05/12]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/05/12]
+ * @since [br_eCampusCore 26.0.0]
  */
 @Configuration
 @EnableConfigurationProperties(SubAgentProperties.class)

@@ -12,8 +12,8 @@ import java.util.Map;
  * <p>Modelled after the ACP {@code session/update} notification surface, but transport-agnostic so
  * HTTP/WebSocket backends can emit the same shape.
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/05/12]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/05/12]
+ * @since [br_eCampusCore 26.0.0]
  */
 public sealed interface SubAgentEvent {
 

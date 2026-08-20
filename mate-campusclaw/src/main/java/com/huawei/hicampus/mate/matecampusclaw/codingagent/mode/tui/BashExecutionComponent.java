@@ -14,8 +14,8 @@ import com.huawei.hicampus.mate.matecampusclaw.tui.ansi.AnsiUtils;
  * Displays a user-initiated bash command ({@code !} prefix) and its output.
  * Matches campusclaw TS bash execution display.
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/05/06]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/05/06]
+ * @since [br_eCampusCore 26.0.0]
  */
 public class BashExecutionComponent implements Component {
 

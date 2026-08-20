@@ -36,8 +36,8 @@ import org.slf4j.LoggerFactory;
  * followed by entries (messages, model changes, thinking level changes, etc.).
  * Each entry has an id and parentId forming a tree structure.
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/05/06]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/05/06]
+ * @since [br_eCampusCore 26.0.0]
  */
 public class SessionManager {
 

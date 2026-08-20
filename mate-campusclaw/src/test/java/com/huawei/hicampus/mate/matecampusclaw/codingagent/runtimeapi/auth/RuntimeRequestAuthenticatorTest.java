@@ -16,8 +16,8 @@ import org.springframework.mock.web.MockHttpServletRequest;
 /**
  * JWT 与 APPKEY 互斥请求头形状校验测试。
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/08/18]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/08/18]
+ * @since [br_eCampusCore 26.0.0]
  */
 class RuntimeRequestAuthenticatorTest {
     private final RuntimeRequestAuthenticator authenticator = new RuntimeRequestAuthenticator();

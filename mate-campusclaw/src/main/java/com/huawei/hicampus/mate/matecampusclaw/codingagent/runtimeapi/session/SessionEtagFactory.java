@@ -14,8 +14,8 @@ import org.springframework.stereotype.Component;
 /**
  * 根据 Session 标识和资源版本生成不泄露内部版本号的强 ETag。
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/08/18]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/08/18]
+ * @since [br_eCampusCore 26.0.0]
  */
 @Component
 public class SessionEtagFactory {

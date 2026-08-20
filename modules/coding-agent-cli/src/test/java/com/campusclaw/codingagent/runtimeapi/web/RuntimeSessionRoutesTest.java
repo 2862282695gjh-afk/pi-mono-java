@@ -40,8 +40,8 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 /**
  * 已确认的创建、读取和删除 Session HTTP 契约测试。
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/08/18]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/08/18]
+ * @since [br_eCampusCore 26.0.0]
  */
 class RuntimeSessionRoutesTest {
     private static final String AGENT_ID = "agent_011CZkYqphY8vELVzwCUpqiQ";

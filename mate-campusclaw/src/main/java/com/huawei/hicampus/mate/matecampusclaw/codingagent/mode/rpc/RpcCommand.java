@@ -14,8 +14,8 @@ import jakarta.annotation.Nullable;
  * optional correlation id, and a loose union of payload fields (message, model, thinkingLevel,
  * value, command) interpreted according to {@code type}.
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/05/13]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/05/13]
+ * @since [br_eCampusCore 26.0.0]
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record RpcCommand(
