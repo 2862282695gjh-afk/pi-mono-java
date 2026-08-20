@@ -2,7 +2,7 @@
 title Coding Agent Module Context
 skinparam componentStyle rectangle
 
-' Source evidence baseline: implementation commit f899547d120ce06aec27ecf5dbb448a7851a942a.
+' Source evidence baseline: implementation commit 3a6358bc9dd5837cdf5ac866fc0761298372510a.
 ' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/CampusClawApplication.java, CampusClawApplication#main.
 ' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/web/RuntimeEventController.java.
 ' Observed behavior: the default process is a Spring MVC HTTP service; CLI is an explicit subcommand.
@@ -32,7 +32,7 @@ Cli --> AgentCore
 @startuml startup-sequence
 title Default Server and Explicit CLI Startup
 
-' Source evidence baseline: implementation commit f899547d120ce06aec27ecf5dbb448a7851a942a.
+' Source evidence baseline: implementation commit 3a6358bc9dd5837cdf5ac866fc0761298372510a.
 ' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/CampusClawApplication.java, CampusClawApplication#main.
 ' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/CampusClawCliLauncher.java, CampusClawCliLauncher#run.
 ' Design reason: keep one executable JAR while separating web and CLI application contexts.
@@ -59,25 +59,33 @@ end
 title Runtime HTTP Components
 left to right direction
 
-' Source evidence baseline: implementation commit f899547d120ce06aec27ecf5dbb448a7851a942a.
+' Source evidence baseline: implementation commit 3a6358bc9dd5837cdf5ac866fc0761298372510a.
 ' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/web, Controller classes.
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/web/RuntimeRequestContext.java, RuntimeRequestContext#locale.
 ' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/event/RuntimeEventService.java.
 ' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/event/RuntimeEventQueryService.java.
 ' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/event/RuntimeExecutionCoordinator.java.
 ' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/persistence/MyBatisRuntimeSessionRepository.java.
 ' Observed behavior: blocking MVC boundaries delegate execution to the agent engine and stream through bounded SSE subscribers.
+' Observed behavior: root messages.properties and messages_zh_CN.properties rely on the default Spring Boot message source.
+' Target-only design: explicit en_US and zh_CN bundles live under i18n and an explicit MessageSource loads them.
+' Architecture change: no base messages.properties is retained, so default message-source auto-configuration is not used.
 ' Design reason: separate request acceptance, history queries, and the asynchronous execution lifecycle.
 
 component "MVC Controllers" as Controllers
 component "Authentication\nInterceptor" as Auth
+component "Locale Negotiator\nen-US | zh-CN" as LocaleNegotiator
 component "Exception Handler" as Errors
 component "ResultBeanAdapter" as Result
 component "ErrorResponseVO" as ErrorBody
+component "Explicit MessageSource" as MessageSource
+folder "i18n locale bundles\nen_US | zh_CN" as Bundles
 component "Session Services" as Sessions
 component "Event Acceptance" as Events
 component "Event Query" as Queries
 component "Execution Context Factory" as Context
 component "Execution Coordinator" as Coordinator
+component "Terminal Event Factory" as TerminalEvents
 component "Event Projector" as Projector
 component "RuntimeSseDispatcher" as Sse
 component "Engine Registry" as Engine
@@ -86,19 +94,26 @@ component "MyBatis Repository" as Repository
 database "openGauss" as Db
 
 Auth --> Controllers
+Controllers --> LocaleNegotiator : Accept-Language
 Controllers --> Sessions
-Controllers --> Events
+Controllers --> Events : request + locale
 Controllers --> Queries
 Controllers --> Result
+Errors --> LocaleNegotiator
+Errors --> MessageSource : localized resMsg
 Errors --> ErrorBody
+MessageSource --> Bundles
 Sessions --> Repository
 Events --> Repository
 Events --> Context
 Events --> Coordinator
 Context --> Queries
 Context --> Engine
+Coordinator --> TerminalEvents
 Coordinator --> Projector
 Coordinator --> Repository
+TerminalEvents --> MessageSource : localized stream.error
+TerminalEvents --> Sse
 Projector --> Repository
 Projector --> Sse
 Engine --> Prompt

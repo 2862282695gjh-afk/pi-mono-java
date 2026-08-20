@@ -1,10 +1,12 @@
 # CampusClaw HTTP V1 实施记录
 
-> 版本：2.1.0
+> 版本：2.2.0
 >
 > 状态：已实现并完成发布前验证
 >
 > 本轮整改分析基线：`f899547d120ce06aec27ecf5dbb448a7851a942a`
+>
+> 国际化实现起点：`3a6358bc9dd5837cdf5ac866fc0761298372510a`
 >
 > 初始实现提交：`8691e8800f05f28afe22499050c29220ef5b7475`
 >
@@ -31,7 +33,7 @@
 | 启动 | `modules/coding-agent-cli/.../CampusClawApplication.java`、`CampusClawCliLauncher.java` |
 | HTTP 边界 | `modules/coding-agent-cli/.../runtimeapi/web/*Controller.java` |
 | 鉴权形状 | `runtimeapi/auth/RuntimeRequestAuthenticator.java`、`web/RuntimeAuthenticationInterceptor.java` |
-| ResultBean / i18n | `runtimeapi/result/*`、`messages.properties`、`messages_zh_CN.properties` |
+| ResultBean / i18n | `runtimeapi/result/*`、`RuntimeMessageSourceConfiguration`、`RuntimeRequestContext`、`src/main/resources/i18n/messages_{en_US,zh_CN}.properties` |
 | Session 业务 | `runtimeapi/session/RuntimeSessionService.java`、`RuntimeSessionConfigurationService.java`、`RuntimeSessionControlService.java` |
 | 事件接受 | `runtimeapi/event/RuntimeEventService.java`、`RuntimeExecutionContextFactory.java` |
 | 事件查询 | `runtimeapi/event/RuntimeEventQueryService.java`、`RuntimeEventCursorCodec.java` |
@@ -73,6 +75,7 @@
 | Agent 运行根目录 | 解析器返回 Agent 父目录，提示词加载器再追加 `.campusclaw` | 解析器直接返回 `.campusclaw` 真实路径，并统一用于 `cwd`、提示词和 `ReadTool` | 安全加固：避免 HTTP V1 工具读取 Agent 父目录 |
 | 事件业务职责 | 单个 `RuntimeEventService` 同时承担接受、分页、历史恢复和异步执行收尾 | 拆分接受、查询、上下文准备和执行协调 | 架构变更：降低构造依赖和修改影响面 |
 | 错误语义 | 调用点分别指定 HTTP 状态和错误码 | 错误枚举集中状态、i18n key 与重试时间 | 安全加固：避免同一错误码出现不同 HTTP 语义 |
+| 国际化资源与协商 | 根目录基础英文资源包加中文资源包；请求头只按 `zh-CN` 前缀判断 | 仅保留 `i18n/messages_en_US.properties` 与 `messages_zh_CN.properties`；显式消息源按标准语言范围和 `q` 权重协商 | 架构变更：支持 Locale、默认语言、编码和回退规则均显式，消除基础英文资源副本 |
 | 多实例执行归属 | `running` Session 未命中本机 Registry 时落入通用 500 | 返回 `503 SESSION_EXECUTION_UNAVAILABLE` | 架构约束：明确需要路由到执行实例，但不臆造转发设施 |
 
 ## 5. 关键运行语义
@@ -124,6 +127,10 @@ DDL 使用 `t_` 前缀：`t_sessions`、`t_session_entries`、`t_session_sequenc
 - 编译器语法树审计确认本次修改的 Java 方法均不超过 50 个非空物理行；
 - `git diff --check` 通过。
 
+国际化实现另外覆盖：无基础资源包的消息源上下文启动、双 Locale key 与
+`RuntimeErrorCode` 完全一致、`Accept-Language` 权重与英文回退、HTTP 中文错误、SSE 中文
+`stream.error`，以及 `mate-campusclaw` 资源目录迁移和旧基础包删除。
+
 发布前已重新执行全量测试、镜像同步、PlantUML、文档链接和 Git 校验；最终结果同时记录在发布提交报告中。
 
 ## 7. 文档策略
@@ -134,6 +141,7 @@ DDL 使用 `t_` 前缀：`t_sessions`、`t_session_entries`、`t_session_sequenc
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 2.2.0 | 2026-08-20 | 落地显式双 Locale 消息源、标准语言协商、HTTP/SSE 错误国际化和镜像资源迁移 |
 | 2.1.0 | 2026-08-19 | 基于 `f899547d` 整改目录边界、事件职责、错误目录、异步日志和多实例执行归属错误 |
 | 2.0.0 | 2026-08-18 | 以实现提交 `8691e880` 重写，修正 MVC、鉴权边界、删除语义、Agent 目录与 `file_ids` 行为 |
 | 1.x | 2026-08-18 | 逐接口开发日志，包含已经失效的 WebFlux、模板快照和文件解析方案 |

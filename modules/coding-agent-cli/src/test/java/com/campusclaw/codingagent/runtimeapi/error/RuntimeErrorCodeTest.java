@@ -6,8 +6,11 @@ package com.campusclaw.codingagent.runtimeapi.error;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.util.Arrays;
 import java.util.Locale;
 import java.util.ResourceBundle;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 import org.junit.jupiter.api.Test;
 
@@ -20,16 +23,16 @@ import org.junit.jupiter.api.Test;
 class RuntimeErrorCodeTest {
     @Test
     void everyErrorCodeHasEnglishAndChineseMessages() {
-        ResourceBundle english = ResourceBundle.getBundle("messages", Locale.US);
-        ResourceBundle chinese = ResourceBundle.getBundle("messages", Locale.SIMPLIFIED_CHINESE);
+        ResourceBundle english = ResourceBundle.getBundle("i18n/messages", Locale.US);
+        ResourceBundle chinese = ResourceBundle.getBundle("i18n/messages", Locale.SIMPLIFIED_CHINESE);
+        Set<String> expectedKeys = Arrays.stream(RuntimeErrorCode.values())
+                .map(RuntimeErrorCode::messageKey)
+                .collect(Collectors.toUnmodifiableSet());
+
+        assertThat(english.keySet()).isEqualTo(expectedKeys);
+        assertThat(chinese.keySet()).isEqualTo(expectedKeys);
 
         for (RuntimeErrorCode code : RuntimeErrorCode.values()) {
-            assertThat(english.containsKey(code.messageKey()))
-                    .as("English message for %s", code)
-                    .isTrue();
-            assertThat(chinese.containsKey(code.messageKey()))
-                    .as("Chinese message for %s", code)
-                    .isTrue();
             assertThat(english.getString(code.messageKey())).isNotBlank();
             assertThat(chinese.getString(code.messageKey())).isNotBlank();
         }

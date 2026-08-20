@@ -107,6 +107,22 @@ class RuntimeEventServiceTest {
         verify(fixture.repository, never()).acceptUserEvent(anyString(), any(), any());
     }
 
+    @Test
+    void executionFailureUsesChineseSseMessage() {
+        Fixture fixture = new Fixture();
+        RuntimeEventStream stream =
+                fixture.service.submit(SESSION_ID, request("分析订单", List.of()), Locale.SIMPLIFIED_CHINESE);
+
+        fixture.agentFuture.completeExceptionally(new IllegalStateException("expected test failure"));
+
+        assertThat(fixture.execution.completion()).isCompletedExceptionally();
+        RuntimeSseEventVO terminal = collect(stream).getLast();
+        assertThat(terminal.getEvent()).isEqualTo("stream.error");
+        assertThat(terminal.getData())
+                .containsEntry("resCode", RuntimeErrorCode.SESSION_EXECUTION_FAILED.name())
+                .containsEntry("resMsg", "Session 执行失败。");
+    }
+
     private static List<RuntimeSseEventVO> collect(RuntimeEventStream stream) {
         List<RuntimeSseEventVO> events = new ArrayList<>();
         stream.attach(Runnable::run, new RuntimeEventSubscriber() {
@@ -156,6 +172,7 @@ class RuntimeEventServiceTest {
     private static StaticMessageSource messages() {
         StaticMessageSource messages = new StaticMessageSource();
         messages.addMessage("SESSION_EXECUTION_FAILED", Locale.US, "Session execution failed.");
+        messages.addMessage("SESSION_EXECUTION_FAILED", Locale.SIMPLIFIED_CHINESE, "Session 执行失败。");
         return messages;
     }
 

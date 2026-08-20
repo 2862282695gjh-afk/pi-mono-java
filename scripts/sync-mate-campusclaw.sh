@@ -11,7 +11,7 @@
 #               (so renames/removals propagate), preserving paths listed in
 #               scripts/sync-mate-exclude.txt (mate-side-only files).
 #               Resources are handled with a small whitelist (database release
-#               scripts, MyBatis mapper XML, schema.sql, message bundles, and
+#               scripts, MyBatis mapper XML, schema.sql, i18n message bundles, and
 #               AutoConfiguration.imports). Application config (.yml/.properties)
 #               is hand-tuned and never touched except for the message bundles.
 #
@@ -45,9 +45,14 @@ SYNCED_RESOURCES=(
   "db/gaussdb"
   "mapper"
   "schema.sql"
+  "i18n"
+  "META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports"
+)
+
+# Legacy resources removed from the canonical module and therefore from the mirror.
+REMOVED_RESOURCES=(
   "messages.properties"
   "messages_zh_CN.properties"
-  "META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports"
 )
 
 APPLY=true
@@ -162,7 +167,7 @@ if $SYNC_TESTS; then
 fi
 
 if $SYNC_RESOURCES; then
-  note "Applying whitelisted resources (db/gaussdb, mapper, schema.sql, messages, AutoConfiguration.imports)"
+  note "Applying whitelisted resources (db/gaussdb, mapper, schema.sql, i18n, AutoConfiguration.imports)"
   for f in "${SYNCED_RESOURCES[@]}"; do
     src="$OUT/src/main/resources/$f"
     dst="$MATE/src/main/resources/$f"
@@ -182,6 +187,16 @@ if $SYNC_RESOURCES; then
         mkdir -p "$(dirname "$dst")"
         cp "$src" "$dst"
       fi
+    fi
+  done
+  for removed_resource in "${REMOVED_RESOURCES[@]}"; do
+    legacy_target="$MATE/src/main/resources/$removed_resource"
+    if $DRY_RUN; then
+      if [ -f "$legacy_target" ]; then
+        echo "  [would delete] src/main/resources/$removed_resource"
+      fi
+    else
+      rm -f "$legacy_target"
     fi
   done
 fi
