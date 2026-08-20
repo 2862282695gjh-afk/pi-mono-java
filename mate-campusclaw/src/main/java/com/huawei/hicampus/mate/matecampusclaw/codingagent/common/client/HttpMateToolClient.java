@@ -60,13 +60,13 @@ public class HttpMateToolClient implements MateToolClient {
      */
     protected static final String QUERYTOOLS = "/mate-service/v1/runtime/tools/query";
 
-    /** Runtime HTTP 契约使用的类型化 Agent UUID 正则。 */
+    // Runtime HTTP 契约使用的类型化 Agent UUID 正则。
     private static final Pattern AGENT_ID_PATTERN = Pattern.compile(RuntimeApiConstants.AGENT_ID_PATTERN);
 
-    /** Runtime HTTP 契约使用的类型化 Skill UUID 正则。 */
+    // Runtime HTTP 契约使用的类型化 Skill UUID 正则。
     private static final Pattern SKILL_ID_PATTERN = Pattern.compile(RuntimeApiConstants.SKILL_ID_PATTERN);
 
-    /** Runtime HTTP 契约使用的类型化 Tool UUID 正则。 */
+    // Runtime HTTP 契约使用的类型化 Tool UUID 正则。
     private static final Pattern TOOL_ID_PATTERN = Pattern.compile(RuntimeApiConstants.TOOL_ID_PATTERN);
 
     /**

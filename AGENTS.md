@@ -19,6 +19,16 @@
   them unless the user explicitly asks. Use a separate Git worktree when the
   current worktree is dirty or is needed for another task.
 
+## Java comment style
+
+- Use `// ...` for brief comments attached to private fields, private
+  constants, and similar implementation details, including regular-expression
+  constants.
+- Do not use one-line Javadoc comments such as `/** ... */` for those brief
+  implementation comments.
+- Continue to use Javadoc where required for top-level public types and public
+  API contracts by `CLAUDE.md` or higher-level instructions.
+
 ## Mandatory Git publishing workflow
 
 - Treat repository administrator access as a capability, not as the normal

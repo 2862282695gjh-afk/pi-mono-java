@@ -45,13 +45,13 @@ import org.springframework.stereotype.Component;
 @Component
 public class AgentRuntimeManager {
 
-    /** 类型化 Agent UUID，不允许路径分隔符或旧格式。 */
+    // 类型化 Agent UUID，不允许路径分隔符或旧格式。
     private static final Pattern AGENT_ID_PATTERN = Pattern.compile(RuntimeApiConstants.AGENT_ID_PATTERN);
 
-    /** 类型化 Skill UUID，不接受旧式短标识。 */
+    // 类型化 Skill UUID，不接受旧式短标识。
     private static final Pattern SKILL_ID_PATTERN = Pattern.compile(RuntimeApiConstants.SKILL_ID_PATTERN);
 
-    /** 类型化 Tool UUID，不接受旧式短标识。 */
+    // 类型化 Tool UUID，不接受旧式短标识。
     private static final Pattern TOOL_ID_PATTERN = Pattern.compile(RuntimeApiConstants.TOOL_ID_PATTERN);
 
     private static final String AGENT_METADATA_FILE = "agentId.json";
