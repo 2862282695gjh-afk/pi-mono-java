@@ -1,0 +1,111 @@
+@startuml frontend_product_boundary
+' Source evidence: frontend/src/App.vue (current debug console shell) and frontend/src/composables/useRuntimeApi.ts (useRuntimeApi, BASE_PATH).
+' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/web/RuntimeSessionController.java.
+' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/web/RuntimeEventController.java.
+' Observed behavior: the current browser client calls the internal Runtime V1 contract directly and exposes credentials and protocol fields.
+' Design reason: the product UI must use a public bridge so internal session identifiers, credentials, ETags, and raw SSE payloads do not cross the browser boundary.
+
+title CampusClaw product frontend boundary
+left to right direction
+
+actor "Campus user" as User
+rectangle "Product frontend" as Frontend {
+  component "Agent and chat workspace" as Workspace
+  component "Product event projector" as Projector
+  component "Developer diagnostics\n(internal build only)" as Diagnostics
+}
+
+rectangle "mate-service" as Mate {
+  component "Public chat API" as PublicApi
+  component "Chat to session mapping" as Mapping
+  component "Auth, policy, and event projection" as Policy
+}
+
+rectangle "CampusClaw Runtime V1" as Runtime {
+  component "Session controllers" as Sessions
+  component "Request-scoped SSE" as Stream
+}
+
+User --> Workspace : chat tasks
+Workspace --> PublicApi : public HTTP and SSE
+PublicApi --> Policy
+Policy --> Mapping
+Mapping --> Sessions : internal HTTP
+Stream --> Policy : internal SSE events
+Policy --> Projector : public safe events
+Diagnostics ..> Sessions : local diagnostics only
+
+note bottom of Frontend
+Product constraints:
+- No Service URL or credential editor
+- No raw session_id, ETag, JSON, or SSE frames
+- Agent, chat, and attachment metadata use public resources
+end note
+
+note bottom of Mate
+Security hardening:
+- Terminate browser authentication
+- Authorize each action
+- Project internal errors and events
+- Do not byte-forward internal SSE
+end note
+
+note bottom of Runtime
+Observed internal contract:
+- 11 Session Runtime operations
+- One active execution per Session
+- Persistent Entry history plus transient progress events
+end note
+@enduml
+
+@startuml runtime_event_ui_projection
+' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/event/RuntimeEventType.java (RuntimeEventType).
+' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/event/RuntimeEventProjector.java (projectMessageStart, projectMessageUpdate, projectToolStart, projectToolEnd).
+' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/event/RuntimeEntryCodec.java (toHistoryEvent, toSseData).
+' Observed behavior: persistent entries and transient execution events share one request-scoped SSE response.
+' Design reason: the UI projects protocol events into stable conversation objects and presents execution controls in user language.
+
+title Runtime events to product UI projection
+left to right direction
+
+rectangle "Runtime event families" as Events {
+  component "user.message" as UserEvent
+  component "assistant.message.started\nassistant.message.delta\nassistant.message.completed" as AssistantEvents
+  component "tool.execution.started\ntool.execution.completed\ntool.result" as ToolEvents
+  component "session.status.idle\nstream.end\nstream.error" as TerminalEvents
+}
+
+rectangle "Frontend projection" as Projection {
+  component "User turn" as UserTurn
+  component "Streaming assistant turn" as AssistantTurn
+  component "Expandable activity card" as ActivityCard
+  component "Session and composer state" as SessionState
+}
+
+rectangle "User controls while running" as Controls {
+  component "Adjust direction now" as Adjust
+  component "Continue when complete" as Continue
+  component "Stop" as Stop
+}
+
+UserEvent --> UserTurn : persist and render
+AssistantEvents --> AssistantTurn : preview then replace with final
+ToolEvents --> ActivityCard : merge lifecycle and result
+TerminalEvents --> SessionState : idle, complete, or recoverable error
+
+Adjust --> SessionState : internal steer
+Continue --> SessionState : internal follow-up
+Stop --> SessionState : internal abort
+
+note bottom of ActivityCard
+Successful tool details collapse by default.
+Errors remain expanded with recovery guidance.
+Raw payloads remain in diagnostics.
+end note
+
+note bottom of SessionState
+Network loss does not replay the POST.
+Reload persistent history and deduplicate
+by the public event identity.
+end note
+@enduml
