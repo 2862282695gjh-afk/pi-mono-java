@@ -1,187 +1,280 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, nextTick, ref, watch } from 'vue';
+import AgentWelcome from './components/AgentWelcome.vue';
+import AppSidebar from './components/AppSidebar.vue';
+import ComposerBox from './components/ComposerBox.vue';
+import ConversationTimeline from './components/ConversationTimeline.vue';
+import DevDiagnostics from './components/DevDiagnostics.vue';
 import { useRuntimeApi } from './composables/useRuntimeApi';
+import { projectRuntimeEvents } from './projectors/runtimeEventProjector';
+import type { AgentOption, ThreadSummary } from './types/product';
+import type { FollowUpMode } from './types/runtime';
 
 const runtime = useRuntimeApi();
-const agentId = ref('');
-const resumeSessionId = ref('');
-const message = ref('');
-const fileIdsText = ref('');
-const selectedModel = ref('');
-const thinking = ref(false);
-const busy = ref(false);
+const isDevelopment = import.meta.env.DEV;
+const configuredAgentId = import.meta.env.VITE_CAMPUSCLAW_AGENT_ID?.trim() || '';
+const agent: AgentOption = {
+  id: configuredAgentId,
+  name: import.meta.env.VITE_CAMPUSCLAW_AGENT_NAME?.trim() || '运营分析 Agent',
+  description:
+    import.meta.env.VITE_CAMPUSCLAW_AGENT_DESCRIPTION?.trim()
+    || '分析业务数据、定位异常，并给出可以直接执行的处理建议。',
+  category: import.meta.env.VITE_CAMPUSCLAW_AGENT_CATEGORY?.trim() || '校园运营',
+};
 
-const fileIds = computed(() =>
-  fileIdsText.value
-    .split(/[\n,]/u)
-    .map((value) => value.trim())
-    .filter(Boolean),
+const threads = ref<ThreadSummary[]>([]);
+const message = ref('');
+const busy = ref(false);
+const submitting = ref(false);
+const sidebarCompact = ref(window.innerWidth <= 800);
+const scrollRegion = ref<HTMLElement | null>(null);
+const followUpMode = ref<FollowUpMode>(readFollowUpMode());
+
+const turns = computed(() => projectRuntimeEvents(runtime.events.value));
+const running = computed(
+  () => runtime.streaming.value || runtime.session.value?.state === 'running',
+);
+const currentThread = computed(() =>
+  threads.value.find((thread) => thread.sessionId === runtime.session.value?.session_id),
+);
+const title = computed(() => currentThread.value?.title || agent.name);
+
+watch(
+  () => runtime.events.value.length,
+  async () => {
+    await nextTick();
+    scrollRegion.value?.scrollTo({ top: scrollRegion.value.scrollHeight, behavior: 'smooth' });
+  },
 );
 
-async function run(action: () => Promise<unknown>): Promise<void> {
+watch(followUpMode, (mode) => localStorage.setItem('campusclaw.followUpMode', mode));
+
+async function run(action: () => Promise<unknown>): Promise<boolean> {
   busy.value = true;
   try {
     await action();
+    return true;
   } catch {
-    // Composable 已把可展示错误写入 lastError。
+    return false;
   } finally {
     busy.value = false;
   }
 }
 
-async function createSession(): Promise<void> {
-  await run(async () => {
-    await runtime.createSession(agentId.value.trim());
-    resumeSessionId.value = runtime.session.value?.session_id ?? '';
-    thinking.value = runtime.session.value?.thinking ?? false;
-    await runtime.listModels();
-    selectedModel.value = runtime.session.value?.model_id ?? '';
+async function createSession(agentId = configuredAgentId): Promise<void> {
+  if (!agentId) return;
+  const succeeded = await run(async () => {
+    const created = await runtime.createSession(agentId);
+    upsertThread(created.session_id, '新会话');
   });
+  if (succeeded) message.value = '';
 }
 
-async function resumeSession(): Promise<void> {
-  await run(async () => {
-    await runtime.getSession(resumeSessionId.value.trim());
-    thinking.value = runtime.session.value?.thinking ?? false;
-    selectedModel.value = runtime.session.value?.model_id ?? '';
+async function resumeSession(sessionId: string): Promise<void> {
+  const succeeded = await run(async () => {
+    const resumed = await runtime.getSession(sessionId);
     await Promise.all([runtime.listModels(), runtime.loadHistory()]);
+    upsertThread(resumed.session_id, '已恢复的会话');
+  });
+  if (succeeded && window.innerWidth <= 800) sidebarCompact.value = true;
+}
+
+function newConversation(): void {
+  runtime.clearSessionView();
+  message.value = '';
+  if (window.innerWidth <= 800) sidebarCompact.value = true;
+}
+
+async function deleteConversation(): Promise<void> {
+  const sessionId = runtime.session.value?.session_id;
+  if (!sessionId) return;
+  if (!window.confirm('确认删除当前会话？删除后无法恢复。')) return;
+  const succeeded = await run(runtime.deleteSession);
+  if (succeeded) threads.value = threads.value.filter((thread) => thread.sessionId !== sessionId);
+}
+
+async function submit(overrideMode?: FollowUpMode): Promise<void> {
+  const text = message.value.trim();
+  if (!text || submitting.value || !runtime.hasSession.value) return;
+  submitting.value = true;
+  try {
+    if (!running.value) {
+      await runtime.sendMessage(text);
+      touchCurrentThread(text);
+    } else {
+      const mode = overrideMode ?? followUpMode.value;
+      if (mode === 'steer') await runtime.steer(text);
+      else await runtime.followUp(text);
+      touchCurrentThread();
+    }
+    message.value = '';
+  } catch {
+    // 请求不确定或被服务拒绝时保留输入，避免用户丢失内容。
+  } finally {
+    submitting.value = false;
+  }
+}
+
+async function changeModel(event: Event): Promise<void> {
+  const modelId = (event.target as HTMLSelectElement).value;
+  if (!modelId || modelId === runtime.session.value?.model_id) return;
+  await run(() => runtime.changeModel(modelId));
+}
+
+async function toggleThinking(): Promise<void> {
+  if (!runtime.session.value) return;
+  await run(() => runtime.changeThinking(!runtime.session.value!.thinking));
+}
+
+function upsertThread(sessionId: string, fallbackTitle: string): void {
+  const existing = threads.value.find((thread) => thread.sessionId === sessionId);
+  if (existing) {
+    existing.updatedAt = new Date().toISOString();
+    return;
+  }
+  threads.value.unshift({
+    sessionId,
+    title: fallbackTitle,
+    agentName: agent.name,
+    updatedAt: new Date().toISOString(),
   });
 }
 
-async function sendMessage(): Promise<void> {
-  const text = message.value.trim();
-  if (!text && fileIds.value.length === 0) return;
-  message.value = '';
-  await run(() => runtime.sendMessage(text, fileIds.value));
+function touchCurrentThread(firstMessage?: string): void {
+  const thread = currentThread.value;
+  if (!thread) return;
+  if (firstMessage && ['新会话', '已恢复的会话'].includes(thread.title)) {
+    thread.title = firstMessage.length > 24 ? `${firstMessage.slice(0, 24)}…` : firstMessage;
+  }
+  thread.updatedAt = new Date().toISOString();
+  threads.value = [thread, ...threads.value.filter((item) => item !== thread)];
 }
 
-async function changeModel(): Promise<void> {
-  await run(() => runtime.changeModel(selectedModel.value));
+function modelLabel(modelId: string): string {
+  return modelId
+    .replace(/^model[_-]/u, '')
+    .replace(/[-_]/gu, ' ')
+    .replace(/\b\w/gu, (letter) => letter.toUpperCase());
 }
 
-async function changeThinking(): Promise<void> {
-  await run(() => runtime.changeThinking(thinking.value));
-}
-
-async function control(kind: 'steer' | 'followUp'): Promise<void> {
-  const text = message.value.trim();
-  if (!text) return;
-  message.value = '';
-  await run(() => runtime[kind](text));
+function readFollowUpMode(): FollowUpMode {
+  const stored = localStorage.getItem('campusclaw.followUpMode');
+  return stored === 'queue' ? 'queue' : 'steer';
 }
 </script>
 
 <template>
-  <header>
-    <span class="dot" :class="{ on: runtime.hasSession.value }"></span>
-    <strong>CampusClaw HTTP + SSE</strong>
-    <span class="muted">session: {{ runtime.session.value?.session_id ?? '-' }}</span>
-    <span class="muted">state: {{ runtime.session.value?.state ?? '-' }}</span>
-    <span class="muted">model: {{ runtime.session.value?.model_id ?? '-' }}</span>
-    <span class="spacer"></span>
-    <button @click="run(() => runtime.getSession())" :disabled="!runtime.hasSession.value || busy">
-      Refresh
-    </button>
-    <button @click="run(() => runtime.loadHistory())" :disabled="!runtime.hasSession.value || busy">
-      History
-    </button>
-  </header>
+  <div class="app-shell" :class="{ 'sidebar-compact': sidebarCompact }">
+    <AppSidebar
+      :threads="threads"
+      :current-session-id="runtime.session.value?.session_id"
+      :compact="sidebarCompact"
+      @new="newConversation"
+      @select="resumeSession"
+      @toggle="sidebarCompact = !sidebarCompact"
+    />
 
-  <main>
-    <section class="events">
-      <div v-if="runtime.events.value.length === 0" class="empty">
-        创建或恢复 Session 后发送 user.message；本页会直接解析该请求返回的 SSE。
-      </div>
-      <article v-for="(entry, index) in runtime.events.value" :key="`${entry.id ?? 'live'}-${index}`">
-        <div class="event-title">
-          <strong>{{ entry.event }}</strong>
-          <span>{{ entry.id ?? 'transient' }}</span>
+    <main class="workspace">
+      <header class="topbar">
+        <button
+          v-if="sidebarCompact"
+          class="icon-button open-sidebar"
+          type="button"
+          aria-label="展开导航"
+          @click="sidebarCompact = false"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6" /></svg>
+        </button>
+        <div class="agent-heading">
+          <div class="agent-heading-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24"><path d="M4 17 10 5l3.2 6L16 7l4 10H4Z" /><path d="M7 17h10" /></svg>
+          </div>
+          <div>
+            <h1>{{ runtime.hasSession.value ? title : 'CampusClaw' }}</h1>
+            <p>{{ runtime.hasSession.value ? `${agent.name} · 自动保存` : 'Agent 工作区' }}</p>
+          </div>
         </div>
-        <pre>{{ JSON.stringify(entry.data, null, 2) }}</pre>
-      </article>
-    </section>
 
-    <aside>
-      <h3>Connection</h3>
-      <label>Service URL（留空表示同源） <input v-model="runtime.apiBase.value" /></label>
-      <label>X-HW-ID <input v-model="runtime.auth.value.credentialId" /></label>
-      <label>
-        Credential mode
-        <select v-model="runtime.auth.value.credentialMode">
-          <option value="jwt">JWT Authorization</option>
-          <option value="appkey">X-HW-APPKEY</option>
-        </select>
-      </label>
-      <label>Credential secret <input v-model="runtime.auth.value.credentialSecret" type="password" /></label>
+        <div v-if="runtime.hasSession.value" class="session-controls">
+          <button
+            class="thinking-control"
+            type="button"
+            :class="{ active: runtime.session.value?.thinking }"
+            :aria-pressed="runtime.session.value?.thinking"
+            :disabled="running || busy"
+            @click="toggleThinking"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M19.1 4.9l-1.4 1.4M6.3 17.7l-1.4 1.4" /></svg>
+            <span>深度思考</span>
+          </button>
+          <label class="model-select">
+            <span class="sr-only">选择模型</span>
+            <select
+              :value="runtime.session.value?.model_id"
+              :disabled="running || busy"
+              @change="changeModel"
+            >
+              <option
+                v-if="runtime.session.value && !runtime.models.value.includes(runtime.session.value.model_id)"
+                :value="runtime.session.value.model_id"
+              >{{ modelLabel(runtime.session.value.model_id) }}</option>
+              <option v-for="model in runtime.models.value" :key="model" :value="model">
+                {{ modelLabel(model) }}
+              </option>
+            </select>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 10 4 4 4-4" /></svg>
+          </label>
+          <span class="state-badge" :class="{ running }" role="status" aria-live="polite">
+            <span></span>{{ running ? '执行中' : '已就绪' }}
+          </span>
+          <button v-if="running" class="stop-button" type="button" :disabled="busy" @click="run(runtime.abort)">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="1" /></svg>
+            停止
+          </button>
+          <button v-else class="icon-button more-button" type="button" aria-label="删除当前会话" title="删除当前会话" @click="deleteConversation">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M8 10v7M12 10v7M16 10v7M6 7l1 14h10l1-14" /></svg>
+          </button>
+        </div>
+      </header>
 
-      <h3>Session</h3>
-      <label>agent_id <input v-model="agentId" placeholder="agent_..." /></label>
-      <button @click="createSession" :disabled="!agentId.trim() || busy">Create Session</button>
-      <label>session_id <input v-model="resumeSessionId" placeholder="01..." /></label>
-      <button @click="resumeSession" :disabled="!resumeSessionId.trim() || busy">Resume Session</button>
-      <button class="danger" @click="run(runtime.deleteSession)" :disabled="!runtime.hasSession.value || busy">
-        Delete Session
-      </button>
+      <div v-if="runtime.lastError.value" class="error-banner" role="alert">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 7v6M12 17h.01" /></svg>
+        <span>{{ runtime.lastError.value }}</span>
+        <button type="button" aria-label="关闭错误提示" @click="runtime.clearError">关闭</button>
+      </div>
 
-      <h3>Model / Thinking</h3>
-      <label>
-        model_id
-        <select v-model="selectedModel" :disabled="!runtime.hasSession.value">
-          <option v-for="model in runtime.models.value" :key="model" :value="model">{{ model }}</option>
-        </select>
-      </label>
-      <button @click="changeModel" :disabled="!selectedModel || busy">Change Model</button>
-      <label class="check"><input v-model="thinking" type="checkbox" /> 深度思考</label>
-      <button @click="changeThinking" :disabled="!runtime.hasSession.value || busy">Apply Thinking</button>
+      <template v-if="!runtime.hasSession.value">
+        <div class="welcome-scroll">
+          <AgentWelcome
+            :agent="agent"
+            :creating="busy"
+            :configured="Boolean(configuredAgentId)"
+            @start="createSession()"
+          />
+          <DevDiagnostics
+            v-if="isDevelopment"
+            :default-agent-id="configuredAgentId"
+            :busy="busy"
+            @create="createSession"
+            @resume="resumeSession"
+          />
+        </div>
+      </template>
 
-      <h3>Stream</h3>
-      <button @click="run(runtime.abort)" :disabled="!runtime.hasSession.value || busy">Abort execution</button>
-      <button @click="runtime.disconnectStream" :disabled="!runtime.streaming.value">Disconnect SSE client</button>
-      <p v-if="runtime.lastError.value" class="error">{{ runtime.lastError.value }}</p>
-    </aside>
-  </main>
-
-  <footer>
-    <textarea v-model="message" placeholder="输入 user.message；执行中可作为 Steer 或 FollowUp"></textarea>
-    <textarea v-model="fileIdsText" class="files" placeholder="file_ids，每行或逗号分隔"></textarea>
-    <div class="actions">
-      <button class="primary" @click="sendMessage" :disabled="!runtime.hasSession.value || busy">Send</button>
-      <button @click="control('steer')" :disabled="!runtime.streaming.value || busy">Steer</button>
-      <button @click="control('followUp')" :disabled="!runtime.streaming.value || busy">FollowUp</button>
-    </div>
-  </footer>
+      <template v-else>
+        <section ref="scrollRegion" class="conversation-scroll" aria-label="会话内容">
+          <ConversationTimeline :turns="turns" :running="running" />
+        </section>
+        <ComposerBox
+          v-model="message"
+          v-model:mode="followUpMode"
+          :running="running"
+          :submitting="submitting"
+          :accepted-controls="runtime.acceptedControls.value"
+          :disabled="busy"
+          @submit="submit"
+        />
+      </template>
+    </main>
+  </div>
 </template>
-
-<style scoped>
-header {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 16px;
-  border-bottom: 1px solid var(--border);
-  background: var(--panel);
-  font-size: 13px;
-}
-.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--err); }
-.dot.on { background: var(--accent); }
-.muted { color: var(--muted); }
-.spacer { flex: 1; }
-main { display: grid; grid-template-columns: 1fr 340px; flex: 1; min-height: 0; }
-.events { overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
-.empty { margin: auto; color: var(--muted); max-width: 520px; line-height: 1.8; }
-article { border: 1px solid var(--border); border-radius: 8px; background: var(--panel); padding: 12px; }
-.event-title { display: flex; justify-content: space-between; color: var(--accent); }
-.event-title span { color: var(--muted); font-size: 11px; }
-pre { margin: 8px 0 0; white-space: pre-wrap; word-break: break-word; font-size: 12px; }
-aside { border-left: 1px solid var(--border); background: var(--panel); padding: 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 9px; }
-aside h3 { margin: 8px 0 0; color: var(--muted); font-size: 11px; text-transform: uppercase; }
-label { color: var(--muted); font-size: 11px; }
-label input, label select { display: block; width: 100%; margin-top: 4px; }
-label.check { display: flex; align-items: center; gap: 8px; }
-label.check input { width: auto; margin: 0; }
-.error { color: var(--err); word-break: break-word; }
-footer { display: grid; grid-template-columns: 1fr 300px auto; gap: 10px; padding: 12px 16px; border-top: 1px solid var(--border); background: var(--panel); }
-textarea { min-height: 70px; resize: vertical; }
-textarea.files { font-family: ui-monospace, monospace; }
-.actions { display: flex; flex-direction: column; gap: 6px; }
-</style>

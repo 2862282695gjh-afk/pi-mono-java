@@ -1,9 +1,13 @@
 @startuml frontend_product_boundary
-' Source evidence: frontend/src/App.vue (current debug console shell) and frontend/src/composables/useRuntimeApi.ts (useRuntimeApi, BASE_PATH).
+' Source baseline: 7b655487df80685187ed0193f6578060615f7d43.
+' Source evidence: frontend/src/App.vue (createSession, resumeSession, submit, product shell).
+' Source evidence: frontend/src/composables/useRuntimeApi.ts (useRuntimeApi, requestRaw, consumeSse).
+' Source evidence: frontend/src/projectors/runtimeEventProjector.ts (projectRuntimeEvents).
 ' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/web/RuntimeSessionController.java.
 ' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/web/RuntimeEventController.java.
-' Observed behavior: the current browser client calls the internal Runtime V1 contract directly and exposes credentials and protocol fields.
-' Design reason: the product UI must use a public bridge so internal session identifiers, credentials, ETags, and raw SSE payloads do not cross the browser boundary.
+' Observed behavior: the product shell hides credentials and protocol fields, but its transitional adapter still calls Runtime V1 directly.
+' Target-only design: the production UI uses a public bridge; the mate-service Agent, Chat, Attachment, and public event contracts do not exist yet.
+' Design reason: internal session identifiers, credentials, ETags, and raw SSE payloads must not cross the production browser boundary.
 
 title CampusClaw product frontend boundary
 left to right direction
@@ -12,6 +16,7 @@ actor "Campus user" as User
 rectangle "Product frontend" as Frontend {
   component "Agent and chat workspace" as Workspace
   component "Product event projector" as Projector
+  component "Direct runtime adapter\n(transition only)" as DirectAdapter
   component "Developer diagnostics\n(internal build only)" as Diagnostics
 }
 
@@ -33,6 +38,8 @@ Policy --> Mapping
 Mapping --> Sessions : internal HTTP
 Stream --> Policy : internal SSE events
 Policy --> Projector : public safe events
+Workspace ..> DirectAdapter : current integration
+DirectAdapter ..> Sessions : internal HTTP and SSE
 Diagnostics ..> Sessions : local diagnostics only
 
 note bottom of Frontend
@@ -40,6 +47,7 @@ Product constraints:
 - No Service URL or credential editor
 - No raw session_id, ETag, JSON, or SSE frames
 - Agent, chat, and attachment metadata use public resources
+- Transitional direct adapter is not a production boundary
 end note
 
 note bottom of Mate
@@ -59,11 +67,17 @@ end note
 @enduml
 
 @startuml runtime_event_ui_projection
+' Source baseline: 7b655487df80685187ed0193f6578060615f7d43.
+' Source evidence: frontend/src/projectors/runtimeEventProjector.ts (projectRuntimeEvents, projectAssistantEvent, projectToolEvent).
+' Source evidence: frontend/src/composables/useRuntimeApi.ts (dispatchSseFrame, mergeRuntimeEvent, loadHistory).
+' Source evidence: frontend/src/components/ComposerBox.vue (onKeydown, current follow-up mode).
 ' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/event/RuntimeEventType.java (RuntimeEventType).
 ' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/event/RuntimeEventProjector.java (projectMessageStart, projectMessageUpdate, projectToolStart, projectToolEnd).
 ' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/event/RuntimeEntryCodec.java (toHistoryEvent, toSseData).
+' Product-reference evidence: ChatGPT.app webview/assets/app-initial-BCLYDefw.js (followUpQueueMode, K9s) and webview/assets/zh-CN-ByRVSIXt.js.
 ' Observed behavior: persistent entries and transient execution events share one request-scoped SSE response.
-' Design reason: the UI projects protocol events into stable conversation objects and presents execution controls in user language.
+' Observed Codex behavior: desktop follow-up mode defaults to steer; a modifier submits one message with the inverse mode.
+' Design reason: the UI projects protocol events into stable conversation objects and uses one current follow-up mode instead of two persistent choices.
 
 title Runtime events to product UI projection
 left to right direction
@@ -83,8 +97,8 @@ rectangle "Frontend projection" as Projection {
 }
 
 rectangle "User controls while running" as Controls {
-  component "Adjust direction now" as Adjust
-  component "Continue when complete" as Continue
+  component "Adjust direction\n(default)" as Adjust
+  component "Queue follow-up\n(configured or one-shot inverse)" as Continue
   component "Stop" as Stop
 }
 
@@ -107,5 +121,8 @@ note bottom of SessionState
 Network loss does not replay the POST.
 Reload persistent history and deduplicate
 by the public event identity.
+
+Adjust direction does not interrupt the
+current model call or tool execution.
 end note
 @enduml

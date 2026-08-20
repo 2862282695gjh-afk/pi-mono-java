@@ -8,13 +8,13 @@
     :root {
       color-scheme: light;
       font-family: Inter, "PingFang SC", "Microsoft YaHei", sans-serif;
-      --ink: #1d2228;
-      --muted: #66707b;
-      --line: #aeb5bc;
-      --soft: #eef0f2;
+      --ink: #282828;
+      --muted: #5d5d5d;
+      --line: #d9d9d9;
+      --soft: #f3f3f3;
       --paper: #fff;
-      --board: #dfe3e7;
-      --dark: #343b43;
+      --board: #ededed;
+      --dark: #181818;
     }
 
     * { box-sizing: border-box; }
@@ -27,16 +27,16 @@
     .legend span::before { content: ""; display: inline-block; width: 10px; height: 10px; margin-right: 6px; border: 1px solid var(--dark); vertical-align: -1px; }
     .legend .system::before { background: var(--soft); }
     .grid { display: grid; grid-template-columns: 980px 1fr; grid-template-rows: 520px 520px; gap: 20px; }
-    .screen { position: relative; overflow: hidden; border: 2px solid var(--dark); border-radius: 12px; background: var(--paper); box-shadow: 0 2px 0 rgba(0,0,0,.12); }
+    .screen { position: relative; overflow: hidden; border: 1px solid var(--dark); border-radius: 12px; background: var(--paper); box-shadow: 0 1px 2px rgba(0,0,0,.08); }
     .screen > .tag { position: absolute; z-index: 5; top: 12px; left: 12px; padding: 5px 9px; border: 1px solid var(--dark); border-radius: 5px; background: var(--paper); font: 700 11px ui-monospace, monospace; }
     .main-screen { grid-row: 1 / span 2; display: grid; grid-template-columns: 240px 1fr; }
-    .rail { display: flex; flex-direction: column; border-right: 1px solid var(--line); background: #f5f6f7; padding: 52px 14px 14px; }
+    .rail { display: flex; flex-direction: column; border-right: 1px solid var(--line); background: #f9f9f9; padding: 52px 14px 14px; }
     .brand { display: flex; gap: 9px; align-items: center; margin-bottom: 20px; font-weight: 800; }
-    .brand-mark { width: 26px; height: 26px; border: 2px solid var(--ink); border-radius: 8px; background: repeating-linear-gradient(135deg, #fff 0 4px, #d9dde1 4px 8px); }
-    .primary { width: 100%; padding: 11px; border: 2px solid var(--ink); border-radius: 7px; background: var(--paper); font-weight: 700; text-align: left; }
+    .brand-mark { width: 26px; height: 26px; border: 1px solid var(--ink); border-radius: 8px; background: var(--dark); }
+    .primary { width: 100%; padding: 11px; border: 1px solid var(--dark); border-radius: 7px; background: var(--dark); color: #fff; font-weight: 700; text-align: left; }
     .section-label { margin: 22px 4px 8px; color: var(--muted); font-size: 11px; font-weight: 700; letter-spacing: .08em; }
     .session { margin-bottom: 5px; padding: 10px; border-radius: 6px; font-size: 13px; }
-    .session.active { border: 1px solid var(--dark); background: var(--paper); font-weight: 700; }
+    .session.active { border: 1px solid var(--line); background: #ededed; font-weight: 700; }
     .session small { display: block; margin-top: 3px; color: var(--muted); font-weight: 400; }
     .rail-bottom { margin-top: auto; border-top: 1px solid var(--line); padding: 13px 8px 2px; color: var(--muted); font-size: 12px; }
     .workspace { display: grid; grid-template-rows: 66px 1fr auto; min-width: 0; }
@@ -72,7 +72,7 @@
     .a2 { bottom: 132px; right: 18px; }
     .a3 { bottom: 20px; left: 255px; }
     .small-screen { display: grid; grid-template-columns: 150px 1fr; }
-    .mini-rail { border-right: 1px solid var(--line); background: #f5f6f7; padding: 48px 10px 10px; }
+    .mini-rail { border-right: 1px solid var(--line); background: #f9f9f9; padding: 48px 10px 10px; }
     .mini-line { height: 12px; margin: 8px 0; border: 1px solid var(--line); border-radius: 3px; background: var(--paper); }
     .mini-content { display: flex; flex-direction: column; }
     .mini-top { height: 54px; border-bottom: 1px solid var(--line); }
@@ -95,9 +95,9 @@
     .step { flex: 1; height: 7px; border: 1px solid var(--line); background: var(--paper); }
     .step.done { background: var(--dark); }
     .control-composer { margin: 0 42px 22px; border: 2px solid var(--dark); border-radius: 10px; padding: 10px; }
-    .mode-row { display: flex; gap: 7px; margin-bottom: 8px; }
-    .mode { padding: 6px 9px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); font-size: 10px; }
-    .mode.active { border-color: var(--dark); background: var(--soft); color: var(--ink); font-weight: 700; }
+    .follow-up-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; color: var(--muted); font-size: 10px; }
+    .follow-up-mode { padding: 6px 9px; border: 1px solid var(--dark); border-radius: 7px; background: var(--soft); color: var(--ink); font-weight: 700; }
+    .follow-up-shortcut { font-family: ui-monospace, monospace; }
     .control-input { display: flex; align-items: center; color: var(--muted); font-size: 12px; }
     .control-input button { margin-left: auto; border: 1px solid var(--dark); border-radius: 7px; background: var(--dark); color: #fff; padding: 7px 10px; }
     .screen-note { position: absolute; right: 12px; bottom: 10px; color: var(--muted); font: 10px ui-monospace, monospace; }
@@ -198,10 +198,10 @@
           </div>
         </div>
         <div class="control-composer">
-          <div class="mode-row"><span class="mode active">立即调整方向</span><span class="mode">完成后继续</span></div>
-          <div class="control-input">补充新的要求…<button>加入执行 ↑</button></div>
+          <div class="follow-up-row"><span class="follow-up-mode">调整方向⌄</span><span class="follow-up-shortcut">⌘⇧↵ 本条加入队列</span></div>
+          <div class="control-input">补充新的要求…<button>调整方向 ↑</button></div>
         </div>
-        <div class="screen-note">立即调整方向 → Steer · 完成后继续 → FollowUp · 停止 → Abort</div>
+        <div class="screen-note">默认：调整方向 → Steer · 单次反转：加入队列 → FollowUp · 停止 → Abort</div>
       </section>
     </div>
   </div>
