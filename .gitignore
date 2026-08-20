@@ -32,7 +32,6 @@ reports/
 
 # Wrappers
 !mvnw
-!mvnw.cmd
 !.mvn/wrapper/maven-wrapper.jar
 
 docs/agent-core-architecture.md

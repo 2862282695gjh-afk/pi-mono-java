@@ -9,6 +9,10 @@
   records, and the `mate-campusclaw` mirror.
 - Follow more specific `AGENTS.md` or `AGENTS.override.md` files if they are
   added under a subdirectory.
+- Treat macOS and Linux as the only supported local launch and installation
+  platforms. Do not add or maintain Windows batch, PowerShell, Maven wrapper,
+  or Task Scheduler entry points unless a later user instruction changes the
+  platform policy.
 - Preserve unrelated user changes. Never stage, rewrite, stash, or discard
   them unless the user explicitly asks. Use a separate Git worktree when the
   current worktree is dirty or is needed for another task.
