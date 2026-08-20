@@ -8,7 +8,7 @@ CampusClaw (`com.campusclaw`, previously `pi-mono-java`) — a terminal AI codin
 
 ## Build & Run
 
-CampusClaw local launch and installation support **macOS and Linux only**. Do not add or maintain Windows batch, PowerShell, Maven wrapper, or Task Scheduler entry points unless the platform policy is explicitly changed.
+CampusClaw local launch and installation support **macOS and Linux only**. Do not add or maintain Windows-specific batch, PowerShell, `mvnw.cmd`, or Task Scheduler launch and installation entry points unless the platform policy is explicitly changed. The POSIX `mvnw` may retain upstream Cygwin/MinGW compatibility for best-effort Windows builds, without a Windows support or validation commitment.
 
 The project requires **JDK 21** (not 17, not 25). `./mvnw` uses whatever `JAVA_HOME` is set; `./campusclaw.sh` auto-detects JDK 21 via Homebrew, `/usr/libexec/java_home -v 21`, SDKMAN, or common Linux paths.
 

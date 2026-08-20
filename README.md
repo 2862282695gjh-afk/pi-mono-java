@@ -2,7 +2,7 @@
 
 CampusClaw 是基于 Java 21 和 Spring Boot 3.4.1 构建的终端 AI 编程助手。它提供交互式 TUI、单次执行、RPC，以及面向前端和服务集成的 HTTP + SSE Runtime；同时支持多模型供应商、代码操作工具、会话持久化、Skill/Extension 扩展和定时任务。
 
-> 支持平台：macOS 与 Linux。Windows 不在支持或维护范围内。
+> 本地启动与安装支持平台：macOS 与 Linux。Windows 启动和安装不在支持或维护范围内。
 
 ## 目录
 
@@ -383,6 +383,8 @@ tui ────────────┤                 │              │
 > 如果默认 JDK 不是 21，需在命令前设置 `JAVA_HOME`。
 
 提交前建议至少执行 `./mvnw verify`、`./mvnw spotless:check` 和 `git diff --check`。
+
+`mvnw` 保留 Maven Wrapper 上游的 Cygwin/MinGW 兼容逻辑，允许用户在 Windows Git Bash 中自行尝试构建；该路径不属于项目支持或持续验证范围。
 
 技术栈：Java 21、Spring Boot 3.4.1、Project Reactor、Spring MVC、Spring WebClient、Picocli 4.7.6、JLine 3.26.2、Lanterna 3.1.2 和 Maven。
 
