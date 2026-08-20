@@ -58,11 +58,10 @@ public class RuntimeExceptionHandler {
     }
 
     private ResponseEntity<ErrorResponseVO> response(RuntimeErrorCode errorCode, HttpServletRequest request) {
-        boolean chinese = RuntimeRequestContext.chinese(request);
-        Locale locale = chinese ? Locale.SIMPLIFIED_CHINESE : Locale.US;
+        Locale locale = RuntimeRequestContext.locale(request);
         String message = messageSource.getMessage(errorCode.messageKey(), null, locale);
         HttpHeaders headers = new HttpHeaders();
-        headers.set(HttpHeaders.CONTENT_LANGUAGE, chinese ? "zh-CN" : "en-US");
+        headers.set(HttpHeaders.CONTENT_LANGUAGE, locale.toLanguageTag());
         errorCode
                 .retryAfterSeconds()
                 .ifPresent(seconds -> headers.set(HttpHeaders.RETRY_AFTER, Integer.toString(seconds)));

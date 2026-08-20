@@ -1,8 +1,10 @@
 # Coding Agent 启动与 Runtime HTTP 设计
 
-> 文档版本：2.4.0
+> 文档版本：2.5.0
 >
-> 实现分析基线：`1f801dbb82bdda30478e3354e685e3153b179a0c`
+> Runtime HTTP 与国际化分析基线：`3a6358bc9dd5837cdf5ac866fc0761298372510a`
+>
+> 启动平台分析基线：`1f801dbb82bdda30478e3354e685e3153b179a0c`
 >
 > 源码仓库：本仓库 `pi-mono-java`
 
@@ -14,6 +16,8 @@
 - 带 `cli` 子命令时，启动无 Web 容器的 CLI 上下文，再由 Picocli 分派 interactive、one-shot、rpc 或 print 等模式。
 
 历史 `--mode server`、手工 Reactor Netty `ServerMode`、函数式 WebFlux 路由和公开 WebSocket 接口均已删除。Runtime 对外协议统一为 HTTP + 请求范围 SSE。
+
+本版本同时记录国际化资源包的目标设计：英文和简体中文资源将显式放入 `i18n/` 目录，且不保留基础 `messages.properties`。该调整尚未在 Runtime HTTP 与国际化分析基线实现，属于目标态架构变更，并已由后续实现提交 `136baee952940e92b545b97103ed9bc44bfc7688` 落地。启动平台结论则以独立的平台分析基线为依据。
 
 ## 2. 源码证据
 
@@ -27,10 +31,13 @@
 | 事件接受、历史查询和执行生命周期相互分离 | `RuntimeEventService`、`RuntimeEventQueryService`、`RuntimeExecutionCoordinator` |
 | SSE 使用有界请求级订阅 | `RuntimeEventStream`、`RuntimeSseDispatcher`、`RuntimeSseEmitterSubscriber` |
 | 公司响应包装保留适配点 | `runtimeapi/result/ResultBeanAdapter.java`、`StandaloneResultBeanAdapter.java` |
+| 国际化基线的错误消息依赖根目录资源包 | `modules/coding-agent-cli/src/main/resources/messages.properties`、`messages_zh_CN.properties` |
+| 国际化基线的语言选择手工检查请求头前缀 | `RuntimeRequestContext#locale`、`RuntimeRequestContext#language` |
+| 国际化基线的 HTTP 与 SSE 错误通过 MessageSource 取文案 | `RuntimeExceptionHandler#response`、`RuntimeTerminalEventFactory#emitError` |
 | 本地工具由目录统一索引与筛选 | `tool/catalog/ToolCatalog.java`、`DefaultToolCatalog.java`、`ToolSelection.java` |
 | MateService 工具通过专用客户端查询和调用 | `common/client/mate/MateToolClient.java`、`tool/mate/ListMateTool.java`、`CallMateTool.java` |
 
-这些内容是实现基线的已观察行为，不是目标态推测。
+这些内容分别是上述分析基线的已观察行为，不是目标态推测。
 
 ## 3. 模块上下文
 
@@ -134,7 +141,39 @@ SSE 流、事件投影器与终止事件分别由独立工厂创建，避免 Con
 服务返回 `503 SESSION_EXECUTION_UNAVAILABLE` 和 `Retry-After: 3`。这是对现有执行归属边界的显式表达；
 本次整改没有假设粘性路由或跨实例转发基础设施。
 
-### 6.7 工具所有权与沙箱边界
+### 6.7 国际化资源与语言协商
+
+Runtime HTTP 与国际化分析基线中的英文资源位于根目录 `messages.properties`，中文资源位于根目录
+`messages_zh_CN.properties`，由 Spring Boot 默认 `MessageSource` 自动配置加载；
+`RuntimeRequestContext#locale` 通过字符串前缀手工识别 `zh-CN`。这些是已观察行为，
+不是本节的目标设计。
+
+目标设计仅保留以下两个显式 Locale 资源包：
+
+```text
+modules/coding-agent-cli/src/main/resources/i18n/messages_en_US.properties
+modules/coding-agent-cli/src/main/resources/i18n/messages_zh_CN.properties
+```
+
+`mate-campusclaw` 镜像使用相同的 `src/main/resources/i18n/` 相对路径。目标态不创建
+`messages.properties`。由于 Spring Boot 的默认消息源自动配置要求基础资源包，Runtime
+必须通过独立配置显式注册名称为 `messageSource` 的 `ResourceBundleMessageSource`：
+basename 固定为 `i18n/messages`，编码固定为 UTF-8，默认 Locale 为 `Locale.US`，并关闭
+系统 Locale 回退。该配置只属于 Runtime 包，CLI 上下文继续通过现有包扫描排除规则隔离
+Runtime Bean。
+
+Runtime 只支持 `en-US` 和 `zh-CN`。语言协商必须按 `Accept-Language` 标准语义处理语言
+范围与 `q` 权重，并把结果收敛为 `Locale.US` 或 `Locale.SIMPLIFIED_CHINESE`；请求头缺失、
+非法或没有支持项时统一回退 `en-US`。错误 HTTP 响应和 SSE `stream.error` 事件使用协商后的
+Locale 获取 `resMsg`，HTTP `Content-Language` 返回实际语言。成功 ResultBean 保持固定
+`resCode="0"`、`resMsg="success"`，不进入消息资源。
+
+两个 Locale 文件必须具有完全相同的 key 集合，并与 `RuntimeErrorCode` 枚举名称一致；
+缺键属于构建和发布阻断问题，不通过 `resMsg` 或错误码字符串兜底。该资源布局不改变 HTTP
+状态、`resCode`、响应结构或 SSE 事件结构，分类为内部架构变更。决策依据见
+[ADR-0017](../decisions/0017-explicit-locale-message-bundles.html)。
+
+### 6.8 工具所有权与沙箱边界
 
 CLI 的 `BashTool`、`ReadTool`、`WriteTool`、`EditTool`、`GlobTool` 和 `GrepTool`
 仍是当前 JVM 内的普通本地工具，由 `ToolCatalog` 发现并按 `ToolSelection` 筛选。
@@ -156,12 +195,15 @@ Runtime V1 事件名 `tool.execution.started` 与 `tool.execution.completed` 是
 - 新增或修改的 Java 方法不超过 50 个非空物理行；
 - Java 与 XML 源文件遵循公司版权、中文 Javadoc 和 XML DTD 规则；
 - 主模块与 `mate-campusclaw` 镜像必须通过同一套测试。
+- 国际化实现必须验证无基础资源包时应用上下文可启动、双资源 key 集相等且覆盖
+  `RuntimeErrorCode`，并覆盖语言权重、英文回退、HTTP 中文错误和 SSE 中文错误。
 
 ## 8. 版本历史
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
-| 2.4.0 | 2026-08-20 | 将本地启动平台收敛为 macOS/Linux，删除 Windows 启动入口并关联平台支持决策 |
+| 2.5.0 | 2026-08-20 | 整合并行设计更新，保留双 Locale 国际化和 macOS/Linux 平台收敛，并消除 ADR 编号冲突 |
+| 2.4.0 | 2026-08-20 | 分别明确无基础资源包的国际化边界，以及仅维护 macOS/Linux 的启动平台边界 |
 | 2.3.0 | 2026-08-19 | 合入最新 HTTP V1 启动与执行架构，并明确 ToolCatalog、MateService 工具和已删除本地 Sandbox 的边界 |
 | 2.2.0 | 2026-08-19 | 统一 `.campusclaw` 真实运行根目录，拆分事件职责，集中错误语义并明确非本机执行边界 |
 | 2.1.0 | 2026-08-19 | HTTP V1 的 Agent 根目录默认值改为 `agent`，受控子目录改为 `.campusclaw/` |
