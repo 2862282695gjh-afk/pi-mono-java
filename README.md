@@ -2,6 +2,8 @@
 
 CampusClaw 是基于 Java 21 和 Spring Boot 3.4.1 构建的终端 AI 编程助手。它提供交互式 TUI、单次执行、RPC，以及面向前端和服务集成的 HTTP + SSE Runtime；同时支持多模型供应商、代码操作工具、会话持久化、Skill/Extension 扩展和定时任务。
 
+> 支持平台：macOS 与 Linux。Windows 不在支持或维护范围内。
+
 ## 目录
 
 - [功能概览](#功能概览)
@@ -50,7 +52,6 @@ JDK 21 安装示例：
 | macOS | `brew install openjdk@21` |
 | Ubuntu/Debian | `sudo apt install openjdk-21-jdk` |
 | Fedora | `sudo dnf install java-21-openjdk-devel` |
-| Windows | 从 [Adoptium](https://adoptium.net/) 安装，或执行 `winget install EclipseAdoptium.Temurin.21.JDK` |
 | 通用 | [SDKMAN](https://sdkman.io/)：`sdk install java 21-tem` |
 
 ### 配置模型凭据
@@ -63,11 +64,6 @@ export ANTHROPIC_API_KEY="sk-ant-..."
 export OPENAI_API_KEY="sk-..."
 ```
 
-```powershell
-# Windows PowerShell，仅对当前会话生效
-$env:ANTHROPIC_API_KEY = "sk-ant-..."
-```
-
 也可以在启动后使用 `/auth login <provider> <key>` 保存凭据，或参照 [`docs/settings.example.json`](docs/settings.example.json) 配置 `settings.json`。凭据解析优先级为：`auth.json`、`settings.json` 中的 `provider.<id>`、模型自身配置、环境变量。
 
 ### 启动 CLI
@@ -75,11 +71,7 @@ $env:ANTHROPIC_API_KEY = "sk-ant-..."
 推荐使用启动脚本。脚本会自动寻找 JDK 21，首次启动或检测到源码变化时构建 CLI JAR，并自动向 JAR 注入 `cli` 子命令。
 
 ```bash
-# macOS / Linux
 ./campusclaw.sh -m glm-5
-
-# Windows
-campusclaw.bat -m glm-5
 ```
 
 强制重新构建：
@@ -91,11 +83,7 @@ campusclaw.bat -m glm-5
 如果自动检测不到 JDK 21，先设置 `JAVA_HOME`：
 
 ```bash
-# macOS / Linux
 export JAVA_HOME=/path/to/jdk-21
-
-# Windows PowerShell
-$env:JAVA_HOME = "C:\\Program Files\\Eclipse Adoptium\\jdk-21"
 ```
 
 ### 启动 HTTP 前后端
@@ -131,7 +119,7 @@ $env:JAVA_HOME = "C:\\Program Files\\Eclipse Adoptium\\jdk-21"
 |---|---|---|
 | `java -jar ...` | Spring Boot MVC HTTP 服务 | HTTP Runtime、前端和服务部署 |
 | `java -jar ... cli ...` | 非 Web CLI 上下文 | 交互式 TUI、单次执行、RPC |
-| `./campusclaw.sh ...` | `cli` 的跨平台包装 | 日常终端使用，自动构建 |
+| `./campusclaw.sh ...` | `cli` 的 macOS/Linux 包装 | 日常终端使用，自动构建 |
 
 CLI 的 `--mode` 支持以下值：
 
@@ -195,7 +183,7 @@ campusclaw [OPTIONS] [PROMPT...]
 ./campusclaw.sh --mode rpc -m glm-5
 ```
 
-Windows 用户将 `./campusclaw.sh` 替换为 `campusclaw.bat`。直接运行 JAR 时要显式写出 `cli`，例如：
+直接运行 JAR 时要显式写出 `cli`，例如：
 
 ```bash
 java -jar modules/coding-agent-cli/target/campusclaw-agent.jar cli -m glm-5
@@ -346,7 +334,6 @@ npm audit --audit-level=high
 ├── scripts/                 # 镜像同步、Git hook 和开发辅助脚本
 ├── pom.xml                  # Maven 根工程，声明 5 个 Java 模块
 ├── campusclaw.sh            # macOS/Linux CLI 启动脚本
-├── campusclaw.bat           # Windows CLI 启动脚本
 ├── start-dev.sh             # 本地 HTTP 前后端开发脚本
 └── README.md
 ```
@@ -393,7 +380,9 @@ tui ────────────┤                 │              │
 ./mvnw spotless:apply
 ```
 
-Windows 用户将 `./mvnw` 替换为 `mvnw.cmd`。提交前建议至少执行 `./mvnw verify`、`./mvnw spotless:check` 和 `git diff --check`。
+> 如果默认 JDK 不是 21，需在命令前设置 `JAVA_HOME`。
+
+提交前建议至少执行 `./mvnw verify`、`./mvnw spotless:check` 和 `git diff --check`。
 
 技术栈：Java 21、Spring Boot 3.4.1、Project Reactor、Spring MVC、Spring WebClient、Picocli 4.7.6、JLine 3.26.2、Lanterna 3.1.2 和 Maven。
 
@@ -431,8 +420,6 @@ git config core.hooksPath scripts/git-hooks
 | [`modules/k8s/README.md`](modules/k8s/README.md) | Kubernetes 单容器部署示例 |
 | [`docs/settings.example.json`](docs/settings.example.json) | 配置文件示例 |
 | [`docs/designs/`](docs/designs/) | 各模块和运行时设计文档 |
-| [`docs/windows-networking-troubleshooting.md`](docs/windows-networking-troubleshooting.md) | Windows 代理和企业证书问题 |
-| [`docs/windows-subprocess-streaming-troubleshooting.md`](docs/windows-subprocess-streaming-troubleshooting.md) | Windows 子进程、管道和 Reactor 流式调试经验 |
 
 Kubernetes 单容器示例位于 `modules/k8s/`；根目录 `k8s/` 主要保存 MateService 集成部署清单。构建镜像：
 
@@ -458,11 +445,8 @@ docker build -t campusclaw:latest .
 ./campusclaw.sh --proxy http://127.0.0.1:7890 -m glm-5
 ```
 
-Windows 系统代理和企业内部证书问题见 [`docs/windows-networking-troubleshooting.md`](docs/windows-networking-troubleshooting.md)。
-
 ### TUI 乱码或无颜色
 
-- Windows 推荐使用 Windows Terminal，并执行 `chcp 65001`；
 - macOS/Linux 确认 `TERM` 不为 `dumb`；
 - 如果是前端页面问题，确认后端端口和 `VITE_BACKEND_URL`/Vite proxy 配置一致。
 
@@ -474,7 +458,3 @@ Windows 系统代理和企业内部证书问题见 [`docs/windows-networking-tro
 ./campusclaw.sh --rebuild -m glm-5
 ./mvnw package -pl modules/coding-agent-cli -am -DskipTests
 ```
-
-### Windows 子 Agent 或流式请求卡住
-
-查看 [`docs/windows-subprocess-streaming-troubleshooting.md`](docs/windows-subprocess-streaming-troubleshooting.md)，其中记录了进程树销毁、管道关闭、Reactor 事件顺序和 trace 排查方法。

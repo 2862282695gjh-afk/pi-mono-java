@@ -14,6 +14,18 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BIN_DIR="${CAMPUSCLAW_HOME:-$HOME/file/.campusclaw}/bin"
 
+require_supported_os() {
+    case "$(uname -s 2>/dev/null || true)" in
+        Darwin|Linux) ;;
+        *)
+            echo "Error: CampusClaw supports macOS and Linux only." >&2
+            exit 1
+            ;;
+    esac
+}
+
+require_supported_os
+
 # ── Verify JDK 21 exists ──────────────────────────────────────
 detect_jdk21() {
     if [ -n "${JAVA_HOME:-}" ] && "$JAVA_HOME/bin/java" -version 2>&1 | grep -q '"21\.'; then

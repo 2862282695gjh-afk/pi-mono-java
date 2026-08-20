@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ADR-0016 · 仅维护 macOS/Linux 启动方式</title>
+  <style>
+    :root{--fg:#1a1a1a;--dim:#666;--accent:#2563eb;--accepted:#15803d;--bg:#fff;--card:#f6f7f9}
+    body{font:15px/1.6 -apple-system,Segoe UI,Roboto,"PingFang SC",sans-serif;color:var(--fg);
+         background:var(--bg);max-width:820px;margin:2rem auto;padding:0 1.2rem}
+    h1{font-size:1.5rem;margin:.2rem 0}
+    .meta{color:var(--dim);font-size:.9rem;margin-bottom:1.2rem}
+    .badge{display:inline-block;padding:.1rem .6rem;border-radius:1rem;font-size:.8rem;background:var(--accepted);color:#fff}
+    section{margin:1.4rem 0}
+    h2{font-size:1.05rem;border-bottom:1px solid #eee;padding-bottom:.3rem}
+    a{color:var(--accent)} code{background:var(--card);padding:.1rem .3rem;border-radius:.3rem}
+  </style>
+</head>
+<body>
+  <h1>ADR-0016 · 仅维护 macOS/Linux 启动方式</h1>
+  <div class="meta">Status: <span class="badge">Accepted</span> · Date: 2026-08-20 ·
+    设计文档: <a href="../designs/platform-support.md">platform-support</a> ·
+    基线: <code>origin/main@1f801dbb82bdda30478e3354e685e3153b179a0c</code></div>
+
+  <section><h2>Context</h2>
+    <p>基线同时维护 macOS/Linux Shell 与 Windows Batch 两套启动和安装实现，并额外分发 Windows Maven Wrapper、维护 Task Scheduler 集成及 Windows 网络排障资料。不同平台的 Shell、路径、证书库和系统调度器语义增加了每次启动相关变更的维护和验证成本。产品现阶段只需要 macOS 与 Linux 本地环境，因此需要把支持承诺、入口文件和运行时分派保持一致。</p>
+  </section>
+
+  <section><h2>Options considered</h2>
+    <ul>
+      <li><strong>继续同时维护 macOS/Linux 与 Windows</strong><br>Pro：现有 Windows 用户无需迁移。<br>Con：继续承担 Batch、PowerShell、CMD Wrapper、Task Scheduler 和平台专属网络问题的维护与验证。Rejected。</li>
+      <li><strong>文档标记 Windows 已弃用，但保留所有入口</strong><br>Pro：短期变更较小，旧命令仍可能运行。<br>Con：仓库文件仍会暗示支持，入口继续腐化，后续修改仍需判断是否同步更新。Rejected。</li>
+      <li><strong>删除 Windows 启动链路并在执行入口明确限制平台</strong><br>Pro：文档、脚本和系统调度器形成单一支持边界；不支持平台快速失败。<br>Con：Windows 用户无法继续使用仓库提供的启动、安装、构建或定时触发入口；没有兼容期。Chosen。</li>
+    </ul>
+    <p><strong>选择理由：</strong>这是明确的产品支持范围收敛。仅修改说明而保留可执行入口会继续形成隐含承诺，因此必须同步删除 Windows 文件和运行时调度分支。</p>
+  </section>
+
+  <section><h2>Decision</h2>
+    <ul>
+      <li>macOS 和 Linux 是唯一受支持、受维护的本地启动与安装平台。</li>
+      <li>删除 <code>campusclaw.bat</code>、<code>install.bat</code>、<code>mvnw.cmd</code> 和 Windows 网络排障文档。</li>
+      <li><code>campusclaw.sh</code> 与 <code>install.sh</code> 仅接受 <code>Darwin</code> 或 <code>Linux</code>。</li>
+      <li><code>SystemSchedulerInstaller</code> 只保留 macOS launchd 与 Linux crontab；其他系统明确拒绝操作，并且启动脚本检测只查找 <code>campusclaw.sh</code>。</li>
+      <li>项目说明和代理工程规范不再提供 Windows 命令，并禁止无新决策时重新引入 Windows 启动入口。</li>
+      <li>与归档输入安全或通用进程健壮性相关的既有防御不因本决策自动删除，它们不表示恢复 Windows 支持。</li>
+    </ul>
+  </section>
+
+  <section><h2>Consequences</h2>
+    <ul>
+      <li><strong>正面：</strong>本地启动链路统一为 POSIX Shell；文档和实现的支持范围一致；平台错误在入口处明确暴露。</li>
+      <li><strong>负面：</strong>Windows 启动、安装、Maven 包装和 Task Scheduler 集成立即停止；旧用户需要自行维护分支或迁移到受支持平台。</li>
+      <li><strong>兼容性：</strong>CLI 参数、JAR、HTTP API、配置文件与持久化格式均未变化；变化仅涉及受支持平台及其入口文件。</li>
+      <li><strong>回滚：</strong>若未来恢复 Windows 支持，需要新 ADR，并重新建立脚本、调度器、CI、文档和平台验证，不能只恢复单个 Batch 文件。</li>
+      <li><strong>数据：</strong>无数据库或本地数据迁移；本次变更不自动删除旧 Windows 环境中已创建的 PATH 条目或系统任务。</li>
+    </ul>
+  </section>
+
+  <section><h2>Related</h2>
+    <ul>
+      <li><a href="../designs/platform-support.md">设计文档：CampusClaw 启动平台支持设计</a></li>
+      <li><a href="../designs/coding-agent-cli.md">设计文档：Coding Agent 启动与 Runtime HTTP 设计</a></li>
+      <li><a href="../designs/cron.md">设计文档：cron 模块</a></li>
+    </ul>
+  </section>
+</body>
+</html>
