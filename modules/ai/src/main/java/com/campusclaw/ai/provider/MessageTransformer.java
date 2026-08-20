@@ -28,8 +28,8 @@ import com.campusclaw.ai.types.UserMessage;
  *
  * <p>Aligned with TypeScript campusclaw transform-messages.ts.
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/05/06]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/05/06]
+ * @since [br_eCampusCore 26.0.0]
  */
 public class MessageTransformer {
 

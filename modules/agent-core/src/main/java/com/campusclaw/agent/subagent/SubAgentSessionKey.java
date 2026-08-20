@@ -18,8 +18,8 @@ import java.util.regex.Pattern;
  * @param backendId backend id (lower-case, e.g. {@code claude-code})
  * @param uuid session uuid (lower-case canonical form)
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/05/12]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/05/12]
+ * @since [br_eCampusCore 26.0.0]
  */
 public record SubAgentSessionKey(String parentAgentId, String backendId, String uuid) {
 

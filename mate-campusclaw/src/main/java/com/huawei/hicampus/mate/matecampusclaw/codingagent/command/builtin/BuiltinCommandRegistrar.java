@@ -25,8 +25,8 @@ import jakarta.annotation.PostConstruct;
  * command set on startup. Registers help, model, compaction, session, auth, providers, loop,
  * cron and the remaining shell commands; eagerly initialized via {@code @Lazy(false)}.
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/05/13]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/05/13]
+ * @since [br_eCampusCore 26.0.0]
  */
 @Component
 @Lazy(false)

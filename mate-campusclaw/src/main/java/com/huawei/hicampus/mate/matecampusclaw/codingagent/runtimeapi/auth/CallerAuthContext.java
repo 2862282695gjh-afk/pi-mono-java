@@ -11,8 +11,8 @@ import java.util.Objects;
  *
  * @param credentialId {@code X-HW-ID} 携带的凭据标识，不代表资源所有者
  * @param credentialMode 请求选择的凭据模式
- * @version [br_eCampusCore 25.1.0_Next, 2026/08/18]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/08/18]
+ * @since [br_eCampusCore 26.0.0]
  */
 public record CallerAuthContext(String credentialId, CredentialMode credentialMode) {
     public CallerAuthContext {

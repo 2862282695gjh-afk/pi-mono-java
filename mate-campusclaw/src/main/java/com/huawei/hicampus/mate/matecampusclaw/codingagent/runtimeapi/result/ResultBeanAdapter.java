@@ -7,8 +7,8 @@ package com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.result;
 /**
  * 隔离公司 ResultBeanFactory 制品的成功响应包装端口。
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/08/18]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/08/18]
+ * @since [br_eCampusCore 26.0.0]
  */
 public interface ResultBeanAdapter {
     /**

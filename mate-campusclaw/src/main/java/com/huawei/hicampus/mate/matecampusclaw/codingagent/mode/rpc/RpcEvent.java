@@ -15,8 +15,8 @@ import jakarta.annotation.Nullable;
  * {@code data} payload or an {@code error} string. Static factories cover the broadcast,
  * response, and error shapes.
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/05/13]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/05/13]
+ * @since [br_eCampusCore 26.0.0]
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record RpcEvent(

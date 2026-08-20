@@ -20,8 +20,8 @@ import org.springframework.context.annotation.Configuration;
  * agent-core is a library module without an {@code @SpringBootApplication} entry point,
  * and dragging in coding-agent-cli's main class would couple the unit test to the CLI.
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/06/18]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/06/18]
+ * @since [br_eCampusCore 26.0.0]
  */
 class ControlPlanePropertiesBindingTest {
 

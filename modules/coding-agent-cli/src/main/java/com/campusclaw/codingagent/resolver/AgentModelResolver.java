@@ -27,8 +27,8 @@ import org.springframework.stereotype.Service;
  * cron jobs and future subagents lets users send cheap work (summarisation,
  * planning) to a smaller / faster model without affecting the foreground chat.
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/05/06]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/05/06]
+ * @since [br_eCampusCore 26.0.0]
  */
 @Service
 public class AgentModelResolver {

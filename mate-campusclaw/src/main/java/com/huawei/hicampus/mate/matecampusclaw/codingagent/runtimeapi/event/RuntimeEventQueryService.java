@@ -20,8 +20,8 @@ import org.springframework.stereotype.Service;
 /**
  * 查询当前 Session 分支事件，并把持久化 Entry 恢复为 Agent 历史。
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/08/19]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/08/19]
+ * @since [br_eCampusCore 26.0.0]
  */
 @Service
 public class RuntimeEventQueryService {

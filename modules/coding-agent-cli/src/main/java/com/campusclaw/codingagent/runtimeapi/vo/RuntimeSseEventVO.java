@@ -13,8 +13,8 @@ import lombok.Getter;
 /**
  * Runtime SSE 事件名、可选序号和 data 负载。
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/08/18]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/08/18]
+ * @since [br_eCampusCore 26.0.0]
  */
 @Getter
 public class RuntimeSseEventVO {

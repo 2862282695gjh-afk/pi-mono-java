@@ -16,8 +16,8 @@ import org.apache.ibatis.annotations.Param;
 /**
  * Runtime Session 主记录、tombstone 与清理任务的数据库 Mapper。
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/08/18]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/08/18]
+ * @since [br_eCampusCore 26.0.0]
  */
 @Mapper
 public interface RuntimeSessionMapper {

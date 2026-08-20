@@ -383,8 +383,8 @@
         </module>
 
         <!-- TopClassComment: public 类必须有 Javadoc 描述功能，且包含 @version 标签
-             记录版本+创建日期。@since 由配套 Javadoc 自带，不强制校验（Checkstyle 没有
-             标准 @since 校验项），但脚本会一同补齐。 -->
+             记录当前产品版本+创建日期。@since 由配套 Javadoc 自带；下方一致性规则
+             会拒绝 @version/@since 中非当前版本的 br_eCampusCore 标签。 -->
         <module name="MissingJavadocType">
             <property name="id" value="top_class_comment"/>
             <property name="scope" value="public"/>
@@ -392,9 +392,14 @@
         <module name="JavadocType">
             <property name="id" value="top_class_comment_version"/>
             <property name="scope" value="public"/>
-            <property name="versionFormat" value="\[br_eCampusCore [^,\]]+,\s*\d{4}/\d{2}/\d{2}\]"/>
+            <property name="versionFormat" value="\[br_eCampusCore 26\.0\.0,\s*\d{4}/\d{2}/\d{2}\]"/>
             <!-- 不强制每个泛型/record 组件都要 @param —— 那超出 TopClassComment 范围。 -->
             <property name="allowMissingParamTags" value="true"/>
+        </module>
+        <module name="RegexpSinglelineJava">
+            <property name="id" value="campuscore_version_consistency"/>
+            <property name="format" value="@(?:version|since)\s+\[br_eCampusCore\s+(?!26\.0\.0(?:,|\]))[^,\]]+(?:,|\])"/>
+            <property name="message" value="br_eCampusCore version must be 26.0.0"/>
         </module>
 
         <!-- JavaComponentOrder: 文件按 copyright / package / import / 类 顺序排列且空行分隔。

@@ -20,8 +20,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
  * <p>Default invocation is the bare {@code codex-acp} binary. Both the command and arguments are
  * overridable through configuration to track future Codex CLI changes without code edits.
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/05/12]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/05/12]
+ * @since [br_eCampusCore 26.0.0]
  */
 public class CodexAcpBackend extends ProcessAcpBackend {
 

@@ -19,8 +19,8 @@ import com.campusclaw.tui.Component;
  *   ↑1.5k ↓200 R832 $0.001 0.7%/200k (auto)           (zai) glm-5 • medium
  * </pre>
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/05/06]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/05/06]
+ * @since [br_eCampusCore 26.0.0]
  */
 public class FooterComponent implements Component {
 

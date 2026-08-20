@@ -13,8 +13,8 @@ import java.util.Locale;
  * Utilities for truncating text output by line count and byte size.
  * Supports head truncation (keep last N lines) and tail truncation (keep first N lines).
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/05/06]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/05/06]
+ * @since [br_eCampusCore 26.0.0]
  */
 public final class TruncationUtils {
 

@@ -32,8 +32,8 @@ import org.junit.jupiter.api.Test;
 /**
  * 当前分支事件分页和 Agent 历史分批恢复测试。
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/08/19]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/08/19]
+ * @since [br_eCampusCore 26.0.0]
  */
 class RuntimeEventQueryServiceTest {
     private static final String SESSION_ID = "session_query";

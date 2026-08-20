@@ -7,8 +7,8 @@ package com.campusclaw.codingagent.runtimeapi.event;
 /**
  * HTTP V1 对外持久化事件和瞬时 SSE 事件类型。
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/08/19]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/08/19]
+ * @since [br_eCampusCore 26.0.0]
  */
 public enum RuntimeEventType {
     USER_MESSAGE("user.message"),

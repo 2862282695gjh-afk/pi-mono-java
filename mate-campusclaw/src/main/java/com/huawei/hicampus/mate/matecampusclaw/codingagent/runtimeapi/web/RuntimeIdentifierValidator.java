@@ -13,8 +13,8 @@ import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.error.Runt
 /**
  * 统一校验 HTTP V1 路径中的公共资源标识符。
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/08/19]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/08/19]
+ * @since [br_eCampusCore 26.0.0]
  */
 public final class RuntimeIdentifierValidator {
     private static final Pattern AGENT_ID = Pattern.compile(RuntimeApiConstants.AGENT_ID_PATTERN);

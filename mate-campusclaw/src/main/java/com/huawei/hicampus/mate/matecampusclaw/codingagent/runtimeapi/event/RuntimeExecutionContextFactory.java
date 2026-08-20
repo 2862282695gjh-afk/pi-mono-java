@@ -22,8 +22,8 @@ import org.springframework.stereotype.Component;
 /**
  * 根据持久化 Session 快照准备模型、历史消息、Agent 和 SSE 执行上下文。
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/08/19]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/08/19]
+ * @since [br_eCampusCore 26.0.0]
  */
 @Component
 public class RuntimeExecutionContextFactory {

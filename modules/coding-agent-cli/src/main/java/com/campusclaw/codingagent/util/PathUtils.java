@@ -11,8 +11,8 @@ import java.nio.file.Path;
  * Utilities for resolving user-supplied file paths relative to a working directory.
  * All resolved paths are validated to stay within the cwd subtree to prevent directory traversal attacks.
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/05/06]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/05/06]
+ * @since [br_eCampusCore 26.0.0]
  */
 public final class PathUtils {
 

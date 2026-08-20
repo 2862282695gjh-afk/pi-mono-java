@@ -13,8 +13,8 @@ import jakarta.servlet.http.HttpServletRequest;
 /**
  * 从 Servlet 请求中读取认证和语言上下文。
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/08/18]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/08/18]
+ * @since [br_eCampusCore 26.0.0]
  */
 public final class RuntimeRequestContext {
     public static final String AUTH_ATTRIBUTE = RuntimeRequestContext.class.getName() + ".auth";

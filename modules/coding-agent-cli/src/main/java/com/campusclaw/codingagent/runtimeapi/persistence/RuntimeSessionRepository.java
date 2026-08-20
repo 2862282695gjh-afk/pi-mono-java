@@ -14,8 +14,8 @@ import com.campusclaw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
 /**
  * Runtime Session 持久化的事务边界端口。
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/08/18]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/08/18]
+ * @since [br_eCampusCore 26.0.0]
  */
 public interface RuntimeSessionRepository {
     void create(RuntimeSessionDTO session);

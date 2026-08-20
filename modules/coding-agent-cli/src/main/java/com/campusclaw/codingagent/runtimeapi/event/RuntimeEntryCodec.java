@@ -37,8 +37,8 @@ import org.springframework.stereotype.Component;
  *
  * <p>原始 ThinkingContent 不进入公共事件，避免把模型内部思考过程作为接口契约披露。
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/08/18]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/08/18]
+ * @since [br_eCampusCore 26.0.0]
  */
 @Component
 public class RuntimeEntryCodec {

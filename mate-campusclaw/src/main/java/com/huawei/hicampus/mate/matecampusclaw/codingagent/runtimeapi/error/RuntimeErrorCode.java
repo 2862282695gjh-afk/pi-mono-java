@@ -11,8 +11,8 @@ import org.springframework.http.HttpStatus;
 /**
  * Runtime HTTP V1 的稳定错误码、HTTP 状态和重试语义。
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/08/19]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/08/19]
+ * @since [br_eCampusCore 26.0.0]
  */
 public enum RuntimeErrorCode {
     INVALID_AGENT_ID(HttpStatus.BAD_REQUEST),

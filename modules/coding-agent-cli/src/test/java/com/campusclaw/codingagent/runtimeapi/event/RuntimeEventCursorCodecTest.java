@@ -20,8 +20,8 @@ import org.junit.jupiter.api.Test;
 /**
  * 不透明事件分页游标的加密、Session 绑定和过期测试。
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/08/18]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/08/18]
+ * @since [br_eCampusCore 26.0.0]
  */
 class RuntimeEventCursorCodecTest {
     private static final String SESSION_ID = "session_cursor_test";

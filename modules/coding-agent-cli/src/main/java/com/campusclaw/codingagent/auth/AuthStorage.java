@@ -29,8 +29,8 @@ import org.springframework.stereotype.Service;
  * lookup plus a convenience accessor that flattens {@link Credential.ApiKey} and
  * {@link Credential.OAuth} to a single token string.
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/05/13]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/05/13]
+ * @since [br_eCampusCore 26.0.0]
  */
 @Service
 public class AuthStorage {

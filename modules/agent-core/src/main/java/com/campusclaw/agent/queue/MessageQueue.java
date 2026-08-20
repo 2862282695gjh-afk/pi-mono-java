@@ -15,8 +15,8 @@ import com.campusclaw.ai.types.Message;
 /**
  * Thread-safe queue for steering and follow-up messages.
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/05/06]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/05/06]
+ * @since [br_eCampusCore 26.0.0]
  */
 public class MessageQueue {
 

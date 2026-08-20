@@ -27,8 +27,8 @@ import org.springframework.stereotype.Service;
 /**
  * Session 模型目录、模型切换和深度思考开关业务。
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/08/18]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/08/18]
+ * @since [br_eCampusCore 26.0.0]
  */
 @Service
 public class RuntimeSessionConfigurationService {

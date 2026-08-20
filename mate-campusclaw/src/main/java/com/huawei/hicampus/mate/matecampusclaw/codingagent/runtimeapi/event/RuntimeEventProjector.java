@@ -32,8 +32,8 @@ import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.vo.Runtime
 /**
  * 把 pi AgentEvent 投影为已确认的公共 SSE 与三类持久化 Entry。
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/08/18]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/08/18]
+ * @since [br_eCampusCore 26.0.0]
  */
 public class RuntimeEventProjector {
     private final String sessionId;

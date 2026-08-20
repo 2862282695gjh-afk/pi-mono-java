@@ -47,8 +47,8 @@ import reactor.core.publisher.Sinks;
  * permissive fallback the same paths are also tried directly off {@code result} for
  * implementations that omit the oneof discriminator.
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/05/15]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/05/15]
+ * @since [br_eCampusCore 26.0.0]
  */
 public final class A2aProtocol {
 

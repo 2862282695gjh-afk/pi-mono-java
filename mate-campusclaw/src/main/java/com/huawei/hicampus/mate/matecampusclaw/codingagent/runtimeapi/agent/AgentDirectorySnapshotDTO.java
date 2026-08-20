@@ -15,8 +15,8 @@ import java.util.Objects;
  * @param defaultModelId 默认模型标识
  * @param enabledModelIds 可切换模型白名单
  * @param runtimeDirectory Agent 的 .campusclaw 只读运行目录
- * @version [br_eCampusCore 25.1.0_Next, 2026/08/18]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/08/18]
+ * @since [br_eCampusCore 26.0.0]
  */
 public record AgentDirectorySnapshotDTO(
         String agentId, String defaultModelId, List<String> enabledModelIds, Path runtimeDirectory) {

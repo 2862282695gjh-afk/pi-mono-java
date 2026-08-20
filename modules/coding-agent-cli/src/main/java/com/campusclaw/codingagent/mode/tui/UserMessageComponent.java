@@ -14,8 +14,8 @@ import com.campusclaw.tui.ansi.AnsiUtils;
  * Renders a user message with background color (#343541) matching campusclaw TS.
  * Full-width background with padding above and below.
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/05/06]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/05/06]
+ * @since [br_eCampusCore 26.0.0]
  */
 public class UserMessageComponent implements Component {
 

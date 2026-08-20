@@ -16,8 +16,8 @@ import com.fasterxml.jackson.annotation.JsonProperty;
  * @param localPath   the original local path (null for git-type)
  * @param installedAt ISO-8601 timestamp of installation
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/05/06]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/05/06]
+ * @since [br_eCampusCore 26.0.0]
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record InstalledSkillRecord(

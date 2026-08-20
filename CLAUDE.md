@@ -700,13 +700,16 @@ static String inferRole(Map<String, Object> message) {
 /**
  * Asynchronously transforms agent messages before they are sent to the model.
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/05/06]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/05/06]
+ * @since [br_eCampusCore 26.0.0]
  */
 public interface ContextTransformer {
 ```
 
-`@version` 格式正则 `\[br_eCampusCore [^,\]]+,\s*\d{4}/\d{2}/\d{2}\]`。`@since` 不强校验但建议同时写。功能描述用**英文**（与现有约定一致，AI / IDE 工具都按英文 Javadoc 优化）。
+当前产品版本固定为 `br_eCampusCore 26.0.0`。`@version` 必须写成
+`[br_eCampusCore 26.0.0, YYYY/MM/DD]`，`@since` 必须写成
+`[br_eCampusCore 26.0.0]`；Checkstyle 会拒绝其他 `br_eCampusCore` 版本。
+功能描述用**英文**（与现有约定一致，AI / IDE 工具都按英文 Javadoc 优化）。
 
 ### 写完 Java 之后
 Stop 钩子会自动跑 `spotless:check` + `checkstyle:check`。主动修复：

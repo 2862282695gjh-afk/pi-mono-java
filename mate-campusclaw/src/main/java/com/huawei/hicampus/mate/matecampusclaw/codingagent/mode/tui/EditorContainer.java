@@ -22,8 +22,8 @@ import com.huawei.hicampus.mate.matecampusclaw.tui.component.Editor;
  * {@code /}, matching commands are shown below the editor. Tab cycles through
  * suggestions, Enter accepts the selected one.
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/05/06]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/05/06]
+ * @since [br_eCampusCore 26.0.0]
  */
 public class EditorContainer implements Component, Focusable {
 

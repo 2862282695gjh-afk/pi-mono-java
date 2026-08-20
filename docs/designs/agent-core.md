@@ -1,4 +1,4 @@
-# agent-core 模块实现设计文档（基于代码 v1.1）
+# agent-core 模块实现设计文档（基于代码 v1.2）
 
 ## 文档信息
 
@@ -8,7 +8,7 @@
 | Story 名称 | agent-core 设计文档（基于代码 v1） |
 | 负责人 | （待补充） |
 | 创建日期 | 2026-05-14 |
-| 版本 | v1.1 (code-derived) |
+| 版本 | v1.2 (code-derived) |
 
 ---
 
@@ -16,6 +16,8 @@
 > `cc2f58d9e24bae1d7c99b9f54e86b71940d86115`；主要证据为
 > `Agent#startExecution/abort/continueQueuedExecution`、`AgentLoop#runInternal`、
 > `MessageQueue`、`ToolExecutionPipeline` 与 `SubAgentRegistry`。
+> 产品版本标记统一基于源码提交 `9e7cc8952937a697fe2c16ff0de287b32bc4c891`，
+> 证据路径为 `CLAUDE.md`、`codecheck.xml` 与 `modules/agent-core/src`。
 
 ## 1. Story 背景
 
@@ -261,7 +263,7 @@ agent-core 不内置具体 Tool 实现（read / write / bash 等在 `coding-agen
 ### 4.2 兼容性设计
 
 - **JDK 版本**：21（root pom `<java.version>21</java.version>`、`<release>21</release>`）；使用 sealed interface（`AgentEvent`）、record（`AgentLoopConfig`、`SubAgentBackend.OpenRequest` 等）、pattern matching switch、虚拟线程；
-- **接口稳定性**：所有对外 API 标注 `@version [br_eCampusCore 25.1.0_Next, YYYY/MM/DD]` + `@since`；`AgentLoopConfig` 提供 9 参 legacy 构造器 + 12 参 canonical 构造器同时存在，**向后兼容**新增 `StreamFunction` / `SteeringMessageSupplier`；
+- **接口稳定性**：所有对外 API 标注 `@version [br_eCampusCore 26.0.0, YYYY/MM/DD]` + `@since`；`AgentLoopConfig` 提供 9 参 legacy 构造器 + 12 参 canonical 构造器同时存在，**向后兼容**新增 `StreamFunction` / `SteeringMessageSupplier`；
 - **未发现 `@Deprecated` 标记**；
 - 协议版本：`AcpProtocol` 内部固定 ACP 版本字符串，HTTP 后端通过 `HttpAgentConfig.protocolVersion` 暴露。
 
@@ -333,3 +335,4 @@ agent-core 不内置具体 Tool 实现（read / write / bash 等在 `coding-agen
 |---|---|---|---|---|---|---|
 | 2026-05-14 | - | - | 设计文档由 codebase-module-design skill 基于代码逆向生成 v1 | - | 由开发者补充关键决策 | 开放 |
 | 2026-08-18 | Codex | 文档维护 | Runtime 控制队列和设计图格式需要与当前源码对齐 | 补充 `continueQueuedExecution`，将子代理 HTTP 后端表述收窄为 HTTP/SSE，并补源码证据 | Mermaid 迁移为单一 `diagram.puml` 中的稳定命名图 | 已落实 |
+| 2026-08-20 | Codex | 文档维护 | 产品版本标记需要统一 | 基于 `9e7cc895` 盘点 Java Javadoc 与规则配置 | 对外 API 统一使用 `br_eCampusCore 26.0.0` | 已落实 |

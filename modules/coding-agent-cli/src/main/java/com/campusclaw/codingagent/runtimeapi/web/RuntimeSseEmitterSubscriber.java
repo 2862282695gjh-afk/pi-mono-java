@@ -17,8 +17,8 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 /**
  * 把 Runtime 事件流写入 Spring MVC SseEmitter。
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/08/18]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/08/18]
+ * @since [br_eCampusCore 26.0.0]
  */
 public class RuntimeSseEmitterSubscriber implements RuntimeEventSubscriber {
     private static final Logger log = LoggerFactory.getLogger(RuntimeSseEmitterSubscriber.class);

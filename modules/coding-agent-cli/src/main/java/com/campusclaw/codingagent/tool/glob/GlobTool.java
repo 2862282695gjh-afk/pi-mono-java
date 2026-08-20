@@ -35,8 +35,8 @@ import org.springframework.stereotype.Component;
  * Agent tool for finding files by glob pattern.
  * Results are sorted by modification time (most recent first).
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/05/06]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/05/06]
+ * @since [br_eCampusCore 26.0.0]
  */
 @Component
 public class GlobTool implements AgentTool {

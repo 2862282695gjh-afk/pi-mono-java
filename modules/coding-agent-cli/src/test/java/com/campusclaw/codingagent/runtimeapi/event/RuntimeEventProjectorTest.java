@@ -55,8 +55,8 @@ import org.junit.jupiter.api.Test;
 /**
  * 使用真实 pi AgentLoop 验证公共 SSE 投影和持久化事件顺序。
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/08/18]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/08/18]
+ * @since [br_eCampusCore 26.0.0]
  */
 class RuntimeEventProjectorTest {
     @Test

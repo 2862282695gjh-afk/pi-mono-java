@@ -25,8 +25,8 @@ import java.util.function.Consumer;
  * prompt, what shape the options array takes, whether to exit immediately after the prompt
  * reply, and how many noise lines to blast onto stderr at startup.
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/05/20]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/05/20]
+ * @since [br_eCampusCore 26.0.0]
  */
 @SuppressWarnings("checkstyle:no_system_out_err") // FakeAcpServer's stdout IS the ACP wire.
 public final class FakeAcpServer {

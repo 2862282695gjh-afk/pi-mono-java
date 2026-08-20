@@ -23,8 +23,8 @@ import jakarta.annotation.Nullable;
  * Tracks the origin and provenance of resources (skills, tools, commands, settings).
  * Enables users to understand where a resource came from and diagnose conflicts.
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/05/06]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/05/06]
+ * @since [br_eCampusCore 26.0.0]
  */
 public class SourceInfo {
 

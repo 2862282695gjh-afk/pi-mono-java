@@ -12,8 +12,8 @@ import java.util.List;
  *
  * <p>Maps to HTTP 409 Conflict at the REST layer.
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/05/06]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/05/06]
+ * @since [br_eCampusCore 26.0.0]
  */
 public class SkillConflictException extends SkillInstallException {
 

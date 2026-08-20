@@ -34,8 +34,8 @@ import org.springframework.stereotype.Service;
  * registry is a single source of truth for liveness; persistence (etcd / Postgres) is a
  * deferred extension recorded in {@code docs/DEFERRED.md}.
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/06/18]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/06/18]
+ * @since [br_eCampusCore 26.0.0]
  */
 @Service
 public class NodeRegistry {

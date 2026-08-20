@@ -27,8 +27,8 @@ import org.springframework.stereotype.Service;
  * loops run within the current conversation session and output streams directly into chat.
  * Loops are session-scoped and do not survive application restart.
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/05/06]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/05/06]
+ * @since [br_eCampusCore 26.0.0]
  */
 @Service
 public class LoopManager {

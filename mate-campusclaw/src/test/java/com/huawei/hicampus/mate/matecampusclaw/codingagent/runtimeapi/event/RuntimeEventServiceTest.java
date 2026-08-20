@@ -57,8 +57,8 @@ import org.springframework.context.support.StaticMessageSource;
 /**
  * Runtime Event 接受边界、执行生命周期和流终止语义测试。
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/08/18]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/08/18]
+ * @since [br_eCampusCore 26.0.0]
  */
 class RuntimeEventServiceTest {
     private static final String SESSION_ID = "session_event_service";

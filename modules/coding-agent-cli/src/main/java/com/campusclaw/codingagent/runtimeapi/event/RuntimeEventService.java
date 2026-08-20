@@ -27,8 +27,8 @@ import org.springframework.stereotype.Service;
 /**
  * 接受 user.message，并建立本轮执行所需的 Session、模型和 SSE 上下文。
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/08/19]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/08/19]
+ * @since [br_eCampusCore 26.0.0]
  */
 @Service
 public class RuntimeEventService {

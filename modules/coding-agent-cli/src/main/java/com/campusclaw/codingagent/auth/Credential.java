@@ -16,8 +16,8 @@ import jakarta.annotation.Nullable;
  * Jackson via a {@code type} discriminator. Two variants are supported: {@link ApiKey} for
  * static keys and {@link OAuth} for tokens with optional refresh metadata.
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/05/13]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/05/13]
+ * @since [br_eCampusCore 26.0.0]
  */
 @JsonTypeInfo(use = JsonTypeInfo.Id.NAME, property = "type")
 @JsonSubTypes({

@@ -21,8 +21,8 @@ import org.springframework.scheduling.annotation.EnableScheduling;
  * the library-style {@code com.huawei.hicampus.mate.matecampusclaw.agent.controlplane} package tree and the
  * host application's bean factory.
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/06/18]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/06/18]
+ * @since [br_eCampusCore 26.0.0]
  */
 @Configuration
 @EnableScheduling

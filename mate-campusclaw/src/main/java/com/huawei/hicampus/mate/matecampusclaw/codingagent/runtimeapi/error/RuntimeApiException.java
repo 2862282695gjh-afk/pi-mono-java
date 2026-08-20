@@ -9,8 +9,8 @@ import org.springframework.http.HttpStatus;
 /**
  * 携带稳定 HTTP 状态和业务错误码的 Runtime API 异常。
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/08/18]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/08/18]
+ * @since [br_eCampusCore 26.0.0]
  */
 public class RuntimeApiException extends RuntimeException {
     private final RuntimeErrorCode errorCode;

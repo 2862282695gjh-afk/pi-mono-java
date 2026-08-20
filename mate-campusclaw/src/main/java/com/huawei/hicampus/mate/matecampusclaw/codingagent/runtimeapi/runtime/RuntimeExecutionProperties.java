@@ -17,8 +17,8 @@ import lombok.Data;
 /**
  * Runtime 活动执行的容量和时限配置。
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/08/18]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/08/18]
+ * @since [br_eCampusCore 26.0.0]
  */
 @Data
 @Validated

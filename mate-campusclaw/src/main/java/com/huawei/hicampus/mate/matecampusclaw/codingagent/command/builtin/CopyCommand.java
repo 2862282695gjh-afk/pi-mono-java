@@ -15,8 +15,8 @@ import com.huawei.hicampus.mate.matecampusclaw.codingagent.util.ClipboardUtils;
  * Slash command {@code /copy} that locates the most recent assistant message in the session
  * history and copies its concatenated text content to the system clipboard.
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/05/13]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/05/13]
+ * @since [br_eCampusCore 26.0.0]
  */
 public class CopyCommand implements SlashCommand {
 

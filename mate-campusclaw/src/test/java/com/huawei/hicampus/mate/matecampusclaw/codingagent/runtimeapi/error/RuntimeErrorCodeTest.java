@@ -14,8 +14,8 @@ import org.junit.jupiter.api.Test;
 /**
  * Runtime 错误码 HTTP 语义和中英文消息目录完整性测试。
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/08/19]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/08/19]
+ * @since [br_eCampusCore 26.0.0]
  */
 class RuntimeErrorCodeTest {
     @Test

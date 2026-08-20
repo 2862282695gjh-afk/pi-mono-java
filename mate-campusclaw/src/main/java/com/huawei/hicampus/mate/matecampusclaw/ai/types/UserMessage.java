@@ -14,8 +14,8 @@ import com.fasterxml.jackson.annotation.JsonProperty;
  * @param content   the content blocks of the message
  * @param timestamp Unix timestamp in milliseconds
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/05/06]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/05/06]
+ * @since [br_eCampusCore 26.0.0]
  */
 public record UserMessage(
         @JsonProperty("content") List<ContentBlock> content, @JsonProperty("timestamp") long timestamp)

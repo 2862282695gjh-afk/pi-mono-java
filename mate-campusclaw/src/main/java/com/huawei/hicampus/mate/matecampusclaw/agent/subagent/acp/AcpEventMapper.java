@@ -15,8 +15,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 /**
  * Translates ACP {@code session/update} payloads into {@link SubAgentEvent} values.
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/05/12]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/05/12]
+ * @since [br_eCampusCore 26.0.0]
  */
 final class AcpEventMapper {
 

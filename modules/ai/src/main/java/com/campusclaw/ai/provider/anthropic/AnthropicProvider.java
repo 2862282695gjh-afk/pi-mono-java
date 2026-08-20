@@ -71,8 +71,8 @@ import jakarta.annotation.Nullable;
  * requests, mapping Anthropic SSE events to the unified
  * {@link AssistantMessageEvent} protocol.
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/05/06]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/05/06]
+ * @since [br_eCampusCore 26.0.0]
  */
 @Component
 public class AnthropicProvider implements ApiProvider {

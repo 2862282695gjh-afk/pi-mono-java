@@ -14,8 +14,8 @@ import com.huawei.hicampus.mate.matecampusclaw.ai.types.Message;
  * verbatim, plus the file paths observed as read or modified during the compacted span (used
  * downstream to re-attach context where relevant).
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/05/13]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/05/13]
+ * @since [br_eCampusCore 26.0.0]
  */
 public record CompactionResult(
         String summary, List<Message> retainedMessages, Set<String> filesRead, Set<String> filesModified) {}

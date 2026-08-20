@@ -15,8 +15,8 @@ import lombok.Data;
 /**
  * Runtime Agent 只读目录配置。
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/08/19]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/08/19]
+ * @since [br_eCampusCore 26.0.0]
  */
 @Data
 @Validated

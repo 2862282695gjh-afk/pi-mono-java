@@ -13,8 +13,8 @@ import org.springframework.stereotype.Component;
  * Coarse risk classification for tool calls coming from a sub-agent. Mirrors the read-only /
  * write / exec / network buckets used by OpenClaw's ACP approval classifier.
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/05/12]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/05/12]
+ * @since [br_eCampusCore 26.0.0]
  */
 @Component
 public class ApprovalClassifier {

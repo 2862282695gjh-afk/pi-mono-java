@@ -19,8 +19,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 /**
  * 从受控本地根目录解析 Agent 当前只读配置。
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/08/19]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/08/19]
+ * @since [br_eCampusCore 26.0.0]
  */
 public class FileAgentDirectoryResolver implements AgentDirectoryResolver {
     private final RuntimeAgentDirectoryProperties properties;

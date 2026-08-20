@@ -42,8 +42,8 @@ import org.springframework.transaction.annotation.EnableTransactionManagement;
 /**
  * 使用真实 openGauss 验证 Runtime Session MyBatis 映射与事务边界。
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/08/18]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/08/18]
+ * @since [br_eCampusCore 26.0.0]
  */
 class RuntimeSessionRepositoryOpenGaussIT {
     private static AnnotationConfigApplicationContext context;
@@ -448,8 +448,8 @@ class RuntimeSessionRepositoryOpenGaussIT {
     /**
      * 真实 openGauss 集成测试的最小 Spring、MyBatis 与事务配置。
      *
-     * @version [br_eCampusCore 25.1.0_Next, 2026/08/18]
-     * @since [br_eCampusCore 25.1.0_Next]
+     * @version [br_eCampusCore 26.0.0, 2026/08/18]
+     * @since [br_eCampusCore 26.0.0]
      */
     @Configuration
     @EnableTransactionManagement
