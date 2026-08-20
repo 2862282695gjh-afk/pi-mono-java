@@ -18,6 +18,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import java.time.OffsetDateTime;
 
+import com.campusclaw.codingagent.runtimeapi.RuntimeMessageSourceConfiguration;
 import com.campusclaw.codingagent.runtimeapi.auth.RuntimeRequestAuthenticator;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
@@ -30,7 +31,6 @@ import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.context.support.ResourceBundleMessageSource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
@@ -55,8 +55,7 @@ class RuntimeSessionControlRoutesTest {
         service = mock(RuntimeSessionControlService.class);
         var controller = new RuntimeSessionControlController(service, new StandaloneResultBeanAdapter());
         var interceptor = new RuntimeAuthenticationInterceptor(new RuntimeRequestAuthenticator());
-        var messages = new ResourceBundleMessageSource();
-        messages.setBasename("messages");
+        var messages = new RuntimeMessageSourceConfiguration().messageSource();
         var objectMapper = JsonMapper.builder().addModule(new JavaTimeModule()).build();
         mvc = MockMvcBuilders.standaloneSetup(controller)
                 .addInterceptors(interceptor)

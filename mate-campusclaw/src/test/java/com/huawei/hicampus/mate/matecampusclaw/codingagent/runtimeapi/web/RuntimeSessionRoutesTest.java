@@ -18,6 +18,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import java.time.OffsetDateTime;
 
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.RuntimeMessageSourceConfiguration;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.auth.RuntimeRequestAuthenticator;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
@@ -31,7 +32,6 @@ import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.context.support.ResourceBundleMessageSource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
 import org.springframework.test.web.servlet.MockMvc;
@@ -57,8 +57,7 @@ class RuntimeSessionRoutesTest {
         service = mock(RuntimeSessionService.class);
         var controller = new RuntimeSessionController(service, new StandaloneResultBeanAdapter());
         var interceptor = new RuntimeAuthenticationInterceptor(new RuntimeRequestAuthenticator());
-        var messages = new ResourceBundleMessageSource();
-        messages.setBasename("messages");
+        var messages = new RuntimeMessageSourceConfiguration().messageSource();
         var objectMapper = JsonMapper.builder().addModule(new JavaTimeModule()).build();
         mvc = MockMvcBuilders.standaloneSetup(controller)
                 .addInterceptors(interceptor)
@@ -133,6 +132,7 @@ class RuntimeSessionRoutesTest {
                 .andExpect(header().string(HttpHeaders.RETRY_AFTER, "3"))
                 .andExpect(header().string(HttpHeaders.CONTENT_LANGUAGE, "zh-CN"))
                 .andExpect(jsonPath("$.resCode").value("MANAGER_UNAVAILABLE"))
+                .andExpect(jsonPath("$.resMsg").value("Model Manager 暂时不可用，请稍后重试。"))
                 .andExpect(jsonPath("$.result").doesNotExist());
     }
 
