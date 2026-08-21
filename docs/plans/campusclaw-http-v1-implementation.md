@@ -6,7 +6,7 @@
 >
 > Runtime HTTP 1.38 实现分析基线：`304eda06ff603fc9b6bbcaad0c296cc151a7defb`
 >
-> HTTP 1.38 设计契约 `main` 合并基线：`superheromeZzh/pi-mono-java-design@ea4c70c33a458182b354ed0908cfc0ef54f13bc0`
+> HTTP 1.38 设计契约基线：`superheromeZzh/pi-mono-java-design@cee69de250a6cf796c55aa1ba591e7f85775713d`
 >
 > 国际化实现起点：`3a6358bc9dd5837cdf5ac866fc0761298372510a`
 >
