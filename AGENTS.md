@@ -19,7 +19,7 @@
   them unless the user explicitly asks. Use a separate Git worktree when the
   current worktree is dirty or is needed for another task.
 
-## Java comment and constant organization
+## Java comment, constant, and validation organization
 
 - Use `// ...` for brief comments attached to private fields, private
   constants, and similar implementation details, including regular-expression
@@ -37,6 +37,14 @@
   constraint in a protocol-specific constants class unless that protocol owns
   the constraint. Constants used only by one class as implementation details
   may remain private in that class.
+- Use standard Jakarta Bean Validation annotations for constraints on request
+  VOs and scalar Controller parameters, including path variables, when the
+  standard annotations can express the rule. Ensure method validation is
+  active and map validation exceptions to stable API errors in the centralized
+  exception handler.
+- Do not implement those standard parameter checks with an imperative
+  Validator utility that every Controller must call. Do not introduce a VO
+  solely to wrap one scalar path or query parameter for validation.
 
 ## Mandatory Git publishing workflow
 
