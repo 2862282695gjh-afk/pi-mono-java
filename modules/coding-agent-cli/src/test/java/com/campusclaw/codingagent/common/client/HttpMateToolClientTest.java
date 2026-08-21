@@ -9,6 +9,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.List;
 
+import com.campusclaw.codingagent.common.client.mate.MateCredentials;
+import com.campusclaw.codingagent.common.client.mate.MateToolClient;
 import com.campusclaw.codingagent.common.client.mate.MateToolMeta;
 import com.campusclaw.codingagent.common.util.MateRestUtil;
 
@@ -152,6 +154,51 @@ class HttpMateToolClientTest {
         var request = server.takeRequest();
         assertThat(request.getHeader("Content-Type")).isEqualTo("application/json");
         assertThat(request.getHeader("Accept")).isEqualTo("application/json");
+    }
+
+    @Test
+    void invokeToolPostsBodyAndForwardsCredentials() throws Exception {
+        server.enqueue(json("{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":{\"answer\":42}}"));
+
+        MateToolClient.ToolResult result =
+                client.callTool("tool-1", java.util.Map.of("query", "hi"), MateCredentials.appKey("hw-id-1", "key-1"));
+
+        assertThat(result.isError()).isFalse();
+        assertThat(result.content()).contains("42");
+        var request = server.takeRequest();
+        assertThat(request.getMethod()).isEqualTo("POST");
+        assertThat(request.getPath()).isEqualTo("/mate-service/v1/runtime/tools/tool-1/execute");
+        assertThat(request.getBody().readUtf8()).contains("\"query\":\"hi\"");
+        assertThat(request.getHeader("X-HW-ID")).isEqualTo("hw-id-1");
+    }
+
+    @Test
+    void invokeToolWithoutCredentialsOmitsAuthHeaders() throws Exception {
+        server.enqueue(json("{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":{}}"));
+
+        client.callTool("tool-1", java.util.Map.of(), null);
+
+        var request = server.takeRequest();
+        assertThat(request.getHeader("X-HW-ID")).isNull();
+        assertThat(request.getHeader("Authorization")).isNull();
+    }
+
+    @Test
+    void invokeToolNonZeroResCodeReturnsErrorResult() throws Exception {
+        server.enqueue(json("{\"resCode\":\"430\",\"resMsg\":\"not authorized\",\"result\":null}"));
+
+        MateToolClient.ToolResult result = client.callTool("tool-1", java.util.Map.of(), null);
+
+        assertThat(result.isError()).isTrue();
+        assertThat(result.content()).contains("430").contains("not authorized");
+    }
+
+    @Test
+    void invokeToolRejectsMaliciousToolIdBeforeRequest() {
+        MateToolClient.ToolResult result = client.callTool("../admin", java.util.Map.of(), null);
+        assertThat(result.isError()).isTrue();
+        assertThat(result.content()).contains("Invalid tool id");
+        assertThat(server.getRequestCount()).isZero();
     }
 
     private static MockResponse json(String body) {

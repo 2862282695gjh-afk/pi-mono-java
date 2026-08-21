@@ -248,15 +248,57 @@ public class HttpMateToolClient implements MateToolClient {
     }
 
     /**
-     * Invokes a tool on the Mate server (the real call behind callMateTool).
+     * Tool execution endpoint:
+     * {@code POST /mate-service/v1/runtime/tools/{toolId}/execute}.
+     */
+    protected static final String TOOL_EXECUTE = "/mate-service/v1/runtime/tools/";
+
+    /**
+     * Invokes a tool on the Mate server (the real call behind callMateTool):
+     * POSTs the args as the JSON body to {@code TOOL_EXECUTE + toolId +
+     * "/execute"}. Headers are built the same way as listTools, plus the
+     * optional {@code X-HW-ID} and {@code Authorization} from the
+     * agent-handed-down credentials (present only when non-null/non-empty).
      *
-     * @param tool the tool name to invoke
-     * @param args the tool arguments
-     * @param credentials agent-handed-down credentials forwarded to the server
-     * @return tool execution result
-     * @throws UnsupportedOperationException stub — real Mate call not yet wired
+     * @param tool the tool ID to invoke
+     * @param args the tool arguments; serialized as the request body per the
+     *        tool's input schema
+     * @param credentials agent-handed-down credentials forwarded to the
+     *        server; null omits both auth headers
+     * @return tool execution result; isError=true on gateway failure
+     * @throws IllegalArgumentException when the tool id is not a valid path
+     *         segment
      */
     protected ToolResult invokeTool(String tool, Map<String, Object> args, MateCredentials credentials) {
-        throw new UnsupportedOperationException("invokeTool: stub (see DEFERRED.md)");
+        if (!ID_SEGMENT_PATTERN.matcher(tool).matches()) {
+            throw new IllegalArgumentException("Invalid tool id for path segment: " + tool);
+        }
+        try {
+            RequestHeaderInfo headerInfo = RequestHeaderInfo.builder().build();
+            if (credentials != null) {
+                headerInfo = headerInfo.toBuilder()
+                        .xHwId(credentials.xHwId())
+                        .authorization(credentials.authorization())
+                        .build();
+            }
+            String body = mapper.writeValueAsString(args != null ? args : Map.of());
+            String raw = mateRestUtil.executePostRawRequest(
+                    mateInnerGwAddress, TOOL_EXECUTE + tool + "/execute", headerInfo, body);
+            JsonNode root = mapper.readTree(raw);
+            String resCode = root.path("resCode").asText("");
+            if (!"0".equals(resCode)) {
+                return new ToolResult(
+                        "tool execute failed: resCode=" + resCode + " resMsg="
+                                + root.path("resMsg").asText(""),
+                        null,
+                        true);
+            }
+            JsonNode resultNode = root.path("result");
+            String content = resultNode.isMissingNode() || resultNode.isNull() ? "" : resultNode.toString();
+            return new ToolResult(content, null, false);
+        } catch (Exception e) {
+            log.error("invokeTool failed: tool={}", tool, e);
+            return new ToolResult("invokeTool failed: " + e.getMessage(), null, true);
+        }
     }
 }
