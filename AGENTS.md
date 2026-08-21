@@ -19,6 +19,25 @@
   them unless the user explicitly asks. Use a separate Git worktree when the
   current worktree is dirty or is needed for another task.
 
+## Java comment and constant organization
+
+- Use `// ...` for brief comments attached to private fields, private
+  constants, and similar implementation details, including regular-expression
+  constants.
+- Do not use one-line Javadoc comments such as `/** ... */` for those brief
+  implementation comments.
+- Continue to use Javadoc where required for top-level public types and public
+  API contracts by `CLAUDE.md` or higher-level instructions.
+- Define reusable constants in the domain-specific `*Constants` or `*Patterns`
+  file that owns the concept. Keep regular-expression strings and their
+  compiled `Pattern` objects together in that source of truth, and make all
+  consumers reference it instead of duplicating literals or calls to
+  `Pattern.compile`.
+- Do not create an unscoped global `Constants` container or place a domain
+  constraint in a protocol-specific constants class unless that protocol owns
+  the constraint. Constants used only by one class as implementation details
+  may remain private in that class.
+
 ## Mandatory Git publishing workflow
 
 - Treat repository administrator access as a capability, not as the normal
