@@ -6,6 +6,7 @@ package com.campusclaw.codingagent.runtimeapi.web;
 
 import java.net.URI;
 
+import com.campusclaw.codingagent.common.identifier.ResourceIdentifierPatterns;
 import com.campusclaw.codingagent.runtimeapi.RuntimeApiConstants;
 import com.campusclaw.codingagent.runtimeapi.result.ResultBeanAdapter;
 import com.campusclaw.codingagent.runtimeapi.session.RuntimeSessionService;
@@ -21,6 +22,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
 
 /**
  * Runtime Session 创建、查询与删除接口。
@@ -40,9 +43,11 @@ public class RuntimeSessionController {
         this.resultBeanAdapter = resultBeanAdapter;
     }
 
-    @PostMapping("/agents/{agent_id}/sessions")
-    public ResponseEntity<Object> create(@PathVariable("agent_id") String agentId, HttpServletRequest request) {
-        RuntimeIdentifierValidator.requireAgentId(agentId);
+    @PostMapping("/agents/{agentId}/sessions")
+    public ResponseEntity<Object> create(
+            @PathVariable("agentId") @NotBlank @Pattern(regexp = ResourceIdentifierPatterns.AGENT_ID_REGEX)
+                    String agentId,
+            HttpServletRequest request) {
         var view = service.create(agentId);
         URI location = URI.create(
                 RuntimeApiConstants.BASE_PATH + "/sessions/" + view.resource().getSessionId());
@@ -51,9 +56,11 @@ public class RuntimeSessionController {
                 .body(resultBeanAdapter.normal(view.resource()));
     }
 
-    @GetMapping("/sessions/{session_id}")
-    public ResponseEntity<Object> get(@PathVariable("session_id") String sessionId, HttpServletRequest request) {
-        RuntimeIdentifierValidator.requireSessionId(sessionId);
+    @GetMapping("/sessions/{sessionId}")
+    public ResponseEntity<Object> get(
+            @PathVariable("sessionId") @NotBlank @Pattern(regexp = ResourceIdentifierPatterns.SESSION_ID_REGEX)
+                    String sessionId,
+            HttpServletRequest request) {
         var view = service.get(sessionId);
         return ResponseEntity.ok()
                 .cacheControl(CacheControl.noStore())
@@ -62,9 +69,10 @@ public class RuntimeSessionController {
                 .body(resultBeanAdapter.normal(view.resource()));
     }
 
-    @DeleteMapping("/sessions/{session_id}")
-    public ResponseEntity<Void> delete(@PathVariable("session_id") String sessionId) {
-        RuntimeIdentifierValidator.requireSessionId(sessionId);
+    @DeleteMapping("/sessions/{sessionId}")
+    public ResponseEntity<Void> delete(
+            @PathVariable("sessionId") @NotBlank @Pattern(regexp = ResourceIdentifierPatterns.SESSION_ID_REGEX)
+                    String sessionId) {
         service.delete(sessionId);
         return ResponseEntity.noContent().cacheControl(CacheControl.noStore()).build();
     }

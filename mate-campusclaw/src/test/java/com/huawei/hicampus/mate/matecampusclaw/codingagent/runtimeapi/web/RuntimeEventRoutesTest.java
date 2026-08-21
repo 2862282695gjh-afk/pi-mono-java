@@ -25,7 +25,6 @@ import java.util.List;
 import java.util.Locale;
 
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.RuntimeMessageSourceConfiguration;
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.auth.RuntimeRequestAuthenticator;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.event.RuntimeEventQueryService;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.event.RuntimeEventService;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.event.RuntimeEventStream;
@@ -54,7 +53,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
  * @since [br_eCampusCore 26.0.0]
  */
 class RuntimeEventRoutesTest {
-    private static final String SESSION_ID = "01JY8W6M8D9K4H2Q7P3V5N1R0T";
+    private static final String SESSION_ID = "session-0123456789abcdef0123456789abcdef";
 
     private RuntimeEventService service;
 
@@ -71,11 +70,9 @@ class RuntimeEventRoutesTest {
         dispatcher = new RuntimeSseDispatcher();
         var controller =
                 new RuntimeEventController(service, queryService, new StandaloneResultBeanAdapter(), dispatcher);
-        var interceptor = new RuntimeAuthenticationInterceptor(new RuntimeRequestAuthenticator());
         var messages = new RuntimeMessageSourceConfiguration().messageSource();
         var objectMapper = JsonMapper.builder().addModule(new JavaTimeModule()).build();
         mvc = MockMvcBuilders.standaloneSetup(controller)
-                .addInterceptors(interceptor)
                 .setControllerAdvice(new RuntimeExceptionHandler(messages))
                 .setMessageConverters(new MappingJackson2HttpMessageConverter(objectMapper))
                 .build();
@@ -92,9 +89,10 @@ class RuntimeEventRoutesTest {
         when(service.submit(eq(SESSION_ID), any(UserEventRequestVO.class), eq(Locale.US)))
                 .thenReturn(stream);
 
-        MvcResult initial = mvc.perform(authenticated(post("/campusclaw-service/v1/sessions/{id}/events", SESSION_ID))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"type\":\"user.message\",\"message\":\"分析订单\",\"file_ids\":[]}"))
+        MvcResult initial = mvc.perform(
+                        authenticated(post("/campusclaw-service/v1/sessions/{sessionId}/events", SESSION_ID))
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("{\"message\":\"分析订单\",\"fileIds\":[]}"))
                 .andExpect(status().isOk())
                 .andExpect(request().asyncStarted())
                 .andReturn();
@@ -111,9 +109,9 @@ class RuntimeEventRoutesTest {
 
     @Test
     void postRejectsUnknownRequestFieldBeforeStartingStream() throws Exception {
-        mvc.perform(authenticated(post("/campusclaw-service/v1/sessions/{id}/events", SESSION_ID))
+        mvc.perform(authenticated(post("/campusclaw-service/v1/sessions/{sessionId}/events", SESSION_ID))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"type\":\"user.message\",\"message\":\"分析订单\",\"model_id\":\"forbidden\"}"))
+                        .content("{\"message\":\"分析订单\",\"modelId\":\"forbidden\"}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.resCode").value("INVALID_EVENT_REQUEST"))
                 .andExpect(jsonPath("$.result").doesNotExist());
@@ -123,13 +121,14 @@ class RuntimeEventRoutesTest {
     @Test
     void postRejectsValuesWhoseJsonTypesDoNotMatchTheContract() throws Exception {
         List<String> invalidBodies = List.of(
-                "{\"type\":1,\"message\":\"分析订单\"}",
-                "{\"type\":\"user.message\",\"message\":1}",
-                "{\"type\":\"user.message\",\"file_ids\":[1]}",
-                "{\"type\":\"user.message\",\"file_ids\":\"file_1\"}");
+                "{\"type\":\"user.message\",\"message\":\"分析订单\"}",
+                "{\"message\":1}",
+                "{\"fileIds\":[1]}",
+                "{\"fileIds\":\"file_1\"}",
+                "{\"file_ids\":[]}");
 
         for (String body : invalidBodies) {
-            mvc.perform(authenticated(post("/campusclaw-service/v1/sessions/{id}/events", SESSION_ID))
+            mvc.perform(authenticated(post("/campusclaw-service/v1/sessions/{sessionId}/events", SESSION_ID))
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(body))
                     .andExpect(status().isBadRequest())
@@ -139,29 +138,40 @@ class RuntimeEventRoutesTest {
     }
 
     @Test
-    void getReturnsResultBeanWithOpaqueNextPage() throws Exception {
+    void getAllowsIntegrationHeadersToCoexistWithoutLocalValidation() throws Exception {
         LinkedHashMap<String, Object> event = new LinkedHashMap<>();
         event.put("type", "user.message");
-        event.put("entry_id", "entry_100");
-        event.put("entry_seq", 17L);
+        event.put("entryId", "entry_100");
+        event.put("entrySeq", 17L);
         when(queryService.list(SESSION_ID, "1", "page_opaque"))
                 .thenReturn(new EventPageResponseVO(List.of(event), "page_next"));
 
-        mvc.perform(get("/campusclaw-service/v1/sessions/{id}/events", SESSION_ID)
+        mvc.perform(get("/campusclaw-service/v1/sessions/{sessionId}/events", SESSION_ID)
                         .queryParam("limit", "1")
                         .queryParam("page", "page_opaque")
                         .header("X-HW-ID", "credential")
+                        .header(HttpHeaders.AUTHORIZATION, "not-locally-validated")
                         .header("X-HW-APPKEY", "opaque-appkey"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.resCode").value("0"))
-                .andExpect(jsonPath("$.result.events[0].entry_seq").value(17))
-                .andExpect(jsonPath("$.result.next_page").value("page_next"));
+                .andExpect(jsonPath("$.result.events[0].entrySeq").value(17))
+                .andExpect(jsonPath("$.result.nextPage").value("page_next"));
+    }
+
+    @Test
+    void invalidSessionIdIsRejectedByParameterValidation() throws Exception {
+        mvc.perform(get("/campusclaw-service/v1/sessions/{sessionId}/events", "session-old"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.resCode").value("INVALID_SESSION_ID"))
+                .andExpect(jsonPath("$.result").doesNotExist());
+
+        verify(queryService, never()).list(any(), any(), any());
     }
 
     private static RuntimeEventStream completedStream() {
         RuntimeEventStream stream = new RuntimeEventStream(16, 4096, Duration.ofSeconds(15), event -> 1L);
-        stream.emit(new RuntimeSseEventVO(
-                "17", "user.message", java.util.Map.of("entry_id", "entry_100", "entry_seq", 17L)));
+        stream.emit(
+                new RuntimeSseEventVO("17", "user.message", java.util.Map.of("entryId", "entry_100", "entrySeq", 17L)));
         stream.emit(new RuntimeSseEventVO(null, "stream.end", java.util.Map.of("reason", "completed")));
         stream.complete();
         return stream;

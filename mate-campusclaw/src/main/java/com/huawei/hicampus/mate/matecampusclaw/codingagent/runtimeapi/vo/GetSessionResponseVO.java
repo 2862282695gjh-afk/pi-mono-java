@@ -7,7 +7,6 @@ package com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.vo;
 import java.time.OffsetDateTime;
 
 import com.fasterxml.jackson.annotation.JsonFormat;
-import com.fasterxml.jackson.annotation.JsonProperty;
 
 import lombok.Getter;
 
@@ -19,13 +18,10 @@ import lombok.Getter;
  */
 @Getter
 public class GetSessionResponseVO {
-    @JsonProperty("session_id")
     private final String sessionId;
 
-    @JsonProperty("agent_id")
     private final String agentId;
 
-    @JsonProperty("model_id")
     private final String modelId;
 
     private final String state;
@@ -33,11 +29,9 @@ public class GetSessionResponseVO {
     private final boolean thinking;
 
     @JsonFormat(shape = JsonFormat.Shape.STRING)
-    @JsonProperty("created_at")
     private final OffsetDateTime createdAt;
 
     @JsonFormat(shape = JsonFormat.Shape.STRING)
-    @JsonProperty("updated_at")
     private final OffsetDateTime updatedAt;
 
     public GetSessionResponseVO(

@@ -10,6 +10,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -42,9 +43,9 @@ import org.junit.jupiter.api.Test;
  * @since [br_eCampusCore 26.0.0]
  */
 class RuntimeSessionServiceTest {
-    private static final String AGENT_ID = "agent_011CZkYqphY8vELVzwCUpqiQ";
+    private static final String AGENT_ID = "agent-0123456789abcdef0123456789abcdef";
 
-    private static final String SESSION_ID = "01JY8W6M8D9K4H2Q7P3V5N1R0T";
+    private static final String SESSION_ID = "session-0123456789abcdef0123456789abcdef";
 
     private RuntimeSessionRepository repository;
 
@@ -80,12 +81,13 @@ class RuntimeSessionServiceTest {
         when(directoryResolver.resolve(AGENT_ID)).thenReturn(snapshot);
         when(modelManager.resolveDefaultModel(snapshot)).thenReturn(model);
         when(model.id()).thenReturn("model-default");
+        when(model.reasoning()).thenReturn(true);
 
         var view = service.create(AGENT_ID);
 
         assertThat(view.resource().getSessionId()).isEqualTo(SESSION_ID);
         assertThat(view.resource().getState()).isEqualTo("idle");
-        assertThat(view.resource().isThinking()).isFalse();
+        assertThat(view.resource().isThinking()).isTrue();
         verify(promptLoader).validate(snapshot.runtimeDirectory());
         verify(repository)
                 .create(org.mockito.ArgumentMatchers.argThat(session -> SESSION_ID.equals(session.getId())
@@ -100,6 +102,7 @@ class RuntimeSessionServiceTest {
         when(directoryResolver.resolve(AGENT_ID)).thenReturn(snapshot);
         when(modelManager.resolveDefaultModel(snapshot)).thenReturn(model);
         when(model.id()).thenReturn("model-default");
+        when(model.reasoning()).thenReturn(true);
         doThrow(new IllegalStateException("database password leaked"))
                 .when(repository)
                 .create(any(RuntimeSessionDTO.class));
@@ -107,6 +110,19 @@ class RuntimeSessionServiceTest {
         assertThatThrownBy(() -> service.create(AGENT_ID))
                 .isInstanceOfSatisfying(RuntimeApiException.class, error -> assertThat(error.errorCode())
                         .isEqualTo(RuntimeErrorCode.SESSION_INITIALIZATION_FAILED));
+    }
+
+    @Test
+    void createRejectsDefaultModelWithoutThinkingCapability() {
+        AgentDirectorySnapshotDTO snapshot = snapshot();
+        Model model = mock(Model.class);
+        when(directoryResolver.resolve(AGENT_ID)).thenReturn(snapshot);
+        when(modelManager.resolveDefaultModel(snapshot)).thenReturn(model);
+
+        assertThatThrownBy(() -> service.create(AGENT_ID))
+                .isInstanceOfSatisfying(RuntimeApiException.class, error -> assertThat(error.errorCode())
+                        .isEqualTo(RuntimeErrorCode.AGENT_MODEL_NOT_CONFIGURED));
+        verify(repository, never()).create(any(RuntimeSessionDTO.class));
     }
 
     @Test

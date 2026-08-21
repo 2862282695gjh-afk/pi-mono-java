@@ -13,6 +13,9 @@ package com.campusclaw.codingagent.runtimeapi.event;
 public enum RuntimeEventType {
     USER_MESSAGE("user.message"),
     ASSISTANT_MESSAGE_STARTED("assistant.message.started"),
+    ASSISTANT_THINKING_STARTED("assistant.thinking.started"),
+    ASSISTANT_THINKING_DELTA("assistant.thinking.delta"),
+    ASSISTANT_THINKING_COMPLETED("assistant.thinking.completed"),
     ASSISTANT_MESSAGE_DELTA("assistant.message.delta"),
     ASSISTANT_MESSAGE_COMPLETED("assistant.message.completed"),
     TOOL_EXECUTION_STARTED("tool.execution.started"),

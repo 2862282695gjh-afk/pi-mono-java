@@ -15,7 +15,7 @@ DROP TABLE IF EXISTS t_sessions;
 
 CREATE TABLE t_sessions (
     id                 VARCHAR(128)   PRIMARY KEY,
-    agent_id           VARCHAR(30)    NOT NULL,
+    agent_id           VARCHAR(64)    NOT NULL,
     model_id           VARCHAR(128)   NOT NULL,
     state              VARCHAR(16)    NOT NULL,
     thinking           BOOLEAN        NOT NULL,

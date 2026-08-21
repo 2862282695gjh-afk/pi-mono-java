@@ -12,7 +12,6 @@ import com.fasterxml.jackson.annotation.JsonSetter;
 import com.fasterxml.jackson.databind.JsonNode;
 
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import lombok.AccessLevel;
 import lombok.Data;
@@ -26,13 +25,6 @@ import lombok.Setter;
  */
 @Data
 public class UserEventRequestVO {
-    public static final String USER_MESSAGE_TYPE_PATTERN = "^user\\.message$";
-
-    @NotBlank
-    @Pattern(regexp = USER_MESSAGE_TYPE_PATTERN)
-    @Setter(AccessLevel.NONE)
-    private String type;
-
     @Size(max = RuntimeApiConstants.MAX_MESSAGE_CHARACTERS)
     @Setter(AccessLevel.NONE)
     private String message;
@@ -40,16 +32,6 @@ public class UserEventRequestVO {
     @Size(max = RuntimeApiConstants.MAX_FILE_IDS)
     @Setter(AccessLevel.NONE)
     private List<@NotBlank String> fileIds;
-
-    /**
-     * 仅接受 JSON 字符串类型的事件类型。
-     *
-     * @param value 原始 JSON 值
-     */
-    @JsonSetter("type")
-    public void readType(JsonNode value) {
-        type = readOptionalText(value, "type");
-    }
 
     /**
      * 仅接受 JSON 字符串或 null 类型的消息正文。
@@ -62,22 +44,22 @@ public class UserEventRequestVO {
     }
 
     /**
-     * 仅接受由 JSON 字符串组成的 file_ids 数组。
+     * 仅接受由 JSON 字符串组成的 fileIds 数组。
      *
      * @param value 原始 JSON 值
      * @throws IllegalArgumentException 值不是数组或数组元素不是字符串时抛出
      */
-    @JsonSetter("file_ids")
+    @JsonSetter("fileIds")
     public void readFileIds(JsonNode value) {
         if (value == null || value.isNull()) {
             fileIds = null;
             return;
         }
         if (!value.isArray()) {
-            throw new IllegalArgumentException("file_ids must be an array");
+            throw new IllegalArgumentException("fileIds must be an array");
         }
         java.util.ArrayList<String> parsed = new java.util.ArrayList<>();
-        value.forEach(item -> parsed.add(requireText(item, "file_ids item")));
+        value.forEach(item -> parsed.add(requireText(item, "fileIds item")));
         fileIds = List.copyOf(parsed);
     }
 

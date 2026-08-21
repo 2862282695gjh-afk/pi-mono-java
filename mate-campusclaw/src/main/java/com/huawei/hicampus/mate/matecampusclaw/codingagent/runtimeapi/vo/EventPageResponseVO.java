@@ -7,8 +7,6 @@ package com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.vo;
 import java.util.List;
 import java.util.Map;
 
-import com.fasterxml.jackson.annotation.JsonProperty;
-
 import lombok.Getter;
 
 /**
@@ -21,7 +19,6 @@ import lombok.Getter;
 public class EventPageResponseVO {
     private final List<Map<String, Object>> events;
 
-    @JsonProperty("next_page")
     private final String nextPage;
 
     public EventPageResponseVO(List<Map<String, Object>> events, String nextPage) {

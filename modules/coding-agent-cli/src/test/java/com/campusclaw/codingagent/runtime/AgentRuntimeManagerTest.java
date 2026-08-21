@@ -22,6 +22,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -42,6 +43,10 @@ import org.junit.jupiter.api.io.TempDir;
 
 class AgentRuntimeManagerTest {
 
+    private static final String SKILL_ONE_ID = "skill-11111111111111111111111111111111";
+
+    private static final String SKILL_TWO_ID = "skill-22222222222222222222222222222222";
+
     @TempDir
     Path tempDir;
 
@@ -58,12 +63,13 @@ class AgentRuntimeManagerTest {
 
     @Test
     void resolvesEachSkillAndMaterializesCompleteRuntime() throws Exception {
-        AgentRuntime runtime = runtime(List.of(new SkillReference("skill-1", "1"), new SkillReference("skill-2", "2")));
-        when(client.getAgentRuntime("agent-a")).thenReturn(runtime);
-        when(client.querySkillInfo("skill-1")).thenReturn(List.of(skillInfo()));
-        when(client.querySkillInfo("skill-2")).thenReturn(List.of(skillInfo("skill-b", "skill-2", "2")));
+        AgentRuntime runtime =
+                runtime(List.of(new SkillReference(SKILL_ONE_ID, "1"), new SkillReference(SKILL_TWO_ID, "2")));
+        when(client.getAgentRuntime("agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")).thenReturn(runtime);
+        when(client.querySkillInfo(SKILL_ONE_ID)).thenReturn(List.of(skillInfo()));
+        when(client.querySkillInfo(SKILL_TWO_ID)).thenReturn(List.of(skillInfo("skill-b", SKILL_TWO_ID, "2")));
 
-        PreparedAgentRuntime prepared = manager.prepare("agent-a");
+        PreparedAgentRuntime prepared = manager.prepare("agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
 
         Path skillRoot = prepared.agentRoot().resolve(".campusclaw/skills/skill-a");
         assertTrue(Files.readString(skillRoot.resolve("SKILL.md"), StandardCharsets.UTF_8)
@@ -75,11 +81,14 @@ class AgentRuntimeManagerTest {
         var toolsJson = new ObjectMapper()
                 .readTree(skillRoot.resolve("references/tools.json").toFile());
         assertEquals(3, toolsJson.path("tools").size());
-        assertEquals("calendar", toolsJson.path("tools").get(0).path("tool_id").asText());
+        assertEquals(
+                toolId("calendar"),
+                toolsJson.path("tools").get(0).path("tool_id").asText());
         assertEquals("calendar", toolsJson.path("tools").get(0).path("name").asText());
         assertEquals(
                 "calendar", toolsJson.path("tools").get(0).path("description").asText());
-        assertEquals("delete", toolsJson.path("tools").get(1).path("tool_id").asText());
+        assertEquals(
+                toolId("delete"), toolsJson.path("tools").get(1).path("tool_id").asText());
         assertEquals("delete", toolsJson.path("tools").get(1).path("name").asText());
         assertEquals(
                 "delete", toolsJson.path("tools").get(1).path("description").asText());
@@ -92,37 +101,40 @@ class AgentRuntimeManagerTest {
         assertEquals("skill-a", prepared.skills().getFirst().name());
         assertNull(prepared.skills().getFirst().id());
         assertEquals("Calendar workflow", prepared.skills().getFirst().description());
-        verify(client).querySkillInfo("skill-1");
-        verify(client).querySkillInfo("skill-2");
+        verify(client).querySkillInfo(SKILL_ONE_ID);
+        verify(client).querySkillInfo(SKILL_TWO_ID);
     }
 
     @Test
     void completeLocalRuntimeDoesNotRepeatRemoteQueries() {
-        when(client.getAgentRuntime("agent-a")).thenReturn(runtime(List.of(new SkillReference("skill-1", "1"))));
-        when(client.querySkillInfo("skill-1")).thenReturn(List.of(skillInfo()));
+        when(client.getAgentRuntime("agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"))
+                .thenReturn(runtime(List.of(new SkillReference(SKILL_ONE_ID, "1"))));
+        when(client.querySkillInfo(SKILL_ONE_ID)).thenReturn(List.of(skillInfo()));
 
-        PreparedAgentRuntime first = manager.prepare("agent-a");
-        PreparedAgentRuntime second = manager.prepare("agent-a");
+        PreparedAgentRuntime first = manager.prepare("agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+        PreparedAgentRuntime second = manager.prepare("agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
 
         assertEquals(first.agentRoot(), second.agentRoot());
         assertEquals(first.skills(), second.skills());
-        verify(client, times(1)).getAgentRuntime("agent-a");
-        verify(client, times(1)).querySkillInfo("skill-1");
+        verify(client, times(1)).getAgentRuntime("agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+        verify(client, times(1)).querySkillInfo(SKILL_ONE_ID);
     }
 
     @Test
     void materializesModelSettingsFileWithDefaultModel() throws Exception {
-        when(client.getAgentRuntime("agent-a"))
-                .thenReturn(
-                        runtime(List.of(new SkillReference("skill-1", "1")), List.of("glm-5.2", "minimax-m2.5"), "3"));
-        when(client.querySkillInfo("skill-1")).thenReturn(List.of(skillInfo()));
+        when(client.getAgentRuntime("agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"))
+                .thenReturn(runtime(
+                        List.of(new SkillReference(SKILL_ONE_ID, "1")), List.of("glm-5.2", "minimax-m2.5"), "3"));
+        when(client.querySkillInfo(SKILL_ONE_ID)).thenReturn(List.of(skillInfo()));
 
-        PreparedAgentRuntime prepared = manager.prepare("agent-a");
+        PreparedAgentRuntime prepared = manager.prepare("agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
 
         var settings = new ObjectMapper()
                 .readTree(
                         prepared.agentRoot().resolve(".campusclaw/setting.json").toFile());
-        assertEquals("agent-a", settings.path("agentId").asText());
+        assertEquals(
+                "agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                settings.path("agentId").asText());
         assertTrue(settings.path("agentVersion").isNumber());
         assertEquals(3, settings.path("agentVersion").asInt());
         assertEquals("glm-5.2", settings.path("defaultModel").asText());
@@ -135,11 +147,11 @@ class AgentRuntimeManagerTest {
 
     @Test
     void keepsNonNumericAgentVersionAsStringInSettingsFile() throws Exception {
-        when(client.getAgentRuntime("agent-a"))
-                .thenReturn(runtime(List.of(new SkillReference("skill-1", "1")), List.of(), "1.0.0"));
-        when(client.querySkillInfo("skill-1")).thenReturn(List.of(skillInfo()));
+        when(client.getAgentRuntime("agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"))
+                .thenReturn(runtime(List.of(new SkillReference(SKILL_ONE_ID, "1")), List.of(), "1.0.0"));
+        when(client.querySkillInfo(SKILL_ONE_ID)).thenReturn(List.of(skillInfo()));
 
-        PreparedAgentRuntime prepared = manager.prepare("agent-a");
+        PreparedAgentRuntime prepared = manager.prepare("agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
 
         var settings = new ObjectMapper()
                 .readTree(
@@ -153,10 +165,10 @@ class AgentRuntimeManagerTest {
 
     @Test
     void fallsBackToBaseModelWhenAgentBindsNoModel() throws Exception {
-        when(client.getAgentRuntime("agent-a"))
-                .thenReturn(runtime(List.of(new SkillReference("skill-1", "1")), List.of("  "), "1"));
-        when(client.querySkillInfo("skill-1")).thenReturn(List.of(skillInfo()));
-        PreparedAgentRuntime local = manager.prepare("agent-a");
+        when(client.getAgentRuntime("agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"))
+                .thenReturn(runtime(List.of(new SkillReference(SKILL_ONE_ID, "1")), List.of("  "), "1"));
+        when(client.querySkillInfo(SKILL_ONE_ID)).thenReturn(List.of(skillInfo()));
+        PreparedAgentRuntime local = manager.prepare("agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
 
         SessionConfig config =
                 manager.sessionConfig(new SessionConfig("base-model", tempDir, "Base prompt", "interactive"), local);
@@ -167,14 +179,24 @@ class AgentRuntimeManagerTest {
     @Test
     void persistsBindingAgentsInSnapshotAndReloadsFromLocalCache() throws Exception {
         List<AgentReference> bindings = List.of(
-                new AgentReference("agent-b", "field-ops", "Field Ops Agent", "Handles on-site operations", "2.0.0"),
-                new AgentReference("agent-c", "reporting", "Reporting Agent", "Writes diagnosis reports", null));
-        when(client.getAgentRuntime("agent-a"))
-                .thenReturn(runtime(List.of(new SkillReference("skill-1", "1")), bindings, null));
-        when(client.querySkillInfo("skill-1")).thenReturn(List.of(skillInfo()));
+                new AgentReference(
+                        "agent-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                        "field-ops",
+                        "Field Ops Agent",
+                        "Handles on-site operations",
+                        "2.0.0"),
+                new AgentReference(
+                        "agent-cccccccccccccccccccccccccccccccc",
+                        "reporting",
+                        "Reporting Agent",
+                        "Writes diagnosis reports",
+                        null));
+        when(client.getAgentRuntime("agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"))
+                .thenReturn(runtime(List.of(new SkillReference(SKILL_ONE_ID, "1")), bindings, null));
+        when(client.querySkillInfo(SKILL_ONE_ID)).thenReturn(List.of(skillInfo()));
 
-        PreparedAgentRuntime prepared = manager.prepare("agent-a");
-        PreparedAgentRuntime local = manager.prepare("agent-a");
+        PreparedAgentRuntime prepared = manager.prepare("agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+        PreparedAgentRuntime local = manager.prepare("agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
 
         assertEquals(bindings, prepared.bindingAgents());
         assertEquals(bindings, local.bindingAgents());
@@ -183,86 +205,113 @@ class AgentRuntimeManagerTest {
                 .readTree(
                         prepared.agentRoot().resolve(".campusclaw/agentId.json").toFile());
         assertEquals(
-                "agent-b", persisted.path("bindingAgents").path(0).path("id").asText());
+                "agent-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                persisted.path("bindingAgents").path(0).path("id").asText());
         assertEquals(
                 "Handles on-site operations",
                 persisted.path("bindingAgents").path(0).path("description").asText());
-        verify(client, times(1)).getAgentRuntime("agent-a");
+        verify(client, times(1)).getAgentRuntime("agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
     }
 
     @Test
     void disabledAgentSnapshotReportsNotEnabled() {
-        when(client.getAgentRuntime("agent-a"))
-                .thenReturn(runtime(List.of(new SkillReference("skill-1", "1")), List.of(), Boolean.FALSE));
-        when(client.querySkillInfo("skill-1")).thenReturn(List.of(skillInfo()));
+        when(client.getAgentRuntime("agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"))
+                .thenReturn(runtime(List.of(new SkillReference(SKILL_ONE_ID, "1")), List.of(), Boolean.FALSE));
+        when(client.querySkillInfo(SKILL_ONE_ID)).thenReturn(List.of(skillInfo()));
 
-        PreparedAgentRuntime prepared = manager.prepare("agent-a");
+        PreparedAgentRuntime prepared = manager.prepare("agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
 
         assertEquals(Boolean.FALSE, prepared.metadata().enabled());
     }
 
     @Test
     void usesModifiedLocalSystemPromptWithoutRepeatingRemoteQueries() throws Exception {
-        when(client.getAgentRuntime("agent-a")).thenReturn(runtime(List.of(new SkillReference("skill-1", "1"))));
-        when(client.querySkillInfo("skill-1")).thenReturn(List.of(skillInfo()));
-        PreparedAgentRuntime prepared = manager.prepare("agent-a");
+        when(client.getAgentRuntime("agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"))
+                .thenReturn(runtime(List.of(new SkillReference(SKILL_ONE_ID, "1"))));
+        when(client.querySkillInfo(SKILL_ONE_ID)).thenReturn(List.of(skillInfo()));
+        PreparedAgentRuntime prepared = manager.prepare("agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
         Files.writeString(prepared.agentRoot().resolve(".campusclaw/systemPrompt.md"), "Modified prompt");
 
-        PreparedAgentRuntime local = manager.prepare("agent-a");
+        PreparedAgentRuntime local = manager.prepare("agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
         SessionConfig config =
                 manager.sessionConfig(new SessionConfig("base-model", tempDir, "Base prompt", "interactive"), local);
 
         assertEquals("Modified prompt\n\nBase prompt", config.customPrompt());
         assertEquals("gpt-4o", config.model());
-        verify(client, times(1)).getAgentRuntime("agent-a");
-        verify(client, times(1)).querySkillInfo("skill-1");
+        verify(client, times(1)).getAgentRuntime("agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+        verify(client, times(1)).querySkillInfo(SKILL_ONE_ID);
     }
 
     @Test
     void rematerializesWhenSnapshotCannotBeLoaded() throws Exception {
-        when(client.getAgentRuntime("agent-a")).thenReturn(runtime(List.of(new SkillReference("skill-1", "1"))));
-        when(client.querySkillInfo("skill-1")).thenReturn(List.of(skillInfo()));
-        PreparedAgentRuntime prepared = manager.prepare("agent-a");
+        when(client.getAgentRuntime("agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"))
+                .thenReturn(runtime(List.of(new SkillReference(SKILL_ONE_ID, "1"))));
+        when(client.querySkillInfo(SKILL_ONE_ID)).thenReturn(List.of(skillInfo()));
+        PreparedAgentRuntime prepared = manager.prepare("agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
         Files.delete(prepared.agentRoot().resolve(".campusclaw/skills/skill-a/SKILL.md"));
 
-        PreparedAgentRuntime rematerialized = manager.prepare("agent-a");
+        PreparedAgentRuntime rematerialized = manager.prepare("agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
 
         assertTrue(Files.isRegularFile(rematerialized.agentRoot().resolve(".campusclaw/skills/skill-a/SKILL.md")));
         assertEquals(1, rematerialized.skills().size());
-        verify(client, times(2)).getAgentRuntime("agent-a");
-        verify(client, times(2)).querySkillInfo("skill-1");
+        verify(client, times(2)).getAgentRuntime("agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+        verify(client, times(2)).querySkillInfo(SKILL_ONE_ID);
     }
 
     @Test
     void rematerializesAndCleansStaleSkillDirectories() throws Exception {
-        when(client.getAgentRuntime("agent-a")).thenReturn(runtime(List.of(new SkillReference("skill-1", "1"))));
-        when(client.querySkillInfo("skill-1")).thenReturn(List.of(skillInfo()));
-        PreparedAgentRuntime prepared = manager.prepare("agent-a");
+        when(client.getAgentRuntime("agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"))
+                .thenReturn(runtime(List.of(new SkillReference(SKILL_ONE_ID, "1"))));
+        when(client.querySkillInfo(SKILL_ONE_ID)).thenReturn(List.of(skillInfo()));
+        PreparedAgentRuntime prepared = manager.prepare("agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
         Path rogueDir = prepared.agentRoot().resolve(".campusclaw/skills/rogue");
         Files.createDirectories(rogueDir);
         Files.writeString(rogueDir.resolve("SKILL.md"), "---\nname: rogue\ndescription: stale\n---\n");
 
-        PreparedAgentRuntime rematerialized = manager.prepare("agent-a");
+        PreparedAgentRuntime rematerialized = manager.prepare("agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
 
         assertFalse(Files.exists(rogueDir));
         assertEquals(
                 List.of("skill-a"),
                 rematerialized.skills().stream().map(SkillInfo::name).toList());
-        verify(client, times(2)).getAgentRuntime("agent-a");
+        verify(client, times(2)).getAgentRuntime("agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
     }
 
     @Test
     void rejectsEmptySkillInfoResult() {
-        when(client.getAgentRuntime("agent-a")).thenReturn(runtime(List.of(new SkillReference("skill-1", "1"))));
-        when(client.querySkillInfo("skill-1")).thenReturn(List.of());
+        when(client.getAgentRuntime("agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"))
+                .thenReturn(runtime(List.of(new SkillReference(SKILL_ONE_ID, "1"))));
+        when(client.querySkillInfo(SKILL_ONE_ID)).thenReturn(List.of());
 
-        assertThrows(AgentRuntimeException.class, () -> manager.prepare("agent-a"));
+        assertThrows(AgentRuntimeException.class, () -> manager.prepare("agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"));
+    }
+
+    @Test
+    void rejectsUntypedSkillIdFromRuntimeMetadata() {
+        when(client.getAgentRuntime("agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"))
+                .thenReturn(runtime(List.of(new SkillReference("skill-1", "1"))));
+
+        assertThrows(AgentRuntimeException.class, () -> manager.prepare("agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"));
+        verify(client, never()).querySkillInfo("skill-1");
     }
 
     @Test
     void rejectsAgentIdThatCouldEscapeTheAgentsRoot() {
         String[] invalidIds = {
-            null, "", "   ", "..", "../sibling", "a/b", "/etc/passwd", "a\\b", ".hidden", "-dash", "_under", "a?b"
+            null,
+            "",
+            "   ",
+            "agent-a",
+            "skill-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "..",
+            "../sibling",
+            "a/b",
+            "/etc/passwd",
+            "a\\b",
+            ".hidden",
+            "-dash",
+            "_under",
+            "a?b"
         };
         for (String invalidId : invalidIds) {
             assertThrows(
@@ -275,47 +324,51 @@ class AgentRuntimeManagerTest {
 
     @Test
     void prepareCachedReadsLocalSnapshotWithoutRemoteCalls() {
-        when(client.getAgentRuntime("agent-a")).thenReturn(runtime(List.of()));
-        manager.prepare("agent-a");
+        when(client.getAgentRuntime("agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")).thenReturn(runtime(List.of()));
+        manager.prepare("agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
 
-        PreparedAgentRuntime cached = manager.prepareCached("agent-a");
+        PreparedAgentRuntime cached = manager.prepareCached("agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
 
-        assertEquals("agent-a", cached.agentId());
-        assertNull(manager.prepareCached("agent-b"));
-        verify(client, times(1)).getAgentRuntime("agent-a");
-        verify(client, never()).getAgentRuntime("agent-b");
+        assertEquals("agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", cached.agentId());
+        assertNull(manager.prepareCached("agent-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"));
+        verify(client, times(1)).getAgentRuntime("agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+        verify(client, never()).getAgentRuntime("agent-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
     }
 
     @Test
     void coldStartOfOneAgentDoesNotBlockAnotherAgent() throws Exception {
         CountDownLatch agentAEntered = new CountDownLatch(1);
         CountDownLatch releaseAgentA = new CountDownLatch(1);
-        when(client.getAgentRuntime("agent-a")).thenAnswer(invocation -> {
+        when(client.getAgentRuntime("agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")).thenAnswer(invocation -> {
             agentAEntered.countDown();
             releaseAgentA.await();
             return runtime(List.of());
         });
-        when(client.getAgentRuntime("agent-b")).thenReturn(runtime(List.of()));
+        when(client.getAgentRuntime("agent-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")).thenReturn(runtime(List.of()));
 
-        var agentAFuture = CompletableFuture.supplyAsync(() -> manager.prepare("agent-a"));
+        var agentAFuture =
+                CompletableFuture.supplyAsync(() -> manager.prepare("agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"));
         try {
             assertThat(agentAEntered.await(5, TimeUnit.SECONDS)).isTrue();
 
-            PreparedAgentRuntime agentB = manager.prepare("agent-b");
+            PreparedAgentRuntime agentB = manager.prepare("agent-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
 
-            assertEquals("agent-b", agentB.agentId());
+            assertEquals("agent-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", agentB.agentId());
         } finally {
             releaseAgentA.countDown();
         }
-        assertEquals("agent-a", agentAFuture.get(5, TimeUnit.SECONDS).agentId());
+        assertEquals(
+                "agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                agentAFuture.get(5, TimeUnit.SECONDS).agentId());
     }
 
     @Test
     void loadsAllSkillToolsFromLocalSnapshot() {
-        when(client.getAgentRuntime("agent-a")).thenReturn(runtime(List.of(new SkillReference("skill-1", "1"))));
-        when(client.querySkillInfo("skill-1")).thenReturn(List.of(skillInfo()));
+        when(client.getAgentRuntime("agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"))
+                .thenReturn(runtime(List.of(new SkillReference(SKILL_ONE_ID, "1"))));
+        when(client.querySkillInfo(SKILL_ONE_ID)).thenReturn(List.of(skillInfo()));
 
-        PreparedAgentRuntime prepared = manager.prepare("agent-a");
+        PreparedAgentRuntime prepared = manager.prepare("agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
 
         assertEquals(List.of("calendar", "delete", "approval"), manager.loadSkillToolNames(prepared, "skill-a"));
     }
@@ -325,7 +378,7 @@ class AgentRuntimeManagerTest {
         List<String> names = List.of("calendar", "BASH", "write", "edit", "EditDiff", "spawn_agent");
         SkillInfo skill = new SkillInfo(
                 "skill-a",
-                "skill-1",
+                SKILL_ONE_ID,
                 "1",
                 "Calendar workflow",
                 "booking",
@@ -339,10 +392,11 @@ class AgentRuntimeManagerTest {
                 List.of(),
                 List.of(),
                 List.of());
-        when(client.getAgentRuntime("agent-a")).thenReturn(runtime(List.of(new SkillReference("skill-1", "1"))));
-        when(client.querySkillInfo("skill-1")).thenReturn(List.of(skill));
+        when(client.getAgentRuntime("agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"))
+                .thenReturn(runtime(List.of(new SkillReference(SKILL_ONE_ID, "1"))));
+        when(client.querySkillInfo(SKILL_ONE_ID)).thenReturn(List.of(skill));
 
-        PreparedAgentRuntime prepared = manager.prepare("agent-a");
+        PreparedAgentRuntime prepared = manager.prepare("agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
 
         assertEquals(names, manager.loadSkillToolNames(prepared, "skill-a"));
     }
@@ -374,8 +428,8 @@ class AgentRuntimeManagerTest {
                 List.of("Agent description"),
                 "Agent A",
                 enabled,
-                "agent-a",
-                "agent-a",
+                "agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
                 "Agent system prompt",
                 List.of("campus"),
                 version);
@@ -395,7 +449,7 @@ class AgentRuntimeManagerTest {
     private static SkillInfo skillInfo(List<SkillFile> references, List<SkillFile> templates) {
         return new SkillInfo(
                 "skill-a",
-                "skill-1",
+                SKILL_ONE_ID,
                 "1",
                 "Calendar workflow",
                 "booking",
@@ -406,6 +460,11 @@ class AgentRuntimeManagerTest {
     }
 
     private static BoundTool tool(String name, String permission) {
-        return new BoundTool(name, name, name, "true", name, permission, "local", "1");
+        return new BoundTool(name, name, toolId(name), "true", name, permission, "local", "1");
+    }
+
+    private static String toolId(String name) {
+        UUID uuid = UUID.nameUUIDFromBytes(name.getBytes(StandardCharsets.UTF_8));
+        return "tool-" + uuid.toString().replace("-", "");
     }
 }

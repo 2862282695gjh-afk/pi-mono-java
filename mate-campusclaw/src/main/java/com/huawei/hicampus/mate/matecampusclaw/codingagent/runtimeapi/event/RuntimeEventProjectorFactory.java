@@ -51,6 +51,7 @@ public class RuntimeEventProjectorFactory {
                 clock,
                 holder.agent()::abort,
                 execution,
-                initialUserMessage);
+                initialUserMessage,
+                holder.thinking());
     }
 }
