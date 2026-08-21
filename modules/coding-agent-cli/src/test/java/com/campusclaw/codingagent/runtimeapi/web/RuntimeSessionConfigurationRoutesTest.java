@@ -5,6 +5,7 @@
 package com.campusclaw.codingagent.runtimeapi.web;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -112,6 +113,16 @@ class RuntimeSessionConfigurationRoutesTest {
                         .content("{\"thinking\":\"true\"}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.resCode").value("INVALID_THINKING_REQUEST"));
+    }
+
+    @Test
+    void invalidSessionIdIsRejectedByParameterValidation() throws Exception {
+        mvc.perform(get("/campusclaw-service/v1/sessions/{id}/models", "session-old"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.resCode").value("INVALID_SESSION_ID"))
+                .andExpect(jsonPath("$.result").doesNotExist());
+
+        verify(service, never()).listModels(anyString());
     }
 
     @Test

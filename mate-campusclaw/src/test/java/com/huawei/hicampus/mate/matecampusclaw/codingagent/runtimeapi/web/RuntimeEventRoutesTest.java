@@ -156,6 +156,16 @@ class RuntimeEventRoutesTest {
                 .andExpect(jsonPath("$.result.next_page").value("page_next"));
     }
 
+    @Test
+    void invalidSessionIdIsRejectedByParameterValidation() throws Exception {
+        mvc.perform(get("/campusclaw-service/v1/sessions/{id}/events", "session-old"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.resCode").value("INVALID_SESSION_ID"))
+                .andExpect(jsonPath("$.result").doesNotExist());
+
+        verify(queryService, never()).list(any(), any(), any());
+    }
+
     private static RuntimeEventStream completedStream() {
         RuntimeEventStream stream = new RuntimeEventStream(16, 4096, Duration.ofSeconds(15), event -> 1L);
         stream.emit(new RuntimeSseEventVO(

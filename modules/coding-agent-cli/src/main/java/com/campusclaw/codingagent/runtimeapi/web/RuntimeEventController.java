@@ -4,6 +4,7 @@
 
 package com.campusclaw.codingagent.runtimeapi.web;
 
+import com.campusclaw.codingagent.common.identifier.ResourceIdentifierPatterns;
 import com.campusclaw.codingagent.runtimeapi.RuntimeApiConstants;
 import com.campusclaw.codingagent.runtimeapi.event.RuntimeEventQueryService;
 import com.campusclaw.codingagent.runtimeapi.event.RuntimeEventService;
@@ -26,6 +27,8 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
 
 /**
  * Session Event 提交 SSE 与当前分支历史分页接口。
@@ -57,10 +60,10 @@ public class RuntimeEventController {
 
     @PostMapping(produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public ResponseEntity<SseEmitter> submit(
-            @PathVariable("session_id") String sessionId,
+            @PathVariable("session_id") @NotBlank @Pattern(regexp = ResourceIdentifierPatterns.SESSION_ID_REGEX)
+                    String sessionId,
             @Valid @RequestBody UserEventRequestVO body,
             HttpServletRequest request) {
-        RuntimeIdentifierValidator.requireSessionId(sessionId);
         SseEmitter emitter = new SseEmitter(0L);
         var events = service.submit(sessionId, body, RuntimeRequestContext.locale(request));
         emitter.onCompletion(events::detach);
@@ -75,11 +78,11 @@ public class RuntimeEventController {
 
     @GetMapping
     public ResponseEntity<Object> list(
-            @PathVariable("session_id") String sessionId,
+            @PathVariable("session_id") @NotBlank @Pattern(regexp = ResourceIdentifierPatterns.SESSION_ID_REGEX)
+                    String sessionId,
             @RequestParam(required = false) String limit,
             @RequestParam(required = false) String page,
             HttpServletRequest request) {
-        RuntimeIdentifierValidator.requireSessionId(sessionId);
         var result = queryService.list(sessionId, limit, page);
         return ResponseEntity.ok()
                 .cacheControl(CacheControl.noStore())

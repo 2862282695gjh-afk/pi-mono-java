@@ -6,6 +6,7 @@ package com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.web;
 
 import java.net.URI;
 
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.common.identifier.ResourceIdentifierPatterns;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.RuntimeApiConstants;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.result.ResultBeanAdapter;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.session.RuntimeSessionService;
@@ -21,6 +22,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
 
 /**
  * Runtime Session 创建、查询与删除接口。
@@ -41,8 +44,10 @@ public class RuntimeSessionController {
     }
 
     @PostMapping("/agents/{agent_id}/sessions")
-    public ResponseEntity<Object> create(@PathVariable("agent_id") String agentId, HttpServletRequest request) {
-        RuntimeIdentifierValidator.requireAgentId(agentId);
+    public ResponseEntity<Object> create(
+            @PathVariable("agent_id") @NotBlank @Pattern(regexp = ResourceIdentifierPatterns.AGENT_ID_REGEX)
+                    String agentId,
+            HttpServletRequest request) {
         var view = service.create(agentId);
         URI location = URI.create(
                 RuntimeApiConstants.BASE_PATH + "/sessions/" + view.resource().getSessionId());
@@ -52,8 +57,10 @@ public class RuntimeSessionController {
     }
 
     @GetMapping("/sessions/{session_id}")
-    public ResponseEntity<Object> get(@PathVariable("session_id") String sessionId, HttpServletRequest request) {
-        RuntimeIdentifierValidator.requireSessionId(sessionId);
+    public ResponseEntity<Object> get(
+            @PathVariable("session_id") @NotBlank @Pattern(regexp = ResourceIdentifierPatterns.SESSION_ID_REGEX)
+                    String sessionId,
+            HttpServletRequest request) {
         var view = service.get(sessionId);
         return ResponseEntity.ok()
                 .cacheControl(CacheControl.noStore())
@@ -63,8 +70,9 @@ public class RuntimeSessionController {
     }
 
     @DeleteMapping("/sessions/{session_id}")
-    public ResponseEntity<Void> delete(@PathVariable("session_id") String sessionId) {
-        RuntimeIdentifierValidator.requireSessionId(sessionId);
+    public ResponseEntity<Void> delete(
+            @PathVariable("session_id") @NotBlank @Pattern(regexp = ResourceIdentifierPatterns.SESSION_ID_REGEX)
+                    String sessionId) {
         service.delete(sessionId);
         return ResponseEntity.noContent().cacheControl(CacheControl.noStore()).build();
     }

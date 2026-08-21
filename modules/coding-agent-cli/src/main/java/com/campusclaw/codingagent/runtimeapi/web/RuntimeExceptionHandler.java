@@ -5,6 +5,7 @@
 package com.campusclaw.codingagent.runtimeapi.web;
 
 import java.util.Locale;
+import java.util.Optional;
 
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
@@ -18,7 +19,9 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.HandlerMethodValidationException;
 import org.springframework.web.servlet.HandlerMapping;
 
 import jakarta.servlet.http.HttpServletRequest;
@@ -51,6 +54,13 @@ public class RuntimeExceptionHandler {
         return response(classifyInvalidBody(request), request);
     }
 
+    @ExceptionHandler(HandlerMethodValidationException.class)
+    public ResponseEntity<ErrorResponseVO> handleInvalidParameter(
+            HandlerMethodValidationException error, HttpServletRequest request) {
+        log.debug("Invalid Runtime request parameter: {} {}", request.getMethod(), request.getRequestURI(), error);
+        return response(classifyInvalidParameter(error), request);
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponseVO> handleUnexpectedError(Exception error, HttpServletRequest request) {
         log.error("Runtime API request failed: {} {}", request.getMethod(), request.getRequestURI(), error);
@@ -79,6 +89,29 @@ public class RuntimeExceptionHandler {
             case "/campusclaw-service/v1/sessions/{session_id}/follow-ups" ->
                 RuntimeErrorCode.INVALID_FOLLOW_UP_REQUEST;
             default -> RuntimeErrorCode.INTERNAL_ERROR;
+        };
+    }
+
+    private static RuntimeErrorCode classifyInvalidParameter(HandlerMethodValidationException error) {
+        return error.getParameterValidationResults().stream()
+                .map(result -> result.getMethodParameter().getParameterAnnotation(PathVariable.class))
+                .filter(annotation -> annotation != null)
+                .map(RuntimeExceptionHandler::pathVariableName)
+                .map(RuntimeExceptionHandler::identifierErrorCode)
+                .flatMap(Optional::stream)
+                .findFirst()
+                .orElse(RuntimeErrorCode.INTERNAL_ERROR);
+    }
+
+    private static String pathVariableName(PathVariable annotation) {
+        return annotation.value().isBlank() ? annotation.name() : annotation.value();
+    }
+
+    private static Optional<RuntimeErrorCode> identifierErrorCode(String pathVariableName) {
+        return switch (pathVariableName) {
+            case "agent_id" -> Optional.of(RuntimeErrorCode.INVALID_AGENT_ID);
+            case "session_id" -> Optional.of(RuntimeErrorCode.INVALID_SESSION_ID);
+            default -> Optional.empty();
         };
     }
 

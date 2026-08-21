@@ -4,9 +4,12 @@
 
 package com.campusclaw.codingagent.runtimeapi.web;
 
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -115,6 +118,26 @@ class RuntimeSessionRoutesTest {
                         .header("X-HW-APPKEY", "opaque-appkey"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.session_id").value(SESSION_ID));
+    }
+
+    @Test
+    void invalidAgentIdIsRejectedByParameterValidation() throws Exception {
+        mvc.perform(post("/campusclaw-service/v1/agents/{agentId}/sessions", "agent-old"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.resCode").value("INVALID_AGENT_ID"))
+                .andExpect(jsonPath("$.result").doesNotExist());
+
+        verify(service, never()).create(anyString());
+    }
+
+    @Test
+    void invalidSessionIdIsRejectedByParameterValidation() throws Exception {
+        mvc.perform(get("/campusclaw-service/v1/sessions/{sessionId}", "session-old"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.resCode").value("INVALID_SESSION_ID"))
+                .andExpect(jsonPath("$.result").doesNotExist());
+
+        verify(service, never()).get(anyString());
     }
 
     @Test

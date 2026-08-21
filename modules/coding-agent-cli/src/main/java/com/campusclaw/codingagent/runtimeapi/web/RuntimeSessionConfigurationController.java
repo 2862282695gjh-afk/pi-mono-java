@@ -4,6 +4,7 @@
 
 package com.campusclaw.codingagent.runtimeapi.web;
 
+import com.campusclaw.codingagent.common.identifier.ResourceIdentifierPatterns;
 import com.campusclaw.codingagent.runtimeapi.RuntimeApiConstants;
 import com.campusclaw.codingagent.runtimeapi.result.ResultBeanAdapter;
 import com.campusclaw.codingagent.runtimeapi.session.RuntimeSessionConfigurationService;
@@ -25,6 +26,8 @@ import org.springframework.web.bind.annotation.RestController;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
 
 /**
  * Session 模型列表、模型切换与深度思考开关接口。
@@ -46,30 +49,32 @@ public class RuntimeSessionConfigurationController {
     }
 
     @GetMapping("/models")
-    public ResponseEntity<Object> listModels(@PathVariable("session_id") String sessionId, HttpServletRequest request) {
-        RuntimeIdentifierValidator.requireSessionId(sessionId);
+    public ResponseEntity<Object> listModels(
+            @PathVariable("session_id") @NotBlank @Pattern(regexp = ResourceIdentifierPatterns.SESSION_ID_REGEX)
+                    String sessionId,
+            HttpServletRequest request) {
         Object result = service.listModels(sessionId);
         return success(result, request);
     }
 
     @PutMapping("/model")
     public ResponseEntity<Object> changeModel(
-            @PathVariable("session_id") String sessionId,
+            @PathVariable("session_id") @NotBlank @Pattern(regexp = ResourceIdentifierPatterns.SESSION_ID_REGEX)
+                    String sessionId,
             @RequestHeader(value = HttpHeaders.IF_MATCH, required = false) String ifMatch,
             @Valid @RequestBody ChangeModelRequestVO body,
             HttpServletRequest request) {
-        RuntimeIdentifierValidator.requireSessionId(sessionId);
         var view = service.changeModel(sessionId, ifMatch, body);
         return sessionResponse(view, request);
     }
 
     @PutMapping("/thinking")
     public ResponseEntity<Object> changeThinking(
-            @PathVariable("session_id") String sessionId,
+            @PathVariable("session_id") @NotBlank @Pattern(regexp = ResourceIdentifierPatterns.SESSION_ID_REGEX)
+                    String sessionId,
             @RequestHeader(value = HttpHeaders.IF_MATCH, required = false) String ifMatch,
             @Valid @RequestBody ChangeThinkingRequestVO body,
             HttpServletRequest request) {
-        RuntimeIdentifierValidator.requireSessionId(sessionId);
         var view = service.changeThinking(sessionId, ifMatch, body);
         return sessionResponse(view, request);
     }

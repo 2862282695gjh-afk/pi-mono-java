@@ -5,6 +5,7 @@
 package com.campusclaw.codingagent.runtimeapi.web;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -101,6 +102,16 @@ class RuntimeSessionControlRoutesTest {
                 .andExpect(jsonPath("$.resCode").value("INVALID_STEER_REQUEST"))
                 .andExpect(jsonPath("$.result").doesNotExist());
         verify(service, never()).steer(any(), any());
+    }
+
+    @Test
+    void invalidSessionIdIsRejectedByParameterValidation() throws Exception {
+        mvc.perform(post("/campusclaw-service/v1/sessions/{id}/abort", "session-old"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.resCode").value("INVALID_SESSION_ID"))
+                .andExpect(jsonPath("$.result").doesNotExist());
+
+        verify(service, never()).abort(anyString());
     }
 
     @Test
