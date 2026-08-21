@@ -64,7 +64,7 @@ class RuntimeSessionControlServiceTest {
         repository = mock(RuntimeSessionRepository.class);
         engines = mock(RuntimeSessionEngineRegistry.class);
         agent = mock(Agent.class);
-        holder = new RuntimeSessionHolder(SESSION_ID, null, agent);
+        holder = new RuntimeSessionHolder(SESSION_ID, null, agent, true);
         execution = new RuntimeActiveExecution(
                 new RuntimeEventStream(256, 1024L * 1024L, Duration.ofSeconds(15), event -> 1L));
         assertThat(holder.begin(execution)).isTrue();

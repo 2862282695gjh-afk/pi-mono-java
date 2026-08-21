@@ -23,12 +23,15 @@ public class RuntimeSessionHolder {
 
     private final Agent agent;
 
+    private final boolean thinking;
+
     private final AtomicReference<RuntimeActiveExecution> activeExecution = new AtomicReference<>();
 
-    public RuntimeSessionHolder(String sessionId, AgentDirectorySnapshotDTO snapshot, Agent agent) {
+    public RuntimeSessionHolder(String sessionId, AgentDirectorySnapshotDTO snapshot, Agent agent, boolean thinking) {
         this.sessionId = sessionId;
         this.snapshot = snapshot;
         this.agent = agent;
+        this.thinking = thinking;
     }
 
     public String sessionId() {
@@ -41,6 +44,10 @@ public class RuntimeSessionHolder {
 
     public Agent agent() {
         return agent;
+    }
+
+    public boolean thinking() {
+        return thinking;
     }
 
     public boolean begin(RuntimeActiveExecution execution) {

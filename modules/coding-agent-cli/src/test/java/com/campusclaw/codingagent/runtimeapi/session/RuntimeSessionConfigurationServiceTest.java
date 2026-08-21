@@ -47,9 +47,9 @@ import org.junit.jupiter.api.Test;
  * @since [br_eCampusCore 26.0.0]
  */
 class RuntimeSessionConfigurationServiceTest {
-    private static final String SESSION_ID = "01JY8W6M8D9K4H2Q7P3V5N1R0T";
+    private static final String SESSION_ID = "session-0123456789abcdef0123456789abcdef";
 
-    private static final String AGENT_ID = "agent_011CZkYqphY8vELVzwCUpqiQ";
+    private static final String AGENT_ID = "agent-0123456789abcdef0123456789abcdef";
 
     private RuntimeSessionRepository repository;
 

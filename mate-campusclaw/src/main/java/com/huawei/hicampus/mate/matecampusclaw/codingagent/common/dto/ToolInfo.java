@@ -9,7 +9,7 @@ import java.util.Map;
 import lombok.Data;
 
 /**
- * Mate 内网网关 QUERYTOOLS 响应中 {@code result.data} 数组的工具元数据项。
+ * Mate 内网网关工具元数据批量查询响应中 {@code result.data} 数组的工具元数据项。
  *
  * @version [br_eCampusCore 26.0.0, 2026/08/18]
  * @since [br_eCampusCore 26.0.0]

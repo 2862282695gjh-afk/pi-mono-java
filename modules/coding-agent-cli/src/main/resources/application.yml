@@ -66,6 +66,8 @@ campusmate:
     request-timeout: PT30S
     success-code: ${CAMPUSMATE_SUCCESS_CODE:0}
     max-response-bytes: ${CAMPUSMATE_MAX_RESPONSE_BYTES:4194304}
+    agent-runtime-path-template: ${CAMPUSMATE_AGENT_RUNTIME_PATH_TEMPLATE:/mate-service/v1/agents/%s/runtime}
+    skill-info-query-path-template: ${CAMPUSMATE_SKILL_INFO_QUERY_PATH_TEMPLATE:/mate-service/v1/skill/query/%s}
 
 logging:
   level:
@@ -149,3 +151,7 @@ controlplane:
 # ClusterIP); empty by default so an unconfigured environment still boots.
 mate:
   innerGWSerive: ${MATE_INNERGWSERIVE:}
+  endpoints:
+    agent-info-path-prefix: ${MATE_AGENT_INFO_PATH_PREFIX:/mate-service/v1/agents/}
+    skill-tools-query-path-prefix: ${MATE_SKILL_TOOLS_QUERY_PATH_PREFIX:/mate-service/v1/skill/info/query/}
+    tool-metadata-query-path: ${MATE_TOOL_METADATA_QUERY_PATH:/mate-service/v1/runtime/tools/query}

@@ -28,7 +28,7 @@ public interface RuntimeSessionRepository {
 
     void finishExecution(String sessionId, OffsetDateTime finishedAt);
 
-    List<RuntimeEntryDTO> listCurrentBranch(String sessionId, long afterSeq, int limit);
+    List<RuntimeEntryDTO> listCurrentBranch(String sessionId, long afterSeq, int limit, boolean includeThinking);
 
     SessionConfigurationUpdate updateModel(
             String sessionId,

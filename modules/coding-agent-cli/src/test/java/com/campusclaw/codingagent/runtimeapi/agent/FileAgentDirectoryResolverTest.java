@@ -25,7 +25,7 @@ import org.junit.jupiter.api.io.TempDir;
  * @since [br_eCampusCore 26.0.0]
  */
 class FileAgentDirectoryResolverTest {
-    private static final String AGENT_ID = "agent_011CZkYqphY8vELVzwCUpqiQ";
+    private static final String AGENT_ID = "agent-0123456789abcdef0123456789abcdef";
 
     @TempDir
     private Path temporaryDirectory;

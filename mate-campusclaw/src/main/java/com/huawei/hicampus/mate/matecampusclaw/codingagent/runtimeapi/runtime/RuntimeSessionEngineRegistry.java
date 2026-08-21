@@ -106,7 +106,7 @@ public class RuntimeSessionEngineRegistry {
             RuntimeActiveExecution execution) {
         Agent agent = createAgent(snapshot, model, thinking);
         agent.replaceMessages(messages);
-        RuntimeSessionHolder holder = new RuntimeSessionHolder(sessionId, snapshot, agent);
+        RuntimeSessionHolder holder = new RuntimeSessionHolder(sessionId, snapshot, agent, thinking);
         if (!holder.begin(execution)) {
             throw new IllegalStateException("new execution holder is already active");
         }

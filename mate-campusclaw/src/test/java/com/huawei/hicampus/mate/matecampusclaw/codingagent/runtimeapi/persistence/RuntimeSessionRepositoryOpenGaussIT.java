@@ -196,23 +196,36 @@ class RuntimeSessionRepositoryOpenGaussIT {
                 session.getId(), "entry_user", "user.message", acceptedAt, "{\"message\":\"hello\",\"file_ids\":[]}");
 
         UserEventAcceptance acceptance = repository.acceptUserEvent(session.getId(), user, acceptedAt);
+        RuntimeEntryDTO thinking = newEntry(
+                session.getId(),
+                "entry_thinking",
+                "assistant.thinking.completed",
+                acceptedAt.plusSeconds(1),
+                "{\"assistant_entry_id\":\"entry_assistant\",\"content_index\":0,"
+                        + "\"content\":{\"type\":\"thinking\",\"text\":\"reasoning\"}}");
+        repository.appendEntry(thinking);
         RuntimeEntryDTO assistant = newEntry(
                 session.getId(),
                 "entry_assistant",
                 "assistant.message.completed",
-                acceptedAt.plusSeconds(1),
+                acceptedAt.plusSeconds(2),
                 "{\"message\":{\"role\":\"assistant\",\"content\":[]},\"finish_reason\":\"stop\"}");
         repository.appendEntry(assistant);
-        repository.finishExecution(session.getId(), acceptedAt.plusSeconds(2));
+        repository.finishExecution(session.getId(), acceptedAt.plusSeconds(3));
 
         assertThat(acceptance.status()).isEqualTo(Status.ACCEPTED);
         assertThat(user.getEntrySeq()).isEqualTo(1L);
         assertThat(user.getParentId()).isNull();
-        assertThat(assistant.getEntrySeq()).isEqualTo(2L);
-        assertThat(assistant.getParentId()).isEqualTo(user.getId());
-        assertThat(repository.listCurrentBranch(session.getId(), 0, 10))
+        assertThat(thinking.getEntrySeq()).isEqualTo(2L);
+        assertThat(thinking.getParentId()).isEqualTo(user.getId());
+        assertThat(assistant.getEntrySeq()).isEqualTo(3L);
+        assertThat(assistant.getParentId()).isEqualTo(thinking.getId());
+        assertThat(repository.listCurrentBranch(session.getId(), 0, 10, false))
                 .extracting(RuntimeEntryDTO::getId)
                 .containsExactly("entry_user", "entry_assistant");
+        assertThat(repository.listCurrentBranch(session.getId(), 0, 10, true))
+                .extracting(RuntimeEntryDTO::getId)
+                .containsExactly("entry_user", "entry_thinking", "entry_assistant");
         RuntimeSessionDTO finished = repository.find(session.getId()).orElseThrow();
         assertThat(finished.getState()).isEqualTo("idle");
         assertThat(finished.getResourceVersion()).isEqualTo(3L);
@@ -269,7 +282,7 @@ class RuntimeSessionRepositoryOpenGaussIT {
         insertBranchEntry(session.getId(), "entry_current", 3L, "entry_root");
         jdbcTemplate.update("UPDATE t_sessions SET active_leaf_id = ? WHERE id = ?", "entry_current", session.getId());
 
-        assertThat(repository.listCurrentBranch(session.getId(), 0, 10))
+        assertThat(repository.listCurrentBranch(session.getId(), 0, 10, false))
                 .extracting(RuntimeEntryDTO::getId)
                 .containsExactly("entry_root", "entry_current");
     }

@@ -3,31 +3,41 @@ title Managed Agent CLI Runtime Flow
 
 ' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/cli/CampusClawCommand.java (call, createAgentSession, configureDelegation)
 ' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtime/AgentRuntimeManager.java (prepare, materialize)
+' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtime/MateServiceClient.java (constructor @Value path templates, getAgentRuntime, querySkillInfo)
 ' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/session/AgentSession.java (initialize, setAgentRuntime, setDelegationState)
+' Source baseline: superheromeZzh/pi-mono-java commit 1e9d4ee2e14717764f8403c20375c55512cbd97b
 ' Observed behavior: only the explicit CLI --agent-id path uses the CampusMate materializer.
 ' Architecture change: HTTP V1 and managed CLI share the .campusclaw location but retain separate file contracts and loading flows.
+' Architecture change: outbound MateServiceClient endpoint templates are injected from application configuration.
 
 actor User
 participant "CampusClawCommand" as CLI
 participant "AgentRuntimeManager" as Runtime
 participant "Local Agent Cache" as Cache
+collections "Application Config" as Config
+participant "MateServiceClient" as MateClient
 participant "CampusMateService" as Mate
 participant "ToolCatalog" as Catalog
 participant "LocalAgentDispatcher" as Dispatcher
 participant "AgentSession" as Session
 
 User -> CLI: cli --agent-id agentId
+Config -> MateClient: @Value endpoint path templates
 CLI -> Runtime: prepare(agentId)
 Runtime -> Cache: load complete .campusclaw snapshot
 
 alt complete local snapshot
   Cache --> Runtime: PreparedAgentRuntime
 else snapshot missing or unreadable
-  Runtime -> Mate: GetAgentRuntime(agentId)
-  Mate --> Runtime: Agent metadata and Skill coordinates
+  Runtime -> MateClient: getAgentRuntime(agentId)
+  MateClient -> Mate: GET configured agent runtime path
+  Mate --> MateClient: Agent metadata and Skill coordinates
+  MateClient --> Runtime: AgentRuntime
   loop each directly bound Skill
-    Runtime -> Mate: querySkillInfo(skillId)
-    Mate --> Runtime: Skill metadata and bound tools
+    Runtime -> MateClient: querySkillInfo(skillId)
+    MateClient -> Mate: GET configured Skill info path
+    Mate --> MateClient: Skill metadata and bound tools
+    MateClient --> Runtime: SkillInfo list
   end
   Runtime -> Cache: materialize Agent and Skill files
   Runtime -> Cache: reload materialized snapshot

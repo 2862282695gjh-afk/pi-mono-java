@@ -59,16 +59,18 @@ class RuntimeEventQueryServiceTest {
         RuntimeEntryDTO first = entry(1L);
         RuntimeEntryDTO second = entry(2L);
         RuntimeEntryDTO lookAhead = entry(3L);
-        when(repository.find(SESSION_ID)).thenReturn(Optional.of(new RuntimeSessionDTO()));
-        when(repository.listCurrentBranch(SESSION_ID, 7L, 3)).thenReturn(List.of(first, second, lookAhead));
-        when(cursorCodec.decode("page_current", SESSION_ID)).thenReturn(7L);
-        when(cursorCodec.encode(SESSION_ID, 2L)).thenReturn("page_next");
-        when(codec.toHistoryEvent(first)).thenReturn(Map.of("entry_seq", 1L));
-        when(codec.toHistoryEvent(second)).thenReturn(Map.of("entry_seq", 2L));
+        RuntimeSessionDTO session = new RuntimeSessionDTO();
+        session.setThinking(true);
+        when(repository.find(SESSION_ID)).thenReturn(Optional.of(session));
+        when(repository.listCurrentBranch(SESSION_ID, 7L, 3, true)).thenReturn(List.of(first, second, lookAhead));
+        when(cursorCodec.decode("page_current", SESSION_ID, true)).thenReturn(7L);
+        when(cursorCodec.encode(SESSION_ID, 2L, true)).thenReturn("page_next");
+        when(codec.toHistoryEvent(first)).thenReturn(Map.of("entrySeq", 1L));
+        when(codec.toHistoryEvent(second)).thenReturn(Map.of("entrySeq", 2L));
 
         var page = service.list(SESSION_ID, "2", "page_current");
 
-        assertThat(page.getEvents()).containsExactly(Map.of("entry_seq", 1L), Map.of("entry_seq", 2L));
+        assertThat(page.getEvents()).containsExactly(Map.of("entrySeq", 1L), Map.of("entrySeq", 2L));
         assertThat(page.getNextPage()).isEqualTo("page_next");
         verify(codec, never()).toHistoryEvent(lookAhead);
     }
@@ -82,13 +84,13 @@ class RuntimeEventQueryServiceTest {
         RuntimeEntryDTO last = entry(501L);
         Model model = mock(Model.class);
         List<Message> restored = List.of(new UserMessage("restored", 0L));
-        when(repository.listCurrentBranch(SESSION_ID, 0L, 500)).thenReturn(firstBatch);
-        when(repository.listCurrentBranch(SESSION_ID, 500L, 500)).thenReturn(List.of(last));
+        when(repository.listCurrentBranch(SESSION_ID, 0L, 500, false)).thenReturn(firstBatch);
+        when(repository.listCurrentBranch(SESSION_ID, 500L, 500, false)).thenReturn(List.of(last));
         when(codec.toAgentMessages(any(), any())).thenReturn(restored);
 
         assertThat(service.restoreHistory(SESSION_ID, model)).isSameAs(restored);
 
-        verify(repository).listCurrentBranch(SESSION_ID, 500L, 500);
+        verify(repository).listCurrentBranch(SESSION_ID, 500L, 500, false);
         verify(codec)
                 .toAgentMessages(
                         org.mockito.ArgumentMatchers.<List<RuntimeEntryDTO>>argThat(entries -> entries.size() == 501),

@@ -7,6 +7,7 @@ package com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.event;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.time.Clock;
@@ -20,6 +21,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import com.huawei.hicampus.mate.matecampusclaw.agent.Agent;
+import com.huawei.hicampus.mate.matecampusclaw.agent.event.MessageStartEvent;
+import com.huawei.hicampus.mate.matecampusclaw.agent.event.MessageUpdateEvent;
 import com.huawei.hicampus.mate.matecampusclaw.agent.tool.AgentTool;
 import com.huawei.hicampus.mate.matecampusclaw.agent.tool.AgentToolResult;
 import com.huawei.hicampus.mate.matecampusclaw.agent.tool.AgentToolUpdateCallback;
@@ -41,6 +44,7 @@ import com.huawei.hicampus.mate.matecampusclaw.ai.types.SimpleStreamOptions;
 import com.huawei.hicampus.mate.matecampusclaw.ai.types.StopReason;
 import com.huawei.hicampus.mate.matecampusclaw.ai.types.StreamOptions;
 import com.huawei.hicampus.mate.matecampusclaw.ai.types.TextContent;
+import com.huawei.hicampus.mate.matecampusclaw.ai.types.ThinkingContent;
 import com.huawei.hicampus.mate.matecampusclaw.ai.types.ToolCall;
 import com.huawei.hicampus.mate.matecampusclaw.ai.types.Usage;
 import com.huawei.hicampus.mate.matecampusclaw.ai.types.UserMessage;
@@ -88,21 +92,94 @@ class RuntimeEventProjectorTest {
                 Clock.fixed(Instant.parse("2026-08-18T00:00:00Z"), ZoneOffset.UTC),
                 agent::abort,
                 execution,
-                initialMessage);
+                initialMessage,
+                false);
         agent.subscribe(projector::onEvent);
 
         agent.prompt(initialMessage).get(2, TimeUnit.SECONDS);
         stream.complete();
 
+        List<RuntimeSseEventVO> events = collect(stream);
         List<String> eventNames =
-                collect(stream).stream().map(RuntimeSseEventVO::getEvent).toList();
+                events.stream().map(RuntimeSseEventVO::getEvent).toList();
         assertConfirmedEventOrder(eventNames);
+        assertCamelCaseEventData(events);
         assertThat(persisted)
                 .extracting(RuntimeEntryDTO::getType)
                 .containsExactly("assistant.message.completed", "tool.result", "assistant.message.completed");
         assertThat(persisted).extracting(RuntimeEntryDTO::getEntrySeq).containsExactly(2L, 3L, 4L);
         assertThat(projector.failure()).isNull();
         assertThat(projector.terminalReason()).isEqualTo(StopReason.STOP);
+    }
+
+    @Test
+    void projectsThinkingLifecycleOnlyForEnabledExecutionSnapshot() {
+        Model model = sampleModel();
+        AssistantMessage message = assistant(model, List.of(new ThinkingContent("先定位异常订单")), StopReason.STOP, 10L);
+        RuntimeSessionRepository repository = mock(RuntimeSessionRepository.class);
+        when(repository.appendEntry(any())).thenAnswer(invocation -> {
+            RuntimeEntryDTO entry = invocation.getArgument(0);
+            entry.setEntrySeq(2L);
+            return entry;
+        });
+        RuntimeEventStream enabledStream = eventStream();
+        RuntimeEventProjector enabled = projector(repository, enabledStream, true);
+
+        projectThinking(enabled, message);
+        enabledStream.complete();
+
+        List<RuntimeSseEventVO> thinkingEvents = collect(enabledStream);
+        assertThat(thinkingEvents)
+                .extracting(RuntimeSseEventVO::getEvent)
+                .containsExactly(
+                        "assistant.message.started",
+                        "assistant.thinking.started",
+                        "assistant.thinking.delta",
+                        "assistant.thinking.completed");
+        assertThat(event(thinkingEvents, "assistant.thinking.started").getData())
+                .containsKeys("assistantEntryId", "contentIndex")
+                .doesNotContainKeys("assistant_entry_id", "content_index");
+        var entry = org.mockito.ArgumentCaptor.forClass(RuntimeEntryDTO.class);
+        verify(repository).appendEntry(entry.capture());
+        assertThat(entry.getValue().getType()).isEqualTo("assistant.thinking.completed");
+        assertThat(entry.getValue().getPayload()).contains("先定位异常订单", "assistant_entry_id");
+
+        RuntimeEventStream disabledStream = eventStream();
+        RuntimeEventProjector disabled = projector(mock(RuntimeSessionRepository.class), disabledStream, false);
+        projectThinking(disabled, message);
+        disabledStream.complete();
+        assertThat(collect(disabledStream))
+                .extracting(RuntimeSseEventVO::getEvent)
+                .containsExactly("assistant.message.started");
+    }
+
+    private static RuntimeEventProjector projector(
+            RuntimeSessionRepository repository, RuntimeEventStream stream, boolean thinking) {
+        AtomicInteger ids = new AtomicInteger(1);
+        return new RuntimeEventProjector(
+                "session_event_test",
+                repository,
+                new RuntimeEntryCodec(new ObjectMapper()),
+                () -> "entry_" + ids.getAndIncrement(),
+                stream,
+                Clock.fixed(Instant.parse("2026-08-18T00:00:00Z"), ZoneOffset.UTC),
+                () -> {},
+                new RuntimeActiveExecution(stream),
+                new UserMessage("分析订单", 1L),
+                thinking);
+    }
+
+    private static void projectThinking(RuntimeEventProjector projector, AssistantMessage message) {
+        projector.onEvent(new MessageStartEvent(message));
+        projector.onEvent(new MessageUpdateEvent(message, new AssistantMessageEvent.ThinkingStartEvent(0, message)));
+        projector.onEvent(
+                new MessageUpdateEvent(message, new AssistantMessageEvent.ThinkingDeltaEvent(0, "先定位", message)));
+        projector.onEvent(
+                new MessageUpdateEvent(message, new AssistantMessageEvent.ThinkingEndEvent(0, "先定位异常订单", message)));
+    }
+
+    private static RuntimeEventStream eventStream() {
+        return new RuntimeEventStream(16, 4096, Duration.ofSeconds(15), event -> 1L);
     }
 
     private static void assertConfirmedEventOrder(List<String> eventNames) {
@@ -116,6 +193,25 @@ class RuntimeEventProjectorTest {
                         "assistant.message.started",
                         "assistant.message.delta",
                         "assistant.message.completed");
+    }
+
+    private static void assertCamelCaseEventData(List<RuntimeSseEventVO> events) {
+        assertThat(event(events, "assistant.message.completed").getData())
+                .containsKeys("entryId", "entrySeq", "finishReason", "createdAt")
+                .doesNotContainKeys("entry_id", "entry_seq", "finish_reason", "created_at");
+        assertThat(event(events, "tool.execution.started").getData())
+                .containsKeys("toolCallId", "toolName")
+                .doesNotContainKeys("tool_call_id", "tool_name");
+        assertThat(event(events, "tool.execution.completed").getData())
+                .containsKeys("toolCallId", "toolName", "isError")
+                .doesNotContainKeys("tool_call_id", "tool_name", "is_error");
+    }
+
+    private static RuntimeSseEventVO event(List<RuntimeSseEventVO> events, String name) {
+        return events.stream()
+                .filter(event -> name.equals(event.getEvent()))
+                .findFirst()
+                .orElseThrow();
     }
 
     private static List<RuntimeSseEventVO> collect(RuntimeEventStream stream) {
