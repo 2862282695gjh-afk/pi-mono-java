@@ -18,13 +18,13 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.regex.Pattern;
 
+import com.campusclaw.codingagent.common.identifier.ResourceIdentifierPatterns;
 import com.campusclaw.codingagent.runtime.MateServiceClient.AgentRuntime;
 import com.campusclaw.codingagent.runtime.MateServiceClient.BoundTool;
 import com.campusclaw.codingagent.runtime.MateServiceClient.DependentSkill;
 import com.campusclaw.codingagent.runtime.MateServiceClient.SkillFile;
 import com.campusclaw.codingagent.runtime.MateServiceClient.SkillInfo;
 import com.campusclaw.codingagent.runtime.MateServiceClient.SkillReference;
-import com.campusclaw.codingagent.runtimeapi.RuntimeApiConstants;
 import com.campusclaw.codingagent.session.SessionConfig;
 import com.campusclaw.codingagent.skill.SkillLoader;
 import com.fasterxml.jackson.annotation.JsonProperty;
@@ -44,15 +44,6 @@ import org.springframework.stereotype.Component;
  */
 @Component
 public class AgentRuntimeManager {
-
-    // 类型化 Agent UUID，不允许路径分隔符或旧格式。
-    private static final Pattern AGENT_ID_PATTERN = Pattern.compile(RuntimeApiConstants.AGENT_ID_PATTERN);
-
-    // 类型化 Skill UUID，不接受旧式短标识。
-    private static final Pattern SKILL_ID_PATTERN = Pattern.compile(RuntimeApiConstants.SKILL_ID_PATTERN);
-
-    // 类型化 Tool UUID，不接受旧式短标识。
-    private static final Pattern TOOL_ID_PATTERN = Pattern.compile(RuntimeApiConstants.TOOL_ID_PATTERN);
 
     private static final String AGENT_METADATA_FILE = "agentId.json";
     private static final String SYSTEM_PROMPT_FILE = "systemPrompt.md";
@@ -127,7 +118,8 @@ public class AgentRuntimeManager {
     }
 
     private Path requireValidAgentId(String agentId) {
-        if (agentId == null || !AGENT_ID_PATTERN.matcher(agentId).matches()) {
+        if (agentId == null
+                || !ResourceIdentifierPatterns.AGENT_ID_PATTERN.matcher(agentId).matches()) {
             throw new IllegalArgumentException("Invalid agentId: " + agentId);
         }
         Path agentsRoot = properties.agentsRoot().toAbsolutePath().normalize();
@@ -371,7 +363,7 @@ public class AgentRuntimeManager {
         List<SkillTool> tools =
                 mapper.readValue(toolsFile.toFile(), SkillToolsFile.class).tools();
         for (SkillTool tool : tools) {
-            requireIdentifier(tool.toolId(), TOOL_ID_PATTERN, "toolId");
+            requireIdentifier(tool.toolId(), ResourceIdentifierPatterns.TOOL_ID_PATTERN, "toolId");
         }
         return tools;
     }
@@ -411,25 +403,29 @@ public class AgentRuntimeManager {
     }
 
     private static boolean hasValidRuntimeIdentifiers(AgentRuntime runtime) {
-        if (runtime == null || !matches(runtime.id(), AGENT_ID_PATTERN)) {
+        if (runtime == null || !matches(runtime.id(), ResourceIdentifierPatterns.AGENT_ID_PATTERN)) {
             return false;
         }
         boolean skillsValid = runtime.bindingSkills().stream()
-                .allMatch(reference -> reference != null && matches(reference.id(), SKILL_ID_PATTERN));
-        boolean toolsValid =
-                runtime.bindingTools().stream().allMatch(tool -> tool != null && matches(tool.id(), TOOL_ID_PATTERN));
+                .allMatch(reference ->
+                        reference != null && matches(reference.id(), ResourceIdentifierPatterns.SKILL_ID_PATTERN));
+        boolean toolsValid = runtime.bindingTools().stream()
+                .allMatch(tool -> tool != null && matches(tool.id(), ResourceIdentifierPatterns.TOOL_ID_PATTERN));
         boolean agentsValid = runtime.bindingAgents().stream()
-                .allMatch(agent -> agent != null && matches(agent.id(), AGENT_ID_PATTERN));
+                .allMatch(agent -> agent != null && matches(agent.id(), ResourceIdentifierPatterns.AGENT_ID_PATTERN));
         return skillsValid && toolsValid && agentsValid;
     }
 
     private static void requireValidSkillIdentifiers(SkillInfo skill) {
-        requireIdentifier(skill == null ? null : skill.id(), SKILL_ID_PATTERN, "skillId");
+        requireIdentifier(skill == null ? null : skill.id(), ResourceIdentifierPatterns.SKILL_ID_PATTERN, "skillId");
         for (BoundTool tool : skill.bindingTools()) {
-            requireIdentifier(tool == null ? null : tool.id(), TOOL_ID_PATTERN, "toolId");
+            requireIdentifier(tool == null ? null : tool.id(), ResourceIdentifierPatterns.TOOL_ID_PATTERN, "toolId");
         }
         for (DependentSkill dependency : skill.bindingSkills()) {
-            requireIdentifier(dependency == null ? null : dependency.id(), SKILL_ID_PATTERN, "skillId");
+            requireIdentifier(
+                    dependency == null ? null : dependency.id(),
+                    ResourceIdentifierPatterns.SKILL_ID_PATTERN,
+                    "skillId");
         }
     }
 

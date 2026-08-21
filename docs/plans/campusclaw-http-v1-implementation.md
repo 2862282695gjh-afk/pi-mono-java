@@ -1,6 +1,6 @@
 # CampusClaw HTTP V1 实施记录
 
-> 版本：3.0.0
+> 版本：3.0.1
 >
 > 状态：已实现并完成发布前验证
 >
@@ -33,7 +33,7 @@
 | 启动 | `modules/coding-agent-cli/.../CampusClawApplication.java`、`CampusClawCliLauncher.java` |
 | HTTP 边界 | `modules/coding-agent-cli/.../runtimeapi/web/*Controller.java` |
 | 调用上下文 Header 边界 | Controller 路由测试；Runtime 不再包含认证器、认证拦截器或认证错误码 |
-| 类型化资源 ID | `RuntimeApiConstants`、`MateServiceClient`、`AgentRuntimeManager`、`HttpMateToolClient`、`RandomSessionIdGenerator` |
+| 类型化资源 ID | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/common/identifier/ResourceIdentifierPatterns.java`、`MateServiceClient`、`AgentRuntimeManager`、`HttpMateToolClient`、`RuntimeIdentifierValidator`、`RandomSessionIdGenerator` |
 | ResultBean / i18n | `runtimeapi/result/*`、`RuntimeMessageSourceConfiguration`、`RuntimeRequestContext`、`src/main/resources/i18n/messages_{en_US,zh_CN}.properties` |
 | Session 业务 | `runtimeapi/session/RuntimeSessionService.java`、`RuntimeSessionConfigurationService.java`、`RuntimeSessionControlService.java` |
 | 事件接受 | `runtimeapi/event/RuntimeEventService.java`、`RuntimeExecutionContextFactory.java` |
@@ -72,7 +72,7 @@
 | Session 与模型 | CLI 启动时先选模型 | Session 创建不要求模型，可在后续事件前切换 | 产品约束：Session 生命周期允许模型切换 |
 | 删除 | 历史方案曾计划自动 abort | active execution 返回 409；idle 才删除 | 安全加固：避免删除与执行副作用竞态 |
 | 调用上下文 Header | 基线认证拦截器检查 Header 齐全、共存和 Bearer 形状 | 全接口保留集成 Header 契约，但 Runtime 不做本地检查 | 架构变更：真实性和动作授权由上游 mate-service 保证，Runtime 不建立凭据状态 |
-| 资源 ID | Agent 使用下划线短 ID，Session 使用无类型 Crockford Base32 | Agent/Tool/Skill/Session 使用类型前缀加 32 位无连字符 UUID | 产品约束：阻止无前缀、错误类型和旧格式进入边界 |
+| 资源 ID | Agent 使用下划线短 ID，Session 使用无类型 Crockford Base32 | Agent/Tool/Skill/Session 使用类型前缀加 32 位无连字符 UUID；正则字符串与编译模式集中在中立的领域模式类 | 产品约束：阻止无前缀、错误类型和旧格式进入边界；架构变更：消除重复编译和核心代码对 HTTP 常量包的反向依赖 |
 | 创建默认值 | `RuntimeSessionService#newSession` 持久化 `thinking=false` | 创建时持久化 `thinking=true` | 产品约束：新 Session 默认启用深度思考 |
 | 用户事件请求 | `UserEventRequestVO` 要求冗余 `type=user.message` | 只接受 `message` 与 `file_ids`，`type` 作为未知字段拒绝 | 产品约束：operation 已固定消息类型 |
 | thinking 事件 | Provider thinking 事件未进入公共 Runtime SSE 或持久化历史 | 执行快照为 true 时开放三阶段事件并持久化 completed；GET 按当前状态过滤 | 架构变更：显式可见性策略和可恢复事件保持一致 |
@@ -126,7 +126,7 @@ DDL 使用 `t_` 前缀：`t_sessions`、`t_session_entries`、`t_session_sequenc
 
 ## 6. 验证证据
 
-以下验证针对 3.0.0 候选实现执行：
+以下验证针对 3.0.1 候选实现执行：
 
 - 主仓 `./mvnw clean test`：2767 个测试通过，0 失败、0 错误；
 - `mate-campusclaw` `clean test`：2767 个测试通过，0 失败、0 错误；
@@ -153,6 +153,7 @@ DDL 使用 `t_` 前缀：`t_sessions`、`t_session_entries`、`t_session_sequenc
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 3.0.1 | 2026-08-21 | 将类型化资源 ID 的正则字符串和编译模式集中到领域模式类，并从 Runtime HTTP 常量中移除领域约束 |
 | 3.0.0 | 2026-08-20 | 对齐 HTTP 1.37 契约：类型化资源 ID、创建默认 thinking、移除 Runtime 本地 Header 认证、删除消息体 type，并实现 thinking 事件持久化、查询过滤和游标绑定 |
 | 2.2.0 | 2026-08-20 | 落地显式双 Locale 消息源、标准语言协商、HTTP/SSE 错误国际化和镜像资源迁移 |
 | 2.1.0 | 2026-08-19 | 基于 `f899547d` 整改目录边界、事件职责、错误目录、异步日志和多实例执行归属错误 |

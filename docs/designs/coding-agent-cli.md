@@ -1,6 +1,6 @@
 # Coding Agent 启动与 Runtime HTTP 设计
 
-> 文档版本：2.6.0
+> 文档版本：2.6.1
 >
 > Runtime HTTP 1.37 对齐分析基线：`3d9b9c55569486f024d6a507ce004101a56dee3f`
 >
@@ -28,7 +28,7 @@ Runtime HTTP 现已对齐独立设计仓库 1.37 契约：资源标识统一为�
 | CLI 排除数据库、Runtime 与控制面 Bean | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/CampusClawCliConfiguration.java` |
 | Runtime 使用 Spring MVC Controller | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/web/*Controller.java` |
 | Runtime 不安装入站认证拦截器 | `runtimeapi/web` 不再包含 `RuntimeAuthenticationInterceptor` 与 `RuntimeWebMvcConfiguration`；路由测试覆盖 Header 缺失与共存 |
-| 类型化资源 ID 与 Session 默认值 | `RuntimeApiConstants`、`MateServiceClient#getAgentRuntime`、`MateServiceClient#querySkillInfo`、`AgentRuntimeManager#prepare`、`HttpMateToolClient#listTools`、`RandomSessionIdGenerator#nextId`、`RuntimeSessionService#newSession` |
+| 类型化资源 ID 与 Session 默认值 | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/common/identifier/ResourceIdentifierPatterns.java`、`MateServiceClient#getAgentRuntime`、`MateServiceClient#querySkillInfo`、`AgentRuntimeManager#prepare`、`HttpMateToolClient#listTools`、`RandomSessionIdGenerator#nextId`、`RuntimeSessionService#newSession` |
 | Session 与事件持久化使用 MyBatis | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/persistence/MyBatisRuntimeSessionRepository.java` |
 | 事件接受、历史查询和执行生命周期相互分离 | `RuntimeEventService`、`RuntimeEventQueryService`、`RuntimeExecutionCoordinator` |
 | thinking 实时投影、持久化和查询过滤 | `RuntimeEventProjector#projectThinking`、`RuntimeEntryCodec#thinkingEntry`、`RuntimeEventQueryService#list`、`RuntimeEventCursorCodec` |
@@ -40,7 +40,7 @@ Runtime HTTP 现已对齐独立设计仓库 1.37 契约：资源标识统一为�
 | 本地工具由目录统一索引与筛选 | `tool/catalog/ToolCatalog.java`、`DefaultToolCatalog.java`、`ToolSelection.java` |
 | MateService 工具通过专用客户端查询和调用 | `common/client/mate/MateToolClient.java`、`tool/mate/ListMateTool.java`、`CallMateTool.java` |
 
-这些内容分别是上述分析基线的已观察行为，不是目标态推测。
+表中的启动、CLI 和历史协议清理是上述提交基线的已观察行为；HTTP 1.37 契约对齐项是相对基线的目标决策，并已在当前分支实现。它们不表示 pi 已存在相同行为。
 
 ## 3. 模块上下文
 
@@ -126,7 +126,7 @@ Runtime V1 固定前缀为 `/campusclaw-service/v1`，包含 11 个接口：
 
 Session、Entry、严格序号、物化数据、删除墓碑和异步清理任务持久化到 openGauss。删除活动 Session 返回 409；成功删除的墓碑只包含 `session_id` 与 `deleted_at`。
 
-Agent、Tool、Skill 和 Session ID 分别匹配 `agent-`、`tool-`、`skill-`、`session-` 加 32 位十六进制 UUID（UUID 内部连字符已移除）。`RandomSessionIdGenerator` 只生成该 Session 格式；创建 Session 持久化 `thinking=true`。`t_sessions.agent_id` 使用 `VARCHAR(64)`，可容纳完整类型化 Agent ID。
+Agent、Tool、Skill 和 Session ID 分别匹配 `agent-`、`tool-`、`skill-`、`session-` 加 32 位十六进制 UUID（UUID 内部连字符已移除）。四类资源 ID 的正则字符串与编译后的 `Pattern` 统一由中立的 `common.identifier.ResourceIdentifierPatterns` 提供；业务类不重复编译，也不依赖 HTTP 专用常量类。`RandomSessionIdGenerator` 只生成该 Session 格式；创建 Session 持久化 `thinking=true`。`t_sessions.agent_id` 使用 `VARCHAR(64)`，可容纳完整类型化 Agent ID。
 
 Agent 配置默认直接读取 `agent/{agent_id}/.campusclaw/` 下的 `settings.json`、
 `SYSTEM.md` 和 `skills/`；部署可通过 `CAMPUSCLAW_AGENT_ROOT` 替换 `agent` 根目录。
@@ -206,6 +206,7 @@ Runtime V1 事件名 `tool.execution.started` 与 `tool.execution.completed` 是
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 2.6.1 | 2026-08-21 | 集中类型化资源 ID 的正则字符串和编译模式，分离领域约束与 Runtime HTTP 常量 |
 | 2.6.0 | 2026-08-20 | 对齐 Runtime HTTP 1.37：类型化资源 ID、Session 默认 thinking、无本地 Header 认证、精简消息体及 thinking 事件可见性和游标绑定 |
 | 2.5.0 | 2026-08-20 | 整合并行设计更新，保留双 Locale 国际化和 macOS/Linux 平台收敛，并消除 ADR 编号冲突 |
 | 2.4.0 | 2026-08-20 | 分别明确无基础资源包的国际化边界，以及仅维护 macOS/Linux 的启动平台边界 |

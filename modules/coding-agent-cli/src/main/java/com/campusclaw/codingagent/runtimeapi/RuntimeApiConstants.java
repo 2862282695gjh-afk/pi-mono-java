@@ -5,21 +5,13 @@
 package com.campusclaw.codingagent.runtimeapi;
 
 /**
- * Runtime HTTP V1 的公共路径和标识符约束。
+ * Runtime HTTP V1 的公共路径、模型格式和请求上限。
  *
  * @version [br_eCampusCore 26.0.0, 2026/08/18]
  * @since [br_eCampusCore 26.0.0]
  */
 public final class RuntimeApiConstants {
     public static final String BASE_PATH = "/campusclaw-service/v1";
-
-    public static final String AGENT_ID_PATTERN = "^agent-[0-9a-fA-F]{32}$";
-
-    public static final String TOOL_ID_PATTERN = "^tool-[0-9a-fA-F]{32}$";
-
-    public static final String SKILL_ID_PATTERN = "^skill-[0-9a-fA-F]{32}$";
-
-    public static final String SESSION_ID_PATTERN = "^session-[0-9a-fA-F]{32}$";
 
     public static final String MODEL_ID_PATTERN = "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$";
 

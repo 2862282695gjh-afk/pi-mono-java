@@ -14,7 +14,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.regex.Pattern;
 
-import com.campusclaw.codingagent.runtimeapi.RuntimeApiConstants;
+import com.campusclaw.codingagent.common.identifier.ResourceIdentifierPatterns;
 import com.fasterxml.jackson.annotation.JsonAlias;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
@@ -35,10 +35,6 @@ public class MateServiceClient {
 
     private static final String AGENT_RUNTIME_PATH = "/mate-service/v1/agents/%s/runtime";
     private static final String SKILL_INFO_PATH = "/mate-service/v1/skill/query/%s";
-
-    private static final Pattern AGENT_ID_PATTERN = Pattern.compile(RuntimeApiConstants.AGENT_ID_PATTERN);
-
-    private static final Pattern SKILL_ID_PATTERN = Pattern.compile(RuntimeApiConstants.SKILL_ID_PATTERN);
 
     private final AgentRuntimeProperties properties;
     private final ObjectMapper mapper;
@@ -69,7 +65,7 @@ public class MateServiceClient {
      * @throws AgentRuntimeException HTTP 请求或响应无效时抛出
      */
     public AgentRuntime getAgentRuntime(String agentId) {
-        requireIdentifier(agentId, AGENT_ID_PATTERN, "agentId");
+        requireIdentifier(agentId, ResourceIdentifierPatterns.AGENT_ID_PATTERN, "agentId");
         HttpRequest request = HttpRequest.newBuilder(endpoint(AGENT_RUNTIME_PATH.formatted(agentId)))
                 .timeout(properties.requestTimeout())
                 .header("Accept", "application/json")
@@ -94,7 +90,7 @@ public class MateServiceClient {
      * @throws AgentRuntimeException HTTP 请求或响应无效时抛出
      */
     public List<SkillInfo> querySkillInfo(String skillId) {
-        requireIdentifier(skillId, SKILL_ID_PATTERN, "skillId");
+        requireIdentifier(skillId, ResourceIdentifierPatterns.SKILL_ID_PATTERN, "skillId");
         HttpRequest request = HttpRequest.newBuilder(endpoint(SKILL_INFO_PATH.formatted(skillId)))
                 .timeout(properties.requestTimeout())
                 .header("Accept", "application/json")

@@ -6,7 +6,7 @@ package com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.web;
 
 import java.util.regex.Pattern;
 
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.RuntimeApiConstants;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.common.identifier.ResourceIdentifierPatterns;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
 
@@ -17,18 +17,14 @@ import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.error.Runt
  * @since [br_eCampusCore 26.0.0]
  */
 public final class RuntimeIdentifierValidator {
-    private static final Pattern AGENT_ID = Pattern.compile(RuntimeApiConstants.AGENT_ID_PATTERN);
-
-    private static final Pattern SESSION_ID = Pattern.compile(RuntimeApiConstants.SESSION_ID_PATTERN);
-
     private RuntimeIdentifierValidator() {}
 
     public static void requireAgentId(String value) {
-        requireIdentifier(value, AGENT_ID, RuntimeErrorCode.INVALID_AGENT_ID);
+        requireIdentifier(value, ResourceIdentifierPatterns.AGENT_ID_PATTERN, RuntimeErrorCode.INVALID_AGENT_ID);
     }
 
     public static void requireSessionId(String value) {
-        requireIdentifier(value, SESSION_ID, RuntimeErrorCode.INVALID_SESSION_ID);
+        requireIdentifier(value, ResourceIdentifierPatterns.SESSION_ID_PATTERN, RuntimeErrorCode.INVALID_SESSION_ID);
     }
 
     private static void requireIdentifier(String value, Pattern pattern, RuntimeErrorCode errorCode) {

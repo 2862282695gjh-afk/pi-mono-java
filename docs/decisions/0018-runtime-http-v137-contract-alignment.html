@@ -23,7 +23,7 @@
   <section><h2>Context</h2>
     <p>独立 HTTP 设计仓库的 1.37 契约要求 Agent、Tool、Skill、Session 使用类型前缀加去连字符 UUID；新 Session 默认 <code>thinking=true</code>；提交用户消息的 operation 已固定为 <code>user.message</code>，请求体不再重复携带 <code>type</code>。</p>
     <p>分析基线仍由认证拦截器在进入 Controller 前检查 <code>X-HW-ID</code> 与 JWT/APPKEY 的齐全、共存和 Bearer 形状，并定义两个本地认证错误码。基线也只公开 Assistant 文本事件：Provider 已有 thinking start/delta/end，但 Runtime 未投影或持久化。</p>
-    <p>源码证据包括 <code>RuntimeApiConstants</code>、<code>MateServiceClient#getAgentRuntime</code>、<code>AgentRuntimeManager#prepare</code>、<code>RandomSessionIdGenerator#nextId</code>、<code>RuntimeSessionService#newSession</code>、<code>RuntimeAuthenticationInterceptor#preHandle</code>、<code>UserEventRequestVO</code>、<code>AssistantMessageEvent</code>、<code>RuntimeEventProjector#projectMessageUpdate</code>、<code>RuntimeEventQueryService#list</code> 与 <code>RuntimeSessionMapper.xml#listCurrentBranch</code>。</p>
+    <p>基线源码证据包括 <code>RuntimeApiConstants</code>、<code>MateServiceClient#getAgentRuntime</code>、<code>AgentRuntimeManager#prepare</code>、<code>RandomSessionIdGenerator#nextId</code>、<code>RuntimeSessionService#newSession</code>、<code>RuntimeAuthenticationInterceptor#preHandle</code>、<code>UserEventRequestVO</code>、<code>AssistantMessageEvent</code>、<code>RuntimeEventProjector#projectMessageUpdate</code>、<code>RuntimeEventQueryService#list</code> 与 <code>RuntimeSessionMapper.xml#listCurrentBranch</code>。当前分支落地证据新增 <code>common/identifier/ResourceIdentifierPatterns.java</code>；这是目标设计的实现，不是 pi 或分析基线的既有行为。</p>
   </section>
 
   <section><h2>Options considered</h2>
@@ -38,6 +38,7 @@
     <ul>
       <li>全部 11 项 operation 继续把 <code>X-HW-ID</code>、<code>Authorization</code> 或 <code>X-HW-APPKEY</code> 作为集成调用上下文；Runtime 不检查缺失、共存、格式或真实性，不创建认证上下文，也不定义 <code>UNAUTHENTICATED</code> 和 <code>AUTH_CREDENTIAL_CONFLICT</code>。</li>
       <li>Agent、Tool、Skill、Session ID 分别使用 <code>agent-</code>、<code>tool-</code>、<code>skill-</code>、<code>session-</code> 加 32 位十六进制 UUID；Session 生成器输出小写十六进制，新 Session 持久化 <code>thinking=true</code>。</li>
+      <li>四类资源 ID 的正则字符串与编译后的 <code>Pattern</code> 集中在中立的 <code>ResourceIdentifierPatterns</code>；<code>RuntimeApiConstants</code> 只保留 HTTP 路径、模型格式和请求上限。</li>
       <li><code>POST /events</code> 请求 VO 只声明 <code>message</code> 与 <code>file_ids</code>；旧 <code>type</code> 按未知字段拒绝。</li>
       <li>执行接受时把 Session thinking 固化在进程内 holder。快照为 true 时投影 <code>assistant.thinking.started/delta/completed</code>，其中 completed 作为独立 Entry 持久化；快照为 false 时三类事件均不产生。</li>
       <li><code>GET /events</code> 按查询时 Session 当前 thinking 决定是否把 <code>assistant.thinking.completed</code> 加入当前分支结果。关闭只隐藏、不删除。page 加密绑定 Session、继续位置、thinking 和过期时间；开关变化使旧 page 无效。</li>
@@ -51,6 +52,7 @@
       <li><strong>数据：</strong><code>t_sessions.agent_id</code> 扩为 <code>VARCHAR(64)</code>；<code>t_session_entries.type</code> 已能容纳新事件名，不增加表。完整安装 DDL 随实现更新。</li>
       <li><strong>分页：</strong>thinking 过滤在 SQL 的 <code>LIMIT</code> 前完成，避免隐藏事件占用页大小；状态切换后客户端必须从第一页重读。</li>
       <li><strong>兼容：</strong>旧 Agent/Session ID、消息体 <code>type</code> 和旧 page 不兼容；这是已确认的 V1 契约收敛，不提供别名。</li>
+      <li><strong>依赖：</strong>核心运行时和 Mate 客户端复用同一组领域模式，不再分别编译正则，也不再为了资源约束依赖 HTTP API 包。</li>
       <li><strong>验证：</strong>单元与路由测试覆盖类型化 ID、默认 thinking、Header 缺失/共存、旧 type 拒绝、thinking 开关投影、持久化过滤和游标失效；openGauss 集成测试覆盖四类当前分支 Entry。</li>
     </ul>
   </section>
