@@ -23,7 +23,12 @@ import okhttp3.mockwebserver.RecordedRequest;
 
 class MateServiceClientTest {
 
+    private static final String AGENT_RUNTIME_PATH_TEMPLATE = "/mate-service/v1/agents/%s/runtime";
+
+    private static final String SKILL_INFO_QUERY_PATH_TEMPLATE = "/mate-service/v1/skill/query/%s";
+
     private MockWebServer server;
+
     private MateServiceClient client;
 
     @BeforeEach
@@ -32,7 +37,8 @@ class MateServiceClientTest {
         server.start();
         var properties = new AgentRuntimeProperties(
                 server.url("/").uri(), Path.of("agent"), Duration.ofSeconds(1L), Duration.ofSeconds(2L));
-        client = new MateServiceClient(properties, new ObjectMapper());
+        client = new MateServiceClient(
+                properties, new ObjectMapper(), AGENT_RUNTIME_PATH_TEMPLATE, SKILL_INFO_QUERY_PATH_TEMPLATE);
     }
 
     @AfterEach
@@ -253,7 +259,8 @@ class MateServiceClientTest {
     void readsRuntimeEnvelopeWithConfiguredSuccessCode() {
         var properties = new AgentRuntimeProperties(
                 server.url("/").uri(), Path.of("agent"), Duration.ofSeconds(1L), Duration.ofSeconds(2L), "200");
-        client = new MateServiceClient(properties, new ObjectMapper());
+        client = new MateServiceClient(
+                properties, new ObjectMapper(), AGENT_RUNTIME_PATH_TEMPLATE, SKILL_INFO_QUERY_PATH_TEMPLATE);
         server.enqueue(
                 new MockResponse()
                         .setHeader("Content-Type", "application/json")
@@ -325,6 +332,29 @@ class MateServiceClientTest {
         assertEquals(0, server.getRequestCount());
     }
 
+    @Test
+    void usesConfiguredEndpointPathTemplates() throws Exception {
+        var properties = new AgentRuntimeProperties(
+                server.url("/").uri(), Path.of("agent"), Duration.ofSeconds(1L), Duration.ofSeconds(2L));
+        client =
+                new MateServiceClient(properties, new ObjectMapper(), "/custom/agents/%s/runtime", "/custom/skills/%s");
+        server.enqueue(
+                new MockResponse().setHeader("Content-Type", "application/json").setBody("{}"));
+        server.enqueue(new MockResponse()
+                .setHeader("Content-Type", "application/json")
+                .setBody("{\"resCode\":\"0\",\"result\":[]}"));
+
+        client.getAgentRuntime("agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+        client.querySkillInfo("skill-11111111111111111111111111111111");
+
+        assertEquals(
+                "/custom/agents/agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/runtime",
+                server.takeRequest().getPath());
+        assertEquals(
+                "/custom/skills/skill-11111111111111111111111111111111",
+                server.takeRequest().getPath());
+    }
+
     private MateServiceClient newClientWithMaxResponseBytes(int maxResponseBytes) {
         var properties = new AgentRuntimeProperties(
                 server.url("/").uri(),
@@ -333,6 +363,7 @@ class MateServiceClientTest {
                 Duration.ofSeconds(2L),
                 "0",
                 maxResponseBytes);
-        return new MateServiceClient(properties, new ObjectMapper());
+        return new MateServiceClient(
+                properties, new ObjectMapper(), AGENT_RUNTIME_PATH_TEMPLATE, SKILL_INFO_QUERY_PATH_TEMPLATE);
     }
 }

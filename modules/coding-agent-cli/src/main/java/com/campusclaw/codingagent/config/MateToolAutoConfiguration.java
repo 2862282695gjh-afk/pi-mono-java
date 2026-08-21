@@ -35,6 +35,18 @@ public class MateToolAutoConfiguration {
     @Value("${mate.innerGWSerive:}")
     private String mateInnerGwAddress;
 
+    /** Agent 元数据查询路径前缀。 */
+    @Value("${mate.endpoints.agent-info-path-prefix}")
+    private String agentInfoPathPrefix;
+
+    /** Skill 绑定工具查询路径前缀。 */
+    @Value("${mate.endpoints.skill-tools-query-path-prefix}")
+    private String skillToolsQueryPathPrefix;
+
+    /** 工具元数据批量查询路径。 */
+    @Value("${mate.endpoints.tool-metadata-query-path}")
+    private String toolMetadataQueryPath;
+
     /**
      * 创建访问 Mate 内部网关所需的 REST 工具。
      *
@@ -56,7 +68,13 @@ public class MateToolAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean(MateToolClient.class)
     public MateToolClient mateToolClient(MateRestUtil restUtil, ObjectProvider<ObjectMapper> mapperProvider) {
-        return new HttpMateToolClient(mateInnerGwAddress, restUtil, mapperProvider.getIfAvailable(ObjectMapper::new));
+        return new HttpMateToolClient(
+                mateInnerGwAddress,
+                agentInfoPathPrefix,
+                skillToolsQueryPathPrefix,
+                toolMetadataQueryPath,
+                restUtil,
+                mapperProvider.getIfAvailable(ObjectMapper::new));
     }
 
     /**

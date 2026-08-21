@@ -20,14 +20,19 @@ import okhttp3.mockwebserver.MockResponse;
 import okhttp3.mockwebserver.MockWebServer;
 
 /**
- * Stub-server tests for {@link HttpMateToolClient}'s two-step listTools:
- * agent/skill metadata GET (extracting bound tool IDs) followed by the
- * QUERYTOOLS POST, plus error and fallback branches.
+ * {@link HttpMateToolClient} 两步查询的桩服务测试：先查询 Agent 或 Skill 元数据并提取绑定工具标识，
+ * 再批量查询工具元数据，同时覆盖错误和兜底分支。
  *
  * @version [br_eCampusCore 26.0.0, 2026/08/18]
  * @since [br_eCampusCore 26.0.0]
  */
 class HttpMateToolClientTest {
+
+    private static final String AGENT_INFO_PATH_PREFIX = "/mate-service/v1/agents/";
+
+    private static final String SKILL_TOOLS_QUERY_PATH_PREFIX = "/mate-service/v1/skill/info/query/";
+
+    private static final String TOOL_METADATA_QUERY_PATH = "/mate-service/v1/runtime/tools/query";
 
     private MockWebServer server;
 
@@ -39,6 +44,9 @@ class HttpMateToolClientTest {
         server.start();
         client = new HttpMateToolClient(
                 server.url("/").toString().replaceAll("/$", ""),
+                AGENT_INFO_PATH_PREFIX,
+                SKILL_TOOLS_QUERY_PATH_PREFIX,
+                TOOL_METADATA_QUERY_PATH,
                 new MateRestUtil(),
                 new com.fasterxml.jackson.databind.ObjectMapper());
     }
@@ -94,7 +102,7 @@ class HttpMateToolClientTest {
     }
 
     @Test
-    void emptyBindingToolsSkipsQueryTools() throws Exception {
+    void emptyBindingToolsSkipsToolMetadataQuery() throws Exception {
         server.enqueue(json("{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":{\"bindingTools\":[]}}"));
 
         List<MateToolMeta> tools = client.listTools("agent-11111111111111111111111111111111", null);
@@ -127,7 +135,7 @@ class HttpMateToolClientTest {
     }
 
     @Test
-    void nonZeroResCodeOnQueryToolsThrows() {
+    void nonZeroResCodeOnToolMetadataQueryThrows() {
         server.enqueue(
                 json(
                         "{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":{\"bindingTools\":[{\"toolId\":\"tool-11111111111111111111111111111111\"}]}}"));
@@ -135,11 +143,11 @@ class HttpMateToolClientTest {
 
         assertThatThrownBy(() -> client.listTools("agent-11111111111111111111111111111111", null))
                 .isInstanceOf(IllegalStateException.class)
-                .hasRootCauseMessage("QUERYTOOLS failed: resCode=403 resMsg=forbidden");
+                .hasRootCauseMessage("tool metadata query failed: resCode=403 resMsg=forbidden");
     }
 
     @Test
-    void invalidBoundToolIdIsRejectedBeforeQueryTools() {
+    void invalidBoundToolIdIsRejectedBeforeToolMetadataQuery() {
         server.enqueue(json(
                 "{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":{\"bindingTools\":[{\"toolId\":\"old-tool-id\"}]}}"));
 
@@ -174,6 +182,26 @@ class HttpMateToolClientTest {
         var request = server.takeRequest();
         assertThat(request.getHeader("Content-Type")).isEqualTo("application/json");
         assertThat(request.getHeader("Accept")).isEqualTo("application/json");
+    }
+
+    @Test
+    void configuredEndpointPathsAreUsed() throws Exception {
+        HttpMateToolClient configuredClient = new HttpMateToolClient(
+                server.url("/").toString().replaceAll("/$", ""),
+                "/custom/agents/",
+                "/custom/skills/",
+                "/custom/tools/query",
+                new MateRestUtil(),
+                new com.fasterxml.jackson.databind.ObjectMapper());
+        server.enqueue(
+                json(
+                        "{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":{\"bindingTools\":[{\"toolId\":\"tool-11111111111111111111111111111111\"}]}}"));
+        server.enqueue(json("{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":{\"data\":[]}}"));
+
+        configuredClient.listTools("agent-11111111111111111111111111111111", null);
+
+        assertThat(server.takeRequest().getPath()).isEqualTo("/custom/agents/agent-11111111111111111111111111111111");
+        assertThat(server.takeRequest().getPath()).isEqualTo("/custom/tools/query");
     }
 
     private static MockResponse json(String body) {

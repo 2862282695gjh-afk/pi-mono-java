@@ -1,8 +1,8 @@
 # Agent 与 Skill 本地优先运行时设计
 
-> 文档版本：2.3.0
+> 文档版本：2.4.0
 >
-> 更新日期：2026-08-19
+> 更新日期：2026-08-21
 >
 > 状态：已实现；仅适用于显式 CLI `--agent-id` 路径
 
@@ -12,17 +12,20 @@
 
 - HTTP V1 分支基线：`1fae0a70ac0fd8c64d40d0c7dde0518f1cd9f28b`
 - 合入的 `origin/main` 基线：`7811dc335fcb0125a1ecbddd63cd77baf120f21d`
+- 本次出站配置治理基线：`1e9d4ee2e14717764f8403c20375c55512cbd97b`
 
 主要源码证据：
 
 - `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/cli/CampusClawCommand.java`：`--agent-id`、`call()`、`createAgentSession()`、`configureDelegation()`
 - `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtime/AgentRuntimeManager.java`：`prepare()`、`prepareCached()`、`materialize()`
-- `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtime/MateServiceClient.java`：GetAgentRuntime 与 querySkillInfo 客户端
+- `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtime/MateServiceClient.java`：构造器 `@Value` 路径模板、`getAgentRuntime()` 与 `querySkillInfo()`
 - `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/session/AgentSession.java`：`setAgentRuntime()`、`setDelegationState()`、`initialize()` 和 Skill/子 Agent 激活
 - `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/tool/catalog/DefaultToolCatalog.java`：本地可执行工具目录
 - `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/agent/FileAgentDirectoryResolver.java`：HTTP V1 的只读 Agent 目录解析
 
 该能力是 CampusMate/CampusClaw 产品集成，不以 pi 的托管 Agent 接口为设计基线。pi 的 Agent、Session、Skill 加载机制仍是本地执行基础，但不存在与 CampusMate 物化协议一一对应的实现。
+
+配置治理基线中，`MateServiceClient` 的两个出站路径模板仍是 Java 静态常量。目标设计将它们移入应用配置并通过构造器参数上的 `@Value` 注入；这是架构配置治理。当前分支已实现该目标，公开入站 HTTP 契约路径不受影响。
 
 ## 2. 当前边界
 
@@ -153,10 +156,14 @@ campusmate:
     request-timeout: PT30S
     success-code: ${CAMPUSMATE_SUCCESS_CODE:0}
     max-response-bytes: ${CAMPUSMATE_MAX_RESPONSE_BYTES:4194304}
+    agent-runtime-path-template: ${CAMPUSMATE_AGENT_RUNTIME_PATH_TEMPLATE:/mate-service/v1/agents/%s/runtime}
+    skill-info-query-path-template: ${CAMPUSMATE_SKILL_INFO_QUERY_PATH_TEMPLATE:/mate-service/v1/skill/query/%s}
 ```
 
 该配置只控制 CLI 托管 Agent 物化。HTTP V1 仍使用独立配置键
 `campusclaw.runtime.agent-directory.root`；两个配置的默认值都为 `agent`，但只有 CLI 配置会触发远程物化。
+
+两个路径模板属于 CampusMate 下游出站接口配置，由 `MateServiceClient` 构造器参数上的 `@Value` 注入。外网模块在 `application.yml` 中维护，`mate-campusclaw` 镜像按其现有格式在 `application.properties` 中维护同名键。Java 字段使用 `agentRuntimePathTemplate` 和 `skillInfoQueryPathTemplate`，不再隐藏为静态路径常量。
 
 ## 9. 测试范围
 
@@ -177,6 +184,7 @@ campusmate:
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 2.4.0 | 2026-08-21 | 将 Agent Runtime 与 Skill Info 出站路径模板移入应用配置，通过 `@Value` 注入，并同步 PlantUML 与配置覆盖测试。 |
 | 2.3.0 | 2026-08-19 | 合入最新主干 Agent 委派与 HTTP V1 目录行为，并确认 Skill 只使用本地直接解析链路。 |
 | 2.2.0 | 2026-08-19 | 将 HTTP V1 目录改为 `agent/{agent_id}/.campusclaw/`；明确 HTTP 与 CLI 共用目录位置但仍保持独立文件契约和远程物化语义。 |
 | 2.1.0 | 2026-08-19 | 合入 Agent 委派能力并把旧 ServerMode 接线迁移到显式托管 CLI；HTTP V1 仍保持独立目录与执行链。 |

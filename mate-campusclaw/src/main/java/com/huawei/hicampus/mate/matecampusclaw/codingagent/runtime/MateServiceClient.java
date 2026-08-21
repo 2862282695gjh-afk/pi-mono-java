@@ -22,6 +22,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 /**
@@ -33,26 +34,38 @@ import org.springframework.stereotype.Component;
 @Component
 public class MateServiceClient {
 
-    private static final String AGENT_RUNTIME_PATH = "/mate-service/v1/agents/%s/runtime";
-    private static final String SKILL_INFO_PATH = "/mate-service/v1/skill/query/%s";
-
     private final AgentRuntimeProperties properties;
     private final ObjectMapper mapper;
     private final HttpClient httpClient;
+    private final String agentRuntimePathTemplate;
+    private final String skillInfoQueryPathTemplate;
 
     @Autowired
-    public MateServiceClient(AgentRuntimeProperties properties, ObjectMapper mapper) {
+    public MateServiceClient(
+            AgentRuntimeProperties properties,
+            ObjectMapper mapper,
+            @Value("${campusmate.runtime.agent-runtime-path-template}") String agentRuntimePathTemplate,
+            @Value("${campusmate.runtime.skill-info-query-path-template}") String skillInfoQueryPathTemplate) {
         this(
                 properties,
                 mapper,
+                agentRuntimePathTemplate,
+                skillInfoQueryPathTemplate,
                 HttpClient.newBuilder()
                         .connectTimeout(properties.connectTimeout())
                         .build());
     }
 
-    MateServiceClient(AgentRuntimeProperties properties, ObjectMapper mapper, HttpClient httpClient) {
+    MateServiceClient(
+            AgentRuntimeProperties properties,
+            ObjectMapper mapper,
+            String agentRuntimePathTemplate,
+            String skillInfoQueryPathTemplate,
+            HttpClient httpClient) {
         this.properties = properties;
         this.mapper = mapper;
+        this.agentRuntimePathTemplate = agentRuntimePathTemplate;
+        this.skillInfoQueryPathTemplate = skillInfoQueryPathTemplate;
         this.httpClient = httpClient;
     }
 
@@ -66,7 +79,7 @@ public class MateServiceClient {
      */
     public AgentRuntime getAgentRuntime(String agentId) {
         requireIdentifier(agentId, ResourceIdentifierPatterns.AGENT_ID_PATTERN, "agentId");
-        HttpRequest request = HttpRequest.newBuilder(endpoint(AGENT_RUNTIME_PATH.formatted(agentId)))
+        HttpRequest request = HttpRequest.newBuilder(endpoint(agentRuntimePathTemplate.formatted(agentId)))
                 .timeout(properties.requestTimeout())
                 .header("Accept", "application/json")
                 .GET()
@@ -91,7 +104,7 @@ public class MateServiceClient {
      */
     public List<SkillInfo> querySkillInfo(String skillId) {
         requireIdentifier(skillId, ResourceIdentifierPatterns.SKILL_ID_PATTERN, "skillId");
-        HttpRequest request = HttpRequest.newBuilder(endpoint(SKILL_INFO_PATH.formatted(skillId)))
+        HttpRequest request = HttpRequest.newBuilder(endpoint(skillInfoQueryPathTemplate.formatted(skillId)))
                 .timeout(properties.requestTimeout())
                 .header("Accept", "application/json")
                 .GET()

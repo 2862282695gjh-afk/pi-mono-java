@@ -1,8 +1,9 @@
 # Mate Tool Client 设计文档
 
 > 模块:`coding-agent-cli`
-> 状态:Accepted(初版 #136 / 目录调整 #140 / 内网网关对接本 PR)
-> 日期:2026-08-17 初版,2026-08-18 更新(QUERYTOOLS 对接 + 简化)
+> 文档版本:1.1.0
+> 状态:Accepted(初版 #136 / 目录调整 #140 / 内网网关对接 #161)
+> 日期:2026-08-17 初版,2026-08-21 更新(出站接口路径配置化)
 
 ---
 
@@ -11,6 +12,16 @@
 CampusClaw 需要调用 Mate 平台管理的工具。这批工具由 Mate 工具服务统一管理(工具元数据、执行),调用经内网网关(`mate.innerGWSerive`),listTools 查询无需凭据,callTool 需携带 agent 下发的凭据。
 
 **约束**:AgentLoop / ToolExecutionPipeline / AgentTool 接口由 core 团队维护,本特性**不允许改动这三个组件**,采用纯增量方式接入。
+
+## 源码基线
+
+- 分析提交:`1e9d4ee2e14717764f8403c20375c55512cbd97b`
+- `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/common/client/HttpMateToolClient.java`:`listTools`、`queryToolIdsByAgentId`、`queryToolIdsBySkillId`、`queryToolMetaByIds`
+- `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/config/MateToolAutoConfiguration.java`:`mateToolClient`
+- `modules/coding-agent-cli/src/main/resources/application.yml`:`mate.innerGWSerive`
+- `mate-campusclaw/src/main/resources/application.properties`:`mate.innerGWSerive`
+
+观察到的基线行为是三个出站接口路径以 Java 静态常量保存。目标设计将这些部署相关路径移入应用配置并以 `@Value` 注入；这是架构配置治理，不是分析基线的既有行为。稳定的入站 HTTP 契约路径仍由对应 API 常量维护，不纳入本次配置化。
 
 ## 关键定义
 
@@ -21,13 +32,13 @@ CampusClaw 需要调用 Mate 平台管理的工具。这批工具由 Mate 工具
 | `MateToolClient` | 接口 | `common/client/mate/` — `listTools(agentId, skillId)` / `callTool(tool, args, credentials)` |
 | `MateToolMeta` | record | `common/client/mate/` — 工具元数据 |
 | `MateCredentials` | record | `common/client/mate/` — 凭据(AppKey / JWT 两模式),仅 callTool 携带 |
-| `HttpMateToolClient` | 实现 | `common/client/` — QUERYTOOLS 真实调用;invoke 仍为 stub(DEF-007) |
+| `HttpMateToolClient` | 实现 | `common/client/` — 工具元数据批量查询真实调用;invoke 仍为 stub(DEF-007) |
 | `MateRestUtil` | 工具类 | `common/util/` — 网关 REST 调用(executePostRawRequest / executeGetRawRequest),返回原始 body 由调用方解信封;`RequestHeaderInfo.toHeaders()` 将 15 字段映射为真实 HTTP header |
 | `RequestHeaderInfo` | DTO | `common/dto/` — 请求头信息(内网网关无需凭据字段,`builder().build()` 即可) |
-| `ToolInfo` | DTO | `common/dto/` — QUERYTOOLS 返回的 `result.data` 数组元素 |
+| `ToolInfo` | DTO | `common/dto/` — 工具元数据批量查询返回的 `result.data` 数组元素 |
 | `AgentInfo` | DTO | `common/dto/` — agent 元数据,`bindingTools[].toolId` 是第一步的 tool ID 来源 |
 | `QuerySkillToolsResult` / `SkillBindingTool` | DTO | `common/dto/` — skill 工具查询结果,`bindingTools[].id` 是第一步的 tool ID 来源 |
-| `MateToolAutoConfiguration` | 配置 | `config/` — 装配 + `@Value("${mate.innerGWSerive:}")` 网关地址 |
+| `MateToolAutoConfiguration` | 配置 | `config/` — 通过 `@Value` 注入网关地址与三个出站接口路径并完成装配 |
 
 ## 架构与数据流
 
@@ -41,7 +52,7 @@ CampusClaw 需要调用 Mate 平台管理的工具。这批工具由 Mate 工具
 
 ![数据流](mate-tool-client/mate_tool_client_dataflow.svg)
 
-[PlantUML 源码](mate-tool-client/diagram.puml#L118)
+[PlantUML 源码](mate-tool-client/diagram.puml#L123)
 
 ```
 listMateTool({agent_id | skill_id})
@@ -53,9 +64,9 @@ listMateTool({agent_id | skill_id})
                   → result: AgentInfo → 摘 bindingTools[].toolId
         skillId: GET /mate-service/v1/skill/info/query/{skillId}
                   → result: QuerySkillToolsResult → 摘 bindingTools[].id
-        (ID 列表为空 → 直接返回空工具列表,不发 QUERYTOOLS)
+        (ID 列表为空 → 直接返回空工具列表,不发工具元数据查询)
         [第二步:工具元数据]
-        POST {mate.innerGWSerive}/mate-service/v1/runtime/tools/query   (QUERYTOOLS)
+        POST {mate.innerGWSerive}{mate.endpoints.tool-metadata-query-path}
         header: RequestHeaderInfo.builder().build()      ← 无凭据
         body: {"toolIds": [第一步摘到的列表]}
         ← {"resCode":"0","resMsg":"...","result":{"data":[ToolInfo,...]}}
@@ -91,13 +102,13 @@ callMateTool({tool, args})
 
 **理由**:内网网关的查询接口不校验凭据;工具执行需要身份。凭据来源由 `CallMateTool.resolveCredentials()` 钩子解析(每次调用执行,不缓存——进程级单例上缓存会串凭据)。钩子默认 `return null`(而非空字符串凭据):空 `appKey("","")` 是"看似有凭据实际为空"的最含糊状态,DEF-007 实现后会让 invokeTool 拿到明确判据(null=未接线)。
 
-### D4. 两步查询:先元数据摘 tool ID,再 QUERYTOOLS 查详情
+### D4. 两步查询:先元数据摘 tool ID,再批量查询详情
 
-**决策**:`listTools(agentId, skillId)` 先 GET agent/skill 元数据摘绑定工具 ID(agent 路径 `bindingTools[].toolId`,skill 路径 `bindingTools[].id`),再把 ID 列表 POST 给 QUERYTOOLS 查完整元数据;ID 列表为空直接返回空列表。
+**决策**:`listTools(agentId, skillId)` 先 GET agent/skill 元数据摘绑定工具 ID(agent 路径 `bindingTools[].toolId`,skill 路径 `bindingTools[].id`),再把 ID 列表 POST 给工具元数据批量查询接口;ID 列表为空直接返回空列表。
 
-**理由**:授权关系(agent/skill → tool)由 Mate 元数据服务持有,客户端不自行推断;QUERYTOOLS 只按 ID 批量查详情,职责单一。三个 protected 编排方法(`queryToolIdsByAgentId`/`queryToolIdsBySkillId`/`queryToolMetaByIds`)可内网覆写。
+**理由**:授权关系(agent/skill → tool)由 Mate 元数据服务持有,客户端不自行推断;工具元数据接口只按 ID 批量查详情,职责单一。三个 protected 编排方法(`queryToolIdsByAgentId`/`queryToolIdsBySkillId`/`queryToolMetaByIds`)可内网覆写。
 
-### D5. QUERYTOOLS 真实调用,invoke 仍为 stub
+### D5. 工具元数据查询真实调用,invoke 仍为 stub
 
 **决策**:`HttpMateToolClient` 的两步查询完整实现;`invokeTool` 保持 `UnsupportedOperationException`(DEF-007)。
 
@@ -135,14 +146,28 @@ MateToolAutoConfiguration
 - 值的来源遵循 mate 侧部署惯例(与 `GAUSSDB_URL` 等同体系):运维写 `/etc/profile`,脚本 source 后导出,应用只认环境变量
 - 默认空串:未配置的环境仍可启动,仅在真正调用 Mate 工具时于网关侧报错(fail-late 但报错清晰,不阻断无关功能)
 
+### D8. 出站接口路径配置化
+
+**决策**:三个部署相关的 Mate 出站接口路径统一使用可读的 lowerCamelCase 实例字段，并由 `MateToolAutoConfiguration` 通过 `@Value` 注入。配置键采用 kebab-case：
+
+| Java 字段 | 应用配置键 | 默认路径 |
+|---|---|---|
+| `agentInfoPathPrefix` | `mate.endpoints.agent-info-path-prefix` | `/mate-service/v1/agents/` |
+| `skillToolsQueryPathPrefix` | `mate.endpoints.skill-tools-query-path-prefix` | `/mate-service/v1/skill/info/query/` |
+| `toolMetadataQueryPath` | `mate.endpoints.tool-metadata-query-path` | `/mate-service/v1/runtime/tools/query` |
+
+外网主模块在 `application.yml` 中维护默认值和环境变量占位符；`mate-campusclaw` 按其现有资源格式在 `application.properties` 中维护完全相同的配置键。Java 中不再保留 `AGENT_INFO`、`SKILL_TOOLS_QUERY`、`QUERYTOOLS` 这类静态路径常量。
+
+**理由**:这些路径属于部署环境中的下游服务拓扑，不是 CampusClaw 对外发布的入站 HTTP 契约。配置化允许不同部署覆盖路径，同时避免含义不清的缩写或合词常量。入站契约常量仍保持集中定义，避免部署配置意外改变公开 API。
+
 ## 边界情况
 
 | 场景 | 行为 |
 |---|---|
 | listMateTool 无 agent_id/skill_id | 返回 0 tool(s),不发网关请求 |
-| agent/skill 元数据 bindingTools 为空 | 返回 0 tool(s),不发 QUERYTOOLS |
+| agent/skill 元数据 bindingTools 为空 | 返回 0 tool(s),不发工具元数据查询 |
 | 任一网关调用 resCode != "0" | 抛 IllegalStateException(含 resCode/resMsg) |
-| QUERYTOOLS 返回空 data | 返回空工具列表 |
+| 工具元数据批量查询返回空 data | 返回空工具列表 |
 | callTool 网关异常 | 包装为 isError=true 的 ToolResult 返回,不中断 agent |
 | Mate result.isError() | 抛 MateToolExecutionException,pipeline 转 ToolResultMessage.isError=true |
 | `mate.tool.enabled=false` | 两个 AgentTool 均不注册 |
@@ -150,13 +175,13 @@ MateToolAutoConfiguration
 
 ## 性能(DFX)
 
-- 无缓存无状态;listTools 为两次网关往返(元数据 GET + QUERYTOOLS POST),callTool 一次
+- 无缓存无状态;listTools 为两次网关往返(元数据 GET + 工具元数据 POST),callTool 一次
 - MateRestUtil:连接超时 10s、请求超时 60s,JDK HttpClient
 - 无 AgentLoop 改动,对现有工具路径零开销
 
 ## 契约改动
 
-LLM API tools 字段新增 listMateTool / callMateTool 两个工具定义。网关契约:QUERYTOOLS(已对接);执行接口(DEF-007 内部定义)。
+LLM API tools 字段新增 listMateTool / callMateTool 两个工具定义。网关工具元数据批量查询接口已对接;执行接口由 DEF-007 内部定义。
 
 ## 测试
 
@@ -166,16 +191,20 @@ LLM API tools 字段新增 listMateTool / callMateTool 两个工具定义。网�
 | `ListMateToolTest` | 3 | agent_id 作 tool ID / skill_id 作 tool ID / 空参查空列表 |
 | `MateToolAutoConfigurationTest` | 4 | 默认装配 / enabled=false 排除 / 网关地址经属性到达 client / isError 经 pipeline 传播 |
 | `MateToolPropertiesTest` | 1 | enabled 默认值 |
-| `HttpMateToolClientTest` | 7 | MockWebServer 桩测试:agent 摘 toolId / skill 摘 id / 空 bindingTools 跳过 QUERYTOOLS / toolName 兜底 / 两步 resCode!=0 抛错 / 请求方法与路径 / header 发送 |
-| `ApplicationYmlLoadTest` | 2 | config-data 真加载 application.yml,占位符解析无循环引用(回归) |
+| `HttpMateToolClientTest` | 11 | MockWebServer 桩测试:两步查询 / 空 bindingTools 跳过详情查询 / toolName 兜底 / 错误分支 / 标识校验 / header 发送 / 配置路径生效 |
+| `ApplicationYmlLoadTest` | 3 | config-data 真加载 application.yml,占位符解析无循环引用,默认路径和外部覆盖生效 |
 
-共 20 个:工具层使用内存 `MockMateToolClient`;HTTP 层使用 MockWebServer 桩服务(不依赖 mock client,直测 `HttpMateToolClient` 两步查询)。
+共 25 个:工具层使用内存 `MockMateToolClient`;HTTP 层使用 MockWebServer 桩服务(不依赖 mock client,直测 `HttpMateToolClient` 两步查询)。
 
 ## 验证
 
-- `./mvnw -pl modules/coding-agent-cli -am test -Dtest='CallMateToolTest,ListMateToolTest,MateToolAutoConfigurationTest,MateToolPropertiesTest,ApplicationYmlLoadTest,HttpMateToolClientTest' -Dsurefire.failIfNoSpecifiedTests=false` — **20 tests, 0 failures**
-- `checkstyle:check` → 0 violations;`spotless:check` → clean
-- `./scripts/sync-mate-campusclaw.sh` — mate-campusclaw 编译通过
+- `./mvnw -pl modules/coding-agent-cli -am test -Dtest='HttpMateToolClientTest,MateToolAutoConfigurationTest,ApplicationYmlLoadTest,MateServiceClientTest,ToolCatalogWiringTest' -Dsurefire.failIfNoSpecifiedTests=false` — **34 tests, 0 failures**
+- `./mvnw clean test` — 全量 Reactor 通过，`coding-agent-cli` **1306 tests, 0 failures**
+- `mvn clean test`(`mate-campusclaw`) — **2777 tests, 0 failures**
+- 主模块 `checkstyle:check` 与 `spotless:check` → clean；mate 镜像全量测试内置 `checkstyle:check` → 0 violations
+- mate 镜像独立 `spotless:check` 仍报告 120 个包名替换后的既有格式问题，首个报告文件不在本次差异中；本次不扩展修改范围
+- `./scripts/sync-mate-campusclaw.sh` — mate-campusclaw 同步并编译通过
+- `plantuml -tsvg docs/designs/mate-tool-client/diagram.puml docs/designs/agent-skill-runtime/diagram.puml` — 三个 SVG 已重新生成；PlantUML ASCII、SVG XML、Markdown 路径和源码锚点校验通过
 
 ## 版本历史
 
@@ -183,6 +212,7 @@ LLM API tools 字段新增 listMateTool / callMateTool 两个工具定义。网�
 |---|---|---|
 | 2026-08-17 | 26.0.0(PR #136) | 初版:双工具 + 契约 + stub,含权限审批与 metaCache |
 | 2026-08-17 | 26.0.0(PR #140) | 目录按域聚合 tool/mate;契约提取 common/client/mate |
-| 2026-08-18 | 26.0.0(本 PR) | QUERYTOOLS 真实对接;MateRestUtil/RequestHeaderInfo/ToolInfo;无状态化;去 ask/deny 客户端执行;凭据仅 callTool 透传;MateToolProperties 改 lombok @Data |
-| 2026-08-18 | 26.0.0(本 PR 续) | listTools 两步查询:agent/skill 元数据摘 tool ID → QUERYTOOLS;新增 AgentInfo/QuerySkillToolsResult/SkillBindingTool DTO;MateRestUtil 加 GET 支持 |
+| 2026-08-18 | 26.0.0(本 PR) | 工具元数据批量查询真实对接;MateRestUtil/RequestHeaderInfo/ToolInfo;无状态化;去 ask/deny 客户端执行;凭据仅 callTool 透传;MateToolProperties 改 lombok @Data |
+| 2026-08-18 | 26.0.0(本 PR 续) | listTools 两步查询:agent/skill 元数据摘 tool ID → 工具元数据批量查询;新增 AgentInfo/QuerySkillToolsResult/SkillBindingTool DTO;MateRestUtil 加 GET 支持 |
 | 2026-08-18 | 26.0.0(评审修复) | 占位符自引用改环境变量注入(D7 初始化链路);resolveCredentials 默认 null;MateRestUtil 删死代码、header 真发送;补 MockWebServer 桩测试与 yml 加载回归;DEF-007 收敛为仅剩 invokeTool |
+| 2026-08-21 | 1.1.0(PR #161 评审修复) | 三个 Mate 工具出站接口路径移入应用配置并通过 `@Value` 注入;Java 字段统一为可读 lowerCamelCase;同步外网 yml、mate 侧 properties、测试与 PlantUML。 |

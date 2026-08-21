@@ -18,26 +18,21 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.boot.test.util.TestPropertyValues;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 import org.springframework.context.annotation.Configuration;
 
 /**
- * Component-scan wiring test for the tool catalog beans.
+ * 工具目录 Bean 的组件扫描装配测试。
  *
- * <p>Unit tests construct these classes directly, so a missing stereotype
- * annotation (for example {@code ExtensionRegistry} without
- * {@code @Component}) only surfaces at application boot. This test scans the
- * real packages to fail fast in the build instead.
+ * <p>单元测试通常直接构造这些类，缺少组件注解等问题只会在应用启动时暴露；本测试扫描真实包并在构建阶段快速失败。
  *
  * @version [br_eCampusCore 26.0.0, 2026/08/17]
  * @since [br_eCampusCore 26.0.0]
  */
 class ToolCatalogWiringTest {
 
-    /**
-     * Scans the catalog and extension packages and asserts the context
-     * refreshes with all constructor dependencies resolvable.
-     */
+    /** 扫描目录与扩展包，验证所有构造器依赖均可解析且上下文能够刷新。 */
     @Test
     void catalogAndExtensionBeansWireTogetherUnderComponentScan() {
         try (AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext()) {
@@ -52,12 +47,7 @@ class ToolCatalogWiringTest {
         }
     }
 
-    /**
-     * Scans the skill control-tool package together with the catalog packages
-     * and asserts {@code activate_skill} is discovered through the Spring
-     * source and resolved by the catalog, so sessions pick it up from the
-     * unified discovery chain instead of manual construction.
-     */
+    /** 扫描 Skill 控制工具与目录包，验证 {@code activate_skill} 经统一 Spring 发现链进入工具目录。 */
     @Test
     void activateSkillToolFlowsThroughCatalogDiscovery() {
         try (AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext()) {
@@ -74,15 +64,14 @@ class ToolCatalogWiringTest {
         }
     }
 
-    /**
-     * Scans the managed-agent runtime package with configuration-property
-     * binding enabled, asserting the multi-constructor record binds through
-     * its canonical constructor and the client's injection constructor is
-     * selected unambiguously.
-     */
+    /** 扫描托管 Agent 运行时包，验证配置绑定与客户端注入构造器能够明确装配。 */
     @Test
     void managedRuntimeBeansWireUnderComponentScan() {
         try (AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext()) {
+            TestPropertyValues.of(
+                            "campusmate.runtime.agent-runtime-path-template=/mate-service/v1/agents/%s/runtime",
+                            "campusmate.runtime.skill-info-query-path-template=/mate-service/v1/skill/query/%s")
+                    .applyTo(context);
             context.scan(AgentRuntimeProperties.class.getPackage().getName());
             context.register(ObjectMapper.class, RuntimePropertiesConfig.class);
             context.refresh();
@@ -95,7 +84,7 @@ class ToolCatalogWiringTest {
         }
     }
 
-    /** Registers {@link AgentRuntimeProperties} for binding in the test context. */
+    /** 在测试上下文中注册 {@link AgentRuntimeProperties} 配置绑定。 */
     @Configuration
     @EnableConfigurationProperties(AgentRuntimeProperties.class)
     static class RuntimePropertiesConfig {}
