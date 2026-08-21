@@ -4,6 +4,7 @@
 
 package com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.web;
 
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.common.identifier.ResourceIdentifierPatterns;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.RuntimeApiConstants;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.result.ResultBeanAdapter;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.session.RuntimeSessionControlService;
@@ -21,6 +22,8 @@ import org.springframework.web.bind.annotation.RestController;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
 
 /**
  * Session Steer、FollowUp 与 Abort 接口。
@@ -29,7 +32,7 @@ import jakarta.validation.Valid;
  * @since [br_eCampusCore 26.0.0]
  */
 @RestController
-@RequestMapping(RuntimeApiConstants.BASE_PATH + "/sessions/{session_id}")
+@RequestMapping(RuntimeApiConstants.BASE_PATH + "/sessions/{sessionId}")
 public class RuntimeSessionControlController {
     private final RuntimeSessionControlService service;
 
@@ -42,27 +45,28 @@ public class RuntimeSessionControlController {
 
     @PostMapping("/steers")
     public ResponseEntity<Object> steer(
-            @PathVariable("session_id") String sessionId,
+            @PathVariable("sessionId") @NotBlank @Pattern(regexp = ResourceIdentifierPatterns.SESSION_ID_REGEX)
+                    String sessionId,
             @Valid @RequestBody ControlMessageRequestVO body,
             HttpServletRequest request) {
-        RuntimeIdentifierValidator.requireSessionId(sessionId);
         var result = service.steer(sessionId, body);
         return accepted(result, request);
     }
 
     @PostMapping("/follow-ups")
     public ResponseEntity<Object> followUp(
-            @PathVariable("session_id") String sessionId,
+            @PathVariable("sessionId") @NotBlank @Pattern(regexp = ResourceIdentifierPatterns.SESSION_ID_REGEX)
+                    String sessionId,
             @Valid @RequestBody ControlMessageRequestVO body,
             HttpServletRequest request) {
-        RuntimeIdentifierValidator.requireSessionId(sessionId);
         var result = service.followUp(sessionId, body);
         return accepted(result, request);
     }
 
     @PostMapping("/abort")
-    public ResponseEntity<Void> abort(@PathVariable("session_id") String sessionId) {
-        RuntimeIdentifierValidator.requireSessionId(sessionId);
+    public ResponseEntity<Void> abort(
+            @PathVariable("sessionId") @NotBlank @Pattern(regexp = ResourceIdentifierPatterns.SESSION_ID_REGEX)
+                    String sessionId) {
         service.abort(sessionId);
         return ResponseEntity.noContent().cacheControl(CacheControl.noStore()).build();
     }

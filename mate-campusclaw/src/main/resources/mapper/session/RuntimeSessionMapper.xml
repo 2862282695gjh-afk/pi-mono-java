@@ -110,7 +110,10 @@
                payload::text AS payload
         FROM current_path
         WHERE entry_seq &gt; #{afterSeq}
-          AND type IN ('user.message', 'assistant.message.completed', 'tool.result')
+          AND (
+              type IN ('user.message', 'assistant.message.completed', 'tool.result')
+              OR (#{includeThinking} = TRUE AND type = 'assistant.thinking.completed')
+          )
         ORDER BY entry_seq
         LIMIT #{limit}
     </select>

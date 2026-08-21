@@ -7,7 +7,6 @@ package com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.vo;
 import java.time.OffsetDateTime;
 
 import com.fasterxml.jackson.annotation.JsonFormat;
-import com.fasterxml.jackson.annotation.JsonProperty;
 
 import lombok.Getter;
 
@@ -19,11 +18,9 @@ import lombok.Getter;
  */
 @Getter
 public class ControlMessageAcceptedResponseVO {
-    @JsonProperty("session_id")
     private final String sessionId;
 
     @JsonFormat(shape = JsonFormat.Shape.STRING)
-    @JsonProperty("accepted_at")
     private final OffsetDateTime acceptedAt;
 
     public ControlMessageAcceptedResponseVO(String sessionId, OffsetDateTime acceptedAt) {

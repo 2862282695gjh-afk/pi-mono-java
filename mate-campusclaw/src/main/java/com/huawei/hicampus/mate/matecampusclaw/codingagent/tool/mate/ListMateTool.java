@@ -22,12 +22,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Lists tools available from the Mate tool service. The agent_id/skill_id
- * parameter is passed as the tool ID to query (QUERYTOOLS on the Mate inner
- * gateway).
+ * 按 {@code agent_id} 或 {@code skill_id} 查询 Mate 服务中已绑定的工具。
  *
- * <p>Stateless: query results are returned to the model only; nothing is
- * cached between calls.
+ * <p>该工具无状态：查询结果仅返回给模型，不在调用之间缓存。
  *
  * @version [br_eCampusCore 26.0.0, 2026/08/18]
  * @since [br_eCampusCore 26.0.0]
@@ -57,9 +54,9 @@ public class ListMateTool implements AgentTool {
     }
 
     /**
-     * Creates a ListMateTool.
+     * 创建 Mate 工具列表查询工具。
      *
-     * @param client the Mate tool service client
+     * @param client Mate 工具服务客户端
      */
     public ListMateTool(MateToolClient client) {
         this.client = client;

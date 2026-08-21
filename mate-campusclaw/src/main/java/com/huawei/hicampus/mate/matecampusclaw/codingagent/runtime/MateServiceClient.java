@@ -12,7 +12,9 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.util.List;
 import java.util.Optional;
+import java.util.regex.Pattern;
 
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.common.identifier.ResourceIdentifierPatterns;
 import com.fasterxml.jackson.annotation.JsonAlias;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
@@ -20,6 +22,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 /**
@@ -31,26 +34,38 @@ import org.springframework.stereotype.Component;
 @Component
 public class MateServiceClient {
 
-    private static final String AGENT_RUNTIME_PATH = "/mate-service/v1/agents/%s/runtime";
-    private static final String SKILL_INFO_PATH = "/mate-service/v1/skill/query/%s";
-
     private final AgentRuntimeProperties properties;
     private final ObjectMapper mapper;
     private final HttpClient httpClient;
+    private final String agentRuntimePathTemplate;
+    private final String skillInfoQueryPathTemplate;
 
     @Autowired
-    public MateServiceClient(AgentRuntimeProperties properties, ObjectMapper mapper) {
+    public MateServiceClient(
+            AgentRuntimeProperties properties,
+            ObjectMapper mapper,
+            @Value("${campusmate.runtime.agent-runtime-path-template}") String agentRuntimePathTemplate,
+            @Value("${campusmate.runtime.skill-info-query-path-template}") String skillInfoQueryPathTemplate) {
         this(
                 properties,
                 mapper,
+                agentRuntimePathTemplate,
+                skillInfoQueryPathTemplate,
                 HttpClient.newBuilder()
                         .connectTimeout(properties.connectTimeout())
                         .build());
     }
 
-    MateServiceClient(AgentRuntimeProperties properties, ObjectMapper mapper, HttpClient httpClient) {
+    MateServiceClient(
+            AgentRuntimeProperties properties,
+            ObjectMapper mapper,
+            String agentRuntimePathTemplate,
+            String skillInfoQueryPathTemplate,
+            HttpClient httpClient) {
         this.properties = properties;
         this.mapper = mapper;
+        this.agentRuntimePathTemplate = agentRuntimePathTemplate;
+        this.skillInfoQueryPathTemplate = skillInfoQueryPathTemplate;
         this.httpClient = httpClient;
     }
 
@@ -59,10 +74,12 @@ public class MateServiceClient {
      *
      * @param agentId 已校验的 Agent 标识
      * @return 运行时定义
+     * @throws IllegalArgumentException Agent 标识不符合类型化 UUID 格式时抛出
      * @throws AgentRuntimeException HTTP 请求或响应无效时抛出
      */
     public AgentRuntime getAgentRuntime(String agentId) {
-        HttpRequest request = HttpRequest.newBuilder(endpoint(AGENT_RUNTIME_PATH.formatted(agentId)))
+        requireIdentifier(agentId, ResourceIdentifierPatterns.AGENT_ID_PATTERN, "agentId");
+        HttpRequest request = HttpRequest.newBuilder(endpoint(agentRuntimePathTemplate.formatted(agentId)))
                 .timeout(properties.requestTimeout())
                 .header("Accept", "application/json")
                 .GET()
@@ -82,10 +99,12 @@ public class MateServiceClient {
      *
      * @param skillId GetAgentRuntime 返回的 Skill 标识
      * @return CampusMate 返回的 Skill 定义
+     * @throws IllegalArgumentException Skill 标识不符合类型化 UUID 格式时抛出
      * @throws AgentRuntimeException HTTP 请求或响应无效时抛出
      */
     public List<SkillInfo> querySkillInfo(String skillId) {
-        HttpRequest request = HttpRequest.newBuilder(endpoint(SKILL_INFO_PATH.formatted(skillId)))
+        requireIdentifier(skillId, ResourceIdentifierPatterns.SKILL_ID_PATTERN, "skillId");
+        HttpRequest request = HttpRequest.newBuilder(endpoint(skillInfoQueryPathTemplate.formatted(skillId)))
                 .timeout(properties.requestTimeout())
                 .header("Accept", "application/json")
                 .GET()
@@ -101,6 +120,12 @@ public class MateServiceClient {
             return response.result();
         } catch (IOException e) {
             throw new AgentRuntimeException("Invalid querySkillInfo response", e);
+        }
+    }
+
+    private static void requireIdentifier(String value, Pattern pattern, String name) {
+        if (value == null || !pattern.matcher(value).matches()) {
+            throw new IllegalArgumentException("Invalid " + name + ": " + value);
         }
     }
 

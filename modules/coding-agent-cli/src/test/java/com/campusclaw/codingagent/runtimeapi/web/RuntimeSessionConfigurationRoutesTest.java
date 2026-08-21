@@ -5,6 +5,7 @@
 package com.campusclaw.codingagent.runtimeapi.web;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -20,7 +21,6 @@ import java.time.OffsetDateTime;
 import java.util.List;
 
 import com.campusclaw.codingagent.runtimeapi.RuntimeMessageSourceConfiguration;
-import com.campusclaw.codingagent.runtimeapi.auth.RuntimeRequestAuthenticator;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
 import com.campusclaw.codingagent.runtimeapi.result.StandaloneResultBeanAdapter;
@@ -47,7 +47,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
  * @since [br_eCampusCore 26.0.0]
  */
 class RuntimeSessionConfigurationRoutesTest {
-    private static final String SESSION_ID = "01JY8W6M8D9K4H2Q7P3V5N1R0T";
+    private static final String SESSION_ID = "session-0123456789abcdef0123456789abcdef";
 
     private RuntimeSessionConfigurationService service;
 
@@ -57,11 +57,9 @@ class RuntimeSessionConfigurationRoutesTest {
     void setUp() {
         service = mock(RuntimeSessionConfigurationService.class);
         var controller = new RuntimeSessionConfigurationController(service, new StandaloneResultBeanAdapter());
-        var interceptor = new RuntimeAuthenticationInterceptor(new RuntimeRequestAuthenticator());
         var messages = new RuntimeMessageSourceConfiguration().messageSource();
         var objectMapper = JsonMapper.builder().addModule(new JavaTimeModule()).build();
         mvc = MockMvcBuilders.standaloneSetup(controller)
-                .addInterceptors(interceptor)
                 .setControllerAdvice(new RuntimeExceptionHandler(messages))
                 .setMessageConverters(new MappingJackson2HttpMessageConverter(objectMapper))
                 .build();
@@ -72,12 +70,12 @@ class RuntimeSessionConfigurationRoutesTest {
         when(service.listModels(SESSION_ID))
                 .thenReturn(new AvailableModelsResponseVO("model-a", List.of("model-a", "model-b")));
 
-        mvc.perform(authenticated(get("/campusclaw-service/v1/sessions/{id}/models", SESSION_ID)))
+        mvc.perform(authenticated(get("/campusclaw-service/v1/sessions/{sessionId}/models", SESSION_ID)))
                 .andExpect(status().isOk())
                 .andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store"))
-                .andExpect(jsonPath("$.result.current_model_id").value("model-a"))
+                .andExpect(jsonPath("$.result.currentModelId").value("model-a"))
                 .andExpect(jsonPath("$.result.models[0]").value("model-a"))
-                .andExpect(jsonPath("$.result.models[0].model_id").doesNotExist());
+                .andExpect(jsonPath("$.result.models[0].modelId").doesNotExist());
     }
 
     @Test
@@ -85,22 +83,22 @@ class RuntimeSessionConfigurationRoutesTest {
         when(service.changeModel(eq(SESSION_ID), eq("\"snp-old\""), any(ChangeModelRequestVO.class)))
                 .thenReturn(view("model-b", false, "\"snp-new\""));
 
-        mvc.perform(authenticated(put("/campusclaw-service/v1/sessions/{id}/model", SESSION_ID))
+        mvc.perform(authenticated(put("/campusclaw-service/v1/sessions/{sessionId}/model", SESSION_ID))
                         .header(HttpHeaders.IF_MATCH, "\"snp-old\"")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"model_id\":\"model-b\"}"))
+                        .content("{\"modelId\":\"model-b\"}"))
                 .andExpect(status().isOk())
                 .andExpect(header().string(HttpHeaders.ETAG, "\"snp-new\""))
-                .andExpect(jsonPath("$.result.model_id").value("model-b"))
+                .andExpect(jsonPath("$.result.modelId").value("model-b"))
                 .andExpect(jsonPath("$.result.thinking").value(false));
     }
 
     @Test
-    void unknownModelFieldIsRejectedBeforeService() throws Exception {
-        mvc.perform(authenticated(put("/campusclaw-service/v1/sessions/{id}/model", SESSION_ID))
+    void snakeCaseModelFieldIsRejectedBeforeService() throws Exception {
+        mvc.perform(authenticated(put("/campusclaw-service/v1/sessions/{sessionId}/model", SESSION_ID))
                         .header(HttpHeaders.IF_MATCH, "\"snp-old\"")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"model_id\":\"model-b\",\"provider\":\"hidden\"}"))
+                        .content("{\"model_id\":\"model-b\"}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.resCode").value("INVALID_MODEL_REQUEST"))
                 .andExpect(jsonPath("$.result").doesNotExist());
@@ -109,7 +107,7 @@ class RuntimeSessionConfigurationRoutesTest {
 
     @Test
     void thinkingStringCoercionIsRejected() throws Exception {
-        mvc.perform(authenticated(put("/campusclaw-service/v1/sessions/{id}/thinking", SESSION_ID))
+        mvc.perform(authenticated(put("/campusclaw-service/v1/sessions/{sessionId}/thinking", SESSION_ID))
                         .header(HttpHeaders.IF_MATCH, "\"snp-old\"")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"thinking\":\"true\"}"))
@@ -118,13 +116,23 @@ class RuntimeSessionConfigurationRoutesTest {
     }
 
     @Test
+    void invalidSessionIdIsRejectedByParameterValidation() throws Exception {
+        mvc.perform(get("/campusclaw-service/v1/sessions/{sessionId}/models", "session-old"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.resCode").value("INVALID_SESSION_ID"))
+                .andExpect(jsonPath("$.result").doesNotExist());
+
+        verify(service, never()).listModels(anyString());
+    }
+
+    @Test
     void missingIfMatchUsesConfirmed428Error() throws Exception {
         when(service.changeModel(eq(SESSION_ID), eq(null), any(ChangeModelRequestVO.class)))
                 .thenThrow(new RuntimeApiException(RuntimeErrorCode.IF_MATCH_REQUIRED));
 
-        mvc.perform(authenticated(put("/campusclaw-service/v1/sessions/{id}/model", SESSION_ID))
+        mvc.perform(authenticated(put("/campusclaw-service/v1/sessions/{sessionId}/model", SESSION_ID))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"model_id\":\"model-b\"}"))
+                        .content("{\"modelId\":\"model-b\"}"))
                 .andExpect(status().isPreconditionRequired())
                 .andExpect(jsonPath("$.resCode").value("IF_MATCH_REQUIRED"))
                 .andExpect(jsonPath("$.result").doesNotExist());
@@ -139,7 +147,7 @@ class RuntimeSessionConfigurationRoutesTest {
         OffsetDateTime created = OffsetDateTime.parse("2026-08-18T00:00:00Z");
         OffsetDateTime updated = OffsetDateTime.parse("2026-08-18T02:00:00Z");
         var response = new GetSessionResponseVO(
-                SESSION_ID, "agent_011CZkYqphY8vELVzwCUpqiQ", modelId, "idle", thinking, created, updated);
+                SESSION_ID, "agent-0123456789abcdef0123456789abcdef", modelId, "idle", thinking, created, updated);
         return new RuntimeSessionView<>(response, etag);
     }
 }

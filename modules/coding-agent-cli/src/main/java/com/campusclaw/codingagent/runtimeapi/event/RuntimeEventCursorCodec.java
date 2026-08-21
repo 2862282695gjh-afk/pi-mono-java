@@ -27,7 +27,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 /**
- * 使用 AES-GCM 签发不可解释、绑定 Session 且有有效期的事件分页游标。
+ * 使用 AES-GCM 签发不可解释、绑定 Session、thinking 状态且有有效期的事件分页游标。
  *
  * @version [br_eCampusCore 26.0.0, 2026/08/18]
  * @since [br_eCampusCore 26.0.0]
@@ -61,12 +61,12 @@ public class RuntimeEventCursorCodec {
         this.key = createKey(properties.getCursorSecret());
     }
 
-    public String encode(String sessionId, long afterSeq) {
+    public String encode(String sessionId, long afterSeq, boolean thinking) {
         try {
             byte[] iv = new byte[IV_LENGTH];
             random.nextBytes(iv);
             Cipher cipher = cipher(Cipher.ENCRYPT_MODE, iv);
-            byte[] encrypted = cipher.doFinal(serialize(sessionId, afterSeq));
+            byte[] encrypted = cipher.doFinal(serialize(sessionId, afterSeq, thinking));
             byte[] token = Arrays.copyOf(iv, iv.length + encrypted.length);
             System.arraycopy(encrypted, 0, token, iv.length, encrypted.length);
             return PREFIX + Base64.getUrlEncoder().withoutPadding().encodeToString(token);
@@ -75,7 +75,7 @@ public class RuntimeEventCursorCodec {
         }
     }
 
-    public long decode(String token, String expectedSessionId) {
+    public long decode(String token, String expectedSessionId, boolean expectedThinking) {
         try {
             if (token == null || !token.startsWith(PREFIX)) {
                 throw invalidCursor(null);
@@ -87,7 +87,7 @@ public class RuntimeEventCursorCodec {
             byte[] iv = Arrays.copyOf(bytes, IV_LENGTH);
             byte[] encrypted = Arrays.copyOfRange(bytes, IV_LENGTH, bytes.length);
             byte[] clear = cipher(Cipher.DECRYPT_MODE, iv).doFinal(encrypted);
-            return deserialize(clear, expectedSessionId);
+            return deserialize(clear, expectedSessionId, expectedThinking);
         } catch (RuntimeApiException error) {
             throw error;
         } catch (Exception error) {
@@ -95,25 +95,28 @@ public class RuntimeEventCursorCodec {
         }
     }
 
-    private byte[] serialize(String sessionId, long afterSeq) throws Exception {
+    private byte[] serialize(String sessionId, long afterSeq, boolean thinking) throws Exception {
         var bytes = new ByteArrayOutputStream();
         try (var output = new DataOutputStream(bytes)) {
-            output.writeByte(1);
+            output.writeByte(2);
             output.writeUTF(sessionId);
             output.writeLong(afterSeq);
+            output.writeBoolean(thinking);
             output.writeLong(clock.instant().plus(properties.getCursorTtl()).getEpochSecond());
         }
         return bytes.toByteArray();
     }
 
-    private long deserialize(byte[] bytes, String expectedSessionId) throws Exception {
+    private long deserialize(byte[] bytes, String expectedSessionId, boolean expectedThinking) throws Exception {
         try (var input = new DataInputStream(new ByteArrayInputStream(bytes))) {
             int version = input.readUnsignedByte();
             String sessionId = input.readUTF();
             long afterSeq = input.readLong();
+            boolean thinking = input.readBoolean();
             long expiresAt = input.readLong();
-            if (version != 1
+            if (version != 2
                     || !sessionId.equals(expectedSessionId)
+                    || thinking != expectedThinking
                     || afterSeq < 0
                     || expiresAt <= clock.instant().getEpochSecond()
                     || input.available() != 0) {

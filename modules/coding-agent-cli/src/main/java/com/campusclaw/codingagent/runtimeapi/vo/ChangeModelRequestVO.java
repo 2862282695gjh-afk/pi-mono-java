@@ -6,7 +6,6 @@ package com.campusclaw.codingagent.runtimeapi.vo;
 
 import com.campusclaw.codingagent.runtimeapi.RuntimeApiConstants;
 import com.fasterxml.jackson.annotation.JsonAnySetter;
-import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonSetter;
 import com.fasterxml.jackson.databind.JsonNode;
 
@@ -26,20 +25,19 @@ import lombok.Setter;
 public class ChangeModelRequestVO {
     @NotBlank
     @Pattern(regexp = RuntimeApiConstants.MODEL_ID_PATTERN)
-    @JsonProperty("model_id")
     @Setter(AccessLevel.NONE)
     private String modelId;
 
     /**
-     * 仅接受 JSON 字符串类型的 model_id。
+     * 仅接受 JSON 字符串类型的 modelId。
      *
      * @param value 原始 JSON 值
      * @throws IllegalArgumentException 字段值不是 JSON 字符串时抛出
      */
-    @JsonSetter("model_id")
+    @JsonSetter("modelId")
     public void readModelId(JsonNode value) {
         if (value == null || !value.isTextual()) {
-            throw new IllegalArgumentException("model_id must be a string");
+            throw new IllegalArgumentException("modelId must be a string");
         }
         modelId = value.textValue();
     }

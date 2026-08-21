@@ -10,6 +10,7 @@ import java.util.List;
 import com.campusclaw.ai.types.Message;
 import com.campusclaw.ai.types.Model;
 import com.campusclaw.codingagent.runtimeapi.dto.RuntimeEntryDTO;
+import com.campusclaw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
 import com.campusclaw.codingagent.runtimeapi.persistence.RuntimeSessionRepository;
@@ -47,10 +48,11 @@ public class RuntimeEventQueryService {
     public EventPageResponseVO list(String sessionId, String limitValue, String page) {
         try {
             int limit = parseLimit(limitValue);
-            requireSession(sessionId);
-            long afterSeq = page == null ? 0 : cursorCodec.decode(page, sessionId);
-            List<RuntimeEntryDTO> entries = repository.listCurrentBranch(sessionId, afterSeq, limit + 1);
-            return pageOf(sessionId, entries, limit);
+            RuntimeSessionDTO session = requireSession(sessionId);
+            boolean thinking = session.isThinking();
+            long afterSeq = page == null ? 0 : cursorCodec.decode(page, sessionId, thinking);
+            List<RuntimeEntryDTO> entries = repository.listCurrentBranch(sessionId, afterSeq, limit + 1, thinking);
+            return pageOf(sessionId, entries, limit, thinking);
         } catch (RuntimeApiException error) {
             throw error;
         } catch (RuntimeException error) {
@@ -62,7 +64,7 @@ public class RuntimeEventQueryService {
         List<RuntimeEntryDTO> entries = new ArrayList<>();
         long afterSeq = 0L;
         while (true) {
-            List<RuntimeEntryDTO> batch = repository.listCurrentBranch(sessionId, afterSeq, RESTORE_BATCH_SIZE);
+            List<RuntimeEntryDTO> batch = repository.listCurrentBranch(sessionId, afterSeq, RESTORE_BATCH_SIZE, false);
             entries.addAll(batch);
             if (batch.size() < RESTORE_BATCH_SIZE) {
                 break;
@@ -72,20 +74,20 @@ public class RuntimeEventQueryService {
         return codec.toAgentMessages(entries, model);
     }
 
-    private EventPageResponseVO pageOf(String sessionId, List<RuntimeEntryDTO> entries, int limit) {
+    private EventPageResponseVO pageOf(String sessionId, List<RuntimeEntryDTO> entries, int limit, boolean thinking) {
         boolean more = entries.size() > limit;
         List<RuntimeEntryDTO> pageEntries = more ? entries.subList(0, limit) : entries;
         List<java.util.Map<String, Object>> events =
                 pageEntries.stream().map(codec::toHistoryEvent).toList();
         String nextPage =
-                more ? cursorCodec.encode(sessionId, pageEntries.getLast().getEntrySeq()) : null;
+                more ? cursorCodec.encode(sessionId, pageEntries.getLast().getEntrySeq(), thinking) : null;
         return new EventPageResponseVO(events, nextPage);
     }
 
-    private void requireSession(String sessionId) {
-        if (repository.find(sessionId).isEmpty()) {
-            throw new RuntimeApiException(RuntimeErrorCode.SESSION_NOT_FOUND);
-        }
+    private RuntimeSessionDTO requireSession(String sessionId) {
+        return repository
+                .find(sessionId)
+                .orElseThrow(() -> new RuntimeApiException(RuntimeErrorCode.SESSION_NOT_FOUND));
     }
 
     private static int parseLimit(String value) {

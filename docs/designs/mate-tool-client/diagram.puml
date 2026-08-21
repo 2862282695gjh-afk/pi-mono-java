@@ -10,18 +10,20 @@
 ' - modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/common/util/:
 '   MateRestUtil (executePostRawRequest / executeGetRawRequest)
 ' - modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/common/dto/:
-'   RequestHeaderInfo (credential-free builder), ToolInfo (QUERYTOOLS result.data),
+'   RequestHeaderInfo (credential-free builder), ToolInfo (tool metadata result.data),
 '   AgentInfo (bindingTools[].toolId), QuerySkillToolsResult/SkillBindingTool
 '   (bindingTools[].id)
 ' - modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/config/:
-'   MateToolAutoConfiguration (@Value mate.innerGWSerive), MateToolProperties
-' Source baseline: superheromeZzh/pi-mono-java PR #144 head (branch refactor/mate-tool-properties-lombok)
+'   MateToolAutoConfiguration (@Value gateway and endpoint paths), MateToolProperties
+' Source baseline: superheromeZzh/pi-mono-java commit 1e9d4ee2e14717764f8403c20375c55512cbd97b
 ' Observed behavior: both AgentTools are stateless Spring singletons; listTools
 ' resolves bound tool IDs from agent/skill metadata (GET) then calls
-' QUERYTOOLS credential-free; callTool forwards agent-handed-down
+' the tool metadata endpoint credential-free; callTool forwards agent-handed-down
 ' credentials; the invoke RPC is still a DEF-007 stub.
-' Design reason: process-wide singleton lifetime forbids per-session state on
-' instances; permission (allow/ask/deny) enforcement stays on the Mate server.
+' Architecture change: outbound endpoint paths are deployment configuration
+' injected with @Value; stable inbound API contract paths remain constants.
+' Design reason: process-wide singleton lifetime forbids per-session state;
+' permission (allow/ask/deny) enforcement stays on the Mate server.
 
 skinparam backgroundColor white
 skinparam shadowing false
@@ -43,8 +45,10 @@ package "tool/mate (AgentTool layer)" {
 
 package "common/client (infrastructure layer)" {
   class HttpMateToolClient {
-    # AGENT_INFO / SKILL_TOOLS_QUERY / QUERYTOOLS
     # mateInnerGwAddress: String
+    # agentInfoPathPrefix: String
+    # skillToolsQueryPathPrefix: String
+    # toolMetadataQueryPath: String
     + listTools(agentId, skillId)
     + callTool(tool, args, credentials)
     # queryToolIdsByAgentId(agentId)
@@ -94,6 +98,7 @@ package "common/util + common/dto" {
 package "config (wiring layer)" {
   class MateToolAutoConfiguration {
     @Value mate.innerGWSerive
+    @Value mate.endpoints.*
     + mateRestUtil() / mateToolClient()
     + callMateTool() / listMateTool()
   }
@@ -123,15 +128,17 @@ end note
 '   execute (agent/skill passthrough, response formatting)
 ' - modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/common/client/HttpMateToolClient.java:
 '   listTools (two-step: agent/skill metadata GET -> binding tool IDs,
-'   then QUERYTOOLS POST), callTool (stub invoke)
+'   then tool metadata POST), callTool (stub invoke)
 ' - modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/common/util/MateRestUtil.java:
 '   executePostRawRequest, resCode/resMsg/result envelope
-' Source baseline: superheromeZzh/pi-mono-java PR #144 head (branch refactor/mate-tool-properties-lombok)
+' Source baseline: superheromeZzh/pi-mono-java commit 1e9d4ee2e14717764f8403c20375c55512cbd97b
 ' Observed behavior: listMateTool resolves bound tool IDs from agent/skill
-' metadata (GET), then POSTs QUERYTOOLS credential-free with those IDs;
+' metadata (GET), then POSTs the tool metadata endpoint credential-free;
 ' callMateTool forwards the call with
 ' resolveCredentials() output; errors become exceptions so the pipeline marks
 ' isError=true.
+' Architecture change: all three outbound paths are injected from application
+' configuration rather than hidden in static Java constants.
 ' Design reason: stateless tools with per-call credential resolution avoid
 ' cross-session leakage on the process-wide singleton client.
 
@@ -169,9 +176,9 @@ else skillId
 end
 note over http
   empty ID list -> return empty tool list
-  (no QUERYTOOLS call)
+  (no tool metadata call)
 end note
-http -> rest: executePostRawRequest(gw, QUERYTOOLS, headerInfo, body)
+http -> rest: executePostRawRequest(gw, toolMetadataQueryPath, headerInfo, body)
 rest -> gw: POST /mate-service/v1/runtime/tools/query
 note right of rest
   header: RequestHeaderInfo.builder().build()

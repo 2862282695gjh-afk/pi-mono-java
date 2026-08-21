@@ -6,8 +6,6 @@ package com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.vo;
 
 import java.util.List;
 
-import com.fasterxml.jackson.annotation.JsonProperty;
-
 import lombok.Getter;
 
 /**
@@ -18,7 +16,6 @@ import lombok.Getter;
  */
 @Getter
 public class AvailableModelsResponseVO {
-    @JsonProperty("current_model_id")
     private final String currentModelId;
 
     private final List<String> models;
