@@ -89,9 +89,10 @@ class RuntimeEventRoutesTest {
         when(service.submit(eq(SESSION_ID), any(UserEventRequestVO.class), eq(Locale.US)))
                 .thenReturn(stream);
 
-        MvcResult initial = mvc.perform(authenticated(post("/campusclaw-service/v1/sessions/{id}/events", SESSION_ID))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"message\":\"分析订单\",\"file_ids\":[]}"))
+        MvcResult initial = mvc.perform(
+                        authenticated(post("/campusclaw-service/v1/sessions/{sessionId}/events", SESSION_ID))
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("{\"message\":\"分析订单\",\"fileIds\":[]}"))
                 .andExpect(status().isOk())
                 .andExpect(request().asyncStarted())
                 .andReturn();
@@ -108,9 +109,9 @@ class RuntimeEventRoutesTest {
 
     @Test
     void postRejectsUnknownRequestFieldBeforeStartingStream() throws Exception {
-        mvc.perform(authenticated(post("/campusclaw-service/v1/sessions/{id}/events", SESSION_ID))
+        mvc.perform(authenticated(post("/campusclaw-service/v1/sessions/{sessionId}/events", SESSION_ID))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"message\":\"分析订单\",\"model_id\":\"forbidden\"}"))
+                        .content("{\"message\":\"分析订单\",\"modelId\":\"forbidden\"}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.resCode").value("INVALID_EVENT_REQUEST"))
                 .andExpect(jsonPath("$.result").doesNotExist());
@@ -122,11 +123,12 @@ class RuntimeEventRoutesTest {
         List<String> invalidBodies = List.of(
                 "{\"type\":\"user.message\",\"message\":\"分析订单\"}",
                 "{\"message\":1}",
-                "{\"file_ids\":[1]}",
-                "{\"file_ids\":\"file_1\"}");
+                "{\"fileIds\":[1]}",
+                "{\"fileIds\":\"file_1\"}",
+                "{\"file_ids\":[]}");
 
         for (String body : invalidBodies) {
-            mvc.perform(authenticated(post("/campusclaw-service/v1/sessions/{id}/events", SESSION_ID))
+            mvc.perform(authenticated(post("/campusclaw-service/v1/sessions/{sessionId}/events", SESSION_ID))
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(body))
                     .andExpect(status().isBadRequest())
@@ -139,12 +141,12 @@ class RuntimeEventRoutesTest {
     void getAllowsIntegrationHeadersToCoexistWithoutLocalValidation() throws Exception {
         LinkedHashMap<String, Object> event = new LinkedHashMap<>();
         event.put("type", "user.message");
-        event.put("entry_id", "entry_100");
-        event.put("entry_seq", 17L);
+        event.put("entryId", "entry_100");
+        event.put("entrySeq", 17L);
         when(queryService.list(SESSION_ID, "1", "page_opaque"))
                 .thenReturn(new EventPageResponseVO(List.of(event), "page_next"));
 
-        mvc.perform(get("/campusclaw-service/v1/sessions/{id}/events", SESSION_ID)
+        mvc.perform(get("/campusclaw-service/v1/sessions/{sessionId}/events", SESSION_ID)
                         .queryParam("limit", "1")
                         .queryParam("page", "page_opaque")
                         .header("X-HW-ID", "credential")
@@ -152,13 +154,13 @@ class RuntimeEventRoutesTest {
                         .header("X-HW-APPKEY", "opaque-appkey"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.resCode").value("0"))
-                .andExpect(jsonPath("$.result.events[0].entry_seq").value(17))
-                .andExpect(jsonPath("$.result.next_page").value("page_next"));
+                .andExpect(jsonPath("$.result.events[0].entrySeq").value(17))
+                .andExpect(jsonPath("$.result.nextPage").value("page_next"));
     }
 
     @Test
     void invalidSessionIdIsRejectedByParameterValidation() throws Exception {
-        mvc.perform(get("/campusclaw-service/v1/sessions/{id}/events", "session-old"))
+        mvc.perform(get("/campusclaw-service/v1/sessions/{sessionId}/events", "session-old"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.resCode").value("INVALID_SESSION_ID"))
                 .andExpect(jsonPath("$.result").doesNotExist());
@@ -168,8 +170,8 @@ class RuntimeEventRoutesTest {
 
     private static RuntimeEventStream completedStream() {
         RuntimeEventStream stream = new RuntimeEventStream(16, 4096, Duration.ofSeconds(15), event -> 1L);
-        stream.emit(new RuntimeSseEventVO(
-                "17", "user.message", java.util.Map.of("entry_id", "entry_100", "entry_seq", 17L)));
+        stream.emit(
+                new RuntimeSseEventVO("17", "user.message", java.util.Map.of("entryId", "entry_100", "entrySeq", 17L)));
         stream.emit(new RuntimeSseEventVO(null, "stream.end", java.util.Map.of("reason", "completed")));
         stream.complete();
         return stream;

@@ -107,10 +107,10 @@ public class RuntimeEntryCodec {
 
     public Map<String, Object> toSseData(RuntimeEntryDTO entry) {
         LinkedHashMap<String, Object> result = new LinkedHashMap<>();
-        result.put("entry_id", entry.getId());
-        result.put("entry_seq", entry.getEntrySeq());
-        appendPayload(result, entry.getPayload());
-        result.put("created_at", entry.getTimestamp().toString());
+        result.put("entryId", entry.getId());
+        result.put("entrySeq", entry.getEntrySeq());
+        appendPublicPayload(result, entry);
+        result.put("createdAt", entry.getTimestamp().toString());
         return result;
     }
 
@@ -251,11 +251,82 @@ public class RuntimeEntryCodec {
         }
     }
 
-    private void appendPayload(LinkedHashMap<String, Object> target, String payload) {
-        JsonNode node = readPayload(payload);
-        node.fields()
-                .forEachRemaining(
-                        field -> target.put(field.getKey(), objectMapper.convertValue(field.getValue(), Object.class)));
+    private void appendPublicPayload(LinkedHashMap<String, Object> target, RuntimeEntryDTO entry) {
+        JsonNode payload = readPayload(entry.getPayload());
+        switch (RuntimeEventType.fromValue(entry.getType())) {
+            case USER_MESSAGE -> appendUserPayload(target, payload);
+            case ASSISTANT_MESSAGE_COMPLETED -> appendAssistantPayload(target, payload);
+            case ASSISTANT_THINKING_COMPLETED -> appendThinkingPayload(target, payload);
+            case TOOL_RESULT -> appendToolResultPayload(target, payload);
+            default -> throw new IllegalArgumentException("unsupported public runtime entry type: " + entry.getType());
+        }
+    }
+
+    private void appendUserPayload(LinkedHashMap<String, Object> target, JsonNode payload) {
+        JsonNode message = payload.get("message");
+        if (message != null) {
+            target.put("message", objectMapper.convertValue(message, Object.class));
+        }
+        target.put("fileIds", objectMapper.convertValue(field(payload, "fileIds", "file_ids"), Object.class));
+    }
+
+    private void appendAssistantPayload(LinkedHashMap<String, Object> target, JsonNode payload) {
+        target.put("message", publicMessage(payload.path("message")));
+        target.put(
+                "finishReason",
+                objectMapper.convertValue(field(payload, "finishReason", "finish_reason"), Object.class));
+    }
+
+    private void appendThinkingPayload(LinkedHashMap<String, Object> target, JsonNode payload) {
+        target.put(
+                "assistantEntryId",
+                objectMapper.convertValue(field(payload, "assistantEntryId", "assistant_entry_id"), Object.class));
+        target.put(
+                "contentIndex",
+                objectMapper.convertValue(field(payload, "contentIndex", "content_index"), Object.class));
+        target.put("content", objectMapper.convertValue(payload.path("content"), Object.class));
+    }
+
+    private void appendToolResultPayload(LinkedHashMap<String, Object> target, JsonNode payload) {
+        target.put("toolCallId", objectMapper.convertValue(field(payload, "toolCallId", "tool_call_id"), Object.class));
+        target.put("toolName", objectMapper.convertValue(field(payload, "toolName", "tool_name"), Object.class));
+        target.put("content", publicContent(payload.path("content")));
+        target.put("isError", objectMapper.convertValue(field(payload, "isError", "is_error"), Object.class));
+    }
+
+    private Map<String, Object> publicMessage(JsonNode message) {
+        LinkedHashMap<String, Object> result = new LinkedHashMap<>();
+        result.put("role", message.path("role").asText());
+        result.put("content", publicContent(message.path("content")));
+        return result;
+    }
+
+    private List<Map<String, Object>> publicContent(JsonNode content) {
+        List<Map<String, Object>> result = new ArrayList<>();
+        content.forEach(block -> result.add(publicContentBlock(block)));
+        return List.copyOf(result);
+    }
+
+    private Map<String, Object> publicContentBlock(JsonNode block) {
+        LinkedHashMap<String, Object> result = new LinkedHashMap<>();
+        String type = block.path("type").asText();
+        result.put("type", type);
+        if ("text".equals(type)) {
+            result.put("text", block.path("text").asText());
+        } else if ("tool_call".equals(type)) {
+            result.put("toolCallId", field(block, "toolCallId", "tool_call_id").asText());
+            result.put("name", block.path("name").asText());
+            result.put("arguments", objectMapper.convertValue(block.path("arguments"), Object.class));
+        } else if ("image".equals(type)) {
+            result.put("data", block.path("data").asText());
+            result.put("mimeType", field(block, "mimeType", "mime_type").asText());
+        }
+        return result;
+    }
+
+    private static JsonNode field(JsonNode node, String camelCase, String snakeCase) {
+        JsonNode value = node.get(camelCase);
+        return value != null ? value : node.path(snakeCase);
     }
 
     private JsonNode readPayload(String payload) {

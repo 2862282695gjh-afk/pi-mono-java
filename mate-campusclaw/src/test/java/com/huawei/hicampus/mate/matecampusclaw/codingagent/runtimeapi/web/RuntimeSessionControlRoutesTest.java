@@ -67,15 +67,15 @@ class RuntimeSessionControlRoutesTest {
         when(service.steer(eq(SESSION_ID), any(ControlMessageRequestVO.class)))
                 .thenReturn(acceptedAt("2026-08-17T15:10:00Z"));
 
-        mvc.perform(authenticated(post("/campusclaw-service/v1/sessions/{id}/steers", SESSION_ID))
+        mvc.perform(authenticated(post("/campusclaw-service/v1/sessions/{sessionId}/steers", SESSION_ID))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"message\":\"先只分析异常订单\"}"))
                 .andExpect(status().isAccepted())
                 .andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store"))
                 .andExpect(header().string(HttpHeaders.CONTENT_LANGUAGE, "en-US"))
                 .andExpect(jsonPath("$.resCode").value("0"))
-                .andExpect(jsonPath("$.result.session_id").value(SESSION_ID))
-                .andExpect(jsonPath("$.result.accepted_at").value("2026-08-17T15:10:00Z"));
+                .andExpect(jsonPath("$.result.sessionId").value(SESSION_ID))
+                .andExpect(jsonPath("$.result.acceptedAt").value("2026-08-17T15:10:00Z"));
     }
 
     @Test
@@ -83,18 +83,18 @@ class RuntimeSessionControlRoutesTest {
         when(service.followUp(eq(SESSION_ID), any(ControlMessageRequestVO.class)))
                 .thenReturn(acceptedAt("2026-08-17T15:11:00Z"));
 
-        mvc.perform(post("/campusclaw-service/v1/sessions/{id}/follow-ups", SESSION_ID)
+        mvc.perform(post("/campusclaw-service/v1/sessions/{sessionId}/follow-ups", SESSION_ID)
                         .header("X-HW-ID", "credential")
                         .header("X-HW-APPKEY", "opaque-appkey")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"message\":\"完成后再给出摘要\"}"))
                 .andExpect(status().isAccepted())
-                .andExpect(jsonPath("$.result.accepted_at").value("2026-08-17T15:11:00Z"));
+                .andExpect(jsonPath("$.result.acceptedAt").value("2026-08-17T15:11:00Z"));
     }
 
     @Test
     void malformedBodyUsesEndpointSpecificErrorWithoutResult() throws Exception {
-        mvc.perform(authenticated(post("/campusclaw-service/v1/sessions/{id}/steers", SESSION_ID))
+        mvc.perform(authenticated(post("/campusclaw-service/v1/sessions/{sessionId}/steers", SESSION_ID))
                         .header(HttpHeaders.ACCEPT_LANGUAGE, "zh-CN")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"message\":\"继续\",\"file_ids\":[]}"))
@@ -106,7 +106,7 @@ class RuntimeSessionControlRoutesTest {
 
     @Test
     void invalidSessionIdIsRejectedByParameterValidation() throws Exception {
-        mvc.perform(post("/campusclaw-service/v1/sessions/{id}/abort", "session-old"))
+        mvc.perform(post("/campusclaw-service/v1/sessions/{sessionId}/abort", "session-old"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.resCode").value("INVALID_SESSION_ID"))
                 .andExpect(jsonPath("$.result").doesNotExist());
@@ -119,7 +119,7 @@ class RuntimeSessionControlRoutesTest {
         when(service.steer(eq(SESSION_ID), any(ControlMessageRequestVO.class)))
                 .thenThrow(new RuntimeApiException(RuntimeErrorCode.SESSION_EXECUTION_UNAVAILABLE));
 
-        mvc.perform(authenticated(post("/campusclaw-service/v1/sessions/{id}/steers", SESSION_ID))
+        mvc.perform(authenticated(post("/campusclaw-service/v1/sessions/{sessionId}/steers", SESSION_ID))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"message\":\"继续\"}"))
                 .andExpect(status().isServiceUnavailable())
@@ -130,7 +130,7 @@ class RuntimeSessionControlRoutesTest {
 
     @Test
     void abortReturnsNoContentWithoutResultBean() throws Exception {
-        mvc.perform(authenticated(post("/campusclaw-service/v1/sessions/{id}/abort", SESSION_ID)))
+        mvc.perform(authenticated(post("/campusclaw-service/v1/sessions/{sessionId}/abort", SESSION_ID)))
                 .andExpect(status().isNoContent())
                 .andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store"))
                 .andExpect(content().string(""));

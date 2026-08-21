@@ -37,7 +37,7 @@
   <section><h2>Decision</h2>
     <ul>
       <li>全部 11 项 operation 继续把 <code>X-HW-ID</code>、<code>Authorization</code> 或 <code>X-HW-APPKEY</code> 作为集成调用上下文；Runtime 不检查缺失、共存、格式或真实性，不创建认证上下文，也不定义 <code>UNAUTHENTICATED</code> 和 <code>AUTH_CREDENTIAL_CONFLICT</code>。</li>
-      <li>Agent、Tool、Skill、Session ID 分别使用 <code>agent-</code>、<code>tool-</code>、<code>skill-</code>、<code>session-</code> 加 32 位十六进制 UUID；Session 生成器输出小写十六进制，新 Session 持久化 <code>thinking=true</code>。</li>
+      <li>Agent、Tool、Skill、Session ID 分别使用 <code>agent-</code>、<code>tool-</code>、<code>skill-</code>、<code>session-</code> 加 32 位十六进制 UUID；Session 生成器输出小写十六进制，新 Session 持久化 <code>thinking=true</code>。默认模型不支持 reasoning 时按无有效默认模型返回 <code>AGENT_MODEL_NOT_CONFIGURED</code>，不创建能力与状态不一致的 Session。</li>
       <li>四类资源 ID 的正则字符串与编译后的 <code>Pattern</code> 集中在中立的 <code>ResourceIdentifierPatterns</code>；<code>RuntimeApiConstants</code> 只保留 HTTP 路径、模型格式和请求上限。</li>
       <li>HTTP 路径中的 Agent 与 Session ID 直接在 Controller 标量参数上使用标准 Jakarta 约束；Spring MVC 方法参数校验异常统一映射为 <code>INVALID_AGENT_ID</code> 或 <code>INVALID_SESSION_ID</code>，不保留命令式 Validator 工具类。</li>
       <li><code>POST /events</code> 请求 VO 只声明 <code>message</code> 与 <code>file_ids</code>；旧 <code>type</code> 按未知字段拒绝。</li>

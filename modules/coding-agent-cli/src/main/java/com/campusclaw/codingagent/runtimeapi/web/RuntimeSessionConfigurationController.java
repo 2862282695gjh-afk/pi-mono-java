@@ -36,7 +36,7 @@ import jakarta.validation.constraints.Pattern;
  * @since [br_eCampusCore 26.0.0]
  */
 @RestController
-@RequestMapping(RuntimeApiConstants.BASE_PATH + "/sessions/{session_id}")
+@RequestMapping(RuntimeApiConstants.BASE_PATH + "/sessions/{sessionId}")
 public class RuntimeSessionConfigurationController {
     private final RuntimeSessionConfigurationService service;
 
@@ -50,7 +50,7 @@ public class RuntimeSessionConfigurationController {
 
     @GetMapping("/models")
     public ResponseEntity<Object> listModels(
-            @PathVariable("session_id") @NotBlank @Pattern(regexp = ResourceIdentifierPatterns.SESSION_ID_REGEX)
+            @PathVariable("sessionId") @NotBlank @Pattern(regexp = ResourceIdentifierPatterns.SESSION_ID_REGEX)
                     String sessionId,
             HttpServletRequest request) {
         Object result = service.listModels(sessionId);
@@ -59,7 +59,7 @@ public class RuntimeSessionConfigurationController {
 
     @PutMapping("/model")
     public ResponseEntity<Object> changeModel(
-            @PathVariable("session_id") @NotBlank @Pattern(regexp = ResourceIdentifierPatterns.SESSION_ID_REGEX)
+            @PathVariable("sessionId") @NotBlank @Pattern(regexp = ResourceIdentifierPatterns.SESSION_ID_REGEX)
                     String sessionId,
             @RequestHeader(value = HttpHeaders.IF_MATCH, required = false) String ifMatch,
             @Valid @RequestBody ChangeModelRequestVO body,
@@ -70,7 +70,7 @@ public class RuntimeSessionConfigurationController {
 
     @PutMapping("/thinking")
     public ResponseEntity<Object> changeThinking(
-            @PathVariable("session_id") @NotBlank @Pattern(regexp = ResourceIdentifierPatterns.SESSION_ID_REGEX)
+            @PathVariable("sessionId") @NotBlank @Pattern(regexp = ResourceIdentifierPatterns.SESSION_ID_REGEX)
                     String sessionId,
             @RequestHeader(value = HttpHeaders.IF_MATCH, required = false) String ifMatch,
             @Valid @RequestBody ChangeThinkingRequestVO body,

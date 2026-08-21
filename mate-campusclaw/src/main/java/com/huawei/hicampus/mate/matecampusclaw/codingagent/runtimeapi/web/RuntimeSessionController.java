@@ -43,9 +43,9 @@ public class RuntimeSessionController {
         this.resultBeanAdapter = resultBeanAdapter;
     }
 
-    @PostMapping("/agents/{agent_id}/sessions")
+    @PostMapping("/agents/{agentId}/sessions")
     public ResponseEntity<Object> create(
-            @PathVariable("agent_id") @NotBlank @Pattern(regexp = ResourceIdentifierPatterns.AGENT_ID_REGEX)
+            @PathVariable("agentId") @NotBlank @Pattern(regexp = ResourceIdentifierPatterns.AGENT_ID_REGEX)
                     String agentId,
             HttpServletRequest request) {
         var view = service.create(agentId);
@@ -56,9 +56,9 @@ public class RuntimeSessionController {
                 .body(resultBeanAdapter.normal(view.resource()));
     }
 
-    @GetMapping("/sessions/{session_id}")
+    @GetMapping("/sessions/{sessionId}")
     public ResponseEntity<Object> get(
-            @PathVariable("session_id") @NotBlank @Pattern(regexp = ResourceIdentifierPatterns.SESSION_ID_REGEX)
+            @PathVariable("sessionId") @NotBlank @Pattern(regexp = ResourceIdentifierPatterns.SESSION_ID_REGEX)
                     String sessionId,
             HttpServletRequest request) {
         var view = service.get(sessionId);
@@ -69,9 +69,9 @@ public class RuntimeSessionController {
                 .body(resultBeanAdapter.normal(view.resource()));
     }
 
-    @DeleteMapping("/sessions/{session_id}")
+    @DeleteMapping("/sessions/{sessionId}")
     public ResponseEntity<Void> delete(
-            @PathVariable("session_id") @NotBlank @Pattern(regexp = ResourceIdentifierPatterns.SESSION_ID_REGEX)
+            @PathVariable("sessionId") @NotBlank @Pattern(regexp = ResourceIdentifierPatterns.SESSION_ID_REGEX)
                     String sessionId) {
         service.delete(sessionId);
         return ResponseEntity.noContent().cacheControl(CacheControl.noStore()).build();

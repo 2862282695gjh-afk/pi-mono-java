@@ -1,8 +1,10 @@
 # Coding Agent 启动与 Runtime HTTP 设计
 
-> 文档版本：2.6.2
+> 文档版本：2.7.0
 >
-> Runtime HTTP 1.37 对齐分析基线：`3d9b9c55569486f024d6a507ce004101a56dee3f`
+> Runtime HTTP 1.38 实现分析基线：`304eda06ff603fc9b6bbcaad0c296cc151a7defb`
+>
+> HTTP 1.38 设计契约基线：`superheromeZzh/pi-mono-java-design@cee69de250a6cf796c55aa1ba591e7f85775713d`
 >
 > 启动平台分析基线：`1f801dbb82bdda30478e3354e685e3153b179a0c`
 >
@@ -17,7 +19,7 @@
 
 历史 `--mode server`、手工 Reactor Netty `ServerMode`、函数式 WebFlux 路由和公开 WebSocket 接口均已删除。Runtime 对外协议统一为 HTTP + 请求范围 SSE。
 
-Runtime HTTP 现已对齐独立设计仓库 1.37 契约：资源标识统一为类型前缀加去连字符 UUID，创建 Session 默认开启 thinking，提交用户消息不再携带冗余 `type`，集成 Header 不在 Runtime 本地检查，thinking 事件按执行快照投影并按查询时 Session 状态过滤。该行为是相对上述分析基线的实现变更，决策见 [ADR-0018](../decisions/0018-runtime-http-v137-contract-alignment.html)。
+Runtime HTTP 现已对齐独立设计仓库 1.38 契约：资源标识统一为类型前缀加去连字符 UUID，创建 Session 默认开启 thinking，提交用户消息不再携带冗余 `type`，集成 Header 不在 Runtime 本地检查，thinking 事件按执行快照投影并按查询时 Session 状态过滤，公开 Path、Query、JSON 与 SSE data 字段统一使用 lowerCamelCase。该行为是相对上述分析基线的实现变更；资源与 thinking 决策见 [ADR-0018](../decisions/0018-runtime-http-v137-contract-alignment.html)，字段命名边界见 [ADR-0019](../decisions/0019-runtime-http-lower-camel-case-fields.html)。
 
 ## 2. 源码证据
 
@@ -29,6 +31,7 @@ Runtime HTTP 现已对齐独立设计仓库 1.37 契约：资源标识统一为�
 | Runtime 使用 Spring MVC Controller | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/web/*Controller.java` |
 | Runtime 不安装入站认证拦截器 | `runtimeapi/web` 不再包含 `RuntimeAuthenticationInterceptor` 与 `RuntimeWebMvcConfiguration`；路由测试覆盖 Header 缺失与共存 |
 | 类型化资源 ID 与 Session 默认值 | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/common/identifier/ResourceIdentifierPatterns.java`、`runtimeapi/web/*Controller` 的 `@PathVariable` 参数约束、`RuntimeExceptionHandler#handleInvalidParameter`、`MateServiceClient#getAgentRuntime`、`MateServiceClient#querySkillInfo`、`AgentRuntimeManager#prepare`、`HttpMateToolClient#listTools`、`RandomSessionIdGenerator#nextId`、`RuntimeSessionService#newSession` |
+| lowerCamelCase HTTP 边界 | `runtimeapi/web/*Controller`、`runtimeapi/vo/*RequestVO`、`runtimeapi/vo/*ResponseVO`、`RuntimeEntryCodec#toSseData`、`RuntimeEntryCodec#toHistoryEvent`、`RuntimeEventProjector` |
 | Session 与事件持久化使用 MyBatis | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/persistence/MyBatisRuntimeSessionRepository.java` |
 | 事件接受、历史查询和执行生命周期相互分离 | `RuntimeEventService`、`RuntimeEventQueryService`、`RuntimeExecutionCoordinator` |
 | thinking 实时投影、持久化和查询过滤 | `RuntimeEventProjector#projectThinking`、`RuntimeEntryCodec#thinkingEntry`、`RuntimeEventQueryService#list`、`RuntimeEventCursorCodec` |
@@ -40,7 +43,7 @@ Runtime HTTP 现已对齐独立设计仓库 1.37 契约：资源标识统一为�
 | 本地工具由目录统一索引与筛选 | `tool/catalog/ToolCatalog.java`、`DefaultToolCatalog.java`、`ToolSelection.java` |
 | MateService 工具通过专用客户端查询和调用 | `common/client/mate/MateToolClient.java`、`tool/mate/ListMateTool.java`、`CallMateTool.java` |
 
-表中的启动、CLI 和历史协议清理是上述提交基线的已观察行为；HTTP 1.37 契约对齐项是相对基线的目标决策，并已在当前分支实现。它们不表示 pi 已存在相同行为。
+表中的启动、CLI 和历史协议清理是上述提交基线的已观察行为；HTTP 1.38 契约对齐项是相对基线的目标决策，并已在当前分支实现。它们不表示 pi 已存在相同行为。
 
 ## 3. 模块上下文
 
@@ -83,17 +86,17 @@ Runtime V1 固定前缀为 `/campusclaw-service/v1`，包含 11 个接口：
 
 | 序号 | 方法与路径 | 作用 |
 |---:|---|---|
-| 1 | `POST /agents/{agent_id}/sessions` | 创建 Session |
-| 2 | `GET /sessions/{session_id}` | 读取精简 Session 状态 |
-| 3 | `DELETE /sessions/{session_id}` | 幂等逻辑删除并创建清理任务 |
-| 4 | `POST /sessions/{session_id}/events` | 接收用户消息并以 SSE 返回本轮事件 |
-| 5 | `GET /sessions/{session_id}/events` | 以不透明游标读取当前分支对话 Entry |
-| 6 | `GET /sessions/{session_id}/models` | 返回当前模型和可用模型 ID 字符串数组 |
-| 7 | `PUT /sessions/{session_id}/model` | 通过强 ETag 切换后续消息使用的模型 |
-| 8 | `PUT /sessions/{session_id}/thinking` | 通过强 ETag 开启或关闭深度思考 |
-| 9 | `POST /sessions/{session_id}/steers` | 将高优先级补充消息加入活动执行 |
-| 10 | `POST /sessions/{session_id}/follow-ups` | 将普通后续消息按 FIFO 加入活动执行 |
-| 11 | `POST /sessions/{session_id}/abort` | 中止活动执行并清空未投递控制消息 |
+| 1 | `POST /agents/{agentId}/sessions` | 创建 Session |
+| 2 | `GET /sessions/{sessionId}` | 读取精简 Session 状态 |
+| 3 | `DELETE /sessions/{sessionId}` | 幂等逻辑删除并创建清理任务 |
+| 4 | `POST /sessions/{sessionId}/events` | 接收用户消息并以 SSE 返回本轮事件 |
+| 5 | `GET /sessions/{sessionId}/events` | 以不透明游标读取当前分支对话 Entry |
+| 6 | `GET /sessions/{sessionId}/models` | 返回当前模型和可用模型 ID 字符串数组 |
+| 7 | `PUT /sessions/{sessionId}/model` | 通过强 ETag 切换后续消息使用的模型 |
+| 8 | `PUT /sessions/{sessionId}/thinking` | 通过强 ETag 开启或关闭深度思考 |
+| 9 | `POST /sessions/{sessionId}/steers` | 将高优先级补充消息加入活动执行 |
+| 10 | `POST /sessions/{sessionId}/follow-ups` | 将普通后续消息按 FIFO 加入活动执行 |
+| 11 | `POST /sessions/{sessionId}/abort` | 中止活动执行并清空未投递控制消息 |
 
 权威、可交互的字段级契约维护在独立设计仓库的 HTML 文档中。本仓不再维护 OpenAPI 副本，避免出现两份互相漂移的契约。
 
@@ -116,7 +119,7 @@ Runtime V1 固定前缀为 `/campusclaw-service/v1`，包含 11 个接口：
 
 一次 `POST /events` 对应一个请求范围 SSE 连接。服务发出 `stream.end` 后关闭连接；下一次用户消息重新建立连接。Steer 与 FollowUp 在当前执行仍活动时进入其队列，事件继续从原 SSE 输出。客户端断线、订阅缓冲溢出只分离订阅，不中止 Agent。
 
-请求体只接受 `message` 与 `file_ids`，路径已经固定 `user.message` 语义，旧 `type` 字段作为未知字段返回 `INVALID_EVENT_REQUEST`。执行接受时固化 Session 的 thinking 值：快照为 `true` 时投影 `assistant.thinking.started/delta/completed`，其中 completed 作为独立 Entry 持久化；快照为 `false` 时不产生 thinking 事件。Assistant MessageEntry 本身仍过滤 `ThinkingContent`，防止同一内容重复进入消息正文。
+请求体只接受 `message` 与 `fileIds`，路径已经固定 `user.message` 语义，旧 `type` 字段作为未知字段返回 `INVALID_EVENT_REQUEST`。执行接受时固化 Session 的 thinking 值：快照为 `true` 时投影 `assistant.thinking.started/delta/completed`，其中 completed 作为独立 Entry 持久化；快照为 `false` 时不产生 thinking 事件。Assistant MessageEntry 本身仍过滤 `ThinkingContent`，防止同一内容重复进入消息正文。
 
 `GET /events` 每次读取 Session 当前 thinking。为 `true` 时返回四类持久化事件，为 `false` 时从当前分支隐藏 `assistant.thinking.completed`，但不删除数据库记录。加密 page 同时绑定 `session_id`、继续位置、thinking 状态和过期时间；开关变化后旧 page 返回 `INVALID_EVENT_LIST_QUERY`，调用方需从第一页重读。
 
@@ -126,22 +129,28 @@ Runtime V1 固定前缀为 `/campusclaw-service/v1`，包含 11 个接口：
 
 Session、Entry、严格序号、物化数据、删除墓碑和异步清理任务持久化到 openGauss。删除活动 Session 返回 409；成功删除的墓碑只包含 `session_id` 与 `deleted_at`。
 
-Agent、Tool、Skill 和 Session ID 分别匹配 `agent-`、`tool-`、`skill-`、`session-` 加 32 位十六进制 UUID（UUID 内部连字符已移除）。四类资源 ID 的正则字符串与编译后的 `Pattern` 统一由中立的 `common.identifier.ResourceIdentifierPatterns` 提供；业务类不重复编译，也不依赖 HTTP 专用常量类。HTTP 路径中的 Agent 与 Session ID 直接在 Controller 的标量 `@PathVariable` 参数上使用 Jakarta `@NotBlank` 和 `@Pattern`，Spring MVC 方法参数校验失败后由 `RuntimeExceptionHandler` 映射为稳定错误码，不再维护命令式路径 ID Validator。`RandomSessionIdGenerator` 只生成该 Session 格式；创建 Session 持久化 `thinking=true`。`t_sessions.agent_id` 使用 `VARCHAR(64)`，可容纳完整类型化 Agent ID。
+Agent、Tool、Skill 和 Session ID 分别匹配 `agent-`、`tool-`、`skill-`、`session-` 加 32 位十六进制 UUID（UUID 内部连字符已移除）。四类资源 ID 的正则字符串与编译后的 `Pattern` 统一由中立的 `common.identifier.ResourceIdentifierPatterns` 提供；业务类不重复编译，也不依赖 HTTP 专用常量类。HTTP 路径中的 Agent 与 Session ID 直接在 Controller 的标量 `@PathVariable` 参数上使用 Jakarta `@NotBlank` 和 `@Pattern`，Spring MVC 方法参数校验失败后由 `RuntimeExceptionHandler` 映射为稳定错误码，不再维护命令式路径 ID Validator。`RandomSessionIdGenerator` 只生成该 Session 格式；创建 Session 持久化 `thinking=true`，默认模型不支持 reasoning 时按无有效默认模型返回 `AGENT_MODEL_NOT_CONFIGURED`，避免对外状态与实际事件能力不一致。`t_sessions.agent_id` 使用 `VARCHAR(64)`，可容纳完整类型化 Agent ID。
 
 Agent 配置默认直接读取 `agent/{agent_id}/.campusclaw/` 下的 `settings.json`、
 `SYSTEM.md` 和 `skills/`；部署可通过 `CAMPUSCLAW_AGENT_ROOT` 替换 `agent` 根目录。
 `.campusclaw/` 的真实路径同时作为 Session `cwd`、提示词根目录和 `ReadTool` 根目录，
-不会把 Agent 父目录暴露给 HTTP V1。Runtime 工具集合只启用 `read`。`file_ids` 作为固定
+不会把 Agent 父目录暴露给 HTTP V1。Runtime 工具集合只启用 `read`。`fileIds` 作为固定
 `[File IDs]` 提示块传入，不在 Runtime 内解析或下载文件。
 
-### 6.5 事件执行职责
+### 6.5 HTTP 字段命名边界
+
+公开 Path、Query、JSON 请求、普通 JSON 响应和 SSE `data` 字段统一使用 lowerCamelCase；`X-HW-ID`、`Authorization`、`X-HW-APPKEY`、`If-Match`、`Accept-Language` 等 Header 保持原名，事件类型、错误码、`tool_call` 等枚举值和类型化 ID 值也不改变。请求 VO 不接受 snake_case 别名。
+
+数据库列、MyBatis 映射与既有 Entry payload 属于内部持久化格式，可以继续使用 snake_case。`RuntimeEntryCodec` 对既有 payload 做字段级受控投影后再输出 lowerCamelCase；工具 `arguments` 内的键由工具 Schema 所有，不参与 Runtime 字段改名。该边界避免数据库迁移和历史 Entry 失效，同时阻止内部格式泄露到 HTTP 契约。
+
+### 6.6 事件执行职责
 
 `RuntimeEventService` 只负责接受 `user.message` 和提交前的原子边界；
 `RuntimeEventQueryService` 负责当前分支分页与 Agent 历史恢复；
 `RuntimeExecutionCoordinator` 负责 Agent 启动、控制消息续跑、超时、持久化收尾和资源释放。
 SSE 流、事件投影器与终止事件分别由独立工厂创建，避免 Controller 或单个 Service 同时承担完整执行生命周期。
 
-### 6.6 错误和多实例边界
+### 6.7 错误和多实例边界
 
 `RuntimeErrorCode` 是错误码、HTTP 状态、国际化 key 和可选 `Retry-After` 的唯一目录。
 错误消息资源 key 与枚举名称一致，异常调用点不能自行拼装 HTTP 状态。
@@ -150,7 +159,7 @@ SSE 流、事件投影器与终止事件分别由独立工厂创建，避免 Con
 服务返回 `503 SESSION_EXECUTION_UNAVAILABLE` 和 `Retry-After: 3`。这是对现有执行归属边界的显式表达；
 本次整改没有假设粘性路由或跨实例转发基础设施。
 
-### 6.7 国际化资源与语言协商
+### 6.8 国际化资源与语言协商
 
 Runtime 只保留以下两个显式 Locale 资源包：
 
@@ -177,7 +186,7 @@ Locale 获取 `resMsg`，HTTP `Content-Language` 返回实际语言。成功 Res
 状态、`resCode`、响应结构或 SSE 事件结构，分类为内部架构变更。决策依据见
 [ADR-0017](../decisions/0017-explicit-locale-message-bundles.html)。
 
-### 6.8 工具所有权与沙箱边界
+### 6.9 工具所有权与沙箱边界
 
 CLI 的 `BashTool`、`ReadTool`、`WriteTool`、`EditTool`、`GlobTool` 和 `GrepTool`
 仍是当前 JVM 内的普通本地工具，由 `ToolCatalog` 发现并按 `ToolSelection` 筛选。
@@ -206,6 +215,7 @@ Runtime V1 事件名 `tool.execution.started` 与 `tool.execution.completed` 是
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 2.7.0 | 2026-08-21 | 对齐 Runtime HTTP 1.38：公开 Path、Query、JSON 与 SSE data 字段统一为 lowerCamelCase；Header 和字段值保持原样；既有 Entry payload 在输出边界受控投影 |
 | 2.6.2 | 2026-08-21 | 将 HTTP 路径 ID 校验改为 Controller 标量参数的 Jakarta 注解，并集中映射方法校验错误 |
 | 2.6.1 | 2026-08-21 | 集中类型化资源 ID 的正则字符串和编译模式，分离领域约束与 Runtime HTTP 常量 |
 | 2.6.0 | 2026-08-20 | 对齐 Runtime HTTP 1.37：类型化资源 ID、Session 默认 thinking、无本地 Header 认证、精简消息体及 thinking 事件可见性和游标绑定 |

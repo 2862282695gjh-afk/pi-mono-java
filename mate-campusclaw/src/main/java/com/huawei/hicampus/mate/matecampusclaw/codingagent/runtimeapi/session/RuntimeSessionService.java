@@ -8,6 +8,7 @@ import java.time.Clock;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 
+import com.huawei.hicampus.mate.matecampusclaw.ai.types.Model;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.agent.AgentDirectoryResolver;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.agent.AgentDirectorySnapshotDTO;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.agent.RuntimeAgentPromptLoader;
@@ -64,9 +65,10 @@ public class RuntimeSessionService {
     public RuntimeSessionView<CreateSessionResponseVO> create(String agentId) {
         AgentDirectorySnapshotDTO snapshot = agentDirectoryResolver.resolve(agentId);
         promptLoader.validate(snapshot.runtimeDirectory());
-        String modelId = modelManager.resolveDefaultModel(snapshot).id();
+        Model model = modelManager.resolveDefaultModel(snapshot);
+        requireThinkingCapableDefaultModel(model);
         OffsetDateTime now = now();
-        RuntimeSessionDTO session = newSession(snapshot, modelId, now);
+        RuntimeSessionDTO session = newSession(snapshot, model.id(), now);
         try {
             repository.create(session);
             return responseAssembler.createView(session);
@@ -109,6 +111,12 @@ public class RuntimeSessionService {
         session.setUpdatedAt(now);
         session.setCwd(snapshot.runtimeDirectory().toString());
         return session;
+    }
+
+    private static void requireThinkingCapableDefaultModel(Model model) {
+        if (!model.reasoning()) {
+            throw new RuntimeApiException(RuntimeErrorCode.AGENT_MODEL_NOT_CONFIGURED);
+        }
     }
 
     private OffsetDateTime now() {

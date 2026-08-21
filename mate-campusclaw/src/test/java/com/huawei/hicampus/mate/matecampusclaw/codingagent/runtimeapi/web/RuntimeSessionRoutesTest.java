@@ -78,10 +78,10 @@ class RuntimeSessionRoutesTest {
                 .andExpect(header().string(HttpHeaders.CONTENT_LANGUAGE, "en-US"))
                 .andExpect(jsonPath("$.resCode").value("0"))
                 .andExpect(jsonPath("$.resMsg").value("success"))
-                .andExpect(jsonPath("$.result.session_id").value(SESSION_ID))
-                .andExpect(jsonPath("$.result.agent_id").value(AGENT_ID))
+                .andExpect(jsonPath("$.result.sessionId").value(SESSION_ID))
+                .andExpect(jsonPath("$.result.agentId").value(AGENT_ID))
                 .andExpect(jsonPath("$.result.thinking").value(true))
-                .andExpect(jsonPath("$.result.updated_at").doesNotExist());
+                .andExpect(jsonPath("$.result.updatedAt").doesNotExist());
     }
 
     @Test
@@ -94,8 +94,8 @@ class RuntimeSessionRoutesTest {
                 .andExpect(status().isOk())
                 .andExpect(header().string(HttpHeaders.ETAG, "\"snp-resource\""))
                 .andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store"))
-                .andExpect(jsonPath("$.result.model_id").value("model-default"))
-                .andExpect(jsonPath("$.result.updated_at").value("2026-08-18T00:00:00Z"));
+                .andExpect(jsonPath("$.result.modelId").value("model-default"))
+                .andExpect(jsonPath("$.result.updatedAt").value("2026-08-18T00:00:00Z"));
     }
 
     @Test
@@ -117,7 +117,7 @@ class RuntimeSessionRoutesTest {
                         .header(HttpHeaders.AUTHORIZATION, "Bearer opaque-token")
                         .header("X-HW-APPKEY", "opaque-appkey"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.result.session_id").value(SESSION_ID));
+                .andExpect(jsonPath("$.result.sessionId").value(SESSION_ID));
     }
 
     @Test

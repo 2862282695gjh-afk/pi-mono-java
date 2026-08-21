@@ -44,22 +44,22 @@ public class UserEventRequestVO {
     }
 
     /**
-     * 仅接受由 JSON 字符串组成的 file_ids 数组。
+     * 仅接受由 JSON 字符串组成的 fileIds 数组。
      *
      * @param value 原始 JSON 值
      * @throws IllegalArgumentException 值不是数组或数组元素不是字符串时抛出
      */
-    @JsonSetter("file_ids")
+    @JsonSetter("fileIds")
     public void readFileIds(JsonNode value) {
         if (value == null || value.isNull()) {
             fileIds = null;
             return;
         }
         if (!value.isArray()) {
-            throw new IllegalArgumentException("file_ids must be an array");
+            throw new IllegalArgumentException("fileIds must be an array");
         }
         java.util.ArrayList<String> parsed = new java.util.ArrayList<>();
-        value.forEach(item -> parsed.add(requireText(item, "file_ids item")));
+        value.forEach(item -> parsed.add(requireText(item, "fileIds item")));
         fileIds = List.copyOf(parsed);
     }
 

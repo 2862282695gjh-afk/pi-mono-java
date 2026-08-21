@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ADR-0019 · Runtime HTTP 公共字段统一使用 lowerCamelCase</title>
+  <style>
+    :root{--fg:#1a1a1a;--dim:#666;--accent:#2563eb;--accepted:#15803d;--bg:#fff;--card:#f6f7f9}
+    body{font:15px/1.6 -apple-system,Segoe UI,Roboto,"PingFang SC",sans-serif;color:var(--fg);
+         background:var(--bg);max-width:860px;margin:2rem auto;padding:0 1.2rem}
+    h1{font-size:1.5rem;margin:.2rem 0}.meta{color:var(--dim);font-size:.9rem;margin-bottom:1.2rem}
+    .badge{display:inline-block;padding:.1rem .6rem;border-radius:1rem;font-size:.8rem;background:var(--accepted);color:#fff}
+    section{margin:1.4rem 0}h2{font-size:1.05rem;border-bottom:1px solid #eee;padding-bottom:.3rem}
+    a{color:var(--accent)}code{background:var(--card);padding:.1rem .3rem;border-radius:.3rem}
+  </style>
+</head>
+<body>
+  <h1>ADR-0019 · Runtime HTTP 公共字段统一使用 lowerCamelCase</h1>
+  <div class="meta">Status: <span class="badge">Accepted</span> · Date: 2026-08-21 ·
+    设计文档: <a href="../designs/coding-agent-cli.md">coding-agent-cli</a> ·
+    实现分析基线: <code>304eda06ff603fc9b6bbcaad0c296cc151a7defb</code> ·
+    契约基线: <code>pi-mono-java-design@cee69de250a6cf796c55aa1ba591e7f85775713d</code></div>
+
+  <section><h2>Context</h2>
+    <p>HTTP 1.37 实现的 Path 变量、请求/响应 VO 和 SSE <code>data</code> 使用了 <code>session_id</code>、<code>file_ids</code>、<code>entry_seq</code> 等 snake_case 字段。独立设计仓库的 HTTP 1.38 契约已经确认，CampusClaw 公共 Path、Query、JSON 与 SSE <code>data</code> 字段统一使用 lowerCamelCase，请求头保持原名。</p>
+    <p>源码证据包括四个 Runtime Controller、请求与响应 VO、<code>RuntimeEntryCodec#toSseData</code>、<code>RuntimeEntryCodec#toHistoryEvent</code> 和 <code>RuntimeEventProjector</code>。数据库列、MyBatis 映射和既有 Entry payload 是内部持久化格式，不等于公共 wire field。</p>
+  </section>
+
+  <section><h2>Options considered</h2>
+    <ul>
+      <li><strong>继续公开 snake_case</strong><br>Pro：不修改当前调用方。<br>Con：与已确认的 1.38 契约和 Java 默认命名不一致。Rejected。</li>
+      <li><strong>同时接受 snake_case 与 lowerCamelCase</strong><br>Pro：客户端可渐进迁移。<br>Con：形成双别名、未知字段和签名输入歧义，长期扩大测试矩阵。Rejected。</li>
+      <li><strong>公共边界仅使用 lowerCamelCase，内部持久化保持兼容</strong><br>Pro：公共契约单一；既有 Entry 无需迁移；工具参数不被误改名。<br>Con：Entry 输出需要显式投影。Chosen。</li>
+    </ul>
+  </section>
+
+  <section><h2>Decision</h2>
+    <ul>
+      <li>所有 Runtime Path 变量、Query 参数、JSON 请求、普通 JSON 响应和 SSE <code>data</code> 字段使用 lowerCamelCase。</li>
+      <li><code>X-HW-ID</code>、<code>Authorization</code>、<code>X-HW-APPKEY</code>、<code>If-Match</code>、<code>Accept-Language</code>、<code>Content-Language</code> 等 Header 保持原名。</li>
+      <li>事件类型、错误码、<code>tool_call</code> 等枚举值和类型化 ID 值保持不变。</li>
+      <li>请求 VO 只接收 lowerCamelCase，不提供 snake_case 别名；严格 JSON 类型检查继续由对应请求 VO 承担。</li>
+      <li>数据库列、MyBatis 映射和既有 Entry payload 可以保持内部 snake_case。<code>RuntimeEntryCodec</code> 按事件类型显式投影公共字段，并保留工具 <code>arguments</code> 的原始键。</li>
+    </ul>
+  </section>
+
+  <section><h2>Consequences</h2>
+    <ul>
+      <li><strong>客户端：</strong>旧 snake_case 请求字段按未知字段拒绝，调用方必须原子升级到 1.38 字段名。</li>
+      <li><strong>路由：</strong>Controller 的 <code>@PathVariable</code> 名称和异常分类同步改为 <code>agentId</code>、<code>sessionId</code>。</li>
+      <li><strong>响应：</strong>Session、模型、控制消息、分页事件和全部 SSE payload 只输出 lowerCamelCase。</li>
+      <li><strong>数据：</strong>不要求迁移已有 Entry payload；受控投影保证旧记录也只以 lowerCamelCase 暴露。</li>
+      <li><strong>验证：</strong>路由、事件投影、分页和跨进程测试同时断言 lowerCamelCase 输出与 snake_case 请求拒绝。</li>
+    </ul>
+  </section>
+
+  <section><h2>Related</h2>
+    <ul>
+      <li><a href="../designs/coding-agent-cli.md">设计文档：Coding Agent 启动与 Runtime HTTP 设计</a></li>
+      <li><a href="../plans/campusclaw-http-v1-implementation.md">实施记录：CampusClaw HTTP V1</a></li>
+      <li><a href="0018-runtime-http-v137-contract-alignment.html">ADR-0018：Runtime HTTP 1.37 资源与 thinking 契约</a></li>
+    </ul>
+  </section>
+</body>
+</html>

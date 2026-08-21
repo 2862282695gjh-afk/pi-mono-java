@@ -124,7 +124,7 @@ public class RuntimeEventProjector {
         }
         assistantEntryId = idGenerator.nextId();
         LinkedHashMap<String, Object> data = new LinkedHashMap<>();
-        data.put("entry_id", assistantEntryId);
+        data.put("entryId", assistantEntryId);
         data.put("role", "assistant");
         stream.emit(new RuntimeSseEventVO(null, RuntimeEventType.ASSISTANT_MESSAGE_STARTED.value(), data));
     }
@@ -139,7 +139,7 @@ public class RuntimeEventProjector {
             block.put("type", "text");
             block.put("text", delta.delta());
             LinkedHashMap<String, Object> data = new LinkedHashMap<>();
-            data.put("entry_id", assistantEntryId);
+            data.put("entryId", assistantEntryId);
             data.put("delta", block);
             stream.emit(new RuntimeSseEventVO(null, RuntimeEventType.ASSISTANT_MESSAGE_DELTA.value(), data));
         } else if (thinking) {
@@ -179,8 +179,8 @@ public class RuntimeEventProjector {
 
     private LinkedHashMap<String, Object> thinkingData(int contentIndex) {
         LinkedHashMap<String, Object> data = new LinkedHashMap<>();
-        data.put("assistant_entry_id", assistantEntryId);
-        data.put("content_index", contentIndex);
+        data.put("assistantEntryId", assistantEntryId);
+        data.put("contentIndex", contentIndex);
         return data;
     }
 
@@ -218,16 +218,16 @@ public class RuntimeEventProjector {
 
     private void projectToolStart(ToolExecutionStartEvent event) {
         LinkedHashMap<String, Object> data = new LinkedHashMap<>();
-        data.put("tool_call_id", event.toolCallId());
-        data.put("tool_name", event.toolName());
+        data.put("toolCallId", event.toolCallId());
+        data.put("toolName", event.toolName());
         stream.emit(new RuntimeSseEventVO(null, RuntimeEventType.TOOL_EXECUTION_STARTED.value(), data));
     }
 
     private void projectToolEnd(ToolExecutionEndEvent event) {
         LinkedHashMap<String, Object> data = new LinkedHashMap<>();
-        data.put("tool_call_id", event.toolCallId());
-        data.put("tool_name", event.toolName());
-        data.put("is_error", event.isError());
+        data.put("toolCallId", event.toolCallId());
+        data.put("toolName", event.toolName());
+        data.put("isError", event.isError());
         stream.emit(new RuntimeSseEventVO(null, RuntimeEventType.TOOL_EXECUTION_COMPLETED.value(), data));
     }
 

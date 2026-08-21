@@ -70,12 +70,12 @@ class RuntimeSessionConfigurationRoutesTest {
         when(service.listModels(SESSION_ID))
                 .thenReturn(new AvailableModelsResponseVO("model-a", List.of("model-a", "model-b")));
 
-        mvc.perform(authenticated(get("/campusclaw-service/v1/sessions/{id}/models", SESSION_ID)))
+        mvc.perform(authenticated(get("/campusclaw-service/v1/sessions/{sessionId}/models", SESSION_ID)))
                 .andExpect(status().isOk())
                 .andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store"))
-                .andExpect(jsonPath("$.result.current_model_id").value("model-a"))
+                .andExpect(jsonPath("$.result.currentModelId").value("model-a"))
                 .andExpect(jsonPath("$.result.models[0]").value("model-a"))
-                .andExpect(jsonPath("$.result.models[0].model_id").doesNotExist());
+                .andExpect(jsonPath("$.result.models[0].modelId").doesNotExist());
     }
 
     @Test
@@ -83,22 +83,22 @@ class RuntimeSessionConfigurationRoutesTest {
         when(service.changeModel(eq(SESSION_ID), eq("\"snp-old\""), any(ChangeModelRequestVO.class)))
                 .thenReturn(view("model-b", false, "\"snp-new\""));
 
-        mvc.perform(authenticated(put("/campusclaw-service/v1/sessions/{id}/model", SESSION_ID))
+        mvc.perform(authenticated(put("/campusclaw-service/v1/sessions/{sessionId}/model", SESSION_ID))
                         .header(HttpHeaders.IF_MATCH, "\"snp-old\"")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"model_id\":\"model-b\"}"))
+                        .content("{\"modelId\":\"model-b\"}"))
                 .andExpect(status().isOk())
                 .andExpect(header().string(HttpHeaders.ETAG, "\"snp-new\""))
-                .andExpect(jsonPath("$.result.model_id").value("model-b"))
+                .andExpect(jsonPath("$.result.modelId").value("model-b"))
                 .andExpect(jsonPath("$.result.thinking").value(false));
     }
 
     @Test
-    void unknownModelFieldIsRejectedBeforeService() throws Exception {
-        mvc.perform(authenticated(put("/campusclaw-service/v1/sessions/{id}/model", SESSION_ID))
+    void snakeCaseModelFieldIsRejectedBeforeService() throws Exception {
+        mvc.perform(authenticated(put("/campusclaw-service/v1/sessions/{sessionId}/model", SESSION_ID))
                         .header(HttpHeaders.IF_MATCH, "\"snp-old\"")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"model_id\":\"model-b\",\"provider\":\"hidden\"}"))
+                        .content("{\"model_id\":\"model-b\"}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.resCode").value("INVALID_MODEL_REQUEST"))
                 .andExpect(jsonPath("$.result").doesNotExist());
@@ -107,7 +107,7 @@ class RuntimeSessionConfigurationRoutesTest {
 
     @Test
     void thinkingStringCoercionIsRejected() throws Exception {
-        mvc.perform(authenticated(put("/campusclaw-service/v1/sessions/{id}/thinking", SESSION_ID))
+        mvc.perform(authenticated(put("/campusclaw-service/v1/sessions/{sessionId}/thinking", SESSION_ID))
                         .header(HttpHeaders.IF_MATCH, "\"snp-old\"")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"thinking\":\"true\"}"))
@@ -117,7 +117,7 @@ class RuntimeSessionConfigurationRoutesTest {
 
     @Test
     void invalidSessionIdIsRejectedByParameterValidation() throws Exception {
-        mvc.perform(get("/campusclaw-service/v1/sessions/{id}/models", "session-old"))
+        mvc.perform(get("/campusclaw-service/v1/sessions/{sessionId}/models", "session-old"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.resCode").value("INVALID_SESSION_ID"))
                 .andExpect(jsonPath("$.result").doesNotExist());
@@ -130,9 +130,9 @@ class RuntimeSessionConfigurationRoutesTest {
         when(service.changeModel(eq(SESSION_ID), eq(null), any(ChangeModelRequestVO.class)))
                 .thenThrow(new RuntimeApiException(RuntimeErrorCode.IF_MATCH_REQUIRED));
 
-        mvc.perform(authenticated(put("/campusclaw-service/v1/sessions/{id}/model", SESSION_ID))
+        mvc.perform(authenticated(put("/campusclaw-service/v1/sessions/{sessionId}/model", SESSION_ID))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"model_id\":\"model-b\"}"))
+                        .content("{\"modelId\":\"model-b\"}"))
                 .andExpect(status().isPreconditionRequired())
                 .andExpect(jsonPath("$.resCode").value("IF_MATCH_REQUIRED"))
                 .andExpect(jsonPath("$.result").doesNotExist());

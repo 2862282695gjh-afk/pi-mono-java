@@ -1,16 +1,18 @@
 # CampusClaw HTTP V1 实施记录
 
-> 版本：3.0.2
+> 版本：3.1.0
 >
 > 状态：已实现并完成发布前验证
 >
-> Runtime HTTP 1.37 对齐分析基线：`3d9b9c55569486f024d6a507ce004101a56dee3f`
+> Runtime HTTP 1.38 实现分析基线：`304eda06ff603fc9b6bbcaad0c296cc151a7defb`
+>
+> HTTP 1.38 设计契约基线：`superheromeZzh/pi-mono-java-design@cee69de250a6cf796c55aa1ba591e7f85775713d`
 >
 > 国际化实现起点：`3a6358bc9dd5837cdf5ac866fc0761298372510a`
 >
 > 初始实现提交：`8691e8800f05f28afe22499050c29220ef5b7475`
 >
-> 日期：2026-08-18
+> 日期：2026-08-21
 
 ## 1. 目标与边界
 
@@ -50,17 +52,17 @@
 
 | 序号 | 方法与路径 | 核心语义 | 结果 |
 |---:|---|---|---|
-| 1 | `POST /campusclaw-service/v1/agents/{agent_id}/sessions` | 生成类型化 Session ID，创建时初始化 `thinking=true` | 已实现 |
-| 2 | `GET /campusclaw-service/v1/sessions/{session_id}` | 返回名称、state、model、thinking、版本等精简状态 | 已实现 |
-| 3 | `DELETE /campusclaw-service/v1/sessions/{session_id}` | running 返回 409；idle 幂等删除；墓碑仅两字段 | 已实现 |
-| 4 | `POST /campusclaw-service/v1/sessions/{session_id}/events` | 请求体只含 `message/file_ids`；按执行快照投影 thinking 并直接返回 SSE | 已实现 |
-| 5 | `GET /campusclaw-service/v1/sessions/{session_id}/events` | 按当前 thinking 过滤持久化事件，page 绑定该状态 | 已实现 |
-| 6 | `GET /campusclaw-service/v1/sessions/{session_id}/models` | `current_model_id` + 模型 ID 字符串数组 | 已实现 |
-| 7 | `PUT /campusclaw-service/v1/sessions/{session_id}/model` | idle + 强 `If-Match`，同值不增版本 | 已实现 |
-| 8 | `PUT /campusclaw-service/v1/sessions/{session_id}/thinking` | 布尔深度思考 + 强 `If-Match` | 已实现 |
-| 9 | `POST /campusclaw-service/v1/sessions/{session_id}/steers` | running 时加入高优先级队列 | 已实现 |
-| 10 | `POST /campusclaw-service/v1/sessions/{session_id}/follow-ups` | running 时加入 FIFO 队列 | 已实现 |
-| 11 | `POST /campusclaw-service/v1/sessions/{session_id}/abort` | 幂等中止，清空未投递队列 | 已实现 |
+| 1 | `POST /campusclaw-service/v1/agents/{agentId}/sessions` | 生成类型化 Session ID，创建时初始化 `thinking=true` | 已实现 |
+| 2 | `GET /campusclaw-service/v1/sessions/{sessionId}` | 返回名称、state、model、thinking、版本等精简状态 | 已实现 |
+| 3 | `DELETE /campusclaw-service/v1/sessions/{sessionId}` | running 返回 409；idle 幂等删除；墓碑仅两字段 | 已实现 |
+| 4 | `POST /campusclaw-service/v1/sessions/{sessionId}/events` | 请求体只含 `message/fileIds`；按执行快照投影 thinking 并直接返回 SSE | 已实现 |
+| 5 | `GET /campusclaw-service/v1/sessions/{sessionId}/events` | 按当前 thinking 过滤持久化事件，page 绑定该状态 | 已实现 |
+| 6 | `GET /campusclaw-service/v1/sessions/{sessionId}/models` | `currentModelId` + 模型 ID 字符串数组 | 已实现 |
+| 7 | `PUT /campusclaw-service/v1/sessions/{sessionId}/model` | idle + 强 `If-Match`，同值不增版本 | 已实现 |
+| 8 | `PUT /campusclaw-service/v1/sessions/{sessionId}/thinking` | 布尔深度思考 + 强 `If-Match` | 已实现 |
+| 9 | `POST /campusclaw-service/v1/sessions/{sessionId}/steers` | running 时加入高优先级队列 | 已实现 |
+| 10 | `POST /campusclaw-service/v1/sessions/{sessionId}/follow-ups` | running 时加入 FIFO 队列 | 已实现 |
+| 11 | `POST /campusclaw-service/v1/sessions/{sessionId}/abort` | 幂等中止，清空未投递队列 | 已实现 |
 
 ## 4. 已观察行为、目标决策和差异分类
 
@@ -73,11 +75,12 @@
 | 删除 | 历史方案曾计划自动 abort | active execution 返回 409；idle 才删除 | 安全加固：避免删除与执行副作用竞态 |
 | 调用上下文 Header | 基线认证拦截器检查 Header 齐全、共存和 Bearer 形状 | 全接口保留集成 Header 契约，但 Runtime 不做本地检查 | 架构变更：真实性和动作授权由上游 mate-service 保证，Runtime 不建立凭据状态 |
 | 资源 ID | Agent 使用下划线短 ID，Session 使用无类型 Crockford Base32 | Agent/Tool/Skill/Session 使用类型前缀加 32 位无连字符 UUID；正则字符串与编译模式集中在中立的领域模式类；HTTP 路径参数使用 Jakarta 注解校验 | 产品约束：阻止无前缀、错误类型和旧格式进入边界；架构变更：消除重复编译、核心代码对 HTTP 常量包的反向依赖和命令式边界 Validator |
-| 创建默认值 | `RuntimeSessionService#newSession` 持久化 `thinking=false` | 创建时持久化 `thinking=true` | 产品约束：新 Session 默认启用深度思考 |
-| 用户事件请求 | `UserEventRequestVO` 要求冗余 `type=user.message` | 只接受 `message` 与 `file_ids`，`type` 作为未知字段拒绝 | 产品约束：operation 已固定消息类型 |
+| 创建默认值 | `RuntimeSessionService#newSession` 持久化 `thinking=false` | 创建时持久化 `thinking=true`；默认模型不支持 reasoning 时返回 `AGENT_MODEL_NOT_CONFIGURED` | 产品约束：新 Session 默认启用深度思考，且公开状态必须与模型能力一致 |
+| 用户事件请求 | `UserEventRequestVO` 要求冗余 `type=user.message` | 只接受 `message` 与 `fileIds`，`type` 和 snake_case 别名作为未知字段拒绝 | 产品约束：operation 已固定消息类型，公共字段统一为 lowerCamelCase |
+| HTTP 字段命名 | 路径变量、请求/响应 VO 与 SSE data 使用 snake_case | Path、Query、JSON 与 SSE data 统一为 lowerCamelCase；Header 保持原名；持久化 payload 继续使用内部格式并在输出边界受控投影 | 产品约束：对齐 HTTP 1.38，避免公共双别名并保持已有 Entry 可读 |
 | thinking 事件 | Provider thinking 事件未进入公共 Runtime SSE 或持久化历史 | 执行快照为 true 时开放三阶段事件并持久化 completed；GET 按当前状态过滤 | 架构变更：显式可见性策略和可恢复事件保持一致 |
 | Agent 来源 | 曾设计独立模板快照 | 直接读取 Agent 目录，只启用 read 工具 | 架构变更：去掉重复模板仓库和缓存 |
-| 文件 | 曾设计 Runtime 文件解析 port | `file_ids` 原样组成固定提示块 | 产品约束：文件内容不由 Runtime 下载 |
+| 文件 | 曾设计 Runtime 文件解析 port | `fileIds` 原样组成固定提示块 | 产品约束：文件内容不由 Runtime 下载 |
 | Agent 运行根目录 | 解析器返回 Agent 父目录，提示词加载器再追加 `.campusclaw` | 解析器直接返回 `.campusclaw` 真实路径，并统一用于 `cwd`、提示词和 `ReadTool` | 安全加固：避免 HTTP V1 工具读取 Agent 父目录 |
 | 事件业务职责 | 单个 `RuntimeEventService` 同时承担接受、分页、历史恢复和异步执行收尾 | 拆分接受、查询、上下文准备和执行协调 | 架构变更：降低构造依赖和修改影响面 |
 | 错误语义 | 调用点分别指定 HTTP 状态和错误码 | 错误枚举集中状态、i18n key 与重试时间 | 安全加固：避免同一错误码出现不同 HTTP 语义 |
@@ -97,13 +100,13 @@ assistant.thinking.started       thinking=true 时可选
 assistant.thinking.delta         thinking=true 时可选
 assistant.thinking.completed     thinking=true 时可选、持久化
 assistant.message.delta
-assistant.message.completed     finish_reason=tool_call
+assistant.message.completed     finishReason=tool_call
 tool.execution.started
 tool.execution.completed
 tool.result
 assistant.message.started
 assistant.message.delta
-assistant.message.completed     finish_reason=stop
+assistant.message.completed     finishReason=stop
 session.status.idle
 stream.end
 ```
@@ -153,6 +156,7 @@ DDL 使用 `t_` 前缀：`t_sessions`、`t_session_entries`、`t_session_sequenc
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 3.1.0 | 2026-08-21 | 对齐 HTTP 1.38：Path、Query、JSON 与 SSE data 统一为 lowerCamelCase；Header 和字段值保持原样；内部 Entry payload 通过受控投影兼容已有数据 |
 | 3.0.2 | 2026-08-21 | 用 Controller 标量参数 Jakarta 注解替代命令式路径 ID Validator，并统一映射 Spring MVC 方法校验错误 |
 | 3.0.1 | 2026-08-21 | 将类型化资源 ID 的正则字符串和编译模式集中到领域模式类，并从 Runtime HTTP 常量中移除领域约束 |
 | 3.0.0 | 2026-08-20 | 对齐 HTTP 1.37 契约：类型化资源 ID、创建默认 thinking、移除 Runtime 本地 Header 认证、删除消息体 type，并实现 thinking 事件持久化、查询过滤和游标绑定 |

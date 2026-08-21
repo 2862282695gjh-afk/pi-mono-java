@@ -10,6 +10,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -80,6 +81,7 @@ class RuntimeSessionServiceTest {
         when(directoryResolver.resolve(AGENT_ID)).thenReturn(snapshot);
         when(modelManager.resolveDefaultModel(snapshot)).thenReturn(model);
         when(model.id()).thenReturn("model-default");
+        when(model.reasoning()).thenReturn(true);
 
         var view = service.create(AGENT_ID);
 
@@ -100,6 +102,7 @@ class RuntimeSessionServiceTest {
         when(directoryResolver.resolve(AGENT_ID)).thenReturn(snapshot);
         when(modelManager.resolveDefaultModel(snapshot)).thenReturn(model);
         when(model.id()).thenReturn("model-default");
+        when(model.reasoning()).thenReturn(true);
         doThrow(new IllegalStateException("database password leaked"))
                 .when(repository)
                 .create(any(RuntimeSessionDTO.class));
@@ -107,6 +110,19 @@ class RuntimeSessionServiceTest {
         assertThatThrownBy(() -> service.create(AGENT_ID))
                 .isInstanceOfSatisfying(RuntimeApiException.class, error -> assertThat(error.errorCode())
                         .isEqualTo(RuntimeErrorCode.SESSION_INITIALIZATION_FAILED));
+    }
+
+    @Test
+    void createRejectsDefaultModelWithoutThinkingCapability() {
+        AgentDirectorySnapshotDTO snapshot = snapshot();
+        Model model = mock(Model.class);
+        when(directoryResolver.resolve(AGENT_ID)).thenReturn(snapshot);
+        when(modelManager.resolveDefaultModel(snapshot)).thenReturn(model);
+
+        assertThatThrownBy(() -> service.create(AGENT_ID))
+                .isInstanceOfSatisfying(RuntimeApiException.class, error -> assertThat(error.errorCode())
+                        .isEqualTo(RuntimeErrorCode.AGENT_MODEL_NOT_CONFIGURED));
+        verify(repository, never()).create(any(RuntimeSessionDTO.class));
     }
 
     @Test

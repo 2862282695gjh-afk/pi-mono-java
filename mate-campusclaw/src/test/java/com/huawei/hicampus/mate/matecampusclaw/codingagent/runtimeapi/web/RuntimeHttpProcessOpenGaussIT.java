@@ -202,15 +202,12 @@ class RuntimeHttpProcessOpenGaussIT {
                 .POST(HttpRequest.BodyPublishers.noBody())
                 .build());
         assertThat(response.statusCode()).isEqualTo(201);
-        return MAPPER.readTree(response.body())
-                .path("result")
-                .path("session_id")
-                .asText();
+        return MAPPER.readTree(response.body()).path("result").path("sessionId").asText();
     }
 
     private static CompletableFuture<HttpResponse<String>> submitUserEventAsync(int port, String sessionId) {
         URI uri = eventsUri(port, sessionId, null);
-        String body = "{\"message\":\"process smoke\",\"file_ids\":[]}";
+        String body = "{\"message\":\"process smoke\",\"fileIds\":[]}";
         HttpRequest request = HttpRequest.newBuilder(uri)
                 .header("X-HW-ID", CALLER_ID)
                 .header("Authorization", "Bearer " + JWT)
@@ -238,8 +235,8 @@ class RuntimeHttpProcessOpenGaussIT {
                 .build());
         assertThat(response.statusCode()).isEqualTo(202);
         JsonNode result = MAPPER.readTree(response.body()).path("result");
-        assertThat(result.path("session_id").asText()).isEqualTo(sessionId);
-        assertThat(result.path("accepted_at").asText()).isNotBlank();
+        assertThat(result.path("sessionId").asText()).isEqualTo(sessionId);
+        assertThat(result.path("acceptedAt").asText()).isNotBlank();
     }
 
     private static void assertIdleControlRejected(int port, String sessionId) throws Exception {
@@ -342,6 +339,9 @@ class RuntimeHttpProcessOpenGaussIT {
         }
         assertThat(stream).contains("process-level answer").doesNotContain("event:stream.error");
         assertThat(stream).contains("先只分析异常订单", "完成后再给出摘要");
+        assertThat(stream)
+                .contains("\"entryId\":", "\"entrySeq\":", "\"finishReason\":", "\"createdAt\":")
+                .doesNotContain("\"entry_id\":", "\"entry_seq\":", "\"finish_reason\":", "\"created_at\":");
         assertThat(stream.indexOf("先只分析异常订单")).isLessThan(stream.indexOf("完成后再给出摘要"));
         assertThat(countOccurrences(stream, "event:user.message")).isEqualTo(3);
         assertThat(countOccurrences(stream, "event:assistant.message.completed"))
@@ -374,9 +374,9 @@ class RuntimeHttpProcessOpenGaussIT {
                                 .asText())
                         .isEqualTo("process-level answer");
             }
-            cursor = page.path("next_page").isNull()
+            cursor = page.path("nextPage").isNull()
                     ? null
-                    : page.path("next_page").asText();
+                    : page.path("nextPage").asText();
             if (index < expectedTypes.size() - 1) {
                 assertThat(cursor).startsWith("page_").doesNotContain(sessionId);
             }
@@ -388,7 +388,7 @@ class RuntimeHttpProcessOpenGaussIT {
         SessionView initial = getSession(port, sessionId);
         assertThat(initial.result().path("thinking").asBoolean()).isTrue();
         JsonNode models = listModels(port, sessionId);
-        assertThat(models.path("current_model_id").asText()).isEqualTo(MODEL_ID);
+        assertThat(models.path("currentModelId").asText()).isEqualTo(MODEL_ID);
         List<String> availableModels = MAPPER.readerForListOf(String.class).readValue(models.path("models"));
         assertThat(availableModels).containsExactly(MODEL_ID, SECOND_MODEL_ID);
 
@@ -397,11 +397,11 @@ class RuntimeHttpProcessOpenGaussIT {
         assertThat(disabled.etag()).isNotEqualTo(initial.etag());
 
         SessionView changed = updateConfiguration(
-                port, sessionId, "model", disabled.etag(), "{\"model_id\":\"" + SECOND_MODEL_ID + "\"}");
-        assertThat(changed.result().path("model_id").asText()).isEqualTo(SECOND_MODEL_ID);
+                port, sessionId, "model", disabled.etag(), "{\"modelId\":\"" + SECOND_MODEL_ID + "\"}");
+        assertThat(changed.result().path("modelId").asText()).isEqualTo(SECOND_MODEL_ID);
         assertThat(changed.result().path("thinking").asBoolean()).isFalse();
         SessionView unchanged = updateConfiguration(
-                port, sessionId, "model", changed.etag(), "{\"model_id\":\"" + SECOND_MODEL_ID + "\"}");
+                port, sessionId, "model", changed.etag(), "{\"modelId\":\"" + SECOND_MODEL_ID + "\"}");
         assertThat(unchanged.etag()).isEqualTo(changed.etag());
         assertStaleConfigurationRejected(port, sessionId, disabled.etag());
     }

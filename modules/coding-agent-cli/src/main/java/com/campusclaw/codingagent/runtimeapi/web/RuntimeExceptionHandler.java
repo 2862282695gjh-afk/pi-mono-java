@@ -82,12 +82,11 @@ public class RuntimeExceptionHandler {
         Object value = request.getAttribute(HandlerMapping.BEST_MATCHING_PATTERN_ATTRIBUTE);
         String pattern = value instanceof String path ? path : "";
         return switch (pattern) {
-            case "/campusclaw-service/v1/sessions/{session_id}/events" -> RuntimeErrorCode.INVALID_EVENT_REQUEST;
-            case "/campusclaw-service/v1/sessions/{session_id}/model" -> RuntimeErrorCode.INVALID_MODEL_REQUEST;
-            case "/campusclaw-service/v1/sessions/{session_id}/thinking" -> RuntimeErrorCode.INVALID_THINKING_REQUEST;
-            case "/campusclaw-service/v1/sessions/{session_id}/steers" -> RuntimeErrorCode.INVALID_STEER_REQUEST;
-            case "/campusclaw-service/v1/sessions/{session_id}/follow-ups" ->
-                RuntimeErrorCode.INVALID_FOLLOW_UP_REQUEST;
+            case "/campusclaw-service/v1/sessions/{sessionId}/events" -> RuntimeErrorCode.INVALID_EVENT_REQUEST;
+            case "/campusclaw-service/v1/sessions/{sessionId}/model" -> RuntimeErrorCode.INVALID_MODEL_REQUEST;
+            case "/campusclaw-service/v1/sessions/{sessionId}/thinking" -> RuntimeErrorCode.INVALID_THINKING_REQUEST;
+            case "/campusclaw-service/v1/sessions/{sessionId}/steers" -> RuntimeErrorCode.INVALID_STEER_REQUEST;
+            case "/campusclaw-service/v1/sessions/{sessionId}/follow-ups" -> RuntimeErrorCode.INVALID_FOLLOW_UP_REQUEST;
             default -> RuntimeErrorCode.INTERNAL_ERROR;
         };
     }
@@ -109,8 +108,8 @@ public class RuntimeExceptionHandler {
 
     private static Optional<RuntimeErrorCode> identifierErrorCode(String pathVariableName) {
         return switch (pathVariableName) {
-            case "agent_id" -> Optional.of(RuntimeErrorCode.INVALID_AGENT_ID);
-            case "session_id" -> Optional.of(RuntimeErrorCode.INVALID_SESSION_ID);
+            case "agentId" -> Optional.of(RuntimeErrorCode.INVALID_AGENT_ID);
+            case "sessionId" -> Optional.of(RuntimeErrorCode.INVALID_SESSION_ID);
             default -> Optional.empty();
         };
     }

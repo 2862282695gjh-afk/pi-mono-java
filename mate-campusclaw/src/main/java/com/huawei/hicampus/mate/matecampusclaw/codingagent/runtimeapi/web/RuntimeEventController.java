@@ -37,7 +37,7 @@ import jakarta.validation.constraints.Pattern;
  * @since [br_eCampusCore 26.0.0]
  */
 @RestController
-@RequestMapping(RuntimeApiConstants.BASE_PATH + "/sessions/{session_id}/events")
+@RequestMapping(RuntimeApiConstants.BASE_PATH + "/sessions/{sessionId}/events")
 public class RuntimeEventController {
     private final RuntimeEventService service;
 
@@ -60,7 +60,7 @@ public class RuntimeEventController {
 
     @PostMapping(produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public ResponseEntity<SseEmitter> submit(
-            @PathVariable("session_id") @NotBlank @Pattern(regexp = ResourceIdentifierPatterns.SESSION_ID_REGEX)
+            @PathVariable("sessionId") @NotBlank @Pattern(regexp = ResourceIdentifierPatterns.SESSION_ID_REGEX)
                     String sessionId,
             @Valid @RequestBody UserEventRequestVO body,
             HttpServletRequest request) {
@@ -78,7 +78,7 @@ public class RuntimeEventController {
 
     @GetMapping
     public ResponseEntity<Object> list(
-            @PathVariable("session_id") @NotBlank @Pattern(regexp = ResourceIdentifierPatterns.SESSION_ID_REGEX)
+            @PathVariable("sessionId") @NotBlank @Pattern(regexp = ResourceIdentifierPatterns.SESSION_ID_REGEX)
                     String sessionId,
             @RequestParam(required = false) String limit,
             @RequestParam(required = false) String page,

@@ -99,9 +99,11 @@ class RuntimeEventProjectorTest {
         agent.prompt(initialMessage).get(2, TimeUnit.SECONDS);
         stream.complete();
 
+        List<RuntimeSseEventVO> events = collect(stream);
         List<String> eventNames =
-                collect(stream).stream().map(RuntimeSseEventVO::getEvent).toList();
+                events.stream().map(RuntimeSseEventVO::getEvent).toList();
         assertConfirmedEventOrder(eventNames);
+        assertCamelCaseEventData(events);
         assertThat(persisted)
                 .extracting(RuntimeEntryDTO::getType)
                 .containsExactly("assistant.message.completed", "tool.result", "assistant.message.completed");
@@ -126,13 +128,17 @@ class RuntimeEventProjectorTest {
         projectThinking(enabled, message);
         enabledStream.complete();
 
-        assertThat(collect(enabledStream))
+        List<RuntimeSseEventVO> thinkingEvents = collect(enabledStream);
+        assertThat(thinkingEvents)
                 .extracting(RuntimeSseEventVO::getEvent)
                 .containsExactly(
                         "assistant.message.started",
                         "assistant.thinking.started",
                         "assistant.thinking.delta",
                         "assistant.thinking.completed");
+        assertThat(event(thinkingEvents, "assistant.thinking.started").getData())
+                .containsKeys("assistantEntryId", "contentIndex")
+                .doesNotContainKeys("assistant_entry_id", "content_index");
         var entry = org.mockito.ArgumentCaptor.forClass(RuntimeEntryDTO.class);
         verify(repository).appendEntry(entry.capture());
         assertThat(entry.getValue().getType()).isEqualTo("assistant.thinking.completed");
@@ -187,6 +193,25 @@ class RuntimeEventProjectorTest {
                         "assistant.message.started",
                         "assistant.message.delta",
                         "assistant.message.completed");
+    }
+
+    private static void assertCamelCaseEventData(List<RuntimeSseEventVO> events) {
+        assertThat(event(events, "assistant.message.completed").getData())
+                .containsKeys("entryId", "entrySeq", "finishReason", "createdAt")
+                .doesNotContainKeys("entry_id", "entry_seq", "finish_reason", "created_at");
+        assertThat(event(events, "tool.execution.started").getData())
+                .containsKeys("toolCallId", "toolName")
+                .doesNotContainKeys("tool_call_id", "tool_name");
+        assertThat(event(events, "tool.execution.completed").getData())
+                .containsKeys("toolCallId", "toolName", "isError")
+                .doesNotContainKeys("tool_call_id", "tool_name", "is_error");
+    }
+
+    private static RuntimeSseEventVO event(List<RuntimeSseEventVO> events, String name) {
+        return events.stream()
+                .filter(event -> name.equals(event.getEvent()))
+                .findFirst()
+                .orElseThrow();
     }
 
     private static List<RuntimeSseEventVO> collect(RuntimeEventStream stream) {

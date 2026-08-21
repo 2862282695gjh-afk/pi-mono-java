@@ -65,12 +65,12 @@ class RuntimeEventQueryServiceTest {
         when(repository.listCurrentBranch(SESSION_ID, 7L, 3, true)).thenReturn(List.of(first, second, lookAhead));
         when(cursorCodec.decode("page_current", SESSION_ID, true)).thenReturn(7L);
         when(cursorCodec.encode(SESSION_ID, 2L, true)).thenReturn("page_next");
-        when(codec.toHistoryEvent(first)).thenReturn(Map.of("entry_seq", 1L));
-        when(codec.toHistoryEvent(second)).thenReturn(Map.of("entry_seq", 2L));
+        when(codec.toHistoryEvent(first)).thenReturn(Map.of("entrySeq", 1L));
+        when(codec.toHistoryEvent(second)).thenReturn(Map.of("entrySeq", 2L));
 
         var page = service.list(SESSION_ID, "2", "page_current");
 
-        assertThat(page.getEvents()).containsExactly(Map.of("entry_seq", 1L), Map.of("entry_seq", 2L));
+        assertThat(page.getEvents()).containsExactly(Map.of("entrySeq", 1L), Map.of("entrySeq", 2L));
         assertThat(page.getNextPage()).isEqualTo("page_next");
         verify(codec, never()).toHistoryEvent(lookAhead);
     }

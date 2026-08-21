@@ -32,7 +32,7 @@ import jakarta.validation.constraints.Pattern;
  * @since [br_eCampusCore 26.0.0]
  */
 @RestController
-@RequestMapping(RuntimeApiConstants.BASE_PATH + "/sessions/{session_id}")
+@RequestMapping(RuntimeApiConstants.BASE_PATH + "/sessions/{sessionId}")
 public class RuntimeSessionControlController {
     private final RuntimeSessionControlService service;
 
@@ -45,7 +45,7 @@ public class RuntimeSessionControlController {
 
     @PostMapping("/steers")
     public ResponseEntity<Object> steer(
-            @PathVariable("session_id") @NotBlank @Pattern(regexp = ResourceIdentifierPatterns.SESSION_ID_REGEX)
+            @PathVariable("sessionId") @NotBlank @Pattern(regexp = ResourceIdentifierPatterns.SESSION_ID_REGEX)
                     String sessionId,
             @Valid @RequestBody ControlMessageRequestVO body,
             HttpServletRequest request) {
@@ -55,7 +55,7 @@ public class RuntimeSessionControlController {
 
     @PostMapping("/follow-ups")
     public ResponseEntity<Object> followUp(
-            @PathVariable("session_id") @NotBlank @Pattern(regexp = ResourceIdentifierPatterns.SESSION_ID_REGEX)
+            @PathVariable("sessionId") @NotBlank @Pattern(regexp = ResourceIdentifierPatterns.SESSION_ID_REGEX)
                     String sessionId,
             @Valid @RequestBody ControlMessageRequestVO body,
             HttpServletRequest request) {
@@ -65,7 +65,7 @@ public class RuntimeSessionControlController {
 
     @PostMapping("/abort")
     public ResponseEntity<Void> abort(
-            @PathVariable("session_id") @NotBlank @Pattern(regexp = ResourceIdentifierPatterns.SESSION_ID_REGEX)
+            @PathVariable("sessionId") @NotBlank @Pattern(regexp = ResourceIdentifierPatterns.SESSION_ID_REGEX)
                     String sessionId) {
         service.abort(sessionId);
         return ResponseEntity.noContent().cacheControl(CacheControl.noStore()).build();
