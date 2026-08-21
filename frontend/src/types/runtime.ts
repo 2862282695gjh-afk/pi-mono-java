@@ -10,23 +10,23 @@ export interface ErrorBean {
 }
 
 export interface RuntimeSession {
-  session_id: string;
-  agent_id: string;
-  model_id: string;
+  sessionId: string;
+  agentId: string;
+  modelId: string;
   state: 'idle' | 'running';
   thinking: boolean;
-  created_at: string;
-  updated_at?: string;
+  createdAt: string;
+  updatedAt?: string;
 }
 
 export interface AvailableModels {
-  current_model_id: string;
+  currentModelId: string;
   models: string[];
 }
 
 export interface RuntimeHistoryPage {
   events: RuntimeEventData[];
-  next_page?: string | null;
+  nextPage?: string | null;
 }
 
 export interface RuntimeEventEnvelope {
@@ -38,8 +38,14 @@ export interface RuntimeEventEnvelope {
 export type RuntimeEventData = Record<string, unknown>;
 
 export interface ControlAccepted {
-  session_id: string;
-  accepted_at: string;
+  sessionId: string;
+  acceptedAt: string;
+}
+
+export type SubmissionOutcome = 'confirmed' | 'uncertain';
+
+export interface MessageSubmission {
+  confirmation: Promise<SubmissionOutcome>;
 }
 
 export type FollowUpMode = 'steer' | 'queue';

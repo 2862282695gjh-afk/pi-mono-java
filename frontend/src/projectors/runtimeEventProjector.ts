@@ -27,12 +27,12 @@ export function projectRuntimeEvents(events: RuntimeEventEnvelope[]): Conversati
 }
 
 function appendUserTurn(turns: ConversationTurn[], data: RuntimeEventData): void {
-  const entryId = readString(data.entry_id) || `user-${turns.length}`;
+  const entryId = readString(data.entryId) || `user-${turns.length}`;
   const turn: UserTurn = {
     key: entryId,
     kind: 'user',
     text: readString(data.message),
-    fileIds: readStringArray(data.file_ids),
+    fileIds: readStringArray(data.fileIds),
   };
   turns.push(turn);
 }
@@ -42,7 +42,7 @@ function projectAssistantEvent(
   assistantTurns: Map<string, AssistantTurn>,
   envelope: RuntimeEventEnvelope,
 ): void {
-  const entryId = readString(envelope.data.entry_id);
+  const entryId = readString(envelope.data.entryId);
   if (!entryId) return;
   const turn = ensureAssistantTurn(turns, assistantTurns, entryId);
 
@@ -60,7 +60,7 @@ function projectThinkingEvent(
   assistantTurns: Map<string, AssistantTurn>,
   envelope: RuntimeEventEnvelope,
 ): void {
-  const assistantEntryId = readString(envelope.data.assistant_entry_id);
+  const assistantEntryId = readString(envelope.data.assistantEntryId);
   if (!assistantEntryId) return;
   const turn = ensureAssistantTurn(turns, assistantTurns, assistantEntryId);
 
@@ -77,15 +77,15 @@ function projectToolEvent(
   activityTurns: Map<string, ActivityTurn>,
   envelope: RuntimeEventEnvelope,
 ): void {
-  const toolCallId = readString(envelope.data.tool_call_id);
+  const toolCallId = readString(envelope.data.toolCallId);
   if (!toolCallId) return;
   const turn = ensureActivityTurn(turns, activityTurns, toolCallId, envelope.data);
 
   if (envelope.event === 'tool.execution.completed') {
-    turn.status = envelope.data.is_error === true ? 'error' : 'completed';
+    turn.status = envelope.data.isError === true ? 'error' : 'completed';
   }
   if (envelope.event === 'tool.result') {
-    turn.status = envelope.data.is_error === true ? 'error' : 'completed';
+    turn.status = envelope.data.isError === true ? 'error' : 'completed';
     turn.result = readContentArrayText(envelope.data.content);
   }
 }
@@ -121,7 +121,7 @@ function ensureActivityTurn(
     key: `tool-${toolCallId}`,
     kind: 'activity',
     toolCallId,
-    toolName: readString(data.tool_name) || 'Agent 工具',
+    toolName: readString(data.toolName) || 'Agent 工具',
     status: 'running',
     result: '',
   };

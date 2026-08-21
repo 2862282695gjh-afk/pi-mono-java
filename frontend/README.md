@@ -4,7 +4,7 @@ Vue 3 + TypeScript + Vite 实现的 CampusClaw Agent 工作区。界面采用 Co
 中性体系，以 Agent、会话、对话、工具活动和执行控制为产品概念，不再把 HTTP/SSE 调试字段
 作为主界面。
 
-当前版本按 CampusClaw Runtime HTTP 1.37.0 实现过渡 adapter。生产架构仍应通过
+当前版本按 CampusClaw Runtime HTTP 1.38.0 实现过渡 adapter。生产架构仍应通过
 mate-service 公共 Agent/Chat/Attachment API；在该契约完成前，本 adapter 用于前后端并行
 开发和内部环境验证，不代表生产安全边界。
 
@@ -12,7 +12,7 @@ mate-service 公共 Agent/Chat/Attachment API；在该契约完成前，本 adap
 
 - 首次进入、常规对话和执行中三个界面状态；
 - Session 创建、恢复、删除、模型选择和深度思考；
-- `POST /sessions/{session_id}/events` 请求级 SSE 增量解析；
+- `POST /sessions/{sessionId}/events` 请求级 SSE 增量解析；
 - 当前分支持久化历史分页、去重和流结束后的恢复；
 - User、Assistant、Thinking 和工具生命周期的产品对象投影；
 - 运行中“调整方向”“加入队列”“停止”；
@@ -55,25 +55,27 @@ npm run dev
 浏览器打开 `http://localhost:5173`。开发服务器默认把 `/campusclaw-service` 代理到
 `http://localhost:8080`。
 
-## HTTP 1.37.0 语义
+## HTTP 1.38.0 语义
 
-- 初始消息体只发送 `message` 和可选 `file_ids`，不发送旧 `type` 字段。
+- Path、Query、JSON 请求/响应和 SSE `data` 字段统一使用 lowerCamelCase，不接受旧 snake_case 别名。
+- 初始消息体只发送 `message` 和可选 `fileIds`，不发送旧 `type` 字段。
 - SSE 是提交消息的同一个响应；收到响应头后 Composer 即进入 running，可继续提交控制消息。
+- Composer 草稿不在响应头到达时清空；只有 SSE `user.message` 或 GET Events 历史确认本次新 Entry 后才清空。
 - Steer 不硬中断当前模型或工具，而是在下一次模型调用前优先送达；FollowUp 在本次执行
   自然结束时继续。
 - Steer/FollowUp 的 `202` 没有公共控制项 ID，界面只使用本地临时 key，不把它伪装为
   Runtime 身份；刷新后不承诺恢复未送达队列。
-- 网络错误后不自动重放初始消息、Steer 或 FollowUp。若写请求结果不确定，保留输入并提示
-  先刷新会话。
-- 流结束后从 GET Events 第一页读取权威持久化历史，原样跟随 `next_page`，按 Entry 去重。
+- 网络错误后不自动重放初始消息、Steer 或 FollowUp。断流后先读 Session/Events 对账；若仍无法确认则保留草稿，发布 `OUTCOME_UNCERTAIN` 并提示不要重复提交。
+- 流结束后从 GET Events 第一页读取权威持久化历史，原样跟随 `nextPage`，按 `entryId` 去重。
 
 ## 质量命令
 
 ```bash
 npm run typecheck
+npm test
 npm run build
 npm audit --audit-level=high
 ```
 
 设计依据见 [CampusClaw 产品前端体验设计](../docs/designs/campusclaw-frontend.md) 和
-[ADR-0018](../docs/decisions/0018-campusclaw-product-frontend-boundary.md)。
+[ADR-0020](../docs/decisions/0020-campusclaw-product-frontend-boundary.html)。

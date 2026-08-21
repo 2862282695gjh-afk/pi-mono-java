@@ -1,11 +1,12 @@
 @startuml frontend_product_boundary
-' Source baseline: 7b655487df80685187ed0193f6578060615f7d43.
+' Backend source baseline: d0efb2fd18f2f2a7db121a1cbd4f039348a8094a.
+' Frontend change baseline: 9ae08be97e49387367500da8fd8b01b4a607c4b3.
 ' Source evidence: frontend/src/App.vue (createSession, resumeSession, submit, product shell).
 ' Source evidence: frontend/src/composables/useRuntimeApi.ts (useRuntimeApi, requestRaw, consumeSse).
 ' Source evidence: frontend/src/projectors/runtimeEventProjector.ts (projectRuntimeEvents).
 ' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/web/RuntimeSessionController.java.
 ' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/web/RuntimeEventController.java.
-' Observed behavior: the product shell hides credentials and protocol fields, but its transitional adapter still calls Runtime V1 directly.
+' Observed behavior: the product shell hides credentials and protocol fields, while its HTTP 1.38 transitional adapter still calls Runtime V1 directly.
 ' Target-only design: the production UI uses a public bridge; the mate-service Agent, Chat, Attachment, and public event contracts do not exist yet.
 ' Design reason: internal session identifiers, credentials, ETags, and raw SSE payloads must not cross the production browser boundary.
 
@@ -45,7 +46,7 @@ Diagnostics ..> Sessions : local diagnostics only
 note bottom of Frontend
 Product constraints:
 - No Service URL or credential editor
-- No raw session_id, ETag, JSON, or SSE frames
+- No raw Runtime sessionId, ETag, JSON, or SSE frames
 - Agent, chat, and attachment metadata use public resources
 - Transitional direct adapter is not a production boundary
 end note
@@ -67,7 +68,8 @@ end note
 @enduml
 
 @startuml runtime_event_ui_projection
-' Source baseline: 7b655487df80685187ed0193f6578060615f7d43.
+' Backend source baseline: d0efb2fd18f2f2a7db121a1cbd4f039348a8094a.
+' Frontend change baseline: 9ae08be97e49387367500da8fd8b01b4a607c4b3.
 ' Source evidence: frontend/src/projectors/runtimeEventProjector.ts (projectRuntimeEvents, projectAssistantEvent, projectToolEvent).
 ' Source evidence: frontend/src/composables/useRuntimeApi.ts (dispatchSseFrame, mergeRuntimeEvent, loadHistory).
 ' Source evidence: frontend/src/components/ComposerBox.vue (onKeydown, current follow-up mode).
@@ -75,7 +77,7 @@ end note
 ' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/event/RuntimeEventProjector.java (projectMessageStart, projectMessageUpdate, projectToolStart, projectToolEnd).
 ' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/event/RuntimeEntryCodec.java (toHistoryEvent, toSseData).
 ' Product-reference evidence: ChatGPT.app webview/assets/app-initial-BCLYDefw.js (followUpQueueMode, K9s) and webview/assets/zh-CN-ByRVSIXt.js.
-' Observed behavior: persistent entries and transient execution events share one request-scoped SSE response.
+' Observed behavior: HTTP 1.38 lowerCamelCase persistent entries and transient execution events share one request-scoped SSE response.
 ' Observed Codex behavior: desktop follow-up mode defaults to steer; a modifier submits one message with the inverse mode.
 ' Design reason: the UI projects protocol events into stable conversation objects and uses one current follow-up mode instead of two persistent choices.
 
@@ -119,8 +121,10 @@ end note
 
 note bottom of SessionState
 Network loss does not replay the POST.
-Reload persistent history and deduplicate
-by the public event identity.
+Keep the submitted draft until user.message
+or persistent history confirms a new Entry.
+If confirmation is still missing, mark the
+outcome uncertain and forbid blind retry.
 
 Adjust direction does not interrupt the
 current model call or tool execution.

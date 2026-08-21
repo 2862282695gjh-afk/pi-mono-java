@@ -5,17 +5,29 @@ import type {
   ControlAccepted,
   ErrorBean,
   FollowUpMode,
+  MessageSubmission,
   ResultBean,
   RuntimeEventData,
   RuntimeEventEnvelope,
   RuntimeHistoryPage,
   RuntimeSession,
+  SubmissionOutcome,
 } from '../types/runtime';
 import { RuntimeApiError } from '../types/runtime';
 
 const API_PATH = '/campusclaw-service/v1';
 const apiBase = trimTrailingSlash(import.meta.env.VITE_CAMPUSCLAW_API_BASE ?? '');
 const callerId = import.meta.env.VITE_CAMPUSCLAW_CALLER_ID?.trim() || 'campusclaw-web';
+
+interface PendingSubmission {
+  sessionId: string;
+  message: string;
+  fileIds: string[];
+  knownEntryIds: Set<string>;
+  confirmation: Promise<SubmissionOutcome>;
+  resolve: (outcome: SubmissionOutcome) => void;
+  settled: boolean;
+}
 
 export function useRuntimeApi() {
   const session = ref<RuntimeSession | null>(null);
@@ -28,6 +40,7 @@ export function useRuntimeApi() {
   const acceptedControls = ref<AcceptedControl[]>([]);
   const hasSession = computed(() => session.value !== null);
   let streamGeneration = 0;
+  let pendingSubmission: PendingSubmission | null = null;
 
   async function createSession(agentId: string): Promise<RuntimeSession> {
     clearError();
@@ -45,10 +58,10 @@ export function useRuntimeApi() {
     return created;
   }
 
-  async function getSession(sessionId = session.value?.session_id): Promise<RuntimeSession> {
+  async function getSession(sessionId = session.value?.sessionId): Promise<RuntimeSession> {
     if (!sessionId) throw missingSessionError();
     clearError();
-    if (session.value && session.value.session_id !== sessionId) {
+    if (session.value && session.value.sessionId !== sessionId) {
       detachCurrentStream();
       events.value = [];
       acceptedControls.value = [];
@@ -78,7 +91,7 @@ export function useRuntimeApi() {
       `/sessions/${encodeURIComponent(sessionId)}/models`,
     );
     models.value = available.models;
-    if (session.value) session.value.model_id = available.current_model_id;
+    if (session.value) session.value.modelId = available.currentModelId;
     return available;
   }
 
@@ -91,7 +104,7 @@ export function useRuntimeApi() {
       {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', 'If-Match': etag.value },
-        body: JSON.stringify({ model_id: modelId }),
+        body: JSON.stringify({ modelId }),
       },
       true,
     );
@@ -131,7 +144,7 @@ export function useRuntimeApi() {
         `/sessions/${encodeURIComponent(sessionId)}/events?${query.toString()}`,
       );
       history.push(...result.events.map(normalizeHistoryEvent));
-      page = result.next_page ?? null;
+      page = result.nextPage ?? null;
       if (page && seenPages.has(page)) break;
       if (page) seenPages.add(page);
     } while (page);
@@ -141,12 +154,13 @@ export function useRuntimeApi() {
     return events.value;
   }
 
-  async function sendMessage(message: string, fileIds: string[] = []): Promise<void> {
+  async function sendMessage(message: string, fileIds: string[] = []): Promise<MessageSubmission> {
     const sessionId = requireSessionId();
     clearError();
-    const body: { message?: string; file_ids?: string[] } = {};
-    if (message.trim()) body.message = message.trim();
-    if (fileIds.length > 0) body.file_ids = fileIds;
+    const normalizedMessage = message.trim();
+    const body: { message?: string; fileIds?: string[] } = {};
+    if (normalizedMessage) body.message = normalizedMessage;
+    if (fileIds.length > 0) body.fileIds = fileIds;
 
     const response = await requestRaw(
       `/sessions/${encodeURIComponent(sessionId)}/events`,
@@ -157,13 +171,13 @@ export function useRuntimeApi() {
       },
       true,
     );
+    settlePendingSubmission('uncertain');
+    const submission = createPendingSubmission(sessionId, normalizedMessage, fileIds);
     const generation = ++streamGeneration;
     streaming.value = true;
-    if (session.value?.session_id === sessionId) session.value.state = 'running';
-    void consumeSse(response, sessionId, generation).catch((error: unknown) => {
-      if (generation !== streamGeneration) return;
-      publishError(normalizeError(error, false));
-    });
+    if (session.value?.sessionId === sessionId) session.value.state = 'running';
+    void consumeSse(response, sessionId, generation);
+    return { confirmation: submission.confirmation };
   }
 
   async function steer(message: string): Promise<ControlAccepted> {
@@ -180,7 +194,7 @@ export function useRuntimeApi() {
     await requestEmpty(`/sessions/${encodeURIComponent(sessionId)}/abort`, { method: 'POST' }, true);
     detachCurrentStream();
     acceptedControls.value = [];
-    if (session.value?.session_id === sessionId) session.value.state = 'idle';
+    if (session.value?.sessionId === sessionId) session.value.state = 'idle';
   }
 
   function clearError(): void {
@@ -201,6 +215,7 @@ export function useRuntimeApi() {
   function detachCurrentStream(): void {
     streamGeneration += 1;
     streaming.value = false;
+    settlePendingSubmission('uncertain');
   }
 
   async function appendControl(mode: FollowUpMode, message: string): Promise<ControlAccepted> {
@@ -220,7 +235,7 @@ export function useRuntimeApi() {
       key: crypto.randomUUID(),
       message: message.trim(),
       mode,
-      acceptedAt: accepted.accepted_at,
+      acceptedAt: accepted.acceptedAt,
     });
     return accepted;
   }
@@ -239,10 +254,15 @@ export function useRuntimeApi() {
     sessionId: string,
     generation: number,
   ): Promise<void> {
-    if (!response.body) throw new RuntimeApiError({ message: '服务未返回可读取的执行流。' });
+    if (!response.body) {
+      await finishInterruptedStream(sessionId, generation);
+      return;
+    }
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
+    let terminalObserved = false;
+    let transportInterrupted = false;
 
     try {
       while (true) {
@@ -250,20 +270,44 @@ export function useRuntimeApi() {
         buffer += decoder.decode(value, { stream: !done });
         const frames = buffer.split(/\r?\n\r?\n/u);
         buffer = frames.pop() ?? '';
-        for (const frame of frames) dispatchSseFrame(frame, sessionId, generation);
+        for (const frame of frames) {
+          terminalObserved = dispatchSseFrame(frame, sessionId, generation) || terminalObserved;
+        }
         if (done) break;
       }
-      if (buffer.trim()) dispatchSseFrame(buffer, sessionId, generation);
+      if (buffer.trim()) {
+        terminalObserved = dispatchSseFrame(buffer, sessionId, generation) || terminalObserved;
+      }
+    } catch {
+      transportInterrupted = true;
     } finally {
       if (generation === streamGeneration) {
         streaming.value = false;
         await reconcileAfterStream(sessionId);
+        if (hasPendingSubmission(sessionId)) {
+          settlePendingSubmission('uncertain');
+          publishError(outcomeUncertainError());
+        } else if (transportInterrupted || !terminalObserved) {
+          publishError(streamInterruptedError());
+        }
       }
     }
   }
 
-  function dispatchSseFrame(frame: string, sessionId: string, generation: number): void {
-    if (generation !== streamGeneration || session.value?.session_id !== sessionId) return;
+  async function finishInterruptedStream(sessionId: string, generation: number): Promise<void> {
+    if (generation !== streamGeneration) return;
+    streaming.value = false;
+    await reconcileAfterStream(sessionId);
+    if (hasPendingSubmission(sessionId)) {
+      settlePendingSubmission('uncertain');
+      publishError(outcomeUncertainError());
+      return;
+    }
+    publishError(streamInterruptedError());
+  }
+
+  function dispatchSseFrame(frame: string, sessionId: string, generation: number): boolean {
+    if (generation !== streamGeneration || session.value?.sessionId !== sessionId) return false;
     let event = 'message';
     let id: string | undefined;
     const dataLines: string[] = [];
@@ -273,28 +317,32 @@ export function useRuntimeApi() {
       if (line.startsWith('id:')) id = line.slice(3).trim();
       if (line.startsWith('data:')) dataLines.push(line.slice(5).trimStart());
     }
-    if (dataLines.length === 0) return;
+    if (dataLines.length === 0) return false;
 
     const data = parseEventData(dataLines.join('\n'));
     if (event === 'stream.error') {
       publishError(streamError(data));
-      return;
+      return true;
     }
     if (event === 'session.status.idle') {
       if (session.value) session.value.state = 'idle';
-      return;
+      return false;
     }
-    if (event === 'stream.end') return;
+    if (event === 'stream.end') return true;
 
     mergeRuntimeEvent({ id, event, data });
-    if (event === 'user.message') reconcileAcceptedControl(data);
+    if (event === 'user.message') {
+      confirmSubmission(data);
+      reconcileAcceptedControl(data);
+    }
+    return false;
   }
 
   function mergeRuntimeEvent(envelope: RuntimeEventEnvelope): void {
-    const entryId = readString(envelope.data.entry_id);
+    const entryId = readString(envelope.data.entryId);
     if (entryId && isPersistentEvent(envelope.event)) {
       const index = events.value.findIndex(
-        (item) => item.event === envelope.event && readString(item.data.entry_id) === entryId,
+        (item) => item.event === envelope.event && readString(item.data.entryId) === entryId,
       );
       if (index >= 0) {
         events.value[index] = envelope;
@@ -310,7 +358,69 @@ export function useRuntimeApi() {
     if (index >= 0) acceptedControls.value.splice(index, 1);
   }
 
+  function createPendingSubmission(
+    sessionId: string,
+    message: string,
+    fileIds: string[],
+  ): PendingSubmission {
+    let resolveConfirmation: (outcome: SubmissionOutcome) => void = () => undefined;
+    const confirmation = new Promise<SubmissionOutcome>((resolve) => {
+      resolveConfirmation = resolve;
+    });
+    pendingSubmission = {
+      sessionId,
+      message,
+      fileIds: [...fileIds],
+      knownEntryIds: new Set(
+        events.value.map((event) => readString(event.data.entryId)).filter(Boolean),
+      ),
+      confirmation,
+      resolve: resolveConfirmation,
+      settled: false,
+    };
+    return pendingSubmission;
+  }
+
+  function confirmSubmission(data: RuntimeEventData): void {
+    const pending = pendingSubmission;
+    if (!pending || !matchesPendingSubmission(data, pending)) return;
+    settlePendingSubmission('confirmed');
+  }
+
+  function confirmSubmissionFromHistory(): void {
+    const pending = pendingSubmission;
+    if (!pending) return;
+    const confirmed = events.value.some((event) => {
+      const entryId = readString(event.data.entryId);
+      return event.event === 'user.message'
+        && !pending.knownEntryIds.has(entryId)
+        && matchesPendingSubmission(event.data, pending);
+    });
+    if (confirmed) settlePendingSubmission('confirmed');
+  }
+
+  function matchesPendingSubmission(
+    data: RuntimeEventData,
+    pending: PendingSubmission,
+  ): boolean {
+    return readString(data.message) === pending.message
+      && arraysEqual(readStringArray(data.fileIds), pending.fileIds);
+  }
+
+  function hasPendingSubmission(sessionId: string): boolean {
+    return pendingSubmission?.sessionId === sessionId && !pendingSubmission.settled;
+  }
+
+  function settlePendingSubmission(outcome: SubmissionOutcome): void {
+    const pending = pendingSubmission;
+    if (!pending || pending.settled) return;
+    pending.settled = true;
+    pending.resolve(outcome);
+    pendingSubmission = null;
+  }
+
   function reconcileAcceptedControlsFromHistory(): void {
+    confirmSubmissionFromHistory();
     if (session.value?.state === 'idle') {
       acceptedControls.value = [];
       return;
@@ -326,14 +436,14 @@ export function useRuntimeApi() {
   }
 
   async function reconcileAfterStream(sessionId: string): Promise<void> {
-    if (session.value?.session_id !== sessionId) return;
+    if (session.value?.sessionId !== sessionId) return;
     const streamErrorMessage = lastError.value;
     const streamErrorCode = lastErrorCode.value;
     try {
       await getSession(sessionId);
       await loadHistory();
     } catch {
-      // 已展示适配层生成的安全错误，保留当前投影供用户恢复。
+      // 保留当前投影和原始流错误，由结果确认状态决定是否可以清空草稿。
     } finally {
       if (streamErrorMessage) {
         lastError.value = streamErrorMessage;
@@ -415,7 +525,7 @@ export function useRuntimeApi() {
   }
 
   function requireSessionId(): string {
-    const sessionId = session.value?.session_id;
+    const sessionId = session.value?.sessionId;
     if (!sessionId) throw publishAndReturn(missingSessionError());
     return sessionId;
   }
@@ -450,13 +560,13 @@ function normalizeHistoryEvent(data: RuntimeEventData): RuntimeEventEnvelope {
   const event = readString(data.type);
   const normalized = { ...data };
   delete normalized.type;
-  return { id: String(data.entry_seq ?? ''), event, data: normalized };
+  return { id: String(data.entrySeq ?? ''), event, data: normalized };
 }
 
 function deduplicatePersistentEvents(events: RuntimeEventEnvelope[]): RuntimeEventEnvelope[] {
   const seen = new Set<string>();
   return events.filter((event) => {
-    const key = `${event.event}:${readString(event.data.entry_id)}`;
+    const key = `${event.event}:${readString(event.data.entryId)}`;
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
@@ -480,12 +590,26 @@ function streamError(data: RuntimeEventData): RuntimeApiError {
 
 function normalizeError(error: unknown, outcomeUncertain: boolean): RuntimeApiError {
   if (error instanceof RuntimeApiError) return error;
+  return outcomeUncertain
+    ? outcomeUncertainError()
+    : new RuntimeApiError({
+      message: '暂时无法连接服务，请检查网络后重试。',
+      code: 'NETWORK_ERROR',
+    });
+}
+
+function outcomeUncertainError(): RuntimeApiError {
   return new RuntimeApiError({
-    message: outcomeUncertain
-      ? '请求结果暂时无法确认。请先刷新会话，不要重复提交。'
-      : '暂时无法连接服务，请检查网络后重试。',
-    code: outcomeUncertain ? 'OUTCOME_UNCERTAIN' : 'NETWORK_ERROR',
-    outcomeUncertain,
+    message: '请求可能已被服务接受，但持久化历史中尚未确认。已保留草稿；请先刷新会话，不要重复提交。',
+    code: 'OUTCOME_UNCERTAIN',
+    outcomeUncertain: true,
+  });
+}
+
+function streamInterruptedError(): RuntimeApiError {
+  return new RuntimeApiError({
+    message: '消息已确认，但执行流已中断；执行可能仍在继续。请刷新会话查看最新结果，不要重复提交。',
+    code: 'STREAM_INTERRUPTED',
   });
 }
 
@@ -536,6 +660,15 @@ function isRecord(value: unknown): value is RuntimeEventData {
 
 function readString(value: unknown): string {
   return typeof value === 'string' ? value : '';
+}
+
+function readStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is string => typeof item === 'string');
+}
+
+function arraysEqual(left: string[], right: string[]): boolean {
+  return left.length === right.length && left.every((value, index) => value === right[index]);
 }
 
 function trimTrailingSlash(value: string): string {

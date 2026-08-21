@@ -35,7 +35,7 @@ const running = computed(
   () => runtime.streaming.value || runtime.session.value?.state === 'running',
 );
 const currentThread = computed(() =>
-  threads.value.find((thread) => thread.sessionId === runtime.session.value?.session_id),
+  threads.value.find((thread) => thread.sessionId === runtime.session.value?.sessionId),
 );
 const title = computed(() => currentThread.value?.title || agent.name);
 
@@ -65,7 +65,7 @@ async function createSession(agentId = configuredAgentId): Promise<void> {
   if (!agentId) return;
   const succeeded = await run(async () => {
     const created = await runtime.createSession(agentId);
-    upsertThread(created.session_id, '新会话');
+    upsertThread(created.sessionId, '新会话');
   });
   if (succeeded) message.value = '';
 }
@@ -74,7 +74,7 @@ async function resumeSession(sessionId: string): Promise<void> {
   const succeeded = await run(async () => {
     const resumed = await runtime.getSession(sessionId);
     await Promise.all([runtime.listModels(), runtime.loadHistory()]);
-    upsertThread(resumed.session_id, '已恢复的会话');
+    upsertThread(resumed.sessionId, '已恢复的会话');
   });
   if (succeeded && window.innerWidth <= 800) sidebarCompact.value = true;
 }
@@ -86,7 +86,7 @@ function newConversation(): void {
 }
 
 async function deleteConversation(): Promise<void> {
-  const sessionId = runtime.session.value?.session_id;
+  const sessionId = runtime.session.value?.sessionId;
   if (!sessionId) return;
   if (!window.confirm('确认删除当前会话？删除后无法恢复。')) return;
   const succeeded = await run(runtime.deleteSession);
@@ -94,19 +94,30 @@ async function deleteConversation(): Promise<void> {
 }
 
 async function submit(overrideMode?: FollowUpMode): Promise<void> {
-  const text = message.value.trim();
+  const draft = message.value;
+  const text = draft.trim();
   if (!text || submitting.value || !runtime.hasSession.value) return;
   submitting.value = true;
-  try {
-    if (!running.value) {
-      await runtime.sendMessage(text);
+  if (!running.value) {
+    try {
+      const submission = await runtime.sendMessage(text);
       touchCurrentThread(text);
-    } else {
-      const mode = overrideMode ?? followUpMode.value;
-      if (mode === 'steer') await runtime.steer(text);
-      else await runtime.followUp(text);
-      touchCurrentThread();
+      submitting.value = false;
+      const outcome = await submission.confirmation;
+      if (outcome === 'confirmed' && message.value === draft) message.value = '';
+    } catch {
+      // 服务拒绝或结果尚未确认时保留草稿，防止丢失内容或重复提交。
+    } finally {
+      submitting.value = false;
     }
+    return;
+  }
+
+  try {
+    const mode = overrideMode ?? followUpMode.value;
+    if (mode === 'steer') await runtime.steer(text);
+    else await runtime.followUp(text);
+    touchCurrentThread();
     message.value = '';
   } catch {
     // 请求不确定或被服务拒绝时保留输入，避免用户丢失内容。
@@ -117,7 +128,7 @@ async function submit(overrideMode?: FollowUpMode): Promise<void> {
 
 async function changeModel(event: Event): Promise<void> {
   const modelId = (event.target as HTMLSelectElement).value;
-  if (!modelId || modelId === runtime.session.value?.model_id) return;
+  if (!modelId || modelId === runtime.session.value?.modelId) return;
   await run(() => runtime.changeModel(modelId));
 }
 
@@ -167,7 +178,7 @@ function readFollowUpMode(): FollowUpMode {
   <div class="app-shell" :class="{ 'sidebar-compact': sidebarCompact }">
     <AppSidebar
       :threads="threads"
-      :current-session-id="runtime.session.value?.session_id"
+      :current-session-id="runtime.session.value?.sessionId"
       :compact="sidebarCompact"
       @new="newConversation"
       @select="resumeSession"
@@ -210,14 +221,14 @@ function readFollowUpMode(): FollowUpMode {
           <label class="model-select">
             <span class="sr-only">选择模型</span>
             <select
-              :value="runtime.session.value?.model_id"
+              :value="runtime.session.value?.modelId"
               :disabled="running || busy"
               @change="changeModel"
             >
               <option
-                v-if="runtime.session.value && !runtime.models.value.includes(runtime.session.value.model_id)"
-                :value="runtime.session.value.model_id"
-              >{{ modelLabel(runtime.session.value.model_id) }}</option>
+                v-if="runtime.session.value && !runtime.models.value.includes(runtime.session.value.modelId)"
+                :value="runtime.session.value.modelId"
+              >{{ modelLabel(runtime.session.value.modelId) }}</option>
               <option v-for="model in runtime.models.value" :key="model" :value="model">
                 {{ modelLabel(model) }}
               </option>
