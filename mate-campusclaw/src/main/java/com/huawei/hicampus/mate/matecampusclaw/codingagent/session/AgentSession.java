@@ -87,6 +87,14 @@ public class AgentSession {
     private Path initializedCwd;
     private List<AgentTool> locallyVisibleTools = List.of();
     private List<AgentTool> baseTools = List.of();
+
+    /**
+     * 会话私有工具(构造传入但目录不提供的,如 {@code MateToolsetFactory}
+     * 产出的 Mate 工具对)。目录刷新只替换目录来源的工具,这些实例按会话
+     * 保留——首次刷新时按"不在目录快照名集中"识别,此后每次刷新后追加。
+     */
+    private List<AgentTool> sessionLocalTools;
+
     private Map<String, List<String>> managedSkillToolNames = Map.of();
     private PreparedAgentRuntime preparedRuntime;
     private AgentRuntimeManager agentRuntimeManager;
@@ -624,7 +632,7 @@ public class AgentSession {
             return;
         }
         toolCatalog.refresh(new ToolRefreshRequest(cwd));
-        tools = List.copyOf(toolCatalog.resolve(toolSelection));
+        tools = List.copyOf(mergeSessionLocalTools(toolCatalog.resolve(toolSelection)));
     }
 
     private void resolveToolsFromCatalogSnapshot() {
@@ -632,8 +640,32 @@ public class AgentSession {
             return;
         }
         synchronized (toolCatalog) {
-            tools = List.copyOf(toolCatalog.resolve(toolSelection));
+            tools = List.copyOf(mergeSessionLocalTools(toolCatalog.resolve(toolSelection)));
         }
+    }
+
+    /**
+     * 将会话私有工具合并进目录解析结果:首次调用时按目录快照名集从当前
+     * 工具列表识别出会话私有工具(目录刷新不会再生它们),此后每次目录
+     * 刷新/重解析后原样追加,保证 initialize 后仍可见。
+     *
+     * @param catalogResolved 目录本次解析出的工具列表
+     * @return 合并后的工具列表
+     */
+    private List<AgentTool> mergeSessionLocalTools(List<AgentTool> catalogResolved) {
+        if (sessionLocalTools == null) {
+            java.util.Set<String> catalogNames =
+                    catalogResolved.stream().map(AgentTool::name).collect(java.util.stream.Collectors.toSet());
+            sessionLocalTools = tools.stream()
+                    .filter(tool -> !catalogNames.contains(tool.name()))
+                    .toList();
+        }
+        if (sessionLocalTools.isEmpty()) {
+            return catalogResolved;
+        }
+        var merged = new java.util.ArrayList<AgentTool>(catalogResolved);
+        merged.addAll(sessionLocalTools);
+        return merged;
     }
 
     /**
