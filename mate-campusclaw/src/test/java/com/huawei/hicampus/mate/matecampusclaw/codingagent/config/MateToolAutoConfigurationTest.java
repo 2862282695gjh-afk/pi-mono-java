@@ -88,7 +88,8 @@ class MateToolAutoConfigurationTest {
     void mateErrorPropagatesThroughPipelineAsIsError() {
         MockMateToolClient client = new MockMateToolClient();
         client.overrideCallResult(new MateToolClient.ToolResult("mate exploded", null, true));
-        CallMateTool callMateTool = new CallMateTool(client, null);
+        CallMateTool callMateTool =
+                new CallMateTool(client, null, new com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.mate.MateToolSessionCache());
 
         ToolCall toolCall =
                 new ToolCall("call-1", "callMateTool", Map.of("tool", "tool-44444444444444444444444444444444"));

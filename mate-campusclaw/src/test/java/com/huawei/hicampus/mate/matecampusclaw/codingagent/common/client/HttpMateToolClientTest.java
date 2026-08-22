@@ -70,8 +70,8 @@ class HttpMateToolClientTest {
         server.enqueue(
                 json(
                         "{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":{\"data\":["
-                                + "{\"toolId\":\"tool-11111111111111111111111111111111\",\"toolName\":\"query\",\"description\":\"d1\",\"permission\":\"allow\"},"
-                                + "{\"toolId\":\"tool-22222222222222222222222222222222\",\"toolName\":\"chart\",\"description\":\"d2\",\"permission\":\"deny\"}]}}"));
+                                + "{\"id\":\"tool-11111111111111111111111111111111\",\"name\":\"query\",\"description\":\"d1\",\"permission\":\"allow\"},"
+                                + "{\"id\":\"tool-22222222222222222222222222222222\",\"name\":\"chart\",\"description\":\"d2\",\"permission\":\"deny\"}]}}"));
 
         List<MateToolMeta> tools = client.listTools("agent-11111111111111111111111111111111", null);
 
@@ -98,7 +98,7 @@ class HttpMateToolClientTest {
                         "{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":"
                                 + "{\"bindingTools\":[{\"id\":\"tool-33333333333333333333333333333333\",\"name\":\"query\",\"permission\":\"allow\"}]}}"));
         server.enqueue(json("{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":{\"data\":["
-                + "{\"toolId\":\"tool-33333333333333333333333333333333\",\"toolName\":\"query\"}]}}"));
+                + "{\"id\":\"tool-33333333333333333333333333333333\",\"name\":\"query\"}]}}"));
 
         List<MateToolMeta> tools = client.listTools(null, "skill-11111111111111111111111111111111");
 
@@ -125,7 +125,7 @@ class HttpMateToolClientTest {
                         "{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":{\"bindingTools\":[{\"toolId\":\"tool-44444444444444444444444444444444\"}]}}"));
         server.enqueue(
                 json(
-                        "{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":{\"data\":[{\"toolId\":\"tool-44444444444444444444444444444444\"}]}}"));
+                        "{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":{\"data\":[{\"id\":\"tool-44444444444444444444444444444444\"}]}}"));
 
         List<MateToolMeta> tools = client.listTools("agent-11111111111111111111111111111111", null);
 
@@ -245,7 +245,7 @@ class HttpMateToolClientTest {
         server.enqueue(json("{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":"
                 + "{\"bindingTools\":[{\"toolId\":\"tool-aaaabbbbccccddddeeeeffff00001111\"}]}}"));
         server.enqueue(json("{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":{\"data\":["
-                + "{\"toolId\":\"tool-aaaabbbbccccddddeeeeffff00001111\",\"toolName\":\"query\"}]}}"));
+                + "{\"id\":\"tool-aaaabbbbccccddddeeeeffff00001111\",\"name\":\"query\"}]}}"));
         server.enqueue(json("{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":{\"answer\":1}}"));
 
         List<MateToolMeta> tools = client.listTools("agent-11111111111111111111111111111111", null);

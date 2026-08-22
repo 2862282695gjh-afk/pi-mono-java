@@ -27,15 +27,16 @@ CampusClaw 需要调用 Mate 平台管理的工具。这批工具由 Mate 工具
 
 | 名称 | 类型 | 位置 |
 |---|---|---|
-| `ListMateTool` | AgentTool | `tool/mate/` — 传 agent_id/skill_id 列出绑定的工具 |
-| `CallMateTool` | AgentTool | `tool/mate/` — 无状态转发工具调用,凭据经 `resolveCredentials` 钩子解析 |
+| `ListMateTool` | AgentTool | `tool/mate/` — 传 agent_id/skill_id 列出绑定的工具;查询后硬性刷新会话缓存 |
+| `CallMateTool` | AgentTool | `tool/mate/` — 入参为工具名,经会话缓存映射为工具标识后转发;凭据经 resolver 按调用解析 |
 | `MateToolClient` | 接口 | `common/client/mate/` — `listTools(agentId, skillId)` / `callTool(tool, args, credentials)` |
 | `MateToolMeta` | record | `common/client/mate/` — 工具元数据 |
 | `MateCredentials` | record | `common/client/mate/` — 凭据(AppKey / JWT 两模式),仅 callTool 携带 |
 | `HttpMateToolClient` | 实现 | `common/client/` — 两步元数据查询 + 工具执行 RPC 均为真实调用 |
 | `MateRestUtil` | 工具类 | `common/util/` — 网关 REST 调用(executePostRawRequest / executeGetRawRequest),返回原始 body 由调用方解信封;`RequestHeaderInfo.toHeaders()` 将 15 字段映射为真实 HTTP header |
 | `RequestHeaderInfo` | DTO | `common/dto/` — 请求头信息(内网网关无需凭据字段,`builder().build()` 即可) |
-| `ToolInfo` | DTO | `common/dto/` — 工具元数据批量查询返回的 `result.data` 数组元素 |
+| `ToolInfo` | DTO | `common/dto/` — 元数据项,全字段对齐网关契约(id/type/version/createdAt/updatedAt/permission/enabled/is_concurrency_safe/name/display_name/description/source/input_schema/output_schema) |
+| `MateToolSessionCache` | 缓存 | `tool/mate/` — 会话级工具名→标识映射;listMateTool 每次查询硬性全量刷新,实例随会话创建即天然隔离 |
 | `AgentInfo` | DTO | `common/dto/` — agent 元数据,`bindingTools[].toolId` 是第一步的 tool ID 来源 |
 | `QuerySkillToolsResult` / `SkillBindingTool` | DTO | `common/dto/` — skill 工具查询结果,`bindingTools[].id` 是第一步的 tool ID 来源 |
 | `MateToolAutoConfiguration` | 配置 | `config/` — 通过 `@Value` 注入网关地址与三个出站接口路径并完成装配 |
@@ -70,15 +71,17 @@ listMateTool({agent_id | skill_id})
         header: RequestHeaderInfo.builder().build()      ← 无凭据
         body: {"toolIds": [第一步摘到的列表]}
         ← {"resCode":"0","resMsg":"...","result":{"data":[ToolInfo,...]}}
-      → resCode != "0" 抛 IllegalStateException;result.data → List<ToolInfo>
-      → toMeta() 转 MateToolMeta(name 取 toolName 兜底 toolId)
-  → 返回工具列表(name + description + inputSchema)给模型
+      → resCode != "0" 抛 IllegalStateException;result.data → List<ToolInfo]
+      → toMeta() 转 MateToolMeta(toolId + toolName 双字段)
+      → MateToolSessionCache.refresh(metas)   ← 硬性全量刷新该会话映射
+  → 返回工具列表(toolName (id: toolId) + description + inputSchema)给模型
 
-callMateTool({tool, args})
-  → CallMateTool.execute (无状态)
+callMateTool({tool: toolName, args})
+  → CallMateTool.execute
+    → sessionCache.lookupToolId(toolName)  ← 未命中拒绝并提示先调 listMateTool
     → resolveCredentials(call)          ← MateCredentialResolver 按调用解析(未注册则 fail-closed)
-    → MateToolClient.callTool(tool, args, credentials)
-      → invokeTool(...)                 ← POST {网关}/tools/{toolId}/execute
+    → MateToolClient.callTool(toolId, args, credentials)
+      → invokeTool(...)                 ← POST {网关}/tools/{toolId}/execute (仍用 toolId 入 path)
     → result.isError() 抛 MateToolExecutionException(pipeline 转 isError=true)
 ```
 
@@ -217,6 +220,7 @@ LLM API tools 字段新增 listMateTool / callMateTool 两个工具定义。网�
 | 2026-08-17 | 26.0.0(PR #140) | 目录按域聚合 tool/mate;契约提取 common/client/mate |
 | 2026-08-18 | 26.0.0(本 PR) | 工具元数据批量查询真实对接;MateRestUtil/RequestHeaderInfo/ToolInfo;无状态化;去 ask/deny 客户端执行;凭据仅 callTool 透传;MateToolProperties 改 lombok @Data |
 | 2026-08-18 | 26.0.0(本 PR 续) | listTools 两步查询:agent/skill 元数据摘 tool ID → 工具元数据批量查询;新增 AgentInfo/QuerySkillToolsResult/SkillBindingTool DTO;MateRestUtil 加 GET 支持 |
+| 2026-08-22 | 26.0.0(#164 续) | callMateTool 入参改工具名,会话级 name→id 缓存(listMateTool 硬性刷新);ToolInfo 全字段对齐网关契约;MateToolMeta 含 toolId+toolName |
 | 2026-08-22 | 26.0.0(#164) | invokeTool 执行 RPC 实现(端点路径配置化);MateCredentialResolver 按调用解析凭据(MateToolCall 只读深拷贝快照);MateCredentials 完整性校验(isBlank/模式互斥/jwt 空 token 拒绝) |
 | 2026-08-18 | 26.0.0(评审修复) | 占位符自引用改环境变量注入(D7 初始化链路);resolveCredentials 默认 null;MateRestUtil 删死代码、header 真发送;补 MockWebServer 桩测试与 yml 加载回归;DEF-007 收敛为仅剩 invokeTool |
 | 2026-08-21 | 1.1.0(PR #161 评审修复) | 三个 Mate 工具出站接口路径移入应用配置并通过 `@Value` 注入;Java 字段统一为可读 lowerCamelCase;同步外网 yml、mate 侧 properties、测试与 PlantUML。 |

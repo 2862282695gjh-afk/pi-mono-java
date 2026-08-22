@@ -10,6 +10,7 @@ import com.huawei.hicampus.mate.matecampusclaw.codingagent.common.util.MateRestU
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.mate.CallMateTool;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.mate.ListMateTool;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.mate.MateCredentialResolver;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.mate.MateToolSessionCache;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import org.springframework.beans.factory.ObjectProvider;
@@ -97,7 +98,7 @@ public class MateToolAutoConfiguration {
     @Bean
     public CallMateTool callMateTool(
             MateToolClient client, ObjectProvider<MateCredentialResolver> credentialResolverProvider) {
-        return new CallMateTool(client, credentialResolverProvider.getIfAvailable());
+        return new CallMateTool(client, credentialResolverProvider.getIfAvailable(), new MateToolSessionCache());
     }
 
     /**
@@ -108,6 +109,6 @@ public class MateToolAutoConfiguration {
      */
     @Bean
     public ListMateTool listMateTool(MateToolClient client) {
-        return new ListMateTool(client);
+        return new ListMateTool(client, new MateToolSessionCache());
     }
 }

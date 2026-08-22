@@ -246,7 +246,8 @@ public class HttpMateToolClient implements MateToolClient {
         }
         for (ToolInfo info : infos) {
             metas.add(new MateToolMeta(
-                    info.getToolId(),
+                    info.getId(),
+                    info.getName(),
                     info.getDescription(),
                     info.getInputSchema(),
                     info.getOutputSchema(),

@@ -35,6 +35,8 @@ public class ListMateTool implements AgentTool {
 
     private final MateToolClient client;
 
+    private final MateToolSessionCache sessionCache;
+
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private static final JsonNode PARAMETERS;
@@ -57,9 +59,11 @@ public class ListMateTool implements AgentTool {
      * 创建 Mate 工具列表查询工具。
      *
      * @param client Mate 工具服务客户端
+     * @param sessionCache 会话级工具名→标识映射缓存;每次查询后硬性全量刷新
      */
-    public ListMateTool(MateToolClient client) {
+    public ListMateTool(MateToolClient client, MateToolSessionCache sessionCache) {
         this.client = client;
+        this.sessionCache = sessionCache;
     }
 
     @Override
@@ -98,6 +102,10 @@ public class ListMateTool implements AgentTool {
 
         List<MateToolMeta> tools = client.listTools(agentId, skillId);
 
+        if (sessionCache != null) {
+            sessionCache.refresh(tools);
+        }
+
         log.info("Listed mate tools: count={}", tools.size());
 
         StringBuilder sb = new StringBuilder();
@@ -113,8 +121,10 @@ public class ListMateTool implements AgentTool {
 
         for (MateToolMeta tool : tools) {
             sb.append("  - ")
+                    .append(tool.toolName() != null ? tool.toolName() : tool.toolId())
+                    .append(" (id: ")
                     .append(tool.toolId())
-                    .append(": ")
+                    .append("): ")
                     .append(tool.description() != null ? tool.description() : "")
                     .append("\n");
             if (tool.inputSchema() != null && !tool.inputSchema().isEmpty()) {

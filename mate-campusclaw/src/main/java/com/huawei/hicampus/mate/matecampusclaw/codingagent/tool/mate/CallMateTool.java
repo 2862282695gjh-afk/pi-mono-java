@@ -42,6 +42,8 @@ public class CallMateTool implements AgentTool {
 
     private final MateCredentialResolver credentialResolver;
 
+    private final MateToolSessionCache sessionCache;
+
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private static final JsonNode PARAMETERS;
@@ -52,7 +54,7 @@ public class CallMateTool implements AgentTool {
                     """
                     {"type":"object",
                      "properties":{
-                       "tool":{"type":"string","description":"Tool ID to call (tool-<32 hex>), as returned by listMateTool"},
+                       "tool":{"type":"string","description":"Tool name to call, as returned by listMateTool"},
                        "args":{"type":"object","description":"Arguments object for the tool"}
                      },
                      "required":["tool"]}""");
@@ -67,10 +69,14 @@ public class CallMateTool implements AgentTool {
      * @param client Mate 工具服务客户端
      * @param credentialResolver 按调用解析凭据的提供者；null 时所有调用
      *        被 fail-closed 拒绝（见 {@code HttpMateToolClient} 的凭据校验）
+     * @param sessionCache 会话级工具名→标识映射缓存；null（非会话单例场景）
+     *        时按名调用直接拒绝并提示先调用 listMateTool
      */
-    public CallMateTool(MateToolClient client, MateCredentialResolver credentialResolver) {
+    public CallMateTool(
+            MateToolClient client, MateCredentialResolver credentialResolver, MateToolSessionCache sessionCache) {
         this.client = client;
         this.credentialResolver = credentialResolver;
+        this.sessionCache = sessionCache;
     }
 
     /**
@@ -117,24 +123,34 @@ public class CallMateTool implements AgentTool {
             String toolCallId, Map<String, Object> params, CancellationToken signal, AgentToolUpdateCallback onUpdate)
             throws Exception {
 
-        String tool = (String) params.get("tool");
+        String toolName = (String) params.get("tool");
         Map<String, Object> toolArgs = (Map<String, Object>) params.get("args");
 
-        if (tool == null) {
+        if (toolName == null) {
             throw new IllegalArgumentException("Missing required parameter: tool");
         }
 
+        // ---- session-scoped name -> id resolution ----
+        String toolId = sessionCache != null ? sessionCache.lookupToolId(toolName) : null;
+        if (toolId == null) {
+            throw new MateToolExecutionException(
+                    toolName,
+                    sessionCache != null
+                            ? "tool name not in the session cache; call listMateTool first to refresh"
+                            : "no session cache wired (singleton tool); call listMateTool first");
+        }
+
         // ---- call tool ----
-        log.info("Calling mate tool: {}", tool);
+        log.info("Calling mate tool: name={} id={}", toolName, toolId);
         MateToolClient.ToolResult result =
-                client.callTool(tool, toolArgs, resolveCredentials(toolCallId, tool, toolArgs));
+                client.callTool(toolId, toolArgs, resolveCredentials(toolCallId, toolId, toolArgs));
 
         if (result.isError()) {
             // Propagate as an exception so ToolExecutionPipeline marks the
             // ToolResultMessage with isError=true (it catches exceptions and
             // builds an error Outcome). Returning normally would lose the
             // error status because the pipeline defaults isError to false.
-            throw new MateToolExecutionException(tool, result.content());
+            throw new MateToolExecutionException(toolName, result.content());
         }
         List<ContentBlock> blocks = List.of(new TextContent(result.content()));
         return new AgentToolResult(blocks, result.metadata());
