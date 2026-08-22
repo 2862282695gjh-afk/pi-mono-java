@@ -96,7 +96,7 @@ class HttpMateToolClientTest {
         server.enqueue(
                 json(
                         "{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":"
-                                + "{\"bindingTools\":[{\"id\":\"tool-33333333333333333333333333333333\",\"name\":\"query\",\"permission\":\"allow\",\"is_concurrency_safe\":true}]}}"));
+                                + "{\"skillInfo\":{\"bindingTools\":[{\"id\":\"tool-33333333333333333333333333333333\",\"name\":\"query\",\"permission\":\"allow\",\"is_concurrency_safe\":true}]}}}"));
         server.enqueue(
                 json(
                         "{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":{\"data\":["
