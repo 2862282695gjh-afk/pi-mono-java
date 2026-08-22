@@ -106,31 +106,54 @@ class CallMateToolTest {
     }
 
     @Test
-    void resolverCannotMutateNestedToolArgs() throws Exception {
-        MockMateToolClient recording = new MockMateToolClient();
-        recording.addTool(new MateToolMeta("query", "q", Map.of(), Map.of(), true, "allow"));
-        java.util.Map<String, Object> nested = new java.util.HashMap<>(Map.of("flag", false));
-        java.util.List<Object> nestedList = new java.util.ArrayList<>(List.of("a"));
-        CallMateTool guarded = new CallMateTool(recording, call -> {
+    void resolverCannotMutateNestedMapArgs() throws Exception {
+        Map<String, Object> nested = new java.util.HashMap<>(Map.of("flag", false));
+        Map<String, Object> args = new java.util.HashMap<>();
+        args.put("options", nested);
+        Map<String, Object> observed = runResolverMutation(args, call -> {
             ((Map<String, Object>) call.args().get("options")).put("dangerous", true);
-            ((List<Object>) call.args().get("tags")).add("injected");
-            return com.campusclaw.codingagent.common.client.mate.MateCredentials.appKey("id", "key");
+            return null;
         });
 
-        Map<String, Object> options = nested;
+        org.junit.jupiter.api.Assertions.assertEquals(Map.of("flag", false), observed.get("options"));
+    }
+
+    @Test
+    void resolverCannotMutateNestedListArgs() throws Exception {
+        java.util.List<Object> nestedList = new java.util.ArrayList<>(List.of("a"));
+        Map<String, Object> args = new java.util.HashMap<>();
+        args.put("tags", nestedList);
+        Map<String, Object> observed = runResolverMutation(args, call -> {
+            ((List<Object>) call.args().get("tags")).add("injected");
+            return null;
+        });
+
+        org.junit.jupiter.api.Assertions.assertEquals(List.of("a"), observed.get("tags"));
+    }
+
+    /**
+     * 以指定参数执行一次带篡改 resolver 的调用，断言快照只读（抛
+     * UnsupportedOperationException）并返回原始嵌套结构供值断言。
+     *
+     * @param args 待传入的工具参数（含待篡改的嵌套结构）
+     * @param mutatingResolver 执行篡改尝试的解析器
+     * @return 原始 args（未被修改）
+     * @throws Exception 工具执行失败时抛出
+     */
+    private Map<String, Object> runResolverMutation(Map<String, Object> args, MateCredentialResolver mutatingResolver)
+            throws Exception {
+        MockMateToolClient recording = new MockMateToolClient();
+        recording.addTool(new MateToolMeta("query", "q", Map.of(), Map.of(), true, "allow"));
+        CallMateTool guarded = new CallMateTool(recording, mutatingResolver);
         Map<String, Object> params = new java.util.HashMap<>();
         params.put("tool", "query");
-        Map<String, Object> args = new java.util.HashMap<>();
-        args.put("options", options);
-        args.put("tags", nestedList);
         params.put("args", args);
 
-        // Deep-copied snapshot is read-only at every level; the mutation
-        // attempt throws before touching the original structures.
+        // The read-only snapshot throws on any mutation attempt, before the
+        // mutation can reach the original structures.
         org.junit.jupiter.api.Assertions.assertThrows(
                 UnsupportedOperationException.class, () -> guarded.execute("t", params, null, null));
-        org.junit.jupiter.api.Assertions.assertEquals(Map.of("flag", false), options);
-        org.junit.jupiter.api.Assertions.assertEquals(List.of("a"), nestedList);
+        return args;
     }
 
     @Test
