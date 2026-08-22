@@ -13,8 +13,8 @@ import com.huawei.hicampus.mate.matecampusclaw.codingagent.common.client.mate.Ma
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.common.client.mate.MateToolClient;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.common.client.mate.MateToolMeta;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.common.dto.AgentInfo;
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.common.dto.QuerySkillToolsResult;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.common.dto.RequestHeaderInfo;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.common.dto.SkillInfoResult;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.common.dto.ToolInfo;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.common.identifier.ResourceIdentifierPatterns;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.common.util.MateRestUtil;
@@ -158,7 +158,7 @@ public class HttpMateToolClient implements MateToolClient {
                 mateInnerGwAddress,
                 skillToolsQueryPathPrefix + skillId,
                 RequestHeaderInfo.builder().build());
-        QuerySkillToolsResult skillResult = unwrapResult(raw, QuerySkillToolsResult.class);
+        SkillInfoResult skillResult = unwrapResult(raw, SkillInfoResult.class);
         List<String> toolIds = new ArrayList<>();
         if (skillResult != null && skillResult.getBindingTools() != null) {
             for (var binding : skillResult.getBindingTools()) {
@@ -259,7 +259,8 @@ public class HttpMateToolClient implements MateToolClient {
 
     /**
      * 调用 Mate 服务端工具：POST 工具参数（按工具 inputSchema 序列化）到
-     * {@code toolExecutePathTemplate} 展开后的执行端点。Header 与
+     * {@code toolExecutePathTemplate} 展开后的执行端点，请求体为
+     * {@code {"arguments": {...}}}（CampusMate 执行接口的参数包装契约）。Header 与
      * listTools 同源构建，并按 Agent 下发凭据补可选的鉴权 Header
      * （AppKey 模式 {@code X-HW-ID} + {@code X-HW-APPKEY}，JWT 模式
      * {@code X-HW-ID} + {@code Authorization}）。
@@ -297,7 +298,9 @@ public class HttpMateToolClient implements MateToolClient {
                     .xHwAppKey(credentials.xHwAppKey())
                     .authorization(credentials.authorization())
                     .build();
-            String body = mapper.writeValueAsString(args != null ? args : Map.of());
+
+            // CampusMate 执行接口契约:参数需包一层 arguments 包装。
+            String body = mapper.writeValueAsString(Map.of("arguments", args != null ? args : Map.of()));
             String path = toolExecutePathTemplate.replace("%s", tool);
             String raw = mateRestUtil.executePostRawRequest(mateInnerGwAddress, path, headerInfo, body);
             JsonNode root = mapper.readTree(raw);
