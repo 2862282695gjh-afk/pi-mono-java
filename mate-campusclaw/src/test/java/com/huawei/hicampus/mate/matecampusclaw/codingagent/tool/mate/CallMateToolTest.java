@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import java.util.List;
 import java.util.Map;
 
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.common.client.mate.MateToolMeta;
@@ -102,6 +103,34 @@ class CallMateToolTest {
         org.junit.jupiter.api.Assertions.assertThrows(
                 UnsupportedOperationException.class, () -> guarded.execute("t", params, null, null));
         org.junit.jupiter.api.Assertions.assertFalse(originalArgs.containsKey("injected"));
+    }
+
+    @Test
+    void resolverCannotMutateNestedToolArgs() throws Exception {
+        MockMateToolClient recording = new MockMateToolClient();
+        recording.addTool(new MateToolMeta("query", "q", Map.of(), Map.of(), true, "allow"));
+        java.util.Map<String, Object> nested = new java.util.HashMap<>(Map.of("flag", false));
+        java.util.List<Object> nestedList = new java.util.ArrayList<>(List.of("a"));
+        CallMateTool guarded = new CallMateTool(recording, call -> {
+            ((Map<String, Object>) call.args().get("options")).put("dangerous", true);
+            ((List<Object>) call.args().get("tags")).add("injected");
+            return com.huawei.hicampus.mate.matecampusclaw.codingagent.common.client.mate.MateCredentials.appKey("id", "key");
+        });
+
+        Map<String, Object> options = nested;
+        Map<String, Object> params = new java.util.HashMap<>();
+        params.put("tool", "query");
+        Map<String, Object> args = new java.util.HashMap<>();
+        args.put("options", options);
+        args.put("tags", nestedList);
+        params.put("args", args);
+
+        // Deep-copied snapshot is read-only at every level; the mutation
+        // attempt throws before touching the original structures.
+        org.junit.jupiter.api.Assertions.assertThrows(
+                UnsupportedOperationException.class, () -> guarded.execute("t", params, null, null));
+        org.junit.jupiter.api.Assertions.assertEquals(Map.of("flag", false), options);
+        org.junit.jupiter.api.Assertions.assertEquals(List.of("a"), nestedList);
     }
 
     @Test

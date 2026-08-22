@@ -4,6 +4,7 @@
 
 package com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.mate;
 
+import java.util.List;
 import java.util.Map;
 
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.common.client.mate.MateCredentials;
@@ -44,14 +45,52 @@ public interface MateCredentialResolver {
      *
      * @param toolCallId 本次工具调用的唯一标识
      * @param tool 待调用的工具标识
-     * @param args 工具参数
+     * @param args 工具参数；构造时经 JSON 往返深拷贝——嵌套 Map/List 与
+     *        出站请求不再共享对象，且全层不可变
      * @version [br_eCampusCore 26.0.0, 2026/08/22]
      * @since [br_eCampusCore 26.0.0]
      */
     record MateToolCall(String toolCallId, String tool, Map<String, Object> args) {
-        /** 拷贝 args 为不可变 Map，保证快照不可变。 */
+        private static final com.fasterxml.jackson.databind.ObjectMapper SNAPSHOT_MAPPER =
+                new com.fasterxml.jackson.databind.ObjectMapper();
+
+        /** 经 JSON 往返深拷贝 args 并逐层只读包装，保证快照全层不可变。 */
         public MateToolCall {
-            args = args == null ? Map.of() : Map.copyOf(args);
+            args = deepCopyArgs(args);
+        }
+
+        private static Map<String, Object> deepCopyArgs(Map<String, Object> source) {
+            if (source == null || source.isEmpty()) {
+                return Map.of();
+            }
+            try {
+                Map<String, Object> copy = SNAPSHOT_MAPPER.readValue(
+                        SNAPSHOT_MAPPER.writeValueAsString(source),
+                        new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {});
+                return readOnly(copy);
+            } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+                throw new IllegalArgumentException("tool args are not JSON-serializable", e);
+            }
+        }
+
+        private static Map<String, Object> readOnly(Map<String, Object> map) {
+            java.util.Map<String, Object> wrapped = new java.util.LinkedHashMap<>();
+            map.forEach((key, value) -> wrapped.put(key, readOnlyValue(value)));
+            return java.util.Collections.unmodifiableMap(wrapped);
+        }
+
+        private static Object readOnlyValue(Object value) {
+            if (value instanceof Map<?, ?> nested) {
+                java.util.Map<String, Object> wrapped = new java.util.LinkedHashMap<>();
+                nested.forEach((key, inner) -> wrapped.put(String.valueOf(key), readOnlyValue(inner)));
+                return java.util.Collections.unmodifiableMap(wrapped);
+            }
+            if (value instanceof List<?> list) {
+                java.util.List<Object> wrapped = new java.util.ArrayList<>();
+                list.forEach(item -> wrapped.add(readOnlyValue(item)));
+                return java.util.Collections.unmodifiableList(wrapped);
+            }
+            return value;
         }
     }
 }
