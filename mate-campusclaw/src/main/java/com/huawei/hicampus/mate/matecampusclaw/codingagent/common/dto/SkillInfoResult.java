@@ -9,24 +9,16 @@ import java.util.List;
 import lombok.Data;
 
 /**
- * Mate 内网网关 {@code GET /mate-service/v1/skill/info/query/{skillId}}
- * 返回信封中 {@code result} 字段的 Skill 信息结果。
+ * Mate 内网网关 {@code GET /mate-service/v1/skill/query/{skillId}} 返回
+ * 信封中 {@code result} 字段的 Skill 信息结果。
+ *
+ * <p>字段对齐 runtime 侧 {@code MateServiceClient.SkillInfo} 的真实契约:
+ * {@code bindingTools} 直挂 result(无额外嵌套),元素含 {@code id}。
  *
  * @version [br_eCampusCore 26.0.0, 2026/08/22]
  * @since [br_eCampusCore 26.0.0]
  */
 @Data
 public class SkillInfoResult {
-    private SkillInfo skillInfo;
-
-    /**
-     * Skill 详情体，绑定工具列表位于其中。
-     *
-     * @version [br_eCampusCore 26.0.0, 2026/08/22]
-     * @since [br_eCampusCore 26.0.0]
-     */
-    @Data
-    public static class SkillInfo {
-        private List<SkillBindingTool> bindingTools;
-    }
+    private List<SkillBindingTool> bindingTools;
 }

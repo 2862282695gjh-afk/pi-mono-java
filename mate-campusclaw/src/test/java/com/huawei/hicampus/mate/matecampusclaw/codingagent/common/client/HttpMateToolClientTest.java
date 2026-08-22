@@ -32,7 +32,7 @@ class HttpMateToolClientTest {
 
     private static final String AGENT_INFO_PATH_PREFIX = "/mate-service/v1/agents/";
 
-    private static final String SKILL_TOOLS_QUERY_PATH_PREFIX = "/mate-service/v1/skill/info/query/";
+    private static final String SKILL_TOOLS_QUERY_PATH_PREFIX = "/mate-service/v1/skill/query/";
 
     private static final String TOOL_METADATA_QUERY_PATH = "/mate-service/v1/runtime/tools/query";
 
@@ -96,7 +96,7 @@ class HttpMateToolClientTest {
         server.enqueue(
                 json(
                         "{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":"
-                                + "{\"skillInfo\":{\"bindingTools\":[{\"id\":\"tool-33333333333333333333333333333333\",\"name\":\"query\",\"permission\":\"allow\",\"is_concurrency_safe\":true}]}}}"));
+                                + "{\"bindingTools\":[{\"id\":\"tool-33333333333333333333333333333333\",\"name\":\"query\",\"permission\":\"allow\",\"is_concurrency_safe\":true}]}}"));
         server.enqueue(
                 json(
                         "{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":{\"data\":["
@@ -106,13 +106,13 @@ class HttpMateToolClientTest {
 
         assertThat(tools).extracting(MateToolMeta::toolId).containsExactly("tool-33333333333333333333333333333333");
         assertThat(server.takeRequest().getPath())
-                .isEqualTo("/mate-service/v1/skill/info/query/skill-11111111111111111111111111111111");
+                .isEqualTo("/mate-service/v1/skill/query/skill-11111111111111111111111111111111");
         assertThat(server.takeRequest().getBody().readUtf8()).contains("\"tool-33333333333333333333333333333333\"");
     }
 
     @Test
     void emptySkillInfoObjectReturnsEmptyToolList() throws Exception {
-        // result: {} — skillInfo 字段被省略
+        // result: {} — bindingTools 字段被省略
         server.enqueue(json("{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":{}}"));
 
         List<MateToolMeta> tools = client.listTools(null, "skill-11111111111111111111111111111111");
@@ -122,9 +122,9 @@ class HttpMateToolClientTest {
     }
 
     @Test
-    void nullSkillInfoReturnsEmptyToolList() throws Exception {
-        // result: {"skillInfo": null} — 显式空值
-        server.enqueue(json("{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":{\"skillInfo\":null}}"));
+    void nullBindingToolsReturnsEmptyToolList() throws Exception {
+        // result: {"bindingTools": null} — 显式空值
+        server.enqueue(json("{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":{\"bindingTools\":null}}"));
 
         List<MateToolMeta> tools = client.listTools(null, "skill-11111111111111111111111111111111");
 
@@ -134,8 +134,8 @@ class HttpMateToolClientTest {
 
     @Test
     void emptyBindingToolsSkipsToolMetadataQuery() throws Exception {
-        // 新协议:skill 路径 bindingTools 嵌套在 skillInfo 下,空列表时跳过工具元数据查询
-        server.enqueue(json("{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":{\"skillInfo\":{\"bindingTools\":[]}}}"));
+        // skill 路径 bindingTools 直挂 result(对齐 runtime 契约),空列表时跳过工具元数据查询
+        server.enqueue(json("{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":{\"bindingTools\":[]}}"));
 
         List<MateToolMeta> tools = client.listTools(null, "skill-11111111111111111111111111111111");
 

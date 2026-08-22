@@ -29,7 +29,7 @@ class ApplicationYmlLoadTest {
             assertThat(context.getEnvironment().getProperty("mate.endpoints.agent-info-path-prefix"))
                     .isEqualTo("/mate-service/v1/agents/");
             assertThat(context.getEnvironment().getProperty("mate.endpoints.skill-tools-query-path-prefix"))
-                    .isEqualTo("/mate-service/v1/skill/info/query/");
+                    .isEqualTo("/mate-service/v1/skill/query/");
             assertThat(context.getEnvironment().getProperty("mate.endpoints.tool-metadata-query-path"))
                     .isEqualTo("/mate-service/v1/runtime/tools/query");
             assertThat(context.getEnvironment().getProperty("mate.endpoints.tool-execute-path-template"))
