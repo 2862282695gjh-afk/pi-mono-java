@@ -70,8 +70,8 @@ class HttpMateToolClientTest {
         server.enqueue(
                 json(
                         "{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":{\"data\":["
-                                + "{\"id\":\"tool-11111111111111111111111111111111\",\"name\":\"query\",\"description\":\"d1\",\"permission\":\"allow\"},"
-                                + "{\"id\":\"tool-22222222222222222222222222222222\",\"name\":\"chart\",\"description\":\"d2\",\"permission\":\"deny\"}]}}"));
+                                + "{\"id\":\"tool-11111111111111111111111111111111\",\"name\":\"query\",\"description\":\"d1\",\"permission\":\"allow\",\"is_concurrency_safe\":true,\"display_name\":\"Query\",\"input_schema\":{\"type\":\"object\"},\"output_schema\":{\"type\":\"object\"}},"
+                                + "{\"id\":\"tool-22222222222222222222222222222222\",\"name\":\"chart\",\"description\":\"d2\",\"permission\":\"deny\",\"is_concurrency_safe\":false}]}}"));
 
         List<MateToolMeta> tools = client.listTools("agent-11111111111111111111111111111111", null);
 
@@ -96,9 +96,11 @@ class HttpMateToolClientTest {
         server.enqueue(
                 json(
                         "{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":"
-                                + "{\"bindingTools\":[{\"id\":\"tool-33333333333333333333333333333333\",\"name\":\"query\",\"permission\":\"allow\"}]}}"));
-        server.enqueue(json("{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":{\"data\":["
-                + "{\"id\":\"tool-33333333333333333333333333333333\",\"name\":\"query\"}]}}"));
+                                + "{\"bindingTools\":[{\"id\":\"tool-33333333333333333333333333333333\",\"name\":\"query\",\"permission\":\"allow\",\"is_concurrency_safe\":true}]}}"));
+        server.enqueue(
+                json(
+                        "{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":{\"data\":["
+                                + "{\"id\":\"tool-33333333333333333333333333333333\",\"name\":\"query\",\"display_name\":\"Query Skill\"}]}}"));
 
         List<MateToolMeta> tools = client.listTools(null, "skill-11111111111111111111111111111111");
 

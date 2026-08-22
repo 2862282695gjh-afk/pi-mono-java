@@ -4,6 +4,9 @@
 
 package com.campusclaw.codingagent.common.dto;
 
+import com.fasterxml.jackson.databind.PropertyNamingStrategies;
+import com.fasterxml.jackson.databind.annotation.JsonNaming;
+
 import lombok.Data;
 
 /**
@@ -14,6 +17,7 @@ import lombok.Data;
  * @version [br_eCampusCore 26.0.0, 2026/08/18]
  * @since [br_eCampusCore 26.0.0]
  */
+@JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
 @Data
 public class SkillBindingTool {
     private String id;
