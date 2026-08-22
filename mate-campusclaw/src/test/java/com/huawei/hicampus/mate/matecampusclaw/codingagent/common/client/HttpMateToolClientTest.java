@@ -111,6 +111,28 @@ class HttpMateToolClientTest {
     }
 
     @Test
+    void emptySkillInfoObjectReturnsEmptyToolList() throws Exception {
+        // result: {} — skillInfo 字段被省略
+        server.enqueue(json("{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":{}}"));
+
+        List<MateToolMeta> tools = client.listTools(null, "skill-11111111111111111111111111111111");
+
+        assertThat(tools).isEmpty();
+        assertThat(server.getRequestCount()).isEqualTo(1);
+    }
+
+    @Test
+    void nullSkillInfoReturnsEmptyToolList() throws Exception {
+        // result: {"skillInfo": null} — 显式空值
+        server.enqueue(json("{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":{\"skillInfo\":null}}"));
+
+        List<MateToolMeta> tools = client.listTools(null, "skill-11111111111111111111111111111111");
+
+        assertThat(tools).isEmpty();
+        assertThat(server.getRequestCount()).isEqualTo(1);
+    }
+
+    @Test
     void emptyBindingToolsSkipsToolMetadataQuery() throws Exception {
         server.enqueue(json("{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":{\"bindingTools\":[]}}"));
 

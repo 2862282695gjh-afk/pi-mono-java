@@ -160,8 +160,9 @@ public class HttpMateToolClient implements MateToolClient {
                 RequestHeaderInfo.builder().build());
         SkillInfoResult skillResult = unwrapResult(raw, SkillInfoResult.class);
         List<String> toolIds = new ArrayList<>();
-        if (skillResult != null && skillResult.getSkillInfo().getBindingTools() != null) {
-            for (var binding : skillResult.getSkillInfo().getBindingTools()) {
+        var skillInfo = skillResult != null ? skillResult.getSkillInfo() : null;
+        if (skillInfo != null && skillInfo.getBindingTools() != null) {
+            for (var binding : skillInfo.getBindingTools()) {
                 toolIds.add(binding.getId());
             }
         }
