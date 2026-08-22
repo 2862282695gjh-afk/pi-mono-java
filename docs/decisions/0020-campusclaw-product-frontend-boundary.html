@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ADR-0020：CampusClaw 产品前端隔离 Runtime 调试协议</title>
+  <style>
+    :root { color-scheme: light; font-family: Inter, "PingFang SC", sans-serif; color: #282828; background: #f9f9f9; }
+    body { margin: 0; }
+    main { width: min(900px, calc(100% - 40px)); margin: 40px auto; padding: 40px; box-sizing: border-box; background: #fff; border: 1px solid rgba(13,13,13,.1); border-radius: 16px; }
+    h1 { margin-top: 0; font-size: 30px; letter-spacing: -.02em; }
+    h2 { margin-top: 32px; font-size: 20px; }
+    h3 { margin-top: 22px; font-size: 17px; }
+    p, li { line-height: 1.75; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 10px 12px; border: 1px solid rgba(13,13,13,.1); text-align: left; vertical-align: top; }
+    th { width: 180px; background: #f3f3f3; }
+    code { padding: 2px 5px; border-radius: 5px; background: #f3f3f3; }
+    a { color: #0169cc; }
+    .status { display: inline-flex; padding: 4px 9px; border-radius: 999px; color: #006b2a; background: #e8f7ed; font-weight: 650; }
+    @media (max-width: 640px) { main { width: 100%; margin: 0; padding: 24px 18px; border: 0; border-radius: 0; } th { width: 110px; } }
+  </style>
+</head>
+<body>
+<main>
+  <h1>ADR-0020：CampusClaw 产品前端隔离 Runtime 调试协议</h1>
+  <table>
+    <tr><th>Status</th><td><span class="status">Accepted</span></td></tr>
+    <tr><th>Date</th><td>2026-08-21</td></tr>
+    <tr><th>Source baseline</th><td><code>origin/main@d0efb2fd18f2f2a7db121a1cbd4f039348a8094a</code>；前端改造前 <code>9ae08be97e49387367500da8fd8b01b4a607c4b3</code></td></tr>
+    <tr><th>HTTP contract</th><td>CampusClaw Runtime HTTP 1.38.0；设计仓 <code>ea4c70c33a458182b354ed0908cfc0ef54f13bc0</code></td></tr>
+    <tr><th>Renumbering</th><td>原前端 ADR-0018 因主分支新增 ADR-0018/0019 而顺延为 0020；决策内容保持连续。</td></tr>
+  </table>
+
+  <h2>Context</h2>
+  <p>改造前的前端把 Service URL、凭据、Runtime Session ID、ETag、原始 SSE Event 和 JSON payload 作为主界面元素。该形态适合接口联调，但用户实际需要选择 Agent、管理会话、发送消息、查看活动和控制执行。</p>
+  <p>HTTP 1.38.0 同时确认：Path、Query、JSON 和 SSE data 只使用 lowerCamelCase；提交消息的 POST 返回请求范围 SSE，断线不取消已经接受的执行，也没有 Idempotency-Key。响应头到达后若连接中断，客户端不能判断是否安全重放，盲目重试会产生重复 User MessageEntry。</p>
+
+  <h2>Considered options</h2>
+  <h3>继续扩展调试台</h3>
+  <p><strong>Pro：</strong>改动最少。<br><strong>Con：</strong>产品信息架构继续围绕内部 operation，内部身份、并发版本和事件模型越过浏览器边界。拒绝。</p>
+
+  <h3>隐藏高级字段后让产品页面直连 Runtime</h3>
+  <p><strong>Pro：</strong>可以快速完成视觉改造。<br><strong>Con：</strong>隐藏 DOM 不能解决浏览器认证、授权、内部资源身份和安全 Event Schema。拒绝作为生产架构。</p>
+
+  <h3>产品 UI 经公共 bridge，直接 Runtime adapter 仅作过渡</h3>
+  <p><strong>Pro：</strong>用户模型稳定，生产责任清晰；当前仓库仍可在内部环境验证界面和 HTTP 1.38.0。<br><strong>Con：</strong>生产集成仍依赖尚未逐项评审的公共 Agent/Chat/Attachment/Event 契约。接受。</p>
+
+  <h2>Decision</h2>
+  <ul>
+    <li>生产浏览器只调用 mate-service 公共 HTTP/SSE；mate-service 终止认证、执行授权，维护公共 Chat 与内部 Session 的映射，并投影浏览器安全 Event。</li>
+    <li>产品主界面只展示 Agent、会话、消息、附件、模型、深度思考、工具活动和粗粒度执行状态；Runtime <code>sessionId</code>、ETag、凭据、原始 JSON/SSE 和内部错误不进入产品主流程。</li>
+    <li>过渡 adapter 严格消费 HTTP 1.38 lowerCamelCase，不提供 snake_case 双读或双写兼容。</li>
+    <li>初始消息的 HTTP 200/SSE 响应头只启动 running 状态，不清空 Composer 草稿。只有 SSE <code>user.message</code> 或 GET Events 中新的、内容一致的 User Entry 能确认持久化并清空未编辑草稿。</li>
+    <li>若断流后历史仍无法确认本次 User Entry，发布 <code>OUTCOME_UNCERTAIN</code>、保留草稿且不提供盲目重试动作；若 User Entry 已确认但流中断，发布 <code>STREAM_INTERRUPTED</code> 并以持久化历史为权威。</li>
+    <li>Steer、FollowUp、Abort 分别产品化为“调整方向”“加入队列”“停止”；“调整方向”不表示硬中断当前模型调用或工具。</li>
+    <li>工具 started/completed/result 合并为一个可展开活动卡；持久化 completed/result 覆盖瞬时预览。</li>
+  </ul>
+
+  <h2>Consequences</h2>
+  <p><strong>正面：</strong>主界面围绕用户任务，Runtime 可独立演进；HTTP 字段错位能由契约测试发现；请求已受理后的网络故障不会因为前端自动清空草稿或提示普通重试而放大成重复执行。</p>
+  <p><strong>负面：</strong>短暂断流时草稿可能在 Composer 中多保留一段时间；当前确认机制依赖对话已加载的 Entry 集合和完整历史分页；公共 bridge 尚未完成，直接 adapter 仍只适合内部过渡集成。</p>
+  <p><strong>后续：</strong>逐项设计公共 Agent、Chat、Attachment、Model Catalog、队列项和 SSE 契约，并把现有 Vitest 契约用例扩展为真实后端浏览器 E2E 与视觉回归。</p>
+
+  <h2>Related</h2>
+  <ul>
+    <li><a href="../designs/campusclaw-frontend.md">CampusClaw 产品前端体验设计</a></li>
+    <li><a href="../designs/campusclaw-frontend/frontend_product_boundary.svg">产品前端边界图</a></li>
+    <li><a href="../designs/campusclaw-frontend/diagram.puml#L1">PlantUML 源码</a></li>
+    <li><a href="0019-runtime-http-lower-camel-case-fields.html">ADR-0019：Runtime HTTP lowerCamelCase 字段</a></li>
+  </ul>
+</main>
+</body>
+</html>
