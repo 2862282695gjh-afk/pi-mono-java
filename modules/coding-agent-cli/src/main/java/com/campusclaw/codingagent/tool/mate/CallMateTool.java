@@ -40,6 +40,8 @@ public class CallMateTool implements AgentTool {
 
     private final MateToolClient client;
 
+    private final MateCredentialResolver credentialResolver;
+
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private static final JsonNode PARAMETERS;
@@ -60,24 +62,27 @@ public class CallMateTool implements AgentTool {
     }
 
     /**
-     * Creates a CallMateTool.
+     * 创建 CallMateTool。
      *
-     * @param client      the Mate tool service client
+     * @param client Mate 工具服务客户端
+     * @param credentialResolver 按调用解析凭据的提供者；null 时所有调用
+     *        被 fail-closed 拒绝（见 {@code HttpMateToolClient} 的凭据校验）
      */
-    public CallMateTool(MateToolClient client) {
+    public CallMateTool(MateToolClient client, MateCredentialResolver credentialResolver) {
         this.client = client;
+        this.credentialResolver = credentialResolver;
     }
 
     /**
-     * Resolves the credentials to forward for a tool invocation. The agent
-     * hands down credentials per call; this hook lets the deployment wire its
-     * own source (e.g. agent context or config) by overriding.
+     * 解析本次工具调用要透传的凭据：委托给构造期注入的
+     * {@link MateCredentialResolver}（每次调用重新解析，按调用隔离）；
+     * 未注入解析器时返回 null，由客户端拒绝执行。
      *
-     * @param tool the tool being called
-     * @return credentials forwarded to the Mate server; null means none
+     * @param tool 待调用的工具标识
+     * @return 透传给 Mate 服务端的凭据；null 表示未接线
      */
     protected MateCredentials resolveCredentials(String tool) {
-        return null;
+        return credentialResolver != null ? credentialResolver.resolve(tool) : null;
     }
 
     @Override

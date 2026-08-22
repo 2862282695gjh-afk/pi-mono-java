@@ -88,7 +88,7 @@ class MateToolAutoConfigurationTest {
     void mateErrorPropagatesThroughPipelineAsIsError() {
         MockMateToolClient client = new MockMateToolClient();
         client.overrideCallResult(new MateToolClient.ToolResult("mate exploded", null, true));
-        CallMateTool callMateTool = new CallMateTool(client);
+        CallMateTool callMateTool = new CallMateTool(client, null);
 
         ToolCall toolCall = new ToolCall("call-1", "callMateTool", Map.of("tool", "boom"));
         ToolExecutionPipeline pipeline = new ToolExecutionPipeline();

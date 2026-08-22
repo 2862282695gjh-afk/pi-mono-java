@@ -211,12 +211,28 @@ class HttpMateToolClientTest {
     }
 
     @Test
+    void invokeToolWithBlankCredentialsIsRefusedBeforeRequest() {
+        for (MateCredentials bad : new MateCredentials[] {
+            new MateCredentials(null, null, null),
+            new MateCredentials("", "", ""),
+            MateCredentials.appKey("hw-id-1", ""),
+            new MateCredentials("hw-id-1", "key", "Bearer tok")
+        }) {
+            MateToolClient.ToolResult result =
+                    client.callTool("tool-11111111111111111111111111111111", java.util.Map.of(), bad);
+            assertThat(result.isError()).isTrue();
+            assertThat(result.content()).contains("incomplete credentials");
+        }
+        assertThat(server.getRequestCount()).isZero();
+    }
+
+    @Test
     void invokeToolWithoutCredentialsIsRefusedBeforeRequest() {
         MateToolClient.ToolResult result =
                 client.callTool("tool-11111111111111111111111111111111", java.util.Map.of(), null);
 
         assertThat(result.isError()).isTrue();
-        assertThat(result.content()).contains("no credentials");
+        assertThat(result.content()).contains("incomplete credentials");
         assertThat(server.getRequestCount()).isZero();
     }
 

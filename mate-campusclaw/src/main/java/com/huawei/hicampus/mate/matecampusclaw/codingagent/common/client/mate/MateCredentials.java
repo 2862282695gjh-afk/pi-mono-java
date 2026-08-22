@@ -38,4 +38,19 @@ public record MateCredentials(String xHwId, String xHwAppKey, String authorizati
     public static MateCredentials jwt(String xHwId, String bearerToken) {
         return new MateCredentials(xHwId, null, "Bearer " + bearerToken);
     }
+
+    /**
+     * 判断凭据是否构成一次完整认证：{@code X-HW-ID} 非空，且 AppKey 与
+     * JWT 两种模式恰好存在一种（对应 Header 非空）。非空但残缺的凭据
+     * （如全 null、空 appKey、空 Authorization、双模式并存）均视为无效，
+     * 调用端应在发请求前拒绝，避免发出半认证请求。
+     *
+     * @return 凭据完整时为 {@code true}
+     */
+    public boolean isComplete() {
+        boolean hasAppKey = xHwAppKey != null && !xHwAppKey.isEmpty();
+        boolean hasAuthorization = authorization != null && !authorization.isEmpty();
+        boolean idPresent = xHwId != null && !xHwId.isEmpty();
+        return idPresent && (hasAppKey ^ hasAuthorization);
+    }
 }

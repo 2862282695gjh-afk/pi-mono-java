@@ -277,11 +277,17 @@ public class HttpMateToolClient implements MateToolClient {
                 || !ResourceIdentifierPatterns.TOOL_ID_PATTERN.matcher(tool).matches()) {
             throw new IllegalArgumentException("Invalid tool id for path segment: " + tool);
         }
-        if (credentials == null) {
+        if (credentials == null || !credentials.isComplete()) {
             log.error(
-                    "invokeTool called without credentials: tool={} — wire CallMateTool.resolveCredentials() first",
+                    "invokeTool called without complete credentials: tool={} — wire"
+                            + " CallMateTool.resolveCredentials() to return X-HW-ID plus exactly one of"
+                            + " X-HW-APPKEY / Authorization",
                     tool);
-            return new ToolResult("invokeTool refused: no credentials (resolveCredentials returned null)", null, true);
+            return new ToolResult(
+                    "invokeTool refused: incomplete credentials (need X-HW-ID plus exactly one of"
+                            + " X-HW-APPKEY / Authorization)",
+                    null,
+                    true);
         }
         try {
             RequestHeaderInfo headerInfo = RequestHeaderInfo.builder()

@@ -9,6 +9,7 @@ import com.campusclaw.codingagent.common.client.mate.MateToolClient;
 import com.campusclaw.codingagent.common.util.MateRestUtil;
 import com.campusclaw.codingagent.tool.mate.CallMateTool;
 import com.campusclaw.codingagent.tool.mate.ListMateTool;
+import com.campusclaw.codingagent.tool.mate.MateCredentialResolver;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import org.springframework.beans.factory.ObjectProvider;
@@ -83,14 +84,20 @@ public class MateToolAutoConfiguration {
     }
 
     /**
-     * 创建 callMateTool 工具。
+     * 创建 callMateTool 工具。凭据来源取容器中可选的
+     * {@link MateCredentialResolver} Bean——部署方注册该 Bean 即接通按调用
+     * 凭据解析（如 Loop 下发的 Authorization）；未注册时工具仍装配，但
+     * 每次调用被 fail-closed 拒绝（见 {@code HttpMateToolClient} 凭据校验），
+     * 不会发出未认证请求。
      *
      * @param client Mate Tool 客户端
+     * @param credentialResolverProvider 凭据解析器提供器；容器无该 Bean 时为空
      * @return callMateTool 工具
      */
     @Bean
-    public CallMateTool callMateTool(MateToolClient client) {
-        return new CallMateTool(client);
+    public CallMateTool callMateTool(
+            MateToolClient client, ObjectProvider<MateCredentialResolver> credentialResolverProvider) {
+        return new CallMateTool(client, credentialResolverProvider.getIfAvailable());
     }
 
     /**

@@ -33,7 +33,19 @@ class CallMateToolTest {
         client = new MockMateToolClient();
         client.addTool(new MateToolMeta("query", "q", Map.of(), Map.of(), true, "allow"));
         client.addTool(new MateToolMeta("delete", "d", Map.of(), Map.of(), false, "deny"));
-        tool = new CallMateTool(client);
+        tool = new CallMateTool(client, null);
+    }
+
+    @Test
+    void resolverProvidedCredentialsReachClient() {
+        com.campusclaw.codingagent.common.client.mate.MateCredentials expected =
+                com.campusclaw.codingagent.common.client.mate.MateCredentials.jwt("hw-id-9", "tok");
+        CallMateTool resolved = new CallMateTool(client, toolName -> expected);
+
+        assertDoesNotThrow(() -> resolved.execute("t", Map.of("tool", "query"), null, null));
+
+        assertEquals("hw-id-9", client.lastCallCredentials().xHwId());
+        assertEquals("Bearer tok", client.lastCallCredentials().authorization());
     }
 
     @Test
