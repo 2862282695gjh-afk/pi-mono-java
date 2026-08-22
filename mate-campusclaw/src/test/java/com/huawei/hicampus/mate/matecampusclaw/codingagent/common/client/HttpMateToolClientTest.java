@@ -134,6 +134,18 @@ class HttpMateToolClientTest {
 
     @Test
     void emptyBindingToolsSkipsToolMetadataQuery() throws Exception {
+        // 新协议:skill 路径 bindingTools 嵌套在 skillInfo 下,空列表时跳过工具元数据查询
+        server.enqueue(json("{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":{\"skillInfo\":{\"bindingTools\":[]}}}"));
+
+        List<MateToolMeta> tools = client.listTools(null, "skill-11111111111111111111111111111111");
+
+        assertThat(tools).isEmpty();
+        assertThat(server.getRequestCount()).isEqualTo(1);
+    }
+
+    @Test
+    void emptyAgentBindingToolsSkipsToolMetadataQuery() throws Exception {
+        // agent 路径契约不变:bindingTools 直挂 result
         server.enqueue(json("{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":{\"bindingTools\":[]}}"));
 
         List<MateToolMeta> tools = client.listTools("agent-11111111111111111111111111111111", null);
