@@ -40,12 +40,49 @@ class CallMateToolTest {
     void resolverProvidedCredentialsReachClient() {
         com.campusclaw.codingagent.common.client.mate.MateCredentials expected =
                 com.campusclaw.codingagent.common.client.mate.MateCredentials.jwt("hw-id-9", "tok");
-        CallMateTool resolved = new CallMateTool(client, toolName -> expected);
+        CallMateTool resolved = new CallMateTool(client, call -> expected);
 
         assertDoesNotThrow(() -> resolved.execute("t", Map.of("tool", "query"), null, null));
 
         assertEquals("hw-id-9", client.lastCallCredentials().xHwId());
         assertEquals("Bearer tok", client.lastCallCredentials().authorization());
+    }
+
+    @Test
+    void concurrentSessionsGetTheirOwnCredentials() throws Exception {
+        java.util.Map<String, com.campusclaw.codingagent.common.client.mate.MateCredentials> bySession =
+                new java.util.concurrent.ConcurrentHashMap<>();
+        bySession.put("call-a", com.campusclaw.codingagent.common.client.mate.MateCredentials.appKey("id-a", "key-a"));
+        bySession.put("call-b", com.campusclaw.codingagent.common.client.mate.MateCredentials.appKey("id-b", "key-b"));
+        CallMateTool multiSession = new CallMateTool(client, call -> bySession.get(call.toolCallId()));
+
+        java.util.List<Thread> workers = new java.util.ArrayList<>();
+        java.util.List<String> mismatches = java.util.Collections.synchronizedList(new java.util.ArrayList<>());
+        for (int i = 0; i < 40; i++) {
+            final String callId = (i % 2 == 0) ? "call-a" : "call-b";
+
+            // Each worker verifies through its own recording client to avoid
+            // the shared lastCallCredentials field racing between threads.
+            MockMateToolClient recordingClient = new MockMateToolClient();
+            recordingClient.addTool(new MateToolMeta("query", "q", Map.of(), Map.of(), true, "allow"));
+            CallMateTool sessionTool = new CallMateTool(recordingClient, call -> bySession.get(call.toolCallId()));
+            workers.add(Thread.ofPlatform().start(() -> {
+                try {
+                    sessionTool.execute(callId, Map.of("tool", "query"), null, null);
+                    String seen = recordingClient.lastCallCredentials().xHwId();
+                    String wanted = bySession.get(callId).xHwId();
+                    if (!wanted.equals(seen)) {
+                        mismatches.add(callId + " wanted " + wanted + " saw " + seen);
+                    }
+                } catch (Exception e) {
+                    mismatches.add(callId + ": " + e.getMessage());
+                }
+            }));
+        }
+        for (Thread w : workers) {
+            w.join();
+        }
+        org.junit.jupiter.api.Assertions.assertTrue(mismatches.isEmpty(), String.join("; ", mismatches));
     }
 
     @Test

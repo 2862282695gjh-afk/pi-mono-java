@@ -74,15 +74,20 @@ public class CallMateTool implements AgentTool {
     }
 
     /**
-     * 解析本次工具调用要透传的凭据：委托给构造期注入的
-     * {@link MateCredentialResolver}（每次调用重新解析，按调用隔离）；
+     * 解析本次工具调用要透传的凭据：以 {@link MateCredentialResolver.MateToolCall}
+     * 上下文快照委托给构造期注入的解析器（每次调用重新解析，按调用隔离）；
      * 未注入解析器时返回 null，由客户端拒绝执行。
      *
+     * @param toolCallId 本次工具调用标识
      * @param tool 待调用的工具标识
+     * @param args 工具参数
      * @return 透传给 Mate 服务端的凭据；null 表示未接线
      */
-    protected MateCredentials resolveCredentials(String tool) {
-        return credentialResolver != null ? credentialResolver.resolve(tool) : null;
+    protected MateCredentials resolveCredentials(String toolCallId, String tool, Map<String, Object> args) {
+        if (credentialResolver == null) {
+            return null;
+        }
+        return credentialResolver.resolve(new MateCredentialResolver.MateToolCall(toolCallId, tool, args));
     }
 
     @Override
@@ -121,7 +126,8 @@ public class CallMateTool implements AgentTool {
 
         // ---- call tool ----
         log.info("Calling mate tool: {}", tool);
-        MateToolClient.ToolResult result = client.callTool(tool, toolArgs, resolveCredentials(tool));
+        MateToolClient.ToolResult result =
+                client.callTool(tool, toolArgs, resolveCredentials(toolCallId, tool, toolArgs));
 
         if (result.isError()) {
             // Propagate as an exception so ToolExecutionPipeline marks the

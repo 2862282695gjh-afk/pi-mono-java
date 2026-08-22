@@ -48,9 +48,9 @@ public record MateCredentials(String xHwId, String xHwAppKey, String authorizati
      * @return 凭据完整时为 {@code true}
      */
     public boolean isComplete() {
-        boolean hasAppKey = xHwAppKey != null && !xHwAppKey.isEmpty();
-        boolean hasAuthorization = authorization != null && !authorization.isEmpty();
-        boolean idPresent = xHwId != null && !xHwId.isEmpty();
+        boolean hasAppKey = xHwAppKey != null && !xHwAppKey.isBlank();
+        boolean hasAuthorization = authorization != null && !authorization.isBlank();
+        boolean idPresent = xHwId != null && !xHwId.isBlank();
         return idPresent && (hasAppKey ^ hasAuthorization);
     }
 }
