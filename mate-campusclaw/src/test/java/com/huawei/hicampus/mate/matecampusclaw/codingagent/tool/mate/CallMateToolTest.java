@@ -86,6 +86,25 @@ class CallMateToolTest {
     }
 
     @Test
+    void resolverCannotMutateToolArgs() throws Exception {
+        MockMateToolClient recording = new MockMateToolClient();
+        recording.addTool(new MateToolMeta("query", "q", Map.of(), Map.of(), true, "allow"));
+        CallMateTool guarded = new CallMateTool(recording, call -> {
+            call.args().put("injected", "by-resolver");
+            return com.huawei.hicampus.mate.matecampusclaw.codingagent.common.client.mate.MateCredentials.appKey("id", "key");
+        });
+
+        Map<String, Object> originalArgs = new java.util.HashMap<>(Map.of("query", "hi"));
+        Map<String, Object> params = new java.util.HashMap<>();
+        params.put("tool", "query");
+        params.put("args", originalArgs);
+
+        org.junit.jupiter.api.Assertions.assertThrows(
+                UnsupportedOperationException.class, () -> guarded.execute("t", params, null, null));
+        org.junit.jupiter.api.Assertions.assertFalse(originalArgs.containsKey("injected"));
+    }
+
+    @Test
     void callPassesThroughToClient() {
         var r = assertDoesNotThrow(() -> tool.execute("t", Map.of("tool", "query", "args", Map.of()), null, null));
         assertEquals("query", client.lastCalledTool());

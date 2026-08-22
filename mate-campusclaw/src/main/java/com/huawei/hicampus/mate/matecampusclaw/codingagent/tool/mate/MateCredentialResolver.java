@@ -48,5 +48,10 @@ public interface MateCredentialResolver {
      * @version [br_eCampusCore 26.0.0, 2026/08/22]
      * @since [br_eCampusCore 26.0.0]
      */
-    record MateToolCall(String toolCallId, String tool, Map<String, Object> args) {}
+    record MateToolCall(String toolCallId, String tool, Map<String, Object> args) {
+        /** 拷贝 args 为不可变 Map，保证快照不可变。 */
+        public MateToolCall {
+            args = args == null ? Map.of() : Map.copyOf(args);
+        }
+    }
 }
