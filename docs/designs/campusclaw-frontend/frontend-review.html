@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>CampusClaw Frontend UX - Design Review</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --canvas: light-dark(#f9f9f9, #181818);
+      --surface: light-dark(#ffffff, #212121);
+      --surface-secondary: light-dark(#f9f9f9, #181818);
+      --surface-tertiary: light-dark(#f3f3f3, #303030);
+      --selected: light-dark(#ededed, #414141);
+      --text: light-dark(#282828, #ededed);
+      --muted: light-dark(#5d5d5d, #afafaf);
+      --border: light-dark(#dfdfdf, #414141);
+      --border-strong: light-dark(#cdcdcd, #5d5d5d);
+      --primary: light-dark(#181818, #ededed);
+      --primary-text: light-dark(#ffffff, #181818);
+      --success: light-dark(#008635, #40c977);
+      --running: light-dark(#00a240, #04b84c);
+      --danger: light-dark(#e02e2a, #ff6764);
+      --link: light-dark(#0169cc, #66b5ff);
+      background: var(--canvas);
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 16px;
+      background: var(--canvas);
+      color: var(--text);
+      font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", sans-serif;
+    }
+    main { width: min(1400px, 100%); margin: 0 auto; }
+    a { color: var(--link); }
+    code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    h1, h2, h3, p { margin: 0; }
+
+    .review-shell {
+      overflow: hidden;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: var(--surface-secondary);
+    }
+    .topbar, .row, .screen-head, .section-title, .review-links {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 9px;
+    }
+    .topbar {
+      justify-content: space-between;
+      padding: 15px 17px;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+    }
+    h1 { font-size: 18px; font-weight: 550; }
+    h2 { font-size: 15px; font-weight: 600; }
+    h3 { margin-bottom: 10px; font-size: 14px; font-weight: 550; }
+    .tag, .screen-name, .screen-key {
+      padding: 2px 8px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: var(--surface-tertiary);
+      font-size: 12px;
+    }
+    .screen-key { color: var(--muted); }
+    .base, .muted { color: var(--muted); font-size: 13px; }
+    .section {
+      padding: 15px;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+    }
+    .section:last-child { border-bottom: 0; }
+    .section-title { justify-content: space-between; }
+    .description { max-width: 1040px; line-height: 1.65; }
+    .authority { margin: 0; padding-left: 20px; line-height: 1.75; }
+
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td {
+      padding: 8px;
+      border-bottom: 1px solid var(--border);
+      text-align: left;
+      vertical-align: top;
+    }
+    th { color: var(--muted); font-weight: 550; }
+    tbody tr:last-child td { border-bottom: 0; }
+
+    .screen-card {
+      margin: 15px;
+      overflow: hidden;
+      border: 1px solid var(--border-strong);
+      border-radius: 10px;
+      background: var(--surface);
+    }
+    .screen-head {
+      padding: 13px 15px;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface-tertiary);
+    }
+    .status-dot {
+      width: 9px;
+      height: 9px;
+      border: 1px solid var(--text);
+      border-radius: 50%;
+      background: transparent;
+    }
+    .status-dot.running { border-color: var(--running); background: var(--running); }
+    .status-dot.success { border-color: var(--success); background: var(--success); }
+    .screen-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.65fr) minmax(280px, .75fr);
+      gap: 0;
+    }
+    figure {
+      margin: 0;
+      padding: 15px;
+      border-right: 1px solid var(--border);
+      background: var(--canvas);
+    }
+    figure img {
+      display: block;
+      width: 100%;
+      height: auto;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #fff;
+    }
+    figcaption { margin-top: 9px; color: var(--muted); font-size: 12px; line-height: 1.5; }
+    .screen-detail { min-width: 0; }
+    .screen-detail .section { background: transparent; }
+    .review-points { margin: 0; padding-left: 20px; line-height: 1.7; }
+
+    .swatches {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(112px, 1fr));
+      gap: 9px;
+    }
+    .swatch {
+      overflow: hidden;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--surface);
+    }
+    .swatch-color { height: 42px; border-bottom: 1px solid var(--border); }
+    .swatch-label { padding: 8px; font-size: 11px; line-height: 1.45; }
+    .primary-action {
+      display: inline-block;
+      padding: 7px 11px;
+      border-radius: 7px;
+      background: var(--primary);
+      color: var(--primary-text);
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .review-question {
+      margin-top: 9px;
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--surface-tertiary);
+    }
+    .review-question summary { cursor: pointer; font-size: 13px; font-weight: 600; }
+    .review-question p { margin-top: 8px; color: var(--muted); font-size: 13px; line-height: 1.6; }
+    .review-links { margin-top: 10px; }
+
+    @media (max-width: 960px) {
+      .screen-grid { grid-template-columns: 1fr; }
+      figure { border-right: 0; border-bottom: 1px solid var(--border); }
+      .swatches { grid-template-columns: repeat(3, minmax(112px, 1fr)); }
+    }
+    @media (max-width: 680px) {
+      body { padding: 8px; }
+      .screen-card { margin-right: 9px; margin-left: 9px; }
+      .swatches { grid-template-columns: repeat(2, minmax(112px, 1fr)); }
+      .table-wrap { overflow-x: auto; }
+    }
+  </style>
+</head>
+<body>
+  <main class="company-design-review">
+    <div class="review-shell">
+      <header class="topbar">
+        <div class="row">
+          <h1>CampusClaw Frontend UX</h1>
+          <span class="tag">0.5.0</span>
+          <span class="tag">Product · 待产品验收</span>
+        </div>
+        <code class="base">HTTP V1 1.38.0 aligned · Codex-inspired</code>
+      </header>
+
+      <section class="section">
+        <h3>评审方式</h3>
+        <p class="description">本页沿用 Runtime HTTP 评审面的卡片结构和稳定评审键。每个界面状态使用固定 <code>screenKey</code>，依次评审作用、用户动作、系统约束和视觉材料；精确设计理由与源码证据仍以 Markdown 为准。</p>
+      </section>
+
+      <section class="section">
+        <h3>设计权威顺序</h3>
+        <ol class="authority">
+          <li><a href="../campusclaw-frontend.md">campusclaw-frontend.md</a>：源码证据、目标差异、设计理由、交互和 Token。</li>
+          <li>本 HTML：主要人类评审界面。</li>
+          <li><a href="diagram.puml">diagram.puml</a>：架构图唯一图源。</li>
+          <li><a href="low-fidelity.html">low-fidelity.html</a>：低保真布局源；PNG 为评审快照。</li>
+        </ol>
+      </section>
+
+      <article class="screen-card" id="first-use" data-screen-key="firstUse">
+        <header class="screen-head">
+          <span class="status-dot" aria-hidden="true"></span>
+          <strong>首次进入 / 选择 Agent</strong>
+          <span class="screen-name">首次进入</span>
+          <code class="screen-key">firstUse</code>
+          <span class="muted">已实现 · 过渡 adapter</span>
+        </header>
+        <div class="screen-grid">
+          <figure>
+            <a href="low-fidelity.html"><img src="low-fidelity.png" alt="CampusClaw 三状态低保真评审板"></a>
+            <figcaption>首次进入状态目前使用三状态低保真板评审；Agent 目录和公共 Chat 创建仍是 mate-service 目标态。</figcaption>
+          </figure>
+          <div class="screen-detail">
+            <section class="section"><h3>作用</h3><p class="description">让用户先选择一个受管 Agent，再进入真实任务会话；创建 Runtime Session、认证和默认模型初始化均在后台完成。</p></section>
+            <section class="section"><h3>主要评审点</h3><ul class="review-points"><li>是否以 Agent 能力而不是协议配置开始。</li><li>首次进入是否需要单独高保真稿。</li><li>Agent 卡片的名称、描述和权限提示是否足够。</li></ul></section>
+          </div>
+        </div>
+      </article>
+
+      <article class="screen-card" id="idle-conversation" data-screen-key="idleConversation">
+        <header class="screen-head">
+          <span class="status-dot success" aria-hidden="true"></span>
+          <strong>常规对话</strong>
+          <span class="screen-name">常规对话</span>
+          <code class="screen-key">idleConversation</code>
+          <span class="muted">已实现 · 过渡 adapter</span>
+        </header>
+        <div class="screen-grid">
+          <figure>
+            <a href="high-fidelity-conversation-v3.png"><img src="high-fidelity-conversation-v3.png" alt="CampusClaw Codex-inspired 常规对话高保真稿"></a>
+            <figcaption>v3：Codex-inspired 黑白中性层级、近黑主动作、浅灰选中态和紧凑工具活动；不复制 OpenAI/Codex 品牌。</figcaption>
+          </figure>
+          <div class="screen-detail">
+            <section class="section"><h3>作用</h3><p class="description">围绕 Agent、Chat、消息、附件和工具活动完成日常任务。协议身份、ETag、原始 SSE 和凭据不进入产品主流程。</p></section>
+            <section class="section"><h3>主要评审点</h3><ul class="review-points"><li>近黑主动作是否符合 CampusClaw 品牌预期。</li><li>工具 started/completed/result 是否应合并为一张活动卡。</li><li>模型和深度思考是否保留在会话顶栏。</li></ul></section>
+          </div>
+        </div>
+      </article>
+
+      <article class="screen-card" id="running-conversation" data-screen-key="runningConversation">
+        <header class="screen-head">
+          <span class="status-dot running" aria-hidden="true"></span>
+          <strong>执行中控制</strong>
+          <span class="screen-name">执行中</span>
+          <code class="screen-key">runningConversation</code>
+          <span class="muted">已实现 · HTTP 1.38.0</span>
+        </header>
+        <div class="screen-grid">
+          <figure>
+            <a href="high-fidelity-running-v4.png"><img src="high-fidelity-running-v4.png" alt="CampusClaw Codex-inspired 执行中高保真稿"></a>
+            <figcaption>v4：跟随 Codex desktop 使用一个当前跟进方式；默认“调整方向”，快捷键可将本条消息“加入队列”。</figcaption>
+          </figure>
+          <div class="screen-detail">
+            <section class="section"><h3>作用</h3><p class="description">让用户看懂 Agent 正在做什么，并通过“调整方向”“加入队列”“停止”控制唯一 active execution。</p></section>
+            <section class="section"><h3>主要评审点</h3><ul class="review-points"><li>当前跟进方式是否在发送前足够清楚，且无需两个常驻胶囊。</li><li>绿色运行点与完成 check 的区分是否清晰。</li><li>停止是否保持小型轮廓按钮，避免与主动作竞争。</li></ul></section>
+          </div>
+        </div>
+      </article>
+
+      <section class="section">
+        <div class="section-title"><h2>Codex-inspired light theme</h2><span class="primary-action">近黑主动作</span></div>
+        <p class="description muted">色值来自本机应用可观察 Token，并被收敛为 CampusClaw 设计决策；不是 OpenAI 官方公开品牌规范。</p>
+        <div class="swatches" style="margin-top:12px">
+          <div class="swatch"><div class="swatch-color" style="background:#fff"></div><div class="swatch-label"><code>#FFFFFF</code><br>main surface</div></div>
+          <div class="swatch"><div class="swatch-color" style="background:#f9f9f9"></div><div class="swatch-label"><code>#F9F9F9</code><br>shell/sidebar</div></div>
+          <div class="swatch"><div class="swatch-color" style="background:#ededed"></div><div class="swatch-label"><code>#EDEDED</code><br>selected</div></div>
+          <div class="swatch"><div class="swatch-color" style="background:#181818"></div><div class="swatch-label"><code>#181818</code><br>primary action</div></div>
+          <div class="swatch"><div class="swatch-color" style="background:#00a240"></div><div class="swatch-label"><code>#00A240</code><br>running</div></div>
+          <div class="swatch"><div class="swatch-color" style="background:#0169cc"></div><div class="swatch-label"><code>#0169CC</code><br>focus/link only</div></div>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2>本轮确认项</h2>
+        <details class="review-question" open><summary>1. 是否确认三状态信息架构？</summary><p><code>firstUse</code>、<code>idleConversation</code>、<code>runningConversation</code> 作为首版稳定评审和测试边界。</p></details>
+        <details class="review-question" open><summary>2. 是否确认 Codex-inspired 视觉方向？</summary><p>黑白中性层级、近黑主动作、少量绿色状态、蓝色仅用于焦点/链接；保留 CampusClaw 自有品牌。</p></details>
+        <details class="review-question" open><summary>3. 已确认：跟进交互与 Codex desktop 一致</summary><p>desktop 默认“调整方向”，设置可切换“加入队列”；<code>Cmd/Ctrl+Shift+Enter</code> 对单条消息临时反转。“调整方向”不会硬中断当前模型或工具。</p></details>
+        <div class="review-links"><a href="../campusclaw-frontend.md">查看完整设计依据</a><span class="muted">·</span><a href="../../decisions/0020-campusclaw-product-frontend-boundary.html">查看 ADR</a><span class="muted">·</span><a href="imagegen-prompts.md">查看 ImageGen Prompts</a></div>
+      </section>
+    </div>
+  </main>
+</body>
+</html>
