@@ -15,7 +15,7 @@ import java.nio.file.Path;
  * @param filePath    absolute path to the template file
  * @param source      where the template was found ("user" or "project")
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/05/06]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/05/06]
+ * @since [br_eCampusCore 26.0.0]
  */
 public record PromptTemplateEntry(String name, String description, String content, Path filePath, String source) {}

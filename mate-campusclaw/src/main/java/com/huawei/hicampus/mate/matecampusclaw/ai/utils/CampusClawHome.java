@@ -20,8 +20,8 @@ import java.nio.file.Path;
  * {@code agent-core}, {@code cron}, and {@code coding-agent-cli} can all reuse a single
  * definition instead of independently hardcoding the path.
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/05/30]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/05/30]
+ * @since [br_eCampusCore 26.0.0]
  */
 public final class CampusClawHome {
 

@@ -11,8 +11,8 @@ import java.util.function.Consumer;
  * size detection, and input handling. Implementations include a real
  * JLine-backed terminal and an in-memory test terminal.
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/05/06]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/05/06]
+ * @since [br_eCampusCore 26.0.0]
  */
 public interface Terminal {
 

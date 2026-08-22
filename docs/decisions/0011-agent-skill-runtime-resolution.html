@@ -18,7 +18,7 @@
 </head>
 <body>
   <h1>ADR-0011 · CampusClaw 本地优先加载 Agent 并按需激活 Skill 工具</h1>
-  <div class="meta">Status: <span class="badge">Accepted</span> · Date: 2026-08-11 ·
+  <div class="meta">Status: <span class="badge">Accepted</span> · Date: 2026-08-11 · Amended: 2026-08-19 ·
     设计文档: <a href="../designs/agent-skill-runtime.md">agent-skill-runtime</a></div>
 
   <section><h2>Context</h2>
@@ -36,6 +36,7 @@
 
   <section><h2>Decision</h2>
     <ul>
+      <li>本决策仅适用于显式传入 <code>cli --agent-id</code> 的托管 CLI 流程。公共 HTTP V1 只读 Manager 预置的 <code>agent/{agent_id}/.campusclaw/</code> HTTP 文件契约，不调用本物化器；旧 REST Chat、ServerMode 和公开 WebSocket 已删除。</li>
       <li>CampusClaw 先选择 <code>agentId</code>，并由 <code>AgentRuntimeManager</code> 定位 <code>./agent/{agentId}</code>。</li>
       <li>本地元数据和 Skill 树完整时直接读取；整个 Agent 目录不存在时调用 <code>GET /mate-service/v1/agents/{agentId}/runtime</code>，只把其中的 <code>bindingSkills</code> 解释为当前 Agent 直接绑定 Skill 的 ID/版本坐标。</li>
       <li>GetAgentRuntime 返回的 <code>systemPrompt</code> 写入 <code>./agent/{agentId}/.campusclaw/systemPrompt.md</code>；本地命中时直接把该文件作为会话系统提示词来源，不与 <code>agentId.json.systemPrompt</code> 比对，也不访问 CampusMateService。</li>
@@ -52,7 +53,7 @@
 
   <section><h2>Consequences</h2>
     <ul>
-      <li>REST、WebSocket 和 CLI 都能传入 Agent ID；会话按 Agent ID 与 conversation ID 共同隔离。</li>
+      <li>CLI 可以通过 <code>--agent-id</code> 选择托管 Agent；未指定时保留普通非托管 CLI 行为。HTTP V1 的 Agent 与 Session 隔离由独立 Runtime API 实现。</li>
       <li>querySkillInfo 提供 references/templates 内容，但仍缺少真实 SKILL.md 指令正文；当前只能生成元数据版 SKILL.md，接口需补正文或制品包才能恢复完整 Skill 工作流。</li>
       <li>GetAgentRuntime 与 querySkillInfo 的 ID/版本不一致、重复 Skill 或非法资源文件会使整个冷启动 fail closed，不发布部分目录。</li>
       <li><code>systemPrompt.md</code> 缺失会使既有 Agent Runtime 被判定为不完整；修改该文件后，新建会话直接使用本地内容。</li>

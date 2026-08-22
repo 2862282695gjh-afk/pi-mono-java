@@ -1,0 +1,33 @@
+/*
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
+ */
+
+package com.huawei.hicampus.mate.matecampusclaw.codingagent.controlplane.api;
+
+import com.huawei.hicampus.mate.matecampusclaw.agent.controlplane.domain.ScheduleDecision;
+
+import lombok.Getter;
+
+/**
+ * Runtime 节点调度结果响应。
+ *
+ * @version [br_eCampusCore 26.0.0, 2026/08/18]
+ * @since [br_eCampusCore 26.0.0]
+ */
+@Getter
+public class ScheduleRuntimeResponseVO {
+    private final String nodeId;
+
+    private final String host;
+
+    private final int port;
+
+    private final String reason;
+
+    public ScheduleRuntimeResponseVO(ScheduleDecision decision) {
+        this.nodeId = decision.nodeId();
+        this.host = decision.host();
+        this.port = decision.port();
+        this.reason = decision.reason();
+    }
+}

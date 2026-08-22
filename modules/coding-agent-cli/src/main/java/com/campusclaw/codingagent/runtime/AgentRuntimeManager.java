@@ -18,8 +18,10 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.regex.Pattern;
 
+import com.campusclaw.codingagent.common.identifier.ResourceIdentifierPatterns;
 import com.campusclaw.codingagent.runtime.MateServiceClient.AgentRuntime;
 import com.campusclaw.codingagent.runtime.MateServiceClient.BoundTool;
+import com.campusclaw.codingagent.runtime.MateServiceClient.DependentSkill;
 import com.campusclaw.codingagent.runtime.MateServiceClient.SkillFile;
 import com.campusclaw.codingagent.runtime.MateServiceClient.SkillInfo;
 import com.campusclaw.codingagent.runtime.MateServiceClient.SkillReference;
@@ -31,26 +33,17 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Component;
 
 /**
- * Resolves managed Agent runtimes from the local cache or CampusMate and materializes
- * the directory structure expected by the existing Skill loader.
+ * 从本地缓存或 CampusMate 解析托管 CLI Agent，并物化现有 Skill 加载器需要的目录结构。
  *
- * <p>Agent identifiers are validated against the same segment pattern declared in
- * {@code docs/openapi/campusclaw-api.yaml} before any path is resolved, so remote
- * {@code agent_id} values cannot traverse outside the agents root (ADR-0013 item 1
- * baseline). The remaining snapshot-hardening rules are still deferred (see
- * {@code docs/DEFERRED.md} and ADR-0013): symlink, tamper and drift validation,
- * response shape validation and atomic publication are not enforced in this
- * iteration. A local snapshot that fails to load simply falls through to
- * re-materialization.</p>
+ * <p>路径解析和物化前校验 Agent、Skill、Tool 类型化资源 ID，防止旧格式或路径分隔符进入快照。
+ * 其余快照加固仍按 {@code docs/DEFERRED.md} 的 DEF-008 暂缓：当前不校验符号链接、本地篡改、
+ * 配置漂移和完整响应形状，也不执行原子发布。无法读取的本地快照会重新物化。
  *
  * @version [br_eCampusCore 26.0.0, 2026/08/18]
  * @since [br_eCampusCore 26.0.0]
  */
 @Component
 public class AgentRuntimeManager {
-
-    /** Single path segment: no separators, leading alphanumerics, same as the OpenAPI {@code agent_id} pattern. */
-    private static final Pattern AGENT_ID_PATTERN = Pattern.compile("^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$");
 
     private static final String AGENT_METADATA_FILE = "agentId.json";
     private static final String SYSTEM_PROMPT_FILE = "systemPrompt.md";
@@ -71,16 +64,14 @@ public class AgentRuntimeManager {
     }
 
     /**
-     * Loads the local Agent runtime when its snapshot files exist, otherwise fetches
-     * it from CampusMate and materializes the directory. An unloadable snapshot
-     * falls through to re-materialization instead of failing closed. Preparation
-     * is serialized per Agent ID only, so one Agent's cold start never blocks
-     * another Agent's (potentially cached) preparation.
+     * 本地快照可用时直接加载，否则从 CampusMate 获取并物化目录。
+     * 无法读取的快照会进入重新物化，而不是按 fail closed 拒绝。
+     * 准备过程只按 Agent ID 串行，因此不同 Agent 的冷启动互不阻塞。
      *
-     * @param agentId selected Agent identifier
-     * @return immutable prepared runtime
-     * @throws AgentRuntimeException when the runtime cannot be fetched or materialized
-     * @throws IllegalArgumentException when {@code agentId} is blank or violates the segment pattern
+     * @param agentId 已选择的 Agent 标识
+     * @return 不可变的已准备运行时
+     * @throws AgentRuntimeException 获取或物化运行时失败时抛出
+     * @throws IllegalArgumentException {@code agentId} 为空或不符合单路径段格式时抛出
      */
     public PreparedAgentRuntime prepare(String agentId) {
         Path agentRoot = requireValidAgentId(agentId);
@@ -98,12 +89,11 @@ public class AgentRuntimeManager {
     }
 
     /**
-     * Loads a locally cached Agent runtime without any remote call or directory
-     * materialization. Used by read-only endpoints that must not trigger fetches.
+     * 只加载本地缓存，不发起远端请求，也不物化目录。
      *
-     * @param agentId selected Agent identifier
-     * @return the cached runtime, or {@code null} when no complete local snapshot exists
-     * @throws IllegalArgumentException when {@code agentId} is blank or violates the segment pattern
+     * @param agentId 已选择的 Agent 标识
+     * @return 缓存运行时；没有完整快照时返回 {@code null}
+     * @throws IllegalArgumentException {@code agentId} 为空或不符合单路径段格式时抛出
      */
     public PreparedAgentRuntime prepareCached(String agentId) {
         Path agentRoot = requireValidAgentId(agentId);
@@ -116,6 +106,7 @@ public class AgentRuntimeManager {
             return local;
         }
         AgentRuntime remote = mateServiceClient.getAgentRuntime(agentId);
+        requireValidRuntimeIdentifiers(remote);
         List<SkillInfo> skills = resolveSkills(remote.bindingSkills());
         materialize(agentRoot, remote, skills);
 
@@ -127,7 +118,8 @@ public class AgentRuntimeManager {
     }
 
     private Path requireValidAgentId(String agentId) {
-        if (agentId == null || !AGENT_ID_PATTERN.matcher(agentId).matches()) {
+        if (agentId == null
+                || !ResourceIdentifierPatterns.AGENT_ID_PATTERN.matcher(agentId).matches()) {
             throw new IllegalArgumentException("Invalid agentId: " + agentId);
         }
         Path agentsRoot = properties.agentsRoot().toAbsolutePath().normalize();
@@ -135,11 +127,11 @@ public class AgentRuntimeManager {
     }
 
     /**
-     * Derives a managed session configuration from cached Agent metadata.
+     * 根据已缓存的 Agent 元数据派生托管 Session 配置。
      *
-     * @param base base CLI/server configuration
-     * @param runtime prepared runtime
-     * @return per-Agent session configuration
+     * @param base CLI 基础配置
+     * @param runtime 已准备运行时
+     * @return 当前 Agent 的 Session 配置
      */
     public SessionConfig sessionConfig(SessionConfig base, PreparedAgentRuntime runtime) {
         String model = runtime.metadata().defaultModel().orElse(base.model());
@@ -160,12 +152,12 @@ public class AgentRuntimeManager {
     }
 
     /**
-     * Loads all tools persisted with a bound Skill.
+     * 加载某个已绑定 Skill 的全部持久化工具名。
      *
-     * @param runtime prepared Agent runtime
-     * @param skillName bound Skill name
-     * @return Skill tool names in snapshot order
-     * @throws AgentRuntimeException when the Skill or its tools snapshot cannot be read
+     * @param runtime 已准备的 Agent 运行时
+     * @param skillName 已绑定 Skill 名称
+     * @return 按快照顺序排列的 Skill 工具名
+     * @throws AgentRuntimeException 无法读取 Skill 或工具快照时抛出
      */
     public List<String> loadSkillToolNames(PreparedAgentRuntime runtime, String skillName) {
         SkillInfo skill = runtime.findSkill(skillName)
@@ -196,19 +188,21 @@ public class AgentRuntimeManager {
         } catch (IOException e) {
             return null;
         }
+        if (!hasValidRuntimeIdentifiers(metadata)) {
+            return null;
+        }
         List<SkillInfo> skills = loadBoundSkills(skillsDir, metadata.bindingSkills());
         return skills == null ? null : new PreparedAgentRuntime(agentId, agentRoot, metadata, skills);
     }
 
     /**
-     * Rebuilds the bound-Skill list from the materialized SKILL.md front-matter headers. A
-     * sub-directory with a parseable SKILL.md header is itself the proof that the Agent is
-     * bound to that Skill; the declared reference count only guards against partially
-     * materialized trees, which fall through to re-materialization.
+     * 从已物化 SKILL.md 的 frontmatter 重建绑定 Skill 列表。
+     * 包含可解析 SKILL.md 的子目录即表示 Agent 绑定了该 Skill；声明数量只用于识别不完整目录，
+     * 不完整目录会进入重新物化。
      *
-     * @param skillsDir directory containing one sub-directory per bound Skill
-     * @param references binding references declared by the cached Agent metadata
-     * @return the bound Skills sorted by name, or {@code null} when the snapshot is incomplete
+     * @param skillsDir 每个已绑定 Skill 对应一个子目录的目录
+     * @param references 缓存 Agent 元数据声明的绑定引用
+     * @return 按名称排序的绑定 Skill；快照不完整时返回 {@code null}
      */
     private List<SkillInfo> loadBoundSkills(Path skillsDir, List<SkillReference> references) {
         List<SkillInfo> available = new ArrayList<>();
@@ -234,11 +228,10 @@ public class AgentRuntimeManager {
     }
 
     /**
-     * Reconstructs the minimal Skill identity snapshot from a SKILL.md front-matter header.
+     * 从 SKILL.md frontmatter 重建最小 Skill 身份快照。
      *
-     * @param content the SKILL.md content
-     * @return Skill metadata carrying name and description only, or {@code null} when the
-     *         header lacks a usable name or description
+     * @param content SKILL.md 内容
+     * @return 只包含名称和描述的 Skill 元数据；缺少可用名称或描述时返回 {@code null}
      */
     private static SkillInfo parseMaterializedSkill(String content) {
         Map<String, Object> frontmatter = SkillLoader.parseFrontmatter(content);
@@ -270,8 +263,7 @@ public class AgentRuntimeManager {
         Path campusClawDir = agentRoot.resolve(".campusclaw");
         Path skillsDir = campusClawDir.resolve("skills");
 
-        // The skills directory is fully managed: re-materialization rewrites it from scratch
-        // so stale Skill directories from an older binding cannot survive a re-fetch.
+        // skills 目录完全受管；重新物化时从头重建，避免旧绑定目录残留。
         deleteRecursively(skillsDir);
         Files.createDirectories(skillsDir);
         for (SkillInfo skill : skills) {
@@ -291,12 +283,11 @@ public class AgentRuntimeManager {
     }
 
     /**
-     * Renders the model-selection settings file persisted next to the Agent metadata.
-     * {@code agentVersion} keeps the numeric form when the version parses as a
-     * whole number, otherwise the raw string is preserved.
+     * 渲染与 Agent 元数据一同保存的模型选择配置。
+     * {@code agentVersion} 可解析为整数时保留数字形式，否则保留原始字符串。
      *
-     * @param runtime Agent metadata
-     * @return setting.json content
+     * @param runtime Agent 元数据
+     * @return setting.json 内容
      */
     private String renderModelSettings(AgentRuntime runtime) {
         var node = mapper.createObjectNode();
@@ -336,14 +327,13 @@ public class AgentRuntimeManager {
     }
 
     /**
-     * Renders the SKILL.md whose front-matter header is the single persisted source of the
-     * Skill identity: {@code name} and {@code description}. No Skill id is persisted — the
-     * materialized {@code skills/} sub-directories themselves prove which Skills the Agent
-     * is bound to.
+     * 渲染 SKILL.md；其 frontmatter 中的 {@code name} 和 {@code description}
+     * 是 Skill 身份的唯一持久化来源。不保存 Skill ID，已物化的 {@code skills/}
+     * 子目录本身表示 Agent 绑定了哪些 Skill。
      *
-     * @param skill Skill metadata fetched from CampusMate
-     * @return the SKILL.md content
-     * @throws IOException when the description cannot be JSON-escaped
+     * @param skill 从 CampusMate 获取的 Skill 元数据
+     * @return SKILL.md 内容
+     * @throws IOException 无法对描述执行 JSON 转义时抛出
      */
     private String renderSkill(SkillInfo skill) throws IOException {
         String description = firstNonBlank(skill.description(), skill.name());
@@ -370,7 +360,12 @@ public class AgentRuntimeManager {
         if (!Files.isRegularFile(toolsFile)) {
             throw new AgentRuntimeException("Skill tools snapshot is missing: " + skill.name());
         }
-        return mapper.readValue(toolsFile.toFile(), SkillToolsFile.class).tools();
+        List<SkillTool> tools =
+                mapper.readValue(toolsFile.toFile(), SkillToolsFile.class).tools();
+        for (SkillTool tool : tools) {
+            requireIdentifier(tool.toolId(), ResourceIdentifierPatterns.TOOL_ID_PATTERN, "toolId");
+        }
+        return tools;
     }
 
     private static List<SkillTool> skillTools(SkillInfo skill) {
@@ -394,9 +389,54 @@ public class AgentRuntimeManager {
             if (result.isEmpty()) {
                 throw new AgentRuntimeException("querySkillInfo returned no Skill for id " + reference.id());
             }
-            skills.add(result.getFirst());
+            SkillInfo skill = result.getFirst();
+            requireValidSkillIdentifiers(skill);
+            skills.add(skill);
         }
         return List.copyOf(skills);
+    }
+
+    private static void requireValidRuntimeIdentifiers(AgentRuntime runtime) {
+        if (!hasValidRuntimeIdentifiers(runtime)) {
+            throw new AgentRuntimeException("GetAgentRuntime returned an invalid typed resource ID");
+        }
+    }
+
+    private static boolean hasValidRuntimeIdentifiers(AgentRuntime runtime) {
+        if (runtime == null || !matches(runtime.id(), ResourceIdentifierPatterns.AGENT_ID_PATTERN)) {
+            return false;
+        }
+        boolean skillsValid = runtime.bindingSkills().stream()
+                .allMatch(reference ->
+                        reference != null && matches(reference.id(), ResourceIdentifierPatterns.SKILL_ID_PATTERN));
+        boolean toolsValid = runtime.bindingTools().stream()
+                .allMatch(tool -> tool != null && matches(tool.id(), ResourceIdentifierPatterns.TOOL_ID_PATTERN));
+        boolean agentsValid = runtime.bindingAgents().stream()
+                .allMatch(agent -> agent != null && matches(agent.id(), ResourceIdentifierPatterns.AGENT_ID_PATTERN));
+        return skillsValid && toolsValid && agentsValid;
+    }
+
+    private static void requireValidSkillIdentifiers(SkillInfo skill) {
+        requireIdentifier(skill == null ? null : skill.id(), ResourceIdentifierPatterns.SKILL_ID_PATTERN, "skillId");
+        for (BoundTool tool : skill.bindingTools()) {
+            requireIdentifier(tool == null ? null : tool.id(), ResourceIdentifierPatterns.TOOL_ID_PATTERN, "toolId");
+        }
+        for (DependentSkill dependency : skill.bindingSkills()) {
+            requireIdentifier(
+                    dependency == null ? null : dependency.id(),
+                    ResourceIdentifierPatterns.SKILL_ID_PATTERN,
+                    "skillId");
+        }
+    }
+
+    private static void requireIdentifier(String value, Pattern pattern, String name) {
+        if (!matches(value, pattern)) {
+            throw new AgentRuntimeException("Invalid " + name + ": " + value);
+        }
+    }
+
+    private static boolean matches(String value, Pattern pattern) {
+        return value != null && pattern.matcher(value).matches();
     }
 
     private static String joinPrompts(String runtimePrompt, String customPrompt) {

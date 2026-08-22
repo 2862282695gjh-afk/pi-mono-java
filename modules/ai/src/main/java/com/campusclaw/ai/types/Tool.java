@@ -14,8 +14,8 @@ import com.fasterxml.jackson.databind.JsonNode;
  * @param description human-readable description of the tool's purpose
  * @param parameters  JSON Schema defining the tool's input parameters
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/05/06]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/05/06]
+ * @since [br_eCampusCore 26.0.0]
  */
 public record Tool(
         @JsonProperty("name") String name,

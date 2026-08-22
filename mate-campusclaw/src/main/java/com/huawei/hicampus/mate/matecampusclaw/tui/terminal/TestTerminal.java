@@ -16,8 +16,8 @@ import java.util.function.Consumer;
  * Records all writes, tracks cursor position, and allows programmatic injection
  * of input and resize events. No real terminal I/O is performed.
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/05/06]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/05/06]
+ * @since [br_eCampusCore 26.0.0]
  */
 public class TestTerminal implements Terminal {
 

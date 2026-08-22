@@ -37,8 +37,8 @@ import org.slf4j.LoggerFactory;
  * {@code session/cancel}. The single underlying {@link AgentSession} is reused across one ACP
  * {@code sessionId}; calling {@code session/new} again resets the conversation.
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/05/12]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/05/12]
+ * @since [br_eCampusCore 26.0.0]
  */
 public class AcpMode {
 

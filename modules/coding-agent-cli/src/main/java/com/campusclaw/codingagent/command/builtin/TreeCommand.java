@@ -12,8 +12,8 @@ import com.campusclaw.codingagent.command.SlashCommandContext;
  * In interactive mode, this is intercepted by InteractiveMode to show the overlay.
  * This fallback handles the text-mode case.
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/05/06]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/05/06]
+ * @since [br_eCampusCore 26.0.0]
  */
 public class TreeCommand implements SlashCommand {
 

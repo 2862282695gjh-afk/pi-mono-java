@@ -12,14 +12,14 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.bind.ConstructorBinding;
 
 /**
- * CampusMate runtime API and local managed-agent cache settings.
+ * CampusMate 运行时接口和本地托管 Agent 缓存配置。
  *
- * @param baseUrl        CampusMate service base URL
- * @param agentsRoot     local root containing {@code agent/{agentId}}
- * @param connectTimeout HTTP connection timeout
- * @param requestTimeout HTTP request timeout
- * @param successCode     CampusMate business success code
- * @param maxResponseBytes maximum accepted CampusMate response size in bytes
+ * @param baseUrl CampusMate 服务基础 URL
+ * @param agentsRoot 包含 {@code agent/{agentId}} 的本地根目录
+ * @param connectTimeout HTTP 连接超时
+ * @param requestTimeout HTTP 请求超时
+ * @param successCode CampusMate 业务成功码
+ * @param maxResponseBytes CampusMate 响应最大允许字节数
  *
  * @version [br_eCampusCore 26.0.0, 2026/08/17]
  * @since [br_eCampusCore 26.0.0]
@@ -48,9 +48,7 @@ public record AgentRuntimeProperties(
         this(baseUrl, agentsRoot, connectTimeout, requestTimeout, successCode, DEFAULT_MAX_RESPONSE_BYTES);
     }
 
-    /**
-     * Applies local-cache and timeout defaults when configuration values are omitted.
-     */
+    /** 配置项缺失时应用本地缓存与超时默认值。 */
     @ConstructorBinding
     public AgentRuntimeProperties {
         agentsRoot = agentsRoot == null ? DEFAULT_AGENTS_ROOT : agentsRoot;

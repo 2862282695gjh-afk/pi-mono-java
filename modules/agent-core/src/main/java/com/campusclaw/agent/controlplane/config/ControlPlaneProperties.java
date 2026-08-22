@@ -17,8 +17,8 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * YAML omits the corresponding section.
  *
  * @param heartbeat heartbeat / liveness settings
- * @version [br_eCampusCore 25.1.0_Next, 2026/06/18]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/06/18]
+ * @since [br_eCampusCore 26.0.0]
  */
 @ConfigurationProperties(prefix = "controlplane")
 public record ControlPlaneProperties(Heartbeat heartbeat) {

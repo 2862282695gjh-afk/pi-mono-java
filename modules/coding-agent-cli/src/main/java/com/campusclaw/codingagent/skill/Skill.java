@@ -17,8 +17,8 @@ import java.nio.file.Path;
  * @param source                  origin: "user" or "project"
  * @param disableModelInvocation  if true, skill is not shown in system prompt
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/05/06]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/05/06]
+ * @since [br_eCampusCore 26.0.0]
  */
 public record Skill(
         String name, String description, Path filePath, Path baseDir, String source, boolean disableModelInvocation) {

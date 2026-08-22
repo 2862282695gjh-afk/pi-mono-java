@@ -11,8 +11,8 @@ import com.campusclaw.codingagent.command.SlashCommandContext;
  * Slash command {@code /new} that resets the current session, clearing conversation history
  * and starting a fresh agent state.
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/05/13]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/05/13]
+ * @since [br_eCampusCore 26.0.0]
  */
 public class NewCommand implements SlashCommand {
 

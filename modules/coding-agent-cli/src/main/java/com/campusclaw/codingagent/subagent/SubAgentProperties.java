@@ -19,8 +19,8 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * between the ACP process backend and the HTTP backend; field validation happens later, at
  * registration time, because the binding layer cannot express a sealed/union shape directly.
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/05/12]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/05/12]
+ * @since [br_eCampusCore 26.0.0]
  */
 @ConfigurationProperties(prefix = "subagent")
 public class SubAgentProperties {

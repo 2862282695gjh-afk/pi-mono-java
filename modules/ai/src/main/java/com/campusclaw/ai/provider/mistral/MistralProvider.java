@@ -50,8 +50,8 @@ import jakarta.annotation.Nullable;
  * {@link ApiProvider} for the Mistral Conversations API.
  * Uses java.net.http.HttpClient for SSE streaming.
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/05/06]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/05/06]
+ * @since [br_eCampusCore 26.0.0]
  */
 @Component
 public class MistralProvider implements ApiProvider {

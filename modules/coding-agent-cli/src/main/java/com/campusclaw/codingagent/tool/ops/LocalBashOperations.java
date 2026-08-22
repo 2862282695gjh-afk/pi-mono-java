@@ -23,8 +23,8 @@ import org.slf4j.LoggerFactory;
  * {@link ShellResolver} so that Git Bash on Windows is found even when
  * {@code bash.exe} is not on PATH.
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/05/06]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/05/06]
+ * @since [br_eCampusCore 26.0.0]
  */
 public class LocalBashOperations implements BashOperations {
 

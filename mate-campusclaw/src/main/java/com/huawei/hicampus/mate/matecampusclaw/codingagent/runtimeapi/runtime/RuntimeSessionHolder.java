@@ -1,0 +1,64 @@
+/*
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
+ */
+
+package com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.runtime;
+
+import java.util.Optional;
+import java.util.concurrent.atomic.AtomicReference;
+
+import com.huawei.hicampus.mate.matecampusclaw.agent.Agent;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.agent.AgentDirectorySnapshotDTO;
+
+/**
+ * 单个 Runtime Session 的进程内执行对象。
+ *
+ * @version [br_eCampusCore 26.0.0, 2026/08/18]
+ * @since [br_eCampusCore 26.0.0]
+ */
+public class RuntimeSessionHolder {
+    private final String sessionId;
+
+    private final AgentDirectorySnapshotDTO snapshot;
+
+    private final Agent agent;
+
+    private final boolean thinking;
+
+    private final AtomicReference<RuntimeActiveExecution> activeExecution = new AtomicReference<>();
+
+    public RuntimeSessionHolder(String sessionId, AgentDirectorySnapshotDTO snapshot, Agent agent, boolean thinking) {
+        this.sessionId = sessionId;
+        this.snapshot = snapshot;
+        this.agent = agent;
+        this.thinking = thinking;
+    }
+
+    public String sessionId() {
+        return sessionId;
+    }
+
+    public AgentDirectorySnapshotDTO snapshot() {
+        return snapshot;
+    }
+
+    public Agent agent() {
+        return agent;
+    }
+
+    public boolean thinking() {
+        return thinking;
+    }
+
+    public boolean begin(RuntimeActiveExecution execution) {
+        return activeExecution.compareAndSet(null, execution);
+    }
+
+    public boolean complete(RuntimeActiveExecution execution) {
+        return activeExecution.compareAndSet(execution, null);
+    }
+
+    public Optional<RuntimeActiveExecution> activeExecution() {
+        return Optional.ofNullable(activeExecution.get());
+    }
+}

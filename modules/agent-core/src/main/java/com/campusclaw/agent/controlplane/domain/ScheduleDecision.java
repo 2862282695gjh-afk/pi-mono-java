@@ -15,8 +15,8 @@ package com.campusclaw.agent.controlplane.domain;
  * @param port    port of the selected node, copied verbatim from the registry snapshot
  * @param reason  short machine-readable token describing why this node won
  *                (e.g. "affinity", "round-robin")
- * @version [br_eCampusCore 25.1.0_Next, 2026/06/18]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/06/18]
+ * @since [br_eCampusCore 26.0.0]
  */
 public record ScheduleDecision(String nodeId, String host, int port, String reason) {
 

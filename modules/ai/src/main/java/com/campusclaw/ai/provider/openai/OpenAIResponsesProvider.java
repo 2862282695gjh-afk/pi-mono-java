@@ -68,8 +68,8 @@ import jakarta.annotation.Nullable;
  *   <li>Tool results use {@code function_call_output} instead of tool messages</li>
  * </ul>
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/05/06]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/05/06]
+ * @since [br_eCampusCore 26.0.0]
  */
 @Component
 public class OpenAIResponsesProvider implements ApiProvider {

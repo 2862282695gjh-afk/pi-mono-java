@@ -25,6 +25,7 @@ import com.campusclaw.agent.event.ToolExecutionStartEvent;
 import com.campusclaw.agent.loop.AgentLoop;
 import com.campusclaw.agent.loop.AgentLoopConfig;
 import com.campusclaw.agent.queue.MessageQueue;
+import com.campusclaw.agent.queue.MessageQueue.DeliveryMode;
 import com.campusclaw.agent.state.AgentState;
 import com.campusclaw.agent.tool.AfterToolCallHandler;
 import com.campusclaw.agent.tool.AgentContext;
@@ -49,8 +50,8 @@ import org.springframework.stereotype.Service;
 /**
  * Facade for configuring and running the phase-4 agent runtime.
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/05/06]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/05/06]
+ * @since [br_eCampusCore 26.0.0]
  */
 @Service
 public class Agent {
@@ -172,6 +173,18 @@ public class Agent {
         followUpQueue.enqueue(message);
     }
 
+    public void setSteeringMode(DeliveryMode mode) {
+        steeringQueue.setMode(mode);
+    }
+
+    public void setFollowUpMode(DeliveryMode mode) {
+        followUpQueue.setMode(mode);
+    }
+
+    public boolean hasQueuedControlMessages() {
+        return steeringQueue.hasMessages() || followUpQueue.hasMessages();
+    }
+
     public void clearSteeringQueue() {
         steeringQueue.clear();
     }
@@ -192,6 +205,17 @@ public class Agent {
 
     public CompletableFuture<Void> continueExecution() {
         return startExecution(List.of(), true);
+    }
+
+    public CompletableFuture<Void> continueQueuedExecution() {
+        List<Message> messages = steeringQueue.drain();
+        if (messages.isEmpty()) {
+            messages = followUpQueue.drain();
+        }
+        if (messages.isEmpty()) {
+            return CompletableFuture.failedFuture(new IllegalStateException("No queued control message"));
+        }
+        return startExecution(messages, false);
     }
 
     public void abort() {

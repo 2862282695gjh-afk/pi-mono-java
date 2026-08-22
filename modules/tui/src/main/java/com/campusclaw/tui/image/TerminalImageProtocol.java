@@ -10,8 +10,8 @@ import java.util.Base64;
  * Terminal image display protocols (Kitty Graphics Protocol, iTerm2 inline images).
  * Generates escape sequences to display images inline in supported terminals.
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/05/06]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/05/06]
+ * @since [br_eCampusCore 26.0.0]
  */
 public final class TerminalImageProtocol {
     private TerminalImageProtocol() {}

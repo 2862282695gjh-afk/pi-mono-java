@@ -16,8 +16,8 @@ import com.huawei.hicampus.mate.matecampusclaw.tui.Component;
  * Each child is rendered at the full available width and the results are concatenated.
  * Uses CopyOnWriteArrayList for thread-safe iteration during concurrent rendering.
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/05/06]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/05/06]
+ * @since [br_eCampusCore 26.0.0]
  */
 public class Container implements Component {
 

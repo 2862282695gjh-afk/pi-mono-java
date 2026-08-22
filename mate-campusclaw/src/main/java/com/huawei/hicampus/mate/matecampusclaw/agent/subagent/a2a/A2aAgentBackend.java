@@ -52,8 +52,8 @@ import reactor.core.publisher.Sinks;
  * itself cannot be cancelled mid-flight when {@code HttpClient.send} is blocking — that would need
  * the async API; deferred until a real upstream contract for cancellation exists).
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/05/15]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/05/15]
+ * @since [br_eCampusCore 26.0.0]
  */
 public class A2aAgentBackend implements SubAgentBackend {
 

@@ -8,7 +8,9 @@ CampusClaw (`com.campusclaw`, previously `pi-mono-java`) — a terminal AI codin
 
 ## Build & Run
 
-The project requires **JDK 21** (not 17, not 25). `./mvnw`/`mvnw.cmd` uses whatever `JAVA_HOME` is set; `./campusclaw.sh` auto-detects JDK 21 via Homebrew, `/usr/libexec/java_home -v 21`, SDKMAN, or common Linux paths.
+CampusClaw local launch and installation support **macOS and Linux only**. Do not add or maintain Windows-specific batch, PowerShell, `mvnw.cmd`, or Task Scheduler launch and installation entry points unless the platform policy is explicitly changed. The POSIX `mvnw` may retain upstream Cygwin/MinGW compatibility for best-effort Windows builds, without a Windows support or validation commitment.
+
+The project requires **JDK 21** (not 17, not 25). `./mvnw` uses whatever `JAVA_HOME` is set; `./campusclaw.sh` auto-detects JDK 21 via Homebrew, `/usr/libexec/java_home -v 21`, SDKMAN, or common Linux paths.
 
 | Command | Purpose |
 |---|---|
@@ -46,8 +48,8 @@ tui ────────────┤                 │              │
 | `modules/coding-agent-cli` | `campusclaw-coding-agent` | Spring Boot + Picocli application integrating everything. Contains the tool implementations (`tool/{read,write,edit,editdiff,bash,glob,grep,ls}`), mode dispatch (`mode/{tui,server,rpc}`), skill loader, session JSONL persistence, slash commands. |
 
 Key runtime concepts:
-- **Execution modes**: `--mode interactive|one-shot|rpc|server|print` selects a handler under `codingagent/mode/`. Server exposes HTTP (see `docs/openapi/campusclaw-api.yaml`), RPC uses stdin/stdout JSONL.
-- **Hybrid tool execution** (see `ARCHITECTURE-HYBRID.md`): tools have a `Hybrid*` variant that routes between local JVM execution and a Docker sandbox sidecar based on risk. Controlled by `tool.execution.*` in `application.yml` (`default-mode: LOCAL|SANDBOX|AUTO`, `hybrid-enabled`). `LOCAL` is the default in the checked-in `application.yml`; set to `SANDBOX`/`AUTO` only when Docker is available.
+- **Startup model**: default `java -jar` starts the Spring Boot MVC HTTP+SSE service. The explicit `cli` subcommand starts a non-web context; inside it, `--mode interactive|one-shot|rpc|print` selects a handler under `codingagent/mode/`. RPC uses stdin/stdout JSONL.
+- **Tool management**: ordinary local tools are indexed by `ToolCatalog`; MateService-managed tools use `ListMateTool`, `CallMateTool`, and `MateToolClient`. Agent Core's `ToolExecutionMode` still controls sequential versus parallel tool calls and is unrelated to tool ownership or deployment. Local Docker Sandbox, Hybrid tools, and `tool.execution.*` configuration are no longer supported.
 - **Extensibility**: two mechanisms layered in `coding-agent-cli` — `skill/` (user-installable skill packs under `~/.campusclaw/packages`) and `extension/` (in-tree `ExtensionPoint` registrations for tools / commands / hooks).
 - **Reactive stack**: `ai` and `agent-core` use Reactor `Mono/Flux` throughout for streaming LLM responses. Don't `.block()` on the event stream path.
 
@@ -342,7 +344,6 @@ grep -rL 'assert\|verify\|fail(' modules/**/src/test/java --include='*.java'
 | ✅ 正例 | ❌ 反例 |
 |---|---|
 | `log.info("docker available: {}", available);` | `log.info("Docker 可用: {}", available);` |
-| `log.warn("sandbox unavailable");` | `log.warn("沙箱不可用！");` |
 | `log.error("auto-recovery test failed");` | `log.error("✗ 自动恢复测试失败!");` |
 | `log.info("worker container id: {}", id);` | `log.info("Worker 容器 ID: {}", id);` |
 
@@ -701,13 +702,16 @@ static String inferRole(Map<String, Object> message) {
 /**
  * Asynchronously transforms agent messages before they are sent to the model.
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/05/06]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/05/06]
+ * @since [br_eCampusCore 26.0.0]
  */
 public interface ContextTransformer {
 ```
 
-`@version` 格式正则 `\[br_eCampusCore [^,\]]+,\s*\d{4}/\d{2}/\d{2}\]`。`@since` 不强校验但建议同时写。功能描述用**英文**（与现有约定一致，AI / IDE 工具都按英文 Javadoc 优化）。
+当前产品版本固定为 `br_eCampusCore 26.0.0`。`@version` 必须写成
+`[br_eCampusCore 26.0.0, YYYY/MM/DD]`，`@since` 必须写成
+`[br_eCampusCore 26.0.0]`；Checkstyle 会拒绝其他 `br_eCampusCore` 版本。
+功能描述用**英文**（与现有约定一致，AI / IDE 工具都按英文 Javadoc 优化）。
 
 ### 写完 Java 之后
 Stop 钩子会自动跑 `spotless:check` + `checkstyle:check`。主动修复：
@@ -751,7 +755,7 @@ The hook runs the sync script in dry-run + no-verify mode and parses rsync's `--
 The repo merges PRs with **Merge commit**（保留每个 commit 的真实 SHA 和顺序，main 上额外多一个 merge commit 记录合并这件事）。
 
 - **Branch from latest main for each topic.** `git checkout main && git pull`, then `git checkout -b <type>/<slug>`. 一个分支可以承载一个完整 feature 的多次提交，不需要把每个原子改动拆成单独分支；但不同主题的工作请分到不同分支，避免 PR 又大又杂。
-- **Branch naming**: `fix/`, `feat/`, `chore/`, `refactor/`, `test/`, `docs/` + kebab-case slug（例如 `fix/bash-windows-compat`）。
+- **Branch naming**: `fix/`, `feat/`, `chore/`, `refactor/`, `test/`, `docs/` + kebab-case slug（例如 `fix/bash-timeout`）。
 - **Commit hygiene**: stage specific files (avoid `git add -A`); commit messages follow Conventional Commits with **Chinese descriptions** (`type(scope): 中文描述`); run `./mvnw spotless:apply` before committing.
 - **保持 PR 与 main 同步**：如果开发期间 main 推进了，在自己分支上 `git fetch origin && git merge origin/main`，或 `git rebase origin/main` + `git push --force-with-lease`。前者无需 force-push 但会引入 merge commit 进 feature 分支，后者保持线性但需要 force-push（仅限自己分支）。
 - **合并后清理**: `git checkout main && git pull && git branch -d <branch> && git push origin --delete <branch>`。Merge commit 策略下 git 能正确识别分支已合并，`-d` 即可删除（无需 `-D`）。
@@ -780,9 +784,9 @@ The repo merges PRs with **Merge commit**（保留每个 commit 的真实 SHA �
 
 - `README.md` — user-facing quickstart, CLI flags, supported providers.
 - `docs/module-architecture.md` — authoritative module/package breakdown.
-- `ARCHITECTURE-HYBRID.md`, `IMPLEMENTATION-HYBRID.md`, `DOCKER-SANDBOX-GUIDE.md` — hybrid local/sandbox execution design.
-- `docs/openapi/campusclaw-api.yaml` — HTTP server mode API (OpenAPI 3, authoritative). `docs/server-api.md` is a deprecated historical snapshot.
-- `docs/asyncapi/chat-ws.yaml` — `/api/ws/chat` WebSocket contract (AsyncAPI).
+- `docs/designs/sandbox-cleanup.md` — local Sandbox removal, MateService tool migration, and deletion record.
+- `docs/designs/mate-tool-client.md` — MateService tool metadata and invocation client design.
+- `docs/plans/campusclaw-http-v1-implementation.md` — Runtime V1 implementation mapping, source baseline, and validation evidence. The field-level contract is maintained as the interactive HTML document in the dedicated design repository; this repository intentionally has no OpenAPI or public WebSocket contract copy.
 - `modules/*/`+`*-design.md` — per-module design docs (Story/AR format).
 - `docs/designs/*.md` — feature/module design docs (gstack `/plan-eng-review` format); see "决策记录与设计文档约定".
 - `docs/decisions/*.html` — ADR decision records (one self-contained HTML per decision).

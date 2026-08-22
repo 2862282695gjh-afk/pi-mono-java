@@ -15,8 +15,8 @@ import com.campusclaw.tui.Component;
  * TUI component that displays an image inline in the terminal.
  * Falls back to a text placeholder if the terminal doesn't support images.
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/05/06]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/05/06]
+ * @since [br_eCampusCore 26.0.0]
  */
 public class ImageComponent implements Component {
     private byte[] imageData;

@@ -34,8 +34,8 @@ import org.springframework.stereotype.Service;
  * included regardless of {@code enabledModels}: the user added them on
  * purpose, and gating them behind a second whitelist would be a footgun.
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/05/06]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/05/06]
+ * @since [br_eCampusCore 26.0.0]
  */
 @Service
 public class ModelCatalogService {

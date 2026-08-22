@@ -29,8 +29,8 @@ import org.slf4j.LoggerFactory;
  * NdJSON transport that reads {@link AcpProtocol.Envelope} values from an {@link InputStream} on a
  * virtual thread and writes them to an {@link OutputStream}. One line == one JSON-RPC message.
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/05/12]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/05/12]
+ * @since [br_eCampusCore 26.0.0]
  */
 public class AcpTransport implements AutoCloseable {
 

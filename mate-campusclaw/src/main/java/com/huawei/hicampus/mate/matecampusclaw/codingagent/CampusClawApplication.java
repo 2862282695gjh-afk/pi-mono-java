@@ -5,61 +5,27 @@
 package com.huawei.hicampus.mate.matecampusclaw.codingagent;
 
 import com.huawei.hicampus.mate.matecampusclaw.agent.controlplane.config.ControlPlaneProperties;
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.cli.CampusClawCommand;
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.config.ToolExecutionProperties;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtime.AgentRuntimeProperties;
 
-import org.springframework.boot.CommandLineRunner;
-import org.springframework.boot.ExitCodeGenerator;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 
-import picocli.CommandLine;
-import picocli.CommandLine.IFactory;
-
 /**
- * CampusClaw — Spring Boot CLI application.
- * Bridges Picocli with Spring Boot via the picocli-spring-boot-starter.
+ * CampusClaw Spring Boot 服务入口。
  *
  * @version [br_eCampusCore 26.0.0, 2026/08/17]
  * @since [br_eCampusCore 26.0.0]
  */
 @SpringBootApplication(scanBasePackages = "com.huawei.hicampus.mate.matecampusclaw")
-@EnableConfigurationProperties({
-    ToolExecutionProperties.class,
-    ControlPlaneProperties.class,
-    AgentRuntimeProperties.class
-})
-public class CampusClawApplication implements CommandLineRunner, ExitCodeGenerator {
-
-    private final CampusClawCommand piCommand;
-    private final IFactory factory;
-    private int exitCode;
-
-    public CampusClawApplication(CampusClawCommand piCommand, IFactory factory) {
-        this.piCommand = piCommand;
-        this.factory = factory;
-    }
+@EnableConfigurationProperties({ControlPlaneProperties.class, AgentRuntimeProperties.class})
+public class CampusClawApplication {
 
     public static void main(String[] args) {
-        // Suppress JVM startup warnings that pollute terminal scrollback:
-        // - Netty: avoid sun.misc.Unsafe (eliminates JVM module access warnings)
-        // - JLine/Jansi: disable native library loading (eliminates restricted method warnings)
-        System.setProperty("io.netty.noUnsafe", "true");
-        System.setProperty("org.jline.terminal.disableDeprecatedProviderWarning", "true");
-        System.setProperty("org.jline.terminal.jansi", "false");
-
-        System.exit(SpringApplication.exit(SpringApplication.run(CampusClawApplication.class, args)));
-    }
-
-    @Override
-    public void run(String... args) {
-        exitCode = new CommandLine(piCommand, factory).execute(args);
-    }
-
-    @Override
-    public int getExitCode() {
-        return exitCode;
+        if (CampusClawCliLauncher.isCliInvocation(args)) {
+            CampusClawCliLauncher.launch(args);
+            return;
+        }
+        SpringApplication.run(CampusClawApplication.class, args);
     }
 }

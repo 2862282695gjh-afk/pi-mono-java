@@ -1,0 +1,28 @@
+@startuml components
+title Control Plane Components
+left to right direction
+
+' Source evidence: implementation commit 8691e8800f05f28afe22499050c29220ef5b7475.
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/controlplane/api/NodeController.java.
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/controlplane/api/RuntimeController.java.
+' Source: modules/agent-core/src/main/java/com/campusclaw/agent/controlplane/service/NodeRegistry.java.
+' Observed behavior: Spring MVC controllers expose in-memory registry and scheduling services.
+
+actor "Operator or node" as Client
+component "NodeController" as NodeApi
+component "RuntimeController" as RuntimeApi
+component "Exception Handler" as Errors
+component "NodeRegistry" as Registry
+component "HealthCheckScheduler" as Health
+component "RuntimeScheduler" as Scheduler
+
+Client --> NodeApi : register and heartbeat
+Client --> RuntimeApi : list and schedule
+NodeApi --> Registry
+RuntimeApi --> Registry
+RuntimeApi --> Scheduler
+Scheduler --> Registry
+Health --> Registry
+NodeApi ..> Errors
+RuntimeApi ..> Errors
+@enduml

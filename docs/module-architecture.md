@@ -33,7 +33,7 @@ LLM 多供应商抽象层，提供统一的消息、工具、流式交互类型�
 | `com.campusclaw.ai.env` | 环境变量处理 |
 | `com.campusclaw.ai.utils` | 工具函数 |
 
-**关键依赖：** Anthropic SDK、OpenAI SDK、Spring WebFlux、Reactor
+**关键依赖：** Anthropic SDK、OpenAI SDK、Spring WebFlux 客户端、Reactor。这里的 WebFlux 只用于模型侧 `WebClient` 流式调用，不是 CampusClaw HTTP 服务端栈；服务端使用 Spring MVC。
 
 ### tui (`campusclaw-tui`)
 

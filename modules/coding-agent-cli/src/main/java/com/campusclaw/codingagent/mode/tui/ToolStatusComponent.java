@@ -26,8 +26,8 @@ import com.campusclaw.tui.ansi.AnsiUtils;
  * Collapsed: shows up to PREVIEW_LINES lines + "... (N more lines, ctrl+o to expand)"
  * Expanded: shows all content + "(ctrl+o to collapse)"
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/05/06]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/05/06]
+ * @since [br_eCampusCore 26.0.0]
  */
 public class ToolStatusComponent implements Component {
 

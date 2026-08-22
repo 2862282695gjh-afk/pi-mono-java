@@ -1,22 +1,25 @@
 spring:
   main:
     banner-mode: off
-    lazy-initialization: true
-    web-application-type: none
   application:
     name: campusclaw-agent
+  threads:
+    virtual:
+      enabled: true
   datasource:
-    url: ${GAUSSDB_URL:jdbc:opengauss://localhost:5432/campusclaw}
+    # openGauss 兼容 PostgreSQL wire/JDBC；标准 pgjdbc 可避免 openGauss 7.0.0-RC3
+    # Maven 制品在可执行包内嵌入第二套 SLF4J API。
+    url: ${GAUSSDB_URL:jdbc:postgresql://localhost:5432/campusclaw}
     username: ${GAUSSDB_USER:campusclaw}
     password: ${GAUSSDB_PASSWORD:}
-    driver-class-name: org.opengauss.Driver
+    driver-class-name: org.postgresql.Driver
     hikari:
       pool-name: campusclaw-session-pool
       minimum-idle: ${GAUSSDB_MIN_IDLE:1}
       maximum-pool-size: ${GAUSSDB_MAX_POOL_SIZE:10}
       connection-timeout: ${GAUSSDB_CONNECTION_TIMEOUT_MS:10000}
       validation-timeout: ${GAUSSDB_VALIDATION_TIMEOUT_MS:5000}
-      initialization-fail-timeout: ${GAUSSDB_INITIALIZATION_FAIL_TIMEOUT_MS:-1}
+      initialization-fail-timeout: ${GAUSSDB_INITIALIZATION_FAIL_TIMEOUT_MS:1}
       data-source-properties:
         currentSchema: ${GAUSSDB_SCHEMA:campusclaw_session}
         sslmode: ${GAUSSDB_SSL_MODE:verify-full}
@@ -26,17 +29,35 @@ mybatis:
   configuration:
     map-underscore-to-camel-case: true
 
-# 服务器模式（--mode server）下 /api/ws/chat 与 /api/chat 的会话持久化
-# 开启后会把每个 conversation_id 的消息历史写入
-# ~/.campusclaw/agent/sessions/--<encoded-cwd>--/<id>.jsonl
-# 重连或进程重启后用同一个 conversation_id 可恢复历史
 server:
-  session:
-    persistence:
-      enabled: true
+  address: ${SERVER_ADDRESS:0.0.0.0}
+  port: ${SERVER_PORT:8080}
 
-# CampusMate managed-Agent runtime. The HTTP endpoint is only used when an
-# agent_id is selected and ./agent/{agentId} does not exist locally.
+campusclaw:
+  runtime:
+    agent-directory:
+      root: ${CAMPUSCLAW_AGENT_ROOT:agent}
+    execution:
+      max-active: ${CAMPUSCLAW_MAX_ACTIVE_EXECUTIONS:100}
+      max-duration: ${CAMPUSCLAW_MAX_EXECUTION_DURATION:PT30M}
+      max-control-messages: ${CAMPUSCLAW_MAX_CONTROL_MESSAGES:32}
+      max-control-bytes: ${CAMPUSCLAW_MAX_CONTROL_BYTES:1048576}
+    events:
+      # 生产和多实例部署必须设置稳定的高熵密钥；缺失时使用仅限当前进程的随机密钥。
+      cursor-secret: ${CAMPUSCLAW_EVENT_CURSOR_SECRET:}
+      cursor-ttl: ${CAMPUSCLAW_EVENT_CURSOR_TTL:PT24H}
+      stream-buffer-events: ${CAMPUSCLAW_STREAM_BUFFER_EVENTS:256}
+      stream-buffer-bytes: ${CAMPUSCLAW_STREAM_BUFFER_BYTES:1048576}
+      heartbeat-interval: ${CAMPUSCLAW_SSE_HEARTBEAT_INTERVAL:PT15S}
+    cleanup:
+      enabled: ${CAMPUSCLAW_CLEANUP_ENABLED:true}
+      batch-size: ${CAMPUSCLAW_CLEANUP_BATCH_SIZE:10}
+      retry-delay: ${CAMPUSCLAW_CLEANUP_RETRY_DELAY:PT30S}
+      running-timeout: ${CAMPUSCLAW_CLEANUP_RUNNING_TIMEOUT:PT5M}
+      poll-interval-ms: ${CAMPUSCLAW_CLEANUP_POLL_INTERVAL_MS:5000}
+
+# CampusMate 托管 CLI Agent 运行时。仅当显式传入 --agent-id 且本地缓存不可用时访问远端；
+# 公共 HTTP V1 使用 campusclaw.runtime.agent-directory，不进入该物化流程。
 campusmate:
   runtime:
     base-url: ${CAMPUSMATE_RUNTIME_BASE_URL:http://campusmate-service:8080}
@@ -45,56 +66,14 @@ campusmate:
     request-timeout: PT30S
     success-code: ${CAMPUSMATE_SUCCESS_CODE:0}
     max-response-bytes: ${CAMPUSMATE_MAX_RESPONSE_BYTES:4194304}
+    agent-runtime-path-template: ${CAMPUSMATE_AGENT_RUNTIME_PATH_TEMPLATE:/mate-service/v1/agents/%s/runtime}
+    skill-info-query-path-template: ${CAMPUSMATE_SKILL_INFO_QUERY_PATH_TEMPLATE:/mate-service/v1/skill/query/%s}
 
 logging:
   level:
     root: WARN
     com.campusclaw: WARN
     io.netty: ERROR
-    # Banner logger 独立级别，让 `pi --mode server` 启动 endpoint 列表无论 root/包级
-    # 怎么调都能打出来——这是面向操作者的启动反馈，不该被生产噪音过滤策略误伤。
-    CampusClawStartupBanner: INFO
-
-# 工具执行配置 - 沙箱模式
-tool:
-  execution:
-    # 默认执行模式: LOCAL | SANDBOX | AUTO
-    # SANDBOX = 强制所有工具在沙箱中执行
-    # AUTO = 根据风险评估自动选择
-    # LOCAL = 强制本地执行
-    default-mode: LOCAL
-
-    # 启用混合路由
-    # 注意：启用混合工具会替换原工具，两者不能同时存在
-    # 默认 false：直接使用本地工具；改为 true 会启用 hybrid 路由并要求 Docker 可用
-    hybrid-enabled: false
-
-    # 允许本地执行
-    local-execution-enabled: true
-
-    # 允许沙箱执行（需要 Docker）
-    sandbox-execution-enabled: true
-
-    # Docker 守护进程地址（本地开发使用本地 Docker）
-    docker-host: unix:///var/run/docker.sock
-
-    # 沙箱工作目录
-    sandbox-workspace-path: /workspace
-
-    # 沙箱工作镜像
-    sandbox-worker-image: alpine:3.19
-
-    # 沙箱资源限制
-    sandbox-worker-memory: 512m
-    sandbox-worker-cpu: 1.0
-
-    # 超时配置
-    sandbox-timeout-seconds: 120
-    local-timeout-seconds: 60
-
-    # 使用临时容器模式（不需要常驻 worker 容器）
-    # 适用于无法拉取镜像的场景，每次执行创建新容器
-    use-ephemeral-containers: false
 
 # 子 agent 后端配置 (spawn_agent 工具)
 # 主 agent 通过 spawn_agent 工具调用其它 coding agent；下方每个 entry 是一种后端。
@@ -172,3 +151,8 @@ controlplane:
 # ClusterIP); empty by default so an unconfigured environment still boots.
 mate:
   innerGWSerive: ${MATE_INNERGWSERIVE:}
+  endpoints:
+    agent-info-path-prefix: ${MATE_AGENT_INFO_PATH_PREFIX:/mate-service/v1/agents/}
+    skill-tools-query-path-prefix: ${MATE_SKILL_TOOLS_QUERY_PATH_PREFIX:/mate-service/v1/skill/info/query/}
+    tool-metadata-query-path: ${MATE_TOOL_METADATA_QUERY_PATH:/mate-service/v1/runtime/tools/query}
+    tool-execute-path-template: ${MATE_TOOL_EXECUTE_PATH_TEMPLATE:/mate-service/v1/runtime/tools/%s/execute}

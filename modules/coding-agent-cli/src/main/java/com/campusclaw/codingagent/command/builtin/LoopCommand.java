@@ -20,8 +20,8 @@ import com.campusclaw.codingagent.loop.LoopManager;
  *   /loop list                  — list active loops
  * </pre>
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/05/06]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/05/06]
+ * @since [br_eCampusCore 26.0.0]
  */
 public class LoopCommand implements SlashCommand {
 

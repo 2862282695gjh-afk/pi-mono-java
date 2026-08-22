@@ -1,0 +1,44 @@
+@startuml supported-launch-paths
+title Supported Local Launch Paths
+left to right direction
+skinparam componentStyle rectangle
+
+' Source evidence baseline: commit 1f801dbb82bdda30478e3354e685e3153b179a0c.
+' Source: campusclaw.sh, detect_jdk21 and main launch flow.
+' Source: install.sh, detect_jdk21 and add_to_path.
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/cron/SystemSchedulerInstaller.java, install and detectLauncherScript.
+' Observed behavior: the baseline also contains Batch, PowerShell, Maven CMD, and Task Scheduler launch paths.
+' Target design: maintain only macOS and Linux local launch and scheduler paths.
+' Review correction baseline: d7c218478faf3577044352b2720f5e8d35a2d745.
+' Review finding: the generated global wrapper duplicated launch logic without the OS guard.
+' Target correction: the generated wrapper delegates to campusclaw.sh and shares its OS guard.
+' Build exception: mvnw may retain best-effort Cygwin and MinGW build compatibility.
+' Product constraint: Windows local launch is outside the supported platform contract.
+
+actor "macOS user" as MacUser
+actor "Linux user" as LinuxUser
+component "install.sh" as Installer
+component "campusclaw.sh" as Launcher
+component "Maven Wrapper\nmvnw" as Maven
+component "CampusClaw JAR" as Jar
+component "SystemSchedulerInstaller" as Scheduler
+component "launchd" as Launchd
+component "crontab" as Crontab
+
+MacUser --> Installer : install command
+LinuxUser --> Installer : install command
+Installer --> Launcher : create wrapper
+MacUser --> Launcher : launch CLI
+LinuxUser --> Launcher : launch CLI
+Launcher --> Maven : build when needed
+Launcher --> Jar : java -jar ... cli
+Scheduler --> Launchd : macOS cron tick
+Scheduler --> Crontab : Linux cron tick
+Launchd --> Launcher : --cron-tick
+Crontab --> Launcher : --cron-tick
+
+note bottom of Scheduler
+Other operating systems are rejected.
+No fallback scheduler is selected.
+end note
+@enduml

@@ -1,0 +1,123 @@
+@startuml module-context
+title Coding Agent Module Context
+skinparam componentStyle rectangle
+
+' Source evidence baseline: origin/main commit 3d9b9c55569486f024d6a507ce004101a56dee3f.
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/CampusClawApplication.java, CampusClawApplication#main.
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/web/RuntimeEventController.java.
+' Observed behavior: the default process is a Spring MVC HTTP service; CLI is an explicit subcommand.
+
+actor "mate-service" as Mate
+actor "CLI user" as CliUser
+component "Spring Boot MVC\nHTTP + SSE" as Http
+component "CampusClaw CLI" as Cli
+component "Runtime services" as Runtime
+component "Control plane" as Control
+component "agent-core" as AgentCore
+component "ai" as Ai
+database "openGauss" as Db
+folder "Agent directory" as AgentDir
+
+Mate --> Http : Runtime V1
+Http --> Runtime
+Http --> Control
+Runtime --> AgentCore
+Runtime --> Db
+Runtime --> AgentDir : read-only
+AgentCore --> Ai
+CliUser --> Cli
+Cli --> AgentCore
+@enduml
+
+@startuml startup-sequence
+title Default Server and Explicit CLI Startup
+
+' Source evidence baseline: origin/main commit 3d9b9c55569486f024d6a507ce004101a56dee3f.
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/CampusClawApplication.java, CampusClawApplication#main.
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/CampusClawCliLauncher.java, CampusClawCliLauncher#run.
+' Design reason: keep one executable JAR while separating web and CLI application contexts.
+
+actor Operator
+participant "CampusClawApplication" as App
+participant "Spring Boot MVC" as Web
+participant "CampusClawCliLauncher" as Launcher
+participant "Picocli" as Cli
+
+Operator -> App : java -jar campusclaw-agent.jar [args]
+alt first argument is cli
+  App -> Launcher : run(args without cli)
+  Launcher -> Launcher : create non-web CLI context
+  Launcher -> Cli : execute command
+  Cli --> Operator : exit code
+else default startup
+  App -> Web : SpringApplication.run(args)
+  Web --> Operator : listen on configured port
+end
+@enduml
+
+@startuml runtime-http-components
+title Runtime HTTP Components
+left to right direction
+
+' Source evidence baseline: origin/main commit 3d9b9c55569486f024d6a507ce004101a56dee3f.
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/web, Controller classes.
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/web/RuntimeRequestContext.java, RuntimeRequestContext#locale.
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/event/RuntimeEventService.java.
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/event/RuntimeEventQueryService.java.
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/event/RuntimeExecutionCoordinator.java.
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/event/RuntimeEventProjector.java.
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/event/RuntimeEventCursorCodec.java.
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/persistence/MyBatisRuntimeSessionRepository.java.
+' Observed behavior: blocking MVC boundaries delegate execution to the agent engine and stream through bounded SSE subscribers.
+' Observed behavior: explicit en_US and zh_CN bundles live under i18n and an explicit MessageSource loads them.
+' Architecture change: integration headers reach MVC without a Runtime authentication interceptor; upstream validates credentials.
+' Architecture change: the execution snapshot gates thinking SSE, while Event Query filters completed thinking by current Session state.
+' Design reason: keep integration authentication outside Runtime and bind event pagination to the selected visibility policy.
+
+component "MVC Controllers" as Controllers
+component "Locale Negotiator\nen-US | zh-CN" as LocaleNegotiator
+component "Exception Handler" as Errors
+component "ResultBeanAdapter" as Result
+component "ErrorResponseVO" as ErrorBody
+component "Explicit MessageSource" as MessageSource
+folder "i18n locale bundles\nen_US | zh_CN" as Bundles
+component "Session Services" as Sessions
+component "Event Acceptance" as Events
+component "Event Query\ncurrent thinking filter" as Queries
+component "Encrypted Cursor\nthinking bound" as Cursor
+component "Execution Context Factory" as Context
+component "Execution Coordinator" as Coordinator
+component "Terminal Event Factory" as TerminalEvents
+component "Event Projector" as Projector
+component "RuntimeSseDispatcher" as Sse
+component "Engine Registry" as Engine
+component "Agent Prompt Loader" as Prompt
+component "MyBatis Repository" as Repository
+database "openGauss" as Db
+
+Controllers --> LocaleNegotiator : Accept-Language
+Controllers --> Sessions
+Controllers --> Events : request + locale
+Controllers --> Queries
+Controllers --> Result
+Errors --> LocaleNegotiator
+Errors --> MessageSource : localized resMsg
+Errors --> ErrorBody
+MessageSource --> Bundles
+Sessions --> Repository
+Events --> Repository
+Events --> Context
+Events --> Coordinator
+Context --> Queries
+Queries --> Cursor
+Context --> Engine
+Coordinator --> TerminalEvents
+Coordinator --> Projector
+Coordinator --> Repository
+TerminalEvents --> MessageSource : localized stream.error
+TerminalEvents --> Sse
+Projector --> Repository
+Projector --> Sse
+Engine --> Prompt
+Repository --> Db
+@enduml

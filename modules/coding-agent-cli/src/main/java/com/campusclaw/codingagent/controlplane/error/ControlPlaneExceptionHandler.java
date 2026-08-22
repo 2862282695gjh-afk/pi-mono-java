@@ -12,101 +12,81 @@ import java.util.NoSuchElementException;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.core.codec.DecodingException;
 import org.springframework.http.HttpStatus;
-import org.springframework.stereotype.Component;
-import org.springframework.web.reactive.function.server.HandlerFilterFunction;
-import org.springframework.web.reactive.function.server.HandlerFunction;
-import org.springframework.web.reactive.function.server.ServerRequest;
-import org.springframework.web.reactive.function.server.ServerResponse;
-import org.springframework.web.server.ServerWebInputException;
-
-import reactor.core.publisher.Mono;
+import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.validation.FieldError;
+import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 /**
- * Translates exceptions thrown by control-plane handler functions into structured HTTP
- * error bodies. Serves the same role the servlet-era {@code @RestControllerAdvice} did,
- * but as a webflux {@link HandlerFilterFunction} that can be attached to any
- * {@code RouterFunction} via {@code .filter(...)}.
+ * 把控制面 MVC 异常转换为稳定的结构化 HTTP 错误响应。
  *
- * <p>Body shape mirrors Spring Boot's default error response:
- * <pre>{@code
- * { "timestamp": "2026-06-18T12:00:00Z", "status": 404, "error": "Not Found",
- *   "message": "node not registered: node-x" }
- * }</pre>
- *
- * <p>{@link Clock} is injected so deterministic tests can pin the {@code timestamp}
- * value. The application-level convention is that no production code calls
- * {@link Instant#now()} directly.
- *
- * @version [br_eCampusCore 25.1.0_Next, 2026/06/18]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/08/18]
+ * @since [br_eCampusCore 26.0.0]
  */
-@Component
-public class ControlPlaneExceptionHandler implements HandlerFilterFunction<ServerResponse, ServerResponse> {
-
+@RestControllerAdvice(basePackages = "com.campusclaw.codingagent.controlplane.api")
+public class ControlPlaneExceptionHandler {
     private static final Logger log = LoggerFactory.getLogger(ControlPlaneExceptionHandler.class);
 
     private final Clock clock;
 
-    /**
-     * Spring constructor.
-     *
-     * @param clock UTC clock bean exported by {@code ControlPlaneConfiguration}
-     */
     public ControlPlaneExceptionHandler(Clock clock) {
         this.clock = clock;
     }
 
-    @Override
-    public Mono<ServerResponse> filter(ServerRequest request, HandlerFunction<ServerResponse> next) {
-        return next.handle(request).onErrorResume(this::translate);
+    @ExceptionHandler(NoSuchElementException.class)
+    public ResponseEntity<Map<String, Object>> handleNotFound(NoSuchElementException error) {
+        log.warn("resource not found: {}", error.getMessage());
+        return errorBody(HttpStatus.NOT_FOUND, error.getMessage());
     }
 
-    private Mono<ServerResponse> translate(Throwable ex) {
-        if (ex instanceof NoSuchElementException nse) {
-            log.warn("resource not found: {}", nse.getMessage());
-            return errorBody(HttpStatus.NOT_FOUND, nse.getMessage());
-        }
-        if (ex instanceof IllegalArgumentException iae) {
-            log.warn("bad request: {}", iae.getMessage());
-            return errorBody(HttpStatus.BAD_REQUEST, iae.getMessage());
-        }
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<Map<String, Object>> handleBadRequest(IllegalArgumentException error) {
+        log.warn("bad request: {}", error.getMessage());
+        return errorBody(HttpStatus.BAD_REQUEST, error.getMessage());
+    }
 
-        // webflux wraps record compact-constructor failures from .bodyToMono(...) in
-        // ServerWebInputException with DecodingException(IllegalArgumentException)
-        // somewhere down the cause chain — surface the original message as 400.
-        Throwable iaeRoot = findCauseOfType(ex, IllegalArgumentException.class);
-        if (ex instanceof ServerWebInputException || ex instanceof DecodingException || iaeRoot != null) {
-            String message = iaeRoot != null ? iaeRoot.getMessage() : ex.getMessage();
-            log.warn("bad request: {}", message);
-            return errorBody(HttpStatus.BAD_REQUEST, message);
-        }
-        log.error("unexpected control-plane error", ex);
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    public ResponseEntity<Map<String, Object>> handleValidation(MethodArgumentNotValidException error) {
+        FieldError field = error.getBindingResult().getFieldError();
+        String message = field == null ? "request body is invalid" : field.getField() + " " + field.getDefaultMessage();
+        log.warn("bad request: {}", message);
+        return errorBody(HttpStatus.BAD_REQUEST, message);
+    }
+
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<Map<String, Object>> handleUnreadable(HttpMessageNotReadableException error) {
+        Throwable invalid = findCause(error, IllegalArgumentException.class);
+        String message = invalid == null ? "request body is required" : invalid.getMessage();
+        log.warn("bad request: {}", message);
+        return errorBody(HttpStatus.BAD_REQUEST, message);
+    }
+
+    @ExceptionHandler(Exception.class)
+    public ResponseEntity<Map<String, Object>> handleUnexpected(Exception error) {
+        log.error("unexpected control-plane error", error);
         return errorBody(HttpStatus.INTERNAL_SERVER_ERROR, "internal error");
     }
 
-    private static Throwable findCauseOfType(Throwable ex, Class<? extends Throwable> type) {
-        Throwable current = ex;
-        while (current != null) {
-            if (type.isInstance(current)) {
-                return current;
-            }
-            Throwable next = current.getCause();
-            if (next == current) {
-                return null;
-            }
-            current = next;
-        }
-        return null;
-    }
-
-    private Mono<ServerResponse> errorBody(HttpStatus status, String message) {
+    private ResponseEntity<Map<String, Object>> errorBody(HttpStatus status, String message) {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("timestamp", Instant.now(clock).toString());
         body.put("status", status.value());
         body.put("error", status.getReasonPhrase());
         body.put("message", message == null ? "" : message);
-        return ServerResponse.status(status).bodyValue(body);
+        return ResponseEntity.status(status).body(body);
+    }
+
+    private static Throwable findCause(Throwable error, Class<? extends Throwable> type) {
+        Throwable current = error;
+        while (current != null) {
+            if (type.isInstance(current)) {
+                return current;
+            }
+            current = current.getCause() == current ? null : current.getCause();
+        }
+        return null;
     }
 }

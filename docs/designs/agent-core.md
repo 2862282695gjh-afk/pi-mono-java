@@ -1,4 +1,4 @@
-# agent-core 模块实现设计文档（基于代码 v1）
+# agent-core 模块实现设计文档（基于代码 v1.2）
 
 ## 文档信息
 
@@ -8,9 +8,16 @@
 | Story 名称 | agent-core 设计文档（基于代码 v1） |
 | 负责人 | （待补充） |
 | 创建日期 | 2026-05-14 |
-| 版本 | v1.0 (code-derived) |
+| 版本 | v1.2 (code-derived) |
 
 ---
+
+> 图表与队列说明更新基于源码提交
+> `cc2f58d9e24bae1d7c99b9f54e86b71940d86115`；主要证据为
+> `Agent#startExecution/abort/continueQueuedExecution`、`AgentLoop#runInternal`、
+> `MessageQueue`、`ToolExecutionPipeline` 与 `SubAgentRegistry`。
+> 产品版本标记统一基于源码提交 `9e7cc8952937a697fe2c16ff0de287b32bc4c891`，
+> 证据路径为 `CLAUDE.md`、`codecheck.xml` 与 `modules/agent-core/src`。
 
 ## 1. Story 背景
 
@@ -47,22 +54,9 @@
 
 ### 2.1 Story 上下文
 
-```mermaid
-flowchart LR
-    ai["campusclaw-ai"]
-    core["campusclaw-agent-core"]
-    cron["campusclaw-cron"]
-    cli["campusclaw-coding-agent"]
-    reactor["reactor-core (外部)"]
-    jackson["jackson + json-schema-validator (外部)"]
-    spring["spring-context (外部)"]
-    ai --> core
-    reactor --> core
-    jackson --> core
-    spring --> core
-    core --> cron
-    core --> cli
-```
+![Agent Core 模块上下文](./agent-core/module-context.svg)
+
+[PlantUML 源文件](./agent-core/diagram.puml#L1)
 
 文字补充：
 
@@ -97,7 +91,7 @@ agent-core 把"如何与 LLM 聊天 + 调工具"这件事抽象成单一的事�
 2. 真正的多轮编排放在 `AgentLoop`，它消费 `campusclaw-ai` 的 `AssistantMessageEventStream`（Reactor Flux），把流上的增量事件翻译成 agent 自己的 sealed `AgentEvent`，并在每个 turn 末决定"继续 / 跑工具 / 结束"；
 3. 工具执行解耦到 `ToolExecutionPipeline`：参数走 JSON-Schema（2020-12）校验，支持 before/after hook 拦截或改写结果，单工具失败封装为 `ToolResultMessage` 而非抛出，保证主循环不中断；
 4. 取消通过 `CancellationToken` + Reactor `Sinks.One` 同时打断"消费流"和"工具内部 IO"，并合成一条 `StopReason.ABORTED` 的 assistant message 让主循环干净退出；
-5. 子代理通过 `SubAgentBackend` SPI 暴露——ACP 后端用 `ProcessBuilder` 拉起 stdio 协议子进程，HTTP 后端走 SSE/WS 协议，审批策略与父 agent 解耦。
+5. 子代理通过 `SubAgentBackend` SPI 暴露——ACP 后端用 `ProcessBuilder` 拉起 stdio 协议子进程，HTTP 后端走 HTTP/SSE 协议，审批策略与父 agent 解耦。
 
 整体设计取向：**只暴露稳定的 Java 抽象（interface / sealed / record），具体策略（converter、transformer、stream function、tool execution mode）通过 `AgentLoopConfig` 注入**，让 CLI / cron 各自按需组合。
 
@@ -117,29 +111,9 @@ agent-core 把"如何与 LLM 聊天 + 调工具"这件事抽象成单一的事�
 10. `AgentState`：循环退出后写回最终 message 列表与 streaming 状态；
 11. `结果`：`Agent.prompt(...)` 返回的 `CompletableFuture<Void>` complete，调用方可取 `state.getMessages()`。
 
-```mermaid
-sequenceDiagram
-    participant Caller
-    participant Agent
-    participant AgentLoop
-    participant LLM as StreamFunction (LLM)
-    participant ToolExecutionPipeline
-    Caller->>Agent: prompt(text)
-    Agent->>AgentLoop: run()
-    AgentLoop-->>Caller: AgentStartEvent
-    loop until end_turn / cancel
-        AgentLoop-->>Caller: TurnStartEvent
-        AgentLoop->>LLM: 流式请求
-        LLM-->>AgentLoop: tool_use / text
-        opt 有 tool_use
-            AgentLoop->>ToolExecutionPipeline: execute(toolCalls)
-            ToolExecutionPipeline-->>AgentLoop: results
-        end
-        AgentLoop-->>Caller: TurnEndEvent
-    end
-    AgentLoop-->>Agent: AgentState
-    Agent-->>Caller: 结果
-```
+![Agent 执行循环时序](./agent-core/loop-sequence.svg)
+
+[PlantUML 源文件](./agent-core/diagram.puml#L26)
 
 **事件清单（sealed `AgentEvent` 子类型）：**
 
@@ -158,7 +132,7 @@ sequenceDiagram
 
 ### 3.3 GUI 前端设计
 
-本模块不涉及前端界面（作为 lib 由上游 `coding-agent-cli`/`assistant` 等消费）。事件流通过 sealed `AgentEvent` 暴露，前端模块（如 TUI / WebSocket gateway）订阅 `AgentEventListener` 自行渲染。
+本模块不涉及前端界面（作为 lib 由上游 `coding-agent-cli`/`assistant` 等消费）。事件流通过 sealed `AgentEvent` 暴露，前端模块（如 TUI 或 HTTP/SSE gateway）订阅 `AgentEventListener` 自行渲染。
 
 ### 3.4 接口描述
 
@@ -168,6 +142,7 @@ sequenceDiagram
 |---|---|---|---|---|
 | `Agent` | `prompt` | `String` 或 `Message` | `CompletableFuture<Void>` | 启动新一次执行 |
 | `Agent` | `continueExecution` | - | `CompletableFuture<Void>` | 不附新输入，继续多轮循环 |
+| `Agent` | `continueQueuedExecution` | - | `CompletableFuture<Void>` | Steer 优先、FollowUp 次之，按队列模式取下一批消息继续同一 active execution |
 | `Agent` | `abort` | - | `void` | 触发当前 `CancellationToken` |
 | `Agent` | `subscribe` | `AgentEventListener` | `Runnable` (取消订阅) | 订阅事件流 |
 | `Agent` | `steer` / `followUp` | `Message` | `void` | 注入运行时引导 / 续 turn 输入 |
@@ -253,61 +228,9 @@ agent-core 不内置具体 Tool 实现（read / write / bash 等在 `coding-agen
 - `ParentPermissionResolver` / `ParentPermissionRequest` / `ParentPermissionDecision`：父 agent 决策接口
 - `TimeoutDeniedResolver`：默认超时拒绝实现
 
-```mermaid
-classDiagram
-    class Agent
-    class AgentLoop
-    class AgentLoopConfig
-    class AgentState
-    class AgentEvent
-    <<interface>> AgentEvent
-    class AgentEventListener
-    <<interface>> AgentEventListener
-    class AgentTool
-    <<interface>> AgentTool
-    class ToolExecutionPipeline
-    class ToolExecutionMode
-    class BeforeToolCallHandler
-    <<interface>> BeforeToolCallHandler
-    class AfterToolCallHandler
-    <<interface>> AfterToolCallHandler
-    class CancellationToken
-    class MessageQueue
-    class ContextTransformer
-    <<interface>> ContextTransformer
-    class MessageConverter
-    <<interface>> MessageConverter
-    class ProxyConfig
-    class SubAgentBackend
-    <<interface>> SubAgentBackend
-    class SubAgentRegistry
-    class ProcessAcpBackend
-    class HttpAgentBackend
-    class ApprovalPolicy
-    <<interface>> ApprovalPolicy
-    class StreamFunction
-    <<interface>> StreamFunction
+![Agent Core 核心类](./agent-core/core-classes.svg)
 
-    Agent *-- AgentState
-    Agent *-- AgentLoop : creates per run
-    Agent --> AgentEventListener : emits to
-    AgentLoop --> AgentLoopConfig : configured by
-    AgentLoop --> ToolExecutionPipeline : uses
-    AgentLoop --> MessageQueue : drains steering/followUp
-    AgentLoop --> ContextTransformer : pre-transform
-    AgentLoop --> MessageConverter : convert
-    AgentLoop --> StreamFunction : stream
-    AgentLoop ..> AgentEvent : emits
-    ToolExecutionPipeline --> AgentTool : invokes
-    ToolExecutionPipeline --> BeforeToolCallHandler : applies
-    ToolExecutionPipeline --> AfterToolCallHandler : applies
-    ToolExecutionPipeline --> ToolExecutionMode : dispatches by
-    ToolExecutionPipeline --> CancellationToken : honors
-    SubAgentRegistry o-- SubAgentBackend
-    ProcessAcpBackend ..|> SubAgentBackend
-    HttpAgentBackend ..|> SubAgentBackend
-    ProcessAcpBackend --> ApprovalPolicy : asks
-```
+[PlantUML 源文件](./agent-core/diagram.puml#L56)
 
 ### 3.7 安装部署设计
 
@@ -340,7 +263,7 @@ classDiagram
 ### 4.2 兼容性设计
 
 - **JDK 版本**：21（root pom `<java.version>21</java.version>`、`<release>21</release>`）；使用 sealed interface（`AgentEvent`）、record（`AgentLoopConfig`、`SubAgentBackend.OpenRequest` 等）、pattern matching switch、虚拟线程；
-- **接口稳定性**：所有对外 API 标注 `@version [br_eCampusCore 25.1.0_Next, YYYY/MM/DD]` + `@since`；`AgentLoopConfig` 提供 9 参 legacy 构造器 + 12 参 canonical 构造器同时存在，**向后兼容**新增 `StreamFunction` / `SteeringMessageSupplier`；
+- **接口稳定性**：所有对外 API 标注 `@version [br_eCampusCore 26.0.0, YYYY/MM/DD]` + `@since`；`AgentLoopConfig` 提供 9 参 legacy 构造器 + 12 参 canonical 构造器同时存在，**向后兼容**新增 `StreamFunction` / `SteeringMessageSupplier`；
 - **未发现 `@Deprecated` 标记**；
 - 协议版本：`AcpProtocol` 内部固定 ACP 版本字符串，HTTP 后端通过 `HttpAgentConfig.protocolVersion` 暴露。
 
@@ -365,7 +288,7 @@ classDiagram
 | `docs/module-architecture.md` | 包含 agent-core 模块说明段落，需要随接口变更同步 |
 | `docs/agent-core-architecture.pdf` | 现有架构图（pdf） |
 | `CLAUDE.md`（仓库根） | 描述 agent-core 在整体依赖图与运行时中的角色 |
-| `docs/openapi/campusclaw-api.yaml` | HTTP server 模式 API（消费 agent-core 的事件），间接相关 |
+| `docs/plans/campusclaw-http-v1-implementation.md` | Runtime HTTP+SSE 实现消费并投影 agent-core 事件，间接相关 |
 
 ---
 
@@ -411,3 +334,5 @@ classDiagram
 | 日期 | 提出人 | 角色 | 问题/议题 | 讨论过程 | 决策结论 | 状态 |
 |---|---|---|---|---|---|---|
 | 2026-05-14 | - | - | 设计文档由 codebase-module-design skill 基于代码逆向生成 v1 | - | 由开发者补充关键决策 | 开放 |
+| 2026-08-18 | Codex | 文档维护 | Runtime 控制队列和设计图格式需要与当前源码对齐 | 补充 `continueQueuedExecution`，将子代理 HTTP 后端表述收窄为 HTTP/SSE，并补源码证据 | Mermaid 迁移为单一 `diagram.puml` 中的稳定命名图 | 已落实 |
+| 2026-08-20 | Codex | 文档维护 | 产品版本标记需要统一 | 基于 `9e7cc895` 盘点 Java Javadoc 与规则配置 | 对外 API 统一使用 `br_eCampusCore 26.0.0` | 已落实 |

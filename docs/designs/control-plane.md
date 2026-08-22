@@ -1,154 +1,74 @@
-# Agent Control Plane — 设计文档
+# Control Plane 设计
 
-> 结构采用 gstack `/plan-eng-review` 视角（Context / 关键定义 / 架构与数据流 / 设计决策 / 边界 / 性能(DFX) / 契约 / 测试 / 验证）。
-> 设计决策逐条链接到 [`docs/decisions/`](../decisions/) 下的 ADR HTML。
+> 文档版本：2.1.0
+>
+> 实现基线：`7811dc335fcb0125a1ecbddd63cd77baf120f21d`
 
-## 1. Context
+## 1. 现状
 
-CampusClaw 需要一个「控制面」来管理数据面节点（data-plane nodes）的注册、心跳、能力聚合与运行时调度。控制面提供 REST API 供数据面节点注册自身、上报指标、接收调度决策。
+控制面已经从函数式 WebFlux 路由迁移为 Spring MVC `@RestController`，并随默认 Spring Boot HTTP 进程启动。它不是 CampusClaw Runtime V1 的 11 个业务接口；两者只共享进程和 Web 容器。
 
-最初设计为独立 sidecar 进程（`modules/agent-control-plane` 独立模块 + `AgentControlPlaneApplication` 主类 + `spring-boot-starter-web` servlet 栈）。在 code review 中发现该设计与主进程存在两个硬冲突（详见 [ADR-0007](../decisions/0007-control-plane-merge-into-agent-core.html)），遂改为**合入 `agent-core` 模块、复用 `CampusClawApplication` 主进程、共享 webflux 服务器**。
-
-控制面 v1 覆盖三段增量（MR-A / MR-B / MR-C）：
-
-| MR | 内容 |
-|---|---|
-| MR-A | domain 模型 + `ControlPlaneProperties` + `ControlPlaneConfiguration`（Clock bean + `@EnableScheduling`） |
-| MR-B | `NodeRegistry` + `HealthCheckScheduler` + `NodeRoutes`（webflux RouterFunction）+ `ControlPlaneExceptionHandler` |
-| MR-C | `RuntimeScheduler` + `ScheduleRequest` / `ScheduleDecision` + `RuntimeRoutes`（webflux RouterFunction） |
-
-## 2. 关键定义
-
-| 类型 | 模块 | 说明 |
+| 组件 | 源码证据 | 职责 |
 |---|---|---|
-| `NodeInfo` | agent-core / `agent.controlplane.domain` | 不可变快照：nodeId、host、port、version、capabilities、status、registeredAt、lastHeartbeatAt、metrics。compact constructor 校验 non-blank id / port 范围 / non-null 必填；`withHeartbeat` / `withStatus` 返回新拷贝 |
-| `NodeStatus` | agent-core / `agent.controlplane.domain` | 枚举：`ACTIVE` / `STALE` / `DEREGISTERED` |
-| `NodeMetrics` | agent-core / `agent.controlplane.domain` | 心跳上报的容量指标：activeAgents、queuedTasks、cpuLoad（拒绝 NaN / ±Infinity）、memoryUsedMb |
-| `RuntimeCapability` | agent-core / `agent.controlplane.domain` | 枚举：`MODEL_OPENAI` / `MODEL_ANTHROPIC` / `MODEL_GOOGLE` / `TOOL_BASH` / `SANDBOX_DOCKER` 等 |
-| `ScheduleRequest` | agent-core / `agent.controlplane.domain` | 调度入参 record：requiredCapabilities（null 标准化为空集）+ preferredNodeId（可选亲和） |
-| `ScheduleDecision` | agent-core / `agent.controlplane.domain` | 调度出参 record：nodeId、host、port、reason（"affinity" / "round-robin" / "least-active"） |
-| `ControlPlaneProperties` | agent-core / `agent.controlplane.config` | `@ConfigurationProperties("controlplane")` record，绑定 `controlplane.heartbeat.{ttl,sweep-interval,grace-after-stale}` |
-| `NodeRegistry` | agent-core / `agent.controlplane.service` | `ConcurrentHashMap` 内存注册表；register / heartbeat / deregister / findNode / listAll / sweep |
-| `HealthCheckScheduler` | agent-core / `agent.controlplane.service` | `@Scheduled` fixedDelayString 周期调用 `registry.sweep()` |
-| `RuntimeScheduler` | agent-core / `agent.controlplane.service` | 调度策略：preferredNodeId 命中 → affinity；否则 ACTIVE∩capabilities 间 round-robin |
-| `NodeRoutes` | coding-agent-cli / `codingagent.controlplane.api` | webflux `RouterFunction` Bean，5 个节点生命周期端点 |
-| `RuntimeRoutes` | coding-agent-cli / `codingagent.controlplane.api` | webflux `RouterFunction` Bean，3 个运行时聚合端点 |
-| `ControlPlaneExceptionHandler` | coding-agent-cli / `codingagent.controlplane.error` | `HandlerFilterFunction`，NoSuchElementException → 404、IllegalArgumentException → 400、ServerWebInputException 解包根因 → 400 |
+| `NodeController` | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/controlplane/api/NodeController.java` | 注册、心跳、查询和注销数据面节点 |
+| `RuntimeController` | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/controlplane/api/RuntimeController.java` | 汇总活动 Runtime、能力和调度决策 |
+| `NodeRegistry` | `modules/agent-core/src/main/java/com/campusclaw/agent/controlplane/service/NodeRegistry.java` | 维护进程内节点状态 |
+| `RuntimeScheduler` | `modules/agent-core/src/main/java/com/campusclaw/agent/controlplane/service/RuntimeScheduler.java` | 按能力和负载选择节点 |
+| `ControlPlaneExceptionHandler` | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/controlplane/error/ControlPlaneExceptionHandler.java` | 映射稳定的控制面错误响应 |
 
-## 3. 架构与数据流
+上述为实现基线的已观察行为。
 
-```
-                        ┌─────────────────────────────────────────┐
-                        │         CampusClawApplication            │
-                        │  (@SpringBootApplication, scanBasePackages│
-                        │   = "com.campusclaw")                    │
-                        │                                         │
-   ┌──────────────┐     │  ┌─────────────────────────────────┐    │
-   │  data-plane  │────►│  │  agent-core                     │    │
-   │  node        │     │  │  └─ agent/controlplane/         │    │
-   │  (HTTP)      │◄────│  │     ├─ domain/  (6 records)     │    │
-   └──────────────┘     │  │     ├─ config/  (props + config)│    │
-                        │  │     └─ service/ (registry +     │    │
-                        │  │                 scheduler)       │    │
-                        │  │                                 │    │
-                        │  │  coding-agent-cli               │    │
-                        │  │  └─ codingagent/controlplane/   │    │
-                        │  │     ├─ api/     (RouterFunction) │    │
-                        │  │     └─ error/   (HandlerFilter)  │    │
-                        │  └─────────────────────────────────┘    │
-                        │                                         │
-                        │  ServerMode (reactor-netty, --mode     │
-                        │  server) 合并所有 RouterFunction bean   │
-                        └─────────────────────────────────────────┘
-```
+## 2. 组件关系
 
-**请求流（以 `POST /api/v1/nodes` 为例）**：
+![Control Plane 组件关系](control-plane/components.svg)
 
-1. 数据面节点发 HTTP POST 到 `CampusClawApplication` 的 reactor-netty server
-2. `ServerMode` 的 `buildRoutes` 把 `NodeRoutes.nodeControlPlaneRoutes` bean 通过 `.and()` 合入主路由链
-3. `NodeRoutes` 的 handler 调 `registry.register(host, port, version, capabilities)`
-4. `NodeRegistry` 生成 `node-<uuid>`、写 `ConcurrentHashMap`、返回 `NodeInfo`
-5. handler 返回 `ServerResponse.created(URI).bodyValue(info)`（201 Created）
-6. 如 `RegisterNodeRequest` 的 record compact constructor 抛 `IllegalArgumentException`（port=0），webflux 包成 `ServerWebInputException`，`ControlPlaneExceptionHandler` filter 解包根因返回 400
+[PlantUML 源码](control-plane/diagram.puml#L1)
 
-**心跳过期扫描流**：
+## 3. HTTP 接口
 
-1. `HealthCheckScheduler.sweep()` 每 `controlplane.heartbeat.sweep-interval`（默认 10s）触发
-2. 调 `NodeRegistry.sweep()`：遍历所有节点，`lastHeartbeatAt + ttl < now` 且 `ACTIVE` → `STALE`；`lastHeartbeatAt + ttl + grace < now` 且 `STALE` → remove
-3. CAS 失败（心跳并发赢了）返回 0，计数不虚高
+### Node
 
-## 4. 设计决策
-
-| ID | 决策 | ADR |
+| 方法 | 路径 | 结果 |
 |---|---|---|
-| D1 | 控制面合入 `agent-core`（库模块）而非独立 sidecar 模块；`CampusClawApplication` 的 `scanBasePackages = "com.campusclaw"` 自动扫描 `agent.controlplane.*` 包 | [ADR-0007](../decisions/0007-control-plane-merge-into-agent-core.html) |
-| D2 | HTTP 端点用 webflux `RouterFunction` 而非 `@RestController`，因为 `application.yml` 配 `web-application-type: none`，Spring Boot autoconf 不会注册 `@RestController` | [ADR-0008](../decisions/0008-control-plane-webflux-routerfunction.html) |
-| D3 | `CampusClawCommand.runServerMode` 通过 `ApplicationContext.getBeansOfType(RouterFunction.class)` 收集所有声明式路由 bean，传给 `ServerMode.setExtraRoutes()` 合入主路由链 | [ADR-0009](../decisions/0009-collect-routerfunction-beans.html) |
-| D4 | 控制面端点暂不鉴权；默认 localhost 绑定 + `--mode server` 受限场景下风险可控；鉴权作为显式延期决策记录 | [ADR-0010](../decisions/0010-defer-control-plane-auth.html) |
+| `POST` | `/api/v1/nodes` | 注册节点，返回 201 与 `Location` |
+| `POST` | `/api/v1/nodes/{nodeId}/heartbeat` | 更新指标并返回节点快照 |
+| `GET` | `/api/v1/nodes` | 返回全部节点 |
+| `GET` | `/api/v1/nodes/{nodeId}` | 返回单个节点或 404 |
+| `DELETE` | `/api/v1/nodes/{nodeId}` | 注销节点，返回 204 或 404 |
 
-## 5. 边界情况
+### Runtime
 
-| # | 场景 | 行为 |
+| 方法 | 路径 | 结果 |
 |---|---|---|
-| E1 | 节点注册时 port=0 或 70000 | `RegisterNodeRequest` compact constructor 抛 `IllegalArgumentException` → `ControlPlaneExceptionHandler` 返回 400 |
-| E2 | 心跳上报 cpuLoad=NaN | `HeartbeatRequest` compact constructor 拒绝（`Double.isFinite`）→ 400 |
-| E3 | 心跳上报给未注册的 nodeId | `NodeRegistry.heartbeat` 抛 `NoSuchElementException` → 404 |
-| E4 | deregister 已注销的 nodeId | `registry.deregister` 返回 `false` → 404 |
-| E5 | sweep 时心跳并发赢了（CAS 失败） | `nodes.replace` 返回 false，`applySweepTransition` 返回 0，状态不变 |
-| E6 | schedule 无合格节点 | `RuntimeScheduler.schedule` 抛 `NoSuchElementException` → 404 |
-| E7 | preferredNodeId 指向的节点不具备所需能力 | 降级到 round-robin 在 ACTIVE∩capabilities 节点间选 |
-| E8 | 全部节点 STALE | `listAll` 返回含 STALE 节点；`RuntimeRoutes` 的 `/runtimes` 和 `/capabilities` 只看 ACTIVE |
+| `GET` | `/api/v1/runtimes` | 返回状态为 ACTIVE 的节点 |
+| `GET` | `/api/v1/runtimes/capabilities` | 返回活动节点能力并集 |
+| `POST` | `/api/v1/runtimes/schedule` | 根据必需能力和首选节点返回调度决策 |
 
-## 6. 性能 (DFX)
+请求对象使用 Jakarta Bean Validation；输出使用专用 Response VO。控制面暂时保留自身错误结构，不复用 Runtime V1 的 ResultBean，这是既有控制面兼容性约束。
 
-| 维度 | 当前状态 | 后续 |
+`RuntimeCapability` 保留模型、本地 Bash/文件、ACP/HTTP/A2A/MCP 子 Agent 等粗粒度能力；
+本地 Docker Sandbox 能力已经删除，不再参与节点注册和调度。
+
+## 4. 生命周期与并发
+
+`NodeRegistry` 是进程内状态源。注册产生节点 ID；心跳更新指标与时间；健康检查任务将超时节点标记为不可用。`RuntimeScheduler` 只在活动节点中筛选，先满足能力约束，再应用首选节点和负载规则。
+
+本设计没有把控制面状态持久化到 openGauss。因此进程重启后节点必须重新注册。这是当前实现事实，不应解释为持久化控制平面。
+
+## 5. 安全边界
+
+当前控制面端点没有认证或授权，而默认 HTTP 服务监听 `0.0.0.0`。这不是安全完成态，而是明确的安全债务；在生产网络暴露这些 `/api/v1/*` 路径前，必须由网关隔离，或补充与部署体系匹配的认证和授权。
+
+Runtime V1 的双凭据 Header 形状校验不会覆盖控制面路径。历史“仅绑定 localhost，因此可以延期鉴权”的 ADR 已因启动模型变化而删除。
+
+## 6. 验证
+
+`NodeControllerTest` 和 `RuntimeControllerTest` 使用 MVC 测试覆盖成功、校验、404 和调度失败映射。`NodeRegistryTest`、`HealthCheckSchedulerTest` 与 `RuntimeSchedulerTest` 覆盖领域行为。
+
+## 7. 版本历史
+
+| 版本 | 日期 | 说明 |
 |---|---|---|
-| 注册表并发 | `ConcurrentHashMap` + `computeIfPresent` / `replace` CAS | 生产规模够用 |
-| sweep 延迟 | 每 10s 一次，遍历全量节点（O(n)） | n > 1000 时考虑分片 |
-| 调度策略 | AtomicInteger round-robin，O(candidates) | 后续可插拔策略链（least-active / weighted） |
-| 持久化 | 无（内存）；重启丢全部节点 | [DEF-003](../DEFERRED.md)（etcd / Postgres） |
-| 可观测 | SLF4J log.info/warn/debug | 后续接 micrometer counter/gauge |
-
-## 7. 契约改动
-
-### HTTP API（新增）
-
-| Method | Path | Body | Status | 说明 |
-|---|---|---|---|---|
-| POST | `/api/v1/nodes` | `RegisterNodeRequest` | 201 | 注册节点 |
-| POST | `/api/v1/nodes/{id}/heartbeat` | `HeartbeatRequest` | 200 | 心跳 |
-| GET | `/api/v1/nodes` | — | 200 | 列表 |
-| GET | `/api/v1/nodes/{id}` | — | 200 / 404 | 单个 |
-| DELETE | `/api/v1/nodes/{id}` | — | 204 / 404 | 注销 |
-| GET | `/api/v1/runtimes` | — | 200 | ACTIVE 节点列表（RuntimeView） |
-| GET | `/api/v1/runtimes/capabilities` | — | 200 | ACTIVE 能力并集 |
-| POST | `/api/v1/runtimes/schedule` | `ScheduleRequestBody` | 200 / 404 | 调度决策 |
-
-### application.yml（新增段落）
-
-```yaml
-controlplane:
-  heartbeat:
-    ttl: PT30S
-    sweep-interval: PT10S
-    grace-after-stale: PT5M
-```
-
-## 8. 测试
-
-| 测试类 | 模块 | 覆盖 |
-|---|---|---|
-| `NodeInfoTest` | agent-core | blank id / port 范围 / null 必填 / withStatus 转换（4 个） |
-| `NodeMetricsTest` | agent-core | 负值 / NaN / ±Infinity（1 个） |
-| `ControlPlanePropertiesBindingTest` | agent-core | yaml binding override + missing 块默认值（2 个，用 `ApplicationContextRunner`） |
-| `NodeRegistryTest` | agent-core | register / heartbeat / sweep ACTIVE→STALE / sweep STALE→remove / deregister 幂等（6 个，用 `MutableClock`） |
-| `RuntimeSchedulerTest` | agent-core | schedule 选合格 / affinity / 优先节点无能力回落 / 无候选（4 个） |
-| `NodeRoutesTest` | coding-agent-cli | register→list / heartbeat / 404 / 400 / deregister 204+404（5 个，用 `WebTestClient.bindToRouterFunction`） |
-| `RuntimeRoutesTest` | coding-agent-cli | capabilities 并集 / 列表 / schedule / affinity / 404（5 个） |
-
-## 9. 验证
-
-- `./mvnw -B verify`：6 模块 BUILD SUCCESS，1310 tests 全过
-- `./mvnw -f mate-campusclaw/pom.xml -B clean test`：2834 tests + coverage checks met
-- `./scripts/sync-mate-campusclaw.sh`：mate 镜像自动同步 controlplane 包，编译通过
-- checkstyle 0 violations（含 JavadocMethod / Javadoc 完整性 / CC ≤ 20 / NBNC ≤ 50）
+| 2.1.0 | 2026-08-19 | 对齐最新主干并删除本地 Docker Sandbox 能力枚举说明 |
+| 2.0.0 | 2026-08-18 | 对齐 Spring MVC Controller 与默认 Web 进程，删除 WebFlux RouterFunction 和 ServerMode ADR |
+| 1.x | 2026-06-22 | 历史函数式 WebFlux 控制面设计，已废弃 |

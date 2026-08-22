@@ -27,7 +27,7 @@ import org.springframework.stereotype.Component;
  * to various extension points.
  *
  * @version [br_eCampusCore 26.0.0, 2026/08/17]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @since [br_eCampusCore 26.0.0]
  */
 @Component
 public class ExtensionRegistry {

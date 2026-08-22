@@ -17,8 +17,8 @@ import org.springframework.stereotype.Component;
  * The actual logic lives in {@link NodeRegistry#sweep()}; this class is a thin Spring
  * scheduler hook so the registry remains framework-light.
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/06/18]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/06/18]
+ * @since [br_eCampusCore 26.0.0]
  */
 @Component
 public class HealthCheckScheduler {

@@ -28,10 +28,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 /**
- * ApplicationContext tests for {@link MateToolAutoConfiguration}: verifies the
- * enable/disable switch registers (or excludes) the two Mate AgentTools, and
- * that a Mate-side error propagates through {@link ToolExecutionPipeline} with
- * {@code isError=true}.
+ * {@link MateToolAutoConfiguration} 的应用上下文测试，验证启停开关、配置注入和 Mate 错误传播。
  *
  * @version [br_eCampusCore 26.0.0, 2026/08/17]
  * @since [br_eCampusCore 26.0.0]
@@ -40,6 +37,10 @@ class MateToolAutoConfigurationTest {
 
     private final ApplicationContextRunner runner = new ApplicationContextRunner()
             .withConfiguration(AutoConfigurations.of(MateToolAutoConfiguration.class))
+            .withPropertyValues(
+                    "mate.endpoints.agent-info-path-prefix=/mate-service/v1/agents/",
+                    "mate.endpoints.skill-tools-query-path-prefix=/mate-service/v1/skill/info/query/",
+                    "mate.endpoints.tool-metadata-query-path=/mate-service/v1/runtime/tools/query")
             .withUserConfiguration(MockClientSupport.class);
 
     @Test
@@ -61,16 +62,25 @@ class MateToolAutoConfigurationTest {
     }
 
     @Test
-    void gatewayAddressReachesTheClient() {
+    void gatewayAddressAndEndpointPathsReachTheClient() {
         new ApplicationContextRunner()
                 .withConfiguration(AutoConfigurations.of(MateToolAutoConfiguration.class))
-                .withPropertyValues("mate.innerGWSerive=http://gw.example.com:9999")
+                .withPropertyValues(
+                        "mate.innerGWSerive=http://gw.example.com:9999",
+                        "mate.endpoints.agent-info-path-prefix=/custom/agents/",
+                        "mate.endpoints.skill-tools-query-path-prefix=/custom/skills/",
+                        "mate.endpoints.tool-metadata-query-path=/custom/tools/query",
+                        "mate.endpoints.tool-execute-path-template=/custom/tools/%s/execute")
                 .run(context -> {
                     assertThat(context).hasSingleBean(MateToolClient.class);
-                    assertThat(context.getBean(MateToolClient.class))
+                    MateToolClient client = context.getBean(MateToolClient.class);
+                    assertThat(client)
                             .isInstanceOf(HttpMateToolClient.class)
-                            .extracting("mateInnerGwAddress")
-                            .isEqualTo("http://gw.example.com:9999");
+                            .hasFieldOrPropertyWithValue("mateInnerGwAddress", "http://gw.example.com:9999")
+                            .hasFieldOrPropertyWithValue("agentInfoPathPrefix", "/custom/agents/")
+                            .hasFieldOrPropertyWithValue("skillToolsQueryPathPrefix", "/custom/skills/")
+                            .hasFieldOrPropertyWithValue("toolMetadataQueryPath", "/custom/tools/query")
+                            .hasFieldOrPropertyWithValue("toolExecutePathTemplate", "/custom/tools/%s/execute");
                 });
     }
 
@@ -94,16 +104,14 @@ class MateToolAutoConfigurationTest {
         assertThat(results.get(0).isError()).isTrue();
     }
 
-    /**
-     * Support config providing a mock client bean (overrides the real HTTP stub).
-     */
+    /** 提供 Mock 客户端 Bean 并覆盖真实 HTTP 实现的测试配置。 */
     @Configuration(proxyBeanMethods = false)
     static class MockClientSupport {
 
         /**
-         * Provides a mock Mate client bean for tests.
+         * 创建测试使用的 Mock Mate 客户端。
          *
-         * @return the mock client
+         * @return Mock Mate 客户端
          */
         @Bean
         MateToolClient mateToolClient() {

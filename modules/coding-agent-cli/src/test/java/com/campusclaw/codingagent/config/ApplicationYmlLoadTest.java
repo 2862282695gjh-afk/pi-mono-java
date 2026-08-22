@@ -11,11 +11,7 @@ import org.springframework.boot.test.context.ConfigDataApplicationContextInitial
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 
 /**
- * Loads the real {@code application.yml} (config-data path, unlike plain
- * {@code ApplicationContextRunner} which skips it) and asserts the Mate
- * gateway placeholder resolves without circular references. Regression test:
- * {@code mate.innerGWSerive: ${mate.innerGWSerive:}} self-reference made the
- * context fail with {@code Circular placeholder reference} at startup.
+ * 加载真实 {@code application.yml}，验证 Mate 网关占位符不会循环引用且支持外部覆盖。
  *
  * @version [br_eCampusCore 26.0.0, 2026/08/18]
  * @since [br_eCampusCore 26.0.0]
@@ -30,14 +26,46 @@ class ApplicationYmlLoadTest {
         runner.run(context -> {
             String resolved = context.getEnvironment().getProperty("mate.innerGWSerive");
             assertThat(resolved).isEqualTo("");
+            assertThat(context.getEnvironment().getProperty("mate.endpoints.agent-info-path-prefix"))
+                    .isEqualTo("/mate-service/v1/agents/");
+            assertThat(context.getEnvironment().getProperty("mate.endpoints.skill-tools-query-path-prefix"))
+                    .isEqualTo("/mate-service/v1/skill/info/query/");
+            assertThat(context.getEnvironment().getProperty("mate.endpoints.tool-metadata-query-path"))
+                    .isEqualTo("/mate-service/v1/runtime/tools/query");
+            assertThat(context.getEnvironment().getProperty("campusmate.runtime.agent-runtime-path-template"))
+                    .isEqualTo("/mate-service/v1/agents/%s/runtime");
+            assertThat(context.getEnvironment().getProperty("campusmate.runtime.skill-info-query-path-template"))
+                    .isEqualTo("/mate-service/v1/skill/query/%s");
         });
     }
 
     @Test
     void mateGatewayPlaceholderPicksUpEnvironmentVariable() {
-        runner.withSystemProperties("mate.innerGWSerive.overridden:none").run(context -> {
-            String raw = context.getEnvironment().getProperty("mate.innerGWSerive");
-            assertThat(raw).isNotNull();
-        });
+        runner.withSystemProperties("MATE_INNERGWSERIVE=http://mate-gateway:8080")
+                .run(context -> assertThat(context.getEnvironment().getProperty("mate.innerGWSerive"))
+                        .isEqualTo("http://mate-gateway:8080"));
+    }
+
+    @Test
+    void outboundEndpointPlaceholdersSupportExternalOverrides() {
+        runner.withSystemProperties(
+                        "MATE_AGENT_INFO_PATH_PREFIX=/custom/agents/",
+                        "MATE_SKILL_TOOLS_QUERY_PATH_PREFIX=/custom/skills/",
+                        "MATE_TOOL_METADATA_QUERY_PATH=/custom/tools/query",
+                        "CAMPUSMATE_AGENT_RUNTIME_PATH_TEMPLATE=/custom/agents/%s/runtime",
+                        "CAMPUSMATE_SKILL_INFO_QUERY_PATH_TEMPLATE=/custom/skills/%s")
+                .run(context -> {
+                    assertThat(context.getEnvironment().getProperty("mate.endpoints.agent-info-path-prefix"))
+                            .isEqualTo("/custom/agents/");
+                    assertThat(context.getEnvironment().getProperty("mate.endpoints.skill-tools-query-path-prefix"))
+                            .isEqualTo("/custom/skills/");
+                    assertThat(context.getEnvironment().getProperty("mate.endpoints.tool-metadata-query-path"))
+                            .isEqualTo("/custom/tools/query");
+                    assertThat(context.getEnvironment().getProperty("campusmate.runtime.agent-runtime-path-template"))
+                            .isEqualTo("/custom/agents/%s/runtime");
+                    assertThat(context.getEnvironment()
+                                    .getProperty("campusmate.runtime.skill-info-query-path-template"))
+                            .isEqualTo("/custom/skills/%s");
+                });
     }
 }

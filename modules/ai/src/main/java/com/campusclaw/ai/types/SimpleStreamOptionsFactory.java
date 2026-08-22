@@ -14,8 +14,8 @@ import jakarta.annotation.Nullable;
  * <p>Provides convenience methods for building options from settings,
  * model defaults, and common use cases.
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/05/06]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/05/06]
+ * @since [br_eCampusCore 26.0.0]
  */
 public final class SimpleStreamOptionsFactory {
 

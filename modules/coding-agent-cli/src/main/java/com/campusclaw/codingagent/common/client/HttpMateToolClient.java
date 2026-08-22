@@ -16,6 +16,7 @@ import com.campusclaw.codingagent.common.dto.AgentInfo;
 import com.campusclaw.codingagent.common.dto.QuerySkillToolsResult;
 import com.campusclaw.codingagent.common.dto.RequestHeaderInfo;
 import com.campusclaw.codingagent.common.dto.ToolInfo;
+import com.campusclaw.codingagent.common.identifier.ResourceIdentifierPatterns;
 import com.campusclaw.codingagent.common.util.MateRestUtil;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -25,15 +26,11 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * HTTP implementation of {@link MateToolClient} calling through the Mate inner
- * gateway via {@link MateRestUtil}.
+ * 通过 {@link MateRestUtil} 访问 Mate 内部网关的 {@link MateToolClient} HTTP 实现。
  *
- * <p>Gateway address comes from the {@code mate.innerGWSerive}
- * property/environment variable; requests carry a credential-free
- * {@link RequestHeaderInfo}. {@link #listTools(String, String)} is a two-step
- * query: agent/skill metadata (binding tool IDs) first, then QUERYTOOLS for
- * the tool details. The invoke RPC behind {@link #callTool} remains a stub
- * for internal development (see {@code docs/DEFERRED.md} DEF-007).
+ * <p>网关地址和出站接口路径均由配置注入，请求使用不携带凭据的 {@link RequestHeaderInfo}。
+ * {@link #listTools(String, String)} 先查询 Agent 或 Skill 元数据中的绑定工具标识，再批量查询工具详情。
+ * {@link #callTool} 背后的调用 RPC 仍是内部开发桩，参见 {@code docs/DEFERRED.md} DEF-007。
  *
  * @version [br_eCampusCore 26.0.0, 2026/08/18]
  * @since [br_eCampusCore 26.0.0]
@@ -42,57 +39,53 @@ public class HttpMateToolClient implements MateToolClient {
 
     private static final Logger log = LoggerFactory.getLogger(HttpMateToolClient.class);
 
-    /**
-     * Agent metadata endpoint: {@code GET /mate-service/v1/agents/{agentId}}.
-     */
-    protected static final String AGENT_INFO = "/mate-service/v1/agents/";
-
-    /**
-     * Skill tool-query endpoint:
-     * {@code GET /mate-service/v1/skill/info/query/{skillId}}.
-     */
-    protected static final String SKILL_TOOLS_QUERY = "/mate-service/v1/skill/info/query/";
-
-    /**
-     * Tool details endpoint (QUERYTOOLS):
-     * {@code POST /mate-service/v1/runtime/tools/query}.
-     */
-    protected static final String QUERYTOOLS = "/mate-service/v1/runtime/tools/query";
-
-    /**
-     * Path-segment pattern for agent/skill IDs, same as the repo's
-     * {@code AgentRuntimeManager.AGENT_ID_PATTERN}: the value becomes a URL
-     * path segment, so {@code ..}, {@code ?}, encoded slashes etc. must be
-     * rejected before any request is sent.
-     */
-    private static final Pattern ID_SEGMENT_PATTERN = Pattern.compile("^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$");
-
-    /**
-     * Address of the Mate inner gateway ({@code mate.innerGWSerive}).
-     */
+    /** Mate 内部网关地址，对应 {@code mate.innerGWSerive}。 */
     protected final String mateInnerGwAddress;
 
-    /**
-     * REST helper performing the actual gateway calls.
-     */
+    /** Agent 元数据查询路径前缀。 */
+    protected final String agentInfoPathPrefix;
+
+    /** Skill 绑定工具查询路径前缀。 */
+    protected final String skillToolsQueryPathPrefix;
+
+    /** 工具元数据批量查询路径。 */
+    protected final String toolMetadataQueryPath;
+
+    /** 工具执行路径模板，{@code %s} 为工具标识占位。 */
+    protected final String toolExecutePathTemplate;
+
+    /** 执行网关请求的 REST 工具。 */
     protected final MateRestUtil mateRestUtil;
 
-    /**
-     * Shared Jackson mapper for request/response DTO conversion.
-     */
+    /** 请求和响应 DTO 转换使用的 Jackson 映射器。 */
     protected final ObjectMapper mapper;
 
     /**
-     * Creates a client pointed at the Mate inner gateway.
+     * 创建访问 Mate 内部网关的客户端。
      *
-     * @param mateInnerGwAddress the inner gateway base address
-     * @param mateRestUtil the REST helper for gateway calls
-     * @param mapper shared Jackson mapper
+     * @param mateInnerGwAddress 内部网关基础地址
+     * @param agentInfoPathPrefix Agent 元数据查询路径前缀
+     * @param skillToolsQueryPathPrefix Skill 绑定工具查询路径前缀
+     * @param toolMetadataQueryPath 工具元数据批量查询路径
+     * @param toolExecutePathTemplate 工具执行路径模板，{@code %s} 为工具标识占位
+     * @param mateRestUtil 网关 REST 工具
+     * @param mapper Jackson 映射器
      */
-    public HttpMateToolClient(String mateInnerGwAddress, MateRestUtil mateRestUtil, ObjectMapper mapper) {
+    public HttpMateToolClient(
+            String mateInnerGwAddress,
+            String agentInfoPathPrefix,
+            String skillToolsQueryPathPrefix,
+            String toolMetadataQueryPath,
+            String toolExecutePathTemplate,
+            MateRestUtil mateRestUtil,
+            ObjectMapper mapper) {
         this.mateInnerGwAddress = mateInnerGwAddress != null && mateInnerGwAddress.endsWith("/")
                 ? mateInnerGwAddress.substring(0, mateInnerGwAddress.length() - 1)
                 : mateInnerGwAddress;
+        this.agentInfoPathPrefix = agentInfoPathPrefix;
+        this.skillToolsQueryPathPrefix = skillToolsQueryPathPrefix;
+        this.toolMetadataQueryPath = toolMetadataQueryPath;
+        this.toolExecutePathTemplate = toolExecutePathTemplate;
         this.mateRestUtil = mateRestUtil;
         this.mapper = mapper;
     }
@@ -104,7 +97,10 @@ public class HttpMateToolClient implements MateToolClient {
             return List.of();
         }
         String scopedId = agentId != null ? agentId : skillId;
-        if (!ID_SEGMENT_PATTERN.matcher(scopedId).matches()) {
+        Pattern expectedPattern = agentId != null
+                ? ResourceIdentifierPatterns.AGENT_ID_PATTERN
+                : ResourceIdentifierPatterns.SKILL_ID_PATTERN;
+        if (!expectedPattern.matcher(scopedId).matches()) {
             throw new IllegalArgumentException(
                     "Invalid " + (agentId != null ? "agent" : "skill") + " id for path segment: " + scopedId);
         }
@@ -128,17 +124,16 @@ public class HttpMateToolClient implements MateToolClient {
     }
 
     /**
-     * Resolves the bound tool IDs for an agent: GET agent metadata and extract
-     * {@code bindingTools[].toolId}.
+     * 查询 Agent 元数据并提取 {@code bindingTools[].toolId}。
      *
-     * @param agentId the Mate agent ID
-     * @return the bound tool ID list
-     * @throws Exception when the gateway call or decoding fails
+     * @param agentId Mate Agent 标识
+     * @return 绑定工具标识列表
+     * @throws Exception 网关调用或响应解析失败时抛出
      */
     protected List<String> queryToolIdsByAgentId(String agentId) throws Exception {
         String raw = mateRestUtil.executeGetRawRequest(
                 mateInnerGwAddress,
-                AGENT_INFO + agentId,
+                agentInfoPathPrefix + agentId,
                 RequestHeaderInfo.builder().build());
         AgentInfo agentInfo = unwrapResult(raw, AgentInfo.class);
         List<String> toolIds = new ArrayList<>();
@@ -151,17 +146,16 @@ public class HttpMateToolClient implements MateToolClient {
     }
 
     /**
-     * Resolves the bound tool IDs for a skill: GET skill tool info and extract
-     * {@code bindingTools[].id}.
+     * 查询 Skill 绑定工具信息并提取 {@code bindingTools[].id}。
      *
-     * @param skillId the Mate skill ID
-     * @return the bound tool ID list
-     * @throws Exception when the gateway call or decoding fails
+     * @param skillId Mate Skill 标识
+     * @return 绑定工具标识列表
+     * @throws Exception 网关调用或响应解析失败时抛出
      */
     protected List<String> queryToolIdsBySkillId(String skillId) throws Exception {
         String raw = mateRestUtil.executeGetRawRequest(
                 mateInnerGwAddress,
-                SKILL_TOOLS_QUERY + skillId,
+                skillToolsQueryPathPrefix + skillId,
                 RequestHeaderInfo.builder().build());
         QuerySkillToolsResult skillResult = unwrapResult(raw, QuerySkillToolsResult.class);
         List<String> toolIds = new ArrayList<>();
@@ -174,24 +168,28 @@ public class HttpMateToolClient implements MateToolClient {
     }
 
     /**
-     * Queries full tool metadata by tool ID list (QUERYTOOLS, POST).
+     * 按工具标识列表批量查询完整工具元数据。
      *
-     * @param toolIds the tool ID list to query
-     * @return full tool metadata list
-     * @throws Exception when the gateway call or decoding fails
-     * @throws IllegalStateException when resCode is not "0"
+     * @param toolIds 待查询的工具标识列表
+     * @return 完整工具元数据列表
+     * @throws Exception 网关调用或响应解析失败时抛出
+     * @throws IllegalStateException {@code resCode} 不为 {@code 0} 时抛出
      */
     protected List<MateToolMeta> queryToolMetaByIds(List<String> toolIds) throws Exception {
         if (toolIds.isEmpty()) {
             return List.of();
         }
+        requireToolIds(toolIds);
         String body = mapper.writeValueAsString(Map.of("toolIds", toolIds));
         String raw = mateRestUtil.executePostRawRequest(
-                mateInnerGwAddress, QUERYTOOLS, RequestHeaderInfo.builder().build(), body);
+                mateInnerGwAddress,
+                toolMetadataQueryPath,
+                RequestHeaderInfo.builder().build(),
+                body);
         JsonNode root = mapper.readTree(raw);
         String resCode = root.path("resCode").asText("");
         if (!"0".equals(resCode)) {
-            throw new IllegalStateException("QUERYTOOLS failed: resCode=" + resCode + " resMsg="
+            throw new IllegalStateException("tool metadata query failed: resCode=" + resCode + " resMsg="
                     + root.path("resMsg").asText(""));
         }
         List<ToolInfo> infos =
@@ -199,16 +197,26 @@ public class HttpMateToolClient implements MateToolClient {
         return toMeta(infos);
     }
 
+    private static void requireToolIds(List<String> toolIds) {
+        for (String toolId : toolIds) {
+            if (toolId == null
+                    || !ResourceIdentifierPatterns.TOOL_ID_PATTERN
+                            .matcher(toolId)
+                            .matches()) {
+                throw new IllegalArgumentException("Invalid tool id: " + toolId);
+            }
+        }
+    }
+
     /**
-     * Decodes the standard {@code {resCode, resMsg, result}} envelope and
-     * returns the typed {@code result}; fails on a non-zero resCode.
+     * 解析标准 {@code {resCode, resMsg, result}} 信封并返回指定类型的 {@code result}。
      *
-     * @param <T> expected result type
-     * @param raw the raw response body
-     * @param type the result class
-     * @return the decoded result, or null when absent
-     * @throws Exception when decoding fails
-     * @throws IllegalStateException when resCode is not "0"
+     * @param <T> 结果类型
+     * @param raw 原始响应体
+     * @param type 结果类
+     * @return 解析后的结果；不存在时返回 {@code null}
+     * @throws Exception 解析失败时抛出
+     * @throws IllegalStateException {@code resCode} 不为 {@code 0} 时抛出
      */
     protected <T> T unwrapResult(String raw, Class<T> type) throws Exception {
         JsonNode root = mapper.readTree(raw);
@@ -225,10 +233,10 @@ public class HttpMateToolClient implements MateToolClient {
     }
 
     /**
-     * Converts gateway {@link ToolInfo} entries to {@link MateToolMeta}.
+     * 将网关 {@link ToolInfo} 转换为 {@link MateToolMeta}。
      *
-     * @param infos the gateway tool entries
-     * @return converted metadata list
+     * @param infos 网关工具元数据列表
+     * @return 转换后的工具元数据列表
      */
     protected List<MateToolMeta> toMeta(List<ToolInfo> infos) {
         List<MateToolMeta> metas = new ArrayList<>();
@@ -248,29 +256,20 @@ public class HttpMateToolClient implements MateToolClient {
     }
 
     /**
-     * Tool execution endpoint:
-     * {@code POST /mate-service/v1/runtime/tools/{toolId}/execute}.
-     */
-    protected static final String TOOL_EXECUTE = "/mate-service/v1/runtime/tools/";
-
-    /**
-     * Invokes a tool on the Mate server (the real call behind callMateTool):
-     * POSTs the args as the JSON body to {@code TOOL_EXECUTE + toolId +
-     * "/execute"}. Headers are built the same way as listTools, plus the
-     * optional {@code X-HW-ID} and {@code Authorization} from the
-     * agent-handed-down credentials (present only when non-null/non-empty).
+     * 调用 Mate 服务端工具：POST 工具参数（按工具 inputSchema 序列化）到
+     * {@code toolExecutePathTemplate} 展开后的执行端点。Header 与
+     * listTools 同源构建，并按 Agent 下发凭据补可选的 {@code X-HW-ID} 与
+     * {@code Authorization}——有则携带，无则省略。
      *
-     * @param tool the tool ID to invoke
-     * @param args the tool arguments; serialized as the request body per the
-     *        tool's input schema
-     * @param credentials agent-handed-down credentials forwarded to the
-     *        server; null omits both auth headers
-     * @return tool execution result; isError=true on gateway failure
-     * @throws IllegalArgumentException when the tool id is not a valid path
-     *         segment
+     * @param tool 待调用的工具标识
+     * @param args 工具参数；按工具 inputSchema 作为请求体
+     * @param credentials Agent 下发并透传到服务端的凭据；null 时省略两个鉴权 Header
+     * @return 工具执行结果；网关失败时为 isError=true
+     * @throws IllegalArgumentException 工具标识不满足路径段约束时抛出
      */
     protected ToolResult invokeTool(String tool, Map<String, Object> args, MateCredentials credentials) {
-        if (!ID_SEGMENT_PATTERN.matcher(tool).matches()) {
+        if (tool == null
+                || !ResourceIdentifierPatterns.TOOL_ID_PATTERN.matcher(tool).matches()) {
             throw new IllegalArgumentException("Invalid tool id for path segment: " + tool);
         }
         try {
@@ -282,8 +281,8 @@ public class HttpMateToolClient implements MateToolClient {
                         .build();
             }
             String body = mapper.writeValueAsString(args != null ? args : Map.of());
-            String raw = mateRestUtil.executePostRawRequest(
-                    mateInnerGwAddress, TOOL_EXECUTE + tool + "/execute", headerInfo, body);
+            String path = toolExecutePathTemplate.replace("%s", tool);
+            String raw = mateRestUtil.executePostRawRequest(mateInnerGwAddress, path, headerInfo, body);
             JsonNode root = mapper.readTree(raw);
             String resCode = root.path("resCode").asText("");
             if (!"0".equals(resCode)) {

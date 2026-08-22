@@ -52,8 +52,8 @@ import org.slf4j.LoggerFactory;
  * via Mockito; the event listener it captures is invoked directly from the test thread so
  * the {@code session/update} notification branches are reproducible.
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/06/09]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/06/09]
+ * @since [br_eCampusCore 26.0.0]
  */
 class AcpModeTest {
 

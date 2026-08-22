@@ -12,7 +12,9 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.util.List;
 import java.util.Optional;
+import java.util.regex.Pattern;
 
+import com.campusclaw.codingagent.common.identifier.ResourceIdentifierPatterns;
 import com.fasterxml.jackson.annotation.JsonAlias;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
@@ -20,10 +22,11 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 /**
- * Minimal HTTP client for the CampusMate Agent and Skill runtime endpoints.
+ * CampusMate Agent 与 Skill 运行时接口的最小 HTTP 客户端。
  *
  * @version [br_eCampusCore 26.0.0, 2026/08/17]
  * @since [br_eCampusCore 26.0.0]
@@ -31,38 +34,52 @@ import org.springframework.stereotype.Component;
 @Component
 public class MateServiceClient {
 
-    private static final String AGENT_RUNTIME_PATH = "/mate-service/v1/agents/%s/runtime";
-    private static final String SKILL_INFO_PATH = "/mate-service/v1/skill/query/%s";
-
     private final AgentRuntimeProperties properties;
     private final ObjectMapper mapper;
     private final HttpClient httpClient;
+    private final String agentRuntimePathTemplate;
+    private final String skillInfoQueryPathTemplate;
 
     @Autowired
-    public MateServiceClient(AgentRuntimeProperties properties, ObjectMapper mapper) {
+    public MateServiceClient(
+            AgentRuntimeProperties properties,
+            ObjectMapper mapper,
+            @Value("${campusmate.runtime.agent-runtime-path-template}") String agentRuntimePathTemplate,
+            @Value("${campusmate.runtime.skill-info-query-path-template}") String skillInfoQueryPathTemplate) {
         this(
                 properties,
                 mapper,
+                agentRuntimePathTemplate,
+                skillInfoQueryPathTemplate,
                 HttpClient.newBuilder()
                         .connectTimeout(properties.connectTimeout())
                         .build());
     }
 
-    MateServiceClient(AgentRuntimeProperties properties, ObjectMapper mapper, HttpClient httpClient) {
+    MateServiceClient(
+            AgentRuntimeProperties properties,
+            ObjectMapper mapper,
+            String agentRuntimePathTemplate,
+            String skillInfoQueryPathTemplate,
+            HttpClient httpClient) {
         this.properties = properties;
         this.mapper = mapper;
+        this.agentRuntimePathTemplate = agentRuntimePathTemplate;
+        this.skillInfoQueryPathTemplate = skillInfoQueryPathTemplate;
         this.httpClient = httpClient;
     }
 
     /**
-     * Fetches Agent metadata and bound Skill metadata.
+     * 获取 Agent 元数据和绑定 Skill 坐标。
      *
-     * @param agentId validated Agent identifier
-     * @return runtime definition
-     * @throws AgentRuntimeException when the HTTP request or response is invalid
+     * @param agentId 已校验的 Agent 标识
+     * @return 运行时定义
+     * @throws IllegalArgumentException Agent 标识不符合类型化 UUID 格式时抛出
+     * @throws AgentRuntimeException HTTP 请求或响应无效时抛出
      */
     public AgentRuntime getAgentRuntime(String agentId) {
-        HttpRequest request = HttpRequest.newBuilder(endpoint(AGENT_RUNTIME_PATH.formatted(agentId)))
+        requireIdentifier(agentId, ResourceIdentifierPatterns.AGENT_ID_PATTERN, "agentId");
+        HttpRequest request = HttpRequest.newBuilder(endpoint(agentRuntimePathTemplate.formatted(agentId)))
                 .timeout(properties.requestTimeout())
                 .header("Accept", "application/json")
                 .GET()
@@ -78,14 +95,16 @@ public class MateServiceClient {
     }
 
     /**
-     * Fetches the complete metadata for a bound Skill reference.
+     * 获取已绑定 Skill 的完整元数据。
      *
-     * @param skillId Skill identifier returned by GetAgentRuntime
-     * @return Skill definitions returned by CampusMate
-     * @throws AgentRuntimeException when the HTTP request or response is invalid
+     * @param skillId GetAgentRuntime 返回的 Skill 标识
+     * @return CampusMate 返回的 Skill 定义
+     * @throws IllegalArgumentException Skill 标识不符合类型化 UUID 格式时抛出
+     * @throws AgentRuntimeException HTTP 请求或响应无效时抛出
      */
     public List<SkillInfo> querySkillInfo(String skillId) {
-        HttpRequest request = HttpRequest.newBuilder(endpoint(SKILL_INFO_PATH.formatted(skillId)))
+        requireIdentifier(skillId, ResourceIdentifierPatterns.SKILL_ID_PATTERN, "skillId");
+        HttpRequest request = HttpRequest.newBuilder(endpoint(skillInfoQueryPathTemplate.formatted(skillId)))
                 .timeout(properties.requestTimeout())
                 .header("Accept", "application/json")
                 .GET()
@@ -101,6 +120,12 @@ public class MateServiceClient {
             return response.result();
         } catch (IOException e) {
             throw new AgentRuntimeException("Invalid querySkillInfo response", e);
+        }
+    }
+
+    private static void requireIdentifier(String value, Pattern pattern, String name) {
+        if (value == null || !pattern.matcher(value).matches()) {
+            throw new IllegalArgumentException("Invalid " + name + ": " + value);
         }
     }
 
@@ -163,9 +188,7 @@ public class MateServiceClient {
                     "campusmate.runtime.base-url is required when a managed Agent is not cached locally");
         }
 
-        // Concatenate instead of URI.resolve: the API paths are absolute-path
-        // segments (/mate-service/...) and resolve() would drop any base path
-        // such as http://host:port/mate-service, silently hitting the wrong URL.
+        // API 路径以 /mate-service 开头；URI.resolve 会丢弃 base URL 已有路径，因此直接拼接。
         String base = baseUrl.toString();
         if (base.endsWith("/")) {
             base = base.substring(0, base.length() - 1);
@@ -173,33 +196,37 @@ public class MateServiceClient {
         return URI.create(base + path);
     }
 
-    /** CampusMate GetAgentRuntime response. */
+    /** CampusMate GetAgentRuntime 响应。 */
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record AgentRuntime(
             @JsonFormat(with = JsonFormat.Feature.ACCEPT_SINGLE_VALUE_AS_ARRAY) List<String> bindingModels,
             @JsonFormat(with = JsonFormat.Feature.ACCEPT_SINGLE_VALUE_AS_ARRAY) List<SkillReference> bindingSkills,
             List<BoundTool> bindingTools,
+            @JsonFormat(with = JsonFormat.Feature.ACCEPT_SINGLE_VALUE_AS_ARRAY) List<AgentReference> bindingAgents,
             @JsonFormat(with = JsonFormat.Feature.ACCEPT_SINGLE_VALUE_AS_ARRAY) List<String> description,
             String displayName,
+            Boolean enabled,
             String id,
             String name,
             String systemPrompt,
             List<String> userCases,
-            String version,
-            AgentReference bindingAgents) {
+            String version) {
 
         public AgentRuntime {
+            // 旧快照缺省 enabled 字段（反序列化为 null）视为启用；归一化保证 enabled() 永不返回 null
+            enabled = enabled == null ? Boolean.TRUE : enabled;
             bindingModels = bindingModels == null ? List.of() : List.copyOf(bindingModels);
             bindingSkills = bindingSkills == null ? List.of() : List.copyOf(bindingSkills);
             bindingTools = bindingTools == null ? List.of() : List.copyOf(bindingTools);
+            bindingAgents = bindingAgents == null ? List.of() : List.copyOf(bindingAgents);
             description = description == null ? List.of() : List.copyOf(description);
             userCases = userCases == null ? List.of() : List.copyOf(userCases);
         }
 
         /**
-         * Returns the first non-blank bound model, used as the session default.
+         * 返回绑定的第一个非空白模型名，作为会话缺省模型。
          *
-         * @return default model name, empty when the Agent binds no model
+         * @return 缺省模型名；Agent 未绑定任何模型时为空
          */
         public Optional<String> defaultModel() {
             return bindingModels.stream()
@@ -208,21 +235,23 @@ public class MateServiceClient {
         }
     }
 
-    /** Skill reference embedded in GetAgentRuntime. */
+    /** GetAgentRuntime 内嵌的 Skill 引用。 */
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record SkillReference(String id, String version) {}
 
-    /** Agent binding metadata returned by GetAgentRuntime. */
+    /**
+     * GetAgentRuntime 返回的子 Agent 绑定元数据。携带 {@code description} 使父 Agent
+     * 呈现子候选时无需加载子 Agent 的完整运行时。
+     */
     @JsonIgnoreProperties(ignoreUnknown = true)
-    public record AgentReference(String id, String name, String displayName, String version) {}
+    public record AgentReference(String id, String name, String displayName, String description, String version) {}
 
-    /** Complete Skill metadata returned by querySkillInfo. */
+    /** querySkillInfo 返回的完整 Skill 元数据。 */
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record SkillInfo(
             String name,
             String id,
-            // Leading-space alias is deliberate, not a typo: the production CampusMate
-            // querySkillInfo payload serializes this key as " version".
+            // 前导空格别名用于兼容生产 querySkillInfo 把字段序列化为 " version" 的现状。
             @JsonAlias(" version") String version,
             String description,
             String useCases,
@@ -239,15 +268,15 @@ public class MateServiceClient {
         }
     }
 
-    /** Skill dependency returned by querySkillInfo. */
+    /** querySkillInfo 返回的 Skill 依赖。 */
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record DependentSkill(String id, String version, String name, String description) {}
 
-    /** Template or reference file returned by querySkillInfo. */
+    /** querySkillInfo 返回的模板或引用文件。 */
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record SkillFile(String id, String name, String content, String fileType) {}
 
-    /** Tool metadata and permission embedded in Agent or Skill metadata. */
+    /** Agent 或 Skill 元数据中内嵌的工具元数据与权限。 */
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record BoundTool(
             String description,
@@ -259,7 +288,7 @@ public class MateServiceClient {
             String source,
             String version) {}
 
-    /** querySkillInfo response envelope. */
+    /** querySkillInfo 响应信封。 */
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record SkillInfoResponse(String resCode, String resMsg, List<SkillInfo> result) {
         public SkillInfoResponse {

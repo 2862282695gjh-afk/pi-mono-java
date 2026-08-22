@@ -10,8 +10,8 @@ import java.util.List;
  * Represents the difference between two rendered frames.
  * Used by {@link DiffRenderer} to compute the minimum set of terminal updates.
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/05/06]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/05/06]
+ * @since [br_eCampusCore 26.0.0]
  */
 public sealed interface RenderDiff permits RenderDiff.LineUpdates, RenderDiff.FullRerender {
 

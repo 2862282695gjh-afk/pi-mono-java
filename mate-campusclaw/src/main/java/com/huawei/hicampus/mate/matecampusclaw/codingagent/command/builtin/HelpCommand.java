@@ -12,8 +12,8 @@ import com.huawei.hicampus.mate.matecampusclaw.codingagent.command.SlashCommandR
  * Slash command {@code /help} that prints every registered slash command alongside any
  * session-installed skills and available prompt templates with their descriptions.
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/05/13]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/05/13]
+ * @since [br_eCampusCore 26.0.0]
  */
 public class HelpCommand implements SlashCommand {
 

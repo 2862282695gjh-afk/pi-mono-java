@@ -17,8 +17,8 @@ import java.util.Map;
  * @param params best-effort serialised params (may be empty)
  * @param options option ids advertised by the backend, in original order; the resolver picks one
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/05/12]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/05/12]
+ * @since [br_eCampusCore 26.0.0]
  */
 public record ParentPermissionRequest(
         String sessionKey,

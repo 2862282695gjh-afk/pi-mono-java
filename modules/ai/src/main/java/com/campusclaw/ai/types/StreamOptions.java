@@ -25,8 +25,8 @@ import jakarta.annotation.Nullable;
  * @param maxRetryDelayMs maximum retry delay in milliseconds
  * @param metadata        arbitrary metadata to attach to the request
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/05/06]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/05/06]
+ * @since [br_eCampusCore 26.0.0]
  */
 public record StreamOptions(
         @JsonProperty("temperature") @Nullable Double temperature,

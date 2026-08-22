@@ -18,8 +18,8 @@ import jakarta.annotation.Nullable;
  * @param arguments        the arguments to pass to the tool
  * @param thoughtSignature optional signature for thought metadata (provider-specific)
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/05/06]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/05/06]
+ * @since [br_eCampusCore 26.0.0]
  */
 public record ToolCall(
         @JsonProperty("id") String id,

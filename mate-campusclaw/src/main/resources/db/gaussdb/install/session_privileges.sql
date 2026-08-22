@@ -9,7 +9,9 @@ GRANT SELECT, INSERT, UPDATE, DELETE
     ON t_sessions,
        t_session_entries,
        t_session_sequences,
-       t_session_materialized
+       t_session_materialized,
+       t_session_tombstone,
+       t_session_cleanup_task
     TO ${SESSION_RUNTIME_ROLE};
 
 COMMIT;

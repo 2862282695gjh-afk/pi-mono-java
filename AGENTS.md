@@ -9,9 +9,42 @@
   records, and the `mate-campusclaw` mirror.
 - Follow more specific `AGENTS.md` or `AGENTS.override.md` files if they are
   added under a subdirectory.
+- Treat macOS and Linux as the only supported local launch and installation
+  platforms. Do not add or maintain Windows-specific batch, PowerShell,
+  `mvnw.cmd`, or Task Scheduler launch and installation entry points unless a
+  later user instruction changes the platform policy. The POSIX `mvnw` may
+  retain upstream Cygwin/MinGW compatibility for best-effort Windows builds;
+  that compatibility carries no Windows support or validation commitment.
 - Preserve unrelated user changes. Never stage, rewrite, stash, or discard
   them unless the user explicitly asks. Use a separate Git worktree when the
   current worktree is dirty or is needed for another task.
+
+## Java comment, constant, and validation organization
+
+- Use `// ...` for brief comments attached to private fields, private
+  constants, and similar implementation details, including regular-expression
+  constants.
+- Do not use one-line Javadoc comments such as `/** ... */` for those brief
+  implementation comments.
+- Continue to use Javadoc where required for top-level public types and public
+  API contracts by `CLAUDE.md` or higher-level instructions.
+- Define reusable constants in the domain-specific `*Constants` or `*Patterns`
+  file that owns the concept. Keep regular-expression strings and their
+  compiled `Pattern` objects together in that source of truth, and make all
+  consumers reference it instead of duplicating literals or calls to
+  `Pattern.compile`.
+- Do not create an unscoped global `Constants` container or place a domain
+  constraint in a protocol-specific constants class unless that protocol owns
+  the constraint. Constants used only by one class as implementation details
+  may remain private in that class.
+- Use standard Jakarta Bean Validation annotations for constraints on request
+  VOs and scalar Controller parameters, including path variables, when the
+  standard annotations can express the rule. Ensure method validation is
+  active and map validation exceptions to stable API errors in the centralized
+  exception handler.
+- Do not implement those standard parameter checks with an imperative
+  Validator utility that every Controller must call. Do not introduce a VO
+  solely to wrap one scalar path or query parameter for validation.
 
 ## Mandatory Git publishing workflow
 

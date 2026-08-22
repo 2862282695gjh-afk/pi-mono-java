@@ -23,8 +23,8 @@ package com.huawei.hicampus.mate.matecampusclaw.agent.controlplane.domain;
  * it does not enforce any transition rule — callers are responsible for legality once
  * the registry layer wires it up.
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/06/18]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/06/18]
+ * @since [br_eCampusCore 26.0.0]
  */
 public enum NodeStatus {
     ACTIVE,

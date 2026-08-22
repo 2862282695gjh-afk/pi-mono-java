@@ -8,11 +8,11 @@ package com.huawei.hicampus.mate.matecampusclaw.agent.controlplane.domain;
  * Coarse-grained capability tag used by the runtime scheduler to filter candidate nodes.
  *
  * <p>Each data-plane node advertises its capabilities at registration time. The set is
- * intentionally small and stable: fine-grained negotiation (specific model id, sandbox
+ * intentionally small and stable: fine-grained negotiation (specific model id,
  * image tag, etc.) belongs to a richer payload sent inside the registration body.
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/06/18]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/06/18]
+ * @since [br_eCampusCore 26.0.0]
  */
 public enum RuntimeCapability {
     MODEL_ANTHROPIC,
@@ -21,7 +21,6 @@ public enum RuntimeCapability {
     MODEL_CUSTOM,
     TOOL_BASH,
     TOOL_FILE_IO,
-    TOOL_DOCKER_SANDBOX,
     SUBAGENT_ACP,
     SUBAGENT_HTTP,
     SUBAGENT_A2A,

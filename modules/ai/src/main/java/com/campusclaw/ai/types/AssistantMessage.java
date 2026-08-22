@@ -23,8 +23,8 @@ import jakarta.annotation.Nullable;
  * @param errorMessage optional error message if stopReason is ERROR
  * @param timestamp    Unix timestamp in milliseconds
  *
- * @version [br_eCampusCore 25.1.0_Next, 2026/05/06]
- * @since [br_eCampusCore 25.1.0_Next]
+ * @version [br_eCampusCore 26.0.0, 2026/05/06]
+ * @since [br_eCampusCore 26.0.0]
  */
 public record AssistantMessage(
         @JsonProperty("content") List<ContentBlock> content,
