@@ -37,7 +37,7 @@ CampusClaw 需要调用 Mate 平台管理的工具。这批工具由 Mate 工具
 | `RequestHeaderInfo` | DTO | `common/dto/` — 请求头信息(内网网关无需凭据字段,`builder().build()` 即可) |
 | `ToolInfo` | DTO | `common/dto/` — 元数据项,全字段对齐网关契约(id/type/version/createdAt/updatedAt/permission/enabled/is_concurrency_safe/name/display_name/description/source/input_schema/output_schema) |
 | `MateToolSessionCache` | 缓存 | `tool/mate/` — 会话级工具名→标识映射;listMateTool 每次查询硬性全量刷新,实例随会话创建即天然隔离 |
-| `MateToolsetFactory` | 工厂 | `tool/mate/` — 每会话产出一对共享新缓存的工具;Spring 只暴露工厂 Bean,不暴露工具单例(单例经 ToolCatalog 跨会话复用会泄漏缓存) |
+| `MateToolsetFactory` | 工厂 | `tool/mate/` — 每会话产出一对共享新缓存的工具;Spring 只暴露工厂 Bean,不暴露工具单例(单例经 ToolCatalog 跨会话复用会泄漏缓存);`create(ToolSelection)` 统一 include/exclude/noTools 过滤且按**原子组**注入(过滤结果须同时含两工具,否则整组不注入) |
 | `AgentInfo` | DTO | `common/dto/` — agent 元数据,`bindingTools[].toolId` 是第一步的 tool ID 来源 |
 | `QuerySkillToolsResult` / `SkillBindingTool` | DTO | `common/dto/` — skill 工具查询结果,`bindingTools[].id` 是第一步的 tool ID 来源 |
 | `MateToolAutoConfiguration` | 配置 | `config/` — 通过 `@Value` 注入网关地址与三个出站接口路径并完成装配 |
@@ -91,6 +91,11 @@ callMateTool({tool: toolName, args})
 ### D1. 会话级缓存,实例即隔离
 
 **决策**:`MateToolClient` 保持无状态;Mate 工具不注册为 Spring 单例 Bean,由 `MateToolsetFactory` 在会话组装点每会话产出一对工具——listMateTool 与 callMateTool 共享一个**新建的** `MateToolSessionCache`,组间互不可见。入口路径(`CampusClawCommand.resolveEffectiveTools`)与委派子会话(`TransientAgentRunner`,经 `DelegationWiring` 携带工厂)均按会话调用工厂;`SpringAgentToolSource`/`ToolCatalog` 不再包含 Mate 工具。
+
+三条配套保障:
+- **initialize 存活**:`AgentSession.mergeSessionLocalTools` 首次目录解析时识别"构造传入但目录未提供"的工具为会话本地,此后每次目录刷新/重解析后追加——`setToolCatalog` + `initialize()` 的覆盖不再丢弃会话私有工具对
+- **选择过滤**:`create(ToolSelection)` 与目录解析同语义应用 include/exclude/noTools——会话私有注入不绕过部署的排除配置
+- **原子组**:过滤结果不同时包含 listMateTool 与 callMateTool 时**整组不注入**——单独的 call 无缓存来源必然全部失败,单独的 list 只能发现不能执行,均误导模型;不做 call 的免缓存执行路径(保持 fail-fast)
 
 **理由**:不同 agent 绑定的工具列表不同,映射不能共享——缓存实例随会话的工具实例一起创建,实例私有即隔离,无需显式 sessionId 通道。硬性全量替换(非增量合并)保证绑定集变化即时生效。历史注:#136 初版有全局 metaCache,#144 评审期因"进程级单例串会话"移除,本次以会话实例化方式回归映射能力,隔离边界从进程缩小到会话。
 
@@ -180,6 +185,8 @@ MateToolAutoConfiguration
 | `mate.tool.enabled=false` | 两个 AgentTool 均不注册 |
 | 凭据缺失或残缺(空白/双模式) | invokeTool 拒绝执行,返回 isError 结果,零请求 |
 | callMateTool 传入的 toolName 不在会话缓存 | 拒绝执行,提示先调 listMateTool |
+| 选择过滤后仅剩 callMateTool 或仅剩 listMateTool | 整组不注入(原子组语义) |
+| exclude 配置排除任一 Mate 工具 | 生效,与目录解析同语义,注入不绕过 |
 | 单例部署(无会话缓存)调用 callMateTool | 拒绝执行,提示无缓存接线 |
 | listMateTool 重复查询 | 缓存每次硬性全量替换,旧条目即时失效 |
 
@@ -203,12 +210,14 @@ LLM API tools 字段新增 listMateTool / callMateTool 两个工具定义。网�
 | `MateToolPropertiesTest` | 1 | enabled 默认值 |
 | `HttpMateToolClientTest` | 19 | MockWebServer 桩测试:两步查询 / 空 bindingTools 跳过详情查询 / 错误分支 / 标识校验 / header 发送 / 配置路径生效 / AppKey 与 JWT 双模式 header 断言 / 凭据残缺 7 形态零请求拒绝 / jwt 空 token 拒绝 / 恶意 toolId 拒绝 / **发现→执行契约(list 返回 toolId 直达执行路径)** |
 | `ApplicationYmlLoadTest` | 3 | config-data 真加载 application.yml,占位符解析无循环引用,默认路径和外部覆盖(含执行端点模板)生效 |
+| `MateToolsetFactoryTest` | 7 | null 全注入 / noTools 空 / include 仅 call 空 / exclude list 空 / include 仅 list 空(对称) / 双排除空 / 全组选择注入对且共享缓存 |
+| `AgentSessionMateToolsTest` | 1 | 真实 initialize 后 agent tools 含 Mate 工具对且共享同一缓存(目录刷新不丢弃) |
 
-共 25 个:工具层使用内存 `MockMateToolClient`;HTTP 层使用 MockWebServer 桩服务(不依赖 mock client,直测 `HttpMateToolClient` 两步查询)。
+共 33 个:工具层使用内存 `MockMateToolClient`;HTTP 层使用 MockWebServer 桩服务(不依赖 mock client,直测 `HttpMateToolClient` 两步查询);装配层覆盖工厂选择过滤与 initialize 存活。
 
 ## 验证
 
-- `./mvnw -pl modules/coding-agent-cli test -Dtest='HttpMateToolClientTest,CallMateToolTest,MateToolAutoConfigurationTest,ListMateToolTest,MateToolPropertiesTest,ApplicationYmlLoadTest' -Dsurefire.failIfNoSpecifiedTests=false` — **41 tests, 0 failures**
+- `./mvnw -pl modules/coding-agent-cli test -Dtest='HttpMateToolClientTest,CallMateToolTest,MateToolAutoConfigurationTest,ListMateToolTest,MateToolPropertiesTest,ApplicationYmlLoadTest' -Dsurefire.failIfNoSpecifiedTests=false` — **33 tests, 0 failures**(Mate 聚焦;另 AgentSession/CampusClawCommand 等装配联动 127 项全过)
 - `./mvnw clean test` — 全量 Reactor 通过，`coding-agent-cli` **1306 tests, 0 failures**
 - `mvn clean test`(`mate-campusclaw`) — **2777 tests, 0 failures**
 - 主模块 `checkstyle:check` 与 `spotless:check` → clean；mate 镜像全量测试内置 `checkstyle:check` → 0 violations
@@ -224,6 +233,7 @@ LLM API tools 字段新增 listMateTool / callMateTool 两个工具定义。网�
 | 2026-08-17 | 26.0.0(PR #140) | 目录按域聚合 tool/mate;契约提取 common/client/mate |
 | 2026-08-18 | 26.0.0(本 PR) | 工具元数据批量查询真实对接;MateRestUtil/RequestHeaderInfo/ToolInfo;无状态化;去 ask/deny 客户端执行;凭据仅 callTool 透传;MateToolProperties 改 lombok @Data |
 | 2026-08-18 | 26.0.0(本 PR 续) | listTools 两步查询:agent/skill 元数据摘 tool ID → 工具元数据批量查询;新增 AgentInfo/QuerySkillToolsResult/SkillBindingTool DTO;MateRestUtil 加 GET 支持 |
+| 2026-08-22 | 26.0.0(#164 续 2) | 工厂 create(ToolSelection) 统一选择过滤(含 exclude)且按原子组注入(半组整组不注入);AgentSession 目录刷新后保留会话本地工具(initialize 存活) |
 | 2026-08-22 | 26.0.0(#164 续) | callMateTool 入参改工具名,会话级 name→id 缓存(listMateTool 硬性刷新);ToolInfo 全字段对齐网关契约;MateToolMeta 含 toolId+toolName |
 | 2026-08-22 | 26.0.0(#164) | invokeTool 执行 RPC 实现(端点路径配置化);MateCredentialResolver 按调用解析凭据(MateToolCall 只读深拷贝快照);MateCredentials 完整性校验(isBlank/模式互斥/jwt 空 token 拒绝) |
 | 2026-08-18 | 26.0.0(评审修复) | 占位符自引用改环境变量注入(D7 初始化链路);resolveCredentials 默认 null;MateRestUtil 删死代码、header 真发送;补 MockWebServer 桩测试与 yml 加载回归;DEF-007 收敛为仅剩 invokeTool |
