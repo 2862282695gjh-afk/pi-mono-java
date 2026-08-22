@@ -37,6 +37,12 @@ public class RequestHeaderInfo {
      */
     private String xHwId;
 
+    /**
+     * X-HW-APPKEY 凭据 Header;AppKey 模式与 xHwId 成对提供。
+     */
+    @ToString.Exclude
+    private String xHwAppKey;
+
     @ToString.Exclude
     private String appKey;
 
@@ -79,6 +85,7 @@ public class RequestHeaderInfo {
         headers.put("X-Forward", xForward);
         headers.put("X-App-Id", appId);
         headers.put("X-HW-ID", xHwId);
+        headers.put("X-HW-APPKEY", xHwAppKey);
         headers.put("X-App-Key", appKey);
         headers.put("Cookie", cookie);
         headers.put("X-Csrf-Token", csrfToken);

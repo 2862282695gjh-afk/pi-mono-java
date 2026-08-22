@@ -258,13 +258,18 @@ public class HttpMateToolClient implements MateToolClient {
     /**
      * 调用 Mate 服务端工具：POST 工具参数（按工具 inputSchema 序列化）到
      * {@code toolExecutePathTemplate} 展开后的执行端点。Header 与
-     * listTools 同源构建，并按 Agent 下发凭据补可选的 {@code X-HW-ID} 与
-     * {@code Authorization}——有则携带，无则省略。
+     * listTools 同源构建，并按 Agent 下发凭据补可选的鉴权 Header
+     * （AppKey 模式 {@code X-HW-ID} + {@code X-HW-APPKEY}，JWT 模式
+     * {@code X-HW-ID} + {@code Authorization}）。
+     *
+     * <p>凭据缺失时直接拒绝执行而非匿名调用——部署未接线凭据来源
+     * （{@code CallMateTool.resolveCredentials()} 返回 null）时快速失败，
+     * 避免未认证请求发出。
      *
      * @param tool 待调用的工具标识
      * @param args 工具参数；按工具 inputSchema 作为请求体
-     * @param credentials Agent 下发并透传到服务端的凭据；null 时省略两个鉴权 Header
-     * @return 工具执行结果；网关失败时为 isError=true
+     * @param credentials Agent 下发并透传到服务端的凭据；null 时拒绝执行
+     * @return 工具执行结果；网关失败或凭据缺失时为 isError=true
      * @throws IllegalArgumentException 工具标识不满足路径段约束时抛出
      */
     protected ToolResult invokeTool(String tool, Map<String, Object> args, MateCredentials credentials) {
@@ -272,14 +277,18 @@ public class HttpMateToolClient implements MateToolClient {
                 || !ResourceIdentifierPatterns.TOOL_ID_PATTERN.matcher(tool).matches()) {
             throw new IllegalArgumentException("Invalid tool id for path segment: " + tool);
         }
+        if (credentials == null) {
+            log.error(
+                    "invokeTool called without credentials: tool={} — wire CallMateTool.resolveCredentials() first",
+                    tool);
+            return new ToolResult("invokeTool refused: no credentials (resolveCredentials returned null)", null, true);
+        }
         try {
-            RequestHeaderInfo headerInfo = RequestHeaderInfo.builder().build();
-            if (credentials != null) {
-                headerInfo = headerInfo.toBuilder()
-                        .xHwId(credentials.xHwId())
-                        .authorization(credentials.authorization())
-                        .build();
-            }
+            RequestHeaderInfo headerInfo = RequestHeaderInfo.builder()
+                    .xHwId(credentials.xHwId())
+                    .xHwAppKey(credentials.xHwAppKey())
+                    .authorization(credentials.authorization())
+                    .build();
             String body = mapper.writeValueAsString(args != null ? args : Map.of());
             String path = toolExecutePathTemplate.replace("%s", tool);
             String raw = mateRestUtil.executePostRawRequest(mateInnerGwAddress, path, headerInfo, body);

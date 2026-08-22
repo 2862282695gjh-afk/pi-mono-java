@@ -206,25 +206,43 @@ class HttpMateToolClientTest {
                 .isEqualTo("/mate-service/v1/runtime/tools/tool-11111111111111111111111111111111/execute");
         assertThat(request.getBody().readUtf8()).contains("\"query\":\"hi\"");
         assertThat(request.getHeader("X-HW-ID")).isEqualTo("hw-id-1");
+        assertThat(request.getHeader("X-HW-APPKEY")).isEqualTo("key-1");
+        assertThat(request.getHeader("Authorization")).isNull();
     }
 
     @Test
-    void invokeToolWithoutCredentialsOmitsAuthHeaders() throws Exception {
-        server.enqueue(json("{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":{}}"));
+    void invokeToolWithoutCredentialsIsRefusedBeforeRequest() {
+        MateToolClient.ToolResult result =
+                client.callTool("tool-11111111111111111111111111111111", java.util.Map.of(), null);
 
-        client.callTool("tool-11111111111111111111111111111111", java.util.Map.of(), null);
+        assertThat(result.isError()).isTrue();
+        assertThat(result.content()).contains("no credentials");
+        assertThat(server.getRequestCount()).isZero();
+    }
+
+    @Test
+    void invokeToolJwtModeForwardsAuthorizationHeader() throws Exception {
+        server.enqueue(json("{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":{\"answer\":1}}"));
+
+        client.callTool(
+                "tool-11111111111111111111111111111111",
+                java.util.Map.of(),
+                MateCredentials.jwt("hw-id-2", "jwt-token"));
 
         var request = server.takeRequest();
-        assertThat(request.getHeader("X-HW-ID")).isNull();
-        assertThat(request.getHeader("Authorization")).isNull();
+        assertThat(request.getHeader("X-HW-ID")).isEqualTo("hw-id-2");
+        assertThat(request.getHeader("Authorization")).isEqualTo("Bearer jwt-token");
+        assertThat(request.getHeader("X-HW-APPKEY")).isNull();
     }
 
     @Test
     void invokeToolNonZeroResCodeReturnsErrorResult() throws Exception {
         server.enqueue(json("{\"resCode\":\"430\",\"resMsg\":\"not authorized\",\"result\":null}"));
 
-        MateToolClient.ToolResult result =
-                client.callTool("tool-11111111111111111111111111111111", java.util.Map.of(), null);
+        MateToolClient.ToolResult result = client.callTool(
+                "tool-11111111111111111111111111111111",
+                java.util.Map.of(),
+                MateCredentials.appKey("hw-id-1", "key-1"));
 
         assertThat(result.isError()).isTrue();
         assertThat(result.content()).contains("430").contains("not authorized");
