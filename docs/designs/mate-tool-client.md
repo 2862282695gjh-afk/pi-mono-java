@@ -32,7 +32,7 @@ CampusClaw 需要调用 Mate 平台管理的工具。这批工具由 Mate 工具
 | `MateToolClient` | 接口 | `common/client/mate/` — `listTools(agentId, skillId)` / `callTool(tool, args, credentials)` |
 | `MateToolMeta` | record | `common/client/mate/` — 工具元数据 |
 | `MateCredentials` | record | `common/client/mate/` — 凭据(AppKey / JWT 两模式),仅 callTool 携带 |
-| `HttpMateToolClient` | 实现 | `common/client/` — 工具元数据批量查询真实调用;invoke 仍为 stub(DEF-007) |
+| `HttpMateToolClient` | 实现 | `common/client/` — 两步元数据查询 + 工具执行 RPC 均为真实调用 |
 | `MateRestUtil` | 工具类 | `common/util/` — 网关 REST 调用(executePostRawRequest / executeGetRawRequest),返回原始 body 由调用方解信封;`RequestHeaderInfo.toHeaders()` 将 15 字段映射为真实 HTTP header |
 | `RequestHeaderInfo` | DTO | `common/dto/` — 请求头信息(内网网关无需凭据字段,`builder().build()` 即可) |
 | `ToolInfo` | DTO | `common/dto/` — 工具元数据批量查询返回的 `result.data` 数组元素 |
@@ -76,9 +76,9 @@ listMateTool({agent_id | skill_id})
 
 callMateTool({tool, args})
   → CallMateTool.execute (无状态)
-    → resolveCredentials(tool)          ← 钩子,凭据来源由部署方实现
+    → resolveCredentials(call)          ← MateCredentialResolver 按调用解析(未注册则 fail-closed)
     → MateToolClient.callTool(tool, args, credentials)
-      → invokeTool(...)                 ← DEF-007 stub,内部开发填真实调用
+      → invokeTool(...)                 ← POST {网关}/tools/{toolId}/execute
     → result.isError() 抛 MateToolExecutionException(pipeline 转 isError=true)
 ```
 
@@ -100,7 +100,9 @@ callMateTool({tool, args})
 
 **决策**:`listTools(toolIds)` 不带凭据(RequestHeaderInfo 默认构造即可过网关);`callTool(tool, args, credentials)` 第三参数透传 agent 下发的 `MateCredentials`。
 
-**理由**:内网网关的查询接口不校验凭据;工具执行需要身份。凭据来源由 `CallMateTool.resolveCredentials()` 钩子解析(每次调用执行,不缓存——进程级单例上缓存会串凭据)。钩子默认 `return null`(而非空字符串凭据):空 `appKey("","")` 是"看似有凭据实际为空"的最含糊状态,DEF-007 实现后会让 invokeTool 拿到明确判据(null=未接线)。
+**理由**:内网网关的查询接口不校验凭据;工具执行需要身份。凭据来源由部署方注册的 `MateCredentialResolver` Bean 按调用解析(`MateToolCall` 只读快照,含 toolCallId/tool/args;每次调用重新解析,进程级单例上不缓存)。未注册 resolver 时 `resolveCredentials()` 返回 null,invokeTool 以 fail-closed 拒绝(零请求)——`MateCredentials.isComplete()` 校验 X-HW-ID 非空且 AppKey/JWT 恰其一非空白,`jwt()` 工厂拒绝空 token。
+
+**边界**:HTTP 入口的凭据捕获与(如需异步执行时的)跨线程传播属于上层职责,不在本客户端范围内——本层只消费 resolver 给出的凭据。
 
 ### D4. 两步查询:先元数据摘 tool ID,再批量查询详情
 
@@ -108,11 +110,11 @@ callMateTool({tool, args})
 
 **理由**:授权关系(agent/skill → tool)由 Mate 元数据服务持有,客户端不自行推断;工具元数据接口只按 ID 批量查详情,职责单一。三个 protected 编排方法(`queryToolIdsByAgentId`/`queryToolIdsBySkillId`/`queryToolMetaByIds`)可内网覆写。
 
-### D5. 工具元数据查询真实调用,invoke 仍为 stub
+### D5. 查询与执行均为真实调用,执行端点路径配置化
 
-**决策**:`HttpMateToolClient` 的两步查询完整实现;`invokeTool` 保持 `UnsupportedOperationException`(DEF-007)。
+**决策**:两步元数据查询与 `invokeTool` 执行 POST(`mate.endpoints.tool-execute-path-template`,默认 `/mate-service/v1/runtime/tools/%s/execute`)均为完整实现;toolId 过 `TOOL_ID_PATTERN` 校验后入 path,args 按工具 inputSchema 序列化为请求体,resCode!=0 转 isError 结果。
 
-**理由**:查询接口契约已定;执行接口(路径/入参/凭据放法)待内网确认后填,签名已冻结。
+**理由**:网关契约已确认;路径经配置注入(与其它三个 endpoint 一致),内网可按环境覆盖。
 
 ### D6. 契约与工具分层(继承自 #140)
 
@@ -155,6 +157,7 @@ MateToolAutoConfiguration
 | `agentInfoPathPrefix` | `mate.endpoints.agent-info-path-prefix` | `/mate-service/v1/agents/` |
 | `skillToolsQueryPathPrefix` | `mate.endpoints.skill-tools-query-path-prefix` | `/mate-service/v1/skill/info/query/` |
 | `toolMetadataQueryPath` | `mate.endpoints.tool-metadata-query-path` | `/mate-service/v1/runtime/tools/query` |
+| `toolExecutePathTemplate` | `mate.endpoints.tool-execute-path-template` | `/mate-service/v1/runtime/tools/%s/execute` |
 
 外网主模块在 `application.yml` 中维护默认值和环境变量占位符；`mate-campusclaw` 按其现有资源格式在 `application.properties` 中维护完全相同的配置键。Java 中不再保留 `AGENT_INFO`、`SKILL_TOOLS_QUERY`、`QUERYTOOLS` 这类静态路径常量。
 
@@ -171,7 +174,7 @@ MateToolAutoConfiguration
 | callTool 网关异常 | 包装为 isError=true 的 ToolResult 返回,不中断 agent |
 | Mate result.isError() | 抛 MateToolExecutionException,pipeline 转 ToolResultMessage.isError=true |
 | `mate.tool.enabled=false` | 两个 AgentTool 均不注册 |
-| invokeTool(stub)被调 | UnsupportedOperationException → callTool 包装为 isError 结果 |
+| 凭据缺失或残缺(空白/双模式) | invokeTool 拒绝执行,返回 isError 结果,零请求 |
 
 ## 性能(DFX)
 
@@ -181,7 +184,7 @@ MateToolAutoConfiguration
 
 ## 契约改动
 
-LLM API tools 字段新增 listMateTool / callMateTool 两个工具定义。网关工具元数据批量查询接口已对接;执行接口由 DEF-007 内部定义。
+LLM API tools 字段新增 listMateTool / callMateTool 两个工具定义。网关契约:元数据批量查询与工具执行均已对接(执行端点路径可配置)。
 
 ## 测试
 
@@ -214,5 +217,6 @@ LLM API tools 字段新增 listMateTool / callMateTool 两个工具定义。网�
 | 2026-08-17 | 26.0.0(PR #140) | 目录按域聚合 tool/mate;契约提取 common/client/mate |
 | 2026-08-18 | 26.0.0(本 PR) | 工具元数据批量查询真实对接;MateRestUtil/RequestHeaderInfo/ToolInfo;无状态化;去 ask/deny 客户端执行;凭据仅 callTool 透传;MateToolProperties 改 lombok @Data |
 | 2026-08-18 | 26.0.0(本 PR 续) | listTools 两步查询:agent/skill 元数据摘 tool ID → 工具元数据批量查询;新增 AgentInfo/QuerySkillToolsResult/SkillBindingTool DTO;MateRestUtil 加 GET 支持 |
+| 2026-08-22 | 26.0.0(#164) | invokeTool 执行 RPC 实现(端点路径配置化);MateCredentialResolver 按调用解析凭据(MateToolCall 只读深拷贝快照);MateCredentials 完整性校验(isBlank/模式互斥/jwt 空 token 拒绝) |
 | 2026-08-18 | 26.0.0(评审修复) | 占位符自引用改环境变量注入(D7 初始化链路);resolveCredentials 默认 null;MateRestUtil 删死代码、header 真发送;补 MockWebServer 桩测试与 yml 加载回归;DEF-007 收敛为仅剩 invokeTool |
 | 2026-08-21 | 1.1.0(PR #161 评审修复) | 三个 Mate 工具出站接口路径移入应用配置并通过 `@Value` 注入;Java 字段统一为可读 lowerCamelCase;同步外网 yml、mate 侧 properties、测试与 PlantUML。 |

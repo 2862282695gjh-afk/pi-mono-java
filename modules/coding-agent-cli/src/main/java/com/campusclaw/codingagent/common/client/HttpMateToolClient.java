@@ -30,7 +30,8 @@ import org.slf4j.LoggerFactory;
  *
  * <p>网关地址和出站接口路径均由配置注入，请求使用不携带凭据的 {@link RequestHeaderInfo}。
  * {@link #listTools(String, String)} 先查询 Agent 或 Skill 元数据中的绑定工具标识，再批量查询工具详情。
- * {@link #callTool} 背后的调用 RPC 仍是内部开发桩，参见 {@code docs/DEFERRED.md} DEF-007。
+ * {@link #callTool} 背后的执行 RPC 经 {@code tool-execute-path-template} 调用网关，
+ * 携带 {@link com.campusclaw.codingagent.tool.mate.MateCredentialResolver} 解析的完整凭据。
  *
  * @version [br_eCampusCore 26.0.0, 2026/08/18]
  * @since [br_eCampusCore 26.0.0]

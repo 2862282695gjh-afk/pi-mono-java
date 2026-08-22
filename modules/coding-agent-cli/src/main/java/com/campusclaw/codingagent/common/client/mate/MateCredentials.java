@@ -32,10 +32,17 @@ public record MateCredentials(String xHwId, String xHwAppKey, String authorizati
      * Creates JWT-mode credentials.
      *
      * @param xHwId the X-HW-ID header value
-     * @param bearerToken the raw JWT (without "Bearer " prefix)
+     * @param bearerToken the raw JWT (without "Bearer " prefix); must be
+     *        non-null and non-blank — an empty token would otherwise be
+     *        wrapped into {@code "Bearer "}/-{@code null} and slip past the
+     *        completeness check as a seemingly valid header
      * @return JWT-mode credentials
+     * @throws IllegalArgumentException when the bearer token is null or blank
      */
     public static MateCredentials jwt(String xHwId, String bearerToken) {
+        if (bearerToken == null || bearerToken.isBlank()) {
+            throw new IllegalArgumentException("bearer token must not be null or blank");
+        }
         return new MateCredentials(xHwId, null, "Bearer " + bearerToken);
     }
 

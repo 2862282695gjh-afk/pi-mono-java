@@ -237,6 +237,13 @@ class HttpMateToolClientTest {
     }
 
     @Test
+    void jwtFactoryRejectsBlankTokens() {
+        assertThatThrownBy(() -> MateCredentials.jwt("hw-id-1", null)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> MateCredentials.jwt("hw-id-1", "")).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> MateCredentials.jwt("hw-id-1", "   ")).isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
     void invokeToolJwtModeForwardsAuthorizationHeader() throws Exception {
         server.enqueue(json("{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":{\"answer\":1}}"));
 
