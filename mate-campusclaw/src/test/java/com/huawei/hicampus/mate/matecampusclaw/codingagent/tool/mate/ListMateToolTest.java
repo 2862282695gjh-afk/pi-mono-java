@@ -64,6 +64,18 @@ class ListMateToolTest {
         assertTrue(asText(r).contains("0 tool(s)"));
     }
 
+    @Test
+    void refreshPopulatesCacheForCallMateTool() throws Exception {
+        MateToolSessionCache shared = new MateToolSessionCache();
+        ListMateTool listing = new ListMateTool(client, shared);
+        CallMateTool calling = new CallMateTool(client, null, shared);
+
+        listing.execute("t", Map.of("agent_id", "agent-1"), null, null);
+        calling.execute("t", Map.of("tool", "query"), null, null);
+
+        assertEquals("tool-11111111111111111111111111111111", client.lastCalledTool());
+    }
+
     private static String asText(com.huawei.hicampus.mate.matecampusclaw.agent.tool.AgentToolResult r) {
         var sb = new StringBuilder();
         for (var b : r.content()) {
