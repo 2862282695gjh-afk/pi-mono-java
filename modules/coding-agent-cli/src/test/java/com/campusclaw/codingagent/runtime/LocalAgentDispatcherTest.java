@@ -106,7 +106,8 @@ class LocalAgentDispatcherTest {
                 null,
                 List.of(),
                 null,
-                com.campusclaw.codingagent.tool.catalog.ToolSelection.all());
+                com.campusclaw.codingagent.tool.catalog.ToolSelection.all(),
+                null);
     }
 
     private static AgentReference binding(String agentId) {

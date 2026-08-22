@@ -155,3 +155,4 @@ mate:
     agent-info-path-prefix: ${MATE_AGENT_INFO_PATH_PREFIX:/mate-service/v1/agents/}
     skill-tools-query-path-prefix: ${MATE_SKILL_TOOLS_QUERY_PATH_PREFIX:/mate-service/v1/skill/info/query/}
     tool-metadata-query-path: ${MATE_TOOL_METADATA_QUERY_PATH:/mate-service/v1/runtime/tools/query}
+    tool-execute-path-template: ${MATE_TOOL_EXECUTE_PATH_TEMPLATE:/mate-service/v1/runtime/tools/%s/execute}

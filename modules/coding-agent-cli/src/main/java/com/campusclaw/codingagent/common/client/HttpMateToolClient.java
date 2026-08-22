@@ -30,7 +30,8 @@ import org.slf4j.LoggerFactory;
  *
  * <p>网关地址和出站接口路径均由配置注入，请求使用不携带凭据的 {@link RequestHeaderInfo}。
  * {@link #listTools(String, String)} 先查询 Agent 或 Skill 元数据中的绑定工具标识，再批量查询工具详情。
- * {@link #callTool} 背后的调用 RPC 仍是内部开发桩，参见 {@code docs/DEFERRED.md} DEF-007。
+ * {@link #callTool} 背后的执行 RPC 经 {@code tool-execute-path-template} 调用网关，
+ * 携带 {@link com.campusclaw.codingagent.tool.mate.MateCredentialResolver} 解析的完整凭据。
  *
  * @version [br_eCampusCore 26.0.0, 2026/08/18]
  * @since [br_eCampusCore 26.0.0]
@@ -51,6 +52,9 @@ public class HttpMateToolClient implements MateToolClient {
     /** 工具元数据批量查询路径。 */
     protected final String toolMetadataQueryPath;
 
+    /** 工具执行路径模板，{@code %s} 为工具标识占位。 */
+    protected final String toolExecutePathTemplate;
+
     /** 执行网关请求的 REST 工具。 */
     protected final MateRestUtil mateRestUtil;
 
@@ -64,6 +68,7 @@ public class HttpMateToolClient implements MateToolClient {
      * @param agentInfoPathPrefix Agent 元数据查询路径前缀
      * @param skillToolsQueryPathPrefix Skill 绑定工具查询路径前缀
      * @param toolMetadataQueryPath 工具元数据批量查询路径
+     * @param toolExecutePathTemplate 工具执行路径模板，{@code %s} 为工具标识占位
      * @param mateRestUtil 网关 REST 工具
      * @param mapper Jackson 映射器
      */
@@ -72,6 +77,7 @@ public class HttpMateToolClient implements MateToolClient {
             String agentInfoPathPrefix,
             String skillToolsQueryPathPrefix,
             String toolMetadataQueryPath,
+            String toolExecutePathTemplate,
             MateRestUtil mateRestUtil,
             ObjectMapper mapper) {
         this.mateInnerGwAddress = mateInnerGwAddress != null && mateInnerGwAddress.endsWith("/")
@@ -80,6 +86,7 @@ public class HttpMateToolClient implements MateToolClient {
         this.agentInfoPathPrefix = agentInfoPathPrefix;
         this.skillToolsQueryPathPrefix = skillToolsQueryPathPrefix;
         this.toolMetadataQueryPath = toolMetadataQueryPath;
+        this.toolExecutePathTemplate = toolExecutePathTemplate;
         this.mateRestUtil = mateRestUtil;
         this.mapper = mapper;
     }
@@ -239,7 +246,8 @@ public class HttpMateToolClient implements MateToolClient {
         }
         for (ToolInfo info : infos) {
             metas.add(new MateToolMeta(
-                    info.getToolName() != null ? info.getToolName() : info.getToolId(),
+                    info.getId(),
+                    info.getName(),
                     info.getDescription(),
                     info.getInputSchema(),
                     info.getOutputSchema(),
@@ -250,15 +258,63 @@ public class HttpMateToolClient implements MateToolClient {
     }
 
     /**
-     * 调用 Mate 服务端工具。
+     * 调用 Mate 服务端工具：POST 工具参数（按工具 inputSchema 序列化）到
+     * {@code toolExecutePathTemplate} 展开后的执行端点。Header 与
+     * listTools 同源构建，并按 Agent 下发凭据补可选的鉴权 Header
+     * （AppKey 模式 {@code X-HW-ID} + {@code X-HW-APPKEY}，JWT 模式
+     * {@code X-HW-ID} + {@code Authorization}）。
      *
-     * @param tool 待调用的工具名
-     * @param args 工具参数
-     * @param credentials Agent 下发并透传到服务端的凭据
-     * @return 工具执行结果
-     * @throws UnsupportedOperationException 真实 Mate 调用尚未接入时抛出
+     * <p>凭据缺失时直接拒绝执行而非匿名调用——部署未接线凭据来源
+     * （{@code CallMateTool.resolveCredentials()} 返回 null）时快速失败，
+     * 避免未认证请求发出。
+     *
+     * @param tool 待调用的工具标识
+     * @param args 工具参数；按工具 inputSchema 作为请求体
+     * @param credentials Agent 下发并透传到服务端的凭据；null 时拒绝执行
+     * @return 工具执行结果；网关失败或凭据缺失时为 isError=true
+     * @throws IllegalArgumentException 工具标识不满足路径段约束时抛出
      */
     protected ToolResult invokeTool(String tool, Map<String, Object> args, MateCredentials credentials) {
-        throw new UnsupportedOperationException("invokeTool: stub (see DEFERRED.md)");
+        if (tool == null
+                || !ResourceIdentifierPatterns.TOOL_ID_PATTERN.matcher(tool).matches()) {
+            throw new IllegalArgumentException("Invalid tool id for path segment: " + tool);
+        }
+        if (credentials == null || !credentials.isComplete()) {
+            log.error(
+                    "invokeTool called without complete credentials: tool={} — wire"
+                            + " CallMateTool.resolveCredentials() to return X-HW-ID plus exactly one of"
+                            + " X-HW-APPKEY / Authorization",
+                    tool);
+            return new ToolResult(
+                    "invokeTool refused: incomplete credentials (need X-HW-ID plus exactly one of"
+                            + " X-HW-APPKEY / Authorization)",
+                    null,
+                    true);
+        }
+        try {
+            RequestHeaderInfo headerInfo = RequestHeaderInfo.builder()
+                    .xHwId(credentials.xHwId())
+                    .xHwAppKey(credentials.xHwAppKey())
+                    .authorization(credentials.authorization())
+                    .build();
+            String body = mapper.writeValueAsString(args != null ? args : Map.of());
+            String path = toolExecutePathTemplate.replace("%s", tool);
+            String raw = mateRestUtil.executePostRawRequest(mateInnerGwAddress, path, headerInfo, body);
+            JsonNode root = mapper.readTree(raw);
+            String resCode = root.path("resCode").asText("");
+            if (!"0".equals(resCode)) {
+                return new ToolResult(
+                        "tool execute failed: resCode=" + resCode + " resMsg="
+                                + root.path("resMsg").asText(""),
+                        null,
+                        true);
+            }
+            JsonNode resultNode = root.path("result");
+            String content = resultNode.isMissingNode() || resultNode.isNull() ? "" : resultNode.toString();
+            return new ToolResult(content, null, false);
+        } catch (Exception e) {
+            log.error("invokeTool failed: tool={}", tool, e);
+            return new ToolResult("invokeTool failed: " + e.getMessage(), null, true);
+        }
     }
 }

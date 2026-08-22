@@ -31,11 +31,14 @@ class ListMateToolTest {
     @BeforeEach
     void setUp() {
         client = new MockMateToolClient();
-        client.addTool(new MateToolMeta("query", "q", Map.of(), Map.of(), true, "allow"));
-        client.addTool(new MateToolMeta("export", "e", Map.of(), Map.of(), false, "allow"));
-        client.bindAgent("agent-1", List.of("query", "export"));
-        client.bindSkill("skill-1", List.of("query"));
-        listMateTool = new ListMateTool(client);
+        client.addTool(new MateToolMeta(
+                "tool-11111111111111111111111111111111", "query", "q", Map.of(), Map.of(), true, "allow"));
+        client.addTool(new MateToolMeta(
+                "tool-22222222222222222222222222222222", "export", "e", Map.of(), Map.of(), false, "allow"));
+        client.bindAgent(
+                "agent-1", List.of("tool-11111111111111111111111111111111", "tool-22222222222222222222222222222222"));
+        client.bindSkill("skill-1", List.of("tool-11111111111111111111111111111111"));
+        listMateTool = new ListMateTool(client, new MateToolSessionCache());
     }
 
     @Test
@@ -59,6 +62,18 @@ class ListMateToolTest {
         assertNull(client.lastListAgentId());
         assertNull(client.lastListSkillId());
         assertTrue(asText(r).contains("0 tool(s)"));
+    }
+
+    @Test
+    void refreshPopulatesCacheForCallMateTool() throws Exception {
+        MateToolSessionCache shared = new MateToolSessionCache();
+        ListMateTool listing = new ListMateTool(client, shared);
+        CallMateTool calling = new CallMateTool(client, null, shared);
+
+        listing.execute("t", Map.of("agent_id", "agent-1"), null, null);
+        calling.execute("t", Map.of("tool", "query"), null, null);
+
+        assertEquals("tool-11111111111111111111111111111111", client.lastCalledTool());
     }
 
     private static String asText(com.campusclaw.agent.tool.AgentToolResult r) {

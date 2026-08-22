@@ -6,7 +6,7 @@
 ' - modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/common/client/mate/:
 '   MateToolClient (listTools/callTool contract), MateToolMeta, MateCredentials
 ' - modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/common/client/:
-'   HttpMateToolClient (two-step listTools wiring, invokeTool stub DEF-007)
+'   HttpMateToolClient (two-step listTools wiring, invokeTool execute RPC)
 ' - modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/common/util/:
 '   MateRestUtil (executePostRawRequest / executeGetRawRequest)
 ' - modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/common/dto/:
@@ -16,14 +16,19 @@
 ' - modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/config/:
 '   MateToolAutoConfiguration (@Value gateway and endpoint paths), MateToolProperties
 ' Source baseline: superheromeZzh/pi-mono-java commit 1e9d4ee2e14717764f8403c20375c55512cbd97b
-' Observed behavior: both AgentTools are stateless Spring singletons; listTools
+' Observed behavior: MateToolsetFactory produces one tool pair per agent
+' session (list + call sharing a fresh MateToolSessionCache); listTools
 ' resolves bound tool IDs from agent/skill metadata (GET) then calls
-' the tool metadata endpoint credential-free; callTool forwards agent-handed-down
-' credentials; the invoke RPC is still a DEF-007 stub.
+' the tool metadata endpoint credential-free and hard-refreshes the session
+' cache; callTool maps the tool name to its id via the cache and forwards
+' agent-handed-down credentials; MateCredentialResolver resolves per-call
+' credentials. Spring registers only the factory bean (plus the stateless
+' MateToolClient) — tool singletons are intentionally NOT beans.
 ' Architecture change: outbound endpoint paths are deployment configuration
 ' injected with @Value; stable inbound API contract paths remain constants.
-' Design reason: process-wide singleton lifetime forbids per-session state;
-' permission (allow/ask/deny) enforcement stays on the Mate server.
+' Design reason: the name-to-id cache is per-session state, so the tool pair
+' must be created per session; permission enforcement stays on the Mate
+' server.
 
 skinparam backgroundColor white
 skinparam shadowing false
@@ -32,15 +37,26 @@ skinparam ArrowColor #475569
 
 title Mate Tool Client Layers and Dependency Direction
 
-package "tool/mate (AgentTool layer)" {
+package "tool/mate (AgentTool layer, per-session instances)" {
   class CallMateTool {
     + execute()
-    # resolveCredentials(tool): MateCredentials
+    # resolveCredentials(MateToolCall): MateCredentials
+    - sessionCache: MateToolSessionCache
   }
   class ListMateTool {
     + execute()
+    - sessionCache: MateToolSessionCache
   }
   class MateToolExecutionException
+  class MateToolSessionCache {
+    + refresh(List<MateToolMeta>)
+    + lookupToolId(toolName): String
+  }
+  class MateToolsetFactory {
+    + create(): List<AgentTool>
+    + create(ToolSelection)
+    MateToolsetFactory: atomic pair + shared fresh cache
+  }
 }
 
 package "common/client (infrastructure layer)" {
@@ -55,7 +71,8 @@ package "common/client (infrastructure layer)" {
     # queryToolIdsBySkillId(skillId)
     # queryToolMetaByIds(toolIds)
     # toMeta(List<ToolInfo>)
-    # invokeTool(...) [stub DEF-007]
+    # invokeTool(toolId, args, credentials)
+    # toolExecutePathTemplate
   }
 }
 
@@ -65,13 +82,21 @@ package "common/client/mate (contract layer)" {
     + callTool(tool, args, credentials)
   }
   class MateToolMeta <<record>> {
-    name / description
+    toolId / description
     inputSchema / outputSchema
     isConcurrencySafe / permission
   }
   class MateCredentials <<record>> {
     xHwId / xHwAppKey / authorization
     + appKey() / jwt()
+    + isComplete()
+  }
+  interface MateCredentialResolver {
+    + resolve(MateToolCall)
+  }
+  class MateToolCall <<record>> {
+    toolCallId / tool / args
+    (deep-copied, read-only)
   }
 }
 
@@ -100,7 +125,7 @@ package "config (wiring layer)" {
     @Value mate.innerGWSerive
     @Value mate.endpoints.*
     + mateRestUtil() / mateToolClient()
-    + callMateTool() / listMateTool()
+    + mateToolsetFactory()
   }
 }
 
@@ -111,7 +136,13 @@ HttpMateToolClient ..> MateRestUtil : gateway calls
 HttpMateToolClient ..> RequestHeaderInfo : credential-free header
 HttpMateToolClient ..> ToolInfo : decodes result.data
 HttpMateToolClient ..> MateCredentials : forwards on callTool
+CallMateTool ..> MateCredentialResolver : per-call resolution
 MateToolAutoConfiguration ..> HttpMateToolClient : @Bean wiring
+MateToolAutoConfiguration ..> MateToolsetFactory : @Bean wiring
+MateToolsetFactory ..> CallMateTool : creates per session
+MateToolsetFactory ..> ListMateTool : creates per session
+CallMateTool --> MateToolSessionCache : lookup name->id
+ListMateTool --> MateToolSessionCache : hard refresh
 
 note bottom of MateToolClient
   contract lives in common/client/mate;
@@ -128,19 +159,22 @@ end note
 '   execute (agent/skill passthrough, response formatting)
 ' - modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/common/client/HttpMateToolClient.java:
 '   listTools (two-step: agent/skill metadata GET -> binding tool IDs,
-'   then tool metadata POST), callTool (stub invoke)
+'   then tool metadata POST), callTool (execute RPC)
 ' - modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/common/util/MateRestUtil.java:
 '   executePostRawRequest, resCode/resMsg/result envelope
 ' Source baseline: superheromeZzh/pi-mono-java commit 1e9d4ee2e14717764f8403c20375c55512cbd97b
-' Observed behavior: listMateTool resolves bound tool IDs from agent/skill
-' metadata (GET), then POSTs the tool metadata endpoint credential-free;
-' callMateTool forwards the call with
-' resolveCredentials() output; errors become exceptions so the pipeline marks
-' isError=true.
-' Architecture change: all three outbound paths are injected from application
-' configuration rather than hidden in static Java constants.
-' Design reason: stateless tools with per-call credential resolution avoid
-' cross-session leakage on the process-wide singleton client.
+' Observed behavior: each session starts at MateToolsetFactory.create();
+' listMateTool resolves bound tool IDs from agent/skill metadata (GET), POSTs
+' the tool metadata endpoint credential-free, then hard-refreshes the session
+' cache; callMateTool maps the tool name via the cache (miss = refuse with
+' "call listMateTool first"), resolves credentials per call and POSTs the
+' execute endpoint with the mapped tool id; errors become exceptions so the
+' pipeline marks isError=true.
+' Architecture change: all outbound paths are injected from application
+' configuration rather than hidden in static Java constants; the tool pair is
+' created per session by the factory, never shared as a singleton.
+' Design reason: the name-to-id cache is session state; factory pairing gives
+' in-group sharing (list feeds call) with cross-session isolation.
 
 skinparam backgroundColor white
 skinparam shadowing false
@@ -151,11 +185,16 @@ title Mate Tool Client Data Flow
 
 actor "Model (LLM)" as llm
 participant "AgentLoop" as loop
+participant "MateToolsetFactory\ntool/mate" as factory
 participant "ListMateTool\ntool/mate" as listTool
 participant "CallMateTool\ntool/mate" as callTool
 participant "HttpMateToolClient\ncommon/client" as http
 participant "MateRestUtil\ncommon/util" as rest
 participant "Mate inner GW\n(mate.innerGWSerive)" as gw
+
+== session assembly ==
+factory -> listTool: new (fresh session cache)
+factory -> callTool: new (shares the same cache)
 
 == listMateTool ==
 llm -> loop: tool_use("listMateTool", {agent_id | skill_id})
@@ -189,20 +228,32 @@ rest --> http: raw body
 http -> http: resCode != 0 -> throw
 http -> http: result.data -> List<ToolInfo> -> toMeta()
 http --> listTool: List<MateToolMeta>
-listTool --> llm: tool list (name + description + inputSchema)
+listTool -> listTool: sessionCache.refresh(metas) - hard replace
+listTool --> llm: tool list (toolName (id) + description + inputSchema)
 
 == callMateTool ==
 llm -> loop: tool_use("callMateTool", {tool, args})
 loop -> callTool: execute
 callTool -> callTool: resolveCredentials(tool)
 callTool -> http: callTool(tool, args, credentials)
-http -> http: invokeTool [DEF-007 stub]
-alt stub throws
-  http --> callTool: isError ToolResult
+callTool -> callTool: sessionCache.lookupToolId(toolName)
+note right of callTool
+  miss -> refuse with
+  "call listMateTool first"
+end note
+callTool -> callTool: resolveCredentials(MateToolCall) [resolver or fail-closed]
+callTool -> http: callTool(toolId, args, credentials)
+alt credentials incomplete/missing
+  http --> callTool: isError ToolResult (refused, zero request)
   callTool --> llm: MateToolExecutionException (pipeline marks isError)
-else real invoke (internal)
-  http -> rest: executePostRawRequest(gw, CALLTOOL, headerInfo, body)
-  rest -> gw: POST tool invocation (credentials forwarded)
+else valid credentials
+  http -> rest: executePostRawRequest(gw, execute-path, headerInfo, body)
+  rest -> gw: POST /mate-service/v1/runtime/tools/{toolId}/execute
+  note right of rest
+    header: RequestHeaderInfo + X-HW-ID
+      + X-HW-APPKEY or Authorization
+    body: args per tool inputSchema
+  end note
   gw --> rest: {resCode, resMsg, result}
   rest --> http: raw body
   alt result error

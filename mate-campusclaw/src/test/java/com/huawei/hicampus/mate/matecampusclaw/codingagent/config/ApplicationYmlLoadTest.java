@@ -32,6 +32,8 @@ class ApplicationYmlLoadTest {
                     .isEqualTo("/mate-service/v1/skill/info/query/");
             assertThat(context.getEnvironment().getProperty("mate.endpoints.tool-metadata-query-path"))
                     .isEqualTo("/mate-service/v1/runtime/tools/query");
+            assertThat(context.getEnvironment().getProperty("mate.endpoints.tool-execute-path-template"))
+                    .isEqualTo("/mate-service/v1/runtime/tools/%s/execute");
             assertThat(context.getEnvironment().getProperty("campusmate.runtime.agent-runtime-path-template"))
                     .isEqualTo("/mate-service/v1/agents/%s/runtime");
             assertThat(context.getEnvironment().getProperty("campusmate.runtime.skill-info-query-path-template"))
@@ -52,6 +54,7 @@ class ApplicationYmlLoadTest {
                         "MATE_AGENT_INFO_PATH_PREFIX=/custom/agents/",
                         "MATE_SKILL_TOOLS_QUERY_PATH_PREFIX=/custom/skills/",
                         "MATE_TOOL_METADATA_QUERY_PATH=/custom/tools/query",
+                        "MATE_TOOL_EXECUTE_PATH_TEMPLATE=/custom/tools/%s/execute",
                         "CAMPUSMATE_AGENT_RUNTIME_PATH_TEMPLATE=/custom/agents/%s/runtime",
                         "CAMPUSMATE_SKILL_INFO_QUERY_PATH_TEMPLATE=/custom/skills/%s")
                 .run(context -> {
@@ -61,6 +64,8 @@ class ApplicationYmlLoadTest {
                             .isEqualTo("/custom/skills/");
                     assertThat(context.getEnvironment().getProperty("mate.endpoints.tool-metadata-query-path"))
                             .isEqualTo("/custom/tools/query");
+                    assertThat(context.getEnvironment().getProperty("mate.endpoints.tool-execute-path-template"))
+                            .isEqualTo("/custom/tools/%s/execute");
                     assertThat(context.getEnvironment().getProperty("campusmate.runtime.agent-runtime-path-template"))
                             .isEqualTo("/custom/agents/%s/runtime");
                     assertThat(context.getEnvironment()

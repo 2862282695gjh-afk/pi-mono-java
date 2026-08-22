@@ -543,7 +543,7 @@ class AgentSessionTest {
 
         private DelegationWiring wiring() {
             return new DelegationWiring(
-                    piAiService, modelRegistry, promptBuilder, skillLoader, skillExpander, tools, null, null);
+                    piAiService, modelRegistry, promptBuilder, skillLoader, skillExpander, tools, null, null, null);
         }
 
         private void writeSkill(String name, String description) throws IOException {

@@ -40,6 +40,10 @@ public class CallMateTool implements AgentTool {
 
     private final MateToolClient client;
 
+    private final MateCredentialResolver credentialResolver;
+
+    private final MateToolSessionCache sessionCache;
+
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private static final JsonNode PARAMETERS;
@@ -50,7 +54,7 @@ public class CallMateTool implements AgentTool {
                     """
                     {"type":"object",
                      "properties":{
-                       "tool":{"type":"string","description":"Tool name to call"},
+                       "tool":{"type":"string","description":"Tool name to call, as returned by listMateTool"},
                        "args":{"type":"object","description":"Arguments object for the tool"}
                      },
                      "required":["tool"]}""");
@@ -60,24 +64,36 @@ public class CallMateTool implements AgentTool {
     }
 
     /**
-     * Creates a CallMateTool.
+     * 创建 CallMateTool。
      *
-     * @param client      the Mate tool service client
+     * @param client Mate 工具服务客户端
+     * @param credentialResolver 按调用解析凭据的提供者；null 时所有调用
+     *        被 fail-closed 拒绝（见 {@code HttpMateToolClient} 的凭据校验）
+     * @param sessionCache 会话级工具名→标识映射缓存；null（非会话单例场景）
+     *        时按名调用直接拒绝并提示先调用 listMateTool
      */
-    public CallMateTool(MateToolClient client) {
+    public CallMateTool(
+            MateToolClient client, MateCredentialResolver credentialResolver, MateToolSessionCache sessionCache) {
         this.client = client;
+        this.credentialResolver = credentialResolver;
+        this.sessionCache = sessionCache;
     }
 
     /**
-     * Resolves the credentials to forward for a tool invocation. The agent
-     * hands down credentials per call; this hook lets the deployment wire its
-     * own source (e.g. agent context or config) by overriding.
+     * 解析本次工具调用要透传的凭据：以 {@link MateCredentialResolver.MateToolCall}
+     * 上下文快照委托给构造期注入的解析器（每次调用重新解析，按调用隔离）；
+     * 未注入解析器时返回 null，由客户端拒绝执行。
      *
-     * @param tool the tool being called
-     * @return credentials forwarded to the Mate server; null means none
+     * @param toolCallId 本次工具调用标识
+     * @param tool 待调用的工具标识
+     * @param args 工具参数
+     * @return 透传给 Mate 服务端的凭据；null 表示未接线
      */
-    protected MateCredentials resolveCredentials(String tool) {
-        return null;
+    protected MateCredentials resolveCredentials(String toolCallId, String tool, Map<String, Object> args) {
+        if (credentialResolver == null) {
+            return null;
+        }
+        return credentialResolver.resolve(new MateCredentialResolver.MateToolCall(toolCallId, tool, args));
     }
 
     @Override
@@ -107,23 +123,34 @@ public class CallMateTool implements AgentTool {
             String toolCallId, Map<String, Object> params, CancellationToken signal, AgentToolUpdateCallback onUpdate)
             throws Exception {
 
-        String tool = (String) params.get("tool");
+        String toolName = (String) params.get("tool");
         Map<String, Object> toolArgs = (Map<String, Object>) params.get("args");
 
-        if (tool == null) {
+        if (toolName == null) {
             throw new IllegalArgumentException("Missing required parameter: tool");
         }
 
+        // ---- session-scoped name -> id resolution ----
+        String toolId = sessionCache != null ? sessionCache.lookupToolId(toolName) : null;
+        if (toolId == null) {
+            throw new MateToolExecutionException(
+                    toolName,
+                    sessionCache != null
+                            ? "tool name not in the session cache; call listMateTool first to refresh"
+                            : "no session cache wired (singleton tool); call listMateTool first");
+        }
+
         // ---- call tool ----
-        log.info("Calling mate tool: {}", tool);
-        MateToolClient.ToolResult result = client.callTool(tool, toolArgs, resolveCredentials(tool));
+        log.info("Calling mate tool: name={} id={}", toolName, toolId);
+        MateToolClient.ToolResult result =
+                client.callTool(toolId, toolArgs, resolveCredentials(toolCallId, toolId, toolArgs));
 
         if (result.isError()) {
             // Propagate as an exception so ToolExecutionPipeline marks the
             // ToolResultMessage with isError=true (it catches exceptions and
             // builds an error Outcome). Returning normally would lose the
             // error status because the pipeline defaults isError to false.
-            throw new MateToolExecutionException(tool, result.content());
+            throw new MateToolExecutionException(toolName, result.content());
         }
         List<ContentBlock> blocks = List.of(new TextContent(result.content()));
         return new AgentToolResult(blocks, result.metadata());

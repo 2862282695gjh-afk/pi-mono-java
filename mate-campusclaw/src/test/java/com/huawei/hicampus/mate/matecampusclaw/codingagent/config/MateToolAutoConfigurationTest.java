@@ -44,19 +44,57 @@ class MateToolAutoConfigurationTest {
             .withUserConfiguration(MockClientSupport.class);
 
     @Test
-    void enabledByDefaultRegistersBothTools() {
+    void enabledByDefaultRegistersFactoryNotSingletonTools() {
         runner.run(context -> {
-            assertThat(context).hasSingleBean(CallMateTool.class);
-            assertThat(context).hasSingleBean(ListMateTool.class);
-            assertThat(context.getBeanNamesForType(AgentTool.class)).contains("callMateTool", "listMateTool");
+            assertThat(context).hasSingleBean(com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.mate.MateToolsetFactory.class);
+
+            // Tools must NOT be singleton beans: the session cache is
+            // per-session state and singleton beans would leak across sessions.
+            assertThat(context).doesNotHaveBean(CallMateTool.class);
+            assertThat(context).doesNotHaveBean(ListMateTool.class);
         });
     }
 
     @Test
-    void disabledExcludesBothTools() {
+    void factoryPairsShareOneCachePerSessionAndIsolateAcrossSessions() {
+        runner.run(context -> {
+            var factory = context.getBean(com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.mate.MateToolsetFactory.class);
+            var pairA = factory.create();
+            var pairB = factory.create();
+
+            var listA = (ListMateTool) pairA.get(0);
+            var callA = (CallMateTool) pairA.get(1);
+            var listB = (ListMateTool) pairB.get(0);
+            var callB = (CallMateTool) pairB.get(1);
+
+            var cacheOfListA = sessionCacheOf(listA);
+            var cacheOfCallA = sessionCacheOf(callA);
+            var cacheOfListB = sessionCacheOf(listB);
+
+            // Within one session pair: list and call share the same cache instance.
+            assertThat(cacheOfListA).isSameAs(cacheOfCallA);
+
+            // Across sessions: distinct caches and distinct tool instances.
+            assertThat(cacheOfListA).isNotSameAs(cacheOfListB);
+            assertThat(listA).isNotSameAs(listB);
+            assertThat(callA).isNotSameAs(callB);
+        });
+    }
+
+    private static com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.mate.MateToolSessionCache sessionCacheOf(Object tool) {
+        try {
+            var field = tool.getClass().getDeclaredField("sessionCache");
+            field.setAccessible(true);
+            return (com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.mate.MateToolSessionCache) field.get(tool);
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException("missing sessionCache field on " + tool.getClass(), e);
+        }
+    }
+
+    @Test
+    void disabledExcludesFactory() {
         runner.withPropertyValues("mate.tool.enabled=false").run(context -> {
-            assertThat(context).doesNotHaveBean(CallMateTool.class);
-            assertThat(context).doesNotHaveBean(ListMateTool.class);
+            assertThat(context).doesNotHaveBean(com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.mate.MateToolsetFactory.class);
             assertThat(context.getBeanNamesForType(AgentTool.class)).isEmpty();
         });
     }
@@ -69,7 +107,8 @@ class MateToolAutoConfigurationTest {
                         "mate.innerGWSerive=http://gw.example.com:9999",
                         "mate.endpoints.agent-info-path-prefix=/custom/agents/",
                         "mate.endpoints.skill-tools-query-path-prefix=/custom/skills/",
-                        "mate.endpoints.tool-metadata-query-path=/custom/tools/query")
+                        "mate.endpoints.tool-metadata-query-path=/custom/tools/query",
+                        "mate.endpoints.tool-execute-path-template=/custom/tools/%s/execute")
                 .run(context -> {
                     assertThat(context).hasSingleBean(MateToolClient.class);
                     MateToolClient client = context.getBean(MateToolClient.class);
@@ -78,7 +117,8 @@ class MateToolAutoConfigurationTest {
                             .hasFieldOrPropertyWithValue("mateInnerGwAddress", "http://gw.example.com:9999")
                             .hasFieldOrPropertyWithValue("agentInfoPathPrefix", "/custom/agents/")
                             .hasFieldOrPropertyWithValue("skillToolsQueryPathPrefix", "/custom/skills/")
-                            .hasFieldOrPropertyWithValue("toolMetadataQueryPath", "/custom/tools/query");
+                            .hasFieldOrPropertyWithValue("toolMetadataQueryPath", "/custom/tools/query")
+                            .hasFieldOrPropertyWithValue("toolExecutePathTemplate", "/custom/tools/%s/execute");
                 });
     }
 
@@ -86,13 +126,16 @@ class MateToolAutoConfigurationTest {
     void mateErrorPropagatesThroughPipelineAsIsError() {
         MockMateToolClient client = new MockMateToolClient();
         client.overrideCallResult(new MateToolClient.ToolResult("mate exploded", null, true));
-        CallMateTool callMateTool = new CallMateTool(client);
+        CallMateTool callMateTool =
+                new CallMateTool(client, null, new com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.mate.MateToolSessionCache());
 
-        ToolCall toolCall = new ToolCall("call-1", "callMateTool", Map.of("tool", "boom"));
+        ToolCall toolCall =
+                new ToolCall("call-1", "callMateTool", Map.of("tool", "tool-44444444444444444444444444444444"));
         ToolExecutionPipeline pipeline = new ToolExecutionPipeline();
 
         List<ToolResultMessage> results = pipeline.executeAll(
-                List.of(new ToolCallWithTool(toolCall, callMateTool, Map.of("tool", "boom"))),
+                List.of(new ToolCallWithTool(
+                        toolCall, callMateTool, Map.of("tool", "tool-44444444444444444444444444444444"))),
                 ToolExecutionMode.SEQUENTIAL,
                 new com.huawei.hicampus.mate.matecampusclaw.agent.tool.AgentContext(),
                 new com.huawei.hicampus.mate.matecampusclaw.agent.tool.CancellationToken(),

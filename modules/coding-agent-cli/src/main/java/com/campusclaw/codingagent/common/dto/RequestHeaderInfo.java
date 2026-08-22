@@ -22,7 +22,7 @@ import lombok.ToString;
  * @since [br_eCampusCore 26.0.0]
  */
 @Data
-@Builder
+@Builder(toBuilder = true)
 public class RequestHeaderInfo {
     @ToString.Exclude
     private String accessToken;
@@ -31,6 +31,17 @@ public class RequestHeaderInfo {
     private String locale;
     private String xForward;
     private String appId;
+
+    /**
+     * X-HW-ID 凭据 Header;由调用方(agent 下发)可选提供。
+     */
+    private String xHwId;
+
+    /**
+     * X-HW-APPKEY 凭据 Header;AppKey 模式与 xHwId 成对提供。
+     */
+    @ToString.Exclude
+    private String xHwAppKey;
 
     @ToString.Exclude
     private String appKey;
@@ -73,6 +84,8 @@ public class RequestHeaderInfo {
         headers.put("X-Locale", locale);
         headers.put("X-Forward", xForward);
         headers.put("X-App-Id", appId);
+        headers.put("X-HW-ID", xHwId);
+        headers.put("X-HW-APPKEY", xHwAppKey);
         headers.put("X-App-Key", appKey);
         headers.put("Cookie", cookie);
         headers.put("X-Csrf-Token", csrfToken);

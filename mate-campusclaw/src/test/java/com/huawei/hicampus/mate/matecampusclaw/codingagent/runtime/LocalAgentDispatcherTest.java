@@ -106,7 +106,8 @@ class LocalAgentDispatcherTest {
                 null,
                 List.of(),
                 null,
-                com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.catalog.ToolSelection.all());
+                com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.catalog.ToolSelection.all(),
+                null);
     }
 
     private static AgentReference binding(String agentId) {
