@@ -667,6 +667,8 @@ public class CampusClawCommand implements Callable<Integer> {
     /**
      * 追加本会话私有的 Mate 工具对。工具名→标识缓存是会话状态,必须每会话
      * 新建一对工具与缓存(工厂保证组内共享、组间隔离),不能复用 Spring 单例。
+     * include/exclude 过滤委托工厂的 {@code create(ToolSelection)},与目录
+     * 解析语义一致——会话私有注入不绕过部署的排除配置。
      *
      * @param resolved 目录解析出的工具列表
      * @param toolSelection 工具可见性选择(空 include 表示全部可见)
@@ -680,10 +682,7 @@ public class CampusClawCommand implements Callable<Integer> {
         if (factory == null || toolSelection.noTools()) {
             return resolved;
         }
-        var include = toolSelection.include();
-        var mateTools = factory.create().stream()
-                .filter(tool -> include.isEmpty() || include.contains(tool.name()))
-                .toList();
+        var mateTools = factory.create(toolSelection);
         if (mateTools.isEmpty()) {
             return resolved;
         }

@@ -74,9 +74,11 @@ public class TransientAgentRunner {
      */
     AgentSession createSession(DelegationWiring wiring, PreparedAgentRuntime childRuntime, DelegationState childState) {
         List<com.huawei.hicampus.mate.matecampusclaw.agent.tool.AgentTool> childLocalTools = new java.util.ArrayList<>(wiring.localTools());
+
+        // 每个子会话一对会话私有的 Mate 工具与缓存,不与入口会话共享
+        // 按入口的 ToolSelection(含 exclude)过滤,与目录语义一致
         if (wiring.mateToolsetFactory() != null) {
-            // 每个子会话一对会话私有的 Mate 工具与缓存,不与入口会话共享。
-            childLocalTools.addAll(wiring.mateToolsetFactory().create());
+            childLocalTools.addAll(wiring.mateToolsetFactory().create(wiring.toolSelection()));
         }
         AgentSession session = new AgentSession(
                 wiring.aiService(),

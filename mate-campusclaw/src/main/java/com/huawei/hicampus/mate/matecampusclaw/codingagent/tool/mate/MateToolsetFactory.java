@@ -51,4 +51,24 @@ public class MateToolsetFactory {
         return List.of(
                 new ListMateTool(client, sessionCache), new CallMateTool(client, credentialResolver, sessionCache));
     }
+
+    /**
+     * 为一个会话创建一对 Mate 工具，并按工具可见性选择过滤。include 与
+     * exclude 语义与目录解析一致：非空 include 仅保留列名工具，exclude
+     * 总是剔除列名工具，noTools 返回空——会话私有注入不得绕过部署配置。
+     *
+     * @param selection 工具可见性选择；null 视为全可见
+     * @return 过滤后的 Mate 工具列表（可能为空）
+     */
+    public List<AgentTool> create(com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.catalog.ToolSelection selection) {
+        if (selection == null || selection.noTools()) {
+            return selection != null && selection.noTools() ? List.of() : create();
+        }
+        var include = selection.include();
+        var exclude = selection.exclude();
+        return create().stream()
+                .filter(tool -> include.isEmpty() || include.contains(tool.name()))
+                .filter(tool -> !exclude.contains(tool.name()))
+                .toList();
+    }
 }
