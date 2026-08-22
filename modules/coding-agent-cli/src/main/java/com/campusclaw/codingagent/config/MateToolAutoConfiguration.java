@@ -85,30 +85,50 @@ public class MateToolAutoConfiguration {
     }
 
     /**
-     * 创建 callMateTool 工具。凭据来源取容器中可选的
-     * {@link MateCredentialResolver} Bean——部署方注册该 Bean 即接通按调用
-     * 凭据解析（如 Loop 下发的 Authorization）；未注册时工具仍装配，但
-     * 每次调用被 fail-closed 拒绝（见 {@code HttpMateToolClient} 凭据校验），
-     * 不会发出未认证请求。
+     * 会话级工具名→标识映射缓存，供两个 Mate 工具共享——listMateTool
+     * 刷新的映射必须能被 callMateTool 读到，二者必须持有同一实例。
+     *
+     * <p>本 Bean 在 Spring 容器内是单例（降级模式：所有会话共享一份
+     * 映射，绑定集以最后一次 listMateTool 查询为准）。会话私有部署应在
+     * 会话组装点（如 runtime 的 session engine）为每对工具创建独立的
+     * {@link MateToolSessionCache} 并传入同一实例，实现按会话隔离。
+     *
+     * @return 共享的会话缓存实例
+     */
+    @Bean
+    public MateToolSessionCache mateToolSessionCache() {
+        return new MateToolSessionCache();
+    }
+
+    /**
+     * 创建 callMateTool 工具（与 listMateTool 共享会话缓存）。凭据来源取
+     * 容器中可选的 {@link MateCredentialResolver} Bean——部署方注册该 Bean
+     * 即接通按调用凭据解析（如 Loop 下发的 Authorization）；未注册时工具
+     * 仍装配，但每次调用被 fail-closed 拒绝（见 {@code HttpMateToolClient}
+     * 的凭据校验），不会发出未认证请求。
      *
      * @param client Mate Tool 客户端
      * @param credentialResolverProvider 凭据解析器提供器；容器无该 Bean 时为空
+     * @param sessionCache 与 listMateTool 共享的会话缓存
      * @return callMateTool 工具
      */
     @Bean
     public CallMateTool callMateTool(
-            MateToolClient client, ObjectProvider<MateCredentialResolver> credentialResolverProvider) {
-        return new CallMateTool(client, credentialResolverProvider.getIfAvailable(), new MateToolSessionCache());
+            MateToolClient client,
+            ObjectProvider<MateCredentialResolver> credentialResolverProvider,
+            MateToolSessionCache sessionCache) {
+        return new CallMateTool(client, credentialResolverProvider.getIfAvailable(), sessionCache);
     }
 
     /**
-     * 创建 listMateTool 工具。
+     * 创建 listMateTool 工具（与 callMateTool 共享会话缓存）。
      *
      * @param client Mate Tool 客户端
+     * @param sessionCache 与 callMateTool 共享的会话缓存
      * @return listMateTool 工具
      */
     @Bean
-    public ListMateTool listMateTool(MateToolClient client) {
-        return new ListMateTool(client, new MateToolSessionCache());
+    public ListMateTool listMateTool(MateToolClient client, MateToolSessionCache sessionCache) {
+        return new ListMateTool(client, sessionCache);
     }
 }

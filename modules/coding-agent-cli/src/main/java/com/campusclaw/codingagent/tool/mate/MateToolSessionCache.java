@@ -44,9 +44,15 @@ public class MateToolSessionCache {
             toolIdByName.clear();
             if (metas != null) {
                 for (MateToolMeta meta : metas) {
-                    if (meta.toolName() != null && meta.toolId() != null) {
-                        toolIdByName.put(meta.toolName(), meta.toolId());
+                    if (meta.toolId() == null) {
+                        continue;
                     }
+
+                    // A blank toolName falls back to the id as the call key,
+                    // matching what ListMateTool displays to the model.
+                    String callKey =
+                            meta.toolName() != null && !meta.toolName().isBlank() ? meta.toolName() : meta.toolId();
+                    toolIdByName.put(callKey, meta.toolId());
                 }
             }
         } finally {

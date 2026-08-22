@@ -120,8 +120,10 @@ public class ListMateTool implements AgentTool {
         sb.append(": ").append(tools.size()).append(" tool(s)\n");
 
         for (MateToolMeta tool : tools) {
+            String displayName =
+                    tool.toolName() != null && !tool.toolName().isBlank() ? tool.toolName() : tool.toolId();
             sb.append("  - ")
-                    .append(tool.toolName() != null ? tool.toolName() : tool.toolId())
+                    .append(displayName)
                     .append(" (id: ")
                     .append(tool.toolId())
                     .append("): ")

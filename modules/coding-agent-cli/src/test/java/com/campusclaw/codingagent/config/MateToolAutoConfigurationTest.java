@@ -53,6 +53,21 @@ class MateToolAutoConfigurationTest {
     }
 
     @Test
+    void bothToolsShareOneSessionCacheBean() {
+        runner.run(context -> {
+            assertThat(context).hasSingleBean(com.campusclaw.codingagent.tool.mate.MateToolSessionCache.class);
+            assertThat(context.getBean(CallMateTool.class))
+                    .hasFieldOrPropertyWithValue(
+                            "sessionCache",
+                            context.getBean(com.campusclaw.codingagent.tool.mate.MateToolSessionCache.class));
+            assertThat(context.getBean(ListMateTool.class))
+                    .hasFieldOrPropertyWithValue(
+                            "sessionCache",
+                            context.getBean(com.campusclaw.codingagent.tool.mate.MateToolSessionCache.class));
+        });
+    }
+
+    @Test
     void disabledExcludesBothTools() {
         runner.withPropertyValues("mate.tool.enabled=false").run(context -> {
             assertThat(context).doesNotHaveBean(CallMateTool.class);

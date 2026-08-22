@@ -87,6 +87,31 @@ class CallMateToolTest {
     }
 
     @Test
+    void toolWithoutNameIsCallableByItsId() throws Exception {
+        // Server returns only a toolId: the display/call key falls back to the id.
+        client.addTool(new MateToolMeta(
+                "tool-99999999999999999999999999999999", null, "anon", Map.of(), Map.of(), true, "allow"));
+        cache.refresh(List.of(new MateToolMeta(
+                "tool-99999999999999999999999999999999", null, "anon", Map.of(), Map.of(), true, "allow")));
+
+        tool.execute("t", Map.of("tool", "tool-99999999999999999999999999999999"), null, null);
+
+        assertEquals("tool-99999999999999999999999999999999", client.lastCalledTool());
+    }
+
+    @Test
+    void blankToolNameAlsoFallsBackToId() throws Exception {
+        client.addTool(new MateToolMeta(
+                "tool-88888888888888888888888888888888", "   ", "sp", Map.of(), Map.of(), true, "allow"));
+        cache.refresh(List.of(new MateToolMeta(
+                "tool-88888888888888888888888888888888", "   ", "sp", Map.of(), Map.of(), true, "allow")));
+
+        tool.execute("t", Map.of("tool", "tool-88888888888888888888888888888888"), null, null);
+
+        assertEquals("tool-88888888888888888888888888888888", client.lastCalledTool());
+    }
+
+    @Test
     void resolverProvidedCredentialsReachClient() {
         MateCredentials expected = MateCredentials.jwt("hw-id-9", "tok");
         CallMateTool resolved = new CallMateTool(client, call -> expected, cache);
