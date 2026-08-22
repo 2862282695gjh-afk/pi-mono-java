@@ -7,10 +7,8 @@ package com.huawei.hicampus.mate.matecampusclaw.codingagent.config;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.common.client.HttpMateToolClient;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.common.client.mate.MateToolClient;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.common.util.MateRestUtil;
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.mate.CallMateTool;
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.mate.ListMateTool;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.mate.MateCredentialResolver;
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.mate.MateToolSessionCache;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.mate.MateToolsetFactory;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import org.springframework.beans.factory.ObjectProvider;
@@ -85,50 +83,27 @@ public class MateToolAutoConfiguration {
     }
 
     /**
-     * 会话级工具名→标识映射缓存，供两个 Mate 工具共享——listMateTool
-     * 刷新的映射必须能被 callMateTool 读到，二者必须持有同一实例。
+     * 创建 Mate 工具对工厂。工具名→标识缓存是会话私有状态（不同 agent
+     * 绑定的工具列表不同），因此两个工具与共享缓存必须按会话成组创建：
+     * 会话组装点每会话调用一次 {@link MateToolsetFactory#create()}，
+     * 得到一对持有独立缓存、但彼此共享该缓存的工具实例。凭据解析器取
+     * 容器中可选的 {@link MateCredentialResolver} Bean——部署方注册该
+     * Bean 即接通按调用凭据解析；未注册时 callMateTool 以 fail-closed
+     * 方式拒绝（见 {@code HttpMateToolClient} 的凭据校验），不会发出
+     * 未认证请求。
      *
-     * <p>本 Bean 在 Spring 容器内是单例（降级模式：所有会话共享一份
-     * 映射，绑定集以最后一次 listMateTool 查询为准）。会话私有部署应在
-     * 会话组装点（如 runtime 的 session engine）为每对工具创建独立的
-     * {@link MateToolSessionCache} 并传入同一实例，实现按会话隔离。
-     *
-     * @return 共享的会话缓存实例
-     */
-    @Bean
-    public MateToolSessionCache mateToolSessionCache() {
-        return new MateToolSessionCache();
-    }
-
-    /**
-     * 创建 callMateTool 工具（与 listMateTool 共享会话缓存）。凭据来源取
-     * 容器中可选的 {@link MateCredentialResolver} Bean——部署方注册该 Bean
-     * 即接通按调用凭据解析（如 Loop 下发的 Authorization）；未注册时工具
-     * 仍装配，但每次调用被 fail-closed 拒绝（见 {@code HttpMateToolClient}
-     * 的凭据校验），不会发出未认证请求。
+     * <p>注意：不能把这对工具注册为 Spring 单例 Bean——
+     * {@code SpringAgentToolSource} 会把单例引用交给 {@code ToolCatalog}
+     * 供所有 {@code AgentSession} 复用，跨会话共享缓存会导致 A 会话的
+     * list 结果被 B 会话覆盖（同名工具映射错乱）。
      *
      * @param client Mate Tool 客户端
      * @param credentialResolverProvider 凭据解析器提供器；容器无该 Bean 时为空
-     * @param sessionCache 与 listMateTool 共享的会话缓存
-     * @return callMateTool 工具
+     * @return 会话私有工具对工厂
      */
     @Bean
-    public CallMateTool callMateTool(
-            MateToolClient client,
-            ObjectProvider<MateCredentialResolver> credentialResolverProvider,
-            MateToolSessionCache sessionCache) {
-        return new CallMateTool(client, credentialResolverProvider.getIfAvailable(), sessionCache);
-    }
-
-    /**
-     * 创建 listMateTool 工具（与 callMateTool 共享会话缓存）。
-     *
-     * @param client Mate Tool 客户端
-     * @param sessionCache 与 callMateTool 共享的会话缓存
-     * @return listMateTool 工具
-     */
-    @Bean
-    public ListMateTool listMateTool(MateToolClient client, MateToolSessionCache sessionCache) {
-        return new ListMateTool(client, sessionCache);
+    public MateToolsetFactory mateToolsetFactory(
+            MateToolClient client, ObjectProvider<MateCredentialResolver> credentialResolverProvider) {
+        return new MateToolsetFactory(client, credentialResolverProvider.getIfAvailable());
     }
 }

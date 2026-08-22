@@ -122,6 +122,7 @@ class TransientAgentRunnerTest {
                                 mock(SkillExpander.class),
                                 List.of(),
                                 null,
+                                null,
                                 null)),
                 DelegationContext.forEntry("agent-1", "agent-2", "conv", "inv-1"));
     }

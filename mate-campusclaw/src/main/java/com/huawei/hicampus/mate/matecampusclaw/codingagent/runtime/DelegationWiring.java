@@ -29,6 +29,7 @@ import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.catalog.ToolSele
  * @param localTools 入口运行的本地可见工具
  * @param toolCatalog 工具目录，入口运行没有时为 {@code null}
  * @param toolSelection 入口运行的工具可见性选择
+ * @param mateToolsetFactory Mate 会话私有工具对工厂；入口没有时为 {@code null}
  *
  * @version [br_eCampusCore 26.0.0, 2026/08/18]
  * @since [br_eCampusCore 26.0.0]
@@ -41,7 +42,8 @@ public record DelegationWiring(
         SkillExpander skillExpander,
         List<com.huawei.hicampus.mate.matecampusclaw.agent.tool.AgentTool> localTools,
         ToolCatalog toolCatalog,
-        ToolSelection toolSelection) {
+        ToolSelection toolSelection,
+        com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.mate.MateToolsetFactory mateToolsetFactory) {
 
     public DelegationWiring {
         localTools = localTools == null ? List.of() : List.copyOf(localTools);

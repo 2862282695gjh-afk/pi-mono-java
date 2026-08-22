@@ -37,6 +37,7 @@ CampusClaw 需要调用 Mate 平台管理的工具。这批工具由 Mate 工具
 | `RequestHeaderInfo` | DTO | `common/dto/` — 请求头信息(内网网关无需凭据字段,`builder().build()` 即可) |
 | `ToolInfo` | DTO | `common/dto/` — 元数据项,全字段对齐网关契约(id/type/version/createdAt/updatedAt/permission/enabled/is_concurrency_safe/name/display_name/description/source/input_schema/output_schema) |
 | `MateToolSessionCache` | 缓存 | `tool/mate/` — 会话级工具名→标识映射;listMateTool 每次查询硬性全量刷新,实例随会话创建即天然隔离 |
+| `MateToolsetFactory` | 工厂 | `tool/mate/` — 每会话产出一对共享新缓存的工具;Spring 只暴露工厂 Bean,不暴露工具单例(单例经 ToolCatalog 跨会话复用会泄漏缓存) |
 | `AgentInfo` | DTO | `common/dto/` — agent 元数据,`bindingTools[].toolId` 是第一步的 tool ID 来源 |
 | `QuerySkillToolsResult` / `SkillBindingTool` | DTO | `common/dto/` — skill 工具查询结果,`bindingTools[].id` 是第一步的 tool ID 来源 |
 | `MateToolAutoConfiguration` | 配置 | `config/` — 通过 `@Value` 注入网关地址与三个出站接口路径并完成装配 |
@@ -89,7 +90,7 @@ callMateTool({tool: toolName, args})
 
 ### D1. 会话级缓存,实例即隔离
 
-**决策**:`MateToolClient` 保持无状态;两个 AgentTool 携带会话私有的 `MateToolSessionCache`(工具名→标识映射),listMateTool 每次查询后硬性全量刷新,callMateTool 据此把入参工具名映射为执行用标识。
+**决策**:`MateToolClient` 保持无状态;Mate 工具不注册为 Spring 单例 Bean,由 `MateToolsetFactory` 在会话组装点每会话产出一对工具——listMateTool 与 callMateTool 共享一个**新建的** `MateToolSessionCache`,组间互不可见。入口路径(`CampusClawCommand.resolveEffectiveTools`)与委派子会话(`TransientAgentRunner`,经 `DelegationWiring` 携带工厂)均按会话调用工厂;`SpringAgentToolSource`/`ToolCatalog` 不再包含 Mate 工具。
 
 **理由**:不同 agent 绑定的工具列表不同,映射不能共享——缓存实例随会话的工具实例一起创建,实例私有即隔离,无需显式 sessionId 通道。硬性全量替换(非增量合并)保证绑定集变化即时生效。历史注:#136 初版有全局 metaCache,#144 评审期因"进程级单例串会话"移除,本次以会话实例化方式回归映射能力,隔离边界从进程缩小到会话。
 

@@ -90,6 +90,9 @@ public class CampusClawCommand implements Callable<Integer> {
     private final ModelRegistry modelRegistry;
     private final SystemPromptBuilder promptBuilder;
     private final List<AgentTool> tools;
+    private final org.springframework.beans.factory.ObjectProvider<
+                    com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.mate.MateToolsetFactory>
+            mateToolsetFactoryProvider;
     private final ToolCatalog toolCatalog;
     private final SlashCommandRegistry commandRegistry;
     private final BashExecutor bashExecutor;
@@ -107,6 +110,8 @@ public class CampusClawCommand implements Callable<Integer> {
             SystemPromptBuilder promptBuilder,
             List<AgentTool> tools,
             SlashCommandRegistry commandRegistry,
+            org.springframework.beans.factory.ObjectProvider<com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.mate.MateToolsetFactory>
+                    mateToolsetFactoryProvider,
             BashExecutor bashExecutor,
             SettingsManager settingsManager,
             @org.springframework.lang.Nullable com.huawei.hicampus.mate.matecampusclaw.cron.CronService cronService,
@@ -121,6 +126,7 @@ public class CampusClawCommand implements Callable<Integer> {
                 tools,
                 new DefaultToolCatalog(List.of(new SpringAgentToolSource(tools))),
                 commandRegistry,
+                mateToolsetFactoryProvider,
                 bashExecutor,
                 settingsManager,
                 cronService,
@@ -139,6 +145,8 @@ public class CampusClawCommand implements Callable<Integer> {
             List<AgentTool> tools,
             ToolCatalog toolCatalog,
             SlashCommandRegistry commandRegistry,
+            org.springframework.beans.factory.ObjectProvider<com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.mate.MateToolsetFactory>
+                    mateToolsetFactoryProvider,
             BashExecutor bashExecutor,
             SettingsManager settingsManager,
             @org.springframework.lang.Nullable com.huawei.hicampus.mate.matecampusclaw.cron.CronService cronService,
@@ -151,6 +159,7 @@ public class CampusClawCommand implements Callable<Integer> {
         this.modelRegistry = modelRegistry;
         this.promptBuilder = promptBuilder;
         this.tools = tools != null ? tools : List.of();
+        this.mateToolsetFactoryProvider = mateToolsetFactoryProvider;
         this.toolCatalog = toolCatalog != null
                 ? toolCatalog
                 : new DefaultToolCatalog(List.of(new SpringAgentToolSource(this.tools)));
@@ -600,9 +609,13 @@ public class CampusClawCommand implements Callable<Integer> {
                 promptBuilder,
                 skillLoader,
                 skillExpander,
-                effectiveTools,
+                effectiveTools.stream()
+                        .filter(tool -> !(tool instanceof com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.mate.ListMateTool)
+                                && !(tool instanceof com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.mate.CallMateTool))
+                        .toList(),
                 toolCatalog,
-                toolSelection);
+                toolSelection,
+                mateToolsetFactoryProvider != null ? mateToolsetFactoryProvider.getIfAvailable() : null);
         session.setDelegationState(DelegationState.entry(dispatcher, null, null, wiring));
     }
 
@@ -648,7 +661,35 @@ public class CampusClawCommand implements Callable<Integer> {
 
     private List<AgentTool> resolveEffectiveTools(Path effectiveCwd, ToolSelection toolSelection) {
         toolCatalog.refresh(new ToolRefreshRequest(effectiveCwd));
-        return toolCatalog.resolve(toolSelection);
+        return appendSessionMateTools(toolCatalog.resolve(toolSelection), toolSelection);
+    }
+
+    /**
+     * 追加本会话私有的 Mate 工具对。工具名→标识缓存是会话状态,必须每会话
+     * 新建一对工具与缓存(工厂保证组内共享、组间隔离),不能复用 Spring 单例。
+     *
+     * @param resolved 目录解析出的工具列表
+     * @param toolSelection 工具可见性选择(空 include 表示全部可见)
+     * @return 追加 Mate 工具后的列表;无工厂或被过滤时原样返回
+     */
+    private List<AgentTool> appendSessionMateTools(List<AgentTool> resolved, ToolSelection toolSelection) {
+        if (mateToolsetFactoryProvider == null || resolved == null) {
+            return resolved;
+        }
+        var factory = mateToolsetFactoryProvider.getIfAvailable();
+        if (factory == null || toolSelection.noTools()) {
+            return resolved;
+        }
+        var include = toolSelection.include();
+        var mateTools = factory.create().stream()
+                .filter(tool -> include.isEmpty() || include.contains(tool.name()))
+                .toList();
+        if (mateTools.isEmpty()) {
+            return resolved;
+        }
+        var combined = new java.util.ArrayList<>(resolved);
+        combined.addAll(mateTools);
+        return combined;
     }
 
     private void applySessionLoading(SessionManager sessionManager, AgentSession session, Path effectiveCwd) {

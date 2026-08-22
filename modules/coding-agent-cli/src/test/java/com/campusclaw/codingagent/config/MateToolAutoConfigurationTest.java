@@ -44,34 +44,57 @@ class MateToolAutoConfigurationTest {
             .withUserConfiguration(MockClientSupport.class);
 
     @Test
-    void enabledByDefaultRegistersBothTools() {
+    void enabledByDefaultRegistersFactoryNotSingletonTools() {
         runner.run(context -> {
-            assertThat(context).hasSingleBean(CallMateTool.class);
-            assertThat(context).hasSingleBean(ListMateTool.class);
-            assertThat(context.getBeanNamesForType(AgentTool.class)).contains("callMateTool", "listMateTool");
-        });
-    }
+            assertThat(context).hasSingleBean(com.campusclaw.codingagent.tool.mate.MateToolsetFactory.class);
 
-    @Test
-    void bothToolsShareOneSessionCacheBean() {
-        runner.run(context -> {
-            assertThat(context).hasSingleBean(com.campusclaw.codingagent.tool.mate.MateToolSessionCache.class);
-            assertThat(context.getBean(CallMateTool.class))
-                    .hasFieldOrPropertyWithValue(
-                            "sessionCache",
-                            context.getBean(com.campusclaw.codingagent.tool.mate.MateToolSessionCache.class));
-            assertThat(context.getBean(ListMateTool.class))
-                    .hasFieldOrPropertyWithValue(
-                            "sessionCache",
-                            context.getBean(com.campusclaw.codingagent.tool.mate.MateToolSessionCache.class));
-        });
-    }
-
-    @Test
-    void disabledExcludesBothTools() {
-        runner.withPropertyValues("mate.tool.enabled=false").run(context -> {
+            // Tools must NOT be singleton beans: the session cache is
+            // per-session state and singleton beans would leak across sessions.
             assertThat(context).doesNotHaveBean(CallMateTool.class);
             assertThat(context).doesNotHaveBean(ListMateTool.class);
+        });
+    }
+
+    @Test
+    void factoryPairsShareOneCachePerSessionAndIsolateAcrossSessions() {
+        runner.run(context -> {
+            var factory = context.getBean(com.campusclaw.codingagent.tool.mate.MateToolsetFactory.class);
+            var pairA = factory.create();
+            var pairB = factory.create();
+
+            var listA = (ListMateTool) pairA.get(0);
+            var callA = (CallMateTool) pairA.get(1);
+            var listB = (ListMateTool) pairB.get(0);
+            var callB = (CallMateTool) pairB.get(1);
+
+            var cacheOfListA = sessionCacheOf(listA);
+            var cacheOfCallA = sessionCacheOf(callA);
+            var cacheOfListB = sessionCacheOf(listB);
+
+            // Within one session pair: list and call share the same cache instance.
+            assertThat(cacheOfListA).isSameAs(cacheOfCallA);
+
+            // Across sessions: distinct caches and distinct tool instances.
+            assertThat(cacheOfListA).isNotSameAs(cacheOfListB);
+            assertThat(listA).isNotSameAs(listB);
+            assertThat(callA).isNotSameAs(callB);
+        });
+    }
+
+    private static com.campusclaw.codingagent.tool.mate.MateToolSessionCache sessionCacheOf(Object tool) {
+        try {
+            var field = tool.getClass().getDeclaredField("sessionCache");
+            field.setAccessible(true);
+            return (com.campusclaw.codingagent.tool.mate.MateToolSessionCache) field.get(tool);
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException("missing sessionCache field on " + tool.getClass(), e);
+        }
+    }
+
+    @Test
+    void disabledExcludesFactory() {
+        runner.withPropertyValues("mate.tool.enabled=false").run(context -> {
+            assertThat(context).doesNotHaveBean(com.campusclaw.codingagent.tool.mate.MateToolsetFactory.class);
             assertThat(context.getBeanNamesForType(AgentTool.class)).isEmpty();
         });
     }
