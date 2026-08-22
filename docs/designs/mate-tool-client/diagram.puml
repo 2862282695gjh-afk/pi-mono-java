@@ -6,7 +6,7 @@
 ' - modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/common/client/mate/:
 '   MateToolClient (listTools/callTool contract), MateToolMeta, MateCredentials
 ' - modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/common/client/:
-'   HttpMateToolClient (two-step listTools wiring, invokeTool stub DEF-007)
+'   HttpMateToolClient (two-step listTools wiring, invokeTool execute RPC)
 ' - modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/common/util/:
 '   MateRestUtil (executePostRawRequest / executeGetRawRequest)
 ' - modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/common/dto/:
@@ -19,7 +19,7 @@
 ' Observed behavior: both AgentTools are stateless Spring singletons; listTools
 ' resolves bound tool IDs from agent/skill metadata (GET) then calls
 ' the tool metadata endpoint credential-free; callTool forwards agent-handed-down
-' credentials; the invoke RPC is still a DEF-007 stub.
+' credentials; MateCredentialResolver resolves per-call credentials.
 ' Architecture change: outbound endpoint paths are deployment configuration
 ' injected with @Value; stable inbound API contract paths remain constants.
 ' Design reason: process-wide singleton lifetime forbids per-session state;
@@ -35,7 +35,7 @@ title Mate Tool Client Layers and Dependency Direction
 package "tool/mate (AgentTool layer)" {
   class CallMateTool {
     + execute()
-    # resolveCredentials(tool): MateCredentials
+    # resolveCredentials(MateToolCall): MateCredentials
   }
   class ListMateTool {
     + execute()
@@ -55,7 +55,8 @@ package "common/client (infrastructure layer)" {
     # queryToolIdsBySkillId(skillId)
     # queryToolMetaByIds(toolIds)
     # toMeta(List<ToolInfo>)
-    # invokeTool(...) [stub DEF-007]
+    # invokeTool(toolId, args, credentials)
+    # toolExecutePathTemplate
   }
 }
 
@@ -65,13 +66,21 @@ package "common/client/mate (contract layer)" {
     + callTool(tool, args, credentials)
   }
   class MateToolMeta <<record>> {
-    name / description
+    toolId / description
     inputSchema / outputSchema
     isConcurrencySafe / permission
   }
   class MateCredentials <<record>> {
     xHwId / xHwAppKey / authorization
     + appKey() / jwt()
+    + isComplete()
+  }
+  interface MateCredentialResolver {
+    + resolve(MateToolCall)
+  }
+  class MateToolCall <<record>> {
+    toolCallId / tool / args
+    (deep-copied, read-only)
   }
 }
 
@@ -111,6 +120,7 @@ HttpMateToolClient ..> MateRestUtil : gateway calls
 HttpMateToolClient ..> RequestHeaderInfo : credential-free header
 HttpMateToolClient ..> ToolInfo : decodes result.data
 HttpMateToolClient ..> MateCredentials : forwards on callTool
+CallMateTool ..> MateCredentialResolver : per-call resolution
 MateToolAutoConfiguration ..> HttpMateToolClient : @Bean wiring
 
 note bottom of MateToolClient
@@ -128,7 +138,7 @@ end note
 '   execute (agent/skill passthrough, response formatting)
 ' - modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/common/client/HttpMateToolClient.java:
 '   listTools (two-step: agent/skill metadata GET -> binding tool IDs,
-'   then tool metadata POST), callTool (stub invoke)
+'   then tool metadata POST), callTool (execute RPC)
 ' - modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/common/util/MateRestUtil.java:
 '   executePostRawRequest, resCode/resMsg/result envelope
 ' Source baseline: superheromeZzh/pi-mono-java commit 1e9d4ee2e14717764f8403c20375c55512cbd97b
@@ -196,13 +206,19 @@ llm -> loop: tool_use("callMateTool", {tool, args})
 loop -> callTool: execute
 callTool -> callTool: resolveCredentials(tool)
 callTool -> http: callTool(tool, args, credentials)
-http -> http: invokeTool [DEF-007 stub]
-alt stub throws
-  http --> callTool: isError ToolResult
+callTool -> callTool: resolveCredentials(MateToolCall) [resolver or fail-closed]
+callTool -> http: callTool(toolId, args, credentials)
+alt credentials incomplete/missing
+  http --> callTool: isError ToolResult (refused, zero request)
   callTool --> llm: MateToolExecutionException (pipeline marks isError)
-else real invoke (internal)
-  http -> rest: executePostRawRequest(gw, CALLTOOL, headerInfo, body)
-  rest -> gw: POST tool invocation (credentials forwarded)
+else valid credentials
+  http -> rest: executePostRawRequest(gw, execute-path, headerInfo, body)
+  rest -> gw: POST /mate-service/v1/runtime/tools/{toolId}/execute
+  note right of rest
+    header: RequestHeaderInfo + X-HW-ID
+      + X-HW-APPKEY or Authorization
+    body: args per tool inputSchema
+  end note
   gw --> rest: {resCode, resMsg, result}
   rest --> http: raw body
   alt result error

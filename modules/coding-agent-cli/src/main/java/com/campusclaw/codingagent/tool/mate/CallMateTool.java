@@ -52,7 +52,7 @@ public class CallMateTool implements AgentTool {
                     """
                     {"type":"object",
                      "properties":{
-                       "tool":{"type":"string","description":"Tool name to call"},
+                       "tool":{"type":"string","description":"Tool ID to call (tool-<32 hex>), as returned by listMateTool"},
                        "args":{"type":"object","description":"Arguments object for the tool"}
                      },
                      "required":["tool"]}""");

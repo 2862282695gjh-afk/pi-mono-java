@@ -45,7 +45,7 @@ public class MockMateToolClient implements MateToolClient {
      * @param meta the tool metadata
      */
     public void addTool(MateToolMeta meta) {
-        toolsById.put(meta.name(), meta);
+        toolsById.put(meta.toolId(), meta);
     }
 
     /**

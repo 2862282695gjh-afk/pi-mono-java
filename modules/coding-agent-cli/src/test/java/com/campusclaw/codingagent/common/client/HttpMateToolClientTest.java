@@ -75,7 +75,9 @@ class HttpMateToolClientTest {
 
         List<MateToolMeta> tools = client.listTools("agent-11111111111111111111111111111111", null);
 
-        assertThat(tools).extracting(MateToolMeta::name).containsExactly("query", "chart");
+        assertThat(tools)
+                .extracting(MateToolMeta::toolId)
+                .containsExactly("tool-11111111111111111111111111111111", "tool-22222222222222222222222222222222");
         assertThat(tools.get(1).permission()).isEqualTo("deny");
 
         var agentReq = server.takeRequest();
@@ -100,7 +102,7 @@ class HttpMateToolClientTest {
 
         List<MateToolMeta> tools = client.listTools(null, "skill-11111111111111111111111111111111");
 
-        assertThat(tools).extracting(MateToolMeta::name).containsExactly("query");
+        assertThat(tools).extracting(MateToolMeta::toolId).containsExactly("tool-33333333333333333333333333333333");
         assertThat(server.takeRequest().getPath())
                 .isEqualTo("/mate-service/v1/skill/info/query/skill-11111111111111111111111111111111");
         assertThat(server.takeRequest().getBody().readUtf8()).contains("\"tool-33333333333333333333333333333333\"");
@@ -127,7 +129,7 @@ class HttpMateToolClientTest {
 
         List<MateToolMeta> tools = client.listTools("agent-11111111111111111111111111111111", null);
 
-        assertThat(tools).extracting(MateToolMeta::name).containsExactly("tool-44444444444444444444444444444444");
+        assertThat(tools).extracting(MateToolMeta::toolId).containsExactly("tool-44444444444444444444444444444444");
     }
 
     @Test
@@ -234,6 +236,28 @@ class HttpMateToolClientTest {
         assertThat(result.isError()).isTrue();
         assertThat(result.content()).contains("incomplete credentials");
         assertThat(server.getRequestCount()).isZero();
+    }
+
+    @Test
+    void discoveredToolIdSatisfiesExecuteContract() throws Exception {
+        // Contract: the toolId returned by listTools must be directly usable
+        // as the `tool` parameter of callTool (discovery-to-execution).
+        server.enqueue(json("{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":"
+                + "{\"bindingTools\":[{\"toolId\":\"tool-aaaabbbbccccddddeeeeffff00001111\"}]}}"));
+        server.enqueue(json("{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":{\"data\":["
+                + "{\"toolId\":\"tool-aaaabbbbccccddddeeeeffff00001111\",\"toolName\":\"query\"}]}}"));
+        server.enqueue(json("{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":{\"answer\":1}}"));
+
+        List<MateToolMeta> tools = client.listTools("agent-11111111111111111111111111111111", null);
+        String discoveredId = tools.getFirst().toolId();
+        MateToolClient.ToolResult result =
+                client.callTool(discoveredId, java.util.Map.of(), MateCredentials.appKey("hw-id-1", "key-1"));
+
+        assertThat(result.isError()).isFalse();
+        assertThat(server.takeRequest().getPath()).contains("/agents/");
+        assertThat(server.takeRequest().getPath()).isEqualTo("/mate-service/v1/runtime/tools/query");
+        assertThat(server.takeRequest().getPath())
+                .isEqualTo("/mate-service/v1/runtime/tools/tool-aaaabbbbccccddddeeeeffff00001111/execute");
     }
 
     @Test

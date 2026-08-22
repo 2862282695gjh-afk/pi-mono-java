@@ -32,8 +32,10 @@ class CallMateToolTest {
     @BeforeEach
     void setUp() {
         client = new MockMateToolClient();
-        client.addTool(new MateToolMeta("query", "q", Map.of(), Map.of(), true, "allow"));
-        client.addTool(new MateToolMeta("delete", "d", Map.of(), Map.of(), false, "deny"));
+        client.addTool(
+                new MateToolMeta("tool-11111111111111111111111111111111", "q", Map.of(), Map.of(), true, "allow"));
+        client.addTool(
+                new MateToolMeta("tool-33333333333333333333333333333333", "d", Map.of(), Map.of(), false, "deny"));
         tool = new CallMateTool(client, null);
     }
 
@@ -43,7 +45,8 @@ class CallMateToolTest {
                 com.campusclaw.codingagent.common.client.mate.MateCredentials.jwt("hw-id-9", "tok");
         CallMateTool resolved = new CallMateTool(client, call -> expected);
 
-        assertDoesNotThrow(() -> resolved.execute("t", Map.of("tool", "query"), null, null));
+        assertDoesNotThrow(
+                () -> resolved.execute("t", Map.of("tool", "tool-11111111111111111111111111111111"), null, null));
 
         assertEquals("hw-id-9", client.lastCallCredentials().xHwId());
         assertEquals("Bearer tok", client.lastCallCredentials().authorization());
@@ -65,11 +68,12 @@ class CallMateToolTest {
             // Each worker verifies through its own recording client to avoid
             // the shared lastCallCredentials field racing between threads.
             MockMateToolClient recordingClient = new MockMateToolClient();
-            recordingClient.addTool(new MateToolMeta("query", "q", Map.of(), Map.of(), true, "allow"));
+            recordingClient.addTool(
+                    new MateToolMeta("tool-11111111111111111111111111111111", "q", Map.of(), Map.of(), true, "allow"));
             CallMateTool sessionTool = new CallMateTool(recordingClient, call -> bySession.get(call.toolCallId()));
             workers.add(Thread.ofPlatform().start(() -> {
                 try {
-                    sessionTool.execute(callId, Map.of("tool", "query"), null, null);
+                    sessionTool.execute(callId, Map.of("tool", "tool-11111111111111111111111111111111"), null, null);
                     String seen = recordingClient.lastCallCredentials().xHwId();
                     String wanted = bySession.get(callId).xHwId();
                     if (!wanted.equals(seen)) {
@@ -89,7 +93,8 @@ class CallMateToolTest {
     @Test
     void resolverCannotMutateToolArgs() throws Exception {
         MockMateToolClient recording = new MockMateToolClient();
-        recording.addTool(new MateToolMeta("query", "q", Map.of(), Map.of(), true, "allow"));
+        recording.addTool(
+                new MateToolMeta("tool-11111111111111111111111111111111", "q", Map.of(), Map.of(), true, "allow"));
         CallMateTool guarded = new CallMateTool(recording, call -> {
             call.args().put("injected", "by-resolver");
             return com.campusclaw.codingagent.common.client.mate.MateCredentials.appKey("id", "key");
@@ -97,7 +102,7 @@ class CallMateToolTest {
 
         Map<String, Object> originalArgs = new java.util.HashMap<>(Map.of("query", "hi"));
         Map<String, Object> params = new java.util.HashMap<>();
-        params.put("tool", "query");
+        params.put("tool", "tool-11111111111111111111111111111111");
         params.put("args", originalArgs);
 
         org.junit.jupiter.api.Assertions.assertThrows(
@@ -143,10 +148,11 @@ class CallMateToolTest {
     private Map<String, Object> runResolverMutation(Map<String, Object> args, MateCredentialResolver mutatingResolver)
             throws Exception {
         MockMateToolClient recording = new MockMateToolClient();
-        recording.addTool(new MateToolMeta("query", "q", Map.of(), Map.of(), true, "allow"));
+        recording.addTool(
+                new MateToolMeta("tool-11111111111111111111111111111111", "q", Map.of(), Map.of(), true, "allow"));
         CallMateTool guarded = new CallMateTool(recording, mutatingResolver);
         Map<String, Object> params = new java.util.HashMap<>();
-        params.put("tool", "query");
+        params.put("tool", "tool-11111111111111111111111111111111");
         params.put("args", args);
 
         // The read-only snapshot throws on any mutation attempt, before the
@@ -158,8 +164,9 @@ class CallMateToolTest {
 
     @Test
     void callPassesThroughToClient() {
-        var r = assertDoesNotThrow(() -> tool.execute("t", Map.of("tool", "query", "args", Map.of()), null, null));
-        assertEquals("query", client.lastCalledTool());
+        var r = assertDoesNotThrow(() -> tool.execute(
+                "t", Map.of("tool", "tool-11111111111111111111111111111111", "args", Map.of()), null, null));
+        assertEquals("tool-11111111111111111111111111111111", client.lastCalledTool());
     }
 
     @Test

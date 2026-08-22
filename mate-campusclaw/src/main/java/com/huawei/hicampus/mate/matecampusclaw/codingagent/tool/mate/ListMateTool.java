@@ -113,7 +113,7 @@ public class ListMateTool implements AgentTool {
 
         for (MateToolMeta tool : tools) {
             sb.append("  - ")
-                    .append(tool.name())
+                    .append(tool.toolId())
                     .append(": ")
                     .append(tool.description() != null ? tool.description() : "")
                     .append("\n");

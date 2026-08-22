@@ -90,11 +90,13 @@ class MateToolAutoConfigurationTest {
         client.overrideCallResult(new MateToolClient.ToolResult("mate exploded", null, true));
         CallMateTool callMateTool = new CallMateTool(client, null);
 
-        ToolCall toolCall = new ToolCall("call-1", "callMateTool", Map.of("tool", "boom"));
+        ToolCall toolCall =
+                new ToolCall("call-1", "callMateTool", Map.of("tool", "tool-44444444444444444444444444444444"));
         ToolExecutionPipeline pipeline = new ToolExecutionPipeline();
 
         List<ToolResultMessage> results = pipeline.executeAll(
-                List.of(new ToolCallWithTool(toolCall, callMateTool, Map.of("tool", "boom"))),
+                List.of(new ToolCallWithTool(
+                        toolCall, callMateTool, Map.of("tool", "tool-44444444444444444444444444444444"))),
                 ToolExecutionMode.SEQUENTIAL,
                 new com.campusclaw.agent.tool.AgentContext(),
                 new com.campusclaw.agent.tool.CancellationToken(),

@@ -31,10 +31,13 @@ class ListMateToolTest {
     @BeforeEach
     void setUp() {
         client = new MockMateToolClient();
-        client.addTool(new MateToolMeta("query", "q", Map.of(), Map.of(), true, "allow"));
-        client.addTool(new MateToolMeta("export", "e", Map.of(), Map.of(), false, "allow"));
-        client.bindAgent("agent-1", List.of("query", "export"));
-        client.bindSkill("skill-1", List.of("query"));
+        client.addTool(
+                new MateToolMeta("tool-11111111111111111111111111111111", "q", Map.of(), Map.of(), true, "allow"));
+        client.addTool(
+                new MateToolMeta("tool-22222222222222222222222222222222", "e", Map.of(), Map.of(), false, "allow"));
+        client.bindAgent(
+                "agent-1", List.of("tool-11111111111111111111111111111111", "tool-22222222222222222222222222222222"));
+        client.bindSkill("skill-1", List.of("tool-11111111111111111111111111111111"));
         listMateTool = new ListMateTool(client);
     }
 
@@ -42,8 +45,8 @@ class ListMateToolTest {
     void agentIdIsPassedThroughToClient() throws Exception {
         var r = listMateTool.execute("t", Map.of("agent_id", "agent-1"), null, null);
         String text = asText(r);
-        assertTrue(text.contains("query"));
-        assertTrue(text.contains("export"));
+        assertTrue(text.contains("tool-11111111111111111111111111111111"));
+        assertTrue(text.contains("tool-22222222222222222222222222222222"));
         assertEquals("agent-1", client.lastListAgentId());
     }
 

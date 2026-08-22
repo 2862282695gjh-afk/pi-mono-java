@@ -9,7 +9,7 @@ import java.util.Map;
 /**
  * Mate 工具元数据批量查询接口返回的单个工具元数据。
  *
- * @param name 工具名
+ * @param toolId 工具标识(满足 TOOL_ID_PATTERN,入执行路径)
  * @param description 可读描述
  * @param inputSchema 输入 JSON Schema
  * @param outputSchema 输出 JSON Schema
@@ -19,7 +19,7 @@ import java.util.Map;
  * @since [br_eCampusCore 26.0.0]
  */
 public record MateToolMeta(
-        String name,
+        String toolId,
         String description,
         Map<String, Object> inputSchema,
         Map<String, Object> outputSchema,

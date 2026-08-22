@@ -1,9 +1,9 @@
 # Mate Tool Client 设计文档
 
 > 模块:`coding-agent-cli`
-> 文档版本:1.1.0
-> 状态:Accepted(初版 #136 / 目录调整 #140 / 内网网关对接 #161)
-> 日期:2026-08-17 初版,2026-08-21 更新(出站接口路径配置化)
+> 文档版本:1.2.0
+> 状态:Accepted(初版 #136 / 目录调整 #140 / 内网网关对接 #161 / 执行链路与凭据解析 #164)
+> 日期:2026-08-17 初版,2026-08-22 更新(执行 RPC + toolId 契约统一 + 凭据解析)
 
 ---
 
@@ -15,7 +15,7 @@ CampusClaw 需要调用 Mate 平台管理的工具。这批工具由 Mate 工具
 
 ## 源码基线
 
-- 分析提交:`1e9d4ee2e14717764f8403c20375c55512cbd97b`
+- 分析提交:`330c1e1e`(PR #164 分支 feat/mate-tool-invoke 当前头)
 - `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/common/client/HttpMateToolClient.java`:`listTools`、`queryToolIdsByAgentId`、`queryToolIdsBySkillId`、`queryToolMetaByIds`
 - `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/config/MateToolAutoConfiguration.java`:`mateToolClient`
 - `modules/coding-agent-cli/src/main/resources/application.yml`:`mate.innerGWSerive`
@@ -96,7 +96,7 @@ callMateTool({tool, args})
 
 **理由**:审批 UI 与权限语义暂不引入(用户决策);服务端是权限的最终裁决点。`MateApprovalUI`、metaCache、本地参数校验随权限逻辑一并移除。
 
-### D3. listTools 免凭据,callTool 透传凭据
+### D3. listTools 免凭据,callTool 透传凭据（[ADR-0021](../decisions/0021-mate-tool-credential-resolution.html)）
 
 **决策**:`listTools(toolIds)` 不带凭据(RequestHeaderInfo 默认构造即可过网关);`callTool(tool, args, credentials)` 第三参数透传 agent 下发的 `MateCredentials`。
 
@@ -190,18 +190,18 @@ LLM API tools 字段新增 listMateTool / callMateTool 两个工具定义。网�
 
 | 测试类 | 数量 | 覆盖 |
 |---|---|---|
-| `CallMateToolTest` | 3 | 调用透传 / 未知工具错误传播 / 缺 tool 参数抛错 |
-| `ListMateToolTest` | 3 | agent_id 作 tool ID / skill_id 作 tool ID / 空参查空列表 |
-| `MateToolAutoConfigurationTest` | 4 | 默认装配 / enabled=false 排除 / 网关地址经属性到达 client / isError 经 pipeline 传播 |
+| `CallMateToolTest` | 8 | 调用透传 / 未知工具错误传播 / 缺 tool 参数抛错 / resolver 凭据到达 client / 并发会话凭据隔离 / 顶层与嵌套 Map、嵌套 List 防篡改 |
+| `ListMateToolTest` | 3 | agent_id 透传 / skill_id 透传 / 空参查空列表 |
+| `MateToolAutoConfigurationTest` | 4 | 默认装配 / enabled=false 排除 / 网关地址与端点路径经属性到达 client / isError 经 pipeline 传播 |
 | `MateToolPropertiesTest` | 1 | enabled 默认值 |
-| `HttpMateToolClientTest` | 11 | MockWebServer 桩测试:两步查询 / 空 bindingTools 跳过详情查询 / toolName 兜底 / 错误分支 / 标识校验 / header 发送 / 配置路径生效 |
-| `ApplicationYmlLoadTest` | 3 | config-data 真加载 application.yml,占位符解析无循环引用,默认路径和外部覆盖生效 |
+| `HttpMateToolClientTest` | 19 | MockWebServer 桩测试:两步查询 / 空 bindingTools 跳过详情查询 / 错误分支 / 标识校验 / header 发送 / 配置路径生效 / AppKey 与 JWT 双模式 header 断言 / 凭据残缺 7 形态零请求拒绝 / jwt 空 token 拒绝 / 恶意 toolId 拒绝 / **发现→执行契约(list 返回 toolId 直达执行路径)** |
+| `ApplicationYmlLoadTest` | 3 | config-data 真加载 application.yml,占位符解析无循环引用,默认路径和外部覆盖(含执行端点模板)生效 |
 
 共 25 个:工具层使用内存 `MockMateToolClient`;HTTP 层使用 MockWebServer 桩服务(不依赖 mock client,直测 `HttpMateToolClient` 两步查询)。
 
 ## 验证
 
-- `./mvnw -pl modules/coding-agent-cli -am test -Dtest='HttpMateToolClientTest,MateToolAutoConfigurationTest,ApplicationYmlLoadTest,MateServiceClientTest,ToolCatalogWiringTest' -Dsurefire.failIfNoSpecifiedTests=false` — **34 tests, 0 failures**
+- `./mvnw -pl modules/coding-agent-cli test -Dtest='HttpMateToolClientTest,CallMateToolTest,MateToolAutoConfigurationTest,ListMateToolTest,MateToolPropertiesTest,ApplicationYmlLoadTest' -Dsurefire.failIfNoSpecifiedTests=false` — **38 tests, 0 failures**
 - `./mvnw clean test` — 全量 Reactor 通过，`coding-agent-cli` **1306 tests, 0 failures**
 - `mvn clean test`(`mate-campusclaw`) — **2777 tests, 0 failures**
 - 主模块 `checkstyle:check` 与 `spotless:check` → clean；mate 镜像全量测试内置 `checkstyle:check` → 0 violations
