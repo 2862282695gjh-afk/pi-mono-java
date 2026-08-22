@@ -16,7 +16,9 @@ import org.junit.jupiter.api.Test;
 
 /**
  * {@link MateToolsetFactory#create(ToolSelection)} 的可见性过滤测试：会话
- * 私有注入不得绕过 include/exclude/noTools 配置（与目录解析语义一致）。
+ * 私有注入不得绕过 include/exclude/noTools 配置，且两个 Mate 工具按
+ * 原子组注入——过滤结果不能同时包含 listMateTool 与 callMateTool 时整组
+ * 不注入（单独的 call 无法刷新缓存，必然全部失败）。
  *
  * @version [br_eCampusCore 26.0.0, 2026/08/22]
  * @since [br_eCampusCore 26.0.0]
@@ -44,37 +46,46 @@ class MateToolsetFactoryTest {
     }
 
     @Test
-    void includeFilterKeepsOnlyListedTools() {
-        var tools = factory.create(new ToolSelection(List.of("callMateTool"), List.of(), false));
-        assertThat(tools).extracting(AgentTool::name).containsExactly("callMateTool");
+    void includingOnlyCallMateToolInjectsNothing() {
+        // 单独的 callMateTool 无法刷新 name→id 缓存,整组不注入。
+        assertThat(factory.create(new ToolSelection(List.of("callMateTool"), List.of(), false)))
+                .isEmpty();
     }
 
     @Test
-    void excludingCallMateToolInjectsOnlyListMateTool() {
-        var tools = factory.create(new ToolSelection(List.of(), List.of("callMateTool"), false));
-        assertThat(tools).extracting(AgentTool::name).containsExactly("listMateTool");
+    void excludingListMateToolInjectsNothing() {
+        // 排除 listMateTool 后 callMateTool 同样失去缓存来源,整组不注入。
+        assertThat(factory.create(new ToolSelection(List.of(), List.of("listMateTool"), false)))
+                .isEmpty();
+    }
+
+    @Test
+    void includingOnlyListMateToolInjectsNothing() {
+        // 对称:只能发现不能执行的单独 listMateTool 亦无意义。
+        assertThat(factory.create(new ToolSelection(List.of("listMateTool"), List.of(), false)))
+                .isEmpty();
     }
 
     @Test
     void excludingBothInjectsNoMateTools() {
-        var tools = factory.create(new ToolSelection(List.of(), List.of("listMateTool", "callMateTool"), false));
-        assertThat(tools).isEmpty();
+        assertThat(factory.create(new ToolSelection(List.of(), List.of("listMateTool", "callMateTool"), false)))
+                .isEmpty();
     }
 
     @Test
-    void includeAndExcludeCombinedExcludesWin() {
-        var tools = factory.create(
-                new ToolSelection(List.of("listMateTool", "callMateTool"), List.of("callMateTool"), false));
-        assertThat(tools).extracting(AgentTool::name).containsExactly("listMateTool");
-    }
+    void fullGroupSelectionInjectsPairSharingOneCache() {
+        var tools = factory.create(new ToolSelection(List.of("listMateTool", "callMateTool"), List.of(), false));
 
-    @Test
-    void filteredPairStillSharesOneSessionCache() {
-        var tools = factory.create(new ToolSelection(List.of(), List.of("callMateTool"), false));
-        var listTool = (ListMateTool) tools.get(0);
-
-        // 与完整批次同语义:组内(list+call)共享缓存;这里验证 list 自身持有缓存实例。
-        assertThat(sessionCacheOf(listTool)).isNotNull();
+        assertThat(tools).extracting(AgentTool::name).containsExactlyInAnyOrder("listMateTool", "callMateTool");
+        var listTool = (ListMateTool) tools.stream()
+                .filter(tool -> tool instanceof ListMateTool)
+                .findFirst()
+                .orElseThrow();
+        var callTool = (CallMateTool) tools.stream()
+                .filter(tool -> tool instanceof CallMateTool)
+                .findFirst()
+                .orElseThrow();
+        assertThat(sessionCacheOf(listTool)).isSameAs(sessionCacheOf(callTool));
     }
 
     private static MateToolSessionCache sessionCacheOf(Object tool) {

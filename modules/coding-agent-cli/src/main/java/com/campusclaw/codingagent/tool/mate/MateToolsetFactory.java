@@ -57,18 +57,27 @@ public class MateToolsetFactory {
      * exclude 语义与目录解析一致：非空 include 仅保留列名工具，exclude
      * 总是剔除列名工具，noTools 返回空——会话私有注入不得绕过部署配置。
      *
+     * <p>两个工具作为<b>原子组</b>注入：callMateTool 的运行前提是同一
+     * 会话先由 listMateTool 刷新 name→id 缓存，因此只要过滤结果不能同时
+     * 包含二者，整组不注入（单独的 callMateTool 必然全部调用失败，单独
+     * 的 listMateTool 只能发现不能执行，均无意义且误导模型）。
+     *
      * @param selection 工具可见性选择；null 视为全可见
-     * @return 过滤后的 Mate 工具列表（可能为空）
+     * @return 过滤后的 Mate 工具列表；过滤结果非全组时为空列表
      */
     public List<AgentTool> create(com.campusclaw.codingagent.tool.catalog.ToolSelection selection) {
-        if (selection == null || selection.noTools()) {
-            return selection != null && selection.noTools() ? List.of() : create();
+        if (selection == null) {
+            return create();
+        }
+        if (selection.noTools()) {
+            return List.of();
         }
         var include = selection.include();
         var exclude = selection.exclude();
-        return create().stream()
+        var filtered = create().stream()
                 .filter(tool -> include.isEmpty() || include.contains(tool.name()))
                 .filter(tool -> !exclude.contains(tool.name()))
                 .toList();
+        return filtered.size() == 2 ? filtered : List.of();
     }
 }
