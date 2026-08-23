@@ -73,6 +73,10 @@ class CatalogRuntimeModelManagerTest {
 
     private static AgentDirectorySnapshotDTO snapshot(List<String> models) {
         return new AgentDirectorySnapshotDTO(
-                "agent-0123456789abcdef0123456789abcdef", models.get(0), models, Path.of("/runtime/agent"));
+                "agent-0123456789abcdef0123456789abcdef",
+                models.get(0),
+                models,
+                Path.of("/runtime/agent"),
+                Path.of("/runtime/agent/.campusclaw"));
     }
 }

@@ -47,7 +47,11 @@ public class FileAgentDirectoryResolver implements AgentDirectoryResolver {
                 .orElseThrow(() -> new RuntimeApiException(RuntimeErrorCode.AGENT_MODEL_NOT_CONFIGURED));
         List<String> models = validModels(runtime.metadata().bindingModels(), defaultModel);
         return new AgentDirectorySnapshotDTO(
-                runtime.agentId(), defaultModel, models, runtime.agentRoot().resolve(".campusclaw"));
+                runtime.agentId(),
+                defaultModel,
+                models,
+                runtime.agentRoot(),
+                runtime.agentRoot().resolve(".campusclaw"));
     }
 
     private static List<String> validModels(List<String> configured, String defaultModel) {

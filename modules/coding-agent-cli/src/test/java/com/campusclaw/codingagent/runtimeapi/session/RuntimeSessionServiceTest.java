@@ -92,7 +92,7 @@ class RuntimeSessionServiceTest {
         verify(repository)
                 .create(org.mockito.ArgumentMatchers.argThat(session -> SESSION_ID.equals(session.getId())
                         && AGENT_ID.equals(session.getAgentId())
-                        && snapshot.runtimeDirectory().toString().equals(session.getCwd())));
+                        && snapshot.agentRoot().toString().equals(session.getCwd())));
     }
 
     @Test
@@ -162,6 +162,7 @@ class RuntimeSessionServiceTest {
                 AGENT_ID,
                 "model-default",
                 List.of("model-default"),
+                Path.of("/runtime/agents").resolve(AGENT_ID),
                 Path.of("/runtime/agents").resolve(AGENT_ID).resolve(".campusclaw"));
     }
 
