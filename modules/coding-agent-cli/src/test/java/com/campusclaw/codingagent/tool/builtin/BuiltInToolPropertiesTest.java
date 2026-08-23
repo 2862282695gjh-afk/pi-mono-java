@@ -47,8 +47,7 @@ class BuiltInToolPropertiesTest {
         properties.afterPropertiesSet();
 
         assertThat(properties.toolsFor(ToolEntryPoint.RUNTIME)).isEmpty();
-        assertThatThrownBy(() -> properties.getRuntime().add("Read"))
-                .isInstanceOf(UnsupportedOperationException.class);
+        assertThatThrownBy(() -> properties.getRuntime().add("Read")).isInstanceOf(UnsupportedOperationException.class);
     }
 
     @Test
