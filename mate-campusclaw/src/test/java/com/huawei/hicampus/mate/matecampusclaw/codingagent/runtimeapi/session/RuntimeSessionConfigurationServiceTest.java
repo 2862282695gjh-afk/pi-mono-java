@@ -70,7 +70,11 @@ class RuntimeSessionConfigurationServiceTest {
         modelManager = mock(RuntimeModelManager.class);
         etagFactory = new SessionEtagFactory();
         snapshot = new AgentDirectorySnapshotDTO(
-                AGENT_ID, "model-a", List.of("model-a", "model-b"), Path.of("/runtime/agent/.campusclaw"));
+                AGENT_ID,
+                "model-a",
+                List.of("model-a", "model-b"),
+                Path.of("/runtime/agent"),
+                Path.of("/runtime/agent/.campusclaw"));
         when(directoryResolver.resolve(AGENT_ID)).thenReturn(snapshot);
         service = new RuntimeSessionConfigurationService(
                 repository,

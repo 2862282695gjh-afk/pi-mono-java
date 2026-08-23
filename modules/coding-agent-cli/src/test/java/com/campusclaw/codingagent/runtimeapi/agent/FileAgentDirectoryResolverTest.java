@@ -37,6 +37,7 @@ class FileAgentDirectoryResolverTest {
 
         AgentDirectorySnapshotDTO snapshot = new FileAgentDirectoryResolver(manager).resolve(AGENT_ID);
 
+        assertThat(snapshot.agentRoot()).isEqualTo(temporaryDirectory);
         assertThat(snapshot.runtimeDirectory()).isEqualTo(temporaryDirectory.resolve(".campusclaw"));
         assertThat(snapshot.defaultModelId()).isEqualTo("model-a");
         assertThat(snapshot.enabledModelIds()).containsExactly("model-a", "model-b");

@@ -228,7 +228,11 @@ class RuntimeEventServiceTest {
         private void prepareAcceptedExecution() {
             RuntimeSessionDTO session = session();
             AgentDirectorySnapshotDTO snapshot = new AgentDirectorySnapshotDTO(
-                    AGENT_ID, "model_test", List.of("model_test"), Path.of("/tmp/agent/.campusclaw"));
+                    AGENT_ID,
+                    "model_test",
+                    List.of("model_test"),
+                    Path.of("/tmp/agent"),
+                    Path.of("/tmp/agent/.campusclaw"));
             Model model = mock(Model.class);
             when(repository.find(SESSION_ID)).thenReturn(Optional.of(session));
             when(repository.listCurrentBranch(SESSION_ID, 0, 500, false)).thenReturn(List.of());

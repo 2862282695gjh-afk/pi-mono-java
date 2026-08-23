@@ -40,7 +40,8 @@ class RuntimeSessionEngineRegistryTest {
                 mock(SubagentExecutionService.class),
                 mock(AgentScopedCronToolFactory.class),
                 properties);
-        var snapshot = new AgentDirectorySnapshotDTO("agent-a", "model-a", List.of("model-a"), Path.of("/agent-a"));
+        var snapshot = new AgentDirectorySnapshotDTO(
+                "agent-a", "model-a", List.of("model-a"), Path.of("/agent-a"), Path.of("/agent-a/.campusclaw"));
         Model model = mock(Model.class);
         RuntimeActiveExecution firstExecution = mock(RuntimeActiveExecution.class);
         RuntimeActiveExecution rejectedExecution = mock(RuntimeActiveExecution.class);

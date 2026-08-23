@@ -109,7 +109,7 @@ public class RuntimeSessionService {
         session.setResourceVersion(1);
         session.setCreatedAt(now);
         session.setUpdatedAt(now);
-        session.setCwd(snapshot.runtimeDirectory().toString());
+        session.setCwd(snapshot.agentRoot().toString());
         return session;
     }
 
