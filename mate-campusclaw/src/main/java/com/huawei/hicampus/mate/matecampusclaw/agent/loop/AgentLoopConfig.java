@@ -10,18 +10,16 @@ import com.huawei.hicampus.mate.matecampusclaw.agent.context.ContextTransformer;
 import com.huawei.hicampus.mate.matecampusclaw.agent.context.DefaultMessageConverter;
 import com.huawei.hicampus.mate.matecampusclaw.agent.context.MessageConverter;
 import com.huawei.hicampus.mate.matecampusclaw.agent.queue.MessageQueue;
-import com.huawei.hicampus.mate.matecampusclaw.agent.tool.ToolExecutionMode;
 import com.huawei.hicampus.mate.matecampusclaw.agent.tool.ToolExecutionPipeline;
 import com.huawei.hicampus.mate.matecampusclaw.ai.CampusClawAiService;
 import com.huawei.hicampus.mate.matecampusclaw.ai.types.Model;
 import com.huawei.hicampus.mate.matecampusclaw.ai.types.SimpleStreamOptions;
 
 /**
- * Configuration required to run the agent loop.
+ * 保存运行 Agent 循环所需的配置。
  *
- * <p>Supports both the legacy {@link CampusClawAiService} and the new pluggable
- * {@link StreamFunction} for LLM streaming. If {@code streamFunction} is
- * provided, it takes precedence over {@code piAiService}.
+ * <p>同时支持既有 {@link CampusClawAiService} 和可插拔 {@link StreamFunction}。
+ * 显式提供 {@code streamFunction} 时优先使用该函数。
  *
  * @version [br_eCampusCore 26.0.0, 2026/05/06]
  * @since [br_eCampusCore 26.0.0]
@@ -32,7 +30,6 @@ public record AgentLoopConfig(
         MessageConverter convertToLlm,
         ContextTransformer transformContext,
         ToolExecutionPipeline toolPipeline,
-        ToolExecutionMode toolExecutionMode,
         MessageQueue steeringQueue,
         MessageQueue followUpQueue,
         SimpleStreamOptions streamOptions,
@@ -41,19 +38,17 @@ public record AgentLoopConfig(
         SteeringMessageSupplier getFollowUpMessages) {
 
     /**
-     * Legacy constructor used before the pluggable {@code StreamFunction} hook was added.
-     * Delegates to the canonical constructor with {@code streamFunction},
-     * {@code getSteeringMessages} and {@code getFollowUpMessages} defaulted to {@code null}.
+     * 保留未引入可插拔 {@code StreamFunction} 时的构造方式。
+     * 该构造方法把三个扩展参数以 {@code null} 传给主构造方法。
      *
-     * @param piAiService the {@link CampusClawAiService} that drives LLM streaming
-     * @param model target LLM model
-     * @param convertToLlm converter from internal messages to LLM-shaped messages
-     * @param transformContext asynchronous context transformer applied before each turn
-     * @param toolPipeline pipeline that executes tool calls returned by the LLM
-     * @param toolExecutionMode sequential vs. parallel tool execution policy
-     * @param steeringQueue queue of steering messages injected mid-turn
-     * @param followUpQueue queue of follow-up messages injected after each turn
-     * @param streamOptions base stream options (temperature, max tokens, etc.)
+     * @param piAiService 驱动 LLM 流式调用的服务
+     * @param model 目标 LLM 模型
+     * @param convertToLlm 内部消息到 LLM 消息的转换器
+     * @param transformContext 每轮调用前执行的异步上下文转换器
+     * @param toolPipeline 执行 LLM 工具调用的 Pipeline
+     * @param steeringQueue 当前执行中的 steer 消息队列
+     * @param followUpQueue 每轮结束后的 follow-up 消息队列
+     * @param streamOptions 温度和 token 上限等基础流式选项
      */
     public AgentLoopConfig(
             CampusClawAiService piAiService,
@@ -61,7 +56,6 @@ public record AgentLoopConfig(
             MessageConverter convertToLlm,
             ContextTransformer transformContext,
             ToolExecutionPipeline toolPipeline,
-            ToolExecutionMode toolExecutionMode,
             MessageQueue steeringQueue,
             MessageQueue followUpQueue,
             SimpleStreamOptions streamOptions) {
@@ -71,7 +65,6 @@ public record AgentLoopConfig(
                 convertToLlm,
                 transformContext,
                 toolPipeline,
-                toolExecutionMode,
                 steeringQueue,
                 followUpQueue,
                 streamOptions,
@@ -87,18 +80,15 @@ public record AgentLoopConfig(
         }
         convertToLlm = convertToLlm != null ? convertToLlm : new DefaultMessageConverter();
         toolPipeline = toolPipeline != null ? toolPipeline : new ToolExecutionPipeline();
-        toolExecutionMode = toolExecutionMode != null ? toolExecutionMode : ToolExecutionMode.SEQUENTIAL;
         steeringQueue = steeringQueue != null ? steeringQueue : new MessageQueue();
         followUpQueue = followUpQueue != null ? followUpQueue : new MessageQueue();
         streamOptions = streamOptions != null ? streamOptions : SimpleStreamOptions.empty();
     }
 
     /**
-     * Returns the effective stream function, either the explicitly provided one
-     * or one wrapping the {@link CampusClawAiService}.
+     * 返回实际使用的流式调用函数；未显式配置时包装 {@link CampusClawAiService}。
      *
-     * @return the configured {@link StreamFunction}, falling back to a method-reference
-     *         wrapper around {@link CampusClawAiService#streamSimple} when none is set
+     * @return 实际使用的流式调用函数
      */
     public StreamFunction effectiveStreamFunction() {
         if (streamFunction != null) {

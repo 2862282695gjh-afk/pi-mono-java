@@ -16,41 +16,27 @@ import com.campusclaw.cron.model.CronSchedule;
 import com.campusclaw.cron.store.CronRunLog;
 import com.campusclaw.cron.store.CronStore;
 
+import org.springframework.context.SmartLifecycle;
 import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Service;
 
 /**
- * Facade service for cron job management. Coordinates store, engine, and run log.
+ * 协调 Cron Job 存储、调度引擎和运行日志的门面服务。
  *
  * @version [br_eCampusCore 26.0.0, 2026/05/06]
  * @since [br_eCampusCore 26.0.0]
  */
 @Service
-public class CronService {
+public class CronService implements SmartLifecycle {
 
     private final CronStore store;
     private final CronEngine engine;
     private final CronRunLog runLog;
-    private volatile String defaultModelId;
 
     public CronService(CronStore store, CronEngine engine, CronRunLog runLog) {
         this.store = store;
         this.engine = engine;
         this.runLog = runLog;
-    }
-
-    /**
-     * Set the default model ID for cron jobs that don't specify one.
-     * Should be called on startup with the user's chosen model.
-     *
-     * @param modelId the model identifier to use as the default
-     */
-    public void setDefaultModelId(String modelId) {
-        this.defaultModelId = modelId;
-    }
-
-    public String getDefaultModelId() {
-        return defaultModelId;
     }
 
     public void start() {
@@ -114,15 +100,5 @@ public class CronService {
 
     public List<CronRunRecord> getRecentRuns(String jobId, int limit) {
         return runLog.getRecentRuns(jobId, limit);
-    }
-
-    /**
-     * Perform a single synchronous tick: execute all due jobs and return results.
-     * Used by {@code --cron-tick} CLI mode for system scheduler integration.
-     *
-     * @return the run record for each job that was executed during this tick
-     */
-    public List<CronRunRecord> tickOnce() {
-        return engine.tickOnce();
     }
 }

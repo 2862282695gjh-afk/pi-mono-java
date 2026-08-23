@@ -29,7 +29,7 @@ import org.slf4j.LoggerFactory;
  * 通过 {@link MateRestUtil} 访问 Mate 内部网关的 {@link MateToolClient} HTTP 实现。
  *
  * <p>网关地址和出站接口路径均由配置注入，请求使用不携带凭据的 {@link RequestHeaderInfo}。
- * {@link #listTools(String, String)} 先查询 Agent 或 Skill 元数据中的绑定工具标识，再批量查询工具详情。
+ * {@link #listAgentTools(String)} 与 {@link #listSkillTools(String)} 先查询绑定工具标识，再批量查询工具详情。
  * {@link #callTool} 背后的执行 RPC 经 {@code tool-execute-path-template} 调用网关，
  * 携带 {@link com.campusclaw.codingagent.tool.mate.MateCredentialResolver} 解析的完整凭据。
  *
@@ -92,35 +92,34 @@ public class HttpMateToolClient implements MateToolClient {
     }
 
     @Override
-    public List<MateToolMeta> listTools(String agentId, String skillId) {
-        if (agentId == null && skillId == null) {
-            log.warn("listTools called without agent_id or skill_id, returning empty list");
-            return List.of();
-        }
-        String scopedId = agentId != null ? agentId : skillId;
-        Pattern expectedPattern = agentId != null
-                ? ResourceIdentifierPatterns.AGENT_ID_PATTERN
-                : ResourceIdentifierPatterns.SKILL_ID_PATTERN;
-        if (!expectedPattern.matcher(scopedId).matches()) {
-            throw new IllegalArgumentException(
-                    "Invalid " + (agentId != null ? "agent" : "skill") + " id for path segment: " + scopedId);
-        }
+    public List<MateToolMeta> listAgentTools(String agentId) {
+        requireScopedId(agentId, ResourceIdentifierPatterns.AGENT_ID_PATTERN, "agent");
         try {
-            List<String> toolIds = agentId != null ? queryToolIdsByAgentId(agentId) : queryToolIdsBySkillId(skillId);
-            return queryToolMetaByIds(toolIds);
-        } catch (Exception e) {
-            log.error("listTools failed: agentId={} skillId={}", agentId, skillId, e);
-            throw new IllegalStateException("listTools failed", e);
+            return queryOrderedToolMeta(queryToolIdsByAgentId(agentId));
+        } catch (Exception exception) {
+            log.error("listAgentTools failed: agentId={}", agentId, exception);
+            throw new IllegalStateException("listAgentTools failed", exception);
         }
     }
 
     @Override
-    public ToolResult callTool(String tool, Map<String, Object> args, MateCredentials credentials) {
+    public List<MateToolMeta> listSkillTools(String skillId) {
+        requireScopedId(skillId, ResourceIdentifierPatterns.SKILL_ID_PATTERN, "skill");
         try {
-            return invokeTool(tool, args, credentials);
+            return queryOrderedToolMeta(queryToolIdsBySkillId(skillId));
+        } catch (Exception exception) {
+            log.error("listSkillTools failed: skillId={}", skillId, exception);
+            throw new IllegalStateException("listSkillTools failed", exception);
+        }
+    }
+
+    @Override
+    public ToolResult callTool(String toolId, Map<String, Object> args, MateCredentials credentials) {
+        try {
+            return invokeTool(toolId, args, credentials);
         } catch (Exception e) {
-            log.error("callTool failed: tool={}", tool, e);
-            return new ToolResult("callTool failed: " + e.getMessage(), null, true);
+            log.error("callTool failed: toolId={}", toolId, e);
+            return new ToolResult("Mate tool execution request failed", null, true);
         }
     }
 
@@ -198,6 +197,34 @@ public class HttpMateToolClient implements MateToolClient {
         return toMeta(infos);
     }
 
+    private List<MateToolMeta> queryOrderedToolMeta(List<String> toolIds) throws Exception {
+        if (new java.util.HashSet<>(toolIds).size() != toolIds.size()) {
+            throw new IllegalStateException("Duplicate bound tool id");
+        }
+        List<MateToolMeta> metadata = queryToolMetaByIds(toolIds);
+        Map<String, MateToolMeta> metadataById = new java.util.HashMap<>();
+        for (MateToolMeta meta : metadata) {
+            if (meta.toolId() != null && metadataById.put(meta.toolId(), meta) != null) {
+                throw new IllegalStateException("Duplicate tool metadata id");
+            }
+        }
+        List<MateToolMeta> ordered = new ArrayList<>();
+        for (String toolId : toolIds) {
+            MateToolMeta meta = metadataById.get(toolId);
+            if (meta == null) {
+                throw new IllegalStateException("Missing metadata for bound tool");
+            }
+            ordered.add(meta);
+        }
+        return List.copyOf(ordered);
+    }
+
+    private static void requireScopedId(String id, Pattern pattern, String scope) {
+        if (id == null || !pattern.matcher(id).matches()) {
+            throw new IllegalArgumentException("Invalid " + scope + " id for path segment");
+        }
+    }
+
     private static void requireToolIds(List<String> toolIds) {
         for (String toolId : toolIds) {
             if (toolId == null
@@ -269,23 +296,23 @@ public class HttpMateToolClient implements MateToolClient {
      * （{@code CallMateTool.resolveCredentials()} 返回 null）时快速失败，
      * 避免未认证请求发出。
      *
-     * @param tool 待调用的工具标识
+     * @param toolId 待调用的工具标识
      * @param args 工具参数；按工具 inputSchema 作为请求体
      * @param credentials Agent 下发并透传到服务端的凭据；null 时拒绝执行
      * @return 工具执行结果；网关失败或凭据缺失时为 isError=true
      * @throws IllegalArgumentException 工具标识不满足路径段约束时抛出
      */
-    protected ToolResult invokeTool(String tool, Map<String, Object> args, MateCredentials credentials) {
-        if (tool == null
-                || !ResourceIdentifierPatterns.TOOL_ID_PATTERN.matcher(tool).matches()) {
-            throw new IllegalArgumentException("Invalid tool id for path segment: " + tool);
+    protected ToolResult invokeTool(String toolId, Map<String, Object> args, MateCredentials credentials) {
+        if (toolId == null
+                || !ResourceIdentifierPatterns.TOOL_ID_PATTERN.matcher(toolId).matches()) {
+            throw new IllegalArgumentException("Invalid tool id for path segment");
         }
         if (credentials == null || !credentials.isComplete()) {
             log.error(
                     "invokeTool called without complete credentials: tool={} — wire"
                             + " CallMateTool.resolveCredentials() to return X-HW-ID plus exactly one of"
                             + " X-HW-APPKEY / Authorization",
-                    tool);
+                    toolId);
             return new ToolResult(
                     "invokeTool refused: incomplete credentials (need X-HW-ID plus exactly one of"
                             + " X-HW-APPKEY / Authorization)",
@@ -301,7 +328,7 @@ public class HttpMateToolClient implements MateToolClient {
 
             // CampusMate 执行接口契约:参数需包一层 arguments 包装。
             String body = mapper.writeValueAsString(Map.of("arguments", args != null ? args : Map.of()));
-            String path = toolExecutePathTemplate.replace("%s", tool);
+            String path = toolExecutePathTemplate.replace("%s", toolId);
             String raw = mateRestUtil.executePostRawRequest(mateInnerGwAddress, path, headerInfo, body);
             JsonNode root = mapper.readTree(raw);
             String resCode = root.path("resCode").asText("");
@@ -316,8 +343,8 @@ public class HttpMateToolClient implements MateToolClient {
             String content = resultNode.isMissingNode() || resultNode.isNull() ? "" : resultNode.toString();
             return new ToolResult(content, null, false);
         } catch (Exception e) {
-            log.error("invokeTool failed: tool={}", tool, e);
-            return new ToolResult("invokeTool failed: " + e.getMessage(), null, true);
+            log.error("invokeTool failed: toolId={}", toolId, e);
+            return new ToolResult("Mate tool execution request failed", null, true);
         }
     }
 }

@@ -4,105 +4,57 @@
 
 package com.campusclaw.codingagent.tool.grep;
 
-import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.FileSystem;
-import java.nio.file.FileVisitResult;
-import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.PathMatcher;
-import java.nio.file.SimpleFileVisitor;
-import java.nio.file.attribute.BasicFileAttributes;
-import java.time.Duration;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
-import java.util.regex.PatternSyntaxException;
 
 import com.campusclaw.agent.tool.AgentTool;
 import com.campusclaw.agent.tool.AgentToolResult;
 import com.campusclaw.agent.tool.AgentToolUpdateCallback;
 import com.campusclaw.agent.tool.CancellationToken;
+import com.campusclaw.agent.tool.ToolExecutionMode;
 import com.campusclaw.ai.types.ContentBlock;
 import com.campusclaw.ai.types.TextContent;
-import com.campusclaw.codingagent.tool.bash.BashExecutionResult;
-import com.campusclaw.codingagent.tool.bash.BashExecutor;
-import com.campusclaw.codingagent.tool.bash.BashExecutorOptions;
-import com.campusclaw.codingagent.util.PathUtils;
+import com.campusclaw.codingagent.tool.ops.GrepOperations;
+import com.campusclaw.codingagent.tool.ops.GrepOperations.GrepRequest;
+import com.campusclaw.codingagent.tool.ops.GrepOperations.GrepResult;
+import com.campusclaw.codingagent.tool.workspace.AgentWorkspaceBoundary;
+import com.campusclaw.codingagent.tool.workspace.WorkspacePathResolver;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.stereotype.Component;
-
 /**
- * Agent tool for searching file contents using regular expressions.
- * Prefers system ripgrep (rg) when available, falls back to a Java implementation.
+ * 在当前 Agent 工作区内搜索文本内容的内置工具。
  *
- * @version [br_eCampusCore 26.0.0, 2026/05/06]
+ * @version [br_eCampusCore 26.0.0, 2026/08/23]
  * @since [br_eCampusCore 26.0.0]
  */
-@Component
 public class GrepTool implements AgentTool {
 
-    private static final Logger log = LoggerFactory.getLogger(GrepTool.class);
-
-    static final int MAX_RESULTS = 500;
-    static final Duration TIMEOUT = Duration.ofSeconds(30);
-
-    /**
-     * File type to extensions mapping, matching ripgrep's --type behavior.
-     */
-    static final Map<String, Set<String>> TYPE_EXTENSIONS = Map.ofEntries(
-            Map.entry("js", Set.of(".js", ".mjs", ".cjs", ".jsx")),
-            Map.entry("ts", Set.of(".ts", ".mts", ".cts", ".tsx")),
-            Map.entry("py", Set.of(".py", ".pyi")),
-            Map.entry("java", Set.of(".java")),
-            Map.entry("rb", Set.of(".rb")),
-            Map.entry("go", Set.of(".go")),
-            Map.entry("rs", Set.of(".rs")),
-            Map.entry("c", Set.of(".c", ".h")),
-            Map.entry("cpp", Set.of(".cpp", ".cc", ".cxx", ".hpp", ".hh", ".hxx", ".h")),
-            Map.entry("cs", Set.of(".cs")),
-            Map.entry("swift", Set.of(".swift")),
-            Map.entry("kt", Set.of(".kt", ".kts")),
-            Map.entry("scala", Set.of(".scala")),
-            Map.entry("html", Set.of(".html", ".htm")),
-            Map.entry("css", Set.of(".css")),
-            Map.entry("json", Set.of(".json")),
-            Map.entry("xml", Set.of(".xml")),
-            Map.entry("yaml", Set.of(".yaml", ".yml")),
-            Map.entry("toml", Set.of(".toml")),
-            Map.entry("md", Set.of(".md", ".markdown")),
-            Map.entry("sh", Set.of(".sh", ".bash", ".zsh")),
-            Map.entry("sql", Set.of(".sql")),
-            Map.entry("php", Set.of(".php")));
+    static final int DEFAULT_LIMIT = 100;
+    static final int MAX_LIMIT = 1000;
+    static final int MAX_CONTEXT = 20;
+    static final int MAX_BYTES = 50 * 1024;
+    private static final String TRUNCATION_MARKER = "\n... (truncated)";
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
-    private final BashExecutor bashExecutor;
-    private final Path cwd;
-    private volatile Boolean rgAvailable;
+    private final GrepOperations grepOperations;
+    private final WorkspacePathResolver pathResolver;
+    private final AgentWorkspaceBoundary boundary;
 
-    @Autowired
-    public GrepTool(BashExecutor bashExecutor) {
-        this(bashExecutor, Path.of(System.getProperty("user.dir")));
-    }
-
-    public GrepTool(BashExecutor bashExecutor, Path cwd) {
-        this.bashExecutor = bashExecutor;
-        this.cwd = cwd;
+    public GrepTool(
+            GrepOperations grepOperations, WorkspacePathResolver pathResolver, AgentWorkspaceBoundary boundary) {
+        this.grepOperations = grepOperations;
+        this.pathResolver = pathResolver;
+        this.boundary = boundary;
     }
 
     @Override
     public String name() {
-        return "grep";
+        return "Grep";
     }
 
     @Override
@@ -112,254 +64,115 @@ public class GrepTool implements AgentTool {
 
     @Override
     public String description() {
-        return "Search file contents using regular expressions.";
+        return "Search file contents for a pattern.";
+    }
+
+    @Override
+    public ToolExecutionMode executionMode() {
+        return ToolExecutionMode.PARALLEL;
     }
 
     @Override
     public JsonNode parameters() {
-        ObjectNode props = MAPPER.createObjectNode();
-        props.set(
+        ObjectNode properties = MAPPER.createObjectNode();
+        properties.set(
                 "pattern",
-                MAPPER.createObjectNode()
-                        .put("type", "string")
-                        .put("description", "Regular expression pattern to search for"));
-        props.set(
-                "path",
-                MAPPER.createObjectNode()
-                        .put("type", "string")
-                        .put("description", "File or directory to search in (optional, defaults to cwd)"));
-        props.set(
-                "glob",
-                MAPPER.createObjectNode()
-                        .put("type", "string")
-                        .put("description", "Glob pattern to filter files (e.g. \"*.ts\")"));
-        props.set(
-                "type",
-                MAPPER.createObjectNode()
-                        .put("type", "string")
-                        .put("description", "File type filter (e.g. \"js\", \"py\", \"java\")"));
-
-        return MAPPER.createObjectNode()
-                .put("type", "object")
-                .<ObjectNode>set("properties", props)
-                .set("required", MAPPER.createArrayNode().add("pattern"));
+                stringProperty("Search pattern, interpreted as a regular expression unless literal is true."));
+        properties.set(
+                "path", stringProperty("Directory or file to search; omitted means the current Agent workspace root."));
+        properties.set("glob", stringProperty("Optional glob filter for searched files."));
+        properties.set("ignoreCase", booleanProperty("Whether matching is case-insensitive; omitted means false."));
+        properties.set(
+                "literal", booleanProperty("Whether to treat pattern as a literal string; omitted means false."));
+        properties.set("context", numberProperty("Lines shown before and after a match; omitted means 0."));
+        properties.set("limit", numberProperty("Maximum matches to return; omitted means 100."));
+        ObjectNode schema = MAPPER.createObjectNode();
+        schema.put("type", "object");
+        schema.set("properties", properties);
+        schema.set("required", MAPPER.createArrayNode().add("pattern"));
+        schema.put("additionalProperties", false);
+        return schema;
     }
 
     @Override
     public AgentToolResult execute(
             String toolCallId, Map<String, Object> params, CancellationToken signal, AgentToolUpdateCallback onUpdate)
             throws Exception {
-        String pattern = (String) params.get("pattern");
-        if (pattern == null || pattern.isEmpty()) {
-            return errorResult("Error: pattern is required");
+        Path searchPath = pathResolver.resolveFileOrDirectory(boundary, stringValue(params.get("path")));
+        GrepRequest request = new GrepRequest(
+                boundary,
+                searchPath,
+                (String) params.get("pattern"),
+                stringValue(params.get("glob")),
+                booleanValue(params.get("ignoreCase")),
+                booleanValue(params.get("literal")),
+                normalizeContext(params.get("context")),
+                normalizeLimit(params.get("limit")));
+        return textResult(formatResult(grepOperations.grep(request, signal)));
+    }
+
+    private static String formatResult(GrepResult result) {
+        if (result.lines().isEmpty()) {
+            return "No matches found.";
         }
-
-        String pathInput = (String) params.get("path");
-        String glob = (String) params.get("glob");
-        String type = (String) params.get("type");
-
-        Path searchPath;
-        if (pathInput != null && !pathInput.isBlank()) {
-            try {
-                searchPath = PathUtils.resolveToCwd(pathInput, cwd);
-            } catch (SecurityException e) {
-                return errorResult("Error: " + e.getMessage());
+        StringBuilder output = new StringBuilder();
+        boolean truncatedByBytes = false;
+        for (String line : result.lines()) {
+            String candidate = output + (output.isEmpty() ? "" : "\n") + line;
+            if (candidate.getBytes(StandardCharsets.UTF_8).length > contentBudget()) {
+                truncatedByBytes = true;
+                break;
             }
-        } else {
-            searchPath = cwd;
+            output.setLength(0);
+            output.append(candidate);
         }
-
-        if (isRgAvailable()) {
-            return executeWithRg(pattern, searchPath, glob, type, signal);
+        if (result.truncated() || truncatedByBytes) {
+            output.append(TRUNCATION_MARKER);
         }
-        return executeWithJava(pattern, searchPath, glob, type);
+        return output.toString();
     }
 
-    // -------------------------------------------------------------------
-    // ripgrep execution
-    // -------------------------------------------------------------------
-
-    private AgentToolResult executeWithRg(
-            String pattern, Path searchPath, String glob, String type, CancellationToken signal) throws IOException {
-        var cmd = new StringBuilder("rg --line-number --no-heading");
-        cmd.append(" --max-count ").append(MAX_RESULTS);
-
-        if (glob != null && !glob.isBlank()) {
-            cmd.append(" --glob ").append(shellQuote(glob));
-        }
-        if (type != null && !type.isBlank()) {
-            cmd.append(" --type ").append(shellQuote(type));
-        }
-
-        cmd.append(' ').append(shellQuote(pattern));
-        cmd.append(' ').append(shellQuote(searchPath.toString()));
-
-        var options = new BashExecutorOptions(TIMEOUT, signal, null);
-        BashExecutionResult result = bashExecutor.execute(cmd.toString(), cwd, options);
-
-        String output = result.stdout() != null ? result.stdout() : "";
-
-        // rg returns exit code 1 for "no matches" — not an error
-        if (result.exitCode() != null && result.exitCode() > 1) {
-            String stderr = result.stderr() != null ? result.stderr() : "";
-            return errorResult("Grep error: " + stderr.trim());
-        }
-
-        if (output.isBlank()) {
-            return textResult("No matches found.");
-        }
-
-        return textResult(output.strip());
+    private static int contentBudget() {
+        return MAX_BYTES - TRUNCATION_MARKER.getBytes(StandardCharsets.UTF_8).length;
     }
 
-    // -------------------------------------------------------------------
-    // Java fallback
-    // -------------------------------------------------------------------
-
-    AgentToolResult executeWithJava(String patternStr, Path searchPath, String glob, String type) {
-        Pattern regex;
-        try {
-            regex = Pattern.compile(patternStr);
-        } catch (PatternSyntaxException e) {
-            return errorResult("Error: invalid regex pattern: " + e.getMessage());
+    private static int normalizeLimit(Object value) {
+        int limit = value == null ? DEFAULT_LIMIT : ((Number) value).intValue();
+        if (limit < 1) {
+            throw new IllegalArgumentException("limit must be greater than zero");
         }
-
-        Set<String> typeExtensions = null;
-        if (type != null && !type.isBlank()) {
-            typeExtensions = TYPE_EXTENSIONS.get(type);
-            if (typeExtensions == null) {
-                return errorResult("Error: unknown file type: " + type);
-            }
-        }
-
-        PathMatcher globMatcher = null;
-        if (glob != null && !glob.isBlank()) {
-            FileSystem fs = searchPath.getFileSystem();
-            globMatcher = fs.getPathMatcher("glob:" + glob);
-        }
-
-        List<String> results = new ArrayList<>();
-
-        if (Files.isRegularFile(searchPath)) {
-            searchFile(searchPath, regex, results);
-        } else {
-            walkAndSearch(searchPath, regex, globMatcher, typeExtensions, results);
-        }
-
-        if (results.isEmpty()) {
-            return textResult("No matches found.");
-        }
-
-        return textResult(String.join("\n", results));
+        return Math.min(limit, MAX_LIMIT);
     }
 
-    private void walkAndSearch(
-            Path dir, Pattern regex, PathMatcher globMatcher, Set<String> typeExtensions, List<String> results) {
-        try {
-            Files.walkFileTree(dir, new SimpleFileVisitor<>() {
-                @Override
-                public FileVisitResult preVisitDirectory(Path d, BasicFileAttributes attrs) {
-                    String name = d.getFileName().toString();
-                    if (name.startsWith(".") || name.equals("node_modules")) {
-                        return FileVisitResult.SKIP_SUBTREE;
-                    }
-                    return results.size() >= MAX_RESULTS ? FileVisitResult.TERMINATE : FileVisitResult.CONTINUE;
-                }
-
-                @Override
-                public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) {
-                    if (results.size() >= MAX_RESULTS) {
-                        return FileVisitResult.TERMINATE;
-                    }
-                    if (!matchesFilters(file, globMatcher, typeExtensions)) {
-                        return FileVisitResult.CONTINUE;
-                    }
-                    searchFile(file, regex, results);
-                    return results.size() >= MAX_RESULTS ? FileVisitResult.TERMINATE : FileVisitResult.CONTINUE;
-                }
-
-                @Override
-                public FileVisitResult visitFileFailed(Path file, IOException exc) {
-                    return FileVisitResult.CONTINUE;
-                }
-            });
-        } catch (IOException e) {
-            // Best-effort walk
-            log.debug("grep walk encountered IO error in {}", dir, e);
+    private static int normalizeContext(Object value) {
+        int context = value == null ? 0 : ((Number) value).intValue();
+        if (context < 0) {
+            throw new IllegalArgumentException("context must not be negative");
         }
+        return Math.min(context, MAX_CONTEXT);
     }
 
-    private static boolean matchesFilters(Path file, PathMatcher globMatcher, Set<String> typeExtensions) {
-        if (globMatcher != null && !globMatcher.matches(file.getFileName())) {
-            return false;
-        }
-        if (typeExtensions != null) {
-            String fileName = file.getFileName().toString();
-            int dot = fileName.lastIndexOf('.');
-            if (dot < 0) {
-                return false;
-            }
-            String ext = fileName.substring(dot);
-            return typeExtensions.contains(ext);
-        }
-        return true;
+    private static boolean booleanValue(Object value) {
+        return value instanceof Boolean enabled && enabled;
     }
 
-    private void searchFile(Path file, Pattern regex, List<String> results) {
-        try {
-            List<String> lines = Files.readAllLines(file, StandardCharsets.UTF_8);
-            Path relative = cwd.relativize(file);
-            for (int i = 0; i < lines.size() && results.size() < MAX_RESULTS; i++) {
-                Matcher m = regex.matcher(lines.get(i));
-                if (m.find()) {
-                    results.add(relative + ":" + (i + 1) + ":" + lines.get(i));
-                }
-            }
-        } catch (IOException e) {
-            // Skip unreadable files (binary, permission issues, etc.)
-            log.debug("grep skipping unreadable file {}", file, e);
-        }
+    private static String stringValue(Object value) {
+        return value instanceof String string ? string : null;
     }
 
-    // -------------------------------------------------------------------
-    // Utilities
-    // -------------------------------------------------------------------
-
-    boolean isRgAvailable() {
-        if (rgAvailable == null) {
-            synchronized (this) {
-                if (rgAvailable == null) {
-                    rgAvailable = checkRgAvailable();
-                }
-            }
-        }
-        return rgAvailable;
+    private static ObjectNode stringProperty(String description) {
+        return MAPPER.createObjectNode().put("type", "string").put("description", description);
     }
 
-    // Visible for testing
-    void setRgAvailable(boolean available) {
-        this.rgAvailable = available;
+    private static ObjectNode numberProperty(String description) {
+        return MAPPER.createObjectNode().put("type", "number").put("description", description);
     }
 
-    private boolean checkRgAvailable() {
-        try {
-            BashExecutionResult result = bashExecutor.execute(
-                    "command -v rg", cwd, new BashExecutorOptions(Duration.ofSeconds(5), null, null));
-            return result.exitCode() != null && result.exitCode() == 0;
-        } catch (IOException e) {
-            return false;
-        }
-    }
-
-    private static String shellQuote(String s) {
-        return "'" + s.replace("'", "'\\''") + "'";
+    private static ObjectNode booleanProperty(String description) {
+        return MAPPER.createObjectNode().put("type", "boolean").put("description", description);
     }
 
     private static AgentToolResult textResult(String text) {
         return new AgentToolResult(List.<ContentBlock>of(new TextContent(text)), null);
-    }
-
-    private static AgentToolResult errorResult(String message) {
-        return new AgentToolResult(List.<ContentBlock>of(new TextContent(message)), null);
     }
 }

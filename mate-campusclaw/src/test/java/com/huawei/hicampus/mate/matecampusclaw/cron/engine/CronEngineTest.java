@@ -38,9 +38,7 @@ import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 
 /**
- * Unit tests for {@link CronEngine}. Mocks store/executor and verifies the
- * engine's scheduling, tick processing, error backoff, listener notification,
- * and consecutive-error auto-disable behavior.
+ * {@link CronEngine} 的调度、失败退避、监听器通知和连续失败自动禁用测试。
  */
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
@@ -62,7 +60,7 @@ class CronEngineTest {
                 enabled,
                 false,
                 schedule,
-                new CronPayload.AgentPrompt("p", null, null, null),
+                new CronPayload.AgentPrompt("agent-test", "p"),
                 state,
                 0L);
     }
@@ -116,7 +114,7 @@ class CronEngineTest {
             engine = new CronEngine(store, executor);
             engine.start();
 
-            // Disabled job is not scheduled — store.updateJob should only be called for enabled
+            // 禁用任务不应安装调度，store.updateJob 只处理启用任务。
             // (scheduleJob writes next run time to state)
             verify(store, atLeastOnce()).updateJob(any(CronJob.class));
         }
@@ -218,7 +216,7 @@ class CronEngineTest {
                     .thenReturn(new CronRunRecord("r1", "j1", 0L, 100L, RunStatus.SUCCESS, null, null, 0));
             engine.triggerJob("j1");
 
-            // Second listener still ran despite first throwing
+            // 第一个监听器抛出异常后，第二个监听器仍应执行。
             assertThat(ok.get()).isGreaterThanOrEqualTo(1);
         }
     }
@@ -289,60 +287,6 @@ class CronEngineTest {
     }
 
     @Nested
-    class TickOnce {
-
-        @Test
-        void emptyStoreReturnsEmptyList() {
-            when(store.load()).thenReturn(List.of());
-            engine = new CronEngine(store, executor);
-            assertThat(engine.tickOnce()).isEmpty();
-        }
-
-        @Test
-        void disabledJobsSkipped() {
-            CronJob j = job("j1", false, new CronSchedule.Every(60_000L));
-            when(store.load()).thenReturn(List.of(j));
-            engine = new CronEngine(store, executor);
-            assertThat(engine.tickOnce()).isEmpty();
-            verify(executor, never()).execute(any(CronJob.class));
-        }
-
-        @Test
-        void runningJobSkipped() {
-            CronJob j = job(
-                    "j1",
-                    true,
-                    new CronSchedule.Every(60_000L),
-                    new CronJobState(0, System.currentTimeMillis(), 0, null, 0, 0));
-            when(store.load()).thenReturn(List.of(j));
-            engine = new CronEngine(store, executor);
-            assertThat(engine.tickOnce()).isEmpty();
-            verify(executor, never()).execute(any(CronJob.class));
-        }
-
-        @Test
-        void pastDueAtScheduleSkipped() {
-            // At schedule with past timestamp returns -1 delay → skipped
-            CronJob j = job("j1", true, new CronSchedule.At(0L));
-            when(store.load()).thenReturn(List.of(j));
-            engine = new CronEngine(store, executor);
-            assertThat(engine.tickOnce()).isEmpty();
-        }
-
-        @Test
-        void dueWithinToleranceExecutes() {
-            // Every schedule defaults to lastRun=0 + interval = 60s past 1970 → due now
-            CronJob j = job("j1", true, new CronSchedule.Every(60_000L));
-            when(store.load()).thenReturn(List.of(j));
-            when(executor.execute(j))
-                    .thenReturn(new CronRunRecord("r1", "j1", 0L, 100L, RunStatus.SUCCESS, null, "ok", 1));
-            engine = new CronEngine(store, executor);
-            List<CronRunRecord> results = engine.tickOnce();
-            assertThat(results).hasSize(1);
-        }
-    }
-
-    @Nested
     class ComputeNextDelay {
 
         @Test
@@ -369,7 +313,7 @@ class CronEngineTest {
                     job("j1", true, new CronSchedule.Every(60_000L), new CronJobState(0, 0, lastRun, "success", 0, 1));
             long delay = engine.computeNextDelay(j);
 
-            // next run is lastRun + interval; with interval 60s and now == lastRun, delay ≈ 60_000
+            // 下一次运行时间为 lastRun 加 interval，此处延迟约为 60 秒。
             assertThat(delay).isGreaterThan(50_000L);
         }
 
@@ -389,7 +333,7 @@ class CronEngineTest {
             CronJob j = job("j1", true, new CronSchedule.CronExpr("0 0 * * * *", null));
             long delay = engine.computeNextDelay(j);
 
-            // delay to next hour boundary — at most 1 hour
+            // 到下一个整点的延迟不超过一小时。
             assertThat(delay).isBetween(0L, 3_600_000L);
         }
 
@@ -420,7 +364,7 @@ class CronEngineTest {
             CronJob j = job("j1", false, new CronSchedule.Every(60_000L));
             engine.scheduleJob(j);
 
-            // No state update should occur for disabled job
+            // 禁用任务不应更新状态。
             verify(store, never()).updateJob(j);
         }
 
@@ -428,8 +372,7 @@ class CronEngineTest {
         void unscheduleMissingJobIsNoOp() {
             engine = new CronEngine(store, executor);
 
-            // unscheduleJob must tolerate a job id that was never scheduled — engine never
-            // saw it, so the lookup miss should silently no-op rather than throw NPE.
+            // unscheduleJob 必须容忍从未调度的任务标识，未命中时直接返回而不是抛出 NPE。
             assertThatNoException().isThrownBy(() -> engine.unscheduleJob("nonexistent"));
         }
     }

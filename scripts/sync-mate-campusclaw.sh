@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
-# Syncs the in-tree mate-campusclaw/ module from modules/{ai,tui,agent-core,
-# cron,coding-agent-cli}, applying the package rename
+# Syncs the in-tree mate-campusclaw/ module from modules/{ai,agent-core,cron,
+# coding-agent-cli}, applying the package rename
 # com.campusclaw -> com.huawei.hicampus.mate.matecampusclaw, then verifies
 # the result by compiling mate-campusclaw/.
 #
@@ -37,7 +37,7 @@ ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 OUT="$ROOT/build/mate-campusclaw"
 MATE="$ROOT/mate-campusclaw"
 EXCLUDE_FILE="$ROOT/scripts/sync-mate-exclude.txt"
-MODULES=(ai tui agent-core cron coding-agent-cli)
+MODULES=(ai agent-core cron coding-agent-cli)
 
 # Resources we DO want to keep in sync from modules/* — anything else under
 # src/main/resources/ on the mate side is hand-tuned and skipped.
@@ -75,7 +75,7 @@ done
 note()  { printf '\033[36m[sync]\033[0m %s\n' "$*"; }
 green() { printf '\033[32m%s\033[0m\n' "$*"; }
 
-# Mirror campusclaw.sh's detection: project requires JDK 21, but JAVA_HOME often points elsewhere.
+# The project requires JDK 21, but JAVA_HOME may point to another version.
 detect_jdk21() {
     if [ -n "${JAVA_HOME:-}" ] && "$JAVA_HOME/bin/java" -version 2>&1 | grep -q '"21\.'; then return 0; fi
     if [ -d "/opt/homebrew/Cellar/openjdk@21" ]; then

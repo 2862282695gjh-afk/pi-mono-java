@@ -1,0 +1,103 @@
+@startuml tool_system_architecture
+' Source baseline: CampusClaw commit d649866a6cae967ace18ceaeb9597edd47e5721e.
+' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/session/AgentSessionFactory.java, create
+' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/tool/builtin/DefaultConfiguredToolAssembler.java, assemble
+' Observed behavior: the implementation uses one session factory for Runtime, Cron, and Child entry points.
+' Design reason: host lifecycle stays outside the shared session while tool semantics remain identical.
+skinparam componentStyle rectangle
+skinparam shadowing false
+title Managed Agent Tool System v2
+
+component "Runtime HTTP Host" as Runtime
+component "Cron Host" as Cron
+component "Child Execution" as Child
+component "AgentSessionFactory" as Factory
+component "ManagedAgentSession" as Session
+component "ConfiguredToolAssembler" as Assembler
+component "BuiltInToolFactory" as ToolFactory
+component "AgentRuntimeManager" as RuntimeManager
+component "MateToolClient" as Mate
+
+Runtime --> RuntimeManager : prepare(agentId)
+Cron --> RuntimeManager : prepare at trigger
+Child --> RuntimeManager : prepare child
+Runtime --> Factory : RUNTIME
+Cron --> Factory : CRON
+Child --> Factory : CHILD_AGENT
+Factory --> Session : create isolated instance
+Factory --> Assembler
+Assembler --> ToolFactory : eight-name closed set
+ToolFactory --> Mate : shared client dependency
+note right of Session
+  Isolated messages, tools,
+  workspace, hooks, cancel domain,
+  and Mate session cache
+end note
+@enduml
+
+@startuml agent_workspace_boundary
+' Source baseline: CampusClaw commit d649866a6cae967ace18ceaeb9597edd47e5721e.
+' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/tool/workspace/WorkspacePathResolver.java, resolveExisting
+' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/tool/workspace/WorkspacePathResolver.java, revalidateDiscoveredPath
+' Design reason: a managed Agent may read its complete root but never another Agent root.
+skinparam shadowing false
+title Agent Workspace Boundary
+
+rectangle "agent/agent-a" as RootA {
+  component ".campusclaw" as MetaA
+  component "business files" as FilesA
+}
+rectangle "agent/agent-b" as RootB
+component "Read / Find / Grep / Ls" as Tools
+component "WorkspacePathResolver" as Resolver
+
+Tools --> Resolver : resolve and revalidate
+Resolver --> RootA : allow normalized real path
+Resolver -[#red,dashed]-> RootB : reject cross-Agent path
+Resolver -[#red,dashed]-> RootA : reject any symlink path
+note bottom of Resolver
+  lexical boundary
+  component symlink rejection
+  realpath boundary
+  traversal-time revalidation
+end note
+@enduml
+
+@startuml mate_call_refresh
+' Source baseline: CampusClaw commit d649866a6cae967ace18ceaeb9597edd47e5721e.
+' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/tool/mate/CallMateTool.java, execute
+' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/tool/mate/MateToolSessionCache.java, resolveOrRefresh
+' Observed behavior: a cache miss refreshes the complete Agent plus direct-Skill tool set once.
+' Design reason: models call by name without knowing whether a tool is bound through Agent or Skill.
+skinparam shadowing false
+title CallMateTool Cache Miss and Single-Flight Refresh
+
+actor Model
+participant CallMateTool as Call
+participant MateToolSessionCache as Cache
+participant MateToolDiscovery as Discovery
+participant MateToolClient as Mate
+
+Model -> Call : {tool, args?}
+Call -> Cache : lookup name
+alt cache hit
+  Cache --> Call : toolId
+else cache miss
+  Cache -> Cache : acquire single-flight lock
+  Cache -> Discovery : load all sources
+  Discovery -> Mate : listAgentTools(agentId)
+  loop each direct Skill
+    Discovery -> Mate : listSkillTools(skillId)
+  end
+  Discovery --> Cache : complete source snapshots
+  Cache -> Cache : reject conflicting names
+  Cache -> Cache : atomically replace snapshot
+  Cache --> Call : toolId or unknown
+end
+Call -> Mate : callTool(toolId, args, credentials)
+Mate --> Call : result
+note over Call,Mate
+  Discovery may be retried.
+  Actual execution is never replayed.
+end note
+@enduml

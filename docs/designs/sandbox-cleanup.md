@@ -1,5 +1,9 @@
 # pi-mono-java Sandbox 清理与工具管理器迁移
 
+> 历史迁移记录。当前规范已由
+> [CampusClaw 受管 Agent 工具系统 v2](tool-system-v2.md)取代；本文提到的本地
+> `ToolCatalog`、CLI 双入口和旧 Mate 工具名称不再是当前实现。
+
 ## 文档信息
 
 | 项目 | 内容 |

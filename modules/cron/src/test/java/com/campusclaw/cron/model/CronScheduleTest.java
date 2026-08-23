@@ -60,7 +60,7 @@ class CronScheduleTest {
                 "test-job",
                 "A test job",
                 new CronSchedule.Every(5000L),
-                new CronPayload.AgentPrompt("do something", null, null, null));
+                new CronPayload.AgentPrompt("agent-test", "do something"));
 
         String json = mapper.writeValueAsString(job);
         CronJob deserialized = mapper.readValue(json, CronJob.class);
@@ -74,8 +74,7 @@ class CronScheduleTest {
 
     @Test
     void cronPayloadRoundTrip() throws Exception {
-        var payload = new CronPayload.AgentPrompt(
-                "run tests", "You are a tester", "claude-sonnet-4", java.util.List.of("bash", "read"));
+        var payload = new CronPayload.AgentPrompt("agent-test", "run tests");
         String json = mapper.writeValueAsString(payload);
         assertTrue(json.contains("\"type\":\"agent_prompt\""));
         CronPayload deserialized = mapper.readValue(json, CronPayload.class);

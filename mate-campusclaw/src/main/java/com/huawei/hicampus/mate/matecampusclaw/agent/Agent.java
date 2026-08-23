@@ -32,7 +32,6 @@ import com.huawei.hicampus.mate.matecampusclaw.agent.tool.AgentContext;
 import com.huawei.hicampus.mate.matecampusclaw.agent.tool.AgentTool;
 import com.huawei.hicampus.mate.matecampusclaw.agent.tool.BeforeToolCallHandler;
 import com.huawei.hicampus.mate.matecampusclaw.agent.tool.CancellationToken;
-import com.huawei.hicampus.mate.matecampusclaw.agent.tool.ToolExecutionMode;
 import com.huawei.hicampus.mate.matecampusclaw.agent.tool.ToolExecutionPipeline;
 import com.huawei.hicampus.mate.matecampusclaw.ai.CampusClawAiService;
 import com.huawei.hicampus.mate.matecampusclaw.ai.types.AssistantMessage;
@@ -44,16 +43,13 @@ import com.huawei.hicampus.mate.matecampusclaw.ai.types.UserMessage;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.stereotype.Service;
 
 /**
- * Facade for configuring and running the phase-4 agent runtime.
+ * 配置并运行 Agent Runtime 的统一门面。
  *
  * @version [br_eCampusCore 26.0.0, 2026/05/06]
  * @since [br_eCampusCore 26.0.0]
  */
-@Service
 public class Agent {
 
     private static final Logger log = LoggerFactory.getLogger(Agent.class);
@@ -66,7 +62,6 @@ public class Agent {
     private final MessageConverter messageConverter;
     private final ContextTransformer contextTransformer;
     private final ToolExecutionPipeline toolPipeline;
-    private final ToolExecutionMode toolExecutionMode;
     private final MessageQueue steeringQueue;
     private final MessageQueue followUpQueue;
     private final SimpleStreamOptions baseStreamOptions;
@@ -76,7 +71,6 @@ public class Agent {
     private volatile CompletableFuture<Void> currentExecution = CompletableFuture.completedFuture(null);
     private volatile CancellationToken currentSignal;
 
-    @Autowired
     public Agent(CampusClawAiService piAiService) {
         this(
                 piAiService,
@@ -84,7 +78,6 @@ public class Agent {
                 new DefaultMessageConverter(),
                 null,
                 new ToolExecutionPipeline(),
-                ToolExecutionMode.SEQUENTIAL,
                 new MessageQueue(),
                 new MessageQueue(),
                 SimpleStreamOptions.empty());
@@ -96,7 +89,6 @@ public class Agent {
             MessageConverter messageConverter,
             ContextTransformer contextTransformer,
             ToolExecutionPipeline toolPipeline,
-            ToolExecutionMode toolExecutionMode,
             MessageQueue steeringQueue,
             MessageQueue followUpQueue,
             SimpleStreamOptions baseStreamOptions) {
@@ -105,7 +97,6 @@ public class Agent {
         this.messageConverter = messageConverter != null ? messageConverter : new DefaultMessageConverter();
         this.contextTransformer = contextTransformer;
         this.toolPipeline = toolPipeline != null ? toolPipeline : new ToolExecutionPipeline();
-        this.toolExecutionMode = toolExecutionMode != null ? toolExecutionMode : ToolExecutionMode.SEQUENTIAL;
         this.steeringQueue = steeringQueue != null ? steeringQueue : new MessageQueue();
         this.followUpQueue = followUpQueue != null ? followUpQueue : new MessageQueue();
         this.baseStreamOptions = baseStreamOptions != null ? baseStreamOptions : SimpleStreamOptions.empty();
@@ -261,7 +252,6 @@ public class Agent {
                     messageConverter,
                     contextTransformer,
                     toolPipeline,
-                    toolExecutionMode,
                     steeringQueue,
                     followUpQueue,
                     buildStreamOptions()));
@@ -302,7 +292,7 @@ public class Agent {
             try {
                 listener.onEvent(event);
             } catch (RuntimeException e) {
-                // Listeners should not break the agent run; surface the bug in logs.
+                // 监听器异常不得中断 Agent 执行，仅记录日志以便定位。
                 log.warn(
                         "agent event listener threw exception (event={})",
                         event.getClass().getSimpleName(),
@@ -348,15 +338,14 @@ public class Agent {
     public static String formatError(Throwable throwable) {
         var current = throwable;
 
-        // Unwrap standard wrapper exceptions
+        // 解包常见的异步包装异常。
         while (current.getCause() != null
                 && (current instanceof java.util.concurrent.CompletionException
                         || current instanceof java.util.concurrent.ExecutionException)) {
             current = current.getCause();
         }
 
-        // Build message including cause chain so the real error is visible
-        // (e.g. "Request failed" from SDK wrapping an actual IOException)
+        // 拼接原因链，避免 SDK 的外层异常掩盖真实错误。
         String message = current.getMessage() != null
                 ? current.getMessage()
                 : current.getClass().getSimpleName();
@@ -367,7 +356,7 @@ public class Agent {
                 message = message + ": " + causeMsg;
             }
 
-            // One more level for deeply nested causes (e.g. SSLHandshakeException -> PKIX)
+            // 再读取一层，以覆盖 SSLHandshakeException 到 PKIX 等深层原因。
             var rootCause = cause.getCause();
             if (rootCause != null && rootCause != cause) {
                 String rootMsg = rootCause.getMessage();
@@ -377,9 +366,9 @@ public class Agent {
             }
         }
 
-        // Append proxy hint for connection failures
+        // 连接失败时追加代理配置提示。
         if (isConnectionError(current)) {
-            message += "\n  提示: 如需使用代理，请添加 --proxy http://127.0.0.1:<端口号> 或设置环境变量 HTTPS_PROXY";
+            message += "\n  提示: 请检查服务出站代理配置和网络连通性";
         }
         return message;
     }

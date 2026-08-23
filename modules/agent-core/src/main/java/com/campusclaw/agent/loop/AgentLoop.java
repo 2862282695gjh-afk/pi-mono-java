@@ -8,6 +8,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.CancellationException;
 
 import com.campusclaw.agent.context.ContextTransformer;
 import com.campusclaw.agent.context.MessageConverter;
@@ -20,12 +21,10 @@ import com.campusclaw.agent.event.MessageUpdateEvent;
 import com.campusclaw.agent.event.TurnEndEvent;
 import com.campusclaw.agent.event.TurnStartEvent;
 import com.campusclaw.agent.queue.MessageQueue;
-import com.campusclaw.agent.subagent.acp.AcpTransport;
 import com.campusclaw.agent.tool.AgentContext;
 import com.campusclaw.agent.tool.AgentTool;
 import com.campusclaw.agent.tool.CancellationToken;
 import com.campusclaw.agent.tool.ToolCallWithTool;
-import com.campusclaw.agent.tool.ToolExecutionMode;
 import com.campusclaw.agent.tool.ToolExecutionPipeline;
 import com.campusclaw.ai.stream.AssistantMessageEvent;
 import com.campusclaw.ai.stream.AssistantMessageEventStream;
@@ -43,7 +42,7 @@ import com.campusclaw.ai.types.ToolResultMessage;
 import reactor.core.publisher.Sinks;
 
 /**
- * Core agent loop that streams assistant responses, executes tools, and manages turn continuation.
+ * 流式接收模型响应、执行工具并管理多轮续跑的 Agent 核心循环。
  *
  * @version [br_eCampusCore 26.0.0, 2026/05/06]
  * @since [br_eCampusCore 26.0.0]
@@ -55,7 +54,6 @@ public class AgentLoop {
     private final MessageConverter convertToLlm;
     private final ContextTransformer transformContext;
     private final ToolExecutionPipeline toolPipeline;
-    private final ToolExecutionMode toolExecutionMode;
     private final MessageQueue steeringQueue;
     private final MessageQueue followUpQueue;
     private final SimpleStreamOptions streamOptions;
@@ -69,7 +67,6 @@ public class AgentLoop {
         this.convertToLlm = config.convertToLlm();
         this.transformContext = config.transformContext();
         this.toolPipeline = config.toolPipeline();
-        this.toolExecutionMode = config.toolExecutionMode();
         this.steeringQueue = config.steeringQueue();
         this.followUpQueue = config.followUpQueue();
         this.streamOptions = config.streamOptions();
@@ -96,74 +93,41 @@ public class AgentLoop {
         }
         List<Message> pendingTurnInputs = List.copyOf(prompts);
         eventListener.onEvent(new AgentStartEvent());
-        int turn = 0;
         try {
             while (!signal.isCancelled()) {
-                turn++;
-                AcpTransport.note("AgentLoop.turn=" + turn + " start msgCount="
-                        + context.messages().size());
                 eventListener.onEvent(new TurnStartEvent());
                 emitPendingInputs(pendingTurnInputs, eventListener);
-                AssistantMessage assistantMessage = invokeModelTraced(turn, context, eventListener, signal);
+                AssistantMessage assistantMessage = invokeModel(context, eventListener, signal);
                 context.appendMessage(assistantMessage);
                 context.setAssistantMessage(assistantMessage);
                 eventListener.onEvent(new MessageEndEvent(assistantMessage));
                 if (assistantMessage.stopReason() == StopReason.ERROR
                         || assistantMessage.stopReason() == StopReason.ABORTED) {
-                    AcpTransport.note("AgentLoop.turn=" + turn + " end stopReason=" + assistantMessage.stopReason());
                     eventListener.onEvent(new TurnEndEvent(assistantMessage, List.of()));
                     break;
                 }
                 var toolCalls = extractToolCalls(assistantMessage);
-                AcpTransport.note("AgentLoop.turn=" + turn + " extractedToolCalls=" + toolCalls.size());
                 if (!toolCalls.isEmpty()) {
-                    pendingTurnInputs =
-                            runToolPhaseTraced(turn, context, signal, eventListener, assistantMessage, toolCalls);
+                    pendingTurnInputs = runToolPhase(context, signal, eventListener, assistantMessage, toolCalls);
                     continue;
                 }
                 var controlMessages = drainNextControlMessages();
                 eventListener.onEvent(new TurnEndEvent(assistantMessage, List.of()));
                 if (controlMessages.isEmpty()) {
-                    AcpTransport.note("AgentLoop.turn=" + turn + " end no-tools no-control-message");
                     break;
                 }
                 context.appendMessages(controlMessages);
                 pendingTurnInputs = controlMessages;
             }
-            AcpTransport.note("AgentLoop.exit cancelled=" + signal.isCancelled() + " totalTurns=" + turn);
+            return context.messages();
+        } catch (CancellationException error) {
+            if (!signal.isCancelled()) {
+                throw error;
+            }
             return context.messages();
         } finally {
             eventListener.onEvent(new AgentEndEvent(context.messages()));
         }
-    }
-
-    private AssistantMessage invokeModelTraced(
-            int turn, AgentContext context, AgentEventListener listener, CancellationToken signal) {
-        try {
-            return invokeModel(context, listener, signal);
-        } catch (RuntimeException ex) {
-            AcpTransport.note("AgentLoop.turn=" + turn + " invokeModel threw: " + ex);
-            throw ex;
-        }
-    }
-
-    private List<Message> runToolPhaseTraced(
-            int turn,
-            AgentContext context,
-            CancellationToken signal,
-            AgentEventListener eventListener,
-            AssistantMessage assistantMessage,
-            List<ToolCall> toolCalls) {
-        List<Message> result;
-        try {
-            result = runToolPhase(context, signal, eventListener, assistantMessage, toolCalls);
-        } catch (RuntimeException ex) {
-            AcpTransport.note("AgentLoop.turn=" + turn + " runToolPhase threw: " + ex);
-            throw ex;
-        }
-        AcpTransport.note("AgentLoop.turn=" + turn + " runToolPhase done msgCount="
-                + context.messages().size() + " cancelled=" + signal.isCancelled());
-        return result;
     }
 
     private List<Message> runToolPhase(
@@ -172,25 +136,18 @@ public class AgentLoop {
             AgentEventListener eventListener,
             AssistantMessage assistantMessage,
             List<ToolCall> toolCalls) {
-        var resolved = new ArrayList<ToolCallWithTool>();
-        var unknownResults = new ArrayList<ToolResultMessage>();
-        resolveToolCallsSafe(toolCalls, context.tools(), resolved, unknownResults);
-        AcpTransport.note("AgentLoop.runToolPhase resolved=" + resolved.size() + " unknown=" + unknownResults.size());
-        var toolResults = new ArrayList<ToolResultMessage>();
-        if (!resolved.isEmpty()) {
-            AcpTransport.note("AgentLoop.runToolPhase calling toolPipeline.executeAll");
-            toolResults.addAll(toolPipeline.executeAll(resolved, toolExecutionMode, context, signal, eventListener));
-            AcpTransport.note("AgentLoop.runToolPhase toolPipeline.executeAll returned results=" + toolResults.size());
+        ResolvedToolCalls resolution = resolveToolCallsSafe(toolCalls, context.tools());
+        List<ToolResultMessage> knownResults = List.of();
+        if (!resolution.known().isEmpty()) {
+            knownResults = toolPipeline.executeAll(resolution.known(), context, signal, eventListener);
         }
-        toolResults.addAll(unknownResults);
+        List<ToolResultMessage> toolResults = resolution.merge(knownResults);
         context.appendMessages(new ArrayList<>(toolResults));
         var steeringMessages = drainSteeringMessages();
         if (!steeringMessages.isEmpty()) {
             context.appendMessages(steeringMessages);
         }
-        AcpTransport.note("AgentLoop.runToolPhase emitting TurnEndEvent steering=" + steeringMessages.size());
         eventListener.onEvent(new TurnEndEvent(assistantMessage, toolResults));
-        AcpTransport.note("AgentLoop.runToolPhase TurnEndEvent emitted, returning");
         return steeringMessages;
     }
 
@@ -202,7 +159,7 @@ public class AgentLoop {
     }
 
     /**
-     * Result of consuming the LLM event stream until cancellation or completion.
+     * 保存 LLM 事件流结束或取消时的消费结果。
      */
     private record StreamConsumeResult(AssistantMessage message, boolean assistantStarted) {}
 
@@ -227,29 +184,7 @@ public class AgentLoop {
         if (assistantMessage == null) {
             throw new IllegalStateException("LLM stream completed without producing an assistant message");
         }
-        noteAssistant(assistantMessage, context.messages().size());
         return assistantMessage;
-    }
-
-    private static void noteAssistant(AssistantMessage msg, int messageCount) {
-        int textChars = 0;
-        int toolCalls = 0;
-        int thinking = 0;
-        int otherBlocks = 0;
-        for (var block : msg.content()) {
-            if (block instanceof TextContent tc) {
-                textChars += tc.text() == null ? 0 : tc.text().length();
-            } else if (block instanceof ToolCall) {
-                toolCalls++;
-            } else if (block.getClass().getSimpleName().contains("Thinking")) {
-                thinking++;
-            } else {
-                otherBlocks++;
-            }
-        }
-        AcpTransport.note("AgentLoop.invokeModel returned: textChars=" + textChars
-                + " toolCalls=" + toolCalls + " thinking=" + thinking + " otherBlocks=" + otherBlocks
-                + " stopReason=" + msg.stopReason() + " msgCountInCtx=" + messageCount);
     }
 
     private StreamConsumeResult consumeStream(
@@ -276,9 +211,7 @@ public class AgentLoop {
         return new StreamConsumeResult(assistantMessage, assistantStarted);
     }
 
-    // Synthesize an ABORTED message so the outer loop terminates cleanly
-    // instead of falling through to result().block(), which would hang on the
-    // torn-down stream.
+    // 合成 ABORTED 消息，使外层循环直接结束，避免在已断开的流上阻塞等待结果。
     private AssistantMessage synthesizeAbortedMessage(StreamConsumeResult result, AgentEventListener listener) {
         var msg = result.message();
         var aborted = new AssistantMessage(
@@ -329,40 +262,56 @@ public class AgentLoop {
         return List.copyOf(toolCalls);
     }
 
-    /**
-     * Resolves tool calls, separating known tools from unknown ones.
-     * Unknown tools get an error result instead of throwing, matching TS behavior.
-     *
-     * @param toolCalls the tool calls emitted by the assistant
-     * @param tools the catalog of tools currently available to the agent
-     * @param resolved out-parameter populated with calls whose tool was found
-     * @param unknownResults out-parameter populated with error results for unknown tools
-     */
-    private void resolveToolCallsSafe(
-            List<ToolCall> toolCalls,
-            List<AgentTool> tools,
-            List<ToolCallWithTool> resolved,
-            List<ToolResultMessage> unknownResults) {
-
+    private ResolvedToolCalls resolveToolCallsSafe(List<ToolCall> toolCalls, List<AgentTool> tools) {
         var toolsByName = new LinkedHashMap<String, AgentTool>();
         for (var tool : tools) {
             toolsByName.put(tool.name(), tool);
         }
-
-        for (var toolCall : toolCalls) {
+        var known = new ArrayList<ToolCallWithTool>();
+        var knownPositions = new ArrayList<Integer>();
+        var unknown = new ArrayList<ToolResultMessage>();
+        var unknownPositions = new ArrayList<Integer>();
+        for (int index = 0; index < toolCalls.size(); index++) {
+            ToolCall toolCall = toolCalls.get(index);
             var tool = toolsByName.get(toolCall.name());
             if (tool != null) {
-                resolved.add(new ToolCallWithTool(toolCall, tool, toolCall.arguments()));
+                known.add(new ToolCallWithTool(toolCall, tool, toolCall.arguments()));
+                knownPositions.add(index);
             } else {
-                // Return error result for unknown tool (agent can adapt)
-                unknownResults.add(new ToolResultMessage(
+                unknown.add(new ToolResultMessage(
                         toolCall.id(),
                         toolCall.name(),
                         List.of(new TextContent("Tool " + toolCall.name() + " not found", null)),
                         null,
                         true,
                         System.currentTimeMillis()));
+                unknownPositions.add(index);
             }
+        }
+        return new ResolvedToolCalls(
+                List.copyOf(known),
+                List.copyOf(knownPositions),
+                List.copyOf(unknown),
+                List.copyOf(unknownPositions),
+                toolCalls.size());
+    }
+
+    private record ResolvedToolCalls(
+            List<ToolCallWithTool> known,
+            List<Integer> knownPositions,
+            List<ToolResultMessage> unknown,
+            List<Integer> unknownPositions,
+            int size) {
+
+        private List<ToolResultMessage> merge(List<ToolResultMessage> knownResults) {
+            var ordered = new ArrayList<ToolResultMessage>(java.util.Collections.nCopies(size, null));
+            for (int index = 0; index < knownResults.size(); index++) {
+                ordered.set(knownPositions.get(index), knownResults.get(index));
+            }
+            for (int index = 0; index < unknown.size(); index++) {
+                ordered.set(unknownPositions.get(index), unknown.get(index));
+            }
+            return List.copyOf(ordered);
         }
     }
 

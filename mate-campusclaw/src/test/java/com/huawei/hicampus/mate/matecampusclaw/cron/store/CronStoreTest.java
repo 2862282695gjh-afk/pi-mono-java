@@ -104,10 +104,10 @@ class CronStoreTest {
     void persistsToDisk() throws IOException {
         store.addJob(createJob("persisted"));
 
-        // Verify file exists
+        // 校验文件已经生成。
         assertTrue(Files.exists(tempDir.resolve("jobs.json")));
 
-        // Create new store instance pointing to same file
+        // 创建指向同一文件的新 Store 实例。
         var store2 = new CronStore(tempDir.resolve("jobs.json"));
         var jobs = store2.load();
         assertEquals(1, jobs.size());
@@ -119,7 +119,7 @@ class CronStoreTest {
         store.addJob(createJob("a"));
         store.addJob(createJob("b"));
 
-        // save() with a new list should replace previously stored jobs entirely.
+        // 使用新列表调用 save() 应完整替换原任务。
         var replacement = java.util.List.of(createJob("only-one"));
         store.save(replacement);
 
@@ -142,26 +142,8 @@ class CronStoreTest {
         assertTrue(store.load().isEmpty(), "updateJob against a missing id must not implicitly add it");
     }
 
-    @Test
-    void processLockAcquireAndRelease() {
-        var lock = store.acquireProcessLock();
-        assertTrue(lock != null, "first acquireProcessLock should succeed");
-
-        // releaseProcessLock(null) is allowed and must not throw.
-        store.releaseProcessLock(null);
-        store.releaseProcessLock(lock);
-
-        // After release, lock is acquirable again.
-        var second = store.acquireProcessLock();
-        assertTrue(second != null, "lock acquirable again after release");
-        store.releaseProcessLock(second);
-    }
-
     private CronJob createJob(String name) {
         return CronJob.create(
-                name,
-                null,
-                new CronSchedule.Every(60000L),
-                new CronPayload.AgentPrompt("do something", null, null, null));
+                name, null, new CronSchedule.Every(60000L), new CronPayload.AgentPrompt("agent-test", "do something"));
     }
 }

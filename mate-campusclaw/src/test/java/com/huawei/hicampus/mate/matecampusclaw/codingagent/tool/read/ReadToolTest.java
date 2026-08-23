@@ -4,319 +4,133 @@
 
 package com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.read;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertInstanceOf;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.when;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import java.io.IOException;
+import java.awt.image.BufferedImage;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Base64;
 import java.util.Map;
 
-import com.huawei.hicampus.mate.matecampusclaw.agent.tool.AgentToolResult;
+import javax.imageio.ImageIO;
+
+import com.huawei.hicampus.mate.matecampusclaw.agent.tool.ToolExecutionMode;
 import com.huawei.hicampus.mate.matecampusclaw.ai.types.ImageContent;
 import com.huawei.hicampus.mate.matecampusclaw.ai.types.TextContent;
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.ops.ReadOperations;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.ops.LocalReadOperations;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.workspace.AgentWorkspaceBoundary;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.workspace.WorkspaceAccessException;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.workspace.WorkspacePathResolver;
 
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
-import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
 
-@ExtendWith(MockitoExtension.class)
+/**
+ * {@link ReadTool} 的精确契约和工作区隔离测试。
+ *
+ * @version [br_eCampusCore 26.0.0, 2026/08/23]
+ * @since [br_eCampusCore 26.0.0]
+ */
 class ReadToolTest {
 
-    @Mock
-    ReadOperations readOperations;
-
     @TempDir
-    Path tempDir;
+    Path agentRoot;
 
-    ReadTool readTool;
+    private ReadTool tool;
 
     @BeforeEach
     void setUp() {
-        readTool = new ReadTool(readOperations, tempDir);
+        AgentWorkspaceBoundary boundary = AgentWorkspaceBoundary.create("agent-a", agentRoot);
+        tool = new ReadTool(new LocalReadOperations(), new WorkspacePathResolver(), boundary);
     }
 
-    private String extractText(AgentToolResult result) {
-        return ((TextContent) result.content().get(0)).text();
+    @Test
+    void shouldPublishPascalCaseParallelContract() {
+        assertThat(tool.name()).isEqualTo("Read");
+        assertThat(tool.description()).isEqualTo("Read the contents of a file. Supports text files and images.");
+        assertThat(tool.executionMode()).isEqualTo(ToolExecutionMode.PARALLEL);
+        assertThat(tool.parameters().path("additionalProperties").asBoolean()).isFalse();
+        assertThat(tool.parameters().path("required").get(0).asText()).isEqualTo("path");
     }
 
-    private void stubFile(String name, String content) throws IOException {
-        Path path = tempDir.resolve(name);
-        when(readOperations.exists(path)).thenReturn(true);
-        when(readOperations.detectMimeType(path)).thenReturn("text/plain");
-        when(readOperations.readFile(path)).thenReturn(content.getBytes(StandardCharsets.UTF_8));
+    @Test
+    void shouldReturnRawTextAndApplyOffsetAndLimit() throws Exception {
+        Files.writeString(agentRoot.resolve("notes.txt"), "one\ntwo\nthree\nfour");
+
+        var result = tool.execute("call", Map.of("path", "notes.txt", "offset", 2, "limit", 2), null, null);
+
+        assertThat(((TextContent) result.content().get(0)).text())
+                .startsWith("two\nthree")
+                .contains("[Output truncated.");
     }
 
-    // -------------------------------------------------------------------
-    // Metadata
-    // -------------------------------------------------------------------
+    @Test
+    void shouldMarkDefaultLineTruncation() throws Exception {
+        String content = "line\n".repeat(ReadTool.DEFAULT_MAX_LINES + 1);
+        Files.writeString(agentRoot.resolve("large.txt"), content);
 
-    @Nested
-    class Metadata {
+        var result = tool.execute("call", Map.of("path", "large.txt"), null, null);
 
-        @Test
-        void name() {
-            assertEquals("read", readTool.name());
-        }
-
-        @Test
-        void label() {
-            assertEquals("Read", readTool.label());
-        }
-
-        @Test
-        void parametersSchema() {
-            var params = readTool.parameters();
-            assertEquals("object", params.get("type").asText());
-            assertTrue(params.get("properties").has("path"));
-            assertTrue(params.get("properties").has("offset"));
-            assertTrue(params.get("properties").has("limit"));
-            assertEquals("path", params.get("required").get(0).asText());
-        }
+        assertThat(((TextContent) result.content().get(0)).text()).contains("[Output truncated.");
     }
 
-    // -------------------------------------------------------------------
-    // Text file reading
-    // -------------------------------------------------------------------
+    @Test
+    void byteTruncationShouldIncludeMarkerWithinPublishedBudget() throws Exception {
+        Files.writeString(agentRoot.resolve("wide.txt"), "界".repeat(30_000));
 
-    @Nested
-    class TextFileReading {
+        var result = tool.execute("call", Map.of("path", "wide.txt"), null, null);
 
-        @Test
-        void readsFileWithLineNumbers() throws Exception {
-            stubFile("test.txt", "line1\nline2\nline3\n");
-
-            var result = readTool.execute("c1", Map.of("path", "test.txt"), null, null);
-
-            String text = extractText(result);
-            assertTrue(text.contains("1\tline1"));
-            assertTrue(text.contains("2\tline2"));
-            assertTrue(text.contains("3\tline3"));
-        }
-
-        @Test
-        void singleLineFile() throws Exception {
-            stubFile("single.txt", "hello");
-
-            var result = readTool.execute("c2", Map.of("path", "single.txt"), null, null);
-
-            String text = extractText(result);
-            assertTrue(text.contains("1\thello"));
-        }
-
-        @Test
-        void emptyFile() throws Exception {
-            stubFile("empty.txt", "");
-
-            var result = readTool.execute("c3", Map.of("path", "empty.txt"), null, null);
-
-            String text = extractText(result);
-
-            // Empty file still gets formatted as a single empty numbered line
-            assertEquals("     1\t", text);
-        }
-
-        @Test
-        void noTruncationForSmallFile() throws Exception {
-            stubFile("small.txt", "a\nb\nc\n");
-
-            var result = readTool.execute("c4", Map.of("path", "small.txt"), null, null);
-
-            var details = (ReadToolDetails) result.details();
-            assertNull(details.truncation());
-        }
+        String output = ((TextContent) result.content().getFirst()).text();
+        assertThat(output).contains("[Output truncated: first line exceeds the 50 KB limit.]");
+        assertThat(output.getBytes(StandardCharsets.UTF_8).length).isLessThanOrEqualTo(ReadTool.DEFAULT_MAX_BYTES);
     }
 
-    // -------------------------------------------------------------------
-    // Offset and limit
-    // -------------------------------------------------------------------
+    @Test
+    void shouldRejectUnsupportedBinaryFile() throws Exception {
+        Files.write(agentRoot.resolve("data.bin"), new byte[] {1, 0, 2});
 
-    @Nested
-    class OffsetAndLimit {
-
-        @Test
-        void offsetSkipsLines() throws Exception {
-            stubFile("offset.txt", "line1\nline2\nline3\nline4\nline5\n");
-
-            var result = readTool.execute("c5", Map.of("path", "offset.txt", "offset", 3), null, null);
-
-            String text = extractText(result);
-            assertFalse(text.contains("1\tline1"));
-            assertFalse(text.contains("2\tline2"));
-            assertTrue(text.contains("3\tline3"));
-            assertTrue(text.contains("4\tline4"));
-            assertTrue(text.contains("5\tline5"));
-        }
-
-        @Test
-        void limitRestrictsLines() throws Exception {
-            stubFile("limit.txt", "line1\nline2\nline3\nline4\nline5\n");
-
-            var result = readTool.execute("c6", Map.of("path", "limit.txt", "limit", 2), null, null);
-
-            String text = extractText(result);
-            assertTrue(text.contains("1\tline1"));
-            assertTrue(text.contains("2\tline2"));
-            assertFalse(text.contains("3\tline3"));
-        }
-
-        @Test
-        void offsetAndLimitCombined() throws Exception {
-            stubFile("combo.txt", "line1\nline2\nline3\nline4\nline5\n");
-
-            var result = readTool.execute("c7", Map.of("path", "combo.txt", "offset", 2, "limit", 2), null, null);
-
-            String text = extractText(result);
-            assertFalse(text.contains("1\tline1"));
-            assertTrue(text.contains("2\tline2"));
-            assertTrue(text.contains("3\tline3"));
-            assertFalse(text.contains("4\tline4"));
-        }
-
-        @Test
-        void offsetBeyondFileReturnsEmpty() throws Exception {
-            stubFile("short.txt", "line1\nline2\n");
-
-            var result = readTool.execute("c8", Map.of("path", "short.txt", "offset", 100), null, null);
-
-            assertEquals("", extractText(result));
-        }
-
-        @Test
-        void offsetAtZeroTreatedAsOne() throws Exception {
-            stubFile("zero.txt", "line1\nline2\n");
-
-            var result = readTool.execute("c9", Map.of("path", "zero.txt", "offset", 0), null, null);
-
-            String text = extractText(result);
-            assertTrue(text.contains("1\tline1"));
-        }
+        assertThatThrownBy(() -> tool.execute("call", Map.of("path", "data.bin"), null, null))
+                .isInstanceOf(WorkspaceAccessException.class)
+                .hasMessage("Unsupported binary file");
     }
 
-    // -------------------------------------------------------------------
-    // Image detection
-    // -------------------------------------------------------------------
+    @Test
+    void shouldReturnSupportedImageContent() throws Exception {
+        Path imagePath = agentRoot.resolve("picture.png");
+        ImageIO.write(new BufferedImage(10, 10, BufferedImage.TYPE_INT_RGB), "png", imagePath.toFile());
 
-    @Nested
-    class ImageDetection {
+        var result = tool.execute("call", Map.of("path", "picture.png"), null, null);
 
-        @Test
-        void pngFileReturnsImageContent() throws Exception {
-            Path path = tempDir.resolve("photo.png");
-            byte[] fakeImageData = {(byte) 0x89, 0x50, 0x4E, 0x47};
-            when(readOperations.exists(path)).thenReturn(true);
-            when(readOperations.detectMimeType(path)).thenReturn("image/png");
-            when(readOperations.readFile(path)).thenReturn(fakeImageData);
-
-            var result = readTool.execute("c10", Map.of("path", "photo.png"), null, null);
-
-            assertEquals(1, result.content().size());
-            assertInstanceOf(ImageContent.class, result.content().get(0));
-            var img = (ImageContent) result.content().get(0);
-            assertEquals("image/png", img.mimeType());
-            assertEquals(Base64.getEncoder().encodeToString(fakeImageData), img.data());
-        }
-
-        @Test
-        void jpegFileReturnsImageContent() throws Exception {
-            Path path = tempDir.resolve("photo.jpg");
-            byte[] fakeData = {(byte) 0xFF, (byte) 0xD8};
-            when(readOperations.exists(path)).thenReturn(true);
-            when(readOperations.detectMimeType(path)).thenReturn("image/jpeg");
-            when(readOperations.readFile(path)).thenReturn(fakeData);
-
-            var result = readTool.execute("c11", Map.of("path", "photo.jpg"), null, null);
-
-            assertInstanceOf(ImageContent.class, result.content().get(0));
-            assertEquals("image/jpeg", ((ImageContent) result.content().get(0)).mimeType());
-        }
-
-        @Test
-        void textMimeTypeReturnsTextContent() throws Exception {
-            stubFile("code.js", "console.log('hi');\n");
-
-            var result = readTool.execute("c12", Map.of("path", "code.js"), null, null);
-
-            assertInstanceOf(TextContent.class, result.content().get(0));
-        }
+        assertThat(result.content().get(0)).isInstanceOf(ImageContent.class);
+        assertThat(((ImageContent) result.content().get(0)).mimeType()).isEqualTo("image/png");
     }
 
-    // -------------------------------------------------------------------
-    // Truncation
-    // -------------------------------------------------------------------
+    @Test
+    void shouldDecodeWebpImage() throws Exception {
+        byte[] webp = Base64.getDecoder().decode("UklGRiIAAABXRUJQVlA4IBYAAAAwAQCdASoBAAEADsD+JaQAA3AAAAAA");
+        Files.write(agentRoot.resolve("picture.webp"), webp);
 
-    @Nested
-    class Truncation {
+        var result = tool.execute("call", Map.of("path", "picture.webp"), null, null);
 
-        @Test
-        void largeFileIsTruncated() throws Exception {
-            var sb = new StringBuilder();
-            for (int i = 0; i < ReadTool.DEFAULT_MAX_LINES + 100; i++) {
-                sb.append("content line ").append(i).append('\n');
-            }
-            stubFile("large.txt", sb.toString());
-
-            var result = readTool.execute("c13", Map.of("path", "large.txt"), null, null);
-
-            var details = (ReadToolDetails) result.details();
-            assertNotNull(details.truncation());
-            assertTrue(details.truncation().truncated());
-        }
-
-        @Test
-        void smallFileNotTruncated() throws Exception {
-            stubFile("tiny.txt", "one\ntwo\nthree\n");
-
-            var result = readTool.execute("c14", Map.of("path", "tiny.txt"), null, null);
-
-            var details = (ReadToolDetails) result.details();
-            assertNull(details.truncation());
-        }
+        assertThat(result.content().getFirst()).isInstanceOf(ImageContent.class);
+        assertThat(((ImageContent) result.content().getFirst()).mimeType()).isEqualTo("image/webp");
     }
 
-    // -------------------------------------------------------------------
-    // Error handling
-    // -------------------------------------------------------------------
+    @Test
+    void shouldExplainWhenCurrentModelDoesNotSupportImages() throws Exception {
+        Path imagePath = agentRoot.resolve("picture.png");
+        ImageIO.write(new BufferedImage(10, 10, BufferedImage.TYPE_INT_RGB), "png", imagePath.toFile());
+        AgentWorkspaceBoundary boundary = AgentWorkspaceBoundary.create("agent-a", agentRoot);
+        ReadTool textOnlyTool = new ReadTool(new LocalReadOperations(), new WorkspacePathResolver(), boundary, false);
 
-    @Nested
-    class ErrorHandling {
+        var result = textOnlyTool.execute("call", Map.of("path", "picture.png"), null, null);
 
-        @Test
-        void missingPathReturnsError() throws Exception {
-            var result = readTool.execute("c15", Map.of(), null, null);
-            assertTrue(extractText(result).contains("Error"));
-        }
-
-        @Test
-        void blankPathReturnsError() throws Exception {
-            var result = readTool.execute("c16", Map.of("path", "  "), null, null);
-            assertTrue(extractText(result).contains("Error"));
-        }
-
-        @Test
-        void fileNotFoundReturnsError() throws Exception {
-            when(readOperations.exists(any())).thenReturn(false);
-
-            var result = readTool.execute("c17", Map.of("path", "missing.txt"), null, null);
-            assertTrue(extractText(result).contains("not found"));
-        }
-
-        @Test
-        void pathTraversalReturnsError() throws Exception {
-            var result = readTool.execute("c18", Map.of("path", "../../etc/passwd"), null, null);
-            assertTrue(extractText(result).contains("Error"));
-        }
+        assertThat(result.content()).hasSize(2);
+        assertThat(result.content().getFirst()).isInstanceOf(ImageContent.class);
+        assertThat(((TextContent) result.content().getLast()).text())
+                .isEqualTo("The current model does not declare image input support.");
     }
 }

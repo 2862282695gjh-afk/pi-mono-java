@@ -9,6 +9,7 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import com.campusclaw.agent.Agent;
 import com.campusclaw.codingagent.runtimeapi.agent.AgentDirectorySnapshotDTO;
+import com.campusclaw.codingagent.session.ManagedAgentSession;
 
 /**
  * 单个 Runtime Session 的进程内执行对象。
@@ -23,14 +24,31 @@ public class RuntimeSessionHolder {
 
     private final Agent agent;
 
+    private final ManagedAgentSession managedSession;
+
     private final boolean thinking;
 
     private final AtomicReference<RuntimeActiveExecution> activeExecution = new AtomicReference<>();
 
     public RuntimeSessionHolder(String sessionId, AgentDirectorySnapshotDTO snapshot, Agent agent, boolean thinking) {
+        this(sessionId, snapshot, agent, null, thinking);
+    }
+
+    public RuntimeSessionHolder(
+            String sessionId, AgentDirectorySnapshotDTO snapshot, ManagedAgentSession session, boolean thinking) {
+        this(sessionId, snapshot, session.agent(), session, thinking);
+    }
+
+    private RuntimeSessionHolder(
+            String sessionId,
+            AgentDirectorySnapshotDTO snapshot,
+            Agent agent,
+            ManagedAgentSession managedSession,
+            boolean thinking) {
         this.sessionId = sessionId;
         this.snapshot = snapshot;
         this.agent = agent;
+        this.managedSession = managedSession;
         this.thinking = thinking;
     }
 
@@ -60,5 +78,11 @@ public class RuntimeSessionHolder {
 
     public Optional<RuntimeActiveExecution> activeExecution() {
         return Optional.ofNullable(activeExecution.get());
+    }
+
+    public void closeSession() {
+        if (managedSession != null) {
+            managedSession.close();
+        }
     }
 }

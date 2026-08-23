@@ -4,67 +4,85 @@
 
 package com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.read;
 
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.nio.charset.CharacterCodingException;
+import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.Base64;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
+
+import javax.imageio.ImageIO;
 
 import com.huawei.hicampus.mate.matecampusclaw.agent.tool.AgentTool;
 import com.huawei.hicampus.mate.matecampusclaw.agent.tool.AgentToolResult;
 import com.huawei.hicampus.mate.matecampusclaw.agent.tool.AgentToolUpdateCallback;
 import com.huawei.hicampus.mate.matecampusclaw.agent.tool.CancellationToken;
+import com.huawei.hicampus.mate.matecampusclaw.agent.tool.ToolExecutionMode;
 import com.huawei.hicampus.mate.matecampusclaw.ai.types.ContentBlock;
 import com.huawei.hicampus.mate.matecampusclaw.ai.types.ImageContent;
 import com.huawei.hicampus.mate.matecampusclaw.ai.types.TextContent;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.ops.ReadOperations;
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.util.PathUtils;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.workspace.AgentWorkspaceBoundary;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.workspace.WorkspaceAccessException;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.workspace.WorkspacePathResolver;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.util.ImageUtils;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.util.TruncationUtils;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.stereotype.Component;
-
 /**
- * Agent tool that reads file contents with optional line offset and limit.
- * Detects image files and returns them as {@link ImageContent}.
- * Text files are returned with line numbers and truncated if they exceed limits.
+ * 在当前 Agent 工作区内读取文本文件或受支持图片的内置工具。
  *
- * @version [br_eCampusCore 26.0.0, 2026/05/06]
+ * @version [br_eCampusCore 26.0.0, 2026/08/23]
  * @since [br_eCampusCore 26.0.0]
  */
-@Component
 public class ReadTool implements AgentTool {
 
-    private static final Logger log = LoggerFactory.getLogger(ReadTool.class);
+    static final int DEFAULT_MAX_BYTES = 50 * 1024;
+    static final int DEFAULT_MAX_LINES = 2000;
+    static final int MAX_IMAGE_DIMENSION = 2000;
 
-    static final int DEFAULT_MAX_BYTES = 32_768; // 32KB
-    static final int DEFAULT_MAX_LINES = 500;
-
+    private static final String TRUNCATION_NOTICE = "\n\n[Output truncated. Continue with offset and limit.]";
+    private static final String FIRST_LINE_TRUNCATION_NOTICE =
+            "\n\n[Output truncated: first line exceeds the 50 KB limit.]";
+    private static final Set<String> SUPPORTED_IMAGES =
+            Set.of("image/jpeg", "image/png", "image/gif", "image/webp", "image/bmp");
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private final ReadOperations readOperations;
-    private final Path cwd;
+    private final WorkspacePathResolver pathResolver;
+    private final AgentWorkspaceBoundary boundary;
 
-    @Autowired
-    public ReadTool(ReadOperations readOperations) {
-        this(readOperations, Path.of(System.getProperty("user.dir")));
+    private final boolean imageInputSupported;
+
+    public ReadTool(
+            ReadOperations readOperations, WorkspacePathResolver pathResolver, AgentWorkspaceBoundary boundary) {
+        this(readOperations, pathResolver, boundary, true);
     }
 
-    public ReadTool(ReadOperations readOperations, Path cwd) {
+    public ReadTool(
+            ReadOperations readOperations,
+            WorkspacePathResolver pathResolver,
+            AgentWorkspaceBoundary boundary,
+            boolean imageInputSupported) {
         this.readOperations = readOperations;
-        this.cwd = cwd;
+        this.pathResolver = pathResolver;
+        this.boundary = boundary;
+        this.imageInputSupported = imageInputSupported;
     }
 
     @Override
     public String name() {
-        return "read";
+        return "Read";
     }
 
     @Override
@@ -74,152 +92,195 @@ public class ReadTool implements AgentTool {
 
     @Override
     public String description() {
-        return "Read the contents of a file. For image files, the content is returned as an image.";
+        return "Read the contents of a file. Supports text files and images.";
+    }
+
+    @Override
+    public ToolExecutionMode executionMode() {
+        return ToolExecutionMode.PARALLEL;
     }
 
     @Override
     public JsonNode parameters() {
-        ObjectNode props = MAPPER.createObjectNode();
-        props.set(
+        ObjectNode properties = MAPPER.createObjectNode();
+        properties.set(
                 "path",
-                MAPPER.createObjectNode()
-                        .put("type", "string")
-                        .put("description", "The file path to read (relative or absolute)"));
-        props.set(
-                "offset",
-                MAPPER.createObjectNode()
-                        .put("type", "integer")
-                        .put("description", "Starting line number, 1-indexed (optional)"));
-        props.set(
-                "limit",
-                MAPPER.createObjectNode()
-                        .put("type", "integer")
-                        .put("description", "Maximum number of lines to read (optional)"));
-
-        return MAPPER.createObjectNode()
-                .put("type", "object")
-                .<ObjectNode>set("properties", props)
-                .set("required", MAPPER.createArrayNode().add("path"));
+                stringProperty("Path to the file to read, relative or absolute within the current Agent workspace."));
+        properties.set("offset", numberProperty("Line number to start reading from, 1-indexed."));
+        properties.set("limit", numberProperty("Maximum number of lines to read."));
+        ObjectNode schema = MAPPER.createObjectNode();
+        schema.put("type", "object");
+        schema.set("properties", properties);
+        schema.set("required", MAPPER.createArrayNode().add("path"));
+        schema.put("additionalProperties", false);
+        return schema;
     }
 
     @Override
     public AgentToolResult execute(
             String toolCallId, Map<String, Object> params, CancellationToken signal, AgentToolUpdateCallback onUpdate)
             throws Exception {
-        String pathInput = (String) params.get("path");
-        if (pathInput == null || pathInput.isBlank()) {
-            return errorResult("Error: path is required");
+        ensureNotCancelled(signal);
+        Path path = pathResolver.resolveFile(boundary, (String) params.get("path"));
+        byte[] bytes = readOperations.readFile(path);
+        String mimeType = readOperations.detectMimeType(path);
+        if (SUPPORTED_IMAGES.contains(mimeType)) {
+            return readImage(bytes, mimeType);
         }
+        ensureNotCancelled(signal);
+        return readText(bytes, params);
+    }
 
-        // Resolve and validate the path
-        Path resolvedPath;
+    private AgentToolResult readImage(byte[] bytes, String mimeType) throws IOException {
+        BufferedImage source = ImageIO.read(new ByteArrayInputStream(bytes));
+        if (source == null) {
+            throw new WorkspaceAccessException("Unsupported or invalid image file");
+        }
+        BufferedImage resized = ImageUtils.resize(source, MAX_IMAGE_DIMENSION);
+        if (resized == source) {
+            return imageResult(bytes, mimeType);
+        }
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        if (!ImageIO.write(resized, "png", output)) {
+            throw new WorkspaceAccessException("Unsupported or invalid image file");
+        }
+        return imageResult(output.toByteArray(), "image/png");
+    }
+
+    private AgentToolResult readText(byte[] bytes, Map<String, Object> params) {
+        String content = decodeText(bytes);
+        int offset = positiveInt(params.get("offset"), 1, "offset");
+        int limit = positiveInt(params.get("limit"), DEFAULT_MAX_LINES, "limit");
+        TextSelection selection = selectLines(content, offset, limit);
+        boolean firstLineTruncated = firstLineExceedsLimit(selection.text());
+        String output = truncateText(selection.text(), selection.moreLines(), firstLineTruncated);
+        boolean truncated = selection.moreLines() || !output.equals(selection.text());
+        var truncation = truncated ? truncationDetails(selection, output, limit, firstLineTruncated) : null;
+        return new AgentToolResult(List.<ContentBlock>of(new TextContent(output)), new ReadToolDetails(truncation));
+    }
+
+    private static String decodeText(byte[] bytes) {
+        if (containsNull(bytes)) {
+            throw new WorkspaceAccessException("Unsupported binary file");
+        }
         try {
-            resolvedPath = PathUtils.resolveReadPath(pathInput, cwd);
-        } catch (SecurityException e) {
-            return errorResult("Error: " + e.getMessage());
+            return StandardCharsets.UTF_8
+                    .newDecoder()
+                    .onMalformedInput(CodingErrorAction.REPORT)
+                    .onUnmappableCharacter(CodingErrorAction.REPORT)
+                    .decode(ByteBuffer.wrap(bytes))
+                    .toString();
+        } catch (CharacterCodingException exception) {
+            throw new WorkspaceAccessException("Unsupported binary file", exception);
         }
-
-        // Check file exists
-        if (!readOperations.exists(resolvedPath)) {
-            return errorResult("Error: file not found: " + pathInput);
-        }
-
-        // Detect image files
-        try {
-            String mimeType = readOperations.detectMimeType(resolvedPath);
-            if (mimeType != null && mimeType.startsWith("image/")) {
-                return readImage(resolvedPath, mimeType);
-            }
-        } catch (IOException e) {
-            // If MIME detection fails, treat as text
-            log.debug("MIME detection failed for {}; falling back to text read", resolvedPath, e);
-        }
-
-        return readText(resolvedPath, params);
     }
 
-    private AgentToolResult readImage(Path path, String mimeType) throws IOException {
-        byte[] data = readOperations.readFile(path);
-        String base64 = Base64.getEncoder().encodeToString(data);
-        return new AgentToolResult(List.<ContentBlock>of(new ImageContent(base64, mimeType)), null);
+    private static TextSelection selectLines(String content, int offset, int limit) {
+        String[] lines = content.split("\n", -1);
+        int start = offset - 1;
+        if (start >= lines.length) {
+            return new TextSelection("", false, lines.length);
+        }
+        int end = Math.min(start + limit, lines.length);
+        String selected = String.join("\n", Arrays.copyOfRange(lines, start, end));
+        return new TextSelection(selected, end < lines.length, lines.length);
     }
 
-    private AgentToolResult readText(Path path, Map<String, Object> params) throws IOException {
-        byte[] rawBytes = readOperations.readFile(path);
-        String content = new String(rawBytes, StandardCharsets.UTF_8);
-
-        String[] allLines = content.split("\n", -1);
-
-        // Remove trailing empty line from split if content ends with newline
-        int totalLines = allLines.length;
-        if (content.endsWith("\n") && totalLines > 0) {
-            totalLines = totalLines - 1;
-        }
-
-        // Parse offset (1-indexed) and limit
-        int offset = 1;
-        Object offsetParam = params.get("offset");
-        if (offsetParam instanceof Number n) {
-            offset = Math.max(1, n.intValue());
-        }
-
-        Integer limit = null;
-        Object limitParam = params.get("limit");
-        if (limitParam instanceof Number n) {
-            limit = n.intValue();
-        }
-
-        // Apply offset and limit to select a window of lines
-        int startIdx = offset - 1; // convert to 0-indexed
-        int endIdx = limit != null ? Math.min(startIdx + limit, totalLines) : totalLines;
-
-        if (startIdx >= totalLines) {
-            return new AgentToolResult(List.<ContentBlock>of(new TextContent("")), new ReadToolDetails(null));
-        }
-
-        // Build numbered output
-        var sb = new StringBuilder();
-        for (int i = startIdx; i < endIdx; i++) {
-            int lineNum = i + 1;
-            sb.append(String.format(Locale.ROOT, "%6d\t%s", lineNum, allLines[i]));
-            if (i < endIdx - 1) {
-                sb.append('\n');
-            }
-        }
-        String numberedOutput = sb.toString();
-
-        // Truncate if needed
-        TruncationUtils.TruncationResult truncationResult =
-                TruncationUtils.truncateTail(numberedOutput, DEFAULT_MAX_LINES, DEFAULT_MAX_BYTES);
-
-        String displayText;
-        if (truncationResult.truncated()) {
-            displayText = truncateFirstNLines(numberedOutput, truncationResult.outputLines());
-        } else {
-            displayText = numberedOutput;
-        }
-
-        var details = new ReadToolDetails(truncationResult.truncated() ? truncationResult : null);
-
-        return new AgentToolResult(List.<ContentBlock>of(new TextContent(displayText)), details);
-    }
-
-    private static String truncateFirstNLines(String text, int maxLines) {
-        String[] lines = text.split("\n", -1);
-        if (lines.length <= maxLines) {
+    private static String truncateText(String text, boolean moreLines, boolean firstLineTruncated) {
+        String notice = firstLineTruncated ? FIRST_LINE_TRUNCATION_NOTICE : TRUNCATION_NOTICE;
+        int noticeBytes = notice.getBytes(StandardCharsets.UTF_8).length;
+        int contentBudget = DEFAULT_MAX_BYTES - noticeBytes;
+        var truncation = TruncationUtils.truncateTail(text, Integer.MAX_VALUE, contentBudget);
+        if (!moreLines && !truncation.truncated()) {
             return text;
         }
-        var sb = new StringBuilder();
-        for (int i = 0; i < maxLines; i++) {
-            if (i > 0) {
-                sb.append('\n');
-            }
-            sb.append(lines[i]);
-        }
-        return sb.toString();
+        String retained = retainPrefix(text, truncation.outputLines(), contentBudget);
+        return retained + notice;
     }
 
-    private static AgentToolResult errorResult(String message) {
-        return new AgentToolResult(List.<ContentBlock>of(new TextContent(message)), null);
+    private static TruncationUtils.TruncationResult truncationDetails(
+            TextSelection selection, String output, int limit, boolean firstLineTruncated) {
+        int outputLines = output.split("\n", -1).length;
+        return new TruncationUtils.TruncationResult(
+                true,
+                outputLines,
+                selection.totalLines(),
+                limit,
+                DEFAULT_MAX_BYTES,
+                firstLineTruncated,
+                "lines-or-bytes");
     }
+
+    private static boolean firstLineExceedsLimit(String text) {
+        int newline = text.indexOf('\n');
+        String firstLine = newline < 0 ? text : text.substring(0, newline);
+        int budget = DEFAULT_MAX_BYTES - FIRST_LINE_TRUNCATION_NOTICE.getBytes(StandardCharsets.UTF_8).length;
+        return firstLine.getBytes(StandardCharsets.UTF_8).length > budget;
+    }
+
+    private static String retainPrefix(String text, int maxLines, int maxBytes) {
+        String[] lines = text.split("\n", -1);
+        StringBuilder output = new StringBuilder();
+        for (int index = 0; index < lines.length && index < maxLines; index++) {
+            String separator = index == 0 ? "" : "\n";
+            String candidate = output + separator + lines[index];
+            if (candidate.getBytes(StandardCharsets.UTF_8).length > maxBytes) {
+                int used = output.toString().getBytes(StandardCharsets.UTF_8).length
+                        + separator.getBytes(StandardCharsets.UTF_8).length;
+                int remaining = maxBytes - used;
+                if (remaining > 0) {
+                    output.append(separator).append(TruncationUtils.truncateLine(lines[index], remaining));
+                }
+                break;
+            }
+            output.append(separator).append(lines[index]);
+        }
+        return output.toString();
+    }
+
+    private static int positiveInt(Object value, int defaultValue, String field) {
+        if (value == null) {
+            return defaultValue;
+        }
+        int parsed = ((Number) value).intValue();
+        if (parsed < 1) {
+            throw new IllegalArgumentException(field + " must be greater than zero");
+        }
+        return parsed;
+    }
+
+    private static boolean containsNull(byte[] bytes) {
+        for (byte value : bytes) {
+            if (value == 0) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private AgentToolResult imageResult(byte[] bytes, String mimeType) {
+        String data = Base64.getEncoder().encodeToString(bytes);
+        List<ContentBlock> content = imageInputSupported
+                ? List.of(new ImageContent(data, mimeType))
+                : List.of(
+                        new ImageContent(data, mimeType),
+                        new TextContent("The current model does not declare image input support."));
+        return new AgentToolResult(content, null);
+    }
+
+    private static ObjectNode stringProperty(String description) {
+        return MAPPER.createObjectNode().put("type", "string").put("description", description);
+    }
+
+    private static ObjectNode numberProperty(String description) {
+        return MAPPER.createObjectNode().put("type", "number").put("description", description);
+    }
+
+    private static void ensureNotCancelled(CancellationToken signal) throws InterruptedException {
+        if (signal != null && signal.isCancelled()) {
+            throw new InterruptedException("Tool execution was cancelled");
+        }
+    }
+
+    private record TextSelection(String text, boolean moreLines, int totalLines) {}
 }
