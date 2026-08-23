@@ -29,7 +29,6 @@ import com.huawei.hicampus.mate.matecampusclaw.agent.tool.AgentTool;
 import com.huawei.hicampus.mate.matecampusclaw.agent.tool.AgentToolResult;
 import com.huawei.hicampus.mate.matecampusclaw.agent.tool.AgentToolUpdateCallback;
 import com.huawei.hicampus.mate.matecampusclaw.agent.tool.CancellationToken;
-import com.huawei.hicampus.mate.matecampusclaw.agent.tool.ToolExecutionMode;
 import com.huawei.hicampus.mate.matecampusclaw.agent.tool.ToolExecutionPipeline;
 import com.huawei.hicampus.mate.matecampusclaw.ai.CampusClawAiService;
 import com.huawei.hicampus.mate.matecampusclaw.ai.model.ModelRegistry;
@@ -65,7 +64,6 @@ class AgentTest {
                 new DefaultMessageConverter(),
                 null,
                 new ToolExecutionPipeline(),
-                ToolExecutionMode.SEQUENTIAL,
                 new MessageQueue(),
                 new MessageQueue(),
                 SimpleStreamOptions.empty());
@@ -100,7 +98,6 @@ class AgentTest {
                 new DefaultMessageConverter(),
                 null,
                 new ToolExecutionPipeline(),
-                ToolExecutionMode.SEQUENTIAL,
                 new MessageQueue(),
                 new MessageQueue(),
                 SimpleStreamOptions.empty());
@@ -118,8 +115,9 @@ class AgentTest {
         assertTrue(tool.cancelled.get());
         assertTrue(agent.getState().getPendingToolCalls().isEmpty());
         assertFalse(agent.getState().isStreaming());
-        assertEquals(3, agent.getState().getMessages().size());
-        assertInstanceOf(ToolResultMessage.class, agent.getState().getMessages().getLast());
+        assertEquals(2, agent.getState().getMessages().size());
+        assertInstanceOf(AssistantMessage.class, agent.getState().getMessages().getLast());
+        assertNull(agent.getState().getError());
     }
 
     @Test
@@ -131,7 +129,6 @@ class AgentTest {
                 new DefaultMessageConverter(),
                 null,
                 new ToolExecutionPipeline(),
-                ToolExecutionMode.SEQUENTIAL,
                 steeringQueue,
                 new MessageQueue(),
                 SimpleStreamOptions.empty());
@@ -164,7 +161,6 @@ class AgentTest {
                 new DefaultMessageConverter(),
                 null,
                 new ToolExecutionPipeline(),
-                ToolExecutionMode.SEQUENTIAL,
                 new MessageQueue(),
                 new MessageQueue(),
                 SimpleStreamOptions.empty());

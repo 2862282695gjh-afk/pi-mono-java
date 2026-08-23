@@ -70,10 +70,10 @@ class HttpMateToolClientTest {
         server.enqueue(
                 json(
                         "{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":{\"data\":["
-                                + "{\"id\":\"tool-11111111111111111111111111111111\",\"name\":\"query\",\"description\":\"d1\",\"permission\":\"allow\",\"is_concurrency_safe\":true,\"display_name\":\"Query\",\"input_schema\":{\"type\":\"object\"},\"output_schema\":{\"type\":\"object\"}},"
-                                + "{\"id\":\"tool-22222222222222222222222222222222\",\"name\":\"chart\",\"description\":\"d2\",\"permission\":\"deny\",\"is_concurrency_safe\":false}]}}"));
+                                + "{\"id\":\"tool-22222222222222222222222222222222\",\"name\":\"chart\",\"description\":\"d2\",\"permission\":\"deny\",\"is_concurrency_safe\":false},"
+                                + "{\"id\":\"tool-11111111111111111111111111111111\",\"name\":\"query\",\"description\":\"d1\",\"permission\":\"allow\",\"is_concurrency_safe\":true,\"display_name\":\"Query\",\"input_schema\":{\"type\":\"object\"},\"output_schema\":{\"type\":\"object\"}}]}}"));
 
-        List<MateToolMeta> tools = client.listTools("agent-11111111111111111111111111111111", null);
+        List<MateToolMeta> tools = client.listAgentTools("agent-11111111111111111111111111111111");
 
         assertThat(tools)
                 .extracting(MateToolMeta::toolId)
@@ -102,7 +102,7 @@ class HttpMateToolClientTest {
                         "{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":{\"data\":["
                                 + "{\"id\":\"tool-33333333333333333333333333333333\",\"name\":\"query\",\"display_name\":\"Query Skill\"}]}}"));
 
-        List<MateToolMeta> tools = client.listTools(null, "skill-11111111111111111111111111111111");
+        List<MateToolMeta> tools = client.listSkillTools("skill-11111111111111111111111111111111");
 
         assertThat(tools).extracting(MateToolMeta::toolId).containsExactly("tool-33333333333333333333333333333333");
         assertThat(server.takeRequest().getPath())
@@ -115,7 +115,7 @@ class HttpMateToolClientTest {
         // result: {} — bindingTools 字段被省略
         server.enqueue(json("{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":{}}"));
 
-        List<MateToolMeta> tools = client.listTools(null, "skill-11111111111111111111111111111111");
+        List<MateToolMeta> tools = client.listSkillTools("skill-11111111111111111111111111111111");
 
         assertThat(tools).isEmpty();
         assertThat(server.getRequestCount()).isEqualTo(1);
@@ -126,7 +126,7 @@ class HttpMateToolClientTest {
         // result: {"bindingTools": null} — 显式空值
         server.enqueue(json("{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":{\"bindingTools\":null}}"));
 
-        List<MateToolMeta> tools = client.listTools(null, "skill-11111111111111111111111111111111");
+        List<MateToolMeta> tools = client.listSkillTools("skill-11111111111111111111111111111111");
 
         assertThat(tools).isEmpty();
         assertThat(server.getRequestCount()).isEqualTo(1);
@@ -137,7 +137,7 @@ class HttpMateToolClientTest {
         // skill 路径 bindingTools 直挂 result(对齐 runtime 契约),空列表时跳过工具元数据查询
         server.enqueue(json("{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":{\"bindingTools\":[]}}"));
 
-        List<MateToolMeta> tools = client.listTools(null, "skill-11111111111111111111111111111111");
+        List<MateToolMeta> tools = client.listSkillTools("skill-11111111111111111111111111111111");
 
         assertThat(tools).isEmpty();
         assertThat(server.getRequestCount()).isEqualTo(1);
@@ -148,7 +148,7 @@ class HttpMateToolClientTest {
         // agent 路径契约不变:bindingTools 直挂 result
         server.enqueue(json("{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":{\"bindingTools\":[]}}"));
 
-        List<MateToolMeta> tools = client.listTools("agent-11111111111111111111111111111111", null);
+        List<MateToolMeta> tools = client.listAgentTools("agent-11111111111111111111111111111111");
 
         assertThat(tools).isEmpty();
         assertThat(server.getRequestCount()).isEqualTo(1);
@@ -163,7 +163,7 @@ class HttpMateToolClientTest {
                 json(
                         "{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":{\"data\":[{\"id\":\"tool-44444444444444444444444444444444\"}]}}"));
 
-        List<MateToolMeta> tools = client.listTools("agent-11111111111111111111111111111111", null);
+        List<MateToolMeta> tools = client.listAgentTools("agent-11111111111111111111111111111111");
 
         assertThat(tools).extracting(MateToolMeta::toolId).containsExactly("tool-44444444444444444444444444444444");
     }
@@ -172,7 +172,7 @@ class HttpMateToolClientTest {
     void nonZeroResCodeOnMetadataThrows() {
         server.enqueue(json("{\"resCode\":\"500\",\"resMsg\":\"agent not found\",\"result\":null}"));
 
-        assertThatThrownBy(() -> client.listTools("agent-11111111111111111111111111111111", null))
+        assertThatThrownBy(() -> client.listAgentTools("agent-11111111111111111111111111111111"))
                 .isInstanceOf(IllegalStateException.class)
                 .hasRootCauseMessage("gateway call failed: resCode=500 resMsg=agent not found");
     }
@@ -184,7 +184,7 @@ class HttpMateToolClientTest {
                         "{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":{\"bindingTools\":[{\"toolId\":\"tool-11111111111111111111111111111111\"}]}}"));
         server.enqueue(json("{\"resCode\":\"403\",\"resMsg\":\"forbidden\",\"result\":null}"));
 
-        assertThatThrownBy(() -> client.listTools("agent-11111111111111111111111111111111", null))
+        assertThatThrownBy(() -> client.listAgentTools("agent-11111111111111111111111111111111"))
                 .isInstanceOf(IllegalStateException.class)
                 .hasRootCauseMessage("tool metadata query failed: resCode=403 resMsg=forbidden");
     }
@@ -194,7 +194,7 @@ class HttpMateToolClientTest {
         server.enqueue(json(
                 "{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":{\"bindingTools\":[{\"toolId\":\"old-tool-id\"}]}}"));
 
-        assertThatThrownBy(() -> client.listTools("agent-11111111111111111111111111111111", null))
+        assertThatThrownBy(() -> client.listAgentTools("agent-11111111111111111111111111111111"))
                 .isInstanceOf(IllegalStateException.class)
                 .hasRootCauseMessage("Invalid tool id: old-tool-id");
         assertThat(server.getRequestCount()).isEqualTo(1);
@@ -203,14 +203,14 @@ class HttpMateToolClientTest {
     @Test
     void maliciousAgentIdIsRejectedBeforeAnyRequest() {
         for (String bad : new String[] {"../admin", "a?x=1", "a%2Fb", "a b", ".hidden"}) {
-            assertThatThrownBy(() -> client.listTools(bad, null)).isInstanceOf(IllegalArgumentException.class);
+            assertThatThrownBy(() -> client.listAgentTools(bad)).isInstanceOf(IllegalArgumentException.class);
         }
         assertThat(server.getRequestCount()).isZero();
     }
 
     @Test
     void maliciousSkillIdIsRejectedBeforeAnyRequest() {
-        assertThatThrownBy(() -> client.listTools(null, "../etc/passwd"))
+        assertThatThrownBy(() -> client.listSkillTools("../etc/passwd"))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("skill");
         assertThat(server.getRequestCount()).isZero();
@@ -220,7 +220,7 @@ class HttpMateToolClientTest {
     void headerInfoFieldsAreSentAsHttpHeaders() throws Exception {
         server.enqueue(json("{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":{\"bindingTools\":[]}}"));
 
-        client.listTools("agent-11111111111111111111111111111111", null);
+        client.listAgentTools("agent-11111111111111111111111111111111");
 
         var request = server.takeRequest();
         assertThat(request.getHeader("Content-Type")).isEqualTo("application/json");
@@ -276,15 +276,14 @@ class HttpMateToolClientTest {
 
     @Test
     void discoveredToolIdSatisfiesExecuteContract() throws Exception {
-        // Contract: the toolId returned by listTools must be directly usable
-        // as the `tool` parameter of callTool (discovery-to-execution).
+        // 发现返回的 toolId 必须能够直接作为 callTool 的工具标识。
         server.enqueue(json("{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":"
                 + "{\"bindingTools\":[{\"toolId\":\"tool-aaaabbbbccccddddeeeeffff00001111\"}]}}"));
         server.enqueue(json("{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":{\"data\":["
                 + "{\"id\":\"tool-aaaabbbbccccddddeeeeffff00001111\",\"name\":\"query\"}]}}"));
         server.enqueue(json("{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":{\"answer\":1}}"));
 
-        List<MateToolMeta> tools = client.listTools("agent-11111111111111111111111111111111", null);
+        List<MateToolMeta> tools = client.listAgentTools("agent-11111111111111111111111111111111");
         String discoveredId = tools.getFirst().toolId();
         MateToolClient.ToolResult result =
                 client.callTool(discoveredId, java.util.Map.of(), MateCredentials.appKey("hw-id-1", "key-1"));
@@ -335,7 +334,7 @@ class HttpMateToolClientTest {
     void invokeToolRejectsMaliciousToolIdBeforeRequest() {
         MateToolClient.ToolResult result = client.callTool("../admin", java.util.Map.of(), null);
         assertThat(result.isError()).isTrue();
-        assertThat(result.content()).contains("Invalid tool id");
+        assertThat(result.content()).isEqualTo("Mate tool execution request failed");
         assertThat(server.getRequestCount()).isZero();
     }
 
@@ -352,9 +351,10 @@ class HttpMateToolClientTest {
         server.enqueue(
                 json(
                         "{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":{\"bindingTools\":[{\"toolId\":\"tool-11111111111111111111111111111111\"}]}}"));
-        server.enqueue(json("{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":{\"data\":[]}}"));
+        server.enqueue(json("{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":{\"data\":["
+                + "{\"id\":\"tool-11111111111111111111111111111111\",\"name\":\"query\"}]}}"));
 
-        configuredClient.listTools("agent-11111111111111111111111111111111", null);
+        configuredClient.listAgentTools("agent-11111111111111111111111111111111");
 
         assertThat(server.takeRequest().getPath()).isEqualTo("/custom/agents/agent-11111111111111111111111111111111");
         assertThat(server.takeRequest().getPath()).isEqualTo("/custom/tools/query");

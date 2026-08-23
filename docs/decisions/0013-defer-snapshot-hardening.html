@@ -18,10 +18,11 @@
 </head>
 <body>
   <h1>ADR-0013 · 暂缓托管 Agent 快照九条防篡改校验</h1>
-  <div class="meta">Status: <span class="badge">Accepted</span> · Date: 2026-08-17 · Amended: 2026-08-19 ·
+  <div class="meta">Status: <span class="badge">Superseded</span> · Date: 2026-08-17 · Amended: 2026-08-24 ·
+    Replaced by: <a href="0022-managed-agent-tool-system-v2.html">ADR-0022</a> ·
     设计文档: <a href="../designs/agent-skill-runtime.md">agent-skill-runtime</a> ·
     部分暂缓: <a href="0011-agent-skill-runtime-resolution.html">ADR-0011</a> ·
-    登记条目: <a href="../DEFERRED.md">DEF-008</a></div>
+    原登记条目 DEF-008 已因目录契约替换而关闭</div>
 
   <section><h2>Context</h2>
     <p>ADR-0011 为本地优先加载选定了 fail closed 语义，实现中据此落地了九条快照防篡改/防漂移规则（路径穿越、符号链接、完整性比对、响应形状校验、资源白名单、SKILL.md 可重建比对、原子发布、物化后复验、元数据最后写入），约 290 行主代码 + 约 800 行测试，占 PR #131 modules 部分约 22%。评审反馈 PR 体量过大（5000+ 行），且其中安全加固在当前阶段（本地 CLI 试点、单信任域 CampusMate）收益有限。</p>

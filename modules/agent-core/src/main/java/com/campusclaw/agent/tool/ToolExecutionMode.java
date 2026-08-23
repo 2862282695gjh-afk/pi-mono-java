@@ -5,7 +5,7 @@
 package com.campusclaw.agent.tool;
 
 /**
- * Strategy for executing multiple tool calls.
+ * 定义同一模型响应中多个工具调用的执行模式。
  *
  * @version [br_eCampusCore 26.0.0, 2026/05/06]
  * @since [br_eCampusCore 26.0.0]

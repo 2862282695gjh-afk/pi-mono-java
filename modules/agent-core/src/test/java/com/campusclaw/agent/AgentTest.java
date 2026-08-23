@@ -29,7 +29,6 @@ import com.campusclaw.agent.tool.AgentTool;
 import com.campusclaw.agent.tool.AgentToolResult;
 import com.campusclaw.agent.tool.AgentToolUpdateCallback;
 import com.campusclaw.agent.tool.CancellationToken;
-import com.campusclaw.agent.tool.ToolExecutionMode;
 import com.campusclaw.agent.tool.ToolExecutionPipeline;
 import com.campusclaw.ai.CampusClawAiService;
 import com.campusclaw.ai.model.ModelRegistry;
@@ -65,7 +64,6 @@ class AgentTest {
                 new DefaultMessageConverter(),
                 null,
                 new ToolExecutionPipeline(),
-                ToolExecutionMode.SEQUENTIAL,
                 new MessageQueue(),
                 new MessageQueue(),
                 SimpleStreamOptions.empty());
@@ -100,7 +98,6 @@ class AgentTest {
                 new DefaultMessageConverter(),
                 null,
                 new ToolExecutionPipeline(),
-                ToolExecutionMode.SEQUENTIAL,
                 new MessageQueue(),
                 new MessageQueue(),
                 SimpleStreamOptions.empty());
@@ -118,8 +115,9 @@ class AgentTest {
         assertTrue(tool.cancelled.get());
         assertTrue(agent.getState().getPendingToolCalls().isEmpty());
         assertFalse(agent.getState().isStreaming());
-        assertEquals(3, agent.getState().getMessages().size());
-        assertInstanceOf(ToolResultMessage.class, agent.getState().getMessages().getLast());
+        assertEquals(2, agent.getState().getMessages().size());
+        assertInstanceOf(AssistantMessage.class, agent.getState().getMessages().getLast());
+        assertNull(agent.getState().getError());
     }
 
     @Test
@@ -131,7 +129,6 @@ class AgentTest {
                 new DefaultMessageConverter(),
                 null,
                 new ToolExecutionPipeline(),
-                ToolExecutionMode.SEQUENTIAL,
                 steeringQueue,
                 new MessageQueue(),
                 SimpleStreamOptions.empty());
@@ -164,7 +161,6 @@ class AgentTest {
                 new DefaultMessageConverter(),
                 null,
                 new ToolExecutionPipeline(),
-                ToolExecutionMode.SEQUENTIAL,
                 new MessageQueue(),
                 new MessageQueue(),
                 SimpleStreamOptions.empty());

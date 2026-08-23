@@ -1,5 +1,9 @@
 # ai 模块实现设计文档（基于代码 v1.2）
 
+> 本文是旧提交的代码快照，不是当前 Runtime 装配规范。当前服务只从内置
+> `ModelRegistry` 与部署环境凭据生成模型目录，受管 Agent 的 `bindingModels` 再做白名单过滤；
+> CLI、TUI、用户级 `settings.json` 和上游自定义凭据覆盖已删除。
+
 ## 文档信息
 
 | 项目 | 内容 |

@@ -23,8 +23,7 @@ import org.slf4j.LoggerFactory;
 import jakarta.annotation.Nullable;
 
 /**
- * Discovers and manages extension packages (skills, tools, commands).
- * Supports npm-style packages and git-based packages.
+ * 发现并管理只包含 Skill 的本地包。
  *
  * @version [br_eCampusCore 26.0.0, 2026/05/06]
  * @since [br_eCampusCore 26.0.0]
@@ -40,8 +39,6 @@ public class PackageManager {
             @JsonProperty("version") @Nullable String version,
             @JsonProperty("description") @Nullable String description,
             @JsonProperty("skills") @Nullable List<String> skills,
-            @JsonProperty("tools") @Nullable List<String> tools,
-            @JsonProperty("commands") @Nullable List<String> commands,
             @JsonProperty("repository") @Nullable String repository) {}
 
     @SuppressWarnings("checkstyle:top_class_comment")
@@ -55,7 +52,7 @@ public class PackageManager {
     }
 
     /**
-     * Scan packages directory for installed packages.
+     * 扫描本地 Skill 包目录。
      */
     public void scan() {
         installed.clear();
@@ -86,38 +83,38 @@ public class PackageManager {
     }
 
     /**
-     * Get all installed packages.
+     * 返回全部已发现 Skill 包。
      *
-     * @return the result
+     * @return 不可变 Skill 包列表
      */
     public List<InstalledPackage> getInstalled() {
         return List.copyOf(installed.values());
     }
 
     /**
-     * Get an installed package by name.
+     * 按名称返回一个已发现 Skill 包。
      *
-     * @param name the name
-     * @return the result
+     * @param name 包名称
+     * @return 对应 Skill 包
      */
     public Optional<InstalledPackage> get(String name) {
         return Optional.ofNullable(installed.get(name));
     }
 
     /**
-     * Check if a package is installed.
+     * 判断指定 Skill 包是否存在。
      *
-     * @param name the name
-     * @return the result
+     * @param name 包名称
+     * @return 存在时为 true
      */
     public boolean isInstalled(String name) {
         return installed.containsKey(name);
     }
 
     /**
-     * Get all skill paths from all packages.
+     * 返回全部 Skill 文档路径。
      *
-     * @return the result
+     * @return Skill 文档路径
      */
     public List<Path> getAllSkillPaths() {
         List<Path> paths = new ArrayList<>();
@@ -128,7 +125,7 @@ public class PackageManager {
                 }
             }
 
-            // Also check for skills/ directory
+            // 同时支持包内约定的 skills/ 目录。
             Path skillsDir = pkg.location().resolve("skills");
             if (Files.isDirectory(skillsDir)) {
                 try (var stream = Files.list(skillsDir)) {

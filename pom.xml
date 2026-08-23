@@ -1,4 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
+-->
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
@@ -13,7 +16,6 @@
 
     <modules>
         <module>modules/ai</module>
-        <module>modules/tui</module>
         <module>modules/agent-core</module>
         <module>modules/cron</module>
         <module>modules/coding-agent-cli</module>
@@ -32,9 +34,6 @@
         <anthropic-java.version>2.18.0</anthropic-java.version>
         <openai-java.version>4.29.1</openai-java.version>
         <json-schema-validator.version>1.5.2</json-schema-validator.version>
-        <picocli.version>4.7.6</picocli.version>
-        <jline.version>3.26.2</jline.version>
-        <lanterna.version>3.1.2</lanterna.version>
         <mockwebserver.version>4.12.0</mockwebserver.version>
         <spotless.version>2.44.4</spotless.version>
         <palantir-java-format.version>2.66.0</palantir-java-format.version>
@@ -43,6 +42,7 @@
         <mybatis-spring-boot.version>3.0.4</mybatis-spring-boot.version>
         <opengauss-jdbc.version>7.0.0-RC3-og</opengauss-jdbc.version>
         <jobrunr.version>7.3.1</jobrunr.version>
+        <twelvemonkeys-imageio.version>3.12.0</twelvemonkeys-imageio.version>
     </properties>
 
     <dependencyManagement>
@@ -72,12 +72,6 @@
                 <artifactId>campusclaw-cron</artifactId>
                 <version>${project.version}</version>
             </dependency>
-            <dependency>
-                <groupId>com.campusclaw</groupId>
-                <artifactId>campusclaw-tui</artifactId>
-                <version>${project.version}</version>
-            </dependency>
-
             <!-- LLM SDKs -->
             <dependency>
                 <groupId>com.anthropic</groupId>
@@ -97,52 +91,6 @@
                 <version>${json-schema-validator.version}</version>
             </dependency>
 
-            <!-- Picocli -->
-            <dependency>
-                <groupId>info.picocli</groupId>
-                <artifactId>picocli-spring-boot-starter</artifactId>
-                <version>${picocli.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>info.picocli</groupId>
-                <artifactId>picocli-codegen</artifactId>
-                <version>${picocli.version}</version>
-            </dependency>
-
-            <!-- JLine -->
-            <dependency>
-                <groupId>org.jline</groupId>
-                <artifactId>jline-terminal</artifactId>
-                <version>${jline.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>org.jline</groupId>
-                <artifactId>jline-terminal-jansi</artifactId>
-                <version>${jline.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>org.jline</groupId>
-                <artifactId>jline-terminal-jna</artifactId>
-                <version>${jline.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>org.jline</groupId>
-                <artifactId>jline-reader</artifactId>
-                <version>${jline.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>org.jline</groupId>
-                <artifactId>jline-console</artifactId>
-                <version>${jline.version}</version>
-            </dependency>
-
-            <!-- Lanterna -->
-            <dependency>
-                <groupId>com.googlecode.lanterna</groupId>
-                <artifactId>lanterna</artifactId>
-                <version>${lanterna.version}</version>
-            </dependency>
-
             <!-- MyBatis -->
             <dependency>
                 <groupId>org.mybatis.spring.boot</groupId>
@@ -160,6 +108,13 @@
                 <groupId>org.jobrunr</groupId>
                 <artifactId>jobrunr-spring-boot-3-starter</artifactId>
                 <version>${jobrunr.version}</version>
+            </dependency>
+
+            <!-- Image decoding -->
+            <dependency>
+                <groupId>com.twelvemonkeys.imageio</groupId>
+                <artifactId>imageio-webp</artifactId>
+                <version>${twelvemonkeys-imageio.version}</version>
             </dependency>
 
             <!-- Test -->

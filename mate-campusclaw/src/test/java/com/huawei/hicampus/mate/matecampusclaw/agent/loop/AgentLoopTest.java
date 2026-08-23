@@ -29,7 +29,6 @@ import com.huawei.hicampus.mate.matecampusclaw.agent.tool.AgentTool;
 import com.huawei.hicampus.mate.matecampusclaw.agent.tool.AgentToolResult;
 import com.huawei.hicampus.mate.matecampusclaw.agent.tool.AgentToolUpdateCallback;
 import com.huawei.hicampus.mate.matecampusclaw.agent.tool.CancellationToken;
-import com.huawei.hicampus.mate.matecampusclaw.agent.tool.ToolExecutionMode;
 import com.huawei.hicampus.mate.matecampusclaw.agent.tool.ToolExecutionPipeline;
 import com.huawei.hicampus.mate.matecampusclaw.ai.CampusClawAiService;
 import com.huawei.hicampus.mate.matecampusclaw.ai.model.ModelRegistry;
@@ -81,7 +80,6 @@ class AgentLoopTest {
                 new DefaultMessageConverter(),
                 transformer,
                 toolPipeline,
-                ToolExecutionMode.SEQUENTIAL,
                 steeringQueue,
                 followUpQueue,
                 SimpleStreamOptions.empty()));
@@ -121,7 +119,6 @@ class AgentLoopTest {
                 new DefaultMessageConverter(),
                 null,
                 new ToolExecutionPipeline(),
-                ToolExecutionMode.SEQUENTIAL,
                 steeringQueue,
                 followUpQueue,
                 SimpleStreamOptions.empty()));
@@ -159,7 +156,6 @@ class AgentLoopTest {
                 new DefaultMessageConverter(),
                 null,
                 new ToolExecutionPipeline(),
-                ToolExecutionMode.SEQUENTIAL,
                 steeringQueue,
                 followUpQueue,
                 SimpleStreamOptions.empty()));
@@ -173,6 +169,33 @@ class AgentLoopTest {
         assertEquals("follow-up", text((UserMessage) result.get(6)));
         assertTrue(steeringQueue.drain().isEmpty());
         assertTrue(followUpQueue.drain().isEmpty());
+    }
+
+    @Test
+    void mixedKnownAndUnknownToolResultsKeepModelCallOrder() {
+        var model = sampleModel();
+        var state = new AgentState();
+        state.setTools(List.of(new ResultTool("known-a"), new ResultTool("known-b")));
+        var context = new AgentContext(state);
+        var loop = new AgentLoop(new AgentLoopConfig(
+                piAiService(model, new ScenarioProvider()),
+                model,
+                new DefaultMessageConverter(),
+                null,
+                new ToolExecutionPipeline(),
+                new MessageQueue(),
+                new MessageQueue(),
+                SimpleStreamOptions.empty()));
+
+        var result = loop.run(List.of(new UserMessage("mixed", 1L)), context, event -> {}, new CancellationToken());
+
+        assertEquals(
+                List.of("unknown-a", "known-a", "unknown-b", "known-b"),
+                result.stream()
+                        .filter(ToolResultMessage.class::isInstance)
+                        .map(ToolResultMessage.class::cast)
+                        .map(ToolResultMessage::toolName)
+                        .toList());
     }
 
     private CampusClawAiService piAiService(Model model, ApiProvider provider) {
@@ -254,6 +277,44 @@ class AgentLoopTest {
         }
     }
 
+    private static final class ResultTool implements AgentTool {
+
+        private final String name;
+
+        private ResultTool(String name) {
+            this.name = name;
+        }
+
+        @Override
+        public String name() {
+            return name;
+        }
+
+        @Override
+        public String label() {
+            return name;
+        }
+
+        @Override
+        public String description() {
+            return "Result tool";
+        }
+
+        @Override
+        public com.fasterxml.jackson.databind.JsonNode parameters() {
+            return new ObjectMapper().createObjectNode().put("type", "object").put("additionalProperties", false);
+        }
+
+        @Override
+        public AgentToolResult execute(
+                String toolCallId,
+                Map<String, Object> params,
+                CancellationToken signal,
+                AgentToolUpdateCallback onUpdate) {
+            return new AgentToolResult(List.of(new TextContent(name)), null);
+        }
+    }
+
     private static final class ScenarioProvider implements ApiProvider {
 
         @Override
@@ -279,6 +340,7 @@ class AgentLoopTest {
                     case "steer-one" -> textStream(model, "first steer reply");
                     case "steer-two" -> textStream(model, "second steer reply");
                     case "follow-up" -> textStream(model, "follow-up reply");
+                    case "mixed" -> toolCallsStream(model);
                     default -> textStream(model, "unknown");
                 };
             }
@@ -290,10 +352,23 @@ class AgentLoopTest {
         }
 
         private AssistantMessageEventStream toolCallStream(Model model, String toolName, Map<String, Object> args) {
+            return toolCallStream(model, List.of(new ToolCall("tool-call-1", toolName, args)));
+        }
+
+        private AssistantMessageEventStream toolCallsStream(Model model) {
+            return toolCallStream(
+                    model,
+                    List.of(
+                            new ToolCall("call-1", "unknown-a", Map.of()),
+                            new ToolCall("call-2", "known-a", Map.of()),
+                            new ToolCall("call-3", "unknown-b", Map.of()),
+                            new ToolCall("call-4", "known-b", Map.of())));
+        }
+
+        private AssistantMessageEventStream toolCallStream(Model model, List<ToolCall> toolCalls) {
             var stream = new AssistantMessageEventStream();
-            var toolCall = new ToolCall("tool-call-1", toolName, args);
             var partial = new AssistantMessage(
-                    List.of(toolCall),
+                    List.copyOf(toolCalls),
                     model.api().value(),
                     model.provider().value(),
                     model.id(),
@@ -303,7 +378,7 @@ class AgentLoopTest {
                     null,
                     10L);
             var done = new AssistantMessage(
-                    List.of(toolCall),
+                    List.copyOf(toolCalls),
                     model.api().value(),
                     model.provider().value(),
                     model.id(),
@@ -313,7 +388,9 @@ class AgentLoopTest {
                     null,
                     11L);
             stream.push(new AssistantMessageEvent.StartEvent(partial));
-            stream.push(new AssistantMessageEvent.ToolCallEndEvent(0, toolCall, partial));
+            for (int index = 0; index < toolCalls.size(); index++) {
+                stream.push(new AssistantMessageEvent.ToolCallEndEvent(index, toolCalls.get(index), partial));
+            }
             stream.push(new AssistantMessageEvent.DoneEvent(StopReason.TOOL_USE, done));
             return stream;
         }

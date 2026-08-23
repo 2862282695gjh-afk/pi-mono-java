@@ -7,7 +7,9 @@ package com.huawei.hicampus.mate.matecampusclaw.codingagent.runtime;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
+import java.util.TreeMap;
 
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtime.MateServiceClient.AgentReference;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtime.MateServiceClient.AgentRuntime;
@@ -50,6 +52,36 @@ public record PreparedAgentRuntime(String agentId, Path agentRoot, AgentRuntime 
      */
     public List<AgentReference> bindingAgents() {
         return metadata.bindingAgents();
+    }
+
+    /**
+     * 返回直接绑定 Skill 的精确名称到标识索引。
+     *
+     * @return 按名称稳定排序的不可变索引
+     */
+    public Map<String, String> skillIdsByName() {
+        Map<String, String> index = new TreeMap<>();
+        for (SkillInfo skill : skills) {
+            if (index.putIfAbsent(skill.name(), skill.id()) != null) {
+                throw new IllegalStateException("Duplicate Skill name: " + skill.name());
+            }
+        }
+        return Map.copyOf(index);
+    }
+
+    /**
+     * 返回直接绑定 Child 的精确名称到绑定元数据索引。
+     *
+     * @return 按名称稳定排序的不可变索引
+     */
+    public Map<String, AgentReference> childAgentsByName() {
+        Map<String, AgentReference> index = new TreeMap<>();
+        for (AgentReference child : bindingAgents()) {
+            if (index.putIfAbsent(child.name(), child) != null) {
+                throw new IllegalStateException("Duplicate Child Agent name: " + child.name());
+            }
+        }
+        return Map.copyOf(index);
     }
 
     /**

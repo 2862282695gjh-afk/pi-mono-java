@@ -35,7 +35,6 @@ import com.campusclaw.agent.tool.AgentTool;
 import com.campusclaw.agent.tool.AgentToolResult;
 import com.campusclaw.agent.tool.AgentToolUpdateCallback;
 import com.campusclaw.agent.tool.CancellationToken;
-import com.campusclaw.agent.tool.ToolExecutionMode;
 import com.campusclaw.agent.tool.ToolExecutionPipeline;
 import com.campusclaw.ai.CampusClawAiService;
 import com.campusclaw.ai.model.ModelRegistry;
@@ -68,12 +67,11 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
 /**
- * Integration tests for the agent loop end-to-end flow (IT-002).
+ * Agent 循环端到端流程的集成测试（IT-002）。
  *
  * <p>Uses a {@code MockApiProvider} to simulate LLM responses and verifies
- * the complete agent cycle: prompt → LLM → tool → result → LLM → done,
- * including multi-turn tool calls, steering injection, follow-up messages,
- * abort, and event emission order.
+ * 覆盖 prompt → LLM → tool → result → LLM → done 的完整循环，以及多轮工具调用、
+ * steer 注入、follow-up 消息、中止和事件顺序。
  */
 @Timeout(30)
 class AgentLoopIntegrationTest {
@@ -109,7 +107,7 @@ class AgentLoopIntegrationTest {
     }
 
     // -------------------------------------------------------------------
-    // Single turn: prompt → LLM text response → done
+    // 单轮：prompt → LLM 文本响应 → 完成。
     // -------------------------------------------------------------------
 
     @Nested
@@ -133,7 +131,7 @@ class AgentLoopIntegrationTest {
 
             runLoop(provider, List.of(), "Hello");
 
-            // Expected: AgentStart, TurnStart, [user message start/end],
+            // 预期包含 AgentStart、TurnStart 和用户消息开始/结束事件。
             //           MessageStart, MessageUpdate+, MessageEnd,
             //           TurnEnd, AgentEnd
             assertEventOrder(
@@ -150,7 +148,7 @@ class AgentLoopIntegrationTest {
     }
 
     // -------------------------------------------------------------------
-    // Tool call loop: prompt → LLM → tool → result → LLM → done
+    // 工具循环：prompt → LLM → tool → result → LLM → 完成。
     // -------------------------------------------------------------------
 
     @Nested
@@ -164,7 +162,7 @@ class AgentLoopIntegrationTest {
 
             var result = runLoop(provider, List.of(bashTool), "List files");
 
-            // user → assistant(tool_call) → tool_result → assistant(text)
+            // 消息顺序：user → assistant(tool_call) → tool_result → assistant(text)。
             assertEquals(4, result.size());
             assertInstanceOf(UserMessage.class, result.get(0));
             assertInstanceOf(AssistantMessage.class, result.get(1));
@@ -172,7 +170,7 @@ class AgentLoopIntegrationTest {
             assertInstanceOf(AssistantMessage.class, result.get(3));
             assertEquals("Done! I found the files.", textOf(result.get(3)));
 
-            // Verify tool result content
+            // 校验工具结果内容。
             var toolResult = (ToolResultMessage) result.get(2);
             assertEquals("bash", toolResult.toolName());
             assertFalse(toolResult.isError());
@@ -212,7 +210,7 @@ class AgentLoopIntegrationTest {
     }
 
     // -------------------------------------------------------------------
-    // Multi-turn tool calls: prompt → tool₁ → result₁ → tool₂ → result₂ → done
+    // 多轮工具调用：prompt → tool1 → result1 → tool2 → result2 → 完成。
     // -------------------------------------------------------------------
 
     @Nested
@@ -230,7 +228,7 @@ class AgentLoopIntegrationTest {
 
             var result = runLoop(provider, List.of(readTool, writeTool), "Read and write");
 
-            // user → assistant(read) → tool_result → assistant(write) → tool_result → assistant(text)
+            // 校验读写工具的多轮消息顺序。
             assertEquals(6, result.size());
             assertInstanceOf(UserMessage.class, result.get(0));
             assertInstanceOf(AssistantMessage.class, result.get(1));
@@ -253,7 +251,7 @@ class AgentLoopIntegrationTest {
     }
 
     // -------------------------------------------------------------------
-    // Steering injection: tool enqueues steering → next turn picks it up
+    // steer 注入：工具将消息入队，下一轮读取。
     // -------------------------------------------------------------------
 
     @Nested
@@ -267,7 +265,7 @@ class AgentLoopIntegrationTest {
 
             var result = runLoop(provider, List.of(steeringTool), "Do something");
 
-            // user → assistant(tool) → tool_result → [steering injected] → assistant(text)
+            // steer 消息应位于工具结果与下一条 Assistant 文本之间。
             assertEquals(5, result.size());
             assertInstanceOf(UserMessage.class, result.get(0)); // "Do something"
             assertInstanceOf(AssistantMessage.class, result.get(1)); // tool call
@@ -286,20 +284,20 @@ class AgentLoopIntegrationTest {
 
             runLoop(provider, List.of(steeringTool), "Go");
 
-            // Verify steering message is emitted via MessageStart/End in the second turn
+            // 校验第二轮通过 MessageStart/End 投影 steer 消息。
             var messageStartEvents = events.stream()
                     .filter(MessageStartEvent.class::isInstance)
                     .map(MessageStartEvent.class::cast)
                     .toList();
 
-            // Should have: user "Go" start, assistant start (turn 1),
+            // 应包含用户消息和第一轮 Assistant 的开始事件。
             //              steering "injected steering" start, assistant start (turn 2)
             assertTrue(messageStartEvents.size() >= 4);
         }
     }
 
     // -------------------------------------------------------------------
-    // Follow-up messages: continuation after text response
+    // follow-up 消息：文本响应后继续执行。
     // -------------------------------------------------------------------
 
     @Nested
@@ -313,7 +311,7 @@ class AgentLoopIntegrationTest {
 
             var result = runLoop(provider, List.of(), "Initial question");
 
-            // user → assistant(text) → [follow-up injected] → assistant(text)
+            // follow-up 消息应连接前后两条 Assistant 文本。
             assertEquals(4, result.size());
             assertEquals("Initial question", textOf(result.get(0)));
             assertEquals("First answer", textOf(result.get(1)));
@@ -340,7 +338,7 @@ class AgentLoopIntegrationTest {
     }
 
     // -------------------------------------------------------------------
-    // Abort mid-execution
+    // 执行中途取消。
     // -------------------------------------------------------------------
 
     @Nested
@@ -350,7 +348,7 @@ class AgentLoopIntegrationTest {
         void abortStopsLoopBeforeSecondTurn() {
             var signal = new CancellationToken();
 
-            // Tool that cancels the signal during execution
+            // 工具在执行期间取消 token。
             var abortTool = new AbortingAgentTool(signal);
 
             var provider = new ScriptedProvider(List.of(
@@ -367,27 +365,25 @@ class AgentLoopIntegrationTest {
                     new DefaultMessageConverter(),
                     null,
                     toolPipeline,
-                    ToolExecutionMode.SEQUENTIAL,
                     steeringQueue,
                     followUpQueue,
                     SimpleStreamOptions.empty()));
 
             var result = loop.run(List.of(new UserMessage("abort me", 1L)), context, events::add, signal);
 
-            // Loop should stop after tool execution due to cancellation
-            // user → assistant(tool) → tool_result
-            assertEquals(3, result.size());
+            // 取消后循环应在工具执行阶段停止，不追加容易被模型误判为成功的 tool_result。
+            // 消息顺序为 user → assistant(tool)。
+            assertEquals(2, result.size());
             assertInstanceOf(UserMessage.class, result.get(0));
             assertInstanceOf(AssistantMessage.class, result.get(1));
-            assertInstanceOf(ToolResultMessage.class, result.get(2));
 
-            // Should still have AgentEnd event
+            // 即使取消也必须投影 AgentEnd 事件。
             assertInstanceOf(AgentEndEvent.class, events.getLast());
         }
     }
 
     // -------------------------------------------------------------------
-    // Agent facade integration
+    // Agent 门面集成。
     // -------------------------------------------------------------------
 
     @Nested
@@ -413,7 +409,7 @@ class AgentLoopIntegrationTest {
             assertEquals(4, messages.size());
             assertEquals("Found 3 files", textOf(messages.get(3)));
 
-            // Verify events were emitted through the agent
+            // 校验 Agent 对外投影事件。
             assertInstanceOf(AgentStartEvent.class, agentEvents.getFirst());
             assertInstanceOf(AgentEndEvent.class, agentEvents.getLast());
         }
@@ -431,21 +427,21 @@ class AgentLoopIntegrationTest {
 
             var future = agent.prompt("Do slow thing");
 
-            // Wait for tool to start executing
+            // 等待工具开始执行。
             slowTool.waitUntilStarted();
             agent.abort();
 
-            // The future should complete (possibly exceptionally)
+            // Future 应当结束，允许以异常结束。
             future.handle((v, t) -> null).join();
 
-            // Agent should be in a clean state: streaming finished, no pending tool calls left over
+            // Agent 应恢复到无流式执行和无待处理工具调用的干净状态。
             assertFalse(agent.getState().isStreaming());
             assertTrue(agent.getState().getPendingToolCalls().isEmpty());
         }
     }
 
     // -------------------------------------------------------------------
-    // Event ordering verification
+    // 事件顺序校验。
     // -------------------------------------------------------------------
 
     @Nested
@@ -475,7 +471,7 @@ class AgentLoopIntegrationTest {
             var provider = new ScriptedProvider(List.of(textReply("Hi")));
             runLoop(provider, List.of(), "Hello");
 
-            // Find the assistant message start/end (not user)
+            // 查找 Assistant 而不是 User 的消息开始和结束事件。
             var msgStarts =
                     events.stream().filter(MessageStartEvent.class::isInstance).toList();
             var msgEnds =
@@ -534,7 +530,7 @@ class AgentLoopIntegrationTest {
     }
 
     // -------------------------------------------------------------------
-    // Context transformer integration
+    // 上下文转换器集成。
     // -------------------------------------------------------------------
 
     @Nested
@@ -561,7 +557,6 @@ class AgentLoopIntegrationTest {
                         return CompletableFuture.completedFuture(messages);
                     },
                     toolPipeline,
-                    ToolExecutionMode.SEQUENTIAL,
                     steeringQueue,
                     followUpQueue,
                     SimpleStreamOptions.empty()));
@@ -573,7 +568,7 @@ class AgentLoopIntegrationTest {
     }
 
     // ===================================================================
-    // Test infrastructure
+    // 测试基础设施。
     // ===================================================================
 
     private List<Message> runLoop(ScriptedProvider provider, List<AgentTool> tools, String prompt) {
@@ -588,7 +583,6 @@ class AgentLoopIntegrationTest {
                 new DefaultMessageConverter(),
                 null,
                 toolPipeline,
-                ToolExecutionMode.SEQUENTIAL,
                 steeringQueue,
                 followUpQueue,
                 SimpleStreamOptions.empty()));
@@ -659,7 +653,7 @@ class AgentLoopIntegrationTest {
     }
 
     // ===================================================================
-    // Mock provider - scripted responses
+    // 使用脚本响应的模拟 Provider。
     // ===================================================================
 
     private record Reply(String text, String toolName, Map<String, Object> toolArgs) {
@@ -669,8 +663,7 @@ class AgentLoopIntegrationTest {
     }
 
     /**
-     * A mock provider that returns scripted responses in order.
-     * Each call to streamSimple consumes the next reply from the script.
+     * 按顺序返回脚本响应的模拟 Provider，每次 streamSimple 调用消费下一条响应。
      */
     private class ScriptedProvider implements ApiProvider {
 
@@ -745,11 +738,11 @@ class AgentLoopIntegrationTest {
     }
 
     // ===================================================================
-    // Test tools
+    // 测试工具。
     // ===================================================================
 
     /**
-     * Simple tool that returns a fixed result.
+     * 返回固定结果的简单工具。
      *
      * @param name the tool name
      * @param description the tool description
@@ -797,7 +790,7 @@ class AgentLoopIntegrationTest {
     }
 
     /**
-     * Tool that injects a steering message into the steering queue.
+     * 向 steer 队列注入消息的工具。
      */
     private static class SteeringAgentTool implements AgentTool {
 
@@ -851,7 +844,7 @@ class AgentLoopIntegrationTest {
     }
 
     /**
-     * Tool that cancels the CancellationToken to simulate abort.
+     * 取消 CancellationToken 以模拟中止的工具。
      */
     private static class AbortingAgentTool implements AgentTool {
 
@@ -905,7 +898,7 @@ class AgentLoopIntegrationTest {
     }
 
     /**
-     * Tool that blocks until abort, for testing Agent.abort().
+     * 阻塞到取消，用于测试 Agent.abort() 的工具。
      */
     private static class SlowAgentTool implements AgentTool {
 
@@ -955,7 +948,7 @@ class AgentLoopIntegrationTest {
                 AgentToolUpdateCallback onUpdate) {
             started.complete(null);
 
-            // Wait for cancellation
+            // 等待取消。
             while (!signal.isCancelled()) {
                 try {
                     Thread.sleep(10);

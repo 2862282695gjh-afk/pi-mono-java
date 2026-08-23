@@ -4,20 +4,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-CampusClaw (`com.campusclaw`, previously `pi-mono-java`) — a terminal AI coding agent built on JDK 21 + Spring Boot 3.4.1. Maven multi-module. The CLI entry point is `modules/coding-agent-cli`, producing `campusclaw-agent.jar`.
+CampusClaw (`com.campusclaw`, previously `pi-mono-java`) is a ToB Agent Runtime service built on JDK 21 + Spring Boot 3.4.1. It is a Maven multi-module project. The historical directory `modules/coding-agent-cli` now contains the Spring Boot service entry point and produces `campusclaw-agent.jar`; there is no CLI/TUI/RPC product mode.
 
 ## Build & Run
 
 CampusClaw local launch and installation support **macOS and Linux only**. Do not add or maintain Windows-specific batch, PowerShell, `mvnw.cmd`, or Task Scheduler launch and installation entry points unless the platform policy is explicitly changed. The POSIX `mvnw` may retain upstream Cygwin/MinGW compatibility for best-effort Windows builds, without a Windows support or validation commitment.
 
-The project requires **JDK 21** (not 17, not 25). `./mvnw` uses whatever `JAVA_HOME` is set; `./campusclaw.sh` auto-detects JDK 21 via Homebrew, `/usr/libexec/java_home -v 21`, SDKMAN, or common Linux paths.
+The project requires **JDK 21** (not 17, not 25). `./mvnw` uses whatever `JAVA_HOME` is set. The mirror sync script auto-detects JDK 21 via Homebrew, `/usr/libexec/java_home -v 21`, SDKMAN, or common Linux paths.
 
 | Command | Purpose |
 |---|---|
-| `./campusclaw.sh -m glm-5` | Launch the CLI — auto-builds on first run and when Java/YAML/XML sources change |
-| `./campusclaw.sh --rebuild ...` | Force rebuild before launch |
-| `./mvnw package -pl modules/coding-agent-cli -am -DskipTests` | Build the fat JAR only |
-| `./mvnw -pl modules/coding-agent-cli spring-boot:run -Dspring-boot.run.arguments='-m glm-5'` | Dev mode via Spring Boot Maven plugin |
+| `./mvnw package -pl :campusclaw-coding-agent -am -DskipTests` | Build the service JAR only |
+| `java -jar modules/coding-agent-cli/target/campusclaw-agent.jar` | Start the Spring Boot HTTP service |
+| `./mvnw -pl :campusclaw-coding-agent -am spring-boot:run` | Development mode via the Spring Boot Maven plugin |
 | `./mvnw test` | Run all tests |
 | `./mvnw -pl modules/agent-core test -Dtest=AgentLoopTest` | Run a single test class (surefire) |
 | `./mvnw -pl modules/agent-core test -Dtest=AgentLoopTest#name` | Run a single test method |
@@ -26,31 +25,30 @@ The project requires **JDK 21** (not 17, not 25). `./mvnw` uses whatever `JAVA_H
 
 Notes:
 - Surefire runs with `-XX:+EnableDynamicAgentLoading` (configured in root POM) — Mockito needs it on JDK 21.
-- The canonical `application.yml` lives at `modules/coding-agent-cli/src/main/resources/application.yml`. Editing it requires a rebuild; `campusclaw.sh` auto-detects yml changes under `modules/` and rebuilds before launch. (There used to be a second copy at the repo root — it was removed; do not reintroduce it.)
+- The canonical `application.yml` lives at `modules/coding-agent-cli/src/main/resources/application.yml`. Editing it requires rebuilding or restarting the service. There used to be a second copy at the repo root; do not reintroduce it.
 
 ## Architecture
 
 Module dependency graph (from `docs/module-architecture.md`):
 
 ```
-ai ─────────────┐
-                ├──→ agent-core ──┬──→ cron ─────┐
-tui ────────────┤                 │              │
-                └─────────────────┴──────────────┴──→ coding-agent-cli
+ai ──→ agent-core ──→ cron ──→ coding-agent-cli
+ └────────────────────────────→ coding-agent-cli
+        └─────────────────────→ coding-agent-cli
 ```
 
 | Module | Artifact | Role |
 |---|---|---|
 | `modules/ai` | `campusclaw-ai` | Unified LLM abstraction. Providers (Anthropic, OpenAI, Google GenAI/Vertex, Bedrock, Mistral, and ~18 OpenAI-compatible flavors) live under `provider/`; types under `types/`; model registry under `model/`. |
-| `modules/tui` | `campusclaw-tui` | Terminal UI primitives built on JLine + Lanterna — full-screen renderer, ANSI utilities, components. No internal deps. |
 | `modules/agent-core` | `campusclaw-agent-core` | Agent runtime. `Agent` is the façade; `AgentLoop` drives the LLM↔tool cycle; `ToolExecutionPipeline` runs tools with before/after hooks and JSON-schema validation; sealed `AgentEvent` hierarchy emits state transitions. |
 | `modules/cron` | `campusclaw-cron` | JobRunr-backed scheduled agent runs, exposed as an `AgentTool` for agents to self-schedule. |
-| `modules/coding-agent-cli` | `campusclaw-coding-agent` | Spring Boot + Picocli application integrating everything. Contains the tool implementations (`tool/{read,write,edit,editdiff,bash,glob,grep,ls}`), mode dispatch (`mode/{tui,server,rpc}`), skill loader, session JSONL persistence, slash commands. |
+| `modules/coding-agent-cli` | `campusclaw-coding-agent` | Spring Boot HTTP/SSE service, managed Agent directory, common Session factory, Skill loader, and the closed eight-tool assembly. The directory name is historical. |
 
 Key runtime concepts:
-- **Startup model**: default `java -jar` starts the Spring Boot MVC HTTP+SSE service. The explicit `cli` subcommand starts a non-web context; inside it, `--mode interactive|one-shot|rpc|print` selects a handler under `codingagent/mode/`. RPC uses stdin/stdout JSONL.
-- **Tool management**: ordinary local tools are indexed by `ToolCatalog`; MateService-managed tools use `ListMateTool`, `CallMateTool`, and `MateToolClient`. Agent Core's `ToolExecutionMode` still controls sequential versus parallel tool calls and is unrelated to tool ownership or deployment. Local Docker Sandbox, Hybrid tools, and `tool.execution.*` configuration are no longer supported.
-- **Extensibility**: two mechanisms layered in `coding-agent-cli` — `skill/` (user-installable skill packs under `~/.campusclaw/packages`) and `extension/` (in-tree `ExtensionPoint` registrations for tools / commands / hooks).
+- **Startup model**: `java -jar` starts the Spring Boot MVC HTTP+SSE service. There is no alternate CLI Spring context or mode dispatcher.
+- **Tool management**: `BuiltInToolName` closes the model-visible set to `Read`, `Find`, `Grep`, `Ls`, `Cron`, `ListMateTools`, `CallMateTool`, and `Agent`. Runtime, Cron, and Child profiles are strict. `ToolExecutionMode` controls only sequential versus parallel scheduling.
+- **Extensibility**: `PackageManager` retains Skill package discovery. Dynamic Java Extension and ToolCatalog registration are removed. Mate tools are discovered in real time and invoked by name.
+- **Session assembly**: Runtime HTTP, Cron trigger, and Child Execution all use `AgentSessionFactory`; Host persistence and lifecycle remain outside the common Session.
 - **Reactive stack**: `ai` and `agent-core` use Reactor `Mono/Flux` throughout for streaming LLM responses. Don't `.block()` on the event stream path.
 
 ## Conventions to preserve
@@ -58,7 +56,7 @@ Key runtime concepts:
 - Java 21 features are in active use (records, sealed interfaces, pattern matching) — don't downgrade.
 - Spotless is enforced via `spotless-maven-plugin` with **palantirJavaFormat 2.66.0**; run `./mvnw spotless:apply` before committing or CI-equivalent checks will diverge. **Requires JDK 21** (palantir 不兼容 JDK 25 的 javac 内部 API)。
 - Tests use JUnit 5 + Mockito + OkHttp `MockWebServer` (for provider integration tests).
-- User config lives at `~/.campusclaw/agent/settings.json` — not `~/.pi/` despite the legacy `.pi/` dir in the repo.
+- Managed runtime data lives under `agent/{agentId}/.campusclaw/` by default. Model credentials come from deployment configuration and are not persisted in Agent directories.
 
 ## Coding conventions enforced by build
 
@@ -734,9 +732,9 @@ Stop 钩子会自动跑 `spotless:check` + `checkstyle:check`。主动修复：
 | `./scripts/sync-mate-campusclaw.sh --no-verify` | Skip the mvn compile step |
 
 Phases:
-1. **Stage** — copy `modules/{ai,tui,agent-core,cron,coding-agent-cli}` into `build/mate-campusclaw/`, rewriting the package in `.java/.yml/.properties/.imports/...`.
+1. **Stage** — copy `modules/{ai,agent-core,cron,coding-agent-cli}` into `build/mate-campusclaw/`, rewriting the package in `.java/.yml/.properties/.imports/...`.
 2. **Apply** — `rsync --delete` from `build/` to in-tree `mate-campusclaw/`. Paths listed in `scripts/sync-mate-exclude.txt` are preserved (mate-side-only files that have no counterpart in `modules/*`).
-3. **Verify** — compile `mate-campusclaw/` with auto-detected JDK 21 (same lookup order as `campusclaw.sh`).
+3. **Verify** — compile `mate-campusclaw/` with the sync script's auto-detected JDK 21.
 
 When adding a new file directly under `mate-campusclaw/` that has no counterpart in `modules/*`, append its path to `scripts/sync-mate-exclude.txt`, otherwise the next `--delete` will remove it (currently none registered). The hand-tuned `application.properties` is environment-specific — the script never touches it; only `META-INF/spring/*.imports` propagate from `modules/*`.
 
@@ -782,7 +780,7 @@ The repo merges PRs with **Merge commit**（保留每个 commit 的真实 SHA �
 
 ## Reference
 
-- `README.md` — user-facing quickstart, CLI flags, supported providers.
+- `README.md` — service quickstart, managed tools, runtime directories, and supported providers.
 - `docs/module-architecture.md` — authoritative module/package breakdown.
 - `docs/designs/sandbox-cleanup.md` — local Sandbox removal, MateService tool migration, and deletion record.
 - `docs/designs/mate-tool-client.md` — MateService tool metadata and invocation client design.

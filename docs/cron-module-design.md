@@ -1,5 +1,10 @@
 # CampusClaw 定时任务模块 (campusclaw-cron) 设计文档
 
+> 历史实现快照，已被
+> [Cron 受管 Agent 执行设计](designs/cron.md)和
+> [CampusClaw 受管 Agent 工具系统 v2](designs/tool-system-v2.md)取代。
+> 本文中的 CLI、TUI、自动 Spring 工具发现和固化模型 payload 不再是当前契约。
+
 ## Context
 
 为 CampusClaw AI 编程助手添加定时任务能力，参考 OpenClaw 的 cron 扩展思路。用户可通过 LLM 对话创建/管理定时任务，由独立 Agent 实例自动执行。

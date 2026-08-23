@@ -4,25 +4,26 @@
 
 package com.campusclaw.codingagent.tool.mate;
 
-import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
-import com.campusclaw.codingagent.common.client.mate.MateCredentials;
+import com.campusclaw.agent.tool.ToolExecutionMode;
+import com.campusclaw.codingagent.common.client.mate.MateToolClient;
 import com.campusclaw.codingagent.common.client.mate.MateToolMeta;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 /**
- * {@link CallMateTool} 单元测试：工具名经会话缓存映射为工具标识、凭据按调用
- * 解析、缓存未命中/无缓存拒绝、并发隔离与参数防篡改。
+ * {@link CallMateTool} 的缓存命中、自动刷新、single-flight 和不重放测试。
  *
- * @version [br_eCampusCore 26.0.0, 2026/08/22]
+ * @version [br_eCampusCore 26.0.0, 2026/08/24]
  * @since [br_eCampusCore 26.0.0]
  */
 class CallMateToolTest {
@@ -30,206 +31,157 @@ class CallMateToolTest {
     private static final String QUERY_ID = "tool-11111111111111111111111111111111";
 
     private MockMateToolClient client;
-    private MateToolSessionCache cache;
-    private CallMateTool tool;
+
+    private MateToolSessionState state;
 
     @BeforeEach
     void setUp() {
         client = new MockMateToolClient();
-        client.addTool(new MateToolMeta(QUERY_ID, "query", "q", Map.of(), Map.of(), true, "allow"));
-        cache = new MateToolSessionCache();
-        cache.refresh(List.of(new MateToolMeta(QUERY_ID, "query", "q", Map.of(), Map.of(), true, "allow")));
-        tool = new CallMateTool(client, null, cache);
+        client.addTool(meta(QUERY_ID, "Query"));
+        client.bindAgent("agent-1", List.of(QUERY_ID));
+        client.bindSkill("skill-1", List.of());
+        state = new MateToolsetFactory(client, null).createSession("agent-1", Map.of("research", "skill-1"));
     }
 
     @Test
-    void toolNameIsMappedToToolIdViaSessionCache() throws Exception {
-        var r = tool.execute("t", Map.of("tool", "query", "args", Map.of()), null, null);
+    void shouldPublishPascalCaseSequentialContract() {
+        CallMateTool tool = state.createCallTool();
 
-        assertTrue(asText(r).contains("mock:" + QUERY_ID));
-        assertEquals(QUERY_ID, client.lastCalledTool());
+        assertThat(tool.name()).isEqualTo("CallMateTool");
+        assertThat(tool.executionMode()).isEqualTo(ToolExecutionMode.SEQUENTIAL);
+        assertThat(tool.parameters().path("required").get(0).asText()).isEqualTo("tool");
+        assertThat(tool.parameters().path("additionalProperties").asBoolean()).isFalse();
     }
 
     @Test
-    void unknownToolNameIsRejectedBeforeRemoteCall() {
-        assertThrows(
-                CallMateTool.MateToolExecutionException.class,
-                () -> tool.execute("t", Map.of("tool", "no-such-name"), null, null));
-        assertEquals(null, client.lastCalledTool());
+    void cacheMissShouldRefreshAllSourcesThenExecuteOnce() throws Exception {
+        state.createCallTool().execute("call", Map.of("tool", "Query"), null, null);
+
+        assertThat(client.agentListCalls()).isEqualTo(1);
+        assertThat(client.skillListCalls()).isEqualTo(1);
+        assertThat(client.executeCalls()).isEqualTo(1);
+        assertThat(client.lastCalledTool()).isEqualTo(QUERY_ID);
+        assertThat(client.lastCallArgs()).isEmpty();
     }
 
     @Test
-    void singletonWithoutCacheIsRejectedWithHint() {
-        CallMateTool singleton = new CallMateTool(client, null, null);
-        assertThrows(
-                CallMateTool.MateToolExecutionException.class,
-                () -> singleton.execute("t", Map.of("tool", "query"), null, null));
-        assertEquals(null, client.lastCalledTool());
+    void listHitShouldAvoidAutomaticFullRefresh() throws Exception {
+        state.createListTool().execute("list", Map.of(), null, null);
+        state.createCallTool().execute("call", Map.of("tool", "Query"), null, null);
+
+        assertThat(client.agentListCalls()).isEqualTo(1);
+        assertThat(client.skillListCalls()).isZero();
+        assertThat(client.executeCalls()).isEqualTo(1);
     }
 
     @Test
-    void missingToolParamThrows() {
-        assertThrows(IllegalArgumentException.class, () -> tool.execute("t", Map.of(), null, null));
+    void executeFailureShouldNotReplayDiscoveryOrExecution() {
+        client.overrideCallResult(new MateToolClient.ToolResult("failed", null, true));
+
+        assertThatThrownBy(() -> state.createCallTool().execute("call", Map.of("tool", "Query"), null, null))
+                .isInstanceOf(CallMateTool.MateToolExecutionException.class);
+        assertThat(client.agentListCalls()).isEqualTo(1);
+        assertThat(client.skillListCalls()).isEqualTo(1);
+        assertThat(client.executeCalls()).isEqualTo(1);
     }
 
     @Test
-    void listMateToolRefreshReplacesCacheEntries() throws Exception {
-        // New binding set arrives via listMateTool: old name must be evicted.
-        client.addTool(new MateToolMeta(
-                "tool-22222222222222222222222222222222", "chart", "c", Map.of(), Map.of(), true, "allow"));
-        cache.refresh(List.of(new MateToolMeta(
-                "tool-22222222222222222222222222222222", "chart", "c", Map.of(), Map.of(), true, "allow")));
-        assertThrows(
-                CallMateTool.MateToolExecutionException.class,
-                () -> tool.execute("t", Map.of("tool", "query"), null, null));
-        tool.execute("t", Map.of("tool", "chart"), null, null);
-        assertEquals("tool-22222222222222222222222222222222", client.lastCalledTool());
-    }
-
-    @Test
-    void toolWithoutNameIsCallableByItsId() throws Exception {
-        // Server returns only a toolId: the display/call key falls back to the id.
-        client.addTool(new MateToolMeta(
-                "tool-99999999999999999999999999999999", null, "anon", Map.of(), Map.of(), true, "allow"));
-        cache.refresh(List.of(new MateToolMeta(
-                "tool-99999999999999999999999999999999", null, "anon", Map.of(), Map.of(), true, "allow")));
-
-        tool.execute("t", Map.of("tool", "tool-99999999999999999999999999999999"), null, null);
-
-        assertEquals("tool-99999999999999999999999999999999", client.lastCalledTool());
-    }
-
-    @Test
-    void blankToolNameAlsoFallsBackToId() throws Exception {
-        client.addTool(new MateToolMeta(
-                "tool-88888888888888888888888888888888", "   ", "sp", Map.of(), Map.of(), true, "allow"));
-        cache.refresh(List.of(new MateToolMeta(
-                "tool-88888888888888888888888888888888", "   ", "sp", Map.of(), Map.of(), true, "allow")));
-
-        tool.execute("t", Map.of("tool", "tool-88888888888888888888888888888888"), null, null);
-
-        assertEquals("tool-88888888888888888888888888888888", client.lastCalledTool());
-    }
-
-    @Test
-    void resolverProvidedCredentialsReachClient() {
-        MateCredentials expected = MateCredentials.jwt("hw-id-9", "tok");
-        CallMateTool resolved = new CallMateTool(client, call -> expected, cache);
-
-        assertDoesNotThrow(() -> resolved.execute("t", Map.of("tool", "query"), null, null));
-
-        assertEquals("hw-id-9", client.lastCallCredentials().xHwId());
-        assertEquals("Bearer tok", client.lastCallCredentials().authorization());
-    }
-
-    @Test
-    void concurrentSessionsGetTheirOwnCredentials() throws Exception {
-        Map<String, MateCredentials> bySession = new java.util.concurrent.ConcurrentHashMap<>();
-        bySession.put("call-a", MateCredentials.appKey("id-a", "key-a"));
-        bySession.put("call-b", MateCredentials.appKey("id-b", "key-b"));
-
-        java.util.List<Thread> workers = new java.util.ArrayList<>();
-        List<String> mismatches = java.util.Collections.synchronizedList(new java.util.ArrayList<>());
-        for (int i = 0; i < 40; i++) {
-            final String callId = (i % 2 == 0) ? "call-a" : "call-b";
-
-            // Each worker verifies through its own recording client to avoid
-            // the shared lastCallCredentials field racing between threads.
-            MockMateToolClient recordingClient = new MockMateToolClient();
-            recordingClient.addTool(new MateToolMeta(QUERY_ID, "query", "q", Map.of(), Map.of(), true, "allow"));
-            CallMateTool sessionTool =
-                    new CallMateTool(recordingClient, call -> bySession.get(call.toolCallId()), cache);
-            workers.add(Thread.ofPlatform().start(() -> {
-                try {
-                    sessionTool.execute(callId, Map.of("tool", "query"), null, null);
-                    String seen = recordingClient.lastCallCredentials().xHwId();
-                    String wanted = bySession.get(callId).xHwId();
-                    if (!wanted.equals(seen)) {
-                        mismatches.add(callId + " wanted " + wanted + " saw " + seen);
-                    }
-                } catch (Exception e) {
-                    mismatches.add(callId + ": " + e.getMessage());
-                }
-            }));
+    void concurrentMissesShouldShareOneFullRefresh() throws Exception {
+        BlockingMateClient blocking = new BlockingMateClient(client);
+        MateToolSessionState blockingState =
+                new MateToolsetFactory(blocking, null).createSession("agent-1", Map.of("research", "skill-1"));
+        try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+            var first = executor.submit(() -> call(blockingState));
+            blocking.started.await(5, TimeUnit.SECONDS);
+            var second = executor.submit(() -> call(blockingState));
+            blocking.release.countDown();
+            first.get(5, TimeUnit.SECONDS);
+            second.get(5, TimeUnit.SECONDS);
         }
-        for (Thread w : workers) {
-            w.join();
+
+        assertThat(blocking.agentLists).isEqualTo(1);
+        assertThat(blocking.skillLists).isEqualTo(1);
+        assertThat(blocking.executeCalls).isEqualTo(2);
+    }
+
+    @Test
+    void conflictingNamesShouldFailAtomicallyBeforeExecution() {
+        String otherId = "tool-22222222222222222222222222222222";
+        client.addTool(meta(otherId, "Query"));
+        client.bindSkill("skill-1", List.of(otherId));
+
+        assertThatThrownBy(() -> state.createCallTool().execute("call", Map.of("tool", "Query"), null, null))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("different ids");
+        assertThat(client.executeCalls()).isZero();
+    }
+
+    @Test
+    void sameNameAndIdAcrossSourcesShouldDeduplicateAndExecuteOnce() throws Exception {
+        client.bindSkill("skill-1", List.of(QUERY_ID));
+
+        state.createCallTool().execute("call", Map.of("tool", "Query"), null, null);
+
+        assertThat(client.agentListCalls()).isEqualTo(1);
+        assertThat(client.skillListCalls()).isEqualTo(1);
+        assertThat(client.executeCalls()).isEqualTo(1);
+    }
+
+    private static MateToolMeta meta(String id, String name) {
+        return new MateToolMeta(id, name, "description", Map.of(), Map.of(), true, "allow");
+    }
+
+    private static void call(MateToolSessionState state) {
+        try {
+            state.createCallTool().execute("call", Map.of("tool", "Query"), null, null);
+        } catch (Exception exception) {
+            throw new IllegalStateException(exception);
         }
-        assertTrue(mismatches.isEmpty(), String.join("; ", mismatches));
     }
 
-    @Test
-    void resolverCannotMutateToolArgs() throws Exception {
-        Map<String, Object> originalArgs = new java.util.HashMap<>(Map.of("query", "hi"));
-        Map<String, Object> params = new java.util.HashMap<>();
-        params.put("tool", "query");
-        params.put("args", originalArgs);
-        CallMateTool guarded = new CallMateTool(
-                client,
-                call -> {
-                    call.args().put("injected", "by-resolver");
-                    return null;
-                },
-                cache);
+    private static final class BlockingMateClient implements MateToolClient {
 
-        assertThrows(UnsupportedOperationException.class, () -> guarded.execute("t", params, null, null));
-        assertTrue(!originalArgs.containsKey("injected"));
-    }
+        private final MockMateToolClient delegate;
+        private final CountDownLatch started = new CountDownLatch(1);
+        private final CountDownLatch release = new CountDownLatch(1);
+        private int agentLists;
+        private int skillLists;
+        private int executeCalls;
 
-    @Test
-    void resolverCannotMutateNestedMapArgs() throws Exception {
-        Map<String, Object> nested = new java.util.HashMap<>(Map.of("flag", false));
-        Map<String, Object> observed = runResolverMutation(new java.util.HashMap<>(Map.of("options", nested)), call -> {
-            ((Map<String, Object>) call.args().get("options")).put("dangerous", true);
-            return null;
-        });
+        private BlockingMateClient(MockMateToolClient delegate) {
+            this.delegate = delegate;
+        }
 
-        assertEquals(Map.of("flag", false), observed.get("options"));
-    }
+        @Override
+        public synchronized List<MateToolMeta> listAgentTools(String agentId) {
+            agentLists++;
+            started.countDown();
+            awaitRelease();
+            return delegate.listAgentTools(agentId);
+        }
 
-    @Test
-    void resolverCannotMutateNestedListArgs() throws Exception {
-        java.util.List<Object> nestedList = new java.util.ArrayList<>(List.of("a"));
-        Map<String, Object> observed =
-                runResolverMutation(new java.util.HashMap<>(Map.of("tags", nestedList)), call -> {
-                    ((List<Object>) call.args().get("tags")).add("injected");
-                    return null;
-                });
+        @Override
+        public synchronized List<MateToolMeta> listSkillTools(String skillId) {
+            skillLists++;
+            return delegate.listSkillTools(skillId);
+        }
 
-        assertEquals(List.of("a"), observed.get("tags"));
-    }
+        @Override
+        public synchronized ToolResult callTool(
+                String tool,
+                Map<String, Object> args,
+                com.campusclaw.codingagent.common.client.mate.MateCredentials credentials) {
+            executeCalls++;
+            return delegate.callTool(tool, args, credentials);
+        }
 
-    /**
-     * 以指定参数执行一次带篡改 resolver 的调用，断言快照只读（抛
-     * UnsupportedOperationException）并返回原始嵌套结构供值断言。
-     *
-     * @param args 待传入的工具参数（含待篡改的嵌套结构）
-     * @param mutatingResolver 执行篡改尝试的解析器
-     * @return 原始 args（未被修改）
-     * @throws Exception 工具执行失败时抛出
-     */
-    private Map<String, Object> runResolverMutation(Map<String, Object> args, MateCredentialResolver mutatingResolver)
-            throws Exception {
-        MockMateToolClient recording = new MockMateToolClient();
-        recording.addTool(new MateToolMeta(QUERY_ID, "query", "q", Map.of(), Map.of(), true, "allow"));
-        CallMateTool guarded = new CallMateTool(recording, mutatingResolver, cache);
-        Map<String, Object> params = new java.util.HashMap<>();
-        params.put("tool", "query");
-        params.put("args", args);
-
-        // The read-only snapshot throws on any mutation attempt, before the
-        // mutation can reach the original structures.
-        assertThrows(UnsupportedOperationException.class, () -> guarded.execute("t", params, null, null));
-        return args;
-    }
-
-    private static String asText(com.campusclaw.agent.tool.AgentToolResult r) {
-        var sb = new StringBuilder();
-        for (var b : r.content()) {
-            if (b instanceof com.campusclaw.ai.types.TextContent t) {
-                sb.append(t.text());
+        private void awaitRelease() {
+            try {
+                release.await(5, TimeUnit.SECONDS);
+            } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException(exception);
             }
         }
-        return sb.toString();
     }
 }

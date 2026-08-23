@@ -22,17 +22,13 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.stereotype.Component;
 
 /**
- * Agent tool that creates or overwrites files.
- * Automatically creates parent directories and serializes writes
- * through {@link FileMutationQueue}.
+ * 创建或覆盖文件、自动创建父目录并通过 {@link FileMutationQueue} 串行化写入的底层工具实现。
  *
  * @version [br_eCampusCore 26.0.0, 2026/05/06]
  * @since [br_eCampusCore 26.0.0]
  */
-@Component
 public class WriteTool implements AgentTool {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();

@@ -4,303 +4,108 @@
 
 package com.campusclaw.codingagent.tool.grep;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.when;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
+import java.util.concurrent.CancellationException;
 
-import com.campusclaw.agent.tool.AgentToolResult;
+import com.campusclaw.agent.tool.CancellationToken;
+import com.campusclaw.agent.tool.ToolExecutionMode;
 import com.campusclaw.ai.types.TextContent;
-import com.campusclaw.codingagent.tool.bash.BashExecutionResult;
-import com.campusclaw.codingagent.tool.bash.BashExecutor;
+import com.campusclaw.codingagent.tool.ops.LocalGrepOperations;
+import com.campusclaw.codingagent.tool.workspace.AgentWorkspaceBoundary;
+import com.campusclaw.codingagent.tool.workspace.WorkspacePathResolver;
 
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
-import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
 
-@ExtendWith(MockitoExtension.class)
+/**
+ * {@link GrepTool} 的模式、上下文、ignore 和输出契约测试。
+ *
+ * @version [br_eCampusCore 26.0.0, 2026/08/23]
+ * @since [br_eCampusCore 26.0.0]
+ */
 class GrepToolTest {
 
-    @Mock
-    BashExecutor bashExecutor;
-
     @TempDir
-    Path tempDir;
+    Path agentRoot;
 
-    GrepTool grepTool;
+    private GrepTool tool;
 
     @BeforeEach
     void setUp() {
-        grepTool = new GrepTool(bashExecutor, tempDir);
-
-        // Force Java fallback for deterministic tests
-        grepTool.setRgAvailable(false);
+        WorkspacePathResolver resolver = new WorkspacePathResolver();
+        AgentWorkspaceBoundary boundary = AgentWorkspaceBoundary.create("agent-a", agentRoot);
+        tool = new GrepTool(new LocalGrepOperations(resolver), resolver, boundary);
     }
 
-    private String extractText(AgentToolResult result) {
-        return ((TextContent) result.content().get(0)).text();
+    @Test
+    void shouldPublishPascalCaseParallelContract() {
+        assertThat(tool.name()).isEqualTo("Grep");
+        assertThat(tool.executionMode()).isEqualTo(ToolExecutionMode.PARALLEL);
+        assertThat(tool.parameters().path("properties").has("literal")).isTrue();
+        assertThat(tool.parameters().path("additionalProperties").asBoolean()).isFalse();
     }
 
-    private void createFile(String relativePath, String content) throws IOException {
-        Path file = tempDir.resolve(relativePath);
-        Files.createDirectories(file.getParent());
-        Files.writeString(file, content);
+    @Test
+    void shouldSearchLiteralCaseInsensitiveWithContext() throws Exception {
+        Files.writeString(agentRoot.resolve("notes.txt"), "before\nNeedle[1]\nafter\n");
+
+        var result = tool.execute(
+                "call", Map.of("pattern", "needle[1]", "literal", true, "ignoreCase", true, "context", 1), null, null);
+
+        assertThat(((TextContent) result.content().get(0)).text())
+                .contains("notes.txt-1-before")
+                .contains("notes.txt:2:Needle[1]")
+                .contains("notes.txt-3-after");
     }
 
-    // -------------------------------------------------------------------
-    // Metadata
-    // -------------------------------------------------------------------
+    @Test
+    void shouldHonorGlobAndGitIgnore() throws Exception {
+        Files.writeString(agentRoot.resolve("keep.txt"), "target");
+        Files.writeString(agentRoot.resolve("skip.log"), "target");
+        Files.writeString(agentRoot.resolve("ignored.txt"), "target");
+        Files.writeString(agentRoot.resolve(".gitignore"), "ignored.txt\n");
 
-    @Nested
-    class Metadata {
+        var result = tool.execute("call", Map.of("pattern", "target", "glob", "*.txt"), null, null);
 
-        @Test
-        void name() {
-            assertEquals("grep", grepTool.name());
-        }
-
-        @Test
-        void label() {
-            assertEquals("Grep", grepTool.label());
-        }
-
-        @Test
-        void parametersSchema() {
-            var params = grepTool.parameters();
-            assertEquals("object", params.get("type").asText());
-            assertTrue(params.get("properties").has("pattern"));
-            assertTrue(params.get("properties").has("path"));
-            assertTrue(params.get("properties").has("glob"));
-            assertTrue(params.get("properties").has("type"));
-            assertEquals("pattern", params.get("required").get(0).asText());
-        }
+        assertThat(((TextContent) result.content().get(0)).text())
+                .isEqualTo("keep.txt:1:target")
+                .doesNotContain("skip.log", "ignored.txt");
     }
 
-    // -------------------------------------------------------------------
-    // Java fallback: basic search
-    // -------------------------------------------------------------------
+    @Test
+    void shouldNotMarkExactLimitAsTruncated() throws Exception {
+        Files.writeString(agentRoot.resolve("notes.txt"), "target\ntarget\ncontext\n");
 
-    @Nested
-    class JavaFallbackBasic {
+        var result = tool.execute("call", Map.of("pattern", "target", "limit", 2, "context", 1), null, null);
 
-        @Test
-        void findsMatchInFile() throws Exception {
-            createFile("test.txt", "hello world\nfoo bar\nhello again\n");
-
-            var result = grepTool.execute("c1", Map.of("pattern", "hello"), null, null);
-
-            String text = extractText(result);
-            assertTrue(text.contains("test.txt:1:hello world"));
-            assertTrue(text.contains("test.txt:3:hello again"));
-        }
-
-        @Test
-        void regexPattern() throws Exception {
-            createFile("code.txt", "int x = 42;\nString s = \"test\";\nint y = 99;\n");
-
-            var result = grepTool.execute("c2", Map.of("pattern", "int \\w+ = \\d+"), null, null);
-
-            String text = extractText(result);
-            assertTrue(text.contains("code.txt:1:"));
-            assertTrue(text.contains("code.txt:3:"));
-            assertFalse(text.contains(":2:"));
-        }
-
-        @Test
-        void noMatchesReturnsMessage() throws Exception {
-            createFile("empty.txt", "nothing relevant here\n");
-
-            var result = grepTool.execute("c3", Map.of("pattern", "zzzzz"), null, null);
-
-            assertEquals("No matches found.", extractText(result));
-        }
-
-        @Test
-        void searchesRecursively() throws Exception {
-            createFile("a/deep.txt", "target line\n");
-            createFile("b/c/deeper.txt", "target again\n");
-
-            var result = grepTool.execute("c4", Map.of("pattern", "target"), null, null);
-
-            String text = extractText(result);
-            assertTrue(text.contains("deep.txt"));
-            assertTrue(text.contains("deeper.txt"));
-        }
-
-        @Test
-        void skipsDotDirectories() throws Exception {
-            createFile(".hidden/secret.txt", "target\n");
-            createFile("visible.txt", "target\n");
-
-            var result = grepTool.execute("c5", Map.of("pattern", "target"), null, null);
-
-            String text = extractText(result);
-            assertTrue(text.contains("visible.txt"));
-            assertFalse(text.contains("secret.txt"));
-        }
-
-        @Test
-        void searchSingleFile() throws Exception {
-            createFile("a.txt", "match here\n");
-            createFile("b.txt", "match here too\n");
-
-            var result = grepTool.execute("c6", Map.of("pattern", "match", "path", "a.txt"), null, null);
-
-            String text = extractText(result);
-            assertTrue(text.contains("a.txt"));
-            assertFalse(text.contains("b.txt"));
-        }
+        assertThat(((TextContent) result.content().get(0)).text())
+                .contains("notes.txt:1:target", "notes.txt:2:target", "notes.txt-3-context")
+                .doesNotContain("... (truncated)");
     }
 
-    // -------------------------------------------------------------------
-    // Java fallback: glob filter
-    // -------------------------------------------------------------------
+    @Test
+    void shouldMarkOutputWhenAnotherMatchExistsBeyondLimit() throws Exception {
+        Files.writeString(agentRoot.resolve("notes.txt"), "target\ntarget\ntarget\n");
 
-    @Nested
-    class JavaFallbackGlob {
+        var result = tool.execute("call", Map.of("pattern", "target", "limit", 2), null, null);
 
-        @Test
-        void globFiltersFiles() throws Exception {
-            createFile("code.java", "public class Foo {}\n");
-            createFile("code.txt", "public class Foo {}\n");
-
-            var result = grepTool.execute("c7", Map.of("pattern", "class", "glob", "*.java"), null, null);
-
-            String text = extractText(result);
-            assertTrue(text.contains("code.java"));
-            assertFalse(text.contains("code.txt"));
-        }
+        assertThat(((TextContent) result.content().get(0)).text())
+                .contains("notes.txt:1:target", "notes.txt:2:target", "... (truncated)")
+                .doesNotContain("notes.txt:3:target");
     }
 
-    // -------------------------------------------------------------------
-    // Java fallback: type filter
-    // -------------------------------------------------------------------
+    @Test
+    void shouldStopBeforeWorkspaceTraversalWhenCancelled() {
+        var signal = new CancellationToken();
+        signal.cancel();
 
-    @Nested
-    class JavaFallbackType {
-
-        @Test
-        void typeFiltersFiles() throws Exception {
-            createFile("Main.java", "public static void main\n");
-            createFile("script.py", "def main():\n");
-
-            var result = grepTool.execute("c8", Map.of("pattern", "main", "type", "java"), null, null);
-
-            String text = extractText(result);
-            assertTrue(text.contains("Main.java"));
-            assertFalse(text.contains("script.py"));
-        }
-
-        @Test
-        void unknownTypeReturnsError() throws Exception {
-            var result = grepTool.execute("c9", Map.of("pattern", "test", "type", "unknown_lang"), null, null);
-
-            assertTrue(extractText(result).contains("unknown file type"));
-        }
-    }
-
-    // -------------------------------------------------------------------
-    // Error handling
-    // -------------------------------------------------------------------
-
-    @Nested
-    class ErrorHandling {
-
-        @Test
-        void missingPatternReturnsError() throws Exception {
-            var result = grepTool.execute("c10", Map.of(), null, null);
-            assertTrue(extractText(result).contains("Error"));
-        }
-
-        @Test
-        void emptyPatternReturnsError() throws Exception {
-            var result = grepTool.execute("c11", Map.of("pattern", ""), null, null);
-            assertTrue(extractText(result).contains("Error"));
-        }
-
-        @Test
-        void invalidRegexReturnsError() throws Exception {
-            var result = grepTool.execute("c12", Map.of("pattern", "[invalid"), null, null);
-            assertTrue(extractText(result).contains("invalid regex"));
-        }
-
-        @Test
-        void pathTraversalReturnsError() throws Exception {
-            var result = grepTool.execute("c13", Map.of("pattern", "test", "path", "../../etc"), null, null);
-            assertTrue(extractText(result).contains("Error"));
-        }
-    }
-
-    // -------------------------------------------------------------------
-    // ripgrep path
-    // -------------------------------------------------------------------
-
-    @Nested
-    class RipgrepPath {
-
-        @Test
-        void usesRgWhenAvailable() throws Exception {
-            grepTool.setRgAvailable(true);
-            when(bashExecutor.execute(any(), any(), any()))
-                    .thenReturn(new BashExecutionResult(0, "file.txt:1:match\n", ""));
-
-            var result = grepTool.execute("c14", Map.of("pattern", "match"), null, null);
-
-            assertTrue(extractText(result).contains("file.txt:1:match"));
-        }
-
-        @Test
-        void rgNoMatchesReturnsMessage() throws Exception {
-            grepTool.setRgAvailable(true);
-            when(bashExecutor.execute(any(), any(), any())).thenReturn(new BashExecutionResult(1, "", ""));
-
-            var result = grepTool.execute("c15", Map.of("pattern", "nope"), null, null);
-
-            assertEquals("No matches found.", extractText(result));
-        }
-
-        @Test
-        void rgErrorReturnsErrorMessage() throws Exception {
-            grepTool.setRgAvailable(true);
-            when(bashExecutor.execute(any(), any(), any()))
-                    .thenReturn(new BashExecutionResult(2, "", "rg: bad regex\n"));
-
-            var result = grepTool.execute("c16", Map.of("pattern", "[bad"), null, null);
-
-            assertTrue(extractText(result).contains("Grep error"));
-        }
-    }
-
-    // -------------------------------------------------------------------
-    // Result limit
-    // -------------------------------------------------------------------
-
-    @Nested
-    class ResultLimit {
-
-        @Test
-        void limitsResults() throws Exception {
-            var sb = new StringBuilder();
-            for (int i = 0; i < GrepTool.MAX_RESULTS + 100; i++) {
-                sb.append("match_line\n");
-            }
-            createFile("big.txt", sb.toString());
-
-            var result = grepTool.execute("c17", Map.of("pattern", "match_line"), null, null);
-
-            String text = extractText(result);
-            long lineCount = text.lines().count();
-            assertTrue(lineCount <= GrepTool.MAX_RESULTS);
-        }
+        assertThatThrownBy(() -> tool.execute("call", Map.of("pattern", "target"), signal, null))
+                .isInstanceOf(CancellationException.class);
     }
 }

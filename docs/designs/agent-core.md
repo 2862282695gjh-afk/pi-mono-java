@@ -1,5 +1,9 @@
 # agent-core 模块实现设计文档（基于代码 v1.2）
 
+> 本文是旧提交的代码快照，不是当前工具或 Child 契约。旧 `SubAgentBackend`、ACP/HTTP/A2A
+> delegation 已删除；当前 Session、工具 Pipeline 和 Child Execution 以
+> [CampusClaw 受管 Agent 工具系统 v2](tool-system-v2.md)为准。
+
 ## 文档信息
 
 | 项目 | 内容 |

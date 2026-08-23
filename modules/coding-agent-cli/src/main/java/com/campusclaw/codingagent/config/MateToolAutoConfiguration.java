@@ -85,17 +85,15 @@ public class MateToolAutoConfiguration {
     /**
      * 创建 Mate 工具对工厂。工具名→标识缓存是会话私有状态（不同 agent
      * 绑定的工具列表不同），因此两个工具与共享缓存必须按会话成组创建：
-     * 会话组装点每会话调用一次 {@link MateToolsetFactory#create()}，
-     * 得到一对持有独立缓存、但彼此共享该缓存的工具实例。凭据解析器取
+     * 会话组装点每会话调用一次 {@link MateToolsetFactory#createSession(String, java.util.Map)}，
+     * 得到一组持有独立缓存、但彼此共享该缓存的工具实例。凭据解析器取
      * 容器中可选的 {@link MateCredentialResolver} Bean——部署方注册该
-     * Bean 即接通按调用凭据解析；未注册时 callMateTool 以 fail-closed
+     * Bean 即接通按调用凭据解析；未注册时 CallMateTool 以 fail-closed
      * 方式拒绝（见 {@code HttpMateToolClient} 的凭据校验），不会发出
      * 未认证请求。
      *
-     * <p>注意：不能把这对工具注册为 Spring 单例 Bean——
-     * {@code SpringAgentToolSource} 会把单例引用交给 {@code ToolCatalog}
-     * 供所有 {@code AgentSession} 复用，跨会话共享缓存会导致 A 会话的
-     * list 结果被 B 会话覆盖（同名工具映射错乱）。
+     * <p>不能把工具实例注册为 Spring 单例 Bean；公共 SessionFactory 必须
+     * 为每个 Session 创建独立状态，避免跨 Agent 名称缓存相互覆盖。
      *
      * @param client Mate Tool 客户端
      * @param credentialResolverProvider 凭据解析器提供器；容器无该 Bean 时为空
