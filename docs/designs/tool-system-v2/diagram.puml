@@ -1,8 +1,10 @@
 @startuml tool_system_architecture
-' Source baseline: CampusClaw commit d649866a6cae967ace18ceaeb9597edd47e5721e.
+' Pre-change baseline: CampusClaw merge base d649866a6cae967ace18ceaeb9597edd47e5721e.
+' Reviewed implementation baseline: CampusClaw PR commit bf28e72f94f29acd316eb872a250893ed54e3632.
 ' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/session/AgentSessionFactory.java, create
 ' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/tool/builtin/DefaultConfiguredToolAssembler.java, assemble
-' Observed behavior: the implementation uses one session factory for Runtime, Cron, and Child entry points.
+' Architecture change: the source-evidence types did not exist at the pre-change baseline.
+' Observed at reviewed baseline: one session factory serves Runtime, Cron, and Child entry points.
 ' Design reason: host lifecycle stays outside the shared session while tool semantics remain identical.
 skinparam componentStyle rectangle
 skinparam shadowing false
@@ -36,9 +38,12 @@ end note
 @enduml
 
 @startuml agent_workspace_boundary
-' Source baseline: CampusClaw commit d649866a6cae967ace18ceaeb9597edd47e5721e.
+' Pre-change baseline: CampusClaw merge base d649866a6cae967ace18ceaeb9597edd47e5721e.
+' Reviewed implementation baseline: CampusClaw PR commit bf28e72f94f29acd316eb872a250893ed54e3632.
 ' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/tool/workspace/WorkspacePathResolver.java, resolveExisting
 ' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/tool/workspace/WorkspacePathResolver.java, revalidateDiscoveredPath
+' Security hardening: WorkspacePathResolver did not exist at the pre-change baseline.
+' Observed at reviewed baseline: all managed file tools resolve through the Agent workspace boundary.
 ' Design reason: a managed Agent may read its complete root but never another Agent root.
 skinparam shadowing false
 title Agent Workspace Boundary
@@ -64,10 +69,12 @@ end note
 @enduml
 
 @startuml mate_call_refresh
-' Source baseline: CampusClaw commit d649866a6cae967ace18ceaeb9597edd47e5721e.
+' Pre-change baseline: CampusClaw merge base d649866a6cae967ace18ceaeb9597edd47e5721e.
+' Reviewed implementation baseline: CampusClaw PR commit bf28e72f94f29acd316eb872a250893ed54e3632.
 ' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/tool/mate/CallMateTool.java, execute
 ' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/tool/mate/MateToolSessionCache.java, resolveOrRefresh
-' Observed behavior: a cache miss refreshes the complete Agent plus direct-Skill tool set once.
+' Architecture change: the source-evidence types did not exist at the pre-change baseline.
+' Observed at reviewed baseline: a miss refreshes the complete Agent plus direct-Skill tool set once.
 ' Design reason: models call by name without knowing whether a tool is bound through Agent or Skill.
 skinparam shadowing false
 title CallMateTool Cache Miss and Single-Flight Refresh

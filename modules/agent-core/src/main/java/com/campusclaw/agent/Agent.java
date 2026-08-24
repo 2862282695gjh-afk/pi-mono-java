@@ -283,7 +283,12 @@ public class Agent {
     }
 
     private SimpleStreamOptions buildStreamOptions() {
-        return baseStreamOptions.toBuilder().reasoning(state.getThinkingLevel()).build();
+        SimpleStreamOptions.Builder builder = baseStreamOptions.toBuilder().reasoning(state.getThinkingLevel());
+        Model model = state.getModel();
+        if (baseStreamOptions.maxTokens() == null && model != null && model.maxTokens() > 0) {
+            builder.maxTokens(model.maxTokens());
+        }
+        return builder.build();
     }
 
     private void emit(AgentEvent event) {

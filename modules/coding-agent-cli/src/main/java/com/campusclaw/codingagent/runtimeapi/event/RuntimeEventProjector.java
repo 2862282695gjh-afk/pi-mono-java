@@ -294,16 +294,29 @@ public class RuntimeEventProjector {
         if (firstKeptIndex < 0 || firstKeptIndex >= contextIds.size()) {
             throw new IllegalStateException("compaction retained boundary is not present in runtime history");
         }
+        String discardedEntryId = discardedEntryId(entries, event.willRetry());
         RuntimeEntryDTO entry = codec.compactionEntry(
                 sessionId,
                 idGenerator.nextId(),
                 event.reason(),
                 contextIds.get(firstKeptIndex),
+                discardedEntryId,
                 event.result(),
                 event.willRetry(),
                 now());
         repository.appendEntry(entry);
         stream.emit(new RuntimeSseEventVO(Long.toString(entry.getEntrySeq()), entry.getType(), codec.toSseData(entry)));
+    }
+
+    private String discardedEntryId(List<RuntimeEntryDTO> entries, boolean willRetry) {
+        if (!willRetry) {
+            return null;
+        }
+        String entryId = codec.lastRetriableAssistantEntryId(entries);
+        if (entryId == null) {
+            throw new IllegalStateException("compaction retry candidate is not present in runtime history");
+        }
+        return entryId;
     }
 
     private List<RuntimeEntryDTO> loadCurrentBranch() {

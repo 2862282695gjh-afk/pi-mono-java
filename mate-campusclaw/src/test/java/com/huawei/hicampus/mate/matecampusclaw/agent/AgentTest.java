@@ -16,6 +16,7 @@ import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 import com.huawei.hicampus.mate.matecampusclaw.agent.context.DefaultMessageConverter;
 import com.huawei.hicampus.mate.matecampusclaw.agent.event.AgentEndEvent;
@@ -87,6 +88,18 @@ class AgentTest {
         assertInstanceOf(AgentStartEvent.class, events.getFirst());
         assertInstanceOf(AgentEndEvent.class, events.getLast());
         assertTrue(events.stream().anyMatch(TurnEndEvent.class::isInstance));
+    }
+
+    @Test
+    void defaultsRequestOutputLimitToLargeModelLimit() throws Exception {
+        Model model = sampleModel(64_000);
+        OptionsCapturingProvider provider = new OptionsCapturingProvider();
+        Agent agent = new Agent(piAiService(model, provider));
+        agent.setModel(model);
+
+        agent.prompt("large output").get(2, TimeUnit.SECONDS);
+
+        assertEquals(64_000, provider.options.get().maxTokens());
     }
 
     @Test
@@ -184,6 +197,10 @@ class AgentTest {
     }
 
     private Model sampleModel() {
+        return sampleModel(4_096);
+    }
+
+    private Model sampleModel(int maxTokens) {
         return new Model(
                 "test-model",
                 "Test Model",
@@ -194,7 +211,7 @@ class AgentTest {
                 List.of(InputModality.TEXT),
                 new ModelCost(1.0, 2.0, 0.5, 0.25),
                 200_000,
-                4_096,
+                maxTokens,
                 null,
                 null,
                 null);
@@ -331,6 +348,27 @@ class AgentTest {
             var userMessage = (UserMessage) context.messages().getLast();
             assertEquals(promptText, ((TextContent) userMessage.content().getFirst()).text());
             return textStream(model, responseText);
+        }
+    }
+
+    private static final class OptionsCapturingProvider implements ApiProvider {
+        private final AtomicReference<SimpleStreamOptions> options = new AtomicReference<>();
+
+        @Override
+        public Api getApi() {
+            return Api.ANTHROPIC_MESSAGES;
+        }
+
+        @Override
+        public AssistantMessageEventStream stream(
+                Model model, Context context, com.huawei.hicampus.mate.matecampusclaw.ai.types.StreamOptions options) {
+            throw new UnsupportedOperationException("Agent uses streamSimple");
+        }
+
+        @Override
+        public AssistantMessageEventStream streamSimple(Model model, Context context, SimpleStreamOptions options) {
+            this.options.set(options);
+            return textStream(model, "done");
         }
     }
 

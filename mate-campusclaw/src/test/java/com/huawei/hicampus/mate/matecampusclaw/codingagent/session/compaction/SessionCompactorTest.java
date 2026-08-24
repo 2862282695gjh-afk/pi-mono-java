@@ -177,6 +177,19 @@ class SessionCompactorTest {
     }
 
     @Test
+    void comparesLengthAgainstLargeRequestedOutputLimit() {
+        SessionCompactor compactor = compactor(true, 100, 10);
+        Model largeOutput = model(200_000, 64_000);
+        AssistantMessage reachedLimit = assistant("complete", usage(100, 64_000), StopReason.LENGTH, 2L);
+        AssistantMessage belowLimit = assistant("partial", usage(100, 63_999), StopReason.LENGTH, 3L);
+
+        assertThat(compactor.decide(List.of(reachedLimit), largeOutput, false).action())
+                .isEqualTo(AutomaticCompactionDecision.Action.NONE);
+        assertThat(compactor.decide(List.of(belowLimit), largeOutput, false).action())
+                .isEqualTo(AutomaticCompactionDecision.Action.OVERFLOW_RETRY);
+    }
+
+    @Test
     void disablesAutomaticCompactionAndRejectsDifferentModelOverflow() {
         Model small = model(1_000, 200);
         AssistantMessage overflow = assistant("done", usage(1_001, 1), StopReason.STOP, 2L);
