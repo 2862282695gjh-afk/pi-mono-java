@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../app/fittrack_theme.dart';
 import '../../models/exercise.dart';
 import '../../models/workout_plan.dart';
 import '../../providers/plan_providers.dart';
@@ -215,7 +216,21 @@ class _PlanEditorScreenState extends ConsumerState<PlanEditorScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(isEditing ? '编辑计划' : '新建计划'),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(isEditing ? '编排计划' : '新建计划'),
+            const Text(
+              'TRAINING TEMPLATE',
+              style: TextStyle(
+                color: FitTrackTheme.muted,
+                fontSize: 9,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 1.1,
+              ),
+            ),
+          ],
+        ),
         actions: [
           if (isEditing)
             IconButton(
@@ -226,33 +241,54 @@ class _PlanEditorScreenState extends ConsumerState<PlanEditorScreen> {
         ],
       ),
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(24, 12, 24, 120),
+        padding: const EdgeInsets.fromLTRB(20, 12, 20, 120),
         children: [
+          const Text(
+            '把意图写下来',
+            style: TextStyle(
+              color: FitTrackTheme.signal,
+              fontSize: 12,
+              fontWeight: FontWeight.w900,
+              letterSpacing: .8,
+            ),
+          ),
+          const SizedBox(height: 6),
           Text(
             isEditing ? '把计划打磨得更顺手。' : '为下一次训练设定节奏。',
             style: Theme.of(context).textTheme.headlineSmall
-                ?.copyWith(fontWeight: FontWeight.w900),
+                ?.copyWith(fontSize: 28),
           ),
           const SizedBox(height: 24),
-          TextField(
-            controller: _nameController,
-            textCapitalization: TextCapitalization.sentences,
-            decoration: const InputDecoration(
-              labelText: '计划名称',
-              hintText: '例如：上肢力量',
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: FitTrackTheme.mist,
+              borderRadius: BorderRadius.circular(24),
+            ),
+            child: Column(
+              children: [
+                TextField(
+                  controller: _nameController,
+                  textCapitalization: TextCapitalization.sentences,
+                  decoration: const InputDecoration(
+                    labelText: '计划名称',
+                    hintText: '例如：上肢力量',
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _descriptionController,
+                  maxLines: 2,
+                  maxLength: 500,
+                  decoration: const InputDecoration(
+                    labelText: '训练备注（可选）',
+                    hintText: '记录这份计划的重点',
+                  ),
+                ),
+              ],
             ),
           ),
-          const SizedBox(height: 16),
-          TextField(
-            controller: _descriptionController,
-            maxLines: 2,
-            maxLength: 500,
-            decoration: const InputDecoration(
-              labelText: '备注（可选）',
-              hintText: '记录这份计划的重点',
-            ),
-          ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 30),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -263,7 +299,7 @@ class _PlanEditorScreenState extends ConsumerState<PlanEditorScreen> {
               ),
               Text(
                 '${_entries.length} 个',
-                style: const TextStyle(color: Color(0xFF667064)),
+                style: const TextStyle(color: FitTrackTheme.muted),
               ),
             ],
           ),
@@ -288,7 +324,7 @@ class _PlanEditorScreenState extends ConsumerState<PlanEditorScreen> {
           OutlinedButton.icon(
             onPressed: _addExercise,
             icon: const Icon(Icons.add_rounded),
-            label: const Text('从动作库添加'),
+            label: const Text('从动作库添加动作'),
           ),
           TextButton.icon(
             onPressed: _createCustomExercise,
@@ -298,7 +334,7 @@ class _PlanEditorScreenState extends ConsumerState<PlanEditorScreen> {
         ],
       ),
       bottomNavigationBar: SafeArea(
-        minimum: const EdgeInsets.fromLTRB(24, 8, 24, 16),
+        minimum: const EdgeInsets.fromLTRB(20, 8, 20, 16),
         child: SizedBox(
           height: 52,
           child: FilledButton(
@@ -309,7 +345,7 @@ class _PlanEditorScreenState extends ConsumerState<PlanEditorScreen> {
                     width: 22,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
-                : Text(isEditing ? '保存修改' : '保存计划'),
+                : Text(isEditing ? '保存这份计划' : '保存并开始编排'),
           ),
         ),
       ),
@@ -323,12 +359,24 @@ class _EditorEmptyState extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(22),
+      padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        color: const Color(0xFFEFF5E8),
-        borderRadius: BorderRadius.circular(20),
+        color: FitTrackTheme.ink,
+        borderRadius: BorderRadius.circular(24),
       ),
-      child: const Text('从动作库加入第一个动作。动作的组数、次数和默认重量都可以随后调整。'),
+      child: const Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.add_task_rounded, color: FitTrackTheme.lime),
+          SizedBox(width: 14),
+          Expanded(
+            child: Text(
+              '从动作库加入第一个动作。组数、次数和默认重量都可以随后调整。',
+              style: TextStyle(color: Color(0xFFD5E1CE), height: 1.5),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -358,53 +406,79 @@ class _PlanEntryCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Card(
       margin: const EdgeInsets.only(bottom: 10),
-      child: ListTile(
+      child: InkWell(
+        borderRadius: BorderRadius.circular(22),
         onTap: onEdit,
-        leading: CircleAvatar(
-          backgroundColor: const Color(0xFFE5FBC1),
-          foregroundColor: const Color(0xFF244315),
-          child: Text(
-            '${index + 1}',
-            style: const TextStyle(fontWeight: FontWeight.w900),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 15, 10, 15),
+          child: Row(
+            children: [
+              Container(
+                width: 39,
+                height: 39,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: FitTrackTheme.lime,
+                  borderRadius: BorderRadius.circular(13),
+                ),
+                child: Text(
+                  '${index + 1}'.padLeft(2, '0'),
+                  style: const TextStyle(fontWeight: FontWeight.w900),
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      entry.exercise.name,
+                      style: const TextStyle(fontWeight: FontWeight.w900),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '${entry.defaultSets} 组 × ${entry.defaultReps} 次  ·  ${entry.defaultWeight} kg',
+                      style: const TextStyle(color: FitTrackTheme.muted),
+                    ),
+                  ],
+                ),
+              ),
+              PopupMenuButton<_EntryAction>(
+                onSelected: (action) {
+                  switch (action) {
+                    case _EntryAction.edit:
+                      onEdit();
+                    case _EntryAction.moveUp:
+                      onMoveUp();
+                    case _EntryAction.moveDown:
+                      onMoveDown();
+                    case _EntryAction.remove:
+                      onRemove();
+                  }
+                },
+                itemBuilder: (context) => [
+                  const PopupMenuItem(
+                    value: _EntryAction.edit,
+                    child: Text('调整默认值'),
+                  ),
+                  if (!isFirst)
+                    const PopupMenuItem(
+                      value: _EntryAction.moveUp,
+                      child: Text('上移'),
+                    ),
+                  if (!isLast)
+                    const PopupMenuItem(
+                      value: _EntryAction.moveDown,
+                      child: Text('下移'),
+                    ),
+                  const PopupMenuItem(
+                    value: _EntryAction.remove,
+                    child: Text('移除动作'),
+                  ),
+                ],
+              ),
+            ],
           ),
-        ),
-        title: Text(
-          entry.exercise.name,
-          style: const TextStyle(fontWeight: FontWeight.w900),
-        ),
-        subtitle: Text(
-          '${entry.defaultSets} 组 × ${entry.defaultReps} 次 · ${entry.defaultWeight} kg',
-        ),
-        trailing: PopupMenuButton<_EntryAction>(
-          onSelected: (action) {
-            switch (action) {
-              case _EntryAction.edit:
-                onEdit();
-              case _EntryAction.moveUp:
-                onMoveUp();
-              case _EntryAction.moveDown:
-                onMoveDown();
-              case _EntryAction.remove:
-                onRemove();
-            }
-          },
-          itemBuilder: (context) => [
-            const PopupMenuItem(value: _EntryAction.edit, child: Text('调整默认值')),
-            if (!isFirst)
-              const PopupMenuItem(
-                value: _EntryAction.moveUp,
-                child: Text('上移'),
-              ),
-            if (!isLast)
-              const PopupMenuItem(
-                value: _EntryAction.moveDown,
-                child: Text('下移'),
-              ),
-            const PopupMenuItem(
-              value: _EntryAction.remove,
-              child: Text('移除动作'),
-            ),
-          ],
         ),
       ),
     );
