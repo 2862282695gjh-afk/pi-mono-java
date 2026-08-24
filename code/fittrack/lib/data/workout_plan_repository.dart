@@ -11,6 +11,7 @@ abstract class WorkoutPlanRepository {
     required List<PlanExerciseDraft> entries,
   });
   Future<void> deletePlan(String planId);
+  Future<List<String>> savePlanBundle(List<PlanSaveDraft> plans);
 }
 
 class SupabaseWorkoutPlanRepository implements WorkoutPlanRepository {
@@ -59,5 +60,14 @@ class SupabaseWorkoutPlanRepository implements WorkoutPlanRepository {
   @override
   Future<void> deletePlan(String planId) {
     return _client.from('workout_plans').delete().eq('id', planId);
+  }
+
+  @override
+  Future<List<String>> savePlanBundle(List<PlanSaveDraft> plans) async {
+    final ids = await _client.rpc(
+      'save_generated_plan_bundle',
+      params: {'p_plans': plans.map((plan) => plan.toJson()).toList()},
+    );
+    return List<String>.from(ids as List);
   }
 }

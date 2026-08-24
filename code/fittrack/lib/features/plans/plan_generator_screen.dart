@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../app/fittrack_theme.dart';
 import '../../models/exercise.dart';
+import '../../models/workout_plan.dart';
 import '../../providers/plan_providers.dart';
 import '../../services/plan_generator.dart';
 
@@ -40,15 +41,19 @@ class _PlanGeneratorScreenState extends ConsumerState<PlanGeneratorScreen> {
     if (bundle == null) return;
     setState(() => _isSaving = true);
     try {
-      for (final plan in bundle.plans) {
-        await ref
-            .read(workoutPlanRepositoryProvider)
-            .savePlan(
-              name: plan.name,
-              description: plan.description,
-              entries: plan.entries,
-            );
-      }
+      await ref
+          .read(workoutPlanRepositoryProvider)
+          .savePlanBundle(
+            bundle.plans
+                .map(
+                  (plan) => PlanSaveDraft(
+                    name: plan.name,
+                    description: plan.description,
+                    entries: plan.entries,
+                  ),
+                )
+                .toList(growable: false),
+          );
       ref.invalidate(workoutPlansProvider);
       if (mounted) context.go('/');
     } catch (_) {

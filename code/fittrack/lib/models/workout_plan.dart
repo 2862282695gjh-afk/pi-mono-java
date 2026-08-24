@@ -99,3 +99,19 @@ class PlanExerciseDraft {
     };
   }
 }
+
+class PlanSaveDraft {
+  const PlanSaveDraft({
+    required this.name,
+    required this.description,
+    required this.entries,
+  });
+  final String name;
+  final String description;
+  final List<PlanExerciseDraft> entries;
+  Map<String, Object> toJson() => {
+    'name': name,
+    'description': description,
+    'exercises': entries.map((entry) => entry.toJson()).toList(),
+  };
+}
