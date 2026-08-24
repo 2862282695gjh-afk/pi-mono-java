@@ -7,6 +7,7 @@ import '../../data/auth_repository.dart';
 import '../../models/workout_plan.dart';
 import '../../providers/auth_providers.dart';
 import '../../providers/plan_providers.dart';
+import '../../providers/workout_providers.dart';
 
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
@@ -46,18 +47,47 @@ class HomeScreen extends ConsumerWidget {
   }
 }
 
-class _PlanList extends StatelessWidget {
+class _PlanList extends ConsumerWidget {
   const _PlanList({required this.plans, required this.onSignOut});
 
   final List<WorkoutPlan> plans;
   final VoidCallback onSignOut;
 
+  Future<void> _syncFinishedDrafts(BuildContext context, WidgetRef ref) async {
+    final drafts = await ref.read(finishedWorkoutDraftsProvider.future);
+    var synced = 0;
+    for (final draft in drafts) {
+      try {
+        await ref
+            .read(workoutBufferRepositoryProvider)
+            .syncFinishedDraft(draft);
+        synced += 1;
+      } catch (_) {
+        // Keep the local draft; a later retry must never lose this training.
+      }
+    }
+    ref.invalidate(finishedWorkoutDraftsProvider);
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            synced == drafts.length
+                ? '已同步 $synced 条训练记录。'
+                : '已同步 $synced 条，其余记录仍安全保存在本机。',
+          ),
+        ),
+      );
+    }
+  }
+
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final actionCount = plans.fold<int>(
       0,
       (sum, plan) => sum + plan.entries.length,
     );
+    final pendingDrafts =
+        ref.watch(finishedWorkoutDraftsProvider).valueOrNull ?? const [];
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 12, 20, 112),
@@ -65,6 +95,13 @@ class _PlanList extends StatelessWidget {
         _TopBar(onSignOut: onSignOut),
         const SizedBox(height: 18),
         _TrainingHero(planCount: plans.length, actionCount: actionCount),
+        if (pendingDrafts.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          _PendingSyncNotice(
+            count: pendingDrafts.length,
+            onSync: () => _syncFinishedDrafts(context, ref),
+          ),
+        ],
         const SizedBox(height: 32),
         Row(
           crossAxisAlignment: CrossAxisAlignment.end,
@@ -103,6 +140,37 @@ class _PlanList extends StatelessWidget {
             ),
           ),
       ],
+    );
+  }
+}
+
+class _PendingSyncNotice extends StatelessWidget {
+  const _PendingSyncNotice({required this.count, required this.onSync});
+
+  final int count;
+  final VoidCallback onSync;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 12, 10, 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFE0D5),
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.cloud_upload_outlined, color: FitTrackTheme.signal),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              '$count 条训练等待同步',
+              style: const TextStyle(fontWeight: FontWeight.w900),
+            ),
+          ),
+          TextButton(onPressed: onSync, child: const Text('立即同步')),
+        ],
+      ),
     );
   }
 }
