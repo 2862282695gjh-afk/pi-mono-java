@@ -79,7 +79,7 @@ auth.users ─1:1─ profiles ─1:N─┬─ exercises (owner_id=null 系统预
 | 6 | 登录/注册 UI、路由守卫、首页 | `1474acde` | 单测、analyze、模拟器启动通过；真实注册受 DNS 阻塞 |
 | M2 | 动作库、计划 CRUD、迁移 `0002` | `36629b9b` | SQL 本地 Postgres 验证、模型单测通过 |
 | M3 基础 | Drift 草稿、迁移 `0003`、同步仓储 | `bc447e50`、`14b25806` | SQL 语法与草稿持久化单测通过 |
-| M3 UI | 训练执行页、逐组本地落盘、休息计时器 | `63497543` | `flutter test` 9/9、analyze 0、debug APK 通过 |
+| M3 UI | 训练执行页、逐组本地落盘、休息计时器、离线记录重试同步 | `63497543`、`df7ebac5` | `flutter test` 9/9、analyze 0、debug APK 通过 |
 | 视觉系统 | 统一主题、首页与计划编辑重设计 | `42dd34ea` | 模拟器登录页实机截图通过 |
 
 ### Supabase 云端现状（已配置好，别重复配）
@@ -100,8 +100,8 @@ auth.users ─1:1─ profiles ─1:N─┬─ exercises (owner_id=null 系统预
 ### 立即
 
 1. **部署并核验 Supabase migrations**：管理 API 当前返回 HTTP 544（连接超时），且模拟器/宿主机解析不到项目域名。网络恢复后按 `0001`、`0002`、`0003` 顺序部署，实际执行邮箱注册、计划 CRUD 和 `sync_workout_session`。
-2. **补齐已结束草稿的同步入口**：训练页现在结束时会尝试同步且只在成功后删本地草稿；下一步在首页展示/重试未同步草稿。
-3. **训练执行验收**：真机完成一次含多动作训练，断网后退出重进确认 Drift 草稿存在，恢复网络后确认云端 session、exercise、set 三层数据一致。
+2. **训练执行验收**：首页已展示并支持重试未同步的已结束草稿；真机完成一次含多动作训练，断网后退出重进确认 Drift 草稿存在，恢复网络后确认云端 session、exercise、set 三层数据一致。
+3. **开始 M4 历史统计**：补 session 历史列表/详情、体重日志与图表；设计数据查询边界后再写 migration 或 repository。
 
 ### 之后（计划 2-6，按里程碑，spec §6）
 
@@ -134,7 +134,7 @@ auth.users ─1:1─ profiles ─1:N─┬─ exercises (owner_id=null 系统预
 2. cat docs/superpowers/specs/2026-08-14-fittrack-commercial-refactor-design.md
 3. cat docs/superpowers/plans/2026-08-24-fittrack-m2-training-plans.md
 4. cd code/fittrack && NO_PROXY=... flutter test && flutter analyze
-5. 先处理未同步草稿的首页重试入口，再做 M4 历史/统计
+5. 从 M4 历史/统计开始；保留现有草稿重试入口的断网验收用例
 6. 完成后：commit、push topic branch，并更新 Draft PR 与 ledger
 ```
 
@@ -148,4 +148,4 @@ curl -s -X POST "https://api.supabase.com/v1/projects/ijvrzxuffzxjtdetulnp/datab
 
 ---
 
-*本交接文档更新于 2026-08-24，基于 `codex/fittrack-m1` @ `63497543` 的状态。*
+*本交接文档更新于 2026-08-24，基于 `codex/fittrack-m1` @ `df7ebac5` 的状态。*
