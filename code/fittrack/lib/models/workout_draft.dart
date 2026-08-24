@@ -80,6 +80,15 @@ class WorkoutExerciseDraft {
   final int sortOrder;
   final List<WorkoutSetDraft> sets;
 
+  WorkoutExerciseDraft copyWith({List<WorkoutSetDraft>? sets}) {
+    return WorkoutExerciseDraft(
+      exerciseId: exerciseId,
+      exerciseName: exerciseName,
+      sortOrder: sortOrder,
+      sets: sets ?? this.sets,
+    );
+  }
+
   Map<String, Object> toJson() => {
     'exercise_id': exerciseId,
     'exercise_name': exerciseName,
@@ -115,6 +124,15 @@ class WorkoutSetDraft {
   final DateTime? completedAt;
 
   bool get isCompleted => completedAt != null;
+
+  WorkoutSetDraft copyWith({double? weight, int? reps, DateTime? completedAt}) {
+    return WorkoutSetDraft(
+      setIndex: setIndex,
+      weight: weight ?? this.weight,
+      reps: reps ?? this.reps,
+      completedAt: completedAt ?? this.completedAt,
+    );
+  }
 
   Map<String, Object?> toJson() => {
     'set_index': setIndex,

@@ -66,4 +66,25 @@ void main() {
     await database.deleteDraft(draft.localId);
     expect(await database.readDrafts('user-1'), isEmpty);
   });
+
+  test('更新单组数据不会丢失其余训练草稿', () {
+    final firstSet = const WorkoutSetDraft(setIndex: 0, weight: 40, reps: 10);
+    final secondSet = const WorkoutSetDraft(setIndex: 1, weight: 40, reps: 10);
+    final exercise = WorkoutExerciseDraft(
+      exerciseId: 'exercise-1',
+      exerciseName: '深蹲',
+      sortOrder: 0,
+      sets: [firstSet, secondSet],
+    );
+    final completed = firstSet.copyWith(
+      weight: 45,
+      completedAt: DateTime.utc(2026, 8, 24, 12),
+    );
+
+    final updated = exercise.copyWith(sets: [completed, secondSet]);
+
+    expect(updated.sets[0].weight, 45);
+    expect(updated.sets[0].isCompleted, isTrue);
+    expect(updated.sets[1], same(secondSet));
+  });
 }

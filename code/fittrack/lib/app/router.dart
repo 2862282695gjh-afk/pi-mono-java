@@ -6,6 +6,7 @@ import '../features/auth/login_screen.dart';
 import '../features/auth/signup_screen.dart';
 import '../features/home/home_screen.dart';
 import '../features/plans/plan_editor_screen.dart';
+import '../features/workouts/workout_session_screen.dart';
 import '../providers/auth_providers.dart';
 
 class RouterRefreshStream extends ChangeNotifier {
@@ -62,6 +63,11 @@ GoRouter buildRouter({
         path: '/plans/:planId/edit',
         builder: (context, state) =>
             PlanEditorScreen(planId: state.pathParameters['planId']),
+      ),
+      GoRoute(
+        path: '/workouts/:planId',
+        builder: (context, state) =>
+            WorkoutSessionScreen(planId: state.pathParameters['planId']!),
       ),
     ],
   );

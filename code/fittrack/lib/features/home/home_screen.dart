@@ -306,7 +306,7 @@ class _PlanCard extends StatelessWidget {
       borderRadius: BorderRadius.circular(24),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
-        onTap: () => context.go('/plans/${plan.id}/edit'),
+        onTap: () => context.go('/workouts/${plan.id}'),
         child: Padding(
           padding: const EdgeInsets.fromLTRB(18, 18, 14, 16),
           child: Column(
@@ -367,6 +367,29 @@ class _PlanCard extends StatelessWidget {
                     fontWeight: FontWeight.w800,
                   ),
                 ),
+              ),
+              const SizedBox(height: 14),
+              Row(
+                children: [
+                  const Icon(
+                    Icons.play_arrow_rounded,
+                    color: FitTrackTheme.forest,
+                    size: 19,
+                  ),
+                  const SizedBox(width: 4),
+                  const Text(
+                    '开始训练',
+                    style: TextStyle(
+                      color: FitTrackTheme.forest,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const Spacer(),
+                  TextButton(
+                    onPressed: () => context.go('/plans/${plan.id}/edit'),
+                    child: const Text('编排'),
+                  ),
+                ],
               ),
             ],
           ),
