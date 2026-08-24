@@ -20,6 +20,12 @@ public class CompactionProperties {
 
     private int keepRecentTokens = 20_000;
 
+    private boolean summaryRetryEnabled = true;
+
+    private int summaryMaxRetries = 3;
+
+    private long summaryRetryBaseDelayMs = 2_000L;
+
     public boolean isEnabled() {
         return enabled;
     }
@@ -48,5 +54,35 @@ public class CompactionProperties {
             throw new IllegalArgumentException("keepRecentTokens must be positive");
         }
         this.keepRecentTokens = keepRecentTokens;
+    }
+
+    public boolean isSummaryRetryEnabled() {
+        return summaryRetryEnabled;
+    }
+
+    public void setSummaryRetryEnabled(boolean summaryRetryEnabled) {
+        this.summaryRetryEnabled = summaryRetryEnabled;
+    }
+
+    public int getSummaryMaxRetries() {
+        return summaryMaxRetries;
+    }
+
+    public void setSummaryMaxRetries(int summaryMaxRetries) {
+        if (summaryMaxRetries < 0) {
+            throw new IllegalArgumentException("summaryMaxRetries must not be negative");
+        }
+        this.summaryMaxRetries = summaryMaxRetries;
+    }
+
+    public long getSummaryRetryBaseDelayMs() {
+        return summaryRetryBaseDelayMs;
+    }
+
+    public void setSummaryRetryBaseDelayMs(long summaryRetryBaseDelayMs) {
+        if (summaryRetryBaseDelayMs <= 0) {
+            throw new IllegalArgumentException("summaryRetryBaseDelayMs must be positive");
+        }
+        this.summaryRetryBaseDelayMs = summaryRetryBaseDelayMs;
     }
 }

@@ -11,89 +11,107 @@ import com.campusclaw.ai.types.AssistantMessage;
 import com.campusclaw.ai.types.StopReason;
 
 /**
- * Detects context overflow errors from LLM provider responses.
- * Aligned with TypeScript campusclaw utils/overflow.ts.
+ * 检测模型供应商返回的上下文溢出及可恢复截断响应。
  *
- * <p>Handles two cases:
- * <ol>
- *   <li>Error-based overflow: provider returns error with recognizable message pattern</li>
- *   <li>Silent overflow: provider accepts the request but usage exceeds context window (z.ai)</li>
- * </ol>
- *
- * @version [br_eCampusCore 26.0.0, 2026/05/06]
+ * @version [br_eCampusCore 26.0.0, 2026/08/24]
  * @since [br_eCampusCore 26.0.0]
  */
 public final class ContextOverflowDetector {
+    private static final int SILENT_OVERFLOW_PERCENT = 99;
+
+    private static final List<Pattern> OVERFLOW_PATTERNS = List.of(
+            pattern("prompt is too long"),
+            pattern("request_too_large"),
+            pattern("input is too long for requested model"),
+            pattern("exceeds the context window"),
+            pattern("exceeds (?:the )?(?:model'?s )?maximum context length(?: of [\\d,]+ tokens?|\\s*\\([\\d,]+\\))"),
+            pattern("input token count.*exceeds the maximum"),
+            pattern("maximum prompt length is \\d+"),
+            pattern("reduce the length of the messages"),
+            pattern("maximum context length is \\d+ tokens"),
+            pattern("exceeds (?:the )?maximum allowed input length of [\\d,]+ tokens?"),
+            pattern("input \\(\\d+ tokens\\) is longer than the model'?s context length \\(\\d+ tokens\\)"),
+            pattern("exceeds the limit of \\d+"),
+            pattern("exceeds the available context size"),
+            pattern("greater than the context length"),
+            pattern("context window exceeds limit"),
+            pattern("exceeded model token limit"),
+            pattern("too large for model with \\d+ maximum context length"),
+            pattern("prompt has [\\d,]+ tokens?, but the configured context size is [\\d,]+ tokens?"),
+            pattern("model_context_window_exceeded"),
+            pattern("prompt too long; exceeded (?:max )?context length"),
+            pattern("range of input length should be"),
+            pattern("context[_ ]length[_ ]exceeded"),
+            pattern("too many tokens"),
+            pattern("token limit exceeded"),
+            pattern("^4(?:00|13)\\s*(?:status code)?\\s*\\(no body\\)"));
+
+    private static final List<Pattern> NON_OVERFLOW_PATTERNS = List.of(
+            pattern("^(Throttling error|Service unavailable):"), pattern("rate limit"), pattern("too many requests"));
 
     private ContextOverflowDetector() {}
 
-    private static final List<Pattern> OVERFLOW_PATTERNS = List.of(
-            Pattern.compile("prompt is too long", Pattern.CASE_INSENSITIVE), // Anthropic
-            Pattern.compile("input is too long for requested model", Pattern.CASE_INSENSITIVE), // Bedrock
-            Pattern.compile("exceeds the context window", Pattern.CASE_INSENSITIVE), // OpenAI
-            Pattern.compile("input token count.*exceeds the maximum", Pattern.CASE_INSENSITIVE), // Google
-            Pattern.compile("maximum prompt length is \\d+", Pattern.CASE_INSENSITIVE), // xAI
-            Pattern.compile("reduce the length of the messages", Pattern.CASE_INSENSITIVE), // Groq
-            Pattern.compile("maximum context length is \\d+ tokens", Pattern.CASE_INSENSITIVE), // OpenRouter
-            Pattern.compile("exceeds the limit of \\d+", Pattern.CASE_INSENSITIVE), // Copilot
-            Pattern.compile("exceeds the available context size", Pattern.CASE_INSENSITIVE), // llama.cpp
-            Pattern.compile("greater than the context length", Pattern.CASE_INSENSITIVE), // LM Studio
-            Pattern.compile("context window exceeds limit", Pattern.CASE_INSENSITIVE), // MiniMax
-            Pattern.compile("exceeded model token limit", Pattern.CASE_INSENSITIVE), // Kimi
-            Pattern.compile(
-                    "too large for model with \\d+ maximum context length", Pattern.CASE_INSENSITIVE), // Mistral
-            Pattern.compile("model_context_window_exceeded", Pattern.CASE_INSENSITIVE), // z.ai
-            Pattern.compile("prompt too long; exceeded (?:max )?context length", Pattern.CASE_INSENSITIVE), // Ollama
-            Pattern.compile("context[_ ]length[_ ]exceeded", Pattern.CASE_INSENSITIVE), // Generic
-            Pattern.compile("too many tokens", Pattern.CASE_INSENSITIVE), // Generic
-            Pattern.compile("token limit exceeded", Pattern.CASE_INSENSITIVE) // Generic
-            );
-
-    private static final Pattern CEREBRAS_PATTERN =
-            Pattern.compile("^4(00|13)\\s*(status code)?\\s*\\(no body\\)", Pattern.CASE_INSENSITIVE);
-
     /**
-     * Check if an assistant message represents a context overflow error.
+     * 判断响应是否表示上下文溢出。
      *
-     * @param message       the assistant message to check
-     * @param contextWindow optional context window size for silent overflow detection (0 to skip)
-     * @return true if the message indicates context overflow
+     * @param message 待检查的 Assistant 响应
+     * @param contextWindow 当前模型上下文窗口；零表示不检查 Usage 信号
+     * @return 显式、静默或 Xiaomi length 溢出时返回 {@code true}
      */
     public static boolean isContextOverflow(AssistantMessage message, int contextWindow) {
-        // Case 1: Error message patterns
-        if (message.stopReason() == StopReason.ERROR && message.errorMessage() != null) {
-            String error = message.errorMessage();
-            for (Pattern p : OVERFLOW_PATTERNS) {
-                if (p.matcher(error).find()) {
-                    return true;
-                }
-            }
-
-            // Cerebras: 400/413 with no body
-            if (CEREBRAS_PATTERN.matcher(error).find()) {
-                return true;
-            }
+        if (hasOverflowError(message)) {
+            return true;
         }
-
-        // Case 2: Silent overflow (z.ai style)
-        if (contextWindow > 0 && message.stopReason() == StopReason.STOP) {
-            int inputTokens = message.usage().input() + message.usage().cacheRead();
-            if (inputTokens > contextWindow) {
-                return true;
-            }
+        if (contextWindow <= 0 || message.usage() == null) {
+            return false;
         }
-
-        return false;
+        int inputTokens = message.usage().input() + message.usage().cacheRead();
+        if (message.stopReason() == StopReason.STOP) {
+            return inputTokens > contextWindow;
+        }
+        return message.stopReason() == StopReason.LENGTH
+                && message.usage().output() == 0
+                && (long) inputTokens * 100L >= (long) contextWindow * SILENT_OVERFLOW_PERCENT;
     }
 
     /**
-     * Check if an assistant message represents a context overflow error.
-     * Does not check for silent overflow.
+     * 只检查响应中的显式溢出信号。
      *
-     * @param message the assistant message to inspect
-     * @return {@code true} when the message indicates an overt context-overflow error
+     * @param message 待检查的 Assistant 响应
+     * @return 错误文本命中溢出信号时返回 {@code true}
      */
     public static boolean isContextOverflow(AssistantMessage message) {
         return isContextOverflow(message, 0);
+    }
+
+    /**
+     * 判断 length 响应是否在目标输出上限之前结束。
+     *
+     * @param message 待检查的 Assistant 响应
+     * @param desiredMaxOutput 上下文裁剪前的模型原始输出上限
+     * @return 允许执行一次压缩后重试时返回 {@code true}
+     */
+    public static boolean isRecoverableLength(AssistantMessage message, int desiredMaxOutput) {
+        return message.stopReason() == StopReason.LENGTH
+                && desiredMaxOutput > 0
+                && message.usage() != null
+                && message.usage().output() < desiredMaxOutput;
+    }
+
+    private static boolean hasOverflowError(AssistantMessage message) {
+        if (message.stopReason() != StopReason.ERROR || message.errorMessage() == null) {
+            return false;
+        }
+        String error = message.errorMessage();
+        if (NON_OVERFLOW_PATTERNS.stream()
+                .anyMatch(candidate -> candidate.matcher(error).find())) {
+            return false;
+        }
+        return OVERFLOW_PATTERNS.stream()
+                .anyMatch(candidate -> candidate.matcher(error).find());
+    }
+
+    private static Pattern pattern(String expression) {
+        return Pattern.compile(expression, Pattern.CASE_INSENSITIVE);
     }
 }
