@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../features/auth/login_screen.dart';
 import '../features/auth/signup_screen.dart';
 import '../features/home/home_screen.dart';
+import '../features/history/history_screen.dart';
 import '../features/plans/plan_editor_screen.dart';
 import '../features/workouts/workout_session_screen.dart';
 import '../providers/auth_providers.dart';
@@ -55,6 +56,15 @@ GoRouter buildRouter({
         builder: (context, state) => const SignupScreen(),
       ),
       GoRoute(path: '/', builder: (context, state) => const HomeScreen()),
+      GoRoute(
+        path: '/history',
+        builder: (context, state) => const HistoryScreen(),
+      ),
+      GoRoute(
+        path: '/history/:sessionId',
+        builder: (context, state) =>
+            HistoryDetailScreen(sessionId: state.pathParameters['sessionId']!),
+      ),
       GoRoute(
         path: '/plans/new',
         builder: (context, state) => const PlanEditorScreen(),

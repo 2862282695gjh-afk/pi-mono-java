@@ -210,6 +210,17 @@ class _TopBar extends StatelessWidget {
           ),
         ),
         IconButton(
+          onPressed: () => context.go('/history'),
+          tooltip: '训练历史',
+          icon: const Icon(Icons.insights_rounded),
+          style: IconButton.styleFrom(
+            backgroundColor: Colors.white,
+            foregroundColor: FitTrackTheme.ink,
+            side: const BorderSide(color: FitTrackTheme.line),
+          ),
+        ),
+        const SizedBox(width: 6),
+        IconButton(
           onPressed: onSignOut,
           tooltip: '登出',
           icon: const Icon(Icons.more_horiz_rounded),
