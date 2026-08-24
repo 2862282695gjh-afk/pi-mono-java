@@ -90,14 +90,14 @@ class RuntimeEventServiceTest {
     void treatsSlashPrefixedTextAsOrdinaryUserMessage() {
         Fixture fixture = new Fixture();
 
-        RuntimeEventStream stream = fixture.service.submit(
-                SESSION_ID, request("/model model-b", List.of()), Locale.US);
+        RuntimeEventStream stream = fixture.service.submit(SESSION_ID, request("/model model-b", List.of()), Locale.US);
         fixture.agentFuture.complete(null);
         fixture.execution.completion().join();
 
         ArgumentCaptor<UserMessage> message = ArgumentCaptor.forClass(UserMessage.class);
         verify(fixture.agent).prompt(message.capture());
-        assertThat(((TextContent) message.getValue().content().getFirst()).text()).isEqualTo("/model model-b");
+        assertThat(((TextContent) message.getValue().content().getFirst()).text())
+                .isEqualTo("/model model-b");
         assertThat(collect(stream))
                 .extracting(RuntimeSseEventVO::getEvent)
                 .containsExactly("user.message", "session.status.idle", "stream.end");
