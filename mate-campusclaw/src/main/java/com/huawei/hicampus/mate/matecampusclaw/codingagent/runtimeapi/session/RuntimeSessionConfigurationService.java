@@ -7,6 +7,8 @@ package com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.session;
 import java.time.Clock;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
+import java.util.List;
 
 import com.huawei.hicampus.mate.matecampusclaw.ai.types.Model;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.agent.AgentDirectoryResolver;
@@ -14,6 +16,8 @@ import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.agent.Agen
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.event.RuntimeEntryCodec;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.event.RuntimeEntryIdGenerator;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.model.RuntimeModelManager;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.persistence.RuntimeSessionRepository;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.persistence.SessionConfigurationUpdate;
@@ -42,6 +46,10 @@ public class RuntimeSessionConfigurationService {
 
     private final RuntimeSessionResponseAssembler responseAssembler;
 
+    private final RuntimeEntryCodec entryCodec;
+
+    private final RuntimeEntryIdGenerator entryIdGenerator;
+
     private final Clock clock;
 
     public RuntimeSessionConfigurationService(
@@ -50,12 +58,16 @@ public class RuntimeSessionConfigurationService {
             RuntimeModelManager modelManager,
             SessionEtagFactory etagFactory,
             RuntimeSessionResponseAssembler responseAssembler,
+            RuntimeEntryCodec entryCodec,
+            RuntimeEntryIdGenerator entryIdGenerator,
             Clock clock) {
         this.repository = repository;
         this.agentDirectoryResolver = agentDirectoryResolver;
         this.modelManager = modelManager;
         this.etagFactory = etagFactory;
         this.responseAssembler = responseAssembler;
+        this.entryCodec = entryCodec;
+        this.entryIdGenerator = entryIdGenerator;
         this.clock = clock;
     }
 
@@ -71,8 +83,14 @@ public class RuntimeSessionConfigurationService {
         try {
             RuntimeSessionDTO current = requireMutableSession(sessionId, ifMatch);
             Model model = modelManager.resolveAvailableModel(resolveAgent(current), request.getModelId());
+            OffsetDateTime updatedAt = now();
             SessionConfigurationUpdate update = repository.updateModel(
-                    sessionId, current.getResourceVersion(), model.id(), model.reasoning(), now());
+                    sessionId,
+                    current.getResourceVersion(),
+                    model.id(),
+                    model.reasoning(),
+                    modelChangeEntries(current, model, "requested", updatedAt),
+                    updatedAt);
             return responseAssembler.getView(requireUpdated(update));
         } catch (RuntimeApiException error) {
             throw error;
@@ -87,8 +105,16 @@ public class RuntimeSessionConfigurationService {
         try {
             RuntimeSessionDTO current = requireMutableSession(sessionId, ifMatch);
             requireThinkingSupported(current, request.getThinking());
-            SessionConfigurationUpdate update =
-                    repository.updateThinking(sessionId, current.getResourceVersion(), request.getThinking(), now());
+            OffsetDateTime updatedAt = now();
+            var entry = entryCodec.thinkingChangedEntry(
+                    sessionId,
+                    entryIdGenerator.nextId(),
+                    current.isThinking(),
+                    request.getThinking(),
+                    "requested",
+                    updatedAt);
+            SessionConfigurationUpdate update = repository.updateThinking(
+                    sessionId, current.getResourceVersion(), request.getThinking(), entry, updatedAt);
             return responseAssembler.getView(requireUpdated(update));
         } catch (RuntimeApiException error) {
             throw error;
@@ -118,6 +144,24 @@ public class RuntimeSessionConfigurationService {
 
     private AgentDirectorySnapshotDTO resolveAgent(RuntimeSessionDTO session) {
         return agentDirectoryResolver.resolve(session.getAgentId());
+    }
+
+    private List<com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.dto.RuntimeEntryDTO> modelChangeEntries(
+            RuntimeSessionDTO current, Model model, String reason, OffsetDateTime updatedAt) {
+        List<com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.dto.RuntimeEntryDTO> entries = new ArrayList<>();
+        entries.add(entryCodec.modelChangedEntry(
+                current.getId(), entryIdGenerator.nextId(), current.getModelId(), model.id(), reason, updatedAt));
+        boolean nextThinking = current.isThinking() && model.reasoning();
+        if (current.isThinking() != nextThinking) {
+            entries.add(entryCodec.thinkingChangedEntry(
+                    current.getId(),
+                    entryIdGenerator.nextId(),
+                    current.isThinking(),
+                    nextThinking,
+                    "modelCapability",
+                    updatedAt));
+        }
+        return List.copyOf(entries);
     }
 
     private void requireThinkingSupported(RuntimeSessionDTO session, boolean requested) {

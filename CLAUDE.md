@@ -47,7 +47,7 @@ ai ──→ agent-core ──→ cron ──→ coding-agent-cli
 Key runtime concepts:
 - **Startup model**: `java -jar` starts the Spring Boot MVC HTTP+SSE service. There is no alternate CLI Spring context or mode dispatcher.
 - **Tool management**: `BuiltInToolName` closes the model-visible set to `Read`, `Find`, `Grep`, `Ls`, `Cron`, `ListMateTools`, `CallMateTool`, and `Agent`. Runtime, Cron, and Child profiles are strict. `ToolExecutionMode` controls only sequential versus parallel scheduling.
-- **Extensibility**: `PackageManager` retains Skill package discovery. Dynamic Java Extension and ToolCatalog registration are removed. Mate tools are discovered in real time and invoked by name.
+- **Extensibility**: `PackageManager` and local Skill installation/import are removed. Managed Skill metadata is read only from the Agent runtime directory prepared by `AgentRuntimeManager`; Mate tools are discovered in real time and invoked by name.
 - **Session assembly**: Runtime HTTP, Cron trigger, and Child Execution all use `AgentSessionFactory`; Host persistence and lifecycle remain outside the common Session.
 - **Reactive stack**: `ai` and `agent-core` use Reactor `Mono/Flux` throughout for streaming LLM responses. Don't `.block()` on the event stream path.
 

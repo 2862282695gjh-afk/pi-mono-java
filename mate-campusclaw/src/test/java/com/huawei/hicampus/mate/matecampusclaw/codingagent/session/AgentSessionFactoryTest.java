@@ -64,7 +64,12 @@ class AgentSessionFactoryTest {
         AgentRuntimeManager runtimeManager = mock(AgentRuntimeManager.class);
         when(runtimeManager.prepare(runtime.agentId())).thenReturn(runtime);
         AgentSessionFactory factory = new AgentSessionFactory(
-                mock(CampusClawAiService.class), runtimeManager, assembler, provider, promptLoader);
+                mock(CampusClawAiService.class),
+                runtimeManager,
+                assembler,
+                provider,
+                promptLoader,
+                mock(com.huawei.hicampus.mate.matecampusclaw.codingagent.session.compaction.SessionCompactor.class));
         ManagedAgentSessionRequest request = ManagedAgentSessionRequest.create(
                 runtime.agentId(), ToolEntryPoint.RUNTIME, model(), ThinkingLevel.MEDIUM);
 

@@ -84,13 +84,13 @@ class RuntimeEventQueryServiceTest {
         RuntimeEntryDTO last = entry(501L);
         Model model = mock(Model.class);
         List<Message> restored = List.of(new UserMessage("restored", 0L));
-        when(repository.listCurrentBranch(SESSION_ID, 0L, 500, false)).thenReturn(firstBatch);
-        when(repository.listCurrentBranch(SESSION_ID, 500L, 500, false)).thenReturn(List.of(last));
+        when(repository.listCurrentBranchEntries(SESSION_ID, 0L, 500)).thenReturn(firstBatch);
+        when(repository.listCurrentBranchEntries(SESSION_ID, 500L, 500)).thenReturn(List.of(last));
         when(codec.toAgentMessages(any(), any())).thenReturn(restored);
 
         assertThat(service.restoreHistory(SESSION_ID, model)).isSameAs(restored);
 
-        verify(repository).listCurrentBranch(SESSION_ID, 500L, 500, false);
+        verify(repository).listCurrentBranchEntries(SESSION_ID, 500L, 500);
         verify(codec)
                 .toAgentMessages(
                         org.mockito.ArgumentMatchers.<List<RuntimeEntryDTO>>argThat(entries -> entries.size() == 501),

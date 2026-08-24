@@ -1,12 +1,14 @@
 # CampusClaw 模块架构
 
-> 文档版本：2.0.0
+> 文档版本：2.1.0
 >
 > 状态：Implemented
 >
 > 更新日期：2026-08-24
 >
 > 实现前源码基线：`d649866a6cae967ace18ceaeb9597edd47e5721e`
+>
+> PR 167 修订基线：`f60cc3e78bb8b700527ac082c7c8e10524ede095`
 
 ## 1. 结论
 
@@ -87,6 +89,8 @@ Spring Boot 服务装配模块。目录名保留 `cli` 仅为避免当前构建�
 |---|---|
 | `com.campusclaw.codingagent.runtimeapi` | Runtime HTTP、SSE、Session 持久化和执行 Host |
 | `com.campusclaw.codingagent.session` | 三入口公共 AgentSessionFactory |
+| `com.campusclaw.codingagent.session.compaction` | 公共上下文压缩与 Read 文件追踪 |
+| `com.campusclaw.codingagent.command` | 未注册的宿主无关 Slash Command 核心与四个处理器 |
 | `com.campusclaw.codingagent.runtime` | 受管目录 prepare/refresh 和 CampusMate 客户端 |
 | `com.campusclaw.codingagent.tool.builtin` | 八工具关闭枚举、严格配置和装配器 |
 | `com.campusclaw.codingagent.tool.ops` | 不调用 shell 的只读文件操作 |
@@ -96,8 +100,9 @@ Spring Boot 服务装配模块。目录名保留 `cli` 仅为避免当前构建�
 | `com.campusclaw.codingagent.skill` | Skill 目录解析和提示词格式化 |
 | `com.campusclaw.codingagent.model` | 服务端可用模型目录 |
 
-本模块不再包含 Picocli、TUI、RPC、Slash Command、终端 Session JSONL、Extension、动态
-ToolCatalog 或用户级认证设置链。
+本模块不再包含 Picocli、TUI、RPC、终端 Session JSONL、Extension、动态 ToolCatalog 或用户级
+认证设置链。Slash Command 核心不是产品入口：首版无 Host 注册，不增加 HTTP 路由，也不解析
+普通用户消息。
 
 ## 4. 运行与持久化边界
 
@@ -122,5 +127,6 @@ ToolCatalog 或用户级认证设置链。
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 2.1.0 | 2026-08-24 | 按职责修订 TUI 删除边界，保留未注册 Slash 核心并把压缩迁入公共 Session |
 | 2.0.0 | 2026-08-24 | 收敛为四个 Java 模块和纯服务入口，删除 TUI/CLI 与动态扩展描述 |
 | 1.x | 2026-08-24 以前 | 五模块终端 Agent 架构，已由工具系统 v2 取代 |

@@ -83,14 +83,14 @@ public class SubagentExecutionService {
                 List.of(),
                 List.of());
         try (ManagedAgentSession session = sessionFactory.create(request)) {
-            signal.onCancel(session.agent()::abort);
+            signal.onCancel(session::abort);
             Runnable unsubscribe = session.agent().subscribe(event -> projectProgress(event, onUpdate));
             onUpdate.onUpdate(textResult("Child Agent started: " + agentName));
             if (signal.isCancelled()) {
                 throw new IllegalStateException("Child Agent execution was cancelled");
             }
             try {
-                session.agent().prompt(task).join();
+                session.prompt(task).join();
             } catch (CompletionException exception) {
                 throw propagate(exception);
             } finally {

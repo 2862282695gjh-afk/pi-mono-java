@@ -96,6 +96,7 @@ class RuntimeEventRoutesTest {
                 .andExpect(status().isOk())
                 .andExpect(request().asyncStarted())
                 .andReturn();
+        initial.getAsyncResult(1_000L);
 
         String body = mvc.perform(asyncDispatch(initial))
                 .andExpect(status().isOk())

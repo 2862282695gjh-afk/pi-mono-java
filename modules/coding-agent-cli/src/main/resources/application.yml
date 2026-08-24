@@ -60,6 +60,10 @@ campusclaw:
       - ListMateTools
       - CallMateTool
   runtime:
+    compaction:
+      enabled: ${CAMPUSCLAW_COMPACTION_ENABLED:true}
+      reserve-tokens: ${CAMPUSCLAW_COMPACTION_RESERVE_TOKENS:16384}
+      keep-recent-tokens: ${CAMPUSCLAW_COMPACTION_KEEP_RECENT_TOKENS:20000}
     execution:
       max-active: ${CAMPUSCLAW_MAX_ACTIVE_EXECUTIONS:100}
       max-duration: ${CAMPUSCLAW_MAX_EXECUTION_DURATION:PT30M}

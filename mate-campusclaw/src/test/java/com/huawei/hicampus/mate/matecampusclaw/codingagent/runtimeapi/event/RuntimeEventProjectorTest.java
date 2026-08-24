@@ -23,6 +23,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import com.huawei.hicampus.mate.matecampusclaw.agent.Agent;
 import com.huawei.hicampus.mate.matecampusclaw.agent.event.MessageStartEvent;
 import com.huawei.hicampus.mate.matecampusclaw.agent.event.MessageUpdateEvent;
+import com.huawei.hicampus.mate.matecampusclaw.agent.event.ToolExecutionUpdateEvent;
 import com.huawei.hicampus.mate.matecampusclaw.agent.tool.AgentTool;
 import com.huawei.hicampus.mate.matecampusclaw.agent.tool.AgentToolResult;
 import com.huawei.hicampus.mate.matecampusclaw.agent.tool.AgentToolUpdateCallback;
@@ -151,6 +152,25 @@ class RuntimeEventProjectorTest {
         assertThat(collect(disabledStream))
                 .extracting(RuntimeSseEventVO::getEvent)
                 .containsExactly("assistant.message.started");
+    }
+
+    @Test
+    void projectsToolDeltaWithoutArgumentsOrPersistence() {
+        RuntimeSessionRepository repository = mock(RuntimeSessionRepository.class);
+        RuntimeEventStream stream = eventStream();
+        RuntimeEventProjector projector = projector(repository, stream, false);
+
+        projector.onEvent(new ToolExecutionUpdateEvent(
+                "call_201", "Read", Map.of("path", "/secret/input.txt"), Map.of("line", "partial")));
+        stream.complete();
+
+        RuntimeSseEventVO delta = event(collect(stream), "tool.execution.delta");
+        assertThat(delta.getData())
+                .containsEntry("toolCallId", "call_201")
+                .containsEntry("toolName", "Read")
+                .containsEntry("delta", Map.of("line", "partial"))
+                .doesNotContainKeys("args", "path");
+        verify(repository, org.mockito.Mockito.never()).appendEntry(any());
     }
 
     private static RuntimeEventProjector projector(

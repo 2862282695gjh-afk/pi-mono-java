@@ -108,7 +108,7 @@ class ManagedCronSessionRunnerTest {
                 null,
                 1)));
         when(session.agent()).thenReturn(agent);
-        when(agent.prompt(any(String.class))).thenReturn(CompletableFuture.completedFuture(null));
+        when(session.prompt(any(String.class))).thenReturn(CompletableFuture.completedFuture(null));
         when(agent.getState()).thenReturn(state);
         return session;
     }

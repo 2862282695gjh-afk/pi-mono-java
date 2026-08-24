@@ -64,7 +64,7 @@ public class ManagedCronSessionRunner implements CronAgentSessionRunner {
                 List.of(),
                 List.of());
         try (ManagedAgentSession session = sessionFactory.create(request)) {
-            session.agent().prompt(prompt).join();
+            session.prompt(prompt).join();
             return extractAnswer(session);
         }
     }

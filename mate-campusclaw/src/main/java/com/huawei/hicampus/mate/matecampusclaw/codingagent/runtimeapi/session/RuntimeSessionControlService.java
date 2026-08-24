@@ -104,7 +104,7 @@ public class RuntimeSessionControlService {
                     .orElseThrow(() -> new RuntimeApiException(RuntimeErrorCode.SESSION_EXECUTION_UNAVAILABLE));
             execution.requestAbort();
             clearControlQueues(holder);
-            holder.agent().abort();
+            holder.abort();
             return execution.completion();
         } finally {
             engineRegistry.unlockOperation(sessionId);

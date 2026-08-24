@@ -18,6 +18,7 @@ import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.error.Runt
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.persistence.RuntimeSessionRepository;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.persistence.UserEventAcceptance;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.runtime.RuntimeSessionEngineRegistry;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.session.RuntimeSessionModelReconciler;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.session.RuntimeSessionState;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.vo.RuntimeSseEventVO;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.vo.UserEventRequestVO;
@@ -44,6 +45,8 @@ public class RuntimeEventService {
 
     private final RuntimeExecutionCoordinator executionCoordinator;
 
+    private final RuntimeSessionModelReconciler modelReconciler;
+
     private final Clock clock;
 
     public RuntimeEventService(
@@ -53,6 +56,7 @@ public class RuntimeEventService {
             RuntimeSessionEngineRegistry engineRegistry,
             RuntimeExecutionContextFactory executionContextFactory,
             RuntimeExecutionCoordinator executionCoordinator,
+            RuntimeSessionModelReconciler modelReconciler,
             Clock clock) {
         this.repository = repository;
         this.codec = codec;
@@ -60,6 +64,7 @@ public class RuntimeEventService {
         this.engineRegistry = engineRegistry;
         this.executionContextFactory = executionContextFactory;
         this.executionCoordinator = executionCoordinator;
+        this.modelReconciler = modelReconciler;
         this.clock = clock;
     }
 
@@ -78,7 +83,14 @@ public class RuntimeEventService {
         RuntimeExecutionContext context = null;
         try {
             RuntimeSessionDTO session = requireIdleSession(sessionId);
-            context = executionContextFactory.create(session, request.message(), request.fileIds());
+            var reconciled = modelReconciler.reconcile(session);
+            context = executionContextFactory.create(
+                    reconciled.session(),
+                    reconciled.agentSnapshot(),
+                    reconciled.model(),
+                    request.message(),
+                    request.fileIds());
+            emitConfigurationEntries(context.execution().eventStream(), reconciled.configurationEntries());
             acceptUserEntry(sessionId, request, context);
             executionCoordinator.start(context.holder(), context.execution(), context.userMessage(), locale);
             return context.execution().eventStream();
@@ -87,6 +99,13 @@ public class RuntimeEventService {
             throw error;
         } finally {
             engineRegistry.unlockOperation(sessionId);
+        }
+    }
+
+    private void emitConfigurationEntries(RuntimeEventStream stream, List<RuntimeEntryDTO> entries) {
+        for (RuntimeEntryDTO entry : entries) {
+            stream.emit(
+                    new RuntimeSseEventVO(Long.toString(entry.getEntrySeq()), entry.getType(), codec.toSseData(entry)));
         }
     }
 

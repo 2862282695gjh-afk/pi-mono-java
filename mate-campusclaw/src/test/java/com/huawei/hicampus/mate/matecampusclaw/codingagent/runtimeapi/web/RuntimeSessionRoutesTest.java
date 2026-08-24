@@ -158,13 +158,13 @@ class RuntimeSessionRoutesTest {
 
     private static RuntimeSessionView<CreateSessionResponseVO> createView() {
         OffsetDateTime time = OffsetDateTime.parse("2026-08-18T00:00:00Z");
-        var response = new CreateSessionResponseVO(SESSION_ID, AGENT_ID, "model-default", "idle", true, time);
+        var response = new CreateSessionResponseVO(SESSION_ID, AGENT_ID, "model-default", "idle", true, null, time);
         return new RuntimeSessionView<>(response, "\"snp-create\"");
     }
 
     private static RuntimeSessionView<GetSessionResponseVO> getView() {
         OffsetDateTime time = OffsetDateTime.parse("2026-08-18T00:00:00Z");
-        var response = new GetSessionResponseVO(SESSION_ID, AGENT_ID, "model-default", "idle", false, time, time);
+        var response = new GetSessionResponseVO(SESSION_ID, AGENT_ID, "model-default", "idle", false, null, time, time);
         return new RuntimeSessionView<>(response, "\"snp-resource\"");
     }
 }

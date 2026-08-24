@@ -13,6 +13,8 @@ import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.dto.Runtim
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.mapper.RuntimeSessionMapper;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.persistence.UserEventAcceptance.Status;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.session.RuntimeSessionState;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
@@ -27,8 +29,11 @@ import org.springframework.transaction.annotation.Transactional;
 public class MyBatisRuntimeSessionRepository implements RuntimeSessionRepository {
     private final RuntimeSessionMapper mapper;
 
-    public MyBatisRuntimeSessionRepository(RuntimeSessionMapper mapper) {
+    private final ObjectMapper objectMapper;
+
+    public MyBatisRuntimeSessionRepository(RuntimeSessionMapper mapper, ObjectMapper objectMapper) {
         this.mapper = mapper;
+        this.objectMapper = objectMapper;
     }
 
     @Override
@@ -39,12 +44,17 @@ public class MyBatisRuntimeSessionRepository implements RuntimeSessionRepository
         }
         mapper.insertSession(session);
         mapper.insertSequence(session.getId());
+        mapper.insertMaterialized(session.getId(), materializedPayload(session));
     }
 
     @Override
     @Transactional(readOnly = true)
     public Optional<RuntimeSessionDTO> find(String sessionId) {
-        return Optional.ofNullable(mapper.findSession(sessionId));
+        RuntimeSessionDTO session = mapper.findSession(sessionId);
+        if (session != null) {
+            session.setLifetimeUsage(readUsage(mapper.findLifetimeUsage(sessionId)));
+        }
+        return Optional.ofNullable(session);
     }
 
     @Override
@@ -76,6 +86,7 @@ public class MyBatisRuntimeSessionRepository implements RuntimeSessionRepository
         }
         appendLocked(session, entry);
         requireOne(mapper.updateActiveLeaf(entry.getSessionId(), entry.getId()), "session active leaf was not updated");
+        accumulateUsage(entry);
         return entry;
     }
 
@@ -93,12 +104,19 @@ public class MyBatisRuntimeSessionRepository implements RuntimeSessionRepository
     }
 
     @Override
+    @Transactional(readOnly = true)
+    public List<RuntimeEntryDTO> listCurrentBranchEntries(String sessionId, long afterSeq, int limit) {
+        return mapper.listCurrentBranchEntries(sessionId, afterSeq, limit);
+    }
+
+    @Override
     @Transactional
     public SessionConfigurationUpdate updateModel(
             String sessionId,
             long expectedVersion,
             String modelId,
             boolean modelSupportsThinking,
+            List<RuntimeEntryDTO> entries,
             OffsetDateTime updatedAt) {
         RuntimeSessionDTO session = mapper.lockSessionForUpdate(sessionId);
         SessionConfigurationUpdate rejected = rejectConfigurationUpdate(session, expectedVersion);
@@ -109,6 +127,7 @@ public class MyBatisRuntimeSessionRepository implements RuntimeSessionRepository
         requireOne(mapper.updateSessionModel(sessionId, modelId, thinking, updatedAt), "session model was not updated");
         session.setModelId(modelId);
         session.setThinking(thinking);
+        appendConfigurationEntries(session, entries);
         markConfigurationUpdated(session, updatedAt);
         return updated(session);
     }
@@ -116,7 +135,7 @@ public class MyBatisRuntimeSessionRepository implements RuntimeSessionRepository
     @Override
     @Transactional
     public SessionConfigurationUpdate updateThinking(
-            String sessionId, long expectedVersion, boolean thinking, OffsetDateTime updatedAt) {
+            String sessionId, long expectedVersion, boolean thinking, RuntimeEntryDTO entry, OffsetDateTime updatedAt) {
         RuntimeSessionDTO session = mapper.lockSessionForUpdate(sessionId);
         SessionConfigurationUpdate rejected = rejectConfigurationUpdate(session, expectedVersion);
         if (rejected != null || session.isThinking() == thinking) {
@@ -126,6 +145,7 @@ public class MyBatisRuntimeSessionRepository implements RuntimeSessionRepository
                 mapper.updateSessionThinking(sessionId, thinking, updatedAt),
                 "session thinking setting was not updated");
         session.setThinking(thinking);
+        appendConfigurationEntries(session, List.of(entry));
         markConfigurationUpdated(session, updatedAt);
         return updated(session);
     }
@@ -181,6 +201,55 @@ public class MyBatisRuntimeSessionRepository implements RuntimeSessionRepository
         entry.setEntrySeq(sequence);
         requireOne(mapper.insertEntry(entry), "runtime entry was not inserted");
         requireOne(mapper.incrementSequence(session.getId()), "session sequence was not incremented");
+        session.setActiveLeafId(entry.getId());
+    }
+
+    private void appendConfigurationEntries(RuntimeSessionDTO session, List<RuntimeEntryDTO> entries) {
+        for (RuntimeEntryDTO entry : entries) {
+            appendLocked(session, entry);
+            accumulateUsage(entry);
+        }
+        if (!entries.isEmpty()) {
+            requireOne(
+                    mapper.updateActiveLeafAnyState(session.getId(), session.getActiveLeafId()),
+                    "session active leaf was not updated");
+        }
+    }
+
+    private void accumulateUsage(RuntimeEntryDTO entry) {
+        if (entry.getUsage() == null) {
+            return;
+        }
+        var current = readUsage(mapper.lockLifetimeUsage(entry.getSessionId()));
+        var accumulated = RuntimeUsageAccumulator.add(current, entry.getUsage());
+        requireOne(
+                mapper.updateLifetimeUsage(entry.getSessionId(), writeJson(accumulated)),
+                "session lifetime usage was not updated");
+    }
+
+    private String materializedPayload(RuntimeSessionDTO session) {
+        var payload = objectMapper.createObjectNode();
+        payload.set("lifetimeUsage", objectMapper.valueToTree(session.getLifetimeUsage()));
+        return writeJson(payload);
+    }
+
+    private com.huawei.hicampus.mate.matecampusclaw.ai.types.Usage readUsage(String value) {
+        if (value == null || value.isBlank()) {
+            return com.huawei.hicampus.mate.matecampusclaw.ai.types.Usage.empty();
+        }
+        try {
+            return objectMapper.readValue(value, com.huawei.hicampus.mate.matecampusclaw.ai.types.Usage.class);
+        } catch (JsonProcessingException error) {
+            throw new IllegalStateException("session lifetime usage is invalid", error);
+        }
+    }
+
+    private String writeJson(Object value) {
+        try {
+            return objectMapper.writeValueAsString(value);
+        } catch (JsonProcessingException error) {
+            throw new IllegalStateException("runtime persistence value cannot be serialized", error);
+        }
     }
 
     private static void requireOne(int affectedRows, String message) {

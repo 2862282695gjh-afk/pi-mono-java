@@ -88,7 +88,7 @@ class RuntimeSessionRepositoryOpenGaussIT {
         assertThat(repository.find(session.getId())).contains(session);
         assertThat(countSession(session.getId())).isOne();
         assertThat(count("t_session_sequences", session.getId())).isOne();
-        assertThat(count("t_session_materialized", session.getId())).isZero();
+        assertThat(count("t_session_materialized", session.getId())).isOne();
     }
 
     @Test
@@ -294,7 +294,8 @@ class RuntimeSessionRepositoryOpenGaussIT {
         repository.create(session);
         OffsetDateTime updatedAt = session.getCreatedAt().plusMinutes(1);
 
-        SessionConfigurationUpdate update = repository.updateModel(session.getId(), 1L, "model-next", false, updatedAt);
+        SessionConfigurationUpdate update =
+                repository.updateModel(session.getId(), 1L, "model-next", false, List.of(), updatedAt);
 
         assertThat(update.status()).isEqualTo(SessionConfigurationUpdate.Status.UPDATED);
         RuntimeSessionDTO stored = repository.find(session.getId()).orElseThrow();
@@ -315,6 +316,7 @@ class RuntimeSessionRepositoryOpenGaussIT {
                 1L,
                 session.getModelId(),
                 false,
+                List.of(),
                 session.getCreatedAt().plusHours(1));
 
         assertThat(update.status()).isEqualTo(SessionConfigurationUpdate.Status.UNCHANGED);
@@ -413,6 +415,12 @@ class RuntimeSessionRepositoryOpenGaussIT {
                         1L,
                         "model-race",
                         true,
+                        List.of(newEntry(
+                                session.getId(),
+                                "entry-model-race",
+                                "session.model.changed",
+                                session.getUpdatedAt().plusMinutes(1),
+                                "{}")),
                         session.getUpdatedAt().plusMinutes(1))
                 .status();
     }
@@ -422,7 +430,16 @@ class RuntimeSessionRepositoryOpenGaussIT {
         assertThat(start.await(5, TimeUnit.SECONDS)).isTrue();
         return repository
                 .updateThinking(
-                        session.getId(), 1L, true, session.getUpdatedAt().plusMinutes(1))
+                        session.getId(),
+                        1L,
+                        true,
+                        newEntry(
+                                session.getId(),
+                                "entry-thinking-race",
+                                "session.thinking.changed",
+                                session.getUpdatedAt().plusMinutes(1),
+                                "{}"),
+                        session.getUpdatedAt().plusMinutes(1))
                 .status();
     }
 
@@ -498,7 +515,7 @@ class RuntimeSessionRepositoryOpenGaussIT {
 
         @Bean
         RuntimeSessionRepository runtimeSessionRepository(RuntimeSessionMapper mapper) {
-            return new MyBatisRuntimeSessionRepository(mapper);
+            return new MyBatisRuntimeSessionRepository(mapper, new com.fasterxml.jackson.databind.ObjectMapper());
         }
 
         @Bean

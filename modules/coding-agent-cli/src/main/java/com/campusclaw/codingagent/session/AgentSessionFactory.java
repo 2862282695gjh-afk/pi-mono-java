@@ -13,6 +13,7 @@ import com.campusclaw.ai.CampusClawAiService;
 import com.campusclaw.codingagent.runtime.AgentRuntimeManager;
 import com.campusclaw.codingagent.runtime.PreparedAgentRuntime;
 import com.campusclaw.codingagent.runtimeapi.agent.RuntimeAgentPromptLoader;
+import com.campusclaw.codingagent.session.compaction.SessionCompactor;
 import com.campusclaw.codingagent.tool.builtin.ConfiguredToolAssembler;
 import com.campusclaw.codingagent.tool.builtin.ToolAssemblyContext;
 import com.campusclaw.codingagent.tool.mate.MateToolSessionState;
@@ -41,17 +42,21 @@ public class AgentSessionFactory {
 
     private final RuntimeAgentPromptLoader promptLoader;
 
+    private final SessionCompactor compactor;
+
     public AgentSessionFactory(
             CampusClawAiService aiService,
             AgentRuntimeManager runtimeManager,
             ConfiguredToolAssembler toolAssembler,
             ObjectProvider<MateToolsetFactory> mateToolsetFactoryProvider,
-            RuntimeAgentPromptLoader promptLoader) {
+            RuntimeAgentPromptLoader promptLoader,
+            SessionCompactor compactor) {
         this.aiService = aiService;
         this.runtimeManager = runtimeManager;
         this.toolAssembler = toolAssembler;
         this.mateToolsetFactoryProvider = mateToolsetFactoryProvider;
         this.promptLoader = promptLoader;
+        this.compactor = compactor;
     }
 
     /**
@@ -87,7 +92,7 @@ public class AgentSessionFactory {
                 contextualSupplier(request.agentToolFactory(), runtime, model));
         List<AgentTool> tools = toolAssembler.assemble(request.entryPoint(), context);
         Agent agent = configureAgent(request, runtime, model, tools);
-        return new ManagedAgentSession(runtime, request.entryPoint(), agent, tools);
+        return new ManagedAgentSession(runtime, request.entryPoint(), agent, tools, compactor);
     }
 
     private Agent configureAgent(
