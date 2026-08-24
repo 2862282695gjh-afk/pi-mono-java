@@ -25,6 +25,8 @@ public interface RuntimeSessionMapper {
 
     int insertSequence(@Param("sessionId") String sessionId);
 
+    int insertMaterialized(@Param("sessionId") String sessionId, @Param("payload") String payload);
+
     RuntimeSessionDTO findSession(@Param("sessionId") String sessionId);
 
     RuntimeSessionDTO lockSessionForUpdate(@Param("sessionId") String sessionId);
@@ -42,6 +44,8 @@ public interface RuntimeSessionMapper {
 
     int updateActiveLeaf(@Param("sessionId") String sessionId, @Param("activeLeafId") String activeLeafId);
 
+    int updateActiveLeafAnyState(@Param("sessionId") String sessionId, @Param("activeLeafId") String activeLeafId);
+
     int markSessionIdle(@Param("sessionId") String sessionId, @Param("updatedAt") OffsetDateTime updatedAt);
 
     List<RuntimeEntryDTO> listCurrentBranch(
@@ -49,6 +53,15 @@ public interface RuntimeSessionMapper {
             @Param("afterSeq") long afterSeq,
             @Param("limit") int limit,
             @Param("includeThinking") boolean includeThinking);
+
+    List<RuntimeEntryDTO> listCurrentBranchEntries(
+            @Param("sessionId") String sessionId, @Param("afterSeq") long afterSeq, @Param("limit") int limit);
+
+    String findLifetimeUsage(@Param("sessionId") String sessionId);
+
+    String lockLifetimeUsage(@Param("sessionId") String sessionId);
+
+    int updateLifetimeUsage(@Param("sessionId") String sessionId, @Param("usage") String usage);
 
     int updateSessionModel(
             @Param("sessionId") String sessionId,

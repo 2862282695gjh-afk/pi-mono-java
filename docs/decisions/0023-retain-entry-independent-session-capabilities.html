@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ADR-0023 · 删除产品入口前迁移入口无关 Session 能力</title>
+  <style>
+    :root{--fg:#172033;--dim:#637083;--accent:#155eef;--ok:#177447;--bg:#fff;--card:#f5f7fa;--line:#dfe4ea}
+    body{font:15px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",sans-serif;color:var(--fg);
+      background:var(--bg);max-width:920px;margin:2rem auto;padding:0 1.25rem}
+    h1{font-size:1.55rem;margin:.2rem 0}.meta{color:var(--dim);font-size:.92rem}.badge{display:inline-block;
+      padding:.1rem .65rem;border-radius:999px;background:var(--ok);color:#fff;font-size:.8rem}
+    section{margin:1.5rem 0}h2{font-size:1.08rem;border-bottom:1px solid var(--line);padding-bottom:.35rem}
+    code{background:var(--card);padding:.08rem .3rem;border-radius:.25rem}a{color:var(--accent)}
+    table{border-collapse:collapse;width:100%}th,td{border:1px solid var(--line);padding:.45rem .6rem;vertical-align:top}
+    .decision{border-left:4px solid var(--ok);background:#f1fbf6;padding:.8rem 1rem}
+  </style>
+</head>
+<body>
+  <h1>ADR-0023 · 删除产品入口前迁移入口无关 Session 能力</h1>
+  <div class="meta">Status: <span class="badge">Accepted</span> · Date: 2026-08-24 ·
+    Design: <a href="../designs/tool-system-v2.md">tool-system-v2</a></div>
+
+  <section><h2>Context</h2>
+    <p>PR 167 的基线提交 <code>f60cc3e78bb8b700527ac082c7c8e10524ede095</code>
+      删除 CampusClaw CLI/TUI 产品入口。旧包树同时拥有对入口无关的对话压缩、文件追踪和
+      Slash Command 语义；按包名整体删除会让 Runtime、Cron 和 Child 丢失这些能力。</p>
+  </section>
+
+  <section><h2>Decision</h2>
+    <div class="decision"><strong>选定：</strong>以行为职责决定 keep/move/delete，而不是以
+      TUI/CLI 包名决定删除范围。</div>
+    <ul>
+      <li>阈值压缩、溢出压缩和最多一次重试迁入公共 <code>ManagedAgentSession</code>。</li>
+      <li>文件追踪迁入压缩核心，活动工具集合下只识别 <code>Read</code>。</li>
+      <li>Slash 核心、Registry 和四个处理器改用宿主无关端口，但首版不向任何 Host 注册。</li>
+      <li>TUI 组件、CLI 启动、JSONL、本机认证、PackageManager、剪贴板和本地 Skill 管理删除。</li>
+      <li>HTTP 仍为 11 个接口；斜杠开头的用户消息不被 Runtime 拦截。</li>
+    </ul>
+  </section>
+
+  <section><h2>Consequences</h2>
+    <table>
+      <tr><th>方面</th><th>结果</th></tr>
+      <tr><td>产品入口</td><td>仍只有 Spring Boot Runtime 服务，没有 CLI/TUI/RPC/ACP。</td></tr>
+      <tr><td>Session 语义</td><td>Runtime、Cron、Child 共享压缩、失败回滚和取消语义。</td></tr>
+      <tr><td>Slash</td><td>源码可独立编译测试，但没有 Spring Bean、HTTP 路由或消息解析。</td></tr>
+      <tr><td>名称</td><td><code>/name</code> 的未来适配仍调用 mate-service，不进入 Runtime Session。</td></tr>
+    </table>
+  </section>
+
+  <section><h2>Evidence</h2>
+    <p>实现符号：<code>ManagedAgentSession</code>、<code>SessionCompactor</code>、
+      <code>FileOperationTracker</code>、<code>SlashCommandRegistry</code>、
+      <code>RuntimeEventProjector</code>、<code>RuntimeSessionModelReconciler</code>。</p>
+  </section>
+</body>
+</html>

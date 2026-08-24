@@ -29,11 +29,13 @@ import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.agent.Agen
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.event.RuntimeEntryCodec;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.model.RuntimeModelManager;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.persistence.RuntimeSessionRepository;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.persistence.SessionConfigurationUpdate;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.vo.ChangeModelRequestVO;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.vo.ChangeThinkingRequestVO;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.BooleanNode;
 import com.fasterxml.jackson.databind.node.TextNode;
 
@@ -82,6 +84,8 @@ class RuntimeSessionConfigurationServiceTest {
                 modelManager,
                 etagFactory,
                 new RuntimeSessionResponseAssembler(etagFactory),
+                new RuntimeEntryCodec(new ObjectMapper()),
+                () -> "entry-config",
                 Clock.fixed(Instant.parse("2026-08-18T02:00:00Z"), ZoneOffset.UTC));
     }
 
@@ -122,7 +126,7 @@ class RuntimeSessionConfigurationServiceTest {
         Model model = model("model-b", false);
         when(repository.find(SESSION_ID)).thenReturn(Optional.of(current));
         when(modelManager.resolveAvailableModel(snapshot, "model-b")).thenReturn(model);
-        when(repository.updateModel(eq(SESSION_ID), eq(1L), eq("model-b"), eq(false), any()))
+        when(repository.updateModel(eq(SESSION_ID), eq(1L), eq("model-b"), eq(false), any(), any()))
                 .thenReturn(update(SessionConfigurationUpdate.Status.UPDATED, updated));
 
         var view = service.changeModel(SESSION_ID, etagFactory.create(SESSION_ID, 1L), modelRequest("model-b"));
@@ -143,7 +147,7 @@ class RuntimeSessionConfigurationServiceTest {
                         service.changeThinking(SESSION_ID, etagFactory.create(SESSION_ID, 1L), thinkingRequest(true)))
                 .isInstanceOfSatisfying(RuntimeApiException.class, error -> assertThat(error.errorCode())
                         .isEqualTo(RuntimeErrorCode.THINKING_NOT_SUPPORTED));
-        verify(repository, never()).updateThinking(any(), anyLong(), anyBoolean(), any());
+        verify(repository, never()).updateThinking(any(), anyLong(), anyBoolean(), any(), any());
     }
 
     @Test
@@ -151,7 +155,7 @@ class RuntimeSessionConfigurationServiceTest {
         RuntimeSessionDTO current = session("model-a", "idle", true, 1L);
         RuntimeSessionDTO updated = session("model-a", "idle", false, 2L);
         when(repository.find(SESSION_ID)).thenReturn(Optional.of(current));
-        when(repository.updateThinking(eq(SESSION_ID), eq(1L), eq(false), any()))
+        when(repository.updateThinking(eq(SESSION_ID), eq(1L), eq(false), any(), any()))
                 .thenReturn(update(SessionConfigurationUpdate.Status.UPDATED, updated));
 
         var view = service.changeThinking(SESSION_ID, etagFactory.create(SESSION_ID, 1L), thinkingRequest(false));

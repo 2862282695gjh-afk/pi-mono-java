@@ -8,6 +8,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -45,6 +46,7 @@ import com.campusclaw.codingagent.runtimeapi.runtime.RuntimeExecutionProperties;
 import com.campusclaw.codingagent.runtimeapi.runtime.RuntimeExecutionTimeoutScheduler;
 import com.campusclaw.codingagent.runtimeapi.runtime.RuntimeSessionEngineRegistry;
 import com.campusclaw.codingagent.runtimeapi.runtime.RuntimeSessionHolder;
+import com.campusclaw.codingagent.runtimeapi.session.RuntimeSessionModelReconciler;
 import com.campusclaw.codingagent.runtimeapi.vo.RuntimeSseEventVO;
 import com.campusclaw.codingagent.runtimeapi.vo.UserEventRequestVO;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -85,6 +87,23 @@ class RuntimeEventServiceTest {
     }
 
     @Test
+    void treatsSlashPrefixedTextAsOrdinaryUserMessage() {
+        Fixture fixture = new Fixture();
+
+        RuntimeEventStream stream = fixture.service.submit(
+                SESSION_ID, request("/model model-b", List.of()), Locale.US);
+        fixture.agentFuture.complete(null);
+        fixture.execution.completion().join();
+
+        ArgumentCaptor<UserMessage> message = ArgumentCaptor.forClass(UserMessage.class);
+        verify(fixture.agent).prompt(message.capture());
+        assertThat(((TextContent) message.getValue().content().getFirst()).text()).isEqualTo("/model model-b");
+        assertThat(collect(stream))
+                .extracting(RuntimeSseEventVO::getEvent)
+                .containsExactly("user.message", "session.status.idle", "stream.end");
+    }
+
+    @Test
     void rejectsDuplicateFileIdsBeforeReadingSession() {
         Fixture fixture = new Fixture();
 
@@ -104,6 +123,18 @@ class RuntimeEventServiceTest {
         assertThatThrownBy(() -> fixture.service.submit(SESSION_ID, request("分析订单", List.of()), Locale.US))
                 .isInstanceOfSatisfying(RuntimeApiException.class, error -> assertThat(error.errorCode())
                         .isEqualTo(RuntimeErrorCode.RUNTIME_CAPACITY_EXCEEDED));
+        verify(fixture.repository, never()).acceptUserEvent(anyString(), any(), any());
+    }
+
+    @Test
+    void unavailableRefreshedDefaultRejectsBeforeUserEntryPersistence() {
+        Fixture fixture = new Fixture();
+        when(fixture.modelManager.resolveAvailableModel(any(), eq("model_test")))
+                .thenThrow(new RuntimeApiException(RuntimeErrorCode.MODEL_NOT_AVAILABLE));
+
+        assertThatThrownBy(() -> fixture.service.submit(SESSION_ID, request("分析订单", List.of()), Locale.US))
+                .isInstanceOfSatisfying(RuntimeApiException.class, error -> assertThat(error.errorCode())
+                        .isEqualTo(RuntimeErrorCode.MODEL_NOT_AVAILABLE));
         verify(fixture.repository, never()).acceptUserEvent(anyString(), any(), any());
     }
 
@@ -218,10 +249,12 @@ class RuntimeEventServiceTest {
                     terminalEventFactory,
                     clock);
             RuntimeEventStreamFactory streamFactory = new RuntimeEventStreamFactory(eventProperties, codec);
-            RuntimeExecutionContextFactory contextFactory = new RuntimeExecutionContextFactory(
-                    resolver, modelManager, queryService, registry, codec, streamFactory, clock);
+            RuntimeExecutionContextFactory contextFactory =
+                    new RuntimeExecutionContextFactory(queryService, registry, codec, streamFactory, clock);
+            RuntimeSessionModelReconciler reconciler =
+                    new RuntimeSessionModelReconciler(repository, resolver, modelManager, codec, idGenerator, clock);
             service = new RuntimeEventService(
-                    repository, codec, idGenerator, registry, contextFactory, coordinator, clock);
+                    repository, codec, idGenerator, registry, contextFactory, coordinator, reconciler, clock);
             prepareAcceptedExecution();
         }
 
@@ -235,9 +268,9 @@ class RuntimeEventServiceTest {
                     Path.of("/tmp/agent/.campusclaw"));
             Model model = mock(Model.class);
             when(repository.find(SESSION_ID)).thenReturn(Optional.of(session));
-            when(repository.listCurrentBranch(SESSION_ID, 0, 500, false)).thenReturn(List.of());
+            when(repository.listCurrentBranchEntries(SESSION_ID, 0, 500)).thenReturn(List.of());
             when(resolver.resolve(AGENT_ID)).thenReturn(snapshot);
-            when(modelManager.resolveModel(snapshot, "model_test")).thenReturn(model);
+            when(modelManager.resolveAvailableModel(snapshot, "model_test")).thenReturn(model);
             when(agent.subscribe(any())).thenReturn(() -> {});
             when(agent.prompt(any(UserMessage.class))).thenReturn(agentFuture);
             when(timeoutScheduler.schedule(any(), any(Duration.class))).thenReturn(mock(ScheduledFuture.class));

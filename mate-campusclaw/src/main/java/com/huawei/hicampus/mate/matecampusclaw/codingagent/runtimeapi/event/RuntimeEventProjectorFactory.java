@@ -49,7 +49,7 @@ public class RuntimeEventProjectorFactory {
                 idGenerator,
                 execution.eventStream(),
                 clock,
-                holder.agent()::abort,
+                holder::abort,
                 execution,
                 initialUserMessage,
                 holder.thinking());

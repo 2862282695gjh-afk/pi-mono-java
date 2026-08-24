@@ -28,6 +28,8 @@ public class CreateSessionResponseVO {
 
     private final boolean thinking;
 
+    private final UsageResponseVO lifetimeUsage;
+
     @JsonFormat(shape = JsonFormat.Shape.STRING)
     private final OffsetDateTime createdAt;
 
@@ -37,12 +39,14 @@ public class CreateSessionResponseVO {
             String modelId,
             String state,
             boolean thinking,
+            UsageResponseVO lifetimeUsage,
             OffsetDateTime createdAt) {
         this.sessionId = sessionId;
         this.agentId = agentId;
         this.modelId = modelId;
         this.state = state;
         this.thinking = thinking;
+        this.lifetimeUsage = lifetimeUsage;
         this.createdAt = createdAt;
     }
 }

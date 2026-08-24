@@ -23,6 +23,11 @@
         VALUES (#{sessionId}, 1)
     </insert>
 
+    <insert id="insertMaterialized">
+        INSERT INTO t_session_materialized (session_id, payload)
+        VALUES (#{sessionId}, CAST(#{payload} AS JSONB))
+    </insert>
+
     <select id="findSession" resultType="com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.dto.RuntimeSessionDTO">
         SELECT id, agent_id, model_id, state, thinking,
                resource_version, created_at, updated_at, cwd, parent_session_id,
@@ -78,6 +83,12 @@
           AND state = 'running'
     </update>
 
+    <update id="updateActiveLeafAnyState">
+        UPDATE t_sessions
+        SET active_leaf_id = #{activeLeafId}
+        WHERE id = #{sessionId}
+    </update>
+
     <update id="markSessionIdle">
         UPDATE t_sessions
         SET state = 'idle',
@@ -111,12 +122,61 @@
         FROM current_path
         WHERE entry_seq &gt; #{afterSeq}
           AND (
-              type IN ('user.message', 'assistant.message.completed', 'tool.result')
+              type IN (
+                  'user.message', 'assistant.message.completed', 'tool.result',
+                  'session.model.changed', 'session.thinking.changed', 'session.compaction.completed'
+              )
               OR (#{includeThinking} = TRUE AND type = 'assistant.thinking.completed')
           )
         ORDER BY entry_seq
         LIMIT #{limit}
     </select>
+
+    <select id="listCurrentBranchEntries" resultType="com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.dto.RuntimeEntryDTO">
+        WITH RECURSIVE current_path (
+            session_id, id, entry_seq, parent_id, type, timestamp, payload
+        ) AS (
+            SELECT entry.session_id, entry.id, entry.entry_seq, entry.parent_id,
+                   entry.type, entry.timestamp, entry.payload
+            FROM t_session_entries entry
+            JOIN t_sessions session
+              ON session.id = entry.session_id
+             AND session.active_leaf_id = entry.id
+            WHERE session.id = #{sessionId}
+            UNION ALL
+            SELECT parent.session_id, parent.id, parent.entry_seq, parent.parent_id,
+                   parent.type, parent.timestamp, parent.payload
+            FROM t_session_entries parent
+            JOIN current_path child
+              ON child.session_id = parent.session_id
+             AND child.parent_id = parent.id
+        )
+        SELECT session_id, id, entry_seq, parent_id, type, timestamp,
+               payload::text AS payload
+        FROM current_path
+        WHERE entry_seq &gt; #{afterSeq}
+        ORDER BY entry_seq
+        LIMIT #{limit}
+    </select>
+
+    <select id="findLifetimeUsage" resultType="string">
+        SELECT (payload -&gt; 'lifetimeUsage')::text
+        FROM t_session_materialized
+        WHERE session_id = #{sessionId}
+    </select>
+
+    <select id="lockLifetimeUsage" resultType="string">
+        SELECT (payload -&gt; 'lifetimeUsage')::text
+        FROM t_session_materialized
+        WHERE session_id = #{sessionId}
+        FOR UPDATE
+    </select>
+
+    <update id="updateLifetimeUsage">
+        UPDATE t_session_materialized
+        SET payload = jsonb_set(payload, '{lifetimeUsage}', CAST(#{usage} AS JSONB), TRUE)
+        WHERE session_id = #{sessionId}
+    </update>
 
     <update id="updateSessionModel">
         UPDATE t_sessions

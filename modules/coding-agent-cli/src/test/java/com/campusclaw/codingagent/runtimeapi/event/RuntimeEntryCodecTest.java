@@ -38,6 +38,19 @@ class RuntimeEntryCodecTest {
         assertToolCall(event);
     }
 
+    @Test
+    void excludesFailedAssistantFromRestoredModelContext() {
+        RuntimeEntryDTO user = entry("entry_user", "user.message", "{}");
+        RuntimeEntryDTO failed = entry(
+                "entry_failed",
+                "assistant.message.completed",
+                "{\"message\":{\"role\":\"assistant\",\"content\":[]},\"finish_reason\":\"error\"}");
+
+        List<String> ids = new RuntimeEntryCodec(new ObjectMapper()).toAgentContextEntryIds(List.of(user, failed));
+
+        assertThat(ids).containsExactly("entry_user");
+    }
+
     @SuppressWarnings("unchecked")
     private static void assertToolCall(Map<String, Object> event) {
         Map<String, Object> message = (Map<String, Object>) event.get("message");
@@ -57,6 +70,15 @@ class RuntimeEntryCodecTest {
         entry.setPayload("{\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_call\","
                 + "\"tool_call_id\":\"call_201\",\"name\":\"query_abnormal_orders\","
                 + "\"arguments\":{\"uploaded_files\":true}}]},\"finish_reason\":\"tool_call\"}");
+        return entry;
+    }
+
+    private static RuntimeEntryDTO entry(String id, String type, String payload) {
+        RuntimeEntryDTO entry = new RuntimeEntryDTO();
+        entry.setId(id);
+        entry.setType(type);
+        entry.setPayload(payload);
+        entry.setTimestamp(OffsetDateTime.parse("2026-08-17T10:00:02Z"));
         return entry;
     }
 }

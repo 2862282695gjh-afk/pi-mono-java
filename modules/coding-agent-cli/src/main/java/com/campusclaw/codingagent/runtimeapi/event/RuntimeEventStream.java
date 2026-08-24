@@ -7,6 +7,7 @@ package com.campusclaw.codingagent.runtimeapi.event;
 import java.time.Duration;
 import java.util.ArrayDeque;
 import java.util.Deque;
+import java.util.Iterator;
 import java.util.concurrent.Executor;
 import java.util.function.ToLongFunction;
 
@@ -50,11 +51,31 @@ public class RuntimeEventStream {
             return false;
         }
         long bytes = eventSizer.applyAsLong(event);
+        evictBestEffortEvents(bytes);
         if (events.size() >= maxEvents || bytes > maxBytes - bufferedBytes) {
             detachInternal();
             return false;
         }
-        events.addLast(new BufferedEvent(event, bytes));
+        events.addLast(new BufferedEvent(event, bytes, false));
+        bufferedBytes += bytes;
+        notifyAll();
+        return true;
+    }
+
+    public synchronized boolean emitBestEffort(RuntimeSseEventVO event) {
+        if (completed || detached) {
+            return false;
+        }
+        long bytes;
+        try {
+            bytes = eventSizer.applyAsLong(event);
+        } catch (RuntimeException error) {
+            return false;
+        }
+        if (events.size() >= maxEvents || bytes > maxBytes - bufferedBytes) {
+            return false;
+        }
+        events.addLast(new BufferedEvent(event, bytes, true));
         bufferedBytes += bytes;
         notifyAll();
         return true;
@@ -137,13 +158,34 @@ public class RuntimeEventStream {
         notifyAll();
     }
 
+    private void evictBestEffortEvents(long requiredBytes) {
+        while (events.size() >= maxEvents || requiredBytes > maxBytes - bufferedBytes) {
+            if (!removeOldestBestEffortEvent()) {
+                return;
+            }
+        }
+    }
+
+    private boolean removeOldestBestEffortEvent() {
+        Iterator<BufferedEvent> iterator = events.iterator();
+        while (iterator.hasNext()) {
+            BufferedEvent buffered = iterator.next();
+            if (buffered.bestEffort()) {
+                iterator.remove();
+                bufferedBytes -= buffered.bytes();
+                return true;
+            }
+        }
+        return false;
+    }
+
     private enum DeliveryKind {
         EVENT,
         HEARTBEAT,
         TERMINAL
     }
 
-    private record BufferedEvent(RuntimeSseEventVO event, long bytes) {}
+    private record BufferedEvent(RuntimeSseEventVO event, long bytes, boolean bestEffort) {}
 
     private record Delivery(DeliveryKind kind, RuntimeSseEventVO event) {
         private static Delivery event(RuntimeSseEventVO event) {

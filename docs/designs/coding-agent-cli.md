@@ -1,12 +1,12 @@
 # Coding Agent Runtime HTTP 与受管 Session 设计
 
-> 文档版本：3.1.0
+> 文档版本：3.2.0
 >
-> Runtime HTTP 1.38 实现分析基线：`304eda06ff603fc9b6bbcaad0c296cc151a7defb`
+> PR 167 修订基线：`f60cc3e78bb8b700527ac082c7c8e10524ede095`
 >
-> HTTP 1.38 设计契约 `main` 合并基线：`superheromeZzh/pi-mono-java-design@ea4c70c33a458182b354ed0908cfc0ef54f13bc0`
+> PR 167 merge base：`d649866a6cae967ace18ceaeb9597edd47e5721e`
 >
-> 启动平台分析基线：`1f801dbb82bdda30478e3354e685e3153b179a0c`
+> HTTP 1.39 设计输入：`superheromeZzh/pi-mono-java-design@3fde5735cd27433c3e3e5e03a5ce39b297ad3b00`
 >
 > 源码仓库：本仓库 `pi-mono-java`
 
@@ -18,7 +18,12 @@ Runtime HTTP、Cron trigger 和 Child Execution 共同使用 `AgentSessionFactor
 
 历史 `--mode server`、手工 Reactor Netty `ServerMode`、函数式 WebFlux 路由和公开 WebSocket 接口均已删除。Runtime 对外协议统一为 HTTP + 请求范围 SSE。
 
-Runtime HTTP 现已对齐独立设计仓库 1.38 契约：资源标识统一为类型前缀加去连字符 UUID，创建 Session 默认开启 thinking，提交用户消息不再携带冗余 `type`，集成 Header 不在 Runtime 本地检查，thinking 事件按执行快照投影并按查询时 Session 状态过滤，公开 Path、Query、JSON 与 SSE data 字段统一使用 lowerCamelCase。该行为是相对上述分析基线的实现变更；资源与 thinking 决策见 [ADR-0018](../decisions/0018-runtime-http-v137-contract-alignment.html)，字段命名边界见 [ADR-0019](../decisions/0019-runtime-http-lower-camel-case-fields.html)。
+Runtime HTTP 现已在 1.38 lowerCamelCase 契约上实现 1.39 修订：Session 增加生命周期 Usage，
+Assistant/Compaction 完成保存本次 Usage，模型/思考/压缩形成持久化领域事件，工具 delta 与
+压缩 started/failed 保持瞬态。资源与 thinking 决策见
+[ADR-0018](../decisions/0018-runtime-http-v137-contract-alignment.html)，字段命名边界见
+[ADR-0019](../decisions/0019-runtime-http-lower-camel-case-fields.html)，TUI 能力迁移见
+[ADR-0023](../decisions/0023-retain-entry-independent-session-capabilities.html)。
 
 ## 2. 源码证据
 
@@ -61,8 +66,9 @@ java -jar modules/coding-agent-cli/target/campusclaw-agent.jar
 
 默认监听 `0.0.0.0:8080`，可通过标准 Spring Boot 配置（例如 `SERVER_PORT`）覆盖。服务使用 Java 21 虚拟线程承载阻塞式 Spring MVC 请求；数据库访问和 Controller 均为阻塞式模型。
 
-命令行参数不再切换另一套 Spring 上下文。CLI/TUI、Picocli 命令、终端 Session 持久化、
-Slash Command 和本地认证设置源码已删除；`modules/coding-agent-cli` 仅保留历史目录名。
+命令行参数不再切换另一套 Spring 上下文。CLI/TUI、Picocli 启动、终端 Session 持久化和
+本地认证设置源码已删除；Slash Command 核心及 `/model`、`/thinking`、`/compact`、`/name`
+处理器保留为未注册的宿主无关代码，不形成 Spring Bean、HTTP 接口或消息拦截器。
 
 ## 5. Runtime HTTP 结构
 
@@ -109,7 +115,16 @@ Runtime V1 固定前缀为 `/campusclaw-service/v1`，包含 11 个接口：
 
 请求体只接受 `message` 与 `fileIds`，路径已经固定 `user.message` 语义，旧 `type` 字段作为未知字段返回 `INVALID_EVENT_REQUEST`。执行接受时固化 Session 的 thinking 值：快照为 `true` 时投影 `assistant.thinking.started/delta/completed`，其中 completed 作为独立 Entry 持久化；快照为 `false` 时不产生 thinking 事件。Assistant MessageEntry 本身仍过滤 `ThinkingContent`，防止同一内容重复进入消息正文。
 
-`GET /events` 每次读取 Session 当前 thinking。为 `true` 时返回四类持久化事件，为 `false` 时从当前分支隐藏 `assistant.thinking.completed`，但不删除数据库记录。加密 page 同时绑定 `session_id`、继续位置、thinking 状态和过期时间；开关变化后旧 page 返回 `INVALID_EVENT_LIST_QUERY`，调用方需从第一页重读。
+`GET /events` 每次读取 Session 当前 thinking，返回公共消息、模型/思考变更、压缩完成和允许
+显示的 thinking。Agent 上下文恢复使用独立查询，只消费消息、工具结果和最新压缩边界，不把
+模型或思考变更事件转换为模型消息。thinking 为 `false` 时只隐藏
+`assistant.thinking.completed`，不删除数据库记录。加密 page 同时绑定 `session_id`、继续位置、
+thinking 状态和过期时间；开关变化后旧 page 返回 `INVALID_EVENT_LIST_QUERY`。
+
+Assistant 完成与压缩完成都持久化完整 `Usage`；`t_session_materialized` 在同一事务中原子累计
+`lifetimeUsage`。Token 字段为 `input/output/cacheRead/cacheWrite/totalTokens`，USD Cost 字段为
+`input/output/cacheRead/cacheWrite/total`。工具进度只投影瞬态 `tool.execution.delta`，数据仅含
+`toolCallId/toolName/delta`；不可序列化、超限或背压时只丢弃该进度，不影响工具执行和最终结果。
 
 每个订阅的缓冲限制为 256 个事件或 1 MiB，心跳间隔 15 秒。执行上限为 100 个，默认 30 分钟超时。
 
@@ -137,6 +152,14 @@ Session 的受控工作区是整个 `agent/{agentId}`，`Read`、`Find`、`Grep`
 `RuntimeEventQueryService` 负责当前分支分页与 Agent 历史恢复；
 `RuntimeExecutionCoordinator` 负责 Agent 启动、控制消息续跑、超时、持久化收尾和资源释放。
 SSE 流、事件投影器与终止事件分别由独立工厂创建，避免 Controller 或单个 Service 同时承担完整执行生命周期。
+
+管理面 refresh 不修改活动执行快照。空闲 Session 下一次执行时由
+`RuntimeSessionModelReconciler` 读取最新目录；当前模型失效时，先原子持久化模型及必要 thinking
+变更事件，再接受 `user.message`。无具备凭据的 default 时直接拒绝，数据库中不产生用户 Entry。
+
+公共 `ManagedAgentSession` 持有阈值压缩、上下文溢出压缩和最多一次重试。压缩失败保留旧消息；
+成功压缩持久化完整摘要和保留边界。配置默认 `enabled=true`、`reserveTokens=16384`、
+`keepRecentTokens=20000`，文件追踪只识别 `Read`。
 
 ### 6.7 错误和多实例边界
 
@@ -198,6 +221,7 @@ Runtime V1 事件名 `tool.execution.started` 与 `tool.execution.completed` 是
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 3.2.0 | 2026-08-24 | 修订 TUI 删除边界，保留未注册 Slash 核心；公共 Session 增加压缩，Runtime 增加 Usage、领域事件、best-effort 工具进度与 refresh 后懒校准 |
 | 3.1.0 | 2026-08-24 | 删除 CLI/TUI、Picocli、终端 Session、用户级认证设置与启动脚本源码，服务模型目录仅使用内置注册表和部署凭据 |
 | 3.0.0 | 2026-08-24 | 删除 CLI 产品入口；HTTP、Cron、Child 共用 SessionFactory；Runtime 创建前 prepare 受管目录并装配八工具 profile |
 | 2.7.0 | 2026-08-21 | 对齐 Runtime HTTP 1.38：公开 Path、Query、JSON 与 SSE data 字段统一为 lowerCamelCase；Header 和字段值保持原样；既有 Entry payload 在输出边界受控投影 |

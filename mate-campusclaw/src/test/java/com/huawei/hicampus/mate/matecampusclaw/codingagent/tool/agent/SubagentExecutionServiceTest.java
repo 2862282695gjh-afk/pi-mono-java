@@ -150,7 +150,7 @@ class SubagentExecutionServiceTest {
         assertThatThrownBy(() -> execute(parent, rootContext(), token))
                 .hasMessage("Child Agent execution was cancelled");
         verify(sessionFactory, never()).create(any());
-        verify(session.agent(), never()).prompt(any(String.class));
+        verify(session, never()).prompt(any(String.class));
     }
 
     private com.huawei.hicampus.mate.matecampusclaw.agent.tool.AgentToolResult execute(
@@ -177,6 +177,7 @@ class SubagentExecutionServiceTest {
                 null,
                 1)));
         when(session.agent()).thenReturn(agent);
+        when(session.prompt(any(String.class))).thenReturn(CompletableFuture.completedFuture(null));
         when(agent.subscribe(any())).thenReturn(() -> {});
         when(agent.prompt(any(String.class))).thenReturn(CompletableFuture.completedFuture(null));
         when(agent.getState()).thenReturn(state);

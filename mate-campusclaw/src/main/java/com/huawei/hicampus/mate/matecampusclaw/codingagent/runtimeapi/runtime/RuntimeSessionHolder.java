@@ -5,11 +5,15 @@
 package com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.runtime;
 
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 
 import com.huawei.hicampus.mate.matecampusclaw.agent.Agent;
+import com.huawei.hicampus.mate.matecampusclaw.ai.types.Message;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.agent.AgentDirectorySnapshotDTO;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.session.ManagedAgentSession;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.session.compaction.SessionCompactionEvent;
 
 /**
  * 单个 Runtime Session 的进程内执行对象。
@@ -64,6 +68,18 @@ public class RuntimeSessionHolder {
         return agent;
     }
 
+    public CompletableFuture<Void> prompt(Message message) {
+        return managedSession == null ? agent.prompt(message) : managedSession.prompt(message);
+    }
+
+    public CompletableFuture<Void> continueQueuedExecution() {
+        return managedSession == null ? agent.continueQueuedExecution() : managedSession.continueQueuedExecution();
+    }
+
+    public Runnable subscribeCompaction(Consumer<SessionCompactionEvent> listener) {
+        return managedSession == null ? () -> {} : managedSession.subscribeCompaction(listener);
+    }
+
     public boolean thinking() {
         return thinking;
     }
@@ -78,6 +94,14 @@ public class RuntimeSessionHolder {
 
     public Optional<RuntimeActiveExecution> activeExecution() {
         return Optional.ofNullable(activeExecution.get());
+    }
+
+    public void abort() {
+        if (managedSession == null) {
+            agent.abort();
+            return;
+        }
+        managedSession.abort();
     }
 
     public void closeSession() {
