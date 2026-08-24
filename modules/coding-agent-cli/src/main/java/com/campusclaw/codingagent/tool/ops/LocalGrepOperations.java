@@ -16,7 +16,9 @@ import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CancellationException;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
@@ -122,6 +124,7 @@ public class LocalGrepOperations implements GrepOperations {
             CancellationToken cancellationToken)
             throws IOException {
         Deque<NumberedLine> previous = new ArrayDeque<>();
+        Map<LineIdentity, Integer> outputIndexes = new HashMap<>();
         int afterRemaining = 0;
         String line = reader.readLine();
         int lineNumber = 0;
@@ -137,12 +140,12 @@ public class LocalGrepOperations implements GrepOperations {
                     accumulator.truncated = true;
                     break;
                 }
-                appendBeforeContext(output, path, previous);
-                output.add(format(path, lineNumber, line, true));
+                appendBeforeContext(output, outputIndexes, path, previous);
+                appendOutput(output, outputIndexes, path, lineNumber, line, true);
                 accumulator.matches++;
                 afterRemaining = request.context();
             } else if (afterRemaining > 0) {
-                output.add(format(path, lineNumber, line, false));
+                appendOutput(output, outputIndexes, path, lineNumber, line, false);
                 afterRemaining--;
             }
             remember(previous, new NumberedLine(lineNumber, line), request.context());
@@ -150,12 +153,27 @@ public class LocalGrepOperations implements GrepOperations {
         }
     }
 
-    private static void appendBeforeContext(List<String> output, String path, Deque<NumberedLine> previous) {
+    private static void appendBeforeContext(
+            List<String> output, Map<LineIdentity, Integer> outputIndexes, String path, Deque<NumberedLine> previous) {
         for (NumberedLine line : previous) {
-            String formatted = format(path, line.number(), line.text(), false);
-            if (output.isEmpty() || !output.get(output.size() - 1).equals(formatted)) {
-                output.add(formatted);
-            }
+            appendOutput(output, outputIndexes, path, line.number(), line.text(), false);
+        }
+    }
+
+    private static void appendOutput(
+            List<String> output,
+            Map<LineIdentity, Integer> outputIndexes,
+            String path,
+            int lineNumber,
+            String line,
+            boolean match) {
+        LineIdentity identity = new LineIdentity(path, lineNumber);
+        Integer existingIndex = outputIndexes.get(identity);
+        if (existingIndex == null) {
+            outputIndexes.put(identity, output.size());
+            output.add(format(path, lineNumber, line, match));
+        } else if (match) {
+            output.set(existingIndex, format(path, lineNumber, line, true));
         }
     }
 
@@ -202,6 +220,8 @@ public class LocalGrepOperations implements GrepOperations {
     }
 
     private record NumberedLine(int number, String text) {}
+
+    private record LineIdentity(String path, int number) {}
 
     private static final class SearchAccumulator {
         private final List<String> lines = new ArrayList<>();

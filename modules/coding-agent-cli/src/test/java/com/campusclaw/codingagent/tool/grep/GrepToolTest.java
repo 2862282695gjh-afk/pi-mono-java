@@ -90,6 +90,16 @@ class GrepToolTest {
     }
 
     @Test
+    void shouldMergeOverlappingContextByPathAndLine() throws Exception {
+        Files.writeString(agentRoot.resolve("notes.txt"), "target\ntarget\ncontext\n");
+
+        var result = tool.execute("call", Map.of("pattern", "target", "limit", 2, "context", 1), null, null);
+
+        assertThat(((TextContent) result.content().get(0)).text())
+                .isEqualTo("notes.txt:1:target\nnotes.txt:2:target\nnotes.txt-3-context");
+    }
+
+    @Test
     void shouldMarkOutputWhenAnotherMatchExistsBeyondLimit() throws Exception {
         Files.writeString(agentRoot.resolve("notes.txt"), "target\ntarget\ntarget\n");
 
