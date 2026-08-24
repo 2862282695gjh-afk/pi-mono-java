@@ -6,6 +6,7 @@ package com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.mate;
 
 import java.util.Map;
 
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.common.client.mate.MateCredentials;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.common.client.mate.MateToolClient;
 
 /**
@@ -18,16 +19,15 @@ public class MateToolsetFactory {
 
     private final MateToolClient client;
 
-    private final MateCredentialResolver credentialResolver;
-
-    public MateToolsetFactory(MateToolClient client, MateCredentialResolver credentialResolver) {
+    public MateToolsetFactory(MateToolClient client) {
         this.client = client;
-        this.credentialResolver = credentialResolver;
     }
 
-    public MateToolSessionState createSession(String agentId, Map<String, String> skillIdsByName) {
+    public MateToolSessionState createSession(
+            String agentId, Map<String, String> skillIdsByName, MateCredentials credentials) {
+        MateCredentials snapshot = credentials == null ? MateCredentials.empty() : credentials;
         MateToolSessionCache cache = new MateToolSessionCache();
-        MateToolDiscovery discovery = new MateToolDiscovery(client, agentId, skillIdsByName, cache);
-        return new MateToolSessionState(client, credentialResolver, discovery);
+        MateToolDiscovery discovery = new MateToolDiscovery(client, agentId, skillIdsByName, cache, snapshot);
+        return new MateToolSessionState(client, snapshot, discovery);
     }
 }

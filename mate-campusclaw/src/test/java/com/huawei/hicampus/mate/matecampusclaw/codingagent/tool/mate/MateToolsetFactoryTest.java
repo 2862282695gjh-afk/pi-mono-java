@@ -8,6 +8,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.Map;
 
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.common.client.mate.MateCredentials;
+
 import org.junit.jupiter.api.Test;
 
 /**
@@ -20,9 +22,9 @@ class MateToolsetFactoryTest {
 
     @Test
     void shouldCreateNewToolsAndIndependentStateForEverySession() {
-        MateToolsetFactory factory = new MateToolsetFactory(new MockMateToolClient(), null);
-        MateToolSessionState first = factory.createSession("agent-1", Map.of());
-        MateToolSessionState second = factory.createSession("agent-2", Map.of());
+        MateToolsetFactory factory = new MateToolsetFactory(new MockMateToolClient());
+        MateToolSessionState first = factory.createSession("agent-1", Map.of(), MateCredentials.empty());
+        MateToolSessionState second = factory.createSession("agent-2", Map.of(), MateCredentials.empty());
 
         assertThat(first).isNotSameAs(second);
         assertThat(first.createListTool()).isNotSameAs(first.createListTool());

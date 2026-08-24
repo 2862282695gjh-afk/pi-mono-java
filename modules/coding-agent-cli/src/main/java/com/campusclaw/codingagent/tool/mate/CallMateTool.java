@@ -32,13 +32,13 @@ public class CallMateTool implements AgentTool {
 
     private final MateToolClient client;
 
-    private final MateCredentialResolver credentialResolver;
+    private final MateCredentials credentials;
 
     private final MateToolDiscovery discovery;
 
-    public CallMateTool(MateToolClient client, MateCredentialResolver credentialResolver, MateToolDiscovery discovery) {
+    public CallMateTool(MateToolClient client, MateCredentials credentials, MateToolDiscovery discovery) {
         this.client = client;
-        this.credentialResolver = credentialResolver;
+        this.credentials = credentials;
         this.discovery = discovery;
     }
 
@@ -90,24 +90,19 @@ public class CallMateTool implements AgentTool {
         String toolName = (String) params.get("tool");
         Map<String, Object> args =
                 params.get("args") instanceof Map<?, ?> value ? (Map<String, Object>) value : Map.of();
+        if (!credentials.isComplete()) {
+            throw new MateToolExecutionException(toolName, "Mate execution credentials are unavailable");
+        }
         String toolId = discovery.resolveToolId(toolName);
         if (toolId == null) {
             throw new MateToolExecutionException(toolName, "unknown Mate tool name");
         }
         ensureNotCancelled(signal);
-        MateCredentials credentials = resolveCredentials(toolCallId, toolId, args);
         MateToolClient.ToolResult result = client.callTool(toolId, args, credentials);
         if (result.isError()) {
             throw new MateToolExecutionException(toolName, result.content());
         }
         return new AgentToolResult(List.<ContentBlock>of(new TextContent(result.content())), result.metadata());
-    }
-
-    private MateCredentials resolveCredentials(String toolCallId, String toolId, Map<String, Object> args) {
-        if (credentialResolver == null) {
-            return null;
-        }
-        return credentialResolver.resolve(new MateCredentialResolver.MateToolCall(toolCallId, toolId, args));
     }
 
     private static void ensureNotCancelled(CancellationToken signal) throws InterruptedException {

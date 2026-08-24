@@ -58,8 +58,10 @@ class MateToolAutoConfigurationTest {
     void factoryPairsShareOneCachePerSessionAndIsolateAcrossSessions() {
         runner.run(context -> {
             var factory = context.getBean(com.campusclaw.codingagent.tool.mate.MateToolsetFactory.class);
-            var stateA = factory.createSession("agent-1", Map.of());
-            var stateB = factory.createSession("agent-2", Map.of());
+            var stateA = factory.createSession(
+                    "agent-1", Map.of(), com.campusclaw.codingagent.common.client.mate.MateCredentials.empty());
+            var stateB = factory.createSession(
+                    "agent-2", Map.of(), com.campusclaw.codingagent.common.client.mate.MateCredentials.empty());
             var listA = stateA.createListTool();
             var callA = stateA.createCallTool();
             var listB = stateB.createListTool();
@@ -118,8 +120,9 @@ class MateToolAutoConfigurationTest {
         client.addTool(new MateToolMeta(toolId, "Explode", "", Map.of(), Map.of(), false, "allow"));
         client.bindAgent("agent-1", List.of(toolId));
         client.overrideCallResult(new MateToolClient.ToolResult("mate exploded", null, true));
-        CallMateTool callMateTool = new com.campusclaw.codingagent.tool.mate.MateToolsetFactory(client, null)
-                .createSession("agent-1", Map.of())
+        CallMateTool callMateTool = new com.campusclaw.codingagent.tool.mate.MateToolsetFactory(client)
+                .createSession(
+                        "agent-1", Map.of(), com.campusclaw.codingagent.common.client.mate.MateCredentials.empty())
                 .createCallTool();
 
         ToolCall toolCall = new ToolCall("call-1", "CallMateTool", Map.of("tool", "Explode"));

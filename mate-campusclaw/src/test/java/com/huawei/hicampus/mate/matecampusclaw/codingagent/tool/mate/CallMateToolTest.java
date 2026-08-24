@@ -14,6 +14,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
 import com.huawei.hicampus.mate.matecampusclaw.agent.tool.ToolExecutionMode;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.common.client.mate.MateCredentials;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.common.client.mate.MateToolClient;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.common.client.mate.MateToolMeta;
 
@@ -30,6 +31,8 @@ class CallMateToolTest {
 
     private static final String QUERY_ID = "tool-11111111111111111111111111111111";
 
+    private static final MateCredentials CREDENTIALS = MateCredentials.jwt("caller-1", "token-1");
+
     private MockMateToolClient client;
 
     private MateToolSessionState state;
@@ -40,7 +43,7 @@ class CallMateToolTest {
         client.addTool(meta(QUERY_ID, "Query"));
         client.bindAgent("agent-1", List.of(QUERY_ID));
         client.bindSkill("skill-1", List.of());
-        state = new MateToolsetFactory(client, null).createSession("agent-1", Map.of("research", "skill-1"));
+        state = new MateToolsetFactory(client).createSession("agent-1", Map.of("research", "skill-1"), CREDENTIALS);
     }
 
     @Test
@@ -62,6 +65,8 @@ class CallMateToolTest {
         assertThat(client.executeCalls()).isEqualTo(1);
         assertThat(client.lastCalledTool()).isEqualTo(QUERY_ID);
         assertThat(client.lastCallArgs()).isEmpty();
+        assertThat(client.lastCallCredentials()).isSameAs(CREDENTIALS);
+        assertThat(client.lastListCredentials()).isSameAs(CREDENTIALS);
     }
 
     @Test
@@ -86,10 +91,23 @@ class CallMateToolTest {
     }
 
     @Test
+    void missingCredentialsShouldFailBeforeExecutionRequest() {
+        MateToolSessionState missingCredentials =
+                new MateToolsetFactory(client).createSession("agent-1", Map.of(), MateCredentials.empty());
+
+        assertThatThrownBy(
+                        () -> missingCredentials.createCallTool().execute("call", Map.of("tool", "Query"), null, null))
+                .isInstanceOf(CallMateTool.MateToolExecutionException.class)
+                .hasMessageContaining("credentials are unavailable");
+        assertThat(client.agentListCalls()).isZero();
+        assertThat(client.executeCalls()).isZero();
+    }
+
+    @Test
     void concurrentMissesShouldShareOneFullRefresh() throws Exception {
         BlockingMateClient blocking = new BlockingMateClient(client);
         MateToolSessionState blockingState =
-                new MateToolsetFactory(blocking, null).createSession("agent-1", Map.of("research", "skill-1"));
+                new MateToolsetFactory(blocking).createSession("agent-1", Map.of("research", "skill-1"), CREDENTIALS);
         try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
             var first = executor.submit(() -> call(blockingState));
             blocking.started.await(5, TimeUnit.SECONDS);
@@ -153,17 +171,17 @@ class CallMateToolTest {
         }
 
         @Override
-        public synchronized List<MateToolMeta> listAgentTools(String agentId) {
+        public synchronized List<MateToolMeta> listAgentTools(String agentId, MateCredentials credentials) {
             agentLists++;
             started.countDown();
             awaitRelease();
-            return delegate.listAgentTools(agentId);
+            return delegate.listAgentTools(agentId, credentials);
         }
 
         @Override
-        public synchronized List<MateToolMeta> listSkillTools(String skillId) {
+        public synchronized List<MateToolMeta> listSkillTools(String skillId, MateCredentials credentials) {
             skillLists++;
-            return delegate.listSkillTools(skillId);
+            return delegate.listSkillTools(skillId, credentials);
         }
 
         @Override

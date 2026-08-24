@@ -10,6 +10,7 @@ import com.campusclaw.ai.types.AssistantMessage;
 import com.campusclaw.ai.types.Model;
 import com.campusclaw.ai.types.TextContent;
 import com.campusclaw.ai.types.ThinkingLevel;
+import com.campusclaw.codingagent.common.client.mate.MateCredentials;
 import com.campusclaw.codingagent.model.ModelCatalogService;
 import com.campusclaw.codingagent.runtime.PreparedAgentRuntime;
 import com.campusclaw.codingagent.session.AgentSessionFactory;
@@ -55,10 +56,11 @@ public class ManagedCronSessionRunner implements CronAgentSessionRunner {
                 ToolEntryPoint.CRON,
                 this::resolveDefaultModel,
                 thinking,
+                MateCredentials.empty(),
                 null,
                 (prepared, model) -> new BoundAgentTool(
                         prepared,
-                        SubagentExecutionContext.root(prepared.agentId(), model, thinking),
+                        SubagentExecutionContext.root(prepared.agentId(), model, thinking, MateCredentials.empty()),
                         subagentExecutionService),
                 null,
                 List.of(),

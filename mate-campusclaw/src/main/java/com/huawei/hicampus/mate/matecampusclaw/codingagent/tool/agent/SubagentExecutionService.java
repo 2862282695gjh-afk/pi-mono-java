@@ -77,6 +77,7 @@ public class SubagentExecutionService {
                 ToolEntryPoint.CHILD_AGENT,
                 runtime -> resolveAllowedChildModel(runtime, context.inheritedModel()),
                 context.inheritedThinking(),
+                context.mateCredentials(),
                 null,
                 null,
                 runtime -> validateChildRuntime(binding, runtime),

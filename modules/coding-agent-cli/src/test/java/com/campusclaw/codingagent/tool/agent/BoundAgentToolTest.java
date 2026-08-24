@@ -18,6 +18,7 @@ import com.campusclaw.ai.types.Model;
 import com.campusclaw.ai.types.ModelCost;
 import com.campusclaw.ai.types.Provider;
 import com.campusclaw.ai.types.ThinkingLevel;
+import com.campusclaw.codingagent.common.client.mate.MateCredentials;
 import com.campusclaw.codingagent.runtime.MateServiceClient.AgentReference;
 import com.campusclaw.codingagent.runtime.MateServiceClient.AgentRuntime;
 import com.campusclaw.codingagent.runtime.PreparedAgentRuntime;
@@ -65,7 +66,7 @@ class BoundAgentToolTest {
         PreparedAgentRuntime runtime = prepared(children);
         return new BoundAgentTool(
                 runtime,
-                SubagentExecutionContext.root(PARENT_ID, model, ThinkingLevel.OFF),
+                SubagentExecutionContext.root(PARENT_ID, model, ThinkingLevel.OFF, MateCredentials.empty()),
                 mock(SubagentExecutionService.class));
     }
 

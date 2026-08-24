@@ -15,6 +15,7 @@ import com.campusclaw.agent.tool.AgentTool;
 import com.campusclaw.agent.tool.BeforeToolCallHandler;
 import com.campusclaw.ai.types.Model;
 import com.campusclaw.ai.types.ThinkingLevel;
+import com.campusclaw.codingagent.common.client.mate.MateCredentials;
 import com.campusclaw.codingagent.runtime.PreparedAgentRuntime;
 import com.campusclaw.codingagent.tool.builtin.ToolEntryPoint;
 
@@ -25,6 +26,7 @@ import com.campusclaw.codingagent.tool.builtin.ToolEntryPoint;
  * @param entryPoint Session 创建入口
  * @param modelResolver 基于同一运行时快照解析当前模型的函数
  * @param thinkingLevel thinking 等级
+ * @param mateCredentials 本次执行的 Mate 凭据快照，不持久化
  * @param cronToolFactory Runtime Cron 工具工厂
  * @param agentToolFactory Runtime 或 Cron 的 Child 工具工厂
  * @param runtimeValidator 入口专属运行时校验器
@@ -38,6 +40,7 @@ public record ManagedAgentSessionRequest(
         ToolEntryPoint entryPoint,
         Function<PreparedAgentRuntime, Model> modelResolver,
         ThinkingLevel thinkingLevel,
+        MateCredentials mateCredentials,
         BiFunction<PreparedAgentRuntime, Model, AgentTool> cronToolFactory,
         BiFunction<PreparedAgentRuntime, Model, AgentTool> agentToolFactory,
         Consumer<PreparedAgentRuntime> runtimeValidator,
@@ -51,6 +54,7 @@ public record ManagedAgentSessionRequest(
         Objects.requireNonNull(entryPoint, "entryPoint");
         Objects.requireNonNull(modelResolver, "modelResolver");
         thinkingLevel = thinkingLevel == null ? ThinkingLevel.OFF : thinkingLevel;
+        mateCredentials = mateCredentials == null ? MateCredentials.empty() : mateCredentials;
         runtimeValidator = runtimeValidator == null ? ignored -> {} : runtimeValidator;
         beforeHooks = beforeHooks == null ? List.of() : List.copyOf(beforeHooks);
         afterHooks = afterHooks == null ? List.of() : List.copyOf(afterHooks);
@@ -60,6 +64,15 @@ public record ManagedAgentSessionRequest(
             String agentId, ToolEntryPoint entryPoint, Model model, ThinkingLevel thinkingLevel) {
         Objects.requireNonNull(model, "model");
         return new ManagedAgentSessionRequest(
-                agentId, entryPoint, ignored -> model, thinkingLevel, null, null, null, List.of(), List.of());
+                agentId,
+                entryPoint,
+                ignored -> model,
+                thinkingLevel,
+                MateCredentials.empty(),
+                null,
+                null,
+                null,
+                List.of(),
+                List.of());
     }
 }

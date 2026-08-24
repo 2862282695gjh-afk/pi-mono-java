@@ -4,6 +4,7 @@
 
 package com.campusclaw.codingagent.tool.mate;
 
+import com.campusclaw.codingagent.common.client.mate.MateCredentials;
 import com.campusclaw.codingagent.common.client.mate.MateToolClient;
 
 /**
@@ -16,14 +17,13 @@ public class MateToolSessionState {
 
     private final MateToolClient client;
 
-    private final MateCredentialResolver credentialResolver;
+    private final MateCredentials credentials;
 
     private final MateToolDiscovery discovery;
 
-    MateToolSessionState(
-            MateToolClient client, MateCredentialResolver credentialResolver, MateToolDiscovery discovery) {
+    MateToolSessionState(MateToolClient client, MateCredentials credentials, MateToolDiscovery discovery) {
         this.client = client;
-        this.credentialResolver = credentialResolver;
+        this.credentials = credentials;
         this.discovery = discovery;
     }
 
@@ -32,6 +32,6 @@ public class MateToolSessionState {
     }
 
     public CallMateTool createCallTool() {
-        return new CallMateTool(client, credentialResolver, discovery);
+        return new CallMateTool(client, credentials, discovery);
     }
 }

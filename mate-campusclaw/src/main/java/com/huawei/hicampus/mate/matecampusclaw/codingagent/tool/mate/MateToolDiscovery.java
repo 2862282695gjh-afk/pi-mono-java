@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.common.client.mate.MateCredentials;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.common.client.mate.MateToolClient;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.common.client.mate.MateToolMeta;
 
@@ -28,19 +29,23 @@ public class MateToolDiscovery {
 
     private final MateToolSessionCache sessionCache;
 
+    private final MateCredentials credentials;
+
     public MateToolDiscovery(
             MateToolClient client,
             String agentId,
             Map<String, String> skillIdsByName,
-            MateToolSessionCache sessionCache) {
+            MateToolSessionCache sessionCache,
+            MateCredentials credentials) {
         this.client = client;
         this.agentId = agentId;
         this.skillIdsByName = Map.copyOf(new TreeMap<>(skillIdsByName));
         this.sessionCache = sessionCache;
+        this.credentials = credentials;
     }
 
     public List<MateToolMeta> listAgentTools() {
-        List<MateToolMeta> tools = client.listAgentTools(agentId);
+        List<MateToolMeta> tools = client.listAgentTools(agentId, credentials);
         sessionCache.updateSource(MateToolSource.agent(), tools);
         return tools;
     }
@@ -50,7 +55,7 @@ public class MateToolDiscovery {
         if (skillId == null) {
             throw new IllegalArgumentException("Unknown directly bound Skill: " + skillName);
         }
-        List<MateToolMeta> tools = client.listSkillTools(skillId);
+        List<MateToolMeta> tools = client.listSkillTools(skillId, credentials);
         sessionCache.updateSource(MateToolSource.skill(skillName), tools);
         return tools;
     }
@@ -61,8 +66,9 @@ public class MateToolDiscovery {
 
     private Map<MateToolSource, List<MateToolMeta>> loadAllSources() {
         Map<MateToolSource, List<MateToolMeta>> discovered = new LinkedHashMap<>();
-        discovered.put(MateToolSource.agent(), client.listAgentTools(agentId));
-        skillIdsByName.forEach((name, id) -> discovered.put(MateToolSource.skill(name), client.listSkillTools(id)));
+        discovered.put(MateToolSource.agent(), client.listAgentTools(agentId, credentials));
+        skillIdsByName.forEach(
+                (name, id) -> discovered.put(MateToolSource.skill(name), client.listSkillTools(id, credentials)));
         return discovered;
     }
 }

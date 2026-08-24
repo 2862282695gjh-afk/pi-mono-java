@@ -1,6 +1,6 @@
 # CampusClaw HTTP V1 实施记录
 
-> 版本：3.1.0
+> 版本：3.2.0
 >
 > 状态：已实现并完成发布前验证
 >
@@ -34,7 +34,7 @@
 |---|---|
 | 启动 | `modules/coding-agent-cli/.../CampusClawApplication.java`、`CampusClawCliLauncher.java` |
 | HTTP 边界 | `modules/coding-agent-cli/.../runtimeapi/web/*Controller.java` |
-| 调用上下文 Header 边界 | Controller 路由测试；Runtime 不再包含认证器、认证拦截器或认证错误码 |
+| 调用上下文 Header 边界 | `RuntimeRequestContext#mateCredentials`、`RuntimeEventController#submit`；Runtime 不包含认证器、认证拦截器或认证错误码 |
 | 类型化资源 ID | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/common/identifier/ResourceIdentifierPatterns.java`、`runtimeapi/web/*Controller` 的 Jakarta 路径参数约束、`RuntimeExceptionHandler#handleInvalidParameter`、`MateServiceClient`、`AgentRuntimeManager`、`HttpMateToolClient`、`RandomSessionIdGenerator` |
 | ResultBean / i18n | `runtimeapi/result/*`、`RuntimeMessageSourceConfiguration`、`RuntimeRequestContext`、`src/main/resources/i18n/messages_{en_US,zh_CN}.properties` |
 | Session 业务 | `runtimeapi/session/RuntimeSessionService.java`、`RuntimeSessionConfigurationService.java`、`RuntimeSessionControlService.java` |
@@ -73,7 +73,7 @@
 | 流式连接 | 旧本地接口与公开 WebSocket 并存 | 单次 POST 建立 SSE，`stream.end` 后关闭 | 架构变更：协议唯一、断线可通过历史恢复 |
 | Session 与模型 | CLI 启动时先选模型 | Session 创建不要求模型，可在后续事件前切换 | 产品约束：Session 生命周期允许模型切换 |
 | 删除 | 历史方案曾计划自动 abort | active execution 返回 409；idle 才删除 | 安全加固：避免删除与执行副作用竞态 |
-| 调用上下文 Header | 基线认证拦截器检查 Header 齐全、共存和 Bearer 形状 | 全接口保留集成 Header 契约，但 Runtime 不做本地检查 | 架构变更：真实性和动作授权由上游 mate-service 保证，Runtime 不建立凭据状态 |
+| 调用上下文 Header | 基线认证拦截器检查 Header 齐全、共存和 Bearer 形状 | 全接口保留集成 Header 契约且不做本地认证；POST Events 额外创建仅供本次 Mate 工具调用的瞬态快照 | 架构变更：真实性和动作授权由上游 mate-service 保证；安全加固：凭据不持久化、不依赖 ThreadLocal |
 | 资源 ID | Agent 使用下划线短 ID，Session 使用无类型 Crockford Base32 | Agent/Tool/Skill/Session 使用类型前缀加 32 位无连字符 UUID；正则字符串与编译模式集中在中立的领域模式类；HTTP 路径参数使用 Jakarta 注解校验 | 产品约束：阻止无前缀、错误类型和旧格式进入边界；架构变更：消除重复编译、核心代码对 HTTP 常量包的反向依赖和命令式边界 Validator |
 | 创建默认值 | `RuntimeSessionService#newSession` 持久化 `thinking=false` | 创建时持久化 `thinking=true`；默认模型不支持 reasoning 时返回 `AGENT_MODEL_NOT_CONFIGURED` | 产品约束：新 Session 默认启用深度思考，且公开状态必须与模型能力一致 |
 | 用户事件请求 | `UserEventRequestVO` 要求冗余 `type=user.message` | 只接受 `message` 与 `fileIds`，`type` 和 snake_case 别名作为未知字段拒绝 | 产品约束：operation 已固定消息类型，公共字段统一为 lowerCamelCase |
@@ -127,6 +127,14 @@ DDL 使用 `t_` 前缀：`t_sessions`、`t_session_entries`、`t_session_sequenc
 - Steer/FollowUp 队列最多 32 条或 1 MiB，超限返回 429；
 - 心跳间隔 15 秒。
 
+### Mate 工具凭据
+
+只有创建活动执行的 `POST /sessions/{sessionId}/events` 会读取调用上下文 Header，并把三项值
+作为不可变 `MateCredentials` 显式传入本次公共 Session。Runtime 不验证真实性、Bearer 形状
+或 AppKey/JWT 互斥性；两类凭据同时存在时保持原样交给 Mate。`ListMateTools` 的发现请求和
+`CallMateTool` 的执行请求使用同一快照，Child 继承父执行快照。快照不进入数据库、Runtime
+Entry、Prompt、模型消息或日志，活动执行关闭后随 Session 释放。
+
 ## 6. 验证证据
 
 以下验证针对 3.0.2 候选实现执行：
@@ -156,6 +164,7 @@ DDL 使用 `t_` 前缀：`t_sessions`、`t_session_entries`、`t_session_sequenc
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 3.2.0 | 2026-08-24 | POST Events 创建瞬态 Mate 凭据快照并显式传递到公共 Session、List/Call 与 Child；保持 Runtime 不做本地认证和凭据不持久化 |
 | 3.1.0 | 2026-08-21 | 对齐 HTTP 1.38：Path、Query、JSON 与 SSE data 统一为 lowerCamelCase；Header 和字段值保持原样；内部 Entry payload 通过受控投影兼容已有数据 |
 | 3.0.2 | 2026-08-21 | 用 Controller 标量参数 Jakarta 注解替代命令式路径 ID Validator，并统一映射 Spring MVC 方法校验错误 |
 | 3.0.1 | 2026-08-21 | 将类型化资源 ID 的正则字符串和编译模式集中到领域模式类，并从 Runtime HTTP 常量中移除领域约束 |

@@ -7,6 +7,7 @@ package com.campusclaw.codingagent.runtimeapi.runtime;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -15,15 +16,18 @@ import java.util.List;
 
 import com.campusclaw.agent.Agent;
 import com.campusclaw.ai.types.Model;
+import com.campusclaw.codingagent.common.client.mate.MateCredentials;
 import com.campusclaw.codingagent.runtimeapi.agent.AgentDirectorySnapshotDTO;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
 import com.campusclaw.codingagent.session.AgentSessionFactory;
 import com.campusclaw.codingagent.session.ManagedAgentSession;
+import com.campusclaw.codingagent.session.ManagedAgentSessionRequest;
 import com.campusclaw.codingagent.tool.agent.SubagentExecutionService;
 import com.campusclaw.codingagent.tool.cron.AgentScopedCronToolFactory;
 
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 class RuntimeSessionEngineRegistryTest {
 
@@ -45,14 +49,21 @@ class RuntimeSessionEngineRegistryTest {
         Model model = mock(Model.class);
         RuntimeActiveExecution firstExecution = mock(RuntimeActiveExecution.class);
         RuntimeActiveExecution rejectedExecution = mock(RuntimeActiveExecution.class);
+        MateCredentials credentials = MateCredentials.appKey("caller-1", "app-key-1");
 
         RuntimeSessionHolder accepted =
-                registry.register("session-a", snapshot, model, false, List.of(), firstExecution);
+                registry.register("session-a", snapshot, model, false, List.of(), firstExecution, credentials);
 
-        assertThatThrownBy(() -> registry.register("session-a", snapshot, model, false, List.of(), rejectedExecution))
+        assertThatThrownBy(() -> registry.register(
+                        "session-a", snapshot, model, false, List.of(), rejectedExecution, credentials))
                 .isInstanceOfSatisfying(RuntimeApiException.class, error -> org.assertj.core.api.Assertions.assertThat(
                                 error.errorCode())
                         .isEqualTo(RuntimeErrorCode.SESSION_BUSY));
+        ArgumentCaptor<ManagedAgentSessionRequest> requests = ArgumentCaptor.forClass(ManagedAgentSessionRequest.class);
+        verify(sessionFactory, times(2)).create(requests.capture());
+        org.assertj.core.api.Assertions.assertThat(requests.getAllValues())
+                .extracting(ManagedAgentSessionRequest::mateCredentials)
+                .containsOnly(credentials);
         verify(rejectedSession).close();
 
         registry.complete(accepted, firstExecution);

@@ -18,6 +18,7 @@ import com.huawei.hicampus.mate.matecampusclaw.ai.types.Model;
 import com.huawei.hicampus.mate.matecampusclaw.ai.types.ModelCost;
 import com.huawei.hicampus.mate.matecampusclaw.ai.types.Provider;
 import com.huawei.hicampus.mate.matecampusclaw.ai.types.ThinkingLevel;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.common.client.mate.MateCredentials;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtime.MateServiceClient.AgentReference;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtime.MateServiceClient.AgentRuntime;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtime.PreparedAgentRuntime;
@@ -65,7 +66,7 @@ class BoundAgentToolTest {
         PreparedAgentRuntime runtime = prepared(children);
         return new BoundAgentTool(
                 runtime,
-                SubagentExecutionContext.root(PARENT_ID, model, ThinkingLevel.OFF),
+                SubagentExecutionContext.root(PARENT_ID, model, ThinkingLevel.OFF, MateCredentials.empty()),
                 mock(SubagentExecutionService.class));
     }
 

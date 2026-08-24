@@ -10,6 +10,7 @@ import com.huawei.hicampus.mate.matecampusclaw.ai.types.AssistantMessage;
 import com.huawei.hicampus.mate.matecampusclaw.ai.types.Model;
 import com.huawei.hicampus.mate.matecampusclaw.ai.types.TextContent;
 import com.huawei.hicampus.mate.matecampusclaw.ai.types.ThinkingLevel;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.common.client.mate.MateCredentials;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.model.ModelCatalogService;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtime.PreparedAgentRuntime;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.session.AgentSessionFactory;
@@ -55,10 +56,11 @@ public class ManagedCronSessionRunner implements CronAgentSessionRunner {
                 ToolEntryPoint.CRON,
                 this::resolveDefaultModel,
                 thinking,
+                MateCredentials.empty(),
                 null,
                 (prepared, model) -> new BoundAgentTool(
                         prepared,
-                        SubagentExecutionContext.root(prepared.agentId(), model, thinking),
+                        SubagentExecutionContext.root(prepared.agentId(), model, thinking, MateCredentials.empty()),
                         subagentExecutionService),
                 null,
                 List.of(),

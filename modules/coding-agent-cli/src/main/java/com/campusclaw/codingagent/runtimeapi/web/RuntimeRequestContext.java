@@ -7,14 +7,17 @@ package com.campusclaw.codingagent.runtimeapi.web;
 import java.util.List;
 import java.util.Locale;
 
+import com.campusclaw.codingagent.common.client.mate.MateCredentialHeaders;
+import com.campusclaw.codingagent.common.client.mate.MateCredentials;
+
 import org.springframework.http.HttpHeaders;
 
 import jakarta.servlet.http.HttpServletRequest;
 
 /**
- * 从 Servlet 请求中读取语言上下文。
+ * 从 Servlet 请求中读取语言与本次 Mate 工具执行凭据上下文。
  *
- * @version [br_eCampusCore 26.0.0, 2026/08/18]
+ * @version [br_eCampusCore 26.0.0, 2026/08/24]
  * @since [br_eCampusCore 26.0.0]
  */
 public final class RuntimeRequestContext {
@@ -37,5 +40,12 @@ public final class RuntimeRequestContext {
 
     public static String language(HttpServletRequest request) {
         return locale(request).toLanguageTag();
+    }
+
+    public static MateCredentials mateCredentials(HttpServletRequest request) {
+        return new MateCredentials(
+                request.getHeader(MateCredentialHeaders.X_HW_ID),
+                request.getHeader(MateCredentialHeaders.X_HW_APPKEY),
+                request.getHeader(MateCredentialHeaders.AUTHORIZATION));
     }
 }

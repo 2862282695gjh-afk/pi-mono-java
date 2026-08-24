@@ -18,17 +18,13 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * REST helper for calls to the Mate inner gateway ({@code mate.innerGWSerive}).
+ * 调用 Mate 内部网关（{@code mate.innerGWSerive}）的 REST 工具。
  *
- * <p>The internal gateway does not require credential headers; a default
- * {@code RequestHeaderInfo.builder().build()} is sufficient — its fields are
- * still mapped onto HTTP headers so the internal deployment can carry them.
- * Transport is the JDK HttpClient; responses are returned raw and decoded by
- * the caller (the {@code {resCode, resMsg, result}} envelope differs per
- * endpoint). The internal development may replace the transport with the
- * campuscommon RestUtil while keeping these signatures.
+ * <p>调用方按执行上下文决定是否填充凭据 Header；本类只负责原样映射非空字段，不保存或
+ * 解析凭据。传输使用 JDK HttpClient，响应保持原始文本并由调用方解析不同端点的
+ * {@code {resCode, resMsg, result}} 信封。
  *
- * @version [br_eCampusCore 26.0.0, 2026/08/18]
+ * @version [br_eCampusCore 26.0.0, 2026/08/24]
  * @since [br_eCampusCore 26.0.0]
  */
 public class MateRestUtil {
@@ -42,32 +38,30 @@ public class MateRestUtil {
     private final HttpClient http;
 
     /**
-     * Creates a MateRestUtil with a default HTTP client.
+     * 使用默认 HTTP 客户端创建实例。
      */
     public MateRestUtil() {
         this(HttpClient.newBuilder().connectTimeout(CONNECT_TIMEOUT).build());
     }
 
     /**
-     * Creates a MateRestUtil with the given HTTP client (tests inject stubs here).
+     * 使用指定 HTTP 客户端创建实例，测试可在此注入替身。
      *
-     * @param http the HTTP client to use
+     * @param http HTTP 客户端
      */
     public MateRestUtil(HttpClient http) {
         this.http = http;
     }
 
     /**
-     * POSTs a JSON body to {@code gwAddress + path} and returns the raw
-     * response body.
+     * 向 {@code gwAddress + path} 发送 JSON POST 请求并返回原始响应体。
      *
-     * @param gwAddress Mate inner gateway base address
-     * @param path API path on the gateway
-     * @param headerInfo request header info mapped onto HTTP headers
-     * @param jsonBody raw JSON request body
-     * @return raw response body string
-     * @throws IllegalStateException when the call fails, is interrupted, or
-     *         returns an empty body
+     * @param gwAddress Mate 内部网关基础地址
+     * @param path 网关 API 路径
+     * @param headerInfo 映射到 HTTP Header 的请求信息
+     * @param jsonBody 原始 JSON 请求体
+     * @return 原始响应体
+     * @throws IllegalStateException 调用失败、中断或返回空响应体时抛出
      */
     public String executePostRawRequest(String gwAddress, String path, RequestHeaderInfo headerInfo, String jsonBody) {
         String url = joinUrl(gwAddress, path);
@@ -85,14 +79,13 @@ public class MateRestUtil {
     }
 
     /**
-     * GETs {@code gwAddress + path} and returns the raw response body.
+     * 向 {@code gwAddress + path} 发送 GET 请求并返回原始响应体。
      *
-     * @param gwAddress Mate inner gateway base address
-     * @param path API path on the gateway (may contain path variables)
-     * @param headerInfo request header info mapped onto HTTP headers
-     * @return raw response body string
-     * @throws IllegalStateException when the call fails, is interrupted, or
-     *         returns an empty body
+     * @param gwAddress Mate 内部网关基础地址
+     * @param path 网关 API 路径，可以包含路径变量
+     * @param headerInfo 映射到 HTTP Header 的请求信息
+     * @return 原始响应体
+     * @throws IllegalStateException 调用失败、中断或返回空响应体时抛出
      */
     public String executeGetRawRequest(String gwAddress, String path, RequestHeaderInfo headerInfo) {
         String url = joinUrl(gwAddress, path);

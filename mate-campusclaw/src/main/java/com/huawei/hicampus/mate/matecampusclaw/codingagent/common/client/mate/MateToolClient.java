@@ -20,17 +20,19 @@ public interface MateToolClient {
      * 查询指定 Agent 直接绑定的工具，并恢复绑定顺序。
      *
      * @param agentId Agent 标识
+     * @param credentials 本次执行的凭据快照；发现端点允许为空
      * @return 按绑定顺序排列的工具元数据
      */
-    List<MateToolMeta> listAgentTools(String agentId);
+    List<MateToolMeta> listAgentTools(String agentId, MateCredentials credentials);
 
     /**
      * 查询指定 Skill 直接绑定的工具，并恢复绑定顺序。
      *
      * @param skillId Skill 标识
+     * @param credentials 本次执行的凭据快照；发现端点允许为空
      * @return 按绑定顺序排列的工具元数据
      */
-    List<MateToolMeta> listSkillTools(String skillId);
+    List<MateToolMeta> listSkillTools(String skillId, MateCredentials credentials);
 
     /**
      * 使用 Agent 下发凭据调用指定内部工具标识。

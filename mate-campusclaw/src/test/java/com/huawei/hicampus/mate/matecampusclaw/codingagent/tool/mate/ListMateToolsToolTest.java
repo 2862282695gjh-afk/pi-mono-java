@@ -13,6 +13,7 @@ import java.util.Map;
 
 import com.huawei.hicampus.mate.matecampusclaw.agent.tool.ToolExecutionMode;
 import com.huawei.hicampus.mate.matecampusclaw.ai.types.TextContent;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.common.client.mate.MateCredentials;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.common.client.mate.MateToolMeta;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -28,6 +29,8 @@ class ListMateToolsToolTest {
 
     private static final String QUERY_ID = "tool-11111111111111111111111111111111";
 
+    private static final MateCredentials CREDENTIALS = MateCredentials.appKey("caller-1", "app-key-1");
+
     private MockMateToolClient client;
 
     private MateToolSessionState state;
@@ -39,7 +42,7 @@ class ListMateToolsToolTest {
                 QUERY_ID, "Query", "Query records", Map.of("type", "object"), Map.of("hidden", true), true, "allow"));
         client.bindAgent("agent-1", List.of(QUERY_ID));
         client.bindSkill("skill-1", List.of(QUERY_ID));
-        state = new MateToolsetFactory(client, null).createSession("agent-1", Map.of("research", "skill-1"));
+        state = new MateToolsetFactory(client).createSession("agent-1", Map.of("research", "skill-1"), CREDENTIALS);
     }
 
     @Test
@@ -62,6 +65,7 @@ class ListMateToolsToolTest {
                         + "\"description\":\"Query records\",\"inputSchema\":{\"type\":\"object\"}}]}");
         assertThat(json).doesNotContain(QUERY_ID, "permission", "outputSchema", "isConcurrencySafe");
         assertThat(client.agentListCalls()).isEqualTo(1);
+        assertThat(client.lastListCredentials()).isSameAs(CREDENTIALS);
     }
 
     @Test
