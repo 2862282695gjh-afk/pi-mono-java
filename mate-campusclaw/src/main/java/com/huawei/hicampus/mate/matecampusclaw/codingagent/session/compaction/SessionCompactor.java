@@ -99,15 +99,41 @@ public class SessionCompactor {
     }
 
     private int findSplitIndex(List<Message> messages) {
+        List<Integer> cutPoints = findValidCutPoints(messages);
+        if (cutPoints.isEmpty()) {
+            return 0;
+        }
         int recentTokens = 0;
+        int splitIndex = cutPoints.getFirst();
         for (int index = messages.size() - 1; index >= 0; index--) {
             int tokens = estimateMessageTokens(messages.get(index));
-            if (recentTokens + tokens > properties.getKeepRecentTokens()) {
-                return index + 1;
-            }
             recentTokens += tokens;
+            if (recentTokens >= properties.getKeepRecentTokens()) {
+                splitIndex = cutPointAtOrAfter(cutPoints, index);
+                break;
+            }
         }
-        return Math.max(1, messages.size() - 1);
+        return splitIndex;
+    }
+
+    private static List<Integer> findValidCutPoints(List<Message> messages) {
+        List<Integer> cutPoints = new ArrayList<>();
+        for (int index = 0; index < messages.size(); index++) {
+            Message message = messages.get(index);
+            if (message instanceof UserMessage || message instanceof AssistantMessage) {
+                cutPoints.add(index);
+            }
+        }
+        return List.copyOf(cutPoints);
+    }
+
+    private static int cutPointAtOrAfter(List<Integer> cutPoints, int messageIndex) {
+        for (int cutPoint : cutPoints) {
+            if (cutPoint >= messageIndex) {
+                return cutPoint;
+            }
+        }
+        return cutPoints.getFirst();
     }
 
     private SessionCompactionResult result(PreparedCompaction prepared, String summary, AssistantMessage response) {
