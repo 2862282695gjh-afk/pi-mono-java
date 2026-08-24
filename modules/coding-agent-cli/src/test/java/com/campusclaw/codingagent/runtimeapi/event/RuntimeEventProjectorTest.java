@@ -237,7 +237,8 @@ class RuntimeEventProjectorTest {
                 .map(AssistantMessage.class::cast)
                 .toList();
         assertThat(assistants).hasSize(1);
-        assertThat(((TextContent) assistants.getFirst().content().getFirst()).text()).isEqualTo("done");
+        assertThat(((TextContent) assistants.getFirst().content().getFirst()).text())
+                .isEqualTo("done");
         assertThat(event(collect(stream), "session.compaction.completed").getData())
                 .doesNotContainKey("_discardedEntryId");
     }
