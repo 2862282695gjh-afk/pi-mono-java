@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ADR-0025 Mate Chat Provider 与 Usage Record</title>
+  <style>
+    :root { color-scheme: light dark; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    body { margin: 0; background: Canvas; color: CanvasText; line-height: 1.65; }
+    main { width: min(960px, calc(100% - 32px)); margin: 32px auto 64px; }
+    header, section { border: 1px solid color-mix(in srgb, CanvasText 18%, transparent); border-radius: 12px; padding: 20px; margin: 16px 0; }
+    header { background: color-mix(in srgb, #2563eb 10%, Canvas); }
+    h1, h2 { line-height: 1.25; }
+    h1 { margin-top: 0; font-size: clamp(1.6rem, 4vw, 2.4rem); }
+    h2 { margin-top: 0; font-size: 1.25rem; }
+    code { background: color-mix(in srgb, CanvasText 9%, transparent); padding: .1rem .3rem; border-radius: 4px; overflow-wrap: anywhere; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { text-align: left; vertical-align: top; border-bottom: 1px solid color-mix(in srgb, CanvasText 16%, transparent); padding: 9px; }
+    .status { display: inline-block; padding: 3px 9px; border-radius: 999px; background: #166534; color: #fff; font-weight: 700; }
+    .decision { border-left: 5px solid #2563eb; }
+    .warning { border-left: 5px solid #d97706; }
+    ul { padding-left: 1.35rem; }
+    @media (max-width: 600px) {
+      main { width: min(100% - 20px, 960px); margin-top: 12px; }
+      header, section { padding: 14px; }
+      table, tbody, tr, th, td { display: block; }
+      th { padding-bottom: 2px; border-bottom: 0; }
+      td { padding-top: 2px; }
+    }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <p><span class="status">Accepted</span> ADR-0025 · 2026-08-25</p>
+    <h1>采用 Mate Chat 通用 Provider 与独立 Usage Record</h1>
+    <p>决策范围：CampusClaw 模型调用、CampusMate 透明代理、Runtime Usage 持久化。</p>
+  </header>
+
+  <section>
+    <h2>上下文</h2>
+    <p>规范仓 2.0.0 已将 OpenAI Responses 方案替换为前台 Chat SSE：
+      <code>POST /mate-service/v1/LLM/chat</code>。CampusClaw→CampusMate 处于内部网关信任边界，
+      不携带应用凭据；CampusMate 托管上游路由和秘密。</p>
+    <p>实施前 Java 主线按 <code>Api</code> 路由 Provider，不能区分使用相同 API 的不同 Provider；
+      Runtime 还把生命周期 Usage 放入物化 Session JSON，不符合 pi 的 Record + Stats 模型。</p>
+  </section>
+
+  <section class="decision">
+    <h2>决策</h2>
+    <ul>
+      <li>增加 <code>ProviderId</code>、<code>ProviderAuth.none()</code> 和 <code>AiProviderRegistry</code>；完整 Provider 身份优先于旧 <code>ApiProviderRegistry</code>。</li>
+      <li>注册唯一 Provider <code>mate-model-manager</code>，内部 API 固定为可配置的 <code>openai-completions</code>。</li>
+      <li>Provider 将 AgentLoop Context 转换为严格 Chat JSON；首版只接受文本和 function tool。</li>
+      <li>CampusMate 替换公开模型 ID、注入私有凭据，并逐字节转发成功 SSE；响应 chunk 不重写。</li>
+      <li>取消通过关闭 HTTP/SSE 完成；不提供远程 cancel operation，不自动重放结果未知的创建请求。</li>
+      <li>新增 <code>t_session_records</code> 与 <code>t_session_stats</code>；Assistant/Compaction Entry、Usage Record 和 Stats 在一个数据库事务中提交。</li>
+      <li>删除公开 Session 的 <code>lifetimeUsage</code> 和 Entry/SSE 的 usage；上游缺失 usage 时写全零内部记录。</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>接口与身份边界</h2>
+    <table>
+      <tr><th>项目</th><th>冻结值</th></tr>
+      <tr><td>Provider</td><td><code>mate-model-manager</code></td></tr>
+      <tr><td>API</td><td><code>openai-completions</code>，只用于 CampusClaw 内部选择实现</td></tr>
+      <tr><td>Endpoint</td><td><code>https://localhost:8591/mate-service/v1/LLM/chat</code>，host/path 可配置</td></tr>
+      <tr><td>认证</td><td>CampusClaw→CampusMate 为 <code>ProviderAuth.none()</code>；CampusMate→上游由 Mate 注入私有凭据</td></tr>
+      <tr><td>取消</td><td>关闭 subscription 和 HTTP/SSE，结果为 <code>StopReason.ABORTED</code></td></tr>
+    </table>
+  </section>
+
+  <section>
+    <h2>Usage 事务不变量</h2>
+    <ul>
+      <li>Entry 与 Record 共用 <code>t_session_sequences</code>；公开 Entry 序号允许有间隔。</li>
+      <li>Record 固定 <code>lane=main</code>，保存 <code>cause/entryId/attempt/stopReason/usage</code>。</li>
+      <li>Record 不设置 parent，不更新 <code>active_leaf_id</code>，不进入公开 SSE 或分支查询。</li>
+      <li><code>cached_tokens += cacheRead</code>；<code>uncached_tokens += input + cacheWrite</code>；
+        <code>total_tokens += totalTokens</code>；<code>cost_total += cost.total</code>。</li>
+    </ul>
+  </section>
+
+  <section class="warning">
+    <h2>明确不做</h2>
+    <ul>
+      <li>不实现尚未冻结的 Model Manager 模型目录、Agent 模型列表和模型解析接口。</li>
+      <li>不把工具发现、工具凭据链或工具 HTTP 客户端复制到模型 Provider。</li>
+      <li>不支持图片、音频、文件、Tool 图片结果、远程取消或创建请求自动重试。</li>
+      <li>不在 CampusClaw 中保存上游 API Key、endpoint 或私有模型 ID。</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>依据与后果</h2>
+    <p>pi-mono 基线：<code>5cd93f688aaab89dbb6dfa4aca535f21796ae185</code>；
+      Java 实施前主线：<code>0d7a12e1dd89eed52f6e12db717fd5703b6b2125</code>；
+      Mate 实施前主线：<code>6d5e6f3714e1cf8744d187a4796ca06300ad7e33</code>。</p>
+    <p>正面后果：Provider 身份不会因共享 API 冲突；上游秘密集中托管；reasoning 和 ToolCall 可续轮；
+      Usage 不污染消息分支。代价：Chat SSE 解析与数据库表增加，公开 Session 不再直接返回生命周期 Usage；
+      如未来需要统计查询，应单独冻结接口。</p>
+    <p>完整实现设计见 <a href="../designs/model-manager-chat-v2.md">Mate Chat 通用 Provider 2.0 实现设计</a>。</p>
+  </section>
+</main>
+</body>
+</html>

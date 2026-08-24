@@ -118,6 +118,7 @@ public class RuntimeEventService {
                 codec.userEntry(sessionId, idGenerator.nextId(), request.message(), request.fileIds(), now());
         UserEventAcceptance acceptance = repository.acceptUserEvent(sessionId, entry, now());
         requireAccepted(acceptance);
+        context.execution().beginRun(entry.getId());
         context.execution()
                 .eventStream()
                 .emit(new RuntimeSseEventVO(

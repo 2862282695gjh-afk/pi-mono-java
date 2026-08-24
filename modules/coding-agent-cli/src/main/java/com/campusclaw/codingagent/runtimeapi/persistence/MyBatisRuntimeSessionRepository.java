@@ -8,13 +8,14 @@ import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Optional;
 
+import com.campusclaw.ai.types.Cost;
+import com.campusclaw.ai.types.Usage;
 import com.campusclaw.codingagent.runtimeapi.dto.RuntimeEntryDTO;
+import com.campusclaw.codingagent.runtimeapi.dto.RuntimeRecordDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
 import com.campusclaw.codingagent.runtimeapi.mapper.RuntimeSessionMapper;
 import com.campusclaw.codingagent.runtimeapi.persistence.UserEventAcceptance.Status;
 import com.campusclaw.codingagent.runtimeapi.session.RuntimeSessionState;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
@@ -29,11 +30,8 @@ import org.springframework.transaction.annotation.Transactional;
 public class MyBatisRuntimeSessionRepository implements RuntimeSessionRepository {
     private final RuntimeSessionMapper mapper;
 
-    private final ObjectMapper objectMapper;
-
-    public MyBatisRuntimeSessionRepository(RuntimeSessionMapper mapper, ObjectMapper objectMapper) {
+    public MyBatisRuntimeSessionRepository(RuntimeSessionMapper mapper) {
         this.mapper = mapper;
-        this.objectMapper = objectMapper;
     }
 
     @Override
@@ -44,17 +42,14 @@ public class MyBatisRuntimeSessionRepository implements RuntimeSessionRepository
         }
         mapper.insertSession(session);
         mapper.insertSequence(session.getId());
-        mapper.insertMaterialized(session.getId(), materializedPayload(session));
+        mapper.insertMaterialized(session.getId(), "{}");
+        mapper.insertStats(session.getId());
     }
 
     @Override
     @Transactional(readOnly = true)
     public Optional<RuntimeSessionDTO> find(String sessionId) {
-        RuntimeSessionDTO session = mapper.findSession(sessionId);
-        if (session != null) {
-            session.setLifetimeUsage(readUsage(mapper.findLifetimeUsage(sessionId)));
-        }
-        return Optional.ofNullable(session);
+        return Optional.ofNullable(mapper.findSession(sessionId));
     }
 
     @Override
@@ -68,6 +63,7 @@ public class MyBatisRuntimeSessionRepository implements RuntimeSessionRepository
             return new UserEventAcceptance(Status.BUSY, session);
         }
         appendLocked(session, entry);
+        incrementMessageCount(entry);
         requireOne(
                 mapper.markSessionRunning(sessionId, entry.getId(), acceptedAt), "session did not enter running state");
         session.setState(RuntimeSessionState.RUNNING.value());
@@ -86,7 +82,22 @@ public class MyBatisRuntimeSessionRepository implements RuntimeSessionRepository
         }
         appendLocked(session, entry);
         requireOne(mapper.updateActiveLeaf(entry.getSessionId(), entry.getId()), "session active leaf was not updated");
-        accumulateUsage(entry);
+        incrementMessageCount(entry);
+        return entry;
+    }
+
+    @Override
+    @Transactional
+    public RuntimeEntryDTO appendEntryWithUsage(RuntimeEntryDTO entry, RuntimeRecordDTO record, Usage usage) {
+        RuntimeSessionDTO session = mapper.lockSessionForUpdate(entry.getSessionId());
+        if (session == null) {
+            throw new IllegalStateException("session disappeared during execution");
+        }
+        appendLocked(session, entry);
+        requireOne(mapper.updateActiveLeaf(entry.getSessionId(), entry.getId()), "session active leaf was not updated");
+        incrementMessageCount(entry);
+        appendRecordLocked(record);
+        accumulateUsageStats(entry.getSessionId(), usage);
         return entry;
     }
 
@@ -181,6 +192,8 @@ public class MyBatisRuntimeSessionRepository implements RuntimeSessionRepository
     @Transactional
     public void completeCleanup(String sessionId) {
         mapper.deleteEntries(sessionId);
+        mapper.deleteRecords(sessionId);
+        mapper.deleteStats(sessionId);
         mapper.deleteSequence(sessionId);
         mapper.deleteMaterialized(sessionId);
         mapper.deleteCleanupTask(sessionId);
@@ -207,7 +220,6 @@ public class MyBatisRuntimeSessionRepository implements RuntimeSessionRepository
     private void appendConfigurationEntries(RuntimeSessionDTO session, List<RuntimeEntryDTO> entries) {
         for (RuntimeEntryDTO entry : entries) {
             appendLocked(session, entry);
-            accumulateUsage(entry);
         }
         if (!entries.isEmpty()) {
             requireOne(
@@ -216,40 +228,37 @@ public class MyBatisRuntimeSessionRepository implements RuntimeSessionRepository
         }
     }
 
-    private void accumulateUsage(RuntimeEntryDTO entry) {
-        if (entry.getUsage() == null) {
-            return;
+    private void appendRecordLocked(RuntimeRecordDTO record) {
+        Long sequence = mapper.lockNextSequence(record.getSessionId());
+        if (sequence == null) {
+            throw new IllegalStateException("session sequence is missing");
         }
-        var current = readUsage(mapper.lockLifetimeUsage(entry.getSessionId()));
-        var accumulated = RuntimeUsageAccumulator.add(current, entry.getUsage());
+        record.setRecordSeq(sequence);
+        requireOne(mapper.insertRecord(record), "runtime record was not inserted");
+        requireOne(mapper.incrementSequence(record.getSessionId()), "session sequence was not incremented");
+    }
+
+    private void incrementMessageCount(RuntimeEntryDTO entry) {
+        if (isMessageEntry(entry.getType())) {
+            requireOne(mapper.incrementMessageCount(entry.getSessionId()), "session message count was not updated");
+        }
+    }
+
+    private void accumulateUsageStats(String sessionId, Usage usage) {
+        Usage value = usage == null ? Usage.empty() : usage;
+        Cost cost = value.cost() == null ? Cost.empty() : value.cost();
         requireOne(
-                mapper.updateLifetimeUsage(entry.getSessionId(), writeJson(accumulated)),
-                "session lifetime usage was not updated");
+                mapper.accumulateUsageStats(
+                        sessionId,
+                        value.cacheRead(),
+                        (long) value.input() + value.cacheWrite(),
+                        value.totalTokens(),
+                        cost.total()),
+                "session usage stats were not updated");
     }
 
-    private String materializedPayload(RuntimeSessionDTO session) {
-        var payload = objectMapper.createObjectNode();
-        payload.set("lifetimeUsage", objectMapper.valueToTree(session.getLifetimeUsage()));
-        return writeJson(payload);
-    }
-
-    private com.campusclaw.ai.types.Usage readUsage(String value) {
-        if (value == null || value.isBlank()) {
-            return com.campusclaw.ai.types.Usage.empty();
-        }
-        try {
-            return objectMapper.readValue(value, com.campusclaw.ai.types.Usage.class);
-        } catch (JsonProcessingException error) {
-            throw new IllegalStateException("session lifetime usage is invalid", error);
-        }
-    }
-
-    private String writeJson(Object value) {
-        try {
-            return objectMapper.writeValueAsString(value);
-        } catch (JsonProcessingException error) {
-            throw new IllegalStateException("runtime persistence value cannot be serialized", error);
-        }
+    private static boolean isMessageEntry(String type) {
+        return "user.message".equals(type) || "assistant.message.completed".equals(type) || "tool.result".equals(type);
     }
 
     private static void requireOne(int affectedRows, String message) {

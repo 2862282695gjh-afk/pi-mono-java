@@ -4,7 +4,6 @@
 
 package com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi;
 
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.model.ModelCatalogService;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtime.AgentRuntimeManager;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.agent.AgentDirectoryResolver;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.agent.FileAgentDirectoryResolver;
@@ -12,7 +11,8 @@ import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.event.Rand
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.event.RuntimeEntryIdGenerator;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.event.RuntimeEventProperties;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.mapper.RuntimeSessionMapper;
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.model.CatalogRuntimeModelManager;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.model.MateModelManagerProperties;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.model.MateRuntimeModelManager;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.model.RuntimeModelManager;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.result.ResultBeanAdapter;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.result.StandaloneResultBeanAdapter;
@@ -40,7 +40,8 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 @EnableConfigurationProperties({
     RuntimeCleanupProperties.class,
     RuntimeExecutionProperties.class,
-    RuntimeEventProperties.class
+    RuntimeEventProperties.class,
+    MateModelManagerProperties.class
 })
 public class RuntimeApiConfiguration {
     @Bean
@@ -57,8 +58,8 @@ public class RuntimeApiConfiguration {
 
     @Bean
     @ConditionalOnMissingBean(RuntimeModelManager.class)
-    public RuntimeModelManager catalogRuntimeModelManager(ModelCatalogService modelCatalogService) {
-        return new CatalogRuntimeModelManager(modelCatalogService);
+    public RuntimeModelManager mateRuntimeModelManager(MateModelManagerProperties properties) {
+        return new MateRuntimeModelManager(properties);
     }
 
     @Bean

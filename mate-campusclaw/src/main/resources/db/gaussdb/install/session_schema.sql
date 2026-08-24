@@ -7,6 +7,8 @@
 BEGIN;
 
 DROP TABLE IF EXISTS t_session_materialized;
+DROP TABLE IF EXISTS t_session_stats;
+DROP TABLE IF EXISTS t_session_records;
 DROP TABLE IF EXISTS t_session_sequences;
 DROP TABLE IF EXISTS t_session_entries;
 DROP TABLE IF EXISTS t_session_cleanup_task;
@@ -123,22 +125,82 @@ CREATE INDEX idx_t_session_entries_session_parent
 CREATE INDEX idx_t_session_entries_session_type
     ON t_session_entries (session_id, type);
 
+CREATE TABLE t_session_records (
+    session_id  VARCHAR(128)   NOT NULL,
+    id          VARCHAR(128)   NOT NULL,
+    record_seq  BIGINT         NOT NULL,
+    lane        VARCHAR(32)    NOT NULL,
+    run_id      VARCHAR(128)   NOT NULL,
+    type        VARCHAR(64)    NOT NULL,
+    timestamp   TIMESTAMPTZ(3) NOT NULL,
+    payload     JSONB          NOT NULL,
+    PRIMARY KEY (session_id, id)
+);
+
+COMMENT ON TABLE t_session_records IS '会话内部运行记录表，保存不参与消息分支的 Usage 等记录';
+COMMENT ON COLUMN t_session_records.session_id IS '这条运行记录属于哪个会话；对应 t_sessions.id';
+COMMENT ON COLUMN t_session_records.id IS '这条运行记录的 ID；在同一个会话内唯一';
+COMMENT ON COLUMN t_session_records.record_seq IS '这条运行记录与 Entry 共享的会话持久化顺序号';
+COMMENT ON COLUMN t_session_records.lane IS '运行记录所属执行通道；当前固定为 main';
+COMMENT ON COLUMN t_session_records.run_id IS '产生这条运行记录的已接受用户执行 ID';
+COMMENT ON COLUMN t_session_records.type IS '运行记录类型；当前支持 usage';
+COMMENT ON COLUMN t_session_records.timestamp IS '产生这条运行记录的事件时间';
+COMMENT ON COLUMN t_session_records.payload IS '运行记录的类型相关 JSON 内容';
+
+CREATE UNIQUE INDEX idx_t_session_records_session_seq
+    ON t_session_records (session_id, record_seq);
+
+CREATE INDEX idx_t_session_records_session_run
+    ON t_session_records (session_id, run_id, record_seq);
+
+CREATE INDEX idx_t_session_records_session_type
+    ON t_session_records (session_id, type, record_seq);
+
+CREATE INDEX idx_t_session_records_session_lane
+    ON t_session_records (session_id, lane, record_seq);
+
+CREATE TABLE t_session_stats (
+    session_id       VARCHAR(128)  PRIMARY KEY,
+    message_count    BIGINT        NOT NULL,
+    cached_tokens    BIGINT        NOT NULL,
+    uncached_tokens  BIGINT        NOT NULL,
+    total_tokens     BIGINT        NOT NULL,
+    cost_total       NUMERIC(24,8) NOT NULL
+);
+
+COMMENT ON TABLE t_session_stats IS '会话生命周期消息数、Token 和费用累计统计表';
+COMMENT ON COLUMN t_session_stats.session_id IS '这份累计统计属于哪个会话；对应 t_sessions.id，每个会话一行';
+COMMENT ON COLUMN t_session_stats.message_count IS '已持久化的用户、助手和工具结果消息总数';
+COMMENT ON COLUMN t_session_stats.cached_tokens IS '模型调用命中缓存的 Token 累计数';
+COMMENT ON COLUMN t_session_stats.uncached_tokens IS '模型调用输入与缓存写入 Token 的累计数';
+COMMENT ON COLUMN t_session_stats.total_tokens IS '模型调用上报的总 Token 累计数';
+COMMENT ON COLUMN t_session_stats.cost_total IS '模型调用费用的累计总额';
+
+ALTER TABLE t_session_stats
+    ADD CONSTRAINT ck_t_session_stats_nonnegative CHECK (
+        message_count >= 0
+        AND cached_tokens >= 0
+        AND uncached_tokens >= 0
+        AND total_tokens >= 0
+        AND cost_total >= 0
+    );
+
 CREATE TABLE t_session_sequences (
     session_id  VARCHAR(128) PRIMARY KEY,
     next_seq    BIGINT       NOT NULL
 );
 
-COMMENT ON TABLE t_session_sequences IS '会话序号表，分配单个会话内严格递增的持久化顺序号';
+COMMENT ON TABLE t_session_sequences IS '会话序号表，为 Entry 和内部 Record 分配严格递增的持久化顺序号';
 COMMENT ON COLUMN t_session_sequences.session_id IS '这行序号记录属于哪个会话；对应 t_sessions.id，每个会话一行';
-COMMENT ON COLUMN t_session_sequences.next_seq IS '下一条新历史记录要使用的 entry_seq；新建会话时为 1，每次成功追加后加 1';
+COMMENT ON COLUMN t_session_sequences.next_seq IS '下一条 Entry 或内部 Record 要使用的顺序号；新建会话时为 1，每次成功追加后加 1';
 
 CREATE TABLE t_session_materialized (
     session_id  VARCHAR(128) PRIMARY KEY,
     payload     JSONB        NOT NULL
 );
 
-COMMENT ON TABLE t_session_materialized IS '会话汇总表，保存当前路径和生命周期用量等物化数据';
+COMMENT ON TABLE t_session_materialized IS '会话汇总表，保存当前路径等可重建的物化数据';
 COMMENT ON COLUMN t_session_materialized.session_id IS '这份汇总属于哪个会话；对应 t_sessions.id，每个会话一行';
-COMMENT ON COLUMN t_session_materialized.payload IS '会话汇总 JSON；activePath 保存当前路径的名称、消息数、模型和思考级别，lifetimeUsage 保存会话自创建以来的 Token 和费用总和';
+COMMENT ON COLUMN t_session_materialized.payload IS '会话汇总 JSON；可保存当前路径名称、模型和思考级别等可重建视图，不保存 Usage';
 
 COMMIT;

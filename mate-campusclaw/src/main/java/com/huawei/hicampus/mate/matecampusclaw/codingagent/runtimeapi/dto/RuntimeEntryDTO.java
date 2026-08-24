@@ -6,8 +6,6 @@ package com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.dto;
 
 import java.time.OffsetDateTime;
 
-import com.huawei.hicampus.mate.matecampusclaw.ai.types.Usage;
-
 import lombok.Data;
 
 /**
@@ -31,6 +29,4 @@ public class RuntimeEntryDTO {
     private OffsetDateTime timestamp;
 
     private String payload;
-
-    private Usage usage;
 }

@@ -53,6 +53,7 @@ import com.campusclaw.ai.types.ToolCall;
 import com.campusclaw.ai.types.Usage;
 import com.campusclaw.ai.types.UserMessage;
 import com.campusclaw.codingagent.runtimeapi.dto.RuntimeEntryDTO;
+import com.campusclaw.codingagent.runtimeapi.dto.RuntimeRecordDTO;
 import com.campusclaw.codingagent.runtimeapi.persistence.RuntimeSessionRepository;
 import com.campusclaw.codingagent.runtimeapi.runtime.RuntimeActiveExecution;
 import com.campusclaw.codingagent.runtimeapi.vo.RuntimeSseEventVO;
@@ -80,14 +81,10 @@ class RuntimeEventProjectorTest {
         RuntimeSessionRepository repository = mock(RuntimeSessionRepository.class);
         AtomicInteger sequence = new AtomicInteger(2);
         List<RuntimeEntryDTO> persisted = new ArrayList<>();
-        when(repository.appendEntry(any())).thenAnswer(invocation -> {
-            RuntimeEntryDTO entry = invocation.getArgument(0);
-            entry.setEntrySeq(sequence.getAndIncrement());
-            persisted.add(entry);
-            return entry;
-        });
+        configurePersistence(repository, sequence, persisted);
         RuntimeEventStream stream = new RuntimeEventStream(256, 1024L * 1024L, Duration.ofSeconds(15), event -> 1L);
         RuntimeActiveExecution execution = new RuntimeActiveExecution(stream);
+        execution.beginRun("entry_run");
         UserMessage initialMessage = new UserMessage("分析订单", 1L);
         AtomicInteger ids = new AtomicInteger(1);
         RuntimeEntryIdGenerator idGenerator = () -> "entry_" + ids.getAndIncrement();
@@ -115,9 +112,27 @@ class RuntimeEventProjectorTest {
         assertThat(persisted)
                 .extracting(RuntimeEntryDTO::getType)
                 .containsExactly("assistant.message.completed", "tool.result", "assistant.message.completed");
-        assertThat(persisted).extracting(RuntimeEntryDTO::getEntrySeq).containsExactly(2L, 3L, 4L);
+        assertThat(persisted).extracting(RuntimeEntryDTO::getEntrySeq).containsExactly(2L, 4L, 5L);
         assertThat(projector.failure()).isNull();
         assertThat(projector.terminalReason()).isEqualTo(StopReason.STOP);
+    }
+
+    private static void configurePersistence(
+            RuntimeSessionRepository repository, AtomicInteger sequence, List<RuntimeEntryDTO> persisted) {
+        when(repository.appendEntry(any())).thenAnswer(invocation -> {
+            RuntimeEntryDTO entry = invocation.getArgument(0);
+            entry.setEntrySeq(sequence.getAndIncrement());
+            persisted.add(entry);
+            return entry;
+        });
+        when(repository.appendEntryWithUsage(any(), any(), any())).thenAnswer(invocation -> {
+            RuntimeEntryDTO entry = invocation.getArgument(0);
+            RuntimeRecordDTO record = invocation.getArgument(1);
+            entry.setEntrySeq(sequence.getAndIncrement());
+            record.setRecordSeq(sequence.getAndIncrement());
+            persisted.add(entry);
+            return entry;
+        });
     }
 
     @Test
@@ -213,7 +228,7 @@ class RuntimeEventProjectorTest {
         RuntimeSessionRepository repository = mock(RuntimeSessionRepository.class);
         when(repository.listCurrentBranchEntries("session_event_test", 0L, 500)).thenReturn(List.of(user, discarded));
         AtomicReference<RuntimeEntryDTO> compaction = new AtomicReference<>();
-        when(repository.appendEntry(any()))
+        when(repository.appendEntryWithUsage(any(), any(), any()))
                 .thenAnswer(invocation -> persistCompaction(invocation.getArgument(0), compaction));
         RuntimeEventStream stream = eventStream();
         RuntimeEventProjector projector = projector(repository, stream, false, codec);
@@ -251,6 +266,8 @@ class RuntimeEventProjectorTest {
     private static RuntimeEventProjector projector(
             RuntimeSessionRepository repository, RuntimeEventStream stream, boolean thinking, RuntimeEntryCodec codec) {
         AtomicInteger ids = new AtomicInteger(1);
+        RuntimeActiveExecution execution = new RuntimeActiveExecution(stream);
+        execution.beginRun("entry_run");
         return new RuntimeEventProjector(
                 "session_event_test",
                 repository,
@@ -259,7 +276,7 @@ class RuntimeEventProjectorTest {
                 stream,
                 Clock.fixed(Instant.parse("2026-08-18T00:00:00Z"), ZoneOffset.UTC),
                 () -> {},
-                new RuntimeActiveExecution(stream),
+                execution,
                 new UserMessage("分析订单", 1L),
                 thinking);
     }

@@ -25,6 +25,7 @@ import com.campusclaw.ai.types.StopReason;
 import com.campusclaw.ai.types.TextContent;
 import com.campusclaw.ai.types.ThinkingLevel;
 import com.campusclaw.ai.types.ToolCall;
+import com.campusclaw.ai.types.ToolChoice;
 import com.campusclaw.ai.types.Usage;
 import com.campusclaw.ai.types.UserMessage;
 import com.campusclaw.ai.utils.ContextOverflowDetector;
@@ -234,6 +235,7 @@ public class SessionCompactor {
     private static SimpleStreamOptions summaryOptions(Model model, ThinkingLevel thinking, int maxTokens) {
         SimpleStreamOptions.Builder builder = SimpleStreamOptions.builder()
                 .maxTokens(maxTokens)
+                .toolChoice(ToolChoice.NONE)
                 .cacheRetention(CacheRetention.NONE)
                 .sessionId(UUID.randomUUID().toString());
         if (model.reasoning() && thinking != null && thinking != ThinkingLevel.OFF) {

@@ -6,8 +6,6 @@ package com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.dto;
 
 import java.time.OffsetDateTime;
 
-import com.huawei.hicampus.mate.matecampusclaw.ai.types.Usage;
-
 import lombok.Data;
 
 /**
@@ -41,6 +39,4 @@ public class RuntimeSessionDTO {
     private String metadata;
 
     private String activeLeafId;
-
-    private Usage lifetimeUsage = Usage.empty();
 }

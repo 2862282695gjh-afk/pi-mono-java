@@ -6,8 +6,6 @@ package com.campusclaw.codingagent.runtimeapi.dto;
 
 import java.time.OffsetDateTime;
 
-import com.campusclaw.ai.types.Usage;
-
 import lombok.Data;
 
 /**
@@ -41,6 +39,4 @@ public class RuntimeSessionDTO {
     private String metadata;
 
     private String activeLeafId;
-
-    private Usage lifetimeUsage = Usage.empty();
 }

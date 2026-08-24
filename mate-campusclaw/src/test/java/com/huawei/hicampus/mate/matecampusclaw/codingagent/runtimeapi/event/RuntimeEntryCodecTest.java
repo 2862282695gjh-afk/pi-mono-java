@@ -12,6 +12,7 @@ import java.util.Map;
 
 import com.huawei.hicampus.mate.matecampusclaw.ai.types.Api;
 import com.huawei.hicampus.mate.matecampusclaw.ai.types.AssistantMessage;
+import com.huawei.hicampus.mate.matecampusclaw.ai.types.Cost;
 import com.huawei.hicampus.mate.matecampusclaw.ai.types.InputModality;
 import com.huawei.hicampus.mate.matecampusclaw.ai.types.Message;
 import com.huawei.hicampus.mate.matecampusclaw.ai.types.Model;
@@ -19,8 +20,10 @@ import com.huawei.hicampus.mate.matecampusclaw.ai.types.ModelCost;
 import com.huawei.hicampus.mate.matecampusclaw.ai.types.Provider;
 import com.huawei.hicampus.mate.matecampusclaw.ai.types.StopReason;
 import com.huawei.hicampus.mate.matecampusclaw.ai.types.TextContent;
+import com.huawei.hicampus.mate.matecampusclaw.ai.types.ThinkingContent;
 import com.huawei.hicampus.mate.matecampusclaw.ai.types.Usage;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.dto.RuntimeEntryDTO;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.dto.RuntimeRecordDTO;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import org.junit.jupiter.api.Test;
@@ -82,6 +85,43 @@ class RuntimeEntryCodecTest {
         assertThat(assistant.api()).isEqualTo("openai-responses");
         assertThat(assistant.provider()).isEqualTo("openai");
         assertThat(assistant.model()).isEqualTo("old-model");
+    }
+
+    @Test
+    void storesUsageOnlyInInternalRecordAndRestoresReasoningSignature() {
+        RuntimeEntryCodec codec = new RuntimeEntryCodec(new ObjectMapper());
+        Usage usage = new Usage(10, 5, 2, 1, 18, new Cost(0.1, 0.2, 0.01, 0.02, 0.33));
+        AssistantMessage original = new AssistantMessage(
+                List.of(new ThinkingContent("reason", "signature", false), new TextContent("done")),
+                "openai-completions",
+                "mate-model-manager",
+                "managed-model",
+                "response-1",
+                usage,
+                StopReason.STOP,
+                null,
+                1L);
+
+        RuntimeEntryDTO entry = codec.assistantEntry("session", "entry", original, OffsetDateTime.now());
+        RuntimeRecordDTO record = codec.usageRecord(
+                "session",
+                "record",
+                "run",
+                RuntimeUsageCause.ASSISTANT,
+                "entry",
+                1,
+                StopReason.STOP,
+                usage,
+                OffsetDateTime.now());
+        AssistantMessage restored = (AssistantMessage)
+                codec.toAgentMessages(List.of(entry), model()).getFirst();
+
+        assertThat(entry.getPayload()).contains("_thinking", "signature").doesNotContain("\"usage\"");
+        assertThat(codec.toSseData(entry)).doesNotContainKey("usage");
+        assertThat(record.getPayload()).contains("\"cause\":\"assistant\"", "\"totalTokens\":18");
+        assertThat(restored.usage()).isEqualTo(Usage.empty());
+        assertThat(((ThinkingContent) restored.content().getFirst()).thinkingSignature())
+                .isEqualTo("signature");
     }
 
     @SuppressWarnings("unchecked")

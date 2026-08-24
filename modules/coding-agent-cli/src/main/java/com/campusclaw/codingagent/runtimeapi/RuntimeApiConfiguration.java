@@ -4,7 +4,6 @@
 
 package com.campusclaw.codingagent.runtimeapi;
 
-import com.campusclaw.codingagent.model.ModelCatalogService;
 import com.campusclaw.codingagent.runtime.AgentRuntimeManager;
 import com.campusclaw.codingagent.runtimeapi.agent.AgentDirectoryResolver;
 import com.campusclaw.codingagent.runtimeapi.agent.FileAgentDirectoryResolver;
@@ -12,7 +11,8 @@ import com.campusclaw.codingagent.runtimeapi.event.RandomRuntimeEntryIdGenerator
 import com.campusclaw.codingagent.runtimeapi.event.RuntimeEntryIdGenerator;
 import com.campusclaw.codingagent.runtimeapi.event.RuntimeEventProperties;
 import com.campusclaw.codingagent.runtimeapi.mapper.RuntimeSessionMapper;
-import com.campusclaw.codingagent.runtimeapi.model.CatalogRuntimeModelManager;
+import com.campusclaw.codingagent.runtimeapi.model.MateModelManagerProperties;
+import com.campusclaw.codingagent.runtimeapi.model.MateRuntimeModelManager;
 import com.campusclaw.codingagent.runtimeapi.model.RuntimeModelManager;
 import com.campusclaw.codingagent.runtimeapi.result.ResultBeanAdapter;
 import com.campusclaw.codingagent.runtimeapi.result.StandaloneResultBeanAdapter;
@@ -40,7 +40,8 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 @EnableConfigurationProperties({
     RuntimeCleanupProperties.class,
     RuntimeExecutionProperties.class,
-    RuntimeEventProperties.class
+    RuntimeEventProperties.class,
+    MateModelManagerProperties.class
 })
 public class RuntimeApiConfiguration {
     @Bean
@@ -57,8 +58,8 @@ public class RuntimeApiConfiguration {
 
     @Bean
     @ConditionalOnMissingBean(RuntimeModelManager.class)
-    public RuntimeModelManager catalogRuntimeModelManager(ModelCatalogService modelCatalogService) {
-        return new CatalogRuntimeModelManager(modelCatalogService);
+    public RuntimeModelManager mateRuntimeModelManager(MateModelManagerProperties properties) {
+        return new MateRuntimeModelManager(properties);
     }
 
     @Bean

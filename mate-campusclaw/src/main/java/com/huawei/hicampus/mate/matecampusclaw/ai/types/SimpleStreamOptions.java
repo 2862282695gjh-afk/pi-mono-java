@@ -11,22 +11,20 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.annotation.Nullable;
 
 /**
- * Extended stream options that add reasoning/thinking configuration
- * on top of the base {@link StreamOptions} fields.
+ * 在基础流式选项上增加推理和工具选择配置。
  *
- * <p>Use {@link Builder} to construct instances fluently.
- *
- * @param temperature     sampling temperature (0.0 - 2.0)
- * @param maxTokens       maximum tokens to generate
- * @param apiKey          API key override for this request
- * @param transport       transport protocol (SSE, WebSocket, auto)
- * @param cacheRetention  prompt cache retention policy
- * @param sessionId       session identifier for stateful conversations
- * @param headers         additional HTTP headers for the request
- * @param maxRetryDelayMs maximum retry delay in milliseconds
- * @param metadata        arbitrary metadata to attach to the request
- * @param reasoning       thinking level to request from the model
- * @param thinkingBudgets token budgets per thinking level
+ * @param temperature 采样温度
+ * @param maxTokens 最大生成 Token 数
+ * @param apiKey 本次请求覆盖使用的 API Key
+ * @param transport 传输协议
+ * @param cacheRetention Prompt 缓存保留策略
+ * @param sessionId 有状态对话 Session 标识
+ * @param headers 请求附加 HTTP Header
+ * @param maxRetryDelayMs 最大重试等待毫秒数
+ * @param metadata 请求附加元数据
+ * @param reasoning 模型推理级别
+ * @param thinkingBudgets 各推理级别的 Token 预算
+ * @param toolChoice 模型是否可以选择函数工具
  *
  * @version [br_eCampusCore 26.0.0, 2026/05/06]
  * @since [br_eCampusCore 26.0.0]
@@ -42,31 +40,32 @@ public record SimpleStreamOptions(
         @JsonProperty("maxRetryDelayMs") @Nullable Long maxRetryDelayMs,
         @JsonProperty("metadata") @Nullable Map<String, Object> metadata,
         @JsonProperty("reasoning") @Nullable ThinkingLevel reasoning,
-        @JsonProperty("thinkingBudgets") @Nullable ThinkingBudgets thinkingBudgets) {
+        @JsonProperty("thinkingBudgets") @Nullable ThinkingBudgets thinkingBudgets,
+        @JsonProperty("toolChoice") @Nullable ToolChoice toolChoice) {
 
     /**
-     * Returns a {@link SimpleStreamOptions} with every field set to {@code null}.
+     * 创建所有字段均为空的简化流式选项。
      *
-     * @return a fully-null {@link SimpleStreamOptions} instance
+     * @return 空的简化流式选项
      */
     public static SimpleStreamOptions empty() {
-        return new SimpleStreamOptions(null, null, null, null, null, null, null, null, null, null, null);
+        return new SimpleStreamOptions(null, null, null, null, null, null, null, null, null, null, null, null);
     }
 
     /**
-     * Returns a new {@link Builder} initialized with default (null) values.
+     * 创建 Builder。
      *
-     * @return a fresh empty {@link Builder}
+     * @return 空 Builder
      */
     public static Builder builder() {
         return new Builder();
     }
 
     /**
-     * Creates a {@link SimpleStreamOptions} from a base {@link StreamOptions} with no reasoning config.
+     * 从基础流式选项创建不含推理配置的简化选项。
      *
-     * @param base source {@link StreamOptions} whose fields are copied verbatim
-     * @return a new {@link SimpleStreamOptions} mirroring {@code base} with reasoning fields unset
+     * @param base 要复制的基础流式选项
+     * @return 复制基础字段后的简化流式选项
      */
     public static SimpleStreamOptions from(StreamOptions base) {
         return new SimpleStreamOptions(
@@ -80,13 +79,14 @@ public record SimpleStreamOptions(
                 base.maxRetryDelayMs(),
                 base.metadata(),
                 null,
+                null,
                 null);
     }
 
     /**
-     * Returns the base {@link StreamOptions} portion (without reasoning fields).
+     * 提取不含推理字段的基础流式选项。
      *
-     * @return a {@link StreamOptions} carrying only the fields shared with the base record
+     * @return 基础流式选项
      */
     public StreamOptions toStreamOptions() {
         return new StreamOptions(
@@ -102,9 +102,9 @@ public record SimpleStreamOptions(
     }
 
     /**
-     * Returns a new {@link Builder} pre-populated from this instance.
+     * 创建预填充当前字段的 Builder。
      *
-     * @return a {@link Builder} pre-filled with this record's field values
+     * @return 预填充 Builder
      */
     public Builder toBuilder() {
         return new Builder()
@@ -118,7 +118,8 @@ public record SimpleStreamOptions(
                 .maxRetryDelayMs(maxRetryDelayMs)
                 .metadata(metadata)
                 .reasoning(reasoning)
-                .thinkingBudgets(thinkingBudgets);
+                .thinkingBudgets(thinkingBudgets)
+                .toolChoice(toolChoice);
     }
 
     @SuppressWarnings("checkstyle:top_class_comment")
@@ -134,6 +135,7 @@ public record SimpleStreamOptions(
         private Map<String, Object> metadata;
         private ThinkingLevel reasoning;
         private ThinkingBudgets thinkingBudgets;
+        private ToolChoice toolChoice;
 
         Builder() {}
 
@@ -192,6 +194,11 @@ public record SimpleStreamOptions(
             return this;
         }
 
+        public Builder toolChoice(@Nullable ToolChoice toolChoice) {
+            this.toolChoice = toolChoice;
+            return this;
+        }
+
         public SimpleStreamOptions build() {
             return new SimpleStreamOptions(
                     temperature,
@@ -204,7 +211,8 @@ public record SimpleStreamOptions(
                     maxRetryDelayMs,
                     metadata,
                     reasoning,
-                    thinkingBudgets);
+                    thinkingBudgets,
+                    toolChoice);
         }
     }
 }
