@@ -5,9 +5,9 @@
 package com.campusclaw.codingagent.runtimeapi;
 
 import com.campusclaw.codingagent.model.ModelCatalogService;
+import com.campusclaw.codingagent.runtime.AgentRuntimeManager;
 import com.campusclaw.codingagent.runtimeapi.agent.AgentDirectoryResolver;
 import com.campusclaw.codingagent.runtimeapi.agent.FileAgentDirectoryResolver;
-import com.campusclaw.codingagent.runtimeapi.agent.RuntimeAgentDirectoryProperties;
 import com.campusclaw.codingagent.runtimeapi.event.RandomRuntimeEntryIdGenerator;
 import com.campusclaw.codingagent.runtimeapi.event.RuntimeEntryIdGenerator;
 import com.campusclaw.codingagent.runtimeapi.event.RuntimeEventProperties;
@@ -20,7 +20,6 @@ import com.campusclaw.codingagent.runtimeapi.runtime.RuntimeExecutionProperties;
 import com.campusclaw.codingagent.runtimeapi.session.RandomSessionIdGenerator;
 import com.campusclaw.codingagent.runtimeapi.session.RuntimeCleanupProperties;
 import com.campusclaw.codingagent.runtimeapi.session.SessionIdGenerator;
-import com.fasterxml.jackson.databind.ObjectMapper;
 
 import org.mybatis.spring.annotation.MapperScan;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
@@ -39,7 +38,6 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 @EnableScheduling
 @MapperScan(basePackageClasses = RuntimeSessionMapper.class)
 @EnableConfigurationProperties({
-    RuntimeAgentDirectoryProperties.class,
     RuntimeCleanupProperties.class,
     RuntimeExecutionProperties.class,
     RuntimeEventProperties.class
@@ -53,9 +51,8 @@ public class RuntimeApiConfiguration {
 
     @Bean
     @ConditionalOnMissingBean(AgentDirectoryResolver.class)
-    public AgentDirectoryResolver fileAgentDirectoryResolver(
-            RuntimeAgentDirectoryProperties properties, ObjectMapper objectMapper) {
-        return new FileAgentDirectoryResolver(properties, objectMapper);
+    public AgentDirectoryResolver fileAgentDirectoryResolver(AgentRuntimeManager runtimeManager) {
+        return new FileAgentDirectoryResolver(runtimeManager);
     }
 
     @Bean

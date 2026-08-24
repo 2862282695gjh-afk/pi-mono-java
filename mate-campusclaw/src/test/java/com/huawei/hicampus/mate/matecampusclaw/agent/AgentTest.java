@@ -16,6 +16,7 @@ import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 import com.huawei.hicampus.mate.matecampusclaw.agent.context.DefaultMessageConverter;
 import com.huawei.hicampus.mate.matecampusclaw.agent.event.AgentEndEvent;
@@ -29,7 +30,6 @@ import com.huawei.hicampus.mate.matecampusclaw.agent.tool.AgentTool;
 import com.huawei.hicampus.mate.matecampusclaw.agent.tool.AgentToolResult;
 import com.huawei.hicampus.mate.matecampusclaw.agent.tool.AgentToolUpdateCallback;
 import com.huawei.hicampus.mate.matecampusclaw.agent.tool.CancellationToken;
-import com.huawei.hicampus.mate.matecampusclaw.agent.tool.ToolExecutionMode;
 import com.huawei.hicampus.mate.matecampusclaw.agent.tool.ToolExecutionPipeline;
 import com.huawei.hicampus.mate.matecampusclaw.ai.CampusClawAiService;
 import com.huawei.hicampus.mate.matecampusclaw.ai.model.ModelRegistry;
@@ -65,7 +65,6 @@ class AgentTest {
                 new DefaultMessageConverter(),
                 null,
                 new ToolExecutionPipeline(),
-                ToolExecutionMode.SEQUENTIAL,
                 new MessageQueue(),
                 new MessageQueue(),
                 SimpleStreamOptions.empty());
@@ -92,6 +91,18 @@ class AgentTest {
     }
 
     @Test
+    void defaultsRequestOutputLimitToLargeModelLimit() throws Exception {
+        Model model = sampleModel(64_000);
+        OptionsCapturingProvider provider = new OptionsCapturingProvider();
+        Agent agent = new Agent(piAiService(model, provider));
+        agent.setModel(model);
+
+        agent.prompt("large output").get(2, TimeUnit.SECONDS);
+
+        assertEquals(64_000, provider.options.get().maxTokens());
+    }
+
+    @Test
     void abortCancelsRunningToolExecution() throws Exception {
         var tool = new BlockingAbortTool();
         var agent = new Agent(
@@ -100,7 +111,6 @@ class AgentTest {
                 new DefaultMessageConverter(),
                 null,
                 new ToolExecutionPipeline(),
-                ToolExecutionMode.SEQUENTIAL,
                 new MessageQueue(),
                 new MessageQueue(),
                 SimpleStreamOptions.empty());
@@ -118,8 +128,9 @@ class AgentTest {
         assertTrue(tool.cancelled.get());
         assertTrue(agent.getState().getPendingToolCalls().isEmpty());
         assertFalse(agent.getState().isStreaming());
-        assertEquals(3, agent.getState().getMessages().size());
-        assertInstanceOf(ToolResultMessage.class, agent.getState().getMessages().getLast());
+        assertEquals(2, agent.getState().getMessages().size());
+        assertInstanceOf(AssistantMessage.class, agent.getState().getMessages().getLast());
+        assertNull(agent.getState().getError());
     }
 
     @Test
@@ -131,7 +142,6 @@ class AgentTest {
                 new DefaultMessageConverter(),
                 null,
                 new ToolExecutionPipeline(),
-                ToolExecutionMode.SEQUENTIAL,
                 steeringQueue,
                 new MessageQueue(),
                 SimpleStreamOptions.empty());
@@ -164,7 +174,6 @@ class AgentTest {
                 new DefaultMessageConverter(),
                 null,
                 new ToolExecutionPipeline(),
-                ToolExecutionMode.SEQUENTIAL,
                 new MessageQueue(),
                 new MessageQueue(),
                 SimpleStreamOptions.empty());
@@ -188,6 +197,10 @@ class AgentTest {
     }
 
     private Model sampleModel() {
+        return sampleModel(4_096);
+    }
+
+    private Model sampleModel(int maxTokens) {
         return new Model(
                 "test-model",
                 "Test Model",
@@ -198,7 +211,7 @@ class AgentTest {
                 List.of(InputModality.TEXT),
                 new ModelCost(1.0, 2.0, 0.5, 0.25),
                 200_000,
-                4_096,
+                maxTokens,
                 null,
                 null,
                 null);
@@ -335,6 +348,27 @@ class AgentTest {
             var userMessage = (UserMessage) context.messages().getLast();
             assertEquals(promptText, ((TextContent) userMessage.content().getFirst()).text());
             return textStream(model, responseText);
+        }
+    }
+
+    private static final class OptionsCapturingProvider implements ApiProvider {
+        private final AtomicReference<SimpleStreamOptions> options = new AtomicReference<>();
+
+        @Override
+        public Api getApi() {
+            return Api.ANTHROPIC_MESSAGES;
+        }
+
+        @Override
+        public AssistantMessageEventStream stream(
+                Model model, Context context, com.huawei.hicampus.mate.matecampusclaw.ai.types.StreamOptions options) {
+            throw new UnsupportedOperationException("Agent uses streamSimple");
+        }
+
+        @Override
+        public AssistantMessageEventStream streamSimple(Model model, Context context, SimpleStreamOptions options) {
+            this.options.set(options);
+            return textStream(model, "done");
         }
     }
 

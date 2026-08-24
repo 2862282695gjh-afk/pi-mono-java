@@ -25,6 +25,9 @@ import com.campusclaw.ai.types.Usage;
 import com.campusclaw.ai.types.UserMessage;
 import com.campusclaw.codingagent.runtimeapi.dto.RuntimeEntryDTO;
 import com.campusclaw.codingagent.runtimeapi.vo.RuntimeSseEventVO;
+import com.campusclaw.codingagent.session.compaction.CompactionMessageSupport;
+import com.campusclaw.codingagent.session.compaction.CompactionReason;
+import com.campusclaw.codingagent.session.compaction.SessionCompactionResult;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -61,18 +64,25 @@ public class RuntimeEntryCodec {
 
     public RuntimeEntryDTO assistantEntry(
             String sessionId, String entryId, AssistantMessage message, OffsetDateTime fallbackTime) {
+        Usage usage = message.usage() == null ? Usage.empty() : message.usage();
         ObjectNode payload = objectMapper.createObjectNode();
         ObjectNode publicMessage = payload.putObject("message");
         publicMessage.put("role", "assistant");
         ArrayNode content = publicMessage.putArray("content");
         message.content().forEach(block -> appendPublicContent(content, block));
         payload.put("finish_reason", finishReason(message.stopReason()));
-        return entry(
+        payload.put("_api", message.api());
+        payload.put("_provider", message.provider());
+        payload.put("_model", message.model());
+        payload.set("usage", objectMapper.valueToTree(usage));
+        RuntimeEntryDTO entry = entry(
                 sessionId,
                 entryId,
                 RuntimeEventType.ASSISTANT_MESSAGE_COMPLETED.value(),
                 eventTime(message.timestamp(), fallbackTime),
                 payload);
+        entry.setUsage(usage);
+        return entry;
     }
 
     public RuntimeEntryDTO thinkingEntry(
@@ -105,6 +115,60 @@ public class RuntimeEntryCodec {
                 payload);
     }
 
+    public RuntimeEntryDTO modelChangedEntry(
+            String sessionId,
+            String entryId,
+            String previousModelId,
+            String modelId,
+            String reason,
+            OffsetDateTime createdAt) {
+        ObjectNode payload = objectMapper.createObjectNode();
+        payload.put("previousModelId", previousModelId);
+        payload.put("modelId", modelId);
+        payload.put("reason", reason);
+        return entry(sessionId, entryId, RuntimeEventType.SESSION_MODEL_CHANGED.value(), createdAt, payload);
+    }
+
+    public RuntimeEntryDTO thinkingChangedEntry(
+            String sessionId,
+            String entryId,
+            boolean previousThinking,
+            boolean thinking,
+            String reason,
+            OffsetDateTime createdAt) {
+        ObjectNode payload = objectMapper.createObjectNode();
+        payload.put("previousThinking", previousThinking);
+        payload.put("thinking", thinking);
+        payload.put("reason", reason);
+        return entry(sessionId, entryId, RuntimeEventType.SESSION_THINKING_CHANGED.value(), createdAt, payload);
+    }
+
+    public RuntimeEntryDTO compactionEntry(
+            String sessionId,
+            String entryId,
+            CompactionReason reason,
+            String firstKeptEntryId,
+            String discardedEntryId,
+            SessionCompactionResult result,
+            boolean willRetry,
+            OffsetDateTime createdAt) {
+        ObjectNode payload = objectMapper.createObjectNode();
+        payload.put("reason", reason.value());
+        payload.put("summary", result.summary());
+        payload.put("firstKeptEntryId", firstKeptEntryId);
+        if (discardedEntryId != null) {
+            payload.put("_discardedEntryId", discardedEntryId);
+        }
+        payload.put("tokensBefore", result.tokensBefore());
+        payload.put("estimatedTokensAfter", result.estimatedTokensAfter());
+        payload.put("willRetry", willRetry);
+        payload.set("usage", objectMapper.valueToTree(result.usage()));
+        RuntimeEntryDTO entry =
+                entry(sessionId, entryId, RuntimeEventType.SESSION_COMPACTION_COMPLETED.value(), createdAt, payload);
+        entry.setUsage(result.usage());
+        return entry;
+    }
+
     public Map<String, Object> toSseData(RuntimeEntryDTO entry) {
         LinkedHashMap<String, Object> result = new LinkedHashMap<>();
         result.put("entryId", entry.getId());
@@ -135,10 +199,23 @@ public class RuntimeEntryCodec {
 
     public List<Message> toAgentMessages(List<RuntimeEntryDTO> entries, Model model) {
         List<Message> messages = new ArrayList<>();
-        for (RuntimeEntryDTO entry : entries) {
-            messages.add(toAgentMessage(entry, model));
+        for (RuntimeEntryDTO entry : effectiveContextEntries(entries)) {
+            Message message = toAgentMessage(entry, model);
+            if (message != null) {
+                messages.add(message);
+            }
         }
         return List.copyOf(messages);
+    }
+
+    public List<String> toAgentContextEntryIds(List<RuntimeEntryDTO> entries) {
+        List<String> ids = new ArrayList<>();
+        for (RuntimeEntryDTO entry : effectiveContextEntries(entries)) {
+            if (isAgentContextEntry(entry)) {
+                ids.add(entry.getId());
+            }
+        }
+        return List.copyOf(ids);
     }
 
     private Message toAgentMessage(RuntimeEntryDTO entry, Model model) {
@@ -147,8 +224,8 @@ public class RuntimeEntryCodec {
             case USER_MESSAGE -> userMessage(entry, payload);
             case ASSISTANT_MESSAGE_COMPLETED -> assistantMessage(entry, payload, model);
             case TOOL_RESULT -> toolResultMessage(entry, payload);
-            default ->
-                throw new IllegalArgumentException("unsupported persisted runtime entry type: " + entry.getType());
+            case SESSION_COMPACTION_COMPLETED -> compactionSummaryMessage(entry, payload);
+            default -> null;
         };
     }
 
@@ -180,14 +257,119 @@ public class RuntimeEntryCodec {
         StopReason reason = parseFinishReason(payload.path("finish_reason").asText());
         return new AssistantMessage(
                 content,
-                model.api().value(),
-                model.provider().value(),
-                model.id(),
+                payload.path("_api").asText(model.api().value()),
+                payload.path("_provider").asText(model.provider().value()),
+                payload.path("_model").asText(model.id()),
                 null,
-                Usage.empty(),
+                readUsage(payload.path("usage")),
                 reason,
                 null,
                 entry.getTimestamp().toInstant().toEpochMilli());
+    }
+
+    private UserMessage compactionSummaryMessage(RuntimeEntryDTO entry, JsonNode payload) {
+        String summary = payload.path("summary").asText();
+        return CompactionMessageSupport.summaryMessage(
+                summary, entry.getTimestamp().toInstant().toEpochMilli());
+    }
+
+    private List<RuntimeEntryDTO> effectiveContextEntries(List<RuntimeEntryDTO> entries) {
+        int compactionIndex = latestCompactionIndex(entries);
+        if (compactionIndex < 0) {
+            return recoverableContextEntries(entries, 0, entries.size());
+        }
+        RuntimeEntryDTO compaction = entries.get(compactionIndex);
+        JsonNode payload = readPayload(compaction.getPayload());
+        String firstKeptEntryId = payload.path("firstKeptEntryId").asText();
+        String discardedEntryId = discardedEntryId(entries, compactionIndex, payload);
+        int firstKeptIndex = findEntryIndex(entries, firstKeptEntryId);
+        List<RuntimeEntryDTO> result = new ArrayList<>();
+        result.add(compaction);
+        if (firstKeptIndex >= 0) {
+            appendContextEntries(entries, firstKeptIndex, compactionIndex, discardedEntryId, result);
+        }
+        appendContextEntries(entries, compactionIndex + 1, entries.size(), null, result);
+        return List.copyOf(result);
+    }
+
+    private void appendContextEntries(
+            List<RuntimeEntryDTO> entries, int start, int end, String excludedEntryId, List<RuntimeEntryDTO> target) {
+        for (int index = start; index < end; index++) {
+            RuntimeEntryDTO entry = entries.get(index);
+            if (!entry.getId().equals(excludedEntryId) && isRecoverableMessageEntry(entry)) {
+                target.add(entry);
+            }
+        }
+    }
+
+    private List<RuntimeEntryDTO> recoverableContextEntries(List<RuntimeEntryDTO> entries, int start, int end) {
+        List<RuntimeEntryDTO> result = new ArrayList<>();
+        appendContextEntries(entries, start, end, null, result);
+        return List.copyOf(result);
+    }
+
+    String lastRetriableAssistantEntryId(List<RuntimeEntryDTO> entries) {
+        return lastRetriableAssistantEntryId(entries, entries.size());
+    }
+
+    private String discardedEntryId(List<RuntimeEntryDTO> entries, int compactionIndex, JsonNode payload) {
+        String stored = payload.path("_discardedEntryId").asText();
+        if (!stored.isBlank()) {
+            return stored;
+        }
+        return payload.path("willRetry").asBoolean() ? lastRetriableAssistantEntryId(entries, compactionIndex) : null;
+    }
+
+    private String lastRetriableAssistantEntryId(List<RuntimeEntryDTO> entries, int end) {
+        for (int index = end - 1; index >= 0; index--) {
+            RuntimeEntryDTO entry = entries.get(index);
+            if (RuntimeEventType.ASSISTANT_MESSAGE_COMPLETED.value().equals(entry.getType())) {
+                return isRetriableAssistantEntry(entry) ? entry.getId() : null;
+            }
+        }
+        return null;
+    }
+
+    private boolean isRetriableAssistantEntry(RuntimeEntryDTO entry) {
+        String reason = field(readPayload(entry.getPayload()), "finishReason", "finish_reason")
+                .asText();
+        return "error".equals(reason) || "length".equals(reason);
+    }
+
+    private static int latestCompactionIndex(List<RuntimeEntryDTO> entries) {
+        for (int index = entries.size() - 1; index >= 0; index--) {
+            if (RuntimeEventType.SESSION_COMPACTION_COMPLETED
+                    .value()
+                    .equals(entries.get(index).getType())) {
+                return index;
+            }
+        }
+        return -1;
+    }
+
+    private static int findEntryIndex(List<RuntimeEntryDTO> entries, String entryId) {
+        for (int index = 0; index < entries.size(); index++) {
+            if (entries.get(index).getId().equals(entryId)) {
+                return index;
+            }
+        }
+        return -1;
+    }
+
+    private boolean isAgentContextEntry(RuntimeEntryDTO entry) {
+        return isRecoverableMessageEntry(entry)
+                || RuntimeEventType.SESSION_COMPACTION_COMPLETED.value().equals(entry.getType());
+    }
+
+    private boolean isRecoverableMessageEntry(RuntimeEntryDTO entry) {
+        String type = entry.getType();
+        if (RuntimeEventType.ASSISTANT_MESSAGE_COMPLETED.value().equals(type)) {
+            String reason = field(readPayload(entry.getPayload()), "finishReason", "finish_reason")
+                    .asText();
+            return !"error".equals(reason) && !"aborted".equals(reason);
+        }
+        return RuntimeEventType.USER_MESSAGE.value().equals(type)
+                || RuntimeEventType.TOOL_RESULT.value().equals(type);
     }
 
     private ToolResultMessage toolResultMessage(RuntimeEntryDTO entry, JsonNode payload) {
@@ -258,6 +440,9 @@ public class RuntimeEntryCodec {
             case ASSISTANT_MESSAGE_COMPLETED -> appendAssistantPayload(target, payload);
             case ASSISTANT_THINKING_COMPLETED -> appendThinkingPayload(target, payload);
             case TOOL_RESULT -> appendToolResultPayload(target, payload);
+            case SESSION_MODEL_CHANGED -> appendModelChangedPayload(target, payload);
+            case SESSION_THINKING_CHANGED -> appendThinkingChangedPayload(target, payload);
+            case SESSION_COMPACTION_COMPLETED -> appendCompactionPayload(target, payload);
             default -> throw new IllegalArgumentException("unsupported public runtime entry type: " + entry.getType());
         }
     }
@@ -275,6 +460,7 @@ public class RuntimeEntryCodec {
         target.put(
                 "finishReason",
                 objectMapper.convertValue(field(payload, "finishReason", "finish_reason"), Object.class));
+        target.put("usage", objectMapper.convertValue(payload.path("usage"), Object.class));
     }
 
     private void appendThinkingPayload(LinkedHashMap<String, Object> target, JsonNode payload) {
@@ -292,6 +478,28 @@ public class RuntimeEntryCodec {
         target.put("toolName", objectMapper.convertValue(field(payload, "toolName", "tool_name"), Object.class));
         target.put("content", publicContent(payload.path("content")));
         target.put("isError", objectMapper.convertValue(field(payload, "isError", "is_error"), Object.class));
+    }
+
+    private void appendModelChangedPayload(LinkedHashMap<String, Object> target, JsonNode payload) {
+        target.put("previousModelId", payload.path("previousModelId").asText());
+        target.put("modelId", payload.path("modelId").asText());
+        target.put("reason", payload.path("reason").asText());
+    }
+
+    private void appendThinkingChangedPayload(LinkedHashMap<String, Object> target, JsonNode payload) {
+        target.put("previousThinking", payload.path("previousThinking").asBoolean());
+        target.put("thinking", payload.path("thinking").asBoolean());
+        target.put("reason", payload.path("reason").asText());
+    }
+
+    private void appendCompactionPayload(LinkedHashMap<String, Object> target, JsonNode payload) {
+        target.put("reason", payload.path("reason").asText());
+        target.put("summary", payload.path("summary").asText());
+        target.put("firstKeptEntryId", payload.path("firstKeptEntryId").asText());
+        target.put("tokensBefore", payload.path("tokensBefore").asInt());
+        target.put("estimatedTokensAfter", payload.path("estimatedTokensAfter").asInt());
+        target.put("willRetry", payload.path("willRetry").asBoolean());
+        target.put("usage", objectMapper.convertValue(payload.path("usage"), Object.class));
     }
 
     private Map<String, Object> publicMessage(JsonNode message) {
@@ -327,6 +535,17 @@ public class RuntimeEntryCodec {
     private static JsonNode field(JsonNode node, String camelCase, String snakeCase) {
         JsonNode value = node.get(camelCase);
         return value != null ? value : node.path(snakeCase);
+    }
+
+    private Usage readUsage(JsonNode node) {
+        if (node == null || node.isMissingNode() || node.isNull()) {
+            return Usage.empty();
+        }
+        try {
+            return objectMapper.treeToValue(node, Usage.class);
+        } catch (Exception error) {
+            throw new IllegalStateException("failed to decode runtime usage", error);
+        }
     }
 
     private JsonNode readPayload(String payload) {

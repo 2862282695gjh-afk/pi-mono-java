@@ -10,22 +10,22 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
 
-import org.springframework.stereotype.Service;
-
 /**
- * In-process registry of {@link SlashCommand} instances keyed by command name. Provides
- * registration, lookup, enumeration, and a parser that dispatches a {@code /name args...}
- * input line to the matching command handler.
+ * 按名称保存和分发 Slash Command 的非托管注册表。
  *
- * @version [br_eCampusCore 26.0.0, 2026/05/13]
+ * <p>该类型不注册为 Spring Bean，任何 Runtime Host 都不会自动启用命令解析。
+ *
+ * @version [br_eCampusCore 26.0.0, 2026/08/24]
  * @since [br_eCampusCore 26.0.0]
  */
-@Service
 public class SlashCommandRegistry {
     private final Map<String, SlashCommand> commands = new LinkedHashMap<>();
 
     public void register(SlashCommand command) {
-        commands.put(command.name(), command);
+        SlashCommand previous = commands.putIfAbsent(command.name(), command);
+        if (previous != null) {
+            throw new IllegalArgumentException("Slash Command name is duplicated: " + command.name());
+        }
     }
 
     public Optional<SlashCommand> get(String name) {
@@ -36,27 +36,33 @@ public class SlashCommandRegistry {
         return Collections.unmodifiableCollection(commands.values());
     }
 
-    /**
-     * Parse and execute a slash command string like {@code /model gpt-4o}.
-     *
-     * @param input the raw slash-command string entered by the user
-     * @param context execution context passed to the command handler
-     * @return {@code true} if a matching command was found and executed;
-     *         {@code false} when no matching registered command exists
-     */
     public boolean execute(String input, SlashCommandContext context) {
-        if (!input.startsWith("/")) {
+        ParsedSlashCommand parsed = parse(input);
+        if (parsed == null) {
             return false;
         }
-        String stripped = input.substring(1).trim();
-        int spaceIdx = stripped.indexOf(' ');
-        String name = spaceIdx >= 0 ? stripped.substring(0, spaceIdx) : stripped;
-        String args = spaceIdx >= 0 ? stripped.substring(spaceIdx + 1).trim() : "";
-        var cmd = commands.get(name);
-        if (cmd == null) {
+        SlashCommand command = commands.get(parsed.name());
+        if (command == null) {
             return false;
         }
-        cmd.execute(context, args);
+        command.execute(context, parsed.arguments());
         return true;
     }
+
+    private static ParsedSlashCommand parse(String input) {
+        if (input == null || !input.startsWith("/")) {
+            return null;
+        }
+        String stripped = input.substring(1).trim();
+        if (stripped.isEmpty()) {
+            return null;
+        }
+        int separator = stripped.indexOf(' ');
+        String name = separator < 0 ? stripped : stripped.substring(0, separator);
+        String arguments =
+                separator < 0 ? "" : stripped.substring(separator + 1).trim();
+        return new ParsedSlashCommand(name, arguments);
+    }
+
+    private record ParsedSlashCommand(String name, String arguments) {}
 }

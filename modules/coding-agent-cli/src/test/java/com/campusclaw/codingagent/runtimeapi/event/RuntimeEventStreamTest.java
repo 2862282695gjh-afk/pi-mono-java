@@ -26,6 +26,25 @@ import org.junit.jupiter.api.Test;
  */
 class RuntimeEventStreamTest {
     @Test
+    void bestEffortOverflowDropsOnlyProgressAndPreservesFinalEvent() throws Exception {
+        RuntimeEventStream stream = new RuntimeEventStream(1, 100, Duration.ofSeconds(1), ignored -> 10L);
+        RuntimeSseEventVO progress = new RuntimeSseEventVO(null, "tool.execution.delta", Map.of());
+        RuntimeSseEventVO completed = new RuntimeSseEventVO("1", "tool.result", Map.of());
+
+        assertThat(stream.emitBestEffort(progress)).isTrue();
+        assertThat(stream.emitBestEffort(progress)).isFalse();
+        assertThat(stream.emit(completed)).isTrue();
+        stream.complete();
+        LatchSubscriber subscriber = new LatchSubscriber();
+        try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+            stream.attach(executor, subscriber);
+            assertThat(subscriber.firstEvent.await(1, TimeUnit.SECONDS)).isTrue();
+            assertThat(subscriber.completed.await(1, TimeUnit.SECONDS)).isTrue();
+        }
+        assertThat(subscriber.events).containsExactly(completed);
+    }
+
+    @Test
     void drainsAcceptedEventsInOrderAfterCompletion() {
         RuntimeEventStream stream = stream(2, 10);
         assertThat(stream.emit(event("first"))).isTrue();
@@ -88,6 +107,33 @@ class RuntimeEventStreamTest {
         @Override
         public void onComplete() {
             completed = true;
+        }
+
+        @Override
+        public void onError(Throwable error) {
+            throw new AssertionError(error);
+        }
+    }
+
+    private static final class LatchSubscriber implements RuntimeEventSubscriber {
+        private final List<RuntimeSseEventVO> events = new ArrayList<>();
+
+        private final CountDownLatch firstEvent = new CountDownLatch(1);
+
+        private final CountDownLatch completed = new CountDownLatch(1);
+
+        @Override
+        public void onEvent(RuntimeSseEventVO event) {
+            events.add(event);
+            firstEvent.countDown();
+        }
+
+        @Override
+        public void onHeartbeat() {}
+
+        @Override
+        public void onComplete() {
+            completed.countDown();
         }
 
         @Override

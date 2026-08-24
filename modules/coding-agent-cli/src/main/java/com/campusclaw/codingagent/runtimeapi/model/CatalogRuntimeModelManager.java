@@ -4,9 +4,8 @@
 
 package com.campusclaw.codingagent.runtimeapi.model;
 
+import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Set;
-import java.util.stream.Collectors;
 
 import com.campusclaw.ai.types.Model;
 import com.campusclaw.codingagent.model.ModelCatalogService;
@@ -35,13 +34,16 @@ public class CatalogRuntimeModelManager implements RuntimeModelManager {
     @Override
     public Model resolveModel(AgentDirectorySnapshotDTO snapshot, String modelId) {
         try {
-            if (!snapshot.enabledModelIds().contains(modelId)) {
-                throw new RuntimeApiException(RuntimeErrorCode.AGENT_MODEL_NOT_CONFIGURED);
-            }
-            return modelCatalogService.getAvailableModels().stream()
-                    .filter(model -> model.id().equals(modelId))
+            Model selected = modelCatalogService.getAvailableModels().stream()
+                    .filter(model -> matchesConfiguredModel(model, modelId))
                     .findFirst()
                     .orElseThrow(() -> new RuntimeApiException(RuntimeErrorCode.AGENT_MODEL_NOT_CONFIGURED));
+            boolean configured = snapshot.enabledModelIds().stream()
+                    .anyMatch(candidate -> matchesConfiguredModel(selected, candidate));
+            if (!configured) {
+                throw new RuntimeApiException(RuntimeErrorCode.AGENT_MODEL_NOT_CONFIGURED);
+            }
+            return selected;
         } catch (RuntimeApiException error) {
             throw error;
         } catch (RuntimeException error) {
@@ -52,14 +54,28 @@ public class CatalogRuntimeModelManager implements RuntimeModelManager {
     @Override
     public List<String> listAvailableModels(AgentDirectorySnapshotDTO snapshot) {
         try {
-            Set<String> available = modelCatalogService.getAvailableModels().stream()
-                    .map(Model::id)
-                    .collect(Collectors.toSet());
-            return snapshot.enabledModelIds().stream()
-                    .filter(available::contains)
-                    .toList();
+            List<Model> available = modelCatalogService.getAvailableModels();
+            var resolved = new LinkedHashSet<String>();
+            for (String configured : snapshot.enabledModelIds()) {
+                available.stream()
+                        .filter(model -> matchesConfiguredModel(model, configured))
+                        .findFirst()
+                        .map(Model::id)
+                        .ifPresent(resolved::add);
+            }
+            return List.copyOf(resolved);
         } catch (RuntimeException error) {
             throw new RuntimeApiException(RuntimeErrorCode.MANAGER_UNAVAILABLE, error);
         }
+    }
+
+    private static boolean matchesConfiguredModel(Model model, String configured) {
+        int slash = configured.indexOf('/');
+        if (slash < 0) {
+            return model.id().equals(configured);
+        }
+        String provider = configured.substring(0, slash);
+        String modelId = configured.substring(slash + 1);
+        return model.provider().value().equals(provider) && model.id().equals(modelId);
     }
 }

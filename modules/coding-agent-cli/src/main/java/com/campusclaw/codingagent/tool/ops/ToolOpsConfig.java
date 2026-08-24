@@ -4,14 +4,13 @@
 
 package com.campusclaw.codingagent.tool.ops;
 
-import com.campusclaw.codingagent.util.FileMutationQueue;
+import com.campusclaw.codingagent.tool.workspace.WorkspacePathResolver;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 /**
- * Spring configuration that provides local filesystem implementations
- * of the tool operations interfaces and shared utilities.
+ * 提供本地文件系统操作实现和共享文件工具依赖的 Spring 配置。
  *
  * @version [br_eCampusCore 26.0.0, 2026/05/06]
  * @since [br_eCampusCore 26.0.0]
@@ -25,22 +24,17 @@ public class ToolOpsConfig {
     }
 
     @Bean
-    public WriteOperations writeOperations() {
-        return new LocalWriteOperations();
-    }
-
-    @Bean
-    public EditOperations editOperations() {
-        return new LocalEditOperations();
-    }
-
-    @Bean
     public LsOperations lsOperations() {
         return new LocalLsOperations();
     }
 
     @Bean
-    public FileMutationQueue fileMutationQueue() {
-        return new FileMutationQueue();
+    public FindOperations findOperations(WorkspacePathResolver pathResolver) {
+        return new LocalFindOperations(pathResolver);
+    }
+
+    @Bean
+    public GrepOperations grepOperations(WorkspacePathResolver pathResolver) {
+        return new LocalGrepOperations(pathResolver);
     }
 }

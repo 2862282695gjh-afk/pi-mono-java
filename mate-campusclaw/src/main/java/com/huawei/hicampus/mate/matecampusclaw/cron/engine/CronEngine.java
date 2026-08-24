@@ -32,8 +32,7 @@ import org.springframework.scheduling.support.CronExpression;
 import org.springframework.stereotype.Service;
 
 /**
- * Scheduling engine for cron jobs. Manages tick-based scheduling, concurrent execution,
- * and job lifecycle. Must be explicitly started/stopped (not SmartLifecycle).
+ * 管理 Cron Job 进程内调度、并发执行和生命周期的当前 Host 引擎。
  *
  * @version [br_eCampusCore 26.0.0, 2026/05/06]
  * @since [br_eCampusCore 26.0.0]
@@ -42,8 +41,7 @@ import org.springframework.stereotype.Service;
 public class CronEngine {
 
     private static final Logger log = LoggerFactory.getLogger(CronEngine.class);
-    private static final long MAX_TICK_INTERVAL_MS = 60_000L;
-    private static final long STALE_THRESHOLD_MS = 2 * 60 * 60 * 1000; // 2 hours
+    private static final long STALE_THRESHOLD_MS = 2L * 60 * 60 * 1000;
     private static final int MAX_CONSECUTIVE_ERRORS = 3;
 
     private final CronStore store;
@@ -72,10 +70,10 @@ public class CronEngine {
             return t;
         });
 
-        // Clean stale running marks
+        // 清理残留的运行中标记。
         cleanStaleRunning();
 
-        // Schedule all enabled jobs
+        // 装配全部已启用任务。
         var jobs = store.load();
         for (var job : jobs) {
             if (job.enabled()) {
@@ -115,16 +113,16 @@ public class CronEngine {
     }
 
     /**
-     * Schedule or reschedule a job. Called when a job is created/updated.
+     * 创建或更新任务后安装其调度计划。
      *
-     * @param job the job whose schedule should be installed (or refreshed)
+     * @param job 待安装或刷新的任务
      */
     public void scheduleJob(CronJob job) {
         if (!running || scheduler == null) {
             return;
         }
 
-        // Cancel existing schedule
+        // 取消该任务已有的调度计划。
         var existing = scheduledJobs.remove(job.id());
         if (existing != null) {
             existing.cancel(false);
@@ -143,7 +141,7 @@ public class CronEngine {
         var future = scheduler.schedule(() -> executeAndReschedule(job.id()), delayMs, TimeUnit.MILLISECONDS);
         scheduledJobs.put(job.id(), future);
 
-        // Update next run time in state
+        // 在任务状态中更新下一次运行时间。
         long nextRunAtMs = System.currentTimeMillis() + delayMs;
         store.updateJob(job.withState(new CronJobState(
                 nextRunAtMs,
@@ -157,9 +155,9 @@ public class CronEngine {
     }
 
     /**
-     * Unschedule a job. Called when a job is deleted/disabled.
+     * 删除或禁用任务时取消其调度计划。
      *
-     * @param jobId identifier of the job to remove from the active schedule
+     * @param jobId 待取消调度的任务标识
      */
     public void unscheduleJob(String jobId) {
         var future = scheduledJobs.remove(jobId);
@@ -169,11 +167,11 @@ public class CronEngine {
     }
 
     /**
-     * Trigger immediate execution of a job.
+     * 立即触发一个任务。
      *
-     * @param jobId identifier of the job to run now
-     * @return the resulting run record
-     * @throws IllegalArgumentException if no job exists with the given id
+     * @param jobId 待运行的任务标识
+     * @return 本次运行记录
+     * @throws IllegalArgumentException 指定任务不存在时抛出
      */
     public CronRunRecord triggerJob(String jobId) {
         var jobOpt = store.getJob(jobId);
@@ -196,7 +194,7 @@ public class CronEngine {
 
             var job = jobOpt.get();
 
-            // Skip if already running
+            // 已经运行中的任务不重复执行。
             if (job.state().runningAtMs() != 0) {
                 log.debug("Job {} is already running, skipping", job.name());
                 return;
@@ -204,7 +202,7 @@ public class CronEngine {
 
             executeJob(job);
 
-            // Reschedule if still enabled and not deleteAfterRun
+            // 任务仍启用时重新安装下一次调度。
             var updatedJob = store.getJob(jobId);
             if (updatedJob.isPresent() && updatedJob.get().enabled()) {
                 scheduleJob(updatedJob.get());
@@ -254,7 +252,7 @@ public class CronEngine {
             log.warn("Job {} auto-disabled after {} consecutive errors", job.name(), errors);
         }
 
-        // Handle deleteAfterRun for one-shot At schedules.
+        // 一次性 At 任务成功后按配置删除。
         if (job.deleteAfterRun() && success) {
             store.removeJob(job.id());
             unscheduleJob(job.id());
@@ -290,34 +288,6 @@ public class CronEngine {
                 0);
     }
 
-    /**
-     * Perform a single synchronous tick: check all enabled jobs, execute those that are due.
-     * Designed for {@code --cron-tick} mode where an external scheduler (launchd/crontab) invokes the CLI.
-     *
-     * @return the run record for each job that was executed during this tick
-     */
-    public List<CronRunRecord> tickOnce() {
-        cleanStaleRunning();
-        var results = new ArrayList<CronRunRecord>();
-        var jobs = store.load();
-        for (var job : jobs) {
-            if (!job.enabled()) {
-                continue;
-            }
-            if (job.state().runningAtMs() != 0) {
-                continue;
-            } // skip if running
-            long delay = computeNextDelay(job);
-            if (delay < 0) {
-                continue;
-            } // past one-shot or invalid
-            if (delay <= 60_000) { // due within 1 minute (tick tolerance)
-                results.add(executeJob(job));
-            }
-        }
-        return results;
-    }
-
     long computeNextDelay(CronJob job) {
         long now = System.currentTimeMillis();
         return switch (job.schedule()) {
@@ -329,7 +299,7 @@ public class CronEngine {
                 long base = Math.max(job.state().lastRunAtMs(), job.createdAtMs());
                 long next = base + every.intervalMs();
 
-                // Apply exponential backoff if there are consecutive errors
+                // 连续失败时应用指数退避。
                 if (job.state().consecutiveErrors() > 0) {
                     long backoff = Math.min(1000L * (1L << job.state().consecutiveErrors()), 3_600_000L);
                     next = Math.max(next, now + backoff);

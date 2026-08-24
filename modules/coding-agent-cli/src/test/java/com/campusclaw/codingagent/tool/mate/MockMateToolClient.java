@@ -14,9 +14,7 @@ import com.campusclaw.codingagent.common.client.mate.MateToolClient;
 import com.campusclaw.codingagent.common.client.mate.MateToolMeta;
 
 /**
- * In-memory mock of {@link MateToolClient} for unit tests. Registered tools
- * are resolved through per-agent/per-skill binding lists, mirroring the
- * two-step query of the real client.
+ * 单元测试使用的内存 {@link MateToolClient}，通过 Agent/Skill 绑定列表模拟真实客户端的两步查询。
  *
  * @version [br_eCampusCore 26.0.0, 2026/08/18]
  * @since [br_eCampusCore 26.0.0]
@@ -37,10 +35,20 @@ public class MockMateToolClient implements MateToolClient {
 
     private MateCredentials lastCallCredentials;
 
+    private MateCredentials lastListCredentials;
+
     private MateToolClient.ToolResult overriddenResult;
 
+    private int agentListCalls;
+
+    private int skillListCalls;
+
+    private int executeCalls;
+
+    private Map<String, Object> lastCallArgs;
+
     /**
-     * Registers a tool.
+     * 注册一个工具。
      *
      * @param meta the tool metadata
      */
@@ -49,7 +57,7 @@ public class MockMateToolClient implements MateToolClient {
     }
 
     /**
-     * Binds a tool ID list to an agent.
+     * 将工具标识列表绑定到 Agent。
      *
      * @param agentId the agent id
      * @param toolIds the bound tool ids
@@ -59,7 +67,7 @@ public class MockMateToolClient implements MateToolClient {
     }
 
     /**
-     * Binds a tool ID list to a skill.
+     * 将工具标识列表绑定到 Skill。
      *
      * @param skillId the skill id
      * @param toolIds the bound tool ids
@@ -69,7 +77,7 @@ public class MockMateToolClient implements MateToolClient {
     }
 
     /**
-     * Returns the agent ID received by the last listTools call.
+     * 返回最近一次 Agent 列表调用收到的 Agent 标识。
      *
      * @return the agent ID
      */
@@ -78,7 +86,7 @@ public class MockMateToolClient implements MateToolClient {
     }
 
     /**
-     * Returns the skill ID received by the last listTools call.
+     * 返回最近一次 Skill 列表调用收到的 Skill 标识。
      *
      * @return the skill ID
      */
@@ -87,7 +95,7 @@ public class MockMateToolClient implements MateToolClient {
     }
 
     /**
-     * Returns the tool name received by the last callTool call.
+     * 返回最近一次 callTool 调用收到的工具标识。
      *
      * @return the tool name
      */
@@ -96,7 +104,7 @@ public class MockMateToolClient implements MateToolClient {
     }
 
     /**
-     * Returns the credentials received by the last callTool call.
+     * 返回最近一次 callTool 调用收到的凭据。
      *
      * @return the credentials
      */
@@ -104,9 +112,28 @@ public class MockMateToolClient implements MateToolClient {
         return lastCallCredentials;
     }
 
+    public MateCredentials lastListCredentials() {
+        return lastListCredentials;
+    }
+
+    public int agentListCalls() {
+        return agentListCalls;
+    }
+
+    public int skillListCalls() {
+        return skillListCalls;
+    }
+
+    public int executeCalls() {
+        return executeCalls;
+    }
+
+    public Map<String, Object> lastCallArgs() {
+        return lastCallArgs;
+    }
+
     /**
-     * Overrides the result returned by the next callTool invocation regardless
-     * of the tool name (used to simulate Mate-side errors).
+     * 覆盖下一次 callTool 的结果，用于模拟 Mate 侧错误。
      *
      * @param result the result to return; null restores normal behavior
      */
@@ -115,10 +142,22 @@ public class MockMateToolClient implements MateToolClient {
     }
 
     @Override
-    public List<MateToolMeta> listTools(String agentId, String skillId) {
+    public List<MateToolMeta> listAgentTools(String agentId, MateCredentials credentials) {
+        agentListCalls++;
         lastListAgentId = agentId;
+        lastListCredentials = credentials;
+        return resolve(toolsByAgent.get(agentId));
+    }
+
+    @Override
+    public List<MateToolMeta> listSkillTools(String skillId, MateCredentials credentials) {
+        skillListCalls++;
         lastListSkillId = skillId;
-        List<String> ids = agentId != null ? toolsByAgent.get(agentId) : toolsBySkill.get(skillId);
+        lastListCredentials = credentials;
+        return resolve(toolsBySkill.get(skillId));
+    }
+
+    private List<MateToolMeta> resolve(List<String> ids) {
         List<MateToolMeta> result = new ArrayList<>();
         if (ids != null) {
             for (String id : ids) {
@@ -133,7 +172,9 @@ public class MockMateToolClient implements MateToolClient {
 
     @Override
     public ToolResult callTool(String tool, Map<String, Object> args, MateCredentials credentials) {
+        executeCalls++;
         lastCalledTool = tool;
+        lastCallArgs = args;
         lastCallCredentials = credentials;
         if (overriddenResult != null) {
             return overriddenResult;

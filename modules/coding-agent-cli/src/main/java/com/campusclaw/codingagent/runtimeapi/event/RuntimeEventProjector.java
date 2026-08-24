@@ -17,6 +17,7 @@ import com.campusclaw.agent.event.MessageStartEvent;
 import com.campusclaw.agent.event.MessageUpdateEvent;
 import com.campusclaw.agent.event.ToolExecutionEndEvent;
 import com.campusclaw.agent.event.ToolExecutionStartEvent;
+import com.campusclaw.agent.event.ToolExecutionUpdateEvent;
 import com.campusclaw.agent.event.TurnEndEvent;
 import com.campusclaw.ai.stream.AssistantMessageEvent;
 import com.campusclaw.ai.types.AssistantMessage;
@@ -28,14 +29,20 @@ import com.campusclaw.codingagent.runtimeapi.dto.RuntimeEntryDTO;
 import com.campusclaw.codingagent.runtimeapi.persistence.RuntimeSessionRepository;
 import com.campusclaw.codingagent.runtimeapi.runtime.RuntimeActiveExecution;
 import com.campusclaw.codingagent.runtimeapi.vo.RuntimeSseEventVO;
+import com.campusclaw.codingagent.session.compaction.SessionCompactionCompletedEvent;
+import com.campusclaw.codingagent.session.compaction.SessionCompactionEvent;
+import com.campusclaw.codingagent.session.compaction.SessionCompactionFailedEvent;
+import com.campusclaw.codingagent.session.compaction.SessionCompactionStartedEvent;
 
 /**
- * 把 pi AgentEvent 投影为已确认的公共 SSE 与四类持久化 Entry。
+ * 把 pi AgentEvent 和公共 Session 压缩事件投影为公共 SSE 与持久化 Entry。
  *
  * @version [br_eCampusCore 26.0.0, 2026/08/18]
  * @since [br_eCampusCore 26.0.0]
  */
 public class RuntimeEventProjector {
+    private static final int ENTRY_BATCH_SIZE = 500;
+
     private final String sessionId;
 
     private final RuntimeSessionRepository repository;
@@ -112,9 +119,27 @@ public class RuntimeEventProjector {
             case MessageUpdateEvent update -> projectMessageUpdate(update);
             case MessageEndEvent end -> projectMessageEnd(end);
             case ToolExecutionStartEvent start -> projectToolStart(start);
+            case ToolExecutionUpdateEvent update -> projectToolUpdate(update);
             case ToolExecutionEndEvent end -> projectToolEnd(end);
             case TurnEndEvent end -> projectToolResults(end.toolResults());
             default -> {}
+        }
+    }
+
+    public synchronized void onCompactionEvent(SessionCompactionEvent event) {
+        if (failure.get() != null) {
+            return;
+        }
+        try {
+            switch (event) {
+                case SessionCompactionStartedEvent started -> projectCompactionStarted(started);
+                case SessionCompactionCompletedEvent completed -> projectCompactionCompleted(completed);
+                case SessionCompactionFailedEvent failed -> projectCompactionFailed(failed);
+            }
+        } catch (RuntimeException error) {
+            if (failure.compareAndSet(null, error)) {
+                abort.run();
+            }
         }
     }
 
@@ -223,6 +248,14 @@ public class RuntimeEventProjector {
         stream.emit(new RuntimeSseEventVO(null, RuntimeEventType.TOOL_EXECUTION_STARTED.value(), data));
     }
 
+    private void projectToolUpdate(ToolExecutionUpdateEvent event) {
+        LinkedHashMap<String, Object> data = new LinkedHashMap<>();
+        data.put("toolCallId", event.toolCallId());
+        data.put("toolName", event.toolName());
+        data.put("delta", event.partialResult());
+        stream.emitBestEffort(new RuntimeSseEventVO(null, RuntimeEventType.TOOL_EXECUTION_DELTA.value(), data));
+    }
+
     private void projectToolEnd(ToolExecutionEndEvent event) {
         LinkedHashMap<String, Object> data = new LinkedHashMap<>();
         data.put("toolCallId", event.toolCallId());
@@ -238,6 +271,72 @@ public class RuntimeEventProjector {
             stream.emit(
                     new RuntimeSseEventVO(Long.toString(entry.getEntrySeq()), entry.getType(), codec.toSseData(entry)));
         }
+    }
+
+    private void projectCompactionStarted(SessionCompactionStartedEvent event) {
+        LinkedHashMap<String, Object> data =
+                compactionLifecycleData(event.reason().value(), event.willRetry());
+        stream.emit(new RuntimeSseEventVO(null, RuntimeEventType.SESSION_COMPACTION_STARTED.value(), data));
+    }
+
+    private void projectCompactionFailed(SessionCompactionFailedEvent event) {
+        LinkedHashMap<String, Object> data =
+                compactionLifecycleData(event.reason().value(), event.willRetry());
+        data.put("aborted", event.aborted());
+        data.put("message", event.message());
+        stream.emit(new RuntimeSseEventVO(null, RuntimeEventType.SESSION_COMPACTION_FAILED.value(), data));
+    }
+
+    private void projectCompactionCompleted(SessionCompactionCompletedEvent event) {
+        List<RuntimeEntryDTO> entries = loadCurrentBranch();
+        List<String> contextIds = codec.toAgentContextEntryIds(entries);
+        int firstKeptIndex = event.result().compactedMessageCount();
+        if (firstKeptIndex < 0 || firstKeptIndex >= contextIds.size()) {
+            throw new IllegalStateException("compaction retained boundary is not present in runtime history");
+        }
+        String discardedEntryId = discardedEntryId(entries, event.willRetry());
+        RuntimeEntryDTO entry = codec.compactionEntry(
+                sessionId,
+                idGenerator.nextId(),
+                event.reason(),
+                contextIds.get(firstKeptIndex),
+                discardedEntryId,
+                event.result(),
+                event.willRetry(),
+                now());
+        repository.appendEntry(entry);
+        stream.emit(new RuntimeSseEventVO(Long.toString(entry.getEntrySeq()), entry.getType(), codec.toSseData(entry)));
+    }
+
+    private String discardedEntryId(List<RuntimeEntryDTO> entries, boolean willRetry) {
+        if (!willRetry) {
+            return null;
+        }
+        String entryId = codec.lastRetriableAssistantEntryId(entries);
+        if (entryId == null) {
+            throw new IllegalStateException("compaction retry candidate is not present in runtime history");
+        }
+        return entryId;
+    }
+
+    private List<RuntimeEntryDTO> loadCurrentBranch() {
+        List<RuntimeEntryDTO> entries = new java.util.ArrayList<>();
+        long afterSeq = 0L;
+        while (true) {
+            List<RuntimeEntryDTO> batch = repository.listCurrentBranchEntries(sessionId, afterSeq, ENTRY_BATCH_SIZE);
+            entries.addAll(batch);
+            if (batch.size() < ENTRY_BATCH_SIZE) {
+                return List.copyOf(entries);
+            }
+            afterSeq = batch.getLast().getEntrySeq();
+        }
+    }
+
+    private static LinkedHashMap<String, Object> compactionLifecycleData(String reason, boolean willRetry) {
+        LinkedHashMap<String, Object> data = new LinkedHashMap<>();
+        data.put("reason", reason);
+        data.put("willRetry", willRetry);
+        return data;
     }
 
     private OffsetDateTime now() {

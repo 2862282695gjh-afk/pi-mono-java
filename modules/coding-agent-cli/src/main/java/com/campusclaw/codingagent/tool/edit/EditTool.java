@@ -23,17 +23,14 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.stereotype.Component;
 
 /**
- * Agent tool that performs exact text replacement in files.
- * Falls back to fuzzy matching when exact match fails.
- * Uses {@link FileMutationQueue} to serialize concurrent edits to the same file.
+ * 对文件执行精确文本替换并在必要时回退模糊匹配的底层工具实现。
+ * 使用 {@link FileMutationQueue} 串行化同一文件上的并发修改。
  *
  * @version [br_eCampusCore 26.0.0, 2026/05/06]
  * @since [br_eCampusCore 26.0.0]
  */
-@Component
 public class EditTool implements AgentTool {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
@@ -83,7 +80,7 @@ public class EditTool implements AgentTool {
                         .put("type", "string")
                         .put("description", "The replacement text (single-replacement mode)"));
 
-        // Multi-edit schema
+        // 多项编辑参数结构。
         ObjectNode editItemProps = MAPPER.createObjectNode();
         editItemProps.set(
                 "oldText",
@@ -138,7 +135,7 @@ public class EditTool implements AgentTool {
             return errorResult("Error: file not found: " + pathInput);
         }
 
-        // Multi-edit mode: edits[] array
+        // 使用 edits 数组的多项编辑模式。
         Object editsParam = params.get("edits");
         if (editsParam instanceof List<?> editsList && !editsList.isEmpty()) {
             if (params.containsKey("oldText") || params.containsKey("newText")) {
@@ -149,7 +146,7 @@ public class EditTool implements AgentTool {
                     () -> performMultiEdit(resolvedPath, pathInput, (List<Map<String, Object>>) editsList));
         }
 
-        // Single-edit mode: oldText + newText
+        // 使用 oldText 和 newText 的单项编辑模式。
         String oldText = (String) params.get("oldText");
         String newText = (String) params.get("newText");
 
@@ -167,7 +164,7 @@ public class EditTool implements AgentTool {
         byte[] rawBytes = editOperations.readFile(path);
         String content = new String(rawBytes, StandardCharsets.UTF_8);
 
-        // Check for multiple exact occurrences
+        // 检查精确文本是否重复出现。
         int occurrences = FuzzyMatch.countOccurrences(content, oldText);
         if (occurrences > 1) {
             return errorResult("Error: oldText matches " + occurrences + " occurrences in " + pathInput
@@ -178,10 +175,10 @@ public class EditTool implements AgentTool {
         boolean fuzzyUsed = false;
 
         if (occurrences == 1) {
-            // Exact match — simple replacement
+            // 精确命中时直接替换。
             updatedContent = content.replace(oldText, newText);
         } else {
-            // No exact match — try fuzzy
+            // 未精确命中时尝试模糊匹配。
             FuzzyMatch.Match match = FuzzyMatch.fuzzyFindText(content, oldText);
             if (match == null) {
                 return errorResult("Error: oldText not found in " + pathInput);
@@ -190,10 +187,10 @@ public class EditTool implements AgentTool {
             fuzzyUsed = true;
         }
 
-        // Write the updated content
+        // 写入更新后的内容。
         editOperations.writeFile(path, updatedContent);
 
-        // Generate diff and details
+        // 生成差异和执行详情。
         String diff = DiffUtils.computeUnifiedDiff(content, updatedContent, pathInput);
         Integer firstChangedLine = DiffUtils.findFirstChangedLine(content, updatedContent);
         var details = new EditToolDetails(diff, firstChangedLine);
@@ -204,9 +201,7 @@ public class EditTool implements AgentTool {
     }
 
     /**
-     * Performs multiple disjoint edits against the original file content.
-     * All edits are matched against the original (not incrementally).
-     * Matching campusclaw's multi-edit behavior.
+     * 基于原始文件内容执行多项互不重叠的编辑，所有编辑都不做增量匹配。
      *
      * @param path the path
      * @param pathInput the pathInput
@@ -221,7 +216,7 @@ public class EditTool implements AgentTool {
         String original = new String(rawBytes, StandardCharsets.UTF_8);
         String content = original;
 
-        // Validate all edits exist and are unique before applying
+        // 应用前确认所有编辑目标存在且唯一。
         record EditEntry(String oldText, String newText, int position) {}
         var entries = new java.util.ArrayList<EditEntry>();
 
@@ -245,10 +240,10 @@ public class EditTool implements AgentTool {
             entries.add(new EditEntry(oldText, newText, pos));
         }
 
-        // Sort by position (descending) to apply from end to start (avoids offset shifts)
+        // 按位置倒序应用，避免前部替换导致偏移变化。
         entries.sort((a, b) -> Integer.compare(b.position, a.position));
 
-        // Check for overlaps
+        // 检查编辑区间是否重叠。
         for (int i = 0; i < entries.size() - 1; i++) {
             var curr = entries.get(i);
             var next = entries.get(i + 1);
@@ -257,7 +252,7 @@ public class EditTool implements AgentTool {
             }
         }
 
-        // Apply edits from end to start
+        // 从文件末尾向前应用编辑。
         for (var entry : entries) {
             content = content.substring(0, entry.position)
                     + entry.newText

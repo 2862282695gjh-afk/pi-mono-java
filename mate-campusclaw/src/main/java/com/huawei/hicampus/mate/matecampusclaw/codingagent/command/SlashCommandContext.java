@@ -4,18 +4,19 @@
 
 package com.huawei.hicampus.mate.matecampusclaw.codingagent.command;
 
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.session.AgentSession;
+import java.util.Objects;
 
 /**
- * Context passed to slash commands for accessing session, printing output, etc.
+ * Slash Command 执行时使用的宿主无关上下文。
  *
- * @version [br_eCampusCore 26.0.0, 2026/05/06]
+ * @param session Session 操作端口
+ * @param output 文本结果端口
+ * @version [br_eCampusCore 26.0.0, 2026/08/24]
  * @since [br_eCampusCore 26.0.0]
  */
-public record SlashCommandContext(AgentSession session, OutputWriter output) {
-    @SuppressWarnings("checkstyle:top_class_comment")
-    @FunctionalInterface
-    public interface OutputWriter {
-        void println(String message);
+public record SlashCommandContext(SlashCommandSession session, SlashCommandOutput output) {
+    public SlashCommandContext {
+        Objects.requireNonNull(session, "session");
+        Objects.requireNonNull(output, "output");
     }
 }

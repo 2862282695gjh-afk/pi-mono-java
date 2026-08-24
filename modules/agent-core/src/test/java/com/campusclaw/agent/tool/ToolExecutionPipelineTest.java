@@ -7,6 +7,7 @@ package com.campusclaw.agent.tool;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
@@ -118,16 +119,35 @@ class ToolExecutionPipelineTest {
         var tool = new MockAgentTool("search", false, false, 0L);
         var toolCall = new ToolCall("call-1", "search", Map.of("query", 1));
         var events = new ArrayList<AgentEvent>();
+        var beforeCalled = new AtomicBoolean(false);
+        pipeline.setBeforeToolCall(context -> {
+            beforeCalled.set(true);
+            return BeforeToolCallResult.allow();
+        });
 
         var result = pipeline.execute(
                 tool, toolCall, Map.of("query", 1), sampleContext(), new CancellationToken(), events::add);
 
         assertTrue(result.isError());
         assertTrue(text(result.content().getFirst()).contains("Tool arguments failed validation"));
+        assertFalse(beforeCalled.get());
         assertFalse(tool.executed.get());
-        assertEquals(2, events.size());
-        assertInstanceOf(ToolExecutionStartEvent.class, events.getFirst());
-        assertInstanceOf(ToolExecutionEndEvent.class, events.getLast());
+        assertTrue(events.isEmpty());
+    }
+
+    @Test
+    void cancelledExecutionStopsBeforeInvokingTool() {
+        var pipeline = new ToolExecutionPipeline();
+        var tool = new MockAgentTool("search", false, false, 0L);
+        var toolCall = new ToolCall("call-1", "search", Map.of("query", "java"));
+        var signal = new CancellationToken();
+        signal.cancel();
+
+        assertThrows(
+                java.util.concurrent.CancellationException.class,
+                () -> pipeline.execute(tool, toolCall, toolCall.arguments(), sampleContext(), signal, null));
+
+        assertFalse(tool.executed.get());
     }
 
     @Test
@@ -153,13 +173,51 @@ class ToolExecutionPipelineTest {
                         new MockAgentTool("search", false, true, 0L, currentConcurrency, maxConcurrency, ready),
                         Map.of("query", "three")));
 
-        var results = pipeline.executeAll(calls, ToolExecutionMode.PARALLEL, context, signal, null);
+        var results = pipeline.executeAll(calls, context, signal, null);
 
         assertEquals(3, results.size());
         assertTrue(maxConcurrency.get() > 1);
         assertEquals(
                 List.of("call-1", "call-2", "call-3"),
                 results.stream().map(ToolResultMessage::toolCallId).toList());
+    }
+
+    @Test
+    void sequentialToolIsBarrierBetweenAdjacentParallelSegments() {
+        var pipeline = new ToolExecutionPipeline();
+        var firstReady = new CountDownLatch(2);
+        var secondReady = new CountDownLatch(2);
+        var firstCompleted = new AtomicInteger();
+        var barrierCompleted = new AtomicBoolean(false);
+        var orderViolation = new AtomicBoolean(false);
+        var calls = List.of(
+                barrierCall("call-1", ToolExecutionMode.PARALLEL, firstReady, firstCompleted, null, orderViolation),
+                barrierCall("call-2", ToolExecutionMode.PARALLEL, firstReady, firstCompleted, null, orderViolation),
+                barrierCall(
+                        "call-3", ToolExecutionMode.SEQUENTIAL, null, firstCompleted, barrierCompleted, orderViolation),
+                barrierCall("call-4", ToolExecutionMode.PARALLEL, secondReady, null, barrierCompleted, orderViolation),
+                barrierCall("call-5", ToolExecutionMode.PARALLEL, secondReady, null, barrierCompleted, orderViolation));
+
+        var results = pipeline.executeAll(calls, sampleContext(), new CancellationToken(), null);
+
+        assertFalse(orderViolation.get());
+        assertTrue(barrierCompleted.get());
+        assertEquals(
+                List.of("call-1", "call-2", "call-3", "call-4", "call-5"),
+                results.stream().map(ToolResultMessage::toolCallId).toList());
+        assertTrue(results.stream().noneMatch(ToolResultMessage::isError));
+    }
+
+    private ToolCallWithTool barrierCall(
+            String id,
+            ToolExecutionMode mode,
+            CountDownLatch ready,
+            AtomicInteger firstCompleted,
+            AtomicBoolean barrierCompleted,
+            AtomicBoolean orderViolation) {
+        var call = new ToolCall(id, id, Map.of());
+        return new ToolCallWithTool(
+                call, new BarrierTool(mode, ready, firstCompleted, barrierCompleted, orderViolation), Map.of());
     }
 
     private AgentContext sampleContext() {
@@ -240,6 +298,11 @@ class ToolExecutionPipelineTest {
         }
 
         @Override
+        public ToolExecutionMode executionMode() {
+            return coordinateForParallelism ? ToolExecutionMode.PARALLEL : ToolExecutionMode.SEQUENTIAL;
+        }
+
+        @Override
         public AgentToolResult execute(
                 String toolCallId,
                 Map<String, Object> params,
@@ -274,6 +337,89 @@ class ToolExecutionPipelineTest {
                 if (coordinateForParallelism) {
                     currentConcurrency.decrementAndGet();
                 }
+            }
+        }
+    }
+
+    private static final class BarrierTool implements AgentTool {
+
+        private final ToolExecutionMode mode;
+        private final CountDownLatch ready;
+        private final AtomicInteger firstCompleted;
+        private final AtomicBoolean barrierCompleted;
+        private final AtomicBoolean orderViolation;
+        private final ObjectMapper mapper = new ObjectMapper();
+
+        private BarrierTool(
+                ToolExecutionMode mode,
+                CountDownLatch ready,
+                AtomicInteger firstCompleted,
+                AtomicBoolean barrierCompleted,
+                AtomicBoolean orderViolation) {
+            this.mode = mode;
+            this.ready = ready;
+            this.firstCompleted = firstCompleted;
+            this.barrierCompleted = barrierCompleted;
+            this.orderViolation = orderViolation;
+        }
+
+        @Override
+        public String name() {
+            return "barrier";
+        }
+
+        @Override
+        public String label() {
+            return name();
+        }
+
+        @Override
+        public String description() {
+            return "Barrier test tool";
+        }
+
+        @Override
+        public com.fasterxml.jackson.databind.JsonNode parameters() {
+            return mapper.createObjectNode().put("type", "object");
+        }
+
+        @Override
+        public ToolExecutionMode executionMode() {
+            return mode;
+        }
+
+        @Override
+        public AgentToolResult execute(
+                String toolCallId,
+                Map<String, Object> params,
+                CancellationToken signal,
+                AgentToolUpdateCallback onUpdate)
+                throws Exception {
+            if (mode == ToolExecutionMode.SEQUENTIAL) {
+                checkSequentialBarrier();
+            } else {
+                checkParallelSegment();
+            }
+            return new AgentToolResult(List.of(new TextContent(toolCallId)), null);
+        }
+
+        private void checkSequentialBarrier() {
+            if (firstCompleted == null || firstCompleted.get() != 2) {
+                orderViolation.set(true);
+            }
+            barrierCompleted.set(true);
+        }
+
+        private void checkParallelSegment() throws InterruptedException {
+            if (barrierCompleted != null && !barrierCompleted.get()) {
+                orderViolation.set(true);
+            }
+            ready.countDown();
+            if (!ready.await(500L, TimeUnit.MILLISECONDS)) {
+                orderViolation.set(true);
+            }
+            if (firstCompleted != null) {
+                firstCompleted.incrementAndGet();
             }
         }
     }

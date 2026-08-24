@@ -2,64 +2,38 @@
 title Coding Agent Module Context
 skinparam componentStyle rectangle
 
-' Source evidence baseline: origin/main commit 3d9b9c55569486f024d6a507ce004101a56dee3f.
+' Source evidence baseline: CampusClaw commit d649866a6cae967ace18ceaeb9597edd47e5721e.
 ' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/CampusClawApplication.java, CampusClawApplication#main.
 ' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/web/RuntimeEventController.java.
-' Observed behavior: the default process is a Spring MVC HTTP service; CLI is an explicit subcommand.
+' Observed behavior: the baseline process supported a Spring MVC service and an explicit CLI subcommand.
+' Architecture change: the target process exposes only the Spring MVC managed Agent service.
+' Design reason: CampusClaw is a ToB service and no longer has an interactive CLI product entry point.
 
 actor "mate-service" as Mate
-actor "CLI user" as CliUser
 component "Spring Boot MVC\nHTTP + SSE" as Http
-component "CampusClaw CLI" as Cli
 component "Runtime services" as Runtime
 component "Control plane" as Control
+component "Managed AgentSession" as Session
 component "agent-core" as AgentCore
 component "ai" as Ai
 database "openGauss" as Db
-folder "Agent directory" as AgentDir
+folder "agent/{agentId}" as AgentDir
 
 Mate --> Http : Runtime V1
 Http --> Runtime
 Http --> Control
-Runtime --> AgentCore
 Runtime --> Db
-Runtime --> AgentDir : read-only
+Runtime --> Session
+Session --> AgentCore
+Session --> AgentDir : confined access
 AgentCore --> Ai
-CliUser --> Cli
-Cli --> AgentCore
-@enduml
-
-@startuml startup-sequence
-title Default Server and Explicit CLI Startup
-
-' Source evidence baseline: origin/main commit 3d9b9c55569486f024d6a507ce004101a56dee3f.
-' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/CampusClawApplication.java, CampusClawApplication#main.
-' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/CampusClawCliLauncher.java, CampusClawCliLauncher#run.
-' Design reason: keep one executable JAR while separating web and CLI application contexts.
-
-actor Operator
-participant "CampusClawApplication" as App
-participant "Spring Boot MVC" as Web
-participant "CampusClawCliLauncher" as Launcher
-participant "Picocli" as Cli
-
-Operator -> App : java -jar campusclaw-agent.jar [args]
-alt first argument is cli
-  App -> Launcher : run(args without cli)
-  Launcher -> Launcher : create non-web CLI context
-  Launcher -> Cli : execute command
-  Cli --> Operator : exit code
-else default startup
-  App -> Web : SpringApplication.run(args)
-  Web --> Operator : listen on configured port
-end
 @enduml
 
 @startuml runtime-http-components
 title Runtime HTTP Components
 left to right direction
 
-' Source evidence baseline: origin/main commit 3d9b9c55569486f024d6a507ce004101a56dee3f.
+' Source evidence baseline: CampusClaw commit d649866a6cae967ace18ceaeb9597edd47e5721e.
 ' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/web, Controller classes.
 ' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/web/RuntimeRequestContext.java, RuntimeRequestContext#locale.
 ' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/event/RuntimeEventService.java.

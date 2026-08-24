@@ -34,9 +34,39 @@ server:
   port: ${SERVER_PORT:8080}
 
 campusclaw:
+  tools:
+    runtime:
+      - Read
+      - Find
+      - Grep
+      - Ls
+      - Cron
+      - ListMateTools
+      - CallMateTool
+      - Agent
+    cron:
+      - Read
+      - Find
+      - Grep
+      - Ls
+      - ListMateTools
+      - CallMateTool
+      - Agent
+    child-agent:
+      - Read
+      - Find
+      - Grep
+      - Ls
+      - ListMateTools
+      - CallMateTool
   runtime:
-    agent-directory:
-      root: ${CAMPUSCLAW_AGENT_ROOT:agent}
+    compaction:
+      enabled: ${CAMPUSCLAW_COMPACTION_ENABLED:true}
+      reserve-tokens: ${CAMPUSCLAW_COMPACTION_RESERVE_TOKENS:16384}
+      keep-recent-tokens: ${CAMPUSCLAW_COMPACTION_KEEP_RECENT_TOKENS:20000}
+      summary-retry-enabled: ${CAMPUSCLAW_COMPACTION_SUMMARY_RETRY_ENABLED:true}
+      summary-max-retries: ${CAMPUSCLAW_COMPACTION_SUMMARY_MAX_RETRIES:3}
+      summary-retry-base-delay-ms: ${CAMPUSCLAW_COMPACTION_SUMMARY_RETRY_BASE_DELAY_MS:2000}
     execution:
       max-active: ${CAMPUSCLAW_MAX_ACTIVE_EXECUTIONS:100}
       max-duration: ${CAMPUSCLAW_MAX_EXECUTION_DURATION:PT30M}
@@ -56,8 +86,7 @@ campusclaw:
       running-timeout: ${CAMPUSCLAW_CLEANUP_RUNNING_TIMEOUT:PT5M}
       poll-interval-ms: ${CAMPUSCLAW_CLEANUP_POLL_INTERVAL_MS:5000}
 
-# CampusMate 托管 CLI Agent 运行时。仅当显式传入 --agent-id 且本地缓存不可用时访问远端；
-# 公共 HTTP V1 使用 campusclaw.runtime.agent-directory，不进入该物化流程。
+# CampusMate 受管 Agent 运行目录。HTTP、Cron 和 Child 共用这一缓存与远端准备流程。
 campusmate:
   runtime:
     base-url: ${CAMPUSMATE_RUNTIME_BASE_URL:http://campusmate-service:8080}
@@ -75,62 +104,6 @@ logging:
     com.campusclaw: WARN
     io.netty: ERROR
 
-# 子 agent 后端配置 (spawn_agent 工具)
-# 主 agent 通过 spawn_agent 工具调用其它 coding agent；下方每个 entry 是一种后端。
-# type=acp: 走 ACP 协议 + stdio (Claude Code, Codex/Gemini 等)
-# type=http: 走自有 HTTP/ndJSON 协议 (URL + 鉴权)
-# type=a2a: 走华为 mate-service 包装的 A2A JSON-RPC (X-HW-ID + X-HW-APPKEY 双 header)
-# disabled=true 可临时关闭某条而不删整段
-subagent:
-  enabled: true
-  approval:
-    # 子代理工具调用权限策略：
-    #   allow - 全部 AUTO_ALLOW（子代理共用父代理信任域，开箱即用，默认值）
-    #   ask   - 只读工具 AUTO_ALLOW，其它走 ParentPermissionResolver；
-    #           默认 TimeoutDeniedResolver 直接拒，需自行实现 interactive resolver 才有意义
-    #   deny  - 全部拒绝（用于演练 / 沙盒测试）
-    default: allow
-  backends:
-    claude-code:
-      type: acp
-      disabled: false
-      command: claude-code-acp
-      args: []
-      prompt-timeout: PT15M
-      client-name: campusclaw-acp
-      client-version: 1.0.0
-    codex:
-      type: acp
-      disabled: true
-      command: codex-acp
-      args: []
-      prompt-timeout: PT15M
-    # 远端 HTTP agent 示例（默认禁用；启用时设置 url + auth-token）
-    remote-http:
-      type: http
-      disabled: true
-      url: https://agent.example.com/api
-      auth-type: bearer    # bearer | header | none
-      auth-token: ${CAMPUSCLAW_REMOTE_AGENT_TOKEN:}
-      connect-timeout: PT10S
-      request-timeout: PT30S
-      prompt-timeout: PT10M
-    # 华为 mate-service A2A agent 示例（默认禁用；启用时填入 hw-id + hw-app-key）
-    # url 是 mate-service 的 A2A request 入口，agent-name 会作为路径段拼到末尾
-    mate-kqa:
-      type: a2a
-      disabled: true
-      url: https://71.9.8.186:1433/mate-service/v1/a2a/request
-      agent-name: KnowledgeQAAgent
-      hw-id: ${HW_ID:a2a_test}
-      hw-app-key: ${HW_APPKEY:}
-      model: 100003         # 可选；spawn_agent 传 model 时覆盖此值
-      connect-timeout: PT10S
-      request-timeout: PT60S
-      # 仅当对端证书无法加入 JDK truststore（如 PoC 调内网自签 CA）时打开；
-      # 生产请把公司 CA 导入 cacerts 或用 -Djavax.net.ssl.trustStore 指定独立 keystore。
-      insecure-skip-verify: false
-
 # Control plane in-process configuration. Control plane runs as a set of beans inside
 # the main CampusClawApplication JVM (not a separate sidecar process), so it shares
 # spring/server/logging blocks with the main application above. Only control-plane-specific
@@ -145,8 +118,8 @@ controlplane:
     grace-after-stale: PT5M
 
 # Mate inner gateway service address used by the Mate tool client
-# (listMateTool / callMateTool). Inner gateway endpoints do not require
-# credential headers. Resolved from the MATE_INNERGWSERIVE environment
+# (ListMateTools / CallMateTool). Discovery endpoints allow empty credentials but
+# receive the current execution snapshot when available. Resolved from MATE_INNERGWSERIVE
 # variable (see install-values.sh, which reads it from the mateservice
 # ClusterIP); empty by default so an unconfigured environment still boots.
 mate:

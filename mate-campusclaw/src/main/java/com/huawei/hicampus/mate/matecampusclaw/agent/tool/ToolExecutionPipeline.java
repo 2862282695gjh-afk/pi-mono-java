@@ -8,6 +8,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 
@@ -24,7 +25,7 @@ import com.networknt.schema.JsonSchemaFactory;
 import com.networknt.schema.SpecVersion;
 
 /**
- * Executes tool calls with hook processing, validation, and event emission.
+ * 负责工具调用校验、hook 处理、执行调度和事件投影。
  *
  * @version [br_eCampusCore 26.0.0, 2026/05/06]
  * @since [br_eCampusCore 26.0.0]
@@ -57,26 +58,32 @@ public class ToolExecutionPipeline {
         Objects.requireNonNull(validatedArgs, "validatedArgs");
         Objects.requireNonNull(context, "context");
         Objects.requireNonNull(signal, "signal");
+        throwIfCancelled(signal);
         AgentEventListener eventListener = listener != null ? listener : event -> {};
         var toolName = toolCall.name();
+        ToolResultMessage invalid = validate(tool, toolCall, validatedArgs, toolName);
+        if (invalid != null) {
+            return invalid;
+        }
         ToolResultMessage blocked = applyBeforeHook(tool, toolCall, validatedArgs, context, toolName);
         if (blocked != null) {
             return blocked;
         }
+        throwIfCancelled(signal);
         eventListener.onEvent(new ToolExecutionStartEvent(toolCall.id(), toolName, validatedArgs));
         var outcome = invokeTool(tool, toolCall, validatedArgs, signal, eventListener);
+        throwIfCancelled(signal);
         outcome = applyAfterHook(toolCall, validatedArgs, context, outcome);
         eventListener.onEvent(new ToolExecutionEndEvent(toolCall.id(), toolName, outcome.result(), outcome.isError()));
         return toToolResultMessage(toolCall, toolName, outcome.result(), outcome.isError());
     }
 
     /**
-     * Composite of an {@link AgentToolResult} and its error flag — internal handoff between phases.
+     * 保存阶段之间传递的工具结果及错误标记。
      */
     private record Outcome(AgentToolResult result, boolean isError) {}
 
-    // Returns the synthesized blocking ToolResultMessage if the beforeToolCall hook rejected
-    // the call (or threw); null when the call should proceed.
+    // before hook 拒绝或抛出异常时返回错误结果，允许继续执行时返回 null。
     private ToolResultMessage applyBeforeHook(
             AgentTool tool,
             ToolCall toolCall,
@@ -104,7 +111,6 @@ public class ToolExecutionPipeline {
             CancellationToken signal,
             AgentEventListener eventListener) {
         try {
-            validateArguments(tool, validatedArgs);
             var result = normalizeResult(tool.execute(
                     toolCall.id(),
                     validatedArgs,
@@ -112,6 +118,13 @@ public class ToolExecutionPipeline {
                     partialResult -> eventListener.onEvent(new ToolExecutionUpdateEvent(
                             toolCall.id(), toolCall.name(), validatedArgs, partialResult))));
             return new Outcome(result, false);
+        } catch (CancellationException e) {
+            throw e;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            var cancellation = new CancellationException("Tool execution was cancelled");
+            cancellation.initCause(e);
+            throw cancellation;
         } catch (Exception e) {
             return new Outcome(errorResult(messageForException(e)), true);
         }
@@ -133,11 +146,7 @@ public class ToolExecutionPipeline {
     }
 
     public List<ToolResultMessage> executeAll(
-            List<ToolCallWithTool> calls,
-            ToolExecutionMode mode,
-            AgentContext context,
-            CancellationToken signal,
-            AgentEventListener listener) {
+            List<ToolCallWithTool> calls, AgentContext context, CancellationToken signal, AgentEventListener listener) {
         Objects.requireNonNull(calls, "calls");
         Objects.requireNonNull(context, "context");
         Objects.requireNonNull(signal, "signal");
@@ -146,19 +155,38 @@ public class ToolExecutionPipeline {
             return List.of();
         }
 
-        return switch (mode != null ? mode : ToolExecutionMode.SEQUENTIAL) {
-            case SEQUENTIAL -> executeSequentially(calls, context, signal, listener);
-            case PARALLEL -> executeInParallel(calls, context, signal, listener);
-        };
+        return executePlanned(calls, context, signal, listener);
     }
 
-    private List<ToolResultMessage> executeSequentially(
+    private List<ToolResultMessage> executePlanned(
             List<ToolCallWithTool> calls, AgentContext context, CancellationToken signal, AgentEventListener listener) {
         var results = new ArrayList<ToolResultMessage>(calls.size());
-        for (var call : calls) {
-            results.add(execute(call.tool(), call.toolCall(), call.validatedArgs(), context, signal, listener));
+        int index = 0;
+        while (index < calls.size()) {
+            ToolCallWithTool call = calls.get(index);
+            if (call.tool().executionMode() == ToolExecutionMode.SEQUENTIAL) {
+                results.add(executeCall(call, context, signal, listener));
+                index++;
+                continue;
+            }
+            int segmentEnd = findParallelSegmentEnd(calls, index);
+            results.addAll(executeInParallel(calls.subList(index, segmentEnd), context, signal, listener));
+            index = segmentEnd;
         }
         return List.copyOf(results);
+    }
+
+    private static int findParallelSegmentEnd(List<ToolCallWithTool> calls, int start) {
+        int end = start;
+        while (end < calls.size() && calls.get(end).tool().executionMode() == ToolExecutionMode.PARALLEL) {
+            end++;
+        }
+        return end;
+    }
+
+    private ToolResultMessage executeCall(
+            ToolCallWithTool call, AgentContext context, CancellationToken signal, AgentEventListener listener) {
+        return execute(call.tool(), call.toolCall(), call.validatedArgs(), context, signal, listener);
     }
 
     private List<ToolResultMessage> executeInParallel(
@@ -166,8 +194,7 @@ public class ToolExecutionPipeline {
         try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
             var futures = new ArrayList<java.util.concurrent.Future<ToolResultMessage>>(calls.size());
             for (var call : calls) {
-                futures.add(executor.submit(
-                        () -> execute(call.tool(), call.toolCall(), call.validatedArgs(), context, signal, listener)));
+                futures.add(executor.submit(() -> executeCall(call, context, signal, listener)));
             }
 
             var results = new ArrayList<ToolResultMessage>(calls.size());
@@ -177,9 +204,20 @@ public class ToolExecutionPipeline {
             return List.copyOf(results);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            throw new IllegalStateException("Interrupted while executing tools in parallel", e);
+            var cancellation = new CancellationException("Tool execution was cancelled");
+            cancellation.initCause(e);
+            throw cancellation;
         } catch (ExecutionException e) {
+            if (e.getCause() instanceof CancellationException cancellation) {
+                throw cancellation;
+            }
             throw new IllegalStateException("Unexpected failure while executing tools in parallel", e);
+        }
+    }
+
+    private static void throwIfCancelled(CancellationToken signal) {
+        if (signal.isCancelled()) {
+            throw new CancellationException("Tool execution was cancelled");
         }
     }
 
@@ -219,6 +257,16 @@ public class ToolExecutionPipeline {
                     .reduce((left, right) -> left + "; " + right)
                     .orElse("Unknown schema validation error");
             throw new IllegalArgumentException("Tool arguments failed validation: " + message);
+        }
+    }
+
+    private ToolResultMessage validate(
+            AgentTool tool, ToolCall toolCall, Map<String, Object> validatedArgs, String toolName) {
+        try {
+            validateArguments(tool, validatedArgs);
+            return null;
+        } catch (Exception error) {
+            return toToolResultMessage(toolCall, toolName, errorResult(messageForException(error)), true);
         }
     }
 

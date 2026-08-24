@@ -68,17 +68,23 @@ public class RuntimeExecutionCoordinator {
     public void start(
             RuntimeSessionHolder holder, RuntimeActiveExecution execution, UserMessage message, Locale locale) {
         RuntimeEventProjector projector = projectorFactory.create(holder, execution, message);
-        Runnable unsubscribe = () -> {};
+        RuntimeSubscriptions subscriptions = RuntimeSubscriptions.empty();
         try {
-            unsubscribe = holder.agent().subscribe(projector::onEvent);
+            subscriptions = subscribe(holder, projector);
             scheduleTimeout(holder, execution);
-            CompletableFuture<Void> future = holder.agent().prompt(message);
-            Runnable finalUnsubscribe = unsubscribe;
+            CompletableFuture<Void> future = holder.prompt(message);
+            RuntimeSubscriptions finalSubscriptions = subscriptions;
             future.whenComplete(
-                    (unused, error) -> finish(holder, execution, projector, finalUnsubscribe, error, locale));
+                    (unused, error) -> finish(holder, execution, projector, finalSubscriptions, error, locale));
         } catch (RuntimeException error) {
-            finish(holder, execution, projector, unsubscribe, error, locale);
+            finish(holder, execution, projector, subscriptions, error, locale);
         }
+    }
+
+    private static RuntimeSubscriptions subscribe(RuntimeSessionHolder holder, RuntimeEventProjector projector) {
+        Runnable agent = holder.agent().subscribe(projector::onEvent);
+        Runnable compaction = holder.subscribeCompaction(projector::onCompactionEvent);
+        return new RuntimeSubscriptions(agent, compaction);
     }
 
     private void scheduleTimeout(RuntimeSessionHolder holder, RuntimeActiveExecution execution) {
@@ -94,20 +100,20 @@ public class RuntimeExecutionCoordinator {
         execution.requestTimeout();
         holder.agent().clearSteeringQueue();
         holder.agent().clearFollowUpQueue();
-        holder.agent().abort();
+        holder.abort();
     }
 
     private void finish(
             RuntimeSessionHolder holder,
             RuntimeActiveExecution execution,
             RuntimeEventProjector projector,
-            Runnable unsubscribe,
+            RuntimeSubscriptions subscriptions,
             Throwable executionError,
             Locale locale) {
         engineRegistry.lockOperation(holder.sessionId());
         try {
-            if (!continueQueuedExecution(holder, execution, projector, executionError, locale, unsubscribe)) {
-                completeExecution(holder, execution, projector, unsubscribe, executionError, locale);
+            if (!continueQueuedExecution(holder, execution, projector, executionError, locale, subscriptions)) {
+                completeExecution(holder, execution, projector, subscriptions, executionError, locale);
             }
         } finally {
             engineRegistry.unlockOperation(holder.sessionId());
@@ -120,16 +126,16 @@ public class RuntimeExecutionCoordinator {
             RuntimeEventProjector projector,
             Throwable executionError,
             Locale locale,
-            Runnable unsubscribe) {
+            RuntimeSubscriptions subscriptions) {
         if (!canContinue(holder, execution, projector, executionError)) {
             return false;
         }
         try {
-            holder.agent()
-                    .continueQueuedExecution()
-                    .whenComplete((unused, error) -> finish(holder, execution, projector, unsubscribe, error, locale));
+            holder.continueQueuedExecution()
+                    .whenComplete(
+                            (unused, error) -> finish(holder, execution, projector, subscriptions, error, locale));
         } catch (RuntimeException error) {
-            completeExecution(holder, execution, projector, unsubscribe, error, locale);
+            completeExecution(holder, execution, projector, subscriptions, error, locale);
         }
         return true;
     }
@@ -151,13 +157,13 @@ public class RuntimeExecutionCoordinator {
             RuntimeSessionHolder holder,
             RuntimeActiveExecution execution,
             RuntimeEventProjector projector,
-            Runnable unsubscribe,
+            RuntimeSubscriptions subscriptions,
             Throwable executionError,
             Locale locale) {
         execution.closeControls();
         Throwable failure = executionFailure(execution, executionError, projector);
         failure = finishPersistence(holder.sessionId(), failure);
-        failure = releaseExecution(holder, execution, unsubscribe, failure);
+        failure = releaseExecution(holder, execution, subscriptions, failure);
         logFailure(holder.sessionId(), failure);
         terminalEventFactory.emit(execution.eventStream(), execution, projector.terminalReason(), failure, locale);
         execution.eventStream().complete();
@@ -182,10 +188,13 @@ public class RuntimeExecutionCoordinator {
     }
 
     private Throwable releaseExecution(
-            RuntimeSessionHolder holder, RuntimeActiveExecution execution, Runnable unsubscribe, Throwable failure) {
+            RuntimeSessionHolder holder,
+            RuntimeActiveExecution execution,
+            RuntimeSubscriptions subscriptions,
+            Throwable failure) {
         Throwable result = failure;
         try {
-            unsubscribe.run();
+            subscriptions.unsubscribe();
         } catch (RuntimeException unsubscribeError) {
             result = combineFailures(result, unsubscribeError);
         } finally {
@@ -210,5 +219,16 @@ public class RuntimeExecutionCoordinator {
 
     private OffsetDateTime now() {
         return OffsetDateTime.ofInstant(clock.instant(), ZoneOffset.UTC);
+    }
+
+    private record RuntimeSubscriptions(Runnable agent, Runnable compaction) {
+        private static RuntimeSubscriptions empty() {
+            return new RuntimeSubscriptions(() -> {}, () -> {});
+        }
+
+        private void unsubscribe() {
+            agent.run();
+            compaction.run();
+        }
     }
 }

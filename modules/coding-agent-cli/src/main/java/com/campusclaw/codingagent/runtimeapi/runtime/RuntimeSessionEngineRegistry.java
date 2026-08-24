@@ -10,18 +10,21 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.locks.ReentrantLock;
 
-import com.campusclaw.agent.Agent;
-import com.campusclaw.agent.queue.MessageQueue.DeliveryMode;
-import com.campusclaw.ai.CampusClawAiService;
 import com.campusclaw.ai.types.Message;
 import com.campusclaw.ai.types.Model;
 import com.campusclaw.ai.types.ThinkingLevel;
+import com.campusclaw.codingagent.common.client.mate.MateCredentials;
 import com.campusclaw.codingagent.runtimeapi.agent.AgentDirectorySnapshotDTO;
-import com.campusclaw.codingagent.runtimeapi.agent.RuntimeAgentPromptLoader;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
-import com.campusclaw.codingagent.tool.ops.ReadOperations;
-import com.campusclaw.codingagent.tool.read.ReadTool;
+import com.campusclaw.codingagent.session.AgentSessionFactory;
+import com.campusclaw.codingagent.session.ManagedAgentSession;
+import com.campusclaw.codingagent.session.ManagedAgentSessionRequest;
+import com.campusclaw.codingagent.tool.agent.BoundAgentTool;
+import com.campusclaw.codingagent.tool.agent.SubagentExecutionContext;
+import com.campusclaw.codingagent.tool.agent.SubagentExecutionService;
+import com.campusclaw.codingagent.tool.builtin.ToolEntryPoint;
+import com.campusclaw.codingagent.tool.cron.AgentScopedCronToolFactory;
 
 import org.springframework.stereotype.Component;
 
@@ -39,22 +42,22 @@ public class RuntimeSessionEngineRegistry {
 
     private final ReentrantLock[] operationLocks = createOperationLocks();
 
-    private final CampusClawAiService aiService;
+    private final AgentSessionFactory sessionFactory;
 
-    private final ReadOperations readOperations;
+    private final SubagentExecutionService subagentExecutionService;
 
-    private final RuntimeAgentPromptLoader promptLoader;
+    private final AgentScopedCronToolFactory cronToolFactory;
 
     private final Semaphore capacity;
 
     public RuntimeSessionEngineRegistry(
-            CampusClawAiService aiService,
-            ReadOperations readOperations,
-            RuntimeAgentPromptLoader promptLoader,
+            AgentSessionFactory sessionFactory,
+            SubagentExecutionService subagentExecutionService,
+            AgentScopedCronToolFactory cronToolFactory,
             RuntimeExecutionProperties properties) {
-        this.aiService = aiService;
-        this.readOperations = readOperations;
-        this.promptLoader = promptLoader;
+        this.sessionFactory = sessionFactory;
+        this.subagentExecutionService = subagentExecutionService;
+        this.cronToolFactory = cronToolFactory;
         this.capacity = new Semaphore(properties.getMaxActive());
     }
 
@@ -64,11 +67,14 @@ public class RuntimeSessionEngineRegistry {
             Model model,
             boolean thinking,
             List<Message> messages,
-            RuntimeActiveExecution execution) {
+            RuntimeActiveExecution execution,
+            MateCredentials credentials) {
         acquireCapacity();
         try {
-            RuntimeSessionHolder holder = createHolder(sessionId, snapshot, model, thinking, messages, execution);
+            RuntimeSessionHolder holder =
+                    createHolder(sessionId, snapshot, model, thinking, messages, execution, credentials);
             if (sessions.putIfAbsent(sessionId, holder) != null) {
+                holder.closeSession();
                 throw new RuntimeApiException(RuntimeErrorCode.SESSION_BUSY);
             }
             return holder;
@@ -85,6 +91,7 @@ public class RuntimeSessionEngineRegistry {
     public void complete(RuntimeSessionHolder holder, RuntimeActiveExecution execution) {
         holder.complete(execution);
         if (sessions.remove(holder.sessionId(), holder)) {
+            holder.closeSession();
             capacity.release();
         }
     }
@@ -103,25 +110,50 @@ public class RuntimeSessionEngineRegistry {
             Model model,
             boolean thinking,
             List<Message> messages,
-            RuntimeActiveExecution execution) {
-        Agent agent = createAgent(snapshot, model, thinking);
-        agent.replaceMessages(messages);
-        RuntimeSessionHolder holder = new RuntimeSessionHolder(sessionId, snapshot, agent, thinking);
+            RuntimeActiveExecution execution,
+            MateCredentials credentials) {
+        ManagedAgentSession session = createSession(snapshot, model, thinking, credentials);
+        session.agent().replaceMessages(messages);
+        RuntimeSessionHolder holder = new RuntimeSessionHolder(sessionId, snapshot, session, thinking);
         if (!holder.begin(execution)) {
             throw new IllegalStateException("new execution holder is already active");
         }
         return holder;
     }
 
-    private Agent createAgent(AgentDirectorySnapshotDTO snapshot, Model model, boolean thinking) {
-        Agent agent = new Agent(aiService);
-        agent.setModel(model);
-        agent.setSystemPrompt(promptLoader.load(snapshot.runtimeDirectory()));
-        agent.setTools(List.of(new ReadTool(readOperations, snapshot.runtimeDirectory())));
-        agent.setThinkingLevel(thinking ? ThinkingLevel.MEDIUM : ThinkingLevel.OFF);
-        agent.setSteeringMode(DeliveryMode.ONE_AT_A_TIME);
-        agent.setFollowUpMode(DeliveryMode.ONE_AT_A_TIME);
-        return agent;
+    private ManagedAgentSession createSession(
+            AgentDirectorySnapshotDTO snapshot, Model model, boolean thinking, MateCredentials credentials) {
+        ThinkingLevel level = thinking ? ThinkingLevel.MEDIUM : ThinkingLevel.OFF;
+        var request = new ManagedAgentSessionRequest(
+                snapshot.agentId(),
+                ToolEntryPoint.RUNTIME,
+                runtime -> requireModelAllowed(runtime, model),
+                level,
+                credentials,
+                (runtime, ignored) -> cronToolFactory.create(runtime.agentId()),
+                (runtime, resolvedModel) -> new BoundAgentTool(
+                        runtime,
+                        SubagentExecutionContext.root(runtime.agentId(), resolvedModel, level, credentials),
+                        subagentExecutionService),
+                null,
+                List.of(),
+                List.of());
+        return sessionFactory.create(request);
+    }
+
+    private static Model requireModelAllowed(
+            com.campusclaw.codingagent.runtime.PreparedAgentRuntime runtime, Model model) {
+        boolean allowed = runtime.metadata().bindingModels().stream()
+                .anyMatch(configured -> matchesConfiguredModel(model, configured));
+        if (!allowed) {
+            throw new RuntimeApiException(RuntimeErrorCode.AGENT_MODEL_NOT_CONFIGURED);
+        }
+        return model;
+    }
+
+    private static boolean matchesConfiguredModel(Model model, String configured) {
+        String qualified = model.provider().value() + "/" + model.id();
+        return model.id().equals(configured) || qualified.equals(configured);
     }
 
     private void acquireCapacity() {

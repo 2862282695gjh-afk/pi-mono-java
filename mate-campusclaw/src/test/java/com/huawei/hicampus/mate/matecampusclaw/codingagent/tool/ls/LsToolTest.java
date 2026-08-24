@@ -5,132 +5,69 @@
 package com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.ls;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.when;
 
-import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.time.Instant;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Map;
 
-import com.huawei.hicampus.mate.matecampusclaw.agent.tool.AgentToolResult;
+import com.huawei.hicampus.mate.matecampusclaw.agent.tool.ToolExecutionMode;
 import com.huawei.hicampus.mate.matecampusclaw.ai.types.TextContent;
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.ops.LsOperations;
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.ops.LsOperations.LsEntry;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.ops.LocalLsOperations;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.workspace.AgentWorkspaceBoundary;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.workspace.WorkspacePathResolver;
 
-import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
-import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
-import org.mockito.junit.jupiter.MockitoSettings;
-import org.mockito.quality.Strictness;
 
-@ExtendWith(MockitoExtension.class)
-@MockitoSettings(strictness = Strictness.LENIENT)
+/**
+ * {@link LsTool} 的精确契约和目录输出测试。
+ *
+ * @version [br_eCampusCore 26.0.0, 2026/08/23]
+ * @since [br_eCampusCore 26.0.0]
+ */
 class LsToolTest {
 
-    @Mock
-    LsOperations lsOperations;
+    @TempDir
+    Path agentRoot;
 
-    private static String text(AgentToolResult r) {
-        return ((TextContent) r.content().get(0)).text();
+    private LsTool tool;
+
+    @BeforeEach
+    void setUp() {
+        AgentWorkspaceBoundary boundary = AgentWorkspaceBoundary.create("agent-a", agentRoot);
+        tool = new LsTool(new LocalLsOperations(), new WorkspacePathResolver(), boundary);
     }
 
-    @Nested
-    class Metadata {
-
-        @Test
-        void identity(@TempDir Path tmp) {
-            LsTool tool = new LsTool(lsOperations, tmp);
-            assertThat(tool.name()).isEqualTo("ls");
-            assertThat(tool.label()).isEqualTo("Ls");
-            assertThat(tool.description()).isNotBlank();
-            assertThat(tool.parameters().get("required").get(0).asText()).isEqualTo("path");
-        }
+    @Test
+    void shouldPublishPascalCaseParallelContract() {
+        assertThat(tool.name()).isEqualTo("Ls");
+        assertThat(tool.description()).isEqualTo("List directory contents.");
+        assertThat(tool.executionMode()).isEqualTo(ToolExecutionMode.PARALLEL);
+        assertThat(tool.parameters().path("required").isMissingNode()).isTrue();
+        assertThat(tool.parameters().path("additionalProperties").asBoolean()).isFalse();
     }
 
-    @Nested
-    class InvalidInput {
+    @Test
+    void shouldListDotfilesAndDirectoriesWithoutFakeMetadata() throws Exception {
+        Files.writeString(agentRoot.resolve("b.txt"), "b");
+        Files.writeString(agentRoot.resolve(".env"), "secret");
+        Files.createDirectory(agentRoot.resolve("A-dir"));
 
-        @Test
-        void missingPathRejected(@TempDir Path tmp) throws Exception {
-            LsTool tool = new LsTool(lsOperations, tmp);
-            AgentToolResult result = tool.execute("id", Map.of(), null, null);
-            assertThat(text(result)).contains("path is required");
-        }
+        var result = tool.execute("call", Map.of(), null, null);
 
-        @Test
-        void blankPathRejected(@TempDir Path tmp) throws Exception {
-            LsTool tool = new LsTool(lsOperations, tmp);
-            AgentToolResult result = tool.execute("id", Map.of("path", "   "), null, null);
-            assertThat(text(result)).contains("path is required");
-        }
-
-        @Test
-        void nonDirectoryRejected(@TempDir Path tmp) throws Exception {
-            Path file = tmp.resolve("a.txt");
-            Files.writeString(file, "hi");
-            LsTool tool = new LsTool(lsOperations, tmp);
-            AgentToolResult result = tool.execute("id", Map.of("path", "a.txt"), null, null);
-            assertThat(text(result)).contains("not a directory");
-        }
+        assertThat(((TextContent) result.content().get(0)).text())
+                .isEqualTo(".env\nA-dir/\nb.txt")
+                .doesNotContain("rw-");
     }
 
-    @Nested
-    class Listing {
+    @Test
+    void shouldApplyConfiguredLimit() throws Exception {
+        Files.writeString(agentRoot.resolve("a"), "a");
+        Files.writeString(agentRoot.resolve("b"), "b");
 
-        @Test
-        void emptyDirectoryMessage(@TempDir Path tmp) throws Exception {
-            when(lsOperations.list(any(Path.class))).thenReturn(new ArrayList<>());
-            LsTool tool = new LsTool(lsOperations, tmp);
-            assertThat(text(tool.execute("id", Map.of("path", "."), null, null)))
-                    .contains("empty directory");
-        }
+        var result = tool.execute("call", Map.of("limit", 1), null, null);
 
-        @Test
-        void formatsEntriesWithTypeFlags(@TempDir Path tmp) throws Exception {
-            List<LsEntry> entries = new ArrayList<>(List.of(
-                    new LsEntry("zzz.txt", "file", 123, Instant.parse("2025-01-01T00:00:00Z")),
-                    new LsEntry("alpha", "directory", 4096, Instant.parse("2025-01-02T00:00:00Z")),
-                    new LsEntry("link.so", "symlink", 0, Instant.parse("2025-01-03T00:00:00Z"))));
-            when(lsOperations.list(any(Path.class))).thenReturn(entries);
-            LsTool tool = new LsTool(lsOperations, tmp);
-            String out = text(tool.execute("id", Map.of("path", "."), null, null));
-
-            // Directories first
-            int dirIdx = out.indexOf("alpha/");
-            int fileIdx = out.indexOf("zzz.txt");
-            int linkIdx = out.indexOf("link.so");
-            assertThat(dirIdx).isLessThan(fileIdx).isLessThan(linkIdx);
-
-            // Type flags
-            assertThat(out).contains("drw-").contains("-rw-").contains("lrw-");
-        }
-
-        @Test
-        void truncatesWhenOverMax(@TempDir Path tmp) throws Exception {
-            List<LsEntry> entries = new ArrayList<>();
-            for (int i = 0; i < 1500; i++) {
-                entries.add(new LsEntry("f" + i + ".txt", "file", 1, Instant.EPOCH));
-            }
-            when(lsOperations.list(any(Path.class))).thenReturn(entries);
-            LsTool tool = new LsTool(lsOperations, tmp);
-            String out = text(tool.execute("id", Map.of("path", "."), null, null));
-            assertThat(out).contains("(truncated to 1000 entries)");
-        }
-
-        @Test
-        void ioErrorReported(@TempDir Path tmp) throws Exception {
-            when(lsOperations.list(any(Path.class))).thenThrow(new IOException("disk down"));
-            LsTool tool = new LsTool(lsOperations, tmp);
-            assertThat(text(tool.execute("id", Map.of("path", "."), null, null)))
-                    .contains("Error listing")
-                    .contains("disk down");
-        }
+        assertThat(((TextContent) result.content().get(0)).text()).isEqualTo("a\n... (truncated)");
     }
 }

@@ -64,7 +64,7 @@ public class RuntimeEventQueryService {
         List<RuntimeEntryDTO> entries = new ArrayList<>();
         long afterSeq = 0L;
         while (true) {
-            List<RuntimeEntryDTO> batch = repository.listCurrentBranch(sessionId, afterSeq, RESTORE_BATCH_SIZE, false);
+            List<RuntimeEntryDTO> batch = repository.listCurrentBranchEntries(sessionId, afterSeq, RESTORE_BATCH_SIZE);
             entries.addAll(batch);
             if (batch.size() < RESTORE_BATCH_SIZE) {
                 break;

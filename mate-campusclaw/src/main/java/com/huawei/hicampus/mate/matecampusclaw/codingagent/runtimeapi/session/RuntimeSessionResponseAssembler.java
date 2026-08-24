@@ -5,8 +5,10 @@
 package com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.session;
 
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.vo.CostResponseVO;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.vo.CreateSessionResponseVO;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.vo.GetSessionResponseVO;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.vo.UsageResponseVO;
 
 import org.springframework.stereotype.Component;
 
@@ -31,6 +33,7 @@ public class RuntimeSessionResponseAssembler {
                 session.getModelId(),
                 session.getState(),
                 session.isThinking(),
+                usage(session.getLifetimeUsage()),
                 session.getCreatedAt());
         return new RuntimeSessionView<>(resource, etag(session));
     }
@@ -42,6 +45,7 @@ public class RuntimeSessionResponseAssembler {
                 session.getModelId(),
                 session.getState(),
                 session.isThinking(),
+                usage(session.getLifetimeUsage()),
                 session.getCreatedAt(),
                 session.getUpdatedAt());
         return new RuntimeSessionView<>(resource, etag(session));
@@ -49,5 +53,17 @@ public class RuntimeSessionResponseAssembler {
 
     private String etag(RuntimeSessionDTO session) {
         return etagFactory.create(session.getId(), session.getResourceVersion());
+    }
+
+    private static UsageResponseVO usage(com.huawei.hicampus.mate.matecampusclaw.ai.types.Usage usage) {
+        var value = usage == null ? com.huawei.hicampus.mate.matecampusclaw.ai.types.Usage.empty() : usage;
+        var cost = value.cost() == null ? com.huawei.hicampus.mate.matecampusclaw.ai.types.Cost.empty() : value.cost();
+        return new UsageResponseVO(
+                value.input(),
+                value.output(),
+                value.cacheRead(),
+                value.cacheWrite(),
+                value.totalTokens(),
+                new CostResponseVO(cost.input(), cost.output(), cost.cacheRead(), cost.cacheWrite(), cost.total()));
     }
 }

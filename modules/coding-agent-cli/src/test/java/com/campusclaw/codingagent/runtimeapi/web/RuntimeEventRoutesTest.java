@@ -24,6 +24,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 
+import com.campusclaw.codingagent.common.client.mate.MateCredentials;
 import com.campusclaw.codingagent.runtimeapi.RuntimeMessageSourceConfiguration;
 import com.campusclaw.codingagent.runtimeapi.event.RuntimeEventQueryService;
 import com.campusclaw.codingagent.runtimeapi.event.RuntimeEventService;
@@ -86,7 +87,11 @@ class RuntimeEventRoutesTest {
     @Test
     void postStreamsNamedEventsWithoutResultBean() throws Exception {
         RuntimeEventStream stream = completedStream();
-        when(service.submit(eq(SESSION_ID), any(UserEventRequestVO.class), eq(Locale.US)))
+        when(service.submit(
+                        eq(SESSION_ID),
+                        any(UserEventRequestVO.class),
+                        eq(Locale.US),
+                        eq(MateCredentials.jwt("credential", "opaque-token"))))
                 .thenReturn(stream);
 
         MvcResult initial = mvc.perform(
@@ -96,6 +101,7 @@ class RuntimeEventRoutesTest {
                 .andExpect(status().isOk())
                 .andExpect(request().asyncStarted())
                 .andReturn();
+        initial.getAsyncResult(1_000L);
 
         String body = mvc.perform(asyncDispatch(initial))
                 .andExpect(status().isOk())
@@ -105,6 +111,12 @@ class RuntimeEventRoutesTest {
                 .getContentAsString();
         assertThat(body).contains("id:17", "event:user.message", "event:stream.end");
         assertThat(body).doesNotContain("resCode", "resMsg", "result");
+        verify(service)
+                .submit(
+                        eq(SESSION_ID),
+                        any(UserEventRequestVO.class),
+                        eq(Locale.US),
+                        eq(MateCredentials.jwt("credential", "opaque-token")));
     }
 
     @Test
@@ -115,7 +127,7 @@ class RuntimeEventRoutesTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.resCode").value("INVALID_EVENT_REQUEST"))
                 .andExpect(jsonPath("$.result").doesNotExist());
-        verify(service, never()).submit(any(), any(), any(Locale.class));
+        verify(service, never()).submit(any(), any(), any(Locale.class), any());
     }
 
     @Test
@@ -134,7 +146,7 @@ class RuntimeEventRoutesTest {
                     .andExpect(status().isBadRequest())
                     .andExpect(jsonPath("$.resCode").value("INVALID_EVENT_REQUEST"));
         }
-        verify(service, never()).submit(any(), any(), any(Locale.class));
+        verify(service, never()).submit(any(), any(), any(Locale.class), any());
     }
 
     @Test

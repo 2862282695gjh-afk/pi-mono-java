@@ -8,15 +8,14 @@ import com.campusclaw.codingagent.command.SlashCommand;
 import com.campusclaw.codingagent.command.SlashCommandContext;
 
 /**
- * Sets or displays the session display name matching campusclaw TS /name command.
+ * 保留的 {@code /name} 命令处理器。
  *
- * @version [br_eCampusCore 26.0.0, 2026/05/06]
+ * <p>显示名称的读写由未来宿主适配 mate-service，不进入 CampusClaw Runtime Session。
+ *
+ * @version [br_eCampusCore 26.0.0, 2026/08/24]
  * @since [br_eCampusCore 26.0.0]
  */
 public class NameCommand implements SlashCommand {
-
-    private String sessionName;
-
     @Override
     public String name() {
         return "name";
@@ -29,30 +28,13 @@ public class NameCommand implements SlashCommand {
 
     @Override
     public void execute(SlashCommandContext context, String arguments) {
-        if (arguments.isEmpty()) {
-            if (sessionName != null && !sessionName.isEmpty()) {
-                context.output().println("Session name: " + sessionName);
-            } else {
-                context.output().println("No session name set. Usage: /name <name>");
-            }
-        } else {
-            sessionName = arguments.trim();
-
-            // Persist session name
-            var sm = context.session().getSessionManager();
-            if (sm != null) {
-                sm.appendSessionName(sessionName);
-            }
-            context.output().println("Session name set to: " + sessionName);
+        if (arguments.isBlank()) {
+            String name = context.session().displayName().orElse("not set");
+            context.output().println("Session name: " + name);
+            return;
         }
-    }
-
-    /**
-     * Returns the current session name, or null if not set.
-     *
-     * @return the result
-     */
-    public String getSessionName() {
-        return sessionName;
+        String name = arguments.trim();
+        context.session().changeDisplayName(name);
+        context.output().println("Session name set to: " + name);
     }
 }

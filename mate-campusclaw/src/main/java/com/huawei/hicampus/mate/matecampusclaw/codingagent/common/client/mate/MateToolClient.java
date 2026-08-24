@@ -8,10 +8,8 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Client contract for the Mate tool service. {@code listTools} resolves the
- * bound tool IDs from agent/skill metadata and queries their details,
- * credential-free; {@code callTool} carries {@link MateCredentials} handed
- * down by the agent.
+ * Mate 工具发现和执行客户端。发现方法分别表达 Agent 与 Skill 作用域，
+ * 执行方法只接受内部工具标识。
  *
  * @version [br_eCampusCore 26.0.0, 2026/08/18]
  * @since [br_eCampusCore 26.0.0]
@@ -19,31 +17,39 @@ import java.util.Map;
 public interface MateToolClient {
 
     /**
-     * Lists tools bound to the given agent or skill: fetches the metadata
-     * (binding tool IDs) first, then queries tool details.
+     * 查询指定 Agent 直接绑定的工具，并恢复绑定顺序。
      *
-     * @param agentId optional agent ID; null = use skillId
-     * @param skillId optional skill ID; null = use agentId
-     * @return tool metadata list
+     * @param agentId Agent 标识
+     * @param credentials 本次执行的凭据快照；发现端点允许为空
+     * @return 按绑定顺序排列的工具元数据
      */
-    List<MateToolMeta> listTools(String agentId, String skillId);
+    List<MateToolMeta> listAgentTools(String agentId, MateCredentials credentials);
 
     /**
-     * Calls a specific tool with agent-handed-down credentials.
+     * 查询指定 Skill 直接绑定的工具，并恢复绑定顺序。
      *
-     * @param tool the tool name
-     * @param args the tool arguments
-     * @param credentials credentials forwarded to the Mate server
-     * @return tool execution result
+     * @param skillId Skill 标识
+     * @param credentials 本次执行的凭据快照；发现端点允许为空
+     * @return 按绑定顺序排列的工具元数据
      */
-    ToolResult callTool(String tool, Map<String, Object> args, MateCredentials credentials);
+    List<MateToolMeta> listSkillTools(String skillId, MateCredentials credentials);
 
     /**
-     * Tool execution result.
+     * 使用 Agent 下发凭据调用指定内部工具标识。
      *
-     * @param content the textual content returned by the tool
-     * @param metadata optional metadata map
-     * @param isError whether the result represents an error
+     * @param toolId 工具标识
+     * @param args 工具参数
+     * @param credentials 透传给 Mate 的凭据
+     * @return 工具执行结果
+     */
+    ToolResult callTool(String toolId, Map<String, Object> args, MateCredentials credentials);
+
+    /**
+     * 工具执行结果。
+     *
+     * @param content 工具返回的文本
+     * @param metadata 可选元数据
+     * @param isError 是否为错误结果
      */
     record ToolResult(String content, Map<String, Object> metadata, boolean isError) {}
 }

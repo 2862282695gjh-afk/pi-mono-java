@@ -7,6 +7,8 @@ package com.campusclaw.codingagent.common.dto;
 import java.util.HashMap;
 import java.util.Map;
 
+import com.campusclaw.codingagent.common.client.mate.MateCredentialHeaders;
+
 import lombok.Builder;
 import lombok.Data;
 import lombok.ToString;
@@ -15,10 +17,10 @@ import lombok.ToString;
  * 每次请求 Mate 内网网关携带的 Header 信息。
  *
  * <p>敏感字段(token、凭据、cookie)以 {@link ToString.Exclude} 排除在
- * {@link #toString()} 之外,不会泄漏进日志。内网网关端点不要求凭据
- * Header,默认构造实例({@code RequestHeaderInfo.builder().build()})即可。
+ * {@link #toString()} 之外，不会泄漏进日志。Mate 工具发现和执行按本次 Agent 执行上下文
+ * 选择性填充凭据字段。
  *
- * @version [br_eCampusCore 26.0.0, 2026/08/18]
+ * @version [br_eCampusCore 26.0.0, 2026/08/24]
  * @since [br_eCampusCore 26.0.0]
  */
 @Data
@@ -71,11 +73,10 @@ public class RequestHeaderInfo {
     private Map<String, String> customHeaders;
 
     /**
-     * Maps the header-info fields onto HTTP header names as expected by the
-     * Mate inner gateway; null fields are omitted. {@code customHeaders}
-     * entries are merged in as-is.
+     * 按 Mate 内部网关约定把字段映射为 HTTP Header；空值由请求构建器忽略，
+     * {@code customHeaders} 条目按原值合并。
      *
-     * @return header name to value map (values may be null)
+     * @return Header 名称到值的映射，值可能为空
      */
     public Map<String, String> toHeaders() {
         Map<String, String> headers = new HashMap<>();
@@ -84,12 +85,12 @@ public class RequestHeaderInfo {
         headers.put("X-Locale", locale);
         headers.put("X-Forward", xForward);
         headers.put("X-App-Id", appId);
-        headers.put("X-HW-ID", xHwId);
-        headers.put("X-HW-APPKEY", xHwAppKey);
+        headers.put(MateCredentialHeaders.X_HW_ID, xHwId);
+        headers.put(MateCredentialHeaders.X_HW_APPKEY, xHwAppKey);
         headers.put("X-App-Key", appKey);
         headers.put("Cookie", cookie);
         headers.put("X-Csrf-Token", csrfToken);
-        headers.put("Authorization", authorization);
+        headers.put(MateCredentialHeaders.AUTHORIZATION, authorization);
         headers.put("X-Auth-Token", xAuthToken);
         headers.put("X-Roa-Rand", roaRand);
         headers.put("X-Agent-Id", xAgentId);

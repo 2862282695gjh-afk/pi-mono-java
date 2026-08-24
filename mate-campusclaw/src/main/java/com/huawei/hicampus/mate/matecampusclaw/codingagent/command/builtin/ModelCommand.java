@@ -8,47 +8,30 @@ import com.huawei.hicampus.mate.matecampusclaw.codingagent.command.SlashCommand;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.command.SlashCommandContext;
 
 /**
- * Slash command {@code /model} (also registered under {@code /models}) that either prints the
- * session's current model or switches to the model id supplied as the argument.
+ * 保留的 {@code /model} 命令处理器。
  *
- * @version [br_eCampusCore 26.0.0, 2026/05/13]
+ * @version [br_eCampusCore 26.0.0, 2026/08/24]
  * @since [br_eCampusCore 26.0.0]
  */
 public class ModelCommand implements SlashCommand {
-
-    private final String name;
-
-    public ModelCommand() {
-        this("model");
-    }
-
-    public ModelCommand(String name) {
-        this.name = name;
-    }
-
     @Override
     public String name() {
-        return name;
+        return "model";
     }
 
     @Override
     public String description() {
-        return "Print or switch the current model (no args opens the picker)";
+        return "Print or switch the current model";
     }
 
     @Override
     public void execute(SlashCommandContext context, String arguments) {
-        if (arguments.isEmpty()) {
-            var model = context.session().getAgent().getState().getModel();
-            context.output().println("Current model: " + (model != null ? model.id() : "unknown"));
-        } else {
-            try {
-                context.session().setModel(arguments.trim());
-                var model = context.session().getAgent().getState().getModel();
-                context.output().println("Switched to model: " + (model != null ? model.id() : arguments.trim()));
-            } catch (IllegalArgumentException e) {
-                context.output().println("Unknown model: " + arguments.trim());
-            }
+        if (arguments.isBlank()) {
+            context.output().println("Current model: " + context.session().currentModelId());
+            return;
         }
+        String modelId = arguments.trim();
+        context.session().changeModel(modelId);
+        context.output().println("Switched to model: " + modelId);
     }
 }

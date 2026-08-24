@@ -5,9 +5,9 @@
 package com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi;
 
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.model.ModelCatalogService;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtime.AgentRuntimeManager;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.agent.AgentDirectoryResolver;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.agent.FileAgentDirectoryResolver;
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.agent.RuntimeAgentDirectoryProperties;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.event.RandomRuntimeEntryIdGenerator;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.event.RuntimeEntryIdGenerator;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.event.RuntimeEventProperties;
@@ -20,7 +20,6 @@ import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.runtime.Ru
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.session.RandomSessionIdGenerator;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.session.RuntimeCleanupProperties;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.session.SessionIdGenerator;
-import com.fasterxml.jackson.databind.ObjectMapper;
 
 import org.mybatis.spring.annotation.MapperScan;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
@@ -39,7 +38,6 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 @EnableScheduling
 @MapperScan(basePackageClasses = RuntimeSessionMapper.class)
 @EnableConfigurationProperties({
-    RuntimeAgentDirectoryProperties.class,
     RuntimeCleanupProperties.class,
     RuntimeExecutionProperties.class,
     RuntimeEventProperties.class
@@ -53,9 +51,8 @@ public class RuntimeApiConfiguration {
 
     @Bean
     @ConditionalOnMissingBean(AgentDirectoryResolver.class)
-    public AgentDirectoryResolver fileAgentDirectoryResolver(
-            RuntimeAgentDirectoryProperties properties, ObjectMapper objectMapper) {
-        return new FileAgentDirectoryResolver(properties, objectMapper);
+    public AgentDirectoryResolver fileAgentDirectoryResolver(AgentRuntimeManager runtimeManager) {
+        return new FileAgentDirectoryResolver(runtimeManager);
     }
 
     @Bean

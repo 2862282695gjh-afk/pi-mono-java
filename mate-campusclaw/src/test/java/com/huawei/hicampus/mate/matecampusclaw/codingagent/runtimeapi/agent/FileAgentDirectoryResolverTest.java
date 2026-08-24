@@ -6,95 +6,82 @@ package com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.agent;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtime.AgentRuntimeException;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtime.AgentRuntimeManager;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtime.MateServiceClient.AgentRuntime;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtime.PreparedAgentRuntime;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-/**
- * Agent 当前只读目录和模型白名单解析测试。
- *
- * @version [br_eCampusCore 26.0.0, 2026/08/19]
- * @since [br_eCampusCore 26.0.0]
- */
 class FileAgentDirectoryResolverTest {
+
     private static final String AGENT_ID = "agent-0123456789abcdef0123456789abcdef";
 
     @TempDir
-    private Path temporaryDirectory;
+    Path temporaryDirectory;
 
     @Test
-    void resolvesDirectCurrentDirectoryWithoutRevisionFiles() throws Exception {
-        Path agent = createAgent("{\"defaultModel\":\"model-a\",\"enabledModels\":[\"model-a\",\"model-b\"]}");
+    void preparesManagedRuntimeAndUsesItsModelBinding() {
+        AgentRuntimeManager manager = mock(AgentRuntimeManager.class);
+        when(manager.prepare(AGENT_ID)).thenReturn(prepared(List.of("model-a", "model-b")));
 
-        AgentDirectorySnapshotDTO snapshot = resolver().resolve(AGENT_ID);
+        AgentDirectorySnapshotDTO snapshot = new FileAgentDirectoryResolver(manager).resolve(AGENT_ID);
 
-        assertThat(snapshot.runtimeDirectory())
-                .isEqualTo(agent.resolve(".campusclaw").toRealPath());
+        assertThat(snapshot.agentRoot()).isEqualTo(temporaryDirectory);
+        assertThat(snapshot.runtimeDirectory()).isEqualTo(temporaryDirectory.resolve(".campusclaw"));
         assertThat(snapshot.defaultModelId()).isEqualTo("model-a");
         assertThat(snapshot.enabledModelIds()).containsExactly("model-a", "model-b");
-        assertThat(agent.resolve("current.json")).doesNotExist();
+        verify(manager).prepare(AGENT_ID);
     }
 
     @Test
-    void defaultsRuntimeRootToAgentDirectory() {
-        assertThat(new RuntimeAgentDirectoryProperties().getRoot()).isEqualTo(Path.of("agent"));
-    }
+    void rejectsMissingOrDuplicateModelBinding() {
+        AgentRuntimeManager manager = mock(AgentRuntimeManager.class);
+        when(manager.prepare(AGENT_ID)).thenReturn(prepared(List.of("model-a", "model-a")));
 
-    @Test
-    void rejectsDuplicateOrMissingDefaultModel() throws Exception {
-        createAgent("{\"defaultModel\":\"model-a\",\"enabledModels\":[\"model-b\",\"model-b\"]}");
-
-        assertThatThrownBy(() -> resolver().resolve(AGENT_ID))
+        assertThatThrownBy(() -> new FileAgentDirectoryResolver(manager).resolve(AGENT_ID))
                 .isInstanceOfSatisfying(RuntimeApiException.class, error -> assertThat(error.errorCode())
                         .isEqualTo(RuntimeErrorCode.AGENT_MODEL_NOT_CONFIGURED));
     }
 
     @Test
-    void rejectsSettingsSymlinkThatEscapesAgentDirectory() throws Exception {
-        Path agent = temporaryDirectory.resolve(AGENT_ID);
-        Path managed = Files.createDirectories(agent.resolve(".campusclaw"));
-        Path outside = temporaryDirectory.resolve("outside.json");
-        Files.writeString(
-                outside, "{\"defaultModel\":\"model-a\",\"enabledModels\":[\"model-a\"]}", StandardCharsets.UTF_8);
-        Files.createSymbolicLink(managed.resolve("settings.json"), outside);
+    void translatesRuntimePreparationFailure() {
+        AgentRuntimeManager manager = mock(AgentRuntimeManager.class);
+        when(manager.prepare(AGENT_ID)).thenThrow(new AgentRuntimeException("Mate unavailable"));
 
-        assertThatThrownBy(() -> resolver().resolve(AGENT_ID))
+        assertThatThrownBy(() -> new FileAgentDirectoryResolver(manager).resolve(AGENT_ID))
                 .isInstanceOfSatisfying(RuntimeApiException.class, error -> assertThat(error.errorCode())
                         .isEqualTo(RuntimeErrorCode.AGENT_NOT_AVAILABLE));
     }
 
     @Test
-    void rejectsLegacyCampusAgentDirectory() throws Exception {
-        Path agent = temporaryDirectory.resolve(AGENT_ID);
-        Path legacyDirectory = Files.createDirectories(agent.resolve(".campusagent"));
-        Files.writeString(
-                legacyDirectory.resolve("settings.json"),
-                "{\"defaultModel\":\"model-a\",\"enabledModels\":[\"model-a\"]}",
-                StandardCharsets.UTF_8);
+    void rejectsDisabledManagedAgent() {
+        AgentRuntimeManager manager = mock(AgentRuntimeManager.class);
+        when(manager.prepare(AGENT_ID)).thenReturn(prepared(List.of("model-a"), false));
 
-        assertThatThrownBy(() -> resolver().resolve(AGENT_ID))
+        assertThatThrownBy(() -> new FileAgentDirectoryResolver(manager).resolve(AGENT_ID))
                 .isInstanceOfSatisfying(RuntimeApiException.class, error -> assertThat(error.errorCode())
                         .isEqualTo(RuntimeErrorCode.AGENT_NOT_AVAILABLE));
     }
 
-    private Path createAgent(String settings) throws Exception {
-        Path agent = temporaryDirectory.resolve(AGENT_ID);
-        Path managed = Files.createDirectories(agent.resolve(".campusclaw"));
-        Files.writeString(managed.resolve("settings.json"), settings, StandardCharsets.UTF_8);
-        return agent;
+    private PreparedAgentRuntime prepared(List<String> models) {
+        return prepared(models, true);
     }
 
-    private FileAgentDirectoryResolver resolver() {
-        RuntimeAgentDirectoryProperties properties = new RuntimeAgentDirectoryProperties();
-        properties.setRoot(temporaryDirectory);
-        return new FileAgentDirectoryResolver(properties, new ObjectMapper());
+    private PreparedAgentRuntime prepared(List<String> models, boolean enabled) {
+        var runtime = new AgentRuntime(
+                models, List.of(), List.of(), List.of(), List.of(), "Agent", enabled, AGENT_ID, "agent", "prompt",
+                List.of(), "1.0.0");
+        return new PreparedAgentRuntime(AGENT_ID, temporaryDirectory, runtime, List.of());
     }
 }

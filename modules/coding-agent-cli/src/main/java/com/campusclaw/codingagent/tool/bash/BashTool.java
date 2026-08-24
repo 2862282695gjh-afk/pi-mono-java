@@ -26,22 +26,19 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.stereotype.Component;
 
 /**
- * Agent tool that executes bash commands via {@link BashExecutor},
- * truncates combined output, and returns results as {@link TextContent}.
+ * 通过 {@link BashExecutor} 执行命令、截断组合输出并返回 {@link TextContent} 的底层工具实现。
  *
  * @version [br_eCampusCore 26.0.0, 2026/05/06]
  * @since [br_eCampusCore 26.0.0]
  */
-@Component
 public class BashTool implements AgentTool {
 
     private static final Logger log = LoggerFactory.getLogger(BashTool.class);
 
     /**
-     * No default timeout — matches campusclaw behavior (timeout only if explicitly set).
+     * 不设置缺省超时，仅在调用方显式传入时限制执行时间。
      */
     static final int NO_TIMEOUT = 0;
 
@@ -109,7 +106,7 @@ public class BashTool implements AgentTool {
             timeoutSeconds = n.intValue();
         }
 
-        // Pass current system environment (matching campusclaw behavior)
+        // 透传当前进程环境变量。
         var env = System.getenv();
 
         var options = new BashExecutorOptions(
@@ -125,10 +122,10 @@ public class BashTool implements AgentTool {
                     List.<ContentBlock>of(new TextContent("Error executing command: " + e.getMessage())), null);
         }
 
-        // Combine stdout and stderr
+        // 合并标准输出和标准错误。
         String combined = buildCombinedOutput(execResult);
 
-        // Truncate the combined output (tail truncation: keep the first lines)
+        // 从尾部截断组合输出并保留前部内容。
         TruncationUtils.TruncationResult truncationResult =
                 TruncationUtils.truncateTail(combined, MAX_OUTPUT_LINES, MAX_OUTPUT_BYTES);
 
@@ -138,13 +135,13 @@ public class BashTool implements AgentTool {
         if (truncationResult.truncated()) {
             displayText = truncateText(combined, truncationResult.outputLines());
 
-            // Write full output to a temp file for later retrieval
+            // 把完整输出写入临时文件，供后续读取。
             try {
                 Path tempFile = Files.createTempFile("bash-output-", ".txt");
                 Files.writeString(tempFile, combined, StandardCharsets.UTF_8);
                 fullOutputPath = tempFile.toString();
             } catch (IOException e) {
-                // If we can't write the temp file, just proceed without it
+                // 临时文件写入失败时继续返回已截断输出。
                 log.warn("failed to spill truncated bash output to temp file; full output unavailable", e);
             }
         } else {
@@ -186,7 +183,7 @@ public class BashTool implements AgentTool {
     }
 
     /**
-     * Truncates text to the first N lines.
+     * 将文本截断为前 N 行。
      *
      * @param text the text
      * @param maxLines the maxLines

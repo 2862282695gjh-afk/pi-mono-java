@@ -11,14 +11,14 @@ import java.util.Map;
 
 import com.campusclaw.agent.tool.AgentTool;
 import com.campusclaw.agent.tool.ToolCallWithTool;
-import com.campusclaw.agent.tool.ToolExecutionMode;
 import com.campusclaw.agent.tool.ToolExecutionPipeline;
 import com.campusclaw.ai.types.ToolCall;
 import com.campusclaw.ai.types.ToolResultMessage;
 import com.campusclaw.codingagent.common.client.HttpMateToolClient;
 import com.campusclaw.codingagent.common.client.mate.MateToolClient;
+import com.campusclaw.codingagent.common.client.mate.MateToolMeta;
 import com.campusclaw.codingagent.tool.mate.CallMateTool;
-import com.campusclaw.codingagent.tool.mate.ListMateTool;
+import com.campusclaw.codingagent.tool.mate.ListMateToolsTool;
 import com.campusclaw.codingagent.tool.mate.MockMateToolClient;
 
 import org.junit.jupiter.api.Test;
@@ -48,10 +48,9 @@ class MateToolAutoConfigurationTest {
         runner.run(context -> {
             assertThat(context).hasSingleBean(com.campusclaw.codingagent.tool.mate.MateToolsetFactory.class);
 
-            // Tools must NOT be singleton beans: the session cache is
-            // per-session state and singleton beans would leak across sessions.
+            // 工具不能是单例 Bean，否则 Session 缓存会跨 Session 泄漏。
             assertThat(context).doesNotHaveBean(CallMateTool.class);
-            assertThat(context).doesNotHaveBean(ListMateTool.class);
+            assertThat(context).doesNotHaveBean(ListMateToolsTool.class);
         });
     }
 
@@ -59,35 +58,27 @@ class MateToolAutoConfigurationTest {
     void factoryPairsShareOneCachePerSessionAndIsolateAcrossSessions() {
         runner.run(context -> {
             var factory = context.getBean(com.campusclaw.codingagent.tool.mate.MateToolsetFactory.class);
-            var pairA = factory.create();
-            var pairB = factory.create();
+            var stateA = factory.createSession(
+                    "agent-1", Map.of(), com.campusclaw.codingagent.common.client.mate.MateCredentials.empty());
+            var stateB = factory.createSession(
+                    "agent-2", Map.of(), com.campusclaw.codingagent.common.client.mate.MateCredentials.empty());
+            var listA = stateA.createListTool();
+            var callA = stateA.createCallTool();
+            var listB = stateB.createListTool();
 
-            var listA = (ListMateTool) pairA.get(0);
-            var callA = (CallMateTool) pairA.get(1);
-            var listB = (ListMateTool) pairB.get(0);
-            var callB = (CallMateTool) pairB.get(1);
-
-            var cacheOfListA = sessionCacheOf(listA);
-            var cacheOfCallA = sessionCacheOf(callA);
-            var cacheOfListB = sessionCacheOf(listB);
-
-            // Within one session pair: list and call share the same cache instance.
-            assertThat(cacheOfListA).isSameAs(cacheOfCallA);
-
-            // Across sessions: distinct caches and distinct tool instances.
-            assertThat(cacheOfListA).isNotSameAs(cacheOfListB);
+            assertThat(discoveryOf(listA)).isSameAs(discoveryOf(callA));
+            assertThat(discoveryOf(listA)).isNotSameAs(discoveryOf(listB));
             assertThat(listA).isNotSameAs(listB);
-            assertThat(callA).isNotSameAs(callB);
         });
     }
 
-    private static com.campusclaw.codingagent.tool.mate.MateToolSessionCache sessionCacheOf(Object tool) {
+    private static com.campusclaw.codingagent.tool.mate.MateToolDiscovery discoveryOf(Object tool) {
         try {
-            var field = tool.getClass().getDeclaredField("sessionCache");
+            var field = tool.getClass().getDeclaredField("discovery");
             field.setAccessible(true);
-            return (com.campusclaw.codingagent.tool.mate.MateToolSessionCache) field.get(tool);
+            return (com.campusclaw.codingagent.tool.mate.MateToolDiscovery) field.get(tool);
         } catch (ReflectiveOperationException e) {
-            throw new IllegalStateException("missing sessionCache field on " + tool.getClass(), e);
+            throw new IllegalStateException("missing discovery field on " + tool.getClass(), e);
         }
     }
 
@@ -125,18 +116,20 @@ class MateToolAutoConfigurationTest {
     @Test
     void mateErrorPropagatesThroughPipelineAsIsError() {
         MockMateToolClient client = new MockMateToolClient();
+        String toolId = "tool-44444444444444444444444444444444";
+        client.addTool(new MateToolMeta(toolId, "Explode", "", Map.of(), Map.of(), false, "allow"));
+        client.bindAgent("agent-1", List.of(toolId));
         client.overrideCallResult(new MateToolClient.ToolResult("mate exploded", null, true));
-        CallMateTool callMateTool =
-                new CallMateTool(client, null, new com.campusclaw.codingagent.tool.mate.MateToolSessionCache());
+        CallMateTool callMateTool = new com.campusclaw.codingagent.tool.mate.MateToolsetFactory(client)
+                .createSession(
+                        "agent-1", Map.of(), com.campusclaw.codingagent.common.client.mate.MateCredentials.empty())
+                .createCallTool();
 
-        ToolCall toolCall =
-                new ToolCall("call-1", "callMateTool", Map.of("tool", "tool-44444444444444444444444444444444"));
+        ToolCall toolCall = new ToolCall("call-1", "CallMateTool", Map.of("tool", "Explode"));
         ToolExecutionPipeline pipeline = new ToolExecutionPipeline();
 
         List<ToolResultMessage> results = pipeline.executeAll(
-                List.of(new ToolCallWithTool(
-                        toolCall, callMateTool, Map.of("tool", "tool-44444444444444444444444444444444"))),
-                ToolExecutionMode.SEQUENTIAL,
+                List.of(new ToolCallWithTool(toolCall, callMateTool, Map.of("tool", "Explode"))),
                 new com.campusclaw.agent.tool.AgentContext(),
                 new com.campusclaw.agent.tool.CancellationToken(),
                 event -> {});

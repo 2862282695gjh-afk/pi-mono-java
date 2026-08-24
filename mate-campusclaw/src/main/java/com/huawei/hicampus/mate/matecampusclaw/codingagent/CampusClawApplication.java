@@ -6,6 +6,8 @@ package com.huawei.hicampus.mate.matecampusclaw.codingagent;
 
 import com.huawei.hicampus.mate.matecampusclaw.agent.controlplane.config.ControlPlaneProperties;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtime.AgentRuntimeProperties;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.session.compaction.CompactionProperties;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.builtin.BuiltInToolProperties;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
@@ -18,14 +20,15 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
  * @since [br_eCampusCore 26.0.0]
  */
 @SpringBootApplication(scanBasePackages = "com.huawei.hicampus.mate.matecampusclaw")
-@EnableConfigurationProperties({ControlPlaneProperties.class, AgentRuntimeProperties.class})
+@EnableConfigurationProperties({
+    ControlPlaneProperties.class,
+    AgentRuntimeProperties.class,
+    BuiltInToolProperties.class,
+    CompactionProperties.class
+})
 public class CampusClawApplication {
 
     public static void main(String[] args) {
-        if (CampusClawCliLauncher.isCliInvocation(args)) {
-            CampusClawCliLauncher.launch(args);
-            return;
-        }
         SpringApplication.run(CampusClawApplication.class, args);
     }
 }

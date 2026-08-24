@@ -58,19 +58,13 @@ class CronServiceTest {
                 enabled,
                 false,
                 new CronSchedule.Every(60000),
-                new CronPayload.AgentPrompt("p", null, null, null),
+                new CronPayload.AgentPrompt("agent-test", "p"),
                 CronJobState.initial(),
                 0L);
     }
 
     @Nested
     class Lifecycle {
-
-        @Test
-        void defaultModelId() {
-            svc.setDefaultModelId("claude-x");
-            assertThat(svc.getDefaultModelId()).isEqualTo("claude-x");
-        }
 
         @Test
         void startDelegates() {
@@ -88,6 +82,7 @@ class CronServiceTest {
         void isRunningDelegates() {
             when(engine.isRunning()).thenReturn(true);
             assertThat(svc.isRunning()).isTrue();
+            assertThat(svc.isAutoStartup()).isTrue();
         }
     }
 
@@ -98,7 +93,7 @@ class CronServiceTest {
         void createJobSchedulesWhenRunning() {
             when(engine.isRunning()).thenReturn(true);
             CronJob created = svc.createJob(
-                    "n", "d", new CronSchedule.Every(60000), new CronPayload.AgentPrompt("p", null, null, null));
+                    "n", "d", new CronSchedule.Every(60000), new CronPayload.AgentPrompt("agent-test", "p"));
             verify(store).addJob(any(CronJob.class));
             verify(engine).scheduleJob(any(CronJob.class));
             assertThat(created.name()).isEqualTo("n");
@@ -107,7 +102,7 @@ class CronServiceTest {
         @Test
         void createJobSkipsScheduleWhenStopped() {
             when(engine.isRunning()).thenReturn(false);
-            svc.createJob("n", null, new CronSchedule.Every(60000), new CronPayload.AgentPrompt("p", null, null, null));
+            svc.createJob("n", null, new CronSchedule.Every(60000), new CronPayload.AgentPrompt("agent-test", "p"));
             verify(engine, never()).scheduleJob(any(CronJob.class));
         }
 
@@ -177,12 +172,6 @@ class CronServiceTest {
             CronRunRecord rec = new CronRunRecord("r1", "j1", 0, 0, RunStatus.SUCCESS, null, null, 0);
             when(runLog.getRecentRuns("j1", 5)).thenReturn(List.of(rec));
             assertThat(svc.getRecentRuns("j1", 5)).containsExactly(rec);
-        }
-
-        @Test
-        void tickOnceDelegates() {
-            when(engine.tickOnce()).thenReturn(List.of());
-            assertThat(svc.tickOnce()).isEmpty();
         }
     }
 

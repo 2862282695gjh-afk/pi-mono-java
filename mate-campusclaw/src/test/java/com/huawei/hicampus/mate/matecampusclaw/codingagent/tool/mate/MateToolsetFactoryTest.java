@@ -6,113 +6,41 @@ package com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.mate;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import java.util.List;
+import java.util.Map;
 
-import com.huawei.hicampus.mate.matecampusclaw.agent.tool.AgentTool;
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.catalog.ToolSelection;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.common.client.mate.MateCredentials;
 
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 /**
- * {@link MateToolsetFactory#create(ToolSelection)} 的可见性过滤测试：会话
- * 私有注入不得绕过 include/exclude/noTools 配置，且两个 Mate 工具按
- * 原子组注入——过滤结果不能同时包含 listMateTool 与 callMateTool 时整组
- * 不注入（单独的 call 无法刷新缓存，必然全部失败）。
+ * {@link MateToolsetFactory} 的 Session 状态隔离测试。
  *
- * @version [br_eCampusCore 26.0.0, 2026/08/22]
+ * @version [br_eCampusCore 26.0.0, 2026/08/24]
  * @since [br_eCampusCore 26.0.0]
  */
 class MateToolsetFactoryTest {
 
-    private MateToolsetFactory factory;
-
-    @BeforeEach
-    void setUp() {
-        factory = new MateToolsetFactory(new NoopMateClient(), null);
-    }
-
     @Test
-    void nullSelectionInjectsBothTools() {
-        assertThat(factory.create((ToolSelection) null))
-                .extracting(AgentTool::name)
-                .contains("listMateTool", "callMateTool");
+    void shouldCreateNewToolsAndIndependentStateForEverySession() {
+        MateToolsetFactory factory = new MateToolsetFactory(new MockMateToolClient());
+        MateToolSessionState first = factory.createSession("agent-1", Map.of(), MateCredentials.empty());
+        MateToolSessionState second = factory.createSession("agent-2", Map.of(), MateCredentials.empty());
+
+        assertThat(first).isNotSameAs(second);
+        assertThat(first.createListTool()).isNotSameAs(first.createListTool());
+        assertThat(first.createCallTool()).isNotSameAs(first.createCallTool());
+        assertThat(first.createListTool()).hasFieldOrPropertyWithValue("discovery", extractDiscovery(first));
+        assertThat(second.createListTool()).hasFieldOrPropertyWithValue("discovery", extractDiscovery(second));
+        assertThat(extractDiscovery(first)).isNotSameAs(extractDiscovery(second));
     }
 
-    @Test
-    void noToolsInjectsNothing() {
-        assertThat(factory.create(new ToolSelection(List.of(), List.of(), true)))
-                .isEmpty();
-    }
-
-    @Test
-    void includingOnlyCallMateToolInjectsNothing() {
-        // 单独的 callMateTool 无法刷新 name→id 缓存,整组不注入。
-        assertThat(factory.create(new ToolSelection(List.of("callMateTool"), List.of(), false)))
-                .isEmpty();
-    }
-
-    @Test
-    void excludingListMateToolInjectsNothing() {
-        // 排除 listMateTool 后 callMateTool 同样失去缓存来源,整组不注入。
-        assertThat(factory.create(new ToolSelection(List.of(), List.of("listMateTool"), false)))
-                .isEmpty();
-    }
-
-    @Test
-    void includingOnlyListMateToolInjectsNothing() {
-        // 对称:只能发现不能执行的单独 listMateTool 亦无意义。
-        assertThat(factory.create(new ToolSelection(List.of("listMateTool"), List.of(), false)))
-                .isEmpty();
-    }
-
-    @Test
-    void excludingBothInjectsNoMateTools() {
-        assertThat(factory.create(new ToolSelection(List.of(), List.of("listMateTool", "callMateTool"), false)))
-                .isEmpty();
-    }
-
-    @Test
-    void fullGroupSelectionInjectsPairSharingOneCache() {
-        var tools = factory.create(new ToolSelection(List.of("listMateTool", "callMateTool"), List.of(), false));
-
-        assertThat(tools).extracting(AgentTool::name).containsExactlyInAnyOrder("listMateTool", "callMateTool");
-        var listTool = (ListMateTool) tools.stream()
-                .filter(tool -> tool instanceof ListMateTool)
-                .findFirst()
-                .orElseThrow();
-        var callTool = (CallMateTool) tools.stream()
-                .filter(tool -> tool instanceof CallMateTool)
-                .findFirst()
-                .orElseThrow();
-        assertThat(sessionCacheOf(listTool)).isSameAs(sessionCacheOf(callTool));
-    }
-
-    private static MateToolSessionCache sessionCacheOf(Object tool) {
+    private static MateToolDiscovery extractDiscovery(MateToolSessionState state) {
         try {
-            var field = tool.getClass().getDeclaredField("sessionCache");
+            var field = MateToolSessionState.class.getDeclaredField("discovery");
             field.setAccessible(true);
-            return (MateToolSessionCache) field.get(tool);
-        } catch (ReflectiveOperationException e) {
-            throw new IllegalStateException("missing sessionCache field", e);
-        }
-    }
-
-    /** 空实现的 Mate 客户端:本测试不触发网关调用。 */
-    private static final class NoopMateClient implements com.huawei.hicampus.mate.matecampusclaw.codingagent.common.client.mate.MateToolClient {
-
-        @Override
-        public List<com.huawei.hicampus.mate.matecampusclaw.codingagent.common.client.mate.MateToolMeta> listTools(
-                String agentId, String skillId) {
-            return List.of();
-        }
-
-        @Override
-        public ToolResult callTool(
-                String tool,
-                java.util.Map<String, Object> args,
-                com.huawei.hicampus.mate.matecampusclaw.codingagent.common.client.mate.MateCredentials credentials) {
-            return new ToolResult("noop", null, false);
+            return (MateToolDiscovery) field.get(state);
+        } catch (ReflectiveOperationException exception) {
+            throw new IllegalStateException(exception);
         }
     }
 }

@@ -4,30 +4,16 @@
 
 package com.campusclaw.codingagent.command.builtin;
 
-import java.util.ArrayList;
-
-import com.campusclaw.ai.types.Message;
-import com.campusclaw.ai.types.UserMessage;
 import com.campusclaw.codingagent.command.SlashCommand;
 import com.campusclaw.codingagent.command.SlashCommandContext;
-import com.campusclaw.codingagent.compaction.Compactor;
 
 /**
- * Slash command {@code /compact} that runs the configured {@link Compactor} over the current
- * session's history, replacing older messages with a summary plus the retained tail to reduce
- * context size for subsequent turns.
+ * 保留的 {@code /compact} 命令处理器。
  *
- * @version [br_eCampusCore 26.0.0, 2026/05/13]
+ * @version [br_eCampusCore 26.0.0, 2026/08/24]
  * @since [br_eCampusCore 26.0.0]
  */
 public class CompactCommand implements SlashCommand {
-
-    private final Compactor compactor;
-
-    public CompactCommand(Compactor compactor) {
-        this.compactor = compactor;
-    }
-
     @Override
     public String name() {
         return "compact";
@@ -40,35 +26,8 @@ public class CompactCommand implements SlashCommand {
 
     @Override
     public void execute(SlashCommandContext context, String arguments) {
-        var session = context.session();
-        var agent = session.getAgent();
-        var model = agent.getState().getModel();
-        var messages = session.getHistory();
-
-        if (messages.isEmpty()) {
-            context.output().println("No messages to compact.");
-            return;
-        }
-
-        context.output().println("Compacting context...");
-        try {
-            var result = compactor.compact(new ArrayList<>(messages), model);
-
-            // Build new message list with summary
-            var newMessages = new ArrayList<Message>();
-            if (!result.summary().isEmpty()) {
-                newMessages.add(new UserMessage(
-                        "[Context compaction summary]\n" + result.summary(), System.currentTimeMillis()));
-            }
-            newMessages.addAll(result.retainedMessages());
-            agent.replaceMessages(newMessages);
-
-            int removed = messages.size() - result.retainedMessages().size();
-            context.output()
-                    .println("Compacted " + removed + " messages into summary, "
-                            + result.retainedMessages().size() + " recent messages kept.");
-        } catch (Exception e) {
-            context.output().println("Compaction failed: " + e.getMessage());
-        }
+        String instructions = arguments.isBlank() ? null : arguments.trim();
+        var result = context.session().compact(instructions);
+        context.output().println("Compacted context to " + result.estimatedTokensAfter() + " estimated tokens.");
     }
 }

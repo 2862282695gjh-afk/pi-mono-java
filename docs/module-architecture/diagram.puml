@@ -1,0 +1,29 @@
+@startuml module_dependencies
+' Source evidence:
+' pom.xml: modules and dependencyManagement
+' modules/agent-core/pom.xml: campusclaw-ai dependency
+' modules/cron/pom.xml: campusclaw-agent-core dependency
+' modules/coding-agent-cli/pom.xml: application dependencies
+' Observed behavior: the Maven reactor contains four Java modules.
+' Design reason: CampusClaw is a service product; CLI and TUI are removed.
+title CampusClaw Module Dependencies
+
+skinparam componentStyle rectangle
+skinparam shadowing false
+
+component "campusclaw-ai" as AI
+component "campusclaw-agent-core" as Core
+component "campusclaw-cron" as Cron
+component "campusclaw-coding-agent\n(Spring Boot service)" as App
+
+Core --> AI
+Cron --> Core
+App --> AI
+App --> Core
+App --> Cron
+
+note bottom of App
+Historical directory name: modules/coding-agent-cli
+No CLI, TUI, or RPC product entry point
+end note
+@enduml

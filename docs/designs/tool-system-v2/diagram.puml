@@ -1,0 +1,153 @@
+@startuml tool_system_architecture
+' Pre-change baseline: CampusClaw merge base d649866a6cae967ace18ceaeb9597edd47e5721e.
+' Reviewed implementation baseline: CampusClaw PR commit bf28e72f94f29acd316eb872a250893ed54e3632.
+' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/session/AgentSessionFactory.java, create
+' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/tool/builtin/DefaultConfiguredToolAssembler.java, assemble
+' Architecture change: the source-evidence types did not exist at the pre-change baseline.
+' Observed at reviewed baseline: one session factory serves Runtime, Cron, and Child entry points.
+' Design reason: host lifecycle stays outside the shared session while tool semantics remain identical.
+skinparam componentStyle rectangle
+skinparam shadowing false
+title Managed Agent Tool System v2
+
+component "Runtime HTTP Host" as Runtime
+component "Cron Host" as Cron
+component "Child Execution" as Child
+component "AgentSessionFactory" as Factory
+component "ManagedAgentSession" as Session
+component "ConfiguredToolAssembler" as Assembler
+component "BuiltInToolFactory" as ToolFactory
+component "AgentRuntimeManager" as RuntimeManager
+component "MateToolClient" as Mate
+
+Runtime --> RuntimeManager : prepare(agentId)
+Cron --> RuntimeManager : prepare at trigger
+Child --> RuntimeManager : prepare child
+Runtime --> Factory : RUNTIME
+Cron --> Factory : CRON
+Child --> Factory : CHILD_AGENT
+Factory --> Session : create isolated instance
+Factory --> Assembler
+Assembler --> ToolFactory : eight-name closed set
+ToolFactory --> Mate : shared client dependency
+note right of Session
+  Isolated messages, tools,
+  workspace, hooks, cancel domain,
+  and Mate session cache
+end note
+@enduml
+
+@startuml mate_credential_flow
+' Implementation baseline before this change: CampusClaw 934b5dd7d9e50b1d7359bea5f2dda71e3c4a34ac.
+' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/web/RuntimeEventController.java, submit
+' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/event/RuntimeEventService.java, submit
+' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/session/AgentSessionFactory.java, create
+' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/tool/mate/MateToolDiscovery.java, listAgentTools
+' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/tool/mate/CallMateTool.java, execute
+' Architecture change: the baseline exposed an optional resolver but did not connect Runtime headers to tools.
+' Security hardening: credentials remain in one active execution and are never persisted or logged.
+' Java divergence: pi has no corresponding Mate credential flow.
+skinparam shadowing false
+title Mate Tool Execution Credential Flow
+
+actor "mate-service" as Caller
+participant "RuntimeEventController" as Controller
+participant "RuntimeEventService" as Service
+participant "RuntimeSessionEngineRegistry" as Registry
+participant "AgentSessionFactory" as Factory
+participant "ListMateTools" as List
+participant "CallMateTool" as Call
+participant "HttpMateToolClient" as Client
+participant "Child Session" as Child
+
+Caller -> Controller : POST Events\nX-HW-ID plus AppKey or JWT
+Controller -> Service : immutable MateCredentials
+Service -> Registry : execution snapshot
+Registry -> Factory : ManagedAgentSessionRequest
+Factory -> List : session-private tool and snapshot
+Factory -> Call : session-private tool and snapshot
+List -> Client : discovery requests with snapshot
+Call -> Client : execute once with snapshot
+Factory -> Child : inherit parent execution snapshot
+note over Service,Child
+  In-memory execution scope only.
+  Never persist in Session rows, Entries,
+  Prompt, messages, events, or logs.
+end note
+note over Call,Client
+  Missing credentials fail before discovery
+  or execution HTTP requests.
+end note
+@enduml
+
+@startuml agent_workspace_boundary
+' Pre-change baseline: CampusClaw merge base d649866a6cae967ace18ceaeb9597edd47e5721e.
+' Reviewed implementation baseline: CampusClaw PR commit bf28e72f94f29acd316eb872a250893ed54e3632.
+' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/tool/workspace/WorkspacePathResolver.java, resolveExisting
+' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/tool/workspace/WorkspacePathResolver.java, revalidateDiscoveredPath
+' Security hardening: WorkspacePathResolver did not exist at the pre-change baseline.
+' Observed at reviewed baseline: all managed file tools resolve through the Agent workspace boundary.
+' Design reason: a managed Agent may read its complete root but never another Agent root.
+skinparam shadowing false
+title Agent Workspace Boundary
+
+rectangle "agent/agent-a" as RootA {
+  component ".campusclaw" as MetaA
+  component "business files" as FilesA
+}
+rectangle "agent/agent-b" as RootB
+component "Read / Find / Grep / Ls" as Tools
+component "WorkspacePathResolver" as Resolver
+
+Tools --> Resolver : resolve and revalidate
+Resolver --> RootA : allow normalized real path
+Resolver -[#red,dashed]-> RootB : reject cross-Agent path
+Resolver -[#red,dashed]-> RootA : reject any symlink path
+note bottom of Resolver
+  lexical boundary
+  component symlink rejection
+  realpath boundary
+  traversal-time revalidation
+end note
+@enduml
+
+@startuml mate_call_refresh
+' Pre-change baseline: CampusClaw merge base d649866a6cae967ace18ceaeb9597edd47e5721e.
+' Reviewed implementation baseline: CampusClaw PR commit bf28e72f94f29acd316eb872a250893ed54e3632.
+' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/tool/mate/CallMateTool.java, execute
+' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/tool/mate/MateToolSessionCache.java, resolveOrRefresh
+' Architecture change: the source-evidence types did not exist at the pre-change baseline.
+' Observed at reviewed baseline: a miss refreshes the complete Agent plus direct-Skill tool set once.
+' Design reason: models call by name without knowing whether a tool is bound through Agent or Skill.
+skinparam shadowing false
+title CallMateTool Cache Miss and Single-Flight Refresh
+
+actor Model
+participant CallMateTool as Call
+participant MateToolSessionCache as Cache
+participant MateToolDiscovery as Discovery
+participant MateToolClient as Mate
+
+Model -> Call : {tool, args?}
+Call -> Cache : lookup name
+alt cache hit
+  Cache --> Call : toolId
+else cache miss
+  Cache -> Cache : acquire single-flight lock
+  Cache -> Discovery : load all sources
+  Discovery -> Mate : listAgentTools(agentId, credentials)
+  loop each direct Skill
+    Discovery -> Mate : listSkillTools(skillId, credentials)
+  end
+  Discovery --> Cache : complete source snapshots
+  Cache -> Cache : reject conflicting names
+  Cache -> Cache : atomically replace snapshot
+  Cache --> Call : toolId or unknown
+end
+Call -> Mate : callTool(toolId, args, credentials)
+Mate --> Call : result
+note over Call,Mate
+  Discovery may be retried.
+  Actual execution is never replayed.
+end note
+@enduml

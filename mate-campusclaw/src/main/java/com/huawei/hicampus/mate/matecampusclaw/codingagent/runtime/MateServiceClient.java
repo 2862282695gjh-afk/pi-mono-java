@@ -244,7 +244,17 @@ public class MateServiceClient {
      * 呈现子候选时无需加载子 Agent 的完整运行时。
      */
     @JsonIgnoreProperties(ignoreUnknown = true)
-    public record AgentReference(String id, String name, String displayName, String description, String version) {}
+    public record AgentReference(
+            String id, String name, String displayName, String description, String version, Boolean enabled) {
+
+        public AgentReference {
+            enabled = enabled == null ? Boolean.TRUE : enabled;
+        }
+
+        public AgentReference(String id, String name, String displayName, String description, String version) {
+            this(id, name, displayName, description, version, Boolean.TRUE);
+        }
+    }
 
     /** querySkillInfo 返回的完整 Skill 元数据。 */
     @JsonIgnoreProperties(ignoreUnknown = true)

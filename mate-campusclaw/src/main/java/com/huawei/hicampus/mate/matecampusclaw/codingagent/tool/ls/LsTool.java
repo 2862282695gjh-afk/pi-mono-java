@@ -4,65 +4,56 @@
 
 package com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.ls;
 
-import java.io.IOException;
-import java.nio.file.Files;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
-import java.time.ZoneId;
-import java.time.format.DateTimeFormatter;
 import java.util.Comparator;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 
 import com.huawei.hicampus.mate.matecampusclaw.agent.tool.AgentTool;
 import com.huawei.hicampus.mate.matecampusclaw.agent.tool.AgentToolResult;
 import com.huawei.hicampus.mate.matecampusclaw.agent.tool.AgentToolUpdateCallback;
 import com.huawei.hicampus.mate.matecampusclaw.agent.tool.CancellationToken;
+import com.huawei.hicampus.mate.matecampusclaw.agent.tool.ToolExecutionMode;
 import com.huawei.hicampus.mate.matecampusclaw.ai.types.ContentBlock;
 import com.huawei.hicampus.mate.matecampusclaw.ai.types.TextContent;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.ops.LsOperations;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.ops.LsOperations.LsEntry;
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.util.PathUtils;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.workspace.AgentWorkspaceBoundary;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.workspace.WorkspacePathResolver;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.util.TruncationUtils;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.stereotype.Component;
-
 /**
- * Agent tool that lists directory contents.
- * Output format: one entry per line with type indicator, size, date, and name.
- * Directories are listed first, then alphabetical within each group.
+ * 在当前 Agent 工作区内列出目录项的内置工具。
  *
- * @version [br_eCampusCore 26.0.0, 2026/05/06]
+ * @version [br_eCampusCore 26.0.0, 2026/08/23]
  * @since [br_eCampusCore 26.0.0]
  */
-@Component
 public class LsTool implements AgentTool {
 
-    static final int MAX_ENTRIES = 1000;
+    static final int DEFAULT_LIMIT = 500;
+    static final int MAX_LIMIT = 1000;
+    static final int MAX_BYTES = 50 * 1024;
+    private static final String TRUNCATION_MARKER = "\n... (truncated)";
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
-    private static final DateTimeFormatter DATE_FORMAT =
-            DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm").withZone(ZoneId.systemDefault());
 
     private final LsOperations lsOperations;
-    private final Path cwd;
+    private final WorkspacePathResolver pathResolver;
+    private final AgentWorkspaceBoundary boundary;
 
-    @Autowired
-    public LsTool(LsOperations lsOperations) {
-        this(lsOperations, Path.of(System.getProperty("user.dir")));
-    }
-
-    public LsTool(LsOperations lsOperations, Path cwd) {
+    public LsTool(LsOperations lsOperations, WorkspacePathResolver pathResolver, AgentWorkspaceBoundary boundary) {
         this.lsOperations = lsOperations;
-        this.cwd = cwd;
+        this.pathResolver = pathResolver;
+        this.boundary = boundary;
     }
 
     @Override
     public String name() {
-        return "ls";
+        return "Ls";
     }
 
     @Override
@@ -72,92 +63,96 @@ public class LsTool implements AgentTool {
 
     @Override
     public String description() {
-        return "List directory contents with file type, size, and modification time.";
+        return "List directory contents.";
+    }
+
+    @Override
+    public ToolExecutionMode executionMode() {
+        return ToolExecutionMode.PARALLEL;
     }
 
     @Override
     public JsonNode parameters() {
-        ObjectNode props = MAPPER.createObjectNode();
-        props.set(
+        ObjectNode properties = MAPPER.createObjectNode();
+        properties.set(
                 "path",
                 MAPPER.createObjectNode()
                         .put("type", "string")
-                        .put("description", "Directory path to list (relative or absolute)"));
-
+                        .put("description", "Directory to list; omitted means the current Agent workspace root."));
+        properties.set(
+                "limit",
+                MAPPER.createObjectNode()
+                        .put("type", "number")
+                        .put("description", "Maximum number of entries; omitted means 500."));
         return MAPPER.createObjectNode()
                 .put("type", "object")
-                .<ObjectNode>set("properties", props)
-                .set("required", MAPPER.createArrayNode().add("path"));
+                .<ObjectNode>set("properties", properties)
+                .put("additionalProperties", false);
     }
 
     @Override
     public AgentToolResult execute(
             String toolCallId, Map<String, Object> params, CancellationToken signal, AgentToolUpdateCallback onUpdate)
             throws Exception {
-        String pathInput = (String) params.get("path");
-        if (pathInput == null || pathInput.isBlank()) {
-            return errorResult("Error: path is required");
-        }
-        Path resolvedPath;
-        try {
-            resolvedPath = PathUtils.resolveReadPath(pathInput, cwd);
-        } catch (SecurityException e) {
-            return errorResult("Error: " + e.getMessage());
-        }
-        if (!Files.isDirectory(resolvedPath)) {
-            return errorResult("Error: not a directory: " + pathInput);
-        }
-        List<LsEntry> entries;
-        try {
-            entries = lsOperations.list(resolvedPath);
-        } catch (IOException e) {
-            return errorResult("Error listing directory: " + e.getMessage());
-        }
-        if (entries.isEmpty()) {
-            return textResult("(empty directory)");
-        }
-        entries.sort(Comparator.comparing((LsEntry e) -> !"directory".equals(e.type()))
-                .thenComparing(LsEntry::name, String.CASE_INSENSITIVE_ORDER));
-        boolean truncated = entries.size() > MAX_ENTRIES;
-        if (truncated) {
-            entries = entries.subList(0, MAX_ENTRIES);
-        }
-        return textResult(formatEntries(entries, truncated));
+        ensureNotCancelled(signal);
+        Path directory = pathResolver.resolveDirectory(boundary, (String) params.get("path"));
+        int limit = normalizeLimit(params.get("limit"));
+        List<LsEntry> entries = lsOperations.list(directory);
+        entries.sort(Comparator.comparing(LsEntry::name, String.CASE_INSENSITIVE_ORDER)
+                .thenComparing(LsEntry::name));
+        ensureNotCancelled(signal);
+        return textResult(formatEntries(entries, limit));
     }
 
-    private static String formatEntries(List<LsEntry> entries, boolean truncated) {
-        var sb = new StringBuilder();
-        for (int i = 0; i < entries.size(); i++) {
-            if (i > 0) {
-                sb.append('\n');
+    private static String formatEntries(List<LsEntry> entries, int limit) {
+        if (entries.isEmpty()) {
+            return "(empty directory)";
+        }
+        StringBuilder output = new StringBuilder();
+        int emitted = 0;
+        for (LsEntry entry : entries) {
+            if (emitted >= limit || !appendWithinBudget(output, displayName(entry))) {
+                return output + TRUNCATION_MARKER;
             }
-            LsEntry entry = entries.get(i);
-            String typeFlag =
-                    switch (entry.type()) {
-                        case "directory" -> "drw-";
-                        case "symlink" -> "lrw-";
-                        default -> "-rw-";
-                    };
-            String name = "directory".equals(entry.type()) ? entry.name() + "/" : entry.name();
-            sb.append(String.format(
-                    Locale.ROOT,
-                    "%s %5d  %s  %s",
-                    typeFlag,
-                    entry.size(),
-                    DATE_FORMAT.format(entry.lastModified()),
-                    name));
+            emitted++;
         }
-        if (truncated) {
-            sb.append("\n... (truncated to ").append(MAX_ENTRIES).append(" entries)");
+        return output.toString();
+    }
+
+    private static boolean appendWithinBudget(StringBuilder output, String name) {
+        String separator = output.isEmpty() ? "" : "\n";
+        String candidate = output + separator + name;
+        int markerBytes = TRUNCATION_MARKER.getBytes(StandardCharsets.UTF_8).length;
+        if (candidate.getBytes(StandardCharsets.UTF_8).length > MAX_BYTES - markerBytes) {
+            return false;
         }
-        return sb.toString();
+        output.append(separator).append(name);
+        return true;
+    }
+
+    private static String displayName(LsEntry entry) {
+        String name = "directory".equals(entry.type()) ? entry.name() + "/" : entry.name();
+        return TruncationUtils.truncateLine(name, MAX_BYTES);
+    }
+
+    private static int normalizeLimit(Object value) {
+        if (value == null) {
+            return DEFAULT_LIMIT;
+        }
+        int limit = ((Number) value).intValue();
+        if (limit < 1) {
+            throw new IllegalArgumentException("limit must be greater than zero");
+        }
+        return Math.min(limit, MAX_LIMIT);
     }
 
     private static AgentToolResult textResult(String text) {
         return new AgentToolResult(List.<ContentBlock>of(new TextContent(text)), null);
     }
 
-    private static AgentToolResult errorResult(String message) {
-        return new AgentToolResult(List.<ContentBlock>of(new TextContent(message)), null);
+    private static void ensureNotCancelled(CancellationToken signal) throws InterruptedException {
+        if (signal != null && signal.isCancelled()) {
+            throw new InterruptedException("Tool execution was cancelled");
+        }
     }
 }

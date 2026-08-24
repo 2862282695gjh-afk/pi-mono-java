@@ -13,16 +13,19 @@ import static org.mockito.Mockito.when;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import com.huawei.hicampus.mate.matecampusclaw.agent.Agent;
 import com.huawei.hicampus.mate.matecampusclaw.agent.event.MessageStartEvent;
 import com.huawei.hicampus.mate.matecampusclaw.agent.event.MessageUpdateEvent;
+import com.huawei.hicampus.mate.matecampusclaw.agent.event.ToolExecutionUpdateEvent;
 import com.huawei.hicampus.mate.matecampusclaw.agent.tool.AgentTool;
 import com.huawei.hicampus.mate.matecampusclaw.agent.tool.AgentToolResult;
 import com.huawei.hicampus.mate.matecampusclaw.agent.tool.AgentToolUpdateCallback;
@@ -37,6 +40,7 @@ import com.huawei.hicampus.mate.matecampusclaw.ai.types.Api;
 import com.huawei.hicampus.mate.matecampusclaw.ai.types.AssistantMessage;
 import com.huawei.hicampus.mate.matecampusclaw.ai.types.Context;
 import com.huawei.hicampus.mate.matecampusclaw.ai.types.InputModality;
+import com.huawei.hicampus.mate.matecampusclaw.ai.types.Message;
 import com.huawei.hicampus.mate.matecampusclaw.ai.types.Model;
 import com.huawei.hicampus.mate.matecampusclaw.ai.types.ModelCost;
 import com.huawei.hicampus.mate.matecampusclaw.ai.types.Provider;
@@ -52,6 +56,10 @@ import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.dto.Runtim
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.persistence.RuntimeSessionRepository;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.runtime.RuntimeActiveExecution;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.vo.RuntimeSseEventVO;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.session.compaction.CompactionReason;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.session.compaction.SessionCompactionCompletedEvent;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.session.compaction.SessionCompactionFailedEvent;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.session.compaction.SessionCompactionResult;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import org.junit.jupiter.api.Test;
@@ -153,13 +161,100 @@ class RuntimeEventProjectorTest {
                 .containsExactly("assistant.message.started");
     }
 
+    @Test
+    void projectsToolDeltaWithoutArgumentsOrPersistence() {
+        RuntimeSessionRepository repository = mock(RuntimeSessionRepository.class);
+        RuntimeEventStream stream = eventStream();
+        RuntimeEventProjector projector = projector(repository, stream, false);
+
+        projector.onEvent(new ToolExecutionUpdateEvent(
+                "call_201", "Read", Map.of("path", "/secret/input.txt"), Map.of("line", "partial")));
+        stream.complete();
+
+        RuntimeSseEventVO delta = event(collect(stream), "tool.execution.delta");
+        assertThat(delta.getData())
+                .containsEntry("toolCallId", "call_201")
+                .containsEntry("toolName", "Read")
+                .containsEntry("delta", Map.of("line", "partial"))
+                .doesNotContainKeys("args", "path");
+        verify(repository, org.mockito.Mockito.never()).appendEntry(any());
+    }
+
+    @Test
+    void projectsAbortedCompactionFailureAsTransientEvent() {
+        RuntimeSessionRepository repository = mock(RuntimeSessionRepository.class);
+        RuntimeEventStream stream = eventStream();
+        RuntimeEventProjector projector = projector(repository, stream, false);
+
+        projector.onCompactionEvent(
+                new SessionCompactionFailedEvent(CompactionReason.OVERFLOW, true, true, "compaction failed"));
+        stream.complete();
+
+        RuntimeSseEventVO failed = event(collect(stream), "session.compaction.failed");
+        assertThat(failed.getId()).isNull();
+        assertThat(failed.getData())
+                .containsEntry("reason", "overflow")
+                .containsEntry("willRetry", true)
+                .containsEntry("aborted", true)
+                .containsEntry("message", "compaction failed");
+        verify(repository, org.mockito.Mockito.never()).appendEntry(any());
+    }
+
+    @Test
+    void reloadExcludesLengthResponseDiscardedBeforeCompactionRetry() {
+        Model model = sampleModel();
+        RuntimeEntryCodec codec = new RuntimeEntryCodec(new ObjectMapper());
+        OffsetDateTime time = OffsetDateTime.parse("2026-08-24T14:00:00Z");
+        RuntimeEntryDTO user = codec.userEntry("session_event_test", "entry_user", "task", List.of(), time);
+        user.setEntrySeq(1L);
+        AssistantMessage length = assistant(model, List.of(new TextContent("partial")), StopReason.LENGTH, 2L);
+        RuntimeEntryDTO discarded = codec.assistantEntry("session_event_test", "entry_length", length, time);
+        discarded.setEntrySeq(2L);
+        RuntimeSessionRepository repository = mock(RuntimeSessionRepository.class);
+        when(repository.listCurrentBranchEntries("session_event_test", 0L, 500)).thenReturn(List.of(user, discarded));
+        AtomicReference<RuntimeEntryDTO> compaction = new AtomicReference<>();
+        when(repository.appendEntry(any()))
+                .thenAnswer(invocation -> persistCompaction(invocation.getArgument(0), compaction));
+        RuntimeEventStream stream = eventStream();
+        RuntimeEventProjector projector = projector(repository, stream, false, codec);
+        SessionCompactionResult result =
+                new SessionCompactionResult("summary", List.of(new UserMessage("task", 1L)), 0, 100, 20, Usage.empty());
+
+        projector.onCompactionEvent(new SessionCompactionCompletedEvent(CompactionReason.OVERFLOW, result, true));
+        RuntimeEntryDTO retry = codec.assistantEntry(
+                "session_event_test",
+                "entry_retry",
+                assistant(model, List.of(new TextContent("done")), StopReason.STOP, 3L),
+                time);
+        List<Message> restored = codec.toAgentMessages(List.of(user, discarded, compaction.get(), retry), model);
+        stream.complete();
+
+        assertThat(compaction.get().getPayload()).contains("\"_discardedEntryId\":\"entry_length\"");
+        assertThat(codec.toAgentContextEntryIds(List.of(user, discarded, compaction.get(), retry)))
+                .containsExactly(compaction.get().getId(), "entry_user", "entry_retry");
+        List<AssistantMessage> assistants = restored.stream()
+                .filter(AssistantMessage.class::isInstance)
+                .map(AssistantMessage.class::cast)
+                .toList();
+        assertThat(assistants).hasSize(1);
+        assertThat(((TextContent) assistants.getFirst().content().getFirst()).text())
+                .isEqualTo("done");
+        assertThat(event(collect(stream), "session.compaction.completed").getData())
+                .doesNotContainKey("_discardedEntryId");
+    }
+
     private static RuntimeEventProjector projector(
             RuntimeSessionRepository repository, RuntimeEventStream stream, boolean thinking) {
+        return projector(repository, stream, thinking, new RuntimeEntryCodec(new ObjectMapper()));
+    }
+
+    private static RuntimeEventProjector projector(
+            RuntimeSessionRepository repository, RuntimeEventStream stream, boolean thinking, RuntimeEntryCodec codec) {
         AtomicInteger ids = new AtomicInteger(1);
         return new RuntimeEventProjector(
                 "session_event_test",
                 repository,
-                new RuntimeEntryCodec(new ObjectMapper()),
+                codec,
                 () -> "entry_" + ids.getAndIncrement(),
                 stream,
                 Clock.fixed(Instant.parse("2026-08-18T00:00:00Z"), ZoneOffset.UTC),
@@ -167,6 +262,13 @@ class RuntimeEventProjectorTest {
                 new RuntimeActiveExecution(stream),
                 new UserMessage("分析订单", 1L),
                 thinking);
+    }
+
+    private static RuntimeEntryDTO persistCompaction(
+            RuntimeEntryDTO entry, AtomicReference<RuntimeEntryDTO> compaction) {
+        entry.setEntrySeq(3L);
+        compaction.set(entry);
+        return entry;
     }
 
     private static void projectThinking(RuntimeEventProjector projector, AssistantMessage message) {

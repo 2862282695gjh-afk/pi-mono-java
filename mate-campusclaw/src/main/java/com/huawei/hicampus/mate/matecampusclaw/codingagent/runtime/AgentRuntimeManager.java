@@ -6,55 +6,60 @@ package com.huawei.hicampus.mate.matecampusclaw.codingagent.runtime;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.regex.Pattern;
 
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.common.identifier.ResourceIdentifierPatterns;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtime.MateServiceClient.AgentReference;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtime.MateServiceClient.AgentRuntime;
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtime.MateServiceClient.BoundTool;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtime.MateServiceClient.DependentSkill;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtime.MateServiceClient.SkillFile;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtime.MateServiceClient.SkillInfo;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtime.MateServiceClient.SkillReference;
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.session.SessionConfig;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.skill.SkillLoader;
-import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 /**
- * 从本地缓存或 CampusMate 解析托管 CLI Agent，并物化现有 Skill 加载器需要的目录结构。
+ * 以缓存优先和原子发布方式准备、刷新受管 Agent 运行目录。
  *
- * <p>路径解析和物化前校验 Agent、Skill、Tool 类型化资源 ID，防止旧格式或路径分隔符进入快照。
- * 其余快照加固仍按 {@code docs/DEFERRED.md} 的 DEF-008 暂缓：当前不校验符号链接、本地篡改、
- * 配置漂移和完整响应形状，也不执行原子发布。无法读取的本地快照会重新物化。
- *
- * @version [br_eCampusCore 26.0.0, 2026/08/18]
+ * @version [br_eCampusCore 26.0.0, 2026/08/24]
  * @since [br_eCampusCore 26.0.0]
  */
 @Component
 public class AgentRuntimeManager {
 
-    private static final String AGENT_METADATA_FILE = "agentId.json";
-    private static final String SYSTEM_PROMPT_FILE = "systemPrompt.md";
-    private static final String AGENT_SETTINGS_FILE = "setting.json";
+    private static final Logger LOGGER = LoggerFactory.getLogger(AgentRuntimeManager.class);
+
+    private static final int SCHEMA_VERSION = 1;
+    private static final String CAMPUSCLAW_DIRECTORY = ".campusclaw";
+    private static final String AGENT_FILE = "agent.json";
+    private static final String SETTINGS_FILE = "settings.json";
+    private static final String SYSTEM_FILE = "SYSTEM.md";
     private static final String SKILL_FILE = "SKILL.md";
-    private static final String SKILL_TOOLS_FILE = "tools.json";
+    private static final String SKILL_MANIFEST_FILE = "skill.json";
 
     private final AgentRuntimeProperties properties;
     private final MateServiceClient mateServiceClient;
     private final ObjectMapper mapper;
-    private final ConcurrentHashMap<String, ReentrantLock> prepareLocks = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, ReentrantLock> locks = new ConcurrentHashMap<>();
 
     public AgentRuntimeManager(
             AgentRuntimeProperties properties, MateServiceClient mateServiceClient, ObjectMapper mapper) {
@@ -64,374 +69,528 @@ public class AgentRuntimeManager {
     }
 
     /**
-     * 本地快照可用时直接加载，否则从 CampusMate 获取并物化目录。
-     * 无法读取的快照会进入重新物化，而不是按 fail closed 拒绝。
-     * 准备过程只按 Agent ID 串行，因此不同 Agent 的冷启动互不阻塞。
+     * 完整缓存存在时直接使用，否则访问 Mate 并原子创建运行目录。
      *
-     * @param agentId 已选择的 Agent 标识
-     * @return 不可变的已准备运行时
-     * @throws AgentRuntimeException 获取或物化运行时失败时抛出
-     * @throws IllegalArgumentException {@code agentId} 为空或不符合单路径段格式时抛出
+     * @param agentId Agent 标识
+     * @return 已准备运行时
      */
     public PreparedAgentRuntime prepare(String agentId) {
-        Path agentRoot = requireValidAgentId(agentId);
+        Path agentRoot = requireAgentRoot(agentId);
         PreparedAgentRuntime cached = loadIfComplete(agentId, agentRoot);
         if (cached != null) {
             return cached;
         }
-        ReentrantLock lock = prepareLocks.computeIfAbsent(agentId, ignored -> new ReentrantLock());
-        lock.lock();
-        try {
-            return prepareRemotely(agentId, agentRoot);
-        } finally {
-            lock.unlock();
-        }
+        return withAgentLock(agentId, () -> {
+            PreparedAgentRuntime rechecked = loadIfComplete(agentId, agentRoot);
+            return rechecked != null ? rechecked : rebuild(agentId, agentRoot);
+        });
     }
 
     /**
-     * 只加载本地缓存，不发起远端请求，也不物化目录。
+     * 仅加载当前完整缓存，不访问 Mate。
      *
-     * @param agentId 已选择的 Agent 标识
-     * @return 缓存运行时；没有完整快照时返回 {@code null}
-     * @throws IllegalArgumentException {@code agentId} 为空或不符合单路径段格式时抛出
+     * @param agentId Agent 标识
+     * @return 完整缓存；不存在时为空
      */
     public PreparedAgentRuntime prepareCached(String agentId) {
-        Path agentRoot = requireValidAgentId(agentId);
+        Path agentRoot = requireAgentRoot(agentId);
         return loadIfComplete(agentId, agentRoot);
     }
 
-    private PreparedAgentRuntime prepareRemotely(String agentId, Path agentRoot) {
-        PreparedAgentRuntime local = loadIfComplete(agentId, agentRoot);
-        if (local != null) {
-            return local;
-        }
-        AgentRuntime remote = mateServiceClient.getAgentRuntime(agentId);
-        requireValidRuntimeIdentifiers(remote);
-        List<SkillInfo> skills = resolveSkills(remote.bindingSkills());
-        materialize(agentRoot, remote, skills);
-
-        PreparedAgentRuntime prepared = loadIfComplete(agentId, agentRoot);
-        if (prepared == null) {
-            throw new AgentRuntimeException("Agent runtime materialization failed: " + agentId);
-        }
-        return prepared;
-    }
-
-    private Path requireValidAgentId(String agentId) {
-        if (agentId == null
-                || !ResourceIdentifierPatterns.AGENT_ID_PATTERN.matcher(agentId).matches()) {
-            throw new IllegalArgumentException("Invalid agentId: " + agentId);
-        }
-        Path agentsRoot = properties.agentsRoot().toAbsolutePath().normalize();
-        return agentsRoot.resolve(agentId).normalize();
+    /**
+     * 强制从 Mate 重建受管目录；失败时保留旧目录。
+     *
+     * @param agentId Agent 标识
+     * @return 刷新后的运行时
+     */
+    public PreparedAgentRuntime refresh(String agentId) {
+        Path agentRoot = requireAgentRoot(agentId);
+        return withAgentLock(agentId, () -> rebuild(agentId, agentRoot));
     }
 
     /**
-     * 根据已缓存的 Agent 元数据派生托管 Session 配置。
+     * 读取已校验运行目录中的系统提示词。
      *
-     * @param base CLI 基础配置
      * @param runtime 已准备运行时
-     * @return 当前 Agent 的 Session 配置
+     * @return 系统提示词
+     * @throws AgentRuntimeException 系统提示词无法读取时抛出
      */
-    public SessionConfig sessionConfig(SessionConfig base, PreparedAgentRuntime runtime) {
-        String model = runtime.metadata().defaultModel().orElse(base.model());
-        String prompt = joinPrompts(readSystemPrompt(runtime), base.customPrompt());
-        return new SessionConfig(model, runtime.agentRoot(), prompt, base.mode());
-    }
-
-    private String readSystemPrompt(PreparedAgentRuntime runtime) {
-        Path systemPromptFile = runtime.agentRoot().resolve(".campusclaw").resolve(SYSTEM_PROMPT_FILE);
-        if (!Files.isRegularFile(systemPromptFile)) {
-            throw new AgentRuntimeException("Agent system prompt is missing: " + runtime.agentId());
-        }
+    public String readSystemPrompt(PreparedAgentRuntime runtime) {
+        Path systemFile = runtime.agentRoot().resolve(CAMPUSCLAW_DIRECTORY).resolve(SYSTEM_FILE);
         try {
-            return Files.readString(systemPromptFile, StandardCharsets.UTF_8);
-        } catch (IOException e) {
-            throw new AgentRuntimeException("Failed to load Agent system prompt: " + runtime.agentId(), e);
+            return Files.readString(systemFile, StandardCharsets.UTF_8);
+        } catch (IOException exception) {
+            throw new AgentRuntimeException("Agent system prompt is unavailable", exception);
         }
     }
 
-    /**
-     * 加载某个已绑定 Skill 的全部持久化工具名。
-     *
-     * @param runtime 已准备的 Agent 运行时
-     * @param skillName 已绑定 Skill 名称
-     * @return 按快照顺序排列的 Skill 工具名
-     * @throws AgentRuntimeException 无法读取 Skill 或工具快照时抛出
-     */
-    public List<String> loadSkillToolNames(PreparedAgentRuntime runtime, String skillName) {
-        SkillInfo skill = runtime.findSkill(skillName)
-                .orElseThrow(() -> new AgentRuntimeException(
-                        "Skill is not bound to Agent " + runtime.agentId() + ": " + skillName));
-        Path skillDir = runtime.agentRoot().resolve(".campusclaw/skills").resolve(skillName);
+    private PreparedAgentRuntime rebuild(String agentId, Path agentRoot) {
+        AgentRuntime remote = mateServiceClient.getAgentRuntime(agentId);
+        requireValidRuntime(remote, agentId);
+        List<SkillInfo> skills = resolveSkills(remote.bindingSkills());
+        Path staging = createStagingDirectory(agentRoot);
         try {
-            return readSkillTools(skillDir, skill).stream().map(SkillTool::name).toList();
-        } catch (IOException e) {
-            throw new AgentRuntimeException("Failed to load Skill tools snapshot: " + skillName, e);
-        }
-    }
-
-    private PreparedAgentRuntime loadIfComplete(String agentId, Path agentRoot) {
-        Path campusClawDir = agentRoot.resolve(".campusclaw");
-        Path metadataFile = campusClawDir.resolve(AGENT_METADATA_FILE);
-        Path systemPromptFile = campusClawDir.resolve(SYSTEM_PROMPT_FILE);
-        Path skillsDir = campusClawDir.resolve("skills");
-        if (!Files.isDirectory(agentRoot)
-                || !Files.isRegularFile(metadataFile)
-                || !Files.isRegularFile(systemPromptFile)
-                || !Files.isDirectory(skillsDir)) {
-            return null;
-        }
-        AgentRuntime metadata;
-        try {
-            metadata = mapper.readValue(metadataFile.toFile(), AgentRuntime.class);
-        } catch (IOException e) {
-            return null;
-        }
-        if (!hasValidRuntimeIdentifiers(metadata)) {
-            return null;
-        }
-        List<SkillInfo> skills = loadBoundSkills(skillsDir, metadata.bindingSkills());
-        return skills == null ? null : new PreparedAgentRuntime(agentId, agentRoot, metadata, skills);
-    }
-
-    /**
-     * 从已物化 SKILL.md 的 frontmatter 重建绑定 Skill 列表。
-     * 包含可解析 SKILL.md 的子目录即表示 Agent 绑定了该 Skill；声明数量只用于识别不完整目录，
-     * 不完整目录会进入重新物化。
-     *
-     * @param skillsDir 每个已绑定 Skill 对应一个子目录的目录
-     * @param references 缓存 Agent 元数据声明的绑定引用
-     * @return 按名称排序的绑定 Skill；快照不完整时返回 {@code null}
-     */
-    private List<SkillInfo> loadBoundSkills(Path skillsDir, List<SkillReference> references) {
-        List<SkillInfo> available = new ArrayList<>();
-        try (var entries = Files.newDirectoryStream(skillsDir)) {
-            for (Path entry : entries) {
-                Path skillFile = entry.resolve(SKILL_FILE);
-                if (Files.isRegularFile(skillFile)) {
-                    SkillInfo skill = parseMaterializedSkill(Files.readString(skillFile, StandardCharsets.UTF_8));
-                    if (skill != null) {
-                        available.add(skill);
-                    }
-                }
+            writeRuntimeTree(staging, remote, skills);
+            PreparedAgentRuntime validated = loadSnapshot(agentId, agentRoot, staging);
+            if (validated == null) {
+                throw new AgentRuntimeException("Generated Agent runtime is incomplete");
             }
-            long declared = references.stream().filter(Objects::nonNull).count();
-            if (available.size() != declared) {
-                return null;
+            publish(agentId, agentRoot, staging);
+            PreparedAgentRuntime published = loadIfComplete(agentId, agentRoot);
+            if (published == null) {
+                throw new AgentRuntimeException("Published Agent runtime is incomplete");
             }
-            available.sort(Comparator.comparing(SkillInfo::name));
-            return List.copyOf(available);
-        } catch (IOException e) {
-            return null;
+            return published;
+        } catch (IOException exception) {
+            throw new AgentRuntimeException("Failed to rebuild Agent runtime", exception);
+        } finally {
+            deleteQuietly(staging);
         }
     }
 
-    /**
-     * 从 SKILL.md frontmatter 重建最小 Skill 身份快照。
-     *
-     * @param content SKILL.md 内容
-     * @return 只包含名称和描述的 Skill 元数据；缺少可用名称或描述时返回 {@code null}
-     */
-    private static SkillInfo parseMaterializedSkill(String content) {
-        Map<String, Object> frontmatter = SkillLoader.parseFrontmatter(content);
-        String name = frontmatterValue(frontmatter, "name");
-        String description = frontmatterValue(frontmatter, "description");
-        if (name == null || description == null) {
-            return null;
-        }
-        return new SkillInfo(name, null, null, description, null, List.of(), List.of(), List.of(), List.of());
-    }
-
-    private static String frontmatterValue(Map<String, Object> frontmatter, String key) {
-        Object value = frontmatter.get(key);
-        if (value == null || String.valueOf(value).isBlank()) {
-            return null;
-        }
-        return String.valueOf(value);
-    }
-
-    private void materialize(Path agentRoot, AgentRuntime runtime, List<SkillInfo> skills) {
+    private Path createStagingDirectory(Path agentRoot) {
         try {
-            writeRuntimeTree(agentRoot, runtime, skills);
-        } catch (IOException e) {
-            throw new AgentRuntimeException("Failed to materialize Agent runtime: " + runtime.id(), e);
+            Files.createDirectories(properties.agentsRoot().toAbsolutePath().normalize());
+            Files.createDirectories(agentRoot);
+            if (Files.isSymbolicLink(agentRoot)) {
+                throw new IOException("Agent root must not be a symbolic link");
+            }
+            return Files.createTempDirectory(agentRoot, ".campusclaw-stage-");
+        } catch (IOException exception) {
+            throw new AgentRuntimeException("Failed to create Agent staging directory", exception);
         }
     }
 
-    private void writeRuntimeTree(Path agentRoot, AgentRuntime runtime, List<SkillInfo> skills) throws IOException {
-        Path campusClawDir = agentRoot.resolve(".campusclaw");
-        Path skillsDir = campusClawDir.resolve("skills");
+    private void writeRuntimeTree(Path campusClawDir, AgentRuntime runtime, List<SkillInfo> skills) throws IOException {
+        Files.createDirectories(campusClawDir.resolve("agents"));
+        Files.createDirectories(campusClawDir.resolve("skills"));
+        writeJson(campusClawDir.resolve(AGENT_FILE), toIdentity(runtime));
+        writeJson(campusClawDir.resolve(SETTINGS_FILE), toSettings(runtime));
+        writeFile(campusClawDir.resolve(SYSTEM_FILE), runtime.systemPrompt());
+        writeChildren(campusClawDir.resolve("agents"), runtime.bindingAgents());
+        writeSkills(campusClawDir.resolve("skills"), skills);
+    }
 
-        // skills 目录完全受管；重新物化时从头重建，避免旧绑定目录残留。
-        deleteRecursively(skillsDir);
-        Files.createDirectories(skillsDir);
+    private void writeChildren(Path agentsDirectory, List<AgentReference> children) throws IOException {
+        Set<String> names = new HashSet<>();
+        for (AgentReference child : children) {
+            requireSafeUniqueName(child.name(), names, "Child Agent");
+            ChildManifest manifest = new ChildManifest(
+                    SCHEMA_VERSION,
+                    child.id(),
+                    child.name(),
+                    child.displayName(),
+                    child.description(),
+                    child.version(),
+                    child.enabled());
+            writeJson(agentsDirectory.resolve(child.name() + ".json"), manifest);
+        }
+    }
+
+    private void writeSkills(Path skillsDirectory, List<SkillInfo> skills) throws IOException {
+        Set<String> names = new HashSet<>();
         for (SkillInfo skill : skills) {
-            Path skillDir = skillsDir.resolve(skillDirectoryName(skill));
-            Path referencesDir = skillDir.resolve("references");
-            Path templatesDir = skillDir.resolve("templates");
-            Files.createDirectories(referencesDir);
-            Files.createDirectories(templatesDir);
-            writeResources(referencesDir, skill.references());
-            writeFile(referencesDir.resolve(SKILL_TOOLS_FILE), renderSkillTools(skill));
-            writeResources(templatesDir, skill.templates());
-            writeFile(skillDir.resolve(SKILL_FILE), renderSkill(skill));
+            requireSafeUniqueName(skill.name(), names, "Skill");
+            Path skillDirectory = skillsDirectory.resolve(skill.name());
+            Files.createDirectories(skillDirectory.resolve("references"));
+            Files.createDirectories(skillDirectory.resolve("templates"));
+            writeJson(
+                    skillDirectory.resolve(SKILL_MANIFEST_FILE),
+                    new SkillManifest(SCHEMA_VERSION, skill.id(), skill.name(), skill.version()));
+            writeFile(skillDirectory.resolve(SKILL_FILE), renderSkill(skill));
+            writeResources(skillDirectory.resolve("references"), skill.references());
+            writeResources(skillDirectory.resolve("templates"), skill.templates());
         }
-        writeFile(campusClawDir.resolve(SYSTEM_PROMPT_FILE), systemPromptContent(runtime));
-        writeFile(campusClawDir.resolve(AGENT_METADATA_FILE), mapper.writeValueAsString(runtime));
-        writeFile(campusClawDir.resolve(AGENT_SETTINGS_FILE), renderModelSettings(runtime));
-    }
-
-    /**
-     * 渲染与 Agent 元数据一同保存的模型选择配置。
-     * {@code agentVersion} 可解析为整数时保留数字形式，否则保留原始字符串。
-     *
-     * @param runtime Agent 元数据
-     * @return setting.json 内容
-     */
-    private String renderModelSettings(AgentRuntime runtime) {
-        var node = mapper.createObjectNode();
-        node.put("agentId", runtime.id() == null ? "" : runtime.id());
-        String version = runtime.version();
-        if (version != null && version.matches("-?\\d{1,18}")) {
-            node.put("agentVersion", Long.parseLong(version));
-        } else {
-            node.put("agentVersion", version == null ? "" : version);
-        }
-        runtime.defaultModel().ifPresent(model -> node.put("defaultModel", model));
-        var enabledModels = node.putArray("enabledModels");
-        runtime.bindingModels().forEach(enabledModels::add);
-        return node.toString();
-    }
-
-    private static String systemPromptContent(AgentRuntime runtime) {
-        return runtime.systemPrompt() == null ? "" : runtime.systemPrompt();
-    }
-
-    private static String skillDirectoryName(SkillInfo skill) {
-        return skill.name() == null || skill.name().isBlank() ? skill.id() : skill.name();
     }
 
     private void writeResources(Path directory, List<SkillFile> resources) throws IOException {
+        Set<String> names = new HashSet<>();
         for (SkillFile resource : resources) {
             if (resource == null) {
                 continue;
             }
-            writeFile(directory.resolve(resourceFileName(resource)), resource.content());
+            String fileName = resourceFileName(resource);
+            requireSafeUniqueName(fileName, names, "Skill resource");
+            writeFile(directory.resolve(fileName), resource.content());
         }
     }
 
-    private static String resourceFileName(SkillFile resource) {
-        String type = resource.fileType() == null ? "" : resource.fileType().toLowerCase(Locale.ROOT);
-        return resource.name() + "." + type;
+    private PreparedAgentRuntime loadIfComplete(String agentId, Path agentRoot) {
+        return loadSnapshot(agentId, agentRoot, agentRoot.resolve(CAMPUSCLAW_DIRECTORY));
     }
 
-    /**
-     * 渲染 SKILL.md；其 frontmatter 中的 {@code name} 和 {@code description}
-     * 是 Skill 身份的唯一持久化来源。不保存 Skill ID，已物化的 {@code skills/}
-     * 子目录本身表示 Agent 绑定了哪些 Skill。
-     *
-     * @param skill 从 CampusMate 获取的 Skill 元数据
-     * @return SKILL.md 内容
-     * @throws IOException 无法对描述执行 JSON 转义时抛出
-     */
-    private String renderSkill(SkillInfo skill) throws IOException {
-        String description = firstNonBlank(skill.description(), skill.name());
-        StringBuilder content = new StringBuilder();
-        content.append("---\nname: ")
-                .append(skill.name())
-                .append("\ndescription: ")
-                .append(mapper.writeValueAsString(description))
-                .append("\n---\n\n");
-        content.append("# ").append(skill.name()).append("\n\n");
-        content.append(description).append('\n');
-        if (hasText(skill.useCases())) {
-            content.append("\n## Use cases\n\n").append(skill.useCases()).append('\n');
+    private PreparedAgentRuntime loadSnapshot(String agentId, Path agentRoot, Path campusClawDir) {
+        if (!isSafeDirectory(campusClawDir) || containsForbiddenEntry(campusClawDir)) {
+            return null;
         }
-        return content.toString();
-    }
-
-    private String renderSkillTools(SkillInfo skill) throws IOException {
-        return mapper.writerWithDefaultPrettyPrinter().writeValueAsString(new SkillToolsFile(skillTools(skill)));
-    }
-
-    private List<SkillTool> readSkillTools(Path skillDir, SkillInfo skill) throws IOException {
-        Path toolsFile = skillDir.resolve("references").resolve(SKILL_TOOLS_FILE);
-        if (!Files.isRegularFile(toolsFile)) {
-            throw new AgentRuntimeException("Skill tools snapshot is missing: " + skill.name());
-        }
-        List<SkillTool> tools =
-                mapper.readValue(toolsFile.toFile(), SkillToolsFile.class).tools();
-        for (SkillTool tool : tools) {
-            requireIdentifier(tool.toolId(), ResourceIdentifierPatterns.TOOL_ID_PATTERN, "toolId");
-        }
-        return tools;
-    }
-
-    private static List<SkillTool> skillTools(SkillInfo skill) {
-        List<SkillTool> tools = new ArrayList<>();
-        for (BoundTool tool : skill.bindingTools()) {
-            if (tool == null) {
-                continue;
+        try {
+            AgentIdentity identity = readJson(campusClawDir.resolve(AGENT_FILE), AgentIdentity.class);
+            AgentSettings settings = readJson(campusClawDir.resolve(SETTINGS_FILE), AgentSettings.class);
+            String systemPrompt = readRequiredFile(campusClawDir.resolve(SYSTEM_FILE));
+            List<AgentReference> children = loadChildren(campusClawDir.resolve("agents"));
+            List<SkillInfo> skills = loadSkills(campusClawDir.resolve("skills"));
+            if (!validSnapshot(agentId, identity, settings, children, skills)) {
+                return null;
             }
-            tools.add(new SkillTool(tool.id(), tool.name(), tool.description() == null ? "" : tool.description()));
+            AgentRuntime metadata = toRuntime(identity, settings, systemPrompt, children, skills);
+            return new PreparedAgentRuntime(agentId, agentRoot.toAbsolutePath().normalize(), metadata, skills);
+        } catch (IOException | RuntimeException exception) {
+            return null;
         }
-        return List.copyOf(tools);
+    }
+
+    private List<AgentReference> loadChildren(Path agentsDirectory) throws IOException {
+        if (!isSafeDirectory(agentsDirectory)) {
+            throw new IOException("Child Agent directory is unavailable");
+        }
+        List<AgentReference> children = new ArrayList<>();
+        try (var entries = Files.list(agentsDirectory)) {
+            for (Path file : entries.sorted().toList()) {
+                ChildManifest child = readJson(file, ChildManifest.class);
+                String fileName = file.getFileName().toString();
+                if (child.schemaVersion() != SCHEMA_VERSION || !fileName.equals(child.name() + ".json")) {
+                    throw new IOException("Child Agent name does not match its path");
+                }
+                children.add(new AgentReference(
+                        child.agentId(),
+                        child.name(),
+                        child.displayName(),
+                        child.description(),
+                        child.version(),
+                        child.enabled()));
+            }
+        }
+        return List.copyOf(children);
+    }
+
+    private List<SkillInfo> loadSkills(Path skillsDirectory) throws IOException {
+        if (!isSafeDirectory(skillsDirectory)) {
+            throw new IOException("Skill directory is unavailable");
+        }
+        List<SkillInfo> skills = new ArrayList<>();
+        try (var entries = Files.list(skillsDirectory)) {
+            for (Path directory : entries.sorted().toList()) {
+                skills.add(loadSkill(directory));
+            }
+        }
+        return List.copyOf(skills);
+    }
+
+    private SkillInfo loadSkill(Path directory) throws IOException {
+        if (!isSafeDirectory(directory)
+                || !isSafeDirectory(directory.resolve("references"))
+                || !isSafeDirectory(directory.resolve("templates"))) {
+            throw new IOException("Skill directory is incomplete");
+        }
+        SkillManifest manifest = readJson(directory.resolve(SKILL_MANIFEST_FILE), SkillManifest.class);
+        if (manifest.schemaVersion() != SCHEMA_VERSION
+                || !directory.getFileName().toString().equals(manifest.name())) {
+            throw new IOException("Skill name does not match its path");
+        }
+        String skillMarkdown = readRequiredFile(directory.resolve(SKILL_FILE));
+        Map<String, Object> frontmatter = SkillLoader.parseFrontmatter(skillMarkdown);
+        String description = Objects.toString(frontmatter.get("description"), "");
+        return new SkillInfo(
+                manifest.name(),
+                manifest.id(),
+                manifest.version(),
+                description,
+                null,
+                List.of(),
+                List.<DependentSkill>of(),
+                List.of(),
+                List.of());
+    }
+
+    private void publish(String agentId, Path agentRoot, Path staging) throws IOException {
+        Files.createDirectories(agentRoot);
+        if (Files.isSymbolicLink(agentRoot)) {
+            throw new IOException("Agent root must not be a symbolic link");
+        }
+        Path target = agentRoot.resolve(CAMPUSCLAW_DIRECTORY);
+        Path backup = agentRoot.resolve(".campusclaw-backup-" + UUID.randomUUID());
+        boolean hadTarget = Files.exists(target, LinkOption.NOFOLLOW_LINKS);
+        try {
+            if (hadTarget) {
+                moveAtomically(target, backup);
+            }
+            moveAtomically(staging, target);
+        } catch (IOException exception) {
+            rollbackPublish(target, backup, hadTarget);
+            throw exception;
+        }
+        deleteQuietly(backup);
+    }
+
+    private static void rollbackPublish(Path target, Path backup, boolean hadTarget) throws IOException {
+        if (Files.exists(target, LinkOption.NOFOLLOW_LINKS)) {
+            deleteRecursively(target);
+        }
+        if (hadTarget && Files.exists(backup, LinkOption.NOFOLLOW_LINKS)) {
+            moveAtomically(backup, target);
+        }
+    }
+
+    private static void moveAtomically(Path source, Path target) throws IOException {
+        try {
+            Files.move(source, target, StandardCopyOption.ATOMIC_MOVE);
+        } catch (AtomicMoveNotSupportedException exception) {
+            throw new IOException("Atomic Agent runtime publication is not supported", exception);
+        }
     }
 
     private List<SkillInfo> resolveSkills(List<SkillReference> references) {
         List<SkillInfo> skills = new ArrayList<>();
-        for (SkillReference reference : references) {
-            if (reference == null) {
-                continue;
-            }
+        for (SkillReference reference : references == null ? List.<SkillReference>of() : references) {
             List<SkillInfo> result = mateServiceClient.querySkillInfo(reference.id());
-            if (result.isEmpty()) {
-                throw new AgentRuntimeException("querySkillInfo returned no Skill for id " + reference.id());
+            if (result.size() != 1) {
+                throw new AgentRuntimeException("Mate returned an ambiguous Skill binding");
             }
             SkillInfo skill = result.getFirst();
-            requireValidSkillIdentifiers(skill);
+            requireValidSkill(skill, reference);
             skills.add(skill);
         }
         return List.copyOf(skills);
     }
 
-    private static void requireValidRuntimeIdentifiers(AgentRuntime runtime) {
-        if (!hasValidRuntimeIdentifiers(runtime)) {
-            throw new AgentRuntimeException("GetAgentRuntime returned an invalid typed resource ID");
+    private Path requireAgentRoot(String agentId) {
+        if (!matches(agentId, ResourceIdentifierPatterns.AGENT_ID_PATTERN)) {
+            throw new IllegalArgumentException("Invalid agentId");
+        }
+        return properties
+                .agentsRoot()
+                .toAbsolutePath()
+                .normalize()
+                .resolve(agentId)
+                .normalize();
+    }
+
+    private <T> T withAgentLock(String agentId, SupplierWithException<T> action) {
+        ReentrantLock lock = locks.computeIfAbsent(agentId, ignored -> new ReentrantLock());
+        lock.lock();
+        try {
+            return action.get();
+        } finally {
+            lock.unlock();
         }
     }
 
-    private static boolean hasValidRuntimeIdentifiers(AgentRuntime runtime) {
-        if (runtime == null || !matches(runtime.id(), ResourceIdentifierPatterns.AGENT_ID_PATTERN)) {
+    private static void requireValidRuntime(AgentRuntime runtime, String requestedId) {
+        if (runtime == null
+                || !requestedId.equals(runtime.id())
+                || !matches(runtime.id(), ResourceIdentifierPatterns.AGENT_ID_PATTERN)) {
+            throw new AgentRuntimeException("Mate returned an invalid Agent identity");
+        }
+        if (!isSafeName(runtime.name()) || isBlank(runtime.version()) || !validModels(runtime.bindingModels())) {
+            throw new AgentRuntimeException("Mate returned invalid Agent metadata");
+        }
+        runtime.bindingSkills().forEach(AgentRuntimeManager::requireValidSkillReference);
+        runtime.bindingAgents().forEach(AgentRuntimeManager::requireValidChildReference);
+    }
+
+    private static void requireValidSkill(SkillInfo skill, SkillReference reference) {
+        requireIdentifier(skill == null ? null : skill.id(), ResourceIdentifierPatterns.SKILL_ID_PATTERN);
+        if (!skill.id().equals(reference.id())) {
+            throw new AgentRuntimeException("Mate returned a different Skill identity");
+        }
+        if (isBlank(reference.version()) || !reference.version().equals(skill.version())) {
+            throw new AgentRuntimeException("Mate returned a different Skill version");
+        }
+        if (!isSafeName(skill.name()) || isBlank(skill.version())) {
+            throw new AgentRuntimeException("Mate returned invalid Skill metadata");
+        }
+    }
+
+    private static boolean validSnapshot(
+            String agentId,
+            AgentIdentity identity,
+            AgentSettings settings,
+            List<AgentReference> children,
+            List<SkillInfo> skills) {
+        if (!validIdentity(agentId, identity) || !validSettings(settings)) {
             return false;
         }
-        boolean skillsValid = runtime.bindingSkills().stream()
-                .allMatch(reference ->
-                        reference != null && matches(reference.id(), ResourceIdentifierPatterns.SKILL_ID_PATTERN));
-        boolean toolsValid = runtime.bindingTools().stream()
-                .allMatch(tool -> tool != null && matches(tool.id(), ResourceIdentifierPatterns.TOOL_ID_PATTERN));
-        boolean agentsValid = runtime.bindingAgents().stream()
-                .allMatch(agent -> agent != null && matches(agent.id(), ResourceIdentifierPatterns.AGENT_ID_PATTERN));
-        return skillsValid && toolsValid && agentsValid;
+        return uniqueNames(children.stream().map(AgentReference::name).toList())
+                && uniqueNames(skills.stream().map(SkillInfo::name).toList())
+                && skills.stream().allMatch(AgentRuntimeManager::validCachedSkill)
+                && children.stream().allMatch(AgentRuntimeManager::validCachedChild);
     }
 
-    private static void requireValidSkillIdentifiers(SkillInfo skill) {
-        requireIdentifier(skill == null ? null : skill.id(), ResourceIdentifierPatterns.SKILL_ID_PATTERN, "skillId");
-        for (BoundTool tool : skill.bindingTools()) {
-            requireIdentifier(tool == null ? null : tool.id(), ResourceIdentifierPatterns.TOOL_ID_PATTERN, "toolId");
+    private static boolean validIdentity(String agentId, AgentIdentity identity) {
+        return identity != null
+                && identity.schemaVersion() == SCHEMA_VERSION
+                && agentId.equals(identity.id())
+                && validIdentityFields(identity);
+    }
+
+    private static boolean validIdentityFields(AgentIdentity identity) {
+        return matches(identity.id(), ResourceIdentifierPatterns.AGENT_ID_PATTERN)
+                && isSafeName(identity.name())
+                && !isBlank(identity.version())
+                && identity.enabled() != null;
+    }
+
+    private static boolean validSettings(AgentSettings settings) {
+        return settings != null
+                && settings.schemaVersion() == SCHEMA_VERSION
+                && validModels(settings.bindingModels())
+                && validDefaultModel(settings);
+    }
+
+    private static boolean validDefaultModel(AgentSettings settings) {
+        return settings.defaultModel() == null
+                ? settings.bindingModels().isEmpty()
+                : settings.bindingModels().contains(settings.defaultModel());
+    }
+
+    private static boolean validModels(List<String> models) {
+        Set<String> unique = new HashSet<>();
+        return models != null && models.stream().allMatch(model -> !isBlank(model) && unique.add(model));
+    }
+
+    private static boolean validCachedSkill(SkillInfo skill) {
+        return skill != null
+                && matches(skill.id(), ResourceIdentifierPatterns.SKILL_ID_PATTERN)
+                && isSafeName(skill.name())
+                && !isBlank(skill.version());
+    }
+
+    private static boolean validCachedChild(AgentReference child) {
+        return child != null
+                && matches(child.id(), ResourceIdentifierPatterns.AGENT_ID_PATTERN)
+                && isSafeName(child.name())
+                && !isBlank(child.version())
+                && child.enabled() != null;
+    }
+
+    private static boolean uniqueNames(List<String> names) {
+        Set<String> exact = new HashSet<>();
+        Set<String> folded = new HashSet<>();
+        for (String name : names) {
+            if (!isSafeName(name) || !exact.add(name) || !folded.add(name.toLowerCase(java.util.Locale.ROOT))) {
+                return false;
+            }
         }
-        for (DependentSkill dependency : skill.bindingSkills()) {
-            requireIdentifier(
-                    dependency == null ? null : dependency.id(),
-                    ResourceIdentifierPatterns.SKILL_ID_PATTERN,
-                    "skillId");
+        return true;
+    }
+
+    private static void requireSafeUniqueName(String name, Set<String> names, String type) {
+        if (!isSafeName(name) || !names.add(name.toLowerCase(java.util.Locale.ROOT))) {
+            throw new AgentRuntimeException(type + " name is invalid or duplicated");
         }
     }
 
-    private static void requireIdentifier(String value, Pattern pattern, String name) {
+    private static boolean isSafeName(String value) {
+        if (value == null || value.isBlank() || value.equals(".") || value.equals("..")) {
+            return false;
+        }
+        return value.indexOf('/') < 0 && value.indexOf('\\') < 0 && value.indexOf('\0') < 0;
+    }
+
+    private static boolean isSafeDirectory(Path path) {
+        return Files.isDirectory(path, LinkOption.NOFOLLOW_LINKS) && !Files.isSymbolicLink(path);
+    }
+
+    private static boolean containsForbiddenEntry(Path root) {
+        try (var paths = Files.walk(root)) {
+            return paths.anyMatch(path ->
+                    Files.isSymbolicLink(path) || path.getFileName().toString().equals("tools.json"));
+        } catch (IOException exception) {
+            return true;
+        }
+    }
+
+    private <T> T readJson(Path path, Class<T> type) throws IOException {
+        if (!Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS) || Files.isSymbolicLink(path)) {
+            throw new IOException("Managed JSON file is unavailable");
+        }
+        return mapper.readValue(path.toFile(), type);
+    }
+
+    private static String readRequiredFile(Path path) throws IOException {
+        if (!Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS) || Files.isSymbolicLink(path)) {
+            throw new IOException("Managed file is unavailable");
+        }
+        return Files.readString(path, StandardCharsets.UTF_8);
+    }
+
+    private void writeJson(Path path, Object value) throws IOException {
+        writeFile(path, mapper.writerWithDefaultPrettyPrinter().writeValueAsString(value));
+    }
+
+    private static void writeFile(Path path, String content) throws IOException {
+        Files.createDirectories(path.getParent());
+        Files.writeString(path, content == null ? "" : content, StandardCharsets.UTF_8);
+    }
+
+    private String renderSkill(SkillInfo skill) throws IOException {
+        String description = firstNonBlank(skill.description(), skill.name());
+        return "---\nname: " + skill.name() + "\ndescription: " + mapper.writeValueAsString(description) + "\n---\n\n# "
+                + skill.name() + "\n\n" + description + "\n";
+    }
+
+    private static String resourceFileName(SkillFile resource) {
+        String type = resource.fileType() == null ? "" : resource.fileType().toLowerCase(java.util.Locale.ROOT);
+        return resource.name() + (type.isBlank() ? "" : "." + type);
+    }
+
+    private static AgentIdentity toIdentity(AgentRuntime runtime) {
+        return new AgentIdentity(
+                SCHEMA_VERSION,
+                runtime.id(),
+                runtime.name(),
+                runtime.displayName(),
+                runtime.description(),
+                runtime.version(),
+                runtime.enabled());
+    }
+
+    private static AgentSettings toSettings(AgentRuntime runtime) {
+        String defaultModel = runtime.defaultModel().orElse(null);
+        return new AgentSettings(SCHEMA_VERSION, defaultModel, runtime.bindingModels());
+    }
+
+    private static AgentRuntime toRuntime(
+            AgentIdentity identity,
+            AgentSettings settings,
+            String systemPrompt,
+            List<AgentReference> children,
+            List<SkillInfo> skills) {
+        List<SkillReference> skillReferences = skills.stream()
+                .map(skill -> new SkillReference(skill.id(), skill.version()))
+                .toList();
+        return new AgentRuntime(
+                settings.bindingModels(),
+                skillReferences,
+                List.of(),
+                children,
+                identity.description(),
+                identity.displayName(),
+                identity.enabled(),
+                identity.id(),
+                identity.name(),
+                systemPrompt,
+                List.of(),
+                identity.version());
+    }
+
+    private static void requireIdentifier(String value, Pattern pattern) {
         if (!matches(value, pattern)) {
-            throw new AgentRuntimeException("Invalid " + name + ": " + value);
+            throw new AgentRuntimeException("Mate returned an invalid typed resource ID");
+        }
+    }
+
+    private static void requireValidSkillReference(SkillReference reference) {
+        requireIdentifier(reference == null ? null : reference.id(), ResourceIdentifierPatterns.SKILL_ID_PATTERN);
+        if (isBlank(reference.version())) {
+            throw new AgentRuntimeException("Mate returned a Skill binding without a fixed version");
+        }
+    }
+
+    private static void requireValidChildReference(AgentReference child) {
+        requireIdentifier(child == null ? null : child.id(), ResourceIdentifierPatterns.AGENT_ID_PATTERN);
+        if (!isSafeName(child.name()) || isBlank(child.version()) || child.enabled() == null) {
+            throw new AgentRuntimeException("Mate returned invalid Child Agent metadata");
         }
     }
 
@@ -439,14 +598,8 @@ public class AgentRuntimeManager {
         return value != null && pattern.matcher(value).matches();
     }
 
-    private static String joinPrompts(String runtimePrompt, String customPrompt) {
-        if (runtimePrompt == null || runtimePrompt.isBlank()) {
-            return customPrompt;
-        }
-        if (customPrompt == null || customPrompt.isBlank()) {
-            return runtimePrompt;
-        }
-        return runtimePrompt + "\n\n" + customPrompt;
+    private static boolean isBlank(String value) {
+        return value == null || value.isBlank();
     }
 
     private static String firstNonBlank(String... values) {
@@ -458,31 +611,53 @@ public class AgentRuntimeManager {
         return "Managed Skill";
     }
 
-    private static void writeFile(Path target, String content) throws IOException {
-        Files.createDirectories(target.getParent());
-        Files.writeString(target, content == null ? "" : content, StandardCharsets.UTF_8);
+    private static void deleteQuietly(Path path) {
+        try {
+            deleteRecursively(path);
+        } catch (IOException exception) {
+            LOGGER.debug("Failed to clean managed Agent staging path: {}", path, exception);
+        }
     }
 
     private static void deleteRecursively(Path root) throws IOException {
-        if (!Files.exists(root)) {
+        if (!Files.exists(root, LinkOption.NOFOLLOW_LINKS)) {
             return;
         }
         try (var paths = Files.walk(root)) {
             for (Path path : paths.sorted(Comparator.reverseOrder()).toList()) {
-                Files.delete(path);
+                Files.deleteIfExists(path);
             }
         }
     }
 
-    private static boolean hasText(String value) {
-        return value != null && !value.isBlank();
-    }
+    private record AgentIdentity(
+            int schemaVersion,
+            String id,
+            String name,
+            String displayName,
+            List<String> description,
+            String version,
+            Boolean enabled) {}
 
-    private record SkillToolsFile(List<SkillTool> tools) {
-        private SkillToolsFile {
-            tools = tools == null ? List.of() : List.copyOf(tools);
+    private record AgentSettings(int schemaVersion, String defaultModel, List<String> bindingModels) {
+        private AgentSettings {
+            bindingModels = bindingModels == null ? List.of() : List.copyOf(bindingModels);
         }
     }
 
-    private record SkillTool(@JsonProperty("tool_id") String toolId, String name, String description) {}
+    private record ChildManifest(
+            int schemaVersion,
+            String agentId,
+            String name,
+            String displayName,
+            String description,
+            String version,
+            Boolean enabled) {}
+
+    private record SkillManifest(int schemaVersion, String id, String name, String version) {}
+
+    @FunctionalInterface
+    private interface SupplierWithException<T> {
+        T get();
+    }
 }

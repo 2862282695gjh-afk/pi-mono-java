@@ -5,11 +5,8 @@
 package com.campusclaw.cron.store;
 
 import java.io.IOException;
-import java.nio.channels.FileChannel;
-import java.nio.channels.FileLock;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -26,8 +23,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 /**
- * JSON file persistence for cron job definitions.
- * Stores jobs in {@code ~/.campusclaw/agent/cron/jobs.json}.
+ * 以 JSON 文件保存当前 Cron Host 的任务定义。
+ * 缺省路径为 {@code ~/.campusclaw/agent/cron/jobs.json}。
  *
  * @version [br_eCampusCore 26.0.0, 2026/05/06]
  * @since [br_eCampusCore 26.0.0]
@@ -145,47 +142,6 @@ public class CronStore {
             mapper.writerWithDefaultPrettyPrinter().writeValue(jobsFile.toFile(), new JobsFile(1, jobs));
         } catch (IOException e) {
             log.error("Failed to save cron jobs", e);
-        }
-    }
-
-    /**
-     * Acquire an inter-process exclusive file lock for safe concurrent access
-     * from multiple JVM instances (e.g. --cron-tick via system scheduler).
-     *
-     * @return the acquired lock, or {@code null} if locking fails
-     */
-    public FileLock acquireProcessLock() {
-        try {
-            Files.createDirectories(jobsFile.getParent());
-            Path lockPath = jobsFile.resolveSibling(jobsFile.getFileName() + ".lock");
-            var channel = FileChannel.open(lockPath, StandardOpenOption.CREATE, StandardOpenOption.WRITE);
-            FileLock fileLock = channel.tryLock();
-            if (fileLock == null) {
-                channel.close();
-                return null;
-            }
-            return fileLock;
-        } catch (IOException e) {
-            log.warn("Failed to acquire process lock", e);
-            return null;
-        }
-    }
-
-    /**
-     * Release a previously acquired process lock.
-     *
-     * @param fileLock the lock returned by {@link #acquireProcessLock()}; {@code null} is allowed and ignored
-     */
-    public void releaseProcessLock(FileLock fileLock) {
-        if (fileLock == null) {
-            return;
-        }
-        try {
-            var channel = fileLock.channel();
-            fileLock.release();
-            channel.close();
-        } catch (IOException e) {
-            log.debug("Error releasing process lock", e);
         }
     }
 

@@ -1,33 +1,37 @@
-# Coding Agent 启动与 Runtime HTTP 设计
+# Coding Agent Runtime HTTP 与受管 Session 设计
 
-> 文档版本：2.7.0
+> 文档版本：3.2.0
 >
-> Runtime HTTP 1.38 实现分析基线：`304eda06ff603fc9b6bbcaad0c296cc151a7defb`
+> PR 167 修订基线：`f60cc3e78bb8b700527ac082c7c8e10524ede095`
 >
-> HTTP 1.38 设计契约 `main` 合并基线：`superheromeZzh/pi-mono-java-design@ea4c70c33a458182b354ed0908cfc0ef54f13bc0`
+> PR 167 merge base：`d649866a6cae967ace18ceaeb9597edd47e5721e`
 >
-> 启动平台分析基线：`1f801dbb82bdda30478e3354e685e3153b179a0c`
+> HTTP 1.39 设计输入：`superheromeZzh/pi-mono-java-design@3fde5735cd27433c3e3e5e03a5ce39b297ad3b00`
 >
 > 源码仓库：本仓库 `pi-mono-java`
 
 ## 1. 结论
 
-`campusclaw-agent.jar` 现在只有两种顶层启动方式：
-
-- 不带 `cli` 子命令时，由 Spring Boot 正常启动 Spring MVC HTTP 服务；
-- 带 `cli` 子命令时，启动无 Web 容器的 CLI 上下文，再由 Picocli 分派 interactive、one-shot、rpc 或 print 等模式。
+`campusclaw-agent.jar` 只有 Spring Boot 服务启动方式，不再分发 CLI/TUI 产品模式。
+Runtime HTTP、Cron trigger 和 Child Execution 共同使用 `AgentSessionFactory`，完整工具和目录
+契约见[工具系统 v2](tool-system-v2.md)。
 
 历史 `--mode server`、手工 Reactor Netty `ServerMode`、函数式 WebFlux 路由和公开 WebSocket 接口均已删除。Runtime 对外协议统一为 HTTP + 请求范围 SSE。
 
-Runtime HTTP 现已对齐独立设计仓库 1.38 契约：资源标识统一为类型前缀加去连字符 UUID，创建 Session 默认开启 thinking，提交用户消息不再携带冗余 `type`，集成 Header 不在 Runtime 本地检查，thinking 事件按执行快照投影并按查询时 Session 状态过滤，公开 Path、Query、JSON 与 SSE data 字段统一使用 lowerCamelCase。该行为是相对上述分析基线的实现变更；资源与 thinking 决策见 [ADR-0018](../decisions/0018-runtime-http-v137-contract-alignment.html)，字段命名边界见 [ADR-0019](../decisions/0019-runtime-http-lower-camel-case-fields.html)。
+Runtime HTTP 现已在 1.38 lowerCamelCase 契约上实现 1.39 修订：Session 增加生命周期 Usage，
+Assistant/Compaction 完成保存本次 Usage，模型/思考/压缩形成持久化领域事件，工具 delta 与
+压缩 started/failed 保持瞬态。资源与 thinking 决策见
+[ADR-0018](../decisions/0018-runtime-http-v137-contract-alignment.html)，字段命名边界见
+[ADR-0019](../decisions/0019-runtime-http-lower-camel-case-fields.html)，TUI 能力迁移见
+[ADR-0023](../decisions/0023-retain-entry-independent-session-capabilities.html)。
 
 ## 2. 源码证据
 
 | 事实 | 源码位置与符号 |
 |---|---|
 | 默认启动 Spring Boot Web 应用 | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/CampusClawApplication.java`，`CampusClawApplication#main` |
-| `cli` 子命令切换至 CLI 上下文 | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/CampusClawCliLauncher.java`，`isCliInvocation`、`run` |
-| CLI 排除数据库、Runtime 与控制面 Bean | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/CampusClawCliConfiguration.java` |
+| 三入口公共 Session 装配 | `session/AgentSessionFactory.java`、`ManagedAgentSession.java` |
+| HTTP 创建前准备受管目录 | `runtimeapi/runtime/RuntimeSessionEngineRegistry.java`、`runtime/AgentRuntimeManager.java` |
 | Runtime 使用 Spring MVC Controller | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/web/*Controller.java` |
 | Runtime 不安装入站认证拦截器 | `runtimeapi/web` 不再包含 `RuntimeAuthenticationInterceptor` 与 `RuntimeWebMvcConfiguration`；路由测试覆盖 Header 缺失与共存 |
 | 类型化资源 ID 与 Session 默认值 | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/common/identifier/ResourceIdentifierPatterns.java`、`runtimeapi/web/*Controller` 的 `@PathVariable` 参数约束、`RuntimeExceptionHandler#handleInvalidParameter`、`MateServiceClient#getAgentRuntime`、`MateServiceClient#querySkillInfo`、`AgentRuntimeManager#prepare`、`HttpMateToolClient#listTools`、`RandomSessionIdGenerator#nextId`、`RuntimeSessionService#newSession` |
@@ -40,10 +44,11 @@ Runtime HTTP 现已对齐独立设计仓库 1.38 契约：资源标识统一为�
 | 国际化资源显式区分两个 Locale | `modules/coding-agent-cli/src/main/resources/i18n/messages_{en_US,zh_CN}.properties`、`RuntimeMessageSourceConfiguration` |
 | 语言选择按范围和权重协商 | `RuntimeRequestContext#locale`、`RuntimeRequestContext#language` |
 | HTTP 与 SSE 错误通过 MessageSource 取文案 | `RuntimeExceptionHandler#response`、`RuntimeTerminalEventFactory#emitError` |
-| 本地工具由目录统一索引与筛选 | `tool/catalog/ToolCatalog.java`、`DefaultToolCatalog.java`、`ToolSelection.java` |
-| MateService 工具通过专用客户端查询和调用 | `common/client/mate/MateToolClient.java`、`tool/mate/ListMateTool.java`、`CallMateTool.java` |
+| 内置工具由关闭枚举和 profile 装配 | `tool/builtin/BuiltInToolName.java`、`BuiltInToolProperties.java`、`DefaultConfiguredToolAssembler.java` |
+| MateService 工具通过专用客户端查询和调用 | `common/client/mate/MateToolClient.java`、`tool/mate/ListMateToolsTool.java`、`CallMateTool.java` |
 
-表中的启动、CLI 和历史协议清理是上述提交基线的已观察行为；HTTP 1.38 契约对齐项是相对基线的目标决策，并已在当前分支实现。它们不表示 pi 已存在相同行为。
+表中的历史协议清理是上述提交基线的已观察行为；服务单入口和公共 SessionFactory 是相对
+基线的架构改造，并已在当前分支实现。它们不表示 pi 已存在相同行为。
 
 ## 3. 模块上下文
 
@@ -53,13 +58,7 @@ Runtime HTTP 现已对齐独立设计仓库 1.38 契约：资源标识统一为�
 
 Spring MVC 只负责 HTTP 业务边界、资源校验、国际化和 SSE 连接，不在 Runtime 内认证集成 Header。会话执行复用 `agent-core` 的 Agent 循环，模型调用复用 `ai` 模块；控制面与 Runtime V1 共享同一 Spring Boot 进程，但路径和业务模型相互独立。
 
-## 4. 启动时序
-
-![默认服务与 CLI 启动时序](coding-agent-cli/startup-sequence.svg)
-
-[PlantUML 源码](coding-agent-cli/diagram.puml#L32)
-
-### 默认 HTTP 服务
+## 4. 服务启动
 
 ```bash
 java -jar modules/coding-agent-cli/target/campusclaw-agent.jar
@@ -67,20 +66,15 @@ java -jar modules/coding-agent-cli/target/campusclaw-agent.jar
 
 默认监听 `0.0.0.0:8080`，可通过标准 Spring Boot 配置（例如 `SERVER_PORT`）覆盖。服务使用 Java 21 虚拟线程承载阻塞式 Spring MVC 请求；数据库访问和 Controller 均为阻塞式模型。
 
-### CLI
-
-```bash
-java -jar modules/coding-agent-cli/target/campusclaw-agent.jar cli -m glm-5
-java -jar modules/coding-agent-cli/target/campusclaw-agent.jar cli --mode rpc -m glm-5
-```
-
-仓库仅维护 macOS/Linux 的 `campusclaw.sh`，脚本会校验操作系统并自动补充 `cli`。Windows 启动入口不属于产品支持范围。CLI 上下文使用 `campusclaw-cli` profile，不启动 Web 容器，也不加载 Runtime 数据库组件。平台支持决策见[启动平台支持设计](platform-support.md)和[ADR-0016](../decisions/0016-macos-linux-launch-support.html)。
+命令行参数不再切换另一套 Spring 上下文。CLI/TUI、Picocli 启动、终端 Session 持久化和
+本地认证设置源码已删除；Slash Command 核心及 `/model`、`/thinking`、`/compact`、`/name`
+处理器保留为未注册的宿主无关代码，不形成 Spring Bean、HTTP 接口或消息拦截器。
 
 ## 5. Runtime HTTP 结构
 
 ![Runtime HTTP 组件](coding-agent-cli/runtime-http-components.svg)
 
-[PlantUML 源码](coding-agent-cli/diagram.puml#L58)
+[PlantUML 源码](coding-agent-cli/diagram.puml#L32)
 
 Runtime V1 固定前缀为 `/campusclaw-service/v1`，包含 11 个接口：
 
@@ -121,7 +115,16 @@ Runtime V1 固定前缀为 `/campusclaw-service/v1`，包含 11 个接口：
 
 请求体只接受 `message` 与 `fileIds`，路径已经固定 `user.message` 语义，旧 `type` 字段作为未知字段返回 `INVALID_EVENT_REQUEST`。执行接受时固化 Session 的 thinking 值：快照为 `true` 时投影 `assistant.thinking.started/delta/completed`，其中 completed 作为独立 Entry 持久化；快照为 `false` 时不产生 thinking 事件。Assistant MessageEntry 本身仍过滤 `ThinkingContent`，防止同一内容重复进入消息正文。
 
-`GET /events` 每次读取 Session 当前 thinking。为 `true` 时返回四类持久化事件，为 `false` 时从当前分支隐藏 `assistant.thinking.completed`，但不删除数据库记录。加密 page 同时绑定 `session_id`、继续位置、thinking 状态和过期时间；开关变化后旧 page 返回 `INVALID_EVENT_LIST_QUERY`，调用方需从第一页重读。
+`GET /events` 每次读取 Session 当前 thinking，返回公共消息、模型/思考变更、压缩完成和允许
+显示的 thinking。Agent 上下文恢复使用独立查询，只消费消息、工具结果和最新压缩边界，不把
+模型或思考变更事件转换为模型消息。thinking 为 `false` 时只隐藏
+`assistant.thinking.completed`，不删除数据库记录。加密 page 同时绑定 `session_id`、继续位置、
+thinking 状态和过期时间；开关变化后旧 page 返回 `INVALID_EVENT_LIST_QUERY`。
+
+Assistant 完成与压缩完成都持久化完整 `Usage`；`t_session_materialized` 在同一事务中原子累计
+`lifetimeUsage`。Token 字段为 `input/output/cacheRead/cacheWrite/totalTokens`，USD Cost 字段为
+`input/output/cacheRead/cacheWrite/total`。工具进度只投影瞬态 `tool.execution.delta`，数据仅含
+`toolCallId/toolName/delta`；不可序列化、超限或背压时只丢弃该进度，不影响工具执行和最终结果。
 
 每个订阅的缓冲限制为 256 个事件或 1 MiB，心跳间隔 15 秒。执行上限为 100 个，默认 30 分钟超时。
 
@@ -131,11 +134,11 @@ Session、Entry、严格序号、物化数据、删除墓碑和异步清理任�
 
 Agent、Tool、Skill 和 Session ID 分别匹配 `agent-`、`tool-`、`skill-`、`session-` 加 32 位十六进制 UUID（UUID 内部连字符已移除）。四类资源 ID 的正则字符串与编译后的 `Pattern` 统一由中立的 `common.identifier.ResourceIdentifierPatterns` 提供；业务类不重复编译，也不依赖 HTTP 专用常量类。HTTP 路径中的 Agent 与 Session ID 直接在 Controller 的标量 `@PathVariable` 参数上使用 Jakarta `@NotBlank` 和 `@Pattern`，Spring MVC 方法参数校验失败后由 `RuntimeExceptionHandler` 映射为稳定错误码，不再维护命令式路径 ID Validator。`RandomSessionIdGenerator` 只生成该 Session 格式；创建 Session 持久化 `thinking=true`，默认模型不支持 reasoning 时按无有效默认模型返回 `AGENT_MODEL_NOT_CONFIGURED`，避免对外状态与实际事件能力不一致。`t_sessions.agent_id` 使用 `VARCHAR(64)`，可容纳完整类型化 Agent ID。
 
-Agent 配置默认直接读取 `agent/{agent_id}/.campusclaw/` 下的 `settings.json`、
-`SYSTEM.md` 和 `skills/`；部署可通过 `CAMPUSCLAW_AGENT_ROOT` 替换 `agent` 根目录。
-`.campusclaw/` 的真实路径同时作为 Session `cwd`、提示词根目录和 `ReadTool` 根目录，
-不会把 Agent 父目录暴露给 HTTP V1。Runtime 工具集合只启用 `read`。`fileIds` 作为固定
-`[File IDs]` 提示块传入，不在 Runtime 内解析或下载文件。
+Agent 配置由 `AgentRuntimeManager.prepare(agentId)` 准备到
+`agent/{agentId}/.campusclaw/`；部署可通过 `CAMPUSCLAW_AGENT_ROOT` 替换 `agent` 根目录。
+Session 的受控工作区是整个 `agent/{agentId}`，`Read`、`Find`、`Grep`、`Ls` 共享该边界并
+拒绝符号链接和 realpath 越界。Runtime 使用工具系统 v2 的 `runtime` profile，而不是历史的
+单一 `read` 工具。`fileIds` 作为固定 `[File IDs]` 提示块传入，不在 Runtime 内解析或下载文件。
 
 ### 6.5 HTTP 字段命名边界
 
@@ -149,6 +152,14 @@ Agent 配置默认直接读取 `agent/{agent_id}/.campusclaw/` 下的 `settings.
 `RuntimeEventQueryService` 负责当前分支分页与 Agent 历史恢复；
 `RuntimeExecutionCoordinator` 负责 Agent 启动、控制消息续跑、超时、持久化收尾和资源释放。
 SSE 流、事件投影器与终止事件分别由独立工厂创建，避免 Controller 或单个 Service 同时承担完整执行生命周期。
+
+管理面 refresh 不修改活动执行快照。空闲 Session 下一次执行时由
+`RuntimeSessionModelReconciler` 读取最新目录；当前模型失效时，先原子持久化模型及必要 thinking
+变更事件，再接受 `user.message`。无具备凭据的 default 时直接拒绝，数据库中不产生用户 Entry。
+
+公共 `ManagedAgentSession` 持有阈值压缩、上下文溢出压缩和最多一次重试。压缩失败保留旧消息；
+成功压缩持久化完整摘要和保留边界。配置默认 `enabled=true`、`reserveTokens=16384`、
+`keepRecentTokens=20000`，文件追踪只识别 `Read`。
 
 ### 6.7 错误和多实例边界
 
@@ -172,8 +183,7 @@ modules/coding-agent-cli/src/main/resources/i18n/messages_zh_CN.properties
 `messages.properties`。由于 Spring Boot 的默认消息源自动配置要求基础资源包，Runtime
 必须通过独立配置显式注册名称为 `messageSource` 的 `ResourceBundleMessageSource`：
 basename 固定为 `i18n/messages`，编码固定为 UTF-8，默认 Locale 为 `Locale.US`，并关闭
-系统 Locale 回退。该配置只属于 Runtime 包，CLI 上下文通过现有包扫描排除规则隔离
-Runtime Bean。
+系统 Locale 回退。该配置只属于 Runtime HTTP 包。
 
 Runtime 只支持 `en-US` 和 `zh-CN`。语言协商必须按 `Accept-Language` 标准语义处理语言
 范围与 `q` 权重，并把结果收敛为 `Locale.US` 或 `Locale.SIMPLIFIED_CHINESE`；请求头缺失、
@@ -186,19 +196,15 @@ Locale 获取 `resMsg`，HTTP `Content-Language` 返回实际语言。成功 Res
 状态、`resCode`、响应结构或 SSE 事件结构，分类为内部架构变更。决策依据见
 [ADR-0017](../decisions/0017-explicit-locale-message-bundles.html)。
 
-### 6.9 工具所有权与沙箱边界
+### 6.9 工具所有权与 Agent 边界
 
-CLI 的 `BashTool`、`ReadTool`、`WriteTool`、`EditTool`、`GlobTool` 和 `GrepTool`
-仍是当前 JVM 内的普通本地工具，由 `ToolCatalog` 发现并按 `ToolSelection` 筛选。
-需要集中查询、授权和执行的工具通过 `ListMateTool`、`CallMateTool` 与
-`MateToolClient` 交给 MateService。旧 Docker Sandbox、Hybrid Tool、
-`ToolExecutionProperties` 和 `tool.execution.*` 配置已经删除，不提供兼容入口。
+Runtime 只公开工具系统 v2 的八个名称。`Bash`、`Edit`、`Write`、`Loop` 和动态
+ToolCatalog/Extension 不进入模型工具列表。`Read`、`Find`、`Grep`、`Ls` 只能读取当前
+`agent/{agentId}`，且拒绝符号链接和 realpath 越界；Mate 工具由 MateService 最终授权执行。
 
-本地工具只保留各实现已有的路径校验、超时和输出截断能力，不构成 Docker 容器隔离承诺。
 Runtime V1 事件名 `tool.execution.started` 与 `tool.execution.completed` 是 HTTP/SSE
-事件类型，不是已删除的 Sandbox 配置项，必须继续保留。完整迁移记录见
-[Sandbox 清理设计](sandbox-cleanup.md)和
-[ADR-0015](../decisions/0015-sandbox-cleanup-tool-manager.html)。
+事件类型，不是工具配置项，必须继续保留。完整契约见[工具系统 v2](tool-system-v2.md)和
+[ADR-0022](../decisions/0022-managed-agent-tool-system-v2.html)。
 
 ## 7. 质量约束
 
@@ -215,6 +221,9 @@ Runtime V1 事件名 `tool.execution.started` 与 `tool.execution.completed` 是
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 3.2.0 | 2026-08-24 | 修订 TUI 删除边界，保留未注册 Slash 核心；公共 Session 增加压缩，Runtime 增加 Usage、领域事件、best-effort 工具进度与 refresh 后懒校准 |
+| 3.1.0 | 2026-08-24 | 删除 CLI/TUI、Picocli、终端 Session、用户级认证设置与启动脚本源码，服务模型目录仅使用内置注册表和部署凭据 |
+| 3.0.0 | 2026-08-24 | 删除 CLI 产品入口；HTTP、Cron、Child 共用 SessionFactory；Runtime 创建前 prepare 受管目录并装配八工具 profile |
 | 2.7.0 | 2026-08-21 | 对齐 Runtime HTTP 1.38：公开 Path、Query、JSON 与 SSE data 字段统一为 lowerCamelCase；Header 和字段值保持原样；既有 Entry payload 在输出边界受控投影 |
 | 2.6.2 | 2026-08-21 | 将 HTTP 路径 ID 校验改为 Controller 标量参数的 Jakarta 注解，并集中映射方法校验错误 |
 | 2.6.1 | 2026-08-21 | 集中类型化资源 ID 的正则字符串和编译模式，分离领域约束与 Runtime HTTP 常量 |

@@ -8,6 +8,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.Locale;
 
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.common.client.mate.MateCredentialHeaders;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.common.client.mate.MateCredentials;
+
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpHeaders;
 import org.springframework.mock.web.MockHttpServletRequest;
@@ -35,6 +38,19 @@ class RuntimeRequestContextTest {
         assertThat(RuntimeRequestContext.locale(new MockHttpServletRequest())).isEqualTo(Locale.US);
         assertThat(resolve("not-a-valid-language-range-@")).isEqualTo(Locale.US);
         assertThat(resolve("fr-FR")).isEqualTo(Locale.US);
+    }
+
+    @Test
+    void capturesCoexistingMateCredentialsWithoutValidation() {
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.addHeader(MateCredentialHeaders.X_HW_ID, "caller-1");
+        request.addHeader(MateCredentialHeaders.X_HW_APPKEY, "app-key-1");
+        request.addHeader(MateCredentialHeaders.AUTHORIZATION, "Bearer token-1");
+
+        MateCredentials credentials = RuntimeRequestContext.mateCredentials(request);
+
+        assertThat(credentials).isEqualTo(new MateCredentials("caller-1", "app-key-1", "Bearer token-1"));
+        assertThat(credentials.isComplete()).isTrue();
     }
 
     private static Locale resolve(String acceptLanguage) {

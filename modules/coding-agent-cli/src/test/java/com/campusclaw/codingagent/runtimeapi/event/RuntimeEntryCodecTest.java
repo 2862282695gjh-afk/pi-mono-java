@@ -10,6 +10,16 @@ import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
 
+import com.campusclaw.ai.types.Api;
+import com.campusclaw.ai.types.AssistantMessage;
+import com.campusclaw.ai.types.InputModality;
+import com.campusclaw.ai.types.Message;
+import com.campusclaw.ai.types.Model;
+import com.campusclaw.ai.types.ModelCost;
+import com.campusclaw.ai.types.Provider;
+import com.campusclaw.ai.types.StopReason;
+import com.campusclaw.ai.types.TextContent;
+import com.campusclaw.ai.types.Usage;
 import com.campusclaw.codingagent.runtimeapi.dto.RuntimeEntryDTO;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -38,6 +48,42 @@ class RuntimeEntryCodecTest {
         assertToolCall(event);
     }
 
+    @Test
+    void excludesFailedAssistantFromRestoredModelContext() {
+        RuntimeEntryDTO user = entry("entry_user", "user.message", "{}");
+        RuntimeEntryDTO failed = entry(
+                "entry_failed",
+                "assistant.message.completed",
+                "{\"message\":{\"role\":\"assistant\",\"content\":[]},\"finish_reason\":\"error\"}");
+
+        List<String> ids = new RuntimeEntryCodec(new ObjectMapper()).toAgentContextEntryIds(List.of(user, failed));
+
+        assertThat(ids).containsExactly("entry_user");
+    }
+
+    @Test
+    void restoresPersistedAssistantModelIdentityInsteadOfCurrentModel() {
+        RuntimeEntryCodec codec = new RuntimeEntryCodec(new ObjectMapper());
+        AssistantMessage original = new AssistantMessage(
+                List.of(new TextContent("done")),
+                "openai-responses",
+                "openai",
+                "old-model",
+                null,
+                Usage.empty(),
+                StopReason.STOP,
+                null,
+                1L);
+        RuntimeEntryDTO entry = codec.assistantEntry("session", "entry", original, OffsetDateTime.now());
+
+        List<Message> restored = codec.toAgentMessages(List.of(entry), model());
+
+        AssistantMessage assistant = (AssistantMessage) restored.getFirst();
+        assertThat(assistant.api()).isEqualTo("openai-responses");
+        assertThat(assistant.provider()).isEqualTo("openai");
+        assertThat(assistant.model()).isEqualTo("old-model");
+    }
+
     @SuppressWarnings("unchecked")
     private static void assertToolCall(Map<String, Object> event) {
         Map<String, Object> message = (Map<String, Object>) event.get("message");
@@ -58,5 +104,31 @@ class RuntimeEntryCodecTest {
                 + "\"tool_call_id\":\"call_201\",\"name\":\"query_abnormal_orders\","
                 + "\"arguments\":{\"uploaded_files\":true}}]},\"finish_reason\":\"tool_call\"}");
         return entry;
+    }
+
+    private static RuntimeEntryDTO entry(String id, String type, String payload) {
+        RuntimeEntryDTO entry = new RuntimeEntryDTO();
+        entry.setId(id);
+        entry.setType(type);
+        entry.setPayload(payload);
+        entry.setTimestamp(OffsetDateTime.parse("2026-08-17T10:00:02Z"));
+        return entry;
+    }
+
+    private static Model model() {
+        return new Model(
+                "current-model",
+                "Current",
+                Api.ANTHROPIC_MESSAGES,
+                Provider.ANTHROPIC,
+                "https://example.com",
+                false,
+                List.of(InputModality.TEXT),
+                new ModelCost(0, 0, 0, 0),
+                10_000,
+                1_000,
+                null,
+                null,
+                null);
     }
 }

@@ -10,9 +10,9 @@ import java.util.List;
 import com.campusclaw.ai.types.Message;
 import com.campusclaw.ai.types.Model;
 import com.campusclaw.ai.types.UserMessage;
-import com.campusclaw.codingagent.runtimeapi.agent.AgentDirectoryResolver;
+import com.campusclaw.codingagent.common.client.mate.MateCredentials;
+import com.campusclaw.codingagent.runtimeapi.agent.AgentDirectorySnapshotDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
-import com.campusclaw.codingagent.runtimeapi.model.RuntimeModelManager;
 import com.campusclaw.codingagent.runtimeapi.runtime.RuntimeActiveExecution;
 import com.campusclaw.codingagent.runtimeapi.runtime.RuntimeSessionEngineRegistry;
 import com.campusclaw.codingagent.runtimeapi.runtime.RuntimeSessionHolder;
@@ -27,10 +27,6 @@ import org.springframework.stereotype.Component;
  */
 @Component
 public class RuntimeExecutionContextFactory {
-    private final AgentDirectoryResolver agentDirectoryResolver;
-
-    private final RuntimeModelManager modelManager;
-
     private final RuntimeEventQueryService queryService;
 
     private final RuntimeSessionEngineRegistry engineRegistry;
@@ -42,15 +38,11 @@ public class RuntimeExecutionContextFactory {
     private final Clock clock;
 
     public RuntimeExecutionContextFactory(
-            AgentDirectoryResolver agentDirectoryResolver,
-            RuntimeModelManager modelManager,
             RuntimeEventQueryService queryService,
             RuntimeSessionEngineRegistry engineRegistry,
             RuntimeEntryCodec codec,
             RuntimeEventStreamFactory streamFactory,
             Clock clock) {
-        this.agentDirectoryResolver = agentDirectoryResolver;
-        this.modelManager = modelManager;
         this.queryService = queryService;
         this.engineRegistry = engineRegistry;
         this.codec = codec;
@@ -58,14 +50,18 @@ public class RuntimeExecutionContextFactory {
         this.clock = clock;
     }
 
-    public RuntimeExecutionContext create(RuntimeSessionDTO session, String message, List<String> fileIds) {
-        var snapshot = agentDirectoryResolver.resolve(session.getAgentId());
-        Model model = modelManager.resolveModel(snapshot, session.getModelId());
+    public RuntimeExecutionContext create(
+            RuntimeSessionDTO session,
+            AgentDirectorySnapshotDTO snapshot,
+            Model model,
+            String message,
+            List<String> fileIds,
+            MateCredentials credentials) {
         List<Message> history = queryService.restoreHistory(session.getId(), model);
         UserMessage userMessage = codec.toUserMessage(message, fileIds, clock.millis());
         RuntimeActiveExecution execution = new RuntimeActiveExecution(streamFactory.create());
-        RuntimeSessionHolder holder =
-                engineRegistry.register(session.getId(), snapshot, model, session.isThinking(), history, execution);
+        RuntimeSessionHolder holder = engineRegistry.register(
+                session.getId(), snapshot, model, session.isThinking(), history, execution, credentials);
         return new RuntimeExecutionContext(holder, execution, userMessage);
     }
 }
