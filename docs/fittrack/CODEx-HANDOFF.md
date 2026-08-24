@@ -82,6 +82,7 @@ auth.users ─1:1─ profiles ─1:N─┬─ exercises (owner_id=null 系统预
 | M3 UI | 训练执行页、逐组本地落盘、休息计时器、离线记录重试同步 | `63497543`、`df7ebac5` | `flutter test` 9/9、analyze 0、debug APK 通过 |
 | 视觉系统 | 统一主题、首页与计划编辑重设计 | `42dd34ea` | 模拟器登录页实机截图通过 |
 | M4 | 历史/详情、体量与估算 1RM、体重趋势、迁移 `0004` | `986a7d2a` | `flutter test` 11/11、analyze 0、全迁移与 debug APK 通过 |
+| M5（部分） | Android 品牌图标、启动页和窗口底色 | `877d2444` | APK 构建、安装、模拟器启动通过 |
 
 ### Supabase 云端现状（已配置好，别重复配）
 
@@ -100,7 +101,7 @@ auth.users ─1:1─ profiles ─1:N─┬─ exercises (owner_id=null 系统预
 
 ### 立即
 
-1. **部署并核验 Supabase migrations**：管理 API 当前返回 HTTP 544（连接超时），且模拟器/宿主机解析不到项目域名。网络恢复后按 `0001`、`0002`、`0003` 顺序部署，实际执行邮箱注册、计划 CRUD 和 `sync_workout_session`。
+1. **部署并核验 Supabase migrations**：管理 API 当前返回 HTTP 544（连接超时），宿主机解析/SSL 连接项目域名也失败。网络恢复后按 `0001`、`0002`、`0003`、`0004` 顺序部署，实际执行邮箱注册、计划 CRUD、`sync_workout_session` 和体重写入。
 2. **训练执行验收**：首页已展示并支持重试未同步的已结束草稿；真机完成一次含多动作训练，断网后退出重进确认 Drift 草稿存在，恢复网络后确认云端 session、exercise、set 三层数据一致。
 3. **M4 真机验收**：部署 `0004` 后确认历史、详情、体重写入与计算结果同云端事实记录一致。
 4. **开始 M5 打磨**：启动页、图标、加载/错误状态的无网验收与 Android 内测包。
@@ -112,7 +113,7 @@ auth.users ─1:1─ profiles ─1:N─┬─ exercises (owner_id=null 系统预
 | 2 计划 | exercises 表+seed(约50动作) + 自定义动作 + workout_plans/plan_exercises CRUD | **代码完成**；待云端部署和真实 API 验收 |
 | 3 训练执行 ⭐ | workout_sessions/session_exercises/session_sets + 逐组记录 UI + 休息计时器 + **drift 本地缓冲/结束同步** | 主流程代码完成；待断网/联网真机验收与草稿重试入口 |
 | 4 历史统计 | 历史列表/详情 + 体量/估算 1RM + bodyweight_logs + 体重趋势 | **代码完成**；待云端部署和真实记录验收 |
-| 5 打磨 | 空/错/加载态、图标、启动页 | Android 内测无崩溃 |
+| 5 打磨 | 空/错/加载态、图标、启动页 | 图标/启动页代码完成；待真实离线验收和 Android 内测无崩溃 |
 
 每份计划在前一份完成后**基于真实工程重写任务分解**，不要照抄旧计划的行号/结构假设。
 
@@ -150,4 +151,4 @@ curl -s -X POST "https://api.supabase.com/v1/projects/ijvrzxuffzxjtdetulnp/datab
 
 ---
 
-*本交接文档更新于 2026-08-24，基于 `codex/fittrack-m1` @ `986a7d2a` 的状态。*
+*本交接文档更新于 2026-08-24，基于 `codex/fittrack-m1` @ `877d2444` 的状态。*
