@@ -1,6 +1,15 @@
+/*
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
+ */
+
 package com.campusclaw.tui.terminal;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -132,6 +141,7 @@ class TestTerminalTest {
         @Test
         void moveCursorWritesAnsi() {
             terminal.moveCursor(3, 7);
+
             // ANSI CUP is 1-based: row 3 -> 4, col 7 -> 8
             assertTrue(terminal.getFullOutput().contains("\033[4;8H"));
         }
@@ -373,8 +383,8 @@ class TestTerminalTest {
         @Test
         void outputIsUnmodifiable() {
             terminal.write("test");
-            assertThrows(UnsupportedOperationException.class,
-                    () -> terminal.getWrittenOutput().add("hack"));
+            assertThrows(UnsupportedOperationException.class, () -> terminal.getWrittenOutput()
+                    .add("hack"));
         }
 
         @Test

@@ -1,0 +1,147 @@
+/*
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
+ */
+
+package com.huawei.hicampus.mate.matecampusclaw.codingagent.mode.rpc;
+
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.io.PrintStream;
+import java.nio.charset.StandardCharsets;
+import java.util.Map;
+import java.util.Objects;
+
+import com.huawei.hicampus.mate.matecampusclaw.agent.event.AgentEndEvent;
+import com.huawei.hicampus.mate.matecampusclaw.agent.event.MessageEndEvent;
+import com.huawei.hicampus.mate.matecampusclaw.agent.event.MessageStartEvent;
+import com.huawei.hicampus.mate.matecampusclaw.agent.event.MessageUpdateEvent;
+import com.huawei.hicampus.mate.matecampusclaw.agent.event.ToolExecutionEndEvent;
+import com.huawei.hicampus.mate.matecampusclaw.agent.event.ToolExecutionStartEvent;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.session.AgentSession;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+/**
+ * RPC mode: reads JSONL commands from stdin, writes JSONL events to stdout.
+ * Designed for headless operation and external process integration.
+ *
+ * @version [br_eCampusCore 26.0.0, 2026/05/06]
+ * @since [br_eCampusCore 26.0.0]
+ */
+public class RpcMode {
+    private static final Logger log = LoggerFactory.getLogger(RpcMode.class);
+    private static final ObjectMapper MAPPER = new ObjectMapper();
+
+    private final AgentSession session;
+    private final PrintStream out;
+
+    public RpcMode(AgentSession session) {
+        this(session, System.out);
+    }
+
+    RpcMode(AgentSession session, PrintStream out) {
+        this.session = Objects.requireNonNull(session, "session");
+        this.out = Objects.requireNonNull(out, "out");
+    }
+
+    public void run() {
+        // Subscribe to agent events and forward as RPC events
+        session.subscribe(event -> {
+            if (event instanceof MessageStartEvent) {
+                emit(RpcEvent.of("message_start", null));
+            } else if (event instanceof MessageUpdateEvent mu) {
+                var msg = mu.message();
+                if (msg != null) {
+                    emit(RpcEvent.of("message_update", Map.of("message", msg)));
+                }
+            } else if (event instanceof MessageEndEvent me) {
+                emit(RpcEvent.of("message_end", Map.of("message", me.message())));
+            } else if (event instanceof ToolExecutionStartEvent te) {
+                emit(RpcEvent.of("tool_start", Map.of("toolName", te.toolName(), "toolCallId", te.toolCallId())));
+            } else if (event instanceof ToolExecutionEndEvent te) {
+                emit(RpcEvent.of("tool_end", Map.of("toolCallId", te.toolCallId())));
+            } else if (event instanceof AgentEndEvent) {
+                emit(RpcEvent.of("done", null));
+            }
+        });
+
+        // Read commands from stdin
+        try (var reader = new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                line = line.trim();
+                if (line.isEmpty()) {
+                    continue;
+                }
+                try {
+                    var cmd = MAPPER.readValue(line, RpcCommand.class);
+                    handleCommand(cmd);
+                } catch (Exception e) {
+                    emit(RpcEvent.error(null, "Invalid command: " + e.getMessage()));
+                }
+            }
+        } catch (Exception e) {
+            log.error("RPC mode error", e);
+        }
+    }
+
+    private void handleCommand(RpcCommand cmd) {
+        try {
+            switch (cmd.type()) {
+                case "prompt" -> {
+                    if (cmd.message() != null) {
+                        session.prompt(cmd.message());
+                        emit(RpcEvent.response(cmd.id(), "ack", null));
+                    }
+                }
+                case "steer" -> {
+                    if (cmd.message() != null) {
+                        session.steer(cmd.message());
+                        emit(RpcEvent.response(cmd.id(), "ack", null));
+                    }
+                }
+                case "abort" -> {
+                    session.abort();
+                    emit(RpcEvent.response(cmd.id(), "ack", null));
+                }
+                case "get_state" -> {
+                    emit(RpcEvent.response(
+                            cmd.id(),
+                            "state",
+                            Map.of(
+                                    "model", session.getModelId(),
+                                    "isStreaming", session.isStreaming())));
+                }
+                case "set_model" -> {
+                    if (cmd.model() != null) {
+                        session.setModel(cmd.model());
+                        emit(RpcEvent.response(cmd.id(), "ack", null));
+                    }
+                }
+                case "new_session" -> {
+                    session.newSession();
+                    emit(RpcEvent.response(cmd.id(), "ack", null));
+                }
+                default -> emit(RpcEvent.error(cmd.id(), "Unknown command: " + cmd.type()));
+            }
+        } catch (Exception e) {
+            emit(RpcEvent.error(cmd.id(), e.getMessage()));
+        }
+    }
+
+    /*
+     * RPC mode's contract is "newline-delimited JSON events on stdout". External
+     * processes parse this stream line-by-line, so events go to the injected
+     * PrintStream (defaults to stdout) and never to a logger.
+     */
+    private void emit(RpcEvent event) {
+        try {
+            out.println(MAPPER.writeValueAsString(event));
+            out.flush();
+        } catch (Exception e) {
+            log.warn("Failed to emit RPC event", e);
+        }
+    }
+}

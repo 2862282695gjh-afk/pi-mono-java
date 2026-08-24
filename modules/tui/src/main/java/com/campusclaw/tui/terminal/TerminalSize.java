@@ -1,3 +1,7 @@
+/*
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
+ */
+
 package com.campusclaw.tui.terminal;
 
 /**
@@ -5,6 +9,8 @@ package com.campusclaw.tui.terminal;
  *
  * @param width  the number of columns
  * @param height the number of rows
+ *
+ * @version [br_eCampusCore 26.0.0, 2026/05/06]
+ * @since [br_eCampusCore 26.0.0]
  */
-public record TerminalSize(int width, int height) {
-}
+public record TerminalSize(int width, int height) {}

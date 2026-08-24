@@ -1,3 +1,7 @@
+/*
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
+ */
+
 package com.campusclaw.tui;
 
 import java.util.ArrayList;
@@ -19,6 +23,9 @@ import java.util.Objects;
  * RenderDiff diff = renderer.computeDiff(lines);
  * // Apply diff to terminal...
  * }</pre>
+ *
+ * @version [br_eCampusCore 26.0.0, 2026/05/06]
+ * @since [br_eCampusCore 26.0.0]
  */
 public class DiffRenderer {
 
@@ -69,6 +76,8 @@ public class DiffRenderer {
 
     /**
      * Returns the last rendered frame.
+     *
+     * @return the cached lines from the most recent render call
      */
     public List<String> getLastRendered() {
         return lastRendered;

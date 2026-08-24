@@ -1,3 +1,7 @@
+/*
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
+ */
+
 package com.campusclaw.codingagent.tool.bash;
 
 /**
@@ -6,10 +10,8 @@ package com.campusclaw.codingagent.tool.bash;
  * @param exitCode the process exit code, or null if the process was killed/timed out
  * @param stdout   captured standard output
  * @param stderr   captured standard error
+ *
+ * @version [br_eCampusCore 26.0.0, 2026/05/06]
+ * @since [br_eCampusCore 26.0.0]
  */
-public record BashExecutionResult(
-        Integer exitCode,
-        String stdout,
-        String stderr
-) {
-}
+public record BashExecutionResult(Integer exitCode, String stdout, String stderr) {}

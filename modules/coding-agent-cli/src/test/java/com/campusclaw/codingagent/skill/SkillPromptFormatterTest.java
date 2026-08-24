@@ -1,6 +1,11 @@
+/*
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
+ */
+
 package com.campusclaw.codingagent.skill;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.file.Path;
 import java.util.List;
@@ -11,9 +16,7 @@ import org.junit.jupiter.api.Test;
 class SkillPromptFormatterTest {
 
     private Skill skill(String name, String description, String filePath) {
-        return new Skill(name, description,
-                Path.of(filePath), Path.of(filePath).getParent(),
-                "project", false);
+        return new Skill(name, description, Path.of(filePath), Path.of(filePath).getParent(), "project", false);
     }
 
     // -------------------------------------------------------------------
@@ -25,9 +28,7 @@ class SkillPromptFormatterTest {
 
         @Test
         void formatsAvailableSkillsXml() {
-            List<Skill> skills = List.of(
-                    skill("commit", "Create git commits", "/skills/commit/SKILL.md")
-            );
+            List<Skill> skills = List.of(skill("commit", "Create git commits", "/skills/commit/SKILL.md"));
 
             String result = SkillPromptFormatter.format(skills);
 
@@ -42,13 +43,23 @@ class SkillPromptFormatterTest {
         void formatsMultipleSkills() {
             List<Skill> skills = List.of(
                     skill("commit", "Git commits", "/skills/commit/SKILL.md"),
-                    skill("review", "Code review", "/skills/review/SKILL.md")
-            );
+                    skill("review", "Code review", "/skills/review/SKILL.md"));
 
             String result = SkillPromptFormatter.format(skills);
 
             assertTrue(result.contains("<name>commit</name>"));
             assertTrue(result.contains("<name>review</name>"));
+        }
+
+        @Test
+        void managedRuntimeRequiresActivationAndHidesFileLocation() {
+            List<Skill> skills = List.of(skill("commit", "Git commits", "/skills/commit/SKILL.md"));
+
+            String result = SkillPromptFormatter.format(skills, true);
+
+            assertTrue(result.contains("call activate_skill"));
+            assertTrue(result.contains("<name>commit</name>"));
+            assertTrue(!result.contains("<location>"));
         }
 
         @Test
@@ -96,9 +107,7 @@ class SkillPromptFormatterTest {
 
         @Test
         void escapesSpecialCharsInFormattedSkill() {
-            List<Skill> skills = List.of(
-                    skill("test", "desc & <special> \"chars\"", "/path/SKILL.md")
-            );
+            List<Skill> skills = List.of(skill("test", "desc & <special> \"chars\"", "/path/SKILL.md"));
 
             String result = SkillPromptFormatter.format(skills);
 

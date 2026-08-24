@@ -1,3 +1,7 @@
+/*
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
+ */
+
 package com.campusclaw.ai.types;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
@@ -9,11 +13,12 @@ import com.fasterxml.jackson.annotation.JsonProperty;
  * @param output     cost per million output tokens
  * @param cacheRead  cost per million cache-read tokens
  * @param cacheWrite cost per million cache-write tokens
+ *
+ * @version [br_eCampusCore 26.0.0, 2026/05/06]
+ * @since [br_eCampusCore 26.0.0]
  */
 public record ModelCost(
-    @JsonProperty("input") double input,
-    @JsonProperty("output") double output,
-    @JsonProperty("cacheRead") double cacheRead,
-    @JsonProperty("cacheWrite") double cacheWrite
-) {
-}
+        @JsonProperty("input") double input,
+        @JsonProperty("output") double output,
+        @JsonProperty("cacheRead") double cacheRead,
+        @JsonProperty("cacheWrite") double cacheWrite) {}

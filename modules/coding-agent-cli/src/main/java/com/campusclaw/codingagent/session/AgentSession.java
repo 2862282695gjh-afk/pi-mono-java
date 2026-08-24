@@ -1,20 +1,30 @@
+/*
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
+ */
+
 package com.campusclaw.codingagent.session;
 
 import java.nio.file.Path;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 
 import com.campusclaw.agent.Agent;
 import com.campusclaw.agent.event.AgentEventListener;
+import com.campusclaw.agent.tool.AfterToolCallContext;
+import com.campusclaw.agent.tool.AfterToolCallResult;
 import com.campusclaw.agent.tool.AgentTool;
 import com.campusclaw.ai.CampusClawAiService;
 import com.campusclaw.ai.model.ModelRegistry;
 import com.campusclaw.ai.types.Message;
 import com.campusclaw.ai.types.Model;
 import com.campusclaw.ai.types.Provider;
+import com.campusclaw.ai.types.TextContent;
 import com.campusclaw.ai.types.UserMessage;
 import com.campusclaw.codingagent.config.AppPaths;
 import com.campusclaw.codingagent.context.ContextFileLoader;
@@ -24,10 +34,24 @@ import com.campusclaw.codingagent.prompt.PromptTemplateEntry;
 import com.campusclaw.codingagent.prompt.PromptTemplateLoader;
 import com.campusclaw.codingagent.prompt.SystemPromptBuilder;
 import com.campusclaw.codingagent.prompt.SystemPromptConfig;
+import com.campusclaw.codingagent.runtime.AgentBindingResolver.ChildAgentSummary;
+import com.campusclaw.codingagent.runtime.AgentRuntimeManager;
+import com.campusclaw.codingagent.runtime.DelegationState;
+import com.campusclaw.codingagent.runtime.PreparedAgentRuntime;
 import com.campusclaw.codingagent.skill.Skill;
 import com.campusclaw.codingagent.skill.SkillExpander;
 import com.campusclaw.codingagent.skill.SkillLoader;
 import com.campusclaw.codingagent.skill.SkillRegistry;
+import com.campusclaw.codingagent.skill.SkillStateStore;
+import com.campusclaw.codingagent.tool.catalog.ControlTool;
+import com.campusclaw.codingagent.tool.catalog.ToolCatalog;
+import com.campusclaw.codingagent.tool.catalog.ToolRefreshRequest;
+import com.campusclaw.codingagent.tool.catalog.ToolSelection;
+import com.campusclaw.codingagent.tool.delegation.InvokeAgentTool;
+import com.campusclaw.codingagent.tool.skill.ActivateSkillTool;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Manages a single agent session lifecycle: initialization, prompt handling,
@@ -36,8 +60,13 @@ import com.campusclaw.codingagent.skill.SkillRegistry;
  * <p>Coordinates {@link Agent}, {@link ModelRegistry}, {@link SkillLoader},
  * {@link SystemPromptBuilder}, and {@link SkillExpander} to provide a cohesive
  * session abstraction for the coding agent CLI.
+ *
+ * @version [br_eCampusCore 26.0.0, 2026/08/17]
+ * @since [br_eCampusCore 26.0.0]
  */
 public class AgentSession {
+
+    private static final Logger log = LoggerFactory.getLogger(AgentSession.class);
 
     static final String DEFAULT_MODEL = "claude-sonnet-4-20250514";
     static final Path USER_AGENT_DIR = AppPaths.USER_AGENT_DIR;
@@ -49,15 +78,39 @@ public class AgentSession {
     private final SystemPromptBuilder promptBuilder;
     private final SkillLoader skillLoader;
     private final SkillExpander skillExpander;
-    private final List<AgentTool> tools;
+    private List<AgentTool> tools;
     private final ContextFileLoader contextFileLoader;
     private final PromptTemplateLoader promptTemplateLoader;
     private SessionManager sessionManager;
+    private ToolCatalog toolCatalog;
+    private volatile ToolSelection toolSelection = ToolSelection.all();
+    private Path initializedCwd;
+    private List<AgentTool> locallyVisibleTools = List.of();
+    private List<AgentTool> baseTools = List.of();
+
+    /**
+     * 会话私有工具(构造传入但目录不提供的,如 {@code MateToolsetFactory}
+     * 产出的 Mate 工具对)。目录刷新只替换目录来源的工具,这些实例按会话
+     * 保留——首次刷新时按"不在目录快照名集中"识别,此后每次刷新后追加。
+     */
+    private List<AgentTool> sessionLocalTools;
+
+    private Map<String, List<String>> managedSkillToolNames = Map.of();
+    private PreparedAgentRuntime preparedRuntime;
+    private AgentRuntimeManager agentRuntimeManager;
+    private DelegationState delegationState;
+    private String initializedModelId;
+    private String initializedCustomPrompt;
+    private final Object runtimeLifecycleLock = new Object();
+    private boolean runtimePromptActive;
+    private boolean runtimeReloadInProgress;
+    private boolean runtimeReloadPending;
 
     private final SkillRegistry skillRegistry = new SkillRegistry();
     private List<PromptTemplateEntry> promptTemplates = List.of();
     private Agent agent;
     private boolean initialized;
+    private com.campusclaw.agent.subagent.SubAgentRegistry subAgentRegistry;
 
     public AgentSession(
             CampusClawAiService piAiService,
@@ -65,16 +118,65 @@ public class AgentSession {
             SystemPromptBuilder promptBuilder,
             SkillLoader skillLoader,
             SkillExpander skillExpander,
-            List<AgentTool> tools
-    ) {
+            List<AgentTool> tools) {
         this.piAiService = Objects.requireNonNull(piAiService, "piAiService");
         this.modelRegistry = Objects.requireNonNull(modelRegistry, "modelRegistry");
         this.promptBuilder = Objects.requireNonNull(promptBuilder, "promptBuilder");
         this.skillLoader = Objects.requireNonNull(skillLoader, "skillLoader");
         this.skillExpander = Objects.requireNonNull(skillExpander, "skillExpander");
-        this.tools = Objects.requireNonNull(tools, "tools");
+        this.tools = List.copyOf(Objects.requireNonNull(tools, "tools"));
         this.contextFileLoader = new ContextFileLoader();
         this.promptTemplateLoader = new PromptTemplateLoader();
+    }
+
+    /**
+     * Enables dynamic tool resolution for this session.
+     *
+     * @param toolCatalog the catalog to refresh and resolve
+     * @param toolSelection the visibility selection for this session
+     */
+    public void setToolCatalog(ToolCatalog toolCatalog, ToolSelection toolSelection) {
+        this.toolCatalog = toolCatalog;
+        setToolSelection(toolSelection);
+    }
+
+    /**
+     * Updates the visibility filter used by the next catalog refresh.
+     *
+     * @param toolSelection current effective selection
+     */
+    public void setToolSelection(ToolSelection toolSelection) {
+        this.toolSelection = toolSelection != null ? toolSelection : ToolSelection.all();
+    }
+
+    /**
+     * Enables the managed Agent/Skill runtime for this session.
+     *
+     * @param runtime prepared local Agent runtime
+     * @param runtimeManager runtime API/cache manager
+     * @throws IllegalStateException when called after initialization
+     */
+    public void setAgentRuntime(PreparedAgentRuntime runtime, AgentRuntimeManager runtimeManager) {
+        if (initialized) {
+            throw new IllegalStateException("Agent runtime must be set before session initialization");
+        }
+        this.preparedRuntime = Objects.requireNonNull(runtime, "runtime");
+        this.agentRuntimeManager = Objects.requireNonNull(runtimeManager, "runtimeManager");
+    }
+
+    /**
+     * 为本会话启用父到子 Agent 委派。设置后，resolver 找到有效子绑定且深度
+     * 上限允许下一跳时即暴露 {@code invoke_agent}；执行经会话级的工具调用后
+     * 处理器进行。
+     *
+     * @param delegationState 链路的调度器、身份与协作者
+     * @throws IllegalStateException 初始化之后调用时抛出
+     */
+    public void setDelegationState(DelegationState delegationState) {
+        if (initialized) {
+            throw new IllegalStateException("Delegation state must be set before session initialization");
+        }
+        this.delegationState = Objects.requireNonNull(delegationState, "delegationState");
     }
 
     /**
@@ -94,10 +196,16 @@ public class AgentSession {
         // 1. Resolve model
         String modelId = config.model() != null ? config.model() : DEFAULT_MODEL;
         Model model = resolveModel(modelId);
+        initializedModelId = model.id();
 
         // 2. Load skills (user-level + project-level)
         Path cwd = config.cwd() != null ? config.cwd() : Path.of(System.getProperty("user.dir"));
+        initializedCwd = cwd;
+        initializedCustomPrompt = config.customPrompt();
+        refreshTools(cwd);
+        locallyVisibleTools = List.copyOf(tools);
         loadSkills(cwd);
+        configureRuntimeTools();
 
         // 3. Load context files (AGENTS.md / CLAUDE.md)
         List<ContextFile> contextFiles = contextFileLoader.loadProjectContextFiles(cwd, USER_AGENT_DIR);
@@ -114,16 +222,23 @@ public class AgentSession {
         Map<String, String> env = buildEnvironmentMap();
 
         SystemPromptConfig promptConfig = new SystemPromptConfig(
-                tools, visibleSkills, cwd, config.customPrompt(), env,
-                contextFiles, systemPromptOverride, appendSystemPrompt
-        );
+                tools,
+                visibleSkills,
+                cwd,
+                config.customPrompt(),
+                env,
+                contextFiles,
+                systemPromptOverride,
+                appendSystemPrompt,
+                preparedRuntime != null);
         String systemPrompt = promptBuilder.build(promptConfig);
 
         // 7. Create and configure Agent
         agent = createAgent(piAiService);
+        agent.setAfterToolCall(this::handleAfterToolCall);
         agent.setModel(model);
         agent.setSystemPrompt(systemPrompt);
-        agent.setTools(tools);
+        agent.setTools(baseTools);
 
         initialized = true;
     }
@@ -142,9 +257,27 @@ public class AgentSession {
 
         // Expand prompt templates first (/templatename args...)
         String expanded = expandPromptTemplate(userInput);
-        // Then expand skill commands (/skill:name args...)
-        expanded = skillExpander.expand(expanded, skillRegistry);
-        return agent.prompt(expanded);
+
+        if (!beginRuntimePrompt()) {
+            return CompletableFuture.failedFuture(new IllegalStateException("Agent is already running"));
+        }
+        try {
+            if (preparedRuntime == null) {
+                expanded = skillExpander.expand(expanded, skillRegistry);
+            } else {
+                agent.setTools(baseTools);
+                var explicitSkill = SkillExpander.extractSkillName(expanded);
+                if (explicitSkill.isPresent()) {
+                    activateRuntimeSkill(explicitSkill.get());
+                }
+                expanded = skillExpander.expand(expanded, skillRegistry);
+            }
+            CompletableFuture<Void> promptFuture = agent.prompt(expanded);
+            return promptFuture.whenComplete((ignored, failure) -> resetRuntimePromptState());
+        } catch (RuntimeException e) {
+            resetRuntimePromptState();
+            return CompletableFuture.failedFuture(e);
+        }
     }
 
     /**
@@ -155,6 +288,22 @@ public class AgentSession {
     public void abort() {
         requireInitialized();
         agent.abort();
+        var registry = subAgentRegistry;
+        if (registry != null) {
+            registry.cancelAll("parent-abort");
+        }
+    }
+
+    /**
+     * Attaches a {@link com.campusclaw.agent.subagent.SubAgentRegistry} so {@link #abort()} can
+     * cascade-cancel any open sub-agent sessions. Without this, sub-agent cancellation still
+     * happens through the per-tool {@code CancellationToken}, but stale sessions across edge cases
+     * (e.g. between turns) would be missed.
+     *
+     * @param registry the registry
+     */
+    public void setSubAgentRegistry(com.campusclaw.agent.subagent.SubAgentRegistry registry) {
+        this.subAgentRegistry = registry;
     }
 
     /**
@@ -181,6 +330,8 @@ public class AgentSession {
 
     /**
      * Returns the skill registry for this session.
+     *
+     * @return the result
      */
     public SkillRegistry getSkillRegistry() {
         return skillRegistry;
@@ -188,6 +339,8 @@ public class AgentSession {
 
     /**
      * Returns whether this session has been initialized.
+     *
+     * @return the result
      */
     public boolean isInitialized() {
         return initialized;
@@ -220,6 +373,7 @@ public class AgentSession {
     /**
      * Returns the current model ID, or {@code "unknown"} if no model is set.
      *
+     * @return the current model identifier, or {@code "unknown"} when unset
      * @throws IllegalStateException if the session is not initialized
      */
     public String getModelId() {
@@ -229,13 +383,44 @@ public class AgentSession {
     }
 
     /**
+     * Returns the working directory used to initialize this session.
+     *
+     * @return initialized working directory
+     */
+    public Path getInitializedCwd() {
+        requireInitialized();
+        return initializedCwd;
+    }
+
+    /**
      * Returns whether the agent is currently streaming a response.
      *
+     * @return {@code true} if a streaming response is in progress
      * @throws IllegalStateException if the session is not initialized
      */
     public boolean isStreaming() {
         requireInitialized();
         return agent.getState().isStreaming();
+    }
+
+    /**
+     * Returns whether this session uses a CampusMate-managed Agent runtime.
+     *
+     * @return {@code true} for an Agent-scoped managed session
+     */
+    public boolean isManagedRuntime() {
+        return preparedRuntime != null;
+    }
+
+    /**
+     * Returns whether a turn owns this session's mutable prompt/tool state.
+     *
+     * @return {@code true} while a prompt is running
+     */
+    public boolean isRuntimePromptActive() {
+        synchronized (runtimeLifecycleLock) {
+            return runtimePromptActive;
+        }
     }
 
     /**
@@ -266,6 +451,8 @@ public class AgentSession {
 
     /**
      * Returns the loaded prompt templates for this session.
+     *
+     * @return the result
      */
     public List<PromptTemplateEntry> getPromptTemplates() {
         return promptTemplates;
@@ -273,6 +460,8 @@ public class AgentSession {
 
     /**
      * Sets the session manager for persistence. Must be called before initialize().
+     *
+     * @param sessionManager the sessionManager
      */
     public void setSessionManager(SessionManager sessionManager) {
         this.sessionManager = sessionManager;
@@ -280,6 +469,8 @@ public class AgentSession {
 
     /**
      * Returns the session manager, or null if not set.
+     *
+     * @return the result
      */
     public SessionManager getSessionManager() {
         return sessionManager;
@@ -293,10 +484,54 @@ public class AgentSession {
      */
     public void reload(String customPrompt) {
         requireInitialized();
-        Path cwd = Path.of(System.getProperty("user.dir"));
+        String effectivePrompt = customPrompt != null ? customPrompt : initializedCustomPrompt;
+        claimRuntimeReloadOrThrow();
+        runClaimedRuntimeReload(effectivePrompt, true, true);
+    }
+
+    /**
+     * Reloads session-facing state after the shared catalog has already been refreshed.
+     */
+    public void reloadFromCatalogSnapshot() {
+        requireInitialized();
+        claimRuntimeReloadOrThrow();
+        runClaimedRuntimeReload(initializedCustomPrompt, false, true);
+    }
+
+    /**
+     * Refreshes this session with its own catalog cwd, or queues the refresh at the
+     * current managed turn boundary.
+     *
+     * @return {@code true} when reloaded immediately; {@code false} when queued
+     */
+    public boolean reloadToolsWhenIdle() {
+        requireInitialized();
+        synchronized (runtimeLifecycleLock) {
+            if (runtimePromptActive || runtimeReloadInProgress) {
+                runtimeReloadPending = true;
+                return false;
+            }
+            runtimeReloadInProgress = true;
+        }
+        runClaimedRuntimeReload(initializedCustomPrompt, true, true);
+        return true;
+    }
+
+    private void reloadInternal(String customPrompt, boolean refreshCatalog) {
+        requireInitialized();
+        Path cwd = initializedCwd != null ? initializedCwd : Path.of(System.getProperty("user.dir"));
+        if (toolCatalog != null) {
+            if (refreshCatalog) {
+                refreshTools(cwd);
+            } else {
+                resolveToolsFromCatalogSnapshot();
+            }
+            locallyVisibleTools = List.copyOf(tools);
+        }
 
         // Reload skills
         loadSkills(cwd);
+        configureRuntimeTools();
 
         // Reload prompt templates
         promptTemplates = promptTemplateLoader.load(cwd, USER_AGENT_DIR);
@@ -310,23 +545,38 @@ public class AgentSession {
         Map<String, String> env = buildEnvironmentMap();
 
         SystemPromptConfig promptConfig = new SystemPromptConfig(
-                tools, visibleSkills, cwd, customPrompt, env,
-                contextFiles, systemPromptOverride, appendSystemPrompt
-        );
+                tools,
+                visibleSkills,
+                cwd,
+                customPrompt,
+                env,
+                contextFiles,
+                systemPromptOverride,
+                appendSystemPrompt,
+                preparedRuntime != null);
         String systemPrompt = promptBuilder.build(promptConfig);
         agent.setSystemPrompt(systemPrompt);
+        agent.setTools(baseTools);
+        initializedCustomPrompt = customPrompt;
     }
 
-    /** Overload for backward compatibility. */
+    /**
+     * Overload for backward compatibility.
+     */
     public void reload() {
         reload(null);
     }
 
     /**
      * Expands a prompt template command like "/templatename arg1 arg2".
+     *
+     * @param input the input
+     * @return the result
      */
     String expandPromptTemplate(String input) {
-        if (!input.startsWith("/")) return input;
+        if (!input.startsWith("/")) {
+            return input;
+        }
 
         int spaceIdx = input.indexOf(' ');
         String name = spaceIdx >= 0 ? input.substring(1, spaceIdx) : input.substring(1);
@@ -377,6 +627,47 @@ public class AgentSession {
         return new Agent(aiService);
     }
 
+    private void refreshTools(Path cwd) {
+        if (toolCatalog == null) {
+            return;
+        }
+        toolCatalog.refresh(new ToolRefreshRequest(cwd));
+        tools = List.copyOf(mergeSessionLocalTools(toolCatalog.resolve(toolSelection)));
+    }
+
+    private void resolveToolsFromCatalogSnapshot() {
+        if (toolCatalog == null) {
+            return;
+        }
+        synchronized (toolCatalog) {
+            tools = List.copyOf(mergeSessionLocalTools(toolCatalog.resolve(toolSelection)));
+        }
+    }
+
+    /**
+     * 将会话私有工具合并进目录解析结果:首次调用时按目录快照名集从当前
+     * 工具列表识别出会话私有工具(目录刷新不会再生它们),此后每次目录
+     * 刷新/重解析后原样追加,保证 initialize 后仍可见。
+     *
+     * @param catalogResolved 目录本次解析出的工具列表
+     * @return 合并后的工具列表
+     */
+    private List<AgentTool> mergeSessionLocalTools(List<AgentTool> catalogResolved) {
+        if (sessionLocalTools == null) {
+            java.util.Set<String> catalogNames =
+                    catalogResolved.stream().map(AgentTool::name).collect(java.util.stream.Collectors.toSet());
+            sessionLocalTools = tools.stream()
+                    .filter(tool -> !catalogNames.contains(tool.name()))
+                    .toList();
+        }
+        if (sessionLocalTools.isEmpty()) {
+            return catalogResolved;
+        }
+        var merged = new java.util.ArrayList<AgentTool>(catalogResolved);
+        merged.addAll(sessionLocalTools);
+        return merged;
+    }
+
     /**
      * Resolves a model from a pattern string.
      * Supports:
@@ -384,6 +675,10 @@ public class AgentSession {
      * - Provider/ID: "zai/glm-5"
      * - Fuzzy substring: "sonnet" matches "claude-sonnet-4-20250514"
      * - Thinking suffix: "sonnet:high" (thinking level is stripped, not applied here)
+     *
+     * @param modelId the model pattern (id, provider/id, or fuzzy substring; may include a thinking suffix)
+     * @return the resolved {@link Model}
+     * @throws IllegalArgumentException when no model matches the given pattern
      */
     Model resolveModel(String modelId) {
         // Strip thinking level suffix (e.g., "sonnet:high" → "sonnet")
@@ -394,10 +689,10 @@ public class AgentSession {
         Provider targetProvider = null;
         if (pattern.contains("/")) {
             String[] parts = pattern.split("/", 2);
-            String providerStr = parts[0].toLowerCase();
+            String providerStr = parts[0].toLowerCase(Locale.ROOT);
             pattern = parts[1];
             for (Provider p : modelRegistry.getProviders()) {
-                if (p.value().toLowerCase().contains(providerStr)) {
+                if (p.value().toLowerCase(Locale.ROOT).contains(providerStr)) {
                     targetProvider = p;
                     break;
                 }
@@ -406,42 +701,265 @@ public class AgentSession {
 
         // 1. Exact match
         for (Provider provider : modelRegistry.getProviders()) {
-            if (targetProvider != null && provider != targetProvider) continue;
+            if (targetProvider != null && provider != targetProvider) {
+                continue;
+            }
             var model = modelRegistry.getModel(provider, pattern);
-            if (model.isPresent()) return model.get();
+            if (model.isPresent()) {
+                return model.get();
+            }
         }
 
         // 2. Fuzzy substring match on id and name
-        String lowerPattern = pattern.toLowerCase();
+        String lowerPattern = pattern.toLowerCase(Locale.ROOT);
         Model bestMatch = null;
         for (Provider provider : modelRegistry.getProviders()) {
-            if (targetProvider != null && provider != targetProvider) continue;
+            if (targetProvider != null && provider != targetProvider) {
+                continue;
+            }
             for (Model m : modelRegistry.getModels(provider)) {
-                if (m.id().toLowerCase().contains(lowerPattern)
-                        || m.name().toLowerCase().contains(lowerPattern)) {
+                if (m.id().toLowerCase(Locale.ROOT).contains(lowerPattern)
+                        || m.name().toLowerCase(Locale.ROOT).contains(lowerPattern)) {
                     if (bestMatch == null || m.id().length() < bestMatch.id().length()) {
                         bestMatch = m; // Prefer shorter ID (more specific match)
                     }
                 }
             }
         }
-        if (bestMatch != null) return bestMatch;
+        if (bestMatch != null) {
+            return bestMatch;
+        }
 
-        throw new IllegalArgumentException("Unknown model: " + modelId
-                + ". Use --list-models to see available models.");
+        throw new IllegalArgumentException(
+                "Unknown model: " + modelId + ". Use --list-models to see available models.");
     }
 
     void loadSkills(Path cwd) {
         skillRegistry.clear();
+        managedSkillToolNames = Map.of();
 
-        // User-level skills: ~/.campusclaw/agent/skills/
-        List<Skill> userSkills = skillLoader.loadFromDirectory(USER_SKILLS_DIR, "user");
-        skillRegistry.registerAll(userSkills);
+        if (preparedRuntime == null) {
+            // User-level skills: ~/.campusclaw/agent/skills/
+            // Filter out skills explicitly disabled via the REST API.
+            java.util.Set<String> disabled = new SkillStateStore(userSkillsDir()).loadDisabled();
+            List<Skill> userSkills = skillLoader.loadFromDirectory(userSkillsDir(), "user").stream()
+                    .filter(s -> !disabled.contains(s.name()))
+                    .toList();
+            skillRegistry.registerAll(userSkills);
+        }
 
         // Project-level skills: {cwd}/.campusclaw/skills/
         Path projectSkillsDir = cwd.resolve(PROJECT_SKILLS_SUBDIR);
+        if (preparedRuntime != null) {
+            List<Skill> managedSkills = new java.util.ArrayList<>();
+            Map<String, List<String>> toolNames = new LinkedHashMap<>();
+            for (var metadata : preparedRuntime.skills()) {
+                managedSkills.add(skillLoader.loadFromFile(
+                        projectSkillsDir.resolve(metadata.name()).resolve("SKILL.md"), "project"));
+                toolNames.put(
+                        metadata.name(), agentRuntimeManager.loadSkillToolNames(preparedRuntime, metadata.name()));
+            }
+            managedSkillToolNames = Map.copyOf(toolNames);
+            skillRegistry.registerAll(managedSkills);
+            return;
+        }
         List<Skill> projectSkills = skillLoader.loadFromDirectory(projectSkillsDir, "project");
         skillRegistry.registerAll(projectSkills);
+    }
+
+    private void configureRuntimeTools() {
+        if (preparedRuntime == null) {
+            // Control tools only apply to managed runtimes; keep them out of plain sessions.
+            tools = tools.stream()
+                    .filter(tool -> !(tool instanceof ControlTool))
+                    .toList();
+            baseTools = List.copyOf(tools);
+            return;
+        }
+        List<ChildAgentSummary> delegationCandidates = delegationCandidates();
+        Set<String> allowedAgentTools = Set.copyOf(preparedRuntime.allowedAgentToolNames());
+        var configured = new LinkedHashMap<String, AgentTool>();
+
+        // 控制工具不受远端 Agent 允许列表约束，但仍遵循产出 locallyVisibleTools
+        // 的本地 ToolSelection。invoke_agent 额外受 resolver 校验通过的子候选门控。
+        locallyVisibleTools.stream()
+                .filter(tool -> allowedAgentTools.contains(tool.name())
+                        || isSessionControlTool(tool, !delegationCandidates.isEmpty()))
+                .map(tool -> adornDelegationTool(tool, delegationCandidates))
+                .forEach(tool -> configured.put(tool.name(), tool));
+        tools = List.copyOf(configured.values());
+        baseTools = tools;
+    }
+
+    private List<ChildAgentSummary> delegationCandidates() {
+        if (delegationState == null) {
+            return List.of();
+        }
+        return delegationState.dispatcher().resolveCandidates(delegationState, preparedRuntime);
+    }
+
+    private static boolean isSessionControlTool(AgentTool tool, boolean delegationEnabled) {
+        if (tool instanceof ActivateSkillTool) {
+            return true;
+        }
+        return delegationEnabled && tool instanceof InvokeAgentTool;
+    }
+
+    private static AgentTool adornDelegationTool(AgentTool tool, List<ChildAgentSummary> candidates) {
+        if (tool instanceof InvokeAgentTool invoke && !candidates.isEmpty()) {
+            return invoke.describedWith(candidates);
+        }
+        return tool;
+    }
+
+    /**
+     * Session-level handler invoked after every tool call. Completes a
+     * {@code activate_skill} control-tool call by attaching the Skill's bound
+     * tools to the agent and replacing the tool's acknowledgement with the
+     * Skill instructions, so the next model turn sees the activated runtime.
+     *
+     * @param context pipeline context of the finished tool call
+     * @return content override carrying the Skill instructions, or
+     *         {@link AfterToolCallResult#noOverride()} for unrelated calls
+     */
+    private AfterToolCallResult handleAfterToolCall(AfterToolCallContext context) {
+        if (preparedRuntime == null || context.isError()) {
+            return AfterToolCallResult.noOverride();
+        }
+        if (ActivateSkillTool.NAME.equals(context.toolCall().name())) {
+            return handleActivateSkillToolCall(context);
+        }
+        if (InvokeAgentTool.NAME.equals(context.toolCall().name())) {
+            return handleDelegationToolCall(context);
+        }
+        return AfterToolCallResult.noOverride();
+    }
+
+    private AfterToolCallResult handleActivateSkillToolCall(AfterToolCallContext context) {
+        Object value = context.args().get("skillName");
+        if (!(value instanceof String skillName) || skillName.isBlank()) {
+            return AfterToolCallResult.noOverride();
+        }
+        String instructions = activateRuntimeSkill(skillName);
+        return new AfterToolCallResult(List.of(new TextContent(instructions)), null, null);
+    }
+
+    private AfterToolCallResult handleDelegationToolCall(AfterToolCallContext context) {
+        if (delegationState == null) {
+            return delegationError("Agent delegation is not available in this session");
+        }
+        Object agentId = context.args().get("agentId");
+        Object task = context.args().get("task");
+        if (!(agentId instanceof String targetId) || targetId.isBlank()) {
+            return delegationError("invoke_agent requires an agentId");
+        }
+        if (!(task instanceof String taskText) || taskText.isBlank()) {
+            return delegationError("invoke_agent requires a task");
+        }
+        try {
+            String answer = delegationState
+                    .dispatcher()
+                    .dispatch(delegationState, preparedRuntime, targetId, taskText, initializedModelId);
+            return new AfterToolCallResult(List.of(new TextContent(answer)), null, null);
+        } catch (RuntimeException e) {
+            return delegationError("Agent delegation failed: " + e.getMessage());
+        }
+    }
+
+    private static AfterToolCallResult delegationError(String message) {
+        return new AfterToolCallResult(List.of(new TextContent(message)), null, true);
+    }
+
+    private String activateRuntimeSkill(String skillName) {
+        Skill skill = skillRegistry
+                .getByName(skillName)
+                .orElseThrow(() -> new IllegalArgumentException("Unknown Skill: " + skillName));
+        List<String> requestedTools = managedSkillToolNames.get(skillName);
+        if (requestedTools == null) {
+            throw new IllegalStateException("Skill tools were not loaded: " + skillName);
+        }
+        Map<String, AgentTool> localTools = new LinkedHashMap<>();
+        locallyVisibleTools.forEach(tool -> localTools.put(tool.name(), tool));
+        List<String> missingTools = requestedTools.stream()
+                .filter(toolName -> !localTools.containsKey(toolName))
+                .toList();
+        if (!missingTools.isEmpty()) {
+            throw new IllegalStateException(
+                    "Skill tools are not installed locally: " + String.join(", ", missingTools));
+        }
+
+        String instructions = skillExpander.expand(skill, null);
+        var activated = new LinkedHashMap<String, AgentTool>();
+        baseTools.forEach(tool -> activated.put(tool.name(), tool));
+        requestedTools.forEach(toolName -> activated.put(toolName, localTools.get(toolName)));
+        agent.setTools(List.copyOf(activated.values()));
+        return instructions;
+    }
+
+    private void resetRuntimePromptState() {
+        boolean reloadPending;
+        synchronized (runtimeLifecycleLock) {
+            agent.setTools(baseTools);
+            runtimePromptActive = false;
+            reloadPending = runtimeReloadPending;
+            if (reloadPending) {
+                runtimeReloadPending = false;
+                runtimeReloadInProgress = true;
+            }
+        }
+        if (reloadPending) {
+            runClaimedRuntimeReload(initializedCustomPrompt, true, false);
+        }
+    }
+
+    private boolean beginRuntimePrompt() {
+        synchronized (runtimeLifecycleLock) {
+            if (runtimePromptActive || runtimeReloadInProgress) {
+                return false;
+            }
+            runtimePromptActive = true;
+            return true;
+        }
+    }
+
+    private void claimRuntimeReloadOrThrow() {
+        synchronized (runtimeLifecycleLock) {
+            if (runtimePromptActive || runtimeReloadInProgress) {
+                throw new IllegalStateException("Cannot reload a managed Agent while it is busy");
+            }
+            runtimeReloadInProgress = true;
+        }
+    }
+
+    private void runClaimedRuntimeReload(String customPrompt, boolean refreshCatalog, boolean propagateFailure) {
+        RuntimeException firstFailure = null;
+        boolean repeat;
+        do {
+            try {
+                reloadInternal(customPrompt, refreshCatalog);
+            } catch (RuntimeException e) {
+                if (firstFailure == null) {
+                    firstFailure = e;
+                }
+                log.warn("Agent session tool reload failed", e);
+            }
+            synchronized (runtimeLifecycleLock) {
+                repeat = runtimeReloadPending && !runtimePromptActive;
+                runtimeReloadPending = false;
+                if (!repeat) {
+                    runtimeReloadInProgress = false;
+                }
+            }
+            customPrompt = initializedCustomPrompt;
+            refreshCatalog = true;
+        } while (repeat);
+        if (propagateFailure && firstFailure != null) {
+            throw firstFailure;
+        }
+    }
+
+    protected Path userSkillsDir() {
+        return USER_SKILLS_DIR;
     }
 
     static Map<String, String> buildEnvironmentMap() {

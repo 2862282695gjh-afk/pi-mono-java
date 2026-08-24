@@ -5,6 +5,18 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 JAR_DIR="$SCRIPT_DIR/modules/coding-agent-cli/target"
 BUILD_MARKER="$JAR_DIR/.build-timestamp"
 
+require_supported_os() {
+    case "$(uname -s 2>/dev/null || true)" in
+        Darwin|Linux) ;;
+        *)
+            echo "Error: CampusClaw supports macOS and Linux only." >&2
+            exit 1
+            ;;
+    esac
+}
+
+require_supported_os
+
 # Auto-detect JDK 21
 detect_jdk21() {
     # 1. Current JAVA_HOME already JDK 21?
@@ -127,4 +139,4 @@ if [ -z "$JAR" ]; then
     exit 1
 fi
 
-exec "$JAVA" -Djava.net.useSystemProxies=true -jar "$JAR" "${ARGS[@]}"
+exec "$JAVA" -jar "$JAR" cli "${ARGS[@]}"

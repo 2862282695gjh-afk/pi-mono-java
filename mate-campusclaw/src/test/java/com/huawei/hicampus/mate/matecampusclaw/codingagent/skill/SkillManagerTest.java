@@ -1,0 +1,448 @@
+/*
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
+ */
+
+package com.huawei.hicampus.mate.matecampusclaw.codingagent.skill;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.List;
+
+import org.junit.jupiter.api.Assumptions;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+
+class SkillManagerTest {
+
+    @TempDir
+    Path tempDir;
+
+    Path skillsDir;
+    SkillManager manager;
+
+    @BeforeEach
+    void setUp() {
+        skillsDir = tempDir.resolve("skills");
+        manager = new SkillManager(skillsDir);
+    }
+
+    // -------------------------------------------------------------------
+    // extractRepoName
+    // -------------------------------------------------------------------
+
+    @Nested
+    class ExtractRepoName {
+
+        @Test
+        void extractsFromHttpsUrl() throws SkillInstallException {
+            assertEquals("my-skill", SkillManager.extractRepoName("https://github.com/user/my-skill"));
+        }
+
+        @Test
+        void extractsFromHttpsUrlWithGitSuffix() throws SkillInstallException {
+            assertEquals("my-skill", SkillManager.extractRepoName("https://github.com/user/my-skill.git"));
+        }
+
+        @Test
+        void extractsFromSshUrl() throws SkillInstallException {
+            assertEquals("my-skill", SkillManager.extractRepoName("git@github.com:user/my-skill.git"));
+        }
+
+        @Test
+        void stripsTrailingSlash() throws SkillInstallException {
+            assertEquals("my-skill", SkillManager.extractRepoName("https://github.com/user/my-skill/"));
+        }
+
+        @Test
+        void lowercasesName() throws SkillInstallException {
+            assertEquals("my-skill", SkillManager.extractRepoName("https://github.com/user/My-Skill"));
+        }
+
+        @Test
+        void replacesInvalidCharsWithHyphens() throws SkillInstallException {
+            assertEquals("my-skill", SkillManager.extractRepoName("https://github.com/user/my_skill"));
+        }
+    }
+
+    // -------------------------------------------------------------------
+    // Link
+    // -------------------------------------------------------------------
+
+    @Nested
+    class Link {
+
+        @Test
+        void linksValidSkillDirectory() throws Exception {
+            Path source = createSkillDir(tempDir.resolve("my-local-skill"), "A local skill");
+
+            String name = manager.link(source);
+
+            assertEquals("my-local-skill", name);
+            assertTrue(Files.isSymbolicLink(skillsDir.resolve(name)));
+            assertEquals(source.toAbsolutePath().normalize(), Files.readSymbolicLink(skillsDir.resolve(name)));
+        }
+
+        @Test
+        void recordsInManifest() throws Exception {
+            Path source = createSkillDir(tempDir.resolve("link-test"), "test");
+
+            manager.link(source);
+
+            List<InstalledSkillRecord> manifest = manager.loadManifest();
+            assertEquals(1, manifest.size());
+            assertEquals("link-test", manifest.get(0).name());
+            assertEquals(InstalledSkillRecord.SOURCE_LINK, manifest.get(0).sourceType());
+            assertEquals(
+                    source.toAbsolutePath().normalize().toString(),
+                    manifest.get(0).localPath());
+        }
+
+        @Test
+        void rejectsNonDirectory() {
+            Path file = tempDir.resolve("not-a-dir");
+            assertThrows(SkillInstallException.class, () -> manager.link(file));
+        }
+
+        @Test
+        void rejectsDirectoryWithoutSkill() throws Exception {
+            Path dir = tempDir.resolve("empty-dir");
+            Files.createDirectories(dir);
+
+            assertThrows(SkillInstallException.class, () -> manager.link(dir));
+        }
+
+        @Test
+        void rejectsWhenTargetAlreadyExists() throws Exception {
+            Path source = createSkillDir(tempDir.resolve("dup-skill"), "skill");
+
+            manager.link(source);
+            assertThrows(SkillInstallException.class, () -> manager.link(source));
+        }
+    }
+
+    // -------------------------------------------------------------------
+    // List
+    // -------------------------------------------------------------------
+
+    @Nested
+    class ListSkills {
+
+        @Test
+        void returnsEmptyListWhenNoSkills() {
+            List<SkillManager.SkillInfo> infos = manager.list();
+            assertTrue(infos.isEmpty());
+        }
+
+        @Test
+        void listsManuallyPlacedSkills() throws Exception {
+            createSkillDir(skillsDir.resolve("manual-skill"), "A manual skill");
+
+            List<SkillManager.SkillInfo> infos = manager.list();
+
+            assertEquals(1, infos.size());
+            assertEquals("manual-skill", infos.get(0).name());
+            assertEquals("local", infos.get(0).sourceType());
+            assertEquals("A manual skill", infos.get(0).description());
+        }
+
+        @Test
+        void listsLinkedSkills() throws Exception {
+            Path source = createSkillDir(tempDir.resolve("linked-skill"), "A linked skill");
+            manager.link(source);
+
+            List<SkillManager.SkillInfo> infos = manager.list();
+
+            assertEquals(1, infos.size());
+            assertEquals("linked-skill", infos.get(0).name());
+            assertEquals(InstalledSkillRecord.SOURCE_LINK, infos.get(0).sourceType());
+        }
+
+        @Test
+        void listsSortedByName() throws Exception {
+            createSkillDir(skillsDir.resolve("zebra"), "Z skill");
+            createSkillDir(skillsDir.resolve("alpha"), "A skill");
+
+            List<SkillManager.SkillInfo> infos = manager.list();
+
+            assertEquals(2, infos.size());
+            assertEquals("alpha", infos.get(0).name());
+            assertEquals("zebra", infos.get(1).name());
+        }
+    }
+
+    // -------------------------------------------------------------------
+    // Remove
+    // -------------------------------------------------------------------
+
+    @Nested
+    class Remove {
+
+        @Test
+        void removesManuallyPlacedSkill() throws Exception {
+            createSkillDir(skillsDir.resolve("to-remove"), "Remove me");
+
+            manager.remove("to-remove");
+
+            assertFalse(Files.exists(skillsDir.resolve("to-remove")));
+        }
+
+        @Test
+        void removesSymlinkedSkill() throws Exception {
+            Path source = createSkillDir(tempDir.resolve("linked-to-remove"), "Remove link");
+            manager.link(source);
+
+            manager.remove("linked-to-remove");
+
+            assertFalse(Files.exists(skillsDir.resolve("linked-to-remove")));
+
+            // Original directory should still exist
+            assertTrue(Files.exists(source));
+        }
+
+        @Test
+        void removesFromManifest() throws Exception {
+            Path source = createSkillDir(tempDir.resolve("tracked"), "Tracked");
+            manager.link(source);
+            assertEquals(1, manager.loadManifest().size());
+
+            manager.remove("tracked");
+
+            assertEquals(0, manager.loadManifest().size());
+        }
+
+        @Test
+        void throwsWhenSkillNotFound() {
+            assertThrows(SkillInstallException.class, () -> manager.remove("nonexistent"));
+        }
+    }
+
+    // -------------------------------------------------------------------
+    // Manifest persistence
+    // -------------------------------------------------------------------
+
+    @Nested
+    class ManifestPersistence {
+
+        @Test
+        void loadsEmptyManifestWhenFileDoesNotExist() {
+            List<InstalledSkillRecord> records = manager.loadManifest();
+            assertTrue(records.isEmpty());
+        }
+
+        @Test
+        void saveAndLoadRoundTrip() throws Exception {
+            Files.createDirectories(skillsDir);
+            var records = List.of(
+                    new InstalledSkillRecord(
+                            "skill-a", "git", "https://github.com/user/skill-a", null, "2026-01-01T00:00:00Z"),
+                    new InstalledSkillRecord("skill-b", "link", null, "/tmp/skill-b", "2026-01-02T00:00:00Z"));
+
+            manager.saveManifest(records);
+            List<InstalledSkillRecord> loaded = manager.loadManifest();
+
+            assertEquals(2, loaded.size());
+            assertEquals("skill-a", loaded.get(0).name());
+            assertEquals("git", loaded.get(0).sourceType());
+            assertEquals("skill-b", loaded.get(1).name());
+            assertEquals("link", loaded.get(1).sourceType());
+        }
+
+        @Test
+        void handlesCorruptManifest() throws Exception {
+            Files.createDirectories(skillsDir);
+            Files.writeString(skillsDir.resolve(".installed.json"), "not valid json{{{");
+
+            List<InstalledSkillRecord> records = manager.loadManifest();
+            assertTrue(records.isEmpty());
+        }
+    }
+
+    // -------------------------------------------------------------------
+    // Import archive
+    // -------------------------------------------------------------------
+
+    @Nested
+    class ImportArchive {
+
+        @Test
+        void importsValidZipArchive() throws Exception {
+            Path zipFile = tempDir.resolve("my-skill.zip");
+            buildZip(zipFile, "my-skill/SKILL.md", "---\ndescription: Imported\n---\nbody");
+            String name = manager.importArchive(zipFile);
+            assertEquals("my-skill", name);
+            assertTrue(Files.exists(skillsDir.resolve("my-skill/SKILL.md")));
+        }
+
+        @Test
+        void rejectsUnsupportedFormat() throws IOException {
+            Path file = tempDir.resolve("payload.bin");
+            Files.writeString(file, "x");
+            assertThrows(SkillInstallException.class, () -> manager.importArchive(file));
+        }
+
+        @Test
+        void rejectsMissingFile() {
+            Path file = tempDir.resolve("nope.zip");
+            assertThrows(SkillInstallException.class, () -> manager.importArchive(file));
+        }
+
+        @Test
+        void rejectsZipWithoutSkillMd() throws Exception {
+            Path zipFile = tempDir.resolve("invalid.zip");
+            buildZip(zipFile, "invalid/README.md", "no skill here");
+            assertThrows(SkillInstallException.class, () -> manager.importArchive(zipFile));
+        }
+
+        @Test
+        void rejectsDuplicateTarget() throws Exception {
+            // Pre-create the target directory so the second import attempt collides
+            Files.createDirectories(skillsDir.resolve("dup-skill"));
+            Path zipFile = tempDir.resolve("dup-skill.zip");
+            buildZip(zipFile, "dup-skill/SKILL.md", "---\ndescription: x\n---\n");
+            assertThrows(SkillInstallException.class, () -> manager.importArchive(zipFile));
+        }
+
+        @Test
+        void useOriginalNameForDerivation() throws Exception {
+            Path zipFile = tempDir.resolve("tmpXYZ.tmp");
+            buildZip(zipFile, "real-name/SKILL.md", "---\ndescription: x\n---\n");
+            String name = manager.importArchive(zipFile, "Real-Name.zip");
+            assertEquals("real-name", name);
+        }
+
+        @Test
+        void rejectsZipSlipParentTraversal() throws Exception {
+            Path zipFile = tempDir.resolve("evil-traversal.zip");
+            buildZip(zipFile, "../evil/SKILL.md", "---\ndescription: evil\n---\n");
+            SkillInstallException ex = assertThrows(SkillInstallException.class, () -> manager.importArchive(zipFile));
+            assertTrue(
+                    ex.getMessage().contains("parent traversal"),
+                    "expected parent-traversal rejection but got: " + ex.getMessage());
+            assertFalse(Files.exists(tempDir.resolve("evil/SKILL.md")));
+        }
+
+        @Test
+        void rejectsZipEntryWithUnixAbsolutePath() throws Exception {
+            Path zipFile = tempDir.resolve("evil-absolute.zip");
+            buildZip(zipFile, "/etc/passwd-skill/SKILL.md", "---\ndescription: evil\n---\n");
+            SkillInstallException ex = assertThrows(SkillInstallException.class, () -> manager.importArchive(zipFile));
+            assertTrue(
+                    ex.getMessage().contains("absolute"),
+                    "expected absolute-path rejection but got: " + ex.getMessage());
+        }
+
+        @Test
+        void rejectsZipEntryWithWindowsBackslashAbsolutePath() throws Exception {
+            Path zipFile = tempDir.resolve("evil-windows.zip");
+            buildZip(zipFile, "\\windows\\evil\\SKILL.md", "---\ndescription: evil\n---\n");
+            SkillInstallException ex = assertThrows(SkillInstallException.class, () -> manager.importArchive(zipFile));
+            assertTrue(
+                    ex.getMessage().contains("absolute"),
+                    "expected absolute-path rejection but got: " + ex.getMessage());
+        }
+
+        @Test
+        void rejectsZipEntryWithWindowsDriveLetter() throws Exception {
+            Path zipFile = tempDir.resolve("evil-drive.zip");
+            buildZip(zipFile, "C:\\evil\\SKILL.md", "---\ndescription: evil\n---\n");
+            SkillInstallException ex = assertThrows(SkillInstallException.class, () -> manager.importArchive(zipFile));
+            assertTrue(
+                    ex.getMessage().contains("Windows absolute")
+                            || ex.getMessage().contains("absolute"),
+                    "expected absolute-path rejection but got: " + ex.getMessage());
+        }
+
+        private void buildZip(Path target, String entryName, String content) throws IOException {
+            try (var out = new java.util.zip.ZipOutputStream(
+                    new java.io.BufferedOutputStream(Files.newOutputStream(target)))) {
+                var entry = new java.util.zip.ZipEntry(entryName);
+                out.putNextEntry(entry);
+                out.write(content.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                out.closeEntry();
+            }
+        }
+    }
+
+    // -------------------------------------------------------------------
+    // Import tar.gz
+    // -------------------------------------------------------------------
+
+    @Nested
+    class ImportTarGz {
+
+        @Test
+        void importsValidTarGzArchive() throws Exception {
+            Assumptions.assumeTrue(tarAvailable(), "tar binary not on PATH");
+            Path stagingDir = tempDir.resolve("staging");
+            Files.createDirectories(stagingDir.resolve("tar-skill"));
+            Files.writeString(
+                    stagingDir.resolve("tar-skill/SKILL.md"),
+                    "---\ndescription: From tar.gz\n---\nbody",
+                    java.nio.charset.StandardCharsets.UTF_8);
+
+            Path tarFile = tempDir.resolve("tar-skill.tar.gz");
+            Process p = new ProcessBuilder("tar", "czf", tarFile.toString(), "-C", stagingDir.toString(), "tar-skill")
+                    .redirectErrorStream(true)
+                    .start();
+            p.getInputStream().readAllBytes();
+            org.junit.jupiter.api.Assertions.assertEquals(0, p.waitFor(), "tar packing must succeed");
+
+            String name = manager.importArchive(tarFile);
+            assertEquals("tar-skill", name);
+            assertTrue(Files.exists(skillsDir.resolve("tar-skill/SKILL.md")));
+        }
+
+        private boolean tarAvailable() {
+            try {
+                return new ProcessBuilder("tar", "--version").start().waitFor() == 0;
+            } catch (Exception e) {
+                return false;
+            }
+        }
+    }
+
+    // -------------------------------------------------------------------
+    // Update
+    // -------------------------------------------------------------------
+
+    @Nested
+    class Update {
+
+        @Test
+        void throwsWhenSkillNotInstalled() {
+            assertThrows(SkillInstallException.class, () -> manager.update("nonexistent"));
+        }
+
+        @Test
+        void throwsWhenSkillIsNotGitRepo() throws Exception {
+            createSkillDir(skillsDir.resolve("not-git"), "Not git");
+            assertThrows(SkillInstallException.class, () -> manager.update("not-git"));
+        }
+    }
+
+    // -------------------------------------------------------------------
+    // Helpers
+    // -------------------------------------------------------------------
+
+    private Path createSkillDir(Path dir, String description) throws IOException {
+        Files.createDirectories(dir);
+        Files.writeString(
+                dir.resolve("SKILL.md"),
+                """
+                ---
+                description: %s
+                ---
+                Skill content here.
+                """
+                        .formatted(description));
+        return dir;
+    }
+}

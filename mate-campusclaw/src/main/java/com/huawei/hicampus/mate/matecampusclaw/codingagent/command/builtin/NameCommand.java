@@ -1,0 +1,58 @@
+/*
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
+ */
+
+package com.huawei.hicampus.mate.matecampusclaw.codingagent.command.builtin;
+
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.command.SlashCommand;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.command.SlashCommandContext;
+
+/**
+ * Sets or displays the session display name matching campusclaw TS /name command.
+ *
+ * @version [br_eCampusCore 26.0.0, 2026/05/06]
+ * @since [br_eCampusCore 26.0.0]
+ */
+public class NameCommand implements SlashCommand {
+
+    private String sessionName;
+
+    @Override
+    public String name() {
+        return "name";
+    }
+
+    @Override
+    public String description() {
+        return "Set session display name";
+    }
+
+    @Override
+    public void execute(SlashCommandContext context, String arguments) {
+        if (arguments.isEmpty()) {
+            if (sessionName != null && !sessionName.isEmpty()) {
+                context.output().println("Session name: " + sessionName);
+            } else {
+                context.output().println("No session name set. Usage: /name <name>");
+            }
+        } else {
+            sessionName = arguments.trim();
+
+            // Persist session name
+            var sm = context.session().getSessionManager();
+            if (sm != null) {
+                sm.appendSessionName(sessionName);
+            }
+            context.output().println("Session name set to: " + sessionName);
+        }
+    }
+
+    /**
+     * Returns the current session name, or null if not set.
+     *
+     * @return the result
+     */
+    public String getSessionName() {
+        return sessionName;
+    }
+}

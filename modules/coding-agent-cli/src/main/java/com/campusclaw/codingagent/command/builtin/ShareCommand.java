@@ -1,8 +1,14 @@
+/*
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
+ */
+
 package com.campusclaw.codingagent.command.builtin;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.concurrent.TimeUnit;
 
 import com.campusclaw.codingagent.command.SlashCommand;
 import com.campusclaw.codingagent.command.SlashCommandContext;
@@ -11,14 +17,23 @@ import com.campusclaw.codingagent.export.HtmlExporter;
 /**
  * Share session as a secret GitHub Gist.
  * Requires the `gh` CLI to be installed and authenticated.
+ *
+ * @version [br_eCampusCore 26.0.0, 2026/05/06]
+ * @since [br_eCampusCore 26.0.0]
  */
 public class ShareCommand implements SlashCommand {
 
-    @Override
-    public String name() { return "share"; }
+    private static final long GH_TIMEOUT_SECONDS = 30L;
 
     @Override
-    public String description() { return "Share session as a secret GitHub gist"; }
+    public String name() {
+        return "share";
+    }
+
+    @Override
+    public String description() {
+        return "Share session as a secret GitHub gist";
+    }
 
     @Override
     public void execute(SlashCommandContext context, String arguments) {
@@ -40,13 +55,23 @@ public class ShareCommand implements SlashCommand {
 
             // Use gh CLI to create a gist
             var process = new ProcessBuilder(
-                    "gh", "gist", "create",
-                    "--desc", "CampusClaw session (" + messages.size() + " messages)",
-                    tmpFile.toString()
-            ).redirectErrorStream(true).start();
+                            "gh",
+                            "gist",
+                            "create",
+                            "--desc",
+                            "CampusClaw session (" + messages.size() + " messages)",
+                            tmpFile.toString())
+                    .redirectErrorStream(true)
+                    .start();
 
-            String output = new String(process.getInputStream().readAllBytes()).trim();
-            int exitCode = process.waitFor();
+            String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8).trim();
+            if (!process.waitFor(GH_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+                process.destroyForcibly();
+                Files.deleteIfExists(tmpFile);
+                context.output().println("gh gist create timed out after " + GH_TIMEOUT_SECONDS + "s");
+                return;
+            }
+            int exitCode = process.exitValue();
 
             Files.deleteIfExists(tmpFile);
 

@@ -1,3 +1,7 @@
+/*
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
+ */
+
 package com.campusclaw.cron.store;
 
 import java.io.BufferedWriter;
@@ -10,6 +14,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
+import com.campusclaw.ai.utils.CampusClawHome;
 import com.campusclaw.cron.model.CronRunRecord;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.databind.DeserializationFeature;
@@ -22,6 +27,9 @@ import org.springframework.stereotype.Service;
 /**
  * Append-only JSONL log for cron job execution records.
  * Each job has its own log file at {@code ~/.campusclaw/agent/cron/runs/{jobId}.jsonl}.
+ *
+ * @version [br_eCampusCore 26.0.0, 2026/05/06]
+ * @since [br_eCampusCore 26.0.0]
  */
 @Service
 public class CronRunLog {
@@ -47,8 +55,8 @@ public class CronRunLog {
         try {
             Files.createDirectories(runsDir);
             String json = mapper.writeValueAsString(record);
-            try (BufferedWriter writer = Files.newBufferedWriter(logFile, StandardCharsets.UTF_8,
-                    StandardOpenOption.CREATE, StandardOpenOption.APPEND)) {
+            try (BufferedWriter writer = Files.newBufferedWriter(
+                    logFile, StandardCharsets.UTF_8, StandardOpenOption.CREATE, StandardOpenOption.APPEND)) {
                 writer.write(json);
                 writer.newLine();
             }
@@ -65,11 +73,14 @@ public class CronRunLog {
         try {
             List<String> lines = Files.readAllLines(logFile, StandardCharsets.UTF_8);
             var records = new ArrayList<CronRunRecord>();
+
             // Read from end for most recent
             int start = Math.max(0, lines.size() - limit);
             for (int i = start; i < lines.size(); i++) {
                 String line = lines.get(i).trim();
-                if (line.isEmpty()) continue;
+                if (line.isEmpty()) {
+                    continue;
+                }
                 try {
                     records.add(mapper.readValue(line, CronRunRecord.class));
                 } catch (IOException e) {
@@ -85,7 +96,6 @@ public class CronRunLog {
     }
 
     private static Path defaultRunsDir() {
-        return Path.of(System.getProperty("user.home"))
-            .resolve(".campusclaw").resolve("agent").resolve("cron").resolve("runs");
+        return CampusClawHome.agentDir().resolve("cron").resolve("runs");
     }
 }

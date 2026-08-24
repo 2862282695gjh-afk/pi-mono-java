@@ -1,9 +1,20 @@
+/*
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
+ */
+
 package com.campusclaw.codingagent.cli;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.ByteArrayInputStream;
+import java.io.InputStream;
 import java.nio.file.Path;
 
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
@@ -12,7 +23,8 @@ import picocli.CommandLine;
 class CampusClawCommandTest {
 
     private CampusClawCommand parse(String... args) {
-        CampusClawCommand cmd = new CampusClawCommand(null, null, null, null, null, null, null, null, null);
+        CampusClawCommand cmd =
+                new CampusClawCommand(null, null, null, null, null, null, null, null, null, null, null, null, null);
         new CommandLine(cmd).parseArgs(args);
         return cmd;
     }
@@ -267,8 +279,7 @@ class CampusClawCommandTest {
                     "--cwd", "/tmp/work",
                     "--system-prompt", "Use Java 21",
                     "--thinking", "high",
-                    "--tools", "read,bash"
-            );
+                    "--tools", "read,bash");
 
             assertEquals("claude-sonnet-4-20250514", cmd.getModel());
             assertEquals("refactor auth", cmd.getPrompt());
@@ -294,6 +305,19 @@ class CampusClawCommandTest {
     @Nested
     class Execution {
 
+        private InputStream originalIn;
+
+        @BeforeEach
+        void setUp() {
+            originalIn = System.in;
+            System.setIn(new ByteArrayInputStream(new byte[0]));
+        }
+
+        @AfterEach
+        void tearDown() {
+            System.setIn(originalIn);
+        }
+
         @Test
         void printModeReturnsZero() {
             CampusClawCommand cmd = parse("--mode", "print", "--prompt", "test");
@@ -316,14 +340,16 @@ class CampusClawCommandTest {
 
         @Test
         void helpExitsWithZero() {
-            CampusClawCommand cmd = new CampusClawCommand(null, null, null, null, null, null, null, null, null);
+            CampusClawCommand cmd =
+                    new CampusClawCommand(null, null, null, null, null, null, null, null, null, null, null, null, null);
             int exitCode = new CommandLine(cmd).execute("--help");
             assertEquals(0, exitCode);
         }
 
         @Test
         void versionExitsWithZero() {
-            CampusClawCommand cmd = new CampusClawCommand(null, null, null, null, null, null, null, null, null);
+            CampusClawCommand cmd =
+                    new CampusClawCommand(null, null, null, null, null, null, null, null, null, null, null, null, null);
             int exitCode = new CommandLine(cmd).execute("--version");
             assertEquals(0, exitCode);
         }

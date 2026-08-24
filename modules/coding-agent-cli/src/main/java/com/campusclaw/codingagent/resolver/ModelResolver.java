@@ -1,6 +1,15 @@
+/*
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
+ */
+
 package com.campusclaw.codingagent.resolver;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
 
 import com.campusclaw.ai.model.ModelRegistry;
 import com.campusclaw.ai.types.Model;
@@ -23,6 +32,9 @@ import jakarta.annotation.Nullable;
  *   <li>Fallback to default model from settings</li>
  *   <li>Fallback to a known safe default</li>
  * </ol>
+ *
+ * @version [br_eCampusCore 26.0.0, 2026/05/06]
+ * @since [br_eCampusCore 26.0.0]
  */
 public class ModelResolver {
 
@@ -48,7 +60,9 @@ public class ModelResolver {
         // 1. If modelId given, try exact match
         if (modelId != null && !modelId.isBlank()) {
             var model = findModel(modelId);
-            if (model.isPresent()) return model.get();
+            if (model.isPresent()) {
+                return model.get();
+            }
             log.warn("Model '{}' not found, trying fallbacks", modelId);
         }
 
@@ -57,19 +71,25 @@ public class ModelResolver {
             String override = scopedOverrides.get(modelId);
             if (override != null) {
                 var model = findModel(override);
-                if (model.isPresent()) return model.get();
+                if (model.isPresent()) {
+                    return model.get();
+                }
             }
         }
 
         // 3. Default from settings
-        if (settings != null && settings.defaultModel() != null) {
-            var model = findModel(settings.defaultModel());
-            if (model.isPresent()) return model.get();
+        if (settings != null && settings.resolvedDefaultModel() != null) {
+            var model = findModel(settings.resolvedDefaultModel());
+            if (model.isPresent()) {
+                return model.get();
+            }
         }
 
         // 4. Safe default
         var model = findModel(SAFE_DEFAULT);
-        if (model.isPresent()) return model.get();
+        if (model.isPresent()) {
+            return model.get();
+        }
 
         throw new IllegalArgumentException("Cannot resolve model: " + modelId);
     }
@@ -77,6 +97,9 @@ public class ModelResolver {
     /**
      * Adds a scoped model override. When {@code alias} is requested,
      * {@code targetModelId} will be resolved instead.
+     *
+     * @param alias the alias
+     * @param targetModelId the targetModelId
      */
     public void addScopedOverride(String alias, String targetModelId) {
         scopedOverrides.put(alias, targetModelId);
@@ -84,6 +107,8 @@ public class ModelResolver {
 
     /**
      * Removes a scoped model override.
+     *
+     * @param alias the alias
      */
     public void removeScopedOverride(String alias) {
         scopedOverrides.remove(alias);
@@ -91,6 +116,8 @@ public class ModelResolver {
 
     /**
      * Returns all scoped overrides.
+     *
+     * @return the result
      */
     public Map<String, String> getScopedOverrides() {
         return Map.copyOf(scopedOverrides);
@@ -98,17 +125,24 @@ public class ModelResolver {
 
     /**
      * Finds a model by exact id across all providers.
+     *
+     * @param modelId the modelId
+     * @return the result
      */
     public Optional<Model> findModel(String modelId) {
         for (Provider provider : modelRegistry.getProviders()) {
             var model = modelRegistry.getModel(provider, modelId);
-            if (model.isPresent()) return model;
+            if (model.isPresent()) {
+                return model;
+            }
         }
         return Optional.empty();
     }
 
     /**
      * Returns all available model ids across all providers.
+     *
+     * @return the result
      */
     public List<String> getAllModelIds() {
         var ids = new ArrayList<String>();

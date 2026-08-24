@@ -1,3 +1,7 @@
+/*
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
+ */
+
 package com.campusclaw.codingagent.command.builtin;
 
 import java.io.BufferedWriter;
@@ -13,14 +17,21 @@ import com.campusclaw.codingagent.command.SlashCommandContext;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 /**
  * Dumps agent state and messages to a debug log file for troubleshooting.
  * Matches campusclaw TS /debug command.
+ *
+ * @version [br_eCampusCore 26.0.0, 2026/05/06]
+ * @since [br_eCampusCore 26.0.0]
  */
 public class DebugCommand implements SlashCommand {
 
-    private static final ObjectMapper MAPPER = new ObjectMapper()
-            .enable(SerializationFeature.INDENT_OUTPUT);
+    private static final Logger log = LoggerFactory.getLogger(DebugCommand.class);
+
+    private static final ObjectMapper MAPPER = new ObjectMapper().enable(SerializationFeature.INDENT_OUTPUT);
 
     @Override
     public String name() {
@@ -50,7 +61,9 @@ public class DebugCommand implements SlashCommand {
         }
 
         var thinkingLevel = state.getThinkingLevel();
-        sb.append("Thinking: ").append(thinkingLevel != null ? thinkingLevel.value() : "off").append("\n");
+        sb.append("Thinking: ")
+                .append(thinkingLevel != null ? thinkingLevel.value() : "off")
+                .append("\n");
         sb.append("Streaming: ").append(state.isStreaming()).append("\n");
 
         String error = state.getError();
@@ -78,11 +91,12 @@ public class DebugCommand implements SlashCommand {
         try {
             Files.createDirectories(debugDir);
         } catch (IOException e) {
-            // ignore
+            // pre-create best-effort; the write below will surface the real failure
+            log.debug("could not pre-create debug dir {}", debugDir, e);
         }
 
-        String filename = "debug-" + LocalDateTime.now().format(
-                DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss")) + ".log";
+        String filename =
+                "debug-" + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss")) + ".log";
         Path debugFile = debugDir.resolve(filename);
 
         try (BufferedWriter writer = Files.newBufferedWriter(debugFile)) {

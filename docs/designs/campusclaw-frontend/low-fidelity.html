@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CampusClaw 前端低保真设计</title>
+  <style>
+    :root {
+      color-scheme: light;
+      font-family: Inter, "PingFang SC", "Microsoft YaHei", sans-serif;
+      --ink: #282828;
+      --muted: #5d5d5d;
+      --line: #d9d9d9;
+      --soft: #f3f3f3;
+      --paper: #fff;
+      --board: #ededed;
+      --dark: #181818;
+    }
+
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--board); color: var(--ink); }
+    .board { width: 1600px; min-height: 1200px; margin: 0 auto; padding: 32px; }
+    .board-header { display: flex; align-items: flex-end; justify-content: space-between; margin-bottom: 20px; }
+    h1 { margin: 0; font-size: 28px; letter-spacing: -.03em; }
+    .subtitle { margin-top: 6px; color: var(--muted); font-size: 14px; }
+    .legend { display: flex; gap: 18px; color: var(--muted); font-size: 12px; }
+    .legend span::before { content: ""; display: inline-block; width: 10px; height: 10px; margin-right: 6px; border: 1px solid var(--dark); vertical-align: -1px; }
+    .legend .system::before { background: var(--soft); }
+    .grid { display: grid; grid-template-columns: 980px 1fr; grid-template-rows: 520px 520px; gap: 20px; }
+    .screen { position: relative; overflow: hidden; border: 1px solid var(--dark); border-radius: 12px; background: var(--paper); box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+    .screen > .tag { position: absolute; z-index: 5; top: 12px; left: 12px; padding: 5px 9px; border: 1px solid var(--dark); border-radius: 5px; background: var(--paper); font: 700 11px ui-monospace, monospace; }
+    .main-screen { grid-row: 1 / span 2; display: grid; grid-template-columns: 240px 1fr; }
+    .rail { display: flex; flex-direction: column; border-right: 1px solid var(--line); background: #f9f9f9; padding: 52px 14px 14px; }
+    .brand { display: flex; gap: 9px; align-items: center; margin-bottom: 20px; font-weight: 800; }
+    .brand-mark { width: 26px; height: 26px; border: 1px solid var(--ink); border-radius: 8px; background: var(--dark); }
+    .primary { width: 100%; padding: 11px; border: 1px solid var(--dark); border-radius: 7px; background: var(--dark); color: #fff; font-weight: 700; text-align: left; }
+    .section-label { margin: 22px 4px 8px; color: var(--muted); font-size: 11px; font-weight: 700; letter-spacing: .08em; }
+    .session { margin-bottom: 5px; padding: 10px; border-radius: 6px; font-size: 13px; }
+    .session.active { border: 1px solid var(--line); background: #ededed; font-weight: 700; }
+    .session small { display: block; margin-top: 3px; color: var(--muted); font-weight: 400; }
+    .rail-bottom { margin-top: auto; border-top: 1px solid var(--line); padding: 13px 8px 2px; color: var(--muted); font-size: 12px; }
+    .workspace { display: grid; grid-template-rows: 66px 1fr auto; min-width: 0; }
+    .topbar { display: flex; align-items: center; gap: 12px; border-bottom: 1px solid var(--line); padding: 0 22px; }
+    .agent-avatar { width: 34px; height: 34px; border: 2px solid var(--dark); border-radius: 9px; background: var(--soft); }
+    .agent-title { font-size: 14px; font-weight: 800; }
+    .agent-meta { color: var(--muted); font-size: 11px; }
+    .top-spacer { flex: 1; }
+    .pill { padding: 7px 10px; border: 1px solid var(--line); border-radius: 999px; background: var(--paper); color: var(--muted); font-size: 11px; }
+    .status { display: flex; align-items: center; gap: 6px; }
+    .status::before { content: ""; width: 8px; height: 8px; border: 1px solid var(--dark); border-radius: 50%; background: var(--paper); }
+    .conversation { overflow: hidden; padding: 32px 70px 20px; }
+    .turn { display: grid; grid-template-columns: 30px 1fr; gap: 12px; margin-bottom: 26px; }
+    .turn.user { grid-template-columns: 1fr; justify-items: end; }
+    .avatar { width: 30px; height: 30px; border: 1px solid var(--dark); border-radius: 8px; background: var(--soft); }
+    .bubble { max-width: 78%; padding: 13px 16px; border: 1px solid var(--dark); border-radius: 12px; background: var(--paper); font-size: 13px; line-height: 1.7; }
+    .user .bubble { background: var(--soft); }
+    .answer { font-size: 13px; line-height: 1.75; }
+    .answer strong { display: block; margin-bottom: 7px; }
+    .tool-card { margin-top: 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--soft); }
+    .tool-head { display: flex; align-items: center; gap: 8px; padding: 10px 12px; font-size: 12px; font-weight: 700; }
+    .tool-head::before { content: ""; width: 13px; height: 13px; border: 2px solid var(--dark); border-radius: 3px; }
+    .tool-result { border-top: 1px solid var(--line); padding: 10px 12px; color: var(--muted); font: 11px/1.5 ui-monospace, monospace; }
+    .composer-wrap { padding: 0 70px 22px; }
+    .composer { border: 2px solid var(--dark); border-radius: 12px; background: var(--paper); padding: 12px; }
+    .composer-placeholder { min-height: 48px; color: var(--muted); font-size: 13px; }
+    .composer-row { display: flex; align-items: center; gap: 8px; }
+    .icon-button { width: 30px; height: 30px; border: 1px solid var(--line); border-radius: 7px; background: var(--paper); }
+    .send { margin-left: auto; padding: 8px 14px; border: 2px solid var(--dark); border-radius: 8px; background: var(--dark); color: #fff; font-weight: 800; }
+    .annotation { position: absolute; z-index: 4; padding: 7px 9px; border: 1px dashed var(--dark); background: #fff; color: var(--ink); font: 11px/1.35 ui-monospace, monospace; }
+    .annotation::after { content: ""; position: absolute; border-top: 1px dashed var(--dark); }
+    .a1 { top: 92px; right: 16px; }
+    .a2 { bottom: 132px; right: 18px; }
+    .a3 { bottom: 20px; left: 255px; }
+    .small-screen { display: grid; grid-template-columns: 150px 1fr; }
+    .mini-rail { border-right: 1px solid var(--line); background: #f9f9f9; padding: 48px 10px 10px; }
+    .mini-line { height: 12px; margin: 8px 0; border: 1px solid var(--line); border-radius: 3px; background: var(--paper); }
+    .mini-content { display: flex; flex-direction: column; }
+    .mini-top { height: 54px; border-bottom: 1px solid var(--line); }
+    .welcome { display: flex; flex: 1; flex-direction: column; align-items: center; justify-content: center; padding: 38px; text-align: center; }
+    .welcome-symbol { width: 56px; height: 56px; border: 2px solid var(--dark); border-radius: 16px; background: var(--soft); }
+    .welcome h2 { margin: 16px 0 6px; font-size: 19px; }
+    .welcome p { width: 76%; margin: 0 0 18px; color: var(--muted); font-size: 12px; line-height: 1.6; }
+    .agent-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; width: 100%; }
+    .agent-card { border: 1px solid var(--dark); border-radius: 8px; padding: 11px; background: var(--paper); text-align: left; font-size: 11px; }
+    .agent-card b { display: block; margin-bottom: 3px; font-size: 12px; }
+    .running-screen { display: flex; flex-direction: column; }
+    .running-top { display: flex; align-items: center; gap: 8px; height: 58px; border-bottom: 1px solid var(--line); padding: 0 18px 0 82px; }
+    .running-top strong { font-size: 13px; }
+    .running-top .stop { margin-left: auto; border: 2px solid var(--dark); border-radius: 7px; padding: 7px 10px; background: var(--paper); font-weight: 700; }
+    .running-body { flex: 1; padding: 22px 42px; }
+    .progress { border: 1px solid var(--dark); border-radius: 9px; background: var(--soft); padding: 12px; }
+    .progress-title { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 800; }
+    .spinner { width: 14px; height: 14px; border: 2px solid var(--line); border-top-color: var(--dark); border-radius: 50%; }
+    .steps { display: flex; gap: 6px; margin-top: 12px; }
+    .step { flex: 1; height: 7px; border: 1px solid var(--line); background: var(--paper); }
+    .step.done { background: var(--dark); }
+    .control-composer { margin: 0 42px 22px; border: 2px solid var(--dark); border-radius: 10px; padding: 10px; }
+    .follow-up-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; color: var(--muted); font-size: 10px; }
+    .follow-up-mode { padding: 6px 9px; border: 1px solid var(--dark); border-radius: 7px; background: var(--soft); color: var(--ink); font-weight: 700; }
+    .follow-up-shortcut { font-family: ui-monospace, monospace; }
+    .control-input { display: flex; align-items: center; color: var(--muted); font-size: 12px; }
+    .control-input button { margin-left: auto; border: 1px solid var(--dark); border-radius: 7px; background: var(--dark); color: #fff; padding: 7px 10px; }
+    .screen-note { position: absolute; right: 12px; bottom: 10px; color: var(--muted); font: 10px ui-monospace, monospace; }
+
+    @media (max-height: 900px) {
+      body { width: 1724px; zoom: .58; }
+    }
+  </style>
+</head>
+<body>
+  <div class="board">
+    <div class="board-header">
+      <div>
+        <h1>CampusClaw 真实前端 · 低保真结构</h1>
+        <div class="subtitle">桌面优先 / 三个关键状态 / 技术协议默认隐藏</div>
+      </div>
+      <div class="legend"><span>用户操作</span><span class="system">系统状态</span></div>
+    </div>
+
+    <div class="grid">
+      <section class="screen main-screen">
+        <div class="tag">01 · 常规对话</div>
+        <aside class="rail">
+          <div class="brand"><span class="brand-mark"></span> CampusClaw</div>
+          <button class="primary">＋ 新建会话</button>
+          <div class="section-label">今天</div>
+          <div class="session active">订单异常分析<small>运营分析 Agent</small></div>
+          <div class="session">课程排期建议<small>校园运营 Agent</small></div>
+          <div class="section-label">过去 7 天</div>
+          <div class="session">实验室周报摘要</div>
+          <div class="session">网络故障复盘</div>
+          <div class="rail-bottom">Agent 中心　·　设置</div>
+        </aside>
+
+        <div class="workspace">
+          <header class="topbar">
+            <span class="agent-avatar"></span>
+            <div><div class="agent-title">运营分析 Agent</div><div class="agent-meta">当前会话 · 自动保存</div></div>
+            <div class="top-spacer"></div>
+            <span class="pill">深度思考：开</span>
+            <span class="pill">Claude Sonnet 4.5⌄</span>
+            <span class="pill status">空闲</span>
+          </header>
+          <main class="conversation">
+            <div class="turn user"><div class="bubble">请分析这些订单文件，并列出异常项。<br>▣ 订单明细.xlsx</div></div>
+            <div class="turn">
+              <span class="avatar"></span>
+              <div class="answer">
+                <strong>我发现了 3 类需要关注的异常</strong>
+                退款率突增、重复订单和跨校区价格不一致。其中退款率异常集中在两个食堂档口。
+                <div class="tool-card">
+                  <div class="tool-head">已读取并分析 1 个文件　⌄</div>
+                  <div class="tool-result">read · 订单明细.xlsx · completed · 3 findings</div>
+                </div>
+              </div>
+            </div>
+          </main>
+          <div class="composer-wrap">
+            <div class="composer">
+              <div class="composer-placeholder">继续提问，或输入你希望 Agent 执行的任务…</div>
+              <div class="composer-row"><button class="icon-button">＋</button><span class="pill">深度思考</span><button class="send">发送 ↑</button></div>
+            </div>
+          </div>
+        </div>
+        <div class="annotation a1">Model / Thinking 是会话级能力<br>放入标题栏，不占用设置侧栏</div>
+        <div class="annotation a2">Tool execution / result<br>合并为可展开的对话内活动卡</div>
+        <div class="annotation a3">凭据、Runtime sessionId、ETag、SSE frame<br>仅在“开发者诊断”抽屉展示</div>
+      </section>
+
+      <section class="screen small-screen">
+        <div class="tag">02 · 首次进入 / 选 Agent</div>
+        <aside class="mini-rail"><div class="mini-line"></div><div class="mini-line"></div><div class="mini-line"></div><div class="mini-line"></div></aside>
+        <div class="mini-content">
+          <div class="mini-top"></div>
+          <div class="welcome">
+            <div class="welcome-symbol"></div>
+            <h2>今天想让 CampusClaw 做什么？</h2>
+            <p>先选择一个 Agent。创建 Session、鉴权和默认模型都由系统在后台完成。</p>
+            <div class="agent-grid">
+              <div class="agent-card"><b>运营分析</b>数据检查、异常定位</div>
+              <div class="agent-card"><b>校园运维</b>故障排查、方案生成</div>
+              <div class="agent-card"><b>教学助手</b>课程内容与排期</div>
+              <div class="agent-card"><b>更多 Agent</b>浏览全部能力 →</div>
+            </div>
+          </div>
+        </div>
+        <div class="screen-note">需要 mate-service Agent 目录（目标态）</div>
+      </section>
+
+      <section class="screen running-screen">
+        <div class="tag">03 · 执行中控制</div>
+        <header class="running-top"><span class="agent-avatar"></span><strong>运营分析 Agent</strong><span class="pill status">执行中</span><button class="stop">停止 ■</button></header>
+        <div class="running-body">
+          <div class="turn user"><div class="bubble">检查这批订单，并给出处理建议。</div></div>
+          <div class="progress">
+            <div class="progress-title"><span class="spinner"></span> 正在读取订单明细并检查异常…</div>
+            <div class="steps"><span class="step done"></span><span class="step done"></span><span class="step"></span><span class="step"></span></div>
+          </div>
+        </div>
+        <div class="control-composer">
+          <div class="follow-up-row"><span class="follow-up-mode">调整方向⌄</span><span class="follow-up-shortcut">⌘⇧↵ 本条加入队列</span></div>
+          <div class="control-input">补充新的要求…<button>调整方向 ↑</button></div>
+        </div>
+        <div class="screen-note">默认：调整方向 → Steer · 单次反转：加入队列 → FollowUp · 停止 → Abort</div>
+      </section>
+    </div>
+  </div>
+</body>
+</html>

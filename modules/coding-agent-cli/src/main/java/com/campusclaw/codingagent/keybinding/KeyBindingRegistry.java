@@ -1,8 +1,16 @@
+/*
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
+ */
+
 package com.campusclaw.codingagent.keybinding;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.*;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.Optional;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -13,6 +21,15 @@ import org.springframework.stereotype.Service;
 
 import jakarta.annotation.PostConstruct;
 
+/**
+ * Service that owns the active CLI key map. On startup it registers the built-in defaults
+ * (interrupt, exit, model cycle, thinking toggle and so on) and then overlays user
+ * customizations loaded from {@code keybindings.json}. Supports lookup by action id and
+ * reverse lookup by key combo.
+ *
+ * @version [br_eCampusCore 26.0.0, 2026/05/13]
+ * @since [br_eCampusCore 26.0.0]
+ */
 @Service
 public class KeyBindingRegistry {
     private static final Logger log = LoggerFactory.getLogger(KeyBindingRegistry.class);
@@ -44,10 +61,11 @@ public class KeyBindingRegistry {
     }
 
     private void loadCustomBindings() {
-        if (!Files.exists(KEYBINDINGS_FILE)) return;
+        if (!Files.exists(KEYBINDINGS_FILE)) {
+            return;
+        }
         try {
-            Map<String, String> custom = MAPPER.readValue(
-                Files.readString(KEYBINDINGS_FILE), new TypeReference<>() {});
+            Map<String, String> custom = MAPPER.readValue(Files.readString(KEYBINDINGS_FILE), new TypeReference<>() {});
             custom.forEach((action, key) -> {
                 var existing = bindings.get(action);
                 if (existing != null) {
@@ -72,12 +90,17 @@ public class KeyBindingRegistry {
         return get(action).map(KeyBinding::key);
     }
 
-    /** Find the action bound to a given key combo. */
+    /**
+     * Find the action bound to a given key combo.
+     *
+     * @param key the key
+     * @return the result
+     */
     public Optional<String> findAction(String key) {
         return bindings.values().stream()
-            .filter(b -> b.key().equalsIgnoreCase(key))
-            .map(KeyBinding::action)
-            .findFirst();
+                .filter(b -> b.key().equalsIgnoreCase(key))
+                .map(KeyBinding::action)
+                .findFirst();
     }
 
     public Collection<KeyBinding> getAll() {

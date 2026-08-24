@@ -1,6 +1,12 @@
+/*
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
+ */
+
 package com.campusclaw.agent.queue;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -107,9 +113,7 @@ class MessageQueueTest {
         assertTrue(queue.hasMessages());
 
         var drained = queue.drain(MessageQueue.DeliveryMode.ALL);
-        var texts = drained.stream()
-            .map(MessageQueueTest::messageText)
-            .collect(Collectors.toSet());
+        var texts = drained.stream().map(MessageQueueTest::messageText).collect(Collectors.toSet());
 
         assertEquals(taskCount, drained.size());
         assertEquals(taskCount, texts.size());

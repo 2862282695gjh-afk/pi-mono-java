@@ -1,10 +1,22 @@
+/*
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
+ */
+
 package com.campusclaw.ai.model;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
 
-import com.campusclaw.ai.types.*;
+import com.campusclaw.ai.types.Api;
+import com.campusclaw.ai.types.InputModality;
+import com.campusclaw.ai.types.Model;
+import com.campusclaw.ai.types.ModelCost;
+import com.campusclaw.ai.types.Provider;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
@@ -21,26 +33,36 @@ class ModelRegistryTest {
 
     private Model anthropicModel(String id, String name) {
         return new Model(
-            id, name,
-            Api.ANTHROPIC_MESSAGES, Provider.ANTHROPIC,
-            "https://api.anthropic.com", false,
-            List.of(InputModality.TEXT),
-            new ModelCost(3.0, 15.0, 0.3, 3.75),
-            200000, 8192, null, null,
-            null
-        );
+                id,
+                name,
+                Api.ANTHROPIC_MESSAGES,
+                Provider.ANTHROPIC,
+                "https://api.anthropic.com",
+                false,
+                List.of(InputModality.TEXT),
+                new ModelCost(3.0, 15.0, 0.3, 3.75),
+                200000,
+                8192,
+                null,
+                null,
+                null);
     }
 
     private Model openaiModel(String id, String name) {
         return new Model(
-            id, name,
-            Api.OPENAI_RESPONSES, Provider.OPENAI,
-            "https://api.openai.com", false,
-            List.of(InputModality.TEXT, InputModality.IMAGE),
-            new ModelCost(2.5, 10.0, 1.25, 2.5),
-            128000, 16384, null, null,
-            null
-        );
+                id,
+                name,
+                Api.OPENAI_RESPONSES,
+                Provider.OPENAI,
+                "https://api.openai.com",
+                false,
+                List.of(InputModality.TEXT, InputModality.IMAGE),
+                new ModelCost(2.5, 10.0, 1.25, 2.5),
+                128000,
+                16384,
+                null,
+                null,
+                null);
     }
 
     @Nested
@@ -72,10 +94,7 @@ class ModelRegistryTest {
         @Test
         void registerAllMultipleModels() {
             var models = List.of(
-                anthropicModel("model-a", "A"),
-                anthropicModel("model-b", "B"),
-                openaiModel("model-c", "C")
-            );
+                    anthropicModel("model-a", "A"), anthropicModel("model-b", "B"), openaiModel("model-c", "C"));
             registry.registerAll(models);
 
             assertTrue(registry.getModel(Provider.ANTHROPIC, "model-a").isPresent());
@@ -134,8 +153,7 @@ class ModelRegistryTest {
         @Test
         void returnsEmptyListForUnknownProvider() {
             var result = registry.getModels(Provider.MISTRAL);
-            assertNotNull(result);
-            assertTrue(result.isEmpty());
+            assertTrue(result.isEmpty(), "no models registered for MISTRAL must yield an empty list, not null");
         }
 
         @Test
@@ -191,6 +209,37 @@ class ModelRegistryTest {
         @Test
         void clearOnEmptyRegistryIsNoOp() {
             assertDoesNotThrow(() -> registry.clear());
+        }
+    }
+
+    @Nested
+    class UnregisterByProvider {
+
+        @Test
+        void removesOnlyThatProvider() {
+            registry.register(anthropicModel("a1", "A1"));
+            registry.register(anthropicModel("a2", "A2"));
+            registry.register(openaiModel("o1", "O1"));
+
+            registry.unregisterByProvider(Provider.ANTHROPIC);
+
+            assertTrue(registry.getModel(Provider.ANTHROPIC, "a1").isEmpty());
+            assertTrue(registry.getModel(Provider.ANTHROPIC, "a2").isEmpty());
+            assertTrue(registry.getModels(Provider.ANTHROPIC).isEmpty());
+            assertTrue(registry.getModel(Provider.OPENAI, "o1").isPresent());
+            assertEquals(1, registry.getModels(Provider.OPENAI).size());
+        }
+
+        @Test
+        void unregisterUnknownProviderIsNoOp() {
+            registry.register(openaiModel("o1", "O1"));
+            assertDoesNotThrow(() -> registry.unregisterByProvider(Provider.CUSTOM));
+            assertEquals(1, registry.getModels(Provider.OPENAI).size());
+        }
+
+        @Test
+        void nullProviderThrows() {
+            assertThrows(NullPointerException.class, () -> registry.unregisterByProvider(null));
         }
     }
 
@@ -253,23 +302,22 @@ class ModelRegistryTest {
             for (var model : ModelRegistry.builtInModels()) {
                 assertTrue(model.contextWindow() > 0, "contextWindow must be positive: " + model.id());
                 assertTrue(model.maxTokens() > 0, "maxTokens must be positive: " + model.id());
-                assertTrue(model.maxTokens() <= model.contextWindow(),
-                    "maxTokens should not exceed contextWindow: " + model.id());
+                assertTrue(
+                        model.maxTokens() <= model.contextWindow(),
+                        "maxTokens should not exceed contextWindow: " + model.id());
             }
         }
 
         @Test
         void builtInProviderCount() {
             var providers = registry.getProviders();
-            assertEquals(17, providers.size());
+            assertEquals(15, providers.size());
             assertTrue(providers.contains(Provider.ANTHROPIC));
             assertTrue(providers.contains(Provider.OPENAI));
             assertTrue(providers.contains(Provider.ZAI));
             assertTrue(providers.contains(Provider.KIMI_CODING));
             assertTrue(providers.contains(Provider.MINIMAX));
             assertTrue(providers.contains(Provider.MINIMAX_CN));
-            assertTrue(providers.contains(Provider.GOOGLE));
-            assertTrue(providers.contains(Provider.GOOGLE_VERTEX));
             assertTrue(providers.contains(Provider.MISTRAL));
             assertTrue(providers.contains(Provider.AZURE_OPENAI));
             assertTrue(providers.contains(Provider.XAI));

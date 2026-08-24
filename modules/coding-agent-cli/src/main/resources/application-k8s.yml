@@ -1,0 +1,11 @@
+# Kubernetes 环境配置
+
+spring:
+  config:
+    activate:
+      on-profile: k8s
+
+# 日志配置
+logging:
+  level:
+    com.campusclaw: INFO

@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: campusclaw-config
+  namespace: campusclaw
+  labels:
+    app.kubernetes.io/name: campusclaw
+    app.kubernetes.io/component: config
+data:
+  # 应用配置
+  application.properties: |
+    # Spring Boot 配置
+    server.port=8080
+
+    # 日志配置
+    logging.level.root=INFO
+    logging.level.com.campusclaw=DEBUG
+
+    # 模型配置
+    campusclaw.model.default=k2p5

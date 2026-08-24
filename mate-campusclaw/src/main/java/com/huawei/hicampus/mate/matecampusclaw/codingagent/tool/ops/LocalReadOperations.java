@@ -1,0 +1,34 @@
+/*
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
+ */
+
+package com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.ops;
+
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+
+/**
+ * Local filesystem implementation of {@link ReadOperations}.
+ *
+ * @version [br_eCampusCore 26.0.0, 2026/05/06]
+ * @since [br_eCampusCore 26.0.0]
+ */
+public class LocalReadOperations implements ReadOperations {
+
+    @Override
+    public byte[] readFile(Path path) throws IOException {
+        return Files.readAllBytes(path);
+    }
+
+    @Override
+    public boolean exists(Path path) {
+        return Files.exists(path);
+    }
+
+    @Override
+    public String detectMimeType(Path path) throws IOException {
+        String mimeType = Files.probeContentType(path);
+        return mimeType != null ? mimeType : "application/octet-stream";
+    }
+}

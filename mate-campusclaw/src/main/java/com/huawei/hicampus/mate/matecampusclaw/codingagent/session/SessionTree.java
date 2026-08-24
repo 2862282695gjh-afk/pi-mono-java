@@ -1,0 +1,208 @@
+/*
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
+ */
+
+package com.huawei.hicampus.mate.matecampusclaw.codingagent.session;
+
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
+import java.util.UUID;
+
+import com.huawei.hicampus.mate.matecampusclaw.ai.types.Message;
+
+/**
+ * In-memory representation of a session as a tree of entries.
+ * Supports forking (branching) and navigating between branches.
+ *
+ * @version [br_eCampusCore 26.0.0, 2026/05/06]
+ * @since [br_eCampusCore 26.0.0]
+ */
+public class SessionTree {
+    private final List<SessionEntry> entries = new ArrayList<>();
+    private final Map<String, SessionEntry> entriesById = new LinkedHashMap<>();
+    private final Map<String, List<String>> childrenMap = new LinkedHashMap<>();
+    private String currentEntryId = null;
+
+    /**
+     * Add an entry to the tree.
+     *
+     * @param entry the entry
+     */
+    public void addEntry(SessionEntry entry) {
+        entries.add(entry);
+        entriesById.put(entry.id(), entry);
+        if (entry.parentId() != null) {
+            childrenMap
+                    .computeIfAbsent(entry.parentId(), k -> new ArrayList<>())
+                    .add(entry.id());
+        }
+        currentEntryId = entry.id();
+    }
+
+    /**
+     * Get the current branch (path from root to current entry).
+     *
+     * @return the result
+     */
+    public List<SessionEntry> getCurrentBranch() {
+        if (currentEntryId == null) {
+            return List.of();
+        }
+        List<SessionEntry> branch = new ArrayList<>();
+        String id = currentEntryId;
+        while (id != null) {
+            SessionEntry entry = entriesById.get(id);
+            if (entry == null) {
+                break;
+            }
+            branch.add(0, entry);
+            id = entry.parentId();
+        }
+        return branch;
+    }
+
+    /**
+     * Get messages from the current branch.
+     *
+     * @return the result
+     */
+    public List<Message> getCurrentMessages() {
+        List<Message> messages = new ArrayList<>();
+        for (SessionEntry entry : getCurrentBranch()) {
+            if ("message".equals(entry.type()) && entry.message() != null) {
+                messages.add(entry.message());
+            }
+        }
+        return messages;
+    }
+
+    /**
+     * Fork at the given entry ID, creating a new branch point.
+     *
+     * @param atEntryId the atEntryId
+     * @return the result
+     *
+     * @throws IllegalArgumentException if the operation fails
+     */
+    public String fork(String atEntryId) {
+        if (!entriesById.containsKey(atEntryId)) {
+            throw new IllegalArgumentException("Entry not found: " + atEntryId);
+        }
+        currentEntryId = atEntryId;
+        return atEntryId;
+    }
+
+    /**
+     * Switch to a different entry (navigating the tree).
+     *
+     * @param entryId the entryId
+     *
+     * @throws IllegalArgumentException if the operation fails
+     */
+    public void switchTo(String entryId) {
+        if (!entriesById.containsKey(entryId)) {
+            throw new IllegalArgumentException("Entry not found: " + entryId);
+        }
+        currentEntryId = entryId;
+    }
+
+    /**
+     * Get all leaf entries (branch tips).
+     *
+     * @return the result
+     */
+    public List<SessionEntry> getLeaves() {
+        Set<String> parents = new HashSet<>();
+        for (SessionEntry e : entries) {
+            if (e.parentId() != null) {
+                parents.add(e.parentId());
+            }
+        }
+        List<SessionEntry> leaves = new ArrayList<>();
+        for (SessionEntry e : entries) {
+            if (!parents.contains(e.id())) {
+                leaves.add(e);
+            }
+        }
+        return leaves;
+    }
+
+    /**
+     * Get children of an entry.
+     *
+     * @param entryId the entryId
+     * @return the result
+     */
+    public List<SessionEntry> getChildren(String entryId) {
+        List<String> childIds = childrenMap.getOrDefault(entryId, List.of());
+        List<SessionEntry> children = new ArrayList<>();
+        for (String id : childIds) {
+            SessionEntry e = entriesById.get(id);
+            if (e != null) {
+                children.add(e);
+            }
+        }
+        return children;
+    }
+
+    /**
+     * Get all entries in order.
+     *
+     * @return the result
+     */
+    public List<SessionEntry> getAllEntries() {
+        return Collections.unmodifiableList(entries);
+    }
+
+    /**
+     * Get current entry ID.
+     *
+     * @return the result
+     */
+    public String getCurrentEntryId() {
+        return currentEntryId;
+    }
+
+    /**
+     * Get entry by ID.
+     *
+     * @param id the id
+     * @return the result
+     */
+    public Optional<SessionEntry> getEntry(String id) {
+        return Optional.ofNullable(entriesById.get(id));
+    }
+
+    /**
+     * Generate a unique entry ID.
+     *
+     * @return the result
+     */
+    public static String generateId() {
+        return UUID.randomUUID().toString().substring(0, 8);
+    }
+
+    /**
+     * Get number of entries.
+     *
+     * @return the result
+     */
+    public int size() {
+        return entries.size();
+    }
+
+    /**
+     * Check if tree is empty.
+     *
+     * @return the result
+     */
+    public boolean isEmpty() {
+        return entries.isEmpty();
+    }
+}

@@ -1,6 +1,15 @@
+/*
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
+ */
+
 package com.campusclaw.codingagent.tool.bash;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
 import java.nio.file.Path;
@@ -59,14 +68,14 @@ class BashExecutorTest {
         void usesWorkingDirectory() throws IOException {
             var result = executor.execute("pwd", tempDir, defaultOptions());
             assertEquals(0, result.exitCode());
+
             // On macOS, /var may symlink to /private/var, so just check the directory name
             assertTrue(result.stdout().trim().endsWith(tempDir.getFileName().toString()));
         }
 
         @Test
         void passesEnvironmentVariables() throws IOException {
-            var options = new BashExecutorOptions(
-                    Duration.ofSeconds(10), null, Map.of("MY_VAR", "value42"));
+            var options = new BashExecutorOptions(Duration.ofSeconds(10), null, Map.of("MY_VAR", "value42"));
             var result = executor.execute("echo $MY_VAR", tempDir, options);
             assertEquals(0, result.exitCode());
             assertEquals("value42\n", result.stdout());
@@ -123,7 +132,7 @@ class BashExecutorTest {
 
         @Test
         void timeoutReturnsNullExitCode() throws IOException {
-            var options = new BashExecutorOptions(Duration.ofMillis(500), null, null);
+            var options = new BashExecutorOptions(Duration.ofMillis(150), null, null);
             var result = executor.execute("sleep 60", tempDir, options);
             assertNull(result.exitCode());
         }
@@ -151,7 +160,7 @@ class BashExecutorTest {
             // Cancel after a short delay
             Thread.ofVirtual().start(() -> {
                 try {
-                    Thread.sleep(300);
+                    Thread.sleep(75);
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                 }
@@ -204,7 +213,8 @@ class BashExecutorTest {
 
             mutable.put("K2", "V2");
             assertFalse(options.env().containsKey("K2"));
-            assertThrows(UnsupportedOperationException.class, () -> options.env().put("X", "Y"));
+            assertThrows(
+                    UnsupportedOperationException.class, () -> options.env().put("X", "Y"));
         }
     }
 }

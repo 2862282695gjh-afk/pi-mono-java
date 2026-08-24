@@ -1,0 +1,35 @@
+/*
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
+ */
+
+package com.huawei.hicampus.mate.matecampusclaw.codingagent.command.builtin;
+
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.command.QuitException;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.command.SlashCommand;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.command.SlashCommandContext;
+
+/**
+ * Slash command {@code /quit} that prints a farewell line and throws {@link QuitException}
+ * to signal the CLI main loop to exit.
+ *
+ * @version [br_eCampusCore 26.0.0, 2026/05/13]
+ * @since [br_eCampusCore 26.0.0]
+ */
+public class QuitCommand implements SlashCommand {
+
+    @Override
+    public String name() {
+        return "quit";
+    }
+
+    @Override
+    public String description() {
+        return "Exit the application";
+    }
+
+    @Override
+    public void execute(SlashCommandContext context, String arguments) {
+        context.output().println("Goodbye.");
+        throw new QuitException();
+    }
+}

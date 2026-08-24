@@ -1,16 +1,38 @@
+/*
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
+ */
+
 package com.campusclaw.ai.provider.anthropic;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 import com.campusclaw.ai.stream.AssistantMessageEvent;
 import com.campusclaw.ai.stream.AssistantMessageEventStream;
-import com.campusclaw.ai.types.*;
+import com.campusclaw.ai.types.Api;
+import com.campusclaw.ai.types.Context;
+import com.campusclaw.ai.types.InputModality;
+import com.campusclaw.ai.types.Model;
+import com.campusclaw.ai.types.ModelCost;
+import com.campusclaw.ai.types.Provider;
+import com.campusclaw.ai.types.StopReason;
+import com.campusclaw.ai.types.TextContent;
+import com.campusclaw.ai.types.ThinkingContent;
+import com.campusclaw.ai.types.ThinkingLevel;
+import com.campusclaw.ai.types.ToolCall;
+import com.campusclaw.ai.types.UserMessage;
 
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -28,30 +50,48 @@ import okhttp3.mockwebserver.SocketPolicy;
 @Timeout(30)
 class AnthropicProviderIntegrationTest {
 
-    private MockWebServer server;
+    private static MockWebServer server;
+
     private AnthropicProvider provider;
 
     private Model testModel(String baseUrl) {
         return new Model(
-                "claude-sonnet-4-20250514", "Claude Sonnet 4",
-                Api.ANTHROPIC_MESSAGES, Provider.ANTHROPIC,
-                baseUrl, true,
+                "claude-sonnet-4-20250514",
+                "Claude Sonnet 4",
+                Api.ANTHROPIC_MESSAGES,
+                Provider.ANTHROPIC,
+                baseUrl,
+                true,
                 List.of(InputModality.TEXT, InputModality.IMAGE),
                 new ModelCost(3.0, 15.0, 0.3, 3.75),
-                200000, 16000, null, null,
-                null
-        );
+                200000,
+                16000,
+                null,
+                null,
+                null);
+    }
+
+    @BeforeAll
+    static void startServer() throws IOException {
+        server = new MockWebServer();
+        server.start();
     }
 
     @BeforeEach
-    void setUp() throws IOException {
-        server = new MockWebServer();
-        server.start();
-        provider = new AnthropicProvider();
+    void setUp() {
+        provider = new AnthropicProvider(
+                new com.campusclaw.ai.env.EnvProviderConfigResolver(new com.campusclaw.ai.env.EnvApiKeyResolver()));
     }
 
     @AfterEach
-    void tearDown() throws IOException {
+    void drainRequests() throws InterruptedException {
+        while (server.takeRequest(1, TimeUnit.MILLISECONDS) != null) {
+            // Drain requests so request-asserting tests do not see prior traffic.
+        }
+    }
+
+    @AfterAll
+    static void shutdownServer() throws IOException {
         server.shutdown();
     }
 
@@ -66,44 +106,50 @@ class AnthropicProviderIntegrationTest {
     @Nested
     class TextStreaming {
 
+        // SSE body fixture for streamsTextResponse() — message_start through message_stop emitting "Hello world".
+        private String helloWorldSseBody() {
+            return sseEvent(
+                            "message_start",
+                            """
+                            {"type":"message_start","message":{"id":"msg_123","type":"message","role":"assistant","model":"claude-sonnet-4-20250514","content":[],"stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":10,"output_tokens":0,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}}}""")
+                    + sseEvent(
+                            "content_block_start",
+                            """
+                            {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}""")
+                    + sseEvent(
+                            "content_block_delta",
+                            """
+                            {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}""")
+                    + sseEvent(
+                            "content_block_delta",
+                            """
+                            {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" world"}}""")
+                    + sseEvent(
+                            "content_block_stop",
+                            """
+                            {"type":"content_block_stop","index":0}""")
+                    + sseEvent(
+                            "message_delta",
+                            """
+                            {"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null},"usage":{"output_tokens":5}}""")
+                    + sseEvent("message_stop", """
+                            {"type":"message_stop"}""");
+        }
+
         @Test
         void streamsTextResponse() throws Exception {
-            String sseBody = sseEvent("message_start",
-                    """
-                    {"type":"message_start","message":{"id":"msg_123","type":"message","role":"assistant","model":"claude-sonnet-4-20250514","content":[],"stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":10,"output_tokens":0,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}}}""")
-                    + sseEvent("content_block_start",
-                    """
-                    {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}""")
-                    + sseEvent("content_block_delta",
-                    """
-                    {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}""")
-                    + sseEvent("content_block_delta",
-                    """
-                    {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" world"}}""")
-                    + sseEvent("content_block_stop",
-                    """
-                    {"type":"content_block_stop","index":0}""")
-                    + sseEvent("message_delta",
-                    """
-                    {"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null},"usage":{"output_tokens":5}}""")
-                    + sseEvent("message_stop",
-                    """
-                    {"type":"message_stop"}""");
-
             server.enqueue(new MockResponse()
                     .setResponseCode(200)
                     .setHeader("Content-Type", "text/event-stream")
-                    .setBody(sseBody)
+                    .setBody(helloWorldSseBody())
                     .setSocketPolicy(SocketPolicy.DISCONNECT_AT_END));
 
             String baseUrl = server.url("/").toString();
             var model = testModel(baseUrl);
-            var context = new Context(null,
-                    List.of(new UserMessage("Hi", 1L)), null);
+            var context = new Context(null, List.of(new UserMessage("Hi", 1L)), null);
             var eventStream = new AssistantMessageEventStream();
 
-            provider.executeStream(model, context, "test-api-key",
-                    null, null, null, null, eventStream);
+            provider.executeStream(model, context, "test-api-key", null, null, null, null, eventStream);
 
             var events = collectEvents(eventStream);
             var finalMsg = eventStream.result().block();
@@ -130,23 +176,25 @@ class AnthropicProviderIntegrationTest {
 
         @Test
         void verifiesRequestParameters() throws Exception {
-            String sseBody = sseEvent("message_start",
-                    """
+            String sseBody = sseEvent(
+                            "message_start",
+                            """
                     {"type":"message_start","message":{"id":"msg_456","type":"message","role":"assistant","model":"claude-sonnet-4-20250514","content":[],"stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":5,"output_tokens":0,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}}}""")
-                    + sseEvent("content_block_start",
-                    """
+                    + sseEvent(
+                            "content_block_start",
+                            """
                     {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}""")
-                    + sseEvent("content_block_delta",
-                    """
+                    + sseEvent(
+                            "content_block_delta",
+                            """
                     {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"OK"}}""")
-                    + sseEvent("content_block_stop",
-                    """
+                    + sseEvent("content_block_stop", """
                     {"type":"content_block_stop","index":0}""")
-                    + sseEvent("message_delta",
-                    """
+                    + sseEvent(
+                            "message_delta",
+                            """
                     {"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null},"usage":{"output_tokens":1}}""")
-                    + sseEvent("message_stop",
-                    """
+                    + sseEvent("message_stop", """
                     {"type":"message_stop"}""");
 
             server.enqueue(new MockResponse()
@@ -157,12 +205,10 @@ class AnthropicProviderIntegrationTest {
 
             String baseUrl = server.url("/").toString();
             var model = testModel(baseUrl);
-            var context = new Context("Be helpful.",
-                    List.of(new UserMessage("Hello", 1L)), null);
+            var context = new Context("Be helpful.", List.of(new UserMessage("Hello", 1L)), null);
             var eventStream = new AssistantMessageEventStream();
 
-            provider.executeStream(model, context, "test-api-key",
-                    4096, 0.7, null, null, eventStream);
+            provider.executeStream(model, context, "test-api-key", 4096, 0.7, null, null, eventStream);
 
             eventStream.result().block();
 
@@ -184,26 +230,29 @@ class AnthropicProviderIntegrationTest {
 
         @Test
         void streamsToolCallResponse() throws Exception {
-            String sseBody = sseEvent("message_start",
-                    """
+            String sseBody = sseEvent(
+                            "message_start",
+                            """
                     {"type":"message_start","message":{"id":"msg_789","type":"message","role":"assistant","model":"claude-sonnet-4-20250514","content":[],"stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":20,"output_tokens":0,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}}}""")
-                    + sseEvent("content_block_start",
-                    """
+                    + sseEvent(
+                            "content_block_start",
+                            """
                     {"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"toolu_abc","name":"bash"}}""")
-                    + sseEvent("content_block_delta",
-                    """
+                    + sseEvent(
+                            "content_block_delta",
+                            """
                     {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\\"com"}}""")
-                    + sseEvent("content_block_delta",
-                    """
+                    + sseEvent(
+                            "content_block_delta",
+                            """
                     {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"mand\\":\\"ls\\"}"}}""")
-                    + sseEvent("content_block_stop",
-                    """
+                    + sseEvent("content_block_stop", """
                     {"type":"content_block_stop","index":0}""")
-                    + sseEvent("message_delta",
-                    """
+                    + sseEvent(
+                            "message_delta",
+                            """
                     {"type":"message_delta","delta":{"stop_reason":"tool_use","stop_sequence":null},"usage":{"output_tokens":15}}""")
-                    + sseEvent("message_stop",
-                    """
+                    + sseEvent("message_stop", """
                     {"type":"message_stop"}""");
 
             server.enqueue(new MockResponse()
@@ -214,12 +263,10 @@ class AnthropicProviderIntegrationTest {
 
             String baseUrl = server.url("/").toString();
             var model = testModel(baseUrl);
-            var context = new Context(null,
-                    List.of(new UserMessage("Run ls", 1L)), null);
+            var context = new Context(null, List.of(new UserMessage("Run ls", 1L)), null);
             var eventStream = new AssistantMessageEventStream();
 
-            provider.executeStream(model, context, "test-api-key",
-                    null, null, null, null, eventStream);
+            provider.executeStream(model, context, "test-api-key", null, null, null, null, eventStream);
 
             var events = collectEvents(eventStream);
             var finalMsg = eventStream.result().block();
@@ -248,50 +295,58 @@ class AnthropicProviderIntegrationTest {
     @Nested
     class ThinkingStreaming {
 
+        // SSE body fixture for streamsThinkingResponse() — thinking block then text block then stop.
+        private String thinkingThenAnswerSseBody() {
+            return sseEvent(
+                            "message_start",
+                            """
+                            {"type":"message_start","message":{"id":"msg_think","type":"message","role":"assistant","model":"claude-sonnet-4-20250514","content":[],"stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":10,"output_tokens":0,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}}}""")
+                    + sseEvent(
+                            "content_block_start",
+                            """
+                            {"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":""}}""")
+                    + sseEvent(
+                            "content_block_delta",
+                            """
+                            {"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"Let me think"}}""")
+                    + sseEvent(
+                            "content_block_stop",
+                            """
+                            {"type":"content_block_stop","index":0}""")
+                    + sseEvent(
+                            "content_block_start",
+                            """
+                            {"type":"content_block_start","index":1,"content_block":{"type":"text","text":""}}""")
+                    + sseEvent(
+                            "content_block_delta",
+                            """
+                            {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"Answer"}}""")
+                    + sseEvent(
+                            "content_block_stop",
+                            """
+                            {"type":"content_block_stop","index":1}""")
+                    + sseEvent(
+                            "message_delta",
+                            """
+                            {"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null},"usage":{"output_tokens":20}}""")
+                    + sseEvent("message_stop", """
+                            {"type":"message_stop"}""");
+        }
+
         @Test
         void streamsThinkingResponse() throws Exception {
-            String sseBody = sseEvent("message_start",
-                    """
-                    {"type":"message_start","message":{"id":"msg_think","type":"message","role":"assistant","model":"claude-sonnet-4-20250514","content":[],"stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":10,"output_tokens":0,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}}}""")
-                    + sseEvent("content_block_start",
-                    """
-                    {"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":""}}""")
-                    + sseEvent("content_block_delta",
-                    """
-                    {"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"Let me think"}}""")
-                    + sseEvent("content_block_stop",
-                    """
-                    {"type":"content_block_stop","index":0}""")
-                    + sseEvent("content_block_start",
-                    """
-                    {"type":"content_block_start","index":1,"content_block":{"type":"text","text":""}}""")
-                    + sseEvent("content_block_delta",
-                    """
-                    {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"Answer"}}""")
-                    + sseEvent("content_block_stop",
-                    """
-                    {"type":"content_block_stop","index":1}""")
-                    + sseEvent("message_delta",
-                    """
-                    {"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null},"usage":{"output_tokens":20}}""")
-                    + sseEvent("message_stop",
-                    """
-                    {"type":"message_stop"}""");
-
             server.enqueue(new MockResponse()
                     .setResponseCode(200)
                     .setHeader("Content-Type", "text/event-stream")
-                    .setBody(sseBody)
+                    .setBody(thinkingThenAnswerSseBody())
                     .setSocketPolicy(SocketPolicy.DISCONNECT_AT_END));
 
             String baseUrl = server.url("/").toString();
             var model = testModel(baseUrl);
-            var context = new Context(null,
-                    List.of(new UserMessage("Think about this", 1L)), null);
+            var context = new Context(null, List.of(new UserMessage("Think about this", 1L)), null);
             var eventStream = new AssistantMessageEventStream();
 
-            provider.executeStream(model, context, "test-api-key",
-                    null, null, ThinkingLevel.MEDIUM, null, eventStream);
+            provider.executeStream(model, context, "test-api-key", null, null, ThinkingLevel.MEDIUM, null, eventStream);
 
             var events = collectEvents(eventStream);
             var finalMsg = eventStream.result().block();
@@ -320,23 +375,25 @@ class AnthropicProviderIntegrationTest {
 
         @Test
         void tracksUsageWithCacheTokens() throws Exception {
-            String sseBody = sseEvent("message_start",
-                    """
+            String sseBody = sseEvent(
+                            "message_start",
+                            """
                     {"type":"message_start","message":{"id":"msg_usage","type":"message","role":"assistant","model":"claude-sonnet-4-20250514","content":[],"stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":100,"output_tokens":0,"cache_creation_input_tokens":50,"cache_read_input_tokens":200}}}""")
-                    + sseEvent("content_block_start",
-                    """
+                    + sseEvent(
+                            "content_block_start",
+                            """
                     {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}""")
-                    + sseEvent("content_block_delta",
-                    """
+                    + sseEvent(
+                            "content_block_delta",
+                            """
                     {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"OK"}}""")
-                    + sseEvent("content_block_stop",
-                    """
+                    + sseEvent("content_block_stop", """
                     {"type":"content_block_stop","index":0}""")
-                    + sseEvent("message_delta",
-                    """
+                    + sseEvent(
+                            "message_delta",
+                            """
                     {"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null},"usage":{"output_tokens":10}}""")
-                    + sseEvent("message_stop",
-                    """
+                    + sseEvent("message_stop", """
                     {"type":"message_stop"}""");
 
             server.enqueue(new MockResponse()
@@ -347,12 +404,10 @@ class AnthropicProviderIntegrationTest {
 
             String baseUrl = server.url("/").toString();
             var model = testModel(baseUrl);
-            var context = new Context(null,
-                    List.of(new UserMessage("Hello", 1L)), null);
+            var context = new Context(null, List.of(new UserMessage("Hello", 1L)), null);
             var eventStream = new AssistantMessageEventStream();
 
-            provider.executeStream(model, context, "test-api-key",
-                    null, null, null, null, eventStream);
+            provider.executeStream(model, context, "test-api-key", null, null, null, null, eventStream);
 
             var finalMsg = eventStream.result().block();
 
@@ -383,12 +438,10 @@ class AnthropicProviderIntegrationTest {
 
             String baseUrl = server.url("/").toString();
             var model = testModel(baseUrl);
-            var context = new Context(null,
-                    List.of(new UserMessage("Hello", 1L)), null);
+            var context = new Context(null, List.of(new UserMessage("Hello", 1L)), null);
             var eventStream = new AssistantMessageEventStream();
 
-            provider.executeStream(model, context, "test-api-key",
-                    null, null, null, null, eventStream);
+            provider.executeStream(model, context, "test-api-key", null, null, null, null, eventStream);
 
             assertThrows(Exception.class, () -> eventStream.result().block());
         }
@@ -396,12 +449,10 @@ class AnthropicProviderIntegrationTest {
         @Test
         void handlesMissingApiKey() {
             var model = testModel("http://localhost:1");
-            var context = new Context(null,
-                    List.of(new UserMessage("Hello", 1L)), null);
+            var context = new Context(null, List.of(new UserMessage("Hello", 1L)), null);
             var eventStream = new AssistantMessageEventStream();
 
-            provider.executeStream(model, context, null,
-                    null, null, null, null, eventStream);
+            provider.executeStream(model, context, null, null, null, null, null, eventStream);
 
             assertThrows(Exception.class, () -> eventStream.result().block());
         }
@@ -416,23 +467,25 @@ class AnthropicProviderIntegrationTest {
 
         @Test
         void mapsMaxTokensStopReason() throws Exception {
-            String sseBody = sseEvent("message_start",
-                    """
+            String sseBody = sseEvent(
+                            "message_start",
+                            """
                     {"type":"message_start","message":{"id":"msg_len","type":"message","role":"assistant","model":"claude-sonnet-4-20250514","content":[],"stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":10,"output_tokens":0,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}}}""")
-                    + sseEvent("content_block_start",
-                    """
+                    + sseEvent(
+                            "content_block_start",
+                            """
                     {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}""")
-                    + sseEvent("content_block_delta",
-                    """
+                    + sseEvent(
+                            "content_block_delta",
+                            """
                     {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"truncated"}}""")
-                    + sseEvent("content_block_stop",
-                    """
+                    + sseEvent("content_block_stop", """
                     {"type":"content_block_stop","index":0}""")
-                    + sseEvent("message_delta",
-                    """
+                    + sseEvent(
+                            "message_delta",
+                            """
                     {"type":"message_delta","delta":{"stop_reason":"max_tokens","stop_sequence":null},"usage":{"output_tokens":100}}""")
-                    + sseEvent("message_stop",
-                    """
+                    + sseEvent("message_stop", """
                     {"type":"message_stop"}""");
 
             server.enqueue(new MockResponse()
@@ -443,12 +496,10 @@ class AnthropicProviderIntegrationTest {
 
             String baseUrl = server.url("/").toString();
             var model = testModel(baseUrl);
-            var context = new Context(null,
-                    List.of(new UserMessage("Write a long essay", 1L)), null);
+            var context = new Context(null, List.of(new UserMessage("Write a long essay", 1L)), null);
             var eventStream = new AssistantMessageEventStream();
 
-            provider.executeStream(model, context, "test-api-key",
-                    null, null, null, null, eventStream);
+            provider.executeStream(model, context, "test-api-key", null, null, null, null, eventStream);
 
             var finalMsg = eventStream.result().block();
 
@@ -468,8 +519,9 @@ class AnthropicProviderIntegrationTest {
     }
 
     private <T> void assertHasEventType(List<AssistantMessageEvent> events, Class<T> type) {
-        assertTrue(events.stream().anyMatch(type::isInstance),
-                "Expected event of type " + type.getSimpleName() + " but none found in: " +
-                        events.stream().map(e -> e.getClass().getSimpleName()).toList());
+        assertTrue(
+                events.stream().anyMatch(type::isInstance),
+                "Expected event of type " + type.getSimpleName() + " but none found in: "
+                        + events.stream().map(e -> e.getClass().getSimpleName()).toList());
     }
 }

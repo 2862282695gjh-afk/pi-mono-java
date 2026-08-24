@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ADR-0011 · Agent 与 Skill 运行时解析</title>
+  <style>
+    :root{--fg:#1a1a1a;--dim:#666;--accent:#2563eb;--accepted:#15803d;--bg:#fff;--card:#f6f7f9}
+    body{font:15px/1.6 -apple-system,Segoe UI,Roboto,"PingFang SC",sans-serif;color:var(--fg);
+         background:var(--bg);max-width:820px;margin:2rem auto;padding:0 1.2rem}
+    h1{font-size:1.5rem;margin:.2rem 0}
+    .meta{color:var(--dim);font-size:.9rem;margin-bottom:1.2rem}
+    .badge{display:inline-block;padding:.1rem .6rem;border-radius:1rem;font-size:.8rem;background:var(--accepted);color:#fff}
+    section{margin:1.4rem 0}
+    h2{font-size:1.05rem;border-bottom:1px solid #eee;padding-bottom:.3rem}
+    a{color:var(--accent)} code{background:var(--card);padding:.1rem .3rem;border-radius:.3rem}
+  </style>
+</head>
+<body>
+  <h1>ADR-0011 · CampusClaw 本地优先加载 Agent 并按需激活 Skill 工具</h1>
+  <div class="meta">Status: <span class="badge">Accepted</span> · Date: 2026-08-11 · Amended: 2026-08-19 ·
+    设计文档: <a href="../designs/agent-skill-runtime.md">agent-skill-runtime</a></div>
+
+  <section><h2>Context</h2>
+    <p>CampusMateService 与 CampusClaw 分 Pod 部署。CampusClaw 选择并运行 Agent，并要求优先复用 <code>./agent/{agentId}</code>；整个 Agent 目录缺失时先调用 GetAgentRuntime 获取 Agent 及直接绑定 Skill 的 ID/版本，再逐个调用 querySkillInfo 物化 Agent 元数据、Skill 文件树和本地工具快照，既有半成品则 fail closed。模型选择 Skill 后，CampusClaw 从本地 <code>references/tools.json</code> 取得全部 Skill 工具并加入下一轮模型上下文。</p>
+  </section>
+
+  <section><h2>Options considered</h2>
+    <ul>
+      <li><strong>每次运行都查询 CampusMateService</strong><br>Pro：状态最新、无需维护本地命中规则。<br>Con：不符合已确定的本地目录优先规则，增加延迟与 CampusMate 故障耦合。Rejected。</li>
+      <li><strong>部署脚本静态复制且不提供运行时管理</strong><br>Pro：实现最简单，启动后无网络调用。<br>Con：Agent 确定后无法统一完成 Skill 发现、上下文构建和工具授权，绑定变化仍与运行目录割裂。Rejected。</li>
+      <li><strong>本地完整则加载，缺失时解析直接绑定 Skill，并通过结构化工具激活 Skill</strong><br>Pro：复用现有目录约定，GetAgentRuntime 保持轻量坐标契约，Skill 内容由 querySkillInfo 独立提供，模型选择和工具加载边界清晰。<br>Con：需要处理跨接口版本匹配、缓存一致性、目录物化及每 Agent 会话隔离。Chosen。</li>
+    </ul>
+    <p><strong>选择理由：</strong>该方案是唯一同时满足本地优先、CampusClaw 决定 Agent、LLM 按需选择 Skill，以及工具权限在执行前解析这四项已确定约束的方案。</p>
+  </section>
+
+  <section><h2>Decision</h2>
+    <ul>
+      <li>本决策仅适用于显式传入 <code>cli --agent-id</code> 的托管 CLI 流程。公共 HTTP V1 只读 Manager 预置的 <code>agent/{agent_id}/.campusclaw/</code> HTTP 文件契约，不调用本物化器；旧 REST Chat、ServerMode 和公开 WebSocket 已删除。</li>
+      <li>CampusClaw 先选择 <code>agentId</code>，并由 <code>AgentRuntimeManager</code> 定位 <code>./agent/{agentId}</code>。</li>
+      <li>本地元数据和 Skill 树完整时直接读取；整个 Agent 目录不存在时调用 <code>GET /mate-service/v1/agents/{agentId}/runtime</code>，只把其中的 <code>bindingSkills</code> 解释为当前 Agent 直接绑定 Skill 的 ID/版本坐标。</li>
+      <li>GetAgentRuntime 返回的 <code>systemPrompt</code> 写入 <code>./agent/{agentId}/.campusclaw/systemPrompt.md</code>；本地命中时直接把该文件作为会话系统提示词来源，不与 <code>agentId.json.systemPrompt</code> 比对，也不访问 CampusMateService。</li>
+      <li>CampusClaw 对每个直接绑定 Skill 调用 <code>GET /mate-service/v1/skill/query/{skillId}</code>，要求唯一结果且返回 ID/版本与绑定坐标匹配，再原子物化目录；既有不完整目录拒绝加载。</li>
+      <li>每个 Skill 目录包含由元数据生成的基础 <code>SKILL.md</code>、本地 Skill 元数据快照、从 <code>bindingTools</code> 生成的 <code>references/tools.json</code>，以及 querySkillInfo 返回的 <code>references</code> 和 <code>templates</code> 文本文件。资源名必须是安全单路径段，fileType 只允许 <code>md</code> 或 <code>txt</code>；绑定数量、资源数量及字节数有上限。本地命中时目录集合、SKILL.md、tools.json 和资源内容都必须与快照完全一致。</li>
+      <li>querySkillInfo 的 <code>bindingSkills</code> 仅保存为依赖元数据；不递归查询、不物化，也不自动暴露为当前 Agent 可选 Skill。</li>
+      <li>托管 Agent 只加载自身 <code>.campusclaw/skills</code>；加载 SKILL.md 时同时加载 <code>references/tools.json</code>，初始上下文只暴露 Skill 的 name/description。</li>
+      <li>用户、CampusClaw 路由和 LLM 的 Skill 选择统一归一到结构化 <code>activate_skill(skillName)</code>。</li>
+      <li>querySkillInfo 返回的全部 Skill 工具都写入 <code>references/tools.json</code>，不按 permission 或工具名称过滤；激活时不访问 CampusMateService，而是从会话已加载的本地快照取工具名，再与本地 ToolCatalog 求交集。</li>
+      <li>ToolCatalog 仅索引 Spring 注册的 <code>AgentTool</code>，不扫描用户目录、不从声明动态创建进程工具。Agent 级基础工具继续应用权限与禁止列表；Skill 级工具不按 permission 或工具名称过滤，但仍必须存在于本地 ToolCatalog。</li>
+      <li>新增 Skill 工具从下一轮 LLM 调用开始生效，Agent 本次运行结束后恢复 Agent 级工具。</li>
+    </ul>
+  </section>
+
+  <section><h2>Consequences</h2>
+    <ul>
+      <li>CLI 可以通过 <code>--agent-id</code> 选择托管 Agent；未指定时保留普通非托管 CLI 行为。HTTP V1 的 Agent 与 Session 隔离由独立 Runtime API 实现。</li>
+      <li>querySkillInfo 提供 references/templates 内容，但仍缺少真实 SKILL.md 指令正文；当前只能生成元数据版 SKILL.md，接口需补正文或制品包才能恢复完整 Skill 工作流。</li>
+      <li>GetAgentRuntime 与 querySkillInfo 的 ID/版本不一致、重复 Skill 或非法资源文件会使整个冷启动 fail closed，不发布部分目录。</li>
+      <li><code>systemPrompt.md</code> 缺失会使既有 Agent Runtime 被判定为不完整；修改该文件后，新建会话直接使用本地内容。</li>
+      <li>依赖 Skill 当前只被记录，不参与递归解析或 Agent 可见性；未来若支持依赖执行，需要另行定义授权与版本闭包。</li>
+      <li>本地完整后不再查询 GetAgentRuntime，当前接口也没有 revision/TTL，因此 Skill 启停和解绑不会自动刷新。</li>
+      <li><code>tools.json</code> 是冷启动 Skill 工具元数据快照；当前接口没有 revision/TTL，工具绑定变化不会在本地缓存有效期间自动刷新。</li>
+      <li>主 Agent 尚无 ASK 审批协议，Agent 级 <code>permission=ask</code> 当前 fail closed；Skill 级 permission 不参与 tools.json 的生成或加载。</li>
+    </ul>
+  </section>
+
+  <section><h2>Related</h2>
+    <ul>
+      <li><a href="../designs/agent-skill-runtime.md">Agent 与 Skill 运行时管理设计及顺序图</a></li>
+      <li><a href="../designs/coding-agent-cli.md">coding-agent-cli 设计</a></li>
+      <li><a href="../designs/tool-system-alignment.md">工具系统对齐设计</a></li>
+      <li><a href="0013-defer-snapshot-hardening.html">ADR-0013</a>（部分暂缓本决策的 fail closed 快照加固，恢复条件见 DEF-008）</li>
+    </ul>
+  </section>
+</body>
+</html>

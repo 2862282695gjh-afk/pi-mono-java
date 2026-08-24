@@ -1,4 +1,12 @@
+/*
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
+ */
+
 package com.campusclaw.cron.store;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -11,8 +19,6 @@ import com.campusclaw.cron.model.CronSchedule;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-
-import static org.junit.jupiter.api.Assertions.*;
 
 class CronStoreTest {
 
@@ -108,9 +114,54 @@ class CronStoreTest {
         assertEquals("persisted", jobs.get(0).name());
     }
 
+    @Test
+    void saveListReplacesAllJobs() {
+        store.addJob(createJob("a"));
+        store.addJob(createJob("b"));
+
+        // save() with a new list should replace previously stored jobs entirely.
+        var replacement = java.util.List.of(createJob("only-one"));
+        store.save(replacement);
+
+        var jobs = store.load();
+        assertEquals(1, jobs.size());
+        assertEquals("only-one", jobs.get(0).name());
+    }
+
+    @Test
+    void loadReturnsEmptyForCorruptJsonFile() throws IOException {
+        Files.writeString(
+                tempDir.resolve("jobs.json"), "{ this is not valid json", java.nio.charset.StandardCharsets.UTF_8);
+        assertTrue(store.load().isEmpty(), "corrupt file should not crash; load() returns empty list");
+    }
+
+    @Test
+    void updateNonExistentJobIsNoOp() {
+        var job = createJob("ghost");
+        store.updateJob(job); // file doesn't exist yet, should not throw and should not create stale state
+        assertTrue(store.load().isEmpty(), "updateJob against a missing id must not implicitly add it");
+    }
+
+    @Test
+    void processLockAcquireAndRelease() {
+        var lock = store.acquireProcessLock();
+        assertTrue(lock != null, "first acquireProcessLock should succeed");
+
+        // releaseProcessLock(null) is allowed and must not throw.
+        store.releaseProcessLock(null);
+        store.releaseProcessLock(lock);
+
+        // After release, lock is acquirable again.
+        var second = store.acquireProcessLock();
+        assertTrue(second != null, "lock acquirable again after release");
+        store.releaseProcessLock(second);
+    }
+
     private CronJob createJob(String name) {
-        return CronJob.create(name, null,
-            new CronSchedule.Every(60000L),
-            new CronPayload.AgentPrompt("do something", null, null, null));
+        return CronJob.create(
+                name,
+                null,
+                new CronSchedule.Every(60000L),
+                new CronPayload.AgentPrompt("do something", null, null, null));
     }
 }

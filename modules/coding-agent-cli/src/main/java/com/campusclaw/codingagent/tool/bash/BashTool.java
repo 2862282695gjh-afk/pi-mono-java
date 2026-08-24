@@ -1,3 +1,7 @@
+/*
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
+ */
+
 package com.campusclaw.codingagent.tool.bash;
 
 import java.io.IOException;
@@ -19,18 +23,28 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 /**
  * Agent tool that executes bash commands via {@link BashExecutor},
  * truncates combined output, and returns results as {@link TextContent}.
+ *
+ * @version [br_eCampusCore 26.0.0, 2026/05/06]
+ * @since [br_eCampusCore 26.0.0]
  */
 @Component
 public class BashTool implements AgentTool {
 
-    /** No default timeout — matches campusclaw behavior (timeout only if explicitly set). */
+    private static final Logger log = LoggerFactory.getLogger(BashTool.class);
+
+    /**
+     * No default timeout — matches campusclaw behavior (timeout only if explicitly set).
+     */
     static final int NO_TIMEOUT = 0;
+
     static final int MAX_OUTPUT_LINES = 2000;
     static final int MAX_OUTPUT_BYTES = 100_000;
 
@@ -67,12 +81,12 @@ public class BashTool implements AgentTool {
     @Override
     public JsonNode parameters() {
         ObjectNode props = MAPPER.createObjectNode();
-        props.set("command", MAPPER.createObjectNode()
-                .put("type", "string")
-                .put("description", "The bash command to execute"));
-        props.set("timeout", MAPPER.createObjectNode()
-                .put("type", "integer")
-                .put("description", "Timeout in seconds (optional)"));
+        props.set(
+                "command",
+                MAPPER.createObjectNode().put("type", "string").put("description", "The bash command to execute"));
+        props.set(
+                "timeout",
+                MAPPER.createObjectNode().put("type", "integer").put("description", "Timeout in seconds (optional)"));
 
         return MAPPER.createObjectNode()
                 .put("type", "object")
@@ -82,17 +96,11 @@ public class BashTool implements AgentTool {
 
     @Override
     public AgentToolResult execute(
-            String toolCallId,
-            Map<String, Object> params,
-            CancellationToken signal,
-            AgentToolUpdateCallback onUpdate
-    ) throws Exception {
+            String toolCallId, Map<String, Object> params, CancellationToken signal, AgentToolUpdateCallback onUpdate)
+            throws Exception {
         String command = (String) params.get("command");
         if (command == null || command.isBlank()) {
-            return new AgentToolResult(
-                    List.<ContentBlock>of(new TextContent("Error: command is required")),
-                    null
-            );
+            return new AgentToolResult(List.<ContentBlock>of(new TextContent("Error: command is required")), null);
         }
 
         int timeoutSeconds = NO_TIMEOUT;
@@ -107,17 +115,14 @@ public class BashTool implements AgentTool {
         var options = new BashExecutorOptions(
                 timeoutSeconds > 0 ? Duration.ofSeconds(timeoutSeconds) : null,
                 signal,
-                env.isEmpty() ? null : new java.util.HashMap<>(env)
-        );
+                env.isEmpty() ? null : new java.util.HashMap<>(env));
 
         BashExecutionResult execResult;
         try {
             execResult = bashExecutor.execute(command, cwd, options);
         } catch (IOException e) {
             return new AgentToolResult(
-                    List.<ContentBlock>of(new TextContent("Error executing command: " + e.getMessage())),
-                    null
-            );
+                    List.<ContentBlock>of(new TextContent("Error executing command: " + e.getMessage())), null);
         }
 
         // Combine stdout and stderr
@@ -138,22 +143,17 @@ public class BashTool implements AgentTool {
                 Path tempFile = Files.createTempFile("bash-output-", ".txt");
                 Files.writeString(tempFile, combined, StandardCharsets.UTF_8);
                 fullOutputPath = tempFile.toString();
-            } catch (IOException ignored) {
+            } catch (IOException e) {
                 // If we can't write the temp file, just proceed without it
+                log.warn("failed to spill truncated bash output to temp file; full output unavailable", e);
             }
         } else {
             displayText = combined;
         }
 
-        var details = new BashToolDetails(
-                truncationResult.truncated() ? truncationResult : null,
-                fullOutputPath
-        );
+        var details = new BashToolDetails(truncationResult.truncated() ? truncationResult : null, fullOutputPath);
 
-        return new AgentToolResult(
-                List.<ContentBlock>of(new TextContent(displayText)),
-                details
-        );
+        return new AgentToolResult(List.<ContentBlock>of(new TextContent(displayText)), details);
     }
 
     private static String buildCombinedOutput(BashExecutionResult result) {
@@ -187,6 +187,10 @@ public class BashTool implements AgentTool {
 
     /**
      * Truncates text to the first N lines.
+     *
+     * @param text the text
+     * @param maxLines the maxLines
+     * @return the result
      */
     private static String truncateText(String text, int maxLines) {
         String[] lines = text.split("\n", -1);
@@ -195,7 +199,9 @@ public class BashTool implements AgentTool {
         }
         var sb = new StringBuilder();
         for (int i = 0; i < maxLines; i++) {
-            if (i > 0) sb.append('\n');
+            if (i > 0) {
+                sb.append('\n');
+            }
             sb.append(lines[i]);
         }
         return sb.toString();

@@ -1,6 +1,12 @@
+/*
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
+ */
+
 package com.campusclaw.codingagent.tool.edit;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -39,11 +45,9 @@ class DiffUtilsTest {
 
         @Test
         void includesContextLines() {
-            String diff = DiffUtils.computeUnifiedDiff(
-                    "1\n2\n3\n4\n5\n6\n7\n8\n",
-                    "1\n2\n3\nX\n5\n6\n7\n8\n",
-                    "test.txt"
-            );
+            String diff =
+                    DiffUtils.computeUnifiedDiff("1\n2\n3\n4\n5\n6\n7\n8\n", "1\n2\n3\nX\n5\n6\n7\n8\n", "test.txt");
+
             // Context lines should have space prefix
             assertTrue(diff.contains(" 3"));
             assertTrue(diff.contains(" 5"));

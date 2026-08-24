@@ -1,40 +1,56 @@
+/*
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
+ */
+
 package com.campusclaw.tui.terminal;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 
 import org.jline.terminal.Attributes;
 import org.jline.terminal.Size;
-import org.jline.terminal.TerminalBuilder;
+import org.jline.terminal.impl.DumbTerminal;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Tests JLineTerminal using a dumb JLine terminal (no real TTY needed).
  */
 class JLineTerminalTest {
 
+    private static final Logger log = LoggerFactory.getLogger(JLineTerminalTest.class);
+
     private org.jline.terminal.Terminal dumbTerminal;
     private JLineTerminal terminal;
 
     @BeforeEach
     void setUp() throws IOException {
-        dumbTerminal = TerminalBuilder.builder()
-                .name("test")
-                .dumb(true)
-                .size(new Size(80, 24))
-                .build();
+        dumbTerminal = new DumbTerminal(
+                "test",
+                "dumb",
+                new ByteArrayInputStream(new byte[0]),
+                new ByteArrayOutputStream(),
+                StandardCharsets.UTF_8);
+        dumbTerminal.setSize(new Size(80, 24));
         terminal = new JLineTerminal(dumbTerminal);
     }
 
     @AfterEach
     void tearDown() {
-        terminal.close();
+        if (terminal != null) {
+            terminal.close();
+        }
     }
 
     @Nested
@@ -79,8 +95,11 @@ class JLineTerminalTest {
             Attributes original = dumbTerminal.getAttributes();
             terminal.enterRawMode();
             terminal.exitRawMode();
-            // Attributes should be restored (dumb terminal may not change them)
-            assertNotNull(dumbTerminal.getAttributes());
+
+            // After a full enterRawMode + exitRawMode round-trip, attributes must equal what they were
+            // before (round-trip restoration). Attributes lacks .equals(), so compare its toString,
+            // which serializes the full flag set.
+            assertEquals(original.toString(), dumbTerminal.getAttributes().toString());
         }
     }
 
@@ -102,6 +121,7 @@ class JLineTerminalTest {
             List<Consumer> listeners = new ArrayList<>();
             terminal.onInput(data -> listeners.add(null));
             terminal.onInput(data -> listeners.add(null));
+
             // No exception means both were registered
             assertEquals(0, listeners.size()); // Not triggered yet
         }
@@ -118,18 +138,19 @@ class JLineTerminalTest {
         @Test
         void doubleCloseDoesNotThrow() {
             terminal.close();
+
             // Second close on a dumb terminal should handle gracefully
             assertDoesNotThrow(() -> {
                 try {
                     dumbTerminal.close();
                 } catch (IOException e) {
                     // Some dumb terminals may throw on double close - that's fine
+                    log.debug("double-close on dumb terminal threw (acceptable)", e);
                 }
             });
         }
     }
 
     // Simple placeholder to avoid compile error for List<Consumer>
-    interface Consumer {
-    }
+    interface Consumer {}
 }

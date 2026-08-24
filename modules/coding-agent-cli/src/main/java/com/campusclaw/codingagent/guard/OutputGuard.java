@@ -1,7 +1,12 @@
+/*
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
+ */
+
 package com.campusclaw.codingagent.guard;
 
 import java.io.OutputStream;
 import java.io.PrintStream;
+import java.nio.charset.StandardCharsets;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -14,6 +19,9 @@ import org.slf4j.LoggerFactory;
  * output from tools, libraries, or System.out.println() calls would
  * break the protocol. OutputGuard captures these and redirects them
  * to stderr or a log file.
+ *
+ * @version [br_eCampusCore 26.0.0, 2026/05/06]
+ * @since [br_eCampusCore 26.0.0]
  */
 public class OutputGuard implements AutoCloseable {
 
@@ -34,8 +42,11 @@ public class OutputGuard implements AutoCloseable {
         this.originalStdout = System.out;
         this.originalStderr = System.err;
 
-        // Create a guarded stdout that redirects non-protocol output to stderr
-        this.guardedStdout = new PrintStream(new GuardedOutputStream(originalStderr));
+        // Create a guarded stdout that redirects non-protocol output to stderr.
+        // autoFlush=true preserves stdout's per-newline flush behavior; explicit UTF-8
+        // avoids reliance on platform default charset (JEP 400 is UTF-8 on JDK 18+ but
+        // can still be overridden via -Dfile.encoding).
+        this.guardedStdout = new PrintStream(new GuardedOutputStream(originalStderr), true, StandardCharsets.UTF_8);
         this.active = false;
     }
 
@@ -64,6 +75,8 @@ public class OutputGuard implements AutoCloseable {
 
     /**
      * Returns whether the guard is currently active.
+     *
+     * @return the result
      */
     public boolean isActive() {
         return active;
@@ -72,6 +85,8 @@ public class OutputGuard implements AutoCloseable {
     /**
      * Returns the original stdout for protocol output.
      * Use this stream for JSONL protocol messages even when the guard is active.
+     *
+     * @return the result
      */
     public PrintStream getProtocolStream() {
         return originalStdout;

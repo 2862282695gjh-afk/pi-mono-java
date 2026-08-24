@@ -1,0 +1,43 @@
+/*
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
+ */
+
+package com.huawei.hicampus.mate.matecampusclaw.codingagent.command.builtin;
+
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.command.SlashCommand;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.command.SlashCommandContext;
+
+/**
+ * Reloads skills and settings matching campusclaw TS /reload command.
+ *
+ * @version [br_eCampusCore 26.0.0, 2026/05/06]
+ * @since [br_eCampusCore 26.0.0]
+ */
+public class ReloadCommand implements SlashCommand {
+
+    @Override
+    public String name() {
+        return "reload";
+    }
+
+    @Override
+    public String description() {
+        return "Reload skills and settings";
+    }
+
+    @Override
+    public void execute(SlashCommandContext context, String arguments) {
+        var session = context.session();
+        context.output().println("Reloading skills, templates, and system prompt...");
+        try {
+            session.reload();
+            int skillCount = session.getSkillRegistry().getAll().size();
+            int templateCount = session.getPromptTemplates().size();
+            context.output()
+                    .println("Reloaded: " + skillCount + " skill(s), " + templateCount
+                            + " template(s). System prompt rebuilt.");
+        } catch (Exception e) {
+            context.output().println("Reload failed: " + e.getMessage());
+        }
+    }
+}

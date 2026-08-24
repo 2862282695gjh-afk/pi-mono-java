@@ -1,0 +1,39 @@
+/*
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
+ */
+
+package com.huawei.hicampus.mate.matecampusclaw.agent.event;
+
+import com.fasterxml.jackson.annotation.JsonSubTypes;
+import com.fasterxml.jackson.annotation.JsonTypeInfo;
+
+/**
+ * Sealed union of events emitted by the agent runtime.
+ *
+ * @version [br_eCampusCore 26.0.0, 2026/05/06]
+ * @since [br_eCampusCore 26.0.0]
+ */
+@JsonTypeInfo(use = JsonTypeInfo.Id.NAME, property = "type")
+@JsonSubTypes({
+    @JsonSubTypes.Type(value = AgentStartEvent.class, name = "agent_start"),
+    @JsonSubTypes.Type(value = AgentEndEvent.class, name = "agent_end"),
+    @JsonSubTypes.Type(value = TurnStartEvent.class, name = "turn_start"),
+    @JsonSubTypes.Type(value = TurnEndEvent.class, name = "turn_end"),
+    @JsonSubTypes.Type(value = MessageStartEvent.class, name = "message_start"),
+    @JsonSubTypes.Type(value = MessageUpdateEvent.class, name = "message_update"),
+    @JsonSubTypes.Type(value = MessageEndEvent.class, name = "message_end"),
+    @JsonSubTypes.Type(value = ToolExecutionStartEvent.class, name = "tool_execution_start"),
+    @JsonSubTypes.Type(value = ToolExecutionUpdateEvent.class, name = "tool_execution_update"),
+    @JsonSubTypes.Type(value = ToolExecutionEndEvent.class, name = "tool_execution_end")
+})
+public sealed interface AgentEvent
+        permits AgentStartEvent,
+                AgentEndEvent,
+                TurnStartEvent,
+                TurnEndEvent,
+                MessageStartEvent,
+                MessageUpdateEvent,
+                MessageEndEvent,
+                ToolExecutionStartEvent,
+                ToolExecutionUpdateEvent,
+                ToolExecutionEndEvent {}

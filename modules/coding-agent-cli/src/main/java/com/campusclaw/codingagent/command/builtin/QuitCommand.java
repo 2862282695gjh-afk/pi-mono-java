@@ -1,8 +1,20 @@
+/*
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
+ */
+
 package com.campusclaw.codingagent.command.builtin;
 
+import com.campusclaw.codingagent.command.QuitException;
 import com.campusclaw.codingagent.command.SlashCommand;
 import com.campusclaw.codingagent.command.SlashCommandContext;
 
+/**
+ * Slash command {@code /quit} that prints a farewell line and throws {@link QuitException}
+ * to signal the CLI main loop to exit.
+ *
+ * @version [br_eCampusCore 26.0.0, 2026/05/13]
+ * @since [br_eCampusCore 26.0.0]
+ */
 public class QuitCommand implements SlashCommand {
 
     @Override
@@ -18,6 +30,6 @@ public class QuitCommand implements SlashCommand {
     @Override
     public void execute(SlashCommandContext context, String arguments) {
         context.output().println("Goodbye.");
-        System.exit(0);
+        throw new QuitException();
     }
 }

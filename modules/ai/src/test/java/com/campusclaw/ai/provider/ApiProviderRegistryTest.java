@@ -1,6 +1,13 @@
+/*
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
+ */
+
 package com.campusclaw.ai.provider;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
 
@@ -100,10 +107,10 @@ class ApiProviderRegistryTest {
 
         @Test
         void registerAddsProvider() {
-            var provider = new MockApiProvider(Api.BEDROCK_CONVERSE_STREAM);
+            var provider = new MockApiProvider(Api.MISTRAL_CONVERSATIONS);
             registry.register(provider, "plugin-a");
 
-            assertSame(provider, registry.getProvider(Api.BEDROCK_CONVERSE_STREAM).orElse(null));
+            assertSame(provider, registry.getProvider(Api.MISTRAL_CONVERSATIONS).orElse(null));
             assertEquals(1, registry.getProviders().size());
         }
 
@@ -219,25 +226,21 @@ class ApiProviderRegistryTest {
 
         @Test
         void clearRemovesAllProviders() {
-            var registry = new ApiProviderRegistry(List.of(
-                new MockApiProvider(Api.ANTHROPIC_MESSAGES),
-                new MockApiProvider(Api.OPENAI_RESPONSES)
-            ));
-            registry.register(new MockApiProvider(Api.BEDROCK_CONVERSE_STREAM), "plugin");
+            var registry = new ApiProviderRegistry(
+                    List.of(new MockApiProvider(Api.ANTHROPIC_MESSAGES), new MockApiProvider(Api.OPENAI_RESPONSES)));
+            registry.register(new MockApiProvider(Api.MISTRAL_CONVERSATIONS), "plugin");
 
             registry.clear();
 
             assertTrue(registry.getProviders().isEmpty());
             assertTrue(registry.getProvider(Api.ANTHROPIC_MESSAGES).isEmpty());
             assertTrue(registry.getProvider(Api.OPENAI_RESPONSES).isEmpty());
-            assertTrue(registry.getProvider(Api.BEDROCK_CONVERSE_STREAM).isEmpty());
+            assertTrue(registry.getProvider(Api.MISTRAL_CONVERSATIONS).isEmpty());
         }
 
         @Test
         void clearAllowsReregistration() {
-            var registry = new ApiProviderRegistry(List.of(
-                new MockApiProvider(Api.ANTHROPIC_MESSAGES)
-            ));
+            var registry = new ApiProviderRegistry(List.of(new MockApiProvider(Api.ANTHROPIC_MESSAGES)));
 
             registry.clear();
             assertTrue(registry.getProviders().isEmpty());
@@ -256,13 +259,12 @@ class ApiProviderRegistryTest {
 
         @Test
         void getProvidersReturnsUnmodifiableList() {
-            var registry = new ApiProviderRegistry(List.of(
-                new MockApiProvider(Api.ANTHROPIC_MESSAGES)
-            ));
+            var registry = new ApiProviderRegistry(List.of(new MockApiProvider(Api.ANTHROPIC_MESSAGES)));
 
             var providers = registry.getProviders();
-            assertThrows(UnsupportedOperationException.class,
-                () -> providers.add(new MockApiProvider(Api.OPENAI_RESPONSES)));
+            assertThrows(
+                    UnsupportedOperationException.class,
+                    () -> providers.add(new MockApiProvider(Api.OPENAI_RESPONSES)));
         }
     }
 }

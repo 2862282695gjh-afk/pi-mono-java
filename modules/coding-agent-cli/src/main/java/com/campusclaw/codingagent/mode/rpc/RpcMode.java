@@ -1,10 +1,22 @@
+/*
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
+ */
+
 package com.campusclaw.codingagent.mode.rpc;
 
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
+import java.io.PrintStream;
+import java.nio.charset.StandardCharsets;
 import java.util.Map;
+import java.util.Objects;
 
-import com.campusclaw.agent.event.*;
+import com.campusclaw.agent.event.AgentEndEvent;
+import com.campusclaw.agent.event.MessageEndEvent;
+import com.campusclaw.agent.event.MessageStartEvent;
+import com.campusclaw.agent.event.MessageUpdateEvent;
+import com.campusclaw.agent.event.ToolExecutionEndEvent;
+import com.campusclaw.agent.event.ToolExecutionStartEvent;
 import com.campusclaw.codingagent.session.AgentSession;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -14,15 +26,24 @@ import org.slf4j.LoggerFactory;
 /**
  * RPC mode: reads JSONL commands from stdin, writes JSONL events to stdout.
  * Designed for headless operation and external process integration.
+ *
+ * @version [br_eCampusCore 26.0.0, 2026/05/06]
+ * @since [br_eCampusCore 26.0.0]
  */
 public class RpcMode {
     private static final Logger log = LoggerFactory.getLogger(RpcMode.class);
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private final AgentSession session;
+    private final PrintStream out;
 
     public RpcMode(AgentSession session) {
-        this.session = session;
+        this(session, System.out);
+    }
+
+    RpcMode(AgentSession session, PrintStream out) {
+        this.session = Objects.requireNonNull(session, "session");
+        this.out = Objects.requireNonNull(out, "out");
     }
 
     public void run() {
@@ -47,11 +68,13 @@ public class RpcMode {
         });
 
         // Read commands from stdin
-        try (var reader = new BufferedReader(new InputStreamReader(System.in))) {
+        try (var reader = new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8))) {
             String line;
             while ((line = reader.readLine()) != null) {
                 line = line.trim();
-                if (line.isEmpty()) continue;
+                if (line.isEmpty()) {
+                    continue;
+                }
                 try {
                     var cmd = MAPPER.readValue(line, RpcCommand.class);
                     handleCommand(cmd);
@@ -84,10 +107,12 @@ public class RpcMode {
                     emit(RpcEvent.response(cmd.id(), "ack", null));
                 }
                 case "get_state" -> {
-                    emit(RpcEvent.response(cmd.id(), "state", Map.of(
-                        "model", session.getModelId(),
-                        "isStreaming", session.isStreaming()
-                    )));
+                    emit(RpcEvent.response(
+                            cmd.id(),
+                            "state",
+                            Map.of(
+                                    "model", session.getModelId(),
+                                    "isStreaming", session.isStreaming())));
                 }
                 case "set_model" -> {
                     if (cmd.model() != null) {
@@ -106,10 +131,15 @@ public class RpcMode {
         }
     }
 
+    /*
+     * RPC mode's contract is "newline-delimited JSON events on stdout". External
+     * processes parse this stream line-by-line, so events go to the injected
+     * PrintStream (defaults to stdout) and never to a logger.
+     */
     private void emit(RpcEvent event) {
         try {
-            System.out.println(MAPPER.writeValueAsString(event));
-            System.out.flush();
+            out.println(MAPPER.writeValueAsString(event));
+            out.flush();
         } catch (Exception e) {
             log.warn("Failed to emit RPC event", e);
         }
