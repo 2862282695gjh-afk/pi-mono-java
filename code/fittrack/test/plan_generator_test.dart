@@ -34,7 +34,7 @@ void main() {
         isCustom: false,
       ),
     ];
-    final plan = const PlanGenerator().generate(
+    final bundle = const PlanGenerator().generateBundle(
       const PlanGenerationRequest(
         goal: TrainingGoal.strength,
         experience: TrainingExperience.beginner,
@@ -42,9 +42,9 @@ void main() {
       ),
       exercises,
     );
-    expect(plan.name, '力量基础计划');
-    expect(plan.entries, hasLength(4));
-    expect(plan.entries.first.defaultSets, 3);
-    expect(plan.entries.first.defaultReps, 5);
+    expect(bundle.plans, hasLength(2));
+    expect(bundle.plans.map((plan) => plan.entries.length), [2, 2]);
+    expect(bundle.plans.first.entries.first.defaultSets, 3);
+    expect(bundle.plans.first.entries.first.defaultReps, 5);
   });
 }

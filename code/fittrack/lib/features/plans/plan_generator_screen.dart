@@ -19,12 +19,12 @@ class _PlanGeneratorScreenState extends ConsumerState<PlanGeneratorScreen> {
   TrainingGoal _goal = TrainingGoal.muscle;
   TrainingExperience _experience = TrainingExperience.beginner;
   int _days = 3;
-  GeneratedWorkoutPlan? _generated;
+  GeneratedPlanBundle? _generated;
   bool _isSaving = false;
 
   void _generate(List<Exercise> exercises) {
     setState(() {
-      _generated = const PlanGenerator().generate(
+      _generated = const PlanGenerator().generateBundle(
         PlanGenerationRequest(
           goal: _goal,
           experience: _experience,
@@ -36,19 +36,21 @@ class _PlanGeneratorScreenState extends ConsumerState<PlanGeneratorScreen> {
   }
 
   Future<void> _save() async {
-    final plan = _generated;
-    if (plan == null) return;
+    final bundle = _generated;
+    if (bundle == null) return;
     setState(() => _isSaving = true);
     try {
-      final id = await ref
-          .read(workoutPlanRepositoryProvider)
-          .savePlan(
-            name: plan.name,
-            description: plan.description,
-            entries: plan.entries,
-          );
+      for (final plan in bundle.plans) {
+        await ref
+            .read(workoutPlanRepositoryProvider)
+            .savePlan(
+              name: plan.name,
+              description: plan.description,
+              entries: plan.entries,
+            );
+      }
       ref.invalidate(workoutPlansProvider);
-      if (mounted) context.go('/plans/$id/edit');
+      if (mounted) context.go('/');
     } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context)
@@ -131,12 +133,14 @@ class _PlanGeneratorScreenState extends ConsumerState<PlanGeneratorScreen> {
             ),
             if (_generated != null) ...[
               const SizedBox(height: 24),
-              _GeneratedPreview(plan: _generated!),
+              _GeneratedPreview(bundle: _generated!),
               const SizedBox(height: 14),
               OutlinedButton.icon(
                 onPressed: _isSaving ? null : _save,
                 icon: const Icon(Icons.edit_note_rounded),
-                label: Text(_isSaving ? '正在保存…' : '保存后继续编辑'),
+                label: Text(
+                  _isSaving ? '正在保存…' : '保存 ${_generated!.plans.length} 份计划',
+                ),
               ),
             ],
           ],
@@ -182,8 +186,8 @@ class _ChoiceSection<T> extends StatelessWidget {
 }
 
 class _GeneratedPreview extends StatelessWidget {
-  const _GeneratedPreview({required this.plan});
-  final GeneratedWorkoutPlan plan;
+  const _GeneratedPreview({required this.bundle});
+  final GeneratedPlanBundle bundle;
   @override
   Widget build(BuildContext context) => Container(
     padding: const EdgeInsets.all(20),
@@ -202,23 +206,27 @@ class _GeneratedPreview extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 7),
-        Text(
-          plan.name,
-          style: const TextStyle(
-            color: Color(0xFFF7FFE9),
-            fontSize: 23,
-            fontWeight: FontWeight.w900,
-          ),
-        ),
-        const SizedBox(height: 14),
-        ...plan.entries.map(
-          (entry) => Padding(
-            padding: const EdgeInsets.only(bottom: 7),
-            child: Text(
-              '${entry.exercise.name}  ·  ${entry.defaultSets} 组 × ${entry.defaultReps} 次',
-              style: const TextStyle(color: Color(0xFFD5E1CE)),
+        ...bundle.plans.expand(
+          (plan) => [
+            const SizedBox(height: 10),
+            Text(
+              plan.name,
+              style: const TextStyle(
+                color: Color(0xFFF7FFE9),
+                fontSize: 18,
+                fontWeight: FontWeight.w900,
+              ),
             ),
-          ),
+            ...plan.entries.map(
+              (entry) => Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Text(
+                  '${entry.exercise.name}  ·  ${entry.defaultSets} 组 × ${entry.defaultReps} 次',
+                  style: const TextStyle(color: Color(0xFFD5E1CE)),
+                ),
+              ),
+            ),
+          ],
         ),
       ],
     ),

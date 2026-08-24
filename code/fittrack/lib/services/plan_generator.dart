@@ -29,6 +29,11 @@ class GeneratedWorkoutPlan {
   final List<PlanExerciseDraft> entries;
 }
 
+class GeneratedPlanBundle {
+  const GeneratedPlanBundle({required this.plans});
+  final List<GeneratedWorkoutPlan> plans;
+}
+
 /// Deterministic offline plan generator. It only recommends exercises available
 /// in the user's library, so its output can be saved through the normal plan RPC.
 class PlanGenerator {
@@ -38,17 +43,20 @@ class PlanGenerator {
     PlanGenerationRequest request,
     List<Exercise> available,
   ) {
+    return generateBundle(request, available).plans.first;
+  }
+
+  GeneratedPlanBundle generateBundle(
+    PlanGenerationRequest request,
+    List<Exercise> available,
+  ) {
     if (available.isEmpty) throw StateError('动作库为空，无法生成计划');
     final names = switch (request.goal) {
       TrainingGoal.strength => ['杠铃深蹲', '杠铃卧推', '传统硬拉', '杠铃划船', '杠铃肩推'],
       TrainingGoal.muscle => ['高杠深蹲', '上斜哑铃卧推', '高位下拉', '腿屈伸', '哑铃侧平举', '绳索下压'],
       TrainingGoal.fitness => ['腿举', '俯卧撑', '坐姿划船', '箭步蹲', '跑步机跑步'],
     };
-    final targetCount = switch (request.daysPerWeek) {
-      2 => 4,
-      3 => 5,
-      _ => 6,
-    };
+    final targetCount = request.daysPerWeek * 3;
     final sets = switch (request.experience) {
       TrainingExperience.beginner => 3,
       TrainingExperience.intermediate => 4,
@@ -79,18 +87,28 @@ class PlanGenerator {
       TrainingGoal.muscle => '增肌',
       TrainingGoal.fitness => '体能',
     };
-    return GeneratedWorkoutPlan(
-      name: '$label基础计划',
-      description: '自动生成 · 每周 ${request.daysPerWeek} 天 · 可按实际训练继续调整',
-      entries: selected
-          .map(
-            (exercise) => PlanExerciseDraft(
-              exercise: exercise,
+    return GeneratedPlanBundle(
+      plans: List.generate(request.daysPerWeek, (dayIndex) {
+        final entries = <PlanExerciseDraft>[];
+        for (
+          var index = dayIndex;
+          index < selected.length;
+          index += request.daysPerWeek
+        ) {
+          entries.add(
+            PlanExerciseDraft(
+              exercise: selected[index],
               defaultSets: sets,
               defaultReps: reps,
             ),
-          )
-          .toList(growable: false),
+          );
+        }
+        return GeneratedWorkoutPlan(
+          name: '$label基础 · 第 ${dayIndex + 1} 天',
+          description: '自动生成 · 每周 ${request.daysPerWeek} 天 · 可按实际训练继续调整',
+          entries: entries,
+        );
+      }),
     );
   }
 }
