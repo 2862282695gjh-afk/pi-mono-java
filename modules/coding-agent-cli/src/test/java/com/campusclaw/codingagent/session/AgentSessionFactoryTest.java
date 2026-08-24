@@ -28,12 +28,14 @@ import com.campusclaw.ai.types.Model;
 import com.campusclaw.ai.types.ModelCost;
 import com.campusclaw.ai.types.Provider;
 import com.campusclaw.ai.types.ThinkingLevel;
+import com.campusclaw.codingagent.common.client.mate.MateCredentials;
 import com.campusclaw.codingagent.runtime.AgentRuntimeManager;
 import com.campusclaw.codingagent.runtime.MateServiceClient.AgentRuntime;
 import com.campusclaw.codingagent.runtime.PreparedAgentRuntime;
 import com.campusclaw.codingagent.runtimeapi.agent.RuntimeAgentPromptLoader;
 import com.campusclaw.codingagent.tool.builtin.ConfiguredToolAssembler;
 import com.campusclaw.codingagent.tool.builtin.ToolEntryPoint;
+import com.campusclaw.codingagent.tool.mate.MateToolSessionState;
 import com.campusclaw.codingagent.tool.mate.MateToolsetFactory;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -60,7 +62,8 @@ class AgentSessionFactoryTest {
         when(promptLoader.load(agentRoot.resolve(".campusclaw"))).thenReturn("system prompt");
         @SuppressWarnings("unchecked")
         ObjectProvider<MateToolsetFactory> provider = mock(ObjectProvider.class);
-        when(provider.getIfAvailable()).thenReturn(null);
+        MateToolsetFactory mateToolsetFactory = mock(MateToolsetFactory.class);
+        when(provider.getIfAvailable()).thenReturn(mateToolsetFactory);
         AgentRuntimeManager runtimeManager = mock(AgentRuntimeManager.class);
         when(runtimeManager.prepare(runtime.agentId())).thenReturn(runtime);
         AgentSessionFactory factory = new AgentSessionFactory(
@@ -70,8 +73,20 @@ class AgentSessionFactoryTest {
                 provider,
                 promptLoader,
                 mock(com.campusclaw.codingagent.session.compaction.SessionCompactor.class));
-        ManagedAgentSessionRequest request = ManagedAgentSessionRequest.create(
-                runtime.agentId(), ToolEntryPoint.RUNTIME, model(), ThinkingLevel.MEDIUM);
+        MateCredentials credentials = MateCredentials.jwt("caller-1", "token-1");
+        when(mateToolsetFactory.createSession(runtime.agentId(), Map.of(), credentials))
+                .thenReturn(mock(MateToolSessionState.class));
+        ManagedAgentSessionRequest request = new ManagedAgentSessionRequest(
+                runtime.agentId(),
+                ToolEntryPoint.RUNTIME,
+                ignored -> model(),
+                ThinkingLevel.MEDIUM,
+                credentials,
+                null,
+                null,
+                null,
+                List.of(),
+                List.of());
 
         ManagedAgentSession first = factory.create(request);
         ManagedAgentSession second = factory.create(request);
@@ -83,6 +98,8 @@ class AgentSessionFactoryTest {
         assertThat(first.agent().getState().getThinkingLevel()).isEqualTo(ThinkingLevel.MEDIUM);
         verify(assembler, org.mockito.Mockito.times(2)).assemble(eq(ToolEntryPoint.RUNTIME), any());
         verify(runtimeManager, org.mockito.Mockito.times(2)).prepare(runtime.agentId());
+        verify(mateToolsetFactory, org.mockito.Mockito.times(2))
+                .createSession(runtime.agentId(), Map.of(), credentials);
     }
 
     private PreparedAgentRuntime prepared(Path agentRoot) {

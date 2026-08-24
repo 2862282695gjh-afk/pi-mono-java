@@ -13,6 +13,7 @@ import java.util.concurrent.locks.ReentrantLock;
 import com.huawei.hicampus.mate.matecampusclaw.ai.types.Message;
 import com.huawei.hicampus.mate.matecampusclaw.ai.types.Model;
 import com.huawei.hicampus.mate.matecampusclaw.ai.types.ThinkingLevel;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.common.client.mate.MateCredentials;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.agent.AgentDirectorySnapshotDTO;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
@@ -66,10 +67,12 @@ public class RuntimeSessionEngineRegistry {
             Model model,
             boolean thinking,
             List<Message> messages,
-            RuntimeActiveExecution execution) {
+            RuntimeActiveExecution execution,
+            MateCredentials credentials) {
         acquireCapacity();
         try {
-            RuntimeSessionHolder holder = createHolder(sessionId, snapshot, model, thinking, messages, execution);
+            RuntimeSessionHolder holder =
+                    createHolder(sessionId, snapshot, model, thinking, messages, execution, credentials);
             if (sessions.putIfAbsent(sessionId, holder) != null) {
                 holder.closeSession();
                 throw new RuntimeApiException(RuntimeErrorCode.SESSION_BUSY);
@@ -107,8 +110,9 @@ public class RuntimeSessionEngineRegistry {
             Model model,
             boolean thinking,
             List<Message> messages,
-            RuntimeActiveExecution execution) {
-        ManagedAgentSession session = createSession(snapshot, model, thinking);
+            RuntimeActiveExecution execution,
+            MateCredentials credentials) {
+        ManagedAgentSession session = createSession(snapshot, model, thinking, credentials);
         session.agent().replaceMessages(messages);
         RuntimeSessionHolder holder = new RuntimeSessionHolder(sessionId, snapshot, session, thinking);
         if (!holder.begin(execution)) {
@@ -117,17 +121,19 @@ public class RuntimeSessionEngineRegistry {
         return holder;
     }
 
-    private ManagedAgentSession createSession(AgentDirectorySnapshotDTO snapshot, Model model, boolean thinking) {
+    private ManagedAgentSession createSession(
+            AgentDirectorySnapshotDTO snapshot, Model model, boolean thinking, MateCredentials credentials) {
         ThinkingLevel level = thinking ? ThinkingLevel.MEDIUM : ThinkingLevel.OFF;
         var request = new ManagedAgentSessionRequest(
                 snapshot.agentId(),
                 ToolEntryPoint.RUNTIME,
                 runtime -> requireModelAllowed(runtime, model),
                 level,
+                credentials,
                 (runtime, ignored) -> cronToolFactory.create(runtime.agentId()),
                 (runtime, resolvedModel) -> new BoundAgentTool(
                         runtime,
-                        SubagentExecutionContext.root(runtime.agentId(), resolvedModel, level),
+                        SubagentExecutionContext.root(runtime.agentId(), resolvedModel, level, credentials),
                         subagentExecutionService),
                 null,
                 List.of(),

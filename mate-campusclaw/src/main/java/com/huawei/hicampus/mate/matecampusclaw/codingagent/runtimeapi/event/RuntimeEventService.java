@@ -11,6 +11,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.common.client.mate.MateCredentials;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.dto.RuntimeEntryDTO;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.error.RuntimeApiException;
@@ -68,9 +69,10 @@ public class RuntimeEventService {
         this.clock = clock;
     }
 
-    public RuntimeEventStream submit(String sessionId, UserEventRequestVO request, Locale locale) {
+    public RuntimeEventStream submit(
+            String sessionId, UserEventRequestVO request, Locale locale, MateCredentials credentials) {
         try {
-            return prepareAndSubmit(sessionId, validate(request), locale);
+            return prepareAndSubmit(sessionId, validate(request), locale, credentials);
         } catch (RuntimeApiException error) {
             throw error;
         } catch (RuntimeException error) {
@@ -78,7 +80,8 @@ public class RuntimeEventService {
         }
     }
 
-    private RuntimeEventStream prepareAndSubmit(String sessionId, ValidatedUserEvent request, Locale locale) {
+    private RuntimeEventStream prepareAndSubmit(
+            String sessionId, ValidatedUserEvent request, Locale locale, MateCredentials credentials) {
         engineRegistry.lockOperation(sessionId);
         RuntimeExecutionContext context = null;
         try {
@@ -89,7 +92,8 @@ public class RuntimeEventService {
                     reconciled.agentSnapshot(),
                     reconciled.model(),
                     request.message(),
-                    request.fileIds());
+                    request.fileIds(),
+                    credentials);
             emitConfigurationEntries(context.execution().eventStream(), reconciled.configurationEntries());
             acceptUserEntry(sessionId, request, context);
             executionCoordinator.start(context.holder(), context.execution(), context.userMessage(), locale);

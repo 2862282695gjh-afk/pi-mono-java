@@ -65,7 +65,8 @@ public class RuntimeEventController {
             @Valid @RequestBody UserEventRequestVO body,
             HttpServletRequest request) {
         SseEmitter emitter = new SseEmitter(0L);
-        var events = service.submit(sessionId, body, RuntimeRequestContext.locale(request));
+        var events = service.submit(
+                sessionId, body, RuntimeRequestContext.locale(request), RuntimeRequestContext.mateCredentials(request));
         emitter.onCompletion(events::detach);
         emitter.onTimeout(events::detach);
         emitter.onError(error -> events.detach());

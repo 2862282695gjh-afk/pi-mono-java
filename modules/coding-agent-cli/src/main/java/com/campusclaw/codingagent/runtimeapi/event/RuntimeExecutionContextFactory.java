@@ -10,6 +10,7 @@ import java.util.List;
 import com.campusclaw.ai.types.Message;
 import com.campusclaw.ai.types.Model;
 import com.campusclaw.ai.types.UserMessage;
+import com.campusclaw.codingagent.common.client.mate.MateCredentials;
 import com.campusclaw.codingagent.runtimeapi.agent.AgentDirectorySnapshotDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
 import com.campusclaw.codingagent.runtimeapi.runtime.RuntimeActiveExecution;
@@ -54,12 +55,13 @@ public class RuntimeExecutionContextFactory {
             AgentDirectorySnapshotDTO snapshot,
             Model model,
             String message,
-            List<String> fileIds) {
+            List<String> fileIds,
+            MateCredentials credentials) {
         List<Message> history = queryService.restoreHistory(session.getId(), model);
         UserMessage userMessage = codec.toUserMessage(message, fileIds, clock.millis());
         RuntimeActiveExecution execution = new RuntimeActiveExecution(streamFactory.create());
-        RuntimeSessionHolder holder =
-                engineRegistry.register(session.getId(), snapshot, model, session.isThinking(), history, execution);
+        RuntimeSessionHolder holder = engineRegistry.register(
+                session.getId(), snapshot, model, session.isThinking(), history, execution, credentials);
         return new RuntimeExecutionContext(holder, execution, userMessage);
     }
 }

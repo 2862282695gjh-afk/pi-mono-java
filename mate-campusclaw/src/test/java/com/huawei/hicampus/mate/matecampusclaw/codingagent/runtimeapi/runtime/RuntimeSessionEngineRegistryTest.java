@@ -7,6 +7,7 @@ package com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.runtime;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -15,15 +16,18 @@ import java.util.List;
 
 import com.huawei.hicampus.mate.matecampusclaw.agent.Agent;
 import com.huawei.hicampus.mate.matecampusclaw.ai.types.Model;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.common.client.mate.MateCredentials;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.agent.AgentDirectorySnapshotDTO;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.session.AgentSessionFactory;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.session.ManagedAgentSession;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.session.ManagedAgentSessionRequest;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.agent.SubagentExecutionService;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.cron.AgentScopedCronToolFactory;
 
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 class RuntimeSessionEngineRegistryTest {
 
@@ -45,14 +49,21 @@ class RuntimeSessionEngineRegistryTest {
         Model model = mock(Model.class);
         RuntimeActiveExecution firstExecution = mock(RuntimeActiveExecution.class);
         RuntimeActiveExecution rejectedExecution = mock(RuntimeActiveExecution.class);
+        MateCredentials credentials = MateCredentials.appKey("caller-1", "app-key-1");
 
         RuntimeSessionHolder accepted =
-                registry.register("session-a", snapshot, model, false, List.of(), firstExecution);
+                registry.register("session-a", snapshot, model, false, List.of(), firstExecution, credentials);
 
-        assertThatThrownBy(() -> registry.register("session-a", snapshot, model, false, List.of(), rejectedExecution))
+        assertThatThrownBy(() -> registry.register(
+                        "session-a", snapshot, model, false, List.of(), rejectedExecution, credentials))
                 .isInstanceOfSatisfying(RuntimeApiException.class, error -> org.assertj.core.api.Assertions.assertThat(
                                 error.errorCode())
                         .isEqualTo(RuntimeErrorCode.SESSION_BUSY));
+        ArgumentCaptor<ManagedAgentSessionRequest> requests = ArgumentCaptor.forClass(ManagedAgentSessionRequest.class);
+        verify(sessionFactory, times(2)).create(requests.capture());
+        org.assertj.core.api.Assertions.assertThat(requests.getAllValues())
+                .extracting(ManagedAgentSessionRequest::mateCredentials)
+                .containsOnly(credentials);
         verify(rejectedSession).close();
 
         registry.complete(accepted, firstExecution);

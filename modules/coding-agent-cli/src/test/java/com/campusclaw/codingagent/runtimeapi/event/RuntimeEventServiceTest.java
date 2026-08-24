@@ -31,6 +31,7 @@ import com.campusclaw.agent.Agent;
 import com.campusclaw.ai.types.Model;
 import com.campusclaw.ai.types.TextContent;
 import com.campusclaw.ai.types.UserMessage;
+import com.campusclaw.codingagent.common.client.mate.MateCredentials;
 import com.campusclaw.codingagent.runtimeapi.agent.AgentDirectoryResolver;
 import com.campusclaw.codingagent.runtimeapi.agent.AgentDirectorySnapshotDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.RuntimeEntryDTO;
@@ -71,8 +72,9 @@ class RuntimeEventServiceTest {
     void persistsRawFileIdsAndCompletesAcceptedStream() {
         Fixture fixture = new Fixture();
         UserEventRequestVO request = request("分析订单", List.of("file_a", "file_b"));
+        MateCredentials credentials = MateCredentials.jwt("caller-1", "token-1");
 
-        RuntimeEventStream stream = fixture.service.submit(SESSION_ID, request, Locale.US);
+        RuntimeEventStream stream = fixture.service.submit(SESSION_ID, request, Locale.US, credentials);
         fixture.agentFuture.complete(null);
         fixture.execution.completion().join();
 
@@ -84,13 +86,15 @@ class RuntimeEventServiceTest {
         assertThat(collect(stream))
                 .extracting(RuntimeSseEventVO::getEvent)
                 .containsExactly("user.message", "session.status.idle", "stream.end");
+        verify(fixture.registry).register(eq(SESSION_ID), any(), any(), eq(false), any(), any(), eq(credentials));
     }
 
     @Test
     void treatsSlashPrefixedTextAsOrdinaryUserMessage() {
         Fixture fixture = new Fixture();
 
-        RuntimeEventStream stream = fixture.service.submit(SESSION_ID, request("/model model-b", List.of()), Locale.US);
+        RuntimeEventStream stream = fixture.service.submit(
+                SESSION_ID, request("/model model-b", List.of()), Locale.US, MateCredentials.empty());
         fixture.agentFuture.complete(null);
         fixture.execution.completion().join();
 
@@ -107,8 +111,11 @@ class RuntimeEventServiceTest {
     void rejectsDuplicateFileIdsBeforeReadingSession() {
         Fixture fixture = new Fixture();
 
-        assertThatThrownBy(() ->
-                        fixture.service.submit(SESSION_ID, request(null, List.of("file_same", "file_same")), Locale.US))
+        assertThatThrownBy(() -> fixture.service.submit(
+                        SESSION_ID,
+                        request(null, List.of("file_same", "file_same")),
+                        Locale.US,
+                        MateCredentials.empty()))
                 .isInstanceOfSatisfying(RuntimeApiException.class, error -> assertThat(error.errorCode())
                         .isEqualTo(RuntimeErrorCode.INVALID_EVENT_REQUEST));
         verify(fixture.repository, never()).find(anyString());
@@ -117,10 +124,11 @@ class RuntimeEventServiceTest {
     @Test
     void capacityFailureHappensBeforeUserEntryPersistence() {
         Fixture fixture = new Fixture();
-        when(fixture.registry.register(anyString(), any(), any(), any(Boolean.class), any(), any()))
+        when(fixture.registry.register(anyString(), any(), any(), any(Boolean.class), any(), any(), any()))
                 .thenThrow(new RuntimeApiException(RuntimeErrorCode.RUNTIME_CAPACITY_EXCEEDED));
 
-        assertThatThrownBy(() -> fixture.service.submit(SESSION_ID, request("分析订单", List.of()), Locale.US))
+        assertThatThrownBy(() -> fixture.service.submit(
+                        SESSION_ID, request("分析订单", List.of()), Locale.US, MateCredentials.empty()))
                 .isInstanceOfSatisfying(RuntimeApiException.class, error -> assertThat(error.errorCode())
                         .isEqualTo(RuntimeErrorCode.RUNTIME_CAPACITY_EXCEEDED));
         verify(fixture.repository, never()).acceptUserEvent(anyString(), any(), any());
@@ -132,7 +140,8 @@ class RuntimeEventServiceTest {
         when(fixture.modelManager.resolveAvailableModel(any(), eq("model_test")))
                 .thenThrow(new RuntimeApiException(RuntimeErrorCode.MODEL_NOT_AVAILABLE));
 
-        assertThatThrownBy(() -> fixture.service.submit(SESSION_ID, request("分析订单", List.of()), Locale.US))
+        assertThatThrownBy(() -> fixture.service.submit(
+                        SESSION_ID, request("分析订单", List.of()), Locale.US, MateCredentials.empty()))
                 .isInstanceOfSatisfying(RuntimeApiException.class, error -> assertThat(error.errorCode())
                         .isEqualTo(RuntimeErrorCode.MODEL_NOT_AVAILABLE));
         verify(fixture.repository, never()).acceptUserEvent(anyString(), any(), any());
@@ -141,8 +150,8 @@ class RuntimeEventServiceTest {
     @Test
     void executionFailureUsesChineseSseMessage() {
         Fixture fixture = new Fixture();
-        RuntimeEventStream stream =
-                fixture.service.submit(SESSION_ID, request("分析订单", List.of()), Locale.SIMPLIFIED_CHINESE);
+        RuntimeEventStream stream = fixture.service.submit(
+                SESSION_ID, request("分析订单", List.of()), Locale.SIMPLIFIED_CHINESE, MateCredentials.empty());
 
         fixture.agentFuture.completeExceptionally(new IllegalStateException("expected test failure"));
 
@@ -280,7 +289,7 @@ class RuntimeEventServiceTest {
                 session.setState("running");
                 return new UserEventAcceptance(Status.ACCEPTED, session);
             });
-            when(registry.register(anyString(), any(), any(), any(Boolean.class), any(), any()))
+            when(registry.register(anyString(), any(), any(), any(Boolean.class), any(), any(), any()))
                     .thenAnswer(invocation -> registerHolder(snapshot, invocation.getArgument(5)));
         }
 

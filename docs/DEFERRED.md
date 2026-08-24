@@ -10,4 +10,3 @@
 | DEF-004 | agent-core (control-plane) | 控制面端点鉴权（mTLS / bearer token / Spring Security）。当前 register / heartbeat / deregister / schedule 端点对任何能访问服务端口的调用方开放；默认服务已监听 0.0.0.0，详见 [Control Plane 设计](designs/control-plane.md)。 | 任何生产网络暴露之前；当前必须由网关或网络策略隔离 `/api/v1/*` | — |
 | DEF-005 | agent-core (control-plane) | 调度策略链（least-active / weighted-round-robin / capacity-aware）。当前 `RuntimeScheduler` 仅支持 sticky affinity + round-robin 两级。 | 当 fleet 异构（节点 CPU / 内存差异大）或需要 QoS 分层调度时 | — |
 | DEF-006 | agent-core (control-plane) | 剩余管理面端点（node drain / graceful shutdown / metrics aggregation / fleet-wide health）。当前仅 register / heartbeat / list / deregister / capabilities / runtimes / schedule 七个端点。 | 当运维需要主动排水节点或聚合 fleet 指标时 | — |
-| DEF-007 | coding-agent-cli | ~~`HttpMateToolClient.invokeTool` stub~~（PR #164 已实现：POST `tool-execute-path-template` 端点，凭据完整性校验后透传）。剩余项：部署方注册 `MateCredentialResolver` Bean 接通真实凭据来源——HTTP 入口捕获与异步传播属上层职责，本仓仅提供解析接口与 fail-closed 默认。 | 部署方接线凭据来源时 | — |

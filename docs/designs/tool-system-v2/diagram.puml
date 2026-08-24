@@ -37,6 +37,49 @@ note right of Session
 end note
 @enduml
 
+@startuml mate_credential_flow
+' Implementation baseline before this change: CampusClaw 934b5dd7d9e50b1d7359bea5f2dda71e3c4a34ac.
+' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/web/RuntimeEventController.java, submit
+' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/event/RuntimeEventService.java, submit
+' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/session/AgentSessionFactory.java, create
+' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/tool/mate/MateToolDiscovery.java, listAgentTools
+' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/tool/mate/CallMateTool.java, execute
+' Architecture change: the baseline exposed an optional resolver but did not connect Runtime headers to tools.
+' Security hardening: credentials remain in one active execution and are never persisted or logged.
+' Java divergence: pi has no corresponding Mate credential flow.
+skinparam shadowing false
+title Mate Tool Execution Credential Flow
+
+actor "mate-service" as Caller
+participant "RuntimeEventController" as Controller
+participant "RuntimeEventService" as Service
+participant "RuntimeSessionEngineRegistry" as Registry
+participant "AgentSessionFactory" as Factory
+participant "ListMateTools" as List
+participant "CallMateTool" as Call
+participant "HttpMateToolClient" as Client
+participant "Child Session" as Child
+
+Caller -> Controller : POST Events\nX-HW-ID plus AppKey or JWT
+Controller -> Service : immutable MateCredentials
+Service -> Registry : execution snapshot
+Registry -> Factory : ManagedAgentSessionRequest
+Factory -> List : session-private tool and snapshot
+Factory -> Call : session-private tool and snapshot
+List -> Client : discovery requests with snapshot
+Call -> Client : execute once with snapshot
+Factory -> Child : inherit parent execution snapshot
+note over Service,Child
+  In-memory execution scope only.
+  Never persist in Session rows, Entries,
+  Prompt, messages, events, or logs.
+end note
+note over Call,Client
+  Missing credentials fail before discovery
+  or execution HTTP requests.
+end note
+@enduml
+
 @startuml agent_workspace_boundary
 ' Pre-change baseline: CampusClaw merge base d649866a6cae967ace18ceaeb9597edd47e5721e.
 ' Reviewed implementation baseline: CampusClaw PR commit bf28e72f94f29acd316eb872a250893ed54e3632.
@@ -92,9 +135,9 @@ alt cache hit
 else cache miss
   Cache -> Cache : acquire single-flight lock
   Cache -> Discovery : load all sources
-  Discovery -> Mate : listAgentTools(agentId)
+  Discovery -> Mate : listAgentTools(agentId, credentials)
   loop each direct Skill
-    Discovery -> Mate : listSkillTools(skillId)
+    Discovery -> Mate : listSkillTools(skillId, credentials)
   end
   Discovery --> Cache : complete source snapshots
   Cache -> Cache : reject conflicting names

@@ -30,6 +30,7 @@ import com.huawei.hicampus.mate.matecampusclaw.ai.types.StopReason;
 import com.huawei.hicampus.mate.matecampusclaw.ai.types.TextContent;
 import com.huawei.hicampus.mate.matecampusclaw.ai.types.ThinkingLevel;
 import com.huawei.hicampus.mate.matecampusclaw.ai.types.Usage;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.common.client.mate.MateCredentials;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.model.ModelCatalogService;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtime.MateServiceClient.AgentReference;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtime.MateServiceClient.AgentRuntime;
@@ -73,10 +74,11 @@ class SubagentExecutionServiceTest {
         ManagedAgentSession session = completedSession("child answer");
         useRuntime(child, session);
         var updates = new java.util.ArrayList<String>();
+        MateCredentials credentials = MateCredentials.jwt("caller-1", "token-1");
 
         var result = service.execute(
                 parent,
-                SubagentExecutionContext.root(PARENT_ID, model, ThinkingLevel.MEDIUM),
+                SubagentExecutionContext.root(PARENT_ID, model, ThinkingLevel.MEDIUM, credentials),
                 "researcher",
                 "research task",
                 new CancellationToken(),
@@ -88,6 +90,7 @@ class SubagentExecutionServiceTest {
         verify(sessionFactory).create(request.capture());
         assertThat(request.getValue().entryPoint()).isEqualTo(ToolEntryPoint.CHILD_AGENT);
         assertThat(request.getValue().agentId()).isEqualTo(CHILD_ID);
+        assertThat(request.getValue().mateCredentials()).isSameAs(credentials);
         verify(session).close();
     }
 
@@ -114,11 +117,13 @@ class SubagentExecutionServiceTest {
     @Test
     void rejectsDepthCycleAndDisabledChild() {
         PreparedAgentRuntime parent = parentRuntime("1.0.0");
-        var atLimit = new SubagentExecutionContext(1, Set.of(PARENT_ID), model, ThinkingLevel.OFF);
+        var atLimit =
+                new SubagentExecutionContext(1, Set.of(PARENT_ID), model, ThinkingLevel.OFF, MateCredentials.empty());
         assertThatThrownBy(() -> execute(parent, atLimit, new CancellationToken()))
                 .hasMessage("Child Agent depth limit exceeded");
 
-        var cycle = new SubagentExecutionContext(0, Set.of(PARENT_ID, CHILD_ID), model, ThinkingLevel.OFF);
+        var cycle = new SubagentExecutionContext(
+                0, Set.of(PARENT_ID, CHILD_ID), model, ThinkingLevel.OFF, MateCredentials.empty());
         assertThatThrownBy(() -> execute(parent, cycle, new CancellationToken()))
                 .hasMessage("Child Agent path contains a cycle");
 
@@ -159,7 +164,7 @@ class SubagentExecutionServiceTest {
     }
 
     private SubagentExecutionContext rootContext() {
-        return SubagentExecutionContext.root(PARENT_ID, model, ThinkingLevel.OFF);
+        return SubagentExecutionContext.root(PARENT_ID, model, ThinkingLevel.OFF, MateCredentials.empty());
     }
 
     private ManagedAgentSession completedSession(String answer) {

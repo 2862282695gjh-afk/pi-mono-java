@@ -77,6 +77,7 @@ class ManagedCronSessionRunnerTest {
         verify(sessionFactory).create(request.capture());
         assertThat(request.getValue().entryPoint()).isEqualTo(ToolEntryPoint.CRON);
         assertThat(request.getValue().agentId()).isEqualTo(AGENT_ID);
+        assertThat(request.getValue().mateCredentials().isComplete()).isFalse();
         assertThat(request.getValue().modelResolver().apply(runtime())).isSameAs(model);
     }
 
