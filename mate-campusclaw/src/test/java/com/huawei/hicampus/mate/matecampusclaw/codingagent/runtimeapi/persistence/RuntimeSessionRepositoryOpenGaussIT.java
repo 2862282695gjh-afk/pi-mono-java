@@ -72,6 +72,8 @@ class RuntimeSessionRepositoryOpenGaussIT {
         repository = context.getBean(RuntimeSessionRepository.class);
         jdbcTemplate = context.getBean(JdbcTemplate.class);
         jdbcTemplate.update("TRUNCATE TABLE t_session_materialized");
+        jdbcTemplate.update("TRUNCATE TABLE t_session_stats");
+        jdbcTemplate.update("TRUNCATE TABLE t_session_records");
         jdbcTemplate.update("TRUNCATE TABLE t_session_sequences");
         jdbcTemplate.update("TRUNCATE TABLE t_session_entries");
         jdbcTemplate.update("TRUNCATE TABLE t_session_cleanup_task");
@@ -88,6 +90,7 @@ class RuntimeSessionRepositoryOpenGaussIT {
         assertThat(repository.find(session.getId())).contains(session);
         assertThat(countSession(session.getId())).isOne();
         assertThat(count("t_session_sequences", session.getId())).isOne();
+        assertThat(count("t_session_stats", session.getId())).isOne();
         assertThat(count("t_session_materialized", session.getId())).isOne();
     }
 
@@ -112,6 +115,8 @@ class RuntimeSessionRepositoryOpenGaussIT {
         repository.completeCleanup(session.getId());
 
         assertThat(count("t_session_entries", session.getId())).isZero();
+        assertThat(count("t_session_records", session.getId())).isZero();
+        assertThat(count("t_session_stats", session.getId())).isZero();
         assertThat(count("t_session_sequences", session.getId())).isZero();
         assertThat(count("t_session_materialized", session.getId())).isZero();
         assertThat(count("t_session_cleanup_task", session.getId())).isZero();
@@ -515,7 +520,7 @@ class RuntimeSessionRepositoryOpenGaussIT {
 
         @Bean
         RuntimeSessionRepository runtimeSessionRepository(RuntimeSessionMapper mapper) {
-            return new MyBatisRuntimeSessionRepository(mapper, new com.fasterxml.jackson.databind.ObjectMapper());
+            return new MyBatisRuntimeSessionRepository(mapper);
         }
 
         @Bean

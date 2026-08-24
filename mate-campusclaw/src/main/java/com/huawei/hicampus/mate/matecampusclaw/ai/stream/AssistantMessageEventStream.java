@@ -11,15 +11,9 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 /**
- * A specialized {@link EventStream} for {@link AssistantMessageEvent}s that
- * resolves to a final {@link AssistantMessage}.
+ * 以最终 AssistantMessage 为结果的 Assistant 消息事件流。
  *
- * <p>The stream auto-completes when a {@link AssistantMessageEvent.DoneEvent}
- * or {@link AssistantMessageEvent.ErrorEvent} is pushed, extracting the
- * {@link AssistantMessage} from the terminal event.
- *
- * <p>Provides convenience methods for pushing common event types without
- * manually constructing the event records.
+ * <p>收到完成或错误事件时自动结束，并从终态事件提取最终消息。
  *
  * @version [br_eCampusCore 26.0.0, 2026/05/06]
  * @since [br_eCampusCore 26.0.0]
@@ -29,7 +23,7 @@ public class AssistantMessageEventStream {
     private final EventStream<AssistantMessageEvent, AssistantMessage> delegate;
 
     /**
-     * Creates a new AssistantMessageEventStream.
+     * 创建 Assistant 消息事件流。
      */
     public AssistantMessageEventStream() {
         this.delegate =
@@ -51,76 +45,85 @@ public class AssistantMessageEventStream {
     }
 
     /**
-     * Pushes a raw event into the stream.
+     * 发送原始 Assistant 消息事件。
      *
-     * @param event the event to push
+     * @param event 要发送的事件
      */
     public void push(AssistantMessageEvent event) {
         delegate.push(event);
     }
 
     /**
-     * Pushes a {@link AssistantMessageEvent.TextDeltaEvent}.
+     * 发送文本增量事件。
      *
-     * @param contentIndex the index of the text content block
-     * @param delta        the incremental text fragment
-     * @param partial      the current partial assistant message
+     * @param contentIndex 文本内容块索引
+     * @param delta 文本增量
+     * @param partial 当前部分 Assistant 消息
      */
     public void pushTextDelta(int contentIndex, String delta, AssistantMessage partial) {
         delegate.push(new AssistantMessageEvent.TextDeltaEvent(contentIndex, delta, partial));
     }
 
     /**
-     * Pushes a {@link AssistantMessageEvent.DoneEvent}, completing the stream.
+     * 发送完成事件并结束流。
      *
-     * @param reason  the stop reason
-     * @param message the final complete assistant message
+     * @param reason 停止原因
+     * @param message 最终 Assistant 消息
      */
     public void pushDone(StopReason reason, AssistantMessage message) {
         delegate.push(new AssistantMessageEvent.DoneEvent(reason, message));
     }
 
     /**
-     * Pushes an {@link AssistantMessageEvent.ErrorEvent}, completing the stream.
+     * 发送错误事件并结束流。
      *
-     * @param reason the error reason (e.g. "error" or "aborted")
-     * @param error  the assistant message containing error details
+     * @param reason 错误原因
+     * @param error 包含错误信息的 Assistant 消息
      */
     public void pushError(String reason, AssistantMessage error) {
         delegate.push(new AssistantMessageEvent.ErrorEvent(reason, error));
     }
 
     /**
-     * Ends the stream with an explicit result, without emitting an additional event.
+     * 使用显式结果结束流，不额外发送事件。
      *
-     * @param result the final assistant message
+     * @param result 最终 Assistant 消息
      */
     public void end(AssistantMessage result) {
         delegate.end(result);
     }
 
     /**
-     * Terminates the stream with an error.
+     * 使用错误结束流。
      *
-     * @param e the error to propagate
+     * @param e 要传播的错误
      */
     public void error(Throwable e) {
         delegate.error(e);
     }
 
     /**
-     * Returns the event stream as a {@link Flux}.
+     * 获取 Assistant 消息事件 Flux。
      *
-     * @return the underlying event flux
+     * @return 事件 Flux
      */
     public Flux<AssistantMessageEvent> asFlux() {
         return delegate.asFlux();
     }
 
     /**
-     * Returns a {@link Mono} that resolves to the final {@link AssistantMessage}.
+     * 注册订阅者取消时执行的动作。
      *
-     * @return the final-result mono
+     * @param action 取消动作
+     */
+    public void onCancel(Runnable action) {
+        delegate.onCancel(action);
+    }
+
+    /**
+     * 获取最终 Assistant 消息 Mono。
+     *
+     * @return 最终消息 Mono
      */
     public Mono<AssistantMessage> result() {
         return delegate.result();

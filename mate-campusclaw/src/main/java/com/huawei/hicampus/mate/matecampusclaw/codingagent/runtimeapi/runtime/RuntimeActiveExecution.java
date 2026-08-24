@@ -35,12 +35,28 @@ public class RuntimeActiveExecution {
 
     private Future<?> timeoutTask;
 
+    private String runId;
+
     public RuntimeActiveExecution(RuntimeEventStream eventStream) {
         this.eventStream = eventStream;
     }
 
     public RuntimeEventStream eventStream() {
         return eventStream;
+    }
+
+    public synchronized void beginRun(String value) {
+        if (runId != null) {
+            throw new IllegalStateException("execution run id is already assigned");
+        }
+        runId = value;
+    }
+
+    public synchronized String runId() {
+        if (runId == null) {
+            throw new IllegalStateException("execution run id is not assigned");
+        }
+        return runId;
     }
 
     public synchronized boolean acceptingControls() {

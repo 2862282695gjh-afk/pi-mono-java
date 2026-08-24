@@ -88,6 +88,15 @@ campusclaw:
 
 # CampusMate 受管 Agent 运行目录。HTTP、Cron 和 Child 共用这一缓存与远端准备流程。
 campusmate:
+  model-manager:
+    base-url: ${CAMPUSMATE_MODEL_MANAGER_BASE_URL:https://localhost:8591}
+    chat-path: ${CAMPUSMATE_MODEL_MANAGER_CHAT_PATH:/mate-service/v1/LLM/chat}
+    api: ${CAMPUSMATE_MODEL_MANAGER_API:openai-completions}
+    connect-timeout: ${CAMPUSMATE_MODEL_MANAGER_CONNECT_TIMEOUT:PT10S}
+    response-timeout: ${CAMPUSMATE_MODEL_MANAGER_RESPONSE_TIMEOUT:PT10M}
+    context-window: ${CAMPUSMATE_MODEL_MANAGER_CONTEXT_WINDOW:128000}
+    max-output-tokens: ${CAMPUSMATE_MODEL_MANAGER_MAX_OUTPUT_TOKENS:8192}
+    reasoning: ${CAMPUSMATE_MODEL_MANAGER_REASONING:true}
   runtime:
     base-url: ${CAMPUSMATE_RUNTIME_BASE_URL:http://campusmate-service:8080}
     agents-root: ${CAMPUSCLAW_AGENTS_ROOT:agent}

@@ -8,6 +8,7 @@ import java.time.OffsetDateTime;
 import java.util.List;
 
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.dto.RuntimeEntryDTO;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.dto.RuntimeRecordDTO;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
 
 import org.apache.ibatis.annotations.Mapper;
@@ -27,6 +28,8 @@ public interface RuntimeSessionMapper {
 
     int insertMaterialized(@Param("sessionId") String sessionId, @Param("payload") String payload);
 
+    int insertStats(@Param("sessionId") String sessionId);
+
     RuntimeSessionDTO findSession(@Param("sessionId") String sessionId);
 
     RuntimeSessionDTO lockSessionForUpdate(@Param("sessionId") String sessionId);
@@ -36,6 +39,17 @@ public interface RuntimeSessionMapper {
     int incrementSequence(@Param("sessionId") String sessionId);
 
     int insertEntry(RuntimeEntryDTO entry);
+
+    int insertRecord(RuntimeRecordDTO record);
+
+    int incrementMessageCount(@Param("sessionId") String sessionId);
+
+    int accumulateUsageStats(
+            @Param("sessionId") String sessionId,
+            @Param("cachedTokens") long cachedTokens,
+            @Param("uncachedTokens") long uncachedTokens,
+            @Param("totalTokens") long totalTokens,
+            @Param("costTotal") double costTotal);
 
     int markSessionRunning(
             @Param("sessionId") String sessionId,
@@ -56,12 +70,6 @@ public interface RuntimeSessionMapper {
 
     List<RuntimeEntryDTO> listCurrentBranchEntries(
             @Param("sessionId") String sessionId, @Param("afterSeq") long afterSeq, @Param("limit") int limit);
-
-    String findLifetimeUsage(@Param("sessionId") String sessionId);
-
-    String lockLifetimeUsage(@Param("sessionId") String sessionId);
-
-    int updateLifetimeUsage(@Param("sessionId") String sessionId, @Param("usage") String usage);
 
     int updateSessionModel(
             @Param("sessionId") String sessionId,
@@ -87,6 +95,10 @@ public interface RuntimeSessionMapper {
     int markCleanupRunning(@Param("sessionId") String sessionId, @Param("updatedAt") OffsetDateTime updatedAt);
 
     int deleteEntries(@Param("sessionId") String sessionId);
+
+    int deleteRecords(@Param("sessionId") String sessionId);
+
+    int deleteStats(@Param("sessionId") String sessionId);
 
     int deleteSequence(@Param("sessionId") String sessionId);
 

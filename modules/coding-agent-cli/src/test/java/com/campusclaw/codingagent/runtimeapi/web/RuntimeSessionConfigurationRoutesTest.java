@@ -147,14 +147,7 @@ class RuntimeSessionConfigurationRoutesTest {
         OffsetDateTime created = OffsetDateTime.parse("2026-08-18T00:00:00Z");
         OffsetDateTime updated = OffsetDateTime.parse("2026-08-18T02:00:00Z");
         var response = new GetSessionResponseVO(
-                SESSION_ID,
-                "agent-0123456789abcdef0123456789abcdef",
-                modelId,
-                "idle",
-                thinking,
-                null,
-                created,
-                updated);
+                SESSION_ID, "agent-0123456789abcdef0123456789abcdef", modelId, "idle", thinking, created, updated);
         return new RuntimeSessionView<>(response, etag);
     }
 }

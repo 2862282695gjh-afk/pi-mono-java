@@ -1,0 +1,69 @@
+@startuml model_manager_chat_call
+' Source baseline: pi-mono-java 0d7a12e1dd89eed52f6e12db717fd5703b6b2125.
+' Source evidence: modules/ai/src/main/java/com/campusclaw/ai/CampusClawAiService.java, CampusClawAiService.streamSimple.
+' Source evidence: modules/ai/src/main/java/com/campusclaw/ai/provider/mate/MateServiceModelManagerProvider.java, streamSimple.
+' Source evidence: modules/ai/src/main/java/com/campusclaw/ai/provider/mate/MateChatRequestMapper.java, map.
+' Source evidence: modules/ai/src/main/java/com/campusclaw/ai/provider/mate/MateChatSseParser.java, accept.
+' Observed behavior: the merged baseline routes legacy providers by Api and has no Mate Chat provider.
+' Architecture change: managed providers are keyed by ProviderId and take precedence over legacy Api routing.
+' Product constraint: CampusClaw calls the five Model Manager operations without application credentials.
+' Security hardening: only Mate owns upstream endpoints, model identifiers, credentials, and controlled headers.
+title Mate Chat provider call
+actor AgentLoop
+component CampusClawAiService
+component AiProviderRegistry
+component MateServiceModelManagerProvider
+component CampusMate
+cloud "Upstream LLM" as Upstream
+
+AgentLoop -> CampusClawAiService: Context and Model
+CampusClawAiService -> AiProviderRegistry: resolve mate-model-manager
+AiProviderRegistry --> CampusClawAiService: ProviderAuth.none
+CampusClawAiService -> MateServiceModelManagerProvider: streamSimple
+MateServiceModelManagerProvider -> MateServiceModelManagerProvider: map Context to Chat JSON
+MateServiceModelManagerProvider -> CampusMate: POST /mate-service/v1/LLM/chat\nno application credentials
+CampusMate -> Upstream: rewrite model and inject private route credentials
+Upstream --> CampusMate: raw OpenAI Chat SSE
+CampusMate --> MateServiceModelManagerProvider: byte-transparent SSE
+MateServiceModelManagerProvider --> AgentLoop: AssistantMessageEvent
+AgentLoop -> MateServiceModelManagerProvider: cancel subscription
+MateServiceModelManagerProvider -> CampusMate: close HTTP/SSE connection
+@enduml
+
+@startuml runtime_usage_persistence
+' Source baseline: pi-mono-java 0d7a12e1dd89eed52f6e12db717fd5703b6b2125.
+' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/event/RuntimeEventProjector.java, persistAssistant and projectCompactionCompleted.
+' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/persistence/MyBatisRuntimeSessionRepository.java, appendEntryWithUsage.
+' Source evidence: modules/coding-agent-cli/src/main/resources/db/gaussdb/install/session_schema.sql.
+' Pi evidence: packages/agent/src/harness/session/types.ts, UsageRecord and SessionStats.
+' Pi evidence: packages/session-backends/sqlite-node/src/sqlite/repo.ts, appendRecord.
+' Observed behavior: the merged Java baseline stores lifetime usage in materialized session JSON.
+' Design reason: usage is a run fact and must not become a branch entry or change active_leaf_id.
+' Java divergence: openGauss uses t_ prefixed tables and one transaction instead of the pi SQLite write queue.
+title Runtime usage record and stats transaction
+participant RuntimeEventProjector
+participant MyBatisRuntimeSessionRepository
+database t_session_sequences
+database t_session_entries
+database t_session_records
+database t_session_stats
+database t_sessions
+
+RuntimeEventProjector -> MyBatisRuntimeSessionRepository: Entry, Usage Record, Usage
+activate MyBatisRuntimeSessionRepository
+MyBatisRuntimeSessionRepository -> t_sessions: lock session
+MyBatisRuntimeSessionRepository -> t_session_sequences: allocate entry_seq
+MyBatisRuntimeSessionRepository -> t_session_entries: insert branch Entry
+MyBatisRuntimeSessionRepository -> t_sessions: update active_leaf_id to Entry
+MyBatisRuntimeSessionRepository -> t_session_sequences: allocate record_seq
+MyBatisRuntimeSessionRepository -> t_session_records: insert lane=main Usage Record
+MyBatisRuntimeSessionRepository -> t_session_stats: increment message and pi usage totals
+MyBatisRuntimeSessionRepository --> RuntimeEventProjector: commit one transaction
+deactivate MyBatisRuntimeSessionRepository
+
+note right of t_session_records
+Record sequence may create legal gaps
+between public Entry sequence values.
+Records never update active_leaf_id.
+end note
+@enduml

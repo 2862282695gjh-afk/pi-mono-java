@@ -8,6 +8,8 @@ GRANT USAGE ON SCHEMA ${SESSION_SCHEMA} TO ${SESSION_RUNTIME_ROLE};
 GRANT SELECT, INSERT, UPDATE, DELETE
     ON t_sessions,
        t_session_entries,
+       t_session_records,
+       t_session_stats,
        t_session_sequences,
        t_session_materialized,
        t_session_tombstone,

@@ -28,6 +28,14 @@
         VALUES (#{sessionId}, CAST(#{payload} AS JSONB))
     </insert>
 
+    <insert id="insertStats">
+        INSERT INTO t_session_stats (
+            session_id, message_count, cached_tokens, uncached_tokens, total_tokens, cost_total
+        ) VALUES (
+            #{sessionId}, 0, 0, 0, 0, 0
+        )
+    </insert>
+
     <select id="findSession" resultType="com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.dto.RuntimeSessionDTO">
         SELECT id, agent_id, model_id, state, thinking,
                resource_version, created_at, updated_at, cwd, parent_session_id,
@@ -65,6 +73,29 @@
             #{sessionId}, #{id}, #{entrySeq}, #{parentId}, #{type}, #{timestamp}, CAST(#{payload} AS JSONB)
         )
     </insert>
+
+    <insert id="insertRecord" parameterType="com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.dto.RuntimeRecordDTO">
+        INSERT INTO t_session_records (
+            session_id, id, record_seq, lane, run_id, type, timestamp, payload
+        ) VALUES (
+            #{sessionId}, #{id}, #{recordSeq}, #{lane}, #{runId}, #{type}, #{timestamp}, CAST(#{payload} AS JSONB)
+        )
+    </insert>
+
+    <update id="incrementMessageCount">
+        UPDATE t_session_stats
+        SET message_count = message_count + 1
+        WHERE session_id = #{sessionId}
+    </update>
+
+    <update id="accumulateUsageStats">
+        UPDATE t_session_stats
+        SET cached_tokens = cached_tokens + #{cachedTokens},
+            uncached_tokens = uncached_tokens + #{uncachedTokens},
+            total_tokens = total_tokens + #{totalTokens},
+            cost_total = cost_total + #{costTotal}
+        WHERE session_id = #{sessionId}
+    </update>
 
     <update id="markSessionRunning">
         UPDATE t_sessions
@@ -159,25 +190,6 @@
         LIMIT #{limit}
     </select>
 
-    <select id="findLifetimeUsage" resultType="string">
-        SELECT (payload -&gt; 'lifetimeUsage')::text
-        FROM t_session_materialized
-        WHERE session_id = #{sessionId}
-    </select>
-
-    <select id="lockLifetimeUsage" resultType="string">
-        SELECT (payload -&gt; 'lifetimeUsage')::text
-        FROM t_session_materialized
-        WHERE session_id = #{sessionId}
-        FOR UPDATE
-    </select>
-
-    <update id="updateLifetimeUsage">
-        UPDATE t_session_materialized
-        SET payload = jsonb_set(payload, '{lifetimeUsage}', CAST(#{usage} AS JSONB), TRUE)
-        WHERE session_id = #{sessionId}
-    </update>
-
     <update id="updateSessionModel">
         UPDATE t_sessions
         SET model_id = #{modelId},
@@ -241,6 +253,16 @@
 
     <delete id="deleteEntries">
         DELETE FROM t_session_entries
+        WHERE session_id = #{sessionId}
+    </delete>
+
+    <delete id="deleteRecords">
+        DELETE FROM t_session_records
+        WHERE session_id = #{sessionId}
+    </delete>
+
+    <delete id="deleteStats">
+        DELETE FROM t_session_stats
         WHERE session_id = #{sessionId}
     </delete>
 

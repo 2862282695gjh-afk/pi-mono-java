@@ -8,7 +8,9 @@ import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Optional;
 
+import com.campusclaw.ai.types.Usage;
 import com.campusclaw.codingagent.runtimeapi.dto.RuntimeEntryDTO;
+import com.campusclaw.codingagent.runtimeapi.dto.RuntimeRecordDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
 
 /**
@@ -25,6 +27,8 @@ public interface RuntimeSessionRepository {
     UserEventAcceptance acceptUserEvent(String sessionId, RuntimeEntryDTO entry, OffsetDateTime acceptedAt);
 
     RuntimeEntryDTO appendEntry(RuntimeEntryDTO entry);
+
+    RuntimeEntryDTO appendEntryWithUsage(RuntimeEntryDTO entry, RuntimeRecordDTO record, Usage usage);
 
     void finishExecution(String sessionId, OffsetDateTime finishedAt);
 
