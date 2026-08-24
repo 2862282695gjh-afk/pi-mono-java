@@ -1,6 +1,6 @@
 # CampusClaw 受管 Agent 工具系统 v2
 
-> 文档版本：1.3.0
+> 文档版本：1.4.0
 >
 > 状态：Implemented
 >
@@ -21,9 +21,10 @@ Session；各 Session 的消息、工作目录、工具实例、Mate 缓存和 E
 | CampusClaw merge base | `d649866a6cae967ace18ceaeb9597edd47e5721e` | PR 167 实现前行为基线 |
 | CampusClaw PR 167 | `f60cc3e78bb8b700527ac082c7c8e10524ede095` | TUI/CLI 删除边界修订输入 |
 | CampusClaw 压缩修订前 | `a7f78fed345a289833970cd7b78399f0e8e51d32` | 本轮 pi 压缩细节对齐输入 |
+| CampusClaw PR 167 审查头 | `bf28e72f94f29acd316eb872a250893ed54e3632` | 当前实现证据和本轮三项审查修订输入 |
 | pi | `5cd93f688aaab89dbb6dfa4aca535f21796ae185` | Read、find、grep、ls、工具调度与上下文压缩对照 |
 | OpenCode | `849c2598abc7d2b40261e74b5826bc74ffc78308` | Task/Child Agent 对照 |
-| 设计仓 | `3fde5735cd27433c3e3e5e03a5ce39b297ad3b00` | 2.0.0 目标设计与本次修订输入 |
+| 设计仓 | `bb967eebe1f62553e92480b3ea3808a664fbe73e` | 2.2.0 工具设计、3.2.0 Runtime 设计和 HTTP 1.40 契约 |
 
 关键实现证据：
 
@@ -37,6 +38,9 @@ Session；各 Session 的消息、工作目录、工具实例、Mate 缓存和 E
 - `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/tool/agent/SubagentExecutionService.java`：Child Execution；
 - `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/session/ManagedAgentSession.java`：公共压缩与最多一次溢出重试；
 - `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/session/compaction/SessionCompactor.java`：Usage 判定、安全切点、摘要请求与重复压缩；
+- `modules/agent-core/src/main/java/com/campusclaw/agent/Agent.java`：把实际模型输出上限传入公共 Agent 请求；
+- `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/event/RuntimeEntryCodec.java`、
+  `RuntimeEventProjector.java`：压缩保留边界、重试候选排除和重载上下文恢复；
 - `modules/ai/src/main/java/com/campusclaw/ai/utils/ContextOverflowDetector.java`：显式、静默及可恢复 length 溢出识别；
 - `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/command/SlashCommandRegistry.java`：未注册到 Host 的 Slash Command 核心；
 - `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/session/RuntimeSessionModelReconciler.java`：refresh 后下一次执行的模型懒校准；
@@ -101,7 +105,7 @@ barrier。结果始终按模型原始 tool-call 顺序写回，包括已知与�
 
 ![Agent 工作区隔离](tool-system-v2/agent_workspace_boundary.svg)
 
-[PlantUML 源码](tool-system-v2/diagram.puml#L38)
+[PlantUML 源码](tool-system-v2/diagram.puml#L40)
 
 `Read`、`Find`、`Grep`、`Ls` 的根目录固定为 `agent/{agentId}`，而不是
 `.campusclaw` 子目录。`WorkspacePathResolver` 对输入执行：
@@ -145,7 +149,7 @@ refresh 成功不修改正在执行的 Session 快照。空闲数据库 Session 
 
 ![CallMateTool 缓存未命中流程](tool-system-v2/mate_call_refresh.svg)
 
-[PlantUML 源码](tool-system-v2/diagram.puml#L66)
+[PlantUML 源码](tool-system-v2/diagram.puml#L71)
 
 `ListMateTools({skillName?})` 无参数查询当前 Agent；有名称时通过已准备目录映射到 Skill ID。
 每次都实时访问 Mate，输出稳定 JSON，仅含 `scope` 和各工具的 `name`、`description`、
@@ -200,6 +204,8 @@ prepare、解析当前 default model，并通过 `CRON` profile 创建公共 Ses
 - 正常 `STOP` 但 Usage 已越界属于静默成功溢出：压缩包含该 Assistant 的完整上下文，返回
   已成功答案，不重放模型调用。`ERROR`、`LENGTH`、显式 provider overflow 和可恢复 length
   才从压缩候选中排除失败 Assistant，成功后重试一次；第二次仍溢出发出明确失败，不再压缩重试；
+- 公共 Agent 在调用方没有显式覆盖时，把当前 `model.maxTokens` 写入实际模型请求；因此可恢复
+  `LENGTH` 使用的期望上限和实际请求上限一致，不受 OpenAI provider 的 32000 缺省值影响；
 - 恢复出的 Session 在接收新 prompt 前先处理未恢复的 `ERROR/LENGTH` 溢出。自动压缩先完成
   `prepare`，没有安全可压缩窗口时静默跳过，不发 started/failed；
 - 安全切点只允许 User 或 Assistant，ToolResult 不能成为首条保留消息。即使最后一条 Assistant
@@ -212,7 +218,9 @@ prepare、解析当前 default model，并通过 `CRON` profile 创建公共 Ses
   `<read-files>`；Bash/Edit/Write 不参与追踪；
 - 摘要为空、带 ToolCall、失败或取消时不替换 Agent 消息，数据库历史 Entry 也不删除。
   Runtime 只在 prepare 成功后投影 started；failed 含 `reason/willRetry/aborted/message` 且不持久化，
-  completed 持久化完整摘要、保留边界、压缩前后 Token 和本次 Usage。
+  completed 持久化完整摘要、保留边界、压缩前后 Token 和本次 Usage。重试压缩额外持久化
+  内部 `_discardedEntryId`，重载时按 Entry ID 精确排除已丢弃的 `ERROR/LENGTH`；该字段不进入
+  历史或 SSE 公共契约，旧 Entry 缺少该字段时只回退识别压缩前最后一条可重试 Assistant。
 
 CampusClaw 不恢复 pi 的 JSONL/tree/Extension、Bash/Edit/Write 文件追踪和 CLI 自动压缩提示；
 这是产品约束。数据库 append-only Entry 投影替代 JSONL compaction entry 属于架构改造；
@@ -261,6 +269,7 @@ git diff --check
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 1.4.0 | 2026-08-24 | 处理 PR 167 三项审查意见：精确持久化并排除压缩重试候选、统一公共 Agent 实际请求与 length 判定的输出上限、修正新增实现的源码证据基线 |
 | 1.3.0 | 2026-08-24 | 固定并实现 pi 压缩细节：Usage 与边界判定、成功 STOP 不重试、错误/length 单次恢复、超大末条保留、split-turn/重复摘要、结构化摘要、Read 路径继承、取消和瞬态重试语义 |
 | 1.2.0 | 2026-08-24 | 修订 PR 167 删除边界：迁移公共压缩与 Read 追踪，保留未注册的 Slash 核心和四个处理器，增加 Usage/领域事件及 refresh 后懒校准 |
 | 1.1.0 | 2026-08-24 | 完成 CLI/TUI 与旧装配源码清理；明确模型仅来自服务端目录和部署凭据、staging 与 `.campusclaw` 同属 Agent 工作区、Child default 不可用时回退父模型 |

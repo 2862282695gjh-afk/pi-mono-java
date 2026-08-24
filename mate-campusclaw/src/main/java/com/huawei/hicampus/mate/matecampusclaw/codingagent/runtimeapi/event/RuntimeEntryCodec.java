@@ -148,6 +148,7 @@ public class RuntimeEntryCodec {
             String entryId,
             CompactionReason reason,
             String firstKeptEntryId,
+            String discardedEntryId,
             SessionCompactionResult result,
             boolean willRetry,
             OffsetDateTime createdAt) {
@@ -155,6 +156,9 @@ public class RuntimeEntryCodec {
         payload.put("reason", reason.value());
         payload.put("summary", result.summary());
         payload.put("firstKeptEntryId", firstKeptEntryId);
+        if (discardedEntryId != null) {
+            payload.put("_discardedEntryId", discardedEntryId);
+        }
         payload.put("tokensBefore", result.tokensBefore());
         payload.put("estimatedTokensAfter", result.estimatedTokensAfter());
         payload.put("willRetry", willRetry);
@@ -275,22 +279,24 @@ public class RuntimeEntryCodec {
             return recoverableContextEntries(entries, 0, entries.size());
         }
         RuntimeEntryDTO compaction = entries.get(compactionIndex);
-        String firstKeptEntryId =
-                readPayload(compaction.getPayload()).path("firstKeptEntryId").asText();
+        JsonNode payload = readPayload(compaction.getPayload());
+        String firstKeptEntryId = payload.path("firstKeptEntryId").asText();
+        String discardedEntryId = discardedEntryId(entries, compactionIndex, payload);
         int firstKeptIndex = findEntryIndex(entries, firstKeptEntryId);
         List<RuntimeEntryDTO> result = new ArrayList<>();
         result.add(compaction);
         if (firstKeptIndex >= 0) {
-            appendContextEntries(entries, firstKeptIndex, compactionIndex, result);
+            appendContextEntries(entries, firstKeptIndex, compactionIndex, discardedEntryId, result);
         }
-        appendContextEntries(entries, compactionIndex + 1, entries.size(), result);
+        appendContextEntries(entries, compactionIndex + 1, entries.size(), null, result);
         return List.copyOf(result);
     }
 
-    private void appendContextEntries(List<RuntimeEntryDTO> entries, int start, int end, List<RuntimeEntryDTO> target) {
+    private void appendContextEntries(
+            List<RuntimeEntryDTO> entries, int start, int end, String excludedEntryId, List<RuntimeEntryDTO> target) {
         for (int index = start; index < end; index++) {
             RuntimeEntryDTO entry = entries.get(index);
-            if (isRecoverableMessageEntry(entry)) {
+            if (!entry.getId().equals(excludedEntryId) && isRecoverableMessageEntry(entry)) {
                 target.add(entry);
             }
         }
@@ -298,8 +304,36 @@ public class RuntimeEntryCodec {
 
     private List<RuntimeEntryDTO> recoverableContextEntries(List<RuntimeEntryDTO> entries, int start, int end) {
         List<RuntimeEntryDTO> result = new ArrayList<>();
-        appendContextEntries(entries, start, end, result);
+        appendContextEntries(entries, start, end, null, result);
         return List.copyOf(result);
+    }
+
+    String lastRetriableAssistantEntryId(List<RuntimeEntryDTO> entries) {
+        return lastRetriableAssistantEntryId(entries, entries.size());
+    }
+
+    private String discardedEntryId(List<RuntimeEntryDTO> entries, int compactionIndex, JsonNode payload) {
+        String stored = payload.path("_discardedEntryId").asText();
+        if (!stored.isBlank()) {
+            return stored;
+        }
+        return payload.path("willRetry").asBoolean() ? lastRetriableAssistantEntryId(entries, compactionIndex) : null;
+    }
+
+    private String lastRetriableAssistantEntryId(List<RuntimeEntryDTO> entries, int end) {
+        for (int index = end - 1; index >= 0; index--) {
+            RuntimeEntryDTO entry = entries.get(index);
+            if (RuntimeEventType.ASSISTANT_MESSAGE_COMPLETED.value().equals(entry.getType())) {
+                return isRetriableAssistantEntry(entry) ? entry.getId() : null;
+            }
+        }
+        return null;
+    }
+
+    private boolean isRetriableAssistantEntry(RuntimeEntryDTO entry) {
+        String reason = field(readPayload(entry.getPayload()), "finishReason", "finish_reason")
+                .asText();
+        return "error".equals(reason) || "length".equals(reason);
     }
 
     private static int latestCompactionIndex(List<RuntimeEntryDTO> entries) {
