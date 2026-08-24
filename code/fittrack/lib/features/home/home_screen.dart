@@ -95,6 +95,8 @@ class _PlanList extends ConsumerWidget {
         _TopBar(onSignOut: onSignOut),
         const SizedBox(height: 18),
         _TrainingHero(planCount: plans.length, actionCount: actionCount),
+        const SizedBox(height: 12),
+        _GeneratorShortcut(onTap: () => context.go('/plans/generate')),
         if (pendingDrafts.isNotEmpty) ...[
           const SizedBox(height: 12),
           _PendingSyncNotice(
@@ -142,6 +144,44 @@ class _PlanList extends ConsumerWidget {
       ],
     );
   }
+}
+
+class _GeneratorShortcut extends StatelessWidget {
+  const _GeneratorShortcut({required this.onTap});
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => Material(
+    color: const Color(0xFFE5FBC1),
+    borderRadius: BorderRadius.circular(20),
+    child: InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(20),
+      child: const Padding(
+        padding: EdgeInsets.symmetric(horizontal: 17, vertical: 15),
+        child: Row(
+          children: [
+            Icon(Icons.auto_awesome_rounded, color: FitTrackTheme.forest),
+            SizedBox(width: 11),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('智能生成计划', style: TextStyle(fontWeight: FontWeight.w900)),
+                  SizedBox(height: 2),
+                  Text(
+                    '按目标和经验给出第一版，再由你调整。',
+                    style: TextStyle(fontSize: 12, color: FitTrackTheme.muted),
+                  ),
+                ],
+              ),
+            ),
+            Icon(Icons.arrow_forward_rounded, color: FitTrackTheme.forest),
+          ],
+        ),
+      ),
+    ),
+  );
 }
 
 class _PendingSyncNotice extends StatelessWidget {

@@ -7,6 +7,7 @@ import '../features/auth/signup_screen.dart';
 import '../features/home/home_screen.dart';
 import '../features/history/history_screen.dart';
 import '../features/plans/plan_editor_screen.dart';
+import '../features/plans/plan_generator_screen.dart';
 import '../features/workouts/workout_session_screen.dart';
 import '../providers/auth_providers.dart';
 
@@ -64,6 +65,10 @@ GoRouter buildRouter({
         path: '/history/:sessionId',
         builder: (context, state) =>
             HistoryDetailScreen(sessionId: state.pathParameters['sessionId']!),
+      ),
+      GoRoute(
+        path: '/plans/generate',
+        builder: (context, state) => const PlanGeneratorScreen(),
       ),
       GoRoute(
         path: '/plans/new',
