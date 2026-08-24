@@ -25,6 +25,7 @@ import com.campusclaw.ai.types.Usage;
 import com.campusclaw.ai.types.UserMessage;
 import com.campusclaw.codingagent.runtimeapi.dto.RuntimeEntryDTO;
 import com.campusclaw.codingagent.runtimeapi.vo.RuntimeSseEventVO;
+import com.campusclaw.codingagent.session.compaction.CompactionMessageSupport;
 import com.campusclaw.codingagent.session.compaction.CompactionReason;
 import com.campusclaw.codingagent.session.compaction.SessionCompactionResult;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -70,6 +71,9 @@ public class RuntimeEntryCodec {
         ArrayNode content = publicMessage.putArray("content");
         message.content().forEach(block -> appendPublicContent(content, block));
         payload.put("finish_reason", finishReason(message.stopReason()));
+        payload.put("_api", message.api());
+        payload.put("_provider", message.provider());
+        payload.put("_model", message.model());
         payload.set("usage", objectMapper.valueToTree(usage));
         RuntimeEntryDTO entry = entry(
                 sessionId,
@@ -249,9 +253,9 @@ public class RuntimeEntryCodec {
         StopReason reason = parseFinishReason(payload.path("finish_reason").asText());
         return new AssistantMessage(
                 content,
-                model.api().value(),
-                model.provider().value(),
-                model.id(),
+                payload.path("_api").asText(model.api().value()),
+                payload.path("_provider").asText(model.provider().value()),
+                payload.path("_model").asText(model.id()),
                 null,
                 readUsage(payload.path("usage")),
                 reason,
@@ -261,9 +265,8 @@ public class RuntimeEntryCodec {
 
     private UserMessage compactionSummaryMessage(RuntimeEntryDTO entry, JsonNode payload) {
         String summary = payload.path("summary").asText();
-        return new UserMessage(
-                "[Context compaction summary]\n" + summary,
-                entry.getTimestamp().toInstant().toEpochMilli());
+        return CompactionMessageSupport.summaryMessage(
+                summary, entry.getTimestamp().toInstant().toEpochMilli());
     }
 
     private List<RuntimeEntryDTO> effectiveContextEntries(List<RuntimeEntryDTO> entries) {

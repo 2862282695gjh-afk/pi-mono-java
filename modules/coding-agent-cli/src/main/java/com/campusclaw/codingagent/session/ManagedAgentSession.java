@@ -6,6 +6,7 @@ package com.campusclaw.codingagent.session;
 
 import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Consumer;
@@ -16,6 +17,8 @@ import com.campusclaw.ai.types.AssistantMessage;
 import com.campusclaw.ai.types.Message;
 import com.campusclaw.ai.types.UserMessage;
 import com.campusclaw.codingagent.runtime.PreparedAgentRuntime;
+import com.campusclaw.codingagent.session.compaction.AutomaticCompactionDecision;
+import com.campusclaw.codingagent.session.compaction.AutomaticCompactionDecision.Action;
 import com.campusclaw.codingagent.session.compaction.CompactionReason;
 import com.campusclaw.codingagent.session.compaction.SessionCompactionCompletedEvent;
 import com.campusclaw.codingagent.session.compaction.SessionCompactionEvent;
@@ -23,6 +26,7 @@ import com.campusclaw.codingagent.session.compaction.SessionCompactionFailedEven
 import com.campusclaw.codingagent.session.compaction.SessionCompactionResult;
 import com.campusclaw.codingagent.session.compaction.SessionCompactionStartedEvent;
 import com.campusclaw.codingagent.session.compaction.SessionCompactor;
+import com.campusclaw.codingagent.session.compaction.SessionCompactor.PreparedCompaction;
 import com.campusclaw.codingagent.tool.builtin.ToolEntryPoint;
 
 import org.slf4j.Logger;
@@ -35,8 +39,10 @@ import org.slf4j.LoggerFactory;
  * @since [br_eCampusCore 26.0.0]
  */
 public final class ManagedAgentSession implements AutoCloseable {
-
     private static final Logger log = LoggerFactory.getLogger(ManagedAgentSession.class);
+
+    private static final String RETRY_EXHAUSTED_MESSAGE =
+            "Context overflow recovery failed after one compact-and-retry attempt";
 
     private final PreparedAgentRuntime runtime;
 
@@ -87,7 +93,9 @@ public final class ManagedAgentSession implements AutoCloseable {
     }
 
     public CompletableFuture<Void> prompt(Message message) {
-        return agent.prompt(message).thenCompose(ignored -> compactAfterExecution(false));
+        return compactBeforePrompt()
+                .thenCompose(ignored -> agent.prompt(message))
+                .thenCompose(ignored -> compactAfterExecution(false));
     }
 
     public CompletableFuture<Void> continueQueuedExecution() {
@@ -95,8 +103,8 @@ public final class ManagedAgentSession implements AutoCloseable {
     }
 
     public CompletableFuture<SessionCompactionResult> compact(String customInstructions) {
-        return runCompaction(
-                CompactionReason.MANUAL, false, List.copyOf(agent.getState().getMessages()), customInstructions);
+        agent.abort();
+        return agent.waitForIdle().thenCompose(ignored -> manualCompaction(customInstructions));
     }
 
     public Runnable subscribeCompaction(Consumer<SessionCompactionEvent> listener) {
@@ -120,33 +128,68 @@ public final class ManagedAgentSession implements AutoCloseable {
         agent.clearFollowUpQueue();
     }
 
-    private CompletableFuture<Void> compactAfterExecution(boolean recoveryAttempted) {
-        if (recoveryAttempted) {
+    private CompletableFuture<Void> compactBeforePrompt() {
+        List<Message> messages = List.copyOf(agent.getState().getMessages());
+        AutomaticCompactionDecision decision =
+                compactor.decide(messages, agent.getState().getModel(), true);
+        if (!decision.requiresCompaction()) {
             return CompletableFuture.completedFuture(null);
         }
-        List<Message> messages = List.copyOf(agent.getState().getMessages());
-        if (compactor.isOverflow(messages, agent.getState().getModel())) {
-            List<Message> retryMessages = withoutLastAssistant(messages);
-            return runCompaction(CompactionReason.OVERFLOW, true, retryMessages, null)
-                    .handle((result, error) -> error == null)
-                    .thenCompose(compacted -> compacted
-                            ? agent.continueExecution().thenCompose(ignored -> compactAfterExecution(true))
-                            : CompletableFuture.completedFuture(null));
-        }
-        if (compactor.exceedsThreshold(messages, agent.getState().getModel())) {
-            return runCompaction(CompactionReason.THRESHOLD, false, messages, null)
-                    .handle((result, error) -> null);
-        }
-        return CompletableFuture.completedFuture(null);
+        List<Message> compactable = decision.willRetry() ? withoutLastAssistant(messages) : messages;
+        return automaticCompaction(decision, compactable).handle((result, error) -> null);
     }
 
-    private CompletableFuture<SessionCompactionResult> runCompaction(
-            CompactionReason reason, boolean willRetry, List<Message> messages, String customInstructions) {
+    private CompletableFuture<Void> compactAfterExecution(boolean recoveryAttempted) {
+        List<Message> messages = List.copyOf(agent.getState().getMessages());
+        AutomaticCompactionDecision decision =
+                compactor.decide(messages, agent.getState().getModel(), false);
+        if (!decision.requiresCompaction()) {
+            return CompletableFuture.completedFuture(null);
+        }
+        if (decision.action() == Action.OVERFLOW_RETRY && recoveryAttempted) {
+            emitCompaction(new SessionCompactionFailedEvent(CompactionReason.OVERFLOW, false, RETRY_EXHAUSTED_MESSAGE));
+            return CompletableFuture.completedFuture(null);
+        }
+        List<Message> compactable = decision.willRetry() ? withoutLastAssistant(messages) : messages;
+        return automaticCompaction(decision, compactable)
+                .handle((result, error) -> error == null && result != null)
+                .thenCompose(compacted -> continueAfterCompaction(decision, compacted));
+    }
+
+    private CompletableFuture<Void> continueAfterCompaction(AutomaticCompactionDecision decision, boolean compacted) {
+        if (!compacted || !decision.willRetry()) {
+            return CompletableFuture.completedFuture(null);
+        }
+        return agent.continueExecution().thenCompose(ignored -> compactAfterExecution(true));
+    }
+
+    private CompletableFuture<SessionCompactionResult> automaticCompaction(
+            AutomaticCompactionDecision decision, List<Message> messages) {
+        PreparedCompaction prepared = compactor.prepare(messages);
+        if (prepared == null) {
+            return CompletableFuture.completedFuture(null);
+        }
+        CompactionReason reason =
+                decision.action() == Action.THRESHOLD ? CompactionReason.THRESHOLD : CompactionReason.OVERFLOW;
+        return runPreparedCompaction(reason, decision.willRetry(), prepared, null);
+    }
+
+    private CompletableFuture<SessionCompactionResult> manualCompaction(String customInstructions) {
+        PreparedCompaction prepared =
+                compactor.prepare(List.copyOf(agent.getState().getMessages()));
+        if (prepared == null) {
+            return CompletableFuture.failedFuture(new IllegalStateException("Session has no compactable history"));
+        }
+        return runPreparedCompaction(CompactionReason.MANUAL, false, prepared, customInstructions);
+    }
+
+    private CompletableFuture<SessionCompactionResult> runPreparedCompaction(
+            CompactionReason reason, boolean willRetry, PreparedCompaction prepared, String customInstructions) {
         emitCompaction(new SessionCompactionStartedEvent(reason, willRetry));
         CompletableFuture<SessionCompactionResult> future;
         try {
             future = compactor.compact(
-                    messages, agent.getState().getModel(), agent.getState().getThinkingLevel(), customInstructions);
+                    prepared, agent.getState().getModel(), agent.getState().getThinkingLevel(), customInstructions);
         } catch (RuntimeException error) {
             emitCompaction(new SessionCompactionFailedEvent(reason, willRetry, "compaction failed"));
             return CompletableFuture.failedFuture(error);
@@ -159,18 +202,12 @@ public final class ManagedAgentSession implements AutoCloseable {
             CompactionReason reason, boolean willRetry, SessionCompactionResult result, Throwable error) {
         currentCompaction = null;
         if (error != null) {
-            emitCompaction(new SessionCompactionFailedEvent(reason, willRetry, "compaction failed"));
+            emitCompaction(
+                    new SessionCompactionFailedEvent(reason, willRetry, isCancellation(error), "compaction failed"));
             return;
         }
-        applyCompaction(result);
+        agent.replaceMessages(compactor.compactedMessages(result));
         emitCompaction(new SessionCompactionCompletedEvent(reason, result, willRetry));
-    }
-
-    private void applyCompaction(SessionCompactionResult result) {
-        List<Message> compacted = new java.util.ArrayList<>();
-        compacted.add(new UserMessage("[Context compaction summary]\n" + result.summary(), System.currentTimeMillis()));
-        compacted.addAll(result.retainedMessages());
-        agent.replaceMessages(compacted);
     }
 
     private void emitCompaction(SessionCompactionEvent event) {
@@ -191,5 +228,14 @@ public final class ManagedAgentSession implements AutoCloseable {
             return List.copyOf(messages.subList(0, messages.size() - 1));
         }
         return messages;
+    }
+
+    private static boolean isCancellation(Throwable error) {
+        for (Throwable current = error; current != null; current = current.getCause()) {
+            if (current instanceof CancellationException) {
+                return true;
+            }
+        }
+        return false;
     }
 }

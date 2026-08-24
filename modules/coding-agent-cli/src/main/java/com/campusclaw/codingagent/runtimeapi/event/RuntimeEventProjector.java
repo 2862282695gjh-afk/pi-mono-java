@@ -282,6 +282,7 @@ public class RuntimeEventProjector {
     private void projectCompactionFailed(SessionCompactionFailedEvent event) {
         LinkedHashMap<String, Object> data =
                 compactionLifecycleData(event.reason().value(), event.willRetry());
+        data.put("aborted", event.aborted());
         data.put("message", event.message());
         stream.emit(new RuntimeSseEventVO(null, RuntimeEventType.SESSION_COMPACTION_FAILED.value(), data));
     }

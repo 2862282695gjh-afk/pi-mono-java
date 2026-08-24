@@ -4,10 +4,10 @@
 
 package com.campusclaw.codingagent.session.compaction;
 
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeSet;
 
 import com.campusclaw.ai.types.AssistantMessage;
 import com.campusclaw.ai.types.Message;
@@ -23,7 +23,11 @@ public final class FileOperationTracker {
     private FileOperationTracker() {}
 
     public static Set<String> filesRead(List<Message> messages) {
-        Set<String> result = new LinkedHashSet<>();
+        return filesRead(messages, Set.of());
+    }
+
+    public static Set<String> filesRead(List<Message> messages, Set<String> inherited) {
+        Set<String> result = new TreeSet<>(inherited);
         for (Message message : messages) {
             if (message instanceof AssistantMessage assistant) {
                 assistant.content().stream()
@@ -36,7 +40,7 @@ public final class FileOperationTracker {
                         .forEach(result::add);
             }
         }
-        return Set.copyOf(result);
+        return java.util.Collections.unmodifiableSet(result);
     }
 
     private static String readPath(Map<String, Object> arguments) {

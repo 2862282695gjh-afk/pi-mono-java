@@ -53,6 +53,8 @@ import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.dto.Runtim
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.persistence.RuntimeSessionRepository;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.runtime.RuntimeActiveExecution;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.vo.RuntimeSseEventVO;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.session.compaction.CompactionReason;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.session.compaction.SessionCompactionFailedEvent;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import org.junit.jupiter.api.Test;
@@ -170,6 +172,26 @@ class RuntimeEventProjectorTest {
                 .containsEntry("toolName", "Read")
                 .containsEntry("delta", Map.of("line", "partial"))
                 .doesNotContainKeys("args", "path");
+        verify(repository, org.mockito.Mockito.never()).appendEntry(any());
+    }
+
+    @Test
+    void projectsAbortedCompactionFailureAsTransientEvent() {
+        RuntimeSessionRepository repository = mock(RuntimeSessionRepository.class);
+        RuntimeEventStream stream = eventStream();
+        RuntimeEventProjector projector = projector(repository, stream, false);
+
+        projector.onCompactionEvent(
+                new SessionCompactionFailedEvent(CompactionReason.OVERFLOW, true, true, "compaction failed"));
+        stream.complete();
+
+        RuntimeSseEventVO failed = event(collect(stream), "session.compaction.failed");
+        assertThat(failed.getId()).isNull();
+        assertThat(failed.getData())
+                .containsEntry("reason", "overflow")
+                .containsEntry("willRetry", true)
+                .containsEntry("aborted", true)
+                .containsEntry("message", "compaction failed");
         verify(repository, org.mockito.Mockito.never()).appendEntry(any());
     }
 

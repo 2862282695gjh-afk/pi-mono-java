@@ -7,6 +7,7 @@ package com.campusclaw.codingagent.session;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -15,6 +16,7 @@ import static org.mockito.Mockito.when;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 
 import com.campusclaw.agent.Agent;
@@ -32,19 +34,22 @@ import com.campusclaw.ai.types.ThinkingLevel;
 import com.campusclaw.ai.types.Usage;
 import com.campusclaw.ai.types.UserMessage;
 import com.campusclaw.codingagent.runtime.PreparedAgentRuntime;
-import com.campusclaw.codingagent.session.compaction.CompactionReason;
+import com.campusclaw.codingagent.session.compaction.AutomaticCompactionDecision;
+import com.campusclaw.codingagent.session.compaction.AutomaticCompactionDecision.Action;
 import com.campusclaw.codingagent.session.compaction.SessionCompactionCompletedEvent;
 import com.campusclaw.codingagent.session.compaction.SessionCompactionEvent;
 import com.campusclaw.codingagent.session.compaction.SessionCompactionFailedEvent;
 import com.campusclaw.codingagent.session.compaction.SessionCompactionResult;
 import com.campusclaw.codingagent.session.compaction.SessionCompactionStartedEvent;
 import com.campusclaw.codingagent.session.compaction.SessionCompactor;
+import com.campusclaw.codingagent.session.compaction.SessionCompactor.PreparedCompaction;
 import com.campusclaw.codingagent.tool.builtin.ToolEntryPoint;
 
 import org.junit.jupiter.api.Test;
+import org.mockito.InOrder;
 
 /**
- * 验证公共 Session 的压缩、回滚和溢出重试语义。
+ * 验证公共 Session 的压缩、回滚和一次溢出恢复状态机。
  *
  * @version [br_eCampusCore 26.0.0, 2026/08/24]
  * @since [br_eCampusCore 26.0.0]
@@ -53,14 +58,9 @@ class ManagedAgentSessionTest {
     @Test
     void appliesThresholdCompactionAndPublishesLifecycle() {
         Fixture fixture = fixture();
-        SessionCompactionResult result = result(fixture.messages());
-        when(fixture.compactor().exceedsThreshold(fixture.messages(), fixture.model()))
-                .thenReturn(true);
-        when(fixture.compactor()
-                        .compact(eq(fixture.messages()), eq(fixture.model()), eq(ThinkingLevel.MEDIUM), eq(null)))
-                .thenReturn(CompletableFuture.completedFuture(result));
-        List<SessionCompactionEvent> events = new ArrayList<>();
-        fixture.session().subscribeCompaction(events::add);
+        stubDecisions(fixture, none(fixture), decision(Action.THRESHOLD, fixture));
+        stubSuccessfulCompaction(fixture, fixture.messages());
+        List<SessionCompactionEvent> events = subscribe(fixture);
 
         fixture.session().prompt("continue").join();
 
@@ -72,78 +72,167 @@ class ManagedAgentSessionTest {
     }
 
     @Test
-    void retriesOverflowOnlyOnceAfterSuccessfulCompaction() {
+    void preservesSuccessfulStopOverflowWithoutRetry() {
         Fixture fixture = fixture();
-        List<Message> compactable = List.of(fixture.messages().getFirst());
-        when(fixture.compactor().isOverflow(fixture.messages(), fixture.model()))
-                .thenReturn(true);
-        when(fixture.compactor().compact(eq(compactable), eq(fixture.model()), eq(ThinkingLevel.MEDIUM), eq(null)))
-                .thenReturn(CompletableFuture.completedFuture(result(compactable)));
-        when(fixture.agent().continueExecution()).thenReturn(CompletableFuture.completedFuture(null));
+        stubDecisions(fixture, none(fixture), decision(Action.OVERFLOW_PRESERVE, fixture));
+        stubSuccessfulCompaction(fixture, fixture.messages());
 
         fixture.session().prompt("continue").join();
 
+        verify(fixture.compactor()).prepare(fixture.messages());
+        verify(fixture.agent(), never()).continueExecution();
+    }
+
+    @Test
+    void retriesErrorOverflowOnceAfterSuccessfulCompaction() {
+        Fixture fixture = fixture();
+        List<Message> retryMessages =
+                fixture.messages().subList(0, fixture.messages().size() - 1);
+        stubDecisions(fixture, none(fixture), decision(Action.OVERFLOW_RETRY, fixture), none(fixture));
+        stubSuccessfulCompaction(fixture, retryMessages);
+
+        fixture.session().prompt("continue").join();
+
+        verify(fixture.compactor()).prepare(retryMessages);
         verify(fixture.agent(), times(1)).continueExecution();
-        verify(fixture.compactor(), times(1)).isOverflow(fixture.messages(), fixture.model());
+    }
+
+    @Test
+    void reportsSecondOverflowWithoutASecondCompaction() {
+        Fixture fixture = fixture();
+        List<Message> retryMessages =
+                fixture.messages().subList(0, fixture.messages().size() - 1);
+        stubDecisions(
+                fixture,
+                none(fixture),
+                decision(Action.OVERFLOW_RETRY, fixture),
+                decision(Action.OVERFLOW_RETRY, fixture));
+        stubSuccessfulCompaction(fixture, retryMessages);
+        List<SessionCompactionEvent> events = subscribe(fixture);
+
+        fixture.session().prompt("continue").join();
+
+        assertThat(events.getLast()).isInstanceOf(SessionCompactionFailedEvent.class);
+        assertThat(((SessionCompactionFailedEvent) events.getLast()).willRetry())
+                .isFalse();
+        assertThat(((SessionCompactionFailedEvent) events.getLast()).message()).contains("after one");
+        verify(fixture.compactor(), times(1)).compact(any(), any(), any(), any());
+    }
+
+    @Test
+    void compactsRecoveredOverflowBeforeSubmittingNewPrompt() {
+        Fixture fixture = fixture();
+        List<Message> retryMessages =
+                fixture.messages().subList(0, fixture.messages().size() - 1);
+        stubDecisions(fixture, decision(Action.OVERFLOW_RETRY, fixture), none(fixture));
+        stubSuccessfulCompaction(fixture, retryMessages);
+
+        fixture.session().prompt("new prompt").join();
+
+        InOrder order = inOrder(fixture.compactor(), fixture.agent());
+        order.verify(fixture.compactor()).compact(any(), any(), any(), any());
+        order.verify(fixture.agent()).replaceMessages(any());
+        order.verify(fixture.agent()).prompt(any(Message.class));
+        verify(fixture.agent(), never()).continueExecution();
+    }
+
+    @Test
+    void silentlySkipsAutomaticCompactionWhenNothingCanBePrepared() {
+        Fixture fixture = fixture();
+        stubDecisions(fixture, none(fixture), decision(Action.THRESHOLD, fixture));
+        when(fixture.compactor().prepare(fixture.messages())).thenReturn(null);
+        List<SessionCompactionEvent> events = subscribe(fixture);
+
+        fixture.session().prompt("continue").join();
+
+        assertThat(events).isEmpty();
+        verify(fixture.compactor(), never()).compact(any(), any(), any(), any());
     }
 
     @Test
     void preservesMessagesWhenOverflowCompactionFails() {
         Fixture fixture = fixture();
-        List<Message> compactable = List.of(fixture.messages().getFirst());
+        List<Message> retryMessages =
+                fixture.messages().subList(0, fixture.messages().size() - 1);
+        stubDecisions(fixture, none(fixture), decision(Action.OVERFLOW_RETRY, fixture));
+        PreparedCompaction prepared = prepared(retryMessages);
+        when(fixture.compactor().prepare(retryMessages)).thenReturn(prepared);
         CompletableFuture<SessionCompactionResult> failed = new CompletableFuture<>();
         failed.completeExceptionally(new IllegalStateException("summary unavailable"));
-        when(fixture.compactor().isOverflow(fixture.messages(), fixture.model()))
-                .thenReturn(true);
-        when(fixture.compactor().compact(eq(compactable), eq(fixture.model()), eq(ThinkingLevel.MEDIUM), eq(null)))
+        when(fixture.compactor().compact(eq(prepared), eq(fixture.model()), eq(ThinkingLevel.MEDIUM), eq(null)))
                 .thenReturn(failed);
-        List<SessionCompactionEvent> events = new ArrayList<>();
-        fixture.session().subscribeCompaction(events::add);
+        List<SessionCompactionEvent> events = subscribe(fixture);
 
         fixture.session().prompt("continue").join();
 
         assertThat(events)
                 .extracting(Object::getClass)
                 .containsExactly(SessionCompactionStartedEvent.class, SessionCompactionFailedEvent.class);
-        assertThat(((SessionCompactionStartedEvent) events.getFirst()).reason()).isEqualTo(CompactionReason.OVERFLOW);
         verify(fixture.agent(), never()).replaceMessages(any());
         verify(fixture.agent(), never()).continueExecution();
     }
 
     @Test
-    void publishesFailureWhenCompactorRejectsSynchronously() {
+    void manualCompactionAbortsExecutionWaitsAndThenCompacts() {
         Fixture fixture = fixture();
-        when(fixture.compactor().exceedsThreshold(fixture.messages(), fixture.model()))
-                .thenReturn(true);
-        when(fixture.compactor()
-                        .compact(eq(fixture.messages()), eq(fixture.model()), eq(ThinkingLevel.MEDIUM), eq(null)))
-                .thenThrow(new IllegalStateException("nothing to compact"));
-        List<SessionCompactionEvent> events = new ArrayList<>();
-        fixture.session().subscribeCompaction(events::add);
+        PreparedCompaction prepared = prepared(fixture.messages());
+        when(fixture.compactor().prepare(fixture.messages())).thenReturn(prepared);
+        when(fixture.compactor().compact(eq(prepared), eq(fixture.model()), eq(ThinkingLevel.MEDIUM), eq("focus")))
+                .thenReturn(CompletableFuture.completedFuture(result(fixture.messages())));
+        when(fixture.compactor().compactedMessages(any())).thenReturn(fixture.messages());
 
-        fixture.session().prompt("continue").join();
+        fixture.session().compact("focus").join();
 
-        assertThat(events)
-                .extracting(Object::getClass)
-                .containsExactly(SessionCompactionStartedEvent.class, SessionCompactionFailedEvent.class);
-        verify(fixture.agent(), never()).replaceMessages(any());
+        InOrder order = inOrder(fixture.agent(), fixture.compactor());
+        order.verify(fixture.agent()).abort();
+        order.verify(fixture.agent()).waitForIdle();
+        order.verify(fixture.compactor()).compact(any(), any(), any(), eq("focus"));
     }
 
     @Test
-    void abortCancelsActiveCompactionAndAgentExecution() {
+    void marksCancelledCompactionAsAborted() {
         Fixture fixture = fixture();
-        CompletableFuture<SessionCompactionResult> compaction = new CompletableFuture<>();
-        when(fixture.compactor()
-                        .compact(eq(fixture.messages()), eq(fixture.model()), eq(ThinkingLevel.MEDIUM), eq(null)))
-                .thenReturn(compaction);
+        PreparedCompaction prepared = prepared(fixture.messages());
+        CompletableFuture<SessionCompactionResult> pending = new CompletableFuture<>();
+        when(fixture.compactor().prepare(fixture.messages())).thenReturn(prepared);
+        when(fixture.compactor().compact(eq(prepared), any(), any(), eq(null))).thenReturn(pending);
+        List<SessionCompactionEvent> events = subscribe(fixture);
 
         fixture.session().compact(null);
         fixture.session().abort();
 
-        assertThat(compaction).isCancelled();
-        verify(fixture.agent()).abort();
-        verify(fixture.agent()).clearSteeringQueue();
-        verify(fixture.agent()).clearFollowUpQueue();
+        assertThat(events.getLast()).isInstanceOf(SessionCompactionFailedEvent.class);
+        assertThat(((SessionCompactionFailedEvent) events.getLast()).aborted()).isTrue();
+        assertThat(pending).isCancelled();
+    }
+
+    private static List<SessionCompactionEvent> subscribe(Fixture fixture) {
+        List<SessionCompactionEvent> events = new ArrayList<>();
+        fixture.session().subscribeCompaction(events::add);
+        return events;
+    }
+
+    private static void stubDecisions(Fixture fixture, AutomaticCompactionDecision... decisions) {
+        when(fixture.compactor().decide(any(), eq(fixture.model()), any(Boolean.class)))
+                .thenReturn(decisions[0], java.util.Arrays.copyOfRange(decisions, 1, decisions.length));
+    }
+
+    private static void stubSuccessfulCompaction(Fixture fixture, List<Message> compactable) {
+        PreparedCompaction prepared = prepared(compactable);
+        SessionCompactionResult result = result(compactable);
+        when(fixture.compactor().prepare(compactable)).thenReturn(prepared);
+        when(fixture.compactor().compact(eq(prepared), eq(fixture.model()), eq(ThinkingLevel.MEDIUM), eq(null)))
+                .thenReturn(CompletableFuture.completedFuture(result));
+        when(fixture.compactor().compactedMessages(result)).thenReturn(compactable);
+    }
+
+    private static AutomaticCompactionDecision none(Fixture fixture) {
+        return decision(Action.NONE, fixture);
+    }
+
+    private static AutomaticCompactionDecision decision(Action action, Fixture fixture) {
+        return new AutomaticCompactionDecision(
+                action, (AssistantMessage) fixture.messages().getLast());
     }
 
     private static Fixture fixture() {
@@ -156,10 +245,16 @@ class ManagedAgentSessionTest {
         Agent agent = mock(Agent.class);
         when(agent.getState()).thenReturn(state);
         when(agent.prompt(any(Message.class))).thenReturn(CompletableFuture.completedFuture(null));
+        when(agent.continueExecution()).thenReturn(CompletableFuture.completedFuture(null));
+        when(agent.waitForIdle()).thenReturn(CompletableFuture.completedFuture(null));
         SessionCompactor compactor = mock(SessionCompactor.class);
         ManagedAgentSession session = new ManagedAgentSession(
                 mock(PreparedAgentRuntime.class), ToolEntryPoint.RUNTIME, agent, List.of(), compactor);
         return new Fixture(session, agent, compactor, model, messages);
+    }
+
+    private static PreparedCompaction prepared(List<Message> retained) {
+        return new PreparedCompaction(List.of(), List.of(), retained, 100, null, Set.of(), 1, false);
     }
 
     private static SessionCompactionResult result(List<Message> retained) {
@@ -170,6 +265,17 @@ class ManagedAgentSessionTest {
         return List.of(
                 new UserMessage("earlier context", 1L),
                 new AssistantMessage(
+                        List.of(new TextContent("earlier answer")),
+                        model.api().value(),
+                        model.provider().value(),
+                        model.id(),
+                        null,
+                        Usage.empty(),
+                        StopReason.STOP,
+                        null,
+                        2L),
+                new UserMessage("current task", 3L),
+                new AssistantMessage(
                         List.of(new TextContent("response")),
                         model.api().value(),
                         model.provider().value(),
@@ -178,7 +284,7 @@ class ManagedAgentSessionTest {
                         Usage.empty(),
                         StopReason.STOP,
                         null,
-                        2L));
+                        4L));
     }
 
     private static Model model() {
@@ -191,7 +297,7 @@ class ManagedAgentSessionTest {
                 true,
                 List.of(InputModality.TEXT),
                 new ModelCost(0, 0, 0, 0),
-                1000,
+                1_000,
                 100,
                 null,
                 null,
