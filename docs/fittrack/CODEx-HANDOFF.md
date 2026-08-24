@@ -55,7 +55,7 @@ auth.users ─1:1─ profiles ─1:N─┬─ exercises (owner_id=null 系统预
                                └─ bodyweight_logs
 ```
 
-- 迁移 `0001`–`0004` 已覆盖 profiles、动作/计划、训练会话和体重记录共 8 张表；完整 SQL 已在本地 Postgres 验证。当前 Supabase Management API 超时，**不要声称新迁移已经部署到云端**。
+- 迁移 `0001`–`0005` 已覆盖 profiles、动作/计划、训练会话、体重记录和多日计划的原子保存；均已部署到 Supabase 托管项目。云端已核验 8 张业务表与 26 条 RLS 策略。
 - PR/体量/1RM **不建表**，从 session_sets 聚合查询（YAGNI）
 
 ## 3. 当前状态（2026-08-24 更新）
@@ -77,14 +77,15 @@ auth.users ─1:1─ profiles ─1:N─┬─ exercises (owner_id=null 系统预
 | 5 | Android deep link + 应用名 | `c5545050` | analyze + apk build 通过 |
 | 7 | RLS 隔离回归脚本 | `65f531cc` | API 分步断言全过（触发器1/1、泄露0） |
 | 6 | 登录/注册 UI、路由守卫、首页 | `1474acde` | 单测、analyze、模拟器启动通过；真实注册受 DNS 阻塞 |
-| M2 | 动作库、计划 CRUD、迁移 `0002` | `36629b9b` | SQL 本地 Postgres 验证、模型单测通过 |
+| M2 | 动作库、计划 CRUD、迁移 `0002` | `36629b9b` | 云端真实账号完成动作读取与计划保存 |
 | M3 基础 | Drift 草稿、迁移 `0003`、同步仓储 | `bc447e50`、`14b25806` | SQL 语法与草稿持久化单测通过 |
 | M3 UI | 训练执行页、逐组本地落盘、休息计时器、离线记录重试同步 | `63497543`、`df7ebac5` | `flutter test` 9/9、analyze 0、debug APK 通过 |
 | 视觉系统 | 统一主题、首页与计划编辑重设计 | `42dd34ea` | 模拟器登录页实机截图通过 |
 | M4 | 历史/详情、体量与估算 1RM、体重趋势、迁移 `0004` | `986a7d2a` | `flutter test` 11/11、analyze 0、全迁移与 debug APK 通过 |
 | M5（部分） | Android 品牌图标、启动页和窗口底色 | `877d2444` | APK 构建、安装、模拟器启动通过 |
 | M5 发布验收 | release APK 构建与模拟器启动 | 工作区验证 | `app-release.apk`（61.8 MB）构建、安装、启动通过 |
-| 计划生成 | 本地智能生成器、预览与保存后编辑流程 | `d226ee71` | `flutter test` 12/12、analyze 0、debug APK 通过 |
+| 计划生成 | 本地规则生成器、目标/经验/频率选择、多日预览 | `d226ee71`、`106b19ae` | 基于真实动作库生成 2–4 份计划 |
+| 多日计划保存 | 通过单个 RPC 原子保存整组计划，避免半保存 | `dfa9c069`、迁移 `0005` | 云端正向写入返回 2 个 ID；故障批次返回 400 且保留 0 份计划 |
 
 ### Supabase 云端现状（已配置好，别重复配）
 
@@ -103,19 +104,19 @@ auth.users ─1:1─ profiles ─1:N─┬─ exercises (owner_id=null 系统预
 
 ### 立即
 
-1. **部署并核验 Supabase migrations**：管理 API 当前返回 HTTP 544（连接超时），宿主机解析/SSL 连接项目域名也失败。网络恢复后按 `0001`、`0002`、`0003`、`0004` 顺序部署，实际执行邮箱注册、计划 CRUD、`sync_workout_session` 和体重写入。
-2. **训练执行验收**：首页已展示并支持重试未同步的已结束草稿；真机完成一次含多动作训练，断网后退出重进确认 Drift 草稿存在，恢复网络后确认云端 session、exercise、set 三层数据一致。
-3. **M4 真机验收**：部署 `0004` 后确认历史、详情、体重写入与计算结果同云端事实记录一致。
-4. **发布前人工验收**：release APK 已能安装启动；在真实 Android 设备手动验证邮箱登录、生成计划、离线训练、恢复网络同步与历史回看后，可进入内测分发。
+1. **训练执行验收**：首页已展示并支持重试未同步的已结束草稿；真机完成一次含多动作训练，断网后退出重进确认 Drift 草稿存在，恢复网络后确认云端 session、exercise、set 三层数据一致。
+2. **M4 真机验收**：确认历史、详情、体重写入与计算结果同云端事实记录一致。
+3. **发布前人工验收**：release APK 已能安装启动；在真实 Android 设备手动验证邮箱登录、生成计划、离线训练、恢复网络同步与历史回看后，可进入内测分发。
+4. **正式环境切换**：将 `mailer_autoconfirm` 改回 false 并配置 SMTP，再开放真实用户注册。
 5. **可选 AI 增强**：当前生成器是确定性本地规则（无需 key）；如接 Qwen/其他模型，须新建服务端代理，绝不能把模型密钥放进客户端。
 
 ### 之后（计划 2-6，按里程碑，spec §6）
 
 | 里程碑 | 内容 | 验收 |
 |---|---|---|
-| 2 计划 | exercises 表+seed(约50动作) + 自定义动作 + workout_plans/plan_exercises CRUD | **代码完成**；待云端部署和真实 API 验收 |
+| 2 计划 | exercises 表+seed(约50动作) + 自定义动作 + workout_plans/plan_exercises CRUD | 代码、云端迁移与真实 API 验收完成 |
 | 3 训练执行 ⭐ | workout_sessions/session_exercises/session_sets + 逐组记录 UI + 休息计时器 + **drift 本地缓冲/结束同步** | 主流程代码完成；待断网/联网真机验收与草稿重试入口 |
-| 4 历史统计 | 历史列表/详情 + 体量/估算 1RM + bodyweight_logs + 体重趋势 | **代码完成**；待云端部署和真实记录验收 |
+| 4 历史统计 | 历史列表/详情 + 体量/估算 1RM + bodyweight_logs + 体重趋势 | 代码与云端迁移完成；待真实记录验收 |
 | 5 打磨 | 空/错/加载态、图标、启动页 | 图标/启动页代码完成；待真实离线验收和 Android 内测无崩溃 |
 
 每份计划在前一份完成后**基于真实工程重写任务分解**，不要照抄旧计划的行号/结构假设。
@@ -154,4 +155,4 @@ curl -s -X POST "https://api.supabase.com/v1/projects/ijvrzxuffzxjtdetulnp/datab
 
 ---
 
-*本交接文档更新于 2026-08-24，基于 `codex/fittrack-m1` @ `877d2444` 的状态。*
+*本交接文档更新于 2026-08-24，基于 `codex/fittrack-m1` @ `dfa9c069` 的状态。*

@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import '../models/exercise.dart';
 import '../models/workout_plan.dart';
 
@@ -50,13 +52,23 @@ class PlanGenerator {
     PlanGenerationRequest request,
     List<Exercise> available,
   ) {
+    if (request.daysPerWeek < 1) {
+      throw ArgumentError.value(
+        request.daysPerWeek,
+        'daysPerWeek',
+        '每周训练天数至少为 1 天',
+      );
+    }
     if (available.isEmpty) throw StateError('动作库为空，无法生成计划');
+    if (available.length < request.daysPerWeek) {
+      throw StateError('动作库数量不足，无法生成 ${request.daysPerWeek} 天的计划');
+    }
     final names = switch (request.goal) {
       TrainingGoal.strength => ['杠铃深蹲', '杠铃卧推', '传统硬拉', '杠铃划船', '杠铃肩推'],
       TrainingGoal.muscle => ['高杠深蹲', '上斜哑铃卧推', '高位下拉', '腿屈伸', '哑铃侧平举', '绳索下压'],
       TrainingGoal.fitness => ['腿举', '俯卧撑', '坐姿划船', '箭步蹲', '跑步机跑步'],
     };
-    final targetCount = request.daysPerWeek * 3;
+    final targetCount = math.min(request.daysPerWeek * 3, available.length);
     final sets = switch (request.experience) {
       TrainingExperience.beginner => 3,
       TrainingExperience.intermediate => 4,
