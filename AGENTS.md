@@ -46,6 +46,21 @@
   Validator utility that every Controller must call. Do not introduce a VO
   solely to wrap one scalar path or query parameter for validation.
 
+## Spring dependency injection
+
+- Use constructor injection for required Spring-managed dependencies and keep
+  the corresponding fields `private final`.
+- When a Spring bean declares exactly one constructor, omit `@Autowired` because
+  Spring selects that constructor automatically.
+- When a Spring bean declares multiple constructors, exactly one constructor
+  must be the Spring injection entry point and that constructor must be
+  annotated with `@Autowired`. Keep test-only or convenience constructors
+  unannotated and no more visible than their consumers require.
+- Do not replace constructor injection with `@Resource` field or setter
+  injection merely to avoid constructor selection. Use `@Resource(name =
+  "...")` only when an integration contract genuinely requires name-based
+  resource lookup, and document that exception locally.
+
 ## Mandatory Git publishing workflow
 
 - Treat repository administrator access as a capability, not as the normal
