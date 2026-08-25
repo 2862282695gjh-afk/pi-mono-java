@@ -19,11 +19,13 @@ import com.campusclaw.ai.types.Message;
 import com.campusclaw.ai.types.Model;
 import com.campusclaw.ai.types.StopReason;
 import com.campusclaw.ai.types.TextContent;
+import com.campusclaw.ai.types.ThinkingContent;
 import com.campusclaw.ai.types.ToolCall;
 import com.campusclaw.ai.types.ToolResultMessage;
 import com.campusclaw.ai.types.Usage;
 import com.campusclaw.ai.types.UserMessage;
 import com.campusclaw.codingagent.runtimeapi.dto.RuntimeEntryDTO;
+import com.campusclaw.codingagent.runtimeapi.dto.RuntimeRecordDTO;
 import com.campusclaw.codingagent.runtimeapi.vo.RuntimeSseEventVO;
 import com.campusclaw.codingagent.session.compaction.CompactionMessageSupport;
 import com.campusclaw.codingagent.session.compaction.CompactionReason;
@@ -64,25 +66,26 @@ public class RuntimeEntryCodec {
 
     public RuntimeEntryDTO assistantEntry(
             String sessionId, String entryId, AssistantMessage message, OffsetDateTime fallbackTime) {
-        Usage usage = message.usage() == null ? Usage.empty() : message.usage();
         ObjectNode payload = objectMapper.createObjectNode();
         ObjectNode publicMessage = payload.putObject("message");
         publicMessage.put("role", "assistant");
         ArrayNode content = publicMessage.putArray("content");
-        message.content().forEach(block -> appendPublicContent(content, block));
+        ArrayNode thinking = payload.putArray("_thinking");
+        for (int index = 0; index < message.content().size(); index++) {
+            ContentBlock block = message.content().get(index);
+            appendPublicContent(content, block);
+            appendPrivateThinking(thinking, block, index);
+        }
         payload.put("finish_reason", finishReason(message.stopReason()));
         payload.put("_api", message.api());
         payload.put("_provider", message.provider());
         payload.put("_model", message.model());
-        payload.set("usage", objectMapper.valueToTree(usage));
-        RuntimeEntryDTO entry = entry(
+        return entry(
                 sessionId,
                 entryId,
                 RuntimeEventType.ASSISTANT_MESSAGE_COMPLETED.value(),
                 eventTime(message.timestamp(), fallbackTime),
                 payload);
-        entry.setUsage(usage);
-        return entry;
     }
 
     public RuntimeEntryDTO thinkingEntry(
@@ -162,11 +165,31 @@ public class RuntimeEntryCodec {
         payload.put("tokensBefore", result.tokensBefore());
         payload.put("estimatedTokensAfter", result.estimatedTokensAfter());
         payload.put("willRetry", willRetry);
-        payload.set("usage", objectMapper.valueToTree(result.usage()));
-        RuntimeEntryDTO entry =
-                entry(sessionId, entryId, RuntimeEventType.SESSION_COMPACTION_COMPLETED.value(), createdAt, payload);
-        entry.setUsage(result.usage());
-        return entry;
+        return entry(sessionId, entryId, RuntimeEventType.SESSION_COMPACTION_COMPLETED.value(), createdAt, payload);
+    }
+
+    public RuntimeRecordDTO usageRecord(
+            String sessionId,
+            String recordId,
+            String runId,
+            RuntimeUsageCause cause,
+            String entryId,
+            int attempt,
+            StopReason stopReason,
+            Usage usage,
+            OffsetDateTime timestamp) {
+        Usage normalized = usage == null ? Usage.empty() : usage;
+        ObjectNode payload = objectMapper.createObjectNode();
+        payload.put("cause", cause.value());
+        payload.put("entryId", entryId);
+        payload.put("attempt", attempt);
+        if (stopReason == null) {
+            payload.putNull("stopReason");
+        } else {
+            payload.put("stopReason", stopReason.value());
+        }
+        payload.set("usage", objectMapper.valueToTree(normalized));
+        return record(sessionId, recordId, runId, timestamp, payload);
     }
 
     public Map<String, Object> toSseData(RuntimeEntryDTO entry) {
@@ -253,7 +276,7 @@ public class RuntimeEntryCodec {
     }
 
     private AssistantMessage assistantMessage(RuntimeEntryDTO entry, JsonNode payload, Model model) {
-        List<ContentBlock> content = readPublicContent(payload.path("message").path("content"));
+        List<ContentBlock> content = restoreAgentContent(payload);
         StopReason reason = parseFinishReason(payload.path("finish_reason").asText());
         return new AssistantMessage(
                 content,
@@ -261,7 +284,7 @@ public class RuntimeEntryCodec {
                 payload.path("_provider").asText(model.provider().value()),
                 payload.path("_model").asText(model.id()),
                 null,
-                readUsage(payload.path("usage")),
+                Usage.empty(),
                 reason,
                 null,
                 entry.getTimestamp().toInstant().toEpochMilli());
@@ -418,6 +441,37 @@ public class RuntimeEntryCodec {
         }
     }
 
+    private void appendPrivateThinking(ArrayNode target, ContentBlock block, int contentIndex) {
+        if (!(block instanceof ThinkingContent thinking)) {
+            return;
+        }
+        ObjectNode stored = target.addObject();
+        stored.put("content_index", contentIndex);
+        stored.put("thinking", thinking.thinking());
+        if (thinking.thinkingSignature() != null) {
+            stored.put("thinking_signature", thinking.thinkingSignature());
+        }
+        stored.put("redacted", thinking.redacted());
+    }
+
+    private List<ContentBlock> restoreAgentContent(JsonNode payload) {
+        List<ContentBlock> result =
+                new ArrayList<>(readPublicContent(payload.path("message").path("content")));
+        for (JsonNode stored : payload.path("_thinking")) {
+            ThinkingContent thinking = new ThinkingContent(
+                    stored.path("thinking").asText(),
+                    nullableText(stored.path("thinking_signature")),
+                    stored.path("redacted").asBoolean());
+            int index = Math.min(stored.path("content_index").asInt(), result.size());
+            result.add(index, thinking);
+        }
+        return List.copyOf(result);
+    }
+
+    private static String nullableText(JsonNode node) {
+        return node.isMissingNode() || node.isNull() ? null : node.asText();
+    }
+
     private RuntimeEntryDTO entry(
             String sessionId, String entryId, String type, OffsetDateTime timestamp, JsonNode payload) {
         RuntimeEntryDTO entry = new RuntimeEntryDTO();
@@ -460,7 +514,6 @@ public class RuntimeEntryCodec {
         target.put(
                 "finishReason",
                 objectMapper.convertValue(field(payload, "finishReason", "finish_reason"), Object.class));
-        target.put("usage", objectMapper.convertValue(payload.path("usage"), Object.class));
     }
 
     private void appendThinkingPayload(LinkedHashMap<String, Object> target, JsonNode payload) {
@@ -499,7 +552,6 @@ public class RuntimeEntryCodec {
         target.put("tokensBefore", payload.path("tokensBefore").asInt());
         target.put("estimatedTokensAfter", payload.path("estimatedTokensAfter").asInt());
         target.put("willRetry", payload.path("willRetry").asBoolean());
-        target.put("usage", objectMapper.convertValue(payload.path("usage"), Object.class));
     }
 
     private Map<String, Object> publicMessage(JsonNode message) {
@@ -507,6 +559,23 @@ public class RuntimeEntryCodec {
         result.put("role", message.path("role").asText());
         result.put("content", publicContent(message.path("content")));
         return result;
+    }
+
+    private RuntimeRecordDTO record(
+            String sessionId, String recordId, String runId, OffsetDateTime timestamp, JsonNode payload) {
+        RuntimeRecordDTO record = new RuntimeRecordDTO();
+        record.setSessionId(sessionId);
+        record.setId(recordId);
+        record.setLane("main");
+        record.setRunId(runId);
+        record.setType("usage");
+        record.setTimestamp(timestamp);
+        try {
+            record.setPayload(objectMapper.writeValueAsString(payload));
+            return record;
+        } catch (Exception error) {
+            throw new IllegalStateException("failed to encode runtime record", error);
+        }
     }
 
     private List<Map<String, Object>> publicContent(JsonNode content) {
@@ -535,17 +604,6 @@ public class RuntimeEntryCodec {
     private static JsonNode field(JsonNode node, String camelCase, String snakeCase) {
         JsonNode value = node.get(camelCase);
         return value != null ? value : node.path(snakeCase);
-    }
-
-    private Usage readUsage(JsonNode node) {
-        if (node == null || node.isMissingNode() || node.isNull()) {
-            return Usage.empty();
-        }
-        try {
-            return objectMapper.treeToValue(node, Usage.class);
-        } catch (Exception error) {
-            throw new IllegalStateException("failed to decode runtime usage", error);
-        }
     }
 
     private JsonNode readPayload(String payload) {

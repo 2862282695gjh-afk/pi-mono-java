@@ -11,7 +11,7 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonValue;
 
 /**
- * LLM provider identifier.
+ * 定义大模型 Provider 标识。
  *
  * @version [br_eCampusCore 26.0.0, 2026/05/06]
  * @since [br_eCampusCore 26.0.0]
@@ -34,6 +34,7 @@ public enum Provider {
     VERCEL_AI_GATEWAY("vercel-ai-gateway"),
     HUGGINGFACE("huggingface"),
     OPENCODE("opencode"),
+    MATE_MODEL_MANAGER("mate-model-manager"),
     CUSTOM("custom");
 
     private final String value;
@@ -58,14 +59,12 @@ public enum Provider {
     }
 
     /**
-     * Lenient variant of {@link #fromValue(String)} for user-supplied input.
-     * Returns empty for unknown / null / blank values instead of throwing.
-     * Matching is also case-insensitive and treats {@code _} and {@code -} as
-     * equivalent so {@code AZURE_OPENAI} matches {@code "azure-openai"} and
-     * {@code "azure_openai"}.
+     * 宽松解析用户提供的 Provider 标识。
      *
-     * @param value user-supplied provider identifier
-     * @return matching {@link Provider}, or empty when unrecognised
+     * <p>未知、空白或空值返回空结果；匹配时忽略大小写，并把下划线与连字符视为等价。
+     *
+     * @param value 用户提供的 Provider 标识
+     * @return 匹配的 Provider；无法识别时为空
      */
     public static Optional<Provider> tryFromValue(String value) {
         if (value == null || value.isBlank()) {

@@ -26,6 +26,7 @@ import com.campusclaw.ai.types.TextContent;
 import com.campusclaw.ai.types.ToolResultMessage;
 import com.campusclaw.ai.types.UserMessage;
 import com.campusclaw.codingagent.runtimeapi.dto.RuntimeEntryDTO;
+import com.campusclaw.codingagent.runtimeapi.dto.RuntimeRecordDTO;
 import com.campusclaw.codingagent.runtimeapi.persistence.RuntimeSessionRepository;
 import com.campusclaw.codingagent.runtimeapi.runtime.RuntimeActiveExecution;
 import com.campusclaw.codingagent.runtimeapi.vo.RuntimeSseEventVO;
@@ -68,6 +69,8 @@ public class RuntimeEventProjector {
     private String assistantEntryId;
 
     private StopReason terminalReason = StopReason.STOP;
+
+    private int assistantAttempt = 1;
 
     public RuntimeEventProjector(
             String sessionId,
@@ -220,7 +223,17 @@ public class RuntimeEventProjector {
     private void persistAssistant(AssistantMessage message) {
         String entryId = assistantEntryId != null ? assistantEntryId : idGenerator.nextId();
         RuntimeEntryDTO entry = codec.assistantEntry(sessionId, entryId, message, now());
-        repository.appendEntry(entry);
+        RuntimeRecordDTO record = codec.usageRecord(
+                sessionId,
+                idGenerator.nextId(),
+                execution.runId(),
+                RuntimeUsageCause.ASSISTANT,
+                entryId,
+                assistantAttempt,
+                message.stopReason(),
+                message.usage(),
+                entry.getTimestamp());
+        repository.appendEntryWithUsage(entry, record, message.usage());
         stream.emit(new RuntimeSseEventVO(Long.toString(entry.getEntrySeq()), entry.getType(), codec.toSseData(entry)));
         assistantEntryId = null;
         terminalReason = message.stopReason();
@@ -304,8 +317,21 @@ public class RuntimeEventProjector {
                 event.result(),
                 event.willRetry(),
                 now());
-        repository.appendEntry(entry);
+        RuntimeRecordDTO record = codec.usageRecord(
+                sessionId,
+                idGenerator.nextId(),
+                execution.runId(),
+                RuntimeUsageCause.COMPACTION,
+                entry.getId(),
+                assistantAttempt,
+                null,
+                event.result().usage(),
+                entry.getTimestamp());
+        repository.appendEntryWithUsage(entry, record, event.result().usage());
         stream.emit(new RuntimeSseEventVO(Long.toString(entry.getEntrySeq()), entry.getType(), codec.toSseData(entry)));
+        if (event.willRetry()) {
+            assistantAttempt++;
+        }
     }
 
     private String discardedEntryId(List<RuntimeEntryDTO> entries, boolean willRetry) {
