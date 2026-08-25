@@ -58,6 +58,17 @@ Key runtime concepts:
 - Tests use JUnit 5 + Mockito + OkHttp `MockWebServer` (for provider integration tests).
 - Managed runtime data lives under `agent/{agentId}/.campusclaw/` by default. Model credentials come from deployment configuration and are not persisted in Agent directories.
 
+## Spring 依赖注入规范
+
+- Spring Bean 的必需依赖统一使用构造器注入，对应字段声明为 `private final`。
+- Bean 只有一个构造器时省略 `@Autowired`，由 Spring 自动选择该构造器。
+- Bean 存在多个构造器时，必须且只能有一个构造器作为 Spring 注入入口，并在该构造器上显式标注
+  `@Autowired`。测试或便捷构造器不标注，并按实际调用方使用尽可能小的可见性。
+- 不得为了绕开构造器选择而改用 `@Resource` 字段或 setter 注入。只有外部集成契约确实要求按名称查找资源时，
+  才允许使用 `@Resource(name = "...")`，并在代码附近说明例外原因。
+- 新增或修改含多个构造器的 Spring Bean 时，评审必须核对注入构造器选择；直接实例化测试不能替代 Spring
+  装配验证。
+
 ## Coding conventions enforced by build
 
 每条规则都是 **build-failing**：违规会让 `./mvnw validate`（Checkstyle）或 `./mvnw spotless:check`（palantirJavaFormat）失败。`scripts/claude-hooks/checkstyle-on-stop.sh` 会在每轮收尾自动跑一遍——但写之前就守规可以避免被钩子拦下、回头改的成本。

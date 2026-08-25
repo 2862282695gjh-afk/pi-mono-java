@@ -23,6 +23,7 @@ import com.huawei.hicampus.mate.matecampusclaw.ai.types.Usage;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.MediaType;
@@ -64,6 +65,7 @@ public class MateServiceModelManagerProvider implements AiProvider {
 
     private final String api;
 
+    @Autowired
     public MateServiceModelManagerProvider(
             ObjectMapper mapper,
             @Value("${campusmate.model-manager.base-url:https://localhost:8591}") String baseUrl,
