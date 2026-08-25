@@ -13,6 +13,9 @@ import com.campusclaw.codingagent.runtime.PreparedAgentRuntime;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 /**
  * 通过统一 AgentRuntimeManager 准备目录并生成 Runtime API 快照。
  *
@@ -20,6 +23,8 @@ import com.campusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
  * @since [br_eCampusCore 26.0.0]
  */
 public class FileAgentDirectoryResolver implements AgentDirectoryResolver {
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(FileAgentDirectoryResolver.class);
 
     private final AgentRuntimeManager runtimeManager;
 
@@ -34,6 +39,7 @@ public class FileAgentDirectoryResolver implements AgentDirectoryResolver {
         } catch (IllegalArgumentException error) {
             throw new RuntimeApiException(RuntimeErrorCode.AGENT_NOT_FOUND, error);
         } catch (AgentRuntimeException error) {
+            LOGGER.error("Failed to prepare Agent runtime: agentId={}", agentId, error);
             throw new RuntimeApiException(RuntimeErrorCode.AGENT_NOT_AVAILABLE, error);
         }
     }
