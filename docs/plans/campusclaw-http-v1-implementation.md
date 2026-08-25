@@ -1,8 +1,10 @@
 # CampusClaw HTTP V1 实施记录
 
-> 版本：3.2.0
+> 版本：3.3.0
 >
-> 状态：已实现并完成发布前验证
+> 状态：已实现并按 Runtime-only 现状校准
+>
+> Runtime-only 校准基线：`42eb8b0ccb98b512d886722f2ad7ce8340d5a77a`
 >
 > Runtime HTTP 1.38 实现分析基线：`304eda06ff603fc9b6bbcaad0c296cc151a7defb`
 >
@@ -16,10 +18,11 @@
 
 ## 1. 目标与边界
 
-本次把 CampusClaw 从“CLI 默认启动、手工 ServerMode 提供旧接口”的模型收口为：
+本文档记录 CampusClaw 从“CLI 默认启动、手工 ServerMode 提供旧接口”的模型收口，以及后续
+Runtime-only 架构演进。当前形态为：
 
 - 默认 `java -jar` 启动 Spring Boot MVC HTTP 服务；
-- `java -jar ... cli` 显式进入 CLI；
+- 不再提供 CLI、TUI、RPC 或其他模式分发入口；
 - Runtime 对外统一为 HTTP + 请求范围 SSE；
 - 按已确认契约实现 11 个 Session 接口；
 - openGauss 作为 Session/Entry 持久化源；
@@ -32,7 +35,7 @@
 
 | 领域 | 实现路径与符号 |
 |---|---|
-| 启动 | `modules/coding-agent-cli/.../CampusClawApplication.java`、`CampusClawCliLauncher.java` |
+| 启动 | `modules/coding-agent-cli/.../CampusClawApplication.java` |
 | HTTP 边界 | `modules/coding-agent-cli/.../runtimeapi/web/*Controller.java` |
 | 调用上下文 Header 边界 | `RuntimeRequestContext#mateCredentials`、`RuntimeEventController#submit`；Runtime 不包含认证器、认证拦截器或认证错误码 |
 | 类型化资源 ID | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/common/identifier/ResourceIdentifierPatterns.java`、`runtimeapi/web/*Controller` 的 Jakarta 路径参数约束、`RuntimeExceptionHandler#handleInvalidParameter`、`MateServiceClient`、`AgentRuntimeManager`、`HttpMateToolClient`、`RandomSessionIdGenerator` |
@@ -164,6 +167,7 @@ Entry、Prompt、模型消息或日志，活动执行关闭后随 Session 释放
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 3.3.0 | 2026-08-25 | 按 Runtime-only 现状删除已退役 CLI 启动描述和失效的启动类证据引用 |
 | 3.2.0 | 2026-08-24 | POST Events 创建瞬态 Mate 凭据快照并显式传递到公共 Session、List/Call 与 Child；保持 Runtime 不做本地认证和凭据不持久化 |
 | 3.1.0 | 2026-08-21 | 对齐 HTTP 1.38：Path、Query、JSON 与 SSE data 统一为 lowerCamelCase；Header 和字段值保持原样；内部 Entry payload 通过受控投影兼容已有数据 |
 | 3.0.2 | 2026-08-21 | 用 Controller 标量参数 Jakarta 注解替代命令式路径 ID Validator，并统一映射 Spring MVC 方法校验错误 |
