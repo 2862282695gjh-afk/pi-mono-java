@@ -24,6 +24,8 @@ import com.campusclaw.codingagent.runtimeapi.session.RuntimeSessionState;
 import com.campusclaw.codingagent.runtimeapi.vo.RuntimeSseEventVO;
 import com.campusclaw.codingagent.runtimeapi.vo.UserEventRequestVO;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 /**
@@ -34,6 +36,8 @@ import org.springframework.stereotype.Service;
  */
 @Service
 public class RuntimeEventService {
+    private static final Logger LOGGER = LoggerFactory.getLogger(RuntimeEventService.class);
+
     private final RuntimeSessionRepository repository;
 
     private final RuntimeEntryCodec codec;
@@ -76,7 +80,8 @@ public class RuntimeEventService {
         } catch (RuntimeApiException error) {
             throw error;
         } catch (RuntimeException error) {
-            throw new RuntimeApiException(RuntimeErrorCode.EVENT_ACCEPTANCE_FAILED, error);
+            LOGGER.error("Failed to accept Runtime event: sessionId={}", sessionId, error);
+            throw new RuntimeApiException(RuntimeErrorCode.EVENT_ACCEPTANCE_FAILED);
         }
     }
 

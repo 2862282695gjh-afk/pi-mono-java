@@ -23,6 +23,8 @@ import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.runtime.Ru
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.vo.ControlMessageAcceptedResponseVO;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.vo.ControlMessageRequestVO;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 /**
@@ -33,6 +35,8 @@ import org.springframework.stereotype.Service;
  */
 @Service
 public class RuntimeSessionControlService {
+    private static final Logger LOGGER = LoggerFactory.getLogger(RuntimeSessionControlService.class);
+
     private final RuntimeSessionRepository repository;
 
     private final RuntimeSessionEngineRegistry engineRegistry;
@@ -66,7 +70,8 @@ public class RuntimeSessionControlService {
         } catch (RuntimeApiException error) {
             throw error;
         } catch (RuntimeException error) {
-            throw new RuntimeApiException(RuntimeErrorCode.SESSION_ABORT_FAILED, error);
+            LOGGER.error("Failed to abort Runtime session: sessionId={}", sessionId, error);
+            throw new RuntimeApiException(RuntimeErrorCode.SESSION_ABORT_FAILED);
         }
     }
 
@@ -85,7 +90,8 @@ public class RuntimeSessionControlService {
         } catch (RuntimeApiException error) {
             throw error;
         } catch (RuntimeException error) {
-            throw new RuntimeApiException(kind.acceptanceFailed(), error);
+            LOGGER.error("Failed to accept Runtime control: sessionId={}, kind={}", sessionId, kind, error);
+            throw new RuntimeApiException(kind.acceptanceFailed());
         } finally {
             engineRegistry.unlockOperation(sessionId);
         }

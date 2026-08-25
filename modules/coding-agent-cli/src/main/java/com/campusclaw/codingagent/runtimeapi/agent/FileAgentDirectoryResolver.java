@@ -37,10 +37,11 @@ public class FileAgentDirectoryResolver implements AgentDirectoryResolver {
         try {
             return snapshot(runtimeManager.prepare(agentId));
         } catch (IllegalArgumentException error) {
-            throw new RuntimeApiException(RuntimeErrorCode.AGENT_NOT_FOUND, error);
+            LOGGER.error("Failed to resolve Agent directory: agentId={}", agentId, error);
+            throw new RuntimeApiException(RuntimeErrorCode.AGENT_NOT_FOUND);
         } catch (AgentRuntimeException error) {
             LOGGER.error("Failed to prepare Agent runtime: agentId={}", agentId, error);
-            throw new RuntimeApiException(RuntimeErrorCode.AGENT_NOT_AVAILABLE, error);
+            throw new RuntimeApiException(RuntimeErrorCode.AGENT_NOT_AVAILABLE);
         }
     }
 

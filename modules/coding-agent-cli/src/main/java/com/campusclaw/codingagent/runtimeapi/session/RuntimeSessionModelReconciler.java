@@ -23,6 +23,8 @@ import com.campusclaw.codingagent.runtimeapi.model.RuntimeModelManager;
 import com.campusclaw.codingagent.runtimeapi.persistence.RuntimeSessionRepository;
 import com.campusclaw.codingagent.runtimeapi.persistence.SessionConfigurationUpdate;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 /**
@@ -33,6 +35,8 @@ import org.springframework.stereotype.Service;
  */
 @Service
 public class RuntimeSessionModelReconciler {
+    private static final Logger LOGGER = LoggerFactory.getLogger(RuntimeSessionModelReconciler.class);
+
     private final RuntimeSessionRepository repository;
 
     private final AgentDirectoryResolver directoryResolver;
@@ -92,7 +96,8 @@ public class RuntimeSessionModelReconciler {
             if (error.errorCode() == RuntimeErrorCode.MANAGER_UNAVAILABLE) {
                 throw error;
             }
-            throw new RuntimeApiException(RuntimeErrorCode.MODEL_NOT_AVAILABLE, error);
+            LOGGER.error("Failed to resolve fallback Runtime model: modelId={}", snapshot.defaultModelId(), error);
+            throw new RuntimeApiException(RuntimeErrorCode.MODEL_NOT_AVAILABLE);
         }
     }
 

@@ -78,11 +78,11 @@ public class RuntimeEventCursorCodec {
     public long decode(String token, String expectedSessionId, boolean expectedThinking) {
         try {
             if (token == null || !token.startsWith(PREFIX)) {
-                throw invalidCursor(null);
+                throw invalidCursor();
             }
             byte[] bytes = Base64.getUrlDecoder().decode(token.substring(PREFIX.length()));
             if (bytes.length <= IV_LENGTH) {
-                throw invalidCursor(null);
+                throw invalidCursor();
             }
             byte[] iv = Arrays.copyOf(bytes, IV_LENGTH);
             byte[] encrypted = Arrays.copyOfRange(bytes, IV_LENGTH, bytes.length);
@@ -91,7 +91,8 @@ public class RuntimeEventCursorCodec {
         } catch (RuntimeApiException error) {
             throw error;
         } catch (Exception error) {
-            throw invalidCursor(error);
+            log.error("Failed to decode Runtime event cursor: sessionId={}", expectedSessionId, error);
+            throw invalidCursor();
         }
     }
 
@@ -120,7 +121,7 @@ public class RuntimeEventCursorCodec {
                     || afterSeq < 0
                     || expiresAt <= clock.instant().getEpochSecond()
                     || input.available() != 0) {
-                throw invalidCursor(null);
+                throw invalidCursor();
             }
             return afterSeq;
         }
@@ -146,7 +147,7 @@ public class RuntimeEventCursorCodec {
         }
     }
 
-    private static RuntimeApiException invalidCursor(Throwable cause) {
-        return new RuntimeApiException(RuntimeErrorCode.INVALID_EVENT_LIST_QUERY, cause);
+    private static RuntimeApiException invalidCursor() {
+        return new RuntimeApiException(RuntimeErrorCode.INVALID_EVENT_LIST_QUERY);
     }
 }

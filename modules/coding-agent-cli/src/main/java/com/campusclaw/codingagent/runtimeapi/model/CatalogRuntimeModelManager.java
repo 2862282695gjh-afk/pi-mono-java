@@ -13,6 +13,9 @@ import com.campusclaw.codingagent.runtimeapi.agent.AgentDirectorySnapshotDTO;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 /**
  * 以当前模型目录充当独立开发环境 Model Manager 的适配器。
  *
@@ -20,6 +23,8 @@ import com.campusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
  * @since [br_eCampusCore 26.0.0]
  */
 public class CatalogRuntimeModelManager implements RuntimeModelManager {
+    private static final Logger LOGGER = LoggerFactory.getLogger(CatalogRuntimeModelManager.class);
+
     private final ModelCatalogService modelCatalogService;
 
     public CatalogRuntimeModelManager(ModelCatalogService modelCatalogService) {
@@ -47,7 +52,8 @@ public class CatalogRuntimeModelManager implements RuntimeModelManager {
         } catch (RuntimeApiException error) {
             throw error;
         } catch (RuntimeException error) {
-            throw new RuntimeApiException(RuntimeErrorCode.MANAGER_UNAVAILABLE, error);
+            LOGGER.error("Failed to resolve Runtime model: modelId={}", modelId, error);
+            throw new RuntimeApiException(RuntimeErrorCode.MANAGER_UNAVAILABLE);
         }
     }
 
@@ -65,7 +71,8 @@ public class CatalogRuntimeModelManager implements RuntimeModelManager {
             }
             return List.copyOf(resolved);
         } catch (RuntimeException error) {
-            throw new RuntimeApiException(RuntimeErrorCode.MANAGER_UNAVAILABLE, error);
+            LOGGER.error("Failed to list available Runtime models: agentId={}", snapshot.agentId(), error);
+            throw new RuntimeApiException(RuntimeErrorCode.MANAGER_UNAVAILABLE);
         }
     }
 

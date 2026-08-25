@@ -11,6 +11,8 @@ import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.agent.Agen
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
 
+import org.slf4j.LoggerFactory;
+
 /**
  * Runtime Session 使用的模型校验和解析端口。
  *
@@ -34,7 +36,9 @@ public interface RuntimeModelManager {
             if (error.errorCode() == RuntimeErrorCode.MANAGER_UNAVAILABLE) {
                 throw error;
             }
-            throw new RuntimeApiException(RuntimeErrorCode.MODEL_NOT_AVAILABLE, error);
+            LoggerFactory.getLogger(RuntimeModelManager.class)
+                    .error("Failed to resolve available Runtime model: modelId={}", modelId, error);
+            throw new RuntimeApiException(RuntimeErrorCode.MODEL_NOT_AVAILABLE);
         }
     }
 }

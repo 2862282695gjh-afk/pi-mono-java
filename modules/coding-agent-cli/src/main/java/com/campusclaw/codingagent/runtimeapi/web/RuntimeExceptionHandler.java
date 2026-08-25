@@ -44,7 +44,6 @@ public class RuntimeExceptionHandler {
 
     @ExceptionHandler(RuntimeApiException.class)
     public ResponseEntity<ErrorResponseVO> handleRuntimeError(RuntimeApiException error, HttpServletRequest request) {
-        logServerError(error, request);
         return response(error.errorCode(), request);
     }
 
@@ -112,11 +111,5 @@ public class RuntimeExceptionHandler {
             case "sessionId" -> Optional.of(RuntimeErrorCode.INVALID_SESSION_ID);
             default -> Optional.empty();
         };
-    }
-
-    private static void logServerError(RuntimeApiException error, HttpServletRequest request) {
-        if (error.status().is5xxServerError()) {
-            log.error("Runtime API request failed: {} {}", request.getMethod(), request.getRequestURI(), error);
-        }
     }
 }

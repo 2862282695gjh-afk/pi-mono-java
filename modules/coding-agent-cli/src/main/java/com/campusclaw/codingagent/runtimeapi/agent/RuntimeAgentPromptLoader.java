@@ -90,7 +90,8 @@ public class RuntimeAgentPromptLoader {
                 }
             }
         } catch (IOException error) {
-            throw unavailable(error);
+            log.error("Failed to scan Runtime Agent skills: directory={}", directory, error);
+            throw unavailable();
         }
     }
 
@@ -109,14 +110,15 @@ public class RuntimeAgentPromptLoader {
             return "";
         }
         if (!isSafeRegularFile(root, candidate)) {
-            throw unavailable(null);
+            throw unavailable();
         }
         Path realFile = safeRealPath(root, candidate);
         requireManagedSize(realFile);
         try {
             return Files.readString(realFile, StandardCharsets.UTF_8);
         } catch (IOException error) {
-            throw unavailable(error);
+            log.error("Failed to read Runtime Agent prompt file: path={}", realFile, error);
+            throw unavailable();
         }
     }
 
@@ -133,12 +135,13 @@ public class RuntimeAgentPromptLoader {
 
     private static Path realDirectory(Path path) {
         if (!Files.isDirectory(path, LinkOption.NOFOLLOW_LINKS)) {
-            throw unavailable(null);
+            throw unavailable();
         }
         try {
             return path.toRealPath();
         } catch (IOException error) {
-            throw unavailable(error);
+            log.error("Failed to resolve Runtime Agent directory: path={}", path, error);
+            throw unavailable();
         }
     }
 
@@ -146,25 +149,27 @@ public class RuntimeAgentPromptLoader {
         try {
             Path realPath = path.toRealPath();
             if (!realPath.startsWith(root)) {
-                throw unavailable(null);
+                throw unavailable();
             }
             return realPath;
         } catch (IOException error) {
-            throw unavailable(error);
+            log.error("Failed to resolve Runtime Agent managed path: path={}", path, error);
+            throw unavailable();
         }
     }
 
     private static void requireManagedSize(Path path) {
         try {
             if (Files.size(path) > MAX_MANAGED_FILE_BYTES) {
-                throw unavailable(null);
+                throw unavailable();
             }
         } catch (IOException error) {
-            throw unavailable(error);
+            log.error("Failed to inspect Runtime Agent managed file: path={}", path, error);
+            throw unavailable();
         }
     }
 
-    private static RuntimeApiException unavailable(Throwable cause) {
-        return new RuntimeApiException(RuntimeErrorCode.AGENT_NOT_AVAILABLE, cause);
+    private static RuntimeApiException unavailable() {
+        return new RuntimeApiException(RuntimeErrorCode.AGENT_NOT_AVAILABLE);
     }
 }

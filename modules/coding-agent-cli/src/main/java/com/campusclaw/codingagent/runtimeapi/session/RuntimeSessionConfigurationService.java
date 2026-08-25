@@ -26,6 +26,8 @@ import com.campusclaw.codingagent.runtimeapi.vo.ChangeModelRequestVO;
 import com.campusclaw.codingagent.runtimeapi.vo.ChangeThinkingRequestVO;
 import com.campusclaw.codingagent.runtimeapi.vo.GetSessionResponseVO;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 /**
@@ -36,6 +38,8 @@ import org.springframework.stereotype.Service;
  */
 @Service
 public class RuntimeSessionConfigurationService {
+    private static final Logger LOGGER = LoggerFactory.getLogger(RuntimeSessionConfigurationService.class);
+
     private final RuntimeSessionRepository repository;
 
     private final AgentDirectoryResolver agentDirectoryResolver;
@@ -95,7 +99,8 @@ public class RuntimeSessionConfigurationService {
         } catch (RuntimeApiException error) {
             throw error;
         } catch (RuntimeException error) {
-            throw new RuntimeApiException(RuntimeErrorCode.SESSION_MODEL_UPDATE_FAILED, error);
+            LOGGER.error("Failed to update Runtime session model: sessionId={}", sessionId, error);
+            throw new RuntimeApiException(RuntimeErrorCode.SESSION_MODEL_UPDATE_FAILED);
         }
     }
 
@@ -119,7 +124,8 @@ public class RuntimeSessionConfigurationService {
         } catch (RuntimeApiException error) {
             throw error;
         } catch (RuntimeException error) {
-            throw new RuntimeApiException(RuntimeErrorCode.SESSION_THINKING_UPDATE_FAILED, error);
+            LOGGER.error("Failed to update Runtime session thinking: sessionId={}", sessionId, error);
+            throw new RuntimeApiException(RuntimeErrorCode.SESSION_THINKING_UPDATE_FAILED);
         }
     }
 
