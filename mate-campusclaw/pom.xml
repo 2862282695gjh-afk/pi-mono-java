@@ -124,12 +124,6 @@
             <artifactId>jakarta.annotation-api</artifactId>
         </dependency>
 
-        <!-- Metrics -->
-        <dependency>
-            <groupId>io.micrometer</groupId>
-            <artifactId>micrometer-core</artifactId>
-        </dependency>
-
         <!-- Lombok -->
         <dependency>
             <groupId>org.projectlombok</groupId>
