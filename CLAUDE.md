@@ -151,7 +151,7 @@ new String(process.getInputStream().readAllBytes())           // 同上
 
 ### 记录日志必须走 SLF4J 门面，禁用 System.out/err 和 printStackTrace
 
-**规则**：所有「记录日志」诉求一律用 SLF4J（`org.slf4j.Logger`）。`System.out.print*` / `System.err.print*` / `Throwable.printStackTrace()` 一律禁止——除非该类承担的就是 CLI 用户输出（Picocli 命令）、协议 stdout/stderr 输出（Print/Rpc 模式）、TUI 终端渲染、启动 banner 等「stdout/stderr 本就是接口」的角色。这类类必须在类声明上加 `@SuppressWarnings("checkstyle:no_system_out_err")` 显式声明意图——这样 reviewer 一眼能看出「这是协议/UI 输出，不是日志」。
+**规则**：所有「记录日志」诉求一律用 SLF4J（`org.slf4j.Logger`）。`System.out.print*` / `System.err.print*` / `Throwable.printStackTrace()` 一律禁止——除非外部集成契约明确规定 stdout/stderr 本身就是接口。这类类必须在类声明上加 `@SuppressWarnings("checkstyle:no_system_out_err")` 显式声明意图——这样 reviewer 一眼能看出「这是协议输出，不是日志」。当前产品没有 CLI、TUI 或 RPC 模式，不能以这些已退役入口为新增输出的理由。
 
 **硬约束**（Checkstyle，build-failing）：
 
@@ -165,7 +165,7 @@ new String(process.getInputStream().readAllBytes())           // 同上
 **为什么不能用 `System.out` 当日志**：
 - 没有时间戳/线程/级别信息——出问题时定位困难
 - 不走 logback/log4j 配置，无法被 appender 收集到文件 / ELK
-- 容器化部署里 stdout 与协议输出（JSONL/RPC）混流，污染契约
+- 容器化部署里 stdout 是日志采集接口，随意输出会污染运行日志
 - 异常堆栈用 `printStackTrace()` 直接打到 stderr，没有上下文，且测试环境难以静默
 
 ✅ 正例（记日志走门面）：
@@ -176,15 +176,12 @@ log.info("session opened: id={}", sessionId);
 log.error("failed to publish event", e);
 ```
 
-✅ 合法 stdout/stderr 出口（必须类级豁免，让意图显式）：
+✅ 外部协议明确要求 stdout 时的出口（必须类级豁免，让意图显式）：
 ```java
 @SuppressWarnings("checkstyle:no_system_out_err")
-@CommandLine.Command(name = "list-models")
-public class ListModelsCommand implements Runnable {
-    @Override
-    public void run() {
-        System.out.println("Available models:");
-        models.forEach(m -> System.out.println("  " + m));
+public final class ExternalProtocolWriter {
+    public void write(String payload) {
+        System.out.println(payload);
     }
 }
 ```
@@ -196,7 +193,7 @@ e.printStackTrace();                                                // 改 log.e
 System.out.println("DEBUG: state = " + state);                      // 改 log.debug("state={}", state)
 ```
 
-**理由**：项目已普遍引入 SLF4J（128 个文件），`LoggingUncaughtExceptionHandler` 已经把后台线程未捕获异常导到 `log.error`。日志型 print 残留在代码里就是可观测性漏洞——上规则一次性堵住，并把「stdout 是契约」的少数类用注解显式标注，杜绝增量。`new InteractiveMode` 路径里类似的事件发布失败、`InteractiveMode#close` 兜底分支，这些都应当走 `log.error("...", e)`，不要在用户终端噪音里再混入诊断信息。
+**理由**：项目已普遍引入 SLF4J（128 个文件），`LoggingUncaughtExceptionHandler` 已经把后台线程未捕获异常导到 `log.error`。日志型 print 残留在代码里就是可观测性漏洞——上规则一次性堵住，并把「stdout 是契约」的少数类用注解显式标注，杜绝增量。事件发布失败、资源关闭兜底等诊断分支都应当走 `log.error("...", e)`，不要把诊断信息混入外部协议输出。
 
 ### 禁止 catch 块静默吞异常（必须有真实处理）
 
@@ -356,7 +353,7 @@ grep -rL 'assert\|verify\|fail(' modules/**/src/test/java --include='*.java'
 | `log.error("auto-recovery test failed");` | `log.error("✗ 自动恢复测试失败!");` |
 | `log.info("worker container id: {}", id);` | `log.info("Worker 容器 ID: {}", id);` |
 
-**用户可见文本**（CLI 输出、TUI 渲染、面向终端用户的提示）走 i18n / 资源束或直接 println 即可，与日志走两条路——日志是给运维和开发看的诊断流，不是给最终用户的产品文案。
+**用户可见文本**（HTTP/SSE 响应与前端文案）走 i18n / 资源束，与日志走两条路——日志是给运维和开发看的诊断流，不是给最终用户的产品文案。只有外部协议明确要求 stdout 时才允许直接输出，并按上一节进行类级豁免。
 
 **绕过**：极端情况（如复现某 charset bug 时必须打中文示例）可在该方法上加 `@SuppressWarnings("checkstyle:no_chinese_in_log")` 局部豁免——但 PR review 应拒绝任何新增豁免，存量为零，不要破例。盘点命令：
 
