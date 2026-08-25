@@ -21,8 +21,12 @@ import com.campusclaw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 
+@ExtendWith(OutputCaptureExtension.class)
 class FileAgentDirectoryResolverTest {
 
     private static final String AGENT_ID = "agent-0123456789abcdef0123456789abcdef";
@@ -55,13 +59,19 @@ class FileAgentDirectoryResolverTest {
     }
 
     @Test
-    void translatesRuntimePreparationFailure() {
+    void logsAndTranslatesRuntimePreparationFailure(CapturedOutput output) {
         AgentRuntimeManager manager = mock(AgentRuntimeManager.class);
-        when(manager.prepare(AGENT_ID)).thenThrow(new AgentRuntimeException("Mate unavailable"));
+        AgentRuntimeException failure = new AgentRuntimeException("Mate unavailable");
+        when(manager.prepare(AGENT_ID)).thenThrow(failure);
 
         assertThatThrownBy(() -> new FileAgentDirectoryResolver(manager).resolve(AGENT_ID))
-                .isInstanceOfSatisfying(RuntimeApiException.class, error -> assertThat(error.errorCode())
-                        .isEqualTo(RuntimeErrorCode.AGENT_NOT_AVAILABLE));
+                .isInstanceOfSatisfying(RuntimeApiException.class, error -> {
+                    assertThat(error.errorCode()).isEqualTo(RuntimeErrorCode.AGENT_NOT_AVAILABLE);
+                    assertThat(error).hasCause(failure);
+                });
+        assertThat(output)
+                .contains("Failed to prepare Agent runtime: agentId=" + AGENT_ID)
+                .contains("AgentRuntimeException: Mate unavailable");
     }
 
     @Test
