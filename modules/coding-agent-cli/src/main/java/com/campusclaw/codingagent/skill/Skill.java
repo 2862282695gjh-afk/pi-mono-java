@@ -7,33 +7,29 @@ package com.campusclaw.codingagent.skill;
 import java.nio.file.Path;
 
 /**
- * A self-contained capability package that provides specialized workflows and instructions.
- * Loaded from SKILL.md files with optional YAML frontmatter.
+ * 从 SKILL.md 加载的自包含能力包，用于提供专用工作流和指令。
  *
- * @param name                    skill identifier (lowercase a-z, 0-9, hyphens; max 64 chars)
- * @param description             human-readable description (max 1024 chars)
- * @param filePath                path to the SKILL.md file
- * @param baseDir                 directory containing the SKILL.md file
- * @param source                  origin: "user" or "project"
- * @param disableModelInvocation  if true, skill is not shown in system prompt
+ * @param name Skill 标识，由小写字母、数字和连字符组成
+ * @param description Skill 描述
+ * @param filePath SKILL.md 路径
+ * @param baseDir SKILL.md 所在目录
+ * @param source Skill 来源
+ * @param disableModelInvocation 是否禁止模型调用
  *
  * @version [br_eCampusCore 26.0.0, 2026/05/06]
  * @since [br_eCampusCore 26.0.0]
  */
 public record Skill(
         String name, String description, Path filePath, Path baseDir, String source, boolean disableModelInvocation) {
-    /**
-     * Maximum allowed length for skill names.
-     */
+    /** Skill 名称最大长度。 */
     public static final int MAX_NAME_LENGTH = 64;
 
-    /**
-     * Maximum allowed length for skill descriptions.
-     */
+    /** Skill 描述最大长度。 */
     public static final int MAX_DESCRIPTION_LENGTH = 1024;
 
-    /**
-     * Pattern that valid skill names must match.
-     */
+    /** SKILL.md 最大字节数。 */
+    public static final long MAX_FILE_BYTES = 1024L * 1024L;
+
+    /** Skill 名称格式。 */
     public static final String NAME_PATTERN = "^[a-z0-9-]+$";
 }

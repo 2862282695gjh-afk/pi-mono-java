@@ -84,7 +84,7 @@ public class RuntimeEventController {
             @RequestParam(required = false) String limit,
             @RequestParam(required = false) String page,
             HttpServletRequest request) {
-        var result = queryService.list(sessionId, limit, page);
+        var result = queryService.list(sessionId, limit, page, RuntimeRequestContext.locale(request));
         return ResponseEntity.ok()
                 .cacheControl(CacheControl.noStore())
                 .header(HttpHeaders.CONTENT_LANGUAGE, RuntimeRequestContext.language(request))

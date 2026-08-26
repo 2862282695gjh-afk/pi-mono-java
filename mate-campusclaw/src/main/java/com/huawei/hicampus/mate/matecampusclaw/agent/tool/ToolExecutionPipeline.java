@@ -290,12 +290,9 @@ public class ToolExecutionPipeline {
     }
 
     private AgentToolResult failureResult(Exception e) {
-        // 结构化错误信息:携带稳定错误码的异常,details 携带 {errorCode, errorCategory},
-        // 公开边界(SSE/查询)据此渲染本地化文案;content 文本只放错误码,不透传内部诊断。
+        // 携带稳定错误码的异常只输出错误码，公开边界据此渲染本地化文案。
         if (e instanceof com.huawei.hicampus.mate.matecampusclaw.agent.error.StableErrorCode coded) {
-            java.util.Map<String, Object> details = new java.util.LinkedHashMap<>();
-            details.put("errorCode", coded.stableErrorCode());
-            details.put("errorCategory", e.getClass().getSimpleName());
+            java.util.Map<String, Object> details = java.util.Map.of("errorCode", coded.stableErrorCode());
             return new AgentToolResult(List.of(new TextContent(coded.stableErrorCode())), details);
         }
         return errorResult(messageForException(e));

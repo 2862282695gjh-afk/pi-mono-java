@@ -183,8 +183,8 @@ class CronEngineTest {
             CronRunRecord record = engine.triggerJob("j1");
             assertThat(failed.get()).isEqualTo(1);
             assertThat(record.status()).isEqualTo(RunStatus.FAILED);
-            assertThat(record.errorCode()).isEqualTo("RuntimeException");
-            assertThat(record.errorMessage()).isEqualTo("oops");
+            assertThat(record.errorCode()).isEqualTo("CRON_EXECUTION_FAILED");
+            assertThat(record.errorMessage()).isNull();
         }
 
         @Test

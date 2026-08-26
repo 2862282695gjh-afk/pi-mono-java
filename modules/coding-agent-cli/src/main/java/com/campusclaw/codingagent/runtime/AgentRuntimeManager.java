@@ -57,10 +57,6 @@ public class AgentRuntimeManager {
     private static final String SKILL_FILE = "SKILL.md";
     private static final String SKILL_MANIFEST_FILE = "skill.json";
 
-    // 与 RuntimeAgentPromptLoader.MAX_MANAGED_FILE_BYTES 对齐:超过该字节数的
-    // SKILL.md 会让真实会话创建失败,发布前直接拒绝。
-    private static final long MAX_SKILL_FILE_BYTES = 1024L * 1024L;
-
     private final AgentRuntimeProperties properties;
     private final MateServiceClient mateServiceClient;
 
@@ -221,7 +217,7 @@ public class AgentRuntimeManager {
         if (isBlank(content)) {
             throw new AgentRuntimeException("Skill content is empty: " + skill.name());
         }
-        if (content.getBytes(StandardCharsets.UTF_8).length > MAX_SKILL_FILE_BYTES) {
+        if (content.getBytes(StandardCharsets.UTF_8).length > Skill.MAX_FILE_BYTES) {
             throw new AgentRuntimeException("Skill content exceeds size limit: " + skill.name());
         }
         Map<String, Object> frontmatter = SkillLoader.parseFrontmatter(content);
@@ -239,7 +235,7 @@ public class AgentRuntimeManager {
     // 解析出的名称还必须与期望名称一致。
     private Skill requireSessionLoadable(String expectedName, Path skillFile) {
         try {
-            if (Files.size(skillFile) > MAX_SKILL_FILE_BYTES) {
+            if (Files.size(skillFile) > Skill.MAX_FILE_BYTES) {
                 throw new AgentRuntimeException("SKILL.md exceeds size limit: " + expectedName);
             }
         } catch (IOException exception) {

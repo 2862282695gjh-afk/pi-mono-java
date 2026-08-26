@@ -6,6 +6,7 @@ package com.huawei.hicampus.mate.matecampusclaw.cron.engine;
 
 import java.util.UUID;
 
+import com.huawei.hicampus.mate.matecampusclaw.cron.model.CronErrorCode;
 import com.huawei.hicampus.mate.matecampusclaw.cron.model.CronJob;
 import com.huawei.hicampus.mate.matecampusclaw.cron.model.CronPayload;
 import com.huawei.hicampus.mate.matecampusclaw.cron.model.CronRunRecord;
@@ -45,28 +46,16 @@ public class CronJobExecutor {
             return append(success(runId, job.id(), startedAt, output));
         } catch (RuntimeException exception) {
             log.error("Cron Job {} execution failed: {}", job.id(), exception.getMessage(), exception);
-            return append(failed(runId, job.id(), startedAt, stableCodeOf(exception), exception));
+            return append(failed(runId, job.id(), startedAt, stableCodeOf(exception)));
         }
     }
 
-    // 运行记录是公开产物:携带稳定错误码的异常只记录错误码,不透传内部诊断文本。
-
-    // 运行记录是公开产物:错误码与消息分开持久化,携带稳定错误码的异常
-    // 消息侧使用异常类名,不透传内部诊断文本。
+    // 运行记录只持久化稳定错误码，诊断文本仅输出到日志。
     private static String stableCodeOf(RuntimeException exception) {
         if (exception instanceof com.huawei.hicampus.mate.matecampusclaw.agent.error.StableErrorCode coded) {
             return coded.stableErrorCode();
         }
-        return exception.getClass().getSimpleName();
-    }
-
-    private static String publicMessageOf(RuntimeException exception) {
-        if (exception instanceof com.huawei.hicampus.mate.matecampusclaw.agent.error.StableErrorCode) {
-            return exception.getClass().getSimpleName();
-        }
-        return exception.getMessage() != null
-                ? exception.getMessage()
-                : exception.getClass().getSimpleName();
+        return CronErrorCode.CRON_EXECUTION_FAILED.name();
     }
 
     private CronRunRecord append(CronRunRecord record) {
@@ -91,8 +80,7 @@ public class CronJobExecutor {
                 0);
     }
 
-    private static CronRunRecord failed(
-            String runId, String jobId, long startedAt, String errorCode, RuntimeException exception) {
+    private static CronRunRecord failed(String runId, String jobId, long startedAt, String errorCode) {
         return new CronRunRecord(
                 runId,
                 jobId,
@@ -100,7 +88,7 @@ public class CronJobExecutor {
                 System.currentTimeMillis(),
                 CronRunRecord.RunStatus.FAILED,
                 errorCode,
-                publicMessageOf(exception),
+                null,
                 null,
                 0);
     }

@@ -5,6 +5,7 @@
 package com.huawei.hicampus.mate.matecampusclaw.cron.engine;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 
@@ -42,11 +43,11 @@ class CronJobExecutorTest {
 
         assertEquals(CronRunRecord.RunStatus.FAILED, record.status());
         assertEquals("MATE_RESPONSE_INVALID", record.errorCode());
-        assertEquals("CodedFailureException", record.errorMessage());
+        assertNull(record.errorMessage());
     }
 
     @Test
-    void uncodedFailureStillRecordsExceptionMessage() {
+    void uncodedFailureUsesGenericStableCodeWithoutDiagnosticText() {
         CronRunLog runLog = mock(CronRunLog.class);
         CronJobExecutor executor = new CronJobExecutor(runLog, (agentId, prompt) -> {
             throw new IllegalStateException("plain failure");
@@ -55,7 +56,8 @@ class CronJobExecutorTest {
         CronRunRecord record = executor.execute(job());
 
         assertEquals(CronRunRecord.RunStatus.FAILED, record.status());
-        assertEquals("plain failure", record.errorMessage());
+        assertEquals("CRON_EXECUTION_FAILED", record.errorCode());
+        assertNull(record.errorMessage());
         assertTrue(record.runId() != null && !record.runId().isBlank());
     }
 

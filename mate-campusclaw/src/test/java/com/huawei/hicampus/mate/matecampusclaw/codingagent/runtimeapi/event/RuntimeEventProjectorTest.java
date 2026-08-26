@@ -17,6 +17,7 @@ import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -91,14 +92,15 @@ class RuntimeEventProjectorTest {
         RuntimeEventProjector projector = new RuntimeEventProjector(
                 "session_event_test",
                 repository,
-                new RuntimeEntryCodec(new ObjectMapper()),
+                codec(),
                 idGenerator,
                 stream,
                 Clock.fixed(Instant.parse("2026-08-18T00:00:00Z"), ZoneOffset.UTC),
                 agent::abort,
                 execution,
                 initialMessage,
-                false);
+                false,
+                Locale.US);
         agent.subscribe(projector::onEvent);
 
         agent.prompt(initialMessage).get(2, TimeUnit.SECONDS);
@@ -218,7 +220,7 @@ class RuntimeEventProjectorTest {
     @Test
     void reloadExcludesLengthResponseDiscardedBeforeCompactionRetry() {
         Model model = sampleModel();
-        RuntimeEntryCodec codec = new RuntimeEntryCodec(new ObjectMapper());
+        RuntimeEntryCodec codec = codec();
         OffsetDateTime time = OffsetDateTime.parse("2026-08-24T14:00:00Z");
         RuntimeEntryDTO user = codec.userEntry("session_event_test", "entry_user", "task", List.of(), time);
         user.setEntrySeq(1L);
@@ -260,7 +262,7 @@ class RuntimeEventProjectorTest {
 
     private static RuntimeEventProjector projector(
             RuntimeSessionRepository repository, RuntimeEventStream stream, boolean thinking) {
-        return projector(repository, stream, thinking, new RuntimeEntryCodec(new ObjectMapper()));
+        return projector(repository, stream, thinking, codec());
     }
 
     private static RuntimeEventProjector projector(
@@ -278,7 +280,8 @@ class RuntimeEventProjectorTest {
                 () -> {},
                 execution,
                 new UserMessage("分析订单", 1L),
-                thinking);
+                thinking,
+                Locale.US);
     }
 
     private static RuntimeEntryDTO persistCompaction(
@@ -299,6 +302,12 @@ class RuntimeEventProjectorTest {
 
     private static RuntimeEventStream eventStream() {
         return new RuntimeEventStream(16, 4096, Duration.ofSeconds(15), event -> 1L);
+    }
+
+    private static RuntimeEntryCodec codec() {
+        return new RuntimeEntryCodec(
+                new ObjectMapper(),
+                new com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.RuntimeMessageSourceConfiguration().messageSource());
     }
 
     private static void assertConfirmedEventOrder(List<String> eventNames) {

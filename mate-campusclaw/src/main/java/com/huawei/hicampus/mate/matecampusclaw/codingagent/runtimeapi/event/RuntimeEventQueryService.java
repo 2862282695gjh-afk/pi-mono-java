@@ -6,6 +6,7 @@ package com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.event;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 import com.huawei.hicampus.mate.matecampusclaw.ai.types.Message;
 import com.huawei.hicampus.mate.matecampusclaw.ai.types.Model;
@@ -49,14 +50,14 @@ public class RuntimeEventQueryService {
         this.cursorCodec = cursorCodec;
     }
 
-    public EventPageResponseVO list(String sessionId, String limitValue, String page) {
+    public EventPageResponseVO list(String sessionId, String limitValue, String page, Locale locale) {
         try {
             int limit = parseLimit(limitValue);
             RuntimeSessionDTO session = requireSession(sessionId);
             boolean thinking = session.isThinking();
             long afterSeq = page == null ? 0 : cursorCodec.decode(page, sessionId, thinking);
             List<RuntimeEntryDTO> entries = repository.listCurrentBranch(sessionId, afterSeq, limit + 1, thinking);
-            return pageOf(sessionId, entries, limit, thinking);
+            return pageOf(sessionId, entries, limit, thinking, locale);
         } catch (RuntimeApiException error) {
             throw error;
         } catch (RuntimeException error) {
@@ -86,11 +87,13 @@ public class RuntimeEventQueryService {
         return codec.toAgentMessages(entries, model);
     }
 
-    private EventPageResponseVO pageOf(String sessionId, List<RuntimeEntryDTO> entries, int limit, boolean thinking) {
+    private EventPageResponseVO pageOf(
+            String sessionId, List<RuntimeEntryDTO> entries, int limit, boolean thinking, Locale locale) {
         boolean more = entries.size() > limit;
         List<RuntimeEntryDTO> pageEntries = more ? entries.subList(0, limit) : entries;
-        List<java.util.Map<String, Object>> events =
-                pageEntries.stream().map(codec::toHistoryEvent).toList();
+        List<java.util.Map<String, Object>> events = pageEntries.stream()
+                .map(entry -> codec.toHistoryEvent(entry, locale))
+                .toList();
         String nextPage =
                 more ? cursorCodec.encode(sessionId, pageEntries.getLast().getEntrySeq(), thinking) : null;
         return new EventPageResponseVO(events, nextPage);

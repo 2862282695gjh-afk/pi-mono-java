@@ -82,6 +82,20 @@ class CronRunLogTest {
             assertThat(recent).hasSize(1);
             assertThat(recent.get(0).runId()).isEqualTo("r1");
         }
+
+        @Test
+        void readsLegacyErrorFieldAsErrorMessage(@TempDir Path tmp) throws IOException {
+            Files.writeString(
+                    tmp.resolve("j1.jsonl"),
+                    "{\"runId\":\"r1\",\"jobId\":\"j1\",\"startedAtMs\":0,"
+                            + "\"finishedAtMs\":1,\"status\":\"FAILED\",\"error\":\"legacy detail\","
+                            + "\"turnCount\":0}\n");
+
+            CronRunRecord record = new CronRunLog(tmp).getRecentRuns("j1", 10).getFirst();
+
+            assertThat(record.errorCode()).isNull();
+            assertThat(record.errorMessage()).isEqualTo("legacy detail");
+        }
     }
 
     @Nested

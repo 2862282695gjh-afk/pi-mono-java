@@ -14,6 +14,7 @@ import static org.mockito.Mockito.when;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 
@@ -65,14 +66,14 @@ class RuntimeEventQueryServiceTest {
         when(repository.listCurrentBranch(SESSION_ID, 7L, 3, true)).thenReturn(List.of(first, second, lookAhead));
         when(cursorCodec.decode("page_current", SESSION_ID, true)).thenReturn(7L);
         when(cursorCodec.encode(SESSION_ID, 2L, true)).thenReturn("page_next");
-        when(codec.toHistoryEvent(first)).thenReturn(Map.of("entrySeq", 1L));
-        when(codec.toHistoryEvent(second)).thenReturn(Map.of("entrySeq", 2L));
+        when(codec.toHistoryEvent(first, Locale.SIMPLIFIED_CHINESE)).thenReturn(Map.of("entrySeq", 1L));
+        when(codec.toHistoryEvent(second, Locale.SIMPLIFIED_CHINESE)).thenReturn(Map.of("entrySeq", 2L));
 
-        var page = service.list(SESSION_ID, "2", "page_current");
+        var page = service.list(SESSION_ID, "2", "page_current", Locale.SIMPLIFIED_CHINESE);
 
         assertThat(page.getEvents()).containsExactly(Map.of("entrySeq", 1L), Map.of("entrySeq", 2L));
         assertThat(page.getNextPage()).isEqualTo("page_next");
-        verify(codec, never()).toHistoryEvent(lookAhead);
+        verify(codec, never()).toHistoryEvent(lookAhead, Locale.SIMPLIFIED_CHINESE);
     }
 
     @Test
@@ -99,7 +100,7 @@ class RuntimeEventQueryServiceTest {
 
     @Test
     void rejectsInvalidLimitBeforeReadingSession() {
-        assertThatThrownBy(() -> service.list(SESSION_ID, "201", null))
+        assertThatThrownBy(() -> service.list(SESSION_ID, "201", null, Locale.US))
                 .isInstanceOfSatisfying(RuntimeApiException.class, error -> assertThat(error.errorCode())
                         .isEqualTo(RuntimeErrorCode.INVALID_EVENT_LIST_QUERY));
 

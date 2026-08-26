@@ -10,6 +10,7 @@ import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 import com.huawei.hicampus.mate.matecampusclaw.ai.types.AssistantMessage;
@@ -35,6 +36,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
+import org.springframework.context.MessageSource;
 import org.springframework.stereotype.Component;
 
 /**
@@ -49,8 +51,11 @@ import org.springframework.stereotype.Component;
 public class RuntimeEntryCodec {
     private final ObjectMapper objectMapper;
 
-    public RuntimeEntryCodec(ObjectMapper objectMapper) {
+    private final MessageSource messageSource;
+
+    public RuntimeEntryCodec(ObjectMapper objectMapper, MessageSource messageSource) {
         this.objectMapper = objectMapper;
+        this.messageSource = messageSource;
     }
 
     public RuntimeEntryDTO userEntry(
@@ -111,15 +116,11 @@ public class RuntimeEntryCodec {
         message.content().forEach(block -> appendPublicContent(content, block));
         payload.put("is_error", message.isError());
 
-        // 结构化错误码:工具失败时 details 携带 {errorCode, errorCategory},
-        // 展示层按 locale 用 MessageSource 渲染文案,自由文本仅作为兜底。
+        // 工具失败时只持久化稳定错误码，对外文案在投影阶段按请求语言生成。
         if (message.isError()
                 && message.details() instanceof java.util.Map<?, ?> coded
                 && coded.get("errorCode") != null) {
             payload.put("error_code", String.valueOf(coded.get("errorCode")));
-            if (coded.get("errorCategory") != null) {
-                payload.put("error_category", String.valueOf(coded.get("errorCategory")));
-            }
         }
         return entry(
                 sessionId,
@@ -204,18 +205,26 @@ public class RuntimeEntryCodec {
     }
 
     public Map<String, Object> toSseData(RuntimeEntryDTO entry) {
+        return toSseData(entry, Locale.US);
+    }
+
+    public Map<String, Object> toSseData(RuntimeEntryDTO entry, Locale locale) {
         LinkedHashMap<String, Object> result = new LinkedHashMap<>();
         result.put("entryId", entry.getId());
         result.put("entrySeq", entry.getEntrySeq());
-        appendPublicPayload(result, entry);
+        appendPublicPayload(result, entry, locale);
         result.put("createdAt", entry.getTimestamp().toString());
         return result;
     }
 
     public Map<String, Object> toHistoryEvent(RuntimeEntryDTO entry) {
+        return toHistoryEvent(entry, Locale.US);
+    }
+
+    public Map<String, Object> toHistoryEvent(RuntimeEntryDTO entry, Locale locale) {
         LinkedHashMap<String, Object> result = new LinkedHashMap<>();
         result.put("type", entry.getType());
-        result.putAll(toSseData(entry));
+        result.putAll(toSseData(entry, locale));
         return result;
     }
 
@@ -411,9 +420,6 @@ public class RuntimeEntryCodec {
         if (payload.path("is_error").asBoolean() && payload.hasNonNull("error_code")) {
             java.util.Map<String, Object> coded = new java.util.LinkedHashMap<>();
             coded.put("errorCode", payload.path("error_code").asText());
-            if (payload.hasNonNull("error_category")) {
-                coded.put("errorCategory", payload.path("error_category").asText());
-            }
             details = coded;
         }
         return new ToolResultMessage(
@@ -507,13 +513,13 @@ public class RuntimeEntryCodec {
         }
     }
 
-    private void appendPublicPayload(LinkedHashMap<String, Object> target, RuntimeEntryDTO entry) {
+    private void appendPublicPayload(LinkedHashMap<String, Object> target, RuntimeEntryDTO entry, Locale locale) {
         JsonNode payload = readPayload(entry.getPayload());
         switch (RuntimeEventType.fromValue(entry.getType())) {
             case USER_MESSAGE -> appendUserPayload(target, payload);
             case ASSISTANT_MESSAGE_COMPLETED -> appendAssistantPayload(target, payload);
             case ASSISTANT_THINKING_COMPLETED -> appendThinkingPayload(target, payload);
-            case TOOL_RESULT -> appendToolResultPayload(target, payload);
+            case TOOL_RESULT -> appendToolResultPayload(target, payload, locale);
             case SESSION_MODEL_CHANGED -> appendModelChangedPayload(target, payload);
             case SESSION_THINKING_CHANGED -> appendThinkingChangedPayload(target, payload);
             case SESSION_COMPACTION_COMPLETED -> appendCompactionPayload(target, payload);
@@ -546,11 +552,24 @@ public class RuntimeEntryCodec {
         target.put("content", objectMapper.convertValue(payload.path("content"), Object.class));
     }
 
-    private void appendToolResultPayload(LinkedHashMap<String, Object> target, JsonNode payload) {
+    private void appendToolResultPayload(LinkedHashMap<String, Object> target, JsonNode payload, Locale locale) {
         target.put("toolCallId", objectMapper.convertValue(field(payload, "toolCallId", "tool_call_id"), Object.class));
         target.put("toolName", objectMapper.convertValue(field(payload, "toolName", "tool_name"), Object.class));
         target.put("content", publicContent(payload.path("content")));
         target.put("isError", objectMapper.convertValue(field(payload, "isError", "is_error"), Object.class));
+        if (payload.path("is_error").asBoolean() && payload.hasNonNull("error_code")) {
+            String errorCode = payload.path("error_code").asText();
+            target.put("errorCode", errorCode);
+            target.put("errorMessage", localizedToolError(errorCode, locale));
+        }
+    }
+
+    private String localizedToolError(String errorCode, Locale locale) {
+        String message = messageSource.getMessage(errorCode, null, null, locale);
+        if (message != null) {
+            return message;
+        }
+        return messageSource.getMessage("TOOL_EXECUTION_FAILED", null, "Tool execution failed.", locale);
     }
 
     private void appendModelChangedPayload(LinkedHashMap<String, Object> target, JsonNode payload) {

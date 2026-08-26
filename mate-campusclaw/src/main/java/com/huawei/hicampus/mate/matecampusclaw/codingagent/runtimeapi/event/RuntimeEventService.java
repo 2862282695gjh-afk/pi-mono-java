@@ -106,8 +106,8 @@ public class RuntimeEventService {
                     request.message(),
                     request.fileIds(),
                     credentials);
-            emitConfigurationEntries(context.execution().eventStream(), reconciled.configurationEntries());
-            acceptUserEntry(sessionId, request, context);
+            emitConfigurationEntries(context.execution().eventStream(), reconciled.configurationEntries(), locale);
+            acceptUserEntry(sessionId, request, context, locale);
             executionCoordinator.start(context.holder(), context.execution(), context.userMessage(), locale);
             return context.execution().eventStream();
         } catch (RuntimeException error) {
@@ -118,14 +118,15 @@ public class RuntimeEventService {
         }
     }
 
-    private void emitConfigurationEntries(RuntimeEventStream stream, List<RuntimeEntryDTO> entries) {
+    private void emitConfigurationEntries(RuntimeEventStream stream, List<RuntimeEntryDTO> entries, Locale locale) {
         for (RuntimeEntryDTO entry : entries) {
-            stream.emit(
-                    new RuntimeSseEventVO(Long.toString(entry.getEntrySeq()), entry.getType(), codec.toSseData(entry)));
+            stream.emit(new RuntimeSseEventVO(
+                    Long.toString(entry.getEntrySeq()), entry.getType(), codec.toSseData(entry, locale)));
         }
     }
 
-    private void acceptUserEntry(String sessionId, ValidatedUserEvent request, RuntimeExecutionContext context) {
+    private void acceptUserEntry(
+            String sessionId, ValidatedUserEvent request, RuntimeExecutionContext context, Locale locale) {
         RuntimeEntryDTO entry =
                 codec.userEntry(sessionId, idGenerator.nextId(), request.message(), request.fileIds(), now());
         UserEventAcceptance acceptance = repository.acceptUserEvent(sessionId, entry, now());
@@ -134,7 +135,7 @@ public class RuntimeEventService {
         context.execution()
                 .eventStream()
                 .emit(new RuntimeSseEventVO(
-                        Long.toString(entry.getEntrySeq()), entry.getType(), codec.toSseData(entry)));
+                        Long.toString(entry.getEntrySeq()), entry.getType(), codec.toSseData(entry, locale)));
     }
 
     private RuntimeSessionDTO requireIdleSession(String sessionId) {

@@ -20,6 +20,7 @@ import java.util.concurrent.locks.ReentrantLock;
 
 import com.campusclaw.agent.util.LoggingUncaughtExceptionHandler;
 import com.campusclaw.cron.model.CronEvent;
+import com.campusclaw.cron.model.CronErrorCode;
 import com.campusclaw.cron.model.CronJob;
 import com.campusclaw.cron.model.CronJobState;
 import com.campusclaw.cron.model.CronRunRecord;
@@ -262,7 +263,9 @@ public class CronEngine {
         if (success) {
             emit(new CronEvent.JobCompleted(job.id(), job.name(), result.runId(), result.output()));
         } else {
-            String failedCode = result.errorCode() != null ? result.errorCode() : "Unknown error";
+            String failedCode = result.errorCode() != null
+                    ? result.errorCode()
+                    : CronErrorCode.CRON_EXECUTION_FAILED.name();
             emit(new CronEvent.JobFailed(job.id(), job.name(), result.runId(), failedCode));
         }
     }
@@ -276,9 +279,7 @@ public class CronEngine {
             updatedJob = updatedJob.withEnabled(false);
         }
         store.updateJob(updatedJob);
-        String engineErrorCode = e instanceof com.campusclaw.agent.error.StableErrorCode coded
-                ? coded.stableErrorCode()
-                : e.getClass().getSimpleName();
+        String engineErrorCode = stableCodeOf(e);
         emit(new CronEvent.JobFailed(job.id(), job.name(), "", engineErrorCode));
         return new CronRunRecord(
                 "",
@@ -287,9 +288,16 @@ public class CronEngine {
                 System.currentTimeMillis(),
                 CronRunRecord.RunStatus.FAILED,
                 engineErrorCode,
-                e.getMessage(),
+                null,
                 null,
                 0);
+    }
+
+    private static String stableCodeOf(Exception exception) {
+        if (exception instanceof com.campusclaw.agent.error.StableErrorCode coded) {
+            return coded.stableErrorCode();
+        }
+        return CronErrorCode.CRON_EXECUTION_FAILED.name();
     }
 
     long computeNextDelay(CronJob job) {
