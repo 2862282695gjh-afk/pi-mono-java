@@ -14,8 +14,8 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.error.RuntimeFailures;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.skill.Skill;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.skill.SkillLoadException;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.skill.SkillLoader;
@@ -90,8 +90,17 @@ public class RuntimeAgentPromptLoader {
                 }
             }
         } catch (IOException error) {
-            throw RuntimeFailures.raise(
-                    "runtime.agent.skills.scan", RuntimeErrorCode.AGENT_NOT_AVAILABLE, error, "path", directory);
+            log.atError()
+                    .addKeyValue("event", "campusclaw.failure")
+                    .addKeyValue("operation", "runtime.agent.skills.scan")
+                    .addKeyValue("errorCode", RuntimeErrorCode.AGENT_NOT_AVAILABLE.name())
+                    .addKeyValue("directory", directory)
+                    .setCause(error)
+                    .log(
+                            "CampusClaw failure: operation={}, errorCode={}",
+                            "runtime.agent.skills.scan",
+                            RuntimeErrorCode.AGENT_NOT_AVAILABLE.name());
+            throw unavailable();
         }
     }
 
@@ -110,16 +119,24 @@ public class RuntimeAgentPromptLoader {
             return "";
         }
         if (!isSafeRegularFile(root, candidate)) {
-            throw RuntimeFailures.raise(
-                    "runtime.agent.prompt.validate", RuntimeErrorCode.AGENT_NOT_AVAILABLE, "path", candidate);
+            throw unavailable();
         }
         Path realFile = safeRealPath(root, candidate);
         requireManagedSize(realFile);
         try {
             return Files.readString(realFile, StandardCharsets.UTF_8);
         } catch (IOException error) {
-            throw RuntimeFailures.raise(
-                    "runtime.agent.prompt.read", RuntimeErrorCode.AGENT_NOT_AVAILABLE, error, "path", realFile);
+            log.atError()
+                    .addKeyValue("event", "campusclaw.failure")
+                    .addKeyValue("operation", "runtime.agent.prompt.read")
+                    .addKeyValue("errorCode", RuntimeErrorCode.AGENT_NOT_AVAILABLE.name())
+                    .addKeyValue("path", realFile)
+                    .setCause(error)
+                    .log(
+                            "CampusClaw failure: operation={}, errorCode={}",
+                            "runtime.agent.prompt.read",
+                            RuntimeErrorCode.AGENT_NOT_AVAILABLE.name());
+            throw unavailable();
         }
     }
 
@@ -136,14 +153,22 @@ public class RuntimeAgentPromptLoader {
 
     private static Path realDirectory(Path path) {
         if (!Files.isDirectory(path, LinkOption.NOFOLLOW_LINKS)) {
-            throw RuntimeFailures.raise(
-                    "runtime.agent.directory.validate", RuntimeErrorCode.AGENT_NOT_AVAILABLE, "path", path);
+            throw unavailable();
         }
         try {
             return path.toRealPath();
         } catch (IOException error) {
-            throw RuntimeFailures.raise(
-                    "runtime.agent.directory.resolve", RuntimeErrorCode.AGENT_NOT_AVAILABLE, error, "path", path);
+            log.atError()
+                    .addKeyValue("event", "campusclaw.failure")
+                    .addKeyValue("operation", "runtime.agent.directory.resolve")
+                    .addKeyValue("errorCode", RuntimeErrorCode.AGENT_NOT_AVAILABLE.name())
+                    .addKeyValue("path", path)
+                    .setCause(error)
+                    .log(
+                            "CampusClaw failure: operation={}, errorCode={}",
+                            "runtime.agent.directory.resolve",
+                            RuntimeErrorCode.AGENT_NOT_AVAILABLE.name());
+            throw unavailable();
         }
     }
 
@@ -151,25 +176,45 @@ public class RuntimeAgentPromptLoader {
         try {
             Path realPath = path.toRealPath();
             if (!realPath.startsWith(root)) {
-                throw RuntimeFailures.raise(
-                        "runtime.agent.path.validate", RuntimeErrorCode.AGENT_NOT_AVAILABLE, "path", path);
+                throw unavailable();
             }
             return realPath;
         } catch (IOException error) {
-            throw RuntimeFailures.raise(
-                    "runtime.agent.path.resolve", RuntimeErrorCode.AGENT_NOT_AVAILABLE, error, "path", path);
+            log.atError()
+                    .addKeyValue("event", "campusclaw.failure")
+                    .addKeyValue("operation", "runtime.agent.path.resolve")
+                    .addKeyValue("errorCode", RuntimeErrorCode.AGENT_NOT_AVAILABLE.name())
+                    .addKeyValue("path", path)
+                    .setCause(error)
+                    .log(
+                            "CampusClaw failure: operation={}, errorCode={}",
+                            "runtime.agent.path.resolve",
+                            RuntimeErrorCode.AGENT_NOT_AVAILABLE.name());
+            throw unavailable();
         }
     }
 
     private static void requireManagedSize(Path path) {
         try {
             if (Files.size(path) > MAX_MANAGED_FILE_BYTES) {
-                throw RuntimeFailures.raise(
-                        "runtime.agent.file.validate", RuntimeErrorCode.AGENT_NOT_AVAILABLE, "path", path);
+                throw unavailable();
             }
         } catch (IOException error) {
-            throw RuntimeFailures.raise(
-                    "runtime.agent.file.inspect", RuntimeErrorCode.AGENT_NOT_AVAILABLE, error, "path", path);
+            log.atError()
+                    .addKeyValue("event", "campusclaw.failure")
+                    .addKeyValue("operation", "runtime.agent.file.inspect")
+                    .addKeyValue("errorCode", RuntimeErrorCode.AGENT_NOT_AVAILABLE.name())
+                    .addKeyValue("path", path)
+                    .setCause(error)
+                    .log(
+                            "CampusClaw failure: operation={}, errorCode={}",
+                            "runtime.agent.file.inspect",
+                            RuntimeErrorCode.AGENT_NOT_AVAILABLE.name());
+            throw unavailable();
         }
+    }
+
+    private static RuntimeApiException unavailable() {
+        return new RuntimeApiException(RuntimeErrorCode.AGENT_NOT_AVAILABLE);
     }
 }

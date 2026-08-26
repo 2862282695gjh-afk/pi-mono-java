@@ -38,7 +38,6 @@ import com.campusclaw.codingagent.runtimeapi.dto.RuntimeEntryDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
-import com.campusclaw.codingagent.runtimeapi.error.RuntimeFailures;
 import com.campusclaw.codingagent.runtimeapi.model.RuntimeModelManager;
 import com.campusclaw.codingagent.runtimeapi.persistence.RuntimeSessionRepository;
 import com.campusclaw.codingagent.runtimeapi.persistence.UserEventAcceptance;
@@ -157,7 +156,7 @@ class RuntimeEventServiceTest {
     @Test
     void executionFailureUsesChineseSseMessage() {
         Fixture fixture = new Fixture();
-        Logger logger = (Logger) LoggerFactory.getLogger(RuntimeFailures.class);
+        Logger logger = (Logger) LoggerFactory.getLogger(RuntimeExecutionCoordinator.class);
         ListAppender<ILoggingEvent> logs = new ListAppender<>();
         logs.start();
         logger.addAppender(logs);
@@ -181,8 +180,11 @@ class RuntimeEventServiceTest {
             assertThat(event.getLevel()).isEqualTo(Level.ERROR);
             assertThat(event.getFormattedMessage())
                     .contains("operation=runtime.execution")
-                    .contains("errorCode=SESSION_EXECUTION_FAILED")
-                    .contains("sessionId=" + SESSION_ID);
+                    .contains("errorCode=SESSION_EXECUTION_FAILED");
+            assertThat(event.getKeyValuePairs()).anySatisfy(pair -> {
+                assertThat(pair.key).isEqualTo("sessionId");
+                assertThat(pair.value).isEqualTo(SESSION_ID);
+            });
             assertThat(event.getThrowableProxy()).isNotNull();
         });
     }

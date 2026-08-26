@@ -17,7 +17,6 @@ import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.dto.Runtim
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.error.RuntimeFailures;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.event.RuntimeEntryCodec;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.event.RuntimeEntryIdGenerator;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.model.RuntimeModelManager;
@@ -117,13 +116,9 @@ public class RuntimeSessionModelReconciler {
     private RuntimeSessionDTO requireUpdated(SessionConfigurationUpdate update) {
         return switch (update.status()) {
             case UPDATED -> update.session();
-            case NOT_FOUND ->
-                throw RuntimeFailures.raise("runtime.session.reconcile.persist", RuntimeErrorCode.SESSION_NOT_FOUND);
-            case BUSY ->
-                throw RuntimeFailures.raise("runtime.session.reconcile.persist", RuntimeErrorCode.SESSION_BUSY);
-            case VERSION_MISMATCH ->
-                throw RuntimeFailures.raise(
-                        "runtime.session.reconcile.persist", RuntimeErrorCode.SESSION_VERSION_MISMATCH);
+            case NOT_FOUND -> throw new RuntimeApiException(RuntimeErrorCode.SESSION_NOT_FOUND);
+            case BUSY -> throw new RuntimeApiException(RuntimeErrorCode.SESSION_BUSY);
+            case VERSION_MISMATCH -> throw new RuntimeApiException(RuntimeErrorCode.SESSION_VERSION_MISMATCH);
             case UNCHANGED -> throw new IllegalStateException("fallback model did not change the session");
         };
     }

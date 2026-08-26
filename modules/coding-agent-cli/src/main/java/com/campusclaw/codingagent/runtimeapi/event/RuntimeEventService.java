@@ -16,7 +16,6 @@ import com.campusclaw.codingagent.runtimeapi.dto.RuntimeEntryDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
-import com.campusclaw.codingagent.runtimeapi.error.RuntimeFailures;
 import com.campusclaw.codingagent.runtimeapi.persistence.RuntimeSessionRepository;
 import com.campusclaw.codingagent.runtimeapi.persistence.UserEventAcceptance;
 import com.campusclaw.codingagent.runtimeapi.runtime.RuntimeSessionEngineRegistry;
@@ -25,6 +24,8 @@ import com.campusclaw.codingagent.runtimeapi.session.RuntimeSessionState;
 import com.campusclaw.codingagent.runtimeapi.vo.RuntimeSseEventVO;
 import com.campusclaw.codingagent.runtimeapi.vo.UserEventRequestVO;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 /**
@@ -35,6 +36,8 @@ import org.springframework.stereotype.Service;
  */
 @Service
 public class RuntimeEventService {
+    private static final Logger LOGGER = LoggerFactory.getLogger(RuntimeEventService.class);
+
     private final RuntimeSessionRepository repository;
 
     private final RuntimeEntryCodec codec;
@@ -77,8 +80,15 @@ public class RuntimeEventService {
         } catch (RuntimeApiException error) {
             throw error;
         } catch (RuntimeException error) {
-            throw RuntimeFailures.raise(
-                    "runtime.events.accept", RuntimeErrorCode.EVENT_ACCEPTANCE_FAILED, error, "sessionId", sessionId);
+            RuntimeErrorCode errorCode = RuntimeErrorCode.EVENT_ACCEPTANCE_FAILED;
+            LOGGER.atError()
+                    .addKeyValue("event", "campusclaw.failure")
+                    .addKeyValue("operation", "runtime.events.accept")
+                    .addKeyValue("errorCode", errorCode.name())
+                    .addKeyValue("sessionId", sessionId)
+                    .setCause(error)
+                    .log("CampusClaw failure: operation={}, errorCode={}", "runtime.events.accept", errorCode.name());
+            throw new RuntimeApiException(errorCode);
         }
     }
 
@@ -130,10 +140,9 @@ public class RuntimeEventService {
     private RuntimeSessionDTO requireIdleSession(String sessionId) {
         RuntimeSessionDTO session = repository
                 .find(sessionId)
-                .orElseThrow(() -> RuntimeFailures.raise(
-                        "runtime.session.find", RuntimeErrorCode.SESSION_NOT_FOUND, "sessionId", sessionId));
+                .orElseThrow(() -> new RuntimeApiException(RuntimeErrorCode.SESSION_NOT_FOUND));
         if (!RuntimeSessionState.IDLE.matches(session.getState())) {
-            throw RuntimeFailures.raise("runtime.events.accept", RuntimeErrorCode.SESSION_BUSY, "sessionId", sessionId);
+            throw new RuntimeApiException(RuntimeErrorCode.SESSION_BUSY);
         }
         return session;
     }
@@ -155,8 +164,8 @@ public class RuntimeEventService {
     private static void requireAccepted(UserEventAcceptance acceptance) {
         switch (acceptance.status()) {
             case ACCEPTED -> {}
-            case NOT_FOUND -> throw RuntimeFailures.raise("runtime.events.persist", RuntimeErrorCode.SESSION_NOT_FOUND);
-            case BUSY -> throw RuntimeFailures.raise("runtime.events.persist", RuntimeErrorCode.SESSION_BUSY);
+            case NOT_FOUND -> throw new RuntimeApiException(RuntimeErrorCode.SESSION_NOT_FOUND);
+            case BUSY -> throw new RuntimeApiException(RuntimeErrorCode.SESSION_BUSY);
         }
     }
 
@@ -169,7 +178,7 @@ public class RuntimeEventService {
     }
 
     private static RuntimeApiException invalidEventRequest() {
-        return RuntimeFailures.raise("runtime.events.validate", RuntimeErrorCode.INVALID_EVENT_REQUEST);
+        return new RuntimeApiException(RuntimeErrorCode.INVALID_EVENT_REQUEST);
     }
 
     private OffsetDateTime now() {

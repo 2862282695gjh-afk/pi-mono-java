@@ -13,10 +13,11 @@ import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.dto.Runtim
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.error.RuntimeFailures;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.persistence.RuntimeSessionRepository;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.vo.EventPageResponseVO;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 /**
@@ -27,6 +28,8 @@ import org.springframework.stereotype.Service;
  */
 @Service
 public class RuntimeEventQueryService {
+    private static final Logger LOGGER = LoggerFactory.getLogger(RuntimeEventQueryService.class);
+
     private static final int DEFAULT_LIMIT = 100;
 
     private static final int MAX_LIMIT = 200;
@@ -57,8 +60,15 @@ public class RuntimeEventQueryService {
         } catch (RuntimeApiException error) {
             throw error;
         } catch (RuntimeException error) {
-            throw RuntimeFailures.raise(
-                    "runtime.events.list", RuntimeErrorCode.EVENT_LIST_FAILED, error, "sessionId", sessionId);
+            RuntimeErrorCode errorCode = RuntimeErrorCode.EVENT_LIST_FAILED;
+            LOGGER.atError()
+                    .addKeyValue("event", "campusclaw.failure")
+                    .addKeyValue("operation", "runtime.events.list")
+                    .addKeyValue("errorCode", errorCode.name())
+                    .addKeyValue("sessionId", sessionId)
+                    .setCause(error)
+                    .log("CampusClaw failure: operation={}, errorCode={}", "runtime.events.list", errorCode.name());
+            throw new RuntimeApiException(errorCode);
         }
     }
 
@@ -89,8 +99,7 @@ public class RuntimeEventQueryService {
     private RuntimeSessionDTO requireSession(String sessionId) {
         return repository
                 .find(sessionId)
-                .orElseThrow(() -> RuntimeFailures.raise(
-                        "runtime.session.find", RuntimeErrorCode.SESSION_NOT_FOUND, "sessionId", sessionId));
+                .orElseThrow(() -> new RuntimeApiException(RuntimeErrorCode.SESSION_NOT_FOUND));
     }
 
     private static int parseLimit(String value) {
@@ -104,8 +113,17 @@ public class RuntimeEventQueryService {
             }
             return limit;
         } catch (NumberFormatException error) {
-            throw RuntimeFailures.raise(
-                    "runtime.events.query.validate", RuntimeErrorCode.INVALID_EVENT_LIST_QUERY, error, "limit", value);
+            RuntimeErrorCode errorCode = RuntimeErrorCode.INVALID_EVENT_LIST_QUERY;
+            LOGGER.atWarn()
+                    .addKeyValue("event", "campusclaw.failure")
+                    .addKeyValue("operation", "runtime.events.limit.parse")
+                    .addKeyValue("errorCode", errorCode.name())
+                    .setCause(error)
+                    .log(
+                            "CampusClaw failure: operation={}, errorCode={}",
+                            "runtime.events.limit.parse",
+                            errorCode.name());
+            throw new RuntimeApiException(errorCode);
         }
     }
 }

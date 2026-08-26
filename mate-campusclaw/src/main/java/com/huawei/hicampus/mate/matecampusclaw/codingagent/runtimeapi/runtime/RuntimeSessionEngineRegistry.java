@@ -15,8 +15,8 @@ import com.huawei.hicampus.mate.matecampusclaw.ai.types.Model;
 import com.huawei.hicampus.mate.matecampusclaw.ai.types.ThinkingLevel;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.common.client.mate.MateCredentials;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.agent.AgentDirectorySnapshotDTO;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.error.RuntimeFailures;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.session.AgentSessionFactory;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.session.ManagedAgentSession;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.session.ManagedAgentSessionRequest;
@@ -26,6 +26,8 @@ import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.agent.SubagentEx
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.builtin.ToolEntryPoint;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.cron.AgentScopedCronToolFactory;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 /**
@@ -36,6 +38,8 @@ import org.springframework.stereotype.Component;
  */
 @Component
 public class RuntimeSessionEngineRegistry {
+    private static final Logger LOGGER = LoggerFactory.getLogger(RuntimeSessionEngineRegistry.class);
+
     private static final int OPERATION_LOCK_STRIPES = 256;
 
     private final ConcurrentHashMap<String, RuntimeSessionHolder> sessions = new ConcurrentHashMap<>();
@@ -75,8 +79,7 @@ public class RuntimeSessionEngineRegistry {
                     createHolder(sessionId, snapshot, model, thinking, messages, execution, credentials);
             if (sessions.putIfAbsent(sessionId, holder) != null) {
                 holder.closeSession();
-                throw RuntimeFailures.raise(
-                        "runtime.execution.register", RuntimeErrorCode.SESSION_BUSY, "sessionId", sessionId);
+                throw new RuntimeApiException(RuntimeErrorCode.SESSION_BUSY);
             }
             return holder;
         } catch (RuntimeException error) {
@@ -147,11 +150,7 @@ public class RuntimeSessionEngineRegistry {
         boolean allowed = runtime.metadata().bindingModels().stream()
                 .anyMatch(configured -> matchesConfiguredModel(model, configured));
         if (!allowed) {
-            throw RuntimeFailures.raise(
-                    "runtime.execution.model.validate",
-                    RuntimeErrorCode.AGENT_MODEL_NOT_CONFIGURED,
-                    "modelId",
-                    model.id());
+            throw new RuntimeApiException(RuntimeErrorCode.AGENT_MODEL_NOT_CONFIGURED);
         }
         return model;
     }
@@ -163,7 +162,16 @@ public class RuntimeSessionEngineRegistry {
 
     private void acquireCapacity() {
         if (!capacity.tryAcquire()) {
-            throw RuntimeFailures.raise("runtime.execution.capacity", RuntimeErrorCode.RUNTIME_CAPACITY_EXCEEDED);
+            RuntimeErrorCode errorCode = RuntimeErrorCode.RUNTIME_CAPACITY_EXCEEDED;
+            LOGGER.atError()
+                    .addKeyValue("event", "campusclaw.failure")
+                    .addKeyValue("operation", "runtime.execution.capacity")
+                    .addKeyValue("errorCode", errorCode.name())
+                    .log(
+                            "CampusClaw failure: operation={}, errorCode={}",
+                            "runtime.execution.capacity",
+                            errorCode.name());
+            throw new RuntimeApiException(errorCode);
         }
     }
 

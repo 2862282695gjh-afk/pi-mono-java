@@ -30,6 +30,9 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.slf4j.spi.LoggingEventBuilder;
 import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.web.reactive.function.client.WebClientRequestException;
 
@@ -40,6 +43,8 @@ import org.springframework.web.reactive.function.client.WebClientRequestExceptio
  * @since [br_eCampusCore 26.0.0]
  */
 final class MateChatSseParser {
+    private static final Logger LOGGER = LoggerFactory.getLogger(MateChatSseParser.class);
+
     private static final List<String> REASONING_FIELDS =
             List.of("reasoning_content", "reasoning", "reasoning_text", "reasoning_details");
 
@@ -104,11 +109,9 @@ final class MateChatSseParser {
 
     void completeWithoutDone() {
         if (!terminal.get()) {
-            fail(MateInvocationFailures.raise(
-                    "mate.response.sse.complete",
-                    MateInvocationErrorCode.UPSTREAM_STREAM_ERROR,
-                    "modelId",
-                    model.id()));
+            MateInvocationErrorCode errorCode = MateInvocationErrorCode.UPSTREAM_STREAM_ERROR;
+            recordFailure("mate.response.sse.complete", errorCode, null);
+            fail(new MateModelInvocationException(errorCode));
         }
     }
 
@@ -140,8 +143,9 @@ final class MateChatSseParser {
         } catch (MateModelInvocationException error) {
             fail(error);
         } catch (Exception error) {
-            fail(MateInvocationFailures.raise(
-                    "mate.response.sse.parse", MateInvocationErrorCode.INVALID_CHAT_SSE, error, "modelId", model.id()));
+            MateInvocationErrorCode errorCode = MateInvocationErrorCode.INVALID_CHAT_SSE;
+            recordFailure("mate.response.sse.parse", errorCode, error);
+            fail(new MateModelInvocationException(errorCode));
         }
     }
 
@@ -195,11 +199,9 @@ final class MateChatSseParser {
         if (reasoningField == null) {
             reasoningField = field;
         } else if (!reasoningField.equals(field)) {
-            throw MateInvocationFailures.raise(
-                    "mate.response.reasoning.validate",
-                    MateInvocationErrorCode.INVALID_CHAT_SSE,
-                    "modelId",
-                    model.id());
+            MateInvocationErrorCode errorCode = MateInvocationErrorCode.INVALID_CHAT_SSE;
+            recordFailure("mate.response.reasoning.validate", errorCode, null);
+            throw new MateModelInvocationException(errorCode);
         }
     }
 
@@ -304,7 +306,7 @@ final class MateChatSseParser {
         }
         if (stopReason == StopReason.ERROR) {
             terminalErrorCode = MateInvocationErrorCode.MODEL_CONTENT_FILTERED;
-            MateInvocationFailures.record("mate.response.finish", terminalErrorCode, "modelId", model.id());
+            recordFailure("mate.response.finish", terminalErrorCode, null);
         }
         stream.pushDone(stopReason, message(stopReason, terminalErrorCode));
     }
@@ -340,12 +342,9 @@ final class MateChatSseParser {
             }
             return mapper.readValue(value, new TypeReference<Map<String, Object>>() {});
         } catch (Exception error) {
-            throw MateInvocationFailures.raise(
-                    "mate.response.toolArguments.parse",
-                    MateInvocationErrorCode.INVALID_CHAT_SSE,
-                    error,
-                    "modelId",
-                    model.id());
+            MateInvocationErrorCode errorCode = MateInvocationErrorCode.INVALID_CHAT_SSE;
+            recordFailure("mate.response.toolArguments.parse", errorCode, error);
+            throw new MateModelInvocationException(errorCode);
         }
     }
 
@@ -379,21 +378,19 @@ final class MateChatSseParser {
 
     private MateModelInvocationException streamError(String data) {
         if (data == null || data.isBlank()) {
-            return MateInvocationFailures.raise(
-                    "mate.response.sse.error", MateInvocationErrorCode.UPSTREAM_STREAM_ERROR, "modelId", model.id());
+            MateInvocationErrorCode errorCode = MateInvocationErrorCode.UPSTREAM_STREAM_ERROR;
+            recordFailure("mate.response.sse.error", errorCode, null);
+            return new MateModelInvocationException(errorCode);
         }
         try {
             String upstreamCode = mapper.readTree(data).path("resCode").asText("UPSTREAM_STREAM_ERROR");
             MateInvocationErrorCode errorCode = MateInvocationErrorCode.fromUpstream(upstreamCode);
-            return MateInvocationFailures.raise(
-                    "mate.response.sse.error", errorCode, "modelId", model.id(), "upstreamErrorCode", upstreamCode);
+            recordFailure("mate.response.sse.error", errorCode, null);
+            return new MateModelInvocationException(errorCode);
         } catch (Exception error) {
-            return MateInvocationFailures.raise(
-                    "mate.response.sse.error",
-                    MateInvocationErrorCode.UPSTREAM_STREAM_ERROR,
-                    error,
-                    "modelId",
-                    model.id());
+            MateInvocationErrorCode errorCode = MateInvocationErrorCode.UPSTREAM_STREAM_ERROR;
+            recordFailure("mate.response.sse.error", errorCode, error);
+            return new MateModelInvocationException(errorCode);
         }
     }
 
@@ -402,7 +399,7 @@ final class MateChatSseParser {
             return invocation.errorCode();
         }
         MateInvocationErrorCode errorCode = transportErrorCode(error);
-        MateInvocationFailures.record("mate.response.stream", errorCode, error, "modelId", model.id());
+        recordFailure("mate.response.stream", errorCode, error);
         return errorCode;
     }
 
@@ -410,8 +407,21 @@ final class MateChatSseParser {
         if (error instanceof MateModelInvocationException invocation) {
             return invocation;
         }
-        return MateInvocationFailures.raise(
-                operation, MateInvocationErrorCode.INVALID_CHAT_SSE, error, "modelId", model.id());
+        MateInvocationErrorCode errorCode = MateInvocationErrorCode.INVALID_CHAT_SSE;
+        recordFailure(operation, errorCode, error);
+        return new MateModelInvocationException(errorCode);
+    }
+
+    private void recordFailure(String operation, MateInvocationErrorCode errorCode, Throwable error) {
+        LoggingEventBuilder event = errorCode.warning() ? LOGGER.atWarn() : LOGGER.atError();
+        event.addKeyValue("event", "campusclaw.failure")
+                .addKeyValue("operation", operation)
+                .addKeyValue("errorCode", errorCode.name())
+                .addKeyValue("modelId", model.id());
+        if (error != null) {
+            event.setCause(error);
+        }
+        event.log("CampusClaw failure: operation={}, errorCode={}", operation, errorCode.name());
     }
 
     private static MateInvocationErrorCode transportErrorCode(Throwable error) {

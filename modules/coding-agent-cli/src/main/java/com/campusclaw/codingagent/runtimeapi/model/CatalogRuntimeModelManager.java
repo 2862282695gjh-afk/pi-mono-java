@@ -12,7 +12,9 @@ import com.campusclaw.codingagent.model.ModelCatalogService;
 import com.campusclaw.codingagent.runtimeapi.agent.AgentDirectorySnapshotDTO;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
-import com.campusclaw.codingagent.runtimeapi.error.RuntimeFailures;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * 以当前模型目录充当独立开发环境 Model Manager 的适配器。
@@ -21,6 +23,8 @@ import com.campusclaw.codingagent.runtimeapi.error.RuntimeFailures;
  * @since [br_eCampusCore 26.0.0]
  */
 public class CatalogRuntimeModelManager implements RuntimeModelManager {
+    private static final Logger LOGGER = LoggerFactory.getLogger(CatalogRuntimeModelManager.class);
+
     private final ModelCatalogService modelCatalogService;
 
     public CatalogRuntimeModelManager(ModelCatalogService modelCatalogService) {
@@ -38,20 +42,25 @@ public class CatalogRuntimeModelManager implements RuntimeModelManager {
             Model selected = modelCatalogService.getAvailableModels().stream()
                     .filter(model -> matchesConfiguredModel(model, modelId))
                     .findFirst()
-                    .orElseThrow(() -> RuntimeFailures.raise(
-                            "runtime.model.resolve", RuntimeErrorCode.AGENT_MODEL_NOT_CONFIGURED, "modelId", modelId));
+                    .orElseThrow(() -> new RuntimeApiException(RuntimeErrorCode.AGENT_MODEL_NOT_CONFIGURED));
             boolean configured = snapshot.enabledModelIds().stream()
                     .anyMatch(candidate -> matchesConfiguredModel(selected, candidate));
             if (!configured) {
-                throw RuntimeFailures.raise(
-                        "runtime.model.validate", RuntimeErrorCode.AGENT_MODEL_NOT_CONFIGURED, "modelId", modelId);
+                throw new RuntimeApiException(RuntimeErrorCode.AGENT_MODEL_NOT_CONFIGURED);
             }
             return selected;
         } catch (RuntimeApiException error) {
             throw error;
         } catch (RuntimeException error) {
-            throw RuntimeFailures.raise(
-                    "runtime.model.resolve", RuntimeErrorCode.MANAGER_UNAVAILABLE, error, "modelId", modelId);
+            RuntimeErrorCode errorCode = RuntimeErrorCode.MANAGER_UNAVAILABLE;
+            LOGGER.atError()
+                    .addKeyValue("event", "campusclaw.failure")
+                    .addKeyValue("operation", "runtime.model.resolve")
+                    .addKeyValue("errorCode", errorCode.name())
+                    .addKeyValue("modelId", modelId)
+                    .setCause(error)
+                    .log("CampusClaw failure: operation={}, errorCode={}", "runtime.model.resolve", errorCode.name());
+            throw new RuntimeApiException(errorCode);
         }
     }
 
@@ -69,8 +78,15 @@ public class CatalogRuntimeModelManager implements RuntimeModelManager {
             }
             return List.copyOf(resolved);
         } catch (RuntimeException error) {
-            throw RuntimeFailures.raise(
-                    "runtime.model.list", RuntimeErrorCode.MANAGER_UNAVAILABLE, error, "agentId", snapshot.agentId());
+            RuntimeErrorCode errorCode = RuntimeErrorCode.MANAGER_UNAVAILABLE;
+            LOGGER.atError()
+                    .addKeyValue("event", "campusclaw.failure")
+                    .addKeyValue("operation", "runtime.model.list")
+                    .addKeyValue("errorCode", errorCode.name())
+                    .addKeyValue("agentId", snapshot.agentId())
+                    .setCause(error)
+                    .log("CampusClaw failure: operation={}, errorCode={}", "runtime.model.list", errorCode.name());
+            throw new RuntimeApiException(errorCode);
         }
     }
 

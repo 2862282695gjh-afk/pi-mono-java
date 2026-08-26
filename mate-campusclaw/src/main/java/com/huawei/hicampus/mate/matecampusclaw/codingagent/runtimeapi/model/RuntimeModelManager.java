@@ -10,7 +10,6 @@ import com.huawei.hicampus.mate.matecampusclaw.ai.types.Model;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.agent.AgentDirectorySnapshotDTO;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.error.RuntimeFailures;
 
 /**
  * Runtime Session 使用的模型校验和解析端口。
@@ -27,8 +26,7 @@ public interface RuntimeModelManager {
 
     default Model resolveAvailableModel(AgentDirectorySnapshotDTO snapshot, String modelId) {
         if (!listAvailableModels(snapshot).contains(modelId)) {
-            throw RuntimeFailures.raise(
-                    "runtime.model.validate", RuntimeErrorCode.MODEL_NOT_AVAILABLE, "modelId", modelId);
+            throw new RuntimeApiException(RuntimeErrorCode.MODEL_NOT_AVAILABLE);
         }
         try {
             return resolveModel(snapshot, modelId);

@@ -10,8 +10,11 @@ import java.util.List;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtime.AgentRuntimeException;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtime.AgentRuntimeManager;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtime.PreparedAgentRuntime;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.error.RuntimeFailures;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * 通过统一 AgentRuntimeManager 准备目录并生成 Runtime API 快照。
@@ -20,6 +23,9 @@ import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.error.Runt
  * @since [br_eCampusCore 26.0.0]
  */
 public class FileAgentDirectoryResolver implements AgentDirectoryResolver {
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(FileAgentDirectoryResolver.class);
+
     private final AgentRuntimeManager runtimeManager;
 
     public FileAgentDirectoryResolver(AgentRuntimeManager runtimeManager) {
@@ -31,26 +37,35 @@ public class FileAgentDirectoryResolver implements AgentDirectoryResolver {
         try {
             return snapshot(runtimeManager.prepare(agentId));
         } catch (IllegalArgumentException error) {
-            throw RuntimeFailures.raise(
-                    "runtime.agent.resolve", RuntimeErrorCode.AGENT_NOT_FOUND, error, "agentId", agentId);
+            RuntimeErrorCode errorCode = RuntimeErrorCode.AGENT_NOT_FOUND;
+            LOGGER.atWarn()
+                    .addKeyValue("event", "campusclaw.failure")
+                    .addKeyValue("operation", "runtime.agent.resolve")
+                    .addKeyValue("errorCode", errorCode.name())
+                    .addKeyValue("agentId", agentId)
+                    .setCause(error)
+                    .log("CampusClaw failure: operation={}, errorCode={}", "runtime.agent.resolve", errorCode.name());
+            throw new RuntimeApiException(errorCode);
         } catch (AgentRuntimeException error) {
-            throw RuntimeFailures.raise(
-                    "runtime.agent.prepare", RuntimeErrorCode.AGENT_NOT_AVAILABLE, error, "agentId", agentId);
+            RuntimeErrorCode errorCode = RuntimeErrorCode.AGENT_NOT_AVAILABLE;
+            LOGGER.atError()
+                    .addKeyValue("event", "campusclaw.failure")
+                    .addKeyValue("operation", "runtime.agent.prepare")
+                    .addKeyValue("errorCode", errorCode.name())
+                    .addKeyValue("agentId", agentId)
+                    .setCause(error)
+                    .log("CampusClaw failure: operation={}, errorCode={}", "runtime.agent.prepare", errorCode.name());
+            throw new RuntimeApiException(errorCode);
         }
     }
 
     private static AgentDirectorySnapshotDTO snapshot(PreparedAgentRuntime runtime) {
         if (!Boolean.TRUE.equals(runtime.metadata().enabled())) {
-            throw RuntimeFailures.raise(
-                    "runtime.agent.validate", RuntimeErrorCode.AGENT_NOT_AVAILABLE, "agentId", runtime.agentId());
+            throw new RuntimeApiException(RuntimeErrorCode.AGENT_NOT_AVAILABLE);
         }
         String defaultModel = runtime.metadata()
                 .defaultModel()
-                .orElseThrow(() -> RuntimeFailures.raise(
-                        "runtime.agent.validate",
-                        RuntimeErrorCode.AGENT_MODEL_NOT_CONFIGURED,
-                        "agentId",
-                        runtime.agentId()));
+                .orElseThrow(() -> new RuntimeApiException(RuntimeErrorCode.AGENT_MODEL_NOT_CONFIGURED));
         List<String> models = validModels(runtime.metadata().bindingModels(), defaultModel);
         return new AgentDirectorySnapshotDTO(
                 runtime.agentId(),
@@ -64,15 +79,11 @@ public class FileAgentDirectoryResolver implements AgentDirectoryResolver {
         LinkedHashSet<String> models = new LinkedHashSet<>();
         for (String model : configured) {
             if (model == null || model.isBlank() || !models.add(model)) {
-                throw RuntimeFailures.raise("runtime.agent.validate", RuntimeErrorCode.AGENT_MODEL_NOT_CONFIGURED);
+                throw new RuntimeApiException(RuntimeErrorCode.AGENT_MODEL_NOT_CONFIGURED);
             }
         }
         if (!models.contains(defaultModel)) {
-            throw RuntimeFailures.raise(
-                    "runtime.agent.validate",
-                    RuntimeErrorCode.AGENT_MODEL_NOT_CONFIGURED,
-                    "defaultModelId",
-                    defaultModel);
+            throw new RuntimeApiException(RuntimeErrorCode.AGENT_MODEL_NOT_CONFIGURED);
         }
         return List.copyOf(models);
     }

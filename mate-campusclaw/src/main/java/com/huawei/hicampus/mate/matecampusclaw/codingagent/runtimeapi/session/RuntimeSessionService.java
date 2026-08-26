@@ -15,13 +15,14 @@ import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.agent.Runt
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.error.RuntimeFailures;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.model.RuntimeModelManager;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.persistence.RuntimeSessionRepository;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.persistence.SessionDeletionStatus;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.vo.CreateSessionResponseVO;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.vo.GetSessionResponseVO;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 /**
@@ -32,6 +33,8 @@ import org.springframework.stereotype.Service;
  */
 @Service
 public class RuntimeSessionService {
+    private static final Logger LOGGER = LoggerFactory.getLogger(RuntimeSessionService.class);
+
     private final RuntimeSessionRepository repository;
 
     private final AgentDirectoryResolver agentDirectoryResolver;
@@ -76,22 +79,23 @@ public class RuntimeSessionService {
         } catch (RuntimeApiException error) {
             throw error;
         } catch (RuntimeException error) {
-            throw RuntimeFailures.raise(
-                    "runtime.session.create",
-                    RuntimeErrorCode.SESSION_INITIALIZATION_FAILED,
-                    error,
-                    "agentId",
-                    agentId,
-                    "sessionId",
-                    session.getId());
+            RuntimeErrorCode errorCode = RuntimeErrorCode.SESSION_INITIALIZATION_FAILED;
+            LOGGER.atError()
+                    .addKeyValue("event", "campusclaw.failure")
+                    .addKeyValue("operation", "runtime.session.create")
+                    .addKeyValue("errorCode", errorCode.name())
+                    .addKeyValue("agentId", agentId)
+                    .addKeyValue("sessionId", session.getId())
+                    .setCause(error)
+                    .log("CampusClaw failure: operation={}, errorCode={}", "runtime.session.create", errorCode.name());
+            throw new RuntimeApiException(errorCode);
         }
     }
 
     public RuntimeSessionView<GetSessionResponseVO> get(String sessionId) {
         RuntimeSessionDTO session = repository
                 .find(sessionId)
-                .orElseThrow(() -> RuntimeFailures.raise(
-                        "runtime.session.find", RuntimeErrorCode.SESSION_NOT_FOUND, "sessionId", sessionId));
+                .orElseThrow(() -> new RuntimeApiException(RuntimeErrorCode.SESSION_NOT_FOUND));
         return responseAssembler.getView(session);
     }
 
@@ -99,14 +103,20 @@ public class RuntimeSessionService {
         try {
             SessionDeletionStatus status = repository.beginDeletion(sessionId, now());
             if (status == SessionDeletionStatus.BUSY) {
-                throw RuntimeFailures.raise(
-                        "runtime.session.delete", RuntimeErrorCode.SESSION_BUSY, "sessionId", sessionId);
+                throw new RuntimeApiException(RuntimeErrorCode.SESSION_BUSY);
             }
         } catch (RuntimeApiException error) {
             throw error;
         } catch (RuntimeException error) {
-            throw RuntimeFailures.raise(
-                    "runtime.session.delete", RuntimeErrorCode.SESSION_DELETE_FAILED, error, "sessionId", sessionId);
+            RuntimeErrorCode errorCode = RuntimeErrorCode.SESSION_DELETE_FAILED;
+            LOGGER.atError()
+                    .addKeyValue("event", "campusclaw.failure")
+                    .addKeyValue("operation", "runtime.session.delete")
+                    .addKeyValue("errorCode", errorCode.name())
+                    .addKeyValue("sessionId", sessionId)
+                    .setCause(error)
+                    .log("CampusClaw failure: operation={}, errorCode={}", "runtime.session.delete", errorCode.name());
+            throw new RuntimeApiException(errorCode);
         }
     }
 
@@ -126,8 +136,7 @@ public class RuntimeSessionService {
 
     private static void requireThinkingCapableDefaultModel(Model model) {
         if (!model.reasoning()) {
-            throw RuntimeFailures.raise(
-                    "runtime.model.validate", RuntimeErrorCode.AGENT_MODEL_NOT_CONFIGURED, "modelId", model.id());
+            throw new RuntimeApiException(RuntimeErrorCode.AGENT_MODEL_NOT_CONFIGURED);
         }
     }
 

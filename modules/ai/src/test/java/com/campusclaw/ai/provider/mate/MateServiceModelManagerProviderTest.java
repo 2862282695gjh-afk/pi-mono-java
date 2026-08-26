@@ -133,6 +133,7 @@ class MateServiceModelManagerProviderTest {
                 1L,
                 failureLogs.list.stream()
                         .filter(event -> event.getLevel() == Level.WARN
+                                && event.getLoggerName().equals(MateChatRequestMapper.class.getName())
                                 && event.getFormattedMessage().contains("errorCode=UNSUPPORTED_MATE_CHAT_CONTENT"))
                         .count());
         assertEquals(0, mate.getRequestCount());
@@ -194,7 +195,8 @@ class MateServiceModelManagerProviderTest {
         assertEquals(MateInvocationErrorCode.MODEL_RATE_LIMITED.name(), error.errorCode());
         assertNull(error.errorMessage());
         assertTrue(failureLogs.list.stream()
-                .anyMatch(event -> event.getFormattedMessage().contains("errorCode=MODEL_RATE_LIMITED")
+                .anyMatch(event -> event.getLoggerName().equals(MateServiceModelManagerProvider.class.getName())
+                        && event.getFormattedMessage().contains("errorCode=MODEL_RATE_LIMITED")
                         && !event.getFormattedMessage().contains("private upstream detail")));
     }
 
@@ -212,7 +214,8 @@ class MateServiceModelManagerProviderTest {
         assertEquals(
                 1L,
                 failureLogs.list.stream()
-                        .filter(event -> event.getFormattedMessage().contains("errorCode=INVALID_CHAT_SSE")
+                        .filter(event -> event.getLoggerName().equals(MateChatSseParser.class.getName())
+                                && event.getFormattedMessage().contains("errorCode=INVALID_CHAT_SSE")
                                 && event.getThrowableProxy() != null)
                         .count());
     }
@@ -361,6 +364,6 @@ class MateServiceModelManagerProviderTest {
     }
 
     private static Logger failureLogger() {
-        return (Logger) LoggerFactory.getLogger(MateInvocationFailures.class);
+        return (Logger) LoggerFactory.getLogger("com.campusclaw.ai.provider.mate");
     }
 }

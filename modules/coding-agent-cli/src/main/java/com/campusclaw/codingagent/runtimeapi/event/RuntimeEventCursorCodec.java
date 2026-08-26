@@ -21,7 +21,6 @@ import javax.crypto.spec.SecretKeySpec;
 
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
-import com.campusclaw.codingagent.runtimeapi.error.RuntimeFailures;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -92,12 +91,17 @@ public class RuntimeEventCursorCodec {
         } catch (RuntimeApiException error) {
             throw error;
         } catch (Exception error) {
-            throw RuntimeFailures.raise(
-                    "runtime.events.cursor.decode",
-                    RuntimeErrorCode.INVALID_EVENT_LIST_QUERY,
-                    error,
-                    "sessionId",
-                    expectedSessionId);
+            log.atWarn()
+                    .addKeyValue("event", "campusclaw.failure")
+                    .addKeyValue("operation", "runtime.events.cursor.decode")
+                    .addKeyValue("errorCode", RuntimeErrorCode.INVALID_EVENT_LIST_QUERY.name())
+                    .addKeyValue("sessionId", expectedSessionId)
+                    .setCause(error)
+                    .log(
+                            "CampusClaw failure: operation={}, errorCode={}",
+                            "runtime.events.cursor.decode",
+                            RuntimeErrorCode.INVALID_EVENT_LIST_QUERY.name());
+            throw invalidCursor();
         }
     }
 
@@ -153,6 +157,6 @@ public class RuntimeEventCursorCodec {
     }
 
     private static RuntimeApiException invalidCursor() {
-        return RuntimeFailures.raise("runtime.events.cursor.decode", RuntimeErrorCode.INVALID_EVENT_LIST_QUERY);
+        return new RuntimeApiException(RuntimeErrorCode.INVALID_EVENT_LIST_QUERY);
     }
 }

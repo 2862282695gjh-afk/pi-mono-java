@@ -72,7 +72,7 @@ class FileAgentDirectoryResolverTest {
         assertThat(output)
                 .contains("operation=runtime.agent.prepare")
                 .contains("errorCode=AGENT_NOT_AVAILABLE")
-                .contains("agentId=" + AGENT_ID)
+                .contains("agentId=\"" + AGENT_ID + "\"")
                 .contains("AgentRuntimeException: Mate unavailable");
     }
 

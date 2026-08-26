@@ -9,9 +9,10 @@ import java.util.Optional;
 
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
-import com.campusclaw.codingagent.runtimeapi.error.RuntimeFailures;
 import com.campusclaw.codingagent.runtimeapi.vo.ErrorResponseVO;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.context.MessageSource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
@@ -33,6 +34,8 @@ import jakarta.servlet.http.HttpServletRequest;
  */
 @RestControllerAdvice(basePackages = "com.campusclaw.codingagent.runtimeapi.web")
 public class RuntimeExceptionHandler {
+    private static final Logger log = LoggerFactory.getLogger(RuntimeExceptionHandler.class);
+
     private final MessageSource messageSource;
 
     public RuntimeExceptionHandler(MessageSource messageSource) {
@@ -47,14 +50,14 @@ public class RuntimeExceptionHandler {
     @ExceptionHandler({HttpMessageNotReadableException.class, MethodArgumentNotValidException.class})
     public ResponseEntity<ErrorResponseVO> handleInvalidBody(Exception error, HttpServletRequest request) {
         RuntimeErrorCode errorCode = classifyInvalidBody(request);
-        RuntimeFailures.record(
-                "runtime.http.body.validate",
-                errorCode,
-                error,
-                "method",
-                request.getMethod(),
-                "path",
-                request.getRequestURI());
+        log.atWarn()
+                .addKeyValue("event", "campusclaw.failure")
+                .addKeyValue("operation", "runtime.http.body.validate")
+                .addKeyValue("errorCode", errorCode.name())
+                .addKeyValue("method", request.getMethod())
+                .addKeyValue("path", request.getRequestURI())
+                .setCause(error)
+                .log("CampusClaw failure: operation={}, errorCode={}", "runtime.http.body.validate", errorCode.name());
         return response(errorCode, request);
     }
 
@@ -62,27 +65,33 @@ public class RuntimeExceptionHandler {
     public ResponseEntity<ErrorResponseVO> handleInvalidParameter(
             HandlerMethodValidationException error, HttpServletRequest request) {
         RuntimeErrorCode errorCode = classifyInvalidParameter(error);
-        RuntimeFailures.record(
-                "runtime.http.parameter.validate",
-                errorCode,
-                error,
-                "method",
-                request.getMethod(),
-                "path",
-                request.getRequestURI());
+        log.atWarn()
+                .addKeyValue("event", "campusclaw.failure")
+                .addKeyValue("operation", "runtime.http.parameter.validate")
+                .addKeyValue("errorCode", errorCode.name())
+                .addKeyValue("method", request.getMethod())
+                .addKeyValue("path", request.getRequestURI())
+                .setCause(error)
+                .log(
+                        "CampusClaw failure: operation={}, errorCode={}",
+                        "runtime.http.parameter.validate",
+                        errorCode.name());
         return response(errorCode, request);
     }
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponseVO> handleUnexpectedError(Exception error, HttpServletRequest request) {
-        RuntimeFailures.record(
-                "runtime.http.request",
-                RuntimeErrorCode.INTERNAL_ERROR,
-                error,
-                "method",
-                request.getMethod(),
-                "path",
-                request.getRequestURI());
+        log.atError()
+                .addKeyValue("event", "campusclaw.failure")
+                .addKeyValue("operation", "runtime.http.request")
+                .addKeyValue("errorCode", RuntimeErrorCode.INTERNAL_ERROR.name())
+                .addKeyValue("method", request.getMethod())
+                .addKeyValue("path", request.getRequestURI())
+                .setCause(error)
+                .log(
+                        "CampusClaw failure: operation={}, errorCode={}",
+                        "runtime.http.request",
+                        RuntimeErrorCode.INTERNAL_ERROR.name());
         return response(RuntimeErrorCode.INTERNAL_ERROR, request);
     }
 

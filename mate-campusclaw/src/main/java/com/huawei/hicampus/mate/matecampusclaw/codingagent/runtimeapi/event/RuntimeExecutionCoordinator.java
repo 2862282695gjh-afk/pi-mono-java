@@ -14,7 +14,6 @@ import java.util.concurrent.TimeoutException;
 import com.huawei.hicampus.mate.matecampusclaw.ai.types.StopReason;
 import com.huawei.hicampus.mate.matecampusclaw.ai.types.UserMessage;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.error.RuntimeFailures;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.persistence.RuntimeSessionRepository;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.runtime.RuntimeActiveExecution;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.runtime.RuntimeExecutionProperties;
@@ -22,6 +21,8 @@ import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.runtime.Ru
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.runtime.RuntimeSessionEngineRegistry;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.runtime.RuntimeSessionHolder;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 /**
@@ -32,6 +33,8 @@ import org.springframework.stereotype.Component;
  */
 @Component
 public class RuntimeExecutionCoordinator {
+    private static final Logger LOGGER = LoggerFactory.getLogger(RuntimeExecutionCoordinator.class);
+
     private final RuntimeSessionEngineRegistry engineRegistry;
 
     private final RuntimeSessionRepository repository;
@@ -211,11 +214,26 @@ public class RuntimeExecutionCoordinator {
 
     private static void recordFailure(String sessionId, RuntimeEventProjector projector, Throwable failure) {
         if (failure != null) {
-            RuntimeFailures.record(
-                    "runtime.execution", RuntimeErrorCode.SESSION_EXECUTION_FAILED, failure, "sessionId", sessionId);
+            LOGGER.atError()
+                    .addKeyValue("event", "campusclaw.failure")
+                    .addKeyValue("operation", "runtime.execution")
+                    .addKeyValue("errorCode", RuntimeErrorCode.SESSION_EXECUTION_FAILED.name())
+                    .addKeyValue("sessionId", sessionId)
+                    .setCause(failure)
+                    .log(
+                            "CampusClaw failure: operation={}, errorCode={}",
+                            "runtime.execution",
+                            RuntimeErrorCode.SESSION_EXECUTION_FAILED.name());
         } else if (projector.terminalReason() == StopReason.ERROR && projector.terminalErrorCode() == null) {
-            RuntimeFailures.record(
-                    "runtime.execution", RuntimeErrorCode.SESSION_EXECUTION_FAILED, "sessionId", sessionId);
+            LOGGER.atError()
+                    .addKeyValue("event", "campusclaw.failure")
+                    .addKeyValue("operation", "runtime.execution")
+                    .addKeyValue("errorCode", RuntimeErrorCode.SESSION_EXECUTION_FAILED.name())
+                    .addKeyValue("sessionId", sessionId)
+                    .log(
+                            "CampusClaw failure: operation={}, errorCode={}",
+                            "runtime.execution",
+                            RuntimeErrorCode.SESSION_EXECUTION_FAILED.name());
         }
     }
 

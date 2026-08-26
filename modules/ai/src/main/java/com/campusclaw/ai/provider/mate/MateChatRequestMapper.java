@@ -24,6 +24,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 /**
  * 将 AgentLoop Context 转换为 Mate Chat JSON 子集。
  *
@@ -31,6 +34,8 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
  * @since [br_eCampusCore 26.0.0]
  */
 final class MateChatRequestMapper {
+    private static final Logger LOGGER = LoggerFactory.getLogger(MateChatRequestMapper.class);
+
     private final ObjectMapper mapper;
 
     MateChatRequestMapper(ObjectMapper mapper) {
@@ -179,17 +184,29 @@ final class MateChatRequestMapper {
         try {
             return mapper.writeValueAsString(call.arguments());
         } catch (JsonProcessingException error) {
-            throw MateInvocationFailures.raise(
-                    "mate.request.toolArguments.serialize",
-                    MateInvocationErrorCode.INVALID_TOOL_ARGUMENTS,
-                    error,
-                    "toolName",
-                    call.name());
+            MateInvocationErrorCode errorCode = MateInvocationErrorCode.INVALID_TOOL_ARGUMENTS;
+            LOGGER.atWarn()
+                    .addKeyValue("event", "campusclaw.failure")
+                    .addKeyValue("operation", "mate.request.toolArguments.serialize")
+                    .addKeyValue("errorCode", errorCode.name())
+                    .addKeyValue("toolName", call.name())
+                    .setCause(error)
+                    .log(
+                            "CampusClaw failure: operation={}, errorCode={}",
+                            "mate.request.toolArguments.serialize",
+                            errorCode.name());
+            throw new MateModelInvocationException(errorCode);
         }
     }
 
     private static MateModelInvocationException unsupported(String message) {
-        return MateInvocationFailures.raise(
-                "mate.request.map", MateInvocationErrorCode.UNSUPPORTED_MATE_CHAT_CONTENT, "reason", message);
+        MateInvocationErrorCode errorCode = MateInvocationErrorCode.UNSUPPORTED_MATE_CHAT_CONTENT;
+        LOGGER.atWarn()
+                .addKeyValue("event", "campusclaw.failure")
+                .addKeyValue("operation", "mate.request.map")
+                .addKeyValue("errorCode", errorCode.name())
+                .addKeyValue("reason", message)
+                .log("CampusClaw failure: operation={}, errorCode={}", "mate.request.map", errorCode.name());
+        return new MateModelInvocationException(errorCode);
     }
 }

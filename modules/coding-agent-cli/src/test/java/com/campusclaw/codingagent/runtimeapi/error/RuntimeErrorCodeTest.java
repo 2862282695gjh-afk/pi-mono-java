@@ -47,4 +47,14 @@ class RuntimeErrorCodeTest {
                 .hasValue(3);
         assertThat(RuntimeErrorCode.SESSION_BUSY.retryAfterSeconds()).isEmpty();
     }
+
+    @Test
+    void runtimeApiExceptionCarriesOnlyErrorCode() {
+        RuntimeApiException error = new RuntimeApiException(RuntimeErrorCode.INTERNAL_ERROR);
+
+        assertThat(error.getMessage()).isEqualTo("INTERNAL_ERROR");
+        assertThat(error.errorCode()).isEqualTo(RuntimeErrorCode.INTERNAL_ERROR);
+        assertThat(error.getCause()).isNull();
+        assertThat(error.getStackTrace()).isEmpty();
+    }
 }
