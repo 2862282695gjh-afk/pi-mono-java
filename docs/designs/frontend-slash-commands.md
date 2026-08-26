@@ -73,6 +73,9 @@ ComposerBox → App.submit() → useRuntimeApi.sendMessage(message)
 
 **默认只返回 `webCapable=true` 的命令**。无需会话上下文(命令集是进程级静态数据)。
 
+**[复审①已采纳] `all=true` 升级为首版正式契约**:不带参数只返回 `webCapable=true`(兼容仅需菜单的调用方);`all=true` 返回全集——**三态 matcher 的数据源**(区分 web-reserved 与 unknown 必需,非诊断用途)。调用方:已认证的 Runtime API 使用者,与其它端点同权限;返回幂等静态,无副作用。
+
+
 **[批注①已采纳] 唯一目录源 = `WebCommandCatalog` Bean**:新增 Spring Bean `WebCommandCatalog`(见 2.1/2.2)持有**全部**已知命令(含 webCapable=false 的 TUI 专属项),它同时是菜单列表、前端 `matchCommand` 对照集、`/events` 守卫、`/commands/{name}` 执行端点的**唯一来源**——不存在第二份注册表。批注指出的"菜单只认子集、守卫认全量"断路由同源消除:TUI-only 命令(如 `/hotkeys`)在 events 被拒后,`POST /commands/{name}` 返回**稳定的 `COMMAND_NOT_AVAILABLE_ON_WEB`(400)**而非 404,前端据此提示"该命令仅在终端可用"。三态语义:
 
 | 输入 | 菜单 | events 守卫 | commands 执行 |
@@ -174,20 +177,29 @@ public record WebCommandDefinition(
         String description,
         String argsHint,
         String category,
-        BiFunction<RuntimeSessionHolder, String, CommandOutcome> handler) {}
+        BiFunction<CommandExecutionContext, String, CommandOutcome> handler) {}
+
+// CommandExecutionContext: sessionId + RuntimeSessionService(持久化会话读取),
+// 不持有 RuntimeSessionHolder(idle 会话无 Holder,见复审②)。
 ```
+
+**[复审②已采纳] handler 上下文改为持久层,不依赖 `RuntimeSessionHolder`**。批注属实:`RuntimeSessionEngineRegistry` 类注释明确"不缓存 idle Session"、Holder 随执行结束释放——而命令恰在非 running 态执行,届时 Holder 已不可用。修订:
+
+- `WebCommandDefinition.handler` 签名改为 `Function<CommandExecutionContext, CommandOutcome>`,`CommandExecutionContext` 携带 `sessionId` + `RuntimeSessionService`(现有持久化会话服务,`RuntimeSessionConfigurationService` 同款读取路径)
+- `model`/`thinking` 空参查询:从会话存储读(`requireSession(sessionId)`),不经 Holder
+- `/new`:**降级为纯前端动作**——不出现在命令端点注册表(matchCommand 三态仍判定为 executable,但 execute 直接本地清视图,零网络请求);注册表实际后端命令只剩 `model`/`thinking`(查询) + `help`/`settings`
 
 **为什么不复用 `SlashCommandRegistry`**:TUI 命令的 `SlashCommandContext` 携带 `AgentSession + OutputWriter`(终端语义),27 个命令大量直接操作 TUI 状态;Web 侧上下文是 `RuntimeSessionHolder`(runtime 会话)。硬桥接需要重写所有命令的上下文适配,不如为新语义建独立注册表,首版只注册 Web 能做的 5 个命令(见下表;model/thinking 写操作走别名,注册表内仅空参查询),handler 内部**复用底层会话操作方法**。
 
 `WebCommandCatalog` 注册表(**首版 5 个**,与批注④决议一致;model/thinking 的写操作走前端别名不经此端点,见 1.2):
 
-| name | argsHint | handler 要点(都操作 `RuntimeSessionHolder` 现有能力) |
+| name | argsHint | handler 要点(经 `CommandExecutionContext` 读持久化会话,复审②) |
 |---|---|---|
-| `model` | `[model-id]` | **仅空参查询**:读当前模型 id 返回;带参时返回 400 提示走 `/model` 端点(别名,见 1.2) |
-| `thinking` | `[on\|off]` | **仅空参查询**:读当前思考级别;带参同样 400 引导别名 |
-| `new` | — | effects=conversationReset(客户端本地清视图,见 3.6 归属表);**不物理删会话** |
-| `help` | — | 输出 webCapable 命令列表文本 |
-| `settings` | — | 只读:当前模型/思考级别摘要 |
+| `model` | `[model-id]` | **仅空参查询**:`requireSession(sessionId)` 读模型 id;带参 400 引导别名(见 1.2) |
+| `thinking` | `[on\|off]` | **仅空参查询**:读思考级别;带参同样 400 |
+| `new` | — | **纯前端动作**(复审②):不注册后端 handler;三态判定 executable 但 execute 在前端本地清视图,零网络请求 |
+| `help` | — | 输出 webCapable 命令列表文本(无需会话) |
+| `settings` | — | 只读:当前模型/思考级别摘要(持久层读取) |
 
 (Catalog 同时登记 webCapable=false 的 TUI 专属命令名——只为守卫与三态判定,不可执行,不出现在菜单;历史版本曾含 name/compact/export,削减理由见批注④表。)
 
@@ -309,7 +321,7 @@ export function useSlashCommands(runtime: ReturnType<typeof useRuntimeApi>) {
   }
 
   /** 执行命令并分发 effects;返回结果供调用方插入系统消息 */
-  async function execute(name: string, args: string): Promise<SlashCommandResult> {
+async function execute(name: string, args: string): Promise<SlashCommandResult> {
     // 【别名分流(批注②)】model/thinking 带参时直接走既有端点(If-Match 完整):
     //   model+参数   → await runtime.changeModel(args) → 组装 {kind:'ok', effects:{modelChanged:true}}
     //   thinking+参数 → 解析 on/off → runtime.changeThinking(...) → 同上
@@ -323,6 +335,8 @@ export function useSlashCommands(runtime: ReturnType<typeof useRuntimeApi>) {
   return { commands, loaded, executing, load, matchCommand, execute };
 }
 ```
+
+**[复审③已采纳] 草稿清空条件收紧**:`runCommand()` 只在 `kind === 'ok'` 时清空 `message`;`kind === 'error'`(参数错/未知模型/412 冲突)**保留草稿**让用户改后重试;网络/HTTP 异常继续抛出走 catch(现有草稿保留语义)。对应 `runCommand` 伪代码中 `message.value = ''` 一行迁移到 `if (result.kind === 'ok')` 分支内;别名路径的 412 同样组装 `kind:'error'`(草稿保留)而非 ok。
 
 **关键约定**:`matchCommand` 是**唯一**的拦截判定点,与后端 `isRegistered` 同规则(首个 token 匹配),保证前端拦截与后端守卫行为一致——不匹配的 `/xxx` 走普通消息,两边都不会误杀。
 
@@ -406,13 +420,20 @@ function onKeydown(event: KeyboardEvent): void {
 ```ts
 function updateText(event: Event): void {
   // ...现有高度自适应逻辑不变...
-  const value = textarea.value;
-  // '/' 触发:光标前文本是单独的首个 '/'(即正在输入第一个 token)且非 running 态
-  menuActive.value = !props.running
-      && value.startsWith('/')
-      && !value.slice(1).includes(' ');   // 参数出现后菜单收起(命令名已确定)
+  const parsed = parseSlashInput(textarea.value);   // 复审④:与后端同规范
+  menuActive.value = !props.running && parsed !== null && parsed.arguments === '';
 }
 ```
+
+**[复审④已采纳] 菜单显隐复用同一 parser**:`updateText` 不再手写 `startsWith('/') + 检查普通空格`,改为调用 `parseSlashInput(value)`(与后端共享规范的 TS 实现,1.3 锁定用例同源):
+
+```ts
+const parsed = parseSlashInput(value);
+menuActive.value = !props.running && parsed !== null && parsed.arguments === '';
+// 菜单激活 = 解析出命令名且还未输入分隔符(空格/制表/换行任一都正确收起);
+// 过滤前缀 = parsed.name(而非手切 value);前导空白容忍与后端一致('  /model' 也出菜单)
+```
+
 
 提交路径:菜单激活时 Enter 走 `chooseActive()`(emit `commandSubmit`),不走原 `submit`。
 
@@ -449,7 +470,7 @@ async function runCommand(payload: { name: string; arguments: string }): Promise
       // /new:仅清本页时间线(clearSessionView),系统消息注明"会话历史仍在服务端"
     }
     // 其余 effects 已在 useSlashCommands.execute 内分发(刷新会话/侧栏)
-    message.value = '';   // 命令成功后清空输入(与消息提交一致)
+    if (result.kind === 'ok') message.value = '';   // 复审③:仅成功清空;error 保留草稿供修改重试
   } catch {
     // RuntimeApiError:显示 lastError(现有错误条);草稿保留
   } finally {
