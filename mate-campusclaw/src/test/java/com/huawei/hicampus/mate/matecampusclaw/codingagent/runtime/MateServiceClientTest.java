@@ -11,6 +11,7 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
 
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.config.CampusMateClientProperties;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import org.junit.jupiter.api.AfterEach;
@@ -35,10 +36,8 @@ class MateServiceClientTest {
     void setUp() throws Exception {
         server = new MockWebServer();
         server.start();
-        var properties = new AgentRuntimeProperties(
-                server.url("/").uri(), Path.of("agent"), Duration.ofSeconds(1L), Duration.ofSeconds(2L));
-        client = new MateServiceClient(
-                properties, new ObjectMapper(), AGENT_RUNTIME_PATH_TEMPLATE, SKILL_INFO_QUERY_PATH_TEMPLATE);
+        var properties = new AgentRuntimeProperties(Path.of("agent"), Duration.ofSeconds(1L), Duration.ofSeconds(2L));
+        client = new MateServiceClient(properties, campusMateProperties(), new ObjectMapper());
     }
 
     @AfterEach
@@ -257,10 +256,9 @@ class MateServiceClientTest {
 
     @Test
     void readsRuntimeEnvelopeWithConfiguredSuccessCode() {
-        var properties = new AgentRuntimeProperties(
-                server.url("/").uri(), Path.of("agent"), Duration.ofSeconds(1L), Duration.ofSeconds(2L), "200");
-        client = new MateServiceClient(
-                properties, new ObjectMapper(), AGENT_RUNTIME_PATH_TEMPLATE, SKILL_INFO_QUERY_PATH_TEMPLATE);
+        var properties =
+                new AgentRuntimeProperties(Path.of("agent"), Duration.ofSeconds(1L), Duration.ofSeconds(2L), "200");
+        client = new MateServiceClient(properties, campusMateProperties(), new ObjectMapper());
         server.enqueue(
                 new MockResponse()
                         .setHeader("Content-Type", "application/json")
@@ -334,10 +332,10 @@ class MateServiceClientTest {
 
     @Test
     void usesConfiguredEndpointPathTemplates() throws Exception {
-        var properties = new AgentRuntimeProperties(
-                server.url("/").uri(), Path.of("agent"), Duration.ofSeconds(1L), Duration.ofSeconds(2L));
-        client =
-                new MateServiceClient(properties, new ObjectMapper(), "/custom/agents/%s/runtime", "/custom/skills/%s");
+        var properties = new AgentRuntimeProperties(Path.of("agent"), Duration.ofSeconds(1L), Duration.ofSeconds(2L));
+        CampusMateClientProperties campusMateProperties = campusMateProperties(
+                "/mate-service/custom%20segment/agents/%s/runtime", "/mate-service/custom%20segment/skills/%s");
+        client = new MateServiceClient(properties, campusMateProperties, new ObjectMapper());
         server.enqueue(
                 new MockResponse().setHeader("Content-Type", "application/json").setBody("{}"));
         server.enqueue(new MockResponse()
@@ -348,22 +346,33 @@ class MateServiceClientTest {
         client.querySkillInfo("skill-11111111111111111111111111111111");
 
         assertEquals(
-                "/custom/agents/agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/runtime",
+                "/mate-service/custom%20segment/agents/agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/runtime",
                 server.takeRequest().getPath());
         assertEquals(
-                "/custom/skills/skill-11111111111111111111111111111111",
+                "/mate-service/custom%20segment/skills/skill-11111111111111111111111111111111",
                 server.takeRequest().getPath());
     }
 
     private MateServiceClient newClientWithMaxResponseBytes(int maxResponseBytes) {
         var properties = new AgentRuntimeProperties(
+                Path.of("agent"), Duration.ofSeconds(1L), Duration.ofSeconds(2L), "0", maxResponseBytes);
+        return new MateServiceClient(properties, campusMateProperties(), new ObjectMapper());
+    }
+
+    private CampusMateClientProperties campusMateProperties() {
+        return campusMateProperties(AGENT_RUNTIME_PATH_TEMPLATE, SKILL_INFO_QUERY_PATH_TEMPLATE);
+    }
+
+    private CampusMateClientProperties campusMateProperties(
+            String agentRuntimePathTemplate, String skillInfoPathTemplate) {
+        return new CampusMateClientProperties(
                 server.url("/").uri(),
-                Path.of("agent"),
-                Duration.ofSeconds(1L),
-                Duration.ofSeconds(2L),
-                "0",
-                maxResponseBytes);
-        return new MateServiceClient(
-                properties, new ObjectMapper(), AGENT_RUNTIME_PATH_TEMPLATE, SKILL_INFO_QUERY_PATH_TEMPLATE);
+                new CampusMateClientProperties.Endpoints(
+                        "/mate-service/v1/LLM/chat",
+                        "/mate-service/v1/agents/%s",
+                        agentRuntimePathTemplate,
+                        skillInfoPathTemplate,
+                        "/mate-service/v1/runtime/tools/query",
+                        "/mate-service/v1/runtime/tools/%s/execute"));
     }
 }
