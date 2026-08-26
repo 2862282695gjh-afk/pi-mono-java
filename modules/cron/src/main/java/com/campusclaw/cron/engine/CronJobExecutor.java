@@ -6,6 +6,7 @@ package com.campusclaw.cron.engine;
 
 import java.util.UUID;
 
+import com.campusclaw.cron.model.CronErrorCode;
 import com.campusclaw.cron.model.CronJob;
 import com.campusclaw.cron.model.CronPayload;
 import com.campusclaw.cron.model.CronRunRecord;
@@ -45,8 +46,16 @@ public class CronJobExecutor {
             return append(success(runId, job.id(), startedAt, output));
         } catch (RuntimeException exception) {
             log.error("Cron Job {} execution failed: {}", job.id(), exception.getMessage(), exception);
-            return append(failed(runId, job.id(), startedAt, exception.getMessage()));
+            return append(failed(runId, job.id(), startedAt, stableCodeOf(exception)));
         }
+    }
+
+    // 运行记录只持久化稳定错误码，诊断文本仅输出到日志。
+    private static String stableCodeOf(RuntimeException exception) {
+        if (exception instanceof com.campusclaw.agent.error.StableErrorCode coded) {
+            return coded.stableErrorCode();
+        }
+        return CronErrorCode.CRON_EXECUTION_FAILED.name();
     }
 
     private CronRunRecord append(CronRunRecord record) {
@@ -55,16 +64,32 @@ public class CronJobExecutor {
     }
 
     private static CronRunRecord running(String runId, String jobId, long startedAt) {
-        return new CronRunRecord(runId, jobId, startedAt, 0, CronRunRecord.RunStatus.RUNNING, null, null, 0);
+        return new CronRunRecord(runId, jobId, startedAt, 0, CronRunRecord.RunStatus.RUNNING, null, null, null, 0);
     }
 
     private static CronRunRecord success(String runId, String jobId, long startedAt, String output) {
         return new CronRunRecord(
-                runId, jobId, startedAt, System.currentTimeMillis(), CronRunRecord.RunStatus.SUCCESS, null, output, 0);
+                runId,
+                jobId,
+                startedAt,
+                System.currentTimeMillis(),
+                CronRunRecord.RunStatus.SUCCESS,
+                null,
+                null,
+                output,
+                0);
     }
 
-    private static CronRunRecord failed(String runId, String jobId, long startedAt, String message) {
+    private static CronRunRecord failed(String runId, String jobId, long startedAt, String errorCode) {
         return new CronRunRecord(
-                runId, jobId, startedAt, System.currentTimeMillis(), CronRunRecord.RunStatus.FAILED, message, null, 0);
+                runId,
+                jobId,
+                startedAt,
+                System.currentTimeMillis(),
+                CronRunRecord.RunStatus.FAILED,
+                errorCode,
+                null,
+                null,
+                0);
     }
 }

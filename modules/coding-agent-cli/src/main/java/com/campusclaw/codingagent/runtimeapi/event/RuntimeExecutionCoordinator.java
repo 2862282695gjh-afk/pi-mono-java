@@ -68,7 +68,7 @@ public class RuntimeExecutionCoordinator {
 
     public void start(
             RuntimeSessionHolder holder, RuntimeActiveExecution execution, UserMessage message, Locale locale) {
-        RuntimeEventProjector projector = projectorFactory.create(holder, execution, message);
+        RuntimeEventProjector projector = projectorFactory.create(holder, execution, message, locale);
         RuntimeSubscriptions subscriptions = RuntimeSubscriptions.empty();
         try {
             subscriptions = subscribe(holder, projector);

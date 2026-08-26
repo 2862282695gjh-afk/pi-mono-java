@@ -4,6 +4,7 @@
 
 package com.huawei.hicampus.mate.matecampusclaw.codingagent.common.client;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -12,6 +13,7 @@ import java.util.regex.Pattern;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.common.client.mate.MateCredentials;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.common.client.mate.MateToolClient;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.common.client.mate.MateToolMeta;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.common.client.mate.MateToolResponseException;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.common.dto.AgentInfo;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.common.dto.RequestHeaderInfo;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.common.dto.SkillInfoResult;
@@ -96,7 +98,7 @@ public class HttpMateToolClient implements MateToolClient {
             return queryOrderedToolMeta(queryToolIdsByAgentId(agentId, credentials), credentials);
         } catch (Exception exception) {
             log.error("listAgentTools failed: agentId={}", agentId, exception);
-            throw new IllegalStateException("listAgentTools failed", exception);
+            throw publicFailure("listAgentTools", exception);
         }
     }
 
@@ -107,7 +109,7 @@ public class HttpMateToolClient implements MateToolClient {
             return queryOrderedToolMeta(queryToolIdsBySkillId(skillId, credentials), credentials);
         } catch (Exception exception) {
             log.error("listSkillTools failed: skillId={}", skillId, exception);
-            throw new IllegalStateException("listSkillTools failed", exception);
+            throw publicFailure("listSkillTools", exception);
         }
     }
 
@@ -169,8 +171,8 @@ public class HttpMateToolClient implements MateToolClient {
      * @param toolIds 待查询的工具标识列表
      * @param credentials 本次执行的凭据快照
      * @return 完整工具元数据列表
-     * @throws Exception 网关调用或响应解析失败时抛出
-     * @throws IllegalStateException {@code resCode} 不为 {@code 0} 时抛出
+     * @throws Exception 网关调用或读取失败时抛出
+     * @throws MateToolResponseException 响应体为空或 {@code result.data} 缺失/形状不符时抛出
      */
     protected List<MateToolMeta> queryToolMetaByIds(List<String> toolIds, MateCredentials credentials)
             throws Exception {
@@ -181,14 +183,17 @@ public class HttpMateToolClient implements MateToolClient {
         String body = mapper.writeValueAsString(Map.of("toolIds", toolIds));
         String raw = mateRestUtil.executePostRawRequest(
                 campusMateBaseUrl, toolMetadataQueryPath, toHeaderInfo(credentials), body);
-        JsonNode root = mapper.readTree(raw);
-        String resCode = root.path("resCode").asText("");
-        if (!"0".equals(resCode)) {
-            throw new IllegalStateException("tool metadata query failed: resCode=" + resCode + " resMsg="
-                    + root.path("resMsg").asText(""));
+        JsonNode root = readRoot(raw);
+        JsonNode data = root.path("result").path("data");
+        if (data.isMissingNode() || data.isNull()) {
+            throw new MateToolResponseException("result.data is missing");
         }
-        List<ToolInfo> infos =
-                mapper.convertValue(root.path("result").path("data"), new TypeReference<List<ToolInfo>>() {});
+        List<ToolInfo> infos;
+        try {
+            infos = mapper.convertValue(data, new TypeReference<List<ToolInfo>>() {});
+        } catch (IllegalArgumentException e) {
+            throw new MateToolResponseException("result.data is not a tool metadata list", e);
+        }
         return toMeta(infos);
     }
 
@@ -233,27 +238,42 @@ public class HttpMateToolClient implements MateToolClient {
     }
 
     /**
-     * 解析标准 {@code {resCode, resMsg, result}} 信封并返回指定类型的 {@code result}。
+     * 解析响应中的 {@code result} 字段并转换为指定类型；响应结构包含 {@code resCode}、
+     * {@code resMsg} 和 {@code result} 字段。本客户端不按 {@code resCode} 预判处理结果。
+     * {@code result} 是元数据端点的必需字段:缺失或为 {@code null} 都视为解析失败,
+     * 不允许把畸形响应当作"没有绑定工具"。
      *
      * @param <T> 结果类型
      * @param raw 原始响应体
      * @param type 结果类
-     * @return 解析后的结果；不存在时返回 {@code null}
-     * @throws Exception 解析失败时抛出
-     * @throws IllegalStateException {@code resCode} 不为 {@code 0} 时抛出
+     * @return 解析后的结果；{@code result} 缺失或为 {@code null} 时抛出异常
+     * @throws Exception 请求或读取失败时抛出
+     * @throws MateToolResponseException 响应体为空、非法 JSON、{@code result} 缺失/为 null 或形状不符时抛出
      */
     protected <T> T unwrapResult(String raw, Class<T> type) throws Exception {
-        JsonNode root = mapper.readTree(raw);
-        String resCode = root.path("resCode").asText("");
-        if (!"0".equals(resCode)) {
-            throw new IllegalStateException("gateway call failed: resCode=" + resCode + " resMsg="
-                    + root.path("resMsg").asText(""));
-        }
+        JsonNode root = readRoot(raw);
         JsonNode resultNode = root.path("result");
         if (resultNode.isMissingNode() || resultNode.isNull()) {
-            return null;
+            throw new MateToolResponseException("result is missing or null");
         }
-        return mapper.treeToValue(resultNode, type);
+        try {
+            return mapper.treeToValue(resultNode, type);
+        } catch (IOException e) {
+            throw new MateToolResponseException("result does not match " + type.getSimpleName(), e);
+        }
+    }
+
+    private JsonNode readRoot(String raw) throws IOException {
+        JsonNode root;
+        try {
+            root = mapper.readTree(raw);
+        } catch (IOException e) {
+            throw new MateToolResponseException("response body is not valid JSON", e);
+        }
+        if (root == null || root.isMissingNode()) {
+            throw new MateToolResponseException("response body is empty");
+        }
+        return root;
     }
 
     /**
@@ -334,6 +354,14 @@ public class HttpMateToolClient implements MateToolClient {
             log.error("invokeTool failed: toolId={}", toolId, e);
             return new ToolResult("Mate tool execution request failed", null, true);
         }
+    }
+
+    // 稳定错误码异常原样透出供公开边界映射;其余异常包装为通用失败。
+    private static RuntimeException publicFailure(String operation, Exception exception) {
+        if (exception instanceof MateToolResponseException) {
+            return (MateToolResponseException) exception;
+        }
+        return new IllegalStateException(operation + " failed", exception);
     }
 
     private static RequestHeaderInfo toHeaderInfo(MateCredentials credentials) {

@@ -100,7 +100,7 @@ public class ToolExecutionPipeline {
             }
             return null;
         } catch (Exception e) {
-            return toToolResultMessage(toolCall, toolName, errorResult(messageForException(e)), true);
+            return toToolResultMessage(toolCall, toolName, failureResult(e), true);
         }
     }
 
@@ -126,7 +126,7 @@ public class ToolExecutionPipeline {
             cancellation.initCause(e);
             throw cancellation;
         } catch (Exception e) {
-            return new Outcome(errorResult(messageForException(e)), true);
+            return new Outcome(failureResult(e), true);
         }
     }
 
@@ -141,7 +141,7 @@ public class ToolExecutionPipeline {
             boolean newIsError = afterResult.isError() != null ? afterResult.isError() : outcome.isError();
             return new Outcome(newResult, newIsError);
         } catch (Exception e) {
-            return new Outcome(errorResult(messageForException(e)), true);
+            return new Outcome(failureResult(e), true);
         }
     }
 
@@ -266,7 +266,7 @@ public class ToolExecutionPipeline {
             validateArguments(tool, validatedArgs);
             return null;
         } catch (Exception error) {
-            return toToolResultMessage(toolCall, toolName, errorResult(messageForException(error)), true);
+            return toToolResultMessage(toolCall, toolName, failureResult(error), true);
         }
     }
 
@@ -289,6 +289,15 @@ public class ToolExecutionPipeline {
         return new AgentToolResult(List.of(new TextContent(message)), null);
     }
 
+    private AgentToolResult failureResult(Exception e) {
+        // 携带稳定错误码的异常只输出错误码，公开边界据此渲染本地化文案。
+        if (e instanceof com.campusclaw.agent.error.StableErrorCode coded) {
+            java.util.Map<String, Object> details = java.util.Map.of("errorCode", coded.stableErrorCode());
+            return new AgentToolResult(List.of(new TextContent(coded.stableErrorCode())), details);
+        }
+        return errorResult(messageForException(e));
+    }
+
     private ToolResultMessage toToolResultMessage(
             ToolCall toolCall, String toolName, AgentToolResult result, boolean isError) {
         return new ToolResultMessage(
@@ -296,6 +305,10 @@ public class ToolExecutionPipeline {
     }
 
     private String messageForException(Exception e) {
+        // 携带稳定错误码的异常公开其错误码,不透传内部诊断文本。
+        if (e instanceof com.campusclaw.agent.error.StableErrorCode coded) {
+            return coded.stableErrorCode();
+        }
         return e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
     }
 }

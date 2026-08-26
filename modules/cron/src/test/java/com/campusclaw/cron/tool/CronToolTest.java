@@ -89,10 +89,11 @@ class CronToolTest {
     void triggerAndRunsUseOwnedJob() {
         when(service.getJob("mine")).thenReturn(Optional.of(job("mine", AGENT_ID)));
         when(service.triggerJob("mine"))
-                .thenReturn(new CronRunRecord("run-1", "mine", 1, 2, CronRunRecord.RunStatus.SUCCESS, null, "ok", 0));
+                .thenReturn(
+                        new CronRunRecord("run-1", "mine", 1, 2, CronRunRecord.RunStatus.SUCCESS, null, null, "ok", 0));
         when(service.getRecentRuns("mine", 10))
-                .thenReturn(List.of(
-                        new CronRunRecord("run-1", "mine", 1, 2, CronRunRecord.RunStatus.SUCCESS, null, "ok", 0)));
+                .thenReturn(List.of(new CronRunRecord(
+                        "run-1", "mine", 1, 2, CronRunRecord.RunStatus.SUCCESS, null, null, "ok", 0)));
 
         assertThat(execute(Map.of("action", "trigger", "job_id", "mine"))).contains("run-1");
         assertThat(execute(Map.of("action", "runs", "job_id", "mine"))).contains("SUCCESS");

@@ -268,7 +268,7 @@ class RuntimeEventServiceTest {
             RuntimeEventProperties eventProperties = new RuntimeEventProperties();
             RuntimeExecutionProperties executionProperties = new RuntimeExecutionProperties();
             RuntimeEventCursorCodec cursorCodec = mock(RuntimeEventCursorCodec.class);
-            RuntimeEntryCodec codec = new RuntimeEntryCodec(new ObjectMapper());
+            RuntimeEntryCodec codec = new RuntimeEntryCodec(new ObjectMapper(), messages());
             Clock clock = Clock.fixed(Instant.parse("2026-08-18T00:00:00Z"), ZoneOffset.UTC);
             RuntimeEntryIdGenerator idGenerator = () -> "entry_" + ids.getAndIncrement();
             RuntimeEventQueryService queryService = new RuntimeEventQueryService(repository, codec, cursorCodec);

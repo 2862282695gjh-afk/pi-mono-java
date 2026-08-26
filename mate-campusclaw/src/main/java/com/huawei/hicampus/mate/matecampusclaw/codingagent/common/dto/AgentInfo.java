@@ -9,7 +9,7 @@ import java.util.List;
 import lombok.Data;
 
 /**
- * Mate 内网网关 {@code GET /mate-service/v1/agents/{agentId}} 返回信封中
+ * Mate 内网网关 {@code GET /mate-service/v1/agents/{agentId}} 返回响应中
  * {@code result} 字段的 Agent 元数据。工具客户端仅消费 {@code bindingTools}。
  *
  * @version [br_eCampusCore 26.0.0, 2026/08/18]

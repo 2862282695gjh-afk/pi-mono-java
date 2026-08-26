@@ -35,8 +35,6 @@ import org.springframework.stereotype.Component;
 public class RuntimeAgentPromptLoader {
     private static final Logger log = LoggerFactory.getLogger(RuntimeAgentPromptLoader.class);
 
-    private static final long MAX_MANAGED_FILE_BYTES = 1024L * 1024L;
-
     private static final int MAX_SKILLS = 128;
 
     private static final int MAX_SCAN_DEPTH = 8;
@@ -196,7 +194,7 @@ public class RuntimeAgentPromptLoader {
 
     private static void requireManagedSize(Path path) {
         try {
-            if (Files.size(path) > MAX_MANAGED_FILE_BYTES) {
+            if (Files.size(path) > Skill.MAX_FILE_BYTES) {
                 throw unavailable();
             }
         } catch (IOException error) {

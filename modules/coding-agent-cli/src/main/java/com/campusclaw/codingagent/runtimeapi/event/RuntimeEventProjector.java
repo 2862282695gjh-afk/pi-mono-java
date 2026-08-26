@@ -9,6 +9,7 @@ import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.concurrent.atomic.AtomicReference;
 
 import com.campusclaw.agent.event.AgentEvent;
@@ -64,6 +65,8 @@ public class RuntimeEventProjector {
 
     private final boolean thinking;
 
+    private final Locale locale;
+
     private final AtomicReference<Throwable> failure = new AtomicReference<>();
 
     private String assistantEntryId;
@@ -84,7 +87,8 @@ public class RuntimeEventProjector {
             Runnable abort,
             RuntimeActiveExecution execution,
             UserMessage initialUserMessage,
-            boolean thinking) {
+            boolean thinking,
+            Locale locale) {
         this.sessionId = sessionId;
         this.repository = repository;
         this.codec = codec;
@@ -95,6 +99,7 @@ public class RuntimeEventProjector {
         this.execution = execution;
         this.initialUserMessage = initialUserMessage;
         this.thinking = thinking;
+        this.locale = locale;
     }
 
     public synchronized void onEvent(AgentEvent event) {
@@ -208,7 +213,7 @@ public class RuntimeEventProjector {
         RuntimeEntryDTO entry = codec.thinkingEntry(
                 sessionId, idGenerator.nextId(), assistantEntryId, event.contentIndex(), event.content(), now());
         repository.appendEntry(entry);
-        stream.emit(new RuntimeSseEventVO(Long.toString(entry.getEntrySeq()), entry.getType(), codec.toSseData(entry)));
+        emitPersisted(entry);
     }
 
     private LinkedHashMap<String, Object> thinkingData(int contentIndex) {
@@ -240,7 +245,7 @@ public class RuntimeEventProjector {
                 message.usage(),
                 entry.getTimestamp());
         repository.appendEntryWithUsage(entry, record, message.usage());
-        stream.emit(new RuntimeSseEventVO(Long.toString(entry.getEntrySeq()), entry.getType(), codec.toSseData(entry)));
+        emitPersisted(entry);
         assistantEntryId = null;
         terminalReason = message.stopReason();
         terminalErrorCode = message.errorCode();
@@ -258,7 +263,7 @@ public class RuntimeEventProjector {
                 .reduce("", String::concat);
         RuntimeEntryDTO entry = codec.userEntry(sessionId, idGenerator.nextId(), text, List.of(), now());
         repository.appendEntry(entry);
-        stream.emit(new RuntimeSseEventVO(Long.toString(entry.getEntrySeq()), entry.getType(), codec.toSseData(entry)));
+        emitPersisted(entry);
     }
 
     private void projectToolStart(ToolExecutionStartEvent event) {
@@ -288,8 +293,7 @@ public class RuntimeEventProjector {
         for (ToolResultMessage result : results) {
             RuntimeEntryDTO entry = codec.toolResultEntry(sessionId, idGenerator.nextId(), result, now());
             repository.appendEntry(entry);
-            stream.emit(
-                    new RuntimeSseEventVO(Long.toString(entry.getEntrySeq()), entry.getType(), codec.toSseData(entry)));
+            emitPersisted(entry);
         }
     }
 
@@ -335,7 +339,7 @@ public class RuntimeEventProjector {
                 event.result().usage(),
                 entry.getTimestamp());
         repository.appendEntryWithUsage(entry, record, event.result().usage());
-        stream.emit(new RuntimeSseEventVO(Long.toString(entry.getEntrySeq()), entry.getType(), codec.toSseData(entry)));
+        emitPersisted(entry);
         if (event.willRetry()) {
             assistantAttempt++;
         }
@@ -370,6 +374,11 @@ public class RuntimeEventProjector {
         data.put("reason", reason);
         data.put("willRetry", willRetry);
         return data;
+    }
+
+    private void emitPersisted(RuntimeEntryDTO entry) {
+        stream.emit(new RuntimeSseEventVO(
+                Long.toString(entry.getEntrySeq()), entry.getType(), codec.toSseData(entry, locale)));
     }
 
     private OffsetDateTime now() {

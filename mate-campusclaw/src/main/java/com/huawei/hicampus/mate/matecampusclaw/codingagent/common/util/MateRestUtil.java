@@ -12,6 +12,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Map;
 
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.common.client.mate.MateToolResponseException;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.common.dto.RequestHeaderInfo;
 
 import org.slf4j.Logger;
@@ -21,8 +22,8 @@ import org.slf4j.LoggerFactory;
  * 调用 CampusMate 共享服务地址的 REST 工具。
  *
  * <p>调用方按执行上下文决定是否填充凭据 Header；本类只负责原样映射非空字段，不保存或
- * 解析凭据。传输使用 JDK HttpClient，响应保持原始文本并由调用方解析不同端点的
- * {@code {resCode, resMsg, result}} 信封。
+ * 解析凭据。传输使用 JDK HttpClient，响应保持原始文本，由调用方解析各自端点响应中的 {@code result} 字段
+ * （响应结构包含 {@code resCode}、{@code resMsg} 和 {@code result} 字段）。
  *
  * @version [br_eCampusCore 26.0.0, 2026/08/24]
  * @since [br_eCampusCore 26.0.0]
@@ -61,7 +62,8 @@ public class MateRestUtil {
      * @param headerInfo 映射到 HTTP Header 的请求信息
      * @param jsonBody 原始 JSON 请求体
      * @return 原始响应体
-     * @throws IllegalStateException 调用失败、中断或返回空响应体时抛出
+     * @throws IllegalStateException 调用失败或中断时抛出
+     * @throws MateToolResponseException 返回空响应体时抛出
      */
     public String executePostRawRequest(
             String campusMateBaseUrl, String path, RequestHeaderInfo headerInfo, String jsonBody) {
@@ -74,6 +76,8 @@ public class MateRestUtil {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new IllegalStateException("CampusMate call interrupted: " + url, e);
+        } catch (MateToolResponseException e) {
+            throw e;
         } catch (Exception e) {
             throw logAndWrap(url, e);
         }
@@ -86,7 +90,8 @@ public class MateRestUtil {
      * @param path CampusMate API 路径，可以包含路径变量
      * @param headerInfo 映射到 HTTP Header 的请求信息
      * @return 原始响应体
-     * @throws IllegalStateException 调用失败、中断或返回空响应体时抛出
+     * @throws IllegalStateException 调用失败或中断时抛出
+     * @throws MateToolResponseException 返回空响应体时抛出
      */
     public String executeGetRawRequest(String campusMateBaseUrl, String path, RequestHeaderInfo headerInfo) {
         String url = joinUrl(campusMateBaseUrl, path);
@@ -96,6 +101,8 @@ public class MateRestUtil {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new IllegalStateException("CampusMate call interrupted: " + url, e);
+        } catch (MateToolResponseException e) {
+            throw e;
         } catch (Exception e) {
             throw logAndWrap(url, e);
         }
@@ -120,7 +127,7 @@ public class MateRestUtil {
     private String send(String url, HttpRequest request) throws Exception {
         HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
         if (response.body() == null || response.body().isEmpty()) {
-            throw new IllegalStateException("CampusMate returned empty body");
+            throw new MateToolResponseException("response body is empty");
         }
         return response.body();
     }

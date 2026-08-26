@@ -107,7 +107,6 @@ campusmate:
     agents-root: ${CAMPUSCLAW_AGENTS_ROOT:agent}
     connect-timeout: ${CAMPUSMATE_RUNTIME_CONNECT_TIMEOUT:PT10S}
     request-timeout: ${CAMPUSMATE_RUNTIME_REQUEST_TIMEOUT:PT30S}
-    success-code: ${CAMPUSMATE_SUCCESS_CODE:0}
     max-response-bytes: ${CAMPUSMATE_MAX_RESPONSE_BYTES:4194304}
   tool:
     enabled: ${CAMPUSMATE_TOOL_ENABLED:true}

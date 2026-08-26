@@ -207,6 +207,30 @@ describe('projectRuntimeEvents', () => {
     }]);
   });
 
+  it('presents the localized public message for a failed tool result', () => {
+    const events: RuntimeEventEnvelope[] = [{
+      event: 'tool.result',
+      data: {
+        toolCallId: 'call-1',
+        toolName: 'CallMateTool',
+        content: [{ type: 'text', text: 'MATE_RESPONSE_INVALID' }],
+        isError: true,
+        errorCode: 'MATE_RESPONSE_INVALID',
+        errorMessage: 'CampusMate 响应格式不正确。',
+      },
+    }];
+
+    expect(projectRuntimeEvents(events)).toEqual([{
+      key: 'tool-call-1',
+      kind: 'activity',
+      toolCallId: 'call-1',
+      toolName: 'CallMateTool',
+      status: 'error',
+      arguments: [],
+      result: 'CampusMate 响应格式不正确。',
+    }]);
+  });
+
   it('does not create a visible turn for a tool proposal before execution starts', () => {
     const events: RuntimeEventEnvelope[] = [{
       event: 'assistant.message.completed',

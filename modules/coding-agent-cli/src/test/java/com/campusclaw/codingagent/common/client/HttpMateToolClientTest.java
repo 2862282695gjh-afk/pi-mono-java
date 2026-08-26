@@ -12,6 +12,7 @@ import java.util.List;
 import com.campusclaw.codingagent.common.client.mate.MateCredentials;
 import com.campusclaw.codingagent.common.client.mate.MateToolClient;
 import com.campusclaw.codingagent.common.client.mate.MateToolMeta;
+import com.campusclaw.codingagent.common.client.mate.MateToolResponseException;
 import com.campusclaw.codingagent.common.util.MateRestUtil;
 
 import org.junit.jupiter.api.AfterEach;
@@ -176,17 +177,42 @@ class HttpMateToolClientTest {
     }
 
     @Test
-    void nonZeroResCodeOnMetadataThrows() {
-        server.enqueue(json("{\"resCode\":\"500\",\"resMsg\":\"agent not found\",\"result\":null}"));
+    void nonZeroResCodeWithParseableResultSucceeds() throws Exception {
+        // 客户端不按 resCode 预判处理结果:result 可解析即成功。
+        server.enqueue(json("{\"resCode\":\"500\",\"resMsg\":\"partial outage\",\"result\":"
+                + "{\"bindingTools\":[{\"toolId\":\"tool-11111111111111111111111111111111\"}]}}"));
+        server.enqueue(json("{\"resCode\":\"403\",\"resMsg\":\"forbidden\",\"result\":{\"data\":"
+                + "[{\"id\":\"tool-11111111111111111111111111111111\",\"name\":\"query\"}]}}"));
 
-        assertThatThrownBy(
-                        () -> client.listAgentTools("agent-11111111111111111111111111111111", MateCredentials.empty()))
-                .isInstanceOf(IllegalStateException.class)
-                .hasRootCauseMessage("gateway call failed: resCode=500 resMsg=agent not found");
+        List<MateToolMeta> tools =
+                client.listAgentTools("agent-11111111111111111111111111111111", MateCredentials.empty());
+
+        assertThat(tools).extracting(MateToolMeta::toolId).containsExactly("tool-11111111111111111111111111111111");
     }
 
     @Test
-    void nonZeroResCodeOnToolMetadataQueryThrows() {
+    void emptyResponseBodyOnAgentInfoThrowsMateToolResponseException() {
+        server.enqueue(json(""));
+
+        assertThatThrownBy(
+                        () -> client.listAgentTools("agent-11111111111111111111111111111111", MateCredentials.empty()))
+                .isInstanceOf(MateToolResponseException.class)
+                .hasMessageContaining("response body is empty");
+    }
+
+    @Test
+    void missingResultOnAgentInfoThrowsInsteadOfEmptyTools() {
+        // result 缺失/null 不允许折叠成"没有绑定工具"。
+        server.enqueue(json("{\"resCode\":\"0\",\"resMsg\":\"ok\"}"));
+
+        assertThatThrownBy(
+                        () -> client.listAgentTools("agent-11111111111111111111111111111111", MateCredentials.empty()))
+                .isInstanceOf(MateToolResponseException.class)
+                .hasMessageContaining("result is missing or null");
+    }
+
+    @Test
+    void missingResultDataOnToolMetadataQueryThrowsWithStableCode() {
         server.enqueue(
                 json(
                         "{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":{\"bindingTools\":[{\"toolId\":\"tool-11111111111111111111111111111111\"}]}}"));
@@ -194,8 +220,10 @@ class HttpMateToolClientTest {
 
         assertThatThrownBy(
                         () -> client.listAgentTools("agent-11111111111111111111111111111111", MateCredentials.empty()))
-                .isInstanceOf(IllegalStateException.class)
-                .hasRootCauseMessage("tool metadata query failed: resCode=403 resMsg=forbidden");
+                .isInstanceOf(MateToolResponseException.class)
+                .hasMessageContaining("result.data is missing")
+                .extracting(e -> ((MateToolResponseException) e).stableErrorCode())
+                .isEqualTo("MATE_TOOL_RESPONSE_INVALID");
     }
 
     @Test

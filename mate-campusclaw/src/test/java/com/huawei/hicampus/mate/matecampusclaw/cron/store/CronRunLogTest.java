@@ -21,7 +21,7 @@ import org.junit.jupiter.api.io.TempDir;
 class CronRunLogTest {
 
     private static CronRunRecord rec(String runId, String jobId, RunStatus status, String output) {
-        return new CronRunRecord(runId, jobId, 0L, 0L, status, null, output, 0);
+        return new CronRunRecord(runId, jobId, 0L, 0L, status, null, null, output, 0);
     }
 
     @Nested
@@ -81,6 +81,20 @@ class CronRunLogTest {
             List<CronRunRecord> recent = new CronRunLog(tmp).getRecentRuns("j1", 10);
             assertThat(recent).hasSize(1);
             assertThat(recent.get(0).runId()).isEqualTo("r1");
+        }
+
+        @Test
+        void readsLegacyErrorFieldAsErrorMessage(@TempDir Path tmp) throws IOException {
+            Files.writeString(
+                    tmp.resolve("j1.jsonl"),
+                    "{\"runId\":\"r1\",\"jobId\":\"j1\",\"startedAtMs\":0,"
+                            + "\"finishedAtMs\":1,\"status\":\"FAILED\",\"error\":\"legacy detail\","
+                            + "\"turnCount\":0}\n");
+
+            CronRunRecord record = new CronRunLog(tmp).getRecentRuns("j1", 10).getFirst();
+
+            assertThat(record.errorCode()).isNull();
+            assertThat(record.errorMessage()).isEqualTo("legacy detail");
         }
     }
 
