@@ -35,12 +35,19 @@ import org.springframework.context.annotation.Configuration;
  */
 class MateToolAutoConfigurationTest {
 
+    private static final String[] CAMPUSMATE_PROPERTIES = {
+        "campusmate.base-url=http://campusmate-service:8080",
+        "campusmate.endpoints.model-chat-path=/mate-service/v1/LLM/chat",
+        "campusmate.endpoints.agent-info-path-template=/mate-service/v1/agents/%s",
+        "campusmate.endpoints.agent-runtime-path-template=/mate-service/v1/agents/%s/runtime",
+        "campusmate.endpoints.skill-info-path-template=/mate-service/v1/skill/query/%s",
+        "campusmate.endpoints.tool-metadata-query-path=/mate-service/v1/runtime/tools/query",
+        "campusmate.endpoints.tool-execute-path-template=/mate-service/v1/runtime/tools/%s/execute"
+    };
+
     private final ApplicationContextRunner runner = new ApplicationContextRunner()
             .withConfiguration(AutoConfigurations.of(MateToolAutoConfiguration.class))
-            .withPropertyValues(
-                    "mate.endpoints.agent-info-path-prefix=/mate-service/v1/agents/",
-                    "mate.endpoints.skill-tools-query-path-prefix=/mate-service/v1/skill/info/query/",
-                    "mate.endpoints.tool-metadata-query-path=/mate-service/v1/runtime/tools/query")
+            .withPropertyValues(CAMPUSMATE_PROPERTIES)
             .withUserConfiguration(MockClientSupport.class);
 
     @Test
@@ -84,7 +91,7 @@ class MateToolAutoConfigurationTest {
 
     @Test
     void disabledExcludesFactory() {
-        runner.withPropertyValues("mate.tool.enabled=false").run(context -> {
+        runner.withPropertyValues("campusmate.tool.enabled=false").run(context -> {
             assertThat(context).doesNotHaveBean(com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.mate.MateToolsetFactory.class);
             assertThat(context.getBeanNamesForType(AgentTool.class)).isEmpty();
         });
@@ -95,21 +102,24 @@ class MateToolAutoConfigurationTest {
         new ApplicationContextRunner()
                 .withConfiguration(AutoConfigurations.of(MateToolAutoConfiguration.class))
                 .withPropertyValues(
-                        "mate.innerGWSerive=http://gw.example.com:9999",
-                        "mate.endpoints.agent-info-path-prefix=/custom/agents/",
-                        "mate.endpoints.skill-tools-query-path-prefix=/custom/skills/",
-                        "mate.endpoints.tool-metadata-query-path=/custom/tools/query",
-                        "mate.endpoints.tool-execute-path-template=/custom/tools/%s/execute")
+                        "campusmate.base-url=http://campusmate.example.com:9999",
+                        "campusmate.endpoints.model-chat-path=/mate-service/custom/chat",
+                        "campusmate.endpoints.agent-info-path-template=/mate-service/custom/agents/%s",
+                        "campusmate.endpoints.agent-runtime-path-template=/mate-service/custom/agents/%s/runtime",
+                        "campusmate.endpoints.skill-info-path-template=/mate-service/custom/skills/%s",
+                        "campusmate.endpoints.tool-metadata-query-path=/mate-service/custom/tools/query",
+                        "campusmate.endpoints.tool-execute-path-template=/mate-service/custom/tools/%s/execute")
                 .run(context -> {
                     assertThat(context).hasSingleBean(MateToolClient.class);
                     MateToolClient client = context.getBean(MateToolClient.class);
                     assertThat(client)
                             .isInstanceOf(HttpMateToolClient.class)
-                            .hasFieldOrPropertyWithValue("mateInnerGwAddress", "http://gw.example.com:9999")
-                            .hasFieldOrPropertyWithValue("agentInfoPathPrefix", "/custom/agents/")
-                            .hasFieldOrPropertyWithValue("skillToolsQueryPathPrefix", "/custom/skills/")
-                            .hasFieldOrPropertyWithValue("toolMetadataQueryPath", "/custom/tools/query")
-                            .hasFieldOrPropertyWithValue("toolExecutePathTemplate", "/custom/tools/%s/execute");
+                            .hasFieldOrPropertyWithValue("campusMateBaseUrl", "http://campusmate.example.com:9999")
+                            .hasFieldOrPropertyWithValue("agentInfoPathTemplate", "/mate-service/custom/agents/%s")
+                            .hasFieldOrPropertyWithValue("skillInfoPathTemplate", "/mate-service/custom/skills/%s")
+                            .hasFieldOrPropertyWithValue("toolMetadataQueryPath", "/mate-service/custom/tools/query")
+                            .hasFieldOrPropertyWithValue(
+                                    "toolExecutePathTemplate", "/mate-service/custom/tools/%s/execute");
                 });
     }
 

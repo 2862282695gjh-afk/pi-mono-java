@@ -26,9 +26,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * 通过 {@link MateRestUtil} 访问 Mate 内部网关的 {@link MateToolClient} HTTP 实现。
+ * 通过 {@link MateRestUtil} 访问 CampusMate 服务的 {@link MateToolClient} HTTP 实现。
  *
- * <p>网关地址和出站接口路径均由配置注入。发现与执行请求使用当前 Agent 执行的不可变凭据
+ * <p>共享基础地址和出站接口路径均由配置注入。发现与执行请求使用当前 Agent 执行的不可变凭据
  * 快照；发现端点允许空凭据，执行端点在发出请求前校验最低完整性。
  *
  * @version [br_eCampusCore 26.0.0, 2026/08/24]
@@ -38,51 +38,51 @@ public class HttpMateToolClient implements MateToolClient {
 
     private static final Logger log = LoggerFactory.getLogger(HttpMateToolClient.class);
 
-    /** Mate 内部网关地址，对应 {@code mate.innerGWSerive}。 */
-    protected final String mateInnerGwAddress;
+    // CampusMate 服务的共享基础地址。
+    protected final String campusMateBaseUrl;
 
-    /** Agent 元数据查询路径前缀。 */
-    protected final String agentInfoPathPrefix;
+    // Agent 元数据查询路径模板。
+    protected final String agentInfoPathTemplate;
 
-    /** Skill 绑定工具查询路径前缀。 */
-    protected final String skillToolsQueryPathPrefix;
+    // Skill 元数据共享查询路径模板。
+    protected final String skillInfoPathTemplate;
 
-    /** 工具元数据批量查询路径。 */
+    // 工具元数据批量查询路径。
     protected final String toolMetadataQueryPath;
 
-    /** 工具执行路径模板，{@code %s} 为工具标识占位。 */
+    // 工具执行路径模板，%s 为工具标识占位。
     protected final String toolExecutePathTemplate;
 
-    /** 执行网关请求的 REST 工具。 */
+    // 执行 CampusMate 请求的 REST 工具。
     protected final MateRestUtil mateRestUtil;
 
-    /** 请求和响应 DTO 转换使用的 Jackson 映射器。 */
+    // 请求和响应 DTO 转换使用的 Jackson 映射器。
     protected final ObjectMapper mapper;
 
     /**
-     * 创建访问 Mate 内部网关的客户端。
+     * 创建访问 CampusMate 服务的客户端。
      *
-     * @param mateInnerGwAddress 内部网关基础地址
-     * @param agentInfoPathPrefix Agent 元数据查询路径前缀
-     * @param skillToolsQueryPathPrefix Skill 绑定工具查询路径前缀
+     * @param campusMateBaseUrl CampusMate 服务基础地址
+     * @param agentInfoPathTemplate Agent 元数据查询路径模板
+     * @param skillInfoPathTemplate Skill 元数据共享查询路径模板
      * @param toolMetadataQueryPath 工具元数据批量查询路径
      * @param toolExecutePathTemplate 工具执行路径模板，{@code %s} 为工具标识占位
      * @param mateRestUtil 网关 REST 工具
      * @param mapper Jackson 映射器
      */
     public HttpMateToolClient(
-            String mateInnerGwAddress,
-            String agentInfoPathPrefix,
-            String skillToolsQueryPathPrefix,
+            String campusMateBaseUrl,
+            String agentInfoPathTemplate,
+            String skillInfoPathTemplate,
             String toolMetadataQueryPath,
             String toolExecutePathTemplate,
             MateRestUtil mateRestUtil,
             ObjectMapper mapper) {
-        this.mateInnerGwAddress = mateInnerGwAddress != null && mateInnerGwAddress.endsWith("/")
-                ? mateInnerGwAddress.substring(0, mateInnerGwAddress.length() - 1)
-                : mateInnerGwAddress;
-        this.agentInfoPathPrefix = agentInfoPathPrefix;
-        this.skillToolsQueryPathPrefix = skillToolsQueryPathPrefix;
+        this.campusMateBaseUrl = campusMateBaseUrl != null && campusMateBaseUrl.endsWith("/")
+                ? campusMateBaseUrl.substring(0, campusMateBaseUrl.length() - 1)
+                : campusMateBaseUrl;
+        this.agentInfoPathTemplate = agentInfoPathTemplate;
+        this.skillInfoPathTemplate = skillInfoPathTemplate;
         this.toolMetadataQueryPath = toolMetadataQueryPath;
         this.toolExecutePathTemplate = toolExecutePathTemplate;
         this.mateRestUtil = mateRestUtil;
@@ -131,7 +131,7 @@ public class HttpMateToolClient implements MateToolClient {
      */
     protected List<String> queryToolIdsByAgentId(String agentId, MateCredentials credentials) throws Exception {
         String raw = mateRestUtil.executeGetRawRequest(
-                mateInnerGwAddress, agentInfoPathPrefix + agentId, toHeaderInfo(credentials));
+                campusMateBaseUrl, agentInfoPathTemplate.formatted(agentId), toHeaderInfo(credentials));
         AgentInfo agentInfo = unwrapResult(raw, AgentInfo.class);
         List<String> toolIds = new ArrayList<>();
         if (agentInfo != null && agentInfo.getBindingTools() != null) {
@@ -152,7 +152,7 @@ public class HttpMateToolClient implements MateToolClient {
      */
     protected List<String> queryToolIdsBySkillId(String skillId, MateCredentials credentials) throws Exception {
         String raw = mateRestUtil.executeGetRawRequest(
-                mateInnerGwAddress, skillToolsQueryPathPrefix + skillId, toHeaderInfo(credentials));
+                campusMateBaseUrl, skillInfoPathTemplate.formatted(skillId), toHeaderInfo(credentials));
         SkillInfoResult skillResult = unwrapResult(raw, SkillInfoResult.class);
         List<String> toolIds = new ArrayList<>();
         if (skillResult != null && skillResult.getBindingTools() != null) {
@@ -180,7 +180,7 @@ public class HttpMateToolClient implements MateToolClient {
         requireToolIds(toolIds);
         String body = mapper.writeValueAsString(Map.of("toolIds", toolIds));
         String raw = mateRestUtil.executePostRawRequest(
-                mateInnerGwAddress, toolMetadataQueryPath, toHeaderInfo(credentials), body);
+                campusMateBaseUrl, toolMetadataQueryPath, toHeaderInfo(credentials), body);
         JsonNode root = mapper.readTree(raw);
         String resCode = root.path("resCode").asText("");
         if (!"0".equals(resCode)) {
@@ -316,8 +316,8 @@ public class HttpMateToolClient implements MateToolClient {
 
             // CampusMate 执行接口契约:参数需包一层 arguments 包装。
             String body = mapper.writeValueAsString(Map.of("arguments", args != null ? args : Map.of()));
-            String path = toolExecutePathTemplate.replace("%s", toolId);
-            String raw = mateRestUtil.executePostRawRequest(mateInnerGwAddress, path, headerInfo, body);
+            String path = toolExecutePathTemplate.formatted(toolId);
+            String raw = mateRestUtil.executePostRawRequest(campusMateBaseUrl, path, headerInfo, body);
             JsonNode root = mapper.readTree(raw);
             String resCode = root.path("resCode").asText("");
             if (!"0".equals(resCode)) {

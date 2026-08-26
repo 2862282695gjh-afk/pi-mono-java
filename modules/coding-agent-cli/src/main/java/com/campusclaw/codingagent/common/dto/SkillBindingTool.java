@@ -10,7 +10,7 @@ import com.fasterxml.jackson.databind.annotation.JsonNaming;
 import lombok.Data;
 
 /**
- * Mate 内网网关 {@code GET /mate-service/v1/skill/info/query/{skillId}}
+ * CampusMate {@code GET /mate-service/v1/skill/query/{skillId}}
  * 返回信封中 {@code result.bindingTools} 数组元素:绑定到 Skill 的工具。
  * 当前仅消费 {@code id}，用于后续批量查询工具元数据。
  *

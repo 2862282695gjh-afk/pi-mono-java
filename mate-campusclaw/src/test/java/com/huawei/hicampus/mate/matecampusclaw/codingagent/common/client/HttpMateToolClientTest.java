@@ -30,9 +30,9 @@ import okhttp3.mockwebserver.MockWebServer;
  */
 class HttpMateToolClientTest {
 
-    private static final String AGENT_INFO_PATH_PREFIX = "/mate-service/v1/agents/";
+    private static final String AGENT_INFO_PATH_TEMPLATE = "/mate-service/v1/agents/%s";
 
-    private static final String SKILL_TOOLS_QUERY_PATH_PREFIX = "/mate-service/v1/skill/query/";
+    private static final String SKILL_INFO_PATH_TEMPLATE = "/mate-service/v1/skill/query/%s";
 
     private static final String TOOL_METADATA_QUERY_PATH = "/mate-service/v1/runtime/tools/query";
 
@@ -48,8 +48,8 @@ class HttpMateToolClientTest {
         server.start();
         client = new HttpMateToolClient(
                 server.url("/").toString().replaceAll("/$", ""),
-                AGENT_INFO_PATH_PREFIX,
-                SKILL_TOOLS_QUERY_PATH_PREFIX,
+                AGENT_INFO_PATH_TEMPLATE,
+                SKILL_INFO_PATH_TEMPLATE,
                 TOOL_METADATA_QUERY_PATH,
                 TOOL_EXECUTE_PATH_TEMPLATE,
                 new MateRestUtil(),
@@ -398,10 +398,10 @@ class HttpMateToolClientTest {
     void configuredEndpointPathsAreUsed() throws Exception {
         HttpMateToolClient configuredClient = new HttpMateToolClient(
                 server.url("/").toString().replaceAll("/$", ""),
-                "/custom/agents/",
-                "/custom/skills/",
-                "/custom/tools/query",
-                "/custom/tools/%s/execute",
+                "/mate-service/custom/agents/%s",
+                "/mate-service/custom/skills/%s",
+                "/mate-service/custom/tools/query",
+                "/mate-service/custom/tools/%s/execute",
                 new MateRestUtil(),
                 new com.fasterxml.jackson.databind.ObjectMapper());
         server.enqueue(
@@ -412,8 +412,9 @@ class HttpMateToolClientTest {
 
         configuredClient.listAgentTools("agent-11111111111111111111111111111111", MateCredentials.empty());
 
-        assertThat(server.takeRequest().getPath()).isEqualTo("/custom/agents/agent-11111111111111111111111111111111");
-        assertThat(server.takeRequest().getPath()).isEqualTo("/custom/tools/query");
+        assertThat(server.takeRequest().getPath())
+                .isEqualTo("/mate-service/custom/agents/agent-11111111111111111111111111111111");
+        assertThat(server.takeRequest().getPath()).isEqualTo("/mate-service/custom/tools/query");
     }
 
     private static MockResponse json(String body) {

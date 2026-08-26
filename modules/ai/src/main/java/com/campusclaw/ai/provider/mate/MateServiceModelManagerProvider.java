@@ -7,6 +7,7 @@ package com.campusclaw.ai.provider.mate;
 import java.net.URI;
 import java.time.Duration;
 import java.util.List;
+import java.util.Locale;
 import java.util.concurrent.atomic.AtomicReference;
 
 import com.campusclaw.ai.provider.AiProvider;
@@ -68,11 +69,11 @@ public class MateServiceModelManagerProvider implements AiProvider {
     @Autowired
     public MateServiceModelManagerProvider(
             ObjectMapper mapper,
-            @Value("${campusmate.model-manager.base-url:https://localhost:8591}") String baseUrl,
-            @Value("${campusmate.model-manager.chat-path:/mate-service/v1/LLM/chat}") String chatPath,
-            @Value("${campusmate.model-manager.api:openai-completions}") String api,
-            @Value("${campusmate.model-manager.connect-timeout:PT10S}") Duration connectTimeout,
-            @Value("${campusmate.model-manager.response-timeout:PT10M}") Duration responseTimeout) {
+            @Value("${campusmate.base-url}") String baseUrl,
+            @Value("${campusmate.endpoints.model-chat-path}") String chatPath,
+            @Value("${campusmate.model.api:openai-completions}") String api,
+            @Value("${campusmate.model.connect-timeout:PT10S}") Duration connectTimeout,
+            @Value("${campusmate.model.response-timeout:PT10M}") Duration responseTimeout) {
         this(mapper, createWebClient(connectTimeout, responseTimeout), endpoint(baseUrl, chatPath), api);
     }
 
@@ -87,7 +88,7 @@ public class MateServiceModelManagerProvider implements AiProvider {
     @PostConstruct
     void validateConfiguration() {
         if (!SUPPORTED_API.equals(api)) {
-            throw new IllegalStateException("Unsupported campusmate.model-manager.api: " + api);
+            throw new IllegalStateException("Unsupported campusmate.model.api: " + api);
         }
     }
 
@@ -175,9 +176,49 @@ public class MateServiceModelManagerProvider implements AiProvider {
     }
 
     private static URI endpoint(String baseUrl, String chatPath) {
-        String base = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
-        String path = chatPath.startsWith("/") ? chatPath : "/" + chatPath;
+        URI origin = validateBaseUrl(baseUrl);
+        String path = validateChatPath(chatPath);
+        String normalized = origin.toString();
+        String base = normalized.endsWith("/") ? normalized.substring(0, normalized.length() - 1) : normalized;
         return URI.create(base + path);
+    }
+
+    private static URI validateBaseUrl(String baseUrl) {
+        if (baseUrl == null || baseUrl.isBlank()) {
+            throw new IllegalArgumentException("campusmate.base-url is required");
+        }
+        URI origin = URI.create(baseUrl);
+        if (!origin.isAbsolute() || origin.getHost() == null) {
+            throw new IllegalArgumentException("campusmate.base-url must be an absolute URI with a host");
+        }
+        String scheme = origin.getScheme().toLowerCase(Locale.ROOT);
+        if (!"http".equals(scheme) && !"https".equals(scheme)) {
+            throw new IllegalArgumentException("campusmate.base-url only supports HTTP(S)");
+        }
+        String path = origin.getRawPath();
+        if (origin.getUserInfo() != null
+                || origin.getQuery() != null
+                || origin.getFragment() != null
+                || (path != null && !path.isEmpty() && !"/".equals(path))) {
+            throw new IllegalArgumentException("campusmate.base-url must contain only scheme, host, and port");
+        }
+        return origin;
+    }
+
+    private static String validateChatPath(String chatPath) {
+        if (chatPath == null || !chatPath.startsWith("/mate-service/")) {
+            throw new IllegalArgumentException("campusmate.endpoints.model-chat-path must start with /mate-service/");
+        }
+        URI path = URI.create(chatPath);
+        if (path.isAbsolute()
+                || path.getAuthority() != null
+                || path.getQuery() != null
+                || path.getFragment() != null
+                || List.of(path.getPath().split("/")).contains("..")) {
+            throw new IllegalArgumentException(
+                    "campusmate.endpoints.model-chat-path must be a service-local path without .. segments");
+        }
+        return chatPath;
     }
 
     private static AssistantMessage errorMessage(Model model, Throwable error) {
