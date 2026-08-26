@@ -16,7 +16,6 @@ import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -30,6 +29,8 @@ import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtime.MateServiceCl
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtime.MateServiceClient.SkillFile;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtime.MateServiceClient.SkillInfo;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtime.MateServiceClient.SkillReference;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.skill.Skill;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.skill.SkillLoadException;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.skill.SkillLoader;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -56,8 +57,15 @@ public class AgentRuntimeManager {
     private static final String SKILL_FILE = "SKILL.md";
     private static final String SKILL_MANIFEST_FILE = "skill.json";
 
+    // 与 RuntimeAgentPromptLoader.MAX_MANAGED_FILE_BYTES 对齐:超过该字节数的
+    // SKILL.md 会让真实会话创建失败,发布前直接拒绝。
+    private static final long MAX_SKILL_FILE_BYTES = 1024L * 1024L;
+
     private final AgentRuntimeProperties properties;
     private final MateServiceClient mateServiceClient;
+
+    // 复用真实会话的同一套 SKILL.md 加载校验,发布前确认落盘文件可被会话加载。
+    private final SkillLoader skillLoader = new SkillLoader();
     private final ObjectMapper mapper;
     private final ConcurrentHashMap<String, ReentrantLock> locks = new ConcurrentHashMap<>();
 
@@ -191,16 +199,60 @@ public class AgentRuntimeManager {
         Set<String> names = new HashSet<>();
         for (SkillInfo skill : skills) {
             requireSafeUniqueName(skill.name(), names, "Skill");
+            requireLoadableSkillMarkdown(skill);
             Path skillDirectory = skillsDirectory.resolve(skill.name());
             Files.createDirectories(skillDirectory.resolve("references"));
             Files.createDirectories(skillDirectory.resolve("templates"));
             writeJson(
                     skillDirectory.resolve(SKILL_MANIFEST_FILE),
                     new SkillManifest(SCHEMA_VERSION, skill.id(), skill.name(), skill.version()));
-            writeFile(skillDirectory.resolve(SKILL_FILE), skill.content());
+            Path skillFile = skillDirectory.resolve(SKILL_FILE);
+            writeFile(skillFile, skill.content());
+            requireSessionLoadable(skill, skillFile);
             writeResources(skillDirectory.resolve("references"), skill.references());
             writeResources(skillDirectory.resolve("templates"), skill.templates());
         }
+    }
+
+    // 发布前校验 SKILL.md 正文:非空、不超大小上限、frontmatter name 与
+    // querySkillInfo 响应的 name 一致、description 必填。
+    private static void requireLoadableSkillMarkdown(SkillInfo skill) {
+        String content = skill.content();
+        if (isBlank(content)) {
+            throw new AgentRuntimeException("Skill content is empty: " + skill.name());
+        }
+        if (content.getBytes(StandardCharsets.UTF_8).length > MAX_SKILL_FILE_BYTES) {
+            throw new AgentRuntimeException("Skill content exceeds size limit: " + skill.name());
+        }
+        Map<String, Object> frontmatter = SkillLoader.parseFrontmatter(content);
+        String frontmatterName = frontmatterValue(frontmatter, "name");
+        if (frontmatterName == null || !frontmatterName.equals(skill.name())) {
+            throw new AgentRuntimeException("SKILL.md frontmatter name does not match Skill metadata: " + skill.name());
+        }
+        if (isBlank(frontmatterValue(frontmatter, "description"))) {
+            throw new AgentRuntimeException("SKILL.md frontmatter description is required: " + skill.name());
+        }
+    }
+
+    // 用真实会话的 SkillLoader 复核已写入的 SKILL.md:名称正则、长度限制等规则
+    // 与会话加载完全一致,解析出的名称还必须与 querySkillInfo 响应的 name 一致。
+    private void requireSessionLoadable(SkillInfo skill, Path skillFile) {
+        Skill loaded;
+        try {
+            loaded = skillLoader.loadFromFile(skillFile, "managed");
+        } catch (SkillLoadException exception) {
+            throw new AgentRuntimeException("SKILL.md is not session-loadable: " + skill.name(), exception);
+        }
+        if (!loaded.name().equals(skill.name())) {
+            throw new AgentRuntimeException("SKILL.md parsed name does not match Skill metadata: " + skill.name());
+        }
+    }
+
+    // frontmatter 取值:键缺失或值为 null 时返回 null。
+    // String.valueOf 会把缺失键渲染成 "null" 字符串,不能直接使用。
+    private static String frontmatterValue(Map<String, Object> frontmatter, String key) {
+        Object value = frontmatter.get(key);
+        return value == null ? null : String.valueOf(value);
     }
 
     private void writeResources(Path directory, List<SkillFile> resources) throws IOException {
@@ -289,9 +341,16 @@ public class AgentRuntimeManager {
         }
         String skillMarkdown = readRequiredFile(directory.resolve(SKILL_FILE));
         Map<String, Object> frontmatter = SkillLoader.parseFrontmatter(skillMarkdown);
-        String description = Objects.toString(frontmatter.get("description"), "");
+        String frontmatterName = frontmatterValue(frontmatter, "name");
+        if (frontmatterName == null || !frontmatterName.equals(manifest.name())) {
+            throw new IOException("SKILL.md frontmatter name does not match skill.json: " + manifest.name());
+        }
+        String description = frontmatterValue(frontmatter, "description");
+        if (isBlank(description)) {
+            throw new IOException("SKILL.md frontmatter description is required: " + manifest.name());
+        }
         return new SkillInfo(
-                manifest.name(),
+                frontmatterName,
                 manifest.id(),
                 manifest.version(),
                 description,

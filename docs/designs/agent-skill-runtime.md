@@ -45,9 +45,11 @@ agent/{agentId}/.campusclaw/
 
 `prepare(agentId)` 先加载完整本地缓存；只有缺失或不完整时访问 Mate。querySkillInfo 响应的
 `result` 是单个 Skill 对象（不是数组），解析时要求其为 JSON 对象；其 `content` 字段是完整
-SKILL.md 内容，原文写入 `skills/{name}/SKILL.md`，不从元数据生成。远端内容先写入同级
-staging 目录，通过 Agent、Skill、Child、文件类型、资源名、ID/版本和边界校验后原子发布。
-发布失败清理 staging 并保留旧目录。
+SKILL.md 内容，原文写入 `skills/{name}/SKILL.md`，不从元数据生成。发布前校验 SKILL.md：
+非空且不超过 1 MiB、frontmatter `name` 与响应 name 及 `skill.json`/目录名一致、
+`description` 必填，并用会话同一套 `SkillLoader` 复核可加载；校验失败不发布、保留旧缓存。
+远端内容先写入同级 staging 目录，通过 Agent、Skill、Child、文件类型、资源名、ID/版本和
+边界校验后原子发布。发布失败清理 staging 并保留旧目录。
 
 `refresh(agentId)` 是管理面显式操作，总是重建目录；它不由模型工具或配置热更新触发。
 HTTP Session 创建、Cron 触发和 Child Execution 均调用 prepare，因此冷目录可以自动创建，
@@ -75,6 +77,6 @@ Session 快照。工具配置也只在应用启动时解析，不由 refresh 变
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
-| 3.1.0 | 2026-08-26 | querySkillInfo 响应 `result` 为单对象，`result.content` 原文写入 `SKILL.md` |
+| 3.1.0 | 2026-08-26 | querySkillInfo 响应 `result` 为单对象，`result.content` 原文写入 `SKILL.md`；发布前校验 frontmatter `name`/`description` 并用 `SkillLoader` 复核 |
 | 3.0.0 | 2026-08-24 | 删除 CLI 双契约和 tools.json，统一服务三入口目录、缓存优先 prepare 与管理面原子 refresh |
 | 2.x | 2026-08-21 以前 | 历史 CLI 运行目录生成与 HTTP 只读目录设计，已由 ADR-0022 取代 |

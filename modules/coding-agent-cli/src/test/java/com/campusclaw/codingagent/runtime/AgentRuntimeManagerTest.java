@@ -15,6 +15,7 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -25,6 +26,7 @@ import com.campusclaw.codingagent.runtime.MateServiceClient.AgentRuntime;
 import com.campusclaw.codingagent.runtime.MateServiceClient.SkillFile;
 import com.campusclaw.codingagent.runtime.MateServiceClient.SkillInfo;
 import com.campusclaw.codingagent.runtime.MateServiceClient.SkillReference;
+import com.campusclaw.codingagent.runtimeapi.agent.RuntimeAgentPromptLoader;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -175,13 +177,71 @@ class AgentRuntimeManagerTest {
     }
 
     @Test
-    void nullSkillContentIsWrittenAsEmptyFile() throws Exception {
+    void nullSkillContentFailsPrepareWithoutPublishing() {
         when(client.getAgentRuntime(AGENT_ID)).thenReturn(runtime("1.0.0", "prompt-v1"));
         when(client.querySkillInfo(SKILL_ID)).thenReturn(skill(null));
 
+        assertThrows(AgentRuntimeException.class, () -> manager.prepare(AGENT_ID));
+
+        assertFalse(Files.exists(tempDir.resolve("agent").resolve(AGENT_ID).resolve(".campusclaw")));
+    }
+
+    @Test
+    void blankSkillContentFailsPrepare() {
+        when(client.getAgentRuntime(AGENT_ID)).thenReturn(runtime("1.0.0", "prompt-v1"));
+        when(client.querySkillInfo(SKILL_ID)).thenReturn(skill("   "));
+
+        assertThrows(AgentRuntimeException.class, () -> manager.prepare(AGENT_ID));
+    }
+
+    @Test
+    void frontmatterNameMismatchFailsPrepare() {
+        when(client.getAgentRuntime(AGENT_ID)).thenReturn(runtime("1.0.0", "prompt-v1"));
+        when(client.querySkillInfo(SKILL_ID))
+                .thenReturn(skill("---\nname: other-skill\ndescription: Calendar workflow\n---\nBody\n"));
+
+        assertThrows(AgentRuntimeException.class, () -> manager.prepare(AGENT_ID));
+
+        assertFalse(Files.exists(tempDir.resolve("agent").resolve(AGENT_ID).resolve(".campusclaw")));
+    }
+
+    @Test
+    void failedRefreshKeepsPreviouslyPublishedCache() throws Exception {
+        stubRuntime("1.0.0", "prompt-v1");
+        PreparedAgentRuntime first = manager.prepare(AGENT_ID);
+        Path skillFile = first.agentRoot().resolve(".campusclaw/skills/calendar/SKILL.md");
+        assertEquals(skillContent(), Files.readString(skillFile, StandardCharsets.UTF_8));
+
+        when(client.querySkillInfo(SKILL_ID)).thenReturn(skill(null));
+        assertThrows(AgentRuntimeException.class, () -> manager.refresh(AGENT_ID));
+
+        assertEquals(skillContent(), Files.readString(skillFile, StandardCharsets.UTF_8));
+    }
+
+    @Test
+    void corruptedFrontmatterNameIsRejectedAndRefetched() throws Exception {
+        stubRuntime("1.0.0", "prompt-v1");
+        PreparedAgentRuntime first = manager.prepare(AGENT_ID);
+        Path skillFile = first.agentRoot().resolve(".campusclaw/skills/calendar/SKILL.md");
+        Files.writeString(
+                skillFile, "---\nname: other-skill\ndescription: Calendar workflow\n---\n", StandardCharsets.UTF_8);
+
+        PreparedAgentRuntime repaired = manager.prepare(AGENT_ID);
+
+        assertEquals(skillContent(), Files.readString(skillFile, StandardCharsets.UTF_8));
+        verify(client, times(2)).querySkillInfo(SKILL_ID);
+    }
+
+    @Test
+    void preparedSkillsLoadThroughRuntimeAgentPromptLoader() throws Exception {
+        stubRuntime("1.0.0", "prompt-v1");
         PreparedAgentRuntime prepared = manager.prepare(AGENT_ID);
 
-        assertEquals("", Files.readString(prepared.agentRoot().resolve(".campusclaw/skills/calendar/SKILL.md")));
+        String prompt = new RuntimeAgentPromptLoader().load(prepared.agentRoot().resolve(".campusclaw"));
+
+        assertTrue(prompt.contains("calendar"));
+        assertTrue(prompt.contains("Calendar workflow"));
+        assertTrue(prompt.contains("prompt-v1"));
     }
 
     private void stubRuntime(String version, String prompt) {
