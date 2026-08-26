@@ -71,8 +71,7 @@ public class MateServiceClient {
      */
     public AgentRuntime getAgentRuntime(String agentId) {
         requireIdentifier(agentId, ResourceIdentifierPatterns.AGENT_ID_PATTERN, "agentId");
-        String path =
-                campusMateProperties.endpoints().agentRuntimePathTemplate().formatted(agentId);
+        String path = expandPathTemplate(campusMateProperties.endpoints().agentRuntimePathTemplate(), agentId);
         HttpRequest request = HttpRequest.newBuilder(campusMateProperties.endpoint(path))
                 .timeout(properties.requestTimeout())
                 .header("Accept", "application/json")
@@ -98,7 +97,7 @@ public class MateServiceClient {
      */
     public List<SkillInfo> querySkillInfo(String skillId) {
         requireIdentifier(skillId, ResourceIdentifierPatterns.SKILL_ID_PATTERN, "skillId");
-        String path = campusMateProperties.endpoints().skillInfoPathTemplate().formatted(skillId);
+        String path = expandPathTemplate(campusMateProperties.endpoints().skillInfoPathTemplate(), skillId);
         HttpRequest request = HttpRequest.newBuilder(campusMateProperties.endpoint(path))
                 .timeout(properties.requestTimeout())
                 .header("Accept", "application/json")
@@ -122,6 +121,10 @@ public class MateServiceClient {
         if (value == null || !pattern.matcher(value).matches()) {
             throw new IllegalArgumentException("Invalid " + name + ": " + value);
         }
+    }
+
+    private static String expandPathTemplate(String template, String resourceId) {
+        return template.replace("%s", resourceId);
     }
 
     private JsonNode send(HttpRequest request, String operation) {

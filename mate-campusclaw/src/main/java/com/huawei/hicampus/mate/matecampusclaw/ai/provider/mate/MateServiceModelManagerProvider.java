@@ -214,11 +214,15 @@ public class MateServiceModelManagerProvider implements AiProvider {
                 || path.getAuthority() != null
                 || path.getQuery() != null
                 || path.getFragment() != null
-                || List.of(path.getPath().split("/")).contains("..")) {
+                || containsDotSegment(path.getPath())) {
             throw new IllegalArgumentException(
-                    "campusmate.endpoints.model-chat-path must be a service-local path without .. segments");
+                    "campusmate.endpoints.model-chat-path must be a service-local path without . or .. segments");
         }
         return chatPath;
+    }
+
+    private static boolean containsDotSegment(String path) {
+        return List.of(path.split("/")).stream().anyMatch(segment -> ".".equals(segment) || "..".equals(segment));
     }
 
     private static AssistantMessage errorMessage(Model model, Throwable error) {

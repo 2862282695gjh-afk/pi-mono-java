@@ -398,7 +398,7 @@ class HttpMateToolClientTest {
     void configuredEndpointPathsAreUsed() throws Exception {
         HttpMateToolClient configuredClient = new HttpMateToolClient(
                 server.url("/").toString().replaceAll("/$", ""),
-                "/mate-service/custom/agents/%s",
+                "/mate-service/custom%20segment/agents/%s",
                 "/mate-service/custom/skills/%s",
                 "/mate-service/custom/tools/query",
                 "/mate-service/custom/tools/%s/execute",
@@ -413,8 +413,33 @@ class HttpMateToolClientTest {
         configuredClient.listAgentTools("agent-11111111111111111111111111111111", MateCredentials.empty());
 
         assertThat(server.takeRequest().getPath())
-                .isEqualTo("/mate-service/custom/agents/agent-11111111111111111111111111111111");
+                .isEqualTo("/mate-service/custom%20segment/agents/agent-11111111111111111111111111111111");
         assertThat(server.takeRequest().getPath()).isEqualTo("/mate-service/custom/tools/query");
+    }
+
+    @Test
+    void percentEncodedSkillAndToolTemplatesExpandOnlyLiteralPlaceholder() throws Exception {
+        HttpMateToolClient configuredClient = new HttpMateToolClient(
+                server.url("/").toString().replaceAll("/$", ""),
+                AGENT_INFO_PATH_TEMPLATE,
+                "/mate-service/custom%20segment/skills/%s",
+                TOOL_METADATA_QUERY_PATH,
+                "/mate-service/custom%20segment/tools/%s/execute",
+                new MateRestUtil(),
+                new com.fasterxml.jackson.databind.ObjectMapper());
+        server.enqueue(json("{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":{\"bindingTools\":[]}}"));
+        server.enqueue(json("{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":{\"answer\":1}}"));
+
+        configuredClient.listSkillTools("skill-11111111111111111111111111111111", MateCredentials.empty());
+        configuredClient.callTool(
+                "tool-11111111111111111111111111111111",
+                java.util.Map.of(),
+                MateCredentials.appKey("hw-id-1", "key-1"));
+
+        assertThat(server.takeRequest().getPath())
+                .isEqualTo("/mate-service/custom%20segment/skills/skill-11111111111111111111111111111111");
+        assertThat(server.takeRequest().getPath())
+                .isEqualTo("/mate-service/custom%20segment/tools/tool-11111111111111111111111111111111/execute");
     }
 
     private static MockResponse json(String body) {

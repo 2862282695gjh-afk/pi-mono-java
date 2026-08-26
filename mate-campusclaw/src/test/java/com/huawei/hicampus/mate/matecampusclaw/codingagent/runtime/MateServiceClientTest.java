@@ -333,8 +333,8 @@ class MateServiceClientTest {
     @Test
     void usesConfiguredEndpointPathTemplates() throws Exception {
         var properties = new AgentRuntimeProperties(Path.of("agent"), Duration.ofSeconds(1L), Duration.ofSeconds(2L));
-        CampusMateClientProperties campusMateProperties =
-                campusMateProperties("/mate-service/custom/agents/%s/runtime", "/mate-service/custom/skills/%s");
+        CampusMateClientProperties campusMateProperties = campusMateProperties(
+                "/mate-service/custom%20segment/agents/%s/runtime", "/mate-service/custom%20segment/skills/%s");
         client = new MateServiceClient(properties, campusMateProperties, new ObjectMapper());
         server.enqueue(
                 new MockResponse().setHeader("Content-Type", "application/json").setBody("{}"));
@@ -346,10 +346,10 @@ class MateServiceClientTest {
         client.querySkillInfo("skill-11111111111111111111111111111111");
 
         assertEquals(
-                "/mate-service/custom/agents/agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/runtime",
+                "/mate-service/custom%20segment/agents/agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/runtime",
                 server.takeRequest().getPath());
         assertEquals(
-                "/mate-service/custom/skills/skill-11111111111111111111111111111111",
+                "/mate-service/custom%20segment/skills/skill-11111111111111111111111111111111",
                 server.takeRequest().getPath());
     }
 

@@ -82,8 +82,8 @@ public record CampusMateClientProperties(URI baseUrl, Endpoints endpoints) {
                 || parsed.getFragment() != null) {
             throw new IllegalArgumentException("campusmate.endpoints." + name + " must be a service-local path");
         }
-        if (containsParentSegment(parsed.getPath())) {
-            throw new IllegalArgumentException("campusmate.endpoints." + name + " cannot contain .. segments");
+        if (containsDotSegment(parsed.getPath())) {
+            throw new IllegalArgumentException("campusmate.endpoints." + name + " cannot contain . or .. segments");
         }
         return path;
     }
@@ -98,9 +98,9 @@ public record CampusMateClientProperties(URI baseUrl, Endpoints endpoints) {
         return count;
     }
 
-    private static boolean containsParentSegment(String path) {
+    private static boolean containsDotSegment(String path) {
         for (String segment : path.split("/")) {
-            if ("..".equals(segment)) {
+            if (".".equals(segment) || "..".equals(segment)) {
                 return true;
             }
         }

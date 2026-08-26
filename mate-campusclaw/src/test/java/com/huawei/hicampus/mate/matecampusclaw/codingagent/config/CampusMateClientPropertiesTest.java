@@ -64,6 +64,29 @@ class CampusMateClientPropertiesTest {
     }
 
     @Test
+    void rejectsCurrentDirectorySegmentsBeforeOperationComparison() {
+        assertThatThrownBy(() -> new CampusMateClientProperties.Endpoints(
+                        "/mate-service/v1/LLM/chat",
+                        "/mate-service/v1/agents/./%s",
+                        "/mate-service/v1/agents/%s/runtime",
+                        "/mate-service/v1/skill/query/%s",
+                        "/mate-service/v1/runtime/tools/query",
+                        "/mate-service/v1/runtime/tools/%s/execute"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("cannot contain . or .. segments");
+
+        assertThatThrownBy(() -> new CampusMateClientProperties.Endpoints(
+                        "/mate-service/v1/LLM/chat",
+                        "/mate-service/v1/agents/%2e/%s",
+                        "/mate-service/v1/agents/%s/runtime",
+                        "/mate-service/v1/skill/query/%s",
+                        "/mate-service/v1/runtime/tools/query",
+                        "/mate-service/v1/runtime/tools/%s/execute"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("cannot contain . or .. segments");
+    }
+
+    @Test
     void rejectsDuplicateMethodAndPathOperation() {
         CampusMateClientProperties.Endpoints duplicate = new CampusMateClientProperties.Endpoints(
                 "/mate-service/v1/LLM/chat",

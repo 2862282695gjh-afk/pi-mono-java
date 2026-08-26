@@ -198,6 +198,19 @@ class MateServiceModelManagerProviderTest {
     }
 
     @Test
+    void rejectsDotSegmentInChatPathAtStartup() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> new MateServiceModelManagerProvider(
+                        mapper,
+                        "https://campusmate.example.com",
+                        "/mate-service/v1/LLM/./chat",
+                        "openai-completions",
+                        Duration.ofSeconds(1L),
+                        Duration.ofSeconds(2L)));
+    }
+
+    @Test
     void closesHttpStreamAndReturnsAbortedWhenCallerCancels() {
         String firstChunk = "data: {\"id\":\"chatcmpl-cancel\",\"model\":\"private-model\","
                 + "\"choices\":[{\"index\":0,\"delta\":{\"content\":\"a\"},\"finish_reason\":null}]}\n\n";

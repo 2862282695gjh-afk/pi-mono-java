@@ -131,7 +131,7 @@ public class HttpMateToolClient implements MateToolClient {
      */
     protected List<String> queryToolIdsByAgentId(String agentId, MateCredentials credentials) throws Exception {
         String raw = mateRestUtil.executeGetRawRequest(
-                campusMateBaseUrl, agentInfoPathTemplate.formatted(agentId), toHeaderInfo(credentials));
+                campusMateBaseUrl, expandPathTemplate(agentInfoPathTemplate, agentId), toHeaderInfo(credentials));
         AgentInfo agentInfo = unwrapResult(raw, AgentInfo.class);
         List<String> toolIds = new ArrayList<>();
         if (agentInfo != null && agentInfo.getBindingTools() != null) {
@@ -152,7 +152,7 @@ public class HttpMateToolClient implements MateToolClient {
      */
     protected List<String> queryToolIdsBySkillId(String skillId, MateCredentials credentials) throws Exception {
         String raw = mateRestUtil.executeGetRawRequest(
-                campusMateBaseUrl, skillInfoPathTemplate.formatted(skillId), toHeaderInfo(credentials));
+                campusMateBaseUrl, expandPathTemplate(skillInfoPathTemplate, skillId), toHeaderInfo(credentials));
         SkillInfoResult skillResult = unwrapResult(raw, SkillInfoResult.class);
         List<String> toolIds = new ArrayList<>();
         if (skillResult != null && skillResult.getBindingTools() != null) {
@@ -316,7 +316,7 @@ public class HttpMateToolClient implements MateToolClient {
 
             // CampusMate 执行接口契约:参数需包一层 arguments 包装。
             String body = mapper.writeValueAsString(Map.of("arguments", args != null ? args : Map.of()));
-            String path = toolExecutePathTemplate.formatted(toolId);
+            String path = expandPathTemplate(toolExecutePathTemplate, toolId);
             String raw = mateRestUtil.executePostRawRequest(campusMateBaseUrl, path, headerInfo, body);
             JsonNode root = mapper.readTree(raw);
             String resCode = root.path("resCode").asText("");
@@ -343,5 +343,9 @@ public class HttpMateToolClient implements MateToolClient {
                 .xHwAppKey(snapshot.xHwAppKey())
                 .authorization(snapshot.authorization())
                 .build();
+    }
+
+    private static String expandPathTemplate(String template, String resourceId) {
+        return template.replace("%s", resourceId);
     }
 }
