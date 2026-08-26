@@ -13,6 +13,9 @@ import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.agent.Agen
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 /**
  * 以当前模型目录充当独立开发环境 Model Manager 的适配器。
  *
@@ -20,6 +23,8 @@ import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.error.Runt
  * @since [br_eCampusCore 26.0.0]
  */
 public class CatalogRuntimeModelManager implements RuntimeModelManager {
+    private static final Logger LOGGER = LoggerFactory.getLogger(CatalogRuntimeModelManager.class);
+
     private final ModelCatalogService modelCatalogService;
 
     public CatalogRuntimeModelManager(ModelCatalogService modelCatalogService) {
@@ -47,7 +52,15 @@ public class CatalogRuntimeModelManager implements RuntimeModelManager {
         } catch (RuntimeApiException error) {
             throw error;
         } catch (RuntimeException error) {
-            throw new RuntimeApiException(RuntimeErrorCode.MANAGER_UNAVAILABLE, error);
+            RuntimeErrorCode errorCode = RuntimeErrorCode.MANAGER_UNAVAILABLE;
+            LOGGER.atError()
+                    .addKeyValue("event", "campusclaw.failure")
+                    .addKeyValue("operation", "runtime.model.resolve")
+                    .addKeyValue("errorCode", errorCode.name())
+                    .addKeyValue("modelId", modelId)
+                    .setCause(error)
+                    .log("CampusClaw failure: operation={}, errorCode={}", "runtime.model.resolve", errorCode.name());
+            throw new RuntimeApiException(errorCode);
         }
     }
 
@@ -65,7 +78,15 @@ public class CatalogRuntimeModelManager implements RuntimeModelManager {
             }
             return List.copyOf(resolved);
         } catch (RuntimeException error) {
-            throw new RuntimeApiException(RuntimeErrorCode.MANAGER_UNAVAILABLE, error);
+            RuntimeErrorCode errorCode = RuntimeErrorCode.MANAGER_UNAVAILABLE;
+            LOGGER.atError()
+                    .addKeyValue("event", "campusclaw.failure")
+                    .addKeyValue("operation", "runtime.model.list")
+                    .addKeyValue("errorCode", errorCode.name())
+                    .addKeyValue("agentId", snapshot.agentId())
+                    .setCause(error)
+                    .log("CampusClaw failure: operation={}, errorCode={}", "runtime.model.list", errorCode.name());
+            throw new RuntimeApiException(errorCode);
         }
     }
 

@@ -67,10 +67,12 @@ class FileAgentDirectoryResolverTest {
         assertThatThrownBy(() -> new FileAgentDirectoryResolver(manager).resolve(AGENT_ID))
                 .isInstanceOfSatisfying(RuntimeApiException.class, error -> {
                     assertThat(error.errorCode()).isEqualTo(RuntimeErrorCode.AGENT_NOT_AVAILABLE);
-                    assertThat(error).hasCause(failure);
+                    assertThat(error).hasNoCause();
                 });
         assertThat(output)
-                .contains("Failed to prepare Agent runtime: agentId=" + AGENT_ID)
+                .contains("operation=runtime.agent.prepare")
+                .contains("errorCode=AGENT_NOT_AVAILABLE")
+                .contains("agentId=\"" + AGENT_ID + "\"")
                 .contains("AgentRuntimeException: Mate unavailable");
     }
 

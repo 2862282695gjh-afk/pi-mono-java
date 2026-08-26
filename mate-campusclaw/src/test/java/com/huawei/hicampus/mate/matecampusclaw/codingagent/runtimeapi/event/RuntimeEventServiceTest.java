@@ -55,7 +55,13 @@ import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.slf4j.LoggerFactory;
 import org.springframework.context.support.StaticMessageSource;
+
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 
 /**
  * Runtime Event 接受边界、执行生命周期和流终止语义测试。
@@ -150,10 +156,19 @@ class RuntimeEventServiceTest {
     @Test
     void executionFailureUsesChineseSseMessage() {
         Fixture fixture = new Fixture();
-        RuntimeEventStream stream = fixture.service.submit(
-                SESSION_ID, request("分析订单", List.of()), Locale.SIMPLIFIED_CHINESE, MateCredentials.empty());
+        Logger logger = (Logger) LoggerFactory.getLogger(RuntimeExecutionCoordinator.class);
+        ListAppender<ILoggingEvent> logs = new ListAppender<>();
+        logs.start();
+        logger.addAppender(logs);
+        RuntimeEventStream stream;
+        try {
+            stream = fixture.service.submit(
+                    SESSION_ID, request("分析订单", List.of()), Locale.SIMPLIFIED_CHINESE, MateCredentials.empty());
 
-        fixture.agentFuture.completeExceptionally(new IllegalStateException("expected test failure"));
+            fixture.agentFuture.completeExceptionally(new IllegalStateException("expected test failure"));
+        } finally {
+            logger.detachAppender(logs);
+        }
 
         assertThat(fixture.execution.completion()).isCompletedExceptionally();
         RuntimeSseEventVO terminal = collect(stream).getLast();
@@ -161,6 +176,17 @@ class RuntimeEventServiceTest {
         assertThat(terminal.getData())
                 .containsEntry("resCode", RuntimeErrorCode.SESSION_EXECUTION_FAILED.name())
                 .containsEntry("resMsg", "Session 执行失败。");
+        assertThat(logs.list).anySatisfy(event -> {
+            assertThat(event.getLevel()).isEqualTo(Level.ERROR);
+            assertThat(event.getFormattedMessage())
+                    .contains("operation=runtime.execution")
+                    .contains("errorCode=SESSION_EXECUTION_FAILED");
+            assertThat(event.getKeyValuePairs()).anySatisfy(pair -> {
+                assertThat(pair.key).isEqualTo("sessionId");
+                assertThat(pair.value).isEqualTo(SESSION_ID);
+            });
+            assertThat(event.getThrowableProxy()).isNotNull();
+        });
     }
 
     private static List<RuntimeSseEventVO> collect(RuntimeEventStream stream) {

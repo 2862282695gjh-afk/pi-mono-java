@@ -26,6 +26,8 @@ import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.vo.ChangeM
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.vo.ChangeThinkingRequestVO;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.vo.GetSessionResponseVO;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 /**
@@ -36,6 +38,8 @@ import org.springframework.stereotype.Service;
  */
 @Service
 public class RuntimeSessionConfigurationService {
+    private static final Logger LOGGER = LoggerFactory.getLogger(RuntimeSessionConfigurationService.class);
+
     private final RuntimeSessionRepository repository;
 
     private final AgentDirectoryResolver agentDirectoryResolver;
@@ -95,7 +99,18 @@ public class RuntimeSessionConfigurationService {
         } catch (RuntimeApiException error) {
             throw error;
         } catch (RuntimeException error) {
-            throw new RuntimeApiException(RuntimeErrorCode.SESSION_MODEL_UPDATE_FAILED, error);
+            RuntimeErrorCode errorCode = RuntimeErrorCode.SESSION_MODEL_UPDATE_FAILED;
+            LOGGER.atError()
+                    .addKeyValue("event", "campusclaw.failure")
+                    .addKeyValue("operation", "runtime.session.model.update")
+                    .addKeyValue("errorCode", errorCode.name())
+                    .addKeyValue("sessionId", sessionId)
+                    .setCause(error)
+                    .log(
+                            "CampusClaw failure: operation={}, errorCode={}",
+                            "runtime.session.model.update",
+                            errorCode.name());
+            throw new RuntimeApiException(errorCode);
         }
     }
 
@@ -119,7 +134,18 @@ public class RuntimeSessionConfigurationService {
         } catch (RuntimeApiException error) {
             throw error;
         } catch (RuntimeException error) {
-            throw new RuntimeApiException(RuntimeErrorCode.SESSION_THINKING_UPDATE_FAILED, error);
+            RuntimeErrorCode errorCode = RuntimeErrorCode.SESSION_THINKING_UPDATE_FAILED;
+            LOGGER.atError()
+                    .addKeyValue("event", "campusclaw.failure")
+                    .addKeyValue("operation", "runtime.session.thinking.update")
+                    .addKeyValue("errorCode", errorCode.name())
+                    .addKeyValue("sessionId", sessionId)
+                    .setCause(error)
+                    .log(
+                            "CampusClaw failure: operation={}, errorCode={}",
+                            "runtime.session.thinking.update",
+                            errorCode.name());
+            throw new RuntimeApiException(errorCode);
         }
     }
 

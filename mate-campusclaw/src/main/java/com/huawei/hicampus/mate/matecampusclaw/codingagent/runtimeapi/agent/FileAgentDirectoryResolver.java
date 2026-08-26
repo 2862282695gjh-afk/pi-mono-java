@@ -37,10 +37,25 @@ public class FileAgentDirectoryResolver implements AgentDirectoryResolver {
         try {
             return snapshot(runtimeManager.prepare(agentId));
         } catch (IllegalArgumentException error) {
-            throw new RuntimeApiException(RuntimeErrorCode.AGENT_NOT_FOUND, error);
+            RuntimeErrorCode errorCode = RuntimeErrorCode.AGENT_NOT_FOUND;
+            LOGGER.atWarn()
+                    .addKeyValue("event", "campusclaw.failure")
+                    .addKeyValue("operation", "runtime.agent.resolve")
+                    .addKeyValue("errorCode", errorCode.name())
+                    .addKeyValue("agentId", agentId)
+                    .setCause(error)
+                    .log("CampusClaw failure: operation={}, errorCode={}", "runtime.agent.resolve", errorCode.name());
+            throw new RuntimeApiException(errorCode);
         } catch (AgentRuntimeException error) {
-            LOGGER.error("Failed to prepare Agent runtime: agentId={}", agentId, error);
-            throw new RuntimeApiException(RuntimeErrorCode.AGENT_NOT_AVAILABLE, error);
+            RuntimeErrorCode errorCode = RuntimeErrorCode.AGENT_NOT_AVAILABLE;
+            LOGGER.atError()
+                    .addKeyValue("event", "campusclaw.failure")
+                    .addKeyValue("operation", "runtime.agent.prepare")
+                    .addKeyValue("errorCode", errorCode.name())
+                    .addKeyValue("agentId", agentId)
+                    .setCause(error)
+                    .log("CampusClaw failure: operation={}, errorCode={}", "runtime.agent.prepare", errorCode.name());
+            throw new RuntimeApiException(errorCode);
         }
     }
 

@@ -99,7 +99,13 @@ public final class ContextOverflowDetector {
     }
 
     private static boolean hasOverflowError(AssistantMessage message) {
-        if (message.stopReason() != StopReason.ERROR || message.errorMessage() == null) {
+        if (message.stopReason() != StopReason.ERROR) {
+            return false;
+        }
+        if ("CONTEXT_WINDOW_EXCEEDED".equals(message.errorCode())) {
+            return true;
+        }
+        if (message.errorMessage() == null) {
             return false;
         }
         String error = message.errorMessage();
