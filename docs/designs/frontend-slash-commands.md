@@ -100,8 +100,8 @@ ComposerBox → App.submit() → useRuntimeApi.sendMessage(message)
   "message": "ok",
   "result": {
     "kind": "ok",
-    "output": "已切换模型: glm-5",
-    "effects": { "modelChanged": true }
+    "output": "当前模型: glm-5",
+    "effects": {}
   }
 }
 ```
@@ -111,20 +111,20 @@ ComposerBox → App.submit() → useRuntimeApi.sendMessage(message)
 - `error`:命令业务失败(如未知模型名),`output` 为安全摘要
 - `no-session`:理论上不会出现(路径已含 sessionId),保留作防御
 
-`effects` 已知键(前端逐个处理,未知键忽略——向前兼容):
+`effects` 首版实际产生的键(前端逐个处理,未知键忽略——向前兼容;完整归属表见 3.6):
 
-| 键 | 类型 | 前端动作 |
-|---|---|---|
-| `modelChanged` | boolean | 刷新会话模型显示(等价 `changeModel` 成功后的本地刷新) |
-| `thinkingChanged` | boolean | 刷新思考级别显示 |
-| `sessionRenamed` | boolean | 刷新会话标题(侧栏) |
-| `conversationReset` | boolean | 清空当前时间线(`/new` 用) |
-| `historyCompacted` | boolean | 标记历史已压缩(首版可仅提示) |
+| 键 | 类型 | 产生来源 | 前端动作 |
+|---|---|---|---|
+| `modelChanged` | boolean | 别名路径(经 changeModel 真实写入,服务端持久化) | 刷新会话模型显示 |
+| `thinkingChanged` | boolean | 别名路径(经 changeThinking,服务端持久化) | 刷新思考级别显示 |
+| `conversationReset` | boolean | `/new` 命令(客户端本地清视图) | 清空本页时间线 |
+| ~~sessionRenamed~~ | — | 首版已移出(/name 削减,见批注④) | — |
+| ~~historyCompacted~~ | — | 首版已移出(/compact 削减) | — |
 
 **[批注②已采纳] `/model`、`/thinking` 写操作走别名,不经命令端点**:这两个命令**带参数时在前端解析为别名**——`useSlashCommands.execute` 直接调用现有 `runtime.changeModel(modelId)` / `runtime.changeThinking(bool)`(内部已带 `If-Match` + 返回最新 Session 与 ETag,乐观并发保护完整继承),成功后组装等效 `SlashCommandResult` 走统一结果展示。命令端点只承接**无对应既有端点**的命令。后端兜底:命令端点收到 model/thinking 写参数时返回 400 提示"请经 /model 端点执行",防止绕过前端造成双路径漂移。空参查询仍走命令端点(只读无并发问题)。
 
 
-**同步短请求,无 SSE**。HTTP 状态码:200 成功(kind=ok/error 都可能是 200);404 未知命令名;400 无效参数格式;409 会话 streaming 中执行了互斥命令;500 内部错误(信封 `message` 给安全摘要)。
+**同步短请求,无 SSE**。HTTP 状态码:200 成功(kind=ok/error 都可能是 200);404 未知命令名(不在 Catalog);400 无效参数格式 / TUI-only 命令(COMMAND_NOT_AVAILABLE_ON_WEB) / model/thinking 带参(引导别名);409 会话 streaming 中执行互斥命令;500 内部错误(信封 `message` 给安全摘要)。
 
 ### 1.3 `POST …/events` 行为变更
 
@@ -177,20 +177,19 @@ public record WebCommandDefinition(
         BiFunction<RuntimeSessionHolder, String, CommandOutcome> handler) {}
 ```
 
-**为什么不复用 `SlashCommandRegistry`**:TUI 命令的 `SlashCommandContext` 携带 `AgentSession + OutputWriter`(终端语义),27 个命令大量直接操作 TUI 状态;Web 侧上下文是 `RuntimeSessionHolder`(runtime 会话)。硬桥接需要重写所有命令的上下文适配,不如为新语义建独立注册表,首版只注册 Web 能做的 8 个命令,handler 内部**复用底层会话操作方法**(如下)。
+**为什么不复用 `SlashCommandRegistry`**:TUI 命令的 `SlashCommandContext` 携带 `AgentSession + OutputWriter`(终端语义),27 个命令大量直接操作 TUI 状态;Web 侧上下文是 `RuntimeSessionHolder`(runtime 会话)。硬桥接需要重写所有命令的上下文适配,不如为新语义建独立注册表,首版只注册 Web 能做的 5 个命令(见下表;model/thinking 写操作走别名,注册表内仅空参查询),handler 内部**复用底层会话操作方法**。
 
-`WebCommandInvoker` 内置注册表(伪代码,首版 8 个):
+`WebCommandCatalog` 注册表(**首版 5 个**,与批注④决议一致;model/thinking 的写操作走前端别名不经此端点,见 1.2):
 
 | name | argsHint | handler 要点(都操作 `RuntimeSessionHolder` 现有能力) |
 |---|---|---|
-| `model` | `[model-id]` | 空参:读当前模型 id 返回;有参:调会话已有的模型变更路径(同 `RuntimeSessionConfigurationController` 的 model 端点逻辑),effects=modelChanged |
-| `thinking` | `[on\|off]` | 同上,走 thinking 配置路径,effects=thinkingChanged |
-| `name` | `[title]` | 重命名会话(若 runtime 已有 rename 能力;没有则本命令首版降级为只读显示当前标题),effects=sessionRenamed |
-| `new` | — | 结束当前会话上下文:返回提示文本 + effects=conversationReset(**不物理删会话**,前端按 reset 清时间线并引导新建) |
-| `compact` | — | 首版:返回"历史压缩已由服务自动执行"提示 + effects=historyCompacted(真实触发压缩若 runtime 未暴露,登记 DEFERRED) |
+| `model` | `[model-id]` | **仅空参查询**:读当前模型 id 返回;带参时返回 400 提示走 `/model` 端点(别名,见 1.2) |
+| `thinking` | `[on\|off]` | **仅空参查询**:读当前思考级别;带参同样 400 引导别名 |
+| `new` | — | effects=conversationReset(客户端本地清视图,见 3.6 归属表);**不物理删会话** |
 | `help` | — | 输出 webCapable 命令列表文本 |
-| `settings` | — | 只读:当前模型/思考级别/会话标题摘要 |
-| `export` | `[format]` | 首版仅 `text`:把会话历史拼为纯文本返回(前端弹下载);其它 format 返回 error |
+| `settings` | — | 只读:当前模型/思考级别摘要 |
+
+(Catalog 同时登记 webCapable=false 的 TUI 专属命令名——只为守卫与三态判定,不可执行,不出现在菜单;历史版本曾含 name/compact/export,削减理由见批注④表。)
 
 **[批注④已采纳] 首版命令削减为 5 个**:`model` / `thinking` / `new` / `help` / `settings`。移出项及理由:
 
@@ -384,8 +383,9 @@ function onKeydown(event: KeyboardEvent): void {
   if (menuActive.value) {
     if (event.key === 'ArrowDown') { event.preventDefault(); moveActive(1); return; }
     if (event.key === 'ArrowUp')   { event.preventDefault(); moveActive(-1); return; }
-    if (event.key === 'Tab' || event.key === 'Enter') { event.preventDefault(); completeActive(); return; } // 两段式:只补全
+    // 注意顺序:带修饰键的 Enter 必须先于普通 Enter 判断,否则被普通分支吞掉
     if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) { event.preventDefault(); completeAndRun(); return; } // 直达
+    if (event.key === 'Tab' || event.key === 'Enter') { event.preventDefault(); completeActive(); return; } // 两段式:只补全
     if (event.key === 'Escape')    { menuActive.value = false; return; }
     return; // 菜单激活时其它键(含普通输入)先放行到 textarea,由 updateText 重新过滤
   }
@@ -458,11 +458,21 @@ async function runCommand(payload: { name: string; arguments: string }): Promise
 }
 ```
 
-原 `submit()` **加一行前置分流**(双保险,防止菜单关闭状态下的漏网 `/cmd`):
+原 `submit()` **加前置分流**(双保险,防止菜单关闭状态下的漏网 `/cmd`;注意 `matchCommand` 返回三态 `SlashMatch`,按下述完整分支处理):
 
 ```ts
-const matched = slash.matchCommand(text);
-if (!running.value && matched) { await runCommand({ name: matched.command.name, arguments: matched.arguments }); return; }
+if (!running.value) {
+  const matched = slash.matchCommand(text);
+  if (matched.type === 'executable') {
+    await runCommand({ name: matched.command.name, arguments: matched.arguments });
+    return;
+  }
+  if (matched.type === 'web-reserved') {
+    appendSystemMessage(`/${matched.command.name} 仅在终端可用`, true);
+    return; // 不透传——后端守卫也会拒,不发请求
+  }
+  // matched.type === 'unknown' → 继续走普通消息提交
+}
 ```
 
 ### 3.6 系统消息(`ConversationTimeline`)
@@ -486,8 +496,8 @@ if (!running.value && matched) { await runCommand({ name: matched.command.name, 
 
 - `useSlashCommands.test.ts`:
   - `load` 缓存(force 才重拉)/ 失败静默置空
-  - `matchCommand`: `/model x` 命中、`/mo` 前缀不命中(未完整)、`/abc` null、非 `/` 开头 null
-  - `execute` effects 分发:modelChanged 触发 getSession、未知 effects 键忽略
+  - `matchCommand` 三态: `/model x`→executable、`/hotkeys x`→web-reserved、`/abc`→unknown、`/mo`(未完整名)→unknown、非 `/` 开头→unknown
+  - `execute` 别名分流: model/thinking 带参走 changeModel/changeThinking(含 412);effects 未知键忽略
 - `CommandMenu` 交互测试:前缀过滤、分类分组、空态占位、select/close emit
 - App 级(可选):命令提交后输入框清空 + 系统消息插入
 
