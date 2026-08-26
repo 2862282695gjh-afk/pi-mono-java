@@ -79,8 +79,8 @@ class FileAgentDirectoryResolverTest {
 
     @Test
     void invalidMateResponseMapsToAgentNotAvailableWithStableCode() {
-        // result 缺失/非对象等响应解析失败映射为 AGENT_NOT_AVAILABLE,
-        // 英文诊断只留在 cause,公开边界按错误码渲染中英文文案。
+        // result 缺失/非对象等响应解析失败映射为 AGENT_NOT_AVAILABLE，
+        // 诊断异常只写入日志，公开边界按错误码渲染中英文文案。
         AgentRuntimeManager manager = mock(AgentRuntimeManager.class);
         AgentRuntimeException failure = new AgentRuntimeException(
                 AgentRuntimeErrorCode.MATE_RESPONSE_INVALID, "querySkillInfo result must be an object");
@@ -89,7 +89,7 @@ class FileAgentDirectoryResolverTest {
         assertThatThrownBy(() -> new FileAgentDirectoryResolver(manager).resolve(AGENT_ID))
                 .isInstanceOfSatisfying(RuntimeApiException.class, error -> {
                     assertThat(error.errorCode()).isEqualTo(RuntimeErrorCode.AGENT_NOT_AVAILABLE);
-                    assertThat(error).hasCause(failure);
+                    assertThat(error).hasNoCause();
                     assertThat(failure.stableErrorCode()).isEqualTo("MATE_RESPONSE_INVALID");
                 });
     }

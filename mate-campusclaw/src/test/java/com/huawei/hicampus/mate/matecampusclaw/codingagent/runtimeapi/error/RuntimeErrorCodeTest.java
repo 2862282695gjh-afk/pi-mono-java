@@ -7,10 +7,14 @@ package com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.error;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.Locale;
 import java.util.ResourceBundle;
 import java.util.Set;
 import java.util.stream.Collectors;
+
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.common.client.mate.MateToolResponseException;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtime.AgentRuntimeErrorCode;
 
 import org.junit.jupiter.api.Test;
 
@@ -27,7 +31,10 @@ class RuntimeErrorCodeTest {
         ResourceBundle chinese = ResourceBundle.getBundle("i18n/messages", Locale.SIMPLIFIED_CHINESE);
         Set<String> expectedKeys = Arrays.stream(RuntimeErrorCode.values())
                 .map(RuntimeErrorCode::messageKey)
-                .collect(Collectors.toUnmodifiableSet());
+                .collect(Collectors.toCollection(HashSet::new));
+        Arrays.stream(AgentRuntimeErrorCode.values()).map(Enum::name).forEach(expectedKeys::add);
+        expectedKeys.add(MateToolResponseException.ERROR_CODE);
+        expectedKeys.add("TOOL_EXECUTION_FAILED");
 
         assertThat(english.keySet()).isEqualTo(expectedKeys);
         assertThat(chinese.keySet()).isEqualTo(expectedKeys);
