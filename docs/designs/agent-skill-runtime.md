@@ -1,6 +1,6 @@
 # Agent 与 Skill 受管运行目录
 
-> 文档版本：3.3.0
+> 文档版本：3.3.1
 >
 > 状态：Implemented
 >
@@ -10,7 +10,7 @@
 ## 1. 源码基线
 
 - 变更前观察基线（CampusClaw）：`56be8eee59415a5f86658d6635a7b7e8891263d3`
-- 本次审查实现提交：`92e45b4cbd45208991b87498c194b932d3dc07a5`
+- 本次审查实现提交：`0ab5db29cd9f4262a24b3ffef4cf009177f25c3e`
 - 设计仓：`c2a495838134aa5e8bc535b906e7534b34779279`
 - 受管目录证据：
   `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtime/AgentRuntimeManager.java`，
@@ -22,7 +22,8 @@
   符号 `failureResult`；
   `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/event/RuntimeEntryCodec.java`，
   符号 `toolResultEntry`/`toSseData`/`toHistoryEvent`；
-  `modules/cron/src/main/java/com/campusclaw/cron/engine/CronJobExecutor.java`，符号 `stableCodeOf`。
+  `modules/cron/src/main/java/com/campusclaw/cron/engine/CronJobExecutor.java`，符号 `stableCodeOf`；
+  `frontend/src/projectors/runtimeEventProjector.ts`，符号 `projectToolEvent`。
 
 基线源码观察到 CLI 生成运行目录与 HTTP 只读目录采用不同文件名，并在 Skill
 `references/tools.json` 保存远端工具快照。本次把两条链收敛为服务端三入口共同使用的一个
@@ -64,7 +65,8 @@ CampusMate 响应解析不按 `resCode` 预判结果，只校验 `result` 形状
 根节点非对象、`result` 缺失/类型不符统一抛带稳定错误码（`AgentRuntimeErrorCode`）的
 `AgentRuntimeException`。Session HTTP 边界经 `FileAgentDirectoryResolver` 映射为
 `AGENT_NOT_AVAILABLE`。工具失败 Entry 只持久化 `error_code`，SSE 和历史查询按请求
-locale 输出 `errorCode` 及 MessageSource 生成的 `errorMessage`；Cron 新运行记录只持久化稳定
+locale 输出 `errorCode` 及 MessageSource 生成的 `errorMessage`；前端失败投影优先展示该
+`errorMessage`，兼容旧事件缺失该字段时回退到 `content`。Cron 新运行记录只持久化稳定
 错误码，旧 JSONL 的 `error` 字段仅作为兼容读取。内部英文诊断仅作为 cause 与日志。
 远端内容先写入同级 staging 目录，通过 Agent、Skill、Child、文件类型、资源名、ID/版本和
 边界校验后原子发布。发布失败清理 staging 并保留旧目录。
@@ -106,6 +108,7 @@ prepare、refresh、原子发布或 HTTP 契约。
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 3.3.1 | 2026-08-26 | 前端工具失败投影消费本地化 errorMessage，并为旧事件保留 content 回退。 |
 | 3.3.0 | 2026-08-26 | 工具失败事件按请求语言生成公开错误文案；Cron 使用通用稳定错误码并兼容旧运行日志；SKILL.md 字节上限收敛为单一定义。 |
 | 3.2.0 | 2026-08-26 | querySkillInfo 的 Skill 响应结果取自 `result`，`result.content` 原文写入 `SKILL.md`；发布前校验 frontmatter `name`/`description` 并用 `SkillLoader` 复核；移除 resCode 预判与 `success-code` 配置，响应解析失败携带稳定错误码。 |
 | 3.1.0 | 2026-08-26 | Runtime 复用 CampusMate 单一 base URL、共享 Agent/Skill Endpoint，并保留本地参数边界。 |
