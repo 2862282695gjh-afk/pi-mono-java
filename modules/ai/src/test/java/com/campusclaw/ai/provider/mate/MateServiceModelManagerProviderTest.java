@@ -9,6 +9,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
@@ -168,6 +169,45 @@ class MateServiceModelManagerProviderTest {
                 "unknown-api");
 
         assertThrows(IllegalStateException.class, invalid::validateConfiguration);
+    }
+
+    @Test
+    void rejectsInvalidSharedBaseUrlAtStartup() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> new MateServiceModelManagerProvider(
+                        mapper,
+                        "ftp://campusmate.example.com",
+                        "/mate-service/v1/LLM/chat",
+                        "openai-completions",
+                        Duration.ofSeconds(1L),
+                        Duration.ofSeconds(2L)));
+    }
+
+    @Test
+    void rejectsChatPathOutsideMateServiceAtStartup() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> new MateServiceModelManagerProvider(
+                        mapper,
+                        "https://campusmate.example.com",
+                        "/other-service/v1/LLM/chat",
+                        "openai-completions",
+                        Duration.ofSeconds(1L),
+                        Duration.ofSeconds(2L)));
+    }
+
+    @Test
+    void rejectsDotSegmentInChatPathAtStartup() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> new MateServiceModelManagerProvider(
+                        mapper,
+                        "https://campusmate.example.com",
+                        "/mate-service/v1/LLM/./chat",
+                        "openai-completions",
+                        Duration.ofSeconds(1L),
+                        Duration.ofSeconds(2L)));
     }
 
     @Test

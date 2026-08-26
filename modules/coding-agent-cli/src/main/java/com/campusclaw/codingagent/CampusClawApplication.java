@@ -5,6 +5,7 @@
 package com.campusclaw.codingagent;
 
 import com.campusclaw.agent.controlplane.config.ControlPlaneProperties;
+import com.campusclaw.codingagent.config.CampusMateClientProperties;
 import com.campusclaw.codingagent.runtime.AgentRuntimeProperties;
 import com.campusclaw.codingagent.session.compaction.CompactionProperties;
 import com.campusclaw.codingagent.tool.builtin.BuiltInToolProperties;
@@ -22,6 +23,7 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 @SpringBootApplication(scanBasePackages = "com.campusclaw")
 @EnableConfigurationProperties({
     ControlPlaneProperties.class,
+    CampusMateClientProperties.class,
     AgentRuntimeProperties.class,
     BuiltInToolProperties.class,
     CompactionProperties.class

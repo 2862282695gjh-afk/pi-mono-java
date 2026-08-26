@@ -1,12 +1,13 @@
 # Mate Tool Client 与 Session 发现设计
 
-> 文档版本：2.1.0
+> 文档版本：2.2.0
 >
 > 状态：Implemented
 >
-> 更新日期：2026-08-24
+> 更新日期：2026-08-26
 > 决策记录：[ADR-0024](../decisions/0024-mate-tool-execution-credential-chain.html)、
-> [ADR-0022](../decisions/0022-managed-agent-tool-system-v2.html)
+> [ADR-0022](../decisions/0022-managed-agent-tool-system-v2.html)、
+> [ADR-0026](../decisions/0026-unify-campusmate-client-configuration.html)
 
 ## 1. 源码基线与分层
 
@@ -79,10 +80,22 @@ Runtime 不验证凭据真实性，也不因 AppKey 与 JWT 同时存在而拒�
 最低完整性检查：`X-HW-ID` 非空且 AppKey/JWT 至少一种非空；最终认证与授权由 Mate 完成。
 这一实现是 CampusClaw 的架构改造，pi 没有对应 Mate 工具或凭据链。
 
-## 5. 版本历史
+## 5. CampusMate 共享配置
+
+自 2.2.0 起，Tool 不再使用顶层 `mate.innerGWSerive` 或私有的 `mate.endpoints`。
+`HttpMateToolClient` 与 Model、受管 Runtime 共享 `campusmate.base-url`，并从
+`campusmate.endpoints` 取得 Agent、Skill、Tool 元数据与 Tool execute operation。
+其中 Skill query 与受管 Runtime 共用一个 `skill-info-path-template`，不再重复配置。
+
+完整结构、源码基线、迁移规则和配置可视化见
+[CampusMate 客户端共享配置设计](campusmate-shared-config.md)。本次只修改配置架构，Tool 的
+HTTP method、path、请求响应和凭据链均保持不变。
+
+## 6. 版本历史
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 2.2.0 | 2026-08-26 | Tool 复用 CampusMate 单一 base URL、共享 Endpoint 目录与 Skill query operation；移除顶层 `mate.*` 配置。 |
 | 2.1.0 | 2026-08-24 | 删除部署方 resolver 占位；实现 Runtime 执行级凭据快照、List/Call HTTP 透传、Child 继承和 Cron fail-closed |
 | 2.0.0 | 2026-08-24 | PascalCase 双工具；按 Agent/Skill 方法拆分客户端；稳定 JSON；Session cache miss 自动完整发现且 execute 不重放 |
 | 1.x | 2026-08-22 以前 | 历史 ID/scope List 与 Call-before-List 设计，已由 ADR-0022 取代 |

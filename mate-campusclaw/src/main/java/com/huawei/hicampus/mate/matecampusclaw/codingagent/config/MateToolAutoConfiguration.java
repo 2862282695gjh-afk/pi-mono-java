@@ -11,7 +11,6 @@ import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.mate.MateToolset
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import org.springframework.beans.factory.ObjectProvider;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -20,35 +19,21 @@ import org.springframework.context.annotation.Configuration;
 
 /**
  * 装配 Mate Tool 客户端及两个 AgentTool，保持默认启用语义，并允许通过
- * {@code mate.tool.enabled=false} 显式关闭。
+ * {@code campusmate.tool.enabled=false} 显式关闭。
  *
  * @version [br_eCampusCore 26.0.0, 2026/08/19]
  * @since [br_eCampusCore 26.0.0]
  */
 @Configuration(proxyBeanMethods = false)
-@ConditionalOnProperty(name = "mate.tool.enabled", havingValue = "true", matchIfMissing = true)
-@EnableConfigurationProperties(MateToolProperties.class)
+@ConditionalOnProperty(name = "campusmate.tool.enabled", havingValue = "true", matchIfMissing = true)
+@EnableConfigurationProperties({CampusMateClientProperties.class, MateToolProperties.class})
 public class MateToolAutoConfiguration {
 
-    /** Mate 内部网关地址，保持对公司既有 {@code mate.innerGWSerive} 配置名的兼容。 */
-    @Value("${mate.innerGWSerive:}")
-    private String mateInnerGwAddress;
+    private final CampusMateClientProperties campusMateProperties;
 
-    /** Agent 元数据查询路径前缀。 */
-    @Value("${mate.endpoints.agent-info-path-prefix}")
-    private String agentInfoPathPrefix;
-
-    /** Skill 绑定工具查询路径前缀。 */
-    @Value("${mate.endpoints.skill-tools-query-path-prefix}")
-    private String skillToolsQueryPathPrefix;
-
-    /** 工具元数据批量查询路径。 */
-    @Value("${mate.endpoints.tool-metadata-query-path}")
-    private String toolMetadataQueryPath;
-
-    /** 工具执行路径模板。 */
-    @Value("${mate.endpoints.tool-execute-path-template:/mate-service/v1/runtime/tools/%s/execute}")
-    private String toolExecutePathTemplate;
+    public MateToolAutoConfiguration(CampusMateClientProperties campusMateProperties) {
+        this.campusMateProperties = campusMateProperties;
+    }
 
     /**
      * 创建访问 Mate 内部网关所需的 REST 工具。
@@ -71,12 +56,13 @@ public class MateToolAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean(MateToolClient.class)
     public MateToolClient mateToolClient(MateRestUtil restUtil, ObjectProvider<ObjectMapper> mapperProvider) {
+        CampusMateClientProperties.Endpoints endpoints = campusMateProperties.endpoints();
         return new HttpMateToolClient(
-                mateInnerGwAddress,
-                agentInfoPathPrefix,
-                skillToolsQueryPathPrefix,
-                toolMetadataQueryPath,
-                toolExecutePathTemplate,
+                campusMateProperties.baseUrl().toString(),
+                endpoints.agentInfoPathTemplate(),
+                endpoints.skillInfoPathTemplate(),
+                endpoints.toolMetadataQueryPath(),
+                endpoints.toolExecutePathTemplate(),
                 restUtil,
                 mapperProvider.getIfAvailable(ObjectMapper::new));
     }
