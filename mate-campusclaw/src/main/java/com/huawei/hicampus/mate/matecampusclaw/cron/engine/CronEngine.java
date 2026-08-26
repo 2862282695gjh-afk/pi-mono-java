@@ -19,8 +19,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
 
 import com.huawei.hicampus.mate.matecampusclaw.agent.util.LoggingUncaughtExceptionHandler;
-import com.huawei.hicampus.mate.matecampusclaw.cron.model.CronEvent;
 import com.huawei.hicampus.mate.matecampusclaw.cron.model.CronErrorCode;
+import com.huawei.hicampus.mate.matecampusclaw.cron.model.CronEvent;
 import com.huawei.hicampus.mate.matecampusclaw.cron.model.CronJob;
 import com.huawei.hicampus.mate.matecampusclaw.cron.model.CronJobState;
 import com.huawei.hicampus.mate.matecampusclaw.cron.model.CronRunRecord;
@@ -263,9 +263,8 @@ public class CronEngine {
         if (success) {
             emit(new CronEvent.JobCompleted(job.id(), job.name(), result.runId(), result.output()));
         } else {
-            String failedCode = result.errorCode() != null
-                    ? result.errorCode()
-                    : CronErrorCode.CRON_EXECUTION_FAILED.name();
+            String failedCode =
+                    result.errorCode() != null ? result.errorCode() : CronErrorCode.CRON_EXECUTION_FAILED.name();
             emit(new CronEvent.JobFailed(job.id(), job.name(), result.runId(), failedCode));
         }
     }

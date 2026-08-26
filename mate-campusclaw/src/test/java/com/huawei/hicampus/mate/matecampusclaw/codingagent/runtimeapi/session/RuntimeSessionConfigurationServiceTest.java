@@ -86,8 +86,7 @@ class RuntimeSessionConfigurationServiceTest {
                 new RuntimeSessionResponseAssembler(etagFactory),
                 new RuntimeEntryCodec(
                         new ObjectMapper(),
-                        new com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.RuntimeMessageSourceConfiguration()
-                                .messageSource()),
+                        new com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.RuntimeMessageSourceConfiguration().messageSource()),
                 () -> "entry-config",
                 Clock.fixed(Instant.parse("2026-08-18T02:00:00Z"), ZoneOffset.UTC));
     }

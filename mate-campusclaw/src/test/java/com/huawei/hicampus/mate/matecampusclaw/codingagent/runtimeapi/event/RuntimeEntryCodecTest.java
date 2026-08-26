@@ -51,7 +51,8 @@ class RuntimeEntryCodecTest {
         RuntimeEntryDTO entry = codec.toolResultEntry("session", "entry", failure, OffsetDateTime.now());
         Map<String, Object> event = codec.toHistoryEvent(entry, Locale.SIMPLIFIED_CHINESE);
 
-        assertThat(entry.getPayload()).contains("\"error_code\":\"MATE_RESPONSE_INVALID\"")
+        assertThat(entry.getPayload())
+                .contains("\"error_code\":\"MATE_RESPONSE_INVALID\"")
                 .doesNotContain("error_category", "InternalException");
         assertThat(event)
                 .containsEntry("errorCode", "MATE_RESPONSE_INVALID")
