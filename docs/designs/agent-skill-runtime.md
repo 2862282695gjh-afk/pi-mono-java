@@ -1,6 +1,6 @@
 # Agent 与 Skill 受管运行目录
 
-> 文档版本：3.2.0
+> 文档版本：3.3.0
 >
 > 状态：Implemented
 >
@@ -10,14 +10,19 @@
 ## 1. 源码基线
 
 - 变更前观察基线（CampusClaw）：`56be8eee59415a5f86658d6635a7b7e8891263d3`
-- 本次审查实现提交：`fa9a61ffacf211973b3ef512a6749f0dc90b9707`（后续代码更新时同步为最终 head）
+- 本次审查实现提交：`92e45b4cbd45208991b87498c194b932d3dc07a5`
 - 设计仓：`c2a495838134aa5e8bc535b906e7534b34779279`
-- 实现证据：`AgentRuntimeManager#prepare/#refresh`（缓存读取与发布前复核共用
-  `requireSessionLoadable`）、`PreparedAgentRuntime`、`FileAgentDirectoryResolver#resolve`
-  （`AGENT_NOT_AVAILABLE` 映射）、`MateServiceClient#querySkillInfo/#getAgentRuntime`
-  （`result` 形状校验与 `AgentRuntimeErrorCode`）、`ToolExecutionPipeline#failureResult`
-  （Child 工具结果结构化 `errorCode`）、`RuntimeEntryCodec#toolResultEntry`（SSE `error_code`
-  字段）、`CronJobExecutor#stableCodeOf`（Cron 运行记录 `errorCode`/`errorMessage` 分列）。
+- 受管目录证据：
+  `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtime/AgentRuntimeManager.java`，
+  符号 `prepare`/`refresh`/`requireSessionLoadable`；
+  `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtime/MateServiceClient.java`，
+  符号 `querySkillInfo`/`getAgentRuntime`。
+- 公开错误证据：
+  `modules/agent-core/src/main/java/com/campusclaw/agent/tool/ToolExecutionPipeline.java`，
+  符号 `failureResult`；
+  `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/event/RuntimeEntryCodec.java`，
+  符号 `toolResultEntry`/`toSseData`/`toHistoryEvent`；
+  `modules/cron/src/main/java/com/campusclaw/cron/engine/CronJobExecutor.java`，符号 `stableCodeOf`。
 
 基线源码观察到 CLI 生成运行目录与 HTTP 只读目录采用不同文件名，并在 Skill
 `references/tools.json` 保存远端工具快照。本次把两条链收敛为服务端三入口共同使用的一个
@@ -48,8 +53,8 @@ agent/{agentId}/.campusclaw/
 
 [PlantUML 源码](tool-system-v2/diagram.puml#L1)
 
-`prepare(agentId)` 先加载完整本地缓存；只有缺失或不完整时访问 Mate。querySkillInfo 响应的
-`result` 是单个 Skill 对象（不是数组），解析时要求其为 JSON 对象；其 `content` 字段是完整
+`prepare(agentId)` 先加载完整本地缓存；只有缺失或不完整时访问 Mate。querySkillInfo 的
+Skill 响应结果取自 `result` 字段，解析时要求该字段为 JSON 对象；其 `content` 字段是完整
 SKILL.md 内容，原文写入 `skills/{name}/SKILL.md`，不从元数据生成。发布前校验 SKILL.md：
 非空且不超过 1 MiB、frontmatter `name` 与响应 name 及 `skill.json`/目录名一致、
 `description` 必填，并用会话同一套 `SkillLoader` 复核可加载；校验失败不发布、保留旧缓存。
@@ -57,9 +62,10 @@ SKILL.md 内容，原文写入 `skills/{name}/SKILL.md`，不从元数据生成�
 目录名一致），磁盘内容损坏、超大或超长时判缓存不完整并重新拉取，而不是带着缺陷命中缓存。
 CampusMate 响应解析不按 `resCode` 预判结果，只校验 `result` 形状；空响应体、非法 JSON、
 根节点非对象、`result` 缺失/类型不符统一抛带稳定错误码（`AgentRuntimeErrorCode`）的
-`AgentRuntimeException`。HTTP/SSE 边界经 `FileAgentDirectoryResolver` 映射为
-`AGENT_NOT_AVAILABLE` 并用 MessageSource 输出中英文文案；Child 工具结果与 Cron 运行记录
-只透出稳定错误码，英文诊断仅作为 cause 与日志。
+`AgentRuntimeException`。Session HTTP 边界经 `FileAgentDirectoryResolver` 映射为
+`AGENT_NOT_AVAILABLE`。工具失败 Entry 只持久化 `error_code`，SSE 和历史查询按请求
+locale 输出 `errorCode` 及 MessageSource 生成的 `errorMessage`；Cron 新运行记录只持久化稳定
+错误码，旧 JSONL 的 `error` 字段仅作为兼容读取。内部英文诊断仅作为 cause 与日志。
 远端内容先写入同级 staging 目录，通过 Agent、Skill、Child、文件类型、资源名、ID/版本和
 边界校验后原子发布。发布失败清理 staging 并保留旧目录。
 
@@ -100,7 +106,8 @@ prepare、refresh、原子发布或 HTTP 契约。
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
-| 3.2.0 | 2026-08-26 | querySkillInfo 响应 `result` 为单对象，`result.content` 原文写入 `SKILL.md`；发布前校验 frontmatter `name`/`description` 并用 `SkillLoader` 复核；移除 resCode 预判与 `success-code` 配置，响应解析失败携带稳定错误码。 |
+| 3.3.0 | 2026-08-26 | 工具失败事件按请求语言生成公开错误文案；Cron 使用通用稳定错误码并兼容旧运行日志；SKILL.md 字节上限收敛为单一定义。 |
+| 3.2.0 | 2026-08-26 | querySkillInfo 的 Skill 响应结果取自 `result`，`result.content` 原文写入 `SKILL.md`；发布前校验 frontmatter `name`/`description` 并用 `SkillLoader` 复核；移除 resCode 预判与 `success-code` 配置，响应解析失败携带稳定错误码。 |
 | 3.1.0 | 2026-08-26 | Runtime 复用 CampusMate 单一 base URL、共享 Agent/Skill Endpoint，并保留本地参数边界。 |
 | 3.0.0 | 2026-08-24 | 删除 CLI 双契约和 tools.json，统一服务三入口目录、缓存优先 prepare 与管理面原子 refresh |
 | 2.x | 2026-08-21 以前 | 历史 CLI 运行目录生成与 HTTP 只读目录设计，已由 ADR-0022 取代 |
