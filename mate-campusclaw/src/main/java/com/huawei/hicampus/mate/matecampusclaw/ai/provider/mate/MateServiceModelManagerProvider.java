@@ -109,8 +109,13 @@ public class MateServiceModelManagerProvider implements AiProvider {
         JsonNode request;
         try {
             request = requestMapper.map(model, context, options);
+        } catch (MateModelInvocationException error) {
+            stream.pushError("error", failureMessage(model, error.errorCode()));
+            return stream;
         } catch (RuntimeException error) {
-            stream.pushError("error", errorMessage(model, error));
+            MateInvocationErrorCode errorCode = MateInvocationErrorCode.MATE_REQUEST_MAPPING_FAILED;
+            MateInvocationFailures.record("mate.request.map", errorCode, error, "modelId", model.id());
+            stream.pushError("error", failureMessage(model, errorCode));
             return stream;
         }
         subscribe(model, request, stream);
@@ -139,8 +144,13 @@ public class MateServiceModelManagerProvider implements AiProvider {
         if (response.statusCode().is2xxSuccessful()) {
             MediaType contentType = response.headers().contentType().orElse(null);
             if (contentType == null || !MediaType.TEXT_EVENT_STREAM.isCompatibleWith(contentType)) {
-                return Flux.error(new MateModelInvocationException(
-                        "INVALID_MATE_RESPONSE", "Mate Chat did not return text/event-stream"));
+                return Flux.error(MateInvocationFailures.raise(
+                        "mate.response.validate",
+                        MateInvocationErrorCode.INVALID_MATE_RESPONSE,
+                        "httpStatus",
+                        response.statusCode().value(),
+                        "contentType",
+                        contentType));
             }
             return response.bodyToFlux(SSE_TYPE);
         }
@@ -150,11 +160,15 @@ public class MateServiceModelManagerProvider implements AiProvider {
     }
 
     private static MateModelInvocationException httpError(ClientResponse response, JsonNode body) {
-        String code = body.path("resCode").asText("MATE_MODEL_MANAGER_ERROR");
-        String message = body.path("resMsg")
-                .asText("Mate Model Manager returned HTTP "
-                        + response.statusCode().value());
-        return new MateModelInvocationException(code, message);
+        String upstreamCode = body.path("resCode").asText("MATE_MODEL_MANAGER_ERROR");
+        MateInvocationErrorCode errorCode = MateInvocationErrorCode.fromUpstream(upstreamCode);
+        return MateInvocationFailures.raise(
+                "mate.response.http",
+                errorCode,
+                "httpStatus",
+                response.statusCode().value(),
+                "upstreamErrorCode",
+                upstreamCode);
     }
 
     private static void cancel(AtomicReference<Disposable> subscription, MateChatSseParser parser) {
@@ -225,7 +239,7 @@ public class MateServiceModelManagerProvider implements AiProvider {
         return List.of(path.split("/")).stream().anyMatch(segment -> ".".equals(segment) || "..".equals(segment));
     }
 
-    private static AssistantMessage errorMessage(Model model, Throwable error) {
+    private static AssistantMessage failureMessage(Model model, MateInvocationErrorCode errorCode) {
         return new AssistantMessage(
                 List.of(),
                 Api.OPENAI_COMPLETIONS.value(),
@@ -235,7 +249,8 @@ public class MateServiceModelManagerProvider implements AiProvider {
                 null,
                 Usage.empty(),
                 StopReason.ERROR,
-                error.getMessage(),
+                errorCode.name(),
+                null,
                 System.currentTimeMillis());
     }
 }

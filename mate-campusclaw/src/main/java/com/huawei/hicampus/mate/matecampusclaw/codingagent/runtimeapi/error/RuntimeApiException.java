@@ -16,7 +16,7 @@ public class RuntimeApiException extends RuntimeException {
     private final RuntimeErrorCode errorCode;
 
     public RuntimeApiException(RuntimeErrorCode errorCode) {
-        super(errorCode.name());
+        super(errorCode.name(), null, false, false);
         this.errorCode = errorCode;
     }
 

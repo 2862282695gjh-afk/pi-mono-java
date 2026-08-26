@@ -16,6 +16,7 @@ import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.agent.Agen
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.error.RuntimeFailures;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.event.RuntimeEntryCodec;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.event.RuntimeEntryIdGenerator;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.model.RuntimeModelManager;
@@ -26,8 +27,6 @@ import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.vo.ChangeM
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.vo.ChangeThinkingRequestVO;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.vo.GetSessionResponseVO;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 /**
@@ -38,8 +37,6 @@ import org.springframework.stereotype.Service;
  */
 @Service
 public class RuntimeSessionConfigurationService {
-    private static final Logger LOGGER = LoggerFactory.getLogger(RuntimeSessionConfigurationService.class);
-
     private final RuntimeSessionRepository repository;
 
     private final AgentDirectoryResolver agentDirectoryResolver;
@@ -99,8 +96,12 @@ public class RuntimeSessionConfigurationService {
         } catch (RuntimeApiException error) {
             throw error;
         } catch (RuntimeException error) {
-            LOGGER.error("Failed to update Runtime session model: sessionId={}", sessionId, error);
-            throw new RuntimeApiException(RuntimeErrorCode.SESSION_MODEL_UPDATE_FAILED);
+            throw RuntimeFailures.raise(
+                    "runtime.session.model.update",
+                    RuntimeErrorCode.SESSION_MODEL_UPDATE_FAILED,
+                    error,
+                    "sessionId",
+                    sessionId);
         }
     }
 
@@ -124,8 +125,12 @@ public class RuntimeSessionConfigurationService {
         } catch (RuntimeApiException error) {
             throw error;
         } catch (RuntimeException error) {
-            LOGGER.error("Failed to update Runtime session thinking: sessionId={}", sessionId, error);
-            throw new RuntimeApiException(RuntimeErrorCode.SESSION_THINKING_UPDATE_FAILED);
+            throw RuntimeFailures.raise(
+                    "runtime.session.thinking.update",
+                    RuntimeErrorCode.SESSION_THINKING_UPDATE_FAILED,
+                    error,
+                    "sessionId",
+                    sessionId);
         }
     }
 
@@ -134,10 +139,15 @@ public class RuntimeSessionConfigurationService {
         RuntimeSessionDTO session = requireSession(sessionId);
         String currentEtag = etagFactory.create(sessionId, session.getResourceVersion());
         if (!currentEtag.equals(ifMatch.trim())) {
-            throw new RuntimeApiException(RuntimeErrorCode.SESSION_VERSION_MISMATCH);
+            throw RuntimeFailures.raise(
+                    "runtime.session.configuration.validate",
+                    RuntimeErrorCode.SESSION_VERSION_MISMATCH,
+                    "sessionId",
+                    sessionId);
         }
         if (!RuntimeSessionState.IDLE.matches(session.getState())) {
-            throw new RuntimeApiException(RuntimeErrorCode.SESSION_BUSY);
+            throw RuntimeFailures.raise(
+                    "runtime.session.configuration.validate", RuntimeErrorCode.SESSION_BUSY, "sessionId", sessionId);
         }
         return session;
     }
@@ -145,7 +155,8 @@ public class RuntimeSessionConfigurationService {
     private RuntimeSessionDTO requireSession(String sessionId) {
         return repository
                 .find(sessionId)
-                .orElseThrow(() -> new RuntimeApiException(RuntimeErrorCode.SESSION_NOT_FOUND));
+                .orElseThrow(() -> RuntimeFailures.raise(
+                        "runtime.session.find", RuntimeErrorCode.SESSION_NOT_FOUND, "sessionId", sessionId));
     }
 
     private AgentDirectorySnapshotDTO resolveAgent(RuntimeSessionDTO session) {
@@ -176,34 +187,43 @@ public class RuntimeSessionConfigurationService {
         }
         Model model = modelManager.resolveModel(resolveAgent(session), session.getModelId());
         if (!model.reasoning()) {
-            throw new RuntimeApiException(RuntimeErrorCode.THINKING_NOT_SUPPORTED);
+            throw RuntimeFailures.raise(
+                    "runtime.session.thinking.validate",
+                    RuntimeErrorCode.THINKING_NOT_SUPPORTED,
+                    "sessionId",
+                    session.getId());
         }
     }
 
     private RuntimeSessionDTO requireUpdated(SessionConfigurationUpdate update) {
         return switch (update.status()) {
             case UPDATED, UNCHANGED -> update.session();
-            case NOT_FOUND -> throw new RuntimeApiException(RuntimeErrorCode.SESSION_NOT_FOUND);
-            case BUSY -> throw new RuntimeApiException(RuntimeErrorCode.SESSION_BUSY);
-            case VERSION_MISMATCH -> throw new RuntimeApiException(RuntimeErrorCode.SESSION_VERSION_MISMATCH);
+            case NOT_FOUND ->
+                throw RuntimeFailures.raise(
+                        "runtime.session.configuration.persist", RuntimeErrorCode.SESSION_NOT_FOUND);
+            case BUSY ->
+                throw RuntimeFailures.raise("runtime.session.configuration.persist", RuntimeErrorCode.SESSION_BUSY);
+            case VERSION_MISMATCH ->
+                throw RuntimeFailures.raise(
+                        "runtime.session.configuration.persist", RuntimeErrorCode.SESSION_VERSION_MISMATCH);
         };
     }
 
     private static void requireModelRequest(ChangeModelRequestVO request) {
         if (request == null) {
-            throw new RuntimeApiException(RuntimeErrorCode.INVALID_MODEL_REQUEST);
+            throw RuntimeFailures.raise("runtime.session.model.validate", RuntimeErrorCode.INVALID_MODEL_REQUEST);
         }
     }
 
     private static void requireThinkingRequest(ChangeThinkingRequestVO request) {
         if (request == null) {
-            throw new RuntimeApiException(RuntimeErrorCode.INVALID_THINKING_REQUEST);
+            throw RuntimeFailures.raise("runtime.session.thinking.validate", RuntimeErrorCode.INVALID_THINKING_REQUEST);
         }
     }
 
     private static void requireIfMatch(String ifMatch) {
         if (ifMatch == null || ifMatch.isBlank()) {
-            throw new RuntimeApiException(RuntimeErrorCode.IF_MATCH_REQUIRED);
+            throw RuntimeFailures.raise("runtime.session.configuration.validate", RuntimeErrorCode.IF_MATCH_REQUIRED);
         }
     }
 

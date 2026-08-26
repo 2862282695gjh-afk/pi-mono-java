@@ -13,6 +13,8 @@ import java.util.concurrent.TimeoutException;
 
 import com.huawei.hicampus.mate.matecampusclaw.ai.types.StopReason;
 import com.huawei.hicampus.mate.matecampusclaw.ai.types.UserMessage;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.error.RuntimeFailures;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.persistence.RuntimeSessionRepository;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.runtime.RuntimeActiveExecution;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.runtime.RuntimeExecutionProperties;
@@ -20,8 +22,6 @@ import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.runtime.Ru
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.runtime.RuntimeSessionEngineRegistry;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.runtime.RuntimeSessionHolder;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 /**
@@ -32,8 +32,6 @@ import org.springframework.stereotype.Component;
  */
 @Component
 public class RuntimeExecutionCoordinator {
-    private static final Logger log = LoggerFactory.getLogger(RuntimeExecutionCoordinator.class);
-
     private final RuntimeSessionEngineRegistry engineRegistry;
 
     private final RuntimeSessionRepository repository;
@@ -164,7 +162,7 @@ public class RuntimeExecutionCoordinator {
         Throwable failure = executionFailure(execution, executionError, projector);
         failure = finishPersistence(holder.sessionId(), failure);
         failure = releaseExecution(holder, execution, subscriptions, failure);
-        logFailure(holder.sessionId(), failure);
+        recordFailure(holder.sessionId(), projector, failure);
         terminalEventFactory.emit(execution.eventStream(), execution, projector.terminalReason(), failure, locale);
         execution.eventStream().complete();
         execution.complete(failure);
@@ -211,9 +209,13 @@ public class RuntimeExecutionCoordinator {
         return primary;
     }
 
-    private static void logFailure(String sessionId, Throwable failure) {
+    private static void recordFailure(String sessionId, RuntimeEventProjector projector, Throwable failure) {
         if (failure != null) {
-            log.warn("Runtime execution failed for session {}", sessionId, failure);
+            RuntimeFailures.record(
+                    "runtime.execution", RuntimeErrorCode.SESSION_EXECUTION_FAILED, failure, "sessionId", sessionId);
+        } else if (projector.terminalReason() == StopReason.ERROR && projector.terminalErrorCode() == null) {
+            RuntimeFailures.record(
+                    "runtime.execution", RuntimeErrorCode.SESSION_EXECUTION_FAILED, "sessionId", sessionId);
         }
     }
 

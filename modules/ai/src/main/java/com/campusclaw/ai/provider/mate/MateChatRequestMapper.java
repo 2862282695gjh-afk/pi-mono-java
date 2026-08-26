@@ -179,12 +179,17 @@ final class MateChatRequestMapper {
         try {
             return mapper.writeValueAsString(call.arguments());
         } catch (JsonProcessingException error) {
-            throw new MateModelInvocationException(
-                    "INVALID_TOOL_ARGUMENTS", "Tool arguments could not be serialized", error);
+            throw MateInvocationFailures.raise(
+                    "mate.request.toolArguments.serialize",
+                    MateInvocationErrorCode.INVALID_TOOL_ARGUMENTS,
+                    error,
+                    "toolName",
+                    call.name());
         }
     }
 
     private static MateModelInvocationException unsupported(String message) {
-        return new MateModelInvocationException("UNSUPPORTED_MATE_CHAT_CONTENT", message);
+        return MateInvocationFailures.raise(
+                "mate.request.map", MateInvocationErrorCode.UNSUPPORTED_MATE_CHAT_CONTENT, "reason", message);
     }
 }

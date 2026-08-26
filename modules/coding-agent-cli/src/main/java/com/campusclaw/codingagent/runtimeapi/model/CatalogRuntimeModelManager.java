@@ -12,9 +12,7 @@ import com.campusclaw.codingagent.model.ModelCatalogService;
 import com.campusclaw.codingagent.runtimeapi.agent.AgentDirectorySnapshotDTO;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import com.campusclaw.codingagent.runtimeapi.error.RuntimeFailures;
 
 /**
  * 以当前模型目录充当独立开发环境 Model Manager 的适配器。
@@ -23,8 +21,6 @@ import org.slf4j.LoggerFactory;
  * @since [br_eCampusCore 26.0.0]
  */
 public class CatalogRuntimeModelManager implements RuntimeModelManager {
-    private static final Logger LOGGER = LoggerFactory.getLogger(CatalogRuntimeModelManager.class);
-
     private final ModelCatalogService modelCatalogService;
 
     public CatalogRuntimeModelManager(ModelCatalogService modelCatalogService) {
@@ -42,18 +38,20 @@ public class CatalogRuntimeModelManager implements RuntimeModelManager {
             Model selected = modelCatalogService.getAvailableModels().stream()
                     .filter(model -> matchesConfiguredModel(model, modelId))
                     .findFirst()
-                    .orElseThrow(() -> new RuntimeApiException(RuntimeErrorCode.AGENT_MODEL_NOT_CONFIGURED));
+                    .orElseThrow(() -> RuntimeFailures.raise(
+                            "runtime.model.resolve", RuntimeErrorCode.AGENT_MODEL_NOT_CONFIGURED, "modelId", modelId));
             boolean configured = snapshot.enabledModelIds().stream()
                     .anyMatch(candidate -> matchesConfiguredModel(selected, candidate));
             if (!configured) {
-                throw new RuntimeApiException(RuntimeErrorCode.AGENT_MODEL_NOT_CONFIGURED);
+                throw RuntimeFailures.raise(
+                        "runtime.model.validate", RuntimeErrorCode.AGENT_MODEL_NOT_CONFIGURED, "modelId", modelId);
             }
             return selected;
         } catch (RuntimeApiException error) {
             throw error;
         } catch (RuntimeException error) {
-            LOGGER.error("Failed to resolve Runtime model: modelId={}", modelId, error);
-            throw new RuntimeApiException(RuntimeErrorCode.MANAGER_UNAVAILABLE);
+            throw RuntimeFailures.raise(
+                    "runtime.model.resolve", RuntimeErrorCode.MANAGER_UNAVAILABLE, error, "modelId", modelId);
         }
     }
 
@@ -71,8 +69,8 @@ public class CatalogRuntimeModelManager implements RuntimeModelManager {
             }
             return List.copyOf(resolved);
         } catch (RuntimeException error) {
-            LOGGER.error("Failed to list available Runtime models: agentId={}", snapshot.agentId(), error);
-            throw new RuntimeApiException(RuntimeErrorCode.MANAGER_UNAVAILABLE);
+            throw RuntimeFailures.raise(
+                    "runtime.model.list", RuntimeErrorCode.MANAGER_UNAVAILABLE, error, "agentId", snapshot.agentId());
         }
     }
 

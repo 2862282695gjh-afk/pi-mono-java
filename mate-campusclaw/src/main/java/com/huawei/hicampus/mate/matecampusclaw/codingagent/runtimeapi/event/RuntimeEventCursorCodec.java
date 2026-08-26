@@ -21,6 +21,7 @@ import javax.crypto.spec.SecretKeySpec;
 
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.error.RuntimeFailures;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -91,8 +92,12 @@ public class RuntimeEventCursorCodec {
         } catch (RuntimeApiException error) {
             throw error;
         } catch (Exception error) {
-            log.error("Failed to decode Runtime event cursor: sessionId={}", expectedSessionId, error);
-            throw invalidCursor();
+            throw RuntimeFailures.raise(
+                    "runtime.events.cursor.decode",
+                    RuntimeErrorCode.INVALID_EVENT_LIST_QUERY,
+                    error,
+                    "sessionId",
+                    expectedSessionId);
         }
     }
 
@@ -148,6 +153,6 @@ public class RuntimeEventCursorCodec {
     }
 
     private static RuntimeApiException invalidCursor() {
-        return new RuntimeApiException(RuntimeErrorCode.INVALID_EVENT_LIST_QUERY);
+        return RuntimeFailures.raise("runtime.events.cursor.decode", RuntimeErrorCode.INVALID_EVENT_LIST_QUERY);
     }
 }

@@ -13,11 +13,10 @@ import com.campusclaw.codingagent.runtimeapi.dto.RuntimeEntryDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
+import com.campusclaw.codingagent.runtimeapi.error.RuntimeFailures;
 import com.campusclaw.codingagent.runtimeapi.persistence.RuntimeSessionRepository;
 import com.campusclaw.codingagent.runtimeapi.vo.EventPageResponseVO;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 /**
@@ -28,8 +27,6 @@ import org.springframework.stereotype.Service;
  */
 @Service
 public class RuntimeEventQueryService {
-    private static final Logger LOGGER = LoggerFactory.getLogger(RuntimeEventQueryService.class);
-
     private static final int DEFAULT_LIMIT = 100;
 
     private static final int MAX_LIMIT = 200;
@@ -60,8 +57,8 @@ public class RuntimeEventQueryService {
         } catch (RuntimeApiException error) {
             throw error;
         } catch (RuntimeException error) {
-            LOGGER.error("Failed to list Runtime events: sessionId={}", sessionId, error);
-            throw new RuntimeApiException(RuntimeErrorCode.EVENT_LIST_FAILED);
+            throw RuntimeFailures.raise(
+                    "runtime.events.list", RuntimeErrorCode.EVENT_LIST_FAILED, error, "sessionId", sessionId);
         }
     }
 
@@ -92,7 +89,8 @@ public class RuntimeEventQueryService {
     private RuntimeSessionDTO requireSession(String sessionId) {
         return repository
                 .find(sessionId)
-                .orElseThrow(() -> new RuntimeApiException(RuntimeErrorCode.SESSION_NOT_FOUND));
+                .orElseThrow(() -> RuntimeFailures.raise(
+                        "runtime.session.find", RuntimeErrorCode.SESSION_NOT_FOUND, "sessionId", sessionId));
     }
 
     private static int parseLimit(String value) {
@@ -106,8 +104,8 @@ public class RuntimeEventQueryService {
             }
             return limit;
         } catch (NumberFormatException error) {
-            LOGGER.error("Failed to parse Runtime event list limit", error);
-            throw new RuntimeApiException(RuntimeErrorCode.INVALID_EVENT_LIST_QUERY);
+            throw RuntimeFailures.raise(
+                    "runtime.events.query.validate", RuntimeErrorCode.INVALID_EVENT_LIST_QUERY, error, "limit", value);
         }
     }
 }

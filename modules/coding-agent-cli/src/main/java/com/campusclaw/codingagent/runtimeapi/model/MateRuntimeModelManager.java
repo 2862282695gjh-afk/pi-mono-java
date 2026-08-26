@@ -12,8 +12,8 @@ import com.campusclaw.ai.types.Model;
 import com.campusclaw.ai.types.ModelCost;
 import com.campusclaw.ai.types.Provider;
 import com.campusclaw.codingagent.runtimeapi.agent.AgentDirectorySnapshotDTO;
-import com.campusclaw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
+import com.campusclaw.codingagent.runtimeapi.error.RuntimeFailures;
 
 /**
  * 使用 Agent 已绑定的 Mate 模型标识构造通用 Provider 模型描述。
@@ -36,7 +36,8 @@ public class MateRuntimeModelManager implements RuntimeModelManager {
     @Override
     public Model resolveModel(AgentDirectorySnapshotDTO snapshot, String modelId) {
         if (!snapshot.enabledModelIds().contains(modelId)) {
-            throw new RuntimeApiException(RuntimeErrorCode.AGENT_MODEL_NOT_CONFIGURED);
+            throw RuntimeFailures.raise(
+                    "runtime.model.validate", RuntimeErrorCode.AGENT_MODEL_NOT_CONFIGURED, "modelId", modelId);
         }
         return new Model(
                 modelId,

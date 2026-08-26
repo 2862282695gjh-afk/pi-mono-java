@@ -70,7 +70,9 @@ class FileAgentDirectoryResolverTest {
                     assertThat(error).hasNoCause();
                 });
         assertThat(output)
-                .contains("Failed to prepare Agent runtime: agentId=" + AGENT_ID)
+                .contains("operation=runtime.agent.prepare")
+                .contains("errorCode=AGENT_NOT_AVAILABLE")
+                .contains("agentId=" + AGENT_ID)
                 .contains("AgentRuntimeException: Mate unavailable");
     }
 

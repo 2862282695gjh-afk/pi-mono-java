@@ -9,10 +9,9 @@ import java.util.Optional;
 
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
+import com.campusclaw.codingagent.runtimeapi.error.RuntimeFailures;
 import com.campusclaw.codingagent.runtimeapi.vo.ErrorResponseVO;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.context.MessageSource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
@@ -34,8 +33,6 @@ import jakarta.servlet.http.HttpServletRequest;
  */
 @RestControllerAdvice(basePackages = "com.campusclaw.codingagent.runtimeapi.web")
 public class RuntimeExceptionHandler {
-    private static final Logger log = LoggerFactory.getLogger(RuntimeExceptionHandler.class);
-
     private final MessageSource messageSource;
 
     public RuntimeExceptionHandler(MessageSource messageSource) {
@@ -49,20 +46,43 @@ public class RuntimeExceptionHandler {
 
     @ExceptionHandler({HttpMessageNotReadableException.class, MethodArgumentNotValidException.class})
     public ResponseEntity<ErrorResponseVO> handleInvalidBody(Exception error, HttpServletRequest request) {
-        log.debug("Invalid Runtime request body: {} {}", request.getMethod(), request.getRequestURI(), error);
-        return response(classifyInvalidBody(request), request);
+        RuntimeErrorCode errorCode = classifyInvalidBody(request);
+        RuntimeFailures.record(
+                "runtime.http.body.validate",
+                errorCode,
+                error,
+                "method",
+                request.getMethod(),
+                "path",
+                request.getRequestURI());
+        return response(errorCode, request);
     }
 
     @ExceptionHandler(HandlerMethodValidationException.class)
     public ResponseEntity<ErrorResponseVO> handleInvalidParameter(
             HandlerMethodValidationException error, HttpServletRequest request) {
-        log.debug("Invalid Runtime request parameter: {} {}", request.getMethod(), request.getRequestURI(), error);
-        return response(classifyInvalidParameter(error), request);
+        RuntimeErrorCode errorCode = classifyInvalidParameter(error);
+        RuntimeFailures.record(
+                "runtime.http.parameter.validate",
+                errorCode,
+                error,
+                "method",
+                request.getMethod(),
+                "path",
+                request.getRequestURI());
+        return response(errorCode, request);
     }
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponseVO> handleUnexpectedError(Exception error, HttpServletRequest request) {
-        log.error("Runtime API request failed: {} {}", request.getMethod(), request.getRequestURI(), error);
+        RuntimeFailures.record(
+                "runtime.http.request",
+                RuntimeErrorCode.INTERNAL_ERROR,
+                error,
+                "method",
+                request.getMethod(),
+                "path",
+                request.getRequestURI());
         return response(RuntimeErrorCode.INTERNAL_ERROR, request);
     }
 

@@ -10,8 +10,7 @@ import com.campusclaw.ai.types.Model;
 import com.campusclaw.codingagent.runtimeapi.agent.AgentDirectorySnapshotDTO;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
-
-import org.slf4j.LoggerFactory;
+import com.campusclaw.codingagent.runtimeapi.error.RuntimeFailures;
 
 /**
  * Runtime Session 使用的模型校验和解析端口。
@@ -28,7 +27,8 @@ public interface RuntimeModelManager {
 
     default Model resolveAvailableModel(AgentDirectorySnapshotDTO snapshot, String modelId) {
         if (!listAvailableModels(snapshot).contains(modelId)) {
-            throw new RuntimeApiException(RuntimeErrorCode.MODEL_NOT_AVAILABLE);
+            throw RuntimeFailures.raise(
+                    "runtime.model.validate", RuntimeErrorCode.MODEL_NOT_AVAILABLE, "modelId", modelId);
         }
         try {
             return resolveModel(snapshot, modelId);
@@ -36,8 +36,6 @@ public interface RuntimeModelManager {
             if (error.errorCode() == RuntimeErrorCode.MANAGER_UNAVAILABLE) {
                 throw error;
             }
-            LoggerFactory.getLogger(RuntimeModelManager.class)
-                    .error("Failed to resolve available Runtime model: modelId={}", modelId, error);
             throw new RuntimeApiException(RuntimeErrorCode.MODEL_NOT_AVAILABLE);
         }
     }

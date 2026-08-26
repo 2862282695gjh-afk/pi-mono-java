@@ -50,13 +50,14 @@ final class MateReasoningSignature {
         } catch (MateModelInvocationException error) {
             throw error;
         } catch (Exception error) {
-            throw new MateModelInvocationException(
-                    "INVALID_REASONING_SIGNATURE", "Mate reasoning signature is invalid", error);
+            throw MateInvocationFailures.raise(
+                    "mate.reasoningSignature.decode", MateInvocationErrorCode.INVALID_REASONING_SIGNATURE, error);
         }
     }
 
     private static MateModelInvocationException invalid() {
-        return new MateModelInvocationException("INVALID_REASONING_SIGNATURE", "Mate reasoning signature is invalid");
+        return MateInvocationFailures.raise(
+                "mate.reasoningSignature.validate", MateInvocationErrorCode.INVALID_REASONING_SIGNATURE);
     }
 
     record ReasoningField(String field, JsonNode value) {}

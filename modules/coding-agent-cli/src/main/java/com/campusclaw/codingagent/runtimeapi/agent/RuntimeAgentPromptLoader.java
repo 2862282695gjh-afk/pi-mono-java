@@ -14,8 +14,8 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 
-import com.campusclaw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
+import com.campusclaw.codingagent.runtimeapi.error.RuntimeFailures;
 import com.campusclaw.codingagent.skill.Skill;
 import com.campusclaw.codingagent.skill.SkillLoadException;
 import com.campusclaw.codingagent.skill.SkillLoader;
@@ -90,8 +90,8 @@ public class RuntimeAgentPromptLoader {
                 }
             }
         } catch (IOException error) {
-            log.error("Failed to scan Runtime Agent skills: directory={}", directory, error);
-            throw unavailable();
+            throw RuntimeFailures.raise(
+                    "runtime.agent.skills.scan", RuntimeErrorCode.AGENT_NOT_AVAILABLE, error, "path", directory);
         }
     }
 
@@ -110,15 +110,16 @@ public class RuntimeAgentPromptLoader {
             return "";
         }
         if (!isSafeRegularFile(root, candidate)) {
-            throw unavailable();
+            throw RuntimeFailures.raise(
+                    "runtime.agent.prompt.validate", RuntimeErrorCode.AGENT_NOT_AVAILABLE, "path", candidate);
         }
         Path realFile = safeRealPath(root, candidate);
         requireManagedSize(realFile);
         try {
             return Files.readString(realFile, StandardCharsets.UTF_8);
         } catch (IOException error) {
-            log.error("Failed to read Runtime Agent prompt file: path={}", realFile, error);
-            throw unavailable();
+            throw RuntimeFailures.raise(
+                    "runtime.agent.prompt.read", RuntimeErrorCode.AGENT_NOT_AVAILABLE, error, "path", realFile);
         }
     }
 
@@ -135,13 +136,14 @@ public class RuntimeAgentPromptLoader {
 
     private static Path realDirectory(Path path) {
         if (!Files.isDirectory(path, LinkOption.NOFOLLOW_LINKS)) {
-            throw unavailable();
+            throw RuntimeFailures.raise(
+                    "runtime.agent.directory.validate", RuntimeErrorCode.AGENT_NOT_AVAILABLE, "path", path);
         }
         try {
             return path.toRealPath();
         } catch (IOException error) {
-            log.error("Failed to resolve Runtime Agent directory: path={}", path, error);
-            throw unavailable();
+            throw RuntimeFailures.raise(
+                    "runtime.agent.directory.resolve", RuntimeErrorCode.AGENT_NOT_AVAILABLE, error, "path", path);
         }
     }
 
@@ -149,27 +151,25 @@ public class RuntimeAgentPromptLoader {
         try {
             Path realPath = path.toRealPath();
             if (!realPath.startsWith(root)) {
-                throw unavailable();
+                throw RuntimeFailures.raise(
+                        "runtime.agent.path.validate", RuntimeErrorCode.AGENT_NOT_AVAILABLE, "path", path);
             }
             return realPath;
         } catch (IOException error) {
-            log.error("Failed to resolve Runtime Agent managed path: path={}", path, error);
-            throw unavailable();
+            throw RuntimeFailures.raise(
+                    "runtime.agent.path.resolve", RuntimeErrorCode.AGENT_NOT_AVAILABLE, error, "path", path);
         }
     }
 
     private static void requireManagedSize(Path path) {
         try {
             if (Files.size(path) > MAX_MANAGED_FILE_BYTES) {
-                throw unavailable();
+                throw RuntimeFailures.raise(
+                        "runtime.agent.file.validate", RuntimeErrorCode.AGENT_NOT_AVAILABLE, "path", path);
             }
         } catch (IOException error) {
-            log.error("Failed to inspect Runtime Agent managed file: path={}", path, error);
-            throw unavailable();
+            throw RuntimeFailures.raise(
+                    "runtime.agent.file.inspect", RuntimeErrorCode.AGENT_NOT_AVAILABLE, error, "path", path);
         }
-    }
-
-    private static RuntimeApiException unavailable() {
-        return new RuntimeApiException(RuntimeErrorCode.AGENT_NOT_AVAILABLE);
     }
 }

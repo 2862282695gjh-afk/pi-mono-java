@@ -15,6 +15,7 @@ import com.campusclaw.codingagent.runtimeapi.RuntimeApiConstants;
 import com.campusclaw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
+import com.campusclaw.codingagent.runtimeapi.error.RuntimeFailures;
 import com.campusclaw.codingagent.runtimeapi.persistence.RuntimeSessionRepository;
 import com.campusclaw.codingagent.runtimeapi.runtime.RuntimeActiveExecution;
 import com.campusclaw.codingagent.runtimeapi.runtime.RuntimeExecutionProperties;
@@ -23,8 +24,6 @@ import com.campusclaw.codingagent.runtimeapi.runtime.RuntimeSessionHolder;
 import com.campusclaw.codingagent.runtimeapi.vo.ControlMessageAcceptedResponseVO;
 import com.campusclaw.codingagent.runtimeapi.vo.ControlMessageRequestVO;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 /**
@@ -35,8 +34,6 @@ import org.springframework.stereotype.Service;
  */
 @Service
 public class RuntimeSessionControlService {
-    private static final Logger LOGGER = LoggerFactory.getLogger(RuntimeSessionControlService.class);
-
     private final RuntimeSessionRepository repository;
 
     private final RuntimeSessionEngineRegistry engineRegistry;
@@ -70,8 +67,8 @@ public class RuntimeSessionControlService {
         } catch (RuntimeApiException error) {
             throw error;
         } catch (RuntimeException error) {
-            LOGGER.error("Failed to abort Runtime session: sessionId={}", sessionId, error);
-            throw new RuntimeApiException(RuntimeErrorCode.SESSION_ABORT_FAILED);
+            throw RuntimeFailures.raise(
+                    "runtime.session.abort", RuntimeErrorCode.SESSION_ABORT_FAILED, error, "sessionId", sessionId);
         }
     }
 
@@ -90,8 +87,14 @@ public class RuntimeSessionControlService {
         } catch (RuntimeApiException error) {
             throw error;
         } catch (RuntimeException error) {
-            LOGGER.error("Failed to accept Runtime control: sessionId={}, kind={}", sessionId, kind, error);
-            throw new RuntimeApiException(kind.acceptanceFailed());
+            throw RuntimeFailures.raise(
+                    "runtime.session.control.accept",
+                    kind.acceptanceFailed(),
+                    error,
+                    "sessionId",
+                    sessionId,
+                    "kind",
+                    kind);
         } finally {
             engineRegistry.unlockOperation(sessionId);
         }
@@ -107,7 +110,11 @@ public class RuntimeSessionControlService {
             }
             RuntimeSessionHolder holder = requireRunningHolder(session);
             RuntimeActiveExecution execution = holder.activeExecution()
-                    .orElseThrow(() -> new RuntimeApiException(RuntimeErrorCode.SESSION_EXECUTION_UNAVAILABLE));
+                    .orElseThrow(() -> RuntimeFailures.raise(
+                            "runtime.session.abort",
+                            RuntimeErrorCode.SESSION_EXECUTION_UNAVAILABLE,
+                            "sessionId",
+                            sessionId));
             execution.requestAbort();
             clearControlQueues(holder);
             holder.abort();
@@ -120,23 +127,40 @@ public class RuntimeSessionControlService {
     private RuntimeSessionDTO requireSession(String sessionId) {
         return repository
                 .find(sessionId)
-                .orElseThrow(() -> new RuntimeApiException(RuntimeErrorCode.SESSION_NOT_FOUND));
+                .orElseThrow(() -> RuntimeFailures.raise(
+                        "runtime.session.find", RuntimeErrorCode.SESSION_NOT_FOUND, "sessionId", sessionId));
     }
 
     private RuntimeSessionHolder requireRunningHolder(RuntimeSessionDTO session) {
         if (!RuntimeSessionState.RUNNING.matches(session.getState())) {
-            throw new RuntimeApiException(RuntimeErrorCode.SESSION_NOT_RUNNING);
+            throw RuntimeFailures.raise(
+                    "runtime.session.control.validate",
+                    RuntimeErrorCode.SESSION_NOT_RUNNING,
+                    "sessionId",
+                    session.getId());
         }
         return engineRegistry
                 .find(session.getId())
-                .orElseThrow(() -> new RuntimeApiException(RuntimeErrorCode.SESSION_EXECUTION_UNAVAILABLE));
+                .orElseThrow(() -> RuntimeFailures.raise(
+                        "runtime.session.control.validate",
+                        RuntimeErrorCode.SESSION_EXECUTION_UNAVAILABLE,
+                        "sessionId",
+                        session.getId()));
     }
 
     private static RuntimeActiveExecution requireAcceptingExecution(RuntimeSessionHolder holder) {
         RuntimeActiveExecution execution = holder.activeExecution()
-                .orElseThrow(() -> new RuntimeApiException(RuntimeErrorCode.SESSION_NOT_RUNNING));
+                .orElseThrow(() -> RuntimeFailures.raise(
+                        "runtime.session.control.validate",
+                        RuntimeErrorCode.SESSION_NOT_RUNNING,
+                        "sessionId",
+                        holder.sessionId()));
         if (!execution.acceptingControls()) {
-            throw new RuntimeApiException(RuntimeErrorCode.SESSION_NOT_RUNNING);
+            throw RuntimeFailures.raise(
+                    "runtime.session.control.validate",
+                    RuntimeErrorCode.SESSION_NOT_RUNNING,
+                    "sessionId",
+                    holder.sessionId());
         }
         return execution;
     }
@@ -149,7 +173,11 @@ public class RuntimeSessionControlService {
             ControlKind kind) {
         if (!execution.queueControl(
                 message, bytes, properties.getMaxControlMessages(), properties.getMaxControlBytes())) {
-            throw new RuntimeApiException(RuntimeErrorCode.CONTROL_QUEUE_FULL);
+            throw RuntimeFailures.raise(
+                    "runtime.session.control.queue",
+                    RuntimeErrorCode.CONTROL_QUEUE_FULL,
+                    "sessionId",
+                    holder.sessionId());
         }
         try {
             if (kind == ControlKind.STEER) {
@@ -168,7 +196,7 @@ public class RuntimeSessionControlService {
                 || request.getMessage() == null
                 || request.getMessage().isBlank()
                 || request.getMessage().length() > RuntimeApiConstants.MAX_MESSAGE_CHARACTERS) {
-            throw new RuntimeApiException(errorCode);
+            throw RuntimeFailures.raise("runtime.session.control.validate", errorCode);
         }
     }
 

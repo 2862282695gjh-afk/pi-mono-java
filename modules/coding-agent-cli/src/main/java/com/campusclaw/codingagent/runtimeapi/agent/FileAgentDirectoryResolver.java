@@ -10,11 +10,8 @@ import java.util.List;
 import com.campusclaw.codingagent.runtime.AgentRuntimeException;
 import com.campusclaw.codingagent.runtime.AgentRuntimeManager;
 import com.campusclaw.codingagent.runtime.PreparedAgentRuntime;
-import com.campusclaw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import com.campusclaw.codingagent.runtimeapi.error.RuntimeFailures;
 
 /**
  * 通过统一 AgentRuntimeManager 准备目录并生成 Runtime API 快照。
@@ -23,9 +20,6 @@ import org.slf4j.LoggerFactory;
  * @since [br_eCampusCore 26.0.0]
  */
 public class FileAgentDirectoryResolver implements AgentDirectoryResolver {
-
-    private static final Logger LOGGER = LoggerFactory.getLogger(FileAgentDirectoryResolver.class);
-
     private final AgentRuntimeManager runtimeManager;
 
     public FileAgentDirectoryResolver(AgentRuntimeManager runtimeManager) {
@@ -37,21 +31,26 @@ public class FileAgentDirectoryResolver implements AgentDirectoryResolver {
         try {
             return snapshot(runtimeManager.prepare(agentId));
         } catch (IllegalArgumentException error) {
-            LOGGER.error("Failed to resolve Agent directory: agentId={}", agentId, error);
-            throw new RuntimeApiException(RuntimeErrorCode.AGENT_NOT_FOUND);
+            throw RuntimeFailures.raise(
+                    "runtime.agent.resolve", RuntimeErrorCode.AGENT_NOT_FOUND, error, "agentId", agentId);
         } catch (AgentRuntimeException error) {
-            LOGGER.error("Failed to prepare Agent runtime: agentId={}", agentId, error);
-            throw new RuntimeApiException(RuntimeErrorCode.AGENT_NOT_AVAILABLE);
+            throw RuntimeFailures.raise(
+                    "runtime.agent.prepare", RuntimeErrorCode.AGENT_NOT_AVAILABLE, error, "agentId", agentId);
         }
     }
 
     private static AgentDirectorySnapshotDTO snapshot(PreparedAgentRuntime runtime) {
         if (!Boolean.TRUE.equals(runtime.metadata().enabled())) {
-            throw new RuntimeApiException(RuntimeErrorCode.AGENT_NOT_AVAILABLE);
+            throw RuntimeFailures.raise(
+                    "runtime.agent.validate", RuntimeErrorCode.AGENT_NOT_AVAILABLE, "agentId", runtime.agentId());
         }
         String defaultModel = runtime.metadata()
                 .defaultModel()
-                .orElseThrow(() -> new RuntimeApiException(RuntimeErrorCode.AGENT_MODEL_NOT_CONFIGURED));
+                .orElseThrow(() -> RuntimeFailures.raise(
+                        "runtime.agent.validate",
+                        RuntimeErrorCode.AGENT_MODEL_NOT_CONFIGURED,
+                        "agentId",
+                        runtime.agentId()));
         List<String> models = validModels(runtime.metadata().bindingModels(), defaultModel);
         return new AgentDirectorySnapshotDTO(
                 runtime.agentId(),
@@ -65,11 +64,15 @@ public class FileAgentDirectoryResolver implements AgentDirectoryResolver {
         LinkedHashSet<String> models = new LinkedHashSet<>();
         for (String model : configured) {
             if (model == null || model.isBlank() || !models.add(model)) {
-                throw new RuntimeApiException(RuntimeErrorCode.AGENT_MODEL_NOT_CONFIGURED);
+                throw RuntimeFailures.raise("runtime.agent.validate", RuntimeErrorCode.AGENT_MODEL_NOT_CONFIGURED);
             }
         }
         if (!models.contains(defaultModel)) {
-            throw new RuntimeApiException(RuntimeErrorCode.AGENT_MODEL_NOT_CONFIGURED);
+            throw RuntimeFailures.raise(
+                    "runtime.agent.validate",
+                    RuntimeErrorCode.AGENT_MODEL_NOT_CONFIGURED,
+                    "defaultModelId",
+                    defaultModel);
         }
         return List.copyOf(models);
     }

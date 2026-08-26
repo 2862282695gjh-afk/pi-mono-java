@@ -15,8 +15,8 @@ import com.huawei.hicampus.mate.matecampusclaw.ai.types.Model;
 import com.huawei.hicampus.mate.matecampusclaw.ai.types.ThinkingLevel;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.common.client.mate.MateCredentials;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.agent.AgentDirectorySnapshotDTO;
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.error.RuntimeFailures;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.session.AgentSessionFactory;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.session.ManagedAgentSession;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.session.ManagedAgentSessionRequest;
@@ -75,7 +75,8 @@ public class RuntimeSessionEngineRegistry {
                     createHolder(sessionId, snapshot, model, thinking, messages, execution, credentials);
             if (sessions.putIfAbsent(sessionId, holder) != null) {
                 holder.closeSession();
-                throw new RuntimeApiException(RuntimeErrorCode.SESSION_BUSY);
+                throw RuntimeFailures.raise(
+                        "runtime.execution.register", RuntimeErrorCode.SESSION_BUSY, "sessionId", sessionId);
             }
             return holder;
         } catch (RuntimeException error) {
@@ -146,7 +147,11 @@ public class RuntimeSessionEngineRegistry {
         boolean allowed = runtime.metadata().bindingModels().stream()
                 .anyMatch(configured -> matchesConfiguredModel(model, configured));
         if (!allowed) {
-            throw new RuntimeApiException(RuntimeErrorCode.AGENT_MODEL_NOT_CONFIGURED);
+            throw RuntimeFailures.raise(
+                    "runtime.execution.model.validate",
+                    RuntimeErrorCode.AGENT_MODEL_NOT_CONFIGURED,
+                    "modelId",
+                    model.id());
         }
         return model;
     }
@@ -158,7 +163,7 @@ public class RuntimeSessionEngineRegistry {
 
     private void acquireCapacity() {
         if (!capacity.tryAcquire()) {
-            throw new RuntimeApiException(RuntimeErrorCode.RUNTIME_CAPACITY_EXCEEDED);
+            throw RuntimeFailures.raise("runtime.execution.capacity", RuntimeErrorCode.RUNTIME_CAPACITY_EXCEEDED);
         }
     }
 

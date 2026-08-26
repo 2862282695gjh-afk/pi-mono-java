@@ -4,10 +4,13 @@
 
 package com.huawei.hicampus.mate.matecampusclaw.ai.provider.mate;
 
+import java.net.ConnectException;
+import java.net.SocketTimeoutException;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import com.huawei.hicampus.mate.matecampusclaw.ai.model.ModelRegistry;
@@ -28,6 +31,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import org.springframework.http.codec.ServerSentEvent;
+import org.springframework.web.reactive.function.client.WebClientRequestException;
 
 /**
  * 将原始 OpenAI Chat SSE 事件投影为统一 AssistantMessageEvent。
@@ -54,6 +58,8 @@ final class MateChatSseParser {
     private Usage usage = Usage.empty();
 
     private StopReason stopReason = StopReason.STOP;
+
+    private MateInvocationErrorCode terminalErrorCode;
 
     private String responseId;
 
@@ -82,7 +88,7 @@ final class MateChatSseParser {
             return;
         }
         if ("error".equals(event.event())) {
-            fail(new MateModelInvocationException("UPSTREAM_STREAM_ERROR", "Mate Chat stream failed"));
+            fail(streamError(event.data()));
             return;
         }
         String data = event.data();
@@ -98,7 +104,11 @@ final class MateChatSseParser {
 
     void completeWithoutDone() {
         if (!terminal.get()) {
-            fail(new MateModelInvocationException("UPSTREAM_STREAM_ERROR", "Mate Chat stream closed before [DONE]"));
+            fail(MateInvocationFailures.raise(
+                    "mate.response.sse.complete",
+                    MateInvocationErrorCode.UPSTREAM_STREAM_ERROR,
+                    "modelId",
+                    model.id()));
         }
     }
 
@@ -106,7 +116,8 @@ final class MateChatSseParser {
         if (!terminal.compareAndSet(false, true)) {
             return;
         }
-        AssistantMessage message = message(StopReason.ERROR, safeMessage(error));
+        MateInvocationErrorCode errorCode = classifyFailure(error);
+        AssistantMessage message = message(StopReason.ERROR, errorCode);
         stream.pushError("error", message);
     }
 
@@ -129,7 +140,8 @@ final class MateChatSseParser {
         } catch (MateModelInvocationException error) {
             fail(error);
         } catch (Exception error) {
-            fail(new MateModelInvocationException("INVALID_CHAT_SSE", "Mate Chat SSE is invalid", error));
+            fail(MateInvocationFailures.raise(
+                    "mate.response.sse.parse", MateInvocationErrorCode.INVALID_CHAT_SSE, error, "modelId", model.id()));
         }
     }
 
@@ -183,8 +195,11 @@ final class MateChatSseParser {
         if (reasoningField == null) {
             reasoningField = field;
         } else if (!reasoningField.equals(field)) {
-            throw new MateModelInvocationException(
-                    "INVALID_CHAT_SSE", "Mate Chat changed reasoning fields within one response");
+            throw MateInvocationFailures.raise(
+                    "mate.response.reasoning.validate",
+                    MateInvocationErrorCode.INVALID_CHAT_SSE,
+                    "modelId",
+                    model.id());
         }
     }
 
@@ -281,13 +296,17 @@ final class MateChatSseParser {
             finishText();
             finishTools();
         } catch (RuntimeException error) {
-            fail(error);
+            fail(normalizeSseFailure("mate.response.finish", error));
             return;
         }
         if (!terminal.compareAndSet(false, true)) {
             return;
         }
-        stream.pushDone(stopReason, message(stopReason, null));
+        if (stopReason == StopReason.ERROR) {
+            terminalErrorCode = MateInvocationErrorCode.MODEL_CONTENT_FILTERED;
+            MateInvocationFailures.record("mate.response.finish", terminalErrorCode, "modelId", model.id());
+        }
+        stream.pushDone(stopReason, message(stopReason, terminalErrorCode));
     }
 
     private void finishThinking() {
@@ -321,7 +340,12 @@ final class MateChatSseParser {
             }
             return mapper.readValue(value, new TypeReference<Map<String, Object>>() {});
         } catch (Exception error) {
-            throw new MateModelInvocationException("INVALID_CHAT_SSE", "Tool arguments are invalid", error);
+            throw MateInvocationFailures.raise(
+                    "mate.response.toolArguments.parse",
+                    MateInvocationErrorCode.INVALID_CHAT_SSE,
+                    error,
+                    "modelId",
+                    model.id());
         }
     }
 
@@ -329,7 +353,7 @@ final class MateChatSseParser {
         return message(StopReason.STOP, null);
     }
 
-    private AssistantMessage message(StopReason reason, String errorMessage) {
+    private AssistantMessage message(StopReason reason, MateInvocationErrorCode errorCode) {
         return new AssistantMessage(
                 List.copyOf(content),
                 Api.OPENAI_COMPLETIONS.value(),
@@ -339,7 +363,8 @@ final class MateChatSseParser {
                 responseModel,
                 usage,
                 reason,
-                errorMessage,
+                errorCode == null ? null : errorCode.name(),
+                null,
                 System.currentTimeMillis());
     }
 
@@ -352,8 +377,59 @@ final class MateChatSseParser {
         };
     }
 
-    private static String safeMessage(Throwable error) {
-        return error.getMessage() == null ? "Mate Chat stream failed" : error.getMessage();
+    private MateModelInvocationException streamError(String data) {
+        if (data == null || data.isBlank()) {
+            return MateInvocationFailures.raise(
+                    "mate.response.sse.error", MateInvocationErrorCode.UPSTREAM_STREAM_ERROR, "modelId", model.id());
+        }
+        try {
+            String upstreamCode = mapper.readTree(data).path("resCode").asText("UPSTREAM_STREAM_ERROR");
+            MateInvocationErrorCode errorCode = MateInvocationErrorCode.fromUpstream(upstreamCode);
+            return MateInvocationFailures.raise(
+                    "mate.response.sse.error", errorCode, "modelId", model.id(), "upstreamErrorCode", upstreamCode);
+        } catch (Exception error) {
+            return MateInvocationFailures.raise(
+                    "mate.response.sse.error",
+                    MateInvocationErrorCode.UPSTREAM_STREAM_ERROR,
+                    error,
+                    "modelId",
+                    model.id());
+        }
+    }
+
+    private MateInvocationErrorCode classifyFailure(Throwable error) {
+        if (error instanceof MateModelInvocationException invocation) {
+            return invocation.errorCode();
+        }
+        MateInvocationErrorCode errorCode = transportErrorCode(error);
+        MateInvocationFailures.record("mate.response.stream", errorCode, error, "modelId", model.id());
+        return errorCode;
+    }
+
+    private MateModelInvocationException normalizeSseFailure(String operation, RuntimeException error) {
+        if (error instanceof MateModelInvocationException invocation) {
+            return invocation;
+        }
+        return MateInvocationFailures.raise(
+                operation, MateInvocationErrorCode.INVALID_CHAT_SSE, error, "modelId", model.id());
+    }
+
+    private static MateInvocationErrorCode transportErrorCode(Throwable error) {
+        boolean requestFailure = false;
+        for (Throwable current = error; current != null; current = current.getCause()) {
+            if (current instanceof TimeoutException
+                    || current instanceof SocketTimeoutException
+                    || current.getClass().getSimpleName().contains("Timeout")) {
+                return MateInvocationErrorCode.MODEL_INVOCATION_TIMEOUT;
+            }
+            if (current instanceof ConnectException) {
+                return MateInvocationErrorCode.MANAGER_UNAVAILABLE;
+            }
+            requestFailure |= current instanceof WebClientRequestException;
+        }
+        return requestFailure
+                ? MateInvocationErrorCode.MANAGER_UNAVAILABLE
+                : MateInvocationErrorCode.UPSTREAM_STREAM_ERROR;
     }
 
     private static final class ToolAccumulator {
