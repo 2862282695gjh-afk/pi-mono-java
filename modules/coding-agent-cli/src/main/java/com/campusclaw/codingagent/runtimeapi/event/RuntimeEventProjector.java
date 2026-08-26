@@ -70,6 +70,8 @@ public class RuntimeEventProjector {
 
     private StopReason terminalReason = StopReason.STOP;
 
+    private String terminalErrorCode;
+
     private int assistantAttempt = 1;
 
     public RuntimeEventProjector(
@@ -114,6 +116,10 @@ public class RuntimeEventProjector {
 
     public StopReason terminalReason() {
         return terminalReason;
+    }
+
+    public String terminalErrorCode() {
+        return terminalErrorCode;
     }
 
     private void project(AgentEvent event) {
@@ -237,6 +243,7 @@ public class RuntimeEventProjector {
         stream.emit(new RuntimeSseEventVO(Long.toString(entry.getEntrySeq()), entry.getType(), codec.toSseData(entry)));
         assistantEntryId = null;
         terminalReason = message.stopReason();
+        terminalErrorCode = message.errorCode();
     }
 
     private void persistQueuedUser(UserMessage message) {

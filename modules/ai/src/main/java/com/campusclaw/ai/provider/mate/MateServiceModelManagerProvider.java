@@ -24,6 +24,9 @@ import com.campusclaw.ai.types.Usage;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.slf4j.spi.LoggingEventBuilder;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.ParameterizedTypeReference;
@@ -50,6 +53,8 @@ import reactor.netty.http.client.HttpClient;
 @Component
 public class MateServiceModelManagerProvider implements AiProvider {
     public static final ProviderId PROVIDER_ID = new ProviderId("mate-model-manager");
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(MateServiceModelManagerProvider.class);
 
     private static final String SUPPORTED_API = "openai-completions";
 
@@ -109,8 +114,19 @@ public class MateServiceModelManagerProvider implements AiProvider {
         JsonNode request;
         try {
             request = requestMapper.map(model, context, options);
+        } catch (MateModelInvocationException error) {
+            stream.pushError("error", failureMessage(model, error.errorCode()));
+            return stream;
         } catch (RuntimeException error) {
-            stream.pushError("error", errorMessage(model, error));
+            MateInvocationErrorCode errorCode = MateInvocationErrorCode.MATE_REQUEST_MAPPING_FAILED;
+            LOGGER.atError()
+                    .addKeyValue("event", "campusclaw.failure")
+                    .addKeyValue("operation", "mate.request.map")
+                    .addKeyValue("errorCode", errorCode.name())
+                    .addKeyValue("modelId", model.id())
+                    .setCause(error)
+                    .log("CampusClaw failure: operation={}, errorCode={}", "mate.request.map", errorCode.name());
+            stream.pushError("error", failureMessage(model, errorCode));
             return stream;
         }
         subscribe(model, request, stream);
@@ -139,8 +155,18 @@ public class MateServiceModelManagerProvider implements AiProvider {
         if (response.statusCode().is2xxSuccessful()) {
             MediaType contentType = response.headers().contentType().orElse(null);
             if (contentType == null || !MediaType.TEXT_EVENT_STREAM.isCompatibleWith(contentType)) {
-                return Flux.error(new MateModelInvocationException(
-                        "INVALID_MATE_RESPONSE", "Mate Chat did not return text/event-stream"));
+                MateInvocationErrorCode errorCode = MateInvocationErrorCode.INVALID_MATE_RESPONSE;
+                LOGGER.atError()
+                        .addKeyValue("event", "campusclaw.failure")
+                        .addKeyValue("operation", "mate.response.validate")
+                        .addKeyValue("errorCode", errorCode.name())
+                        .addKeyValue("httpStatus", response.statusCode().value())
+                        .addKeyValue("contentType", contentType)
+                        .log(
+                                "CampusClaw failure: operation={}, errorCode={}",
+                                "mate.response.validate",
+                                errorCode.name());
+                return Flux.error(new MateModelInvocationException(errorCode));
             }
             return response.bodyToFlux(SSE_TYPE);
         }
@@ -150,11 +176,16 @@ public class MateServiceModelManagerProvider implements AiProvider {
     }
 
     private static MateModelInvocationException httpError(ClientResponse response, JsonNode body) {
-        String code = body.path("resCode").asText("MATE_MODEL_MANAGER_ERROR");
-        String message = body.path("resMsg")
-                .asText("Mate Model Manager returned HTTP "
-                        + response.statusCode().value());
-        return new MateModelInvocationException(code, message);
+        String upstreamCode = body.path("resCode").asText("MATE_MODEL_MANAGER_ERROR");
+        MateInvocationErrorCode errorCode = MateInvocationErrorCode.fromUpstream(upstreamCode);
+        LoggingEventBuilder event = errorCode.warning() ? LOGGER.atWarn() : LOGGER.atError();
+        event.addKeyValue("event", "campusclaw.failure")
+                .addKeyValue("operation", "mate.response.http")
+                .addKeyValue("errorCode", errorCode.name())
+                .addKeyValue("httpStatus", response.statusCode().value())
+                .addKeyValue("upstreamErrorCode", upstreamCode)
+                .log("CampusClaw failure: operation={}, errorCode={}", "mate.response.http", errorCode.name());
+        return new MateModelInvocationException(errorCode);
     }
 
     private static void cancel(AtomicReference<Disposable> subscription, MateChatSseParser parser) {
@@ -225,7 +256,7 @@ public class MateServiceModelManagerProvider implements AiProvider {
         return List.of(path.split("/")).stream().anyMatch(segment -> ".".equals(segment) || "..".equals(segment));
     }
 
-    private static AssistantMessage errorMessage(Model model, Throwable error) {
+    private static AssistantMessage failureMessage(Model model, MateInvocationErrorCode errorCode) {
         return new AssistantMessage(
                 List.of(),
                 Api.OPENAI_COMPLETIONS.value(),
@@ -235,7 +266,8 @@ public class MateServiceModelManagerProvider implements AiProvider {
                 null,
                 Usage.empty(),
                 StopReason.ERROR,
-                error.getMessage(),
+                errorCode.name(),
+                null,
                 System.currentTimeMillis());
     }
 }

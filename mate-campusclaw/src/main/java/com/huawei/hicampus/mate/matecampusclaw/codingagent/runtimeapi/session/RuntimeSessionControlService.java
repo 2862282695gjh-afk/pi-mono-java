@@ -23,6 +23,8 @@ import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.runtime.Ru
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.vo.ControlMessageAcceptedResponseVO;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.vo.ControlMessageRequestVO;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 /**
@@ -33,6 +35,8 @@ import org.springframework.stereotype.Service;
  */
 @Service
 public class RuntimeSessionControlService {
+    private static final Logger LOGGER = LoggerFactory.getLogger(RuntimeSessionControlService.class);
+
     private final RuntimeSessionRepository repository;
 
     private final RuntimeSessionEngineRegistry engineRegistry;
@@ -66,7 +70,15 @@ public class RuntimeSessionControlService {
         } catch (RuntimeApiException error) {
             throw error;
         } catch (RuntimeException error) {
-            throw new RuntimeApiException(RuntimeErrorCode.SESSION_ABORT_FAILED, error);
+            RuntimeErrorCode errorCode = RuntimeErrorCode.SESSION_ABORT_FAILED;
+            LOGGER.atError()
+                    .addKeyValue("event", "campusclaw.failure")
+                    .addKeyValue("operation", "runtime.session.abort")
+                    .addKeyValue("errorCode", errorCode.name())
+                    .addKeyValue("sessionId", sessionId)
+                    .setCause(error)
+                    .log("CampusClaw failure: operation={}, errorCode={}", "runtime.session.abort", errorCode.name());
+            throw new RuntimeApiException(errorCode);
         }
     }
 
@@ -85,7 +97,19 @@ public class RuntimeSessionControlService {
         } catch (RuntimeApiException error) {
             throw error;
         } catch (RuntimeException error) {
-            throw new RuntimeApiException(kind.acceptanceFailed(), error);
+            RuntimeErrorCode errorCode = kind.acceptanceFailed();
+            LOGGER.atError()
+                    .addKeyValue("event", "campusclaw.failure")
+                    .addKeyValue("operation", "runtime.session.control.accept")
+                    .addKeyValue("errorCode", errorCode.name())
+                    .addKeyValue("sessionId", sessionId)
+                    .addKeyValue("controlKind", kind)
+                    .setCause(error)
+                    .log(
+                            "CampusClaw failure: operation={}, errorCode={}",
+                            "runtime.session.control.accept",
+                            errorCode.name());
+            throw new RuntimeApiException(errorCode);
         } finally {
             engineRegistry.unlockOperation(sessionId);
         }

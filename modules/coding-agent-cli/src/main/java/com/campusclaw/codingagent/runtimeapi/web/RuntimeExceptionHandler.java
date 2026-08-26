@@ -44,26 +44,54 @@ public class RuntimeExceptionHandler {
 
     @ExceptionHandler(RuntimeApiException.class)
     public ResponseEntity<ErrorResponseVO> handleRuntimeError(RuntimeApiException error, HttpServletRequest request) {
-        logServerError(error, request);
         return response(error.errorCode(), request);
     }
 
     @ExceptionHandler({HttpMessageNotReadableException.class, MethodArgumentNotValidException.class})
     public ResponseEntity<ErrorResponseVO> handleInvalidBody(Exception error, HttpServletRequest request) {
-        log.debug("Invalid Runtime request body: {} {}", request.getMethod(), request.getRequestURI(), error);
-        return response(classifyInvalidBody(request), request);
+        RuntimeErrorCode errorCode = classifyInvalidBody(request);
+        log.atWarn()
+                .addKeyValue("event", "campusclaw.failure")
+                .addKeyValue("operation", "runtime.http.body.validate")
+                .addKeyValue("errorCode", errorCode.name())
+                .addKeyValue("method", request.getMethod())
+                .addKeyValue("path", request.getRequestURI())
+                .setCause(error)
+                .log("CampusClaw failure: operation={}, errorCode={}", "runtime.http.body.validate", errorCode.name());
+        return response(errorCode, request);
     }
 
     @ExceptionHandler(HandlerMethodValidationException.class)
     public ResponseEntity<ErrorResponseVO> handleInvalidParameter(
             HandlerMethodValidationException error, HttpServletRequest request) {
-        log.debug("Invalid Runtime request parameter: {} {}", request.getMethod(), request.getRequestURI(), error);
-        return response(classifyInvalidParameter(error), request);
+        RuntimeErrorCode errorCode = classifyInvalidParameter(error);
+        log.atWarn()
+                .addKeyValue("event", "campusclaw.failure")
+                .addKeyValue("operation", "runtime.http.parameter.validate")
+                .addKeyValue("errorCode", errorCode.name())
+                .addKeyValue("method", request.getMethod())
+                .addKeyValue("path", request.getRequestURI())
+                .setCause(error)
+                .log(
+                        "CampusClaw failure: operation={}, errorCode={}",
+                        "runtime.http.parameter.validate",
+                        errorCode.name());
+        return response(errorCode, request);
     }
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponseVO> handleUnexpectedError(Exception error, HttpServletRequest request) {
-        log.error("Runtime API request failed: {} {}", request.getMethod(), request.getRequestURI(), error);
+        log.atError()
+                .addKeyValue("event", "campusclaw.failure")
+                .addKeyValue("operation", "runtime.http.request")
+                .addKeyValue("errorCode", RuntimeErrorCode.INTERNAL_ERROR.name())
+                .addKeyValue("method", request.getMethod())
+                .addKeyValue("path", request.getRequestURI())
+                .setCause(error)
+                .log(
+                        "CampusClaw failure: operation={}, errorCode={}",
+                        "runtime.http.request",
+                        RuntimeErrorCode.INTERNAL_ERROR.name());
         return response(RuntimeErrorCode.INTERNAL_ERROR, request);
     }
 
@@ -112,11 +140,5 @@ public class RuntimeExceptionHandler {
             case "sessionId" -> Optional.of(RuntimeErrorCode.INVALID_SESSION_ID);
             default -> Optional.empty();
         };
-    }
-
-    private static void logServerError(RuntimeApiException error, HttpServletRequest request) {
-        if (error.status().is5xxServerError()) {
-            log.error("Runtime API request failed: {} {}", request.getMethod(), request.getRequestURI(), error);
-        }
     }
 }
