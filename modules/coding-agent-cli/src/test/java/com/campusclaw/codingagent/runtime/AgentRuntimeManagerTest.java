@@ -65,11 +65,12 @@ class AgentRuntimeManagerTest {
         Path managed = prepared.agentRoot().resolve(".campusclaw");
         assertTrue(Files.isRegularFile(managed.resolve("agent.json")));
         assertTrue(Files.isRegularFile(managed.resolve("settings.json")));
-        assertEquals("prompt-v1", Files.readString(managed.resolve("SYSTEM.md")));
+        assertEquals("prompt-v1", Files.readString(managed.resolve("SYSTEM.md"), StandardCharsets.UTF_8));
         assertTrue(Files.isRegularFile(managed.resolve("agents/researcher.json")));
         assertTrue(Files.isRegularFile(managed.resolve("skills/calendar/skill.json")));
         assertTrue(Files.isRegularFile(managed.resolve("skills/calendar/SKILL.md")));
-        assertEquals(skillContent(), Files.readString(managed.resolve("skills/calendar/SKILL.md")));
+        assertEquals(
+                skillContent(), Files.readString(managed.resolve("skills/calendar/SKILL.md"), StandardCharsets.UTF_8));
         assertTrue(Files.isDirectory(managed.resolve("skills/calendar/references")));
         assertTrue(Files.isDirectory(managed.resolve("skills/calendar/templates")));
         try (var paths = Files.walk(managed)) {

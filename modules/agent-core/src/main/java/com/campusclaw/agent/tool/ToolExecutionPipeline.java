@@ -296,6 +296,10 @@ public class ToolExecutionPipeline {
     }
 
     private String messageForException(Exception e) {
+        // 携带稳定错误码的异常公开其错误码,不透传内部诊断文本。
+        if (e instanceof com.campusclaw.agent.error.StableErrorCode coded) {
+            return coded.stableErrorCode();
+        }
         return e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
     }
 }

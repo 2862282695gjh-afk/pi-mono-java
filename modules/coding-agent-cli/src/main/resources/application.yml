@@ -102,7 +102,6 @@ campusmate:
     agents-root: ${CAMPUSCLAW_AGENTS_ROOT:agent}
     connect-timeout: PT10S
     request-timeout: PT30S
-    success-code: ${CAMPUSMATE_SUCCESS_CODE:0}
     max-response-bytes: ${CAMPUSMATE_MAX_RESPONSE_BYTES:4194304}
     agent-runtime-path-template: ${CAMPUSMATE_AGENT_RUNTIME_PATH_TEMPLATE:/mate-service/v1/agents/%s/runtime}
     skill-info-query-path-template: ${CAMPUSMATE_SKILL_INFO_QUERY_PATH_TEMPLATE:/mate-service/v1/skill/query/%s}

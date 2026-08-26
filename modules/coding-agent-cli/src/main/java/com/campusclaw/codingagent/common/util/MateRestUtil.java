@@ -12,6 +12,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Map;
 
+import com.campusclaw.codingagent.common.client.mate.MateToolResponseException;
 import com.campusclaw.codingagent.common.dto.RequestHeaderInfo;
 
 import org.slf4j.Logger;
@@ -61,7 +62,8 @@ public class MateRestUtil {
      * @param headerInfo 映射到 HTTP Header 的请求信息
      * @param jsonBody 原始 JSON 请求体
      * @return 原始响应体
-     * @throws IllegalStateException 调用失败、中断或返回空响应体时抛出
+     * @throws IllegalStateException 调用失败或中断时抛出
+     * @throws MateToolResponseException 返回空响应体时抛出
      */
     public String executePostRawRequest(String gwAddress, String path, RequestHeaderInfo headerInfo, String jsonBody) {
         String url = joinUrl(gwAddress, path);
@@ -73,6 +75,8 @@ public class MateRestUtil {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new IllegalStateException("Mate gateway call interrupted: " + url, e);
+        } catch (MateToolResponseException e) {
+            throw e;
         } catch (Exception e) {
             throw logAndWrap(url, e);
         }
@@ -85,7 +89,8 @@ public class MateRestUtil {
      * @param path 网关 API 路径，可以包含路径变量
      * @param headerInfo 映射到 HTTP Header 的请求信息
      * @return 原始响应体
-     * @throws IllegalStateException 调用失败、中断或返回空响应体时抛出
+     * @throws IllegalStateException 调用失败或中断时抛出
+     * @throws MateToolResponseException 返回空响应体时抛出
      */
     public String executeGetRawRequest(String gwAddress, String path, RequestHeaderInfo headerInfo) {
         String url = joinUrl(gwAddress, path);
@@ -95,6 +100,8 @@ public class MateRestUtil {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new IllegalStateException("Mate gateway call interrupted: " + url, e);
+        } catch (MateToolResponseException e) {
+            throw e;
         } catch (Exception e) {
             throw logAndWrap(url, e);
         }
@@ -119,7 +126,7 @@ public class MateRestUtil {
     private String send(String url, HttpRequest request) throws Exception {
         HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
         if (response.body() == null || response.body().isEmpty()) {
-            throw new IllegalStateException("Mate gateway returned empty body");
+            throw new MateToolResponseException("response body is empty");
         }
         return response.body();
     }

@@ -84,12 +84,12 @@ public class MateServiceClient {
                 .GET()
                 .build();
         JsonNode root = send(request, "GetAgentRuntime");
-        validateBusinessSuccess(root, "GetAgentRuntime");
         JsonNode payload = root.hasNonNull("result") ? root.get("result") : root;
         try {
             return mapper.treeToValue(payload, AgentRuntime.class);
         } catch (IOException e) {
-            throw new AgentRuntimeException("Invalid GetAgentRuntime response", e);
+            throw new AgentRuntimeException(
+                    AgentRuntimeErrorCode.MATE_RESPONSE_INVALID, "Invalid GetAgentRuntime response", e);
         }
     }
 
@@ -109,15 +109,16 @@ public class MateServiceClient {
                 .GET()
                 .build();
         JsonNode root = send(request, "querySkillInfo");
-        validateBusinessSuccess(root, "querySkillInfo");
         JsonNode result = root.get("result");
         if (result == null || !result.isObject()) {
-            throw new AgentRuntimeException("querySkillInfo result must be an object");
+            throw new AgentRuntimeException(
+                    AgentRuntimeErrorCode.MATE_RESPONSE_INVALID, "querySkillInfo result must be an object");
         }
         try {
             return mapper.treeToValue(result, SkillInfo.class);
         } catch (IOException e) {
-            throw new AgentRuntimeException("Invalid querySkillInfo response", e);
+            throw new AgentRuntimeException(
+                    AgentRuntimeErrorCode.MATE_RESPONSE_INVALID, "Invalid querySkillInfo response", e);
         }
     }
 
@@ -133,14 +134,17 @@ public class MateServiceClient {
             response = httpClient.send(request, HttpResponse.BodyHandlers.ofInputStream());
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            throw new AgentRuntimeException(operation + " interrupted", e);
+            throw new AgentRuntimeException(AgentRuntimeErrorCode.MATE_REQUEST_FAILED, operation + " interrupted", e);
         } catch (IOException e) {
-            throw new AgentRuntimeException(operation + " request failed", e);
+            throw new AgentRuntimeException(
+                    AgentRuntimeErrorCode.MATE_REQUEST_FAILED, operation + " request failed", e);
         }
         byte[] responseBytes;
         try (InputStream body = response.body()) {
             if (response.statusCode() < 200 || response.statusCode() >= 300) {
-                throw new AgentRuntimeException(operation + " returned HTTP " + response.statusCode());
+                throw new AgentRuntimeException(
+                        AgentRuntimeErrorCode.MATE_REQUEST_FAILED,
+                        operation + " returned HTTP " + response.statusCode());
             }
             int maxResponseBytes = properties.maxResponseBytes();
             long contentLength =
@@ -153,36 +157,36 @@ public class MateServiceClient {
                 throw responseTooLarge(operation);
             }
         } catch (IOException e) {
-            throw new AgentRuntimeException(operation + " response body could not be read", e);
+            throw new AgentRuntimeException(
+                    AgentRuntimeErrorCode.MATE_REQUEST_FAILED, operation + " response body could not be read", e);
         }
+        JsonNode root;
         try {
-            return mapper.readTree(responseBytes);
+            root = mapper.readTree(responseBytes);
         } catch (IOException e) {
-            throw new AgentRuntimeException(operation + " returned invalid JSON", e);
+            throw new AgentRuntimeException(
+                    AgentRuntimeErrorCode.MATE_RESPONSE_INVALID, operation + " returned invalid JSON", e);
         }
+        if (root == null || root.isMissingNode() || !root.isObject()) {
+            throw new AgentRuntimeException(
+                    AgentRuntimeErrorCode.MATE_RESPONSE_INVALID,
+                    operation + " response body is empty or not a JSON object");
+        }
+        return root;
     }
 
     private AgentRuntimeException responseTooLarge(String operation) {
-        return new AgentRuntimeException(operation + " response exceeds campusmate.runtime.max-response-bytes ("
-                + properties.maxResponseBytes() + ")");
-    }
-
-    private void validateBusinessSuccess(JsonNode root, String operation) {
-        if (!root.has("resCode")) {
-            return;
-        }
-        String actual = root.path("resCode").asText();
-        if (!properties.successCode().equals(actual)) {
-            String message = root.path("resMsg").asText("");
-            throw new AgentRuntimeException(
-                    operation + " failed with resCode " + actual + (message.isBlank() ? "" : ": " + message));
-        }
+        return new AgentRuntimeException(
+                AgentRuntimeErrorCode.MATE_RESPONSE_TOO_LARGE,
+                operation + " response exceeds campusmate.runtime.max-response-bytes (" + properties.maxResponseBytes()
+                        + ")");
     }
 
     private URI endpoint(String path) {
         URI baseUrl = properties.baseUrl();
         if (baseUrl == null || baseUrl.toString().isBlank()) {
             throw new AgentRuntimeException(
+                    AgentRuntimeErrorCode.MATE_CONFIG_MISSING,
                     "campusmate.runtime.base-url is required when a managed Agent is not cached locally");
         }
 

@@ -92,6 +92,63 @@ class ToolExecutionPipelineTest {
     }
 
     @Test
+    void stableErrorCodeExceptionIsExposedAsCodeNotDiagnosticText() {
+        var pipeline = new ToolExecutionPipeline();
+        var tool = new CodedFailingTool();
+        var toolCall = new ToolCall("call-1", "coded", Map.of());
+
+        var result = pipeline.execute(tool, toolCall, Map.of(), sampleContext(), new CancellationToken(), e -> {});
+
+        assertTrue(result.isError());
+        assertEquals("MATE_RESPONSE_INVALID", text(result.content().getFirst()));
+    }
+
+    private static final class CodedFailingTool implements AgentTool {
+
+        @Override
+        public String name() {
+            return "coded";
+        }
+
+        @Override
+        public String label() {
+            return "coded";
+        }
+
+        @Override
+        public String description() {
+            return "fails with a stable error code";
+        }
+
+        @Override
+        public com.fasterxml.jackson.databind.JsonNode parameters() {
+            return new com.fasterxml.jackson.databind.ObjectMapper().createObjectNode();
+        }
+
+        @Override
+        public AgentToolResult execute(
+                String toolCallId,
+                Map<String, Object> params,
+                CancellationToken signal,
+                AgentToolUpdateCallback onUpdate) {
+            throw new CodedFailureException();
+        }
+    }
+
+    private static final class CodedFailureException extends RuntimeException
+            implements com.campusclaw.agent.error.StableErrorCode {
+
+        private CodedFailureException() {
+            super("internal english diagnostic that must not leak");
+        }
+
+        @Override
+        public String stableErrorCode() {
+            return "MATE_RESPONSE_INVALID";
+        }
+    }
+
+    @Test
     void afterToolCallCanOverrideResult() {
         var pipeline = new ToolExecutionPipeline();
         var tool = new MockAgentTool("search", false, false, 0L);

@@ -41,6 +41,10 @@ class MateServiceClientTest {
                 properties, new ObjectMapper(), AGENT_RUNTIME_PATH_TEMPLATE, SKILL_INFO_QUERY_PATH_TEMPLATE);
     }
 
+    private static MockResponse json(String body) {
+        return new MockResponse().setHeader("Content-Type", "application/json").setBody(body);
+    }
+
     @AfterEach
     void tearDown() throws Exception {
         server.shutdown();
@@ -244,71 +248,92 @@ class MateServiceClientTest {
     }
 
     @Test
-    void rejectsBusinessErrorFromSkillInfoQuery() {
+    void acceptsNonZeroResCodeWhenResultIsParseable() throws Exception {
+        // 客户端不按 resCode 预判处理结果:只要 result 可解析即成功。
         server.enqueue(
-                new MockResponse()
-                        .setHeader("Content-Type", "application/json")
-                        .setBody(
-                                """
-                        {
-                          "resCode": "404",
-                          "resMsg": "skill missing",
-                          "result": []
-                        }
-                        """));
+                json(
+                        """
+                {
+                  "resCode": "72",
+                  "resMsg": "ut laboris",
+                  "result": {
+                    "name": "calendar",
+                    "id": "skill-11111111111111111111111111111111",
+                    "version": "1.0.0",
+                    "content": "---\\nname: calendar\\ndescription: Calendar\\n---\\nBody\\n"
+                  }
+                }
+                """));
 
-        AgentRuntimeException error = assertThrows(
-                AgentRuntimeException.class, () -> client.querySkillInfo("skill-11111111111111111111111111111111"));
+        MateServiceClient.SkillInfo skill = client.querySkillInfo("skill-11111111111111111111111111111111");
 
-        assertEquals("querySkillInfo failed with resCode 404: skill missing", error.getMessage());
+        assertEquals("calendar", skill.name());
+        assertEquals("1.0.0", skill.version());
     }
 
     @Test
-    void readsRuntimeEnvelopeWithConfiguredSuccessCode() {
-        var properties = new AgentRuntimeProperties(
-                server.url("/").uri(), Path.of("agent"), Duration.ofSeconds(1L), Duration.ofSeconds(2L), "200");
-        client = new MateServiceClient(
-                properties, new ObjectMapper(), AGENT_RUNTIME_PATH_TEMPLATE, SKILL_INFO_QUERY_PATH_TEMPLATE);
+    void emptyResponseBodyOnGetAgentRuntimeFailsAsResponseInvalid() {
         server.enqueue(
-                new MockResponse()
-                        .setHeader("Content-Type", "application/json")
-                        .setBody(
-                                """
-                        {
-                          "resCode": "200",
-                          "resMsg": "ok",
-                          "result": {
-                            "id": "agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-                            "name": "Agent A",
-                            "bindingSkills": [],
-                            "bindingTools": []
-                          }
-                        }
-                        """));
-
-        assertEquals(
-                "agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-                client.getAgentRuntime("agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa").id());
-    }
-
-    @Test
-    void rejectsBusinessErrorFromRuntimeQuery() {
-        server.enqueue(
-                new MockResponse()
-                        .setHeader("Content-Type", "application/json")
-                        .setBody(
-                                """
-                        {
-                          "resCode": "403",
-                          "resMsg": "agent disabled",
-                          "result": null
-                        }
-                        """));
+                new MockResponse().setHeader("Content-Type", "application/json").setBody(""));
 
         AgentRuntimeException error = assertThrows(
                 AgentRuntimeException.class, () -> client.getAgentRuntime("agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"));
 
-        assertEquals("GetAgentRuntime failed with resCode 403: agent disabled", error.getMessage());
+        assertEquals(AgentRuntimeErrorCode.MATE_RESPONSE_INVALID, error.errorCode());
+        assertEquals(AgentRuntimeErrorCode.MATE_RESPONSE_INVALID.name(), error.stableErrorCode());
+    }
+
+    @Test
+    void emptyResponseBodyOnQuerySkillInfoFailsAsResponseInvalid() {
+        server.enqueue(
+                new MockResponse().setHeader("Content-Type", "application/json").setBody("   "));
+
+        AgentRuntimeException error = assertThrows(
+                AgentRuntimeException.class, () -> client.querySkillInfo("skill-11111111111111111111111111111111"));
+
+        assertEquals(AgentRuntimeErrorCode.MATE_RESPONSE_INVALID, error.errorCode());
+    }
+
+    @Test
+    void arrayRootNodeFailsAsResponseInvalid() {
+        server.enqueue(json("[{\"id\": \"agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}]"));
+
+        AgentRuntimeException error = assertThrows(
+                AgentRuntimeException.class, () -> client.getAgentRuntime("agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"));
+
+        assertEquals(AgentRuntimeErrorCode.MATE_RESPONSE_INVALID, error.errorCode());
+    }
+
+    @Test
+    void missingSkillInfoResultCarriesStableErrorCode() {
+        server.enqueue(json("{\"resCode\": \"404\", \"resMsg\": \"skill missing\", \"result\": null}"));
+
+        AgentRuntimeException error = assertThrows(
+                AgentRuntimeException.class, () -> client.querySkillInfo("skill-11111111111111111111111111111111"));
+
+        assertEquals(AgentRuntimeErrorCode.MATE_RESPONSE_INVALID, error.errorCode());
+        assertEquals("MATE_RESPONSE_INVALID", error.stableErrorCode());
+    }
+
+    @Test
+    void runtimeQueryWithNullResultFallsBackToEnvelopeBody() throws Exception {
+        // result 为 null 时按响应体本身解析,不因 resCode 预判而失败。
+        server.enqueue(
+                json(
+                        """
+                {
+                  "resCode": "403",
+                  "resMsg": "agent disabled",
+                  "id": "agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                  "name": "Agent A",
+                  "bindingSkills": [],
+                  "bindingTools": []
+                }
+                """));
+
+        assertEquals(
+                "agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                client.getAgentRuntime("agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa").id());
     }
 
     @Test
@@ -369,7 +394,6 @@ class MateServiceClientTest {
                 Path.of("agent"),
                 Duration.ofSeconds(1L),
                 Duration.ofSeconds(2L),
-                "0",
                 maxResponseBytes);
         return new MateServiceClient(
                 properties, new ObjectMapper(), AGENT_RUNTIME_PATH_TEMPLATE, SKILL_INFO_QUERY_PATH_TEMPLATE);

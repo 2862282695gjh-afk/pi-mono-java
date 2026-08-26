@@ -45,8 +45,18 @@ public class CronJobExecutor {
             return append(success(runId, job.id(), startedAt, output));
         } catch (RuntimeException exception) {
             log.error("Cron Job {} execution failed: {}", job.id(), exception.getMessage(), exception);
-            return append(failed(runId, job.id(), startedAt, exception.getMessage()));
+            return append(failed(runId, job.id(), startedAt, publicErrorText(exception)));
         }
+    }
+
+    // 运行记录是公开产物:携带稳定错误码的异常只记录错误码,不透传内部诊断文本。
+    private static String publicErrorText(RuntimeException exception) {
+        if (exception instanceof com.huawei.hicampus.mate.matecampusclaw.agent.error.StableErrorCode coded) {
+            return "error-code=" + coded.stableErrorCode();
+        }
+        return exception.getMessage() != null
+                ? exception.getMessage()
+                : exception.getClass().getSimpleName();
     }
 
     private CronRunRecord append(CronRunRecord record) {
