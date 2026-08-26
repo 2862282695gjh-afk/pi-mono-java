@@ -41,8 +41,8 @@
       <li>CampusClaw 先选择 <code>agentId</code>，并由 <code>AgentRuntimeManager</code> 定位 <code>./agent/{agentId}</code>。</li>
       <li>本地元数据和 Skill 树完整时直接读取；整个 Agent 目录不存在时调用 <code>GET /mate-service/v1/agents/{agentId}/runtime</code>，只把其中的 <code>bindingSkills</code> 解释为当前 Agent 直接绑定 Skill 的 ID/版本坐标。</li>
       <li>GetAgentRuntime 返回的 <code>systemPrompt</code> 写入 <code>./agent/{agentId}/.campusclaw/systemPrompt.md</code>；本地命中时直接把该文件作为会话系统提示词来源，不与 <code>agentId.json.systemPrompt</code> 比对，也不访问 CampusMateService。</li>
-      <li>CampusClaw 对每个直接绑定 Skill 调用 <code>GET /mate-service/v1/skill/query/{skillId}</code>；响应 <code>result</code> 是单个 Skill 对象（不是数组），返回 ID/版本与绑定坐标匹配，再原子物化目录；既有不完整目录拒绝加载。</li>
-      <li>每个 Skill 目录包含由 querySkillInfo <code>result.content</code> 原文保存的 <code>SKILL.md</code>、本地 Skill 元数据快照、从 <code>bindingTools</code> 生成的 <code>references/tools.json</code>，以及 querySkillInfo 返回的 <code>references</code> 和 <code>templates</code> 文本文件。资源名必须是安全单路径段，fileType 只允许 <code>md</code> 或 <code>txt</code>；绑定数量、资源数量及字节数有上限。本地命中时目录集合、SKILL.md、tools.json 和资源内容都必须与快照完全一致。</li>
+      <li>CampusClaw 对每个直接绑定 Skill 调用 <code>GET /mate-service/v1/skill/query/{skillId}</code>，要求唯一结果且返回 ID/版本与绑定坐标匹配，再原子物化目录；既有不完整目录拒绝加载。</li>
+      <li>每个 Skill 目录包含由元数据生成的基础 <code>SKILL.md</code>、本地 Skill 元数据快照、从 <code>bindingTools</code> 生成的 <code>references/tools.json</code>，以及 querySkillInfo 返回的 <code>references</code> 和 <code>templates</code> 文本文件。资源名必须是安全单路径段，fileType 只允许 <code>md</code> 或 <code>txt</code>；绑定数量、资源数量及字节数有上限。本地命中时目录集合、SKILL.md、tools.json 和资源内容都必须与快照完全一致。</li>
       <li>querySkillInfo 的 <code>bindingSkills</code> 仅保存为依赖元数据；不递归查询、不物化，也不自动暴露为当前 Agent 可选 Skill。</li>
       <li>托管 Agent 只加载自身 <code>.campusclaw/skills</code>；加载 SKILL.md 时同时加载 <code>references/tools.json</code>，初始上下文只暴露 Skill 的 name/description。</li>
       <li>用户、CampusClaw 路由和 LLM 的 Skill 选择统一归一到结构化 <code>activate_skill(skillName)</code>。</li>
@@ -55,7 +55,7 @@
   <section><h2>Consequences</h2>
     <ul>
       <li>CLI 可以通过 <code>--agent-id</code> 选择托管 Agent；未指定时保留普通非托管 CLI 行为。HTTP V1 的 Agent 与 Session 隔离由独立 Runtime API 实现。</li>
-      <li>querySkillInfo 的 <code>result.content</code> 提供完整 SKILL.md 指令正文；CampusClaw 按原文落盘，不再从 description/useCases 生成正文。</li>
+      <li>querySkillInfo 提供 references/templates 内容，但仍缺少真实 SKILL.md 指令正文；当前只能生成元数据版 SKILL.md，接口需补正文或制品包才能恢复完整 Skill 工作流。</li>
       <li>GetAgentRuntime 与 querySkillInfo 的 ID/版本不一致、重复 Skill 或非法资源文件会使整个冷启动 fail closed，不发布部分目录。</li>
       <li><code>systemPrompt.md</code> 缺失会使既有 Agent Runtime 被判定为不完整；修改该文件后，新建会话直接使用本地内容。</li>
       <li>依赖 Skill 当前只被记录，不参与递归解析或 Agent 可见性；未来若支持依赖执行，需要另行定义授权与版本闭包。</li>

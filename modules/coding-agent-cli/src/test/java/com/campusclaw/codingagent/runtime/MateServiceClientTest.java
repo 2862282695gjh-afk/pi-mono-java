@@ -195,7 +195,7 @@ class MateServiceClientTest {
     }
 
     @Test
-    void queriesCompleteSkillInfoObjectWithStandardVersionAndContent() throws Exception {
+    void queriesCompleteSkillInfoObjectWithVersionAndContent() throws Exception {
         server.enqueue(
                 new MockResponse().setHeader("Content-Type", "application/json").setBody(skillInfoResponse()));
 

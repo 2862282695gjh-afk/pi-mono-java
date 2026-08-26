@@ -41,7 +41,7 @@
     <ul>
       <li>九条规则的主代码与测试整体暂缓，登记 <a href="../DEFERRED.md">DEF-008</a>；ADR-0011 的本地优先架构决策不变，仅暂缓其 fail closed 加固部分。<strong>①的基础兜底已就位：</strong><code>prepare()/prepareCached()</code> 入口使用单路径段正则（<code>^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$</code>，无路径分隔符、首字符字母数字）拒绝穿越值；符号链接与真实路径边界等完整校验以及②–⑨仍随 DEF-008 暂缓。</li>
       <li><code>AgentRuntimeManager</code> 语义降级：<code>prepare()</code> 入口做 agentId 段格式校验（见上条）；快照四要素（agentId.json/systemPrompt.md/skills 目录/可读的 skill.json）齐备即加载，否则重新拉取远程并<strong>原地覆盖物化</strong>（自愈，不再报"配置漂移"错误）。</li>
-      <li>远程响应仅保留最小健壮性：querySkillInfo <code>result</code> 必须为对象；Skill <code>content</code> 按原文写入，null 或空值落为空文件。不再校验 id 匹配、版本坐标、数量/大小上限、重复检测。</li>
+      <li>远程响应仅保留最小健壮性：querySkillInfo 空结果报错；不再校验 id 匹配、版本坐标、数量/大小上限、重复检测。</li>
       <li>物化改为直接写入目标目录（保留逐文件写入），移除临时目录 + 原子移动发布。</li>
       <li>设计文档 <code>agent-skill-runtime.md</code> §5.1 同步降级为当前语义，完整九条规则移至本 ADR 附录留档。</li>
     </ul>

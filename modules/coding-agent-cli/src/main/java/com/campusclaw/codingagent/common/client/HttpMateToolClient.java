@@ -233,7 +233,8 @@ public class HttpMateToolClient implements MateToolClient {
     }
 
     /**
-     * 解析标准 {@code {resCode, resMsg, result}} 信封并返回指定类型的 {@code result}。
+     * 解析响应中的 {@code result} 字段并转换为指定类型；响应结构包含 {@code resCode}、
+     * {@code resMsg} 和 {@code result} 字段。
      *
      * @param <T> 结果类型
      * @param raw 原始响应体

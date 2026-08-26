@@ -21,8 +21,8 @@ import org.slf4j.LoggerFactory;
  * 调用 Mate 内部网关（{@code mate.innerGWSerive}）的 REST 工具。
  *
  * <p>调用方按执行上下文决定是否填充凭据 Header；本类只负责原样映射非空字段，不保存或
- * 解析凭据。传输使用 JDK HttpClient，响应保持原始文本并由调用方解析不同端点的
- * {@code {resCode, resMsg, result}} 信封。
+ * 解析凭据。传输使用 JDK HttpClient，响应保持原始文本，由调用方解析各自端点响应中的 {@code result} 字段
+ * （响应结构包含 {@code resCode}、{@code resMsg} 和 {@code result} 字段）。
  *
  * @version [br_eCampusCore 26.0.0, 2026/08/24]
  * @since [br_eCampusCore 26.0.0]
