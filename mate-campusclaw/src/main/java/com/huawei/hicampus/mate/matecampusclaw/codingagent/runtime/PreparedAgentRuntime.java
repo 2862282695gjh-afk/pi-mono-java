@@ -22,7 +22,7 @@ import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtime.MateServiceCl
  * @param agentId 已选择的 Agent 标识
  * @param agentRoot 本地 {@code ./agent/{agentId}} 目录
  * @param metadata 缓存的运行时元数据
- * @param skills 从已物化 SKILL.md frontmatter 重建的绑定 Skill 身份快照；
+ * @param skills 从已生成的 SKILL.md frontmatter 重建的绑定 Skill 身份快照；
  *               {@code skills/} 子目录本身表示绑定关系
  *
  * @version [br_eCampusCore 26.0.0, 2026/08/17]
