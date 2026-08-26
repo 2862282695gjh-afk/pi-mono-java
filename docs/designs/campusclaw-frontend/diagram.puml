@@ -1,5 +1,5 @@
 @startuml frontend_product_boundary
-' Backend source baseline: origin/main 8f9f3c1b51cca5ffbc3501fc4a1cb9ac253124be.
+' Backend source baseline: origin/main 63adc08cf5c57e3a7cc3caa317452062606ce8b4.
 ' Frontend pre-change baseline: 849e4173.
 ' Source evidence: frontend/src/App.vue (createSession, resumeSession, submit, product shell).
 ' Source evidence: frontend/src/composables/useRuntimeApi.ts (useRuntimeApi, requestRaw, consumeSse).
@@ -145,7 +145,7 @@ end note
 @enduml
 
 @startuml runtime_event_ui_projection
-' Backend source baseline: origin/main 8f9f3c1b51cca5ffbc3501fc4a1cb9ac253124be.
+' Backend source baseline: origin/main 63adc08cf5c57e3a7cc3caa317452062606ce8b4.
 ' Frontend pre-change baseline: 849e4173.
 ' Visual design baseline: campusclaw-frontend-design 5c2231654ea94dd248b5ea9a478d2cb27cd36a52.
 ' Source evidence: frontend/src/projectors/runtimeEventProjector.ts (projectRuntimeEvents, projectAssistantEvent, projectThinkingEvent, projectToolEvent, projectToolArguments).
