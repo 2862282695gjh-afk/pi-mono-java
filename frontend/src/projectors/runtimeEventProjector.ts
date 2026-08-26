@@ -133,7 +133,9 @@ function projectToolEvent(
   }
   if (envelope.event === 'tool.result') {
     turn.status = envelope.data.isError === true ? 'error' : 'completed';
-    turn.result = truncateToolResult(readContentArrayText(envelope.data.content));
+    const content = readContentArrayText(envelope.data.content);
+    const errorMessage = readString(envelope.data.errorMessage);
+    turn.result = truncateToolResult(turn.status === 'error' && errorMessage ? errorMessage : content);
   }
 }
 
