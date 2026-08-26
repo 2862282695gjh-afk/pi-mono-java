@@ -24,7 +24,7 @@ CampusClaw 不提供 CLI、TUI、RPC 或本地安装入口。`modules/coding-age
 - JDK 21；
 - openGauss 或 PostgreSQL 兼容数据库；
 - 至少一个受支持模型供应商的部署凭据；
-- 可访问的 CampusMate Runtime 和 Mate 工具服务。
+- 可访问的 CampusMate 服务。
 
 构建服务：
 
@@ -46,8 +46,10 @@ java -jar modules/coding-agent-cli/target/campusclaw-agent.jar
 | `GAUSSDB_URL` / `GAUSSDB_USER` / `GAUSSDB_PASSWORD` | 数据库连接 |
 | `GAUSSDB_SCHEMA` / `GAUSSDB_SSL_MODE` | 数据库 schema 和 SSL 模式 |
 | `CAMPUSCLAW_AGENTS_ROOT` | 受管 Agent 根目录，缺省为 `agent` |
-| `CAMPUSMATE_RUNTIME_BASE_URL` | 受管目录准备服务地址 |
-| `MATE_INNERGWSERIVE` | Mate 工具内部网关地址 |
+| `CAMPUSMATE_BASE_URL` | Model、受管 Runtime 与 Tool 共享的 CampusMate 服务地址（必填） |
+| `CAMPUSMATE_MODEL_*` | CampusMate Model Provider 的 API、超时和 token 参数 |
+| `CAMPUSMATE_RUNTIME_*` | CampusMate Runtime 客户端的超时参数 |
+| `CAMPUSMATE_*_PATH*` | 六个 CampusMate HTTP operation path 或 path template |
 | `CAMPUSCLAW_EVENT_CURSOR_SECRET` | Runtime 事件游标签名密钥 |
 
 模型凭据示例：
@@ -216,6 +218,7 @@ ai -> agent-core -> cron -> coding-agent-cli
 
 | 文档 | 用途 |
 |---|---|
+| [`campusmate-shared-config.md`](docs/designs/campusmate-shared-config.md) | CampusMate 单一服务地址、六 operation 目录和配置迁移 |
 | [`tool-system-v2.md`](docs/designs/tool-system-v2.md) | 三入口、八工具、工作区和 Session 装配主设计 |
 | [`coding-agent-cli.md`](docs/designs/coding-agent-cli.md) | Runtime HTTP 与公共 Session 设计 |
 | [`mate-tool-client.md`](docs/designs/mate-tool-client.md) | Mate 实时发现、Session 缓存和名称调用 |

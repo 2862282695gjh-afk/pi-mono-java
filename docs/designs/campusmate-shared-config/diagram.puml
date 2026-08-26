@@ -1,0 +1,84 @@
+@startuml campusmate_shared_configuration
+' Source evidence: modules/coding-agent-cli/src/main/resources/application.yml lines 89-140 at 56be8eee59415a5f86658d6635a7b7e8891263d3.
+' Reviewed implementation: CampusMateClientProperties, MateServiceModelManagerProvider, MateServiceClient, and MateToolAutoConfiguration at e8533b5ebf564f9d8d707faa115be638dc377556.
+' Server evidence: LlmChatController and AgentDefinitionController at mate-service 956b547f5ca12ca89e68f73012f92a4406b0c9fa.
+' Observed behavior: three configuration roots declared three service origins and seven path keys for one CampusMate service.
+' Server observation: Chat, Agent info, and Agent runtime operations exist at the mate-service baseline.
+' Target-only design: Skill query, Tool metadata, and Tool execute are client dependencies but server-side pending at that baseline.
+' Architecture change: one shared origin and six HTTP operations are consumed by all three clients.
+' Security hardening: base URLs and service-local paths fail during startup when invalid.
+skinparam shadowing false
+skinparam componentStyle rectangle
+left to right direction
+
+package "CampusClaw" {
+  component "Model Provider" as model
+  component "Managed Runtime Client" as runtime
+  component "Tool Client" as tool
+  component "CampusMateClientProperties" as properties
+  database "campusmate.base-url" as base
+  collections "Observed in mate-service\nChat + Agent info + Agent runtime" as observed
+  collections "Target-only in mate-service\nSkill query + Tool metadata + Tool execute" as target_only
+}
+
+cloud "CampusMate Service" as campusmate
+
+model --> properties : model chat
+runtime --> properties : agent runtime and skill
+tool --> properties : agent, skill, and tool
+properties --> base
+properties --> observed
+properties --> target_only
+base --> campusmate : one origin
+observed --> campusmate : implemented at 956b547f
+target_only ..> campusmate : server-side pending
+
+note bottom of properties
+  Shared configuration only.
+  Model, Runtime, and Tool
+  keep separate local parameters.
+end note
+
+legend bottom
+  Solid: observed server implementation.
+  Dotted: target-only server dependency.
+  HTTP contracts are unchanged by this configuration design.
+endlegend
+@enduml
+
+@startuml configuration_key_migration
+' Source evidence: application.yml lines 89-140 at 56be8eee59415a5f86658d6635a7b7e8891263d3.
+' Design reason: mate and campusmate identify the same downstream service.
+' Design reason: Runtime and Tool consumed the same Skill query operation through duplicate keys.
+skinparam shadowing false
+left to right direction
+
+rectangle "Observed configuration" as old {
+  card "campusmate.model-manager\nbase-url + chat-path" as old_model
+  card "campusmate.runtime\nbase-url + 2 paths" as old_runtime
+  card "mate\ninnerGWSerive + 4 paths" as old_tool
+}
+
+rectangle "Target configuration" as target {
+  card "campusmate.base-url\none required origin" as new_base
+  card "campusmate.endpoints\nsix unique operations" as new_endpoints
+  card "campusmate.model\nmodel-local parameters" as new_model
+  card "campusmate.runtime\nruntime-local parameters" as new_runtime
+  card "campusmate.tool\nenabled" as new_tool
+}
+
+old_model --> new_base
+old_runtime --> new_base
+old_tool --> new_base
+old_model --> new_endpoints
+old_runtime --> new_endpoints
+old_tool --> new_endpoints
+old_model --> new_model
+old_runtime --> new_runtime
+old_tool --> new_tool
+
+note bottom of new_endpoints
+  Runtime and Tool share one
+  skill-info-path-template entry.
+end note
+@enduml
