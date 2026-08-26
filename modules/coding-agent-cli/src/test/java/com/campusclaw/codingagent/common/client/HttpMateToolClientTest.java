@@ -201,6 +201,17 @@ class HttpMateToolClientTest {
     }
 
     @Test
+    void missingResultOnAgentInfoThrowsInsteadOfEmptyTools() {
+        // result 缺失/null 不允许折叠成"没有绑定工具"。
+        server.enqueue(json("{\"resCode\":\"0\",\"resMsg\":\"ok\"}"));
+
+        assertThatThrownBy(
+                        () -> client.listAgentTools("agent-11111111111111111111111111111111", MateCredentials.empty()))
+                .isInstanceOf(MateToolResponseException.class)
+                .hasMessageContaining("result is missing or null");
+    }
+
+    @Test
     void missingResultDataOnToolMetadataQueryThrowsWithStableCode() {
         server.enqueue(
                 json(

@@ -57,7 +57,7 @@ class MateServiceClientTest {
                         .setHeader("Content-Type", "application/json")
                         .setBody(
                                 """
-                        {
+{"resCode":"0","result":{
                           "id": "agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
                           "name": "Agent A",
                           "bindingModels": "gpt-4o",
@@ -66,8 +66,8 @@ class MateServiceClientTest {
                             "version": "1.0.0"
                           },
                           "bindingTools": []
-                        }
-                        """));
+                        }}
+"""));
 
         var runtime = client.getAgentRuntime("agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
 
@@ -89,13 +89,13 @@ class MateServiceClientTest {
                         .setHeader("Content-Type", "application/json")
                         .setBody(
                                 """
-                        {
+{"resCode":"0","result":{
                           "id": "agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
                           "name": "Agent A",
                           "bindingModels": ["glm-5.2", "minimax-m2.5"],
                           "description": ["Diagnoses device faults", "Drafts reports"]
-                        }
-                        """));
+                        }}
+"""));
 
         var runtime = client.getAgentRuntime("agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
 
@@ -111,13 +111,13 @@ class MateServiceClientTest {
                         .setHeader("Content-Type", "application/json")
                         .setBody(
                                 """
-                        {
+{"resCode":"0","result":{
                           "id": "agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
                           "name": "Agent A",
                           "bindingModels": "glm-5.2",
                           "description": "Diagnoses device faults"
-                        }
-                        """));
+                        }}
+"""));
 
         var runtime = client.getAgentRuntime("agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
 
@@ -132,7 +132,7 @@ class MateServiceClientTest {
                         .setHeader("Content-Type", "application/json")
                         .setBody(
                                 """
-                        {
+{"resCode":"0","result":{
                           "id": "agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
                           "name": "Agent A",
                           "bindingAgents": [
@@ -149,8 +149,8 @@ class MateServiceClientTest {
                             }
                           ],
                           "enabled": false
-                        }
-                        """));
+                        }}
+"""));
 
         var runtime = client.getAgentRuntime("agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
 
@@ -175,7 +175,7 @@ class MateServiceClientTest {
                         .setHeader("Content-Type", "application/json")
                         .setBody(
                                 """
-                        {
+{"resCode":"0","result":{
                           "id": "agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
                           "name": "Agent A",
                           "bindingAgents": {
@@ -183,8 +183,8 @@ class MateServiceClientTest {
                             "name": "field-ops",
                             "description": "Handles on-site device operations"
                           }
-                        }
-                        """));
+                        }}
+"""));
 
         var runtime = client.getAgentRuntime("agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
 
@@ -316,8 +316,8 @@ class MateServiceClientTest {
     }
 
     @Test
-    void runtimeQueryWithNullResultFallsBackToEnvelopeBody() throws Exception {
-        // result 为 null 时按响应体本身解析,不因 resCode 预判而失败。
+    void missingRuntimeResultIsRejected() {
+        // result 缺失或为 null 不再回退到整个响应体,直接判响应无效。
         server.enqueue(
                 json(
                         """
@@ -331,9 +331,21 @@ class MateServiceClientTest {
                 }
                 """));
 
-        assertEquals(
-                "agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-                client.getAgentRuntime("agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa").id());
+        AgentRuntimeException error = assertThrows(
+                AgentRuntimeException.class, () -> client.getAgentRuntime("agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"));
+
+        assertEquals(AgentRuntimeErrorCode.MATE_RESPONSE_INVALID, error.errorCode());
+        assertEquals("GetAgentRuntime result must be an object", error.getMessage());
+    }
+
+    @Test
+    void nullRuntimeResultIsRejected() {
+        server.enqueue(json("{\"resCode\":\"0\",\"result\":null}"));
+
+        AgentRuntimeException error = assertThrows(
+                AgentRuntimeException.class, () -> client.getAgentRuntime("agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"));
+
+        assertEquals(AgentRuntimeErrorCode.MATE_RESPONSE_INVALID, error.errorCode());
     }
 
     @Test
@@ -371,8 +383,9 @@ class MateServiceClientTest {
                 server.url("/").uri(), Path.of("agent"), Duration.ofSeconds(1L), Duration.ofSeconds(2L));
         client =
                 new MateServiceClient(properties, new ObjectMapper(), "/custom/agents/%s/runtime", "/custom/skills/%s");
-        server.enqueue(
-                new MockResponse().setHeader("Content-Type", "application/json").setBody("{}"));
+        server.enqueue(new MockResponse()
+                .setHeader("Content-Type", "application/json")
+                .setBody("{\"resCode\":\"0\",\"result\":{}}"));
         server.enqueue(new MockResponse()
                 .setHeader("Content-Type", "application/json")
                 .setBody("{\"resCode\":\"0\",\"result\":{}}"));

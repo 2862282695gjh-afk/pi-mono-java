@@ -110,6 +110,17 @@ public class RuntimeEntryCodec {
         ArrayNode content = payload.putArray("content");
         message.content().forEach(block -> appendPublicContent(content, block));
         payload.put("is_error", message.isError());
+
+        // 结构化错误码:工具失败时 details 携带 {errorCode, errorCategory},
+        // 展示层按 locale 用 MessageSource 渲染文案,自由文本仅作为兜底。
+        if (message.isError()
+                && message.details() instanceof java.util.Map<?, ?> coded
+                && coded.get("errorCode") != null) {
+            payload.put("error_code", String.valueOf(coded.get("errorCode")));
+            if (coded.get("errorCategory") != null) {
+                payload.put("error_category", String.valueOf(coded.get("errorCategory")));
+            }
+        }
         return entry(
                 sessionId,
                 entryId,
@@ -396,11 +407,20 @@ public class RuntimeEntryCodec {
     }
 
     private ToolResultMessage toolResultMessage(RuntimeEntryDTO entry, JsonNode payload) {
+        Object details = null;
+        if (payload.path("is_error").asBoolean() && payload.hasNonNull("error_code")) {
+            java.util.Map<String, Object> coded = new java.util.LinkedHashMap<>();
+            coded.put("errorCode", payload.path("error_code").asText());
+            if (payload.hasNonNull("error_category")) {
+                coded.put("errorCategory", payload.path("error_category").asText());
+            }
+            details = coded;
+        }
         return new ToolResultMessage(
                 payload.path("tool_call_id").asText(),
                 payload.path("tool_name").asText(),
                 readPublicContent(payload.path("content")),
-                null,
+                details,
                 payload.path("is_error").asBoolean(),
                 entry.getTimestamp().toInstant().toEpochMilli());
     }

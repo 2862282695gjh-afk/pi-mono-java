@@ -18,7 +18,8 @@ public record CronRunRecord(
         long startedAtMs,
         long finishedAtMs,
         RunStatus status,
-        @Nullable String error,
+        @Nullable String errorCode,
+        @Nullable String errorMessage,
         @Nullable String output,
         int turnCount) {
 

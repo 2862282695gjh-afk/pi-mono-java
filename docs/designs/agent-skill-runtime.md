@@ -9,10 +9,15 @@
 
 ## 1. 源码基线
 
-- CampusClaw（PR 前基线）：`56be8eee59415a5f86658d6635a7b7e8891263d3`
+- 变更前观察基线（CampusClaw）：`56be8eee59415a5f86658d6635a7b7e8891263d3`
+- 本次审查实现提交：`b0f45547d129c77e8978fdf8438e63df4e4db050`（后续代码更新时同步为最终 head）
 - 设计仓：`c2a495838134aa5e8bc535b906e7534b34779279`
-- 实现证据：`AgentRuntimeManager#prepare/#refresh`、`PreparedAgentRuntime`、
-  `FileAgentDirectoryResolver#resolve`。
+- 实现证据：`AgentRuntimeManager#prepare/#refresh`（缓存读取与发布前复核共用
+  `requireSessionLoadable`）、`PreparedAgentRuntime`、`FileAgentDirectoryResolver#resolve`
+  （`AGENT_NOT_AVAILABLE` 映射）、`MateServiceClient#querySkillInfo/#getAgentRuntime`
+  （`result` 形状校验与 `AgentRuntimeErrorCode`）、`ToolExecutionPipeline#failureResult`
+  （Child 工具结果结构化 `errorCode`）、`RuntimeEntryCodec#toolResultEntry`（SSE `error_code`
+  字段）、`CronJobExecutor#stableCodeOf`（Cron 运行记录 `errorCode`/`errorMessage` 分列）。
 
 基线源码观察到 CLI 生成运行目录与 HTTP 只读目录采用不同文件名，并在 Skill
 `references/tools.json` 保存远端工具快照。本次把两条链收敛为服务端三入口共同使用的一个

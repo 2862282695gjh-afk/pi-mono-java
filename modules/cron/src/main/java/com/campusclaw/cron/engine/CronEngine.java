@@ -262,8 +262,8 @@ public class CronEngine {
         if (success) {
             emit(new CronEvent.JobCompleted(job.id(), job.name(), result.runId(), result.output()));
         } else {
-            emit(new CronEvent.JobFailed(
-                    job.id(), job.name(), result.runId(), result.error() != null ? result.error() : "Unknown error"));
+            String failedCode = result.errorCode() != null ? result.errorCode() : "Unknown error";
+            emit(new CronEvent.JobFailed(job.id(), job.name(), result.runId(), failedCode));
         }
     }
 
@@ -276,13 +276,17 @@ public class CronEngine {
             updatedJob = updatedJob.withEnabled(false);
         }
         store.updateJob(updatedJob);
-        emit(new CronEvent.JobFailed(job.id(), job.name(), "", e.getMessage()));
+        String engineErrorCode = e instanceof com.campusclaw.agent.error.StableErrorCode coded
+                ? coded.stableErrorCode()
+                : e.getClass().getSimpleName();
+        emit(new CronEvent.JobFailed(job.id(), job.name(), "", engineErrorCode));
         return new CronRunRecord(
                 "",
                 job.id(),
                 System.currentTimeMillis(),
                 System.currentTimeMillis(),
                 CronRunRecord.RunStatus.FAILED,
+                engineErrorCode,
                 e.getMessage(),
                 null,
                 0);

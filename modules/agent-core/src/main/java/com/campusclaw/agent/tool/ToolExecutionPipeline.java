@@ -100,7 +100,7 @@ public class ToolExecutionPipeline {
             }
             return null;
         } catch (Exception e) {
-            return toToolResultMessage(toolCall, toolName, errorResult(messageForException(e)), true);
+            return toToolResultMessage(toolCall, toolName, failureResult(e), true);
         }
     }
 
@@ -126,7 +126,7 @@ public class ToolExecutionPipeline {
             cancellation.initCause(e);
             throw cancellation;
         } catch (Exception e) {
-            return new Outcome(errorResult(messageForException(e)), true);
+            return new Outcome(failureResult(e), true);
         }
     }
 
@@ -141,7 +141,7 @@ public class ToolExecutionPipeline {
             boolean newIsError = afterResult.isError() != null ? afterResult.isError() : outcome.isError();
             return new Outcome(newResult, newIsError);
         } catch (Exception e) {
-            return new Outcome(errorResult(messageForException(e)), true);
+            return new Outcome(failureResult(e), true);
         }
     }
 
@@ -266,7 +266,7 @@ public class ToolExecutionPipeline {
             validateArguments(tool, validatedArgs);
             return null;
         } catch (Exception error) {
-            return toToolResultMessage(toolCall, toolName, errorResult(messageForException(error)), true);
+            return toToolResultMessage(toolCall, toolName, failureResult(error), true);
         }
     }
 
@@ -287,6 +287,18 @@ public class ToolExecutionPipeline {
 
     private AgentToolResult errorResult(String message) {
         return new AgentToolResult(List.of(new TextContent(message)), null);
+    }
+
+    private AgentToolResult failureResult(Exception e) {
+        // 结构化错误信息:携带稳定错误码的异常,details 携带 {errorCode, errorCategory},
+        // 公开边界(SSE/查询)据此渲染本地化文案;content 文本只放错误码,不透传内部诊断。
+        if (e instanceof com.campusclaw.agent.error.StableErrorCode coded) {
+            java.util.Map<String, Object> details = new java.util.LinkedHashMap<>();
+            details.put("errorCode", coded.stableErrorCode());
+            details.put("errorCategory", e.getClass().getSimpleName());
+            return new AgentToolResult(List.of(new TextContent(coded.stableErrorCode())), details);
+        }
+        return errorResult(messageForException(e));
     }
 
     private ToolResultMessage toToolResultMessage(

@@ -234,6 +234,37 @@ class AgentRuntimeManagerTest {
     }
 
     @Test
+    void oversizedCachedSkillFileTriggersRefetch() throws Exception {
+        stubRuntime("1.0.0", "prompt-v1");
+        PreparedAgentRuntime first = manager.prepare(AGENT_ID);
+        Path skillFile = first.agentRoot().resolve(".campusclaw/skills/calendar/SKILL.md");
+        Files.writeString(skillFile, "x".repeat(1024 * 1024 + 1), StandardCharsets.UTF_8);
+
+        PreparedAgentRuntime repaired = manager.prepare(AGENT_ID);
+
+        assertEquals(skillContent(), Files.readString(skillFile, StandardCharsets.UTF_8));
+        verify(client, times(2)).querySkillInfo(SKILL_ID);
+    }
+
+    @Test
+    void overlongCachedDescriptionTriggersRefetch() throws Exception {
+        stubRuntime("1.0.0", "prompt-v1");
+        PreparedAgentRuntime first = manager.prepare(AGENT_ID);
+        Path skillFile = first.agentRoot().resolve(".campusclaw/skills/calendar/SKILL.md");
+
+        // 描述超过 Skill.MAX_DESCRIPTION_LENGTH(1024):缓存读取判不完整并重新拉取。
+        Files.writeString(
+                skillFile,
+                "---\nname: calendar\ndescription: " + "d".repeat(2000) + "\n---\nBody\n",
+                StandardCharsets.UTF_8);
+
+        PreparedAgentRuntime repaired = manager.prepare(AGENT_ID);
+
+        assertEquals(skillContent(), Files.readString(skillFile, StandardCharsets.UTF_8));
+        verify(client, times(2)).querySkillInfo(SKILL_ID);
+    }
+
+    @Test
     void preparedSkillsLoadThroughRuntimeAgentPromptLoader() throws Exception {
         stubRuntime("1.0.0", "prompt-v1");
         PreparedAgentRuntime prepared = manager.prepare(AGENT_ID);

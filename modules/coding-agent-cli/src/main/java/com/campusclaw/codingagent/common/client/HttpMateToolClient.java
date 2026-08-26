@@ -239,21 +239,22 @@ public class HttpMateToolClient implements MateToolClient {
 
     /**
      * 解析响应中的 {@code result} 字段并转换为指定类型；响应结构包含 {@code resCode}、
-     * {@code resMsg} 和 {@code result} 字段。本客户端不按 {@code resCode} 预判处理结果，
-     * 只按各调用点的实际需要校验 {@code result} 的形状。
+     * {@code resMsg} 和 {@code result} 字段。本客户端不按 {@code resCode} 预判处理结果。
+     * {@code result} 是元数据端点的必需字段:缺失或为 {@code null} 都视为解析失败,
+     * 不允许把畸形响应当作"没有绑定工具"。
      *
      * @param <T> 结果类型
      * @param raw 原始响应体
      * @param type 结果类
-     * @return 解析后的结果；{@code result} 缺失或为 {@code null} 时返回 {@code null}
+     * @return 解析后的结果；{@code result} 缺失或为 {@code null} 时抛出异常
      * @throws Exception 请求或读取失败时抛出
-     * @throws MateToolResponseException 响应体为空、非法 JSON 或 {@code result} 形状不符时抛出
+     * @throws MateToolResponseException 响应体为空、非法 JSON、{@code result} 缺失/为 null 或形状不符时抛出
      */
     protected <T> T unwrapResult(String raw, Class<T> type) throws Exception {
         JsonNode root = readRoot(raw);
         JsonNode resultNode = root.path("result");
         if (resultNode.isMissingNode() || resultNode.isNull()) {
-            return null;
+            throw new MateToolResponseException("result is missing or null");
         }
         try {
             return mapper.treeToValue(resultNode, type);

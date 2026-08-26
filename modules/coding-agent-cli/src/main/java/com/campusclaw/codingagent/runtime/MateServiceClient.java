@@ -84,7 +84,11 @@ public class MateServiceClient {
                 .GET()
                 .build();
         JsonNode root = send(request, "GetAgentRuntime");
-        JsonNode payload = root.hasNonNull("result") ? root.get("result") : root;
+        JsonNode payload = root.get("result");
+        if (payload == null || !payload.isObject()) {
+            throw new AgentRuntimeException(
+                    AgentRuntimeErrorCode.MATE_RESPONSE_INVALID, "GetAgentRuntime result must be an object");
+        }
         try {
             return mapper.treeToValue(payload, AgentRuntime.class);
         } catch (IOException e) {

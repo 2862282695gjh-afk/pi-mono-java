@@ -41,7 +41,8 @@ class CronJobExecutorTest {
         CronRunRecord record = executor.execute(job());
 
         assertEquals(CronRunRecord.RunStatus.FAILED, record.status());
-        assertEquals("error-code=MATE_RESPONSE_INVALID", record.error());
+        assertEquals("MATE_RESPONSE_INVALID", record.errorCode());
+        assertEquals("CodedFailureException", record.errorMessage());
     }
 
     @Test
@@ -54,7 +55,7 @@ class CronJobExecutorTest {
         CronRunRecord record = executor.execute(job());
 
         assertEquals(CronRunRecord.RunStatus.FAILED, record.status());
-        assertEquals("plain failure", record.error());
+        assertEquals("plain failure", record.errorMessage());
         assertTrue(record.runId() != null && !record.runId().isBlank());
     }
 

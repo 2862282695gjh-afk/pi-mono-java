@@ -139,7 +139,7 @@ class CronEngineTest {
             CronJob j = job("j1", true, new CronSchedule.Every(60_000L));
             when(store.getJob("j1")).thenReturn(Optional.of(j));
             when(executor.execute(j))
-                    .thenReturn(new CronRunRecord("r1", "j1", 0L, 100L, RunStatus.SUCCESS, null, "done", 1));
+                    .thenReturn(new CronRunRecord("r1", "j1", 0L, 100L, RunStatus.SUCCESS, null, null, "done", 1));
 
             engine.triggerJob("j1");
             assertThat(started.get()).isEqualTo(1);
@@ -159,7 +159,8 @@ class CronEngineTest {
             CronJob j = job("j1", true, new CronSchedule.Every(60_000L));
             when(store.getJob("j1")).thenReturn(Optional.of(j));
             when(executor.execute(j))
-                    .thenReturn(new CronRunRecord("r1", "j1", 0L, 100L, RunStatus.FAILED, "boom", null, 0));
+                    .thenReturn(
+                            new CronRunRecord("r1", "j1", 0L, 100L, RunStatus.FAILED, "TEST_CODE", "boom", null, 0));
 
             engine.triggerJob("j1");
             assertThat(failed.get()).isEqualTo(1);
@@ -182,7 +183,8 @@ class CronEngineTest {
             CronRunRecord record = engine.triggerJob("j1");
             assertThat(failed.get()).isEqualTo(1);
             assertThat(record.status()).isEqualTo(RunStatus.FAILED);
-            assertThat(record.error()).isEqualTo("oops");
+            assertThat(record.errorCode()).isEqualTo("RuntimeException");
+            assertThat(record.errorMessage()).isEqualTo("oops");
         }
 
         @Test
@@ -196,7 +198,7 @@ class CronEngineTest {
             CronJob j = job("j1", true, new CronSchedule.Every(60_000L));
             when(store.getJob("j1")).thenReturn(Optional.of(j));
             when(executor.execute(j))
-                    .thenReturn(new CronRunRecord("r1", "j1", 0L, 100L, RunStatus.SUCCESS, null, null, 0));
+                    .thenReturn(new CronRunRecord("r1", "j1", 0L, 100L, RunStatus.SUCCESS, null, null, null, 0));
             engine.triggerJob("j1");
             assertThat(count.get()).isZero();
         }
@@ -213,7 +215,7 @@ class CronEngineTest {
             CronJob j = job("j1", true, new CronSchedule.Every(60_000L));
             when(store.getJob("j1")).thenReturn(Optional.of(j));
             when(executor.execute(j))
-                    .thenReturn(new CronRunRecord("r1", "j1", 0L, 100L, RunStatus.SUCCESS, null, null, 0));
+                    .thenReturn(new CronRunRecord("r1", "j1", 0L, 100L, RunStatus.SUCCESS, null, null, null, 0));
             engine.triggerJob("j1");
 
             // 第一个监听器抛出异常后，第二个监听器仍应执行。
@@ -239,7 +241,7 @@ class CronEngineTest {
             CronJob j = job("j1", true, new CronSchedule.Every(60_000L), new CronJobState(0, 0, 0, "failed", 2, 5));
             when(store.getJob("j1")).thenReturn(Optional.of(j));
             when(executor.execute(j))
-                    .thenReturn(new CronRunRecord("r1", "j1", 0L, 100L, RunStatus.SUCCESS, null, "done", 1));
+                    .thenReturn(new CronRunRecord("r1", "j1", 0L, 100L, RunStatus.SUCCESS, null, null, "done", 1));
 
             engine.triggerJob("j1");
 
@@ -257,7 +259,8 @@ class CronEngineTest {
             CronJob j = job("j1", true, new CronSchedule.Every(60_000L), new CronJobState(0, 0, 0, null, 0, 0));
             when(store.getJob("j1")).thenReturn(Optional.of(j));
             when(executor.execute(j))
-                    .thenReturn(new CronRunRecord("r1", "j1", 0L, 100L, RunStatus.FAILED, "boom", null, 0));
+                    .thenReturn(
+                            new CronRunRecord("r1", "j1", 0L, 100L, RunStatus.FAILED, "TEST_CODE", "boom", null, 0));
 
             engine.triggerJob("j1");
 
@@ -274,7 +277,8 @@ class CronEngineTest {
             CronJob j = job("j1", true, new CronSchedule.Every(60_000L), new CronJobState(0, 0, 0, "failed", 2, 5));
             when(store.getJob("j1")).thenReturn(Optional.of(j));
             when(executor.execute(j))
-                    .thenReturn(new CronRunRecord("r1", "j1", 0L, 100L, RunStatus.FAILED, "boom", null, 0));
+                    .thenReturn(
+                            new CronRunRecord("r1", "j1", 0L, 100L, RunStatus.FAILED, "TEST_CODE", "boom", null, 0));
 
             engine.triggerJob("j1");
 

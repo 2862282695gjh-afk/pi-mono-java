@@ -7,8 +7,9 @@ package com.huawei.hicampus.mate.matecampusclaw.codingagent.runtime;
 import com.huawei.hicampus.mate.matecampusclaw.agent.error.StableErrorCode;
 
 /**
- * Signals that a managed Agent runtime could not be fetched, materialized, or activated.
- * 携带稳定错误码供公开边界映射；英文消息仅作为日志与诊断。
+ * Agent 运行时获取、准备或激活失败时抛出。
+ * 携带稳定错误码供公开边界（HTTP/SSE、Child 工具结果、Cron 运行记录）映射，
+ * 英文消息仅作为日志与诊断，不直接对外展示。
  *
  * @version [br_eCampusCore 26.0.0, 2026/08/17]
  * @since [br_eCampusCore 26.0.0]

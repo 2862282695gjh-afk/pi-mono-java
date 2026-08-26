@@ -21,7 +21,7 @@ import org.junit.jupiter.api.io.TempDir;
 class CronRunLogTest {
 
     private static CronRunRecord rec(String runId, String jobId, RunStatus status, String output) {
-        return new CronRunRecord(runId, jobId, 0L, 0L, status, null, output, 0);
+        return new CronRunRecord(runId, jobId, 0L, 0L, status, null, null, output, 0);
     }
 
     @Nested

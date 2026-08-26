@@ -208,7 +208,7 @@ public class AgentRuntimeManager {
                     new SkillManifest(SCHEMA_VERSION, skill.id(), skill.name(), skill.version()));
             Path skillFile = skillDirectory.resolve(SKILL_FILE);
             writeFile(skillFile, skill.content());
-            requireSessionLoadable(skill, skillFile);
+            requireSessionLoadable(skill.name(), skillFile);
             writeResources(skillDirectory.resolve("references"), skill.references());
             writeResources(skillDirectory.resolve("templates"), skill.templates());
         }
@@ -234,18 +234,27 @@ public class AgentRuntimeManager {
         }
     }
 
-    // 用真实会话的 SkillLoader 复核已写入的 SKILL.md:名称正则、长度限制等规则
-    // 与会话加载完全一致,解析出的名称还必须与 querySkillInfo 响应的 name 一致。
-    private void requireSessionLoadable(SkillInfo skill, Path skillFile) {
+    // 统一的 SKILL.md 会话可加载校验入口:字节上限与 SkillLoader 完整规则
+    // (名称正则、name/description 长度限制)。发布前复核与缓存读取共用,
+    // 解析出的名称还必须与期望名称一致。
+    private Skill requireSessionLoadable(String expectedName, Path skillFile) {
+        try {
+            if (Files.size(skillFile) > MAX_SKILL_FILE_BYTES) {
+                throw new AgentRuntimeException("SKILL.md exceeds size limit: " + expectedName);
+            }
+        } catch (IOException exception) {
+            throw new AgentRuntimeException("SKILL.md is unreadable: " + expectedName, exception);
+        }
         Skill loaded;
         try {
             loaded = skillLoader.loadFromFile(skillFile, "managed");
         } catch (SkillLoadException exception) {
-            throw new AgentRuntimeException("SKILL.md is not session-loadable: " + skill.name(), exception);
+            throw new AgentRuntimeException("SKILL.md is not session-loadable: " + expectedName, exception);
         }
-        if (!loaded.name().equals(skill.name())) {
-            throw new AgentRuntimeException("SKILL.md parsed name does not match Skill metadata: " + skill.name());
+        if (!loaded.name().equals(expectedName)) {
+            throw new AgentRuntimeException("SKILL.md parsed name does not match Skill metadata: " + expectedName);
         }
+        return loaded;
     }
 
     // frontmatter 取值:键缺失或值为 null 时返回 null。
@@ -339,21 +348,17 @@ public class AgentRuntimeManager {
                 || !directory.getFileName().toString().equals(manifest.name())) {
             throw new IOException("Skill name does not match its path");
         }
-        String skillMarkdown = readRequiredFile(directory.resolve(SKILL_FILE));
-        Map<String, Object> frontmatter = SkillLoader.parseFrontmatter(skillMarkdown);
-        String frontmatterName = frontmatterValue(frontmatter, "name");
-        if (frontmatterName == null || !frontmatterName.equals(manifest.name())) {
-            throw new IOException("SKILL.md frontmatter name does not match skill.json: " + manifest.name());
-        }
-        String description = frontmatterValue(frontmatter, "description");
-        if (isBlank(description)) {
-            throw new IOException("SKILL.md frontmatter description is required: " + manifest.name());
-        }
+        Path skillFile = directory.resolve(SKILL_FILE);
+
+        // 缓存读取与发布前复核共用同一校验入口(字节上限 + SkillLoader 完整规则):
+        // 任一规则不过即判缓存不完整,触发重新拉取,而不是带着缺陷命中缓存。
+        Skill loaded = requireSessionLoadable(manifest.name(), skillFile);
+        String skillMarkdown = readRequiredFile(skillFile);
         return new SkillInfo(
-                frontmatterName,
+                loaded.name(),
                 manifest.id(),
                 manifest.version(),
-                description,
+                loaded.description(),
                 null,
                 skillMarkdown,
                 List.of(),
