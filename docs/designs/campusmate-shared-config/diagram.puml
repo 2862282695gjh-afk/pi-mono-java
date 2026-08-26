@@ -1,7 +1,10 @@
 @startuml campusmate_shared_configuration
 ' Source evidence: modules/coding-agent-cli/src/main/resources/application.yml lines 89-140 at 56be8eee59415a5f86658d6635a7b7e8891263d3.
-' Source evidence: MateServiceModelManagerProvider constructor, MateServiceClient constructor, and MateToolAutoConfiguration fields at the same baseline.
+' Reviewed implementation: CampusMateClientProperties, MateServiceModelManagerProvider, MateServiceClient, and MateToolAutoConfiguration at e8533b5ebf564f9d8d707faa115be638dc377556.
+' Server evidence: LlmChatController and AgentDefinitionController at mate-service 956b547f5ca12ca89e68f73012f92a4406b0c9fa.
 ' Observed behavior: three configuration roots declared three service origins and seven path keys for one CampusMate service.
+' Server observation: Chat, Agent info, and Agent runtime operations exist at the mate-service baseline.
+' Target-only design: Skill query, Tool metadata, and Tool execute are client dependencies but server-side pending at that baseline.
 ' Architecture change: one shared origin and six HTTP operations are consumed by all three clients.
 ' Security hardening: base URLs and service-local paths fail during startup when invalid.
 skinparam shadowing false
@@ -14,7 +17,8 @@ package "CampusClaw" {
   component "Tool Client" as tool
   component "CampusMateClientProperties" as properties
   database "campusmate.base-url" as base
-  collections "campusmate.endpoints\n6 HTTP operations" as endpoints
+  collections "Observed in mate-service\nChat + Agent info + Agent runtime" as observed
+  collections "Target-only in mate-service\nSkill query + Tool metadata + Tool execute" as target_only
 }
 
 cloud "CampusMate Service" as campusmate
@@ -23,9 +27,11 @@ model --> properties : model chat
 runtime --> properties : agent runtime and skill
 tool --> properties : agent, skill, and tool
 properties --> base
-properties --> endpoints
+properties --> observed
+properties --> target_only
 base --> campusmate : one origin
-endpoints --> campusmate : service-local paths
+observed --> campusmate : implemented at 956b547f
+target_only ..> campusmate : server-side pending
 
 note bottom of properties
   Shared configuration only.
@@ -34,7 +40,9 @@ note bottom of properties
 end note
 
 legend bottom
-  HTTP methods, payloads, responses, and authentication are unchanged.
+  Solid: observed server implementation.
+  Dotted: target-only server dependency.
+  HTTP contracts are unchanged by this configuration design.
 endlegend
 @enduml
 

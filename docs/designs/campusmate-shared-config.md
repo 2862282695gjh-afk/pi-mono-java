@@ -2,12 +2,14 @@
 
 | 属性 | 值 |
 |---|---|
-| 文档版本 | 1.0.0 |
+| 文档版本 | 1.1.0 |
 | 状态 | 已实现于 `codex/campusmate-shared-config`，待评审合入 |
 | 更新日期 | 2026-08-26 |
 | 外部设计基线 | `/Users/z/设计`：`c250e3f07536871d3d676242e552a5eb4346b0c7` |
 | 外部设计文档 | `campusmate-shared-client-configuration/README.md` 2.1.0 |
 | 实施前源码基线 | `56be8eee59415a5f86658d6635a7b7e8891263d3` |
+| 受审实现基线 | `e8533b5ebf564f9d8d707faa115be638dc377556` |
+| mate-service 观察基线 | `956b547f5ca12ca89e68f73012f92a4406b0c9fa` |
 | 决策记录 | [ADR-0026](../decisions/0026-unify-campusmate-client-configuration.html) |
 
 ## 1. 结论
@@ -40,6 +42,9 @@
 
 ### 2.2 目标实现证据
 
+以下目标实现证据冻结于受审实现基线 `e8533b5ebf564f9d8d707faa115be638dc377556`，
+不以可移动分支名替代源码版本：
+
 | 源码 | 符号 | 目标职责 |
 |---|---|---|
 | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/config/CampusMateClientProperties.java` | `CampusMateClientProperties`、`Endpoints` | 绑定并校验唯一 base URL 与六个 operation path，统一拼接完整 URI。 |
@@ -48,11 +53,25 @@
 | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtime/MateServiceClient.java` | `getAgentRuntime`、`querySkillInfo` | 从共享 endpoint 目录取得 Runtime 和 Skill operation。 |
 | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/config/MateToolAutoConfiguration.java` | `mateToolClient` | Tool 客户端复用同一 base URL、Agent/Skill operation 与 Tool operation。 |
 
+### 2.3 mate-service 服务端状态
+
+以下状态来自独立 mate-service 仓库的观察基线
+`956b547f5ca12ca89e68f73012f92a4406b0c9fa`。客户端已有依赖不等于服务端已存在对应实现：
+
+| operation | mate-service 源码证据 | 分类 |
+|---|---|---|
+| `POST /mate-service/v1/LLM/chat` | `src/main/java/com/huawei/hicampus/mate/agentdefinition/modelmanager/controller/LlmChatController.java`：`CHAT_PATH`、`createChat` | 已观察服务端行为 |
+| `GET /mate-service/v1/agents/{agentId}` | `src/main/java/com/huawei/hicampus/mate/agentdefinition/controller/AgentDefinitionController.java`：`getAgent` | 已观察服务端行为 |
+| `GET /mate-service/v1/agents/{agentId}/runtime` | `src/main/java/com/huawei/hicampus/mate/agentdefinition/controller/AgentDefinitionController.java`：`getRuntimeAgent` | 已观察服务端行为 |
+| `GET /mate-service/v1/skill/query/{skillId}` | 在该基线未发现对应 Controller | 目标态设计，服务端待实现 |
+| `POST /mate-service/v1/runtime/tools/query` | 在该基线未发现对应 Controller | 目标态设计，服务端待实现 |
+| `POST /mate-service/v1/runtime/tools/{toolId}/execute` | 在该基线未发现对应 Controller | 目标态设计，服务端待实现 |
+
 ## 3. 配置结构与迁移
 
 ![CampusMate 配置键迁移](campusmate-shared-config/configuration_key_migration.svg)
 
-[PlantUML 源码：`configuration_key_migration`](campusmate-shared-config/diagram.puml#L41)
+[PlantUML 源码：`configuration_key_migration`](campusmate-shared-config/diagram.puml#L49)
 
 ```yaml
 campusmate:
@@ -87,8 +106,10 @@ campusmate:
 
 - `campusmate.base-url` 必须是带 host 的绝对 HTTP(S) URI，不允许 user-info、query、fragment
   或服务路径；尾部 `/` 统一去除。
-- operation path 必须以 `/mate-service/` 开头，不允许 origin、query、fragment 或 `..`。
+- operation path 必须以 `/mate-service/` 开头，不允许 origin、query、fragment、`.` 或 `..`；
+  百分号编码的点段按 URI 解码后的 path 同样拒绝。
 - Agent、Runtime、Skill、Tool execute 模板必须且只能包含一个 `%s`；非模板 operation 不得包含占位符。
+- 模板展开只精确替换 `%s`，保留其余合法百分号编码（例如 `%20`），不使用格式化器解释整个 path。
 - 配置在 Spring 绑定和 Provider 初始化阶段失败，避免错误地址延迟到首次调用才暴露。
 - 六个条目以 `HTTP method + path` 校验唯一性；Runtime 和 Tool 共享同一个 Skill query 条目。
 - 安装脚本发现旧部署变量与显式新变量值冲突时失败，不静默覆盖。
@@ -96,13 +117,15 @@ campusmate:
 ## 5. HTTP 契约边界
 
 本次是配置架构改造，不修改任何 HTTP method、path、请求体、响应体、SSE 或认证语义。
-六个 operation 的实际冻结值与实施前调用一致；只消除重复配置入口。Provider 身份
-`mate-model-manager` 也保持不变，`model` 仅是配置分组名称。
+六个 operation 的 method 与 path 保持 pi-mono-java 实施前客户端调用值，只消除重复配置入口；
+其中三项已在 mate-service 观察基线中实现，Skill query 与两项 Tool operation 是目标态设计、
+服务端待实现。Provider 身份 `mate-model-manager` 也保持不变，`model` 仅是配置分组名称。
 
 ## 6. 验证
 
-- 配置绑定：缺失或非法 base URL、越界 path、占位符数量与重复 operation；
-- 客户端：Model、Runtime、Tool 在自定义共享 base URL 和自定义 endpoint 下请求正确 URI；
+- 配置绑定：缺失或非法 base URL、越界或规范化点段 path、占位符数量与重复 operation；
+- 客户端：Model、Runtime、Tool 在自定义共享 base URL 和自定义 endpoint 下请求正确 URI，
+  并保留 path 中 `%20` 等合法百分号编码；
 - 兼容交付：规范 YAML、手工维护的镜像 properties 与安装脚本保持同一目标键；
 - 工程规则：Spotless、Checkstyle、相关测试、镜像同步、PlantUML/SVG 和 `git diff --check`。
 
@@ -110,4 +133,5 @@ campusmate:
 
 | 版本 | 日期 | 变化 |
 |---|---|---|
+| 1.1.0 | 2026-08-26 | 响应 PR 审查：冻结受审实现基线，区分 mate-service 已观察 operation 与服务端目标态，并补充模板百分号编码及规范化点段校验。 |
 | 1.0.0 | 2026-08-26 | 实现 CampusMate 单一 base URL、六 operation endpoint 目录、`model/runtime/tool` 配置分组与启动期校验。 |
