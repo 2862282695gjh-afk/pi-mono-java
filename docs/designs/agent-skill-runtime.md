@@ -10,7 +10,7 @@
 ## 1. 源码基线
 
 - 变更前观察基线（CampusClaw）：`56be8eee59415a5f86658d6635a7b7e8891263d3`
-- 本次审查实现提交：`b0f45547d129c77e8978fdf8438e63df4e4db050`（后续代码更新时同步为最终 head）
+- 本次审查实现提交：`fa9a61ffacf211973b3ef512a6749f0dc90b9707`（后续代码更新时同步为最终 head）
 - 设计仓：`c2a495838134aa5e8bc535b906e7534b34779279`
 - 实现证据：`AgentRuntimeManager#prepare/#refresh`（缓存读取与发布前复核共用
   `requireSessionLoadable`）、`PreparedAgentRuntime`、`FileAgentDirectoryResolver#resolve`
@@ -53,6 +53,8 @@ agent/{agentId}/.campusclaw/
 SKILL.md 内容，原文写入 `skills/{name}/SKILL.md`，不从元数据生成。发布前校验 SKILL.md：
 非空且不超过 1 MiB、frontmatter `name` 与响应 name 及 `skill.json`/目录名一致、
 `description` 必填，并用会话同一套 `SkillLoader` 复核可加载；校验失败不发布、保留旧缓存。
+缓存命中读取复用同一校验入口（字节上限 + `SkillLoader` 完整规则 + 名称与 `skill.json`/
+目录名一致），磁盘内容损坏、超大或超长时判缓存不完整并重新拉取，而不是带着缺陷命中缓存。
 CampusMate 响应解析不按 `resCode` 预判结果，只校验 `result` 形状；空响应体、非法 JSON、
 根节点非对象、`result` 缺失/类型不符统一抛带稳定错误码（`AgentRuntimeErrorCode`）的
 `AgentRuntimeException`。HTTP/SSE 边界经 `FileAgentDirectoryResolver` 映射为
