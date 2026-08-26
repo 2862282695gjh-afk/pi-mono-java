@@ -34,7 +34,8 @@ agent/{agentId}/.campusclaw/
 ```
 
 根 `agent.json` 是当前 Agent 身份；`agents/{agentName}.json` 是一个直接绑定 Child 的轻量
-身份与固定版本；`skill.json` 保存 `schemaVersion=1`、`id`、`name`、`version`。名称必须与
+身份与固定版本；`skill.json` 保存 `schemaVersion=1`、`id`、`name`、`version`。`SKILL.md`
+按 querySkillInfo `result.content` 原文保存，不从元数据生成。名称必须与
 路径精确一致且大小写折叠后唯一。目录拒绝符号链接和任何 `tools.json`。
 
 ## 3. prepare 与 refresh

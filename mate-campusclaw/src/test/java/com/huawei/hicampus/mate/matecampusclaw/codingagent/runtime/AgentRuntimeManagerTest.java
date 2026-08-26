@@ -67,6 +67,7 @@ class AgentRuntimeManagerTest {
         assertTrue(Files.isRegularFile(managed.resolve("agents/researcher.json")));
         assertTrue(Files.isRegularFile(managed.resolve("skills/calendar/skill.json")));
         assertTrue(Files.isRegularFile(managed.resolve("skills/calendar/SKILL.md")));
+        assertEquals(skillContent(), Files.readString(managed.resolve("skills/calendar/SKILL.md")));
         assertTrue(Files.isDirectory(managed.resolve("skills/calendar/references")));
         assertTrue(Files.isDirectory(managed.resolve("skills/calendar/templates")));
         try (var paths = Files.walk(managed)) {
@@ -173,9 +174,19 @@ class AgentRuntimeManagerTest {
         }
     }
 
+    @Test
+    void nullSkillContentIsWrittenAsEmptyFile() throws Exception {
+        when(client.getAgentRuntime(AGENT_ID)).thenReturn(runtime("1.0.0", "prompt-v1"));
+        when(client.querySkillInfo(SKILL_ID)).thenReturn(skill(null));
+
+        PreparedAgentRuntime prepared = manager.prepare(AGENT_ID);
+
+        assertEquals("", Files.readString(prepared.agentRoot().resolve(".campusclaw/skills/calendar/SKILL.md")));
+    }
+
     private void stubRuntime(String version, String prompt) {
         when(client.getAgentRuntime(AGENT_ID)).thenReturn(runtime(version, prompt));
-        when(client.querySkillInfo(SKILL_ID)).thenReturn(List.of(skill()));
+        when(client.querySkillInfo(SKILL_ID)).thenReturn(skill(skillContent()));
     }
 
     private static AgentRuntime runtime(String version, String prompt) {
@@ -206,16 +217,21 @@ class AgentRuntimeManagerTest {
         return new AgentReference(id, name, "Child", "Researches a task", "1.0.0");
     }
 
-    private static SkillInfo skill() {
+    private static SkillInfo skill(String content) {
         return new SkillInfo(
                 "calendar",
                 SKILL_ID,
                 "1.0.0",
                 "Calendar workflow",
                 "booking",
+                content,
                 List.of(),
                 List.of(),
                 List.of(new SkillFile("template-1", "request", "Template", "txt")),
                 List.of(new SkillFile("reference-1", "guide", "Reference", "md")));
+    }
+
+    private static String skillContent() {
+        return "---\nname: calendar\ndescription: Calendar workflow\n---\n\nUse the calendar workflow.\n";
     }
 }

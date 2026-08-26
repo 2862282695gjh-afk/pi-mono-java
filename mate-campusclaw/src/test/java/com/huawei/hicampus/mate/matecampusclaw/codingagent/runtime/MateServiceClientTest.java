@@ -195,19 +195,18 @@ class MateServiceClientTest {
     }
 
     @Test
-    void queriesCompleteSkillInfoAndAcceptsBothVersionFieldNames() throws Exception {
+    void queriesCompleteSkillInfoObjectWithStandardVersionAndContent() throws Exception {
         server.enqueue(
                 new MockResponse().setHeader("Content-Type", "application/json").setBody(skillInfoResponse()));
 
-        var skills = client.querySkillInfo("skill-11111111111111111111111111111111");
+        var skill = client.querySkillInfo("skill-11111111111111111111111111111111");
 
-        assertEquals(
-                List.of("1.0.0", "2.0.0"),
-                skills.stream().map(MateServiceClient.SkillInfo::version).toList());
-        assertEquals("calendar", skills.getFirst().bindingTools().getFirst().name());
-        assertEquals("base-skill", skills.getFirst().bindingSkills().getFirst().name());
-        assertEquals("template body", skills.getFirst().templates().getFirst().content());
-        assertEquals("reference body", skills.getFirst().references().getFirst().content());
+        assertEquals("1.0.0", skill.version());
+        assertEquals("---\nname: skill-a\ndescription: Skill A\n---\n", skill.content());
+        assertEquals("calendar", skill.bindingTools().getFirst().name());
+        assertEquals("base-skill", skill.bindingSkills().getFirst().name());
+        assertEquals("template body", skill.templates().getFirst().content());
+        assertEquals("reference body", skill.references().getFirst().content());
         RecordedRequest request = server.takeRequest();
         assertEquals("GET", request.getMethod());
         assertEquals("/mate-service/v1/skill/query/skill-11111111111111111111111111111111", request.getPath());
@@ -216,9 +215,10 @@ class MateServiceClientTest {
 
     private static String skillInfoResponse() {
         return """
-                {"resCode":"0","resMsg":"ok","result":[{
-                  "name":"skill-a","id":"skill-11111111111111111111111111111111"," version":"1.0.0",
+                {"resCode":"0","resMsg":"ok","result":{
+                  "name":"skill-a","id":"skill-11111111111111111111111111111111","version":"1.0.0",
                   "description":"Skill A","useCases":"booking",
+                  "content":"---\\nname: skill-a\\ndescription: Skill A\\n---\\n",
                   "bindingTools":[{"id":"tool-11111111111111111111111111111111","version":"2.0.0","name":"calendar",
                     "description":"Calendar tool","permission":"allow","source":"local"}],
                   "bindingSkills":[{"id":"skill-00000000000000000000000000000000","version":"0.9.0",
@@ -227,12 +227,20 @@ class MateServiceClientTest {
                     "content":"template body","fileType":"md"}],
                   "references":[{"id":"reference-1","name":"guide",
                     "content":"reference body","fileType":"txt"}]
-                },{
-                  "name":"skill-b","id":"skill-22222222222222222222222222222222","version":"2.0.0",
-                  "description":"Skill B","useCases":"reporting","bindingTools":[],
-                  "bindingSkills":[],"templates":[],"references":[]
-                }]}
+                }}
                 """;
+    }
+
+    @Test
+    void rejectsArraySkillInfoResult() {
+        server.enqueue(new MockResponse()
+                .setHeader("Content-Type", "application/json")
+                .setBody("{\"resCode\":\"0\",\"result\":[]}"));
+
+        AgentRuntimeException error = assertThrows(
+                AgentRuntimeException.class, () -> client.querySkillInfo("skill-11111111111111111111111111111111"));
+
+        assertEquals("querySkillInfo result must be an object", error.getMessage());
     }
 
     @Test
@@ -342,7 +350,7 @@ class MateServiceClientTest {
                 new MockResponse().setHeader("Content-Type", "application/json").setBody("{}"));
         server.enqueue(new MockResponse()
                 .setHeader("Content-Type", "application/json")
-                .setBody("{\"resCode\":\"0\",\"result\":[]}"));
+                .setBody("{\"resCode\":\"0\",\"result\":{}}"));
 
         client.getAgentRuntime("agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
         client.querySkillInfo("skill-11111111111111111111111111111111");

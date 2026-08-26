@@ -197,7 +197,7 @@ public class AgentRuntimeManager {
             writeJson(
                     skillDirectory.resolve(SKILL_MANIFEST_FILE),
                     new SkillManifest(SCHEMA_VERSION, skill.id(), skill.name(), skill.version()));
-            writeFile(skillDirectory.resolve(SKILL_FILE), renderSkill(skill));
+            writeFile(skillDirectory.resolve(SKILL_FILE), skill.content());
             writeResources(skillDirectory.resolve("references"), skill.references());
             writeResources(skillDirectory.resolve("templates"), skill.templates());
         }
@@ -296,6 +296,7 @@ public class AgentRuntimeManager {
                 manifest.version(),
                 description,
                 null,
+                skillMarkdown,
                 List.of(),
                 List.<DependentSkill>of(),
                 List.of(),
@@ -342,11 +343,7 @@ public class AgentRuntimeManager {
     private List<SkillInfo> resolveSkills(List<SkillReference> references) {
         List<SkillInfo> skills = new ArrayList<>();
         for (SkillReference reference : references == null ? List.<SkillReference>of() : references) {
-            List<SkillInfo> result = mateServiceClient.querySkillInfo(reference.id());
-            if (result.size() != 1) {
-                throw new AgentRuntimeException("Mate returned an ambiguous Skill binding");
-            }
-            SkillInfo skill = result.getFirst();
+            SkillInfo skill = mateServiceClient.querySkillInfo(reference.id());
             requireValidSkill(skill, reference);
             skills.add(skill);
         }
@@ -523,12 +520,6 @@ public class AgentRuntimeManager {
         Files.writeString(path, content == null ? "" : content, StandardCharsets.UTF_8);
     }
 
-    private String renderSkill(SkillInfo skill) throws IOException {
-        String description = firstNonBlank(skill.description(), skill.name());
-        return "---\nname: " + skill.name() + "\ndescription: " + mapper.writeValueAsString(description) + "\n---\n\n# "
-                + skill.name() + "\n\n" + description + "\n";
-    }
-
     private static String resourceFileName(SkillFile resource) {
         String type = resource.fileType() == null ? "" : resource.fileType().toLowerCase(java.util.Locale.ROOT);
         return resource.name() + (type.isBlank() ? "" : "." + type);
@@ -600,15 +591,6 @@ public class AgentRuntimeManager {
 
     private static boolean isBlank(String value) {
         return value == null || value.isBlank();
-    }
-
-    private static String firstNonBlank(String... values) {
-        for (String value : values) {
-            if (value != null && !value.isBlank()) {
-                return value;
-            }
-        }
-        return "Managed Skill";
     }
 
     private static void deleteQuietly(Path path) {

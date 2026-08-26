@@ -15,7 +15,6 @@ import java.util.Optional;
 import java.util.regex.Pattern;
 
 import com.campusclaw.codingagent.common.identifier.ResourceIdentifierPatterns;
-import com.fasterxml.jackson.annotation.JsonAlias;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -102,7 +101,7 @@ public class MateServiceClient {
      * @throws IllegalArgumentException Skill 标识不符合类型化 UUID 格式时抛出
      * @throws AgentRuntimeException HTTP 请求或响应无效时抛出
      */
-    public List<SkillInfo> querySkillInfo(String skillId) {
+    public SkillInfo querySkillInfo(String skillId) {
         requireIdentifier(skillId, ResourceIdentifierPatterns.SKILL_ID_PATTERN, "skillId");
         HttpRequest request = HttpRequest.newBuilder(endpoint(skillInfoQueryPathTemplate.formatted(skillId)))
                 .timeout(properties.requestTimeout())
@@ -110,14 +109,13 @@ public class MateServiceClient {
                 .GET()
                 .build();
         JsonNode root = send(request, "querySkillInfo");
+        validateBusinessSuccess(root, "querySkillInfo");
+        JsonNode result = root.get("result");
+        if (result == null || !result.isObject()) {
+            throw new AgentRuntimeException("querySkillInfo result must be an object");
+        }
         try {
-            SkillInfoResponse response = mapper.treeToValue(root, SkillInfoResponse.class);
-            if (!properties.successCode().equals(response.resCode())) {
-                throw new AgentRuntimeException("querySkillInfo failed with resCode "
-                        + response.resCode()
-                        + (response.resMsg() == null || response.resMsg().isBlank() ? "" : ": " + response.resMsg()));
-            }
-            return response.result();
+            return mapper.treeToValue(result, SkillInfo.class);
         } catch (IOException e) {
             throw new AgentRuntimeException("Invalid querySkillInfo response", e);
         }
@@ -261,10 +259,10 @@ public class MateServiceClient {
     public record SkillInfo(
             String name,
             String id,
-            // 前导空格别名用于兼容生产 querySkillInfo 把字段序列化为 " version" 的现状。
-            @JsonAlias(" version") String version,
+            String version,
             String description,
             String useCases,
+            String content,
             List<BoundTool> bindingTools,
             List<DependentSkill> bindingSkills,
             List<SkillFile> templates,
@@ -297,12 +295,4 @@ public class MateServiceClient {
             String permission,
             String source,
             String version) {}
-
-    /** querySkillInfo 响应信封。 */
-    @JsonIgnoreProperties(ignoreUnknown = true)
-    public record SkillInfoResponse(String resCode, String resMsg, List<SkillInfo> result) {
-        public SkillInfoResponse {
-            result = result == null ? List.of() : List.copyOf(result);
-        }
-    }
 }
