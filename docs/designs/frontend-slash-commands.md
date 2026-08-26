@@ -2,7 +2,7 @@
 
 > 模块:`coding-agent-cli`(runtimeapi) + `frontend/`
 > 状态:Proposed
-> 日期:2026-08-25(详细版 v2)
+> 日期:2026-08-25(v2),2026-08-26(v3 评审修订:采纳 codex 批注①—⑧)
 > 契约基线:Runtime HTTP 1.38(`BASE_PATH = /campusclaw-service/v1`);本设计的契约改动为 **1.39 候选**,落地前需与 owner 对齐
 > 读者:前端(Vue)与后端(Java runtimeapi)开发者,按本文可直接开工
 
@@ -73,6 +73,15 @@ ComposerBox → App.submit() → useRuntimeApi.sendMessage(message)
 
 **默认只返回 `webCapable=true` 的命令**。无需会话上下文(命令集是进程级静态数据)。
 
+**[批注①已采纳] 唯一目录源 = `WebCommandCatalog` Bean**:新增 Spring Bean `WebCommandCatalog`(见 2.1/2.2)持有**全部**已知命令(含 webCapable=false 的 TUI 专属项),它同时是菜单列表、前端 `matchCommand` 对照集、`/events` 守卫、`/commands/{name}` 执行端点的**唯一来源**——不存在第二份注册表。批注指出的"菜单只认子集、守卫认全量"断路由同源消除:TUI-only 命令(如 `/hotkeys`)在 events 被拒后,`POST /commands/{name}` 返回**稳定的 `COMMAND_NOT_AVAILABLE_ON_WEB`(400)**而非 404,前端据此提示"该命令仅在终端可用"。三态语义:
+
+| 输入 | 菜单 | events 守卫 | commands 执行 |
+|---|---|---|---|
+| `/model`(webCapable) | 展示 | 拒 → 引导命令端点 | 执行 |
+| `/hotkeys`(TUI-only,在 Catalog) | 不展示 | 拒 | 400 COMMAND_NOT_AVAILABLE_ON_WEB |
+| `/abc`(不在 Catalog) | 不展示 | **透传给模型** | 404(正常未知) |
+
+
 ### 1.2 `POST /campusclaw-service/v1/sessions/{sessionId}/commands/{name}`
 
 请求:
@@ -112,11 +121,27 @@ ComposerBox → App.submit() → useRuntimeApi.sendMessage(message)
 | `conversationReset` | boolean | 清空当前时间线(`/new` 用) |
 | `historyCompacted` | boolean | 标记历史已压缩(首版可仅提示) |
 
+**[批注②已采纳] `/model`、`/thinking` 写操作走别名,不经命令端点**:这两个命令**带参数时在前端解析为别名**——`useSlashCommands.execute` 直接调用现有 `runtime.changeModel(modelId)` / `runtime.changeThinking(bool)`(内部已带 `If-Match` + 返回最新 Session 与 ETag,乐观并发保护完整继承),成功后组装等效 `SlashCommandResult` 走统一结果展示。命令端点只承接**无对应既有端点**的命令。后端兜底:命令端点收到 model/thinking 写参数时返回 400 提示"请经 /model 端点执行",防止绕过前端造成双路径漂移。空参查询仍走命令端点(只读无并发问题)。
+
+
 **同步短请求,无 SSE**。HTTP 状态码:200 成功(kind=ok/error 都可能是 200);404 未知命令名;400 无效参数格式;409 会话 streaming 中执行了互斥命令;500 内部错误(信封 `message` 给安全摘要)。
 
 ### 1.3 `POST …/events` 行为变更
 
-`RuntimeEventService.submit` 增加守卫:消息以 `/` 开头**且**去掉斜杠后的首个 token 匹配已注册命令名(不区分 webCapable)时,返回错误码 `COMMAND_NOT_ROUTED`(400),message 提示"命令请经 /commands 端点执行"。不匹配任何命令名的 `/xxx` 正常透传(与 TUI `execute() 返回 false` 语义一致)。
+`RuntimeEventService.submit` 增加守卫:消息以 `/` 开头**且**首 token 匹配 `WebCommandCatalog` 中的命令名(全集,不区分 webCapable)时,返回错误码 `COMMAND_NOT_ROUTED`(400),message 提示"命令请经 /commands 端点执行"。不匹配任何命令名的 `/xxx` 正常透传(与 TUI `execute() 返回 false` 语义一致)。
+
+**[批注③已采纳]** 守卫数据源即 `WebCommandCatalog`(Spring Bean,Runtime API 显式注入),不依赖 `SlashCommandRegistry`(其非 Bean 且 Runtime Host 不启用该解析)。解析规则**写死为共享规范**,前后端各自实现、同一组用例锁定:
+
+```
+parseSlashInput(text):
+  trimmed = text 去除首尾空白(含换行)
+  若 trimmed 不以 '/' 开头 → null
+  rest = trimmed.substring(1);去除前导空白(容忍 '/ model')
+  首个空白(空格/制表/换行,≥1)之前 = name;其后去除前导空白 = arguments
+  name 为空(输入仅 '/')→ null
+```
+
+锁定用例(前后端跑同一组,结果必须一致):`'/model glm-5'`→(model,glm-5) / `'/model'`→(model,'') / `'/  model   x  '`→(model,'x') / `'/model\n第二行'`→(model,'第二行') / `'/'`→null / `'/model '`→(model,'') / `'text /model'`→null(非开头) / `'/中文命令'`→(中文命令,'')(未命中 Catalog 即透传)。
 
 ---
 
@@ -127,7 +152,9 @@ ComposerBox → App.submit() → useRuntimeApi.sendMessage(message)
 ```
 modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/
 ├── command/
-│   ├── WebCommandInvoker.java          ← 新增:执行入口
+│   ├── WebCommandCatalog.java          ← 新增【批注①采纳】:唯一命令目录(Spring Bean,
+│   │                                     含 webCapable 全集 + parseSlashInput/isRegistered)
+│   ├── WebCommandInvoker.java          ← 新增:执行入口(依赖 Catalog)
 │   ├── WebCommandDefinition.java       ← 新增:命令定义 record
 │   └── WebCommandEffect.java           ← 新增:effects 常量/record
 ├── dto/
@@ -135,8 +162,8 @@ modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/
 │   └── CommandResultDTO.java           ← 新增
 └── web/
     └── RuntimeCommandController.java   ← 新增
-修改:runtimeapi/event/RuntimeEventService.java(/守卫)
-修改:runtimeapi/error 相关(注册 COMMAND_NOT_ROUTED 错误码)
+修改:runtimeapi/event/RuntimeEventService.java(/守卫,注入 Catalog)
+修改:runtimeapi/error(注册 COMMAND_NOT_ROUTED / COMMAND_NOT_AVAILABLE_ON_WEB)
 ```
 
 ### 2.2 `WebCommandDefinition`(命令注册表,不走 SlashCommandRegistry)
@@ -164,6 +191,16 @@ public record WebCommandDefinition(
 | `help` | — | 输出 webCapable 命令列表文本 |
 | `settings` | — | 只读:当前模型/思考级别/会话标题摘要 |
 | `export` | `[format]` | 首版仅 `text`:把会话历史拼为纯文本返回(前端弹下载);其它 format 返回 error |
+
+**[批注④已采纳] 首版命令削减为 5 个**:`model` / `thinking` / `new` / `help` / `settings`。移出项及理由:
+
+| 移出命令 | 理由(采纳批注) | 重开条件 |
+|---|---|---|
+| `/compact` | Runtime 无 Web 可调用的手动压缩操作,`historyCompacted` 不能表示未发生的成功 | 服务端暴露真实压缩端点且可观测后 |
+| `/name` | 会话标题仅存前端内存 `threads`,TUI `NameCommand` 自身也标注待 mate-service 适配;`sessionRenamed` 刷新的只是本地数组 | 标题持久化 API 落地后 |
+| `/export` | 全量历史同步拼 JSON 无体积/超时/编码/文件名/下载安全边界 | 改造为受限下载端点(流式 + 大小上限)或仅导出前端已加载历史,另行设计 |
+
+`/new` 的 `conversationReset` 语义同步收窄(见 3.6 effects 标注)。
 
 `CommandOutcome`:
 
@@ -264,20 +301,24 @@ export function useSlashCommands(runtime: ReturnType<typeof useRuntimeApi>) {
     // 失败静默降级:commands 保持空,输入 '/' 无菜单(不阻塞主流程)
   }
 
-  /** 输入文本是否应拦截为命令(仅非 running 态拦截;running 态 steer/queue 语义不变) */
-  function matchCommand(text: string): { command: SlashCommandDescriptor; arguments: string } | null {
-    // 仅当 text 以 '/' 开头且首个 token === 某命令 name 时返回;否则 null
-    // 例: '/model glm-5' → { command: model 命令, arguments: 'glm-5' }
-    // '/abc' → null(透传为普通消息)
+  /** 解析输入为三态(仅非 running 态拦截;running 态 steer/queue 语义不变)。
+   *  parseSlashInput 与后端 WebCommandCatalog 同规则(1.3 锁定用例)。 */
+  function matchCommand(text: string): SlashMatch {
+    // executable:webCapable=true 且首 token 命中 → 命令执行
+    // web-reserved:webCapable=false 且命中 → 本地提示,零网络请求
+    // unknown:未命中(含非 '/' 开头)→ 透传普通消息
   }
 
   /** 执行命令并分发 effects;返回结果供调用方插入系统消息 */
   async function execute(name: string, args: string): Promise<SlashCommandResult> {
-    // POST /sessions/{id}/commands/{name}  body {arguments: args}
-    // 成功后按 effects 逐键分发:
-    //   modelChanged/thinkingChanged → runtime 刷新会话(复用现有 getSession)
-    //   sessionRenamed → 刷新侧栏线程列表
-    //   conversationReset → 由 App.vue 处理(见 3.4)
+    // 【别名分流(批注②)】model/thinking 带参时直接走既有端点(If-Match 完整):
+    //   model+参数   → await runtime.changeModel(args) → 组装 {kind:'ok', effects:{modelChanged:true}}
+    //   thinking+参数 → 解析 on/off → runtime.changeThinking(...) → 同上
+    //   412 冲突 → {kind:'error', output:'会话已被其它操作修改,请刷新后重试'}
+    // 其余命令:POST /sessions/{id}/commands/{name}  body {arguments: args}
+    // 成功后按 effects 逐键分发(归属见 3.6 表):
+    //   modelChanged/thinkingChanged → 别名路径已由 changeModel 内部刷新 session
+    //   conversationReset → 由 App.vue 处理(见 3.5)
   }
 
   return { commands, loaded, executing, load, matchCommand, execute };
@@ -285,6 +326,22 @@ export function useSlashCommands(runtime: ReturnType<typeof useRuntimeApi>) {
 ```
 
 **关键约定**:`matchCommand` 是**唯一**的拦截判定点,与后端 `isRegistered` 同规则(首个 token 匹配),保证前端拦截与后端守卫行为一致——不匹配的 `/xxx` 走普通消息,两边都不会误杀。
+
+**[批注⑤已采纳] `matchCommand` 改为三态返回**。前端列表加载取**全量**(`GET /commands?all=true`,含 webCapable=false;菜单过滤在前端做):
+
+```ts
+type SlashMatch =
+  | { type: 'executable'; command: SlashCommandDescriptor; arguments: string }   // webCapable=true
+  | { type: 'web-reserved'; command: SlashCommandDescriptor; arguments: string } // 在 Catalog 但 webCapable=false
+  | { type: 'unknown' };                                                          // 不在 Catalog,透传
+```
+
+- `executable` → 走命令执行路径(别名分流见 execute)
+- `web-reserved` → **不透传**(后端守卫也会拒),本地系统消息"该命令仅在终端可用",零网络请求
+- `unknown` → 普通消息(与后端守卫透传同源一致)
+
+菜单只渲染 `executable` 项——不展示一个点不了的命令。
+
 
 ### 3.3 `CommandMenu.vue`(新建组件,约 150 行)
 
@@ -327,8 +384,8 @@ function onKeydown(event: KeyboardEvent): void {
   if (menuActive.value) {
     if (event.key === 'ArrowDown') { event.preventDefault(); moveActive(1); return; }
     if (event.key === 'ArrowUp')   { event.preventDefault(); moveActive(-1); return; }
-    if (event.key === 'Tab')       { event.preventDefault(); completeActive(); return; } // Tab:补全命令名(留个尾空格)
-    if (event.key === 'Enter')     { event.preventDefault(); chooseActive(); return; }   // Enter:选中并提交
+    if (event.key === 'Tab' || event.key === 'Enter') { event.preventDefault(); completeActive(); return; } // 两段式:只补全
+    if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) { event.preventDefault(); completeAndRun(); return; } // 直达
     if (event.key === 'Escape')    { menuActive.value = false; return; }
     return; // 菜单激活时其它键(含普通输入)先放行到 textarea,由 updateText 重新过滤
   }
@@ -359,6 +416,16 @@ function updateText(event: Event): void {
 
 提交路径:菜单激活时 Enter 走 `chooseActive()`(emit `commandSubmit`),不走原 `submit`。
 
+**[批注⑥已采纳] Enter/Tab 统一两段式,消除误触发**:
+
+- 菜单激活时 **Tab 或 Enter = 只补全**(输入替换为 `/name ` 带尾空格,菜单收起,草稿保留)——不存在"Enter 直接执行"
+- 补全后再按普通 **Enter 才执行**(此时无菜单,走 `submit()` 前置分流)——两段确认,高亮误触 `/new` 风险消除
+- 空候选 / 列表加载失败 / `activeIndex` 无有效值 → Enter **回落普通 Composer 行为**(未匹配文本走 unknown 透传)
+- 快捷直达:菜单激活时 **Cmd/Ctrl+Enter = 补全并立即执行**(效率入口;普通 Enter 永远安全)
+
+`onKeydown` 菜单分支:Enter(无修饰)/Tab → `completeActive()`;Cmd/Ctrl+Enter → `completeAndRun()`;↑↓/Esc 不变。
+
+
 ### 3.5 `App.vue` 改动(命令执行接线)
 
 ```ts
@@ -379,7 +446,7 @@ async function runCommand(payload: { name: string; arguments: string }): Promise
     const result = await slash.execute(payload.name, payload.arguments);
     appendSystemMessage(result.output, result.kind === 'error'); // 见下
     if (result.effects.conversationReset) {
-      // /new:清时间线 + 引导态(复用现有"首次进入"分支的状态设置)
+      // /new:仅清本页时间线(clearSessionView),系统消息注明"会话历史仍在服务端"
     }
     // 其余 effects 已在 useSlashCommands.execute 内分发(刷新会话/侧栏)
     message.value = '';   // 命令成功后清空输入(与消息提交一致)
@@ -404,6 +471,17 @@ if (!running.value && matched) { await runCommand({ name: matched.command.name, 
 - 时间线渲染:区别于 user/assistant 的居中灰字样式(参考 accepted-list 的视觉层级),`isError` 时红色
 - `runtimeEventProjector` **不改**——系统消息不经过 SSE 投影管线
 
+**[批注⑦已采纳] effects 逐项标注状态归属**:
+
+| effect | 归属 | 刷新后 | 说明 |
+|---|---|---|---|
+| `modelChanged` | **服务端持久化** | 保持 | 经 changeModel(PUT /model)真实写入 |
+| `thinkingChanged` | **服务端持久化** | 保持 | 经 changeThinking(PUT /thinking)真实写入 |
+| `conversationReset` | **客户端本地** | 回到服务端真实历史 | 仅 `clearSessionView()`,不结束服务端会话;系统消息附注"时间线已在本页清空,会话历史仍在服务端" |
+| `sessionRenamed` | — | — | 首版已移出(/name 削减) |
+| `historyCompacted` | — | — | 首版已移出(/compact 削减) |
+
+
 ### 3.7 前端测试(vitest)
 
 - `useSlashCommands.test.ts`:
@@ -412,6 +490,20 @@ if (!running.value && matched) { await runCommand({ name: matched.command.name, 
   - `execute` effects 分发:modelChanged 触发 getSession、未知 effects 键忽略
 - `CommandMenu` 交互测试:前缀过滤、分类分组、空态占位、select/close emit
 - App 级(可选):命令提交后输入框清空 + 系统消息插入
+
+**[批注⑧已采纳] 测试与配套同步清单**:
+
+前端 vitest 增补:
+- **三方一致性**:1.3 的 parseSlashInput 锁定用例在 Catalog(Java)/守卫(Java)/matcher(TS)各自跑出相同结果——共享用例 JSON,双端 CI 校验
+- 过期 ETag:`/model glm-5` 别名触发 changeModel 412 → 提示刷新重试
+- TUI-only 文本(`/hotkeys x`)→ web-reserved → 本地提示且**零网络请求**
+- 空菜单 Enter / 列表加载失败 Enter → 回落普通行为;无会话执行 `/new` → 错误条不崩溃
+- a11y:textarea `aria-expanded`/`aria-controls`/`aria-activedescendant`;Esc 后焦点仍在 textarea
+
+后端增补:
+- `WebCommandCatalogTest`:parseSlashInput 锁定用例全集 + isRegistered 边界
+- `RuntimeErrorCode` 注册 `COMMAND_NOT_ROUTED`/`COMMAND_NOT_AVAILABLE_ON_WEB`,同步:中英 i18n 资源、前端 `friendlyError()` 映射、异常处理器 HTTP 状态绑定
+
 
 ---
 
@@ -425,34 +517,39 @@ if (!running.value && matched) { await runCommand({ name: matched.command.name, 
 
 ### 4.2 手动验收清单
 
-1. 输入 `/` 出菜单,`/mo` 过滤到 model,↑↓ 导航,Tab 补全为 `/model `
-2. Enter 提交 `/model`(空参)→ 系统消息显示当前模型
-3. `/model glm-5` → 系统消息 + 侧栏/头部模型名刷新(modelChanged)
-4. `/new` → 时间线清空回到引导态
-5. curl 直接 `POST .../events` body `{"message":"/model glm-5"}` → 400 COMMAND_NOT_ROUTED
-6. 输入 `/abc`(非命令)→ 作为普通消息发送给模型
-7. running 态输入 `/` → 无菜单,原 steer/queue 语义不受影响
-8. Esc 关菜单后输入仍在,可继续编辑
+1. 输入 `/` 出菜单,`/mo` 过滤到 model,↑↓ 导航,**Enter/Tab 补全为 `/model `(不执行)**;再按 Enter → 系统消息显示当前模型(空参查询)
+2. `/model glm-5` 提交 → 走 changeModel 别名(PUT /model + If-Match)→ 系统消息 + 模型名刷新;人为篡改 ETag 重放 → 412 提示刷新
+3. `/thinking on` → 同上经 changeThinking
+4. `/new` → 时间线清空 + 系统消息"仅清空当前视图,会话历史仍在服务端"
+5. 输入 `/hotkeys` → 本地提示"该命令仅在终端可用",**Network 面板零请求**
+6. curl 直接 `POST .../events` body `{"message":"/model glm-5"}` → 400 COMMAND_NOT_ROUTED;`/hotkeys` 同样 400
+7. curl `POST .../commands/hotkeys` → 400 COMMAND_NOT_AVAILABLE_ON_WEB(非 404)
+8. 输入 `/abc`(非命令)→ 作为普通消息发送给模型(守卫与前端同判定)
+9. running 态输入 `/` → 无菜单,原 steer/queue 语义不受影响
+10. Esc 关菜单后输入仍在、焦点在 textarea;空候选时 Enter 回落普通行为
 
 ## 边界情况
 
 | 场景 | 行为 |
 |---|---|
-| 无会话时输入 `/` | 菜单照常;执行时后端 400(路径无有效 session)→ 前端错误条提示先创建会话 |
-| 命令列表加载失败 | 静默降级:无菜单,`/cmd` 由后端守卫兜底报 COMMAND_NOT_ROUTED |
+| 无会话时输入 `/` | 菜单照常;执行时前端 hasSession=false 拦截提示先创建会话(不发请求) |
+| 命令列表加载失败 | 静默降级:无菜单;`/model x` 等由后端守卫兜底 COMMAND_NOT_ROUTED(前端 unknown 透传后被拒,提示一致) |
+| TUI-only 命令(`/hotkeys`) | 三态 web-reserved:本地提示,零网络请求 |
 | 未知 effects 键 | 前端忽略(向前兼容) |
 | executing 中重复提交 | submitting 状态复用,按钮禁用 |
-| `/` 后立即空格 | 菜单收起(首个 token 结束),文本按普通消息发送 |
-| 命令参数含敏感值 | 首版 8 命令均无敏感参数;/login 类不在 webCapable 集 |
+| `/` 后立即空格 | 菜单收起(首个 token 结束);`/ ` 解析 name='' → unknown 透传 |
+| 命令参数含敏感值 | 首版 5 命令均无敏感参数;/login 类不在 Catalog webCapable 集 |
+| ETag 过期(别名路径) | 412 → 系统消息"会话已被修改,请刷新",自动 getSession 重取 ETag |
 
 ## 设计决策(浓缩,理由见 v1)
 
-- **D1 独立命令端点**:命令不是对话,不进历史/不触发 LLM/无 SSE
-- **D2 服务端守卫为主**:前端拦截是体验,events 端点 `/`+已注册命令名 → COMMAND_NOT_ROUTED
-- **D3 webCapable 分级**:TUI 专属命令不出现在 Web,服务端声明
-- **D4 结果为本地系统消息**:不持久化,`effects` 声明式驱动既有刷新
-- **D5 首版 8 命令**:model/thinking/name/new/compact/help/settings/export
-- **D6 前后端同规则拦截**:matchCommand 与 isRegistered 都是"首个 token 精确匹配",永不误杀 `/xxx` 普通文本
+- **D1 独立命令端点**:命令不是对话,不进历史/不触发 LLM/无 SSE;**已有配置端点的写操作走别名**不经命令端点(If-Match 完整性)
+- **D2 服务端守卫为主**:前端拦截是体验,events 端点按 Catalog 全集守卫 → COMMAND_NOT_ROUTED;TUI-only 命令在命令端点 → COMMAND_NOT_AVAILABLE_ON_WEB
+- **D3 webCapable 三态分级**:executable / web-reserved / unknown——菜单只展示 executable,reserved 本地提示零请求,unknown 双端一致透传
+- **D4 结果为本地系统消息**:不持久化;effects 逐项标注**服务端持久化 / 客户端本地**归属
+- **D5 首版 5 命令**:model/thinking/new/help/settings(compact/name/export 移出,条件成熟重开)
+- **D6 单一目录源**:WebCommandCatalog 是菜单/守卫/执行/matcher 唯一数据源;parseSlashInput 规则写死,前后端共享锁定用例
+- **D7 两段式确认**:Enter/Tab 只补全,普通 Enter 才执行;Cmd/Ctrl+Enter 为直达快捷键
 
 ## 性能(DFX)
 
@@ -464,11 +561,12 @@ if (!running.value && matched) { await runCommand({ name: matched.command.name, 
 
 | 层 | 文件 | 用例数(估) |
 |---|---|---|
-| Java | `RuntimeCommandControllerTest` | 6 |
-| Java | `RuntimeEventServiceTest` 增补 | 2 |
-| Java | `WebCommandInvokerTest`(每命令参数分支) | ~12 |
-| TS | `useSlashCommands.test.ts` | ~8 |
-| TS | `CommandMenu` 测试 | ~5 |
+| Java | `WebCommandCatalogTest`(parseSlashInput 锁定用例 + isRegistered) | ~10 |
+| Java | `RuntimeCommandControllerTest`(含 NOT_AVAILABLE_ON_WEB/412) | ~8 |
+| Java | `RuntimeEventServiceTest` 增补(守卫全分支) | ~4 |
+| Java | `WebCommandInvokerTest`(5 命令参数分支) | ~10 |
+| TS | `useSlashCommands.test.ts`(三态/别名/ETag/一致性) | ~12 |
+| TS | `CommandMenu` 测试(含 a11y) | ~6 |
 
 ## 验证命令
 
