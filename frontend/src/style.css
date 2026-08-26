@@ -1,20 +1,21 @@
 :root {
-  --surface-primary: #ffffff;
-  --surface-secondary: #f9f9f9;
-  --surface-tertiary: #f3f3f3;
-  --surface-selected: #ededed;
-  --text-primary: #282828;
-  --text-secondary: #5d5d5d;
-  --text-tertiary: #8a8a8a;
-  --border-subtle: rgba(13, 13, 13, 0.05);
-  --border-default: rgba(13, 13, 13, 0.1);
-  --border-strong: rgba(13, 13, 13, 0.18);
-  --action-primary: #181818;
-  --action-primary-hover: #303030;
+  --brand-mark: #d97757;
+  --surface-primary: #fffcfa;
+  --surface-secondary: #f8f3f0;
+  --surface-tertiary: #f4ece8;
+  --surface-selected: #efe4de;
+  --text-primary: #2c2724;
+  --text-secondary: #6c625d;
+  --text-tertiary: #958882;
+  --border-subtle: rgba(76, 50, 39, 0.07);
+  --border-default: #ded4cf;
+  --border-strong: #cdbeb6;
+  --action-primary: #2b2522;
+  --action-primary-hover: #463b36;
   --status-running: #00a240;
   --status-success: #008635;
-  --status-error: #c62828;
-  --focus: #0169cc;
+  --status-error: #e02e2a;
+  --focus: #a9472b;
   --sidebar-width: 248px;
   --topbar-height: 72px;
   --content-width: 880px;
@@ -143,19 +144,20 @@ svg {
   flex: 0 0 auto;
   align-items: center;
   justify-content: center;
-  width: 34px;
-  height: 34px;
-  overflow: hidden;
-  border-radius: 9px;
-  color: #fff;
-  background: var(--action-primary);
+  width: 36px;
+  height: 36px;
 }
 
-.brand-mark svg {
-  width: 27px;
-  height: 27px;
-  fill: currentColor;
-  stroke: none;
+.brand-mark img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.brand-mark-spacer {
+  width: 44px;
+  height: 1px;
 }
 
 .icon-button {
@@ -192,7 +194,7 @@ svg {
   gap: 9px;
   border: 1px solid var(--action-primary);
   border-radius: 12px;
-  color: #fff;
+  color: var(--surface-primary);
   background: var(--action-primary);
   font-weight: 620;
 }
@@ -245,7 +247,7 @@ svg {
   left: -1px;
   width: 2px;
   border-radius: 2px;
-  background: var(--action-primary);
+  background: var(--brand-mark);
   content: "";
 }
 
@@ -328,7 +330,7 @@ svg {
   padding: 0 24px;
   gap: 14px;
   border-bottom: 1px solid var(--border-default);
-  background: rgba(255, 255, 255, 0.94);
+  background: rgba(255, 252, 250, 0.94);
 }
 
 .open-sidebar {
@@ -490,11 +492,11 @@ svg {
   min-height: 48px;
   padding: 10px 12px;
   gap: 9px;
-  border: 1px solid rgba(198, 40, 40, 0.2);
+  border: 1px solid rgba(224, 46, 42, 0.2);
   border-radius: 12px;
   color: #7f1d1d;
-  background: #fff7f7;
-  box-shadow: 0 10px 30px rgba(13, 13, 13, 0.08);
+  background: #fff6f3;
+  box-shadow: 0 10px 30px rgba(76, 50, 39, 0.08);
   font-size: 13px;
   transform: translateX(-50%);
 }
@@ -531,9 +533,8 @@ svg {
 }
 
 .welcome-mark .brand-mark {
-  width: 48px;
-  height: 48px;
-  border-radius: 13px;
+  width: 72px;
+  height: 72px;
 }
 
 .welcome .eyebrow {
@@ -570,7 +571,7 @@ svg {
   border-radius: 16px;
   text-align: left;
   background: var(--surface-primary);
-  box-shadow: 0 10px 32px rgba(13, 13, 13, 0.04);
+  box-shadow: 0 10px 32px rgba(76, 50, 39, 0.05);
 }
 
 .agent-card > div:nth-child(2) {
@@ -604,7 +605,7 @@ svg {
   gap: 8px;
   border: 1px solid var(--action-primary);
   border-radius: 10px;
-  color: #fff;
+  color: var(--surface-primary);
   background: var(--action-primary);
   font-size: 13px;
   font-weight: 600;
@@ -769,11 +770,18 @@ svg {
   height: 14px;
 }
 
-.assistant-turn {
+.assistant-turn,
+.thinking-turn {
   display: grid;
-  grid-template-columns: 34px minmax(0, 1fr);
+  grid-template-columns: 44px minmax(0, 1fr);
   align-items: start;
   gap: 14px;
+}
+
+.assistant-turn .brand-mark,
+.thinking-turn .brand-mark {
+  width: 44px;
+  height: 44px;
 }
 
 .assistant-body {
@@ -1082,124 +1090,205 @@ svg {
   animation: spin 0.9s linear infinite;
 }
 
-.thinking-block {
-  margin: 0 0 12px;
+.thinking-disclosure {
+  max-width: 720px;
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: 13px;
 }
 
-.thinking-block summary {
+.thinking-disclosure summary,
+.thinking-status {
+  display: flex;
+  align-items: center;
   width: fit-content;
-  cursor: pointer;
-  color: var(--text-tertiary);
-}
-
-.thinking-block p {
-  margin: 10px 0 0;
-  padding: 10px 14px;
-  border-left: 2px solid var(--border-strong);
-  line-height: 1.7;
-  white-space: pre-wrap;
-}
-
-.activity-turn {
-  display: grid;
-  grid-template-columns: 34px minmax(0, 1fr);
-  margin-left: 48px;
-  gap: 10px;
-}
-
-.activity-icon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  margin-top: 10px;
-  border-radius: 50%;
-  color: var(--text-secondary);
-  background: var(--surface-tertiary);
-}
-
-.activity-icon.completed {
-  color: var(--status-success);
-  background: rgba(0, 134, 53, 0.08);
-}
-
-.activity-icon.error {
-  color: var(--status-error);
-  background: rgba(198, 40, 40, 0.07);
-}
-
-.activity-icon svg,
-.activity-icon .spinner {
-  width: 15px;
-  height: 15px;
-}
-
-.activity-icon .spinner {
-  border-width: 1.5px;
-}
-
-.activity-card {
-  overflow: hidden;
-  border: 1px solid var(--border-default);
-  border-radius: 12px;
-  background: var(--surface-primary);
-}
-
-.activity-card summary {
-  display: flex;
-  align-items: center;
-  min-height: 50px;
-  padding: 9px 14px;
+  min-height: 36px;
+  gap: 9px;
   cursor: pointer;
   list-style: none;
 }
 
-.activity-card summary::-webkit-details-marker {
+.thinking-status {
+  cursor: default;
+}
+
+.thinking-disclosure summary::-webkit-details-marker,
+.tool-activity summary::-webkit-details-marker {
   display: none;
 }
 
-.activity-card summary > span {
-  flex: 1;
+.thinking-disclosure strong {
+  color: var(--text-primary);
+  font-weight: 580;
 }
 
-.activity-card strong,
-.activity-card small {
-  display: block;
-}
-
-.activity-card strong {
-  font-size: 13px;
-  font-weight: 610;
-}
-
-.activity-card small {
-  margin-top: 3px;
-  color: var(--text-tertiary);
-  font-size: 11px;
-}
-
-.activity-card summary > svg {
-  width: 16px;
+.thinking-disclosure summary > svg {
+  width: 15px;
+  height: 15px;
   color: var(--text-tertiary);
   transition: transform 140ms ease;
 }
 
-.activity-card[open] summary > svg {
+.thinking-disclosure[open] summary > svg {
   transform: rotate(180deg);
 }
 
-.activity-card > p {
+.thinking-disclosure p {
+  margin: 5px 0 0 5px;
+  padding: 5px 0 5px 20px;
+  border-left: 1px solid var(--border-default);
+  line-height: 1.65;
+  white-space: pre-wrap;
+}
+
+.thinking-complete {
+  width: 10px;
+  height: 10px;
+  border: 1px solid var(--text-secondary);
+  border-radius: 50%;
+}
+
+.thinking-disclosure .spinner {
+  width: 14px;
+  height: 14px;
+  border-width: 1.5px;
+}
+
+.activity-turn {
+  margin-left: 58px;
+}
+
+.tool-activity {
+  max-width: 720px;
+}
+
+.tool-activity summary {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto 16px;
+  align-items: center;
+  min-height: 38px;
+  padding: 1px 0;
+  gap: 9px;
+  cursor: pointer;
+  list-style: none;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.tool-activity summary strong {
+  overflow: hidden;
+  color: var(--text-primary);
+  font-weight: 590;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tool-state-icon {
+  display: inline-grid;
+  width: 18px;
+  height: 18px;
+  place-items: center;
+  color: var(--text-tertiary);
+}
+
+.tool-state-icon.completed {
+  color: var(--status-success);
+}
+
+.tool-state-icon.error {
+  color: var(--status-error);
+}
+
+.tool-state-icon svg,
+.tool-state-icon .spinner {
+  width: 16px;
+  height: 16px;
+}
+
+.tool-state-icon .spinner {
+  border-width: 1.5px;
+}
+
+.tool-status {
+  color: var(--text-tertiary);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.tool-chevron {
+  width: 15px;
+  height: 15px;
+  color: var(--text-tertiary);
+  transition: transform 140ms ease;
+}
+
+.tool-activity[open] .tool-chevron {
+  transform: rotate(180deg);
+}
+
+.tool-detail {
+  margin: 1px 0 9px 8px;
+  padding: 5px 0 2px 23px;
+  border-left: 1px solid var(--border-default);
+}
+
+.tool-detail section > h4 {
+  margin: 0 0 7px;
+  color: var(--text-tertiary);
+  font-size: 11px;
+  font-weight: 560;
+}
+
+.tool-arguments {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
   margin: 0;
-  padding: 12px 14px;
+  padding: 9px 11px;
+  gap: 5px 14px;
+  border-radius: 7px;
+  background: var(--surface-tertiary);
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.tool-arguments dt {
+  color: var(--text-tertiary);
+}
+
+.tool-arguments dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.tool-arguments dd.redacted {
+  color: var(--text-tertiary);
+  font-style: italic;
+}
+
+.tool-empty {
+  margin: 0;
+  color: var(--text-tertiary);
+  font-size: 12px;
+}
+
+.tool-output {
+  margin-top: 12px;
+}
+
+.tool-output pre {
+  max-height: 240px;
+  margin: 0;
+  padding: 9px 0 0;
+  overflow: auto;
   border-top: 1px solid var(--border-subtle);
   color: var(--text-secondary);
-  background: var(--surface-secondary);
+  background: transparent;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
   font-size: 12px;
   line-height: 1.65;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .running-placeholder {
@@ -1215,7 +1304,7 @@ svg {
   width: min(var(--content-width), calc(100% - 48px));
   margin: 0 auto;
   padding-bottom: 11px;
-  background: linear-gradient(to bottom, rgba(255, 255, 255, 0), #fff 28px, #fff);
+  background: linear-gradient(to bottom, rgba(255, 252, 250, 0), #fffcfa 28px, #fffcfa);
 }
 
 .accepted-list {
@@ -1224,7 +1313,7 @@ svg {
   overflow-y: auto;
   border: 1px solid var(--border-default);
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.96);
+  background: rgba(255, 252, 250, 0.96);
 }
 
 .accepted-item {
@@ -1276,12 +1365,12 @@ svg {
   border: 1px solid var(--border-strong);
   border-radius: 16px;
   background: var(--surface-primary);
-  box-shadow: 0 10px 38px rgba(13, 13, 13, 0.09);
+  box-shadow: 0 10px 38px rgba(76, 50, 39, 0.09);
 }
 
 .composer:focus-within {
-  border-color: rgba(1, 105, 204, 0.48);
-  box-shadow: 0 0 0 3px rgba(1, 105, 204, 0.08), 0 10px 38px rgba(13, 13, 13, 0.08);
+  border-color: rgba(169, 71, 43, 0.48);
+  box-shadow: 0 0 0 3px rgba(169, 71, 43, 0.08), 0 10px 38px rgba(76, 50, 39, 0.08);
 }
 
 .follow-up-mode {
@@ -1357,7 +1446,7 @@ svg {
   gap: 7px;
   border: 1px solid var(--action-primary);
   border-radius: 10px;
-  color: #fff;
+  color: var(--surface-primary);
   background: var(--action-primary);
   font-size: 13px;
   font-weight: 620;
@@ -1441,7 +1530,7 @@ svg {
   .sidebar {
     position: absolute;
     inset: 0 auto 0 0;
-    box-shadow: 20px 0 50px rgba(13, 13, 13, 0.12);
+    box-shadow: 20px 0 50px rgba(76, 50, 39, 0.12);
   }
 
   .workspace {

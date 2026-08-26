@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ADR-0028：采用 O1 原图与安全 Agent 活动披露</title>
+  <style>
+    :root { color-scheme: light; font-family: Inter, "PingFang SC", sans-serif; color: #2c2724; background: #f8f3f0; }
+    body { margin: 0; }
+    main { width: min(900px, calc(100% - 40px)); margin: 40px auto; padding: 40px; box-sizing: border-box; background: #fffcfa; border: 1px solid #ded4cf; border-radius: 16px; }
+    h1 { margin-top: 0; font-size: 30px; letter-spacing: -.02em; }
+    h2 { margin-top: 32px; font-size: 20px; }
+    h3 { margin-top: 22px; font-size: 17px; }
+    p, li { line-height: 1.75; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 10px 12px; border: 1px solid #ded4cf; text-align: left; vertical-align: top; }
+    th { width: 180px; background: #f4ece8; }
+    code { padding: 2px 5px; border-radius: 5px; background: #f4ece8; overflow-wrap: anywhere; }
+    a { color: #a9472b; }
+    .status { display: inline-flex; padding: 4px 9px; border-radius: 999px; color: #006b2a; background: #e8f7ed; font-weight: 650; }
+    @media (max-width: 640px) { main { width: 100%; margin: 0; padding: 24px 18px; border: 0; border-radius: 0; } th { width: 110px; } }
+  </style>
+</head>
+<body>
+<main>
+  <h1>ADR-0028：采用 O1 原图与安全 Agent 活动披露</h1>
+  <table>
+    <tr><th>Status</th><td><span class="status">Accepted</span></td></tr>
+    <tr><th>Date</th><td>2026-08-26</td></tr>
+    <tr><th>Main baseline</th><td><code>origin/main@8f9f3c1b51cca5ffbc3501fc4a1cb9ac253124be</code></td></tr>
+    <tr><th>Pre-change frontend</th><td><code>849e4173</code> 的 <code>BrandMark.vue</code>、<code>ConversationTimeline.vue</code>、<code>runtimeEventProjector.ts</code>、<code>style.css</code></td></tr>
+    <tr><th>Design baseline</th><td><code>campusclaw-frontend-design@5c2231654ea94dd248b5ea9a478d2cb27cd36a52</code> 的 <code>campusclaw-mark-o1.png</code>、<code>high-fidelity-conversation-v8.png</code>、<code>high-fidelity-running-v8.png</code></td></tr>
+    <tr><th>Implemented paths</th><td><code>frontend/src/assets/campusclaw-mark-o1.png</code>、<code>BrandMark.vue</code>、<code>ThinkingDisclosure.vue</code>、<code>ToolActivity.vue</code>、<code>runtimeEventProjector.ts</code>、<code>style.css</code></td></tr>
+  </table>
+
+  <h2>Context</h2>
+  <p>变更前的实现使用应用内 SVG 近似品牌图，外层是近黑圆角方块；这与用户确认的 O1 透明位图在形状、间距和展示方式上不同。界面同时把 Runtime 原始 thinking 文本放入可展开区，并用带边框的大卡片显示工具结果，既偏离 v8 视觉稿，也把私有推理误当成可直接展示的产品内容。</p>
+  <p>当前 Runtime HTTP 1.38.0 会发送 <code>assistant.thinking.*</code> 原始内容，却还没有公共 bridge 生成的安全 thinking 摘要字段。Assistant completed 内容包含工具名和参数，工具生命周期事件包含执行状态与结果。浏览器过渡 adapter 因此可以实现安全降级和纵深脱敏，但不能替代目标生产 bridge 的网络边界。</p>
+
+  <h2>Decision drivers</h2>
+  <ul>
+    <li>实现中的品牌标识必须与用户确认的 O1 像素级同源，不允许重新生成、描摹或套入额外底板。</li>
+    <li>Agent 活动应像 Codex 风格工作台一样紧凑、连续、可展开，但不能把原始推理暴露给用户。</li>
+    <li>工具详情必须按输入在上、输出在下阅读，并限制敏感字段、内部 ID、绝对路径和超长内容。</li>
+    <li>当前 Runtime 契约缺字段时应安全降级，不得用原始内容补齐产品摘要。</li>
+  </ul>
+
+  <h2>Decision</h2>
+  <ul>
+    <li><code>BrandMark.vue</code>直接引用权威 <code>campusclaw-mark-o1.png</code>。实现资产与设计资产 SHA-256 均为 <code>68150b9c669a7d3f5b4b306aeb79092852b308a127ec9cc522b48be6a47551cc</code>，不添加深色方块、裁剪或重绘。</li>
+    <li>浅色 Token 使用主表面 <code>#FFFCFA</code>、侧栏 <code>#F8F3F0</code>、辅助表面 <code>#F4ECE8</code>、选中态 <code>#EFE4DE</code>、主文本 <code>#2C2724</code>、主动作 <code>#2B2522</code>。O1 珊瑚色 <code>#D97757</code>只承担品牌识别；运行和完成继续使用绿色。</li>
+    <li>Thinking 投影只读取 <code>thinkingDisplayTitle</code>/<code>thinkingDisplaySummary</code>，兼容未来 bridge 的 <code>displayTitle</code>/<code>displaySummary</code>。原始 <code>delta</code>、<code>content</code> 和其他 thinking 文本永不进入产品 turn；无安全摘要时只显示“正在分析”或“分析过程”状态。</li>
+    <li>Thinking 与 Tool 分别使用专用 disclosure。当前项默认展开，已完成工具默认折叠；工具尚未开始执行时不创建可见活动。详情固定按“输入参数 → 输出结果”纵向排列。</li>
+    <li>工具参数在投影层扁平化，最多 12 行、3 层和每值 240 字符。凭据、Cookie、Token、内部 Agent/Session/Tool/File ID 及类似 Bearer/JWT 值显示为“已隐藏”；绝对路径只显示最后一段。工具结果最多 4,000 字符并以纯文本显示。</li>
+    <li>同一用户消息后的连续 Assistant 活动只在第一项显示一次 O1；后续 Thinking、Tool 与 Assistant 内容保持同一视觉列，避免重复品牌噪声。</li>
+  </ul>
+
+  <h2>Intentional differences</h2>
+  <p><strong>产品约束：</strong>高保真稿中的附件名称、行数和工具输出是说明性样例；实现只展示 Runtime 实际返回且通过投影策略的数据。</p>
+  <p><strong>安全加固：</strong>当前 Runtime 只提供原始 thinking 时，实现故意比视觉稿信息更少，显示状态而非推理。工具参数的浏览器脱敏是过渡纵深防护，生产目标仍要求公共 bridge 在内容到达浏览器前完成最小化和脱敏。</p>
+  <p><strong>架构变化：</strong>Thinking 和 Tool 从 Assistant Markdown 中分离为独立产品对象和专用 viewer；Assistant Markdown 的安全边界继续由 ADR-0027 约束。</p>
+
+  <h2>Consequences</h2>
+  <p><strong>正面：</strong>实际界面与 O1 v8 设计同源；Agent 活动更紧凑；原始推理、凭据和内部标识不会因富文本能力而进入 DOM；移动端仍保留纵向扫描与局部表格滚动。</p>
+  <p><strong>负面：</strong>在公共 bridge 尚未提供安全摘要前，Thinking 只有状态信息；客户端脱敏规则需要与未来服务端字段策略保持一致；471 KB 的原始 O1 PNG 会直接进入构建产物。</p>
+
+  <h2>Validation</h2>
+  <ul>
+    <li><code>runtimeEventProjector.test.ts</code>验证原始 thinking 不投影、安全摘要投影、工具延迟出现、参数隐藏和绝对路径收敛。</li>
+    <li>桌面 1280×720 与移动 390×844 浏览器验收覆盖 O1 比例、暖色 Token、disclosure 展开、纵向工具详情和表格局部滚动。</li>
+    <li>前端必须通过 <code>npm test</code>、<code>npm run typecheck</code>、<code>npm run build</code> 和 <code>npm audit --audit-level=high</code>。</li>
+  </ul>
+
+  <h2>Related</h2>
+  <ul>
+    <li><a href="../designs/campusclaw-frontend.md">CampusClaw 产品前端体验设计</a></li>
+    <li><a href="../designs/campusclaw-frontend/high-fidelity-conversation-v8.png">常规对话 v8</a></li>
+    <li><a href="../designs/campusclaw-frontend/high-fidelity-running-v8.png">执行中 v8</a></li>
+    <li><a href="0027-assistant-safe-rich-text.html">ADR-0027：Assistant 安全富文本采用 Token-to-VNode 投影</a></li>
+    <li><a href="0020-campusclaw-product-frontend-boundary.html">ADR-0020：产品前端隔离 Runtime 调试协议</a></li>
+  </ul>
+</main>
+</body>
+</html>

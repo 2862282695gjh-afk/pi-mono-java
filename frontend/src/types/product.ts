@@ -23,8 +23,21 @@ export interface AssistantTurn {
   key: string;
   kind: 'assistant';
   rawMarkdown: string;
-  thinking: string;
   streaming: boolean;
+}
+
+export interface ThinkingTurn {
+  key: string;
+  kind: 'thinking';
+  status: 'running' | 'completed';
+  title: string;
+  summary: string;
+}
+
+export interface ToolArgumentRow {
+  key: string;
+  value: string;
+  redacted: boolean;
 }
 
 export interface ActivityTurn {
@@ -33,7 +46,8 @@ export interface ActivityTurn {
   toolCallId: string;
   toolName: string;
   status: 'running' | 'completed' | 'error';
+  arguments: ToolArgumentRow[];
   result: string;
 }
 
-export type ConversationTurn = UserTurn | AssistantTurn | ActivityTurn;
+export type ConversationTurn = UserTurn | ThinkingTurn | AssistantTurn | ActivityTurn;

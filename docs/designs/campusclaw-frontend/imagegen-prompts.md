@@ -4,9 +4,9 @@
 |---|---|
 | 生成方式 | Codex 内置 imagegen |
 | 用例分类 | `ui-mockup` |
-| 最终方向 | 常规态 v3；执行中 v4，Codex-aligned follow-up composer |
+| 最终方向 | 常规态 v8；执行中 v8；O1 原图与暖中性活动 disclosure |
 | 视觉证据 | 本机 `ChatGPT.app` 26.814.41407 light-theme Token；非公开品牌规范 |
-| 日期 | 2026-08-20 |
+| 日期 | 2026-08-26 |
 
 v1 暖色稿和 v2 钴蓝稿保留为过程制品，不再被主设计文档引用。v3 只借鉴 Codex 的
 中性层级、工具型工作台密度和状态表达，保留 CampusClaw 品牌，不复制 OpenAI/Codex
@@ -14,6 +14,11 @@ v1 暖色稿和 v2 钴蓝稿保留为过程制品，不再被主设计文档引�
 
 执行中 v4 继续使用同一视觉系统，只更新跟进交互：移除两个常驻模式胶囊，改为一个当前
 模式“调整方向”，并给出将本条消息“加入队列”的快捷键提示。
+
+v5-v8 将已确认的 O1 透明 PNG 直接放入界面，并将冷灰 Token 调整为暖白、暖灰和深暖黑。
+最终 v8 没有重新生成或描摹 O1：`campusclaw-mark-o1.png` 是实现与高保真稿共同使用的权威
+位图。Thinking 采用安全摘要 disclosure；工具采用紧凑动作行，展开详情固定按“输入参数 →
+输出结果”纵向排列。
 
 ## 常规对话 v3
 
@@ -91,3 +96,18 @@ Constraints: no OpenAI logo, no Codex wordmark, no orange/coral/peach/sand/beige
 ```
 
 输出：`high-fidelity-running-v4.png`
+
+## 最终 O1 暖中性 v8
+
+编辑目标：常规态 v7 与执行中 v7；权威品牌输入：`campusclaw-mark-o1.png`。
+
+```text
+Use case: ui-mockup
+Asset type: final CampusClaw desktop Agent workbench mockups
+Primary request: Keep the v7 layout, content, safe thinking disclosure, compact tool rows, vertical input-then-output details, and responsive information hierarchy unchanged. Replace every temporary brand rendition with the supplied transparent O1 PNG exactly as provided, preserving its five organic coral shapes, spacing, proportions, alpha channel, and color. Do not redraw, trace, recolor, crop, frame, or place it inside a dark tile.
+Visual system: main #FFFCFA, shell #F8F3F0, supporting surface #F4ECE8, selection #EFE4DE, text #2C2724/#6C625D, border #DED4CF, primary action #2B2522, brand #D97757, success/running green only for state, focus/link #A9472B.
+Constraints: no OpenAI logo or wordmark, no replacement mascot, no blue primary surfaces, no gradient, glassmorphism, neon, dashboard charts, right inspector, device frame, watermark, extra logo, invented text, or horizontal input/output split. Do not crop any application edge.
+```
+
+输出：`high-fidelity-conversation-v8.png`、`high-fidelity-running-v8.png`。实现必须直接复制权威 O1
+PNG，不得把生成稿中的像素当成品牌图源。

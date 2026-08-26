@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>ADR-0026：Assistant 安全富文本采用 Token-to-VNode 投影</title>
+  <title>ADR-0027：Assistant 安全富文本采用 Token-to-VNode 投影</title>
   <style>
     :root { color-scheme: light; font-family: Inter, "PingFang SC", sans-serif; color: #282828; background: #f9f9f9; }
     body { margin: 0; }
@@ -23,7 +23,7 @@
 </head>
 <body>
 <main>
-  <h1>ADR-0026：Assistant 安全富文本采用 Token-to-VNode 投影</h1>
+  <h1>ADR-0027：Assistant 安全富文本采用 Token-to-VNode 投影</h1>
   <table>
     <tr><th>Status</th><td><span class="status">Accepted</span></td></tr>
     <tr><th>Date</th><td>2026-08-26</td></tr>
@@ -63,7 +63,7 @@
     <li>使用 MIT 许可的 <code>markdown-it</code> 15.0.0，显式关闭 raw HTML、linkify 和 typographer，只消费 parser token，不调用其 HTML renderer。</li>
     <li>应用中间树只允许段落、<code>h2-h4</code>、列表/只读 task、强调/删除线、引用、分隔线、行内代码、代码块、GFM table 与链接。表格对齐只能取 <code>left</code>、<code>center</code> 或 <code>right</code>。</li>
     <li>只有无嵌入凭据的绝对 <code>http:</code>/<code>https:</code> URL 可以点击，并统一使用新窗口与 <code>noopener noreferrer</code>。相对 URL 和其他协议降级为不可点击文本。</li>
-    <li>Markdown 图片只显示替代文字占位，不创建 <code>img</code> 或发起网络请求。raw HTML 作为文本显示。User、Thinking、Tool result 和 Error 继续使用纯文本或专用 viewer。</li>
+    <li>Markdown 图片只显示替代文字占位，不创建 <code>img</code> 或发起网络请求。raw HTML 作为文本显示。User、Tool result 和 Error 继续使用纯文本或专用 viewer；Thinking 的安全摘要边界由 ADR-0028 约束。</li>
     <li>Vue 只使用 <code>h()</code> 创建固定 VNode；禁止 <code>v-html</code>、<code>innerHTML</code> 和字符串拼接事件属性。</li>
     <li>streaming 更新每个 animation frame 至多解析一次；只有空行边界前的稳定块进入 parser，未闭合尾部保持纯文本。completed 立即执行完整解析，并播报一次“回答已完成”。</li>
     <li>parser 嵌套上限为 32；源文本超过 200,000 字符、中间树超过 10,000 节点或解析异常时，显示未截断纯文本和降级提示。公共 Chat 契约仍需独立冻结消息大小上限。</li>
@@ -88,6 +88,7 @@
     <li><a href="../designs/campusclaw-frontend/assistant_rich_text_rendering.svg">Assistant 安全富文本渲染图</a></li>
     <li><a href="../designs/campusclaw-frontend/diagram.puml#L70">PlantUML 源码</a></li>
     <li><a href="0020-campusclaw-product-frontend-boundary.html">ADR-0020：产品前端隔离 Runtime 调试协议</a></li>
+    <li><a href="0028-agent-activity-disclosure-and-o1-brand.html">ADR-0028：采用 O1 原图与安全 Agent 活动披露</a></li>
   </ul>
 </main>
 </body>

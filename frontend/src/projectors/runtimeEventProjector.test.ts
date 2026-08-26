@@ -62,10 +62,16 @@ describe('projectRuntimeEvents', () => {
         fileIds: ['file-1'],
       },
       {
+        key: 'thinking-entry-assistant-0',
+        kind: 'thinking',
+        status: 'running',
+        title: '正在分析',
+        summary: '',
+      },
+      {
         key: 'entry-assistant',
         kind: 'assistant',
         rawMarkdown: '发现 3 条异常。',
-        thinking: '正在定位异常。',
         streaming: false,
       },
       {
@@ -74,6 +80,7 @@ describe('projectRuntimeEvents', () => {
         toolCallId: 'call-1',
         toolName: 'query_orders',
         status: 'completed',
+        arguments: [],
         result: '3 rows',
       },
     ]);
@@ -108,8 +115,115 @@ describe('projectRuntimeEvents', () => {
       key: 'entry-assistant',
       kind: 'assistant',
       rawMarkdown: '| Name |\n| --- |\n| complete |',
-      thinking: '',
       streaming: false,
     }]);
+  });
+
+  it('never projects raw thinking content and only exposes safe display fields', () => {
+    const events: RuntimeEventEnvelope[] = [
+      {
+        event: 'assistant.thinking.delta',
+        data: {
+          assistantEntryId: 'entry-assistant',
+          contentIndex: 0,
+          delta: { type: 'thinking', text: '不应展示的原始思维文本' },
+        },
+      },
+      {
+        event: 'assistant.thinking.completed',
+        data: {
+          assistantEntryId: 'entry-assistant',
+          contentIndex: 0,
+          content: { type: 'thinking', text: '同样不应展示' },
+          thinkingDisplayTitle: '已检查数据范围',
+          thinkingDisplaySummary: '已核对近 30 天的订单状态与异常分布。',
+        },
+      },
+    ];
+
+    const turns = projectRuntimeEvents(events);
+    expect(turns).toEqual([{
+      key: 'thinking-entry-assistant-0',
+      kind: 'thinking',
+      status: 'completed',
+      title: '已检查数据范围',
+      summary: '已核对近 30 天的订单状态与异常分布。',
+    }]);
+    expect(JSON.stringify(turns)).not.toContain('原始思维');
+  });
+
+  it('waits for tool execution and presents redacted, bounded arguments', () => {
+    const events: RuntimeEventEnvelope[] = [
+      {
+        event: 'assistant.message.completed',
+        data: {
+          entryId: 'entry-assistant',
+          message: {
+            role: 'assistant',
+            content: [{
+              type: 'tool_call',
+              toolCallId: 'call-1',
+              name: 'Read',
+              arguments: {
+                path: '/Users/example/private/project/report.md',
+                token: 'secret-token',
+                headers: { authorization: 'Bearer visible-secret' },
+                note: '  Bearer another-secret',
+                query: '检查报告',
+              },
+            }],
+          },
+        },
+      },
+      {
+        event: 'tool.execution.started',
+        data: { toolCallId: 'call-1', toolName: 'Read' },
+      },
+      {
+        event: 'tool.result',
+        data: {
+          toolCallId: 'call-1',
+          toolName: 'Read',
+          content: [{ type: 'text', text: '读取完成' }],
+          isError: false,
+        },
+      },
+    ];
+
+    expect(projectRuntimeEvents(events)).toEqual([{
+      key: 'tool-call-1',
+      kind: 'activity',
+      toolCallId: 'call-1',
+      toolName: 'Read',
+      status: 'completed',
+      arguments: [
+        { key: 'path', value: '…/report.md', redacted: false },
+        { key: 'token', value: '已隐藏', redacted: true },
+        { key: 'headers.authorization', value: '已隐藏', redacted: true },
+        { key: 'note', value: '已隐藏', redacted: true },
+        { key: 'query', value: '检查报告', redacted: false },
+      ],
+      result: '读取完成',
+    }]);
+  });
+
+  it('does not create a visible turn for a tool proposal before execution starts', () => {
+    const events: RuntimeEventEnvelope[] = [{
+      event: 'assistant.message.completed',
+      data: {
+        entryId: 'entry-assistant',
+        message: {
+          role: 'assistant',
+          content: [{
+            type: 'tool_call',
+            toolCallId: 'call-1',
+            name: 'Find',
+            arguments: { pattern: '*.md' },
+          }],
+        },
+      },
+    }];
+
+    expect(projectRuntimeEvents(events)).toEqual([]);
   });
 });

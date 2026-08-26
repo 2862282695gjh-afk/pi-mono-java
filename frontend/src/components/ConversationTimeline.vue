@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import AssistantRichText from './AssistantRichText';
 import BrandMark from './BrandMark.vue';
+import ThinkingDisclosure from './ThinkingDisclosure.vue';
+import ToolActivity from './ToolActivity.vue';
 import type { ConversationTurn } from '../types/product';
 
 defineProps<{
@@ -8,10 +10,21 @@ defineProps<{
   running: boolean;
 }>();
 
-function activityLabel(status: 'running' | 'completed' | 'error'): string {
-  if (status === 'running') return '正在执行';
-  if (status === 'error') return '执行失败';
-  return '已完成';
+function hasVisibleRunningTurn(turns: ConversationTurn[]): boolean {
+  return turns.some((turn) => {
+    if (turn.kind === 'assistant') return turn.streaming;
+    if (turn.kind === 'thinking' || turn.kind === 'activity') return turn.status === 'running';
+    return false;
+  });
+}
+
+function showAgentMark(turns: ConversationTurn[], index: number): boolean {
+  for (let cursor = index - 1; cursor >= 0; cursor -= 1) {
+    const previous = turns[cursor];
+    if (!previous || previous.kind === 'user') break;
+    if (previous.kind === 'assistant' || previous.kind === 'thinking') return false;
+  }
+  return true;
 }
 </script>
 
@@ -26,7 +39,7 @@ function activityLabel(status: 'running' | 'completed' | 'error'): string {
       </div>
     </div>
 
-    <template v-for="turn in turns" :key="turn.key">
+    <template v-for="(turn, index) in turns" :key="turn.key">
       <article v-if="turn.kind === 'user'" class="turn user-turn">
         <div class="user-bubble">{{ turn.text || '已提交附件' }}</div>
         <div v-if="turn.fileIds.length" class="attachment-summary">
@@ -36,12 +49,9 @@ function activityLabel(status: 'running' | 'completed' | 'error'): string {
       </article>
 
       <article v-else-if="turn.kind === 'assistant'" class="turn assistant-turn">
-        <BrandMark />
+        <BrandMark v-if="showAgentMark(turns, index)" />
+        <span v-else class="brand-mark-spacer" aria-hidden="true"></span>
         <div class="assistant-body">
-          <details v-if="turn.thinking" class="thinking-block">
-            <summary>查看思考过程</summary>
-            <p>{{ turn.thinking }}</p>
-          </details>
           <AssistantRichText
             v-if="turn.rawMarkdown"
             :source="turn.rawMarkdown"
@@ -54,24 +64,18 @@ function activityLabel(status: 'running' | 'completed' | 'error'): string {
         </div>
       </article>
 
-      <article v-else class="turn activity-turn">
-        <div class="activity-icon" :class="turn.status" aria-hidden="true">
-          <svg v-if="turn.status === 'completed'" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6" /></svg>
-          <svg v-else-if="turn.status === 'error'" viewBox="0 0 24 24"><path d="m7 7 10 10M17 7 7 17" /></svg>
-          <span v-else class="spinner"></span>
+      <article v-else-if="turn.kind === 'thinking'" class="turn thinking-turn">
+        <BrandMark v-if="showAgentMark(turns, index)" />
+        <span v-else class="brand-mark-spacer" aria-hidden="true"></span>
+        <div class="assistant-body">
+          <ThinkingDisclosure :turn="turn" />
         </div>
-        <details class="activity-card" :open="turn.status === 'error'">
-          <summary>
-            <span><strong>{{ turn.toolName }}</strong><small>{{ activityLabel(turn.status) }}</small></span>
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 10 4 4 4-4" /></svg>
-          </summary>
-          <p v-if="turn.result">{{ turn.result }}</p>
-          <p v-else>Agent 正在使用该能力处理任务。</p>
-        </details>
       </article>
+
+      <ToolActivity v-else :turn="turn" />
     </template>
 
-    <article v-if="running && turns.every((turn) => turn.kind !== 'assistant' || !turn.streaming)" class="turn assistant-turn running-placeholder">
+    <article v-if="running && !hasVisibleRunningTurn(turns)" class="turn assistant-turn running-placeholder">
       <BrandMark />
       <div class="assistant-working"><span class="spinner" aria-hidden="true"></span>正在处理新的要求…</div>
     </article>
