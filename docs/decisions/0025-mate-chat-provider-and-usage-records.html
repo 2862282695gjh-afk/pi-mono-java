@@ -65,7 +65,7 @@
       <tr><th>项目</th><th>冻结值</th></tr>
       <tr><td>Provider</td><td><code>mate-model-manager</code></td></tr>
       <tr><td>API</td><td><code>openai-completions</code>，只用于 CampusClaw 内部选择实现</td></tr>
-      <tr><td>Endpoint</td><td><code>https://localhost:8591/mate-service/v1/LLM/chat</code>，host/path 可配置</td></tr>
+      <tr><td>Endpoint</td><td><code>campusmate.base-url + campusmate.endpoints.model-chat-path</code>；共享配置由 ADR-0026 约束</td></tr>
       <tr><td>认证</td><td>CampusClaw→CampusMate 为 <code>ProviderAuth.none()</code>；CampusMate→上游由 Mate 注入私有凭据</td></tr>
       <tr><td>取消</td><td>关闭 subscription 和 HTTP/SSE，结果为 <code>StopReason.ABORTED</code></td></tr>
     </table>
@@ -100,7 +100,9 @@
     <p>正面后果：Provider 身份不会因共享 API 冲突；上游秘密集中托管；reasoning 和 ToolCall 可续轮；
       Usage 不污染消息分支。代价：Chat SSE 解析与数据库表增加，公开 Session 不再直接返回生命周期 Usage；
       如未来需要统计查询，应单独冻结接口。</p>
-    <p>完整实现设计见 <a href="../designs/model-manager-chat-v2.md">Mate Chat 通用 Provider 2.0 实现设计</a>。</p>
+    <p>完整实现设计见 <a href="../designs/model-manager-chat-v2.md">Mate Chat 通用 Provider 2.0 实现设计</a>；
+      CampusMate 单一服务地址与 Endpoint 目录见
+      <a href="0026-unify-campusmate-client-configuration.html">ADR-0026</a>。</p>
   </section>
 </main>
 </body>

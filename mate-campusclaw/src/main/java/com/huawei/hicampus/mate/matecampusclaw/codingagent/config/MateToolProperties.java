@@ -9,11 +9,11 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 import lombok.Data;
 
 /**
- * Configuration properties for the Mate tool client and AgentTools.
+ * Mate Tool 客户端与 AgentTool 装配配置。
  *
  * <p>Example {@code application.yml}:
  * <pre>
- * mate:
+ * campusmate:
  *   tool:
  *     enabled: true
  * </pre>
@@ -22,11 +22,8 @@ import lombok.Data;
  * @since [br_eCampusCore 26.0.0]
  */
 @Data
-@ConfigurationProperties(prefix = "mate.tool")
+@ConfigurationProperties(prefix = "campusmate.tool")
 public class MateToolProperties {
-
-    /**
-     * Master enable switch; when false neither Mate AgentTool is registered.
-     */
+    // 关闭时不装配任何 Mate AgentTool。
     private boolean enabled = true;
 }

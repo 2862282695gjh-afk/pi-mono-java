@@ -26,6 +26,8 @@ import com.campusclaw.codingagent.tool.agent.SubagentExecutionService;
 import com.campusclaw.codingagent.tool.builtin.ToolEntryPoint;
 import com.campusclaw.codingagent.tool.cron.AgentScopedCronToolFactory;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 /**
@@ -36,6 +38,8 @@ import org.springframework.stereotype.Component;
  */
 @Component
 public class RuntimeSessionEngineRegistry {
+    private static final Logger LOGGER = LoggerFactory.getLogger(RuntimeSessionEngineRegistry.class);
+
     private static final int OPERATION_LOCK_STRIPES = 256;
 
     private final ConcurrentHashMap<String, RuntimeSessionHolder> sessions = new ConcurrentHashMap<>();
@@ -158,7 +162,16 @@ public class RuntimeSessionEngineRegistry {
 
     private void acquireCapacity() {
         if (!capacity.tryAcquire()) {
-            throw new RuntimeApiException(RuntimeErrorCode.RUNTIME_CAPACITY_EXCEEDED);
+            RuntimeErrorCode errorCode = RuntimeErrorCode.RUNTIME_CAPACITY_EXCEEDED;
+            LOGGER.atError()
+                    .addKeyValue("event", "campusclaw.failure")
+                    .addKeyValue("operation", "runtime.execution.capacity")
+                    .addKeyValue("errorCode", errorCode.name())
+                    .log(
+                            "CampusClaw failure: operation={}, errorCode={}",
+                            "runtime.execution.capacity",
+                            errorCode.name());
+            throw new RuntimeApiException(errorCode);
         }
     }
 

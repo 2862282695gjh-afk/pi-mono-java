@@ -11,19 +11,14 @@ package com.campusclaw.ai.provider.mate;
  * @since [br_eCampusCore 26.0.0]
  */
 public class MateModelInvocationException extends RuntimeException {
-    private final String errorCode;
+    private final MateInvocationErrorCode errorCode;
 
-    public MateModelInvocationException(String errorCode, String message) {
-        super(message);
+    public MateModelInvocationException(MateInvocationErrorCode errorCode) {
+        super(errorCode.name(), null, false, false);
         this.errorCode = errorCode;
     }
 
-    public MateModelInvocationException(String errorCode, String message, Throwable cause) {
-        super(message, cause);
-        this.errorCode = errorCode;
-    }
-
-    public String errorCode() {
+    public MateInvocationErrorCode errorCode() {
         return errorCode;
     }
 }

@@ -9,3 +9,6 @@ spring:
 logging:
   level:
     com.campusclaw: INFO
+  structured:
+    format:
+      console: ${CAMPUSCLAW_LOG_FORMAT:ecs}

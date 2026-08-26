@@ -1,6 +1,6 @@
 # Agent 与 Skill 受管运行目录
 
-> 文档版本：3.1.0
+> 文档版本：3.2.0
 >
 > 状态：Implemented
 >
@@ -85,10 +85,22 @@ Session 快照。工具配置也只在应用启动时解析，不由 refresh 变
 - staging 校验通过前不替换可用目录，失败不发布半成品；
 - `Read`、`Find`、`Grep`、`Ls` 的边界是完整 `agent/{agentId}`，不只是 `.campusclaw`。
 
-## 6. 版本历史
+## 6. CampusMate 共享配置
+
+受管目录客户端从 `campusmate.endpoints.agent-runtime-path-template` 和共享的
+`skill-info-path-template` 获取 operation path；不再持有独立 `campusmate.runtime.base-url`。
+Model、受管 Runtime 与 Tool 统一使用必填 `campusmate.base-url`。Runtime 自有的 agents root、
+超时和响应大小限制仍在 `campusmate.runtime`，没有被错误提升为共享参数。
+
+完整配置图、源码证据和迁移规则见
+[CampusMate 客户端共享配置设计](campusmate-shared-config.md)。该架构改造不改变受管目录的
+prepare、refresh、原子发布或 HTTP 契约。
+
+## 7. 版本历史
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
-| 3.1.0 | 2026-08-26 | querySkillInfo 响应 `result` 为单对象，`result.content` 原文写入 `SKILL.md`；发布前校验 frontmatter `name`/`description` 并用 `SkillLoader` 复核；移除 resCode 预判与 `success-code` 配置，响应解析失败携带稳定错误码 |
+| 3.2.0 | 2026-08-26 | querySkillInfo 响应 `result` 为单对象，`result.content` 原文写入 `SKILL.md`；发布前校验 frontmatter `name`/`description` 并用 `SkillLoader` 复核；移除 resCode 预判与 `success-code` 配置，响应解析失败携带稳定错误码。 |
+| 3.1.0 | 2026-08-26 | Runtime 复用 CampusMate 单一 base URL、共享 Agent/Skill Endpoint，并保留本地参数边界。 |
 | 3.0.0 | 2026-08-24 | 删除 CLI 双契约和 tools.json，统一服务三入口目录、缓存优先 prepare 与管理面原子 refresh |
 | 2.x | 2026-08-21 以前 | 历史 CLI 运行目录生成与 HTTP 只读目录设计，已由 ADR-0022 取代 |

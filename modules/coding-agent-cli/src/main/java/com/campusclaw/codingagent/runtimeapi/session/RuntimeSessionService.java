@@ -21,6 +21,8 @@ import com.campusclaw.codingagent.runtimeapi.persistence.SessionDeletionStatus;
 import com.campusclaw.codingagent.runtimeapi.vo.CreateSessionResponseVO;
 import com.campusclaw.codingagent.runtimeapi.vo.GetSessionResponseVO;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 /**
@@ -31,6 +33,8 @@ import org.springframework.stereotype.Service;
  */
 @Service
 public class RuntimeSessionService {
+    private static final Logger LOGGER = LoggerFactory.getLogger(RuntimeSessionService.class);
+
     private final RuntimeSessionRepository repository;
 
     private final AgentDirectoryResolver agentDirectoryResolver;
@@ -75,7 +79,16 @@ public class RuntimeSessionService {
         } catch (RuntimeApiException error) {
             throw error;
         } catch (RuntimeException error) {
-            throw new RuntimeApiException(RuntimeErrorCode.SESSION_INITIALIZATION_FAILED, error);
+            RuntimeErrorCode errorCode = RuntimeErrorCode.SESSION_INITIALIZATION_FAILED;
+            LOGGER.atError()
+                    .addKeyValue("event", "campusclaw.failure")
+                    .addKeyValue("operation", "runtime.session.create")
+                    .addKeyValue("errorCode", errorCode.name())
+                    .addKeyValue("agentId", agentId)
+                    .addKeyValue("sessionId", session.getId())
+                    .setCause(error)
+                    .log("CampusClaw failure: operation={}, errorCode={}", "runtime.session.create", errorCode.name());
+            throw new RuntimeApiException(errorCode);
         }
     }
 
@@ -95,7 +108,15 @@ public class RuntimeSessionService {
         } catch (RuntimeApiException error) {
             throw error;
         } catch (RuntimeException error) {
-            throw new RuntimeApiException(RuntimeErrorCode.SESSION_DELETE_FAILED, error);
+            RuntimeErrorCode errorCode = RuntimeErrorCode.SESSION_DELETE_FAILED;
+            LOGGER.atError()
+                    .addKeyValue("event", "campusclaw.failure")
+                    .addKeyValue("operation", "runtime.session.delete")
+                    .addKeyValue("errorCode", errorCode.name())
+                    .addKeyValue("sessionId", sessionId)
+                    .setCause(error)
+                    .log("CampusClaw failure: operation={}, errorCode={}", "runtime.session.delete", errorCode.name());
+            throw new RuntimeApiException(errorCode);
         }
     }
 

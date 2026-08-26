@@ -51,8 +51,8 @@ class AgentRuntimeManagerTest {
     @BeforeEach
     void setUp() {
         client = mock(MateServiceClient.class);
-        var properties = new AgentRuntimeProperties(
-                null, tempDir.resolve("agent"), Duration.ofSeconds(1L), Duration.ofSeconds(2L));
+        var properties =
+                new AgentRuntimeProperties(tempDir.resolve("agent"), Duration.ofSeconds(1L), Duration.ofSeconds(2L));
         manager = new AgentRuntimeManager(properties, client, new ObjectMapper());
     }
 

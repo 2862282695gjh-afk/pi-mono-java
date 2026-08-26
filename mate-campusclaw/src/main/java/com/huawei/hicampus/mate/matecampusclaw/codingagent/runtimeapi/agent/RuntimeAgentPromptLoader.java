@@ -90,7 +90,17 @@ public class RuntimeAgentPromptLoader {
                 }
             }
         } catch (IOException error) {
-            throw unavailable(error);
+            log.atError()
+                    .addKeyValue("event", "campusclaw.failure")
+                    .addKeyValue("operation", "runtime.agent.skills.scan")
+                    .addKeyValue("errorCode", RuntimeErrorCode.AGENT_NOT_AVAILABLE.name())
+                    .addKeyValue("directory", directory)
+                    .setCause(error)
+                    .log(
+                            "CampusClaw failure: operation={}, errorCode={}",
+                            "runtime.agent.skills.scan",
+                            RuntimeErrorCode.AGENT_NOT_AVAILABLE.name());
+            throw unavailable();
         }
     }
 
@@ -109,14 +119,24 @@ public class RuntimeAgentPromptLoader {
             return "";
         }
         if (!isSafeRegularFile(root, candidate)) {
-            throw unavailable(null);
+            throw unavailable();
         }
         Path realFile = safeRealPath(root, candidate);
         requireManagedSize(realFile);
         try {
             return Files.readString(realFile, StandardCharsets.UTF_8);
         } catch (IOException error) {
-            throw unavailable(error);
+            log.atError()
+                    .addKeyValue("event", "campusclaw.failure")
+                    .addKeyValue("operation", "runtime.agent.prompt.read")
+                    .addKeyValue("errorCode", RuntimeErrorCode.AGENT_NOT_AVAILABLE.name())
+                    .addKeyValue("path", realFile)
+                    .setCause(error)
+                    .log(
+                            "CampusClaw failure: operation={}, errorCode={}",
+                            "runtime.agent.prompt.read",
+                            RuntimeErrorCode.AGENT_NOT_AVAILABLE.name());
+            throw unavailable();
         }
     }
 
@@ -133,12 +153,22 @@ public class RuntimeAgentPromptLoader {
 
     private static Path realDirectory(Path path) {
         if (!Files.isDirectory(path, LinkOption.NOFOLLOW_LINKS)) {
-            throw unavailable(null);
+            throw unavailable();
         }
         try {
             return path.toRealPath();
         } catch (IOException error) {
-            throw unavailable(error);
+            log.atError()
+                    .addKeyValue("event", "campusclaw.failure")
+                    .addKeyValue("operation", "runtime.agent.directory.resolve")
+                    .addKeyValue("errorCode", RuntimeErrorCode.AGENT_NOT_AVAILABLE.name())
+                    .addKeyValue("path", path)
+                    .setCause(error)
+                    .log(
+                            "CampusClaw failure: operation={}, errorCode={}",
+                            "runtime.agent.directory.resolve",
+                            RuntimeErrorCode.AGENT_NOT_AVAILABLE.name());
+            throw unavailable();
         }
     }
 
@@ -146,25 +176,45 @@ public class RuntimeAgentPromptLoader {
         try {
             Path realPath = path.toRealPath();
             if (!realPath.startsWith(root)) {
-                throw unavailable(null);
+                throw unavailable();
             }
             return realPath;
         } catch (IOException error) {
-            throw unavailable(error);
+            log.atError()
+                    .addKeyValue("event", "campusclaw.failure")
+                    .addKeyValue("operation", "runtime.agent.path.resolve")
+                    .addKeyValue("errorCode", RuntimeErrorCode.AGENT_NOT_AVAILABLE.name())
+                    .addKeyValue("path", path)
+                    .setCause(error)
+                    .log(
+                            "CampusClaw failure: operation={}, errorCode={}",
+                            "runtime.agent.path.resolve",
+                            RuntimeErrorCode.AGENT_NOT_AVAILABLE.name());
+            throw unavailable();
         }
     }
 
     private static void requireManagedSize(Path path) {
         try {
             if (Files.size(path) > MAX_MANAGED_FILE_BYTES) {
-                throw unavailable(null);
+                throw unavailable();
             }
         } catch (IOException error) {
-            throw unavailable(error);
+            log.atError()
+                    .addKeyValue("event", "campusclaw.failure")
+                    .addKeyValue("operation", "runtime.agent.file.inspect")
+                    .addKeyValue("errorCode", RuntimeErrorCode.AGENT_NOT_AVAILABLE.name())
+                    .addKeyValue("path", path)
+                    .setCause(error)
+                    .log(
+                            "CampusClaw failure: operation={}, errorCode={}",
+                            "runtime.agent.file.inspect",
+                            RuntimeErrorCode.AGENT_NOT_AVAILABLE.name());
+            throw unavailable();
         }
     }
 
-    private static RuntimeApiException unavailable(Throwable cause) {
-        return new RuntimeApiException(RuntimeErrorCode.AGENT_NOT_AVAILABLE, cause);
+    private static RuntimeApiException unavailable() {
+        return new RuntimeApiException(RuntimeErrorCode.AGENT_NOT_AVAILABLE);
     }
 }

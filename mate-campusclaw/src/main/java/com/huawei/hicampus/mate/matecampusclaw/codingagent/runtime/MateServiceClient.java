@@ -6,7 +6,6 @@ package com.huawei.hicampus.mate.matecampusclaw.codingagent.runtime;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
@@ -15,13 +14,13 @@ import java.util.Optional;
 import java.util.regex.Pattern;
 
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.common.identifier.ResourceIdentifierPatterns;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.config.CampusMateClientProperties;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 /**
@@ -34,22 +33,17 @@ import org.springframework.stereotype.Component;
 public class MateServiceClient {
 
     private final AgentRuntimeProperties properties;
+    private final CampusMateClientProperties campusMateProperties;
     private final ObjectMapper mapper;
     private final HttpClient httpClient;
-    private final String agentRuntimePathTemplate;
-    private final String skillInfoQueryPathTemplate;
 
     @Autowired
     public MateServiceClient(
-            AgentRuntimeProperties properties,
-            ObjectMapper mapper,
-            @Value("${campusmate.runtime.agent-runtime-path-template}") String agentRuntimePathTemplate,
-            @Value("${campusmate.runtime.skill-info-query-path-template}") String skillInfoQueryPathTemplate) {
+            AgentRuntimeProperties properties, CampusMateClientProperties campusMateProperties, ObjectMapper mapper) {
         this(
                 properties,
+                campusMateProperties,
                 mapper,
-                agentRuntimePathTemplate,
-                skillInfoQueryPathTemplate,
                 HttpClient.newBuilder()
                         .connectTimeout(properties.connectTimeout())
                         .build());
@@ -57,14 +51,12 @@ public class MateServiceClient {
 
     MateServiceClient(
             AgentRuntimeProperties properties,
+            CampusMateClientProperties campusMateProperties,
             ObjectMapper mapper,
-            String agentRuntimePathTemplate,
-            String skillInfoQueryPathTemplate,
             HttpClient httpClient) {
         this.properties = properties;
+        this.campusMateProperties = campusMateProperties;
         this.mapper = mapper;
-        this.agentRuntimePathTemplate = agentRuntimePathTemplate;
-        this.skillInfoQueryPathTemplate = skillInfoQueryPathTemplate;
         this.httpClient = httpClient;
     }
 
@@ -78,7 +70,8 @@ public class MateServiceClient {
      */
     public AgentRuntime getAgentRuntime(String agentId) {
         requireIdentifier(agentId, ResourceIdentifierPatterns.AGENT_ID_PATTERN, "agentId");
-        HttpRequest request = HttpRequest.newBuilder(endpoint(agentRuntimePathTemplate.formatted(agentId)))
+        String path = expandPathTemplate(campusMateProperties.endpoints().agentRuntimePathTemplate(), agentId);
+        HttpRequest request = HttpRequest.newBuilder(campusMateProperties.endpoint(path))
                 .timeout(properties.requestTimeout())
                 .header("Accept", "application/json")
                 .GET()
@@ -107,7 +100,8 @@ public class MateServiceClient {
      */
     public SkillInfo querySkillInfo(String skillId) {
         requireIdentifier(skillId, ResourceIdentifierPatterns.SKILL_ID_PATTERN, "skillId");
-        HttpRequest request = HttpRequest.newBuilder(endpoint(skillInfoQueryPathTemplate.formatted(skillId)))
+        String path = expandPathTemplate(campusMateProperties.endpoints().skillInfoPathTemplate(), skillId);
+        HttpRequest request = HttpRequest.newBuilder(campusMateProperties.endpoint(path))
                 .timeout(properties.requestTimeout())
                 .header("Accept", "application/json")
                 .GET()
@@ -130,6 +124,10 @@ public class MateServiceClient {
         if (value == null || !pattern.matcher(value).matches()) {
             throw new IllegalArgumentException("Invalid " + name + ": " + value);
         }
+    }
+
+    private static String expandPathTemplate(String template, String resourceId) {
+        return template.replace("%s", resourceId);
     }
 
     private JsonNode send(HttpRequest request, String operation) {
@@ -184,22 +182,6 @@ public class MateServiceClient {
                 AgentRuntimeErrorCode.MATE_RESPONSE_TOO_LARGE,
                 operation + " response exceeds campusmate.runtime.max-response-bytes (" + properties.maxResponseBytes()
                         + ")");
-    }
-
-    private URI endpoint(String path) {
-        URI baseUrl = properties.baseUrl();
-        if (baseUrl == null || baseUrl.toString().isBlank()) {
-            throw new AgentRuntimeException(
-                    AgentRuntimeErrorCode.MATE_CONFIG_MISSING,
-                    "campusmate.runtime.base-url is required when a managed Agent is not cached locally");
-        }
-
-        // API 路径以 /mate-service 开头；URI.resolve 会丢弃 base URL 已有路径，因此直接拼接。
-        String base = baseUrl.toString();
-        if (base.endsWith("/")) {
-            base = base.substring(0, base.length() - 1);
-        }
-        return URI.create(base + path);
     }
 
     /** CampusMate GetAgentRuntime 响应。 */
