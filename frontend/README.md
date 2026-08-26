@@ -1,8 +1,8 @@
 # CampusClaw Frontend
 
-Vue 3 + TypeScript + Vite 实现的 CampusClaw Agent 工作区。界面采用 Codex-inspired 黑白
-中性体系，以 Agent、会话、对话、工具活动和执行控制为产品概念，不再把 HTTP/SSE 调试字段
-作为主界面。
+Vue 3 + TypeScript + Vite 实现的 CampusClaw Agent 工作区。界面采用 O1 原始透明品牌图与
+Codex-inspired 暖中性体系，以 Agent、会话、对话、工具活动和执行控制为产品概念，不再把
+HTTP/SSE 调试字段作为主界面。
 
 当前版本按 CampusClaw Runtime HTTP 1.38.0 实现过渡 adapter。生产架构仍应通过
 mate-service 公共 Agent/Chat/Attachment API；在该契约完成前，本 adapter 用于前后端并行
@@ -14,13 +14,24 @@ mate-service 公共 Agent/Chat/Attachment API；在该契约完成前，本 adap
 - Session 创建、恢复、删除、模型选择和深度思考；
 - `POST /sessions/{sessionId}/events` 请求级 SSE 增量解析；
 - 当前分支持久化历史分页、去重和流结束后的恢复；
-- User、Assistant、Thinking 和工具生命周期的产品对象投影；
+- User、Assistant、安全 Thinking 状态/摘要和工具生命周期的产品对象投影；
+- Assistant 安全富文本、流式稳定区渲染、表格横向滚动和代码复制；
+- 紧凑工具 disclosure、输入参数在上/输出结果在下的详情和投影层敏感参数隐藏；
 - 运行中“调整方向”“加入队列”“停止”；
 - desktop 默认 `steer`，`Cmd/Ctrl+Shift+Enter` 对单条消息反转模式；
-- Codex-inspired Design Token、键盘焦点、reduced-motion 和响应式侧栏。
+- O1 warm-neutral Design Token、键盘焦点、reduced-motion 和响应式侧栏。
 
 界面不会接收或显示 JWT、APPKEY、ETag、内部 Session ID、原始 JSON 或 SSE frame。开发构建
 保留一个可折叠诊断入口，仅允许临时指定 Agent ID 或恢复 Session；生产构建不会渲染该入口。
+
+Assistant 文本支持受控 Markdown；原始 HTML 不执行，图片不发起网络请求，只有绝对
+`http`/`https` 链接可以点击。User、Tool result 和错误信息继续按纯文本显示。Thinking
+只读取 bridge 未来提供的 `thinkingDisplayTitle`/`thinkingDisplaySummary`（兼容
+`displayTitle`/`displaySummary`）；当前 Runtime 只有原始 thinking 时，界面仅显示运行/完成
+状态，绝不展示原始推理文本。
+
+工具参数在进入 DOM 前执行行数、深度和长度预算，并隐藏凭据、内部 ID 和绝对路径；这是
+过渡 adapter 的纵深防护，不替代生产 bridge 在网络边界完成字段级最小化和脱敏。
 
 ## 配置
 
@@ -77,5 +88,7 @@ npm run build
 npm audit --audit-level=high
 ```
 
-设计依据见 [CampusClaw 产品前端体验设计](../docs/designs/campusclaw-frontend.md) 和
-[ADR-0020](../docs/decisions/0020-campusclaw-product-frontend-boundary.html)。
+设计依据见 [CampusClaw 产品前端体验设计](../docs/designs/campusclaw-frontend.md)、
+[ADR-0020](../docs/decisions/0020-campusclaw-product-frontend-boundary.html)、
+[ADR-0027](../docs/decisions/0027-assistant-safe-rich-text.html) 和
+[ADR-0028](../docs/decisions/0028-agent-activity-disclosure-and-o1-brand.html)。

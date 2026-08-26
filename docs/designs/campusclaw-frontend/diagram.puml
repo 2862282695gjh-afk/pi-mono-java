@@ -1,6 +1,6 @@
 @startuml frontend_product_boundary
-' Backend source baseline: d0efb2fd18f2f2a7db121a1cbd4f039348a8094a.
-' Frontend change baseline: 9ae08be97e49387367500da8fd8b01b4a607c4b3.
+' Backend source baseline: origin/main 63adc08cf5c57e3a7cc3caa317452062606ce8b4.
+' Frontend pre-change baseline: 849e4173.
 ' Source evidence: frontend/src/App.vue (createSession, resumeSession, submit, product shell).
 ' Source evidence: frontend/src/composables/useRuntimeApi.ts (useRuntimeApi, requestRaw, consumeSse).
 ' Source evidence: frontend/src/projectors/runtimeEventProjector.ts (projectRuntimeEvents).
@@ -67,19 +67,100 @@ Observed internal contract:
 end note
 @enduml
 
+@startuml assistant_rich_text_rendering
+' Analyzed source baseline: origin/main 56be8eee59415a5f86658d6635a7b7e8891263d3.
+' Baseline evidence: frontend/src/components/ConversationTimeline.vue lines 37-49 used plain text interpolation.
+' Baseline evidence: frontend/src/projectors/runtimeEventProjector.ts projectAssistantEvent preserved delta and completed text.
+' Implemented source: frontend/src/markdown/richText.ts (parseAssistantMarkdown, safeExternalLink, splitStableMarkdown).
+' Implemented source: frontend/src/components/AssistantRichText.ts (AssistantRichText, renderNode, renderCodeBlock).
+' Implemented source: frontend/src/components/ConversationTimeline.vue and frontend/src/style.css assistant-rich-text rules.
+' Observed behavior: Runtime transports text rather than HTML, and completed events plus history are authoritative.
+' Architecture change: the Assistant turn now keeps rawMarkdown and all preview, completion, and history paths use one renderer.
+' Security hardening: raw HTML, remote Markdown images, relative routes, credential-bearing URLs, and dangerous schemes never become active DOM.
+' Design reason: a controlled token-to-Vue projection makes model tables, lists, and code readable without trusting generated HTML.
+
+title Assistant safe rich-text rendering
+top to bottom direction
+
+rectangle "Runtime and public event input" as Input {
+  component "assistant.message.delta\ntext fragment" as Delta
+  component "assistant.message.completed\nfull persistent text" as Completed
+  component "GET history\nfull persistent text" as History
+}
+
+rectangle "Conversation projection" as Projection {
+  component "Assistant turn\nrawMarkdown and state" as Raw
+  component "Stable block boundary\nplus plain streaming tail" as Stable
+}
+
+rectangle "Safe rich-text renderer" as Renderer {
+  component "markdown-it token parser\nraw HTML disabled" as Parser
+  component "Node allowlist\nURL policy and render budget" as Policy
+  component "Fixed Vue VNodes\nno v-html or innerHTML" as Vue
+}
+
+rectangle "Assistant message UI" as UI {
+  component "Paragraphs, headings,\nlists, tasks, and quotes" as Prose
+  component "Scrollable semantic table" as Table
+  component "Inline code and code block\nwith text-only copy" as Code
+  component "Safe external link" as Link
+  component "Escaped plain-text fallback" as Fallback
+}
+
+Delta --> Raw : append source text
+Completed --> Raw : replace preview with authority
+History --> Raw : restore the same source text
+Raw --> Stable : once per animation frame
+Stable --> Parser : stable blocks and safe tail
+Parser --> Policy : parsed tokens
+Policy --> Vue : allowed nodes and attributes
+Policy --> Fallback : rejected or over budget
+Vue --> Prose
+Vue --> Table
+Vue --> Code
+Vue --> Link
+
+note bottom of Input
+Observed source contract:
+- Runtime carries text, not HTML
+- Completed and history are authoritative
+- Tool result and safe thinking disclosure use separate UI paths
+end note
+
+note bottom of Renderer
+Security rules:
+- Escape raw HTML
+- Allow only absolute HTTP and HTTPS links
+- Block Markdown image network requests
+- Clamp headings inside the message
+- Preserve source text for fallback and copy
+end note
+
+note bottom of UI
+Responsive and accessibility rules:
+- Only table and code containers scroll horizontally
+- The page and composer never gain horizontal overflow
+- Screen readers receive one completion announcement
+end note
+@enduml
+
 @startuml runtime_event_ui_projection
-' Backend source baseline: d0efb2fd18f2f2a7db121a1cbd4f039348a8094a.
-' Frontend change baseline: 9ae08be97e49387367500da8fd8b01b4a607c4b3.
-' Source evidence: frontend/src/projectors/runtimeEventProjector.ts (projectRuntimeEvents, projectAssistantEvent, projectToolEvent).
+' Backend source baseline: origin/main 63adc08cf5c57e3a7cc3caa317452062606ce8b4.
+' Frontend pre-change baseline: 849e4173.
+' Visual design baseline: campusclaw-frontend-design 5c2231654ea94dd248b5ea9a478d2cb27cd36a52.
+' Source evidence: frontend/src/projectors/runtimeEventProjector.ts (projectRuntimeEvents, projectAssistantEvent, projectThinkingEvent, projectToolEvent, projectToolArguments).
 ' Source evidence: frontend/src/composables/useRuntimeApi.ts (dispatchSseFrame, mergeRuntimeEvent, loadHistory).
+' Source evidence: frontend/src/components/ConversationTimeline.vue, ThinkingDisclosure.vue, ToolActivity.vue, and BrandMark.vue.
+' Source evidence: frontend/src/assets/campusclaw-mark-o1.png and frontend/src/style.css.
 ' Source evidence: frontend/src/components/ComposerBox.vue (onKeydown, current follow-up mode).
 ' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/event/RuntimeEventType.java (RuntimeEventType).
 ' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/event/RuntimeEventProjector.java (projectMessageStart, projectMessageUpdate, projectToolStart, projectToolEnd).
 ' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/event/RuntimeEntryCodec.java (toHistoryEvent, toSseData).
 ' Product-reference evidence: ChatGPT.app webview/assets/app-initial-BCLYDefw.js (followUpQueueMode, K9s) and webview/assets/zh-CN-ByRVSIXt.js.
-' Observed behavior: HTTP 1.38 lowerCamelCase persistent entries and transient execution events share one request-scoped SSE response.
+' Observed behavior: HTTP 1.38 lowerCamelCase persistent entries and transient execution events share one request-scoped SSE response; Runtime thinking contains raw reasoning and no safe display summary.
 ' Observed Codex behavior: desktop follow-up mode defaults to steer; a modifier submits one message with the inverse mode.
-' Design reason: the UI projects protocol events into stable conversation objects and uses one current follow-up mode instead of two persistent choices.
+' Security hardening: raw thinking is ignored; tool arguments are bounded and redacted before DOM projection.
+' Design reason: the UI projects protocol events into stable conversation objects, exposes compact safe activity, and uses one current follow-up mode instead of two persistent choices.
 
 title Runtime events to product UI projection
 left to right direction
@@ -87,6 +168,7 @@ left to right direction
 rectangle "Runtime event families" as Events {
   component "user.message" as UserEvent
   component "assistant.message.started\nassistant.message.delta\nassistant.message.completed" as AssistantEvents
+  component "assistant.thinking.delta\nassistant.thinking.completed" as ThinkingEvents
   component "tool.execution.started\ntool.execution.completed\ntool.result" as ToolEvents
   component "session.status.idle\nstream.end\nstream.error" as TerminalEvents
 }
@@ -94,7 +176,9 @@ rectangle "Runtime event families" as Events {
 rectangle "Frontend projection" as Projection {
   component "User turn" as UserTurn
   component "Streaming assistant turn" as AssistantTurn
-  component "Expandable activity card" as ActivityCard
+  component "Safe thinking disclosure" as ThinkingDisclosure
+  component "Compact tool disclosure\ninput then output" as ToolDisclosure
+  component "Exact O1 brand asset\nonce per agent sequence" as BrandAsset
   component "Session and composer state" as SessionState
 }
 
@@ -106,17 +190,28 @@ rectangle "User controls while running" as Controls {
 
 UserEvent --> UserTurn : persist and render
 AssistantEvents --> AssistantTurn : preview then replace with final
-ToolEvents --> ActivityCard : merge lifecycle and result
+ThinkingEvents --> ThinkingDisclosure : safe display fields or state only
+ToolEvents --> ToolDisclosure : merge lifecycle and result
 TerminalEvents --> SessionState : idle, complete, or recoverable error
+BrandAsset --> AssistantTurn
+BrandAsset --> ThinkingDisclosure
 
 Adjust --> SessionState : internal steer
 Continue --> SessionState : internal follow-up
 Stop --> SessionState : internal abort
 
-note bottom of ActivityCard
+note bottom of ThinkingDisclosure
+Never display raw delta or content.
+The public bridge must provide a safe title
+and summary; otherwise show state only.
+end note
+
+note bottom of ToolDisclosure
+Current and failed tools remain expanded.
 Successful tool details collapse by default.
-Errors remain expanded with recovery guidance.
-Raw payloads remain in diagnostics.
+Arguments are row, depth, and length bounded.
+Credentials and internal IDs are redacted.
+Absolute paths are reduced to the last segment.
 end note
 
 note bottom of SessionState
