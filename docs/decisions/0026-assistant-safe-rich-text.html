@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ADR-0026：Assistant 安全富文本采用 Token-to-VNode 投影</title>
+  <style>
+    :root { color-scheme: light; font-family: Inter, "PingFang SC", sans-serif; color: #282828; background: #f9f9f9; }
+    body { margin: 0; }
+    main { width: min(900px, calc(100% - 40px)); margin: 40px auto; padding: 40px; box-sizing: border-box; background: #fff; border: 1px solid rgba(13,13,13,.1); border-radius: 16px; }
+    h1 { margin-top: 0; font-size: 30px; letter-spacing: -.02em; }
+    h2 { margin-top: 32px; font-size: 20px; }
+    h3 { margin-top: 22px; font-size: 17px; }
+    p, li { line-height: 1.75; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 10px 12px; border: 1px solid rgba(13,13,13,.1); text-align: left; vertical-align: top; }
+    th { width: 180px; background: #f3f3f3; }
+    code { padding: 2px 5px; border-radius: 5px; background: #f3f3f3; overflow-wrap: anywhere; }
+    a { color: #0169cc; }
+    .status { display: inline-flex; padding: 4px 9px; border-radius: 999px; color: #006b2a; background: #e8f7ed; font-weight: 650; }
+    @media (max-width: 640px) { main { width: 100%; margin: 0; padding: 24px 18px; border: 0; border-radius: 0; } th { width: 110px; } }
+  </style>
+</head>
+<body>
+<main>
+  <h1>ADR-0026：Assistant 安全富文本采用 Token-to-VNode 投影</h1>
+  <table>
+    <tr><th>Status</th><td><span class="status">Accepted</span></td></tr>
+    <tr><th>Date</th><td>2026-08-26</td></tr>
+    <tr><th>Analyzed baseline</th><td><code>origin/main@56be8eee59415a5f86658d6635a7b7e8891263d3</code></td></tr>
+    <tr><th>Baseline evidence</th><td><code>ConversationTimeline.vue:37-49</code>、<code>runtimeEventProjector.ts:40-55,133-145</code>、<code>style.css:784-789</code></td></tr>
+    <tr><th>Implemented paths</th><td><code>frontend/src/markdown/richText.ts</code>、<code>frontend/src/components/AssistantRichText.ts</code>、<code>frontend/src/components/ConversationTimeline.vue</code>、<code>frontend/src/projectors/runtimeEventProjector.ts</code></td></tr>
+  </table>
+
+  <h2>Context</h2>
+  <p>基线实现通过 Vue 文本插值显示 Assistant <code>text</code>，因此模型返回的表格管道符、标题标记、反引号和列表标记会直接暴露给用户。Runtime 已把 delta、completed 和 GET history 的 Assistant <code>TextContent.text</code> 作为普通文本原样传递，没有服务端 HTML，也没有可信富文本边界。</p>
+  <p>Assistant 输出、用户输入和工具结果具有不同信任与产品语义。若统一开启 Markdown 或直接插入 HTML，模型和外部系统内容可产生脚本、跟踪图片、危险协议链接或伪造应用内操作。</p>
+
+  <h2>Decision drivers</h2>
+  <ul>
+    <li>表格、列表、引用、强调和代码需要语义化、可选择、可访问的显示。</li>
+    <li>流式 preview、completed 替换和历史恢复必须由同一份原文得到结构等价的最终结果。</li>
+    <li>不可信内容不得变成 HTML 字符串、事件属性、远程图片请求或任意协议导航。</li>
+    <li>超大或异常输入必须可预测地回退，不得白屏、截断原文或阻塞主线程。</li>
+  </ul>
+
+  <h2>Considered options</h2>
+  <h3>继续显示纯文本</h3>
+  <p><strong>Pro：</strong>安全与实现最简单。<br><strong>Con：</strong>表格、代码和层级结构难以阅读，正是本次用户反馈的问题。拒绝。</p>
+
+  <h3>Markdown 直接生成 HTML，再用 sanitizer 和 v-html 插入</h3>
+  <p><strong>Pro：</strong>生态成熟、实现代码少。<br><strong>Con：</strong>系统仍需维护 HTML 字符串信任边界和 sanitizer 配置；Vue 模板无法对每个节点、属性、复制行为与可访问性进行静态控制。拒绝。</p>
+
+  <h3>Markdown token parser 加自有 allowlist，再创建固定 Vue VNode</h3>
+  <p><strong>Pro：</strong>复用成熟语法解析，同时由应用完全控制可出现的元素、属性、URL 与交互；无需 HTML 注入。<br><strong>Con：</strong>需要维护 token 到中间树及 VNode 的映射，并为流式边界与降级补充测试。接受。</p>
+
+  <h3>自行实现完整 Markdown parser</h3>
+  <p><strong>Pro：</strong>依赖最少。<br><strong>Con：</strong>CommonMark/GFM 边界复杂，安全和兼容维护成本明显更高。拒绝。</p>
+
+  <h2>Decision</h2>
+  <ul>
+    <li>Assistant turn 使用 <code>rawMarkdown</code> 保存唯一原文；delta 追加，completed 以持久化全文替换。Runtime、SSE 与历史契约不新增 HTML 字段。</li>
+    <li>使用 MIT 许可的 <code>markdown-it</code> 15.0.0，显式关闭 raw HTML、linkify 和 typographer，只消费 parser token，不调用其 HTML renderer。</li>
+    <li>应用中间树只允许段落、<code>h2-h4</code>、列表/只读 task、强调/删除线、引用、分隔线、行内代码、代码块、GFM table 与链接。表格对齐只能取 <code>left</code>、<code>center</code> 或 <code>right</code>。</li>
+    <li>只有无嵌入凭据的绝对 <code>http:</code>/<code>https:</code> URL 可以点击，并统一使用新窗口与 <code>noopener noreferrer</code>。相对 URL 和其他协议降级为不可点击文本。</li>
+    <li>Markdown 图片只显示替代文字占位，不创建 <code>img</code> 或发起网络请求。raw HTML 作为文本显示。User、Thinking、Tool result 和 Error 继续使用纯文本或专用 viewer。</li>
+    <li>Vue 只使用 <code>h()</code> 创建固定 VNode；禁止 <code>v-html</code>、<code>innerHTML</code> 和字符串拼接事件属性。</li>
+    <li>streaming 更新每个 animation frame 至多解析一次；只有空行边界前的稳定块进入 parser，未闭合尾部保持纯文本。completed 立即执行完整解析，并播报一次“回答已完成”。</li>
+    <li>parser 嵌套上限为 32；源文本超过 200,000 字符、中间树超过 10,000 节点或解析异常时，显示未截断纯文本和降级提示。公共 Chat 契约仍需独立冻结消息大小上限。</li>
+  </ul>
+
+  <h2>Consequences</h2>
+  <p><strong>正面：</strong>Assistant 表格、列表和代码可读；所有消息来源复用同一渲染器；不建立 HTML 信任面；图片、链接、复制和可访问性行为可由组件集中控制。</p>
+  <p><strong>负面：</strong>运行包增加 Markdown parser 及其依赖；流式尾部会在安全边界出现前暂时显示 Markdown 标记；语法扩展必须同时更新 allowlist、渲染器、样式和安全测试。</p>
+  <p><strong>安全影响：</strong>这是安全加固，不表示模型输出可信。CSP、公共 bridge 的事件投影、错误脱敏和浏览器认证边界仍然必须独立成立。</p>
+  <p><strong>后续：</strong>公共 Chat 契约评审时冻结消息大小和附件媒体策略；浏览器 E2E 增加多视口溢出、键盘滚动、Clipboard 失败与网络请求观察。</p>
+
+  <h2>Validation</h2>
+  <ul>
+    <li><code>richText.test.ts</code>覆盖语法、HTML/图片/URL 边界、任务列表、表格对齐、流式尾块和预算降级。</li>
+    <li>前端必须通过 <code>npm test</code>、<code>npm run typecheck</code>、<code>npm run build</code> 和高危依赖审计。</li>
+    <li>设计图必须由 ASCII-only PlantUML 生成并验证为 XML；Markdown 不得包含 Mermaid。</li>
+  </ul>
+
+  <h2>Related</h2>
+  <ul>
+    <li><a href="../designs/campusclaw-frontend.md">CampusClaw 产品前端体验设计</a></li>
+    <li><a href="../designs/campusclaw-frontend/assistant_rich_text_rendering.svg">Assistant 安全富文本渲染图</a></li>
+    <li><a href="../designs/campusclaw-frontend/diagram.puml#L70">PlantUML 源码</a></li>
+    <li><a href="0020-campusclaw-product-frontend-boundary.html">ADR-0020：产品前端隔离 Runtime 调试协议</a></li>
+  </ul>
+</main>
+</body>
+</html>

@@ -67,6 +67,83 @@ Observed internal contract:
 end note
 @enduml
 
+@startuml assistant_rich_text_rendering
+' Analyzed source baseline: origin/main 56be8eee59415a5f86658d6635a7b7e8891263d3.
+' Baseline evidence: frontend/src/components/ConversationTimeline.vue lines 37-49 used plain text interpolation.
+' Baseline evidence: frontend/src/projectors/runtimeEventProjector.ts projectAssistantEvent preserved delta and completed text.
+' Implemented source: frontend/src/markdown/richText.ts (parseAssistantMarkdown, safeExternalLink, splitStableMarkdown).
+' Implemented source: frontend/src/components/AssistantRichText.ts (AssistantRichText, renderNode, renderCodeBlock).
+' Implemented source: frontend/src/components/ConversationTimeline.vue lines 38-53 and frontend/src/style.css assistant-rich-text rules.
+' Observed behavior: Runtime transports text rather than HTML, and completed events plus history are authoritative.
+' Architecture change: the Assistant turn now keeps rawMarkdown and all preview, completion, and history paths use one renderer.
+' Security hardening: raw HTML, remote Markdown images, relative routes, credential-bearing URLs, and dangerous schemes never become active DOM.
+' Design reason: a controlled token-to-Vue projection makes model tables, lists, and code readable without trusting generated HTML.
+
+title Assistant safe rich-text rendering
+top to bottom direction
+
+rectangle "Runtime and public event input" as Input {
+  component "assistant.message.delta\ntext fragment" as Delta
+  component "assistant.message.completed\nfull persistent text" as Completed
+  component "GET history\nfull persistent text" as History
+}
+
+rectangle "Conversation projection" as Projection {
+  component "Assistant turn\nrawMarkdown and state" as Raw
+  component "Stable block boundary\nplus plain streaming tail" as Stable
+}
+
+rectangle "Safe rich-text renderer" as Renderer {
+  component "markdown-it token parser\nraw HTML disabled" as Parser
+  component "Node allowlist\nURL policy and render budget" as Policy
+  component "Fixed Vue VNodes\nno v-html or innerHTML" as Vue
+}
+
+rectangle "Assistant message UI" as UI {
+  component "Paragraphs, headings,\nlists, tasks, and quotes" as Prose
+  component "Scrollable semantic table" as Table
+  component "Inline code and code block\nwith text-only copy" as Code
+  component "Safe external link" as Link
+  component "Escaped plain-text fallback" as Fallback
+}
+
+Delta --> Raw : append source text
+Completed --> Raw : replace preview with authority
+History --> Raw : restore the same source text
+Raw --> Stable : once per animation frame
+Stable --> Parser : stable blocks and safe tail
+Parser --> Policy : parsed tokens
+Policy --> Vue : allowed nodes and attributes
+Policy --> Fallback : rejected or over budget
+Vue --> Prose
+Vue --> Table
+Vue --> Code
+Vue --> Link
+
+note bottom of Input
+Observed source contract:
+- Runtime carries text, not HTML
+- Completed and history are authoritative
+- Tool result and thinking use separate UI paths
+end note
+
+note bottom of Renderer
+Security rules:
+- Escape raw HTML
+- Allow only absolute HTTP and HTTPS links
+- Block Markdown image network requests
+- Clamp headings inside the message
+- Preserve source text for fallback and copy
+end note
+
+note bottom of UI
+Responsive and accessibility rules:
+- Only table and code containers scroll horizontally
+- The page and composer never gain horizontal overflow
+- Screen readers receive one completion announcement
+end note
+@enduml
+
 @startuml runtime_event_ui_projection
 ' Backend source baseline: d0efb2fd18f2f2a7db121a1cbd4f039348a8094a.
 ' Frontend change baseline: 9ae08be97e49387367500da8fd8b01b4a607c4b3.

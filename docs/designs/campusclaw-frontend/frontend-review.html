@@ -186,7 +186,7 @@
       <header class="topbar">
         <div class="row">
           <h1>CampusClaw Frontend UX</h1>
-          <span class="tag">0.5.0</span>
+          <span class="tag">0.6.0</span>
           <span class="tag">Product · 待产品验收</span>
         </div>
         <code class="base">HTTP V1 1.38.0 aligned · Codex-inspired</code>
@@ -238,11 +238,11 @@
         <div class="screen-grid">
           <figure>
             <a href="high-fidelity-conversation-v3.png"><img src="high-fidelity-conversation-v3.png" alt="CampusClaw Codex-inspired 常规对话高保真稿"></a>
-            <figcaption>v3：Codex-inspired 黑白中性层级、近黑主动作、浅灰选中态和紧凑工具活动；不复制 OpenAI/Codex 品牌。</figcaption>
+            <figcaption>v3：Codex-inspired 黑白中性层级和开放式 Assistant 正文；0.6.0 已在 Vue 页面实现安全富文本，不复制 OpenAI/Codex 品牌。</figcaption>
           </figure>
           <div class="screen-detail">
-            <section class="section"><h3>作用</h3><p class="description">围绕 Agent、Chat、消息、附件和工具活动完成日常任务。协议身份、ETag、原始 SSE 和凭据不进入产品主流程。</p></section>
-            <section class="section"><h3>主要评审点</h3><ul class="review-points"><li>近黑主动作是否符合 CampusClaw 品牌预期。</li><li>工具 started/completed/result 是否应合并为一张活动卡。</li><li>模型和深度思考是否保留在会话顶栏。</li></ul></section>
+            <section class="section"><h3>作用</h3><p class="description">围绕 Agent、Chat、消息、附件和工具活动完成日常任务。Assistant 使用安全 Markdown 富文本；协议身份、ETag、原始 SSE 和凭据不进入产品主流程。</p></section>
+            <section class="section"><h3>主要评审点</h3><ul class="review-points"><li>表格、代码、列表和引用是否清晰且不撑破页面。</li><li>User、Thinking 和 Tool result 是否继续保持纯文本边界。</li><li>模型和深度思考是否保留在会话顶栏。</li></ul></section>
           </div>
         </div>
       </article>
@@ -285,7 +285,8 @@
         <details class="review-question" open><summary>1. 是否确认三状态信息架构？</summary><p><code>firstUse</code>、<code>idleConversation</code>、<code>runningConversation</code> 作为首版稳定评审和测试边界。</p></details>
         <details class="review-question" open><summary>2. 是否确认 Codex-inspired 视觉方向？</summary><p>黑白中性层级、近黑主动作、少量绿色状态、蓝色仅用于焦点/链接；保留 CampusClaw 自有品牌。</p></details>
         <details class="review-question" open><summary>3. 已确认：跟进交互与 Codex desktop 一致</summary><p>desktop 默认“调整方向”，设置可切换“加入队列”；<code>Cmd/Ctrl+Shift+Enter</code> 对单条消息临时反转。“调整方向”不会硬中断当前模型或工具。</p></details>
-        <div class="review-links"><a href="../campusclaw-frontend.md">查看完整设计依据</a><span class="muted">·</span><a href="../../decisions/0020-campusclaw-product-frontend-boundary.html">查看 ADR</a><span class="muted">·</span><a href="imagegen-prompts.md">查看 ImageGen Prompts</a></div>
+        <details class="review-question" open><summary>4. 已实现：Assistant 安全富文本</summary><p>只有 Assistant 原文进入 token-to-VNode 渲染；raw HTML、远程图片、相对路由和危险协议不成为活动 DOM，流式尾部在稳定边界前保持纯文本。</p></details>
+        <div class="review-links"><a href="../campusclaw-frontend.md">查看完整设计依据</a><span class="muted">·</span><a href="../../decisions/0020-campusclaw-product-frontend-boundary.html">边界 ADR</a><span class="muted">·</span><a href="../../decisions/0026-assistant-safe-rich-text.html">富文本 ADR</a><span class="muted">·</span><a href="imagegen-prompts.md">查看 ImageGen Prompts</a></div>
       </section>
     </div>
   </main>

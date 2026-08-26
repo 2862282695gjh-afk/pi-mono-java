@@ -47,10 +47,10 @@ function projectAssistantEvent(
   const turn = ensureAssistantTurn(turns, assistantTurns, entryId);
 
   if (envelope.event === 'assistant.message.delta') {
-    turn.text += readTextContent(envelope.data.delta);
+    turn.rawMarkdown += readTextContent(envelope.data.delta);
   }
   if (envelope.event === 'assistant.message.completed') {
-    turn.text = readMessageText(envelope.data.message) || turn.text;
+    turn.rawMarkdown = readMessageText(envelope.data.message);
     turn.streaming = false;
   }
 }
@@ -100,7 +100,7 @@ function ensureAssistantTurn(
   const turn: AssistantTurn = {
     key: entryId,
     kind: 'assistant',
-    text: '',
+    rawMarkdown: '',
     thinking: '',
     streaming: true,
   };

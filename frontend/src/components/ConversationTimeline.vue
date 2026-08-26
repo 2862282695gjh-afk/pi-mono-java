@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AssistantRichText from './AssistantRichText';
 import BrandMark from './BrandMark.vue';
 import type { ConversationTurn } from '../types/product';
 
@@ -41,7 +42,11 @@ function activityLabel(status: 'running' | 'completed' | 'error'): string {
             <summary>查看思考过程</summary>
             <p>{{ turn.thinking }}</p>
           </details>
-          <div v-if="turn.text" class="assistant-message" :aria-live="turn.streaming ? 'off' : 'polite'">{{ turn.text }}</div>
+          <AssistantRichText
+            v-if="turn.rawMarkdown"
+            :source="turn.rawMarkdown"
+            :streaming="turn.streaming"
+          />
           <div v-else-if="turn.streaming" class="assistant-working">
             <span class="spinner" aria-hidden="true"></span>
             正在思考…

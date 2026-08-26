@@ -15,12 +15,16 @@ mate-service 公共 Agent/Chat/Attachment API；在该契约完成前，本 adap
 - `POST /sessions/{sessionId}/events` 请求级 SSE 增量解析；
 - 当前分支持久化历史分页、去重和流结束后的恢复；
 - User、Assistant、Thinking 和工具生命周期的产品对象投影；
+- Assistant 安全富文本、流式稳定区渲染、表格横向滚动和代码复制；
 - 运行中“调整方向”“加入队列”“停止”；
 - desktop 默认 `steer`，`Cmd/Ctrl+Shift+Enter` 对单条消息反转模式；
 - Codex-inspired Design Token、键盘焦点、reduced-motion 和响应式侧栏。
 
 界面不会接收或显示 JWT、APPKEY、ETag、内部 Session ID、原始 JSON 或 SSE frame。开发构建
 保留一个可折叠诊断入口，仅允许临时指定 Agent ID 或恢复 Session；生产构建不会渲染该入口。
+
+Assistant 文本支持受控 Markdown；原始 HTML 不执行，图片不发起网络请求，只有绝对
+`http`/`https` 链接可以点击。User、Thinking、Tool result 和错误信息继续按纯文本显示。
 
 ## 配置
 

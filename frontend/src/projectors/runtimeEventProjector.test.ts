@@ -64,7 +64,7 @@ describe('projectRuntimeEvents', () => {
       {
         key: 'entry-assistant',
         kind: 'assistant',
-        text: '发现 3 条异常。',
+        rawMarkdown: '发现 3 条异常。',
         thinking: '正在定位异常。',
         streaming: false,
       },
@@ -77,5 +77,39 @@ describe('projectRuntimeEvents', () => {
         result: '3 rows',
       },
     ]);
+  });
+
+  it('replaces a Markdown preview with the authoritative completed source', () => {
+    const events: RuntimeEventEnvelope[] = [
+      {
+        event: 'assistant.message.started',
+        data: { entryId: 'entry-assistant', role: 'assistant' },
+      },
+      {
+        event: 'assistant.message.delta',
+        data: {
+          entryId: 'entry-assistant',
+          delta: { type: 'text', text: '| incomplete' },
+        },
+      },
+      {
+        event: 'assistant.message.completed',
+        data: {
+          entryId: 'entry-assistant',
+          message: {
+            role: 'assistant',
+            content: [{ type: 'text', text: '| Name |\n| --- |\n| complete |' }],
+          },
+        },
+      },
+    ];
+
+    expect(projectRuntimeEvents(events)).toEqual([{
+      key: 'entry-assistant',
+      kind: 'assistant',
+      rawMarkdown: '| Name |\n| --- |\n| complete |',
+      thinking: '',
+      streaming: false,
+    }]);
   });
 });

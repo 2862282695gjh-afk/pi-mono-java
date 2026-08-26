@@ -22,7 +22,7 @@ export interface UserTurn {
 export interface AssistantTurn {
   key: string;
   kind: 'assistant';
-  text: string;
+  rawMarkdown: string;
   thinking: string;
   streaming: boolean;
 }
