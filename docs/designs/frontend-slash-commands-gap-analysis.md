@@ -183,6 +183,23 @@ public class WebCommandCatalog {
 - **内存单飞标记降级为快速路径优化**(挡住同进程高频重复),正确性完全由持久化准入保证——两机制不冲突:准入是 source of truth
 - **重启并发集成测试**:写 started → 模拟重启(丢内存态)→ 立即新 /compact → 断言 409(未超时)或补 failed 后成功(超时),全程无双 operation
 
+**[继续复查⑯已采纳——准入与登记同一事务]**。批注属实:查询在锁内、写入在锁外,两个并发请求都能看到"无 started"各自启动。修订准入序列为**单个数据库事务**内完成(持有 session 行锁):
+
+```
+BEGIN(行锁该 session)
+  1. 查未终态 started:
+     存在且未超时 → ROLLBACK,返回 409 COMPACTION_IN_PROGRESS
+     存在且已超时  → 补写 failed(TERMINAL_WRITE_RECOVERY)
+  2. 生成 operationId,写入新 compaction_started entry
+  3. (同进程)登记内存单飞快速路径标记
+COMMIT
+→ 事务提交后才启动压缩 future
+```
+
+- 准入、超时补写、started 写入、单飞登记**四步一事务**——并发两请求串行化于行锁,第二个必见第一个的 started → 409
+- **集成测试**:两并发 POST /compact 断言恰一条 started 持久化 + 一个 409 响应
+
+
 
 
 **[继续复查⑬已采纳]** ④决议第 2 条的"返回 kind:error"(与 POST 已返回 operationId 矛盾)与 ⑪ 流程的"条件追加 completed/failed"(failed 实为无条件)均已改写——全文只保留当前语义:completed 条件追加、CAS 失败转无条件 failed、终态由历史投影呈现。
