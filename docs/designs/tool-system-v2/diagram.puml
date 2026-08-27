@@ -38,14 +38,13 @@ end note
 @enduml
 
 @startuml mate_credential_flow
-' Implementation baseline before this change: CampusClaw 934b5dd7d9e50b1d7359bea5f2dda71e3c4a34ac.
+' Pre-change implementation baseline: CampusClaw 320d790726a70aada6100052952d5494d2a378ac.
 ' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/web/RuntimeEventController.java, submit
-' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/event/RuntimeEventService.java, submit
-' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/session/AgentSessionFactory.java, create
+' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/web/RuntimeRequestContext.java, mateCredentials
 ' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/tool/mate/MateToolDiscovery.java, listAgentTools
-' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/tool/mate/CallMateTool.java, execute
-' Architecture change: the baseline exposed an optional resolver but did not connect Runtime headers to tools.
-' Security hardening: credentials remain in one active execution and are never persisted or logged.
+' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/common/client/HttpMateToolClient.java, invokeTool
+' Observed behavior: the pre-change client forwarded three execution credential headers to discovery and execute.
+' Security hardening: discovery receives no credentials; only execute receives the four-header snapshot.
 ' Java divergence: pi has no corresponding Mate credential flow.
 skinparam shadowing false
 title Mate Tool Execution Credential Flow
@@ -60,14 +59,14 @@ participant "CallMateTool" as Call
 participant "HttpMateToolClient" as Client
 participant "Child Session" as Child
 
-Caller -> Controller : POST Events\nX-HW-ID plus AppKey or JWT
+Caller -> Controller : POST Events\naccess-token and X-HW-ID\nplus AppKey or JWT
 Controller -> Service : immutable MateCredentials
 Service -> Registry : execution snapshot
 Registry -> Factory : ManagedAgentSessionRequest
-Factory -> List : session-private tool and snapshot
+Factory -> List : session-private tool
 Factory -> Call : session-private tool and snapshot
-List -> Client : discovery requests with snapshot
-Call -> Client : execute once with snapshot
+List -> Client : discovery without credentials
+Call -> Client : execute once with four-header snapshot
 Factory -> Child : inherit parent execution snapshot
 note over Service,Child
   In-memory execution scope only.
@@ -75,8 +74,8 @@ note over Service,Child
   Prompt, messages, events, or logs.
 end note
 note over Call,Client
-  Missing credentials fail before discovery
-  or execution HTTP requests.
+  Missing access-token or identity credentials
+  fail before the execute HTTP request.
 end note
 @enduml
 
@@ -112,13 +111,12 @@ end note
 @enduml
 
 @startuml mate_call_refresh
-' Pre-change baseline: CampusClaw merge base d649866a6cae967ace18ceaeb9597edd47e5721e.
-' Reviewed implementation baseline: CampusClaw PR commit bf28e72f94f29acd316eb872a250893ed54e3632.
+' Pre-change implementation baseline: CampusClaw 320d790726a70aada6100052952d5494d2a378ac.
 ' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/tool/mate/CallMateTool.java, execute
 ' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/tool/mate/MateToolSessionCache.java, resolveOrRefresh
-' Architecture change: the source-evidence types did not exist at the pre-change baseline.
-' Observed at reviewed baseline: a miss refreshes the complete Agent plus direct-Skill tool set once.
-' Design reason: models call by name without knowing whether a tool is bound through Agent or Skill.
+' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/tool/mate/MateToolDiscovery.java, loadAllSources
+' Observed behavior: a miss refreshes the complete Agent plus direct-Skill tool set once.
+' Security hardening: cache-miss discovery never receives the execution credential snapshot.
 skinparam shadowing false
 title CallMateTool Cache Miss and Single-Flight Refresh
 
@@ -135,9 +133,9 @@ alt cache hit
 else cache miss
   Cache -> Cache : acquire single-flight lock
   Cache -> Discovery : load all sources
-  Discovery -> Mate : listAgentTools(agentId, credentials)
+  Discovery -> Mate : listAgentTools(agentId)
   loop each direct Skill
-    Discovery -> Mate : listSkillTools(skillId, credentials)
+    Discovery -> Mate : listSkillTools(skillId)
   end
   Discovery --> Cache : complete source snapshots
   Cache -> Cache : reject conflicting names

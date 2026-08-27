@@ -29,7 +29,8 @@ class ListMateToolsToolTest {
 
     private static final String QUERY_ID = "tool-11111111111111111111111111111111";
 
-    private static final MateCredentials CREDENTIALS = MateCredentials.appKey("caller-1", "app-key-1");
+    private static final MateCredentials CREDENTIALS =
+            MateCredentials.appKey("caller-1", "app-key-1", "access-token-1");
 
     private MockMateToolClient client;
 
@@ -65,7 +66,6 @@ class ListMateToolsToolTest {
                         + "\"description\":\"Query records\",\"inputSchema\":{\"type\":\"object\"}}]}");
         assertThat(json).doesNotContain(QUERY_ID, "permission", "outputSchema", "isConcurrencySafe");
         assertThat(client.agentListCalls()).isEqualTo(1);
-        assertThat(client.lastListCredentials()).isSameAs(CREDENTIALS);
     }
 
     @Test

@@ -9,14 +9,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 
-import com.huawei.hicampus.mate.matecampusclaw.codingagent.common.client.mate.MateCredentials;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.common.client.mate.MateToolClient;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.common.client.mate.MateToolMeta;
 
 /**
  * 在单个 Session 内协调 Mate 实时发现、直接 Skill 解析和缓存刷新。
  *
- * @version [br_eCampusCore 26.0.0, 2026/08/24]
+ * @version [br_eCampusCore 26.0.0, 2026/08/27]
  * @since [br_eCampusCore 26.0.0]
  */
 public class MateToolDiscovery {
@@ -29,23 +28,19 @@ public class MateToolDiscovery {
 
     private final MateToolSessionCache sessionCache;
 
-    private final MateCredentials credentials;
-
     public MateToolDiscovery(
             MateToolClient client,
             String agentId,
             Map<String, String> skillIdsByName,
-            MateToolSessionCache sessionCache,
-            MateCredentials credentials) {
+            MateToolSessionCache sessionCache) {
         this.client = client;
         this.agentId = agentId;
         this.skillIdsByName = Map.copyOf(new TreeMap<>(skillIdsByName));
         this.sessionCache = sessionCache;
-        this.credentials = credentials;
     }
 
     public List<MateToolMeta> listAgentTools() {
-        List<MateToolMeta> tools = client.listAgentTools(agentId, credentials);
+        List<MateToolMeta> tools = client.listAgentTools(agentId);
         sessionCache.updateSource(MateToolSource.agent(), tools);
         return tools;
     }
@@ -55,7 +50,7 @@ public class MateToolDiscovery {
         if (skillId == null) {
             throw new IllegalArgumentException("Unknown directly bound Skill: " + skillName);
         }
-        List<MateToolMeta> tools = client.listSkillTools(skillId, credentials);
+        List<MateToolMeta> tools = client.listSkillTools(skillId);
         sessionCache.updateSource(MateToolSource.skill(skillName), tools);
         return tools;
     }
@@ -66,9 +61,8 @@ public class MateToolDiscovery {
 
     private Map<MateToolSource, List<MateToolMeta>> loadAllSources() {
         Map<MateToolSource, List<MateToolMeta>> discovered = new LinkedHashMap<>();
-        discovered.put(MateToolSource.agent(), client.listAgentTools(agentId, credentials));
-        skillIdsByName.forEach(
-                (name, id) -> discovered.put(MateToolSource.skill(name), client.listSkillTools(id, credentials)));
+        discovered.put(MateToolSource.agent(), client.listAgentTools(agentId));
+        skillIdsByName.forEach((name, id) -> discovered.put(MateToolSource.skill(name), client.listSkillTools(id)));
         return discovered;
     }
 }

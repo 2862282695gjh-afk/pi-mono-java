@@ -8,10 +8,10 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Mate 工具发现和执行客户端。发现方法分别表达 Agent 与 Skill 作用域，
- * 执行方法只接受内部工具标识。
+ * Mate 工具发现和执行客户端。发现方法不接收执行凭据，执行方法只接受内部工具标识并显式
+ * 接收本次执行的凭据快照。
  *
- * @version [br_eCampusCore 26.0.0, 2026/08/18]
+ * @version [br_eCampusCore 26.0.0, 2026/08/27]
  * @since [br_eCampusCore 26.0.0]
  */
 public interface MateToolClient {
@@ -20,19 +20,17 @@ public interface MateToolClient {
      * 查询指定 Agent 直接绑定的工具，并恢复绑定顺序。
      *
      * @param agentId Agent 标识
-     * @param credentials 本次执行的凭据快照；发现端点允许为空
      * @return 按绑定顺序排列的工具元数据
      */
-    List<MateToolMeta> listAgentTools(String agentId, MateCredentials credentials);
+    List<MateToolMeta> listAgentTools(String agentId);
 
     /**
      * 查询指定 Skill 直接绑定的工具，并恢复绑定顺序。
      *
      * @param skillId Skill 标识
-     * @param credentials 本次执行的凭据快照；发现端点允许为空
      * @return 按绑定顺序排列的工具元数据
      */
-    List<MateToolMeta> listSkillTools(String skillId, MateCredentials credentials);
+    List<MateToolMeta> listSkillTools(String skillId);
 
     /**
      * 使用 Agent 下发凭据调用指定内部工具标识。

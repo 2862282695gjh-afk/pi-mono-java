@@ -17,7 +17,7 @@ import jakarta.servlet.http.HttpServletRequest;
 /**
  * 从 Servlet 请求中读取语言与本次 Mate 工具执行凭据上下文。
  *
- * @version [br_eCampusCore 26.0.0, 2026/08/24]
+ * @version [br_eCampusCore 26.0.0, 2026/08/27]
  * @since [br_eCampusCore 26.0.0]
  */
 public final class RuntimeRequestContext {
@@ -46,6 +46,7 @@ public final class RuntimeRequestContext {
         return new MateCredentials(
                 request.getHeader(MateCredentialHeaders.X_HW_ID),
                 request.getHeader(MateCredentialHeaders.X_HW_APPKEY),
-                request.getHeader(MateCredentialHeaders.AUTHORIZATION));
+                request.getHeader(MateCredentialHeaders.AUTHORIZATION),
+                request.getHeader(MateCredentialHeaders.ACCESS_TOKEN));
     }
 }

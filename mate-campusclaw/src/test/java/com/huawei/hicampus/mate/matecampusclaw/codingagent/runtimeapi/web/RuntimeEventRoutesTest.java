@@ -24,6 +24,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.common.client.mate.MateCredentialHeaders;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.common.client.mate.MateCredentials;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.RuntimeMessageSourceConfiguration;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.event.RuntimeEventQueryService;
@@ -50,7 +51,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 /**
  * Session Event 提交流与当前分支历史分页 HTTP 契约测试。
  *
- * @version [br_eCampusCore 26.0.0, 2026/08/18]
+ * @version [br_eCampusCore 26.0.0, 2026/08/27]
  * @since [br_eCampusCore 26.0.0]
  */
 class RuntimeEventRoutesTest {
@@ -91,7 +92,7 @@ class RuntimeEventRoutesTest {
                         eq(SESSION_ID),
                         any(UserEventRequestVO.class),
                         eq(Locale.US),
-                        eq(MateCredentials.jwt("credential", "opaque-token"))))
+                        eq(MateCredentials.jwt("credential", "opaque-token", "opaque-access-token"))))
                 .thenReturn(stream);
 
         MvcResult initial = mvc.perform(
@@ -116,7 +117,7 @@ class RuntimeEventRoutesTest {
                         eq(SESSION_ID),
                         any(UserEventRequestVO.class),
                         eq(Locale.US),
-                        eq(MateCredentials.jwt("credential", "opaque-token")));
+                        eq(MateCredentials.jwt("credential", "opaque-token", "opaque-access-token")));
     }
 
     @Test
@@ -191,6 +192,8 @@ class RuntimeEventRoutesTest {
 
     private static org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder authenticated(
             org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder request) {
-        return request.header("X-HW-ID", "credential").header(HttpHeaders.AUTHORIZATION, "Bearer opaque-token");
+        return request.header(MateCredentialHeaders.X_HW_ID, "credential")
+                .header(HttpHeaders.AUTHORIZATION, "Bearer opaque-token")
+                .header(MateCredentialHeaders.ACCESS_TOKEN, "opaque-access-token");
     }
 }

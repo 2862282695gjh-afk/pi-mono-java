@@ -1,6 +1,6 @@
 # CampusClaw HTTP V1 实施记录
 
-> 版本：3.3.1
+> 版本：3.4.0
 >
 > 状态：已实现并按 Runtime-only 现状校准
 >
@@ -10,6 +10,8 @@
 >
 > Runtime-only 当前校准基线：`42eb8b0ccb98b512d886722f2ad7ce8340d5a77a`
 >
+> 工具执行凭据边界变更前基线：`320d790726a70aada6100052952d5494d2a378ac`
+>
 > HTTP 1.38 设计契约 `main` 合并基线：`superheromeZzh/pi-mono-java-design@ea4c70c33a458182b354ed0908cfc0ef54f13bc0`
 >
 > 国际化实现起点：`3a6358bc9dd5837cdf5ac866fc0761298372510a`
@@ -18,7 +20,7 @@
 >
 > 初始日期：2026-08-21
 >
-> 更新日期：2026-08-25
+> 更新日期：2026-08-27
 
 ## 1. 目标与边界
 
@@ -44,7 +46,8 @@ Runtime-only 架构演进。当前形态为：
 | 变更前 Agent 模板 | `cb12ac7ce5637935c7e55f341b834afc71978d11` 的 `runtimeapi/template/FileAgentRuntimeSnapshotProvider#readRevision` |
 | 启动 | `modules/coding-agent-cli/.../CampusClawApplication.java` |
 | HTTP 边界 | `modules/coding-agent-cli/.../runtimeapi/web/*Controller.java` |
-| 调用上下文 Header 边界 | `RuntimeRequestContext#mateCredentials`、`RuntimeEventController#submit`；Runtime 不包含认证器、认证拦截器或认证错误码 |
+| 调用上下文 Header 边界 | `RuntimeRequestContext#mateCredentials`、`RuntimeEventController#submit`；POST Events 捕获 `X-HW-ID`、`X-HW-APPKEY`、`Authorization`、`access-token`，Runtime 不包含认证器、认证拦截器或认证错误码 |
+| Mate 发现与执行 Header | `MateToolClient#listAgentTools`、`#listSkillTools` 不接收凭据；`HttpMateToolClient#invokeTool` 只在 execute 请求透传四项快照 Header |
 | 类型化资源 ID | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/common/identifier/ResourceIdentifierPatterns.java`、`runtimeapi/web/*Controller` 的 Jakarta 路径参数约束、`RuntimeExceptionHandler#handleInvalidParameter`、`MateServiceClient`、`AgentRuntimeManager`、`HttpMateToolClient`、`RandomSessionIdGenerator` |
 | ResultBean / i18n | `runtimeapi/result/*`、`RuntimeMessageSourceConfiguration`、`RuntimeRequestContext`、`src/main/resources/i18n/messages_{en_US,zh_CN}.properties` |
 | Session 业务 | `runtimeapi/session/RuntimeSessionService.java`、`RuntimeSessionConfigurationService.java`、`RuntimeSessionControlService.java` |
@@ -66,7 +69,7 @@ Runtime-only 架构演进。当前形态为：
 | 1 | `POST /campusclaw-service/v1/agents/{agentId}/sessions` | 生成类型化 Session ID，创建时初始化 `thinking=true` | 已实现 |
 | 2 | `GET /campusclaw-service/v1/sessions/{sessionId}` | 返回名称、state、model、thinking、版本等精简状态 | 已实现 |
 | 3 | `DELETE /campusclaw-service/v1/sessions/{sessionId}` | running 返回 409；idle 幂等删除；墓碑仅两字段 | 已实现 |
-| 4 | `POST /campusclaw-service/v1/sessions/{sessionId}/events` | 请求体只含 `message/fileIds`；按执行快照投影 thinking 并直接返回 SSE | 已实现 |
+| 4 | `POST /campusclaw-service/v1/sessions/{sessionId}/events` | 请求体只含 `message/fileIds`；捕获四项瞬态工具执行凭据；按执行快照投影 thinking 并直接返回 SSE | 已实现 |
 | 5 | `GET /campusclaw-service/v1/sessions/{sessionId}/events` | 按当前 thinking 过滤持久化事件，page 绑定该状态 | 已实现 |
 | 6 | `GET /campusclaw-service/v1/sessions/{sessionId}/models` | `currentModelId` + 模型 ID 字符串数组 | 已实现 |
 | 7 | `PUT /campusclaw-service/v1/sessions/{sessionId}/model` | idle + 强 `If-Match`，同值不增版本 | 已实现 |
@@ -84,7 +87,7 @@ Runtime-only 架构演进。当前形态为：
 | 流式连接 | 旧本地接口与公开 WebSocket 并存 | 单次 POST 建立 SSE，`stream.end` 后关闭 | 架构变更：协议唯一、断线可通过历史恢复 |
 | Session 与模型 | CLI 启动时先选模型 | Session 创建不要求模型，可在后续事件前切换 | 产品约束：Session 生命周期允许模型切换 |
 | 删除 | 历史方案曾计划自动 abort | active execution 返回 409；idle 才删除 | 安全加固：避免删除与执行副作用竞态 |
-| 调用上下文 Header | 基线认证拦截器检查 Header 齐全、共存和 Bearer 形状 | 全接口保留集成 Header 契约且不做本地认证；POST Events 额外创建仅供本次 Mate 工具调用的瞬态快照 | 架构变更：真实性和动作授权由上游 mate-service 保证；安全加固：凭据不持久化、不依赖 ThreadLocal |
+| 调用上下文 Header | 基线认证拦截器检查 Header 齐全、共存和 Bearer 形状；`320d7907` 把三项快照透传到发现和执行 | 全接口保留集成 Header 契约且不做本地认证；POST Events 捕获四项瞬态快照，只有 Mate Tool execute 透传 | 架构变更：真实性和动作授权由上游 mate-service 保证；安全加固：发现链路无执行凭据，快照不持久化、不依赖 ThreadLocal |
 | 资源 ID | Agent 使用下划线短 ID，Session 使用无类型 Crockford Base32 | Agent/Tool/Skill/Session 使用类型前缀加 32 位无连字符 UUID；正则字符串与编译模式集中在中立的领域模式类；HTTP 路径参数使用 Jakarta 注解校验 | 产品约束：阻止无前缀、错误类型和旧格式进入边界；架构变更：消除重复编译、核心代码对 HTTP 常量包的反向依赖和命令式边界 Validator |
 | 创建默认值 | `RuntimeSessionService#newSession` 持久化 `thinking=false` | 创建时持久化 `thinking=true`；默认模型不支持 reasoning 时返回 `AGENT_MODEL_NOT_CONFIGURED` | 产品约束：新 Session 默认启用深度思考，且公开状态必须与模型能力一致 |
 | 用户事件请求 | `UserEventRequestVO` 要求冗余 `type=user.message` | 只接受 `message` 与 `fileIds`，`type` 和 snake_case 别名作为未知字段拒绝 | 产品约束：operation 已固定消息类型，公共字段统一为 lowerCamelCase |
@@ -142,13 +145,28 @@ DDL 使用 `t_` 前缀：`t_sessions`、`t_session_tombstone`、`t_session_clean
 
 ### Mate 工具凭据
 
-只有创建活动执行的 `POST /sessions/{sessionId}/events` 会读取调用上下文 Header，并把三项值
-作为不可变 `MateCredentials` 显式传入本次公共 Session。Runtime 不验证真实性、Bearer 形状
-或 AppKey/JWT 互斥性；两类凭据同时存在时保持原样交给 Mate。`ListMateTools` 的发现请求和
-`CallMateTool` 的执行请求使用同一快照，Child 继承父执行快照。快照不进入数据库、Runtime
-Entry、Prompt、模型消息或日志，活动执行关闭后随 Session 释放。
+只有创建活动执行的 `POST /sessions/{sessionId}/events` 会读取调用上下文 Header，并把
+`X-HW-ID`、`X-HW-APPKEY`、`Authorization`、`access-token` 四项值作为不可变
+`MateCredentials` 显式传入本次公共 Session。Runtime 不验证真实性、Bearer 形状或
+AppKey/JWT 互斥性；两类身份凭据同时存在时保持原样交给 Mate。
+
+`ListMateTools` 以及 Call 缓存 miss 触发的 Agent binding、Skill binding、tool metadata
+发现请求都不接收或发送上述执行凭据。只有 `CallMateTool` 最终调用
+`POST /mate-service/v1/runtime/tools/{toolId}/execute` 时，才透传收到的四项 Header；缺少
+`access-token`、`X-HW-ID` 或 AppKey/JWT 至少一种时 execute 在本地 fail closed，但 POST
+Events 本身不新增鉴权错误。Child 继承父执行快照。快照不进入数据库、Runtime Entry、Prompt、
+模型消息或日志，活动执行关闭后随 Session 释放。
 
 ## 6. 验证证据
+
+3.4.0 工具执行凭据边界在 JDK 21 上完成以下验证：
+
+- 主仓 `./mvnw clean test`：Reactor 全部成功，其中 `campusclaw-coding-agent` 607 个测试通过，
+  0 失败、0 错误；
+- `mate-campusclaw` 聚焦测试：64 个凭据链、Runtime 路由、Session/Child 测试通过，0 失败、
+  0 错误；
+- `./scripts/sync-mate-campusclaw.sh`：镜像同步完成并通过镜像编译；
+- `./mvnw spotless:apply`、Checkstyle、PlantUML SVG/XML、文档链接与 `git diff --check` 通过。
 
 以下验证针对 3.0.2 候选实现执行：
 
@@ -177,6 +195,7 @@ Entry、Prompt、模型消息或日志，活动执行关闭后随 Session 释放
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 3.4.0 | 2026-08-27 | POST Events 捕获 `access-token`，并把 Mate 执行凭据出站范围收窄到 Tool execute；所有发现请求不再透传。 |
 | 3.3.1 | 2026-08-25 | 处理 PR #172 审查：校准八工具与 Agent 工作区、Compaction/Usage 持久化模型及三段源码基线 |
 | 3.3.0 | 2026-08-25 | 按 Runtime-only 现状删除已退役 CLI 启动描述和失效的启动类证据引用 |
 | 3.2.0 | 2026-08-24 | POST Events 创建瞬态 Mate 凭据快照并显式传递到公共 Session、List/Call 与 Child；保持 Runtime 不做本地认证和凭据不持久化 |

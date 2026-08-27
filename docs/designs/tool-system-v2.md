@@ -1,11 +1,12 @@
 # CampusClaw 受管 Agent 工具系统 v2
 
-> 文档版本：1.5.0
+> 文档版本：1.6.0
 >
 > 状态：Implemented
 >
-> 日期：2026-08-24
+> 日期：2026-08-27
 > 决策记录：[ADR-0022](../decisions/0022-managed-agent-tool-system-v2.html)、
+> [ADR-0032](../decisions/0032-tool-execution-credential-boundary.html)、
 > [ADR-0024](../decisions/0024-mate-tool-execution-credential-chain.html)
 
 ## 1. 结论与源码基线
@@ -24,6 +25,7 @@ Session；各 Session 的消息、工作目录、工具实例、Mate 缓存和 E
 | CampusClaw 压缩修订前 | `a7f78fed345a289833970cd7b78399f0e8e51d32` | 本轮 pi 压缩细节对齐输入 |
 | CampusClaw PR 167 审查头 | `bf28e72f94f29acd316eb872a250893ed54e3632` | 当前实现证据和本轮三项审查修订输入 |
 | CampusClaw 凭据链修订前 | `934b5dd7d9e50b1d7359bea5f2dda71e3c4a34ac` | Mate HTTP 凭据链实现输入 |
+| CampusClaw execute-only 凭据边界修订前 | `320d790726a70aada6100052952d5494d2a378ac` | 三项 Header 同时透传到发现与执行的源码行为输入 |
 | pi | `5cd93f688aaab89dbb6dfa4aca535f21796ae185` | Read、find、grep、ls、工具调度与上下文压缩对照 |
 | OpenCode | `849c2598abc7d2b40261e74b5826bc74ffc78308` | Task/Child Agent 对照 |
 | 设计仓 | `bb967eebe1f62553e92480b3ea3808a664fbe73e` | 2.2.0 工具设计、3.2.0 Runtime 设计和 HTTP 1.40 契约 |
@@ -110,7 +112,7 @@ barrier。结果始终按模型原始 tool-call 顺序写回，包括已知与�
 
 ![Agent 工作区隔离](tool-system-v2/agent_workspace_boundary.svg)
 
-[PlantUML 源码](tool-system-v2/diagram.puml#L83)
+[PlantUML 源码](tool-system-v2/diagram.puml#L82)
 
 `Read`、`Find`、`Grep`、`Ls` 的根目录固定为 `agent/{agentId}`，而不是
 `.campusclaw` 子目录。`WorkspacePathResolver` 对输入执行：
@@ -154,7 +156,7 @@ refresh 成功不修改正在执行的 Session 快照。空闲数据库 Session 
 
 ![CallMateTool 缓存未命中流程](tool-system-v2/mate_call_refresh.svg)
 
-[PlantUML 源码](tool-system-v2/diagram.puml#L114)
+[PlantUML 源码](tool-system-v2/diagram.puml#L113)
 
 ![Mate 工具执行级凭据链](tool-system-v2/mate_credential_flow.svg)
 
@@ -162,8 +164,8 @@ refresh 成功不修改正在执行的 Session 快照。空闲数据库 Session 
 
 `ListMateTools({skillName?})` 无参数查询当前 Agent；有名称时通过已准备目录映射到 Skill ID。
 每次都实时访问 Mate，输出稳定 JSON，仅含 `scope` 和各工具的 `name`、`description`、
-`inputSchema`。内部客户端分为 `listAgentTools(agentId, credentials)` 和
-`listSkillTools(skillId, credentials)`，按 ID 关联批量元数据并恢复 Mate 绑定顺序。
+`inputSchema`。内部客户端分为 `listAgentTools(agentId)` 和 `listSkillTools(skillId)`，按 ID
+关联批量元数据并恢复 Mate 绑定顺序；发现方法没有执行凭据参数。
 
 `CallMateTool({tool,args?})` 只按名称调用。缓存是 Session 私有的完整“名称 → ID”快照：
 
@@ -174,11 +176,12 @@ refresh 成功不修改正在执行的 Session 快照。空闲数据库 Session 
 - 自动流程只重试发现，绝不重放已发出的 execute。
 
 并发 miss 共享同一轮成功或失败结果。List 只更新被查询来源的最近成功快照，不清空其他
-来源。`POST Events` 的调用上下文 Header 形成只存在于本次执行内存中的不可变凭据快照；
-List 的所有发现请求和 Call 的单次执行请求使用同一快照。凭据不进入持久化 Session、Event、
-Prompt 或日志。Child 继承父执行快照；Cron 无入站身份，Call 在发现前 fail closed。Runtime
-只检查执行请求具备 `X-HW-ID` 和至少一种 AppKey/JWT，不验证真实性或互斥性，Mate 继续负责
-最终授权和参数校验。
+来源。`POST Events` 从 `X-HW-ID`、`X-HW-APPKEY`、`Authorization`、`access-token` 形成
+只存在于本次执行内存中的不可变凭据快照。List 和 Call miss 的所有发现请求均不携带快照；
+只有 Call 的单次 execute 请求透传收到的四项 Header。凭据不进入持久化 Session、Event、
+Prompt 或日志。Child 继承父执行快照；Cron 无入站身份，Call 在 execute 前 fail closed。
+Runtime 只检查 execute 具备 `access-token`、`X-HW-ID` 和至少一种 AppKey/JWT，不验证真实性
+或互斥性，Mate 继续负责最终授权和参数校验。
 
 ## 8. Child Execution
 
@@ -269,7 +272,7 @@ CampusClaw 不恢复 pi 的 JSONL/tree/Extension、Bash/Edit/Write 文件追踪�
 
 实现测试覆盖严格配置、每 Session 新工具实例、Schema-before-hook、hook 顺序、并行 barrier、
 工作区越界/符号链接、原子 prepare/refresh 回滚、无 `tools.json`、Mate 稳定 JSON、缓存隔离、
-single-flight 成功与失败、执行不重放、Runtime 凭据提取与逐层传递、List/Call Header 透传、
+single-flight 成功与失败、执行不重放、Runtime 四项凭据提取与逐层传递、发现无凭据与 execute Header 透传、
 Child 凭据继承、Cron 缺少凭据时 Call fail closed、Child 直接绑定/版本/深度/循环/取消/进度、Cron Agent
 隔离和 HTTP 冷目录创建。仓库交付前执行：
 
@@ -283,6 +286,7 @@ git diff --check
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 1.6.0 | 2026-08-27 | 增加 `access-token` 执行快照，并将四项凭据透传严格收窄到 Mate Tool execute。 |
 | 1.5.0 | 2026-08-24 | 实现 Mate 凭据链：Runtime 执行快照、List/Call 透传、Child 继承、Cron fail-closed，并删除部署方 resolver 占位 |
 | 1.4.0 | 2026-08-24 | 处理 PR 167 三项审查意见：精确持久化并排除压缩重试候选、统一公共 Agent 实际请求与 length 判定的输出上限、修正新增实现的源码证据基线 |
 | 1.3.0 | 2026-08-24 | 固定并实现 pi 压缩细节：Usage 与边界判定、成功 STOP 不重试、错误/length 单次恢复、超大末条保留、split-turn/重复摘要、结构化摘要、Read 路径继承、取消和瞬态重试语义 |
