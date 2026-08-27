@@ -794,71 +794,75 @@ svg {
   margin-top: 14px;
 }
 
-.assistant-rich-text {
+.agent-activity-panel + .agent-activity-panel {
+  margin-top: 10px;
+}
+
+.safe-rich-text {
   font-size: 14px;
   line-height: 1.8;
   word-break: break-word;
 }
 
-.assistant-rich-text > :first-child {
+.safe-rich-text > :first-child {
   margin-top: 0;
 }
 
-.assistant-rich-text > :last-child {
+.safe-rich-text > :last-child {
   margin-bottom: 0;
 }
 
-.assistant-rich-text p {
+.safe-rich-text p {
   margin: 0 0 12px;
 }
 
-.assistant-rich-text h2,
-.assistant-rich-text h3,
-.assistant-rich-text h4 {
+.safe-rich-text h2,
+.safe-rich-text h3,
+.safe-rich-text h4 {
   margin: 22px 0 9px;
   color: var(--text-primary);
   line-height: 1.35;
   letter-spacing: -0.015em;
 }
 
-.assistant-rich-text h2 {
+.safe-rich-text h2 {
   font-size: 19px;
 }
 
-.assistant-rich-text h3 {
+.safe-rich-text h3 {
   font-size: 16px;
 }
 
-.assistant-rich-text h4 {
+.safe-rich-text h4 {
   font-size: 14px;
 }
 
-.assistant-rich-text ul,
-.assistant-rich-text ol {
+.safe-rich-text ul,
+.safe-rich-text ol {
   margin: 8px 0 14px;
   padding-left: 24px;
 }
 
-.assistant-rich-text li + li {
+.safe-rich-text li + li {
   margin-top: 4px;
 }
 
-.assistant-rich-text li > p {
+.safe-rich-text li > p {
   margin: 0;
 }
 
-.assistant-rich-text blockquote {
+.safe-rich-text blockquote {
   margin: 14px 0;
   padding: 2px 16px;
   border-left: 3px solid var(--border-strong);
   color: var(--text-secondary);
 }
 
-.assistant-rich-text blockquote > :last-child {
+.safe-rich-text blockquote > :last-child {
   margin-bottom: 0;
 }
 
-.assistant-rich-text hr {
+.safe-rich-text hr {
   margin: 22px 0;
   border: 0;
   border-top: 1px solid var(--border-subtle);
@@ -1023,7 +1027,7 @@ svg {
   font-size: 11px;
 }
 
-.assistant-rich-text.is-plain-fallback {
+.safe-rich-text.is-plain-fallback {
   white-space: pre-wrap;
 }
 
@@ -1054,10 +1058,6 @@ svg {
   background: var(--surface-secondary);
 }
 
-.agent-activity-panel > * + * {
-  border-top: 1px solid var(--border-subtle);
-}
-
 .thinking-disclosure {
   width: 100%;
   color: var(--text-secondary);
@@ -1084,6 +1084,15 @@ svg {
   font-weight: 580;
 }
 
+.thinking-raw-label {
+  padding: 2px 6px;
+  border: 1px solid var(--border-default);
+  border-radius: 999px;
+  color: var(--text-tertiary);
+  font-size: 10px;
+  line-height: 1.2;
+}
+
 .thinking-disclosure summary > svg {
   margin-left: auto;
   width: 15px;
@@ -1096,16 +1105,32 @@ svg {
   transform: rotate(180deg);
 }
 
-.thinking-disclosure p {
+.thinking-content {
   margin: 3px 0 7px 5px;
   padding: 5px 0 5px 19px;
   border-left: 1px solid var(--border-default);
   line-height: 1.65;
-  white-space: pre-wrap;
 }
 
-.thinking-disclosure p.thinking-empty {
+.thinking-content.thinking-empty {
   color: var(--text-tertiary);
+}
+
+.thinking-content.thinking-empty p {
+  margin: 0;
+}
+
+.thinking-content .safe-rich-text {
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.thinking-content .safe-rich-text h2,
+.thinking-content .safe-rich-text h3,
+.thinking-content .safe-rich-text h4 {
+  margin-top: 14px;
+  font-size: 13px;
 }
 
 .thinking-complete {
@@ -1281,11 +1306,6 @@ svg {
   overflow-wrap: anywhere;
 }
 
-.tool-arguments dd.redacted {
-  color: var(--text-tertiary);
-  font-style: italic;
-}
-
 .tool-empty {
   margin: 0;
   color: var(--text-tertiary);
@@ -1296,7 +1316,7 @@ svg {
   margin-top: 12px;
 }
 
-.tool-output pre {
+.tool-output-content {
   max-height: 240px;
   margin: 0;
   padding: 9px 0 0;
@@ -1304,11 +1324,18 @@ svg {
   border-top: 1px solid var(--border-subtle);
   color: var(--text-secondary);
   background: transparent;
-  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+}
+
+.tool-output-content .safe-rich-text {
   font-size: 12px;
   line-height: 1.65;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
+}
+
+.tool-output-content .safe-rich-text h2,
+.tool-output-content .safe-rich-text h3,
+.tool-output-content .safe-rich-text h4 {
+  margin-top: 14px;
+  font-size: 13px;
 }
 
 .running-placeholder {

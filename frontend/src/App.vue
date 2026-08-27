@@ -202,7 +202,7 @@ function readFollowUpMode(): FollowUpMode {
           </div>
           <div>
             <h1>{{ runtime.hasSession.value ? title : 'CampusClaw' }}</h1>
-            <p>{{ runtime.hasSession.value ? `${agent.name} · 自动保存` : 'Agent 工作区' }}</p>
+            <p>{{ runtime.hasSession.value ? `${agent.name} · Runtime 调试` : 'Runtime 调试工作台' }}</p>
           </div>
         </div>
 

@@ -66,7 +66,7 @@ describe('projectRuntimeEvents', () => {
         kind: 'thinking',
         status: 'running',
         title: '正在分析',
-        summary: '',
+        content: '正在定位异常。',
       },
       {
         key: 'entry-assistant',
@@ -119,14 +119,22 @@ describe('projectRuntimeEvents', () => {
     }]);
   });
 
-  it('never projects raw thinking content and only exposes safe display fields', () => {
+  it('streams raw thinking fragments and replaces them with authoritative completed content', () => {
     const events: RuntimeEventEnvelope[] = [
       {
         event: 'assistant.thinking.delta',
         data: {
           assistantEntryId: 'entry-assistant',
           contentIndex: 0,
-          delta: { type: 'thinking', text: '不应展示的原始思维文本' },
+          delta: { type: 'thinking', text: '先检查订单，' },
+        },
+      },
+      {
+        event: 'assistant.thinking.delta',
+        data: {
+          assistantEntryId: 'entry-assistant',
+          contentIndex: 0,
+          delta: { type: 'thinking', text: '再核对价格。' },
         },
       },
       {
@@ -134,9 +142,7 @@ describe('projectRuntimeEvents', () => {
         data: {
           assistantEntryId: 'entry-assistant',
           contentIndex: 0,
-          content: { type: 'thinking', text: '同样不应展示' },
-          thinkingDisplayTitle: '已检查数据范围',
-          thinkingDisplaySummary: '已核对近 30 天的订单状态与异常分布。',
+          content: { type: 'thinking', text: '先检查订单，再核对价格和数量。' },
         },
       },
     ];
@@ -146,13 +152,48 @@ describe('projectRuntimeEvents', () => {
       key: 'thinking-entry-assistant-0',
       kind: 'thinking',
       status: 'completed',
-      title: '已检查数据范围',
-      summary: '已核对近 30 天的订单状态与异常分布。',
+      title: '分析过程',
+      content: '先检查订单，再核对价格和数量。',
     }]);
-    expect(JSON.stringify(turns)).not.toContain('原始思维');
   });
 
-  it('waits for tool execution and presents redacted, bounded arguments', () => {
+  it('distinguishes no thinking event from a thinking event without text content', () => {
+    expect(projectRuntimeEvents([])).toEqual([]);
+
+    expect(projectRuntimeEvents([{
+      event: 'assistant.thinking.started',
+      data: {
+        assistantEntryId: 'entry-assistant',
+        contentIndex: 0,
+      },
+    }])).toEqual([{
+      key: 'thinking-entry-assistant-0',
+      kind: 'thinking',
+      status: 'running',
+      title: '正在分析',
+      content: '',
+    }]);
+  });
+
+  it('projects persisted thinking content without requiring display fields', () => {
+    expect(projectRuntimeEvents([{
+      event: 'assistant.thinking.completed',
+      data: {
+        assistantEntryId: 'entry-assistant',
+        contentIndex: 0,
+        content: { type: 'thinking', text: '这是历史记录中的原始推理。' },
+      },
+    }])).toEqual([{
+      key: 'thinking-entry-assistant-0',
+      kind: 'thinking',
+      status: 'completed',
+      title: '分析过程',
+      content: '这是历史记录中的原始推理。',
+    }]);
+  });
+
+  it('waits for tool execution and presents raw, bounded debug arguments', () => {
+    const longText = 'x'.repeat(241);
     const events: RuntimeEventEnvelope[] = [
       {
         event: 'assistant.message.completed',
@@ -170,6 +211,7 @@ describe('projectRuntimeEvents', () => {
                 headers: { authorization: 'Bearer visible-secret' },
                 note: '  Bearer another-secret',
                 query: '检查报告',
+                longText,
               },
             }],
           },
@@ -197,11 +239,12 @@ describe('projectRuntimeEvents', () => {
       toolName: 'Read',
       status: 'completed',
       arguments: [
-        { key: 'path', value: '…/report.md', redacted: false },
-        { key: 'token', value: '已隐藏', redacted: true },
-        { key: 'headers.authorization', value: '已隐藏', redacted: true },
-        { key: 'note', value: '已隐藏', redacted: true },
-        { key: 'query', value: '检查报告', redacted: false },
+        { key: 'path', value: '/Users/example/private/project/report.md' },
+        { key: 'token', value: 'secret-token' },
+        { key: 'headers.authorization', value: 'Bearer visible-secret' },
+        { key: 'note', value: '  Bearer another-secret' },
+        { key: 'query', value: '检查报告' },
+        { key: 'longText', value: `${'x'.repeat(240)}…` },
       ],
       result: '读取完成',
     }]);

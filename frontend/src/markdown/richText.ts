@@ -1,7 +1,7 @@
 import MarkdownIt, { type Token } from 'markdown-it';
 
-export const MAX_ASSISTANT_MARKDOWN_SOURCE_LENGTH = 200_000;
-export const MAX_ASSISTANT_RICH_TEXT_NODES = 10_000;
+export const MAX_RICH_TEXT_SOURCE_LENGTH = 200_000;
+export const MAX_RICH_TEXT_NODES = 10_000;
 
 export type RichElementName =
   | 'p'
@@ -75,7 +75,7 @@ export type RichTextNode =
   | RichImagePlaceholderNode
   | RichStreamingTailNode;
 
-export interface AssistantRichTextDocument {
+export interface RichTextDocument {
   nodes: RichTextNode[];
   fallback: boolean;
   fallbackReason?: 'sourceLength' | 'nodeCount' | 'parseError';
@@ -122,8 +122,8 @@ const elementByTokenType: Partial<Record<string, RichElementName>> = {
   s_open: 'del',
 };
 
-export function parseAssistantMarkdown(source: string, streaming = false): AssistantRichTextDocument {
-  if (source.length > MAX_ASSISTANT_MARKDOWN_SOURCE_LENGTH) {
+export function parseSafeMarkdown(source: string, streaming = false): RichTextDocument {
+  if (source.length > MAX_RICH_TEXT_SOURCE_LENGTH) {
     return fallbackDocument(source, 'sourceLength');
   }
 
@@ -302,7 +302,7 @@ function appendText(target: RichTextNode[], value: string, budget: ParseBudget):
 
 function appendNode(target: RichTextNode[], node: RichTextNode, budget: ParseBudget): void {
   budget.nodeCount += 1;
-  if (budget.nodeCount > MAX_ASSISTANT_RICH_TEXT_NODES) throw new NodeBudgetExceeded();
+  if (budget.nodeCount > MAX_RICH_TEXT_NODES) throw new NodeBudgetExceeded();
   target.push(node);
 }
 
@@ -342,8 +342,8 @@ function findFirstText(nodes: RichTextNode[]): RichTextValueNode | null {
 
 function fallbackDocument(
   source: string,
-  fallbackReason: AssistantRichTextDocument['fallbackReason'],
-): AssistantRichTextDocument {
+  fallbackReason: RichTextDocument['fallbackReason'],
+): RichTextDocument {
   return {
     nodes: [{ kind: 'streamingTail', value: source }],
     fallback: true,

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onUnmounted, ref } from 'vue';
-import AssistantRichText from './AssistantRichText';
 import BrandMark from './BrandMark.vue';
+import SafeRichText from './SafeRichText';
 import ThinkingDisclosure from './ThinkingDisclosure.vue';
 import ToolActivity from './ToolActivity.vue';
 import type { AgentRound } from '../projectors/conversationRounds';
@@ -43,10 +43,11 @@ async function copyRound(): Promise<void> {
     <div class="agent-round-body">
       <template v-for="block in round.blocks" :key="block.key">
         <div v-if="block.kind === 'assistant'" class="agent-message">
-          <AssistantRichText
+          <SafeRichText
             v-if="block.turn.rawMarkdown"
             :source="block.turn.rawMarkdown"
             :streaming="block.turn.streaming"
+            completion-message="回答已完成"
           />
           <div v-else-if="block.turn.streaming" class="assistant-working">
             <span class="spinner" aria-hidden="true"></span>
@@ -54,11 +55,13 @@ async function copyRound(): Promise<void> {
           </div>
         </div>
 
-        <section v-else class="agent-activity-panel" aria-label="Agent 活动">
-          <template v-for="activity in block.turns" :key="activity.key">
-            <ThinkingDisclosure v-if="activity.kind === 'thinking'" :turn="activity" />
-            <ToolActivity v-else :turn="activity" />
-          </template>
+        <section
+          v-else
+          class="agent-activity-panel"
+          :aria-label="block.turn.kind === 'thinking' ? '分析活动' : '工具活动'"
+        >
+          <ThinkingDisclosure v-if="block.turn.kind === 'thinking'" :turn="block.turn" />
+          <ToolActivity v-else :turn="block.turn" />
         </section>
       </template>
 

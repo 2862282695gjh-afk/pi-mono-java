@@ -31,13 +31,12 @@ export interface ThinkingTurn {
   kind: 'thinking';
   status: 'running' | 'completed';
   title: string;
-  summary: string;
+  content: string;
 }
 
 export interface ToolArgumentRow {
   key: string;
   value: string;
-  redacted: boolean;
 }
 
 export interface ActivityTurn {
