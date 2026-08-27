@@ -13,7 +13,9 @@ defineProps<{ turn: ThinkingTurn }>();
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 10 4 4 4-4" /></svg>
     </summary>
     <p :class="{ 'thinking-empty': !turn.summary }">
-      {{ turn.summary || '当前运行环境未提供可安全展示的分析摘要。' }}
+      {{ turn.summary || (turn.status === 'running'
+        ? '分析进行中，暂未收到面向用户的摘要。'
+        : '已收到分析事件，但当前环境未提供面向用户的摘要。') }}
     </p>
   </details>
 </template>

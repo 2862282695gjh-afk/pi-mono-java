@@ -1,6 +1,6 @@
 import http from 'node:http';
 
-const port = 8080;
+const port = Number.parseInt(process.env.CAMPUSCLAW_FIXTURE_PORT ?? '8080', 10);
 const sessionId = 'session-design-review';
 const agentId = 'agent-design-review';
 let state = 'idle';
@@ -106,7 +106,6 @@ function startExecution(response) {
     assistantEntryId: 'assistant-live-tool',
     contentIndex: 0,
     thinkingDisplayTitle: '正在检查异常规则',
-    thinkingDisplaySummary: '正在核对价格阈值、数量范围和重复订单规则。',
   });
   writeEvent(response, 'assistant.message.completed', {
     entryId: 'assistant-live-tool',
@@ -123,6 +122,19 @@ function startExecution(response) {
   writeEvent(response, 'tool.execution.started', {
     toolCallId: 'call-live-grep',
     toolName: 'Grep',
+  });
+  writeEvent(response, 'tool.result', {
+    entryId: 'tool-live-grep',
+    toolCallId: 'call-live-grep',
+    toolName: 'Grep',
+    content: [{ type: 'text', text: 'MATE_RESPONSE_INVALID' }],
+    isError: true,
+    errorMessage: 'CampusMate 响应格式不正确。',
+  }, '7');
+  writeEvent(response, 'assistant.thinking.delta', {
+    assistantEntryId: 'assistant-live-recovery',
+    contentIndex: 0,
+    thinkingDisplayTitle: '正在分析工具失败原因',
   });
   const keepAlive = setInterval(() => response.write(': keep-alive\n\n'), 15_000);
   activeStreams.add({ response, keepAlive });

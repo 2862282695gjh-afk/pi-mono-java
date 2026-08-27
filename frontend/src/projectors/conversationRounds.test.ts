@@ -33,9 +33,14 @@ describe('groupConversationTurns', () => {
         key: 'round-thinking-1',
         blocks: [
           {
-            kind: 'activityGroup',
+            kind: 'activity',
             key: 'activity-thinking-1',
-            turns: [turns[1], turns[2]],
+            turn: turns[1],
+          },
+          {
+            kind: 'activity',
+            key: 'activity-tool-1',
+            turn: turns[2],
           },
           { kind: 'assistant', key: 'assistant-1', turn: turns[3] },
           { kind: 'assistant', key: 'assistant-2', turn: turns[4] },
@@ -65,7 +70,7 @@ describe('groupConversationTurns', () => {
       key: 'round-assistant-1',
       blocks: [
         { kind: 'assistant', key: 'assistant-1', turn: turns[0] },
-        { kind: 'activityGroup', key: 'activity-tool-1', turns: [turns[1]] },
+        { kind: 'activity', key: 'activity-tool-1', turn: turns[1] },
       ],
       copySource: '正在处理',
       active: true,

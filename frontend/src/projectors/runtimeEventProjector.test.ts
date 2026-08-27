@@ -152,6 +152,24 @@ describe('projectRuntimeEvents', () => {
     expect(JSON.stringify(turns)).not.toContain('原始思维');
   });
 
+  it('distinguishes no thinking event from a thinking event without a display summary', () => {
+    expect(projectRuntimeEvents([])).toEqual([]);
+
+    expect(projectRuntimeEvents([{
+      event: 'assistant.thinking.started',
+      data: {
+        assistantEntryId: 'entry-assistant',
+        contentIndex: 0,
+      },
+    }])).toEqual([{
+      key: 'thinking-entry-assistant-0',
+      kind: 'thinking',
+      status: 'running',
+      title: '正在分析',
+      summary: '',
+    }]);
+  });
+
   it('waits for tool execution and presents redacted, bounded arguments', () => {
     const events: RuntimeEventEnvelope[] = [
       {

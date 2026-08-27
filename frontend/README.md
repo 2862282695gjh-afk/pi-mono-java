@@ -16,8 +16,8 @@ mate-service 公共 Agent/Chat/Attachment API；在该契约完成前，本 adap
 - 当前分支持久化历史分页、去重和流结束后的恢复；
 - User、Assistant、安全 Thinking 状态/摘要和工具生命周期的产品对象投影；
 - Assistant 安全富文本、流式稳定区渲染、表格与代码块局部横向滚动；
-- 分析过程始终可展开，安全摘要缺失时显示明确占位，不展示原始推理；
-- Thinking 与 Tool 统一进入暖灰虚线活动区，工具详情按输入在上、输出在下排列；
+- 分析过程始终可展开；只有收到 Thinking 事件但缺少面向用户的摘要字段时才显示明确占位，不展示原始推理；
+- 每个 Thinking 与 Tool 分别进入独立暖灰虚线活动框，工具详情按输入在上、输出在下排列；
 - 每轮 Agent 回答只提供一个 Codex 风格图标复制入口，复制本轮全部 Assistant Markdown；
 - 运行中“调整方向”“加入队列”“停止”；
 - desktop 默认 `steer`，`Cmd/Ctrl+Shift+Enter` 对单条消息反转模式；
@@ -29,8 +29,8 @@ mate-service 公共 Agent/Chat/Attachment API；在该契约完成前，本 adap
 Assistant 文本支持受控 Markdown；原始 HTML 不执行，图片不发起网络请求，只有绝对
 `http`/`https` 链接可以点击。User、Tool result 和错误信息继续按纯文本显示。Thinking
 只读取 bridge 未来提供的 `thinkingDisplayTitle`/`thinkingDisplaySummary`（兼容
-`displayTitle`/`displaySummary`）；当前 Runtime 只有原始 thinking 时，展开区显示“未提供可安全
-展示的分析摘要”，绝不展示原始推理文本。
+`displayTitle`/`displaySummary`）。完全没有 Thinking 事件时不创建分析框；已收到事件但当前
+Runtime 只有原始 thinking 时，展开区明确提示未收到面向用户的摘要，绝不展示原始推理文本。
 
 工具参数在进入 DOM 前执行行数、深度和长度预算，并隐藏凭据、内部 ID 和绝对路径；这是
 过渡 adapter 的纵深防护，不替代生产 bridge 在网络边界完成字段级最小化和脱敏。

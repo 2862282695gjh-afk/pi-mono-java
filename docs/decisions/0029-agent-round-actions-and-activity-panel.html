@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>ADR-0029：整轮复制动作与虚线 Agent 活动区</title>
+  <title>ADR-0029：整轮复制动作与独立虚线活动框</title>
   <style>
     :root { color-scheme: light; font-family: Inter, "PingFang SC", sans-serif; color: #2c2724; background: #f8f3f0; }
     body { margin: 0; }
@@ -23,11 +23,12 @@
 </head>
 <body>
 <main>
-  <h1>ADR-0029：整轮复制动作与虚线 Agent 活动区</h1>
+  <h1>ADR-0029：整轮复制动作与独立虚线活动框</h1>
   <table>
     <tr><th>Status</th><td><span class="status">Accepted</span></td></tr>
     <tr><th>Date</th><td>2026-08-27</td></tr>
-    <tr><th>Analyzed baseline</th><td><code>origin/main@ce8ad1efa49c8023350b68de2e1d6f347576aa25</code></td></tr>
+    <tr><th>Original baseline</th><td><code>origin/main@ce8ad1efa49c8023350b68de2e1d6f347576aa25</code></td></tr>
+    <tr><th>Refinement baseline</th><td><code>origin/main@1813c601101660a401e5e2004c5c00b8e3d7b75b</code>（PR #178 已合入的统一活动组）</td></tr>
     <tr><th>Observed source</th><td><code>frontend/src/components/AssistantRichText.ts</code>、<code>ConversationTimeline.vue</code>、<code>ThinkingDisclosure.vue</code>、<code>ToolActivity.vue</code>、<code>frontend/src/style.css</code></td></tr>
     <tr><th>Implemented source</th><td><code>frontend/src/projectors/conversationRounds.ts</code>、<code>frontend/src/components/AgentRound.vue</code>、<code>ConversationTimeline.vue</code>、<code>ThinkingDisclosure.vue</code>、<code>ToolActivity.vue</code>、<code>frontend/src/style.css</code></td></tr>
   </table>
@@ -35,6 +36,7 @@
   <h2>Context</h2>
   <p>基线实现把复制动作放在每个 <code>AssistantRichText</code> 内，并为每个 fenced code block 再提供一个文字按钮。一次用户请求可能经历多个 Assistant Entry 和工具循环，因此产品界面会出现多个“复制原文”和“复制”按钮；这些按钮既显眼，又把 Runtime 的消息切分泄漏成用户交互。</p>
   <p><code>ThinkingDisclosure.vue</code> 只有存在安全摘要时才渲染为 <code>&lt;details&gt;</code>。当前 Runtime 没有安全摘要字段时，它退化为不可点击状态，用户会把“无法展开”理解为界面故障。Thinking 与 Tool 同时直接放在主画布背景上，缺少区别于最终回答的轻量分组。</p>
+  <p>0.8.0 把连续 Thinking/Tool 放入同一个虚线活动组。真实失败场景中，一个展开工具会把前后多个 Thinking 一起包入巨型容器，单项边界不清晰。用户在 PR #178 合入后明确要求保留现有暖灰、虚线和圆角样式，但让 Thinking 与每个 Tool 分别拥有独立框。</p>
 
   <h2>Decision drivers</h2>
   <ul>
@@ -42,6 +44,7 @@
     <li>复制动作应像 Codex 对话动作一样使用小图标和透明命中区，默认低强调。</li>
     <li>分析入口必须稳定可发现，同时继续禁止原始 thinking 进入 DOM。</li>
     <li>分析与工具需要共同的视觉边界，但不能变成厚重卡片或监控 Dashboard。</li>
+    <li>每个活动需要独立边界，避免一个长工具详情改变相邻 Thinking 的视觉归属。</li>
   </ul>
 
   <h2>Considered options</h2>
@@ -57,11 +60,17 @@
   <h3>没有安全摘要时继续禁用分析展开</h3>
   <p><strong>Pro：</strong>不会展示无内容面板。<br><strong>Con：</strong>同一控件在不同部署下行为不稳定，且用户无法区分安全降级与故障。拒绝。</p>
 
+  <h3>连续 Thinking/Tool 共用一个虚线活动组</h3>
+  <p><strong>Pro：</strong>时序紧凑，外框数量少。<br><strong>Con：</strong>展开工具会形成过大的组合卡片，相邻 Thinking 和 Tool 的归属不清晰。0.8.0 曾采用，用户评审后拒绝。</p>
+
+  <h3>Thinking 与每个 Tool 分别使用独立虚线框</h3>
+  <p><strong>Pro：</strong>保留现有视觉语言，同时让每项活动可独立扫描、展开和定位。<br><strong>Con：</strong>相邻活动之间会增加 10 px 垂直间距。接受。</p>
+
   <h2>Decision</h2>
   <ul>
     <li><code>conversationRounds.ts</code> 以 User turn 为边界，将其后的 Assistant、Thinking 与 Tool turn 聚合为一个 Agent round；刷新历史与实时流使用相同规则。</li>
-    <li>同一 Agent round 中连续 Thinking/Tool 组成活动组；活动组使用 <code>--surface-secondary</code> 暖灰背景、<code>--border-strong</code> 1 px 虚线和 12 px 圆角，视觉参考开发者诊断入口但不复用其诊断语义。</li>
-    <li>Thinking 始终使用原生 <code>&lt;details&gt;</code>。运行中默认展开，完成后默认折叠；有安全摘要时显示摘要，没有时显示“当前运行环境未提供可安全展示的分析摘要”。原始 <code>delta/content</code> 仍禁止进入 DOM。</li>
+    <li>同一 Agent round 中每个 Thinking 与 Tool 分别形成一个活动块；每个活动块使用 <code>--surface-secondary</code> 暖灰背景、<code>--border-strong</code> 1 px 虚线和 12 px 圆角，相邻框间隔 10 px。视觉参考开发者诊断入口但不复用其诊断语义。</li>
+    <li>Thinking 始终使用原生 <code>&lt;details&gt;</code>。运行中默认展开，完成后默认折叠；有 display 摘要时显示摘要。完全没有 Thinking 事件时不创建分析框；收到事件但缺少 display 摘要时，运行中显示“分析进行中，暂未收到面向用户的摘要”，完成后显示“已收到分析事件，但当前环境未提供面向用户的摘要”。原始 <code>delta/content</code> 仍禁止进入 DOM。</li>
     <li>移除 Assistant 消息级“复制原文”和代码块级复制按钮。每个完成的 Agent round 只显示一个复制图标；当前 round 仍在 streaming、thinking 或执行工具时隐藏。</li>
     <li>复制内容是本轮全部非空 Assistant <code>rawMarkdown</code>，按原 Entry 顺序用两个换行连接；不包含 Thinking 摘要、工具参数、工具结果或错误诊断。</li>
     <li>复制按钮使用透明 44 × 44 px 命中区和 17 px 图标；默认低强调，round hover、键盘 focus 或无 hover 设备上可见。成功后切换 check 图标，并通过 tooltip、<code>aria-label</code> 和 live region 提供反馈。</li>
@@ -69,26 +78,26 @@
 
   <h2>Intentional differences</h2>
   <p><strong>产品约束：</strong>代码块不再提供独立复制动作；需要单独代码时用户仍可选择文本，产品优先保证一轮一个清晰复制入口。</p>
-  <p><strong>安全加固：</strong>可展开不意味着可以读取原始思维。安全摘要缺失时只显示产品占位，公共 bridge 仍负责生成可展示摘要。</p>
+  <p><strong>安全加固：</strong>可展开不意味着可以读取原始思维。收到事件但 display 摘要缺失时只显示精确产品占位，公共 bridge 仍负责生成可展示摘要。</p>
   <p><strong>架构变化：</strong>UI 新增 User-turn-to-Agent-round 投影。Runtime Event 与持久化 Entry 契约不变，回合只存在于前端产品视图。</p>
 
   <h2>Consequences</h2>
-  <p><strong>正面：</strong>每轮回答只有一个低噪音动作；分析入口行为稳定；活动与最终答案层级清晰；O1 只在 round 顶部出现一次。</p>
-  <p><strong>负面：</strong>单独复制 code fence 不再是一键操作；多 Assistant Entry 复制时会插入两个换行；运行中必须等待 round 完成后才能使用复制按钮。</p>
+  <p><strong>正面：</strong>每轮回答只有一个低噪音动作；分析入口行为稳定；每个 Thinking/Tool 的边界清晰；O1 只在 round 顶部出现一次。</p>
+  <p><strong>负面：</strong>单独复制 code fence 不再是一键操作；多 Assistant Entry 复制时会插入两个换行；相邻活动框增加少量垂直间距；运行中必须等待 round 完成后才能使用复制按钮。</p>
   <p><strong>后续：</strong>公共 Chat 契约如未来提供稳定 turn/round ID，前端聚合键可从 User Entry 边界迁移到公共 ID，但复制范围与安全边界保持不变。</p>
 
   <h2>Validation</h2>
   <ul>
-    <li><code>conversationRounds.test.ts</code>覆盖 User 边界、连续活动分组、多 Assistant 聚合和运行状态。</li>
-    <li>浏览器验收覆盖分析展开、安全占位、完成 round 的单一复制按钮、复制文本、活动虚线边界和桌面/移动视口。</li>
+    <li><code>conversationRounds.test.ts</code>覆盖 User 边界、活动逐项独立、多 Assistant 聚合和运行状态；<code>runtimeEventProjector.test.ts</code>区分没有 Thinking 事件与有事件但无 display 摘要。</li>
+    <li>浏览器验收覆盖分析展开、精确占位、完成 round 的单一复制按钮、复制文本、Thinking/Tool 独立虚线边界和桌面/移动视口。</li>
     <li>前端必须通过 <code>npm test</code>、<code>npm run typecheck</code>、<code>npm run build</code> 和高危依赖审计。</li>
   </ul>
 
   <h2>Related</h2>
   <ul>
     <li><a href="../designs/campusclaw-frontend.md">CampusClaw 产品前端体验设计</a></li>
-    <li><a href="../designs/campusclaw-frontend/high-fidelity-conversation-v9.png">常规对话 v9</a></li>
-    <li><a href="../designs/campusclaw-frontend/high-fidelity-running-v9.png">执行中 v9</a></li>
+    <li><a href="../designs/campusclaw-frontend/high-fidelity-conversation-v10.png">常规对话 v10</a></li>
+    <li><a href="../designs/campusclaw-frontend/high-fidelity-running-v10.png">执行中 v10</a></li>
     <li><a href="0027-assistant-safe-rich-text.html">ADR-0027：Assistant 安全富文本采用 Token-to-VNode 投影</a></li>
     <li><a href="0028-agent-activity-disclosure-and-o1-brand.html">ADR-0028：采用 O1 原图与安全 Agent 活动披露</a></li>
   </ul>

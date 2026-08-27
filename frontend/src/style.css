@@ -794,6 +794,10 @@ svg {
   margin-top: 14px;
 }
 
+.agent-activity-panel + .agent-activity-panel {
+  margin-top: 10px;
+}
+
 .assistant-rich-text {
   font-size: 14px;
   line-height: 1.8;
@@ -1052,10 +1056,6 @@ svg {
   border: 1px dashed var(--border-strong);
   border-radius: 12px;
   background: var(--surface-secondary);
-}
-
-.agent-activity-panel > * + * {
-  border-top: 1px solid var(--border-subtle);
 }
 
 .thinking-disclosure {

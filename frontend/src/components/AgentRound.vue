@@ -54,11 +54,13 @@ async function copyRound(): Promise<void> {
           </div>
         </div>
 
-        <section v-else class="agent-activity-panel" aria-label="Agent 活动">
-          <template v-for="activity in block.turns" :key="activity.key">
-            <ThinkingDisclosure v-if="activity.kind === 'thinking'" :turn="activity" />
-            <ToolActivity v-else :turn="activity" />
-          </template>
+        <section
+          v-else
+          class="agent-activity-panel"
+          :aria-label="block.turn.kind === 'thinking' ? '分析活动' : '工具活动'"
+        >
+          <ThinkingDisclosure v-if="block.turn.kind === 'thinking'" :turn="block.turn" />
+          <ToolActivity v-else :turn="block.turn" />
         </section>
       </template>
 
