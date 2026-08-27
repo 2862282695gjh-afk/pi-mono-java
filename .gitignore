@@ -53,3 +53,7 @@ package-lock.json
 # Python bytecode (skills/scripts may include python helpers)
 __pycache__/
 *.pyc
+
+# Code intelligence tool local cache
+codegraph/
+.codegraph/
