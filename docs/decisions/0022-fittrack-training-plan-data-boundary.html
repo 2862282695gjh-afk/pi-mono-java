@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ADR-0022 · FitTrack 系统动作与用户计划的 RLS 边界</title>
+  <style>
+    :root{--fg:#1a1a1a;--dim:#666;--accent:#2563eb;--accepted:#15803d;--bg:#fff;--card:#f6f7f9}
+    body{font:15px/1.6 -apple-system,Segoe UI,"PingFang SC",sans-serif;color:var(--fg);background:var(--bg);max-width:860px;margin:2rem auto;padding:0 1.2rem}
+    h1{font-size:1.5rem;margin:.2rem 0}.meta{color:var(--dim);font-size:.9rem;margin-bottom:1.2rem}.badge{display:inline-block;padding:.1rem .6rem;border-radius:1rem;font-size:.8rem;background:var(--accepted);color:#fff}
+    section{margin:1.4rem 0}h2{font-size:1.05rem;border-bottom:1px solid #eee;padding-bottom:.3rem}a{color:var(--accent)}code{background:var(--card);padding:.1rem .3rem;border-radius:.3rem}table{border-collapse:collapse;width:100%}td,th{border:1px solid #eee;padding:.35rem .6rem;font-size:.9rem}
+  </style>
+</head>
+<body>
+  <h1>ADR-0022 · FitTrack 系统动作与用户计划的 RLS 边界</h1>
+  <div class="meta">Status: <span class="badge">Accepted</span> · Date: 2026-08-24 · 设计文档: <a href="../designs/fittrack-training-plans.md">fittrack-training-plans</a></div>
+  <section><h2>Context</h2><p>动作库既需要约 50 个所有用户共享的预置动作，也需要用户创建私有动作；训练计划必须能原子地保存有序动作，且不得信任客户端传入的 owner。</p></section>
+  <section><h2>Decision</h2><p>采用单个 <code>exercises</code> 表：系统行的 <code>owner_id</code> 为 null，用户行的 <code>owner_id</code> 为 <code>auth.uid()</code>。RLS 允许已认证用户读取系统行或自己的行，仅允许用户创建、修改、删除自己的自定义行。计划和计划动作均由 owner RLS 隔离；<code>save_workout_plan</code> 在数据库端验证归属与排序并原子替换动作。</p></section>
+  <section><h2>考虑过的选项</h2><table><tr><th>选项</th><th>Pro</th><th>Con</th></tr><tr><td>分离系统/用户动作表</td><td>语义直观</td><td>查询和计划外键需要 union 或双外键</td></tr><tr><td><b>单表 + nullable owner（选定）</b></td><td>统一查询、单一计划外键、RLS 明确</td><td>策略需区分系统和私有行</td></tr><tr><td>客户端删后逐条保存计划动作</td><td>实现简单</td><td>断网/并发时会留下半成品计划</td></tr></table></section>
+  <section><h2>Consequences</h2><ul><li>正面：预置动作和用户动作以一次查询提供；用户无法篡改系统数据或他人计划。</li><li>负面：RPC 是计划编辑的受控写入口；后续迁移需维持其输入契约。</li></ul></section>
+  <section><h2>Related</h2><ul><li><a href="../designs/fittrack-training-plans.md">FitTrack 动作库与训练计划 MVP</a></li><li><a href="../superpowers/specs/2026-08-14-fittrack-commercial-refactor-design.md">FitTrack 商用重构设计</a></li></ul></section>
+</body>
+</html>
