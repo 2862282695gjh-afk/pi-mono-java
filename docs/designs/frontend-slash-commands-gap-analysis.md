@@ -243,9 +243,16 @@ afterCommit:
 
 **[继续复查㉑已采纳——超时后进入禁止态,不自动放行]**。批注属实:跨实例/重启后宽限期不能证明旧 worker 停止,自动放行仍会双跑;首版无 lease/fencing 就不能把"宽限期已过"当放行条件。修订⑳的保守分支再收紧:
 
-- 超时补 failed(`TIMEOUT_OBSERVED`)后该 session 进入 **compaction 禁止态**:新 /compact 一律 409 `COMPACTION_SUSPENDED`(提示"存在超时未确认的压缩任务,请联系运维或等待系统确认")——直至旧 worker **可观察地写入终态**(任何进程补写 completed/failed 均解除)或运维显式确认;不做基于时间的自动恢复
+- 超时补 failed(`TIMEOUT_OBSERVED`)后该 session 进入 **compaction 禁止态**:新 /compact 一律 409 `COMPACTION_SUSPENDED`(提示"存在超时未确认的压缩任务,请联系运维或等待系统确认")——直至运维显式解除或**单实例下本进程 future 终止的可验证确认**(㉕修正:原'任何进程补写终态均解除'与⑲ no-op 冲突,已写入的 failed 不构成解除信号);不做基于时间的自动恢复
 - 单实例部署下 reconcile 可观测本进程 future 终止(⑰生命周期),future 结束即写终态解除禁止态——常见路径自动化不受影响;跨实例悬挂需人工介入(登记运维 runbook)
 - lease/fencing 若产品要求全自动恢复则为前置能力——按批注提示从"后续演进"升级为**条件性前置**(多实例部署启用 compact 前必须先实现);测试:旧 worker 于另一实例运行 + 当前实例重启超宽限期 → 不得启动第二个任务
+
+**[继续复查㉕已采纳——suspended 落库 + 解除条件修正]**。批注两点均属实:①禁止态无持久化表示,重启后按"有无未终态 started"准入会丢状态再启动;②⑲规定 timeout failed 后晚到回调 no-op——**不存在**"旧 worker 写终态解除"的信号,㉑的解除条件自相矛盾。修订:
+
+- **持久化 suspended 状态**:超时补写 failed 的**同一事务**内追加第四类 entry `SESSION_COMPACTION_SUSPENDED`(payload: `operationId`, `reason=TIMEOUT_OBSERVED`, `suspendedAt`);准入的行锁事务内除查未终态 started 外**同时查 suspended entry 存在** → 409 `COMPACTION_SUSPENDED`
+- **解除条件修正**(替换㉑的错误表述):首版无 lease 时 suspended **仅由两条路径解除**——①运维显式解除(新增运维端点或运维工具写入 `SUSPENDED_CLEARED` entry,带解除者标识);②**可验证的 worker-stopped 持久化确认**:仅单实例部署下本进程 future 终止时由该进程写 `SUSPENDED_CLEARED`(进程可观测自身 future,这是可验证确认;跨实例的旧 worker 之死**不可**由他进程证明,只能走①)。已写入的 timeout failed **不构成**解除信号(修正㉑)
+- 测试:重启后仍 409(suspended 持久化生效);旧 worker(他实例)退出不误解锁;运维解锁 / 单实例 future 终止清除后才可新建 operation
+
 
 
 **[横向㉔已采纳]** 2.3 正文四处同步最终语义:启动响应补 operationId(⑩);failed 改"operation-open 条件追加"(⑲,不校验 leaf 但校验 operation);超时后"进入禁止态不启动新压缩"(⑳+㉑);下游历史批注段落标注"已被后续修订取代"。
@@ -292,6 +299,18 @@ afterCommit:
 3. 展开大小上限:SKILL.md 正文截断(如 16KB,超出截断并在消息内注明)防超长注入
 4. 错误码进 RuntimeErrorCode + i18n + 前端 friendlyError 同步清单
 
+**[横向㉖已采纳——统一请求体]**:两条 commands 端点共用 `CommandInvocationRequestDTO`:
+
+```json
+{ "arguments": "<原始参数串,可空串,≤8KB,UTF-8 原样保留(含内部空白/换行)>" }
+```
+
+- 校验:非字符串/超 8KB → 400 `ARGUMENTS_TOO_LARGE`;空 body 或缺字段按空串处理(兼容无参命令);不做 trim(展示与执行用同一原文,parse 已分离)
+- 可选 `clientRequestId`(幂等重试预留,首版服务端仅日志记录不语义化)
+- 前端 composer parser 分离 name/arguments 后**仅 arguments 入 body**;服务端不从 URL/文案反解析
+- 测试:skill 参数原样传递(含前后空白)、Extension 参数校验、空 body、超长 body
+
+
 
 **[继续复查③已采纳——响应类型进契约]**。避免同一路径运行时猜 JSON/SSE:`CommandDescriptorDTO` 与 TS `SlashCommandDescriptor` **正式增加 `streaming: boolean`** 字段(默认 false):
 
@@ -323,6 +342,19 @@ public interface SlashCommandExtension {
     List<WebCommandDefinition> commands();   // 启动期经 WebCommandCatalog 构造注入
 }
 ```
+
+**[横向㉗已采纳——SPI 加 extensionId]**:
+
+```java
+public interface SlashCommandExtension {
+    String extensionId();                 // ^[a-z][a-z0-9-]{0,15}$,不得为保留字 skill/内置命令名
+    List<WebCommandDefinition> commands();
+}
+```
+
+- 注册校验(Catalog 构造期):该 extension 的**所有** `definition.name` 必须以 `extensionId + ':'` 开头;namespace **唯一拥有**(第二个扩展注册同前缀 → 启动失败);descriptor 增 `sourceExtensionId`(诊断用,前端不依赖)
+- 测试:冒用他人前缀拒绝、同 namespace 双扩展拒绝、extensionId 非法/保留字拒绝
+
 
 - 命名规则:与内置/`skill:` 前缀冲突 → **注册期抛错**(启动失败,显式暴露冲突);建议约定 Extension 命令以自有前缀命名(如 `git:`、`jira:`)
 - descriptor 完整暴露(name/description/argsHint/category/executionMode),`?all=true` 可见性同内置
