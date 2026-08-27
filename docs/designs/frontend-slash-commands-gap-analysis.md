@@ -135,6 +135,34 @@ public class WebCommandCatalog {
 - **单飞标记**以 operation 终态回调(completed/failed 均释放)为准,不以 HTTP 返回为准
 - (可选后续)状态查询端点 `GET /sessions/{id}/compact/{operationId}` 直查单条——首版靠历史分页即可,登记后续
 
+**[继续复查⑩已采纳——operationId 进正式契约]**:
+
+**DTO/TS**:`CommandResultDTO` 与 TS `SlashCommandResult` 增加可选 `operationId: string`(仅异步命令返回,其余为 null);JSON 示例:
+
+```json
+{ "kind": "ok", "output": "压缩已启动", "operationId": "cpt_a1b2c3", "effects": {} }
+```
+
+**三类持久化 entry 契约**(复用 RuntimeEntryCodec 既有 compaction 通道,类型与 payload):
+
+| entry type | payload 必含 | 备注 |
+|---|---|---|
+| `SESSION_COMPACTION_STARTED`(新增类型) | `operationId`, `startedAt` | 启动即写 |
+| `SESSION_COMPACTION_COMPLETED`(既有) | `operationId`, `reason`, `keptMessages`, `removedMessages`, `completedAt` | 既有 compactionEntry 补 operationId 字段 |
+| `SESSION_COMPACTION_FAILED`(新增类型) | `operationId`, `errorCode`(如 CANCELLED_BY_NEW_MESSAGES), `failedAt` | |
+
+**GET /events 投影**:projector 对 started/failed 增加投影(既有 completed 已投影);前端 runtimeEventProjector 识别 payload.operationId 与本地记录的启动 operationId 关联(而非文案匹配)。**测试断言同一 operationId 的 started→终态关联**,不止看展示文本。
+
+
+**[继续复查⑪已采纳——存储位置与分支行为定稿]**。查证:Codec 的 `toAgentMessage` 仅恢复 USER/ASSISTANT/TOOL_RESULT/**COMPACTION_COMPLETED**(转 summary message),其余类型恢复为 null(`RuntimeEntryCodec:272` default 分支)——意味着 started/failed 天然不进 Agent 上下文,completed 会进(以 summary 形式,这是**期望行为**:压缩结果本就应成为上下文)。
+
+定稿:
+- **started/failed 不入对话上下文**:新增的两个类型走 codec default(null)——无需额外排除规则;但它们**会推进 activeLeafId**(普通 append)——因此 **expectedLeafId 采样点定为 started entry 写入之后**(流程:写 started → 记 leaf → 读历史 → 压缩 → 条件追加 completed/failed;started 自身推进 leaf 不影响,因其后采样)
+- **completed 入上下文**:既有 summary message 行为保留(压缩语义);其 leaf 推进即条件追加本身
+- **不引入独立 operation 表**:三类 entry 全走主分支持久化(与既有 completed 同款),Codec 恢复规则如上;避免双存储一致性
+- CAS 语义因此自洽:expectedLeafId 在 started 之后采样,普通消息只会推进 leaf 触发 CAS 失败——started 自身不会再干扰
+
+
 
 
 
@@ -261,4 +289,3 @@ extensionId    := ^[a-z][a-z0-9-]{0,15}$                      (注册时声明,�
 - 前端:resume 选择列表交互/前缀匹配;compact 启动确认 + 历史分页结果刷新(无进度条);`/skill:` 补全 + 流式消费(content-type 分流);SystemNoticeStack 渲染(⑨);无会话策略表全覆盖(⑩,含 !requiresSession 豁免)
 
 **[继续复查⑨已采纳]** 测试清单路径统一为 `POST /sessions/{id}/commands/compact`(带 sessionId);无会话 `POST /commands/{name}` 仅 requiresSession=false 命令可用。
-
