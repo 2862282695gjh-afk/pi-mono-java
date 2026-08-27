@@ -16,10 +16,6 @@ import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-<<<<<<< HEAD
-import java.util.Objects;
-=======
->>>>>>> upstream/main
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -33,11 +29,8 @@ import com.campusclaw.codingagent.runtime.MateServiceClient.DependentSkill;
 import com.campusclaw.codingagent.runtime.MateServiceClient.SkillFile;
 import com.campusclaw.codingagent.runtime.MateServiceClient.SkillInfo;
 import com.campusclaw.codingagent.runtime.MateServiceClient.SkillReference;
-<<<<<<< HEAD
-=======
 import com.campusclaw.codingagent.skill.Skill;
 import com.campusclaw.codingagent.skill.SkillLoadException;
->>>>>>> upstream/main
 import com.campusclaw.codingagent.skill.SkillLoader;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -202,22 +195,13 @@ public class AgentRuntimeManager {
         Set<String> names = new HashSet<>();
         for (SkillInfo skill : skills) {
             requireSafeUniqueName(skill.name(), names, "Skill");
-<<<<<<< HEAD
-=======
             requireLoadableSkillMarkdown(skill);
->>>>>>> upstream/main
             Path skillDirectory = skillsDirectory.resolve(skill.name());
             Files.createDirectories(skillDirectory.resolve("references"));
             Files.createDirectories(skillDirectory.resolve("templates"));
             writeJson(
                     skillDirectory.resolve(SKILL_MANIFEST_FILE),
                     new SkillManifest(SCHEMA_VERSION, skill.id(), skill.name(), skill.version()));
-<<<<<<< HEAD
-            writeFile(skillDirectory.resolve(SKILL_FILE), renderSkill(skill));
-            writeResources(skillDirectory.resolve("references"), skill.references());
-            writeResources(skillDirectory.resolve("templates"), skill.templates());
-        }
-=======
             Path skillFile = skillDirectory.resolve(SKILL_FILE);
             writeFile(skillFile, skill.content());
             requireSessionLoadable(skill.name(), skillFile);
@@ -274,7 +258,6 @@ public class AgentRuntimeManager {
     private static String frontmatterValue(Map<String, Object> frontmatter, String key) {
         Object value = frontmatter.get(key);
         return value == null ? null : String.valueOf(value);
->>>>>>> upstream/main
     }
 
     private void writeResources(Path directory, List<SkillFile> resources) throws IOException {
@@ -361,17 +344,6 @@ public class AgentRuntimeManager {
                 || !directory.getFileName().toString().equals(manifest.name())) {
             throw new IOException("Skill name does not match its path");
         }
-<<<<<<< HEAD
-        String skillMarkdown = readRequiredFile(directory.resolve(SKILL_FILE));
-        Map<String, Object> frontmatter = SkillLoader.parseFrontmatter(skillMarkdown);
-        String description = Objects.toString(frontmatter.get("description"), "");
-        return new SkillInfo(
-                manifest.name(),
-                manifest.id(),
-                manifest.version(),
-                description,
-                null,
-=======
         Path skillFile = directory.resolve(SKILL_FILE);
 
         // 缓存读取与发布前复核共用同一校验入口(字节上限 + SkillLoader 完整规则):
@@ -385,7 +357,6 @@ public class AgentRuntimeManager {
                 loaded.description(),
                 null,
                 skillMarkdown,
->>>>>>> upstream/main
                 List.of(),
                 List.<DependentSkill>of(),
                 List.of(),
@@ -432,15 +403,7 @@ public class AgentRuntimeManager {
     private List<SkillInfo> resolveSkills(List<SkillReference> references) {
         List<SkillInfo> skills = new ArrayList<>();
         for (SkillReference reference : references == null ? List.<SkillReference>of() : references) {
-<<<<<<< HEAD
-            List<SkillInfo> result = mateServiceClient.querySkillInfo(reference.id());
-            if (result.size() != 1) {
-                throw new AgentRuntimeException("Mate returned an ambiguous Skill binding");
-            }
-            SkillInfo skill = result.getFirst();
-=======
             SkillInfo skill = mateServiceClient.querySkillInfo(reference.id());
->>>>>>> upstream/main
             requireValidSkill(skill, reference);
             skills.add(skill);
         }
@@ -617,15 +580,6 @@ public class AgentRuntimeManager {
         Files.writeString(path, content == null ? "" : content, StandardCharsets.UTF_8);
     }
 
-<<<<<<< HEAD
-    private String renderSkill(SkillInfo skill) throws IOException {
-        String description = firstNonBlank(skill.description(), skill.name());
-        return "---\nname: " + skill.name() + "\ndescription: " + mapper.writeValueAsString(description) + "\n---\n\n# "
-                + skill.name() + "\n\n" + description + "\n";
-    }
-
-=======
->>>>>>> upstream/main
     private static String resourceFileName(SkillFile resource) {
         String type = resource.fileType() == null ? "" : resource.fileType().toLowerCase(java.util.Locale.ROOT);
         return resource.name() + (type.isBlank() ? "" : "." + type);
@@ -705,18 +659,6 @@ public class AgentRuntimeManager {
         } catch (IOException exception) {
             LOGGER.debug("Failed to clean managed Agent staging path: {}", path, exception);
         }
-<<<<<<< HEAD
-        return "Managed Skill";
-    }
-
-    private static void deleteQuietly(Path path) {
-        try {
-            deleteRecursively(path);
-        } catch (IOException exception) {
-            LOGGER.debug("Failed to clean managed Agent staging path: {}", path, exception);
-        }
-=======
->>>>>>> upstream/main
     }
 
     private static void deleteRecursively(Path root) throws IOException {

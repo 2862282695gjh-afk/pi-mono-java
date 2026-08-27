@@ -25,10 +25,7 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 @SpringBootApplication(scanBasePackages = "com.campusclaw")
 @EnableConfigurationProperties({
     ControlPlaneProperties.class,
-<<<<<<< HEAD
-=======
     CampusMateClientProperties.class,
->>>>>>> upstream/main
     AgentRuntimeProperties.class,
     BuiltInToolProperties.class,
     CompactionProperties.class
@@ -39,9 +36,6 @@ public class CampusClawApplication {
     private static final Logger LOGGER = LoggerFactory.getLogger(CampusClawApplication.class);
 
     public static void main(String[] args) {
-<<<<<<< HEAD
-        SpringApplication.run(CampusClawApplication.class, args);
-=======
         launch(args, values -> SpringApplication.run(CampusClawApplication.class, values));
     }
 
@@ -72,6 +66,5 @@ public class CampusClawApplication {
         private StartupException() {
             super(STARTUP_ERROR_CODE, null, false, false);
         }
->>>>>>> upstream/main
     }
 }

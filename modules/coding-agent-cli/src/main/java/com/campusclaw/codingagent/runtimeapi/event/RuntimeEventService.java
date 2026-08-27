@@ -106,13 +106,8 @@ public class RuntimeEventService {
                     request.message(),
                     request.fileIds(),
                     credentials);
-<<<<<<< HEAD
-            emitConfigurationEntries(context.execution().eventStream(), reconciled.configurationEntries());
-            acceptUserEntry(sessionId, request, context);
-=======
             emitConfigurationEntries(context.execution().eventStream(), reconciled.configurationEntries(), locale);
             acceptUserEntry(sessionId, request, context, locale);
->>>>>>> upstream/main
             executionCoordinator.start(context.holder(), context.execution(), context.userMessage(), locale);
             return context.execution().eventStream();
         } catch (RuntimeException error) {
@@ -123,16 +118,6 @@ public class RuntimeEventService {
         }
     }
 
-<<<<<<< HEAD
-    private void emitConfigurationEntries(RuntimeEventStream stream, List<RuntimeEntryDTO> entries) {
-        for (RuntimeEntryDTO entry : entries) {
-            stream.emit(
-                    new RuntimeSseEventVO(Long.toString(entry.getEntrySeq()), entry.getType(), codec.toSseData(entry)));
-        }
-    }
-
-    private void acceptUserEntry(String sessionId, ValidatedUserEvent request, RuntimeExecutionContext context) {
-=======
     private void emitConfigurationEntries(RuntimeEventStream stream, List<RuntimeEntryDTO> entries, Locale locale) {
         for (RuntimeEntryDTO entry : entries) {
             stream.emit(new RuntimeSseEventVO(
@@ -142,7 +127,6 @@ public class RuntimeEventService {
 
     private void acceptUserEntry(
             String sessionId, ValidatedUserEvent request, RuntimeExecutionContext context, Locale locale) {
->>>>>>> upstream/main
         RuntimeEntryDTO entry =
                 codec.userEntry(sessionId, idGenerator.nextId(), request.message(), request.fileIds(), now());
         UserEventAcceptance acceptance = repository.acceptUserEvent(sessionId, entry, now());

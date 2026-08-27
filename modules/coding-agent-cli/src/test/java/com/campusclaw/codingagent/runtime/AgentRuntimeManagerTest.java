@@ -15,6 +15,7 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -25,10 +26,7 @@ import com.campusclaw.codingagent.runtime.MateServiceClient.AgentRuntime;
 import com.campusclaw.codingagent.runtime.MateServiceClient.SkillFile;
 import com.campusclaw.codingagent.runtime.MateServiceClient.SkillInfo;
 import com.campusclaw.codingagent.runtime.MateServiceClient.SkillReference;
-<<<<<<< HEAD
-=======
 import com.campusclaw.codingagent.runtimeapi.agent.RuntimeAgentPromptLoader;
->>>>>>> upstream/main
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -67,19 +65,12 @@ class AgentRuntimeManagerTest {
         Path managed = prepared.agentRoot().resolve(".campusclaw");
         assertTrue(Files.isRegularFile(managed.resolve("agent.json")));
         assertTrue(Files.isRegularFile(managed.resolve("settings.json")));
-<<<<<<< HEAD
-        assertEquals("prompt-v1", Files.readString(managed.resolve("SYSTEM.md")));
-        assertTrue(Files.isRegularFile(managed.resolve("agents/researcher.json")));
-        assertTrue(Files.isRegularFile(managed.resolve("skills/calendar/skill.json")));
-        assertTrue(Files.isRegularFile(managed.resolve("skills/calendar/SKILL.md")));
-=======
         assertEquals("prompt-v1", Files.readString(managed.resolve("SYSTEM.md"), StandardCharsets.UTF_8));
         assertTrue(Files.isRegularFile(managed.resolve("agents/researcher.json")));
         assertTrue(Files.isRegularFile(managed.resolve("skills/calendar/skill.json")));
         assertTrue(Files.isRegularFile(managed.resolve("skills/calendar/SKILL.md")));
         assertEquals(
                 skillContent(), Files.readString(managed.resolve("skills/calendar/SKILL.md"), StandardCharsets.UTF_8));
->>>>>>> upstream/main
         assertTrue(Files.isDirectory(managed.resolve("skills/calendar/references")));
         assertTrue(Files.isDirectory(managed.resolve("skills/calendar/templates")));
         try (var paths = Files.walk(managed)) {
@@ -186,21 +177,6 @@ class AgentRuntimeManagerTest {
         }
     }
 
-<<<<<<< HEAD
-    private void stubRuntime(String version, String prompt) {
-        when(client.getAgentRuntime(AGENT_ID)).thenReturn(runtime(version, prompt));
-        when(client.querySkillInfo(SKILL_ID)).thenReturn(List.of(skill()));
-    }
-
-    private static AgentRuntime runtime(String version, String prompt) {
-        return runtime(List.of(child("researcher", CHILD_ID)), prompt, version);
-    }
-
-    private static AgentRuntime runtime(List<AgentReference> children, String prompt) {
-        return runtime(children, prompt, "2.0.0");
-    }
-
-=======
     @Test
     void nullSkillContentFailsPrepareWithoutPublishing() {
         when(client.getAgentRuntime(AGENT_ID)).thenReturn(runtime("1.0.0", "prompt-v1"));
@@ -313,7 +289,6 @@ class AgentRuntimeManagerTest {
         return runtime(children, prompt, "2.0.0");
     }
 
->>>>>>> upstream/main
     private static AgentRuntime runtime(List<AgentReference> children, String prompt, String version) {
         return new AgentRuntime(
                 List.of("gpt-4o"),
@@ -334,31 +309,21 @@ class AgentRuntimeManagerTest {
         return new AgentReference(id, name, "Child", "Researches a task", "1.0.0");
     }
 
-<<<<<<< HEAD
-    private static SkillInfo skill() {
-=======
     private static SkillInfo skill(String content) {
->>>>>>> upstream/main
         return new SkillInfo(
                 "calendar",
                 SKILL_ID,
                 "1.0.0",
                 "Calendar workflow",
                 "booking",
-<<<<<<< HEAD
-=======
                 content,
->>>>>>> upstream/main
                 List.of(),
                 List.of(),
                 List.of(new SkillFile("template-1", "request", "Template", "txt")),
                 List.of(new SkillFile("reference-1", "guide", "Reference", "md")));
-<<<<<<< HEAD
-=======
     }
 
     private static String skillContent() {
         return "---\nname: calendar\ndescription: Calendar workflow\n---\n\nUse the calendar workflow.\n";
->>>>>>> upstream/main
     }
 }

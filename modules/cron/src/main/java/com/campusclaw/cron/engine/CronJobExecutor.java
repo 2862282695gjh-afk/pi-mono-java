@@ -6,10 +6,7 @@ package com.campusclaw.cron.engine;
 
 import java.util.UUID;
 
-<<<<<<< HEAD
-=======
 import com.campusclaw.cron.model.CronErrorCode;
->>>>>>> upstream/main
 import com.campusclaw.cron.model.CronJob;
 import com.campusclaw.cron.model.CronPayload;
 import com.campusclaw.cron.model.CronRunRecord;
@@ -49,12 +46,6 @@ public class CronJobExecutor {
             return append(success(runId, job.id(), startedAt, output));
         } catch (RuntimeException exception) {
             log.error("Cron Job {} execution failed: {}", job.id(), exception.getMessage(), exception);
-<<<<<<< HEAD
-            return append(failed(runId, job.id(), startedAt, exception.getMessage()));
-        }
-    }
-
-=======
             return append(failed(runId, job.id(), startedAt, stableCodeOf(exception)));
         }
     }
@@ -67,30 +58,17 @@ public class CronJobExecutor {
         return CronErrorCode.CRON_EXECUTION_FAILED.name();
     }
 
->>>>>>> upstream/main
     private CronRunRecord append(CronRunRecord record) {
         runLog.appendRun(record);
         return record;
     }
 
     private static CronRunRecord running(String runId, String jobId, long startedAt) {
-<<<<<<< HEAD
-        return new CronRunRecord(runId, jobId, startedAt, 0, CronRunRecord.RunStatus.RUNNING, null, null, 0);
-=======
         return new CronRunRecord(runId, jobId, startedAt, 0, CronRunRecord.RunStatus.RUNNING, null, null, null, 0);
->>>>>>> upstream/main
     }
 
     private static CronRunRecord success(String runId, String jobId, long startedAt, String output) {
         return new CronRunRecord(
-<<<<<<< HEAD
-                runId, jobId, startedAt, System.currentTimeMillis(), CronRunRecord.RunStatus.SUCCESS, null, output, 0);
-    }
-
-    private static CronRunRecord failed(String runId, String jobId, long startedAt, String message) {
-        return new CronRunRecord(
-                runId, jobId, startedAt, System.currentTimeMillis(), CronRunRecord.RunStatus.FAILED, message, null, 0);
-=======
                 runId,
                 jobId,
                 startedAt,
@@ -113,6 +91,5 @@ public class CronJobExecutor {
                 null,
                 null,
                 0);
->>>>>>> upstream/main
     }
 }

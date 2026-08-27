@@ -84,13 +84,9 @@ class RuntimeSessionConfigurationServiceTest {
                 modelManager,
                 etagFactory,
                 new RuntimeSessionResponseAssembler(etagFactory),
-<<<<<<< HEAD
-                new RuntimeEntryCodec(new ObjectMapper()),
-=======
                 new RuntimeEntryCodec(
                         new ObjectMapper(),
                         new com.campusclaw.codingagent.runtimeapi.RuntimeMessageSourceConfiguration().messageSource()),
->>>>>>> upstream/main
                 () -> "entry-config",
                 Clock.fixed(Instant.parse("2026-08-18T02:00:00Z"), ZoneOffset.UTC));
     }

@@ -68,11 +68,7 @@ public class RuntimeExecutionCoordinator {
 
     public void start(
             RuntimeSessionHolder holder, RuntimeActiveExecution execution, UserMessage message, Locale locale) {
-<<<<<<< HEAD
-        RuntimeEventProjector projector = projectorFactory.create(holder, execution, message);
-=======
         RuntimeEventProjector projector = projectorFactory.create(holder, execution, message, locale);
->>>>>>> upstream/main
         RuntimeSubscriptions subscriptions = RuntimeSubscriptions.empty();
         try {
             subscriptions = subscribe(holder, projector);
@@ -169,11 +165,7 @@ public class RuntimeExecutionCoordinator {
         Throwable failure = executionFailure(execution, executionError, projector);
         failure = finishPersistence(holder.sessionId(), failure);
         failure = releaseExecution(holder, execution, subscriptions, failure);
-<<<<<<< HEAD
-        logFailure(holder.sessionId(), failure);
-=======
         recordFailure(holder.sessionId(), projector, failure);
->>>>>>> upstream/main
         terminalEventFactory.emit(execution.eventStream(), execution, projector.terminalReason(), failure, locale);
         execution.eventStream().complete();
         execution.complete(failure);

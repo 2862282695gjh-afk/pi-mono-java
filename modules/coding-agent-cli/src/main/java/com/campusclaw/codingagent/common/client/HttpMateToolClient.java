@@ -30,11 +30,7 @@ import org.slf4j.LoggerFactory;
 /**
  * 通过 {@link MateRestUtil} 访问 CampusMate 服务的 {@link MateToolClient} HTTP 实现。
  *
-<<<<<<< HEAD
- * <p>网关地址和出站接口路径均由配置注入。发现与执行请求使用当前 Agent 执行的不可变凭据
-=======
  * <p>共享基础地址和出站接口路径均由配置注入。发现与执行请求使用当前 Agent 执行的不可变凭据
->>>>>>> upstream/main
  * 快照；发现端点允许空凭据，执行端点在发出请求前校验最低完整性。
  *
  * @version [br_eCampusCore 26.0.0, 2026/08/24]
@@ -102,11 +98,7 @@ public class HttpMateToolClient implements MateToolClient {
             return queryOrderedToolMeta(queryToolIdsByAgentId(agentId, credentials), credentials);
         } catch (Exception exception) {
             log.error("listAgentTools failed: agentId={}", agentId, exception);
-<<<<<<< HEAD
-            throw new IllegalStateException("listAgentTools failed", exception);
-=======
             throw publicFailure("listAgentTools", exception);
->>>>>>> upstream/main
         }
     }
 
@@ -117,11 +109,7 @@ public class HttpMateToolClient implements MateToolClient {
             return queryOrderedToolMeta(queryToolIdsBySkillId(skillId, credentials), credentials);
         } catch (Exception exception) {
             log.error("listSkillTools failed: skillId={}", skillId, exception);
-<<<<<<< HEAD
-            throw new IllegalStateException("listSkillTools failed", exception);
-=======
             throw publicFailure("listSkillTools", exception);
->>>>>>> upstream/main
         }
     }
 
@@ -145,11 +133,7 @@ public class HttpMateToolClient implements MateToolClient {
      */
     protected List<String> queryToolIdsByAgentId(String agentId, MateCredentials credentials) throws Exception {
         String raw = mateRestUtil.executeGetRawRequest(
-<<<<<<< HEAD
-                mateInnerGwAddress, agentInfoPathPrefix + agentId, toHeaderInfo(credentials));
-=======
                 campusMateBaseUrl, expandPathTemplate(agentInfoPathTemplate, agentId), toHeaderInfo(credentials));
->>>>>>> upstream/main
         AgentInfo agentInfo = unwrapResult(raw, AgentInfo.class);
         List<String> toolIds = new ArrayList<>();
         if (agentInfo != null && agentInfo.getBindingTools() != null) {
@@ -170,11 +154,7 @@ public class HttpMateToolClient implements MateToolClient {
      */
     protected List<String> queryToolIdsBySkillId(String skillId, MateCredentials credentials) throws Exception {
         String raw = mateRestUtil.executeGetRawRequest(
-<<<<<<< HEAD
-                mateInnerGwAddress, skillToolsQueryPathPrefix + skillId, toHeaderInfo(credentials));
-=======
                 campusMateBaseUrl, expandPathTemplate(skillInfoPathTemplate, skillId), toHeaderInfo(credentials));
->>>>>>> upstream/main
         SkillInfoResult skillResult = unwrapResult(raw, SkillInfoResult.class);
         List<String> toolIds = new ArrayList<>();
         if (skillResult != null && skillResult.getBindingTools() != null) {
@@ -202,14 +182,6 @@ public class HttpMateToolClient implements MateToolClient {
         requireToolIds(toolIds);
         String body = mapper.writeValueAsString(Map.of("toolIds", toolIds));
         String raw = mateRestUtil.executePostRawRequest(
-<<<<<<< HEAD
-                mateInnerGwAddress, toolMetadataQueryPath, toHeaderInfo(credentials), body);
-        JsonNode root = mapper.readTree(raw);
-        String resCode = root.path("resCode").asText("");
-        if (!"0".equals(resCode)) {
-            throw new IllegalStateException("tool metadata query failed: resCode=" + resCode + " resMsg="
-                    + root.path("resMsg").asText(""));
-=======
                 campusMateBaseUrl, toolMetadataQueryPath, toHeaderInfo(credentials), body);
         JsonNode root = readRoot(raw);
         JsonNode data = root.path("result").path("data");
@@ -221,7 +193,6 @@ public class HttpMateToolClient implements MateToolClient {
             infos = mapper.convertValue(data, new TypeReference<List<ToolInfo>>() {});
         } catch (IllegalArgumentException e) {
             throw new MateToolResponseException("result.data is not a tool metadata list", e);
->>>>>>> upstream/main
         }
         return toMeta(infos);
     }
@@ -365,13 +336,8 @@ public class HttpMateToolClient implements MateToolClient {
 
             // CampusMate 执行接口契约:参数需包一层 arguments 包装。
             String body = mapper.writeValueAsString(Map.of("arguments", args != null ? args : Map.of()));
-<<<<<<< HEAD
-            String path = toolExecutePathTemplate.replace("%s", toolId);
-            String raw = mateRestUtil.executePostRawRequest(mateInnerGwAddress, path, headerInfo, body);
-=======
             String path = expandPathTemplate(toolExecutePathTemplate, toolId);
             String raw = mateRestUtil.executePostRawRequest(campusMateBaseUrl, path, headerInfo, body);
->>>>>>> upstream/main
             JsonNode root = mapper.readTree(raw);
             String resCode = root.path("resCode").asText("");
             if (!"0".equals(resCode)) {
@@ -390,8 +356,6 @@ public class HttpMateToolClient implements MateToolClient {
         }
     }
 
-<<<<<<< HEAD
-=======
     // 稳定错误码异常原样透出供公开边界映射;其余异常包装为通用失败。
     private static RuntimeException publicFailure(String operation, Exception exception) {
         if (exception instanceof MateToolResponseException) {
@@ -400,7 +364,6 @@ public class HttpMateToolClient implements MateToolClient {
         return new IllegalStateException(operation + " failed", exception);
     }
 
->>>>>>> upstream/main
     private static RequestHeaderInfo toHeaderInfo(MateCredentials credentials) {
         MateCredentials snapshot = credentials == null ? MateCredentials.empty() : credentials;
         return RequestHeaderInfo.builder()
@@ -409,11 +372,8 @@ public class HttpMateToolClient implements MateToolClient {
                 .authorization(snapshot.authorization())
                 .build();
     }
-<<<<<<< HEAD
-=======
 
     private static String expandPathTemplate(String template, String resourceId) {
         return template.replace("%s", resourceId);
     }
->>>>>>> upstream/main
 }

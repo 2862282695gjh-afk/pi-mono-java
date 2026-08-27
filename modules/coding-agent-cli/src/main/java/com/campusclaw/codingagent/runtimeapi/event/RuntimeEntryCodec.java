@@ -522,11 +522,7 @@ public class RuntimeEntryCodec {
             case USER_MESSAGE -> appendUserPayload(target, payload);
             case ASSISTANT_MESSAGE_COMPLETED -> appendAssistantPayload(target, payload);
             case ASSISTANT_THINKING_COMPLETED -> appendThinkingPayload(target, payload);
-<<<<<<< HEAD
-            case TOOL_RESULT -> appendToolResultPayload(target, payload);
-=======
             case TOOL_RESULT -> appendToolResultPayload(target, payload, locale);
->>>>>>> upstream/main
             case SESSION_MODEL_CHANGED -> appendModelChangedPayload(target, payload);
             case SESSION_THINKING_CHANGED -> appendThinkingChangedPayload(target, payload);
             case SESSION_COMPACTION_COMPLETED -> appendCompactionPayload(target, payload);
@@ -577,27 +573,6 @@ public class RuntimeEntryCodec {
             return message;
         }
         return messageSource.getMessage(TOOL_EXECUTION_FAILED, null, "Tool execution failed.", locale);
-    }
-
-    private void appendModelChangedPayload(LinkedHashMap<String, Object> target, JsonNode payload) {
-        target.put("previousModelId", payload.path("previousModelId").asText());
-        target.put("modelId", payload.path("modelId").asText());
-        target.put("reason", payload.path("reason").asText());
-    }
-
-    private void appendThinkingChangedPayload(LinkedHashMap<String, Object> target, JsonNode payload) {
-        target.put("previousThinking", payload.path("previousThinking").asBoolean());
-        target.put("thinking", payload.path("thinking").asBoolean());
-        target.put("reason", payload.path("reason").asText());
-    }
-
-    private void appendCompactionPayload(LinkedHashMap<String, Object> target, JsonNode payload) {
-        target.put("reason", payload.path("reason").asText());
-        target.put("summary", payload.path("summary").asText());
-        target.put("firstKeptEntryId", payload.path("firstKeptEntryId").asText());
-        target.put("tokensBefore", payload.path("tokensBefore").asInt());
-        target.put("estimatedTokensAfter", payload.path("estimatedTokensAfter").asInt());
-        target.put("willRetry", payload.path("willRetry").asBoolean());
     }
 
     private void appendModelChangedPayload(LinkedHashMap<String, Object> target, JsonNode payload) {

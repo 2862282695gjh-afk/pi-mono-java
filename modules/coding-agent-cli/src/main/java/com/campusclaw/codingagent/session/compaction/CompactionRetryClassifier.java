@@ -11,8 +11,6 @@ import com.campusclaw.ai.types.AssistantMessage;
 import com.campusclaw.ai.types.StopReason;
 
 final class CompactionRetryClassifier {
-<<<<<<< HEAD
-=======
     private static final List<String> RETRYABLE_CODES = List.of(
             "MODEL_RATE_LIMITED",
             "MODEL_UNAVAILABLE",
@@ -22,7 +20,6 @@ final class CompactionRetryClassifier {
             "UPSTREAM_STREAM_ERROR",
             "MATE_MODEL_MANAGER_ERROR");
 
->>>>>>> upstream/main
     private static final List<Pattern> NON_RETRYABLE = patterns(
             "GoUsageLimitError",
             "FreeUsageLimitError",
@@ -69,12 +66,8 @@ final class CompactionRetryClassifier {
     private CompactionRetryClassifier() {}
 
     static boolean isRetryable(AssistantMessage message) {
-<<<<<<< HEAD
-        return message.stopReason() == StopReason.ERROR && isRetryable(message.errorMessage());
-=======
         return message.stopReason() == StopReason.ERROR
                 && (isRetryableCode(message.errorCode()) || isRetryable(message.errorMessage()));
->>>>>>> upstream/main
     }
 
     static boolean isRetryable(Throwable error) {
@@ -87,12 +80,9 @@ final class CompactionRetryClassifier {
     }
 
     private static boolean isRetryable(String message) {
-<<<<<<< HEAD
-=======
         if (isRetryableCode(message)) {
             return true;
         }
->>>>>>> upstream/main
         if (message == null
                 || NON_RETRYABLE.stream()
                         .anyMatch(pattern -> pattern.matcher(message).find())) {
@@ -101,13 +91,10 @@ final class CompactionRetryClassifier {
         return RETRYABLE.stream().anyMatch(pattern -> pattern.matcher(message).find());
     }
 
-<<<<<<< HEAD
-=======
     private static boolean isRetryableCode(String errorCode) {
         return errorCode != null && RETRYABLE_CODES.contains(errorCode);
     }
 
->>>>>>> upstream/main
     private static List<Pattern> patterns(String... expressions) {
         return java.util.Arrays.stream(expressions)
                 .map(expression -> Pattern.compile(expression, Pattern.CASE_INSENSITIVE))

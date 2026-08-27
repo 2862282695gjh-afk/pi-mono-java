@@ -228,13 +228,9 @@ public class SessionCompactor {
         if (!CompactionRetryClassifier.isRetryable(response)) {
             return Mono.just(response);
         }
-<<<<<<< HEAD
-        String message = response.errorMessage() == null ? "Transient summary failure" : response.errorMessage();
-=======
         String message = response.errorCode() != null
                 ? response.errorCode()
                 : response.errorMessage() == null ? "Transient summary failure" : response.errorMessage();
->>>>>>> upstream/main
         return Mono.error(new IllegalStateException(message));
     }
 

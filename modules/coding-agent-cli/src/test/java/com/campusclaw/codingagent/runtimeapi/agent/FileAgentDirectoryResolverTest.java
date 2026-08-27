@@ -13,10 +13,7 @@ import static org.mockito.Mockito.when;
 import java.nio.file.Path;
 import java.util.List;
 
-<<<<<<< HEAD
-=======
 import com.campusclaw.codingagent.runtime.AgentRuntimeErrorCode;
->>>>>>> upstream/main
 import com.campusclaw.codingagent.runtime.AgentRuntimeException;
 import com.campusclaw.codingagent.runtime.AgentRuntimeManager;
 import com.campusclaw.codingagent.runtime.MateServiceClient.AgentRuntime;
@@ -30,10 +27,7 @@ import org.junit.jupiter.api.io.TempDir;
 import org.springframework.boot.test.system.CapturedOutput;
 import org.springframework.boot.test.system.OutputCaptureExtension;
 
-<<<<<<< HEAD
-=======
 @ExtendWith(OutputCaptureExtension.class)
->>>>>>> upstream/main
 class FileAgentDirectoryResolverTest {
 
     private static final String AGENT_ID = "agent-0123456789abcdef0123456789abcdef";
@@ -66,23 +60,6 @@ class FileAgentDirectoryResolverTest {
     }
 
     @Test
-<<<<<<< HEAD
-    void translatesRuntimePreparationFailure() {
-        AgentRuntimeManager manager = mock(AgentRuntimeManager.class);
-        when(manager.prepare(AGENT_ID)).thenThrow(new AgentRuntimeException("Mate unavailable"));
-
-        assertThatThrownBy(() -> new FileAgentDirectoryResolver(manager).resolve(AGENT_ID))
-                .isInstanceOfSatisfying(RuntimeApiException.class, error -> assertThat(error.errorCode())
-                        .isEqualTo(RuntimeErrorCode.AGENT_NOT_AVAILABLE));
-    }
-
-    @Test
-    void rejectsDisabledManagedAgent() {
-        AgentRuntimeManager manager = mock(AgentRuntimeManager.class);
-        when(manager.prepare(AGENT_ID)).thenReturn(prepared(List.of("model-a"), false));
-
-        assertThatThrownBy(() -> new FileAgentDirectoryResolver(manager).resolve(AGENT_ID))
-=======
     void logsAndTranslatesRuntimePreparationFailure(CapturedOutput output) {
         AgentRuntimeManager manager = mock(AgentRuntimeManager.class);
         AgentRuntimeException failure = new AgentRuntimeException("Mate unavailable");
@@ -123,7 +100,6 @@ class FileAgentDirectoryResolverTest {
         when(manager.prepare(AGENT_ID)).thenReturn(prepared(List.of("model-a"), false));
 
         assertThatThrownBy(() -> new FileAgentDirectoryResolver(manager).resolve(AGENT_ID))
->>>>>>> upstream/main
                 .isInstanceOfSatisfying(RuntimeApiException.class, error -> assertThat(error.errorCode())
                         .isEqualTo(RuntimeErrorCode.AGENT_NOT_AVAILABLE));
     }

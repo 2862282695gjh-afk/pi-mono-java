@@ -156,10 +156,6 @@ class RuntimeEventServiceTest {
     @Test
     void executionFailureUsesChineseSseMessage() {
         Fixture fixture = new Fixture();
-<<<<<<< HEAD
-        RuntimeEventStream stream = fixture.service.submit(
-                SESSION_ID, request("分析订单", List.of()), Locale.SIMPLIFIED_CHINESE, MateCredentials.empty());
-=======
         Logger logger = (Logger) LoggerFactory.getLogger(RuntimeExecutionCoordinator.class);
         ListAppender<ILoggingEvent> logs = new ListAppender<>();
         logs.start();
@@ -168,7 +164,6 @@ class RuntimeEventServiceTest {
         try {
             stream = fixture.service.submit(
                     SESSION_ID, request("分析订单", List.of()), Locale.SIMPLIFIED_CHINESE, MateCredentials.empty());
->>>>>>> upstream/main
 
             fixture.agentFuture.completeExceptionally(new IllegalStateException("expected test failure"));
         } finally {

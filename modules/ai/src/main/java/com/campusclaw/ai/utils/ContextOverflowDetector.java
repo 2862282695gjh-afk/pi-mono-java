@@ -99,9 +99,6 @@ public final class ContextOverflowDetector {
     }
 
     private static boolean hasOverflowError(AssistantMessage message) {
-<<<<<<< HEAD
-        if (message.stopReason() != StopReason.ERROR || message.errorMessage() == null) {
-=======
         if (message.stopReason() != StopReason.ERROR) {
             return false;
         }
@@ -109,7 +106,6 @@ public final class ContextOverflowDetector {
             return true;
         }
         if (message.errorMessage() == null) {
->>>>>>> upstream/main
             return false;
         }
         String error = message.errorMessage();

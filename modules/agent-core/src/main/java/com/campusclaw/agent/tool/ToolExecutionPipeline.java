@@ -266,11 +266,7 @@ public class ToolExecutionPipeline {
             validateArguments(tool, validatedArgs);
             return null;
         } catch (Exception error) {
-<<<<<<< HEAD
-            return toToolResultMessage(toolCall, toolName, errorResult(messageForException(error)), true);
-=======
             return toToolResultMessage(toolCall, toolName, failureResult(error), true);
->>>>>>> upstream/main
         }
     }
 

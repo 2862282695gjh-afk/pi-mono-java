@@ -4,19 +4,13 @@
 
 package com.campusclaw.ai.provider.mate;
 
-<<<<<<< HEAD
-=======
 import java.net.ConnectException;
 import java.net.SocketTimeoutException;
->>>>>>> upstream/main
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-<<<<<<< HEAD
-=======
 import java.util.concurrent.TimeoutException;
->>>>>>> upstream/main
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import com.campusclaw.ai.model.ModelRegistry;
@@ -36,15 +30,11 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
-<<<<<<< HEAD
-import org.springframework.http.codec.ServerSentEvent;
-=======
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.spi.LoggingEventBuilder;
 import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.web.reactive.function.client.WebClientRequestException;
->>>>>>> upstream/main
 
 /**
  * 将原始 OpenAI Chat SSE 事件投影为统一 AssistantMessageEvent。
@@ -53,11 +43,8 @@ import org.springframework.web.reactive.function.client.WebClientRequestExceptio
  * @since [br_eCampusCore 26.0.0]
  */
 final class MateChatSseParser {
-<<<<<<< HEAD
-=======
     private static final Logger LOGGER = LoggerFactory.getLogger(MateChatSseParser.class);
 
->>>>>>> upstream/main
     private static final List<String> REASONING_FIELDS =
             List.of("reasoning_content", "reasoning", "reasoning_text", "reasoning_details");
 
@@ -77,11 +64,8 @@ final class MateChatSseParser {
 
     private StopReason stopReason = StopReason.STOP;
 
-<<<<<<< HEAD
-=======
     private MateInvocationErrorCode terminalErrorCode;
 
->>>>>>> upstream/main
     private String responseId;
 
     private String responseModel;
@@ -109,11 +93,7 @@ final class MateChatSseParser {
             return;
         }
         if ("error".equals(event.event())) {
-<<<<<<< HEAD
-            fail(new MateModelInvocationException("UPSTREAM_STREAM_ERROR", "Mate Chat stream failed"));
-=======
             fail(streamError(event.data()));
->>>>>>> upstream/main
             return;
         }
         String data = event.data();
@@ -129,13 +109,9 @@ final class MateChatSseParser {
 
     void completeWithoutDone() {
         if (!terminal.get()) {
-<<<<<<< HEAD
-            fail(new MateModelInvocationException("UPSTREAM_STREAM_ERROR", "Mate Chat stream closed before [DONE]"));
-=======
             MateInvocationErrorCode errorCode = MateInvocationErrorCode.UPSTREAM_STREAM_ERROR;
             recordFailure("mate.response.sse.complete", errorCode, null);
             fail(new MateModelInvocationException(errorCode));
->>>>>>> upstream/main
         }
     }
 
@@ -143,12 +119,8 @@ final class MateChatSseParser {
         if (!terminal.compareAndSet(false, true)) {
             return;
         }
-<<<<<<< HEAD
-        AssistantMessage message = message(StopReason.ERROR, safeMessage(error));
-=======
         MateInvocationErrorCode errorCode = classifyFailure(error);
         AssistantMessage message = message(StopReason.ERROR, errorCode);
->>>>>>> upstream/main
         stream.pushError("error", message);
     }
 
@@ -171,13 +143,9 @@ final class MateChatSseParser {
         } catch (MateModelInvocationException error) {
             fail(error);
         } catch (Exception error) {
-<<<<<<< HEAD
-            fail(new MateModelInvocationException("INVALID_CHAT_SSE", "Mate Chat SSE is invalid", error));
-=======
             MateInvocationErrorCode errorCode = MateInvocationErrorCode.INVALID_CHAT_SSE;
             recordFailure("mate.response.sse.parse", errorCode, error);
             fail(new MateModelInvocationException(errorCode));
->>>>>>> upstream/main
         }
     }
 
@@ -231,14 +199,9 @@ final class MateChatSseParser {
         if (reasoningField == null) {
             reasoningField = field;
         } else if (!reasoningField.equals(field)) {
-<<<<<<< HEAD
-            throw new MateModelInvocationException(
-                    "INVALID_CHAT_SSE", "Mate Chat changed reasoning fields within one response");
-=======
             MateInvocationErrorCode errorCode = MateInvocationErrorCode.INVALID_CHAT_SSE;
             recordFailure("mate.response.reasoning.validate", errorCode, null);
             throw new MateModelInvocationException(errorCode);
->>>>>>> upstream/main
         }
     }
 
@@ -335,25 +298,17 @@ final class MateChatSseParser {
             finishText();
             finishTools();
         } catch (RuntimeException error) {
-<<<<<<< HEAD
-            fail(error);
-=======
             fail(normalizeSseFailure("mate.response.finish", error));
->>>>>>> upstream/main
             return;
         }
         if (!terminal.compareAndSet(false, true)) {
             return;
         }
-<<<<<<< HEAD
-        stream.pushDone(stopReason, message(stopReason, null));
-=======
         if (stopReason == StopReason.ERROR) {
             terminalErrorCode = MateInvocationErrorCode.MODEL_CONTENT_FILTERED;
             recordFailure("mate.response.finish", terminalErrorCode, null);
         }
         stream.pushDone(stopReason, message(stopReason, terminalErrorCode));
->>>>>>> upstream/main
     }
 
     private void finishThinking() {
@@ -387,13 +342,9 @@ final class MateChatSseParser {
             }
             return mapper.readValue(value, new TypeReference<Map<String, Object>>() {});
         } catch (Exception error) {
-<<<<<<< HEAD
-            throw new MateModelInvocationException("INVALID_CHAT_SSE", "Tool arguments are invalid", error);
-=======
             MateInvocationErrorCode errorCode = MateInvocationErrorCode.INVALID_CHAT_SSE;
             recordFailure("mate.response.toolArguments.parse", errorCode, error);
             throw new MateModelInvocationException(errorCode);
->>>>>>> upstream/main
         }
     }
 
@@ -401,11 +352,7 @@ final class MateChatSseParser {
         return message(StopReason.STOP, null);
     }
 
-<<<<<<< HEAD
-    private AssistantMessage message(StopReason reason, String errorMessage) {
-=======
     private AssistantMessage message(StopReason reason, MateInvocationErrorCode errorCode) {
->>>>>>> upstream/main
         return new AssistantMessage(
                 List.copyOf(content),
                 Api.OPENAI_COMPLETIONS.value(),
@@ -415,12 +362,8 @@ final class MateChatSseParser {
                 responseModel,
                 usage,
                 reason,
-<<<<<<< HEAD
-                errorMessage,
-=======
                 errorCode == null ? null : errorCode.name(),
                 null,
->>>>>>> upstream/main
                 System.currentTimeMillis());
     }
 
@@ -433,10 +376,6 @@ final class MateChatSseParser {
         };
     }
 
-<<<<<<< HEAD
-    private static String safeMessage(Throwable error) {
-        return error.getMessage() == null ? "Mate Chat stream failed" : error.getMessage();
-=======
     private MateModelInvocationException streamError(String data) {
         if (data == null || data.isBlank()) {
             MateInvocationErrorCode errorCode = MateInvocationErrorCode.UPSTREAM_STREAM_ERROR;
@@ -501,7 +440,6 @@ final class MateChatSseParser {
         return requestFailure
                 ? MateInvocationErrorCode.MANAGER_UNAVAILABLE
                 : MateInvocationErrorCode.UPSTREAM_STREAM_ERROR;
->>>>>>> upstream/main
     }
 
     private static final class ToolAccumulator {

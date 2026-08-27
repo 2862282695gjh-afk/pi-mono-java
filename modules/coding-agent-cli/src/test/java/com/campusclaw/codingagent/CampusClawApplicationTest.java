@@ -4,6 +4,7 @@
 
 package com.campusclaw.codingagent;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatNoException;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -26,8 +27,6 @@ class CampusClawApplicationTest {
     void applicationCanBeConstructedWithoutCliDependencies() {
         assertThatNoException().isThrownBy(CampusClawApplication::new);
     }
-<<<<<<< HEAD
-=======
 
     @Test
     void startupFailureLogsRawErrorAndThrowsOnlyCode() {
@@ -52,5 +51,4 @@ class CampusClawApplicationTest {
             logger.detachAppender(logs);
         }
     }
->>>>>>> upstream/main
 }

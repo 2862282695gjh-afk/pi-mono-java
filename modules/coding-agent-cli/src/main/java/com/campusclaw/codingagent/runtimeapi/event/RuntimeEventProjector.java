@@ -73,11 +73,8 @@ public class RuntimeEventProjector {
 
     private StopReason terminalReason = StopReason.STOP;
 
-<<<<<<< HEAD
-=======
     private String terminalErrorCode;
 
->>>>>>> upstream/main
     private int assistantAttempt = 1;
 
     public RuntimeEventProjector(
@@ -248,11 +245,7 @@ public class RuntimeEventProjector {
                 message.usage(),
                 entry.getTimestamp());
         repository.appendEntryWithUsage(entry, record, message.usage());
-<<<<<<< HEAD
-        stream.emit(new RuntimeSseEventVO(Long.toString(entry.getEntrySeq()), entry.getType(), codec.toSseData(entry)));
-=======
         emitPersisted(entry);
->>>>>>> upstream/main
         assistantEntryId = null;
         terminalReason = message.stopReason();
         terminalErrorCode = message.errorCode();
@@ -346,11 +339,7 @@ public class RuntimeEventProjector {
                 event.result().usage(),
                 entry.getTimestamp());
         repository.appendEntryWithUsage(entry, record, event.result().usage());
-<<<<<<< HEAD
-        stream.emit(new RuntimeSseEventVO(Long.toString(entry.getEntrySeq()), entry.getType(), codec.toSseData(entry)));
-=======
         emitPersisted(entry);
->>>>>>> upstream/main
         if (event.willRetry()) {
             assistantAttempt++;
         }
@@ -387,14 +376,11 @@ public class RuntimeEventProjector {
         return data;
     }
 
-<<<<<<< HEAD
-=======
     private void emitPersisted(RuntimeEntryDTO entry) {
         stream.emit(new RuntimeSseEventVO(
                 Long.toString(entry.getEntrySeq()), entry.getType(), codec.toSseData(entry, locale)));
     }
 
->>>>>>> upstream/main
     private OffsetDateTime now() {
         return OffsetDateTime.ofInstant(clock.instant(), ZoneOffset.UTC);
     }

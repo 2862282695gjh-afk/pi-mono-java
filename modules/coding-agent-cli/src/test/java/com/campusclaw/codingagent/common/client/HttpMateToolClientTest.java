@@ -184,17 +184,10 @@ class HttpMateToolClientTest {
         server.enqueue(json("{\"resCode\":\"403\",\"resMsg\":\"forbidden\",\"result\":{\"data\":"
                 + "[{\"id\":\"tool-11111111111111111111111111111111\",\"name\":\"query\"}]}}"));
 
-<<<<<<< HEAD
-        assertThatThrownBy(
-                        () -> client.listAgentTools("agent-11111111111111111111111111111111", MateCredentials.empty()))
-                .isInstanceOf(IllegalStateException.class)
-                .hasRootCauseMessage("gateway call failed: resCode=500 resMsg=agent not found");
-=======
         List<MateToolMeta> tools =
                 client.listAgentTools("agent-11111111111111111111111111111111", MateCredentials.empty());
 
         assertThat(tools).extracting(MateToolMeta::toolId).containsExactly("tool-11111111111111111111111111111111");
->>>>>>> upstream/main
     }
 
     @Test
@@ -227,15 +220,10 @@ class HttpMateToolClientTest {
 
         assertThatThrownBy(
                         () -> client.listAgentTools("agent-11111111111111111111111111111111", MateCredentials.empty()))
-<<<<<<< HEAD
-                .isInstanceOf(IllegalStateException.class)
-                .hasRootCauseMessage("tool metadata query failed: resCode=403 resMsg=forbidden");
-=======
                 .isInstanceOf(MateToolResponseException.class)
                 .hasMessageContaining("result.data is missing")
                 .extracting(e -> ((MateToolResponseException) e).stableErrorCode())
                 .isEqualTo("MATE_TOOL_RESPONSE_INVALID");
->>>>>>> upstream/main
     }
 
     @Test

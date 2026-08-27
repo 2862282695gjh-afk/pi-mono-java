@@ -220,11 +220,7 @@ class RuntimeEventProjectorTest {
     @Test
     void reloadExcludesLengthResponseDiscardedBeforeCompactionRetry() {
         Model model = sampleModel();
-<<<<<<< HEAD
-        RuntimeEntryCodec codec = new RuntimeEntryCodec(new ObjectMapper());
-=======
         RuntimeEntryCodec codec = codec();
->>>>>>> upstream/main
         OffsetDateTime time = OffsetDateTime.parse("2026-08-24T14:00:00Z");
         RuntimeEntryDTO user = codec.userEntry("session_event_test", "entry_user", "task", List.of(), time);
         user.setEntrySeq(1L);
@@ -266,11 +262,7 @@ class RuntimeEventProjectorTest {
 
     private static RuntimeEventProjector projector(
             RuntimeSessionRepository repository, RuntimeEventStream stream, boolean thinking) {
-<<<<<<< HEAD
-        return projector(repository, stream, thinking, new RuntimeEntryCodec(new ObjectMapper()));
-=======
         return projector(repository, stream, thinking, codec());
->>>>>>> upstream/main
     }
 
     private static RuntimeEventProjector projector(
@@ -290,13 +282,6 @@ class RuntimeEventProjectorTest {
                 new UserMessage("分析订单", 1L),
                 thinking,
                 Locale.US);
-    }
-
-    private static RuntimeEntryDTO persistCompaction(
-            RuntimeEntryDTO entry, AtomicReference<RuntimeEntryDTO> compaction) {
-        entry.setEntrySeq(3L);
-        compaction.set(entry);
-        return entry;
     }
 
     private static RuntimeEntryDTO persistCompaction(

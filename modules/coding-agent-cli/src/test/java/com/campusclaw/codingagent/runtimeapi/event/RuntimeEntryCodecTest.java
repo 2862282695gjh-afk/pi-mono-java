@@ -22,10 +22,7 @@ import com.campusclaw.ai.types.Provider;
 import com.campusclaw.ai.types.StopReason;
 import com.campusclaw.ai.types.TextContent;
 import com.campusclaw.ai.types.ThinkingContent;
-<<<<<<< HEAD
-=======
 import com.campusclaw.ai.types.ToolResultMessage;
->>>>>>> upstream/main
 import com.campusclaw.ai.types.Usage;
 import com.campusclaw.codingagent.runtimeapi.dto.RuntimeEntryDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.RuntimeRecordDTO;
@@ -87,22 +84,14 @@ class RuntimeEntryCodecTest {
                 "assistant.message.completed",
                 "{\"message\":{\"role\":\"assistant\",\"content\":[]},\"finish_reason\":\"error\"}");
 
-<<<<<<< HEAD
-        List<String> ids = new RuntimeEntryCodec(new ObjectMapper()).toAgentContextEntryIds(List.of(user, failed));
-=======
         List<String> ids = codec().toAgentContextEntryIds(List.of(user, failed));
->>>>>>> upstream/main
 
         assertThat(ids).containsExactly("entry_user");
     }
 
     @Test
     void restoresPersistedAssistantModelIdentityInsteadOfCurrentModel() {
-<<<<<<< HEAD
-        RuntimeEntryCodec codec = new RuntimeEntryCodec(new ObjectMapper());
-=======
         RuntimeEntryCodec codec = codec();
->>>>>>> upstream/main
         AssistantMessage original = new AssistantMessage(
                 List.of(new TextContent("done")),
                 "openai-responses",
@@ -125,11 +114,7 @@ class RuntimeEntryCodecTest {
 
     @Test
     void storesUsageOnlyInInternalRecordAndRestoresReasoningSignature() {
-<<<<<<< HEAD
-        RuntimeEntryCodec codec = new RuntimeEntryCodec(new ObjectMapper());
-=======
         RuntimeEntryCodec codec = codec();
->>>>>>> upstream/main
         Usage usage = new Usage(10, 5, 2, 1, 18, new Cost(0.1, 0.2, 0.01, 0.02, 0.33));
         AssistantMessage original = new AssistantMessage(
                 List.of(new ThinkingContent("reason", "signature", false), new TextContent("done")),
@@ -186,15 +171,12 @@ class RuntimeEntryCodecTest {
         return entry;
     }
 
-<<<<<<< HEAD
-=======
     private static RuntimeEntryCodec codec() {
         return new RuntimeEntryCodec(
                 new ObjectMapper(),
                 new com.campusclaw.codingagent.runtimeapi.RuntimeMessageSourceConfiguration().messageSource());
     }
 
->>>>>>> upstream/main
     private static RuntimeEntryDTO entry(String id, String type, String payload) {
         RuntimeEntryDTO entry = new RuntimeEntryDTO();
         entry.setId(id);

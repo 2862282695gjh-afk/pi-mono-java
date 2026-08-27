@@ -39,14 +39,11 @@ class ContextOverflowDetectorTest {
                 List.of(new TextContent("ok", null)), "x", "x", "x", null, u, StopReason.STOP, null, 0L);
     }
 
-<<<<<<< HEAD
-=======
     private static AssistantMessage errorCode(String errorCode) {
         return new AssistantMessage(
                 List.of(), "x", "x", "x", null, null, Usage.empty(), StopReason.ERROR, errorCode, null, 0L);
     }
 
->>>>>>> upstream/main
     private static AssistantMessage lengthStopped(int input, int output) {
         Usage usage = new Usage(input, output, 0, 0, input + output, Cost.empty());
         return new AssistantMessage(

@@ -292,8 +292,6 @@ public class CronEngine {
                 0);
     }
 
-<<<<<<< HEAD
-=======
     private static String stableCodeOf(Exception exception) {
         if (exception instanceof com.campusclaw.agent.error.StableErrorCode coded) {
             return coded.stableErrorCode();
@@ -301,7 +299,6 @@ public class CronEngine {
         return CronErrorCode.CRON_EXECUTION_FAILED.name();
     }
 
->>>>>>> upstream/main
     long computeNextDelay(CronJob job) {
         long now = System.currentTimeMillis();
         return switch (job.schedule()) {

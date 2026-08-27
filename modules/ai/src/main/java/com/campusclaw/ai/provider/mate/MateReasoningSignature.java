@@ -10,12 +10,9 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
-<<<<<<< HEAD
-=======
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
->>>>>>> upstream/main
 /**
  * 编码并解析需要按原字段重放的 Chat reasoning 内容。
  *
@@ -23,11 +20,8 @@ import org.slf4j.LoggerFactory;
  * @since [br_eCampusCore 26.0.0]
  */
 final class MateReasoningSignature {
-<<<<<<< HEAD
-=======
     private static final Logger LOGGER = LoggerFactory.getLogger(MateReasoningSignature.class);
 
->>>>>>> upstream/main
     private static final Set<String> FIELDS =
             Set.of("reasoning_content", "reasoning", "reasoning_text", "reasoning_details");
 
@@ -61,10 +55,6 @@ final class MateReasoningSignature {
         } catch (MateModelInvocationException error) {
             throw error;
         } catch (Exception error) {
-<<<<<<< HEAD
-            throw new MateModelInvocationException(
-                    "INVALID_REASONING_SIGNATURE", "Mate reasoning signature is invalid", error);
-=======
             MateInvocationErrorCode errorCode = MateInvocationErrorCode.INVALID_REASONING_SIGNATURE;
             LOGGER.atError()
                     .addKeyValue("event", "campusclaw.failure")
@@ -76,14 +66,10 @@ final class MateReasoningSignature {
                             "mate.reasoningSignature.decode",
                             errorCode.name());
             throw new MateModelInvocationException(errorCode);
->>>>>>> upstream/main
         }
     }
 
     private static MateModelInvocationException invalid() {
-<<<<<<< HEAD
-        return new MateModelInvocationException("INVALID_REASONING_SIGNATURE", "Mate reasoning signature is invalid");
-=======
         MateInvocationErrorCode errorCode = MateInvocationErrorCode.INVALID_REASONING_SIGNATURE;
         LOGGER.atError()
                 .addKeyValue("event", "campusclaw.failure")
@@ -94,7 +80,6 @@ final class MateReasoningSignature {
                         "mate.reasoningSignature.validate",
                         errorCode.name());
         return new MateModelInvocationException(errorCode);
->>>>>>> upstream/main
     }
 
     record ReasoningField(String field, JsonNode value) {}
