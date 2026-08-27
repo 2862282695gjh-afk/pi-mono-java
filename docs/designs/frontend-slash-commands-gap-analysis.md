@@ -54,7 +54,7 @@
 | 来源 | 注册时机 | 命令 |
 |---|---|---|
 | 内置 | Bean 构造 | model/thinking/new/help/settings(原五命令,决议不变) |
-| 内置(新需求) | Bean 构造 | resume/compact/skill(见 2.2—2.4) |
+| 内置(新需求) | Bean 构造 | resume/compact/skill 命令通道(见 2.2—2.4；Skill descriptor 按会话请求期解析) |
 | Extension | `ExtensionPoint.commands()` 扩展点 | 自定义命令(见 2.5) |
 
 ```java
@@ -69,12 +69,12 @@ public class WebCommandCatalog {
 
     public void register(WebCommandDefinition def) { /* 冲突即抛 */ }
     public ParsedSlashInput parseSlashInput(String text) { /* 1.3 共享规范 + hasSeparator */ }
-    public boolean isRegistered(String name) { ... }
-    public List<CommandDescriptorDTO> descriptors(boolean all) { ... }
+    public boolean isStaticRegistered(String name) { ... }
+    public List<CommandDescriptorDTO> staticDescriptors(boolean all) { ... }
 }
 ```
 
-**缓存策略(复审③)**:Extension 仅启动期经构造注入,运行期静态——`GET /commands` 幂等可安全缓存(内存缓存即可,无需 ETag/失效机制);运行期动态注册为后续演进,首版不做。
+**缓存策略(最终契约)**:Extension 仅启动期经构造注入,运行期静态；`WebCommandCatalog` 的内置 + Extension 静态层可安全内存缓存,无需 ETag/失效机制。带 sessionId 的 `GET /commands` 还会在请求期合并该 agent 的 Skill descriptor，Skill 部分首版不得复用全局缓存。运行期动态安装/卸载 Extension 仍为后续演进，首版不做。
 
 **[横向㉚已采纳——Catalog 静态/Skill 动态分层]**。批注属实:skill 按当前 agent 的 runtime 目录解析,不同 agent 可见集不同——全局缓存会把 A 的技能暴露给 B。修订:
 
@@ -104,11 +104,61 @@ public class WebCommandCatalog {
 
 **前提变化**:批注④的"Runtime 无手动压缩"已过时——`SessionCompactor.compact()` 已存在(异步 + Started/Completed/Failed 事件)。缺口是 HTTP 暴露与进度通道。
 
-设计(经复审①/继续复查①④修订后的**当前契约**,前文旧 SSE 表述作废):
+概览（实施细节与最终状态机见下方“2.3.1 实施基线”，本概览不单独构成实现依据）:
 - `/compact` → `POST /sessions/{id}/commands/compact`(SERVER,requiresSession=true)→ 重建会话(含历史恢复)后触发 `SessionCompactor.compact(customInstructions)`
 - **无实时 SSE 进度**:命令同步返回 `{kind:'ok', output:'压缩已启动', operationId, effects:{}}`(启动确认,⑩);**结果经持久化事件流可查**(compaction 事件已入 RuntimeEntryCodec 持久化,断线重连/刷新后 `GET /events` 历史分页可见"已压缩"条目)
 - 并发保护:completed 走 leaf 条件追加(继续复查④);failed/终态写入走 operation-open 校验(⑲);进行中单飞 409 `COMPACTION_IN_PROGRESS`;超时后进入禁止态 409 `COMPACTION_SUSPENDED`(⑳+㉑)
 - 运行态互斥:streaming 中执行 → 409(复用既有互斥语义)
+
+#### 2.3.1 实施基线（唯一有效契约）
+
+本节是 `/compact` 的唯一实施依据；后续按“复查”编号保留的文字仅用于追溯设计决策，和本节冲突时一律以本节为准。
+
+**HTTP 与前端**
+
+- 调用：`POST /sessions/{sessionId}/commands/compact`，请求体为 `CommandInvocationRequestDTO`；首版忽略 arguments。
+- 成功启动：同步返回 JSON `{kind:'ok', output:'压缩已启动', operationId, effects:{}}`，不建立实时 SSE。前端在 timeline 显示启动反馈，并在后续历史分页中按 `operationId` 关联终态。
+- 拒绝：运行态互斥返回既有 busy 错误；已有进行中操作返回 `409 COMPACTION_IN_PROGRESS`；存在活跃禁止态返回 `409 COMPACTION_SUSPENDED`。
+- 不提供取消端点。`/compact` 与普通 `POST /events` 在同一 session 上互斥，普通提交不得与“读历史 → compact → 写终态”并发覆盖上下文。
+- 禁止态清除不是 Slash Command：仅受现有运维授权保护的管理端点/工具可调用；`actor` 由服务端安全上下文取得，`clearReason` 必填并随审计 entry 持久化，客户端不得伪造 actor。
+
+**持久化状态机**
+
+| 状态 entry | 必含字段 | 是否进入 Agent 上下文 | 转换条件 |
+|---|---|---|---|
+| `SESSION_COMPACTION_STARTED` | `operationId`, `startedAt` | 否 | 准入事务内创建 |
+| `SESSION_COMPACTION_COMPLETED` | `operationId`, `reason`, `keptMessages`, `removedMessages`, `completedAt` | 是，作为 summary | operation 仍 open 且 activeLeaf 未变化 |
+| `SESSION_COMPACTION_FAILED` | `operationId`, `errorCode`, `failedAt` | 否 | operation 仍 open；不校验 leaf |
+| `SESSION_COMPACTION_SUSPENDED` | `operationId`, `reason=TIMEOUT_OBSERVED`, `suspendedAt` | 否 | 超时 recovery 与 failed 在同一事务内写入 |
+| `SUSPENDED_CLEARED` | `suspendedOperationId`, `actor`, `clearReason`, `clearedAt` | 否 | 仅清除当前同 operationId 的活跃禁止态 |
+
+`RuntimeEntryCodec` 对除 completed 外的四种状态 entry 一律恢复为 `null`，不得污染 Agent message；事件投影必须保留 operationId（cleared 使用 suspendedOperationId），前端不得通过展示文案关联状态。
+
+**仓储原子操作**
+
+1. `admitCompaction(sessionId, now)` 持有 session 行锁并在同一事务内执行：
+   - 存在未被 cleared 覆盖的 suspended → 返回 `SUSPENDED`；
+   - 存在未终态 started 且未超时 → 返回 `IN_PROGRESS`；
+   - 存在超时 started → 对该 operation 以 operation-open 条件写 `FAILED(TIMEOUT_OBSERVED)` 和 `SUSPENDED`，提交后返回 `SUSPENDED`，**不得**在本次请求启动新操作；
+   - 否则生成 operationId、写入 `STARTED`，并记录 started 后的 activeLeafId，返回 `ADMITTED(operationId, expectedLeafId)`。
+2. 事务提交后的 `afterCommit` 才能登记内存快速路径标记并启动 future。登记或启动失败时，对同一 operationId 尽力执行 `tryAppendTerminalIfOpen(..., FAILED)`；失败交 reconcile。内存标记仅是优化，必须按 operationId compare-and-set 清理。
+3. `tryAppendTerminalIfOpen(sessionId, operationId, entry)` 在 session 行锁事务内先确认该 operation 的 started 存在且尚无终态；已终态则 no-op。completed 额外校验 expectedLeafId；leaf 冲突时仅在 operation 仍 open 的前提下写 `FAILED(CANCELLED_BY_NEW_MESSAGES)`。因此每个 operationId 恰有一个终态，晚到回调只能释放本地资源，不能再写 entry。
+4. `tryClearSuspensionIfCurrent(sessionId, suspendedOperationId, actor, clearReason)` 只在当前未清除的 suspended 属于该 operationId 时写 `SUSPENDED_CLEARED`；其他情况 no-op。准入检查的是活跃 suspended 配对状态，而非任意历史 suspended entry。
+
+**超时与多实例边界**
+
+- 固定超时只能观察到“任务未确认完成”，不能证明旧 worker 已停止。因此首版超时后进入持久化禁止态，绝不按时间自动放行。
+- 单实例可在本进程确认 future 已终止后，以同一 operationId 清除禁止态；多实例或重启后只能由受授权运维操作显式清除。
+- 若产品要求多实例自动恢复，lease/epoch fencing（续租、原子夺取、执行前与终态前 owner 校验）是 `/compact` 上线前置条件；不能以宽限期替代。
+
+**必须验证**
+
+- 两个并发 compact 请求仅产生一个 started，另一个为 409；事务回滚不会遗留内存标记。
+- 普通 events 与 completed 竞争时，summary 不覆盖新消息，operation 以 completed 或 failed 之一终结。
+- 超时回收后旧 future 晚到不得追加第二个终态；重启后 suspended 仍返回 409；重复/晚到 clear 不得清除新 suspended。
+- 多实例场景下，未启用 lease/fencing 时不得自动启动第二个 compact；运维 clear 后才可新建 operation。
+
+#### 2.3.2 历史复审记录（仅追溯，不构成实施契约）
 
 **[复审①已采纳——批注部分属实,架构补全如下]**
 
@@ -303,9 +353,9 @@ afterCommit:
 
 命名规则:以 `skill:` 为前缀的命名空间,`^skill:[a-z0-9-]+$`(与命令名 `^[a-z][a-z0-9-]*$` 区分,不冲突)。
 
-- **发现/补全**:`GET /commands` 的 descriptor 对每个已安装 Skill 生成 `skill:<name>` 条目(category=`skill`,argsHint 来自 Skill 元数据)——菜单输入 `/skill:` 前缀时过滤展示
+- **发现/补全**:带已授权 sessionId 的 `GET /commands` 在请求期为该 agent 已安装 Skill 生成 `skill:<name>` descriptor(category=`skill`,argsHint 来自 Skill 元数据)；菜单输入 `/skill:` 前缀时过滤展示。无会话目录仅返回静态命令，不暴露 Skill。
 - **执行(复查⑥修订)**:`POST /sessions/{id}/commands/skill:<name>`(SERVER,`produces = TEXT_EVENT_STREAM_VALUE`)——服务端替用户提交消息并**在同一响应中返回 SSE**:内部等价 `POST /events {message: skillArgs}`(submit + SseEmitter attach,`RuntimeEventController.submit` 同款模式),**前端只发一次请求**、输出经该流实时返回;断线重连走既有 `GET /events` 历史分页。descriptor 以 `streaming: true` 标注,前端用 fetch-stream 处理;**禁止**"服务端 submit + 前端另行 POST events"的双请求形态(那是二次 prompt,会重复执行 skill)
-- 与 events 守卫的关系:`skill:*` 注册进 Catalog → 守卫拦截 `  /skill:foo` 一致
+- **与 events 守卫的关系**:对符合 `skill:` grammar 的输入，守卫直接以解析出的 name/arguments 路由当前 session 的 Command Invoker；由 SkillResolver 决定执行或返回稳定错误，绝不按静态 Catalog 判断或落入普通 prompt。
 - 权限:Skill 的权限/信任边界沿用现有 Skill 加载体系,命令层不另设
 
 **[横向㉛已采纳——skill 守卫按 grammar 路由,不查静态表]**。批注属实:㉚后 skill 不在静态 Catalog,原"注册进 Catalog 才拦截"会漏——已安装 skill 可能漏进普通 prompt。修订守卫判定:
@@ -317,12 +367,12 @@ afterCommit:
   if parsed.name 匹配 ^skill:[a-z0-9-]+$ → **一律路由 Command Invoker**
       (session 的 SkillResolver 决定:成功执行 / SKILL_NOT_FOUND /
        SKILL_NOT_VISIBLE / SKILL_INVOCATION_DISABLED——绝不落入普通 prompt)
-  else if 静态 Catalog.isRegistered(parsed.name) → 拒(引导命令端点)
+  else if 静态 Catalog.isStaticRegistered(parsed.name) → 拒(引导命令端点)
   else → 透传
 ```
 
 - skill 分支**不看静态表**,由 grammar 前缀 + per-session resolver 确定性处置——客户端无法绕过服务端 Skill 解析
-- 内置/Extension 仍走静态 isRegistered(它们确在 Catalog)
+- 内置/Extension 仍走静态 isStaticRegistered(它们确在 Catalog)
 - 测试:直接 POST /events 的已安装 skill(路由执行)/未知 skill(稳定错误)/不可见 skill(错误,非透传)/不同 agent 同名 skill 可见性差异——断言 skill 输入**绝不**作为普通 prompt 到达模型
 
 
@@ -462,7 +512,7 @@ extensionId    := ^[a-z][a-z0-9-]{0,15}$                      (注册时声明,�
 
 ## 测试与验证(增量)
 
-- 后端:`GET /sessions` 列表端点分页/过滤;`POST /sessions/{id}/commands/compact` 启动确认 + leaf 条件追加并发集成测试(events vs compact 竞争单胜);skill 流式命令(服务端解析 + SSE 同响应 + 四类错误码);Extension 注册冲突;executionMode/requiresSession/streaming 契约(⑧/继续复查⑤③);无会话端点(POST /commands/{name} 的 SESSION_REQUIRED 与 help 可达)
-- 前端:resume 选择列表交互/前缀匹配;compact 启动确认 + 历史分页结果刷新(无进度条);`/skill:` 补全 + 流式消费(content-type 分流);SystemNoticeStack 渲染(⑨);无会话策略表全覆盖(⑩,含 !requiresSession 豁免)
+- 后端:`GET /sessions` 的授权分页与 sessionIdPrefix 匹配;`POST /sessions/{id}/commands/compact` 的启动确认、leaf 条件追加、operationId 单终态、suspended/cleared 配对及重启后禁止态;skill 流式命令的服务端解析、SSE 同响应、四类错误码和直接 `POST /events` 时绝不落入普通 prompt;按 session 合并 Skill 目录的多 agent 隔离;Extension namespace/执行模式冲突;executionMode/requiresSession/streaming 与 CommandInvocationRequestDTO 契约;无会话端点(POST /commands/{name} 的 SESSION_REQUIRED 与 help 可达)
+- 前端:resume 选择列表、前缀匹配及切换后重拉命令目录;compact 启动确认与历史分页结果刷新(无进度条);`/skill:` 的会话级补全和流式消费(content-type 分流);SystemNoticeStack 渲染(⑨);无会话策略表全覆盖(⑩,含 !requiresSession 豁免)
 
 **[继续复查⑨已采纳]** 测试清单路径统一为 `POST /sessions/{id}/commands/compact`(带 sessionId);无会话 `POST /commands/{name}` 仅 requiresSession=false 命令可用。
