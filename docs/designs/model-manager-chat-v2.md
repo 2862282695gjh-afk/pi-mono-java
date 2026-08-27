@@ -2,14 +2,16 @@
 
 | 属性 | 值 |
 |---|---|
-| 文档版本 | 1.0.0 |
-| 状态 | 已实现于 `codex/model-manager-chat-v2`，待评审合入 |
-| 设计日期 | 2026-08-25 |
-| 规范来源 | `/Users/z/设计/model-manager-provider-contract/README.md` 2.0.0 |
+| 文档版本 | 1.1.0 |
+| 状态 | Chat 已实现；共享配置收敛已实现于 `codex/campusmate-shared-config`，待评审合入 |
+| 设计日期 | 2026-08-26 |
+| 规范来源 | `/Users/z/设计/model-manager-provider-contract/README.md` 2.4.0 |
 | pi-mono 基线 | `5cd93f688aaab89dbb6dfa4aca535f21796ae185` |
 | 设计分析时 pi-mono-java 基线 | `d649866a6cae967ace18ceaeb9597edd47e5721e` |
 | 实施前 pi-mono-java 主线 | `0d7a12e1dd89eed52f6e12db717fd5703b6b2125` |
 | 实施前 mate-service 主线 | `6d5e6f3714e1cf8744d187a4796ca06300ad7e33` |
+| 共享配置实施前源码基线 | `56be8eee59415a5f86658d6635a7b7e8891263d3` |
+| 配置决策 | [ADR-0026](../decisions/0026-unify-campusmate-client-configuration.html) |
 
 ## 1. 结论与边界
 
@@ -71,14 +73,17 @@ CampusClaw 新增稳定身份为 `mate-model-manager` 的通用 Provider，调�
 
 ```yaml
 campusmate:
-  model-manager:
-    base-url: ${CAMPUSMATE_MODEL_MANAGER_BASE_URL:https://localhost:8591}
-    chat-path: ${CAMPUSMATE_MODEL_MANAGER_CHAT_PATH:/mate-service/v1/LLM/chat}
-    api: ${CAMPUSMATE_MODEL_MANAGER_API:openai-completions}
+  base-url: ${CAMPUSMATE_BASE_URL}
+  endpoints:
+    model-chat-path: ${CAMPUSMATE_MODEL_CHAT_PATH:/mate-service/v1/LLM/chat}
+  model:
+    api: ${CAMPUSMATE_MODEL_API:openai-completions}
 ```
 
-独立 Runtime 的 `application.yml` 与内嵌 `mate-campusclaw/application.properties` 均声明这些配置，
-保证两种装配方式接受相同的环境变量和默认值。
+Model、受管 Runtime 与 Tool 共用 `campusmate.base-url` 和 `campusmate.endpoints`；模型专属的
+API、超时和 token 参数保留在 `campusmate.model`。完整配置结构、迁移规则与启动期校验见
+[CampusMate 客户端共享配置设计](campusmate-shared-config.md)。规范 YAML 与内嵌
+`mate-campusclaw/application.properties` 声明相同目标键。
 
 `MateChatRequestMapper` 始终产生数组 `messages`，并执行下列转换：
 
@@ -160,4 +165,5 @@ cost_total      += usage.cost.total
 
 | 版本 | 日期 | 变化 |
 |---|---|---|
+| 1.1.0 | 2026-08-26 | Model 配置从 `model-manager` 收敛为 `model`，并复用 CampusMate 单一 base URL 与共享 Endpoint 目录。 |
 | 1.0.0 | 2026-08-25 | 实现 Mate Chat Provider、透明代理、断流取消、reasoning 重放和 pi 风格 Usage SQL。 |

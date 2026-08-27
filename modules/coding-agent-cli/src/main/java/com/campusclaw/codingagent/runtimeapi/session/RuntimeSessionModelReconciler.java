@@ -92,7 +92,11 @@ public class RuntimeSessionModelReconciler {
             if (error.errorCode() == RuntimeErrorCode.MANAGER_UNAVAILABLE) {
                 throw error;
             }
+<<<<<<< HEAD
             throw new RuntimeApiException(RuntimeErrorCode.MODEL_NOT_AVAILABLE, error);
+=======
+            throw new RuntimeApiException(RuntimeErrorCode.MODEL_NOT_AVAILABLE);
+>>>>>>> upstream/main
         }
     }
 

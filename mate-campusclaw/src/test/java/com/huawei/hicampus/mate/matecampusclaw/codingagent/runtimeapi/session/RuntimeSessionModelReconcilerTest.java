@@ -63,7 +63,9 @@ class RuntimeSessionModelReconcilerTest {
                 repository,
                 resolver,
                 modelManager,
-                new RuntimeEntryCodec(new ObjectMapper()),
+                new RuntimeEntryCodec(
+                        new ObjectMapper(),
+                        new com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.RuntimeMessageSourceConfiguration().messageSource()),
                 new SequenceIds(),
                 Clock.fixed(Instant.parse("2026-08-24T00:00:00Z"), ZoneOffset.UTC));
 

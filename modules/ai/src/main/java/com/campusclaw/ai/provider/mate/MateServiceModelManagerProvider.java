@@ -7,6 +7,10 @@ package com.campusclaw.ai.provider.mate;
 import java.net.URI;
 import java.time.Duration;
 import java.util.List;
+<<<<<<< HEAD
+=======
+import java.util.Locale;
+>>>>>>> upstream/main
 import java.util.concurrent.atomic.AtomicReference;
 
 import com.campusclaw.ai.provider.AiProvider;
@@ -23,6 +27,13 @@ import com.campusclaw.ai.types.Usage;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+<<<<<<< HEAD
+=======
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.slf4j.spi.LoggingEventBuilder;
+import org.springframework.beans.factory.annotation.Autowired;
+>>>>>>> upstream/main
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.MediaType;
@@ -49,6 +60,11 @@ import reactor.netty.http.client.HttpClient;
 public class MateServiceModelManagerProvider implements AiProvider {
     public static final ProviderId PROVIDER_ID = new ProviderId("mate-model-manager");
 
+<<<<<<< HEAD
+=======
+    private static final Logger LOGGER = LoggerFactory.getLogger(MateServiceModelManagerProvider.class);
+
+>>>>>>> upstream/main
     private static final String SUPPORTED_API = "openai-completions";
 
     private static final ParameterizedTypeReference<ServerSentEvent<String>> SSE_TYPE =
@@ -64,6 +80,7 @@ public class MateServiceModelManagerProvider implements AiProvider {
 
     private final String api;
 
+<<<<<<< HEAD
     public MateServiceModelManagerProvider(
             ObjectMapper mapper,
             @Value("${campusmate.model-manager.base-url:https://localhost:8591}") String baseUrl,
@@ -71,6 +88,16 @@ public class MateServiceModelManagerProvider implements AiProvider {
             @Value("${campusmate.model-manager.api:openai-completions}") String api,
             @Value("${campusmate.model-manager.connect-timeout:PT10S}") Duration connectTimeout,
             @Value("${campusmate.model-manager.response-timeout:PT10M}") Duration responseTimeout) {
+=======
+    @Autowired
+    public MateServiceModelManagerProvider(
+            ObjectMapper mapper,
+            @Value("${campusmate.base-url}") String baseUrl,
+            @Value("${campusmate.endpoints.model-chat-path}") String chatPath,
+            @Value("${campusmate.model.api:openai-completions}") String api,
+            @Value("${campusmate.model.connect-timeout:PT10S}") Duration connectTimeout,
+            @Value("${campusmate.model.response-timeout:PT10M}") Duration responseTimeout) {
+>>>>>>> upstream/main
         this(mapper, createWebClient(connectTimeout, responseTimeout), endpoint(baseUrl, chatPath), api);
     }
 
@@ -85,7 +112,11 @@ public class MateServiceModelManagerProvider implements AiProvider {
     @PostConstruct
     void validateConfiguration() {
         if (!SUPPORTED_API.equals(api)) {
+<<<<<<< HEAD
             throw new IllegalStateException("Unsupported campusmate.model-manager.api: " + api);
+=======
+            throw new IllegalStateException("Unsupported campusmate.model.api: " + api);
+>>>>>>> upstream/main
         }
     }
 
@@ -106,8 +137,24 @@ public class MateServiceModelManagerProvider implements AiProvider {
         JsonNode request;
         try {
             request = requestMapper.map(model, context, options);
+<<<<<<< HEAD
         } catch (RuntimeException error) {
             stream.pushError("error", errorMessage(model, error));
+=======
+        } catch (MateModelInvocationException error) {
+            stream.pushError("error", failureMessage(model, error.errorCode()));
+            return stream;
+        } catch (RuntimeException error) {
+            MateInvocationErrorCode errorCode = MateInvocationErrorCode.MATE_REQUEST_MAPPING_FAILED;
+            LOGGER.atError()
+                    .addKeyValue("event", "campusclaw.failure")
+                    .addKeyValue("operation", "mate.request.map")
+                    .addKeyValue("errorCode", errorCode.name())
+                    .addKeyValue("modelId", model.id())
+                    .setCause(error)
+                    .log("CampusClaw failure: operation={}, errorCode={}", "mate.request.map", errorCode.name());
+            stream.pushError("error", failureMessage(model, errorCode));
+>>>>>>> upstream/main
             return stream;
         }
         subscribe(model, request, stream);
@@ -136,8 +183,23 @@ public class MateServiceModelManagerProvider implements AiProvider {
         if (response.statusCode().is2xxSuccessful()) {
             MediaType contentType = response.headers().contentType().orElse(null);
             if (contentType == null || !MediaType.TEXT_EVENT_STREAM.isCompatibleWith(contentType)) {
+<<<<<<< HEAD
                 return Flux.error(new MateModelInvocationException(
                         "INVALID_MATE_RESPONSE", "Mate Chat did not return text/event-stream"));
+=======
+                MateInvocationErrorCode errorCode = MateInvocationErrorCode.INVALID_MATE_RESPONSE;
+                LOGGER.atError()
+                        .addKeyValue("event", "campusclaw.failure")
+                        .addKeyValue("operation", "mate.response.validate")
+                        .addKeyValue("errorCode", errorCode.name())
+                        .addKeyValue("httpStatus", response.statusCode().value())
+                        .addKeyValue("contentType", contentType)
+                        .log(
+                                "CampusClaw failure: operation={}, errorCode={}",
+                                "mate.response.validate",
+                                errorCode.name());
+                return Flux.error(new MateModelInvocationException(errorCode));
+>>>>>>> upstream/main
             }
             return response.bodyToFlux(SSE_TYPE);
         }
@@ -147,11 +209,24 @@ public class MateServiceModelManagerProvider implements AiProvider {
     }
 
     private static MateModelInvocationException httpError(ClientResponse response, JsonNode body) {
+<<<<<<< HEAD
         String code = body.path("resCode").asText("MATE_MODEL_MANAGER_ERROR");
         String message = body.path("resMsg")
                 .asText("Mate Model Manager returned HTTP "
                         + response.statusCode().value());
         return new MateModelInvocationException(code, message);
+=======
+        String upstreamCode = body.path("resCode").asText("MATE_MODEL_MANAGER_ERROR");
+        MateInvocationErrorCode errorCode = MateInvocationErrorCode.fromUpstream(upstreamCode);
+        LoggingEventBuilder event = errorCode.warning() ? LOGGER.atWarn() : LOGGER.atError();
+        event.addKeyValue("event", "campusclaw.failure")
+                .addKeyValue("operation", "mate.response.http")
+                .addKeyValue("errorCode", errorCode.name())
+                .addKeyValue("httpStatus", response.statusCode().value())
+                .addKeyValue("upstreamErrorCode", upstreamCode)
+                .log("CampusClaw failure: operation={}, errorCode={}", "mate.response.http", errorCode.name());
+        return new MateModelInvocationException(errorCode);
+>>>>>>> upstream/main
     }
 
     private static void cancel(AtomicReference<Disposable> subscription, MateChatSseParser parser) {
@@ -173,12 +248,65 @@ public class MateServiceModelManagerProvider implements AiProvider {
     }
 
     private static URI endpoint(String baseUrl, String chatPath) {
+<<<<<<< HEAD
         String base = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
         String path = chatPath.startsWith("/") ? chatPath : "/" + chatPath;
         return URI.create(base + path);
     }
 
     private static AssistantMessage errorMessage(Model model, Throwable error) {
+=======
+        URI origin = validateBaseUrl(baseUrl);
+        String path = validateChatPath(chatPath);
+        String normalized = origin.toString();
+        String base = normalized.endsWith("/") ? normalized.substring(0, normalized.length() - 1) : normalized;
+        return URI.create(base + path);
+    }
+
+    private static URI validateBaseUrl(String baseUrl) {
+        if (baseUrl == null || baseUrl.isBlank()) {
+            throw new IllegalArgumentException("campusmate.base-url is required");
+        }
+        URI origin = URI.create(baseUrl);
+        if (!origin.isAbsolute() || origin.getHost() == null) {
+            throw new IllegalArgumentException("campusmate.base-url must be an absolute URI with a host");
+        }
+        String scheme = origin.getScheme().toLowerCase(Locale.ROOT);
+        if (!"http".equals(scheme) && !"https".equals(scheme)) {
+            throw new IllegalArgumentException("campusmate.base-url only supports HTTP(S)");
+        }
+        String path = origin.getRawPath();
+        if (origin.getUserInfo() != null
+                || origin.getQuery() != null
+                || origin.getFragment() != null
+                || (path != null && !path.isEmpty() && !"/".equals(path))) {
+            throw new IllegalArgumentException("campusmate.base-url must contain only scheme, host, and port");
+        }
+        return origin;
+    }
+
+    private static String validateChatPath(String chatPath) {
+        if (chatPath == null || !chatPath.startsWith("/mate-service/")) {
+            throw new IllegalArgumentException("campusmate.endpoints.model-chat-path must start with /mate-service/");
+        }
+        URI path = URI.create(chatPath);
+        if (path.isAbsolute()
+                || path.getAuthority() != null
+                || path.getQuery() != null
+                || path.getFragment() != null
+                || containsDotSegment(path.getPath())) {
+            throw new IllegalArgumentException(
+                    "campusmate.endpoints.model-chat-path must be a service-local path without . or .. segments");
+        }
+        return chatPath;
+    }
+
+    private static boolean containsDotSegment(String path) {
+        return List.of(path.split("/")).stream().anyMatch(segment -> ".".equals(segment) || "..".equals(segment));
+    }
+
+    private static AssistantMessage failureMessage(Model model, MateInvocationErrorCode errorCode) {
+>>>>>>> upstream/main
         return new AssistantMessage(
                 List.of(),
                 Api.OPENAI_COMPLETIONS.value(),
@@ -188,7 +316,12 @@ public class MateServiceModelManagerProvider implements AiProvider {
                 null,
                 Usage.empty(),
                 StopReason.ERROR,
+<<<<<<< HEAD
                 error.getMessage(),
+=======
+                errorCode.name(),
+                null,
+>>>>>>> upstream/main
                 System.currentTimeMillis());
     }
 }

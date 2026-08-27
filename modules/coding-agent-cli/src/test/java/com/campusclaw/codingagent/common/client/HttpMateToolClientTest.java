@@ -12,6 +12,7 @@ import java.util.List;
 import com.campusclaw.codingagent.common.client.mate.MateCredentials;
 import com.campusclaw.codingagent.common.client.mate.MateToolClient;
 import com.campusclaw.codingagent.common.client.mate.MateToolMeta;
+import com.campusclaw.codingagent.common.client.mate.MateToolResponseException;
 import com.campusclaw.codingagent.common.util.MateRestUtil;
 
 import org.junit.jupiter.api.AfterEach;
@@ -30,9 +31,9 @@ import okhttp3.mockwebserver.MockWebServer;
  */
 class HttpMateToolClientTest {
 
-    private static final String AGENT_INFO_PATH_PREFIX = "/mate-service/v1/agents/";
+    private static final String AGENT_INFO_PATH_TEMPLATE = "/mate-service/v1/agents/%s";
 
-    private static final String SKILL_TOOLS_QUERY_PATH_PREFIX = "/mate-service/v1/skill/query/";
+    private static final String SKILL_INFO_PATH_TEMPLATE = "/mate-service/v1/skill/query/%s";
 
     private static final String TOOL_METADATA_QUERY_PATH = "/mate-service/v1/runtime/tools/query";
 
@@ -48,8 +49,8 @@ class HttpMateToolClientTest {
         server.start();
         client = new HttpMateToolClient(
                 server.url("/").toString().replaceAll("/$", ""),
-                AGENT_INFO_PATH_PREFIX,
-                SKILL_TOOLS_QUERY_PATH_PREFIX,
+                AGENT_INFO_PATH_TEMPLATE,
+                SKILL_INFO_PATH_TEMPLATE,
                 TOOL_METADATA_QUERY_PATH,
                 TOOL_EXECUTE_PATH_TEMPLATE,
                 new MateRestUtil(),
@@ -176,17 +177,49 @@ class HttpMateToolClientTest {
     }
 
     @Test
-    void nonZeroResCodeOnMetadataThrows() {
-        server.enqueue(json("{\"resCode\":\"500\",\"resMsg\":\"agent not found\",\"result\":null}"));
+    void nonZeroResCodeWithParseableResultSucceeds() throws Exception {
+        // 客户端不按 resCode 预判处理结果:result 可解析即成功。
+        server.enqueue(json("{\"resCode\":\"500\",\"resMsg\":\"partial outage\",\"result\":"
+                + "{\"bindingTools\":[{\"toolId\":\"tool-11111111111111111111111111111111\"}]}}"));
+        server.enqueue(json("{\"resCode\":\"403\",\"resMsg\":\"forbidden\",\"result\":{\"data\":"
+                + "[{\"id\":\"tool-11111111111111111111111111111111\",\"name\":\"query\"}]}}"));
 
+<<<<<<< HEAD
         assertThatThrownBy(
                         () -> client.listAgentTools("agent-11111111111111111111111111111111", MateCredentials.empty()))
                 .isInstanceOf(IllegalStateException.class)
                 .hasRootCauseMessage("gateway call failed: resCode=500 resMsg=agent not found");
+=======
+        List<MateToolMeta> tools =
+                client.listAgentTools("agent-11111111111111111111111111111111", MateCredentials.empty());
+
+        assertThat(tools).extracting(MateToolMeta::toolId).containsExactly("tool-11111111111111111111111111111111");
+>>>>>>> upstream/main
     }
 
     @Test
-    void nonZeroResCodeOnToolMetadataQueryThrows() {
+    void emptyResponseBodyOnAgentInfoThrowsMateToolResponseException() {
+        server.enqueue(json(""));
+
+        assertThatThrownBy(
+                        () -> client.listAgentTools("agent-11111111111111111111111111111111", MateCredentials.empty()))
+                .isInstanceOf(MateToolResponseException.class)
+                .hasMessageContaining("response body is empty");
+    }
+
+    @Test
+    void missingResultOnAgentInfoThrowsInsteadOfEmptyTools() {
+        // result 缺失/null 不允许折叠成"没有绑定工具"。
+        server.enqueue(json("{\"resCode\":\"0\",\"resMsg\":\"ok\"}"));
+
+        assertThatThrownBy(
+                        () -> client.listAgentTools("agent-11111111111111111111111111111111", MateCredentials.empty()))
+                .isInstanceOf(MateToolResponseException.class)
+                .hasMessageContaining("result is missing or null");
+    }
+
+    @Test
+    void missingResultDataOnToolMetadataQueryThrowsWithStableCode() {
         server.enqueue(
                 json(
                         "{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":{\"bindingTools\":[{\"toolId\":\"tool-11111111111111111111111111111111\"}]}}"));
@@ -194,8 +227,15 @@ class HttpMateToolClientTest {
 
         assertThatThrownBy(
                         () -> client.listAgentTools("agent-11111111111111111111111111111111", MateCredentials.empty()))
+<<<<<<< HEAD
                 .isInstanceOf(IllegalStateException.class)
                 .hasRootCauseMessage("tool metadata query failed: resCode=403 resMsg=forbidden");
+=======
+                .isInstanceOf(MateToolResponseException.class)
+                .hasMessageContaining("result.data is missing")
+                .extracting(e -> ((MateToolResponseException) e).stableErrorCode())
+                .isEqualTo("MATE_TOOL_RESPONSE_INVALID");
+>>>>>>> upstream/main
     }
 
     @Test
@@ -398,10 +438,10 @@ class HttpMateToolClientTest {
     void configuredEndpointPathsAreUsed() throws Exception {
         HttpMateToolClient configuredClient = new HttpMateToolClient(
                 server.url("/").toString().replaceAll("/$", ""),
-                "/custom/agents/",
-                "/custom/skills/",
-                "/custom/tools/query",
-                "/custom/tools/%s/execute",
+                "/mate-service/custom%20segment/agents/%s",
+                "/mate-service/custom/skills/%s",
+                "/mate-service/custom/tools/query",
+                "/mate-service/custom/tools/%s/execute",
                 new MateRestUtil(),
                 new com.fasterxml.jackson.databind.ObjectMapper());
         server.enqueue(
@@ -412,8 +452,34 @@ class HttpMateToolClientTest {
 
         configuredClient.listAgentTools("agent-11111111111111111111111111111111", MateCredentials.empty());
 
-        assertThat(server.takeRequest().getPath()).isEqualTo("/custom/agents/agent-11111111111111111111111111111111");
-        assertThat(server.takeRequest().getPath()).isEqualTo("/custom/tools/query");
+        assertThat(server.takeRequest().getPath())
+                .isEqualTo("/mate-service/custom%20segment/agents/agent-11111111111111111111111111111111");
+        assertThat(server.takeRequest().getPath()).isEqualTo("/mate-service/custom/tools/query");
+    }
+
+    @Test
+    void percentEncodedSkillAndToolTemplatesExpandOnlyLiteralPlaceholder() throws Exception {
+        HttpMateToolClient configuredClient = new HttpMateToolClient(
+                server.url("/").toString().replaceAll("/$", ""),
+                AGENT_INFO_PATH_TEMPLATE,
+                "/mate-service/custom%20segment/skills/%s",
+                TOOL_METADATA_QUERY_PATH,
+                "/mate-service/custom%20segment/tools/%s/execute",
+                new MateRestUtil(),
+                new com.fasterxml.jackson.databind.ObjectMapper());
+        server.enqueue(json("{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":{\"bindingTools\":[]}}"));
+        server.enqueue(json("{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":{\"answer\":1}}"));
+
+        configuredClient.listSkillTools("skill-11111111111111111111111111111111", MateCredentials.empty());
+        configuredClient.callTool(
+                "tool-11111111111111111111111111111111",
+                java.util.Map.of(),
+                MateCredentials.appKey("hw-id-1", "key-1"));
+
+        assertThat(server.takeRequest().getPath())
+                .isEqualTo("/mate-service/custom%20segment/skills/skill-11111111111111111111111111111111");
+        assertThat(server.takeRequest().getPath())
+                .isEqualTo("/mate-service/custom%20segment/tools/tool-11111111111111111111111111111111/execute");
     }
 
     private static MockResponse json(String body) {

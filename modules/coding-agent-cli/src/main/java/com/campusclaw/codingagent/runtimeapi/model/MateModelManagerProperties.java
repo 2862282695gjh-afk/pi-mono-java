@@ -15,7 +15,11 @@ import lombok.Data;
  * @since [br_eCampusCore 26.0.0]
  */
 @Data
+<<<<<<< HEAD
 @ConfigurationProperties(prefix = "campusmate.model-manager")
+=======
+@ConfigurationProperties(prefix = "campusmate.model")
+>>>>>>> upstream/main
 public class MateModelManagerProperties {
     private int contextWindow = 128_000;
 

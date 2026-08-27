@@ -11,6 +11,7 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
 
+import com.campusclaw.codingagent.config.CampusMateClientProperties;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import org.junit.jupiter.api.AfterEach;
@@ -35,10 +36,12 @@ class MateServiceClientTest {
     void setUp() throws Exception {
         server = new MockWebServer();
         server.start();
-        var properties = new AgentRuntimeProperties(
-                server.url("/").uri(), Path.of("agent"), Duration.ofSeconds(1L), Duration.ofSeconds(2L));
-        client = new MateServiceClient(
-                properties, new ObjectMapper(), AGENT_RUNTIME_PATH_TEMPLATE, SKILL_INFO_QUERY_PATH_TEMPLATE);
+        var properties = new AgentRuntimeProperties(Path.of("agent"), Duration.ofSeconds(1L), Duration.ofSeconds(2L));
+        client = new MateServiceClient(properties, campusMateProperties(), new ObjectMapper());
+    }
+
+    private static MockResponse json(String body) {
+        return new MockResponse().setHeader("Content-Type", "application/json").setBody(body);
     }
 
     @AfterEach
@@ -53,7 +56,7 @@ class MateServiceClientTest {
                         .setHeader("Content-Type", "application/json")
                         .setBody(
                                 """
-                        {
+{"resCode":"0","result":{
                           "id": "agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
                           "name": "Agent A",
                           "bindingModels": "gpt-4o",
@@ -62,8 +65,8 @@ class MateServiceClientTest {
                             "version": "1.0.0"
                           },
                           "bindingTools": []
-                        }
-                        """));
+                        }}
+"""));
 
         var runtime = client.getAgentRuntime("agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
 
@@ -85,13 +88,13 @@ class MateServiceClientTest {
                         .setHeader("Content-Type", "application/json")
                         .setBody(
                                 """
-                        {
+{"resCode":"0","result":{
                           "id": "agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
                           "name": "Agent A",
                           "bindingModels": ["glm-5.2", "minimax-m2.5"],
                           "description": ["Diagnoses device faults", "Drafts reports"]
-                        }
-                        """));
+                        }}
+"""));
 
         var runtime = client.getAgentRuntime("agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
 
@@ -107,13 +110,13 @@ class MateServiceClientTest {
                         .setHeader("Content-Type", "application/json")
                         .setBody(
                                 """
-                        {
+{"resCode":"0","result":{
                           "id": "agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
                           "name": "Agent A",
                           "bindingModels": "glm-5.2",
                           "description": "Diagnoses device faults"
-                        }
-                        """));
+                        }}
+"""));
 
         var runtime = client.getAgentRuntime("agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
 
@@ -128,7 +131,7 @@ class MateServiceClientTest {
                         .setHeader("Content-Type", "application/json")
                         .setBody(
                                 """
-                        {
+{"resCode":"0","result":{
                           "id": "agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
                           "name": "Agent A",
                           "bindingAgents": [
@@ -145,8 +148,8 @@ class MateServiceClientTest {
                             }
                           ],
                           "enabled": false
-                        }
-                        """));
+                        }}
+"""));
 
         var runtime = client.getAgentRuntime("agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
 
@@ -171,7 +174,7 @@ class MateServiceClientTest {
                         .setHeader("Content-Type", "application/json")
                         .setBody(
                                 """
-                        {
+{"resCode":"0","result":{
                           "id": "agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
                           "name": "Agent A",
                           "bindingAgents": {
@@ -179,8 +182,8 @@ class MateServiceClientTest {
                             "name": "field-ops",
                             "description": "Handles on-site device operations"
                           }
-                        }
-                        """));
+                        }}
+"""));
 
         var runtime = client.getAgentRuntime("agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
 
@@ -195,19 +198,18 @@ class MateServiceClientTest {
     }
 
     @Test
-    void queriesCompleteSkillInfoAndAcceptsBothVersionFieldNames() throws Exception {
+    void queriesCompleteSkillInfoObjectWithVersionAndContent() throws Exception {
         server.enqueue(
                 new MockResponse().setHeader("Content-Type", "application/json").setBody(skillInfoResponse()));
 
-        var skills = client.querySkillInfo("skill-11111111111111111111111111111111");
+        var skill = client.querySkillInfo("skill-11111111111111111111111111111111");
 
-        assertEquals(
-                List.of("1.0.0", "2.0.0"),
-                skills.stream().map(MateServiceClient.SkillInfo::version).toList());
-        assertEquals("calendar", skills.getFirst().bindingTools().getFirst().name());
-        assertEquals("base-skill", skills.getFirst().bindingSkills().getFirst().name());
-        assertEquals("template body", skills.getFirst().templates().getFirst().content());
-        assertEquals("reference body", skills.getFirst().references().getFirst().content());
+        assertEquals("1.0.0", skill.version());
+        assertEquals("---\nname: skill-a\ndescription: Skill A\n---\n", skill.content());
+        assertEquals("calendar", skill.bindingTools().getFirst().name());
+        assertEquals("base-skill", skill.bindingSkills().getFirst().name());
+        assertEquals("template body", skill.templates().getFirst().content());
+        assertEquals("reference body", skill.references().getFirst().content());
         RecordedRequest request = server.takeRequest();
         assertEquals("GET", request.getMethod());
         assertEquals("/mate-service/v1/skill/query/skill-11111111111111111111111111111111", request.getPath());
@@ -216,9 +218,10 @@ class MateServiceClientTest {
 
     private static String skillInfoResponse() {
         return """
-                {"resCode":"0","resMsg":"ok","result":[{
-                  "name":"skill-a","id":"skill-11111111111111111111111111111111"," version":"1.0.0",
+                {"resCode":"0","resMsg":"ok","result":{
+                  "name":"skill-a","id":"skill-11111111111111111111111111111111","version":"1.0.0",
                   "description":"Skill A","useCases":"booking",
+                  "content":"---\\nname: skill-a\\ndescription: Skill A\\n---\\n",
                   "bindingTools":[{"id":"tool-11111111111111111111111111111111","version":"2.0.0","name":"calendar",
                     "description":"Calendar tool","permission":"allow","source":"local"}],
                   "bindingSkills":[{"id":"skill-00000000000000000000000000000000","version":"0.9.0",
@@ -227,80 +230,121 @@ class MateServiceClientTest {
                     "content":"template body","fileType":"md"}],
                   "references":[{"id":"reference-1","name":"guide",
                     "content":"reference body","fileType":"txt"}]
-                },{
-                  "name":"skill-b","id":"skill-22222222222222222222222222222222","version":"2.0.0",
-                  "description":"Skill B","useCases":"reporting","bindingTools":[],
-                  "bindingSkills":[],"templates":[],"references":[]
-                }]}
+                }}
                 """;
     }
 
     @Test
-    void rejectsBusinessErrorFromSkillInfoQuery() {
-        server.enqueue(
-                new MockResponse()
-                        .setHeader("Content-Type", "application/json")
-                        .setBody(
-                                """
-                        {
-                          "resCode": "404",
-                          "resMsg": "skill missing",
-                          "result": []
-                        }
-                        """));
+    void rejectsArraySkillInfoResult() {
+        server.enqueue(new MockResponse()
+                .setHeader("Content-Type", "application/json")
+                .setBody("{\"resCode\":\"0\",\"result\":[]}"));
 
         AgentRuntimeException error = assertThrows(
                 AgentRuntimeException.class, () -> client.querySkillInfo("skill-11111111111111111111111111111111"));
 
-        assertEquals("querySkillInfo failed with resCode 404: skill missing", error.getMessage());
+        assertEquals("querySkillInfo result must be an object", error.getMessage());
     }
 
     @Test
-    void readsRuntimeEnvelopeWithConfiguredSuccessCode() {
-        var properties = new AgentRuntimeProperties(
-                server.url("/").uri(), Path.of("agent"), Duration.ofSeconds(1L), Duration.ofSeconds(2L), "200");
-        client = new MateServiceClient(
-                properties, new ObjectMapper(), AGENT_RUNTIME_PATH_TEMPLATE, SKILL_INFO_QUERY_PATH_TEMPLATE);
+    void acceptsNonZeroResCodeWhenResultIsParseable() throws Exception {
+        // 客户端不按 resCode 预判处理结果：只要 result 可解析即成功。
         server.enqueue(
-                new MockResponse()
-                        .setHeader("Content-Type", "application/json")
-                        .setBody(
-                                """
-                        {
-                          "resCode": "200",
-                          "resMsg": "ok",
-                          "result": {
-                            "id": "agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-                            "name": "Agent A",
-                            "bindingSkills": [],
-                            "bindingTools": []
-                          }
-                        }
-                        """));
+                json(
+                        """
+                {
+                  "resCode": "72",
+                  "resMsg": "ut laboris",
+                  "result": {
+                    "name": "calendar",
+                    "id": "skill-11111111111111111111111111111111",
+                    "version": "1.0.0",
+                    "content": "---\\nname: calendar\\ndescription: Calendar\\n---\\nBody\\n"
+                  }
+                }
+                """));
 
-        assertEquals(
-                "agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-                client.getAgentRuntime("agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa").id());
+        MateServiceClient.SkillInfo skill = client.querySkillInfo("skill-11111111111111111111111111111111");
+
+        assertEquals("calendar", skill.name());
+        assertEquals("1.0.0", skill.version());
     }
 
     @Test
-    void rejectsBusinessErrorFromRuntimeQuery() {
+    void emptyResponseBodyOnGetAgentRuntimeFailsAsResponseInvalid() {
         server.enqueue(
-                new MockResponse()
-                        .setHeader("Content-Type", "application/json")
-                        .setBody(
-                                """
-                        {
-                          "resCode": "403",
-                          "resMsg": "agent disabled",
-                          "result": null
-                        }
-                        """));
+                new MockResponse().setHeader("Content-Type", "application/json").setBody(""));
 
         AgentRuntimeException error = assertThrows(
                 AgentRuntimeException.class, () -> client.getAgentRuntime("agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"));
 
-        assertEquals("GetAgentRuntime failed with resCode 403: agent disabled", error.getMessage());
+        assertEquals(AgentRuntimeErrorCode.MATE_RESPONSE_INVALID, error.errorCode());
+        assertEquals(AgentRuntimeErrorCode.MATE_RESPONSE_INVALID.name(), error.stableErrorCode());
+    }
+
+    @Test
+    void emptyResponseBodyOnQuerySkillInfoFailsAsResponseInvalid() {
+        server.enqueue(
+                new MockResponse().setHeader("Content-Type", "application/json").setBody("   "));
+
+        AgentRuntimeException error = assertThrows(
+                AgentRuntimeException.class, () -> client.querySkillInfo("skill-11111111111111111111111111111111"));
+
+        assertEquals(AgentRuntimeErrorCode.MATE_RESPONSE_INVALID, error.errorCode());
+    }
+
+    @Test
+    void arrayRootNodeFailsAsResponseInvalid() {
+        server.enqueue(json("[{\"id\": \"agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}]"));
+
+        AgentRuntimeException error = assertThrows(
+                AgentRuntimeException.class, () -> client.getAgentRuntime("agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"));
+
+        assertEquals(AgentRuntimeErrorCode.MATE_RESPONSE_INVALID, error.errorCode());
+    }
+
+    @Test
+    void missingSkillInfoResultCarriesStableErrorCode() {
+        server.enqueue(json("{\"resCode\": \"404\", \"resMsg\": \"skill missing\", \"result\": null}"));
+
+        AgentRuntimeException error = assertThrows(
+                AgentRuntimeException.class, () -> client.querySkillInfo("skill-11111111111111111111111111111111"));
+
+        assertEquals(AgentRuntimeErrorCode.MATE_RESPONSE_INVALID, error.errorCode());
+        assertEquals("MATE_RESPONSE_INVALID", error.stableErrorCode());
+    }
+
+    @Test
+    void missingRuntimeResultIsRejected() {
+        // result 缺失或为 null 不再回退到整个响应体,直接判响应无效。
+        server.enqueue(
+                json(
+                        """
+                {
+                  "resCode": "403",
+                  "resMsg": "agent disabled",
+                  "id": "agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                  "name": "Agent A",
+                  "bindingSkills": [],
+                  "bindingTools": []
+                }
+                """));
+
+        AgentRuntimeException error = assertThrows(
+                AgentRuntimeException.class, () -> client.getAgentRuntime("agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"));
+
+        assertEquals(AgentRuntimeErrorCode.MATE_RESPONSE_INVALID, error.errorCode());
+        assertEquals("GetAgentRuntime result must be an object", error.getMessage());
+    }
+
+    @Test
+    void nullRuntimeResultIsRejected() {
+        server.enqueue(json("{\"resCode\":\"0\",\"result\":null}"));
+
+        AgentRuntimeException error = assertThrows(
+                AgentRuntimeException.class, () -> client.getAgentRuntime("agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"));
+
+        assertEquals(AgentRuntimeErrorCode.MATE_RESPONSE_INVALID, error.errorCode());
     }
 
     @Test
@@ -334,36 +378,48 @@ class MateServiceClientTest {
 
     @Test
     void usesConfiguredEndpointPathTemplates() throws Exception {
-        var properties = new AgentRuntimeProperties(
-                server.url("/").uri(), Path.of("agent"), Duration.ofSeconds(1L), Duration.ofSeconds(2L));
-        client =
-                new MateServiceClient(properties, new ObjectMapper(), "/custom/agents/%s/runtime", "/custom/skills/%s");
-        server.enqueue(
-                new MockResponse().setHeader("Content-Type", "application/json").setBody("{}"));
+        var properties = new AgentRuntimeProperties(Path.of("agent"), Duration.ofSeconds(1L), Duration.ofSeconds(2L));
+        CampusMateClientProperties campusMateProperties = campusMateProperties(
+                "/mate-service/custom%20segment/agents/%s/runtime", "/mate-service/custom%20segment/skills/%s");
+        client = new MateServiceClient(properties, campusMateProperties, new ObjectMapper());
         server.enqueue(new MockResponse()
                 .setHeader("Content-Type", "application/json")
-                .setBody("{\"resCode\":\"0\",\"result\":[]}"));
+                .setBody("{\"resCode\":\"0\",\"result\":{}}"));
+        server.enqueue(new MockResponse()
+                .setHeader("Content-Type", "application/json")
+                .setBody("{\"resCode\":\"0\",\"result\":{}}"));
 
         client.getAgentRuntime("agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
         client.querySkillInfo("skill-11111111111111111111111111111111");
 
         assertEquals(
-                "/custom/agents/agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/runtime",
+                "/mate-service/custom%20segment/agents/agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/runtime",
                 server.takeRequest().getPath());
         assertEquals(
-                "/custom/skills/skill-11111111111111111111111111111111",
+                "/mate-service/custom%20segment/skills/skill-11111111111111111111111111111111",
                 server.takeRequest().getPath());
     }
 
     private MateServiceClient newClientWithMaxResponseBytes(int maxResponseBytes) {
         var properties = new AgentRuntimeProperties(
+                Path.of("agent"), Duration.ofSeconds(1L), Duration.ofSeconds(2L), maxResponseBytes);
+        return new MateServiceClient(properties, campusMateProperties(), new ObjectMapper());
+    }
+
+    private CampusMateClientProperties campusMateProperties() {
+        return campusMateProperties(AGENT_RUNTIME_PATH_TEMPLATE, SKILL_INFO_QUERY_PATH_TEMPLATE);
+    }
+
+    private CampusMateClientProperties campusMateProperties(
+            String agentRuntimePathTemplate, String skillInfoPathTemplate) {
+        return new CampusMateClientProperties(
                 server.url("/").uri(),
-                Path.of("agent"),
-                Duration.ofSeconds(1L),
-                Duration.ofSeconds(2L),
-                "0",
-                maxResponseBytes);
-        return new MateServiceClient(
-                properties, new ObjectMapper(), AGENT_RUNTIME_PATH_TEMPLATE, SKILL_INFO_QUERY_PATH_TEMPLATE);
+                new CampusMateClientProperties.Endpoints(
+                        "/mate-service/v1/LLM/chat",
+                        "/mate-service/v1/agents/%s",
+                        agentRuntimePathTemplate,
+                        skillInfoPathTemplate,
+                        "/mate-service/v1/runtime/tools/query",
+                        "/mate-service/v1/runtime/tools/%s/execute"));
     }
 }

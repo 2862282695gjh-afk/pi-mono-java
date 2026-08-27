@@ -265,6 +265,8 @@ public record WebCommandDefinition(
 | `/name` | 会话标题仅存前端内存 `threads`,TUI `NameCommand` 自身也标注待 mate-service 适配;`sessionRenamed` 刷新的只是本地数组 | 标题持久化 API 落地后 |
 | `/export` | 全量历史同步拼 JSON 无体积/超时/编码/文件名/下载安全边界 | 改造为受限下载端点(流式 + 大小上限)或仅导出前端已加载历史,另行设计 |
 
+> <span style="color: #d1242f"><strong>【新增需求｜范围扩展，必须纳入实现】</strong> Slash 工具不再限定为本文的 5 个内置命令。必须实现：<strong>1.</strong> <code>/resume</code>，可检索并恢复已有会话；<strong>2.</strong> <code>/compact</code>，触发真实的手动上下文压缩并向前端反馈进度/结果；<strong>3.</strong> <code>/skill:&lt;skill-name&gt; [arguments]</code>，支持技能发现、补全和执行；<strong>4.</strong> Extension 自定义扩展，能够向命令目录注册自定义命令及其元数据。后续设计必须补齐每项的 HTTP 契约、参数与补全交互、权限/信任边界、冲突与命名规则、运行态互斥与取消、错误码、结果/effects、前后端测试。当前“首版 5 个命令”“静态 WebCommandCatalog”“同步 &lt;100ms、无 SSE”及将 /compact 移出的结论，均须按此需求重新设计。</span>
+
 `/new` 的 `conversationReset` 语义同步收窄(见 3.6 effects 标注)。
 
 `CommandOutcome`:
@@ -363,6 +365,8 @@ export interface SlashCommandResult {
   }>;
 }
 ```
+
+> <span style="color: #d1242f"><strong>【终审复查⑧ P0｜executionMode 未进入 DTO/TS 类型，/new 分流无法编译】</strong> 第 580–582 行已读取 <code>matched.command.executionMode</code>，但 CommandDescriptorDTO 的 HTTP 示例与此处 <code>SlashCommandDescriptor</code> 都没有该字段，TypeScript 将直接报错，前端也无法知道命令是否本地执行。请将 executionMode（至少 SERVER / CLIENT_LOCAL）加入后端 DTO、GET 响应示例和 TS 类型，并补默认/all=true 响应及 matcher 的契约测试。</span>
 
 ### 3.2 `useSlashCommands.ts`(新建 composable,约 120 行)
 
@@ -596,6 +600,8 @@ async function submit(overrideMode?: FollowUpMode): Promise<void> {
 
 `/new` 的 effects 分支同步落实:`runtime.clearSessionView()`(useRuntimeApi 既有方法,deleteSession 同款,App.vue:83 已有调用先例)——不止注释;系统消息照常插入本地 systemMessages(引导态时间线为空时显示于顶部,刷新消失符合 D4)。
 
+> <span style="color: #d1242f"><strong>【终审复查⑨ P1｜/new 清视图后的系统消息尚无实际渲染接线】</strong> 当前 App 模板在 <code>hasSession=false</code> 时只渲染 AgentWelcome/DevDiagnostics；ConversationTimeline 也只接收 <code>turns</code>，没有 systemMessages 输入。因此 <code>clearSessionView()</code> 后前面追加的提示不会显示。请明确并给出实际模板接线：将系统消息作为 welcome 区顶部的独立组件渲染，或在 clear 前后采用可见 toast；同时补 /new 有会话与无会话的可见反馈测试。</span>
+
 
 (前置分流的完整实现见上方终审复查⑥修订的 `submit()`——分流位于 session 守卫之前且 CLIENT_LOCAL 豁免;此段历史版本保留对照。)
 
@@ -680,6 +686,8 @@ async function submit(overrideMode?: FollowUpMode): Promise<void> {
 | `/` 后立即空格 | 菜单收起(首个 token 结束);`/ ` 解析 name='' → unknown 透传 |
 | 命令参数含敏感值 | 首版 5 命令均无敏感参数;/login 类不在 Catalog webCapable 集 |
 | ETag 过期(别名路径) | 412 → 系统消息"会话已被修改,请刷新",自动 getSession 重取 ETag |
+
+> <span style="color: #d1242f"><strong>【终审复查⑩ P1｜边界表仍把 /new 与所有命令一并拦截】</strong> 终审复查⑥已规定 CLIENT_LOCAL <code>/new</code> 在无会话时豁免 session 守卫，本表仍写成“执行时一律拦截”，与第 569–597 行冲突。请改为：无会话时仅 CLIENT_LOCAL 命令可执行；SERVER 命令提示先创建会话。新增的 /resume、/skill 及 Extension 命令也需在扩展设计中明确各自的无会话策略。</span>
 
 ## 设计决策(浓缩,理由见 v1)
 

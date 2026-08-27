@@ -1,0 +1,717 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CampusClaw Sub-Agent 子 Agent 编排体系</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<style>
+  :root {
+    --bg: #0d1117;
+    --card: #161b22;
+    --border: #30363d;
+    --text: #e6edf3;
+    --dim: #8b949e;
+    --accent: #58a6ff;
+    --green: #3fb950;
+    --orange: #d29922;
+    --red: #f85149;
+    --purple: #bc8cff;
+    --cyan: #39d2c0;
+  }
+  * { box-sizing: border-box; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    line-height: 1.7;
+    margin: 0;
+    padding: 0;
+    font-size: 15px;
+  }
+  .container {
+    max-width: 780px;
+    margin: 0 auto;
+    padding: 2rem 3rem 5rem;
+  }
+  h1 {
+    font-size: 1.9rem;
+    margin: 0 0 0.4rem;
+    background: linear-gradient(135deg, var(--accent), var(--purple));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    line-height: 1.3;
+  }
+  h2 {
+    font-size: 1.35rem;
+    margin: 2.6rem 0 1rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid var(--border);
+    color: var(--text);
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+  }
+  h3 {
+    font-size: 1.05rem;
+    margin: 1.6rem 0 0.7rem;
+    color: var(--accent);
+  }
+  p { margin: 0.7rem 0; color: var(--text); }
+  code, .mono { font-family: 'SF Mono', Menlo, Consolas, monospace; }
+  p code, li code, td code {
+    background: rgba(88,166,255,0.12);
+    color: var(--accent);
+    padding: 0.1em 0.4em;
+    border-radius: 4px;
+    font-size: 0.88em;
+  }
+  .subtitle {
+    color: var(--dim);
+    font-size: 0.9rem;
+    margin-bottom: 0.3rem;
+  }
+  .subtitle .src-path { color: var(--cyan); font-family: 'SF Mono', Menlo, monospace; }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 1.25rem;
+    margin: 1rem 0;
+  }
+  .note {
+    background: #1a1f2b;
+    border-left: 3px solid var(--accent);
+    padding: 0.85rem 1.1rem;
+    border-radius: 0 6px 6px 0;
+    margin: 1rem 0;
+    font-size: 0.9rem;
+    color: var(--text);
+  }
+  .note.blue { border-left-color: var(--accent); }
+  .note.orange { border-left-color: var(--orange); }
+  .note.red { border-left-color: var(--red); }
+  .note.green { border-left-color: var(--green); }
+  .note strong { color: var(--text); }
+  .note .tag {
+    display: inline-block;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    margin-right: 0.5rem;
+    color: var(--dim);
+  }
+
+  /* badges */
+  .badge-green, .badge-orange, .badge-red, .badge-purple, .badge-cyan, .badge-dim {
+    font-size: 0.7rem;
+    font-weight: 700;
+    padding: 0.18rem 0.55rem;
+    border-radius: 20px;
+    letter-spacing: 0.03em;
+    vertical-align: middle;
+    white-space: nowrap;
+  }
+  .badge-green { background: rgba(63,185,80,0.15); color: var(--green); border: 1px solid rgba(63,185,80,0.4); }
+  .badge-orange { background: rgba(210,153,34,0.15); color: var(--orange); border: 1px solid rgba(210,153,34,0.4); }
+  .badge-red { background: rgba(248,81,73,0.15); color: var(--red); border: 1px solid rgba(248,81,73,0.4); }
+  .badge-purple { background: rgba(188,140,255,0.15); color: var(--purple); border: 1px solid rgba(188,140,255,0.4); }
+  .badge-cyan { background: rgba(57,210,192,0.15); color: var(--cyan); border: 1px solid rgba(57,210,192,0.4); }
+  .badge-dim { background: rgba(139,148,158,0.12); color: var(--dim); border: 1px solid rgba(139,148,158,0.35); }
+
+  /* code block */
+  .code-block {
+    background: #0a0e14;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin: 1rem 0;
+    overflow: hidden;
+  }
+  .code-head {
+    background: #1c2128;
+    padding: 0.5rem 1rem;
+    font-size: 0.78rem;
+    color: var(--dim);
+    border-bottom: 1px solid var(--border);
+    font-family: 'SF Mono', Menlo, monospace;
+  }
+  .code-body {
+    padding: 1rem 1.1rem;
+    font-family: 'SF Mono', Menlo, Consolas, monospace;
+    font-size: 0.82rem;
+    line-height: 1.65;
+    white-space: pre-wrap;
+    word-break: break-all;
+    margin: 0;
+    color: var(--text);
+    overflow-x: hidden;
+  }
+  .src {
+    font-family: 'SF Mono', Menlo, monospace;
+    font-size: 0.75rem;
+    color: var(--cyan);
+    margin: 1.2rem 0 0.2rem;
+  }
+  .cc { color: #8b949e; font-style: italic; }
+  .ck { color: var(--purple); }
+  .cf { color: var(--green); }
+  .cs { color: var(--orange); }
+  .ct { color: var(--accent); }
+  .cn { color: #79c0ff; }
+  .ch { background: rgba(88,166,255,0.08); border-left: 2px solid var(--accent); padding-left: 0.6em; display: block; }
+
+  /* tables */
+  .params, .cmp {
+    width: 88%;
+    margin: 1.2rem auto;
+    border-collapse: separate;
+    border-spacing: 0;
+    border-radius: 8px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    font-size: 0.86rem;
+  }
+  .params th, .cmp th {
+    background: #1c2128;
+    color: var(--text);
+    text-align: left;
+    padding: 0.6rem 0.9rem;
+    font-weight: 600;
+    border-bottom: 1px solid var(--border);
+  }
+  .params td, .cmp td {
+    padding: 0.55rem 0.9rem;
+    border-bottom: 1px solid rgba(48,54,61,0.6);
+    color: var(--text);
+    vertical-align: top;
+  }
+  .params tr:last-child td, .cmp tr:last-child td { border-bottom: none; }
+  .params code, .cmp code {
+    background: rgba(88,166,255,0.12);
+    color: var(--accent);
+    padding: 0.1em 0.35em;
+    border-radius: 4px;
+    font-size: 0.85em;
+  }
+
+  /* stack visualization */
+  .stack { display: flex; flex-direction: column; gap: 3px; width: 80%; margin: 1rem auto; }
+  .stack-label {
+    text-align: center;
+    font-size: 0.8rem;
+    color: var(--dim);
+    margin-bottom: 0.5rem;
+  }
+  .stack-box {
+    padding: 0.55rem 0.9rem;
+    border-radius: 6px;
+    font-size: 0.84rem;
+    border: 1px solid;
+    font-family: 'SF Mono', Menlo, monospace;
+  }
+  .stack-box .lbl { color: var(--text); font-weight: 600; }
+  .stack-box .dsc { color: var(--dim); font-size: 0.8em; }
+  .stack-box.g { background: rgba(63,185,80,0.12); border-color: rgba(63,185,80,0.25); }
+  .stack-box.a { background: rgba(88,166,255,0.12); border-color: rgba(88,166,255,0.25); }
+  .stack-box.o { background: rgba(210,153,34,0.12); border-color: rgba(210,153,34,0.25); }
+  .stack-box.r { background: rgba(248,81,73,0.12); border-color: rgba(248,81,73,0.25); }
+  .stack-box.p { background: rgba(188,140,255,0.12); border-color: rgba(188,140,255,0.25); }
+  .stack-box.dim { background: rgba(139,148,158,0.10); border-color: rgba(139,148,158,0.22); }
+
+  /* mermaid */
+  .mermaid-wrap {
+    background: #ffffff;
+    border-radius: 8px;
+    padding: 1rem;
+    max-width: 88%;
+    margin: 1.2rem auto;
+    text-align: center;
+  }
+  .mermaid-caption {
+    text-align: center;
+    color: #555;
+    font-size: 0.82rem;
+    margin-bottom: 0.6rem;
+    font-weight: 600;
+  }
+  .mermaid-wrap .mermaid { display: flex; justify-content: center; }
+
+  /* collapsible diagrams */
+  details.diag {
+    background: rgba(22,27,34,0.5);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin: 1.2rem auto;
+    max-width: 92%;
+    overflow: hidden;
+  }
+  details.diag.wide { max-width: 96%; }
+  details.diag > summary {
+    cursor: pointer;
+    padding: 0.6rem 1rem;
+    background: #1c2128;
+    color: var(--accent);
+    font-size: 0.85rem;
+    font-weight: 600;
+    list-style: none;
+    user-select: none;
+  }
+  details.diag > summary::-webkit-details-marker { display: none; }
+  details.diag > summary::before { content: "▾ "; color: var(--dim); }
+  details.diag[open] > summary::before { content: "▾ "; }
+  details.diag > .mermaid-wrap,
+  details.diag > .diagram { margin: 1rem auto; border-radius: 6px; }
+
+  ul.feature { list-style: none; padding-left: 0; }
+  ul.feature li { padding: 0.3rem 0 0.3rem 1.5rem; position: relative; }
+  ul.feature li::before { position: absolute; left: 0; font-weight: 700; }
+  ul.feature.yes li::before { content: "✓"; color: var(--green); }
+  ul.feature.warn li::before { content: "▲"; color: var(--orange); }
+  ul.feature.no li::before { content: "✕"; color: var(--red); }
+
+  .footer {
+    margin-top: 3rem;
+    padding-top: 1.2rem;
+    border-top: 1px solid var(--border);
+    color: var(--dim);
+    font-size: 0.8rem;
+    text-align: center;
+  }
+  .footer .src-path { color: var(--cyan); font-family: 'SF Mono', Menlo, monospace; }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<div class="container">
+
+<h1>CampusClaw Sub-Agent 子 Agent 编排体系</h1>
+<div class="subtitle">架构与能力边界分析 · 源码 <span class="src-path">modules/agent-core</span> · 分析日期 2026/06/16</div>
+
+<div class="card">
+<p><strong>定位：</strong>这是一套 <strong>sub-agent（子 agent）委托/编排体系</strong>，核心在
+<code>com.campusclaw.agent.subagent</code> 包。主 agent 通过 <code>spawn_agent</code> 工具把任务一次性委托给外部 coding agent
+（Claude Code / Codex / 远程 HTTP agent / 华为 mate-service agent），<code>SubAgentRegistry</code> 统一负责
+<strong>后端注册、会话跟踪、级联取消、审计落盘</strong>。</p>
+<p>它 <strong>不是</strong> 常驻/调度/编排型的 agent manager —— 实际使用模式是 <strong>"spawn → 跑 → 销毁" 的一次性委托</strong>。</p>
+</div>
+
+<!-- ============ 总览架构图 ============ -->
+<h2>① 总体架构 <span class="badge-purple">overview</span></h2>
+
+<div class="mermaid-wrap">
+<div class="mermaid-caption">Sub-Agent 编排体系总架构（虚线 = 审计/旁路，实线 = 调用与数据流）</div>
+<div class="mermaid">
+flowchart TD
+  Main["主 Agent · AgentLoop<br/>(持有 AgentTool 集合)"]
+  Tool["SpawnAgentTool<br/>工具名 spawn_agent"]
+  Reg["SubAgentRegistry<br/>Spring @Component · 核心管理器"]
+  Backend["SubAgentBackend<br/>可插拔接口"]
+
+  ACP["ACP 后端 · ProcessAcpBackend<br/>stdio + ndJSON"]
+  CC["ClaudeCodeAcpBackend"]
+  Codex["CodexAcpBackend"]
+  A2A["A2aAgentBackend<br/>华为 mate-service JSON-RPC"]
+  HTTP["HttpAgentBackend<br/>HTTP / WebSocket"]
+
+  ExtCC["Claude Code<br/>(claude-code-acp)"]
+  ExtCodex["Codex"]
+  ExtHTTP["远程 HTTP Agent"]
+  ExtMate["mate-service Agent"]
+
+  Store["FileSubAgentSessionStore<br/>审计落盘"]
+  Approv["approval/ 权限审批<br/>接在后端层"]
+  Audit[("~/.campusclaw/agent/<br/>subagents/&lt;backend&gt;/&lt;uuid&gt;.json")]
+
+  Main -->|"调用工具"| Tool
+  Tool -->|"requireBackend / trackSession"| Reg
+  Tool -->|"open / prompt / close"| Backend
+  Reg -.->|"持久化 record"| Store
+  Store -.-> Audit
+
+  Backend --> ACP
+  Backend --> A2A
+  Backend --> HTTP
+  ACP --> CC
+  ACP --> Codex
+  A2A -.-> ExtMate
+  HTTP -.-> ExtHTTP
+  CC -.->|"子进程"| ExtCC
+  Codex -.->|"子进程"| ExtCodex
+  ACP --> Approv
+
+  classDef mgr fill:#e8f0fe,stroke:#1a73e8,color:#1a73e8,stroke-width:2px;
+  classDef ext fill:#fef7e0,stroke:#b06000,color:#b06000;
+  classDef store fill:#e6f4ea,stroke:#137333,color:#137333;
+  class Reg mgr;
+  class ExtCC,ExtCodex,ExtHTTP,ExtMate ext;
+  class Store,Audit store;
+</div>
+</div>
+
+<div class="note blue">
+<span class="tag">关键</span>三条主线：<strong>① 委托流</strong>（主 agent → spawn_agent → registry → backend → 子 agent），
+<strong>② 取消流</strong>（父 abort → registry.cancelAll → 各 backend.cancel），
+<strong>③ 审计流</strong>（registry → FileSubAgentSessionStore → json 文件，best-effort）。
+</div>
+
+<h3>四者关系：yml · SubAgentRegistry · SubAgentBackend · spawn_agent</h3>
+
+<div class="card">
+<p>这四个部分构成 <strong>"配置 → 登记 → 驱动"</strong> 链：<code>application.yml</code> 是连接参数，
+<code>SubAgentBackend</code> 实例把参数 + 协议代码揉成一个"驱动器"，<code>SubAgentRegistry</code> 按 id 存取这些驱动器，
+<code>spawn_agent</code> 工具在运行时把 registry 与 backend 串起来。<strong>同一个 backend 实例</strong>：启动时被 <code>new</code> 出来、<code>register</code> 进 Registry，运行时被 <code>spawn_agent</code> 取出、调它的 <code>open/prompt/close</code>。</p>
+</div>
+
+<div class="mermaid-wrap wide">
+<div class="mermaid-caption">注册阶段（启动时 @PostConstruct）：yaml 参数 → new 实例 → 进 map（全程不碰外部 agent）</div>
+<div class="mermaid">
+sequenceDiagram
+  participant Y as application.yml
+  participant A as SubAgentAutoConfiguration
+  participant R as SubAgentRegistry
+  Y->>A: Spring 绑定 subagent.backends.*
+  loop 每个 non-disabled backend
+    A->>A: 按 type new 出 SubAgentBackend 实例
+    A->>R: register(id, backend)
+    R->>R: backendsById.put(id, backend)
+  end
+  Note over R: map 里现在有实例<br/>但没 fork 进程 / 没发 HTTP
+</div>
+</div>
+
+<table class="cmp">
+<tr><th>部分</th><th>是什么</th><th>不是什么</th></tr>
+<tr><td><code>application.yml</code></td><td>连接参数（backend 的原料）</td><td>agent 本身</td></tr>
+<tr><td><code>SubAgentBackend</code> 实例</td><td>驱动器 / 适配器（协议代码 + 参数融合的对象）</td><td>不是 agent、不是配置文本</td></tr>
+<tr><td><code>SubAgentRegistry</code></td><td>登记簿 / 注册表（@Component，按 id 存取）</td><td>不是执行器（不创建 / 不运行 session）</td></tr>
+<tr><td><code>spawn_agent</code> 工具</td><td>编排者（查 registry + 调 backend）</td><td>不是 backend、不是 agent</td></tr>
+</table>
+
+<table class="cmp">
+<tr><th>agent 体系</th><th>等价的 JDBC 概念</th></tr>
+<tr><td><code>application.yml</code> 的 backend 配置</td><td>JDBC URL + 用户名密码（连接参数）</td></tr>
+<tr><td><code>SubAgentBackend</code> 接口</td><td><code>java.sql.Connection</code> 接口</td></tr>
+<tr><td><code>ProcessAcpBackend</code> / <code>A2aAgentBackend</code> / <code>HttpAgentBackend</code></td><td>MySQL / PostgreSQL Driver（不同协议实现）</td></tr>
+<tr><td><code>SubAgentRegistry</code></td><td><code>DriverManager</code>（注册 / 查找）</td></tr>
+<tr><td>外部 agent（Claude Code / mate-service）</td><td>数据库服务器（真正干活的一方）</td></tr>
+<tr><td><code>spawn_agent</code> 工具</td><td>业务代码调 <code>DriverManager.getConnection</code></td></tr>
+</table>
+
+<div class="note orange">
+<span class="tag">注册 = 存实例</span>注册进 Registry 的是 <strong>SubAgentBackend 实例</strong>（一个 Java 对象）——<strong>不是</strong> yaml 配置文本（配置在 <code>new</code> 时被吸收），<strong>也不是</strong>外部 agent 本身（注册时不 fork 进程、不发 HTTP、不验证可达）。真正的连接是调用阶段（<code>spawn_agent</code> → <code>backend.open/prompt</code>）才惰性发生的。
+</div>
+
+<!-- ============ SpawnAgentTool ============ -->
+<h2>② 工具入口 — spawn_agent <span class="badge-cyan">entry</span></h2>
+
+<div class="card">
+<p><code>SpawnAgentTool</code> 实现 <code>AgentTool</code>，工具名 <code>spawn_agent</code>。它是主 agent 唯一能"生成子 agent"的入口，
+把一次工具调用翻译为 <strong>open → trackSession → 流式 prompt → forgetSession → close</strong> 的完整生命周期。</p>
+</div>
+
+<div class="src">modules/coding-agent-cli/.../subagent/tool/SpawnAgentTool.java</div>
+<div class="code-block">
+<div class="code-head">SpawnAgentTool.execute → runSession 核心流程</div>
+<div class="code-body"><span class="ct">SubAgentBackend</span> backend = registry.<span class="cf">requireBackend</span>(backendId);  <span class="cc">// 按 id 查后端</span>
+<span class="ct">Duration</span> timeout = <span class="cf">resolveTimeout</span>(params.get(<span class="cs">"timeout_seconds"</span>)); <span class="cc">// 默认 600s</span>
+<span class="ct">OpenRequest</span> openRequest = <span class="ck">new</span> <span class="cf">OpenRequest</span>(<span class="cs">"main"</span>, cwd, model, thinking, Map.of(), timeout);
+<span class="ck">return</span> <span class="cf">runSession</span>(backend, openRequest, task, signal, onUpdate, timeout);
+
+<span class="cc">// runSession 生命周期：</span>
+<span class="ct">SubAgentSession</span> session = backend.<span class="cf">open</span>(request);     <span class="cc">// 开会话</span>
+registry.<span class="cf">trackSession</span>(session);                       <span class="cc">// 登记进内存表</span>
+<span class="ck">try</span> {
+    <span class="cf">streamPrompt</span>(backend, session, task, ...);        <span class="cc">// Flux&lt;SubAgentEvent&gt; 流式</span>
+} <span class="ck">finally</span> {
+    registry.<span class="cf">forgetSession</span>(session);                <span class="cc">// 移出内存表</span>
+    backend.<span class="cf">close</span>(session, <span class="cs">"tool-finished"</span>);        <span class="cc">// 关闭会话</span>
+}</div>
+</div>
+
+<div class="mermaid-wrap wide">
+<div class="mermaid-caption">委托流时序（一次 spawn_agent 调用的完整生命周期）</div>
+<div class="mermaid">
+sequenceDiagram
+  participant M as 主 Agent
+  participant T as SpawnAgentTool
+  participant R as SubAgentRegistry
+  participant B as SubAgentBackend
+  participant S as 外部子 Agent
+
+  M->>T: spawn_agent(backend, task, cwd, model)
+  T->>R: requireBackend(backendId)
+  R-->>T: SubAgentBackend
+  T->>B: open(OpenRequest)
+  B-->>T: SubAgentSession
+  T->>R: trackSession(session)
+  T->>B: prompt(session, task)  Flux
+  B->>S: ACP / A2A / HTTP
+  loop 流式回流
+    S-->>B: token / tool 事件
+    B-->>T: SubAgentEvent
+    T-->>M: onUpdate(增量文本)
+  end
+  B-->>T: Done(stopReason)
+  T->>R: forgetSession(session)
+  T->>B: close(session)
+  T-->>M: AgentToolResult(最终文本)
+</div>
+</div>
+
+<div class="note orange">
+<span class="tag">设计取舍</span><strong>一次性模型：</strong>每次 <code>spawn_agent</code> 都 <code>open</code> 一个全新 session（<code>SubAgentSessionKey</code> 每次生成新 UUID），
+跑完立即 <code>close</code>。<strong>没有 session 复用 / resume</strong> —— 这是它"只是委托工具而非 manager"的根本原因。
+</div>
+
+<!-- ============ SubAgentRegistry ============ -->
+<h2>③ 核心管理器 — SubAgentRegistry <span class="badge-purple">manager</span></h2>
+
+<div class="card">
+<p>Spring <code>@Component</code>，进程级单例。通过 <code>ObjectProvider&lt;SubAgentBackend&gt;</code> 在构造时自动收集所有后端 bean。
+内部维护 <strong>三张并发表</strong>，外加一个可选的 <code>SubAgentSessionStore</code>。</p>
+</div>
+
+<div class="src">modules/agent-core/.../subagent/SubAgentRegistry.java</div>
+<div class="code-block">
+<div class="code-head">SubAgentRegistry 的三张表 + 关键方法</div>
+<div class="code-body"><span class="ck">private final</span> <span class="ct">Map</span>&lt;<span class="ct">String</span>, <span class="ct">SubAgentBackend</span>&gt; backendsById   = <span class="ck">new</span> ConcurrentHashMap&lt;&gt;();  <span class="cc">// 后端注册表</span>
+<span class="ck">private final</span> <span class="ct">Map</span>&lt;<span class="ct">String</span>, <span class="ct">SubAgentSession</span>&gt; sessionsByKey = <span class="ck">new</span> ConcurrentHashMap&lt;&gt;();  <span class="cc">// 活跃会话(内存)</span>
+<span class="ck">private final</span> <span class="ct">Map</span>&lt;<span class="ct">String</span>, <span class="ct">SubAgentSessionRecord</span>&gt; recordsByKey = <span class="ck">new</span> ConcurrentHashMap&lt;&gt;();  <span class="cc">// 会话记录</span>
+<span class="ck">private final</span> <span class="ct">SubAgentSessionStore</span> sessionStore;                                   <span class="cc">// 审计(可 NOOP)</span>
+
+<span class="cf">register</span>(backend)            <span class="cc">// 注册后端(自动/手动)</span>
+<span class="cf">requireBackend</span>(id)           <span class="cc">// 查后端,缺失抛 SubAgentException</span>
+<span class="cf">trackSession</span>(session, label) <span class="cc">// 登记活跃会话 + 持久化 record</span>
+<span class="cf">forgetSession</span>(session)       <span class="cc">// 移出会话 + 落"已关闭"记录</span>
+<span class="cf">sessions</span>()                  <span class="cc">// 列出所有活跃会话</span>
+<span class="ch"><span class="cf">cancelAll</span>(reason)            <span class="cc">// ★ 父 abort 时级联取消所有子 session</span></span></div>
+</div>
+
+<table class="params">
+<tr><th>内部结构</th><th>类型</th><th>作用</th><th>激活</th></tr>
+<tr><td><code>backendsById</code></td><td>Map&lt;String, Backend&gt;</td><td>后端注册表，Spring 自动发现</td><td><span class="badge-green">激活</span></td></tr>
+<tr><td><code>sessionsByKey</code></td><td>Map&lt;String, Session&gt;</td><td>活跃会话（内存，跑完即移除）</td><td><span class="badge-green">激活</span></td></tr>
+<tr><td><code>recordsByKey</code></td><td>Map&lt;String, Record&gt;</td><td>会话记录元数据</td><td><span class="badge-green">激活</span></td></tr>
+<tr><td><code>sessionStore</code></td><td>SubAgentSessionStore</td><td>审计落盘（best-effort，<strong>不复用</strong>）</td><td><span class="badge-orange">仅审计</span></td></tr>
+<tr><td><code>cancelAll</code></td><td>方法</td><td>遍历所有活跃会话调 <code>backend.cancel</code></td><td><span class="badge-green">激活</span></td></tr>
+</table>
+
+<!-- ============ SubAgentBackend ============ -->
+<h2>④ 可插拔后端 — SubAgentBackend <span class="badge-cyan">backend</span></h2>
+
+<div class="card">
+<p>统一接口，屏蔽传输差异。所有后端都产出同构的 <code>Flux&lt;SubAgentEvent&gt;</code>，让上层（<code>SpawnAgentTool</code>）无需关心协议。</p>
+</div>
+
+<div class="src">modules/agent-core/.../subagent/SubAgentBackend.java</div>
+<div class="code-block">
+<div class="code-head">SubAgentBackend 接口契约</div>
+<div class="code-body"><span class="ck">public interface</span> <span class="ct">SubAgentBackend</span> {
+    <span class="ct">String</span> <span class="cf">id</span>();                                          <span class="cc">// 稳定 id，registry 与 spawn_agent 共用</span>
+    <span class="ct">SubAgentSession</span> <span class="cf">open</span>(<span class="ct">OpenRequest</span> request);            <span class="cc">// 开会话</span>
+    <span class="ct">Flux</span>&lt;<span class="ct">SubAgentEvent</span>&gt; <span class="cf">prompt</span>(session, text, signal);        <span class="cc">// 驱动一轮，流式事件</span>
+    <span class="ck">default void</span> <span class="cf">respondPermission</span>(session, reqId, outcome);   <span class="cc">// 回复权限请求(默认不支持)</span>
+    <span class="ck">void</span> <span class="cf">cancel</span>(session, reason);                            <span class="cc">// 取消</span>
+    <span class="ck">void</span> <span class="cf">close</span>(session, reason);                             <span class="cc">// 关闭</span>
+
+    <span class="ck">record</span> <span class="ct">OpenRequest</span>(parentAgentId, cwd, model, thinking, env, timeout) {}
+    <span class="ck">enum</span> <span class="ct">PermissionOutcome</span> { ALLOW_ONCE, ALLOW_ALWAYS, DENY, CANCEL }
+}</div>
+</div>
+
+<div class="mermaid-wrap">
+<div class="mermaid-caption">三种后端实现与传输协议</div>
+<div class="mermaid">
+flowchart LR
+  API["SubAgentBackend 接口"]
+  API --> ACP["ACP 子树<br/>stdio + ndJSON"]
+  API --> A2A["A2A<br/>JSON-RPC"]
+  API --> HTTP["HTTP<br/>ndJSON / WS"]
+
+  ACP --> PAB["ProcessAcpBackend<br/>(基类,处理权限)"]
+  PAB --> CC["ClaudeCodeAcpBackend<br/>claude-code-acp"]
+  PAB --> CX["CodexAcpBackend<br/>codex-acp"]
+
+  CC -. 子进程 .-> E1["Claude Code"]
+  CX -. 子进程 .-> E2["Codex / Gemini"]
+  A2A -. HTTPS+双Header .-> E3["mate-service<br/>KnowledgeQAAgent"]
+  HTTP -. HTTPS+bearer .-> E4["远程 HTTP Agent"]
+
+  classDef ext fill:#fef7e0,stroke:#b06000,color:#b06000;
+  class E1,E2,E3,E4 ext;
+</div>
+</div>
+
+<table class="cmp">
+<tr><th>后端</th><th>协议</th><th>传输</th><th>鉴权</th><th>默认状态</th></tr>
+<tr><td><code>claude-code</code></td><td>ACP</td><td>stdio 子进程</td><td>—</td><td><span class="badge-green">enabled</span></td></tr>
+<tr><td><code>codex</code></td><td>ACP</td><td>stdio 子进程</td><td>—</td><td><span class="badge-red">disabled</span></td></tr>
+<tr><td><code>remote-http</code></td><td>HTTP</td><td>HTTPS</td><td>bearer token</td><td><span class="badge-red">disabled</span></td></tr>
+<tr><td><code>mate-kqa</code></td><td>A2A</td><td>HTTPS JSON-RPC</td><td>X-HW-ID + X-HW-APPKEY</td><td><span class="badge-red">disabled</span></td></tr>
+</table>
+
+<!-- ============ 会话模型 ============ -->
+<h2>⑤ 会话模型 <span class="badge-green">session</span></h2>
+
+<div class="card">
+<p>记录每次 spawn 的子 agent 会话。<code>SubAgentSessionKey</code> 格式对齐 OpenClaw 约定，便于未来跨工具互操作。</p>
+</div>
+
+<div class="stack">
+<div class="stack-label">SubAgentSessionKey 格式</div>
+<div class="stack-box a"><span class="lbl">agent:&lt;parentAgentId&gt;:&lt;backendId&gt;:&lt;uuid&gt;</span><br/><span class="dsc">例：agent:main:claude-code:550e8400-e29b-41d4-a716-446655440000</span></div>
+<div class="stack-box g"><span class="lbl">SubAgentSession</span> (record) — key + runtimeSessionId + backend</div>
+<div class="stack-box p"><span class="lbl">SubAgentSessionRecord</span> — opened/closed 时间戳 + label，可序列化</div>
+<div class="stack-box dim"><span class="lbl">SubAgentSessionStore</span> — 接口；FileSubAgentSessionStore 落盘到 ~/.campusclaw/agent/subagents/&lt;backend&gt;/&lt;uuid&gt;.json</div>
+</div>
+
+<div class="note blue">
+<span class="tag">持久化语义</span><code>FileSubAgentSessionStore</code> 的 Javadoc 明确写道：<em>"best-effort metadata, <strong>not a correctness dependency</strong>"</em>。
+也就是说落盘的 json 只是 <strong>审计/元数据</strong>，<strong>不会</strong>被用来 resume 或复用 session。
+</div>
+
+<!-- ============ 权限审批 ============ -->
+<h2>⑥ 权限审批 — approval/ <span class="badge-orange">partial</span></h2>
+
+<div class="card">
+<p>父 agent 对子 agent 工具调用的权限控制。<strong>架构完整，但接在后端层（<code>ProcessAcpBackend</code>），且默认配置下基本是摆设。</strong></p>
+</div>
+
+<div class="mermaid-wrap">
+<div class="mermaid-caption">DefaultApprovalPolicy 决策流程（subagent.approval.default）</div>
+<div class="mermaid">
+flowchart TD
+  In["子 agent 要调一个工具<br/>decide(risk, toolName)"]
+  In --> M{mode}
+  M -->|ALLOW 默认| A1["AUTO_ALLOW<br/>全部放行<br/>子 agent 继承父信任域"]
+  M -->|DENY| A2["DENY<br/>全部拒绝(演练/沙盒)"]
+  M -->|ASK| A3{risk == READ_ONLY?}
+  A3 -->|是| A4["AUTO_ALLOW"]
+  A3 -->|否| A5["ASK_PARENT<br/>→ ParentPermissionResolver"]
+  A5 --> A6["默认 TimeoutDeniedResolver<br/>直接 CANCELLED"]
+  A6 -.->|"需自实现 interactive resolver<br/>才有实际意义"| A7["TUI 提示 / RPC 往返"]
+
+  classDef allow fill:#e6f4ea,stroke:#137333,color:#137333;
+  classDef deny fill:#fce8e6,stroke:#c5221f,color:#c5221f;
+  classDef ask fill:#fef7e0,stroke:#b06000,color:#b06000;
+  class A1,A4 allow;
+  class A2 deny;
+  class A5,A6,A7 ask;
+</div>
+</div>
+
+<div class="src">modules/agent-core/.../subagent/approval/DefaultApprovalPolicy.java</div>
+<div class="code-block">
+<div class="code-head">DefaultApprovalPolicy.decide — 三种模式</div>
+<div class="code-body"><span class="ck">public</span> <span class="ct">DefaultApprovalPolicy</span>(@Value(<span class="cs">"${subagent.approval.default:allow}"</span>) <span class="ct">String</span> configured) {
+    <span class="ck">this</span>.mode = <span class="cf">parse</span>(configured);  <span class="cc">// 默认 ALLOW</span>
+}
+
+<span class="ck">public</span> <span class="ct">ApprovalDecision</span> <span class="cf">decide</span>(<span class="ct">Risk</span> risk, <span class="ct">String</span> toolName) {
+    <span class="ck">return switch</span> (mode) {
+        <span class="ck">case</span> ALLOW -> AUTO_ALLOW;
+        <span class="ck">case</span> DENY  -> DENY;
+        <span class="ck">case</span> ASK   -> risk == READ_ONLY ? AUTO_ALLOW : ASK_PARENT;
+    };
+}</div>
+</div>
+
+<div class="note red">
+<span class="tag">未接通</span><code>SpawnAgentTool.handleEvent</code> 只处理 <code>TextDelta / Done / Error</code>，<strong>没有处理 <code>SubAgentEvent.PermissionRequest</code></strong>，
+整个工具里也没调 <code>respondPermission</code>。也就是说 <strong>父 agent 无法通过 spawn_agent 路径交互式批准</strong>子 agent 的工具请求 ——
+父控权限这条链在工具层是断的，权限实际只在后端内部（用 policy）自行裁决。
+</div>
+
+<!-- ============ 事件模型 ============ -->
+<h2>⑦ 事件模型 — SubAgentEvent <span class="badge-green">events</span></h2>
+
+<div class="card">
+<p><code>sealed interface</code>，6 个事件变体。模仿 ACP <code>session/update</code> 通知面，但与传输无关，让 HTTP/WebSocket 后端能产出同样形状。</p>
+</div>
+
+<table class="params">
+<tr><th>事件</th><th>字段</th><th>SpawnAgentTool 是否处理</th></tr>
+<tr><td><code>TextDelta</code></td><td>stream(OUTPUT/THOUGHT), text</td><td><span class="badge-green">是</span> — OUTPUT 进 transcript，THOUGHT 兜底</td></tr>
+<tr><td><code>Done</code></td><td>stopReason(END_TURN/MAX_TOKENS/REFUSAL/CANCELLED/ERROR)</td><td><span class="badge-green">是</span> — 结束 latch</td></tr>
+<tr><td><code>Error</code></td><td>code, message, retryable</td><td><span class="badge-green">是</span></td></tr>
+<tr><td><code>ToolCall</code></td><td>toolCallId, name, title, status</td><td><span class="badge-red">否</span></td></tr>
+<tr><td><code>Status</code></td><td>summary, details</td><td><span class="badge-red">否</span></td></tr>
+<tr><td><code>PermissionRequest</code></td><td>requestId, toolName, params</td><td><span class="badge-red">否 — 断链</span></td></tr>
+</table>
+
+<!-- ============ 配置状态 ============ -->
+<h2>⑧ 配置状态 — application.yml <span class="badge-dim">config</span></h2>
+
+<div class="src">modules/coding-agent-cli/src/main/resources/application.yml</div>
+<div class="code-block">
+<div class="code-head">subagent 配置块（节选）</div>
+<div class="code-body"><span class="ct">subagent</span>:
+  <span class="ct">enabled</span>: <span class="cn">true</span>
+  <span class="ct">approval</span>:
+    <span class="ct">default</span>: <span class="cs">allow</span>      <span class="cc"># allow | ask | deny</span>
+  <span class="ct">backends</span>:
+    <span class="ct">claude-code</span>: { <span class="ct">type</span>: acp,   <span class="ct">disabled</span>: <span class="cn">false</span>, command: claude-code-acp }  <span class="cc"># ★ 唯一启用</span>
+    <span class="ct">codex</span>:       { <span class="ct">type</span>: acp,   <span class="ct">disabled</span>: <span class="cn">true</span>  }
+    <span class="ct">remote-http</span>: { <span class="ct">type</span>: http,  <span class="ct">disabled</span>: <span class="cn">true</span>  }
+    <span class="ct">mate-kqa</span>:    { <span class="ct">type</span>: a2a,   <span class="ct">disabled</span>: <span class="cn">true</span>  }</div>
+</div>
+
+<!-- ============ 能力边界 ============ -->
+<h2>⑨ 能力边界 <span class="badge-red">boundary</span></h2>
+
+<table class="cmp">
+<tr><th>类别</th><th>具体能力</th><th>状态</th></tr>
+<tr><td rowspan="4"><strong>已激活</strong></td><td>后端注册 / Spring 自动发现</td><td><span class="badge-green">✓</span></td></tr>
+<tr><td>会话跟踪（内存）+ 级联取消 cancelAll</td><td><span class="badge-green">✓</span></td></tr>
+<tr><td>三种可插拔后端（ACP / A2A / HTTP）</td><td><span class="badge-green">✓</span></td></tr>
+<tr><td>审计落盘（FileSubAgentSessionStore）</td><td><span class="badge-green">✓</span></td></tr>
+<tr><td rowspan="2"><strong>框架已搭<br/>默认未激活</strong></td><td>权限审批（allow 全放行；SpawnAgentTool 未处理 PermissionRequest）</td><td><span class="badge-orange">▲</span></td></tr>
+<tr><td>会话持久化（仅审计，不 resume / 不复用）</td><td><span class="badge-orange">▲</span></td></tr>
+<tr><td rowspan="5"><strong>缺失</strong></td><td>子 agent 常驻 / 池化 / 跨任务复用</td><td><span class="badge-red">✕</span></td></tr>
+<tr><td>多个子 agent 之间通信 / 协作</td><td><span class="badge-red">✕</span></td></tr>
+<tr><td>并发上限 / 队列调度</td><td><span class="badge-red">✕</span></td></tr>
+<tr><td>编排图 / DAG（A 完了跑 B）</td><td><span class="badge-red">✕</span></td></tr>
+<tr><td>资源配额 / 优先级 / 监控聚合</td><td><span class="badge-red">✕</span></td></tr>
+</table>
+
+<div class="note green">
+<span class="tag">结论</span>当前是一个 <strong>"delegation（委托）工具"</strong>：主 agent 把一个任务一次性丢给外部 coding agent，拿结果就销毁。
+<code>SubAgentRegistry</code> 扮演 <strong>注册表 + 级联取消器 + 审计员</strong>，<strong>不是</strong>调度/编排型 agent manager。
+要升级为真正的多 agent 管理器，缺的是：<strong>常驻 session 复用、并发/队列调度、子 agent 间通信、把权限审批真正接进父 agent 事件流</strong>。
+</div>
+
+<div class="footer">
+分析来源：源码阅读 <span class="src-path">modules/agent-core/.../agent/subagent/</span>、<span class="src-path">modules/coding-agent-cli/.../codingagent/subagent/</span><br/>
+关键类：SubAgentRegistry · SubAgentBackend · SpawnAgentTool · SubAgentEvent · DefaultApprovalPolicy · FileSubAgentSessionStore<br/>
+生成方式：knowledge-html skill · 2026/06/16
+</div>
+
+</div>
+
+<script>
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: 'default',
+    themeVariables: { fontSize: '14px' },
+    flowchart: { curve: 'basis', padding: 15 },
+    sequence: { actorMargin: 50 }
+  });
+
+  document.querySelectorAll('.mermaid-wrap, .diagram').forEach(el => {
+    const cap = el.querySelector('.mermaid-caption, .stack-label');
+    const text = cap ? cap.textContent.trim() : '图表';
+    if (cap) cap.style.display = 'none';
+    const d = document.createElement('details');
+    d.open = true;
+    d.className = 'diag' + (el.classList.contains('wide') ? ' wide' : '');
+    const s = document.createElement('summary');
+    s.textContent = text;
+    el.parentNode.insertBefore(d, el);
+    d.appendChild(s);
+    d.appendChild(el);
+  });
+</script>
+</body>
+</html>

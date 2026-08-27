@@ -8,6 +8,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 import com.huawei.hicampus.mate.matecampusclaw.ai.types.Api;
@@ -21,6 +22,7 @@ import com.huawei.hicampus.mate.matecampusclaw.ai.types.Provider;
 import com.huawei.hicampus.mate.matecampusclaw.ai.types.StopReason;
 import com.huawei.hicampus.mate.matecampusclaw.ai.types.TextContent;
 import com.huawei.hicampus.mate.matecampusclaw.ai.types.ThinkingContent;
+import com.huawei.hicampus.mate.matecampusclaw.ai.types.ToolResultMessage;
 import com.huawei.hicampus.mate.matecampusclaw.ai.types.Usage;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.dto.RuntimeEntryDTO;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.dto.RuntimeRecordDTO;
@@ -36,10 +38,33 @@ import org.junit.jupiter.api.Test;
  */
 class RuntimeEntryCodecTest {
     @Test
+    void projectsToolFailureAsStableCodeAndLocalizedMessage() {
+        RuntimeEntryCodec codec = codec();
+        ToolResultMessage failure = new ToolResultMessage(
+                "call_1",
+                "querySkillInfo",
+                List.of(new TextContent("MATE_RESPONSE_INVALID")),
+                Map.of("errorCode", "MATE_RESPONSE_INVALID", "errorCategory", "InternalException"),
+                true,
+                1L);
+
+        RuntimeEntryDTO entry = codec.toolResultEntry("session", "entry", failure, OffsetDateTime.now());
+        Map<String, Object> event = codec.toHistoryEvent(entry, Locale.SIMPLIFIED_CHINESE);
+
+        assertThat(entry.getPayload())
+                .contains("\"error_code\":\"MATE_RESPONSE_INVALID\"")
+                .doesNotContain("error_category", "InternalException");
+        assertThat(event)
+                .containsEntry("errorCode", "MATE_RESPONSE_INVALID")
+                .containsEntry("errorMessage", "CampusMate 响应格式不正确。")
+                .doesNotContainKey("errorCategory");
+    }
+
+    @Test
     void projectsStoredAssistantPayloadWithoutChangingToolArguments() {
         RuntimeEntryDTO entry = assistantEntry();
 
-        Map<String, Object> event = new RuntimeEntryCodec(new ObjectMapper()).toHistoryEvent(entry);
+        Map<String, Object> event = codec().toHistoryEvent(entry);
 
         assertThat(event)
                 .containsEntry("type", "assistant.message.completed")
@@ -59,14 +84,14 @@ class RuntimeEntryCodecTest {
                 "assistant.message.completed",
                 "{\"message\":{\"role\":\"assistant\",\"content\":[]},\"finish_reason\":\"error\"}");
 
-        List<String> ids = new RuntimeEntryCodec(new ObjectMapper()).toAgentContextEntryIds(List.of(user, failed));
+        List<String> ids = codec().toAgentContextEntryIds(List.of(user, failed));
 
         assertThat(ids).containsExactly("entry_user");
     }
 
     @Test
     void restoresPersistedAssistantModelIdentityInsteadOfCurrentModel() {
-        RuntimeEntryCodec codec = new RuntimeEntryCodec(new ObjectMapper());
+        RuntimeEntryCodec codec = codec();
         AssistantMessage original = new AssistantMessage(
                 List.of(new TextContent("done")),
                 "openai-responses",
@@ -89,7 +114,7 @@ class RuntimeEntryCodecTest {
 
     @Test
     void storesUsageOnlyInInternalRecordAndRestoresReasoningSignature() {
-        RuntimeEntryCodec codec = new RuntimeEntryCodec(new ObjectMapper());
+        RuntimeEntryCodec codec = codec();
         Usage usage = new Usage(10, 5, 2, 1, 18, new Cost(0.1, 0.2, 0.01, 0.02, 0.33));
         AssistantMessage original = new AssistantMessage(
                 List.of(new ThinkingContent("reason", "signature", false), new TextContent("done")),
@@ -144,6 +169,12 @@ class RuntimeEntryCodecTest {
                 + "\"tool_call_id\":\"call_201\",\"name\":\"query_abnormal_orders\","
                 + "\"arguments\":{\"uploaded_files\":true}}]},\"finish_reason\":\"tool_call\"}");
         return entry;
+    }
+
+    private static RuntimeEntryCodec codec() {
+        return new RuntimeEntryCodec(
+                new ObjectMapper(),
+                new com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.RuntimeMessageSourceConfiguration().messageSource());
     }
 
     private static RuntimeEntryDTO entry(String id, String type, String payload) {

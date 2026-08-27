@@ -21,6 +21,10 @@ import jakarta.annotation.Nullable;
  * @param responseModel 上游返回的可选实际模型标识
  * @param usage Token 和费用用量
  * @param stopReason 模型停止生成的原因
+<<<<<<< HEAD
+=======
+ * @param errorCode 停止原因为错误时的可选稳定错误码
+>>>>>>> upstream/main
  * @param errorMessage 停止原因为错误时的可选消息
  * @param timestamp Unix 毫秒时间戳
  *
@@ -36,6 +40,7 @@ public record AssistantMessage(
         @JsonProperty("responseModel") @Nullable String responseModel,
         @JsonProperty("usage") Usage usage,
         @JsonProperty("stopReason") StopReason stopReason,
+        @JsonProperty("errorCode") @Nullable String errorCode,
         @JsonProperty("errorMessage") @Nullable String errorMessage,
         @JsonProperty("timestamp") long timestamp)
         implements Message {
@@ -46,10 +51,42 @@ public record AssistantMessage(
             String provider,
             String model,
             @Nullable String responseId,
+<<<<<<< HEAD
+=======
+            @Nullable String responseModel,
             Usage usage,
             StopReason stopReason,
             @Nullable String errorMessage,
             long timestamp) {
+        this(
+                content,
+                api,
+                provider,
+                model,
+                responseId,
+                responseModel,
+                usage,
+                stopReason,
+                null,
+                errorMessage,
+                timestamp);
+    }
+
+    public AssistantMessage(
+            List<ContentBlock> content,
+            String api,
+            String provider,
+            String model,
+            @Nullable String responseId,
+>>>>>>> upstream/main
+            Usage usage,
+            StopReason stopReason,
+            @Nullable String errorMessage,
+            long timestamp) {
+<<<<<<< HEAD
         this(content, api, provider, model, responseId, null, usage, stopReason, errorMessage, timestamp);
+=======
+        this(content, api, provider, model, responseId, null, usage, stopReason, null, errorMessage, timestamp);
+>>>>>>> upstream/main
     }
 }

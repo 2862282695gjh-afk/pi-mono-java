@@ -13,6 +13,7 @@ import static org.mockito.Mockito.when;
 import java.nio.file.Path;
 import java.util.List;
 
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtime.AgentRuntimeErrorCode;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtime.AgentRuntimeException;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtime.AgentRuntimeManager;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtime.MateServiceClient.AgentRuntime;
@@ -21,8 +22,12 @@ import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.error.Runt
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 
+@ExtendWith(OutputCaptureExtension.class)
 class FileAgentDirectoryResolverTest {
 
     private static final String AGENT_ID = "agent-0123456789abcdef0123456789abcdef";
@@ -55,13 +60,38 @@ class FileAgentDirectoryResolverTest {
     }
 
     @Test
-    void translatesRuntimePreparationFailure() {
+    void logsAndTranslatesRuntimePreparationFailure(CapturedOutput output) {
         AgentRuntimeManager manager = mock(AgentRuntimeManager.class);
-        when(manager.prepare(AGENT_ID)).thenThrow(new AgentRuntimeException("Mate unavailable"));
+        AgentRuntimeException failure = new AgentRuntimeException("Mate unavailable");
+        when(manager.prepare(AGENT_ID)).thenThrow(failure);
 
         assertThatThrownBy(() -> new FileAgentDirectoryResolver(manager).resolve(AGENT_ID))
-                .isInstanceOfSatisfying(RuntimeApiException.class, error -> assertThat(error.errorCode())
-                        .isEqualTo(RuntimeErrorCode.AGENT_NOT_AVAILABLE));
+                .isInstanceOfSatisfying(RuntimeApiException.class, error -> {
+                    assertThat(error.errorCode()).isEqualTo(RuntimeErrorCode.AGENT_NOT_AVAILABLE);
+                    assertThat(error).hasNoCause();
+                });
+        assertThat(output)
+                .contains("operation=runtime.agent.prepare")
+                .contains("errorCode=AGENT_NOT_AVAILABLE")
+                .contains("agentId=\"" + AGENT_ID + "\"")
+                .contains("AgentRuntimeException: Mate unavailable");
+    }
+
+    @Test
+    void invalidMateResponseMapsToAgentNotAvailableWithStableCode() {
+        // result 缺失/非对象等响应解析失败映射为 AGENT_NOT_AVAILABLE，
+        // 诊断异常只写入日志，公开边界按错误码渲染中英文文案。
+        AgentRuntimeManager manager = mock(AgentRuntimeManager.class);
+        AgentRuntimeException failure = new AgentRuntimeException(
+                AgentRuntimeErrorCode.MATE_RESPONSE_INVALID, "querySkillInfo result must be an object");
+        when(manager.prepare(AGENT_ID)).thenThrow(failure);
+
+        assertThatThrownBy(() -> new FileAgentDirectoryResolver(manager).resolve(AGENT_ID))
+                .isInstanceOfSatisfying(RuntimeApiException.class, error -> {
+                    assertThat(error.errorCode()).isEqualTo(RuntimeErrorCode.AGENT_NOT_AVAILABLE);
+                    assertThat(error).hasNoCause();
+                    assertThat(failure.stableErrorCode()).isEqualTo("MATE_RESPONSE_INVALID");
+                });
     }
 
     @Test

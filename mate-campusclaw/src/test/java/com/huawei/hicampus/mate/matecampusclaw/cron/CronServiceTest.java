@@ -162,14 +162,14 @@ class CronServiceTest {
 
         @Test
         void triggerDelegates() {
-            CronRunRecord rec = new CronRunRecord("r1", "j1", 0, 0, RunStatus.SUCCESS, null, null, 0);
+            CronRunRecord rec = new CronRunRecord("r1", "j1", 0, 0, RunStatus.SUCCESS, null, null, null, 0);
             when(engine.triggerJob("j1")).thenReturn(rec);
             assertThat(svc.triggerJob("j1")).isSameAs(rec);
         }
 
         @Test
         void getRecentRunsDelegates() {
-            CronRunRecord rec = new CronRunRecord("r1", "j1", 0, 0, RunStatus.SUCCESS, null, null, 0);
+            CronRunRecord rec = new CronRunRecord("r1", "j1", 0, 0, RunStatus.SUCCESS, null, null, null, 0);
             when(runLog.getRecentRuns("j1", 5)).thenReturn(List.of(rec));
             assertThat(svc.getRecentRuns("j1", 5)).containsExactly(rec);
         }

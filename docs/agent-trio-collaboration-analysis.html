@@ -1,0 +1,598 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CampusClaw 三剑客 —— AgentSession / Agent / AgentLoop 协作剖析</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<style>
+:root {
+  --bg: #0d1117;
+  --card: #161b22;
+  --border: #30363d;
+  --text: #e6edf3;
+  --dim: #8b949e;
+  --accent: #58a6ff;
+  --green: #3fb950;
+  --orange: #d29922;
+  --red: #f85149;
+  --purple: #bc8cff;
+  --cyan: #39d2c0;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  line-height: 1.7;
+  font-size: 15px;
+}
+.container {
+  max-width: 780px;
+  margin: 0 auto;
+  padding: 2rem 3rem 4rem;
+}
+h1 {
+  font-size: 1.9rem;
+  margin: 0 0 0.3rem;
+  background: linear-gradient(90deg, var(--accent), var(--purple));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.subtitle { color: var(--dim); font-size: 0.88rem; margin-bottom: 0.4rem; }
+.meta { color: var(--dim); font-size: 0.8rem; margin-bottom: 2rem; }
+h2 {
+  font-size: 1.35rem;
+  margin: 2.6rem 0 1rem;
+  padding-bottom: 0.4rem;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+h3 { font-size: 1.05rem; margin: 1.4rem 0 0.6rem; color: var(--accent); }
+p { margin: 0.6rem 0; }
+a { color: var(--accent); text-decoration: none; }
+code {
+  font-family: 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 0.85em;
+  background: rgba(88,166,255,0.12);
+  color: var(--accent);
+  padding: 0.1em 0.4em;
+  border-radius: 4px;
+}
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1.1rem 1.3rem;
+  margin: 1rem 0;
+}
+.note {
+  background: #1a1f2b;
+  border-left: 3px solid var(--accent);
+  border-radius: 0 8px 8px 0;
+  padding: 0.8rem 1.1rem;
+  margin: 1rem 0;
+}
+.note.blue { border-left-color: var(--accent); }
+.note.green { border-left-color: var(--green); }
+.note.orange { border-left-color: var(--orange); }
+.note.purple { border-left-color: var(--purple); }
+.note strong { color: var(--text); }
+
+.src {
+  font-family: 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 0.74rem;
+  color: var(--dim);
+  margin: 1rem 0 0.3rem;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.src::before { content: "📁"; filter: grayscale(1) opacity(0.6); }
+.code-block {
+  background: #0a0e14;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  margin: 0 0 1rem;
+}
+.code-head {
+  background: #1c2128;
+  color: var(--dim);
+  font-family: 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 0.74rem;
+  padding: 0.4rem 0.9rem;
+  border-bottom: 1px solid var(--border);
+}
+.code-body {
+  font-family: 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 0.8rem;
+  line-height: 1.6;
+  padding: 0.9rem 1.1rem;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.cc { color: #6e7681; font-style: italic; }   /* comment */
+.ck { color: var(--purple); }                  /* keyword */
+.cf { color: var(--green); }                   /* function */
+.cs { color: var(--orange); }                  /* string */
+.ct { color: var(--accent); }                  /* type */
+.cn { color: #79c0ff; }                        /* number */
+.ch { background: rgba(88,166,255,0.10); border-left: 2px solid var(--accent); padding-left: 0.4rem; margin-left: -0.4rem; display: inline-block; }
+
+.params, .cmp {
+  width: 88%;
+  margin: 1rem auto;
+  border-collapse: separate;
+  border-spacing: 0;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  font-size: 0.85rem;
+}
+.params th, .cmp th {
+  background: #1c2128;
+  color: var(--accent);
+  text-align: left;
+  padding: 0.6rem 0.9rem;
+  font-weight: 600;
+}
+.params td, .cmp td {
+  padding: 0.55rem 0.9rem;
+  border-top: 1px solid var(--border);
+  vertical-align: top;
+}
+.params tr:hover td, .cmp tr:hover td { background: rgba(88,166,255,0.04); }
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 80%;
+  margin: 1rem auto;
+}
+.stack-box {
+  padding: 0.55rem 0.9rem;
+  border-radius: 6px;
+  font-size: 0.83rem;
+  border: 1px solid;
+}
+.stack-box.g { background: rgba(63,185,80,0.12); border-color: rgba(63,185,80,0.25); }
+.stack-box.o { background: rgba(210,153,34,0.12); border-color: rgba(210,153,34,0.25); }
+.stack-box.a { background: rgba(88,166,255,0.12); border-color: rgba(88,166,255,0.25); }
+.stack-box.p { background: rgba(188,140,255,0.12); border-color: rgba(188,140,255,0.25); }
+.stack-box.dim { background: rgba(139,148,158,0.10); border-color: rgba(139,148,158,0.22); }
+.stack-box .role { color: var(--dim); font-size: 0.74rem; float: right; }
+
+.badge {
+  display: inline-block;
+  font-size: 0.7rem;
+  padding: 0.12rem 0.55rem;
+  border-radius: 999px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.badge-blue { background: rgba(88,166,255,0.14); color: var(--accent); border: 1px solid rgba(88,166,255,0.3); }
+.badge-green { background: rgba(63,185,80,0.14); color: var(--green); border: 1px solid rgba(63,185,80,0.3); }
+.badge-purple { background: rgba(188,140,255,0.14); color: var(--purple); border: 1px solid rgba(188,140,255,0.3); }
+.badge-orange { background: rgba(210,153,34,0.14); color: var(--orange); border: 1px solid rgba(210,153,34,0.3); }
+.badge-cyan { background: rgba(57,210,192,0.14); color: var(--cyan); border: 1px solid rgba(57,210,192,0.3); }
+
+.mermaid-wrap {
+  background: #ffffff;
+  border-radius: 10px;
+  padding: 1.2rem;
+  margin: 1rem auto;
+  width: 88%;
+}
+.mermaid-wrap.wide { width: 95%; }
+.mermaid-caption {
+  text-align: center;
+  color: #555;
+  font-size: 0.82rem;
+  margin-bottom: 0.6rem;
+  font-weight: 600;
+}
+.diag summary {
+  cursor: pointer;
+  color: var(--accent);
+  font-size: 0.85rem;
+  margin: 0.6rem 0;
+  font-weight: 600;
+}
+.diag.wide { width: 95%; }
+
+.footer {
+  margin-top: 3rem;
+  padding-top: 1.2rem;
+  border-top: 1px solid var(--border);
+  color: var(--dim);
+  font-size: 0.78rem;
+}
+.kbd {
+  font-family: 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 0.78em;
+  background: #1c2128;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.05em 0.4em;
+  color: var(--text);
+}
+</style>
+</head>
+<body>
+<div class="container">
+
+<h1>三剑客：AgentSession / Agent / AgentLoop</h1>
+<div class="subtitle">一轮对话中三者的协作机制与职责边界</div>
+<div class="meta">
+  项目：CampusClaw（原 pi-mono-java）·
+  模块：<code>agent-core</code> + <code>coding-agent-cli</code> ·
+  分析日期：2026-07-08
+</div>
+
+<div class="card">
+<p>这三个类名相似、职责却截然不同，是一轮对话里分工最核心的三层。<strong>一句话区分：</strong></p>
+<p>🪟 <strong>AgentSession</strong> = 会话外壳（转发，不干活）　·　🧠 <strong>Agent</strong> = 生命周期 + 状态宿主 + 事件总线　·　🔄 <strong>AgentLoop</strong> = 单轮执行的算法核心（LLM↔工具循环）</p>
+<p>另有两位"隐形关键角色"贯穿其中：<code>AgentContext</code>（Loop 与 State 的桥梁）与 <code>AgentState</code>（唯一的状态真相源）。本文一并讲清。</p>
+</div>
+
+<h2>🗺️ 总览：一轮对话的端到端时序</h2>
+
+<div class="card">
+<p>用户敲下一行输入后，调用链从 CLI 会话层穿透到 agent 内核，再异步驱动 LLM。下图把"谁调谁、数据怎么流、事件怎么回流"一次性画清。</p>
+</div>
+
+<div class="mermaid-wrap wide">
+<div class="mermaid-caption">图 1：一轮对话的完整调用时序（从用户输入到回复定稿）</div>
+<pre class="mermaid">
+sequenceDiagram
+    autonumber
+    actor U as 用户
+    participant IM as InteractiveMode<br/>(CLI 会话层)
+    participant S as AgentSession<br/>(外壳)
+    participant A as Agent<br/>(宿主+状态)
+    participant L as AgentLoop<br/>(循环算法)
+    participant C as AgentContext<br/>(桥梁)
+    participant ST as AgentState<br/>(状态真相源)
+    participant LLM as LLM
+
+    U->>IM: 输入文本
+    IM->>S: getAgent().subscribe(listener)
+    IM->>S: prompt(input)  &nbsp;&nbsp;✦ .join() 阻塞等待
+    S->>A: prompt(message)  &nbsp;&nbsp;✦ 纯转发
+    A->>A: startExecution(): 防重入检查<br/>建 CancellationToken
+    A->>C: new AgentContext(state)  ✦ 包住自己的 state
+    A->>L: new AgentLoop(config)
+    A->>L: run(msgs, context, this::emit, signal)<br/>✦ 在虚拟线程异步跑
+
+    rect rgb(40,40,55)
+    note over L,ST: AgentLoop while 循环（每个 turn）
+    L->>C: appendMessages(prompts)
+    C->>ST: appendMessage()  ✦ 用户消息入库
+    L->>C: messages()
+    C->>ST: getMessages()  ✦ copyOf 快照
+    L->>LLM: stream(model, context)
+    LLM-->>L: 流式 chunks
+    L->>A: emit(MessageStart/Update)  ✦ 回调
+    A->>ST: setStreaming / setStreamMessage
+    A-->>IM: listener.onEvent  ✦ UI 流式渲染
+    L->>C: appendMessage(assistant)
+    L->>C: appendMessages(toolResults)
+    end
+
+    L->>A: emit(AgentEndEvent, final messages)
+    A->>ST: replaceMessages(final)  ✦ 整体定稿
+    L-->>A: return context.messages()
+    A-->>IM: CompletableFuture 完成 ✦ .join() 解除阻塞
+    IM->>S: getAgent().getState().getError()
+    IM->>U: 渲染最终回复
+</pre>
+</div>
+
+<div class="note blue">
+<strong>关键观察：</strong>Agent 把自己的 <code>AgentState</code> 包进 <code>AgentContext</code> 交给 Loop——三者是通过<strong>「共享同一个 state 实例」+「emit 事件回调」</strong>两条线协作的，而非直接持有对方引用。Loop 是无状态算法，每次执行新建；Agent 是有状态宿主，跨轮常驻。
+</div>
+
+<!-- ==================== AgentSession ==================== -->
+
+<h2>🪟 <span class="badge badge-cyan">coding-agent-cli 层</span>　AgentSession —— 会话外壳</h2>
+
+<div class="card">
+<p><strong>定位：</strong>CLI 会话层的一个"门面 / 转发壳"。持有 <code>Agent</code> 引用 + 若干会话级附带状态（skill registry、sub-agent registry、初始化标志），<strong>但不参与一轮对话的执行逻辑</strong>。</p>
+<p><strong>在一轮中的作用：</strong>被 <code>InteractiveMode</code> 当作"拿 agent、读历史、注入插话"的统一入口。它的所有"读写消息"方法<strong>全部转发</strong>给 agent / state，自身对消息历史零所有权。</p>
+</div>
+
+<div class="src">modules/coding-agent-cli/.../session/AgentSession.java</div>
+<div class="code-block">
+<div class="code-head">AgentSession.java · getHistory / getAgent 都是转发</div>
+<div class="code-body"><span class="cc">// 不持有 history 字段 —— 每次现读 agent 的 state</span>
+<span class="ck">public</span> <span class="ct">List</span>&lt;<span class="ct">Message</span>&gt; <span class="cf">getHistory</span>() {
+    <span class="ck">return</span> agent.<span class="cf">getState</span>().<span class="cf">getMessages</span>();   <span class="cc">// ← 纯转发</span>
+}
+
+<span class="ck">public</span> <span class="ct">Agent</span> <span class="cf">getAgent</span>() {
+    <span class="ck">return</span> agent;
+}</div>
+</div>
+
+<div class="note">
+<strong>为什么需要这一层？</strong>InteractiveMode 完全可以直接调 <code>agent</code>。Session 的价值在于封装<strong>会话级关注点</strong>（持久化、技能注册、子 agent 注册），让 InteractiveMode 不直接耦合 agent-core 内核。但在"一轮对话的执行"这件事上，它是个透明的传声筒。
+</div>
+
+<!-- ==================== Agent ==================== -->
+
+<h2>🧠 <span class="badge badge-purple">agent-core 层</span>　Agent —— 生命周期 + 状态宿主 + 事件总线</h2>
+
+<div class="card">
+<p><strong>定位：</strong>agent-core 的门面类，是整个会话<strong>唯一长生命周期</strong>的对象（一个会话一个 Agent）。它自己<strong>不驱动 LLM</strong>，把驱动职责完全委托给 AgentLoop。</p>
+<p><strong>三个核心职责：</strong></p>
+<p>① <strong>状态宿主</strong>——持有唯一的 <code>AgentState</code>（消息、model、tools、streaming 标志、错误）。<br>
+② <strong>生命周期管理</strong>——<code>startExecution</code> 防重入、建取消令牌、新建 context + loop、在虚拟线程异步跑、收尾清理。<br>
+③ <strong>事件总线</strong>——Loop 产生事件 → <code>emit</code> → 投影回 state + 广播给所有 listeners（UI、持久化）。</p>
+</div>
+
+<h3>① 生命周期入口：startExecution</h3>
+<div class="src">modules/agent-core/.../agent/Agent.java · 218-269</div>
+<div class="code-block">
+<div class="code-head">Agent.java · 每轮新建 context + loop，虚拟线程异步跑</div>
+<div class="code-body"><span class="ck">private</span> <span class="ct">CompletableFuture</span>&lt;<span class="ct">Void</span>&gt; <span class="cf">startExecution</span>(<span class="ct">List</span>&lt;<span class="ct">Message</span>&gt; messages, <span class="ck">boolean</span> continueOnly) {
+    <span class="ck">synchronized</span> (executionLock) {
+        <span class="ck">if</span> (!currentExecution.<span class="cf">isDone</span>())              <span class="cc">// 防重入</span>
+            <span class="ck">return</span> <span class="ct">CompletableFuture</span>.<span class="cf">failedFuture</span>(...<span class="cs">"Agent is already running"</span>);
+
+        <span class="ck">var</span> signal = <span class="ck">new</span> <span class="ct">CancellationToken</span>();      <span class="cc">// 支持 abort</span>
+        <span class="ch"><span class="ck">var</span> context = <span class="ck">new</span> <span class="ct">AgentContext</span>(state);       <span class="cc">// ✦ 包住自己的 state</span></span>
+        <span class="ch"><span class="ck">var</span> loop    = <span class="ck">new</span> <span class="ct">AgentLoop</span>(<span class="ck">new</span> <span class="ct">AgentLoopConfig</span>(...));  <span class="cc">// ✦ 每轮新建</span></span>
+
+        <span class="ck">var</span> execution = <span class="ct">CompletableFuture</span>.<span class="cf">runAsync</span>(
+                () -> {
+                    <span class="ck">if</span> (continueOnly) loop.<span class="cf">continueLoop</span>(context, <span class="ck">this</span>::emit, signal);
+                    <span class="ck">else</span>               loop.<span class="cf">run</span>(messages, context, <span class="ck">this</span>::emit, signal);
+                },
+                VIRTUAL_THREAD_EXECUTOR)                 <span class="cc">// ✦ 虚拟线程，异步</span>
+                .<span class="cf">whenComplete</span>((u, t) -> { state.<span class="cf">setStreaming</span>(<span class="ck">false</span>); ... });
+        currentExecution = execution;
+        <span class="ck">return</span> execution;                              <span class="cc">// 立即返回，不阻塞</span>
+    }
+}</div>
+</div>
+
+<div class="note purple">
+<strong>精妙之处：</strong><code>AgentLoop</code> 是<strong>每次执行都 new 一个</strong>的无状态对象，而 <code>Agent</code> + <code>AgentState</code> 跨轮常驻。这让"算法"和"宿主"彻底解耦——同一个 Agent 可以连续 <code>prompt</code> 多次，状态自然延续，而 Loop 用完即弃。
+</div>
+
+<h3>② + ③ 事件回流：emit 与 applyEventToState</h3>
+<div class="src">modules/agent-core/.../agent/Agent.java · 275-322</div>
+<div class="code-block">
+<div class="code-head">Agent.java · Loop 的每个事件都经此回流</div>
+<div class="code-body"><span class="ck">private</span> <span class="ck">void</span> <span class="cf">emit</span>(<span class="ct">AgentEvent</span> event) {
+    <span class="cf">applyEventToState</span>(event);                       <span class="cc">// ① 投影回 state</span>
+    <span class="ck">for</span> (<span class="ck">var</span> listener : listeners)                  <span class="cc">// ② 广播给 UI/持久化</span>
+        listener.<span class="cf">onEvent</span>(event);
+}
+
+<span class="ck">private</span> <span class="ck">void</span> <span class="cf">applyEventToState</span>(<span class="ct">AgentEvent</span> event) {
+    <span class="ck">switch</span> (event) {
+        <span class="ck">case</span> <span class="ct">MessageUpdateEvent</span> e -> { state.<span class="cf">setStreaming</span>(<span class="ck">true</span>);  state.<span class="cf">setStreamMessage</span>(e.<span class="cf">message</span>()); } <span class="cc">// 流式实时投影</span>
+        <span class="ck">case</span> <span class="ct">MessageEndEvent</span> e   -> { state.<span class="cf">setStreaming</span>(<span class="ck">false</span>); state.<span class="cf">setStreamMessage</span>(<span class="ck">null</span>); }
+        <span class="ck">case</span> <span class="ct">ToolExecutionStartEvent</span> e -> state.<span class="cf">addPendingToolCall</span>(e.<span class="cf">toolCallId</span>());
+        <span class="ch"><span class="ck">case</span> <span class="ct">AgentEndEvent</span> e     -> state.<span class="cf">replaceMessages</span>(e.<span class="cf">messages</span>());   <span class="cc">// ✦ 最终整体定稿</span></span>
+        ...
+    }
+}</div>
+</div>
+
+<div class="note blue">
+<strong>双通道：</strong>Loop 边流式产出 → emit 实时把 <code>streamMessage</code> 写进 state（UI 看到字一个个冒出）；轮次结束的 <code>AgentEndEvent</code> 再 <code>replaceMessages</code> 把完整最终历史整体写回。<strong>流式</strong>与<strong>定稿</strong>是两条不同的写路径。
+</div>
+
+<!-- ==================== AgentLoop ==================== -->
+
+<h2>🔄 <span class="badge badge-green">agent-core 层</span>　AgentLoop —— 单轮执行的算法核心</h2>
+
+<div class="card">
+<p><strong>定位：</strong>无状态的"LLM ↔ 工具"循环驱动器。由 Agent 在每次执行时新建，跑完即弃。它<strong>只认 AgentContext</strong>（拿消息、写消息、取工具），不直接碰 Agent 或 AgentState。</p>
+<p><strong>在一轮中的作用：</strong>在虚拟线程里跑 <code>while</code> 循环，每个 turn = 一次 <code>invokeModel</code>（流式调 LLM）+ 可能的 <code>runToolPhase</code>（执行工具）。循环到"无工具调用且无 follow-up"为止。</p>
+</div>
+
+<h3>主循环结构</h3>
+<div class="src">modules/agent-core/.../loop/AgentLoop.java · 89-138</div>
+<div class="code-block">
+<div class="code-head">AgentLoop.java · runInternal —— 每轮 turn 的核心循环</div>
+<div class="code-body"><span class="ck">while</span> (!signal.<span class="cf">isCancelled</span>()) {
+    turn++;
+    <span class="ch"><span class="ct">AssistantMessage</span> assistant = <span class="cf">invokeModelTraced</span>(...);   <span class="cc">// ① 流式调 LLM</span></span>
+    context.<span class="cf">appendMessage</span>(assistant);                        <span class="cc">// ② 回复入 state</span>
+    <span class="ck">if</span> (assistant.<span class="cf">stopReason</span>() == ERROR || == ABORTED) <span class="ck">break</span>;
+
+    <span class="ck">var</span> toolCalls = <span class="cf">extractToolCalls</span>(assistant);
+    <span class="ck">if</span> (!toolCalls.<span class="cf">isEmpty</span>()) {
+        <span class="cf">runToolPhaseTraced</span>(...);                            <span class="cc">// ③ 执行工具 → 结果入 state</span>
+        <span class="ck">continue</span>;                                       <span class="cc">//   → 下一轮 turn</span>
+    }
+    <span class="ck">var</span> followUp = <span class="cf">drainFollowUpMessages</span>();
+    <span class="ck">if</span> (followUp.<span class="cf">isEmpty</span>()) <span class="ck">break</span>;                          <span class="cc">// ④ 无工具无后续 → 结束</span>
+    context.<span class="cf">appendMessages</span>(followUp);
+}
+<span class="ck">return</span> context.<span class="cf">messages</span>();                                          <span class="cc">// finally 发 AgentEndEvent</span></div>
+</div>
+
+<h3>单个 turn 内部的两个关键步骤</h3>
+<div class="mermaid-wrap">
+<div class="mermaid-caption">图 2：单个 turn 的展开（模型调用 → 工具阶段）</div>
+<pre class="mermaid">
+flowchart TD
+    A["turn 开始"] --> B["invokeModel:<br/>transformMessages(context.messages)<br/>→ stream → LLM"]
+    B --> C{"流式 chunks"}
+    C -->|emit MessageUpdate| D["state.streamMessage 实时更新<br/>UI 逐字渲染"]
+    B --> E["返回 AssistantMessage"]
+    E --> F["context.appendMessage(assistant)"]
+    F --> G{"extractToolCalls<br/>有工具调用?"}
+    G -->|有| H["runToolPhase:<br/>toolPipeline.executeAll<br/>(带 before/after hooks)"]
+    H --> I["context.appendMessages(toolResults)"]
+    I --> J["drainSteeringMessages<br/>(用户中途插话)"]
+    J --> K["continue → 下一 turn"]
+    G -->|无| L{"有 followUp?"}
+    L -->|有| M["appendMessages(followUp)<br/>→ 下一 turn"]
+    L -->|无| N["break → 循环结束<br/>emit AgentEndEvent"]
+    style B fill:#e3f2fd,color:#333
+    style H fill:#fff3e0,color:#333
+    style N fill:#e8f5e9,color:#333
+</pre>
+</div>
+
+<div class="src">modules/agent-core/.../loop/AgentLoop.java · 169-195</div>
+<div class="code-block">
+<div class="code-head">AgentLoop.java · runToolPhase —— 工具执行与结果回收</div>
+<div class="code-body"><span class="ck">var</span> toolResults = <span class="ck">new</span> <span class="ct">ArrayList</span>&lt;<span class="ct">ToolResultMessage</span>&gt;();
+<span class="ck">if</span> (!resolved.<span class="cf">isEmpty</span>()) {
+    toolResults.<span class="cf">addAll</span>(toolPipeline.<span class="cf">executeAll</span>(resolved, toolExecutionMode, context, signal, eventListener));
+}
+toolResults.<span class="cf">addAll</span>(unknownResults);
+context.<span class="cf">appendMessages</span>(<span class="ck">new</span> <span class="ct">ArrayList</span>&lt;&gt;(toolResults));     <span class="cc">// ✦ 工具结果入 state</span>
+<span class="ck">var</span> steering = <span class="cf">drainSteeringMessages</span>();                <span class="cc">// 用户中途插话</span>
+<span class="ck">if</span> (!steering.<span class="cf">isEmpty</span>()) context.<span class="cf">appendMessages</span>(steering);</div>
+</div>
+
+<div class="note green">
+<strong>Loop 与外界只有两个接口：</strong>① 经 <code>AgentContext</code> 读写消息（间接改 state）；② 经 <code>this::emit</code> 回调上报事件。它对 Agent、对 UI、对持久化<strong>一无所知</strong>——这是它能做成无状态、可复用、可测试的关键。
+</div>
+
+<!-- ==================== AgentContext + AgentState ==================== -->
+
+<h2>🌉 <span class="badge badge-blue">隐形主角</span>　AgentContext 与 AgentState</h2>
+
+<div class="card">
+<p>这两个不在标题里，却是一切协作的"底座"。理解它们，才算真正理解三剑客为什么这么分。</p>
+</div>
+
+<h3>AgentContext —— Loop 与 State 的可变桥梁</h3>
+<div class="card">
+<p>Loop 拿着它，像一根"操作杆"。它的每个方法都<strong>原样转发</strong>给持有的 <code>AgentState</code>：</p>
+</div>
+<div class="src">modules/agent-core/.../tool/AgentContext.java · 75-91</div>
+<div class="code-block">
+<div class="code-head">AgentContext.java · 全部转发给共享的 state</div>
+<div class="code-body"><span class="ck">public</span> <span class="ct">List</span>&lt;<span class="ct">Message</span>&gt; <span class="cf">messages</span>()                  { <span class="ck">return</span> state.<span class="cf">getMessages</span>(); }
+<span class="ck">public</span> <span class="ck">void</span> <span class="cf">appendMessage</span>(<span class="ct">Message</span> m)         { state.<span class="cf">appendMessage</span>(m); }      <span class="cc">// ← 转发</span>
+<span class="ck">public</span> <span class="ck">void</span> <span class="cf">appendMessages</span>(<span class="ct">List</span>&lt;?&gt; ms)      { ms.<span class="cf">forEach</span>(state::appendMessage); }
+<span class="ck">public</span> <span class="ck">void</span> <span class="cf">replaceMessages</span>(<span class="ct">List</span>&lt;<span class="ct">Message</span>&gt; m){ state.<span class="cf">replaceMessages</span>(m); }</div>
+</div>
+
+<div class="note blue">
+<strong>为什么要有这一层？</strong>Agent 把自己的 state 包进 context 交给 Loop。Loop 写 context ⇔ 写 state ⇔ Agent 的 emit 也能立刻读到。Context 让 Loop<strong>不必持有 Agent 引用</strong>就能改状态，把"循环算法"和"宿主对象"的耦合降到只剩"共享 state + 事件回调"。
+</div>
+
+<h3>AgentState —— 唯一的状态真相源</h3>
+<div class="card">
+<p>整个体系里<strong>唯一真正存 <code>List&lt;Message&gt;</code></strong> 的地方。读写锁保护，所有读写都 <code>copyOf</code> 防御性拷贝。</p>
+</div>
+<div class="stack">
+<div class="stack-box p">AgentState <span class="role">底层 · 唯一真相源</span></div>
+<div class="stack-box a">AgentContext（包住 state，转发） <span class="role">桥梁</span></div>
+<div class="stack-box g">AgentLoop（经 context 读写） · Agent（经 emit 投影） <span class="role">双写者</span></div>
+<div class="stack-box dim">AgentSession.getHistory()（只读转发） <span class="role">外壳</span></div>
+</div>
+<div class="src">modules/agent-core/.../state/AgentState.java · 117-136</div>
+<div class="code-block">
+<div class="code-head">AgentState.java · 读写都加锁 + 拷贝</div>
+<div class="code-body"><span class="ck">public</span> <span class="ct">List</span>&lt;<span class="ct">Message</span>&gt; <span class="cf">getMessages</span>() {
+    lock.<span class="cf">readLock</span>().<span class="cf">lock</span>();
+    <span class="ck">try</span> { <span class="ck">return</span> <span class="ct">List</span>.<span class="cf">copyOf</span>(messages); }              <span class="cc">// 读时拷贝</span>
+    <span class="ck">finally</span> { lock.<span class="cf">readLock</span>().<span class="cf">unlock</span>(); }
+}
+<span class="ck">public</span> <span class="ck">void</span> <span class="cf">setMessages</span>(<span class="ct">List</span>&lt;<span class="ct">Message</span>&gt; m) {
+    lock.<span class="cf">writeLock</span>().<span class="cf">lock</span>();
+    <span class="ck">try</span> { <span class="ck">this</span>.messages = <span class="ck">new</span> <span class="ct">ArrayList</span>&lt;&gt;(m); }       <span class="cc">// 写时拷贝 + 整体替换</span>
+    <span class="ck">finally</span> { lock.<span class="cf">writeLock</span>().<span class="cf">unlock</span>(); }
+}</div>
+</div>
+
+<!-- ==================== 入口层 ==================== -->
+
+<h2>🚪 <span class="badge badge-orange">触发点</span>　InteractiveMode 如何发起一轮</h2>
+<div class="card">
+<p>三剑客是被 <code>InteractiveMode.executePrompt</code> 启动的。这里能看到"虚拟线程异步 + <code>.join()</code> 同步等"的经典配合：Agent 内部异步跑，TUI 层用 <code>.join()</code> 阻塞等这轮完，保证回复渲染完才回到输入态。</p>
+</div>
+<div class="src">modules/coding-agent-cli/.../mode/InteractiveMode.java · 789-830</div>
+<div class="code-block">
+<div class="code-head">InteractiveMode.java · executePrompt 节选</div>
+<div class="code-body"><span class="ck">int</span> agentMessageCountBefore = session.<span class="cf">getAgent</span>().<span class="cf">getState</span>().<span class="cf">getMessages</span>().<span class="cf">size</span>();  <span class="cc">// 记快照，abort 时回滚</span>
+<span class="cf">persistUserMessage</span>(session, input);
+<span class="ct">Runnable</span> unsub = session.<span class="cf">getAgent</span>().<span class="cf">subscribe</span>(event -> { ... });   <span class="cc">// 订阅事件 → UI 渲染</span>
+<span class="ch">session.<span class="cf">prompt</span>(input).<span class="cf">join</span>();                         <span class="cc">// ✦ 转发给 agent.prompt，阻塞等完成</span></span>
+<span class="ct">String</span> error = session.<span class="cf">getAgent</span>().<span class="cf">getState</span>().<span class="cf">getError</span>();
+unsub.<span class="cf">run</span>();</div>
+</div>
+
+<!-- ==================== 对比 + 洞察 ==================== -->
+
+<h2>📊 三者职责对比</h2>
+<table class="cmp">
+<thead><tr><th>维度</th><th>AgentSession</th><th>Agent</th><th>AgentLoop</th></tr></thead>
+<tbody>
+<tr><td>所在层</td><td><span class="badge badge-cyan">coding-agent-cli</span></td><td><span class="badge badge-purple">agent-core</span></td><td><span class="badge badge-green">agent-core</span></td></tr>
+<tr><td>一句话角色</td><td>会话外壳 / 转发门面</td><td>状态宿主 + 生命周期 + 事件总线</td><td>LLM↔工具循环算法</td></tr>
+<tr><td>生命周期</td><td>一个会话一个</td><td>一个会话一个（常驻）</td><td><strong>每次执行新建</strong>（用完即弃）</td></tr>
+<tr><td>持有消息历史?</td><td>❌ 不持有（转发）</td><td>✅ 经 AgentState</td><td>❌ 经 AgentContext 改 state</td></tr>
+<tr><td>是否驱动 LLM?</td><td>❌</td><td>❌ 委托给 Loop</td><td>✅ 唯一驱动者</td></tr>
+<tr><td>对外暴露</td><td>getHistory / prompt / getAgent</td><td>prompt / abort / subscribe / waitForIdle</td><td>run / continueLoop（基本不被外部直调）</td></tr>
+<tr><td>是否感知 UI?</td><td>间接（被 IM 调用）</td><td>是（事件总线广播给 listeners）</td><td>❌ 只经 emit 上报，不知谁在听</td></tr>
+<tr><td>状态/无状态</td><td>有（会话级附带状态）</td><td>有（AgentState）</td><td><strong>无状态</strong>（纯算法）</td></tr>
+</tbody>
+</table>
+
+<h2>💡 三个关键设计洞察</h2>
+
+<div class="note green">
+<strong>① 「算法即弃、宿主常驻」的分层。</strong>AgentLoop 每次 <code>prompt</code> 都 new 一个、跑完丢弃；Agent 和 AgentState 贯穿整个会话。这让循环逻辑可以做得纯粹（无状态、易测、可复用），而跨轮的状态连续性由 Agent 兜底。
+</div>
+
+<div class="note purple">
+<strong>② 双线解耦：共享 state + 事件回调。</strong>Agent 和 Loop 之间没有直接的持有引用——数据线是「共享同一个 <code>AgentState</code> 实例」（Loop 经 context 写，Agent 经 emit 读/写），控制线是「<code>this::emit</code> 回调」。Loop 不知 Agent 存在，Agent 也不直接操控 Loop 内部，两者只通过这两条线跳探戈。
+</div>
+
+<div class="note blue">
+<strong>③ 流式与定稿是两条写路径。</strong>Loop 边产出边 <code>emit(MessageUpdate)</code> → <code>state.streamMessage</code>（临时、UI 逐字渲染）；轮次结束才 <code>emit(AgentEndEvent)</code> → <code>state.replaceMessages</code>（整体、最终定稿）。这解释了为什么 UI 能实时滚动、而历史记录是"完整一轮"的单位。
+</div>
+
+<div class="card">
+<p>🪜 <strong>一句话串起来：</strong></p>
+<p><code>InteractiveMode</code> 经 <strong>AgentSession</strong>（转发壳）调 <strong>Agent</strong>（建 context + 新 Loop，虚拟线程异步跑）；<strong>AgentLoop</strong>（无状态算法）经 <strong>AgentContext</strong> 改 <strong>AgentState</strong>（唯一真相源）、经 <code>emit</code> 把事件回流给 <strong>Agent</strong>（投影回 state + 广播 UI）；循环结束 <code>AgentEndEvent</code> 定稿，<code>.join()</code> 解除阻塞，一轮对话完成。</p>
+</div>
+
+<div class="footer">
+  分析来源：基于 CampusClaw（pi-mono-java）源码直读 · AgentLoop.java / Agent.java / AgentContext.java / AgentState.java / AgentSession.java / InteractiveMode.java<br>
+  生成工具：knowledge-html skill · 2026-07-08 · 可点击右上角图例折叠/展开所有图表
+</div>
+
+</div>
+
+<script>
+mermaid.initialize({
+  startOnLoad: true,
+  theme: 'default',
+  themeVariables: { fontSize: '14px' },
+  flowchart: { curve: 'basis', padding: 15 },
+  sequence: { actorMargin: 50, mirrorActors: false }
+});
+document.querySelectorAll('.mermaid-wrap').forEach(el => {
+  const cap = el.querySelector('.mermaid-caption');
+  const text = cap ? cap.textContent.trim() : '图表';
+  if (cap) cap.style.display = 'none';
+  const d = document.createElement('details');
+  d.open = true;
+  d.className = 'diag' + (el.classList.contains('wide') ? ' wide' : '');
+  const s = document.createElement('summary');
+  s.textContent = '🗂 ' + text;
+  el.parentNode.insertBefore(d, el);
+  d.appendChild(s);
+  d.appendChild(el);
+});
+</script>
+</body>
+</html>

@@ -13,6 +13,7 @@ import java.util.concurrent.TimeoutException;
 
 import com.campusclaw.ai.types.StopReason;
 import com.campusclaw.ai.types.UserMessage;
+import com.campusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
 import com.campusclaw.codingagent.runtimeapi.persistence.RuntimeSessionRepository;
 import com.campusclaw.codingagent.runtimeapi.runtime.RuntimeActiveExecution;
 import com.campusclaw.codingagent.runtimeapi.runtime.RuntimeExecutionProperties;
@@ -32,7 +33,7 @@ import org.springframework.stereotype.Component;
  */
 @Component
 public class RuntimeExecutionCoordinator {
-    private static final Logger log = LoggerFactory.getLogger(RuntimeExecutionCoordinator.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger(RuntimeExecutionCoordinator.class);
 
     private final RuntimeSessionEngineRegistry engineRegistry;
 
@@ -67,7 +68,11 @@ public class RuntimeExecutionCoordinator {
 
     public void start(
             RuntimeSessionHolder holder, RuntimeActiveExecution execution, UserMessage message, Locale locale) {
+<<<<<<< HEAD
         RuntimeEventProjector projector = projectorFactory.create(holder, execution, message);
+=======
+        RuntimeEventProjector projector = projectorFactory.create(holder, execution, message, locale);
+>>>>>>> upstream/main
         RuntimeSubscriptions subscriptions = RuntimeSubscriptions.empty();
         try {
             subscriptions = subscribe(holder, projector);
@@ -164,7 +169,11 @@ public class RuntimeExecutionCoordinator {
         Throwable failure = executionFailure(execution, executionError, projector);
         failure = finishPersistence(holder.sessionId(), failure);
         failure = releaseExecution(holder, execution, subscriptions, failure);
+<<<<<<< HEAD
         logFailure(holder.sessionId(), failure);
+=======
+        recordFailure(holder.sessionId(), projector, failure);
+>>>>>>> upstream/main
         terminalEventFactory.emit(execution.eventStream(), execution, projector.terminalReason(), failure, locale);
         execution.eventStream().complete();
         execution.complete(failure);
@@ -211,9 +220,28 @@ public class RuntimeExecutionCoordinator {
         return primary;
     }
 
-    private static void logFailure(String sessionId, Throwable failure) {
+    private static void recordFailure(String sessionId, RuntimeEventProjector projector, Throwable failure) {
         if (failure != null) {
-            log.warn("Runtime execution failed for session {}", sessionId, failure);
+            LOGGER.atError()
+                    .addKeyValue("event", "campusclaw.failure")
+                    .addKeyValue("operation", "runtime.execution")
+                    .addKeyValue("errorCode", RuntimeErrorCode.SESSION_EXECUTION_FAILED.name())
+                    .addKeyValue("sessionId", sessionId)
+                    .setCause(failure)
+                    .log(
+                            "CampusClaw failure: operation={}, errorCode={}",
+                            "runtime.execution",
+                            RuntimeErrorCode.SESSION_EXECUTION_FAILED.name());
+        } else if (projector.terminalReason() == StopReason.ERROR && projector.terminalErrorCode() == null) {
+            LOGGER.atError()
+                    .addKeyValue("event", "campusclaw.failure")
+                    .addKeyValue("operation", "runtime.execution")
+                    .addKeyValue("errorCode", RuntimeErrorCode.SESSION_EXECUTION_FAILED.name())
+                    .addKeyValue("sessionId", sessionId)
+                    .log(
+                            "CampusClaw failure: operation={}, errorCode={}",
+                            "runtime.execution",
+                            RuntimeErrorCode.SESSION_EXECUTION_FAILED.name());
         }
     }
 

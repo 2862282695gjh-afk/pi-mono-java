@@ -7,7 +7,7 @@ package com.huawei.hicampus.mate.matecampusclaw.cron.model;
 import org.springframework.lang.Nullable;
 
 /**
- * Events emitted by the cron engine during job lifecycle.
+ * Cron 引擎在 Job 生命周期中发出的事件。
  *
  * @version [br_eCampusCore 26.0.0, 2026/05/06]
  * @since [br_eCampusCore 26.0.0]
@@ -21,5 +21,5 @@ public sealed interface CronEvent {
     record JobCompleted(String jobId, String jobName, String runId, @Nullable String output) implements CronEvent {}
 
     @SuppressWarnings("checkstyle:top_class_comment")
-    record JobFailed(String jobId, String jobName, String runId, String error) implements CronEvent {}
+    record JobFailed(String jobId, String jobName, String runId, String errorCode) implements CronEvent {}
 }

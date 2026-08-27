@@ -15,6 +15,7 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -25,6 +26,7 @@ import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtime.MateServiceCl
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtime.MateServiceClient.SkillFile;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtime.MateServiceClient.SkillInfo;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtime.MateServiceClient.SkillReference;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.agent.RuntimeAgentPromptLoader;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -49,8 +51,8 @@ class AgentRuntimeManagerTest {
     @BeforeEach
     void setUp() {
         client = mock(MateServiceClient.class);
-        var properties = new AgentRuntimeProperties(
-                null, tempDir.resolve("agent"), Duration.ofSeconds(1L), Duration.ofSeconds(2L));
+        var properties =
+                new AgentRuntimeProperties(tempDir.resolve("agent"), Duration.ofSeconds(1L), Duration.ofSeconds(2L));
         manager = new AgentRuntimeManager(properties, client, new ObjectMapper());
     }
 
@@ -63,10 +65,12 @@ class AgentRuntimeManagerTest {
         Path managed = prepared.agentRoot().resolve(".campusclaw");
         assertTrue(Files.isRegularFile(managed.resolve("agent.json")));
         assertTrue(Files.isRegularFile(managed.resolve("settings.json")));
-        assertEquals("prompt-v1", Files.readString(managed.resolve("SYSTEM.md")));
+        assertEquals("prompt-v1", Files.readString(managed.resolve("SYSTEM.md"), StandardCharsets.UTF_8));
         assertTrue(Files.isRegularFile(managed.resolve("agents/researcher.json")));
         assertTrue(Files.isRegularFile(managed.resolve("skills/calendar/skill.json")));
         assertTrue(Files.isRegularFile(managed.resolve("skills/calendar/SKILL.md")));
+        assertEquals(
+                skillContent(), Files.readString(managed.resolve("skills/calendar/SKILL.md"), StandardCharsets.UTF_8));
         assertTrue(Files.isDirectory(managed.resolve("skills/calendar/references")));
         assertTrue(Files.isDirectory(managed.resolve("skills/calendar/templates")));
         try (var paths = Files.walk(managed)) {
@@ -173,9 +177,108 @@ class AgentRuntimeManagerTest {
         }
     }
 
+    @Test
+    void nullSkillContentFailsPrepareWithoutPublishing() {
+        when(client.getAgentRuntime(AGENT_ID)).thenReturn(runtime("1.0.0", "prompt-v1"));
+        when(client.querySkillInfo(SKILL_ID)).thenReturn(skill(null));
+
+        assertThrows(AgentRuntimeException.class, () -> manager.prepare(AGENT_ID));
+
+        assertFalse(Files.exists(tempDir.resolve("agent").resolve(AGENT_ID).resolve(".campusclaw")));
+    }
+
+    @Test
+    void blankSkillContentFailsPrepare() {
+        when(client.getAgentRuntime(AGENT_ID)).thenReturn(runtime("1.0.0", "prompt-v1"));
+        when(client.querySkillInfo(SKILL_ID)).thenReturn(skill("   "));
+
+        assertThrows(AgentRuntimeException.class, () -> manager.prepare(AGENT_ID));
+    }
+
+    @Test
+    void frontmatterNameMismatchFailsPrepare() {
+        when(client.getAgentRuntime(AGENT_ID)).thenReturn(runtime("1.0.0", "prompt-v1"));
+        when(client.querySkillInfo(SKILL_ID))
+                .thenReturn(skill("---\nname: other-skill\ndescription: Calendar workflow\n---\nBody\n"));
+
+        assertThrows(AgentRuntimeException.class, () -> manager.prepare(AGENT_ID));
+
+        assertFalse(Files.exists(tempDir.resolve("agent").resolve(AGENT_ID).resolve(".campusclaw")));
+    }
+
+    @Test
+    void failedRefreshKeepsPreviouslyPublishedCache() throws Exception {
+        stubRuntime("1.0.0", "prompt-v1");
+        PreparedAgentRuntime first = manager.prepare(AGENT_ID);
+        Path skillFile = first.agentRoot().resolve(".campusclaw/skills/calendar/SKILL.md");
+        assertEquals(skillContent(), Files.readString(skillFile, StandardCharsets.UTF_8));
+
+        when(client.querySkillInfo(SKILL_ID)).thenReturn(skill(null));
+        assertThrows(AgentRuntimeException.class, () -> manager.refresh(AGENT_ID));
+
+        assertEquals(skillContent(), Files.readString(skillFile, StandardCharsets.UTF_8));
+    }
+
+    @Test
+    void corruptedFrontmatterNameIsRejectedAndRefetched() throws Exception {
+        stubRuntime("1.0.0", "prompt-v1");
+        PreparedAgentRuntime first = manager.prepare(AGENT_ID);
+        Path skillFile = first.agentRoot().resolve(".campusclaw/skills/calendar/SKILL.md");
+        Files.writeString(
+                skillFile, "---\nname: other-skill\ndescription: Calendar workflow\n---\n", StandardCharsets.UTF_8);
+
+        PreparedAgentRuntime repaired = manager.prepare(AGENT_ID);
+
+        assertEquals(skillContent(), Files.readString(skillFile, StandardCharsets.UTF_8));
+        verify(client, times(2)).querySkillInfo(SKILL_ID);
+    }
+
+    @Test
+    void oversizedCachedSkillFileTriggersRefetch() throws Exception {
+        stubRuntime("1.0.0", "prompt-v1");
+        PreparedAgentRuntime first = manager.prepare(AGENT_ID);
+        Path skillFile = first.agentRoot().resolve(".campusclaw/skills/calendar/SKILL.md");
+        Files.writeString(skillFile, "x".repeat(1024 * 1024 + 1), StandardCharsets.UTF_8);
+
+        PreparedAgentRuntime repaired = manager.prepare(AGENT_ID);
+
+        assertEquals(skillContent(), Files.readString(skillFile, StandardCharsets.UTF_8));
+        verify(client, times(2)).querySkillInfo(SKILL_ID);
+    }
+
+    @Test
+    void overlongCachedDescriptionTriggersRefetch() throws Exception {
+        stubRuntime("1.0.0", "prompt-v1");
+        PreparedAgentRuntime first = manager.prepare(AGENT_ID);
+        Path skillFile = first.agentRoot().resolve(".campusclaw/skills/calendar/SKILL.md");
+
+        // 描述超过 Skill.MAX_DESCRIPTION_LENGTH(1024):缓存读取判不完整并重新拉取。
+        Files.writeString(
+                skillFile,
+                "---\nname: calendar\ndescription: " + "d".repeat(2000) + "\n---\nBody\n",
+                StandardCharsets.UTF_8);
+
+        PreparedAgentRuntime repaired = manager.prepare(AGENT_ID);
+
+        assertEquals(skillContent(), Files.readString(skillFile, StandardCharsets.UTF_8));
+        verify(client, times(2)).querySkillInfo(SKILL_ID);
+    }
+
+    @Test
+    void preparedSkillsLoadThroughRuntimeAgentPromptLoader() throws Exception {
+        stubRuntime("1.0.0", "prompt-v1");
+        PreparedAgentRuntime prepared = manager.prepare(AGENT_ID);
+
+        String prompt = new RuntimeAgentPromptLoader().load(prepared.agentRoot().resolve(".campusclaw"));
+
+        assertTrue(prompt.contains("calendar"));
+        assertTrue(prompt.contains("Calendar workflow"));
+        assertTrue(prompt.contains("prompt-v1"));
+    }
+
     private void stubRuntime(String version, String prompt) {
         when(client.getAgentRuntime(AGENT_ID)).thenReturn(runtime(version, prompt));
-        when(client.querySkillInfo(SKILL_ID)).thenReturn(List.of(skill()));
+        when(client.querySkillInfo(SKILL_ID)).thenReturn(skill(skillContent()));
     }
 
     private static AgentRuntime runtime(String version, String prompt) {
@@ -206,16 +309,21 @@ class AgentRuntimeManagerTest {
         return new AgentReference(id, name, "Child", "Researches a task", "1.0.0");
     }
 
-    private static SkillInfo skill() {
+    private static SkillInfo skill(String content) {
         return new SkillInfo(
                 "calendar",
                 SKILL_ID,
                 "1.0.0",
                 "Calendar workflow",
                 "booking",
+                content,
                 List.of(),
                 List.of(),
                 List.of(new SkillFile("template-1", "request", "Template", "txt")),
                 List.of(new SkillFile("reference-1", "guide", "Reference", "md")));
+    }
+
+    private static String skillContent() {
+        return "---\nname: calendar\ndescription: Calendar workflow\n---\n\nUse the calendar workflow.\n";
     }
 }

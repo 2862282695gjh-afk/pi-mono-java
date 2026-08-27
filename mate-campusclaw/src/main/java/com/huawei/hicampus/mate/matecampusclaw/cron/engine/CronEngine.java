@@ -19,6 +19,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
 
 import com.huawei.hicampus.mate.matecampusclaw.agent.util.LoggingUncaughtExceptionHandler;
+import com.huawei.hicampus.mate.matecampusclaw.cron.model.CronErrorCode;
 import com.huawei.hicampus.mate.matecampusclaw.cron.model.CronEvent;
 import com.huawei.hicampus.mate.matecampusclaw.cron.model.CronJob;
 import com.huawei.hicampus.mate.matecampusclaw.cron.model.CronJobState;
@@ -262,8 +263,9 @@ public class CronEngine {
         if (success) {
             emit(new CronEvent.JobCompleted(job.id(), job.name(), result.runId(), result.output()));
         } else {
-            emit(new CronEvent.JobFailed(
-                    job.id(), job.name(), result.runId(), result.error() != null ? result.error() : "Unknown error"));
+            String failedCode =
+                    result.errorCode() != null ? result.errorCode() : CronErrorCode.CRON_EXECUTION_FAILED.name();
+            emit(new CronEvent.JobFailed(job.id(), job.name(), result.runId(), failedCode));
         }
     }
 
@@ -276,16 +278,25 @@ public class CronEngine {
             updatedJob = updatedJob.withEnabled(false);
         }
         store.updateJob(updatedJob);
-        emit(new CronEvent.JobFailed(job.id(), job.name(), "", e.getMessage()));
+        String engineErrorCode = stableCodeOf(e);
+        emit(new CronEvent.JobFailed(job.id(), job.name(), "", engineErrorCode));
         return new CronRunRecord(
                 "",
                 job.id(),
                 System.currentTimeMillis(),
                 System.currentTimeMillis(),
                 CronRunRecord.RunStatus.FAILED,
-                e.getMessage(),
+                engineErrorCode,
+                null,
                 null,
                 0);
+    }
+
+    private static String stableCodeOf(Exception exception) {
+        if (exception instanceof com.huawei.hicampus.mate.matecampusclaw.agent.error.StableErrorCode coded) {
+            return coded.stableErrorCode();
+        }
+        return CronErrorCode.CRON_EXECUTION_FAILED.name();
     }
 
     long computeNextDelay(CronJob job) {

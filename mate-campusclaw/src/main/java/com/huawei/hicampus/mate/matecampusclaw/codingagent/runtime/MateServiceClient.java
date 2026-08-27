@@ -6,7 +6,6 @@ package com.huawei.hicampus.mate.matecampusclaw.codingagent.runtime;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
@@ -15,14 +14,13 @@ import java.util.Optional;
 import java.util.regex.Pattern;
 
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.common.identifier.ResourceIdentifierPatterns;
-import com.fasterxml.jackson.annotation.JsonAlias;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.config.CampusMateClientProperties;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 /**
@@ -35,22 +33,17 @@ import org.springframework.stereotype.Component;
 public class MateServiceClient {
 
     private final AgentRuntimeProperties properties;
+    private final CampusMateClientProperties campusMateProperties;
     private final ObjectMapper mapper;
     private final HttpClient httpClient;
-    private final String agentRuntimePathTemplate;
-    private final String skillInfoQueryPathTemplate;
 
     @Autowired
     public MateServiceClient(
-            AgentRuntimeProperties properties,
-            ObjectMapper mapper,
-            @Value("${campusmate.runtime.agent-runtime-path-template}") String agentRuntimePathTemplate,
-            @Value("${campusmate.runtime.skill-info-query-path-template}") String skillInfoQueryPathTemplate) {
+            AgentRuntimeProperties properties, CampusMateClientProperties campusMateProperties, ObjectMapper mapper) {
         this(
                 properties,
+                campusMateProperties,
                 mapper,
-                agentRuntimePathTemplate,
-                skillInfoQueryPathTemplate,
                 HttpClient.newBuilder()
                         .connectTimeout(properties.connectTimeout())
                         .build());
@@ -58,14 +51,12 @@ public class MateServiceClient {
 
     MateServiceClient(
             AgentRuntimeProperties properties,
+            CampusMateClientProperties campusMateProperties,
             ObjectMapper mapper,
-            String agentRuntimePathTemplate,
-            String skillInfoQueryPathTemplate,
             HttpClient httpClient) {
         this.properties = properties;
+        this.campusMateProperties = campusMateProperties;
         this.mapper = mapper;
-        this.agentRuntimePathTemplate = agentRuntimePathTemplate;
-        this.skillInfoQueryPathTemplate = skillInfoQueryPathTemplate;
         this.httpClient = httpClient;
     }
 
@@ -79,18 +70,23 @@ public class MateServiceClient {
      */
     public AgentRuntime getAgentRuntime(String agentId) {
         requireIdentifier(agentId, ResourceIdentifierPatterns.AGENT_ID_PATTERN, "agentId");
-        HttpRequest request = HttpRequest.newBuilder(endpoint(agentRuntimePathTemplate.formatted(agentId)))
+        String path = expandPathTemplate(campusMateProperties.endpoints().agentRuntimePathTemplate(), agentId);
+        HttpRequest request = HttpRequest.newBuilder(campusMateProperties.endpoint(path))
                 .timeout(properties.requestTimeout())
                 .header("Accept", "application/json")
                 .GET()
                 .build();
         JsonNode root = send(request, "GetAgentRuntime");
-        validateBusinessSuccess(root, "GetAgentRuntime");
-        JsonNode payload = root.hasNonNull("result") ? root.get("result") : root;
+        JsonNode payload = root.get("result");
+        if (payload == null || !payload.isObject()) {
+            throw new AgentRuntimeException(
+                    AgentRuntimeErrorCode.MATE_RESPONSE_INVALID, "GetAgentRuntime result must be an object");
+        }
         try {
             return mapper.treeToValue(payload, AgentRuntime.class);
         } catch (IOException e) {
-            throw new AgentRuntimeException("Invalid GetAgentRuntime response", e);
+            throw new AgentRuntimeException(
+                    AgentRuntimeErrorCode.MATE_RESPONSE_INVALID, "Invalid GetAgentRuntime response", e);
         }
     }
 
@@ -102,24 +98,25 @@ public class MateServiceClient {
      * @throws IllegalArgumentException Skill 标识不符合类型化 UUID 格式时抛出
      * @throws AgentRuntimeException HTTP 请求或响应无效时抛出
      */
-    public List<SkillInfo> querySkillInfo(String skillId) {
+    public SkillInfo querySkillInfo(String skillId) {
         requireIdentifier(skillId, ResourceIdentifierPatterns.SKILL_ID_PATTERN, "skillId");
-        HttpRequest request = HttpRequest.newBuilder(endpoint(skillInfoQueryPathTemplate.formatted(skillId)))
+        String path = expandPathTemplate(campusMateProperties.endpoints().skillInfoPathTemplate(), skillId);
+        HttpRequest request = HttpRequest.newBuilder(campusMateProperties.endpoint(path))
                 .timeout(properties.requestTimeout())
                 .header("Accept", "application/json")
                 .GET()
                 .build();
         JsonNode root = send(request, "querySkillInfo");
+        JsonNode result = root.get("result");
+        if (result == null || !result.isObject()) {
+            throw new AgentRuntimeException(
+                    AgentRuntimeErrorCode.MATE_RESPONSE_INVALID, "querySkillInfo result must be an object");
+        }
         try {
-            SkillInfoResponse response = mapper.treeToValue(root, SkillInfoResponse.class);
-            if (!properties.successCode().equals(response.resCode())) {
-                throw new AgentRuntimeException("querySkillInfo failed with resCode "
-                        + response.resCode()
-                        + (response.resMsg() == null || response.resMsg().isBlank() ? "" : ": " + response.resMsg()));
-            }
-            return response.result();
+            return mapper.treeToValue(result, SkillInfo.class);
         } catch (IOException e) {
-            throw new AgentRuntimeException("Invalid querySkillInfo response", e);
+            throw new AgentRuntimeException(
+                    AgentRuntimeErrorCode.MATE_RESPONSE_INVALID, "Invalid querySkillInfo response", e);
         }
     }
 
@@ -129,20 +126,27 @@ public class MateServiceClient {
         }
     }
 
+    private static String expandPathTemplate(String template, String resourceId) {
+        return template.replace("%s", resourceId);
+    }
+
     private JsonNode send(HttpRequest request, String operation) {
         HttpResponse<InputStream> response;
         try {
             response = httpClient.send(request, HttpResponse.BodyHandlers.ofInputStream());
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            throw new AgentRuntimeException(operation + " interrupted", e);
+            throw new AgentRuntimeException(AgentRuntimeErrorCode.MATE_REQUEST_FAILED, operation + " interrupted", e);
         } catch (IOException e) {
-            throw new AgentRuntimeException(operation + " request failed", e);
+            throw new AgentRuntimeException(
+                    AgentRuntimeErrorCode.MATE_REQUEST_FAILED, operation + " request failed", e);
         }
         byte[] responseBytes;
         try (InputStream body = response.body()) {
             if (response.statusCode() < 200 || response.statusCode() >= 300) {
-                throw new AgentRuntimeException(operation + " returned HTTP " + response.statusCode());
+                throw new AgentRuntimeException(
+                        AgentRuntimeErrorCode.MATE_REQUEST_FAILED,
+                        operation + " returned HTTP " + response.statusCode());
             }
             int maxResponseBytes = properties.maxResponseBytes();
             long contentLength =
@@ -155,45 +159,29 @@ public class MateServiceClient {
                 throw responseTooLarge(operation);
             }
         } catch (IOException e) {
-            throw new AgentRuntimeException(operation + " response body could not be read", e);
+            throw new AgentRuntimeException(
+                    AgentRuntimeErrorCode.MATE_REQUEST_FAILED, operation + " response body could not be read", e);
         }
+        JsonNode root;
         try {
-            return mapper.readTree(responseBytes);
+            root = mapper.readTree(responseBytes);
         } catch (IOException e) {
-            throw new AgentRuntimeException(operation + " returned invalid JSON", e);
+            throw new AgentRuntimeException(
+                    AgentRuntimeErrorCode.MATE_RESPONSE_INVALID, operation + " returned invalid JSON", e);
         }
+        if (root == null || root.isMissingNode() || !root.isObject()) {
+            throw new AgentRuntimeException(
+                    AgentRuntimeErrorCode.MATE_RESPONSE_INVALID,
+                    operation + " response body is empty or not a JSON object");
+        }
+        return root;
     }
 
     private AgentRuntimeException responseTooLarge(String operation) {
-        return new AgentRuntimeException(operation + " response exceeds campusmate.runtime.max-response-bytes ("
-                + properties.maxResponseBytes() + ")");
-    }
-
-    private void validateBusinessSuccess(JsonNode root, String operation) {
-        if (!root.has("resCode")) {
-            return;
-        }
-        String actual = root.path("resCode").asText();
-        if (!properties.successCode().equals(actual)) {
-            String message = root.path("resMsg").asText("");
-            throw new AgentRuntimeException(
-                    operation + " failed with resCode " + actual + (message.isBlank() ? "" : ": " + message));
-        }
-    }
-
-    private URI endpoint(String path) {
-        URI baseUrl = properties.baseUrl();
-        if (baseUrl == null || baseUrl.toString().isBlank()) {
-            throw new AgentRuntimeException(
-                    "campusmate.runtime.base-url is required when a managed Agent is not cached locally");
-        }
-
-        // API 路径以 /mate-service 开头；URI.resolve 会丢弃 base URL 已有路径，因此直接拼接。
-        String base = baseUrl.toString();
-        if (base.endsWith("/")) {
-            base = base.substring(0, base.length() - 1);
-        }
-        return URI.create(base + path);
+        return new AgentRuntimeException(
+                AgentRuntimeErrorCode.MATE_RESPONSE_TOO_LARGE,
+                operation + " response exceeds campusmate.runtime.max-response-bytes (" + properties.maxResponseBytes()
+                        + ")");
     }
 
     /** CampusMate GetAgentRuntime 响应。 */
@@ -261,10 +249,10 @@ public class MateServiceClient {
     public record SkillInfo(
             String name,
             String id,
-            // 前导空格别名用于兼容生产 querySkillInfo 把字段序列化为 " version" 的现状。
-            @JsonAlias(" version") String version,
+            String version,
             String description,
             String useCases,
+            String content,
             List<BoundTool> bindingTools,
             List<DependentSkill> bindingSkills,
             List<SkillFile> templates,
@@ -297,12 +285,4 @@ public class MateServiceClient {
             String permission,
             String source,
             String version) {}
-
-    /** querySkillInfo 响应信封。 */
-    @JsonIgnoreProperties(ignoreUnknown = true)
-    public record SkillInfoResponse(String resCode, String resMsg, List<SkillInfo> result) {
-        public SkillInfoResponse {
-            result = result == null ? List.of() : List.copyOf(result);
-        }
-    }
 }

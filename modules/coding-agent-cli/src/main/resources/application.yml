@@ -86,6 +86,7 @@ campusclaw:
       running-timeout: ${CAMPUSCLAW_CLEANUP_RUNNING_TIMEOUT:PT5M}
       poll-interval-ms: ${CAMPUSCLAW_CLEANUP_POLL_INTERVAL_MS:5000}
 
+<<<<<<< HEAD
 # CampusMate 受管 Agent 运行目录。HTTP、Cron 和 Child 共用这一缓存与远端准备流程。
 campusmate:
   model-manager:
@@ -104,8 +105,32 @@ campusmate:
     request-timeout: PT30S
     success-code: ${CAMPUSMATE_SUCCESS_CODE:0}
     max-response-bytes: ${CAMPUSMATE_MAX_RESPONSE_BYTES:4194304}
+=======
+# CampusMate 是 Model、受管 Runtime 与 Tool 客户端共享的唯一服务身份。
+campusmate:
+  base-url: ${CAMPUSMATE_BASE_URL}
+  endpoints:
+    model-chat-path: ${CAMPUSMATE_MODEL_CHAT_PATH:/mate-service/v1/LLM/chat}
+    agent-info-path-template: ${CAMPUSMATE_AGENT_INFO_PATH_TEMPLATE:/mate-service/v1/agents/%s}
+>>>>>>> upstream/main
     agent-runtime-path-template: ${CAMPUSMATE_AGENT_RUNTIME_PATH_TEMPLATE:/mate-service/v1/agents/%s/runtime}
-    skill-info-query-path-template: ${CAMPUSMATE_SKILL_INFO_QUERY_PATH_TEMPLATE:/mate-service/v1/skill/query/%s}
+    skill-info-path-template: ${CAMPUSMATE_SKILL_INFO_PATH_TEMPLATE:/mate-service/v1/skill/query/%s}
+    tool-metadata-query-path: ${CAMPUSMATE_TOOL_METADATA_QUERY_PATH:/mate-service/v1/runtime/tools/query}
+    tool-execute-path-template: ${CAMPUSMATE_TOOL_EXECUTE_PATH_TEMPLATE:/mate-service/v1/runtime/tools/%s/execute}
+  model:
+    api: ${CAMPUSMATE_MODEL_API:openai-completions}
+    connect-timeout: ${CAMPUSMATE_MODEL_CONNECT_TIMEOUT:PT10S}
+    response-timeout: ${CAMPUSMATE_MODEL_RESPONSE_TIMEOUT:PT10M}
+    context-window: ${CAMPUSMATE_MODEL_CONTEXT_WINDOW:128000}
+    max-output-tokens: ${CAMPUSMATE_MODEL_MAX_OUTPUT_TOKENS:8192}
+    reasoning: ${CAMPUSMATE_MODEL_REASONING:true}
+  runtime:
+    agents-root: ${CAMPUSCLAW_AGENTS_ROOT:agent}
+    connect-timeout: ${CAMPUSMATE_RUNTIME_CONNECT_TIMEOUT:PT10S}
+    request-timeout: ${CAMPUSMATE_RUNTIME_REQUEST_TIMEOUT:PT30S}
+    max-response-bytes: ${CAMPUSMATE_MAX_RESPONSE_BYTES:4194304}
+  tool:
+    enabled: ${CAMPUSMATE_TOOL_ENABLED:true}
 
 logging:
   level:
@@ -125,6 +150,7 @@ controlplane:
     sweep-interval: PT10S
     # How long a STALE node lingers before being removed entirely.
     grace-after-stale: PT5M
+<<<<<<< HEAD
 
 # Mate inner gateway service address used by the Mate tool client
 # (ListMateTools / CallMateTool). Discovery endpoints allow empty credentials but
@@ -138,3 +164,5 @@ mate:
     skill-tools-query-path-prefix: ${MATE_SKILL_TOOLS_QUERY_PATH_PREFIX:/mate-service/v1/skill/query/}
     tool-metadata-query-path: ${MATE_TOOL_METADATA_QUERY_PATH:/mate-service/v1/runtime/tools/query}
     tool-execute-path-template: ${MATE_TOOL_EXECUTE_PATH_TEMPLATE:/mate-service/v1/runtime/tools/%s/execute}
+=======
+>>>>>>> upstream/main

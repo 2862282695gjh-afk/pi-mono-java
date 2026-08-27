@@ -5,6 +5,7 @@
 package com.campusclaw.codingagent.runtimeapi.event;
 
 import java.time.Clock;
+import java.util.Locale;
 
 import com.campusclaw.ai.types.UserMessage;
 import com.campusclaw.codingagent.runtimeapi.persistence.RuntimeSessionRepository;
@@ -41,7 +42,10 @@ public class RuntimeEventProjectorFactory {
     }
 
     public RuntimeEventProjector create(
-            RuntimeSessionHolder holder, RuntimeActiveExecution execution, UserMessage initialUserMessage) {
+            RuntimeSessionHolder holder,
+            RuntimeActiveExecution execution,
+            UserMessage initialUserMessage,
+            Locale locale) {
         return new RuntimeEventProjector(
                 holder.sessionId(),
                 repository,
@@ -52,6 +56,7 @@ public class RuntimeEventProjectorFactory {
                 holder::abort,
                 execution,
                 initialUserMessage,
-                holder.thinking());
+                holder.thinking(),
+                locale);
     }
 }

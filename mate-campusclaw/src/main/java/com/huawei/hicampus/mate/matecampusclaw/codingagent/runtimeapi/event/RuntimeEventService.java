@@ -24,6 +24,8 @@ import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.session.Ru
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.vo.RuntimeSseEventVO;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.vo.UserEventRequestVO;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 /**
@@ -34,6 +36,8 @@ import org.springframework.stereotype.Service;
  */
 @Service
 public class RuntimeEventService {
+    private static final Logger LOGGER = LoggerFactory.getLogger(RuntimeEventService.class);
+
     private final RuntimeSessionRepository repository;
 
     private final RuntimeEntryCodec codec;
@@ -76,7 +80,15 @@ public class RuntimeEventService {
         } catch (RuntimeApiException error) {
             throw error;
         } catch (RuntimeException error) {
-            throw new RuntimeApiException(RuntimeErrorCode.EVENT_ACCEPTANCE_FAILED, error);
+            RuntimeErrorCode errorCode = RuntimeErrorCode.EVENT_ACCEPTANCE_FAILED;
+            LOGGER.atError()
+                    .addKeyValue("event", "campusclaw.failure")
+                    .addKeyValue("operation", "runtime.events.accept")
+                    .addKeyValue("errorCode", errorCode.name())
+                    .addKeyValue("sessionId", sessionId)
+                    .setCause(error)
+                    .log("CampusClaw failure: operation={}, errorCode={}", "runtime.events.accept", errorCode.name());
+            throw new RuntimeApiException(errorCode);
         }
     }
 
@@ -94,8 +106,8 @@ public class RuntimeEventService {
                     request.message(),
                     request.fileIds(),
                     credentials);
-            emitConfigurationEntries(context.execution().eventStream(), reconciled.configurationEntries());
-            acceptUserEntry(sessionId, request, context);
+            emitConfigurationEntries(context.execution().eventStream(), reconciled.configurationEntries(), locale);
+            acceptUserEntry(sessionId, request, context, locale);
             executionCoordinator.start(context.holder(), context.execution(), context.userMessage(), locale);
             return context.execution().eventStream();
         } catch (RuntimeException error) {
@@ -106,14 +118,15 @@ public class RuntimeEventService {
         }
     }
 
-    private void emitConfigurationEntries(RuntimeEventStream stream, List<RuntimeEntryDTO> entries) {
+    private void emitConfigurationEntries(RuntimeEventStream stream, List<RuntimeEntryDTO> entries, Locale locale) {
         for (RuntimeEntryDTO entry : entries) {
-            stream.emit(
-                    new RuntimeSseEventVO(Long.toString(entry.getEntrySeq()), entry.getType(), codec.toSseData(entry)));
+            stream.emit(new RuntimeSseEventVO(
+                    Long.toString(entry.getEntrySeq()), entry.getType(), codec.toSseData(entry, locale)));
         }
     }
 
-    private void acceptUserEntry(String sessionId, ValidatedUserEvent request, RuntimeExecutionContext context) {
+    private void acceptUserEntry(
+            String sessionId, ValidatedUserEvent request, RuntimeExecutionContext context, Locale locale) {
         RuntimeEntryDTO entry =
                 codec.userEntry(sessionId, idGenerator.nextId(), request.message(), request.fileIds(), now());
         UserEventAcceptance acceptance = repository.acceptUserEvent(sessionId, entry, now());
@@ -122,7 +135,7 @@ public class RuntimeEventService {
         context.execution()
                 .eventStream()
                 .emit(new RuntimeSseEventVO(
-                        Long.toString(entry.getEntrySeq()), entry.getType(), codec.toSseData(entry)));
+                        Long.toString(entry.getEntrySeq()), entry.getType(), codec.toSseData(entry, locale)));
     }
 
     private RuntimeSessionDTO requireIdleSession(String sessionId) {

@@ -11,7 +11,7 @@
 #   ./scripts/install_value.sh --print           # print resolved values only
 #
 # Consumed by application.yml / application.properties:
-#   mate.innerGWSerive=${MATE_INNERGWSERIVE:}   <- from CAMPUSINNERGWSERVICE_DOMAIN_NAME_URL
+#   campusmate.base-url=${CAMPUSMATE_BASE_URL}
 #
 set -euo pipefail
 
@@ -24,17 +24,25 @@ if [ -f "$PROFILE_FILE" ]; then
     source "$PROFILE_FILE"
 fi
 
-# Mate inner gateway address. The value comes from /etc/profile; the
-# CAMPUSINNERGWSERVICE_DOMAIN_NAME_URL name follows the mate-service
-# deployment convention.
+# CampusMate shared service address. The legacy deployment variable remains an
+# installation-boundary input, but the application only consumes CAMPUSMATE_BASE_URL.
 if [ -n "${CAMPUSINNERGWSERVICE_DOMAIN_NAME_URL:-}" ]; then
-    export MATE_INNERGWSERIVE="$CAMPUSINNERGWSERVICE_DOMAIN_NAME_URL"
-else
-    echo "[install_value] Warning: CAMPUSINNERGWSERVICE_DOMAIN_NAME_URL not set in $PROFILE_FILE;" >&2
-    echo "[install_value] mate.innerGWSerive will stay empty and Mate tool calls will fail." >&2
+    if [ -n "${CAMPUSMATE_BASE_URL:-}" ] \
+        && [ "$CAMPUSMATE_BASE_URL" != "$CAMPUSINNERGWSERVICE_DOMAIN_NAME_URL" ]; then
+        echo "[install_value] CAMPUSMATE_BASE_URL conflicts with CAMPUSINNERGWSERVICE_DOMAIN_NAME_URL." >&2
+        if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then
+            return 1
+        fi
+        exit 1
+    fi
+    export CAMPUSMATE_BASE_URL="${CAMPUSMATE_BASE_URL:-$CAMPUSINNERGWSERVICE_DOMAIN_NAME_URL}"
+fi
+
+if [ -z "${CAMPUSMATE_BASE_URL:-}" ]; then
+    echo "[install_value] Warning: CAMPUSMATE_BASE_URL is not configured in $PROFILE_FILE." >&2
 fi
 
 if [ "${1:-}" = "--print" ]; then
-    echo "MATE_INNERGWSERIVE=${MATE_INNERGWSERIVE:-}"
+    echo "CAMPUSMATE_BASE_URL=${CAMPUSMATE_BASE_URL:-}"
     exit 0
 fi

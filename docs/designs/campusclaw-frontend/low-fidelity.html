@@ -8,13 +8,18 @@
     :root {
       color-scheme: light;
       font-family: Inter, "PingFang SC", "Microsoft YaHei", sans-serif;
-      --ink: #282828;
-      --muted: #5d5d5d;
-      --line: #d9d9d9;
-      --soft: #f3f3f3;
-      --paper: #fff;
-      --board: #ededed;
-      --dark: #181818;
+      --brand: #d97757;
+      --brand-strong: #a9472b;
+      --ink: #2c2724;
+      --muted: #6c625d;
+      --line: #ded4cf;
+      --soft: #f4ece8;
+      --paper: #fffcfa;
+      --board: #eee6e1;
+      --shell: #f8f3f0;
+      --selected: #efe4de;
+      --dark: #2b2522;
+      --success: #16875b;
     }
 
     * { box-sizing: border-box; }
@@ -30,13 +35,13 @@
     .screen { position: relative; overflow: hidden; border: 1px solid var(--dark); border-radius: 12px; background: var(--paper); box-shadow: 0 1px 2px rgba(0,0,0,.08); }
     .screen > .tag { position: absolute; z-index: 5; top: 12px; left: 12px; padding: 5px 9px; border: 1px solid var(--dark); border-radius: 5px; background: var(--paper); font: 700 11px ui-monospace, monospace; }
     .main-screen { grid-row: 1 / span 2; display: grid; grid-template-columns: 240px 1fr; }
-    .rail { display: flex; flex-direction: column; border-right: 1px solid var(--line); background: #f9f9f9; padding: 52px 14px 14px; }
+    .rail { display: flex; flex-direction: column; border-right: 1px solid var(--line); background: var(--shell); padding: 52px 14px 14px; }
     .brand { display: flex; gap: 9px; align-items: center; margin-bottom: 20px; font-weight: 800; }
-    .brand-mark { width: 26px; height: 26px; border: 1px solid var(--ink); border-radius: 8px; background: var(--dark); }
+    .brand-mark { width: 36px; height: 36px; object-fit: contain; }
     .primary { width: 100%; padding: 11px; border: 1px solid var(--dark); border-radius: 7px; background: var(--dark); color: #fff; font-weight: 700; text-align: left; }
     .section-label { margin: 22px 4px 8px; color: var(--muted); font-size: 11px; font-weight: 700; letter-spacing: .08em; }
     .session { margin-bottom: 5px; padding: 10px; border-radius: 6px; font-size: 13px; }
-    .session.active { border: 1px solid var(--line); background: #ededed; font-weight: 700; }
+    .session.active { border: 1px solid var(--line); background: var(--selected); box-shadow: inset 3px 0 var(--brand); font-weight: 700; }
     .session small { display: block; margin-top: 3px; color: var(--muted); font-weight: 400; }
     .rail-bottom { margin-top: auto; border-top: 1px solid var(--line); padding: 13px 8px 2px; color: var(--muted); font-size: 12px; }
     .workspace { display: grid; grid-template-rows: 66px 1fr auto; min-width: 0; }
@@ -51,15 +56,37 @@
     .conversation { overflow: hidden; padding: 32px 70px 20px; }
     .turn { display: grid; grid-template-columns: 30px 1fr; gap: 12px; margin-bottom: 26px; }
     .turn.user { grid-template-columns: 1fr; justify-items: end; }
-    .avatar { width: 30px; height: 30px; border: 1px solid var(--dark); border-radius: 8px; background: var(--soft); }
+    .avatar { width: 36px; height: 36px; object-fit: contain; }
     .bubble { max-width: 78%; padding: 13px 16px; border: 1px solid var(--dark); border-radius: 12px; background: var(--paper); font-size: 13px; line-height: 1.7; }
     .user .bubble { background: var(--soft); }
-    .answer { font-size: 13px; line-height: 1.75; }
-    .answer strong { display: block; margin-bottom: 7px; }
-    .tool-card { margin-top: 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--soft); }
-    .tool-head { display: flex; align-items: center; gap: 8px; padding: 10px 12px; font-size: 12px; font-weight: 700; }
-    .tool-head::before { content: ""; width: 13px; height: 13px; border: 2px solid var(--dark); border-radius: 3px; }
-    .tool-result { border-top: 1px solid var(--line); padding: 10px 12px; color: var(--muted); font: 11px/1.5 ui-monospace, monospace; }
+    .answer { min-width: 0; font-size: 13px; line-height: 1.65; }
+    .answer h3 { margin: 0 0 7px; font-size: 15px; }
+    .answer p { margin: 0 0 9px; }
+    .rich-table-wrap { max-width: 100%; overflow-x: auto; }
+    .rich-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+    .rich-table th, .rich-table td { padding: 6px 8px; border: 1px solid var(--line); text-align: left; }
+    .rich-table th { background: var(--soft); }
+    .rich-table .number { text-align: right; }
+    .inline-code { padding: 2px 5px; border: 1px solid var(--line); border-radius: 4px; background: var(--soft); font-family: ui-monospace, monospace; }
+    .activity-stream { max-width: 100%; margin: 0 0 14px; padding: 7px 10px; border: 1px dashed var(--line); border-radius: 8px; background: var(--shell); }
+    .thinking-row { margin-bottom: 5px; color: var(--muted); font-size: 11px; }
+    .thinking-row summary { display: flex; min-height: 32px; align-items: center; gap: 7px; cursor: pointer; list-style: none; }
+    .thinking-row summary::-webkit-details-marker, .tool-card summary::-webkit-details-marker { display: none; }
+    .thinking-row summary::before { content: ""; width: 9px; height: 9px; border: 1px solid var(--dark); border-radius: 50%; background: var(--paper); }
+    .thinking-row summary::after, .tool-head::after { content: "›"; color: var(--muted); }
+    .thinking-row[open] summary::after, .tool-card[open] .tool-head::after { transform: rotate(90deg); }
+    .thinking-content { margin: 4px 0 8px 17px; color: var(--ink); line-height: 1.45; white-space: pre-wrap; }
+    .tool-card { background: transparent; }
+    .tool-head { display: grid; grid-template-columns: 14px minmax(0, 1fr) auto 10px; gap: 7px; align-items: center; min-height: 34px; padding: 2px 0; color: var(--muted); font-size: 11px; cursor: pointer; list-style: none; }
+    .tool-head::before { content: "✓"; color: #008635; font-weight: 800; }
+    .tool-head b { color: var(--ink); }
+    .tool-state { margin-left: auto; color: var(--muted); font-size: 10px; font-weight: 600; }
+    .tool-args { margin: 0 0 8px 21px; padding: 5px 0 3px 10px; border-left: 1px solid var(--line); }
+    .arg-label { margin-bottom: 3px; color: var(--muted); font-size: 10px; font-weight: 700; }
+    .arg-line { width: 62%; padding: 6px 8px; border-radius: 5px; background: var(--soft); color: var(--ink); font: 10px/1.45 ui-monospace, monospace; }
+    .tool-output { width: 62%; margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--line); color: var(--ink); font-size: 10px; }
+    .round-actions { display: flex; min-height: 30px; margin-top: 3px; }
+    .copy-icon { display: inline-grid; width: 30px; height: 30px; padding: 0; place-items: center; border: 0; border-radius: 6px; background: transparent; color: var(--muted); font-size: 16px; }
     .composer-wrap { padding: 0 70px 22px; }
     .composer { border: 2px solid var(--dark); border-radius: 12px; background: var(--paper); padding: 12px; }
     .composer-placeholder { min-height: 48px; color: var(--muted); font-size: 13px; }
@@ -72,12 +99,12 @@
     .a2 { bottom: 132px; right: 18px; }
     .a3 { bottom: 20px; left: 255px; }
     .small-screen { display: grid; grid-template-columns: 150px 1fr; }
-    .mini-rail { border-right: 1px solid var(--line); background: #f9f9f9; padding: 48px 10px 10px; }
+    .mini-rail { border-right: 1px solid var(--line); background: var(--shell); padding: 48px 10px 10px; }
     .mini-line { height: 12px; margin: 8px 0; border: 1px solid var(--line); border-radius: 3px; background: var(--paper); }
     .mini-content { display: flex; flex-direction: column; }
     .mini-top { height: 54px; border-bottom: 1px solid var(--line); }
     .welcome { display: flex; flex: 1; flex-direction: column; align-items: center; justify-content: center; padding: 38px; text-align: center; }
-    .welcome-symbol { width: 56px; height: 56px; border: 2px solid var(--dark); border-radius: 16px; background: var(--soft); }
+    .welcome-symbol { width: 68px; height: 68px; object-fit: contain; }
     .welcome h2 { margin: 16px 0 6px; font-size: 19px; }
     .welcome p { width: 76%; margin: 0 0 18px; color: var(--muted); font-size: 12px; line-height: 1.6; }
     .agent-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; width: 100%; }
@@ -88,12 +115,18 @@
     .running-top strong { font-size: 13px; }
     .running-top .stop { margin-left: auto; border: 2px solid var(--dark); border-radius: 7px; padding: 7px 10px; background: var(--paper); font-weight: 700; }
     .running-body { flex: 1; padding: 22px 42px; }
-    .progress { border: 1px solid var(--dark); border-radius: 9px; background: var(--soft); padding: 12px; }
+    .running-activity { padding: 7px 10px; border: 1px dashed var(--line); border-radius: 8px; background: var(--shell); font-size: 11px; }
+    .running-thinking { margin-bottom: 5px; }
     .progress-title { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 800; }
-    .spinner { width: 14px; height: 14px; border: 2px solid var(--line); border-top-color: var(--dark); border-radius: 50%; }
-    .steps { display: flex; gap: 6px; margin-top: 12px; }
-    .step { flex: 1; height: 7px; border: 1px solid var(--line); background: var(--paper); }
-    .step.done { background: var(--dark); }
+    .spinner { width: 14px; height: 14px; border: 2px solid var(--line); border-top-color: var(--success); border-radius: 50%; }
+    .running-thinking p { margin: 4px 0 0 22px; color: var(--muted); }
+    .running-tools { background: transparent; }
+    .running-tool { padding: 5px 0; }
+    .running-tool-head { display: grid; grid-template-columns: 14px minmax(0, 1fr) auto 10px; gap: 7px; align-items: center; font-weight: 700; }
+    .running-tool-head .tool-state { margin-left: auto; }
+    .running-tool-args { margin: 6px 0 0 20px; padding-left: 10px; border-left: 1px solid var(--line); color: var(--muted); }
+    .running-tool-args .arg-line { width: 72%; }
+    .running-tool-args .tool-output { width: 72%; }
     .control-composer { margin: 0 42px 22px; border: 2px solid var(--dark); border-radius: 10px; padding: 10px; }
     .follow-up-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; color: var(--muted); font-size: 10px; }
     .follow-up-mode { padding: 6px 9px; border: 1px solid var(--dark); border-radius: 7px; background: var(--soft); color: var(--ink); font-weight: 700; }
@@ -121,7 +154,7 @@
       <section class="screen main-screen">
         <div class="tag">01 · 常规对话</div>
         <aside class="rail">
-          <div class="brand"><span class="brand-mark"></span> CampusClaw</div>
+          <div class="brand"><img class="brand-mark" src="campusclaw-mark-o1.png" alt=""> CampusClaw</div>
           <button class="primary">＋ 新建会话</button>
           <div class="section-label">今天</div>
           <div class="session active">订单异常分析<small>运营分析 Agent</small></div>
@@ -144,14 +177,37 @@
           <main class="conversation">
             <div class="turn user"><div class="bubble">请分析这些订单文件，并列出异常项。<br>▣ 订单明细.xlsx</div></div>
             <div class="turn">
-              <span class="avatar"></span>
+              <img class="avatar" src="campusclaw-mark-o1.png" alt="CampusClaw">
               <div class="answer">
-                <strong>我发现了 3 类需要关注的异常</strong>
-                退款率突增、重复订单和跨校区价格不一致。其中退款率异常集中在两个食堂档口。
-                <div class="tool-card">
-                  <div class="tool-head">已读取并分析 1 个文件　⌄</div>
-                  <div class="tool-result">read · 订单明细.xlsx · completed · 3 findings</div>
+                <div class="activity-stream">
+                  <details class="thinking-row">
+                    <summary><span>分析过程</span></summary>
+                    <div class="thinking-content">先确认订单结构，再检查价格、数量与重复订单。</div>
+                  </details>
+                  <details class="tool-card" open>
+                    <summary class="tool-head"><span><b>读取</b> 订单明细.xlsx</span><span class="tool-state">3,482 行</span></summary>
+                    <div class="tool-args">
+                      <div class="arg-label">输入参数</div>
+                      <div class="arg-line">file　订单明细.xlsx<br>sheet　订单明细</div>
+                      <div class="arg-label" style="margin-top:6px">输出结果</div>
+                      <div class="tool-output">已读取 3,482 行订单。</div>
+                    </div>
+                  </details>
                 </div>
+                <h3>异常汇总</h3>
+                <p>已读取文件，发现以下 3 类异常：</p>
+                <div class="rich-table-wrap" tabindex="0" aria-label="异常汇总表，可横向滚动">
+                  <table class="rich-table">
+                    <thead><tr><th>异常类型</th><th class="number">数量</th><th>处理建议</th></tr></thead>
+                    <tbody>
+                      <tr><td>价格异常</td><td class="number">24</td><td>复核定价</td></tr>
+                      <tr><td>数量异常</td><td class="number">17</td><td>校验原始数据</td></tr>
+                      <tr><td>重复下单</td><td class="number">9</td><td>合并并联系用户</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+                <p style="margin-top:9px">建议优先检查 <span class="inline-code">order_id</span> 重复记录。</p>
+                <div class="round-actions"><button class="copy-icon" title="复制本轮回答" aria-label="复制本轮回答">⧉</button></div>
               </div>
             </div>
           </main>
@@ -163,8 +219,8 @@
           </div>
         </div>
         <div class="annotation a1">Model / Thinking 是会话级能力<br>放入标题栏，不占用设置侧栏</div>
-        <div class="annotation a2">Tool execution / result<br>合并为可展开的对话内活动卡</div>
-        <div class="annotation a3">凭据、Runtime sessionId、ETag、SSE frame<br>仅在“开发者诊断”抽屉展示</div>
+        <div class="annotation a2">分析 + Tool → 暖灰虚线活动区<br>分析始终可展开；本轮仅一个复制图标</div>
+        <div class="annotation a3">凭据、session_id、ETag、SSE frame<br>仅在“开发者诊断”抽屉展示</div>
       </section>
 
       <section class="screen small-screen">
@@ -173,7 +229,7 @@
         <div class="mini-content">
           <div class="mini-top"></div>
           <div class="welcome">
-            <div class="welcome-symbol"></div>
+            <img class="welcome-symbol" src="campusclaw-mark-o1.png" alt="CampusClaw">
             <h2>今天想让 CampusClaw 做什么？</h2>
             <p>先选择一个 Agent。创建 Session、鉴权和默认模型都由系统在后台完成。</p>
             <div class="agent-grid">
@@ -192,9 +248,25 @@
         <header class="running-top"><span class="agent-avatar"></span><strong>运营分析 Agent</strong><span class="pill status">执行中</span><button class="stop">停止 ■</button></header>
         <div class="running-body">
           <div class="turn user"><div class="bubble">检查这批订单，并给出处理建议。</div></div>
-          <div class="progress">
-            <div class="progress-title"><span class="spinner"></span> 正在读取订单明细并检查异常…</div>
-            <div class="steps"><span class="step done"></span><span class="step done"></span><span class="step"></span><span class="step"></span></div>
+          <div class="running-activity">
+            <div class="running-thinking">
+              <div class="progress-title"><span class="spinner"></span> 正在检查订单结构与异常规则　<span class="tool-state">分析中　⌄</span></div>
+              <p>先确认字段含义和数据规模，再检查价格、数量与重复订单。</p>
+            </div>
+            <div class="running-tools">
+              <div class="running-tool">
+                <div class="running-tool-head"><span style="color:#008635">✓</span><span>读取 订单明细.xlsx</span><span class="tool-state">3,482 行</span><span>›</span></div>
+              </div>
+              <div class="running-tool">
+                <div class="running-tool-head"><span class="spinner"></span><span>检查 价格与数量异常</span><span class="tool-state">进行中…</span><span>⌃</span></div>
+                <div class="running-tool-args">
+                  <div class="arg-label">输入参数</div>
+                  <div class="arg-line">fields　price, quantity<br>threshold　10%</div>
+                  <div class="arg-label" style="margin-top:6px">输出结果</div>
+                  <div class="tool-output">正在检查，已处理 2,910 / 3,482 行…</div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
         <div class="control-composer">

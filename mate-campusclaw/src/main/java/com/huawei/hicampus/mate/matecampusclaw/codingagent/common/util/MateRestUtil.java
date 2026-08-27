@@ -12,17 +12,18 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Map;
 
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.common.client.mate.MateToolResponseException;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.common.dto.RequestHeaderInfo;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * 调用 Mate 内部网关（{@code mate.innerGWSerive}）的 REST 工具。
+ * 调用 CampusMate 共享服务地址的 REST 工具。
  *
  * <p>调用方按执行上下文决定是否填充凭据 Header；本类只负责原样映射非空字段，不保存或
- * 解析凭据。传输使用 JDK HttpClient，响应保持原始文本并由调用方解析不同端点的
- * {@code {resCode, resMsg, result}} 信封。
+ * 解析凭据。传输使用 JDK HttpClient，响应保持原始文本，由调用方解析各自端点响应中的 {@code result} 字段
+ * （响应结构包含 {@code resCode}、{@code resMsg} 和 {@code result} 字段）。
  *
  * @version [br_eCampusCore 26.0.0, 2026/08/24]
  * @since [br_eCampusCore 26.0.0]
@@ -54,17 +55,19 @@ public class MateRestUtil {
     }
 
     /**
-     * 向 {@code gwAddress + path} 发送 JSON POST 请求并返回原始响应体。
+     * 向 {@code campusMateBaseUrl + path} 发送 JSON POST 请求并返回原始响应体。
      *
-     * @param gwAddress Mate 内部网关基础地址
-     * @param path 网关 API 路径
+     * @param campusMateBaseUrl CampusMate 服务基础地址
+     * @param path CampusMate API 路径
      * @param headerInfo 映射到 HTTP Header 的请求信息
      * @param jsonBody 原始 JSON 请求体
      * @return 原始响应体
-     * @throws IllegalStateException 调用失败、中断或返回空响应体时抛出
+     * @throws IllegalStateException 调用失败或中断时抛出
+     * @throws MateToolResponseException 返回空响应体时抛出
      */
-    public String executePostRawRequest(String gwAddress, String path, RequestHeaderInfo headerInfo, String jsonBody) {
-        String url = joinUrl(gwAddress, path);
+    public String executePostRawRequest(
+            String campusMateBaseUrl, String path, RequestHeaderInfo headerInfo, String jsonBody) {
+        String url = joinUrl(campusMateBaseUrl, path);
         try {
             HttpRequest request = newRequestBuilder(url, headerInfo)
                     .POST(HttpRequest.BodyPublishers.ofString(jsonBody, StandardCharsets.UTF_8))
@@ -72,29 +75,34 @@ public class MateRestUtil {
             return send(url, request);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            throw new IllegalStateException("Mate gateway call interrupted: " + url, e);
+            throw new IllegalStateException("CampusMate call interrupted: " + url, e);
+        } catch (MateToolResponseException e) {
+            throw e;
         } catch (Exception e) {
             throw logAndWrap(url, e);
         }
     }
 
     /**
-     * 向 {@code gwAddress + path} 发送 GET 请求并返回原始响应体。
+     * 向 {@code campusMateBaseUrl + path} 发送 GET 请求并返回原始响应体。
      *
-     * @param gwAddress Mate 内部网关基础地址
-     * @param path 网关 API 路径，可以包含路径变量
+     * @param campusMateBaseUrl CampusMate 服务基础地址
+     * @param path CampusMate API 路径，可以包含路径变量
      * @param headerInfo 映射到 HTTP Header 的请求信息
      * @return 原始响应体
-     * @throws IllegalStateException 调用失败、中断或返回空响应体时抛出
+     * @throws IllegalStateException 调用失败或中断时抛出
+     * @throws MateToolResponseException 返回空响应体时抛出
      */
-    public String executeGetRawRequest(String gwAddress, String path, RequestHeaderInfo headerInfo) {
-        String url = joinUrl(gwAddress, path);
+    public String executeGetRawRequest(String campusMateBaseUrl, String path, RequestHeaderInfo headerInfo) {
+        String url = joinUrl(campusMateBaseUrl, path);
         try {
             HttpRequest request = newRequestBuilder(url, headerInfo).GET().build();
             return send(url, request);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            throw new IllegalStateException("Mate gateway call interrupted: " + url, e);
+            throw new IllegalStateException("CampusMate call interrupted: " + url, e);
+        } catch (MateToolResponseException e) {
+            throw e;
         } catch (Exception e) {
             throw logAndWrap(url, e);
         }
@@ -119,20 +127,20 @@ public class MateRestUtil {
     private String send(String url, HttpRequest request) throws Exception {
         HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
         if (response.body() == null || response.body().isEmpty()) {
-            throw new IllegalStateException("Mate gateway returned empty body");
+            throw new MateToolResponseException("response body is empty");
         }
         return response.body();
     }
 
     private IllegalStateException logAndWrap(String url, Exception e) {
-        log.error("Mate gateway call failed: url={}", url, e);
-        return new IllegalStateException("Mate gateway call failed: " + url, e);
+        log.error("CampusMate call failed: url={}", url, e);
+        return new IllegalStateException("CampusMate call failed: " + url, e);
     }
 
-    private static String joinUrl(String gwAddress, String path) {
-        String base = gwAddress != null && gwAddress.endsWith("/")
-                ? gwAddress.substring(0, gwAddress.length() - 1)
-                : gwAddress;
+    private static String joinUrl(String campusMateBaseUrl, String path) {
+        String base = campusMateBaseUrl != null && campusMateBaseUrl.endsWith("/")
+                ? campusMateBaseUrl.substring(0, campusMateBaseUrl.length() - 1)
+                : campusMateBaseUrl;
         String suffix = path != null && path.startsWith("/") ? path : "/" + path;
         return base + suffix;
     }

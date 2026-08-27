@@ -11,6 +11,15 @@ import com.huawei.hicampus.mate.matecampusclaw.ai.types.AssistantMessage;
 import com.huawei.hicampus.mate.matecampusclaw.ai.types.StopReason;
 
 final class CompactionRetryClassifier {
+    private static final List<String> RETRYABLE_CODES = List.of(
+            "MODEL_RATE_LIMITED",
+            "MODEL_UNAVAILABLE",
+            "MANAGER_UNAVAILABLE",
+            "MODEL_INVOCATION_TIMEOUT",
+            "UPSTREAM_MODEL_ERROR",
+            "UPSTREAM_STREAM_ERROR",
+            "MATE_MODEL_MANAGER_ERROR");
+
     private static final List<Pattern> NON_RETRYABLE = patterns(
             "GoUsageLimitError",
             "FreeUsageLimitError",
@@ -57,7 +66,8 @@ final class CompactionRetryClassifier {
     private CompactionRetryClassifier() {}
 
     static boolean isRetryable(AssistantMessage message) {
-        return message.stopReason() == StopReason.ERROR && isRetryable(message.errorMessage());
+        return message.stopReason() == StopReason.ERROR
+                && (isRetryableCode(message.errorCode()) || isRetryable(message.errorMessage()));
     }
 
     static boolean isRetryable(Throwable error) {
@@ -70,12 +80,19 @@ final class CompactionRetryClassifier {
     }
 
     private static boolean isRetryable(String message) {
+        if (isRetryableCode(message)) {
+            return true;
+        }
         if (message == null
                 || NON_RETRYABLE.stream()
                         .anyMatch(pattern -> pattern.matcher(message).find())) {
             return false;
         }
         return RETRYABLE.stream().anyMatch(pattern -> pattern.matcher(message).find());
+    }
+
+    private static boolean isRetryableCode(String errorCode) {
+        return errorCode != null && RETRYABLE_CODES.contains(errorCode);
     }
 
     private static List<Pattern> patterns(String... expressions) {

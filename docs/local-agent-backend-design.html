@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LocalAgentBackend 设计草图 — CampusClaw 自派生子 agent</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<style>
+  :root{--bg:#0d1117;--card:#161b22;--border:#30363d;--text:#e6edf3;--dim:#8b949e;--accent:#58a6ff;--green:#3fb950;--orange:#d29922;--purple:#bc8cff;}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;line-height:1.7;font-size:15px}
+  .container{max-width:860px;margin:0 auto;padding:2rem 3rem 5rem}
+  h1{font-size:1.7rem;margin:0 0 .3rem;letter-spacing:-.02em}
+  h2{font-size:1.25rem;margin:2.2rem 0 .8rem;padding-bottom:.4rem;border-bottom:1px solid var(--border)}
+  .sub{color:var(--dim);font-size:.88rem;font-family:'SF Mono',Menlo,Consolas,monospace}
+  code{font-family:'SF Mono',Menlo,Consolas,monospace;font-size:.85em;background:rgba(88,166,255,.12);color:var(--accent);padding:.1em .35em;border-radius:5px}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:1.1rem 1.25rem;margin:1rem 0}
+  .note{background:#1a1f2b;border-left:3px solid var(--accent);border-radius:0 8px 8px 0;padding:.8rem 1.1rem;margin:1rem 0;font-size:.92rem}
+  .note.green{border-left-color:var(--green)} .note.orange{border-left-color:var(--orange)}
+  .note .nt{font-weight:600;color:var(--accent)} .note.green .nt{color:var(--green)} .note.orange .nt{color:var(--orange)}
+  .badge{display:inline-block;font-size:.7rem;font-family:'SF Mono',Menlo,Consolas,monospace;padding:.12em .55em;border-radius:20px;border:1px solid;vertical-align:middle}
+  .badge-green{color:var(--green);border-color:rgba(63,185,80,.4);background:rgba(63,185,80,.08)}
+  .badge-dim{color:var(--dim);border-color:rgba(139,148,158,.4);background:rgba(139,148,158,.08)}
+  .mermaid-wrap{background:#fff;border-radius:10px;padding:1rem;max-width:92%;margin:1.2rem auto;text-align:center}
+  .mermaid-caption{font-size:.78rem;color:#555;text-align:center;margin-bottom:.5rem;font-family:'SF Mono',Menlo,Consolas,monospace}
+  details.diag{max-width:92%;margin:1.2rem auto}
+  details.diag>summary{cursor:pointer;color:var(--dim);font-size:.8rem;font-family:'SF Mono',Menlo,Consolas,monospace;margin-bottom:.5rem;list-style:none}
+  details.diag>summary::before{content:"▾ "}
+  ul{padding-left:1.3rem} li{margin:.3rem 0} strong{color:#fff}
+  .legend{display:flex;gap:1.2rem;flex-wrap:wrap;font-size:.8rem;color:var(--dim);margin:.6rem 0}
+  .swatch{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:.4rem;vertical-align:middle}
+  .footer{margin-top:2.5rem;padding-top:1rem;border-top:1px solid var(--border);color:var(--dim);font-size:.78rem;font-family:'SF Mono',Menlo,Consolas,monospace}
+</style>
+</head>
+<body>
+<div class="container">
+
+  <h1>LocalAgentBackend 设计草图</h1>
+  <div class="sub">补「派生自己 runtime 的子 agent」—— CampusClaw 自派生路径</div>
+
+  <div class="card">
+    <p>现状:<code>SubAgentBackend</code> 只有 3 个实现,全是<strong>连外部 runtime</strong>(ACP 进程 / HTTP / A2A),<code>spawn_agent</code> 从不在进程内 <code>new Agent()</code>。本设计新增第 4 种 backend —— <code>LocalAgentBackend</code>:<code>open()</code> 时本机 <code>new Agent()</code>(独立 AgentState/cwd),子 agent 跑在 <strong>CampusClaw 自己的 AgentLoop</strong> 上。</p>
+  </div>
+
+  <div class="legend">
+    <span><span class="swatch" style="background:#3fb950"></span>★ 新增</span>
+    <span><span class="swatch" style="background:#c9d1d9"></span>现有(复用)</span>
+    <span><span class="swatch" style="background:#8b949e"></span>现有外部 backend(对比)</span>
+  </div>
+
+  <!-- 类图 -->
+  <h2>① 类图 — 新增类与接口实现关系</h2>
+  <div class="mermaid-wrap">
+    <div class="mermaid-caption">图 A · LocalAgentBackend 类结构(★新增 / 灰=现有)</div>
+    <pre class="mermaid">
+classDiagram
+    direction TB
+
+    class SubAgentBackend {
+        <<interface>>
+        +open(OpenRequest) SubAgentSession
+        +prompt(session, text, signal) Flux
+        +cancel(session, reason)
+        +close(session, reason)
+    }
+    class ProcessAcpBackend
+    class HttpAgentBackend
+    class A2aAgentBackend
+
+    class LocalAgentBackend {
+        -governor : SpawnGovernor
+        -mapper : AgentEventMapper
+        -factory : AgentFactory
+        +open(req) SubAgentSession
+        +prompt(session, text, signal) Flux
+        +cancel(session, reason)
+        +close(session, reason)
+    }
+    class SpawnGovernor {
+        -sem : Semaphore
+        -depth : AtomicInteger
+        -perParent : Map
+        +acquire(parentId, depth)
+        +release(session)
+    }
+    class AgentEventMapper {
+        +map(AgentEvent) SubAgentEvent
+    }
+    class AgentFactory {
+        +create(OpenRequest) Agent
+    }
+
+    class Agent
+    class AgentLoop
+    class AgentState
+    class AgentEvent
+    class SubAgentEvent
+
+    SubAgentBackend <|.. ProcessAcpBackend
+    SubAgentBackend <|.. HttpAgentBackend
+    SubAgentBackend <|.. A2aAgentBackend
+    SubAgentBackend <|.. LocalAgentBackend
+
+    LocalAgentBackend --> SpawnGovernor : acquire and release
+    LocalAgentBackend --> AgentEventMapper : 映射事件
+    LocalAgentBackend --> AgentFactory : open 时调
+    AgentFactory ..> Agent : create()
+    Agent *--> AgentLoop
+    Agent *--> AgentState
+    AgentEventMapper ..> AgentEvent : 输入
+    AgentEventMapper ..> SubAgentEvent : 输出
+
+    classDef new fill:#e8f5e9,stroke:#3fb950,color:#222,stroke-width:2px;
+    classDef cur fill:#eef2ff,stroke:#58a6ff,color:#222;
+    classDef ext fill:#eeeeee,stroke:#bbb,color:#666;
+    class LocalAgentBackend,SpawnGovernor,AgentEventMapper,AgentFactory new;
+    class SubAgentBackend,Agent,AgentLoop,AgentState,AgentEvent,SubAgentEvent cur;
+    class ProcessAcpBackend,HttpAgentBackend,A2aAgentBackend ext;
+    </pre>
+  </div>
+
+  <div class="note green">
+    <span class="nt">新增 4 个类:</span>
+    <ul style="margin:.3rem 0">
+      <li><code>LocalAgentBackend</code> —— 实现 <code>SubAgentBackend</code>,<code>open()</code> 时 <code>new Agent()</code>;和现有 3 个 backend 平级,只是执行面在进程内。</li>
+      <li><code>SpawnGovernor</code> —— 自派生比外部 spawn 更易失控(同进程递归),<strong>强制</strong>的并发/深度/每父子数闸门(对齐 OpenClaw <code>maxConcurrent/maxSpawnDepth/maxChildrenPerAgent</code>)。</li>
+      <li><code>AgentEventMapper</code> —— 把子 Agent 的 <code>AgentEvent</code> 映射成 backend 契约的 <code>SubAgentEvent</code>(ACP 那边是 <code>AcpEventMapper</code> 反过来做,这里正向)。</li>
+      <li><code>AgentFactory</code> —— 按 <code>OpenRequest</code>(model/thinking/cwd override)造一个<strong>隔离</strong>的子 Agent(独立 AgentState、独立 workspace、可选缩小的 tools/prompt)。</li>
+    </ul>
+  </div>
+
+  <!-- 组件/数据流图 -->
+  <h2>② 组件·数据流图 — 自派生 vs 外部派生</h2>
+  <div class="mermaid-wrap">
+    <div class="mermaid-caption">图 B · 两条 spawn 路径对比(绿=自派生留进程内 / 虚线=外部出进程)</div>
+    <pre class="mermaid">
+flowchart LR
+    subgraph MAIN["主 CampusClaw runtime（同一进程）"]
+        direction TB
+        MAINLOOP["主 AgentLoop / Agent"]
+        TOOL["SpawnAgentTool<br/>backend=local"]
+        REG["SubAgentRegistry"]
+        LOCAL["LocalAgentBackend ★"]
+        GOV["SpawnGovernor ★<br/>acquire/release"]
+        FACT["AgentFactory ★"]
+        MAP["AgentEventMapper ★"]
+        CHILD["子 Agent ★<br/>独立 AgentState + AgentLoop"]
+    end
+
+    EXTACP["ACP 进程<br/>claude-code"]
+    EXTHTTP["远程 HTTP runtime"]
+    EXTA2A["A2A peer runtime"]
+
+    MAINLOOP -->|"模型调 spawn_agent"| TOOL
+    TOOL --> REG
+    REG --> LOCAL
+    LOCAL -->|"①open: acquire"| GOV
+    LOCAL -->|"②create(OpenRequest)"| FACT
+    FACT -->|"new Agent()"| CHILD
+    LOCAL -->|"③prompt(text)"| CHILD
+    CHILD -->|"AgentEvent 流"| MAP
+    MAP -->|"SubAgentEvent"| LOCAL
+    LOCAL -->|"Flux 回流"| TOOL
+    LOCAL -.->|"④close: release"| GOV
+
+    REG -.->|"backend=acp"| EXTACP
+    REG -.->|"backend=http"| EXTHTTP
+    REG -.->|"backend=a2a"| EXTA2A
+
+    classDef new fill:#e8f5e9,stroke:#3fb950,color:#222,stroke-width:2px;
+    classDef cur fill:#eef2ff,stroke:#58a6ff,color:#222;
+    classDef ext fill:#fff3e0,stroke:#d29922,color:#222;
+    class LOCAL,GOV,FACT,MAP,CHILD new;
+    class MAINLOOP,TOOL,REG cur;
+    class EXTACP,EXTHTTP,EXTA2A ext;
+    </pre>
+  </div>
+
+  <div class="note orange">
+    <span class="nt">关键边界:</span>自派生路径(<code>local</code>)<strong>全程不离开进程</strong>——从 <code>SpawnAgentTool</code> 到子 <code>Agent</code> 都在主 runtime 同一 JVM 里,只靠 <code>SpawnGovernor</code> 做隔离与限流。外部 backend(虚线)则各自出进程。两条路径对 <code>SpawnAgentTool</code>/<code>registry</code> 透明,只是 backendId 不同。
+  </div>
+
+  <!-- 时序 -->
+  <h2>③ 自派生时序 — 一次 spawn_agent(local)</h2>
+  <div class="mermaid-wrap">
+    <div class="mermaid-caption">图 C · open / prompt / close 全流程</div>
+    <pre class="mermaid">
+sequenceDiagram
+    participant T as SpawnAgentTool
+    participant L as LocalAgentBackend
+    participant G as SpawnGovernor
+    participant F as AgentFactory
+    participant C as 子 Agent (AgentLoop)
+    participant M as AgentEventMapper
+
+    T->>L: open(OpenRequest{parent,cwd,model,depth})
+    L->>G: acquire(parentId, depth)
+    alt 超限
+        G-->>L: reject
+        L-->>T: SubAgentException(SPAWN_LIMIT)
+    else 放行
+        G-->>L: granted
+        L->>F: create(OpenRequest)
+        F->>C: new Agent(独立 State/cwd)
+        L-->>T: SubAgentSession
+    end
+
+    T->>L: prompt(session, task, signal)
+    L->>C: agent.prompt(task)
+    loop 子 agent 自己的 runInternal
+        C->>M: AgentEvent
+        M->>M: map → SubAgentEvent
+        M-->>L: SubAgentEvent
+        L-->>T: Flux 推流
+    end
+    C-->>L: run 结束
+
+    T->>L: close(session, "tool-finished")
+    L->>G: release(session)
+    L->>C: tear down / 可选归档
+    </pre>
+  </div>
+
+  <div class="note">
+    <span class="nt">隔离 vs 外部 backend:</span>子 Agent 与主 Agent 共享同一 JVM 的 LLM provider / 文件系统 / 虚拟线程,隔离边界比「外部进程」弱——这正是 <code>SpawnGovernor</code> 必须存在的原因(OpenClaw 同 runtime 内 spawn 也因此配一堆 limit)。<code>cwd</code> 隔离 + 可选 tools/prompt 缩小是软隔离,真正硬上限靠 governor。
+  </div>
+
+  <div class="footer">
+    设计草图 · 与现有 subagent-architecture.html / runtime-scheduler-analysis.html 互补<br>
+    非已实现代码 — LocalAgentBackend / SpawnGovernor / AgentEventMapper / AgentFactory 均为提议新增<br>
+    2026-06-17
+  </div>
+
+</div>
+<script>
+  mermaid.initialize({startOnLoad:true,theme:'default',themeVariables:{fontSize:'14px'},flowchart:{curve:'basis',padding:15},sequence:{actorMargin:45}});
+  document.querySelectorAll('.mermaid-wrap').forEach(el=>{
+    const cap=el.querySelector('.mermaid-caption'); const text=cap?cap.textContent.trim():'图表';
+    if(cap)cap.style.display='none';
+    const d=document.createElement('details'); d.open=true; d.className='diag';
+    const s=document.createElement('summary'); s.textContent=text;
+    el.parentNode.insertBefore(d,el); d.appendChild(s); d.appendChild(el);
+  });
+</script>
+</body>
+</html>

@@ -63,7 +63,13 @@ class RuntimeSessionModelReconcilerTest {
                 repository,
                 resolver,
                 modelManager,
+<<<<<<< HEAD
                 new RuntimeEntryCodec(new ObjectMapper()),
+=======
+                new RuntimeEntryCodec(
+                        new ObjectMapper(),
+                        new com.campusclaw.codingagent.runtimeapi.RuntimeMessageSourceConfiguration().messageSource()),
+>>>>>>> upstream/main
                 new SequenceIds(),
                 Clock.fixed(Instant.parse("2026-08-24T00:00:00Z"), ZoneOffset.UTC));
 

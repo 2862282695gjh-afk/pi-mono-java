@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ADR-0026 统一 CampusMate 客户端配置</title>
+  <style>
+    :root { color-scheme: light dark; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    body { margin: 0; background: Canvas; color: CanvasText; line-height: 1.65; }
+    main { width: min(960px, calc(100% - 32px)); margin: 32px auto 64px; }
+    header, section { border: 1px solid color-mix(in srgb, CanvasText 18%, transparent); border-radius: 12px; padding: 20px; margin: 16px 0; }
+    header { background: color-mix(in srgb, #2563eb 10%, Canvas); }
+    h1, h2 { line-height: 1.25; }
+    h1 { margin-top: 0; font-size: clamp(1.6rem, 4vw, 2.4rem); }
+    h2 { margin-top: 0; font-size: 1.25rem; }
+    code { background: color-mix(in srgb, CanvasText 9%, transparent); padding: .1rem .3rem; border-radius: 4px; overflow-wrap: anywhere; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { text-align: left; vertical-align: top; border-bottom: 1px solid color-mix(in srgb, CanvasText 16%, transparent); padding: 9px; }
+    .status { display: inline-block; padding: 3px 9px; border-radius: 999px; background: #166534; color: #fff; font-weight: 700; }
+    .decision { border-left: 5px solid #2563eb; }
+    .warning { border-left: 5px solid #d97706; }
+    ul { padding-left: 1.35rem; }
+    @media (max-width: 600px) {
+      main { width: min(100% - 20px, 960px); margin-top: 12px; }
+      header, section { padding: 14px; }
+      table, tbody, tr, th, td { display: block; }
+      th { padding-bottom: 2px; border-bottom: 0; }
+      td { padding-top: 2px; }
+    }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <p><span class="status">Accepted</span> ADR-0026 · 2026-08-26</p>
+    <h1>统一 CampusMate 客户端的服务身份、地址与 Endpoint 目录</h1>
+    <p>决策范围：CampusClaw 的 Model、受管 Runtime、Tool 客户端配置和安装变量映射。</p>
+  </header>
+
+  <section>
+    <h2>上下文</h2>
+    <p>实施前源码基线 <code>56be8eee59415a5f86658d6635a7b7e8891263d3</code> 把同一个
+      CampusMate 服务拆成 <code>campusmate.model-manager</code>、<code>campusmate.runtime</code>
+      和顶层 <code>mate</code> 三个配置入口，分别声明服务地址，并用七个 path 键描述六个 HTTP
+      operation。Runtime 与 Tool 的 Skill query 是同一 method + path，却分别配置。</p>
+    <p>这种结构允许三个客户端被误配到不同 origin，也让 <code>mate.innerGWSerive</code> 的历史拼写
+      继续进入应用契约。用户已明确 <code>mate</code> 与 CampusMate 是同一服务，并选择将
+      <code>model-manager</code> 配置分组缩写为 <code>model</code>。</p>
+  </section>
+
+  <section class="decision">
+    <h2>决策</h2>
+    <ul>
+      <li>只保留一个必填 <code>campusmate.base-url</code>，供 Model、Runtime 和 Tool 客户端共享。</li>
+      <li>在 <code>campusmate.endpoints</code> 中按 HTTP operation 维护六个 service-local path；Runtime 与 Tool 复用一个 Skill query 条目。</li>
+      <li>模型本地参数放入 <code>campusmate.model</code>，Runtime 本地参数放入 <code>campusmate.runtime</code>，Tool 开关放入 <code>campusmate.tool</code>。</li>
+      <li>删除顶层 <code>mate.*</code>、<code>campusmate.model-manager.*</code> 和各客户端独立 base URL；应用不双读旧键。</li>
+      <li>安装脚本可在边界把部署平台旧变量 <code>CAMPUSINNERGWSERVICE_DOMAIN_NAME_URL</code> 转换为 <code>CAMPUSMATE_BASE_URL</code>；显式新旧值冲突时失败。</li>
+      <li>新增类型化配置校验：origin 只能是无服务路径的 HTTP(S) URL，operation 必须留在 <code>/mate-service/</code> 下，拒绝规范化点段，并满足模板占位符约束。</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>目标配置</h2>
+    <table>
+      <tr><th>项目</th><th>目标</th></tr>
+      <tr><td>唯一 origin</td><td><code>campusmate.base-url</code> / <code>CAMPUSMATE_BASE_URL</code></td></tr>
+      <tr><td>共享 operation</td><td><code>campusmate.endpoints.*</code>，六个 method + path</td></tr>
+      <tr><td>模型参数</td><td><code>campusmate.model.*</code></td></tr>
+      <tr><td>Runtime 参数</td><td><code>campusmate.runtime.*</code></td></tr>
+      <tr><td>Tool 参数</td><td><code>campusmate.tool.enabled</code></td></tr>
+    </table>
+  </section>
+
+  <section>
+    <h2>备选方案</h2>
+    <table>
+      <tr><th>方案</th><th>优点</th><th>拒绝原因</th></tr>
+      <tr><td>保留三个 base URL</td><td>迁移最少</td><td>继续允许同一服务被配置为不同 origin，服务身份没有收敛。</td></tr>
+      <tr><td>新旧键长期双读</td><td>短期兼容旧部署</td><td>优先级和冲突规则复杂，拼写错误成为长期公共契约。</td></tr>
+      <tr><td>只统一 base URL，路径仍分散</td><td>改动较小</td><td>重复 Skill operation 仍存在，无法形成可审计的调用目录。</td></tr>
+      <tr><td>共享 base URL + 六 operation 目录</td><td>一个服务身份、一个来源、可启动期校验</td><td>需要一次性迁移环境变量和配置键；本决策选择此方案。</td></tr>
+    </table>
+  </section>
+
+  <section class="warning">
+    <h2>明确不做</h2>
+    <ul>
+      <li>不修改任何 CampusMate HTTP method、path、请求体、响应体、SSE 或认证规则。</li>
+      <li>不把 Provider ID <code>mate-model-manager</code> 改名；<code>model</code> 仅是配置分组。</li>
+      <li>不在应用内保留旧配置别名或根据空值猜测优先级。</li>
+      <li>不把客户端超时、模型 token 参数或 Runtime 文件目录合并为共享参数。</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>后果与相关资料</h2>
+    <p>正面后果：三个客户端必然指向同一服务 origin；Endpoint 可按 operation 清点；Skill query
+      不再重复；错误地址和越界 path 在启动阶段失败。迁移成本：部署必须设置
+      <code>CAMPUSMATE_BASE_URL</code>，旧应用配置键不再生效，手工维护的交付 properties 必须同步。</p>
+    <p>外部设计基线：<code>/Users/z/设计</code> 的
+      <code>c250e3f07536871d3d676242e552a5eb4346b0c7</code>；详细实现与源码证据见
+      <a href="../designs/campusmate-shared-config.md">CampusMate 客户端共享配置设计</a>。
+      Model Chat 的协议决策仍见 <a href="0025-mate-chat-provider-and-usage-records.html">ADR-0025</a>。</p>
+    <p>受审实现冻结于 <code>e8533b5ebf564f9d8d707faa115be638dc377556</code>。在 mate-service
+      基线 <code>956b547f5ca12ca89e68f73012f92a4406b0c9fa</code> 中，Chat、Agent info 和 Agent runtime
+      是已观察服务端行为；Skill query、Tool metadata 和 Tool execute 是目标态设计，服务端待实现。</p>
+  </section>
+</main>
+</body>
+</html>

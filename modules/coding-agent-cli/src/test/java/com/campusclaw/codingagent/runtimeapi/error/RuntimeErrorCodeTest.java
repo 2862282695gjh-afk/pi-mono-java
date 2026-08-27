@@ -7,10 +7,14 @@ package com.campusclaw.codingagent.runtimeapi.error;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.Locale;
 import java.util.ResourceBundle;
 import java.util.Set;
 import java.util.stream.Collectors;
+
+import com.campusclaw.codingagent.common.client.mate.MateToolResponseException;
+import com.campusclaw.codingagent.runtime.AgentRuntimeErrorCode;
 
 import org.junit.jupiter.api.Test;
 
@@ -27,7 +31,10 @@ class RuntimeErrorCodeTest {
         ResourceBundle chinese = ResourceBundle.getBundle("i18n/messages", Locale.SIMPLIFIED_CHINESE);
         Set<String> expectedKeys = Arrays.stream(RuntimeErrorCode.values())
                 .map(RuntimeErrorCode::messageKey)
-                .collect(Collectors.toUnmodifiableSet());
+                .collect(Collectors.toCollection(HashSet::new));
+        Arrays.stream(AgentRuntimeErrorCode.values()).map(Enum::name).forEach(expectedKeys::add);
+        expectedKeys.add(MateToolResponseException.ERROR_CODE);
+        expectedKeys.add("TOOL_EXECUTION_FAILED");
 
         assertThat(english.keySet()).isEqualTo(expectedKeys);
         assertThat(chinese.keySet()).isEqualTo(expectedKeys);
@@ -46,5 +53,15 @@ class RuntimeErrorCodeTest {
         assertThat(RuntimeErrorCode.SESSION_EXECUTION_UNAVAILABLE.retryAfterSeconds())
                 .hasValue(3);
         assertThat(RuntimeErrorCode.SESSION_BUSY.retryAfterSeconds()).isEmpty();
+    }
+
+    @Test
+    void runtimeApiExceptionCarriesOnlyErrorCode() {
+        RuntimeApiException error = new RuntimeApiException(RuntimeErrorCode.INTERNAL_ERROR);
+
+        assertThat(error.getMessage()).isEqualTo("INTERNAL_ERROR");
+        assertThat(error.errorCode()).isEqualTo(RuntimeErrorCode.INTERNAL_ERROR);
+        assertThat(error.getCause()).isNull();
+        assertThat(error.getStackTrace()).isEmpty();
     }
 }

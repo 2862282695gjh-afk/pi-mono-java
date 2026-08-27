@@ -39,6 +39,11 @@ class ContextOverflowDetectorTest {
                 List.of(new TextContent("ok", null)), "x", "x", "x", null, u, StopReason.STOP, null, 0L);
     }
 
+    private static AssistantMessage errorCode(String errorCode) {
+        return new AssistantMessage(
+                List.of(), "x", "x", "x", null, null, Usage.empty(), StopReason.ERROR, errorCode, null, 0L);
+    }
+
     private static AssistantMessage lengthStopped(int input, int output) {
         Usage usage = new Usage(input, output, 0, 0, input + output, Cost.empty());
         return new AssistantMessage(
@@ -51,6 +56,11 @@ class ContextOverflowDetectorTest {
         @Test
         void anthropicPromptTooLong() {
             assertTrue(ContextOverflowDetector.isContextOverflow(error("prompt is too long: 200000 tokens")));
+        }
+
+        @Test
+        void stableCodeTakesPrecedenceOverMissingErrorMessage() {
+            assertTrue(ContextOverflowDetector.isContextOverflow(errorCode("CONTEXT_WINDOW_EXCEEDED")));
         }
 
         @Test

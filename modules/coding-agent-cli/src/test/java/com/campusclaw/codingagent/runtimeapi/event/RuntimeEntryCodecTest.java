@@ -8,6 +8,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 import com.campusclaw.ai.types.Api;
@@ -21,6 +22,10 @@ import com.campusclaw.ai.types.Provider;
 import com.campusclaw.ai.types.StopReason;
 import com.campusclaw.ai.types.TextContent;
 import com.campusclaw.ai.types.ThinkingContent;
+<<<<<<< HEAD
+=======
+import com.campusclaw.ai.types.ToolResultMessage;
+>>>>>>> upstream/main
 import com.campusclaw.ai.types.Usage;
 import com.campusclaw.codingagent.runtimeapi.dto.RuntimeEntryDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.RuntimeRecordDTO;
@@ -36,10 +41,33 @@ import org.junit.jupiter.api.Test;
  */
 class RuntimeEntryCodecTest {
     @Test
+    void projectsToolFailureAsStableCodeAndLocalizedMessage() {
+        RuntimeEntryCodec codec = codec();
+        ToolResultMessage failure = new ToolResultMessage(
+                "call_1",
+                "querySkillInfo",
+                List.of(new TextContent("MATE_RESPONSE_INVALID")),
+                Map.of("errorCode", "MATE_RESPONSE_INVALID", "errorCategory", "InternalException"),
+                true,
+                1L);
+
+        RuntimeEntryDTO entry = codec.toolResultEntry("session", "entry", failure, OffsetDateTime.now());
+        Map<String, Object> event = codec.toHistoryEvent(entry, Locale.SIMPLIFIED_CHINESE);
+
+        assertThat(entry.getPayload())
+                .contains("\"error_code\":\"MATE_RESPONSE_INVALID\"")
+                .doesNotContain("error_category", "InternalException");
+        assertThat(event)
+                .containsEntry("errorCode", "MATE_RESPONSE_INVALID")
+                .containsEntry("errorMessage", "CampusMate 响应格式不正确。")
+                .doesNotContainKey("errorCategory");
+    }
+
+    @Test
     void projectsStoredAssistantPayloadWithoutChangingToolArguments() {
         RuntimeEntryDTO entry = assistantEntry();
 
-        Map<String, Object> event = new RuntimeEntryCodec(new ObjectMapper()).toHistoryEvent(entry);
+        Map<String, Object> event = codec().toHistoryEvent(entry);
 
         assertThat(event)
                 .containsEntry("type", "assistant.message.completed")
@@ -59,14 +87,22 @@ class RuntimeEntryCodecTest {
                 "assistant.message.completed",
                 "{\"message\":{\"role\":\"assistant\",\"content\":[]},\"finish_reason\":\"error\"}");
 
+<<<<<<< HEAD
         List<String> ids = new RuntimeEntryCodec(new ObjectMapper()).toAgentContextEntryIds(List.of(user, failed));
+=======
+        List<String> ids = codec().toAgentContextEntryIds(List.of(user, failed));
+>>>>>>> upstream/main
 
         assertThat(ids).containsExactly("entry_user");
     }
 
     @Test
     void restoresPersistedAssistantModelIdentityInsteadOfCurrentModel() {
+<<<<<<< HEAD
         RuntimeEntryCodec codec = new RuntimeEntryCodec(new ObjectMapper());
+=======
+        RuntimeEntryCodec codec = codec();
+>>>>>>> upstream/main
         AssistantMessage original = new AssistantMessage(
                 List.of(new TextContent("done")),
                 "openai-responses",
@@ -89,7 +125,11 @@ class RuntimeEntryCodecTest {
 
     @Test
     void storesUsageOnlyInInternalRecordAndRestoresReasoningSignature() {
+<<<<<<< HEAD
         RuntimeEntryCodec codec = new RuntimeEntryCodec(new ObjectMapper());
+=======
+        RuntimeEntryCodec codec = codec();
+>>>>>>> upstream/main
         Usage usage = new Usage(10, 5, 2, 1, 18, new Cost(0.1, 0.2, 0.01, 0.02, 0.33));
         AssistantMessage original = new AssistantMessage(
                 List.of(new ThinkingContent("reason", "signature", false), new TextContent("done")),
@@ -146,6 +186,15 @@ class RuntimeEntryCodecTest {
         return entry;
     }
 
+<<<<<<< HEAD
+=======
+    private static RuntimeEntryCodec codec() {
+        return new RuntimeEntryCodec(
+                new ObjectMapper(),
+                new com.campusclaw.codingagent.runtimeapi.RuntimeMessageSourceConfiguration().messageSource());
+    }
+
+>>>>>>> upstream/main
     private static RuntimeEntryDTO entry(String id, String type, String payload) {
         RuntimeEntryDTO entry = new RuntimeEntryDTO();
         entry.setId(id);

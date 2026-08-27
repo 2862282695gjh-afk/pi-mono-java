@@ -1,0 +1,702 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CampusClaw (pi-mono-java) Runtime 调度器架构分析</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<style>
+  :root {
+    --bg: #0d1117; --card: #161b22; --border: #30363d;
+    --text: #e6edf3; --dim: #8b949e; --accent: #58a6ff;
+    --green: #3fb950; --orange: #d29922; --red: #f85149;
+    --purple: #bc8cff; --cyan: #39d2c0;
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;
+    line-height:1.7; font-size:15px; }
+  .container { max-width:780px; margin:0 auto; padding:2rem 3rem 5rem; }
+  h1 { font-size:1.9rem; margin:0 0 0.3rem; letter-spacing:-0.02em; }
+  h2 { font-size:1.35rem; margin:2.6rem 0 1rem; padding-bottom:0.5rem;
+    border-bottom:1px solid var(--border); display:flex; align-items:center; gap:0.6rem; }
+  h3 { font-size:1.08rem; margin:1.6rem 0 0.7rem; }
+  p { color:var(--text); }
+  .subtitle { color:var(--dim); font-size:0.9rem; margin-bottom:0.2rem;
+    font-family:'SF Mono',Menlo,Consolas,monospace; }
+  .date-line { color:var(--dim); font-size:0.82rem; margin-top:0.6rem; }
+  code { font-family:'SF Mono',Menlo,Consolas,monospace; font-size:0.86em;
+    background:rgba(88,166,255,0.12); color:var(--accent); padding:0.1em 0.38em; border-radius:5px; }
+  .card { background:var(--card); border:1px solid var(--border); border-radius:10px;
+    padding:1.25rem; margin:1rem 0; }
+  .note { background:#1a1f2b; border-left:3px solid var(--accent); border-radius:0 8px 8px 0;
+    padding:0.85rem 1.1rem; margin:1rem 0; font-size:0.92rem; color:var(--text); }
+  .note.green { border-left-color:var(--green); } .note.orange { border-left-color:var(--orange); }
+  .note.purple { border-left-color:var(--purple); } .note.red { border-left-color:var(--red); }
+  .note .nt { font-weight:600; color:var(--accent); }
+  .note.green .nt { color:var(--green); } .note.orange .nt { color:var(--orange); }
+  .note.purple .nt { color:var(--purple); } .note.red .nt { color:var(--red); }
+  .src { font-family:'SF Mono',Menlo,Consolas,monospace; font-size:0.76rem; color:var(--dim);
+    margin:1.2rem 0 0.3rem; display:block; } .src::before { content:"⌖ "; opacity:0.7; }
+  .code-block { background:#0a0e14; border:1px solid var(--border); border-radius:8px;
+    overflow:hidden; margin:0.4rem 0 1rem; }
+  .code-head { background:#1c2128; color:var(--dim); font-family:'SF Mono',Menlo,Consolas,monospace;
+    font-size:0.74rem; padding:0.45rem 0.9rem; border-bottom:1px solid var(--border); }
+  .code-block pre { margin:0; padding:0.95rem 1.1rem; font-family:'SF Mono',Menlo,Consolas,monospace;
+    font-size:0.8rem; line-height:1.6; white-space:pre-wrap; word-break:break-all; color:#c9d1d9; }
+  .cc { color:#8b949e; font-style:italic; } .ck { color:var(--purple); }
+  .cf { color:var(--green); } .cs { color:var(--orange); } .ct { color:var(--accent); }
+  .cn { color:#79c0ff; }
+  .ch { display:block; background:rgba(88,166,255,0.08); border-left:2px solid var(--accent);
+    padding-left:0.6rem; margin-left:-0.6rem; }
+  .mermaid-wrap { background:#fff; border-radius:10px; padding:1rem; max-width:88%; margin:1.2rem auto; text-align:center; }
+  .mermaid-wrap.wide { max-width:95%; }
+  .mermaid-caption { font-size:0.78rem; color:#555; text-align:center; margin-bottom:0.5rem;
+    font-family:'SF Mono',Menlo,Consolas,monospace; }
+  details.diag { max-width:88%; margin:1.2rem auto; } details.diag.wide { max-width:95%; }
+  details.diag > summary { cursor:pointer; color:var(--dim); font-size:0.8rem;
+    font-family:'SF Mono',Menlo,Consolas,monospace; margin-bottom:0.5rem; list-style:none; }
+  details.diag > summary::before { content:"▾ "; }
+  details.diag[open] > .mermaid-wrap { background:#fff; }
+  .params, .cmp { border-collapse:separate; border-spacing:0; width:100%; max-width:88%;
+    margin:1rem auto; font-size:0.85rem; border:1px solid var(--border); border-radius:8px; overflow:hidden; }
+  .params th, .cmp th { background:#1c2128; color:var(--text); text-align:left; padding:0.6rem 0.9rem;
+    font-weight:600; border-bottom:1px solid var(--border); }
+  .params td, .cmp td { padding:0.55rem 0.9rem; border-bottom:1px solid var(--border); color:var(--text); vertical-align:top; }
+  .params tr:last-child td, .cmp tr:last-child td { border-bottom:none; }
+  .params td code, .cmp td code { font-size:0.82em; }
+  .stack { display:flex; flex-direction:column; gap:3px; max-width:88%; margin:1rem auto; }
+  .stack-box { border-radius:7px; padding:0.7rem 1rem; font-size:0.86rem; border:1px solid; }
+  .stack-box .sl { font-weight:600; font-size:0.82rem; display:block; margin-bottom:0.15rem; }
+  .stack-box .sd { color:var(--dim); font-size:0.78rem; font-family:'SF Mono',Menlo,Consolas,monospace; }
+  .stack-box.g { background:rgba(63,185,80,0.12); border-color:rgba(63,185,80,0.25); } .stack-box.g .sl { color:var(--green); }
+  .stack-box.a { background:rgba(88,166,255,0.12); border-color:rgba(88,166,255,0.25); } .stack-box.a .sl { color:var(--accent); }
+  .stack-box.p { background:rgba(188,140,255,0.12); border-color:rgba(188,140,255,0.25); } .stack-box.p .sl { color:var(--purple); }
+  .stack-box.o { background:rgba(210,153,34,0.12); border-color:rgba(210,153,34,0.25); } .stack-box.o .sl { color:var(--orange); }
+  .stack-box.c { background:rgba(57,210,192,0.12); border-color:rgba(57,210,192,0.25); } .stack-box.c .sl { color:var(--cyan); }
+  .badge { display:inline-block; font-size:0.7rem; font-family:'SF Mono',Menlo,Consolas,monospace;
+    padding:0.12em 0.6em; border-radius:20px; border:1px solid; vertical-align:middle; line-height:1.5; }
+  .badge-green { color:var(--green); border-color:rgba(63,185,80,0.4); background:rgba(63,185,80,0.08); }
+  .badge-orange { color:var(--orange); border-color:rgba(210,153,34,0.4); background:rgba(210,153,34,0.08); }
+  .badge-red { color:var(--red); border-color:rgba(248,81,73,0.4); background:rgba(248,81,73,0.08); }
+  .badge-purple { color:var(--purple); border-color:rgba(188,140,255,0.4); background:rgba(188,140,255,0.08); }
+  .badge-cyan { color:var(--cyan); border-color:rgba(57,210,192,0.4); background:rgba(57,210,192,0.08); }
+  .badge-blue { color:var(--accent); border-color:rgba(88,166,255,0.4); background:rgba(88,166,255,0.08); }
+  ul, ol { padding-left:1.3rem; } li { margin:0.3rem 0; } strong { color:#fff; }
+  .footer { margin-top:3rem; padding-top:1.2rem; border-top:1px solid var(--border);
+    color:var(--dim); font-size:0.8rem; font-family:'SF Mono',Menlo,Consolas,monospace; }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <h1>CampusClaw Runtime 调度器架构</h1>
+  <div class="subtitle">com.campusclaw.agent.loop · JDK 21 + Spring Boot · modules/agent-core</div>
+  <div class="date-line">基于 codegraph 调用图分析 · 2026-06-16</div>
+
+  <!-- ========== 总览 ========== -->
+  <h2><span class="badge badge-blue">总览</span> 调度器是什么</h2>
+
+  <div class="card">
+    <p>CampusClaw（原 <code>pi-mono-java</code>）的 <strong>runtime 调度器</strong>是驱动 Coding Agent 运转的核心引擎：决定<em>何时</em>调用 LLM、<em>何时</em>执行工具、<em>何时</em>注入用户中途打断的消息、<em>何时</em>停止。核心是 <code>AgentLoop.runInternal()</code>——一个<strong>单层 <code>while(!signal.isCancelled())</code> 循环 + <code>continue</code> 分支</strong>。</p>
+    <p>它分三层：<code>AgentLoop</code>（纯调度）→ <code>Agent</code>（有状态门面，跑在<strong>虚拟线程</strong>上）→ <code>AgentSession</code>（应用层 prompt 展开 + 路由）。整套建立在 <strong>Reactor</strong> 流式响应与 <strong> sealed AgentEvent</strong> 事件模型之上。</p>
+  </div>
+
+  <div class="note green">
+    <span class="nt">与 TS 版的关键差异：</span>作者把 TypeScript 版（<code>pi-mono</code>）的<strong>双层嵌套循环</strong>（外层跑 follow-up、内层跑 tool+steering）重构为 Java 版的<strong>单循环 + <code>continue</code></strong>——工具阶段返回 steering 消息作为下一轮 pending 输入并 <code>continue</code>，无工具分支再查 follow-up。控制流更扁平，并发模型从 async/await 换成虚拟线程，事件从 union 类型换成 sealed interface + Jackson 序列化。
+  </div>
+
+  <div class="mermaid-wrap wide">
+    <div class="mermaid-caption">图 1 · AgentLoop / Agent / AgentSession 三层关系与调用·事件流</div>
+    <pre class="mermaid">
+sequenceDiagram
+    autonumber
+    participant U as 用户
+    participant M as Mode<br/>(TUI / Server / RPC / ACP)
+    participant S as AgentSession
+    participant A as Agent
+    participant L as AgentLoop<br/>(虚拟线程)
+
+    Note over S: 拥有 1 个 Agent（组合）
+    Note over A: 拥有状态；每次执行 new 1 个 AgentLoop
+    Note over L: 纯调度，无状态
+
+    U->>M: 输入
+    M->>S: subscribe(渲染回调)
+    Note right of S: 透传 → agent.subscribe(listener)
+    M->>S: prompt(text)
+    S->>S: 展开 skill / prompt 模板
+    S->>A: agent.prompt(Message)
+    A->>A: startExecution() 串行化检查
+    A->>L: new AgentLoop(config)<br/>loop.run(msgs, ctx, this::emit, signal)
+
+    loop runInternal 单循环
+        L->>L: invokeModel (transform→convert→stream)<br/>+ toolPipeline.executeAll
+        L->>A: emit(AgentEvent)
+        A->>A: applyEventToState 更新状态
+        A->>M: 广播 listener.onEvent
+        M->>U: 渲染 (终端 / HTTP / WS)
+    end
+    </pre>
+  </div>
+
+  <div class="mermaid-wrap wide">
+    <div class="mermaid-caption">图 1-2 · 三层类图关系（静态结构）</div>
+    <pre class="mermaid">
+classDiagram
+    direction TB
+
+    class AgentSession {
+        -agent : Agent
+        +prompt(text) CompletableFuture
+        +steer(text) void
+        +abort() void
+        +subscribe(l) Runnable
+        -expandSkill(msg) Message
+    }
+    class Agent {
+        -state : AgentState
+        -steeringQueue : MessageQueue
+        -followUpQueue : MessageQueue
+        -currentExecution : CompletableFuture
+        -currentSignal : CancellationToken
+        +prompt(msg) CompletableFuture
+        +steer(msg) void
+        +followUp(msg) void
+        +abort() void
+        -startExecution(msgs, continueOnly)
+        -emit(event) void
+        -applyEventToState(event) void
+    }
+    class AgentLoop {
+        +run(prompts, ctx, listener, signal)
+        +continueLoop(ctx, listener, signal)
+        -runInternal(prompts, ctx, listener, signal)
+        -invokeModel(ctx, listener, signal)
+        -runToolPhase(ctx, signal, listener, msg, calls)
+    }
+    class AgentState {
+        +messages : List~Message~
+        +streaming : boolean
+        +pendingToolCalls : Set~String~
+    }
+    class MessageQueue {
+        +enqueue(msg)
+        +drain() List~Message~
+    }
+    class AgentEventListener {
+        <<interface>>
+        +onEvent(e : AgentEvent)
+    }
+
+    AgentSession o--> Agent : 拥有 1
+    Agent --> AgentLoop : 每次 startExecution new
+    Agent *--> AgentState : 组合
+    Agent *--> MessageQueue : steeringQueue
+    Agent *--> MessageQueue : followUpQueue
+    Agent ..> AgentEventListener : 回调 this::emit
+    AgentLoop ..> AgentEventListener : 接收 listener 参数
+
+    note for AgentLoop "无状态: 构造只吃 AgentLoopConfig 拆成的 final 字段"
+    note for Agent "有状态门面: executionLock 串行化 + 虚拟线程驱动 loop"
+    note for AgentSession "应用层: 展开 skill/prompt 模板; subscribe 透传给 Agent"
+    note for MessageQueue "每个 Agent 自己一把, ReentrantLock 线程安全"
+    </pre>
+  </div>
+
+  <!-- ========== Layer 1 ========== -->
+  <h2><span class="badge badge-green">Layer 1</span> AgentLoop · 单循环调度</h2>
+
+  <div class="card">
+    <p><code>com.campusclaw.agent.loop.AgentLoop</code>（405 行）是<strong>纯调度器</strong>——不持有应用状态，构造时把 <code>AgentLoopConfig</code>（一个 12 字段 record）的字段拆成 final 依赖。两个入口最终都汇入 <code>runInternal()</code>：</p>
+    <ul>
+      <li><code>run(prompts, context, listener, signal)</code> —— 用新 prompt 启动</li>
+      <li><code>continueLoop(context, listener, signal)</code> —— 从已有上下文继续（重试/恢复）</li>
+    </ul>
+    <p><code>listener</code> 是 <code>AgentEventListener</code>（函数式接口，<code>onEvent(AgentEvent)</code>），所有状态变化通过它向外广播。</p>
+  </div>
+
+  <div class="mermaid-wrap">
+    <div class="mermaid-caption">图 2 · runInternal 单循环控制流（核心）</div>
+    <pre class="mermaid">
+flowchart TD
+    Start(["runInternal(prompts, ctx, listener, signal)"]) --> Init["appendMessages(prompts)<br/>pendingTurnInputs = copy(prompts)<br/>emit AgentStart"]
+    Init --> While{"while<br/>!signal.isCancelled()"}
+    While -->|"取消"| Exit
+    While --> Turn["turn++ · emit TurnStart"]
+    Turn --> EmitP["emitPendingInputs<br/>对每条 pending emit MessageStart/End"]
+    EmitP --> Invoke["invokeModel()<br/>transform→convert→Flux 流式消费"]
+    Invoke --> Append["appendMessage(assistant)<br/>emit MessageEnd"]
+    Append --> Stop{"stopReason<br/>ERROR/ABORTED?"}
+    Stop -->|"是"| TE1["emit TurnEnd<br/>(空 results)"] --> Break(["break"])
+    Stop -->|"否"| Tc{"有 ToolCall?"}
+    Tc -->|"有"| ToolPhase["runToolPhase()<br/>executeAll + drain steering"]
+    ToolPhase --> SetP["pendingTurnInputs =<br/>返回的 steering 消息"]
+    SetP --> Cont(["continue · 下一轮"])
+    Cont --> While
+    Tc -->|"无"| Foll["drainFollowUpMessages()<br/>emit TurnEnd"]
+    Foll --> HasF{"follow-up<br/>非空?"}
+    HasF -->|"有"| AppendF["appendMessages(followUp)<br/>pendingTurnInputs = followUp"]
+    AppendF --> While
+    HasF -->|"无"| Break2(["break · 停止"])
+    Break --> Exit(["finally: emit AgentEnd<br/>return context.messages()"])
+    Break2 --> Exit
+
+    classDef loop fill:#e8f5e9,stroke:#3fb950,color:#333,stroke-width:2px;
+    classDef halt fill:#ffebee,stroke:#f85149,color:#333,stroke-width:2px;
+    classDef model fill:#fff8e1,stroke:#d29922,color:#333,stroke-width:2px;
+    class While loop; class Break,Break2,Exit halt;
+    class Invoke,ToolPhase model;
+    </pre>
+  </div>
+
+  <div class="note green">
+    <span class="nt">单循环的精髓：</span>没有内外两层 while。<strong>工具分支</strong>把 steering 消息作为返回值交给 <code>pendingTurnInputs</code> 再 <code>continue</code>——下一轮顶部重新 <code>emitPendingInputs</code> 把它们注入上下文（不跳过当前工具结果）。<strong>无工具分支</strong>才查 follow-up，有则设 pending 继续，无则 break。整段循环体保持在一个方法内、圈复杂度可控。
+  </div>
+
+  <span class="src">modules/agent-core/.../agent/loop/AgentLoop.java:89 — runInternal 主循环</span>
+  <div class="code-block">
+    <div class="code-head">java</div>
+<pre><span class="ck">private</span> List&lt;Message&gt; <span class="cf">runInternal</span>(
+        List&lt;Message&gt; prompts, AgentContext context,
+        AgentEventListener listener, CancellationToken signal) {
+    AgentEventListener eventListener = listener != <span class="cn">null</span> ? listener : event -&gt; {};
+    <span class="ck">if</span> (!prompts.isEmpty()) {
+        context.appendMessages(prompts);
+    }
+    List&lt;Message&gt; pendingTurnInputs = List.copyOf(prompts);
+    eventListener.onEvent(<span class="ck">new</span> AgentStartEvent());
+    <span class="ck">int</span> turn = <span class="cn">0</span>;
+    <span class="ck">try</span> {
+        <span class="ch"><span class="ck">while</span> (!signal.isCancelled()) {</span>
+            turn++;
+            AcpTransport.note(<span class="cs">"AgentLoop.turn="</span> + turn + <span class="cs">" start msgCount="</span> + context.messages().size());
+            eventListener.onEvent(<span class="ck">new</span> TurnStartEvent());
+            emitPendingInputs(pendingTurnInputs, eventListener);
+
+            <span class="cc">// 流式调用 LLM（transform→convert→Flux 消费）</span>
+            AssistantMessage assistantMessage = invokeModelTraced(turn, context, eventListener, signal);
+            context.appendMessage(assistantMessage);
+            context.setAssistantMessage(assistantMessage);
+            eventListener.onEvent(<span class="ck">new</span> MessageEndEvent(assistantMessage));
+
+            <span class="ck">if</span> (assistantMessage.stopReason() == StopReason.ERROR
+                    || assistantMessage.stopReason() == StopReason.ABORTED) {
+                eventListener.onEvent(<span class="ck">new</span> TurnEndEvent(assistantMessage, List.of()));
+                <span class="ck">break</span>;
+            }
+
+            <span class="ck">var</span> toolCalls = extractToolCalls(assistantMessage);
+            <span class="ch"><span class="ck">if</span> (!toolCalls.isEmpty()) {</span>
+                <span class="cc">// 执行工具 + drain steering；steering 作为下一轮 pending</span>
+                pendingTurnInputs = runToolPhaseTraced(turn, context, signal, eventListener, assistantMessage, toolCalls);
+                <span class="ck">continue</span>;
+            }
+
+            <span class="cc">// 无工具 → 查 follow-up 决定是否续跑</span>
+            <span class="ck">var</span> followUpMessages = drainFollowUpMessages();
+            eventListener.onEvent(<span class="ck">new</span> TurnEndEvent(assistantMessage, List.of()));
+            <span class="ck">if</span> (followUpMessages.isEmpty()) {
+                <span class="ck">break</span>;
+            }
+            context.appendMessages(followUpMessages);
+            pendingTurnInputs = followUpMessages;
+        }
+        <span class="ck">return</span> context.messages();
+    } <span class="ck">finally</span> {
+        eventListener.onEvent(<span class="ck">new</span> AgentEndEvent(context.messages()));
+    }
+}</pre>
+  </div>
+
+  <!-- ========== 模型调用 / 流式 ========== -->
+  <h2><span class="badge badge-cyan">流式</span> invokeModel · Reactor + 取消</h2>
+
+  <div class="card">
+    <p><code>invokeModel()</code> 是 LLM 边界：先 <code>transformContext</code>（异步剪枝/注入），再 <code>convertToLlm</code>（转 LLM 形态消息），然后 <code>streamFunction.stream(...)</code> 拿到 Reactor <code>Flux</code>。<strong>取消</strong>靠 <code>CancellationToken</code> 注册回调，向一个 <code>Sinks.One&lt;Object&gt;</code> 发空信号，用 <code>takeUntilOther(cancelSink)</code> 撕掉流。</p>
+  </div>
+
+  <span class="src">modules/agent-core/.../agent/loop/AgentLoop.java:255 — consumeStream + 取消合成</span>
+  <div class="code-block">
+    <div class="code-head">java</div>
+<pre><span class="ck">private</span> StreamConsumeResult <span class="cf">consumeStream</span>(AssistantMessageEventStream stream,
+        Sinks.One&lt;Object&gt; cancelSink, AgentEventListener listener, CancellationToken signal) {
+    AssistantMessage assistantMessage = <span class="cn">null</span>;
+    <span class="ck">var</span> assistantStarted = <span class="cn">false</span>;
+    <span class="ch"><span class="ck">for</span> (<span class="ck">var</span> event : stream.asFlux().takeUntilOther(cancelSink.asMono()).toIterable()) {</span>
+        <span class="ck">if</span> (signal.isCancelled()) {
+            <span class="ck">break</span>;   <span class="cc">// 到达后立即停，不再 block</span>
+        }
+        <span class="ck">var</span> currentMessage = extractAssistantMessage(event);
+        <span class="ck">if</span> (!assistantStarted) {
+            listener.onEvent(<span class="ck">new</span> MessageStartEvent(currentMessage));
+            assistantStarted = <span class="cn">true</span>;
+        }
+        <span class="ck">if</span> (!(event <span class="ck">instanceof</span> AssistantMessageEvent.StartEvent)) {
+            listener.onEvent(<span class="ck">new</span> MessageUpdateEvent(currentMessage, event));
+        }
+        assistantMessage = currentMessage;
+    }
+    <span class="ck">return</span> <span class="ck">new</span> StreamConsumeResult(assistantMessage, assistantStarted);
+}
+
+<span class="cc">// 取消后合成 ABORTED 消息，让外层循环干净退出（避免 result().block() 在已拆除的流上挂死）</span>
+<span class="ck">private</span> AssistantMessage <span class="cf">synthesizeAbortedMessage</span>(StreamConsumeResult result, ...) {
+    <span class="ck">return new</span> AssistantMessage(... , StopReason.ABORTED, <span class="cn">null</span>, System.currentTimeMillis());
+}</pre>
+  </div>
+
+  <div class="note purple">
+    <span class="nt">取消契约：</span>Reactor 的 <code>takeUntilOther(cancelSink.asMono())</code> 让取消信号能<strong>穿透正在进行的流</strong>。取消后不调 <code>stream.result().block()</code>（那会在已拆除的流上永久挂起），而是合成一个 <code>StopReason.ABORTED</code> 的 AssistantMessage——上层看到 ABORTED 就 <code>break</code> 退出循环。这是注释里点名的 bug 规避。
+  </div>
+
+  <!-- ========== 工具管线 ========== -->
+  <h2><span class="badge badge-orange">工具执行</span> ToolExecutionPipeline</h2>
+
+  <div class="card">
+    <p>工具执行被抽到独立类 <code>ToolExecutionPipeline</code>（253 行），由 <code>AgentLoop</code> 持有。单工具生命周期：<strong>beforeHook → validate → execute → afterHook → emit</strong>。<code>executeAll</code> 按 <code>ToolExecutionMode</code> 分顺序/并发两种策略。</p>
+  </div>
+
+  <div class="mermaid-wrap wide">
+    <div class="mermaid-caption">图 3 · PARALLEL 模式（虚拟线程 per task），prepare 与 hook 串行、execute 并发</div>
+    <pre class="mermaid">
+sequenceDiagram
+    participant L as AgentLoop.runToolPhase
+    participant P as ToolExecutionPipeline
+    participant VT as newVirtualThreadPerTaskExecutor
+    participant T1 as Tool A
+    participant T2 as Tool B
+
+    L->>P: executeAll([A,B], PARALLEL, ctx, signal, listener)
+    Note over P: resolveToolCallsSafe 已在 Loop 拆分 known/unknown
+    P->>VT: submit A
+    P->>VT: submit B
+    par 虚拟线程 A
+        VT->>T1: execute()
+        T1-->>P: ToolExecutionUpdateEvent (partialResult)
+        T1-->>P: final AgentToolResult
+    and 虚拟线程 B
+        VT->>T2: execute()
+        T2-->>P: final AgentToolResult
+    end
+    Note over P: future.get() 按提交顺序收集
+    P-->>L: List<ToolResultMessage> (源顺序)
+    L->>L: drain steering → 作为下一轮 pending
+  </pre>
+  </div>
+
+  <span class="src">modules/agent-core/.../agent/tool/ToolExecutionPipeline.java:164 — 并发执行</span>
+  <div class="code-block">
+    <div class="code-head">java</div>
+<pre><span class="ck">private</span> List&lt;ToolResultMessage&gt; <span class="cf">executeInParallel</span>(
+        List&lt;ToolCallWithTool&gt; calls, AgentContext context, CancellationToken signal, AgentEventListener listener) {
+    <span class="ch"><span class="ck">try</span> (<span class="ck">var</span> executor = Executors.newVirtualThreadPerTaskExecutor()) {</span>
+        <span class="ck">var</span> futures = <span class="ck">new</span> ArrayList&lt;Future&lt;ToolResultMessage&gt;&gt;(calls.size());
+        <span class="ck">for</span> (<span class="ck">var</span> call : calls) {
+            futures.add(executor.submit(() -&gt;
+                execute(call.tool(), call.toolCall(), call.validatedArgs(), context, signal, listener)));
+        }
+        <span class="ck">var</span> results = <span class="ck">new</span> ArrayList&lt;ToolResultMessage&gt;(calls.size());
+        <span class="ck">for</span> (<span class="ck">var</span> future : futures) {
+            results.add(future.<span class="cf">get</span>());   <span class="cc">// 按提交顺序取 → 结果保源顺序</span>
+        }
+        <span class="ck">return</span> List.copyOf(results);
+    } <span class="ck">catch</span> (InterruptedException e) {
+        Thread.currentThread().interrupt();
+        <span class="ck">throw new</span> IllegalStateException(<span class="cs">"Interrupted while executing tools in parallel"</span>, e);
+    }
+}</pre>
+  </div>
+
+  <div class="note orange">
+    <span class="nt">虚拟线程 per task：</span>每个工具一个虚拟线程——对 IO 密集的工具（bash、网络请求）几乎零开销、可大量并发。结果仍<strong>按提交顺序</strong> <code>future.get()</code> 收集，保证 ToolResultMessage 顺序确定、可重放（与 TS 版的「按源顺序 emit」对齐）。
+  </div>
+
+  <table class="params">
+    <thead><tr><th>阶段</th><th>方法</th><th>职责</th></tr></thead>
+    <tbody>
+      <tr><td><strong>before</strong></td><td><code>applyBeforeHook</code></td><td>调 <code>BeforeToolCallHandler</code>。返回 <code>block=true</code> 或抛异常 → 合成错误 ToolResultMessage 短路返回，不执行。</td></tr>
+      <tr><td><strong>validate</strong></td><td><code>validateArguments</code></td><td>networknt <strong>JsonSchema V202012</strong> 校验参数，错误信息聚合排序后抛 <code>IllegalArgumentException</code>。</td></tr>
+      <tr><td><strong>execute</strong></td><td><code>invokeTool</code></td><td><code>tool.execute(id, args, signal, onUpdate)</code>，<code>onUpdate</code> 转 <code>ToolExecutionUpdateEvent</code>。异常转错误结果，不中断。</td></tr>
+      <tr><td><strong>after</strong></td><td><code>applyAfterHook</code></td><td>调 <code>AfterToolCallHandler</code>，按字段覆盖 content/details/isError（无深合并）。</td></tr>
+      <tr><td><strong>emit</strong></td><td><code>execute</code></td><td>发 <code>ToolExecutionStartEvent</code> / <code>EndEvent</code>，返回 <code>ToolResultMessage</code>。</td></tr>
+    </tbody>
+  </table>
+
+  <!-- ========== Config / Hook ========== -->
+  <h2><span class="badge badge-purple">配置</span> AgentLoopConfig record</h2>
+
+  <div class="card">
+    <p>所有可配置行为打包进一个 <strong>record</strong>（12 字段）。compact constructor 给大部分字段兜底默认值——不传也有合理行为。<code>streamFunction</code> 优先于 legacy <code>piAiService</code>（<code>effectiveStreamFunction()</code> 二选一）。</p>
+  </div>
+
+  <span class="src">modules/agent-core/.../agent/loop/AgentLoopConfig.java:29 — record + compact constructor</span>
+  <div class="code-block">
+    <div class="code-head">java</div>
+<pre><span class="ck">public record</span> AgentLoopConfig(
+        CampusClawAiService piAiService,
+        Model model,
+        MessageConverter convertToLlm,          <span class="cc">// AgentMessage → LLM Message</span>
+        ContextTransformer transformContext,    <span class="cc">// 异步剪枝/注入（compaction 接入点）</span>
+        ToolExecutionPipeline toolPipeline,
+        ToolExecutionMode toolExecutionMode,    <span class="cc">// SEQUENTIAL | PARALLEL</span>
+        MessageQueue steeringQueue,
+        MessageQueue followUpQueue,
+        SimpleStreamOptions streamOptions,
+        StreamFunction streamFunction,          <span class="cc">// 可插拔流式函数，优先于 piAiService</span>
+        SteeringMessageSupplier getSteeringMessages,
+        SteeringMessageSupplier getFollowUpMessages) {
+
+    <span class="ck">public</span> AgentLoopConfig {   <span class="cc">// compact：兜底默认</span>
+        Objects.requireNonNull(model, <span class="cs">"model"</span>);
+        <span class="ck">if</span> (piAiService == <span class="cn">null</span> &amp;&amp; streamFunction == <span class="cn">null</span>)
+            <span class="ck">throw new</span> IllegalArgumentException(<span class="cs">"Either piAiService or streamFunction must be provided"</span>);
+        convertToLlm = convertToLlm != <span class="cn">null</span> ? convertToLlm : <span class="ck">new</span> DefaultMessageConverter();
+        toolPipeline = toolPipeline != <span class="cn">null</span> ? toolPipeline : <span class="ck">new</span> ToolExecutionPipeline();
+        toolExecutionMode = toolExecutionMode != <span class="cn">null</span> ? toolExecutionMode : ToolExecutionMode.SEQUENTIAL;
+        steeringQueue = steeringQueue != <span class="cn">null</span> ? steeringQueue : <span class="ck">new</span> MessageQueue();
+        followUpQueue = followUpQueue != <span class="cn">null</span> ? followUpQueue : <span class="ck">new</span> MessageQueue();
+    }
+}</pre>
+  </div>
+
+  <div class="note purple">
+    <span class="nt">双投递通道：</span>steering/follow-up 各有<strong>两种来源</strong>——<code>MessageQueue</code>（线程安全队列）和可选的 <code>SteeringMessageSupplier</code>（函数式回调）。<code>drainSteeringMessages()</code> 优先用 supplier，为空再退回 <code>queue.drain()</code>。这让调度器既能接「往队列塞消息」的简单用法，也能接「按需拉取」的自定义逻辑。
+  </div>
+
+  <!-- ========== Event ========== -->
+  <h2><span class="badge badge-cyan">可观测</span> Sealed AgentEvent</h2>
+
+  <div class="card">
+    <p>事件是 Java 21 <strong>sealed interface</strong>，10 个子类型（permits 列表穷举）。带 Jackson <code>@JsonSubTypes</code> 注解——可直接序列化为 JSON 用于 Server/RPC 模式的线上传输。</p>
+  </div>
+
+  <div class="stack">
+    <div class="stack-box a"><span class="sl">agent_start</span><span class="sd">AgentStartEvent · runInternal 入口（仅 1 次，try 体外）</span></div>
+    <div class="stack-box g"><span class="sl">turn_start</span><span class="sd">TurnStartEvent · 每轮 while 顶部</span></div>
+    <div class="stack-box g"><span class="sl">message_start / message_update / message_end</span><span class="sd">assistant 流式（update 携带 AssistantMessageEvent）+ pending/toolResult</span></div>
+    <div class="stack-box o"><span class="sl">tool_execution_start / update / end</span><span class="sd">单个工具 · update 携带 partialResult</span></div>
+    <div class="stack-box g"><span class="sl">turn_end { message, toolResults }</span><span class="sd">TurnEndEvent · 该回合工具结果</span></div>
+    <div class="stack-box a"><span class="sl">agent_end { messages }</span><span class="sd">AgentEndEvent · finally 块（无论正常/异常/取消都发）</span></div>
+  </div>
+
+  <div class="note">
+    <span class="nt">AcpTransport.note(...)：</span>调度器在循环每个关键节点都插了 <code>AcpTransport.note("AgentLoop.turn=...")</code> 追踪点——为 ACP 模式（Agent Client Protocol）提供细粒度执行轨迹。这是 TS 版没有的内建可观测层。
+  </div>
+
+  <!-- ========== Layer 2 ========== -->
+  <h2><span class="badge badge-purple">Layer 2</span> Agent · 虚拟线程门面</h2>
+
+  <div class="card">
+    <p><code>com.campusclaw.agent.Agent</code>（373 行）是无状态 <code>AgentLoop</code> 的<strong>有状态外壳</strong>。核心 <code>startExecution()</code> 做四件事：① <code>executionLock</code> 串行化（运行中再调直接失败）；② 构造 <code>AgentLoop</code>；③ 提交到 <code>VIRTUAL_THREAD_EXECUTOR</code>；④ <code>whenComplete</code> 清理状态。</p>
+  </div>
+
+  <span class="src">modules/agent-core/.../agent/Agent.java:218 — startExecution 虚拟线程驱动</span>
+  <div class="code-block">
+    <div class="code-head">java</div>
+<pre><span class="ck">private</span> CompletableFuture&lt;Void&gt; <span class="cf">startExecution</span>(List&lt;Message&gt; messages, <span class="ck">boolean</span> continueOnly) {
+    <span class="ck">synchronized</span> (executionLock) {
+        <span class="ch"><span class="ck">if</span> (!currentExecution.isDone()) {</span>
+            <span class="ck">return</span> CompletableFuture.failedFuture(
+                <span class="ck">new</span> IllegalStateException(<span class="cs">"Agent is already running"</span>));
+        }
+        <span class="ck">var</span> signal = <span class="ck">new</span> CancellationToken();
+        currentSignal = signal;
+        <span class="ck">var</span> context = <span class="ck">new</span> AgentContext(state);
+        <span class="ck">var</span> loop = <span class="ck">new</span> AgentLoop(<span class="ck">new</span> AgentLoopConfig(piAiService, model, ...));
+
+        <span class="ch"><span class="ck">var</span> execution = CompletableFuture.runAsync(() -&gt; {</span>
+            <span class="ck">if</span> (continueOnly) loop.continueLoop(context, <span class="ck">this</span>::emit, signal);
+            <span class="ck">else</span>             loop.run(messages, context, <span class="ck">this</span>::emit, signal);
+        }, VIRTUAL_THREAD_EXECUTOR).whenComplete((unused, throwable) -&gt; {
+            state.setStreaming(<span class="cn">false</span>);
+            state.setStreamMessage(<span class="cn">null</span>);
+            state.clearPendingToolCalls();
+            <span class="ck">synchronized</span> (executionLock) { currentSignal = <span class="cn">null</span>; }
+            <span class="ck">if</span> (throwable != <span class="cn">null</span>) state.setError(formatError(throwable));
+        });
+
+        currentExecution = execution;
+        <span class="ck">return</span> execution;
+    }
+}</pre>
+  </div>
+
+  <span class="src">modules/agent-core/.../agent/Agent.java:275 — emit 隔离监听器异常</span>
+  <div class="code-block">
+    <div class="code-head">java</div>
+<pre><span class="ck">private void</span> <span class="cf">emit</span>(AgentEvent event) {
+    applyEventToState(event);                  <span class="cc">// 事件 → AgentState</span>
+    <span class="ch"><span class="ck">for</span> (<span class="ck">var</span> listener : listeners) {   <span class="cc">// CopyOnWriteArrayList 广播</span></span>
+        <span class="ck">try</span> {
+            listener.onEvent(event);
+        } <span class="ck">catch</span> (RuntimeException e) {
+            <span class="cc">// 监听器不应打断 agent 运行；把 bug 暴露到日志</span>
+            log.warn(<span class="cs">"agent event listener threw exception (event={})"</span>,
+                     event.getClass().getSimpleName(), e);
+        }
+    }
+}</pre>
+  </div>
+
+  <div class="note red">
+    <span class="nt">容错纪律：</span><code>emit()</code> 对每个监听器单独 try/catch——一个有 bug 的监听器抛异常只进 SLF4J <code>log.warn</code>，<strong>不会拖垮整次 agent 运行</strong>。这正是 CLAUDE.md 「禁止静默 catch」规则的正确实践：异常被真实记录、带上下文（event 类型），而非吞掉。
+  </div>
+
+  <table class="params">
+    <thead><tr><th>公开 API</th><th>语义</th><th>底层动作</th></tr></thead>
+    <tbody>
+      <tr><td><code>prompt(Message)</code></td><td>开启新对话（返回 <code>CompletableFuture&lt;Void&gt;</code>）</td><td><code>startExecution([msg], false)</code> → <code>loop.run</code></td></tr>
+      <tr><td><code>continueExecution()</code></td><td>从现有上下文继续</td><td><code>startExecution([], true)</code> → <code>loop.continueLoop</code></td></tr>
+      <tr><td><code>steer(Message)</code></td><td>「打断」：本回合工具跑完后注入</td><td><code>steeringQueue.enqueue(msg)</code></td></tr>
+      <tr><td><code>followUp(Message)</code></td><td>「排队」：agent 停下后续跑</td><td><code>followUpQueue.enqueue(msg)</code></td></tr>
+      <tr><td><code>abort()</code></td><td>中止当前运行</td><td><code>currentSignal.cancel()</code> → ABORTED 合成</td></tr>
+      <tr><td><code>waitForIdle()</code></td><td>等运行结束</td><td><code>currentExecution.handle(...)</code></td></tr>
+      <tr><td><code>subscribe(listener)</code></td><td>注册事件监听（返回取消订阅 Runnable）</td><td>加进 <code>CopyOnWriteArrayList</code></td></tr>
+    </tbody>
+  </table>
+
+  <!-- ========== Queue ========== -->
+  <h2><span class="badge badge-blue">并发</span> MessageQueue · 线程安全</h2>
+
+  <div class="card">
+    <p>steering/follow-up 队列是 <code>com.campusclaw.agent.queue.MessageQueue</code>——<code>ReentrantLock</code> 守护 <code>ArrayDeque&lt;Message&gt;</code>，支持两种 <code>DeliveryMode</code>。因为 <code>steer()</code>/<code>followUp()</code> 可能从任意线程调用（UI 线程、WebSocket 线程），而 drain 发生在虚拟线程的循环里，<strong>跨线程安全是硬需求</strong>。</p>
+  </div>
+
+  <table class="params">
+    <thead><tr><th>DeliveryMode</th><th>drain 行为</th><th>对应场景</th></tr></thead>
+    <tbody>
+      <tr><td><code>ALL</code>（默认）</td><td>取出全部并清空队列</td><td>一次性消化所有积压</td></tr>
+      <tr><td><code>ONE_AT_A_TIME</code></td><td>只取队首一条，其余留到下轮</td><td>逐条确认式交互（每轮只见一条打断）</td></tr>
+    </tbody>
+  </table>
+
+  <span class="src">modules/agent-core/.../agent/queue/MessageQueue.java:98 — drainLocked</span>
+  <div class="code-block">
+    <div class="code-head">java</div>
+<pre><span class="ck">private</span> List&lt;Message&gt; <span class="cf">drainLocked</span>(DeliveryMode mode) {
+    <span class="ck">if</span> (messages.isEmpty()) {
+        <span class="ck">return</span> List.of();
+    }
+    <span class="ck">return switch</span> (mode) {
+        <span class="ck">case</span> ALL -&gt; {
+            <span class="ck">var</span> drained = <span class="ck">new</span> ArrayList&lt;Message&gt;(messages);
+            messages.clear();
+            <span class="ck">yield</span> List.copyOf(drained);
+        }
+        <span class="ck">case</span> ONE_AT_A_TIME -&gt; List.of(messages.removeFirst());
+    };
+}</pre>
+  </div>
+
+  <!-- ========== Layer 3 ========== -->
+  <h2><span class="badge badge-blue">Layer 3</span> AgentSession · 应用层</h2>
+
+  <div class="card">
+    <p><code>codingagent.session.AgentSession</code>（527 行）是面向使用方（InteractiveMode / Server / RPC / ACP / OneShotMode）的 API。它负责 skill 命令展开、prompt 模板、系统提示组装，再把用户意图映射到 <code>Agent</code> 的 API。</p>
+  </div>
+
+  <div class="mermaid-wrap wide">
+    <div class="mermaid-caption">图 4 · runInternal 的输入注入 + steer/followUp 投递时机（单个会话）</div>
+    <pre class="mermaid">
+sequenceDiagram
+    participant A as Agent
+    participant L as AgentLoop.runInternal
+    participant Q as 本Agent自己的队列<br/>(steering / followUp)
+
+    Note over A,L: loop.run(prompts, ctx, emit, signal)
+    A->>L: runInternal(prompts)
+    L->>L: appendMessages(prompts)<br/>pendingTurnInputs = prompts
+
+    rect rgb(232,245,233)
+    Note over L: turn 1 · 有工具分支
+    L->>L: ① emitPendingInputs(prompts)<br/>注入上下文 + 发 MessageStart/End
+    L->>L: ② invokeModel → runToolPhase 执行工具
+    Note over Q: 期间 agent.steer(msg) 入队<br/>(可能来自别的线程,但仍是本会话)
+    L->>Q: drainSteeringMessages
+    Q-->>L: steering 消息
+    L->>L: pendingTurnInputs = steering · continue
+    end
+
+    rect rgb(255,248,225)
+    Note over L: turn 2 · 无工具分支
+    L->>L: ① emitPendingInputs(steering)
+    L->>L: ② invokeModel (本轮无工具)
+    L->>Q: drainFollowUpMessages
+    Q-->>L: followUp 消息
+    L->>L: pendingTurnInputs = followUp · while 续跑
+    end
+
+    Note over A,Q: 隔离:每个 Agent 实例的状态与队列互不相通<br/>多用户 = 多个独立 Agent/AgentSession
+    </pre>
+  </div>
+
+  <div class="note green">
+    <span class="nt">steeringMode 与投递时机解耦：</span><code>steer</code> 在「工具阶段结束时」被 drain（注入下一轮，<strong>不跳过当前工具</strong>）；<code>followUp</code> 在「无工具且无 steering、本该停止时」被 drain（决定是否续跑）。这套时机完全由单循环的两个分支位置决定——读图 2 即可定位。
+  </div>
+
+  <!-- ========== 对比总结 ========== -->
+  <h2><span class="badge badge-blue">总结</span> 三层职责 + 与 TS 版对照</h2>
+
+  <table class="cmp">
+    <thead><tr><th>维度</th><th>Layer 1 · AgentLoop</th><th>Layer 2 · Agent</th><th>Layer 3 · AgentSession</th></tr></thead>
+    <tbody>
+      <tr><td><strong>文件</strong></td><td>agent/loop/AgentLoop.java</td><td>agent/Agent.java</td><td>codingagent/session/AgentSession.java</td></tr>
+      <tr><td><strong>行数</strong></td><td>405</td><td>373</td><td>527</td></tr>
+      <tr><td><strong>状态</strong></td><td>无（final 依赖）</td><td>AgentState + 队列 + lock</td><td>session 全量</td></tr>
+      <tr><td><strong>核心</strong></td><td>runInternal 单循环</td><td>startExecution + emit</td><td>prompt 展开 + 路由</td></tr>
+      <tr><td><strong>并发</strong></td><td>同步（被驱动）</td><td>虚拟线程 + CompletableFuture</td><td>调用方线程</td></tr>
+    </tbody>
+  </table>
+
+  <table class="cmp">
+    <thead><tr><th>机制</th><th>Java 版 (pi-mono-java)</th><th>TS 版 (pi-mono) 参考</th></tr></thead>
+    <tbody>
+      <tr><td><strong>循环结构</strong></td><td>单 <code>while</code> + <code>continue</code> 分支</td><td>双层嵌套 while（外 follow-up / 内 tool+steering）</td></tr>
+      <tr><td><strong>并发模型</strong></td><td>虚拟线程 <code>newVirtualThreadPerTaskExecutor</code></td><td><code>Promise.all</code> async/await</td></tr>
+      <tr><td><strong>流式响应</strong></td><td>Reactor <code>Flux</code> + <code>takeUntilOther</code></td><td>async iterator <code>for await</code></td></tr>
+      <tr><td><strong>取消</strong></td><td><code>CancellationToken</code> + <code>Sinks.One</code>，合成 ABORTED</td><td><code>AbortSignal</code></td></tr>
+      <tr><td><strong>事件</strong></td><td>sealed interface + Jackson 序列化</td><td>union type + emit 回调</td></tr>
+      <tr><td><strong>队列</strong></td><td>线程安全 <code>MessageQueue</code>（ReentrantLock）</td><td>普通数组字段 + mode</td></tr>
+      <tr><td><strong>参数校验</strong></td><td>JSON-Schema V202012 (networknt)</td><td><code>validateToolArguments</code></td></tr>
+      <tr><td><strong>工具执行</strong></td><td>独立 <code>ToolExecutionPipeline</code> 类</td><td>loop 内联函数</td></tr>
+      <tr><td><strong>可观测</strong></td><td><code>AcpTransport.note(...)</code> 追踪点</td><td>仅事件流</td></tr>
+    </tbody>
+  </table>
+
+  <div class="note green">
+    <span class="nt">设计精髓：</span>调度逻辑（单循环 + 取消 + 流式消费）与业务逻辑（消息转换、上下文剪枝、权限 hook、JSON 校验）<strong>彻底解耦</strong>——前者是固定的循环骨架与 record/ sealed 契约，后者全是可注入字段与 handler。<code>AgentLoop</code> 不 import 任何 <code>codingagent.*</code> 包，这让 <code>agent-core</code> 能被任意上层模式（CLI / Server / RPC / ACP）和 <code>mate-campusclaw</code> 镜像复用。
+  </div>
+
+  <div class="footer">
+    分析来源：codegraph 调用图（callers / callees / query）+ 源码精读<br>
+    涉及文件：modules/agent-core（agent/loop/*, agent/Agent.java, agent/tool/ToolExecutionPipeline, agent/queue/MessageQueue, agent/event/*）· modules/coding-agent-cli/session/AgentSession.java<br>
+    生成日期：2026-06-16
+  </div>
+
+</div>
+
+<script>
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: 'default',
+    themeVariables: { fontSize: '14px' },
+    flowchart: { curve: 'basis', padding: 15 },
+    sequence: { actorMargin: 50 }
+  });
+  document.querySelectorAll('.mermaid-wrap, .diagram').forEach(el => {
+    const cap = el.querySelector('.mermaid-caption, .stack-label');
+    const text = cap ? cap.textContent.trim() : '图表';
+    if (cap) cap.style.display = 'none';
+    const d = document.createElement('details');
+    d.open = true;
+    d.className = 'diag' + (el.classList.contains('wide') ? ' wide' : '');
+    const s = document.createElement('summary');
+    s.textContent = text;
+    el.parentNode.insertBefore(d, el);
+    d.appendChild(s);
+    d.appendChild(el);
+  });
+</script>
+</body>
+</html>

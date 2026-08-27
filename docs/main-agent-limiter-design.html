@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>主 Agent 并发限流器设计草图 — CampusClaw</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<style>
+  :root{--bg:#0d1117;--card:#161b22;--border:#30363d;--text:#e6edf3;--dim:#8b949e;--accent:#58a6ff;--green:#3fb950;--orange:#d29922;--red:#f85149;--purple:#bc8cff;}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;line-height:1.7;font-size:15px}
+  .container{max-width:860px;margin:0 auto;padding:2rem 3rem 5rem}
+  h1{font-size:1.65rem;margin:0 0 .3rem;letter-spacing:-.02em}
+  h2{font-size:1.2rem;margin:2.2rem 0 .8rem;padding-bottom:.4rem;border-bottom:1px solid var(--border)}
+  .sub{color:var(--dim);font-size:.88rem;font-family:'SF Mono',Menlo,Consolas,monospace}
+  code{font-family:'SF Mono',Menlo,Consolas,monospace;font-size:.85em;background:rgba(88,166,255,.12);color:var(--accent);padding:.1em .35em;border-radius:5px}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:1.1rem 1.25rem;margin:1rem 0}
+  .note{background:#1a1f2b;border-left:3px solid var(--accent);border-radius:0 8px 8px 0;padding:.8rem 1.1rem;margin:1rem 0;font-size:.92rem}
+  .note.green{border-left-color:var(--green)} .note.orange{border-left-color:var(--orange)} .note.red{border-left-color:var(--red)}
+  .note .nt{font-weight:600;color:var(--accent)} .note.green .nt{color:var(--green)} .note.orange .nt{color:var(--orange)} .note.red .nt{color:var(--red)}
+  .mermaid-wrap{background:#fff;border-radius:10px;padding:1rem;max-width:92%;margin:1.2rem auto;text-align:center}
+  .mermaid-caption{font-size:.78rem;color:#555;text-align:center;margin-bottom:.5rem;font-family:'SF Mono',Menlo,Consolas,monospace}
+  details.diag{max-width:92%;margin:1.2rem auto}
+  details.diag>summary{cursor:pointer;color:var(--dim);font-size:.8rem;font-family:'SF Mono',Menlo,Consolas,monospace;margin-bottom:.5rem;list-style:none}
+  details.diag>summary::before{content:"▾ "}
+  ul{padding-left:1.3rem} li{margin:.3rem 0} strong{color:#fff}
+  .footer{margin-top:2.5rem;padding-top:1rem;border-top:1px solid var(--border);color:var(--dim);font-size:.78rem;font-family:'SF Mono',Menlo,Consolas,monospace}
+</style>
+</head>
+<body>
+<div class="container">
+
+  <h1>主 Agent 并发限流器结构</h1>
+  <div class="sub">补「跨 Agent 全局并发上限」—— Agent.startExecution 边界 / 拒绝快、不阻塞</div>
+
+  <div class="card">
+    <p>现状:<code>executionLock</code> 只保证<strong>单个 Agent 内部一次一个 run</strong>;虚拟线程无界;全仓无任何<strong>跨 Agent</strong>的并发上限。K 个主 agent 并发会同时打爆 LLM provider。本设计在 <code>Agent.startExecution</code> 边界加一个<strong>共享</strong>的 <code>MainConcurrencyLimiter</code>,策略是<strong>快速拒绝</strong>(沿用 <code>executionLock</code> 现有抛错风格),绝不阻塞 acquire。</p>
+  </div>
+
+  <!-- 结构图 -->
+  <h2>① 结构图 — 限流器组件 + 如何接进 Agent</h2>
+  <div class="mermaid-wrap">
+    <div class="mermaid-caption">图 A · MainConcurrencyLimiter 结构与依赖</div>
+    <pre class="mermaid">
+classDiagram
+    direction TB
+
+    class MainConcurrencyLimiter {
+        -permits : Semaphore
+        -maxAgents : int
+        -inFlight : AtomicInteger
+        +tryAcquire() boolean
+        +tryAcquire(timeout) boolean
+        +release() void
+        +inFlightCount() int
+    }
+
+    class Agent {
+        -state : AgentState
+        -executionLock : Object
+        -limiter : MainConcurrencyLimiter
+        +prompt(msg) CompletableFuture
+        +abort()
+        -startExecution(msgs, cont)
+        -emit(event)
+    }
+
+    class RateLimitedException {
+        +maxAgents int
+        +retryAfterSeconds int
+    }
+
+    class AgentState
+    class Semaphore
+    class CancellationToken
+
+    Agent --> MainConcurrencyLimiter : start 时 acquire / complete 时 release
+    Agent ..> RateLimitedException : 拒绝时返回
+    Agent *--> AgentState
+    Agent ..> CancellationToken
+    MainConcurrencyLimiter *--> Semaphore
+
+    note for MainConcurrencyLimiter "共享单例: 跨所有 Agent 全局, 非每实例一把"
+    note for Agent "limiter 与现有 executionLock 并存, 各管一个维度"
+    note for RateLimitedException "可携带 retryAfterSeconds 给上层转 Retry-After"
+    </pre>
+  </div>
+
+  <div class="note green">
+    <span class="nt">两个维度别混:</span>
+    <ul style="margin:.3rem 0">
+      <li><code>executionLock</code> = <strong>per-Agent</strong>(同一个 Agent 别并发跑两个 run)。原有的,不动。</li>
+      <li><code>MainConcurrencyLimiter</code> = <strong>全局</strong>(整个 JVM 同时有多少个主 loop 在跑)。新增的,共享一把 Semaphore。</li>
+    </ul>
+    检查顺序:先 <code>executionLock</code>(自己别重入),再 <code>limiter.tryAcquire</code>(全局别超)。
+  </div>
+
+  <!-- 流程图 -->
+  <h2>② 流程图 — startExecution 的放行 / 拒绝 / 释放</h2>
+  <div class="mermaid-wrap">
+    <div class="mermaid-caption">图 B · tryAcquire 拒绝快, 非阻塞; run 结束才 release</div>
+    <pre class="mermaid">
+flowchart TD
+    Start(["startExecution(msgs, cont)"]) --> LK{"executionLock<br/>已在跑?"}
+    LK -->|"是"| R1["failedFuture<br/>Agent already running"]
+    LK -->|"否"| AC{"limiter.tryAcquire()<br/>全局并发已满?"}
+
+    AC -->|"拒绝"| R2["failedFuture(RateLimitedException)<br/>→ server 层转 429/503 + Retry-After"]
+    AC -->|"放行"| TK["new CancellationToken<br/>currentSignal = signal"]
+    TK --> SP["runAsync( loop.run, VIRTUAL_THREAD_EXECUTOR )<br/>起虚拟线程跑 loop ★占一个许可"]
+    SP --> WC["whenComplete"]
+    WC --> RL["limiter.release()  ★还许可"]
+    WC --> CL["清 streaming / pendingToolCalls<br/>currentSignal = null"]
+    RL --> Done(["返回 CompletableFuture"])
+    CL --> Done
+    R1 --> DoneR(["调用方收到失败"])
+    R2 --> DoneR
+
+    classDef reject fill:#ffebee,stroke:#f85149,color:#333,stroke-width:2px;
+    classDef run fill:#e8f5e9,stroke:#3fb950,color:#333,stroke-width:2px;
+    class R1,R2 reject;
+    class SP,RL run;
+    </pre>
+  </div>
+
+  <div class="note red">
+    <span class="nt">关键:拒绝而非阻塞。</span><code>tryAcquire()</code> 立即返回 false → 立刻 <code>failedFuture</code>,绝不 <code>permits.acquire()</code> 死等。原因:主 agent run 又长又可能持有资源,阻塞会让外部请求(HTTP/WS)挂着堆积,且和子 agent 的 <code>SpawnGovernor</code> 叠加时极易 hold-and-wait 死锁。拒绝是可恢复的(客户端/模型读到错误能重试),阻塞/死锁不可恢复。
+  </div>
+
+  <!-- 分层定位 -->
+  <h2>③ 分层定位 — 它和其他限流器各管什么</h2>
+  <div class="mermaid-wrap">
+    <div class="mermaid-caption">图 C · 四道闸的职责边界(本图聚焦 MainConcurrencyLimiter)</div>
+    <pre class="mermaid">
+flowchart LR
+    REQ["请求 / prompt"] --> MAINLIM["MainConcurrencyLimiter ★<br/>全局主 loop 并发上限<br/>策略: 拒绝(429/503)"]
+    MAINLIM -->|"放行"| LOCK["executionLock<br/>单 Agent 串行<br/>(原有)"]
+    LOCK --> LOOP["AgentLoop run<br/>虚拟线程"]
+    LOOP -->|"spawn_agent"| GOV["SpawnGovernor<br/>子 agent 深度/每父子数<br/>策略: 拒绝"]
+    LOOP -->|"调 LLM"| PROV["LLM Provider 限流<br/>QPS/并发 + 429 退避<br/>策略: 重试(可等)"]
+
+    classDef focus fill:#e8f5e9,stroke:#3fb950,color:#222,stroke-width:3px;
+    classDef exist fill:#eef2ff,stroke:#58a6ff,color:#222;
+    classDef other fill:#fff3e0,stroke:#d29922,color:#222;
+    class MAINLIM focus;
+    class LOCK,LOOP exist;
+    class GOV,PROV other;
+    </pre>
+  </div>
+
+  <div class="note orange">
+    <span class="nt">策略因层而异:</span>
+    <ul style="margin:.3rem 0">
+      <li><strong>MainConcurrencyLimiter</strong>(本图主角) + <strong>SpawnGovernor</strong> → <strong>拒绝</strong>(非阻塞,沿用 executionLock 风格)。</li>
+      <li><strong>LLM Provider 限流</strong> → <strong>重试/退避</strong>(同一调用可重试,配合已有 <code>maxRetryDelayMs</code>,可等)。</li>
+    </ul>
+    只有 provider 那层适合「等」;主并发和 spawn 那两层一律快速拒绝。
+  </div>
+
+  <div class="footer">
+    设计草图 · 非已实现代码 — MainConcurrencyLimiter / RateLimitedException 为提议新增<br>
+    与 local-agent-backend-design.html(SpawnGovernor)互补:一个管顶层主并发,一个管子 agent spawn<br>
+    2026-06-18
+  </div>
+
+</div>
+<script>
+  mermaid.initialize({startOnLoad:true,theme:'default',themeVariables:{fontSize:'14px'},flowchart:{curve:'basis',padding:15}});
+  document.querySelectorAll('.mermaid-wrap').forEach(el=>{
+    const cap=el.querySelector('.mermaid-caption'); const text=cap?cap.textContent.trim():'图表';
+    if(cap)cap.style.display='none';
+    const d=document.createElement('details'); d.open=true; d.className='diag';
+    const s=document.createElement('summary'); s.textContent=text;
+    el.parentNode.insertBefore(d,el); d.appendChild(s); d.appendChild(el);
+  });
+</script>
+</body>
+</html>

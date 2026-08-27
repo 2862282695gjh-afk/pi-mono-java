@@ -155,7 +155,7 @@ class RuntimeEventRoutesTest {
         event.put("type", "user.message");
         event.put("entryId", "entry_100");
         event.put("entrySeq", 17L);
-        when(queryService.list(SESSION_ID, "1", "page_opaque"))
+        when(queryService.list(SESSION_ID, "1", "page_opaque", Locale.US))
                 .thenReturn(new EventPageResponseVO(List.of(event), "page_next"));
 
         mvc.perform(get("/campusclaw-service/v1/sessions/{sessionId}/events", SESSION_ID)
@@ -177,7 +177,7 @@ class RuntimeEventRoutesTest {
                 .andExpect(jsonPath("$.resCode").value("INVALID_SESSION_ID"))
                 .andExpect(jsonPath("$.result").doesNotExist());
 
-        verify(queryService, never()).list(any(), any(), any());
+        verify(queryService, never()).list(any(), any(), any(), any(Locale.class));
     }
 
     private static RuntimeEventStream completedStream() {

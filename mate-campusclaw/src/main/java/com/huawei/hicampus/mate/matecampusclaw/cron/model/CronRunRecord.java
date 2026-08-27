@@ -4,10 +4,12 @@
 
 package com.huawei.hicampus.mate.matecampusclaw.cron.model;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
+
 import org.springframework.lang.Nullable;
 
 /**
- * Record of a single cron job execution.
+ * 单次 Cron Job 执行记录。
  *
  * @version [br_eCampusCore 26.0.0, 2026/05/06]
  * @since [br_eCampusCore 26.0.0]
@@ -18,7 +20,8 @@ public record CronRunRecord(
         long startedAtMs,
         long finishedAtMs,
         RunStatus status,
-        @Nullable String error,
+        @Nullable String errorCode,
+        @JsonAlias("error") @Nullable String errorMessage,
         @Nullable String output,
         int turnCount) {
 

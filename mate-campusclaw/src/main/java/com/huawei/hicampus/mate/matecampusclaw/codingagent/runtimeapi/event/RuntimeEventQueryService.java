@@ -6,6 +6,7 @@ package com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.event;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 import com.huawei.hicampus.mate.matecampusclaw.ai.types.Message;
 import com.huawei.hicampus.mate.matecampusclaw.ai.types.Model;
@@ -16,6 +17,8 @@ import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.error.Runt
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.persistence.RuntimeSessionRepository;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.vo.EventPageResponseVO;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 /**
@@ -26,6 +29,8 @@ import org.springframework.stereotype.Service;
  */
 @Service
 public class RuntimeEventQueryService {
+    private static final Logger LOGGER = LoggerFactory.getLogger(RuntimeEventQueryService.class);
+
     private static final int DEFAULT_LIMIT = 100;
 
     private static final int MAX_LIMIT = 200;
@@ -45,18 +50,26 @@ public class RuntimeEventQueryService {
         this.cursorCodec = cursorCodec;
     }
 
-    public EventPageResponseVO list(String sessionId, String limitValue, String page) {
+    public EventPageResponseVO list(String sessionId, String limitValue, String page, Locale locale) {
         try {
             int limit = parseLimit(limitValue);
             RuntimeSessionDTO session = requireSession(sessionId);
             boolean thinking = session.isThinking();
             long afterSeq = page == null ? 0 : cursorCodec.decode(page, sessionId, thinking);
             List<RuntimeEntryDTO> entries = repository.listCurrentBranch(sessionId, afterSeq, limit + 1, thinking);
-            return pageOf(sessionId, entries, limit, thinking);
+            return pageOf(sessionId, entries, limit, thinking, locale);
         } catch (RuntimeApiException error) {
             throw error;
         } catch (RuntimeException error) {
-            throw new RuntimeApiException(RuntimeErrorCode.EVENT_LIST_FAILED, error);
+            RuntimeErrorCode errorCode = RuntimeErrorCode.EVENT_LIST_FAILED;
+            LOGGER.atError()
+                    .addKeyValue("event", "campusclaw.failure")
+                    .addKeyValue("operation", "runtime.events.list")
+                    .addKeyValue("errorCode", errorCode.name())
+                    .addKeyValue("sessionId", sessionId)
+                    .setCause(error)
+                    .log("CampusClaw failure: operation={}, errorCode={}", "runtime.events.list", errorCode.name());
+            throw new RuntimeApiException(errorCode);
         }
     }
 
@@ -74,11 +87,13 @@ public class RuntimeEventQueryService {
         return codec.toAgentMessages(entries, model);
     }
 
-    private EventPageResponseVO pageOf(String sessionId, List<RuntimeEntryDTO> entries, int limit, boolean thinking) {
+    private EventPageResponseVO pageOf(
+            String sessionId, List<RuntimeEntryDTO> entries, int limit, boolean thinking, Locale locale) {
         boolean more = entries.size() > limit;
         List<RuntimeEntryDTO> pageEntries = more ? entries.subList(0, limit) : entries;
-        List<java.util.Map<String, Object>> events =
-                pageEntries.stream().map(codec::toHistoryEvent).toList();
+        List<java.util.Map<String, Object>> events = pageEntries.stream()
+                .map(entry -> codec.toHistoryEvent(entry, locale))
+                .toList();
         String nextPage =
                 more ? cursorCodec.encode(sessionId, pageEntries.getLast().getEntrySeq(), thinking) : null;
         return new EventPageResponseVO(events, nextPage);
@@ -101,7 +116,17 @@ public class RuntimeEventQueryService {
             }
             return limit;
         } catch (NumberFormatException error) {
-            throw new RuntimeApiException(RuntimeErrorCode.INVALID_EVENT_LIST_QUERY, error);
+            RuntimeErrorCode errorCode = RuntimeErrorCode.INVALID_EVENT_LIST_QUERY;
+            LOGGER.atWarn()
+                    .addKeyValue("event", "campusclaw.failure")
+                    .addKeyValue("operation", "runtime.events.limit.parse")
+                    .addKeyValue("errorCode", errorCode.name())
+                    .setCause(error)
+                    .log(
+                            "CampusClaw failure: operation={}, errorCode={}",
+                            "runtime.events.limit.parse",
+                            errorCode.name());
+            throw new RuntimeApiException(errorCode);
         }
     }
 }
