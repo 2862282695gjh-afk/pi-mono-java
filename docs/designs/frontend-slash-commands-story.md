@@ -18,7 +18,7 @@
 | # | 前置项 | 核查结论 | 承接 |
 |---|---|---|---|
 | B1 | 可构建基线 | 已完成：本地 main 曾残留 37 个文件的 Git 冲突标记，已恢复为 upstream 干净版本并提交 `adee3c8d`，构建通过（对应主文档 §7.1 交付 0） | 无需再动 |
-| B2 | 认证授权底座 | 当前 runtimeapi 全部端点无鉴权、无用户身份概念。主文档 §2 固定 Spring Security OAuth2 Resource Server（JWT issuer/签名/过期/audience 校验 + `RuntimePrincipalResolver` claim 映射），§3 要求 owner subject + agent scope 双重校验 | **必须最先实施**（下文 FS-00）；所有命令端点的授权语义都建立在其上 |
+| B2 | 认证授权底座 | 当前 runtimeapi 全部端点无鉴权、无用户身份概念。主文档 §2.2 固定 Spring Security OAuth2 Resource Server（JWT issuer/签名/过期/audience 校验 + `RuntimePrincipalResolver` claim 映射），并要求 owner subject + agent scope 双重校验与 USE/DELETE/RUNTIME_OPERATIONS 权限划分 | **必须最先实施**（下文 FS-00）；所有命令端点的授权语义都建立在其上 |
 
 ---
 
@@ -48,7 +48,7 @@
 
 ### FS-00 认证、授权与数据归属（P0 前置）
 
-**权威条款**：主文档 §2（JWT 认证）、§3（owner subject + agent scope）、§4（端点权限表）。
+**权威条款**：主文档 §2.2（JWT 认证、owner subject + agent scope、USE/DELETE/RUNTIME_OPERATIONS 权限划分）。
 
 ```gherkin
 Given 已完成的存量数据 owner 回填迁移（owner_subject_id 无 NULL）
@@ -187,7 +187,7 @@ And 其余 "/xxx"(未注册、grammar 不符)保持普通 prompt 透传。
 
 ### FS-09 无会话命令入口
 
-**权威条款**：主文档 §4.1、§4.3、§2 权限表。
+**权威条款**：主文档 §4.1、§4.3、§2.2。
 
 ```gherkin
 When 未建会话调用 /help 或 GET /commands?scope=static
@@ -203,16 +203,16 @@ Then 前端本地处理(App.vue 分流顺序保证),不发 commands 请求。
 
 ```
 B1 构建基线(已完成)
- └─ ① 认证授权底座            = 主文档 §7.1 交付 0–1(P0)
-     └─ ② Catalog+parser+守卫   = §7.2–7.3 交付 2(P0)   ←events 守卫与本层共用 parser 用例
-         ├─ ③ 前端 composer/菜单/App 分流 = §7.4 交付 3(P0/P1)
+ └─ ① 认证授权底座            = 主文档 §7.2 交付 1(P0)
+     └─ ② Catalog+parser+HTTP骨架 = §7.3 交付 2(P0)   ←events 守卫与本层共用 parser 用例
+         ├─ ③ resume/内置命令/前端分流 = §7.4 交付 3(P0/P1)
          ├─ ④ Skill+Extension   = §7.5 交付 4(P1)        ←依赖②的 catalog 与①的授权
          └─ ⑤ compact+历史投影  = §7.6 交付 5(P0)        ←依赖②的 DTO/信封,可与③④并行
 ```
 
 类清单、包名约束与职责边界**以主文档 §7 各交付表为准**（如 `WebCommandCatalog`、`RuntimeSkillResolver`、`SlashCommandExtension`、`RuntimeCommandService`、`RuntimeCompactionCommandService`、`RuntimeCompactionHistoryProjector`、`CompactionReconcileWorker` 及 repository 三原子操作），本文不再复制以免漂移。
 
-关键不变量提示（引用条款）：单飞标记只在 afterCommit 登记、CAS 按 operationId 清理（§5.3.4.2）；COMPLETED 条件追加 / FAILED 无条件 open 校验（§5.3.4.1/3）；events 守卫与 commands 路径调用同一个 parser 和同一个 Skill resolver（§5.1、§5.2.1）。
+关键不变量提示（引用条款）：单飞标记只在 afterCommit 登记、CAS 按 operationId 清理（§5.3.4 第 2 条）；COMPLETED 条件追加 / FAILED open 校验与晚到回调单终态（§5.3.4 第 1/3 条）；events 守卫与 commands 路径调用同一个 parser 和同一个 Skill resolver（§5.1、§5.2.1）。
 
 ## 5. 前端设计
 
@@ -241,8 +241,8 @@ B1 构建基线(已完成)
 ## 7. 验证命令
 
 ```bash
-# 后端（JDK 21）
-JAVA_HOME=/opt/homebrew/opt/openjdk@21 ./mvnw -pl :campusclaw-coding-agent -am test
+# 后端（前提：JAVA_HOME 已指向 JDK 21）
+./mvnw -pl :campusclaw-coding-agent -am test
 ./mvnw spotless:check checkstyle:check
 # 前端
 cd frontend && npm test && npm run typecheck
