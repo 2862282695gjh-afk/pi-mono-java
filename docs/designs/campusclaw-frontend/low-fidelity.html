@@ -145,8 +145,8 @@
   <div class="board">
     <div class="board-header">
       <div>
-        <h1>CampusClaw 真实前端 · 低保真结构</h1>
-        <div class="subtitle">桌面优先 / 三个关键状态 / 技术协议默认隐藏</div>
+        <h1>CampusClaw Runtime 调试工作台 · 低保真结构</h1>
+        <div class="subtitle">桌面优先 / 三个关键状态 / 原始 Thinking 与 Tool 参数可见</div>
       </div>
       <div class="legend"><span>用户操作</span><span class="system">系统状态</span></div>
     </div>
@@ -188,8 +188,8 @@
                   <details class="tool-card" open>
                     <summary class="tool-head"><span><b>读取</b> 订单明细.xlsx</span><span class="tool-state">3,482 行</span></summary>
                     <div class="tool-args">
-                      <div class="arg-label">输入参数</div>
-                      <div class="arg-line">file　订单明细.xlsx<br>sheet　订单明细</div>
+                      <div class="arg-label">原始输入参数</div>
+                      <div class="arg-line">file　/workspace/订单明细.xlsx<br>sessionId　session-design-review<br>headers.authorization　Bearer fixture-review-token</div>
                       <div class="arg-label" style="margin-top:6px">输出结果</div>
                       <div class="tool-output"><b>读取完成</b><br>已读取 3,482 行订单。</div>
                     </div>
@@ -221,7 +221,7 @@
         </div>
         <div class="annotation a1">Model / Thinking 是会话级能力<br>放入标题栏，不占用设置侧栏</div>
         <div class="annotation a2">Thinking / Tool → 各自独立虚线框<br>原始推理和 Tool 输出统一安全富文本</div>
-        <div class="annotation a3">凭据、session_id、ETag、SSE frame<br>仅在“开发者诊断”抽屉展示</div>
+        <div class="annotation a3">Tool 参数中的路径、ID、凭据形态值按原文展示<br>仅允许受控调试环境使用</div>
       </section>
 
       <section class="screen small-screen">
@@ -261,8 +261,8 @@
               <div class="running-tool">
                 <div class="running-tool-head"><span class="spinner"></span><span>检查 价格与数量异常</span><span class="tool-state">进行中…</span><span>⌃</span></div>
                 <div class="running-tool-args">
-                  <div class="arg-label">输入参数</div>
-                  <div class="arg-line">fields　price, quantity<br>threshold　10%</div>
+                  <div class="arg-label">原始输入参数</div>
+                  <div class="arg-line">path　/workspace/订单明细.xlsx<br>fields　price, quantity<br>threshold　10%</div>
                   <div class="arg-label" style="margin-top:6px">输出结果</div>
                   <div class="tool-output"><b>检查进度</b><br>已处理 2,910 / 3,482 行…</div>
                 </div>

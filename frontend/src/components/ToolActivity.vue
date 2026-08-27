@@ -46,14 +46,14 @@ function emptyResult(status: ActivityTurn['status']): string {
     </summary>
     <div class="tool-detail">
       <section>
-        <h4>输入参数</h4>
+        <h4>原始输入参数</h4>
         <dl v-if="turn.arguments.length" class="tool-arguments">
           <template v-for="row in turn.arguments" :key="row.key">
             <dt>{{ row.key }}</dt>
-            <dd :class="{ redacted: row.redacted }">{{ row.value }}</dd>
+            <dd>{{ row.value }}</dd>
           </template>
         </dl>
-        <p v-else class="tool-empty">未提供可安全显示的参数摘要。</p>
+        <p v-else class="tool-empty">工具未提供输入参数。</p>
       </section>
       <section class="tool-output">
         <h4>输出结果</h4>

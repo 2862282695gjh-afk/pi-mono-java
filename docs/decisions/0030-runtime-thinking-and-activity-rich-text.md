@@ -2,12 +2,13 @@
 
 | 属性 | 值 |
 |---|---|
-| 状态 | Accepted |
+| 状态 | Superseded in part by [ADR-0031](0031-debug-workbench-raw-tool-arguments.md) |
 | 日期 | 2026-08-27 |
 | 分析基线 | `PR #179@8c5f3462d745ec0c5146d55dcb62108ac2a33282` |
 | 后端源码证据 | `RuntimeEventProjector.java` 的 `emitThinkingDelta` / `persistThinking`；`RuntimeEntryCodec.java` 的 `thinkingEntry` / `appendThinkingPayload` |
 | 前端实现路径 | `runtimeEventProjector.ts` 的 `projectThinkingEvent`；`SafeRichText.ts`；`ThinkingDisclosure.vue`；`ToolActivity.vue`；`richText.ts` |
 | 替代决策 | [ADR-0027](0027-assistant-safe-rich-text.html)、[ADR-0028](0028-agent-activity-disclosure-and-o1-brand.html)、[ADR-0029](0029-agent-round-actions-and-activity-panel.html) |
+| 后续修订 | [ADR-0031](0031-debug-workbench-raw-tool-arguments.md) 仅替换前端定位与 Tool 参数可见性；Thinking/富文本/活动框决策继续有效 |
 
 ## 背景
 
@@ -96,4 +97,4 @@
 - [常规对话 v11](../designs/campusclaw-frontend/high-fidelity-conversation-v11.png)
 - [执行中 v11](../designs/campusclaw-frontend/high-fidelity-running-v11.png)
 - [对话活动安全富文本渲染图](../designs/campusclaw-frontend/assistant_rich_text_rendering.svg)
-- [PlantUML 源码](../designs/campusclaw-frontend/diagram.puml#L70)
+- [PlantUML 源码](../designs/campusclaw-frontend/diagram.puml#L72)

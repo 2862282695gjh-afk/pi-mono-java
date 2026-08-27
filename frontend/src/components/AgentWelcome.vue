@@ -14,9 +14,9 @@ const emit = defineEmits<{ start: [] }>();
 <template>
   <section class="welcome" aria-labelledby="welcome-title">
     <div class="welcome-mark"><BrandMark /></div>
-    <p class="eyebrow">CAMPUSCLAW WORKSPACE</p>
-    <h1 id="welcome-title">今天想让 Agent 做什么？</h1>
-    <p class="welcome-intro">选择已配置的 Agent，开始一次可持续调整、可查看执行过程的任务。</p>
+    <p class="eyebrow">CAMPUSCLAW RUNTIME DEBUG</p>
+    <h1 id="welcome-title">选择要调试的 Agent</h1>
+    <p class="welcome-intro">创建真实 Runtime Session，检查模型、Thinking、工具调用和执行控制。</p>
 
     <article class="agent-card" :class="{ unavailable: !configured }">
       <div class="agent-icon" aria-hidden="true">
@@ -36,8 +36,8 @@ const emit = defineEmits<{ start: [] }>();
     <p v-if="!configured" class="setup-note">
       当前环境尚未配置默认 Agent。开发环境可在下方诊断入口临时指定。
     </p>
-    <div class="welcome-promises" aria-label="工作区能力">
-      <span>执行过程可见</span><span>运行中可调整</span><span>会话自动保存</span>
+    <div class="welcome-promises" aria-label="调试工作台能力">
+      <span>原始推理可见</span><span>原始参数可见</span><span>运行中可调整</span>
     </div>
   </section>
 </template>

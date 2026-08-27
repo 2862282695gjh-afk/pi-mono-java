@@ -37,7 +37,6 @@ export interface ThinkingTurn {
 export interface ToolArgumentRow {
   key: string;
   value: string;
-  redacted: boolean;
 }
 
 export interface ActivityTurn {

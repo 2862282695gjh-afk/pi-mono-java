@@ -1,27 +1,28 @@
 @startuml frontend_product_boundary
 ' Backend source baseline: origin/main 63adc08cf5c57e3a7cc3caa317452062606ce8b4.
-' Frontend interaction-refinement baseline: PR 179 commit 8c5f3462d745ec0c5146d55dcb62108ac2a33282.
+' Frontend interaction-refinement baseline: PR 179 commit e4ef301cc7cbf93c4a651c060e2c48ebcec74cbd.
 ' Source evidence: frontend/src/App.vue (createSession, resumeSession, submit, product shell).
 ' Source evidence: frontend/src/composables/useRuntimeApi.ts (useRuntimeApi, requestRaw, consumeSse).
 ' Source evidence: frontend/src/projectors/runtimeEventProjector.ts (projectRuntimeEvents).
 ' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/web/RuntimeSessionController.java.
 ' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/web/RuntimeEventController.java.
-' Observed behavior: the product shell hides credentials and protocol fields, while its HTTP 1.38 transitional adapter still calls Runtime V1 directly.
+' Observed behavior: the internal workbench calls Runtime V1 directly and renders raw thinking plus bounded raw tool arguments.
 ' Target-only design: the production UI uses a public bridge; the mate-service Agent, Chat, Attachment, and public event contracts do not exist yet.
-' Design reason: internal session identifiers, credentials, ETags, and raw SSE payloads must not cross the production browser boundary.
+' Architecture change: the current frontend is an internal debug workbench, not a production security boundary.
+' Design reason: runtime developers need exact call parameters, while a future production UI still needs an independent public boundary.
 
-title CampusClaw product frontend boundary
+title CampusClaw debug workbench and future product boundary
 left to right direction
 
-actor "Campus user" as User
-rectangle "Product frontend" as Frontend {
-  component "Agent and chat workspace" as Workspace
-  component "Product event projector" as Projector
-  component "Direct runtime adapter\n(transition only)" as DirectAdapter
-  component "Developer diagnostics\n(internal build only)" as Diagnostics
+actor "Runtime developer" as Developer
+rectangle "Internal debug workbench" as Frontend {
+  component "Agent session workspace" as Workspace
+  component "Debug event projector" as Projector
+  component "Direct runtime adapter" as DirectAdapter
+  component "Session diagnostics" as Diagnostics
 }
 
-rectangle "mate-service" as Mate {
+rectangle "Future production bridge\n(target only)" as Mate {
   component "Public chat API" as PublicApi
   component "Chat to session mapping" as Mapping
   component "Auth, policy, and event projection" as Policy
@@ -32,23 +33,24 @@ rectangle "CampusClaw Runtime V1" as Runtime {
   component "Request-scoped SSE" as Stream
 }
 
-User --> Workspace : chat tasks
-Workspace --> PublicApi : public HTTP and SSE
+Developer --> Workspace : inspect and steer runs
+Workspace --> DirectAdapter : internal HTTP and SSE
+DirectAdapter --> Sessions
+Workspace ..> PublicApi : future product path
 PublicApi --> Policy
 Policy --> Mapping
 Mapping --> Sessions : internal HTTP
 Stream --> Policy : internal SSE events
 Policy --> Projector : public safe events
-Workspace ..> DirectAdapter : current integration
-DirectAdapter ..> Sessions : internal HTTP and SSE
 Diagnostics ..> Sessions : local diagnostics only
 
 note bottom of Frontend
-Product constraints:
+Debug workbench constraints:
 - No Service URL or credential editor
-- No raw Runtime sessionId, ETag, JSON, or SSE frames
-- Agent, chat, and attachment metadata use public resources
-- Transitional direct adapter is not a production boundary
+- Raw thinking and bounded raw tool arguments are visible
+- Tool arguments may contain IDs, paths, or credentials
+- ETag, JSON, and SSE frames are not persistent main UI
+- This is not a production security boundary
 end note
 
 note bottom of Mate
@@ -68,7 +70,7 @@ end note
 @enduml
 
 @startuml assistant_rich_text_rendering
-' Analyzed source baseline: PR 179 commit 8c5f3462d745ec0c5146d55dcb62108ac2a33282.
+' Analyzed source baseline: PR 179 commit e4ef301cc7cbf93c4a651c060e2c48ebcec74cbd.
 ' Baseline evidence: frontend/src/components/ConversationTimeline.vue lines 37-49 used plain text interpolation.
 ' Baseline evidence: frontend/src/projectors/runtimeEventProjector.ts projectAssistantEvent preserved delta and completed text.
 ' Implemented source: frontend/src/markdown/richText.ts (parseSafeMarkdown, safeExternalLink, splitStableMarkdown).
@@ -158,7 +160,7 @@ end note
 
 @startuml runtime_event_ui_projection
 ' Backend source baseline: origin/main 63adc08cf5c57e3a7cc3caa317452062606ce8b4.
-' Frontend interaction-refinement baseline: PR 179 commit 8c5f3462d745ec0c5146d55dcb62108ac2a33282.
+' Frontend interaction-refinement baseline: PR 179 commit e4ef301cc7cbf93c4a651c060e2c48ebcec74cbd.
 ' Visual design baseline: campusclaw-frontend-design 5c2231654ea94dd248b5ea9a478d2cb27cd36a52.
 ' Source evidence: frontend/src/projectors/runtimeEventProjector.ts (projectRuntimeEvents, projectAssistantEvent, projectThinkingEvent, projectToolEvent, projectToolArguments).
 ' Source evidence: frontend/src/composables/useRuntimeApi.ts (dispatchSseFrame, mergeRuntimeEvent, loadHistory).
@@ -173,12 +175,13 @@ end note
 ' Observed behavior: HTTP 1.38 lowerCamelCase persistent entries and transient execution events share one request-scoped SSE response; Runtime thinking contains raw reasoning and no safe display summary.
 ' Observed Codex behavior: desktop follow-up mode defaults to steer; a modifier submits one message with the inverse mode.
 ' Product constraint: raw thinking is visible without changing the Runtime event interface; delta streams and completed content is authoritative.
-' Security hardening: all text uses the safe Markdown renderer; tool arguments remain bounded and redacted before DOM projection.
+' Security hardening: generated text uses the safe Markdown renderer; tool arguments remain bounded for page stability.
+' Architecture change: the debug workbench displays raw tool argument values without redaction or path contraction.
 ' Architecture change: User turns bound Agent rounds; each completed round owns one copy action.
 ' Product constraint: each thinking item and each tool item owns an independent warm neutral dashed activity frame.
 ' Design reason: independent frames preserve compact safe activity while preventing one expanded tool from visually swallowing adjacent thinking or tool items.
 
-title Runtime events to product UI projection
+title Runtime events to debug workbench projection
 left to right direction
 
 rectangle "Runtime event families" as Events {
@@ -235,8 +238,8 @@ note bottom of ToolDisclosure
 Current and failed tools remain expanded.
 Successful tool details collapse by default.
 Arguments are row, depth, and length bounded.
-Credentials and internal IDs are redacted.
-Absolute paths are reduced to the last segment.
+Credential-shaped values and internal IDs stay visible.
+Absolute paths stay unchanged.
 Result text uses the safe Markdown renderer.
 end note
 

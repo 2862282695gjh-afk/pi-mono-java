@@ -45,7 +45,12 @@ const history = [
         type: 'tool_call',
         toolCallId: 'call-history-read',
         name: 'Read',
-        arguments: { file: '/workspace/订单明细.xlsx', sheet: '订单明细' },
+        arguments: {
+          file: '/workspace/订单明细.xlsx',
+          sheet: '订单明细',
+          sessionId: 'session-design-review',
+          headers: { authorization: 'Bearer fixture-review-token' },
+        },
       }],
     },
   },

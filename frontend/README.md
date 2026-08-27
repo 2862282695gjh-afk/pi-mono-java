@@ -1,8 +1,8 @@
 # CampusClaw Frontend
 
-Vue 3 + TypeScript + Vite 实现的 CampusClaw Agent 工作区。界面采用 O1 原始透明品牌图与
-Codex-inspired 暖中性体系，以 Agent、会话、对话、工具活动和执行控制为产品概念，不再把
-HTTP/SSE 调试字段作为主界面。
+Vue 3 + TypeScript + Vite 实现的 CampusClaw Runtime 调试工作台。界面采用 O1 原始透明
+品牌图与 Codex-inspired 暖中性体系，以 Agent、会话、对话、工具活动和执行控制组织调试
+信息，供开发和内部验证使用，不作为生产用户界面或生产安全边界。
 
 当前版本按 CampusClaw Runtime HTTP 1.38.0 实现过渡 adapter。生产架构仍应通过
 mate-service 公共 Agent/Chat/Attachment API；在该契约完成前，本 adapter 用于前后端并行
@@ -23,8 +23,9 @@ mate-service 公共 Agent/Chat/Attachment API；在该契约完成前，本 adap
 - desktop 默认 `steer`，`Cmd/Ctrl+Shift+Enter` 对单条消息反转模式；
 - O1 warm-neutral Design Token、键盘焦点、reduced-motion 和响应式侧栏。
 
-界面不会接收或显示 JWT、APPKEY、ETag、内部 Session ID、原始 JSON 或 SSE frame。开发构建
-保留一个可折叠诊断入口，仅允许临时指定 Agent ID 或恢复 Session；生产构建不会渲染该入口。
+工作台不会提供 JWT、APPKEY 等凭据编辑器，也不会主动展示 ETag、原始 JSON 或 SSE frame；
+但 Runtime 工具调用中已经存在的参数会按原值显示，包括凭据形态字段、内部 ID 和绝对路径。
+因此只能在受控调试环境中使用。
 
 Assistant、Thinking 和 Tool result 文本共用受控 Markdown；原始 HTML 不执行，图片不发起
 网络请求，只有绝对 `http`/`https` 链接可以点击。Thinking 从现有
@@ -32,8 +33,9 @@ Assistant、Thinking 和 Tool result 文本共用受控 Markdown；原始 HTML �
 `assistant.thinking.completed.data.content.text` 后以持久化全文替换；完全没有 Thinking 事件时
 不创建分析框。User 文本和 Tool 输入参数继续使用纯文本/结构化键值展示。
 
-工具参数在进入 DOM 前执行行数、深度和长度预算，并隐藏凭据、内部 ID 和绝对路径；这是
-过渡 adapter 的纵深防护，不替代生产 bridge 在网络边界完成字段级最小化和脱敏。
+工具参数在进入 DOM 前仍执行行数、深度和长度预算，避免异常 payload 阻塞页面；除此之外不做
+字段隐藏、值脱敏或路径缩短。生产产品若复用相关能力，必须在独立公共 bridge 中重新定义认证、
+授权和字段级最小化策略，不能直接复用本调试工作台的可见性边界。
 
 ## 配置
 
@@ -90,9 +92,10 @@ npm run build
 npm audit --audit-level=high
 ```
 
-设计依据见 [CampusClaw 产品前端体验设计](../docs/designs/campusclaw-frontend.md)、
+设计依据见 [CampusClaw 前端调试工作台设计](../docs/designs/campusclaw-frontend.md)、
 [ADR-0020](../docs/decisions/0020-campusclaw-product-frontend-boundary.html)、
 [ADR-0027](../docs/decisions/0027-assistant-safe-rich-text.html) 和
 [ADR-0028](../docs/decisions/0028-agent-activity-disclosure-and-o1-brand.html)、
 [ADR-0029](../docs/decisions/0029-agent-round-actions-and-activity-panel.html) 和
-[ADR-0030](../docs/decisions/0030-runtime-thinking-and-activity-rich-text.md)。
+[ADR-0030](../docs/decisions/0030-runtime-thinking-and-activity-rich-text.md)、
+[ADR-0031](../docs/decisions/0031-debug-workbench-raw-tool-arguments.md)。

@@ -13,7 +13,7 @@ const sessionId = ref('');
 <template>
   <details class="dev-diagnostics">
     <summary>开发者诊断入口</summary>
-    <p>仅开发构建可见。用于公共 Agent/Chat API 完成前的 Runtime 联调，不接收凭据。</p>
+    <p>用于手动创建或恢复 Runtime Session。工具调用中已有的参数会在对话区按原值展示。</p>
     <div class="diagnostic-row">
       <label>Agent ID<input v-model="agentId" placeholder="agent-…" /></label>
       <button type="button" :disabled="busy || !agentId.trim()" @click="emit('create', agentId.trim())">创建</button>

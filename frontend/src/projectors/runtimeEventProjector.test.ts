@@ -192,7 +192,8 @@ describe('projectRuntimeEvents', () => {
     }]);
   });
 
-  it('waits for tool execution and presents redacted, bounded arguments', () => {
+  it('waits for tool execution and presents raw, bounded debug arguments', () => {
+    const longText = 'x'.repeat(241);
     const events: RuntimeEventEnvelope[] = [
       {
         event: 'assistant.message.completed',
@@ -210,6 +211,7 @@ describe('projectRuntimeEvents', () => {
                 headers: { authorization: 'Bearer visible-secret' },
                 note: '  Bearer another-secret',
                 query: '检查报告',
+                longText,
               },
             }],
           },
@@ -237,11 +239,12 @@ describe('projectRuntimeEvents', () => {
       toolName: 'Read',
       status: 'completed',
       arguments: [
-        { key: 'path', value: '…/report.md', redacted: false },
-        { key: 'token', value: '已隐藏', redacted: true },
-        { key: 'headers.authorization', value: '已隐藏', redacted: true },
-        { key: 'note', value: '已隐藏', redacted: true },
-        { key: 'query', value: '检查报告', redacted: false },
+        { key: 'path', value: '/Users/example/private/project/report.md' },
+        { key: 'token', value: 'secret-token' },
+        { key: 'headers.authorization', value: 'Bearer visible-secret' },
+        { key: 'note', value: '  Bearer another-secret' },
+        { key: 'query', value: '检查报告' },
+        { key: 'longText', value: `${'x'.repeat(240)}…` },
       ],
       result: '读取完成',
     }]);

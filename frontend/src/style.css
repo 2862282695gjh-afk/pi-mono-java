@@ -1306,11 +1306,6 @@ svg {
   overflow-wrap: anywhere;
 }
 
-.tool-arguments dd.redacted {
-  color: var(--text-tertiary);
-  font-style: italic;
-}
-
 .tool-empty {
   margin: 0;
   color: var(--text-tertiary);
