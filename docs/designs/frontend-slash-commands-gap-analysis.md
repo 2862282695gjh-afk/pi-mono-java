@@ -146,15 +146,17 @@ public class WebCommandCatalog {
 { "kind": "ok", "output": "压缩已启动", "operationId": "cpt_a1b2c3", "effects": {} }
 ```
 
-**三类持久化 entry 契约**(复用 RuntimeEntryCodec 既有 compaction 通道,类型与 payload):
+**五类持久化 entry 契约**(㉙同步 suspended 状态机,复用 RuntimeEntryCodec 既有 compaction 通道):
 
-| entry type | payload 必含 | 备注 |
-|---|---|---|
-| `SESSION_COMPACTION_STARTED`(新增类型) | `operationId`, `startedAt` | 启动即写 |
-| `SESSION_COMPACTION_COMPLETED`(既有) | `operationId`, `reason`, `keptMessages`, `removedMessages`, `completedAt` | 既有 compactionEntry 补 operationId 字段 |
-| `SESSION_COMPACTION_FAILED`(新增类型) | `operationId`, `errorCode`(如 CANCELLED_BY_NEW_MESSAGES), `failedAt` | |
+| entry type | payload 必含 | Codec 恢复规则 | 备注 |
+|---|---|---|---|
+| `SESSION_COMPACTION_STARTED`(新增) | `operationId`, `startedAt` | **不进 Agent 上下文**(toAgentMessage default null) | 启动即写(⑯事务内) |
+| `SESSION_COMPACTION_COMPLETED`(既有) | `operationId`, `reason`, `keptMessages`, `removedMessages`, `completedAt` | **进上下文**(compactionSummaryMessage,压缩语义) | leaf 条件追加 |
+| `SESSION_COMPACTION_FAILED`(新增) | `operationId`, `errorCode`(如 CANCELLED_BY_NEW_MESSAGES), `failedAt` | **不进 Agent 上下文** | operation-open 条件追加(⑲) |
+| `SESSION_COMPACTION_SUSPENDED`(新增,㉕) | `operationId`, `reason`(TIMEOUT_OBSERVED), `suspendedAt` | **不进 Agent 上下文** | 超时同事务写入;准入配对判定(㉘) |
+| `SUSPENDED_CLEARED`(新增,㉘) | `suspendedOperationId`, `actor`, `clearReason`, `clearedAt` | **不进 Agent 上下文** | tryClearSuspensionIfCurrent 条件转换;幂等 |
 
-**GET /events 投影**:projector 对 started/failed 增加投影(既有 completed 已投影);前端 runtimeEventProjector 识别 payload.operationId 与本地记录的启动 operationId 关联(而非文案匹配)。**测试断言同一 operationId 的 started→终态关联**,不止看展示文本。
+**GET /events 投影**:projector 对 started/failed/suspended/cleared 各增加投影(completed 既有);前端 runtimeEventProjector 按 payload.operationId / suspendedOperationId 与本地记录关联(非文案匹配)——suspended 显示"压缩已超时挂起"、cleared 显示"禁止态已解除(操作者: {actor})"。**测试断言同一 operationId 的 started→终态关联及 suspended↔cleared 配对**,兼容测试覆盖五类 entry 的迁移与历史回放。
 
 
 **[继续复查⑪已采纳——存储位置与分支行为定稿]**。查证:Codec 的 `toAgentMessage` 仅恢复 USER/ASSISTANT/TOOL_RESULT/**COMPACTION_COMPLETED**(转 summary message),其余类型恢复为 null(`RuntimeEntryCodec:272` default 分支)——意味着 started/failed 天然不进 Agent 上下文,completed 会进(以 summary 形式,这是**期望行为**:压缩结果本就应成为上下文)。
@@ -260,6 +262,9 @@ afterCommit:
 - **晚到 clear 安全**:旧 worker 相关的 clear 请求若在新 operation 已产生新 suspended 后到达,因 operationId 不匹配 → no-op,不影响新禁止态
 - entry 类型表补 `SUSPENDED_CLEARED`;投影:cleared 显示"禁止态已解除(操作者/原因)"
 - 测试:clear 后可新建;旧 worker 晚到 clear 不影响新 suspended;重复 clear 幂等
+
+**[继续复查㉙已采纳]** 类型表扩为五类并逐类标注 payload/Codec 恢复规则(suspended 与 cleared 均不进 Agent 上下文)/投影与前端展示;兼容测试覆盖五类迁移与历史回放。
+
 
 
 
