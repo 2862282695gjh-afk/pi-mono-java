@@ -122,7 +122,7 @@ public class WebCommandCatalog {
 **[继续复查④已采纳——CAS 落地为仓储条件追加]**。批注属实:现有 `RuntimeSessionRepository` 无 entryVersion/compare-and-set(查证:append 走 `lockNextSequence` 分配序列,`MyBatisRuntimeSessionRepository:209`)。修订为实现级方案:
 
 1. **新增仓储方法** `tryAppendCompactionIfLeafUnchanged(sessionId, expectedLeafId, entry)`:单事务内 `lockNextSequence` + **校验 session.activeLeafId == expectedLeafId**(不等则返回失败,不插入、不推进 sequence)——复用既有行锁语义实现条件追加,不引入新版本列
-2. 压缩前记录 `expectedLeafId = session.getActiveLeafId()`;完成后经该方法原子写入——成功→提交;失败(leaf 已被并发消息推进)→ **释放单飞标记 + 清理重建 Session**,返回 `{kind:'error', output:'会话有新消息,压缩已取消,请重试'}`(自动重试登记后续)
+2. 压缩前记录 `expectedLeafId = session.getActiveLeafId()`;completed 经该方法原子写入——成功→提交;失败(leaf 已被并发消息推进)→ 同一回调内转投**无条件追加 failed entry**(errorCode=CANCELLED_BY_NEW_MESSAGES,见继续复查⑫),释放重建 Session——POST 此时早已返回 operationId,取消事实经持久化 failed entry 呈现,不改 HTTP 响应
 3. **重复 /compact 幂等**:per-session 单飞标记进行中 → 409 `COMPACTION_IN_PROGRESS`;完成后重复 → 正常再压(新 leaf 快照)
 4. **并发集成测试**:两线程竞争(普通 events append vs compact 写入)只允许一个成功提交 compaction entry,另一个可见新 leaf 后取消
 
@@ -157,7 +157,7 @@ public class WebCommandCatalog {
 **[继续复查⑪已采纳——存储位置与分支行为定稿]**。查证:Codec 的 `toAgentMessage` 仅恢复 USER/ASSISTANT/TOOL_RESULT/**COMPACTION_COMPLETED**(转 summary message),其余类型恢复为 null(`RuntimeEntryCodec:272` default 分支)——意味着 started/failed 天然不进 Agent 上下文,completed 会进(以 summary 形式,这是**期望行为**:压缩结果本就应成为上下文)。
 
 定稿:
-- **started/failed 不入对话上下文**:新增的两个类型走 codec default(null)——无需额外排除规则;但它们**会推进 activeLeafId**(普通 append)——因此 **expectedLeafId 采样点定为 started entry 写入之后**(流程:写 started → 记 leaf → 读历史 → 压缩 → 条件追加 completed/failed;started 自身推进 leaf 不影响,因其后采样)
+- **started/failed 不入对话上下文**:新增的两个类型走 codec default(null)——无需额外排除规则;但它们**会推进 activeLeafId**(普通 append)——因此 **expectedLeafId 采样点定为 started entry 写入之后**(流程:写 started → 记 leaf → 读历史 → 压缩 → completed 条件追加 / failed 无条件追加;started 自身推进 leaf 不影响,因其后采样)
 - **completed 入上下文**:既有 summary message 行为保留(压缩语义);其 leaf 推进即条件追加本身
 - **不引入独立 operation 表**:三类 entry 全走主分支持久化(与既有 completed 同款),Codec 恢复规则如上;避免双存储一致性
 - CAS 语义因此自洽:expectedLeafId 在 started 之后采样,普通消息只会推进 leaf 触发 CAS 失败——started 自身不会再干扰
@@ -168,6 +168,9 @@ public class WebCommandCatalog {
 - **completed 的 CAS 失败转投 failed**:条件追加返回失败 → 在同一回调内改调 `appendOperationTerminal(failed entry, errorCode=CANCELLED_BY_NEW_MESSAGES)`——保证 started 后必有且仅有一个终态
 - **单飞标记释放**在 finally(completed 成功、failed 成功、二者均异常)统一执行——与终态写入同一路径,不泄漏
 - **测试**:模拟 leaf 竞争(压缩期间插入普通消息)断言 started 后恰一个 completed 或 failed;两条终态并存为缺陷
+
+**[继续复查⑬已采纳]** ④决议第 2 条的"返回 kind:error"(与 POST 已返回 operationId 矛盾)与 ⑪ 流程的"条件追加 completed/failed"(failed 实为无条件)均已改写——全文只保留当前语义:completed 条件追加、CAS 失败转无条件 failed、终态由历史投影呈现。
+
 
 
 
