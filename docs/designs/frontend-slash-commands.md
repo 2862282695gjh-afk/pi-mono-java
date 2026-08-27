@@ -69,7 +69,7 @@ ComposerBox → App.submit() → useRuntimeApi.sendMessage(message)
 - `name`:命令名,**不含斜杠**;`^[a-z][a-z0-9-]*$`(与现有命令名一致)
 - `argsHint`:参数提示给补全菜单展示(如 `[model-id]`),可为空串
 - `category`:`session` | `conversation` | `system` | `tui`——前端菜单分组
-- `webCapable`:false 时前端不展示(`?all=true` 查询参数供诊断面板用,首版可不做)
+- `webCapable`:false 时前端菜单不展示;`all=true` 返回全集(首版正式契约,三态 matcher 数据源,见下方复审①决议)
 
 **默认只返回 `webCapable=true` 的命令**。无需会话上下文(命令集是进程级静态数据)。
 
@@ -146,6 +146,18 @@ parseSlashInput(text):
 
 锁定用例(前后端跑同一组,结果必须一致):`'/model glm-5'`→(model,glm-5) / `'/model'`→(model,'') / `'/  model   x  '`→(model,'x') / `'/model\n第二行'`→(model,'第二行') / `'/'`→null / `'/model '`→(model,'') / `'text /model'`→null(非开头) / `'/中文命令'`→(中文命令,'')(未命中 Catalog 即透传)。
 
+**[再复审②已采纳] 解析结果增加 `hasSeparator` 字段,菜单激活改依据分隔符**。批注属实:parser 对输入做 trim,`'/model '`(补全写入的尾空格)与 `'/model'` 的 `arguments` 都是 `''`——按 `arguments === ''` 判激活会导致补全后菜单不收起、Enter 再次补全的死循环。修订 `parseSlashInput` 返回结构:
+
+```
+ParsedSlashInput { name, arguments, hasSeparator }
+  hasSeparator = 原始输入(未 trim)中 name 之后是否出现过空白分隔符
+```
+
+- 菜单激活 = `parsed !== null && !parsed.hasSeparator`(名字还在输入中,无分隔符)
+- 补全写入 `/model ` → hasSeparator=true → 菜单收起 → 普通 Enter 走 submit 分流(两段式成立)
+- 锁定用例追加:`'/model '`→(model,'',hasSeparator=true)、`'/model'`→(model,'',false)、`'/model	x'`→(model,'x',true)——前后端 matcher/菜单共用此字段
+
+
 ---
 
 ## 第二部分:后端实现(Java)
@@ -177,11 +189,20 @@ public record WebCommandDefinition(
         String description,
         String argsHint,
         String category,
-        BiFunction<CommandExecutionContext, String, CommandOutcome> handler) {}
+        ExecutionMode executionMode,   // SERVER | CLIENT_LOCAL(再复审③)
+        BiFunction<CommandExecutionContext, String, CommandOutcome> handler) {  // SERVER 必填,CLIENT_LOCAL 为 null
+
+    public enum ExecutionMode { SERVER, CLIENT_LOCAL }
+}
 
 // CommandExecutionContext: sessionId + RuntimeSessionService(持久化会话读取),
 // 不持有 RuntimeSessionHolder(idle 会话无 Holder,见复审②)。
 ```
+
+**[再复审③已采纳] record 签名统一 + local-only 描述符显式化**:
+- 签名统一为 `BiFunction<CommandExecutionContext, String, CommandOutcome>`(第二参数 = arguments,保留 BiFunction;复审②正文的"单参数 Function"表述作废)
+- `/new` 等纯前端命令不从该 record 虚设 handler:`WebCommandDefinition` 增加 `executionMode` 字段——`SERVER`(handler 必填)/ `CLIENT_LOCAL`(handler 为 null,后端 `/commands/{name}` 收到直接返回 400 提示 client-local command);三态 matcher 与菜单照常把它当 executable,execute 在前端本地处理,零网络请求
+
 
 **[复审②已采纳] handler 上下文改为持久层,不依赖 `RuntimeSessionHolder`**。批注属实:`RuntimeSessionEngineRegistry` 类注释明确"不缓存 idle Session"、Holder 随执行结束释放——而命令恰在非 running 态执行,届时 Holder 已不可用。修订:
 
@@ -197,7 +218,7 @@ public record WebCommandDefinition(
 |---|---|---|
 | `model` | `[model-id]` | **仅空参查询**:`requireSession(sessionId)` 读模型 id;带参 400 引导别名(见 1.2) |
 | `thinking` | `[on\|off]` | **仅空参查询**:读思考级别;带参同样 400 |
-| `new` | — | **纯前端动作**(复审②):不注册后端 handler;三态判定 executable 但 execute 在前端本地清视图,零网络请求 |
+| `new` | — | **CLIENT_LOCAL**(复审②+再复审③):executionMode=CLIENT_LOCAL、handler=null;后端收到该 name 返回 400 提示 client-local;前端 execute 本地清视图,零网络请求 |
 | `help` | — | 输出 webCapable 命令列表文本(无需会话) |
 | `settings` | — | 只读:当前模型/思考级别摘要(持久层读取) |
 
@@ -419,9 +440,14 @@ function onKeydown(event: KeyboardEvent): void {
 
 ```ts
 function updateText(event: Event): void {
-  // ...现有高度自适应逻辑不变...
-  const parsed = parseSlashInput(textarea.value);   // 复审④:与后端同规范
-  menuActive.value = !props.running && parsed !== null && parsed.arguments === '';
+  const textarea = event.target as HTMLTextAreaElement;   // 再复审④:先取元素(与现有一致)
+  textarea.style.height = 'auto';
+  textarea.style.height = `${Math.min(textarea.scrollHeight, 220)}px`;   // 高度自适应保留
+  emit('update:modelValue', textarea.value);
+
+  // 复审④+再复审②:parser 同规范,菜单激活依据 hasSeparator(补全尾空格后正确收起)
+  const parsed = parseSlashInput(textarea.value);
+  menuActive.value = !props.running && parsed !== null && !parsed.hasSeparator;
 }
 ```
 
@@ -429,9 +455,10 @@ function updateText(event: Event): void {
 
 ```ts
 const parsed = parseSlashInput(value);
-menuActive.value = !props.running && parsed !== null && parsed.arguments === '';
-// 菜单激活 = 解析出命令名且还未输入分隔符(空格/制表/换行任一都正确收起);
-// 过滤前缀 = parsed.name(而非手切 value);前导空白容忍与后端一致('  /model' 也出菜单)
+menuActive.value = !props.running && parsed !== null && !parsed.hasSeparator;
+// 激活依据分隔符而非 arguments 是否为空(再复审②:补全写入 '/model ' 后
+// hasSeparator=true,菜单正确收起,Enter 走 submit 分流);
+// 过滤前缀 = parsed.name;前导空白容忍与后端一致
 ```
 
 
@@ -544,7 +571,8 @@ if (!running.value) {
 
 - 后端先交付两个端点 + events 守卫(可用 curl 验收:`curl GET .../commands`、`curl POST .../commands/model -d '{"arguments":""}'`)
 - 前端拿到契约即可 mock `useSlashCommands`(vitest mock fetch),组件开发不被后端阻塞
-- 联调点:错误码映射(COMMAND_NOT_ROURTED → 前端"请使用命令菜单或直接输入完整命令"提示)、409 场景
+- 联调点:错误码映射(`COMMAND_NOT_ROUTED` → 前端"请使用命令菜单或直接输入完整命令"提示;再复审⑤已纠正本行原先的 ROURTED 拼写错误)、409 场景
+
 
 ### 4.2 手动验收清单
 
