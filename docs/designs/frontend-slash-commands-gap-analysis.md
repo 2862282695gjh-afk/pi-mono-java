@@ -111,20 +111,30 @@ public class WebCommandCatalog {
 
 **结论**:`POST /compact` 承诺修正为"同步返回启动确认;结果经持久化事件流可查;无实时 SSE 进度"——不再声称"经既有 events SSE 反馈进度"。
 
+**[复查⑤已采纳——批注属实,重建流程补全]**。查证:`AgentSessionFactory.create()`(`AgentSessionFactory.java:69`)确实只组装新 Agent/工具,不读历史——若直接 compact 将压缩空上下文。修订重建流程为三步:
+
+1. **恢复历史**:经 `RuntimeSessionEngineRegistry` 同款路径(`RuntimeSessionEngineRegistry.java:120` 有 `agent().replaceMessages(messages)` 先例)——从 RuntimeEntryRepository 读有效上下文条目,`RuntimeEntryCodec` 解码为 messages,`replaceMessages` 注入重建的 Session
+2. **执行压缩**:`ManagedAgentSession.compact()`(内部触发 SessionCompactor + 事件)
+3. **写回与释放**:压缩结果条目经 RuntimeEntryCodec 写入持久化流,try-with-resources 释放重建 Session
+
+**并发围栏**:压缩期间(读历史→写 compaction entry)对该 sessionId 的普通 `POST /events` 提交互斥——实现为 sessionId 级读写锁(读历史/写结果为写侧,普通提交为读侧排队;或复用既有 per-session 操作锁 `RuntimeSessionEngineRegistry.operationLock`);避免压缩 summary 覆盖并发新消息。**端到端测试**:idle 有历史会话压缩后,下一次 prompt 携带 summary + 保留消息(非空上下文)。
+
+
 
 ### 2.4 `/skill:<skill-name> [arguments]`(发现/补全/执行)
 
 命名规则:以 `skill:` 为前缀的命名空间,`^skill:[a-z0-9-]+$`(与命令名 `^[a-z][a-z0-9-]*$` 区分,不冲突)。
 
 - **发现/补全**:`GET /commands` 的 descriptor 对每个已安装 Skill 生成 `skill:<name>` 条目(category=`skill`,argsHint 来自 Skill 元数据)——菜单输入 `/skill:` 前缀时过滤展示
-- **执行**:`POST /sessions/{id}/commands/skill:<name>`(SERVER)→ 将 `<arguments>` 作为用户消息**注入当前会话上下文**(等价用户手打,走正常 agent 循环);返回 `{kind:'ok', output:'已提交技能 xxx'}`,实际执行结果经 events SSE
+- **执行(复查⑥修订)**:`POST /sessions/{id}/commands/skill:<name>`(SERVER,`produces = TEXT_EVENT_STREAM_VALUE`)——服务端替用户提交消息并**在同一响应中返回 SSE**:内部等价 `POST /events {message: skillArgs}`(submit + SseEmitter attach,`RuntimeEventController.submit` 同款模式),**前端只发一次请求**、输出经该流实时返回;断线重连走既有 `GET /events` 历史分页。descriptor 以 `streaming: true` 标注,前端用 fetch-stream 处理;**禁止**"服务端 submit + 前端另行 POST events"的双请求形态(那是二次 prompt,会重复执行 skill)
 - 与 events 守卫的关系:`skill:*` 注册进 Catalog → 守卫拦截 `  /skill:foo` 一致
 - 权限:Skill 的权限/信任边界沿用现有 Skill 加载体系,命令层不另设
 
 **[复审②已采纳——契约贯通修订]**:
 - **名称模式统一**:`^([a-z][a-z0-9-]*|skill:[a-z0-9-]+)$`——主文档 Controller `@PathVariable` 校验、Catalog parser、TS `SlashCommandDescriptor.name` 注释同步;冲突测试:内置命令名不得以 `skill:` 开头(注册期检查)
 - **category 枚举扩容**:`'session' | 'conversation' | 'system' | 'skill' | 'extension'`(tui 随 TUI 删除移除);DTO 与 TS 同步
-- **执行流定稿——复用 events 协议,不自建订阅**:`POST /commands/skill:<name>` 的语义修订为**"服务器替用户提交一条消息"**——内部等价于 `POST /events {message: skillArgs}`,走同一条 submit 路径(RuntimeEventService 既有投影/持久化/流式全继承)。前端交互:命令确认返回后**前端自动发起一次 events 请求订阅输出**(与用户手动发消息的流一致),不新增可重连订阅;断线重连经既有 `GET /events` 历史分页。即:命令是"快捷输入",执行流完全复用消息协议——不出现第二套运行事件通道。
+- **执行流定稿(复查⑥修正)——命令端点直接返回 SSE**:`POST /commands/skill:<name>` 内部等价 submit(message=skillArgs) 并在同一响应 attach SseEmitter——前端单请求拿全流,不另行 POST events(那会二次提交);断线重连走 `GET /events` 历史分页;不新增第二套运行事件通道。
+
 
 
 ### 2.5 Extension 自定义命令注册
@@ -138,6 +148,22 @@ public interface SlashCommandExtension {
 - 命名规则:与内置/`skill:` 前缀冲突 → **注册期抛错**(启动失败,显式暴露冲突);建议约定 Extension 命令以自有前缀命名(如 `git:`、`jira:`)
 - descriptor 完整暴露(name/description/argsHint/category/executionMode),`?all=true` 可见性同内置
 - 无会话策略:Extension 自声明(definition 增加 `requiresSession` 布尔,SERVER 默认 true,CLIENT_LOCAL 恒 false)
+
+**[复查⑦已采纳——统一 namespace grammar]**。名称规范定义为:
+
+```
+commandName    := builtinName | namespacedName
+builtinName    := ^[a-z][a-z0-9-]{0,31}$                       (内置,无冒号)
+namespacedName := ^[ns]:[a-z0-9][a-z0-9-]{0,31}$              (带命名空间)
+ns             := skill | <extensionId>                        (skill 为保留 ns)
+extensionId    := ^[a-z][a-z0-9-]{0,15}$                      (注册时声明,不可为 skill/内置保留字)
+```
+
+- **单一正则进所有层**:Controller `@PathVariable`、Catalog parser、TS 类型注释、URL 编码(冒号合法路径字符,无需转义)统一 `^(?:[a-z][a-z0-9-]{0,31}|[a-z][a-z0-9-]{0,15}:[a-z0-9][a-z0-9-]{0,31})$`
+- **保留 namespace**:`skill` 为系统保留;Extension 的 `extensionId` 注册时声明且不得与内置命令名/`skill` 冲突(注册期抛错)
+- **冲突测试**:内置名带冒号拒绝、`skill:foo` 仅系统注册、`git:status` 走 Extension ns、非法 ns(大写/超长)拒绝
+- 原 2.5 的"建议自有前缀"从建议升级为 grammar 强制
+
 
 **[复审③已采纳]** 2.1 标题与"动态性影响"段改为"**启动期可扩展,运行期静态**":Extension 仅经 Spring 构造注入(启动期组合),运行期无注册/卸载 API;`GET /commands` 保持幂等可安全缓存,无需缓存失效机制。真正的运行期动态(安装/卸载/重载 + 目录版本)登记为后续演进,首版不做。
 
