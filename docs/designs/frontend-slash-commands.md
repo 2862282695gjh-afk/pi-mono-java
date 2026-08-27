@@ -369,7 +369,9 @@ export function useSlashCommands(runtime: ReturnType<typeof useRuntimeApi>) {
 
   async function load(force = false): Promise<void> {
     if (loaded.value && !force) return;
-    // GET /commands,走 useRuntimeApi 同源的 requestRaw/错误处理
+    // 必须请求 GET /commands?all=true(终审复查②:三态 matcher 依赖全集,
+    // 默认响应只含 webCapable 项会让 /hotkeys 被判 unknown 错误透传)
+    // 走 useRuntimeApi 同源的 requestRaw/错误处理;
     // 失败静默降级:commands 保持空,输入 '/' 无菜单(不阻塞主流程)
   }
 
@@ -387,7 +389,11 @@ async function execute(name: string, args: string): Promise<SlashCommandResult> 
     //   model+参数   → await runtime.changeModel(args) → 组装 {kind:'ok', effects:{modelChanged:true}}
     //   thinking+参数 → 解析 on/off → runtime.changeThinking(...) → 同上
     //   412 冲突 → {kind:'error', output:'会话已被其它操作修改,请刷新后重试'}
-    // 其余命令:POST /sessions/{id}/commands/{name}  body {arguments: args}
+    // 【CLIENT_LOCAL 分支(终审复查③)】/new 必须在 POST 之前本地处理:
+    //   if (name === 'new') return { kind:'ok', output:'已开始新对话(本页视图已清空)',
+    //                               effects:{ conversationReset:true } };
+    //   ——零网络请求;无会话时同样直接返回(ok,视图本就是引导态),不发请求
+    // 其余 SERVER 命令:POST /sessions/{id}/commands/{name}  body {arguments: args}
     // 成功后按 effects 逐键分发(归属见 3.6 表):
     //   modelChanged/thinkingChanged → 别名路径已由 changeModel 内部刷新 session
     //   conversationReset → 由 App.vue 处理(见 3.5)
@@ -396,6 +402,12 @@ async function execute(name: string, args: string): Promise<SlashCommandResult> 
   return { commands, loaded, executing, load, matchCommand, execute };
 }
 ```
+
+**[终审复查②已采纳]** `load` 伪代码的 `GET /commands` 已改为必须带 `?all=true`(三态 matcher 数据源);测试清单同步:load 用例断言 query 参数含 `all=true`。
+
+
+**[终审复查③已采纳]** execute 伪代码补 CLIENT_LOCAL 分支:`name === 'new'` 在 POST 之前本地返回 `{kind:'ok', effects:{conversationReset:true}}`(零网络请求,无会话时同样直接返回);测试断言无会话 `/new` 的产品决策与零网络请求。
+
 
 **[复审③已采纳] 草稿清空条件收紧**:`runCommand()` 只在 `kind === 'ok'` 时清空 `message`;`kind === 'error'`(参数错/未知模型/412 冲突)**保留草稿**让用户改后重试;网络/HTTP 异常继续抛出走 catch(现有草稿保留语义)。对应 `runCommand` 伪代码中 `message.value = ''` 一行迁移到 `if (result.kind === 'ok')` 分支内;别名路径的 412 同样组装 `kind:'error'`(草稿保留)而非 ok。
 
@@ -435,11 +447,14 @@ emits: {
 ```
 
 **行为**:
-- 按 `filter` 前缀过滤 `commands`(name 以去掉 `/` 的串开头),按 `category` 分组展示
+- 过滤两步(终审复查④):先按 `webCapable === true` 过滤(App 传入的是 `?all=true` 全集,不过滤会把 TUI-only 项展示出来),再按 `filter` 前缀过滤(name 以去掉 `/` 的串开头),按 `category` 分组展示
 - 每项两行:`/name argsHint` + description 灰字
 - 无匹配时显示"没有匹配的命令"占位(**不**自动关闭——用户可能还在输入)
 - 定位:`absolute` 悬浮于 Composer 上方(`bottom: 100%`),宽度与 composer 一致;`role="listbox"` + 项 `role="option"`,高亮项 `aria-selected`
-- 点击项 = `emit('select')`;纯展示组件,键盘事件由父组件统一处理(见 3.4)
+- 点击项 = `emit('select')`(**仅补全**,与普通 Enter 同语义;见 3.4 两段式);纯展示组件,键盘事件由父组件统一处理(见 3.4)
+
+**[终审复查④已采纳]** 组件行为补两步过滤(webCapable 先于前缀);点击/普通 Enter 统一为仅补全,只有 Cmd/Ctrl+Enter 补全并 emit `commandSubmit`——3.3 与 3.4 的 Enter 语义不再冲突。
+
 
 ### 3.4 `ComposerBox.vue` 改动(键盘与菜单集成)
 
@@ -502,7 +517,7 @@ menuActive.value = !props.running && parsed !== null && !parsed.hasSeparator;
 ```
 
 
-提交路径:菜单激活时 Enter 走 `chooseActive()`(emit `commandSubmit`),不走原 `submit`。
+提交路径(终审复查④统一):菜单激活时**普通 Enter/Tab/点击 = 只补全**(`completeActive()`,不 emit);**仅 Cmd/Ctrl+Enter = 补全并 emit `commandSubmit`**(`completeAndRun()`)——与 3.4 两段式决议一致。
 
 **[批注⑥已采纳] Enter/Tab 统一两段式,消除误触发**:
 
@@ -583,10 +598,11 @@ if (!running.value) {
 ### 3.7 前端测试(vitest)
 
 - `useSlashCommands.test.ts`:
-  - `load` 缓存(force 才重拉)/ 失败静默置空
+  - `load` 缓存(force 才重拉)/ 失败静默置空;**请求断言 query 含 all=true**(终审复查②)
+  - `execute('/new')` → 本地返回 conversationReset、**零网络请求**(无会话时同样,终审复查③)
   - `matchCommand` 三态: `/model x`→executable、`/hotkeys x`→web-reserved、`/abc`→unknown、`/mo`(未完整名)→unknown、非 `/` 开头→unknown
   - `execute` 别名分流: model/thinking 带参走 changeModel/changeThinking(含 412);effects 未知键忽略
-- `CommandMenu` 交互测试:前缀过滤、分类分组、空态占位、select/close emit
+- `CommandMenu` 交互测试:webCapable 过滤(全集输入不出 TUI 项)、前缀过滤、分类分组、空态占位、select/close emit
 - App 级(可选):命令提交后输入框清空 + 系统消息插入
 
 **[批注⑧已采纳] 测试与配套同步清单**:
