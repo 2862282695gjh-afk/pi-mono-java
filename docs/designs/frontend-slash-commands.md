@@ -212,14 +212,21 @@ public record WebCommandDefinition(
     public WebCommandDefinition {
         // SERVER + null handler → 执行期 NPE;CLIENT_LOCAL + handler → 职责不清。
         // 注册期即拒绝,约束成为可执行契约。
-        if (executionMode == null
-                || (executionMode == ExecutionMode.SERVER) == (handler != null)) {
+        // 合法组合: (SERVER, handler!=null) 或 (CLIENT_LOCAL, handler==null),
+        // 即两者布尔值相等;写为 != 并取反抛错(终审复查①:上一版 == 方向写反,
+        // 会放行错误组合、拒绝正确组合)。
+        boolean isServer = executionMode == ExecutionMode.SERVER;
+        boolean hasHandler = handler != null;
+        if (executionMode == null || isServer != hasHandler) {
             throw new IllegalArgumentException(
                 "SERVER requires a handler; CLIENT_LOCAL requires null handler: " + name);
         }
     }
 }
 ```
+
+**[终审复查①已采纳]** 上一版 `(executionMode == SERVER) == (handler != null)` 方向写反(== 拒绝正确组合、放行错误组合);已改为命名布尔 `isServer != hasHandler` 抛错并加注释说明真值表,同时补四组合参数化测试。
+
 
 
 **[再复审③已采纳] record 签名统一 + local-only 描述符显式化**:
@@ -313,6 +320,7 @@ if (parsed != null && catalog.isRegistered(parsed.name())) {
   - `GET /commands` 只含 webCapable 命令,字段齐全
   - `POST /commands/model`(空参)→ 200 + kind=ok + 当前模型 id
   - `POST /commands/model glm-5`(有效参)→ **400 + 稳定引导错误码(如 MODEL_WRITE_VIA_ALIAS)/消息提示走 PUT /model**——不再断言命令端点写入成功(终审④:modelChanged 的成功路径由 PUT /model 既有测试与 useSlashCommands 别名测试覆盖)
+  - **`WebCommandDefinition` 四组合参数化测试(终审复查①)**:(SERVER, handler) 与 (CLIENT_LOCAL, null) 注册成功;(SERVER, null) 与 (CLIENT_LOCAL, handler) 抛 IllegalArgumentException
   - `POST /commands/unknown` → 404
   - `POST /commands/model` 于 streaming 会话 → 409
   - 无效 name 路径段(`/commands/Model`)→ 400
