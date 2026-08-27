@@ -222,6 +222,14 @@ afterCommit:
 - **测试 A(提交失败路径)**:强制第 2 步写 started 或 COMMIT 失败 → 断言 afterCommit 回调**完全未执行**、内存标记不存在、下一次 /compact 不被误 409(正常走准入)
 - **测试 B(提交成功、afterCommit 失败路径)**:COMMIT 成功后强制第 3/4 步抛出 → 断言 started 已持久化 + 同 operationId 终态可达(第 5 步 failed 或 reconcile 补写),呈现 failed 而非悬挂
 
+**[继续复查⑲已采纳——终态写入改为 operationId 条件状态转换]**。批注属实:超时补 failed 后旧 future 仍在跑,晚到的 completed/failed 回调会再写 entry,同一 operationId 出现两条终态。修订:
+
+- **终态写入统一为状态转换**(completed 与 failed 同规则):同一 session 行锁事务内,`确认该 operationId 的 started 尚无终态 entry` → 追加终态;**已存在终态(含超时回收写的 failed)→ no-op 并释放本地资源**(不写 entry)——仓储方法收敛为 `tryAppendTerminalIfOpen(sessionId, operationId, entry)`,completed 的 leaf 条件校验作为其内部第二道检查(leaf 不符仍走取消转 failed 的既有路径,但仅在 operation 仍 open 时)
+- ⑫的"无条件追加 failed"相应修正:无条件指不校验 leaf,**仍须校验 operation open**——两条围栏(leaf 防覆盖、operation 防重复终态)分层
+- 内存标记释放保持幂等(⑰),晚到回调 no-op 后同样释放
+- **跨实例/重启集成测试**:运行超过超时阈值 → 准入回收补 failed + 启动新 operation → 旧 future 随后完成 → 断言旧 operationId 恰一条 failed(回收写的那条)、新 operation 独立完整跑完
+
+
 
 
 
