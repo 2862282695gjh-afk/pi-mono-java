@@ -162,6 +162,14 @@ public class WebCommandCatalog {
 - **不引入独立 operation 表**:三类 entry 全走主分支持久化(与既有 completed 同款),Codec 恢复规则如上;避免双存储一致性
 - CAS 语义因此自洽:expectedLeafId 在 started 之后采样,普通消息只会推进 leaf 触发 CAS 失败——started 自身不会再干扰
 
+**[继续复查⑫已采纳——终态写入用独立无条件追加]**。批注属实:leaf 已被并发消息推进,failed entry 若仍走条件追加(期望旧 leaf)将二次失败,operation 卡在 started。修订:
+
+- **两个仓储方法分工**:`tryAppendCompactionIfLeafUnchanged(expectedLeafId, entry)` 仅用于 **completed**(成功路径,条件保证 summary 不覆盖新消息);**failed 走独立的无条件追加** `appendOperationTerminal(entry)`——以**当前 leaf** 安全追加(复用 appendLocked 行锁语义),不校验 expectedLeafId、不进 Agent 上下文(⑪:codec default 恢复 null),因此与新消息共存无害
+- **completed 的 CAS 失败转投 failed**:条件追加返回失败 → 在同一回调内改调 `appendOperationTerminal(failed entry, errorCode=CANCELLED_BY_NEW_MESSAGES)`——保证 started 后必有且仅有一个终态
+- **单飞标记释放**在 finally(completed 成功、failed 成功、二者均异常)统一执行——与终态写入同一路径,不泄漏
+- **测试**:模拟 leaf 竞争(压缩期间插入普通消息)断言 started 后恰一个 completed 或 failed;两条终态并存为缺陷
+
+
 
 
 
