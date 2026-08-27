@@ -253,6 +253,15 @@ afterCommit:
 - **解除条件修正**(替换㉑的错误表述):首版无 lease 时 suspended **仅由两条路径解除**——①运维显式解除(新增运维端点或运维工具写入 `SUSPENDED_CLEARED` entry,带解除者标识);②**可验证的 worker-stopped 持久化确认**:仅单实例部署下本进程 future 终止时由该进程写 `SUSPENDED_CLEARED`(进程可观测自身 future,这是可验证确认;跨实例的旧 worker 之死**不可**由他进程证明,只能走①)。已写入的 timeout failed **不构成**解除信号(修正㉑)
 - 测试:重启后仍 409(suspended 持久化生效);旧 worker(他实例)退出不误解锁;运维解锁 / 单实例 future 终止清除后才可新建 operation
 
+**[继续复查㉘已采纳——clear 为按 operationId 的条件转换]**。批注属实:cleared 只是追加 entry,旧 suspended 仍存在,"存在即 409"按字面实现永久阻塞;clear 不校验归属则可能误清新 operation 的禁止态。修订:
+
+- **清除即状态转换**:`tryClearSuspensionIfCurrent(sessionId, suspendedOperationId, actor)`——同一行锁事务中,仅当**当前未清除的最新 suspended 恰属于该 operationId** 时写入 `SUSPENDED_CLEARED`(payload: `suspendedOperationId`, `actor`, `clearedAt`);否则(已清除/不匹配/有更新的 suspended)→ **no-op**(幂等,不误清)
+- **准入查询语义修正**:检查的不是"任意 suspended entry 存在",而是"**未被对应 cleared 覆盖的最新 suspended**"——按 (suspended, cleared) 配对判定活跃禁止态;cleared 后即可新建 operation
+- **晚到 clear 安全**:旧 worker 相关的 clear 请求若在新 operation 已产生新 suspended 后到达,因 operationId 不匹配 → no-op,不影响新禁止态
+- entry 类型表补 `SUSPENDED_CLEARED`;投影:cleared 显示"禁止态已解除(操作者/原因)"
+- 测试:clear 后可新建;旧 worker 晚到 clear 不影响新 suspended;重复 clear 幂等
+
+
 
 
 **[横向㉔已采纳]** 2.3 正文四处同步最终语义:启动响应补 operationId(⑩);failed 改"operation-open 条件追加"(⑲,不校验 leaf 但校验 operation);超时后"进入禁止态不启动新压缩"(⑳+㉑);下游历史批注段落标注"已被后续修订取代"。
