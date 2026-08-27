@@ -215,7 +215,13 @@ afterCommit:
 - 事务内**只剩**准入/补写/started 三步;内存标记与 future 启动在 **afterCommit**——提交失败则三者皆无,一致
 - 提交成功但启动失败:started 已在库,走第 5 步写 failed(该场景由⑭的 reconcile 兜底)
 - 内存标记清理幂等(释放时 compare-and-set 该 operationId,防误清新 operation)
-- **测试**:①事务回滚发生在内存登记之后(标记不得遗留/后续请求不受误 409);②提交后启动失败(最终呈现 failed 非悬挂)
+- **测试**(⑱修正):①强制 started 写入或 COMMIT 失败 → afterCommit 未执行、无内存标记、下次请求不误 409;②COMMIT 成功后第 3/4 步失败 → started 已持久化且终态可达(failed),非悬挂
+
+**[继续复查⑱已采纳]**。批注属实:afterCommit 仅在成功提交后调用,"回滚发生在内存登记之后"时序不可能构造。测试改为验证**提交边界**:
+
+- **测试 A(提交失败路径)**:强制第 2 步写 started 或 COMMIT 失败 → 断言 afterCommit 回调**完全未执行**、内存标记不存在、下一次 /compact 不被误 409(正常走准入)
+- **测试 B(提交成功、afterCommit 失败路径)**:COMMIT 成功后强制第 3/4 步抛出 → 断言 started 已持久化 + 同 operationId 终态可达(第 5 步 failed 或 reconcile 补写),呈现 failed 而非悬挂
+
 
 
 
