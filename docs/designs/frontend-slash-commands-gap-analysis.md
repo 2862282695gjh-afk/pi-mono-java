@@ -87,14 +87,17 @@ public class WebCommandCatalog {
 - **纯前端编排命令**(CLIENT_LOCAL 变体 + 读新列表端点);无会话时同样可用(恢复正是"从无会话到有会话")——豁免 session 守卫
 - effects:`sessionRestored`(前端:切换 thread/加载历史/滚到底)
 
+**[横向㉓已采纳——服务端 idPrefix 查询]**:`GET /sessions?sessionIdPrefix=<prefix>&limit=20` 受授权范围约束(按调用者可见 agent 域过滤,agentId 参数仅为过滤条件**非**授权凭据——鉴权沿用 Runtime API 既有机制),返回 `matches[] + hasMore`(上限 20):恰 1 条直接恢复;多条展示候选;hasMore=true 或超上限提示"前缀过短"。测试:跨页同前缀、越权 agentId 不可见、删除/新建导致列表变动时重查。
+
+
 ### 2.3 `/compact`(真实手动压缩 + 进度反馈)
 
 **前提变化**:批注④的"Runtime 无手动压缩"已过时——`SessionCompactor.compact()` 已存在(异步 + Started/Completed/Failed 事件)。缺口是 HTTP 暴露与进度通道。
 
 设计(经复审①/继续复查①④修订后的**当前契约**,前文旧 SSE 表述作废):
 - `/compact` → `POST /sessions/{id}/commands/compact`(SERVER,requiresSession=true)→ 重建会话(含历史恢复)后触发 `SessionCompactor.compact(customInstructions)`
-- **无实时 SSE 进度**:命令同步返回 `{kind:'ok', output:'压缩已启动', effects:{}}`(启动确认);**结果经持久化事件流可查**(compaction 事件已入 RuntimeEntryCodec 持久化,断线重连/刷新后 `GET /events` 历史分页可见"已压缩"条目)
-- 并发保护:leaf 条件追加(继续复查④)+ 进行中单飞 409 `COMPACTION_IN_PROGRESS`
+- **无实时 SSE 进度**:命令同步返回 `{kind:'ok', output:'压缩已启动', operationId, effects:{}}`(启动确认,⑩);**结果经持久化事件流可查**(compaction 事件已入 RuntimeEntryCodec 持久化,断线重连/刷新后 `GET /events` 历史分页可见"已压缩"条目)
+- 并发保护:completed 走 leaf 条件追加(继续复查④);failed/终态写入走 operation-open 校验(⑲);进行中单飞 409 `COMPACTION_IN_PROGRESS`;超时后进入禁止态 409 `COMPACTION_SUSPENDED`(⑳+㉑)
 - 运行态互斥:streaming 中执行 → 409(复用既有互斥语义)
 
 **[复审①已采纳——批注部分属实,架构补全如下]**
@@ -178,7 +181,7 @@ public class WebCommandCatalog {
 
 **[继续复查⑮已采纳——admission guard 持久化]**。批注属实:进程内标记 + future 重启即失,reconcile 未跑前新 /compact 会当空闲再启动,双 operation 破坏单操作不变量。修订:
 
-- **admission 检查落库**:POST /compact 的准入在同一 session 行锁事务内查询持久化 entry——存在未终态的 started:未超时 → 409 `COMPACTION_IN_PROGRESS`;**已超时 → 同步补写 failed**(errorCode=`TERMINAL_WRITE_RECOVERY`,即把 reconcile 的单条逻辑内联到准入路径)后正常走新压缩——准入即最小 reconcile,不依赖后台任务先行
+- **admission 检查落库**:POST /compact 的准入在同一 session 行锁事务内查询持久化 entry——存在未终态的 started:未超时 → 409 `COMPACTION_IN_PROGRESS`;**已超时 → 同步补写 failed**(errorCode=`TERMINAL_WRITE_RECOVERY`)后**进入禁止态、不启动新压缩**(㉑修订:原'正常走新压缩'已被取代——宽限期跨实例不可证明)
 - **进程启动扫描**:启动时(或 reconcile 首轮)全量扫描悬挂 started(有 started 无终态)补 failed——多实例部署下任一实例启动即清理
 - **内存单飞标记降级为快速路径优化**(挡住同进程高频重复),正确性完全由持久化准入保证——两机制不冲突:准入是 source of truth
 - **重启并发集成测试**:写 started → 模拟重启(丢内存态)→ 立即新 /compact → 断言 409(未超时)或补 failed 后成功(超时),全程无双 operation
@@ -237,6 +240,16 @@ afterCommit:
 - 完整 lease 方案(leaseId/epoch/expiresAt、worker 条件续租、原子夺取、重活前+写终态前双点 owner 校验)登记为后续演进——多实例/慢任务场景上量后再做
 
 **测试**:①慢压缩(模拟超过阈值)不被误启动第二次(新请求得到 error 而非双跑);②标记 failed 后旧 future 晚到完成 → no-op(⑲覆盖);③reconcile 宽限期后新压缩可达
+
+**[继续复查㉑已采纳——超时后进入禁止态,不自动放行]**。批注属实:跨实例/重启后宽限期不能证明旧 worker 停止,自动放行仍会双跑;首版无 lease/fencing 就不能把"宽限期已过"当放行条件。修订⑳的保守分支再收紧:
+
+- 超时补 failed(`TIMEOUT_OBSERVED`)后该 session 进入 **compaction 禁止态**:新 /compact 一律 409 `COMPACTION_SUSPENDED`(提示"存在超时未确认的压缩任务,请联系运维或等待系统确认")——直至旧 worker **可观察地写入终态**(任何进程补写 completed/failed 均解除)或运维显式确认;不做基于时间的自动恢复
+- 单实例部署下 reconcile 可观测本进程 future 终止(⑰生命周期),future 结束即写终态解除禁止态——常见路径自动化不受影响;跨实例悬挂需人工介入(登记运维 runbook)
+- lease/fencing 若产品要求全自动恢复则为前置能力——按批注提示从"后续演进"升级为**条件性前置**(多实例部署启用 compact 前必须先实现);测试:旧 worker 于另一实例运行 + 当前实例重启超宽限期 → 不得启动第二个任务
+
+
+**[横向㉔已采纳]** 2.3 正文四处同步最终语义:启动响应补 operationId(⑩);failed 改"operation-open 条件追加"(⑲,不校验 leaf 但校验 operation);超时后"进入禁止态不启动新压缩"(⑳+㉑);下游历史批注段落标注"已被后续修订取代"。
+
 
 
 
@@ -313,7 +326,10 @@ public interface SlashCommandExtension {
 
 - 命名规则:与内置/`skill:` 前缀冲突 → **注册期抛错**(启动失败,显式暴露冲突);建议约定 Extension 命令以自有前缀命名(如 `git:`、`jira:`)
 - descriptor 完整暴露(name/description/argsHint/category/executionMode),`?all=true` 可见性同内置
-- 无会话策略:Extension 自声明(definition 增加 `requiresSession` 布尔,SERVER 默认 true,CLIENT_LOCAL 恒 false)
+- 无会话策略:`requiresSession` 布尔(默认 true);**首版 Extension 限 SERVER**(横向㉒:注册 CLIENT_LOCAL 启动期拒绝)
+
+**[横向㉒已采纳]** 首版 Extension 命令**限定 SERVER**(可选 streaming/requiresSession);`WebCommandCatalog` 注册时校验 Extension 声明 CLIENT_LOCAL → 启动期抛错(无浏览器扩展包/可信加载/handler 注册协议,前端识别模式却无代码可执行)。CLIENT_LOCAL 仅保留前端内置命令(new/resume);客户端扩展需签名/发布/版本协商/沙箱设计,另行立项。契约测试:Extension 注册 CLIENT_LOCAL 启动期拒绝。
+
 
 **[复查⑦已采纳——统一 namespace grammar]**。名称规范定义为:
 
