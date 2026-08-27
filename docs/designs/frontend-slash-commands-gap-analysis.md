@@ -308,6 +308,24 @@ afterCommit:
 - 与 events 守卫的关系:`skill:*` 注册进 Catalog → 守卫拦截 `  /skill:foo` 一致
 - 权限:Skill 的权限/信任边界沿用现有 Skill 加载体系,命令层不另设
 
+**[横向㉛已采纳——skill 守卫按 grammar 路由,不查静态表]**。批注属实:㉚后 skill 不在静态 Catalog,原"注册进 Catalog 才拦截"会漏——已安装 skill 可能漏进普通 prompt。修订守卫判定:
+
+```
+守卫(same 事务路径):
+  parsed = parseSlashInput(message)
+  if parsed == null → 透传
+  if parsed.name 匹配 ^skill:[a-z0-9-]+$ → **一律路由 Command Invoker**
+      (session 的 SkillResolver 决定:成功执行 / SKILL_NOT_FOUND /
+       SKILL_NOT_VISIBLE / SKILL_INVOCATION_DISABLED——绝不落入普通 prompt)
+  else if 静态 Catalog.isRegistered(parsed.name) → 拒(引导命令端点)
+  else → 透传
+```
+
+- skill 分支**不看静态表**,由 grammar 前缀 + per-session resolver 确定性处置——客户端无法绕过服务端 Skill 解析
+- 内置/Extension 仍走静态 isRegistered(它们确在 Catalog)
+- 测试:直接 POST /events 的已安装 skill(路由执行)/未知 skill(稳定错误)/不可见 skill(错误,非透传)/不同 agent 同名 skill 可见性差异——断言 skill 输入**绝不**作为普通 prompt 到达模型
+
+
 **[复审②已采纳——契约贯通修订]**:
 - **名称模式统一**:`^([a-z][a-z0-9-]*|skill:[a-z0-9-]+)$`——主文档 Controller `@PathVariable` 校验、Catalog parser、TS `SlashCommandDescriptor.name` 注释同步;冲突测试:内置命令名不得以 `skill:` 开头(注册期检查)
 - **category 枚举扩容**:`'session' | 'conversation' | 'system' | 'skill' | 'extension'`(tui 随 TUI 删除移除);DTO 与 TS 同步
