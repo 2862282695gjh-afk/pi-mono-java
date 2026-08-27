@@ -199,6 +199,29 @@ public record WebCommandDefinition(
 // 不持有 RuntimeSessionHolder(idle 会话无 Holder,见复审②)。
 ```
 
+**[终审①已采纳] 执行模式约束落进 compact constructor**(注释约定不阻止错误注册):
+
+```java
+public record WebCommandDefinition(
+        String name, String description, String argsHint, String category,
+        ExecutionMode executionMode,
+        BiFunction<CommandExecutionContext, String, CommandOutcome> handler) {
+
+    public enum ExecutionMode { SERVER, CLIENT_LOCAL }
+
+    public WebCommandDefinition {
+        // SERVER + null handler → 执行期 NPE;CLIENT_LOCAL + handler → 职责不清。
+        // 注册期即拒绝,约束成为可执行契约。
+        if (executionMode == null
+                || (executionMode == ExecutionMode.SERVER) == (handler != null)) {
+            throw new IllegalArgumentException(
+                "SERVER requires a handler; CLIENT_LOCAL requires null handler: " + name);
+        }
+    }
+}
+```
+
+
 **[再复审③已采纳] record 签名统一 + local-only 描述符显式化**:
 - 签名统一为 `BiFunction<CommandExecutionContext, String, CommandOutcome>`(第二参数 = arguments,保留 BiFunction;复审②正文的"单参数 Function"表述作废)
 - `/new` 等纯前端命令不从该 record 虚设 handler:`WebCommandDefinition` 增加 `executionMode` 字段——`SERVER`(handler 必填)/ `CLIENT_LOCAL`(handler 为 null,后端 `/commands/{name}` 收到直接返回 400 提示 client-local command);三态 matcher 与菜单照常把它当 executable,execute 在前端本地处理,零网络请求
@@ -206,11 +229,14 @@ public record WebCommandDefinition(
 
 **[复审②已采纳] handler 上下文改为持久层,不依赖 `RuntimeSessionHolder`**。批注属实:`RuntimeSessionEngineRegistry` 类注释明确"不缓存 idle Session"、Holder 随执行结束释放——而命令恰在非 running 态执行,届时 Holder 已不可用。修订:
 
-- `WebCommandDefinition.handler` 签名改为 `Function<CommandExecutionContext, CommandOutcome>`,`CommandExecutionContext` 携带 `sessionId` + `RuntimeSessionService`(现有持久化会话服务,`RuntimeSessionConfigurationService` 同款读取路径)
+- `WebCommandDefinition.handler` 签名为 `BiFunction<CommandExecutionContext, String, CommandOutcome>`(第二参数 = arguments;终审②统一,以再复审③ record 定义为准),`CommandExecutionContext` 携带 `sessionId` + `RuntimeSessionService`(现有持久化会话服务,`RuntimeSessionConfigurationService` 同款读取路径)
 - `model`/`thinking` 空参查询:从会话存储读(`requireSession(sessionId)`),不经 Holder
 - `/new`:**降级为纯前端动作**——不出现在命令端点注册表(matchCommand 三态仍判定为 executable,但 execute 直接本地清视图,零网络请求);注册表实际后端命令只剩 `model`/`thinking`(查询) + `help`/`settings`
 
-**为什么不复用 `SlashCommandRegistry`**:TUI 命令的 `SlashCommandContext` 携带 `AgentSession + OutputWriter`(终端语义),27 个命令大量直接操作 TUI 状态;Web 侧上下文是 `RuntimeSessionHolder`(runtime 会话)。硬桥接需要重写所有命令的上下文适配,不如为新语义建独立注册表,首版只注册 Web 能做的 5 个命令(见下表;model/thinking 写操作走别名,注册表内仅空参查询),handler 内部**复用底层会话操作方法**。
+**为什么不复用 `SlashCommandRegistry`**:TUI 命令的 `SlashCommandContext` 携带 `AgentSession + OutputWriter`(终端语义),27 个命令大量直接操作 TUI 状态;Web 侧上下文是 `CommandExecutionContext`(持久层会话读取,见复审②)。硬桥接需要重写所有命令的上下文适配,不如为新语义建独立注册表,首版只注册 Web 能做的 5 个命令(见下表;model/thinking 写操作走别名,注册表内仅空参查询),handler 内部**复用底层会话操作方法**。
+
+**[终审②已采纳]** 复审②决议段的 `Function` 单参表述与 `RuntimeSessionHolder` 上下文残留已清理(统一为 `BiFunction<CommandExecutionContext, String, CommandOutcome>` + `CommandExecutionContext`);Controller 骨架 `invoke(holder, ...)` 同步改为传入 `CommandExecutionContext`。
+
 
 `WebCommandCatalog` 注册表(**首版 5 个**,与批注④决议一致;model/thinking 的写操作走前端别名不经此端点,见 1.2):
 
@@ -261,7 +287,7 @@ public class RuntimeCommandController {
             @RequestBody CommandExecuteRequestDTO body) {
         // 404: 未注册命令名(异常处理器映射)
         // 409: 会话 streaming 且命令标记互斥(model/thinking/name)
-        // 其余: invoker.invoke(holder, name, body.arguments())
+        // 其余: invoker.invoke(new CommandExecutionContext(sessionId, sessionService), name, body.arguments())
     }
 }
 ```
@@ -269,12 +295,15 @@ public class RuntimeCommandController {
 ### 2.4 `/events` 守卫(RuntimeEventService)
 
 ```java
-// submit() 入口、校验 message 之后:
-String head = firstToken(message);  // 去掉 '/' 的第一个空白分隔 token
-if (message.startsWith("/") && commandInvoker.isRegistered(head)) {
-    throw new RuntimeApiException(RuntimeErrorCode.COMMAND_NOT_ROUTED, head);
+// submit() 入口、校验 message 之后(终审③:与 1.3 共享解析,勿手写 startsWith/firstToken):
+var parsed = catalog.parseSlashInput(message);
+if (parsed != null && catalog.isRegistered(parsed.name())) {
+    throw new RuntimeApiException(RuntimeErrorCode.COMMAND_NOT_ROUTED, parsed.name());
 }
 ```
+
+**[终审③已采纳]** 守卫骨架改用 `catalog.parseSlashInput(message)` + `isRegistered(parsed.name())`(与 1.3 共享规范,含前导空白容忍)——原始 `startsWith("/") + firstToken` 写法会使 `'  /model'` 这类前端可识别的输入绕过守卫直达模型,前后端不一致。守卫回归测试追加:`'  /model'`、`'/  model x'`(前导空白与多空白形式)。
+
 
 `COMMAND_NOT_ROUTED` 加入 `RuntimeErrorCode`,HTTP 映射 400。
 
@@ -283,10 +312,13 @@ if (message.startsWith("/") && commandInvoker.isRegistered(head)) {
 - `RuntimeCommandControllerTest`(MockMvc 或现有测试风格):
   - `GET /commands` 只含 webCapable 命令,字段齐全
   - `POST /commands/model`(空参)→ 200 + kind=ok + 当前模型 id
-  - `POST /commands/model`(有效参)→ effects.modelChanged=true
+  - `POST /commands/model glm-5`(有效参)→ **400 + 稳定引导错误码(如 MODEL_WRITE_VIA_ALIAS)/消息提示走 PUT /model**——不再断言命令端点写入成功(终审④:modelChanged 的成功路径由 PUT /model 既有测试与 useSlashCommands 别名测试覆盖)
   - `POST /commands/unknown` → 404
   - `POST /commands/model` 于 streaming 会话 → 409
   - 无效 name 路径段(`/commands/Model`)→ 400
+
+**[终审④已采纳]** 上一行"(有效参)→ effects.modelChanged=true"是 v2 遗留的双写路径断言,已改写为 400 + 稳定引导错误码;`modelChanged` 成功用例归属 PUT /model 既有测试与前端别名测试。
+
 - `RuntimeEventServiceTest` 增补:
   - `/model x` 走 events → 400 COMMAND_NOT_ROUTED
   - `/非命令文本` → 正常透传(现有断言不破坏)
