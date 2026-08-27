@@ -1,8 +1,8 @@
 # 前端 Slash Commands 功能设计文档
 
 > 模块:`coding-agent-cli`(runtimeapi) + `frontend/`
-> 状态:Proposed
-> 日期:2026-08-25(v2),2026-08-26(v3 评审修订:采纳 codex 批注①—⑧)
+> 状态:**Superseded**——已被 [frontend-slash-commands-gap-analysis.md](frontend-slash-commands-gap-analysis.md) 取代(复审④)
+> 日期:2026-08-25(v2),2026-08-26(v3),2026-08-27 标记废弃
 > 契约基线:Runtime HTTP 1.38(`BASE_PATH = /campusclaw-service/v1`);本设计的契约改动为 **1.39 候选**,落地前需与 owner 对齐
 > 读者:前端(Vue)与后端(Java runtimeapi)开发者,按本文可直接开工
 

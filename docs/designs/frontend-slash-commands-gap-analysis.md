@@ -47,7 +47,7 @@
 
 ## 第二部分:新范围设计(四项新需求 + 原有五命令)
 
-### 2.1 命令目录动态化(WebCommandCatalog 重设计)
+### 2.1 命令目录:启动期可扩展,运行期静态(WebCommandCatalog)
 
 原"静态注册表"改为**运行时可注册的目录 Bean**,三来源:
 
@@ -74,7 +74,7 @@ public class WebCommandCatalog {
 }
 ```
 
-**动态性影响**:`GET /commands` 不再是"幂等静态"——Extension 可在启动后注册(仅启动期,运行期注册暂不开放,首版目录启动后冻结);响应仍可缓存至 Extension 重载。
+**缓存策略(复审③)**:Extension 仅启动期经构造注入,运行期静态——`GET /commands` 幂等可安全缓存(内存缓存即可,无需 ETag/失效机制);运行期动态注册为后续演进,首版不做。
 
 ### 2.2 `/resume`(检索并恢复已有会话)
 
@@ -97,6 +97,21 @@ public class WebCommandCatalog {
 - 命令本身返回 `{kind:'ok', output:'压缩已启动', effects:{}}`(异步启动确认),结果由事件流送达
 - 运行态互斥:streaming 中执行 → 409(复用既有互斥语义)
 
+**[复审①已采纳——批注部分属实,架构补全如下]**
+
+查证:compaction 事件到 SSE 的桥接**已存在**(`RuntimeExecutionCoordinator:91` `holder.subscribeCompaction(projector::onCompactionEvent)`,projector 含 Started/Completed/Failed 三分支投影)——但批注核心成立:**该桥接只在 events 请求的执行期存活**(subscribe 随 submit 开始、finish 时 unsubscribe),且 idle 会话 Holder 已释放,命令端点无法仅凭 sessionId 触达 `ManagedAgentSession.compact()`。补全架构:
+
+**1. 会话重建(可压缩 Session 的取得)**:`POST /compact` 经 `AgentSessionFactory` 按持久化配置重建 `ManagedAgentSession`(与 Cron 触发同款路径——Cron 无入站请求也能压缩,证明该路径可行),压缩完成后释放重建的 Session(不留 Holder)。
+
+**2. 事件投影到"命令请求对应 SSE"——不承诺**:批注正确指出 commands POST 返回后没有活跃订阅者。修订承诺为两层:
+- **持久层(可靠)**:compaction 事件写入既有持久化事件流(RuntimeEntryCodec 已编码 compaction 事件)——断线重连/新开页面经 `GET /events` 历史分页可见"已压缩"结果,这覆盖状态查询需求
+- **实时层(尽力)**:若压缩期间用户恰在 streaming(409 互斥已排除此态)——实际不成立;因此**首版 /compact 无实时进度,只有启动确认 + 持久化结果**。时间线显示"压缩已启动,结果稍后出现在历史中"
+
+**3. abort 取消语义**:手动压缩经重建 Session 独立执行,与会话的 abort(CancellationToken)不共享;压缩任务自身可经 `CompletableFuture.cancel()` 取消——**首版不暴露取消端点**(压缩通常秒级完成,取消价值低),登记 DEFERRED 待真实需求。
+
+**结论**:`POST /compact` 承诺修正为"同步返回启动确认;结果经持久化事件流可查;无实时 SSE 进度"——不再声称"经既有 events SSE 反馈进度"。
+
+
 ### 2.4 `/skill:<skill-name> [arguments]`(发现/补全/执行)
 
 命名规则:以 `skill:` 为前缀的命名空间,`^skill:[a-z0-9-]+$`(与命令名 `^[a-z][a-z0-9-]*$` 区分,不冲突)。
@@ -105,6 +120,12 @@ public class WebCommandCatalog {
 - **执行**:`POST /sessions/{id}/commands/skill:<name>`(SERVER)→ 将 `<arguments>` 作为用户消息**注入当前会话上下文**(等价用户手打,走正常 agent 循环);返回 `{kind:'ok', output:'已提交技能 xxx'}`,实际执行结果经 events SSE
 - 与 events 守卫的关系:`skill:*` 注册进 Catalog → 守卫拦截 `  /skill:foo` 一致
 - 权限:Skill 的权限/信任边界沿用现有 Skill 加载体系,命令层不另设
+
+**[复审②已采纳——契约贯通修订]**:
+- **名称模式统一**:`^([a-z][a-z0-9-]*|skill:[a-z0-9-]+)$`——主文档 Controller `@PathVariable` 校验、Catalog parser、TS `SlashCommandDescriptor.name` 注释同步;冲突测试:内置命令名不得以 `skill:` 开头(注册期检查)
+- **category 枚举扩容**:`'session' | 'conversation' | 'system' | 'skill' | 'extension'`(tui 随 TUI 删除移除);DTO 与 TS 同步
+- **执行流定稿——复用 events 协议,不自建订阅**:`POST /commands/skill:<name>` 的语义修订为**"服务器替用户提交一条消息"**——内部等价于 `POST /events {message: skillArgs}`,走同一条 submit 路径(RuntimeEventService 既有投影/持久化/流式全继承)。前端交互:命令确认返回后**前端自动发起一次 events 请求订阅输出**(与用户手动发消息的流一致),不新增可重连订阅;断线重连经既有 `GET /events` 历史分页。即:命令是"快捷输入",执行流完全复用消息协议——不出现第二套运行事件通道。
+
 
 ### 2.5 Extension 自定义命令注册
 
@@ -117,6 +138,9 @@ public interface SlashCommandExtension {
 - 命名规则:与内置/`skill:` 前缀冲突 → **注册期抛错**(启动失败,显式暴露冲突);建议约定 Extension 命令以自有前缀命名(如 `git:`、`jira:`)
 - descriptor 完整暴露(name/description/argsHint/category/executionMode),`?all=true` 可见性同内置
 - 无会话策略:Extension 自声明(definition 增加 `requiresSession` 布尔,SERVER 默认 true,CLIENT_LOCAL 恒 false)
+
+**[复审③已采纳]** 2.1 标题与"动态性影响"段改为"**启动期可扩展,运行期静态**":Extension 仅经 Spring 构造注入(启动期组合),运行期无注册/卸载 API;`GET /commands` 保持幂等可安全缓存,无需缓存失效机制。真正的运行期动态(安装/卸载/重载 + 目录版本)登记为后续演进,首版不做。
+
 
 ### 2.6 无会话策略统一表(替代边界表的旧表述)
 
@@ -147,6 +171,9 @@ public interface SlashCommandExtension {
 | 同步 <100ms 无 SSE | 命令确认仍同步;compact/skill 的**执行结果**经 events SSE |
 | webCapable 三态(基于 TUI-only 命令) | 保留概念但语义更新:目录含 skill:*/Extension 动态项,`hotkeys` 等 TUI-only 已随 TUI 删除自然消失 |
 | SlashCommandContext(AgentSession+OutputWriter) | 现实为 SlashCommandSession 端口 + SlashCommandOutput;Web 侧仍用 CommandExecutionContext(前设计),但 model/thinking/compact 可直接委托给既有 4 个内置命令的实现(它们已对端口编程) |
+
+**[复审④已采纳——主文档标记 Superseded]**:frontend-slash-commands.md 头部状态改为 Superseded(指向本文),其"TUI 27 命令/静态 5 命令/同步无 SSE/compact 移出/旧 category"等历史结论不再具执行力;本文成为单一规范(完整覆盖 HTTP 契约/DTO/前端接线/测试)。开发以本文为准。
+
 
 ## 测试与验证(增量)
 
