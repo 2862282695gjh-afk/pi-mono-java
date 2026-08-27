@@ -199,6 +199,25 @@ COMMIT
 - 准入、超时补写、started 写入、单飞登记**四步一事务**——并发两请求串行化于行锁,第二个必见第一个的 started → 409
 - **集成测试**:两并发 POST /compact 断言恰一条 started 持久化 + 一个 409 响应
 
+**[继续复查⑰已采纳——内存标记移出事务]**。批注属实:内存标记不可随数据库回滚——提交失败时标记遗留而库中无 started,进程内永久误报 409。修订序列:
+
+```
+DB 事务(行锁):
+  1. 查未终态 started(未超时→回滚 409;超时→补 failed)
+  2. 生成 operationId,写入 started
+COMMIT
+afterCommit:
+  3. 登记内存快速路径标记(幂等 putIfAbsent)
+  4. 启动压缩 future
+  5. 若 3/4 失败:同 operationId 尽力写 failed → 仍失败交 reconcile
+```
+
+- 事务内**只剩**准入/补写/started 三步;内存标记与 future 启动在 **afterCommit**——提交失败则三者皆无,一致
+- 提交成功但启动失败:started 已在库,走第 5 步写 failed(该场景由⑭的 reconcile 兜底)
+- 内存标记清理幂等(释放时 compare-and-set 该 operationId,防误清新 operation)
+- **测试**:①事务回滚发生在内存登记之后(标记不得遗留/后续请求不受误 409);②提交后启动失败(最终呈现 failed 非悬挂)
+
+
 
 
 
