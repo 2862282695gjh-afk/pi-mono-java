@@ -10,13 +10,13 @@ import {
   type VNodeChild,
 } from 'vue';
 import {
-  parseAssistantMarkdown,
+  parseSafeMarkdown,
   type RichElementNode,
   type RichTextNode,
 } from '../markdown/richText';
 
 export default defineComponent({
-  name: 'AssistantRichText',
+  name: 'SafeRichText',
   props: {
     source: {
       type: String,
@@ -26,11 +26,15 @@ export default defineComponent({
       type: Boolean as PropType<boolean>,
       default: false,
     },
+    completionMessage: {
+      type: String,
+      default: '',
+    },
   },
   setup(props) {
     const renderedSource = ref(props.source);
     const renderedStreaming = ref(props.streaming);
-    const document = computed(() => parseAssistantMarkdown(renderedSource.value, renderedStreaming.value));
+    const document = computed(() => parseSafeMarkdown(renderedSource.value, renderedStreaming.value));
     const completionAnnouncement = ref('');
     let pendingSource = props.source;
     let renderFrame: number | undefined;
@@ -41,7 +45,7 @@ export default defineComponent({
         cancelRenderFrame();
         renderedSource.value = source;
         renderedStreaming.value = false;
-        if (previous?.[1]) announceCompletion();
+        if (previous?.[1] && props.completionMessage) announceCompletion();
         return;
       }
       pendingSource = source;
@@ -69,7 +73,7 @@ export default defineComponent({
     }
 
     function announceCompletion(): void {
-      completionAnnouncement.value = '回答已完成';
+      completionAnnouncement.value = props.completionMessage;
       if (announcementTimer !== undefined) window.clearTimeout(announcementTimer);
       announcementTimer = window.setTimeout(() => {
         completionAnnouncement.value = '';
@@ -171,7 +175,7 @@ export default defineComponent({
     }
 
     return () => h('div', {
-      class: ['assistant-rich-text', document.value.fallback && 'is-plain-fallback'],
+      class: ['safe-rich-text', document.value.fallback && 'is-plain-fallback'],
       'aria-live': 'off',
     }, [
       document.value.fallback

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onUnmounted, ref } from 'vue';
-import AssistantRichText from './AssistantRichText';
 import BrandMark from './BrandMark.vue';
+import SafeRichText from './SafeRichText';
 import ThinkingDisclosure from './ThinkingDisclosure.vue';
 import ToolActivity from './ToolActivity.vue';
 import type { AgentRound } from '../projectors/conversationRounds';
@@ -43,10 +43,11 @@ async function copyRound(): Promise<void> {
     <div class="agent-round-body">
       <template v-for="block in round.blocks" :key="block.key">
         <div v-if="block.kind === 'assistant'" class="agent-message">
-          <AssistantRichText
+          <SafeRichText
             v-if="block.turn.rawMarkdown"
             :source="block.turn.rawMarkdown"
             :streaming="block.turn.streaming"
+            completion-message="回答已完成"
           />
           <div v-else-if="block.turn.streaming" class="assistant-working">
             <span class="spinner" aria-hidden="true"></span>

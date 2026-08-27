@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
-  MAX_ASSISTANT_MARKDOWN_SOURCE_LENGTH,
-  parseAssistantMarkdown,
+  MAX_RICH_TEXT_SOURCE_LENGTH,
+  parseSafeMarkdown,
   safeExternalLink,
   splitStableMarkdown,
   type RichTextNode,
@@ -23,7 +23,7 @@ function textContent(nodes: RichTextNode[]): string {
   }).join('');
 }
 
-describe('parseAssistantMarkdown', () => {
+describe('parseSafeMarkdown', () => {
   it('projects supported block and inline syntax into controlled nodes', () => {
     const source = [
       '# Heading',
@@ -39,7 +39,7 @@ describe('parseAssistantMarkdown', () => {
       '```',
     ].join('\n');
 
-    const document = parseAssistantMarkdown(source);
+    const document = parseSafeMarkdown(source);
     const nodes = walk(document.nodes);
 
     expect(document.fallback).toBe(false);
@@ -58,7 +58,7 @@ describe('parseAssistantMarkdown', () => {
   });
 
   it('clamps heading hierarchy to h2 through h4', () => {
-    const nodes = walk(parseAssistantMarkdown('# One\n\n### Three\n\n###### Six').nodes);
+    const nodes = walk(parseSafeMarkdown('# One\n\n### Three\n\n###### Six').nodes);
     const headings = nodes
       .filter((node) => node.kind === 'element' && /^h\d$/.test(node.name))
       .map((node) => node.kind === 'element' ? node.name : '');
@@ -68,7 +68,7 @@ describe('parseAssistantMarkdown', () => {
 
   it('keeps raw HTML inert and replaces Markdown images with a placeholder', () => {
     const source = '<script>alert("x")</script>\n\n![diagram](https://attacker.example/pixel.png)';
-    const nodes = walk(parseAssistantMarkdown(source).nodes);
+    const nodes = walk(parseSafeMarkdown(source).nodes);
 
     expect(textContent(nodes)).toContain('<script>alert("x")</script>');
     expect(nodes.some((node) => node.kind === 'element' && ['script', 'img'].includes(node.name))).toBe(false);
@@ -85,7 +85,7 @@ describe('parseAssistantMarkdown', () => {
       '',
       '[credentials](https://user:password@example.com/)',
     ].join('\n');
-    const links = walk(parseAssistantMarkdown(source).nodes).filter((node) => node.kind === 'link');
+    const links = walk(parseSafeMarkdown(source).nodes).filter((node) => node.kind === 'link');
 
     expect(links).toContainEqual(expect.objectContaining({
       href: 'https://example.com/path',
@@ -97,7 +97,7 @@ describe('parseAssistantMarkdown', () => {
   });
 
   it('marks task-list items as read-only task state', () => {
-    const nodes = walk(parseAssistantMarkdown('- [x] shipped\n- [ ] pending').nodes);
+    const nodes = walk(parseSafeMarkdown('- [x] shipped\n- [ ] pending').nodes);
     const items = nodes.filter((node) => node.kind === 'element' && node.name === 'li');
 
     expect(items).toHaveLength(2);
@@ -109,8 +109,8 @@ describe('parseAssistantMarkdown', () => {
 
   it('keeps the unstable streaming tail plain until a safe block boundary', () => {
     const source = 'Stable paragraph.\n\n| Name | Value |\n| --- | --- |\n| alpha | one |';
-    const streaming = parseAssistantMarkdown(source, true);
-    const completed = parseAssistantMarkdown(source, false);
+    const streaming = parseSafeMarkdown(source, true);
+    const completed = parseSafeMarkdown(source, false);
 
     expect(streaming.nodes.at(-1)).toMatchObject({
       kind: 'streamingTail',
@@ -126,14 +126,14 @@ describe('parseAssistantMarkdown', () => {
   });
 
   it('falls back to plain text when source or node budgets are exceeded', () => {
-    const oversized = 'x'.repeat(MAX_ASSISTANT_MARKDOWN_SOURCE_LENGTH + 1);
+    const oversized = 'x'.repeat(MAX_RICH_TEXT_SOURCE_LENGTH + 1);
     const deeplyPopulated = Array.from({ length: 6_000 }, (_, index) => `paragraph ${index}`).join('\n\n');
 
-    expect(parseAssistantMarkdown(oversized)).toMatchObject({
+    expect(parseSafeMarkdown(oversized)).toMatchObject({
       fallback: true,
       fallbackReason: 'sourceLength',
     });
-    expect(parseAssistantMarkdown(deeplyPopulated)).toMatchObject({
+    expect(parseSafeMarkdown(deeplyPopulated)).toMatchObject({
       fallback: true,
       fallbackReason: 'nodeCount',
     });

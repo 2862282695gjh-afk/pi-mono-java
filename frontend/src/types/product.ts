@@ -31,7 +31,7 @@ export interface ThinkingTurn {
   kind: 'thinking';
   status: 'running' | 'completed';
   title: string;
-  summary: string;
+  content: string;
 }
 
 export interface ToolArgumentRow {

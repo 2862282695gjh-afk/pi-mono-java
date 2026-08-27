@@ -14,9 +14,9 @@ mate-service 公共 Agent/Chat/Attachment API；在该契约完成前，本 adap
 - Session 创建、恢复、删除、模型选择和深度思考；
 - `POST /sessions/{sessionId}/events` 请求级 SSE 增量解析；
 - 当前分支持久化历史分页、去重和流结束后的恢复；
-- User、Assistant、安全 Thinking 状态/摘要和工具生命周期的产品对象投影；
-- Assistant 安全富文本、流式稳定区渲染、表格与代码块局部横向滚动；
-- 分析过程始终可展开；只有收到 Thinking 事件但缺少面向用户的摘要字段时才显示明确占位，不展示原始推理；
+- User、Assistant、原始 Thinking 和工具生命周期的产品对象投影；
+- Assistant、Thinking 与 Tool 输出共用安全富文本、流式稳定区渲染、表格与代码块局部横向滚动；
+- 分析过程始终可展开，直接增量展示 `assistant.thinking.delta` 原始片段，并由 completed 内容校正；
 - 每个 Thinking 与 Tool 分别进入独立暖灰虚线活动框，工具详情按输入在上、输出在下排列；
 - 每轮 Agent 回答只提供一个 Codex 风格图标复制入口，复制本轮全部 Assistant Markdown；
 - 运行中“调整方向”“加入队列”“停止”；
@@ -26,11 +26,11 @@ mate-service 公共 Agent/Chat/Attachment API；在该契约完成前，本 adap
 界面不会接收或显示 JWT、APPKEY、ETag、内部 Session ID、原始 JSON 或 SSE frame。开发构建
 保留一个可折叠诊断入口，仅允许临时指定 Agent ID 或恢复 Session；生产构建不会渲染该入口。
 
-Assistant 文本支持受控 Markdown；原始 HTML 不执行，图片不发起网络请求，只有绝对
-`http`/`https` 链接可以点击。User、Tool result 和错误信息继续按纯文本显示。Thinking
-只读取 bridge 未来提供的 `thinkingDisplayTitle`/`thinkingDisplaySummary`（兼容
-`displayTitle`/`displaySummary`）。完全没有 Thinking 事件时不创建分析框；已收到事件但当前
-Runtime 只有原始 thinking 时，展开区明确提示未收到面向用户的摘要，绝不展示原始推理文本。
+Assistant、Thinking 和 Tool result 文本共用受控 Markdown；原始 HTML 不执行，图片不发起
+网络请求，只有绝对 `http`/`https` 链接可以点击。Thinking 从现有
+`assistant.thinking.delta.data.delta.text` 增量追加，收到
+`assistant.thinking.completed.data.content.text` 后以持久化全文替换；完全没有 Thinking 事件时
+不创建分析框。User 文本和 Tool 输入参数继续使用纯文本/结构化键值展示。
 
 工具参数在进入 DOM 前执行行数、深度和长度预算，并隐藏凭据、内部 ID 和绝对路径；这是
 过渡 adapter 的纵深防护，不替代生产 bridge 在网络边界完成字段级最小化和脱敏。
@@ -94,4 +94,5 @@ npm audit --audit-level=high
 [ADR-0020](../docs/decisions/0020-campusclaw-product-frontend-boundary.html)、
 [ADR-0027](../docs/decisions/0027-assistant-safe-rich-text.html) 和
 [ADR-0028](../docs/decisions/0028-agent-activity-disclosure-and-o1-brand.html)、
-[ADR-0029](../docs/decisions/0029-agent-round-actions-and-activity-panel.html)。
+[ADR-0029](../docs/decisions/0029-agent-round-actions-and-activity-panel.html) 和
+[ADR-0030](../docs/decisions/0030-runtime-thinking-and-activity-rich-text.md)。

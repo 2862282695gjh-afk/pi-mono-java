@@ -103,7 +103,7 @@ function projectThinkingEvent(
       kind: 'thinking',
       status: 'running',
       title: '正在分析',
-      summary: '',
+      content: '',
     };
     thinkingTurns.set(key, turn);
     turns.push(turn);
@@ -111,8 +111,13 @@ function projectThinkingEvent(
 
   const completed = envelope.event === 'assistant.thinking.completed';
   turn.status = completed ? 'completed' : 'running';
-  turn.title = readThinkingDisplay(envelope.data, 'Title') || (completed ? '分析过程' : '正在分析');
-  turn.summary = readThinkingDisplay(envelope.data, 'Summary') || turn.summary;
+  turn.title = completed ? '分析过程' : '正在分析';
+  if (envelope.event === 'assistant.thinking.delta') {
+    turn.content += readTextContent(envelope.data.delta);
+  }
+  if (completed) {
+    turn.content = readThinkingContent(envelope.data.content) || turn.content;
+  }
 }
 
 function projectToolEvent(
@@ -277,13 +282,13 @@ function truncate(value: string, limit: number, suffix = '…'): string {
   return value.length > limit ? `${value.slice(0, limit)}${suffix}` : value;
 }
 
-function readThinkingDisplay(data: RuntimeEventData, suffix: 'Title' | 'Summary'): string {
-  return readString(data[`thinkingDisplay${suffix}`]) || readString(data[`display${suffix}`]);
-}
-
 function readMessageText(value: unknown): string {
   const message = readRecord(value);
   return readContentArrayText(message?.content);
+}
+
+function readThinkingContent(value: unknown): string {
+  return readTextContent(value) || readContentArrayText(value);
 }
 
 function readContentArrayText(value: unknown): string {

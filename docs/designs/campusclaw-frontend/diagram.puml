@@ -1,6 +1,6 @@
 @startuml frontend_product_boundary
 ' Backend source baseline: origin/main 63adc08cf5c57e3a7cc3caa317452062606ce8b4.
-' Frontend interaction-refinement baseline: origin/main 1813c601101660a401e5e2004c5c00b8e3d7b75b.
+' Frontend interaction-refinement baseline: PR 179 commit 8c5f3462d745ec0c5146d55dcb62108ac2a33282.
 ' Source evidence: frontend/src/App.vue (createSession, resumeSession, submit, product shell).
 ' Source evidence: frontend/src/composables/useRuntimeApi.ts (useRuntimeApi, requestRaw, consumeSse).
 ' Source evidence: frontend/src/projectors/runtimeEventProjector.ts (projectRuntimeEvents).
@@ -68,30 +68,33 @@ end note
 @enduml
 
 @startuml assistant_rich_text_rendering
-' Analyzed source baseline: origin/main 1813c601101660a401e5e2004c5c00b8e3d7b75b.
+' Analyzed source baseline: PR 179 commit 8c5f3462d745ec0c5146d55dcb62108ac2a33282.
 ' Baseline evidence: frontend/src/components/ConversationTimeline.vue lines 37-49 used plain text interpolation.
 ' Baseline evidence: frontend/src/projectors/runtimeEventProjector.ts projectAssistantEvent preserved delta and completed text.
-' Implemented source: frontend/src/markdown/richText.ts (parseAssistantMarkdown, safeExternalLink, splitStableMarkdown).
-' Implemented source: frontend/src/components/AssistantRichText.ts (AssistantRichText, renderNode, renderCodeBlock).
+' Implemented source: frontend/src/markdown/richText.ts (parseSafeMarkdown, safeExternalLink, splitStableMarkdown).
+' Implemented source: frontend/src/components/SafeRichText.ts (SafeRichText, renderNode, renderCodeBlock).
 ' Implemented source: frontend/src/projectors/conversationRounds.ts (groupConversationTurns) and frontend/src/components/AgentRound.vue.
-' Implemented source: frontend/src/components/ConversationTimeline.vue and frontend/src/style.css assistant-rich-text and round-action rules.
-' Observed behavior: Runtime transports text rather than HTML, and completed events plus history are authoritative.
-' Architecture change: the Assistant turn now keeps rawMarkdown and all preview, completion, and history paths use one renderer.
+' Implemented source: frontend/src/components/ThinkingDisclosure.vue, ToolActivity.vue, ConversationTimeline.vue, and frontend/src/style.css safe-rich-text and round-action rules.
+' Observed behavior: Runtime transports Assistant, thinking, and tool-result text rather than HTML, and completed events plus history are authoritative.
+' Architecture change: Assistant, thinking, and tool-result text use one safe renderer; thinking delta is replaced by completed authoritative content.
 ' Security hardening: raw HTML, remote Markdown images, relative routes, credential-bearing URLs, and dangerous schemes never become active DOM.
 ' Architecture change: copy actions are owned by an Agent round rather than an Assistant Entry or code block.
-' Design reason: a controlled token-to-Vue projection makes model tables, lists, and code readable without trusting generated HTML, while one round action avoids repeated controls.
+' Design reason: a controlled token-to-Vue projection makes all conversation activity readable without trusting generated HTML, while one round action avoids repeated controls.
 
-title Assistant safe rich-text rendering
+title Conversation activity safe rich-text rendering
 top to bottom direction
 
 rectangle "Runtime and public event input" as Input {
-  component "assistant.message.delta\ntext fragment" as Delta
-  component "assistant.message.completed\nfull persistent text" as Completed
-  component "GET history\nfull persistent text" as History
+  component "assistant.message.delta\nassistant message text" as AssistantDelta
+  component "assistant.thinking.delta\nraw thinking text" as ThinkingDelta
+  component "tool.result\nraw result text" as ToolResult
+  component "Completed and GET history\nauthoritative full text" as Completed
 }
 
 rectangle "Conversation projection" as Projection {
-  component "Assistant turn\nrawMarkdown and state" as Raw
+  component "Assistant rawMarkdown" as AssistantRaw
+  component "Thinking raw content" as ThinkingRaw
+  component "Tool result content" as ToolRaw
   component "Stable block boundary\nplus plain streaming tail" as Stable
 }
 
@@ -101,7 +104,7 @@ rectangle "Safe rich-text renderer" as Renderer {
   component "Fixed Vue VNodes\nno v-html or innerHTML" as Vue
 }
 
-rectangle "Assistant message UI" as UI {
+rectangle "Conversation activity UI" as UI {
   component "Paragraphs, headings,\nlists, tasks, and quotes" as Prose
   component "Scrollable semantic table" as Table
   component "Inline code and code block" as Code
@@ -110,10 +113,14 @@ rectangle "Assistant message UI" as UI {
   component "One Agent-round copy action" as RoundCopy
 }
 
-Delta --> Raw : append source text
-Completed --> Raw : replace preview with authority
-History --> Raw : restore the same source text
-Raw --> Stable : once per animation frame
+AssistantDelta --> AssistantRaw : append source text
+ThinkingDelta --> ThinkingRaw : append raw fragment
+ToolResult --> ToolRaw : project result text
+Completed --> AssistantRaw : replace preview
+Completed --> ThinkingRaw : replace preview
+AssistantRaw --> Stable : once per animation frame
+ThinkingRaw --> Stable : once per animation frame
+ToolRaw --> Parser : completed text
 Stable --> Parser : stable blocks and safe tail
 Parser --> Policy : parsed tokens
 Policy --> Vue : allowed nodes and attributes
@@ -122,13 +129,13 @@ Vue --> Prose
 Vue --> Table
 Vue --> Code
 Vue --> Link
-Raw --> RoundCopy : aggregate Assistant source by User turn
+AssistantRaw --> RoundCopy : aggregate by User turn
 
 note bottom of Input
 Observed source contract:
 - Runtime carries text, not HTML
 - Completed and history are authoritative
-- Tool result and safe thinking disclosure use separate UI paths
+- Assistant, raw thinking, and tool result share one renderer
 end note
 
 note bottom of Renderer
@@ -151,7 +158,7 @@ end note
 
 @startuml runtime_event_ui_projection
 ' Backend source baseline: origin/main 63adc08cf5c57e3a7cc3caa317452062606ce8b4.
-' Frontend interaction-refinement baseline: origin/main 1813c601101660a401e5e2004c5c00b8e3d7b75b.
+' Frontend interaction-refinement baseline: PR 179 commit 8c5f3462d745ec0c5146d55dcb62108ac2a33282.
 ' Visual design baseline: campusclaw-frontend-design 5c2231654ea94dd248b5ea9a478d2cb27cd36a52.
 ' Source evidence: frontend/src/projectors/runtimeEventProjector.ts (projectRuntimeEvents, projectAssistantEvent, projectThinkingEvent, projectToolEvent, projectToolArguments).
 ' Source evidence: frontend/src/composables/useRuntimeApi.ts (dispatchSseFrame, mergeRuntimeEvent, loadHistory).
@@ -165,7 +172,8 @@ end note
 ' Product-reference evidence: ChatGPT.app webview/assets/app-initial-BCLYDefw.js (followUpQueueMode, K9s) and webview/assets/zh-CN-ByRVSIXt.js.
 ' Observed behavior: HTTP 1.38 lowerCamelCase persistent entries and transient execution events share one request-scoped SSE response; Runtime thinking contains raw reasoning and no safe display summary.
 ' Observed Codex behavior: desktop follow-up mode defaults to steer; a modifier submits one message with the inverse mode.
-' Security hardening: raw thinking is ignored; tool arguments are bounded and redacted before DOM projection.
+' Product constraint: raw thinking is visible without changing the Runtime event interface; delta streams and completed content is authoritative.
+' Security hardening: all text uses the safe Markdown renderer; tool arguments remain bounded and redacted before DOM projection.
 ' Architecture change: User turns bound Agent rounds; each completed round owns one copy action.
 ' Product constraint: each thinking item and each tool item owns an independent warm neutral dashed activity frame.
 ' Design reason: independent frames preserve compact safe activity while preventing one expanded tool from visually swallowing adjacent thinking or tool items.
@@ -184,7 +192,7 @@ rectangle "Runtime event families" as Events {
 rectangle "Frontend projection" as Projection {
   component "User turn" as UserTurn
   component "Streaming assistant turn" as AssistantTurn
-  component "Safe thinking disclosure" as ThinkingDisclosure
+  component "Raw thinking disclosure\nsafe rich text" as ThinkingDisclosure
   component "Compact tool disclosure\ninput then output" as ToolDisclosure
   component "Independent dashed\nthinking frame" as ThinkingFrame
   component "Independent dashed\ntool frame" as ToolFrame
@@ -201,7 +209,7 @@ rectangle "User controls while running" as Controls {
 
 UserEvent --> UserTurn : persist and render
 AssistantEvents --> AssistantTurn : preview then replace with final
-ThinkingEvents --> ThinkingDisclosure : safe display fields or state only
+ThinkingEvents --> ThinkingDisclosure : append delta then replace with completed
 ToolEvents --> ToolDisclosure : merge lifecycle and result
 TerminalEvents --> SessionState : idle, complete, or recoverable error
 ThinkingDisclosure --> ThinkingFrame
@@ -216,12 +224,11 @@ Continue --> SessionState : internal follow-up
 Stop --> SessionState : internal abort
 
 note bottom of ThinkingDisclosure
-Never display raw delta or content.
-The public bridge must provide a safe title
-and summary. No thinking event means no frame.
-An event without a display summary shows a
-precise placeholder instead of raw reasoning.
-The disclosure always remains expandable.
+Display raw delta text as it arrives.
+Replace it with completed persistent content.
+No thinking event means no frame.
+Render Markdown through the same allowlist.
+Label the disclosure as raw reasoning.
 end note
 
 note bottom of ToolDisclosure
@@ -230,6 +237,7 @@ Successful tool details collapse by default.
 Arguments are row, depth, and length bounded.
 Credentials and internal IDs are redacted.
 Absolute paths are reduced to the last segment.
+Result text uses the safe Markdown renderer.
 end note
 
 note bottom of AgentRound

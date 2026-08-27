@@ -182,8 +182,8 @@
               <div class="answer">
                 <div class="activity-stream">
                   <details class="thinking-row">
-                    <summary><span>分析过程</span></summary>
-                    <div class="thinking-content">先确认订单结构，再检查价格、数量与重复订单。</div>
+                    <summary><span>分析过程　<small>原始推理</small></span></summary>
+                    <div class="thinking-content">先确认订单结构，再检查 <b>价格</b>、数量与重复订单。</div>
                   </details>
                   <details class="tool-card" open>
                     <summary class="tool-head"><span><b>读取</b> 订单明细.xlsx</span><span class="tool-state">3,482 行</span></summary>
@@ -191,7 +191,7 @@
                       <div class="arg-label">输入参数</div>
                       <div class="arg-line">file　订单明细.xlsx<br>sheet　订单明细</div>
                       <div class="arg-label" style="margin-top:6px">输出结果</div>
-                      <div class="tool-output">已读取 3,482 行订单。</div>
+                      <div class="tool-output"><b>读取完成</b><br>已读取 3,482 行订单。</div>
                     </div>
                   </details>
                 </div>
@@ -220,7 +220,7 @@
           </div>
         </div>
         <div class="annotation a1">Model / Thinking 是会话级能力<br>放入标题栏，不占用设置侧栏</div>
-        <div class="annotation a2">Thinking / Tool → 各自独立虚线框<br>分析始终可展开；本轮仅一个复制图标</div>
+        <div class="annotation a2">Thinking / Tool → 各自独立虚线框<br>原始推理和 Tool 输出统一安全富文本</div>
         <div class="annotation a3">凭据、session_id、ETag、SSE frame<br>仅在“开发者诊断”抽屉展示</div>
       </section>
 
@@ -251,8 +251,8 @@
           <div class="turn user"><div class="bubble">检查这批订单，并给出处理建议。</div></div>
           <div class="running-activity">
             <div class="running-thinking">
-              <div class="progress-title"><span class="spinner"></span> 正在检查订单结构与异常规则　<span class="tool-state">分析中　⌄</span></div>
-              <p>先确认字段含义和数据规模，再检查价格、数量与重复订单。</p>
+              <div class="progress-title"><span class="spinner"></span> 正在分析　<span class="tool-state">原始推理　⌄</span></div>
+              <p>先确认字段含义和数据规模，再检查 <b>价格</b>、数量与重复订单。</p>
             </div>
             <div class="running-tools">
               <div class="running-tool">
@@ -264,7 +264,7 @@
                   <div class="arg-label">输入参数</div>
                   <div class="arg-line">fields　price, quantity<br>threshold　10%</div>
                   <div class="arg-label" style="margin-top:6px">输出结果</div>
-                  <div class="tool-output">正在检查，已处理 2,910 / 3,482 行…</div>
+                  <div class="tool-output"><b>检查进度</b><br>已处理 2,910 / 3,482 行…</div>
                 </div>
               </div>
             </div>

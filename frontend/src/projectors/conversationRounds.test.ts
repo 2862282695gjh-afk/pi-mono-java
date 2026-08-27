@@ -11,7 +11,7 @@ describe('groupConversationTurns', () => {
         kind: 'thinking',
         status: 'completed',
         title: '分析过程',
-        summary: '先检查字段。',
+        content: '先检查字段。',
       },
       {
         key: 'tool-1',

@@ -30,8 +30,10 @@ const history = [
     entrySeq: 2,
     assistantEntryId: 'assistant-history-tool',
     contentIndex: 0,
-    thinkingDisplayTitle: '分析过程',
-    thinkingDisplaySummary: '先确认订单结构，再检查价格、数量与重复订单。',
+    content: {
+      type: 'thinking',
+      text: '**检查计划**\n\n1. 确认订单表结构和字段含义\n2. 检查价格、数量与重复订单\n3. 避免把缺失值直接判定为异常',
+    },
   },
   {
     type: 'assistant.message.completed',
@@ -53,7 +55,7 @@ const history = [
     entrySeq: 4,
     toolCallId: 'call-history-read',
     toolName: 'Read',
-    content: [{ type: 'text', text: '已读取 3,482 行订单。' }],
+    content: [{ type: 'text', text: '**读取完成**\n\n- 已读取 3,482 行订单\n- 工作表：`订单明细`' }],
     isError: false,
   },
   {
@@ -105,7 +107,10 @@ function startExecution(response) {
   writeEvent(response, 'assistant.thinking.delta', {
     assistantEntryId: 'assistant-live-tool',
     contentIndex: 0,
-    thinkingDisplayTitle: '正在检查异常规则',
+    delta: {
+      type: 'thinking',
+      text: '**检查顺序**\n\n1. 核对价格阈值和数量范围\n2. 检查重复订单\n3. 使用工具定位相关字段',
+    },
   });
   writeEvent(response, 'assistant.message.completed', {
     entryId: 'assistant-live-tool',
@@ -129,12 +134,15 @@ function startExecution(response) {
     toolName: 'Grep',
     content: [{ type: 'text', text: 'MATE_RESPONSE_INVALID' }],
     isError: true,
-    errorMessage: 'CampusMate 响应格式不正确。',
+    errorMessage: '**调用失败**\n\nCampusMate 响应格式不正确。',
   }, '7');
   writeEvent(response, 'assistant.thinking.delta', {
     assistantEntryId: 'assistant-live-recovery',
     contentIndex: 0,
-    thinkingDisplayTitle: '正在分析工具失败原因',
+    delta: {
+      type: 'thinking',
+      text: '**失败判断**\n\n- 查询工具返回了无效响应\n- 保留当前任务上下文\n- 调整检查方式，避免重复提交同一个调用',
+    },
   });
   const keepAlive = setInterval(() => response.write(': keep-alive\n\n'), 15_000);
   activeStreams.add({ response, keepAlive });
