@@ -169,6 +169,14 @@ public class WebCommandCatalog {
 - **单飞标记释放**在 finally(completed 成功、failed 成功、二者均异常)统一执行——与终态写入同一路径,不泄漏
 - **测试**:模拟 leaf 竞争(压缩期间插入普通消息)断言 started 后恰一个 completed 或 failed;两条终态并存为缺陷
 
+**[继续复查⑭已采纳——终态写入失败的后台补偿]**。批注属实:finally 释放在终态 append 异常时会导致无历史记录 + 标记释放 + 新 compact 可启动——不变量破坏。修订:
+
+- **单飞标记的释放条件收紧**:仅在**终态 entry 成功持久化后**释放;终态 append 异常时**标记保持占用**(阻止新 compact),转入恢复路径
+- **后台 reconcile**:新增轻量恢复任务(复用既有 `SessionCleanupWorker` 的调度形态,或随其扫描):周期发现"started 存在且超时(如 5 分钟)无终态"的 operation → 补写 `compaction_failed`(errorCode=`TERMINAL_WRITE_RECOVERY`)并释放标记——保证不变量最终成立(至少一次终态,延迟可观察)
+- **三类失败源全覆盖**:Factory 重建失败 / compactor future 异常 / terminal append 异常——统一走"写 failed(尽力)+ 失败则交 reconcile 兜底";append 失败不原地无限重试(避免占用请求线程)
+- **测试**:注入 terminal append 异常 → 断言标记未释放、reconcile 补写 failed、最终历史呈现单一终态(非悬挂 started)
+
+
 **[继续复查⑬已采纳]** ④决议第 2 条的"返回 kind:error"(与 POST 已返回 operationId 矛盾)与 ⑪ 流程的"条件追加 completed/failed"(failed 实为无条件)均已改写——全文只保留当前语义:completed 条件追加、CAS 失败转无条件 failed、终态由历史投影呈现。
 
 
