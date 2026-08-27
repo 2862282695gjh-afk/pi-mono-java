@@ -32,34 +32,32 @@ function emptyResult(status: ActivityTurn['status']): string {
 </script>
 
 <template>
-  <article class="turn activity-turn">
-    <details class="tool-activity" :open="turn.status !== 'completed'">
-      <summary>
-        <span class="tool-state-icon" :class="turn.status" aria-hidden="true">
-          <svg v-if="turn.status === 'completed'" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6" /></svg>
-          <svg v-else-if="turn.status === 'error'" viewBox="0 0 24 24"><path d="m7 7 10 10M17 7 7 17" /></svg>
-          <span v-else class="spinner"></span>
-        </span>
-        <strong>{{ toolLabel(turn.toolName) }}</strong>
-        <span class="tool-status">{{ statusLabel(turn.status) }}</span>
-        <svg class="tool-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m8 10 4 4 4-4" /></svg>
-      </summary>
-      <div class="tool-detail">
-        <section>
-          <h4>输入参数</h4>
-          <dl v-if="turn.arguments.length" class="tool-arguments">
-            <template v-for="row in turn.arguments" :key="row.key">
-              <dt>{{ row.key }}</dt>
-              <dd :class="{ redacted: row.redacted }">{{ row.value }}</dd>
-            </template>
-          </dl>
-          <p v-else class="tool-empty">未提供可安全显示的参数摘要。</p>
-        </section>
-        <section class="tool-output">
-          <h4>输出结果</h4>
-          <pre>{{ turn.result || emptyResult(turn.status) }}</pre>
-        </section>
-      </div>
-    </details>
-  </article>
+  <details class="tool-activity" :open="turn.status !== 'completed'">
+    <summary>
+      <span class="tool-state-icon" :class="turn.status" aria-hidden="true">
+        <svg v-if="turn.status === 'completed'" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6" /></svg>
+        <svg v-else-if="turn.status === 'error'" viewBox="0 0 24 24"><path d="m7 7 10 10M17 7 7 17" /></svg>
+        <span v-else class="spinner"></span>
+      </span>
+      <strong>{{ toolLabel(turn.toolName) }}</strong>
+      <span class="tool-status">{{ statusLabel(turn.status) }}</span>
+      <svg class="tool-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m8 10 4 4 4-4" /></svg>
+    </summary>
+    <div class="tool-detail">
+      <section>
+        <h4>输入参数</h4>
+        <dl v-if="turn.arguments.length" class="tool-arguments">
+          <template v-for="row in turn.arguments" :key="row.key">
+            <dt>{{ row.key }}</dt>
+            <dd :class="{ redacted: row.redacted }">{{ row.value }}</dd>
+          </template>
+        </dl>
+        <p v-else class="tool-empty">未提供可安全显示的参数摘要。</p>
+      </section>
+      <section class="tool-output">
+        <h4>输出结果</h4>
+        <pre>{{ turn.result || emptyResult(turn.status) }}</pre>
+      </section>
+    </div>
+  </details>
 </template>

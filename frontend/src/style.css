@@ -770,23 +770,28 @@ svg {
   height: 14px;
 }
 
-.assistant-turn,
-.thinking-turn {
+.agent-round {
   display: grid;
   grid-template-columns: 44px minmax(0, 1fr);
   align-items: start;
   gap: 14px;
 }
 
-.assistant-turn .brand-mark,
-.thinking-turn .brand-mark {
+.agent-round .brand-mark {
   width: 44px;
   height: 44px;
 }
 
+.agent-round-body,
 .assistant-body {
   min-width: 0;
   padding-top: 4px;
+}
+
+.agent-message + .agent-message,
+.agent-activity-panel + .agent-message,
+.agent-message + .agent-activity-panel {
+  margin-top: 14px;
 }
 
 .assistant-rich-text {
@@ -880,28 +885,12 @@ svg {
 .rich-code-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  min-height: 38px;
-  padding-left: 14px;
+  min-height: 34px;
+  padding: 0 14px;
   border-bottom: 1px solid var(--border-subtle);
   color: var(--text-tertiary);
   font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
   font-size: 11px;
-}
-
-.rich-code-copy {
-  align-self: stretch;
-  min-width: 58px;
-  min-height: 44px;
-  border-left: 1px solid var(--border-subtle);
-  color: var(--text-secondary);
-  background: transparent;
-  font-size: 12px;
-}
-
-.rich-code-copy:hover {
-  color: var(--text-primary);
-  background: var(--surface-tertiary);
 }
 
 .rich-code-block pre {
@@ -1038,39 +1027,6 @@ svg {
   white-space: pre-wrap;
 }
 
-.rich-message-actions {
-  display: flex;
-  min-height: 44px;
-  margin-top: 4px;
-}
-
-.rich-message-copy {
-  min-height: 44px;
-  padding: 0 10px;
-  border-radius: 7px;
-  color: var(--text-tertiary);
-  background: transparent;
-  font-size: 12px;
-  opacity: 0;
-  transition: color 120ms ease, background 120ms ease, opacity 120ms ease;
-}
-
-.assistant-rich-text:hover .rich-message-copy,
-.assistant-rich-text:focus-within .rich-message-copy {
-  opacity: 1;
-}
-
-.rich-message-copy:hover {
-  color: var(--text-primary);
-  background: var(--surface-tertiary);
-}
-
-@media (hover: none) {
-  .rich-message-copy {
-    opacity: 1;
-  }
-}
-
 .assistant-working {
   display: flex;
   align-items: center;
@@ -1090,25 +1046,32 @@ svg {
   animation: spin 0.9s linear infinite;
 }
 
-.thinking-disclosure {
+.agent-activity-panel {
   max-width: 720px;
+  padding: 7px 12px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 12px;
+  background: var(--surface-secondary);
+}
+
+.agent-activity-panel > * + * {
+  border-top: 1px solid var(--border-subtle);
+}
+
+.thinking-disclosure {
+  width: 100%;
   color: var(--text-secondary);
   font-size: 13px;
 }
 
-.thinking-disclosure summary,
-.thinking-status {
+.thinking-disclosure summary {
   display: flex;
   align-items: center;
-  width: fit-content;
+  width: 100%;
   min-height: 36px;
   gap: 9px;
   cursor: pointer;
   list-style: none;
-}
-
-.thinking-status {
-  cursor: default;
 }
 
 .thinking-disclosure summary::-webkit-details-marker,
@@ -1122,6 +1085,7 @@ svg {
 }
 
 .thinking-disclosure summary > svg {
+  margin-left: auto;
   width: 15px;
   height: 15px;
   color: var(--text-tertiary);
@@ -1133,11 +1097,15 @@ svg {
 }
 
 .thinking-disclosure p {
-  margin: 5px 0 0 5px;
-  padding: 5px 0 5px 20px;
+  margin: 3px 0 7px 5px;
+  padding: 5px 0 5px 19px;
   border-left: 1px solid var(--border-default);
   line-height: 1.65;
   white-space: pre-wrap;
+}
+
+.thinking-disclosure p.thinking-empty {
+  color: var(--text-tertiary);
 }
 
 .thinking-complete {
@@ -1153,12 +1121,8 @@ svg {
   border-width: 1.5px;
 }
 
-.activity-turn {
-  margin-left: 58px;
-}
-
 .tool-activity {
-  max-width: 720px;
+  width: 100%;
 }
 
 .tool-activity summary {
@@ -1226,9 +1190,65 @@ svg {
 }
 
 .tool-detail {
-  margin: 1px 0 9px 8px;
+  margin: 1px 0 8px 8px;
   padding: 5px 0 2px 23px;
   border-left: 1px solid var(--border-default);
+}
+
+.agent-round-actions {
+  display: flex;
+  min-height: 44px;
+  margin-top: 2px;
+}
+
+.round-copy-button {
+  position: relative;
+  display: inline-grid;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  place-items: center;
+  border: 0;
+  border-radius: 8px;
+  color: var(--text-tertiary);
+  background: transparent;
+  opacity: 0;
+  transition: color 120ms ease, background 120ms ease, opacity 120ms ease;
+}
+
+.round-copy-button::before {
+  position: absolute;
+  inset: 7px;
+  border-radius: 7px;
+  background: transparent;
+  content: "";
+  transition: background 120ms ease;
+}
+
+.round-copy-button svg {
+  position: relative;
+  z-index: 1;
+  width: 17px;
+  height: 17px;
+}
+
+.agent-round:hover .round-copy-button,
+.agent-round:focus-within .round-copy-button {
+  opacity: 1;
+}
+
+.round-copy-button:hover {
+  color: var(--text-primary);
+}
+
+.round-copy-button:hover::before {
+  background: var(--surface-tertiary);
+}
+
+@media (hover: none) {
+  .round-copy-button {
+    opacity: 1;
+  }
 }
 
 .tool-detail section > h4 {
@@ -1581,10 +1601,6 @@ svg {
 
   .conversation-scroll {
     padding: 24px 14px 220px;
-  }
-
-  .activity-turn {
-    margin-left: 0;
   }
 
   .user-bubble {

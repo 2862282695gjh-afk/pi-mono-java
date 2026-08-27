@@ -1,14 +1,23 @@
 <script setup lang="ts">
-import AssistantRichText from './AssistantRichText';
+import { computed } from 'vue';
+import AgentRound from './AgentRound.vue';
 import BrandMark from './BrandMark.vue';
-import ThinkingDisclosure from './ThinkingDisclosure.vue';
-import ToolActivity from './ToolActivity.vue';
+import { groupConversationTurns } from '../projectors/conversationRounds';
+import type { ConversationTimelineItem } from '../projectors/conversationRounds';
 import type { ConversationTurn } from '../types/product';
 
-defineProps<{
+const props = defineProps<{
   turns: ConversationTurn[];
   running: boolean;
 }>();
+
+const timelineItems = computed(() => groupConversationTurns(props.turns));
+const trailingAgentIndex = computed(() => findTrailingAgentIndex(timelineItems.value));
+
+function findTrailingAgentIndex(items: ConversationTimelineItem[]): number {
+  const index = items.length - 1;
+  return items[index]?.kind === 'agent' ? index : -1;
+}
 
 function hasVisibleRunningTurn(turns: ConversationTurn[]): boolean {
   return turns.some((turn) => {
@@ -16,15 +25,6 @@ function hasVisibleRunningTurn(turns: ConversationTurn[]): boolean {
     if (turn.kind === 'thinking' || turn.kind === 'activity') return turn.status === 'running';
     return false;
   });
-}
-
-function showAgentMark(turns: ConversationTurn[], index: number): boolean {
-  for (let cursor = index - 1; cursor >= 0; cursor -= 1) {
-    const previous = turns[cursor];
-    if (!previous || previous.kind === 'user') break;
-    if (previous.kind === 'assistant' || previous.kind === 'thinking') return false;
-  }
-  return true;
 }
 </script>
 
@@ -39,43 +39,22 @@ function showAgentMark(turns: ConversationTurn[], index: number): boolean {
       </div>
     </div>
 
-    <template v-for="(turn, index) in turns" :key="turn.key">
-      <article v-if="turn.kind === 'user'" class="turn user-turn">
-        <div class="user-bubble">{{ turn.text || '已提交附件' }}</div>
-        <div v-if="turn.fileIds.length" class="attachment-summary">
+    <template v-for="(item, index) in timelineItems" :key="item.key">
+      <article v-if="item.kind === 'user'" class="turn user-turn">
+        <div class="user-bubble">{{ item.turn.text || '已提交附件' }}</div>
+        <div v-if="item.turn.fileIds.length" class="attachment-summary">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 12 5-5a3 3 0 0 1 4 4l-7 7a5 5 0 0 1-7-7l7-7" /></svg>
-          {{ turn.fileIds.length }} 个附件
+          {{ item.turn.fileIds.length }} 个附件
         </div>
       </article>
-
-      <article v-else-if="turn.kind === 'assistant'" class="turn assistant-turn">
-        <BrandMark v-if="showAgentMark(turns, index)" />
-        <span v-else class="brand-mark-spacer" aria-hidden="true"></span>
-        <div class="assistant-body">
-          <AssistantRichText
-            v-if="turn.rawMarkdown"
-            :source="turn.rawMarkdown"
-            :streaming="turn.streaming"
-          />
-          <div v-else-if="turn.streaming" class="assistant-working">
-            <span class="spinner" aria-hidden="true"></span>
-            正在思考…
-          </div>
-        </div>
-      </article>
-
-      <article v-else-if="turn.kind === 'thinking'" class="turn thinking-turn">
-        <BrandMark v-if="showAgentMark(turns, index)" />
-        <span v-else class="brand-mark-spacer" aria-hidden="true"></span>
-        <div class="assistant-body">
-          <ThinkingDisclosure :turn="turn" />
-        </div>
-      </article>
-
-      <ToolActivity v-else :turn="turn" />
+      <AgentRound
+        v-else
+        :round="item"
+        :active="item.active || (running && index === trailingAgentIndex)"
+      />
     </template>
 
-    <article v-if="running && !hasVisibleRunningTurn(turns)" class="turn assistant-turn running-placeholder">
+    <article v-if="running && !hasVisibleRunningTurn(turns)" class="turn agent-round running-placeholder">
       <BrandMark />
       <div class="assistant-working"><span class="spinner" aria-hidden="true"></span>正在处理新的要求…</div>
     </article>
