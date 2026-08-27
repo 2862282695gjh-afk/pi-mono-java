@@ -128,6 +128,14 @@ public class WebCommandCatalog {
 
 **[继续复查④已采纳]** 见上方修订:entryVersion 改为基于既有 `lockNextSequence` 行锁的条件追加方法(校验 activeLeafId),失败路径释放单飞标记并清理重建 Session;并发集成测试纳入清单。
 
+**[继续复查⑦已采纳——补 operation 状态模型]**。批注属实:启动确认已返回,CAS 失败无法再改 HTTP 响应,且不写 entry 则历史也无失败痕迹。修订:
+
+- **持久化 compaction operation 记录**:POST 成功启动时即写入 `compaction_started` entry(含 `operationId`);future 完成回调写 `compaction_completed`/`compaction_failed` entry(失败含原因,如 `CANCELLED_BY_NEW_MESSAGES`)——**三类状态均入持久化事件流**,GET /events 可见
+- **POST 响应**返回 `{kind:'ok', output:'压缩已启动', operationId, effects:{}}`——前端记录 operationId,历史刷新看到对应 completed/failed 时呈现"已压缩 N 条"/"因新消息取消,请重试"
+- **单飞标记**以 operation 终态回调(completed/failed 均释放)为准,不以 HTTP 返回为准
+- (可选后续)状态查询端点 `GET /sessions/{id}/compact/{operationId}` 直查单条——首版靠历史分页即可,登记后续
+
+
 
 
 
@@ -167,8 +175,14 @@ public class WebCommandCatalog {
 
 **[继续复查⑤已采纳]**:
 - `CommandDescriptorDTO` / TS `SlashCommandDescriptor` **正式增加 `requiresSession: boolean`**(SERVER 默认 true,/help、/resume 等为 false;CLIENT_LOCAL 恒 false)
-- **新增无会话端点** `POST /campusclaw-service/v1/commands/{name}`(无 sessionId 路径段):仅承接 requiresSession=false 的 SERVER 命令(help/resume);requiresSession=true 的命令走该端点 → 400 `SESSION_REQUIRED`;带会话路径 `POST /sessions/{id}/commands/{name}` 行为不变(两端点共用同一 Invoker,权限一致)
+- **新增无会话端点** `POST /campusclaw-service/v1/commands/{name}`(无 sessionId 路径段):仅承接 requiresSession=false 的 SERVER 命令(help 等;resume 是 CLIENT_LOCAL 不经此端点,见继续复查⑧);requiresSession=true 的命令走该端点 → 400 `SESSION_REQUIRED`;带会话路径 `POST /sessions/{id}/commands/{name}` 行为不变(两端点共用同一 Invoker,权限一致)
 - **前端判定同步**:`matchCommand`/submit 分流的豁免条件从"仅 CLIENT_LOCAL"扩为"`executionMode === 'CLIENT_LOCAL' || !command.requiresSession`";无会话时 executable 且 !requiresSession → 调无会话端点;2.6 表的 /help 规则由此可达
+
+**[继续复查⑧已采纳——两类命令分开列]**:
+- **`/resume`:纯 CLIENT_LOCAL,不调用任何 POST commands 端点**——网络请求仅 `GET /sessions`(会话列表);选择后前端本地 `App.resumeSession()`。requiresSession 对它无意义(恒 false)
+- **`/help`:SERVER 且 requiresSession=false——走无会话端点 `POST /commands/{name}`**(该端点仅承接此类;承接对象修正为"help 等",resume 不在此列)
+- execute 分流与测试明确各自网络请求:resume 断言仅 1 次 GET sessions、零 POST;help 断言 1 次 POST /commands/help
+
 
 
 
@@ -243,5 +257,8 @@ extensionId    := ^[a-z][a-z0-9-]{0,15}$                      (注册时声明,�
 
 ## 测试与验证(增量)
 
-- 后端:`GET /sessions` 列表端点分页/过滤;`POST /commands/compact` 启动确认 + leaf 条件追加并发集成测试(events vs compact 竞争单胜);skill 流式命令(服务端解析 + SSE 同响应 + 四类错误码);Extension 注册冲突;executionMode/requiresSession/streaming 契约(⑧/继续复查⑤③);无会话端点(POST /commands/{name} 的 SESSION_REQUIRED 与 help 可达)
+- 后端:`GET /sessions` 列表端点分页/过滤;`POST /sessions/{id}/commands/compact` 启动确认 + leaf 条件追加并发集成测试(events vs compact 竞争单胜);skill 流式命令(服务端解析 + SSE 同响应 + 四类错误码);Extension 注册冲突;executionMode/requiresSession/streaming 契约(⑧/继续复查⑤③);无会话端点(POST /commands/{name} 的 SESSION_REQUIRED 与 help 可达)
 - 前端:resume 选择列表交互/前缀匹配;compact 启动确认 + 历史分页结果刷新(无进度条);`/skill:` 补全 + 流式消费(content-type 分流);SystemNoticeStack 渲染(⑨);无会话策略表全覆盖(⑩,含 !requiresSession 豁免)
+
+**[继续复查⑨已采纳]** 测试清单路径统一为 `POST /sessions/{id}/commands/compact`(带 sessionId);无会话 `POST /commands/{name}` 仅 requiresSession=false 命令可用。
+
