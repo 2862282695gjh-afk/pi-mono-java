@@ -176,6 +176,14 @@ public class WebCommandCatalog {
 - **三类失败源全覆盖**:Factory 重建失败 / compactor future 异常 / terminal append 异常——统一走"写 failed(尽力)+ 失败则交 reconcile 兜底";append 失败不原地无限重试(避免占用请求线程)
 - **测试**:注入 terminal append 异常 → 断言标记未释放、reconcile 补写 failed、最终历史呈现单一终态(非悬挂 started)
 
+**[继续复查⑮已采纳——admission guard 持久化]**。批注属实:进程内标记 + future 重启即失,reconcile 未跑前新 /compact 会当空闲再启动,双 operation 破坏单操作不变量。修订:
+
+- **admission 检查落库**:POST /compact 的准入在同一 session 行锁事务内查询持久化 entry——存在未终态的 started:未超时 → 409 `COMPACTION_IN_PROGRESS`;**已超时 → 同步补写 failed**(errorCode=`TERMINAL_WRITE_RECOVERY`,即把 reconcile 的单条逻辑内联到准入路径)后正常走新压缩——准入即最小 reconcile,不依赖后台任务先行
+- **进程启动扫描**:启动时(或 reconcile 首轮)全量扫描悬挂 started(有 started 无终态)补 failed——多实例部署下任一实例启动即清理
+- **内存单飞标记降级为快速路径优化**(挡住同进程高频重复),正确性完全由持久化准入保证——两机制不冲突:准入是 source of truth
+- **重启并发集成测试**:写 started → 模拟重启(丢内存态)→ 立即新 /compact → 断言 409(未超时)或补 failed 后成功(超时),全程无双 operation
+
+
 
 **[继续复查⑬已采纳]** ④决议第 2 条的"返回 kind:error"(与 POST 已返回 operationId 矛盾)与 ⑪ 流程的"条件追加 completed/failed"(failed 实为无条件)均已改写——全文只保留当前语义:completed 条件追加、CAS 失败转无条件 failed、终态由历史投影呈现。
 
