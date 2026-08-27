@@ -31,12 +31,9 @@ export default defineComponent({
     const renderedSource = ref(props.source);
     const renderedStreaming = ref(props.streaming);
     const document = computed(() => parseAssistantMarkdown(renderedSource.value, renderedStreaming.value));
-    const copiedPath = ref('');
-    const copyFeedback = ref('');
     const completionAnnouncement = ref('');
     let pendingSource = props.source;
     let renderFrame: number | undefined;
-    let resetTimer: number | undefined;
     let announcementTimer: number | undefined;
 
     watch(() => [props.source, props.streaming] as const, ([source, streaming], previous) => {
@@ -54,7 +51,6 @@ export default defineComponent({
 
     onUnmounted(() => {
       cancelRenderFrame();
-      if (resetTimer !== undefined) window.clearTimeout(resetTimer);
       if (announcementTimer !== undefined) window.clearTimeout(announcementTimer);
     });
 
@@ -77,23 +73,6 @@ export default defineComponent({
       if (announcementTimer !== undefined) window.clearTimeout(announcementTimer);
       announcementTimer = window.setTimeout(() => {
         completionAnnouncement.value = '';
-      }, 2_000);
-    }
-
-    async function copyText(value: string, path: string, successMessage: string): Promise<void> {
-      try {
-        if (!navigator.clipboard) throw new Error('Clipboard API unavailable');
-        await navigator.clipboard.writeText(value);
-        copiedPath.value = path;
-        copyFeedback.value = successMessage;
-      } catch {
-        copiedPath.value = '';
-        copyFeedback.value = '复制失败，请手动选择文本';
-      }
-      if (resetTimer !== undefined) window.clearTimeout(resetTimer);
-      resetTimer = window.setTimeout(() => {
-        copiedPath.value = '';
-        copyFeedback.value = '';
       }, 2_000);
     }
 
@@ -167,16 +146,9 @@ export default defineComponent({
     }
 
     function renderCodeBlock(value: string, language: string, path: string): VNodeChild {
-      const copied = copiedPath.value === path;
       return h('div', { class: 'rich-code-block', key: path }, [
         h('div', { class: 'rich-code-header' }, [
           h('span', language || 'text'),
-          h('button', {
-            type: 'button',
-            class: 'rich-code-copy',
-            'aria-label': copied ? '代码已复制' : `复制 ${language || '纯文本'} 代码`,
-            onClick: () => copyText(value, path, '代码已复制'),
-          }, copied ? '已复制' : '复制'),
         ]),
         h('pre', [h('code', value)]),
       ]);
@@ -206,15 +178,6 @@ export default defineComponent({
         ? h('p', { class: 'rich-fallback-notice' }, '内容较长，已使用纯文本模式。')
         : null,
       ...document.value.nodes.map((node, index) => renderNode(node, String(index))),
-      h('div', { class: 'rich-message-actions' }, [
-        h('button', {
-          type: 'button',
-          class: 'rich-message-copy',
-          'aria-label': copiedPath.value === 'source' ? '回答原文已复制' : '复制回答原文',
-          onClick: () => copyText(props.source, 'source', '回答原文已复制'),
-        }, copiedPath.value === 'source' ? '已复制原文' : '复制原文'),
-      ]),
-      h('span', { class: 'sr-only', 'aria-live': 'polite' }, copyFeedback.value),
       h('span', { class: 'sr-only', 'aria-live': 'polite' }, completionAnnouncement.value),
     ]);
   },

@@ -1,0 +1,184 @@
+import http from 'node:http';
+
+const port = 8080;
+const sessionId = 'session-design-review';
+const agentId = 'agent-design-review';
+let state = 'idle';
+const activeStreams = new Set();
+
+const session = () => ({
+  sessionId,
+  agentId,
+  modelId: 'claude-sonnet-4-5',
+  state,
+  thinking: true,
+  createdAt: '2026-08-26T08:00:00Z',
+  updatedAt: '2026-08-26T08:08:00Z',
+});
+
+const history = [
+  {
+    type: 'user.message',
+    entryId: 'user-history-1',
+    entrySeq: 1,
+    message: '请分析订单明细，列出异常项并给出处理建议。',
+    fileIds: ['file-orders'],
+  },
+  {
+    type: 'assistant.thinking.completed',
+    entryId: 'thinking-history-1',
+    entrySeq: 2,
+    assistantEntryId: 'assistant-history-tool',
+    contentIndex: 0,
+    thinkingDisplayTitle: '分析过程',
+    thinkingDisplaySummary: '先确认订单结构，再检查价格、数量与重复订单。',
+  },
+  {
+    type: 'assistant.message.completed',
+    entryId: 'assistant-history-tool',
+    entrySeq: 3,
+    message: {
+      role: 'assistant',
+      content: [{
+        type: 'tool_call',
+        toolCallId: 'call-history-read',
+        name: 'Read',
+        arguments: { file: '/workspace/订单明细.xlsx', sheet: '订单明细' },
+      }],
+    },
+  },
+  {
+    type: 'tool.result',
+    entryId: 'tool-history-1',
+    entrySeq: 4,
+    toolCallId: 'call-history-read',
+    toolName: 'Read',
+    content: [{ type: 'text', text: '已读取 3,482 行订单。' }],
+    isError: false,
+  },
+  {
+    type: 'assistant.message.completed',
+    entryId: 'assistant-history-final',
+    entrySeq: 5,
+    message: {
+      role: 'assistant',
+      content: [{
+        type: 'text',
+        text: '## 异常汇总\n\n已读取文件，发现以下 3 类异常：\n\n| 异常类型 | 数量 | 处理建议 |\n| --- | ---: | --- |\n| 价格异常 | 24 | 复核定价 |\n| 数量异常 | 17 | 校验原始数据 |\n| 重复下单 | 9 | 合并并联系用户 |\n\n建议优先检查 `order_id` 重复记录。',
+      }],
+    },
+  },
+];
+
+function sendJson(response, result, status = 200, headers = {}) {
+  response.writeHead(status, {
+    'Content-Type': 'application/json; charset=utf-8',
+    ...headers,
+  });
+  response.end(JSON.stringify({ resCode: '0', resMsg: 'success', result }));
+}
+
+function sendEmpty(response, status = 204) {
+  response.writeHead(status);
+  response.end();
+}
+
+function writeEvent(response, event, data, id) {
+  if (id) response.write(`id: ${id}\n`);
+  response.write(`event: ${event}\n`);
+  response.write(`data: ${JSON.stringify(data)}\n\n`);
+}
+
+function startExecution(response) {
+  state = 'running';
+  response.writeHead(200, {
+    'Content-Type': 'text/event-stream; charset=utf-8',
+    'Cache-Control': 'no-cache',
+    Connection: 'keep-alive',
+  });
+  writeEvent(response, 'user.message', {
+    entryId: 'user-live-1',
+    entrySeq: 6,
+    message: '继续检查价格和数量异常，并标记需要人工复核的订单。',
+    fileIds: [],
+  }, '6');
+  writeEvent(response, 'assistant.thinking.delta', {
+    assistantEntryId: 'assistant-live-tool',
+    contentIndex: 0,
+    thinkingDisplayTitle: '正在检查异常规则',
+    thinkingDisplaySummary: '正在核对价格阈值、数量范围和重复订单规则。',
+  });
+  writeEvent(response, 'assistant.message.completed', {
+    entryId: 'assistant-live-tool',
+    message: {
+      role: 'assistant',
+      content: [{
+        type: 'tool_call',
+        toolCallId: 'call-live-grep',
+        name: 'Grep',
+        arguments: { pattern: 'price|quantity', path: '/workspace/订单明细.xlsx' },
+      }],
+    },
+  });
+  writeEvent(response, 'tool.execution.started', {
+    toolCallId: 'call-live-grep',
+    toolName: 'Grep',
+  });
+  const keepAlive = setInterval(() => response.write(': keep-alive\n\n'), 15_000);
+  activeStreams.add({ response, keepAlive });
+  response.on('close', () => {
+    clearInterval(keepAlive);
+    for (const stream of activeStreams) {
+      if (stream.response === response) activeStreams.delete(stream);
+    }
+  });
+}
+
+function abortExecution(response) {
+  state = 'idle';
+  for (const stream of activeStreams) {
+    clearInterval(stream.keepAlive);
+    writeEvent(stream.response, 'session.status.idle', { status: 'idle' });
+    writeEvent(stream.response, 'stream.end', { reason: 'aborted' });
+    stream.response.end();
+  }
+  activeStreams.clear();
+  sendEmpty(response);
+}
+
+const server = http.createServer((request, response) => {
+  const url = new URL(request.url || '/', `http://${request.headers.host}`);
+  const path = url.pathname;
+
+  if (request.method === 'POST' && path.endsWith(`/agents/${agentId}/sessions`)) {
+    sendJson(response, session());
+    return;
+  }
+  if (request.method === 'GET' && path.endsWith(`/sessions/${sessionId}`)) {
+    sendJson(response, session(), 200, { ETag: '"design-v1"' });
+    return;
+  }
+  if (request.method === 'GET' && path.endsWith(`/sessions/${sessionId}/models`)) {
+    sendJson(response, {
+      currentModelId: 'claude-sonnet-4-5',
+      models: ['claude-sonnet-4-5', 'gpt-5.4'],
+    });
+    return;
+  }
+  if (request.method === 'GET' && path.endsWith(`/sessions/${sessionId}/events`)) {
+    sendJson(response, { events: history, nextPage: null });
+    return;
+  }
+  if (request.method === 'POST' && path.endsWith(`/sessions/${sessionId}/events`)) {
+    startExecution(response);
+    return;
+  }
+  if (request.method === 'POST' && path.endsWith(`/sessions/${sessionId}/abort`)) {
+    abortExecution(response);
+    return;
+  }
+  response.writeHead(404, { 'Content-Type': 'application/json; charset=utf-8' });
+  response.end(JSON.stringify({ resCode: 'NOT_FOUND', resMsg: 'Not found' }));
+});
+
+server.listen(port, '127.0.0.1');

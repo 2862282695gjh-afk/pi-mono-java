@@ -2,8 +2,8 @@
 
 | 属性 | 值 |
 |---|---|
-| 文档版本 | 0.7.0 |
-| 状态 | Implemented（过渡集成）；O1 品牌、暖中性视觉、安全 Agent 活动与 Assistant 富文本已落地，生产公共 bridge 仍待设计 |
+| 文档版本 | 0.8.0 |
+| 状态 | Implemented（过渡集成）；整轮复制、可展开分析、虚线 Agent 活动区、O1 品牌与安全富文本已落地，生产公共 bridge 仍待设计 |
 | 界面评审状态 | `firstUse`、`idleConversation`、`runningConversation` 已实现；桌面 1280×720 与移动 390×844 已通过本地浏览器验收 |
 | 主设计依据 | 本文件，维护源码证据、目标差异、设计理由、状态与 Design Token |
 | 人类评审界面 | [`frontend-review.html`](campusclaw-frontend/frontend-review.html)，集中展示低保真、高保真、富文本与 Agent 活动评审面 |
@@ -12,11 +12,11 @@
 | Codex 视觉证据 | 本机 `ChatGPT.app` 26.814.41407（build 6720）中的 light-theme CSS Token；`app.asar` SHA-256 `8fba32f8baa6d984b0f0f4149d3da46221e3adb3b52836f85fe65e31e655a8c0` |
 | Codex 跟进交互证据 | 同一安装包 `webview/assets/app-initial-BCLYDefw.js` 的 `followUpQueueMode`、`K9s()`、submit action，以及 `webview/assets/zh-CN-ByRVSIXt.js` 的 Composer 文案 |
 | O1 视觉设计基线 | `campusclaw-frontend-design@5c2231654ea94dd248b5ea9a478d2cb27cd36a52`；`campusclaw-mark-o1.png` SHA-256 `68150b9c669a7d3f5b4b306aeb79092852b308a127ec9cc522b48be6a47551cc` |
-| pi-mono-java 本轮分析基线 | `origin/main@63adc08cf5c57e3a7cc3caa317452062606ce8b4` |
-| 本轮前端改造前基线 | `849e4173`（Assistant 安全富文本初版） |
-| 实现源码 | `frontend/src/App.vue`、`frontend/src/assets/campusclaw-mark-o1.png`、`frontend/src/components/AssistantRichText.ts`、`frontend/src/components/ThinkingDisclosure.vue`、`frontend/src/components/ToolActivity.vue`、`frontend/src/markdown/richText.ts`、`frontend/src/composables/useRuntimeApi.ts`、`frontend/src/projectors/runtimeEventProjector.ts`、`frontend/src/style.css` |
+| pi-mono-java 本轮分析基线 | `origin/main@ce8ad1efa49c8023350b68de2e1d6f347576aa25` |
+| 本轮前端改造前基线 | `ce8ad1ef`（PR #177 已合入的 O1 + 安全活动版本） |
+| 实现源码 | `frontend/src/App.vue`、`frontend/src/assets/campusclaw-mark-o1.png`、`frontend/src/components/AgentRound.vue`、`frontend/src/components/AssistantRichText.ts`、`frontend/src/components/ThinkingDisclosure.vue`、`frontend/src/components/ToolActivity.vue`、`frontend/src/markdown/richText.ts`、`frontend/src/composables/useRuntimeApi.ts`、`frontend/src/projectors/conversationRounds.ts`、`frontend/src/projectors/runtimeEventProjector.ts`、`frontend/src/style.css` |
 | Postman 核对 | 2026-08-20；只读核对 `Agent Runtime` collection 及真实 SSE 响应 |
-| 更新日期 | 2026-08-26 |
+| 更新日期 | 2026-08-27 |
 
 ## 1. 结论
 
@@ -32,9 +32,14 @@ Agent 工作台。主界面只暴露用户能够理解并需要决策的概念�
 作为内部构建中的开发者诊断入口，不能继续充当产品首页。
 
 Assistant 正文以原始 Markdown 文本为权威，经过受限语法解析和固定 Vue VNode 投影为安全
-富文本；表格、列表、引用、链接、行内代码和代码块均有明确样式、溢出和复制行为。User、
+富文本；表格、列表、引用、链接、行内代码和代码块均有明确样式与溢出行为。User、
 Tool result 与错误走纯文本路径。Thinking 只展示公共 bridge 提供的安全标题/摘要；当前
-Runtime 只有原始推理时只显示状态，不用原始内容补齐摘要。
+Runtime 只有原始推理时仍提供可展开 disclosure，并在内容区显示安全占位，不用原始内容
+补齐摘要。Thinking 与 Tool 按时序合并到暖灰虚线活动区，与主回答背景形成轻量边界。
+
+复制动作归属于“用户消息后的整轮 Agent 回答”，而不是单条 Assistant Entry 或代码块。
+一轮完成后只显示一个图标按钮，复制本轮全部 Assistant Markdown；Thinking 摘要、工具参数
+与工具输出属于诊断活动，不进入复制内容。
 
 视觉采用 O1 原始透明品牌图与 Codex-inspired 暖中性层级：暖白、暖灰、深暖黑构成工作台，
 O1 珊瑚色只承担品牌识别，少量绿色表达状态。界面不使用 OpenAI/Codex 商标或标志。
@@ -78,7 +83,7 @@ O1 珊瑚色只承担品牌识别，少量绿色表达状态。界面不使用 O
 | 本机 `ChatGPT.app` 26.814.41407 的 `app.asar` light-theme Token | 可观察到 `gray-0/50/75/100/500/750/900`、近黑 primary solid、5%/10% alpha border、灰色 user message background、green success 与 blue focus/link；这是 Codex-inspired 视觉证据，不是公开品牌规范。 |
 | 同一 `app.asar` 的 `webview/assets/app-initial-BCLYDefw.js`：`followUpQueueMode`、`K9s()`、`composer.submitButtonTooltip.*` 与 submit telemetry | Codex desktop 的跟进模式取值为 `steer` / `queue`，desktop 默认 `steer`；`Cmd/Ctrl+Shift+Enter` 对单条消息执行相反模式；已排队消息支持送入当前运行、编辑、删除、重试与恢复。历史 `interrupt` 配置会归一为 `steer`。 |
 | 同一 `app.asar` 的 `webview/assets/zh-CN-ByRVSIXt.js` | 产品文案使用“调整方向”“加入队列”“停止”；“调整方向”的说明是提交但不中断正在运行的模型，而不是立即中止当前模型或工具。 |
-| `campusclaw-frontend-design@5c22316` 的 `campusclaw-mark-o1.png`、常规态/执行中 v8 | 用户确认 O1 透明 PNG 为品牌权威源；活动采用安全 Thinking disclosure 和紧凑 Tool 行，工具展开内容按输入在上、输出在下排列。 |
+| `campusclaw-frontend-design@5c22316` 的 `campusclaw-mark-o1.png`、常规态/执行中 v8 | 用户确认 O1 透明 PNG 为品牌权威源；活动采用安全 Thinking disclosure 和紧凑 Tool 行，工具展开内容按输入在上、输出在下排列。v9 在此基础上增加整轮复制与虚线活动区。 |
 | [OpenAI 官方 Codex use cases](https://developers.openai.com/codex/use-cases) | 官方将 Codex 表述为理解代码、构建/测试、评审并交付任务的工作界面；官方未公开可复制的 Codex Design Token，因此具体色值以本机可观察资源和本设计决策为依据。 |
 
 ### 3.2 当前实现行为
@@ -92,12 +97,13 @@ O1 珊瑚色只承担品牌识别，少量绿色表达状态。界面不使用 O
 | `frontend/src/projectors/runtimeEventProjector.ts` 的 `projectAssistantEvent`、`projectThinkingEvent`、`projectToolEvent` | Assistant delta 追加到 `rawMarkdown`，completed 用持久化原文替换；Thinking 忽略原始内容，只读取安全 display 字段；工具只在实际执行/结果事件出现后创建活动。 |
 | `frontend/src/projectors/runtimeEventProjector.ts` 的 `projectToolArguments`、`appendToolArgument` | 工具参数先执行行数、深度和长度预算，再隐藏凭据、内部 ID 与疑似 Bearer/JWT 值；绝对路径只保留文件名。工具结果保持纯文本并限制长度。 |
 | `frontend/src/markdown/richText.ts:1-352` | `markdown-it` 15.0.0 只生成 token；自有 allowlist、URL policy、节点/字符预算和稳定尾块逻辑生成受控中间树。raw HTML、图片与不安全链接不能成为活动 DOM。 |
-| `frontend/src/components/AssistantRichText.ts:18-221` | 固定 Vue VNode 递归渲染语义内容，提供表格滚动、代码/原文复制、外链提示、动画帧节流和单次完成播报；不使用 `v-html` 或 `innerHTML`。 |
-| `frontend/src/components/ConversationTimeline.vue`、`ThinkingDisclosure.vue`、`ToolActivity.vue` | 仅 Assistant 正文进入富文本组件；Thinking 和 Tool 使用独立专用 viewer。同一用户消息后的连续 Agent 活动只显示一次 O1，当前项展开、完成工具折叠。 |
+| `frontend/src/components/AssistantRichText.ts` | 固定 Vue VNode 递归渲染语义内容，提供表格/代码局部滚动、外链提示、动画帧节流和单次完成播报；不使用 `v-html` 或 `innerHTML`，也不创建消息级或代码块级复制动作。 |
+| `frontend/src/projectors/conversationRounds.ts`、`frontend/src/components/AgentRound.vue`、`ConversationTimeline.vue` | 以 User turn 为边界聚合整轮 Agent 活动；连续 Thinking/Tool 组成虚线活动组；一轮只显示一次 O1 和一个完成态复制图标，复制本轮 Assistant Markdown。 |
+| `frontend/src/components/ThinkingDisclosure.vue`、`ToolActivity.vue` | Thinking 始终使用原生可展开 disclosure；安全摘要缺失时展开显示占位。Tool 当前/失败展开、完成折叠，输入与输出纵向排列。 |
 | `frontend/src/components/BrandMark.vue`、`frontend/src/assets/campusclaw-mark-o1.png` | 组件直接引用权威透明 PNG，不使用 SVG 重绘、深色底板或裁剪；实现资产与设计资产 SHA-256 相同。 |
 | `frontend/src/composables/useRuntimeApi.test.ts`、`frontend/src/projectors/runtimeEventProjector.test.ts` | Vitest 契约测试覆盖 Session/Model/Control、多页 Events、SSE lowerCamelCase 投影与断流确认/不确定分支。 |
 | `frontend/src/markdown/richText.test.ts` | 覆盖支持语法、标题钳制、表格对齐、HTML/图片/链接安全边界、任务列表、流式稳定尾块和预算降级。 |
-| `frontend/src/style.css` 的根 Token、`.thinking-disclosure`、`.tool-activity` | 落地 O1 暖中性 Token、紧凑活动 disclosure、纵向工具详情和响应式局部滚动；Assistant 富文本样式仍限定在消息根节点。 |
+| `frontend/src/style.css` 的根 Token、`.agent-activity-panel`、`.round-copy-button` | 落地 O1 暖中性 Token、类似开发者诊断入口的虚线活动容器、透明 44 px 命中区的 17 px 复制图标、纵向工具详情和响应式局部滚动。 |
 
 直接 Runtime adapter 是公共 bridge 尚未设计期间的过渡架构，不代表生产边界已经完成。
 它只读取非秘密环境配置，不提供 JWT/APPKEY 编辑器，也不在产品 DOM 展示内部资源标识。
@@ -107,7 +113,7 @@ O1 珊瑚色只承担品牌识别，少量绿色表达状态。界面不使用 O
 - 每个 Session 同一时刻最多有一个 active execution。
 - `POST /sessions/{id}/events` 是请求范围 SSE；断线不等于中止，也不能自动重放 POST。
 - `user.message`、`assistant.thinking.completed`、`assistant.message.completed`、`tool.result` 是可恢复的持久化 Entry，其中 thinking 的历史可见性受 Session 当前开关控制。
-- 当前 thinking 事件只有原始推理内容，没有已确认的安全 display 标题/摘要字段；过渡 UI 只能显示状态，目标 bridge 必须生成安全摘要。
+- 当前 thinking 事件只有原始推理内容，没有已确认的安全 display 标题/摘要字段；过渡 UI 只能显示状态与安全占位，目标 bridge 必须生成安全摘要。
 - `assistant.message.started/delta`、工具执行 started/completed 和流控制事件是瞬时状态。
 - Model 与 Thinking 只允许在 Session `idle` 时修改，并通过强 ETag 防止覆盖并发修改。
 - Steer 优先于 FollowUp；两者只在 `running` 时接受；Abort 在 `idle` 时也是幂等成功。
@@ -125,6 +131,9 @@ O1 珊瑚色只承担品牌识别，少量绿色表达状态。界面不使用 O
 | 运行中只显示当前跟进模式，默认 Steer | 产品约束 | Codex desktop 的 Composer 以一个可配置默认行为和单次反转快捷键工作；两个常驻模式会增加不必要决策并偏离参照实现。 |
 | 将工具事件合并为紧凑 disclosure | 产品约束 | 保留执行透明度，同时避免 started/completed/result 三段协议噪音；输入与输出按阅读顺序纵向排列。 |
 | Thinking 只展示安全 display 字段，缺失时退化为状态 | 安全加固 | 原始私有推理不属于产品输出；后端契约缺失不能成为扩大暴露面的理由。 |
+| Thinking 始终可展开，缺少安全摘要时显示占位 | 产品约束 + 安全加固 | 保持稳定可发现的交互，同时明确说明数据缺口，不让“不可展开”被误解为界面故障，也不回退到原始推理。 |
+| Thinking 与 Tool 进入统一虚线活动区 | 产品约束 | 暖灰背景与主画布接近，虚线边界提供轻量分组，避免协议活动与最终回答混在同一视觉平面。 |
+| 每轮只保留一个图标复制动作 | 产品约束 + 架构变化 | 用户复制的是整轮回答；消息级与代码块级按钮会重复、尺寸显眼，并把 Runtime Entry 切分泄漏到产品交互。 |
 | 工具参数投影执行预算、敏感键/值隐藏和路径收敛 | 安全加固 | 降低过渡 adapter 将凭据、内部 ID、绝对路径或超长 payload 写入 DOM 的风险；生产仍由 bridge 在网络边界负责。 |
 | Assistant 正文使用安全 Markdown 富文本 | 产品约束 | 模型天然输出表格、代码、列表和强调；纯文本会把结构标记直接暴露给用户。 |
 | 禁止原始 HTML、Markdown 图片和任意协议链接 | 安全加固 | 模型与外部内容均不可信；避免 XSS、跟踪像素、应用路由欺骗与危险协议跳转。 |
@@ -147,6 +156,7 @@ O1 珊瑚色只承担品牌识别，少量绿色表达状态。界面不使用 O
 - 实现产品化执行控制、安全 Thinking/工具活动呈现与断线恢复文案。
 - 落地 O1 原图、Codex-inspired 暖中性视觉 Token、基础尺寸和响应式规则。
 - 落地 Assistant 富文本语法、安全边界、流式稳定性、复制和响应式溢出规则。
+- 以用户消息为回合边界聚合 Agent 内容，提供单一整轮复制动作和统一活动容器。
 - 对齐 HTTP 1.38.0 lowerCamelCase wire contract，同时明确生产前端仍缺少的公共契约。
 
 ### 4.3 非目标
@@ -181,7 +191,7 @@ O1 珊瑚色只承担品牌识别，少量绿色表达状态。界面不使用 O
 |---|---|---|---|
 | 左侧导航 | 新建会话、最近会话、Agent 中心、设置 | 创建、切换、搜索会话 | Runtime `sessionId`、接口地址 |
 | 顶部栏 | Agent 名称、自动保存、模型、深度思考、粗粒度状态 | 切换 idle Session 的模型/思考；运行时停止 | ETag、资源版本、Provider 凭据 |
-| 对话画布 | User turn、Assistant 安全富文本、安全 Thinking 摘要/状态、紧凑工具活动、附件和错误恢复提示 | 阅读、选择文本、打开安全外链、复制原文/代码、展开分析或工具详情 | 原始 thinking、SSE frame、瞬时 Entry ID、凭据、绝对路径、可执行 HTML |
+| 对话画布 | User turn、Assistant 安全富文本、虚线 Agent 活动区、安全 Thinking 摘要/占位、紧凑工具活动、附件和错误恢复提示 | 阅读、选择文本、打开安全外链、复制整轮回答、展开分析或工具详情 | 原始 thinking、SSE frame、瞬时 Entry ID、凭据、绝对路径、可执行 HTML |
 | Composer | 附件、输入、发送；运行时当前跟进模式 | 发送新消息、调整方向、加入队列 | operation path、内部请求体 |
 | 开发者诊断 | 请求摘要、原始事件、内部标识 | 复制调试信息 | 仅内部构建和授权角色可见 |
 
@@ -189,24 +199,25 @@ O1 珊瑚色只承担品牌识别，少量绿色表达状态。界面不使用 O
 
 低保真同时覆盖常规对话、首次进入/选择 Agent、执行中控制三个状态。
 
-![CampusClaw 低保真三状态](campusclaw-frontend/low-fidelity.png)
-
-[打开可缩放低保真评审页](campusclaw-frontend/low-fidelity.html)
+[打开当前可缩放低保真评审页](campusclaw-frontend/low-fidelity.html)。该 HTML 是 0.8.0 的
+低保真图源，包含可展开分析、虚线活动区和每轮单一复制入口；仓库中的 PNG 仅保留为
+0.7.0 历史快照，不作为本版本评审依据。
 
 ### 6.2 高保真：常规对话
 
-![CampusClaw O1 暖中性高保真常规对话](campusclaw-frontend/high-fidelity-conversation-v8.png)
+![CampusClaw O1 暖中性高保真常规对话](campusclaw-frontend/high-fidelity-conversation-v9.png)
 
 视觉意图：O1 透明原图直接显示，不缩进深色方块；暖白、暖灰、深暖黑与品牌珊瑚色协调，
-绿色只在成功/执行时出现。Thinking 与工具保持紧凑、可展开和编辑器式精度；工具详情按
-输入参数在上、输出结果在下排列。页面仍保留充足留白，不把执行过程做成监控 Dashboard。
+绿色只在成功/执行时出现。Thinking 与工具进入统一暖灰虚线活动区；分析过程始终可展开，
+工具详情按输入参数在上、输出结果在下排列。整轮回答底部只有一个小型复制图标。页面仍
+保留充足留白，不把执行过程做成监控 Dashboard。
 
 ### 6.3 高保真：执行中
 
-![CampusClaw O1 暖中性高保真执行中](campusclaw-frontend/high-fidelity-running-v8.png)
+![CampusClaw O1 暖中性高保真执行中](campusclaw-frontend/high-fidelity-running-v9.png)
 
 运行态只增加必要的进度、安全分析摘要、当前工具、停止操作与 Composer 跟进方式，不改变
-导航和会话身份。v8 延续单一当前模式：默认动作显示为“调整方向”，并提示可用
+导航和会话身份。当前轮完成前不显示复制动作。v9 延续单一当前模式：默认动作显示为“调整方向”，并提示可用
 `⌘/Ctrl+Shift+Enter` 将本条消息改为“加入队列”；这与 Codex desktop 的默认模式和单次
 反转行为一致。
 
@@ -268,7 +279,7 @@ Chat 标题或用户会话列表接口。
 
 ![Runtime Event 到产品 UI 投影](campusclaw-frontend/runtime_event_ui_projection.svg)
 
-[PlantUML 源码：`runtime_event_ui_projection`](campusclaw-frontend/diagram.puml#L147)
+[PlantUML 源码：`runtime_event_ui_projection`](campusclaw-frontend/diagram.puml#L152)
 
 | Runtime 事件 | 产品 UI 对象 | 处理规则 |
 |---|---|---|
@@ -276,7 +287,7 @@ Chat 标题或用户会话列表接口。
 | `assistant.message.started` | 内部 streaming 状态 | 不立即创建空的可见 turn；等到正文 delta 或其他可见活动再显示。 |
 | `assistant.message.delta` | Assistant Markdown 源预览 | 顺序追加到 `rawMarkdown`；每个动画帧至多解析一次，未闭合尾块按纯文本预览。 |
 | `assistant.message.completed` | Assistant 完整 turn / Tool 规格 | 文本用持久化完整 `rawMarkdown` 替换 preview；`tool_call` 只登记工具名和经过安全投影的参数，不在尚未执行时显示活动。 |
-| `assistant.thinking.delta/completed` | 安全 Thinking disclosure | 只读取 `thinkingDisplayTitle/summary` 或 `displayTitle/summary`；忽略原始 `delta/content`。缺少安全字段时只显示运行/完成状态。 |
+| `assistant.thinking.delta/completed` | 安全 Thinking disclosure | 只读取 `thinkingDisplayTitle/summary` 或 `displayTitle/summary`；忽略原始 `delta/content`。disclosure 始终可展开，缺少安全摘要时显示明确占位。 |
 | `tool.execution.started` | Tool disclosure running | 与此前 Assistant tool call 关联；这是工具首次成为可见活动的时刻。 |
 | `tool.execution.completed` | Tool disclosure 状态 | 结束 spinner；失败默认展开，完成默认折叠，等待或合并 `tool.result`。 |
 | `tool.result` | Tool disclosure 结果 | 纯文本输出；成功默认折叠，失败默认展开；不另起聊天气泡。 |
@@ -290,13 +301,13 @@ Chat 标题或用户会话列表接口。
 
 富文本仅是前端显示投影，不改变 Runtime Entry、SSE 或公共 Chat 消息格式。公共 bridge 必须
 原样传递 Assistant `TextContent.text`，不得预先转换为 HTML；前端保留 `rawMarkdown`，
-渲染失败时回退为纯文本，并可复制原文。
+渲染失败时回退为纯文本，并可通过整轮动作复制原文。
 
 | 内容面 | 显示方式 | 设计理由 |
 |---|---|---|
 | Assistant 正文 | 受限 Markdown token → allowlist 中间树 → 固定 Vue VNode | 改善表格、列表、代码和强调的可读性，不信任模型生成 HTML。 |
 | User 正文 | 纯文本 `pre-wrap` | 忠实显示用户输入，避免伪装成系统 UI 或可点击动作。 |
-| Thinking | 专用 disclosure；只显示安全标题/摘要或状态 | 与最终答案保持视觉和安全边界；原始私有推理永不进入 DOM。 |
+| Thinking | 专用 disclosure；只显示安全标题/摘要或安全占位 | 与最终答案保持视觉和安全边界；原始私有推理永不进入 DOM。 |
 | Tool activity | 专用 disclosure；安全参数摘要在上、纯文本结果在下 | 外部工具内容不得自动继承 Assistant Markdown 权限；输入需先执行预算与敏感字段隐藏。 |
 | Error / recovery | 纯文本产品文案 | 错误面不接受模型或下游富文本。 |
 
@@ -310,7 +321,7 @@ Chat 标题或用户会话列表接口。
 | 强调、粗体、删除线 | `em`、`strong`、`del` | 沿用正文色彩。 |
 | 引用、分隔线 | `blockquote`、`hr` | 引用不伪装为系统警告。 |
 | 行内代码 | `code` chip | 等宽字体，可随正文选择复制。 |
-| fenced code block | 代码容器 | 显示语言标签与复制按钮；只复制代码文本，长行横向滚动。 |
+| fenced code block | 代码容器 | 显示语言标签，长行横向滚动；不单独提供复制按钮，整轮统一复制。 |
 | GFM table | 语义 `table` 与滚动容器 | 保留表头和 Markdown 对齐标记；只在表格内横向滚动。 |
 | 安全链接 | 外部链接 | 只允许无凭据的绝对 `http:` / `https:`，新窗口并设置 `noopener noreferrer`。 |
 | raw HTML | 可见纯文本 | 永不进入 DOM，不提供启用开关。 |
@@ -332,7 +343,7 @@ Chat 标题或用户会话列表接口。
    再生成自有中间树，依赖不能直接返回要插入 DOM 的 HTML。
 3. 中间树只允许固定节点、受控表格对齐属性和安全 URL；Vue 使用 `h()` 创建节点，禁止
    `v-html`、`innerHTML` 与字符串事件属性。
-4. 链接统一做协议和凭据检查；图片只生成替代文字占位；代码复制与原文复制只接收文本。
+4. 链接统一做协议和凭据检查；图片只生成替代文字占位；整轮复制只接收聚合后的 Assistant 原始 Markdown 文本。
 5. parser 最大嵌套为 32；字符与节点预算集中在 `richText.ts`。解析异常或超限回退纯文本。
 6. 富文本样式限定在 `.assistant-rich-text` 根节点及 `rich-*` 子组件，不覆盖导航、Composer
    或错误提示；现有 CSP 继续禁止 inline script。
@@ -351,8 +362,12 @@ Chat 标题或用户会话列表接口。
 - Assistant 继续使用开放式正文，不加整块气泡；正文 14 px / 1.8，标题、段落、列表与引用
   使用紧凑的内容节奏。
 - 表格和代码块各自横向滚动，不让页面或 Composer 产生水平溢出；表格容器可通过键盘聚焦。
-- 代码块使用中性表面、1 px 边界、语言标签和至少 44 px 高复制按钮；复制反馈为可读状态文字。
-- 消息动作提供“复制原文”，复制权威 `rawMarkdown`；代码按钮只复制 fence 内的代码文本。
+- 代码块使用中性表面、1 px 边界和语言标签；长行只在代码容器内滚动，不提供独立复制按钮。
+- 每个用户消息后的 Agent 回合只提供一个图标复制动作。按钮使用透明 44 × 44 px 命中区与
+  17 px 图标，默认低强调，hover/focus 时显现；复制该回合全部 Assistant `rawMarkdown`，按
+  原 Entry 顺序以两个换行连接，不包含 Thinking、工具参数或工具结果。
+- 当前回合仍在 streaming、thinking 或执行工具时隐藏复制动作；完成后显示，并通过图标变化、
+  tooltip、`aria-label` 与低打扰 live region 提供成功或失败反馈。
 - 外链带外链标识；链接文字未包含目标主机时补充显示主机，降低误导链接风险。
 
 ## 10. 视觉与组件基线
@@ -397,9 +412,9 @@ spinner/进度文本和 check/“已完成”标签区分，不能只依赖颜�
 - 所有图标按钮具有可读名称；主要命中区至少 44 × 44 CSS px。
 - `Enter` 按当前跟进方式发送，`Shift+Enter` 换行；运行中通过动作名称明确当前方式。
 - `Cmd/Ctrl+Shift+Enter` 对单条运行中消息临时反转“调整方向”与“加入队列”，不改变默认设置。
-- Thinking 与 Tool Activity 使用原生可聚焦 disclosure；summary 提供可读标题、状态与展开状态。
+- Thinking 与 Tool Activity 使用原生可聚焦 disclosure；summary 提供可读标题、状态与展开状态。Thinking 即使没有安全摘要也始终可展开。
 - 流式文本更新使用低打扰 live region，避免每个 token 都被读屏播报。
-- 富文本保留标题、列表、引用、表格和代码语义；复制按钮与表格滚动区有可读名称。
+- 富文本保留标题、列表、引用、表格和代码语义；整轮复制按钮与表格滚动区有可读名称。
 - `prefers-reduced-motion` 下取消 spinner 旋转，保留静态状态文本。
 
 ### 10.4 响应式
@@ -443,7 +458,7 @@ spinner/进度文本和 check/“已完成”标签区分，不能只依赖颜�
 - Tool error：活动 disclosure 默认展开；只显示通过投影策略的输入摘要和纯文本结果，不直接展示原始私有 payload。
 - 长会话：历史虚拟化；分页向上加载；持久化 turn 与 streaming turn 使用稳定 key。
 - 大消息：输入区显示字符计数接近上限；附件最多 32 个，在选择阶段阻止超限。
-- 富文本解析失败或超出安全预算：回退为未截断纯文本并保留复制原文；不得白屏或把原始
+- 富文本解析失败或超出安全预算：回退为未截断纯文本并保留整轮复制；不得白屏或把原始
   字符串作为 HTML 写入 DOM。
 
 ## 13. 设计决策
@@ -454,16 +469,19 @@ spinner/进度文本和 check/“已完成”标签区分，不能只依赖颜�
   （Accepted）：仅 Assistant 原文进入受控 Markdown 解析；禁止 HTML 注入、远程图片和不安全链接，所有消息路径共用同一渲染器。
 - [ADR-0028：采用 O1 原图与安全 Agent 活动披露](../decisions/0028-agent-activity-disclosure-and-o1-brand.html)
   （Accepted）：直接引用权威 O1 PNG，使用暖中性 Token；Thinking 只展示安全 display 字段，工具使用紧凑 disclosure 和纵向输入/输出详情。
+- [ADR-0029：整轮复制动作与虚线 Agent 活动区](../decisions/0029-agent-round-actions-and-activity-panel.html)
+  （Accepted）：以 User turn 划分 Agent 回合；Thinking 始终可展开；连续活动进入虚线分组；完成回合只提供一个图标复制入口。
 
 ## 14. 实施分期
 
 1. **已完成：产品前端壳**：导航、三类状态、对话、紧凑活动 disclosure、Composer、响应式和安全错误文案。
 2. **已完成：过渡 Runtime adapter**：对齐 HTTP 1.38.0 lowerCamelCase、请求级 SSE、历史去重、ETag、运行控制和提交结果确认；不接收浏览器凭据。
-3. **已完成：Assistant 安全富文本**：`rawMarkdown` 单一事实源、token allowlist、流式稳定尾块、表格/代码/复制、安全链接、图片占位和预算回退。
-4. **已完成：O1 与安全活动呈现**：权威品牌 PNG、暖中性 Token、安全 Thinking 状态/摘要、工具参数脱敏、纵向详情和单轮品牌去重。
-5. **下一步：公共 bridge 契约评审**：逐项确认 Agent、Chat、Attachment、Model Catalog、Thinking 安全摘要、队列项和 public SSE。
-6. **下一步：生产集成**：把 `useRuntimeApi` 替换为公共 adapter，补齐认证、授权、服务端事件最小化、持久化会话列表和上传。
-7. **部分完成：测试固化**：已有 Runtime adapter、Event projector 与富文本 Vitest 测试，并完成本地多视口浏览器验收；自动浏览器 E2E 与截图视觉回归仍待接入持续集成。
+3. **已完成：Assistant 安全富文本**：`rawMarkdown` 单一事实源、token allowlist、流式稳定尾块、表格/代码、安全链接、图片占位和预算回退。
+4. **已完成：O1 与安全活动呈现**：权威品牌 PNG、暖中性 Token、安全 Thinking 摘要/占位、工具参数脱敏、纵向详情和单轮品牌去重。
+5. **已完成：整轮交互收敛**：按 User turn 聚合 Agent 回合；连续 Thinking/Tool 进入虚线活动区；完成回合只显示一个图标复制入口。
+6. **下一步：公共 bridge 契约评审**：逐项确认 Agent、Chat、Attachment、Model Catalog、Thinking 安全摘要、队列项和 public SSE。
+7. **下一步：生产集成**：把 `useRuntimeApi` 替换为公共 adapter，补齐认证、授权、服务端事件最小化、持久化会话列表和上传。
+8. **部分完成：测试固化**：已有 Runtime adapter、Event projector、回合分组与富文本 Vitest 测试，并完成本地多视口浏览器验收；自动浏览器 E2E 与截图视觉回归仍待接入持续集成。
 
 ## 15. 测试与验收
 
@@ -475,6 +493,7 @@ spinner/进度文本和 check/“已完成”标签区分，不能只依赖颜�
 - 富文本安全测试：raw HTML、危险/相对 URL、带凭据 URL、远程图片、超深嵌套和预算超限；
   断言无活动 HTML/图片节点且能保留纯文本。
 - 富文本流式测试：空行稳定边界、未闭合 fenced code、表格尾块与 completed 最终解析。
+- 回合分组测试：User turn 边界、连续活动分组、多 Assistant Markdown 聚合、运行中复制隐藏和下一轮隔离。
 - 恢复测试：SSE 断流后历史确认返回 `confirmed`；未找到新 User Entry 返回 `uncertain` 并发布 `OUTCOME_UNCERTAIN`。
 - 控制测试：desktop running 默认 Steer、设置切换 Queue、单条快捷键反转、Abort、Steer 优先、
   队列满、响应不确定不重试、刷新后不虚构未送达队列。
@@ -491,24 +510,24 @@ spinner/进度文本和 check/“已完成”标签区分，不能只依赖颜�
 - Markdown 不包含 Mermaid；三张 SVG、所有图片和 PlantUML 行锚点存在。
 - `frontend-review.html` 可独立打开，三个 `screenKey`、版本、评审状态和图片均可见。
 - 低保真 HTML 可独立打开，三个状态均在首屏评审板中可见。
-- 常规态 v8 与运行态 v8 高保真 PNG 可解码；O1 资产与权威设计哈希一致，页面符合暖中性 Token 与纵向活动详情。
+- 常规态 v9 与运行态 v9 高保真 PNG 可解码；O1 资产与权威设计哈希一致，页面符合暖中性 Token、虚线活动区、可展开分析、整轮复制与纵向工具详情。
 - `git diff --check` 通过。
 - `npm test`、`npm run typecheck`、`npm run build` 与 `npm audit --audit-level=high` 通过。
 
 ## 17. 高保真生成说明
 
-常规态 v8 与运行态 v8 使用内置 imagegen 的 `ui-mockup` 编辑路径生成：以此前高保真稿为
-布局与内容参考，并把用户确认的 O1 透明 PNG 作为权威品牌输入。最终约束重点是：完整产品
-视口、无右侧设置栏、隐藏内部协议字段、安全 Thinking disclosure、紧凑工具行、输入在上/
-输出在下、暖中性表面、深暖黑主动作和少量绿色状态。实际实现直接复制 O1 原图，不从生成
-稿反向裁切品牌；字段、Token 与交互仍以本设计文档为准。
+常规态 v9 与运行态 v9 从本轮 Vue 实现和本地 Runtime fixture 直接截取，不再通过生成式图片
+重绘交互。截图固定在桌面评审视口，验证 O1 原图、暖中性表面、虚线活动区、分析展开、
+纵向工具详情与整轮复制图标。v8 仍记录此前 imagegen 视觉方向，但 v9 与代码和本设计文档
+共同构成当前视觉依据。
 
-[查看两次生成使用的完整 Prompt](campusclaw-frontend/imagegen-prompts.md)
+[查看历史 v8 生成使用的完整 Prompt](campusclaw-frontend/imagegen-prompts.md)
 
 ## 18. 版本历史
 
 | 版本 | 日期 | 变更 |
 |---|---|---|
+| 0.8.0 | 2026-08-27 | 基于 `origin/main@ce8ad1ef`：将 Thinking 改为始终可展开，安全摘要缺失时显示占位；按 User turn 聚合整轮 Agent 内容，将连续 Thinking/Tool 放入暖灰虚线活动区；移除消息级和代码块级复制按钮，完成回合只显示一个 Codex 风格图标并复制本轮全部 Assistant Markdown；增加回合分组测试、ADR-0029、v9 评审稿与浏览器验收。 |
 | 0.7.0 | 2026-08-26 | 基于 `origin/main@63adc08c` 和 O1 设计基线 `5c22316`：实现权威 O1 PNG 与暖中性 Token；将 Thinking 改为只读安全 display 字段、无摘要时状态降级；将 Tool Activity 改为当前展开/完成折叠的紧凑 disclosure，输入在上、输出在下，并加入参数预算、敏感字段隐藏、绝对路径收敛和结果截断；同一轮只显示一次品牌图；补充投影测试、多视口浏览器验收、v8 高保真、ADR-0028，并把富文本 ADR 顺延为 0027。 |
 | 0.6.0 | 2026-08-26 | 基于 `origin/main@56be8eee` 实现 Assistant-only 安全 Markdown：引入 `markdown-it` token parser 和自有 allowlist/URL policy，将 Assistant turn 明确为 `rawMarkdown`；增加流式稳定尾块、动画帧节流、语义表格、任务列表、代码/原文复制、图片占位、链接主机提示、纯文本预算降级、完成态播报及专项测试；新增富文本 ADR 和 PlantUML/SVG。 |
 | 0.5.0 | 2026-08-21 | 合并 `origin/main@d0efb2fd` 后对齐 Runtime HTTP 1.38.0 lowerCamelCase；修复 Session/Model/Control、SSE 与 `nextPage` 分页投影；新增初始消息持久化确认句柄，断流时优先从历史对账，无法确认则保留草稿并禁止盲目重试；增加 Vitest 契约测试，ADR 因主分支编号冲突顺延为 0020。 |
