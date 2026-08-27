@@ -119,6 +119,14 @@ public class WebCommandCatalog {
 
 **并发围栏**:压缩期间(读历史→写 compaction entry)对该 sessionId 的普通 `POST /events` 提交互斥——实现为 sessionId 级读写锁(读历史/写结果为写侧,普通提交为读侧排队;或复用既有 per-session 操作锁 `RuntimeSessionEngineRegistry.operationLock`);避免压缩 summary 覆盖并发新消息。**端到端测试**:idle 有历史会话压缩后,下一次 prompt 携带 summary + 保留消息(非空上下文)。
 
+**[继续复查①已采纳——锁改为版本围栏]**。批注属实:POST 返回即释放锁,异步 future 完成前的窗口围栏失效。放弃"HTTP handler 持锁跨越异步"方案,改**快照版本 + CAS**:
+
+1. 读取历史前记录会话当前 `entryVersion`(持久层单调递增)
+2. 压缩完成后写 compaction entry 用 **compare-and-set(期望 version)**:成功→提交;失败(期间有新消息)→**重试一次**(重读增量后再压)或返回 `{kind:'error', output:'会话有新消息,压缩已取消,请重试'}`——首版选取消+提示(简单、可预期),自动重试登记后续
+3. **重复 /compact 幂等**:压缩进行中再收到 → 409 `COMPACTION_IN_PROGRESS`(per-session 单飞标记);已完成后重复 → 正常再压(新快照)
+4. 该方案无需长持锁,读-压-写全程仅靠版本号保证不覆盖
+
+
 
 
 ### 2.4 `/skill:<skill-name> [arguments]`(发现/补全/执行)
@@ -134,6 +142,26 @@ public class WebCommandCatalog {
 - **名称模式统一**:`^([a-z][a-z0-9-]*|skill:[a-z0-9-]+)$`——主文档 Controller `@PathVariable` 校验、Catalog parser、TS `SlashCommandDescriptor.name` 注释同步;冲突测试:内置命令名不得以 `skill:` 开头(注册期检查)
 - **category 枚举扩容**:`'session' | 'conversation' | 'system' | 'skill' | 'extension'`(tui 随 TUI 删除移除);DTO 与 TS 同步
 - **执行流定稿(复查⑥修正)——命令端点直接返回 SSE**:`POST /commands/skill:<name>` 内部等价 submit(message=skillArgs) 并在同一响应 attach SseEmitter——前端单请求拿全流,不另行 POST events(那会二次提交);断线重连走 `GET /events` 历史分页;不新增第二套运行事件通道。
+
+**[继续复查②已采纳——服务端 skill 解析展开]**。批注属实:prompt 仅列技能目录,模型靠 Read 猜加载——命令必须服务端确定性解析。`POST /commands/skill:<name>` 服务端流程:
+
+1. **解析 Skill**:按当前 agent 的 runtime 目录(SkillLoader 体系)查 `<name>`;**未知** → 稳定错误 `SKILL_NOT_FOUND`(400);**不可见**(不在当前 agent 绑定集)→ `SKILL_NOT_VISIBLE`(400);**disableModelInvocation=true** → `SKILL_INVOCATION_DISABLED`(400);**路径逃逸**(name 含 `..`/绝对路径等,grammar 已限 `[a-z0-9-]` 但仍防御性校验 filePath 在 workspace 边界内)→ `SKILL_PATH_INVALID`(400)
+2. **组装消息**:读取 SKILL.md 正文,组装为一次 user message——`[Skill: <name>]
+<SKILL.md 正文>
+
+<用户 arguments>`(SkillPromptFormatter 同源模板);再经既有 submit+ SSE 路径发出
+3. 展开大小上限:SKILL.md 正文截断(如 16KB,超出截断并在消息内注明)防超长注入
+4. 错误码进 RuntimeErrorCode + i18n + 前端 friendlyError 同步清单
+
+
+**[继续复查③已采纳——响应类型进契约]**。避免同一路径运行时猜 JSON/SSE:`CommandDescriptorDTO` 与 TS `SlashCommandDescriptor` **正式增加 `streaming: boolean`** 字段(默认 false):
+
+- `streaming:false`(model/thinking 查询/new 除外为 CLIENT_LOCAL/help/settings):`POST /commands/{name}` → `application/json` `CommandResultDTO`(现状不变)
+- `streaming:true`(skill:*、声明流式的 Extension):`POST /commands/{name}` → `text/event-stream`(submit+attach 模式)
+- **前端按 descriptor 分流**:`execute()` 检查 `command.streaming`——false 走 `requestResult<SlashCommandResult>`(json),true 走既有 `sendMessage` 同款 SSE 消费(`consumeSse` 复用);无运行时嗅探
+- 错误格式统一:流式命令在流开始前的校验失败(如 SKILL_NOT_FOUND)返回**普通 JSON 错误信封 + 400**——即 `produces` 声明两种,Spring 按异常路径协商;前端流式分支先检查 content-type 非 event-stream 则按 JSON 错误处理
+- /help 输出列表标注各命令 streaming 标记
+
 
 
 
