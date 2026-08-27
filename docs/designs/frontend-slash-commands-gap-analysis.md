@@ -91,10 +91,10 @@ public class WebCommandCatalog {
 
 **前提变化**:批注④的"Runtime 无手动压缩"已过时——`SessionCompactor.compact()` 已存在(异步 + Started/Completed/Failed 事件)。缺口是 HTTP 暴露与进度通道。
 
-设计(打破原"同步 <100ms 无 SSE"约束——压缩是长操作):
-- `/compact` → `POST /sessions/{id}/compact`(新端点,SERVER 命令)→ 触发 `SessionCompactor.compact(customInstructions)`
-- **进度经既有 events SSE 流**:`SessionCompactionStartedEvent/CompletedEvent/FailedEvent` 已在事件体系内,前端 projector 增加 compacting/compacted 投影(时间线显示系统消息"正在压缩…/已压缩 N 条消息")
-- 命令本身返回 `{kind:'ok', output:'压缩已启动', effects:{}}`(异步启动确认),结果由事件流送达
+设计(经复审①/继续复查①④修订后的**当前契约**,前文旧 SSE 表述作废):
+- `/compact` → `POST /sessions/{id}/commands/compact`(SERVER,requiresSession=true)→ 重建会话(含历史恢复)后触发 `SessionCompactor.compact(customInstructions)`
+- **无实时 SSE 进度**:命令同步返回 `{kind:'ok', output:'压缩已启动', effects:{}}`(启动确认);**结果经持久化事件流可查**(compaction 事件已入 RuntimeEntryCodec 持久化,断线重连/刷新后 `GET /events` 历史分页可见"已压缩"条目)
+- 并发保护:leaf 条件追加(继续复查④)+ 进行中单飞 409 `COMPACTION_IN_PROGRESS`
 - 运行态互斥:streaming 中执行 → 409(复用既有互斥语义)
 
 **[复审①已采纳——批注部分属实,架构补全如下]**
@@ -119,12 +119,15 @@ public class WebCommandCatalog {
 
 **并发围栏**:压缩期间(读历史→写 compaction entry)对该 sessionId 的普通 `POST /events` 提交互斥——实现为 sessionId 级读写锁(读历史/写结果为写侧,普通提交为读侧排队;或复用既有 per-session 操作锁 `RuntimeSessionEngineRegistry.operationLock`);避免压缩 summary 覆盖并发新消息。**端到端测试**:idle 有历史会话压缩后,下一次 prompt 携带 summary + 保留消息(非空上下文)。
 
-**[继续复查①已采纳——锁改为版本围栏]**。批注属实:POST 返回即释放锁,异步 future 完成前的窗口围栏失效。放弃"HTTP handler 持锁跨越异步"方案,改**快照版本 + CAS**:
+**[继续复查④已采纳——CAS 落地为仓储条件追加]**。批注属实:现有 `RuntimeSessionRepository` 无 entryVersion/compare-and-set(查证:append 走 `lockNextSequence` 分配序列,`MyBatisRuntimeSessionRepository:209`)。修订为实现级方案:
 
-1. 读取历史前记录会话当前 `entryVersion`(持久层单调递增)
-2. 压缩完成后写 compaction entry 用 **compare-and-set(期望 version)**:成功→提交;失败(期间有新消息)→**重试一次**(重读增量后再压)或返回 `{kind:'error', output:'会话有新消息,压缩已取消,请重试'}`——首版选取消+提示(简单、可预期),自动重试登记后续
-3. **重复 /compact 幂等**:压缩进行中再收到 → 409 `COMPACTION_IN_PROGRESS`(per-session 单飞标记);已完成后重复 → 正常再压(新快照)
-4. 该方案无需长持锁,读-压-写全程仅靠版本号保证不覆盖
+1. **新增仓储方法** `tryAppendCompactionIfLeafUnchanged(sessionId, expectedLeafId, entry)`:单事务内 `lockNextSequence` + **校验 session.activeLeafId == expectedLeafId**(不等则返回失败,不插入、不推进 sequence)——复用既有行锁语义实现条件追加,不引入新版本列
+2. 压缩前记录 `expectedLeafId = session.getActiveLeafId()`;完成后经该方法原子写入——成功→提交;失败(leaf 已被并发消息推进)→ **释放单飞标记 + 清理重建 Session**,返回 `{kind:'error', output:'会话有新消息,压缩已取消,请重试'}`(自动重试登记后续)
+3. **重复 /compact 幂等**:per-session 单飞标记进行中 → 409 `COMPACTION_IN_PROGRESS`;完成后重复 → 正常再压(新 leaf 快照)
+4. **并发集成测试**:两线程竞争(普通 events append vs compact 写入)只允许一个成功提交 compaction entry,另一个可见新 leaf 后取消
+
+**[继续复查④已采纳]** 见上方修订:entryVersion 改为基于既有 `lockNextSequence` 行锁的条件追加方法(校验 activeLeafId),失败路径释放单飞标记并清理重建 Session;并发集成测试纳入清单。
+
 
 
 
@@ -161,6 +164,12 @@ public class WebCommandCatalog {
 - **前端按 descriptor 分流**:`execute()` 检查 `command.streaming`——false 走 `requestResult<SlashCommandResult>`(json),true 走既有 `sendMessage` 同款 SSE 消费(`consumeSse` 复用);无运行时嗅探
 - 错误格式统一:流式命令在流开始前的校验失败(如 SKILL_NOT_FOUND)返回**普通 JSON 错误信封 + 400**——即 `produces` 声明两种,Spring 按异常路径协商;前端流式分支先检查 content-type 非 event-stream 则按 JSON 错误处理
 - /help 输出列表标注各命令 streaming 标记
+
+**[继续复查⑤已采纳]**:
+- `CommandDescriptorDTO` / TS `SlashCommandDescriptor` **正式增加 `requiresSession: boolean`**(SERVER 默认 true,/help、/resume 等为 false;CLIENT_LOCAL 恒 false)
+- **新增无会话端点** `POST /campusclaw-service/v1/commands/{name}`(无 sessionId 路径段):仅承接 requiresSession=false 的 SERVER 命令(help/resume);requiresSession=true 的命令走该端点 → 400 `SESSION_REQUIRED`;带会话路径 `POST /sessions/{id}/commands/{name}` 行为不变(两端点共用同一 Invoker,权限一致)
+- **前端判定同步**:`matchCommand`/submit 分流的豁免条件从"仅 CLIENT_LOCAL"扩为"`executionMode === 'CLIENT_LOCAL' || !command.requiresSession`";无会话时 executable 且 !requiresSession → 调无会话端点;2.6 表的 /help 规则由此可达
+
 
 
 
@@ -221,15 +230,18 @@ extensionId    := ^[a-z][a-z0-9-]{0,15}$                      (注册时声明,�
 |---|---|
 | "TUI 27 命令" | 改"4 个内置命令,TUI 宿主已移除" |
 | 首版 5 命令静态目录 | 目录动态化:内置 5+3(resume/compact/skill 通道)+ Extension;启动期注册、运行期冻结 |
-| /compact 移出 | 恢复:SessionCompactor 已存在,新 POST /compact 端点 + SSE 进度 |
-| 同步 <100ms 无 SSE | 命令确认仍同步;compact/skill 的**执行结果**经 events SSE |
+| /compact 移出 | 恢复:SessionCompactor 已存在;命令端点 + 启动确认,结果持久化可查(**无实时 SSE**,见 2.3 当前契约) |
+| 同步 <100ms 无 SSE | 命令确认仍同步;skill 是流式命令(SSE 同响应);compact **无实时 SSE**,结果持久化可查 |
 | webCapable 三态(基于 TUI-only 命令) | 保留概念但语义更新:目录含 skill:*/Extension 动态项,`hotkeys` 等 TUI-only 已随 TUI 删除自然消失 |
 | SlashCommandContext(AgentSession+OutputWriter) | 现实为 SlashCommandSession 端口 + SlashCommandOutput;Web 侧仍用 CommandExecutionContext(前设计),但 model/thinking/compact 可直接委托给既有 4 个内置命令的实现(它们已对端口编程) |
+
+**[继续复查⑥已采纳]** 2.3 前文的 SSE 进度旧表述、修订清单两行、测试清单均已改写为当前契约(compact 无实时 SSE / skill 同响应 SSE / entryVersion 改 leaf 条件追加)——每命令单一契约,不依赖后文段落覆盖。
+
 
 **[复审④已采纳——主文档标记 Superseded]**:frontend-slash-commands.md 头部状态改为 Superseded(指向本文),其"TUI 27 命令/静态 5 命令/同步无 SSE/compact 移出/旧 category"等历史结论不再具执行力;本文成为单一规范(完整覆盖 HTTP 契约/DTO/前端接线/测试)。开发以本文为准。
 
 
 ## 测试与验证(增量)
 
-- 后端:`GET /sessions` 列表端点分页/过滤;`POST /compact` 异步启动 + 事件投影;skill 注入走 events;Extension 注册冲突;executionMode 契约(⑧)
-- 前端:resume 选择列表交互/前缀匹配;compact 进度系统消息;`/skill:` 补全;SystemNoticeStack 渲染(⑨);无会话策略表全覆盖(⑩)
+- 后端:`GET /sessions` 列表端点分页/过滤;`POST /commands/compact` 启动确认 + leaf 条件追加并发集成测试(events vs compact 竞争单胜);skill 流式命令(服务端解析 + SSE 同响应 + 四类错误码);Extension 注册冲突;executionMode/requiresSession/streaming 契约(⑧/继续复查⑤③);无会话端点(POST /commands/{name} 的 SESSION_REQUIRED 与 help 可达)
+- 前端:resume 选择列表交互/前缀匹配;compact 启动确认 + 历史分页结果刷新(无进度条);`/skill:` 补全 + 流式消费(content-type 分流);SystemNoticeStack 渲染(⑨);无会话策略表全覆盖(⑩,含 !requiresSession 豁免)
