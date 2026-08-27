@@ -76,6 +76,16 @@ public class WebCommandCatalog {
 
 **缓存策略(复审③)**:Extension 仅启动期经构造注入,运行期静态——`GET /commands` 幂等可安全缓存(内存缓存即可,无需 ETag/失效机制);运行期动态注册为后续演进,首版不做。
 
+**[横向㉚已采纳——Catalog 静态/Skill 动态分层]**。批注属实:skill 按当前 agent 的 runtime 目录解析,不同 agent 可见集不同——全局缓存会把 A 的技能暴露给 B。修订:
+
+- **WebCommandCatalog 仅静态**:内置 + Extension(启动期组合,运行期不变,⑶缓存结论只对此层成立)
+- **`GET /commands` 拆两层**:
+  - 无会话形态(或显式 `?scope=static`):只返回静态命令(内置+Extension)——/help 无会话时**不泄露 skill**
+  - 带 sessionId(已授权):请求期合并该 agent 的 Skill descriptor(从 runtime 目录实时解析);**skill 部分首版禁用缓存**(每次请求解析,启动期目录规模小可接受);缓存 key 约束仅对静态层
+- 前端:resume 切换会话后**重拉带 sessionId 的 commands**(刷新 skill 集);补全菜单数据源区分静态/会话层
+- 测试:多 agent skill 集隔离(A 的 skill 不出现在 B 的响应)、/resume 后目录刷新、无会话 help 不含 skill
+
+
 ### 2.2 `/resume`(检索并恢复已有会话)
 
 **前置依赖(新端点)**:`GET /campusclaw-service/v1/sessions?agentId=&limit=&cursor=`
