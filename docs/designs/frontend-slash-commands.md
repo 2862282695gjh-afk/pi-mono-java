@@ -285,7 +285,9 @@ public record CommandOutcome(String kind, String output, Map<String, Boolean> ef
 public class RuntimeCommandController {
 
     @GetMapping("/commands")
-    public ResultBean<List<CommandDescriptorDTO>> list() { ... }   // 静态注册表映射,无会话依赖
+    public ResultBean<List<CommandDescriptorDTO>> list(
+            @RequestParam(defaultValue = "false") boolean all) { ... }
+    // all=false(默认)只回 webCapable 项;all=true 回全集(终审复查⑤)
 
     @PostMapping("/sessions/{sessionId}/commands/{name}")
     public ResultBean<CommandResultDTO> execute(
@@ -298,6 +300,9 @@ public class RuntimeCommandController {
     }
 }
 ```
+
+**[终审复查⑤已采纳]** `list()` 补 `@RequestParam(defaultValue = "false") boolean all`;测试同时覆盖默认响应(仅 webCapable)与 `?all=true` 全量响应。
+
 
 ### 2.4 `/events` 守卫(RuntimeEventService)
 
@@ -317,7 +322,7 @@ if (parsed != null && catalog.isRegistered(parsed.name())) {
 ### 2.5 后端测试(清单)
 
 - `RuntimeCommandControllerTest`(MockMvc 或现有测试风格):
-  - `GET /commands` 只含 webCapable 命令,字段齐全
+  - `GET /commands`(默认)只含 webCapable;`?all=true` 含全集(终审复查⑤)
   - `POST /commands/model`(空参)→ 200 + kind=ok + 当前模型 id
   - `POST /commands/model glm-5`(有效参)→ **400 + 稳定引导错误码(如 MODEL_WRITE_VIA_ALIAS)/消息提示走 PUT /model**——不再断言命令端点写入成功(终审④:modelChanged 的成功路径由 PUT /model 既有测试与 useSlashCommands 别名测试覆盖)
   - **`WebCommandDefinition` 四组合参数化测试(终审复查①)**:(SERVER, handler) 与 (CLIENT_LOCAL, null) 注册成功;(SERVER, null) 与 (CLIENT_LOCAL, handler) 抛 IllegalArgumentException
@@ -549,7 +554,7 @@ async function runCommand(payload: { name: string; arguments: string }): Promise
     const result = await slash.execute(payload.name, payload.arguments);
     appendSystemMessage(result.output, result.kind === 'error'); // 见下
     if (result.effects.conversationReset) {
-      // /new:仅清本页时间线(clearSessionView),系统消息注明"会话历史仍在服务端"
+      runtime.clearSessionView();   // 终审复查⑥:落实既有方法,不止注释
     }
     // 其余 effects 已在 useSlashCommands.execute 内分发(刷新会话/侧栏)
     if (result.kind === 'ok') message.value = '';   // 复审③:仅成功清空;error 保留草稿供修改重试
@@ -561,22 +566,38 @@ async function runCommand(payload: { name: string; arguments: string }): Promise
 }
 ```
 
-原 `submit()` **加前置分流**(双保险,防止菜单关闭状态下的漏网 `/cmd`;注意 `matchCommand` 返回三态 `SlashMatch`,按下述完整分支处理):
+**[终审复查⑥已采纳]** 批注属实:现有 `App.submit()` 首行 `if (!text || submitting.value || !runtime.hasSession.value) return;` 在三态分流之前拦截,无会话 `/new` 本地成功分支不可达。修订——**slash 分流前置于 session 守卫,仅 CLIENT_LOCAL 豁免 session 检查**:
 
 ```ts
-if (!running.value) {
-  const matched = slash.matchCommand(text);
-  if (matched.type === 'executable') {
-    await runCommand({ name: matched.command.name, arguments: matched.arguments });
-    return;
+async function submit(overrideMode?: FollowUpMode): Promise<void> {
+  const draft = message.value;
+  const text = draft.trim();
+  if (!text || submitting.value) return;
+
+  // 终审复查⑥:分流前置于 session 守卫;CLIENT_LOCAL(/new)豁免 session 检查
+  if (!running.value) {
+    const matched = slash.matchCommand(text);
+    const isClientLocal = matched.type === 'executable'
+        && matched.command.executionMode === 'CLIENT_LOCAL';
+    if (matched.type === 'executable' && (runtime.hasSession.value || isClientLocal)) {
+      await runCommand({ name: matched.command.name, arguments: matched.arguments });
+      return;
+    }
+    if (matched.type === 'web-reserved') {
+      appendSystemMessage(`/${matched.command.name} 仅在终端可用`, true);
+      return;
+    }
+    // unknown → 继续(无会话时由下方原守卫拦截普通消息)
   }
-  if (matched.type === 'web-reserved') {
-    appendSystemMessage(`/${matched.command.name} 仅在终端可用`, true);
-    return; // 不透传——后端守卫也会拒,不发请求
-  }
-  // matched.type === 'unknown' → 继续走普通消息提交
+  if (!runtime.hasSession.value) return;   // 原守卫保留,位于分流之后
+  // ...原有发送/steer/queue 逻辑不变...
 }
 ```
+
+`/new` 的 effects 分支同步落实:`runtime.clearSessionView()`(useRuntimeApi 既有方法,deleteSession 同款,App.vue:83 已有调用先例)——不止注释;系统消息照常插入本地 systemMessages(引导态时间线为空时显示于顶部,刷新消失符合 D4)。
+
+
+(前置分流的完整实现见上方终审复查⑥修订的 `submit()`——分流位于 session 守卫之前且 CLIENT_LOCAL 豁免;此段历史版本保留对照。)
 
 ### 3.6 系统消息(`ConversationTimeline`)
 
@@ -611,8 +632,12 @@ if (!running.value) {
 - **三方一致性**:1.3 的 parseSlashInput 锁定用例在 Catalog(Java)/守卫(Java)/matcher(TS)各自跑出相同结果——共享用例 JSON,双端 CI 校验
 - 过期 ETag:`/model glm-5` 别名触发 changeModel 412 → 提示刷新重试
 - TUI-only 文本(`/hotkeys x`)→ web-reserved → 本地提示且**零网络请求**
-- 空菜单 Enter / 列表加载失败 Enter → 回落普通行为;无会话执行 `/new` → 错误条不崩溃
+- 空菜单 Enter / 列表加载失败 Enter → 回落普通行为;无会话执行 `/new` → 成功清理引导态 + 零网络请求(终审复查⑦:与 3.5 统一)
+  - App.submit 层测试:session 守卫被 CLIENT_LOCAL 分流正确绕过(/new 无会话可达 runCommand;普通消息无会话仍被拦)
 - a11y:textarea `aria-expanded`/`aria-controls`/`aria-activedescendant`;Esc 后焦点仍在 textarea
+
+**[终审复查⑦已采纳]** 两处期望统一为"成功清理引导态、零网络请求";新增 App.submit 层测试覆盖守卫绕过。
+
 
 后端增补:
 - `WebCommandCatalogTest`:parseSlashInput 锁定用例全集 + isRegistered 边界
