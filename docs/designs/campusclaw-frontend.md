@@ -2,7 +2,7 @@
 
 | 属性 | 值 |
 |---|---|
-| 文档版本 | 0.12.1 |
+| 文档版本 | 0.12.2 |
 | 状态 | Implemented（内部调试工作台）；独立 `Headers` 面板、请求级 Header 快照、原始 Thinking、原始 Tool 参数、全活动安全富文本、独立虚线框、整轮复制与 O1 品牌已落地 |
 | 界面评审状态 | `debugHeaders`、`firstUse`、`idleConversation`、`runningConversation` 已实现；Headers 桌面 736 px 与移动 360 px 已通过本地浏览器验收 |
 | 主设计依据 | 本文件，维护源码证据、目标差异、设计理由、状态与 Design Token |
@@ -18,6 +18,7 @@
 | Headers 初始评审实现 | `eb347db8c13eda13c240dc4cf60154fc49b9bd91`；首次实现通用编辑器、请求级副本和适配器合并边界 |
 | Headers 评审修正实现 | `3b3e51f13f7a97cf1b135d13f4b1285e147c74ae`；修正折叠错误聚焦与 Fetch 禁止请求 Header 名称+值算法 |
 | 已确认设计基线 | `pi-mono-java-design@2748497`；独立 `Headers` 面板、通用 Key/Value、自动 Header 不展示、手工同名值优先 |
+| 流式预览术语修订基线 | `origin/main@28b3235e5cff0da2f768cbfc6b7b9ce5e2b51193` |
 | 实现源码 | `frontend/src/App.vue`、`frontend/src/debugHeaders.ts`、`frontend/src/components/DebugHeaders.vue`、`frontend/src/composables/useRuntimeApi.ts`、`frontend/src/assets/campusclaw-mark-o1.png`、`frontend/src/components/AgentRound.vue`、`frontend/src/components/SafeRichText.ts`、`frontend/src/components/ThinkingDisclosure.vue`、`frontend/src/components/ToolActivity.vue`、`frontend/src/markdown/richText.ts`、`frontend/src/projectors/conversationRounds.ts`、`frontend/src/projectors/runtimeEventProjector.ts`、`frontend/src/style.css` |
 | Postman 核对 | 2026-08-20；只读核对 `Agent Runtime` collection 及真实 SSE 响应 |
 | 更新日期 | 2026-08-28 |
@@ -83,8 +84,8 @@ O1 珊瑚色只承担品牌识别，少量绿色表达状态。界面不使用 O
 | `8691e880:frontend/src/App.vue:77-150` | 改造前页面标题为 `CampusClaw HTTP + SSE`，右侧直接展示 Connection、鉴权、Session、Model/Thinking 与 Stream 控件，底部直接暴露 Send、Steer、FollowUp。 |
 | `8691e880:frontend/src/composables/useRuntimeApi.ts:5-235` | 改造前浏览器直接管理凭据、ETag、Session 和原始 SSE Event。 |
 | `RuntimeSessionController`、`RuntimeEventController`、`RuntimeSessionConfigurationController`、`RuntimeSessionControlController` | 当前后端已实现 11 个内部 Session Runtime operation。 |
-| `RuntimeEventType.java:13-26` | 对外事件同时包含持久化消息、瞬时 Assistant delta、工具进度和流终止事件。 |
-| `RuntimeEventProjector.java:117-241` (`projectMessageStart`、`projectThinking`、`projectToolStart`、`projectToolEnd`) | HTTP 1.38 SSE 使用 `entryId`、`assistantEntryId`、`toolCallId`、`toolName`、`isError` 等 lowerCamelCase 字段；Assistant preview 与 completed 分离，工具开始/结束是瞬时事件。 |
+| `RuntimeEventType.java:13-26` | 对外事件同时包含持久化消息、非持久化的 Assistant 流式预览、工具执行进度和流终止事件。 |
+| `RuntimeEventProjector.java:117-241` (`projectMessageStart`、`projectThinking`、`projectToolStart`、`projectToolEnd`) | HTTP 1.38 SSE 使用 `entryId`、`assistantEntryId`、`toolCallId`、`toolName`、`isError` 等 lowerCamelCase 字段；Assistant 流式预览与持久化 completed 分离，工具开始/结束只作为流式预览发送。 |
 | `RuntimeEntryCodec.java:108-128, 258-322` (`toSseData`、`toHistoryEvent`、`appendPublicPayload`) | SSE data 与 GET Events 的持久化事件共享 lowerCamelCase 公开投影；数据库 payload 中的 snake_case 只是内部存储兼容形式。 |
 | `RuntimeEventProjector.java` 的 `projectThinking` 与 `RuntimeEntryCodec.java` 的 thinking payload 投影 | 当前 Runtime 发送原始 thinking delta，并把 completed 全文作为独立持久化 Entry；没有额外 display 标题或摘要字段。 |
 | `CreateSessionResponseVO`、`GetSessionResponseVO`、`AvailableModelsResponseVO`、`EventPageResponseVO`、`ControlMessageAcceptedResponseVO` | 后端 `d0efb2fd` 的边界 VO 分别序列化 `sessionId/agentId/modelId/createdAt/updatedAt`、`currentModelId`、`nextPage`、`acceptedAt`。 |
@@ -128,7 +129,7 @@ O1 珊瑚色只承担品牌识别，少量绿色表达状态。界面不使用 O
 - `POST /sessions/{id}/events` 是请求范围 SSE；断线不等于中止，也不能自动重放 POST。
 - `user.message`、`assistant.thinking.completed`、`assistant.message.completed`、`tool.result` 是可恢复的持久化 Entry，其中 thinking 的历史可见性受 Session 当前开关控制。
 - 当前 thinking 事件直接提供原始推理：delta 在 `data.delta.text`，completed 权威全文在 `data.content.text`；前端保持事件接口不变并展示这两个现有字段。
-- `assistant.message.started/delta`、工具执行 started/completed 和流控制事件是瞬时状态。
+- `assistant.message.started/delta` 与工具执行 started/completed 是非持久化的流式预览事件；流控制事件同样不进入 GET Events。
 - Model 与 Thinking 只允许在 Session `idle` 时修改，并通过强 ETag 防止覆盖并发修改。
 - Steer 优先于 FollowUp；两者只在 `running` 时接受；Abort 在 `idle` 时也是幂等成功。
 - Runtime 只接收 `fileIds`，不负责浏览器文件上传、文件名和预览元数据。
@@ -502,7 +503,7 @@ spinner/进度文本和 check/“已完成”标签区分，不能只依赖颜�
 - `429 CONTROL_QUEUE_FULL`：保留 Composer 内容，提示等待、切换跟进方式或停止。
 - `503`：读取 `Retry-After`，显示可重试状态；不要泄漏执行实例归属信息。
 - `OUTCOME_UNCERTAIN`：保留提交草稿，告知用户先刷新历史，不提供“重试”主动作。
-- `STREAM_INTERRUPTED`：表示 User Entry 已确认但本次实时预览中断；保留已持久化 turn，继续以 GET Events 为权威事实。
+- `STREAM_INTERRUPTED`：表示 User Entry 已确认但本次流式预览中断；保留已持久化 turn，继续以 GET Events 为权威事实。
 - Tool error：活动 disclosure 默认展开；显示有页面预算的原始输入参数和安全富文本结果，不额外展开未建模的原始事件 payload。
 - 长会话：历史虚拟化；分页向上加载；持久化 turn 与 streaming turn 使用稳定 key。
 - 大消息：输入区显示字符计数接近上限；附件最多 32 个，在选择阶段阻止超限。
@@ -583,6 +584,7 @@ spinner/进度文本和 check/“已完成”标签区分，不能只依赖颜�
 
 | 版本 | 日期 | 变更 |
 |---|---|---|
+| 0.12.2 | 2026-08-28 | 统一 Runtime Event 术语：将只随当前 SSE 发送且不进入 GET Events 的 Assistant 和工具执行事件称为“流式预览事件”；同步断流提示文案，不改变前端代码或线上契约。 |
 | 0.12.1 | 2026-08-28 | 合并 `origin/main@a7a245b4079b53f79eacb96475a1b58a9c3713c7` 并响应 PR #184 评审：折叠 Headers 校验失败时先展开并聚焦精确 Key/Value；按 WHATWG Fetch 名称+值算法校验禁止请求 Header；补充初始实现与修正提交证据；因主分支编号冲突将本决策顺延为 ADR-0034。 |
 | 0.12.0 | 2026-08-28 | 基于 `origin/main@dee709fc584dd722d2e94eb381338b997659e35a` 和设计基线 `pi-mono-java-design@2748497`：开发模式新增独立通用 `Headers` 面板；不预设凭据模式、不展示自动 Header，临时值只存在当前页面并仅附加到下一次初始 Events POST；手工同名值覆盖适配器默认值；新增校验、请求边界测试、初始 ADR 和链路图。 |
 | 0.11.0 | 2026-08-27 | 基于 PR #179 的 `e4ef301cc7cbf93c4a651c060e2c48ebcec74cbd`：明确当前前端是内部 Runtime 调试工作台；取消 Tool 参数的敏感键/值隐藏和绝对路径收缩，改为有 12 行、3 层、每值 240 字符页面预算的原始参数 viewer；新增 ADR-0031、v12 高保真并同步浏览器验收。 |
