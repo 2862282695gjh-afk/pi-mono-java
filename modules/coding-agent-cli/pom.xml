@@ -77,12 +77,6 @@
             <artifactId>snakeyaml</artifactId>
         </dependency>
 
-        <!-- Image decoding -->
-        <dependency>
-            <groupId>com.twelvemonkeys.imageio</groupId>
-            <artifactId>imageio-webp</artifactId>
-        </dependency>
-
         <!-- Lombok -->
         <dependency>
             <groupId>org.projectlombok</groupId>

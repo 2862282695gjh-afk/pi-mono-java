@@ -108,12 +108,6 @@
             <artifactId>snakeyaml</artifactId>
         </dependency>
 
-        <!-- Image decoding -->
-        <dependency>
-            <groupId>com.twelvemonkeys.imageio</groupId>
-            <artifactId>imageio-webp</artifactId>
-        </dependency>
-
         <!-- Jakarta annotations (@PostConstruct on gateway beans) -->
         <dependency>
             <groupId>jakarta.annotation</groupId>

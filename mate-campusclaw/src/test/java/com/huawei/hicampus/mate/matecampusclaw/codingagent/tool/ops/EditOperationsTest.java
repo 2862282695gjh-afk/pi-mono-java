@@ -56,11 +56,6 @@ class EditOperationsTest {
         }
 
         @Override
-        public String detectMimeType(Path path) throws IOException {
-            return read.detectMimeType(path);
-        }
-
-        @Override
         public void writeFile(Path path, String content) throws IOException {
             write.writeFile(path, content);
         }

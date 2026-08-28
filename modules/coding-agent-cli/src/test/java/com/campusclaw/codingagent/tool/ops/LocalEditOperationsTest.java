@@ -5,7 +5,6 @@
 package com.campusclaw.codingagent.tool.ops;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatNoException;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.io.IOException;
@@ -41,17 +40,6 @@ class LocalEditOperationsTest {
         assertThat(ops.exists(file)).isFalse();
         Files.writeString(file, "x");
         assertThat(ops.exists(file)).isTrue();
-    }
-
-    @Test
-    void detectMimeTypeProbesContent(@TempDir Path tmp) throws IOException {
-        LocalEditOperations ops = new LocalEditOperations();
-        Path file = tmp.resolve("a.txt");
-        Files.writeString(file, "hi");
-
-        // probeContentType is filesystem-dependent and may legitimately return null; we only
-        // assert that the call itself does not throw — the value may be platform-specific.
-        assertThatNoException().isThrownBy(() -> ops.detectMimeType(file));
     }
 
     @Test
