@@ -177,8 +177,7 @@ Agent 目录、Session 或工具缓存。
 │   ├── ai/                  # LLM 抽象、供应商适配和模型注册
 │   ├── agent-core/          # Agent 循环、Session、事件和工具 Pipeline
 │   ├── cron/                # 定时任务模型、引擎、存储和 Agent 工具
-│   ├── coding-agent-cli/    # Spring Boot 服务、Runtime Host 和工具实现（历史目录名）
-│   └── k8s/                 # Kubernetes 部署清单
+│   └── coding-agent-cli/    # Spring Boot 服务、Runtime Host 和工具实现（历史目录名）
 ├── frontend/                # Vue 3 + TypeScript Runtime 调试客户端
 ├── mate-campusclaw/         # 从 modules/* 生成的公司集成镜像
 ├── agent/                   # 受管 Agent 示例和运行素材
