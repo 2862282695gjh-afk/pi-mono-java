@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, ref } from 'vue';
-import { validateDebugHeaders } from '../debugHeaders';
+import { revealFirstDebugHeaderError, validateDebugHeaders } from '../debugHeaders';
 import type { DebugHeaderInput } from '../debugHeaders';
 
 interface DebugHeaderRow extends DebugHeaderInput {
@@ -8,7 +8,7 @@ interface DebugHeaderRow extends DebugHeaderInput {
 }
 
 const rows = ref<DebugHeaderRow[]>([createRow()]);
-const root = ref<HTMLElement | null>(null);
+const root = ref<HTMLDetailsElement | null>(null);
 const validation = computed(() => validateDebugHeaders(rows.value));
 let nextRowId = 2;
 
@@ -41,8 +41,7 @@ function clearRows(): void {
 async function snapshot(): Promise<Headers | null> {
   const result = validation.value;
   if (!result.valid) {
-    await nextTick();
-    root.value?.querySelector<HTMLInputElement>('[aria-invalid="true"]')?.focus();
+    await revealFirstDebugHeaderError(root.value, result, nextTick);
     return null;
   }
   return new Headers(result.headers);
@@ -84,7 +83,7 @@ defineExpose({ snapshot });
               placeholder="Key"
               autocomplete="off"
               spellcheck="false"
-              :aria-invalid="Boolean(validation.errors[index])"
+              :aria-invalid="validation.errorFields[index] === 'key'"
               @input="ensureTrailingRow"
             >
           </label>
@@ -97,7 +96,7 @@ defineExpose({ snapshot });
               placeholder="Value"
               autocomplete="off"
               spellcheck="false"
-              :aria-invalid="Boolean(validation.errors[index])"
+              :aria-invalid="validation.errorFields[index] === 'value'"
               @input="ensureTrailingRow"
             >
             <span v-if="validation.errors[index]" class="debug-header-error" role="alert">
