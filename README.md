@@ -67,7 +67,7 @@ export OPENAI_API_KEY="sk-..."
 
 | 工具 | 作用 | 执行模式 |
 |---|---|---|
-| `Read` | 分块读取文本或读取受支持图片 | PARALLEL |
+| `Read` | 分块读取 UTF-8 文本文件 | PARALLEL |
 | `Find` | 按 glob 查找文件 | PARALLEL |
 | `Grep` | 按正则或字面量搜索文件内容 | PARALLEL |
 | `Ls` | 列出目录内容 | PARALLEL |

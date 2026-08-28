@@ -19,6 +19,4 @@ public interface ReadOperations {
     byte[] readFile(Path path) throws IOException;
 
     boolean exists(Path path);
-
-    String detectMimeType(Path path) throws IOException;
 }

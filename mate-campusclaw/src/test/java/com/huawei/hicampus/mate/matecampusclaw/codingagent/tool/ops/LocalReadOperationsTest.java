@@ -76,27 +76,4 @@ class LocalReadOperationsTest {
             assertFalse(ops.exists(tempDir.resolve("nope")));
         }
     }
-
-    @Nested
-    class DetectMimeType {
-
-        @Test
-        void textFile() throws IOException {
-            Path file = Files.writeString(tempDir.resolve("test.txt"), "content");
-            String mime = ops.detectMimeType(file);
-
-            // Different OS/JDK may return different MIME for .txt — but it should be a text/* type,
-            // not the application/octet-stream fallback
-            assertTrue(mime.startsWith("text/"), "expected text/* for .txt, got: " + mime);
-        }
-
-        @Test
-        void unknownExtensionFallsBackToOctetStream() throws IOException {
-            Path file = Files.writeString(tempDir.resolve("data.xyz123"), "content");
-            String mime = ops.detectMimeType(file);
-
-            // probeContentType returns null for unknown extensions → ReadOperations falls back
-            assertEquals("application/octet-stream", mime);
-        }
-    }
 }

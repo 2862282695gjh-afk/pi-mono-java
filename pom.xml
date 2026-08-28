@@ -42,7 +42,6 @@
         <mybatis-spring-boot.version>3.0.4</mybatis-spring-boot.version>
         <opengauss-jdbc.version>7.0.0-RC3-og</opengauss-jdbc.version>
         <jobrunr.version>7.3.1</jobrunr.version>
-        <twelvemonkeys-imageio.version>3.12.0</twelvemonkeys-imageio.version>
     </properties>
 
     <dependencyManagement>
@@ -108,13 +107,6 @@
                 <groupId>org.jobrunr</groupId>
                 <artifactId>jobrunr-spring-boot-3-starter</artifactId>
                 <version>${jobrunr.version}</version>
-            </dependency>
-
-            <!-- Image decoding -->
-            <dependency>
-                <groupId>com.twelvemonkeys.imageio</groupId>
-                <artifactId>imageio-webp</artifactId>
-                <version>${twelvemonkeys-imageio.version}</version>
             </dependency>
 
             <!-- Test -->
