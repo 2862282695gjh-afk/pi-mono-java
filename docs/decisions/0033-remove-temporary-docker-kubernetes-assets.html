@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ADR-0033：移除仓库内临时 Docker 与 Kubernetes 部署资产</title>
+  <style>
+    :root { color-scheme: light; font-family: Inter, "PingFang SC", sans-serif; color: #202938; background: #f5f7fa; }
+    body { margin: 0; }
+    main { width: min(920px, calc(100% - 40px)); margin: 40px auto; padding: 40px; box-sizing: border-box; background: #fff; border: 1px solid #dce2ea; border-radius: 16px; }
+    h1 { margin-top: 0; font-size: 30px; }
+    h2 { margin-top: 32px; font-size: 20px; }
+    h3 { margin-top: 22px; font-size: 17px; }
+    p, li { line-height: 1.75; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 10px 12px; border: 1px solid #dce2ea; text-align: left; vertical-align: top; }
+    th { width: 190px; background: #f5f7fa; }
+    code { padding: 2px 5px; border-radius: 5px; background: #eef2f6; overflow-wrap: anywhere; }
+    a { color: #155eef; }
+    .status { display: inline-flex; padding: 4px 9px; border-radius: 999px; color: #12633a; background: #e8f7ed; font-weight: 650; }
+    @media (max-width: 640px) { main { width: 100%; margin: 0; padding: 24px 18px; border: 0; border-radius: 0; } th { width: 120px; } }
+  </style>
+</head>
+<body>
+<main>
+  <h1>ADR-0033：移除仓库内临时 Docker 与 Kubernetes 部署资产</h1>
+  <table>
+    <tr><th>Status</th><td><span class="status">Accepted</span></td></tr>
+    <tr><th>Date</th><td>2026-08-28</td></tr>
+    <tr><th>Pre-change baseline</th><td><code>origin/main@dee709fc584dd722d2e94eb381338b997659e35a</code></td></tr>
+    <tr><th>Observed source</th><td><code>Dockerfile</code>、<code>k8s/mateservice-deployment.yaml</code>、<code>modules/k8s/*</code>、<code>modules/coding-agent-cli/src/main/resources/application-k8s.yml</code>、<code>README.md</code></td></tr>
+    <tr><th>Target source</th><td><code>README.md</code>、<code>docs/designs/deployment-assets-cleanup.md</code>、<code>docs/designs/sandbox-cleanup.md</code>；部署资产从仓库删除</td></tr>
+  </table>
+
+  <h2>Context</h2>
+  <p>根 Dockerfile、根 MateService Kubernetes 清单和 <code>modules/k8s</code> 源于本地工具沙箱及其后的单容器过渡方案。当前产品已经移除 Docker Sandbox、DinD 和 Hybrid Tool，仓库现阶段也不维护正式 Kubernetes 部署框架。</p>
+  <p>这些资产已经与当前源码不一致：Dockerfile 复制不存在的 TUI POM；Kubernetes 清单没有提供当前应用所需的 CampusMate 和 GaussDB 配置；健康检查、ConfigMap、存储和环境变体也没有形成可验证的交付链。继续保留会把历史样例误表达为当前受维护能力。</p>
+
+  <h2>Decision drivers</h2>
+  <ul>
+    <li>让仓库内容准确反映当前产品和交付边界。</li>
+    <li>避免为尚未设计的 Kubernetes 框架提前固化镜像、配置、存储和网络决策。</li>
+    <li>删除已失效且没有 CI 验证的部署入口，降低维护和安全误用风险。</li>
+    <li>保留 Maven/JAR 构建作为当前明确可验证的服务构建入口。</li>
+  </ul>
+
+  <h2>Considered options</h2>
+  <h3>修复现有 Dockerfile 和 Kubernetes 清单</h3>
+  <p><strong>优点：</strong>短期内可以恢复本地容器部署。<br><strong>缺点：</strong>需要提前决定未来框架的镜像供应链、配置、秘密、探针、存储和发布方式，而这些不属于当前范围。拒绝。</p>
+
+  <h3>删除 Kubernetes 清单但保留根 Dockerfile</h3>
+  <p><strong>优点：</strong>保留本地镜像构建入口。<br><strong>缺点：</strong>Dockerfile 同样来自沙箱时期且已经失效；保留它仍表达仓库维护镜像交付的承诺。拒绝。</p>
+
+  <h3>完整删除临时 Docker/Kubernetes 资产</h3>
+  <p><strong>优点：</strong>源码边界清晰；不再维护失效入口；未来部署框架可以从真实需求重新设计。<br><strong>缺点：</strong>仓库暂时不提供容器镜像和 Kubernetes 一键部署能力，外部使用者需要等待后续框架。接受。</p>
+
+  <h2>Decision</h2>
+  <ul>
+    <li>删除根 <code>Dockerfile</code> 和 <code>k8s/mateservice-deployment.yaml</code>。</li>
+    <li>删除 <code>modules/k8s</code> 全目录，包括 Kustomize、minikube、kind 和 Docker Desktop 样例。</li>
+    <li>删除 <code>modules/coding-agent-cli/src/main/resources/application-k8s.yml</code>，不保留空 Profile 或兼容占位。</li>
+    <li>README 不再把 Kubernetes 清单列为项目模块。</li>
+    <li>保留 Maven/JAR 构建和通用 <code>application.yml</code>；不修改应用 API、数据库或 MateService 协议。</li>
+    <li>未来 Kubernetes 框架必须通过新的设计和 ADR 定义，本次不声明任何替代部署实现。</li>
+    <li>源码删除不自动删除外部镜像、容器、Kubernetes 对象或持久卷。</li>
+  </ul>
+
+  <h2>Intentional differences</h2>
+  <p><strong>架构变化：</strong>仓库从维护临时镜像与 Kubernetes 样例，改为只维护应用源码和 Maven/JAR 构建入口。</p>
+  <p><strong>产品约束：</strong>在后续框架完成前，仓库不承诺 Docker 镜像或 Kubernetes 部署能力。</p>
+  <p><strong>安全收口：</strong>删除包含个人绝对路径、固定 NodePort、root 容器和不完整配置注入的历史样例，避免被误用于生产。</p>
+
+  <h2>Consequences</h2>
+  <ul>
+    <li>正面：项目结构与当前交付范围一致，不再存在两套互相漂移的 Kubernetes 清单。</li>
+    <li>正面：未来部署框架不受历史 minikube、kind、PVC 和镜像命名约束。</li>
+    <li>负面：仓库暂时没有容器镜像构建和 Kubernetes 快速部署入口。</li>
+    <li>兼容性：外部设置 <code>SPRING_PROFILES_ACTIVE=k8s</code> 不再加载原日志覆盖；部署方需要显式配置日志。</li>
+    <li>运维：已有外部资源仍需按环境单独盘点和清理，Git 删除本身不产生集群侧变更。</li>
+  </ul>
+
+  <h2>Required validation</h2>
+  <ul>
+    <li>确认源码和维护文档不再引用被删除的部署文件和命令。</li>
+    <li>构建 <code>campusclaw-agent.jar</code>，确认通用应用资源完整。</li>
+    <li>执行 Mate 镜像同步检查，确认删除模块资源没有产生镜像漂移。</li>
+    <li>校验设计文档、ADR 链接和 Git diff。</li>
+  </ul>
+
+  <h2>Related</h2>
+  <ul>
+    <li><a href="../designs/deployment-assets-cleanup.md">CampusClaw 临时 Docker 与 Kubernetes 资产清理设计</a></li>
+    <li><a href="../designs/sandbox-cleanup.md">pi-mono-java Sandbox 清理与工具管理器迁移</a></li>
+    <li><a href="0015-sandbox-cleanup-tool-manager.html">ADR-0015：移除本地沙箱并统一由工具管理器管理受管控工具</a></li>
+  </ul>
+</main>
+</body>
+</html>

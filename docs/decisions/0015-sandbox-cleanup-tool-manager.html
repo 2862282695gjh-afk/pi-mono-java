@@ -18,8 +18,9 @@
 </head>
 <body>
   <h1>ADR-0015 · 移除本地沙箱并统一由工具管理器管理受管控工具</h1>
-  <div class="meta">Status: <span class="badge">Superseded in tool assembly</span> · Date: 2026-08-19 · Amended: 2026-08-24 ·
+  <div class="meta">Status: <span class="badge">Superseded</span> · Date: 2026-08-19 · Amended: 2026-08-28 ·
     Tool assembly replaced by: <a href="0022-managed-agent-tool-system-v2.html">ADR-0022</a> ·
+    Deployment assets replaced by: <a href="0033-remove-temporary-docker-kubernetes-assets.html">ADR-0033</a> ·
     设计文档: <a href="../designs/sandbox-cleanup.md">sandbox-cleanup</a> ·
     基线: <code>origin/main@7811dc335fcb0125a1ecbddd63cd77baf120f21d</code></div>
 
@@ -45,6 +46,7 @@
       <li>将根 Dockerfile 和 Kubernetes 工作负载收敛为单应用容器；保留工作区/PVC、Service、HPA、PDB 和健康检查，删除 DinD sidecar、Docker socket、特权权限和 Docker readiness。</li>
       <li>外部旧容器和 volume 只在发布运维确认后执行清理，本 ADR 不授权代码自动执行破坏性删除。</li>
     </ul>
+    <p><strong>后续取代：</strong>本 ADR 保留单容器 Docker/Kubernetes 清单的部署决定已由 ADR-0033 取代。当前仓库不维护 Dockerfile 或 Kubernetes 部署资产；未来 Kubernetes 框架需要独立设计。</p>
   </section>
 
   <section><h2>Consequences</h2>
@@ -61,6 +63,8 @@
       <li><a href="../designs/sandbox-cleanup.md">设计文档：pi-mono-java Sandbox 清理与工具管理器迁移</a></li>
       <li><a href="../designs/coding-agent-cli.md">设计文档：coding-agent-cli</a></li>
       <li><a href="../designs/mate-tool-client.md">设计文档：MateService 工具客户端</a></li>
+      <li><a href="../designs/deployment-assets-cleanup.md">设计文档：临时 Docker 与 Kubernetes 资产清理</a></li>
+      <li><a href="0033-remove-temporary-docker-kubernetes-assets.html">ADR-0033：移除仓库内临时 Docker 与 Kubernetes 部署资产</a></li>
     </ul>
   </section>
 </body>
