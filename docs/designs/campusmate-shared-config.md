@@ -2,15 +2,16 @@
 
 | 属性 | 值 |
 |---|---|
-| 文档版本 | 1.1.0 |
-| 状态 | 已实现于 `codex/campusmate-shared-config`，待评审合入 |
-| 更新日期 | 2026-08-26 |
+| 文档版本 | 1.2.0 |
+| 状态 | 已更新于 `codex/remove-mate-install-value`，待评审合入 |
+| 更新日期 | 2026-08-28 |
 | 外部设计基线 | `/Users/z/设计`：`c250e3f07536871d3d676242e552a5eb4346b0c7` |
 | 外部设计文档 | `campusmate-shared-client-configuration/README.md` 2.1.0 |
 | 实施前源码基线 | `56be8eee59415a5f86658d6635a7b7e8891263d3` |
 | 受审实现基线 | `e8533b5ebf564f9d8d707faa115be638dc377556` |
+| 兼容清理源码基线 | `28b3235e5cff0da2f768cbfc6b7b9ce5e2b51193` |
 | mate-service 观察基线 | `956b547f5ca12ca89e68f73012f92a4406b0c9fa` |
-| 决策记录 | [ADR-0026](../decisions/0026-unify-campusmate-client-configuration.html) |
+| 决策记录 | [ADR-0026](../decisions/0026-unify-campusmate-client-configuration.html)、[ADR-0035](../decisions/0035-remove-legacy-campusmate-environment-adapter.html) |
 
 ## 1. 结论
 
@@ -18,7 +19,8 @@
 因此统一使用一个必填 `campusmate.base-url` 和一个 `campusmate.endpoints` operation 目录。
 模型本地参数归入 `campusmate.model`，Runtime 本地参数归入 `campusmate.runtime`，Tool 开关归入
 `campusmate.tool`。不再保留 `campusmate.model-manager.base-url`、
-`campusmate.runtime.base-url` 或顶层 `mate.*` 应用配置。
+`campusmate.runtime.base-url`、顶层 `mate.*` 应用配置或旧部署变量转换脚本。部署环境必须直接向
+应用进程提供 `CAMPUSMATE_BASE_URL`。
 
 ![CampusMate 共享客户端配置](campusmate-shared-config/campusmate_shared_configuration.svg)
 
@@ -53,7 +55,22 @@
 | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtime/MateServiceClient.java` | `getAgentRuntime`、`querySkillInfo` | 从共享 endpoint 目录取得 Runtime 和 Skill operation。 |
 | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/config/MateToolAutoConfiguration.java` | `mateToolClient` | Tool 客户端复用同一 base URL、Agent/Skill operation 与 Tool operation。 |
 
-### 2.3 mate-service 服务端状态
+### 2.3 旧部署变量兼容清理
+
+以下证据来自兼容清理源码基线 `28b3235e5cff0da2f768cbfc6b7b9ce5e2b51193`：
+
+| 源码 | 观察行为或目标决策 |
+|---|---|
+| `mate-campusclaw/scripts/install_value.sh` | 观察行为：脚本读取 `/etc/profile`，把旧变量 `CAMPUSINNERGWSERVICE_DOMAIN_NAME_URL` 转换成应用所需的 `CAMPUSMATE_BASE_URL`。 |
+| `mate-campusclaw/src/main/resources/application.properties` | 观察行为：应用只读取 `CAMPUSMATE_BASE_URL`，不读取旧变量。 |
+| `modules/coding-agent-cli/src/main/resources/application.yml` | 观察行为：主模块同样只读取 `CAMPUSMATE_BASE_URL`，且不存在对应安装脚本。 |
+| `scripts/sync-mate-exclude.txt` | 目标决策：删除脚本后移除其 mate 侧独有路径登记。 |
+
+根据 [ADR-0035](../decisions/0035-remove-legacy-campusmate-environment-adapter.html)，删除该 mate
+侧兼容脚本属于部署边界收敛：新旧部署都必须直接注入 `CAMPUSMATE_BASE_URL`，不再由仓库代码转换
+旧变量。该变化不修改 CampusMate HTTP 契约。
+
+### 2.4 mate-service 服务端状态
 
 以下状态来自独立 mate-service 仓库的观察基线
 `956b547f5ca12ca89e68f73012f92a4406b0c9fa`。客户端已有依赖不等于服务端已存在对应实现：
@@ -100,7 +117,7 @@ campusmate:
 | `mate.innerGWSerive` | `campusmate.base-url` | 修复服务身份与拼写，不保留别名。 |
 | 三组旧 path | `campusmate.endpoints.*` | 按 HTTP operation 去重为六条。 |
 | `campusmate.model-manager.*` 本地参数 | `campusmate.model.*` | 按用户命名决策将 `model-manager` 收敛为 `model`。 |
-| `CAMPUSINNERGWSERVICE_DOMAIN_NAME_URL` | `CAMPUSMATE_BASE_URL` | 只在安装脚本边界转换；目标应用只读取新变量。 |
+| `CAMPUSINNERGWSERVICE_DOMAIN_NAME_URL` | 无 | 删除旧变量兼容和 `mate-campusclaw/scripts/install_value.sh`；部署直接设置 `CAMPUSMATE_BASE_URL`。 |
 
 ## 4. 校验与安全边界
 
@@ -112,7 +129,7 @@ campusmate:
 - 模板展开只精确替换 `%s`，保留其余合法百分号编码（例如 `%20`），不使用格式化器解释整个 path。
 - 配置在 Spring 绑定和 Provider 初始化阶段失败，避免错误地址延迟到首次调用才暴露。
 - 六个条目以 `HTTP method + path` 校验唯一性；Runtime 和 Tool 共享同一个 Skill query 条目。
-- 安装脚本发现旧部署变量与显式新变量值冲突时失败，不静默覆盖。
+- 应用和仓库交付脚本不读取旧部署变量；缺少 `CAMPUSMATE_BASE_URL` 时按必填配置失败。
 
 ## 5. HTTP 契约边界
 
@@ -126,12 +143,13 @@ campusmate:
 - 配置绑定：缺失或非法 base URL、越界或规范化点段 path、占位符数量与重复 operation；
 - 客户端：Model、Runtime、Tool 在自定义共享 base URL 和自定义 endpoint 下请求正确 URI，
   并保留 path 中 `%20` 等合法百分号编码；
-- 兼容交付：规范 YAML、手工维护的镜像 properties 与安装脚本保持同一目标键；
+- 兼容交付：规范 YAML 与手工维护的镜像 properties 只读取 `CAMPUSMATE_BASE_URL`，仓库不再提供旧变量转换脚本；
 - 工程规则：Spotless、Checkstyle、相关测试、镜像同步、PlantUML/SVG 和 `git diff --check`。
 
 ## 7. 版本历史
 
 | 版本 | 日期 | 变化 |
 |---|---|---|
+| 1.2.0 | 2026-08-28 | 删除 mate 侧旧部署变量转换脚本，要求部署直接注入 `CAMPUSMATE_BASE_URL`，并以 ADR-0035 记录兼容边界收敛。 |
 | 1.1.0 | 2026-08-26 | 响应 PR 审查：冻结受审实现基线，区分 mate-service 已观察 operation 与服务端目标态，并补充模板百分号编码及规范化点段校验。 |
 | 1.0.0 | 2026-08-26 | 实现 CampusMate 单一 base URL、六 operation endpoint 目录、`model/runtime/tool` 配置分组与启动期校验。 |
