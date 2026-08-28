@@ -21,11 +21,15 @@ mate-service 公共 Agent/Chat/Attachment API；在该契约完成前，本 adap
 - 每轮 Agent 回答只提供一个 Codex 风格图标复制入口，复制本轮全部 Assistant Markdown；
 - 运行中“调整方向”“加入队列”“停止”；
 - desktop 默认 `steer`，`Cmd/Ctrl+Shift+Enter` 对单条消息反转模式；
+- 开发模式顶部提供独立 `Headers` 面板，可用通用 Key/Value 行配置下一次普通消息提交的请求头；
 - O1 warm-neutral Design Token、键盘焦点、reduced-motion 和响应式侧栏。
 
-工作台不会提供 JWT、APPKEY 等凭据编辑器，也不会主动展示 ETag、原始 JSON 或 SSE frame；
-但 Runtime 工具调用中已经存在的参数会按原值显示，包括凭据形态字段、内部 ID 和绝对路径。
-因此只能在受控调试环境中使用。
+工作台不会提供 JWT、APPKEY 等固定凭据模式或持久化凭据仓库，也不会主动展示 ETag、原始
+JSON 或 SSE frame。`npm run dev` 下的 `Headers` 面板允许开发者临时填写任意合法请求头；值
+只存在于当前页面内存，并且只附加到下一次初始
+`POST /sessions/{sessionId}/events`。Session、历史、配置、Steer、FollowUp 和 Abort 请求不会
+携带这些值；请求适配器自动生成的 Header 不在面板中展示。Runtime 工具调用中已经存在的参数
+仍会按原值显示，包括凭据形态字段、内部 ID 和绝对路径。因此只能在受控调试环境中使用。
 
 Assistant、Thinking 和 Tool result 文本共用受控 Markdown；原始 HTML 不执行，图片不发起
 网络请求，只有绝对 `http`/`https` 链接可以点击。Thinking 从现有
@@ -82,6 +86,8 @@ npm run dev
   Runtime 身份；刷新后不承诺恢复未送达队列。
 - 网络错误后不自动重放初始消息、Steer 或 FollowUp。断流后先读 Session/Events 对账；若仍无法确认则保留草稿，发布 `OUTCOME_UNCERTAIN` 并提示不要重复提交。
 - 流结束后从 GET Events 第一页读取权威持久化历史，原样跟随 `nextPage`，按 `entryId` 去重。
+- 开发模式的自定义 Header 在普通消息提交时生成不可变快照；手工同名值覆盖适配器默认值，
+  但不会传播到其他 Runtime operation，也不会在断流后自动重放。
 
 ## 质量命令
 

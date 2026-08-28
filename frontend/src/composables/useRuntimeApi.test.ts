@@ -134,6 +134,43 @@ describe('useRuntimeApi HTTP 1.38 contract', () => {
     expect(runtime.lastErrorCode.value).toBe('STREAM_INTERRUPTED');
     expect(runtime.events.value[0]?.data.entryId).toBe('entry-confirmed');
   });
+
+  it('attaches custom headers only to the initial event POST and lets them override defaults', async () => {
+    const persisted = userEvent('entry-headers', 23, '检查订单');
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(sseResponse([
+        'id: 23',
+        'event: user.message',
+        `data: ${JSON.stringify(withoutType(persisted))}`,
+        '',
+        'event: stream.end',
+        'data: {"reason":"completed"}',
+        '',
+      ].join('\n')))
+      .mockResolvedValueOnce(resultResponse(runtimeSession()))
+      .mockResolvedValueOnce(resultResponse(historyPage([persisted], null)));
+    vi.stubGlobal('fetch', fetchMock);
+    const runtime = useRuntimeApi();
+    runtime.session.value = runtimeSession();
+    const customHeaders = new Headers({
+      Authorization: 'Bearer fixture-token',
+      'access-token': 'fixture-access-token',
+      'X-HW-ID': 'debugger-override',
+    });
+
+    const submission = await runtime.sendMessage('检查订单', [], customHeaders);
+
+    await expect(submission.confirmation).resolves.toBe('confirmed');
+    await vi.waitFor(() => expect(runtime.streaming.value).toBe(false));
+    expect(requestHeaders(fetchMock, 0).get('authorization')).toBe('Bearer fixture-token');
+    expect(requestHeaders(fetchMock, 0).get('access-token')).toBe('fixture-access-token');
+    expect(requestHeaders(fetchMock, 0).get('x-hw-id')).toBe('debugger-override');
+    expect(requestHeaders(fetchMock, 1).get('authorization')).toBeNull();
+    expect(requestHeaders(fetchMock, 1).get('access-token')).toBeNull();
+    expect(requestHeaders(fetchMock, 1).get('x-hw-id')).toBe('campusclaw-web');
+    expect(requestHeaders(fetchMock, 2).get('authorization')).toBeNull();
+    expect(requestHeaders(fetchMock, 2).get('access-token')).toBeNull();
+  });
 });
 
 function runtimeSession(overrides: Partial<RuntimeSession> = {}): RuntimeSession {
@@ -199,4 +236,9 @@ function withoutType(event: RuntimeEventData): RuntimeEventData {
 function requestJson(fetchMock: ReturnType<typeof vi.fn>, callIndex: number): unknown {
   const init = fetchMock.mock.calls[callIndex]?.[1] as RequestInit | undefined;
   return JSON.parse(String(init?.body));
+}
+
+function requestHeaders(fetchMock: ReturnType<typeof vi.fn>, callIndex: number): Headers {
+  const init = fetchMock.mock.calls[callIndex]?.[1] as RequestInit | undefined;
+  return new Headers(init?.headers);
 }

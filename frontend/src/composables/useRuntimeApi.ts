@@ -154,7 +154,11 @@ export function useRuntimeApi() {
     return events.value;
   }
 
-  async function sendMessage(message: string, fileIds: string[] = []): Promise<MessageSubmission> {
+  async function sendMessage(
+    message: string,
+    fileIds: string[] = [],
+    requestHeaders?: HeadersInit,
+  ): Promise<MessageSubmission> {
     const sessionId = requireSessionId();
     clearError();
     const normalizedMessage = message.trim();
@@ -166,7 +170,10 @@ export function useRuntimeApi() {
       `/sessions/${encodeURIComponent(sessionId)}/events`,
       {
         method: 'POST',
-        headers: { Accept: 'text/event-stream', 'Content-Type': 'application/json' },
+        headers: mergeRequestHeaders(
+          { Accept: 'text/event-stream', 'Content-Type': 'application/json' },
+          requestHeaders,
+        ),
         body: JSON.stringify(body),
       },
       true,
@@ -486,12 +493,11 @@ export function useRuntimeApi() {
     try {
       response = await fetch(`${apiBase}${API_PATH}${path}`, {
         ...init,
-        headers: {
+        headers: mergeRequestHeaders({
           Accept: 'application/json',
           'Accept-Language': navigator.language.startsWith('zh') ? 'zh-CN' : 'en-US',
           'X-HW-ID': callerId,
-          ...init.headers,
-        },
+        }, init.headers),
       });
     } catch (error) {
       throw publishAndReturn(normalizeError(error, mutating));
@@ -673,4 +679,13 @@ function arraysEqual(left: string[], right: string[]): boolean {
 
 function trimTrailingSlash(value: string): string {
   return value.replace(/\/+$/u, '');
+}
+
+function mergeRequestHeaders(...sources: Array<HeadersInit | undefined>): Headers {
+  const merged = new Headers();
+  sources.forEach((source) => {
+    if (!source) return;
+    new Headers(source).forEach((value, key) => merged.set(key, value));
+  });
+  return merged;
 }

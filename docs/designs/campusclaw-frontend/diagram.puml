@@ -1,6 +1,6 @@
 @startuml frontend_product_boundary
-' Backend source baseline: origin/main 63adc08cf5c57e3a7cc3caa317452062606ce8b4.
-' Frontend interaction-refinement baseline: PR 179 commit e4ef301cc7cbf93c4a651c060e2c48ebcec74cbd.
+' Backend source baseline: origin/main dee709fc584dd722d2e94eb381338b997659e35a.
+' Frontend pre-change baseline: origin/main dee709fc584dd722d2e94eb381338b997659e35a.
 ' Source evidence: frontend/src/App.vue (createSession, resumeSession, submit, product shell).
 ' Source evidence: frontend/src/composables/useRuntimeApi.ts (useRuntimeApi, requestRaw, consumeSse).
 ' Source evidence: frontend/src/projectors/runtimeEventProjector.ts (projectRuntimeEvents).
@@ -19,7 +19,7 @@ rectangle "Internal debug workbench" as Frontend {
   component "Agent session workspace" as Workspace
   component "Debug event projector" as Projector
   component "Direct runtime adapter" as DirectAdapter
-  component "Session diagnostics" as Diagnostics
+  component "Headers and session diagnostics" as Diagnostics
 }
 
 rectangle "Future production bridge\n(target only)" as Mate {
@@ -46,7 +46,7 @@ Diagnostics ..> Sessions : local diagnostics only
 
 note bottom of Frontend
 Debug workbench constraints:
-- No Service URL or credential editor
+- No Service URL or fixed credential mode
 - Raw thinking and bounded raw tool arguments are visible
 - Tool arguments may contain IDs, paths, or credentials
 - ETag, JSON, and SSE frames are not persistent main UI
@@ -259,5 +259,92 @@ outcome uncertain and forbid blind retry.
 
 Adjust direction does not interrupt the
 current model call or tool execution.
+end note
+@enduml
+
+@startuml frontend_debug_header_flow
+' Frontend pre-change baseline: origin/main dee709fc584dd722d2e94eb381338b997659e35a.
+' Backend feature commit: d03c08dbae870f19eee8d4fa79a707185f7a26b5, merged before the frontend baseline.
+' Observed source: frontend/src/composables/useRuntimeApi.ts (requestRaw generated non-secret X-HW-ID and had no custom header input).
+' Observed source: frontend/src/components/DevDiagnostics.vue (the only pre-change development tool entry).
+' Backend source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/web/RuntimeEventController.java (submit).
+' Backend source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/web/RuntimeRequestContext.java (mateCredentials).
+' Backend source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/common/client/HttpMateToolClient.java (invokeTool).
+' Target implementation: frontend/src/components/DebugHeaders.vue (editor and request snapshot).
+' Target implementation: frontend/src/debugHeaders.ts (validation and Headers construction).
+' Target implementation: frontend/src/App.vue (development-only panel and initial submit boundary).
+' Target implementation: frontend/src/composables/useRuntimeApi.ts (sendMessage and mergeRequestHeaders).
+' Observed behavior: the pre-change frontend had no custom request-header controls and requestRaw generated X-HW-ID internally.
+' Implemented architecture change: a development-only generic editor contributes one immutable Headers copy to the initial event POST.
+' Product constraint: there are no credential modes, preset names, generated-header rows, annotations, or persistent storage.
+' Security hardening: invalid names and values block submission; temporary headers never spread to history, configuration, or control requests.
+' Design reason: a generic key-value surface supports fast protocol debugging without freezing current credential names into the UI.
+
+title Internal debug header flow
+left to right direction
+
+actor "Developer" as Developer
+
+rectangle "Internal development frontend" as DevFrontend {
+  component "Headers panel\nKey-value rows and inline validation" as Panel
+  component "In-memory enabled rows\nclear on reload" as HeaderState
+  component "Initial event request adapter\nimmutable Headers copy" as EventAdapter
+}
+
+rectangle "CampusClaw Runtime V1" as Runtime {
+  component "POST sessions/{sessionId}/events\nRuntimeEventController.submit" as Submit
+  component "RuntimeRequestContext\nrecognized credential values" as Snapshot
+  component "Agent execution context" as Execution
+}
+
+rectangle "mate-service" as Mate {
+  component "Agent, Skill, and tool metadata\ndiscovery without credentials" as Discovery
+  component "POST runtime/tools/{toolId}/execute\nrecognized credentials attached" as Execute
+}
+
+Developer --> Panel : edit temporary rows
+Panel --> HeaderState : update enabled rows or clear
+HeaderState --> EventAdapter : copy on message submit
+EventAdapter --> Submit : initial event POST only
+Submit --> Snapshot : read recognized request headers
+Snapshot --> Execution : hold for this execution
+Execution --> Discovery : discover tools
+Execution --> Execute : invoke a selected tool
+
+note bottom of Panel
+No preset names or credential modes.
+Keep one trailing blank row.
+Generated headers are not rendered.
+Manual values override generated values.
+
+Reject invalid header names and values.
+Reject case-insensitive duplicate custom names.
+Reject Fetch-forbidden request header names.
+Show errors only on the affected row.
+end note
+
+note bottom of EventAdapter
+Never attach temporary headers to:
+- Session create or read
+- History, model, or thinking
+- Steer, FollowUp, or Abort
+
+Do not replay the event POST after disconnect.
+end note
+
+note bottom of Runtime
+Runtime transport behavior:
+- Read recognized values without authenticating them
+- Do not persist values in Session or events
+- Later edits affect only the next execution
+- Ignore unrecognized values after the inbound request
+end note
+
+note bottom of Mate
+Backend implementation behavior:
+- Discovery receives no credential values
+- Tool execute receives recognized credential values
+- Missing required values fail before outbound call
+- Logs and errors show presence only
 end note
 @enduml
