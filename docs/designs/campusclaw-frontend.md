@@ -2,7 +2,7 @@
 
 | 属性 | 值 |
 |---|---|
-| 文档版本 | 0.12.0 |
+| 文档版本 | 0.12.1 |
 | 状态 | Implemented（内部调试工作台）；独立 `Headers` 面板、请求级 Header 快照、原始 Thinking、原始 Tool 参数、全活动安全富文本、独立虚线框、整轮复制与 O1 品牌已落地 |
 | 界面评审状态 | `debugHeaders`、`firstUse`、`idleConversation`、`runningConversation` 已实现；Headers 桌面 736 px 与移动 360 px 已通过本地浏览器验收 |
 | 主设计依据 | 本文件，维护源码证据、目标差异、设计理由、状态与 Design Token |
@@ -14,6 +14,9 @@
 | O1 视觉设计基线 | `campusclaw-frontend-design@5c2231654ea94dd248b5ea9a478d2cb27cd36a52`；`campusclaw-mark-o1.png` SHA-256 `68150b9c669a7d3f5b4b306aeb79092852b308a127ec9cc522b48be6a47551cc` |
 | pi-mono-java 本轮分析基线 | `origin/main@dee709fc584dd722d2e94eb381338b997659e35a`（PR #181 已合入的 Tool execute 凭据边界） |
 | 本轮前端改造前基线 | `dee709fc584dd722d2e94eb381338b997659e35a`；前端尚无 Header 编辑器，统一请求只生成非秘密 `X-HW-ID` |
+| 本轮同步主分支基线 | `origin/main@a7a245b4079b53f79eacb96475a1b58a9c3713c7`；ADR-0033 已由部署资产清理决策占用 |
+| Headers 初始评审实现 | `eb347db8c13eda13c240dc4cf60154fc49b9bd91`；首次实现通用编辑器、请求级副本和适配器合并边界 |
+| Headers 评审修正实现 | `3b3e51f13f7a97cf1b135d13f4b1285e147c74ae`；修正折叠错误聚焦与 Fetch 禁止请求 Header 名称+值算法 |
 | 已确认设计基线 | `pi-mono-java-design@2748497`；独立 `Headers` 面板、通用 Key/Value、自动 Header 不展示、手工同名值优先 |
 | 实现源码 | `frontend/src/App.vue`、`frontend/src/debugHeaders.ts`、`frontend/src/components/DebugHeaders.vue`、`frontend/src/composables/useRuntimeApi.ts`、`frontend/src/assets/campusclaw-mark-o1.png`、`frontend/src/components/AgentRound.vue`、`frontend/src/components/SafeRichText.ts`、`frontend/src/components/ThinkingDisclosure.vue`、`frontend/src/components/ToolActivity.vue`、`frontend/src/markdown/richText.ts`、`frontend/src/projectors/conversationRounds.ts`、`frontend/src/projectors/runtimeEventProjector.ts`、`frontend/src/style.css` |
 | Postman 核对 | 2026-08-20；只读核对 `Agent Runtime` collection 及真实 SSE 响应 |
@@ -99,7 +102,8 @@ O1 珊瑚色只承担品牌识别，少量绿色表达状态。界面不使用 O
 | `frontend/src/App.vue:64-137`，`createSession`、`resumeSession`、`submit` | 以 Agent 和会话为调试入口；会话列表当前仅保存在内存；初始消息在 `user.message` 或历史确认前保留 Composer 草稿，运行中按当前 `steer/queue` 模式提交。 |
 | `frontend/src/App.vue` 的 `submit` 与顶栏模板 | 调试工作台主界面呈现侧栏、Agent/会话标题、模型、深度思考、执行状态、停止、对话和 Composer；低频 Session 诊断与独立 `Headers` 面板仅在 `import.meta.env.DEV` 下出现。普通消息发送前读取 Header 快照，校验失败时保留草稿。 |
 | `frontend/src/composables/useRuntimeApi.ts` 的 `sendMessage`、`requestRaw`、`mergeRequestHeaders` | 全部普通 JSON 请求/响应、`nextPage` 分页与控制接受结果已对齐 HTTP 1.38 lowerCamelCase；仅初始 Events POST 合并开发者 Header，且手工同名值覆盖适配器默认值。 |
-| `frontend/src/components/DebugHeaders.vue`、`frontend/src/debugHeaders.ts` | 开发模式顶部提供独立 `Headers` 面板；通用 Key/Value 行支持启停、删除、清空、自动空白尾行、大小写不敏感重复校验、HTTP token/CRLF/Fetch 禁止名称校验。自动生成 Header 不进入 DOM。 |
+| `eb347db8:frontend/src/components/DebugHeaders.vue#snapshot`、`frontend/src/debugHeaders.ts#validateDebugHeaders` | 初始评审实现提供独立 `Headers` 面板、通用 Key/Value 行、请求快照和行级校验；该提交尚未处理折叠面板错误聚焦和完整 Fetch 名称+值算法。 |
+| `3b3e51f1:frontend/src/components/DebugHeaders.vue#snapshot`、`frontend/src/debugHeaders.ts#revealFirstDebugHeaderError`、`#validateDebugHeaders` | 评审修正实现会先展开面板并等待渲染，再聚焦精确错误字段；禁止请求 Header 按 Fetch 的固定名称、前缀及方法覆盖头的值共同判断。自动生成 Header 不进入 DOM。 |
 | `frontend/src/composables/useRuntimeApi.ts:252-447` | UTF-8 增量解析 SSE；断流后读取 Session 和全量 Events 对账；只有新 `user.message` 按 `entryId`、正文和 `fileIds` 确认后才解除草稿保留，否则发布 `OUTCOME_UNCERTAIN`。 |
 | `frontend/src/projectors/runtimeEventProjector.ts` 的 `projectAssistantEvent`、`projectThinkingEvent`、`projectToolEvent` | Assistant 与 Thinking delta 分别追加到前端 turn，completed 用持久化原文替换；工具只在实际执行/结果事件出现后创建活动。 |
 | `frontend/src/projectors/runtimeEventProjector.ts` 的 `projectToolArguments`、`appendToolArgument` | 工具参数执行行数、深度和长度预算后按原值进入结构化 viewer；不隐藏凭据形态字段、内部 ID 或绝对路径。工具结果以原始字符串投影并限制长度，再进入安全富文本渲染。 |
@@ -222,7 +226,11 @@ mate-service 完成认证、授权、公共 Chat 标识映射、字段最小化�
 - 首屏只有一条启用的空白行；编辑最后一条空白行时自动补出新的空白尾行。
 - 每行包含启用开关、Key、Value 和删除动作；摘要只显示有效 Header 数量，清空恢复一条空白行。
 - 已启用的半空行、非法 HTTP token、Fetch 无法表示的值、禁止设置的名称和大小写不敏感重复
-  都会阻止普通消息提交，保留 Composer 草稿并聚焦首个错误字段。
+  都会阻止普通消息提交，保留 Composer 草稿；若面板已折叠，则先展开并等待 Vue 完成渲染，
+  再聚焦首个错误所在的 Key 或 Value。
+- 禁止请求 Header 严格按 [WHATWG Fetch 名称+值算法](https://fetch.spec.whatwg.org/#forbidden-request-header)
+  判断：固定名称包括 `Set-Cookie`，`proxy-`/`sec-` 前缀始终禁止；三个方法覆盖 Header 只在
+  拆分后的值包含 `CONNECT`、`TRACE` 或 `TRACK` 时禁止，带引号的值保持为单项参与判断。
 - `Accept`、`Accept-Language`、`Content-Type`、适配器默认 `X-HW-ID` 等自动 Header 不渲染、
   不列举；开发者手工填写同名 Key 时，在请求合并阶段按大小写不敏感语义覆盖默认值。
 - 输入只存在于当前页面组件状态和必需的表单 DOM；刷新即清空，不进入 local/session storage。
@@ -485,8 +493,8 @@ spinner/进度文本和 check/“已完成”标签区分，不能只依赖颜�
 ## 12. 错误、边界与 DFX
 
 - `401/403`：交给统一登录/权限处理，不在 Chat 里展示凭据编辑器。
-- Header 编辑错误：只校验已启用行；错误在行内显示并阻止初始 Events POST，保留消息草稿，
-  不把未校验值发送给任何接口。
+- Header 编辑错误：只校验已启用行；错误在行内显示并阻止初始 Events POST，保留消息草稿；
+  折叠面板先展开再聚焦具体 Key/Value，不把未校验值发送给任何接口。
 - `409 SESSION_BUSY`：普通发送切换到运行中控制，不自动重复请求。
 - `409 SESSION_NOT_RUNNING`：刷新 Session；允许用户改为新的普通消息。
 - `412 SESSION_VERSION_MISMATCH`：刷新模型/思考状态，再让用户确认是否继续修改。
@@ -513,7 +521,7 @@ spinner/进度文本和 check/“已完成”标签区分，不能只依赖颜�
   （Superseded in part）：Thinking、统一安全富文本、独立活动框与整轮复制规则继续有效；Tool 参数可见性由 ADR-0031 修订。
 - [ADR-0031：调试工作台直接展示工具原始参数](../decisions/0031-debug-workbench-raw-tool-arguments.md)
   （Accepted）：当前前端明确为内部调试工作台；工具参数不脱敏、不缩短路径，仅保留页面稳定性预算。
-- [ADR-0033：开发模式使用通用请求 Headers 面板](../decisions/0033-development-request-headers.html)
+- [ADR-0034：开发模式使用通用请求 Headers 面板](../decisions/0034-development-request-headers.html)
   （Accepted）：使用独立 Key/Value 面板和请求级副本；不展示自动 Header，只影响初始 Events POST。
 
 ## 14. 实施分期
@@ -533,7 +541,7 @@ spinner/进度文本和 check/“已完成”标签区分，不能只依赖颜�
 - 视觉回归：1440、1280、1024、768 四个宽度。
 - 状态测试：first use、idle、running、aborted、stream error、offline recovery。
 - HTTP 1.38 契约测试：Session/Model/Control lowerCamelCase、`modelId` 请求、`nextPage` 多页读取。
-- Header 编辑器测试：空白尾行、启停、HTTP token、非法值、Fetch 禁止名称和大小写不敏感重复校验。
+- Header 编辑器测试：空白尾行、启停、HTTP token、非法值、Fetch 禁止名称+值算法、大小写不敏感重复校验，以及折叠面板展开后聚焦精确错误字段。
 - 请求边界测试：手工同名 Header 覆盖默认值，且临时值只出现在初始 Events POST，不进入
   Session、历史对账、配置或控制请求。
 - Event projector 测试：`entryId/fileIds/assistantEntryId/toolCallId/toolName/isError` 投影、Thinking delta 聚合、completed 权威替换、工具延迟显示、原始参数和 tool result 合并。
@@ -575,7 +583,8 @@ spinner/进度文本和 check/“已完成”标签区分，不能只依赖颜�
 
 | 版本 | 日期 | 变更 |
 |---|---|---|
-| 0.12.0 | 2026-08-28 | 基于 `origin/main@dee709fc584dd722d2e94eb381338b997659e35a` 和设计基线 `pi-mono-java-design@2748497`：开发模式新增独立通用 `Headers` 面板；不预设凭据模式、不展示自动 Header，临时值只存在当前页面并仅附加到下一次初始 Events POST；手工同名值覆盖适配器默认值；新增校验、请求边界测试、ADR-0033 和链路图。 |
+| 0.12.1 | 2026-08-28 | 合并 `origin/main@a7a245b4079b53f79eacb96475a1b58a9c3713c7` 并响应 PR #184 评审：折叠 Headers 校验失败时先展开并聚焦精确 Key/Value；按 WHATWG Fetch 名称+值算法校验禁止请求 Header；补充初始实现与修正提交证据；因主分支编号冲突将本决策顺延为 ADR-0034。 |
+| 0.12.0 | 2026-08-28 | 基于 `origin/main@dee709fc584dd722d2e94eb381338b997659e35a` 和设计基线 `pi-mono-java-design@2748497`：开发模式新增独立通用 `Headers` 面板；不预设凭据模式、不展示自动 Header，临时值只存在当前页面并仅附加到下一次初始 Events POST；手工同名值覆盖适配器默认值；新增校验、请求边界测试、初始 ADR 和链路图。 |
 | 0.11.0 | 2026-08-27 | 基于 PR #179 的 `e4ef301cc7cbf93c4a651c060e2c48ebcec74cbd`：明确当前前端是内部 Runtime 调试工作台；取消 Tool 参数的敏感键/值隐藏和绝对路径收缩，改为有 12 行、3 层、每值 240 字符页面预算的原始参数 viewer；新增 ADR-0031、v12 高保真并同步浏览器验收。 |
 | 0.10.0 | 2026-08-27 | 基于 PR #179 的 `8c5f3462d745ec0c5146d55dcb62108ac2a33282`：保持 `assistant.thinking.*` 事件接口不变，前端直接聚合 delta 原文并由 completed 全文校正；把 Assistant-only 渲染器泛化为 `SafeRichText`，供 Assistant、Thinking 与 Tool result 共用；保留 Tool 参数结构化脱敏、独立虚线框与整轮复制；新增 ADR-0030、v11 高保真和多视口验收。 |
 | 0.9.0 | 2026-08-27 | 基于 `origin/main@1813c601101660a401e5e2004c5c00b8e3d7b75b`：保留 User-turn Agent round 与单一复制入口，将连续 Thinking/Tool 共用外框改为每个活动独立暖灰虚线框；明确区分“没有 Thinking 事件”与“已收到事件但缺少 display 摘要”，为两种状态补充投影测试和精确占位文案；同步 ADR-0029、v10 高保真和浏览器验收。 |

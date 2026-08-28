@@ -333,7 +333,7 @@
         <div class="row">
           <img class="review-brand-mark" src="campusclaw-mark-o1.png" alt="">
           <h1>CampusClaw Runtime Debug Workbench</h1>
-          <span class="tag">0.12.0</span>
+          <span class="tag">0.12.1</span>
           <span class="tag">Implementation · 已实现</span>
         </div>
         <code class="base">Internal debug only · HTTP V1 1.38.0 aligned · O1 warm-neutral</code>
@@ -514,8 +514,8 @@ HAVING COUNT(*) &gt; 1;</code></pre>
         <details class="review-question" open><summary>4. 已实现：全活动安全富文本边界</summary><p>Assistant、原始 Thinking 与 Tool result 共用受限 Markdown；User 和 Tool 参数保持纯文本/结构化 viewer。raw HTML、远程 Markdown 图片、相对路由和危险协议永不激活。</p></details>
         <details class="review-question" open><summary>5. 已实现：原始 Thinking、整轮动作与独立虚线框</summary><p>Thinking 直接展示现有 delta/content 原文并标记“原始推理”，不改变事件接口；Thinking 与每个 Tool 分别进入独立暖灰虚线框。每轮 Agent 回答只在完成后显示一个紧凑复制图标，复制本轮全部 Assistant Markdown，不复制 Thinking 与 Tool 内容。</p></details>
         <details class="review-question" open><summary>6. 已确认：内部调试工作台展示原始 Tool 参数</summary><p>Tool 参数不隐藏凭据形态字段、内部 ID 或绝对路径；12 行、3 层、每值 240 字符只用于页面稳定性。该可见性不得直接用于生产产品前端。</p></details>
-        <details class="review-question" open><summary>7. 已实现：独立通用 Headers 面板</summary><p>开发模式使用通用 Key/Value 行，不提供凭据模式或固定名称，不与开发者诊断入口合并，不展示自动生成 Header；页面内临时值只用于下一次初始 Events POST。</p></details>
-        <div class="review-links"><a href="../campusclaw-frontend.md">查看完整设计依据</a><span class="muted">·</span><a href="../../decisions/0020-campusclaw-product-frontend-boundary.html">历史产品边界 ADR</a><span class="muted">·</span><a href="../../decisions/0030-runtime-thinking-and-activity-rich-text.md">活动富文本 ADR</a><span class="muted">·</span><a href="../../decisions/0031-debug-workbench-raw-tool-arguments.md">调试参数 ADR</a><span class="muted">·</span><a href="../../decisions/0033-development-request-headers.html">Headers ADR</a><span class="muted">·</span><a href="imagegen-prompts.md">查看 ImageGen Prompts</a></div>
+        <details class="review-question" open><summary>7. 已实现：独立通用 Headers 面板</summary><p>开发模式使用通用 Key/Value 行，不提供凭据模式或固定名称，不与开发者诊断入口合并，不展示自动生成 Header；页面内临时值只用于下一次初始 Events POST。校验失败时自动展开面板并聚焦具体 Key 或 Value。</p></details>
+        <div class="review-links"><a href="../campusclaw-frontend.md">查看完整设计依据</a><span class="muted">·</span><a href="../../decisions/0020-campusclaw-product-frontend-boundary.html">历史产品边界 ADR</a><span class="muted">·</span><a href="../../decisions/0030-runtime-thinking-and-activity-rich-text.md">活动富文本 ADR</a><span class="muted">·</span><a href="../../decisions/0031-debug-workbench-raw-tool-arguments.md">调试参数 ADR</a><span class="muted">·</span><a href="../../decisions/0034-development-request-headers.html">Headers ADR</a><span class="muted">·</span><a href="imagegen-prompts.md">查看 ImageGen Prompts</a></div>
       </section>
     </div>
   </main>

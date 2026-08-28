@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>ADR-0033：开发模式使用通用请求 Headers 面板</title>
+  <title>ADR-0034：开发模式使用通用请求 Headers 面板</title>
   <style>
     :root { color-scheme: light; font-family: Inter, "PingFang SC", sans-serif; color: #2c2724; background: #f8f3f0; }
     body { margin: 0; }
@@ -23,15 +23,17 @@
 </head>
 <body>
 <main>
-  <h1>ADR-0033：开发模式使用通用请求 Headers 面板</h1>
+  <h1>ADR-0034：开发模式使用通用请求 Headers 面板</h1>
   <table>
     <tr><th>Status</th><td><span class="status">Accepted</span></td></tr>
     <tr><th>Date</th><td>2026-08-28</td></tr>
     <tr><th>Frontend pre-change baseline</th><td><code>origin/main@dee709fc584dd722d2e94eb381338b997659e35a</code></td></tr>
+    <tr><th>Synced main baseline</th><td><code>origin/main@a7a245b4079b53f79eacb96475a1b58a9c3713c7</code>；该基线已使用 ADR-0033</td></tr>
     <tr><th>Backend feature source</th><td><code>d03c08dbae870f19eee8d4fa79a707185f7a26b5</code>，已合入本轮前端基线</td></tr>
     <tr><th>Confirmed design baseline</th><td><code>pi-mono-java-design@2748497</code></td></tr>
     <tr><th>Observed source</th><td><code>frontend/src/App.vue#submit</code>、<code>frontend/src/components/DevDiagnostics.vue</code>、<code>frontend/src/composables/useRuntimeApi.ts#sendMessage</code>、<code>#requestRaw</code></td></tr>
-    <tr><th>Implemented source</th><td><code>frontend/src/components/DebugHeaders.vue</code>、<code>frontend/src/debugHeaders.ts</code>、<code>frontend/src/App.vue#submit</code>、<code>frontend/src/composables/useRuntimeApi.ts#sendMessage</code>、<code>#mergeRequestHeaders</code></td></tr>
+    <tr><th>Initial reviewed implementation</th><td><code>eb347db8c13eda13c240dc4cf60154fc49b9bd91</code>：<code>frontend/src/components/DebugHeaders.vue#snapshot</code>、<code>frontend/src/debugHeaders.ts#validateDebugHeaders</code>、<code>frontend/src/App.vue#submit</code>、<code>frontend/src/composables/useRuntimeApi.ts#sendMessage</code>、<code>#mergeRequestHeaders</code></td></tr>
+    <tr><th>Review correction implementation</th><td><code>3b3e51f13f7a97cf1b135d13f4b1285e147c74ae</code>：<code>frontend/src/components/DebugHeaders.vue#snapshot</code>、<code>frontend/src/debugHeaders.ts#revealFirstDebugHeaderError</code>、<code>#validateDebugHeaders</code></td></tr>
   </table>
 
   <h2>Context</h2>
@@ -61,7 +63,8 @@
     <li>开发构建的顶部工具区提供独立折叠入口，名称固定为 <code>Headers</code>，不与开发者诊断入口合并。</li>
     <li>编辑器使用通用 Key/Value 行。每行支持启用、删除；编辑尾行时自动增加空白行；摘要显示有效 Header 数量；清空后恢复一条空白行。</li>
     <li>界面不提供凭据模式、固定 Header 名、说明注释、自动生成 Header 行或“隐藏请求头”列表。</li>
-    <li>已启用的半空行、非法 HTTP token、Fetch 无法表示的值、禁止设置的请求 Header 名和大小写不敏感重复名称阻止提交，并聚焦首个错误字段。</li>
+    <li>已启用的半空行、非法 HTTP token、Fetch 无法表示的值、<a href="https://fetch.spec.whatwg.org/#forbidden-request-header">Fetch 禁止请求 Header</a> 和大小写不敏感重复名称阻止提交。折叠面板会先展开并等待 Vue 完成渲染，再聚焦首个错误所在的 Key 或 Value。</li>
+    <li>Fetch 规则按名称和值共同判断：包括 <code>Set-Cookie</code> 与 <code>proxy-</code>/<code>sec-</code> 前缀；<code>X-HTTP-Method</code>、<code>X-HTTP-Method-Override</code>、<code>X-Method-Override</code> 仅在拆分后的值包含 <code>CONNECT</code>、<code>TRACE</code> 或 <code>TRACK</code> 时拒绝。</li>
     <li>值只保存在当前 Vue 组件状态和必需的表单 DOM，不写入 localStorage、sessionStorage、IndexedDB、日志或设计 fixture；刷新页面即清空。</li>
     <li>普通消息提交时创建一次 <code>Headers</code> 副本，仅传给初始 Events POST。Session 创建/读取、Events 历史对账、模型/Thinking 配置、Steer、FollowUp、Abort 和断流恢复均不接收该副本。</li>
     <li>适配器继续内部生成默认 Header。开发者手工填写同名 Key 时，在请求合并阶段按 Fetch <code>Headers</code> 的大小写不敏感语义覆盖默认值。</li>
@@ -84,7 +87,7 @@
 
   <h2>Validation</h2>
   <ul>
-    <li><code>frontend/src/debugHeaders.test.ts</code> 覆盖合法行、HTTP token、非法值、Fetch 禁止名称和大小写不敏感重复名称。</li>
+    <li><code>frontend/src/debugHeaders.test.ts</code> 覆盖合法行、HTTP token、非法值、Fetch 名称+值算法、大小写不敏感重复名称，以及折叠面板先展开再聚焦精确错误字段。</li>
     <li><code>frontend/src/composables/useRuntimeApi.test.ts</code> 覆盖自定义值覆盖默认 <code>X-HW-ID</code>，并验证临时 Header 只出现在初始 Events POST。</li>
     <li><code>npm test</code>、<code>npm run typecheck</code>、<code>npm run build</code> 和多视口开发构建浏览器检查覆盖功能、类型、打包和响应式呈现。</li>
   </ul>

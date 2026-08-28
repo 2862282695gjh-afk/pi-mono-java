@@ -264,16 +264,18 @@ end note
 
 @startuml frontend_debug_header_flow
 ' Frontend pre-change baseline: origin/main dee709fc584dd722d2e94eb381338b997659e35a.
+' Synced main baseline: origin/main a7a245b4079b53f79eacb96475a1b58a9c3713c7; ADR-0033 was already allocated.
 ' Backend feature commit: d03c08dbae870f19eee8d4fa79a707185f7a26b5, merged before the frontend baseline.
 ' Observed source: frontend/src/composables/useRuntimeApi.ts (requestRaw generated non-secret X-HW-ID and had no custom header input).
 ' Observed source: frontend/src/components/DevDiagnostics.vue (the only pre-change development tool entry).
 ' Backend source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/web/RuntimeEventController.java (submit).
 ' Backend source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/web/RuntimeRequestContext.java (mateCredentials).
 ' Backend source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/common/client/HttpMateToolClient.java (invokeTool).
-' Target implementation: frontend/src/components/DebugHeaders.vue (editor and request snapshot).
-' Target implementation: frontend/src/debugHeaders.ts (validation and Headers construction).
-' Target implementation: frontend/src/App.vue (development-only panel and initial submit boundary).
-' Target implementation: frontend/src/composables/useRuntimeApi.ts (sendMessage and mergeRequestHeaders).
+' Initial reviewed implementation: eb347db8c13eda13c240dc4cf60154fc49b9bd91.
+' Initial reviewed source: frontend/src/components/DebugHeaders.vue (snapshot) and frontend/src/debugHeaders.ts (validateDebugHeaders).
+' Initial reviewed source: frontend/src/App.vue (submit) and frontend/src/composables/useRuntimeApi.ts (sendMessage and mergeRequestHeaders).
+' Review correction implementation: 3b3e51f13f7a97cf1b135d13f4b1285e147c74ae.
+' Corrected source: frontend/src/debugHeaders.ts (revealFirstDebugHeaderError and validateDebugHeaders).
 ' Observed behavior: the pre-change frontend had no custom request-header controls and requestRaw generated X-HW-ID internally.
 ' Implemented architecture change: a development-only generic editor contributes one immutable Headers copy to the initial event POST.
 ' Product constraint: there are no credential modes, preset names, generated-header rows, annotations, or persistent storage.
@@ -319,8 +321,8 @@ Manual values override generated values.
 
 Reject invalid header names and values.
 Reject case-insensitive duplicate custom names.
-Reject Fetch-forbidden request header names.
-Show errors only on the affected row.
+Apply the Fetch forbidden name-and-value algorithm.
+Expand before focusing the exact invalid field.
 end note
 
 note bottom of EventAdapter
