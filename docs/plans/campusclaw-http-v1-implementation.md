@@ -1,6 +1,6 @@
 # CampusClaw HTTP V1 实施记录
 
-> 版本：3.4.0
+> 版本：3.4.1
 >
 > 状态：已实现并按 Runtime-only 现状校准
 >
@@ -20,7 +20,7 @@
 >
 > 初始日期：2026-08-21
 >
-> 更新日期：2026-08-27
+> 更新日期：2026-08-28
 
 ## 1. 目标与边界
 
@@ -47,7 +47,7 @@ Runtime-only 架构演进。当前形态为：
 | 启动 | `modules/coding-agent-cli/.../CampusClawApplication.java` |
 | HTTP 边界 | `modules/coding-agent-cli/.../runtimeapi/web/*Controller.java` |
 | 调用上下文 Header 边界 | `RuntimeRequestContext#mateCredentials`、`RuntimeEventController#submit`；POST Events 捕获 `X-HW-ID`、`X-HW-APPKEY`、`Authorization`、`access-token`，Runtime 不包含认证器、认证拦截器或认证错误码 |
-| Mate 发现与执行 Header | `MateToolClient#listAgentTools`、`#listSkillTools` 不接收凭据；`HttpMateToolClient#invokeTool` 只在 execute 请求透传四项快照 Header |
+| Mate 发现与执行 Header | `MateToolClient#listAgentTools`、`#listSkillTools` 不接收凭据；`HttpMateToolClient#invokeTool` 只让 execute 请求携带 POST Events 收到的四项非空值 |
 | 类型化资源 ID | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/common/identifier/ResourceIdentifierPatterns.java`、`runtimeapi/web/*Controller` 的 Jakarta 路径参数约束、`RuntimeExceptionHandler#handleInvalidParameter`、`MateServiceClient`、`AgentRuntimeManager`、`HttpMateToolClient`、`RandomSessionIdGenerator` |
 | ResultBean / i18n | `runtimeapi/result/*`、`RuntimeMessageSourceConfiguration`、`RuntimeRequestContext`、`src/main/resources/i18n/messages_{en_US,zh_CN}.properties` |
 | Session 业务 | `runtimeapi/session/RuntimeSessionService.java`、`RuntimeSessionConfigurationService.java`、`RuntimeSessionControlService.java` |
@@ -69,7 +69,7 @@ Runtime-only 架构演进。当前形态为：
 | 1 | `POST /campusclaw-service/v1/agents/{agentId}/sessions` | 生成类型化 Session ID，创建时初始化 `thinking=true` | 已实现 |
 | 2 | `GET /campusclaw-service/v1/sessions/{sessionId}` | 返回名称、state、model、thinking、版本等精简状态 | 已实现 |
 | 3 | `DELETE /campusclaw-service/v1/sessions/{sessionId}` | running 返回 409；idle 幂等删除；墓碑仅两字段 | 已实现 |
-| 4 | `POST /campusclaw-service/v1/sessions/{sessionId}/events` | 请求体只含 `message/fileIds`；捕获四项瞬态工具执行凭据；按执行快照投影 thinking 并直接返回 SSE | 已实现 |
+| 4 | `POST /campusclaw-service/v1/sessions/{sessionId}/events` | 请求体只含 `message/fileIds`；读取四项工具执行凭据并只在当次执行内存中持有；按 thinking 状态投影并直接返回 SSE | 已实现 |
 | 5 | `GET /campusclaw-service/v1/sessions/{sessionId}/events` | 按当前 thinking 过滤持久化事件，page 绑定该状态 | 已实现 |
 | 6 | `GET /campusclaw-service/v1/sessions/{sessionId}/models` | `currentModelId` + 模型 ID 字符串数组 | 已实现 |
 | 7 | `PUT /campusclaw-service/v1/sessions/{sessionId}/model` | idle + 强 `If-Match`，同值不增版本 | 已实现 |
@@ -87,7 +87,7 @@ Runtime-only 架构演进。当前形态为：
 | 流式连接 | 旧本地接口与公开 WebSocket 并存 | 单次 POST 建立 SSE，`stream.end` 后关闭 | 架构变更：协议唯一、断线可通过历史恢复 |
 | Session 与模型 | CLI 启动时先选模型 | Session 创建不要求模型，可在后续事件前切换 | 产品约束：Session 生命周期允许模型切换 |
 | 删除 | 历史方案曾计划自动 abort | active execution 返回 409；idle 才删除 | 安全加固：避免删除与执行副作用竞态 |
-| 调用上下文 Header | 基线认证拦截器检查 Header 齐全、共存和 Bearer 形状；`320d7907` 把三项快照透传到发现和执行 | 全接口保留集成 Header 契约且不做本地认证；POST Events 捕获四项瞬态快照，只有 Mate Tool execute 透传 | 架构变更：真实性和动作授权由上游 mate-service 保证；安全加固：发现链路无执行凭据，快照不持久化、不依赖 ThreadLocal |
+| 调用上下文 Header | 基线认证拦截器检查 Header 齐全、共存和 Bearer 形状；`320d7907` 把 POST Events 读取的三项值同时发送给发现和执行 | 全接口保留集成 Header 契约且不做本地认证；POST Events 读取四项值，发现请求不携带，只有 Mate Tool execute 携带 | 架构变更：真实性和动作授权由上游 mate-service 保证；安全加固：值只在当次 Agent 执行和 Child 调用期间由内存对象持有，不持久化、不依赖 ThreadLocal |
 | 资源 ID | Agent 使用下划线短 ID，Session 使用无类型 Crockford Base32 | Agent/Tool/Skill/Session 使用类型前缀加 32 位无连字符 UUID；正则字符串与编译模式集中在中立的领域模式类；HTTP 路径参数使用 Jakarta 注解校验 | 产品约束：阻止无前缀、错误类型和旧格式进入边界；架构变更：消除重复编译、核心代码对 HTTP 常量包的反向依赖和命令式边界 Validator |
 | 创建默认值 | `RuntimeSessionService#newSession` 持久化 `thinking=false` | 创建时持久化 `thinking=true`；默认模型不支持 reasoning 时返回 `AGENT_MODEL_NOT_CONFIGURED` | 产品约束：新 Session 默认启用深度思考，且公开状态必须与模型能力一致 |
 | 用户事件请求 | `UserEventRequestVO` 要求冗余 `type=user.message` | 只接受 `message` 与 `fileIds`，`type` 和 snake_case 别名作为未知字段拒绝 | 产品约束：operation 已固定消息类型，公共字段统一为 lowerCamelCase |
@@ -145,17 +145,17 @@ DDL 使用 `t_` 前缀：`t_sessions`、`t_session_tombstone`、`t_session_clean
 
 ### Mate 工具凭据
 
-只有创建活动执行的 `POST /sessions/{sessionId}/events` 会读取调用上下文 Header，并把
-`X-HW-ID`、`X-HW-APPKEY`、`Authorization`、`access-token` 四项值作为不可变
-`MateCredentials` 显式传入本次公共 Session。Runtime 不验证真实性、Bearer 形状或
-AppKey/JWT 互斥性；两类身份凭据同时存在时保持原样交给 Mate。
+`POST /sessions/{sessionId}/events` 读取 `X-HW-ID`、`X-HW-APPKEY`、`Authorization` 和
+`access-token`。这些值只在本次 Agent 执行及其 Child 调用期间由内存中的 `MateCredentials`
+持有，不写入数据库、Runtime Entry、Event、Prompt、模型消息或日志；执行结束后 Runtime
+不再主动持有这些值。Runtime 不验证真实性、Bearer 形状或 AppKey/JWT 互斥性。
 
 `ListMateTools` 以及 Call 缓存 miss 触发的 Agent binding、Skill binding、tool metadata
-发现请求都不接收或发送上述执行凭据。只有 `CallMateTool` 最终调用
-`POST /mate-service/v1/runtime/tools/{toolId}/execute` 时，才透传收到的四项 Header；缺少
-`access-token`、`X-HW-ID` 或 AppKey/JWT 至少一种时 execute 在本地 fail closed，但 POST
-Events 本身不新增鉴权错误。Child 继承父执行快照。快照不进入数据库、Runtime Entry、Prompt、
-模型消息或日志，活动执行关闭后随 Session 释放。
+请求都不携带上述值。只有 `CallMateTool` 最终发送
+`POST /mate-service/v1/runtime/tools/{toolId}/execute` 时，才把收到的非空值放入同名 Header；
+AppKey 与 JWT 同时存在时都发送。发送 execute 前必须具有 `access-token`、`X-HW-ID` 以及
+AppKey/JWT 至少一种，否则不发送 execute 请求并返回工具执行失败，但 POST Events 本身不因此
+被拒绝。Cron 没有入站调用方值，因此仍可发现工具但不能执行 Mate 工具。
 
 ## 6. 验证证据
 
@@ -195,10 +195,11 @@ Events 本身不新增鉴权错误。Child 继承父执行快照。快照不进�
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
-| 3.4.0 | 2026-08-27 | POST Events 捕获 `access-token`，并把 Mate 执行凭据出站范围收窄到 Tool execute；所有发现请求不再透传。 |
+| 3.4.1 | 2026-08-28 | 用读取时机、内存持有期限、携带请求和缺失值行为定义 Mate 工具凭据边界。 |
+| 3.4.0 | 2026-08-27 | POST Events 读取 `access-token`；发现请求不携带四项值，只有 Tool execute 携带收到的值。 |
 | 3.3.1 | 2026-08-25 | 处理 PR #172 审查：校准八工具与 Agent 工作区、Compaction/Usage 持久化模型及三段源码基线 |
 | 3.3.0 | 2026-08-25 | 按 Runtime-only 现状删除已退役 CLI 启动描述和失效的启动类证据引用 |
-| 3.2.0 | 2026-08-24 | POST Events 创建瞬态 Mate 凭据快照并显式传递到公共 Session、List/Call 与 Child；保持 Runtime 不做本地认证和凭据不持久化 |
+| 3.2.0 | 2026-08-24 | POST Events 读取三项 Mate 凭据并在当次 Agent 执行和 Child 调用期间由内存对象持有；保持 Runtime 不做本地认证和凭据不持久化 |
 | 3.1.0 | 2026-08-21 | 对齐 HTTP 1.38：Path、Query、JSON 与 SSE data 统一为 lowerCamelCase；Header 和字段值保持原样；内部 Entry payload 通过受控投影兼容已有数据 |
 | 3.0.2 | 2026-08-21 | 用 Controller 标量参数 Jakarta 注解替代命令式路径 ID Validator，并统一映射 Spring MVC 方法校验错误 |
 | 3.0.1 | 2026-08-21 | 将类型化资源 ID 的正则字符串和编译模式集中到领域模式类，并从 Runtime HTTP 常量中移除领域约束 |

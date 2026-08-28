@@ -44,7 +44,7 @@ end note
 ' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/tool/mate/MateToolDiscovery.java, listAgentTools
 ' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/common/client/HttpMateToolClient.java, invokeTool
 ' Observed behavior: the pre-change client forwarded three execution credential headers to discovery and execute.
-' Security hardening: discovery receives no credentials; only execute receives the four-header snapshot.
+' Security hardening: discovery receives no credentials; only execute receives the four header values.
 ' Java divergence: pi has no corresponding Mate credential flow.
 skinparam shadowing false
 title Mate Tool Execution Credential Flow
@@ -61,17 +61,19 @@ participant "Child Session" as Child
 
 Caller -> Controller : POST Events\naccess-token and X-HW-ID\nplus AppKey or JWT
 Controller -> Service : immutable MateCredentials
-Service -> Registry : execution snapshot
+Service -> Registry : values held for current execution
 Registry -> Factory : ManagedAgentSessionRequest
 Factory -> List : session-private tool
-Factory -> Call : session-private tool and snapshot
+Factory -> Call : session-private tool and values
 List -> Client : discovery without credentials
-Call -> Client : execute once with four-header snapshot
-Factory -> Child : inherit parent execution snapshot
+Call -> Client : execute once with received header values
+Factory -> Child : use parent execution values
 note over Service,Child
-  In-memory execution scope only.
-  Never persist in Session rows, Entries,
-  Prompt, messages, events, or logs.
+  Values are held only during this Agent execution
+  and its Child calls.
+  Never write to database, Event, Prompt,
+  model messages, or logs.
+  Runtime releases active references after execution.
 end note
 note over Call,Client
   Missing access-token or identity credentials
@@ -116,7 +118,7 @@ end note
 ' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/tool/mate/MateToolSessionCache.java, resolveOrRefresh
 ' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/tool/mate/MateToolDiscovery.java, loadAllSources
 ' Observed behavior: a miss refreshes the complete Agent plus direct-Skill tool set once.
-' Security hardening: cache-miss discovery never receives the execution credential snapshot.
+' Security hardening: cache-miss discovery never receives the execution credential values.
 skinparam shadowing false
 title CallMateTool Cache Miss and Single-Flight Refresh
 
