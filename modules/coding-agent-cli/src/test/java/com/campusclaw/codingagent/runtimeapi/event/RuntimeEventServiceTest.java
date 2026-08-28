@@ -78,7 +78,7 @@ class RuntimeEventServiceTest {
     void persistsRawFileIdsAndCompletesAcceptedStream() {
         Fixture fixture = new Fixture();
         UserEventRequestVO request = request("分析订单", List.of("file_a", "file_b"));
-        MateCredentials credentials = MateCredentials.jwt("caller-1", "token-1");
+        MateCredentials credentials = MateCredentials.jwt("caller-1", "token-1", "access-token-1");
 
         RuntimeEventStream stream = fixture.service.submit(SESSION_ID, request, Locale.US, credentials);
         fixture.agentFuture.complete(null);

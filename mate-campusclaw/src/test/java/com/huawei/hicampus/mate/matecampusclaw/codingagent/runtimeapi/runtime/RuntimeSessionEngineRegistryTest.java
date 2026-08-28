@@ -49,7 +49,7 @@ class RuntimeSessionEngineRegistryTest {
         Model model = mock(Model.class);
         RuntimeActiveExecution firstExecution = mock(RuntimeActiveExecution.class);
         RuntimeActiveExecution rejectedExecution = mock(RuntimeActiveExecution.class);
-        MateCredentials credentials = MateCredentials.appKey("caller-1", "app-key-1");
+        MateCredentials credentials = MateCredentials.appKey("caller-1", "app-key-1", "access-token-1");
 
         RuntimeSessionHolder accepted =
                 registry.register("session-a", snapshot, model, false, List.of(), firstExecution, credentials);

@@ -30,10 +30,11 @@ import org.slf4j.LoggerFactory;
 /**
  * 通过 {@link MateRestUtil} 访问 CampusMate 服务的 {@link MateToolClient} HTTP 实现。
  *
- * <p>共享基础地址和出站接口路径均由配置注入。发现与执行请求使用当前 Agent 执行的不可变凭据
- * 快照；发现端点允许空凭据，执行端点在发出请求前校验最低完整性。
+ * <p>共享基础地址和出站接口路径均由配置注入。Agent、Skill 和工具元数据发现请求不携带
+ * 执行凭据；只有工具执行请求使用当前 Agent 执行的不可变凭据快照，并在发出请求前校验最低
+ * 完整性。
  *
- * @version [br_eCampusCore 26.0.0, 2026/08/24]
+ * @version [br_eCampusCore 26.0.0, 2026/08/27]
  * @since [br_eCampusCore 26.0.0]
  */
 public class HttpMateToolClient implements MateToolClient {
@@ -92,10 +93,10 @@ public class HttpMateToolClient implements MateToolClient {
     }
 
     @Override
-    public List<MateToolMeta> listAgentTools(String agentId, MateCredentials credentials) {
+    public List<MateToolMeta> listAgentTools(String agentId) {
         requireScopedId(agentId, ResourceIdentifierPatterns.AGENT_ID_PATTERN, "agent");
         try {
-            return queryOrderedToolMeta(queryToolIdsByAgentId(agentId, credentials), credentials);
+            return queryOrderedToolMeta(queryToolIdsByAgentId(agentId));
         } catch (Exception exception) {
             log.error("listAgentTools failed: agentId={}", agentId, exception);
             throw publicFailure("listAgentTools", exception);
@@ -103,10 +104,10 @@ public class HttpMateToolClient implements MateToolClient {
     }
 
     @Override
-    public List<MateToolMeta> listSkillTools(String skillId, MateCredentials credentials) {
+    public List<MateToolMeta> listSkillTools(String skillId) {
         requireScopedId(skillId, ResourceIdentifierPatterns.SKILL_ID_PATTERN, "skill");
         try {
-            return queryOrderedToolMeta(queryToolIdsBySkillId(skillId, credentials), credentials);
+            return queryOrderedToolMeta(queryToolIdsBySkillId(skillId));
         } catch (Exception exception) {
             log.error("listSkillTools failed: skillId={}", skillId, exception);
             throw publicFailure("listSkillTools", exception);
@@ -127,13 +128,12 @@ public class HttpMateToolClient implements MateToolClient {
      * 查询 Agent 元数据并提取 {@code bindingTools[].toolId}。
      *
      * @param agentId Mate Agent 标识
-     * @param credentials 本次执行的凭据快照
      * @return 绑定工具标识列表
      * @throws Exception 网关调用或响应解析失败时抛出
      */
-    protected List<String> queryToolIdsByAgentId(String agentId, MateCredentials credentials) throws Exception {
+    protected List<String> queryToolIdsByAgentId(String agentId) throws Exception {
         String raw = mateRestUtil.executeGetRawRequest(
-                campusMateBaseUrl, expandPathTemplate(agentInfoPathTemplate, agentId), toHeaderInfo(credentials));
+                campusMateBaseUrl, expandPathTemplate(agentInfoPathTemplate, agentId), null);
         AgentInfo agentInfo = unwrapResult(raw, AgentInfo.class);
         List<String> toolIds = new ArrayList<>();
         if (agentInfo != null && agentInfo.getBindingTools() != null) {
@@ -148,13 +148,12 @@ public class HttpMateToolClient implements MateToolClient {
      * 查询 Skill 绑定工具信息并提取 {@code bindingTools[].id}。
      *
      * @param skillId Mate Skill 标识
-     * @param credentials 本次执行的凭据快照
      * @return 绑定工具标识列表
      * @throws Exception 网关调用或响应解析失败时抛出
      */
-    protected List<String> queryToolIdsBySkillId(String skillId, MateCredentials credentials) throws Exception {
+    protected List<String> queryToolIdsBySkillId(String skillId) throws Exception {
         String raw = mateRestUtil.executeGetRawRequest(
-                campusMateBaseUrl, expandPathTemplate(skillInfoPathTemplate, skillId), toHeaderInfo(credentials));
+                campusMateBaseUrl, expandPathTemplate(skillInfoPathTemplate, skillId), null);
         SkillInfoResult skillResult = unwrapResult(raw, SkillInfoResult.class);
         List<String> toolIds = new ArrayList<>();
         if (skillResult != null && skillResult.getBindingTools() != null) {
@@ -169,20 +168,17 @@ public class HttpMateToolClient implements MateToolClient {
      * 按工具标识列表批量查询完整工具元数据。
      *
      * @param toolIds 待查询的工具标识列表
-     * @param credentials 本次执行的凭据快照
      * @return 完整工具元数据列表
      * @throws Exception 网关调用或读取失败时抛出
      * @throws MateToolResponseException 响应体为空或 {@code result.data} 缺失/形状不符时抛出
      */
-    protected List<MateToolMeta> queryToolMetaByIds(List<String> toolIds, MateCredentials credentials)
-            throws Exception {
+    protected List<MateToolMeta> queryToolMetaByIds(List<String> toolIds) throws Exception {
         if (toolIds.isEmpty()) {
             return List.of();
         }
         requireToolIds(toolIds);
         String body = mapper.writeValueAsString(Map.of("toolIds", toolIds));
-        String raw = mateRestUtil.executePostRawRequest(
-                campusMateBaseUrl, toolMetadataQueryPath, toHeaderInfo(credentials), body);
+        String raw = mateRestUtil.executePostRawRequest(campusMateBaseUrl, toolMetadataQueryPath, null, body);
         JsonNode root = readRoot(raw);
         JsonNode data = root.path("result").path("data");
         if (data.isMissingNode() || data.isNull()) {
@@ -197,12 +193,11 @@ public class HttpMateToolClient implements MateToolClient {
         return toMeta(infos);
     }
 
-    private List<MateToolMeta> queryOrderedToolMeta(List<String> toolIds, MateCredentials credentials)
-            throws Exception {
+    private List<MateToolMeta> queryOrderedToolMeta(List<String> toolIds) throws Exception {
         if (new java.util.HashSet<>(toolIds).size() != toolIds.size()) {
             throw new IllegalStateException("Duplicate bound tool id");
         }
-        List<MateToolMeta> metadata = queryToolMetaByIds(toolIds, credentials);
+        List<MateToolMeta> metadata = queryToolMetaByIds(toolIds);
         Map<String, MateToolMeta> metadataById = new java.util.HashMap<>();
         for (MateToolMeta meta : metadata) {
             if (meta.toolId() != null && metadataById.put(meta.toolId(), meta) != null) {
@@ -303,10 +298,9 @@ public class HttpMateToolClient implements MateToolClient {
     /**
      * 调用 Mate 服务端工具：POST 工具参数（按工具 inputSchema 序列化）到
      * {@code toolExecutePathTemplate} 展开后的执行端点，请求体为
-     * {@code {"arguments": {...}}}（CampusMate 执行接口的参数包装契约）。Header 与
-     * listTools 同源构建，并按本次 Agent 执行快照补充鉴权 Header
-     * （AppKey 模式 {@code X-HW-ID} + {@code X-HW-APPKEY}，JWT 模式
-     * {@code X-HW-ID} + {@code Authorization}）。
+     * {@code {"arguments": {...}}}（CampusMate 执行接口的参数包装契约）。仅本执行请求按
+     * Agent 执行快照补充 {@code X-HW-ID}、{@code X-HW-APPKEY}、
+     * {@code Authorization} 和 {@code access-token}，空值由请求构建器忽略。
      *
      * <p>凭据缺失时直接拒绝执行而非匿名调用，避免未认证请求发出。
      *
@@ -324,10 +318,12 @@ public class HttpMateToolClient implements MateToolClient {
         if (credentials == null || !credentials.isComplete()) {
             log.error(
                     "invokeTool called without complete credentials: tool={}; wire"
-                            + " execution credentials to include X-HW-ID plus X-HW-APPKEY or Authorization",
+                            + " execution credentials to include access-token, X-HW-ID plus"
+                            + " X-HW-APPKEY or Authorization",
                     toolId);
             return new ToolResult(
-                    "invokeTool refused: incomplete credentials (need X-HW-ID plus X-HW-APPKEY or Authorization)",
+                    "invokeTool refused: incomplete credentials (need access-token, X-HW-ID plus"
+                            + " X-HW-APPKEY or Authorization)",
                     null,
                     true);
         }
@@ -370,6 +366,7 @@ public class HttpMateToolClient implements MateToolClient {
                 .xHwId(snapshot.xHwId())
                 .xHwAppKey(snapshot.xHwAppKey())
                 .authorization(snapshot.authorization())
+                .accessToken(snapshot.accessToken())
                 .build();
     }
 

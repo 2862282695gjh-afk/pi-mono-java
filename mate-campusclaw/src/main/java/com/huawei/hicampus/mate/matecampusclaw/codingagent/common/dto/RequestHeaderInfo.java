@@ -17,10 +17,10 @@ import lombok.ToString;
  * 每次请求 Mate 内网网关携带的 Header 信息。
  *
  * <p>敏感字段(token、凭据、cookie)以 {@link ToString.Exclude} 排除在
- * {@link #toString()} 之外，不会泄漏进日志。Mate 工具发现和执行按本次 Agent 执行上下文
- * 选择性填充凭据字段。
+ * {@link #toString()} 之外，不会泄漏进日志。Mate 工具发现请求不填充执行凭据，只有工具执行
+ * 请求按本次 Agent 执行上下文填充凭据字段。
  *
- * @version [br_eCampusCore 26.0.0, 2026/08/24]
+ * @version [br_eCampusCore 26.0.0, 2026/08/27]
  * @since [br_eCampusCore 26.0.0]
  */
 @Data
@@ -80,7 +80,7 @@ public class RequestHeaderInfo {
      */
     public Map<String, String> toHeaders() {
         Map<String, String> headers = new HashMap<>();
-        headers.put("X-Access-Token", accessToken);
+        headers.put(MateCredentialHeaders.ACCESS_TOKEN, accessToken);
         headers.put("X-Client-IP", clientIp);
         headers.put("X-Locale", locale);
         headers.put("X-Forward", xForward);
