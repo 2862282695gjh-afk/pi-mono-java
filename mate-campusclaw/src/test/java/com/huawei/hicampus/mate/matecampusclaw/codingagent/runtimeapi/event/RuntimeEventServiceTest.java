@@ -50,18 +50,16 @@ import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.runtime.Ru
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.session.RuntimeSessionModelReconciler;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.vo.RuntimeSseEventVO;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.runtimeapi.vo.UserEventRequestVO;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.test.Log4j2TestAppender;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 
+import org.apache.logging.log4j.Level;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.core.Logger;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
-import org.slf4j.LoggerFactory;
 import org.springframework.context.support.StaticMessageSource;
-
-import ch.qos.logback.classic.Level;
-import ch.qos.logback.classic.Logger;
-import ch.qos.logback.classic.spi.ILoggingEvent;
-import ch.qos.logback.core.read.ListAppender;
 
 /**
  * Runtime Event 接受边界、执行生命周期和流终止语义测试。
@@ -156,8 +154,8 @@ class RuntimeEventServiceTest {
     @Test
     void executionFailureUsesChineseSseMessage() {
         Fixture fixture = new Fixture();
-        Logger logger = (Logger) LoggerFactory.getLogger(RuntimeExecutionCoordinator.class);
-        ListAppender<ILoggingEvent> logs = new ListAppender<>();
+        Logger logger = (Logger) LogManager.getLogger(RuntimeExecutionCoordinator.class);
+        Log4j2TestAppender logs = new Log4j2TestAppender("runtime-execution-failure-logs");
         logs.start();
         logger.addAppender(logs);
         RuntimeEventStream stream;
@@ -167,7 +165,8 @@ class RuntimeEventServiceTest {
 
             fixture.agentFuture.completeExceptionally(new IllegalStateException("expected test failure"));
         } finally {
-            logger.detachAppender(logs);
+            logger.removeAppender(logs);
+            logs.stop();
         }
 
         assertThat(fixture.execution.completion()).isCompletedExceptionally();
@@ -176,16 +175,14 @@ class RuntimeEventServiceTest {
         assertThat(terminal.getData())
                 .containsEntry("resCode", RuntimeErrorCode.SESSION_EXECUTION_FAILED.name())
                 .containsEntry("resMsg", "Session 执行失败。");
-        assertThat(logs.list).anySatisfy(event -> {
+        assertThat(logs.events()).anySatisfy(event -> {
             assertThat(event.getLevel()).isEqualTo(Level.ERROR);
-            assertThat(event.getFormattedMessage())
+            assertThat(event.getMessage().getFormattedMessage())
                     .contains("operation=runtime.execution")
                     .contains("errorCode=SESSION_EXECUTION_FAILED");
-            assertThat(event.getKeyValuePairs()).anySatisfy(pair -> {
-                assertThat(pair.key).isEqualTo("sessionId");
-                assertThat(pair.value).isEqualTo(SESSION_ID);
-            });
-            assertThat(event.getThrowableProxy()).isNotNull();
+            String loggedSessionId = event.getContextData().getValue("sessionId");
+            assertThat(loggedSessionId).isEqualTo(SESSION_ID);
+            assertThat(event.getThrown()).isNotNull();
         });
     }
 
