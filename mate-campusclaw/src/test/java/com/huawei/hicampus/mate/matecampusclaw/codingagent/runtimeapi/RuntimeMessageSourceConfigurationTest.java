@@ -31,6 +31,7 @@ class RuntimeMessageSourceConfigurationTest {
         runner.run(context -> {
             assertThat(context).hasNotFailed().hasSingleBean(ResourceBundleMessageSource.class);
             ResourceBundleMessageSource messageSource = context.getBean(ResourceBundleMessageSource.class);
+            assertThat(messageSource.getBasenameSet()).containsExactly(RuntimeApiConstants.MESSAGE_BUNDLE_BASENAME);
             assertThat(messageSource.getMessage(RuntimeErrorCode.INTERNAL_ERROR.name(), null, Locale.FRANCE))
                     .isEqualTo("Internal service error.");
             assertThat(messageSource.getMessage(
@@ -49,7 +50,10 @@ class RuntimeMessageSourceConfigurationTest {
 
         assertThat(moduleOutput.resolve("messages.properties")).doesNotExist();
         assertThat(moduleOutput.resolve("i18n/messages.properties")).doesNotExist();
-        assertThat(moduleOutput.resolve("i18n/messages_en_US.properties")).isRegularFile();
-        assertThat(moduleOutput.resolve("i18n/messages_zh_CN.properties")).isRegularFile();
+        assertThat(moduleOutput.resolve("i18n/campusclaw_messages.properties")).doesNotExist();
+        assertThat(moduleOutput.resolve("i18n/campusclaw_messages_en_US.properties"))
+                .isRegularFile();
+        assertThat(moduleOutput.resolve("i18n/campusclaw_messages_zh_CN.properties"))
+                .isRegularFile();
     }
 }

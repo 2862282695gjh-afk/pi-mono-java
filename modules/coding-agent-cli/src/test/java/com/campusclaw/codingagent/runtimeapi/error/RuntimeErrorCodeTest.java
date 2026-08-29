@@ -15,6 +15,7 @@ import java.util.stream.Collectors;
 
 import com.campusclaw.codingagent.common.client.mate.MateToolResponseException;
 import com.campusclaw.codingagent.runtime.AgentRuntimeErrorCode;
+import com.campusclaw.codingagent.runtimeapi.RuntimeApiConstants;
 
 import org.junit.jupiter.api.Test;
 
@@ -27,8 +28,9 @@ import org.junit.jupiter.api.Test;
 class RuntimeErrorCodeTest {
     @Test
     void everyErrorCodeHasEnglishAndChineseMessages() {
-        ResourceBundle english = ResourceBundle.getBundle("i18n/messages", Locale.US);
-        ResourceBundle chinese = ResourceBundle.getBundle("i18n/messages", Locale.SIMPLIFIED_CHINESE);
+        ResourceBundle english = ResourceBundle.getBundle(RuntimeApiConstants.MESSAGE_BUNDLE_BASENAME, Locale.US);
+        ResourceBundle chinese =
+                ResourceBundle.getBundle(RuntimeApiConstants.MESSAGE_BUNDLE_BASENAME, Locale.SIMPLIFIED_CHINESE);
         Set<String> expectedKeys = Arrays.stream(RuntimeErrorCode.values())
                 .map(RuntimeErrorCode::messageKey)
                 .collect(Collectors.toCollection(HashSet::new));
