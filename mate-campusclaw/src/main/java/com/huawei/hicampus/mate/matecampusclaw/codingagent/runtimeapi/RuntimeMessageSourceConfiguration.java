@@ -22,7 +22,7 @@ public class RuntimeMessageSourceConfiguration {
     @Bean
     public ResourceBundleMessageSource messageSource() {
         ResourceBundleMessageSource messageSource = new ResourceBundleMessageSource();
-        messageSource.setBasename("i18n/messages");
+        messageSource.setBasename(RuntimeApiConstants.MESSAGE_BUNDLE_BASENAME);
         messageSource.setDefaultEncoding(StandardCharsets.UTF_8.name());
         messageSource.setDefaultLocale(Locale.US);
         messageSource.setFallbackToSystemLocale(false);
