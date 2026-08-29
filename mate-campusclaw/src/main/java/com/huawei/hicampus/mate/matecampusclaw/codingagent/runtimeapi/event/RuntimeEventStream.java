@@ -102,9 +102,10 @@ public class RuntimeEventStream {
 
     private void drain(RuntimeEventSubscriber subscriber) {
         try {
-            while (deliverNext(subscriber)) {
-                // 持续消费，直到流完成或客户端断开。
-            }
+            boolean continueDraining;
+            do {
+                continueDraining = deliverNext(subscriber);
+            } while (continueDraining);
             subscriber.onComplete();
         } catch (RuntimeException error) {
             detach();
