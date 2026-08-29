@@ -6,6 +6,8 @@ package com.campusclaw.codingagent.runtimeapi;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.net.URISyntaxException;
+import java.nio.file.Path;
 import java.util.Locale;
 
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
@@ -13,7 +15,6 @@ import com.campusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.context.support.ResourceBundleMessageSource;
-import org.springframework.core.io.ClassPathResource;
 
 /**
  * Runtime 显式消息源和无基础资源包启动行为测试。
@@ -39,12 +40,16 @@ class RuntimeMessageSourceConfigurationTest {
     }
 
     @Test
-    void onlyExplicitLocaleBundlesExist() {
-        assertThat(new ClassPathResource("messages.properties").exists()).isFalse();
-        assertThat(new ClassPathResource("i18n/messages.properties").exists()).isFalse();
-        assertThat(new ClassPathResource("i18n/messages_en_US.properties").exists())
-                .isTrue();
-        assertThat(new ClassPathResource("i18n/messages_zh_CN.properties").exists())
-                .isTrue();
+    void onlyExplicitLocaleBundlesExistInModuleOutput() throws URISyntaxException {
+        Path moduleOutput = Path.of(RuntimeMessageSourceConfiguration.class
+                .getProtectionDomain()
+                .getCodeSource()
+                .getLocation()
+                .toURI());
+
+        assertThat(moduleOutput.resolve("messages.properties")).doesNotExist();
+        assertThat(moduleOutput.resolve("i18n/messages.properties")).doesNotExist();
+        assertThat(moduleOutput.resolve("i18n/messages_en_US.properties")).isRegularFile();
+        assertThat(moduleOutput.resolve("i18n/messages_zh_CN.properties")).isRegularFile();
     }
 }
