@@ -4,9 +4,10 @@
 
 | 项目 | 内容 |
 |---|---|
-| 文档版本 | v1.0 |
+| 文档版本 | v1.1 |
 | 变更前源码基线 | `origin/main@32db273125dc0a14d5f751dc0bfaa332ee87ceb8` |
-| 已评审实现 | `26d146f401a8557b687e1490f97a5899b22f79be` |
+| 已评审日志实现 | `26d146f401a8557b687e1490f97a5899b22f79be` |
+| 管理面补充实现 | `65fb8eabbaa1a7dd63c2777280e19c8bdf5be8eb` |
 | 实现分支 | `codex/align-log4j2` |
 | 适用范围 | Maven 日志依赖、Spring Boot 主程序与测试、`mate-campusclaw` 镜像 |
 | 变更类型 | 架构变化、公司运行环境兼容 |
@@ -59,9 +60,9 @@ CampusClaw 的主模块、`mate-campusclaw` 镜像以及测试统一使用一条
 
 根 POM 负责声明统一的 Log4j2 实现；直接引入 `spring-boot-starter` 和 `spring-boot-starter-test` 的模块在各自入口排除 `spring-boot-starter-logging`。不在每个 Web、JDBC 或 Validation Starter 上重复排除，因为 Maven 对相同传递依赖的直接路径调解已经从主入口切断默认日志 Starter。
 
-### 4.3 不通过排除 Actuator 规避冲突
+### 4.3 日志对齐与管理面关闭分别决策
 
-Actuator 是公司父 POM 的受管能力，当前仓库不修改该父 POM。目标是让应用日志实现满足公司自动配置的 Log4j2 运行时预期，而不是逐个排除 Actuator 类或自动配置。
+日志类型冲突仍通过统一 Log4j2 运行时解决，不以逐项排除 Actuator 替代日志依赖对齐。公司镜像原有的 Actuator 排除清单属于独立的公司集成边界；管理端口和管理 Web 上下文关闭配置按追加策略补齐，见 [ADR-0038：追加关闭 Mate 管理 Web 面](../decisions/0038-disable-mate-management-web.html)。
 
 ### 4.4 测试断言事件语义而非控制台排版
 
@@ -120,4 +121,5 @@ Log4j2 的默认控制台 Layout 不保证把 SLF4J 结构化键值渲染成与 
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.1 | 2026-08-29 | 澄清日志运行时对齐与公司管理 Web 面关闭是两个独立决策 |
 | v1.0 | 2026-08-29 | 统一生产、测试和 `mate-campusclaw` 的 Log4j2 运行时，并记录公司 Actuator 集成边界 |
