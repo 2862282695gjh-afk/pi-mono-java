@@ -1,12 +1,14 @@
 # Coding Agent Runtime HTTP 与受管 Session 设计
 
-> 文档版本：3.2.0
+> 文档版本：3.3.0
 >
 > PR 167 修订基线：`f60cc3e78bb8b700527ac082c7c8e10524ede095`
 >
 > PR 167 merge base：`d649866a6cae967ace18ceaeb9597edd47e5721e`
 >
 > HTTP 1.39 设计输入：`superheromeZzh/pi-mono-java-design@3fde5735cd27433c3e3e5e03a5ce39b297ad3b00`
+>
+> 流式预览术语修订基线：`28b3235e5cff0da2f768cbfc6b7b9ce5e2b51193`
 >
 > 源码仓库：本仓库 `pi-mono-java`
 
@@ -20,7 +22,8 @@ Runtime HTTP、Cron trigger 和 Child Execution 共同使用 `AgentSessionFactor
 
 Runtime HTTP 现已在 1.38 lowerCamelCase 契约上实现 1.39 修订：Session 增加生命周期 Usage，
 Assistant/Compaction 完成保存本次 Usage，模型/思考/压缩形成持久化领域事件，工具 delta 与
-压缩 started/failed 保持瞬态。资源与 thinking 决策见
+压缩 started/failed 是只在当前 SSE 中发送的流式预览事件，不持久化、不进入 GET Events。
+资源与 thinking 决策见
 [ADR-0018](../decisions/0018-runtime-http-v137-contract-alignment.html)，字段命名边界见
 [ADR-0019](../decisions/0019-runtime-http-lower-camel-case-fields.html)，TUI 能力迁移见
 [ADR-0023](../decisions/0023-retain-entry-independent-session-capabilities.html)。
@@ -123,8 +126,9 @@ thinking 状态和过期时间；开关变化后旧 page 返回 `INVALID_EVENT_L
 
 Assistant 完成与压缩完成都持久化完整 `Usage`；`t_session_materialized` 在同一事务中原子累计
 `lifetimeUsage`。Token 字段为 `input/output/cacheRead/cacheWrite/totalTokens`，USD Cost 字段为
-`input/output/cacheRead/cacheWrite/total`。工具进度只投影瞬态 `tool.execution.delta`，数据仅含
-`toolCallId/toolName/delta`；不可序列化、超限或背压时只丢弃该进度，不影响工具执行和最终结果。
+`input/output/cacheRead/cacheWrite/total`。工具进度只通过非持久化的 `tool.execution.delta` 作为流式预览发送，
+数据仅含 `toolCallId/toolName/delta`；不可序列化、超限或背压时只丢弃该进度，不影响工具执行和最终结果。
+工具执行的持久化 `tool.result` 才是可恢复的权威结果。
 
 每个订阅的缓冲限制为 256 个事件或 1 MiB，心跳间隔 15 秒。执行上限为 100 个，默认 30 分钟超时。
 
@@ -221,6 +225,7 @@ Runtime V1 事件名 `tool.execution.started` 与 `tool.execution.completed` 是
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 3.3.0 | 2026-08-28 | 统一 Runtime Event 术语：将 started/delta/progress 和压缩 started/failed 称为“流式预览事件”，明确它们只在当前 SSE 中发送、不持久化、不进入 GET Events；对齐 `RuntimeEventProjector` 的直接 stream emit 与 `RuntimeEventQueryService` 只查询持久化 Entry 的已实现行为，不改变 Java 代码或线上契约。 |
 | 3.2.0 | 2026-08-24 | 修订 TUI 删除边界，保留未注册 Slash 核心；公共 Session 增加压缩，Runtime 增加 Usage、领域事件、best-effort 工具进度与 refresh 后懒校准 |
 | 3.1.0 | 2026-08-24 | 删除 CLI/TUI、Picocli、终端 Session、用户级认证设置与启动脚本源码，服务模型目录仅使用内置注册表和部署凭据 |
 | 3.0.0 | 2026-08-24 | 删除 CLI 产品入口；HTTP、Cron、Child 共用 SessionFactory；Runtime 创建前 prepare 受管目录并装配八工具 profile |
