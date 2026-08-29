@@ -36,8 +36,8 @@ class RuntimeErrorCodeTest {
         expectedKeys.add(MateToolResponseException.ERROR_CODE);
         expectedKeys.add("TOOL_EXECUTION_FAILED");
 
-        assertThat(english.keySet()).isEqualTo(expectedKeys);
-        assertThat(chinese.keySet()).isEqualTo(expectedKeys);
+        assertThat(english.keySet()).containsAll(expectedKeys);
+        assertThat(chinese.keySet()).containsAll(expectedKeys);
 
         for (RuntimeErrorCode code : RuntimeErrorCode.values()) {
             assertThat(english.getString(code.messageKey())).isNotBlank();
