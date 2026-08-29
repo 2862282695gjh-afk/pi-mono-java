@@ -10,6 +10,12 @@ import java.util.regex.Pattern;
 import com.campusclaw.ai.types.AssistantMessage;
 import com.campusclaw.ai.types.StopReason;
 
+/**
+ * 根据模型错误码、错误消息和异常因果链判定上下文压缩失败是否可重试。
+ *
+ * @version [br_eCampusCore 26.0.0, 2026/08/24]
+ * @since [br_eCampusCore 26.0.0]
+ */
 final class CompactionRetryClassifier {
     private static final List<String> RETRYABLE_CODES = List.of(
             "MODEL_RATE_LIMITED",
