@@ -29,11 +29,15 @@ class ManagementConfigurationTest {
                     .isEqualTo("false");
             assertThat(context.getEnvironment().getProperty("spring.autoconfigure.exclude"))
                     .isNotNull()
-                    .satisfies(exclusions -> assertThat(exclusions.split(","))
-                            .contains(
-                                    "org.springframework.boot.actuate.autoconfigure.endpoint.web.WebEndpointAutoConfiguration",
-                                    "org.springframework.boot.actuate.autoconfigure.web.server.ManagementContextAutoConfiguration",
-                                    "org.springframework.boot.actuate.autoconfigure.web.servlet.ServletManagementContextAutoConfiguration"));
+                    .satisfies(exclusions -> {
+                        assertThat(exclusions.split(","))
+                                .contains(
+                                        "org.springframework.boot.actuate.autoconfigure.endpoint.web.WebEndpointAutoConfiguration",
+                                        "org.springframework.boot.actuate.autoconfigure.web.server.ManagementContextAutoConfiguration",
+                                        "org.springframework.boot.actuate.autoconfigure.web.servlet.ServletManagementContextAutoConfiguration")
+                                .doesNotContain(
+                                        "org.springframework.boot.actuate.autoconfigure.endpoint.EndpointAutoConfiguration");
+                    });
         });
     }
 }
