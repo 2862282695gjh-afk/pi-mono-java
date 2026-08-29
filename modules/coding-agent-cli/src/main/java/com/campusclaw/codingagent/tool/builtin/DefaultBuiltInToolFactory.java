@@ -7,7 +7,6 @@ package com.campusclaw.codingagent.tool.builtin;
 import java.util.function.Supplier;
 
 import com.campusclaw.agent.tool.AgentTool;
-import com.campusclaw.ai.types.InputModality;
 import com.campusclaw.codingagent.tool.find.FindTool;
 import com.campusclaw.codingagent.tool.grep.GrepTool;
 import com.campusclaw.codingagent.tool.ls.LsTool;
@@ -55,12 +54,7 @@ public class DefaultBuiltInToolFactory implements BuiltInToolFactory {
     @Override
     public AgentTool create(BuiltInToolName name, ToolAssemblyContext context) {
         return switch (name) {
-            case READ ->
-                new ReadTool(
-                        readOperations,
-                        pathResolver,
-                        context.workspaceBoundary(),
-                        context.model().inputModalities().contains(InputModality.IMAGE));
+            case READ -> new ReadTool(readOperations, pathResolver, context.workspaceBoundary());
             case FIND -> new FindTool(findOperations, pathResolver, context.workspaceBoundary());
             case GREP -> new GrepTool(grepOperations, pathResolver, context.workspaceBoundary());
             case LS -> new LsTool(lsOperations, pathResolver, context.workspaceBoundary());

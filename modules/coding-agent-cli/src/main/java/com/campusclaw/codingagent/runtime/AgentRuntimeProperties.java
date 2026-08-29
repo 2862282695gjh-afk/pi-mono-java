@@ -34,7 +34,9 @@ public record AgentRuntimeProperties(
         this(agentsRoot, connectTimeout, requestTimeout, DEFAULT_MAX_RESPONSE_BYTES);
     }
 
-    /** 配置项缺失时应用本地缓存与超时默认值。 */
+    /**
+     * 配置项缺失时应用本地缓存与超时默认值。
+     */
     @ConstructorBinding
     public AgentRuntimeProperties {
         agentsRoot = agentsRoot == null ? DEFAULT_AGENTS_ROOT : agentsRoot;

@@ -29,11 +29,6 @@ public class LocalEditOperations implements EditOperations {
     }
 
     @Override
-    public String detectMimeType(Path path) throws IOException {
-        return Files.probeContentType(path);
-    }
-
-    @Override
     public void writeFile(Path path, String content) throws IOException {
         Path parent = path.getParent();
         if (parent != null && !Files.exists(parent)) {

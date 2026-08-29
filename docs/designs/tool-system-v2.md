@@ -1,13 +1,14 @@
 # CampusClaw 受管 Agent 工具系统 v2
 
-> 文档版本：1.6.2
+> 文档版本：1.7.0
 >
 > 状态：Implemented
 >
 > 日期：2026-08-28
 > 决策记录：[ADR-0022](../decisions/0022-managed-agent-tool-system-v2.html)、
 > [ADR-0032](../decisions/0032-tool-execution-credential-boundary.html)、
-> [ADR-0024](../decisions/0024-mate-tool-execution-credential-chain.html)
+> [ADR-0024](../decisions/0024-mate-tool-execution-credential-chain.html)、
+> [ADR-0036](../decisions/0036-read-text-only.html)
 
 ## 1. 结论与源码基线
 
@@ -27,6 +28,8 @@ Session；各 Session 的消息、工作目录、工具实例、Mate 缓存和 E
 | CampusClaw 凭据链修订前 | `934b5dd7d9e50b1d7359bea5f2dda71e3c4a34ac` | Mate HTTP 凭据链实现输入 |
 | CampusClaw execute-only 凭据边界修订前 | `320d790726a70aada6100052952d5494d2a378ac` | 三项 Header 同时由发现与执行请求携带的源码行为输入 |
 | CampusClaw execute-only 凭据边界实现 | `d03c08dbae870f19eee8d4fa79a707185f7a26b5` | POST Events 读取四项值、发现不携带这些值且只有 execute 携带的审查实现证据 |
+| CampusClaw Read 图片能力收敛前 | `3452bceb0be586c1c845cde589ecb7ee1e6c5908` | 观察 Read 的 MIME 分支、图片缩放、Base64 输出和 WebP 依赖 |
+| CampusClaw Read 纯文本实现 | `16fd9d2c5c1ffa99bab9535797a472484f2d5362` | 审查后的 UTF-8 文本契约、二进制拒绝、图片路径和依赖删除证据 |
 | pi | `5cd93f688aaab89dbb6dfa4aca535f21796ae185` | Read、find、grep、ls、工具调度与上下文压缩对照 |
 | OpenCode | `849c2598abc7d2b40261e74b5826bc74ffc78308` | Task/Child Agent 对照 |
 | 设计仓 | `bb967eebe1f62553e92480b3ea3808a664fbe73e` | 2.2.0 工具设计、3.2.0 Runtime 设计和 HTTP 1.40 契约 |
@@ -39,6 +42,10 @@ Session；各 Session 的消息、工作目录、工具实例、Mate 缓存和 E
 - `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/session/AgentSessionFactory.java`：三入口公共 Session 装配；
 - `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtime/AgentRuntimeManager.java`：缓存优先 prepare、原子 refresh；
 - `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/tool/workspace/WorkspacePathResolver.java`：工作区和符号链接边界；
+- `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/tool/read/ReadTool.java`：UTF-8 解码、文本分块、字节截断与二进制拒绝；
+- `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/tool/ops/ReadOperations.java`、
+  `LocalReadOperations.java`：仅保留文件字节读取和存在性能力；
+- `modules/coding-agent-cli/pom.xml`、`pom.xml`：删除 Read 图片解码所需的 WebP 依赖；
 - `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/tool/mate/MateToolSessionCache.java`：Session 缓存及 single-flight；
 - `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/web/RuntimeRequestContext.java`、
   `runtimeapi/event/RuntimeEventService.java`、`session/ManagedAgentSessionRequest.java`：Mate 凭据的执行期间内存传递；
@@ -60,6 +67,7 @@ Session；各 Session 的消息、工作目录、工具实例、Mate 缓存和 E
 |---|---|---|---|
 | 工具发现 | Spring ToolCatalog、Extension 与多个旧工具共同进入装配面 | 关闭枚举 + 严格 profile + 工厂装配 | 架构改造：模型契约必须可审计且不受 classpath 漂移影响 |
 | 本地文件 | Read/Grep/Ls 可接收进程可见路径，Find 对应旧 Glob | 四工具统一限制到 `agent/{agentId}`，拒绝符号链接和 realpath 越界 | 安全加固：防止跨 Agent 读取 |
+| Read 内容 | 收敛前按 MIME 解码 JPEG/PNG/GIF/WebP/BMP，必要时缩放并输出 `ImageContent` | 仅接受严格 UTF-8 文本并输出 `TextContent`；图片以及含 NUL 或非法 UTF-8 的二进制内容失败 | 产品约束：Read 不再向模型提供本地图片读取入口 |
 | Mate 调用 | List 接受 Agent/Skill ID；Call 依赖预先 List 的缓存 | List 只接受可选 `skillName`；Call 按名称，miss 自动完整发现 | 产品约束：模型不感知内部 ID 或调用来源 |
 | Mate 凭据 | 执行客户端要求凭据，但只提供部署方 resolver 占位，Runtime Header 未进入工具链 | POST Events 读取四项值并在本次 Agent 执行和 Child 调用期间由内存对象持有；List 与 Call miss 的发现请求不携带，只有 Call execute 携带；Cron 无入站值时不发送 execute | 架构改造与安全加固：明确值的生命周期和携带请求，不持久化、不依赖线程上下文 |
 | Child | `spawn_agent`、`invoke_agent`、ACP/HTTP/A2A 与独立 runner 并存 | `Agent({agentName,task})` 只解析直接绑定，并通过公共 SessionFactory 执行 | 架构改造：统一父子执行语义并删除后端身份概念 |
@@ -124,7 +132,14 @@ barrier。结果始终按模型原始 tool-call 顺序写回，包括已知与�
 4. 遍历发现的每个路径在读取/输出前再次复核。
 
 四个工具不调用 Bash。Find 使用 glob，Grep 支持正则/字面量、glob 和上下文；两者应用
-`.gitignore`。Read 对齐文本分块及图片读取，Ls 包含 dotfile、名称排序并给目录追加 `/`。
+`.gitignore`。Read 仅读取严格 UTF-8 文本，保留 1-based `offset`、`limit`、默认
+2,000 行和 50 KiB 输出截断；包含 NUL 或无法按 UTF-8 解码的内容作为不支持的二进制
+文件失败。Read 不再检测图片 MIME、缩放、Base64 编码或返回 `ImageContent`；该限制不删除
+模型层通用的图片模态和 `ImageContent` 类型。Ls 包含 dotfile、名称排序并给目录追加 `/`。
+
+取消图片路径后，Read 不再进行图片全量解码、缩放和 Base64 复制，也不再需要
+`imageio-webp`。文本路径仍先使用 `Files.readAllBytes` 读取整个文件，再执行解码和输出截断；
+本次不改为流式读取。
 
 ## 6. 受管目录 prepare 与 refresh
 
@@ -273,7 +288,8 @@ CampusClaw 不恢复 pi 的 JSONL/tree/Extension、Bash/Edit/Write 文件追踪�
 ## 13. 验证
 
 实现测试覆盖严格配置、每 Session 新工具实例、Schema-before-hook、hook 顺序、并行 barrier、
-工作区越界/符号链接、原子 prepare/refresh 回滚、无 `tools.json`、Mate 稳定 JSON、缓存隔离、
+工作区越界/符号链接、Read 的 UTF-8 分块/截断/二进制和图片拒绝、原子 prepare/refresh 回滚、
+无 `tools.json`、Mate 稳定 JSON、缓存隔离、
 single-flight 成功与失败、执行不重放、Runtime 四项凭据读取与执行期间内存传递、发现请求无凭据与 execute Header 携带、
 Child 凭据继承、Cron 缺少凭据时 Call fail closed、Child 直接绑定/版本/深度/循环/取消/进度、Cron Agent
 隔离和 HTTP 冷目录创建。仓库交付前执行：
@@ -288,6 +304,7 @@ git diff --check
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 1.7.0 | 2026-08-28 | 将 Read 收敛为严格 UTF-8 文本工具，删除图片 MIME/缩放/Base64 路径、模型图片模态分支和 WebP 解码依赖。 |
 | 1.6.2 | 2026-08-28 | 用读取时机、内存持有期限、携带请求和缺失值行为定义 Mate 工具凭据边界。 |
 | 1.6.1 | 2026-08-28 | 补充 execute-only 审查实现提交，并统一前文对 List、Call miss 和 Call execute 凭据边界的描述。 |
 | 1.6.0 | 2026-08-27 | POST Events 增加读取 `access-token`；发现请求不携带凭据，只有 Mate Tool execute 携带收到的值。 |

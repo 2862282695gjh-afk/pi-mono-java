@@ -149,6 +149,9 @@ public class RuntimeEventProjector {
                 case SessionCompactionStartedEvent started -> projectCompactionStarted(started);
                 case SessionCompactionCompletedEvent completed -> projectCompactionCompleted(completed);
                 case SessionCompactionFailedEvent failed -> projectCompactionFailed(failed);
+                default ->
+                    throw new IllegalArgumentException("unsupported session compaction event: "
+                            + event.getClass().getName());
             }
         } catch (RuntimeException error) {
             if (failure.compareAndSet(null, error)) {

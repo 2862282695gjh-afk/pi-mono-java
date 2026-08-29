@@ -7,7 +7,6 @@ package com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.builtin;
 import java.util.function.Supplier;
 
 import com.huawei.hicampus.mate.matecampusclaw.agent.tool.AgentTool;
-import com.huawei.hicampus.mate.matecampusclaw.ai.types.InputModality;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.find.FindTool;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.grep.GrepTool;
 import com.huawei.hicampus.mate.matecampusclaw.codingagent.tool.ls.LsTool;
@@ -55,12 +54,7 @@ public class DefaultBuiltInToolFactory implements BuiltInToolFactory {
     @Override
     public AgentTool create(BuiltInToolName name, ToolAssemblyContext context) {
         return switch (name) {
-            case READ ->
-                new ReadTool(
-                        readOperations,
-                        pathResolver,
-                        context.workspaceBoundary(),
-                        context.model().inputModalities().contains(InputModality.IMAGE));
+            case READ -> new ReadTool(readOperations, pathResolver, context.workspaceBoundary());
             case FIND -> new FindTool(findOperations, pathResolver, context.workspaceBoundary());
             case GREP -> new GrepTool(grepOperations, pathResolver, context.workspaceBoundary());
             case LS -> new LsTool(lsOperations, pathResolver, context.workspaceBoundary());
