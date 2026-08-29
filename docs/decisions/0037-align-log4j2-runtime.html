@@ -40,7 +40,7 @@
   <ul>
     <li>与公司 Actuator/日志自动配置使用同一种 Log4j2 Core 上下文。</li>
     <li>生产、测试和 <code>mate-campusclaw</code> 只保留一个 SLF4J Provider。</li>
-    <li>不修改公司父 POM，也不通过逐项排除 Actuator 自动配置规避问题。</li>
+    <li>不修改公司父 POM，也不以逐项排除 Actuator 替代日志运行时对齐；管理面关闭由 ADR-0038 独立决策。</li>
     <li>保留现有 SLF4J 业务日志调用和结构化字段。</li>
   </ul>
 
@@ -64,7 +64,7 @@
   </ul>
 
   <h2>Intentional difference</h2>
-  <p><strong>架构变化：</strong>日志后端从 Logback 切换为 Log4j2，生产和测试共享同一事件模型。<strong>产品约束：</strong>无业务 API 或日志字段变化。<strong>公司集成约束：</strong>应用 Classpath 必须满足公司 Actuator/日志自动配置的原生 Log4j2 上下文预期。</p>
+  <p><strong>架构变化：</strong>日志后端从 Logback 切换为 Log4j2，生产和测试共享同一事件模型。<strong>产品约束：</strong>无业务 API 或日志字段变化。<strong>公司集成约束：</strong>应用 Classpath 必须满足公司 Actuator/日志自动配置的原生 Log4j2 上下文预期；管理 Web 面关闭另见 ADR-0038。</p>
 
   <h2>Consequences</h2>
   <ul>
@@ -87,6 +87,7 @@
   <h2>Related</h2>
   <ul>
     <li><a href="../designs/logging-runtime.md">CampusClaw Log4j2 统一运行时设计</a></li>
+    <li><a href="0038-disable-mate-management-web.html">ADR-0038：追加关闭 Mate 管理 Web 面</a></li>
   </ul>
 </main>
 </body>
