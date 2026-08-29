@@ -68,6 +68,7 @@ final class MateChatRequestMapper {
             case UserMessage user -> appendUser(messages, user);
             case AssistantMessage assistant -> appendAssistant(messages, assistant);
             case ToolResultMessage result -> appendToolResult(messages, result);
+            default -> throw unsupported("Mate Chat message type is unsupported");
         }
     }
 
