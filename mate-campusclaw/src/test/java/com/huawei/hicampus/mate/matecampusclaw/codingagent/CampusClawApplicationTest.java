@@ -8,13 +8,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatNoException;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import org.junit.jupiter.api.Test;
-import org.slf4j.LoggerFactory;
+import com.huawei.hicampus.mate.matecampusclaw.codingagent.test.Log4j2TestAppender;
 
-import ch.qos.logback.classic.Level;
-import ch.qos.logback.classic.Logger;
-import ch.qos.logback.classic.spi.ILoggingEvent;
-import ch.qos.logback.core.read.ListAppender;
+import org.apache.logging.log4j.Level;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.core.Logger;
+import org.junit.jupiter.api.Test;
 
 /**
  * CampusClaw 仅服务模式入口测试。
@@ -30,8 +29,8 @@ class CampusClawApplicationTest {
 
     @Test
     void startupFailureLogsRawErrorAndThrowsOnlyCode() {
-        Logger logger = (Logger) LoggerFactory.getLogger(CampusClawApplication.class);
-        ListAppender<ILoggingEvent> logs = new ListAppender<>();
+        Logger logger = (Logger) LogManager.getLogger(CampusClawApplication.class);
+        Log4j2TestAppender logs = new Log4j2TestAppender("startup-failure-logs");
         logs.start();
         logger.addAppender(logs);
         var original = new IllegalStateException("invalid startup configuration");
@@ -42,13 +41,14 @@ class CampusClawApplicationTest {
                     .isInstanceOf(CampusClawApplication.StartupException.class)
                     .hasMessage(CampusClawApplication.STARTUP_ERROR_CODE)
                     .hasNoCause();
-            assertThat(logs.list).singleElement().satisfies(event -> {
+            assertThat(logs.events()).singleElement().satisfies(event -> {
                 assertThat(event.getLevel()).isEqualTo(Level.ERROR);
-                assertThat(event.getFormattedMessage()).contains("errorCode=STARTUP_FAILED");
-                assertThat(event.getThrowableProxy()).isNotNull();
+                assertThat(event.getMessage().getFormattedMessage()).contains("errorCode=STARTUP_FAILED");
+                assertThat(event.getThrown()).isNotNull();
             });
         } finally {
-            logger.detachAppender(logs);
+            logger.removeAppender(logs);
+            logs.stop();
         }
     }
 }
