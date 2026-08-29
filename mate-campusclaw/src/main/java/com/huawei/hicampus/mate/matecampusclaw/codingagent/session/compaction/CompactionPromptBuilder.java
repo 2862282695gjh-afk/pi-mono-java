@@ -19,6 +19,12 @@ import com.huawei.hicampus.mate.matecampusclaw.ai.types.UserMessage;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+/**
+ * 构建上下文压缩使用的系统提示词，并将会话消息序列化为历史摘要或回合前缀提示词。
+ *
+ * @version [br_eCampusCore 26.0.0, 2026/08/24]
+ * @since [br_eCampusCore 26.0.0]
+ */
 final class CompactionPromptBuilder {
     static final String SYSTEM_PROMPT =
             """

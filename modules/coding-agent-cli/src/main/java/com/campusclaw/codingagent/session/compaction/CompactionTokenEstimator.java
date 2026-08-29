@@ -20,6 +20,12 @@ import com.campusclaw.ai.types.UserMessage;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+/**
+ * 结合最近一次有效模型用量和后续消息内容估算上下文压缩所需的 Token 数量。
+ *
+ * @version [br_eCampusCore 26.0.0, 2026/08/24]
+ * @since [br_eCampusCore 26.0.0]
+ */
 final class CompactionTokenEstimator {
     private static final int ESTIMATED_IMAGE_CHARS = 4_800;
 
