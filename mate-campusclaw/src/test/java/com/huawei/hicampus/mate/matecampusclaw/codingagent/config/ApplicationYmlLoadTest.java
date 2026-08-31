@@ -58,6 +58,17 @@ class ApplicationYmlLoadTest {
     }
 
     @Test
+    void agentRootUsesCurrentEnvironmentVariable() {
+        runner.withSystemProperties("CAMPUSCLAW_AGENTS_ROOT=/var/lib/campusclaw/agents")
+                .run(context -> {
+                    assertThat(context.getEnvironment().getProperty("campusmate.runtime.agents-root"))
+                            .isEqualTo("/var/lib/campusclaw/agents");
+                    assertThat(context.getEnvironment().getProperty("campusclaw.runtime.agent-directory.root"))
+                            .isNull();
+                });
+    }
+
+    @Test
     void outboundEndpointPlaceholdersSupportExternalOverrides() {
         runner.withSystemProperties(
                         "CAMPUSMATE_MODEL_CHAT_PATH=/mate-service/custom/chat",
