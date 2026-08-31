@@ -4,13 +4,14 @@
 
 | 项目 | 内容 |
 |---|---|
-| 文档版本 | v1.1 |
+| 文档版本 | v1.2 |
 | 变更前源码基线 | `origin/main@5dfa22ada4c7958eff6b4de5f1c718362805b6ee` |
 | 已评审实现 | `c03bd5da488ae5a1a5c80386de64a4b5e7c8d1c9` |
-| 实现分支 | `codex/disable-management-endpoints` |
+| 本次分析基线 | `origin/main@3f136e792c5301673ce28cd3debb1b3528dc702d` |
+| 实现分支 | `codex/remove-redundant-actuator-exclusions` |
 | 适用范围 | `mate-campusclaw` 公司环境专用 Spring Boot 配置与回归测试 |
 | 变更类型 | 公司集成约束、安全加固 |
-| 决策状态 | Accepted |
+| 决策状态 | ADR-0038 已被 ADR-0040 替代 |
 
 ## 1. Context
 
@@ -21,6 +22,8 @@
 最初采用纯追加方式：保留已有清单，增加关闭管理端口的属性以及两个管理上下文排除项。公司环境启动验证随后出现 `NoSuchBeanDefinitionException: ParameterValueMapper`。调试确认 Spring Boot 3.4.1 的 `EndpointAutoConfiguration.endpointOperationParameterMapper` 提供该公共 Bean，而公司环境中仍启用的 Actuator 配置需要注入它。
 
 修正后的方案删除 `EndpointAutoConfiguration` 这一项排除，保留其余历史排除项和新增的管理 Web 关闭配置。这样既恢复自动配置依赖完整性，也不开放管理 HTTP 面。通用 `modules/coding-agent-cli` 不直接依赖公司父 POM，配置保持不变。
+
+升级到 Spring Boot 3.4.5 后，对 31 项排除逐项复核发现两类维护问题：一类是已经不存在或拼写不再匹配的类名；另一类是与 `management.server.port=-1` 或 `management.endpoints.enabled-by-default=false` 重复表达同一关闭语义的纵深保护。当前产品决策是不在这一场景保留冗余保护，而由一个配置项负责一个关闭语义；仍会独立创建 Bean 或产生运行时副作用的自动配置继续显式排除。
 
 ## 2. 关键定义与源码证据
 
@@ -54,34 +57,54 @@ Spring Boot 3.4.1 上游源码证据：`EndpointAutoConfiguration.endpointOperat
 - **管理端口：** `management.server.port=-1` 按 Spring Boot 管理端口契约关闭管理服务器。
 - **Endpoint 默认值：** 保留 `management.endpoints.enabled-by-default=false`。
 - **端点基础设施：** 不排除 `EndpointAutoConfiguration`，保留其提供的 `ParameterValueMapper` 等公共 Bean。
-- **自动配置边界：** 保留其余原有排除清单，并追加 `ManagementContextAutoConfiguration` 与 `ServletManagementContextAutoConfiguration`；已有的 `WebEndpointAutoConfiguration` 不重复声明。
+- **单一关闭语义：** 不再额外排除由前两项属性已经关闭的 Endpoint 和 `ManagementContextAutoConfiguration`。
+- **自动配置边界：** 只保留仍会独立创建 Bean 或产生副作用的自动配置排除，包括 Health Contributor、Metrics、Observation、Web Endpoint 基础设施和 Servlet 管理上下文基础设施。
+- **版本对齐：** 删除 Spring Boot 3.4.5 中不存在的旧 Mongo 和 Management Server 类名，并把 Elasticsearch 健康贡献者改为 3.4.5 的准确类名。
+
+### 2.4 Spring Boot 3.4.5 源码证据
+
+以下观察来自 Spring Boot `v3.4.5`：
+
+| 观察到的行为 | 上游源码证据 |
+|---|---|
+| 负数 `management.server.port` 被解析为 `ManagementPortType.DISABLED` | `spring-boot-project/spring-boot-actuator-autoconfigure/src/main/java/org/springframework/boot/actuate/autoconfigure/web/server/ManagementPortType.java#get` |
+| `ManagementContextAutoConfiguration` 只为 `SAME` 和 `DIFFERENT` 端口类型启用内部配置 | `spring-boot-project/spring-boot-actuator-autoconfigure/src/main/java/org/springframework/boot/actuate/autoconfigure/web/server/ManagementContextAutoConfiguration.java` 的两个内部配置类 |
+| `management.endpoints.enabled-by-default=false` 把默认 Endpoint access 解析为 `Access.NONE` | `spring-boot-project/spring-boot-actuator-autoconfigure/src/main/java/org/springframework/boot/actuate/autoconfigure/endpoint/PropertiesEndpointAccessResolver.java#determineDefaultAccess` |
+| `WebEndpointAutoConfiguration` 和 `ServletManagementContextAutoConfiguration` 不受上述两个属性统一关闭，仍可创建基础 Bean | 两个同名自动配置类的 `@Bean` 方法 |
+| 3.4.5 使用 `ElasticsearchRestHealthContributorAutoConfiguration`，旧 `ElasticSearch...` 名称不在自动配置清单 | `spring-boot-project/spring-boot-actuator-autoconfigure/src/main/resources/META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports` 与 `spring-boot-project/spring-boot-actuator-autoconfigure/src/main/java/org/springframework/boot/actuate/autoconfigure/elasticsearch/ElasticsearchRestHealthContributorAutoConfiguration.java` |
 
 ## 3. 架构与配置流
 
-启动时，Spring Boot 先加载 `mate-campusclaw/src/main/resources/application.properties`，再由公司父项目传入的 Actuator 自动配置读取管理属性。`EndpointAutoConfiguration` 提供公共基础 Bean，未被排除的公司自动配置可以正常注入；管理端口、Endpoint 默认开关和管理 Web 自动配置排除继续阻止管理 HTTP 面建立。业务 Servlet Web 服务仍使用 `server.*` 配置启动。
+启动时，Spring Boot 先加载 `mate-campusclaw/src/main/resources/application.properties`，再由公司父项目传入的 Actuator 自动配置读取管理属性。`EndpointAutoConfiguration` 提供公共基础 Bean，未被排除的公司自动配置可以正常注入。`management.server.port=-1` 是关闭管理 HTTP 的唯一配置，`management.endpoints.enabled-by-default=false` 是默认关闭 Endpoint 的唯一配置；排除清单只负责阻止不受这两个属性控制的独立基础 Bean 和运行时副作用。业务 Servlet Web 服务仍使用 `server.*` 配置启动。
 
 本次没有新增运行时组件、调用链或状态转换，三组静态配置之间不存在需要图示才能澄清的拓扑，因此不新增 PlantUML 图。
 
 ## 4. 设计决策
 
-正式决策见 [ADR-0038：关闭 Mate 管理 Web 面并保留端点基础设施](../decisions/0038-disable-mate-management-web.html)。
+当前决策见 [ADR-0040：删除 Mate Actuator 冗余自动配置排除](../decisions/0040-remove-redundant-mate-actuator-exclusions.html)。原 [ADR-0038](../decisions/0038-disable-mate-management-web.html) 保留历史并标记为被替代。
 
-### 4.1 保留端点基础设施并追加管理上下文保护
+### 4.1 用属性单独承担管理面关闭语义
 
-不把现有 30 项清单整体替换为 3 项，因为这会恢复大量与本次目标无关的 Actuator 自动配置。只删除 `EndpointAutoConfiguration` 排除，恢复 `ParameterValueMapper` 等公共基础 Bean；其余历史排除项继续保留，并追加缺失的管理端口和管理上下文边界。
+保留 `management.server.port=-1` 和 `management.endpoints.enabled-by-default=false`，删除 10 个 Endpoint 自动配置排除以及 `ManagementContextAutoConfiguration` 排除。产品不依靠多个机制重复表达相同关闭意图，避免升级时维护长清单和已经失效的类名。
 
-### 4.2 公司专用配置不进入通用模块
+### 4.2 保留有独立运行时作用的排除
+
+Health Contributor、Audit、Metrics、Observation、HttpExchanges、`WebEndpointAutoConfiguration` 和 `ServletManagementContextAutoConfiguration` 不由管理端口或 Endpoint 默认 access 统一关闭。它们可能创建注册表、过滤器、发现器、健康检查或管理上下文基础 Bean，因此继续排除。Elasticsearch 条目改用 3.4.5 的准确类名；旧 Mongo 包名和不存在的 `ManagementServerAutoConfiguration` 删除。
+
+### 4.3 公司专用配置不进入通用模块
 
 通用模块的 `application.yml` 不引入这些属性。它没有公司父 POM 约束，而且仓库约定 `mate-campusclaw/application.properties` 是手工维护的环境专用配置。该差异属于公司集成约束和管理面安全加固，不是通用产品架构变化。
 
-### 4.3 用公司镜像专用测试锁定配置
+### 4.4 用公司镜像专用测试锁定配置
 
-新增测试直接加载真实 `application.properties`，断言管理端口、Endpoint 默认开关和 3 个关键管理 Web 自动配置排除项，同时断言 `EndpointAutoConfiguration` 不在排除清单中。测试文件加入同步排除清单，使后续模块镜像同步不会删除它。
+测试直接加载真实 `application.properties`，断言管理端口和 Endpoint 默认开关，并按顺序精确校验只剩 18 个有独立作用的排除项。精确集合同时防止冗余 Endpoint、失效旧类名和 `ManagementContextAutoConfiguration` 回流。测试文件加入同步排除清单，使后续模块镜像同步不会删除它。
 
 ## 5. 边界情况
 
-- 仅删除 `EndpointAutoConfiguration` 排除，以修复公司环境已验证的公共 Bean 缺失；其余历史排除项不放宽。
-- `WebEndpointAutoConfiguration` 已存在，只保留一次，避免重复配置。
+- 不允许用单个 Endpoint 的 enabled/access 配置覆盖默认关闭策略；若产品以后需要开放 Endpoint，应形成新的显式决策，而不是恢复冗余排除。
+- `WebEndpointAutoConfiguration` 和 `ServletManagementContextAutoConfiguration` 仍有独立 Bean 创建行为，继续排除。
+- `ManagementContextAutoConfiguration` 在端口为 `-1` 时没有匹配的 `SAME` 或 `DIFFERENT` 内部配置，不再排除。
+- 类路径中没有 Actuator 时，Spring Boot 会忽略不存在的排除类名；因此测试必须精确锁定目标列表，不能把“配置可以加载”当作类名有效性的证明。
 - 业务端口仍由 `SERVER_PORT` 或默认值 `8080` 决定。
 - 本次关闭的是管理服务器和管理 Web 上下文，不修改 CampusClaw 的业务 HTTP/SSE 路由。
 - 公司父 POM 不在仓库内，本地测试只能验证配置加载和关键配置值，不能替代公司工程的最终启动验证。
@@ -89,33 +112,34 @@ Spring Boot 3.4.1 上游源码证据：`EndpointAutoConfiguration.endpointOperat
 
 ## 6. DFX
 
-- **可靠性：** 恢复公共基础 Bean，避免公司自动配置因依赖缺失而终止启动；其余历史排除项保持不变。
-- **安全性：** 显式关闭管理端口和管理 Web 上下文，避免公司父 POM 传入未预期的管理 HTTP 面。
-- **可维护性：** 测试同时锁定管理 Web 排除和端点基础配置保留，避免后续再次形成不完整的自动配置组合。
+- **可靠性：** 保留 `EndpointAutoConfiguration` 公共基础 Bean，避免公司自动配置因依赖缺失而终止启动。
+- **安全性：** 管理 HTTP 由负数管理端口关闭，Endpoint 由默认 access 关闭；本场景不增加重复保护。
+- **可维护性：** 排除项从 31 项收敛为 18 项，删除无效类名，并通过精确集合测试避免清单再次漂移。
 - **性能：** 不新增线程、连接、缓存或请求处理逻辑。
 - **可观测性：** 不改变业务日志链路；管理 Endpoint 不作为 CampusClaw 观测接口暴露。
 
 ## 7. 契约改动
 
 - 无 Java API、业务 HTTP/SSE、数据库或消息契约变化。
-- 公司部署配置新增固定值 `management.server.port=-1`。
-- `spring.autoconfigure.exclude` 删除 `EndpointAutoConfiguration`，并在原列表末尾新增两个管理上下文类名。
+- 公司部署继续固定 `management.server.port=-1` 和 `management.endpoints.enabled-by-default=false`。
+- `spring.autoconfigure.exclude` 删除 10 个重复的 Endpoint 排除、`ManagementContextAutoConfiguration` 和 2 个已不存在的旧类名，并修正 Elasticsearch 自动配置类名。
 
 ## 8. 实现证据
 
-以下内容来自已评审实现 `c03bd5da488ae5a1a5c80386de64a4b5e7c8d1c9`：
+初始关闭行为来自已评审实现 `c03bd5da488ae5a1a5c80386de64a4b5e7c8d1c9`；本次目标实现基于 `origin/main@3f136e792c5301673ce28cd3debb1b3528dc702d`：
 
 | 目标行为 | 实现证据 |
 |---|---|
-| 关闭管理端口并保留 Endpoint 默认禁用 | `mate-campusclaw/src/main/resources/application.properties:1-3` |
-| 恢复 Endpoint 公共基础配置并追加两个 Management Context 排除 | `mate-campusclaw/src/main/resources/application.properties:4-35` |
-| 业务服务端口保持原配置 | `mate-campusclaw/src/main/resources/application.properties:39-40` |
-| 真实配置加载测试覆盖管理 Web 边界和 Endpoint 基础配置保留 | `mate-campusclaw/src/test/java/com/huawei/hicampus/mate/matecampusclaw/codingagent/config/ManagementConfigurationTest.java:19-43` |
+| 关闭管理端口并保留 Endpoint 默认禁用 | `mate-campusclaw/src/main/resources/application.properties:1-4` |
+| 只保留有独立运行时作用的 18 个自动配置排除 | `mate-campusclaw/src/main/resources/application.properties:5-23` |
+| 业务服务端口保持原配置 | `mate-campusclaw/src/main/resources/application.properties:27-28` |
+| 真实配置加载测试精确覆盖属性和目标排除集合 | `mate-campusclaw/src/test/java/com/huawei/hicampus/mate/matecampusclaw/codingagent/config/ManagementConfigurationTest.java:19-56` |
 | 公司专用测试受镜像同步保护 | `scripts/sync-mate-exclude.txt:10` |
 
 ## 9. 测试与验证
 
-- 执行 `ManagementConfigurationTest`，验证真实配置解析结果以及 `EndpointAutoConfiguration` 未被排除。
+- 执行 `ManagementConfigurationTest`，验证真实配置解析结果和 18 项目标排除集合。
+- 对照 Spring Boot 3.4.5 `AutoConfiguration.imports`，验证所有保留类名存在且可排除。
 - 执行 `mate-campusclaw` 完整 Maven `verify`。
 - 执行镜像同步 dry-run，确认公司专用配置和测试不会被覆盖或删除。
 - 检查可执行 JAR 中的 `application.properties`，确认打包值与源码一致。
@@ -125,5 +149,6 @@ Spring Boot 3.4.1 上游源码证据：`EndpointAutoConfiguration.endpointOperat
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.2 | 2026-08-31 | 删除与管理端口及 Endpoint 默认 access 重复的纵深保护，清理失效类名并精确锁定剩余排除集合 |
 | v1.1 | 2026-08-29 | 根据公司启动验证恢复 Actuator Endpoint 公共基础配置，并增加防回归断言 |
 | v1.0 | 2026-08-29 | 保留原 Actuator 排除清单，追加管理端口和管理 Web 上下文关闭配置 |

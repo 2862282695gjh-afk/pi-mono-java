@@ -25,12 +25,14 @@
 <main>
   <h1>ADR-0038：关闭 Mate 管理 Web 面并保留端点基础设施</h1>
   <table>
-    <tr><th>Status</th><td><span class="status">Accepted</span></td></tr>
+    <tr><th>Status</th><td><span class="status">Superseded</span></td></tr>
     <tr><th>Date</th><td>2026-08-29</td></tr>
     <tr><th>Pre-change baseline</th><td><code>origin/main@5dfa22ada4c7958eff6b4de5f1c718362805b6ee</code></td></tr>
     <tr><th>Reviewed implementation</th><td><code>c03bd5da488ae5a1a5c80386de64a4b5e7c8d1c9</code></td></tr>
     <tr><th>Observed source</th><td><code>mate-campusclaw/src/main/resources/application.properties</code>、<code>mate-campusclaw/pom.xml</code>、<code>scripts/sync-mate-campusclaw.sh</code></td></tr>
   </table>
+
+  <p>本决策中关于冗余管理上下文保护和原排除清单整体保留的部分已由 <a href="0040-remove-redundant-mate-actuator-exclusions.html">ADR-0040</a> 替代；恢复 <code>EndpointAutoConfiguration</code> 公共基础 Bean 的结论继续有效。</p>
 
   <h2>Context</h2>
   <p>公司父 POM 会向 <code>mate-campusclaw</code> 传递引入 Actuator；父 POM 源码和最终公司 Classpath 不在本仓库，这一条件来自外部集成环境。变更前的公司专用配置已经默认禁用 Endpoint，并维护 30 项 Actuator 自动配置排除，但没有设置负数管理端口，也没有排除通用及 Servlet 管理上下文自动配置。</p>
@@ -93,6 +95,7 @@
   <ul>
     <li><a href="../designs/mate-management-web.md">Mate CampusClaw 管理 Web 面关闭设计</a></li>
     <li><a href="0037-align-log4j2-runtime.html">ADR-0037：统一使用 Log4j2 运行时</a></li>
+    <li><a href="0040-remove-redundant-mate-actuator-exclusions.html">ADR-0040：删除 Mate Actuator 冗余自动配置排除</a></li>
   </ul>
 </main>
 </body>
