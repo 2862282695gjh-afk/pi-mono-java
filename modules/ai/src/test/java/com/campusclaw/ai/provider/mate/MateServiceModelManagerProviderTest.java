@@ -6,6 +6,7 @@ package com.campusclaw.ai.provider.mate;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -321,6 +322,24 @@ class MateServiceModelManagerProviderTest {
         assertEquals(StopReason.ABORTED, aborted.stopReason());
         assertEquals("chatcmpl-cancel", aborted.responseId());
         assertEquals(1, mate.getRequestCount());
+    }
+
+    @Test
+    void closesHttpStreamAndReturnsAbortedWhenResultFutureIsCancelled() throws Exception {
+        mate.enqueue(new MockResponse()
+                .setHeader("Content-Type", "text/event-stream")
+                .setBody(" ".repeat(100_000))
+                .throttleBody(256, 1, TimeUnit.SECONDS));
+
+        var stream = provider.streamSimple(model(), simpleContext(), null);
+        var result = stream.result().toFuture();
+
+        assertNotNull(mate.takeRequest(5L, TimeUnit.SECONDS));
+        assertTrue(result.cancel(true));
+        assertTrue(result.isCancelled());
+        assertEquals(
+                StopReason.ABORTED,
+                stream.result().block(Duration.ofSeconds(2L)).stopReason());
     }
 
     private Context context() {

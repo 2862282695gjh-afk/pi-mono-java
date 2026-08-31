@@ -4,10 +4,12 @@
 
 package com.campusclaw.ai.stream;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -104,6 +106,18 @@ class EventStreamTest {
 
             // Check result without consuming Flux
             StepVerifier.create(stream.result()).expectNext("result").verifyComplete();
+        }
+
+        @Test
+        void resultFutureCancellationRunsCancelActionOnce() {
+            var stream = new EventStream<String, String>(e -> false, e -> e);
+            var cancellations = new AtomicInteger();
+            stream.onCancel(cancellations::incrementAndGet);
+
+            assertTrue(stream.result().toFuture().cancel(true));
+            assertEquals(1, cancellations.get());
+            stream.result().toFuture().cancel(true);
+            assertEquals(1, cancellations.get());
         }
     }
 
