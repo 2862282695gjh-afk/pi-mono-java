@@ -1,6 +1,6 @@
 # Coding Agent Runtime HTTP 与受管 Session 设计
 
-> 文档版本：3.3.0
+> 文档版本：3.4.0
 >
 > PR 167 修订基线：`f60cc3e78bb8b700527ac082c7c8e10524ede095`
 >
@@ -9,6 +9,8 @@
 > HTTP 1.39 设计输入：`superheromeZzh/pi-mono-java-design@3fde5735cd27433c3e3e5e03a5ce39b297ad3b00`
 >
 > 流式预览术语修订基线：`28b3235e5cff0da2f768cbfc6b7b9ce5e2b51193`
+>
+> 压缩取消释放修复基线：`8081b5882f0f95ea37f1a36c659265c723bcd3ef`
 >
 > 源码仓库：本仓库 `pi-mono-java`
 
@@ -43,6 +45,7 @@ Assistant/Compaction 完成保存本次 Usage，模型/思考/压缩形成持久
 | 事件接受、历史查询和执行生命周期相互分离 | `RuntimeEventService`、`RuntimeEventQueryService`、`RuntimeExecutionCoordinator` |
 | thinking 实时投影、持久化和查询过滤 | `RuntimeEventProjector#projectThinking`、`RuntimeEntryCodec#thinkingEntry`、`RuntimeEventQueryService#list`、`RuntimeEventCursorCodec` |
 | SSE 使用有界请求级订阅 | `RuntimeEventStream`、`RuntimeSseDispatcher`、`RuntimeSseEmitterSubscriber` |
+| 压缩取消释放 Mate SSE | `SessionCompactor#completeSummary`、`EventStream#result`、`MateServiceModelManagerProvider#subscribe`、`MateServiceModelManagerProvider#cancel` |
 | 公司响应包装保留适配点 | `runtimeapi/result/ResultBeanAdapter.java`、`StandaloneResultBeanAdapter.java` |
 | 国际化资源显式区分两个 Locale | `modules/coding-agent-cli/src/main/resources/i18n/messages_{en_US,zh_CN}.properties`、`RuntimeMessageSourceConfiguration` |
 | 语言选择按范围和权重协商 | `RuntimeRequestContext#locale`、`RuntimeRequestContext#language` |
@@ -165,6 +168,12 @@ SSE 流、事件投影器与终止事件分别由独立工厂创建，避免 Con
 成功压缩持久化完整摘要和保留边界。配置默认 `enabled=true`、`reserveTokens=16384`、
 `keepRecentTokens=20000`，文件追踪只识别 `Read`。
 
+已观察实现中，压缩摘要只订阅 `EventStream.result()` 并通过 `Mono.toFuture()` 暴露取消，Mate
+Provider 则持有独立的 WebClient SSE `Disposable`。目标决策是事件 Flux 与结果 Mono 共用同一个
+幂等取消回调：任一消费路径取消都必须释放 Mate SSE、终止 Parser，并停止继续积累事件。设计原因是
+压缩不会消费事件 Flux；若结果取消不传播到底层订阅，中止只会结束本地 Future，而连接与无界事件缓冲仍存活。
+该修复属于资源生命周期纠正，不改变 Runtime HTTP、SSE 或持久化契约。
+
 ### 6.7 错误和多实例边界
 
 `RuntimeErrorCode` 是错误码、HTTP 状态、国际化 key 和可选 `Retry-After` 的唯一目录。
@@ -225,6 +234,7 @@ Runtime V1 事件名 `tool.execution.started` 与 `tool.execution.completed` 是
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 3.4.0 | 2026-08-31 | 统一事件 Flux 与结果 Mono 的取消传播；压缩中止时释放 Mate SSE 订阅并终止事件累积。 |
 | 3.3.0 | 2026-08-28 | 统一 Runtime Event 术语：将 started/delta/progress 和压缩 started/failed 称为“流式预览事件”，明确它们只在当前 SSE 中发送、不持久化、不进入 GET Events；对齐 `RuntimeEventProjector` 的直接 stream emit 与 `RuntimeEventQueryService` 只查询持久化 Entry 的已实现行为，不改变 Java 代码或线上契约。 |
 | 3.2.0 | 2026-08-24 | 修订 TUI 删除边界，保留未注册 Slash 核心；公共 Session 增加压缩，Runtime 增加 Usage、领域事件、best-effort 工具进度与 refresh 后懒校准 |
 | 3.1.0 | 2026-08-24 | 删除 CLI/TUI、Picocli、终端 Session、用户级认证设置与启动脚本源码，服务模型目录仅使用内置注册表和部署凭据 |

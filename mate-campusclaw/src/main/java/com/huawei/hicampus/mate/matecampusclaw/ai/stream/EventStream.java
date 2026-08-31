@@ -32,6 +32,7 @@ public class EventStream<T, R> {
     private final Sinks.Many<T> eventSink;
     private final Sinks.One<R> resultSink;
     private final Flux<T> eventFlux;
+    private final Mono<R> resultMono;
 
     private final Object lock = new Object();
     private boolean done = false;
@@ -50,6 +51,7 @@ public class EventStream<T, R> {
         this.eventSink = Sinks.many().unicast().onBackpressureBuffer();
         this.resultSink = Sinks.one();
         this.eventFlux = eventSink.asFlux().doOnCancel(this::cancel);
+        this.resultMono = resultSink.asMono().doOnCancel(this::cancel);
     }
 
     /**
@@ -137,7 +139,7 @@ public class EventStream<T, R> {
     }
 
     /**
-     * 注册订阅者取消事件流时执行的动作。
+     * 注册事件或结果订阅被取消时执行的动作。
      *
      * @param action 取消动作
      */
@@ -161,9 +163,11 @@ public class EventStream<T, R> {
     /**
      * 获取最终结果 Mono。
      *
+     * <p>取消结果订阅会执行与事件订阅相同的幂等取消动作。
+     *
      * @return 最终结果 Mono
      */
     public Mono<R> result() {
-        return resultSink.asMono();
+        return resultMono;
     }
 }
