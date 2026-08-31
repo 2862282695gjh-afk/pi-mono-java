@@ -132,14 +132,22 @@ public class ReadTool implements AgentTool {
     }
 
     private static TextSelection selectLines(String content, int offset, int limit) {
-        String[] lines = content.split("\n", -1);
-        int start = offset - 1;
-        if (start >= lines.length) {
-            return new TextSelection("", false, lines.length);
+        if (content.isEmpty()) {
+            return new TextSelection("", false, 0);
         }
-        int end = Math.min(start + limit, lines.length);
+        String[] lines = content.split("\n", -1);
+        boolean endsWithNewline = content.endsWith("\n");
+        int totalLines = lines.length - (endsWithNewline ? 1 : 0);
+        int start = offset - 1;
+        if (start >= totalLines) {
+            return new TextSelection("", false, totalLines);
+        }
+        int end = Math.min(start + limit, totalLines);
         String selected = String.join("\n", Arrays.copyOfRange(lines, start, end));
-        return new TextSelection(selected, end < lines.length, lines.length);
+        if (endsWithNewline && end == totalLines) {
+            selected += "\n";
+        }
+        return new TextSelection(selected, end < totalLines, totalLines);
     }
 
     private static String truncateText(String text, boolean moreLines, boolean firstLineTruncated) {
