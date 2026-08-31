@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-CampusClaw (`com.campusclaw`, previously `pi-mono-java`) is a ToB Agent Runtime service built on JDK 21 + Spring Boot 3.4.1. It is a Maven multi-module project. The historical directory `modules/coding-agent-cli` now contains the Spring Boot service entry point and produces `campusclaw-agent.jar`; there is no CLI/TUI/RPC product mode.
+CampusClaw (`com.campusclaw`, previously `pi-mono-java`) is a ToB Agent Runtime service built on JDK 21 + Spring Boot 3.4.5. It is a Maven multi-module project. The historical directory `modules/coding-agent-cli` now contains the Spring Boot service entry point and produces `campusclaw-agent.jar`; there is no CLI/TUI/RPC product mode.
 
 ## Build & Run
 

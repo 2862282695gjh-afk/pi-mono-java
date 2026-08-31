@@ -1,6 +1,6 @@
 # CampusClaw
 
-CampusClaw 是基于 Java 21 和 Spring Boot 3.4.1 构建的 ToB Agent Runtime 服务。产品通过
+CampusClaw 是基于 Java 21 和 Spring Boot 3.4.5 构建的 ToB Agent Runtime 服务。产品通过
 HTTP + SSE 提供受管 Agent 会话，Runtime、Cron 和 Child Agent 共用同一套 Session 装配、
 工具执行、错误和取消语义。
 
