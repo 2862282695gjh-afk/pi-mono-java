@@ -66,6 +66,21 @@ class FindToolTest {
     }
 
     @Test
+    void shouldKeepNestedDirectoryForRootAnchoredGitIgnorePattern() throws Exception {
+        Path rootDist = Files.createDirectory(agentRoot.resolve("dist"));
+        Files.writeString(rootDist.resolve("Ignored.java"), "class Ignored {}");
+        Path nestedDist = Files.createDirectories(agentRoot.resolve("src/dist"));
+        Files.writeString(nestedDist.resolve("Kept.java"), "class Kept {}");
+        Files.writeString(agentRoot.resolve(".gitignore"), "/dist\n");
+
+        var result = tool.execute("call", Map.of("pattern", "**/*.java"), null, null);
+
+        assertThat(((TextContent) result.content().get(0)).text())
+                .isEqualTo("src/dist/Kept.java")
+                .doesNotContain("dist/Ignored.java");
+    }
+
+    @Test
     void shouldReturnStableEmptyText() throws Exception {
         var result = tool.execute("call", Map.of("pattern", "*.missing"), null, null);
 

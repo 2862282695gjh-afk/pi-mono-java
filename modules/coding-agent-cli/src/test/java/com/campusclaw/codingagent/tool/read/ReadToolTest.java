@@ -63,6 +63,27 @@ class ReadToolTest {
     }
 
     @Test
+    void shouldNotTreatTrailingNewlineAsAdditionalLine() throws Exception {
+        String content = "one\ntwo\n";
+        Files.writeString(agentRoot.resolve("terminated.txt"), content);
+
+        var result = tool.execute("call", Map.of("path", "terminated.txt", "offset", 1, "limit", 2), null, null);
+
+        assertThat(((TextContent) result.content().getFirst()).text()).isEqualTo(content);
+        assertThat(((ReadToolDetails) result.details()).truncation()).isNull();
+    }
+
+    @Test
+    void shouldReturnEmptyFileWithoutTruncation() throws Exception {
+        Files.writeString(agentRoot.resolve("empty.txt"), "");
+
+        var result = tool.execute("call", Map.of("path", "empty.txt"), null, null);
+
+        assertThat(((TextContent) result.content().getFirst()).text()).isEmpty();
+        assertThat(((ReadToolDetails) result.details()).truncation()).isNull();
+    }
+
+    @Test
     void shouldMarkDefaultLineTruncation() throws Exception {
         String content = "line\n".repeat(ReadTool.DEFAULT_MAX_LINES + 1);
         Files.writeString(agentRoot.resolve("large.txt"), content);
@@ -74,13 +95,16 @@ class ReadToolTest {
 
     @Test
     void byteTruncationShouldIncludeMarkerWithinPublishedBudget() throws Exception {
-        Files.writeString(agentRoot.resolve("wide.txt"), "界".repeat(30_000));
+        Files.writeString(agentRoot.resolve("wide.txt"), "界".repeat(30_000) + "\n");
 
         var result = tool.execute("call", Map.of("path", "wide.txt"), null, null);
 
         String output = ((TextContent) result.content().getFirst()).text();
+        var details = (ReadToolDetails) result.details();
         assertThat(output).contains("[Output truncated: first line exceeds the 50 KB limit.]");
         assertThat(output.getBytes(StandardCharsets.UTF_8).length).isLessThanOrEqualTo(ReadTool.DEFAULT_MAX_BYTES);
+        assertThat(details.truncation()).isNotNull();
+        assertThat(details.truncation().totalLines()).isEqualTo(1);
     }
 
     @Test

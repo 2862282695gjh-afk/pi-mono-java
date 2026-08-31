@@ -79,6 +79,20 @@ class GrepToolTest {
     }
 
     @Test
+    void shouldKeepNestedFileForRootAnchoredGitIgnorePattern() throws Exception {
+        Files.writeString(agentRoot.resolve("ignored.txt"), "target");
+        Path source = Files.createDirectory(agentRoot.resolve("src"));
+        Files.writeString(source.resolve("kept.txt"), "target");
+        Files.writeString(agentRoot.resolve(".gitignore"), "/*.txt\n");
+
+        var result = tool.execute("call", Map.of("pattern", "target", "glob", "*.txt"), null, null);
+
+        assertThat(((TextContent) result.content().get(0)).text())
+                .isEqualTo("src/kept.txt:1:target")
+                .doesNotContain("ignored.txt");
+    }
+
+    @Test
     void shouldNotMarkExactLimitAsTruncated() throws Exception {
         Files.writeString(agentRoot.resolve("notes.txt"), "target\ntarget\ncontext\n");
 

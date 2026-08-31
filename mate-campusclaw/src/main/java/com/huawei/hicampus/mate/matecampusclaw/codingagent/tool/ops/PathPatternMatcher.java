@@ -21,17 +21,26 @@ final class PathPatternMatcher {
     }
 
     static PathPatternMatcher glob(String glob) {
-        if (glob == null || glob.isBlank()) {
-            throw new IllegalArgumentException("glob pattern is required");
-        }
-        String normalized = glob.replace('\\', '/');
+        String normalized = normalize(glob);
         boolean basenameOnly = normalized.indexOf('/') < 0;
         String prefix = basenameOnly ? "(?:^|.*/)" : "^";
         return new PathPatternMatcher(Pattern.compile(prefix + toRegex(normalized) + "$"));
     }
 
+    static PathPatternMatcher rootedGlob(String glob) {
+        String normalized = normalize(glob);
+        return new PathPatternMatcher(Pattern.compile("^" + toRegex(normalized) + "$"));
+    }
+
     boolean matches(String relativePath) {
         return pattern.matcher(relativePath.replace('\\', '/')).matches();
+    }
+
+    private static String normalize(String glob) {
+        if (glob == null || glob.isBlank()) {
+            throw new IllegalArgumentException("glob pattern is required");
+        }
+        return glob.replace('\\', '/');
     }
 
     private static String toRegex(String glob) {
