@@ -21,7 +21,7 @@ class ManagementConfigurationTest {
             new ApplicationContextRunner().withInitializer(new ConfigDataApplicationContextInitializer());
 
     @Test
-    void disablesManagementServerAndManagementWebAutoConfigurations() {
+    void usesPropertiesInsteadOfRedundantManagementExclusions() {
         runner.run(context -> {
             assertThat(context.getEnvironment().getProperty("management.server.port"))
                     .isEqualTo("-1");
@@ -31,12 +31,25 @@ class ManagementConfigurationTest {
                     .isNotNull()
                     .satisfies(exclusions -> {
                         assertThat(exclusions.split(","))
-                                .contains(
+                                .containsExactly(
+                                        "org.springframework.boot.actuate.autoconfigure.amqp.RabbitHealthContributorAutoConfiguration",
+                                        "org.springframework.boot.actuate.autoconfigure.audit.AuditAutoConfiguration",
+                                        "org.springframework.boot.actuate.autoconfigure.availability.AvailabilityHealthContributorAutoConfiguration",
+                                        "org.springframework.boot.actuate.autoconfigure.availability.AvailabilityProbesAutoConfiguration",
+                                        "org.springframework.boot.actuate.autoconfigure.data.mongo.MongoHealthContributorAutoConfiguration",
+                                        "org.springframework.boot.actuate.autoconfigure.data.redis.RedisHealthContributorAutoConfiguration",
+                                        "org.springframework.boot.actuate.autoconfigure.elasticsearch.ElasticsearchRestHealthContributorAutoConfiguration",
                                         "org.springframework.boot.actuate.autoconfigure.endpoint.web.WebEndpointAutoConfiguration",
-                                        "org.springframework.boot.actuate.autoconfigure.web.server.ManagementContextAutoConfiguration",
-                                        "org.springframework.boot.actuate.autoconfigure.web.servlet.ServletManagementContextAutoConfiguration")
-                                .doesNotContain(
-                                        "org.springframework.boot.actuate.autoconfigure.endpoint.EndpointAutoConfiguration");
+                                        "org.springframework.boot.actuate.autoconfigure.health.HealthContributorAutoConfiguration",
+                                        "org.springframework.boot.actuate.autoconfigure.info.InfoContributorAutoConfiguration",
+                                        "org.springframework.boot.actuate.autoconfigure.jdbc.DataSourceHealthContributorAutoConfiguration",
+                                        "org.springframework.boot.actuate.autoconfigure.jms.JmsHealthContributorAutoConfiguration",
+                                        "org.springframework.boot.actuate.autoconfigure.mail.MailHealthContributorAutoConfiguration",
+                                        "org.springframework.boot.actuate.autoconfigure.metrics.MetricsAutoConfiguration",
+                                        "org.springframework.boot.actuate.autoconfigure.observation.ObservationAutoConfiguration",
+                                        "org.springframework.boot.actuate.autoconfigure.system.DiskSpaceHealthContributorAutoConfiguration",
+                                        "org.springframework.boot.actuate.autoconfigure.web.exchanges.HttpExchangesAutoConfiguration",
+                                        "org.springframework.boot.actuate.autoconfigure.web.servlet.ServletManagementContextAutoConfiguration");
                     });
         });
     }

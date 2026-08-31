@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ADR-0040：删除 Mate Actuator 冗余自动配置排除</title>
+  <style>
+    :root { color-scheme: light; font-family: Inter, "PingFang SC", sans-serif; color: #25272a; background: #f2f5f7; }
+    body { margin: 0; }
+    main { width: min(920px, calc(100% - 40px)); margin: 40px auto; padding: 40px; box-sizing: border-box; background: #fff; border: 1px solid #d7dde2; border-radius: 16px; }
+    h1 { margin-top: 0; font-size: 30px; }
+    h2 { margin-top: 32px; font-size: 20px; }
+    h3 { margin-top: 22px; font-size: 17px; }
+    p, li { line-height: 1.75; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 10px 12px; border: 1px solid #d7dde2; text-align: left; vertical-align: top; }
+    th { width: 190px; background: #edf2f5; }
+    code { padding: 2px 5px; border-radius: 5px; background: #edf2f5; overflow-wrap: anywhere; }
+    a { color: #1769aa; }
+    .status { display: inline-flex; padding: 4px 9px; border-radius: 999px; color: #12633a; background: #e8f7ed; font-weight: 650; }
+    @media (max-width: 640px) { main { width: 100%; margin: 0; padding: 24px 18px; border: 0; border-radius: 0; } th { width: 120px; } }
+  </style>
+</head>
+<body>
+<main>
+  <h1>ADR-0040：删除 Mate Actuator 冗余自动配置排除</h1>
+  <table>
+    <tr><th>Status</th><td><span class="status">Accepted</span></td></tr>
+    <tr><th>Date</th><td>2026-08-31</td></tr>
+    <tr><th>Analyzed source</th><td><code>origin/main@3f136e792c5301673ce28cd3debb1b3528dc702d</code></td></tr>
+    <tr><th>Implementation branch</th><td><code>codex/remove-redundant-actuator-exclusions</code></td></tr>
+    <tr><th>Observed source</th><td><code>mate-campusclaw/src/main/resources/application.properties</code>、<code>mate-campusclaw/src/test/java/com/huawei/hicampus/mate/matecampusclaw/codingagent/config/ManagementConfigurationTest.java</code>、Spring Boot <code>v3.4.5</code> Actuator 自动配置源码</td></tr>
+    <tr><th>Supersedes</th><td><a href="0038-disable-mate-management-web.html">ADR-0038</a> 中关于冗余管理上下文保护和原排除清单整体保留的决策</td></tr>
+  </table>
+
+  <h2>Context</h2>
+  <p><code>mate-campusclaw</code> 通过公司父 POM 获得 Actuator 依赖。本仓配置使用 <code>management.server.port=-1</code> 关闭管理 HTTP，并使用 <code>management.endpoints.enabled-by-default=false</code> 默认关闭 Endpoint，同时还维护 31 个显式自动配置排除。</p>
+  <p>基于 Spring Boot 3.4.5 源码逐项复核后发现，10 个 Endpoint 排除与 Endpoint 默认 access 重复，<code>ManagementContextAutoConfiguration</code> 与负数管理端口重复；另外有 3 个类名不在 3.4.5 自动配置清单中，其中 Elasticsearch 条目使用了错误拼写。冗余清单增加升级维护成本，也让字符串测试在类名已经失效时仍然通过。</p>
+
+  <h2>Source evidence</h2>
+  <ul>
+    <li><code>ManagementPortType.get</code> 在 <code>management.server.port</code> 为负数时返回 <code>DISABLED</code>。</li>
+    <li><code>ManagementContextAutoConfiguration</code> 的内部配置只匹配 <code>SAME</code> 或 <code>DIFFERENT</code>。</li>
+    <li><code>PropertiesEndpointAccessResolver.determineDefaultAccess</code> 把 <code>management.endpoints.enabled-by-default=false</code> 转换为 <code>Access.NONE</code>。</li>
+    <li><code>WebEndpointAutoConfiguration</code>、<code>ServletManagementContextAutoConfiguration</code>、Health Contributor、Metrics 和 Observation 仍可独立创建 Bean，不属于同一关闭语义。</li>
+    <li>Spring Boot 3.4.5 自动配置清单包含 <code>ElasticsearchRestHealthContributorAutoConfiguration</code>，不包含旧 <code>ElasticSearch...</code>、旧 Mongo 包名或 <code>ManagementServerAutoConfiguration</code>。</li>
+  </ul>
+
+  <h2>Decision drivers</h2>
+  <ul>
+    <li>一个配置项只承担一个可核对的关闭语义。</li>
+    <li>不在当前场景保留冗余纵深保护。</li>
+    <li>保留公司环境仍需要的 Endpoint 公共基础 Bean。</li>
+    <li>继续阻止不受管理端口和 Endpoint 默认 access 控制的独立 Bean 与副作用。</li>
+    <li>所有显式排除类名必须与 Spring Boot 3.4.5 自动配置清单一致。</li>
+  </ul>
+
+  <h2>Considered options</h2>
+  <h3>保留全部纵深保护</h3>
+  <p><strong>优点：</strong>单项 Endpoint 或管理端口误配置后仍有额外阻断。<br><strong>缺点：</strong>同一意图由多个机制重复表达，类名会随 Spring Boot 升级漂移，并与当前“不需要冗余防护”的产品约束冲突。拒绝。</p>
+
+  <h3>删除全部自动配置排除</h3>
+  <p><strong>优点：</strong>配置最短。<br><strong>缺点：</strong>会恢复 Health Contributor、Metrics、Observation、审计和请求交换记录等独立 Bean 或副作用，超出管理 HTTP 与 Endpoint 默认 access 的关闭范围。拒绝。</p>
+
+  <h3>删除重复项并保留独立作用项</h3>
+  <p><strong>优点：</strong>关闭语义单一，保留非重复的公司兼容边界，并清除失效类名。<br><strong>缺点：</strong>如果以后主动覆盖管理端口或 Endpoint access，系统不再依靠重复排除阻止该配置生效；届时必须形成新的产品决策。接受。</p>
+
+  <h2>Decision</h2>
+  <ul>
+    <li>以 <code>management.server.port=-1</code> 作为关闭管理 HTTP 的唯一配置，删除 <code>ManagementContextAutoConfiguration</code> 排除。</li>
+    <li>以 <code>management.endpoints.enabled-by-default=false</code> 作为默认关闭 Endpoint 的唯一配置，删除 10 个 Endpoint 自动配置排除。</li>
+    <li>保留 18 个仍会独立创建 Bean 或产生副作用的自动配置排除。</li>
+    <li>删除旧 Mongo 包名和不存在的 <code>ManagementServerAutoConfiguration</code>。</li>
+    <li>把错误的 <code>ElasticSearchRestHealthContributorAutoConfiguration</code> 修正为 <code>ElasticsearchRestHealthContributorAutoConfiguration</code>。</li>
+    <li>测试精确断言 18 项目标集合，不再只抽查少数字符串。</li>
+  </ul>
+
+  <h2>Intentional differences</h2>
+  <p><strong>产品约束：</strong>本场景不需要冗余防护，后续显式开放管理端口或 Endpoint 时由新的配置和设计决策负责。<strong>安全边界：</strong>管理 HTTP 仍由负数端口关闭，Endpoint 仍默认不可访问。<strong>架构变化：</strong>排除清单从重复表达关闭意图改为只控制独立基础设施 Bean 和副作用。</p>
+
+  <h2>Consequences</h2>
+  <ul>
+    <li>正面：排除项从 31 项收敛为 18 项，所有保留类名都存在于 Spring Boot 3.4.5 自动配置清单。</li>
+    <li>正面：Endpoint 公共基础配置继续保留，避免再次缺失 <code>ParameterValueMapper</code>。</li>
+    <li>正面：测试可以发现冗余项、失效类名或清单漂移。</li>
+    <li>负面：如果更高优先级配置覆盖管理端口或 Endpoint access，系统不会再依靠重复排除抵消该覆盖。</li>
+    <li>边界：公司父 POM 和最终 classpath 不在本仓，仍需公司工程执行最终启动验证。</li>
+  </ul>
+
+  <h2>Validation</h2>
+  <ul>
+    <li>执行 <code>ManagementConfigurationTest</code>。</li>
+    <li>执行 <code>mate-campusclaw</code> Maven <code>verify</code>。</li>
+    <li>对照 Spring Boot 3.4.5 <code>AutoConfiguration.imports</code> 验证保留类名。</li>
+    <li>执行镜像同步 dry-run、文档链接检查和 <code>git diff --check</code>。</li>
+  </ul>
+
+  <h2>Related</h2>
+  <ul>
+    <li><a href="../designs/mate-management-web.md">Mate CampusClaw 管理 Web 面关闭设计</a></li>
+    <li><a href="0038-disable-mate-management-web.html">ADR-0038：关闭 Mate 管理 Web 面并保留端点基础设施</a></li>
+    <li><a href="0039-upgrade-spring-boot-3-4-5.html">ADR-0039：升级 Spring Boot 3.4.5</a></li>
+  </ul>
+</main>
+</body>
+</html>
