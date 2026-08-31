@@ -28,7 +28,7 @@
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
 
         <!-- Spring Boot -->
-        <spring-boot.version>3.4.1</spring-boot.version>
+        <spring-boot.version>3.4.5</spring-boot.version>
 
         <!-- Third-party versions -->
         <anthropic-java.version>2.18.0</anthropic-java.version>

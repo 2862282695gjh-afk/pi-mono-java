@@ -1,18 +1,20 @@
 # CampusClaw 模块架构
 
-> 文档版本：2.1.0
+> 文档版本：2.1.1
 >
 > 状态：Implemented
 >
-> 更新日期：2026-08-24
+> 更新日期：2026-08-31
 >
 > 实现前源码基线：`d649866a6cae967ace18ceaeb9597edd47e5721e`
 >
 > PR 167 修订基线：`f60cc3e78bb8b700527ac082c7c8e10524ede095`
+>
+> Spring Boot 3.4.5 实现：`994bdff13100ce363214e74abb70dfafbd1ce1b5`
 
 ## 1. 结论
 
-CampusClaw 是 JDK 21 + Spring Boot 3.4.1 的 ToB Agent Runtime 服务。Maven Reactor 只包含
+CampusClaw 是 JDK 21 + Spring Boot 3.4.5 的 ToB Agent Runtime 服务。Maven Reactor 只包含
 `ai`、`agent-core`、`cron` 和 `coding-agent-cli` 四个 Java 模块；CLI/TUI 产品入口和
 `modules/tui` 已删除。`coding-agent-cli` 只是历史目录名，当前职责是组装 Spring Boot HTTP
 服务、受管 Agent Session 和八个内置工具。
