@@ -4,7 +4,7 @@
 >
 > 状态：Implemented（§5 参数位置标注为 Proposal，待 CampusMate 对齐）
 >
-> 更新日期：2026-08-29
+> 更新日期：2026-08-31
 > 决策记录：[ADR-0024](../decisions/0024-mate-tool-execution-credential-chain.html)、
 > [ADR-0022](../decisions/0022-managed-agent-tool-system-v2.html)、
 > [ADR-0026](../decisions/0026-unify-campusmate-client-configuration.html)
@@ -101,7 +101,10 @@ MCP 2026-07-28 规范同样没有 path/query/body 概念（`arguments` 平铺整
 | 字段 | 取值 | 说明 |
 |---|---|---|
 | `x-mcp-in` | `path` \| `query` \| `header` | 参数位置；**缺省 = body**，不提供显式 body 取值 |
-| `x-mcp-name` | 字符串 | 目标名：URL 模板占位符名 / query 参数名 / header 名；缺省 = 属性名 |
+
+目标名（URL 占位符 / query 参数名 / header 名）**恒等于属性名**：注册工具时若 wire 名与
+期望的属性名不同，直接将属性命名为 wire 名（如 header 名 `Idempotency-Key` 可直接作为
+JSON 属性名）。本约定不提供改名机制。
 
 责任划分：**CampusClaw 全链路零改动**——发现、模型展示、execute 平铺均原样透传，不解析、
 不校验该标注。校验在 Mate 工具注册期完成，拆分在 CampusMate 执行器完成。
@@ -121,7 +124,7 @@ MCP 2026-07-28 规范同样没有 path/query/body 概念（`arguments` 平铺整
 
 以下示例共用"校区用户管理"REST 后端。
 
-**query**（数组展开、query 键改名），模板 `GET /campuses/{campusId}/users`：
+**query**（数组按重复键展开），模板 `GET /campuses/{campusId}/users`：
 
 ```json
 {
@@ -131,7 +134,7 @@ MCP 2026-07-28 规范同样没有 path/query/body 概念（`arguments` 平铺整
     "properties": {
       "campusId": { "type": "string", "x-mcp-in": "path" },
       "status": { "type": "string", "enum": ["active", "frozen"], "x-mcp-in": "query" },
-      "tags": { "type": "array", "items": { "type": "string" }, "x-mcp-in": "query", "x-mcp-name": "tag" },
+      "tag": { "type": "array", "items": { "type": "string" }, "x-mcp-in": "query" },
       "limit": { "type": "integer", "minimum": 1, "maximum": 100, "x-mcp-in": "query" }
     },
     "required": ["campusId"]
@@ -139,7 +142,7 @@ MCP 2026-07-28 规范同样没有 path/query/body 概念（`arguments` 平铺整
 }
 ```
 
-调用 `{"campusId":"c01","status":"active","tags":["新生","部长"],"limit":20}` 得到
+调用 `{"campusId":"c01","status":"active","tag":["新生","部长"],"limit":20}` 得到
 `GET /campuses/c01/users?status=active&tag=新生&tag=部长&limit=20`。
 
 **path**（位置参数必须 `required`），模板 `GET /campuses/{campusId}/users/{userId}`：
@@ -184,7 +187,7 @@ MCP 2026-07-28 规范同样没有 path/query/body 概念（`arguments` 平铺整
 
 `profile` 整体作为请求体。
 
-**header**（`x-mcp-name` 指定真实 header 名；幂等键场景），模板 `PUT /campuses/{campusId}/users/{userId}/freeze`：
+**header**（属性名即 header 名；幂等键场景），模板 `PUT /campuses/{campusId}/users/{userId}/freeze`：
 
 ```json
 {
@@ -194,10 +197,10 @@ MCP 2026-07-28 规范同样没有 path/query/body 概念（`arguments` 平铺整
     "properties": {
       "campusId": { "type": "string", "x-mcp-in": "path" },
       "userId": { "type": "string", "x-mcp-in": "path" },
-      "requestId": { "type": "string", "x-mcp-in": "header", "x-mcp-name": "Idempotency-Key" },
+      "Idempotency-Key": { "type": "string", "x-mcp-in": "header" },
       "reason": { "type": "string" }
     },
-    "required": ["campusId", "userId", "requestId"]
+    "required": ["campusId", "userId", "Idempotency-Key"]
   }
 }
 ```
@@ -205,7 +208,7 @@ MCP 2026-07-28 规范同样没有 path/query/body 概念（`arguments` 平铺整
 完整往返（CampusMate 执行器视角）：
 
 ```text
-模型 args: {"campusId":"c01","userId":"u42","requestId":"8f3c-9a","reason":"违规操作"}
+模型 args: {"campusId":"c01","userId":"u42","Idempotency-Key":"8f3c-9a","reason":"违规操作"}
   ↓ 拆分：path c01/u42 展开模板；header Idempotency-Key: 8f3c-9a；body {"reason":"违规操作"}
 PUT /campuses/c01/users/u42/freeze
 Idempotency-Key: 8f3c-9a
@@ -237,7 +240,7 @@ HTTP method、path、请求响应和凭据链均保持不变。
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
-| 2.3.0 | 2026-08-29 | 新增 §5 工具参数位置标注提案（`x-mcp-in`/`x-mcp-name`，借鉴 MCP `x-mcp-header` 先例）；原 CampusMate 共享配置顺延为 §6 |
+| 2.3.0 | 2026-08-31 | 新增 §5 工具参数位置标注提案（单字段 `x-mcp-in`，目标名恒等于属性名，借鉴 MCP `x-mcp-header` 先例）；原 CampusMate 共享配置顺延为 §6 |
 | 2.2.0 | 2026-08-26 | Tool 复用 CampusMate 单一 base URL、共享 Endpoint 目录与 Skill query operation；移除顶层 `mate.*` 配置。 |
 | 2.1.0 | 2026-08-24 | 删除部署方 resolver 占位；实现 Runtime 执行级凭据快照、List/Call HTTP 透传、Child 继承和 Cron fail-closed |
 | 2.0.0 | 2026-08-24 | PascalCase 双工具；按 Agent/Skill 方法拆分客户端；稳定 JSON；Session cache miss 自动完整发现且 execute 不重放 |
