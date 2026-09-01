@@ -4,7 +4,7 @@
 
 | 项目 | 内容 |
 |---|---|
-| 文档版本 | v1.1 |
+| 文档版本 | v1.2 |
 | 状态 | Implemented |
 | 更新日期 | 2026-09-01 |
 | 变更前源码基线 | `origin/main@96c5c01069cce6179d068862d94b8feddfee8fd0` |
@@ -83,6 +83,10 @@ MyBatis Spring Boot Starter 保持仓库显式指定的 3.0.4；HikariCP、Hiber
 这是变更前已存在的公司集成风险，不是 3.4.5 回归。由于公司父 POM 和最终 Classpath 不在本仓库，
 本次不擅自缩减或更正该清单，保持已验证的公司环境边界。
 
+后续部署架构已变更：CampusClaw 成为公司独立服务后，
+[ADR-0043](../decisions/0043-remove-campusclaw-standalone-actuator-configuration.html) 删除了全部 Actuator
+应用属性和自动配置排除。这是升级完成后的独立决策，不改写当次 3.4.5 对比结论。
+
 ## 3. 架构与数据流
 
 根 POM 的一个版本属性向下管理 BOM；BOM 为 Reactor 模块和公司镜像提供传递依赖版本；
@@ -116,7 +120,7 @@ Spring Boot 3.5。这将归因边界限定为一次补丁级升级。
 - JDK 继续固定为 21；3.4.4 新增的 Java 24+ Tomcat APR 默认行为不影响当前运行时。
 - 应用没有 Spring Security 或 `EndpointRequest.to()`，不把安全公告描述成已观察的仓库漏洞。
 - 没有空 YAML map、`@MockBean` 或 `@SpyBean` 的已知使用需要适配。
-- 公司镜像的 3 个历史 Actuator 字符串保持不变，需在独立公司集成任务中处理。
+- 当次升级保留的 3 个历史 Actuator 字符串已随 ADR-0043 删除整个排除清单，不再是当前运行边界。
 
 ## 6. DFX
 
@@ -155,5 +159,6 @@ Spring Boot 3.5。这将归因边界限定为一次补丁级升级。
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.2 | 2026-09-01 | 记录 CampusClaw 后续转为独立服务并删除 Actuator 专用配置，保留历史升级证据。 |
 | v1.1 | 2026-09-01 | 对齐当前公司镜像路径，并明确切换 NativeParent 是升级完成后的独立架构变化。 |
 | v1.0 | 2026-08-31 | 记录 3.4.1 至 3.4.5 的版本决策、依赖变化、风险评估与验证证据 |

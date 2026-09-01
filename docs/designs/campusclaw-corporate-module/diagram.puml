@@ -3,6 +3,7 @@
 ' Current repository paths: modules/*, scripts/sync-campusclaw.sh,
 ' campusclaw/pom.xml, and scripts/git-hooks/pre-push.
 ' Source evidence: campusclaw/pom.xml lost root POM logging dependencies at 294e6d90.
+' User-provided target condition: CampusClaw is deployed as a standalone company service.
 ' Observed behavior: four canonical modules feed one generated corporate mirror.
 ' Architecture change: the mirror has an independent parent, GAV, package, and build gate.
 ' Design reason: keep one implementation source while isolating corporate integration metadata.
@@ -48,6 +49,7 @@ end note
 note bottom of local
   Corporate verification is independent
   from the root Maven reactor.
+  Deployment is a standalone company service.
   Required dependencies are explicit.
 end note
 @enduml

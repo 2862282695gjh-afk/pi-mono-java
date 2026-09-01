@@ -27,8 +27,10 @@
   <table>
     <tr><th>Status</th><td><span class="status">Accepted</span></td></tr>
     <tr><th>Date</th><td>2026-09-01</td></tr>
+    <tr><th>Last updated</th><td>2026-09-01</td></tr>
     <tr><th>Source baseline</th><td><code>origin/main@2cb1661fd4dc27f2bc02579c44878d7a69775c3d</code></td></tr>
     <tr><th>Observed source</th><td><code>campusclaw/src/main/resources/application.properties</code>、<code>modules/coding-agent-cli/src/main/resources/application.yml</code>、<code>campusclaw/src/test/java/com/huawei/hicampus/claw/codingagent/config/ManagementConfigurationTest.java</code></td></tr>
+    <tr><th>Current verification source</th><td><code>campusclaw/src/test/java/com/huawei/hicampus/claw/codingagent/config/CampusMateConfigurationTest.java</code></td></tr>
   </table>
 
   <h2>Context</h2>
@@ -38,6 +40,7 @@
   <p>公司镜像的 <code>application.properties</code> 与
     <code>ManagementConfigurationTest</code> 均为镜像侧手工维护文件，不由主模块同步覆盖，因此可以在
     不改变规范源码配置的前提下锁定该产品差异。</p>
+  <p><strong>后续实现更新：</strong>ADR-0043 删除 Actuator 专用断言后，该专有测试已重命名为 <code>CampusMateConfigurationTest</code>；本 ADR 的缺省值决策不变。</p>
 
   <h2>Observed behavior</h2>
   <ul>
@@ -88,7 +91,7 @@
 
   <h2>Validation</h2>
   <ul>
-    <li><code>ManagementConfigurationTest</code> 验证无环境变量时得到 <code>https://localhost:8591</code>。</li>
+    <li><code>CampusMateConfigurationTest</code> 验证无环境变量时得到 <code>https://localhost:8591</code>。</li>
     <li>同一测试验证显式 <code>CAMPUSMATE_BASE_URL</code> 覆盖缺省值。</li>
     <li>同步 dry-run 验证公司专有测试和手工配置不产生镜像漂移。</li>
     <li>公司 Maven 环境执行镜像测试；普通环境若无法解析 <code>NativeParent</code>，必须明确报告该门禁未运行。</li>

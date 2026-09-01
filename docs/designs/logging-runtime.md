@@ -4,11 +4,12 @@
 
 | 项目 | 内容 |
 |---|---|
-| 文档版本 | v1.3 |
+| 文档版本 | v1.4 |
 | 变更前源码基线 | `origin/main@32db273125dc0a14d5f751dc0bfaa332ee87ceb8` |
 | 已评审日志实现 | `26d146f401a8557b687e1490f97a5899b22f79be` |
 | 管理面补充实现 | `65fb8eabbaa1a7dd63c2777280e19c8bdf5be8eb` |
 | 公司父 POM 切换后修复基线 | `origin/main@294e6d90bcad8c4214b08807bfd1cfdee5cc2404` |
+| 独立服务 Actuator 配置收敛基线 | `origin/main@b46b9d37e634dae12a777576062e2097516fe153` |
 | 实现分支 | `codex/align-log4j2` |
 | 适用范围 | Maven 日志依赖、Spring Boot 主程序与测试、`campusclaw` 镜像 |
 | 变更类型 | 架构变化、公司运行环境兼容 |
@@ -74,9 +75,12 @@ CampusClaw 的主模块、`campusclaw` 镜像以及测试统一使用一条日�
 声明 SLF4J API 和 Log4j2 Starter；公司父 POM 只负责依赖版本与插件管理。Maven 的
 `dependencyManagement` 不会自动把受管依赖加入应用 Classpath。
 
-### 4.3 日志对齐与管理面关闭分别决策
+### 4.3 日志对齐与 Actuator 应用配置分别决策
 
-日志类型冲突仍通过统一 Log4j2 运行时解决，不以逐项排除 Actuator 替代日志依赖对齐。公司镜像原有的 Actuator 排除清单属于独立的公司集成边界；管理端口和管理 Web 上下文关闭配置按追加策略补齐，见 [ADR-0038：追加关闭 CampusClaw 公司集成管理 Web 面](../decisions/0038-disable-campusclaw-corporate-management-web.html)。
+日志类型冲突仍通过统一 Log4j2 运行时解决，不以逐项排除 Actuator 替代日志依赖对齐。
+历史的管理面关闭见 ADR-0038 和 ADR-0040；CampusClaw 转为公司独立服务后，
+[ADR-0043](../decisions/0043-remove-campusclaw-standalone-actuator-configuration.html) 已删除应用级
+Actuator 属性和自动配置排除。该配置收敛不改变 Log4j2 单 Provider 契约。
 
 ### 4.4 测试断言事件语义而非控制台排版
 
@@ -144,6 +148,7 @@ Log4j2 的默认控制台 Layout 不保证把 SLF4J 结构化键值渲染成与 
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.4 | 2026-09-01 | 对齐 CampusClaw 公司独立服务边界：删除 Actuator 专用应用配置不影响 Log4j2 单 Provider 决策。 |
 | v1.3 | 2026-09-01 | 修复公司镜像切换 `NativeParent` 后丢失根 POM 公共日志依赖的问题，要求镜像显式声明 SLF4J 和 Log4j2 Starter。 |
 | v1.2 | 2026-09-01 | 对齐 CampusClaw 公司镜像的新目录、Java 包和公司父 POM 构建边界。 |
 | v1.1 | 2026-08-29 | 澄清日志运行时对齐与公司管理 Web 面关闭是两个独立决策 |

@@ -4,15 +4,16 @@
 
 | 项目 | 内容 |
 |---|---|
-| 文档版本 | 1.2.0 |
+| 文档版本 | 1.3.0 |
 | 状态 | Implemented |
 | 日期 | 2026-09-01 |
 | 源码基线 | `98d3999ec6d57e099d7bf02aaa4fcf9607fc61aa` |
 | 配置默认值变更前基线 | `2cb1661fd4dc27f2bc02579c44878d7a69775c3d` |
 | 显式日志依赖修复前基线 | `294e6d90bcad8c4214b08807bfd1cfdee5cc2404` |
+| 独立服务 Actuator 配置收敛前基线 | `b46b9d37e634dae12a777576062e2097516fe153` |
 | 适用范围 | `campusclaw/`、镜像同步脚本、pre-push 门禁和公司 Maven 构建 |
 | 变更类型 | 架构变化、公司集成约束 |
-| 决策记录 | [ADR-0037](../decisions/0037-align-log4j2-runtime.html)、[ADR-0041](../decisions/0041-standardize-campusclaw-corporate-module-identity.html)、[ADR-0042](../decisions/0042-default-campusmate-base-url-for-corporate-mirror.html) |
+| 决策记录 | [ADR-0037](../decisions/0037-align-log4j2-runtime.html)、[ADR-0041](../decisions/0041-standardize-campusclaw-corporate-module-identity.html)、[ADR-0042](../decisions/0042-default-campusmate-base-url-for-corporate-mirror.html)、[ADR-0043](../decisions/0043-remove-campusclaw-standalone-actuator-configuration.html) |
 
 > 本文中的路径和标识按 2026-09-01 的当前仓库位置展示；源码基线 SHA 仍是迁移前行为证据。
 
@@ -30,6 +31,9 @@
 1.2.0 修复公司父 POM 切换后的依赖边界：镜像不继承根 POM，因此必须在自身 POM 中显式声明
 SLF4J API 和 Log4j2 Starter；`NativeParent` 继续负责公司统一版本与插件管理。
 
+1.3.0 对齐公司独立服务拓扑：镜像 `application.properties` 不再包含为子模块集成准备的
+Actuator 管理属性或自动配置排除，最终管理策略由公司运行平台决定。
+
 ## 2. 关键定义与源码证据
 
 ### 2.1 观察行为
@@ -44,7 +48,7 @@ SLF4J API 和 Log4j2 Starter；`NativeParent` 继续负责公司统一版本与�
 | 同步分为 Stage、Apply、Verify | `scripts/sync-campusclaw.sh` 的三个阶段 |
 | 公司专有路径由排除清单保护 | `scripts/sync-campusclaw-exclude.txt` |
 | 根 Reactor 只包含主模块 | `pom.xml` 的 `<modules>` |
-| 公司管理配置有镜像专用回归测试 | `campusclaw/src/test/java/com/huawei/hicampus/claw/codingagent/config/ManagementConfigurationTest.java` |
+| 公司 CampusMate 配置有镜像专用回归测试 | `campusclaw/src/test/java/com/huawei/hicampus/claw/codingagent/config/CampusMateConfigurationTest.java` |
 
 在修复前基线 `294e6d90bcad8c4214b08807bfd1cfdee5cc2404`，根 `pom.xml` 的公共依赖包含
 `slf4j-api` 和 `spring-boot-starter-log4j2`，公司镜像 POM 切换到 `NativeParent` 后却未显式声明
@@ -63,6 +67,7 @@ SLF4J API 和 Log4j2 Starter；`NativeParent` 继续负责公司统一版本与�
 | 启动类 | `com.huawei.hicampus.claw.codingagent.CampusClawApplication` |
 | 同步入口 | `scripts/sync-campusclaw.sh` |
 | 日志依赖 | 镜像 POM 显式声明 `slf4j-api` 和 `spring-boot-starter-log4j2`，版本由 `NativeParent` 管理 |
+| 公司部署形态 | 独立服务；应用配置不覆盖 Actuator 策略 |
 
 这些变化属于架构变化和公司集成约束。Java 业务行为与公开契约保持不变，不属于产品功能迁移。
 
@@ -124,6 +129,15 @@ HTTPS CampusMate 服务；显式 `CAMPUSMATE_BASE_URL` 继续覆盖该值。通�
 Provider。该修复落实 [ADR-0037](../decisions/0037-align-log4j2-runtime.html) 的既有决策，不新增日志
 架构分支。
 
+### 4.7 独立服务不保留 Actuator 专用应用配置
+
+CampusClaw 在公司中作为独立服务运行，不再需要以 `management.*` 或
+`spring.autoconfigure.exclude` 抵消上层子模块带入的 Actuator 行为。这些配置从
+`application.properties` 一次性删除，不保留部分列表或兼容键。
+
+如果 `NativeParent` 或公司运行平台最终引入 Actuator，其端口和暴露范围由独立服务的标准
+部署配置决定。该决策见 [ADR-0043](../decisions/0043-remove-campusclaw-standalone-actuator-configuration.html)。
+
 ## 5. 边界情况
 
 - 无法解析 `NativeParent`：默认同步失败并提示配置公司 Maven 仓库；只允许显式
@@ -140,6 +154,7 @@ Provider。该修复落实 [ADR-0037](../decisions/0037-align-log4j2-runtime.htm
   不回退根 POM，也不在镜像 POM 固定一套独立版本。
 - 公司父 POM 传递引入 Logback 或 `log4j-to-slf4j`：依赖树和 JAR 检查失败，避免双 Provider 或
   双向桥进入运行时。
+- 公司最终 Classpath 引入 Actuator：使用运行平台的标准端口和暴露策略，不恢复应用级排除。
 
 ## 6. DFX
 
@@ -147,6 +162,7 @@ Provider。该修复落实 [ADR-0037](../decisions/0037-align-log4j2-runtime.htm
 - 可诊断性：父 POM解析错误明确给出坐标、环境要求和显式跳过方式。
 - 可观测性：公司镜像显式保留与主模块相同的 Log4j2 Core 运行时和日志测试事件模型。
 - 安全性：不保留旧包扫描和白名单入口，降低重复暴露或错误扫描的风险。
+- 配置边界：Actuator 实际暴露由公司独立服务运行平台验证，本仓库不再隐式关闭。
 - 可验证性：根 Reactor 与公司镜像分别构建，验证结果不会相互冒充。
 
 ## 7. 契约改动
@@ -154,12 +170,13 @@ Provider。该修复落实 [ADR-0037](../decisions/0037-align-log4j2-runtime.htm
 外部部署构建契约使用新目录、GAV、JAR、启动类和 Java 包。Spring 应用名为 `campusclaw`。
 公司镜像的 `campusmate.base-url` 新增 `https://localhost:8591` 缺省值，原有
 `CAMPUSMATE_BASE_URL` 环境变量继续作为覆盖入口；通用主模块仍要求显式配置。HTTP/SSE、数据库
-表、其余 `campusmate.*` 配置和 Mate Tool 契约没有变化。
+表、其余 `campusmate.*` 配置和 Mate Tool 契约没有变化。公司镜像不再声明 Actuator
+`management.*` 或自动配置排除，对应策略由公司独立服务运行环境提供。
 
 ## 8. 测试与验证
 
 仓库内验证包括根工程 `./mvnw verify`、同步后 dry-run 零漂移、337/141 文件计数、POM 坐标和
-`finalName` 缺失检查、公司镜像缺省地址与环境变量覆盖测试、受控文件旧标识零残留、PlantUML/SVG
+`finalName` 缺失检查、公司镜像缺省地址与环境变量覆盖测试、Actuator 专用配置零残留、受控文件旧标识零残留、PlantUML/SVG
 验证、公司镜像 Log4j2 依赖树检查以及 `git diff --check`。
 
 公司 Maven 环境还必须执行 `./scripts/sync-campusclaw.sh` 与
@@ -170,6 +187,7 @@ Provider。该修复落实 [ADR-0037](../decisions/0037-align-log4j2-runtime.htm
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 1.3.0 | 2026-09-01 | 对齐公司独立服务拓扑，删除镜像 Actuator 属性和自动配置排除，并重命名专有配置测试。 |
 | 1.2.0 | 2026-09-01 | 公司镜像显式声明 SLF4J 和 Log4j2 Starter，修复切换 `NativeParent` 后丢失根 POM 公共日志依赖的问题。 |
 | 1.1.0 | 2026-09-01 | 公司镜像为 `campusmate.base-url` 增加 `https://localhost:8591` 缺省值并保留环境变量覆盖；通用主模块仍为必填。 |
 | 1.0.0 | 2026-09-01 | 统一 CampusClaw 公司镜像目录、Java 包、父 POM、项目坐标、产物名和验证边界。 |

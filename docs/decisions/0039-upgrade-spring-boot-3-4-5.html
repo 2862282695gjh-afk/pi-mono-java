@@ -35,6 +35,7 @@
   <h2>Context</h2>
   <p>变更前，根 POM 以 <code>spring-boot.version=3.4.1</code> 同时管理 Spring Boot BOM 和 Maven 打包插件，Reactor 模块与公司镜像共享该版本源。上游 3.4.5 在同一维护线内提供缺陷与依赖修复，并修复影响 3.4.0–3.4.4 的 CVE-2025-22235。</p>
   <p>仓库没有 Spring Security 或 <code>EndpointRequest.to()</code> 的使用，因此没有观察到该漏洞的应用触发路径。本决策是依赖维护与安全修复，不改变系统架构。</p>
+  <p><strong>后续变化：</strong>CampusClaw 转为公司独立服务后，<a href="0043-remove-campusclaw-standalone-actuator-configuration.html">ADR-0043</a> 删除了当时保留的 Actuator 应用配置。该部署架构变化不改写本 ADR 的补丁升级结论。</p>
 
   <h2>Decision drivers</h2>
   <ul>
@@ -85,6 +86,7 @@
   <ul>
     <li><a href="../designs/spring-boot-3-4-5-upgrade.md">Spring Boot 3.4.5 升级评估与实施设计</a></li>
     <li><a href="0038-disable-campusclaw-corporate-management-web.html">ADR-0038：关闭 CampusClaw 公司集成管理 Web 面并保留端点基础设施</a></li>
+    <li><a href="0043-remove-campusclaw-standalone-actuator-configuration.html">ADR-0043：删除 CampusClaw 独立服务的 Actuator 专用配置</a></li>
     <li><a href="https://github.com/spring-projects/spring-boot/releases/tag/v3.4.5">Spring Boot 3.4.5 release</a></li>
     <li><a href="https://spring.io/security/cve-2025-22235/">CVE-2025-22235</a></li>
   </ul>

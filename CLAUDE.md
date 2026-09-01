@@ -744,7 +744,7 @@ Phases:
 2. **Apply** — `rsync --delete` from `build/` to in-tree `campusclaw/`. Paths listed in `scripts/sync-campusclaw-exclude.txt` are preserved (corporate-mirror-only files that have no counterpart in `modules/*`).
 3. **Verify** — resolve `NativeParent` and compile `campusclaw/` with the sync script's auto-detected JDK 21. Failure to resolve the company parent is fatal; the script never silently skips this gate.
 
-When adding a new file directly under `campusclaw/` that has no counterpart in `modules/*`, append its path to `scripts/sync-campusclaw-exclude.txt`, otherwise the next `--delete` will remove it. The current exclusions protect the corporate Skill tree and `ManagementConfigurationTest`. The hand-tuned `application.properties` is environment-specific — the script never touches it; only `META-INF/spring/*.imports` propagate from `modules/*`.
+When adding a new file directly under `campusclaw/` that has no counterpart in `modules/*`, append its path to `scripts/sync-campusclaw-exclude.txt`, otherwise the next `--delete` will remove it. The current exclusions protect the corporate Skill tree and `CampusMateConfigurationTest`. The hand-tuned `application.properties` is environment-specific, contains no Actuator-specific overrides for the standalone service, and is never touched by the script; only `META-INF/spring/*.imports` propagate from `modules/*`.
 
 ### pre-push guard
 
