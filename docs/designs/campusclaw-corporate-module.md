@@ -4,14 +4,15 @@
 
 | 项目 | 内容 |
 |---|---|
-| 文档版本 | 1.1.0 |
+| 文档版本 | 1.2.0 |
 | 状态 | Implemented |
 | 日期 | 2026-09-01 |
 | 源码基线 | `98d3999ec6d57e099d7bf02aaa4fcf9607fc61aa` |
 | 配置默认值变更前基线 | `2cb1661fd4dc27f2bc02579c44878d7a69775c3d` |
+| 显式日志依赖修复前基线 | `294e6d90bcad8c4214b08807bfd1cfdee5cc2404` |
 | 适用范围 | `campusclaw/`、镜像同步脚本、pre-push 门禁和公司 Maven 构建 |
 | 变更类型 | 架构变化、公司集成约束 |
-| 决策记录 | [ADR-0041](../decisions/0041-standardize-campusclaw-corporate-module-identity.html)、[ADR-0042](../decisions/0042-default-campusmate-base-url-for-corporate-mirror.html) |
+| 决策记录 | [ADR-0037](../decisions/0037-align-log4j2-runtime.html)、[ADR-0041](../decisions/0041-standardize-campusclaw-corporate-module-identity.html)、[ADR-0042](../decisions/0042-default-campusmate-base-url-for-corporate-mirror.html) |
 
 > 本文中的路径和标识按 2026-09-01 的当前仓库位置展示；源码基线 SHA 仍是迁移前行为证据。
 
@@ -25,6 +26,9 @@
 可执行 JAR 验证成为独立、显式的构建门禁。1.0.0 的身份迁移不改变 HTTP/SSE、数据库表、
 环境变量、`campusmate.*` 配置或 Mate Tool 契约；1.1.0 只为公司镜像的 `campusmate.base-url`
 增加本地缺省值，不改变通用主模块或 HTTP 契约。
+
+1.2.0 修复公司父 POM 切换后的依赖边界：镜像不继承根 POM，因此必须在自身 POM 中显式声明
+SLF4J API 和 Log4j2 Starter；`NativeParent` 继续负责公司统一版本与插件管理。
 
 ## 2. 关键定义与源码证据
 
@@ -42,6 +46,10 @@
 | 根 Reactor 只包含主模块 | `pom.xml` 的 `<modules>` |
 | 公司管理配置有镜像专用回归测试 | `campusclaw/src/test/java/com/huawei/hicampus/claw/codingagent/config/ManagementConfigurationTest.java` |
 
+在修复前基线 `294e6d90bcad8c4214b08807bfd1cfdee5cc2404`，根 `pom.xml` 的公共依赖包含
+`slf4j-api` 和 `spring-boot-starter-log4j2`，公司镜像 POM 切换到 `NativeParent` 后却未显式声明
+二者。镜像测试源码直接导入 Log4j2 API/Core，因此公司构建在 `testCompile` 阶段报告包不存在。
+
 ### 2.2 目标决策
 
 | 项目 | 目标值 |
@@ -54,6 +62,7 @@
 | Spring 应用名 | `campusclaw` |
 | 启动类 | `com.huawei.hicampus.claw.codingagent.CampusClawApplication` |
 | 同步入口 | `scripts/sync-campusclaw.sh` |
+| 日志依赖 | 镜像 POM 显式声明 `slf4j-api` 和 `spring-boot-starter-log4j2`，版本由 `NativeParent` 管理 |
 
 这些变化属于架构变化和公司集成约束。Java 业务行为与公开契约保持不变，不属于产品功能迁移。
 
@@ -104,6 +113,17 @@ HTTPS CampusMate 服务；显式 `CAMPUSMATE_BASE_URL` 继续覆盖该值。通�
 该差异属于公司集成产品约束。它不恢复旧部署变量、不增加配置别名，也不改变共享客户端的 URI
 校验或 CampusMate HTTP 契约。架构关系没有变化，因此本版本复用现有生成关系图。
 
+### 4.6 显式声明公司镜像所需日志依赖
+
+根 POM 的公共 `<dependencies>` 只对根 Reactor 模块生效。公司镜像改用 `NativeParent` 后，必须在
+`campusclaw/pom.xml` 显式声明源码和测试直接需要的 `slf4j-api` 与
+`spring-boot-starter-log4j2`。父 POM 的依赖管理负责提供公司统一版本，但不会自动把受管依赖加入
+应用 Classpath。
+
+镜像继续排除 `spring-boot-starter-logging`，确保运行时只保留 `log4j-slf4j2-impl` 这一条 SLF4J
+Provider。该修复落实 [ADR-0037](../decisions/0037-align-log4j2-runtime.html) 的既有决策，不新增日志
+架构分支。
+
 ## 5. 边界情况
 
 - 无法解析 `NativeParent`：默认同步失败并提示配置公司 Maven 仓库；只允许显式
@@ -116,11 +136,16 @@ HTTPS CampusMate 服务；显式 `CAMPUSMATE_BASE_URL` 继续覆盖该值。通�
 - 未配置 `CAMPUSMATE_BASE_URL`：公司镜像使用 `https://localhost:8591`；本地服务或证书不可用时，
   后续请求按连接或 TLS 错误失败，不回退到其他地址。
 - 已配置 `CAMPUSMATE_BASE_URL`：显式值覆盖缺省值，并继续接受共享配置的启动期 URI 校验。
+- 公司父 POM 未管理日志依赖版本：公司构建明确失败并报告缺失版本；应在公司依赖管理边界补齐，
+  不回退根 POM，也不在镜像 POM 固定一套独立版本。
+- 公司父 POM 传递引入 Logback 或 `log4j-to-slf4j`：依赖树和 JAR 检查失败，避免双 Provider 或
+  双向桥进入运行时。
 
 ## 6. DFX
 
 - 可维护性：主模块仍是唯一业务源码，镜像由确定性脚本生成。
 - 可诊断性：父 POM解析错误明确给出坐标、环境要求和显式跳过方式。
+- 可观测性：公司镜像显式保留与主模块相同的 Log4j2 Core 运行时和日志测试事件模型。
 - 安全性：不保留旧包扫描和白名单入口，降低重复暴露或错误扫描的风险。
 - 可验证性：根 Reactor 与公司镜像分别构建，验证结果不会相互冒充。
 
@@ -135,7 +160,7 @@ HTTPS CampusMate 服务；显式 `CAMPUSMATE_BASE_URL` 继续覆盖该值。通�
 
 仓库内验证包括根工程 `./mvnw verify`、同步后 dry-run 零漂移、337/141 文件计数、POM 坐标和
 `finalName` 缺失检查、公司镜像缺省地址与环境变量覆盖测试、受控文件旧标识零残留、PlantUML/SVG
-验证以及 `git diff --check`。
+验证、公司镜像 Log4j2 依赖树检查以及 `git diff --check`。
 
 公司 Maven 环境还必须执行 `./scripts/sync-campusclaw.sh` 与
 `./mvnw -f campusclaw/pom.xml clean verify`，检查有效 GAV、Manifest、Start-Class、默认 JAR
@@ -145,5 +170,6 @@ HTTPS CampusMate 服务；显式 `CAMPUSMATE_BASE_URL` 继续覆盖该值。通�
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 1.2.0 | 2026-09-01 | 公司镜像显式声明 SLF4J 和 Log4j2 Starter，修复切换 `NativeParent` 后丢失根 POM 公共日志依赖的问题。 |
 | 1.1.0 | 2026-09-01 | 公司镜像为 `campusmate.base-url` 增加 `https://localhost:8591` 缺省值并保留环境变量覆盖；通用主模块仍为必填。 |
 | 1.0.0 | 2026-09-01 | 统一 CampusClaw 公司镜像目录、Java 包、父 POM、项目坐标、产物名和验证边界。 |

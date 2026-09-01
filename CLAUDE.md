@@ -730,7 +730,7 @@ Stop 钩子会自动跑 `spotless:check` + `checkstyle:check`。主动修复：
 
 ## CampusClaw corporate mirror
 
-`campusclaw/` is a single-module corporate mirror of `modules/*`. Package is rewritten `com.campusclaw` → `com.huawei.hicampus.claw`. The mirror is **generated** — make changes in `modules/*`, then sync. It is outside the root Reactor and resolves `com.huawei.hicampus:NativeParent:26.0.0-SNAPSHOT` from the configured company Maven repository. Its project GAV is `com.huawei.campus:claw:1.0-SNAPSHOT`, and Maven's default artifact is `campusclaw/target/claw-1.0-SNAPSHOT.jar`. Its hand-maintained `application.properties` defaults `campusmate.base-url` to `https://localhost:8591`; `CAMPUSMATE_BASE_URL` overrides that value.
+`campusclaw/` is a single-module corporate mirror of `modules/*`. Package is rewritten `com.campusclaw` → `com.huawei.hicampus.claw`. The mirror is **generated** — make changes in `modules/*`, then sync. It is outside the root Reactor and resolves `com.huawei.hicampus:NativeParent:26.0.0-SNAPSHOT` from the configured company Maven repository. Its project GAV is `com.huawei.campus:claw:1.0-SNAPSHOT`, and Maven's default artifact is `campusclaw/target/claw-1.0-SNAPSHOT.jar`. Because it does not inherit the root POM, its POM explicitly declares `slf4j-api` and `spring-boot-starter-log4j2`; `NativeParent` supplies their company-managed versions. Its hand-maintained `application.properties` defaults `campusmate.base-url` to `https://localhost:8591`; `CAMPUSMATE_BASE_URL` overrides that value.
 
 | Command | Purpose |
 |---|---|
