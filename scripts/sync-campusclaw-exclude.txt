@@ -7,4 +7,4 @@
 # When you intentionally add a new file under campusclaw/ that has no
 # counterpart in modules/*, add its path here so future syncs preserve it.
 com/huawei/hicampus/claw/skills/
-com/huawei/hicampus/claw/codingagent/config/ManagementConfigurationTest.java
+com/huawei/hicampus/claw/codingagent/config/CampusMateConfigurationTest.java

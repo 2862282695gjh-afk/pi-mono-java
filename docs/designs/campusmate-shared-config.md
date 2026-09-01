@@ -2,7 +2,7 @@
 
 | 属性 | 值 |
 |---|---|
-| 文档版本 | 1.4.0 |
+| 文档版本 | 1.4.1 |
 | 状态 | Implemented |
 | 更新日期 | 2026-09-01 |
 | 外部设计基线 | `/Users/z/设计`：`c250e3f07536871d3d676242e552a5eb4346b0c7` |
@@ -69,7 +69,7 @@
 | 源码 | 目标职责 |
 |---|---|
 | `campusclaw/src/main/resources/application.properties` | 未配置环境变量时把 `campusmate.base-url` 解析为 `https://localhost:8591`；显式环境变量优先。 |
-| `campusclaw/src/test/java/com/huawei/hicampus/claw/codingagent/config/ManagementConfigurationTest.java` | 同时锁定缺省值和环境变量覆盖行为。 |
+| `campusclaw/src/test/java/com/huawei/hicampus/claw/codingagent/config/CampusMateConfigurationTest.java` | 同时锁定缺省值和环境变量覆盖行为。 |
 | `modules/coding-agent-cli/src/main/resources/application.yml` | 保持通用部署必填，不引入公司环境默认值。 |
 
 该差异是公司集成产品约束，不是 CampusMate HTTP 契约或主模块架构变化。
@@ -180,6 +180,7 @@ campusmate.base-url=${CAMPUSMATE_BASE_URL:https://localhost:8591}
 
 | 版本 | 日期 | 变化 |
 |---|---|---|
+| 1.4.1 | 2026-09-01 | CampusClaw 删除 Actuator 专用断言后，专有测试重命名为 `CampusMateConfigurationTest`；CampusMate 缺省值决策不变。 |
 | 1.4.0 | 2026-09-01 | 公司镜像为 `campusmate.base-url` 增加 `https://localhost:8591` 缺省值并保留环境变量覆盖；通用主模块仍为必填。 |
 | 1.3.0 | 2026-09-01 | 对齐 CampusClaw 公司镜像的新目录、Java 包和同步入口；历史行为继续以原提交 SHA 为准。 |
 | 1.2.0 | 2026-08-28 | 删除公司镜像侧旧部署变量转换脚本，要求部署直接注入 `CAMPUSMATE_BASE_URL`，并以 ADR-0035 记录兼容边界收敛。 |

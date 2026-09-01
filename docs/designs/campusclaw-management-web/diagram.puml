@@ -1,0 +1,35 @@
+@startuml campusclaw_actuator_boundary
+' Source evidence: campusclaw/src/main/resources/application.properties:1-23 at b46b9d37e634dae12a777576062e2097516fe153.
+' Source evidence: campusclaw/pom.xml does not directly declare Actuator at the same baseline.
+' User-provided target condition: CampusClaw is deployed as a standalone company service.
+' Observed behavior: the baseline application disabled management access and excluded Actuator auto-configurations.
+' Architecture change: the standalone service no longer overrides Actuator behavior in application properties.
+' Design reason: the company runtime boundary owns management policy for the standalone service.
+
+title CampusClaw Standalone Actuator Configuration Boundary
+
+skinparam monochrome true
+skinparam shadowing false
+skinparam componentStyle rectangle
+
+cloud "Company runtime platform" as platform
+artifact "NativeParent and runtime policy" as policy
+component "CampusClaw standalone service" as service
+file "application.properties\nbusiness configuration only" as application
+component "Optional Actuator runtime" as actuator
+
+platform --> service : deploy and configure
+policy --> service : build and runtime defaults
+application --> service : server, database, CampusMate, logging
+service --> actuator : uses when present
+
+note right of application
+  No management.* overrides.
+  No Actuator auto-configuration exclusions.
+end note
+
+note bottom of actuator
+  Presence, port, and exposure follow
+  the effective company runtime policy.
+end note
+@enduml
