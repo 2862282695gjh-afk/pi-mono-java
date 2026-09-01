@@ -60,10 +60,14 @@
   <ul>
     <li>删除 <code>campusclaw/scripts/install_value.sh</code>。</li>
     <li>删除 <code>scripts/sync-campusclaw-exclude.txt</code> 中对该公司镜像侧目录的登记。</li>
-    <li>部署必须直接向 CampusClaw 进程提供非空 <code>CAMPUSMATE_BASE_URL</code>。</li>
+    <li>本决策作出时，部署必须直接向 CampusClaw 进程提供非空 <code>CAMPUSMATE_BASE_URL</code>。</li>
     <li>仓库不读取或转换 <code>CAMPUSINNERGWSERVICE_DOMAIN_NAME_URL</code>，也不增加应用内旧变量回退。</li>
     <li>本决策仅废止 ADR-0026 的安装脚本兼容条款；共享 base URL、Endpoint 目录和校验决策继续有效。</li>
   </ul>
+  <p><strong>后续修订：</strong>2026-09-01 的
+    <a href="0042-default-campusmate-base-url-for-corporate-mirror.html">ADR-0042</a> 只为公司镜像增加
+    <code>https://localhost:8591</code> 本地缺省值。通用主模块仍要求显式设置
+    <code>CAMPUSMATE_BASE_URL</code>，旧变量和转换脚本仍不恢复。</p>
 
   <h2>Intentional difference</h2>
   <p><strong>产品约束：</strong>旧部署变量不再属于支持的安装输入。<strong>架构变化：</strong>部署边界从“旧变量经 mate 专用 Shell 转换”收敛为“启动进程直接接收应用变量”。CampusMate HTTP 契约不变。</p>
@@ -72,7 +76,8 @@
   <ul>
     <li>正面：主模块与公司镜像使用同一个明确的环境变量契约。</li>
     <li>正面：首次安装无需理解或执行额外的变量转换脚本。</li>
-    <li>负面：仍只设置旧变量的外部部署在迁移前将因缺少必填配置而启动失败。</li>
+    <li>负面：仍只设置旧变量的外部部署不会获得兼容；通用主模块将因缺少必填配置而启动失败，
+      公司镜像则使用 ADR-0042 定义的本地缺省地址。</li>
     <li>后续：外部 mate 父工程和部署流水线若曾调用该脚本，必须移除调用并直接注入新变量。</li>
   </ul>
 
@@ -86,6 +91,7 @@
   <h2>Related</h2>
   <ul>
     <li><a href="0026-unify-campusmate-client-configuration.html">ADR-0026：统一 CampusMate 客户端配置</a></li>
+    <li><a href="0042-default-campusmate-base-url-for-corporate-mirror.html">ADR-0042：为公司镜像设置 CampusMate 本地缺省地址</a></li>
     <li><a href="../designs/campusmate-shared-config.md">CampusMate 客户端共享配置设计</a></li>
   </ul>
 </main>

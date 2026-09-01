@@ -46,7 +46,7 @@ java -jar modules/coding-agent-cli/target/campusclaw-agent.jar
 | `GAUSSDB_URL` / `GAUSSDB_USER` / `GAUSSDB_PASSWORD` | 数据库连接 |
 | `GAUSSDB_SCHEMA` / `GAUSSDB_SSL_MODE` | 数据库 schema 和 SSL 模式 |
 | `CAMPUSCLAW_AGENTS_ROOT` | 受管 Agent 根目录，缺省为 `agent` |
-| `CAMPUSMATE_BASE_URL` | Model、受管 Runtime 与 Tool 共享的 CampusMate 服务地址（必填） |
+| `CAMPUSMATE_BASE_URL` | Model、受管 Runtime 与 Tool 共享的 CampusMate 服务地址；主模块必填，公司镜像缺省为 `https://localhost:8591` |
 | `CAMPUSMATE_MODEL_*` | CampusMate Model Provider 的 API、超时和 token 参数 |
 | `CAMPUSMATE_RUNTIME_*` | CampusMate Runtime 客户端的超时参数 |
 | `CAMPUSMATE_*_PATH*` | 六个 CampusMate HTTP operation path 或 path template |
