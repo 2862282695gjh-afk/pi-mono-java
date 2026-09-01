@@ -4,13 +4,14 @@
 
 | 项目 | 内容 |
 |---|---|
-| 文档版本 | 1.0.0 |
+| 文档版本 | 1.1.0 |
 | 状态 | Implemented |
 | 日期 | 2026-09-01 |
 | 源码基线 | `98d3999ec6d57e099d7bf02aaa4fcf9607fc61aa` |
+| 配置默认值变更前基线 | `2cb1661fd4dc27f2bc02579c44878d7a69775c3d` |
 | 适用范围 | `campusclaw/`、镜像同步脚本、pre-push 门禁和公司 Maven 构建 |
 | 变更类型 | 架构变化、公司集成约束 |
-| 决策记录 | [ADR-0041](../decisions/0041-standardize-campusclaw-corporate-module-identity.html) |
+| 决策记录 | [ADR-0041](../decisions/0041-standardize-campusclaw-corporate-module-identity.html)、[ADR-0042](../decisions/0042-default-campusmate-base-url-for-corporate-mirror.html) |
 
 > 本文中的路径和标识按 2026-09-01 的当前仓库位置展示；源码基线 SHA 仍是迁移前行为证据。
 
@@ -21,8 +22,9 @@
 根 Reactor，普通开发构建会依赖公司仓库；若独立维护两份 Java 源码，又会产生功能漂移。
 
 目标是保留“主模块生成公司镜像”的单向关系，同时统一公司模块身份，并让公司父 POM解析和
-可执行 JAR 验证成为独立、显式的构建门禁。本次不改变 HTTP/SSE、数据库表、环境变量、
-`campusmate.*` 配置或 Mate Tool 契约。
+可执行 JAR 验证成为独立、显式的构建门禁。1.0.0 的身份迁移不改变 HTTP/SSE、数据库表、
+环境变量、`campusmate.*` 配置或 Mate Tool 契约；1.1.0 只为公司镜像的 `campusmate.base-url`
+增加本地缺省值，不改变通用主模块或 HTTP 契约。
 
 ## 2. 关键定义与源码证据
 
@@ -92,6 +94,16 @@ Stage 结果同步到 `campusclaw/src`。`application.properties`、公司 POM �
 镜像 POM 不配置 `finalName`，产物由 `artifactId` 和 `version` 推导为
 `claw-1.0-SNAPSHOT.jar`。这使构建结果与有效 GAV 一致，减少额外命名规则。
 
+### 4.5 公司镜像提供 CampusMate 本地缺省地址
+
+公司镜像手工维护的 `application.properties` 使用
+`${CAMPUSMATE_BASE_URL:https://localhost:8591}`。未配置环境变量时，镜像连接本机 8591 端口的
+HTTPS CampusMate 服务；显式 `CAMPUSMATE_BASE_URL` 继续覆盖该值。通用主模块的
+`application.yml` 保持 `${CAMPUSMATE_BASE_URL}` 必填，不获得公司环境默认值。
+
+该差异属于公司集成产品约束。它不恢复旧部署变量、不增加配置别名，也不改变共享客户端的 URI
+校验或 CampusMate HTTP 契约。架构关系没有变化，因此本版本复用现有生成关系图。
+
 ## 5. 边界情况
 
 - 无法解析 `NativeParent`：默认同步失败并提示配置公司 Maven 仓库；只允许显式
@@ -101,6 +113,9 @@ Stage 结果同步到 `campusclaw/src`。`application.properties`、公司 POM �
 - 源包重写遗漏：Stage 校验立即失败，未通过的内容不得应用到镜像。
 - 公司父 POM 缺少依赖或插件版本：记录具体缺项并在公司构建边界修正，不回退根 POM。
 - 根模块改变：必须重新同步，pre-push dry-run 对内容漂移进行拦截。
+- 未配置 `CAMPUSMATE_BASE_URL`：公司镜像使用 `https://localhost:8591`；本地服务或证书不可用时，
+  后续请求按连接或 TLS 错误失败，不回退到其他地址。
+- 已配置 `CAMPUSMATE_BASE_URL`：显式值覆盖缺省值，并继续接受共享配置的启动期 URI 校验。
 
 ## 6. DFX
 
@@ -111,13 +126,16 @@ Stage 结果同步到 `campusclaw/src`。`application.properties`、公司 POM �
 
 ## 7. 契约改动
 
-外部部署构建契约改为新目录、GAV、JAR、启动类和 Java 包。Spring 应用名为 `campusclaw`。
-HTTP/SSE、数据库表、环境变量、`campusmate.*` 配置和 Mate Tool 契约没有变化。
+外部部署构建契约使用新目录、GAV、JAR、启动类和 Java 包。Spring 应用名为 `campusclaw`。
+公司镜像的 `campusmate.base-url` 新增 `https://localhost:8591` 缺省值，原有
+`CAMPUSMATE_BASE_URL` 环境变量继续作为覆盖入口；通用主模块仍要求显式配置。HTTP/SSE、数据库
+表、其余 `campusmate.*` 配置和 Mate Tool 契约没有变化。
 
 ## 8. 测试与验证
 
 仓库内验证包括根工程 `./mvnw verify`、同步后 dry-run 零漂移、337/141 文件计数、POM 坐标和
-`finalName` 缺失检查、受控文件旧标识零残留、PlantUML/SVG 验证以及 `git diff --check`。
+`finalName` 缺失检查、公司镜像缺省地址与环境变量覆盖测试、受控文件旧标识零残留、PlantUML/SVG
+验证以及 `git diff --check`。
 
 公司 Maven 环境还必须执行 `./scripts/sync-campusclaw.sh` 与
 `./mvnw -f campusclaw/pom.xml clean verify`，检查有效 GAV、Manifest、Start-Class、默认 JAR
@@ -127,4 +145,5 @@ HTTP/SSE、数据库表、环境变量、`campusmate.*` 配置和 Mate Tool 契�
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 1.1.0 | 2026-09-01 | 公司镜像为 `campusmate.base-url` 增加 `https://localhost:8591` 缺省值并保留环境变量覆盖；通用主模块仍为必填。 |
 | 1.0.0 | 2026-09-01 | 统一 CampusClaw 公司镜像目录、Java 包、父 POM、项目坐标、产物名和验证边界。 |

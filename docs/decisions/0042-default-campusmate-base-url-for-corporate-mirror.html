@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ADR-0042：为公司镜像设置 CampusMate 本地缺省地址</title>
+  <style>
+    :root { color-scheme: light; font-family: Inter, "PingFang SC", sans-serif; color: #213047; background: #eef3f8; }
+    body { margin: 0; }
+    main { width: min(940px, calc(100% - 40px)); margin: 40px auto; padding: 40px; box-sizing: border-box; background: #fff; border: 1px solid #cad5e1; border-radius: 16px; }
+    h1 { margin-top: 0; font-size: 30px; }
+    h2 { margin-top: 32px; font-size: 20px; }
+    h3 { margin-top: 22px; font-size: 17px; }
+    p, li { line-height: 1.75; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 10px 12px; border: 1px solid #cad5e1; text-align: left; vertical-align: top; }
+    th { width: 200px; background: #f1f5f9; }
+    code { padding: 2px 5px; border-radius: 5px; background: #eef2f7; overflow-wrap: anywhere; }
+    a { color: #1d4ed8; }
+    .status { display: inline-flex; padding: 4px 9px; border-radius: 999px; color: #166534; background: #dcfce7; font-weight: 650; }
+    @media (max-width: 640px) { main { width: 100%; margin: 0; padding: 24px 18px; border: 0; border-radius: 0; } th { width: 125px; } }
+  </style>
+</head>
+<body>
+<main>
+  <h1>ADR-0042：为公司镜像设置 CampusMate 本地缺省地址</h1>
+  <table>
+    <tr><th>Status</th><td><span class="status">Accepted</span></td></tr>
+    <tr><th>Date</th><td>2026-09-01</td></tr>
+    <tr><th>Source baseline</th><td><code>origin/main@2cb1661fd4dc27f2bc02579c44878d7a69775c3d</code></td></tr>
+    <tr><th>Observed source</th><td><code>campusclaw/src/main/resources/application.properties</code>、<code>modules/coding-agent-cli/src/main/resources/application.yml</code>、<code>campusclaw/src/test/java/com/huawei/hicampus/claw/codingagent/config/ManagementConfigurationTest.java</code></td></tr>
+  </table>
+
+  <h2>Context</h2>
+  <p>变更前，公司镜像与通用主模块都使用必填占位符 <code>${CAMPUSMATE_BASE_URL}</code>。公司镜像的
+    本地集成环境已约定 CampusMate 在本机 8591 端口通过 HTTPS 提供服务；每次都额外注入同一个地址
+    增加部署配置成本。通用主模块面向多种部署环境，不应继承该公司环境假设。</p>
+  <p>公司镜像的 <code>application.properties</code> 与
+    <code>ManagementConfigurationTest</code> 均为镜像侧手工维护文件，不由主模块同步覆盖，因此可以在
+    不改变规范源码配置的前提下锁定该产品差异。</p>
+
+  <h2>Observed behavior</h2>
+  <ul>
+    <li><code>campusclaw/src/main/resources/application.properties</code> 声明
+      <code>campusmate.base-url=${CAMPUSMATE_BASE_URL}</code>，缺少环境变量时没有地址。</li>
+    <li><code>modules/coding-agent-cli/src/main/resources/application.yml</code> 使用相同的必填环境变量占位符。</li>
+    <li><code>ManagementConfigurationTest</code> 只校验公司管理端口和 Actuator 暴露范围，未锁定 CampusMate 地址。</li>
+  </ul>
+
+  <h2>Decision drivers</h2>
+  <ul>
+    <li>让公司镜像在标准本地集成拓扑中无需额外地址配置即可启动。</li>
+    <li>保留生产和非标准环境通过 <code>CAMPUSMATE_BASE_URL</code> 覆盖地址的能力。</li>
+    <li>不把公司环境假设扩散到通用主模块。</li>
+    <li>不恢复旧部署变量、转换脚本或应用配置别名。</li>
+  </ul>
+
+  <h2>Considered options</h2>
+  <h3>继续要求所有环境显式配置</h3>
+  <p><strong>优点：</strong>没有新的缺省行为。<br><strong>缺点：</strong>公司镜像的标准本地拓扑仍需重复配置固定地址。拒绝。</p>
+
+  <h3>通用主模块和公司镜像同时增加缺省值</h3>
+  <p><strong>优点：</strong>两个配置文件表面一致。<br><strong>缺点：</strong>把公司本地部署假设扩散到通用产品，可能让配置遗漏静默连接本机。拒绝。</p>
+
+  <h3>只为公司镜像增加缺省值</h3>
+  <p><strong>优点：</strong>满足公司集成拓扑，并保持通用配置严格。<br><strong>缺点：</strong>镜像与规范配置存在有意差异，需要专有测试和文档维护。接受。</p>
+
+  <h2>Decision</h2>
+  <ul>
+    <li>公司镜像声明 <code>campusmate.base-url=${CAMPUSMATE_BASE_URL:https://localhost:8591}</code>。</li>
+    <li>显式 <code>CAMPUSMATE_BASE_URL</code> 优先于缺省值，并继续经过现有共享 URI 校验。</li>
+    <li>通用主模块继续声明 <code>base-url: ${CAMPUSMATE_BASE_URL}</code>，环境变量保持必填。</li>
+    <li>公司专有测试分别覆盖未设置环境变量时的缺省值和显式覆盖行为。</li>
+    <li>不修改 CampusMate HTTP/SSE、认证、数据库、Mate Tool 或其余配置契约。</li>
+  </ul>
+
+  <h2>Intentional difference</h2>
+  <p><strong>公司集成产品约束：</strong>只有公司镜像知道本机 HTTPS 8591 端口这一标准拓扑。
+    <strong>非架构变化：</strong>共享客户端、Endpoint 目录、URI 校验和主模块同步关系保持不变。</p>
+
+  <h2>Consequences</h2>
+  <ul>
+    <li>正面：标准公司本地环境不再需要重复设置固定的 CampusMate 地址。</li>
+    <li>正面：部署仍可使用环境变量指向远端或不同端口。</li>
+    <li>约束：本机服务未启动或 TLS 证书不可用时，实际请求会以连接或证书错误失败，不回退到其他地址。</li>
+    <li>维护成本：镜像专有测试必须防止同步流程覆盖，并与手工 properties 一起审查。</li>
+  </ul>
+
+  <h2>Validation</h2>
+  <ul>
+    <li><code>ManagementConfigurationTest</code> 验证无环境变量时得到 <code>https://localhost:8591</code>。</li>
+    <li>同一测试验证显式 <code>CAMPUSMATE_BASE_URL</code> 覆盖缺省值。</li>
+    <li>同步 dry-run 验证公司专有测试和手工配置不产生镜像漂移。</li>
+    <li>公司 Maven 环境执行镜像测试；普通环境若无法解析 <code>NativeParent</code>，必须明确报告该门禁未运行。</li>
+  </ul>
+
+  <h2>Related</h2>
+  <ul>
+    <li><a href="0026-unify-campusmate-client-configuration.html">ADR-0026：统一 CampusMate 客户端配置</a></li>
+    <li><a href="0035-remove-legacy-campusmate-environment-adapter.html">ADR-0035：删除 CampusMate 旧部署变量兼容脚本</a></li>
+    <li><a href="0041-standardize-campusclaw-corporate-module-identity.html">ADR-0041：标准化 CampusClaw 公司镜像模块身份</a></li>
+    <li><a href="../designs/campusmate-shared-config.md">CampusMate 客户端共享配置设计</a></li>
+    <li><a href="../designs/campusclaw-corporate-module.md">CampusClaw 公司镜像模块设计</a></li>
+  </ul>
+</main>
+</body>
+</html>

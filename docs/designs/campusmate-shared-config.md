@@ -2,7 +2,7 @@
 
 | 属性 | 值 |
 |---|---|
-| 文档版本 | 1.3.0 |
+| 文档版本 | 1.4.0 |
 | 状态 | Implemented |
 | 更新日期 | 2026-09-01 |
 | 外部设计基线 | `/Users/z/设计`：`c250e3f07536871d3d676242e552a5eb4346b0c7` |
@@ -10,19 +10,20 @@
 | 实施前源码基线 | `56be8eee59415a5f86658d6635a7b7e8891263d3` |
 | 受审实现基线 | `e8533b5ebf564f9d8d707faa115be638dc377556` |
 | 兼容清理源码基线 | `28b3235e5cff0da2f768cbfc6b7b9ce5e2b51193` |
+| 公司镜像默认值变更前基线 | `2cb1661fd4dc27f2bc02579c44878d7a69775c3d` |
 | mate-service 观察基线 | `956b547f5ca12ca89e68f73012f92a4406b0c9fa` |
-| 决策记录 | [ADR-0026](../decisions/0026-unify-campusmate-client-configuration.html)、[ADR-0035](../decisions/0035-remove-legacy-campusmate-environment-adapter.html) |
+| 决策记录 | [ADR-0026](../decisions/0026-unify-campusmate-client-configuration.html)、[ADR-0035](../decisions/0035-remove-legacy-campusmate-environment-adapter.html)、[ADR-0042](../decisions/0042-default-campusmate-base-url-for-corporate-mirror.html) |
 
 > 公司镜像相关路径和标识按 2026-09-01 的当前仓库位置展示；历史提交 SHA 仍是对应行为证据。
 
 ## 1. 结论
 
 `mate`、CampusMate Model、受管 Runtime 与 Mate Tool 是同一个 CampusMate 服务的不同消费面，
-因此统一使用一个必填 `campusmate.base-url` 和一个 `campusmate.endpoints` operation 目录。
+因此统一使用一个 `campusmate.base-url` 和一个 `campusmate.endpoints` operation 目录。
 模型本地参数归入 `campusmate.model`，Runtime 本地参数归入 `campusmate.runtime`，Tool 开关归入
 `campusmate.tool`。不再保留 `campusmate.model-manager.base-url`、
-`campusmate.runtime.base-url`、顶层 `mate.*` 应用配置或旧部署变量转换脚本。部署环境必须直接向
-应用进程提供 `CAMPUSMATE_BASE_URL`。
+`campusmate.runtime.base-url`、顶层 `mate.*` 应用配置或旧部署变量转换脚本。通用主模块仍要求部署
+显式提供 `CAMPUSMATE_BASE_URL`；公司镜像缺省使用 `https://localhost:8591`，同一环境变量可覆盖。
 
 ![CampusMate 共享客户端配置](campusmate-shared-config/campusmate_shared_configuration.svg)
 
@@ -57,7 +58,23 @@
 | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtime/MateServiceClient.java` | `getAgentRuntime`、`querySkillInfo` | 从共享 endpoint 目录取得 Runtime 和 Skill operation。 |
 | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/config/MateToolAutoConfiguration.java` | `mateToolClient` | Tool 客户端复用同一 base URL、Agent/Skill operation 与 Tool operation。 |
 
-### 2.3 旧部署变量兼容清理
+### 2.3 公司镜像默认值
+
+以 `2cb1661fd4dc27f2bc02579c44878d7a69775c3d` 为变更前观察基线，
+`campusclaw/src/main/resources/application.properties` 只声明
+`${CAMPUSMATE_BASE_URL}`，未提供缺省地址；通用主模块的 `application.yml` 使用同一必填占位符。
+
+目标实现只修改公司镜像手工维护的配置：
+
+| 源码 | 目标职责 |
+|---|---|
+| `campusclaw/src/main/resources/application.properties` | 未配置环境变量时把 `campusmate.base-url` 解析为 `https://localhost:8591`；显式环境变量优先。 |
+| `campusclaw/src/test/java/com/huawei/hicampus/claw/codingagent/config/ManagementConfigurationTest.java` | 同时锁定缺省值和环境变量覆盖行为。 |
+| `modules/coding-agent-cli/src/main/resources/application.yml` | 保持通用部署必填，不引入公司环境默认值。 |
+
+该差异是公司集成产品约束，不是 CampusMate HTTP 契约或主模块架构变化。
+
+### 2.4 旧部署变量兼容清理
 
 以下证据来自兼容清理源码基线 `28b3235e5cff0da2f768cbfc6b7b9ce5e2b51193`：
 
@@ -69,10 +86,11 @@
 | `scripts/sync-campusclaw-exclude.txt` | 目标决策：删除脚本后移除其公司镜像侧独有路径登记。 |
 
 根据 [ADR-0035](../decisions/0035-remove-legacy-campusmate-environment-adapter.html)，删除该 mate
-侧兼容脚本属于部署边界收敛：新旧部署都必须直接注入 `CAMPUSMATE_BASE_URL`，不再由仓库代码转换
-旧变量。该变化不修改 CampusMate HTTP 契约。
+侧兼容脚本属于部署边界收敛：当时的新旧部署都必须直接注入 `CAMPUSMATE_BASE_URL`，不再由仓库
+代码转换旧变量。ADR-0042 后续只为公司镜像增加本地缺省值，仍不恢复旧变量或转换脚本。两次变化
+均不修改 CampusMate HTTP 契约。
 
-### 2.4 mate-service 服务端状态
+### 2.5 mate-service 服务端状态
 
 以下状态来自独立 mate-service 仓库的观察基线
 `956b547f5ca12ca89e68f73012f92a4406b0c9fa`。客户端已有依赖不等于服务端已存在对应实现：
@@ -90,7 +108,7 @@
 
 ![CampusMate 配置键迁移](campusmate-shared-config/configuration_key_migration.svg)
 
-[PlantUML 源码：`configuration_key_migration`](campusmate-shared-config/diagram.puml#L49)
+[PlantUML 源码：`configuration_key_migration`](campusmate-shared-config/diagram.puml#L52)
 
 ```yaml
 campusmate:
@@ -110,6 +128,12 @@ campusmate:
     enabled: true
 ```
 
+公司镜像在手工维护的 properties 中增加本地缺省值：
+
+```properties
+campusmate.base-url=${CAMPUSMATE_BASE_URL:https://localhost:8591}
+```
+
 迁移规则：
 
 | 旧键或变量 | 新键或变量 | 处理 |
@@ -119,7 +143,8 @@ campusmate:
 | `mate.innerGWSerive` | `campusmate.base-url` | 修复服务身份与拼写，不保留别名。 |
 | 三组旧 path | `campusmate.endpoints.*` | 按 HTTP operation 去重为六条。 |
 | `campusmate.model-manager.*` 本地参数 | `campusmate.model.*` | 按用户命名决策将 `model-manager` 收敛为 `model`。 |
-| `CAMPUSINNERGWSERVICE_DOMAIN_NAME_URL` | 无 | 删除旧变量兼容和 `campusclaw/scripts/install_value.sh`；部署直接设置 `CAMPUSMATE_BASE_URL`。 |
+| `CAMPUSINNERGWSERVICE_DOMAIN_NAME_URL` | 无 | 删除旧变量兼容和 `campusclaw/scripts/install_value.sh`；不再读取该变量。 |
+| 公司镜像缺省 CampusMate 地址 | `https://localhost:8591` | 仅在 `CAMPUSMATE_BASE_URL` 未配置时使用；显式值继续覆盖。 |
 
 ## 4. 校验与安全边界
 
@@ -131,7 +156,8 @@ campusmate:
 - 模板展开只精确替换 `%s`，保留其余合法百分号编码（例如 `%20`），不使用格式化器解释整个 path。
 - 配置在 Spring 绑定和 Provider 初始化阶段失败，避免错误地址延迟到首次调用才暴露。
 - 六个条目以 `HTTP method + path` 校验唯一性；Runtime 和 Tool 共享同一个 Skill query 条目。
-- 应用和仓库交付脚本不读取旧部署变量；缺少 `CAMPUSMATE_BASE_URL` 时按必填配置失败。
+- 应用和仓库交付脚本不读取旧部署变量；通用主模块缺少 `CAMPUSMATE_BASE_URL` 时按必填配置失败，
+  公司镜像则使用 `https://localhost:8591`。
 
 ## 5. HTTP 契约边界
 
@@ -142,16 +168,19 @@ campusmate:
 
 ## 6. 验证
 
-- 配置绑定：缺失或非法 base URL、越界或规范化点段 path、占位符数量与重复 operation；
+- 配置绑定：通用主模块缺失或非法 base URL、公司镜像缺省值与环境变量覆盖、越界或规范化点段
+  path、占位符数量与重复 operation；
 - 客户端：Model、Runtime、Tool 在自定义共享 base URL 和自定义 endpoint 下请求正确 URI，
   并保留 path 中 `%20` 等合法百分号编码；
-- 兼容交付：规范 YAML 与手工维护的镜像 properties 只读取 `CAMPUSMATE_BASE_URL`，仓库不再提供旧变量转换脚本；
+- 兼容交付：规范 YAML 与手工维护的镜像 properties 只读取 `CAMPUSMATE_BASE_URL`，公司镜像提供
+  本地缺省值，仓库不再提供旧变量转换脚本；
 - 工程规则：Spotless、Checkstyle、相关测试、镜像同步、PlantUML/SVG 和 `git diff --check`。
 
 ## 7. 版本历史
 
 | 版本 | 日期 | 变化 |
 |---|---|---|
+| 1.4.0 | 2026-09-01 | 公司镜像为 `campusmate.base-url` 增加 `https://localhost:8591` 缺省值并保留环境变量覆盖；通用主模块仍为必填。 |
 | 1.3.0 | 2026-09-01 | 对齐 CampusClaw 公司镜像的新目录、Java 包和同步入口；历史行为继续以原提交 SHA 为准。 |
 | 1.2.0 | 2026-08-28 | 删除公司镜像侧旧部署变量转换脚本，要求部署直接注入 `CAMPUSMATE_BASE_URL`，并以 ADR-0035 记录兼容边界收敛。 |
 | 1.1.0 | 2026-08-26 | 响应 PR 审查：冻结受审实现基线，区分 mate-service 已观察 operation 与服务端目标态，并补充模板百分号编码及规范化点段校验。 |

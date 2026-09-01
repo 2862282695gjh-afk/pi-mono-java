@@ -7,6 +7,7 @@
 ' Target-only design: Skill query, Tool metadata, and Tool execute are client dependencies but server-side pending at that baseline.
 ' Architecture change: one shared origin and six HTTP operations are consumed by all three clients.
 ' Security hardening: base URLs and service-local paths fail during startup when invalid.
+' Product constraint: campusclaw/src/main/resources/application.properties defaults the origin to https://localhost:8591 after 2cb1661f.
 skinparam shadowing false
 skinparam componentStyle rectangle
 left to right direction
@@ -37,6 +38,8 @@ note bottom of properties
   Shared configuration only.
   Model, Runtime, and Tool
   keep separate local parameters.
+  Canonical module: environment required.
+  Corporate mirror: localhost HTTPS default.
 end note
 
 legend bottom
@@ -48,6 +51,7 @@ endlegend
 
 @startuml configuration_key_migration
 ' Source evidence: application.yml lines 89-140 at 56be8eee59415a5f86658d6635a7b7e8891263d3.
+' Product constraint: campusclaw/src/main/resources/application.properties supplies the corporate mirror default after 2cb1661f.
 ' Design reason: mate and campusmate identify the same downstream service.
 ' Design reason: Runtime and Tool consumed the same Skill query operation through duplicate keys.
 skinparam shadowing false
@@ -60,7 +64,7 @@ rectangle "Observed configuration" as old {
 }
 
 rectangle "Target configuration" as target {
-  card "campusmate.base-url\none required origin" as new_base
+  card "campusmate.base-url\none shared origin" as new_base
   card "campusmate.endpoints\nsix unique operations" as new_endpoints
   card "campusmate.model\nmodel-local parameters" as new_model
   card "campusmate.runtime\nruntime-local parameters" as new_runtime
@@ -80,5 +84,10 @@ old_tool --> new_tool
 note bottom of new_endpoints
   Runtime and Tool share one
   skill-info-path-template entry.
+end note
+
+note bottom of new_base
+  Canonical module: environment required.
+  Corporate mirror: https://localhost:8591.
 end note
 @enduml
