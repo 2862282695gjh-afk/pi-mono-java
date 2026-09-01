@@ -4,14 +4,16 @@
 
 | 项目 | 内容 |
 |---|---|
-| 文档版本 | v1.1 |
+| 文档版本 | v1.2 |
 | 变更前源码基线 | `origin/main@32db273125dc0a14d5f751dc0bfaa332ee87ceb8` |
 | 已评审日志实现 | `26d146f401a8557b687e1490f97a5899b22f79be` |
 | 管理面补充实现 | `65fb8eabbaa1a7dd63c2777280e19c8bdf5be8eb` |
 | 实现分支 | `codex/align-log4j2` |
-| 适用范围 | Maven 日志依赖、Spring Boot 主程序与测试、`mate-campusclaw` 镜像 |
+| 适用范围 | Maven 日志依赖、Spring Boot 主程序与测试、`campusclaw` 镜像 |
 | 变更类型 | 架构变化、公司运行环境兼容 |
 | 决策状态 | Accepted |
+
+> 公司镜像相关路径和标识按 2026-09-01 的当前仓库位置展示；历史提交 SHA 仍是对应行为证据。
 
 ## 1. Context
 
@@ -29,14 +31,14 @@ Windows 只是暴露问题的运行环境；冲突来自同一 Classpath 中日�
 |---|---|
 | 根 POM 为全部模块直接引入 `slf4j-api` 和 `logback-classic` | `pom.xml:122-131` |
 | CLI 的 `spring-boot-starter` 和 `spring-boot-starter-test` 没有排除默认日志 Starter | `modules/coding-agent-cli/pom.xml:39-55`、`modules/coding-agent-cli/pom.xml:87-92` |
-| 独立镜像 POM 同样保留 Spring Boot 默认日志依赖 | `mate-campusclaw/pom.xml:36-56`、`mate-campusclaw/pom.xml:124-129` |
+| 独立镜像 POM 同样保留 Spring Boot 默认日志依赖 | `campusclaw/pom.xml:36-56`、`campusclaw/pom.xml:124-129` |
 | Mate Provider 日志测试直接导入并使用 Logback 类型 | `modules/ai/src/test/java/com/campusclaw/ai/provider/mate/MateServiceModelManagerProviderTest.java:40-50`、`:62-82` |
 
 这些证据只能说明仓库原有 Logback 选择；Actuator 和公司日志自动配置行为属于外部集成条件。
 
 ## 3. 目标设计
 
-CampusClaw 的主模块、`mate-campusclaw` 镜像以及测试统一使用一条日志链路：
+CampusClaw 的主模块、`campusclaw` 镜像以及测试统一使用一条日志链路：
 
 1. 业务代码继续只依赖 SLF4J API，不改写现有日志调用。
 2. 根 POM 使用 `spring-boot-starter-log4j2` 提供唯一的 SLF4J Provider 和 Log4j2 Core。
@@ -62,7 +64,7 @@ CampusClaw 的主模块、`mate-campusclaw` 镜像以及测试统一使用一条
 
 ### 4.3 日志对齐与管理面关闭分别决策
 
-日志类型冲突仍通过统一 Log4j2 运行时解决，不以逐项排除 Actuator 替代日志依赖对齐。公司镜像原有的 Actuator 排除清单属于独立的公司集成边界；管理端口和管理 Web 上下文关闭配置按追加策略补齐，见 [ADR-0038：追加关闭 Mate 管理 Web 面](../decisions/0038-disable-mate-management-web.html)。
+日志类型冲突仍通过统一 Log4j2 运行时解决，不以逐项排除 Actuator 替代日志依赖对齐。公司镜像原有的 Actuator 排除清单属于独立的公司集成边界；管理端口和管理 Web 上下文关闭配置按追加策略补齐，见 [ADR-0038：追加关闭 CampusClaw 公司集成管理 Web 面](../decisions/0038-disable-campusclaw-corporate-management-web.html)。
 
 ### 4.4 测试断言事件语义而非控制台排版
 
@@ -76,7 +78,7 @@ Log4j2 的默认控制台 Layout 不保证把 SLF4J 结构化键值渲染成与 
 - 不存在：`logback-classic`、`logback-core`、`log4j-to-slf4j`。
 - SLF4J 到 Log4j2 的桥接方向只有 `log4j-slf4j2-impl`，不得同时出现反向桥。
 - 可执行 JAR 中必须只有同样的单向日志链路。
-- `mate-campusclaw` POM 的公司定制部分继续保留，模块测试变更通过同步脚本进行包名镜像。
+- `campusclaw` POM 的公司定制部分继续保留，模块测试变更通过同步脚本进行包名镜像。
 
 ## 6. 边界情况与影响
 
@@ -103,7 +105,7 @@ Log4j2 的默认控制台 Layout 不保证把 SLF4J 结构化键值渲染成与 
 |---|---|
 | 全模块统一继承 Log4j2 Starter | `pom.xml:122-131` |
 | CLI 排除主程序和测试默认日志 Starter | `modules/coding-agent-cli/pom.xml:39-49`、`:93-104` |
-| 独立镜像应用相同排除 | `mate-campusclaw/pom.xml:36-46`、`:130-141` |
+| 独立镜像应用相同排除 | `campusclaw/pom.xml:36-46`、`:130-141` |
 | 测试 Appender 保存不可变 Log4j2 事件 | `modules/ai/src/test/java/com/campusclaw/ai/test/Log4j2TestAppender.java:20-34` |
 | Mate WARN/ERROR 日志按实际 logger 配置和恢复 | `modules/ai/src/test/java/com/campusclaw/ai/provider/mate/MateServiceModelManagerProviderTest.java:62-99` |
 | 结构化字段和异常直接从 LogEvent 断言 | `modules/coding-agent-cli/src/test/java/com/campusclaw/codingagent/runtimeapi/agent/FileAgentDirectoryResolverTest.java:62-89` |
@@ -111,15 +113,16 @@ Log4j2 的默认控制台 Layout 不保证把 SLF4J 结构化键值渲染成与 
 ## 9. 测试与验证
 
 - 主工程执行完整 `./mvnw verify`。
-- `mate-campusclaw` 执行完整 `./mvnw -f mate-campusclaw/pom.xml verify`。
+- `campusclaw` 执行完整 `./mvnw -f campusclaw/pom.xml verify`。
 - 两侧执行日志依赖树检查，确认没有 Logback 和 `log4j-to-slf4j`。
 - 检查两个可执行 JAR 的 `BOOT-INF/lib`，确认只包含 Log4j2 API、Core 和 SLF4J2 Provider。
-- 执行 `scripts/sync-mate-campusclaw.sh --dry-run`，确认镜像同步没有源码漂移。
+- 执行 `scripts/sync-campusclaw.sh --dry-run`，确认镜像同步没有源码漂移。
 - 生成 PlantUML SVG，校验 XML、Markdown 路径、源码链接、ASCII 和 `git diff --check`。
 
 ## 10. 版本历史
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.2 | 2026-09-01 | 对齐 CampusClaw 公司镜像的新目录、Java 包和公司父 POM 构建边界。 |
 | v1.1 | 2026-08-29 | 澄清日志运行时对齐与公司管理 Web 面关闭是两个独立决策 |
-| v1.0 | 2026-08-29 | 统一生产、测试和 `mate-campusclaw` 的 Log4j2 运行时，并记录公司 Actuator 集成边界 |
+| v1.0 | 2026-08-29 | 统一生产、测试和 `campusclaw` 的 Log4j2 运行时，并记录公司 Actuator 集成边界 |

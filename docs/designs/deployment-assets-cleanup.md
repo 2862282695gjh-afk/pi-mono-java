@@ -4,12 +4,14 @@
 
 | 项目 | 内容 |
 |---|---|
-| 文档版本 | v1.0 |
+| 文档版本 | v1.1 |
 | 变更前源码基线 | `origin/main@dee709fc584dd722d2e94eb381338b997659e35a` |
 | 实现分支 | `codex/remove-k8s-assets` |
 | 适用范围 | 根 Docker 构建文件、根和 `modules` 下 Kubernetes 资产、Kubernetes Spring Profile、关联说明文档 |
 | 变更类型 | 架构变化、过期部署资产清理 |
 | 决策状态 | Accepted |
+
+> 公司镜像相关路径和标识按 2026-09-01 的当前仓库位置展示；历史提交 SHA 仍是对应行为证据。
 
 ## 1. Context
 
@@ -77,7 +79,7 @@
 - 本次不修改 Java API、HTTP/SSE 契约、数据库对象、MateService 调用协议或前端行为。
 - 删除 `application-k8s.yml` 后，外部即使设置 `SPRING_PROFILES_ACTIVE=k8s`，也不会再获得原有的 ECS 日志格式覆盖；未来部署必须显式定义日志配置。
 - 删除仓库文件不会删除任何运行中的 Pod、Service、PV、镜像或本地 Docker 数据。这些外部资源需要按环境单独盘点，不在本次源码变更授权范围内。
-- `mate-campusclaw` 当前没有这些 Kubernetes 文件的镜像副本；仍需运行镜像同步检查，证明删除模块资源后两侧保持一致。
+- `campusclaw` 当前没有这些 Kubernetes 文件的镜像副本；仍需运行镜像同步检查，证明删除模块资源后两侧保持一致。
 - 所有删除内容仍可从变更前 Git 基线恢复，但不再作为受维护入口。
 
 ## 7. DFX
@@ -102,7 +104,7 @@
 
 - 搜索源码和维护文档，确认不再引用已删除文件、Kustomize 命令或仓库自建镜像命令。
 - 执行 Maven 服务 JAR 构建，确认删除 Kubernetes Profile 不影响资源打包。
-- 执行 `scripts/sync-mate-campusclaw.sh --dry-run`，确认公司镜像目录没有同步漂移。
+- 执行 `scripts/sync-campusclaw.sh --dry-run`，确认公司镜像目录没有同步漂移。
 - 校验新增 ADR HTML 结构和文档链接。
 - 确认 Markdown 中不存在 Mermaid，执行 `git diff --check`。
 
@@ -112,4 +114,5 @@
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.1 | 2026-09-01 | 对齐 CampusClaw 公司镜像的新目录和同步入口，不改变历史部署资产清理决策。 |
 | v1.0 | 2026-08-28 | 删除工具沙箱时期遗留的 Docker/Kubernetes 资产，并把未来 Kubernetes 框架划为后续独立设计 |

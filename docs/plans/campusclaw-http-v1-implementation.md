@@ -1,6 +1,6 @@
 # CampusClaw HTTP V1 实施记录
 
-> 版本：3.4.1
+> 版本：3.5.0
 >
 > 状态：已实现并按 Runtime-only 现状校准
 >
@@ -20,7 +20,9 @@
 >
 > 初始日期：2026-08-21
 >
-> 更新日期：2026-08-28
+> 更新日期：2026-09-01
+
+> 公司镜像相关路径和标识按 2026-09-01 的当前仓库位置展示；历史提交 SHA 仍是对应行为证据。
 
 ## 1. 目标与边界
 
@@ -32,7 +34,7 @@ Runtime-only 架构演进。当前形态为：
 - Runtime 对外统一为 HTTP + 请求范围 SSE；
 - 按已确认契约实现 11 个 Session 接口；
 - openGauss 作为 Session/Entry 持久化源；
-- `mate-campusclaw` 由同步脚本生成并验证；
+- `campusclaw` 由同步脚本生成并验证；
 - 删除旧公开 WebSocket、ServerMode、WebFlux 路由和本仓 OpenAPI 副本。
 
 公司内部 ResultBean 制品坐标和真实类全限定名未提供，因此没有臆造依赖。实现通过 `ResultBeanAdapter` 保留替换点；公司 Bean 在集成工程中调用真实 `ResultBeanFactory.getFactory().normal()` 即可获得相同 Controller 开发体验。
@@ -60,7 +62,7 @@ Runtime-only 架构演进。当前形态为：
 | DDL | `src/main/resources/db/gaussdb/install/session_schema.sql` |
 | Agent 受管目录与工作区 | `runtime/AgentRuntimeManager.java`、`runtime/PreparedAgentRuntime.java`、`runtimeapi/agent/FileAgentDirectoryResolver.java`、`session/AgentSessionFactory.java`、`tool/workspace/AgentWorkspaceBoundary.java` |
 | Runtime 默认工具 | `tool/builtin/BuiltInToolProperties.java`、`tool/builtin/ToolAssembler.java` |
-| 公司镜像 | `mate-campusclaw/`、`scripts/sync-mate-campusclaw.sh` |
+| 公司镜像 | `campusclaw/`、`scripts/sync-campusclaw.sh` |
 
 ## 3. 接口完成情况
 
@@ -163,19 +165,19 @@ AppKey/JWT 至少一种，否则不发送 execute 请求并返回工具执行失
 
 - 主仓 `./mvnw clean test`：Reactor 全部成功，其中 `campusclaw-coding-agent` 607 个测试通过，
   0 失败、0 错误；
-- `mate-campusclaw` 聚焦测试：64 个凭据链、Runtime 路由、Session/Child 测试通过，0 失败、
+- `campusclaw` 聚焦测试：64 个凭据链、Runtime 路由、Session/Child 测试通过，0 失败、
   0 错误；
-- `./scripts/sync-mate-campusclaw.sh`：镜像同步完成并通过镜像编译；
+- `./scripts/sync-campusclaw.sh`：镜像同步完成并通过镜像编译；
 - `./mvnw spotless:apply`、Checkstyle、PlantUML SVG/XML、文档链接与 `git diff --check` 通过。
 
 以下验证针对 3.0.2 候选实现执行：
 
 - 主仓 `./mvnw clean test`：2772 个测试通过，0 失败、0 错误；
-- `mate-campusclaw` `clean test`：2772 个测试通过，0 失败、0 错误；
+- `campusclaw` `clean test`：2772 个测试通过，0 失败、0 错误；
 - `RuntimeSessionRepositoryOpenGaussIT`：连接真实 `opengauss/opengauss-server:latest`，14 个测试通过；
 - `RuntimeHttpProcessOpenGaussIT`：1 个跨进程测试通过；启动打包后的真实 JVM 进程并连接真实 openGauss，覆盖创建、读取、SSE、409 删除、abort、204 删除、404 读取和墓碑；
 - `./mvnw -pl modules/coding-agent-cli -am package -DskipTests`：可执行 JAR 打包通过；
-- `./scripts/sync-mate-campusclaw.sh`：镜像同步和编译验证通过；
+- `./scripts/sync-campusclaw.sh`：镜像同步和编译验证通过；
 - `./mvnw spotless:apply`：格式化检查通过；
 - Checkstyle 为 0 个违规；
 - 编译器语法树审计确认本次修改的 Java 方法均不超过 50 个非空物理行；
@@ -183,7 +185,7 @@ AppKey/JWT 至少一种，否则不发送 execute 请求并返回工具执行失
 
 国际化实现另外覆盖：无基础资源包的消息源上下文启动、双 Locale key 与
 `RuntimeErrorCode` 完全一致、`Accept-Language` 权重与英文回退、HTTP 中文错误、SSE 中文
-`stream.error`，以及 `mate-campusclaw` 资源目录迁移和旧基础包删除。
+`stream.error`，以及 `campusclaw` 资源目录迁移和旧基础包删除。
 
 发布前已重新执行全量测试、镜像同步、PlantUML、文档链接和 Git 校验；最终结果同时记录在发布提交报告中。
 
@@ -195,6 +197,7 @@ AppKey/JWT 至少一种，否则不发送 execute 请求并返回工具执行失
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 3.5.0 | 2026-09-01 | 对齐 CampusClaw 公司镜像的新目录、Java 包、同步入口和独立公司构建门禁；HTTP/SSE 契约不变。 |
 | 3.4.1 | 2026-08-28 | 用读取时机、内存持有期限、携带请求和缺失值行为定义 Mate 工具凭据边界。 |
 | 3.4.0 | 2026-08-27 | POST Events 读取 `access-token`；发现请求不携带四项值，只有 Tool execute 携带收到的值。 |
 | 3.3.1 | 2026-08-25 | 处理 PR #172 审查：校准八工具与 Agent 工作区、Compaction/Usage 持久化模型及三段源码基线 |

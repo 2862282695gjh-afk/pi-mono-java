@@ -1,6 +1,6 @@
 # Coding Agent Runtime HTTP 与受管 Session 设计
 
-> 文档版本：3.4.0
+> 文档版本：3.5.0
 >
 > PR 167 修订基线：`f60cc3e78bb8b700527ac082c7c8e10524ede095`
 >
@@ -15,6 +15,8 @@
 > Agent 根目录配置清理基线：`1b3b519419ca9bf9025ba2c88335382b9a5b3b02`
 >
 > 源码仓库：本仓库 `pi-mono-java`
+
+> 公司镜像相关路径和标识按 2026-09-01 的当前仓库位置展示；历史提交 SHA 仍是对应行为证据。
 
 ## 1. 结论
 
@@ -38,7 +40,7 @@ Assistant/Compaction 完成保存本次 Usage，模型/思考/压缩形成持久
 |---|---|
 | 默认启动 Spring Boot Web 应用 | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/CampusClawApplication.java`，`CampusClawApplication#main` |
 | 三入口公共 Session 装配 | `session/AgentSessionFactory.java`、`ManagedAgentSession.java` |
-| HTTP 创建前准备受管目录 | `runtimeapi/runtime/RuntimeSessionEngineRegistry.java`、`runtime/AgentRuntimeManager.java`；根目录由 `AgentRuntimeProperties` 的 `campusmate.runtime.agents-root` 绑定，主模块和 Mate 配置分别位于 `modules/coding-agent-cli/src/main/resources/application.yml` 与 `mate-campusclaw/src/main/resources/application.properties` |
+| HTTP 创建前准备受管目录 | `runtimeapi/runtime/RuntimeSessionEngineRegistry.java`、`runtime/AgentRuntimeManager.java`；根目录由 `AgentRuntimeProperties` 的 `campusmate.runtime.agents-root` 绑定，主模块和 Mate 配置分别位于 `modules/coding-agent-cli/src/main/resources/application.yml` 与 `campusclaw/src/main/resources/application.properties` |
 | Runtime 使用 Spring MVC Controller | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/web/*Controller.java` |
 | Runtime 不安装入站认证拦截器 | `runtimeapi/web` 不再包含 `RuntimeAuthenticationInterceptor` 与 `RuntimeWebMvcConfiguration`；路由测试覆盖 Header 缺失与共存 |
 | 类型化资源 ID 与 Session 默认值 | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/common/identifier/ResourceIdentifierPatterns.java`、`runtimeapi/web/*Controller` 的 `@PathVariable` 参数约束、`RuntimeExceptionHandler#handleInvalidParameter`、`MateServiceClient#getAgentRuntime`、`MateServiceClient#querySkillInfo`、`AgentRuntimeManager#prepare`、`HttpMateToolClient#listTools`、`RandomSessionIdGenerator#nextId`、`RuntimeSessionService#newSession` |
@@ -194,7 +196,7 @@ modules/coding-agent-cli/src/main/resources/i18n/messages_en_US.properties
 modules/coding-agent-cli/src/main/resources/i18n/messages_zh_CN.properties
 ```
 
-`mate-campusclaw` 镜像使用相同的 `src/main/resources/i18n/` 相对路径。实现不创建
+`campusclaw` 镜像使用相同的 `src/main/resources/i18n/` 相对路径。实现不创建
 `messages.properties`。由于 Spring Boot 的默认消息源自动配置要求基础资源包，Runtime
 必须通过独立配置显式注册名称为 `messageSource` 的 `ResourceBundleMessageSource`：
 basename 固定为 `i18n/messages`，编码固定为 UTF-8，默认 Locale 为 `Locale.US`，并关闭
@@ -228,7 +230,7 @@ Runtime V1 事件名 `tool.execution.started` 与 `tool.execution.completed` 是
 - MyBatis Mapper XML 使用 `resultType`，全局启用下划线到驼峰映射；
 - 新增或修改的 Java 方法不超过 50 个非空物理行；
 - Java 与 XML 源文件遵循公司版权、中文 Javadoc 和 XML DTD 规则；
-- 主模块与 `mate-campusclaw` 镜像必须通过同一套测试。
+- 主模块与 `campusclaw` 镜像必须通过同一套测试。
 - 国际化实现必须验证无基础资源包时应用上下文可启动、双资源 key 集相等且覆盖
   `RuntimeErrorCode`，并覆盖语言权重、英文回退、HTTP 中文错误和 SSE 中文错误。
 
@@ -236,6 +238,7 @@ Runtime V1 事件名 `tool.execution.started` 与 `tool.execution.completed` 是
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 3.5.0 | 2026-09-01 | 对齐 CampusClaw 公司镜像的新目录、Java 包、同步入口和独立公司构建边界。 |
 | 3.4.0 | 2026-08-31 | 统一事件 Flux 与结果 Mono 的取消传播；压缩中止时释放 Mate SSE 订阅并终止事件累积。 |
 | 3.3.1 | 2026-08-31 | 删除 Mate 配置中未绑定的旧 Agent 根目录配置，统一使用 `campusmate.runtime.agents-root` 和 `CAMPUSCLAW_AGENTS_ROOT`。 |
 | 3.3.0 | 2026-08-28 | 统一 Runtime Event 术语：将 started/delta/progress 和压缩 started/failed 称为“流式预览事件”，明确它们只在当前 SSE 中发送、不持久化、不进入 GET Events；对齐 `RuntimeEventProjector` 的直接 stream emit 与 `RuntimeEventQueryService` 只查询持久化 Entry 的已实现行为，不改变 Java 代码或线上契约。 |

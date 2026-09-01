@@ -27,7 +27,7 @@
     <ul>
       <li><code>google-cloud-aiplatform</code> 被声明为 <code>modules/ai/pom.xml</code> 依赖，但<strong>整个代码库从未 import</strong>——两个 Google provider 实际只用 JDK 自带的 <code>java.net.http.HttpClient</code>，该依赖是纯粹的死重量；</li>
       <li><code>software.amazon.awssdk:bedrockruntime</code> 是一套庞大的原生 SDK，仅被 <code>BedrockProvider</code> 一个类使用，且 Bedrock 在内置模型目录里<strong>没有任何 built-in 模型</strong>；</li>
-      <li>这两条线还牵动凭据嗅探（Google ADC、AWS 多凭据源经 <code>&lt;authenticated&gt;</code> 哨兵）、控制面能力枚举（<code>RuntimeCapability.MODEL_GOOGLE / MODEL_BEDROCK</code>）、文档、以及 mate-campusclaw 镜像，维护面广。</li>
+      <li>这两条线还牵动凭据嗅探（Google ADC、AWS 多凭据源经 <code>&lt;authenticated&gt;</code> 哨兵）、控制面能力枚举（<code>RuntimeCapability.MODEL_GOOGLE / MODEL_BEDROCK</code>）、文档、以及 campusclaw 镜像，维护面广。</li>
     </ul>
     <p>目标是把 provider/模型/凭据/依赖面收敛，降低维护与镜像成本。</p></section>
 
@@ -53,7 +53,7 @@
     <ul>
       <li><strong>正向</strong>：依赖树显著收缩（移除一套 AWS 原生 SDK + 一个未使用的 Google 依赖）；provider/凭据/枚举面更小；文档与代码由测试钉死，不再漂移。</li>
       <li><strong>负向 / 迁移</strong>：不再支持以 Google（AI Studio / Vertex / Gemini CLI / Antigravity）或 Amazon Bedrock 为 provider 的模型；<code>settings.json</code> 中若有命名这些 provider 的自定义模型将无法解析（<code>Provider.fromValue</code> 抛错）。需要 Gemini 的用户仍可经 OpenRouter 等 OpenAI 兼容 flavor 自行配置 custom 模型。</li>
-      <li><strong>后续</strong>：mate-campusclaw 镜像经 <code>sync-mate-campusclaw.sh</code> 的 <code>rsync --delete</code> 自动移除镜像副本；其手维护的 <code>pom.xml</code> 需手动删除两条依赖。</li>
+      <li><strong>后续</strong>：campusclaw 镜像经 <code>sync-campusclaw.sh</code> 的 <code>rsync --delete</code> 自动移除镜像副本；其手维护的 <code>pom.xml</code> 需手动删除两条依赖。</li>
     </ul></section>
 
   <section><h2>Related</h2>
