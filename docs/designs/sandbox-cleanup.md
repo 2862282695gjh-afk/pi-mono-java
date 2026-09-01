@@ -10,11 +10,13 @@
 
 | 项目 | 内容 |
 |---|---|
-| 文档版本 | v1.2 |
+| 文档版本 | v1.3 |
 | 历史分析源码基线 | `origin/main@7811dc335fcb0125a1ecbddd63cd77baf120f21d` |
 | 后续部署资产清理基线 | `origin/main@dee709fc584dd722d2e94eb381338b997659e35a` |
-| 适用模块 | `modules/coding-agent-cli`、`modules/agent-core`、`mate-campusclaw` |
+| 适用模块 | `modules/coding-agent-cli`、`modules/agent-core`、`campusclaw` |
 | 变更类型 | 架构迁移、部署简化、过期文档清理 |
+
+> 公司镜像相关路径和标识按 2026-09-01 的当前仓库位置展示；历史提交 SHA 仍是对应行为证据。
 
 ## 1. 结论与原因
 
@@ -128,7 +130,7 @@ Docker 镜像和 Kubernetes 部署框架维护职责，因此删除：
 
 v1.0/v1.1 的历史验收标准包括：
 
-- `modules/coding-agent-cli` 和 `mate-campusclaw` 均可编译测试。
+- `modules/coding-agent-cli` 和 `campusclaw` 均可编译测试。
 - 本地基础工具仍由 Spring 和 `ToolCatalog` 注册，Schema 不包含 `_executionMode`。
 - `ToolExecutionMode` 的串行/并行行为保持不变。
 - 生产源码、测试、配置和部署文件不再引用 `ExecutionRouter`、`Hybrid*`、`DockerSandbox`、`SandboxSkillParser`、`ToolExecutionProperties`、`TOOL_EXECUTION_*`、`DOCKER_HOST`、DinD 或 `privileged`。
@@ -140,13 +142,14 @@ v1.2 后续清理改为验证：
 
 - 仓库中不再存在根 Dockerfile、Kubernetes 清单或 `application-k8s.yml`；
 - README 和维护文档不再把这些文件描述为当前部署能力；
-- Maven/JAR 构建和 `mate-campusclaw` 镜像同步检查通过；
+- Maven/JAR 构建和 `campusclaw` 镜像同步检查通过；
 - 本文和 ADR-0015 链接到后续清理设计与 ADR-0033。
 
 ## 9. 版本历史
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.3 | 2026-09-01 | 对齐 CampusClaw 公司镜像的新目录和同步入口，不改变历史 Sandbox 清理边界。 |
 | v1.2 | 2026-08-28 | 记录单容器 Docker/Kubernetes 过渡资产的后续删除，并把未来 Kubernetes 框架划为独立设计 |
 | v1.1 | 2026-08-19 | 合入 `origin/main@7811dc33` 的 HTTP V1、CLI 启动和 Agent 委派变更，并区分 Runtime SSE 事件名与已删除 Sandbox 配置 |
 | v1.0 | 2026-08-19 | 记录本地沙箱清理、MateService 工具迁移、单容器部署和过期文档删除 |

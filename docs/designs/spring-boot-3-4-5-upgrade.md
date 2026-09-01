@@ -4,19 +4,22 @@
 
 | 项目 | 内容 |
 |---|---|
-| 文档版本 | v1.0 |
+| 文档版本 | v1.1 |
 | 状态 | Implemented |
-| 日期 | 2026-08-31 |
+| 更新日期 | 2026-09-01 |
 | 变更前源码基线 | `origin/main@96c5c01069cce6179d068862d94b8feddfee8fd0` |
 | 已验证实现 | `994bdff13100ce363214e74abb70dfafbd1ce1b5` |
 | 实现分支 | `codex/upgrade-spring-boot-3-4-5` |
 | 变更类型 | 依赖维护、安全修复；无架构变更 |
 
+> 公司镜像相关路径和标识按 2026-09-01 的当前仓库位置展示；历史提交 SHA 仍是对应行为证据。
+
 ## 1. Context
 
 变更前，根 POM 用单一 `spring-boot.version=3.4.1` 同时管理 Spring Boot BOM 和 Maven
-打包插件。四个 Reactor 模块与独立的 `mate-campusclaw` 公司镜像都继承该根 POM，
-因此修改一个属性会同时改变编译、测试、运行时依赖与可执行 JAR 打包器。
+打包插件。四个 Reactor 模块继承该根 POM；当时的独立公司镜像也使用同一根 POM，
+因此当次修改一个属性会同时改变编译、测试、运行时依赖与可执行 JAR 打包器。公司镜像现已
+切换到 `com.huawei.hicampus:NativeParent:26.0.0-SNAPSHOT`，这属于后续架构变化，不改写当次验证结论。
 
 目标是在不跨越 Spring Boot 3.4 维护线的前提下升级到 3.4.5，获取上游缺陷、
 安全与依赖修复，并通过两套完整构建证明当前代码无需适配。Spring 官方发布说明记录了
@@ -36,9 +39,9 @@
 | 同一属性导入 BOM | `pom.xml:49-56`，`spring-boot-dependencies` |
 | 同一属性管理打包插件 | `pom.xml:212-216`，`spring-boot-maven-plugin` |
 | 主服务使用 Web、JDBC、Validation 和 Test Starter | `modules/coding-agent-cli/pom.xml:39-60`、`:93-104` |
-| 公司镜像继承根 POM 并使用同类 Starter | `mate-campusclaw/pom.xml:11-16`、`:36-62`、`:130-141` |
-| 公司镜像维护 Actuator 自动配置排除清单 | `mate-campusclaw/src/main/resources/application.properties:1-35` |
-| 公司镜像测试锁定管理端口和关键排除项 | `mate-campusclaw/src/test/java/com/huawei/hicampus/mate/matecampusclaw/codingagent/config/ManagementConfigurationTest.java:19-42` |
+| 公司镜像继承根 POM 并使用同类 Starter | `campusclaw/pom.xml:11-16`、`:36-62`、`:130-141` |
+| 公司镜像维护 Actuator 自动配置排除清单 | `campusclaw/src/main/resources/application.properties:1-35` |
+| 公司镜像测试锁定管理端口和关键排除项 | `campusclaw/src/test/java/com/huawei/hicampus/claw/codingagent/config/ManagementConfigurationTest.java:19-42` |
 
 仓库中没有 `EndpointRequest`、Spring Security、`@MockBean` 或 `@SpyBean` 的使用。因此本应用不符合
 `CVE-2025-22235` 公告列出的触发条件；升级的安全价值是不再使用受影响的 Spring Boot
@@ -96,16 +99,17 @@ PlantUML 图。
 只把根 POM 属性改为 3.4.5，不同时调整显式锁定的 MyBatis、JobRunr 或 LLM SDK，也不跨越到
 Spring Boot 3.5。这将归因边界限定为一次补丁级升级。
 
-### 4.2 BOM 和打包插件使用同一版本
+### 4.2 当次升级保持 BOM 和打包插件同版本
 
-不为子模块或公司镜像增加局部覆盖。继续由 `spring-boot.version` 同时控制 BOM 与打包插件，
-避免编译 Classpath 和打包器版本分裂。
+当次升级不为子模块或公司镜像增加局部覆盖，继续由 `spring-boot.version` 同时控制 BOM 与
+打包插件，避免编译 Classpath 和打包器版本分裂。当前公司镜像已切换为由 `NativeParent` 管理
+依赖和插件版本，必须在公司 Maven 环境单独验证，不再从根属性继承。
 
 ### 4.3 保留公司环境复验门槛
 
-本仓库可验证独立镜像的编译、测试、打包和配置加载，但不能模拟公司父 POM 传递的 Actuator
-最终 Classpath。因此归并前仍建议在公司工程执行一次启动验证；这是外部集成确认，不是当前
-仓库构建的失败。
+普通仓库环境只能验证根 Reactor 和镜像生成一致性，不能模拟公司父 POM 传递的 Actuator
+最终 Classpath，也可能无法解析 `NativeParent`。因此公司 Maven 环境中的镜像 `verify` 和启动
+验证是强制门禁；缺少该环境时必须明确记录未执行，不能宣称公司镜像构建通过。
 
 ## 5. 边界情况
 
@@ -140,8 +144,8 @@ Spring Boot 3.5。这将归因边界限定为一次补丁级升级。
 ## 9. 测试与验证
 
 - `./mvnw -Dspring-boot.version=3.4.5 verify`：通过，五个 Reactor 项目成功，服务模块 585 个测试零失败。
-- `./mvnw -Dspring-boot.version=3.4.5 -f mate-campusclaw/pom.xml verify`：通过，1292 个测试零失败。
-- 版本落盘后执行 `./mvnw verify` 和 `./mvnw -f mate-campusclaw/pom.xml verify`：通过。
+- `./mvnw -Dspring-boot.version=3.4.5 -f campusclaw/pom.xml verify`：通过，1292 个测试零失败。
+- 版本落盘后执行 `./mvnw verify` 和 `./mvnw -f campusclaw/pom.xml verify`：通过。
 - `dependency:tree` 基线/目标对比：通过，已记录实际传递依赖变化。
 - 3.4.1/3.4.5 Actuator JAR 类清单对比：未发现升级导致的清单匹配变化。
 - 镜像同步 dry-run：通过，无内容变更待同步。
@@ -151,4 +155,5 @@ Spring Boot 3.5。这将归因边界限定为一次补丁级升级。
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.1 | 2026-09-01 | 对齐当前公司镜像路径，并明确切换 NativeParent 是升级完成后的独立架构变化。 |
 | v1.0 | 2026-08-31 | 记录 3.4.1 至 3.4.5 的版本决策、依赖变化、风险评估与验证证据 |

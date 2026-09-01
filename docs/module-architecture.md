@@ -1,16 +1,18 @@
 # CampusClaw 模块架构
 
-> 文档版本：2.1.1
+> 文档版本：2.2.0
 >
 > 状态：Implemented
 >
-> 更新日期：2026-08-31
+> 更新日期：2026-09-01
 >
 > 实现前源码基线：`d649866a6cae967ace18ceaeb9597edd47e5721e`
 >
 > PR 167 修订基线：`f60cc3e78bb8b700527ac082c7c8e10524ede095`
 >
 > Spring Boot 3.4.5 实现：`994bdff13100ce363214e74abb70dfafbd1ce1b5`
+
+> 公司镜像相关路径和标识按 2026-09-01 的当前仓库位置展示；历史提交 SHA 仍是对应行为证据。
 
 ## 1. 结论
 
@@ -112,7 +114,10 @@ Spring Boot 服务装配模块。目录名保留 `cli` 仅为避免当前构建�
 - 公共 Session 管理 Agent、工具实例、hook、取消域和 Session 级 Mate 缓存；
 - `AgentRuntimeManager` 管理 `agent/{agentId}/.campusclaw` 的缓存优先 prepare 和管理面 refresh；
 - Runtime、Cron 和 Child 使用同一 Session 类型，但各自消息、cwd、工具实例和上下文隔离；
-- `mate-campusclaw` 由 `scripts/sync-mate-campusclaw.sh` 从四个主模块生成，不双份维护。
+- `campusclaw` 由 `scripts/sync-campusclaw.sh` 从四个主模块生成，不双份维护；
+- 公司镜像不加入根 Reactor，使用 Java 根包 `com.huawei.hicampus.claw`，通过
+  `com.huawei.hicampus:NativeParent:26.0.0-SNAPSHOT` 独立构建；其项目坐标为
+  `com.huawei.campus:claw:1.0-SNAPSHOT`，默认 JAR 为 `claw-1.0-SNAPSHOT.jar`。
 
 ## 5. 源码证据
 
@@ -124,11 +129,14 @@ Spring Boot 服务装配模块。目录名保留 `cli` 仅为避免当前构建�
 | 关闭工具集合 | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/tool/builtin/BuiltInToolName.java` |
 | 工具 Pipeline | `modules/agent-core/src/main/java/com/campusclaw/agent/tool/ToolExecutionPipeline.java` |
 | Cron 执行端口 | `modules/cron/src/main/java/com/campusclaw/cron/engine/CronAgentSessionRunner.java` |
+| 公司镜像生成与包重写 | `scripts/sync-campusclaw.sh` 的 `MODULES`、`SRC_PKG`、`DST_PKG` 和 `validate_staged_tree` |
+| 公司镜像独立 Maven 边界 | `campusclaw/pom.xml` 的 `parent`、项目 GAV、`start-class` 和 `spring-boot-maven-plugin` |
 
 ## 6. 版本历史
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 2.2.0 | 2026-09-01 | 补充 CampusClaw 公司镜像的新目录、Java 包、公司 Maven 坐标与独立构建边界。 |
 | 2.1.0 | 2026-08-24 | 按职责修订 TUI 删除边界，保留未注册 Slash 核心并把压缩迁入公共 Session |
 | 2.0.0 | 2026-08-24 | 收敛为四个 Java 模块和纯服务入口，删除 TUI/CLI 与动态扩展描述 |
 | 1.x | 2026-08-24 以前 | 五模块终端 Agent 架构，已由工具系统 v2 取代 |

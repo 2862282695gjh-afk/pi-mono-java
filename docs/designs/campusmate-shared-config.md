@@ -2,9 +2,9 @@
 
 | 属性 | 值 |
 |---|---|
-| 文档版本 | 1.2.0 |
-| 状态 | 已更新于 `codex/remove-mate-install-value`，待评审合入 |
-| 更新日期 | 2026-08-28 |
+| 文档版本 | 1.3.0 |
+| 状态 | Implemented |
+| 更新日期 | 2026-09-01 |
 | 外部设计基线 | `/Users/z/设计`：`c250e3f07536871d3d676242e552a5eb4346b0c7` |
 | 外部设计文档 | `campusmate-shared-client-configuration/README.md` 2.1.0 |
 | 实施前源码基线 | `56be8eee59415a5f86658d6635a7b7e8891263d3` |
@@ -12,6 +12,8 @@
 | 兼容清理源码基线 | `28b3235e5cff0da2f768cbfc6b7b9ce5e2b51193` |
 | mate-service 观察基线 | `956b547f5ca12ca89e68f73012f92a4406b0c9fa` |
 | 决策记录 | [ADR-0026](../decisions/0026-unify-campusmate-client-configuration.html)、[ADR-0035](../decisions/0035-remove-legacy-campusmate-environment-adapter.html) |
+
+> 公司镜像相关路径和标识按 2026-09-01 的当前仓库位置展示；历史提交 SHA 仍是对应行为证据。
 
 ## 1. 结论
 
@@ -38,7 +40,7 @@
 | `modules/ai/src/main/java/com/campusclaw/ai/provider/mate/MateServiceModelManagerProvider.java` | `MateServiceModelManagerProvider`，L68-L76 | Model Provider 独立注入 base URL 与 Chat path。 |
 | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtime/MateServiceClient.java` | `MateServiceClient`，L37-L69 | Runtime Properties 持有自己的 base URL，并在客户端注入两条 Runtime 路径。 |
 | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/config/MateToolAutoConfiguration.java` | `MateToolAutoConfiguration`，L21-L81 | Tool 使用顶层 `mate.innerGWSerive` 和四个 `mate.endpoints`；Skill query 与 Runtime 实际指向相同 operation。 |
-| `mate-campusclaw/scripts/install_value.sh` | 环境变量映射 | 安装边界把 `CAMPUSINNERGWSERVICE_DOMAIN_NAME_URL` 映射到拼写错误的 `MATE_INNERGWSERIVE`。 |
+| `campusclaw/scripts/install_value.sh` | 环境变量映射 | 安装边界把 `CAMPUSINNERGWSERVICE_DOMAIN_NAME_URL` 映射到拼写错误的 `MATE_INNERGWSERIVE`。 |
 
 这些内容是已观察到的旧实现，不代表目标设计。
 
@@ -61,10 +63,10 @@
 
 | 源码 | 观察行为或目标决策 |
 |---|---|
-| `mate-campusclaw/scripts/install_value.sh` | 观察行为：脚本读取 `/etc/profile`，把旧变量 `CAMPUSINNERGWSERVICE_DOMAIN_NAME_URL` 转换成应用所需的 `CAMPUSMATE_BASE_URL`。 |
-| `mate-campusclaw/src/main/resources/application.properties` | 观察行为：应用只读取 `CAMPUSMATE_BASE_URL`，不读取旧变量。 |
+| `campusclaw/scripts/install_value.sh` | 观察行为：脚本读取 `/etc/profile`，把旧变量 `CAMPUSINNERGWSERVICE_DOMAIN_NAME_URL` 转换成应用所需的 `CAMPUSMATE_BASE_URL`。 |
+| `campusclaw/src/main/resources/application.properties` | 观察行为：应用只读取 `CAMPUSMATE_BASE_URL`，不读取旧变量。 |
 | `modules/coding-agent-cli/src/main/resources/application.yml` | 观察行为：主模块同样只读取 `CAMPUSMATE_BASE_URL`，且不存在对应安装脚本。 |
-| `scripts/sync-mate-exclude.txt` | 目标决策：删除脚本后移除其 mate 侧独有路径登记。 |
+| `scripts/sync-campusclaw-exclude.txt` | 目标决策：删除脚本后移除其公司镜像侧独有路径登记。 |
 
 根据 [ADR-0035](../decisions/0035-remove-legacy-campusmate-environment-adapter.html)，删除该 mate
 侧兼容脚本属于部署边界收敛：新旧部署都必须直接注入 `CAMPUSMATE_BASE_URL`，不再由仓库代码转换
@@ -117,7 +119,7 @@ campusmate:
 | `mate.innerGWSerive` | `campusmate.base-url` | 修复服务身份与拼写，不保留别名。 |
 | 三组旧 path | `campusmate.endpoints.*` | 按 HTTP operation 去重为六条。 |
 | `campusmate.model-manager.*` 本地参数 | `campusmate.model.*` | 按用户命名决策将 `model-manager` 收敛为 `model`。 |
-| `CAMPUSINNERGWSERVICE_DOMAIN_NAME_URL` | 无 | 删除旧变量兼容和 `mate-campusclaw/scripts/install_value.sh`；部署直接设置 `CAMPUSMATE_BASE_URL`。 |
+| `CAMPUSINNERGWSERVICE_DOMAIN_NAME_URL` | 无 | 删除旧变量兼容和 `campusclaw/scripts/install_value.sh`；部署直接设置 `CAMPUSMATE_BASE_URL`。 |
 
 ## 4. 校验与安全边界
 
@@ -150,6 +152,7 @@ campusmate:
 
 | 版本 | 日期 | 变化 |
 |---|---|---|
-| 1.2.0 | 2026-08-28 | 删除 mate 侧旧部署变量转换脚本，要求部署直接注入 `CAMPUSMATE_BASE_URL`，并以 ADR-0035 记录兼容边界收敛。 |
+| 1.3.0 | 2026-09-01 | 对齐 CampusClaw 公司镜像的新目录、Java 包和同步入口；历史行为继续以原提交 SHA 为准。 |
+| 1.2.0 | 2026-08-28 | 删除公司镜像侧旧部署变量转换脚本，要求部署直接注入 `CAMPUSMATE_BASE_URL`，并以 ADR-0035 记录兼容边界收敛。 |
 | 1.1.0 | 2026-08-26 | 响应 PR 审查：冻结受审实现基线，区分 mate-service 已观察 operation 与服务端目标态，并补充模板百分号编码及规范化点段校验。 |
 | 1.0.0 | 2026-08-26 | 实现 CampusMate 单一 base URL、六 operation endpoint 目录、`model/runtime/tool` 配置分组与启动期校验。 |

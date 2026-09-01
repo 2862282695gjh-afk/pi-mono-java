@@ -28,21 +28,21 @@
     <tr><th>Status</th><td><span class="status">Accepted</span></td></tr>
     <tr><th>Date</th><td>2026-08-28</td></tr>
     <tr><th>Source baseline</th><td><code>origin/main@28b3235e5cff0da2f768cbfc6b7b9ce5e2b51193</code></td></tr>
-    <tr><th>Observed source</th><td><code>mate-campusclaw/scripts/install_value.sh</code>、<code>mate-campusclaw/src/main/resources/application.properties</code>、<code>modules/coding-agent-cli/src/main/resources/application.yml</code>、<code>scripts/sync-mate-exclude.txt</code></td></tr>
+    <tr><th>Observed source</th><td><code>campusclaw/scripts/install_value.sh</code>、<code>campusclaw/src/main/resources/application.properties</code>、<code>modules/coding-agent-cli/src/main/resources/application.yml</code>、<code>scripts/sync-campusclaw-exclude.txt</code></td></tr>
   </table>
 
   <h2>Context</h2>
-  <p><code>mate-campusclaw/scripts/install_value.sh</code> 是 mate 侧独有的部署适配脚本。它读取
+  <p><code>campusclaw/scripts/install_value.sh</code> 是公司镜像侧独有的部署适配脚本。它读取
     <code>/etc/profile</code>，把旧平台变量 <code>CAMPUSINNERGWSERVICE_DOMAIN_NAME_URL</code>
     转换为应用实际读取的 <code>CAMPUSMATE_BASE_URL</code>。四个主模块没有对应脚本，主模块 YAML
-    和 mate 侧 properties 都已经只读取 <code>CAMPUSMATE_BASE_URL</code>。</p>
+    和公司镜像侧 properties 都已经只读取 <code>CAMPUSMATE_BASE_URL</code>。</p>
   <p>部署不再需要兼容旧变量后，保留脚本会继续暗示两套受支持的配置入口，并使新部署误以为必须先
     source 一个安装脚本。实际应用只需要启动进程环境中的一个明确变量。</p>
 
   <h2>Decision drivers</h2>
   <ul>
     <li>让部署入口与应用配置契约一致，只保留 <code>CAMPUSMATE_BASE_URL</code>。</li>
-    <li>移除主模块不存在、仅由 mate 镜像手工维护的兼容资产。</li>
+    <li>移除主模块不存在、仅由公司镜像手工维护的兼容资产。</li>
     <li>避免首次部署把环境变量适配脚本误解为安装或启动程序。</li>
   </ul>
 
@@ -58,8 +58,8 @@
 
   <h2>Decision</h2>
   <ul>
-    <li>删除 <code>mate-campusclaw/scripts/install_value.sh</code>。</li>
-    <li>删除 <code>scripts/sync-mate-exclude.txt</code> 中对该 mate 侧目录的登记。</li>
+    <li>删除 <code>campusclaw/scripts/install_value.sh</code>。</li>
+    <li>删除 <code>scripts/sync-campusclaw-exclude.txt</code> 中对该公司镜像侧目录的登记。</li>
     <li>部署必须直接向 CampusClaw 进程提供非空 <code>CAMPUSMATE_BASE_URL</code>。</li>
     <li>仓库不读取或转换 <code>CAMPUSINNERGWSERVICE_DOMAIN_NAME_URL</code>，也不增加应用内旧变量回退。</li>
     <li>本决策仅废止 ADR-0026 的安装脚本兼容条款；共享 base URL、Endpoint 目录和校验决策继续有效。</li>
@@ -70,7 +70,7 @@
 
   <h2>Consequences</h2>
   <ul>
-    <li>正面：主模块与 mate 镜像使用同一个明确的环境变量契约。</li>
+    <li>正面：主模块与公司镜像使用同一个明确的环境变量契约。</li>
     <li>正面：首次安装无需理解或执行额外的变量转换脚本。</li>
     <li>负面：仍只设置旧变量的外部部署在迁移前将因缺少必填配置而启动失败。</li>
     <li>后续：外部 mate 父工程和部署流水线若曾调用该脚本，必须移除调用并直接注入新变量。</li>
@@ -79,7 +79,7 @@
   <h2>Validation</h2>
   <ul>
     <li>排除历史设计记录后，交付文件和实现配置搜索不再出现脚本名或旧部署变量。</li>
-    <li>镜像同步 dry-run 证明主模块与 mate 镜像源码仍然一致。</li>
+    <li>镜像同步 dry-run 证明主模块与公司镜像源码仍然一致。</li>
     <li><code>git diff --check</code> 验证删除和文档更新没有格式错误。</li>
   </ul>
 

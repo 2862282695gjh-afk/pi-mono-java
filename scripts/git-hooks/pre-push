@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Aborts `git push` if mate-campusclaw/ is out of sync with modules/*.
+# Aborts `git push` if campusclaw/ is out of sync with modules/*.
 # Skipped automatically when the push range doesn't touch either tree.
 # Bypass with `git push --no-verify` when you intentionally want to defer the sync.
 #
@@ -9,7 +9,7 @@
 set -euo pipefail
 
 ROOT="$(git rev-parse --show-toplevel)"
-SCRIPT="$ROOT/scripts/sync-mate-campusclaw.sh"
+SCRIPT="$ROOT/scripts/sync-campusclaw.sh"
 
 # Script may be missing on older branches — don't block those.
 [ -x "$SCRIPT" ] || exit 0
@@ -17,7 +17,7 @@ SCRIPT="$ROOT/scripts/sync-mate-campusclaw.sh"
 # pre-push receives one line per ref being pushed:
 #   <local_ref> <local_sha> <remote_ref> <remote_sha>
 # Decide whether to run the (slow) sync check by inspecting only the diff
-# of paths that matter (modules/* or mate-campusclaw/).
+# of paths that matter (modules/* or campusclaw/).
 zero='0000000000000000000000000000000000000000'
 needs_check=false
 while read -r local_ref local_sha remote_ref remote_sha; do
@@ -35,7 +35,7 @@ while read -r local_ref local_sha remote_ref remote_sha; do
   # Process substitution avoids a `set -o pipefail` interaction where
   # `grep -q` exits early, sends SIGPIPE upstream, and the pipeline reports
   # failure even though grep matched.
-  if grep -qE '^(modules/|mate-campusclaw/|scripts/sync-mate)' \
+  if grep -qE '^(modules/|campusclaw/|scripts/sync-campusclaw)' \
        < <(git diff --name-only "$range" 2>/dev/null); then
     needs_check=true
     break
@@ -44,7 +44,7 @@ done
 
 $needs_check || exit 0
 
-echo "[pre-push] modules/ or mate-campusclaw/ changed — checking mirror sync..."
+echo "[pre-push] modules/ or campusclaw/ changed — checking mirror sync..."
 
 # Run the sync in dry-run mode and look for itemize lines that mean a real change:
 #   >f.s....  size differs       >f+++++++  new file
@@ -57,7 +57,7 @@ PENDING="$(
 )"
 
 if [ -z "$PENDING" ]; then
-  echo "[pre-push] mate-campusclaw is in sync."
+  echo "[pre-push] campusclaw is in sync."
   exit 0
 fi
 
@@ -65,16 +65,16 @@ count="$(printf '%s\n' "$PENDING" | wc -l | tr -d ' ')"
 preview="$(printf '%s\n' "$PENDING" | head -10)"
 
 cat >&2 <<EOF
-[pre-push] mate-campusclaw is OUT OF SYNC with modules/* ($count change(s) pending).
+[pre-push] campusclaw is OUT OF SYNC with modules/* ($count change(s) pending).
 
 Sample of what the sync would do:
 $preview
 $( [ "$count" -gt 10 ] && echo "... ($((count - 10)) more)" )
 
 Resolve:
-  ./scripts/sync-mate-campusclaw.sh
-  git add mate-campusclaw
-  git commit -m 'chore(mate): 同步 modules 到 mate-campusclaw'
+  ./scripts/sync-campusclaw.sh
+  git add campusclaw
+  git commit -m 'chore(campusclaw): 同步 modules 到公司镜像'
   git push
 
 Bypass (not recommended):

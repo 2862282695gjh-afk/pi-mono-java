@@ -1,14 +1,16 @@
 # CampusClaw 受管 Agent 工具系统 v2
 
-> 文档版本：1.7.2
+> 文档版本：1.8.0
 >
 > 状态：Implemented
 >
-> 日期：2026-08-31
+> 日期：2026-09-01
 > 决策记录：[ADR-0022](../decisions/0022-managed-agent-tool-system-v2.html)、
 > [ADR-0032](../decisions/0032-tool-execution-credential-boundary.html)、
 > [ADR-0024](../decisions/0024-mate-tool-execution-credential-chain.html)、
 > [ADR-0036](../decisions/0036-read-text-only.html)
+
+> 公司镜像相关路径和标识按 2026-09-01 的当前仓库位置展示；历史提交 SHA 仍是对应行为证据。
 
 ## 1. 结论与源码基线
 
@@ -320,7 +322,7 @@ Child 凭据继承、Cron 缺少凭据时 Call fail closed、Child 直接绑定/
 
 ```text
 ./mvnw clean verify
-./scripts/sync-mate-campusclaw.sh
+./scripts/sync-campusclaw.sh
 git diff --check
 ```
 
@@ -328,6 +330,7 @@ git diff --check
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 1.8.0 | 2026-09-01 | 对齐 CampusClaw 公司镜像的新目录、Java 包和同步入口；工具契约不变。 |
 | 1.7.2 | 2026-08-31 | 修正 Find/Grep 的 `.gitignore` 根锚定规则：`/dist`、`/*.txt` 仅相对规则文件所在目录的根生效，不再误过滤嵌套同名路径。 |
 | 1.7.1 | 2026-08-31 | 修正 Read 末尾 LF 的逻辑行边界：空文件为 0 行，末尾换行不增加 `totalLines` 或误触发截断，同时保留原始末尾换行。 |
 | 1.7.0 | 2026-08-28 | 将 Read 收敛为严格 UTF-8 文本工具，删除图片 MIME/缩放/Base64 路径、模型图片模态分支和 WebP 解码依赖。 |

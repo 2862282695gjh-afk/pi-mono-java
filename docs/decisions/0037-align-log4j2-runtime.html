@@ -29,7 +29,7 @@
     <tr><th>Date</th><td>2026-08-29</td></tr>
     <tr><th>Pre-change baseline</th><td><code>origin/main@32db273125dc0a14d5f751dc0bfaa332ee87ceb8</code></td></tr>
     <tr><th>Reviewed implementation</th><td><code>26d146f401a8557b687e1490f97a5899b22f79be</code></td></tr>
-    <tr><th>Observed source</th><td><code>pom.xml</code>、<code>modules/coding-agent-cli/pom.xml</code>、<code>modules/agent-core/pom.xml</code>、<code>modules/cron/pom.xml</code>、<code>mate-campusclaw/pom.xml</code> 以及日志相关测试</td></tr>
+    <tr><th>Observed source</th><td><code>pom.xml</code>、<code>modules/coding-agent-cli/pom.xml</code>、<code>modules/agent-core/pom.xml</code>、<code>modules/cron/pom.xml</code>、<code>campusclaw/pom.xml</code> 以及日志相关测试</td></tr>
   </table>
 
   <h2>Context</h2>
@@ -39,7 +39,7 @@
   <h2>Decision drivers</h2>
   <ul>
     <li>与公司 Actuator/日志自动配置使用同一种 Log4j2 Core 上下文。</li>
-    <li>生产、测试和 <code>mate-campusclaw</code> 只保留一个 SLF4J Provider。</li>
+    <li>生产、测试和 <code>campusclaw</code> 只保留一个 SLF4J Provider。</li>
     <li>不修改公司父 POM，也不以逐项排除 Actuator 替代日志运行时对齐；管理面关闭由 ADR-0038 独立决策。</li>
     <li>保留现有 SLF4J 业务日志调用和结构化字段。</li>
   </ul>
@@ -60,7 +60,7 @@
     <li>所有直接引入 Spring Boot 主 Starter 或测试 Starter 的相关模块排除 <code>spring-boot-starter-logging</code>。</li>
     <li>目标依赖树和可执行 JAR 不得包含 <code>logback-classic</code>、<code>logback-core</code> 或 <code>log4j-to-slf4j</code>。</li>
     <li>测试使用 test-scope Log4j2 Appender，直接验证格式化消息、级别、ContextData 和 Throwable。</li>
-    <li><code>mate-campusclaw</code> 保持与模块源码同步，并在其独立 POM 应用同一日志排除。</li>
+    <li><code>campusclaw</code> 保持与模块源码同步，并在其独立 POM 应用同一日志排除。</li>
   </ul>
 
   <h2>Intentional difference</h2>
@@ -77,7 +77,7 @@
 
   <h2>Validation</h2>
   <ul>
-    <li>主工程和 <code>mate-campusclaw</code> 分别执行完整 Maven <code>verify</code>。</li>
+    <li>主工程和 <code>campusclaw</code> 分别执行完整 Maven <code>verify</code>。</li>
     <li>检查两侧依赖树，只允许 <code>log4j-slf4j2-impl</code> 作为 SLF4J Provider。</li>
     <li>检查两个可执行 JAR 的 <code>BOOT-INF/lib</code>，确认没有 Logback 和反向桥。</li>
     <li>日志相关测试直接覆盖 WARN/ERROR、结构化字段、异常对象和敏感信息不泄漏。</li>
@@ -87,7 +87,7 @@
   <h2>Related</h2>
   <ul>
     <li><a href="../designs/logging-runtime.md">CampusClaw Log4j2 统一运行时设计</a></li>
-    <li><a href="0038-disable-mate-management-web.html">ADR-0038：追加关闭 Mate 管理 Web 面</a></li>
+    <li><a href="0038-disable-campusclaw-corporate-management-web.html">ADR-0038：追加关闭 CampusClaw 公司集成管理 Web 面</a></li>
   </ul>
 </main>
 </body>

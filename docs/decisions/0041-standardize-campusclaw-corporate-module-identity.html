@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ADR-0041：统一 CampusClaw 公司镜像模块身份</title>
+  <style>
+    body { max-width: 960px; margin: 0 auto; padding: 32px; color: #172033; font: 16px/1.65 system-ui, sans-serif; }
+    h1, h2 { color: #0f3b66; }
+    code { padding: 2px 5px; border-radius: 4px; background: #eef3f8; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 9px 12px; border: 1px solid #cbd5e1; text-align: left; vertical-align: top; }
+    th { background: #eef3f8; }
+    .meta { padding: 16px 20px; border-left: 4px solid #2563eb; background: #f8fafc; }
+    .accepted { color: #166534; font-weight: 700; }
+  </style>
+</head>
+<body>
+  <h1>ADR-0041：统一 CampusClaw 公司镜像模块身份</h1>
+  <div class="meta">
+    <p><strong>Status：</strong><span class="accepted">Accepted</span></p>
+    <p><strong>Date：</strong>2026-09-01</p>
+    <p><strong>Source baseline：</strong><code>98d3999ec6d57e099d7bf02aaa4fcf9607fc61aa</code></p>
+    <p>文中的仓库路径按当前模块身份展示；源码基线 SHA 是迁移前行为证据。</p>
+  </div>
+
+  <h2>Context</h2>
+  <p>仓库以四个根 Reactor 模块维护通用业务源码，同时生成一个面向公司环境的单模块镜像。
+     公司集成要求统一模块目录、Java 包、Maven 坐标、启动类和产物名，并切换到公司
+     <code>NativeParent</code>。根 Reactor 必须继续在普通开发环境独立构建。</p>
+
+  <h2>Decision</h2>
+  <table>
+    <thead><tr><th>项目</th><th>决策值</th></tr></thead>
+    <tbody>
+      <tr><td>目录</td><td><code>campusclaw/</code></td></tr>
+      <tr><td>Java 根包</td><td><code>com.huawei.hicampus.claw</code></td></tr>
+      <tr><td>Parent</td><td><code>com.huawei.hicampus:NativeParent:26.0.0-SNAPSHOT</code>，并使用空 <code>relativePath</code></td></tr>
+      <tr><td>项目 GAV</td><td><code>com.huawei.campus:claw:1.0-SNAPSHOT</code></td></tr>
+      <tr><td>默认产物</td><td><code>claw-1.0-SNAPSHOT.jar</code></td></tr>
+      <tr><td>应用身份</td><td><code>campusclaw</code>；启动类 <code>com.huawei.hicampus.claw.codingagent.CampusClawApplication</code></td></tr>
+      <tr><td>同步入口</td><td><code>scripts/sync-campusclaw.sh</code></td></tr>
+    </tbody>
+  </table>
+  <p>公司镜像不加入根 Reactor，不配置 <code>finalName</code>，也不提供旧目录、脚本、包、坐标或
+     产物名的兼容入口。同步脚本默认解析公司父 POM 并验证镜像；普通环境只能显式使用
+     <code>--no-verify</code>。</p>
+
+  <h2>考虑过的选项及取舍</h2>
+  <h3>选项 A：一次性统一身份并保持独立构建（选择）</h3>
+  <p><strong>Pro：</strong>公司模块身份单一，GAV 与默认 JAR 一致；根 Reactor 不依赖公司仓库；
+     包扫描、日志和白名单只有一个目标。</p>
+  <p><strong>Con：</strong>公司父工程及部署配置必须同步迁移，无法分阶段依赖旧入口。</p>
+
+  <h3>选项 B：保留兼容目录、包或产物别名</h3>
+  <p><strong>Pro：</strong>外部使用方可渐进迁移。</p>
+  <p><strong>Con：</strong>会形成重复包扫描、脚本分叉和产物身份歧义，并延长不可验证的兼容期。</p>
+
+  <h3>选项 C：把公司镜像加入根 Reactor</h3>
+  <p><strong>Pro：</strong>一次 Maven 命令可覆盖所有模块。</p>
+  <p><strong>Con：</strong>普通开发构建会被公司父 POM 和仓库可用性阻塞，破坏通用工程边界。</p>
+
+  <h2>所选方案与理由</h2>
+  <p>选择选项 A。单向生成继续保证业务源码只有一个权威，公司 POM 和环境专有文件留在镜像
+     边界；空 <code>relativePath</code> 强制使用公司仓库父 POM。默认验证失败时显式报错，防止把
+     未执行的公司构建误报为成功。</p>
+
+  <h2>Consequences</h2>
+  <ul>
+    <li>正向：目录、Java 包、GAV、启动类、日志分类和默认 JAR 统一。</li>
+    <li>正向：根工程构建与公司镜像构建保持独立，失败归因清晰。</li>
+    <li>负向：公司 Maven 环境之外不能完成镜像最终构建门禁。</li>
+    <li>后续：公司父工程必须更新模块路径、GAV、JAR、启动类、包扫描和白名单。</li>
+    <li>门禁：公司环境验证通过前，相关 Draft PR 不得转为 Ready 或合并。</li>
+  </ul>
+
+  <h2>Related</h2>
+  <ul>
+    <li><a href="../designs/campusclaw-corporate-module.md">CampusClaw 公司镜像模块设计</a></li>
+    <li><a href="0040-remove-redundant-campusclaw-corporate-actuator-exclusions.html">ADR-0040：收敛公司管理面自动配置排除</a></li>
+  </ul>
+</body>
+</html>

@@ -1,0 +1,51 @@
+@startuml campusclaw_corporate_module
+' Source evidence: 98d3999ec6d57e099d7bf02aaa4fcf9607fc61aa.
+' Current repository paths: modules/*, scripts/sync-campusclaw.sh,
+' campusclaw/pom.xml, and scripts/git-hooks/pre-push.
+' Observed behavior: four canonical modules feed one generated corporate mirror.
+' Architecture change: the mirror has an independent parent, GAV, package, and build gate.
+' Design reason: keep one implementation source while isolating corporate integration metadata.
+
+title CampusClaw Corporate Module Generation
+
+package "Canonical root reactor" {
+  component "modules/ai" as ai
+  component "modules/agent-core" as core
+  component "modules/cron" as cron
+  component "modules/coding-agent-cli" as runtime
+}
+
+component "scripts/sync-campusclaw.sh" as sync
+folder "build/campusclaw" as stage
+
+package "Corporate module: campusclaw" {
+  component "Generated Java and resources\ncom.huawei.hicampus.claw" as mirror
+  component "Corporate-only files\nPOM, properties, protected test" as local
+}
+
+cloud "Company Maven repository" as repository
+artifact "NativeParent\n26.0.0-SNAPSHOT" as parent
+component "pre-push guard" as hook
+
+ai --> sync
+core --> sync
+cron --> sync
+runtime --> sync
+sync --> stage : copy and rewrite package
+stage --> mirror : rsync with delete
+local -[hidden]-> mirror
+repository --> parent : resolve
+parent --> local : dependency and plugin management
+hook --> sync : dry-run consistency check
+
+note right of mirror
+  GAV: com.huawei.campus:claw:1.0-SNAPSHOT
+  JAR: claw-1.0-SNAPSHOT.jar
+  Start-Class: CampusClawApplication
+end note
+
+note bottom of local
+  Corporate verification is independent
+  from the root Maven reactor.
+end note
+@enduml
