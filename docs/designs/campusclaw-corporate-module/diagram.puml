@@ -2,6 +2,7 @@
 ' Source evidence: 98d3999ec6d57e099d7bf02aaa4fcf9607fc61aa.
 ' Current repository paths: modules/*, scripts/sync-campusclaw.sh,
 ' campusclaw/pom.xml, and scripts/git-hooks/pre-push.
+' Source evidence: campusclaw/pom.xml lost root POM logging dependencies at 294e6d90.
 ' Observed behavior: four canonical modules feed one generated corporate mirror.
 ' Architecture change: the mirror has an independent parent, GAV, package, and build gate.
 ' Design reason: keep one implementation source while isolating corporate integration metadata.
@@ -35,7 +36,7 @@ sync --> stage : copy and rewrite package
 stage --> mirror : rsync with delete
 local -[hidden]-> mirror
 repository --> parent : resolve
-parent --> local : dependency and plugin management
+parent --> local : version and plugin management
 hook --> sync : dry-run consistency check
 
 note right of mirror
@@ -47,5 +48,6 @@ end note
 note bottom of local
   Corporate verification is independent
   from the root Maven reactor.
+  Required dependencies are explicit.
 end note
 @enduml

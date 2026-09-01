@@ -27,8 +27,10 @@
   <table>
     <tr><th>Status</th><td><span class="status">Accepted</span></td></tr>
     <tr><th>Date</th><td>2026-08-29</td></tr>
+    <tr><th>Last updated</th><td>2026-09-01</td></tr>
     <tr><th>Pre-change baseline</th><td><code>origin/main@32db273125dc0a14d5f751dc0bfaa332ee87ceb8</code></td></tr>
     <tr><th>Reviewed implementation</th><td><code>26d146f401a8557b687e1490f97a5899b22f79be</code></td></tr>
+    <tr><th>Corporate parent correction baseline</th><td><code>origin/main@294e6d90bcad8c4214b08807bfd1cfdee5cc2404</code></td></tr>
     <tr><th>Observed source</th><td><code>pom.xml</code>、<code>modules/coding-agent-cli/pom.xml</code>、<code>modules/agent-core/pom.xml</code>、<code>modules/cron/pom.xml</code>、<code>campusclaw/pom.xml</code> 以及日志相关测试</td></tr>
   </table>
 
@@ -61,7 +63,14 @@
     <li>目标依赖树和可执行 JAR 不得包含 <code>logback-classic</code>、<code>logback-core</code> 或 <code>log4j-to-slf4j</code>。</li>
     <li>测试使用 test-scope Log4j2 Appender，直接验证格式化消息、级别、ContextData 和 Throwable。</li>
     <li><code>campusclaw</code> 保持与模块源码同步，并在其独立 POM 应用同一日志排除。</li>
+    <li><code>campusclaw</code> 使用独立公司父 POM 时，在自身 POM 显式声明
+      <code>slf4j-api</code> 和 <code>spring-boot-starter-log4j2</code>；公司父 POM 管理版本但不代替
+      应用声明所需依赖。</li>
   </ul>
+  <p><strong>后续实施修正：</strong>2026-09-01 切换到 <code>NativeParent</code> 后，公司镜像不再继承
+    根 POM 的公共日志依赖，但镜像 POM 一度只保留默认日志排除，导致公司构建在测试编译阶段报告
+    <code>org.apache.logging.log4j</code> 不存在。本次显式依赖修复恢复本 ADR 已接受的目标 Classpath，
+    不构成新的架构决策。</p>
 
   <h2>Intentional difference</h2>
   <p><strong>架构变化：</strong>日志后端从 Logback 切换为 Log4j2，生产和测试共享同一事件模型。<strong>产品约束：</strong>无业务 API 或日志字段变化。<strong>公司集成约束：</strong>应用 Classpath 必须满足公司 Actuator/日志自动配置的原生 Log4j2 上下文预期；管理 Web 面关闭另见 ADR-0038。</p>
@@ -70,6 +79,7 @@
   <ul>
     <li>正面：消除双日志实现、双向桥和不兼容 <code>LoggerContext</code>。</li>
     <li>正面：主工程、镜像和测试的日志行为由同一实现验证。</li>
+    <li>正面：公司镜像不再依赖根 POM 或公司父 POM 隐式带入日志实现，Maven 构建边界清晰。</li>
     <li>负面：控制台默认排版可能与 Logback 不同，结构化字段的展示由部署 Layout 决定。</li>
     <li>边界：未新增 <code>log4j2.xml</code>，日志级别和输出格式仍由 Spring Boot 或部署环境配置。</li>
     <li>边界：本决策不新增 Windows 启动或安装支持。</li>
@@ -79,6 +89,8 @@
   <ul>
     <li>主工程和 <code>campusclaw</code> 分别执行完整 Maven <code>verify</code>。</li>
     <li>检查两侧依赖树，只允许 <code>log4j-slf4j2-impl</code> 作为 SLF4J Provider。</li>
+    <li>公司镜像依赖树必须包含 <code>slf4j-api</code>、<code>log4j-api</code>、<code>log4j-core</code>、
+      <code>log4j-slf4j2-impl</code> 和 <code>log4j-jul</code>。</li>
     <li>检查两个可执行 JAR 的 <code>BOOT-INF/lib</code>，确认没有 Logback 和反向桥。</li>
     <li>日志相关测试直接覆盖 WARN/ERROR、结构化字段、异常对象和敏感信息不泄漏。</li>
     <li>执行镜像 dry-run、PlantUML 生成、文档链接、ASCII、XML 和 Git diff 校验。</li>
