@@ -7,6 +7,8 @@ package com.campusclaw.ai.stream;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.time.Duration;
+import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -17,6 +19,8 @@ import org.junit.jupiter.api.Test;
 import reactor.test.StepVerifier;
 
 class EventStreamTest {
+
+    private static final Duration STREAM_COMPLETION_TIMEOUT = Duration.ofSeconds(1);
 
     // --- Basic Push and Subscribe ---
 
@@ -62,7 +66,7 @@ class EventStreamTest {
             var stream = new EventStream<String, String>(e -> false, e -> e);
             stream.end();
 
-            StepVerifier.create(stream.asFlux()).verifyComplete();
+            assertEquals(List.of(), stream.asFlux().collectList().block(STREAM_COMPLETION_TIMEOUT));
         }
     }
 
@@ -95,7 +99,7 @@ class EventStreamTest {
             stream.push("a");
             stream.end();
 
-            StepVerifier.create(stream.result()).verifyComplete();
+            assertTrue(stream.result().blockOptional(STREAM_COMPLETION_TIMEOUT).isEmpty());
         }
 
         @Test
@@ -258,9 +262,9 @@ class EventStreamTest {
             var stream = new EventStream<String, String>(e -> false, e -> e);
             stream.end();
 
-            StepVerifier.create(stream.asFlux()).verifyComplete();
+            assertEquals(List.of(), stream.asFlux().collectList().block(STREAM_COMPLETION_TIMEOUT));
 
-            StepVerifier.create(stream.result()).verifyComplete();
+            assertTrue(stream.result().blockOptional(STREAM_COMPLETION_TIMEOUT).isEmpty());
         }
     }
 
