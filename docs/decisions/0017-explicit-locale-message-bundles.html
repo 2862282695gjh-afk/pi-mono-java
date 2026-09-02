@@ -39,7 +39,7 @@
   <section><h2>Decision</h2>
     <ul>
       <li>主模块只维护 <code>src/main/resources/i18n/messages_en_US.properties</code> 与 <code>src/main/resources/i18n/messages_zh_CN.properties</code>；不创建 <code>messages.properties</code>。</li>
-      <li><code>mate-campusclaw</code> 镜像保持相同的 <code>src/main/resources/i18n/</code> 相对路径，由现有镜像同步流程生成。</li>
+      <li><code>campusclaw</code> 镜像保持相同的 <code>src/main/resources/i18n/</code> 相对路径，由现有镜像同步流程生成。</li>
       <li>Runtime 显式注册名称为 <code>messageSource</code> 的 <code>ResourceBundleMessageSource</code>，basename 为 <code>i18n/messages</code>，编码为 UTF-8，默认 Locale 为 <code>Locale.US</code>，并关闭系统 Locale 回退。</li>
       <li>只支持 <code>en-US</code> 与 <code>zh-CN</code>；按 <code>Accept-Language</code> 的语言范围和 <code>q</code> 权重协商，缺失、非法或不支持时回退 <code>en-US</code>。</li>
       <li>Java 错误枚举名称、<code>resCode</code> 和消息 key 保持一致；两个 Locale 文件必须具有相同 key 集，并覆盖全部 <code>RuntimeErrorCode</code>。</li>

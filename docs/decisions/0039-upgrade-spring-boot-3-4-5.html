@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ADR-0039：将 Spring Boot 升级到 3.4.5</title>
+  <style>
+    :root { color-scheme: light; font-family: Inter, "PingFang SC", sans-serif; color: #25272a; background: #f2f5f7; }
+    body { margin: 0; }
+    main { width: min(920px, calc(100% - 40px)); margin: 40px auto; padding: 40px; box-sizing: border-box; background: #fff; border: 1px solid #d7dde2; border-radius: 16px; }
+    h1 { margin-top: 0; font-size: 30px; }
+    h2 { margin-top: 32px; font-size: 20px; }
+    h3 { margin-top: 22px; font-size: 17px; }
+    p, li { line-height: 1.75; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 10px 12px; border: 1px solid #d7dde2; text-align: left; vertical-align: top; }
+    th { width: 190px; background: #edf2f5; }
+    code { padding: 2px 5px; border-radius: 5px; background: #edf2f5; overflow-wrap: anywhere; }
+    a { color: #1769aa; }
+    .status { display: inline-flex; padding: 4px 9px; border-radius: 999px; color: #12633a; background: #e8f7ed; font-weight: 650; }
+    @media (max-width: 640px) { main { width: 100%; margin: 0; padding: 24px 18px; border: 0; border-radius: 0; } th { width: 120px; } }
+  </style>
+</head>
+<body>
+<main>
+  <h1>ADR-0039：将 Spring Boot 升级到 3.4.5</h1>
+  <table>
+    <tr><th>Status</th><td><span class="status">Accepted</span></td></tr>
+    <tr><th>Date</th><td>2026-08-31</td></tr>
+    <tr><th>Pre-change baseline</th><td><code>origin/main@96c5c01069cce6179d068862d94b8feddfee8fd0</code></td></tr>
+    <tr><th>Reviewed implementation</th><td><code>994bdff13100ce363214e74abb70dfafbd1ce1b5</code></td></tr>
+    <tr><th>Observed source</th><td><code>pom.xml</code>、<code>modules/coding-agent-cli/pom.xml</code>、<code>campusclaw/pom.xml</code>、<code>campusclaw/src/main/resources/application.properties</code></td></tr>
+  </table>
+
+  <h2>Context</h2>
+  <p>变更前，根 POM 以 <code>spring-boot.version=3.4.1</code> 同时管理 Spring Boot BOM 和 Maven 打包插件，Reactor 模块与公司镜像共享该版本源。上游 3.4.5 在同一维护线内提供缺陷与依赖修复，并修复影响 3.4.0–3.4.4 的 CVE-2025-22235。</p>
+  <p>仓库没有 Spring Security 或 <code>EndpointRequest.to()</code> 的使用，因此没有观察到该漏洞的应用触发路径。本决策是依赖维护与安全修复，不改变系统架构。</p>
+  <p><strong>后续变化：</strong>CampusClaw 转为公司独立服务后，<a href="0043-remove-campusclaw-standalone-actuator-configuration.html">ADR-0043</a> 删除了当时保留的 Actuator 应用配置。该部署架构变化不改写本 ADR 的补丁升级结论。</p>
+
+  <h2>Decision drivers</h2>
+  <ul>
+    <li>移除受已公开安全公告影响的 Spring Boot 版本。</li>
+    <li>获取 Spring Framework、Tomcat、Reactor、Netty、Jackson 和 JDBC 的维护修复。</li>
+    <li>保持 Spring Boot 3.4 维护线，不扩大到次要版本迁移。</li>
+    <li>保持 BOM、打包插件、子模块和公司镜像的版本一致。</li>
+  </ul>
+
+  <h2>Considered options</h2>
+  <h3>保留 3.4.1</h3>
+  <p><strong>优点：</strong>零变更。<br><strong>缺点：</strong>继续使用受 CVE-2025-22235 影响的上游版本，并丢失后续补丁修复。拒绝。</p>
+
+  <h3>升级到 3.4.5</h3>
+  <p><strong>优点：</strong>在同一维护线内获得安全、框架和传递依赖修复，完整构建可验证兼容性。<br><strong>缺点：</strong>传递更新多个底层库，仍需公司父 POM 环境的启动复验。接受。</p>
+
+  <h3>跨越到更新的 Spring Boot 次要版本</h3>
+  <p><strong>优点：</strong>可获得更新功能与更长的版本时间线。<br><strong>缺点：</strong>引入超出本次目标的迁移行为和测试面。拒绝。</p>
+
+  <h2>Decision</h2>
+  <ul>
+    <li>将根 POM 的 <code>spring-boot.version</code> 从 3.4.1 更改为 3.4.5。</li>
+    <li>不为子模块或公司镜像建立版本覆盖，BOM 与打包插件继续共享一个属性。</li>
+    <li>不同时升级仓库显式锁定的 MyBatis、JobRunr 或 LLM SDK。</li>
+    <li>保持公司 Actuator 排除清单不变；其中三个历史字符串的非精确匹配是既有风险，不与补丁升级混改。</li>
+  </ul>
+
+  <h2>Intentional difference</h2>
+  <p><strong>安全修复：</strong>不再使用受 CVE-2025-22235 影响的 3.4.1 版本。<strong>产品约束：</strong>JDK 21、HTTP/SSE 契约、数据库配置和工具集保持不变。<strong>架构变更：</strong>无。</p>
+
+  <h2>Consequences</h2>
+  <ul>
+    <li>正面：Spring Boot、Spring Framework、Tomcat、Reactor、Netty 等组件获得补丁级更新。</li>
+    <li>正面：主 Reactor 585 个测试和公司镜像 1292 个测试全部通过，无 Java 或配置适配。</li>
+    <li>负面：多个传递依赖同时变化，回归范围必须包含主服务和公司镜像。</li>
+    <li>边界：公司父 POM 和最终 Actuator Classpath 不在本仓库，归并前应在公司工程复验启动。</li>
+  </ul>
+
+  <h2>Validation</h2>
+  <ul>
+    <li>对比 3.4.1 和 3.4.5 的 Maven 有效依赖树。</li>
+    <li>对比两个版本的 Actuator 自动配置类清单。</li>
+    <li>执行主 Reactor 完整 <code>verify</code> 和公司镜像完整 <code>verify</code>。</li>
+    <li>执行镜像同步 dry-run、文档链接与格式校验、<code>git diff --check</code>。</li>
+  </ul>
+
+  <h2>Related</h2>
+  <ul>
+    <li><a href="../designs/spring-boot-3-4-5-upgrade.md">Spring Boot 3.4.5 升级评估与实施设计</a></li>
+    <li><a href="0038-disable-campusclaw-corporate-management-web.html">ADR-0038：关闭 CampusClaw 公司集成管理 Web 面并保留端点基础设施</a></li>
+    <li><a href="0043-remove-campusclaw-standalone-actuator-configuration.html">ADR-0043：删除 CampusClaw 独立服务的 Actuator 专用配置</a></li>
+    <li><a href="https://github.com/spring-projects/spring-boot/releases/tag/v3.4.5">Spring Boot 3.4.5 release</a></li>
+    <li><a href="https://spring.io/security/cve-2025-22235/">CVE-2025-22235</a></li>
+  </ul>
+</main>
+</body>
+</html>

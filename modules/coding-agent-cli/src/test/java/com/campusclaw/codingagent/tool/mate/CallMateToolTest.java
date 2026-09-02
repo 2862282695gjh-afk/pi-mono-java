@@ -31,7 +31,7 @@ class CallMateToolTest {
 
     private static final String QUERY_ID = "tool-11111111111111111111111111111111";
 
-    private static final MateCredentials CREDENTIALS = MateCredentials.jwt("caller-1", "token-1");
+    private static final MateCredentials CREDENTIALS = MateCredentials.jwt("caller-1", "token-1", "access-token-1");
 
     private MockMateToolClient client;
 
@@ -66,7 +66,6 @@ class CallMateToolTest {
         assertThat(client.lastCalledTool()).isEqualTo(QUERY_ID);
         assertThat(client.lastCallArgs()).isEmpty();
         assertThat(client.lastCallCredentials()).isSameAs(CREDENTIALS);
-        assertThat(client.lastListCredentials()).isSameAs(CREDENTIALS);
     }
 
     @Test
@@ -171,17 +170,17 @@ class CallMateToolTest {
         }
 
         @Override
-        public synchronized List<MateToolMeta> listAgentTools(String agentId, MateCredentials credentials) {
+        public synchronized List<MateToolMeta> listAgentTools(String agentId) {
             agentLists++;
             started.countDown();
             awaitRelease();
-            return delegate.listAgentTools(agentId, credentials);
+            return delegate.listAgentTools(agentId);
         }
 
         @Override
-        public synchronized List<MateToolMeta> listSkillTools(String skillId, MateCredentials credentials) {
+        public synchronized List<MateToolMeta> listSkillTools(String skillId) {
             skillLists++;
-            return delegate.listSkillTools(skillId, credentials);
+            return delegate.listSkillTools(skillId);
         }
 
         @Override

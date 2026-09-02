@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ADR-0034：开发模式使用通用请求 Headers 面板</title>
+  <style>
+    :root { color-scheme: light; font-family: Inter, "PingFang SC", sans-serif; color: #2c2724; background: #f8f3f0; }
+    body { margin: 0; }
+    main { width: min(920px, calc(100% - 40px)); margin: 40px auto; padding: 40px; box-sizing: border-box; background: #fffcfa; border: 1px solid #ded4cf; border-radius: 16px; }
+    h1 { margin-top: 0; font-size: 30px; }
+    h2 { margin-top: 32px; font-size: 20px; }
+    h3 { margin-top: 22px; font-size: 17px; }
+    p, li { line-height: 1.75; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 10px 12px; border: 1px solid #ded4cf; text-align: left; vertical-align: top; }
+    th { width: 190px; background: #f4ece8; }
+    code { padding: 2px 5px; border-radius: 5px; background: #f4ece8; overflow-wrap: anywhere; }
+    a { color: #a9472b; }
+    .status { display: inline-flex; padding: 4px 9px; border-radius: 999px; color: #12633a; background: #e8f7ed; font-weight: 650; }
+    @media (max-width: 640px) { main { width: 100%; margin: 0; padding: 24px 18px; border: 0; border-radius: 0; } th { width: 120px; } }
+  </style>
+</head>
+<body>
+<main>
+  <h1>ADR-0034：开发模式使用通用请求 Headers 面板</h1>
+  <table>
+    <tr><th>Status</th><td><span class="status">Accepted</span></td></tr>
+    <tr><th>Date</th><td>2026-08-28</td></tr>
+    <tr><th>Frontend pre-change baseline</th><td><code>origin/main@dee709fc584dd722d2e94eb381338b997659e35a</code></td></tr>
+    <tr><th>Synced main baseline</th><td><code>origin/main@a7a245b4079b53f79eacb96475a1b58a9c3713c7</code>；该基线已使用 ADR-0033</td></tr>
+    <tr><th>Backend feature source</th><td><code>d03c08dbae870f19eee8d4fa79a707185f7a26b5</code>，已合入本轮前端基线</td></tr>
+    <tr><th>Confirmed design baseline</th><td><code>pi-mono-java-design@2748497</code></td></tr>
+    <tr><th>Observed source</th><td><code>frontend/src/App.vue#submit</code>、<code>frontend/src/components/DevDiagnostics.vue</code>、<code>frontend/src/composables/useRuntimeApi.ts#sendMessage</code>、<code>#requestRaw</code></td></tr>
+    <tr><th>Initial reviewed implementation</th><td><code>eb347db8c13eda13c240dc4cf60154fc49b9bd91</code>：<code>frontend/src/components/DebugHeaders.vue#snapshot</code>、<code>frontend/src/debugHeaders.ts#validateDebugHeaders</code>、<code>frontend/src/App.vue#submit</code>、<code>frontend/src/composables/useRuntimeApi.ts#sendMessage</code>、<code>#mergeRequestHeaders</code></td></tr>
+    <tr><th>Review correction implementation</th><td><code>3b3e51f13f7a97cf1b135d13f4b1285e147c74ae</code>：<code>frontend/src/components/DebugHeaders.vue#snapshot</code>、<code>frontend/src/debugHeaders.ts#revealFirstDebugHeaderError</code>、<code>#validateDebugHeaders</code></td></tr>
+  </table>
+
+  <h2>Context</h2>
+  <p>变更前前端没有自定义请求 Header 的入口。适配器为普通请求内部生成 <code>Accept</code>、<code>Accept-Language</code>、<code>Content-Type</code> 和非秘密的 <code>X-HW-ID</code>，开发者无法从页面为一次消息提交补充调用上下文。</p>
+  <p>后端已在初始 <code>POST /sessions/{sessionId}/events</code> 读取契约识别的凭据 Header，并只在当次 Agent 执行及其 Child 调用期间由内存对象持有。前端调试入口需要允许协议快速试验，但不应预设 JWT、APPKEY 或“双凭据”等模式，也不应把自动生成的 Header 暴露为可编辑清单。</p>
+
+  <h2>Decision drivers</h2>
+  <ul>
+    <li>允许开发者输入当前或未来协议所需的任意合法 Header 名称和值。</li>
+    <li>保持 Header 编辑器与 Agent/Session 诊断职责分离。</li>
+    <li>把临时值限制在开发构建、当前页面和一次初始 Events 请求中。</li>
+    <li>避免通过预置项、说明注释或隐藏 Header 列表把后端内部实现固化为前端信息架构。</li>
+  </ul>
+
+  <h2>Considered options</h2>
+  <h3>提供 JWT、APPKEY 与兼容模式</h3>
+  <p><strong>优点：</strong>常见凭据组合输入较快。<br><strong>缺点：</strong>把当前凭据名称和组合固化在 UI，无法覆盖其他协议 Header，也会重复后端规则。拒绝。</p>
+
+  <h3>把 Header 字段放入开发者诊断入口</h3>
+  <p><strong>优点：</strong>减少一个顶部入口。<br><strong>缺点：</strong>混合请求构造与 Session 诊断，入口名称和内容不再匹配。拒绝。</p>
+
+  <h3>使用独立通用 Headers 面板</h3>
+  <p><strong>优点：</strong>Key/Value 与 HTTP 原语一致；不依赖特定凭据模式；可复用原开发者诊断入口的紧凑视觉。<br><strong>缺点：</strong>开发者需要自己知道目标接口接受哪些 Header。接受。</p>
+
+  <h2>Decision</h2>
+  <ul>
+    <li>开发构建的顶部工具区提供独立折叠入口，名称固定为 <code>Headers</code>，不与开发者诊断入口合并。</li>
+    <li>编辑器使用通用 Key/Value 行。每行支持启用、删除；编辑尾行时自动增加空白行；摘要显示有效 Header 数量；清空后恢复一条空白行。</li>
+    <li>界面不提供凭据模式、固定 Header 名、说明注释、自动生成 Header 行或“隐藏请求头”列表。</li>
+    <li>已启用的半空行、非法 HTTP token、Fetch 无法表示的值、<a href="https://fetch.spec.whatwg.org/#forbidden-request-header">Fetch 禁止请求 Header</a> 和大小写不敏感重复名称阻止提交。折叠面板会先展开并等待 Vue 完成渲染，再聚焦首个错误所在的 Key 或 Value。</li>
+    <li>Fetch 规则按名称和值共同判断：包括 <code>Set-Cookie</code> 与 <code>proxy-</code>/<code>sec-</code> 前缀；<code>X-HTTP-Method</code>、<code>X-HTTP-Method-Override</code>、<code>X-Method-Override</code> 仅在拆分后的值包含 <code>CONNECT</code>、<code>TRACE</code> 或 <code>TRACK</code> 时拒绝。</li>
+    <li>值只保存在当前 Vue 组件状态和必需的表单 DOM，不写入 localStorage、sessionStorage、IndexedDB、日志或设计 fixture；刷新页面即清空。</li>
+    <li>普通消息提交时创建一次 <code>Headers</code> 副本，仅传给初始 Events POST。Session 创建/读取、Events 历史对账、模型/Thinking 配置、Steer、FollowUp、Abort 和断流恢复均不接收该副本。</li>
+    <li>适配器继续内部生成默认 Header。开发者手工填写同名 Key 时，在请求合并阶段按 Fetch <code>Headers</code> 的大小写不敏感语义覆盖默认值。</li>
+    <li>前端会把所有已启用且合法的自定义 Header 发送到 Runtime Events endpoint；后端只读取其契约明确识别的名称，其他名称不会进入后续 Agent 执行上下文。</li>
+  </ul>
+
+  <h2>Intentional differences</h2>
+  <p><strong>产品约束：</strong>采用 Postman 风格的通用行模型，但保留 CampusClaw 原有暖灰虚线视觉，不复制 Postman 的完整标签页、批量编辑或自动 Header 展示。</p>
+  <p><strong>架构变化：</strong>前端从“请求 Header 全由适配器生成”改为“初始 Events POST 可合并一次开发者副本”；其他请求签名保持不接收该副本。</p>
+  <p><strong>安全加固：</strong>开发工具只在 <code>import.meta.env.DEV</code> 下渲染；输入不持久化，非法值在 Fetch 前被拒绝，断线不会重放带副作用 POST。</p>
+
+  <h2>Consequences</h2>
+  <ul>
+    <li>正面：新增 Header 不需要改动组件结构或增加凭据模式。</li>
+    <li>正面：自动 Header 保持内部实现细节，页面只呈现开发者主动输入的内容。</li>
+    <li>正面：通过函数签名和契约测试证明临时值不会扩散到读取、配置和控制请求。</li>
+    <li>负面：输入值仍会出现在当前页面输入元素和浏览器网络面板，因此该能力只能用于受控开发环境。</li>
+    <li>负面：浏览器平台禁止设置的 Header 无法用此工具覆盖，错误会在发送前显示。</li>
+  </ul>
+
+  <h2>Validation</h2>
+  <ul>
+    <li><code>frontend/src/debugHeaders.test.ts</code> 覆盖合法行、HTTP token、非法值、Fetch 名称+值算法、大小写不敏感重复名称，以及折叠面板先展开再聚焦精确错误字段。</li>
+    <li><code>frontend/src/composables/useRuntimeApi.test.ts</code> 覆盖自定义值覆盖默认 <code>X-HW-ID</code>，并验证临时 Header 只出现在初始 Events POST。</li>
+    <li><code>npm test</code>、<code>npm run typecheck</code>、<code>npm run build</code> 和多视口开发构建浏览器检查覆盖功能、类型、打包和响应式呈现。</li>
+  </ul>
+
+  <h2>Related</h2>
+  <ul>
+    <li><a href="../designs/campusclaw-frontend.md">CampusClaw 前端调试工作台设计</a></li>
+    <li><a href="../designs/campusclaw-frontend/frontend_debug_header_flow.svg">开发者请求 Header 链路</a></li>
+    <li><a href="../designs/campusclaw-frontend/diagram.puml#L265">PlantUML 源码</a></li>
+    <li><a href="0032-tool-execution-credential-boundary.html">ADR-0032：将执行凭据限制在 Mate Tool execute</a></li>
+  </ul>
+</main>
+</body>
+</html>

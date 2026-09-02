@@ -4,22 +4,14 @@
 
 package com.campusclaw.codingagent.tool.read;
 
-import java.awt.image.BufferedImage;
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.charset.CharacterCodingException;
 import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.Arrays;
-import java.util.Base64;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
-
-import javax.imageio.ImageIO;
 
 import com.campusclaw.agent.tool.AgentTool;
 import com.campusclaw.agent.tool.AgentToolResult;
@@ -27,20 +19,18 @@ import com.campusclaw.agent.tool.AgentToolUpdateCallback;
 import com.campusclaw.agent.tool.CancellationToken;
 import com.campusclaw.agent.tool.ToolExecutionMode;
 import com.campusclaw.ai.types.ContentBlock;
-import com.campusclaw.ai.types.ImageContent;
 import com.campusclaw.ai.types.TextContent;
 import com.campusclaw.codingagent.tool.ops.ReadOperations;
 import com.campusclaw.codingagent.tool.workspace.AgentWorkspaceBoundary;
 import com.campusclaw.codingagent.tool.workspace.WorkspaceAccessException;
 import com.campusclaw.codingagent.tool.workspace.WorkspacePathResolver;
-import com.campusclaw.codingagent.util.ImageUtils;
 import com.campusclaw.codingagent.util.TruncationUtils;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
 /**
- * 在当前 Agent 工作区内读取文本文件或受支持图片的内置工具。
+ * 在当前 Agent 工作区内读取 UTF-8 文本文件的内置工具。
  *
  * @version [br_eCampusCore 26.0.0, 2026/08/23]
  * @since [br_eCampusCore 26.0.0]
@@ -49,35 +39,21 @@ public class ReadTool implements AgentTool {
 
     static final int DEFAULT_MAX_BYTES = 50 * 1024;
     static final int DEFAULT_MAX_LINES = 2000;
-    static final int MAX_IMAGE_DIMENSION = 2000;
 
     private static final String TRUNCATION_NOTICE = "\n\n[Output truncated. Continue with offset and limit.]";
     private static final String FIRST_LINE_TRUNCATION_NOTICE =
             "\n\n[Output truncated: first line exceeds the 50 KB limit.]";
-    private static final Set<String> SUPPORTED_IMAGES =
-            Set.of("image/jpeg", "image/png", "image/gif", "image/webp", "image/bmp");
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private final ReadOperations readOperations;
     private final WorkspacePathResolver pathResolver;
     private final AgentWorkspaceBoundary boundary;
 
-    private final boolean imageInputSupported;
-
     public ReadTool(
             ReadOperations readOperations, WorkspacePathResolver pathResolver, AgentWorkspaceBoundary boundary) {
-        this(readOperations, pathResolver, boundary, true);
-    }
-
-    public ReadTool(
-            ReadOperations readOperations,
-            WorkspacePathResolver pathResolver,
-            AgentWorkspaceBoundary boundary,
-            boolean imageInputSupported) {
         this.readOperations = readOperations;
         this.pathResolver = pathResolver;
         this.boundary = boundary;
-        this.imageInputSupported = imageInputSupported;
     }
 
     @Override
@@ -92,7 +68,7 @@ public class ReadTool implements AgentTool {
 
     @Override
     public String description() {
-        return "Read the contents of a file. Supports text files and images.";
+        return "Read the contents of a UTF-8 text file.";
     }
 
     @Override
@@ -123,28 +99,8 @@ public class ReadTool implements AgentTool {
         ensureNotCancelled(signal);
         Path path = pathResolver.resolveFile(boundary, (String) params.get("path"));
         byte[] bytes = readOperations.readFile(path);
-        String mimeType = readOperations.detectMimeType(path);
-        if (SUPPORTED_IMAGES.contains(mimeType)) {
-            return readImage(bytes, mimeType);
-        }
         ensureNotCancelled(signal);
         return readText(bytes, params);
-    }
-
-    private AgentToolResult readImage(byte[] bytes, String mimeType) throws IOException {
-        BufferedImage source = ImageIO.read(new ByteArrayInputStream(bytes));
-        if (source == null) {
-            throw new WorkspaceAccessException("Unsupported or invalid image file");
-        }
-        BufferedImage resized = ImageUtils.resize(source, MAX_IMAGE_DIMENSION);
-        if (resized == source) {
-            return imageResult(bytes, mimeType);
-        }
-        ByteArrayOutputStream output = new ByteArrayOutputStream();
-        if (!ImageIO.write(resized, "png", output)) {
-            throw new WorkspaceAccessException("Unsupported or invalid image file");
-        }
-        return imageResult(output.toByteArray(), "image/png");
     }
 
     private AgentToolResult readText(byte[] bytes, Map<String, Object> params) {
@@ -176,14 +132,22 @@ public class ReadTool implements AgentTool {
     }
 
     private static TextSelection selectLines(String content, int offset, int limit) {
-        String[] lines = content.split("\n", -1);
-        int start = offset - 1;
-        if (start >= lines.length) {
-            return new TextSelection("", false, lines.length);
+        if (content.isEmpty()) {
+            return new TextSelection("", false, 0);
         }
-        int end = Math.min(start + limit, lines.length);
+        String[] lines = content.split("\n", -1);
+        boolean endsWithNewline = content.endsWith("\n");
+        int totalLines = lines.length - (endsWithNewline ? 1 : 0);
+        int start = offset - 1;
+        if (start >= totalLines) {
+            return new TextSelection("", false, totalLines);
+        }
+        int end = Math.min(start + limit, totalLines);
         String selected = String.join("\n", Arrays.copyOfRange(lines, start, end));
-        return new TextSelection(selected, end < lines.length, lines.length);
+        if (endsWithNewline && end == totalLines) {
+            selected += "\n";
+        }
+        return new TextSelection(selected, end < totalLines, totalLines);
     }
 
     private static String truncateText(String text, boolean moreLines, boolean firstLineTruncated) {
@@ -256,16 +220,6 @@ public class ReadTool implements AgentTool {
             }
         }
         return false;
-    }
-
-    private AgentToolResult imageResult(byte[] bytes, String mimeType) {
-        String data = Base64.getEncoder().encodeToString(bytes);
-        List<ContentBlock> content = imageInputSupported
-                ? List.of(new ImageContent(data, mimeType))
-                : List.of(
-                        new ImageContent(data, mimeType),
-                        new TextContent("The current model does not declare image input support."));
-        return new AgentToolResult(content, null);
     }
 
     private static ObjectNode stringProperty(String description) {

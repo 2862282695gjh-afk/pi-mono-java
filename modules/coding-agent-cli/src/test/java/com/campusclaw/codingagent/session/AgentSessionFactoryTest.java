@@ -73,7 +73,7 @@ class AgentSessionFactoryTest {
                 provider,
                 promptLoader,
                 mock(com.campusclaw.codingagent.session.compaction.SessionCompactor.class));
-        MateCredentials credentials = MateCredentials.jwt("caller-1", "token-1");
+        MateCredentials credentials = MateCredentials.jwt("caller-1", "token-1", "access-token-1");
         when(mateToolsetFactory.createSession(runtime.agentId(), Map.of(), credentials))
                 .thenReturn(mock(MateToolSessionState.class));
         ManagedAgentSessionRequest request = new ManagedAgentSessionRequest(

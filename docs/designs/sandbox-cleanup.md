@@ -2,16 +2,21 @@
 
 > 历史迁移记录。当前规范已由
 > [CampusClaw 受管 Agent 工具系统 v2](tool-system-v2.md)取代；本文提到的本地
-> `ToolCatalog`、CLI 双入口和旧 Mate 工具名称不再是当前实现。
+> `ToolCatalog`、CLI 双入口和旧 Mate 工具名称不再是当前实现。本文曾保留的
+> 单容器 Docker/Kubernetes 过渡资产也已由
+> [临时 Docker 与 Kubernetes 资产清理](deployment-assets-cleanup.md)取代。
 
 ## 文档信息
 
 | 项目 | 内容 |
 |---|---|
-| 文档版本 | v1.1 |
-| 源码基线 | `origin/main@7811dc335fcb0125a1ecbddd63cd77baf120f21d` |
-| 适用模块 | `modules/coding-agent-cli`、`modules/agent-core`、`mate-campusclaw` |
+| 文档版本 | v1.3 |
+| 历史分析源码基线 | `origin/main@7811dc335fcb0125a1ecbddd63cd77baf120f21d` |
+| 后续部署资产清理基线 | `origin/main@dee709fc584dd722d2e94eb381338b997659e35a` |
+| 适用模块 | `modules/coding-agent-cli`、`modules/agent-core`、`campusclaw` |
 | 变更类型 | 架构迁移、部署简化、过期文档清理 |
+
+> 公司镜像相关路径和标识按 2026-09-01 的当前仓库位置展示；历史提交 SHA 仍是对应行为证据。
 
 ## 1. 结论与原因
 
@@ -101,16 +106,31 @@ PlantUML 源码：[diagram.puml#L1](sandbox-cleanup/diagram.puml#L1)
 - `CLAUDE.md`：删除沙箱配置、脚本和过期文档索引。
 - `modules/k8s/README.md`：改为单容器部署说明。
 
-## 7. 部署与运维边界
+### 6.4 后续删除的过渡部署资产
 
-- 根 `Dockerfile` 使用 Maven/JDK 21 构建，不安装 Docker CLI，不设置 `DOCKER_HOST`。
-- K8s Deployment 保留应用容器、数据 PVC、Service、HPA、PDB 和健康检查；不运行 DinD、Docker socket 或特权容器。
-- 外部遗留容器和 Docker volume 的清理由发布运维按环境确认后执行，本次代码变更不自动删除它们。
-- 回滚只能回到包含旧沙箱代码的完整版本，并同时恢复其配置、Docker daemon、sidecar 和权限设置；不能只恢复一个旧类文件。
+在 `origin/main@dee709fc584dd722d2e94eb381338b997659e35a` 基线上，仓库不再承担
+Docker 镜像和 Kubernetes 部署框架维护职责，因此删除：
 
-## 8. 验收标准
+- 根 `Dockerfile` 和 `k8s/mateservice-deployment.yaml`；
+- `modules/k8s/` 全目录；
+- `modules/coding-agent-cli/src/main/resources/application-k8s.yml`。
 
-- `modules/coding-agent-cli` 和 `mate-campusclaw` 均可编译测试。
+这次后续删除是架构变化，不表示 Docker 或 Kubernetes 永久不受支持。未来 Kubernetes
+框架是 target-only 后续设计，不能把本节删除前的镜像名、资源名、存储和探针配置当成新框架基线。
+
+## 7. 后续部署与运维边界
+
+- 本文 v1.0/v1.1 曾把单容器 Docker/Kubernetes 清单作为移除 DinD 后的过渡目标；该目标不再是当前仓库能力。
+- 当前仓库只维护 Maven/JAR 构建入口，不维护 Dockerfile、Kubernetes 资源或 Kubernetes 专用 Spring Profile。
+- 未来 Kubernetes 框架必须独立确定镜像供应链、配置、秘密、探针、存储、网络和发布验证；当前没有对应实现。
+- 外部遗留容器、镜像、Kubernetes 对象和 volume 的清理由发布运维按环境确认后执行，源码变更不自动删除它们。
+- 如果需要回滚本地 Docker Sandbox，必须回到包含旧沙箱代码的完整版本，并同时恢复配置、Docker daemon、sidecar 和权限设置；不能只恢复一个旧类文件。
+
+## 8. 验收记录
+
+v1.0/v1.1 的历史验收标准包括：
+
+- `modules/coding-agent-cli` 和 `campusclaw` 均可编译测试。
 - 本地基础工具仍由 Spring 和 `ToolCatalog` 注册，Schema 不包含 `_executionMode`。
 - `ToolExecutionMode` 的串行/并行行为保持不变。
 - 生产源码、测试、配置和部署文件不再引用 `ExecutionRouter`、`Hybrid*`、`DockerSandbox`、`SandboxSkillParser`、`ToolExecutionProperties`、`TOOL_EXECUTION_*`、`DOCKER_HOST`、DinD 或 `privileged`。
@@ -118,9 +138,18 @@ PlantUML 源码：[diagram.puml#L1](sandbox-cleanup/diagram.puml#L1)
 - `kubectl kustomize modules/k8s` 成功，Deployment 只有一个应用容器。
 - PlantUML 能生成 SVG；SVG 是有效 XML；Markdown 引用、源码链接和行号锚点有效；`git diff --check` 通过。
 
+v1.2 后续清理改为验证：
+
+- 仓库中不再存在根 Dockerfile、Kubernetes 清单或 `application-k8s.yml`；
+- README 和维护文档不再把这些文件描述为当前部署能力；
+- Maven/JAR 构建和 `campusclaw` 镜像同步检查通过；
+- 本文和 ADR-0015 链接到后续清理设计与 ADR-0033。
+
 ## 9. 版本历史
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.3 | 2026-09-01 | 对齐 CampusClaw 公司镜像的新目录和同步入口，不改变历史 Sandbox 清理边界。 |
+| v1.2 | 2026-08-28 | 记录单容器 Docker/Kubernetes 过渡资产的后续删除，并把未来 Kubernetes 框架划为独立设计 |
 | v1.1 | 2026-08-19 | 合入 `origin/main@7811dc33` 的 HTTP V1、CLI 启动和 Agent 委派变更，并区分 Runtime SSE 事件名与已删除 Sandbox 配置 |
 | v1.0 | 2026-08-19 | 记录本地沙箱清理、MateService 工具迁移、单容器部署和过期文档删除 |

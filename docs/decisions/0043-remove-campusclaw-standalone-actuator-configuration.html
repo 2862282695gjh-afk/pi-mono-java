@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ADR-0043：删除 CampusClaw 独立服务的 Actuator 专用配置</title>
+  <style>
+    :root { color-scheme: light; font-family: Inter, "PingFang SC", sans-serif; color: #25272a; background: #f2f5f7; }
+    body { margin: 0; }
+    main { width: min(920px, calc(100% - 40px)); margin: 40px auto; padding: 40px; box-sizing: border-box; background: #fff; border: 1px solid #d7dde2; border-radius: 16px; }
+    h1 { margin-top: 0; font-size: 30px; }
+    h2 { margin-top: 32px; font-size: 20px; }
+    h3 { margin-top: 22px; font-size: 17px; }
+    p, li { line-height: 1.75; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 10px 12px; border: 1px solid #d7dde2; text-align: left; vertical-align: top; }
+    th { width: 190px; background: #edf2f5; }
+    code { padding: 2px 5px; border-radius: 5px; background: #edf2f5; overflow-wrap: anywhere; }
+    a { color: #1769aa; }
+    .status { display: inline-flex; padding: 4px 9px; border-radius: 999px; color: #12633a; background: #e8f7ed; font-weight: 650; }
+    @media (max-width: 640px) { main { width: 100%; margin: 0; padding: 24px 18px; border: 0; border-radius: 0; } th { width: 120px; } }
+  </style>
+</head>
+<body>
+<main>
+  <h1>ADR-0043：删除 CampusClaw 独立服务的 Actuator 专用配置</h1>
+  <table>
+    <tr><th>Status</th><td><span class="status">Accepted</span></td></tr>
+    <tr><th>Date</th><td>2026-09-01</td></tr>
+    <tr><th>Source baseline</th><td><code>origin/main@b46b9d37e634dae12a777576062e2097516fe153</code></td></tr>
+    <tr><th>Observed source</th><td><code>campusclaw/src/main/resources/application.properties</code>、<code>campusclaw/src/test/java/com/huawei/hicampus/claw/codingagent/config/ManagementConfigurationTest.java</code>、<code>campusclaw/pom.xml</code></td></tr>
+    <tr><th>Supersedes</th><td><a href="0040-remove-redundant-campusclaw-corporate-actuator-exclusions.html">ADR-0040</a></td></tr>
+  </table>
+
+  <h2>Context</h2>
+  <p>修改前，公司镜像以子模块集成前提运行，在应用配置中关闭管理端口、默认禁用 Endpoint，并排除 18 个 Actuator 自动配置。ADR-0038 和 ADR-0040 分别记录了这一边界的初始关闭方案和排除清单收敛方案。</p>
+  <p>CampusClaw 在公司中现已是独立服务。原配置所针对的上层子模块集成前提不再成立，应用不应继续隐式抵消公司运行平台或父 POM 提供的标准 Actuator 行为。</p>
+
+  <h2>Decision drivers</h2>
+  <ul>
+    <li>让独立服务的管理策略由公司运行平台明确管理。</li>
+    <li>删除与 18 个 Spring Boot 自动配置类名的长期耦合。</li>
+    <li>保持 CampusClaw 业务 HTTP/SSE、数据库、CampusMate 和日志契约不变。</li>
+    <li>不保留已失效部署拓扑的兼容键或部分排除。</li>
+  </ul>
+
+  <h2>Considered options</h2>
+  <h3>保留全部现有配置</h3>
+  <p><strong>优点：</strong>不改变当前管理面行为。<br><strong>缺点：</strong>独立服务仍携带已失效的子模块集成策略，并持续耦合 Spring Boot 类名。拒绝。</p>
+
+  <h3>只删除 <code>management.*</code> 或只删除排除清单</h3>
+  <p><strong>优点：</strong>变更行数较少。<br><strong>缺点：</strong>仍保留一半旧策略，无法形成清晰的独立服务边界。拒绝。</p>
+
+  <h3>删除全部 Actuator 专用应用配置</h3>
+  <p><strong>优点：</strong>应用不再覆盖平台策略，配置边界与独立服务拓扑一致。<br><strong>缺点：</strong>如果最终 Classpath 包含 Actuator，其实际暴露需在公司运行环境重新验证。接受。</p>
+
+  <h2>Decision</h2>
+  <ul>
+    <li>从 <code>campusclaw/src/main/resources/application.properties</code> 删除 <code>management.server.port</code> 和 <code>management.endpoints.enabled-by-default</code>。</li>
+    <li>删除仅由 18 个 Actuator 类名组成的 <code>spring.autoconfigure.exclude</code> 清单。</li>
+    <li>不在应用配置中保留旧键、空值、注释或兼容排除。</li>
+    <li>保留 <code>server.*</code> 业务端口和其他所有业务配置。</li>
+    <li>删除专有测试中的 Actuator 断言，并将剩余 CampusMate 配置测试重命名。</li>
+  </ul>
+
+  <h2>Intentional difference</h2>
+  <p><strong>部署架构变化：</strong>CampusClaw 从需要抵消上层管理面的子模块集成边界收敛为公司独立服务。<strong>公司集成边界：</strong>Actuator 的存在、端口和暴露由有效公司 Classpath 与运行配置决定。</p>
+
+  <h2>Consequences</h2>
+  <ul>
+    <li>正面：应用配置不再维护易随 Spring Boot 升级漂移的 Actuator 类名清单。</li>
+    <li>正面：管理面行为与公司独立服务的标准运行策略一致。</li>
+    <li>边界：本仓库不再保证管理端口为 <code>-1</code> 或 Endpoint 默认关闭。</li>
+    <li>门禁：公司 Maven 和运行环境必须验证最终 Actuator 依赖、端口和暴露范围。</li>
+  </ul>
+
+  <h2>Validation</h2>
+  <ul>
+    <li>扫描镜像配置，确认不存在 <code>management.*</code>、Actuator 自动配置类名或专用排除。</li>
+    <li>执行保留的 CampusMate 配置测试、根 Reactor <code>verify</code> 与镜像同步 dry-run。</li>
+    <li>在可解析 <code>NativeParent</code> 的公司 Maven 环境执行镜像 <code>clean verify</code> 和启动验证。</li>
+    <li>生成并验证 PlantUML/SVG，执行文档链接、Mermaid 禁用和 Git diff 检查。</li>
+  </ul>
+
+  <h2>Related</h2>
+  <ul>
+    <li><a href="../designs/campusclaw-management-web.md">CampusClaw 独立服务 Actuator 配置边界设计</a></li>
+    <li><a href="0038-disable-campusclaw-corporate-management-web.html">ADR-0038：关闭 CampusClaw 公司集成管理 Web 面</a></li>
+    <li><a href="0040-remove-redundant-campusclaw-corporate-actuator-exclusions.html">ADR-0040：删除冗余 Actuator 自动配置排除</a></li>
+    <li><a href="0041-standardize-campusclaw-corporate-module-identity.html">ADR-0041：统一 CampusClaw 公司镜像模块身份</a></li>
+  </ul>
+</main>
+</body>
+</html>

@@ -6,7 +6,7 @@
 - Before changing code, tests, build files, or design documents, read
   `CLAUDE.md` and the relevant source and design files. `CLAUDE.md` is the
   detailed repository handbook for builds, Java conventions, tests, design
-  records, and the `mate-campusclaw` mirror.
+  records, and the `campusclaw` mirror.
 - Follow more specific `AGENTS.md` or `AGENTS.override.md` files if they are
   added under a subdirectory.
 - Treat macOS and Linux as the only supported local launch and installation
@@ -91,7 +91,7 @@
   committing.
 - Run `git diff --check` and the smallest relevant build, formatting, and test
   commands described in `CLAUDE.md`. Report any validation that could not run.
-- When `modules/*` changes, update and verify the `mate-campusclaw` mirror as
+- When `modules/*` changes, update and verify the `campusclaw` mirror as
   required by `CLAUDE.md` before pushing.
 - Do not claim a task is complete when required tests, the branch push, or the
   Draft pull request is still missing. State the exact remaining blocker.

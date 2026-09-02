@@ -1,12 +1,16 @@
 # CampusClaw 受管 Agent 工具系统 v2
 
-> 文档版本：1.5.0
+> 文档版本：1.8.0
 >
 > 状态：Implemented
 >
-> 日期：2026-08-24
+> 日期：2026-09-01
 > 决策记录：[ADR-0022](../decisions/0022-managed-agent-tool-system-v2.html)、
-> [ADR-0024](../decisions/0024-mate-tool-execution-credential-chain.html)
+> [ADR-0032](../decisions/0032-tool-execution-credential-boundary.html)、
+> [ADR-0024](../decisions/0024-mate-tool-execution-credential-chain.html)、
+> [ADR-0036](../decisions/0036-read-text-only.html)
+
+> 公司镜像相关路径和标识按 2026-09-01 的当前仓库位置展示；历史提交 SHA 仍是对应行为证据。
 
 ## 1. 结论与源码基线
 
@@ -24,6 +28,14 @@ Session；各 Session 的消息、工作目录、工具实例、Mate 缓存和 E
 | CampusClaw 压缩修订前 | `a7f78fed345a289833970cd7b78399f0e8e51d32` | 本轮 pi 压缩细节对齐输入 |
 | CampusClaw PR 167 审查头 | `bf28e72f94f29acd316eb872a250893ed54e3632` | 当前实现证据和本轮三项审查修订输入 |
 | CampusClaw 凭据链修订前 | `934b5dd7d9e50b1d7359bea5f2dda71e3c4a34ac` | Mate HTTP 凭据链实现输入 |
+| CampusClaw execute-only 凭据边界修订前 | `320d790726a70aada6100052952d5494d2a378ac` | 三项 Header 同时由发现与执行请求携带的源码行为输入 |
+| CampusClaw execute-only 凭据边界实现 | `d03c08dbae870f19eee8d4fa79a707185f7a26b5` | POST Events 读取四项值、发现不携带这些值且只有 execute 携带的审查实现证据 |
+| CampusClaw Read 图片能力收敛前 | `3452bceb0be586c1c845cde589ecb7ee1e6c5908` | 观察 Read 的 MIME 分支、图片缩放、Base64 输出和 WebP 依赖 |
+| CampusClaw Read 纯文本实现 | `16fd9d2c5c1ffa99bab9535797a472484f2d5362` | 审查后的 UTF-8 文本契约、二进制拒绝、图片路径和依赖删除证据 |
+| CampusClaw Read 行数修复前 | `1b3b519419ca9bf9025ba2c88335382b9a5b3b02` | 观察末尾 LF 被保留分割结果误计为额外空行的行为 |
+| CampusClaw Read 行数修复实现 | `0397d92f8ce17e9d00ce4904f147cba980377c6f` | 末尾换行、空文件、精确 limit 和截断元数据的审查实现证据 |
+| CampusClaw gitignore 根锚定修复前 | `94abd2abcb03943daef5118115e4b4a21f1c4d5f` | 观察根锚定规则去除前导斜杠后被无路径分隔符 glob 按任意深度匹配的行为 |
+| CampusClaw gitignore 根锚定修复实现 | `305c5a935f41498e252c83fe93d2201dbfc64218` | Find、Grep 根锚定匹配器及集成回归测试的审查实现证据 |
 | pi | `5cd93f688aaab89dbb6dfa4aca535f21796ae185` | Read、find、grep、ls、工具调度与上下文压缩对照 |
 | OpenCode | `849c2598abc7d2b40261e74b5826bc74ffc78308` | Task/Child Agent 对照 |
 | 设计仓 | `bb967eebe1f62553e92480b3ea3808a664fbe73e` | 2.2.0 工具设计、3.2.0 Runtime 设计和 HTTP 1.40 契约 |
@@ -36,9 +48,15 @@ Session；各 Session 的消息、工作目录、工具实例、Mate 缓存和 E
 - `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/session/AgentSessionFactory.java`：三入口公共 Session 装配；
 - `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtime/AgentRuntimeManager.java`：缓存优先 prepare、原子 refresh；
 - `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/tool/workspace/WorkspacePathResolver.java`：工作区和符号链接边界；
+- `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/tool/ops/GitIgnoreRules.java`、
+  `PathPatternMatcher.java`：`.gitignore` 解析、根相对 glob 与普通 basename glob 的不同匹配语义；
+- `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/tool/read/ReadTool.java`：UTF-8 解码、文本分块、字节截断与二进制拒绝；
+- `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/tool/ops/ReadOperations.java`、
+  `LocalReadOperations.java`：仅保留文件字节读取和存在性能力；
+- `modules/coding-agent-cli/pom.xml`、`pom.xml`：删除 Read 图片解码所需的 WebP 依赖；
 - `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/tool/mate/MateToolSessionCache.java`：Session 缓存及 single-flight；
 - `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/web/RuntimeRequestContext.java`、
-  `runtimeapi/event/RuntimeEventService.java`、`session/ManagedAgentSessionRequest.java`：瞬态 Mate 凭据链；
+  `runtimeapi/event/RuntimeEventService.java`、`session/ManagedAgentSessionRequest.java`：Mate 凭据的执行期间内存传递；
 - `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/tool/agent/SubagentExecutionService.java`：Child Execution；
 - `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/session/ManagedAgentSession.java`：公共压缩与最多一次溢出重试；
 - `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/session/compaction/SessionCompactor.java`：Usage 判定、安全切点、摘要请求与重复压缩；
@@ -57,8 +75,11 @@ Session；各 Session 的消息、工作目录、工具实例、Mate 缓存和 E
 |---|---|---|---|
 | 工具发现 | Spring ToolCatalog、Extension 与多个旧工具共同进入装配面 | 关闭枚举 + 严格 profile + 工厂装配 | 架构改造：模型契约必须可审计且不受 classpath 漂移影响 |
 | 本地文件 | Read/Grep/Ls 可接收进程可见路径，Find 对应旧 Glob | 四工具统一限制到 `agent/{agentId}`，拒绝符号链接和 realpath 越界 | 安全加固：防止跨 Agent 读取 |
+| Read 内容 | 收敛前按 MIME 解码 JPEG/PNG/GIF/WebP/BMP，必要时缩放并输出 `ImageContent` | 仅接受严格 UTF-8 文本并输出 `TextContent`；图片以及含 NUL 或非法 UTF-8 的二进制内容失败 | 产品约束：Read 不再向模型提供本地图片读取入口 |
+| Read 行边界 | 修复前的 `selectLines` 使用 `split("\n", -1)` 的数组长度判断总行数和剩余行，末尾 LF 会产生一个虚构空行 | 空文件按 0 行处理；末尾 LF 只终止最后一行，选择到文件末尾时仍原样保留该 LF | 实现缺陷修复：对齐既有 1-based `offset`/`limit` 契约，不改变产品或架构边界 |
+| gitignore 根锚定 | 解析器保留前导 `/` 的锚定标志，但去掉斜杠后的无分隔符 glob 仍进入 basename 任意深度匹配器，导致 `/dist` 错误忽略 `src/dist` | 锚定规则和含路径分隔符规则使用相对当前 `.gitignore` 目录根开始的 glob；普通无斜杠规则仍匹配任意目录层级 | 实现缺陷修复：恢复既有 Git ignore 根锚定语义，不改变产品、安全或架构边界 |
 | Mate 调用 | List 接受 Agent/Skill ID；Call 依赖预先 List 的缓存 | List 只接受可选 `skillName`；Call 按名称，miss 自动完整发现 | 产品约束：模型不感知内部 ID 或调用来源 |
-| Mate 凭据 | 执行客户端要求凭据，但只提供部署方 resolver 占位，Runtime Header 未进入工具链 | POST Events 创建执行级快照，List/Call 共用，Child 继承，Cron 无来源时 fail closed | 架构改造与安全加固：显式传播且不持久化、不依赖线程上下文 |
+| Mate 凭据 | 执行客户端要求凭据，但只提供部署方 resolver 占位，Runtime Header 未进入工具链 | POST Events 读取四项值并在本次 Agent 执行和 Child 调用期间由内存对象持有；List 与 Call miss 的发现请求不携带，只有 Call execute 携带；Cron 无入站值时不发送 execute | 架构改造与安全加固：明确值的生命周期和携带请求，不持久化、不依赖线程上下文 |
 | Child | `spawn_agent`、`invoke_agent`、ACP/HTTP/A2A 与独立 runner 并存 | `Agent({agentName,task})` 只解析直接绑定，并通过公共 SessionFactory 执行 | 架构改造：统一父子执行语义并删除后端身份概念 |
 | Cron | payload 固化 model/system/tools，并由旧本地 Session 执行 | Job 只保存 agentId/prompt，触发时 prepare 并使用 cron profile | 架构改造：配置随 Agent 当前绑定生效 |
 | CLI | 服务入口可分发到 CLI/TUI，Loop 属于 CLI Session | 产品只保留服务入口；无 CLI profile、Loop 或 `/reload` | 产品约束：CampusClaw 是 ToB 服务 |
@@ -110,7 +131,7 @@ barrier。结果始终按模型原始 tool-call 顺序写回，包括已知与�
 
 ![Agent 工作区隔离](tool-system-v2/agent_workspace_boundary.svg)
 
-[PlantUML 源码](tool-system-v2/diagram.puml#L83)
+[PlantUML 源码](tool-system-v2/diagram.puml#L84)
 
 `Read`、`Find`、`Grep`、`Ls` 的根目录固定为 `agent/{agentId}`，而不是
 `.campusclaw` 子目录。`WorkspacePathResolver` 对输入执行：
@@ -121,7 +142,29 @@ barrier。结果始终按模型原始 tool-call 顺序写回，包括已知与�
 4. 遍历发现的每个路径在读取/输出前再次复核。
 
 四个工具不调用 Bash。Find 使用 glob，Grep 支持正则/字面量、glob 和上下文；两者应用
-`.gitignore`。Read 对齐文本分块及图片读取，Ls 包含 dotfile、名称排序并给目录追加 `/`。
+`.gitignore`。Read 仅读取严格 UTF-8 文本，保留 1-based `offset`、`limit`、默认
+2,000 行和 50 KiB 输出截断；包含 NUL 或无法按 UTF-8 解码的内容作为不支持的二进制
+文件失败。Read 不再检测图片 MIME、缩放、Base64 编码或返回 `ImageContent`；该限制不删除
+模型层通用的图片模态和 `ImageContent` 类型。Ls 包含 dotfile、名称排序并给目录追加 `/`。
+
+Find 和目录模式 Grep 读取工作区内各级 `.gitignore`。以 `/` 开头的规则相对该
+`.gitignore` 所在目录的根开始匹配：`/dist` 忽略该层的 `dist` 及其后代，但不忽略
+`src/dist`；`/*.txt` 只忽略该层的文本文件。修复前源码 `94abd2ab` 虽在 `parseRule` 中保留
+`anchored=true`，却在去掉前导斜杠后把 `dist` 交给 basename 任意深度匹配器，祖先路径检查
+因此会让嵌套同名目录误命中。目标实现为根锚定规则和含路径分隔符规则显式创建根相对匹配器；
+不带 `/` 的普通规则仍逐路径段匹配任意深度。该修正只恢复 ignore 过滤结果，不改变 Find/Grep
+自身的用户 glob 契约。
+
+在修复前源码 `1b3b5194` 中，`selectLines` 直接把 `split("\n", -1)` 的数组长度作为
+`totalLines`，因此末尾 LF 会成为额外空元素；当实际行数恰好等于 `limit` 时还会错误设置
+`moreLines` 并附加截断提示。目标设计把空文件定义为 0 行，把末尾 LF 定义为最后一行的
+终止符；只有真实的后续文本行才设置 `moreLines`。选择范围到达文件末尾时保留原始末尾 LF，
+所以未截断读取的文本内容不发生变化。该修正的理由是让行数元数据、分页判断和返回文本共享
+同一行边界，而不是改变 Read 的公开参数或输出类型。
+
+取消图片路径后，Read 不再进行图片全量解码、缩放和 Base64 复制，也不再需要
+`imageio-webp`。文本路径仍先使用 `Files.readAllBytes` 读取整个文件，再执行解码和输出截断；
+本次不改为流式读取。
 
 ## 6. 受管目录 prepare 与 refresh
 
@@ -154,7 +197,7 @@ refresh 成功不修改正在执行的 Session 快照。空闲数据库 Session 
 
 ![CallMateTool 缓存未命中流程](tool-system-v2/mate_call_refresh.svg)
 
-[PlantUML 源码](tool-system-v2/diagram.puml#L114)
+[PlantUML 源码](tool-system-v2/diagram.puml#L115)
 
 ![Mate 工具执行级凭据链](tool-system-v2/mate_credential_flow.svg)
 
@@ -162,8 +205,8 @@ refresh 成功不修改正在执行的 Session 快照。空闲数据库 Session 
 
 `ListMateTools({skillName?})` 无参数查询当前 Agent；有名称时通过已准备目录映射到 Skill ID。
 每次都实时访问 Mate，输出稳定 JSON，仅含 `scope` 和各工具的 `name`、`description`、
-`inputSchema`。内部客户端分为 `listAgentTools(agentId, credentials)` 和
-`listSkillTools(skillId, credentials)`，按 ID 关联批量元数据并恢复 Mate 绑定顺序。
+`inputSchema`。内部客户端分为 `listAgentTools(agentId)` 和 `listSkillTools(skillId)`，按 ID
+关联批量元数据并恢复 Mate 绑定顺序；发现方法没有执行凭据参数。
 
 `CallMateTool({tool,args?})` 只按名称调用。缓存是 Session 私有的完整“名称 → ID”快照：
 
@@ -173,12 +216,14 @@ refresh 成功不修改正在执行的 Session 快照。空闲数据库 Session 
 - 发现成功后替换完整快照，再解析名称；
 - 自动流程只重试发现，绝不重放已发出的 execute。
 
-并发 miss 共享同一轮成功或失败结果。List 只更新被查询来源的最近成功快照，不清空其他
-来源。`POST Events` 的调用上下文 Header 形成只存在于本次执行内存中的不可变凭据快照；
-List 的所有发现请求和 Call 的单次执行请求使用同一快照。凭据不进入持久化 Session、Event、
-Prompt 或日志。Child 继承父执行快照；Cron 无入站身份，Call 在发现前 fail closed。Runtime
-只检查执行请求具备 `X-HW-ID` 和至少一种 AppKey/JWT，不验证真实性或互斥性，Mate 继续负责
-最终授权和参数校验。
+并发 miss 共享同一轮成功或失败结果。List 只更新被查询来源的最近成功缓存，不清空其他
+来源。`POST Events` 读取 `X-HW-ID`、`X-HW-APPKEY`、`Authorization` 和 `access-token`；
+这些值只在本次 Agent 执行及其 Child 调用期间由内存对象持有，不写入数据库、Event、Prompt、
+模型消息或日志，执行结束后 Runtime 不再主动持有。Agent binding、Skill binding 和 tool
+metadata 查询不携带这些值；只有 Call 的单次 execute 请求携带收到的非空值。发送 execute
+前必须具有 `access-token`、`X-HW-ID` 以及 AppKey/JWT 至少一种，否则不发送请求并返回工具
+执行失败，但 POST Events 本身不因此被拒绝。Runtime 不验证真实性或 AppKey/JWT 互斥性，
+Mate 继续负责最终授权和参数校验。Cron 没有入站调用方值，因此仍可发现但不能执行 Mate 工具。
 
 ## 8. Child Execution
 
@@ -268,14 +313,16 @@ CampusClaw 不恢复 pi 的 JSONL/tree/Extension、Bash/Edit/Write 文件追踪�
 ## 13. 验证
 
 实现测试覆盖严格配置、每 Session 新工具实例、Schema-before-hook、hook 顺序、并行 barrier、
-工作区越界/符号链接、原子 prepare/refresh 回滚、无 `tools.json`、Mate 稳定 JSON、缓存隔离、
-single-flight 成功与失败、执行不重放、Runtime 凭据提取与逐层传递、List/Call Header 透传、
+工作区越界/符号链接、根锚定 `.gitignore` 对根层命中和嵌套同名路径保留、Read 的 UTF-8
+分块/截断/二进制和图片拒绝、原子 prepare/refresh 回滚、
+无 `tools.json`、Mate 稳定 JSON、缓存隔离、
+single-flight 成功与失败、执行不重放、Runtime 四项凭据读取与执行期间内存传递、发现请求无凭据与 execute Header 携带、
 Child 凭据继承、Cron 缺少凭据时 Call fail closed、Child 直接绑定/版本/深度/循环/取消/进度、Cron Agent
 隔离和 HTTP 冷目录创建。仓库交付前执行：
 
 ```text
 ./mvnw clean verify
-./scripts/sync-mate-campusclaw.sh
+./scripts/sync-campusclaw.sh
 git diff --check
 ```
 
@@ -283,7 +330,14 @@ git diff --check
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
-| 1.5.0 | 2026-08-24 | 实现 Mate 凭据链：Runtime 执行快照、List/Call 透传、Child 继承、Cron fail-closed，并删除部署方 resolver 占位 |
+| 1.8.0 | 2026-09-01 | 对齐 CampusClaw 公司镜像的新目录、Java 包和同步入口；工具契约不变。 |
+| 1.7.2 | 2026-08-31 | 修正 Find/Grep 的 `.gitignore` 根锚定规则：`/dist`、`/*.txt` 仅相对规则文件所在目录的根生效，不再误过滤嵌套同名路径。 |
+| 1.7.1 | 2026-08-31 | 修正 Read 末尾 LF 的逻辑行边界：空文件为 0 行，末尾换行不增加 `totalLines` 或误触发截断，同时保留原始末尾换行。 |
+| 1.7.0 | 2026-08-28 | 将 Read 收敛为严格 UTF-8 文本工具，删除图片 MIME/缩放/Base64 路径、模型图片模态分支和 WebP 解码依赖。 |
+| 1.6.2 | 2026-08-28 | 用读取时机、内存持有期限、携带请求和缺失值行为定义 Mate 工具凭据边界。 |
+| 1.6.1 | 2026-08-28 | 补充 execute-only 审查实现提交，并统一前文对 List、Call miss 和 Call execute 凭据边界的描述。 |
+| 1.6.0 | 2026-08-27 | POST Events 增加读取 `access-token`；发现请求不携带凭据，只有 Mate Tool execute 携带收到的值。 |
+| 1.5.0 | 2026-08-24 | 删除部署方 resolver 占位；Runtime 读取三项凭据供当次 List/Call 和 Child 使用，Cron 缺少值时 fail closed。 |
 | 1.4.0 | 2026-08-24 | 处理 PR 167 三项审查意见：精确持久化并排除压缩重试候选、统一公共 Agent 实际请求与 length 判定的输出上限、修正新增实现的源码证据基线 |
 | 1.3.0 | 2026-08-24 | 固定并实现 pi 压缩细节：Usage 与边界判定、成功 STOP 不重试、错误/length 单次恢复、超大末条保留、split-turn/重复摘要、结构化摘要、Read 路径继承、取消和瞬态重试语义 |
 | 1.2.0 | 2026-08-24 | 修订 PR 167 删除边界：迁移公共压缩与 Read 追踪，保留未注册的 Slash 核心和四个处理器，增加 Usage/领域事件及 refresh 后懒校准 |

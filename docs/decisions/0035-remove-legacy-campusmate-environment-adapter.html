@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ADR-0035：删除 CampusMate 旧部署变量兼容脚本</title>
+  <style>
+    :root { color-scheme: light; font-family: Inter, "PingFang SC", sans-serif; color: #2c2724; background: #f8f3f0; }
+    body { margin: 0; }
+    main { width: min(920px, calc(100% - 40px)); margin: 40px auto; padding: 40px; box-sizing: border-box; background: #fffcfa; border: 1px solid #ded4cf; border-radius: 16px; }
+    h1 { margin-top: 0; font-size: 30px; }
+    h2 { margin-top: 32px; font-size: 20px; }
+    h3 { margin-top: 22px; font-size: 17px; }
+    p, li { line-height: 1.75; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 10px 12px; border: 1px solid #ded4cf; text-align: left; vertical-align: top; }
+    th { width: 190px; background: #f4ece8; }
+    code { padding: 2px 5px; border-radius: 5px; background: #f4ece8; overflow-wrap: anywhere; }
+    a { color: #a9472b; }
+    .status { display: inline-flex; padding: 4px 9px; border-radius: 999px; color: #12633a; background: #e8f7ed; font-weight: 650; }
+    @media (max-width: 640px) { main { width: 100%; margin: 0; padding: 24px 18px; border: 0; border-radius: 0; } th { width: 120px; } }
+  </style>
+</head>
+<body>
+<main>
+  <h1>ADR-0035：删除 CampusMate 旧部署变量兼容脚本</h1>
+  <table>
+    <tr><th>Status</th><td><span class="status">Accepted</span></td></tr>
+    <tr><th>Date</th><td>2026-08-28</td></tr>
+    <tr><th>Source baseline</th><td><code>origin/main@28b3235e5cff0da2f768cbfc6b7b9ce5e2b51193</code></td></tr>
+    <tr><th>Observed source</th><td><code>campusclaw/scripts/install_value.sh</code>、<code>campusclaw/src/main/resources/application.properties</code>、<code>modules/coding-agent-cli/src/main/resources/application.yml</code>、<code>scripts/sync-campusclaw-exclude.txt</code></td></tr>
+  </table>
+
+  <h2>Context</h2>
+  <p><code>campusclaw/scripts/install_value.sh</code> 是公司镜像侧独有的部署适配脚本。它读取
+    <code>/etc/profile</code>，把旧平台变量 <code>CAMPUSINNERGWSERVICE_DOMAIN_NAME_URL</code>
+    转换为应用实际读取的 <code>CAMPUSMATE_BASE_URL</code>。四个主模块没有对应脚本，主模块 YAML
+    和公司镜像侧 properties 都已经只读取 <code>CAMPUSMATE_BASE_URL</code>。</p>
+  <p>部署不再需要兼容旧变量后，保留脚本会继续暗示两套受支持的配置入口，并使新部署误以为必须先
+    source 一个安装脚本。实际应用只需要启动进程环境中的一个明确变量。</p>
+
+  <h2>Decision drivers</h2>
+  <ul>
+    <li>让部署入口与应用配置契约一致，只保留 <code>CAMPUSMATE_BASE_URL</code>。</li>
+    <li>移除主模块不存在、仅由公司镜像手工维护的兼容资产。</li>
+    <li>避免首次部署把环境变量适配脚本误解为安装或启动程序。</li>
+  </ul>
+
+  <h2>Considered options</h2>
+  <h3>保留现有兼容脚本</h3>
+  <p><strong>优点：</strong>仍使用旧变量的部署无需调整。<br><strong>缺点：</strong>继续维护已明确不需要的双入口，并增加部署认知成本。拒绝。</p>
+
+  <h3>把旧变量回退逻辑移入 Java 应用</h3>
+  <p><strong>优点：</strong>不再依赖 Shell。<br><strong>缺点：</strong>把已放弃的兼容契约扩散到所有主模块运行方式，并引入变量优先级。拒绝。</p>
+
+  <h3>只接受新变量</h3>
+  <p><strong>优点：</strong>部署契约与应用读取路径完全一致，不需要额外脚本。<br><strong>缺点：</strong>仍使用旧变量的外部部署必须迁移。接受。</p>
+
+  <h2>Decision</h2>
+  <ul>
+    <li>删除 <code>campusclaw/scripts/install_value.sh</code>。</li>
+    <li>删除 <code>scripts/sync-campusclaw-exclude.txt</code> 中对该公司镜像侧目录的登记。</li>
+    <li>本决策作出时，部署必须直接向 CampusClaw 进程提供非空 <code>CAMPUSMATE_BASE_URL</code>。</li>
+    <li>仓库不读取或转换 <code>CAMPUSINNERGWSERVICE_DOMAIN_NAME_URL</code>，也不增加应用内旧变量回退。</li>
+    <li>本决策仅废止 ADR-0026 的安装脚本兼容条款；共享 base URL、Endpoint 目录和校验决策继续有效。</li>
+  </ul>
+  <p><strong>后续修订：</strong>2026-09-01 的
+    <a href="0042-default-campusmate-base-url-for-corporate-mirror.html">ADR-0042</a> 只为公司镜像增加
+    <code>https://localhost:8591</code> 本地缺省值。通用主模块仍要求显式设置
+    <code>CAMPUSMATE_BASE_URL</code>，旧变量和转换脚本仍不恢复。</p>
+
+  <h2>Intentional difference</h2>
+  <p><strong>产品约束：</strong>旧部署变量不再属于支持的安装输入。<strong>架构变化：</strong>部署边界从“旧变量经 mate 专用 Shell 转换”收敛为“启动进程直接接收应用变量”。CampusMate HTTP 契约不变。</p>
+
+  <h2>Consequences</h2>
+  <ul>
+    <li>正面：主模块与公司镜像使用同一个明确的环境变量契约。</li>
+    <li>正面：首次安装无需理解或执行额外的变量转换脚本。</li>
+    <li>负面：仍只设置旧变量的外部部署不会获得兼容；通用主模块将因缺少必填配置而启动失败，
+      公司镜像则使用 ADR-0042 定义的本地缺省地址。</li>
+    <li>后续：外部 mate 父工程和部署流水线若曾调用该脚本，必须移除调用并直接注入新变量。</li>
+  </ul>
+
+  <h2>Validation</h2>
+  <ul>
+    <li>排除历史设计记录后，交付文件和实现配置搜索不再出现脚本名或旧部署变量。</li>
+    <li>镜像同步 dry-run 证明主模块与公司镜像源码仍然一致。</li>
+    <li><code>git diff --check</code> 验证删除和文档更新没有格式错误。</li>
+  </ul>
+
+  <h2>Related</h2>
+  <ul>
+    <li><a href="0026-unify-campusmate-client-configuration.html">ADR-0026：统一 CampusMate 客户端配置</a></li>
+    <li><a href="0042-default-campusmate-base-url-for-corporate-mirror.html">ADR-0042：为公司镜像设置 CampusMate 本地缺省地址</a></li>
+    <li><a href="../designs/campusmate-shared-config.md">CampusMate 客户端共享配置设计</a></li>
+  </ul>
+</main>
+</body>
+</html>

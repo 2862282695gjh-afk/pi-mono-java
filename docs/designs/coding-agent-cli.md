@@ -1,6 +1,6 @@
 # Coding Agent Runtime HTTP 与受管 Session 设计
 
-> 文档版本：3.2.0
+> 文档版本：3.5.0
 >
 > PR 167 修订基线：`f60cc3e78bb8b700527ac082c7c8e10524ede095`
 >
@@ -8,7 +8,15 @@
 >
 > HTTP 1.39 设计输入：`superheromeZzh/pi-mono-java-design@3fde5735cd27433c3e3e5e03a5ce39b297ad3b00`
 >
+> 流式预览术语修订基线：`28b3235e5cff0da2f768cbfc6b7b9ce5e2b51193`
+>
+> 压缩取消释放修复基线：`8081b5882f0f95ea37f1a36c659265c723bcd3ef`
+>
+> Agent 根目录配置清理基线：`1b3b519419ca9bf9025ba2c88335382b9a5b3b02`
+>
 > 源码仓库：本仓库 `pi-mono-java`
+
+> 公司镜像相关路径和标识按 2026-09-01 的当前仓库位置展示；历史提交 SHA 仍是对应行为证据。
 
 ## 1. 结论
 
@@ -20,7 +28,8 @@ Runtime HTTP、Cron trigger 和 Child Execution 共同使用 `AgentSessionFactor
 
 Runtime HTTP 现已在 1.38 lowerCamelCase 契约上实现 1.39 修订：Session 增加生命周期 Usage，
 Assistant/Compaction 完成保存本次 Usage，模型/思考/压缩形成持久化领域事件，工具 delta 与
-压缩 started/failed 保持瞬态。资源与 thinking 决策见
+压缩 started/failed 是只在当前 SSE 中发送的流式预览事件，不持久化、不进入 GET Events。
+资源与 thinking 决策见
 [ADR-0018](../decisions/0018-runtime-http-v137-contract-alignment.html)，字段命名边界见
 [ADR-0019](../decisions/0019-runtime-http-lower-camel-case-fields.html)，TUI 能力迁移见
 [ADR-0023](../decisions/0023-retain-entry-independent-session-capabilities.html)。
@@ -31,7 +40,7 @@ Assistant/Compaction 完成保存本次 Usage，模型/思考/压缩形成持久
 |---|---|
 | 默认启动 Spring Boot Web 应用 | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/CampusClawApplication.java`，`CampusClawApplication#main` |
 | 三入口公共 Session 装配 | `session/AgentSessionFactory.java`、`ManagedAgentSession.java` |
-| HTTP 创建前准备受管目录 | `runtimeapi/runtime/RuntimeSessionEngineRegistry.java`、`runtime/AgentRuntimeManager.java` |
+| HTTP 创建前准备受管目录 | `runtimeapi/runtime/RuntimeSessionEngineRegistry.java`、`runtime/AgentRuntimeManager.java`；根目录由 `AgentRuntimeProperties` 的 `campusmate.runtime.agents-root` 绑定，主模块和 Mate 配置分别位于 `modules/coding-agent-cli/src/main/resources/application.yml` 与 `campusclaw/src/main/resources/application.properties` |
 | Runtime 使用 Spring MVC Controller | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/web/*Controller.java` |
 | Runtime 不安装入站认证拦截器 | `runtimeapi/web` 不再包含 `RuntimeAuthenticationInterceptor` 与 `RuntimeWebMvcConfiguration`；路由测试覆盖 Header 缺失与共存 |
 | 类型化资源 ID 与 Session 默认值 | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/common/identifier/ResourceIdentifierPatterns.java`、`runtimeapi/web/*Controller` 的 `@PathVariable` 参数约束、`RuntimeExceptionHandler#handleInvalidParameter`、`MateServiceClient#getAgentRuntime`、`MateServiceClient#querySkillInfo`、`AgentRuntimeManager#prepare`、`HttpMateToolClient#listTools`、`RandomSessionIdGenerator#nextId`、`RuntimeSessionService#newSession` |
@@ -40,6 +49,7 @@ Assistant/Compaction 完成保存本次 Usage，模型/思考/压缩形成持久
 | 事件接受、历史查询和执行生命周期相互分离 | `RuntimeEventService`、`RuntimeEventQueryService`、`RuntimeExecutionCoordinator` |
 | thinking 实时投影、持久化和查询过滤 | `RuntimeEventProjector#projectThinking`、`RuntimeEntryCodec#thinkingEntry`、`RuntimeEventQueryService#list`、`RuntimeEventCursorCodec` |
 | SSE 使用有界请求级订阅 | `RuntimeEventStream`、`RuntimeSseDispatcher`、`RuntimeSseEmitterSubscriber` |
+| 压缩取消释放 Mate SSE | `SessionCompactor#completeSummary`、`EventStream#result`、`MateServiceModelManagerProvider#subscribe`、`MateServiceModelManagerProvider#cancel` |
 | 公司响应包装保留适配点 | `runtimeapi/result/ResultBeanAdapter.java`、`StandaloneResultBeanAdapter.java` |
 | 国际化资源显式区分两个 Locale | `modules/coding-agent-cli/src/main/resources/i18n/messages_{en_US,zh_CN}.properties`、`RuntimeMessageSourceConfiguration` |
 | 语言选择按范围和权重协商 | `RuntimeRequestContext#locale`、`RuntimeRequestContext#language` |
@@ -123,8 +133,9 @@ thinking 状态和过期时间；开关变化后旧 page 返回 `INVALID_EVENT_L
 
 Assistant 完成与压缩完成都持久化完整 `Usage`；`t_session_materialized` 在同一事务中原子累计
 `lifetimeUsage`。Token 字段为 `input/output/cacheRead/cacheWrite/totalTokens`，USD Cost 字段为
-`input/output/cacheRead/cacheWrite/total`。工具进度只投影瞬态 `tool.execution.delta`，数据仅含
-`toolCallId/toolName/delta`；不可序列化、超限或背压时只丢弃该进度，不影响工具执行和最终结果。
+`input/output/cacheRead/cacheWrite/total`。工具进度只通过非持久化的 `tool.execution.delta` 作为流式预览发送，
+数据仅含 `toolCallId/toolName/delta`；不可序列化、超限或背压时只丢弃该进度，不影响工具执行和最终结果。
+工具执行的持久化 `tool.result` 才是可恢复的权威结果。
 
 每个订阅的缓冲限制为 256 个事件或 1 MiB，心跳间隔 15 秒。执行上限为 100 个，默认 30 分钟超时。
 
@@ -135,7 +146,7 @@ Session、Entry、严格序号、物化数据、删除墓碑和异步清理任�
 Agent、Tool、Skill 和 Session ID 分别匹配 `agent-`、`tool-`、`skill-`、`session-` 加 32 位十六进制 UUID（UUID 内部连字符已移除）。四类资源 ID 的正则字符串与编译后的 `Pattern` 统一由中立的 `common.identifier.ResourceIdentifierPatterns` 提供；业务类不重复编译，也不依赖 HTTP 专用常量类。HTTP 路径中的 Agent 与 Session ID 直接在 Controller 的标量 `@PathVariable` 参数上使用 Jakarta `@NotBlank` 和 `@Pattern`，Spring MVC 方法参数校验失败后由 `RuntimeExceptionHandler` 映射为稳定错误码，不再维护命令式路径 ID Validator。`RandomSessionIdGenerator` 只生成该 Session 格式；创建 Session 持久化 `thinking=true`，默认模型不支持 reasoning 时按无有效默认模型返回 `AGENT_MODEL_NOT_CONFIGURED`，避免对外状态与实际事件能力不一致。`t_sessions.agent_id` 使用 `VARCHAR(64)`，可容纳完整类型化 Agent ID。
 
 Agent 配置由 `AgentRuntimeManager.prepare(agentId)` 准备到
-`agent/{agentId}/.campusclaw/`；部署可通过 `CAMPUSCLAW_AGENT_ROOT` 替换 `agent` 根目录。
+`agent/{agentId}/.campusclaw/`；部署可通过 `CAMPUSCLAW_AGENTS_ROOT` 替换 `agent` 根目录。
 Session 的受控工作区是整个 `agent/{agentId}`，`Read`、`Find`、`Grep`、`Ls` 共享该边界并
 拒绝符号链接和 realpath 越界。Runtime 使用工具系统 v2 的 `runtime` profile，而不是历史的
 单一 `read` 工具。`fileIds` 作为固定 `[File IDs]` 提示块传入，不在 Runtime 内解析或下载文件。
@@ -161,6 +172,12 @@ SSE 流、事件投影器与终止事件分别由独立工厂创建，避免 Con
 成功压缩持久化完整摘要和保留边界。配置默认 `enabled=true`、`reserveTokens=16384`、
 `keepRecentTokens=20000`，文件追踪只识别 `Read`。
 
+已观察实现中，压缩摘要只订阅 `EventStream.result()` 并通过 `Mono.toFuture()` 暴露取消，Mate
+Provider 则持有独立的 WebClient SSE `Disposable`。目标决策是事件 Flux 与结果 Mono 共用同一个
+幂等取消回调：任一消费路径取消都必须释放 Mate SSE、终止 Parser，并停止继续积累事件。设计原因是
+压缩不会消费事件 Flux；若结果取消不传播到底层订阅，中止只会结束本地 Future，而连接与无界事件缓冲仍存活。
+该修复属于资源生命周期纠正，不改变 Runtime HTTP、SSE 或持久化契约。
+
 ### 6.7 错误和多实例边界
 
 `RuntimeErrorCode` 是错误码、HTTP 状态、国际化 key 和可选 `Retry-After` 的唯一目录。
@@ -179,7 +196,7 @@ modules/coding-agent-cli/src/main/resources/i18n/messages_en_US.properties
 modules/coding-agent-cli/src/main/resources/i18n/messages_zh_CN.properties
 ```
 
-`mate-campusclaw` 镜像使用相同的 `src/main/resources/i18n/` 相对路径。实现不创建
+`campusclaw` 镜像使用相同的 `src/main/resources/i18n/` 相对路径。实现不创建
 `messages.properties`。由于 Spring Boot 的默认消息源自动配置要求基础资源包，Runtime
 必须通过独立配置显式注册名称为 `messageSource` 的 `ResourceBundleMessageSource`：
 basename 固定为 `i18n/messages`，编码固定为 UTF-8，默认 Locale 为 `Locale.US`，并关闭
@@ -213,7 +230,7 @@ Runtime V1 事件名 `tool.execution.started` 与 `tool.execution.completed` 是
 - MyBatis Mapper XML 使用 `resultType`，全局启用下划线到驼峰映射；
 - 新增或修改的 Java 方法不超过 50 个非空物理行；
 - Java 与 XML 源文件遵循公司版权、中文 Javadoc 和 XML DTD 规则；
-- 主模块与 `mate-campusclaw` 镜像必须通过同一套测试。
+- 主模块与 `campusclaw` 镜像必须通过同一套测试。
 - 国际化实现必须验证无基础资源包时应用上下文可启动、双资源 key 集相等且覆盖
   `RuntimeErrorCode`，并覆盖语言权重、英文回退、HTTP 中文错误和 SSE 中文错误。
 
@@ -221,6 +238,10 @@ Runtime V1 事件名 `tool.execution.started` 与 `tool.execution.completed` 是
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 3.5.0 | 2026-09-01 | 对齐 CampusClaw 公司镜像的新目录、Java 包、同步入口和独立公司构建边界。 |
+| 3.4.0 | 2026-08-31 | 统一事件 Flux 与结果 Mono 的取消传播；压缩中止时释放 Mate SSE 订阅并终止事件累积。 |
+| 3.3.1 | 2026-08-31 | 删除 Mate 配置中未绑定的旧 Agent 根目录配置，统一使用 `campusmate.runtime.agents-root` 和 `CAMPUSCLAW_AGENTS_ROOT`。 |
+| 3.3.0 | 2026-08-28 | 统一 Runtime Event 术语：将 started/delta/progress 和压缩 started/failed 称为“流式预览事件”，明确它们只在当前 SSE 中发送、不持久化、不进入 GET Events；对齐 `RuntimeEventProjector` 的直接 stream emit 与 `RuntimeEventQueryService` 只查询持久化 Entry 的已实现行为，不改变 Java 代码或线上契约。 |
 | 3.2.0 | 2026-08-24 | 修订 TUI 删除边界，保留未注册 Slash 核心；公共 Session 增加压缩，Runtime 增加 Usage、领域事件、best-effort 工具进度与 refresh 后懒校准 |
 | 3.1.0 | 2026-08-24 | 删除 CLI/TUI、Picocli、终端 Session、用户级认证设置与启动脚本源码，服务模型目录仅使用内置注册表和部署凭据 |
 | 3.0.0 | 2026-08-24 | 删除 CLI 产品入口；HTTP、Cron、Child 共用 SessionFactory；Runtime 创建前 prepare 受管目录并装配八工具 profile |

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-CampusClaw (`com.campusclaw`, previously `pi-mono-java`) is a ToB Agent Runtime service built on JDK 21 + Spring Boot 3.4.1. It is a Maven multi-module project. The historical directory `modules/coding-agent-cli` now contains the Spring Boot service entry point and produces `campusclaw-agent.jar`; there is no CLI/TUI/RPC product mode.
+CampusClaw (`com.campusclaw`, previously `pi-mono-java`) is a ToB Agent Runtime service built on JDK 21 + Spring Boot 3.4.5. It is a Maven multi-module project. The historical directory `modules/coding-agent-cli` now contains the Spring Boot service entry point and produces `campusclaw-agent.jar`; there is no CLI/TUI/RPC product mode.
 
 ## Build & Run
 
@@ -720,33 +720,33 @@ Stop 钩子会自动跑 `spotless:check` + `checkstyle:check`。主动修复：
 
 （前提：`JAVA_HOME` 指向 JDK 21；`~/.zshrc` 已配置默认走 21。）
 
-## Mate-campusclaw mirror
+## CampusClaw corporate mirror
 
-`mate-campusclaw/` is a single-module mirror of `modules/*` maintained for integration into a corporate `mate` parent project. Package is rewritten `com.campusclaw` → `com.huawei.hicampus.mate.matecampusclaw`. The mirror is **generated** — make changes in `modules/*`, then sync.
+`campusclaw/` is a single-module corporate mirror of `modules/*`. Package is rewritten `com.campusclaw` → `com.huawei.hicampus.claw`. The mirror is **generated** — make changes in `modules/*`, then sync. It is outside the root Reactor and resolves `com.huawei.hicampus:NativeParent:26.0.0-SNAPSHOT` from the configured company Maven repository. Its project GAV is `com.huawei.campus:claw:1.0-SNAPSHOT`, and Maven's default artifact is `campusclaw/target/claw-1.0-SNAPSHOT.jar`. Because it does not inherit the root POM, its POM explicitly declares `slf4j-api` and `spring-boot-starter-log4j2`; `NativeParent` supplies their company-managed versions. Its hand-maintained `application.properties` defaults `campusmate.base-url` to `https://localhost:8591`; `CAMPUSMATE_BASE_URL` overrides that value.
 
 | Command | Purpose |
 |---|---|
-| `./scripts/sync-mate-campusclaw.sh` | Stage from `modules/*`, apply to `mate-campusclaw/`, run `mvn compile` to verify |
-| `./scripts/sync-mate-campusclaw.sh --dry-run` | Show what apply would change without writing |
-| `./scripts/sync-mate-campusclaw.sh --no-apply` | Only stage to `build/mate-campusclaw/`; leave `mate-campusclaw/` untouched |
-| `./scripts/sync-mate-campusclaw.sh --no-verify` | Skip the mvn compile step |
+| `./scripts/sync-campusclaw.sh` | Stage from `modules/*`, apply to `campusclaw/`, run `mvn compile` to verify |
+| `./scripts/sync-campusclaw.sh --dry-run` | Show what apply would change without writing |
+| `./scripts/sync-campusclaw.sh --no-apply` | Only stage to `build/campusclaw/`; leave `campusclaw/` untouched |
+| `./scripts/sync-campusclaw.sh --no-verify` | Explicitly skip company-parent resolution and mirror compile (ordinary local environments only) |
 
 Phases:
-1. **Stage** — copy `modules/{ai,agent-core,cron,coding-agent-cli}` into `build/mate-campusclaw/`, rewriting the package in `.java/.yml/.properties/.imports/...`.
-2. **Apply** — `rsync --delete` from `build/` to in-tree `mate-campusclaw/`. Paths listed in `scripts/sync-mate-exclude.txt` are preserved (mate-side-only files that have no counterpart in `modules/*`).
-3. **Verify** — compile `mate-campusclaw/` with the sync script's auto-detected JDK 21.
+1. **Stage** — copy `modules/{ai,agent-core,cron,coding-agent-cli}` into `build/campusclaw/`, rewriting the package in `.java/.yml/.properties/.imports/...`.
+2. **Apply** — `rsync --delete` from `build/` to in-tree `campusclaw/`. Paths listed in `scripts/sync-campusclaw-exclude.txt` are preserved (corporate-mirror-only files that have no counterpart in `modules/*`).
+3. **Verify** — resolve `NativeParent` and compile `campusclaw/` with the sync script's auto-detected JDK 21. Failure to resolve the company parent is fatal; the script never silently skips this gate.
 
-When adding a new file directly under `mate-campusclaw/` that has no counterpart in `modules/*`, append its path to `scripts/sync-mate-exclude.txt`, otherwise the next `--delete` will remove it (currently none registered). The hand-tuned `application.properties` is environment-specific — the script never touches it; only `META-INF/spring/*.imports` propagate from `modules/*`.
+When adding a new file directly under `campusclaw/` that has no counterpart in `modules/*`, append its path to `scripts/sync-campusclaw-exclude.txt`, otherwise the next `--delete` will remove it. The current exclusions protect the corporate Skill tree and `CampusMateConfigurationTest`. The hand-tuned `application.properties` is environment-specific, contains no Actuator-specific overrides for the standalone service, and is never touched by the script; only `META-INF/spring/*.imports` propagate from `modules/*`.
 
 ### pre-push guard
 
-`scripts/git-hooks/pre-push` blocks `git push` whenever the push range touches `modules/` or `mate-campusclaw/` and the mirror is out of sync. Activate it once per clone:
+`scripts/git-hooks/pre-push` blocks `git push` whenever the push range touches `modules/` or `campusclaw/` and the mirror is out of sync. Activate it once per clone:
 
 ```bash
 git config core.hooksPath scripts/git-hooks
 ```
 
-The hook runs the sync script in dry-run + no-verify mode and parses rsync's `--itemize-changes` output. Pushes that don't touch `modules/`, `mate-campusclaw/`, or `scripts/sync-mate*` skip the check. Bypass with `git push --no-verify` when intentional.
+The hook runs the sync script in dry-run + no-verify mode and parses rsync's `--itemize-changes` output. Pushes that don't touch `modules/`, `campusclaw/`, or `scripts/sync-campusclaw*` skip the check. Bypass with `git push --no-verify` when intentional.
 
 ## Git workflow
 
@@ -776,7 +776,7 @@ The repo merges PRs with **Merge commit**（保留每个 commit 的真实 SHA �
 
 ### 联动
 - 设计文档「设计决策」小节逐条链接到对应 `docs/decisions/*.html`。
-- `docs/` 与 `CLAUDE.md` 不在 mate-campusclaw 镜像范围，无需 sync。
+- `docs/` 与 `CLAUDE.md` 不在 campusclaw 镜像范围，无需 sync。
 
 ## Reference
 
@@ -788,4 +788,4 @@ The repo merges PRs with **Merge commit**（保留每个 commit 的真实 SHA �
 - `modules/*/`+`*-design.md` — per-module design docs (Story/AR format).
 - `docs/designs/*.md` — feature/module design docs (gstack `/plan-eng-review` format); see "决策记录与设计文档约定".
 - `docs/decisions/*.html` — ADR decision records (one self-contained HTML per decision).
-- `scripts/sync-mate-campusclaw.sh` + `scripts/sync-mate-exclude.txt` — sync `modules/*` → `mate-campusclaw/` (see "Mate-campusclaw mirror" section).
+- `scripts/sync-campusclaw.sh` + `scripts/sync-campusclaw-exclude.txt` — sync `modules/*` → `campusclaw/` (see "CampusClaw corporate mirror" section).

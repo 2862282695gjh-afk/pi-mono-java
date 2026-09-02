@@ -35,8 +35,6 @@ public class MockMateToolClient implements MateToolClient {
 
     private MateCredentials lastCallCredentials;
 
-    private MateCredentials lastListCredentials;
-
     private MateToolClient.ToolResult overriddenResult;
 
     private int agentListCalls;
@@ -112,10 +110,6 @@ public class MockMateToolClient implements MateToolClient {
         return lastCallCredentials;
     }
 
-    public MateCredentials lastListCredentials() {
-        return lastListCredentials;
-    }
-
     public int agentListCalls() {
         return agentListCalls;
     }
@@ -142,18 +136,16 @@ public class MockMateToolClient implements MateToolClient {
     }
 
     @Override
-    public List<MateToolMeta> listAgentTools(String agentId, MateCredentials credentials) {
+    public List<MateToolMeta> listAgentTools(String agentId) {
         agentListCalls++;
         lastListAgentId = agentId;
-        lastListCredentials = credentials;
         return resolve(toolsByAgent.get(agentId));
     }
 
     @Override
-    public List<MateToolMeta> listSkillTools(String skillId, MateCredentials credentials) {
+    public List<MateToolMeta> listSkillTools(String skillId) {
         skillListCalls++;
         lastListSkillId = skillId;
-        lastListCredentials = credentials;
         return resolve(toolsBySkill.get(skillId));
     }
 

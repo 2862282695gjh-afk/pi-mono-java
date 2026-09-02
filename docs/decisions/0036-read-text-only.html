@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ADR-0036：Read 仅支持 UTF-8 文本读取</title>
+  <style>
+    :root { color-scheme: light; font-family: Inter, "PingFang SC", sans-serif; color: #2c2724; background: #f8f3f0; }
+    body { margin: 0; }
+    main { width: min(920px, calc(100% - 40px)); margin: 40px auto; padding: 40px; box-sizing: border-box; background: #fffcfa; border: 1px solid #ded4cf; border-radius: 16px; }
+    h1 { margin-top: 0; font-size: 30px; }
+    h2 { margin-top: 32px; font-size: 20px; }
+    h3 { margin-top: 22px; font-size: 17px; }
+    p, li { line-height: 1.75; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 10px 12px; border: 1px solid #ded4cf; text-align: left; vertical-align: top; }
+    th { width: 190px; background: #f4ece8; }
+    code { padding: 2px 5px; border-radius: 5px; background: #f4ece8; overflow-wrap: anywhere; }
+    a { color: #a9472b; }
+    .status { display: inline-flex; padding: 4px 9px; border-radius: 999px; color: #12633a; background: #e8f7ed; font-weight: 650; }
+    @media (max-width: 640px) { main { width: 100%; margin: 0; padding: 24px 18px; border: 0; border-radius: 0; } th { width: 120px; } }
+  </style>
+</head>
+<body>
+<main>
+  <h1>ADR-0036：Read 仅支持 UTF-8 文本读取</h1>
+  <table>
+    <tr><th>Status</th><td><span class="status">Accepted</span></td></tr>
+    <tr><th>Date</th><td>2026-08-28</td></tr>
+    <tr><th>Pre-change baseline</th><td><code>origin/main@3452bceb0be586c1c845cde589ecb7ee1e6c5908</code></td></tr>
+    <tr><th>Reviewed implementation</th><td><code>16fd9d2c5c1ffa99bab9535797a472484f2d5362</code></td></tr>
+    <tr><th>Line-count correction baseline</th><td><code>origin/main@1b3b519419ca9bf9025ba2c88335382b9a5b3b02</code></td></tr>
+    <tr><th>Reviewed line-count correction</th><td><code>0397d92f8ce17e9d00ce4904f147cba980377c6f</code></td></tr>
+    <tr><th>Observed source</th><td><code>modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/tool/read/ReadTool.java</code>、<code>tool/ops/ReadOperations.java</code>、<code>tool/ops/LocalReadOperations.java</code>、<code>tool/builtin/DefaultBuiltInToolFactory.java</code>、<code>modules/coding-agent-cli/pom.xml</code>、<code>pom.xml</code></td></tr>
+  </table>
+
+  <h2>Context</h2>
+  <p>收敛前的 <code>Read</code> 同时承担文本分块和本地图片输入：它按扩展名和 MIME 识别
+    JPEG、PNG、GIF、WebP 与 BMP，解码后将长边缩放到 2,000 像素以内，再向模型返回
+    Base64 <code>ImageContent</code>。该路径还使工具工厂必须读取模型图片模态，并引入专用
+    <code>imageio-webp</code> 运行时依赖。</p>
+  <p>产品现在只希望通过 <code>Read</code> 向模型暴露可分块、可截断的工作区文本，不希望
+    本地图片因文件后缀自动进入模型上下文。</p>
+  <p>行数修复前的 <code>selectLines</code> 使用 <code>split("\n", -1)</code> 的数组长度作为
+    <code>totalLines</code> 和剩余行判断。以 LF 结尾的文件会因此多出一个空元素：实际行数
+    恰好等于 <code>limit</code> 时仍被标记为截断，字节截断元数据中的总行数也会多 1。</p>
+
+  <h2>Decision drivers</h2>
+  <ul>
+    <li>让 <code>Read</code> 的公开描述、运行时输出类型和实际能力都固定为 UTF-8 文本。</li>
+    <li>消除本地图片解码、缩放和 Base64 复制带来的内存和依赖成本。</li>
+    <li>保留现有 Agent 工作区、符号链接拒绝、文本分块、截断和取消语义。</li>
+  </ul>
+
+  <h2>Considered options</h2>
+  <h3>保留现有文本和图片双能力</h3>
+  <p><strong>优点：</strong>模型可直接观察工作区图片。<br><strong>缺点：</strong>与新的纯文本产品边界冲突，继续保留图片处理和 WebP 依赖。拒绝。</p>
+
+  <h3>图片只返回路径或提示文本</h3>
+  <p><strong>优点：</strong>模型仍能知道目标是图片。<br><strong>缺点：</strong>仍需要按 MIME 或扩展名建立图片特殊分支，并且与普通二进制错误产生两套语义。拒绝。</p>
+
+  <h3>只支持严格 UTF-8 文本</h3>
+  <p><strong>优点：</strong>单一输出类型、单一错误边界，可删除图片专用代码和依赖。<br><strong>缺点：</strong>依赖 <code>Read</code> 观察本地图片的 Agent 需要调整。接受。</p>
+
+  <h2>Decision</h2>
+  <ul>
+    <li><code>Read</code> 的描述固定为读取 UTF-8 文本文件，成功结果只包含 <code>TextContent</code>。</li>
+    <li>保留 1-based <code>offset</code>、<code>limit</code>、默认 2,000 行和 50 KiB 输出上限。</li>
+    <li>空文件按 0 个逻辑行处理；末尾 LF 只作为最后一行的终止符，不产生额外逻辑行。</li>
+    <li>选择范围到达文件末尾时保留原始末尾 LF；只有真实后续行才产生截断提示。</li>
+    <li>含 NUL 或无法严格按 UTF-8 解码的文件统一以 <code>Unsupported binary file</code> 失败。</li>
+    <li>删除 MIME 检测、图片解码/缩放/Base64 分支、模型图片模态判断、<code>ImageUtils</code> 及 <code>imageio-webp</code> 依赖。</li>
+    <li>通用 AI 模型层的 <code>ImageContent</code>、<code>InputModality.IMAGE</code> 和 Provider 图片能力不属于本次删除范围。</li>
+  </ul>
+
+  <h2>Intentional difference</h2>
+  <p><strong>产品约束：</strong>不再通过 <code>Read</code> 把本地图片送入模型。<strong>架构变化：</strong>工具从基于 MIME 的文本/图片双分支收敛为严格 UTF-8 文本路径。工作区安全边界不变。</p>
+  <p><strong>实现缺陷修复：</strong>末尾 LF 行数修正用于恢复既有 <code>offset</code>、
+    <code>limit</code> 和原文返回契约，不新增产品约束、安全加固或架构变化。</p>
+
+  <h2>Consequences</h2>
+  <ul>
+    <li>正面：工具不再产生 <code>ImageContent</code>，也不会根据当前模型模态改变输出。</li>
+    <li>正面：删除 WebP SPI 依赖及图片解码、缩放和 Base64 的额外内存复制。</li>
+    <li>负面：JPEG、PNG、GIF、WebP 和 BMP 等二进制图片现在以不支持的二进制文件失败。</li>
+    <li>边界：可解码为 UTF-8 的文本文件仍按文本读取；工具不以文件后缀拒绝文本。</li>
+    <li>边界：末尾 LF 不增加逻辑行数，但未截断输出仍保留该字符。</li>
+    <li>边界：文本路径仍使用 <code>Files.readAllBytes</code> 后解码，流式读取不属于本决策。</li>
+  </ul>
+
+  <h2>Validation</h2>
+  <ul>
+    <li><code>ReadToolTest</code> 验证公开描述、文本分块、截断、空文件、末尾 LF 行数、二进制拒绝和 PNG 文件头拒绝。</li>
+    <li>定向 Maven 测试覆盖 <code>ReadTool</code>、操作接口、工具装配和工作区边界。</li>
+    <li>主模块和 <code>campusclaw</code> 镜像必须编译通过，依赖树不得再包含 <code>imageio-webp</code>。</li>
+  </ul>
+
+  <h2>Related</h2>
+  <ul>
+    <li><a href="0022-managed-agent-tool-system-v2.html">ADR-0022：受管 Agent 使用三入口八工具关闭集合</a></li>
+    <li><a href="../designs/tool-system-v2.md">CampusClaw 受管 Agent 工具系统 v2</a></li>
+  </ul>
+</main>
+</body>
+</html>

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import SafeRichText from './SafeRichText';
 import type { ActivityTurn } from '../types/product';
 
 defineProps<{ turn: ActivityTurn }>();
@@ -26,8 +27,8 @@ function statusLabel(status: ActivityTurn['status']): string {
 
 function emptyResult(status: ActivityTurn['status']): string {
   if (status === 'running') return '等待工具返回…';
-  if (status === 'error') return '工具未返回可安全显示的错误详情。';
-  return '工具已完成，未返回可显示内容。';
+  if (status === 'error') return '工具未返回错误详情。';
+  return '工具已完成，未返回内容。';
 }
 </script>
 
@@ -45,18 +46,21 @@ function emptyResult(status: ActivityTurn['status']): string {
     </summary>
     <div class="tool-detail">
       <section>
-        <h4>输入参数</h4>
+        <h4>原始输入参数</h4>
         <dl v-if="turn.arguments.length" class="tool-arguments">
           <template v-for="row in turn.arguments" :key="row.key">
             <dt>{{ row.key }}</dt>
-            <dd :class="{ redacted: row.redacted }">{{ row.value }}</dd>
+            <dd>{{ row.value }}</dd>
           </template>
         </dl>
-        <p v-else class="tool-empty">未提供可安全显示的参数摘要。</p>
+        <p v-else class="tool-empty">工具未提供输入参数。</p>
       </section>
       <section class="tool-output">
         <h4>输出结果</h4>
-        <pre>{{ turn.result || emptyResult(turn.status) }}</pre>
+        <div class="tool-output-content">
+          <SafeRichText v-if="turn.result" :source="turn.result" />
+          <p v-else class="tool-empty">{{ emptyResult(turn.status) }}</p>
+        </div>
       </section>
     </div>
   </details>

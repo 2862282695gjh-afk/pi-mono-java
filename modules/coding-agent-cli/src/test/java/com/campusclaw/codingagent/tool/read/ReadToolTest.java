@@ -7,17 +7,12 @@ package com.campusclaw.codingagent.tool.read;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import java.awt.image.BufferedImage;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Base64;
 import java.util.Map;
 
-import javax.imageio.ImageIO;
-
 import com.campusclaw.agent.tool.ToolExecutionMode;
-import com.campusclaw.ai.types.ImageContent;
 import com.campusclaw.ai.types.TextContent;
 import com.campusclaw.codingagent.tool.ops.LocalReadOperations;
 import com.campusclaw.codingagent.tool.workspace.AgentWorkspaceBoundary;
@@ -50,7 +45,7 @@ class ReadToolTest {
     @Test
     void shouldPublishPascalCaseParallelContract() {
         assertThat(tool.name()).isEqualTo("Read");
-        assertThat(tool.description()).isEqualTo("Read the contents of a file. Supports text files and images.");
+        assertThat(tool.description()).isEqualTo("Read the contents of a UTF-8 text file.");
         assertThat(tool.executionMode()).isEqualTo(ToolExecutionMode.PARALLEL);
         assertThat(tool.parameters().path("additionalProperties").asBoolean()).isFalse();
         assertThat(tool.parameters().path("required").get(0).asText()).isEqualTo("path");
@@ -68,6 +63,27 @@ class ReadToolTest {
     }
 
     @Test
+    void shouldNotTreatTrailingNewlineAsAdditionalLine() throws Exception {
+        String content = "one\ntwo\n";
+        Files.writeString(agentRoot.resolve("terminated.txt"), content);
+
+        var result = tool.execute("call", Map.of("path", "terminated.txt", "offset", 1, "limit", 2), null, null);
+
+        assertThat(((TextContent) result.content().getFirst()).text()).isEqualTo(content);
+        assertThat(((ReadToolDetails) result.details()).truncation()).isNull();
+    }
+
+    @Test
+    void shouldReturnEmptyFileWithoutTruncation() throws Exception {
+        Files.writeString(agentRoot.resolve("empty.txt"), "");
+
+        var result = tool.execute("call", Map.of("path", "empty.txt"), null, null);
+
+        assertThat(((TextContent) result.content().getFirst()).text()).isEmpty();
+        assertThat(((ReadToolDetails) result.details()).truncation()).isNull();
+    }
+
+    @Test
     void shouldMarkDefaultLineTruncation() throws Exception {
         String content = "line\n".repeat(ReadTool.DEFAULT_MAX_LINES + 1);
         Files.writeString(agentRoot.resolve("large.txt"), content);
@@ -79,13 +95,16 @@ class ReadToolTest {
 
     @Test
     void byteTruncationShouldIncludeMarkerWithinPublishedBudget() throws Exception {
-        Files.writeString(agentRoot.resolve("wide.txt"), "界".repeat(30_000));
+        Files.writeString(agentRoot.resolve("wide.txt"), "界".repeat(30_000) + "\n");
 
         var result = tool.execute("call", Map.of("path", "wide.txt"), null, null);
 
         String output = ((TextContent) result.content().getFirst()).text();
+        var details = (ReadToolDetails) result.details();
         assertThat(output).contains("[Output truncated: first line exceeds the 50 KB limit.]");
         assertThat(output.getBytes(StandardCharsets.UTF_8).length).isLessThanOrEqualTo(ReadTool.DEFAULT_MAX_BYTES);
+        assertThat(details.truncation()).isNotNull();
+        assertThat(details.truncation().totalLines()).isEqualTo(1);
     }
 
     @Test
@@ -98,39 +117,12 @@ class ReadToolTest {
     }
 
     @Test
-    void shouldReturnSupportedImageContent() throws Exception {
-        Path imagePath = agentRoot.resolve("picture.png");
-        ImageIO.write(new BufferedImage(10, 10, BufferedImage.TYPE_INT_RGB), "png", imagePath.toFile());
+    void shouldRejectImageFileAsBinary() throws Exception {
+        byte[] pngHeader = {(byte) 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00};
+        Files.write(agentRoot.resolve("picture.png"), pngHeader);
 
-        var result = tool.execute("call", Map.of("path", "picture.png"), null, null);
-
-        assertThat(result.content().get(0)).isInstanceOf(ImageContent.class);
-        assertThat(((ImageContent) result.content().get(0)).mimeType()).isEqualTo("image/png");
-    }
-
-    @Test
-    void shouldDecodeWebpImage() throws Exception {
-        byte[] webp = Base64.getDecoder().decode("UklGRiIAAABXRUJQVlA4IBYAAAAwAQCdASoBAAEADsD+JaQAA3AAAAAA");
-        Files.write(agentRoot.resolve("picture.webp"), webp);
-
-        var result = tool.execute("call", Map.of("path", "picture.webp"), null, null);
-
-        assertThat(result.content().getFirst()).isInstanceOf(ImageContent.class);
-        assertThat(((ImageContent) result.content().getFirst()).mimeType()).isEqualTo("image/webp");
-    }
-
-    @Test
-    void shouldExplainWhenCurrentModelDoesNotSupportImages() throws Exception {
-        Path imagePath = agentRoot.resolve("picture.png");
-        ImageIO.write(new BufferedImage(10, 10, BufferedImage.TYPE_INT_RGB), "png", imagePath.toFile());
-        AgentWorkspaceBoundary boundary = AgentWorkspaceBoundary.create("agent-a", agentRoot);
-        ReadTool textOnlyTool = new ReadTool(new LocalReadOperations(), new WorkspacePathResolver(), boundary, false);
-
-        var result = textOnlyTool.execute("call", Map.of("path", "picture.png"), null, null);
-
-        assertThat(result.content()).hasSize(2);
-        assertThat(result.content().getFirst()).isInstanceOf(ImageContent.class);
-        assertThat(((TextContent) result.content().getLast()).text())
-                .isEqualTo("The current model does not declare image input support.");
+        assertThatThrownBy(() -> tool.execute("call", Map.of("path", "picture.png"), null, null))
+                .isInstanceOf(WorkspaceAccessException.class)
+                .hasMessage("Unsupported binary file");
     }
 }

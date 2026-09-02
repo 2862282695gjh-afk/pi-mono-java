@@ -12,10 +12,6 @@ const MAX_TOOL_ARGUMENT_ROWS = 12;
 const MAX_TOOL_ARGUMENT_DEPTH = 3;
 const MAX_TOOL_VALUE_LENGTH = 240;
 const MAX_TOOL_RESULT_LENGTH = 4_000;
-const REDACTED_TOOL_VALUE = '已隐藏';
-const SENSITIVE_ARGUMENT_KEY = /authorization|cookie|credential|password|secret|token|api.?key|app.?key|access.?key|private.?key|jwt|session.?id|agent.?id|tool.?call.?id|file.?id/iu;
-const SENSITIVE_ARGUMENT_VALUE = /^\s*(?:bearer\s+|basic\s+|eyJ[a-zA-Z0-9_-]+\.)/iu;
-const ABSOLUTE_PATH = /^(?:\/|[a-zA-Z]:[\\/])/u;
 
 interface AssistantProjection {
   turn: AssistantTurn;
@@ -103,7 +99,7 @@ function projectThinkingEvent(
       kind: 'thinking',
       status: 'running',
       title: '正在分析',
-      summary: '',
+      content: '',
     };
     thinkingTurns.set(key, turn);
     turns.push(turn);
@@ -111,8 +107,13 @@ function projectThinkingEvent(
 
   const completed = envelope.event === 'assistant.thinking.completed';
   turn.status = completed ? 'completed' : 'running';
-  turn.title = readThinkingDisplay(envelope.data, 'Title') || (completed ? '分析过程' : '正在分析');
-  turn.summary = readThinkingDisplay(envelope.data, 'Summary') || turn.summary;
+  turn.title = completed ? '分析过程' : '正在分析';
+  if (envelope.event === 'assistant.thinking.delta') {
+    turn.content += readTextContent(envelope.data.delta);
+  }
+  if (completed) {
+    turn.content = readThinkingContent(envelope.data.content) || turn.content;
+  }
 }
 
 function projectToolEvent(
@@ -232,10 +233,6 @@ function appendToolArgument(
   depth: number,
 ): void {
   if (rows.length >= MAX_TOOL_ARGUMENT_ROWS) return;
-  if (SENSITIVE_ARGUMENT_KEY.test(key)) {
-    rows.push({ key, value: REDACTED_TOOL_VALUE, redacted: true });
-    return;
-  }
   if (Array.isArray(value) && value.length > 0 && depth < MAX_TOOL_ARGUMENT_DEPTH) {
     value.forEach((item, index) => appendToolArgument(rows, `${key}[${index}]`, item, depth + 1));
     return;
@@ -249,24 +246,16 @@ function appendToolArgument(
     return;
   }
   const formatted = formatToolValue(value);
-  rows.push({ key, value: formatted, redacted: formatted === REDACTED_TOOL_VALUE });
+  rows.push({ key, value: formatted });
 }
 
 function formatToolValue(value: unknown): string {
-  if (typeof value === 'string') {
-    if (SENSITIVE_ARGUMENT_VALUE.test(value)) return REDACTED_TOOL_VALUE;
-    const visible = ABSOLUTE_PATH.test(value) ? `…/${lastPathSegment(value)}` : value;
-    return truncate(visible, MAX_TOOL_VALUE_LENGTH);
-  }
+  if (typeof value === 'string') return truncate(value, MAX_TOOL_VALUE_LENGTH);
   if (value === null) return 'null';
   if (typeof value === 'number' || typeof value === 'boolean') return String(value);
   if (Array.isArray(value)) return value.length === 0 ? '[]' : '[…]';
   if (readRecord(value)) return Object.keys(value as RuntimeEventData).length === 0 ? '{}' : '{…}';
   return String(value ?? '');
-}
-
-function lastPathSegment(value: string): string {
-  return value.replace(/\\/gu, '/').split('/').filter(Boolean).at(-1) || '本地路径';
 }
 
 function truncateToolResult(value: string): string {
@@ -277,13 +266,13 @@ function truncate(value: string, limit: number, suffix = '…'): string {
   return value.length > limit ? `${value.slice(0, limit)}${suffix}` : value;
 }
 
-function readThinkingDisplay(data: RuntimeEventData, suffix: 'Title' | 'Summary'): string {
-  return readString(data[`thinkingDisplay${suffix}`]) || readString(data[`display${suffix}`]);
-}
-
 function readMessageText(value: unknown): string {
   const message = readRecord(value);
   return readContentArrayText(message?.content);
+}
+
+function readThinkingContent(value: unknown): string {
+  return readTextContent(value) || readContentArrayText(value);
 }
 
 function readContentArrayText(value: unknown): string {

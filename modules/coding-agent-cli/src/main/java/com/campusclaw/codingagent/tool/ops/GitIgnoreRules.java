@@ -155,7 +155,7 @@ final class GitIgnoreRules {
         }
 
         private boolean matchesPathOrDescendant(String path, String value) {
-            PathPatternMatcher matcher = PathPatternMatcher.glob(value);
+            PathPatternMatcher matcher = PathPatternMatcher.rootedGlob(value);
             if (matcher.matches(path)) {
                 return true;
             }

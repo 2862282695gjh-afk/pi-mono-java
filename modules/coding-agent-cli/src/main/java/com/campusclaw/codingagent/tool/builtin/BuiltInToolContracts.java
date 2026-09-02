@@ -24,7 +24,7 @@ final class BuiltInToolContracts {
 
     static String description(BuiltInToolName name) {
         return switch (name) {
-            case READ -> "Read the contents of a file. Supports text files and images.";
+            case READ -> "Read the contents of a UTF-8 text file.";
             case FIND -> "Search for files by glob pattern.";
             case GREP -> "Search file contents for a pattern.";
             case LS -> "List directory contents.";

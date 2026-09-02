@@ -74,7 +74,7 @@ class SubagentExecutionServiceTest {
         ManagedAgentSession session = completedSession("child answer");
         useRuntime(child, session);
         var updates = new java.util.ArrayList<String>();
-        MateCredentials credentials = MateCredentials.jwt("caller-1", "token-1");
+        MateCredentials credentials = MateCredentials.jwt("caller-1", "token-1", "access-token-1");
 
         var result = service.execute(
                 parent,

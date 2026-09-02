@@ -19,12 +19,15 @@
 <body>
   <h1>ADR-0022 · 受管 Agent 使用三入口八工具关闭集合</h1>
   <div class="meta">Status: <span class="badge">Accepted</span> · Date: 2026-08-24 ·
+    Updated: 2026-08-31 ·
     Design: <a href="../designs/tool-system-v2.md">tool-system-v2</a></div>
 
   <section><h2>Context</h2>
     <p>基线实现同时存在 CLI、动态 ToolCatalog/Extension、本地写与命令工具、两套 Child Agent
       调用方式，以及依赖预先 List 的 Mate 调用。对于 ToB 受管 Agent，这会让模型实际可见的工具
-      随 Spring classpath 和入口发生漂移；本地文件工具还能观察进程可见路径，无法形成 Agent 租户边界。</p>
+      随 Spring classpath 和入口发生漂移；本地文件工具还能观察进程可见路径，无法形成 Agent 租户边界。
+      Find 与目录模式 Grep 还必须按 Git 语义应用工作区内的 <code>.gitignore</code>；根锚定规则若在
+      解析后退化为 basename 任意深度匹配，会静默漏掉本应返回的嵌套路径。</p>
   </section>
 
   <section><h2>Decision</h2>
@@ -34,6 +37,7 @@
     <ul>
       <li>三个入口都通过公共 <code>AgentSessionFactory</code> 创建隔离 Session，Host 单独持有生命周期。</li>
       <li>四个本地读取工具只能访问当前 <code>agent/{agentId}</code>，拒绝符号链接和 realpath 越界。</li>
+      <li>Find 与目录模式 Grep 的根锚定 ignore 规则相对规则文件所在目录的根匹配；普通无斜杠规则仍可匹配任意深度。</li>
       <li>Mate 工具由模型按名称直接调用；Session cache miss 时 single-flight 自动发现完整绑定集，只重试发现。</li>
       <li><code>Agent</code> 只解析直接绑定，首版最大深度 1；Child 仍使用公共 SessionFactory。</li>
       <li><code>Cron</code> 只在 Runtime 管理，Job 绑定 Agent，触发时使用 Agent 当前目录和 cron profile。</li>
@@ -54,6 +58,7 @@
   <section><h2>Consequences</h2>
     <ul>
       <li>正面：启动时即可证明工具名和 profile；文件读取具备 Agent 边界；父子与定时执行共享相同语义。</li>
+      <li>正面：<code>/dist</code>、<code>/*.txt</code> 不再误过滤嵌套同名目录或文件，Find/Grep 结果与 Git 根锚定语义一致。</li>
       <li>正面：Mate List 保持实时，Call 具备缓存快路径和 miss 自愈，并避免副作用重放。</li>
       <li>负面：旧 CLI、Extension、旧 Cron payload 和旧小写工具名不兼容；部署配置必须一次性切换。</li>
       <li>边界：Cron 集群持久化与租约不由本 ADR 决定；旧底层工具代码可暂存但必须保持模型不可达。</li>
@@ -67,10 +72,16 @@
   </section>
 
   <section><h2>Evidence</h2>
-    <p>实现基线：<code>d649866a6cae967ace18ceaeb9597edd47e5721e</code>。核心符号：
+    <p>初始实现基线：<code>d649866a6cae967ace18ceaeb9597edd47e5721e</code>。gitignore 修复前基线：
+      <code>94abd2abcb03943daef5118115e4b4a21f1c4d5f</code>；审查实现：
+      <code>305c5a935f41498e252c83fe93d2201dbfc64218</code>。核心符号：
       <code>BuiltInToolName</code>、<code>BuiltInToolProperties</code>、<code>AgentSessionFactory</code>、
       <code>WorkspacePathResolver</code>、<code>MateToolSessionCache.resolveOrRefresh</code>、
-      <code>SubagentExecutionService</code>、<code>CronTool</code>。</p>
+      <code>SubagentExecutionService</code>、<code>CronTool</code>、
+      <code>GitIgnoreRules.IgnoreRule.matchesPathOrDescendant</code>、
+      <code>PathPatternMatcher.rootedGlob</code>。gitignore 证据路径：
+      <code>modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/tool/ops/GitIgnoreRules.java</code>、
+      <code>modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/tool/ops/PathPatternMatcher.java</code>。</p>
   </section>
 </body>
 </html>

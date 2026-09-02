@@ -5,7 +5,9 @@ import AppSidebar from './components/AppSidebar.vue';
 import ComposerBox from './components/ComposerBox.vue';
 import ConversationTimeline from './components/ConversationTimeline.vue';
 import DevDiagnostics from './components/DevDiagnostics.vue';
+import DebugHeaders from './components/DebugHeaders.vue';
 import { useRuntimeApi } from './composables/useRuntimeApi';
+import type { DebugHeadersExpose } from './debugHeaders';
 import { projectRuntimeEvents } from './projectors/runtimeEventProjector';
 import type { AgentOption, ThreadSummary } from './types/product';
 import type { FollowUpMode } from './types/runtime';
@@ -29,6 +31,7 @@ const submitting = ref(false);
 const sidebarCompact = ref(window.innerWidth <= 800);
 const scrollRegion = ref<HTMLElement | null>(null);
 const followUpMode = ref<FollowUpMode>(readFollowUpMode());
+const debugHeaders = ref<DebugHeadersExpose | null>(null);
 
 const turns = computed(() => projectRuntimeEvents(runtime.events.value));
 const running = computed(
@@ -99,8 +102,13 @@ async function submit(overrideMode?: FollowUpMode): Promise<void> {
   if (!text || submitting.value || !runtime.hasSession.value) return;
   submitting.value = true;
   if (!running.value) {
+    const requestHeaders = isDevelopment ? await debugHeaders.value?.snapshot() : undefined;
+    if (requestHeaders === null) {
+      submitting.value = false;
+      return;
+    }
     try {
-      const submission = await runtime.sendMessage(text);
+      const submission = await runtime.sendMessage(text, [], requestHeaders);
       touchCurrentThread(text);
       submitting.value = false;
       const outcome = await submission.confirmation;
@@ -202,9 +210,11 @@ function readFollowUpMode(): FollowUpMode {
           </div>
           <div>
             <h1>{{ runtime.hasSession.value ? title : 'CampusClaw' }}</h1>
-            <p>{{ runtime.hasSession.value ? `${agent.name} · 自动保存` : 'Agent 工作区' }}</p>
+            <p>{{ runtime.hasSession.value ? `${agent.name} · Runtime 调试` : 'Runtime 调试工作台' }}</p>
           </div>
         </div>
+
+        <DebugHeaders v-if="isDevelopment" ref="debugHeaders" />
 
         <div v-if="runtime.hasSession.value" class="session-controls">
           <button

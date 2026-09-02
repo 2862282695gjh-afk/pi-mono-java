@@ -1,0 +1,30 @@
+@startuml logging_runtime
+' Source evidence: pom.xml:122-131 at implementation commit 26d146f401a8557b687e1490f97a5899b22f79be.
+' Source evidence: modules/coding-agent-cli/pom.xml:39-49,93-104 at the same commit.
+' Source evidence: modules/ai/src/test/java/com/campusclaw/ai/test/Log4j2TestAppender.java:20-34.
+' Source evidence: campusclaw/pom.xml lacked explicit logging dependencies at 294e6d90bcad8c4214b08807bfd1cfdee5cc2404.
+' Observed behavior: baseline 32db273125dc0a14d5f751dc0bfaa332ee87ceb8 selected Logback directly.
+' Observed behavior: the corporate mirror lost root POM dependencies when it switched to NativeParent.
+' External integration condition: company Actuator logging auto-configuration expects a Log4j2 Core LoggerContext.
+' Design reason: one native Log4j2 provider prevents mixed LoggerContext types in every supported runtime and test path.
+
+title CampusClaw Log4j2 Runtime
+
+skinparam shadowing false
+skinparam componentStyle rectangle
+
+rectangle "Application code\nSLF4J API" as application
+rectangle "Maven dependency entry\nroot inherited or mirror explicit" as dependency
+rectangle "log4j-slf4j2-impl\nsingle SLF4J provider" as binding
+rectangle "Log4j2 Core\nLoggerContext" as core
+rectangle "Configured appenders" as output
+rectangle "Company Actuator and\nlogging auto-configuration" as company
+rectangle "Log4j2TestAppender\ntest scope" as tests
+
+application --> binding : log events
+dependency --> binding : supplies provider
+binding --> core : native delegation
+company --> core : native context access
+core --> output : runtime events
+core ..> tests : captured test events
+@enduml

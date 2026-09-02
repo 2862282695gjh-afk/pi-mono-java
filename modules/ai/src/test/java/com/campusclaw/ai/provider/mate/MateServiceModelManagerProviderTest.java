@@ -6,6 +6,7 @@ package com.campusclaw.ai.provider.mate;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -16,6 +17,7 @@ import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 import com.campusclaw.ai.stream.AssistantMessageEvent;
+import com.campusclaw.ai.test.Log4j2TestAppender;
 import com.campusclaw.ai.types.Api;
 import com.campusclaw.ai.types.AssistantMessage;
 import com.campusclaw.ai.types.Context;
@@ -37,17 +39,16 @@ import com.campusclaw.ai.types.UserMessage;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import org.apache.logging.log4j.Level;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.core.Logger;
+import org.apache.logging.log4j.core.config.Configurator;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.slf4j.LoggerFactory;
 import org.springframework.http.client.reactive.ReactorClientHttpConnector;
 import org.springframework.web.reactive.function.client.WebClient;
 
-import ch.qos.logback.classic.Level;
-import ch.qos.logback.classic.Logger;
-import ch.qos.logback.classic.spi.ILoggingEvent;
-import ch.qos.logback.core.read.ListAppender;
 import okhttp3.mockwebserver.MockResponse;
 import okhttp3.mockwebserver.MockWebServer;
 import reactor.netty.http.client.HttpClient;
@@ -59,10 +60,25 @@ class MateServiceModelManagerProviderTest {
 
     private MateServiceModelManagerProvider provider;
 
-    private ListAppender<ILoggingEvent> failureLogs;
+    private List<Logger> failureLoggers;
+
+    private List<Level> originalFailureLogLevels;
+
+    private Log4j2TestAppender failureLogs;
 
     @BeforeEach
     void setUp() throws Exception {
+        failureLogs = new Log4j2TestAppender("mate-provider-failure-logs");
+        failureLogs.start();
+        failureLoggers = List.of(
+                (Logger) LogManager.getLogger(MateChatRequestMapper.class),
+                (Logger) LogManager.getLogger(MateChatSseParser.class),
+                (Logger) LogManager.getLogger(MateServiceModelManagerProvider.class));
+        originalFailureLogLevels = failureLoggers.stream().map(Logger::getLevel).toList();
+        failureLoggers.forEach(logger -> {
+            Configurator.setLevel(logger.getName(), Level.WARN);
+            logger.addAppender(failureLogs);
+        });
         mate = new MockWebServer();
         mate.start();
         WebClient client = WebClient.builder()
@@ -71,14 +87,16 @@ class MateServiceModelManagerProviderTest {
         provider = new MateServiceModelManagerProvider(
                 mapper, client, mate.url("/mate-service/v1/LLM/chat").uri(), "openai-completions");
         provider.validateConfiguration();
-        failureLogs = new ListAppender<>();
-        failureLogs.start();
-        failureLogger().addAppender(failureLogs);
     }
 
     @AfterEach
     void tearDown() throws Exception {
-        failureLogger().detachAppender(failureLogs);
+        for (int index = 0; index < failureLoggers.size(); index++) {
+            Logger logger = failureLoggers.get(index);
+            logger.removeAppender(failureLogs);
+            Configurator.setLevel(logger.getName(), originalFailureLogLevels.get(index));
+        }
+        failureLogs.stop();
         mate.shutdown();
     }
 
@@ -131,10 +149,12 @@ class MateServiceModelManagerProviderTest {
         assertNull(error.errorMessage());
         assertEquals(
                 1L,
-                failureLogs.list.stream()
+                failureLogs.events().stream()
                         .filter(event -> event.getLevel() == Level.WARN
                                 && event.getLoggerName().equals(MateChatRequestMapper.class.getName())
-                                && event.getFormattedMessage().contains("errorCode=UNSUPPORTED_MATE_CHAT_CONTENT"))
+                                && event.getMessage()
+                                        .getFormattedMessage()
+                                        .contains("errorCode=UNSUPPORTED_MATE_CHAT_CONTENT"))
                         .count());
         assertEquals(0, mate.getRequestCount());
     }
@@ -194,10 +214,15 @@ class MateServiceModelManagerProviderTest {
 
         assertEquals(MateInvocationErrorCode.MODEL_RATE_LIMITED.name(), error.errorCode());
         assertNull(error.errorMessage());
-        assertTrue(failureLogs.list.stream()
-                .anyMatch(event -> event.getLoggerName().equals(MateServiceModelManagerProvider.class.getName())
-                        && event.getFormattedMessage().contains("errorCode=MODEL_RATE_LIMITED")
-                        && !event.getFormattedMessage().contains("private upstream detail")));
+        List<String> loggedFailures = failureLogs.events().stream()
+                .map(event -> event.getLoggerName() + ": " + event.getMessage().getFormattedMessage())
+                .toList();
+        assertTrue(
+                failureLogs.events().stream()
+                        .anyMatch(event -> event.getLoggerName().equals(MateServiceModelManagerProvider.class.getName())
+                                && event.getMessage().getFormattedMessage().contains("errorCode=MODEL_RATE_LIMITED")
+                                && !event.getMessage().getFormattedMessage().contains("private upstream detail")),
+                loggedFailures::toString);
     }
 
     @Test
@@ -213,10 +238,10 @@ class MateServiceModelManagerProviderTest {
         assertNull(error.errorMessage());
         assertEquals(
                 1L,
-                failureLogs.list.stream()
+                failureLogs.events().stream()
                         .filter(event -> event.getLoggerName().equals(MateChatSseParser.class.getName())
-                                && event.getFormattedMessage().contains("errorCode=INVALID_CHAT_SSE")
-                                && event.getThrowableProxy() != null)
+                                && event.getMessage().getFormattedMessage().contains("errorCode=INVALID_CHAT_SSE")
+                                && event.getThrown() != null)
                         .count());
     }
 
@@ -299,6 +324,24 @@ class MateServiceModelManagerProviderTest {
         assertEquals(1, mate.getRequestCount());
     }
 
+    @Test
+    void closesHttpStreamAndReturnsAbortedWhenResultFutureIsCancelled() throws Exception {
+        mate.enqueue(new MockResponse()
+                .setHeader("Content-Type", "text/event-stream")
+                .setBody(" ".repeat(100_000))
+                .throttleBody(256, 1, TimeUnit.SECONDS));
+
+        var stream = provider.streamSimple(model(), simpleContext(), null);
+        var result = stream.result().toFuture();
+
+        assertNotNull(mate.takeRequest(5L, TimeUnit.SECONDS));
+        assertTrue(result.cancel(true));
+        assertTrue(result.isCancelled());
+        assertEquals(
+                StopReason.ABORTED,
+                stream.result().block(Duration.ofSeconds(2L)).stopReason());
+    }
+
     private Context context() {
         String signature = MateReasoningSignature.encode(
                 mapper, "reasoning_content", mapper.getNodeFactory().textNode("prior reasoning"));
@@ -361,9 +404,5 @@ class MateServiceModelManagerProviderTest {
                 + "\"usage\":{\"prompt_tokens\":20,\"completion_tokens\":10,\"total_tokens\":30,"
                 + "\"prompt_tokens_details\":{\"cached_tokens\":5}}}\n\n"
                 + "data: [DONE]\n\n";
-    }
-
-    private static Logger failureLogger() {
-        return (Logger) LoggerFactory.getLogger("com.campusclaw.ai.provider.mate");
     }
 }

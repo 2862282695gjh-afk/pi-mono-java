@@ -1,0 +1,79 @@
+/*
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
+ */
+
+package com.huawei.hicampus.claw.codingagent.tool.ops;
+
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.NoSuchFileException;
+import java.nio.file.Path;
+
+import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+
+class LocalReadOperationsTest {
+
+    private final LocalReadOperations ops = new LocalReadOperations();
+
+    @TempDir
+    Path tempDir;
+
+    @Nested
+    class ReadFile {
+
+        @Test
+        void readsFileContent() throws IOException {
+            Path file = Files.writeString(tempDir.resolve("test.txt"), "hello world");
+            byte[] content = ops.readFile(file);
+            assertEquals("hello world", new String(content, StandardCharsets.UTF_8));
+        }
+
+        @Test
+        void readsBinaryContent() throws IOException {
+            byte[] binary = {0x00, 0x01, 0x02, (byte) 0xFF};
+            Path file = tempDir.resolve("binary.dat");
+            Files.write(file, binary);
+            assertArrayEquals(binary, ops.readFile(file));
+        }
+
+        @Test
+        void readsEmptyFile() throws IOException {
+            Path file = Files.createFile(tempDir.resolve("empty.txt"));
+            assertEquals(0, ops.readFile(file).length);
+        }
+
+        @Test
+        void throwsOnNonExistentFile() {
+            assertThrows(NoSuchFileException.class, () -> ops.readFile(tempDir.resolve("missing.txt")));
+        }
+    }
+
+    @Nested
+    class Exists {
+
+        @Test
+        void existingFile() throws IOException {
+            Path file = Files.createFile(tempDir.resolve("exists.txt"));
+            assertTrue(ops.exists(file));
+        }
+
+        @Test
+        void existingDirectory() {
+            assertTrue(ops.exists(tempDir));
+        }
+
+        @Test
+        void nonExistentPath() {
+            assertFalse(ops.exists(tempDir.resolve("nope")));
+        }
+    }
+}

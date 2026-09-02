@@ -1,6 +1,6 @@
 # CampusClaw
 
-CampusClaw 是基于 Java 21 和 Spring Boot 3.4.1 构建的 ToB Agent Runtime 服务。产品通过
+CampusClaw 是基于 Java 21 和 Spring Boot 3.4.5 构建的 ToB Agent Runtime 服务。产品通过
 HTTP + SSE 提供受管 Agent 会话，Runtime、Cron 和 Child Agent 共用同一套 Session 装配、
 工具执行、错误和取消语义。
 
@@ -46,8 +46,10 @@ java -jar modules/coding-agent-cli/target/campusclaw-agent.jar
 | `GAUSSDB_URL` / `GAUSSDB_USER` / `GAUSSDB_PASSWORD` | 数据库连接 |
 | `GAUSSDB_SCHEMA` / `GAUSSDB_SSL_MODE` | 数据库 schema 和 SSL 模式 |
 | `CAMPUSCLAW_AGENTS_ROOT` | 受管 Agent 根目录，缺省为 `agent` |
-| `CAMPUSMATE_RUNTIME_BASE_URL` | 受管目录准备服务地址 |
-| `MATE_INNERGWSERIVE` | Mate 工具内部网关地址 |
+| `CAMPUSMATE_BASE_URL` | Model、受管 Runtime 与 Tool 共享的 CampusMate 服务地址；主模块必填，公司镜像缺省为 `https://localhost:8591` |
+| `CAMPUSMATE_MODEL_*` | CampusMate Model Provider 的 API、超时和 token 参数 |
+| `CAMPUSMATE_RUNTIME_*` | CampusMate Runtime 客户端的超时参数 |
+| `CAMPUSMATE_*_PATH*` | 六个 CampusMate HTTP operation path 或 path template |
 | `CAMPUSCLAW_EVENT_CURSOR_SECRET` | Runtime 事件游标签名密钥 |
 
 模型凭据示例：
@@ -65,7 +67,7 @@ export OPENAI_API_KEY="sk-..."
 
 | 工具 | 作用 | 执行模式 |
 |---|---|---|
-| `Read` | 分块读取文本或读取受支持图片 | PARALLEL |
+| `Read` | 分块读取 UTF-8 文本文件 | PARALLEL |
 | `Find` | 按 glob 查找文件 | PARALLEL |
 | `Grep` | 按正则或字面量搜索文件内容 | PARALLEL |
 | `Ls` | 列出目录内容 | PARALLEL |
@@ -175,10 +177,9 @@ Agent 目录、Session 或工具缓存。
 │   ├── ai/                  # LLM 抽象、供应商适配和模型注册
 │   ├── agent-core/          # Agent 循环、Session、事件和工具 Pipeline
 │   ├── cron/                # 定时任务模型、引擎、存储和 Agent 工具
-│   ├── coding-agent-cli/    # Spring Boot 服务、Runtime Host 和工具实现（历史目录名）
-│   └── k8s/                 # Kubernetes 部署清单
+│   └── coding-agent-cli/    # Spring Boot 服务、Runtime Host 和工具实现（历史目录名）
 ├── frontend/                # Vue 3 + TypeScript Runtime 调试客户端
-├── mate-campusclaw/         # 从 modules/* 生成的公司集成镜像
+├── campusclaw/              # 从 modules/* 生成的公司集成镜像（不加入根 Reactor）
 ├── agent/                   # 受管 Agent 示例和运行素材
 ├── docs/                    # 设计、部署和运行文档
 ├── scripts/                 # 镜像同步、Git hook 和辅助脚本
@@ -202,20 +203,27 @@ ai -> agent-core -> cron -> coding-agent-cli
 ./mvnw test
 ./mvnw verify
 
-# 同步并编译公司集成镜像
-./scripts/sync-mate-campusclaw.sh
+# 在可解析 NativeParent 的公司 Maven 环境同步并编译镜像
+./scripts/sync-campusclaw.sh
 
-# 预览镜像差异
-./scripts/sync-mate-campusclaw.sh --dry-run
+# 普通本地环境显式跳过公司构建，仅同步或预览差异
+./scripts/sync-campusclaw.sh --no-verify
+./scripts/sync-campusclaw.sh --dry-run --no-verify
 ```
 
-`mate-campusclaw/` 是生成镜像，主源码只在 `modules/*` 修改。同步脚本从
-`modules/{ai,agent-core,cron,coding-agent-cli}` 生成镜像并重写 Java 包名；不要双份手工维护。
+`campusclaw/` 是生成镜像，主源码只在 `modules/*` 修改。同步脚本从
+`modules/{ai,agent-core,cron,coding-agent-cli}` 生成镜像并把 Java 根包重写为
+`com.huawei.hicampus.claw`；不要双份手工维护。镜像使用公司父 POM
+`com.huawei.hicampus:NativeParent:26.0.0-SNAPSHOT`，项目坐标为
+`com.huawei.campus:claw:1.0-SNAPSHOT`，默认产物为
+`campusclaw/target/claw-1.0-SNAPSHOT.jar`。父 POM 不可解析时同步脚本会失败，不会静默跳过构建。
 
 ## 相关文档
 
 | 文档 | 用途 |
 |---|---|
+| [`campusclaw-corporate-module.md`](docs/designs/campusclaw-corporate-module.md) | 公司镜像生成、包重写、父 POM 与构建边界 |
+| [`campusmate-shared-config.md`](docs/designs/campusmate-shared-config.md) | CampusMate 单一服务地址、六 operation 目录和配置迁移 |
 | [`tool-system-v2.md`](docs/designs/tool-system-v2.md) | 三入口、八工具、工作区和 Session 装配主设计 |
 | [`coding-agent-cli.md`](docs/designs/coding-agent-cli.md) | Runtime HTTP 与公共 Session 设计 |
 | [`mate-tool-client.md`](docs/designs/mate-tool-client.md) | Mate 实时发现、Session 缓存和名称调用 |

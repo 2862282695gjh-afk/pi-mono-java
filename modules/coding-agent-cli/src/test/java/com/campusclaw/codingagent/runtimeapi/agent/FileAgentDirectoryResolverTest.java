@@ -20,14 +20,14 @@ import com.campusclaw.codingagent.runtime.MateServiceClient.AgentRuntime;
 import com.campusclaw.codingagent.runtime.PreparedAgentRuntime;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
+import com.campusclaw.codingagent.test.Log4j2TestAppender;
 
+import org.apache.logging.log4j.Level;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.core.Logger;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
-import org.springframework.boot.test.system.CapturedOutput;
-import org.springframework.boot.test.system.OutputCaptureExtension;
 
-@ExtendWith(OutputCaptureExtension.class)
 class FileAgentDirectoryResolverTest {
 
     private static final String AGENT_ID = "agent-0123456789abcdef0123456789abcdef";
@@ -60,21 +60,33 @@ class FileAgentDirectoryResolverTest {
     }
 
     @Test
-    void logsAndTranslatesRuntimePreparationFailure(CapturedOutput output) {
+    void logsAndTranslatesRuntimePreparationFailure() {
         AgentRuntimeManager manager = mock(AgentRuntimeManager.class);
         AgentRuntimeException failure = new AgentRuntimeException("Mate unavailable");
         when(manager.prepare(AGENT_ID)).thenThrow(failure);
-
-        assertThatThrownBy(() -> new FileAgentDirectoryResolver(manager).resolve(AGENT_ID))
-                .isInstanceOfSatisfying(RuntimeApiException.class, error -> {
-                    assertThat(error.errorCode()).isEqualTo(RuntimeErrorCode.AGENT_NOT_AVAILABLE);
-                    assertThat(error).hasNoCause();
-                });
-        assertThat(output)
-                .contains("operation=runtime.agent.prepare")
-                .contains("errorCode=AGENT_NOT_AVAILABLE")
-                .contains("agentId=\"" + AGENT_ID + "\"")
-                .contains("AgentRuntimeException: Mate unavailable");
+        Logger logger = (Logger) LogManager.getLogger(FileAgentDirectoryResolver.class);
+        Log4j2TestAppender logs = new Log4j2TestAppender("agent-directory-failure-logs");
+        logs.start();
+        logger.addAppender(logs);
+        try {
+            assertThatThrownBy(() -> new FileAgentDirectoryResolver(manager).resolve(AGENT_ID))
+                    .isInstanceOfSatisfying(RuntimeApiException.class, error -> {
+                        assertThat(error.errorCode()).isEqualTo(RuntimeErrorCode.AGENT_NOT_AVAILABLE);
+                        assertThat(error).hasNoCause();
+                    });
+            assertThat(logs.events()).singleElement().satisfies(event -> {
+                assertThat(event.getLevel()).isEqualTo(Level.ERROR);
+                assertThat(event.getMessage().getFormattedMessage())
+                        .contains("operation=runtime.agent.prepare")
+                        .contains("errorCode=AGENT_NOT_AVAILABLE");
+                String loggedAgentId = event.getContextData().getValue("agentId");
+                assertThat(loggedAgentId).isEqualTo(AGENT_ID);
+                assertThat(event.getThrown()).isSameAs(failure);
+            });
+        } finally {
+            logger.removeAppender(logs);
+            logs.stop();
+        }
     }
 
     @Test

@@ -58,6 +58,11 @@
       <li>安装脚本可在边界把部署平台旧变量 <code>CAMPUSINNERGWSERVICE_DOMAIN_NAME_URL</code> 转换为 <code>CAMPUSMATE_BASE_URL</code>；显式新旧值冲突时失败。</li>
       <li>新增类型化配置校验：origin 只能是无服务路径的 HTTP(S) URL，operation 必须留在 <code>/mate-service/</code> 下，拒绝规范化点段，并满足模板占位符约束。</li>
     </ul>
+    <p><strong>后续修订：</strong>2026-08-28 的
+      <a href="0035-remove-legacy-campusmate-environment-adapter.html">ADR-0035</a> 废止了上述安装脚本兼容条款；
+      当时的部署必须直接设置 <code>CAMPUSMATE_BASE_URL</code>。2026-09-01 的
+      <a href="0042-default-campusmate-base-url-for-corporate-mirror.html">ADR-0042</a> 后续只为公司镜像
+      增加本地缺省值；通用主模块仍要求显式设置。其余共享配置决策保持有效。</p>
   </section>
 
   <section>
@@ -96,12 +101,16 @@
   <section>
     <h2>后果与相关资料</h2>
     <p>正面后果：三个客户端必然指向同一服务 origin；Endpoint 可按 operation 清点；Skill query
-      不再重复；错误地址和越界 path 在启动阶段失败。迁移成本：部署必须设置
-      <code>CAMPUSMATE_BASE_URL</code>，旧应用配置键不再生效，手工维护的交付 properties 必须同步。</p>
+      不再重复；错误地址和越界 path 在启动阶段失败。迁移成本：通用主模块部署必须设置
+      <code>CAMPUSMATE_BASE_URL</code>，公司镜像未设置时使用 ADR-0042 定义的本地缺省值；旧应用配置键
+      不再生效，手工维护的交付 properties 必须同步。</p>
     <p>外部设计基线：<code>/Users/z/设计</code> 的
       <code>c250e3f07536871d3d676242e552a5eb4346b0c7</code>；详细实现与源码证据见
       <a href="../designs/campusmate-shared-config.md">CampusMate 客户端共享配置设计</a>。
-      Model Chat 的协议决策仍见 <a href="0025-mate-chat-provider-and-usage-records.html">ADR-0025</a>。</p>
+      Model Chat 的协议决策仍见 <a href="0025-mate-chat-provider-and-usage-records.html">ADR-0025</a>；
+      旧部署变量兼容的后续修订见
+      <a href="0035-remove-legacy-campusmate-environment-adapter.html">ADR-0035</a>；公司镜像本地缺省值见
+      <a href="0042-default-campusmate-base-url-for-corporate-mirror.html">ADR-0042</a>。</p>
     <p>受审实现冻结于 <code>e8533b5ebf564f9d8d707faa115be638dc377556</code>。在 mate-service
       基线 <code>956b547f5ca12ca89e68f73012f92a4406b0c9fa</code> 中，Chat、Agent info 和 Agent runtime
       是已观察服务端行为；Skill query、Tool metadata 和 Tool execute 是目标态设计，服务端待实现。</p>

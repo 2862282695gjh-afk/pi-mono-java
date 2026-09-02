@@ -202,6 +202,59 @@
       height: 88px;
       object-fit: contain;
     }
+    .headers-specimen {
+      max-width: 680px;
+      margin-top: 12px;
+      border: 1px dashed var(--border-strong);
+      border-radius: 12px;
+      background: var(--surface-secondary);
+    }
+    .headers-specimen > summary {
+      display: flex;
+      min-height: 42px;
+      padding: 0 14px;
+      align-items: center;
+      gap: 7px;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 620;
+      list-style: none;
+    }
+    .headers-specimen > summary::-webkit-details-marker { display: none; }
+    .headers-specimen > summary span:last-child { color: var(--muted); font-weight: 400; }
+    .headers-specimen-body { padding: 0 14px 14px; border-top: 1px solid var(--border); }
+    .headers-specimen-actions { display: flex; justify-content: flex-end; padding: 10px 0 4px; }
+    .headers-specimen button {
+      min-height: 36px;
+      padding: 0 11px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      background: var(--surface);
+    }
+    .headers-specimen-head,
+    .headers-specimen-row {
+      display: grid;
+      grid-template-columns: 44px minmax(150px, .75fr) minmax(220px, 1.25fr) 44px;
+      align-items: center;
+      gap: 8px;
+    }
+    .headers-specimen-head { padding: 8px 0 6px; color: var(--muted); font-size: 11px; }
+    .headers-specimen-row { padding: 7px 0; border-top: 1px solid var(--border); }
+    .headers-specimen-row label:first-child { display: grid; min-height: 44px; place-items: center; }
+    .headers-specimen-row input[type="checkbox"] { width: 15px; height: 15px; accent-color: var(--primary); }
+    .headers-specimen-row input[type="text"] {
+      width: 100%;
+      min-width: 0;
+      min-height: 36px;
+      padding: 0 10px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      background: var(--surface);
+      font: 12px ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+    .headers-specimen-delete { width: 44px; min-height: 44px !important; padding: 0 !important; font-size: 18px; }
     .rich-text-specimen {
       max-width: 820px;
       margin-top: 12px;
@@ -224,14 +277,18 @@
     .round-copy-specimen { display: inline-grid; width: 32px; height: 32px; padding: 0; place-items: center; border: 0; border-radius: 7px; color: var(--muted); background: transparent; font-size: 16px; }
     .round-copy-specimen:hover { color: var(--text); background: var(--surface-tertiary); }
     .activity-specimen {
+      display: grid;
       max-width: 820px;
       margin-top: 12px;
+      gap: 10px;
+    }
+    .activity-frame {
       padding: 10px 14px;
       border: 1px dashed var(--border-strong);
       border-radius: 12px;
       background: var(--surface-secondary);
     }
-    .thinking-specimen { margin-bottom: 5px; color: var(--muted); }
+    .thinking-specimen { color: var(--muted); }
     .thinking-specimen summary, .tool-specimen summary { cursor: pointer; list-style: none; }
     .thinking-specimen summary::-webkit-details-marker, .tool-specimen summary::-webkit-details-marker { display: none; }
     .thinking-specimen summary { display: flex; min-height: 34px; align-items: center; gap: 8px; font-size: 13px; }
@@ -261,6 +318,11 @@
       .screen-card { margin-right: 9px; margin-left: 9px; }
       .swatches { grid-template-columns: repeat(2, minmax(112px, 1fr)); }
       .table-wrap { overflow-x: auto; }
+      .headers-specimen-head { display: none; }
+      .headers-specimen-row { grid-template-columns: 44px minmax(0, 1fr) 44px; align-items: start; }
+      .headers-specimen-row label:first-child { grid-row: 1 / span 2; }
+      .headers-specimen-row label:not(:first-child) { grid-column: 2; }
+      .headers-specimen-delete { grid-column: 3; grid-row: 1 / span 2; }
     }
   </style>
 </head>
@@ -270,11 +332,11 @@
       <header class="topbar">
         <div class="row">
           <img class="review-brand-mark" src="campusclaw-mark-o1.png" alt="">
-          <h1>CampusClaw Frontend UX</h1>
-          <span class="tag">0.8.0</span>
+          <h1>CampusClaw Runtime Debug Workbench</h1>
+          <span class="tag">0.12.1</span>
           <span class="tag">Implementation · 已实现</span>
         </div>
-        <code class="base">HTTP V1 1.38.0 aligned · O1 warm-neutral</code>
+        <code class="base">Internal debug only · HTTP V1 1.38.0 aligned · O1 warm-neutral</code>
       </header>
 
       <section class="section">
@@ -288,7 +350,7 @@
           <li><a href="../campusclaw-frontend.md">campusclaw-frontend.md</a>：源码证据、目标差异、设计理由、交互和 Token。</li>
           <li>本 HTML：主要人类评审界面。</li>
           <li><a href="diagram.puml">diagram.puml</a>：架构图唯一图源。</li>
-          <li><a href="low-fidelity.html">low-fidelity.html</a>：0.8.0 低保真布局图源；PNG 仅为 0.7.0 历史快照。</li>
+          <li><a href="low-fidelity.html">low-fidelity.html</a>：0.11.0 低保真布局图源；PNG 仅为 0.7.0 历史快照。</li>
         </ol>
       </section>
 
@@ -298,6 +360,23 @@
           <img src="campusclaw-mark-o1.png" alt="CampusClaw O1 品牌标识">
           <p class="description">界面直接引用同一张透明 PNG，不通过生成模型重绘。五个有机色块的形状、比例、间距与颜色保持不变；<code>#D97757</code> 只承担品牌识别，暖中性表面负责与其协调。</p>
         </div>
+      </section>
+
+      <section class="section" id="debug-headers" data-screen-key="debugHeaders">
+        <div class="section-title"><h2>已实现：Headers</h2><code class="screen-key">debugHeaders</code></div>
+        <details class="headers-specimen" open>
+          <summary><span>Headers</span><span>(0)</span></summary>
+          <div class="headers-specimen-body">
+            <div class="headers-specimen-actions"><button type="button">全部清空</button></div>
+            <div class="headers-specimen-head" aria-hidden="true"><span></span><span>Key</span><span>Value</span><span></span></div>
+            <div class="headers-specimen-row">
+              <label><input type="checkbox" checked aria-label="启用此请求头"></label>
+              <label><span hidden>Header Key</span><input type="text" placeholder="Key" aria-label="Header Key"></label>
+              <label><span hidden>Header Value</span><input type="text" placeholder="Value" aria-label="Header Value"></label>
+              <button class="headers-specimen-delete" type="button" aria-label="删除此请求头">×</button>
+            </div>
+          </div>
+        </details>
       </section>
 
       <article class="screen-card" id="first-use" data-screen-key="firstUse">
@@ -311,14 +390,14 @@
         <div class="screen-grid">
           <figure>
             <a class="artifact-link-card" href="low-fidelity.html">
-              <strong>打开 0.8.0 三状态低保真评审板</strong>
+              <strong>打开 0.11.0 三状态低保真评审板</strong>
               <span>可缩放 HTML 图源 · 包含本轮活动展示更新</span>
               <span class="artifact-state-list"><b>常规对话</b><b>首次进入</b><b>执行中</b></span>
             </a>
-            <figcaption>HTML 图源包含当前可展开分析、虚线活动区和每轮单一复制入口；Agent 目录和公共 Chat 创建仍是 mate-service 目标态。</figcaption>
+            <figcaption>HTML 图源包含原始 Thinking、原始 Tool 参数、全活动安全富文本、Thinking/Tool 独立虚线框和每轮单一复制入口；当前用途是 Runtime 内部联调。</figcaption>
           </figure>
           <div class="screen-detail">
-            <section class="section"><h3>作用</h3><p class="description">让用户先选择一个受管 Agent，再进入真实任务会话；创建 Runtime Session、认证和默认模型初始化均在后台完成。</p></section>
+            <section class="section"><h3>作用</h3><p class="description">让调试人员选择一个 Agent，进入真实 Runtime Session 并检查后续模型、工具和事件行为。</p></section>
             <section class="section"><h3>主要评审点</h3><ul class="review-points"><li>是否以 Agent 能力而不是协议配置开始。</li><li>首次进入是否需要单独高保真稿。</li><li>Agent 卡片的名称、描述和权限提示是否足够。</li></ul></section>
           </div>
         </div>
@@ -334,12 +413,12 @@
         </header>
         <div class="screen-grid">
           <figure>
-            <a href="high-fidelity-conversation-v9.png"><img src="high-fidelity-conversation-v9.png" alt="CampusClaw O1 暖中性常规对话高保真稿"></a>
-            <figcaption>v9：分析与工具进入统一暖灰虚线活动区；分析过程始终可展开；整轮回答底部只保留一个紧凑复制图标。</figcaption>
+            <a href="high-fidelity-conversation-v12.png"><img src="high-fidelity-conversation-v12.png" alt="CampusClaw O1 调试工作台常规对话高保真稿"></a>
+            <figcaption>v12：原始 Tool 参数展示完整 fixture 路径、Session ID 与 Authorization；Thinking/Tool 继续使用独立虚线框和统一安全富文本。</figcaption>
           </figure>
           <div class="screen-detail">
-            <section class="section"><h3>作用</h3><p class="description">围绕 Agent、Chat、消息、附件和工具活动完成日常任务。协议身份、ETag、原始 SSE 和凭据不进入产品主流程。</p></section>
-            <section class="section"><h3>主要评审点</h3><ul class="review-points"><li>安全分析与工具是否在同一暖灰虚线活动区中易于连续阅读，又保持独立信任边界。</li><li>分析过程是否始终可展开；没有安全摘要时是否用明确占位而不是暴露原始推理。</li><li>整轮回答是否只出现一个图标复制入口，且不再为每段正文或代码块重复提供按钮。</li><li>工具详情是否按输入在上、输出在下阅读，并且不显示内部 ID、绝对路径或凭据。</li></ul></section>
+            <section class="section"><h3>作用</h3><p class="description">围绕 Agent、Session、消息与工具活动复现 Runtime 行为。工具参数按原值展示；ETag 和原始 SSE 仍不作为常驻页面内容。</p></section>
+            <section class="section"><h3>主要评审点</h3><ul class="review-points"><li>Thinking 与每个 Tool 是否分别拥有独立暖灰虚线边界，同时保持同一视觉节奏。</li><li>原始 Thinking 是否明确标识，并能正确渲染列表、代码和表格而不执行 HTML。</li><li>整轮回答是否只出现一个图标复制入口，且不复制 Thinking 或 Tool 内容。</li><li>原始输入参数是否完整显示 fixture 的内部 ID、绝对路径和凭据形态值，同时保持页面预算。</li></ul></section>
           </div>
         </div>
       </article>
@@ -371,21 +450,25 @@ HAVING COUNT(*) &gt; 1;</code></pre>
 
       <section class="section" id="agent-activity">
         <div class="section-title"><h2>Thinking 与 Tool Activity 评审面</h2><code class="screen-key">agentActivity</code></div>
-        <p class="description muted">参考 Codex 的活动披露：分析与工具共同放进轻量暖灰虚线容器，内容仍由专用 viewer 隔离。分析始终可展开；当前执行项默认展开，完成项默认折叠。工具详情按“输入参数 → 输出结果”纵向排列。</p>
+        <p class="description muted">参考 Codex 的活动披露密度：Thinking 与每个 Tool 分别使用轻量暖灰虚线框。原始 Thinking 与 Tool result 共用受限 Markdown viewer；当前执行项默认展开，完成项默认折叠。工具详情按“原始输入参数 → 输出结果”纵向排列。</p>
         <div class="activity-specimen">
-          <details class="thinking-specimen">
-            <summary><span>分析过程</span><span>›</span></summary>
-            <p>先确认订单结构，再检查价格、数量与重复订单。</p>
-          </details>
-          <details class="tool-specimen" open>
-            <summary><span class="tool-check" aria-hidden="true">✓</span><span><b>读取</b> 订单明细.xlsx</span><span class="tool-status">3,482 行</span><span aria-hidden="true">⌄</span></summary>
-            <div class="tool-input">
-              <strong>输入参数</strong>
-              <dl><dt>file</dt><dd>订单明细.xlsx</dd><dt>sheet</dt><dd>订单明细</dd></dl>
-              <span class="tool-output-label">输出结果</span>
-              <p class="tool-output-result">已读取 3,482 行。</p>
-            </div>
-          </details>
+          <div class="activity-frame">
+            <details class="thinking-specimen">
+              <summary><span>分析过程 · 原始推理</span><span>›</span></summary>
+              <p>先确认订单结构，再检查 <strong>价格</strong>、数量与重复订单。</p>
+            </details>
+          </div>
+          <div class="activity-frame">
+            <details class="tool-specimen" open>
+              <summary><span class="tool-check" aria-hidden="true">✓</span><span><b>读取</b> 订单明细.xlsx</span><span class="tool-status">3,482 行</span><span aria-hidden="true">⌄</span></summary>
+              <div class="tool-input">
+                <strong>原始输入参数</strong>
+                <dl><dt>file</dt><dd>/workspace/订单明细.xlsx</dd><dt>sessionId</dt><dd>session-design-review</dd><dt>headers.authorization</dt><dd>Bearer fixture-review-token</dd></dl>
+                <span class="tool-output-label">输出结果</span>
+                <p class="tool-output-result"><strong>读取完成</strong><br>已读取 3,482 行，可继续检查异常规则。</p>
+              </div>
+            </details>
+          </div>
         </div>
       </section>
 
@@ -399,12 +482,12 @@ HAVING COUNT(*) &gt; 1;</code></pre>
         </header>
         <div class="screen-grid">
           <figure>
-            <a href="high-fidelity-running-v9.png"><img src="high-fidelity-running-v9.png" alt="CampusClaw O1 暖中性执行中高保真稿"></a>
-            <figcaption>v9：当前安全分析与工具共用虚线活动区，分析与当前工具保持展开；执行完成前不显示整轮复制入口。</figcaption>
+            <a href="high-fidelity-running-v12.png"><img src="high-fidelity-running-v12.png" alt="CampusClaw O1 调试工作台执行中高保真稿"></a>
+            <figcaption>v12：当前原始 Thinking 与工具各自使用独立虚线框；工具详情显示原始路径，执行完成前不显示整轮复制入口。</figcaption>
           </figure>
           <div class="screen-detail">
             <section class="section"><h3>作用</h3><p class="description">让用户看懂 Agent 正在做什么，并通过“调整方向”“加入队列”“停止”控制唯一 active execution。</p></section>
-            <section class="section"><h3>主要评审点</h3><ul class="review-points"><li>运行中分析摘要是否足够可读，同时不暴露原始私有推理。</li><li>当前工具展开、完成工具折叠和未开始工具不显示是否符合活动节奏。</li><li>输入参数与输出结果的纵向顺序是否比左右分栏更易扫描。</li><li>当前跟进方式是否在发送前足够清楚，且无需两个常驻胶囊。</li></ul></section>
+            <section class="section"><h3>主要评审点</h3><ul class="review-points"><li>运行中原始推理是否随 delta 更新，并保持“原始推理”标识。</li><li>当前工具展开、完成工具折叠和未开始工具不显示是否符合活动节奏。</li><li>Thinking 与 Tool 输出的列表、表格和代码是否使用同一安全富文本规则。</li><li>当前跟进方式是否在发送前足够清楚，且无需两个常驻胶囊。</li></ul></section>
           </div>
         </div>
       </article>
@@ -428,9 +511,11 @@ HAVING COUNT(*) &gt; 1;</code></pre>
         <details class="review-question" open><summary>1. 已实现：三状态信息架构</summary><p><code>firstUse</code>、<code>idleConversation</code>、<code>runningConversation</code> 作为首版稳定评审和测试边界。</p></details>
         <details class="review-question" open><summary>2. 已实现：O1 品牌标识与暖中性配色</summary><p>O1 使用原始透明 PNG，不生成式重绘，也不缩进深色品牌方块；暖白、暖灰与深暖黑构成工作台，珊瑚色仅用于品牌标识，绿色继续表达运行与完成。</p></details>
         <details class="review-question" open><summary>3. 已确认：跟进交互与 Codex desktop 一致</summary><p>desktop 默认“调整方向”，设置可切换“加入队列”；<code>Cmd/Ctrl+Shift+Enter</code> 对单条消息临时反转。“调整方向”不会硬中断当前模型或工具。</p></details>
-        <details class="review-question" open><summary>4. 已实现：Assistant-only 安全富文本边界</summary><p>Assistant 正文支持受限 Markdown；User 与 Tool 原始结果保持纯文本/专用 viewer，Thinking 只显示安全摘要或安全占位。raw HTML、远程 Markdown 图片、相对路由和危险协议永不激活。</p></details>
-        <details class="review-question" open><summary>5. 已实现：整轮动作与虚线活动区</summary><p>Thinking 只读取面向用户的安全标题和摘要，并且始终可展开；缺少摘要时显示安全占位。Thinking 与 Tool 进入同一个暖灰虚线活动区，工具详情保持纵向排列。每轮 Agent 回答只在完成后显示一个紧凑复制图标，复制本轮全部 Assistant Markdown，不复制分析与工具诊断内容。</p></details>
-        <div class="review-links"><a href="../campusclaw-frontend.md">查看完整设计依据</a><span class="muted">·</span><a href="../../decisions/0020-campusclaw-product-frontend-boundary.html">边界 ADR</a><span class="muted">·</span><a href="../../decisions/0027-assistant-safe-rich-text.html">富文本 ADR</a><span class="muted">·</span><a href="../../decisions/0028-agent-activity-disclosure-and-o1-brand.html">活动与品牌 ADR</a><span class="muted">·</span><a href="../../decisions/0029-agent-round-actions-and-activity-panel.html">整轮动作 ADR</a><span class="muted">·</span><a href="imagegen-prompts.md">查看 ImageGen Prompts</a></div>
+        <details class="review-question" open><summary>4. 已实现：全活动安全富文本边界</summary><p>Assistant、原始 Thinking 与 Tool result 共用受限 Markdown；User 和 Tool 参数保持纯文本/结构化 viewer。raw HTML、远程 Markdown 图片、相对路由和危险协议永不激活。</p></details>
+        <details class="review-question" open><summary>5. 已实现：原始 Thinking、整轮动作与独立虚线框</summary><p>Thinking 直接展示现有 delta/content 原文并标记“原始推理”，不改变事件接口；Thinking 与每个 Tool 分别进入独立暖灰虚线框。每轮 Agent 回答只在完成后显示一个紧凑复制图标，复制本轮全部 Assistant Markdown，不复制 Thinking 与 Tool 内容。</p></details>
+        <details class="review-question" open><summary>6. 已确认：内部调试工作台展示原始 Tool 参数</summary><p>Tool 参数不隐藏凭据形态字段、内部 ID 或绝对路径；12 行、3 层、每值 240 字符只用于页面稳定性。该可见性不得直接用于生产产品前端。</p></details>
+        <details class="review-question" open><summary>7. 已实现：独立通用 Headers 面板</summary><p>开发模式使用通用 Key/Value 行，不提供凭据模式或固定名称，不与开发者诊断入口合并，不展示自动生成 Header；页面内临时值只用于下一次初始 Events POST。校验失败时自动展开面板并聚焦具体 Key 或 Value。</p></details>
+        <div class="review-links"><a href="../campusclaw-frontend.md">查看完整设计依据</a><span class="muted">·</span><a href="../../decisions/0020-campusclaw-product-frontend-boundary.html">历史产品边界 ADR</a><span class="muted">·</span><a href="../../decisions/0030-runtime-thinking-and-activity-rich-text.md">活动富文本 ADR</a><span class="muted">·</span><a href="../../decisions/0031-debug-workbench-raw-tool-arguments.md">调试参数 ADR</a><span class="muted">·</span><a href="../../decisions/0034-development-request-headers.html">Headers ADR</a><span class="muted">·</span><a href="imagegen-prompts.md">查看 ImageGen Prompts</a></div>
       </section>
     </div>
   </main>

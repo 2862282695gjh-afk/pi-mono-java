@@ -13,9 +13,9 @@ export interface AgentMessageBlock {
 }
 
 export interface AgentActivityBlock {
-  kind: 'activityGroup';
+  kind: 'activity';
   key: string;
-  turns: Array<ThinkingTurn | ActivityTurn>;
+  turn: ThinkingTurn | ActivityTurn;
 }
 
 export interface AgentRound {
@@ -69,27 +69,15 @@ function appendAgentRound(items: ConversationTimelineItem[], turns: AgentTurn[])
 
 function groupAgentBlocks(turns: AgentTurn[]): Array<AgentMessageBlock | AgentActivityBlock> {
   const blocks: Array<AgentMessageBlock | AgentActivityBlock> = [];
-  let activityTurns: Array<ThinkingTurn | ActivityTurn> = [];
 
   for (const turn of turns) {
     if (turn.kind === 'assistant') {
-      appendActivityBlock(blocks, activityTurns);
-      activityTurns = [];
       blocks.push({ kind: 'assistant', key: turn.key, turn });
     } else {
-      activityTurns.push(turn);
+      blocks.push({ kind: 'activity', key: `activity-${turn.key}`, turn });
     }
   }
-  appendActivityBlock(blocks, activityTurns);
   return blocks;
-}
-
-function appendActivityBlock(
-  blocks: Array<AgentMessageBlock | AgentActivityBlock>,
-  turns: Array<ThinkingTurn | ActivityTurn>,
-): void {
-  if (!turns.length) return;
-  blocks.push({ kind: 'activityGroup', key: `activity-${turns[0].key}`, turns });
 }
 
 function isActiveTurn(turn: AgentTurn): boolean {
