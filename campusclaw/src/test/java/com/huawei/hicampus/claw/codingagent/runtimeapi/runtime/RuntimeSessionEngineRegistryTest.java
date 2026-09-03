@@ -4,6 +4,7 @@
 
 package com.huawei.hicampus.claw.codingagent.runtimeapi.runtime;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
@@ -13,6 +14,10 @@ import static org.mockito.Mockito.when;
 
 import java.nio.file.Path;
 import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import com.huawei.hicampus.claw.agent.Agent;
 import com.huawei.hicampus.claw.ai.types.Model;
@@ -32,18 +37,34 @@ import org.mockito.ArgumentCaptor;
 class RuntimeSessionEngineRegistryTest {
 
     @Test
+    void releasesOperationLockWhenOperationFails() throws Exception {
+        RuntimeSessionEngineRegistry registry = registry(1);
+
+        assertThatThrownBy(() -> registry.withOperationLock("session-a", () -> {
+                    throw new IllegalStateException("expected test failure");
+                }))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("expected test failure");
+
+        ExecutorService executor =
+                Executors.newThreadPerTaskExecutor(Thread.ofVirtual().factory());
+        try {
+            Future<String> nextOperation =
+                    executor.submit(() -> registry.withOperationLock("session-a", () -> "completed"));
+
+            assertThat(nextOperation.get(1L, TimeUnit.SECONDS)).isEqualTo("completed");
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
     void duplicateRegistrationClosesTheRejectedSession() {
         AgentSessionFactory sessionFactory = mock(AgentSessionFactory.class);
         ManagedAgentSession firstSession = session(mock(Agent.class));
         ManagedAgentSession rejectedSession = session(mock(Agent.class));
         when(sessionFactory.create(any())).thenReturn(firstSession, rejectedSession);
-        var properties = new RuntimeExecutionProperties();
-        properties.setMaxActive(2);
-        var registry = new RuntimeSessionEngineRegistry(
-                sessionFactory,
-                mock(SubagentExecutionService.class),
-                mock(AgentScopedCronToolFactory.class),
-                properties);
+        var registry = registry(sessionFactory, 2);
         var snapshot = new AgentDirectorySnapshotDTO(
                 "agent-a", "model-a", List.of("model-a"), Path.of("/agent-a"), Path.of("/agent-a/.campusclaw"));
         Model model = mock(Model.class);
@@ -74,5 +95,19 @@ class RuntimeSessionEngineRegistryTest {
         ManagedAgentSession session = mock(ManagedAgentSession.class);
         when(session.agent()).thenReturn(agent);
         return session;
+    }
+
+    private static RuntimeSessionEngineRegistry registry(int maxActive) {
+        return registry(mock(AgentSessionFactory.class), maxActive);
+    }
+
+    private static RuntimeSessionEngineRegistry registry(AgentSessionFactory sessionFactory, int maxActive) {
+        var properties = new RuntimeExecutionProperties();
+        properties.setMaxActive(maxActive);
+        return new RuntimeSessionEngineRegistry(
+                sessionFactory,
+                mock(SubagentExecutionService.class),
+                mock(AgentScopedCronToolFactory.class),
+                properties);
     }
 }

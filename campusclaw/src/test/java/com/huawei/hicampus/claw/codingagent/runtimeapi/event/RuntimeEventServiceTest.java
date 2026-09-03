@@ -9,6 +9,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -26,6 +27,7 @@ import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Supplier;
 
 import com.huawei.hicampus.claw.agent.Agent;
 import com.huawei.hicampus.claw.ai.types.Model;
@@ -287,6 +289,14 @@ class RuntimeEventServiceTest {
                     new RuntimeSessionModelReconciler(repository, resolver, modelManager, codec, idGenerator, clock);
             service = new RuntimeEventService(
                     repository, codec, idGenerator, registry, contextFactory, coordinator, reconciler, clock);
+            when(registry.withOperationLock(anyString(), any(Supplier.class)))
+                    .thenAnswer(invocation -> ((Supplier<?>) invocation.getArgument(1)).get());
+            doAnswer(invocation -> {
+                        ((Runnable) invocation.getArgument(1)).run();
+                        return null;
+                    })
+                    .when(registry)
+                    .withOperationLock(anyString(), any(Runnable.class));
             prepareAcceptedExecution();
         }
 

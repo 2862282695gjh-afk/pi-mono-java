@@ -9,6 +9,7 @@ import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.Supplier;
 
 import com.campusclaw.ai.types.Message;
 import com.campusclaw.ai.types.Model;
@@ -100,12 +101,21 @@ public class RuntimeSessionEngineRegistry {
         }
     }
 
-    public void lockOperation(String sessionId) {
-        operationLock(sessionId).lock();
+    public <T> T withOperationLock(String sessionId, Supplier<T> operation) {
+        ReentrantLock lock = operationLock(sessionId);
+        lock.lock();
+        try {
+            return operation.get();
+        } finally {
+            lock.unlock();
+        }
     }
 
-    public void unlockOperation(String sessionId) {
-        operationLock(sessionId).unlock();
+    public void withOperationLock(String sessionId, Runnable operation) {
+        withOperationLock(sessionId, () -> {
+            operation.run();
+            return null;
+        });
     }
 
     private RuntimeSessionHolder createHolder(
