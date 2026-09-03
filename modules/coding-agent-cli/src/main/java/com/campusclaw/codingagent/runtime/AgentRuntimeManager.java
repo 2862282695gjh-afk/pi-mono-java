@@ -414,12 +414,12 @@ public class AgentRuntimeManager {
         if (!matches(agentId, ResourceIdentifierPatterns.AGENT_ID_PATTERN)) {
             throw new IllegalArgumentException("Invalid agentId");
         }
-        return properties
-                .agentsRoot()
-                .toAbsolutePath()
-                .normalize()
-                .resolve(agentId)
-                .normalize();
+        Path agentsRoot = properties.agentsRoot().toAbsolutePath().normalize();
+        Path agentRoot = agentsRoot.resolve(agentId).normalize();
+        if (!agentRoot.startsWith(agentsRoot)) {
+            throw new IllegalArgumentException("Resolved Agent path escapes agents root");
+        }
+        return agentRoot;
     }
 
     private <T> T withAgentLock(String agentId, SupplierWithException<T> action) {

@@ -178,6 +178,26 @@ class AgentRuntimeManagerTest {
     }
 
     @Test
+    void rejectsNormalizedAgentPathOutsideConfiguredRoot() {
+        Path configuredRoot = mock(Path.class);
+        Path normalizedRoot = mock(Path.class);
+        Path unresolvedAgentRoot = mock(Path.class);
+        Path escapedAgentRoot = mock(Path.class);
+        when(configuredRoot.toAbsolutePath()).thenReturn(normalizedRoot);
+        when(normalizedRoot.normalize()).thenReturn(normalizedRoot);
+        when(normalizedRoot.resolve(AGENT_ID)).thenReturn(unresolvedAgentRoot);
+        when(unresolvedAgentRoot.normalize()).thenReturn(escapedAgentRoot);
+        when(escapedAgentRoot.startsWith(normalizedRoot)).thenReturn(false);
+        var properties = new AgentRuntimeProperties(configuredRoot, Duration.ofSeconds(1L), Duration.ofSeconds(2L));
+        var boundaryManager = new AgentRuntimeManager(properties, client, new ObjectMapper());
+
+        IllegalArgumentException exception =
+                assertThrows(IllegalArgumentException.class, () -> boundaryManager.prepareCached(AGENT_ID));
+
+        assertEquals("Resolved Agent path escapes agents root", exception.getMessage());
+    }
+
+    @Test
     void nullSkillContentFailsPrepareWithoutPublishing() {
         when(client.getAgentRuntime(AGENT_ID)).thenReturn(runtime("1.0.0", "prompt-v1"));
         when(client.querySkillInfo(SKILL_ID)).thenReturn(skill(null));

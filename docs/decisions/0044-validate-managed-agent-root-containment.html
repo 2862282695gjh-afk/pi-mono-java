@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ADR-0044：校验受管 Agent 根路径包含关系</title>
+  <style>
+    :root { color-scheme: light; font-family: Inter, "PingFang SC", sans-serif; color: #25272a; background: #f2f5f7; }
+    body { margin: 0; }
+    main { width: min(920px, calc(100% - 40px)); margin: 40px auto; padding: 40px; box-sizing: border-box; background: #fff; border: 1px solid #d7dde2; border-radius: 16px; }
+    h1 { margin-top: 0; font-size: 30px; }
+    h2 { margin-top: 32px; font-size: 20px; }
+    h3 { margin-top: 22px; font-size: 17px; }
+    p, li { line-height: 1.75; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 10px 12px; border: 1px solid #d7dde2; text-align: left; vertical-align: top; }
+    th { width: 190px; background: #edf2f5; }
+    code { padding: 2px 5px; border-radius: 5px; background: #edf2f5; overflow-wrap: anywhere; }
+    a { color: #1769aa; }
+    .status { display: inline-flex; padding: 4px 9px; border-radius: 999px; color: #12633a; background: #e8f7ed; font-weight: 650; }
+    @media (max-width: 640px) { main { width: 100%; margin: 0; padding: 24px 18px; border: 0; border-radius: 0; } th { width: 120px; } }
+  </style>
+</head>
+<body>
+<main>
+  <h1>ADR-0044：校验受管 Agent 根路径包含关系</h1>
+  <table>
+    <tr><th>Status</th><td><span class="status">Accepted</span></td></tr>
+    <tr><th>Date</th><td>2026-09-03</td></tr>
+    <tr><th>Source baseline</th><td><code>origin/main@c9d858bc8261bf07f5585f545b53495bf2226a56</code></td></tr>
+    <tr><th>Observed source</th><td><code>modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtime/AgentRuntimeManager.java</code>，符号 <code>requireAgentRoot</code>；<code>modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/common/identifier/ResourceIdentifierPatterns.java</code>，符号 <code>AGENT_ID_PATTERN</code></td></tr>
+    <tr><th>Classification</th><td>Security hardening</td></tr>
+  </table>
+
+  <h2>Context</h2>
+  <p>分析基线中，<code>AgentRuntimeManager#requireAgentRoot</code> 先要求 <code>agentId</code> 符合 <code>agent-</code> 加 32 位十六进制字符的领域格式，再调用 <code>agentsRoot.resolve(agentId).normalize()</code> 生成缓存目录。该格式不接受路径分隔符、<code>..</code> 或绝对路径，因此当前标准文件系统调用不能由普通请求构造目录逃逸。</p>
+  <p>路径拼接完成后没有独立验证结果仍位于规范化的 <code>agentsRoot</code> 下。安全边界因此隐式依赖 ID 正则，静态分析也无法从路径操作本身确认包含关系。未来正则、配置绑定或文件系统提供者变化时，缺少后置校验会扩大回归风险。</p>
+
+  <h2>Decision drivers</h2>
+  <ul>
+    <li>让每个动态路径拼接点自身具备可审计的根目录包含性保证。</li>
+    <li>保留现有领域 ID 校验，不降低对非法输入的拒绝强度。</li>
+    <li>在任何文件读取、目录创建或远端访问前失败。</li>
+    <li>不改变合法 Agent 的磁盘布局与缓存、refresh 或发布行为。</li>
+  </ul>
+
+  <h2>Considered options</h2>
+  <h3>只依赖 Agent ID 正则</h3>
+  <p><strong>优点：</strong>不增加代码。<br><strong>缺点：</strong>路径安全与领域格式规则耦合，拼接结果没有独立、显式且 fail-closed 的验证。拒绝。</p>
+
+  <h3>仅检查字符串前缀</h3>
+  <p><strong>优点：</strong>实现直观。<br><strong>缺点：</strong>字符串前缀会把相邻目录名误判为子目录，例如 <code>/agent-other</code> 可匹配 <code>/agent</code>，并且绕过文件系统路径段语义。拒绝。</p>
+
+  <h3>规范化 Path 后使用 startsWith 校验</h3>
+  <p><strong>优点：</strong>按文件系统路径段判断包含关系，直接保护 <code>resolve</code> 的结果，并与现有格式校验形成双层边界。<br><strong>缺点：</strong>在当前严格 ID 正则下属于冗余校验，但该冗余是有意的纵深防御。接受。</p>
+
+  <h2>Decision</h2>
+  <ul>
+    <li>先把配置的 <code>agentsRoot</code> 转为绝对路径并规范化。</li>
+    <li>以规范化根目录执行 <code>resolve(agentId)</code> 并再次规范化。</li>
+    <li>要求结果 <code>startsWith</code> 规范化根目录；失败时抛出 <code>IllegalArgumentException</code>。</li>
+    <li>保留 <code>AGENT_ID_PATTERN</code> 前置校验，使非法领域 ID 在路径操作前被拒绝。</li>
+    <li>增加独立回归测试，模拟路径解析结果位于配置根目录之外，证明后置校验会阻止后续访问。</li>
+  </ul>
+
+  <h2>Intentional difference</h2>
+  <p><strong>安全加固：</strong>合法 Agent 的行为与目录布局不变；新增行为只在规范化结果不属于配置根目录时 fail closed。该校验不是对 pi 既有行为的描述，而是 CampusClaw Java 实现新增的路径边界保证。</p>
+
+  <h2>Consequences</h2>
+  <ul>
+    <li>正面：动态路径拼接点可以独立证明不会逃逸 <code>agentsRoot</code>。</li>
+    <li>正面：将来即使 ID 规则被放宽，路径包含性仍有独立保护。</li>
+    <li>兼容性：所有当前合法 <code>agentId</code> 继续解析为原目录。</li>
+    <li>失败语义：包含性验证失败时，在文件系统或 Mate 产生副作用前抛出参数异常。</li>
+  </ul>
+
+  <h2>Validation</h2>
+  <ul>
+    <li>执行 <code>AgentRuntimeManagerTest</code>，覆盖非法 ID 与规范化结果逃逸两种拒绝路径。</li>
+    <li>执行格式、Checkstyle、模块测试、镜像同步与 Git diff 检查。</li>
+    <li>验证设计文档不含 Mermaid、PlantUML 为 ASCII、SVG 与源码链接有效。</li>
+  </ul>
+
+  <h2>Related</h2>
+  <ul>
+    <li><a href="../designs/agent-skill-runtime.md">Agent 与 Skill 受管运行目录设计</a></li>
+    <li><a href="0022-managed-agent-tool-system-v2.html">ADR-0022：统一受管 Agent 工具系统 v2</a></li>
+  </ul>
+</main>
+</body>
+</html>
