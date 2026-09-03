@@ -20,6 +20,11 @@ public class RuntimeApiException extends RuntimeException {
         this.errorCode = errorCode;
     }
 
+    public RuntimeApiException(RuntimeErrorCode errorCode, Throwable cause) {
+        super(errorCode.name(), cause, false, false);
+        this.errorCode = errorCode;
+    }
+
     public HttpStatus status() {
         return errorCode.status();
     }

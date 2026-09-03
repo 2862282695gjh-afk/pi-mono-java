@@ -1,6 +1,6 @@
 # Coding Agent Runtime HTTP 与受管 Session 设计
 
-> 文档版本：3.5.0
+> 文档版本：3.5.1
 >
 > PR 167 修订基线：`f60cc3e78bb8b700527ac082c7c8e10524ede095`
 >
@@ -13,6 +13,8 @@
 > 压缩取消释放修复基线：`8081b5882f0f95ea37f1a36c659265c723bcd3ef`
 >
 > Agent 根目录配置清理基线：`1b3b519419ca9bf9025ba2c88335382b9a5b3b02`
+>
+> 模型异常因果链修复源码基线：`c9d858bc8261bf07f5585f545b53495bf2226a56`
 >
 > 源码仓库：本仓库 `pi-mono-java`
 
@@ -54,6 +56,7 @@ Assistant/Compaction 完成保存本次 Usage，模型/思考/压缩形成持久
 | 国际化资源显式区分两个 Locale | `modules/coding-agent-cli/src/main/resources/i18n/messages_{en_US,zh_CN}.properties`、`RuntimeMessageSourceConfiguration` |
 | 语言选择按范围和权重协商 | `RuntimeRequestContext#locale`、`RuntimeRequestContext#language` |
 | HTTP 与 SSE 错误通过 MessageSource 取文案 | `RuntimeExceptionHandler#response`、`RuntimeTerminalEventFactory#emitError` |
+| 模型可用性校验与稳定错误码映射 | `runtimeapi/model/RuntimeModelManager.java`，`RuntimeModelManager#resolveAvailableModel`；`runtimeapi/error/RuntimeApiException.java` 的构造器 |
 | 内置工具由关闭枚举和 profile 装配 | `tool/builtin/BuiltInToolName.java`、`BuiltInToolProperties.java`、`DefaultConfiguredToolAssembler.java` |
 | MateService 工具通过专用客户端查询和调用 | `common/client/mate/MateToolClient.java`、`tool/mate/ListMateToolsTool.java`、`CallMateTool.java` |
 
@@ -183,6 +186,18 @@ Provider 则持有独立的 WebClient SSE `Disposable`。目标决策是事件 F
 `RuntimeErrorCode` 是错误码、HTTP 状态、国际化 key 和可选 `Retry-After` 的唯一目录。
 错误消息资源 key 与枚举名称一致，异常调用点不能自行拼装 HTTP 状态。
 
+源码基线中的 `RuntimeModelManager#resolveAvailableModel` 会把
+`AGENT_MODEL_NOT_CONFIGURED` 等内部模型解析错误统一映射为 `MODEL_NOT_AVAILABLE`，以免公开接口
+泄露模型配置状态；但包装时没有关联已捕获的 `RuntimeApiException`，导致内部错误码随新异常丢失。
+目标实现为 `RuntimeApiException` 增加保留 cause、但仍禁用包装异常自身栈跟踪的构造器，并仅在该
+错误码映射分支使用。`MANAGER_UNAVAILABLE` 继续原样传播，首次可用性检查失败仍直接生成无 cause 的
+`MODEL_NOT_AVAILABLE`。`RuntimeExceptionHandler` 仍只读取外层 `errorCode` 构造 HTTP 响应，因此该
+调整不改变状态码、响应体或国际化文案，也不向客户端暴露 cause。
+
+这是一项内部错误传播架构修正：在保留防枚举产品约束的同时，让进程内调用方和诊断代码可以沿
+异常因果链定位原始分类。方案与取舍见
+[ADR-0044](../decisions/0044-preserve-runtime-model-resolution-cause.html)。
+
 活动执行仍是进程内资源。如果数据库状态为 `running`，但 Steer、FollowUp 或 Abort 请求没有命中执行实例，
 服务返回 `503 SESSION_EXECUTION_UNAVAILABLE` 和 `Retry-After: 3`。这是对现有执行归属边界的显式表达；
 本次整改没有假设粘性路由或跨实例转发基础设施。
@@ -238,6 +253,7 @@ Runtime V1 事件名 `tool.execution.started` 与 `tool.execution.completed` 是
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 3.5.1 | 2026-09-03 | 模型可用性错误码转换保留原始异常 cause，同时维持对外 `MODEL_NOT_AVAILABLE` 防枚举语义。 |
 | 3.5.0 | 2026-09-01 | 对齐 CampusClaw 公司镜像的新目录、Java 包、同步入口和独立公司构建边界。 |
 | 3.4.0 | 2026-08-31 | 统一事件 Flux 与结果 Mono 的取消传播；压缩中止时释放 Mate SSE 订阅并终止事件累积。 |
 | 3.3.1 | 2026-08-31 | 删除 Mate 配置中未绑定的旧 Agent 根目录配置，统一使用 `campusmate.runtime.agents-root` 和 `CAMPUSCLAW_AGENTS_ROOT`。 |
