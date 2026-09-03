@@ -85,7 +85,11 @@ public class RuntimeSessionControlService {
     private ControlMessageAcceptedResponseVO accept(
             String sessionId, ControlMessageRequestVO request, ControlKind kind) {
         requireRequest(request, kind.invalidRequest());
-        engineRegistry.lockOperation(sessionId);
+        return engineRegistry.withOperationLock(sessionId, () -> acceptLocked(sessionId, request, kind));
+    }
+
+    private ControlMessageAcceptedResponseVO acceptLocked(
+            String sessionId, ControlMessageRequestVO request, ControlKind kind) {
         try {
             RuntimeSessionDTO session = requireSession(sessionId);
             RuntimeSessionHolder holder = requireRunningHolder(session);
@@ -110,29 +114,26 @@ public class RuntimeSessionControlService {
                             "runtime.session.control.accept",
                             errorCode.name());
             throw new RuntimeApiException(errorCode);
-        } finally {
-            engineRegistry.unlockOperation(sessionId);
         }
     }
 
     private CompletableFuture<Void> prepareAbort(String sessionId) {
-        engineRegistry.lockOperation(sessionId);
-        try {
-            RuntimeSessionDTO session = requireSession(sessionId);
-            if (RuntimeSessionState.IDLE.matches(session.getState())) {
-                engineRegistry.find(sessionId).ifPresent(this::clearControlQueues);
-                return CompletableFuture.completedFuture(null);
-            }
-            RuntimeSessionHolder holder = requireRunningHolder(session);
-            RuntimeActiveExecution execution = holder.activeExecution()
-                    .orElseThrow(() -> new RuntimeApiException(RuntimeErrorCode.SESSION_EXECUTION_UNAVAILABLE));
-            execution.requestAbort();
-            clearControlQueues(holder);
-            holder.abort();
-            return execution.completion();
-        } finally {
-            engineRegistry.unlockOperation(sessionId);
+        return engineRegistry.withOperationLock(sessionId, () -> prepareAbortLocked(sessionId));
+    }
+
+    private CompletableFuture<Void> prepareAbortLocked(String sessionId) {
+        RuntimeSessionDTO session = requireSession(sessionId);
+        if (RuntimeSessionState.IDLE.matches(session.getState())) {
+            engineRegistry.find(sessionId).ifPresent(this::clearControlQueues);
+            return CompletableFuture.completedFuture(null);
         }
+        RuntimeSessionHolder holder = requireRunningHolder(session);
+        RuntimeActiveExecution execution = holder.activeExecution()
+                .orElseThrow(() -> new RuntimeApiException(RuntimeErrorCode.SESSION_EXECUTION_UNAVAILABLE));
+        execution.requestAbort();
+        clearControlQueues(holder);
+        holder.abort();
+        return execution.completion();
     }
 
     private RuntimeSessionDTO requireSession(String sessionId) {
