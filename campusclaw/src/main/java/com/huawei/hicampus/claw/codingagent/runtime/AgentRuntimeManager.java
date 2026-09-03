@@ -415,6 +415,9 @@ public class AgentRuntimeManager {
         if (!matches(agentId, ResourceIdentifierPatterns.AGENT_ID_PATTERN)) {
             throw new IllegalArgumentException("Invalid agentId");
         }
+        if (!validatePath(properties.agentsRoot())) {
+            throw new IllegalArgumentException("Invalid agents root path");
+        }
         try {
             Path agentsRoot = Path.of(properties.agentsRoot().toFile().getCanonicalPath());
             Path expectedAgentRoot = agentsRoot.resolve(agentId);
@@ -430,6 +433,18 @@ public class AgentRuntimeManager {
         } catch (IOException exception) {
             throw new AgentRuntimeException("Failed to resolve canonical Agent root", exception);
         }
+    }
+
+    private static boolean validatePath(Path path) {
+        if (path == null || path.toString().isBlank() || !path.equals(path.normalize())) {
+            return false;
+        }
+        for (Path segment : path) {
+            if (segment.toString().equals(".") || segment.toString().equals("..")) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private <T> T withAgentLock(String agentId, SupplierWithException<T> action) {

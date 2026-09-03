@@ -179,6 +179,19 @@ class AgentRuntimeManagerTest {
     }
 
     @Test
+    void rejectsInvalidConfiguredAgentsRootBeforePathResolution() {
+        Path invalidAgentsRoot = tempDir.resolve("cache").resolve("..").resolve("agent");
+        var properties = new AgentRuntimeProperties(invalidAgentsRoot, Duration.ofSeconds(1L), Duration.ofSeconds(2L));
+        var boundaryManager = new AgentRuntimeManager(properties, client, new ObjectMapper());
+
+        IllegalArgumentException exception =
+                assertThrows(IllegalArgumentException.class, () -> boundaryManager.prepareCached(AGENT_ID));
+
+        assertEquals("Invalid agents root path", exception.getMessage());
+        verifyNoInteractions(client);
+    }
+
+    @Test
     void rejectsCanonicalAgentPathOutsideConfiguredRoot() throws Exception {
         Path agentsRoot = tempDir.resolve("agent");
         Path outsideRoot = tempDir.resolve("outside");
