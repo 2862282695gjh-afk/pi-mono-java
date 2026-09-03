@@ -1,131 +1,126 @@
-# CI 单提交新增代码行门禁设计
+# CI PR 新增代码行门禁设计
 
 ## 文档信息
 
 | 项目 | 内容 |
 |---|---|
-| 文档版本 | v1.1 |
-| 变更前源码基线 | `origin/main@c9d858bc8261bf07f5585f545b53495bf2226a56` |
-| 集成基线 | `origin/main@c2e8564d55f4408d32d7bf94ea164b6ee9adbf62` |
-| 评审实现提交 | `93a0c11952218cb03cb4f9b89927e2280820dbce` |
-| 实现分支 | `codex/ci-addition-limit` |
-| 适用范围 | GitHub Actions、提交新增行检查脚本及其回归测试 |
-| 变更类型 | 仓库 CI 架构变化 |
+| 文档版本 | v2.0 |
+| 变更前源码基线 | `origin/main@2df1ffd0b15044221ea1facd43b0797f5cdbb098` |
+| 评审实现提交 | `e7b68fd5a1b9c4699d30635d06b9467f3b8bdf2f` |
+| 实现分支 | `codex/pr-addition-limit` |
+| 适用范围 | GitHub Actions、PR 新增行检查脚本及其回归测试 |
+| 变更类型 | 产品约束调整、仓库 CI 架构变化 |
 | 决策状态 | Accepted |
 
 ## 1. Context
 
-变更前，`.github/workflows/ci.yml` 在 `pull_request` 和 `main` 分支 `push` 事件上执行 Spotless 与 Maven `verify`，但不限制单个提交的新增规模。大提交可以在已有格式化和构建门禁全部通过后进入评审，使改动难以逐提交理解、回滚和定位。
+源码基线已经提供单提交新增行门禁：PR 内每个提交最多新增 2000 行非文档内容，多个分别合规的提交可以使整个 PR 超过 2000 行。该行为控制提交粒度，但不能满足“整个 PR 的新增代码不得超过 2000 行”的产品约束，也允许通过拆分提交绕过 PR 规模限制。
 
-本次目标是在现有 CI 构建前增加单提交门禁：每个提交最多新增 2000 行非文档内容；文档不参与统计。该规则约束提交粒度，不限制整个 PR 的累计新增行数，也不修改 Java、HTTP、数据库或运行时契约。
+目标设计改为统计 PR 最终状态相对目标分支共同祖先的新增非文档代码行。门禁只度量最终送审差异，不累计中间提交已经删除或改写的瞬态内容；文档排除、文档移入代码目录的完整计费和 Git 读取失败时关闭门禁的规则保持不变。
 
-## 2. 变更前源码证据
+## 2. 源码证据
 
-以下观察均来自变更前基线 `origin/main@c9d858bc8261bf07f5585f545b53495bf2226a56`：
+以下观察来自变更前基线 `origin/main@2df1ffd0b15044221ea1facd43b0797f5cdbb098`：
 
 | 观察到的行为 | 源码证据 |
 |---|---|
-| CI 由 `pull_request(main)` 和 `push(main)` 触发 | `.github/workflows/ci.yml:3-7`，`on` |
-| Checkout 使用 `actions/checkout@v4` 的默认历史深度 | `.github/workflows/ci.yml:13`，`build.steps` |
-| Checkout 后直接配置 JDK、执行 Spotless 和 Maven `verify` | `.github/workflows/ci.yml:15-26`，`build.steps` |
-| 仓库没有对应的提交新增行检查脚本或测试 | `scripts/` 目录在该基线下仅包含 Claude hook、Git hook 和公司镜像同步脚本 |
+| CI 在 PR 和 `main` push 上调用新增行脚本及其测试 | `.github/workflows/ci.yml:3-24`，`build.steps` |
+| 门禁上限为 2000 行，文档路径与常见文档扩展名不参与统计 | `scripts/check-commit-additions.sh:6,18-38`，`MAX_ADDED_LINES`、`is_documentation_path` |
+| 脚本枚举 merge-base 到 head 的每个提交并逐一比较上限 | `scripts/check-commit-additions.sh:96-163,172-202`，`check_commit` 及提交循环 |
+| 普通提交、二父合并提交分别使用 `diff-tree`、`remerge-diff` 读取差异 | `scripts/check-commit-additions.sh:40-81`，`write_commit_stats` |
+| 两个各新增 1500 行的提交被明确测试为通过 | `scripts/tests/check-commit-additions-test.sh:109-116`，`test_basic_limits` |
 
-`scripts/check-commit-additions.sh`、`scripts/tests/check-commit-additions-test.sh` 及其行为均为本次 target-only 设计，不作为变更前已有能力描述。
-
-以下目标实现证据固定在评审实现提交 `93a0c11952218cb03cb4f9b89927e2280820dbce`：
+以下目标实现证据固定在评审实现提交 `e7b68fd5a1b9c4699d30635d06b9467f3b8bdf2f`：
 
 | 目标行为 | 实现证据 |
 |---|---|
-| CI 拉取完整历史并传入 base/head SHA，随后运行门禁测试 | `.github/workflows/ci.yml:13-24` |
-| 普通提交使用 `diff-tree`，二父合并提交使用 `--remerge-diff`，所有 Git 读取显式检查状态 | `scripts/check-commit-additions.sh:40-81`，`write_commit_stats` |
-| 文档移入代码目录时读取目标 Blob 并按完整文本行数统计 | `scripts/check-commit-additions.sh:83-94`，`count_blob_lines`；`scripts/check-commit-additions.sh:121-143`，`check_commit` |
-| 提交枚举写入临时文件，避免 process substitution 丢失 producer 退出状态 | `scripts/check-commit-additions.sh:165-202` |
-| 回归覆盖边界、重命名、合并、冲突解决和 Git 读取失败 | `scripts/tests/check-commit-additions-test.sh:86-234` |
+| 脚本求 merge-base 后只对 merge-base 与 head 执行一次 rename-aware `git diff --numstat` | `scripts/check-commit-additions.sh:53-70,118-132`，`check_pull_request` |
+| 所有非文档路径的最终新增行汇总后只比较一次 2000 行上限 | `scripts/check-commit-additions.sh:72-115`，`check_pull_request` |
+| 文档移入代码目录时读取 head 中的目标 Blob 并按完整文本行数统计 | `scripts/check-commit-additions.sh:40-51,80-97`，`count_blob_lines` |
+| 回归测试拒绝拆分到多个提交的 3000 行，并接受最终缩减为 1000 行的 PR | `scripts/tests/check-commit-additions-test.sh:109-133`，`test_basic_limits` |
+| CI 步骤名称明确为 PR 新增行门禁 | `.github/workflows/ci.yml:17-24` |
+
+本次从逐提交检查改为 PR 最终差异检查属于目标设计和产品约束调整，不是变更前已有行为。
 
 ## 3. 关键定义
 
-- **单提交：** PR 分支相对目标分支共同祖先可达的每个提交，包括普通提交和合并提交。
-- **普通提交新增代码行：** Git `diff-tree --numstat` 对非文档路径报告的文本新增行数。删除行不能抵扣新增行。
-- **合并提交独有新增行：** Git `--remerge-diff --numstat` 重建自动合并结果后，实际合并提交相对该结果新增的非文档文本行；目标分支和主题分支已有提交不重复计费。
+- **PR 比较基线：** CI 提供的目标分支 base revision 与 PR head revision 的共同祖先，即 `git merge-base base head`。
+- **PR 最终新增代码行：** Git 对比较基线与 head 最终树执行 `git diff --numstat -M` 后，所有非文档文本路径 additions 列的总和。deletions 列不抵扣 additions。
+- **最终差异语义：** 中间提交新增、但在 head 前已经删除或改写掉的内容不计入；门禁约束评审者最终看到的 PR 差异，而不是历史编辑次数。
 - **文档路径：** 任意 `docs`、`doc` 或 `documentation` 目录；Markdown、MDX、reStructuredText、AsciiDoc 文件；以及 README、CHANGELOG、CONTRIBUTING、LICENSE、NOTICE 标准文档文件。
-- **跨边界重命名：** 旧路径属于文档、目标路径不属于文档时，按目标文件的完整文本行数计费；其他非文档重命名只累计 Git 报告的实际新增行。
-- **通过边界：** 新增代码行小于或等于 2000 行；2001 行起失败。
+- **跨边界重命名：** 旧路径属于文档、目标路径不属于文档时，按 head 中目标文件的完整文本行数计费；其他非文档重命名只累计 Git 报告的实际新增行。
+- **通过边界：** PR 最终新增代码行小于或等于 2000 行；2001 行起失败。
 
 ## 4. 架构与数据流
 
-![单提交新增代码行门禁流程](commit-addition-limit/commit_addition_limit.svg)
+![PR 新增代码行门禁流程](commit-addition-limit/commit_addition_limit.svg)
 
 [PlantUML 源文件](commit-addition-limit/diagram.puml#L1)
 
-CI 使用完整 Git 历史解析事件提供的 base/head SHA。检查脚本先求共同祖先，再按提交顺序读取父提交：普通提交读取 rename-aware `diff-tree numstat`；二父合并提交读取 `remerge-diff numstat`，只度量自动合并之外的内容。解析时同时保留 rename 的旧、新路径，文档移入代码目录会读取目标 Blob 的完整文本行数。任一 Git 读取失败、无法解析或不支持的多父合并都会以执行错误拒绝放行；全部提交通过后才继续 JDK、Spotless 和 Maven 构建。
+CI Checkout 完整 Git 历史并传入 base/head SHA。脚本验证两个 revision、求共同祖先，然后将一次 rename-aware `git diff --numstat` 的结果写入临时文件。解析阶段保留重命名的旧、新路径，排除文档，并对文档移入代码目录的文件读取 head Blob 完整行数。所有计费路径汇总后只比较一次 2000 行上限；Git 读取或记录解析失败时返回执行错误，不把空输出解释为 0 行。
 
 ## 5. 设计决策
 
-正式决策见 [ADR-0047：限制每个提交的非文档新增行](../decisions/0047-limit-added-code-lines-per-commit.html)。
+新决策见 [ADR-0048：限制整个 PR 的非文档新增代码行](../decisions/0048-limit-added-code-lines-per-pull-request.html)。原 [ADR-0047：限制每个提交的非文档新增行](../decisions/0047-limit-added-code-lines-per-commit.html) 已被取代。
 
-### 5.1 按提交检查，不按 PR 汇总检查
+### 5.1 按 PR 最终差异汇总，不按提交检查
 
-规则目的是控制可评审、可回滚的提交单元。两个各新增 1500 行的提交分别合规，即使 PR 汇总为 3000 行；单个新增 2001 行的提交即使 PR 后续又删除内容，仍然失败。
+2000 行是整个 PR 的评审规模上限。拆分提交不能增加额度：两个各新增 1500 行、最终合计新增 3000 行的提交必须失败。相反，中间曾新增 2500 行、在 head 前缩减为 1000 行时按最终 1000 行通过，因为评审面只保留 1000 行。
 
-### 5.2 使用 Git 原生 numstat 与 remerge-diff
+### 5.2 使用 merge-base 到 head 的单次 Git numstat
 
-门禁统计版本库实际保存的提交差异，不依赖语言识别器或 GitHub API。普通提交使用 `git diff-tree --numstat -M`；二父合并提交使用 `git show --remerge-diff --numstat -M` 重建自动合并结果，只统计冲突解决或额外暂存内容造成的差异。二进制文件没有文本行数，不进入本门禁计数，仍由构建、资产规则和评审约束。
+直接比较 base 与 head 会在目标分支前进而 PR 尚未同步时，把目标分支的新内容误当成 PR 反向差异。先求共同祖先，再比较共同祖先与 head，可稳定度量 PR 自有最终内容。单次最终树差异天然覆盖普通提交、合并提交、冲突解决和 merge-only 内容，不再需要枚举父提交或调用 `remerge-diff`。
 
-### 5.3 以路径和文档扩展名排除文档
+### 5.3 保留文档排除和跨边界重命名防绕过
 
-排除规则集中在脚本函数内并由回归测试锁定。`docs` 等文档目录下的 HTML、SVG、PlantUML 或示例源码均作为文档排除；目录外的 HTML、YAML、JSON、测试和构建配置仍计入。rename 记录同时保留旧、新路径：从文档路径移入非文档路径时，读取提交中的目标 Blob 并按完整文本行数计费，不能利用 Git 的 `0/0` 纯重命名结果绕过门禁。
+文档不消耗代码新增行额度。rename 记录同时保留旧、新路径：从文档路径移入非文档路径时，Git 可能报告 `0/0` 纯重命名，因此必须读取 head 的目标 Blob 并按完整文本行数计费。code-to-code 纯重命名保持 0 新增。
 
-### 5.4 合并提交只计算自动合并之外的内容
+### 5.4 所有 Git 数据读取显式 fail-closed
 
-Git 合并提交相对任一父提交的普通 diff 都会重复包含另一分支历史。`remerge-diff` 以两个父提交重建自动合并，再比较实际合并树，因此无冲突同步不产生额外计费，冲突解决和 merge-only 新文件则受同一 2000 行上限约束。三父及以上 octopus merge 没有纳入当前产品工作流，门禁以执行错误拒绝而不是跳过。
-
-### 5.5 所有读取显式 fail-closed
-
-`set -e` 不负责门禁正确性。提交列表和每个 `numstat` 结果先由显式检查退出状态的 Git 命令写入临时文件，再由循环解析；父提交、目标 Blob、提交主题等关键读取也逐一检查。Git 对象缺失、版本不支持 `remerge-diff` 或输出无法解析时返回执行错误 2，不把空输出解释为 0 行。
+`git diff` 先在 `if ! ...; then` 中执行并写入临时文件，再由循环解析，不能依赖 process substitution 或 `set -e` 传播 producer 失败。revision、merge-base、目标 Blob和 numstat 记录任一不可读或不可解析时返回执行错误 2。
 
 ## 6. 边界情况
 
-- 2000 行通过，2001 行失败；空提交和纯删除提交计为 0。
-- 文档与代码在同一提交中出现时，只累计代码路径。
-- code-to-code 纯重命名通过 rename detection 保持 0 新增；docs-to-code 重命名按目标文件完整行数计费，包含同时修改后的内容。
-- 无冲突二父合并只复核其中普通提交，合并本身为 0；冲突解决或额外暂存内容按 `remerge-diff` 结果计费。
-- 三父及以上 octopus merge 当前不受支持并返回执行错误，不静默放行。
-- base 不是 head 的祖先时，以二者共同祖先确定 PR 自有提交，支持目标分支在 PR 开发期间前进。
-- 多个越界提交会在一次运行中分别报告，便于一次性修正。
-- 无共同祖先、无效 SHA、Git 对象读取失败或无法解析的记录属于门禁执行错误，返回退出码 2，不静默放行。
+- 2000 行通过，2001 行失败；纯删除的 additions 为 0。
+- 多个提交的最终新增行合并计费，不能通过拆分提交获得多个 2000 行额度。
+- 中间提交曾存在、但最终 head 已删除的内容不计入最终 PR 差异。
+- 文档与代码同时变化时只累计代码路径；二进制文件没有文本行数，不进入本门禁。
+- code-to-code 纯重命名计为 0；docs-to-code 重命名按 head 中目标文件完整文本行数计费。
+- 主题分支合并目标分支时，以共同祖先排除目标历史；冲突解决和 merge-only 新内容只要存在于最终 PR 树，就进入最终差异。
+- base 与 head 相同则新增 0 行；无共同祖先、无效 SHA、Git 对象不可读或 numstat 记录无法解析时失败关闭。
 
 ## 7. DFX
 
-- **性能：** 复杂度与 PR 自有提交数及其变更文件数线性相关；二父合并需要额外重建自动合并结果。完整 Checkout 增加历史拉取量，但避免依赖 GitHub API 和浅克隆补拉分支。
-- **可维护性：** 统计规则位于独立脚本，CI 只负责传递事件 SHA；脚本可在本地复现。
-- **可观测性：** 每个提交输出通过或失败摘要，失败时列出非文档文件新增行。
-- **安全性：** 脚本只读取 Git 对象，不执行提交中的内容，不需要额外 Token 权限；所有统计输入失败时关闭门禁。
-- **兼容性：** 使用 Bash、Git `remerge-diff` 和标准命令，适配当前仓库支持的 macOS/Linux 与 GitHub Ubuntu Runner；缺少所需 Git 能力时明确失败。
+- **性能：** 复杂度与 PR 最终变更文件和文本行数线性相关；不再逐提交读取父信息或重建合并，开销低于旧算法。
+- **可维护性：** 统计规则仍位于独立脚本，CI 只传递事件 SHA；保留原脚本路径以减少调用方迁移成本。
+- **可观测性：** 输出 PR 总新增行与 2000 行上限；失败时列出每个计费文件的新增行。
+- **安全性：** 脚本只读取 Git 对象，不执行 PR 内容；关键数据读取失败时关闭门禁。
+- **兼容性：** 使用 Bash 与 Git 标准命令，适配仓库支持的 macOS/Linux 和 GitHub Ubuntu Runner。
 
 ## 8. 契约改动
 
-- PR 与 `main` push 的 `build` Job 新增 `Commit addition limit` 和脚本回归测试步骤。
-- Checkout 改为 `fetch-depth: 0`，确保共同祖先与逐提交对象可用。
-- 新增 CI 失败契约：任意普通或合并提交新增非文档行超过 2000 时，构建步骤不再继续；统计无法完成时同样失败。
+- `scripts/check-commit-additions.sh` 的两个 revision 参数保持不变，但结果语义从“逐提交分别检查”改为“最终 PR 差异汇总检查”。
+- PR 与 `main` push 的 CI 步骤显示名改为 `Pull request addition limit`；push 事件仍以 before/after 范围执行相同的最终差异检查，作为合并后的防御性复核。
+- 新增 CI 失败契约：最终 PR 新增非文档代码超过 2000 行时停止后续构建；Git 统计无法完成时同样失败。
 - 不修改应用 API、持久化、配置键、模块镜像或运行时行为。
 
 ## 9. 测试
 
 `scripts/tests/check-commit-additions-test.sh` 使用临时 Git 仓库覆盖：
 
-- 恰好 2000 行通过；
-- 2001 行失败并报告 `2001/2000`；
-- 大体量 `docs` 内容和文档扩展名不计入；
-- PR 累计超过 2000、但每个提交均未越界时通过；
-- code-to-code 纯重命名不会被误记为全文件新增；docs-to-code 纯重命名及同时修改按目标完整内容计费；
-- 无冲突合并不重复计费，merge-only 新文件和超大冲突解决会失败；
-- 提交 Tree 对象不可读时返回执行错误 2，不能以 0 行假绿。
+- 恰好 2000 行通过，2001 行失败；
+- 两个提交分别新增 1500 行、最终合计 3000 行时失败；
+- 中间新增 2500 行、最终缩减到 1000 行时通过；
+- 大体量文档和文档扩展名不计入；
+- code-to-code 纯重命名保持 0，docs-to-code 纯重命名及同时修改按目标完整内容计费；
+- 合并目标分支不重复计费，merge-only 新文件和超大冲突解决进入最终差异；
+- PR head Tree 对象不可读时返回执行错误 2，不能以 0 行假绿。
 
 ## 10. 验证
 
 - 执行 `bash -n` 与 ShellCheck 校验两个脚本。
 - 执行脚本回归测试。
-- 对当前分支提交范围执行新增行门禁。
+- 对 `origin/main...HEAD` 执行 PR 新增行门禁。
 - 执行 `plantuml -tsvg docs/designs/commit-addition-limit/diagram.puml` 并验证 SVG XML。
 - 校验 Markdown 不含 Mermaid、PlantUML 仅含 ASCII、文档链接和 PlantUML 行锚有效。
 - 执行 `git diff --check` 和仓库 Maven `verify`。
@@ -134,5 +129,6 @@ Git 合并提交相对任一父提交的普通 diff 都会重复包含另一分�
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
-| v1.1 | 2026-09-03 | 按评审修复 Git 读取假绿、docs-to-code 重命名与 merge-only 绕过，固定评审实现提交，并将冲突 ADR 编号调整为 0047 |
+| v2.0 | 2026-09-03 | 将 2000 行限制从每个提交调整为整个 PR 的最终新增非文档代码行总量，并以 ADR-0048 取代 ADR-0047 |
+| v1.1 | 2026-09-03 | 修复 Git 读取假绿、docs-to-code 重命名与 merge-only 绕过，固定评审实现提交，并将冲突 ADR 编号调整为 0047 |
 | v1.0 | 2026-09-03 | 新增每个普通提交最多 2000 行非文档新增内容的 CI 门禁设计 |

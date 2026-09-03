@@ -14,13 +14,13 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Commit addition limit
+      - name: Pull request addition limit
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: ./scripts/check-commit-additions.sh "$BASE_SHA" "$HEAD_SHA"
 
-      - name: Commit addition limit tests
+      - name: Pull request addition limit tests
         run: ./scripts/tests/check-commit-additions-test.sh
 
       - name: Set up JDK 21

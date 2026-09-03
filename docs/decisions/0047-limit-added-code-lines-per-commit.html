@@ -17,7 +17,7 @@
     th { width: 190px; background: #edf2f5; }
     code { padding: 2px 5px; border-radius: 5px; background: #edf2f5; overflow-wrap: anywhere; }
     a { color: #1769aa; }
-    .status { display: inline-flex; padding: 4px 9px; border-radius: 999px; color: #12633a; background: #e8f7ed; font-weight: 650; }
+    .status { display: inline-flex; padding: 4px 9px; border-radius: 999px; color: #7a4214; background: #fff1df; font-weight: 650; }
     @media (max-width: 640px) { main { width: 100%; margin: 0; padding: 24px 18px; border: 0; border-radius: 0; } th { width: 120px; } }
   </style>
 </head>
@@ -25,11 +25,12 @@
 <main>
   <h1>ADR-0047：限制每个提交的非文档新增行</h1>
   <table>
-    <tr><th>Status</th><td><span class="status">Accepted</span></td></tr>
+    <tr><th>Status</th><td><span class="status">Superseded</span></td></tr>
     <tr><th>Date</th><td>2026-09-03</td></tr>
     <tr><th>Source baseline</th><td><code>origin/main@c9d858bc8261bf07f5585f545b53495bf2226a56</code></td></tr>
     <tr><th>Integration baseline</th><td><code>origin/main@c2e8564d55f4408d32d7bf94ea164b6ee9adbf62</code></td></tr>
     <tr><th>Reviewed implementation</th><td><code>93a0c11952218cb03cb4f9b89927e2280820dbce</code></td></tr>
+    <tr><th>Superseded by</th><td><a href="0048-limit-added-code-lines-per-pull-request.html">ADR-0048：限制整个 PR 的非文档新增代码行</a></td></tr>
     <tr><th>Observed source</th><td><code>.github/workflows/ci.yml:3-7,13,15-26</code>、<code>scripts/</code></td></tr>
     <tr><th>Change class</th><td>仓库 CI 架构变化</td></tr>
   </table>
@@ -93,7 +94,8 @@
 
   <h2>Related</h2>
   <ul>
-    <li><a href="../designs/commit-addition-limit.md">CI 单提交新增代码行门禁设计 v1.1</a></li>
+    <li><a href="0048-limit-added-code-lines-per-pull-request.html">ADR-0048：限制整个 PR 的非文档新增代码行</a></li>
+    <li><a href="../designs/commit-addition-limit.md">CI PR 新增代码行门禁设计 v2.0</a></li>
     <li><a href="../designs/commit-addition-limit/diagram.puml#L1">PlantUML 源文件</a></li>
   </ul>
 </main>

@@ -14,8 +14,8 @@ initialize_repository() {
 
   test_repository="$test_root/$name"
   git init -q -b main "$test_repository"
-  git -C "$test_repository" config user.name "Commit Addition Test"
-  git -C "$test_repository" config user.email "commit-addition-test@example.com"
+  git -C "$test_repository" config user.name "Pull Request Addition Test"
+  git -C "$test_repository" config user.email "pull-request-addition-test@example.com"
 }
 
 write_lines() {
@@ -90,6 +90,7 @@ test_basic_limits() {
   local split_head
   local renamed_head
   local docs_head
+  local reduced_head
 
   initialize_repository basic
   write_lines 1 "$test_repository/README.md"
@@ -110,7 +111,8 @@ test_basic_limits() {
   commit_all "first acceptable commit" >/dev/null
   write_lines 1500 "$test_repository/src/second.java"
   split_head="$(commit_all "second acceptable commit")"
-  assert_passes "checks each commit instead of the aggregate diff" "$baseline" "$split_head"
+  assert_fails_with "rejects aggregate additions split across commits" \
+    "$baseline" "$split_head" "3000/2000"
 
   git -C "$test_repository" mv src/first.java src/renamed.java
   renamed_head="$(commit_all "rename code without additions")"
@@ -121,6 +123,14 @@ test_basic_limits() {
   write_lines 2500 "$test_repository/REFERENCE.RST"
   docs_head="$(commit_all "documentation only")"
   assert_passes "ignores documentation paths and extensions" "$baseline" "$docs_head"
+
+  git -C "$test_repository" switch -q -c final-diff "$baseline"
+  write_lines 2500 "$test_repository/src/reduced.java"
+  commit_all "add transient oversized content" >/dev/null
+  write_lines 1000 "$test_repository/src/reduced.java"
+  reduced_head="$(commit_all "reduce content before review")"
+  assert_passes "measures the final pull-request diff instead of historical churn" \
+    "$baseline" "$reduced_head"
 }
 
 test_document_to_code_renames() {
@@ -174,7 +184,7 @@ test_merge_commits() {
   write_lines 2001 "$test_repository/src/merge-only.java"
   merge_only_head="$(commit_all "merge with additional code")"
   assert_fails_with "counts content unique to a merge commit" \
-    "$main_head" "$merge_only_head" "2001/2000"
+    "$main_head" "$merge_only_head" "2002/2000"
 }
 
 test_conflict_resolution() {
@@ -223,8 +233,8 @@ test_git_read_failure() {
   object_path="$test_repository/.git/objects/${tree:0:2}/${tree:2}"
   mv "$object_path" "$object_path.missing"
 
-  assert_exits_with "fails closed when a commit tree is unreadable" 2 \
-    "$baseline" "$head" "cannot read diff for commit"
+  assert_exits_with "fails closed when a pull-request tree is unreadable" 2 \
+    "$baseline" "$head" "cannot read pull-request diff"
 }
 
 test_basic_limits
@@ -233,4 +243,4 @@ test_merge_commits
 test_conflict_resolution
 test_git_read_failure
 
-echo "PASS: commit addition limit tests"
+echo "PASS: pull-request addition limit tests"
