@@ -58,11 +58,9 @@ public class SkillCommandSource implements CommandDefinitionSource {
         }
         List<CommandDefinition> definitions = new ArrayList<>();
         for (SkillInfo skill : prepared.skills()) {
-            descriptor(session, prepared, skill)
-                    .ifPresent(descriptor -> definitions.add(new CommandDefinition(descriptor)));
+            definition(session, prepared, skill).ifPresent(definitions::add);
         }
-        definitions.sort(
-                Comparator.comparing(definition -> definition.descriptor().getName()));
+        definitions.sort(Comparator.comparing(CommandDefinition::name));
         return definitions;
     }
 
@@ -70,7 +68,7 @@ public class SkillCommandSource implements CommandDefinitionSource {
         return agentRuntimeManager.prepareCached(session.getAgentId());
     }
 
-    private Optional<CommandDescriptorDTO> descriptor(
+    private Optional<CommandDefinition> definition(
             RuntimeSessionDTO session, PreparedAgentRuntime prepared, SkillInfo skill) {
         String skillName = skill.name();
         if (!SkillNameValidator.isValid(skillName) || !hasSkillMarkdown(prepared, skillName)) {
@@ -88,7 +86,7 @@ public class SkillCommandSource implements CommandDefinitionSource {
             descriptor.setUnavailableCode(busyCode);
         }
         descriptor.setInput(inputDescriptor(idle, busyCode));
-        return Optional.of(descriptor);
+        return Optional.of(new CommandDefinition(descriptor.getName(), CommandKind.SKILL, descriptor));
     }
 
     private CommandInputDescriptorDTO inputDescriptor(boolean idle, String busyCode) {

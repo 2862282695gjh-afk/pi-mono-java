@@ -58,34 +58,17 @@ public class SkillCommandSource implements CommandDefinitionSource {
         }
         List<CommandDefinition> definitions = new ArrayList<>();
         for (SkillInfo skill : prepared.skills()) {
-            descriptor(session, prepared, skill)
-                    .ifPresent(descriptor -> definitions.add(new CommandDefinition(descriptor)));
+            definition(session, prepared, skill).ifPresent(definitions::add);
         }
-        definitions.sort(
-                Comparator.comparing(definition -> definition.descriptor().getName()));
+        definitions.sort(Comparator.comparing(CommandDefinition::name));
         return definitions;
-    }
-
-    @Override
-    public Optional<CommandDefinition> find(RuntimeSessionDTO session, String name) {
-        String skillName = skillNameOf(name);
-        if (skillName == null) {
-            return Optional.empty();
-        }
-        PreparedAgentRuntime prepared = preparedRuntime(session);
-        if (prepared == null) {
-            return Optional.empty();
-        }
-        return prepared.findSkill(skillName)
-                .flatMap(skill -> descriptor(session, prepared, skill))
-                .map(CommandDefinition::new);
     }
 
     private PreparedAgentRuntime preparedRuntime(RuntimeSessionDTO session) {
         return agentRuntimeManager.prepareCached(session.getAgentId());
     }
 
-    private Optional<CommandDescriptorDTO> descriptor(
+    private Optional<CommandDefinition> definition(
             RuntimeSessionDTO session, PreparedAgentRuntime prepared, SkillInfo skill) {
         String skillName = skill.name();
         if (!SkillNameValidator.isValid(skillName) || !hasSkillMarkdown(prepared, skillName)) {
@@ -103,7 +86,7 @@ public class SkillCommandSource implements CommandDefinitionSource {
             descriptor.setUnavailableCode(busyCode);
         }
         descriptor.setInput(inputDescriptor(idle, busyCode));
-        return Optional.of(descriptor);
+        return Optional.of(new CommandDefinition(descriptor.getName(), CommandKind.SKILL, descriptor));
     }
 
     private CommandInputDescriptorDTO inputDescriptor(boolean idle, String busyCode) {
@@ -116,14 +99,6 @@ public class SkillCommandSource implements CommandDefinitionSource {
             input.setUnavailableCode(busyCode);
         }
         return input;
-    }
-
-    private String skillNameOf(String name) {
-        if (name == null || !name.startsWith(COMMAND_PREFIX)) {
-            return null;
-        }
-        String skillName = name.substring(COMMAND_PREFIX.length());
-        return SkillNameValidator.isValid(skillName) ? skillName : null;
     }
 
     private boolean hasSkillMarkdown(PreparedAgentRuntime prepared, String skillName) {
