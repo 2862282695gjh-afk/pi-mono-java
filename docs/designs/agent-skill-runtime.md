@@ -1,6 +1,6 @@
 # Agent 与 Skill 受管运行目录
 
-> 文档版本：3.4.1
+> 文档版本：3.4.2
 >
 > 状态：Implemented
 >
@@ -13,6 +13,8 @@
 - 本次审查实现提交：`0ab5db29cd9f4262a24b3ffef4cf009177f25c3e`
 - Agent 根目录包含性加固分析基线：`c9d858bc8261bf07f5585f545b53495bf2226a56`
 - Agent 根目录身份审查实现提交：`90e78251885814a34b8e054ea7f44f86baecbb1b`
+- Agent 根目录配置路径前置校验分析基线：`687f6a28ea2b88480fe38dc367652c66a43ff678`
+- Agent 根目录配置路径前置校验实现提交：`8921a493185e86f4773843241016627b05a8ce59`
 - 设计仓：`c2a495838134aa5e8bc535b906e7534b34779279`
 - 受管目录证据：
   `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtime/AgentRuntimeManager.java`，
@@ -109,7 +111,16 @@ ID 与磁盘目录的一一对应；验证失败时，在任何缓存读取、�
 Agent 目录通过符号链接逃出根目录或别名到根目录内的其他资源。决策及备选方案见
 [ADR-0044](../decisions/0044-validate-managed-agent-root-containment.html)。
 
+配置路径前置校验分析基线 `687f6a28ea2b88480fe38dc367652c66a43ff678` 中，
+`requireAgentRoot` 会直接把 `properties.agentsRoot()` 交给 `getCanonicalPath()`，缺少公司安全告警
+要求的显式路径合法性判定。实现提交 `8921a493185e86f4773843241016627b05a8ce59` 在任何 canonical
+解析前先调用 `validatePath(properties.agentsRoot())`；空路径、包含 `.` 或 `..` 路径段以及归一化
+结果与原路径不同的配置均抛出 `IllegalArgumentException`。这是**安全加固**：合法配置行为不变，
+配置路径词法合法性、canonical 路径解析、根目录包含关系和 Agent 目录身份成为依次执行的独立
+防线。
+
 - `agentId` 必须符合领域 ID 格式且只解析为 `agents-root` 下的单目录；
+- `properties.agentsRoot()` 必须先通过 `validatePath` 词法合法性校验，再进入 canonical 路径解析；
 - Agent 根目录和候选目录必须使用 canonical path，禁止以 absolute path 代替；
 - canonical Agent 根路径必须显式通过 canonical `agents-root` 包含性校验；
 - canonical Agent 根路径必须与 `canonical agents-root/agentId` 精确一致，禁止根目录内别名；
@@ -134,6 +145,7 @@ prepare、refresh、原子发布或 HTTP 契约。
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 3.4.2 | 2026-09-03 | `requireAgentRoot` 在 canonical 解析前显式调用 `validatePath` 校验 `properties.agentsRoot()`，非法配置立即抛出异常。 |
 | 3.4.1 | 2026-09-03 | canonical Agent 路径除通过根目录包含性校验外，还必须与请求 ID 的预期目录精确一致，拒绝指向其他 Agent 或根目录的符号链接别名。 |
 | 3.4.0 | 2026-09-03 | `requireAgentRoot` 使用 canonical path 并校验根目录包含关系，形成格式校验、符号链接解析与路径后置校验。 |
 | 3.3.1 | 2026-08-26 | 前端工具失败投影消费本地化 errorMessage，并为旧事件保留 content 回退。 |

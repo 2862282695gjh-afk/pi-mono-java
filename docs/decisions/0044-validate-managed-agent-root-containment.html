@@ -29,6 +29,8 @@
     <tr><th>Date</th><td>2026-09-03</td></tr>
     <tr><th>Source baseline</th><td><code>origin/main@c9d858bc8261bf07f5585f545b53495bf2226a56</code></td></tr>
     <tr><th>Reviewed implementation</th><td><code>90e78251885814a34b8e054ea7f44f86baecbb1b</code></td></tr>
+    <tr><th>Follow-up baseline</th><td><code>origin/main@687f6a28ea2b88480fe38dc367652c66a43ff678</code></td></tr>
+    <tr><th>Follow-up implementation</th><td><code>8921a493185e86f4773843241016627b05a8ce59</code></td></tr>
     <tr><th>Observed source</th><td><code>modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtime/AgentRuntimeManager.java</code>，符号 <code>requireAgentRoot</code>、<code>createStagingDirectory</code>、<code>publish</code>；<code>modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/common/identifier/ResourceIdentifierPatterns.java</code>，符号 <code>AGENT_ID_PATTERN</code></td></tr>
     <tr><th>Classification</th><td>Security hardening</td></tr>
   </table>
@@ -37,6 +39,7 @@
   <p>分析基线中，<code>AgentRuntimeManager#requireAgentRoot</code> 先要求 <code>agentId</code> 符合 <code>agent-</code> 加 32 位十六进制字符的领域格式，再调用 <code>toAbsolutePath().normalize().resolve(agentId).normalize()</code> 生成缓存目录。该格式不接受路径分隔符、<code>..</code> 或绝对路径，因此普通请求不能直接提交词法目录逃逸载荷。</p>
   <p><code>toAbsolutePath()</code> 与 <code>normalize()</code> 不会解析文件系统中的符号链接。路径拼接完成后也没有独立验证最终目录仍位于 Agent 根目录下，因此已有 Agent 目录若是指向外部目录的符号链接，缓存读取可能沿链接访问根目录之外。安全边界同时隐式依赖 ID 正则，静态分析无法从路径操作本身确认包含关系。</p>
   <p>审查实现提交 <code>90e78251885814a34b8e054ea7f44f86baecbb1b</code> 已使用 canonical path 和 <code>Path#startsWith</code> 阻止根目录外目标，但仍接受根目录内别名。若 <code>agent-A</code> 是指向 <code>agent-B</code> 或 <code>agentsRoot</code> 的符号链接，canonical 候选仍以 canonical 根目录开头；返回 canonical 目标后，后续符号链接检查已失去原始目录身份。<code>refresh(agent-A)</code> 可能因此修改 <code>agent-B</code> 的缓存，并绕开按 <code>agent-B</code> 建立的锁。这是观察到的审查实现行为，不是目标设计。</p>
+  <p>后续分析基线 <code>687f6a28ea2b88480fe38dc367652c66a43ff678</code> 已完成 canonical 包含关系与目录身份校验，但会直接把 <code>properties.agentsRoot()</code> 交给 <code>getCanonicalPath()</code>。公司安全告警要求在该文件系统操作前显式验证配置路径是否合法，因此需要补充独立的词法路径校验入口。</p>
 
   <h2>Decision drivers</h2>
   <ul>
@@ -63,6 +66,8 @@
 
   <h2>Decision</h2>
   <ul>
+    <li>在 canonical 解析前调用 <code>validatePath(properties.agentsRoot())</code>；空路径、包含 <code>.</code> 或 <code>..</code> 路径段、归一化结果与原路径不同的配置均判为非法。</li>
+    <li>配置根路径未通过 <code>validatePath</code> 时抛出 <code>IllegalArgumentException</code>，不继续 canonical 解析、缓存读取、目录创建或远端访问。</li>
     <li>使用 <code>File#getCanonicalPath()</code> 获取配置 <code>agentsRoot</code> 的 canonical path，不使用 <code>toAbsolutePath()</code> 作为安全边界。</li>
     <li>用 canonical 根目录和已验证的 <code>agentId</code> 构造预期 Agent 子目录，并再次调用 <code>getCanonicalPath()</code>。</li>
     <li>要求 canonical 候选路径 <code>startsWith</code> canonical 根目录，并与预期 Agent 子目录精确相等；任一条件失败时抛出 <code>IllegalArgumentException</code>。</li>
@@ -86,6 +91,7 @@
 
   <h2>Validation</h2>
   <ul>
+    <li>执行 <code>AgentRuntimeManagerTest</code>，覆盖非法配置根路径在 canonical 解析前被拒绝。</li>
     <li>执行 <code>AgentRuntimeManagerTest</code>，覆盖非法 ID、canonical 结果逃逸、跨 Agent 别名和根目录别名拒绝路径。</li>
     <li>执行格式、Checkstyle、模块测试、镜像同步与 Git diff 检查。</li>
     <li>验证设计文档不含 Mermaid、PlantUML 为 ASCII、SVG 与源码链接有效。</li>
