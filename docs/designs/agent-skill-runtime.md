@@ -1,16 +1,18 @@
 # Agent 与 Skill 受管运行目录
 
-> 文档版本：3.3.1
+> 文档版本：3.4.1
 >
 > 状态：Implemented
 >
-> 更新日期：2026-08-26
+> 更新日期：2026-09-03
 > 规范性工具契约：[CampusClaw 受管 Agent 工具系统 v2](tool-system-v2.md)
 
 ## 1. 源码基线
 
 - 变更前观察基线（CampusClaw）：`56be8eee59415a5f86658d6635a7b7e8891263d3`
 - 本次审查实现提交：`0ab5db29cd9f4262a24b3ffef4cf009177f25c3e`
+- Agent 根目录包含性加固分析基线：`c9d858bc8261bf07f5585f545b53495bf2226a56`
+- Agent 根目录身份审查实现提交：`90e78251885814a34b8e054ea7f44f86baecbb1b`
 - 设计仓：`c2a495838134aa5e8bc535b906e7534b34779279`
 - 受管目录证据：
   `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtime/AgentRuntimeManager.java`，
@@ -84,9 +86,33 @@ HTTP Session 创建、Cron 触发和 Child Execution 均调用 prepare，因此�
 目录缓存和 Session 生命周期分离：refresh 只影响随后创建的 Session，不修改正在执行的
 Session 快照。工具配置也只在应用启动时解析，不由 refresh 变更。
 
-## 5. 安全边界
+## 5. 安全边界与设计决策
+
+分析基线中的 `AgentRuntimeManager#requireAgentRoot` 已在路径拼接前用
+`ResourceIdentifierPatterns.AGENT_ID_PATTERN` 限制 `agentId` 为固定格式单路径段，但使用
+`toAbsolutePath().normalize()` 只完成词法路径归一化，不会解析文件系统中的符号链接，也没有
+验证最终路径仍属于 Agent 根目录。现有正则使常规调用不能提供 `..` 或绝对路径；缺少的是
+canonical path 与路径操作自身的 fail-closed 后置条件。
+
+审查实现提交 `90e78251885814a34b8e054ea7f44f86baecbb1b` 中，`requireAgentRoot` 已分别
+canonicalize 配置根目录和 Agent 候选目录，并用 `startsWith` 拒绝根目录外的目标。但该包含性
+判断仍会接受根目录内的符号链接别名，例如 `agent-A -> agent-B` 或 `agent-A -> agents-root`。
+方法返回 canonical 目标后，`createStagingDirectory` 与 `publish` 只能看到普通目标目录，无法再
+识别原始链接；`refresh(agent-A)` 因而可能修改另一个 Agent 的缓存，且按 `agent-A` 获取的锁
+不能保护 `agent-B` 的并发操作。这是审查实现中观察到的安全缺口，不是目标行为。
+
+目标实现把该变化分类为**安全加固**：保留入口格式校验，分别用 `File#getCanonicalPath()` 获取
+配置根目录和 Agent 候选目录的 canonical path，先用 `Path.startsWith(canonicalAgentsRoot)`
+验证包含关系，再要求 canonical 候选精确等于 `canonicalAgentsRoot.resolve(agentId)`，保持请求
+ID 与磁盘目录的一一对应；验证失败时，在任何缓存读取、目录创建或 Mate 访问发生前抛出
+`IllegalArgumentException`。选择该分层校验是为了让路径安全不只依赖当前 ID 正则，同时阻止
+Agent 目录通过符号链接逃出根目录或别名到根目录内的其他资源。决策及备选方案见
+[ADR-0044](../decisions/0044-validate-managed-agent-root-containment.html)。
 
 - `agentId` 必须符合领域 ID 格式且只解析为 `agents-root` 下的单目录；
+- Agent 根目录和候选目录必须使用 canonical path，禁止以 absolute path 代替；
+- canonical Agent 根路径必须显式通过 canonical `agents-root` 包含性校验；
+- canonical Agent 根路径必须与 `canonical agents-root/agentId` 精确一致，禁止根目录内别名；
 - 本地缓存树任何符号链接都会使其无效；
 - 资源名不允许路径分隔、`.`、`..` 或 NUL；
 - Agent/Skill/Child 的名称、ID、版本和绑定坐标必须一致；
@@ -108,6 +134,8 @@ prepare、refresh、原子发布或 HTTP 契约。
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 3.4.1 | 2026-09-03 | canonical Agent 路径除通过根目录包含性校验外，还必须与请求 ID 的预期目录精确一致，拒绝指向其他 Agent 或根目录的符号链接别名。 |
+| 3.4.0 | 2026-09-03 | `requireAgentRoot` 使用 canonical path 并校验根目录包含关系，形成格式校验、符号链接解析与路径后置校验。 |
 | 3.3.1 | 2026-08-26 | 前端工具失败投影消费本地化 errorMessage，并为旧事件保留 content 回退。 |
 | 3.3.0 | 2026-08-26 | 工具失败事件按请求语言生成公开错误文案；Cron 使用通用稳定错误码并兼容旧运行日志；SKILL.md 字节上限收敛为单一定义。 |
 | 3.2.0 | 2026-08-26 | querySkillInfo 的 Skill 响应结果取自 `result`，`result.content` 原文写入 `SKILL.md`；发布前校验 frontmatter `name`/`description` 并用 `SkillLoader` 复核；移除 resCode 预判与 `success-code` 配置，响应解析失败携带稳定错误码。 |
