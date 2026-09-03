@@ -95,3 +95,41 @@ Projector --> Sse
 Engine --> Prompt
 Repository --> Db
 @enduml
+
+@startuml runtime-operation-lock
+title Runtime Session Operation Lock Scope
+skinparam backgroundColor white
+
+' Source baseline: origin/main commit eb318f32830f15b3657c71e8be31bfbfd316652f.
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/runtime/RuntimeSessionEngineRegistry.java, lockOperation and unlockOperation.
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/event/RuntimeEventService.java, prepareAndSubmit.
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/session/RuntimeSessionControlService.java, accept and prepareAbort.
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/event/RuntimeExecutionCoordinator.java, finish.
+' Reviewed implementation: commit 812bf407d9fef9088b6bef8f8b86bd8f2bbb1f7e.
+' Reviewed source: RuntimeSessionEngineRegistry.java, withOperationLock.
+' Observed behavior: callers acquire and release the striped operation lock through separate registry methods.
+' Architecture change: withOperationLock owns acquisition and finally-based release around the submitted operation.
+' Design reason: lock release must remain guaranteed when the submitted operation throws.
+
+participant "Runtime caller" as Caller
+participant "Engine Registry" as Registry
+participant "Striped Lock" as Lock
+participant "Submitted Operation" as Operation
+
+Caller -> Registry : withOperationLock(sessionId, operation)
+activate Registry
+Registry -> Lock : lock()
+activate Lock
+Registry -> Operation : get() / run()
+activate Operation
+alt operation returns
+    Operation --> Registry : result
+else operation throws
+    Operation --> Registry : RuntimeException
+end
+deactivate Operation
+Registry -> Lock : unlock() in finally
+deactivate Lock
+Registry --> Caller : result or exception
+deactivate Registry
+@enduml

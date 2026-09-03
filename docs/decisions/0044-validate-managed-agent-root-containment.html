@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ADR-0044：校验受管 Agent 根路径包含关系与目录身份</title>
+  <style>
+    :root { color-scheme: light; font-family: Inter, "PingFang SC", sans-serif; color: #25272a; background: #f2f5f7; }
+    body { margin: 0; }
+    main { width: min(920px, calc(100% - 40px)); margin: 40px auto; padding: 40px; box-sizing: border-box; background: #fff; border: 1px solid #d7dde2; border-radius: 16px; }
+    h1 { margin-top: 0; font-size: 30px; }
+    h2 { margin-top: 32px; font-size: 20px; }
+    h3 { margin-top: 22px; font-size: 17px; }
+    p, li { line-height: 1.75; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 10px 12px; border: 1px solid #d7dde2; text-align: left; vertical-align: top; }
+    th { width: 190px; background: #edf2f5; }
+    code { padding: 2px 5px; border-radius: 5px; background: #edf2f5; overflow-wrap: anywhere; }
+    a { color: #1769aa; }
+    .status { display: inline-flex; padding: 4px 9px; border-radius: 999px; color: #12633a; background: #e8f7ed; font-weight: 650; }
+    @media (max-width: 640px) { main { width: 100%; margin: 0; padding: 24px 18px; border: 0; border-radius: 0; } th { width: 120px; } }
+  </style>
+</head>
+<body>
+<main>
+  <h1>ADR-0044：校验受管 Agent 根路径包含关系与目录身份</h1>
+  <table>
+    <tr><th>Status</th><td><span class="status">Accepted</span></td></tr>
+    <tr><th>Date</th><td>2026-09-03</td></tr>
+    <tr><th>Source baseline</th><td><code>origin/main@c9d858bc8261bf07f5585f545b53495bf2226a56</code></td></tr>
+    <tr><th>Reviewed implementation</th><td><code>90e78251885814a34b8e054ea7f44f86baecbb1b</code></td></tr>
+    <tr><th>Observed source</th><td><code>modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtime/AgentRuntimeManager.java</code>，符号 <code>requireAgentRoot</code>、<code>createStagingDirectory</code>、<code>publish</code>；<code>modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/common/identifier/ResourceIdentifierPatterns.java</code>，符号 <code>AGENT_ID_PATTERN</code></td></tr>
+    <tr><th>Classification</th><td>Security hardening</td></tr>
+  </table>
+
+  <h2>Context</h2>
+  <p>分析基线中，<code>AgentRuntimeManager#requireAgentRoot</code> 先要求 <code>agentId</code> 符合 <code>agent-</code> 加 32 位十六进制字符的领域格式，再调用 <code>toAbsolutePath().normalize().resolve(agentId).normalize()</code> 生成缓存目录。该格式不接受路径分隔符、<code>..</code> 或绝对路径，因此普通请求不能直接提交词法目录逃逸载荷。</p>
+  <p><code>toAbsolutePath()</code> 与 <code>normalize()</code> 不会解析文件系统中的符号链接。路径拼接完成后也没有独立验证最终目录仍位于 Agent 根目录下，因此已有 Agent 目录若是指向外部目录的符号链接，缓存读取可能沿链接访问根目录之外。安全边界同时隐式依赖 ID 正则，静态分析无法从路径操作本身确认包含关系。</p>
+  <p>审查实现提交 <code>90e78251885814a34b8e054ea7f44f86baecbb1b</code> 已使用 canonical path 和 <code>Path#startsWith</code> 阻止根目录外目标，但仍接受根目录内别名。若 <code>agent-A</code> 是指向 <code>agent-B</code> 或 <code>agentsRoot</code> 的符号链接，canonical 候选仍以 canonical 根目录开头；返回 canonical 目标后，后续符号链接检查已失去原始目录身份。<code>refresh(agent-A)</code> 可能因此修改 <code>agent-B</code> 的缓存，并绕开按 <code>agent-B</code> 建立的锁。这是观察到的审查实现行为，不是目标设计。</p>
+
+  <h2>Decision drivers</h2>
+  <ul>
+    <li>遵守公司文件路径规范，使用 canonical path 而不是 absolute path 作为安全判断依据。</li>
+    <li>让每个动态路径拼接点自身具备可审计的根目录包含性保证。</li>
+    <li>保持请求 <code>agentId</code> 与受管目录的一一对应，禁止根目录内符号链接别名。</li>
+    <li>保留现有领域 ID 校验，不降低对非法输入的拒绝强度。</li>
+    <li>在任何文件读取、目录创建或远端访问前失败。</li>
+    <li>不改变合法 Agent 的磁盘布局与缓存、refresh 或发布行为。</li>
+  </ul>
+
+  <h2>Considered options</h2>
+  <h3>只依赖 Agent ID 正则和 absolute path</h3>
+  <p><strong>优点：</strong>不增加代码。<br><strong>缺点：</strong>路径安全与领域格式规则耦合，absolute path 不解析符号链接，拼接结果没有独立、显式且 fail-closed 的验证。拒绝。</p>
+
+  <h3>使用 <code>Path#toRealPath</code></h3>
+  <p><strong>优点：</strong>返回真实文件系统路径并解析符号链接。<br><strong>缺点：</strong>冷启动时目标 Agent 目录尚不存在，<code>toRealPath</code> 会失败，无法支持现有按需创建流程。拒绝。</p>
+
+  <h3>使用 <code>File#getCanonicalPath</code> 后只执行 Path 包含性校验</h3>
+  <p><strong>优点：</strong>支持尚不存在的目标目录，解析已有符号链接，并阻止根目录外目标。<br><strong>缺点：</strong>无法区分请求目录与根目录内的 canonical 目标，会接受指向其他 Agent 或根目录的符号链接别名。拒绝。</p>
+
+  <h3>使用 canonical path，并校验包含关系与目录身份</h3>
+  <p><strong>优点：</strong>保留冷目录按需创建能力，同时拒绝根目录外目标和根目录内别名；路径安全与逻辑资源身份均可独立审计。<br><strong>缺点：</strong>canonical path 解析可能产生 I/O 错误，需要明确失败语义。接受。</p>
+
+  <h2>Decision</h2>
+  <ul>
+    <li>使用 <code>File#getCanonicalPath()</code> 获取配置 <code>agentsRoot</code> 的 canonical path，不使用 <code>toAbsolutePath()</code> 作为安全边界。</li>
+    <li>用 canonical 根目录和已验证的 <code>agentId</code> 构造预期 Agent 子目录，并再次调用 <code>getCanonicalPath()</code>。</li>
+    <li>要求 canonical 候选路径 <code>startsWith</code> canonical 根目录，并与预期 Agent 子目录精确相等；任一条件失败时抛出 <code>IllegalArgumentException</code>。</li>
+    <li>canonical path 解析失败时抛出 <code>AgentRuntimeException</code>，不继续文件或远端操作。</li>
+    <li>保留 <code>AGENT_ID_PATTERN</code> 前置校验，使非法领域 ID 在路径操作前被拒绝。</li>
+    <li>增加真实符号链接回归测试，覆盖指向根目录之外、根目录内另一 Agent 和根目录本身的三种目标。</li>
+  </ul>
+
+  <h2>Intentional difference</h2>
+  <p><strong>安全加固：</strong>合法 Agent 的行为与目录布局不变；新增行为会拒绝 canonical path 不属于配置根目录的路径，以及指向根目录内其他资源的符号链接别名。该校验不是对 pi 既有行为的描述，而是 CampusClaw Java 实现新增的路径边界与资源身份保证。</p>
+
+  <h2>Consequences</h2>
+  <ul>
+    <li>正面：动态路径拼接点可以基于 canonical path 独立证明不会逃逸 <code>agentsRoot</code>。</li>
+    <li>正面：已有 Agent 路径中的符号链接不能把缓存读取引导到配置根目录之外。</li>
+    <li>正面：一个 Agent 的符号链接不能把 refresh 或发布重定向到另一个 Agent 的缓存。</li>
+    <li>正面：将来即使 ID 规则被放宽，路径包含性仍有独立保护。</li>
+    <li>兼容性：所有当前合法 <code>agentId</code> 继续解析为原目录。</li>
+    <li>失败语义：包含性验证失败时，在文件系统或 Mate 产生副作用前抛出参数异常。</li>
+  </ul>
+
+  <h2>Validation</h2>
+  <ul>
+    <li>执行 <code>AgentRuntimeManagerTest</code>，覆盖非法 ID、canonical 结果逃逸、跨 Agent 别名和根目录别名拒绝路径。</li>
+    <li>执行格式、Checkstyle、模块测试、镜像同步与 Git diff 检查。</li>
+    <li>验证设计文档不含 Mermaid、PlantUML 为 ASCII、SVG 与源码链接有效。</li>
+  </ul>
+
+  <h2>Related</h2>
+  <ul>
+    <li><a href="../designs/agent-skill-runtime.md">Agent 与 Skill 受管运行目录设计</a></li>
+    <li><a href="0022-managed-agent-tool-system-v2.html">ADR-0022：统一受管 Agent 工具系统 v2</a></li>
+  </ul>
+</main>
+</body>
+</html>

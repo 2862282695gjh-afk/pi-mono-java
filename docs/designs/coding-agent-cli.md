@@ -1,6 +1,6 @@
 # Coding Agent Runtime HTTP 与受管 Session 设计
 
-> 文档版本：3.5.0
+> 文档版本：3.6.1
 >
 > PR 167 修订基线：`f60cc3e78bb8b700527ac082c7c8e10524ede095`
 >
@@ -13,6 +13,14 @@
 > 压缩取消释放修复基线：`8081b5882f0f95ea37f1a36c659265c723bcd3ef`
 >
 > Agent 根目录配置清理基线：`1b3b519419ca9bf9025ba2c88335382b9a5b3b02`
+>
+> Runtime 操作锁源码基线：`origin/main@eb318f32830f15b3657c71e8be31bfbfd316652f`
+>
+> Runtime 操作锁审查实现：`812bf407d9fef9088b6bef8f8b86bd8f2bbb1f7e`
+>
+> 模型异常因果链修复前基线：`c9d858bc8261bf07f5585f545b53495bf2226a56`
+>
+> 模型异常因果链已审查实现：`f3e2a31c6f0692fec429567c5535c6ec9bec7343`
 >
 > 源码仓库：本仓库 `pi-mono-java`
 
@@ -47,6 +55,8 @@ Assistant/Compaction 完成保存本次 Usage，模型/思考/压缩形成持久
 | lowerCamelCase HTTP 边界 | `runtimeapi/web/*Controller`、`runtimeapi/vo/*RequestVO`、`runtimeapi/vo/*ResponseVO`、`RuntimeEntryCodec#toSseData`、`RuntimeEntryCodec#toHistoryEvent`、`RuntimeEventProjector` |
 | Session 与事件持久化使用 MyBatis | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/persistence/MyBatisRuntimeSessionRepository.java` |
 | 事件接受、历史查询和执行生命周期相互分离 | `RuntimeEventService`、`RuntimeEventQueryService`、`RuntimeExecutionCoordinator` |
+| 源码基线由调用方配对操作锁 | `RuntimeSessionEngineRegistry#lockOperation`、`RuntimeSessionEngineRegistry#unlockOperation`，存在于 `origin/main@eb318f32830f15b3657c71e8be31bfbfd316652f` |
+| 审查实现收口同一 Session 的事件接受、控制和执行收尾串行化 | `RuntimeSessionEngineRegistry#withOperationLock`、`RuntimeEventService#prepareAndSubmit`、`RuntimeSessionControlService#accept`、`RuntimeSessionControlService#prepareAbort`、`RuntimeExecutionCoordinator#finish`，存在于 `812bf407d9fef9088b6bef8f8b86bd8f2bbb1f7e` |
 | thinking 实时投影、持久化和查询过滤 | `RuntimeEventProjector#projectThinking`、`RuntimeEntryCodec#thinkingEntry`、`RuntimeEventQueryService#list`、`RuntimeEventCursorCodec` |
 | SSE 使用有界请求级订阅 | `RuntimeEventStream`、`RuntimeSseDispatcher`、`RuntimeSseEmitterSubscriber` |
 | 压缩取消释放 Mate SSE | `SessionCompactor#completeSummary`、`EventStream#result`、`MateServiceModelManagerProvider#subscribe`、`MateServiceModelManagerProvider#cancel` |
@@ -54,6 +64,7 @@ Assistant/Compaction 完成保存本次 Usage，模型/思考/压缩形成持久
 | 国际化资源显式区分两个 Locale | `modules/coding-agent-cli/src/main/resources/i18n/messages_{en_US,zh_CN}.properties`、`RuntimeMessageSourceConfiguration` |
 | 语言选择按范围和权重协商 | `RuntimeRequestContext#locale`、`RuntimeRequestContext#language` |
 | HTTP 与 SSE 错误通过 MessageSource 取文案 | `RuntimeExceptionHandler#response`、`RuntimeTerminalEventFactory#emitError` |
+| 模型可用性校验与稳定错误码映射 | `runtimeapi/model/RuntimeModelManager.java`，`RuntimeModelManager#resolveAvailableModel`；`runtimeapi/error/RuntimeApiException.java` 的构造器 |
 | 内置工具由关闭枚举和 profile 装配 | `tool/builtin/BuiltInToolName.java`、`BuiltInToolProperties.java`、`DefaultConfiguredToolAssembler.java` |
 | MateService 工具通过专用客户端查询和调用 | `common/client/mate/MateToolClient.java`、`tool/mate/ListMateToolsTool.java`、`CallMateTool.java` |
 
@@ -183,6 +194,18 @@ Provider 则持有独立的 WebClient SSE `Disposable`。目标决策是事件 F
 `RuntimeErrorCode` 是错误码、HTTP 状态、国际化 key 和可选 `Retry-After` 的唯一目录。
 错误消息资源 key 与枚举名称一致，异常调用点不能自行拼装 HTTP 状态。
 
+修复前基线中的 `RuntimeModelManager#resolveAvailableModel` 会把
+`AGENT_MODEL_NOT_CONFIGURED` 等内部模型解析错误统一映射为 `MODEL_NOT_AVAILABLE`，以免公开接口
+泄露模型配置状态；但包装时没有关联已捕获的 `RuntimeApiException`，导致内部错误码随新异常丢失。
+已审查实现为 `RuntimeApiException` 增加保留 cause、但仍禁用包装异常自身栈跟踪的构造器，并仅在该
+错误码映射分支使用。`MANAGER_UNAVAILABLE` 继续原样传播，首次可用性检查失败仍直接生成无 cause 的
+`MODEL_NOT_AVAILABLE`。`RuntimeExceptionHandler` 仍只读取外层 `errorCode` 构造 HTTP 响应，因此该
+调整不改变状态码、响应体或国际化文案，也不向客户端暴露 cause。
+
+这是一项内部错误传播架构修正：在保留防枚举产品约束的同时，让进程内调用方和诊断代码可以沿
+异常因果链定位原始分类。方案与取舍见
+[ADR-0046](../decisions/0046-preserve-runtime-model-resolution-cause.html)。
+
 活动执行仍是进程内资源。如果数据库状态为 `running`，但 Steer、FollowUp 或 Abort 请求没有命中执行实例，
 服务返回 `503 SESSION_EXECUTION_UNAVAILABLE` 和 `Retry-After: 3`。这是对现有执行归属边界的显式表达；
 本次整改没有假设粘性路由或跨实例转发基础设施。
@@ -223,6 +246,23 @@ Runtime V1 事件名 `tool.execution.started` 与 `tool.execution.completed` 是
 事件类型，不是工具配置项，必须继续保留。完整契约见[工具系统 v2](tool-system-v2.md)和
 [ADR-0022](../decisions/0022-managed-agent-tool-system-v2.html)。
 
+### 6.10 操作锁作用域
+
+![Runtime Session 操作锁作用域](coding-agent-cli/runtime-operation-lock.svg)
+
+[PlantUML 源码](coding-agent-cli/diagram.puml#L99)
+
+源码基线中的 `RuntimeSessionEngineRegistry#lockOperation` 和 `#unlockOperation` 向调用方分别暴露
+加锁与解锁。当前三个调用类都用 `finally` 成对释放，但注册表本身无法保证未来调用者遵守该协议，
+静态分析也无法在加锁方法内证明锁一定释放。这是已观察的 Java 行为，不是 pi 行为。
+
+审查实现由 `RuntimeSessionEngineRegistry#withOperationLock` 接收 `Supplier` 或 `Runnable`，在同一方法
+内获取条带锁，并在 `finally` 中统一释放。事件接受、Steer/FollowUp、Abort 和执行收尾只提交临界区
+操作，不再获得独立的 `unlock` 能力；操作正常返回和抛出运行时异常都经过同一释放路径。同一 Session
+以及哈希到同一条带的 Session 仍保持原有串行语义，HTTP、SSE、持久化与错误契约不变。该差异分类为
+内部架构变更，目的是让锁释放成为注册表保证而非调用方约定。决策见
+[ADR-0045](../decisions/0045-scope-runtime-operation-lock-release.html)。
+
 ## 7. 质量约束
 
 - Controller 只接收和返回 VO，Service 负责业务规则和 VO/DTO 转换，Mapper 使用 DTO；
@@ -238,6 +278,8 @@ Runtime V1 事件名 `tool.execution.started` 与 `tool.execution.completed` 是
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 3.6.1 | 2026-09-03 | 模型可用性错误码转换保留原始异常 cause，同时维持对外 `MODEL_NOT_AVAILABLE` 防枚举语义。 |
+| 3.6.0 | 2026-09-03 | 将 Runtime Session 操作锁收口为作用域 API，保证正常与异常路径都在 `finally` 中释放。 |
 | 3.5.0 | 2026-09-01 | 对齐 CampusClaw 公司镜像的新目录、Java 包、同步入口和独立公司构建边界。 |
 | 3.4.0 | 2026-08-31 | 统一事件 Flux 与结果 Mono 的取消传播；压缩中止时释放 Mate SSE 订阅并终止事件累积。 |
 | 3.3.1 | 2026-08-31 | 删除 Mate 配置中未绑定的旧 Agent 根目录配置，统一使用 `campusmate.runtime.agents-root` 和 `CAMPUSCLAW_AGENTS_ROOT`。 |

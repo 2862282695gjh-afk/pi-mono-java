@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ADR-0045：收口 Runtime Session 操作锁释放</title>
+  <style>
+    :root { color-scheme: light; font-family: Inter, "PingFang SC", sans-serif; color: #25272a; background: #f2f5f7; }
+    body { margin: 0; }
+    main { width: min(920px, calc(100% - 40px)); margin: 40px auto; padding: 40px; box-sizing: border-box; background: #fff; border: 1px solid #d7dde2; border-radius: 16px; }
+    h1 { margin-top: 0; font-size: 30px; }
+    h2 { margin-top: 32px; font-size: 20px; }
+    h3 { margin-top: 22px; font-size: 17px; }
+    p, li { line-height: 1.75; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 10px 12px; border: 1px solid #d7dde2; text-align: left; vertical-align: top; }
+    th { width: 190px; background: #edf2f5; }
+    code { padding: 2px 5px; border-radius: 5px; background: #edf2f5; overflow-wrap: anywhere; }
+    a { color: #1769aa; }
+    .status { display: inline-flex; padding: 4px 9px; border-radius: 999px; color: #12633a; background: #e8f7ed; font-weight: 650; }
+    @media (max-width: 640px) { main { width: 100%; margin: 0; padding: 24px 18px; border: 0; border-radius: 0; } th { width: 120px; } }
+  </style>
+</head>
+<body>
+<main>
+  <h1>ADR-0045：收口 Runtime Session 操作锁释放</h1>
+  <table>
+    <tr><th>Status</th><td><span class="status">Accepted</span></td></tr>
+    <tr><th>Date</th><td>2026-09-03</td></tr>
+    <tr><th>Source baseline</th><td><code>origin/main@eb318f32830f15b3657c71e8be31bfbfd316652f</code></td></tr>
+    <tr><th>Observed source</th><td><code>modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/runtime/RuntimeSessionEngineRegistry.java</code>，符号 <code>lockOperation</code>、<code>unlockOperation</code>；<code>RuntimeEventService#prepareAndSubmit</code>、<code>RuntimeSessionControlService#accept</code>、<code>RuntimeSessionControlService#prepareAbort</code>、<code>RuntimeExecutionCoordinator#finish</code></td></tr>
+    <tr><th>Reviewed implementation</th><td><code>812bf407d9fef9088b6bef8f8b86bd8f2bbb1f7e</code>，符号 <code>RuntimeSessionEngineRegistry#withOperationLock</code> 及上述调用类的同名审查路径</td></tr>
+    <tr><th>Classification</th><td>Architecture change</td></tr>
+  </table>
+
+  <h2>Context</h2>
+  <p>源码基线使用 256 个 <code>ReentrantLock</code> 条带串行化同一 Session 的事件接受、控制消息和执行收尾。<code>RuntimeSessionEngineRegistry#lockOperation</code> 只调用 <code>lock()</code>，<code>#unlockOperation</code> 由调用方在各自的 <code>finally</code> 中调用。</p>
+  <p>现有调用点虽然成对释放，但该 API 将锁生命周期拆到两个公开方法：注册表不能保证未来调用者一定进入 <code>finally</code>，静态分析也无法从加锁方法本身证明异常路径会释放锁。一次漏解锁会永久阻塞映射到同一条带的后续 Session 操作。</p>
+
+  <h2>Decision drivers</h2>
+  <ul>
+    <li>锁释放必须由拥有加锁动作的同一抽象负责。</li>
+    <li>正常返回与运行时异常必须共享同一个 <code>finally</code> 释放路径。</li>
+    <li>保持现有条带数、哈希映射和串行化范围，不改变业务契约。</li>
+    <li>让新增调用点无法获得一个需要手工配对的公开解锁方法。</li>
+  </ul>
+
+  <h2>Considered options</h2>
+  <h3>保留两个公开方法并依赖代码评审</h3>
+  <p><strong>优点：</strong>不修改调用接口。<br><strong>缺点：</strong>释放仍是调用方约定，新增异常分支或提前返回时可能遗漏，静态分析告警仍然成立。拒绝。</p>
+
+  <h3>返回 <code>AutoCloseable</code> 并使用 try-with-resources</h3>
+  <p><strong>优点：</strong>调用点语法简洁。<br><strong>缺点：</strong>锁仍在创建 guard 的方法内获取、在另一个对象中释放；保证分散在两个抽象中，分析工具也未必能证明配对。拒绝。</p>
+
+  <h3>由注册表执行作用域操作</h3>
+  <p><strong>优点：</strong><code>lock()</code> 与 <code>unlock()</code> 位于同一方法和显式 <code>try/finally</code>；调用方不能忘记释放；返回值与无返回值操作都可表达。<br><strong>缺点：</strong>调用方需要把临界区表示为 <code>Supplier</code> 或 <code>Runnable</code>。接受。</p>
+
+  <h2>Decision</h2>
+  <ul>
+    <li>删除公开的 <code>lockOperation</code> 与 <code>unlockOperation</code>。</li>
+    <li>新增 <code>withOperationLock(sessionId, Supplier&lt;T&gt;)</code>，在获取条带锁后执行操作，并在 <code>finally</code> 中释放。</li>
+    <li>新增 <code>Runnable</code> 重载并委托给同一 <code>Supplier</code> 实现，不复制锁生命周期逻辑。</li>
+    <li>事件接受、Steer/FollowUp、Abort 与执行收尾全部通过作用域 API 执行。</li>
+    <li>增加跨线程回归测试：临界区抛出异常后，另一线程必须能在有界时间内完成同一 Session 的下一次操作。</li>
+  </ul>
+
+  <h2>Intentional difference</h2>
+  <p><strong>架构变更：</strong>内部调用由手工加锁/解锁协议改为注册表托管的作用域操作。条带映射、并发顺序、异常传播、HTTP、SSE 和持久化行为保持不变。该决策描述 CampusClaw Java 目标实现，不宣称 pi 存在相同 API。</p>
+
+  <h2>Consequences</h2>
+  <ul>
+    <li>正面：任何已提交操作无论正常返回还是抛出运行时异常，锁都会在 <code>finally</code> 中释放。</li>
+    <li>正面：未来调用者无法直接获取锁后遗漏解锁。</li>
+    <li>正面：静态分析可以在一个方法内验证锁生命周期。</li>
+    <li>兼容性：同一 Session 和条带冲突 Session 继续串行执行。</li>
+    <li>限制：临界区仍不得执行无界阻塞操作；本决策只保证异常路径释放，不改变锁的可中断性或公平性。</li>
+  </ul>
+
+  <h2>Validation</h2>
+  <ul>
+    <li>执行 <code>RuntimeSessionEngineRegistryTest</code>，验证异常后另一线程可重新取得同一 Session 的锁。</li>
+    <li>执行 Session 控制与 Runtime Event 回归测试，确认作用域 API 没有改变业务结果。</li>
+    <li>执行格式、Checkstyle、模块测试、公司镜像同步与 Git diff 检查。</li>
+    <li>验证设计文档不含 Mermaid、PlantUML 为 ASCII、SVG 与源码链接有效。</li>
+  </ul>
+
+  <h2>Related</h2>
+  <ul>
+    <li><a href="../designs/coding-agent-cli.md">Coding Agent Runtime HTTP 与受管 Session 设计</a></li>
+    <li><a href="0018-runtime-http-v137-contract-alignment.html">ADR-0018：Runtime HTTP 契约对齐</a></li>
+  </ul>
+</main>
+</body>
+</html>
