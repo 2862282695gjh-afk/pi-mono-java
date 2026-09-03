@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ADR-0048：限制整个 PR 的非文档新增代码行</title>
+  <style>
+    :root { color-scheme: light; font-family: Inter, "PingFang SC", sans-serif; color: #25272a; background: #f2f5f7; }
+    body { margin: 0; }
+    main { width: min(920px, calc(100% - 40px)); margin: 40px auto; padding: 40px; box-sizing: border-box; background: #fff; border: 1px solid #d7dde2; border-radius: 16px; }
+    h1 { margin-top: 0; font-size: 30px; }
+    h2 { margin-top: 32px; font-size: 20px; }
+    h3 { margin-top: 22px; font-size: 17px; }
+    p, li { line-height: 1.75; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 10px 12px; border: 1px solid #d7dde2; text-align: left; vertical-align: top; }
+    th { width: 190px; background: #edf2f5; }
+    code { padding: 2px 5px; border-radius: 5px; background: #edf2f5; overflow-wrap: anywhere; }
+    a { color: #1769aa; }
+    .status { display: inline-flex; padding: 4px 9px; border-radius: 999px; color: #12633a; background: #e8f7ed; font-weight: 650; }
+    @media (max-width: 640px) { main { width: 100%; margin: 0; padding: 24px 18px; border: 0; border-radius: 0; } th { width: 120px; } }
+  </style>
+</head>
+<body>
+<main>
+  <h1>ADR-0048：限制整个 PR 的非文档新增代码行</h1>
+  <table>
+    <tr><th>Status</th><td><span class="status">Accepted</span></td></tr>
+    <tr><th>Date</th><td>2026-09-03</td></tr>
+    <tr><th>Source baseline</th><td><code>origin/main@2df1ffd0b15044221ea1facd43b0797f5cdbb098</code></td></tr>
+    <tr><th>Reviewed implementation</th><td><code>e7b68fd5a1b9c4699d30635d06b9467f3b8bdf2f</code></td></tr>
+    <tr><th>Observed source</th><td><code>.github/workflows/ci.yml:3-24</code>、<code>scripts/check-commit-additions.sh:40-202</code>、<code>scripts/tests/check-commit-additions-test.sh:109-116</code></td></tr>
+    <tr><th>Change class</th><td>产品约束调整、仓库 CI 架构变化</td></tr>
+  </table>
+
+  <h2>Context</h2>
+  <p>源码基线按提交分别执行 2000 行非文档新增代码门禁。两个各新增 1500 行的提交都合规，因此一个最终新增 3000 行的 PR 仍能进入评审。该行为与“整个 PR 新增代码不得超过 2000 行”的产品约束不一致。</p>
+  <p>门禁需要约束评审者最终看到的 PR 差异，排除目标分支在开发期间新增的内容，并保留文档排除、跨路径重命名防绕过和 Git 数据读取失败时关闭门禁的安全属性。</p>
+
+  <h2>Decision drivers</h2>
+  <ul>
+    <li>整个 PR 共享一个 2000 行新增代码额度，拆分提交不能增加额度。</li>
+    <li>统计最终送审内容，不累计已经在后续提交删除或改写的瞬态内容。</li>
+    <li>删除行不抵扣新增行，文档不消耗代码行额度。</li>
+    <li>目标分支前进或被合并进主题分支时，不重复计算目标历史。</li>
+    <li>算法可本地复现，并在 Git 输入不可读时失败关闭。</li>
+  </ul>
+
+  <h2>Considered options</h2>
+  <h3>继续按每个提交分别限制</h3>
+  <p><strong>优点：</strong>能控制单个可回滚提交的规模，并已经实现完整合并提交处理。<br><strong>缺点：</strong>拆分提交即可使 PR 总新增量超过 2000 行，不能满足 PR 级产品约束。拒绝。</p>
+
+  <h3>累计 PR 历史中每个提交的 additions</h3>
+  <p><strong>优点：</strong>拆分提交不会绕过总量限制。<br><strong>缺点：</strong>同一内容的多次修改会重复计费，已经在最终 head 删除的瞬态内容仍占额度，结果不等于评审者看到的 PR 差异。拒绝。</p>
+
+  <h3>统计 merge-base 到 head 的最终 numstat</h3>
+  <p><strong>优点：</strong>直接对应最终 PR 评审面；共同祖先排除目标分支历史；单次 Git diff 能覆盖普通提交、合并提交和冲突解决；实现更简单、开销更低。<br><strong>缺点：</strong>中间曾出现但最终删除的超大内容不计入；二进制文件没有文本行数。接受。</p>
+
+  <h2>Decision</h2>
+  <ul>
+    <li>保留 <code>scripts/check-commit-additions.sh</code> 的 base/head 参数和 2000 行边界，以 <code>git merge-base</code> 计算 PR 比较基线。</li>
+    <li>不再枚举提交。对 merge-base 与 head 执行一次 rename-aware <code>git diff --numstat -z -M --no-ext-diff --no-textconv</code>，汇总最终非文档文本路径的 additions。</li>
+    <li>deletions 不抵扣 additions；中间提交已经删除、未进入最终 head 的内容不属于最终 PR 差异。</li>
+    <li>rename 同时保留旧、新路径；文档移入代码目录时按 head 中目标 Blob 的完整文本行数统计。</li>
+    <li>文档目录、文档扩展名及标准仓库文档文件继续排除；二进制内容继续由其他规则和评审约束。</li>
+    <li>Git revision、merge-base、最终 diff、目标 Blob 或 numstat 记录不可读时返回执行错误 2，不把失败当作 0 行。</li>
+    <li>CI 步骤名称更新为 PR 新增行门禁，并在既有 Spotless/Maven 门禁前运行脚本及回归测试。</li>
+  </ul>
+
+  <h2>Intentional difference</h2>
+  <p><strong>产品约束：</strong>2000 行从单个提交额度调整为整个 PR 的共享额度。<strong>架构变化：</strong>CI 从遍历提交历史及重建合并提交，改为只验证共同祖先到 head 的最终树差异。文档排除规则保持不变。</p>
+
+  <h2>Consequences</h2>
+  <ul>
+    <li>正面：多个小提交的最终新增代码会合并计费，不能通过拆分提交绕过限制。</li>
+    <li>正面：结果与 PR 最终评审面一致，目标分支历史不会被重复计费。</li>
+    <li>正面：不再需要逐提交父解析、<code>remerge-diff</code> 或 octopus merge 特判，算法和输出更简单。</li>
+    <li>正面：文档移入代码目录和 Git 读取失败的既有防绕过能力保留。</li>
+    <li>代价：提交历史中的瞬态大改动不计入，只约束最终评审差异。</li>
+    <li>代价：GitHub Actions 仍需完整历史以可靠求共同祖先。</li>
+    <li>边界：二进制文件没有文本新增行；其大小和适用性继续由其他规则及评审约束。</li>
+  </ul>
+
+  <h2>Validation</h2>
+  <ul>
+    <li>用临时 Git 仓库覆盖 2000/2001 边界、多个提交累计 3000 行、最终缩减到 1000 行和文档排除。</li>
+    <li>覆盖 code-to-code、docs-to-code 重命名，目标分支同步、merge-only 内容、冲突解决和不可读 Git Tree。</li>
+    <li>执行 Bash 语法检查、ShellCheck、脚本回归测试和当前 PR 范围门禁。</li>
+    <li>执行 Maven <code>verify</code>、Git diff 检查及设计文档、PlantUML、SVG 验证。</li>
+  </ul>
+
+  <h2>Related</h2>
+  <ul>
+    <li><a href="0047-limit-added-code-lines-per-commit.html">Supersedes ADR-0047：限制每个提交的非文档新增行</a></li>
+    <li><a href="../designs/commit-addition-limit.md">CI PR 新增代码行门禁设计 v2.0</a></li>
+    <li><a href="../designs/commit-addition-limit/diagram.puml#L1">PlantUML 源文件</a></li>
+  </ul>
+</main>
+</body>
+</html>
