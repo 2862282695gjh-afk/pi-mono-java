@@ -417,10 +417,14 @@ public class AgentRuntimeManager {
         }
         try {
             Path agentsRoot = Path.of(properties.agentsRoot().toFile().getCanonicalPath());
-            File agentDirectory = new File(agentsRoot.toFile(), agentId);
+            Path expectedAgentRoot = agentsRoot.resolve(agentId);
+            File agentDirectory = expectedAgentRoot.toFile();
             Path agentRoot = Path.of(agentDirectory.getCanonicalPath());
             if (!agentRoot.startsWith(agentsRoot)) {
                 throw new IllegalArgumentException("Canonical Agent path escapes agents root");
+            }
+            if (!agentRoot.equals(expectedAgentRoot)) {
+                throw new IllegalArgumentException("Canonical Agent path does not match requested Agent directory");
             }
             return agentRoot;
         } catch (IOException exception) {
