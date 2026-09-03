@@ -10,10 +10,10 @@
 #   2. APPLY  — rsync staged Java sources into campusclaw/ with --delete
 #               (so renames/removals propagate), preserving paths listed in
 #               scripts/sync-campusclaw-exclude.txt (mirror-only files).
-#               Resources are handled with a small whitelist (database release
-#               scripts, MyBatis mapper XML, schema.sql, i18n message bundles, and
-#               AutoConfiguration.imports). Application config (.yml/.properties)
-#               is hand-tuned and never touched except for the message bundles.
+#               Classpath resources use a small whitelist. The canonical GaussDB
+#               DDL is published separately as scripts/install/initdb_gaussdbv5.sql.
+#               Application config (.yml/.properties) is hand-tuned and never
+#               touched except for the message bundles.
 #
 # Workflow:
 #   ./mvnw -DskipTests package          # ensure modules/* compile first
@@ -23,7 +23,7 @@
 #   --no-apply         stop after STAGE; don't touch campusclaw/
 #   --no-verify        skip the mvn compile verification of campusclaw/
 #   --dry-run          show what APPLY would change (rsync -n) without writing
-#   --skip-resources   don't sync resources at all
+#   --skip-resources   don't sync classpath resources
 #   --no-tests         don't sync src/test/java
 
 set -euo pipefail
@@ -38,11 +38,12 @@ OUT="$ROOT/build/campusclaw"
 MIRROR="$ROOT/campusclaw"
 EXCLUDE_FILE="$ROOT/scripts/sync-campusclaw-exclude.txt"
 MODULES=(ai agent-core cron coding-agent-cli)
+DATABASE_SCHEMA="$ROOT/modules/coding-agent-cli/src/main/resources/db/gaussdb/install/session_schema.sql"
+DATABASE_SCRIPT_REL="scripts/install/initdb_gaussdbv5.sql"
 
 # Resources we DO want to keep in sync from modules/* — anything else under
 # src/main/resources/ on the mirror side is hand-tuned and skipped.
 SYNCED_RESOURCES=(
-  "db/gaussdb"
   "mapper"
   "schema.sql"
   "i18n"
@@ -75,8 +76,21 @@ done
 note()  { printf '\033[36m[sync]\033[0m %s\n' "$*"; }
 green() { printf '\033[32m%s\033[0m\n' "$*"; }
 
+stage_database_install_script() {
+  local staged_script="$OUT/$DATABASE_SCRIPT_REL"
+
+  if [ ! -f "$DATABASE_SCHEMA" ]; then
+    echo "missing canonical database schema: $DATABASE_SCHEMA" >&2
+    return 1
+  fi
+
+  rm -rf "$OUT/src/main/resources/db/gaussdb"
+  mkdir -p "$(dirname "$staged_script")"
+  cp "$DATABASE_SCHEMA" "$staged_script"
+}
+
 validate_staged_tree() {
-  local java_root unexpected_file
+  local database_script file_count java_root unexpected_file
 
   if grep -R -I -q -F "$SRC_PKG" "$OUT/src"; then
     echo "source package remains in staged content: $SRC_PKG" >&2
@@ -93,6 +107,23 @@ validate_staged_tree() {
       return 1
     fi
   done
+
+  if [ -e "$OUT/src/main/resources/db/gaussdb" ]; then
+    echo "GaussDB scripts must not be staged as classpath resources" >&2
+    return 1
+  fi
+
+  database_script="$OUT/$DATABASE_SCRIPT_REL"
+  if ! cmp -s "$DATABASE_SCHEMA" "$database_script"; then
+    echo "staged database install script differs from canonical schema" >&2
+    return 1
+  fi
+
+  file_count="$(find "$OUT/scripts/install" -mindepth 1 -maxdepth 1 -type f | wc -l | tr -d ' ')"
+  if [ "$file_count" -ne 1 ]; then
+    echo "database install directory must contain exactly one file" >&2
+    return 1
+  fi
 }
 
 # The project requires JDK 21, but JAVA_HOME may point to another version.
@@ -180,6 +211,9 @@ find "$OUT/src" -type f \( \
     -o -name '*.json' -o -name '*.sql' -o -name '*.txt' \
   \) -print0 | xargs -0 perl -pi -e "s|\\Q${SRC_PKG}\\E|${DST_PKG}|g"
 
+note "Staging corporate GaussDB install script"
+stage_database_install_script
+
 validate_staged_tree
 
 green "Staged: $OUT"
@@ -209,8 +243,31 @@ if $SYNC_TESTS; then
   rsync "${RSYNC_FLAGS[@]}" "$OUT/src/test/java/" "$MIRROR/src/test/java/"
 fi
 
+note "Applying corporate GaussDB install script -> $MIRROR/scripts/install/"
+database_script_source="$OUT/scripts/install/"
+database_script_target="$MIRROR/scripts/install/"
+if $DRY_RUN; then
+  if [ -d "$database_script_target" ]; then
+    rsync -an --delete --itemize-changes "$database_script_source" "$database_script_target"
+  else
+    echo ">f+++++++ $DATABASE_SCRIPT_REL"
+  fi
+else
+  mkdir -p "$database_script_target"
+  rsync -a --delete "$database_script_source" "$database_script_target"
+fi
+
+legacy_database_resources="$MIRROR/src/main/resources/db/gaussdb"
+if $DRY_RUN; then
+  if [ -e "$legacy_database_resources" ]; then
+    echo "  [would delete] src/main/resources/db/gaussdb"
+  fi
+else
+  rm -rf "$legacy_database_resources"
+fi
+
 if $SYNC_RESOURCES; then
-  note "Applying whitelisted resources (db/gaussdb, mapper, schema.sql, i18n, AutoConfiguration.imports)"
+  note "Applying whitelisted classpath resources (mapper, schema.sql, i18n, AutoConfiguration.imports)"
   for f in "${SYNCED_RESOURCES[@]}"; do
     src="$OUT/src/main/resources/$f"
     dst="$MIRROR/src/main/resources/$f"
@@ -269,10 +326,11 @@ cat <<EOF
 Done. campusclaw/ is now in sync with modules/*.
 
 Review:
-  git diff -- campusclaw/src
+  git diff -- campusclaw/src campusclaw/scripts
   git status campusclaw
 
 If new files appear under campusclaw/ that you wrote directly (not from
 modules/), add their paths to scripts/sync-campusclaw-exclude.txt so future syncs
-preserve them.
+preserve them. campusclaw/scripts/install is generated and must contain only
+initdb_gaussdbv5.sql.
 EOF
