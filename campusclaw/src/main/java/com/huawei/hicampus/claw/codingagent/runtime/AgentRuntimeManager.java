@@ -4,6 +4,7 @@
 
 package com.huawei.hicampus.claw.codingagent.runtime;
 
+import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.AtomicMoveNotSupportedException;
@@ -154,7 +155,7 @@ public class AgentRuntimeManager {
 
     private Path createStagingDirectory(Path agentRoot) {
         try {
-            Files.createDirectories(properties.agentsRoot().toAbsolutePath().normalize());
+            Files.createDirectories(agentRoot.getParent());
             Files.createDirectories(agentRoot);
             if (Files.isSymbolicLink(agentRoot)) {
                 throw new IOException("Agent root must not be a symbolic link");
@@ -290,7 +291,7 @@ public class AgentRuntimeManager {
                 return null;
             }
             AgentRuntime metadata = toRuntime(identity, settings, systemPrompt, children, skills);
-            return new PreparedAgentRuntime(agentId, agentRoot.toAbsolutePath().normalize(), metadata, skills);
+            return new PreparedAgentRuntime(agentId, agentRoot, metadata, skills);
         } catch (IOException | RuntimeException exception) {
             return null;
         }
@@ -414,12 +415,17 @@ public class AgentRuntimeManager {
         if (!matches(agentId, ResourceIdentifierPatterns.AGENT_ID_PATTERN)) {
             throw new IllegalArgumentException("Invalid agentId");
         }
-        Path agentsRoot = properties.agentsRoot().toAbsolutePath().normalize();
-        Path agentRoot = agentsRoot.resolve(agentId).normalize();
-        if (!agentRoot.startsWith(agentsRoot)) {
-            throw new IllegalArgumentException("Resolved Agent path escapes agents root");
+        try {
+            Path agentsRoot = Path.of(properties.agentsRoot().toFile().getCanonicalPath());
+            File agentDirectory = new File(agentsRoot.toFile(), agentId);
+            Path agentRoot = Path.of(agentDirectory.getCanonicalPath());
+            if (!agentRoot.startsWith(agentsRoot)) {
+                throw new IllegalArgumentException("Canonical Agent path escapes agents root");
+            }
+            return agentRoot;
+        } catch (IOException exception) {
+            throw new AgentRuntimeException("Failed to resolve canonical Agent root", exception);
         }
-        return agentRoot;
     }
 
     private <T> T withAgentLock(String agentId, SupplierWithException<T> action) {

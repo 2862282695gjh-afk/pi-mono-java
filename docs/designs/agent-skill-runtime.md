@@ -88,19 +88,21 @@ Session 快照。工具配置也只在应用启动时解析，不由 refresh 变
 ## 5. 安全边界与设计决策
 
 分析基线中的 `AgentRuntimeManager#requireAgentRoot` 已在路径拼接前用
-`ResourceIdentifierPatterns.AGENT_ID_PATTERN` 限制 `agentId` 为固定格式单路径段，但
-`agentsRoot.resolve(agentId).normalize()` 后没有显式验证结果仍属于规范化后的
-`agentsRoot`。现有正则使常规调用不能提供 `..` 或绝对路径；缺少的是路径操作自身的
-fail-closed 后置条件。
+`ResourceIdentifierPatterns.AGENT_ID_PATTERN` 限制 `agentId` 为固定格式单路径段，但使用
+`toAbsolutePath().normalize()` 只完成词法路径归一化，不会解析文件系统中的符号链接，也没有
+验证最终路径仍属于 Agent 根目录。现有正则使常规调用不能提供 `..` 或绝对路径；缺少的是
+canonical path 与路径操作自身的 fail-closed 后置条件。
 
-目标实现把该变化分类为**安全加固**：保留入口格式校验，并在 `resolve` 与 `normalize` 后用
-`startsWith(normalizedAgentsRoot)` 验证包含关系；验证失败时，在任何缓存读取、目录创建或 Mate
-访问发生前抛出 `IllegalArgumentException`。选择该双层校验是为了让路径安全不只依赖当前 ID
-正则，并使静态分析与后续维护可以直接确认路径不会逃逸配置根目录。决策及备选方案见
+目标实现把该变化分类为**安全加固**：保留入口格式校验，分别用 `File#getCanonicalPath()` 获取
+配置根目录和 Agent 候选目录的 canonical path，再用 `Path.startsWith(canonicalAgentsRoot)` 验证
+包含关系；验证失败时，在任何缓存读取、目录创建或 Mate 访问发生前抛出
+`IllegalArgumentException`。选择该双层校验是为了让路径安全不只依赖当前 ID 正则，并阻止
+现有 Agent 目录通过符号链接指向根目录之外。决策及备选方案见
 [ADR-0044](../decisions/0044-validate-managed-agent-root-containment.html)。
 
 - `agentId` 必须符合领域 ID 格式且只解析为 `agents-root` 下的单目录；
-- 规范化后的 Agent 根路径必须显式通过 `agents-root` 包含性校验；
+- Agent 根目录和候选目录必须使用 canonical path，禁止以 absolute path 代替；
+- canonical Agent 根路径必须显式通过 canonical `agents-root` 包含性校验；
 - 本地缓存树任何符号链接都会使其无效；
 - 资源名不允许路径分隔、`.`、`..` 或 NUL；
 - Agent/Skill/Child 的名称、ID、版本和绑定坐标必须一致；
@@ -122,7 +124,7 @@ prepare、refresh、原子发布或 HTTP 契约。
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
-| 3.4.0 | 2026-09-03 | 为 `requireAgentRoot` 增加 resolve/normalize 后的根目录包含性校验，形成格式校验与路径后置校验两道防线。 |
+| 3.4.0 | 2026-09-03 | `requireAgentRoot` 使用 canonical path 并校验根目录包含关系，形成格式校验、符号链接解析与路径后置校验。 |
 | 3.3.1 | 2026-08-26 | 前端工具失败投影消费本地化 errorMessage，并为旧事件保留 content 回退。 |
 | 3.3.0 | 2026-08-26 | 工具失败事件按请求语言生成公开错误文案；Cron 使用通用稳定错误码并兼容旧运行日志；SKILL.md 字节上限收敛为单一定义。 |
 | 3.2.0 | 2026-08-26 | querySkillInfo 的 Skill 响应结果取自 `result`，`result.content` 原文写入 `SKILL.md`；发布前校验 frontmatter `name`/`description` 并用 `SkillLoader` 复核；移除 resCode 预判与 `success-code` 配置，响应解析失败携带稳定错误码。 |

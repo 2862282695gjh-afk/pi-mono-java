@@ -33,11 +33,12 @@
   </table>
 
   <h2>Context</h2>
-  <p>分析基线中，<code>AgentRuntimeManager#requireAgentRoot</code> 先要求 <code>agentId</code> 符合 <code>agent-</code> 加 32 位十六进制字符的领域格式，再调用 <code>agentsRoot.resolve(agentId).normalize()</code> 生成缓存目录。该格式不接受路径分隔符、<code>..</code> 或绝对路径，因此当前标准文件系统调用不能由普通请求构造目录逃逸。</p>
-  <p>路径拼接完成后没有独立验证结果仍位于规范化的 <code>agentsRoot</code> 下。安全边界因此隐式依赖 ID 正则，静态分析也无法从路径操作本身确认包含关系。未来正则、配置绑定或文件系统提供者变化时，缺少后置校验会扩大回归风险。</p>
+  <p>分析基线中，<code>AgentRuntimeManager#requireAgentRoot</code> 先要求 <code>agentId</code> 符合 <code>agent-</code> 加 32 位十六进制字符的领域格式，再调用 <code>toAbsolutePath().normalize().resolve(agentId).normalize()</code> 生成缓存目录。该格式不接受路径分隔符、<code>..</code> 或绝对路径，因此普通请求不能直接提交词法目录逃逸载荷。</p>
+  <p><code>toAbsolutePath()</code> 与 <code>normalize()</code> 不会解析文件系统中的符号链接。路径拼接完成后也没有独立验证最终目录仍位于 Agent 根目录下，因此已有 Agent 目录若是指向外部目录的符号链接，缓存读取可能沿链接访问根目录之外。安全边界同时隐式依赖 ID 正则，静态分析无法从路径操作本身确认包含关系。</p>
 
   <h2>Decision drivers</h2>
   <ul>
+    <li>遵守公司文件路径规范，使用 canonical path 而不是 absolute path 作为安全判断依据。</li>
     <li>让每个动态路径拼接点自身具备可审计的根目录包含性保证。</li>
     <li>保留现有领域 ID 校验，不降低对非法输入的拒绝强度。</li>
     <li>在任何文件读取、目录创建或远端访问前失败。</li>
@@ -45,30 +46,32 @@
   </ul>
 
   <h2>Considered options</h2>
-  <h3>只依赖 Agent ID 正则</h3>
-  <p><strong>优点：</strong>不增加代码。<br><strong>缺点：</strong>路径安全与领域格式规则耦合，拼接结果没有独立、显式且 fail-closed 的验证。拒绝。</p>
+  <h3>只依赖 Agent ID 正则和 absolute path</h3>
+  <p><strong>优点：</strong>不增加代码。<br><strong>缺点：</strong>路径安全与领域格式规则耦合，absolute path 不解析符号链接，拼接结果没有独立、显式且 fail-closed 的验证。拒绝。</p>
 
-  <h3>仅检查字符串前缀</h3>
-  <p><strong>优点：</strong>实现直观。<br><strong>缺点：</strong>字符串前缀会把相邻目录名误判为子目录，例如 <code>/agent-other</code> 可匹配 <code>/agent</code>，并且绕过文件系统路径段语义。拒绝。</p>
+  <h3>使用 <code>Path#toRealPath</code></h3>
+  <p><strong>优点：</strong>返回真实文件系统路径并解析符号链接。<br><strong>缺点：</strong>冷启动时目标 Agent 目录尚不存在，<code>toRealPath</code> 会失败，无法支持现有按需创建流程。拒绝。</p>
 
-  <h3>规范化 Path 后使用 startsWith 校验</h3>
-  <p><strong>优点：</strong>按文件系统路径段判断包含关系，直接保护 <code>resolve</code> 的结果，并与现有格式校验形成双层边界。<br><strong>缺点：</strong>在当前严格 ID 正则下属于冗余校验，但该冗余是有意的纵深防御。接受。</p>
+  <h3>使用 <code>File#getCanonicalPath</code> 后执行 Path 包含性校验</h3>
+  <p><strong>优点：</strong>支持尚不存在的目标目录，解析已有符号链接，并按文件系统路径段验证包含关系。<br><strong>缺点：</strong>canonical path 解析可能产生 I/O 错误，需要明确失败语义。接受。</p>
 
   <h2>Decision</h2>
   <ul>
-    <li>先把配置的 <code>agentsRoot</code> 转为绝对路径并规范化。</li>
-    <li>以规范化根目录执行 <code>resolve(agentId)</code> 并再次规范化。</li>
-    <li>要求结果 <code>startsWith</code> 规范化根目录；失败时抛出 <code>IllegalArgumentException</code>。</li>
+    <li>使用 <code>File#getCanonicalPath()</code> 获取配置 <code>agentsRoot</code> 的 canonical path，不使用 <code>toAbsolutePath()</code> 作为安全边界。</li>
+    <li>在 canonical 根目录下构造 Agent 子目录，并再次调用 <code>getCanonicalPath()</code>。</li>
+    <li>把两个 canonical path 转为 <code>Path</code>，要求候选路径 <code>startsWith</code> canonical 根目录；失败时抛出 <code>IllegalArgumentException</code>。</li>
+    <li>canonical path 解析失败时抛出 <code>AgentRuntimeException</code>，不继续文件或远端操作。</li>
     <li>保留 <code>AGENT_ID_PATTERN</code> 前置校验，使非法领域 ID 在路径操作前被拒绝。</li>
-    <li>增加独立回归测试，模拟路径解析结果位于配置根目录之外，证明后置校验会阻止后续访问。</li>
+    <li>增加独立回归测试，以真实符号链接把合法 Agent 目录指向根目录之外，证明 canonical 后置校验会阻止后续访问。</li>
   </ul>
 
   <h2>Intentional difference</h2>
-  <p><strong>安全加固：</strong>合法 Agent 的行为与目录布局不变；新增行为只在规范化结果不属于配置根目录时 fail closed。该校验不是对 pi 既有行为的描述，而是 CampusClaw Java 实现新增的路径边界保证。</p>
+  <p><strong>安全加固：</strong>合法 Agent 的行为与目录布局不变；新增行为会拒绝 canonical path 不属于配置根目录的路径，包括指向外部目录的已有符号链接。该校验不是对 pi 既有行为的描述，而是 CampusClaw Java 实现新增的路径边界保证。</p>
 
   <h2>Consequences</h2>
   <ul>
-    <li>正面：动态路径拼接点可以独立证明不会逃逸 <code>agentsRoot</code>。</li>
+    <li>正面：动态路径拼接点可以基于 canonical path 独立证明不会逃逸 <code>agentsRoot</code>。</li>
+    <li>正面：已有 Agent 路径中的符号链接不能把缓存读取引导到配置根目录之外。</li>
     <li>正面：将来即使 ID 规则被放宽，路径包含性仍有独立保护。</li>
     <li>兼容性：所有当前合法 <code>agentId</code> 继续解析为原目录。</li>
     <li>失败语义：包含性验证失败时，在文件系统或 Mate 产生副作用前抛出参数异常。</li>
