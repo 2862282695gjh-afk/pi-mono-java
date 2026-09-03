@@ -114,14 +114,19 @@ public class SkillLoader {
         Path baseDir = filePath.getParent();
         String parentDirName = baseDir != null ? baseDir.getFileName().toString() : "";
 
-        // 名称优先取 frontmatter，其次取父目录名。
-        String name = frontmatter.containsKey("name") ? String.valueOf(frontmatter.get("name")) : parentDirName;
+        // Agent Skills 规范：frontmatter 名称必填且必须是字符串，并与所在文件夹同名。
+        if (!(frontmatter.get("name") instanceof String name) || name.isBlank()) {
+            throw new SkillLoadException("Skill name is required in frontmatter: " + filePath);
+        }
 
         validateName(name, filePath);
 
-        // 描述为必填字段。
-        String description =
-                frontmatter.containsKey("description") ? String.valueOf(frontmatter.get("description")) : null;
+        if (!name.equals(parentDirName)) {
+            throw new SkillLoadException("Skill name must match its folder name: " + filePath);
+        }
+
+        // 描述为必填字段，且必须是字符串。
+        String description = frontmatter.get("description") instanceof String text ? text : null;
 
         if (description == null || description.isBlank()) {
             throw new SkillLoadException("Skill description is required: " + filePath);

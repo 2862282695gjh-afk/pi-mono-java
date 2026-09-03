@@ -41,6 +41,8 @@ class AgentRuntimeManagerTest {
 
     private static final String SKILL_ID = "skill-11111111111111111111111111111111";
 
+    private static final String LEGACY_SKILL_ID = "skill-ffffffffffffffffffffffffffffffff";
+
     @TempDir
     Path tempDir;
 
@@ -279,6 +281,50 @@ class AgentRuntimeManagerTest {
     private void stubRuntime(String version, String prompt) {
         when(client.getAgentRuntime(AGENT_ID)).thenReturn(runtime(version, prompt));
         when(client.querySkillInfo(SKILL_ID)).thenReturn(skill(skillContent()));
+    }
+
+    @Test
+    void prepareSucceedsWhenLegacySkillNameIsBound() throws Exception {
+        when(client.getAgentRuntime(AGENT_ID)).thenReturn(runtimeWithLegacySkill());
+        when(client.querySkillInfo(SKILL_ID)).thenReturn(skill(skillContent()));
+        when(client.querySkillInfo(LEGACY_SKILL_ID)).thenReturn(legacySkill());
+
+        PreparedAgentRuntime prepared = manager.prepare(AGENT_ID);
+
+        Path managed = prepared.agentRoot().resolve(".campusclaw");
+        assertTrue(Files.isRegularFile(managed.resolve("skills/calendar/SKILL.md")));
+        assertTrue(Files.isRegularFile(managed.resolve("skills/pdf--tools/SKILL.md")));
+        assertTrue(prepared.skills().stream().anyMatch(info -> "pdf--tools".equals(info.name())));
+    }
+
+    private AgentRuntime runtimeWithLegacySkill() {
+        return new AgentRuntime(
+                List.of("gpt-4o"),
+                List.of(new SkillReference(SKILL_ID, "1.0.0"), new SkillReference(LEGACY_SKILL_ID, "1.0.0")),
+                List.of(),
+                List.of(child("researcher", CHILD_ID)),
+                List.of("description"),
+                "Agent A",
+                true,
+                AGENT_ID,
+                "agent-a",
+                "prompt-v1",
+                List.of(),
+                "1.0.0");
+    }
+
+    private static SkillInfo legacySkill() {
+        return new SkillInfo(
+                "pdf--tools",
+                LEGACY_SKILL_ID,
+                "1.0.0",
+                "Legacy naming skill",
+                "legacy",
+                "---\nname: pdf--tools\ndescription: Legacy workflow\n---\n\nUse the legacy workflow.\n",
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of());
     }
 
     private static AgentRuntime runtime(String version, String prompt) {

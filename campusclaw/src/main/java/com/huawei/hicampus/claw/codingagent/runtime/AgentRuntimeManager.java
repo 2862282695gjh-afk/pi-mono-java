@@ -50,7 +50,14 @@ public class AgentRuntimeManager {
     private static final Logger LOGGER = LoggerFactory.getLogger(AgentRuntimeManager.class);
 
     private static final int SCHEMA_VERSION = 1;
-    private static final String CAMPUSCLAW_DIRECTORY = ".campusclaw";
+
+    /**
+     * Managed runtime directory name under the agent root; consumers that resolve
+     * published runtime files (for example Skill command discovery) must go through
+     * this constant instead of hard-coding the literal.
+     */
+    public static final String CAMPUSCLAW_DIRECTORY = ".campusclaw";
+
     private static final String AGENT_FILE = "agent.json";
     private static final String SETTINGS_FILE = "settings.json";
     private static final String SYSTEM_FILE = "SYSTEM.md";
