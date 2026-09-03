@@ -18,6 +18,7 @@ import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.Optional;
+import java.util.function.Supplier;
 
 import com.huawei.hicampus.claw.agent.Agent;
 import com.huawei.hicampus.claw.ai.types.UserMessage;
@@ -69,6 +70,8 @@ class RuntimeSessionControlServiceTest {
                 new RuntimeEventStream(256, 1024L * 1024L, Duration.ofSeconds(15), event -> 1L));
         assertThat(holder.begin(execution)).isTrue();
         when(engines.find(SESSION_ID)).thenReturn(Optional.of(holder));
+        when(engines.withOperationLock(any(), any(Supplier.class)))
+                .thenAnswer(invocation -> ((Supplier<?>) invocation.getArgument(1)).get());
         properties = new RuntimeExecutionProperties();
         service = new RuntimeSessionControlService(
                 repository, engines, Clock.fixed(Instant.parse("2026-08-18T07:10:00Z"), ZoneOffset.UTC), properties);

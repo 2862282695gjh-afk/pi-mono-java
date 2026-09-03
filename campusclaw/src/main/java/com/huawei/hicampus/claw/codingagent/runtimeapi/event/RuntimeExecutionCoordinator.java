@@ -111,14 +111,11 @@ public class RuntimeExecutionCoordinator {
             RuntimeSubscriptions subscriptions,
             Throwable executionError,
             Locale locale) {
-        engineRegistry.lockOperation(holder.sessionId());
-        try {
+        engineRegistry.withOperationLock(holder.sessionId(), () -> {
             if (!continueQueuedExecution(holder, execution, projector, executionError, locale, subscriptions)) {
                 completeExecution(holder, execution, projector, subscriptions, executionError, locale);
             }
-        } finally {
-            engineRegistry.unlockOperation(holder.sessionId());
-        }
+        });
     }
 
     private boolean continueQueuedExecution(

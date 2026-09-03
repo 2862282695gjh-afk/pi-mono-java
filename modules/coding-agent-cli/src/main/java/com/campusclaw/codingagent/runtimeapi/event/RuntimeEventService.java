@@ -94,7 +94,12 @@ public class RuntimeEventService {
 
     private RuntimeEventStream prepareAndSubmit(
             String sessionId, ValidatedUserEvent request, Locale locale, MateCredentials credentials) {
-        engineRegistry.lockOperation(sessionId);
+        return engineRegistry.withOperationLock(
+                sessionId, () -> prepareAndSubmitLocked(sessionId, request, locale, credentials));
+    }
+
+    private RuntimeEventStream prepareAndSubmitLocked(
+            String sessionId, ValidatedUserEvent request, Locale locale, MateCredentials credentials) {
         RuntimeExecutionContext context = null;
         try {
             RuntimeSessionDTO session = requireIdleSession(sessionId);
@@ -113,8 +118,6 @@ public class RuntimeEventService {
         } catch (RuntimeException error) {
             releaseUnacceptedExecution(context);
             throw error;
-        } finally {
-            engineRegistry.unlockOperation(sessionId);
         }
     }
 
