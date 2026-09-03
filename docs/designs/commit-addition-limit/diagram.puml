@@ -1,8 +1,9 @@
 @startuml commit_addition_limit
-' Source evidence: .github/workflows/ci.yml:1-25 at c9d858bc8261bf07f5585f545b53495bf2226a56.
+' Pre-change source evidence: .github/workflows/ci.yml:3-7,13,15-26 at c9d858bc8261bf07f5585f545b53495bf2226a56.
+' Reviewed implementation evidence: scripts/check-commit-additions.sh:40-202 and scripts/tests/check-commit-additions-test.sh:86-234 at 93a0c11952218cb03cb4f9b89927e2280820dbce.
 ' Observed behavior: CI checked formatting and the Maven build without a commit-size gate.
-' Target-only design: scripts/check-commit-additions.sh checks each non-merge commit.
-' Design reason: bound reviewable commit size without charging documentation additions.
+' Architecture change: the gate checks normal and merge-only commit additions and fails closed.
+' Design reason: bound reviewable commit size without charging documentation or target history.
 title Per-commit addition limit
 
 actor Contributor
@@ -16,9 +17,19 @@ Actions -> Git: Checkout full history
 Actions -> Gate: Provide base SHA and head SHA
 Gate -> Git: Resolve merge base
 
-loop Each non-merge commit
-  Gate -> Git: Read rename-aware numstat
-  Gate -> Gate: Exclude documentation paths
+loop Each commit
+  Gate -> Git: Read commit parents
+  alt Zero or one parent
+    Gate -> Git: Read rename-aware diff-tree numstat
+  else Two parents
+    Gate -> Git: Read remerge-diff numstat
+  else More than two parents
+    Gate --> Actions: Fail closed as unsupported
+  end
+  Gate -> Gate: Classify old and new paths
+  opt Documentation moved into code
+    Gate -> Git: Read full destination blob
+  end
   Gate -> Gate: Sum added lines only
   alt Added code lines exceed 2000
     Gate --> Actions: Fail with commit and file details
