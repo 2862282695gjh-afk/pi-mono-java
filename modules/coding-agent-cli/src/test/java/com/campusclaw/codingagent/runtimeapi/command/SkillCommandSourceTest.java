@@ -110,19 +110,6 @@ class SkillCommandSourceTest {
     }
 
     @Test
-    void findRequiresSkillPrefixAndKnownSkill() throws IOException {
-        skillMarkdown("alpha");
-        when(agentRuntimeManager.prepareCached(AGENT_ID))
-                .thenReturn(prepared(new SkillInfo("alpha", null, null, "Alpha", null, null, null, null, null, null)));
-
-        assertThat(source.find(session("idle"), "skill:alpha")).isPresent();
-        assertThat(source.find(session("idle"), "alpha")).isEmpty();
-        assertThat(source.find(session("idle"), "skill:missing")).isEmpty();
-        assertThat(source.find(session("idle"), "skill:--bad")).isEmpty();
-        assertThat(source.find(session("idle"), null)).isEmpty();
-    }
-
-    @Test
     void skillsWithoutMaterializedMarkdownAreIgnored() {
         when(agentRuntimeManager.prepareCached(AGENT_ID))
                 .thenReturn(

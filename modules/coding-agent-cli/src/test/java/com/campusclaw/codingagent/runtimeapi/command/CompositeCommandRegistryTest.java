@@ -8,7 +8,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.List;
-import java.util.Optional;
 
 import com.campusclaw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
 
@@ -71,22 +70,9 @@ class CompositeCommandRegistryTest {
     }
 
     private CommandDefinitionSource source(String... names) {
-        return new CommandDefinitionSource() {
-            @Override
-            public List<CommandDefinition> list(RuntimeSessionDTO sessionView) {
-                return java.util.Arrays.stream(names)
-                        .map(CompositeCommandRegistryTest.this::definition)
-                        .toList();
-            }
-
-            @Override
-            public Optional<CommandDefinition> find(RuntimeSessionDTO sessionView, String name) {
-                return java.util.Arrays.stream(names)
-                        .filter(candidate -> candidate.equals(name))
-                        .map(CompositeCommandRegistryTest.this::definition)
-                        .findFirst();
-            }
-        };
+        return sessionView -> java.util.Arrays.stream(names)
+                .map(CompositeCommandRegistryTest.this::definition)
+                .toList();
     }
 
     private CommandDefinition definition(String name) {
