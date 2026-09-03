@@ -1,0 +1,33 @@
+@startuml commit_addition_limit
+' Source evidence: .github/workflows/ci.yml:1-25 at c9d858bc8261bf07f5585f545b53495bf2226a56.
+' Observed behavior: CI checked formatting and the Maven build without a commit-size gate.
+' Target-only design: scripts/check-commit-additions.sh checks each non-merge commit.
+' Design reason: bound reviewable commit size without charging documentation additions.
+title Per-commit addition limit
+
+actor Contributor
+participant "GitHub Actions" as Actions
+database "Git history" as Git
+participant "Commit addition gate" as Gate
+participant "Existing build gates" as Build
+
+Contributor -> Actions: Push pull-request commits
+Actions -> Git: Checkout full history
+Actions -> Gate: Provide base SHA and head SHA
+Gate -> Git: Resolve merge base
+
+loop Each non-merge commit
+  Gate -> Git: Read rename-aware numstat
+  Gate -> Gate: Exclude documentation paths
+  Gate -> Gate: Sum added lines only
+  alt Added code lines exceed 2000
+    Gate --> Actions: Fail with commit and file details
+  else Added code lines are at most 2000
+    Gate --> Actions: Report commit pass
+  end
+end
+
+Actions -> Gate: Run gate regression tests
+Actions -> Build: Set up JDK, format check, verify
+Build --> Contributor: CI result
+@enduml

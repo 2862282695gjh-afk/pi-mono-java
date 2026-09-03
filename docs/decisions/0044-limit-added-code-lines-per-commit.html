@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ADR-0044：按普通提交限制非文档新增行</title>
+  <style>
+    :root { color-scheme: light; font-family: Inter, "PingFang SC", sans-serif; color: #25272a; background: #f2f5f7; }
+    body { margin: 0; }
+    main { width: min(920px, calc(100% - 40px)); margin: 40px auto; padding: 40px; box-sizing: border-box; background: #fff; border: 1px solid #d7dde2; border-radius: 16px; }
+    h1 { margin-top: 0; font-size: 30px; }
+    h2 { margin-top: 32px; font-size: 20px; }
+    h3 { margin-top: 22px; font-size: 17px; }
+    p, li { line-height: 1.75; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 10px 12px; border: 1px solid #d7dde2; text-align: left; vertical-align: top; }
+    th { width: 190px; background: #edf2f5; }
+    code { padding: 2px 5px; border-radius: 5px; background: #edf2f5; overflow-wrap: anywhere; }
+    a { color: #1769aa; }
+    .status { display: inline-flex; padding: 4px 9px; border-radius: 999px; color: #12633a; background: #e8f7ed; font-weight: 650; }
+    @media (max-width: 640px) { main { width: 100%; margin: 0; padding: 24px 18px; border: 0; border-radius: 0; } th { width: 120px; } }
+  </style>
+</head>
+<body>
+<main>
+  <h1>ADR-0044：按普通提交限制非文档新增行</h1>
+  <table>
+    <tr><th>Status</th><td><span class="status">Accepted</span></td></tr>
+    <tr><th>Date</th><td>2026-09-03</td></tr>
+    <tr><th>Source baseline</th><td><code>origin/main@c9d858bc8261bf07f5585f545b53495bf2226a56</code></td></tr>
+    <tr><th>Observed source</th><td><code>.github/workflows/ci.yml:1-25</code>、<code>scripts/</code></td></tr>
+    <tr><th>Change class</th><td>仓库 CI 架构变化</td></tr>
+  </table>
+
+  <h2>Context</h2>
+  <p>变更前的 CI 只执行 Spotless 与 Maven <code>verify</code>，没有约束提交的新增规模。构建成功不能保证提交易于评审、定位和回滚，因此需要在构建前增加仓库级提交粒度门禁。</p>
+  <p>产品要求每个提交不得新增超过 2000 行代码，文档不计入。这里的“每个提交”需要在目标分支可能前进、主题分支可能合并最新 <code>main</code> 的 Git 历史中保持稳定语义。</p>
+
+  <h2>Decision drivers</h2>
+  <ul>
+    <li>直接约束单个可评审、可回滚提交，而不是限制整个 PR 的功能规模。</li>
+    <li>文档新增不消耗代码行额度，删除代码也不能抵扣新增代码。</li>
+    <li>不依赖 GitHub API、语言识别服务或额外权限。</li>
+    <li>支持目标分支前进以及主题分支合并最新 <code>main</code> 的既有工作流。</li>
+    <li>门禁算法可在本地用同一脚本和 Git 对象复现。</li>
+  </ul>
+
+  <h2>Considered options</h2>
+  <h3>限制 PR 汇总新增行</h3>
+  <p><strong>优点：</strong>实现简单，GitHub 页面也能近似展示。<br><strong>缺点：</strong>两个清晰的小提交会因累计规模被拒绝，无法落实“每次提交”的要求；后续删除还可能掩盖早期超大提交。拒绝。</p>
+
+  <h3>依赖人工评审判断提交规模</h3>
+  <p><strong>优点：</strong>无需 CI 变化，可以按场景自由判断。<br><strong>缺点：</strong>执行不一致且发现太晚，无法形成自动门禁。拒绝。</p>
+
+  <h3>用 Git numstat 逐普通提交统计非文档新增行</h3>
+  <p><strong>优点：</strong>准确区分新增与删除，结果可复现，能通过路径规则排除文档，并允许一个 PR 包含多个合规提交。<br><strong>缺点：</strong>CI 需要完整 Git 历史；二进制内容没有文本行数；合并提交没有唯一的父提交差异。接受。</p>
+
+  <h2>Decision</h2>
+  <ul>
+    <li>新增 <code>scripts/check-commit-additions.sh</code>，接收 base/head revision 并以共同祖先确定检查范围。</li>
+    <li>按历史顺序检查范围内所有非合并提交；合并提交不重复统计，其包含的非合并提交仍受门禁约束。</li>
+    <li>使用 rename-aware <code>git diff-tree --numstat</code> 统计文本新增行，只累加 additions 列。</li>
+    <li>每个提交新增非文档行不超过 2000 时通过；2001 行起失败，删除行不能抵扣。</li>
+    <li>排除文档目录、文档扩展名及标准仓库文档文件；目录外的应用 HTML、配置、测试和脚本仍计入。</li>
+    <li>Checkout 使用完整历史，并在现有 Spotless/Maven 门禁前运行检查脚本及其回归测试。</li>
+  </ul>
+
+  <h2>Intentional difference</h2>
+  <p><strong>架构变化：</strong>CI 从只验证最终源码状态，扩展为同时验证 PR 的提交历史结构。<strong>产品约束：</strong>2000 行是提交评审粒度上限，不是运行时、模块或 PR 总量限制。文档排除属于明确产品规则，不代表文档无需评审。</p>
+
+  <h2>Consequences</h2>
+  <ul>
+    <li>正面：超大代码提交在构建前被确定性拒绝，并给出提交和逐文件证据。</li>
+    <li>正面：大型功能可以拆成多个各自合规、可理解的提交。</li>
+    <li>正面：文档、ADR 和生成设计图不会占用代码额度。</li>
+    <li>代价：GitHub Actions 必须执行完整历史 Checkout，增加网络与存储开销。</li>
+    <li>边界：二进制文件没有文本新增行；其大小和适用性继续由其他规则及评审约束。</li>
+    <li>边界：合并提交不单独计算，避免把目标分支已有历史重复计入；合并所包含的普通提交逐一计算。</li>
+  </ul>
+
+  <h2>Validation</h2>
+  <ul>
+    <li>用临时 Git 仓库覆盖 2000/2001 边界、文档排除、多提交累计和重命名。</li>
+    <li>执行 Bash 语法检查、ShellCheck、脚本回归测试和当前分支提交范围检查。</li>
+    <li>执行现有 Maven <code>verify</code>、Git diff 检查及设计文档/PlantUML/SVG 验证。</li>
+  </ul>
+
+  <h2>Related</h2>
+  <ul>
+    <li><a href="../designs/commit-addition-limit.md">CI 单提交新增代码行门禁设计</a></li>
+    <li><a href="../designs/commit-addition-limit/diagram.puml#L1">PlantUML 源文件</a></li>
+  </ul>
+</main>
+</body>
+</html>
