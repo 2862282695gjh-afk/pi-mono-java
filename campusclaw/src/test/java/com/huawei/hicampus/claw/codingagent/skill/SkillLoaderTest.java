@@ -201,7 +201,7 @@ class SkillLoaderTest {
         }
 
         @Test
-        void requiresNameInFrontmatter() throws IOException {
+        void defaultsNameToParentDirectoryName() throws IOException {
             Path skillDir = tempDir.resolve("commit");
             Files.createDirectories(skillDir);
             Path skillFile = skillDir.resolve("SKILL.md");
@@ -214,52 +214,9 @@ class SkillLoaderTest {
                     Body.
                     """);
 
-            SkillLoadException error =
-                    assertThrows(SkillLoadException.class, () -> loader.loadFromFile(skillFile, "user"));
+            Skill skill = loader.loadFromFile(skillFile, "user");
 
-            assertTrue(error.getMessage().contains("name is required"));
-        }
-
-        @Test
-        void rejectsNullFrontmatterNameEvenWhenFolderMatchesNull() throws IOException {
-            Path skillDir = tempDir.resolve("null");
-            Files.createDirectories(skillDir);
-            Path skillFile = skillDir.resolve("SKILL.md");
-            Files.writeString(
-                    skillFile,
-                    """
-                    ---
-                    name:
-                    description: Null name
-                    ---
-                    Body.
-                    """);
-
-            SkillLoadException error =
-                    assertThrows(SkillLoadException.class, () -> loader.loadFromFile(skillFile, "user"));
-
-            assertTrue(error.getMessage().contains("name is required"));
-        }
-
-        @Test
-        void rejectsNonStringFrontmatterName() throws IOException {
-            Path skillDir = tempDir.resolve("commit");
-            Files.createDirectories(skillDir);
-            Path skillFile = skillDir.resolve("SKILL.md");
-            Files.writeString(
-                    skillFile,
-                    """
-                    ---
-                    name: [commit, assistant]
-                    description: List name
-                    ---
-                    Body.
-                    """);
-
-            SkillLoadException error =
-                    assertThrows(SkillLoadException.class, () -> loader.loadFromFile(skillFile, "user"));
-
-            assertTrue(error.getMessage().contains("name is required"));
+            assertEquals("commit", skill.name());
         }
 
         @Test
