@@ -1,6 +1,6 @@
 # Coding Agent Runtime HTTP 与受管 Session 设计
 
-> 文档版本：3.5.0
+> 文档版本：3.6.0
 >
 > PR 167 修订基线：`f60cc3e78bb8b700527ac082c7c8e10524ede095`
 >
@@ -13,6 +13,10 @@
 > 压缩取消释放修复基线：`8081b5882f0f95ea37f1a36c659265c723bcd3ef`
 >
 > Agent 根目录配置清理基线：`1b3b519419ca9bf9025ba2c88335382b9a5b3b02`
+>
+> Runtime 操作锁源码基线：`origin/main@eb318f32830f15b3657c71e8be31bfbfd316652f`
+>
+> Runtime 操作锁审查实现：`812bf407d9fef9088b6bef8f8b86bd8f2bbb1f7e`
 >
 > 源码仓库：本仓库 `pi-mono-java`
 
@@ -47,6 +51,8 @@ Assistant/Compaction 完成保存本次 Usage，模型/思考/压缩形成持久
 | lowerCamelCase HTTP 边界 | `runtimeapi/web/*Controller`、`runtimeapi/vo/*RequestVO`、`runtimeapi/vo/*ResponseVO`、`RuntimeEntryCodec#toSseData`、`RuntimeEntryCodec#toHistoryEvent`、`RuntimeEventProjector` |
 | Session 与事件持久化使用 MyBatis | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/persistence/MyBatisRuntimeSessionRepository.java` |
 | 事件接受、历史查询和执行生命周期相互分离 | `RuntimeEventService`、`RuntimeEventQueryService`、`RuntimeExecutionCoordinator` |
+| 源码基线由调用方配对操作锁 | `RuntimeSessionEngineRegistry#lockOperation`、`RuntimeSessionEngineRegistry#unlockOperation`，存在于 `origin/main@eb318f32830f15b3657c71e8be31bfbfd316652f` |
+| 审查实现收口同一 Session 的事件接受、控制和执行收尾串行化 | `RuntimeSessionEngineRegistry#withOperationLock`、`RuntimeEventService#prepareAndSubmit`、`RuntimeSessionControlService#accept`、`RuntimeSessionControlService#prepareAbort`、`RuntimeExecutionCoordinator#finish`，存在于 `812bf407d9fef9088b6bef8f8b86bd8f2bbb1f7e` |
 | thinking 实时投影、持久化和查询过滤 | `RuntimeEventProjector#projectThinking`、`RuntimeEntryCodec#thinkingEntry`、`RuntimeEventQueryService#list`、`RuntimeEventCursorCodec` |
 | SSE 使用有界请求级订阅 | `RuntimeEventStream`、`RuntimeSseDispatcher`、`RuntimeSseEmitterSubscriber` |
 | 压缩取消释放 Mate SSE | `SessionCompactor#completeSummary`、`EventStream#result`、`MateServiceModelManagerProvider#subscribe`、`MateServiceModelManagerProvider#cancel` |
@@ -223,6 +229,23 @@ Runtime V1 事件名 `tool.execution.started` 与 `tool.execution.completed` 是
 事件类型，不是工具配置项，必须继续保留。完整契约见[工具系统 v2](tool-system-v2.md)和
 [ADR-0022](../decisions/0022-managed-agent-tool-system-v2.html)。
 
+### 6.10 操作锁作用域
+
+![Runtime Session 操作锁作用域](coding-agent-cli/runtime-operation-lock.svg)
+
+[PlantUML 源码](coding-agent-cli/diagram.puml#L99)
+
+源码基线中的 `RuntimeSessionEngineRegistry#lockOperation` 和 `#unlockOperation` 向调用方分别暴露
+加锁与解锁。当前三个调用类都用 `finally` 成对释放，但注册表本身无法保证未来调用者遵守该协议，
+静态分析也无法在加锁方法内证明锁一定释放。这是已观察的 Java 行为，不是 pi 行为。
+
+审查实现由 `RuntimeSessionEngineRegistry#withOperationLock` 接收 `Supplier` 或 `Runnable`，在同一方法
+内获取条带锁，并在 `finally` 中统一释放。事件接受、Steer/FollowUp、Abort 和执行收尾只提交临界区
+操作，不再获得独立的 `unlock` 能力；操作正常返回和抛出运行时异常都经过同一释放路径。同一 Session
+以及哈希到同一条带的 Session 仍保持原有串行语义，HTTP、SSE、持久化与错误契约不变。该差异分类为
+内部架构变更，目的是让锁释放成为注册表保证而非调用方约定。决策见
+[ADR-0045](../decisions/0045-scope-runtime-operation-lock-release.html)。
+
 ## 7. 质量约束
 
 - Controller 只接收和返回 VO，Service 负责业务规则和 VO/DTO 转换，Mapper 使用 DTO；
@@ -238,6 +261,7 @@ Runtime V1 事件名 `tool.execution.started` 与 `tool.execution.completed` 是
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 3.6.0 | 2026-09-03 | 将 Runtime Session 操作锁收口为作用域 API，保证正常与异常路径都在 `finally` 中释放。 |
 | 3.5.0 | 2026-09-01 | 对齐 CampusClaw 公司镜像的新目录、Java 包、同步入口和独立公司构建边界。 |
 | 3.4.0 | 2026-08-31 | 统一事件 Flux 与结果 Mono 的取消传播；压缩中止时释放 Mate SSE 订阅并终止事件累积。 |
 | 3.3.1 | 2026-08-31 | 删除 Mate 配置中未绑定的旧 Agent 根目录配置，统一使用 `campusmate.runtime.agents-root` 和 `CAMPUSCLAW_AGENTS_ROOT`。 |
