@@ -133,3 +133,28 @@ deactivate Lock
 Registry --> Caller : result or exception
 deactivate Registry
 @enduml
+
+@startuml corporate-gaussdb-script-layout
+title Corporate GaussDB Script Packaging
+left to right direction
+skinparam backgroundColor white
+
+' Source baseline: origin/main commit d84dd3d6a306b7587c70b29e0100e741dacef989.
+' Source: modules/coding-agent-cli/src/main/resources/db/gaussdb/install/session_schema.sql.
+' Source: scripts/sync-campusclaw.sh, SYNCED_RESOURCES and the resource apply loop.
+' Observed behavior: the baseline sync copies the complete db/gaussdb tree into corporate classpath resources.
+' Product constraint: the corporate module must publish one initdb_gaussdbv5.sql under scripts/install.
+' Architecture change: mirror sync derives the corporate install file from canonical DDL and removes the classpath tree.
+' Design reason: keep one schema source while meeting the corporate delivery layout without packaging SQL in the JAR.
+
+artifact "Canonical module DDL\nsession_schema.sql" as Canonical
+component "Mirror sync\nstage and apply" as Sync
+folder "Corporate install scripts\ncampusclaw/scripts/install" as Install
+artifact "initdb_gaussdbv5.sql\nDDL only" as InitScript
+folder "Corporate classpath resources" as Resources
+
+Canonical --> Sync : read
+Sync --> InitScript : byte-identical copy
+Install *-- InitScript
+Sync ..> Resources : remove db/gaussdb
+@enduml

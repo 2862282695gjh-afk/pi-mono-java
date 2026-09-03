@@ -1,6 +1,6 @@
 # Coding Agent Runtime HTTP 与受管 Session 设计
 
-> 文档版本：3.6.1
+> 文档版本：3.7.0
 >
 > PR 167 修订基线：`f60cc3e78bb8b700527ac082c7c8e10524ede095`
 >
@@ -22,9 +22,13 @@
 >
 > 模型异常因果链已审查实现：`f3e2a31c6f0692fec429567c5535c6ec9bec7343`
 >
+> GaussDB 脚本布局源码基线：`origin/main@d84dd3d6a306b7587c70b29e0100e741dacef989`
+>
+> GaussDB 脚本布局实现：`c1335026`
+>
 > 源码仓库：本仓库 `pi-mono-java`
 
-> 公司镜像相关路径和标识按 2026-09-01 的当前仓库位置展示；历史提交 SHA 仍是对应行为证据。
+> 公司镜像相关路径和标识按 2026-09-03 的当前仓库位置展示；历史提交 SHA 仍是对应行为证据。
 
 ## 1. 结论
 
@@ -54,6 +58,7 @@ Assistant/Compaction 完成保存本次 Usage，模型/思考/压缩形成持久
 | 类型化资源 ID 与 Session 默认值 | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/common/identifier/ResourceIdentifierPatterns.java`、`runtimeapi/web/*Controller` 的 `@PathVariable` 参数约束、`RuntimeExceptionHandler#handleInvalidParameter`、`MateServiceClient#getAgentRuntime`、`MateServiceClient#querySkillInfo`、`AgentRuntimeManager#prepare`、`HttpMateToolClient#listTools`、`RandomSessionIdGenerator#nextId`、`RuntimeSessionService#newSession` |
 | lowerCamelCase HTTP 边界 | `runtimeapi/web/*Controller`、`runtimeapi/vo/*RequestVO`、`runtimeapi/vo/*ResponseVO`、`RuntimeEntryCodec#toSseData`、`RuntimeEntryCodec#toHistoryEvent`、`RuntimeEventProjector` |
 | Session 与事件持久化使用 MyBatis | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/persistence/MyBatisRuntimeSessionRepository.java` |
+| GaussDB DDL 与公司交付布局 | `modules/coding-agent-cli/src/main/resources/db/gaussdb/install/session_schema.sql`；`scripts/sync-campusclaw.sh` 的 `SYNCED_RESOURCES`、`stage_database_install_script` 和公司脚本 apply 逻辑；`campusclaw/scripts/install/initdb_gaussdbv5.sql` |
 | 事件接受、历史查询和执行生命周期相互分离 | `RuntimeEventService`、`RuntimeEventQueryService`、`RuntimeExecutionCoordinator` |
 | 源码基线由调用方配对操作锁 | `RuntimeSessionEngineRegistry#lockOperation`、`RuntimeSessionEngineRegistry#unlockOperation`，存在于 `origin/main@eb318f32830f15b3657c71e8be31bfbfd316652f` |
 | 审查实现收口同一 Session 的事件接受、控制和执行收尾串行化 | `RuntimeSessionEngineRegistry#withOperationLock`、`RuntimeEventService#prepareAndSubmit`、`RuntimeSessionControlService#accept`、`RuntimeSessionControlService#prepareAbort`、`RuntimeExecutionCoordinator#finish`，存在于 `812bf407d9fef9088b6bef8f8b86bd8f2bbb1f7e` |
@@ -263,6 +268,29 @@ Runtime V1 事件名 `tool.execution.started` 与 `tool.execution.completed` 是
 内部架构变更，目的是让锁释放成为注册表保证而非调用方约定。决策见
 [ADR-0045](../decisions/0045-scope-runtime-operation-lock-release.html)。
 
+### 6.11 公司镜像 GaussDB 脚本交付
+
+![公司镜像 GaussDB 脚本交付](coding-agent-cli/corporate-gaussdb-script-layout.svg)
+
+[PlantUML 源码](coding-agent-cli/diagram.puml#L137)
+
+源码基线中，`scripts/sync-campusclaw.sh` 把模块侧整个 `db/gaussdb` 目录列入资源白名单，因而将
+安装 DDL、空初始化数据脚本、授权占位脚本和 upgrade README 一并复制到
+`campusclaw/src/main/resources/db/gaussdb/`。这些文件会进入 Maven classpath 和打包产物，
+不符合公司工程对数据库安装资产的目录与单文件约束。
+
+模块侧布局保持不变，继续供 `start-dev.sh` 和独立工程使用。公司镜像同步改为读取规范
+`session_schema.sql`，字节级复制为
+`campusclaw/scripts/install/initdb_gaussdbv5.sql`，并删除公司镜像中的旧 classpath 目录。
+`campusclaw/scripts/install/` 是由同步脚本完整管理的生成目录，只允许该文件；空初始化数据、
+授权占位和 upgrade README 不进入公司交付目录。`--skip-resources` 只跳过 classpath 资源，
+不会跳过这个独立安装资产。
+
+目录和文件名属于公司交付产品约束；由同一规范 DDL 自动生成公司单文件、让 dry-run、pre-push
+与 CI 共同检查一致性，属于镜像同步架构变化。SQL 内容、表结构、应用 DML 权限和 Runtime
+行为均不改变。方案与取舍见
+[ADR-0049](../decisions/0049-publish-corporate-gaussdb-init-script.html)。
+
 ## 7. 质量约束
 
 - Controller 只接收和返回 VO，Service 负责业务规则和 VO/DTO 转换，Mapper 使用 DTO；
@@ -271,6 +299,8 @@ Runtime V1 事件名 `tool.execution.started` 与 `tool.execution.completed` 是
 - 新增或修改的 Java 方法不超过 50 个非空物理行；
 - Java 与 XML 源文件遵循公司版权、中文 Javadoc 和 XML DTD 规则；
 - 主模块与 `campusclaw` 镜像必须通过同一套测试。
+- 公司镜像不得在 classpath resources 下包含 GaussDB 脚本；`scripts/install/` 必须只含与规范
+  DDL 字节级一致的 `initdb_gaussdbv5.sql`。
 - 国际化实现必须验证无基础资源包时应用上下文可启动、双资源 key 集相等且覆盖
   `RuntimeErrorCode`，并覆盖语言权重、英文回退、HTTP 中文错误和 SSE 中文错误。
 
@@ -278,6 +308,7 @@ Runtime V1 事件名 `tool.execution.started` 与 `tool.execution.completed` 是
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 3.7.0 | 2026-09-03 | 将公司镜像 GaussDB DDL 改为 `scripts/install/initdb_gaussdbv5.sql` 单文件交付，保留模块侧多文件布局并由同步脚本保证一致性。 |
 | 3.6.1 | 2026-09-03 | 模型可用性错误码转换保留原始异常 cause，同时维持对外 `MODEL_NOT_AVAILABLE` 防枚举语义。 |
 | 3.6.0 | 2026-09-03 | 将 Runtime Session 操作锁收口为作用域 API，保证正常与异常路径都在 `finally` 中释放。 |
 | 3.5.0 | 2026-09-01 | 对齐 CampusClaw 公司镜像的新目录、Java 包、同步入口和独立公司构建边界。 |
