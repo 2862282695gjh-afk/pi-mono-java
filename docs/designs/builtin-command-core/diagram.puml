@@ -1,0 +1,66 @@
+@startuml builtin_command_core
+title Builtin Command Core and Parallel Skill Extension
+' Source evidence: pi-mono-java@a8192e04 modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/command/CompositeCommandRegistry.java resolve.
+' Source evidence: pi-mono-java@8a402bc7 modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/command/BuiltinCommandSource.java constructor.
+' Source evidence: pi-mono@4af9d21d packages/coding-agent/src/core/agent-session.ts _tryExecuteExtensionCommand.
+' Architecture change: typed source filtering precedes resolution; one catalog preserves descriptor and definition identity.
+' Design reason: Skill work proceeds independently; Builtin selection is not a product-wide command ban.
+skinparam shadowing false
+skinparam classAttributeIconSize 0
+package "Future application boundary" {
+  class CommandCatalogService <<target-only>>
+  class CommandExecutionService <<target-only>>
+}
+package "Core - singleton collaborators" {
+  class CompositeCommandRegistry
+  interface CommandDefinitionSource {
+    kind()
+    list(session)
+    definitions(session)
+  }
+  class BuiltinCommandSource
+  interface BuiltinCommandContributor
+  interface CommandDefinition
+  class BuiltinCommandDefinition
+  class DisplayCommandDefinition
+  interface CommandAdmissionPolicy
+  interface CommandHandler
+}
+package "Request-owned immutable values" {
+  class ResolvedCommandCatalog
+  class ResolvedCommandDTO
+  class CommandSessionSnapshotDTO
+  class CommandExecutionContext
+}
+package "Parallel Skill work" {
+  class SkillCommandSource
+  class SkillExecutionDefinition <<separate workstream>>
+}
+CommandCatalogService --> CompositeCommandRegistry
+CommandExecutionService --> CompositeCommandRegistry : resolve once
+CommandExecutionService --> CommandExecutionContext
+CompositeCommandRegistry o-- "0..*" CommandDefinitionSource
+BuiltinCommandSource ..|> CommandDefinitionSource
+SkillCommandSource ..|> CommandDefinitionSource
+BuiltinCommandSource o-- "0..*" BuiltinCommandContributor : startup unique names
+BuiltinCommandContributor --> BuiltinCommandDefinition
+BuiltinCommandDefinition ..|> CommandDefinition
+DisplayCommandDefinition ..|> CommandDefinition
+SkillExecutionDefinition ..|> CommandDefinition
+BuiltinCommandDefinition *-- CommandAdmissionPolicy
+BuiltinCommandDefinition *-- CommandHandler
+CompositeCommandRegistry --> ResolvedCommandCatalog : filter before resolving
+ResolvedCommandCatalog o-- "0..*" CommandDefinition : preserve identity
+ResolvedCommandCatalog *-- "0..*" ResolvedCommandDTO : describe once
+ResolvedCommandCatalog *-- CommandSessionSnapshotDTO
+CommandExecutionContext --> ResolvedCommandCatalog : same Help view
+note bottom of CommandAdmissionPolicy
+Preview only.
+Domain writes recheck under locks.
+end note
+note bottom of CommandExecutionService
+No HTTP route in this core PR.
+No fake production contributors.
+No request credentials in singleton state.
+end note
+@enduml
