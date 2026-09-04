@@ -7,48 +7,45 @@ package com.huawei.hicampus.claw.codingagent.skill;
 import java.util.regex.Pattern;
 
 /**
- * Single source of Skill name rules for the whole product. {@code LEGACY} keeps
- * loading compatibility for existing skills; {@code STRICT} follows the Agent
- * Skills specification and is used by command discovery and command execution
- * admission. Both share the same maximum name length.
+ * Skill 名称规则的单一来源：加载保持旧格式兼容，命令发现使用严格规则。
  *
  * @version [br_eCampusCore 26.0.0, 2026/09/03]
  * @since [br_eCampusCore 26.0.0]
  */
 public final class SkillNamePatterns {
-    /**
-     * Loading-compatible rule: lowercase letters, digits and hyphens.
-     */
-    public static final Pattern LEGACY = Pattern.compile("^[a-z0-9-]+$");
+    public static final int MAX_NAME_LENGTH = 64;
 
-    /**
-     * Agent Skills rule: hyphens must not lead, trail or repeat.
-     */
-    public static final Pattern STRICT = Pattern.compile("^[a-z0-9]+(?:-[a-z0-9]+)*$");
+    public static final String LEGACY_REGEX = "^[a-z0-9-]+$";
+
+    public static final String STRICT_REGEX = "^[a-z0-9]+(?:-[a-z0-9]+)*$";
+
+    public static final Pattern LEGACY = Pattern.compile(LEGACY_REGEX);
+
+    public static final Pattern STRICT = Pattern.compile(STRICT_REGEX);
 
     private SkillNamePatterns() {}
 
     /**
-     * Checks whether the name satisfies the strict Agent Skills rule.
+     * 检查名称是否符合严格 Agent Skills 规则。
      *
-     * @param name candidate Skill name
-     * @return true when the name is valid for command discovery and execution
+     * @param name 候选 Skill 名称
+     * @return 是否符合命令发现规则
      */
     public static boolean isStrictValid(String name) {
         return isLengthValid(name) && STRICT.matcher(name).matches();
     }
 
     /**
-     * Checks whether the name satisfies the legacy loading rule.
+     * 检查名称是否符合兼容加载规则。
      *
-     * @param name candidate Skill name
-     * @return true when the name is valid for Skill loading
+     * @param name 候选 Skill 名称
+     * @return 是否符合加载规则
      */
     public static boolean isLegacyValid(String name) {
         return isLengthValid(name) && LEGACY.matcher(name).matches();
     }
 
     private static boolean isLengthValid(String name) {
-        return name != null && !name.isEmpty() && name.length() <= Skill.MAX_NAME_LENGTH;
+        return name != null && !name.isEmpty() && name.length() <= MAX_NAME_LENGTH;
     }
 }

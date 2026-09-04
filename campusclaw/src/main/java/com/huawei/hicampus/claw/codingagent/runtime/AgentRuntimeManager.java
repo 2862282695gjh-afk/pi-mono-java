@@ -53,9 +53,7 @@ public class AgentRuntimeManager {
     private static final int SCHEMA_VERSION = 1;
 
     /**
-     * Managed runtime directory name under the agent root; consumers that resolve
-     * published runtime files (for example Skill command discovery) must go through
-     * this constant instead of hard-coding the literal.
+     * Agent 根目录下的受管发布目录名称；发现等消费者复用此常量。
      */
     public static final String CAMPUSCLAW_DIRECTORY = ".campusclaw";
 

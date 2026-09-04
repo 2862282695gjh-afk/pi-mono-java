@@ -6,9 +6,12 @@ package com.huawei.hicampus.claw.codingagent.runtimeapi.command;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -22,10 +25,11 @@ import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /**
- * Session-scoped Skill command discovery: strict name filtering, stable sorting,
- * per-state availability and the versioned snapshot carried by each resolution.
+ * 验证 Skill 名称过滤、排序、状态可用性与版本快照。
  *
  * @version [br_eCampusCore 26.0.0, 2026/09/04]
  * @since [br_eCampusCore 26.0.0]
@@ -56,12 +60,12 @@ class SkillCommandSourceTest {
         when(agentRuntimeManager.prepareCached(AGENT_ID))
                 .thenReturn(prepared(skill("beta", "Beta skill"), skill("alpha", "Alpha skill")));
 
-        List<ResolvedCommand> commands = source.list(session("idle"));
+        List<ResolvedCommandDTO> commands = source.list(session("idle"));
 
         assertThat(commands).hasSize(2);
         assertThat(commands.get(0).name()).isEqualTo("skill:alpha");
         assertThat(commands.get(1).name()).isEqualTo("skill:beta");
-        ResolvedCommand command = commands.get(0);
+        ResolvedCommandDTO command = commands.get(0);
         assertThat(command.kind()).isEqualTo(CommandKind.SKILL);
         assertThat(command.description()).isEqualTo("Alpha skill");
         assertThat(command.available()).isTrue();
@@ -70,6 +74,9 @@ class SkillCommandSourceTest {
         assertThat(command.input().available()).isTrue();
         assertThat(command.input().acceptsFiles()).isTrue();
         assertThat(command.input().placeholder()).isEqualTo("request");
+        assertThat(command.input().suggestions()).isEmpty();
+        verify(agentRuntimeManager).prepareCached(AGENT_ID);
+        verifyNoMoreInteractions(agentRuntimeManager);
     }
 
     @Test
@@ -77,9 +84,8 @@ class SkillCommandSourceTest {
         skillMarkdown("alpha");
         when(agentRuntimeManager.prepareCached(AGENT_ID)).thenReturn(prepared(skill("alpha", "Alpha skill")));
 
-        ResolvedCommand command = source.list(session("idle")).getFirst();
+        ResolvedCommandDTO command = source.list(session("idle")).getFirst();
 
-        assertThat(command.snapshot()).isNotNull();
         assertThat(command.snapshot().agentId()).isEqualTo(AGENT_ID);
         assertThat(command.snapshot().agentVersion()).isEqualTo(AGENT_VERSION);
         assertThat(command.snapshot().skillId()).isEqualTo("skill-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
@@ -94,9 +100,9 @@ class SkillCommandSourceTest {
                 .thenReturn(
                         prepared(skill("good-name", "ok"), skill("pdf--tools", "legacy"), skill("-lead", "legacy")));
 
-        List<ResolvedCommand> commands = source.list(session("idle"));
+        List<ResolvedCommandDTO> commands = source.list(session("idle"));
 
-        assertThat(commands).extracting(ResolvedCommand::name).containsExactly("skill:good-name");
+        assertThat(commands).extracting(ResolvedCommandDTO::name).containsExactly("skill:good-name");
     }
 
     @Test
@@ -104,7 +110,7 @@ class SkillCommandSourceTest {
         skillMarkdown("alpha");
         when(agentRuntimeManager.prepareCached(AGENT_ID)).thenReturn(prepared(skill("alpha", "Alpha skill")));
 
-        ResolvedCommand command = source.list(session("running")).getFirst();
+        ResolvedCommandDTO command = source.list(session("running")).getFirst();
 
         assertThat(command.available()).isFalse();
         assertThat(command.unavailableCode()).isEqualTo("SESSION_BUSY");
@@ -122,6 +128,25 @@ class SkillCommandSourceTest {
     @Test
     void skillsWithoutMaterializedMarkdownAreIgnored() {
         when(agentRuntimeManager.prepareCached(AGENT_ID)).thenReturn(prepared(skill("ghost", "no folder")));
+
+        assertThat(source.list(session("idle"))).isEmpty();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"sibling", "root", "outside"})
+    void ignoresSymbolicLinkAliases(String targetName, @TempDir Path outside) throws IOException {
+        Path managed = agentRoot.resolve(AgentRuntimeManager.CAMPUSCLAW_DIRECTORY);
+        Path target =
+                switch (targetName) {
+                    case "outside" -> outside;
+                    case "root" -> agentRoot;
+                    default -> managed.resolve("skills/beta");
+                };
+        Files.createDirectories(target);
+        Files.writeString(target.resolve("SKILL.md"), "content", StandardCharsets.UTF_8);
+        Files.createDirectories(managed.resolve("skills"));
+        Files.createSymbolicLink(managed.resolve("skills/alpha"), target);
+        when(agentRuntimeManager.prepareCached(AGENT_ID)).thenReturn(prepared(skill("alpha", "alias")));
 
         assertThat(source.list(session("idle"))).isEmpty();
     }
@@ -171,6 +196,6 @@ class SkillCommandSourceTest {
                 .resolve("skills")
                 .resolve(name);
         Files.createDirectories(skillDir);
-        Files.writeString(skillDir.resolve("SKILL.md"), "---\nname: " + name + "\n---\n");
+        Files.writeString(skillDir.resolve("SKILL.md"), "---\nname: " + name + "\n---\n", StandardCharsets.UTF_8);
     }
 }

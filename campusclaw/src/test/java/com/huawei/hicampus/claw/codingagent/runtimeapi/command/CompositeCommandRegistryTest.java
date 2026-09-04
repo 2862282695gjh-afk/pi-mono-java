@@ -6,7 +6,12 @@ package com.huawei.hicampus.claw.codingagent.runtimeapi.command;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
+import java.util.ArrayList;
 import java.util.List;
 
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
@@ -14,8 +19,7 @@ import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
 import org.junit.jupiter.api.Test;
 
 /**
- * Source composition, duplicate detection and exact-name lookup of the per-request
- * resolved command catalog.
+ * 验证来源合并、重名检测、只解析一次和不可变清单。
  *
  * @version [br_eCampusCore 26.0.0, 2026/09/04]
  * @since [br_eCampusCore 26.0.0]
@@ -30,7 +34,7 @@ class CompositeCommandRegistryTest {
                 new CompositeCommandRegistry(List.of(source("skill:zeta", "skill:alpha"), source("skill:middle")));
 
         assertThat(registry.resolve(session).list())
-                .extracting(ResolvedCommand::name)
+                .extracting(ResolvedCommandDTO::name)
                 .containsExactly("skill:alpha", "skill:middle", "skill:zeta");
     }
 
@@ -39,20 +43,33 @@ class CompositeCommandRegistryTest {
         CompositeCommandRegistry registry =
                 new CompositeCommandRegistry(List.of(source("skill:dup"), source("skill:dup")));
 
-        assertThatThrownBy(() -> registry.resolve(session))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("skill:dup");
+        IllegalStateException failure = assertThrows(IllegalStateException.class, () -> registry.resolve(session));
+        assertThat(failure).hasMessageContaining("skill:dup");
     }
 
     @Test
     void catalogFindServesExactNameFromSameResolution() {
-        CompositeCommandRegistry registry = new CompositeCommandRegistry(List.of(source("skill:one", "skill:two")));
+        CommandDefinitionSource source = mock(CommandDefinitionSource.class);
+        when(source.list(session)).thenReturn(List.of(resolved("skill:one"), resolved("skill:two")));
+        CompositeCommandRegistry registry = new CompositeCommandRegistry(List.of(source));
 
         ResolvedCommandCatalog catalog = registry.resolve(session);
 
         assertThat(catalog.find("skill:one")).isPresent();
         assertThat(catalog.find("skill:two")).isPresent();
         assertThat(catalog.find("skill:missing")).isEmpty();
+        verify(source).list(session);
+    }
+
+    @Test
+    void suggestionsAreCopiedAndCannotBeChanged() {
+        List<String> suggestions = new ArrayList<>(List.of("first"));
+        ResolvedCommandDTO.InputDTO input =
+                new ResolvedCommandDTO.InputDTO("optional", true, null, false, "", suggestions);
+        suggestions.add("later");
+
+        assertThat(input.suggestions()).containsExactly("first");
+        assertThatThrownBy(() -> input.suggestions().clear()).isInstanceOf(UnsupportedOperationException.class);
     }
 
     private CommandDefinitionSource source(String... names) {
@@ -61,14 +78,14 @@ class CompositeCommandRegistryTest {
                 .toList();
     }
 
-    private ResolvedCommand resolved(String name) {
-        return new ResolvedCommand(
+    private ResolvedCommandDTO resolved(String name) {
+        return new ResolvedCommandDTO(
                 name,
                 CommandKind.SKILL,
                 "description",
                 true,
                 null,
-                new ResolvedCommand.Input("optional", true, null, true, "request", null),
+                new ResolvedCommandDTO.InputDTO("optional", true, null, true, "request", List.of()),
                 null);
     }
 }

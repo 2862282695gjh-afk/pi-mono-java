@@ -8,37 +8,34 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * Immutable per-request resolution result of {@link CompositeCommandRegistry}. One
- * catalog instance serves command listing and exact-name lookup for the same
- * request, so display, admission and execution read a single validated view of
- * deeply immutable {@link ResolvedCommand} values.
+ * 请求级不可变发现清单；列表与名称查找共享同一次来源解析结果。
  *
  * @version [br_eCampusCore 26.0.0, 2026/09/04]
  * @since [br_eCampusCore 26.0.0]
  */
 public final class ResolvedCommandCatalog {
-    private final List<ResolvedCommand> commands;
+    private final List<ResolvedCommandDTO> commands;
 
-    ResolvedCommandCatalog(List<ResolvedCommand> commands) {
+    ResolvedCommandCatalog(List<ResolvedCommandDTO> commands) {
         this.commands = List.copyOf(commands);
     }
 
     /**
-     * Returns all resolved commands of this resolution, sorted by command name.
+     * 读取按名称排序的本次发现结果。
      *
-     * @return immutable command list
+     * @return 不可变命令列表
      */
-    public List<ResolvedCommand> list() {
+    public List<ResolvedCommandDTO> list() {
         return commands;
     }
 
     /**
-     * Finds one resolved command by exact command name.
+     * 按精确名称查询本次发现结果。
      *
-     * @param name command name without leading slash
-     * @return command when present in this resolution
+     * @param name 不含前导斜杠的命令名
+     * @return 匹配的命令，不存在时为空
      */
-    public Optional<ResolvedCommand> find(String name) {
+    public Optional<ResolvedCommandDTO> find(String name) {
         return commands.stream().filter(command -> command.name().equals(name)).findFirst();
     }
 }

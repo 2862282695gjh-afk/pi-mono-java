@@ -15,10 +15,7 @@ import com.campusclaw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
 import org.springframework.stereotype.Service;
 
 /**
- * Combines all {@link CommandDefinitionSource} beans and resolves one validated
- * {@link ResolvedCommandCatalog} per request, so listing and exact-name lookup
- * share a single resolution of the dynamic sources. The registry contains no
- * command branching; adding a command only means adding a source.
+ * 聚合发现来源，每次请求只解析一次不可变清单，供列表与名称查找共享。
  *
  * @version [br_eCampusCore 26.0.0, 2026/09/04]
  * @since [br_eCampusCore 26.0.0]
@@ -32,24 +29,24 @@ public class CompositeCommandRegistry {
     }
 
     /**
-     * Resolves the command catalog visible to the session for a single request.
+     * 解析当前请求可见的命令清单。
      *
-     * @param session authorized session providing the agent scope
-     * @return validated catalog with commands sorted by command name
-     * @throws IllegalStateException when two sources contribute the same command name
+     * @param session 已经完成访问检查的 Session
+     * @return 经过查重并按名称排序的只读清单
+     * @throws IllegalStateException 不同来源贡献相同命令名时抛出
      */
     public ResolvedCommandCatalog resolve(RuntimeSessionDTO session) {
-        List<ResolvedCommand> commands = new ArrayList<>();
+        List<ResolvedCommandDTO> commands = new ArrayList<>();
         Set<String> seen = new HashSet<>();
         for (CommandDefinitionSource source : sources) {
-            for (ResolvedCommand command : source.list(session)) {
+            for (ResolvedCommandDTO command : source.list(session)) {
                 if (!seen.add(command.name())) {
                     throw new IllegalStateException("Duplicate command name: " + command.name());
                 }
                 commands.add(command);
             }
         }
-        commands.sort(Comparator.comparing(ResolvedCommand::name));
+        commands.sort(Comparator.comparing(ResolvedCommandDTO::name));
         return new ResolvedCommandCatalog(commands);
     }
 }

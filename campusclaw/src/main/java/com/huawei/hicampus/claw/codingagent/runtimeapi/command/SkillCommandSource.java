@@ -26,11 +26,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 /**
- * Dynamic command source that exposes the direct-bound skills of the session agent
- * as {@code skill:<name>} commands. Commands are resolved from the latest complete
- * prepared runtime without triggering an Agent refresh; each resolution carries a
- * versioned {@link SkillCommandSnapshot} so later admission and execution never
- * re-resolve by name. Skill content, paths and IDs never appear in descriptors.
+ * 从最新完整缓存发现直接绑定 Skill，不触发刷新，保留版本身份但不公开正文与路径。
+ * 本期只提供内部发现能力，不开放 Skill 命令执行。
  *
  * @version [br_eCampusCore 26.0.0, 2026/09/04]
  * @since [br_eCampusCore 26.0.0]
@@ -40,7 +37,7 @@ public class SkillCommandSource implements CommandDefinitionSource {
     private static final Logger LOGGER = LoggerFactory.getLogger(SkillCommandSource.class);
 
     /**
-     * Reserved namespace prefix of Skill commands.
+     * Skill 命令的保留命名空间前缀。
      */
     public static final String COMMAND_PREFIX = "skill:";
 
@@ -53,24 +50,20 @@ public class SkillCommandSource implements CommandDefinitionSource {
     }
 
     @Override
-    public List<ResolvedCommand> list(RuntimeSessionDTO session) {
-        PreparedAgentRuntime prepared = preparedRuntime(session);
+    public List<ResolvedCommandDTO> list(RuntimeSessionDTO session) {
+        PreparedAgentRuntime prepared = agentRuntimeManager.prepareCached(session.getAgentId());
         if (prepared == null) {
             return List.of();
         }
-        List<ResolvedCommand> commands = new ArrayList<>();
+        List<ResolvedCommandDTO> commands = new ArrayList<>();
         for (SkillInfo skill : prepared.skills()) {
             resolved(session, prepared, skill).ifPresent(commands::add);
         }
-        commands.sort(Comparator.comparing(ResolvedCommand::name));
+        commands.sort(Comparator.comparing(ResolvedCommandDTO::name));
         return commands;
     }
 
-    private PreparedAgentRuntime preparedRuntime(RuntimeSessionDTO session) {
-        return agentRuntimeManager.prepareCached(session.getAgentId());
-    }
-
-    private Optional<ResolvedCommand> resolved(
+    private Optional<ResolvedCommandDTO> resolved(
             RuntimeSessionDTO session, PreparedAgentRuntime prepared, SkillInfo skill) {
         String skillName = skill.name();
         if (!SkillNamePatterns.isStrictValid(skillName) || !hasSkillMarkdown(prepared, skillName)) {
@@ -79,11 +72,11 @@ public class SkillCommandSource implements CommandDefinitionSource {
         }
         boolean idle = RuntimeSessionState.IDLE.matches(session.getState());
         String busyCode = RuntimeErrorCode.SESSION_BUSY.name();
-        ResolvedCommand.Input input = new ResolvedCommand.Input(
-                CommandInputMode.OPTIONAL.value(), idle, idle ? null : busyCode, true, "request", null);
-        SkillCommandSnapshot snapshot = new SkillCommandSnapshot(
+        ResolvedCommandDTO.InputDTO input = new ResolvedCommandDTO.InputDTO(
+                CommandInputMode.OPTIONAL.value(), idle, idle ? null : busyCode, true, "request", List.of());
+        SkillCommandSnapshotDTO snapshot = new SkillCommandSnapshotDTO(
                 prepared.agentId(), agentVersion(prepared), skill.id(), skill.version(), skill.content());
-        return Optional.of(new ResolvedCommand(
+        return Optional.of(new ResolvedCommandDTO(
                 COMMAND_PREFIX + skillName,
                 CommandKind.SKILL,
                 skill.description(),
@@ -107,8 +100,13 @@ public class SkillCommandSource implements CommandDefinitionSource {
             if (!Files.isRegularFile(skillFile, LinkOption.NOFOLLOW_LINKS)) {
                 return false;
             }
-            Path realRoot = prepared.agentRoot().toRealPath();
-            return skillFile.toRealPath().startsWith(realRoot);
+            Path realRoot = prepared.agentRoot().toFile().getCanonicalFile().toPath();
+            Path expected = realRoot.resolve(AgentRuntimeManager.CAMPUSCLAW_DIRECTORY)
+                    .resolve("skills")
+                    .resolve(skillName)
+                    .resolve(SKILL_MARKDOWN_FILE);
+            Path canonicalFile = skillFile.toFile().getCanonicalFile().toPath();
+            return canonicalFile.startsWith(realRoot) && canonicalFile.equals(expected);
         } catch (IOException error) {
             LOGGER.warn(
                     "Ignoring Runtime skill command with unreadable folder: name={}, cause={}",

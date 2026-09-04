@@ -11,8 +11,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
 /**
- * Single-source Skill name rules: legacy loading compatibility versus the strict
- * Agent Skills rule used by command discovery and execution.
+ * 验证兼容加载与严格发现规则共享名称约束。
  *
  * @version [br_eCampusCore 26.0.0, 2026/09/04]
  * @since [br_eCampusCore 26.0.0]
@@ -35,7 +34,7 @@ class SkillNamePatternsTest {
     void strictRejectsNullAndOverlongNames() {
         assertThat(SkillNamePatterns.isStrictValid(null)).isFalse();
         assertThat(SkillNamePatterns.isStrictValid("a".repeat(65))).isFalse();
-        assertThat(SkillNamePatterns.isStrictValid("a".repeat(Skill.MAX_NAME_LENGTH)))
+        assertThat(SkillNamePatterns.isStrictValid("a".repeat(SkillNamePatterns.MAX_NAME_LENGTH)))
                 .isTrue();
     }
 

@@ -7,7 +7,7 @@ package com.campusclaw.codingagent.runtimeapi.command;
 import com.fasterxml.jackson.annotation.JsonValue;
 
 /**
- * Argument input mode of a slash command descriptor.
+ * 命令描述符的参数输入模式。
  *
  * @version [br_eCampusCore 26.0.0, 2026/09/02]
  * @since [br_eCampusCore 26.0.0]
@@ -24,9 +24,9 @@ public enum CommandInputMode {
     }
 
     /**
-     * Returns the lowercase wire value used in descriptors.
+     * 返回描述符使用的小写枚举值。
      *
-     * @return wire value
+     * @return 小写枚举值
      */
     @JsonValue
     public String value() {

@@ -7,7 +7,7 @@ package com.huawei.hicampus.claw.codingagent.runtimeapi.command;
 import com.fasterxml.jackson.annotation.JsonValue;
 
 /**
- * Command kind of a slash command descriptor.
+ * 命令描述符的来源类型。
  *
  * @version [br_eCampusCore 26.0.0, 2026/09/02]
  * @since [br_eCampusCore 26.0.0]
@@ -23,9 +23,9 @@ public enum CommandKind {
     }
 
     /**
-     * Returns the lowercase wire value used in descriptors and HTTP payloads.
+     * 返回描述符使用的小写枚举值。
      *
-     * @return wire value
+     * @return 小写枚举值
      */
     @JsonValue
     public String value() {
