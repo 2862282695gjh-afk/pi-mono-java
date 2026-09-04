@@ -27,7 +27,7 @@ Java 基线为 `6d7ba8483f69e8cccab04489a0111a27fde1315d`；本切片实现为
 | 本切片实现 | `runtimeapi/service/command/readonly/CommandHelpFormatter.java:query` | 复用已有描述符，Help 只展示 Builtin，不再次调用 Registry |
 | 本切片实现 | `runtimeapi/service/command/readonly/{RuntimeSessionStatusService,BoundSkillQueryService}.java:query` | 分别读取请求内持久化观察值和执行时完整绑定快照；返回内部 DTO |
 | pi `4af9d21d3b4d664e4a29fcabfec85171077248e3` | `packages/coding-agent/src/core/agent-session.ts:1289` · `_tryExecuteExtensionCommand` | 扩展命令按名称查找并调用 `handler(args, ctx)`；不是 Java Builtin HTTP 实现 |
-| 同一 pi 提交 | 同文件 `getSessionStats:3247`、`_bindExtensionCore:2462` | 前者聚合消息、用量和成本；后者把扩展、模板和 Skill 组合成命令元数据 |
+| 同一 pi 提交 | 同文件 `getSessionStats:3247`、`_bindExtensionCore:2464` | 前者聚合消息、用量和成本；后者把扩展、模板和 Skill 组合成命令元数据 |
 
 pi 仅提供 Handler/上下文分离和资源元数据读取的行为参考。Java Status 不统计用量属于
 已确认的产品约束；Java Skills 只返回名称、描述属于最小信息暴露约束；使用 Spring
