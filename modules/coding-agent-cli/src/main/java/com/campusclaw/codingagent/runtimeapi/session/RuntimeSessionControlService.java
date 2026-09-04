@@ -11,7 +11,6 @@ import java.time.ZoneOffset;
 import java.util.concurrent.CompletableFuture;
 
 import com.campusclaw.ai.types.UserMessage;
-import com.campusclaw.codingagent.runtimeapi.RuntimeApiConstants;
 import com.campusclaw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
@@ -22,6 +21,7 @@ import com.campusclaw.codingagent.runtimeapi.runtime.RuntimeSessionEngineRegistr
 import com.campusclaw.codingagent.runtimeapi.runtime.RuntimeSessionHolder;
 import com.campusclaw.codingagent.runtimeapi.vo.ControlMessageAcceptedResponseVO;
 import com.campusclaw.codingagent.runtimeapi.vo.ControlMessageRequestVO;
+import com.campusclaw.common.constant.ClawConstants;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -186,7 +186,7 @@ public class RuntimeSessionControlService {
         if (request == null
                 || request.getMessage() == null
                 || request.getMessage().isBlank()
-                || request.getMessage().length() > RuntimeApiConstants.MAX_MESSAGE_CHARACTERS) {
+                || request.getMessage().length() > ClawConstants.RuntimeApi.MAX_MESSAGE_CHARACTERS) {
             throw new RuntimeApiException(errorCode);
         }
     }

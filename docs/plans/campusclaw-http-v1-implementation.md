@@ -1,6 +1,6 @@
 # CampusClaw HTTP V1 实施记录
 
-> 版本：3.6.0
+> 版本：3.7.0
 >
 > 状态：已实现并按 Runtime-only 现状校准
 >
@@ -24,7 +24,7 @@
 >
 > 初始日期：2026-08-21
 >
-> 更新日期：2026-09-03
+> 更新日期：2026-09-04
 
 > 公司镜像相关路径和标识按 2026-09-03 的当前仓库位置展示；历史提交 SHA 仍是对应行为证据。
 
@@ -45,6 +45,10 @@ Runtime-only 架构演进。当前形态为：
 
 ## 2. 源码证据
 
+共享常量迁移复核基线为 `ee3fdb4893228045f06b9b1d1b3b3bb505812c73`：该版仍使用独立常量类；本次架构调整
+将 ID、HTTP 路径及请求限制迁入新 common 模块的 ClawConstants，以下对应路径已更新至目标实现。
+常量值、Jakarta 校验触发位置和 HTTP 契约保持不变，见[共享常量设计](../designs/shared-constants.md)。
+
 | 领域 | 实现路径与符号 |
 |---|---|
 | 变更前启动与模式 | `cb12ac7ce5637935c7e55f341b834afc71978d11` 的 `modules/coding-agent-cli/src/main/resources/application.yml`、`mode/server/ServerMode.java` |
@@ -54,7 +58,7 @@ Runtime-only 架构演进。当前形态为：
 | HTTP 边界 | `modules/coding-agent-cli/.../runtimeapi/web/*Controller.java` |
 | 调用上下文 Header 边界 | `RuntimeRequestContext#mateCredentials`、`RuntimeEventController#submit`；POST Events 捕获 `X-HW-ID`、`X-HW-APPKEY`、`Authorization`、`access-token`，Runtime 不包含认证器、认证拦截器或认证错误码 |
 | Mate 发现与执行 Header | `MateToolClient#listAgentTools`、`#listSkillTools` 不接收凭据；`HttpMateToolClient#invokeTool` 只让 execute 请求携带 POST Events 收到的四项非空值 |
-| 类型化资源 ID | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/common/identifier/ResourceIdentifierPatterns.java`、`runtimeapi/web/*Controller` 的 Jakarta 路径参数约束、`RuntimeExceptionHandler#handleInvalidParameter`、`MateServiceClient`、`AgentRuntimeManager`、`HttpMateToolClient`、`RandomSessionIdGenerator` |
+| 类型化资源 ID | `modules/common/src/main/java/com/campusclaw/common/constant/ClawConstants.java`、`runtimeapi/web/*Controller` 的 Jakarta 路径参数约束、`RuntimeExceptionHandler#handleInvalidParameter`、`MateServiceClient`、`AgentRuntimeManager`、`HttpMateToolClient`、`RandomSessionIdGenerator` |
 | ResultBean / i18n | `runtimeapi/result/*`、`RuntimeMessageSourceConfiguration`、`RuntimeRequestContext`、`src/main/resources/i18n/messages_{en_US,zh_CN}.properties` |
 | Session 业务 | `runtimeapi/session/RuntimeSessionService.java`、`RuntimeSessionConfigurationService.java`、`RuntimeSessionControlService.java` |
 | 事件接受 | `runtimeapi/event/RuntimeEventService.java`、`RuntimeExecutionContextFactory.java` |
@@ -94,7 +98,7 @@ Runtime-only 架构演进。当前形态为：
 | Session 与模型 | CLI 启动时先选模型 | Session 创建不要求模型，可在后续事件前切换 | 产品约束：Session 生命周期允许模型切换 |
 | 删除 | 历史方案曾计划自动 abort | active execution 返回 409；idle 才删除 | 安全加固：避免删除与执行副作用竞态 |
 | 调用上下文 Header | 基线认证拦截器检查 Header 齐全、共存和 Bearer 形状；`320d7907` 把 POST Events 读取的三项值同时发送给发现和执行 | 全接口保留集成 Header 契约且不做本地认证；POST Events 读取四项值，发现请求不携带，只有 Mate Tool execute 携带 | 架构变更：真实性和动作授权由上游 mate-service 保证；安全加固：值只在当次 Agent 执行和 Child 调用期间由内存对象持有，不持久化、不依赖 ThreadLocal |
-| 资源 ID | Agent 使用下划线短 ID，Session 使用无类型 Crockford Base32 | Agent/Tool/Skill/Session 使用类型前缀加 32 位无连字符 UUID；正则字符串与编译模式集中在中立的领域模式类；HTTP 路径参数使用 Jakarta 注解校验 | 产品约束：阻止无前缀、错误类型和旧格式进入边界；架构变更：消除重复编译、核心代码对 HTTP 常量包的反向依赖和命令式边界 Validator |
+| 资源 ID | Agent 使用下划线短 ID，Session 使用无类型 Crockford Base32 | Agent/Tool/Skill/Session 使用类型前缀加 32 位无连字符 UUID；正则字符串与编译模式集中在底层 ClawConstants 的领域分组；HTTP 路径参数使用 Jakarta 注解校验 | 产品约束：阻止无前缀、错误类型和旧格式进入边界；架构变更：消除重复编译、核心代码对 HTTP 常量包的反向依赖和命令式边界 Validator |
 | 创建默认值 | `RuntimeSessionService#newSession` 持久化 `thinking=false` | 创建时持久化 `thinking=true`；默认模型不支持 reasoning 时返回 `AGENT_MODEL_NOT_CONFIGURED` | 产品约束：新 Session 默认启用深度思考，且公开状态必须与模型能力一致 |
 | 用户事件请求 | `UserEventRequestVO` 要求冗余 `type=user.message` | 只接受 `message` 与 `fileIds`，`type` 和 snake_case 别名作为未知字段拒绝 | 产品约束：operation 已固定消息类型，公共字段统一为 lowerCamelCase |
 | HTTP 字段命名 | 路径变量、请求/响应 VO 与 SSE data 使用 snake_case | Path、Query、JSON 与 SSE data 统一为 lowerCamelCase；Header 保持原名；持久化 payload 继续使用内部格式并在输出边界受控投影 | 产品约束：对齐 HTTP 1.38，避免公共双别名并保持已有 Entry 可读 |
@@ -214,6 +218,7 @@ AppKey/JWT 至少一种，否则不发送 execute 请求并返回工具执行失
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 3.7.0 | 2026-09-04 | 更新资源 ID、HTTP 路径和请求限制的归属至底层 common 的 ClawConstants，外部契约不变。 |
 | 3.6.0 | 2026-09-03 | 公司镜像只在 `scripts/install/` 交付单一 GaussDB 初始化 DDL，不再将数据库发布材料打入 classpath。 |
 | 3.5.0 | 2026-09-01 | 对齐 CampusClaw 公司镜像的新目录、Java 包、同步入口和独立公司构建门禁；HTTP/SSE 契约不变。 |
 | 3.4.1 | 2026-08-28 | 用读取时机、内存持有期限、携带请求和缺失值行为定义 Mate 工具凭据边界。 |

@@ -4,7 +4,7 @@
 
 package com.huawei.hicampus.claw.codingagent.runtimeapi.vo;
 
-import com.huawei.hicampus.claw.codingagent.runtimeapi.RuntimeApiConstants;
+import com.huawei.hicampus.claw.common.constant.ClawConstants;
 import com.fasterxml.jackson.annotation.JsonAnySetter;
 import com.fasterxml.jackson.annotation.JsonSetter;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -24,7 +24,7 @@ import lombok.Setter;
 @Data
 public class ChangeModelRequestVO {
     @NotBlank
-    @Pattern(regexp = RuntimeApiConstants.MODEL_ID_PATTERN)
+    @Pattern(regexp = ClawConstants.RuntimeApi.MODEL_ID_REGEX)
     @Setter(AccessLevel.NONE)
     private String modelId;
 

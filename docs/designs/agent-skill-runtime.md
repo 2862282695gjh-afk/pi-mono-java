@@ -1,6 +1,6 @@
 # Agent 与 Skill 受管运行目录
 
-> 文档版本：3.5.2
+> 文档版本：3.6.0
 >
 > 状态：Implemented
 >
@@ -194,9 +194,9 @@ Skill 文件的 canonical 路径必须位于 Agent 根目录，且等于该根�
 
 **目标决策与理由（产品约束）：** 根据 2026-09-04 用户明确纠正，非法名称不提供兼容加载。
 名称为 1 至 64 个 ASCII 小写字母、数字及分隔连字符；禁止首尾连字符、连续连字符和其他字符。
-本次实现以 `skill/SkillConstants` 为 Skill 领域共享常量及正则的唯一定义位置，
+本次实现以 `common.constant.ClawConstants.Skill` 为 Skill 领域共享常量及正则的唯一定义位置，
 名称规则由 `NAME_REGEX`、`NAME_PATTERN`、`MAX_NAME_LENGTH` 和 `isValidName` 表达。
-`SkillConstants` 及其名称符号属于本次修复，类不存在于上述变更前基线；名称长度上限仍为 64。
+`ClawConstants.Skill` 及其名称符号属于本次修复，类不存在于上述变更前基线；名称长度上限仍为 64。
 Loader 与命令发现使用同一判定，删除 LEGACY/STRICT 分支和旧方法，不提供别名或自动改名。
 该约束消除“可以加载却不能发现为命令”的名称规则差异，保持 Skill 名称与绑定、目录身份一致。
 决策和备选方案见 [ADR-0050](../decisions/0050-unify-skill-name-validation.md)。
@@ -217,7 +217,7 @@ Loader 与命令发现使用同一判定，删除 LEGACY/STRICT 分支和旧方�
 但 `common/identifier/ResourceIdentifierPatterns.java` 中的 `SKILL_ID_REGEX` 与
 `SKILL_ID_PATTERN` 仍与 `skill/SkillNamePatterns.java` 分散维护；仅消除重复字面量未完成领域归属要求。
 上述路径均相对于 `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/`。
-本次按已有 AGENTS.md 规则作**架构归属调整**：将 ID 正则迁至 `SkillConstants.ID_REGEX` 和
+本次按已有 AGENTS.md 规则作**架构归属调整**：将 ID 正则迁至 `ClawConstants.Skill.ID_REGEX` 和
 `ID_PATTERN`，与名称规则同类维护，删除旧名称规则类及通用类中的 Skill 定义，不保留转发别名。
 `runtime/AgentRuntimeManager.java` 的 `requireValidSkill`、`validCachedSkill`、`requireValidSkillReference`，
 `runtime/MateServiceClient.java` 的 `querySkillInfo`，以及 `common/client/HttpMateToolClient.java`
@@ -228,10 +228,17 @@ Loader 与命令发现使用同一判定，删除 LEGACY/STRICT 分支和旧方�
 已集中正则，但 `skill/Skill.java` 仍声明 `MAX_DESCRIPTION_LENGTH` 和 `MAX_FILE_BYTES`；
 `skill/SkillLoader.java`、`runtime/AgentRuntimeManager.java`、`runtimeapi/agent/RuntimeAgentPromptLoader.java`
 及 `runtimeapi/service/command/SkillCommandSource.java` 还分别持有目录名、文件名或命令前缀。
-已有规则约束所有共享常量，仅集中正则仍未满足要求。最终实现将领域类更名为 `SkillConstants`，
+已有规则约束所有共享常量，仅集中正则仍未满足要求。3.5.2 将领域类更名为 `SkillConstants`，
 统一名称上限 64、描述上限 1024、文件上限 1 MiB、`skills` 目录名、`SKILL.md` 与 `skill.json`
 文件名及 `skill:` 命令前缀。上述消费者直接引用常量，`Skill` 仅承载数据，不保留转发字段或旧类。
 这是**架构归属调整**，各常量值和已有校验触发位置保持不变。
+
+产品共享常量复核基线：`ee3fdb4893228045f06b9b1d1b3b3bb505812c73`。3.6.0 按用户确认，
+将上述 SkillConstants 的全部定义迁入新底层 common 模块的 `ClawConstants.Skill`；Runtime 文件约定
+迁入 `ClawConstants.Runtime`，并删除旧类和字段。新包与 ai、codingagent 同级，定义文件为
+`modules/common/src/main/java/com/campusclaw/common/constant/ClawConstants.java`。这替代旧的按领域
+分文件规则，严格名称行为继续有效；见[共享常量设计](shared-constants.md)和
+[ADR-0051](../decisions/0051-centralize-shared-claw-constants.md)。
 
 合法名称、64 字符边界、固定 ID/版本、目录安全校验和 HTTP 结构均保持原行为。已有非法缓存不再命中，
 需要上游提供合法且与文件、元数据一致的名称；不通过去掉或折叠连字符来改变资源身份。
@@ -246,6 +253,7 @@ Loader 与命令发现使用同一判定，删除 LEGACY/STRICT 分支和旧方�
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 3.6.0 | 2026-09-04 | 将 Skill 与 Runtime 共享定义迁入底层 common 的 ClawConstants 领域分组。 |
 | 3.5.2 | 2026-09-04 | 以 SkillConstants 统一正则、长度和大小限制、目录与文件名、命令前缀；Skill 仅承载数据。 |
 | 3.5.1 | 2026-09-04 | 按 Skill 领域归属统一 ID 与名称正则到 SkillPatterns，迁移所有消费者，删除旧定义和类。 |
 | 3.5.0 | 2026-09-04 | 废止非法 Skill 名称兼容；统一加载与命令发现校验，补充发布、缓存和提示词拒绝回归。 |

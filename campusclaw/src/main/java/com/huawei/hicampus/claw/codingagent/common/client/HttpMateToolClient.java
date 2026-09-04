@@ -18,9 +18,8 @@ import com.huawei.hicampus.claw.codingagent.common.dto.AgentInfo;
 import com.huawei.hicampus.claw.codingagent.common.dto.RequestHeaderInfo;
 import com.huawei.hicampus.claw.codingagent.common.dto.SkillInfoResult;
 import com.huawei.hicampus.claw.codingagent.common.dto.ToolInfo;
-import com.huawei.hicampus.claw.codingagent.common.identifier.ResourceIdentifierPatterns;
 import com.huawei.hicampus.claw.codingagent.common.util.MateRestUtil;
-import com.huawei.hicampus.claw.codingagent.skill.SkillConstants;
+import com.huawei.hicampus.claw.common.constant.ClawConstants;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -95,7 +94,7 @@ public class HttpMateToolClient implements MateToolClient {
 
     @Override
     public List<MateToolMeta> listAgentTools(String agentId) {
-        requireScopedId(agentId, ResourceIdentifierPatterns.AGENT_ID_PATTERN, "agent");
+        requireScopedId(agentId, ClawConstants.Agent.ID_PATTERN, "agent");
         try {
             return queryOrderedToolMeta(queryToolIdsByAgentId(agentId));
         } catch (Exception exception) {
@@ -106,7 +105,7 @@ public class HttpMateToolClient implements MateToolClient {
 
     @Override
     public List<MateToolMeta> listSkillTools(String skillId) {
-        requireScopedId(skillId, SkillConstants.ID_PATTERN, "skill");
+        requireScopedId(skillId, ClawConstants.Skill.ID_PATTERN, "skill");
         try {
             return queryOrderedToolMeta(queryToolIdsBySkillId(skillId));
         } catch (Exception exception) {
@@ -224,10 +223,7 @@ public class HttpMateToolClient implements MateToolClient {
 
     private static void requireToolIds(List<String> toolIds) {
         for (String toolId : toolIds) {
-            if (toolId == null
-                    || !ResourceIdentifierPatterns.TOOL_ID_PATTERN
-                            .matcher(toolId)
-                            .matches()) {
+            if (toolId == null || !ClawConstants.Tool.ID_PATTERN.matcher(toolId).matches()) {
                 throw new IllegalArgumentException("Invalid tool id: " + toolId);
             }
         }
@@ -291,7 +287,7 @@ public class HttpMateToolClient implements MateToolClient {
                     info.getInputSchema(),
                     info.getOutputSchema(),
                     Boolean.TRUE.equals(info.getIsConcurrencySafe()),
-                    info.getPermission() != null ? info.getPermission() : "allow"));
+                    info.getPermission() != null ? info.getPermission() : ClawConstants.Mate.TOOL_PERMISSION_ALLOW));
         }
         return metas;
     }
@@ -312,8 +308,7 @@ public class HttpMateToolClient implements MateToolClient {
      * @throws IllegalArgumentException 工具标识不满足路径段约束时抛出
      */
     protected ToolResult invokeTool(String toolId, Map<String, Object> args, MateCredentials credentials) {
-        if (toolId == null
-                || !ResourceIdentifierPatterns.TOOL_ID_PATTERN.matcher(toolId).matches()) {
+        if (toolId == null || !ClawConstants.Tool.ID_PATTERN.matcher(toolId).matches()) {
             throw new IllegalArgumentException("Invalid tool id for path segment");
         }
         if (credentials == null || !credentials.isComplete()) {

@@ -17,8 +17,11 @@ title Skill Constants: One Domain Owner for Shared Rules
 ' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/skill/SkillLoader.java SKILL_FILENAME.
 ' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtime/AgentRuntimeManager.java SKILL_FILE, SKILL_MANIFEST_FILE.
 ' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/service/command/SkillCommandSource.java COMMAND_PREFIX, SKILL_MARKDOWN_FILE.
-' Architecture change: SkillConstants owns patterns, shared limits, directory and file names, and command prefix; Skill carries data only.
-' Target product constraint: remove invalid-name compatibility; SkillConstants owns NAME_REGEX, NAME_PATTERN and isValidName.
+' Shared constant baseline: ee3fdb4893228045f06b9b1d1b3b3bb505812c73.
+' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/skill/SkillConstants.java.
+' Target owner: modules/common/src/main/java/com/campusclaw/common/constant/ClawConstants.java Skill.
+' Architecture change: ClawConstants.Skill owns patterns, shared limits, directory and file names, and command prefix; Skill carries data only.
+' Target product constraint: remove invalid-name compatibility; ClawConstants.Skill owns NAME_REGEX, NAME_PATTERN and isValidName.
 ' Design reason: one accepted name set prevents inconsistent loading and discovery without renaming resource identities.
 skinparam shadowing false
 skinparam componentStyle rectangle
@@ -27,7 +30,7 @@ component AgentRuntimeManager as Runtime
 component RuntimeAgentPromptLoader as Prompt
 component SkillLoader as Loader
 component SkillCommandSource as Commands
-component SkillConstants as Constants
+component "ClawConstants.Skill\n(common module)" as Constants
 component MateServiceClient as MetadataClient
 component HttpMateToolClient as ToolClient
 Runtime --> Loader : publish and cache reload

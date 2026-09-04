@@ -23,6 +23,10 @@
     </properties>
 
     <dependencies>
+        <dependency>
+            <groupId>com.campusclaw</groupId>
+            <artifactId>campusclaw-common</artifactId>
+        </dependency>
         <!-- Internal modules -->
         <dependency>
             <groupId>com.campusclaw</groupId>

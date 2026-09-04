@@ -5,12 +5,16 @@
 ' Source evidence: campusclaw/pom.xml lost root POM logging dependencies at 294e6d90.
 ' User-provided target condition: CampusClaw is deployed as a standalone company service.
 ' Observed behavior: four canonical modules feed one generated corporate mirror.
+' Source baseline for common addition: ee3fdb4893228045f06b9b1d1b3b3bb505812c73.
+' Source evidence: scripts/sync-campusclaw.sh MODULES; scripts/tests/sync-campusclaw-layout-test.sh.
+' Target architecture: include the new common module in the five canonical generation sources.
 ' Architecture change: the mirror has an independent parent, GAV, package, and build gate.
 ' Design reason: keep one implementation source while isolating corporate integration metadata.
 
 title CampusClaw Corporate Module Generation
 
 package "Canonical root reactor" {
+  component "modules/common" as common
   component "modules/ai" as ai
   component "modules/agent-core" as core
   component "modules/cron" as cron
@@ -29,6 +33,7 @@ cloud "Company Maven repository" as repository
 artifact "NativeParent\n26.0.0-SNAPSHOT" as parent
 component "pre-push guard" as hook
 
+common --> sync
 ai --> sync
 core --> sync
 cron --> sync

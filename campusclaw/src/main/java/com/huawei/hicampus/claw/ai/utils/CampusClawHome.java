@@ -6,50 +6,41 @@ package com.huawei.hicampus.claw.ai.utils;
 
 import java.nio.file.Path;
 
+import com.huawei.hicampus.claw.common.constant.ClawConstants;
+
 /**
- * Resolves the CampusClaw user-level configuration root, shared across all modules.
+ * 解析各模块共享的 CampusClaw 用户级配置根目录。
  *
- * <p>Resolution order (highest precedence first):
- * <ol>
- *   <li>system property {@code -Dcampusclaw.home}</li>
- *   <li>environment variable {@code CAMPUSCLAW_HOME}</li>
- *   <li>default {@code ~/.campusclaw}</li>
- * </ol>
+ * <p>依次优先使用系统属性 {@code campusclaw.home}、环境变量 {@code CAMPUSCLAW_HOME}，
+ * 最后回退至 {@code ~/.campusclaw}。固定名称由底层 common 模块的 ClawConstants 定义，
+ * 本类仅负责路径解析，供 Agent 与服务模块复用。
  *
- * <p>This lives in the {@code ai} module — the lowest module in the dependency graph — so
- * {@code agent-core}, {@code cron}, and {@code coding-agent-cli} can all reuse a single
- * definition instead of independently hardcoding the path.
- *
- * @version [br_eCampusCore 26.0.0, 2026/05/30]
+ * @version [br_eCampusCore 26.0.0, 2026/09/04]
  * @since [br_eCampusCore 26.0.0]
  */
 public final class CampusClawHome {
 
-    private static final String HOME_PROPERTY = "campusclaw.home";
-    private static final String HOME_ENV = "CAMPUSCLAW_HOME";
-    private static final String CONFIG_DIR_NAME = ".campusclaw";
-    private static final String AGENT_SUBDIR = "agent";
-
     private CampusClawHome() {}
 
     /**
-     * Returns the user-level configuration root (default {@code ~/.campusclaw}).
+     * 返回用户级配置根目录，默认值为 {@code ~/.campusclaw}。
      *
-     * @return the resolved configuration root directory
+     * @return 解析后的配置根目录
      */
     public static Path baseDir() {
         return resolveBaseDir(
-                System.getProperty(HOME_PROPERTY), System.getenv(HOME_ENV), System.getProperty("user.home"));
+                System.getProperty(ClawConstants.Home.PROPERTY),
+                System.getenv(ClawConstants.Home.ENVIRONMENT_VARIABLE),
+                System.getProperty("user.home"));
     }
 
     /**
-     * Pure resolution seam for {@link #baseDir()}: picks the config root from the three inputs
-     * without touching process state, so the precedence rules are unit-testable in isolation.
+     * 按三个输入值的优先级解析配置根目录，不读取或修改进程状态。
      *
-     * @param homeProperty value of the {@code campusclaw.home} system property (may be {@code null} or blank)
-     * @param homeEnv value of the {@code CAMPUSCLAW_HOME} environment variable (may be {@code null} or blank)
-     * @param userHome value of the {@code user.home} system property, used for the default location
-     * @return the resolved configuration root directory
+     * @param homeProperty 系统属性 {@code campusclaw.home} 的值，可为空
+     * @param homeEnv 环境变量 {@code CAMPUSCLAW_HOME} 的值，可为空
+     * @param userHome 系统属性 {@code user.home} 的值，用于构造默认路径
+     * @return 解析后的配置根目录
      */
     static Path resolveBaseDir(String homeProperty, String homeEnv, String userHome) {
         if (homeProperty != null && !homeProperty.isBlank()) {
@@ -58,15 +49,15 @@ public final class CampusClawHome {
         if (homeEnv != null && !homeEnv.isBlank()) {
             return Path.of(homeEnv);
         }
-        return Path.of(userHome, CONFIG_DIR_NAME);
+        return Path.of(userHome, ClawConstants.Home.CONFIG_DIRECTORY_NAME);
     }
 
     /**
-     * Returns the user-level agent directory ({@code <baseDir>/agent}).
+     * 返回用户级 Agent 目录，即 {@code <baseDir>/agent}。
      *
-     * @return the resolved agent configuration directory
+     * @return 解析后的 Agent 配置目录
      */
     public static Path agentDir() {
-        return baseDir().resolve(AGENT_SUBDIR);
+        return baseDir().resolve(ClawConstants.Home.AGENT_DIRECTORY_NAME);
     }
 }

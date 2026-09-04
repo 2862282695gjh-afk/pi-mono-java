@@ -11,7 +11,7 @@ import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Supplier;
 
 import com.huawei.hicampus.claw.codingagent.common.client.mate.MateToolMeta;
-import com.huawei.hicampus.claw.codingagent.common.identifier.ResourceIdentifierPatterns;
+import com.huawei.hicampus.claw.common.constant.ClawConstants;
 
 /**
  * 保存单个 Session 的 Mate 工具来源快照和完整名称到标识索引。
@@ -118,9 +118,7 @@ public class MateToolSessionCache {
             if (tool.toolName() == null
                     || tool.toolName().isBlank()
                     || tool.toolId() == null
-                    || !ResourceIdentifierPatterns.TOOL_ID_PATTERN
-                            .matcher(tool.toolId())
-                            .matches()) {
+                    || !ClawConstants.Tool.ID_PATTERN.matcher(tool.toolId()).matches()) {
                 throw new IllegalStateException("Mate tool metadata is incomplete");
             }
             String previous = index.putIfAbsent(tool.toolName(), tool.toolId());

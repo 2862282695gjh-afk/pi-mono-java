@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Syncs the in-tree campusclaw/ module from modules/{ai,agent-core,cron,
+# Syncs the in-tree campusclaw/ module from modules/{common,ai,agent-core,cron,
 # coding-agent-cli}, applying the package rename
 # com.campusclaw -> com.huawei.hicampus.claw, then verifies
 # the result by compiling campusclaw/.
@@ -37,7 +37,7 @@ ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 OUT="$ROOT/build/campusclaw"
 MIRROR="$ROOT/campusclaw"
 EXCLUDE_FILE="$ROOT/scripts/sync-campusclaw-exclude.txt"
-MODULES=(ai agent-core cron coding-agent-cli)
+MODULES=(common ai agent-core cron coding-agent-cli)
 DATABASE_SCHEMA="$ROOT/modules/coding-agent-cli/src/main/resources/db/gaussdb/install/session_schema.sql"
 DATABASE_SCRIPT_REL="scripts/install/initdb_gaussdbv5.sql"
 

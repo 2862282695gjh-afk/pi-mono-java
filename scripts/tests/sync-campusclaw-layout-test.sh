@@ -31,4 +31,12 @@ cmp -s "$CANONICAL_SCHEMA" "$MIRROR_SCRIPT" \
 cmp -s "$CANONICAL_SCHEMA" "$STAGED_SCRIPT" \
   || fail "staged database install script differs from canonical schema"
 
-printf '[layout-test] CampusClaw database script layout is valid.\n'
+COMMON_SOURCE="$ROOT/modules/common/src/main/java/com/campusclaw/common/constant/ClawConstants.java"
+STAGED_COMMON="$ROOT/build/campusclaw/src/main/java/com/huawei/hicampus/claw/common/constant/ClawConstants.java"
+[ -f "$STAGED_COMMON" ] || fail "common constants are missing from the staged mirror"
+expected_common="$(sed 's/com\.campusclaw/com.huawei.hicampus.claw/g' "$COMMON_SOURCE")" \
+  || fail "cannot read canonical common constants"
+staged_common="$(cat "$STAGED_COMMON")" || fail "cannot read staged common constants"
+[ "$expected_common" = "$staged_common" ] || fail "staged common constants differ from canonical source"
+
+printf '[layout-test] CampusClaw database and common-module layouts are valid.\n'

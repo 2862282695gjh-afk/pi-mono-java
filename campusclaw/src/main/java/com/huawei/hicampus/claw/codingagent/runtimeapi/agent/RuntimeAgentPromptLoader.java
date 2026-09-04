@@ -17,10 +17,10 @@ import java.util.List;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.error.RuntimeErrorCode;
 import com.huawei.hicampus.claw.codingagent.skill.Skill;
-import com.huawei.hicampus.claw.codingagent.skill.SkillConstants;
 import com.huawei.hicampus.claw.codingagent.skill.SkillLoadException;
 import com.huawei.hicampus.claw.codingagent.skill.SkillLoader;
 import com.huawei.hicampus.claw.codingagent.skill.SkillPromptFormatter;
+import com.huawei.hicampus.claw.common.constant.ClawConstants;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -44,8 +44,8 @@ public class RuntimeAgentPromptLoader {
 
     public String load(Path runtimeDirectory) {
         Path root = realDirectory(runtimeDirectory);
-        String systemPrompt = readOptionalFile(root, root.resolve("SYSTEM.md"));
-        List<Skill> skills = loadSkills(root, root.resolve(SkillConstants.DIRECTORY_NAME));
+        String systemPrompt = readOptionalFile(root, root.resolve(ClawConstants.Runtime.SYSTEM_FILE_NAME));
+        List<Skill> skills = loadSkills(root, root.resolve(ClawConstants.Skill.DIRECTORY_NAME));
         String skillsPrompt = SkillPromptFormatter.format(skills);
         if (systemPrompt.isBlank()) {
             return skillsPrompt;
@@ -77,7 +77,7 @@ public class RuntimeAgentPromptLoader {
         if (depth > MAX_SCAN_DEPTH || files.size() >= MAX_SKILLS) {
             return;
         }
-        Path skillFile = directory.resolve(SkillConstants.MARKDOWN_FILE_NAME);
+        Path skillFile = directory.resolve(ClawConstants.Skill.MARKDOWN_FILE_NAME);
         if (isSafeRegularFile(root, skillFile)) {
             files.add(safeRealPath(root, skillFile));
             return;
@@ -195,7 +195,7 @@ public class RuntimeAgentPromptLoader {
 
     private static void requireManagedSize(Path path) {
         try {
-            if (Files.size(path) > SkillConstants.MAX_FILE_BYTES) {
+            if (Files.size(path) > ClawConstants.Skill.MAX_FILE_BYTES) {
                 throw unavailable();
             }
         } catch (IOException error) {

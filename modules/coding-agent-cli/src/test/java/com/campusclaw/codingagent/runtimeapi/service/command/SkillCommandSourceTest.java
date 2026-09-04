@@ -23,6 +23,7 @@ import com.campusclaw.codingagent.runtime.PreparedAgentRuntime;
 import com.campusclaw.codingagent.runtimeapi.command.type.CommandKind;
 import com.campusclaw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.command.ResolvedCommandDTO;
+import com.campusclaw.common.constant.ClawConstants;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -138,7 +139,7 @@ class SkillCommandSourceTest {
     @ParameterizedTest
     @ValueSource(strings = {"sibling", "root", "outside"})
     void ignoresSymbolicLinkAliases(String targetName, @TempDir Path outside) throws IOException {
-        Path managed = agentRoot.resolve(AgentRuntimeManager.CAMPUSCLAW_DIRECTORY);
+        Path managed = agentRoot.resolve(ClawConstants.Runtime.DIRECTORY_NAME);
         Path target =
                 switch (targetName) {
                     case "outside" -> outside;
@@ -195,7 +196,7 @@ class SkillCommandSourceTest {
 
     private void skillMarkdown(String name) throws IOException {
         Path skillDir = agentRoot
-                .resolve(AgentRuntimeManager.CAMPUSCLAW_DIRECTORY)
+                .resolve(ClawConstants.Runtime.DIRECTORY_NAME)
                 .resolve("skills")
                 .resolve(name);
         Files.createDirectories(skillDir);

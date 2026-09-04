@@ -313,7 +313,7 @@ class AgentRuntimeManagerTest {
         PreparedAgentRuntime first = manager.prepare(AGENT_ID);
         Path skillFile = first.agentRoot().resolve(".campusclaw/skills/calendar/SKILL.md");
 
-        // 描述超过 SkillConstants.MAX_DESCRIPTION_LENGTH(1024):缓存读取判不完整并重新拉取。
+        // 描述超过 ClawConstants.Skill.MAX_DESCRIPTION_LENGTH(1024):缓存读取判不完整并重新拉取。
         Files.writeString(
                 skillFile,
                 "---\nname: calendar\ndescription: " + "d".repeat(2000) + "\n---\nBody\n",

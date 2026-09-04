@@ -1,8 +1,8 @@
 # ADR-0050：统一 Skill 领域常量与名称校验
 
-- Status：Accepted
+- Status：Accepted；常量文件归属部分由 [ADR-0051](0051-centralize-shared-claw-constants.md) 替代，严格名称约束仍有效。
 - Date：2026-09-04
-- 文档版本：1.2.0
+- 文档版本：1.3.0
 - 决策类别：产品约束、架构归属调整
 - 源码观察基线：`2c2092f2fa764a7aa7b47da841299f8866d7a151`
 
@@ -32,14 +32,14 @@
 ## Decision
 
 名称只允许 1 至 64 个 ASCII 小写字母、数字以及单个分隔连字符，禁止首尾和连续连字符。
-所有 Skill 共享常量集中于领域类 `skill/SkillConstants`。名称由 `NAME_REGEX`、
+按后续 ADR-0051，所有 Skill 共享常量集中于底层 `common.constant.ClawConstants.Skill`。名称由 `NAME_REGEX`、
 `NAME_PATTERN`、`MAX_NAME_LENGTH` 和 `isValidName` 表达，加载和发现共同复用；
 ID 由 `ID_REGEX` 与 `ID_PATTERN` 表达，Runtime、MateServiceClient 和 HttpMateToolClient 共同复用。
 删除 LEGACY/STRICT 两套模式及方法、SkillNamePatterns 旧类及 ResourceIdentifierPatterns 中的
 Skill ID 定义，不提供旧规则开关、转发别名或自动改名。ID 格式与原先的十六进制大小写规则保持不变。
 
 同类集中名称上限 64、描述上限 1024、文件上限 1 MiB、`skills` 目录名、`SKILL.md` 与 `skill.json`
-文件名、`skill:` 命令前缀。消费者直接引用，删除 SkillPatterns 旧类和业务类中的对应常量。
+文件名、`skill:` 命令前缀。消费者直接引用，删除 SkillPatterns、SkillConstants 旧类和业务类中的对应常量。
 `Skill` 只承载元数据，不持有共享常量；错误翻译和非法文件处理仍由现有 Loader、Runtime 及提示词调用方负责。
 本次不改变 Child Agent 名称规则、ID 格式、HTTP 结构或 Skill 命令执行的交付边界。
 
@@ -53,7 +53,7 @@ Skill ID 定义，不提供旧规则开关、转发别名或自动改名。ID �
 | 统一严格规则 | 一个定义来源，非法名称在加载时即被拒绝 | 非法数据必须由来源方修正；选择。 |
 
 按字段分别设立名称类和通用资源 ID 类虽能避免字面量重复，仍使同一 Skill 领域的规则分散维护；
-因此选择在 SkillConstants 内用明确的成员名区分 ID、名称、限制和文件约定。
+原方案在 SkillConstants 内区分 ID、名称、限制和文件约定；后续 ADR-0051 将该完整分组迁入 ClawConstants.Skill。
 同一领域的共享常量一起维护，使数据类型、加载器与调用方无需分别声明规则。
 
 ## Consequences
@@ -79,6 +79,7 @@ ID 定义迁移复用两类 Mate 客户端的出站路径与非法 ID 拒绝测�
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 1.3.0 | 2026-09-04 | 标记常量文件归属由 ADR-0051 替代；严格名称约束继续有效。 |
 | 1.2.0 | 2026-09-04 | 扩展为 SkillConstants，统一共享限制、目录和文件名、命令前缀，使 Skill 仅承载数据。 |
 | 1.1.0 | 2026-09-04 | 将 Skill ID 和名称的所有正则统一到 SkillPatterns，删除分散定义及旧类。 |
 | 1.0.0 | 2026-09-04 | 按用户纠正移除非法名称兼容，统一 Skill 名称规则。 |

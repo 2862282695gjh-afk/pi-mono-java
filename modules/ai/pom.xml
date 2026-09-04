@@ -19,6 +19,10 @@
     <name>campusclaw-ai</name>
 
     <dependencies>
+        <dependency>
+            <groupId>com.campusclaw</groupId>
+            <artifactId>campusclaw-common</artifactId>
+        </dependency>
         <!-- LLM SDKs -->
         <dependency>
             <groupId>com.anthropic</groupId>

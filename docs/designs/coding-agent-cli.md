@@ -1,6 +1,6 @@
 # Coding Agent Runtime HTTP 与受管 Session 设计
 
-> 文档版本：3.7.0
+> 文档版本：3.8.0
 >
 > PR 167 修订基线：`f60cc3e78bb8b700527ac082c7c8e10524ede095`
 >
@@ -48,6 +48,10 @@ Assistant/Compaction 完成保存本次 Usage，模型/思考/压缩形成持久
 
 ## 2. 源码证据
 
+共享常量迁移复核基线为 `ee3fdb4893228045f06b9b1d1b3b3bb505812c73`：该版仍使用独立常量类；本次架构调整
+将 ID、HTTP 路径及请求限制迁入新 common 模块的 ClawConstants，以下对应路径已更新至目标实现。
+常量值、Jakarta 校验触发位置和 HTTP 契约保持不变，见[共享常量设计](shared-constants.md)。
+
 | 事实 | 源码位置与符号 |
 |---|---|
 | 默认启动 Spring Boot Web 应用 | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/CampusClawApplication.java`，`CampusClawApplication#main` |
@@ -55,7 +59,7 @@ Assistant/Compaction 完成保存本次 Usage，模型/思考/压缩形成持久
 | HTTP 创建前准备受管目录 | `runtimeapi/runtime/RuntimeSessionEngineRegistry.java`、`runtime/AgentRuntimeManager.java`；根目录由 `AgentRuntimeProperties` 的 `campusmate.runtime.agents-root` 绑定，主模块和 Mate 配置分别位于 `modules/coding-agent-cli/src/main/resources/application.yml` 与 `campusclaw/src/main/resources/application.properties` |
 | Runtime 使用 Spring MVC Controller | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/web/*Controller.java` |
 | Runtime 不安装入站认证拦截器 | `runtimeapi/web` 不再包含 `RuntimeAuthenticationInterceptor` 与 `RuntimeWebMvcConfiguration`；路由测试覆盖 Header 缺失与共存 |
-| 类型化资源 ID 与 Session 默认值 | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/common/identifier/ResourceIdentifierPatterns.java`、`runtimeapi/web/*Controller` 的 `@PathVariable` 参数约束、`RuntimeExceptionHandler#handleInvalidParameter`、`MateServiceClient#getAgentRuntime`、`MateServiceClient#querySkillInfo`、`AgentRuntimeManager#prepare`、`HttpMateToolClient#listTools`、`RandomSessionIdGenerator#nextId`、`RuntimeSessionService#newSession` |
+| 类型化资源 ID 与 Session 默认值 | `modules/common/src/main/java/com/campusclaw/common/constant/ClawConstants.java`、`runtimeapi/web/*Controller` 的 `@PathVariable` 参数约束、`RuntimeExceptionHandler#handleInvalidParameter`、`MateServiceClient#getAgentRuntime`、`MateServiceClient#querySkillInfo`、`AgentRuntimeManager#prepare`、`HttpMateToolClient#listTools`、`RandomSessionIdGenerator#nextId`、`RuntimeSessionService#newSession` |
 | lowerCamelCase HTTP 边界 | `runtimeapi/web/*Controller`、`runtimeapi/vo/*RequestVO`、`runtimeapi/vo/*ResponseVO`、`RuntimeEntryCodec#toSseData`、`RuntimeEntryCodec#toHistoryEvent`、`RuntimeEventProjector` |
 | Session 与事件持久化使用 MyBatis | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/persistence/MyBatisRuntimeSessionRepository.java` |
 | GaussDB DDL 与公司交付布局 | `modules/coding-agent-cli/src/main/resources/db/gaussdb/install/session_schema.sql`；`scripts/sync-campusclaw.sh` 的 `SYNCED_RESOURCES`、`stage_database_install_script` 和公司脚本 apply 逻辑；`campusclaw/scripts/install/initdb_gaussdbv5.sql` |
@@ -159,7 +163,7 @@ Assistant 完成与压缩完成都持久化完整 `Usage`；`t_session_materiali
 
 Session、Entry、严格序号、物化数据、删除墓碑和异步清理任务持久化到 openGauss。删除活动 Session 返回 409；成功删除的墓碑只包含 `session_id` 与 `deleted_at`。
 
-Agent、Tool、Skill 和 Session ID 分别匹配 `agent-`、`tool-`、`skill-`、`session-` 加 32 位十六进制 UUID（UUID 内部连字符已移除）。四类资源 ID 的正则字符串与编译后的 `Pattern` 统一由中立的 `common.identifier.ResourceIdentifierPatterns` 提供；业务类不重复编译，也不依赖 HTTP 专用常量类。HTTP 路径中的 Agent 与 Session ID 直接在 Controller 的标量 `@PathVariable` 参数上使用 Jakarta `@NotBlank` 和 `@Pattern`，Spring MVC 方法参数校验失败后由 `RuntimeExceptionHandler` 映射为稳定错误码，不再维护命令式路径 ID Validator。`RandomSessionIdGenerator` 只生成该 Session 格式；创建 Session 持久化 `thinking=true`，默认模型不支持 reasoning 时按无有效默认模型返回 `AGENT_MODEL_NOT_CONFIGURED`，避免对外状态与实际事件能力不一致。`t_sessions.agent_id` 使用 `VARCHAR(64)`，可容纳完整类型化 Agent ID。
+Agent、Tool、Skill 和 Session ID 分别匹配 `agent-`、`tool-`、`skill-`、`session-` 加 32 位十六进制 UUID（UUID 内部连字符已移除）。四类资源 ID 的正则字符串与编译后的 `Pattern` 统一由底层 `common.constant.ClawConstants` 的 Agent、Tool、Skill、Session 分组提供；业务类不重复编译，也不依赖 HTTP 专用常量类。HTTP 路径中的 Agent 与 Session ID 直接在 Controller 的标量 `@PathVariable` 参数上使用 Jakarta `@NotBlank` 和 `@Pattern`，Spring MVC 方法参数校验失败后由 `RuntimeExceptionHandler` 映射为稳定错误码，不再维护命令式路径 ID Validator。`RandomSessionIdGenerator` 只生成该 Session 格式；创建 Session 持久化 `thinking=true`，默认模型不支持 reasoning 时按无有效默认模型返回 `AGENT_MODEL_NOT_CONFIGURED`，避免对外状态与实际事件能力不一致。`t_sessions.agent_id` 使用 `VARCHAR(64)`，可容纳完整类型化 Agent ID。
 
 Agent 配置由 `AgentRuntimeManager.prepare(agentId)` 准备到
 `agent/{agentId}/.campusclaw/`；部署可通过 `CAMPUSCLAW_AGENTS_ROOT` 替换 `agent` 根目录。
@@ -308,6 +312,7 @@ Runtime V1 事件名 `tool.execution.started` 与 `tool.execution.completed` 是
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 3.8.0 | 2026-09-04 | 更新资源 ID、HTTP 路径和请求限制的归属至底层 common 的 ClawConstants，外部契约不变。 |
 | 3.7.0 | 2026-09-03 | 将公司镜像 GaussDB DDL 改为 `scripts/install/initdb_gaussdbv5.sql` 单文件交付，保留模块侧多文件布局并由同步脚本保证一致性。 |
 | 3.6.1 | 2026-09-03 | 模型可用性错误码转换保留原始异常 cause，同时维持对外 `MODEL_NOT_AVAILABLE` 防枚举语义。 |
 | 3.6.0 | 2026-09-03 | 将 Runtime Session 操作锁收口为作用域 API，保证正常与异常路径都在 `finally` 中释放。 |

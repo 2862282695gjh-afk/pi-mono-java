@@ -9,12 +9,12 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.List;
 
-import com.campusclaw.codingagent.common.client.mate.MateCredentialHeaders;
 import com.campusclaw.codingagent.common.client.mate.MateCredentials;
 import com.campusclaw.codingagent.common.client.mate.MateToolClient;
 import com.campusclaw.codingagent.common.client.mate.MateToolMeta;
 import com.campusclaw.codingagent.common.client.mate.MateToolResponseException;
 import com.campusclaw.codingagent.common.util.MateRestUtil;
+import com.campusclaw.common.constant.ClawConstants;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -292,7 +292,7 @@ class HttpMateToolClientTest {
         assertThat(request.getHeader("X-HW-ID")).isEqualTo("hw-id-1");
         assertThat(request.getHeader("X-HW-APPKEY")).isEqualTo("key-1");
         assertThat(request.getHeader("Authorization")).isNull();
-        assertThat(request.getHeader(MateCredentialHeaders.ACCESS_TOKEN)).isEqualTo("access-token-1");
+        assertThat(request.getHeader(ClawConstants.Mate.ACCESS_TOKEN)).isEqualTo("access-token-1");
         assertThat(request.getHeader("X-Access-Token")).isNull();
     }
 
@@ -366,7 +366,7 @@ class HttpMateToolClientTest {
         assertThat(request.getHeader("X-HW-ID")).isEqualTo("hw-id-2");
         assertThat(request.getHeader("Authorization")).isEqualTo("Bearer jwt-token");
         assertThat(request.getHeader("X-HW-APPKEY")).isNull();
-        assertThat(request.getHeader(MateCredentialHeaders.ACCESS_TOKEN)).isEqualTo("access-token-2");
+        assertThat(request.getHeader(ClawConstants.Mate.ACCESS_TOKEN)).isEqualTo("access-token-2");
     }
 
     @Test
@@ -383,7 +383,7 @@ class HttpMateToolClientTest {
         assertThat(request.getHeader("X-HW-ID")).isEqualTo("hw-id-3");
         assertThat(request.getHeader("X-HW-APPKEY")).isEqualTo("app-key-3");
         assertThat(request.getHeader("Authorization")).isEqualTo("Bearer jwt-token-3");
-        assertThat(request.getHeader(MateCredentialHeaders.ACCESS_TOKEN)).isEqualTo("access-token-3");
+        assertThat(request.getHeader(ClawConstants.Mate.ACCESS_TOKEN)).isEqualTo("access-token-3");
     }
 
     @Test
@@ -476,10 +476,10 @@ class HttpMateToolClientTest {
     private static void assertNoCredentialHeaders(okhttp3.mockwebserver.RecordedRequest request) {
         assertThat(request.getHeader("Content-Type")).isEqualTo("application/json");
         assertThat(request.getHeader("Accept")).isEqualTo("application/json");
-        assertThat(request.getHeader(MateCredentialHeaders.X_HW_ID)).isNull();
-        assertThat(request.getHeader(MateCredentialHeaders.X_HW_APPKEY)).isNull();
-        assertThat(request.getHeader(MateCredentialHeaders.AUTHORIZATION)).isNull();
-        assertThat(request.getHeader(MateCredentialHeaders.ACCESS_TOKEN)).isNull();
+        assertThat(request.getHeader(ClawConstants.Mate.X_HW_ID)).isNull();
+        assertThat(request.getHeader(ClawConstants.Mate.X_HW_APPKEY)).isNull();
+        assertThat(request.getHeader(ClawConstants.Mate.AUTHORIZATION)).isNull();
+        assertThat(request.getHeader(ClawConstants.Mate.ACCESS_TOKEN)).isNull();
         assertThat(request.getHeader("X-Access-Token")).isNull();
     }
 }

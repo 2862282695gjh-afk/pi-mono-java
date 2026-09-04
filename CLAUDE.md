@@ -31,14 +31,12 @@ Notes:
 
 Module dependency graph (from `docs/module-architecture.md`):
 
-```
-ai ──→ agent-core ──→ cron ──→ coding-agent-cli
- └────────────────────────────→ coding-agent-cli
-        └─────────────────────→ coding-agent-cli
-```
+Direct dependencies: ai → common; agent-core → ai; cron → agent-core;
+coding-agent-cli → common, ai, agent-core, cron. Common has no business-module dependency.
 
 | Module | Artifact | Role |
 |---|---|---|
+| `modules/common` | `campusclaw-common` | Shared business constants in `com.campusclaw.common.constant.ClawConstants`, grouped by domain. |
 | `modules/ai` | `campusclaw-ai` | Unified LLM abstraction. Providers (Anthropic, OpenAI, Google GenAI/Vertex, Bedrock, Mistral, and ~18 OpenAI-compatible flavors) live under `provider/`; types under `types/`; model registry under `model/`. |
 | `modules/agent-core` | `campusclaw-agent-core` | Agent runtime. `Agent` is the façade; `AgentLoop` drives the LLM↔tool cycle; `ToolExecutionPipeline` runs tools with before/after hooks and JSON-schema validation; sealed `AgentEvent` hierarchy emits state transitions. |
 | `modules/cron` | `campusclaw-cron` | JobRunr-backed scheduled agent runs, exposed as an `AgentTool` for agents to self-schedule. |
@@ -52,6 +50,8 @@ Key runtime concepts:
 - **Reactive stack**: `ai` and `agent-core` use Reactor `Mono/Flux` throughout for streaming LLM responses. Don't `.block()` on the event stream path.
 
 ## Conventions to preserve
+
+- Shared business constants belong in the bottom-level common module's `ClawConstants`, using nested domain groups. Keep regex strings and compiled patterns together, remove old aliases, and retain private implementation details and injected configuration in their owning code.
 
 - Java 21 features are in active use (records, sealed interfaces, pattern matching) — don't downgrade.
 - Spotless is enforced via `spotless-maven-plugin` with **palantirJavaFormat 2.66.0**; run `./mvnw spotless:apply` before committing or CI-equivalent checks will diverge. **Requires JDK 21** (palantir 不兼容 JDK 25 的 javac 内部 API)。
@@ -740,7 +740,7 @@ Stop 钩子会自动跑 `spotless:check` + `checkstyle:check`。主动修复：
 | `./scripts/sync-campusclaw.sh --no-verify` | Explicitly skip company-parent resolution and mirror compile (ordinary local environments only) |
 
 Phases:
-1. **Stage** — copy `modules/{ai,agent-core,cron,coding-agent-cli}` into `build/campusclaw/`, rewriting the package in `.java/.yml/.properties/.imports/...`. Remove GaussDB files from staged classpath resources and copy the canonical `session_schema.sql` byte-for-byte to `build/campusclaw/scripts/install/initdb_gaussdbv5.sql`.
+1. **Stage** — copy `modules/{common,ai,agent-core,cron,coding-agent-cli}` into `build/campusclaw/`, rewriting the package in `.java/.yml/.properties/.imports/...`. Remove GaussDB files from staged classpath resources and copy the canonical `session_schema.sql` byte-for-byte to `build/campusclaw/scripts/install/initdb_gaussdbv5.sql`.
 2. **Apply** — `rsync --delete` from `build/` to in-tree `campusclaw/`. Paths listed in `scripts/sync-campusclaw-exclude.txt` are preserved (corporate-mirror-only files that have no counterpart in `modules/*`). The generated `campusclaw/scripts/install/` directory contains only `initdb_gaussdbv5.sql`, and the legacy `campusclaw/src/main/resources/db/gaussdb/` directory is removed.
 3. **Verify** — resolve `NativeParent` and compile `campusclaw/` with the sync script's auto-detected JDK 21. Failure to resolve the company parent is fatal; the script never silently skips this gate.
 

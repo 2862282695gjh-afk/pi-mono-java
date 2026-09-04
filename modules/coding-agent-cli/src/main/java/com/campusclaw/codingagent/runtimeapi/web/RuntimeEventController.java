@@ -4,13 +4,12 @@
 
 package com.campusclaw.codingagent.runtimeapi.web;
 
-import com.campusclaw.codingagent.common.identifier.ResourceIdentifierPatterns;
-import com.campusclaw.codingagent.runtimeapi.RuntimeApiConstants;
 import com.campusclaw.codingagent.runtimeapi.event.RuntimeEventQueryService;
 import com.campusclaw.codingagent.runtimeapi.event.RuntimeEventService;
 import com.campusclaw.codingagent.runtimeapi.event.RuntimeSseDispatcher;
 import com.campusclaw.codingagent.runtimeapi.result.ResultBeanAdapter;
 import com.campusclaw.codingagent.runtimeapi.vo.UserEventRequestVO;
+import com.campusclaw.common.constant.ClawConstants;
 
 import org.springframework.http.CacheControl;
 import org.springframework.http.HttpHeaders;
@@ -37,7 +36,7 @@ import jakarta.validation.constraints.Pattern;
  * @since [br_eCampusCore 26.0.0]
  */
 @RestController
-@RequestMapping(RuntimeApiConstants.BASE_PATH + "/sessions/{sessionId}/events")
+@RequestMapping(ClawConstants.RuntimeApi.BASE_PATH + "/sessions/{sessionId}/events")
 public class RuntimeEventController {
     private final RuntimeEventService service;
 
@@ -60,8 +59,7 @@ public class RuntimeEventController {
 
     @PostMapping(produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public ResponseEntity<SseEmitter> submit(
-            @PathVariable("sessionId") @NotBlank @Pattern(regexp = ResourceIdentifierPatterns.SESSION_ID_REGEX)
-                    String sessionId,
+            @PathVariable("sessionId") @NotBlank @Pattern(regexp = ClawConstants.Session.ID_REGEX) String sessionId,
             @Valid @RequestBody UserEventRequestVO body,
             HttpServletRequest request) {
         SseEmitter emitter = new SseEmitter(0L);
@@ -79,8 +77,7 @@ public class RuntimeEventController {
 
     @GetMapping
     public ResponseEntity<Object> list(
-            @PathVariable("sessionId") @NotBlank @Pattern(regexp = ResourceIdentifierPatterns.SESSION_ID_REGEX)
-                    String sessionId,
+            @PathVariable("sessionId") @NotBlank @Pattern(regexp = ClawConstants.Session.ID_REGEX) String sessionId,
             @RequestParam(required = false) String limit,
             @RequestParam(required = false) String page,
             HttpServletRequest request) {
