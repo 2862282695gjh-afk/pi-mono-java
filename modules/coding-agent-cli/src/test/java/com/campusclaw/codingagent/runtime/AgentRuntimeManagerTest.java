@@ -35,6 +35,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.NullAndEmptySource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 class AgentRuntimeManagerTest {
@@ -174,11 +175,28 @@ class AgentRuntimeManagerTest {
         verify(client, never()).getAgentRuntime(AGENT_ID);
     }
 
-    @Test
-    void rejectsAgentIdThatCouldEscapeRoot() {
-        for (String invalid : List.of("agent-a", "../agent-a", "skill-11111111111111111111111111111111")) {
-            assertThrows(IllegalArgumentException.class, () -> manager.prepare(invalid));
-        }
+    @ParameterizedTest
+    @NullAndEmptySource
+    @ValueSource(
+            strings = {
+                " ",
+                ".",
+                "..",
+                "agent-a",
+                "../agent-a",
+                "/agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/..",
+                "agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\\child",
+                "agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\0",
+                "skill-11111111111111111111111111111111"
+            })
+    void rejectsAgentIdThatCouldEscapeRoot(String invalid) {
+        assertThrows(IllegalArgumentException.class, () -> manager.prepare(invalid));
+        assertThrows(IllegalArgumentException.class, () -> manager.prepareCached(invalid));
+        assertThrows(IllegalArgumentException.class, () -> manager.refresh(invalid));
+
+        verifyNoInteractions(client);
+        assertFalse(Files.exists(tempDir.resolve("agent")));
     }
 
     @Test

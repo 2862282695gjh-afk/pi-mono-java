@@ -1,6 +1,6 @@
 # Agent 与 Skill 受管运行目录
 
-> 文档版本：3.6.0
+> 文档版本：3.6.1
 >
 > 状态：Implemented
 >
@@ -15,6 +15,9 @@
 - Agent 根目录身份审查实现提交：`90e78251885814a34b8e054ea7f44f86baecbb1b`
 - Agent 根目录配置路径前置校验分析基线：`687f6a28ea2b88480fe38dc367652c66a43ff678`
 - Agent 根目录配置路径前置校验实现提交：`8921a493185e86f4773843241016627b05a8ce59`
+- Agent 路径操作逐点校验分析基线：`2dfec2c5ff4768e12c0d50fdec76ad539654dc4e`；
+  `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtime/AgentRuntimeManager.java`，
+  符号 `requireAgentRoot`（413–435 行）与 `validatePath(Path)`（437–448 行）。
 - 设计仓：`c2a495838134aa5e8bc535b906e7534b34779279`
 - 受管目录证据：
   `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtime/AgentRuntimeManager.java`，
@@ -119,8 +122,22 @@ Agent 目录通过符号链接逃出根目录或别名到根目录内的其他�
 配置路径词法合法性、canonical 路径解析、根目录包含关系和 Agent 目录身份成为依次执行的独立
 防线。
 
+逐点校验分析基线 `2dfec2c5ff4768e12c0d50fdec76ad539654dc4e` 已校验配置根路径，
+但 `resolve(agentId)` 的实参和 `expectedAgentRoot.toFile()` 的接收对象仍缺少各自的显式
+`validatePath` 前置判定，用户于 2026-09-04 反馈这两处仍触发公司 Path Manipulation 告警。
+3.6.1 按该反馈补齐**安全加固**：在 `resolve(agentId)` 前调用 `validatePath(agentId)`，
+在 `toFile()` 前调用 `validatePath(expectedAgentRoot)`；任一失败均立即抛出
+`IllegalArgumentException`。新增私有 String 重载解析路径后复用已有 Path 校验，
+不可解析的字符串返回 false。已有 ID 格式、canonical 包含性和目录身份检查继续生效。
+该修复落实 [ADR-0044](../decisions/0044-validate-managed-agent-root-containment.html) 的显式路径
+校验要求，使告警位置的输入与校验对象直接对应；它不代表分析基线已经具备这些调用。
+本地以 `AgentRuntimeManagerTest` 验证合法目录创建、缓存与刷新、三个入口拒绝非法 ID、
+非法配置路径和三类符号链接。公司扫描器需另行复扫，本地回归不能证明告警已经消除。
+
 - `agentId` 必须符合领域 ID 格式且只解析为 `agents-root` 下的单目录；
 - `properties.agentsRoot()` 必须先通过 `validatePath` 词法合法性校验，再进入 canonical 路径解析；
+- `resolve(agentId)` 前必须通过 `validatePath(agentId)`，拼接结果在 `toFile()` 前必须通过
+  `validatePath(expectedAgentRoot)`；
 - Agent 根目录和候选目录必须使用 canonical path，禁止以 absolute path 代替；
 - canonical Agent 根路径必须显式通过 canonical `agents-root` 包含性校验；
 - canonical Agent 根路径必须与 `canonical agents-root/agentId` 精确一致，禁止根目录内别名；
@@ -253,6 +270,7 @@ Loader 与命令发现使用同一判定，删除 LEGACY/STRICT 分支和旧方�
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 3.6.1 | 2026-09-04 | 为 resolve 的 agentId 实参和 toFile 的 expectedAgentRoot 接收对象补齐显式 validatePath 前置校验。 |
 | 3.6.0 | 2026-09-04 | 将 Skill 与 Runtime 共享定义迁入底层 common 的 ClawConstants 领域分组。 |
 | 3.5.2 | 2026-09-04 | 以 SkillConstants 统一正则、长度和大小限制、目录与文件名、命令前缀；Skill 仅承载数据。 |
 | 3.5.1 | 2026-09-04 | 按 Skill 领域归属统一 ID 与名称正则到 SkillPatterns，迁移所有消费者，删除旧定义和类。 |
