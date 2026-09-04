@@ -2,13 +2,22 @@
 title Control Plane Components
 left to right direction
 
-' Source evidence: implementation commit 8691e8800f05f28afe22499050c29220ef5b7475.
-' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/controlplane/api/NodeController.java.
-' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/controlplane/api/RuntimeController.java.
-' Source: modules/agent-core/src/main/java/com/campusclaw/agent/controlplane/service/NodeRegistry.java.
+' Source evidence: pre-change commit 0300541fbbe3db8b05ffa1ac953f15f01df74b3e.
+' Source evidence: reviewed implementation commit e8b861f2878ff07769a0e1c15ac5e45ab04316b3.
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/controlplane/api/StatusController.java, status().
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/controlplane/api/NodeController.java, register(), heartbeat().
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/controlplane/api/RuntimeController.java, list(), schedule().
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/controlplane/error/ControlPlaneExceptionHandler.java, handleUnexpected().
+' Source: modules/agent-core/src/main/java/com/campusclaw/agent/controlplane/service/NodeRegistry.java, register(), sweep().
+' Source: modules/agent-core/src/main/java/com/campusclaw/agent/controlplane/service/HealthCheckScheduler.java, sweep().
+' Source: modules/agent-core/src/main/java/com/campusclaw/agent/controlplane/service/RuntimeScheduler.java, schedule().
 ' Observed behavior: Spring MVC controllers expose in-memory registry and scheduling services.
+' Observed behavior: StatusController was added in the reviewed commit and returns a fixed Success body.
+' Design reason: The requested liveness probe has no registry or downstream dependency.
+' Product constraint: Preserve GET /api/v1/status and its plain string response.
 
 actor "Operator or node" as Client
+component "StatusController" as StatusApi
 component "NodeController" as NodeApi
 component "RuntimeController" as RuntimeApi
 component "Exception Handler" as Errors
@@ -16,6 +25,8 @@ component "NodeRegistry" as Registry
 component "HealthCheckScheduler" as Health
 component "RuntimeScheduler" as Scheduler
 
+Client --> StatusApi : GET /api/v1/status
+StatusApi --> Client : 200 Success
 Client --> NodeApi : register and heartbeat
 Client --> RuntimeApi : list and schedule
 NodeApi --> Registry
