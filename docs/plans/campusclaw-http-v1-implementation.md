@@ -1,6 +1,6 @@
 # CampusClaw HTTP V1 实施记录
 
-> 版本：3.5.0
+> 版本：3.6.0
 >
 > 状态：已实现并按 Runtime-only 现状校准
 >
@@ -16,13 +16,17 @@
 >
 > 国际化实现起点：`3a6358bc9dd5837cdf5ac866fc0761298372510a`
 >
+> 公司 GaussDB 脚本布局源码基线：`origin/main@d84dd3d6a306b7587c70b29e0100e741dacef989`
+>
+> 公司 GaussDB 脚本布局实现：`c1335026`
+>
 > 初始实现提交：`8691e8800f05f28afe22499050c29220ef5b7475`
 >
 > 初始日期：2026-08-21
 >
-> 更新日期：2026-09-01
+> 更新日期：2026-09-03
 
-> 公司镜像相关路径和标识按 2026-09-01 的当前仓库位置展示；历史提交 SHA 仍是对应行为证据。
+> 公司镜像相关路径和标识按 2026-09-03 的当前仓库位置展示；历史提交 SHA 仍是对应行为证据。
 
 ## 1. 目标与边界
 
@@ -59,7 +63,7 @@ Runtime-only 架构演进。当前形态为：
 | 执行协调与 SSE | `RuntimeExecutionCoordinator.java`、`RuntimeEventStream.java`、`RuntimeSseDispatcher.java` |
 | 执行生命周期 | `runtimeapi/runtime/RuntimeSessionEngineRegistry.java`、`RuntimeActiveExecution.java`、`RuntimeExecutionTimeoutScheduler.java` |
 | 持久化 | `runtimeapi/persistence/MyBatisRuntimeSessionRepository#appendEntryWithUsage`、`mapper/session/RuntimeSessionMapper.xml` |
-| DDL | `src/main/resources/db/gaussdb/install/session_schema.sql` |
+| DDL | 模块规范源：`modules/coding-agent-cli/src/main/resources/db/gaussdb/install/session_schema.sql`；公司交付文件：`campusclaw/scripts/install/initdb_gaussdbv5.sql` |
 | Agent 受管目录与工作区 | `runtime/AgentRuntimeManager.java`、`runtime/PreparedAgentRuntime.java`、`runtimeapi/agent/FileAgentDirectoryResolver.java`、`session/AgentSessionFactory.java`、`tool/workspace/AgentWorkspaceBoundary.java` |
 | Runtime 默认工具 | `tool/builtin/BuiltInToolProperties.java`、`tool/builtin/ToolAssembler.java` |
 | 公司镜像 | `campusclaw/`、`scripts/sync-campusclaw.sh` |
@@ -135,6 +139,10 @@ DDL 使用 `t_` 前缀：`t_sessions`、`t_session_tombstone`、`t_session_clean
 
 助手完成和 Compaction 完成会各自追加一条 `usage` Runtime Record 到 `t_session_records`，并在同一事务内累计 `t_session_stats`。Entry 的 `entry_seq` 与 Record 的 `record_seq` 由 `t_session_sequences` 统一分配，因此两个通道共享 Session 内严格递增的持久化顺序。历史 API 只投影当前叶节点回溯得到的 Entry 分支；不参与消息分支的 Usage Record 不进入历史消息或模型上下文。
 
+模块侧继续以 `src/main/resources/db/gaussdb/` 保存独立开发所需的安装、授权和升级材料；公司镜像
+不把它们放入 classpath，而是仅在 `scripts/install/` 交付与规范 DDL 字节级一致的
+`initdb_gaussdbv5.sql`。这是交付布局变化，不是数据库 Schema 或 Runtime 行为变化。
+
 事件 page 使用 AES-GCM 保护并绑定 Session、`afterSeq`、签发时 thinking 和有效期。Session thinking 切换后，旧 page 以 `INVALID_EVENT_LIST_QUERY` 失败，调用方必须从第一页重新读取。
 
 ### 容量
@@ -160,6 +168,15 @@ AppKey/JWT 至少一种，否则不发送 execute 请求并返回工具执行失
 被拒绝。Cron 没有入站调用方值，因此仍可发现工具但不能执行 Mate 工具。
 
 ## 6. 验证证据
+
+3.6.0 公司 GaussDB 脚本布局完成以下验证：
+
+- 镜像布局回归脚本验证旧 classpath 目录不存在、公司安装目录只有目标文件，且目标与暂存 SQL
+  均和模块规范 DDL 字节级一致；
+- 同步脚本应用后再次 dry-run 无内容差异，Bash 语法检查与 ShellCheck 通过；
+- 公司 Maven package 与同步脚本 compile 门禁均因当前环境无法解析
+  `com.huawei.hicampus:NativeParent:26.0.0-SNAPSHOT` 而未通过，未执行公司 JAR 内容检查；
+- 主仓 Maven verify、PlantUML/SVG/XML、文档链接和 `git diff --check` 通过。
 
 3.4.0 工具执行凭据边界在 JDK 21 上完成以下验证：
 
@@ -197,6 +214,7 @@ AppKey/JWT 至少一种，否则不发送 execute 请求并返回工具执行失
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 3.6.0 | 2026-09-03 | 公司镜像只在 `scripts/install/` 交付单一 GaussDB 初始化 DDL，不再将数据库发布材料打入 classpath。 |
 | 3.5.0 | 2026-09-01 | 对齐 CampusClaw 公司镜像的新目录、Java 包、同步入口和独立公司构建门禁；HTTP/SSE 契约不变。 |
 | 3.4.1 | 2026-08-28 | 用读取时机、内存持有期限、携带请求和缺失值行为定义 Mate 工具凭据边界。 |
 | 3.4.0 | 2026-08-27 | POST Events 读取 `access-token`；发现请求不携带四项值，只有 Tool execute 携带收到的值。 |

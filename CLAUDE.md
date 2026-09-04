@@ -740,11 +740,13 @@ Stop 钩子会自动跑 `spotless:check` + `checkstyle:check`。主动修复：
 | `./scripts/sync-campusclaw.sh --no-verify` | Explicitly skip company-parent resolution and mirror compile (ordinary local environments only) |
 
 Phases:
-1. **Stage** — copy `modules/{ai,agent-core,cron,coding-agent-cli}` into `build/campusclaw/`, rewriting the package in `.java/.yml/.properties/.imports/...`.
-2. **Apply** — `rsync --delete` from `build/` to in-tree `campusclaw/`. Paths listed in `scripts/sync-campusclaw-exclude.txt` are preserved (corporate-mirror-only files that have no counterpart in `modules/*`).
+1. **Stage** — copy `modules/{ai,agent-core,cron,coding-agent-cli}` into `build/campusclaw/`, rewriting the package in `.java/.yml/.properties/.imports/...`. Remove GaussDB files from staged classpath resources and copy the canonical `session_schema.sql` byte-for-byte to `build/campusclaw/scripts/install/initdb_gaussdbv5.sql`.
+2. **Apply** — `rsync --delete` from `build/` to in-tree `campusclaw/`. Paths listed in `scripts/sync-campusclaw-exclude.txt` are preserved (corporate-mirror-only files that have no counterpart in `modules/*`). The generated `campusclaw/scripts/install/` directory contains only `initdb_gaussdbv5.sql`, and the legacy `campusclaw/src/main/resources/db/gaussdb/` directory is removed.
 3. **Verify** — resolve `NativeParent` and compile `campusclaw/` with the sync script's auto-detected JDK 21. Failure to resolve the company parent is fatal; the script never silently skips this gate.
 
 When adding a new file directly under `campusclaw/` that has no counterpart in `modules/*`, append its path to `scripts/sync-campusclaw-exclude.txt`, otherwise the next `--delete` will remove it. The current exclusions protect the corporate Skill tree and `CampusMateConfigurationTest`. The hand-tuned `application.properties` is environment-specific, contains no Actuator-specific overrides for the standalone service, and is never touched by the script; only `META-INF/spring/*.imports` propagate from `modules/*`.
+
+The module-side GaussDB release files remain under `modules/coding-agent-cli/src/main/resources/db/gaussdb/` for standalone development. The corporate mirror publishes only `campusclaw/scripts/install/initdb_gaussdbv5.sql`, derived from `install/session_schema.sql`; it does not publish the empty initial-data script, privilege placeholders, or upgrade README. `campusclaw/scripts/install/` is generated and must not contain hand-maintained files. Because the corporate SQL is an external install artifact rather than a classpath resource, `--skip-resources` does not skip it.
 
 ### pre-push guard
 
@@ -754,7 +756,7 @@ When adding a new file directly under `campusclaw/` that has no counterpart in `
 git config core.hooksPath scripts/git-hooks
 ```
 
-The hook runs the sync script in dry-run + no-verify mode and parses rsync's `--itemize-changes` output. Pushes that don't touch `modules/`, `campusclaw/`, or `scripts/sync-campusclaw*` skip the check. Bypass with `git push --no-verify` when intentional.
+The hook runs the sync script in dry-run + no-verify mode and parses rsync's `--itemize-changes` output together with managed asset update/deletion markers. Pushes that don't touch `modules/`, `campusclaw/`, or `scripts/sync-campusclaw*` skip the check. Bypass with `git push --no-verify` when intentional.
 
 ## Git workflow
 

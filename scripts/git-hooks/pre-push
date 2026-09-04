@@ -20,7 +20,7 @@ SCRIPT="$ROOT/scripts/sync-campusclaw.sh"
 # of paths that matter (modules/* or campusclaw/).
 zero='0000000000000000000000000000000000000000'
 needs_check=false
-while read -r local_ref local_sha remote_ref remote_sha; do
+while read -r _local_ref local_sha _remote_ref remote_sha; do
   [ -z "${local_sha:-}" ] && continue
   [ "$local_sha" = "$zero" ] && continue                # branch deletion
 
@@ -48,11 +48,11 @@ echo "[pre-push] modules/ or campusclaw/ changed — checking mirror sync..."
 
 # Run the sync in dry-run mode and look for itemize lines that mean a real change:
 #   >f.s....  size differs       >f+++++++  new file
-#   *deleting deletion           [would update] resource whitelist update
+#   *deleting deletion           [would update/delete] managed asset update
 # (>f..t.... is mtime-only — ignored.)
 PENDING="$(
   "$SCRIPT" --dry-run --no-verify 2>&1 \
-    | grep -E '^(>f\.s|>f\+|\*deleting|\[would update\])' \
+    | grep -E '^(>f\.s|>f\+|\*deleting|[[:space:]]*\[would (update|delete)\])' \
     || true
 )"
 
