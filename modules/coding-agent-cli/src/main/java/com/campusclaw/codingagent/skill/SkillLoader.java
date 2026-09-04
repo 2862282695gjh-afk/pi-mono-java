@@ -12,7 +12,6 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.regex.Pattern;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -35,7 +34,6 @@ public class SkillLoader {
     private static final Logger log = LoggerFactory.getLogger(SkillLoader.class);
 
     static final String SKILL_FILENAME = "SKILL.md";
-    private static final Pattern NAME_REGEX = Pattern.compile(Skill.NAME_PATTERN);
     private static final String FRONTMATTER_DELIMITER = "---";
 
     /**
@@ -141,10 +139,11 @@ public class SkillLoader {
         if (name == null || name.isEmpty()) {
             throw new SkillLoadException("Skill name is required: " + filePath);
         }
-        if (name.length() > Skill.MAX_NAME_LENGTH) {
-            throw new SkillLoadException("Skill name exceeds " + Skill.MAX_NAME_LENGTH + " characters: " + filePath);
+        if (name.length() > SkillNamePatterns.MAX_NAME_LENGTH) {
+            throw new SkillLoadException(
+                    "Skill name exceeds " + SkillNamePatterns.MAX_NAME_LENGTH + " characters: " + filePath);
         }
-        if (!NAME_REGEX.matcher(name).matches()) {
+        if (!SkillNamePatterns.LEGACY.matcher(name).matches()) {
             throw new SkillLoadException(
                     "Skill name contains invalid characters (must be lowercase a-z, 0-9, hyphens): " + filePath);
         }
