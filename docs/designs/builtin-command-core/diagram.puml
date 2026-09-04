@@ -1,44 +1,64 @@
 @startuml builtin_command_core
-title Builtin Command Core and Parallel Skill Extension
-' Source evidence: pi-mono-java@a8192e04 modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/command/CompositeCommandRegistry.java resolve.
-' Source evidence: pi-mono-java@8a402bc7 modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/command/BuiltinCommandSource.java constructor.
+title Builtin Command Core: Package Layers
+' Review baseline: pi-mono-java@11b21f95 used a flat runtimeapi.command package.
+' Source evidence: pi-mono-java@15aa0bf1 modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/service/command/CompositeCommandRegistry.java resolve.
+' Source evidence: pi-mono-java@15aa0bf1 modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/command/builtin/BuiltinCommandDefinition.java describe.
+' Source evidence: pi-mono-java@15aa0bf1 modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/command/definition/CommandDefinition.java describe.
+' Source evidence: pi-mono-java@15aa0bf1 modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/command/execution/CommandExecutionContext.java catalog, session.
 ' Source evidence: pi-mono@4af9d21d packages/coding-agent/src/core/agent-session.ts _tryExecuteExtensionCommand.
-' Architecture change: typed source filtering precedes resolution; one catalog preserves descriptor and definition identity.
-' Design reason: Skill work proceeds independently; Builtin selection is not a product-wide command ban.
+' Observed behavior: one catalog preserves descriptor and definition identity; behavior is unchanged by moving packages.
+' Java architecture change: separate service, DTO, and core packages; generic definitions never depend on Builtin definitions.
+' Design reason: the catalog references generic definitions, avoiding a Builtin -> execution -> catalog -> Builtin cycle.
 skinparam shadowing false
 skinparam classAttributeIconSize 0
-package "Future application boundary" {
-  class CommandCatalogService <<target-only>>
-  class CommandExecutionService <<target-only>>
+skinparam packageStyle rectangle
+set namespaceSeparator none
+package "runtimeapi.service.command" {
+  class CompositeCommandRegistry <<singleton>>
+  class BuiltinCommandSource <<singleton>>
+  class SkillCommandSource <<singleton>>
 }
-package "Core - singleton collaborators" {
-  class CompositeCommandRegistry
+package "runtimeapi.command.source" {
   interface CommandDefinitionSource {
     kind()
     list(session)
     definitions(session)
   }
-  class BuiltinCommandSource
+}
+package "runtimeapi.command.builtin" {
   interface BuiltinCommandContributor
-  interface CommandDefinition
   class BuiltinCommandDefinition
-  class DisplayCommandDefinition
+}
+package "runtimeapi.command.execution" {
   interface CommandAdmissionPolicy
   interface CommandHandler
+  class CommandExecutionContext <<request>>
+  note right of CommandAdmissionPolicy
+  Preview only.
+  Domain writes recheck under locks.
+  end note
 }
-package "Request-owned immutable values" {
-  class ResolvedCommandCatalog
-  class ResolvedCommandDTO
-  class CommandSessionSnapshotDTO
-  class CommandExecutionContext
+package "runtimeapi.command.catalog" {
+  class ResolvedCommandCatalog <<request>>
 }
-package "Parallel Skill work" {
-  class SkillCommandSource
-  class SkillExecutionDefinition <<separate workstream>>
+package "runtimeapi.command.definition" {
+  interface CommandDefinition
+  class DisplayCommandDefinition
+  note bottom of CommandDefinition
+  No dependency on Builtin definitions or handlers.
+  No HTTP route or placeholder Controller / VO.
+  end note
 }
-CommandCatalogService --> CompositeCommandRegistry
-CommandExecutionService --> CompositeCommandRegistry : resolve once
-CommandExecutionService --> CommandExecutionContext
+package "runtimeapi.dto.command" {
+  class ResolvedCommandDTO <<immutable>>
+  class CommandSessionSnapshotDTO <<immutable>>
+  interface CommandResultDTO
+}
+package "runtimeapi.command.type" {
+  enum CommandKind
+  enum CommandInputMode
+}
+
 CompositeCommandRegistry o-- "0..*" CommandDefinitionSource
 BuiltinCommandSource ..|> CommandDefinitionSource
 SkillCommandSource ..|> CommandDefinitionSource
@@ -46,21 +66,17 @@ BuiltinCommandSource o-- "0..*" BuiltinCommandContributor : startup unique names
 BuiltinCommandContributor --> BuiltinCommandDefinition
 BuiltinCommandDefinition ..|> CommandDefinition
 DisplayCommandDefinition ..|> CommandDefinition
-SkillExecutionDefinition ..|> CommandDefinition
 BuiltinCommandDefinition *-- CommandAdmissionPolicy
 BuiltinCommandDefinition *-- CommandHandler
+CommandHandler --> CommandExecutionContext
+CommandHandler --> CommandResultDTO
+CommandDefinitionSource --> CommandDefinition
 CompositeCommandRegistry --> ResolvedCommandCatalog : filter before resolving
 ResolvedCommandCatalog o-- "0..*" CommandDefinition : preserve identity
 ResolvedCommandCatalog *-- "0..*" ResolvedCommandDTO : describe once
 ResolvedCommandCatalog *-- CommandSessionSnapshotDTO
 CommandExecutionContext --> ResolvedCommandCatalog : same Help view
-note bottom of CommandAdmissionPolicy
-Preview only.
-Domain writes recheck under locks.
-end note
-note bottom of CommandExecutionService
-No HTTP route in this core PR.
-No fake production contributors.
-No request credentials in singleton state.
-end note
+CommandDefinition --> ResolvedCommandDTO
+ResolvedCommandDTO --> CommandKind
+BuiltinCommandDefinition --> CommandInputMode
 @enduml

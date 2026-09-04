@@ -17,19 +17,28 @@
 <body><main>
   <h1>ADR-0049：Builtin 命令分层核心与并行扩展边界</h1>
   <p>Status：<span class="status">Accepted · 用户已确认分层方案与并行分工</span><br>Date：2026-09-04</p>
+  <p>文档版本：1.1.0 · 包结构按 PR #218 评论修订。</p>
   <p>Java 基线：<code>a8192e047f4061bd385297d3dc6c4358362d0d49</code><br>
   核心实现：<code>8a402bc794f33e12c756b32b9b7274ad0c289b45</code><br>
+  包结构审查基线：<code>11b21f95a0d621c48f0cc1d1b826bc5ee72e2507</code><br>
+  分包实现：<code>15aa0bf17b3444af6724cf5557c89ef76d72e13c</code><br>
   设计输入：<code>pi-mono-java-design@eec7baf1d52f9f982f7ab4836600cfa2386b3e7c</code> 及 2026-09-04 用户澄清。</p>
   <h2>Context</h2>
   <p>PR #210 已提供 Skill 发现 DTO 和 Catalog，但缺少来源前置过滤及可执行定义。
   七个 Builtin 需要独立 Handler 和准入，Help 与执行应使用同一快照。
   Skill Command 由其他同事并行实现，不得把本会话范围误写为产品禁用或延期。</p>
-  <p>源码位于 <code>modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/command/</code>：
+  <p>历史核心实现源码位于 <code>modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/command/</code>：
   基线的 <code>CompositeCommandRegistry.resolve</code> 聚合全部 Source；
   本 PR 的 <code>BuiltinCommandSource</code>、<code>BuiltinCommandDefinition.describe</code> 建立分层核心。
   pi <code>4af9d21d3b4d664e4a29fcabfec85171077248e3</code> 的
   <code>packages/coding-agent/src/core/agent-session.ts:_tryExecuteExtensionCommand</code>
   提供 Handler 与上下文的行为参考，不是企业 HTTP 契约。</p>
+  <p>分包实现中，源码根目录保持为
+  <code>modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/</code>；
+  <code>CompositeCommandRegistry.resolve</code> 与两个来源服务位于 <code>service/command/</code>，
+  内部 DTO 位于 <code>dto/command/</code>，核心分别位于
+  <code>command/{definition,builtin,execution,catalog,source,type}/</code>。
+  完整类型归属见关联设计文档；旧路径只作为对应提交的历史证据。</p>
   <h2>考虑过的选项及取舍</h2>
   <ul>
     <li>中央名称 switch：起步代码少，但每个新命令必须修改同一分派器，拒绝。</li>
@@ -42,6 +51,8 @@
     <li>Builtin Contributor 在启动时贡献固定定义；BuiltinCommandSource 拒绝重名。</li>
     <li>定义接口只含 describe；Builtin 组合元数据、准入和 Handler；展示定义不带假 Handler。</li>
     <li>一次 Catalog 同时固定描述符、定义索引和 Session 观察 DTO；Context 复用 Catalog。</li>
+    <li>DTO、Spring 服务与核心职责按包分层。通用定义不依赖 Builtin 定义，
+    依赖保持为 builtin → execution → catalog → definition → dto → type；来源 SPI 不依赖实现服务。</li>
     <li>准入预览不代替锁内复核；内部结果使用 DTO，未来应用层转独立只读 VO。</li>
     <li>本 PR 不发布路由、不持久化通用命令历史、不实现七个具体命令或 Skill 执行。</li>
   </ul>
@@ -54,12 +65,20 @@
     <li>正面：启动即发现重名；列表、Help、分派不再重复解析。</li>
     <li>正面：无请求可变字段、无凭据保存、无新增线程或数据库。</li>
     <li>代价：自定义 Source 必须补 kind；准入策略及 Handler 的无请求状态仍需代码评审保证。</li>
+    <li>迁移：更新 import，不保留旧包占位；Catalog 构造器开放给跨包注册服务，
+    其排序、查重和快照行为不变。不新增 Controller、VO，不进行全仓 MVC 重构。</li>
     <li>后续：各窄服务必须锁内复核；Compact 独立实现不传播客户端取消的完成句柄。</li>
     <li>后续：最终 HTTP 发布前与 Skill 开发线对齐，不用 Builtin-only 正则禁止 skill:*。</li>
   </ul>
   <h2>验证</h2>
-  <p>八项新测试与既有发现回归通过；模块及依赖共 1343 项通过；新增行门禁 1242/2000。
+  <p>九项核心测试与既有发现回归共 22 项通过；clean test 后模块及依赖共 1344 项通过；
+  19 个类型的包依赖无环，新增真实组件扫描测试；模块侧新增 792 行，完整 PR 门禁 1623/2000。
   镜像已显式同步，但公司 Parent 无法解析，未宣称镜像编译通过。</p>
+  <h2>版本历史</h2>
+  <ul>
+    <li>1.1.0 · 2026-09-04：落实包归属与无环依赖，更新源码证据和组件扫描验证。</li>
+    <li>1.0.0 · 2026-09-04：记录 Builtin 分层核心、Catalog 身份及独立扩展边界。</li>
+  </ul>
   <h2>Related</h2>
   <ul>
     <li><a href="../designs/builtin-command-core.md">Builtin 核心设计与交付边界</a></li>

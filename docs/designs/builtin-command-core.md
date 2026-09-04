@@ -1,6 +1,6 @@
 # Builtin Command 分层核心
 
-> 版本：1.0.0 · 日期：2026-09-04 · 状态：核心切片已实现，尚无 Command HTTP 路由
+> 版本：1.1.0 · 日期：2026-09-04 · 状态：核心切片已实现，尚无 Command HTTP 路由
 
 ## 1. Context
 
@@ -26,11 +26,42 @@ Skill 开发线对齐后发布，不能把 Builtin 名称正则当作禁止 skil
 Java 新类型不能归因于合并前基线。pi 只提供 Handler 与上下文分离的行为参考；
 Spring 来源装配、DTO/VO 和企业 HTTP 均为 Java 架构决策。
 
+上述 Java 路径属于各自历史提交。包结构评审基线为
+`11b21f95a0d621c48f0cc1d1b826bc5ee72e2507`：19 个命令类型仍混放于 `runtimeapi.command`。
+整改实现为 `15aa0bf17b3444af6724cf5557c89ef76d72e13c`，当前相对路径见下表。
+本次属于 Java 包依赖架构修正，不改变发现、准入或执行行为，也不推导为 pi 的包结构要求。
+
 ## 3. 架构与数据流
 
-![Builtin 核心与并行扩展边界](builtin-command-core/builtin_command_core.svg)
+![Builtin 核心包分层与依赖方向](builtin-command-core/builtin_command_core.svg)
 
 [PlantUML 源码](builtin-command-core/diagram.puml#L1)
+
+### 3.1 包归属与依赖方向
+
+下表包名均以 `com.campusclaw.codingagent.runtimeapi` 为前缀；源码根目录为
+`modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/`。
+`campusclaw` 同步相同目录结构，仅替换公司包名前缀。
+
+| 包 | 所属类型 | 允许的命令内部依赖 |
+|---|---|---|
+| `service.command` | BuiltinCommandSource、SkillCommandSource、CompositeCommandRegistry | 核心 SPI 与 DTO；仅本层装配 Spring 服务和外部 Runtime 协作者 |
+| `dto.command` | BuiltinCommandMetadataDTO、CommandSessionSnapshotDTO、CommandResultDTO、ResolvedCommandDTO、SkillCommandSnapshotDTO | `command.type`；Session 复制复用既有 RuntimeSessionDTO，不依赖 Service 或 Handler |
+| `command.type` | CommandKind、CommandInputMode | 无命令层反向依赖 |
+| `command.definition` | CommandDefinition、DisplayCommandDefinition | DTO；不依赖 Builtin、Handler 或 Catalog |
+| `command.catalog` | ResolvedCommandCatalog | 通用定义与 DTO；不依赖具体 Builtin 定义 |
+| `command.execution` | CommandHandler、CommandAdmissionPolicy、CommandExecutionContext | Catalog 与 DTO；不依赖 Spring 或注册服务 |
+| `command.builtin` | BuiltinCommandDefinition、BuiltinCommandContributor | 通用定义、执行 SPI、类型与 DTO |
+| `command.source` | CommandDefinitionSource | 通用定义、类型与 DTO；不依赖具体来源服务 |
+
+关键调用依赖为 `builtin → execution → catalog → definition → dto → type`，
+Source SPI 依赖通用定义，Spring 服务依赖这些核心抽象。通用定义与 Builtin 定义分包，
+避免 Catalog 保存定义索引时反向依赖持有 Handler 的 Builtin 包；命令相关包之间无环。
+Catalog 构造器仅因注册服务跨包创建快照而改为 public；排序、查重与单次解析仍由 Registry
+负责，构造器不新增业务校验。三个测试类同步归入 `runtimeapi.service.command`，以公开核心
+接口验证协作，不依赖旧包的可见性。未新增 Controller、VO 或兼容旧包的占位类型。
+
+### 3.2 运行机制（保持不变）
 
 - 单例 BuiltinCommandSource 在构造时调用各 Contributor 一次，拒绝同名定义并复制集合。
   核心 PR 允许零 Contributor；后续七个具体命令逐个落地，不安装假 Handler。
@@ -48,6 +79,9 @@ Spring 来源装配、DTO/VO 和企业 HTTP 均为 Java 架构决策。
 ## 4. 设计决策
 
 [ADR-0049](../decisions/0049-builtin-command-json-execution.html) 记录选项与取舍。
+
+响应 [PR #218 包结构评论](https://github.com/superheromeZzh/pi-mono-java/pull/218#discussion_r3930555908)，
+层级必须落实到 package 与 imports，而非只在类名或逻辑类图上区分；不扩展为全仓 MVC 重构。
 
 准入策略仅返回观察时的不可用原因，null 表示可用；带参数与无参数分别计算。
 NONE 输入模式固定不可带参，原因是 COMMAND_ARGUMENTS_NOT_SUPPORTED。
@@ -84,19 +118,24 @@ Controller 和七个具体 Handler/DTO/VO、数据库变更、Compact 生命周�
 
 ## 7. 测试与验证
 
-- 新增八项核心测试：七名排序/来源隔离、Spring 重名失败/空核心启动、Skill 共存、
-  单次解析与 Handler 身份、Session 复制、不可变集合及跨来源一致性。
-- 模块及依赖测试：1343 项，0 失败、0 错误、0 跳过；最终参数/提示边界调整后针对性测试再次通过。
+- 九项核心测试：七名排序/来源隔离、Spring 重名失败/空核心启动、Skill 共存、
+  单次解析与 Handler 身份、Session 复制、不可变集合及跨来源一致性，以及新增的真实组件扫描与装配。
+- 三个命令测试类共 22 项通过；清理旧包编译产物后执行模块及依赖 clean test：
+  1344 项，0 失败、0 错误、0 跳过。
+- 核对 19 个类型的内部 import 依赖无环；去除包与 import 差异后，生产类型实现保持一致，
+  唯一可见性调整为 Catalog 构造器。未残留旧包声明。
 - Spotless、Checkstyle 与 git diff --check 通过。
 - 指定质量脚本安装目录缺失，使用本机 java-ut-coverage-loop.skill 中同一原始脚本：
-  0 errors；新测试 0 warnings，原有测试保留 4 条命名建议。
+  三个命令测试文件 0 errors；新测试 0 warnings，两个既有测试类保留 11 条命名建议。
 - sync-campusclaw.sh 正常验证入口因缺失 NativeParent:26.0.0-SNAPSHOT 失败；
   显式 --no-verify 同步镜像，不伪造公司 Parent，不声称公司镜像编译通过。
-- 新增代码门禁：模块 621 行、镜像 621 行，合计 1242/2000；后续修改以最终门禁结果为准。
+- 新增代码门禁：模块侧 792 行；完整 PR 1623/2000，低于 1800 行软上限。
+  完整 PR 按门禁脚本的 Git 重命名检测计数，不将跨包迁移手工豁免。
 - PlantUML 生成、ASCII、SVG XML/同步及链接检查在发布前执行。
 
 ## 8. 版本历史
 
 | 版本 | 日期 | 变更 |
 |---|---|---|
+| 1.1.0 | 2026-09-04 | 按 #218 评论拆分 DTO、Spring Service 与核心职责包；明确无环依赖，补组件扫描回归，同步镜像和当前源码路径。 |
 | 1.0.0 | 2026-09-04 | 核心切片、来源隔离、单次 Catalog 与 Skill 并行开发边界；未发布 HTTP。 |
