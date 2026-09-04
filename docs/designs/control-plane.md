@@ -48,7 +48,7 @@
 不会访问节点注册表、数据库、MateService 或模型服务；接口本身的处理时间和空间均为 O(1)。
 
 **设计决策与理由**：保留截图指定的路径、大小写和字符串响应，不增加 JSON/ResultBean 或 VO 包装。
-这是明确的**产品约束**，详见 [ADR-0050](../decisions/0050-service-status-endpoint.md)。
+这是明确的**产品约束**，详见 [ADR-0052](../decisions/0052-service-status-endpoint.md)。
 成功仅表示当前进程能够处理该 HTTP 请求，不代表外部依赖健康、会话可执行或服务已具备业务就绪条件。
 依赖故障不会被该方法主动检测；进程未启动或请求未到达时也无法保证返回 `Success`。
 本次没有引入独立安全加固或其他架构变更。
@@ -92,7 +92,7 @@ Node 和 Runtime 的请求对象使用 Jakarta Bean Validation；输出使用专
 
 `NodeControllerTest` 和 `RuntimeControllerTest` 使用 MVC 测试覆盖成功、校验、404 和调度失败映射。`NodeRegistryTest`、`HealthCheckSchedulerTest` 与 `RuntimeSchedulerTest` 覆盖领域行为。
 
-2026-09-04 本次状态接口验证：
+2026-09-04 状态接口首次实现验证：
 
 - JDK 21 下运行 `./mvnw -q spotless:apply checkstyle:check`，通过。
 - 运行 `./mvnw -q -pl :campusclaw-coding-agent -am -Dtest=NodeControllerTest,RuntimeControllerTest -Dsurefire.failIfNoSpecifiedTests=false package`，打包及现有 6 个控制面测试通过。
@@ -100,11 +100,19 @@ Node 和 Runtime 的请求对象使用 Jakarta Bean Validation；输出使用专
 - `./scripts/sync-campusclaw.sh` 因无法解析 `com.huawei.hicampus:NativeParent:26.0.0-SNAPSHOT` 失败；按本地环境流程运行 `--no-verify` 完成源码同步。企业父 POM 下的完整镜像编译仍待具备公司 Maven 仓库访问条件的环境执行。
 - 镜像 dry-run 及 502 个生成 Java 文件的逐字节一致性检查通过；最终 `spotless:check`、Checkstyle、PlantUML 生成与 ASCII 检查、SVG XML 与重复生成一致性、修改文档的本地链接和行锚点、仓库 Markdown 的 Mermaid 禁用检查及 `git diff --check` 均通过。
 
+2026-09-04 测试补充：
+
+- 基于已合入主干 `0c555642b0712dbaab21bb9312823f33cdf8e6a7` 的分支基线 `625f14e44dc93727382463c6a12c7ad646bef4e6`，新增 `modules/coding-agent-cli/src/test/java/com/campusclaw/codingagent/controlplane/api/StatusControllerTest.java`。`statusReturnsOkWithSuccessBody()` 直接调用 `StatusController.status()`，分别断言 `HttpStatus.OK` 与响应体 `Success`。
+- 运行 `./mvnw -q -pl :campusclaw-coding-agent -am -Dtest=StatusControllerTest,NodeControllerTest,RuntimeControllerTest -Dsurefire.failIfNoSpecifiedTests=false package`，新增 1 个测试与既有 6 个测试全部通过，编译打包通过。
+- Spotless 与 Checkstyle 通过。企业镜像测试由同步脚本生成；完整企业镜像编译仍因 `NativeParent` 不可解析而受阻。
+- `CLAUDE.md` 要求的 `~/.claude/skills/java-ut-coverage-loop/scripts/check_test_quality.py` 在本机缺失，调用失败，未完成该工具检查；已核对新增用例的两个断言均检查实际方法返回值。
+- 主干已使用 ADR-0050 与 ADR-0051，因此将状态接口记录重编号为 ADR-0052，并同步引用；接口契约及组件关系不变。
+
 ## 7. 版本历史
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
-| 2.2.0 | 2026-09-04 | 新增固定响应的服务存活接口，记录实现基线、产品约束与验证结果，并按当前源码澄清调度规则 |
+| 2.2.0 | 2026-09-04 | 新增固定响应的服务存活接口，记录实现基线、产品约束与验证结果，并按当前源码澄清调度规则；后续补充 StatusController 单元测试，并在合入最新主干后将本接口 ADR 编号调整为 0052，接口契约不变 |
 | 2.1.0 | 2026-08-19 | 对齐最新主干并删除本地 Docker Sandbox 能力枚举说明 |
 | 2.0.0 | 2026-08-18 | 对齐 Spring MVC Controller 与默认 Web 进程，删除 WebFlux RouterFunction 和 ServerMode ADR |
 | 1.x | 2026-06-22 | 历史函数式 WebFlux 控制面设计，已废弃 |
