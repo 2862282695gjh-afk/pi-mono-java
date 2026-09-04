@@ -143,9 +143,9 @@ public class SkillLoader {
             throw new SkillLoadException(
                     "Skill name exceeds " + SkillNamePatterns.MAX_NAME_LENGTH + " characters: " + filePath);
         }
-        if (!SkillNamePatterns.LEGACY.matcher(name).matches()) {
+        if (!SkillNamePatterns.isValid(name)) {
             throw new SkillLoadException(
-                    "Skill name contains invalid characters (must be lowercase a-z, 0-9, hyphens): " + filePath);
+                    "Skill name must use lowercase a-z, 0-9 and single separating hyphens: " + filePath);
         }
     }
 

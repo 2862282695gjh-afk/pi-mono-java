@@ -76,7 +76,7 @@ public class SkillCommandSource implements CommandDefinitionSource {
     private Optional<ResolvedCommandDTO> resolved(
             RuntimeSessionDTO session, PreparedAgentRuntime prepared, SkillInfo skill) {
         String skillName = skill.name();
-        if (!SkillNamePatterns.isStrictValid(skillName) || !hasSkillMarkdown(prepared, skillName)) {
+        if (!SkillNamePatterns.isValid(skillName) || !hasSkillMarkdown(prepared, skillName)) {
             LOGGER.warn("Ignoring invalid Runtime skill command: name={}", skillName);
             return Optional.empty();
         }

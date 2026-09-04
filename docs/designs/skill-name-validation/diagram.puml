@@ -1,0 +1,41 @@
+@startuml skill_name_validation
+title Skill Name Validation: One Rule for Every Consumer
+' Source baseline: pi-mono-java@2c2092f2fa764a7aa7b47da841299f8866d7a151.
+' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/skill/SkillLoader.java validateName, loadFromFile.
+' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/skill/SkillNamePatterns.java LEGACY_REGEX, STRICT_REGEX.
+' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtime/AgentRuntimeManager.java requireSessionLoadable, writeSkills, loadSkill.
+' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/agent/RuntimeAgentPromptLoader.java loadSkill.
+' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/service/command/SkillCommandSource.java resolved.
+' Observed behavior: the baseline loads names with invalid hyphens but excludes them from command discovery.
+' Target product constraint: remove invalid-name compatibility; NAME_REGEX, NAME_PATTERN and isValid are introduced by this fix.
+' Design reason: one accepted name set prevents inconsistent loading and discovery without renaming resource identities.
+skinparam shadowing false
+skinparam componentStyle rectangle
+left to right direction
+component AgentRuntimeManager as Runtime
+component RuntimeAgentPromptLoader as Prompt
+component SkillLoader as Loader
+component SkillCommandSource as Commands
+component SkillNamePatterns as Names
+Runtime --> Loader : publish and cache reload
+Prompt --> Loader : load prompt skills
+Loader --> Names : isValid(name)
+Commands --> Names : isValid(name)
+note bottom of Names
+1 to 64 ASCII characters.
+Lowercase letters and digits.
+Single hyphens separate nonempty groups.
+No leading, trailing or repeated hyphens.
+end note
+note bottom of Runtime
+Reject invalid publication.
+Preserve the last valid directory on refresh failure.
+Reject invalid cache and refetch on prepare.
+end note
+note bottom of Prompt
+Invalid skills are omitted from the prompt.
+end note
+note bottom of Commands
+Invalid names produce no command.
+end note
+@enduml

@@ -95,12 +95,13 @@ class SkillCommandSourceTest {
         assertThat(command.snapshot().markdown()).contains("name: alpha");
     }
 
-    @Test
-    void filtersSkillsFailingStrictNameRules() throws IOException {
+    @ParameterizedTest
+    @ValueSource(strings = {"-pdf", "pdf-", "pdf--tools"})
+    void filtersInvalidSkillNamesEvenWhenMarkdownExists(String name) throws IOException {
         skillMarkdown("good-name");
+        skillMarkdown(name);
         when(agentRuntimeManager.prepareCached(AGENT_ID))
-                .thenReturn(
-                        prepared(skill("good-name", "ok"), skill("pdf--tools", "legacy"), skill("-lead", "legacy")));
+                .thenReturn(prepared(skill("good-name", "ok"), skill(name, "invalid")));
 
         List<ResolvedCommandDTO> commands = source.list(session("idle"));
 

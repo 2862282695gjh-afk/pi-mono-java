@@ -1,6 +1,6 @@
 # Agent 与 Skill 受管运行目录
 
-> 文档版本：3.4.3
+> 文档版本：3.5.0
 >
 > 状态：Implemented
 >
@@ -154,7 +154,8 @@ prepare、refresh、原子发布或 HTTP 契约。
 InputDTO 对建议列表做防御性复制，Source 提供非 null 空列表，Catalog 复制外层列表。
 不在 DTO 中增加业务校验；注册表负责重名检测，Source 负责可用性与文件检查。
 删除无消费者的可变展示 DTO，公开响应 VO 留待 HTTP PR。
-SkillNamePatterns 集中维护两套正则字符串、编译模式和最大长度，Loader 继续使用兼容规则。
+PR #210 当时让 SkillNamePatterns 集中维护两套正则字符串、编译模式和最大长度，Loader
+继续使用兼容规则。该名称兼容策略已由下文 6.2 的统一校验决策废止。
 Skill 文件的 canonical 路径必须位于 Agent 根目录，且等于该根下预期的命名文件，
 拒绝根外、兄弟 Skill 和根目录别名；沿用 [ADR-0044](../decisions/0044-validate-managed-agent-root-containment.html)
 的包含性加身份校验原则，不改变受管目录发布流程。
@@ -169,13 +170,62 @@ Skill 文件的 canonical 路径必须位于 Agent 根目录，且等于该根�
 此链接为待合并设计，不表示产品已发布。后续不得复用旧的请求级 Command SSE 或 Name 边车方案。
 
 验证包括稳定排序、重名拒绝、同一来源仅调用一次、建议列表不可修改、版本快照、
-不刷新 Agent、三类符号链接别名以及旧格式 Skill 仍能 prepare；同时运行 SkillLoader 回归。
+不刷新 Agent、三类符号链接别名；当时还测试旧格式 Skill 仍能 prepare，该测试预期已由 6.2
+替换为拒绝非法名称；同时运行 SkillLoader 回归。
 模块侧新增代码不超过 850 行，镜像同步后低于 1800 行软上限，最终以 PR 新增行数门禁为准。
+
+### 6.2 Skill 名称统一校验
+
+变更前源码基线：`2c2092f2fa764a7aa7b47da841299f8866d7a151`。以下路径相对于仓库根目录，
+表中符号描述该基线的实际行为：
+
+| 源码路径 | 符号与观察行为 |
+|---|---|
+| `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/skill/SkillNamePatterns.java` | `LEGACY_REGEX` 只限制字符种类；`STRICT_REGEX` 还禁止首尾及连续连字符。 |
+| `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/skill/SkillLoader.java` | `validateName` 使用 `LEGACY`，因此 `-pdf`、`pdf-`、`pdf--tools` 会通过加载校验。 |
+| `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtime/AgentRuntimeManager.java` | `writeSkills` 与 `loadSkill` 都通过 `requireSessionLoadable` 调用 `SkillLoader.loadFromFile`，宽松规则作用于发布与缓存读取。 |
+| `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/agent/RuntimeAgentPromptLoader.java` | `loadSkill` 调用同一 Loader；未禁用模型调用时，基线会把上述 Skill 纳入可见摘要。 |
+| `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/service/command/SkillCommandSource.java` | `resolved` 使用 `isStrictValid`，上述名称不会出现在命令发现结果。 |
+
+宽松正则最早可追溯至提交 `6335f6fbb4de2ec4eedb338c1de73ea24e3c8a07` 的
+`modules/coding-agent-cli/src/main/java/com/mariozechner/pi/codingagent/skill/Skill.java:NAME_PATTERN`。
+提交 `d60c74b38b9e1e961c4fcd2abff180146bbf395c` 将其迁入 `SkillNamePatterns.LEGACY`。
+这些代码以及人为构造的兼容测试，只能证明原实现放行过非法名称，不能证明存在受支持的历史数据迁移需求。
+
+**目标决策与理由（产品约束）：** 根据 2026-09-04 用户明确纠正，非法名称不提供兼容加载。
+名称为 1 至 64 个 ASCII 小写字母、数字及分隔连字符；禁止首尾连字符、连续连字符和其他字符。
+本次实现以 `SkillNamePatterns.NAME_REGEX`、`NAME_PATTERN`、`MAX_NAME_LENGTH` 为唯一定义，
+`isValid` 为共享判定。`NAME_REGEX`、`NAME_PATTERN` 和 `isValid` 为本次新增符号，
+不存在于上述变更前基线；`MAX_NAME_LENGTH` 沿用原有常量。
+Loader 与命令发现使用同一判定，删除 LEGACY/STRICT 分支和旧方法，不提供别名或自动改名。
+该约束消除“可以加载却不能发现为命令”的名称规则差异，保持 Skill 名称与绑定、目录身份一致。
+决策和备选方案见 [ADR-0050](../decisions/0050-unify-skill-name-validation.md)。
+
+![Skill 名称统一校验与加载入口](skill-name-validation/skill_name_validation.svg)
+
+[PlantUML 源码](skill-name-validation/diagram.puml#L1)
+
+| 入口 | 非法名称处理 |
+|---|---|
+| `SkillLoader.loadFromFile` | 抛出 `SkillLoadException`；frontmatter 名称和缺省的父目录名称均须合法。 |
+| 受管目录首次 `prepare` / `refresh` | 发布前复核失败，抛出 `AgentRuntimeException`；首次不发布目录，刷新保留原有效目录。 |
+| `prepareCached` / `prepare` 缓存命中 | 非法名称使缓存无效；前者返回空且不访问 Mate，后者重新拉取；远端仍非法则失败。 |
+| 提示词加载 / 目录扫描 | 沿用现有非法文件处理方式，跳过该 Skill，不加入提示词或加载结果。 |
+| 命令发现 | 沿用现有过滤方式，不生成非法名称的命令。 |
+
+合法名称、64 字符边界、固定 ID/版本、目录安全校验和 HTTP 结构均保持原行为。已有非法缓存不再命中，
+需要上游提供合法且与文件、元数据一致的名称；不通过去掉或折叠连字符来改变资源身份。
+判定仍复用预编译 Pattern，不增加网络或数据库操作；缓存无效后的拉取沿用既有 prepare 流程。
+
+测试覆盖三类连字符错误的文件加载、目录名称回退、首次发布失败、刷新保留旧目录、缓存拒绝并重建、
+提示词排除以及存在实际 SKILL.md 文件时的命令过滤，并保留合法名称、空值和长度边界验证。
+原有“兼容加载成功”测试已删除；验证结果记录在本次 Draft PR 中。
 
 ## 7. 版本历史
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 3.5.0 | 2026-09-04 | 废止非法 Skill 名称兼容；统一加载与命令发现校验，补充发布、缓存和提示词拒绝回归。 |
 | 3.4.3 | 2026-09-04 | 记录 PR #210 发现层修复：深度不可变 DTO、名称规则单一来源、文件 canonical 身份校验；HTTP 与 Skill 执行尚未发布。 |
 | 3.4.2 | 2026-09-03 | `requireAgentRoot` 在 canonical 解析前显式调用 `validatePath` 校验 `properties.agentsRoot()`，非法配置立即抛出异常。 |
 | 3.4.1 | 2026-09-03 | canonical Agent 路径除通过根目录包含性校验外，还必须与请求 ID 的预期目录精确一致，拒绝指向其他 Agent 或根目录的符号链接别名。 |

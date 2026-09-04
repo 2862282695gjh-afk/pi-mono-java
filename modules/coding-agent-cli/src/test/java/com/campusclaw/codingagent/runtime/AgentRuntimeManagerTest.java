@@ -28,11 +28,14 @@ import com.campusclaw.codingagent.runtime.MateServiceClient.SkillFile;
 import com.campusclaw.codingagent.runtime.MateServiceClient.SkillInfo;
 import com.campusclaw.codingagent.runtime.MateServiceClient.SkillReference;
 import com.campusclaw.codingagent.runtimeapi.agent.RuntimeAgentPromptLoader;
+import com.campusclaw.codingagent.skill.SkillLoadException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class AgentRuntimeManagerTest {
 
@@ -41,8 +44,6 @@ class AgentRuntimeManagerTest {
     private static final String CHILD_ID = "agent-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 
     private static final String SKILL_ID = "skill-11111111111111111111111111111111";
-
-    private static final String LEGACY_SKILL_ID = "skill-ffffffffffffffffffffffffffffffff";
 
     @TempDir
     Path tempDir;
@@ -341,44 +342,66 @@ class AgentRuntimeManagerTest {
         when(client.querySkillInfo(SKILL_ID)).thenReturn(skill(skillContent()));
     }
 
-    @Test
-    void prepareSucceedsWhenLegacySkillNameIsBound() throws Exception {
-        when(client.getAgentRuntime(AGENT_ID)).thenReturn(runtimeWithLegacySkill());
-        when(client.querySkillInfo(SKILL_ID)).thenReturn(skill(skillContent()));
-        when(client.querySkillInfo(LEGACY_SKILL_ID)).thenReturn(legacySkill());
+    @ParameterizedTest
+    @ValueSource(strings = {"-pdf", "pdf-", "pdf--tools"})
+    void invalidSkillNameFailsPrepareWithoutPublishing(String name) {
+        stubRuntime("1.0.0", "prompt-v1");
+        when(client.querySkillInfo(SKILL_ID)).thenReturn(skillWithName(name));
 
-        PreparedAgentRuntime prepared = manager.prepare(AGENT_ID);
+        AgentRuntimeException error = assertThrows(AgentRuntimeException.class, () -> manager.prepare(AGENT_ID));
 
-        Path managed = prepared.agentRoot().resolve(".campusclaw");
-        assertTrue(Files.isRegularFile(managed.resolve("skills/calendar/SKILL.md")));
-        assertTrue(Files.isRegularFile(managed.resolve("skills/pdf--tools/SKILL.md")));
-        assertTrue(prepared.skills().stream().anyMatch(info -> "pdf--tools".equals(info.name())));
+        assertTrue(error.getCause() instanceof SkillLoadException);
+        assertFalse(Files.exists(tempDir.resolve("agent").resolve(AGENT_ID).resolve(".campusclaw")));
     }
 
-    private AgentRuntime runtimeWithLegacySkill() {
-        return new AgentRuntime(
-                List.of("gpt-4o"),
-                List.of(new SkillReference(SKILL_ID, "1.0.0"), new SkillReference(LEGACY_SKILL_ID, "1.0.0")),
-                List.of(),
-                List.of(child("researcher", CHILD_ID)),
-                List.of("description"),
-                "Agent A",
-                true,
-                AGENT_ID,
-                "agent-a",
-                "prompt-v1",
-                List.of(),
-                "1.0.0");
+    @ParameterizedTest
+    @ValueSource(strings = {"-pdf", "pdf-", "pdf--tools"})
+    void invalidSkillNameFailsRefreshAndPreservesPublishedCache(String name) throws Exception {
+        stubRuntime("1.0.0", "prompt-v1");
+        PreparedAgentRuntime first = manager.prepare(AGENT_ID);
+        when(client.querySkillInfo(SKILL_ID)).thenReturn(skillWithName(name));
+
+        AgentRuntimeException error = assertThrows(AgentRuntimeException.class, () -> manager.refresh(AGENT_ID));
+
+        assertTrue(error.getCause() instanceof SkillLoadException);
+        Path managed = first.agentRoot().resolve(".campusclaw");
+        assertEquals(
+                skillContent(), Files.readString(managed.resolve("skills/calendar/SKILL.md"), StandardCharsets.UTF_8));
+        assertEquals("prompt-v1", manager.readSystemPrompt(manager.prepareCached(AGENT_ID)));
+        assertFalse(Files.exists(managed.resolve("skills").resolve(name)));
     }
 
-    private static SkillInfo legacySkill() {
+    @ParameterizedTest
+    @ValueSource(strings = {"-pdf", "pdf-", "pdf--tools"})
+    void invalidCachedSkillNameIsRejectedAndRefetched(String name) throws Exception {
+        stubRuntime("1.0.0", "prompt-v1");
+        PreparedAgentRuntime first = manager.prepare(AGENT_ID);
+        Path skills = first.agentRoot().resolve(".campusclaw/skills");
+        Path invalidDirectory = Files.move(skills.resolve("calendar"), skills.resolve(name));
+        Path manifest = invalidDirectory.resolve("skill.json");
+        String metadata = Files.readString(manifest, StandardCharsets.UTF_8).replace("calendar", name);
+        Files.writeString(manifest, metadata, StandardCharsets.UTF_8);
+        Files.writeString(
+                invalidDirectory.resolve("SKILL.md"), skillWithName(name).content(), StandardCharsets.UTF_8);
+
+        assertNull(manager.prepareCached(AGENT_ID));
+        verify(client).querySkillInfo(SKILL_ID);
+        PreparedAgentRuntime repaired = manager.prepare(AGENT_ID);
+
+        assertEquals(SKILL_ID, repaired.skillIdsByName().get("calendar"));
+        assertFalse(Files.exists(invalidDirectory));
+        assertEquals(skillContent(), Files.readString(skills.resolve("calendar/SKILL.md"), StandardCharsets.UTF_8));
+        verify(client, times(2)).querySkillInfo(SKILL_ID);
+    }
+
+    private static SkillInfo skillWithName(String name) {
         return new SkillInfo(
-                "pdf--tools",
-                LEGACY_SKILL_ID,
+                name,
+                SKILL_ID,
                 "1.0.0",
-                "Legacy naming skill",
-                "legacy",
-                "---\nname: pdf--tools\ndescription: Legacy workflow\n---\n\nUse the legacy workflow.\n",
+                "Invalid naming skill",
+                "test",
+                "---\nname: " + name + "\ndescription: Invalid workflow\n---\nBody.\n",
                 List.of(),
                 List.of(),
                 List.of(),
