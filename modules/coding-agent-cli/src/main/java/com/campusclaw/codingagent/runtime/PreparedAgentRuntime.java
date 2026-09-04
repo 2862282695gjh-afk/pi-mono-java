@@ -15,6 +15,7 @@ import com.campusclaw.codingagent.runtime.MateServiceClient.AgentReference;
 import com.campusclaw.codingagent.runtime.MateServiceClient.AgentRuntime;
 import com.campusclaw.codingagent.runtime.MateServiceClient.BoundTool;
 import com.campusclaw.codingagent.runtime.MateServiceClient.SkillInfo;
+import com.campusclaw.common.constant.ClawConstants;
 
 /**
  * 用于初始化单个托管 Agent Session 的不可变本地快照。
@@ -97,7 +98,7 @@ public record PreparedAgentRuntime(String agentId, Path agentRoot, AgentRuntime 
     static List<String> allowedToolNames(List<BoundTool> tools) {
         return tools.stream()
                 .filter(tool -> tool.name() != null && !tool.name().isBlank())
-                .filter(tool -> "allow".equals(normalizePermission(tool.permission())))
+                .filter(tool -> ClawConstants.Mate.TOOL_PERMISSION_ALLOW.equals(normalizePermission(tool.permission())))
                 .map(BoundTool::name)
                 .distinct()
                 .toList();

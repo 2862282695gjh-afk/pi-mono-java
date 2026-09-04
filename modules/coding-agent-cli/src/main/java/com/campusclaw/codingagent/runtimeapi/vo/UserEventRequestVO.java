@@ -6,7 +6,7 @@ package com.campusclaw.codingagent.runtimeapi.vo;
 
 import java.util.List;
 
-import com.campusclaw.codingagent.runtimeapi.RuntimeApiConstants;
+import com.campusclaw.common.constant.ClawConstants;
 import com.fasterxml.jackson.annotation.JsonAnySetter;
 import com.fasterxml.jackson.annotation.JsonSetter;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -25,11 +25,11 @@ import lombok.Setter;
  */
 @Data
 public class UserEventRequestVO {
-    @Size(max = RuntimeApiConstants.MAX_MESSAGE_CHARACTERS)
+    @Size(max = ClawConstants.RuntimeApi.MAX_MESSAGE_CHARACTERS)
     @Setter(AccessLevel.NONE)
     private String message;
 
-    @Size(max = RuntimeApiConstants.MAX_FILE_IDS)
+    @Size(max = ClawConstants.RuntimeApi.MAX_FILE_IDS)
     @Setter(AccessLevel.NONE)
     private List<@NotBlank String> fileIds;
 

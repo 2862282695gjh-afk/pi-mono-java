@@ -26,8 +26,4 @@ public record MateToolMeta(
         Map<String, Object> inputSchema,
         Map<String, Object> outputSchema,
         boolean isConcurrencySafe,
-        String permission) {
-
-    /** 服务端未声明权限时使用的默认值。 */
-    public static final String ALLOW = "allow";
-}
+        String permission) {}

@@ -13,6 +13,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
+import com.huawei.hicampus.claw.common.constant.ClawConstants;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.yaml.snakeyaml.Yaml;
@@ -33,7 +35,6 @@ public class SkillLoader {
 
     private static final Logger log = LoggerFactory.getLogger(SkillLoader.class);
 
-    static final String SKILL_FILENAME = "SKILL.md";
     private static final String FRONTMATTER_DELIMITER = "---";
 
     /**
@@ -65,7 +66,7 @@ public class SkillLoader {
     }
 
     private void scanDirectory(Path dir, String source, List<Skill> skills) {
-        Path skillFile = dir.resolve(SKILL_FILENAME);
+        Path skillFile = dir.resolve(ClawConstants.Skill.MARKDOWN_FILE_NAME);
         if (Files.isRegularFile(skillFile)) {
             // 当前目录是 Skill 根目录，加载后不再向下递归。
             try {
@@ -124,9 +125,9 @@ public class SkillLoader {
         if (description == null || description.isBlank()) {
             throw new SkillLoadException("Skill description is required: " + filePath);
         }
-        if (description.length() > Skill.MAX_DESCRIPTION_LENGTH) {
-            throw new SkillLoadException(
-                    "Skill description exceeds " + Skill.MAX_DESCRIPTION_LENGTH + " characters: " + filePath);
+        if (description.length() > ClawConstants.Skill.MAX_DESCRIPTION_LENGTH) {
+            throw new SkillLoadException("Skill description exceeds " + ClawConstants.Skill.MAX_DESCRIPTION_LENGTH
+                    + " characters: " + filePath);
         }
 
         // 解析禁止模型调用标记。
@@ -139,13 +140,13 @@ public class SkillLoader {
         if (name == null || name.isEmpty()) {
             throw new SkillLoadException("Skill name is required: " + filePath);
         }
-        if (name.length() > SkillNamePatterns.MAX_NAME_LENGTH) {
+        if (name.length() > ClawConstants.Skill.MAX_NAME_LENGTH) {
             throw new SkillLoadException(
-                    "Skill name exceeds " + SkillNamePatterns.MAX_NAME_LENGTH + " characters: " + filePath);
+                    "Skill name exceeds " + ClawConstants.Skill.MAX_NAME_LENGTH + " characters: " + filePath);
         }
-        if (!SkillNamePatterns.LEGACY.matcher(name).matches()) {
+        if (!ClawConstants.Skill.isValidName(name)) {
             throw new SkillLoadException(
-                    "Skill name contains invalid characters (must be lowercase a-z, 0-9, hyphens): " + filePath);
+                    "Skill name must use lowercase a-z, 0-9 and single separating hyphens: " + filePath);
         }
     }
 

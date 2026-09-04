@@ -24,7 +24,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 
-import com.campusclaw.codingagent.common.client.mate.MateCredentialHeaders;
 import com.campusclaw.codingagent.common.client.mate.MateCredentials;
 import com.campusclaw.codingagent.runtimeapi.RuntimeMessageSourceConfiguration;
 import com.campusclaw.codingagent.runtimeapi.event.RuntimeEventQueryService;
@@ -35,6 +34,7 @@ import com.campusclaw.codingagent.runtimeapi.result.StandaloneResultBeanAdapter;
 import com.campusclaw.codingagent.runtimeapi.vo.EventPageResponseVO;
 import com.campusclaw.codingagent.runtimeapi.vo.RuntimeSseEventVO;
 import com.campusclaw.codingagent.runtimeapi.vo.UserEventRequestVO;
+import com.campusclaw.common.constant.ClawConstants;
 import com.fasterxml.jackson.databind.json.JsonMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 
@@ -192,8 +192,8 @@ class RuntimeEventRoutesTest {
 
     private static org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder authenticated(
             org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder request) {
-        return request.header(MateCredentialHeaders.X_HW_ID, "credential")
+        return request.header(ClawConstants.Mate.X_HW_ID, "credential")
                 .header(HttpHeaders.AUTHORIZATION, "Bearer opaque-token")
-                .header(MateCredentialHeaders.ACCESS_TOKEN, "opaque-access-token");
+                .header(ClawConstants.Mate.ACCESS_TOKEN, "opaque-access-token");
     }
 }

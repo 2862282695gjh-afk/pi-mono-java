@@ -13,8 +13,8 @@ import java.util.ResourceBundle;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-import com.campusclaw.codingagent.common.client.mate.MateToolResponseException;
 import com.campusclaw.codingagent.runtime.AgentRuntimeErrorCode;
+import com.campusclaw.common.constant.ClawConstants;
 
 import org.junit.jupiter.api.Test;
 
@@ -33,7 +33,7 @@ class RuntimeErrorCodeTest {
                 .map(RuntimeErrorCode::messageKey)
                 .collect(Collectors.toCollection(HashSet::new));
         Arrays.stream(AgentRuntimeErrorCode.values()).map(Enum::name).forEach(expectedKeys::add);
-        expectedKeys.add(MateToolResponseException.ERROR_CODE);
+        expectedKeys.add(ClawConstants.Mate.TOOL_RESPONSE_INVALID);
         expectedKeys.add("TOOL_EXECUTION_FAILED");
 
         assertThat(english.keySet()).containsAll(expectedKeys);

@@ -24,7 +24,7 @@ import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.command.ResolvedComma
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.command.SkillCommandSnapshotDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.error.RuntimeErrorCode;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.session.RuntimeSessionState;
-import com.huawei.hicampus.claw.codingagent.skill.SkillNamePatterns;
+import com.huawei.hicampus.claw.common.constant.ClawConstants;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -40,13 +40,6 @@ import org.springframework.stereotype.Service;
 @Service
 public class SkillCommandSource implements CommandDefinitionSource {
     private static final Logger LOGGER = LoggerFactory.getLogger(SkillCommandSource.class);
-
-    /**
-     * Skill 命令的保留命名空间前缀。
-     */
-    public static final String COMMAND_PREFIX = "skill:";
-
-    private static final String SKILL_MARKDOWN_FILE = "SKILL.md";
 
     private final AgentRuntimeManager agentRuntimeManager;
 
@@ -76,7 +69,7 @@ public class SkillCommandSource implements CommandDefinitionSource {
     private Optional<ResolvedCommandDTO> resolved(
             RuntimeSessionDTO session, PreparedAgentRuntime prepared, SkillInfo skill) {
         String skillName = skill.name();
-        if (!SkillNamePatterns.isStrictValid(skillName) || !hasSkillMarkdown(prepared, skillName)) {
+        if (!ClawConstants.Skill.isValidName(skillName) || !hasSkillMarkdown(prepared, skillName)) {
             LOGGER.warn("Ignoring invalid Runtime skill command: name={}", skillName);
             return Optional.empty();
         }
@@ -87,7 +80,7 @@ public class SkillCommandSource implements CommandDefinitionSource {
         SkillCommandSnapshotDTO snapshot = new SkillCommandSnapshotDTO(
                 prepared.agentId(), agentVersion(prepared), skill.id(), skill.version(), skill.content());
         return Optional.of(new ResolvedCommandDTO(
-                COMMAND_PREFIX + skillName,
+                ClawConstants.Skill.COMMAND_PREFIX + skillName,
                 CommandKind.SKILL,
                 skill.description(),
                 idle,
@@ -102,19 +95,19 @@ public class SkillCommandSource implements CommandDefinitionSource {
 
     private boolean hasSkillMarkdown(PreparedAgentRuntime prepared, String skillName) {
         Path skillFile = prepared.agentRoot()
-                .resolve(AgentRuntimeManager.CAMPUSCLAW_DIRECTORY)
-                .resolve("skills")
+                .resolve(ClawConstants.Runtime.DIRECTORY_NAME)
+                .resolve(ClawConstants.Skill.DIRECTORY_NAME)
                 .resolve(skillName)
-                .resolve(SKILL_MARKDOWN_FILE);
+                .resolve(ClawConstants.Skill.MARKDOWN_FILE_NAME);
         try {
             if (!Files.isRegularFile(skillFile, LinkOption.NOFOLLOW_LINKS)) {
                 return false;
             }
             Path realRoot = prepared.agentRoot().toFile().getCanonicalFile().toPath();
-            Path expected = realRoot.resolve(AgentRuntimeManager.CAMPUSCLAW_DIRECTORY)
-                    .resolve("skills")
+            Path expected = realRoot.resolve(ClawConstants.Runtime.DIRECTORY_NAME)
+                    .resolve(ClawConstants.Skill.DIRECTORY_NAME)
                     .resolve(skillName)
-                    .resolve(SKILL_MARKDOWN_FILE);
+                    .resolve(ClawConstants.Skill.MARKDOWN_FILE_NAME);
             Path canonicalFile = skillFile.toFile().getCanonicalFile().toPath();
             return canonicalFile.startsWith(realRoot) && canonicalFile.equals(expected);
         } catch (IOException error) {

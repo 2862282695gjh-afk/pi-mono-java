@@ -7,7 +7,7 @@ package com.campusclaw.codingagent.common.dto;
 import java.util.HashMap;
 import java.util.Map;
 
-import com.campusclaw.codingagent.common.client.mate.MateCredentialHeaders;
+import com.campusclaw.common.constant.ClawConstants;
 
 import lombok.Builder;
 import lombok.Data;
@@ -80,17 +80,17 @@ public class RequestHeaderInfo {
      */
     public Map<String, String> toHeaders() {
         Map<String, String> headers = new HashMap<>();
-        headers.put(MateCredentialHeaders.ACCESS_TOKEN, accessToken);
+        headers.put(ClawConstants.Mate.ACCESS_TOKEN, accessToken);
         headers.put("X-Client-IP", clientIp);
         headers.put("X-Locale", locale);
         headers.put("X-Forward", xForward);
         headers.put("X-App-Id", appId);
-        headers.put(MateCredentialHeaders.X_HW_ID, xHwId);
-        headers.put(MateCredentialHeaders.X_HW_APPKEY, xHwAppKey);
+        headers.put(ClawConstants.Mate.X_HW_ID, xHwId);
+        headers.put(ClawConstants.Mate.X_HW_APPKEY, xHwAppKey);
         headers.put("X-App-Key", appKey);
         headers.put("Cookie", cookie);
         headers.put("X-Csrf-Token", csrfToken);
-        headers.put(MateCredentialHeaders.AUTHORIZATION, authorization);
+        headers.put(ClawConstants.Mate.AUTHORIZATION, authorization);
         headers.put("X-Auth-Token", xAuthToken);
         headers.put("X-Roa-Rand", roaRand);
         headers.put("X-Agent-Id", xAgentId);

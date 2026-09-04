@@ -1,10 +1,10 @@
 # CampusClaw 模块架构
 
-> 文档版本：2.2.0
+> 文档版本：2.3.0
 >
 > 状态：Implemented
 >
-> 更新日期：2026-09-01
+> 更新日期：2026-09-04
 >
 > 实现前源码基线：`d649866a6cae967ace18ceaeb9597edd47e5721e`
 >
@@ -17,7 +17,7 @@
 ## 1. 结论
 
 CampusClaw 是 JDK 21 + Spring Boot 3.4.5 的 ToB Agent Runtime 服务。Maven Reactor 只包含
-`ai`、`agent-core`、`cron` 和 `coding-agent-cli` 四个 Java 模块；CLI/TUI 产品入口和
+`common`、`ai`、`agent-core`、`cron` 和 `coding-agent-cli` 五个 Java 模块；CLI/TUI 产品入口和
 `modules/tui` 已删除。`coding-agent-cli` 只是历史目录名，当前职责是组装 Spring Boot HTTP
 服务、受管 Agent Session 和八个内置工具。
 
@@ -32,12 +32,21 @@ CampusClaw 是 JDK 21 + Spring Boot 3.4.5 的 ToB Agent Runtime 服务。Maven R
 
 依赖方向固定为：
 
-- `ai` 无仓内模块依赖；
+- `common` 无仓内业务模块依赖；
+- `ai` 依赖 `common`；
 - `agent-core` 依赖 `ai`；
 - `cron` 依赖 `agent-core`；
-- `coding-agent-cli` 依赖 `ai`、`agent-core` 和 `cron`，生成最终服务 JAR。
+- `coding-agent-cli` 依赖 `common`、`ai`、`agent-core` 和 `cron`，生成最终服务 JAR。
 
 ## 3. 模块职责
+
+### common (`campusclaw-common`)
+
+新增 `modules/common` 作为底层共享常量模块，`com.campusclaw.common` 与 ai、agent、cron、codingagent
+同级。`common.constant.ClawConstants` 按领域分组，集中原先各业务包持有的共享常量。
+源码复核基线 `ee3fdb4893228045f06b9b1d1b3b3bb505812c73` 尚无此模块；新增模块及依赖属于**架构调整**，
+不是基线既有行为。来源清单和边界见[共享常量设计](designs/shared-constants.md)，决策见
+[ADR-0051](decisions/0051-centralize-shared-claw-constants.md)。
 
 ### 3.1 ai (`campusclaw-ai`)
 
@@ -114,7 +123,7 @@ Spring Boot 服务装配模块。目录名保留 `cli` 仅为避免当前构建�
 - 公共 Session 管理 Agent、工具实例、hook、取消域和 Session 级 Mate 缓存；
 - `AgentRuntimeManager` 管理 `agent/{agentId}/.campusclaw` 的缓存优先 prepare 和管理面 refresh；
 - Runtime、Cron 和 Child 使用同一 Session 类型，但各自消息、cwd、工具实例和上下文隔离；
-- `campusclaw` 由 `scripts/sync-campusclaw.sh` 从四个主模块生成，不双份维护；
+- `campusclaw` 由 `scripts/sync-campusclaw.sh` 从五个主模块生成，不双份维护；
 - 公司镜像不加入根 Reactor，使用 Java 根包 `com.huawei.hicampus.claw`，通过
   `com.huawei.hicampus:NativeParent:26.0.0-SNAPSHOT` 独立构建；其项目坐标为
   `com.huawei.campus:claw:1.0-SNAPSHOT`，默认 JAR 为 `claw-1.0-SNAPSHOT.jar`。
@@ -123,7 +132,7 @@ Spring Boot 服务装配模块。目录名保留 `cli` 仅为避免当前构建�
 
 | 结论 | 仓库相对路径与符号 |
 |---|---|
-| 四模块 Reactor | `pom.xml` 的 `<modules>` |
+| 五模块 Reactor | `pom.xml` 的 `<modules>` |
 | 服务唯一入口 | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/CampusClawApplication.java` |
 | 公共 Session | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/session/AgentSessionFactory.java` |
 | 关闭工具集合 | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/tool/builtin/BuiltInToolName.java` |
@@ -136,6 +145,7 @@ Spring Boot 服务装配模块。目录名保留 `cli` 仅为避免当前构建�
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 2.3.0 | 2026-09-04 | 新增 common 模块与 ClawConstants，直接消费者显式声明底层依赖。 |
 | 2.2.0 | 2026-09-01 | 补充 CampusClaw 公司镜像的新目录、Java 包、公司 Maven 坐标与独立构建边界。 |
 | 2.1.0 | 2026-08-24 | 按职责修订 TUI 删除边界，保留未注册 Slash 核心并把压缩迁入公共 Session |
 | 2.0.0 | 2026-08-24 | 收敛为四个 Java 模块和纯服务入口，删除 TUI/CLI 与动态扩展描述 |

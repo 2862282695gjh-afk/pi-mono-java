@@ -7,8 +7,8 @@ package com.huawei.hicampus.claw.codingagent.runtimeapi.web;
 import java.util.List;
 import java.util.Locale;
 
-import com.huawei.hicampus.claw.codingagent.common.client.mate.MateCredentialHeaders;
 import com.huawei.hicampus.claw.codingagent.common.client.mate.MateCredentials;
+import com.huawei.hicampus.claw.common.constant.ClawConstants;
 
 import org.springframework.http.HttpHeaders;
 
@@ -44,9 +44,9 @@ public final class RuntimeRequestContext {
 
     public static MateCredentials mateCredentials(HttpServletRequest request) {
         return new MateCredentials(
-                request.getHeader(MateCredentialHeaders.X_HW_ID),
-                request.getHeader(MateCredentialHeaders.X_HW_APPKEY),
-                request.getHeader(MateCredentialHeaders.AUTHORIZATION),
-                request.getHeader(MateCredentialHeaders.ACCESS_TOKEN));
+                request.getHeader(ClawConstants.Mate.X_HW_ID),
+                request.getHeader(ClawConstants.Mate.X_HW_APPKEY),
+                request.getHeader(ClawConstants.Mate.AUTHORIZATION),
+                request.getHeader(ClawConstants.Mate.ACCESS_TOKEN));
     }
 }

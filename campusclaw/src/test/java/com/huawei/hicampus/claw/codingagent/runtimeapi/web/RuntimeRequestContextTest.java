@@ -8,8 +8,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.Locale;
 
-import com.huawei.hicampus.claw.codingagent.common.client.mate.MateCredentialHeaders;
 import com.huawei.hicampus.claw.codingagent.common.client.mate.MateCredentials;
+import com.huawei.hicampus.claw.common.constant.ClawConstants;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpHeaders;
@@ -43,10 +43,10 @@ class RuntimeRequestContextTest {
     @Test
     void capturesCoexistingMateCredentialsWithoutValidation() {
         MockHttpServletRequest request = new MockHttpServletRequest();
-        request.addHeader(MateCredentialHeaders.X_HW_ID, "caller-1");
-        request.addHeader(MateCredentialHeaders.X_HW_APPKEY, "app-key-1");
-        request.addHeader(MateCredentialHeaders.AUTHORIZATION, "Bearer token-1");
-        request.addHeader(MateCredentialHeaders.ACCESS_TOKEN, "access-token-1");
+        request.addHeader(ClawConstants.Mate.X_HW_ID, "caller-1");
+        request.addHeader(ClawConstants.Mate.X_HW_APPKEY, "app-key-1");
+        request.addHeader(ClawConstants.Mate.AUTHORIZATION, "Bearer token-1");
+        request.addHeader(ClawConstants.Mate.ACCESS_TOKEN, "access-token-1");
 
         MateCredentials credentials = RuntimeRequestContext.mateCredentials(request);
 
@@ -58,8 +58,8 @@ class RuntimeRequestContextTest {
     @Test
     void missingAccessTokenIsCapturedWithoutLocalRejectionButIsIncompleteForExecution() {
         MockHttpServletRequest request = new MockHttpServletRequest();
-        request.addHeader(MateCredentialHeaders.X_HW_ID, "caller-1");
-        request.addHeader(MateCredentialHeaders.X_HW_APPKEY, "app-key-1");
+        request.addHeader(ClawConstants.Mate.X_HW_ID, "caller-1");
+        request.addHeader(ClawConstants.Mate.X_HW_APPKEY, "app-key-1");
 
         MateCredentials credentials = RuntimeRequestContext.mateCredentials(request);
 
