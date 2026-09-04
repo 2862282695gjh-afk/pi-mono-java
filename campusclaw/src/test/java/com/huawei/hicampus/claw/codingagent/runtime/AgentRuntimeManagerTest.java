@@ -13,6 +13,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import java.nio.charset.StandardCharsets;
@@ -177,6 +178,63 @@ class AgentRuntimeManagerTest {
         for (String invalid : List.of("agent-a", "../agent-a", "skill-11111111111111111111111111111111")) {
             assertThrows(IllegalArgumentException.class, () -> manager.prepare(invalid));
         }
+    }
+
+    @Test
+    void rejectsInvalidConfiguredAgentsRootBeforePathResolution() {
+        Path invalidAgentsRoot = tempDir.resolve("cache").resolve("..").resolve("agent");
+        var properties = new AgentRuntimeProperties(invalidAgentsRoot, Duration.ofSeconds(1L), Duration.ofSeconds(2L));
+        var boundaryManager = new AgentRuntimeManager(properties, client, new ObjectMapper());
+
+        IllegalArgumentException exception =
+                assertThrows(IllegalArgumentException.class, () -> boundaryManager.prepareCached(AGENT_ID));
+
+        assertEquals("Invalid agents root path", exception.getMessage());
+        verifyNoInteractions(client);
+    }
+
+    @Test
+    void rejectsCanonicalAgentPathOutsideConfiguredRoot() throws Exception {
+        Path agentsRoot = tempDir.resolve("agent");
+        Path outsideRoot = tempDir.resolve("outside");
+        Files.createDirectories(agentsRoot);
+        Files.createDirectories(outsideRoot);
+        Files.createSymbolicLink(agentsRoot.resolve(AGENT_ID), outsideRoot);
+
+        IllegalArgumentException exception =
+                assertThrows(IllegalArgumentException.class, () -> manager.prepareCached(AGENT_ID));
+
+        assertEquals("Canonical Agent path escapes agents root", exception.getMessage());
+    }
+
+    @Test
+    void rejectsCanonicalAgentPathAliasedToAnotherAgent() throws Exception {
+        Path agentsRoot = tempDir.resolve("agent");
+        Path otherAgentRoot = agentsRoot.resolve(CHILD_ID);
+        Path otherManagedRoot = otherAgentRoot.resolve(".campusclaw");
+        Files.createDirectories(otherManagedRoot);
+        Path otherSystemFile = otherManagedRoot.resolve("SYSTEM.md");
+        Files.writeString(otherSystemFile, "other-agent", StandardCharsets.UTF_8);
+        Files.createSymbolicLink(agentsRoot.resolve(AGENT_ID), otherAgentRoot);
+
+        IllegalArgumentException exception =
+                assertThrows(IllegalArgumentException.class, () -> manager.refresh(AGENT_ID));
+
+        assertEquals("Canonical Agent path does not match requested Agent directory", exception.getMessage());
+        assertEquals("other-agent", Files.readString(otherSystemFile, StandardCharsets.UTF_8));
+        verifyNoInteractions(client);
+    }
+
+    @Test
+    void rejectsCanonicalAgentPathAliasedToAgentsRoot() throws Exception {
+        Path agentsRoot = tempDir.resolve("agent");
+        Files.createDirectories(agentsRoot);
+        Files.createSymbolicLink(agentsRoot.resolve(AGENT_ID), agentsRoot);
+
+        IllegalArgumentException exception =
+                assertThrows(IllegalArgumentException.class, () -> manager.prepareCached(AGENT_ID));
+
+        assertEquals("Canonical Agent path does not match requested Agent directory", exception.getMessage());
     }
 
     @Test

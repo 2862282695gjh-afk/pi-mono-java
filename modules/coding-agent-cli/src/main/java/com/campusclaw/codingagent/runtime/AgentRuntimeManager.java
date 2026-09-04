@@ -4,6 +4,7 @@
 
 package com.campusclaw.codingagent.runtime;
 
+import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.AtomicMoveNotSupportedException;
@@ -161,7 +162,7 @@ public class AgentRuntimeManager {
 
     private Path createStagingDirectory(Path agentRoot) {
         try {
-            Files.createDirectories(properties.agentsRoot().toAbsolutePath().normalize());
+            Files.createDirectories(agentRoot.getParent());
             Files.createDirectories(agentRoot);
             if (Files.isSymbolicLink(agentRoot)) {
                 throw new IOException("Agent root must not be a symbolic link");
@@ -297,7 +298,7 @@ public class AgentRuntimeManager {
                 return null;
             }
             AgentRuntime metadata = toRuntime(identity, settings, systemPrompt, children, skills);
-            return new PreparedAgentRuntime(agentId, agentRoot.toAbsolutePath().normalize(), metadata, skills);
+            return new PreparedAgentRuntime(agentId, agentRoot, metadata, skills);
         } catch (IOException | RuntimeException exception) {
             return null;
         }
@@ -421,12 +422,36 @@ public class AgentRuntimeManager {
         if (!matches(agentId, ResourceIdentifierPatterns.AGENT_ID_PATTERN)) {
             throw new IllegalArgumentException("Invalid agentId");
         }
-        return properties
-                .agentsRoot()
-                .toAbsolutePath()
-                .normalize()
-                .resolve(agentId)
-                .normalize();
+        if (!validatePath(properties.agentsRoot())) {
+            throw new IllegalArgumentException("Invalid agents root path");
+        }
+        try {
+            Path agentsRoot = Path.of(properties.agentsRoot().toFile().getCanonicalPath());
+            Path expectedAgentRoot = agentsRoot.resolve(agentId);
+            File agentDirectory = expectedAgentRoot.toFile();
+            Path agentRoot = Path.of(agentDirectory.getCanonicalPath());
+            if (!agentRoot.startsWith(agentsRoot)) {
+                throw new IllegalArgumentException("Canonical Agent path escapes agents root");
+            }
+            if (!agentRoot.equals(expectedAgentRoot)) {
+                throw new IllegalArgumentException("Canonical Agent path does not match requested Agent directory");
+            }
+            return agentRoot;
+        } catch (IOException exception) {
+            throw new AgentRuntimeException("Failed to resolve canonical Agent root", exception);
+        }
+    }
+
+    private static boolean validatePath(Path path) {
+        if (path == null || path.toString().isBlank() || !path.equals(path.normalize())) {
+            return false;
+        }
+        for (Path segment : path) {
+            if (segment.toString().equals(".") || segment.toString().equals("..")) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private <T> T withAgentLock(String agentId, SupplierWithException<T> action) {

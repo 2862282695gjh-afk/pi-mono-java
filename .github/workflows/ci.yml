@@ -11,6 +11,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Pull request addition limit
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: ./scripts/check-commit-additions.sh "$BASE_SHA" "$HEAD_SHA"
+
+      - name: Pull request addition limit tests
+        run: ./scripts/tests/check-commit-additions-test.sh
 
       - name: Set up JDK 21
         uses: actions/setup-java@v4
