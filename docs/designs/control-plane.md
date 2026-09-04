@@ -1,8 +1,10 @@
 # Control Plane 设计
 
-> 文档版本：2.1.0
+> 文档版本：2.2.0
 >
-> 实现基线：`7811dc335fcb0125a1ecbddd63cd77baf120f21d`
+> 变更前基线：`0300541fbbe3db8b05ffa1ac953f15f01df74b3e`
+>
+> 已核对实现基线：`e8b861f2878ff07769a0e1c15ac5e45ab04316b3`
 
 ## 1. 现状
 
@@ -10,13 +12,20 @@
 
 | 组件 | 源码证据 | 职责 |
 |---|---|---|
+| `StatusController.status` | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/controlplane/api/StatusController.java:19` | 返回固定文本，供调用方探测服务存活 |
 | `NodeController` | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/controlplane/api/NodeController.java` | 注册、心跳、查询和注销数据面节点 |
 | `RuntimeController` | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/controlplane/api/RuntimeController.java` | 汇总活动 Runtime、能力和调度决策 |
 | `NodeRegistry` | `modules/agent-core/src/main/java/com/campusclaw/agent/controlplane/service/NodeRegistry.java` | 维护进程内节点状态 |
-| `RuntimeScheduler` | `modules/agent-core/src/main/java/com/campusclaw/agent/controlplane/service/RuntimeScheduler.java` | 按能力和负载选择节点 |
+| `RuntimeScheduler` | `modules/agent-core/src/main/java/com/campusclaw/agent/controlplane/service/RuntimeScheduler.java` | 按能力筛选，优先首选节点，否则轮询选择 |
 | `ControlPlaneExceptionHandler` | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/controlplane/error/ControlPlaneExceptionHandler.java` | 映射稳定的控制面错误响应 |
 
 上述为实现基线的已观察行为。
+
+变更前基线尚无 `StatusController`；该类首次出现在上述已核对实现基线。
+`CampusClawApplication` 的 `@SpringBootApplication(scanBasePackages = "com.campusclaw")`
+覆盖其所在包，文件位于 `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/CampusClawApplication.java`。
+企业镜像由 `scripts/sync-campusclaw.sh` 生成对应的
+`campusclaw/src/main/java/com/huawei/hicampus/claw/codingagent/controlplane/api/StatusController.java`。
 
 ## 2. 组件关系
 
@@ -25,6 +34,24 @@
 [PlantUML 源码](control-plane/diagram.puml#L1)
 
 ## 3. HTTP 接口
+
+### Status
+
+用户提供的代码要求新增固定响应的服务存活接口，供探测方确认 HTTP 请求能够到达服务。
+
+| 方法 | 路径 | 输入 | 成功结果 |
+|---|---|---|---|
+| `GET` | `/api/v1/status` | 无必填参数、请求体或凭据 Header | `200 OK`，响应体为 `Success` |
+
+**已观察行为**：Spring MVC 将请求交给 `StatusController.status()`，方法直接返回
+`ResponseEntity.ok("Success")`；普通请求得到纯文本响应。该方法没有注入依赖、可变状态或外部 I/O，
+不会访问节点注册表、数据库、MateService 或模型服务；接口本身的处理时间和空间均为 O(1)。
+
+**设计决策与理由**：保留截图指定的路径、大小写和字符串响应，不增加 JSON/ResultBean 或 VO 包装。
+这是明确的**产品约束**，详见 [ADR-0050](../decisions/0050-service-status-endpoint.md)。
+成功仅表示当前进程能够处理该 HTTP 请求，不代表外部依赖健康、会话可执行或服务已具备业务就绪条件。
+依赖故障不会被该方法主动检测；进程未启动或请求未到达时也无法保证返回 `Success`。
+本次没有引入独立安全加固或其他架构变更。
 
 ### Node
 
@@ -44,14 +71,14 @@
 | `GET` | `/api/v1/runtimes/capabilities` | 返回活动节点能力并集 |
 | `POST` | `/api/v1/runtimes/schedule` | 根据必需能力和首选节点返回调度决策 |
 
-请求对象使用 Jakarta Bean Validation；输出使用专用 Response VO。控制面暂时保留自身错误结构，不复用 Runtime V1 的 ResultBean，这是既有控制面兼容性约束。
+Node 和 Runtime 的请求对象使用 Jakarta Bean Validation；输出使用专用 Response VO。控制面暂时保留自身错误结构，不复用 Runtime V1 的 ResultBean，这是既有控制面兼容性约束。
 
 `RuntimeCapability` 保留模型、本地 Bash/文件、ACP/HTTP/A2A/MCP 子 Agent 等粗粒度能力；
 本地 Docker Sandbox 能力已经删除，不再参与节点注册和调度。
 
 ## 4. 生命周期与并发
 
-`NodeRegistry` 是进程内状态源。注册产生节点 ID；心跳更新指标与时间；健康检查任务将超时节点标记为不可用。`RuntimeScheduler` 只在活动节点中筛选，先满足能力约束，再应用首选节点和负载规则。
+`NodeRegistry` 是进程内状态源。注册产生节点 ID；心跳更新指标与时间；健康检查任务将超时节点标记为不可用。`RuntimeScheduler` 只在活动节点中筛选，先满足能力约束，再应用首选节点和轮询规则。
 
 本设计没有把控制面状态持久化到 openGauss。因此进程重启后节点必须重新注册。这是当前实现事实，不应解释为持久化控制平面。
 
@@ -59,16 +86,25 @@
 
 当前控制面端点没有认证或授权，而默认 HTTP 服务监听 `0.0.0.0`。这不是安全完成态，而是明确的安全债务；在生产网络暴露这些 `/api/v1/*` 路径前，必须由网关隔离，或补充与部署体系匹配的认证和授权。
 
-Runtime V1 的双凭据 Header 形状校验不会覆盖控制面路径。历史“仅绑定 localhost，因此可以延期鉴权”的 ADR 已因启动模型变化而删除。
+`StatusController.status()` 不读取或校验业务凭据 Header。历史“仅绑定 localhost，因此可以延期鉴权”的 ADR 已因启动模型变化而删除。
 
 ## 6. 验证
 
 `NodeControllerTest` 和 `RuntimeControllerTest` 使用 MVC 测试覆盖成功、校验、404 和调度失败映射。`NodeRegistryTest`、`HealthCheckSchedulerTest` 与 `RuntimeSchedulerTest` 覆盖领域行为。
 
+2026-09-04 本次状态接口验证：
+
+- JDK 21 下运行 `./mvnw -q spotless:apply checkstyle:check`，通过。
+- 运行 `./mvnw -q -pl :campusclaw-coding-agent -am -Dtest=NodeControllerTest,RuntimeControllerTest -Dsurefire.failIfNoSpecifiedTests=false package`，打包及现有 6 个控制面测试通过。
+- 通过 JShell 调用 MockMvc 发起无凭据的 `GET /api/v1/status` 冒烟请求，观察到 HTTP 200、`text/plain`、响应体精确为 `Success`。本次未新增单元测试；该检查不等同于完整部署进程测试。
+- `./scripts/sync-campusclaw.sh` 因无法解析 `com.huawei.hicampus:NativeParent:26.0.0-SNAPSHOT` 失败；按本地环境流程运行 `--no-verify` 完成源码同步。企业父 POM 下的完整镜像编译仍待具备公司 Maven 仓库访问条件的环境执行。
+- 镜像 dry-run 及 502 个生成 Java 文件的逐字节一致性检查通过；最终 `spotless:check`、Checkstyle、PlantUML 生成与 ASCII 检查、SVG XML 与重复生成一致性、修改文档的本地链接和行锚点、仓库 Markdown 的 Mermaid 禁用检查及 `git diff --check` 均通过。
+
 ## 7. 版本历史
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 2.2.0 | 2026-09-04 | 新增固定响应的服务存活接口，记录实现基线、产品约束与验证结果，并按当前源码澄清调度规则 |
 | 2.1.0 | 2026-08-19 | 对齐最新主干并删除本地 Docker Sandbox 能力枚举说明 |
 | 2.0.0 | 2026-08-18 | 对齐 Spring MVC Controller 与默认 Web 进程，删除 WebFlux RouterFunction 和 ServerMode ADR |
 | 1.x | 2026-06-22 | 历史函数式 WebFlux 控制面设计，已废弃 |
