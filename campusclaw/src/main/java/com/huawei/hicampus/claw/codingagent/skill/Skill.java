@@ -21,15 +21,9 @@ import java.nio.file.Path;
  */
 public record Skill(
         String name, String description, Path filePath, Path baseDir, String source, boolean disableModelInvocation) {
-    /** Skill 名称最大长度。 */
-    public static final int MAX_NAME_LENGTH = 64;
-
     /** Skill 描述最大长度。 */
     public static final int MAX_DESCRIPTION_LENGTH = 1024;
 
     /** SKILL.md 最大字节数。 */
     public static final long MAX_FILE_BYTES = 1024L * 1024L;
-
-    /** Skill 名称格式。 */
-    public static final String NAME_PATTERN = "^[a-z0-9-]+$";
 }

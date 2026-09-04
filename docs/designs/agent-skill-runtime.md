@@ -1,10 +1,10 @@
 # Agent 与 Skill 受管运行目录
 
-> 文档版本：3.4.2
+> 文档版本：3.4.3
 >
 > 状态：Implemented
 >
-> 更新日期：2026-09-03
+> 更新日期：2026-09-04
 > 规范性工具契约：[CampusClaw 受管 Agent 工具系统 v2](tool-system-v2.md)
 
 ## 1. 源码基线
@@ -141,10 +141,42 @@ Model、受管 Runtime 与 Tool 统一使用必填 `campusmate.base-url`。Runti
 [CampusMate 客户端共享配置设计](campusmate-shared-config.md)。该架构改造不改变受管目录的
 prepare、refresh、原子发布或 HTTP 契约。
 
+### 6.1 命令发现前置层（PR #210，未发布 HTTP）
+
+复核基线 `d60c74b38b9e1e961c4fcd2abff180146bbf395c`：
+`modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/command/`
+中的 `CompositeCommandRegistry.resolve` 已做到每个来源只解析一次，但 `ResolvedCommand.Input`
+仍直接引用调用方的 suggestions 列表；record 本身不保证集合深度不可变。
+同基线 `SkillCommandSource.hasSkillMarkdown` 只检查 canonical 包含性，未限制目录别名；
+`skill/SkillNamePatterns` 已区分兼容与严格规则，但长度常量仍分散在 Skill 类型。
+
+本 PR 修复目标：发现数据只使用只读 `ResolvedCommandDTO` 与 `SkillCommandSnapshotDTO`；
+InputDTO 对建议列表做防御性复制，Source 提供非 null 空列表，Catalog 复制外层列表。
+不在 DTO 中增加业务校验；注册表负责重名检测，Source 负责可用性与文件检查。
+删除无消费者的可变展示 DTO，公开响应 VO 留待 HTTP PR。
+SkillNamePatterns 集中维护两套正则字符串、编译模式和最大长度，Loader 继续使用兼容规则。
+Skill 文件的 canonical 路径必须位于 Agent 根目录，且等于该根下预期的命名文件，
+拒绝根外、兄弟 Skill 和根目录别名；沿用 [ADR-0044](../decisions/0044-validate-managed-agent-root-containment.html)
+的包含性加身份校验原则，不改变受管目录发布流程。
+
+![请求级命令发现](command-discovery/command_discovery_snapshot.svg)
+
+[PlantUML 源码](command-discovery/diagram.puml#L1)
+
+只读发现层不提供 Handler、Controller 或命令执行。Skill 命令执行延期，Builtin 来源过滤、
+七个 Contributor 和最终 HTTP JSON 路由按设计先修
+[PR #4](https://github.com/superheromeZzh/pi-mono-java-design/pull/4) 串行交付；
+此链接为待合并设计，不表示产品已发布。后续不得复用旧的请求级 Command SSE 或 Name 边车方案。
+
+验证包括稳定排序、重名拒绝、同一来源仅调用一次、建议列表不可修改、版本快照、
+不刷新 Agent、三类符号链接别名以及旧格式 Skill 仍能 prepare；同时运行 SkillLoader 回归。
+模块侧新增代码不超过 850 行，镜像同步后低于 1800 行软上限，最终以 PR 新增行数门禁为准。
+
 ## 7. 版本历史
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 3.4.3 | 2026-09-04 | 记录 PR #210 发现层修复：深度不可变 DTO、名称规则单一来源、文件 canonical 身份校验；HTTP 与 Skill 执行尚未发布。 |
 | 3.4.2 | 2026-09-03 | `requireAgentRoot` 在 canonical 解析前显式调用 `validatePath` 校验 `properties.agentsRoot()`，非法配置立即抛出异常。 |
 | 3.4.1 | 2026-09-03 | canonical Agent 路径除通过根目录包含性校验外，还必须与请求 ID 的预期目录精确一致，拒绝指向其他 Agent 或根目录的符号链接别名。 |
 | 3.4.0 | 2026-09-03 | `requireAgentRoot` 使用 canonical path 并校验根目录包含关系，形成格式校验、符号链接解析与路径后置校验。 |

@@ -1,0 +1,28 @@
+@startuml command_discovery_snapshot
+title Command Discovery: Request Snapshot, No HTTP Execution
+' Source evidence: pi-mono-java@d60c74b3 modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/command/CompositeCommandRegistry.java resolve.
+' Source evidence: pi-mono-java@d60c74b3 modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/command/SkillCommandSource.java list, hasSkillMarkdown.
+' Observed behavior: sources resolve once; the original Input record retained a mutable suggestions list.
+' PR correction: copy nested collections, keep DTOs read-only, and verify canonical file identity.
+' Design reason: list and exact-name lookup must observe the same discovery result.
+skinparam shadowing false
+interface CommandDefinitionSource
+class CompositeCommandRegistry <<singleton>>
+class SkillCommandSource <<singleton>>
+class AgentRuntimeManager <<singleton>>
+class ResolvedCommandCatalog <<request>>
+class ResolvedCommandDTO <<immutable>>
+class InputDTO <<immutable>>
+class SkillCommandSnapshotDTO <<immutable>>
+CompositeCommandRegistry o-- CommandDefinitionSource
+SkillCommandSource ..|> CommandDefinitionSource
+SkillCommandSource --> AgentRuntimeManager : prepareCached only
+CompositeCommandRegistry --> ResolvedCommandCatalog : validate uniqueness and sort
+ResolvedCommandCatalog *-- ResolvedCommandDTO : copy outer list
+ResolvedCommandDTO *-- InputDTO : copy suggestions
+ResolvedCommandDTO *-- SkillCommandSnapshotDTO : version and content
+note bottom of SkillCommandSource
+No refresh, Handler, or public endpoint.
+Canonical file must equal its expected named path.
+end note
+@enduml

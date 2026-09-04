@@ -51,7 +51,12 @@ public class AgentRuntimeManager {
     private static final Logger LOGGER = LoggerFactory.getLogger(AgentRuntimeManager.class);
 
     private static final int SCHEMA_VERSION = 1;
-    private static final String CAMPUSCLAW_DIRECTORY = ".campusclaw";
+
+    /**
+     * Agent 根目录下的受管发布目录名称；发现等消费者复用此常量。
+     */
+    public static final String CAMPUSCLAW_DIRECTORY = ".campusclaw";
+
     private static final String AGENT_FILE = "agent.json";
     private static final String SETTINGS_FILE = "settings.json";
     private static final String SYSTEM_FILE = "SYSTEM.md";
