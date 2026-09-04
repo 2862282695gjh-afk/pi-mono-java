@@ -17,7 +17,7 @@ import org.junit.jupiter.api.Test;
  * Source composition, duplicate detection and exact-name lookup of the per-request
  * resolved command catalog.
  *
- * @version [br_eCampusCore 26.0.0, 2026/09/03]
+ * @version [br_eCampusCore 26.0.0, 2026/09/04]
  * @since [br_eCampusCore 26.0.0]
  */
 class CompositeCommandRegistryTest {
@@ -30,7 +30,7 @@ class CompositeCommandRegistryTest {
                 new CompositeCommandRegistry(List.of(source("skill:zeta", "skill:alpha"), source("skill:middle")));
 
         assertThat(registry.resolve(session).list())
-                .extracting(definition -> definition.descriptor().getName())
+                .extracting(ResolvedCommand::name)
                 .containsExactly("skill:alpha", "skill:middle", "skill:zeta");
     }
 
@@ -57,16 +57,18 @@ class CompositeCommandRegistryTest {
 
     private CommandDefinitionSource source(String... names) {
         return sessionView -> java.util.Arrays.stream(names)
-                .map(CompositeCommandRegistryTest.this::definition)
+                .map(CompositeCommandRegistryTest.this::resolved)
                 .toList();
     }
 
-    private CommandDefinition definition(String name) {
-        CommandDescriptorDTO descriptor = new CommandDescriptorDTO();
-        descriptor.setName(name);
-        descriptor.setKind(CommandKind.SKILL);
-        descriptor.setDescription("description");
-        descriptor.setAvailable(true);
-        return new CommandDefinition(name, CommandKind.SKILL, descriptor);
+    private ResolvedCommand resolved(String name) {
+        return new ResolvedCommand(
+                name,
+                CommandKind.SKILL,
+                "description",
+                true,
+                null,
+                new ResolvedCommand.Input("optional", true, null, true, "request", null),
+                null);
     }
 }

@@ -14,6 +14,7 @@ import java.nio.file.Path;
 import java.util.List;
 
 import com.huawei.hicampus.claw.codingagent.runtime.AgentRuntimeManager;
+import com.huawei.hicampus.claw.codingagent.runtime.MateServiceClient.AgentRuntime;
 import com.huawei.hicampus.claw.codingagent.runtime.MateServiceClient.SkillInfo;
 import com.huawei.hicampus.claw.codingagent.runtime.PreparedAgentRuntime;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
@@ -23,15 +24,17 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * Session-scoped Skill command discovery: strict name filtering, stable sorting and
- * per-state availability derived from the prepared runtime snapshot.
+ * Session-scoped Skill command discovery: strict name filtering, stable sorting,
+ * per-state availability and the versioned snapshot carried by each resolution.
  *
- * @version [br_eCampusCore 26.0.0, 2026/09/02]
+ * @version [br_eCampusCore 26.0.0, 2026/09/04]
  * @since [br_eCampusCore 26.0.0]
  */
 class SkillCommandSourceTest {
 
     private static final String AGENT_ID = "agent-0123456789abcdef0123456789abcdef";
+
+    private static final String AGENT_VERSION = "1.0.0";
 
     @TempDir
     Path agentRoot;
@@ -51,55 +54,62 @@ class SkillCommandSourceTest {
         skillMarkdown("beta");
         skillMarkdown("alpha");
         when(agentRuntimeManager.prepareCached(AGENT_ID))
-                .thenReturn(prepared(
-                        new SkillInfo("beta", null, null, "Beta skill", null, null, null, null, null, null),
-                        new SkillInfo("alpha", null, null, "Alpha skill", null, null, null, null, null, null)));
+                .thenReturn(prepared(skill("beta", "Beta skill"), skill("alpha", "Alpha skill")));
 
-        List<CommandDefinition> definitions = source.list(session("idle"));
+        List<ResolvedCommand> commands = source.list(session("idle"));
 
-        assertThat(definitions).hasSize(2);
-        assertThat(definitions.get(0).descriptor().getName()).isEqualTo("skill:alpha");
-        assertThat(definitions.get(1).descriptor().getName()).isEqualTo("skill:beta");
-        CommandDescriptorDTO descriptor = definitions.get(0).descriptor();
-        assertThat(descriptor.getKind()).isEqualTo(CommandKind.SKILL);
-        assertThat(descriptor.getDescription()).isEqualTo("Alpha skill");
-        assertThat(descriptor.isAvailable()).isTrue();
-        assertThat(descriptor.getUnavailableCode()).isNull();
-        assertThat(descriptor.getInput().getMode()).isEqualTo(CommandInputMode.OPTIONAL);
-        assertThat(descriptor.getInput().isAvailable()).isTrue();
-        assertThat(descriptor.getInput().isAcceptsFiles()).isTrue();
-        assertThat(descriptor.getInput().getPlaceholder()).isEqualTo("request");
+        assertThat(commands).hasSize(2);
+        assertThat(commands.get(0).name()).isEqualTo("skill:alpha");
+        assertThat(commands.get(1).name()).isEqualTo("skill:beta");
+        ResolvedCommand command = commands.get(0);
+        assertThat(command.kind()).isEqualTo(CommandKind.SKILL);
+        assertThat(command.description()).isEqualTo("Alpha skill");
+        assertThat(command.available()).isTrue();
+        assertThat(command.unavailableCode()).isNull();
+        assertThat(command.input().mode()).isEqualTo("optional");
+        assertThat(command.input().available()).isTrue();
+        assertThat(command.input().acceptsFiles()).isTrue();
+        assertThat(command.input().placeholder()).isEqualTo("request");
+    }
+
+    @Test
+    void resolutionCarriesVersionedSkillSnapshot() throws IOException {
+        skillMarkdown("alpha");
+        when(agentRuntimeManager.prepareCached(AGENT_ID)).thenReturn(prepared(skill("alpha", "Alpha skill")));
+
+        ResolvedCommand command = source.list(session("idle")).getFirst();
+
+        assertThat(command.snapshot()).isNotNull();
+        assertThat(command.snapshot().agentId()).isEqualTo(AGENT_ID);
+        assertThat(command.snapshot().agentVersion()).isEqualTo(AGENT_VERSION);
+        assertThat(command.snapshot().skillId()).isEqualTo("skill-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+        assertThat(command.snapshot().skillVersion()).isEqualTo("2.0.0");
+        assertThat(command.snapshot().markdown()).contains("name: alpha");
     }
 
     @Test
     void filtersSkillsFailingStrictNameRules() throws IOException {
         skillMarkdown("good-name");
         when(agentRuntimeManager.prepareCached(AGENT_ID))
-                .thenReturn(prepared(
-                        new SkillInfo("good-name", null, null, "ok", null, null, null, null, null, null),
-                        new SkillInfo("pdf--tools", null, null, "legacy", null, null, null, null, null, null),
-                        new SkillInfo("-lead", null, null, "legacy", null, null, null, null, null, null)));
+                .thenReturn(
+                        prepared(skill("good-name", "ok"), skill("pdf--tools", "legacy"), skill("-lead", "legacy")));
 
-        List<CommandDefinition> definitions = source.list(session("idle"));
+        List<ResolvedCommand> commands = source.list(session("idle"));
 
-        assertThat(definitions)
-                .extracting(definition -> definition.descriptor().getName())
-                .containsExactly("skill:good-name");
+        assertThat(commands).extracting(ResolvedCommand::name).containsExactly("skill:good-name");
     }
 
     @Test
     void runningSessionMarksSkillUnavailableWithBusyCode() throws IOException {
         skillMarkdown("alpha");
-        when(agentRuntimeManager.prepareCached(AGENT_ID))
-                .thenReturn(prepared(new SkillInfo("alpha", null, null, "Alpha", null, null, null, null, null, null)));
+        when(agentRuntimeManager.prepareCached(AGENT_ID)).thenReturn(prepared(skill("alpha", "Alpha skill")));
 
-        List<CommandDefinition> definitions = source.list(session("running"));
+        ResolvedCommand command = source.list(session("running")).getFirst();
 
-        CommandDescriptorDTO descriptor = definitions.getFirst().descriptor();
-        assertThat(descriptor.isAvailable()).isFalse();
-        assertThat(descriptor.getUnavailableCode()).isEqualTo("SESSION_BUSY");
-        assertThat(descriptor.getInput().isAvailable()).isFalse();
-        assertThat(descriptor.getInput().getUnavailableCode()).isEqualTo("SESSION_BUSY");
+        assertThat(command.available()).isFalse();
+        assertThat(command.unavailableCode()).isEqualTo("SESSION_BUSY");
+        assertThat(command.input().available()).isFalse();
+        assertThat(command.input().unavailableCode()).isEqualTo("SESSION_BUSY");
     }
 
     @Test
@@ -111,15 +121,26 @@ class SkillCommandSourceTest {
 
     @Test
     void skillsWithoutMaterializedMarkdownAreIgnored() {
-        when(agentRuntimeManager.prepareCached(AGENT_ID))
-                .thenReturn(
-                        prepared(new SkillInfo("ghost", null, null, "no folder", null, null, null, null, null, null)));
+        when(agentRuntimeManager.prepareCached(AGENT_ID)).thenReturn(prepared(skill("ghost", "no folder")));
 
         assertThat(source.list(session("idle"))).isEmpty();
     }
 
     private PreparedAgentRuntime prepared(SkillInfo... skills) {
-        return new PreparedAgentRuntime(AGENT_ID, agentRoot, null, List.of(skills));
+        AgentRuntime metadata = new AgentRuntime(
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                "Agent A",
+                true,
+                AGENT_ID,
+                "agent-a",
+                "prompt",
+                List.of(),
+                AGENT_VERSION);
+        return new PreparedAgentRuntime(AGENT_ID, agentRoot, metadata, List.of(skills));
     }
 
     private RuntimeSessionDTO session(String state) {
@@ -129,12 +150,27 @@ class SkillCommandSourceTest {
         return session;
     }
 
+    private SkillInfo skill(String name, String description) {
+        String content = "---\nname: " + name + "\ndescription: " + description + "\n---\nBody.\n";
+        return new SkillInfo(
+                name,
+                "skill-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "2.0.0",
+                description,
+                null,
+                content,
+                null,
+                null,
+                null,
+                null);
+    }
+
     private void skillMarkdown(String name) throws IOException {
         Path skillDir = agentRoot
-                .resolve(com.huawei.hicampus.claw.codingagent.runtime.AgentRuntimeManager.CAMPUSCLAW_DIRECTORY)
+                .resolve(AgentRuntimeManager.CAMPUSCLAW_DIRECTORY)
                 .resolve("skills")
                 .resolve(name);
         Files.createDirectories(skillDir);
-        Files.writeString(skillDir.resolve("SKILL.md"), "---\nname: x\n---\n");
+        Files.writeString(skillDir.resolve("SKILL.md"), "---\nname: " + name + "\n---\n");
     }
 }

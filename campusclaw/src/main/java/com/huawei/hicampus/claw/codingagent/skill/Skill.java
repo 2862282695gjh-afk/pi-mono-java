@@ -29,7 +29,4 @@ public record Skill(
 
     /** SKILL.md 最大字节数。 */
     public static final long MAX_FILE_BYTES = 1024L * 1024L;
-
-    /** Skill 名称格式。 */
-    public static final String NAME_PATTERN = "^[a-z0-9-]+$";
 }

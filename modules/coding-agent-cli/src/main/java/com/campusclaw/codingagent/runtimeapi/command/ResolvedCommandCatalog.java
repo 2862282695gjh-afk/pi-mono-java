@@ -10,36 +10,35 @@ import java.util.Optional;
 /**
  * Immutable per-request resolution result of {@link CompositeCommandRegistry}. One
  * catalog instance serves command listing and exact-name lookup for the same
- * request, so display, admission and execution read a single validated view.
+ * request, so display, admission and execution read a single validated view of
+ * deeply immutable {@link ResolvedCommand} values.
  *
- * @version [br_eCampusCore 26.0.0, 2026/09/03]
+ * @version [br_eCampusCore 26.0.0, 2026/09/04]
  * @since [br_eCampusCore 26.0.0]
  */
 public final class ResolvedCommandCatalog {
-    private final List<CommandDefinition> definitions;
+    private final List<ResolvedCommand> commands;
 
-    ResolvedCommandCatalog(List<CommandDefinition> definitions) {
-        this.definitions = List.copyOf(definitions);
+    ResolvedCommandCatalog(List<ResolvedCommand> commands) {
+        this.commands = List.copyOf(commands);
     }
 
     /**
-     * Returns all definitions of this resolution, sorted by command name.
+     * Returns all resolved commands of this resolution, sorted by command name.
      *
-     * @return immutable definition list
+     * @return immutable command list
      */
-    public List<CommandDefinition> list() {
-        return definitions;
+    public List<ResolvedCommand> list() {
+        return commands;
     }
 
     /**
-     * Finds one definition by exact command name.
+     * Finds one resolved command by exact command name.
      *
      * @param name command name without leading slash
-     * @return definition when present in this resolution
+     * @return command when present in this resolution
      */
-    public Optional<CommandDefinition> find(String name) {
-        return definitions.stream()
-                .filter(definition -> definition.name().equals(name))
-                .findFirst();
+    public Optional<ResolvedCommand> find(String name) {
+        return commands.stream().filter(command -> command.name().equals(name)).findFirst();
     }
 }

@@ -20,7 +20,7 @@ import org.springframework.stereotype.Service;
  * share a single resolution of the dynamic sources. The registry contains no
  * command branching; adding a command only means adding a source.
  *
- * @version [br_eCampusCore 26.0.0, 2026/09/03]
+ * @version [br_eCampusCore 26.0.0, 2026/09/04]
  * @since [br_eCampusCore 26.0.0]
  */
 @Service
@@ -35,21 +35,21 @@ public class CompositeCommandRegistry {
      * Resolves the command catalog visible to the session for a single request.
      *
      * @param session authorized session providing the agent scope
-     * @return validated catalog with definitions sorted by command name
+     * @return validated catalog with commands sorted by command name
      * @throws IllegalStateException when two sources contribute the same command name
      */
     public ResolvedCommandCatalog resolve(RuntimeSessionDTO session) {
-        List<CommandDefinition> definitions = new ArrayList<>();
+        List<ResolvedCommand> commands = new ArrayList<>();
         Set<String> seen = new HashSet<>();
         for (CommandDefinitionSource source : sources) {
-            for (CommandDefinition definition : source.list(session)) {
-                if (!seen.add(definition.name())) {
-                    throw new IllegalStateException("Duplicate command name: " + definition.name());
+            for (ResolvedCommand command : source.list(session)) {
+                if (!seen.add(command.name())) {
+                    throw new IllegalStateException("Duplicate command name: " + command.name());
                 }
-                definitions.add(definition);
+                commands.add(command);
             }
         }
-        definitions.sort(Comparator.comparing(CommandDefinition::name));
-        return new ResolvedCommandCatalog(definitions);
+        commands.sort(Comparator.comparing(ResolvedCommand::name));
+        return new ResolvedCommandCatalog(commands);
     }
 }

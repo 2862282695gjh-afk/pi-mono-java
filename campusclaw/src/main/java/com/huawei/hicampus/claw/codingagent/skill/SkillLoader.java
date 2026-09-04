@@ -35,7 +35,7 @@ public class SkillLoader {
     private static final Logger log = LoggerFactory.getLogger(SkillLoader.class);
 
     static final String SKILL_FILENAME = "SKILL.md";
-    private static final Pattern NAME_REGEX = Pattern.compile(Skill.NAME_PATTERN);
+    private static final Pattern NAME_REGEX = SkillNamePatterns.LEGACY;
     private static final String FRONTMATTER_DELIMITER = "---";
 
     /**

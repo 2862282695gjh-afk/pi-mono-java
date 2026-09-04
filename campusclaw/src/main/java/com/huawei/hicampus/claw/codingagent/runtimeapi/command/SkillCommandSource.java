@@ -19,6 +19,7 @@ import com.huawei.hicampus.claw.codingagent.runtime.PreparedAgentRuntime;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.error.RuntimeErrorCode;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.session.RuntimeSessionState;
+import com.huawei.hicampus.claw.codingagent.skill.SkillNamePatterns;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -26,11 +27,12 @@ import org.springframework.stereotype.Service;
 
 /**
  * Dynamic command source that exposes the direct-bound skills of the session agent
- * as {@code skill:<name>} commands. Definitions are resolved from the latest
- * complete prepared runtime without triggering an Agent refresh; skill content,
- * paths, IDs and versions never appear in descriptors.
+ * as {@code skill:<name>} commands. Commands are resolved from the latest complete
+ * prepared runtime without triggering an Agent refresh; each resolution carries a
+ * versioned {@link SkillCommandSnapshot} so later admission and execution never
+ * re-resolve by name. Skill content, paths and IDs never appear in descriptors.
  *
- * @version [br_eCampusCore 26.0.0, 2026/09/02]
+ * @version [br_eCampusCore 26.0.0, 2026/09/04]
  * @since [br_eCampusCore 26.0.0]
  */
 @Service
@@ -51,54 +53,48 @@ public class SkillCommandSource implements CommandDefinitionSource {
     }
 
     @Override
-    public List<CommandDefinition> list(RuntimeSessionDTO session) {
+    public List<ResolvedCommand> list(RuntimeSessionDTO session) {
         PreparedAgentRuntime prepared = preparedRuntime(session);
         if (prepared == null) {
             return List.of();
         }
-        List<CommandDefinition> definitions = new ArrayList<>();
+        List<ResolvedCommand> commands = new ArrayList<>();
         for (SkillInfo skill : prepared.skills()) {
-            definition(session, prepared, skill).ifPresent(definitions::add);
+            resolved(session, prepared, skill).ifPresent(commands::add);
         }
-        definitions.sort(Comparator.comparing(CommandDefinition::name));
-        return definitions;
+        commands.sort(Comparator.comparing(ResolvedCommand::name));
+        return commands;
     }
 
     private PreparedAgentRuntime preparedRuntime(RuntimeSessionDTO session) {
         return agentRuntimeManager.prepareCached(session.getAgentId());
     }
 
-    private Optional<CommandDefinition> definition(
+    private Optional<ResolvedCommand> resolved(
             RuntimeSessionDTO session, PreparedAgentRuntime prepared, SkillInfo skill) {
         String skillName = skill.name();
-        if (!SkillNameValidator.isValid(skillName) || !hasSkillMarkdown(prepared, skillName)) {
+        if (!SkillNamePatterns.isStrictValid(skillName) || !hasSkillMarkdown(prepared, skillName)) {
             LOGGER.warn("Ignoring invalid Runtime skill command: name={}", skillName);
             return Optional.empty();
         }
         boolean idle = RuntimeSessionState.IDLE.matches(session.getState());
         String busyCode = RuntimeErrorCode.SESSION_BUSY.name();
-        CommandDescriptorDTO descriptor = new CommandDescriptorDTO();
-        descriptor.setName(COMMAND_PREFIX + skillName);
-        descriptor.setKind(CommandKind.SKILL);
-        descriptor.setDescription(skill.description());
-        descriptor.setAvailable(idle);
-        if (!idle) {
-            descriptor.setUnavailableCode(busyCode);
-        }
-        descriptor.setInput(inputDescriptor(idle, busyCode));
-        return Optional.of(new CommandDefinition(descriptor.getName(), CommandKind.SKILL, descriptor));
+        ResolvedCommand.Input input = new ResolvedCommand.Input(
+                CommandInputMode.OPTIONAL.value(), idle, idle ? null : busyCode, true, "request", null);
+        SkillCommandSnapshot snapshot = new SkillCommandSnapshot(
+                prepared.agentId(), agentVersion(prepared), skill.id(), skill.version(), skill.content());
+        return Optional.of(new ResolvedCommand(
+                COMMAND_PREFIX + skillName,
+                CommandKind.SKILL,
+                skill.description(),
+                idle,
+                idle ? null : busyCode,
+                input,
+                snapshot));
     }
 
-    private CommandInputDescriptorDTO inputDescriptor(boolean idle, String busyCode) {
-        CommandInputDescriptorDTO input = new CommandInputDescriptorDTO();
-        input.setMode(CommandInputMode.OPTIONAL);
-        input.setAcceptsFiles(true);
-        input.setPlaceholder("request");
-        input.setAvailable(idle);
-        if (!idle) {
-            input.setUnavailableCode(busyCode);
-        }
-        return input;
+    private String agentVersion(PreparedAgentRuntime prepared) {
+        return prepared.metadata() == null ? null : prepared.metadata().version();
     }
 
     private boolean hasSkillMarkdown(PreparedAgentRuntime prepared, String skillName) {
