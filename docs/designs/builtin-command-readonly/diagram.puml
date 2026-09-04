@@ -1,0 +1,66 @@
+@startuml builtin_command_readonly
+' Java baseline: 6d7ba8483f69e8cccab04489a0111a27fde1315d
+' Readonly implementation: 21d19792ce72546a7d0072501463dd4c1241b669
+' Java source root: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/
+' Sources: runtimeapi/service/command/contributor/*CommandContributor.java:definition
+' Sources: runtimeapi/service/command/readonly/{CommandHelpFormatter,RuntimeSessionStatusService,BoundSkillQueryService}.java:query
+' Sources: runtimeapi/command/execution/CommandExecutionContext.java; runtime/AgentRuntimeManager.java:prepareCached
+' pi: 4af9d21d3b4d664e4a29fcabfec85171077248e3
+' pi source: packages/coding-agent/src/core/agent-session.ts:_tryExecuteExtensionCommand,getSessionStats
+' Observed behavior: pi invokes handlers with context and computes rich session statistics.
+' Java divergence: this target slice reads persisted status and returns internal DTOs, not HTTP responses.
+' Design reason: reuse one request catalog and read complete bindings without refresh or shared request state.
+title Readonly builtin commands - target class boundaries
+set namespaceSeparator none
+skinparam classAttributeIconSize 0
+skinparam shadowing false
+skinparam linetype ortho
+hide empty members
+
+package "service.command.contributor" {
+  class "Help / Status / Skills\nCommandContributor" as Contributors <<singleton x3>> {
+    definition()
+  }
+}
+package "command.builtin / execution" {
+  interface "BuiltinCommandContributor" as SPI
+  class "BuiltinCommandDefinition" as Definition
+  interface "CommandHandler" as Handler {
+    execute(context, arguments)
+  }
+}
+package "service.command.readonly" {
+  class "CommandHelpFormatter" as Help <<singleton>>
+  class "RuntimeSessionStatusService" as Status <<singleton>>
+  class "BoundSkillQueryService" as Skills <<singleton>>
+}
+package "Request / data boundaries" {
+  class "ResolvedCommandCatalog" as Catalog <<request>>
+  class "CommandSessionSnapshotDTO" as Session <<request>>
+  class "Help / Status / Skills\nCommandResultDTO" as Results <<readonly data>>
+}
+package "Existing runtime" {
+  class "AgentRuntimeManager" as Manager <<singleton>> {
+    prepareCached(agentId)
+  }
+}
+
+Contributors ..|> SPI
+Contributors ..> Definition : creates
+Definition *-- "1" Handler
+Contributors --> Help : help lambda
+Contributors --> Status : status lambda
+Contributors --> Skills : skills lambda
+Help --> Catalog : existing descriptors
+Status --> Session
+Skills --> Manager : read only
+Catalog *-- "1" Session
+Help ..> Results
+Status ..> Results
+Skills ..> Results
+note bottom of Results
+  No input validation in DTOs.
+  No Controller or HTTP route in this slice.
+  Future application code converts DTOs to response VOs.
+end note
+@enduml
