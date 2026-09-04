@@ -1,5 +1,5 @@
 @startuml skill_name_validation
-title Skill Patterns: One Domain Owner for IDs and Names
+title Skill Constants: One Domain Owner for Shared Rules
 ' Source baseline: pi-mono-java@2c2092f2fa764a7aa7b47da841299f8866d7a151.
 ' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/skill/SkillLoader.java validateName, loadFromFile.
 ' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/skill/SkillNamePatterns.java LEGACY_REGEX, STRICT_REGEX.
@@ -11,8 +11,14 @@ title Skill Patterns: One Domain Owner for IDs and Names
 ' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/common/identifier/ResourceIdentifierPatterns.java SKILL_ID_REGEX, SKILL_ID_PATTERN.
 ' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtime/MateServiceClient.java querySkillInfo.
 ' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/common/client/HttpMateToolClient.java listSkillTools.
-' Architecture change: move Skill ID and name definitions into skill/SkillPatterns; remove old definitions and aliases.
-' Target product constraint: remove invalid-name compatibility; SkillPatterns owns NAME_REGEX, NAME_PATTERN and isValidName.
+' Constant ownership baseline: pi-mono-java@c0e2915230e73f626a5ede99f0fc3b3412bbff0b.
+' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/skill/Skill.java MAX_DESCRIPTION_LENGTH, MAX_FILE_BYTES.
+' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/skill/SkillPatterns.java MAX_NAME_LENGTH, ID_PATTERN, NAME_PATTERN.
+' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/skill/SkillLoader.java SKILL_FILENAME.
+' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtime/AgentRuntimeManager.java SKILL_FILE, SKILL_MANIFEST_FILE.
+' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/service/command/SkillCommandSource.java COMMAND_PREFIX, SKILL_MARKDOWN_FILE.
+' Architecture change: SkillConstants owns patterns, shared limits, directory and file names, and command prefix; Skill carries data only.
+' Target product constraint: remove invalid-name compatibility; SkillConstants owns NAME_REGEX, NAME_PATTERN and isValidName.
 ' Design reason: one accepted name set prevents inconsistent loading and discovery without renaming resource identities.
 skinparam shadowing false
 skinparam componentStyle rectangle
@@ -21,22 +27,27 @@ component AgentRuntimeManager as Runtime
 component RuntimeAgentPromptLoader as Prompt
 component SkillLoader as Loader
 component SkillCommandSource as Commands
-component SkillPatterns as Patterns
+component SkillConstants as Constants
 component MateServiceClient as MetadataClient
 component HttpMateToolClient as ToolClient
 Runtime --> Loader : publish and cache reload
 Prompt --> Loader : load prompt skills
-Loader --> Patterns : isValidName(name)
-Commands --> Patterns : isValidName(name)
-Runtime --> Patterns : ID_PATTERN
-MetadataClient --> Patterns : ID_PATTERN
-ToolClient --> Patterns : ID_PATTERN
-note bottom of Patterns
+Loader --> Constants : name validation, description limit, file name
+Commands --> Constants : name validation, paths, command prefix
+Runtime --> Constants : ID_PATTERN, file limit, paths
+Prompt --> Constants : file limit, paths
+MetadataClient --> Constants : ID_PATTERN
+ToolClient --> Constants : ID_PATTERN
+note bottom of Constants
 ID: skill- followed by 32 hex characters.
 Name: 1 to 64 ASCII characters.
 Lowercase letters and digits.
 Single hyphens separate nonempty groups.
 No leading, trailing or repeated hyphens.
+Description: at most 1024 characters.
+File size: at most 1 MiB.
+Directory and files: skills, SKILL.md, skill.json.
+Command prefix: skill:
 end note
 note bottom of Runtime
 Reject invalid publication.

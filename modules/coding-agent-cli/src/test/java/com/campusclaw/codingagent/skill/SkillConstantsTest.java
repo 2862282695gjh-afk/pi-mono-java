@@ -2,7 +2,7 @@
  * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
  */
 
-package com.huawei.hicampus.claw.codingagent.skill;
+package com.campusclaw.codingagent.skill;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -17,12 +17,12 @@ import org.junit.jupiter.params.provider.ValueSource;
  * @version [br_eCampusCore 26.0.0, 2026/09/04]
  * @since [br_eCampusCore 26.0.0]
  */
-class SkillPatternsTest {
+class SkillConstantsTest {
 
     @ParameterizedTest
     @ValueSource(strings = {"a", "pdf", "k8s-ops", "a1-b2-c3"})
     void acceptsCompliantNames(String name) {
-        assertThat(SkillPatterns.isValidName(name)).isTrue();
+        assertThat(SkillConstants.isValidName(name)).isTrue();
     }
 
     @ParameterizedTest
@@ -30,14 +30,14 @@ class SkillPatternsTest {
     @ValueSource(
             strings = {"-", "--", "-pdf", "pdf-", "pdf--tools", "PDF", "pdf tools", "pdf_tools", "pdf.tools", "工具"})
     void rejectsNonCompliantNames(String name) {
-        assertThat(SkillPatterns.isValidName(name)).isFalse();
+        assertThat(SkillConstants.isValidName(name)).isFalse();
     }
 
     @Test
     void rejectsNullAndOverlongNames() {
-        assertThat(SkillPatterns.isValidName(null)).isFalse();
-        assertThat(SkillPatterns.isValidName("a".repeat(65))).isFalse();
-        assertThat(SkillPatterns.isValidName("a".repeat(SkillPatterns.MAX_NAME_LENGTH)))
+        assertThat(SkillConstants.isValidName(null)).isFalse();
+        assertThat(SkillConstants.isValidName("a".repeat(65))).isFalse();
+        assertThat(SkillConstants.isValidName("a".repeat(SkillConstants.MAX_NAME_LENGTH)))
                 .isTrue();
     }
 }

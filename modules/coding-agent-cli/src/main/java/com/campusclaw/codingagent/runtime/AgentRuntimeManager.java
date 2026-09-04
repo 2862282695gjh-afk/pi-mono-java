@@ -31,9 +31,9 @@ import com.campusclaw.codingagent.runtime.MateServiceClient.SkillFile;
 import com.campusclaw.codingagent.runtime.MateServiceClient.SkillInfo;
 import com.campusclaw.codingagent.runtime.MateServiceClient.SkillReference;
 import com.campusclaw.codingagent.skill.Skill;
+import com.campusclaw.codingagent.skill.SkillConstants;
 import com.campusclaw.codingagent.skill.SkillLoadException;
 import com.campusclaw.codingagent.skill.SkillLoader;
-import com.campusclaw.codingagent.skill.SkillPatterns;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import org.slf4j.Logger;
@@ -61,8 +61,6 @@ public class AgentRuntimeManager {
     private static final String AGENT_FILE = "agent.json";
     private static final String SETTINGS_FILE = "settings.json";
     private static final String SYSTEM_FILE = "SYSTEM.md";
-    private static final String SKILL_FILE = "SKILL.md";
-    private static final String SKILL_MANIFEST_FILE = "skill.json";
 
     private final AgentRuntimeProperties properties;
     private final MateServiceClient mateServiceClient;
@@ -174,12 +172,12 @@ public class AgentRuntimeManager {
 
     private void writeRuntimeTree(Path campusClawDir, AgentRuntime runtime, List<SkillInfo> skills) throws IOException {
         Files.createDirectories(campusClawDir.resolve("agents"));
-        Files.createDirectories(campusClawDir.resolve("skills"));
+        Files.createDirectories(campusClawDir.resolve(SkillConstants.DIRECTORY_NAME));
         writeJson(campusClawDir.resolve(AGENT_FILE), toIdentity(runtime));
         writeJson(campusClawDir.resolve(SETTINGS_FILE), toSettings(runtime));
         writeFile(campusClawDir.resolve(SYSTEM_FILE), runtime.systemPrompt());
         writeChildren(campusClawDir.resolve("agents"), runtime.bindingAgents());
-        writeSkills(campusClawDir.resolve("skills"), skills);
+        writeSkills(campusClawDir.resolve(SkillConstants.DIRECTORY_NAME), skills);
     }
 
     private void writeChildren(Path agentsDirectory, List<AgentReference> children) throws IOException {
@@ -207,9 +205,9 @@ public class AgentRuntimeManager {
             Files.createDirectories(skillDirectory.resolve("references"));
             Files.createDirectories(skillDirectory.resolve("templates"));
             writeJson(
-                    skillDirectory.resolve(SKILL_MANIFEST_FILE),
+                    skillDirectory.resolve(SkillConstants.MANIFEST_FILE_NAME),
                     new SkillManifest(SCHEMA_VERSION, skill.id(), skill.name(), skill.version()));
-            Path skillFile = skillDirectory.resolve(SKILL_FILE);
+            Path skillFile = skillDirectory.resolve(SkillConstants.MARKDOWN_FILE_NAME);
             writeFile(skillFile, skill.content());
             requireSessionLoadable(skill.name(), skillFile);
             writeResources(skillDirectory.resolve("references"), skill.references());
@@ -224,7 +222,7 @@ public class AgentRuntimeManager {
         if (isBlank(content)) {
             throw new AgentRuntimeException("Skill content is empty: " + skill.name());
         }
-        if (content.getBytes(StandardCharsets.UTF_8).length > Skill.MAX_FILE_BYTES) {
+        if (content.getBytes(StandardCharsets.UTF_8).length > SkillConstants.MAX_FILE_BYTES) {
             throw new AgentRuntimeException("Skill content exceeds size limit: " + skill.name());
         }
         Map<String, Object> frontmatter = SkillLoader.parseFrontmatter(content);
@@ -242,7 +240,7 @@ public class AgentRuntimeManager {
     // 解析出的名称还必须与期望名称一致。
     private Skill requireSessionLoadable(String expectedName, Path skillFile) {
         try {
-            if (Files.size(skillFile) > Skill.MAX_FILE_BYTES) {
+            if (Files.size(skillFile) > SkillConstants.MAX_FILE_BYTES) {
                 throw new AgentRuntimeException("SKILL.md exceeds size limit: " + expectedName);
             }
         } catch (IOException exception) {
@@ -292,7 +290,7 @@ public class AgentRuntimeManager {
             AgentSettings settings = readJson(campusClawDir.resolve(SETTINGS_FILE), AgentSettings.class);
             String systemPrompt = readRequiredFile(campusClawDir.resolve(SYSTEM_FILE));
             List<AgentReference> children = loadChildren(campusClawDir.resolve("agents"));
-            List<SkillInfo> skills = loadSkills(campusClawDir.resolve("skills"));
+            List<SkillInfo> skills = loadSkills(campusClawDir.resolve(SkillConstants.DIRECTORY_NAME));
             if (!validSnapshot(agentId, identity, settings, children, skills)) {
                 return null;
             }
@@ -346,12 +344,12 @@ public class AgentRuntimeManager {
                 || !isSafeDirectory(directory.resolve("templates"))) {
             throw new IOException("Skill directory is incomplete");
         }
-        SkillManifest manifest = readJson(directory.resolve(SKILL_MANIFEST_FILE), SkillManifest.class);
+        SkillManifest manifest = readJson(directory.resolve(SkillConstants.MANIFEST_FILE_NAME), SkillManifest.class);
         if (manifest.schemaVersion() != SCHEMA_VERSION
                 || !directory.getFileName().toString().equals(manifest.name())) {
             throw new IOException("Skill name does not match its path");
         }
-        Path skillFile = directory.resolve(SKILL_FILE);
+        Path skillFile = directory.resolve(SkillConstants.MARKDOWN_FILE_NAME);
 
         // 缓存读取与发布前复核共用同一校验入口(字节上限 + SkillLoader 完整规则):
         // 任一规则不过即判缓存不完整,触发重新拉取,而不是带着缺陷命中缓存。
@@ -477,7 +475,7 @@ public class AgentRuntimeManager {
     }
 
     private static void requireValidSkill(SkillInfo skill, SkillReference reference) {
-        requireIdentifier(skill == null ? null : skill.id(), SkillPatterns.ID_PATTERN);
+        requireIdentifier(skill == null ? null : skill.id(), SkillConstants.ID_PATTERN);
         if (!skill.id().equals(reference.id())) {
             throw new AgentRuntimeException("Mate returned a different Skill identity");
         }
@@ -538,7 +536,7 @@ public class AgentRuntimeManager {
 
     private static boolean validCachedSkill(SkillInfo skill) {
         return skill != null
-                && matches(skill.id(), SkillPatterns.ID_PATTERN)
+                && matches(skill.id(), SkillConstants.ID_PATTERN)
                 && isSafeName(skill.name())
                 && !isBlank(skill.version());
     }
@@ -663,7 +661,7 @@ public class AgentRuntimeManager {
     }
 
     private static void requireValidSkillReference(SkillReference reference) {
-        requireIdentifier(reference == null ? null : reference.id(), SkillPatterns.ID_PATTERN);
+        requireIdentifier(reference == null ? null : reference.id(), SkillConstants.ID_PATTERN);
         if (isBlank(reference.version())) {
             throw new AgentRuntimeException("Mate returned a Skill binding without a fixed version");
         }

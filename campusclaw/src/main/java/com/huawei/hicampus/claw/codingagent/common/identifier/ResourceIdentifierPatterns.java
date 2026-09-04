@@ -7,7 +7,7 @@ package com.huawei.hicampus.claw.codingagent.common.identifier;
 import java.util.regex.Pattern;
 
 /**
- * Agent、Tool 与 Session 类型化资源标识符的正则约束；Skill 规则由 SkillPatterns 维护。
+ * Agent、Tool 与 Session 类型化资源标识符的正则约束；Skill 规则由 SkillConstants 维护。
  *
  * @version [br_eCampusCore 26.0.0, 2026/08/21]
  * @since [br_eCampusCore 26.0.0]

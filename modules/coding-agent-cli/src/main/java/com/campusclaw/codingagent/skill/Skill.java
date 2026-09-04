@@ -20,10 +20,4 @@ import java.nio.file.Path;
  * @since [br_eCampusCore 26.0.0]
  */
 public record Skill(
-        String name, String description, Path filePath, Path baseDir, String source, boolean disableModelInvocation) {
-    /** Skill 描述最大长度。 */
-    public static final int MAX_DESCRIPTION_LENGTH = 1024;
-
-    /** SKILL.md 最大字节数。 */
-    public static final long MAX_FILE_BYTES = 1024L * 1024L;
-}
+        String name, String description, Path filePath, Path baseDir, String source, boolean disableModelInvocation) {}

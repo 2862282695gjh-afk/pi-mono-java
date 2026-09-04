@@ -33,7 +33,6 @@ public class SkillLoader {
 
     private static final Logger log = LoggerFactory.getLogger(SkillLoader.class);
 
-    static final String SKILL_FILENAME = "SKILL.md";
     private static final String FRONTMATTER_DELIMITER = "---";
 
     /**
@@ -65,7 +64,7 @@ public class SkillLoader {
     }
 
     private void scanDirectory(Path dir, String source, List<Skill> skills) {
-        Path skillFile = dir.resolve(SKILL_FILENAME);
+        Path skillFile = dir.resolve(SkillConstants.MARKDOWN_FILE_NAME);
         if (Files.isRegularFile(skillFile)) {
             // 当前目录是 Skill 根目录，加载后不再向下递归。
             try {
@@ -124,9 +123,9 @@ public class SkillLoader {
         if (description == null || description.isBlank()) {
             throw new SkillLoadException("Skill description is required: " + filePath);
         }
-        if (description.length() > Skill.MAX_DESCRIPTION_LENGTH) {
+        if (description.length() > SkillConstants.MAX_DESCRIPTION_LENGTH) {
             throw new SkillLoadException(
-                    "Skill description exceeds " + Skill.MAX_DESCRIPTION_LENGTH + " characters: " + filePath);
+                    "Skill description exceeds " + SkillConstants.MAX_DESCRIPTION_LENGTH + " characters: " + filePath);
         }
 
         // 解析禁止模型调用标记。
@@ -139,11 +138,11 @@ public class SkillLoader {
         if (name == null || name.isEmpty()) {
             throw new SkillLoadException("Skill name is required: " + filePath);
         }
-        if (name.length() > SkillPatterns.MAX_NAME_LENGTH) {
+        if (name.length() > SkillConstants.MAX_NAME_LENGTH) {
             throw new SkillLoadException(
-                    "Skill name exceeds " + SkillPatterns.MAX_NAME_LENGTH + " characters: " + filePath);
+                    "Skill name exceeds " + SkillConstants.MAX_NAME_LENGTH + " characters: " + filePath);
         }
-        if (!SkillPatterns.isValidName(name)) {
+        if (!SkillConstants.isValidName(name)) {
             throw new SkillLoadException(
                     "Skill name must use lowercase a-z, 0-9 and single separating hyphens: " + filePath);
         }

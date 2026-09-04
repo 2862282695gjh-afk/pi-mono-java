@@ -17,6 +17,7 @@ import java.util.List;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
 import com.campusclaw.codingagent.skill.Skill;
+import com.campusclaw.codingagent.skill.SkillConstants;
 import com.campusclaw.codingagent.skill.SkillLoadException;
 import com.campusclaw.codingagent.skill.SkillLoader;
 import com.campusclaw.codingagent.skill.SkillPromptFormatter;
@@ -44,7 +45,7 @@ public class RuntimeAgentPromptLoader {
     public String load(Path runtimeDirectory) {
         Path root = realDirectory(runtimeDirectory);
         String systemPrompt = readOptionalFile(root, root.resolve("SYSTEM.md"));
-        List<Skill> skills = loadSkills(root, root.resolve("skills"));
+        List<Skill> skills = loadSkills(root, root.resolve(SkillConstants.DIRECTORY_NAME));
         String skillsPrompt = SkillPromptFormatter.format(skills);
         if (systemPrompt.isBlank()) {
             return skillsPrompt;
@@ -76,7 +77,7 @@ public class RuntimeAgentPromptLoader {
         if (depth > MAX_SCAN_DEPTH || files.size() >= MAX_SKILLS) {
             return;
         }
-        Path skillFile = directory.resolve("SKILL.md");
+        Path skillFile = directory.resolve(SkillConstants.MARKDOWN_FILE_NAME);
         if (isSafeRegularFile(root, skillFile)) {
             files.add(safeRealPath(root, skillFile));
             return;
@@ -194,7 +195,7 @@ public class RuntimeAgentPromptLoader {
 
     private static void requireManagedSize(Path path) {
         try {
-            if (Files.size(path) > Skill.MAX_FILE_BYTES) {
+            if (Files.size(path) > SkillConstants.MAX_FILE_BYTES) {
                 throw unavailable();
             }
         } catch (IOException error) {

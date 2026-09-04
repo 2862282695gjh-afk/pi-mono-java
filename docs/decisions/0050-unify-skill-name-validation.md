@@ -1,8 +1,8 @@
-# ADR-0050：统一 Skill 领域正则与名称校验
+# ADR-0050：统一 Skill 领域常量与名称校验
 
 - Status：Accepted
 - Date：2026-09-04
-- 文档版本：1.1.0
+- 文档版本：1.2.0
 - 决策类别：产品约束、架构归属调整
 - 源码观察基线：`2c2092f2fa764a7aa7b47da841299f8866d7a151`
 
@@ -24,16 +24,23 @@
 `common/identifier/ResourceIdentifierPatterns.java`，与名称规则分散在两个类；已有 AGENTS.md
 明确要求共享正则归属于领域类，用户再次指出该遗漏。1.1.0 将 ID 与名称规则统一到 SkillPatterns。
 
+共享常量复核基线 `c0e2915230e73f626a5ede99f0fc3b3412bbff0b` 中，`skill/Skill.java` 仍持有
+`MAX_DESCRIPTION_LENGTH`、`MAX_FILE_BYTES`；Loader、Runtime、提示词加载和命令发现分别声明
+目录名、文件名或命令前缀。AGENTS.md 已要求共享常量按领域集中，用户拒绝将该要求缩成正则归属。
+1.2.0 将这些常量与正则统一至 SkillConstants；具体源文件与符号见运行目录设计 6.2。
+
 ## Decision
 
 名称只允许 1 至 64 个 ASCII 小写字母、数字以及单个分隔连字符，禁止首尾和连续连字符。
-所有 Skill ID 与名称正则集中于领域类 `skill/SkillPatterns`。名称由 `NAME_REGEX`、
+所有 Skill 共享常量集中于领域类 `skill/SkillConstants`。名称由 `NAME_REGEX`、
 `NAME_PATTERN`、`MAX_NAME_LENGTH` 和 `isValidName` 表达，加载和发现共同复用；
 ID 由 `ID_REGEX` 与 `ID_PATTERN` 表达，Runtime、MateServiceClient 和 HttpMateToolClient 共同复用。
 删除 LEGACY/STRICT 两套模式及方法、SkillNamePatterns 旧类及 ResourceIdentifierPatterns 中的
 Skill ID 定义，不提供旧规则开关、转发别名或自动改名。ID 格式与原先的十六进制大小写规则保持不变。
 
-`Skill` 保持元数据承载职责；错误翻译和非法文件处理仍由现有 Loader、Runtime 及提示词调用方负责。
+同类集中名称上限 64、描述上限 1024、文件上限 1 MiB、`skills` 目录名、`SKILL.md` 与 `skill.json`
+文件名、`skill:` 命令前缀。消费者直接引用，删除 SkillPatterns 旧类和业务类中的对应常量。
+`Skill` 只承载元数据，不持有共享常量；错误翻译和非法文件处理仍由现有 Loader、Runtime 及提示词调用方负责。
 本次不改变 Child Agent 名称规则、ID 格式、HTTP 结构或 Skill 命令执行的交付边界。
 
 ## 选项与取舍
@@ -46,13 +53,15 @@ Skill ID 定义，不提供旧规则开关、转发别名或自动改名。ID �
 | 统一严格规则 | 一个定义来源，非法名称在加载时即被拒绝 | 非法数据必须由来源方修正；选择。 |
 
 按字段分别设立名称类和通用资源 ID 类虽能避免字面量重复，仍使同一 Skill 领域的规则分散维护；
-因此选择在 SkillPatterns 内用明确的 ID 与 NAME 成员区分字段。
+因此选择在 SkillConstants 内用明确的成员名区分 ID、名称、限制和文件约定。
+同一领域的共享常量一起维护，使数据类型、加载器与调用方无需分别声明规则。
 
 ## Consequences
 
 合法名称行为保持一致。非法远端 Skill 不能发布，失败刷新保留旧有效目录；非法本地缓存不再命中，
 重新拉取仍不合法时返回失败。直接提示词扫描跳过非法 Skill，命令发现过滤非法名称。
 不新增持久化结构、网络调用或可配置策略。预编译 Pattern 继续复用。
+常量归属调整保留各数值、文件布局、命令名称和校验触发位置，不改变上述名称收紧之外的运行行为。
 
 ## 验证
 
@@ -70,5 +79,6 @@ ID 定义迁移复用两类 Mate 客户端的出站路径与非法 ID 拒绝测�
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 1.2.0 | 2026-09-04 | 扩展为 SkillConstants，统一共享限制、目录和文件名、命令前缀，使 Skill 仅承载数据。 |
 | 1.1.0 | 2026-09-04 | 将 Skill ID 和名称的所有正则统一到 SkillPatterns，删除分散定义及旧类。 |
 | 1.0.0 | 2026-09-04 | 按用户纠正移除非法名称兼容，统一 Skill 名称规则。 |

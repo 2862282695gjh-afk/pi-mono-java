@@ -20,7 +20,7 @@ import com.campusclaw.codingagent.common.dto.SkillInfoResult;
 import com.campusclaw.codingagent.common.dto.ToolInfo;
 import com.campusclaw.codingagent.common.identifier.ResourceIdentifierPatterns;
 import com.campusclaw.codingagent.common.util.MateRestUtil;
-import com.campusclaw.codingagent.skill.SkillPatterns;
+import com.campusclaw.codingagent.skill.SkillConstants;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -106,7 +106,7 @@ public class HttpMateToolClient implements MateToolClient {
 
     @Override
     public List<MateToolMeta> listSkillTools(String skillId) {
-        requireScopedId(skillId, SkillPatterns.ID_PATTERN, "skill");
+        requireScopedId(skillId, SkillConstants.ID_PATTERN, "skill");
         try {
             return queryOrderedToolMeta(queryToolIdsBySkillId(skillId));
         } catch (Exception exception) {
