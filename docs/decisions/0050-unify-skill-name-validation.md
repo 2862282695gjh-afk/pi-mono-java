@@ -1,9 +1,9 @@
-# ADR-0050：统一 Skill 名称校验
+# ADR-0050：统一 Skill 领域正则与名称校验
 
 - Status：Accepted
 - Date：2026-09-04
-- 文档版本：1.0.0
-- 决策类别：产品约束
+- 文档版本：1.1.0
+- 决策类别：产品约束、架构归属调整
 - 源码观察基线：`2c2092f2fa764a7aa7b47da841299f8866d7a151`
 
 ## Context
@@ -20,11 +20,18 @@
 2026-09-04 用户明确拒绝非法名称兼容。原实现放行和人为兼容测试并不能证明产品需要保留此行为。
 本决策替代运行目录设计 3.4.3 中的名称兼容策略。
 
+领域归属复核基线 `cf4f929af2d407d3673bfabac0c311831fb570c7` 中，ID 正则仍留在
+`common/identifier/ResourceIdentifierPatterns.java`，与名称规则分散在两个类；已有 AGENTS.md
+明确要求共享正则归属于领域类，用户再次指出该遗漏。1.1.0 将 ID 与名称规则统一到 SkillPatterns。
+
 ## Decision
 
 名称只允许 1 至 64 个 ASCII 小写字母、数字以及单个分隔连字符，禁止首尾和连续连字符。
-所有名称规则集中于 Skill 领域的 `SkillNamePatterns`；加载和发现共同调用 `isValid`。
-删除 LEGACY/STRICT 两套模式及方法，不提供旧规则开关、方法别名或自动改名。
+所有 Skill ID 与名称正则集中于领域类 `skill/SkillPatterns`。名称由 `NAME_REGEX`、
+`NAME_PATTERN`、`MAX_NAME_LENGTH` 和 `isValidName` 表达，加载和发现共同复用；
+ID 由 `ID_REGEX` 与 `ID_PATTERN` 表达，Runtime、MateServiceClient 和 HttpMateToolClient 共同复用。
+删除 LEGACY/STRICT 两套模式及方法、SkillNamePatterns 旧类及 ResourceIdentifierPatterns 中的
+Skill ID 定义，不提供旧规则开关、转发别名或自动改名。ID 格式与原先的十六进制大小写规则保持不变。
 
 `Skill` 保持元数据承载职责；错误翻译和非法文件处理仍由现有 Loader、Runtime 及提示词调用方负责。
 本次不改变 Child Agent 名称规则、ID 格式、HTTP 结构或 Skill 命令执行的交付边界。
@@ -38,6 +45,9 @@
 | 自动去除或折叠连字符 | 部分非法输入可继续处理 | 改变绑定与目录身份，可能产生重名；拒绝。 |
 | 统一严格规则 | 一个定义来源，非法名称在加载时即被拒绝 | 非法数据必须由来源方修正；选择。 |
 
+按字段分别设立名称类和通用资源 ID 类虽能避免字面量重复，仍使同一 Skill 领域的规则分散维护；
+因此选择在 SkillPatterns 内用明确的 ID 与 NAME 成员区分字段。
+
 ## Consequences
 
 合法名称行为保持一致。非法远端 Skill 不能发布，失败刷新保留旧有效目录；非法本地缓存不再命中，
@@ -48,6 +58,7 @@
 
 覆盖合法及空名称、64/65 字符边界、首尾和连续连字符、文件和目录回退名称、首次发布失败、
 刷新保留旧目录、缓存拒绝与重建、提示词过滤和有实体文件时的命令过滤。
+ID 定义迁移复用两类 Mate 客户端的出站路径与非法 ID 拒绝测试。
 运行聚焦 JUnit、格式及 Checkstyle；同步 campusclaw 镜像并明确报告公司依赖验证是否可执行。
 
 ## Related
@@ -59,4 +70,5 @@
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 1.1.0 | 2026-09-04 | 将 Skill ID 和名称的所有正则统一到 SkillPatterns，删除分散定义及旧类。 |
 | 1.0.0 | 2026-09-04 | 按用户纠正移除非法名称兼容，统一 Skill 名称规则。 |

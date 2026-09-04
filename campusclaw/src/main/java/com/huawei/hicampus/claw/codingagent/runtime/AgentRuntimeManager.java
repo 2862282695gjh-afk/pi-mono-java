@@ -33,6 +33,7 @@ import com.huawei.hicampus.claw.codingagent.runtime.MateServiceClient.SkillRefer
 import com.huawei.hicampus.claw.codingagent.skill.Skill;
 import com.huawei.hicampus.claw.codingagent.skill.SkillLoadException;
 import com.huawei.hicampus.claw.codingagent.skill.SkillLoader;
+import com.huawei.hicampus.claw.codingagent.skill.SkillPatterns;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import org.slf4j.Logger;
@@ -476,7 +477,7 @@ public class AgentRuntimeManager {
     }
 
     private static void requireValidSkill(SkillInfo skill, SkillReference reference) {
-        requireIdentifier(skill == null ? null : skill.id(), ResourceIdentifierPatterns.SKILL_ID_PATTERN);
+        requireIdentifier(skill == null ? null : skill.id(), SkillPatterns.ID_PATTERN);
         if (!skill.id().equals(reference.id())) {
             throw new AgentRuntimeException("Mate returned a different Skill identity");
         }
@@ -537,7 +538,7 @@ public class AgentRuntimeManager {
 
     private static boolean validCachedSkill(SkillInfo skill) {
         return skill != null
-                && matches(skill.id(), ResourceIdentifierPatterns.SKILL_ID_PATTERN)
+                && matches(skill.id(), SkillPatterns.ID_PATTERN)
                 && isSafeName(skill.name())
                 && !isBlank(skill.version());
     }
@@ -662,7 +663,7 @@ public class AgentRuntimeManager {
     }
 
     private static void requireValidSkillReference(SkillReference reference) {
-        requireIdentifier(reference == null ? null : reference.id(), ResourceIdentifierPatterns.SKILL_ID_PATTERN);
+        requireIdentifier(reference == null ? null : reference.id(), SkillPatterns.ID_PATTERN);
         if (isBlank(reference.version())) {
             throw new AgentRuntimeException("Mate returned a Skill binding without a fixed version");
         }

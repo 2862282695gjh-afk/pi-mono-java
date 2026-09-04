@@ -15,6 +15,7 @@ import java.util.regex.Pattern;
 
 import com.huawei.hicampus.claw.codingagent.common.identifier.ResourceIdentifierPatterns;
 import com.huawei.hicampus.claw.codingagent.config.CampusMateClientProperties;
+import com.huawei.hicampus.claw.codingagent.skill.SkillPatterns;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -99,7 +100,7 @@ public class MateServiceClient {
      * @throws AgentRuntimeException HTTP 请求或响应无效时抛出
      */
     public SkillInfo querySkillInfo(String skillId) {
-        requireIdentifier(skillId, ResourceIdentifierPatterns.SKILL_ID_PATTERN, "skillId");
+        requireIdentifier(skillId, SkillPatterns.ID_PATTERN, "skillId");
         String path = expandPathTemplate(campusMateProperties.endpoints().skillInfoPathTemplate(), skillId);
         HttpRequest request = HttpRequest.newBuilder(campusMateProperties.endpoint(path))
                 .timeout(properties.requestTimeout())

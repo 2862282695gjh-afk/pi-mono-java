@@ -24,7 +24,7 @@ import com.campusclaw.codingagent.runtimeapi.dto.command.ResolvedCommandDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.command.SkillCommandSnapshotDTO;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
 import com.campusclaw.codingagent.runtimeapi.session.RuntimeSessionState;
-import com.campusclaw.codingagent.skill.SkillNamePatterns;
+import com.campusclaw.codingagent.skill.SkillPatterns;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -76,7 +76,7 @@ public class SkillCommandSource implements CommandDefinitionSource {
     private Optional<ResolvedCommandDTO> resolved(
             RuntimeSessionDTO session, PreparedAgentRuntime prepared, SkillInfo skill) {
         String skillName = skill.name();
-        if (!SkillNamePatterns.isValid(skillName) || !hasSkillMarkdown(prepared, skillName)) {
+        if (!SkillPatterns.isValidName(skillName) || !hasSkillMarkdown(prepared, skillName)) {
             LOGGER.warn("Ignoring invalid Runtime skill command: name={}", skillName);
             return Optional.empty();
         }

@@ -20,6 +20,7 @@ import com.campusclaw.codingagent.common.dto.SkillInfoResult;
 import com.campusclaw.codingagent.common.dto.ToolInfo;
 import com.campusclaw.codingagent.common.identifier.ResourceIdentifierPatterns;
 import com.campusclaw.codingagent.common.util.MateRestUtil;
+import com.campusclaw.codingagent.skill.SkillPatterns;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -105,7 +106,7 @@ public class HttpMateToolClient implements MateToolClient {
 
     @Override
     public List<MateToolMeta> listSkillTools(String skillId) {
-        requireScopedId(skillId, ResourceIdentifierPatterns.SKILL_ID_PATTERN, "skill");
+        requireScopedId(skillId, SkillPatterns.ID_PATTERN, "skill");
         try {
             return queryOrderedToolMeta(queryToolIdsBySkillId(skillId));
         } catch (Exception exception) {
@@ -334,22 +335,25 @@ public class HttpMateToolClient implements MateToolClient {
             String body = mapper.writeValueAsString(Map.of("arguments", args != null ? args : Map.of()));
             String path = expandPathTemplate(toolExecutePathTemplate, toolId);
             String raw = mateRestUtil.executePostRawRequest(campusMateBaseUrl, path, headerInfo, body);
-            JsonNode root = mapper.readTree(raw);
-            String resCode = root.path("resCode").asText("");
-            if (!"0".equals(resCode)) {
-                return new ToolResult(
-                        "tool execute failed: resCode=" + resCode + " resMsg="
-                                + root.path("resMsg").asText(""),
-                        null,
-                        true);
-            }
-            JsonNode resultNode = root.path("result");
-            String content = resultNode.isMissingNode() || resultNode.isNull() ? "" : resultNode.toString();
-            return new ToolResult(content, null, false);
+            return toToolResult(mapper.readTree(raw));
         } catch (Exception e) {
             log.error("invokeTool failed: toolId={}", toolId, e);
             return new ToolResult("Mate tool execution request failed", null, true);
         }
+    }
+
+    private static ToolResult toToolResult(JsonNode root) {
+        String resCode = root.path("resCode").asText("");
+        if (!"0".equals(resCode)) {
+            return new ToolResult(
+                    "tool execute failed: resCode=" + resCode + " resMsg="
+                            + root.path("resMsg").asText(""),
+                    null,
+                    true);
+        }
+        JsonNode resultNode = root.path("result");
+        String content = resultNode.isMissingNode() || resultNode.isNull() ? "" : resultNode.toString();
+        return new ToolResult(content, null, false);
     }
 
     // 稳定错误码异常原样透出供公开边界映射;其余异常包装为通用失败。

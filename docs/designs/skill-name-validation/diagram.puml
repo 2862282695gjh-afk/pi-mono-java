@@ -1,5 +1,5 @@
 @startuml skill_name_validation
-title Skill Name Validation: One Rule for Every Consumer
+title Skill Patterns: One Domain Owner for IDs and Names
 ' Source baseline: pi-mono-java@2c2092f2fa764a7aa7b47da841299f8866d7a151.
 ' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/skill/SkillLoader.java validateName, loadFromFile.
 ' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/skill/SkillNamePatterns.java LEGACY_REGEX, STRICT_REGEX.
@@ -7,7 +7,12 @@ title Skill Name Validation: One Rule for Every Consumer
 ' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/agent/RuntimeAgentPromptLoader.java loadSkill.
 ' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/service/command/SkillCommandSource.java resolved.
 ' Observed behavior: the baseline loads names with invalid hyphens but excludes them from command discovery.
-' Target product constraint: remove invalid-name compatibility; NAME_REGEX, NAME_PATTERN and isValid are introduced by this fix.
+' Follow-up baseline: pi-mono-java@cf4f929af2d407d3673bfabac0c311831fb570c7.
+' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/common/identifier/ResourceIdentifierPatterns.java SKILL_ID_REGEX, SKILL_ID_PATTERN.
+' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtime/MateServiceClient.java querySkillInfo.
+' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/common/client/HttpMateToolClient.java listSkillTools.
+' Architecture change: move Skill ID and name definitions into skill/SkillPatterns; remove old definitions and aliases.
+' Target product constraint: remove invalid-name compatibility; SkillPatterns owns NAME_REGEX, NAME_PATTERN and isValidName.
 ' Design reason: one accepted name set prevents inconsistent loading and discovery without renaming resource identities.
 skinparam shadowing false
 skinparam componentStyle rectangle
@@ -16,13 +21,19 @@ component AgentRuntimeManager as Runtime
 component RuntimeAgentPromptLoader as Prompt
 component SkillLoader as Loader
 component SkillCommandSource as Commands
-component SkillNamePatterns as Names
+component SkillPatterns as Patterns
+component MateServiceClient as MetadataClient
+component HttpMateToolClient as ToolClient
 Runtime --> Loader : publish and cache reload
 Prompt --> Loader : load prompt skills
-Loader --> Names : isValid(name)
-Commands --> Names : isValid(name)
-note bottom of Names
-1 to 64 ASCII characters.
+Loader --> Patterns : isValidName(name)
+Commands --> Patterns : isValidName(name)
+Runtime --> Patterns : ID_PATTERN
+MetadataClient --> Patterns : ID_PATTERN
+ToolClient --> Patterns : ID_PATTERN
+note bottom of Patterns
+ID: skill- followed by 32 hex characters.
+Name: 1 to 64 ASCII characters.
 Lowercase letters and digits.
 Single hyphens separate nonempty groups.
 No leading, trailing or repeated hyphens.

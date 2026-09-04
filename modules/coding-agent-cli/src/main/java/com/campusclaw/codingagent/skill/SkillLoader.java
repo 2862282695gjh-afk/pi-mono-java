@@ -139,11 +139,11 @@ public class SkillLoader {
         if (name == null || name.isEmpty()) {
             throw new SkillLoadException("Skill name is required: " + filePath);
         }
-        if (name.length() > SkillNamePatterns.MAX_NAME_LENGTH) {
+        if (name.length() > SkillPatterns.MAX_NAME_LENGTH) {
             throw new SkillLoadException(
-                    "Skill name exceeds " + SkillNamePatterns.MAX_NAME_LENGTH + " characters: " + filePath);
+                    "Skill name exceeds " + SkillPatterns.MAX_NAME_LENGTH + " characters: " + filePath);
         }
-        if (!SkillNamePatterns.isValid(name)) {
+        if (!SkillPatterns.isValidName(name)) {
             throw new SkillLoadException(
                     "Skill name must use lowercase a-z, 0-9 and single separating hyphens: " + filePath);
         }

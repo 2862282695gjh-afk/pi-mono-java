@@ -1,6 +1,6 @@
 # Agent 与 Skill 受管运行目录
 
-> 文档版本：3.5.0
+> 文档版本：3.5.1
 >
 > 状态：Implemented
 >
@@ -194,14 +194,14 @@ Skill 文件的 canonical 路径必须位于 Agent 根目录，且等于该根�
 
 **目标决策与理由（产品约束）：** 根据 2026-09-04 用户明确纠正，非法名称不提供兼容加载。
 名称为 1 至 64 个 ASCII 小写字母、数字及分隔连字符；禁止首尾连字符、连续连字符和其他字符。
-本次实现以 `SkillNamePatterns.NAME_REGEX`、`NAME_PATTERN`、`MAX_NAME_LENGTH` 为唯一定义，
-`isValid` 为共享判定。`NAME_REGEX`、`NAME_PATTERN` 和 `isValid` 为本次新增符号，
-不存在于上述变更前基线；`MAX_NAME_LENGTH` 沿用原有常量。
+本次实现以 `skill/SkillPatterns` 为 Skill 领域所有正则的唯一定义位置，
+名称规则由 `NAME_REGEX`、`NAME_PATTERN`、`MAX_NAME_LENGTH` 和 `isValidName` 表达。
+`SkillPatterns` 及其名称符号属于本次修复，类不存在于上述变更前基线；名称长度上限仍为 64。
 Loader 与命令发现使用同一判定，删除 LEGACY/STRICT 分支和旧方法，不提供别名或自动改名。
 该约束消除“可以加载却不能发现为命令”的名称规则差异，保持 Skill 名称与绑定、目录身份一致。
 决策和备选方案见 [ADR-0050](../decisions/0050-unify-skill-name-validation.md)。
 
-![Skill 名称统一校验与加载入口](skill-name-validation/skill_name_validation.svg)
+![Skill 领域正则与消费入口](skill-name-validation/skill_name_validation.svg)
 
 [PlantUML 源码](skill-name-validation/diagram.puml#L1)
 
@@ -213,18 +213,31 @@ Loader 与命令发现使用同一判定，删除 LEGACY/STRICT 分支和旧方�
 | 提示词加载 / 目录扫描 | 沿用现有非法文件处理方式，跳过该 Skill，不加入提示词或加载结果。 |
 | 命令发现 | 沿用现有过滤方式，不生成非法名称的命令。 |
 
+领域归属复核基线：`cf4f929af2d407d3673bfabac0c311831fb570c7`。该版已统一名称判定，
+但 `common/identifier/ResourceIdentifierPatterns.java` 中的 `SKILL_ID_REGEX` 与
+`SKILL_ID_PATTERN` 仍与 `skill/SkillNamePatterns.java` 分散维护；仅消除重复字面量未完成领域归属要求。
+上述路径均相对于 `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/`。
+本次按已有 AGENTS.md 规则作**架构归属调整**：将 ID 正则迁至 `SkillPatterns.ID_REGEX` 和
+`ID_PATTERN`，与名称规则同类维护，删除旧名称规则类及通用类中的 Skill 定义，不保留转发别名。
+`runtime/AgentRuntimeManager.java` 的 `requireValidSkill`、`validCachedSkill`、`requireValidSkillReference`，
+`runtime/MateServiceClient.java` 的 `querySkillInfo`，以及 `common/client/HttpMateToolClient.java`
+的 `listSkillTools` 都改为复用该 ID 模式。ID 格式仍为 `skill-` 加 32 位十六进制字符，保留十六进制大小写规则。
+名称与 ID 是不同字段，分别使用对应的模式，但定义归属统一。
+
 合法名称、64 字符边界、固定 ID/版本、目录安全校验和 HTTP 结构均保持原行为。已有非法缓存不再命中，
 需要上游提供合法且与文件、元数据一致的名称；不通过去掉或折叠连字符来改变资源身份。
 判定仍复用预编译 Pattern，不增加网络或数据库操作；缓存无效后的拉取沿用既有 prepare 流程。
 
 测试覆盖三类连字符错误的文件加载、目录名称回退、首次发布失败、刷新保留旧目录、缓存拒绝并重建、
 提示词排除以及存在实际 SKILL.md 文件时的命令过滤，并保留合法名称、空值和长度边界验证。
-原有“兼容加载成功”测试已删除；验证结果记录在本次 Draft PR 中。
+原有“兼容加载成功”测试已删除。ID 定义迁移复用 MateServiceClientTest、HttpMateToolClientTest
+及 Runtime 回归，验证合法请求路径和非法 ID 在出站请求前被拒绝；验证结果记录在本次 Draft PR 中。
 
 ## 7. 版本历史
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 3.5.1 | 2026-09-04 | 按 Skill 领域归属统一 ID 与名称正则到 SkillPatterns，迁移所有消费者，删除旧定义和类。 |
 | 3.5.0 | 2026-09-04 | 废止非法 Skill 名称兼容；统一加载与命令发现校验，补充发布、缓存和提示词拒绝回归。 |
 | 3.4.3 | 2026-09-04 | 记录 PR #210 发现层修复：深度不可变 DTO、名称规则单一来源、文件 canonical 身份校验；HTTP 与 Skill 执行尚未发布。 |
 | 3.4.2 | 2026-09-03 | `requireAgentRoot` 在 canonical 解析前显式调用 `validatePath` 校验 `properties.agentsRoot()`，非法配置立即抛出异常。 |
