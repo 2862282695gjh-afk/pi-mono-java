@@ -4,12 +4,11 @@
 
 package com.huawei.hicampus.claw.codingagent.runtimeapi.web;
 
-import com.huawei.hicampus.claw.codingagent.common.identifier.ResourceIdentifierPatterns;
-import com.huawei.hicampus.claw.codingagent.runtimeapi.RuntimeApiConstants;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.result.ResultBeanAdapter;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.session.RuntimeSessionControlService;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.vo.ControlMessageAcceptedResponseVO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.vo.ControlMessageRequestVO;
+import com.huawei.hicampus.claw.common.constant.ClawConstants;
 
 import org.springframework.http.CacheControl;
 import org.springframework.http.HttpHeaders;
@@ -32,7 +31,7 @@ import jakarta.validation.constraints.Pattern;
  * @since [br_eCampusCore 26.0.0]
  */
 @RestController
-@RequestMapping(RuntimeApiConstants.BASE_PATH + "/sessions/{sessionId}")
+@RequestMapping(ClawConstants.RuntimeApi.BASE_PATH + "/sessions/{sessionId}")
 public class RuntimeSessionControlController {
     private final RuntimeSessionControlService service;
 
@@ -45,8 +44,7 @@ public class RuntimeSessionControlController {
 
     @PostMapping("/steers")
     public ResponseEntity<Object> steer(
-            @PathVariable("sessionId") @NotBlank @Pattern(regexp = ResourceIdentifierPatterns.SESSION_ID_REGEX)
-                    String sessionId,
+            @PathVariable("sessionId") @NotBlank @Pattern(regexp = ClawConstants.Session.ID_REGEX) String sessionId,
             @Valid @RequestBody ControlMessageRequestVO body,
             HttpServletRequest request) {
         var result = service.steer(sessionId, body);
@@ -55,8 +53,7 @@ public class RuntimeSessionControlController {
 
     @PostMapping("/follow-ups")
     public ResponseEntity<Object> followUp(
-            @PathVariable("sessionId") @NotBlank @Pattern(regexp = ResourceIdentifierPatterns.SESSION_ID_REGEX)
-                    String sessionId,
+            @PathVariable("sessionId") @NotBlank @Pattern(regexp = ClawConstants.Session.ID_REGEX) String sessionId,
             @Valid @RequestBody ControlMessageRequestVO body,
             HttpServletRequest request) {
         var result = service.followUp(sessionId, body);
@@ -65,8 +62,7 @@ public class RuntimeSessionControlController {
 
     @PostMapping("/abort")
     public ResponseEntity<Void> abort(
-            @PathVariable("sessionId") @NotBlank @Pattern(regexp = ResourceIdentifierPatterns.SESSION_ID_REGEX)
-                    String sessionId) {
+            @PathVariable("sessionId") @NotBlank @Pattern(regexp = ClawConstants.Session.ID_REGEX) String sessionId) {
         service.abort(sessionId);
         return ResponseEntity.noContent().cacheControl(CacheControl.noStore()).build();
     }

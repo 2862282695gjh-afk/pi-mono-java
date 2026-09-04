@@ -6,7 +6,7 @@ package com.huawei.hicampus.claw.codingagent.runtimeapi.session;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.huawei.hicampus.claw.codingagent.common.identifier.ResourceIdentifierPatterns;
+import com.huawei.hicampus.claw.common.constant.ClawConstants;
 
 import org.junit.jupiter.api.Test;
 
@@ -24,7 +24,7 @@ class RandomSessionIdGeneratorTest {
         String first = generator.nextId();
         String second = generator.nextId();
 
-        assertThat(first).matches(ResourceIdentifierPatterns.SESSION_ID_REGEX);
-        assertThat(second).matches(ResourceIdentifierPatterns.SESSION_ID_REGEX).isNotEqualTo(first);
+        assertThat(first).matches(ClawConstants.Session.ID_REGEX);
+        assertThat(second).matches(ClawConstants.Session.ID_REGEX).isNotEqualTo(first);
     }
 }

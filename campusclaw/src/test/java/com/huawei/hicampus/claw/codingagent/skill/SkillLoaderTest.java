@@ -11,6 +11,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -19,6 +20,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class SkillLoaderTest {
 
@@ -33,7 +36,7 @@ class SkillLoaderTest {
     }
 
     // -------------------------------------------------------------------
-    // Frontmatter parsing
+    // 解析 frontmatter
     // -------------------------------------------------------------------
 
     @Nested
@@ -90,7 +93,7 @@ class SkillLoaderTest {
     }
 
     // -------------------------------------------------------------------
-    // Strip frontmatter
+    // 移除 frontmatter
     // -------------------------------------------------------------------
 
     @Nested
@@ -119,7 +122,7 @@ class SkillLoaderTest {
     }
 
     // -------------------------------------------------------------------
-    // Name validation
+    // 名称校验
     // -------------------------------------------------------------------
 
     @Nested
@@ -169,7 +172,7 @@ class SkillLoaderTest {
     }
 
     // -------------------------------------------------------------------
-    // loadFromFile
+    // 从文件加载
     // -------------------------------------------------------------------
 
     @Nested
@@ -284,6 +287,34 @@ class SkillLoaderTest {
             assertThrows(SkillLoadException.class, () -> loader.loadFromFile(skillFile, "project"));
         }
 
+        @ParameterizedTest
+        @ValueSource(strings = {"-pdf", "pdf-", "pdf--tools", "-"})
+        void rejectsInvalidHyphensInFrontmatter(String name) throws IOException {
+            Path skillFile = tempDir.resolve("SKILL.md");
+            Files.writeString(
+                    skillFile,
+                    "---\nname: '" + name + "'\ndescription: Invalid skill\n---\nBody.",
+                    StandardCharsets.UTF_8);
+
+            SkillLoadException error =
+                    assertThrows(SkillLoadException.class, () -> loader.loadFromFile(skillFile, "managed"));
+
+            assertTrue(error.getMessage().contains("single separating hyphens"));
+        }
+
+        @ParameterizedTest
+        @ValueSource(strings = {"-pdf", "pdf-", "pdf--tools", "-"})
+        void rejectsInvalidHyphensInDirectoryFallback(String name) throws IOException {
+            Path skillDir = Files.createDirectory(tempDir.resolve(name));
+            Path skillFile = skillDir.resolve("SKILL.md");
+            Files.writeString(skillFile, "---\ndescription: Invalid skill\n---\nBody.", StandardCharsets.UTF_8);
+
+            SkillLoadException error =
+                    assertThrows(SkillLoadException.class, () -> loader.loadFromFile(skillFile, "managed"));
+
+            assertTrue(error.getMessage().contains("single separating hyphens"));
+        }
+
         @Test
         void throwsForNonexistentFile() {
             assertThrows(
@@ -293,7 +324,7 @@ class SkillLoaderTest {
     }
 
     // -------------------------------------------------------------------
-    // loadFromDirectory
+    // 从目录加载
     // -------------------------------------------------------------------
 
     @Nested
@@ -363,7 +394,7 @@ class SkillLoaderTest {
 
         @Test
         void doesNotRecurseIntoSkillRoot() throws IOException {
-            // my-skill has SKILL.md — it's a skill root
+            // my-skill 包含 SKILL.md，属于 Skill 根目录。
             Path skillDir = tempDir.resolve("my-skill");
             Files.createDirectories(skillDir);
             Files.writeString(
@@ -376,7 +407,7 @@ class SkillLoaderTest {
                     Body.
                     """);
 
-            // Nested child should be ignored
+            // 忽略 Skill 根目录中的嵌套子目录。
             Path childDir = skillDir.resolve("child-skill");
             Files.createDirectories(childDir);
             Files.writeString(
@@ -409,7 +440,7 @@ class SkillLoaderTest {
 
         @Test
         void skipsInvalidSkillFiles() throws IOException {
-            // Valid skill
+            // 合法 Skill
             Path validDir = tempDir.resolve("valid-skill");
             Files.createDirectories(validDir);
             Files.writeString(
@@ -422,7 +453,7 @@ class SkillLoaderTest {
                     Body.
                     """);
 
-            // Invalid skill (missing description)
+            // 非法 Skill（缺少描述）
             Path invalidDir = tempDir.resolve("invalid-skill");
             Files.createDirectories(invalidDir);
             Files.writeString(

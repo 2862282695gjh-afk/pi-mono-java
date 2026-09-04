@@ -23,6 +23,7 @@ import com.huawei.hicampus.claw.codingagent.runtime.PreparedAgentRuntime;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.command.type.CommandKind;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.command.ResolvedCommandDTO;
+import com.huawei.hicampus.claw.common.constant.ClawConstants;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -95,12 +96,13 @@ class SkillCommandSourceTest {
         assertThat(command.snapshot().markdown()).contains("name: alpha");
     }
 
-    @Test
-    void filtersSkillsFailingStrictNameRules() throws IOException {
+    @ParameterizedTest
+    @ValueSource(strings = {"-pdf", "pdf-", "pdf--tools"})
+    void filtersInvalidSkillNamesEvenWhenMarkdownExists(String name) throws IOException {
         skillMarkdown("good-name");
+        skillMarkdown(name);
         when(agentRuntimeManager.prepareCached(AGENT_ID))
-                .thenReturn(
-                        prepared(skill("good-name", "ok"), skill("pdf--tools", "legacy"), skill("-lead", "legacy")));
+                .thenReturn(prepared(skill("good-name", "ok"), skill(name, "invalid")));
 
         List<ResolvedCommandDTO> commands = source.list(session("idle"));
 
@@ -137,7 +139,7 @@ class SkillCommandSourceTest {
     @ParameterizedTest
     @ValueSource(strings = {"sibling", "root", "outside"})
     void ignoresSymbolicLinkAliases(String targetName, @TempDir Path outside) throws IOException {
-        Path managed = agentRoot.resolve(AgentRuntimeManager.CAMPUSCLAW_DIRECTORY);
+        Path managed = agentRoot.resolve(ClawConstants.Runtime.DIRECTORY_NAME);
         Path target =
                 switch (targetName) {
                     case "outside" -> outside;
@@ -194,7 +196,7 @@ class SkillCommandSourceTest {
 
     private void skillMarkdown(String name) throws IOException {
         Path skillDir = agentRoot
-                .resolve(AgentRuntimeManager.CAMPUSCLAW_DIRECTORY)
+                .resolve(ClawConstants.Runtime.DIRECTORY_NAME)
                 .resolve("skills")
                 .resolve(name);
         Files.createDirectories(skillDir);
