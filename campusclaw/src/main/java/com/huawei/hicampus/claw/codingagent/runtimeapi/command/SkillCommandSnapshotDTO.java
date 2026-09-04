@@ -5,7 +5,7 @@
 package com.huawei.hicampus.claw.codingagent.runtimeapi.command;
 
 /**
- * 命令发现时取得的 Skill 身份与正文快照；本期不开放执行或持久化调用快照。
+ * 命令发现时取得的 Skill 身份与正文快照；不承担独立开发线的执行或调用快照持久化。
  *
  * @param agentId 所属 Agent 标识
  * @param agentVersion Agent 版本

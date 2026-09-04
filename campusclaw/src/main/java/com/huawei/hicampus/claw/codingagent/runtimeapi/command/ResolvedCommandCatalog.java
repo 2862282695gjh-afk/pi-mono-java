@@ -5,6 +5,7 @@
 package com.huawei.hicampus.claw.codingagent.runtimeapi.command;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -16,8 +17,25 @@ import java.util.Optional;
 public final class ResolvedCommandCatalog {
     private final List<ResolvedCommandDTO> commands;
 
-    ResolvedCommandCatalog(List<ResolvedCommandDTO> commands) {
+    private final Map<String, CommandDefinition> definitions;
+
+    private final CommandSessionSnapshotDTO session;
+
+    ResolvedCommandCatalog(
+            CommandSessionSnapshotDTO session,
+            List<ResolvedCommandDTO> commands,
+            Map<String, CommandDefinition> definitions) {
+        this.session = session;
         this.commands = List.copyOf(commands);
+        this.definitions = Map.copyOf(definitions);
+    }
+
+    public CommandSessionSnapshotDTO session() {
+        return session;
+    }
+
+    public Optional<CommandDefinition> findDefinition(String name) {
+        return name == null ? Optional.empty() : Optional.ofNullable(definitions.get(name));
     }
 
     /**

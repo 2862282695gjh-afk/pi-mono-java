@@ -9,13 +9,19 @@ import java.util.List;
 import com.campusclaw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
 
 /**
- * 按 Session 发现命令，只提供列表；注册表在单次结果上负责精确查找。
- * 不触发 Agent 刷新或模型调用；可执行定义与准入策略由后续 Builtin 层提供。
+ * 按 Session 提供展示或可执行定义；注册表负责单次解析和精确查找。
+ * 不触发 Agent 刷新或模型调用；来源过滤必须发生在解析之前。
  *
  * @version [br_eCampusCore 26.0.0, 2026/09/04]
  * @since [br_eCampusCore 26.0.0]
  */
 public interface CommandDefinitionSource {
+    CommandKind kind();
+
+    default List<? extends CommandDefinition> definitions(RuntimeSessionDTO session) {
+        return list(session).stream().map(DisplayCommandDefinition::new).toList();
+    }
+
     /**
      * 列出本来源为 Session 提供的命令。
      *

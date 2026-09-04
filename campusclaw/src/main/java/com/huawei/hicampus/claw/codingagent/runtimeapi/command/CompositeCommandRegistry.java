@@ -4,11 +4,11 @@
 
 package com.huawei.hicampus.claw.codingagent.runtimeapi.command;
 
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.HashSet;
+import java.util.EnumSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
+import java.util.TreeMap;
 
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
 
@@ -36,17 +36,33 @@ public class CompositeCommandRegistry {
      * @throws IllegalStateException 不同来源贡献相同命令名时抛出
      */
     public ResolvedCommandCatalog resolve(RuntimeSessionDTO session) {
-        List<ResolvedCommandDTO> commands = new ArrayList<>();
-        Set<String> seen = new HashSet<>();
+        return resolve(session, EnumSet.allOf(CommandKind.class));
+    }
+
+    public ResolvedCommandCatalog resolve(RuntimeSessionDTO session, CommandKind kind) {
+        return resolve(session, Set.of(kind));
+    }
+
+    private ResolvedCommandCatalog resolve(RuntimeSessionDTO session, Set<CommandKind> kinds) {
+        CommandSessionSnapshotDTO snapshot = CommandSessionSnapshotDTO.from(session);
+        TreeMap<String, ResolvedCommandDTO> commands = new TreeMap<>();
+        TreeMap<String, CommandDefinition> definitions = new TreeMap<>();
         for (CommandDefinitionSource source : sources) {
-            for (ResolvedCommandDTO command : source.list(session)) {
-                if (!seen.add(command.name())) {
+            CommandKind sourceKind = Objects.requireNonNull(source.kind());
+            if (!kinds.contains(sourceKind)) {
+                continue;
+            }
+            for (CommandDefinition definition : source.definitions(session)) {
+                ResolvedCommandDTO command = definition.describe(snapshot);
+                if (command.kind() != sourceKind) {
+                    throw new IllegalStateException("Command kind differs from its source: " + command.name());
+                }
+                if (commands.putIfAbsent(command.name(), command) != null) {
                     throw new IllegalStateException("Duplicate command name: " + command.name());
                 }
-                commands.add(command);
+                definitions.put(command.name(), definition);
             }
         }
-        commands.sort(Comparator.comparing(ResolvedCommandDTO::name));
-        return new ResolvedCommandCatalog(commands);
+        return new ResolvedCommandCatalog(snapshot, List.copyOf(commands.values()), definitions);
     }
 }

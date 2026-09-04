@@ -49,7 +49,8 @@ class CompositeCommandRegistryTest {
 
     @Test
     void catalogFindServesExactNameFromSameResolution() {
-        CommandDefinitionSource source = mock(CommandDefinitionSource.class);
+        CommandDefinitionSource source = mock(CommandDefinitionSource.class, org.mockito.Mockito.CALLS_REAL_METHODS);
+        when(source.kind()).thenReturn(CommandKind.SKILL);
         when(source.list(session)).thenReturn(List.of(resolved("skill:one"), resolved("skill:two")));
         CompositeCommandRegistry registry = new CompositeCommandRegistry(List.of(source));
 
@@ -73,9 +74,13 @@ class CompositeCommandRegistryTest {
     }
 
     private CommandDefinitionSource source(String... names) {
-        return sessionView -> java.util.Arrays.stream(names)
-                .map(CompositeCommandRegistryTest.this::resolved)
-                .toList();
+        CommandDefinitionSource source = mock(CommandDefinitionSource.class, org.mockito.Mockito.CALLS_REAL_METHODS);
+        when(source.kind()).thenReturn(CommandKind.SKILL);
+        when(source.list(session))
+                .thenReturn(java.util.Arrays.stream(names)
+                        .map(CompositeCommandRegistryTest.this::resolved)
+                        .toList());
+        return source;
     }
 
     private ResolvedCommandDTO resolved(String name) {
