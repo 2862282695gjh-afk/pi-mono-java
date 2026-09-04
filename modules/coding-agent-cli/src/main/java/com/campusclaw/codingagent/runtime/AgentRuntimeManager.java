@@ -9,6 +9,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -419,7 +420,13 @@ public class AgentRuntimeManager {
         }
         try {
             Path agentsRoot = Path.of(properties.agentsRoot().toFile().getCanonicalPath());
+            if (!validatePath(agentId)) {
+                throw new IllegalArgumentException("Invalid agentId path");
+            }
             Path expectedAgentRoot = agentsRoot.resolve(agentId);
+            if (!validatePath(expectedAgentRoot)) {
+                throw new IllegalArgumentException("Invalid Agent root path");
+            }
             File agentDirectory = expectedAgentRoot.toFile();
             Path agentRoot = Path.of(agentDirectory.getCanonicalPath());
             if (!agentRoot.startsWith(agentsRoot)) {
@@ -431,6 +438,17 @@ public class AgentRuntimeManager {
             return agentRoot;
         } catch (IOException exception) {
             throw new AgentRuntimeException("Failed to resolve canonical Agent root", exception);
+        }
+    }
+
+    private static boolean validatePath(String path) {
+        if (path == null) {
+            return false;
+        }
+        try {
+            return validatePath(Path.of(path));
+        } catch (InvalidPathException exception) {
+            return false;
         }
     }
 
