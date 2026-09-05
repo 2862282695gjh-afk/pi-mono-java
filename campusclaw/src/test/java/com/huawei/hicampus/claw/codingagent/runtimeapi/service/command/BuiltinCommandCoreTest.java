@@ -91,7 +91,6 @@ class BuiltinCommandCoreTest {
         new ApplicationContextRunner()
                 .withUserConfiguration(CommandServiceScan.class)
                 .withBean(AgentRuntimeManager.class, () -> mock(AgentRuntimeManager.class))
-                .withBean(BuiltinCommandContributor.class, () -> () -> definition("help"))
                 .run(context -> {
                     assertThat(context)
                             .hasSingleBean(BuiltinCommandSource.class)
@@ -101,7 +100,7 @@ class BuiltinCommandCoreTest {
                                     .resolve(session)
                                     .list())
                             .extracting(ResolvedCommandDTO::name)
-                            .containsExactly("help");
+                            .containsExactly("help", "skills", "status");
                 });
     }
 

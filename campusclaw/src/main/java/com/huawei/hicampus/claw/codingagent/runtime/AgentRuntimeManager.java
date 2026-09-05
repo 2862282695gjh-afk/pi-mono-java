@@ -35,6 +35,7 @@ import com.huawei.hicampus.claw.codingagent.skill.SkillLoadException;
 import com.huawei.hicampus.claw.codingagent.skill.SkillLoader;
 import com.huawei.hicampus.claw.common.constant.ClawConstants;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -94,7 +95,7 @@ public class AgentRuntimeManager {
      */
     public PreparedAgentRuntime prepareCached(String agentId) {
         Path agentRoot = requireAgentRoot(agentId);
-        return loadIfComplete(agentId, agentRoot);
+        return withAgentLock(agentId, () -> loadIfComplete(agentId, agentRoot));
     }
 
     /**
@@ -635,7 +636,8 @@ public class AgentRuntimeManager {
                 runtime.displayName(),
                 runtime.description(),
                 runtime.version(),
-                runtime.enabled());
+                runtime.enabled(),
+                runtime.userCases());
     }
 
     private static AgentSettings toSettings(AgentRuntime runtime) {
@@ -663,7 +665,7 @@ public class AgentRuntimeManager {
                 identity.id(),
                 identity.name(),
                 systemPrompt,
-                List.of(),
+                identity.userCases() == null ? List.of() : identity.userCases(),
                 identity.version());
     }
 
@@ -719,9 +721,10 @@ public class AgentRuntimeManager {
             String id,
             String name,
             String displayName,
-            List<String> description,
+            @JsonDeserialize(contentUsing = AgentMetadataTextDeserializer.class) List<String> description,
             String version,
-            Boolean enabled) {}
+            Boolean enabled,
+            @JsonDeserialize(contentUsing = AgentMetadataTextDeserializer.class) List<String> userCases) {}
 
     private record AgentSettings(int schemaVersion, String defaultModel, List<String> bindingModels) {
         private AgentSettings {

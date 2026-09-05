@@ -17,15 +17,16 @@
 <body><main>
   <h1>ADR-0049：Builtin 命令分层核心与并行扩展边界</h1>
   <p>Status：<span class="status">Accepted · 用户已确认分层方案与并行分工</span><br>Date：2026-09-04</p>
-  <p>文档版本：1.1.0 · 包结构按 PR #218 评论修订。</p>
+  <p>文档版本：1.3.0 · 同步基于 Agent 元数据的新版 Help。</p>
   <p>Java 基线：<code>a8192e047f4061bd385297d3dc6c4358362d0d49</code><br>
   核心实现：<code>8a402bc794f33e12c756b32b9b7274ad0c289b45</code><br>
   包结构审查基线：<code>11b21f95a0d621c48f0cc1d1b826bc5ee72e2507</code><br>
   分包实现：<code>15aa0bf17b3444af6724cf5557c89ef76d72e13c</code><br>
-  设计输入：<code>pi-mono-java-design@eec7baf1d52f9f982f7ab4836600cfa2386b3e7c</code> 及 2026-09-04 用户澄清。</p>
+  设计输入：<code>pi-mono-java-design@eec7baf1d52f9f982f7ab4836600cfa2386b3e7c</code>、
+  Help 更新 <code>e2afc2632ecbf2a528daf266626eaff5aff9289b</code> 及 2026-09-04 用户澄清。</p>
   <h2>Context</h2>
   <p>PR #210 已提供 Skill 发现 DTO 和 Catalog，但缺少来源前置过滤及可执行定义。
-  七个 Builtin 需要独立 Handler 和准入，Help 与执行应使用同一快照。
+  七个 Builtin 需要独立 Handler 和准入；列表、准入和分派使用同一 Catalog 快照。
   Skill Command 由其他同事并行实现，不得把本会话范围误写为产品禁用或延期。</p>
   <p>历史核心实现源码位于 <code>modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/command/</code>：
   基线的 <code>CompositeCommandRegistry.resolve</code> 聚合全部 Source；
@@ -54,7 +55,7 @@
     <li>DTO、Spring 服务与核心职责按包分层。通用定义不依赖 Builtin 定义，
     依赖保持为 builtin → execution → catalog → definition → dto → type；来源 SPI 不依赖实现服务。</li>
     <li>准入预览不代替锁内复核；内部结果使用 DTO，未来应用层转独立只读 VO。</li>
-    <li>本 PR 不发布路由、不持久化通用命令历史、不实现七个具体命令或 Skill 执行。</li>
+    <li>核心切片（PR #218）不发布路由、不持久化通用命令历史、不实现七个具体命令或 Skill 执行。</li>
   </ul>
   <h2>所选方案与理由</h2>
   <p>此决策属于 Java 内部架构变化。源过滤避免 Builtin 依赖 Skill 文件读取；
@@ -62,7 +63,7 @@
   Builtin JSON 目标已确认，但不据此决定 Skill 的最终公共请求形状。</p>
   <h2>Consequences</h2>
   <ul>
-    <li>正面：启动即发现重名；列表、Help、分派不再重复解析。</li>
+    <li>正面：启动即发现重名；列表、准入和分派不再重复解析。</li>
     <li>正面：无请求可变字段、无凭据保存、无新增线程或数据库。</li>
     <li>代价：自定义 Source 必须补 kind；准入策略及 Handler 的无请求状态仍需代码评审保证。</li>
     <li>迁移：更新 import，不保留旧包占位；Catalog 构造器开放给跨包注册服务，
@@ -70,17 +71,48 @@
     <li>后续：各窄服务必须锁内复核；Compact 独立实现不传播客户端取消的完成句柄。</li>
     <li>后续：最终 HTTP 发布前与 Skill 开发线对齐，不用 Builtin-only 正则禁止 skill:*。</li>
   </ul>
-  <h2>验证</h2>
+  <h2 id="readonly">只读实现切片（1.3.0）</h2>
+  <p>从 <code>origin/main@6d7ba8483f69e8cccab04489a0111a27fde1315d</code> 串行创建下一分支；
+  初始实现提交为 <code>21d19792ce72546a7d0072501463dd4c1241b669</code>，
+  新版 Help 实现为 <code>2ceb3f7319e61c6d036526f4ccd2f6e56114ac5a</code>。
+  本切片沿用已确认的分层决策，不修改 pi-mono-java-design，不发布 Command HTTP 路由。</p>
+  <ul>
+    <li><code>service.command.contributor</code> 中三个 Contributor 各自提供元数据、准入和真实 Handler lambda，
+    依赖 <code>service.command.readonly</code> 中对应窄服务；不增加中央名称 switch 或其他命令的占位实现。</li>
+    <li><code>AgentHelpQueryService.query</code> 按 Session Agent ID 读取一次完整本地缓存，返回显示名、
+    用途介绍和使用场景；<code>RuntimeSessionStatusService.query</code> 只读持久化 Session 观察值，
+    <code>BoundSkillQueryService.query</code> 同样调用 <code>AgentRuntimeManager.prepareCached</code>。
+    三个查询在 idle/running 均允许；Help / Skills 无完整快照时失败，不主动刷新。</li>
+    <li>Help 改为 NONE；纯空白参数视为空，其他参数返回 <code>INVALID_COMMAND_REQUEST</code>。
+    命令目录由后续 GET Commands 接口负责，不再由 Help 复用 Catalog 展示。</li>
+    <li><code>AgentRuntimeManager</code> 在既有 schemaVersion 下保存并恢复 <code>userCases</code>；
+    旧缓存缺字段恢复为空列表，非法文本项使快照不可用。<code>prepareCached</code> 与刷新发布共用
+    Agent 锁，显式刷新失败继续保留上一完整快照。</li>
+    <li>没有在 DTO 构造器中实施参数或业务校验；三个结果 record 位于 <code>dto.command</code>。
+    DTO 列表只作防御复制；参数语义由窄服务校验，统一 HTTP 请求校验和 DTO→VO 留给后续切片。</li>
+    <li>Help 不依赖 Registry，避免反向注入环；Status 观察持久化状态；Help / Skills 的本地完整
+    快照查询没有远端调用和运行状态变更，且不会跨原子发布混合两代缓存文件。</li>
+    <li>代价：此时仅三个真实命令可供内部集成；Skills 仍承担既有完整目录读取成本。
+    后续应用层必须完成授权，并同时捕获 Handler 的同步抛错及 Stage 的异步失败。</li>
+  </ul>
+  <p>模块与依赖共 1399 项通过；指定质量脚本在当前机器不存在，未声称该项通过。
+  模块侧非文档新增 850 行，镜像后 1700 行。镜像已同步，公司 Parent 仍不可解析，未验证公司镜像编译。
+  Name 下一切片须等待本 PR 合并后再从最新 main 创建。</p>
+  <h2>核心切片验证（1.1.0）</h2>
   <p>九项核心测试与既有发现回归共 22 项通过；clean test 后模块及依赖共 1344 项通过；
   19 个类型的包依赖无环，新增真实组件扫描测试；模块侧新增 792 行，完整 PR 门禁 1623/2000。
   镜像已显式同步，但公司 Parent 无法解析，未宣称镜像编译通过。</p>
   <h2>版本历史</h2>
   <ul>
+    <li>1.3.0 · 2026-09-05：将 Help 改为无参 Agent 使用指南，并记录 userCases 缓存和并发快照一致性。</li>
+    <li>1.2.0 · 2026-09-04：记录三个只读命令的服务归属、数据边界、完整快照行为和验证证据。</li>
     <li>1.1.0 · 2026-09-04：落实包归属与无环依赖，更新源码证据和组件扫描验证。</li>
     <li>1.0.0 · 2026-09-04：记录 Builtin 分层核心、Catalog 身份及独立扩展边界。</li>
   </ul>
   <h2>Related</h2>
   <ul>
+    <li><a href="../designs/builtin-command-readonly.md">Builtin 只读切片交付记录</a></li>
+    <li><a href="../designs/builtin-command-readonly/diagram.puml#L1">只读切片 PlantUML</a></li>
     <li><a href="../designs/builtin-command-core.md">Builtin 核心设计与交付边界</a></li>
     <li><a href="../designs/builtin-command-core/diagram.puml#L1">目标核心 PlantUML</a></li>
     <li><a href="0048-limit-added-code-lines-per-pull-request.html">ADR-0048：整个 PR 新增代码门禁</a></li>
