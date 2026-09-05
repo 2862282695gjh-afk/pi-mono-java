@@ -157,6 +157,38 @@ class HttpMateToolClientTest {
     }
 
     @Test
+    void stringEncodedSchemaWithCamelCaseKeysIsNormalized() throws Exception {
+        server.enqueue(json("{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":{\"bindingTools\":"
+                + "[{\"toolId\":\"tool-11111111111111111111111111111111\",\"version\":\"2\"}]}}"));
+        server.enqueue(json("{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":{\"data\":["
+                + "{\"id\":\"tool-11111111111111111111111111111111\",\"name\":\"query\",\"description\":\"d1\","
+                + "\"inputSchema\":\"{\\\"type\\\":\\\"object\\\",\\\"properties\\\":{\\\"path\\\":{\\\"type\\\":\\\"string\\\"}},\\\"required\\\":[\\\"path\\\"]}\","
+                + "\"outputSchema\":\"{\\\"type\\\":\\\"object\\\"}\"}]}}"));
+
+        List<MateToolMeta> tools = client.listAgentTools("agent-11111111111111111111111111111111");
+
+        assertThat(tools).hasSize(1);
+        assertThat(tools.getFirst().inputSchema())
+                .containsEntry("type", "object")
+                .containsKey("properties");
+        assertThat(tools.getFirst().outputSchema()).containsEntry("type", "object");
+    }
+
+    @Test
+    void malformedSchemaStringDegradesToNullInsteadOfFailingBatch() throws Exception {
+        server.enqueue(json("{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":{\"bindingTools\":"
+                + "[{\"toolId\":\"tool-11111111111111111111111111111111\",\"version\":\"2\"}]}}"));
+        server.enqueue(json("{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":{\"data\":["
+                + "{\"id\":\"tool-11111111111111111111111111111111\",\"name\":\"query\",\"description\":\"d1\","
+                + "\"inputSchema\":\"not-a-json\"}]}}"));
+
+        List<MateToolMeta> tools = client.listAgentTools("agent-11111111111111111111111111111111");
+
+        assertThat(tools).hasSize(1);
+        assertThat(tools.getFirst().inputSchema()).isNull();
+    }
+
+    @Test
     void missingToolNameFallsBackToToolId() throws Exception {
         server.enqueue(
                 json(

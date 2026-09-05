@@ -6,7 +6,9 @@ package com.campusclaw.codingagent.common.dto;
 
 import java.util.Map;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
 import com.fasterxml.jackson.databind.PropertyNamingStrategies;
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import com.fasterxml.jackson.databind.annotation.JsonNaming;
 
 import lombok.Data;
@@ -17,8 +19,10 @@ import lombok.Data;
  * <p>网关契约为 snake_case 键（{@code is_concurrency_safe / display_name /
  * input_schema / output_schema}），以 {@link JsonNaming} 的
  * SNAKE_CASE 策略显式映射，避免默认 Mapper 反序列化失败或静默置 null。
+ * 实测网关会将 schema 以「JSON 字符串」而非对象返回，{@link SchemaMapDeserializer}
+ * 同时兼容字符串与对象两种形态，均归一化为结构化 Map。
  *
- * @version [br_eCampusCore 26.0.0, 2026/08/22]
+ * @version [br_eCampusCore 26.0.0, 2026/09/05]
  * @since [br_eCampusCore 26.0.0]
  */
 @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
@@ -36,6 +40,12 @@ public class ToolInfo {
     private String displayName;
     private String description;
     private String source;
+
+    @JsonDeserialize(using = SchemaMapDeserializer.class)
+    @JsonAlias("inputSchema")
     private Map<String, Object> inputSchema;
+
+    @JsonDeserialize(using = SchemaMapDeserializer.class)
+    @JsonAlias("outputSchema")
     private Map<String, Object> outputSchema;
 }
