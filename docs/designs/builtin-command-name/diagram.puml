@@ -1,17 +1,18 @@
 @startuml builtin_name_layers
 ' Java baseline: dfb90cac4e233e09a0b8f047f7e9f4682f5ad238
 ' Name implementation: fe50e8d1bbd45c87b300bba71612b80350c3c1a6
+' Creation response correction: cf6c515305bd6ac67ca261f42d697be8ef03cf6d
 ' Java root: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/
 ' Sources: service/command/contributor/NameCommandContributor.java:definition
 ' Sources: service/command/SessionNamingService.java:execute,normalizeName
 ' Sources: persistence/MyBatisRuntimeSessionRepository.java:updateName
-' Sources: session/RuntimeSessionResponseAssembler.java:getView
+' Sources: session/RuntimeSessionResponseAssembler.java:createView,getView
 ' pi: 4af9d21d3b4d664e4a29fcabfec85171077248e3
 ' pi source: packages/coding-agent/src/core/session-manager.ts:appendSessionInfo,getSessionName
 ' Observed behavior: pi appends session_info and reads the latest name from history.
 ' Java divergence: one nullable column stores the current name; no name history.
 ' Design reason: separate validation, transaction ownership, DTOs and the existing HTTP view.
-title Name command - implemented class boundaries
+title Name command - target class boundaries
 set namespaceSeparator none
 skinparam shadowing false
 skinparam classAttributeIconSize 0
@@ -44,6 +45,7 @@ package "session" {
   class "RuntimeSessionResponseAssembler" as Assembler
 }
 package "vo" {
+  class "CreateSessionResponseVO" as CreateView
   class "GetSessionResponseVO" as View
 }
 Contributor ..|> SPI
@@ -56,6 +58,7 @@ Repository -down-> Mapper : transaction
 Repository .right.> Update
 Mapper .right.> Session
 Assembler .up.> Session
+Assembler .down.> CreateView : includes displayName = null
 Assembler .down.> View : includes nullable displayName
 note right of Service
   Fixed collaborators only.

@@ -1,6 +1,6 @@
 # Builtin Command：Name 实现切片
 
-> 版本：1.0.0 · 日期：2026-09-05 · 状态：Name 内部执行与 GET Session 名称已实现；Command HTTP 待统一发布
+> 版本：1.0.1 · 日期：2026-09-05 · 状态：Name 内部执行与创建/GET Session 名称已实现；Command HTTP 待统一发布
 
 ## 1. Context
 
@@ -10,13 +10,17 @@
 
 用户于 2026-09-05 明确当前是首版，没有已发布的数据库版本需要兼容，因此只更新全量安装 SQL，
 不增加升级脚本。此记录仅维护实现仓证据，**未修改 pi-mono-java-design**。
-Help 保持 PR #222 的 Agent 使用指南行为；Skill 执行由同事并行开发，本切片不限制其交付。
+Help 保持 PR #222 的 Agent 使用指南行为。按最新已确认设计，Builtin 与 Skill Command 由用户统一负责
+设计、实现和集成；Skill 执行及共享 HTTP 对齐纳入统一验收。Name 仍保持独立切片范围，不提前发布 Command 路由。
 
 ## 2. 源码证据与关键定义
 
 Java 变更前基线为上述 main；本切片实现提交为
 `fe50e8d1bbd45c87b300bba71612b80350c3c1a6`。下表 Java 路径根目录为
 `modules/coding-agent-cli/src/main/`。
+
+PR #224 评审基线为 `83cef886f17e08404611a53a21ac0ef2d4cfa087`，创建响应遗漏修复为
+`cf6c515305bd6ac67ca261f42d697be8ef03cf6d`。这是对已确认契约的补齐，不是新增产品决策。
 
 | 证据类别 | 仓库相对路径与符号 | 观察或决策 |
 |---|---|---|
@@ -28,6 +32,8 @@ Java 变更前基线为上述 main；本切片实现提交为
 | 本切片实现 | `resources/db/gaussdb/install/session_schema.sql:t_sessions` | 可空 display_name 与字节长度约束，仅保存当前值 |
 | 本切片实现 | `modules/common/src/main/java/com/campusclaw/common/constant/ClawConstants.java:Session`（仓库根路径） | 统一名称长度与危险字符模式，不在 DTO 中保存共享常量或执行校验 |
 | 已确认设计输入 | `pi-mono-java-design@e370d2d49e6cd20b7dd910944e583d7f67115cf4` · `04-命令与技能/01-内置命令/README.md:5. Name 当前状态` | 当前名称、运行中可修改、80 字节、last-commit-wins、无 Name 历史；只读取此决策 |
+| 创建契约及校验依据 | 同设计提交 · `01-总体架构/01-CampusClaw多Agent运行时/接口契约/操作/01-create-session.json`、`validate-chat-http-v1.py:validate_create_session` | 创建成功必须包含 displayName 且为 null；评审前遗漏该字段，现由 CreateSessionResponseVO 与 createView 补齐 |
+| 最新已确认责任 | `pi-mono-java-design@41304c1f3df0e8eca53141312724d7a684a1d07f` · `04-命令与技能/01-内置命令/README.md:1. 范围与证据`（设计分支 codex/help-agent-metadata-design） | 2.6.1 改为用户统一负责 Builtin/Skill；评审时尚未合入设计 main，不因此忽略已确认决定 |
 | pi 观察 | `pi@4af9d21d3b4d664e4a29fcabfec85171077248e3` · `packages/coding-agent/src/core/agent-session.ts:setSessionName` | 调用 appendSessionInfo，向监听器和扩展发布 session_info_changed |
 | pi 观察 | 同提交 `packages/coding-agent/src/core/session-manager.ts:appendSessionInfo/getSessionName` | 将 CR/LF 替换为空格并 trim，追加 session_info；反向查找最近名称，空名称可清除 |
 
@@ -53,7 +59,7 @@ Java 不复制 pi 的名称历史与清空行为：只保留当前名称属于**
 
 ![Name 锁内更新时序](builtin-command-name/builtin_name_update.svg)
 
-[PlantUML 源码](builtin-command-name/diagram.puml#L66)
+[PlantUML 源码](builtin-command-name/diagram.puml#L69)
 
 ## 4. 决策与边界情况
 
@@ -75,8 +81,9 @@ Java 不复制 pi 的名称历史与清空行为：只保留当前名称属于**
 
 ## 5. 契约改动与 DFX
 
-- 已有 GET Session 增加 `displayName`，未命名也保留该字段并返回 JSON null。既有配置 PUT 复用此响应 VO，
-  同样保留当前名称。创建响应保持不变；前端共享 Session 类型因此将该字段声明为可选且可空。
+- 创建 Session 成功响应必须包含 `displayName: null`；GET Session 与既有配置 PUT 同样始终保留该字段。
+  CreateSessionResponseVO 和 GetSessionResponseVO 均为只读 VO，Service 组装器分别映射。
+  前端共享 Session 类型声明为必有的 `displayName: string | null`；创建响应仍不包含 updatedAt。
 - Name 内部结果仅含 displayName/changed；未来普通 JSON 响应再添加 `command=name`，不添加 sourceEventSeq。
   没有发布 GET/POST Command 路由，没有新增请求级 SSE。
 - 非法名称为 INVALID_COMMAND_REQUEST（400），不存在为 SESSION_NOT_FOUND（404）；
@@ -90,15 +97,17 @@ Java 不复制 pi 的名称历史与清空行为：只保留当前名称属于**
 - 模块和依赖测试 1498 项全部通过，包含 Name Unicode/字节边界、空参数、running 准入、错误映射、真实组件装配及既有 Model/Thinking 回归。
 - 独立 openGauss 容器执行全量安装 SQL，真实 Repository 集成测试 18 项通过；新增用例验证锁等待、
   并发同名/异名、无历史副作用、约束失败回滚、删除后不能改名，以及重新建立 Spring/MyBatis 上下文后的当前名称。
-  该用例没有重启 JVM；完整多 JVM HTTP 流程仍留给最终 HTTP 切片。
-- GET Session 的 MockMvc 测试验证 null 字段保留、真实组装器的中文名称与内部 resourceVersion 不泄露。
-  前端契约测试 9 项通过，包含 null/中文名称，TypeScript 检查通过。
+  该用例没有重启 JVM；完整多 JVM HTTP 流程仍留给最终 HTTP 切片。本轮响应契约修复未改动持久化，未重跑这 18 项。
+- 创建与 GET Session 的 MockMvc 测试验证字段存在及 null 值、真实组装器的中文名称与内部 resourceVersion 不泄露。
+  创建回归先在旧代码复现缺少 displayName，修复后 121 项定向 Java 测试通过；真实创建 Service 验证初始持久化值与响应均为空。
+  前端契约测试 9 项通过，覆盖 201 创建结果、GET 的 null/中文名称与刷新后的状态，TypeScript 检查通过。
 - 已运行指定质量脚本的本机归档同版副本（与 `.skill` 包内脚本逐字节一致）；新 Name 测试零问题，
-  Repository/核心测试仅有既有命名警告。脚本不识别既有 MockMvc 的 andExpect，相关旧用例产生静态误报；新增及本次修改的 GET 测试具备真实断言与调用验证。
+  Repository/核心测试仅有既有命名警告。本轮脚本仍对三个未改动的旧 MockMvc 用例报 andExpect 识别误报；
+  本次修改的创建与 GET 测试具备真实断言与调用验证，未产生新增质量问题。
 - 完整 mvnw verify、Spotless、Checkstyle 与 git diff --check 通过；Java AST 检查本次涉及类的全部方法/构造器，最长 41 个非空物理行。
 - 已执行镜像同步；默认校验因 `NativeParent:26.0.0-SNAPSHOT` 无法解析而失败，显式 --no-verify 完成同步，
   **公司镜像编译未验证**。全量安装 SQL 由同步脚本生成到 campusclaw，不手工编辑。
-- 模块侧新增 600 行，含镜像与前端的完整非文档新增为 1210/2000；低于 850/1800 的切片预算。
+- 模块侧新增 619 行，含镜像与前端的完整非文档新增为 1255/2000；低于 850/1800 的切片预算。
 - 图由 PlantUML 生成；ASCII、SVG XML/同步、Markdown 图链接与源码锚点、无 Mermaid 均通过；
   ADR HTML 在 1280px/360px、禁用 JavaScript 时内容可读且无横向溢出，生成图已可视核对。
 
@@ -106,4 +115,5 @@ Java 不复制 pi 的名称历史与清空行为：只保留当前名称属于**
 
 | 版本 | 日期 | 变更 |
 |---|---|---|
+| 1.0.1 | 2026-09-05 | 根据 #224 评论补齐创建响应 displayName:null、前端必有字段与回归；同步已确认的 Builtin/Skill 统一责任。 |
 | 1.0.0 | 2026-09-05 | Name 内部执行、首版当前名称存储、GET Session 字段、并发与恢复验证；不增加升级脚本或 Command 路由。 |
