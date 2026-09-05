@@ -12,6 +12,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.time.Clock;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -32,6 +33,7 @@ import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.command.BuiltinComman
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.command.CommandResultDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.command.CommandSessionSnapshotDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.command.ResolvedCommandDTO;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.persistence.RuntimeSessionRepository;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
@@ -91,6 +93,8 @@ class BuiltinCommandCoreTest {
         new ApplicationContextRunner()
                 .withUserConfiguration(CommandServiceScan.class)
                 .withBean(AgentRuntimeManager.class, () -> mock(AgentRuntimeManager.class))
+                .withBean(RuntimeSessionRepository.class, () -> mock(RuntimeSessionRepository.class))
+                .withBean(Clock.class, Clock::systemUTC)
                 .run(context -> {
                     assertThat(context)
                             .hasSingleBean(BuiltinCommandSource.class)
@@ -100,7 +104,7 @@ class BuiltinCommandCoreTest {
                                     .resolve(session)
                                     .list())
                             .extracting(ResolvedCommandDTO::name)
-                            .containsExactly("help", "skills", "status");
+                            .containsExactly("help", "name", "skills", "status");
                 });
     }
 

@@ -39,6 +39,7 @@ public class RuntimeSessionResponseAssembler {
         var resource = new GetSessionResponseVO(
                 session.getId(),
                 session.getAgentId(),
+                session.getDisplayName(),
                 session.getModelId(),
                 session.getState(),
                 session.isThinking(),

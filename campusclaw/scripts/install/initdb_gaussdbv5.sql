@@ -18,6 +18,7 @@ DROP TABLE IF EXISTS t_sessions;
 CREATE TABLE t_sessions (
     id                 VARCHAR(128)   PRIMARY KEY,
     agent_id           VARCHAR(64)    NOT NULL,
+    display_name       VARCHAR(80),
     model_id           VARCHAR(128)   NOT NULL,
     state              VARCHAR(16)    NOT NULL,
     thinking           BOOLEAN        NOT NULL,
@@ -33,6 +34,7 @@ CREATE TABLE t_sessions (
 COMMENT ON TABLE t_sessions IS '会话主表，保存会话元数据和当前路径末端';
 COMMENT ON COLUMN t_sessions.id IS '会话的唯一 ID，用于关联该会话的历史记录、序号和汇总数据';
 COMMENT ON COLUMN t_sessions.agent_id IS '创建会话时固定且不可变的 Agent 标识';
+COMMENT ON COLUMN t_sessions.display_name IS '用户设置的当前会话名称；未设置时为空，最多 80 个 UTF-8 字节';
 COMMENT ON COLUMN t_sessions.model_id IS '后续用户事件默认使用的当前模型标识';
 COMMENT ON COLUMN t_sessions.state IS '会话粗粒度运行状态，仅允许 idle 或 running';
 COMMENT ON COLUMN t_sessions.thinking IS '后续用户事件是否启用深度思考';
@@ -58,6 +60,10 @@ ALTER TABLE t_sessions
 
 ALTER TABLE t_sessions
     ADD CONSTRAINT ck_t_sessions_resource_version CHECK (resource_version > 0);
+
+ALTER TABLE t_sessions
+    ADD CONSTRAINT ck_t_sessions_display_name
+    CHECK (display_name IS NULL OR octet_length(display_name) BETWEEN 1 AND 80);
 
 CREATE TABLE t_session_tombstone (
     session_id  VARCHAR(128)   PRIMARY KEY,

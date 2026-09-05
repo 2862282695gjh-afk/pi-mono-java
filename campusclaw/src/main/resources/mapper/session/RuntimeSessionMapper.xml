@@ -10,11 +10,11 @@
         INSERT INTO t_sessions (
             id, agent_id, model_id, state, thinking,
             resource_version, created_at, updated_at, cwd, parent_session_id,
-            metadata, active_leaf_id
+            metadata, active_leaf_id, display_name
         ) VALUES (
             #{id}, #{agentId}, #{modelId}, #{state}, #{thinking},
             #{resourceVersion}, #{createdAt}, #{updatedAt}, #{cwd}, #{parentSessionId},
-            CAST(#{metadata} AS JSONB), #{activeLeafId}
+            CAST(#{metadata} AS JSONB), #{activeLeafId}, #{displayName}
         )
     </insert>
 
@@ -39,7 +39,7 @@
     <select id="findSession" resultType="com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeSessionDTO">
         SELECT id, agent_id, model_id, state, thinking,
                resource_version, created_at, updated_at, cwd, parent_session_id,
-               metadata::text AS metadata, active_leaf_id
+               metadata::text AS metadata, active_leaf_id, display_name
         FROM t_sessions
         WHERE id = #{sessionId}
     </select>
@@ -47,7 +47,7 @@
     <select id="lockSessionForUpdate" resultType="com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeSessionDTO">
         SELECT id, agent_id, model_id, state, thinking,
                resource_version, created_at, updated_at, cwd, parent_session_id,
-               metadata::text AS metadata, active_leaf_id
+               metadata::text AS metadata, active_leaf_id, display_name
         FROM t_sessions
         WHERE id = #{sessionId}
         FOR UPDATE
@@ -207,6 +207,14 @@
             updated_at = #{updatedAt}
         WHERE id = #{sessionId}
           AND state = 'idle'
+    </update>
+
+    <update id="updateSessionName">
+        UPDATE t_sessions
+        SET display_name = #{displayName},
+            resource_version = resource_version + 1,
+            updated_at = #{updatedAt}
+        WHERE id = #{sessionId}
     </update>
 
     <insert id="insertTombstone">

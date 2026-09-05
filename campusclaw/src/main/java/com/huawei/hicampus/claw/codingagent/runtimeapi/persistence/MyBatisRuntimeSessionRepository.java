@@ -6,6 +6,7 @@ package com.huawei.hicampus.claw.codingagent.runtimeapi.persistence;
 
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 
 import com.huawei.hicampus.claw.ai.types.Cost;
@@ -13,6 +14,7 @@ import com.huawei.hicampus.claw.ai.types.Usage;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeEntryDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeRecordDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.SessionNameUpdateDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.mapper.RuntimeSessionMapper;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.persistence.UserEventAcceptance.Status;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.session.RuntimeSessionState;
@@ -50,6 +52,20 @@ public class MyBatisRuntimeSessionRepository implements RuntimeSessionRepository
     @Transactional(readOnly = true)
     public Optional<RuntimeSessionDTO> find(String sessionId) {
         return Optional.ofNullable(mapper.findSession(sessionId));
+    }
+
+    @Override
+    @Transactional
+    public Optional<SessionNameUpdateDTO> updateName(String sessionId, String displayName, OffsetDateTime updatedAt) {
+        RuntimeSessionDTO session = mapper.lockSessionForUpdate(sessionId);
+        if (session == null) {
+            return Optional.empty();
+        }
+        if (Objects.equals(session.getDisplayName(), displayName)) {
+            return Optional.of(new SessionNameUpdateDTO(session.getDisplayName(), false));
+        }
+        requireOne(mapper.updateSessionName(sessionId, displayName, updatedAt), "session name was not updated");
+        return Optional.of(new SessionNameUpdateDTO(displayName, true));
     }
 
     @Override

@@ -33,6 +33,15 @@ describe('useRuntimeApi HTTP 1.38 contract', () => {
     expect(runtime.models.value).toEqual(['model-primary']);
   });
 
+  it.each([null, '中文  name'])('preserves GET Session displayName %s', async (displayName) => {
+    const current = runtimeSession({ displayName });
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(resultResponse(current)));
+    const runtime = useRuntimeApi();
+
+    expect(await runtime.getSession(SESSION_ID)).toEqual(current);
+    expect(runtime.session.value).toHaveProperty('displayName', displayName);
+  });
+
   it('writes modelId and reads acceptedAt with exact lowerCamelCase keys', async () => {
     const updated = runtimeSession({ modelId: 'model-secondary' });
     const fetchMock = vi.fn()
