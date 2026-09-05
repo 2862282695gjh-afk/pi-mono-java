@@ -86,12 +86,14 @@ class RuntimeSessionServiceTest {
         var view = service.create(AGENT_ID);
 
         assertThat(view.resource().getSessionId()).isEqualTo(SESSION_ID);
+        assertThat(view.resource().getDisplayName()).isNull();
         assertThat(view.resource().getState()).isEqualTo("idle");
         assertThat(view.resource().isThinking()).isTrue();
         verify(promptLoader).validate(snapshot.runtimeDirectory());
         verify(repository)
                 .create(org.mockito.ArgumentMatchers.argThat(session -> SESSION_ID.equals(session.getId())
                         && AGENT_ID.equals(session.getAgentId())
+                        && session.getDisplayName() == null
                         && snapshot.agentRoot().toString().equals(session.getCwd())));
     }
 

@@ -83,8 +83,11 @@ class RuntimeSessionRoutesTest {
                 .andExpect(jsonPath("$.resMsg").value("success"))
                 .andExpect(jsonPath("$.result.sessionId").value(SESSION_ID))
                 .andExpect(jsonPath("$.result.agentId").value(AGENT_ID))
+                .andExpect(jsonPath("$.result", org.hamcrest.Matchers.hasKey("displayName")))
+                .andExpect(jsonPath("$.result.displayName").value(org.hamcrest.Matchers.nullValue()))
                 .andExpect(jsonPath("$.result.thinking").value(true))
                 .andExpect(jsonPath("$.result.updatedAt").doesNotExist());
+        verify(service).create(AGENT_ID);
     }
 
     @Test
@@ -180,8 +183,15 @@ class RuntimeSessionRoutesTest {
 
     private static RuntimeSessionView<CreateSessionResponseVO> createView() {
         OffsetDateTime time = OffsetDateTime.parse("2026-08-18T00:00:00Z");
-        var response = new CreateSessionResponseVO(SESSION_ID, AGENT_ID, "model-default", "idle", true, time);
-        return new RuntimeSessionView<>(response, "\"snp-create\"");
+        RuntimeSessionDTO session = new RuntimeSessionDTO();
+        session.setId(SESSION_ID);
+        session.setAgentId(AGENT_ID);
+        session.setModelId("model-default");
+        session.setState("idle");
+        session.setThinking(true);
+        session.setResourceVersion(1L);
+        session.setCreatedAt(time);
+        return new RuntimeSessionResponseAssembler(new SessionEtagFactory()).createView(session);
     }
 
     private static RuntimeSessionView<GetSessionResponseVO> getView() {

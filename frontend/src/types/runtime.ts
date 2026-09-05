@@ -12,7 +12,7 @@ export interface ErrorBean {
 export interface RuntimeSession {
   sessionId: string;
   agentId: string;
-  displayName?: string | null;
+  displayName: string | null;
   modelId: string;
   state: 'idle' | 'running';
   thinking: boolean;
