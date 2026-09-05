@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>ADR-0045 网关工具 schema 字符串形态归一化与非法降级策略</title>
+<style>
+body { font-family: -apple-system, "PingFang SC", sans-serif; max-width: 860px; margin: 2rem auto; padding: 0 1.5rem; line-height: 1.75; color: #1f2328; }
+h1 { font-size: 1.5rem; border-bottom: 2px solid #d0d7de; padding-bottom: .5rem; }
+h2 { font-size: 1.15rem; margin-top: 2rem; border-bottom: 1px solid #d0d7de; padding-bottom: .3rem; }
+table { border-collapse: collapse; margin: 1rem 0; }
+td, th { border: 1px solid #d0d7de; padding: .45rem .8rem; text-align: left; vertical-align: top; }
+th { background: #f6f8fa; }
+.badge { display: inline-block; padding: .15rem .7rem; border-radius: 999px; font-size: .85rem; font-weight: 600; }
+.accepted { background: #dafbe1; color: #116329; border: 1px solid #4ac26b; }
+code { background: #f6f8fa; padding: .1rem .35rem; border-radius: 4px; font-size: .9em; }
+.meta td:first-child { font-weight: 600; white-space: nowrap; background: #f6f8fa; }
+</style>
+</head>
+<body>
+<h1>ADR-0045：网关工具 schema 字符串形态归一化与非法降级策略</h1>
+
+<table class="meta">
+<tr><td>Status</td><td><span class="badge accepted">Accepted</span></td></tr>
+<tr><td>Date</td><td>2026-09-05</td></tr>
+<tr><td>Deciders</td><td>Runtime / Mate 工具链评审</td></tr>
+<tr><td>Related</td><td>设计文档 <code>docs/designs/mate-tool-schema-parsing.md</code>；<code>TOOL元数据设计.json</code>（Mate 侧元数据草案）；<a href="https://github.com/superheromeZzh/pi-mono-java/pull/226">PR #226</a></td></tr>
+</table>
+
+<h2>Context</h2>
+<p>实测网关 <code>tools/query</code> 将 <code>input_schema</code> / <code>output_schema</code> 以<strong>序列化 JSON 字符串</strong>返回
+（<code>"{\"type\":\"object\",...}"</code>），且存在驼峰键 <code>inputSchema</code> 变体。<code>ToolInfo</code> 将两字段声明为
+<code>Map&lt;String,Object&gt;</code>——字符串→Map 绑定失败被 Jackson 静默置 null，或驼峰键被未知键策略忽略。</p>
+<p>连锁后果：<code>ListMateTools</code> 传给模型的 <code>inputSchema</code> 为空对象 <code>{}</code>，
+模型不知道工具参数结构，<code>CallMateTool</code> 的 <code>args</code> 随机生成。
+既有单测的夹具恰好写的是对象形态，未暴露该问题。</p>
+
+<h2>Decision</h2>
+<ol>
+<li><strong>宽容反序列化</strong>：新增 <code>SchemaMapDeserializer</code> 挂接 <code>ToolInfo</code> 两个 schema 字段；
+字符串形态二次反序列化，对象形态直接归一化；<code>@JsonAlias</code> 兼容驼峰键变体。</li>
+<li><strong>非法降级为 null</strong>：字符串不是合法 JSON 对象时归一为 <code>null</code> 并 <code>log.warn</code>，
+不抛异常、不阻断整批元数据解析。上游（<code>ListMateToolsTool</code>）对 null 有既有兜底
+（序列化为空对象 <code>{}</code>），模型收到空结构。</li>
+<li><strong>缓存不动</strong>：<code>MateToolSessionCache</code> 仅缓存 name→toolId 映射，schema 不进缓存；
+Mate 侧 schema 填实后 <code>ListMateTools</code>（实时查询）下一次即生效。</li>
+</ol>
+
+<h2>考虑过的选项</h2>
+<table>
+<tr><th>选项</th><th>Pro</th><th>Con</th></tr>
+<tr><td><strong>A. 双形态归一化 + null 降级</strong>（选定）</td><td>单工具坏数据不阻断整批（可用性优先）；实现集中在 DTO 反序列化器</td><td>降级后该工具参数结构对模型不可见，args 只能猜测</td></tr>
+<tr><td>B. 非法 schema 抛异常</td><td>快速暴露数据问题</td><td>单个坏 schema 阻断整批发现，所有工具不可用——可用性损失远大于收益</td></tr>
+<tr><td>C. 原始字符串透传给模型</td><td>信息"无损"</td><td>模型收到无法解析的转义字符串比空结构更糟，可能把字符串当参数值回填</td></tr>
+</table>
+<p>选择 A：可用性优先 + 降级路径可观测（log.warn），根治依赖 Mate 注册侧填实参数定义。</p>
+
+<h2>Consequences</h2>
+<ul>
+<li>正向：schema 字符串/对象双形态即插即用；单点数据损坏不影响其他工具的发现与调用。</li>
+<li>正向：完全向后兼容——对象形态行为不变，现有对象形态夹具保持通过。</li>
+<li>负向：非法 schema 降级后该工具对模型"参数不可见"（args 猜测），依赖 log.warn 监控发现频率。</li>
+<li>后续：Mate 注册侧填实参数定义后，降级路径几乎不会命中；若 <code>input_schema</code> 位置标注
+（<code>x-mcp-in</code>）提案落地，schema 内容将扩展参数位置语义，反序列化器无需变更（透传 Map）。</li>
+</ul>
+
+<h2>验证</h2>
+<p><code>HttpMateToolClientTest</code> 32/32 通过，含新增：
+<code>stringEncodedSchemaWithCamelCaseKeysIsNormalized</code>（驼峰键 + 字符串形态）、
+<code>malformedSchemaStringDegradesToNullInsteadOfFailingBatch</code>（非法降级）、
+<code>snakeCaseStringSchemaPreservesNestedConstraints</code>（snake 主键 + required 保留）、
+<code>mixedBatchWithInvalidSchemaIsolatesDamagePerTool</code>（混合批次按工具隔离损伤）。
+全模块 676+ tests 通过；<code>campusclaw/</code> 镜像同步（dry-run 内容级差异 0）。</p>
+
+</body>
+</html>

@@ -8,6 +8,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.List;
+import java.util.Map;
 
 import com.campusclaw.codingagent.common.client.mate.MateCredentials;
 import com.campusclaw.codingagent.common.client.mate.MateToolClient;
@@ -186,6 +187,42 @@ class HttpMateToolClientTest {
 
         assertThat(tools).hasSize(1);
         assertThat(tools.getFirst().inputSchema()).isNull();
+    }
+
+    @Test
+    void snakeCaseStringSchemaPreservesNestedConstraints() throws Exception {
+        server.enqueue(json("{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":{\"bindingTools\":"
+                + "[{\"toolId\":\"tool-11111111111111111111111111111111\",\"version\":\"2\"}]}}"));
+        server.enqueue(json("{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":{\"data\":["
+                + "{\"id\":\"tool-11111111111111111111111111111111\",\"name\":\"query\",\"description\":\"d1\","
+                + "\"input_schema\":\"{\\\"type\\\":\\\"object\\\",\\\"properties\\\":{\\\"path\\\":{\\\"type\\\":\\\"string\\\",\\\"minLength\\\":1}},"
+                + "\\\"required\\\":[\\\"path\\\",\\\"mode\\\"]}\"}]}}"));
+
+        List<MateToolMeta> tools = client.listAgentTools("agent-11111111111111111111111111111111");
+
+        Map<String, Object> schema = tools.getFirst().inputSchema();
+        assertThat(schema.get("required")).isEqualTo(List.of("path", "mode"));
+        assertThat(schema).containsKey("properties");
+    }
+
+    @Test
+    void mixedBatchWithInvalidSchemaIsolatesDamagePerTool() throws Exception {
+        server.enqueue(json("{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":{\"bindingTools\":"
+                + "[{\"toolId\":\"tool-11111111111111111111111111111111\",\"version\":\"2\"},"
+                + "{\"toolId\":\"tool-22222222222222222222222222222222\",\"version\":\"1\"}]}}"));
+        server.enqueue(
+                json(
+                        "{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":{\"data\":["
+                                + "{\"id\":\"tool-11111111111111111111111111111111\",\"name\":\"query\",\"description\":\"d1\","
+                                + "\"input_schema\":\"not-a-json\"},"
+                                + "{\"id\":\"tool-22222222222222222222222222222222\",\"name\":\"chart\",\"description\":\"d2\","
+                                + "\"input_schema\":\"{\\\"type\\\":\\\"object\\\",\\\"properties\\\":{\\\"scope\\\":{\\\"type\\\":\\\"string\\\"}}}\"}]}}"));
+
+        List<MateToolMeta> tools = client.listAgentTools("agent-11111111111111111111111111111111");
+
+        assertThat(tools).hasSize(2);
+        assertThat(tools.get(0).inputSchema()).isNull();
+        assertThat(tools.get(1).inputSchema()).containsEntry("type", "object");
     }
 
     @Test
