@@ -17,6 +17,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import okhttp3.mockwebserver.MockResponse;
 import okhttp3.mockwebserver.MockWebServer;
@@ -92,7 +94,8 @@ class MateServiceClientTest {
                           "id": "agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
                           "name": "Agent A",
                           "bindingModels": ["glm-5.2", "minimax-m2.5"],
-                          "description": ["Diagnoses device faults", "Drafts reports"]
+                          "description": ["Diagnoses device faults", "Drafts reports"],
+                          "userCases": ["On-call diagnosis"]
                         }}
 """));
 
@@ -100,7 +103,19 @@ class MateServiceClientTest {
 
         assertEquals(List.of("glm-5.2", "minimax-m2.5"), runtime.bindingModels());
         assertEquals(List.of("Diagnoses device faults", "Drafts reports"), runtime.description());
+        assertEquals(List.of("On-call diagnosis"), runtime.userCases());
         assertEquals("glm-5.2", runtime.defaultModel().orElseThrow());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"null", "1", "true"})
+    void rejectsNonStringAgentGuideEntries(String value) {
+        server.enqueue(json("{\"result\":{\"userCases\":[" + value + "]}}"));
+
+        AgentRuntimeException error = assertThrows(
+                AgentRuntimeException.class, () -> client.getAgentRuntime("agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"));
+
+        assertEquals(AgentRuntimeErrorCode.MATE_RESPONSE_INVALID, error.errorCode());
     }
 
     @Test

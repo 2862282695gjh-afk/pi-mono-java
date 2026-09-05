@@ -21,6 +21,10 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 import com.campusclaw.codingagent.runtime.MateServiceClient.AgentReference;
 import com.campusclaw.codingagent.runtime.MateServiceClient.AgentRuntime;
@@ -101,6 +105,7 @@ class AgentRuntimeManagerTest {
         PreparedAgentRuntime refreshed = manager.refresh(AGENT_ID);
 
         assertEquals("prompt-v2", manager.readSystemPrompt(refreshed));
+        assertEquals(List.of("Use 2.0.0"), refreshed.metadata().userCases());
         verify(client, times(2)).getAgentRuntime(AGENT_ID);
     }
 
@@ -114,6 +119,68 @@ class AgentRuntimeManagerTest {
 
         PreparedAgentRuntime cached = manager.prepareCached(AGENT_ID);
         assertEquals("prompt-v1", manager.readSystemPrompt(cached));
+        assertEquals(List.of("Use 1.0.0"), cached.metadata().userCases());
+    }
+
+    @Test
+    void userCasesSurviveRestartAndRemainOptionalInOldCaches() throws Exception {
+        stubRuntime("1.0.0", "prompt-v1");
+        PreparedAgentRuntime prepared = manager.prepare(AGENT_ID);
+        Path identityFile = prepared.agentRoot().resolve(".campusclaw/agent.json");
+        assertEquals(
+                "Use 1.0.0",
+                new ObjectMapper()
+                        .readTree(identityFile.toFile())
+                        .path("userCases")
+                        .get(0)
+                        .asText());
+        MateServiceClient restartedClient = mock(MateServiceClient.class);
+        var restarted = new AgentRuntimeManager(
+                new AgentRuntimeProperties(tempDir.resolve("agent"), Duration.ofSeconds(1L), Duration.ofSeconds(2L)),
+                restartedClient,
+                new ObjectMapper());
+
+        assertEquals(
+                List.of("Use 1.0.0"),
+                restarted.prepareCached(AGENT_ID).metadata().userCases());
+        var identity = new ObjectMapper().readTree(identityFile.toFile());
+        ((com.fasterxml.jackson.databind.node.ObjectNode) identity).remove("userCases");
+        new ObjectMapper().writeValue(identityFile.toFile(), identity);
+        assertEquals(List.of(), restarted.prepareCached(AGENT_ID).metadata().userCases());
+        ((com.fasterxml.jackson.databind.node.ObjectNode) identity)
+                .putArray("userCases")
+                .add(1);
+        new ObjectMapper().writeValue(identityFile.toFile(), identity);
+        assertNull(restarted.prepareCached(AGENT_ID));
+        verifyNoInteractions(restartedClient);
+    }
+
+    @Test
+    void cachedReadWaitsForRefreshToPublishOneSnapshot() throws Exception {
+        stubRuntime("1.0.0", "prompt-v1");
+        manager.prepare(AGENT_ID);
+        var refreshStarted = new CountDownLatch(1);
+        var releaseRefresh = new CountDownLatch(1);
+        when(client.getAgentRuntime(AGENT_ID)).thenAnswer(ignored -> {
+            refreshStarted.countDown();
+            assertTrue(releaseRefresh.await(2L, TimeUnit.SECONDS));
+            return runtime("2.0.0", "prompt-v2");
+        });
+        var executor = Executors.newFixedThreadPool(2);
+        try {
+            var refresh = executor.submit(() -> manager.refresh(AGENT_ID));
+            assertTrue(refreshStarted.await(2L, TimeUnit.SECONDS));
+            var cached = executor.submit(() -> manager.prepareCached(AGENT_ID));
+            assertThrows(TimeoutException.class, () -> cached.get(100L, TimeUnit.MILLISECONDS));
+            releaseRefresh.countDown();
+            assertEquals(
+                    List.of("Use 2.0.0"),
+                    cached.get(2L, TimeUnit.SECONDS).metadata().userCases());
+            refresh.get(2L, TimeUnit.SECONDS);
+        } finally {
+            releaseRefresh.countDown();
+            executor.shutdownNow();
+        }
     }
 
     @Test
@@ -446,7 +513,7 @@ class AgentRuntimeManagerTest {
                 AGENT_ID,
                 "agent-a",
                 prompt,
-                List.of(),
+                List.of("Use " + version),
                 version);
     }
 

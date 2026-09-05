@@ -19,6 +19,7 @@ import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
@@ -191,13 +192,15 @@ public class MateServiceClient {
             @JsonFormat(with = JsonFormat.Feature.ACCEPT_SINGLE_VALUE_AS_ARRAY) List<SkillReference> bindingSkills,
             List<BoundTool> bindingTools,
             @JsonFormat(with = JsonFormat.Feature.ACCEPT_SINGLE_VALUE_AS_ARRAY) List<AgentReference> bindingAgents,
-            @JsonFormat(with = JsonFormat.Feature.ACCEPT_SINGLE_VALUE_AS_ARRAY) List<String> description,
+            @JsonFormat(with = JsonFormat.Feature.ACCEPT_SINGLE_VALUE_AS_ARRAY)
+                    @JsonDeserialize(contentUsing = AgentMetadataTextDeserializer.class)
+                    List<String> description,
             String displayName,
             Boolean enabled,
             String id,
             String name,
             String systemPrompt,
-            List<String> userCases,
+            @JsonDeserialize(contentUsing = AgentMetadataTextDeserializer.class) List<String> userCases,
             String version) {
 
         public AgentRuntime {

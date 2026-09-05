@@ -7,24 +7,23 @@ package com.campusclaw.codingagent.runtimeapi.service.command;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
-import java.util.concurrent.CompletableFuture;
 
 import com.campusclaw.codingagent.runtime.AgentRuntimeManager;
-import com.campusclaw.codingagent.runtimeapi.command.builtin.BuiltinCommandContributor;
+import com.campusclaw.codingagent.runtime.MateServiceClient.AgentRuntime;
+import com.campusclaw.codingagent.runtime.PreparedAgentRuntime;
 import com.campusclaw.codingagent.runtimeapi.command.builtin.BuiltinCommandDefinition;
 import com.campusclaw.codingagent.runtimeapi.command.catalog.ResolvedCommandCatalog;
 import com.campusclaw.codingagent.runtimeapi.command.execution.CommandExecutionContext;
-import com.campusclaw.codingagent.runtimeapi.command.type.CommandInputMode;
 import com.campusclaw.codingagent.runtimeapi.command.type.CommandKind;
 import com.campusclaw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
-import com.campusclaw.codingagent.runtimeapi.dto.command.BuiltinCommandMetadataDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.command.CommandResultDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.command.HelpCommandResultDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.command.ResolvedCommandDTO;
@@ -34,8 +33,8 @@ import com.campusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
 import com.campusclaw.codingagent.runtimeapi.service.command.contributor.HelpCommandContributor;
 import com.campusclaw.codingagent.runtimeapi.service.command.contributor.SkillsCommandContributor;
 import com.campusclaw.codingagent.runtimeapi.service.command.contributor.StatusCommandContributor;
+import com.campusclaw.codingagent.runtimeapi.service.command.readonly.AgentHelpQueryService;
 import com.campusclaw.codingagent.runtimeapi.service.command.readonly.BoundSkillQueryService;
-import com.campusclaw.codingagent.runtimeapi.service.command.readonly.CommandHelpFormatter;
 import com.campusclaw.codingagent.runtimeapi.service.command.readonly.RuntimeSessionStatusService;
 
 import org.junit.jupiter.api.Test;
@@ -52,11 +51,9 @@ import org.junit.jupiter.params.provider.ValueSource;
 class ReadonlyBuiltinCommandTest {
     private final AgentRuntimeManager manager = mock(AgentRuntimeManager.class);
 
-    private final CommandHelpFormatter help = new CommandHelpFormatter();
-
     @ParameterizedTest
     @ValueSource(strings = {"idle", "running"})
-    void shouldRegisterThreeRealHandlersWithoutReadingAgentOrSkillSource(String state) {
+    void shouldRegisterThreeNoArgumentCommandsWithoutReadingAgentOrSkillSource(String state) {
         SkillCommandSource skills = mock(SkillCommandSource.class);
         when(skills.kind()).thenReturn(CommandKind.SKILL);
         ResolvedCommandCatalog catalog =
@@ -67,84 +64,52 @@ class ReadonlyBuiltinCommandTest {
             assertThat(command.available()).isTrue();
             assertThat(command.unavailableCode()).isNull();
             assertThat(command.kind()).isEqualTo(CommandKind.BUILTIN);
-            assertThat(command.input().acceptsFiles()).isFalse();
-            assertThat(command.input().suggestions()).isEmpty();
+            assertThat(command.input())
+                    .isEqualTo(new ResolvedCommandDTO.InputDTO(
+                            "none", false, "COMMAND_ARGUMENTS_NOT_SUPPORTED", false, null, List.of()));
         });
-        assertThat(catalog.find("help").orElseThrow().input().mode()).isEqualTo("optional");
-        assertThat(catalog.find("help").orElseThrow().input().available()).isTrue();
-        assertThat(catalog.list().subList(1, 3)).allSatisfy(command -> {
-            assertThat(command.input().mode()).isEqualTo("none");
-            assertThat(command.input().available()).isFalse();
-            assertThat(command.input().unavailableCode()).isEqualTo("COMMAND_ARGUMENTS_NOT_SUPPORTED");
-        });
+        assertThat(catalog.find("help").orElseThrow().description())
+                .isEqualTo("Describe the current Agent's purpose and use cases.");
         verify(skills).kind();
-        org.mockito.Mockito.verifyNoMoreInteractions(skills);
-        verifyNoInteractions(manager);
-    }
-
-    @ParameterizedTest
-    @NullAndEmptySource
-    @ValueSource(strings = {" \t\n", "\u2003"})
-    void shouldReuseSevenDescriptorsInHelpWithoutResolvingAgain(String arguments) {
-        ResolvedCommandCatalog catalog = catalog("running", "thinking", "compact", "model", "name");
-        HelpCommandResultDTO result = (HelpCommandResultDTO) execute(catalog, "help", arguments);
-
-        assertThat(result.commands())
-                .extracting(ResolvedCommandDTO::name)
-                .containsExactly("compact", "help", "model", "name", "skills", "status", "thinking");
-        assertThat(result.commands()).allSatisfy(command -> assertThat(command)
-                .isSameAs(catalog.find(command.name()).orElseThrow()));
+        verifyNoMoreInteractions(skills);
         verifyNoInteractions(manager);
     }
 
     @Test
-    void shouldFindExactHelpNameAfterStrippingWhitespace() {
-        ResolvedCommandCatalog catalog = catalog("idle");
-        HelpCommandResultDTO result = (HelpCommandResultDTO) execute(catalog, "help", " \tstatus\u2003");
+    void shouldReturnNormalizedAgentGuideFromOneCachedSnapshotPerRequest() {
+        PreparedAgentRuntime prepared = mock(PreparedAgentRuntime.class);
+        AgentRuntime metadata = mock(AgentRuntime.class);
+        when(prepared.metadata()).thenReturn(metadata);
+        when(metadata.displayName()).thenReturn("  Agent display  ", " \n");
+        when(metadata.name()).thenReturn("  agent-name  ");
+        when(metadata.description()).thenReturn(List.of("  Purpose\nline  ", "  "), null);
+        when(metadata.userCases()).thenReturn(List.of("  Case one  ", ""), null);
+        when(manager.prepareCached("agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")).thenReturn(prepared);
 
-        assertThat(result.commands()).containsExactly(catalog.find("status").orElseThrow());
-        assertThat(result.commands().getFirst()).isSameAs(catalog.find("status").orElseThrow());
-        verifyNoInteractions(manager);
+        assertThat(execute(session("idle"), "help", ""))
+                .isEqualTo(new HelpCommandResultDTO("Agent display", List.of("Purpose\nline"), List.of("Case one")));
+        assertThat(execute(session("running"), "help", " \n"))
+                .isEqualTo(new HelpCommandResultDTO("agent-name", List.of(), List.of()));
+        verify(manager, times(2)).prepareCached("agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+        verifyNoMoreInteractions(manager);
     }
 
-    @ParameterizedTest
-    @ValueSource(strings = {"missing", "Status", "sta", "skill:review"})
-    void shouldRejectHelpNamesWithoutAnExactBuiltinMatch(String arguments) {
-        assertThatThrownBy(() -> execute(catalog("idle"), "help", arguments))
+    @Test
+    void shouldReportAgentUnavailableWithoutACompleteCache() {
+        assertThatThrownBy(() -> execute(session("idle"), "help", null))
                 .isInstanceOfSatisfying(RuntimeApiException.class, error -> {
-                    assertThat(error.errorCode()).isEqualTo(RuntimeErrorCode.COMMAND_NOT_FOUND);
-                    assertThat(error.status().value()).isEqualTo(404);
+                    assertThat(error.errorCode()).isEqualTo(RuntimeErrorCode.AGENT_NOT_AVAILABLE);
+                    assertThat(error.status().value()).isEqualTo(422);
                 });
-    }
-
-    @Test
-    void shouldRejectLeadingSlashInHelpArgument() {
-        assertThatThrownBy(() -> execute(catalog("idle"), "help", " /status "))
-                .isInstanceOfSatisfying(RuntimeApiException.class, error -> {
-                    assertThat(error.errorCode()).isEqualTo(RuntimeErrorCode.INVALID_COMMAND_REQUEST);
-                    assertThat(error.status().value()).isEqualTo(400);
-                });
-    }
-
-    @Test
-    void shouldExcludeSkillsEvenWhenGivenAMixedCatalog() {
-        ResolvedCommandCatalog builtins = catalog("idle");
-        List<ResolvedCommandDTO> descriptors = new ArrayList<>(builtins.list());
-        descriptors.add(new ResolvedCommandDTO("skill:review", CommandKind.SKILL, "review", true, null, null, null));
-        ResolvedCommandCatalog mixed = new ResolvedCommandCatalog(builtins.session(), descriptors, java.util.Map.of());
-
-        assertThat(help.query(mixed, "").commands()).containsExactlyElementsOf(builtins.list());
-        assertThatThrownBy(() -> help.query(mixed, "skill:review"))
-                .isInstanceOfSatisfying(RuntimeApiException.class, error -> assertThat(error.errorCode())
-                        .isEqualTo(RuntimeErrorCode.COMMAND_NOT_FOUND));
+        verify(manager).prepareCached("agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+        verifyNoMoreInteractions(manager);
     }
 
     @ParameterizedTest
     @NullAndEmptySource
     void shouldReturnPersistedStatusWithoutReadingAgent(String arguments) {
         for (String state : List.of("idle", "running")) {
-            ResolvedCommandCatalog catalog = catalog(state);
-            assertThat(execute(catalog, "status", arguments))
+            assertThat(execute(session(state), "status", arguments))
                     .isEqualTo(new StatusCommandResultDTO(state, "provider/model", true));
         }
         verifyNoInteractions(manager);
@@ -153,45 +118,44 @@ class ReadonlyBuiltinCommandTest {
     @Test
     void shouldKeepStatusBoundToTheRequestSnapshot() {
         RuntimeSessionDTO session = session("idle");
-        CompositeCommandRegistry registry = new CompositeCommandRegistry(List.of(source()));
-        ResolvedCommandCatalog first = registry.resolve(session, CommandKind.BUILTIN);
+        ResolvedCommandCatalog first = new CompositeCommandRegistry(List.of(source())).resolve(session);
         session.setState("running");
         session.setModelId(null);
         session.setThinking(false);
 
-        assertThat(execute(first, "status", "")).isEqualTo(new StatusCommandResultDTO("idle", "provider/model", true));
-        assertThat(execute(registry.resolve(session, CommandKind.BUILTIN), "status", ""))
-                .isEqualTo(new StatusCommandResultDTO("running", null, false));
+        assertThat(new RuntimeSessionStatusService().query(first.session(), ""))
+                .isEqualTo(new StatusCommandResultDTO("idle", "provider/model", true));
+        assertThat(execute(session, "status", "")).isEqualTo(new StatusCommandResultDTO("running", null, false));
         verifyNoInteractions(manager);
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {" ", "\n", "detail"})
-    void shouldRejectReadonlyArgumentsBeforeReadingAnyAgent(String arguments) {
-        ResolvedCommandCatalog catalog = catalog("running");
-        for (String name : List.of("status", "skills")) {
-            assertThatThrownBy(() -> execute(catalog, name, arguments))
-                    .isInstanceOfSatisfying(RuntimeApiException.class, error -> assertThat(error.errorCode())
-                            .isEqualTo(RuntimeErrorCode.INVALID_COMMAND_REQUEST));
+    @ValueSource(strings = {"model", "/status", "skill:review", "missing"})
+    void shouldRejectNonemptyArgumentsForAllReadonlyCommands(String arguments) {
+        for (String name : List.of("help", "status", "skills")) {
+            assertThatThrownBy(() -> execute(session("running"), name, arguments))
+                    .isInstanceOfSatisfying(RuntimeApiException.class, error -> {
+                        assertThat(error.errorCode()).isEqualTo(RuntimeErrorCode.INVALID_COMMAND_REQUEST);
+                        assertThat(error.status().value()).isEqualTo(400);
+                    });
         }
         verifyNoInteractions(manager);
     }
 
-    @Test
-    void shouldCopyHelpResultAndRepresentEmptyCatalogAsEmptyList() {
-        ResolvedCommandCatalog catalog = catalog("idle");
-        List<ResolvedCommandDTO> commands = new ArrayList<>(catalog.list());
-        HelpCommandResultDTO result = new HelpCommandResultDTO(commands);
-        commands.clear();
-
-        assertThat(result.commands()).containsExactlyElementsOf(catalog.list());
-        assertThatThrownBy(() -> result.commands().clear()).isInstanceOf(UnsupportedOperationException.class);
-        assertThat(help.query(new ResolvedCommandCatalog(catalog.session(), List.of(), java.util.Map.of()), "")
-                        .commands())
-                .isEmpty();
+    @ParameterizedTest
+    @ValueSource(strings = {" ", "\n"})
+    void shouldKeepStatusAndSkillsWhitespaceRulesUnchanged(String arguments) {
+        for (String name : List.of("status", "skills")) {
+            assertThatThrownBy(() -> execute(session("idle"), name, arguments))
+                    .isInstanceOf(RuntimeApiException.class)
+                    .hasMessage("INVALID_COMMAND_REQUEST");
+        }
+        verifyNoInteractions(manager);
     }
 
-    private CommandResultDTO execute(ResolvedCommandCatalog catalog, String name, String arguments) {
+    private CommandResultDTO execute(RuntimeSessionDTO session, String name, String arguments) {
+        ResolvedCommandCatalog catalog =
+                new CompositeCommandRegistry(List.of(source())).resolve(session, CommandKind.BUILTIN);
         BuiltinCommandDefinition definition =
                 (BuiltinCommandDefinition) catalog.findDefinition(name).orElseThrow();
         return definition
@@ -201,22 +165,11 @@ class ReadonlyBuiltinCommandTest {
                 .join();
     }
 
-    private ResolvedCommandCatalog catalog(String state, String... fixtures) {
-        return new CompositeCommandRegistry(List.of(source(fixtures))).resolve(session(state), CommandKind.BUILTIN);
-    }
-
-    private BuiltinCommandSource source(String... fixtures) {
-        List<BuiltinCommandContributor> contributors = new ArrayList<>(List.of(
-                new HelpCommandContributor(help),
+    private BuiltinCommandSource source() {
+        return new BuiltinCommandSource(List.of(
+                new HelpCommandContributor(new AgentHelpQueryService(manager)),
                 new StatusCommandContributor(new RuntimeSessionStatusService()),
                 new SkillsCommandContributor(new BoundSkillQueryService(manager))));
-        for (String name : fixtures) {
-            contributors.add(() -> new BuiltinCommandDefinition(
-                    new BuiltinCommandMetadataDTO(name, "fixture", CommandInputMode.NONE, null, List.of()),
-                    (session, withArguments) -> null,
-                    (context, arguments) -> CompletableFuture.completedFuture(new HelpCommandResultDTO(List.of()))));
-        }
-        return new BuiltinCommandSource(contributors);
     }
 
     private RuntimeSessionDTO session(String state) {

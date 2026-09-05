@@ -11,7 +11,7 @@ import com.campusclaw.codingagent.runtimeapi.command.builtin.BuiltinCommandContr
 import com.campusclaw.codingagent.runtimeapi.command.builtin.BuiltinCommandDefinition;
 import com.campusclaw.codingagent.runtimeapi.command.type.CommandInputMode;
 import com.campusclaw.codingagent.runtimeapi.dto.command.BuiltinCommandMetadataDTO;
-import com.campusclaw.codingagent.runtimeapi.service.command.readonly.CommandHelpFormatter;
+import com.campusclaw.codingagent.runtimeapi.service.command.readonly.AgentHelpQueryService;
 
 import org.springframework.stereotype.Component;
 
@@ -23,9 +23,9 @@ import org.springframework.stereotype.Component;
  */
 @Component
 public class HelpCommandContributor implements BuiltinCommandContributor {
-    private final CommandHelpFormatter service;
+    private final AgentHelpQueryService service;
 
-    public HelpCommandContributor(CommandHelpFormatter service) {
+    public HelpCommandContributor(AgentHelpQueryService service) {
         this.service = service;
     }
 
@@ -34,11 +34,11 @@ public class HelpCommandContributor implements BuiltinCommandContributor {
         return new BuiltinCommandDefinition(
                 new BuiltinCommandMetadataDTO(
                         "help",
-                        "List built-in commands or describe one command.",
-                        CommandInputMode.OPTIONAL,
-                        "command name",
+                        "Describe the current Agent's purpose and use cases.",
+                        CommandInputMode.NONE,
+                        null,
                         List.of()),
                 (session, withArguments) -> null,
-                (context, arguments) -> CompletableFuture.completedFuture(service.query(context.catalog(), arguments)));
+                (context, arguments) -> CompletableFuture.completedFuture(service.query(context.session(), arguments)));
     }
 }
