@@ -22,6 +22,8 @@ public class GetSessionResponseVO {
 
     private final String agentId;
 
+    private final String displayName;
+
     private final String modelId;
 
     private final String state;
@@ -37,6 +39,7 @@ public class GetSessionResponseVO {
     public GetSessionResponseVO(
             String sessionId,
             String agentId,
+            String displayName,
             String modelId,
             String state,
             boolean thinking,
@@ -44,6 +47,7 @@ public class GetSessionResponseVO {
             OffsetDateTime updatedAt) {
         this.sessionId = sessionId;
         this.agentId = agentId;
+        this.displayName = displayName;
         this.modelId = modelId;
         this.state = state;
         this.thinking = thinking;

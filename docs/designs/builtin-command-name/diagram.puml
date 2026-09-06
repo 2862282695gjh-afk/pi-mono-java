@@ -1,0 +1,106 @@
+@startuml builtin_name_layers
+' Java baseline: dfb90cac4e233e09a0b8f047f7e9f4682f5ad238
+' Name implementation: fe50e8d1bbd45c87b300bba71612b80350c3c1a6
+' Creation response correction: cf6c515305bd6ac67ca261f42d697be8ef03cf6d
+' Java root: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/
+' Sources: service/command/contributor/NameCommandContributor.java:definition
+' Sources: service/command/SessionNamingService.java:execute,normalizeName
+' Sources: persistence/MyBatisRuntimeSessionRepository.java:updateName
+' Sources: session/RuntimeSessionResponseAssembler.java:createView,getView
+' pi: 4af9d21d3b4d664e4a29fcabfec85171077248e3
+' pi source: packages/coding-agent/src/core/session-manager.ts:appendSessionInfo,getSessionName
+' Observed behavior: pi appends session_info and reads the latest name from history.
+' Java divergence: one nullable column stores the current name; no name history.
+' Design reason: separate validation, transaction ownership, DTOs and the existing HTTP view.
+title Name command - target class boundaries
+set namespaceSeparator none
+skinparam shadowing false
+skinparam classAttributeIconSize 0
+hide empty members
+package "command.builtin / execution" {
+  interface "BuiltinCommandContributor" as SPI
+  class "BuiltinCommandDefinition" as Definition
+}
+package "service.command.contributor" {
+  class "NameCommandContributor" as Contributor
+}
+package "service.command" {
+  class "SessionNamingService" as Service
+}
+package "persistence" {
+  interface "RuntimeSessionRepository" as Port
+  class "MyBatisRuntimeSessionRepository" as Repository
+}
+package "mapper" {
+  interface "RuntimeSessionMapper" as Mapper
+}
+package "dto.command" {
+  class "NameCommandResultDTO" as Result
+}
+package "dto" {
+  class "SessionNameUpdateDTO" as Update
+  class "RuntimeSessionDTO" as Session
+}
+package "session" {
+  class "RuntimeSessionResponseAssembler" as Assembler
+}
+package "vo" {
+  class "CreateSessionResponseVO" as CreateView
+  class "GetSessionResponseVO" as View
+}
+Contributor ..|> SPI
+Contributor ..> Definition : creates real handler
+Contributor -down-> Service
+Service -down-> Port
+Service .right.> Result
+Repository -up-|> Port
+Repository -down-> Mapper : transaction
+Repository .right.> Update
+Mapper .right.> Session
+Assembler .up.> Session
+Assembler .down.> CreateView : includes displayName = null
+Assembler .down.> View : includes nullable displayName
+note right of Service
+  Fixed collaborators only.
+  No request state or credentials.
+end note
+@enduml
+
+@startuml builtin_name_update
+' Implementation: fe50e8d1bbd45c87b300bba71612b80350c3c1a6
+' Sources: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/
+' service/command/SessionNamingService.java:execute,normalizeName
+' persistence/MyBatisRuntimeSessionRepository.java:updateName
+' SQL: modules/coding-agent-cli/src/main/resources/mapper/session/RuntimeSessionMapper.xml:lockSessionForUpdate,updateSessionName
+' Observed behavior: existing model/thinking updates use the same database row lock.
+' Java divergence: Name has no expectedVersion and may update a running session.
+' Design reason: compare the latest committed name under the lock; unchanged means no write.
+title Name update - transaction and unchanged semantics
+skinparam shadowing false
+participant "Name handler" as Handler
+participant "SessionNamingService" as Service
+participant "Repository transaction" as Repo
+database "t_sessions" as DB
+Handler -> Service : execute(sessionId, nonempty arguments)
+Service -> Service : reject unsafe raw characters\nstrip edges; enforce UTF-8 byte limit
+Service -> Repo : updateName(sessionId, name, time)
+activate Repo
+Repo -> DB : SELECT ... FOR UPDATE
+DB --> Repo : latest session row
+alt no session row
+  Repo --> Service : Optional.empty
+else same normalized name
+  Repo --> Service : changed = false; commit without write
+else different name (idle or running)
+  Repo -> DB : UPDATE display_name, version + 1, updated_at
+  DB --> Repo : affected rows = 1
+  Repo --> Service : changed = true; commit
+end
+deactivate Repo
+Service --> Handler : NameCommandResultDTO or stable error
+note over Repo, DB
+  Entry, Record, sequence and active leaf are unchanged.
+  No name event or command lifecycle is appended.
+  SQL failure rolls back before error translation.
+end note
+@enduml

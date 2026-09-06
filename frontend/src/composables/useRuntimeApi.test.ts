@@ -18,7 +18,7 @@ describe('useRuntimeApi HTTP 1.38 contract', () => {
   it('reads lowerCamelCase session and model responses', async () => {
     const session = runtimeSession();
     const fetchMock = vi.fn()
-      .mockResolvedValueOnce(resultResponse(session))
+      .mockResolvedValueOnce(resultResponse({ ...session, updatedAt: undefined }, {}, 201))
       .mockResolvedValueOnce(resultResponse(session, { ETag: '"session-v1"' }))
       .mockResolvedValueOnce(resultResponse({ currentModelId: session.modelId, models: [session.modelId] }));
     vi.stubGlobal('fetch', fetchMock);
@@ -27,10 +27,22 @@ describe('useRuntimeApi HTTP 1.38 contract', () => {
     const created = await runtime.createSession(AGENT_ID);
 
     expect(created.sessionId).toBe(SESSION_ID);
+    expect(created).toHaveProperty('displayName', null);
+    expect(created).not.toHaveProperty('updatedAt');
+    expect(runtime.session.value).toHaveProperty('displayName', null);
     expect(runtime.session.value?.agentId).toBe(AGENT_ID);
     expect(runtime.session.value?.modelId).toBe('model-primary');
     expect(runtime.etag.value).toBe('"session-v1"');
     expect(runtime.models.value).toEqual(['model-primary']);
+  });
+
+  it.each([null, '中文  name'])('preserves GET Session displayName %s', async (displayName) => {
+    const current = runtimeSession({ displayName });
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(resultResponse(current)));
+    const runtime = useRuntimeApi();
+
+    expect(await runtime.getSession(SESSION_ID)).toEqual(current);
+    expect(runtime.session.value).toHaveProperty('displayName', displayName);
   });
 
   it('writes modelId and reads acceptedAt with exact lowerCamelCase keys', async () => {
@@ -177,6 +189,7 @@ function runtimeSession(overrides: Partial<RuntimeSession> = {}): RuntimeSession
   return {
     sessionId: SESSION_ID,
     agentId: AGENT_ID,
+    displayName: null,
     modelId: 'model-primary',
     state: 'idle',
     thinking: true,
@@ -201,9 +214,9 @@ function historyPage(events: RuntimeEventData[], nextPage: string | null) {
   return { events, nextPage };
 }
 
-function resultResponse<T>(result: T, headers: HeadersInit = {}): Response {
+function resultResponse<T>(result: T, headers: HeadersInit = {}, status = 200): Response {
   return new Response(JSON.stringify({ resCode: '0', resMsg: 'success', result }), {
-    status: 200,
+    status,
     headers: { 'Content-Type': 'application/json', ...headers },
   });
 }

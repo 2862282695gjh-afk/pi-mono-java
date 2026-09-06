@@ -77,6 +77,11 @@ public interface RuntimeSessionMapper {
             @Param("thinking") boolean thinking,
             @Param("updatedAt") OffsetDateTime updatedAt);
 
+    int updateSessionName(
+            @Param("sessionId") String sessionId,
+            @Param("displayName") String displayName,
+            @Param("updatedAt") OffsetDateTime updatedAt);
+
     int updateSessionThinking(
             @Param("sessionId") String sessionId,
             @Param("thinking") boolean thinking,

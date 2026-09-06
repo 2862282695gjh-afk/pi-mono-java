@@ -12,6 +12,7 @@ import com.huawei.hicampus.claw.ai.types.Usage;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeEntryDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeRecordDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.SessionNameUpdateDTO;
 
 /**
  * Runtime Session 持久化的事务边界端口。
@@ -23,6 +24,8 @@ public interface RuntimeSessionRepository {
     void create(RuntimeSessionDTO session);
 
     Optional<RuntimeSessionDTO> find(String sessionId);
+
+    Optional<SessionNameUpdateDTO> updateName(String sessionId, String displayName, OffsetDateTime updatedAt);
 
     UserEventAcceptance acceptUserEvent(String sessionId, RuntimeEntryDTO entry, OffsetDateTime acceptedAt);
 
