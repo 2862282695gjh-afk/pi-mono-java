@@ -3,19 +3,22 @@
 > 模块：`modules/coding-agent-cli`（`common/dto`）
 > 状态：Implemented
 > 日期：2026-09-05
-> 决策记录：[ADR-0045](../decisions/0045-mate-tool-schema-string-normalization.html)
+> 决策记录：[ADR-0053](../decisions/0053-mate-tool-schema-string-normalization.html)
 
 ## Context（为什么）
 
 实测网关 `tools/query` 返回的 `input_schema` / `output_schema` 是**序列化 JSON 字符串**
-（形如 `"{\"type\":\"object\",\"properties\":{...}}"`），且存在驼峰键 `inputSchema` 变体；
-而 `ToolInfo` 将两字段声明为 `Map<String,Object>`。双重不匹配（键名 + 值类型）导致
-Jackson 绑定失败**静默置 null**，连锁后果：
+（形如 `"{\"type\":\"object\",\"properties\":{...}}"`），且存在驼峰键 `inputSchema` 变体。
+修复前（基线 `dfb90cac`），`ToolInfo` 将两字段声明为 `Map<String,Object>`，
+两条不匹配路径产生**不同的故障表现**：
 
-```
-schema 绑定失败 → ListMateTools 传给模型的 inputSchema = {}（空对象兜底）
-→ 模型不知道工具参数结构 → CallMateTool 的 args 随机生成
-```
+| 键名形态 | 值形态 | 基线行为 | 影响 |
+|---|---|---|---|
+| `input_schema`（snake 主键） | JSON 字符串 | `MismatchedInputException` → 被包装为 `MateToolResponseException` → **整批发现失败** | 所有工具不可发现 |
+| `inputSchema`（驼峰别名，策略未覆盖） | 任意 | 未知键被 Jackson 忽略 → 字段留 null → ListMateTools 输出 `{}` | 该工具参数结构对模型不可见 |
+
+两种路径均导致模型拿不到参数结构，`CallMateTool` 的 args 随机生成——但故障面不同：
+前者使**所有**工具不可用，后者仅当前工具不可见。
 
 既有单测未暴露：夹具中 schema 写的是 JSON 对象形态，恰好绕过真实环境的字符串形态。
 
