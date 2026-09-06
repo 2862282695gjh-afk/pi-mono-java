@@ -190,6 +190,34 @@ class HttpMateToolClientTest {
     }
 
     @Test
+    void trailingGarbageAfterValidJsonDegradesToNull() throws Exception {
+        server.enqueue(json("{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":{\"bindingTools\":"
+                + "[{\"toolId\":\"tool-11111111111111111111111111111111\",\"version\":\"2\"}]}}"));
+        server.enqueue(json("{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":{\"data\":["
+                + "{\"id\":\"tool-11111111111111111111111111111111\",\"name\":\"query\",\"description\":\"d1\","
+                + "\"inputSchema\":\"{\\\"type\\\":\\\"object\\\"}garbage\"}]}}"));
+
+        List<MateToolMeta> tools = client.listAgentTools("agent-11111111111111111111111111111111");
+
+        assertThat(tools).hasSize(1);
+        assertThat(tools.getFirst().inputSchema()).isNull();
+    }
+
+    @Test
+    void multipleRootJsonValuesDegradeToNull() throws Exception {
+        server.enqueue(json("{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":{\"bindingTools\":"
+                + "[{\"toolId\":\"tool-11111111111111111111111111111111\",\"version\":\"2\"}]}}"));
+        server.enqueue(json("{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":{\"data\":["
+                + "{\"id\":\"tool-11111111111111111111111111111111\",\"name\":\"query\",\"description\":\"d1\","
+                + "\"inputSchema\":\"{} {\\\"required\\\":[\\\"path\\\"]}\"}]}}"));
+
+        List<MateToolMeta> tools = client.listAgentTools("agent-11111111111111111111111111111111");
+
+        assertThat(tools).hasSize(1);
+        assertThat(tools.getFirst().inputSchema()).isNull();
+    }
+
+    @Test
     void snakeCaseStringSchemaPreservesNestedConstraints() throws Exception {
         server.enqueue(json("{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":{\"bindingTools\":"
                 + "[{\"toolId\":\"tool-11111111111111111111111111111111\",\"version\":\"2\"}]}}"));
