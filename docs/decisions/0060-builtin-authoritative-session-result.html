@@ -13,7 +13,7 @@
 </head>
 <body><main>
   <h1>ADR-0060：Builtin 传递完整权威 Session</h1>
-  <p>Status：Accepted · Date：2026-09-07 · Version：1.0.0</p>
+  <p>Status：Accepted · Date：2026-09-07 · Version：1.1.0</p>
   <p>设计依据：<code>pi-mono-java-design@88f4df16bc24bbfcd28e1ec374feb2de0db8be3b</code>，
   <code>04-命令与技能/01-内置命令/README.md</code> 2.9.0 §8/8.1；设计仓只读。
   Java 变更前基线：<code>6f52fddc87a03c20916fc7b6ef1de87f6a7a8cf5</code>；
@@ -50,7 +50,11 @@
   <ul>
     <li>正面：正文与 ETag 同源；新增 Session 字段可沿同一结果通道传递，无需逐命令复制。</li>
     <li>代价：Status 增加一次完整查询；内部结果含持久化字段，应用层必须白名单投影，不能直接序列化。</li>
-    <li>后续：R07 补真实 lifetimeUsage；CommandResponseAssembler/HTTP 尚未发布，不能把内部测试视为完整公开契约验收。</li>
+    <li>组合：R07 已随 main <code>b143aec605ca444f8af62ce47034004446cc2e33</code> 合入，本分支普通合并提交
+    <code>ab88af5335f40bb371736bc0f143328d3eb7caf1</code> 保留锁后 Usage 读取、完整结果及毫秒精度。
+    随后普通合并含 #235 的 main <code>188b1c3fd22fe9a943391f313a677d40da7530fd</code>，
+    组合代码提交为 <code>9dcd938fdde1daafc221a97e24b5de438991d379</code>，无额外生产修改。
+    CommandResponseAssembler/HTTP 尚未发布，不能把内部测试视为完整公开契约验收。</li>
     <li>范围：不新增 Maven 依赖、升级 SQL、Events V2、旧控制接口迁移或 Skill 待决执行契约。</li>
   </ul>
   <h2>验证</h2>
@@ -65,6 +69,7 @@
     <li><a href="0054-builtin-thinking-locked-capability.html">ADR-0054：局部替代 Thinking 子集与公开序号方向，能力与事务保持</a></li>
   </ul>
   <h2>版本历史</h2>
+  <p>1.1.0 · 2026-09-07：记录已合入 R07、Compact 接入的两次组合代码与非零 Usage 回归，完整结果决策不变。</p>
   <p>1.0.0 · 2026-09-07：确定权威 Session 传递、共享结果与业务投影边界。</p>
 </main></body>
 </html>

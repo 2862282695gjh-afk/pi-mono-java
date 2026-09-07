@@ -1,6 +1,6 @@
 # Builtin 权威 Session 结果通道
 
-> 版本：1.0.0 · 日期：2026-09-07 · 状态：R06 内部对齐修复；Command HTTP 尚未发布
+> 版本：1.1.0 · 日期：2026-09-07 · 状态：R06 与已合入 R07 组合验证完成；Command HTTP 尚未发布
 
 ## 1. Context 与范围
 
@@ -12,12 +12,17 @@ Slash 是业务入口；成功资源不再带 command/changed/sourceEventSeq，�
 
 2026-09-07 用户明确授权并行修复、逐个复审和串行合并，替代此前串行开发安排。
 R06 与 R07 均从最新 `origin/main@6f52fddc87a03c20916fc7b6ef1de87f6a7a8cf5` 建独立工作树，不堆叠。
-R07 补 lifetimeUsage 的真实分项累计与既有 Session VO；在其合入前，R06 不宣称完整 Session HTTP 契约已完成。
+R07 补 lifetimeUsage 的真实分项累计与既有 Session VO，已随 PR #236 合入 main `b143aec605ca444f8af62ce47034004446cc2e33`。
+本分支通过普通 merge 接入该主线；组合代码及新增 Usage 断言的提交为
+`ab88af5335f40bb371736bc0f143328d3eb7caf1`，父提交为 `92b4ac8d` 与 `b143aec6`，此阶段尚不包含 PR #235。
+随后 PR #235 合入 main `188b1c3fd22fe9a943391f313a677d40da7530fd`；本分支再次普通合并，
+最终组合代码提交为 `9dcd938fdde1daafc221a97e24b5de438991d379`，父提交为 `ab88af53` 与 `188b1c3f`。
+未将完整内部资源与既有 Session VO 验证冒充共享 Command HTTP 契约验收。
 
 ## 2. 源码证据与关键定义
 
 下表路径根为 `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/`。
-变更前基线为 `6f52fddc87a03c20916fc7b6ef1de87f6a7a8cf5`，本轮实现提交为 `b2506c1f2b2fcb36228d4114cd32f77c15c42ab0`；
+变更前基线为 `6f52fddc87a03c20916fc7b6ef1de87f6a7a8cf5`，初始实现提交为 `b2506c1f2b2fcb36228d4114cd32f77c15c42ab0`；
 “本轮修复”不冒充基线既有行为。
 
 | 路径与符号 | 变更前观察 | 本轮修复与理由 |
@@ -53,7 +58,8 @@ R07 补 lifetimeUsage 的真实分项累计与既有 Session VO；在其合入�
 见 [ADR-0060](../decisions/0060-builtin-authoritative-session-result.html)。
 
 - SessionCommandResultDTO 保留 changed 和 sourceEventSeq 是领域信息，并非公开回执。新 HTTP 层必须白名单投影。
-- 完整保留 RuntimeSessionDTO，而不是复制一套 Session 字段；R07 的 lifetimeUsage 加入后沿同一通道传递。
+- 完整保留 RuntimeSessionDTO，而不是复制一套 Session 字段；已合入的 R07 lifetimeUsage 沿同一通道传递，
+  分项累计与业务 VO 的源码证据见 [R07 实现说明](session-lifetime-usage.md)。
 - Model 查询保留模型配置顺序及不可变非 null 列表，无 ETag；修改与同值只返回 Session 结果。
 - Name running 可修改，归一值相同不改 updatedAt/resourceVersion，不写 Entry/Record，不改变 leaf。
 - Model/Thinking running 修改仍拒绝；模型能力、自动关闭 Thinking、Entry 顺序和回滚语义不变。
@@ -67,10 +73,15 @@ R07 补 lifetimeUsage 的真实分项累计与既有 Session VO；在其合入�
 
 Status 增加一次按主键查询完整资源；其余查询/修改不增加提交后的往返，Model 修改减少一次候选目录读取。
 沿用数据库行锁，不增加线程、队列、容量、文件持久化或通用生命周期。
-R07 会调整同一 Repository 的 Usage 加载，后合方必须普通 merge 最新 main 并验证锁内快照与事务回滚。
+R07 调整了同一 Repository 的 Usage 加载，本次合并保留锁后读取 Stats、完整 Session 结果和三个配置更新的毫秒截断；
+组合回归覆盖锁内快照与事务回滚，未新增生产逻辑。
 不扩展 Events V2、旧控制退役、前端迁移或 Skill 待决执行契约。
 
 ## 6. 测试与验证
+
+### 6.1 初始 R06 历史证据
+
+以下为初始实现的验证记录；两次组合结果见第 6.2、6.3 节。
 
 - `./mvnw -q spotless:apply checkstyle:check` 与完整 `./mvnw -q verify` 通过：1669 项普通测试，0 失败/错误/跳过。
 - 独立 openGauss 全量安装库执行 Repository IT：27 项，0 失败/错误/跳过。时间精度回归先真实失败再修复通过；
@@ -90,8 +101,30 @@ R07 会调整同一 Repository 的 Usage 加载，后合方必须普通 merge �
 
 公共 Command JSON 的字段、鉴权、Header、ResultBean 和多 JVM HTTP 验收留给共享应用/HTTP 切片。
 
+### 6.2 合入 R07 后的组合验证
+
+以下命令针对 `ab88af53` 的组合代码执行，不作为后续合入 #235 后重跑完整验证的声明。
+
+- JDK 21 `./mvnw -q spotless:apply checkstyle:check verify`：1671 项常规测试，0 失败/错误/跳过。
+- 专用 openGauss 全量安装库：Repository 27 + LifetimeUsage 10 + Compact Admission 11，共 48 项全部通过。
+  其中 R07 独立 JVM 恢复、锁等待后同值 Model 最新 Usage、原子累计与回滚继续通过；不包含 #235 接入测试。
+- 原 12 个 SessionCommandSnapshotTest 参数用例增加锁前后不同的非零十项 Usage/Cost 断言，验证查询/修改/同值的完整业务 VO。
+- 原三种配置时间精度用例先经生产 Entry + Usage 路径写入非零用量，再验证修改/同值的完整资源、用量不丢失与毫秒时间。
+- 两份增强测试的质量检查 0 errors，14 项既有命名 warnings；32 个有效 Java 的 AST 无 finding，原 record/Unicode 人工检查保持。
+- 镜像显式同步且一致；公司 NativeParent 编译仍未验证。相对最新 main 模块新增 455/850、含镜像 910/2000。
+- 文档冲突合并保留 R06/R07 链接、当前响应/工作流和一条 1.0.2 历史项；没有重写旧图或设计仓。
+
+### 6.3 再合入 Compact 接入主线后的增量验证
+
+- `9dcd938f` 干净合并已审 #235 的 12 个既有路径，无额外生产修改；保留完整 Session、锁后 Usage 和三个配置时间截断。
+- 最小定向回归：Compact Service 17 + Session Repository 5 + Compact Repository 10 + Session Snapshot 12，共 44 项全部通过。
+- 同一专用 openGauss 全量安装库：Repository 27 + LifetimeUsage 10 + Compact Admission 11 + Compact Service 6，共 54 项全部通过。
+- 镜像 dry-run 与 `git diff --check` 通过；相对 `origin/main@188b1c3f` 新增代码仍为模块 455/850、含镜像 910/2000。
+- 本阶段不重复完整 verify；最终提交另受远端 CI 门禁约束。公司 NativeParent 编译仍未验证。
+
 ## 7. 版本历史
 
 | 版本 | 日期 | 变更 |
 |---|---|---|
+| 1.1.0 | 2026-09-07 | 普通合并已审 R07 和 Compact 接入主线，补非零 Usage 的资源投影及真实数据库组合断言；区分两次组合代码与验证。 |
 | 1.0.0 | 2026-09-07 | 修复权威 Session 结果传递，旧公开回执与标量子集方向 superseded；保留事务、领域信息和交付边界。 |
