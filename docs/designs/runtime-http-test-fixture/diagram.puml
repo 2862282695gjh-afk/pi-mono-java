@@ -1,0 +1,45 @@
+@startuml runtime_http_fixture
+' Java baseline: b7f077d59b09362dc366241920a85b6d218d1189
+' Observed behavior: private infrastructure in RuntimeHttpProcessOpenGaussIT uses stale local settings.
+' Source: modules/coding-agent-cli/src/test/java/com/campusclaw/codingagent/runtimeapi/web/RuntimeHttpProcessOpenGaussIT.java:startRuntime,prepareRuntimeFiles,ModelStub
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtime/AgentRuntimeManager.java:prepareCached,loadSnapshot
+' Source: modules/ai/src/main/java/com/campusclaw/ai/provider/mate/MateServiceModelManagerProvider.java:eventFlux
+' Design reason: reuse actual JAR, cache and network boundaries without a new production API.
+' Java test architecture change: align fixtures with current Mate configuration; no pi behavior claim.
+' Implementation evidence: 0a2c00b945f43bea7528875f1503bb662e2e3b56
+' New source: modules/coding-agent-cli/src/test/java/com/campusclaw/codingagent/runtimeapi/web/RuntimeHttpProcessFixture.java:prepareRuntimeFiles,startRuntime,ModelStub.close
+' New source: modules/coding-agent-cli/src/test/java/com/campusclaw/codingagent/runtimeapi/web/RuntimeHttpProcessOpenGaussIT.java:testPackagedJarRestartsWithPersistedHistory
+skinparam shadowing false
+skinparam backgroundColor #FFFFFF
+title Reusable Runtime HTTP process fixture
+actor "JUnit scenario" as Test
+participant "Shared fixture" as Fixture
+database "Owned test database" as DB
+collections "Complete managed cache" as Cache
+participant "Packaged JVM" as JVM
+participant "Mate Chat stub" as Mate
+Test -> Fixture : prepare files and own resources
+Fixture -> Cache : Agent identity, settings, Skill manifest
+Fixture -> JVM : start JAR with isolated configuration
+Test -> JVM : create Session and POST Events
+JVM -> Cache : prepare complete snapshot
+JVM -> DB : persist ordinary messages
+JVM -> Mate : actual Chat HTTP request
+Mate --> JVM : gated SSE response
+JVM --> Test : existing Runtime SSE
+Test -> Fixture : close first JVM
+Fixture -> JVM : stop and wait for exit
+Test -> Fixture : restart with same cache and database
+Fixture -> JVM : start second JAR process
+Test -> JVM : GET Session / Events, POST Events
+JVM -> DB : restore persisted branch
+JVM -> Mate : restored history in Chat request
+Mate --> JVM : SSE response
+Test -> Fixture : close resources
+Fixture -> JVM : stop process
+Fixture -> Mate : stop server and interrupt executor
+note over Test,DB
+  Every database assertion uses its new Session ID.
+  No global TRUNCATE and no schema setup in fixture.
+end note
+@enduml
