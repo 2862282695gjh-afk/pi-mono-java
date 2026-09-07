@@ -10,17 +10,20 @@ import java.util.Optional;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.error.RuntimeErrorCode;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.vo.ErrorResponseVO;
+import com.huawei.hicampus.claw.common.constant.ClawConstants;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.MessageSource;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.HandlerMethod;
 import org.springframework.web.method.annotation.HandlerMethodValidationException;
 import org.springframework.web.servlet.HandlerMapping;
 
@@ -103,7 +106,20 @@ public class RuntimeExceptionHandler {
         errorCode
                 .retryAfterSeconds()
                 .ifPresent(seconds -> headers.set(HttpHeaders.RETRY_AFTER, Integer.toString(seconds)));
-        return new ResponseEntity<>(new ErrorResponseVO(errorCode.name(), message), headers, errorCode.status());
+        HttpStatus status = errorCode.status();
+        if (errorCode == RuntimeErrorCode.AGENT_NOT_AVAILABLE && isCommandCatalogRequest(request)) {
+            status = HttpStatus.SERVICE_UNAVAILABLE;
+            headers.set(
+                    HttpHeaders.RETRY_AFTER,
+                    Integer.toString(ClawConstants.RuntimeApi.Command.CATALOG_RETRY_AFTER_SECONDS));
+        }
+        return new ResponseEntity<>(new ErrorResponseVO(errorCode.name(), message), headers, status);
+    }
+
+    private static boolean isCommandCatalogRequest(HttpServletRequest request) {
+        Object handler = request.getAttribute(HandlerMapping.BEST_MATCHING_HANDLER_ATTRIBUTE);
+        return handler instanceof HandlerMethod method
+                && RuntimeCommandCatalogController.class.isAssignableFrom(method.getBeanType());
     }
 
     private static RuntimeErrorCode classifyInvalidBody(HttpServletRequest request) {
