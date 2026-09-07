@@ -10,7 +10,7 @@ import com.campusclaw.codingagent.runtimeapi.dto.command.CommandSessionSnapshotD
 import com.campusclaw.codingagent.runtimeapi.dto.command.ResolvedCommandDTO;
 
 /**
- * 包装已有发现结果的展示定义，不安装 Handler；Skill 执行由独立开发线扩展。
+ * 包装已有发现结果的展示定义，不安装 Handler；真实执行需使用独立的可执行定义。
  *
  * @version [br_eCampusCore 26.0.0, 2026/09/04]
  * @since [br_eCampusCore 26.0.0]

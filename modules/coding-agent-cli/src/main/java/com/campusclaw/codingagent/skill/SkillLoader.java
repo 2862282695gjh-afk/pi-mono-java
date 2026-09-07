@@ -111,12 +111,7 @@ public class SkillLoader {
         Map<String, Object> frontmatter = parseFrontmatter(content);
 
         Path baseDir = filePath.getParent();
-        String parentDirName = baseDir != null ? baseDir.getFileName().toString() : "";
-
-        // 名称优先取 frontmatter，其次取父目录名。
-        String name = frontmatter.containsKey("name") ? String.valueOf(frontmatter.get("name")) : parentDirName;
-
-        validateName(name, filePath);
+        String name = requireDeclaredName(frontmatter.get("name"), filePath);
 
         // 描述为必填字段。
         String description =
@@ -134,6 +129,19 @@ public class SkillLoader {
         boolean disableModelInvocation = Boolean.TRUE.equals(frontmatter.get("disable-model-invocation"));
 
         return new Skill(name, description, filePath, baseDir, source, disableModelInvocation);
+    }
+
+    private static String requireDeclaredName(Object rawName, Path filePath) {
+        if (!(rawName instanceof String name)) {
+            throw new SkillLoadException("Skill name must be a nonempty string: " + filePath);
+        }
+        validateName(name, filePath);
+        Path baseDir = filePath.getParent();
+        Path directoryName = baseDir == null ? null : baseDir.getFileName();
+        if (directoryName == null || !name.equals(directoryName.toString())) {
+            throw new SkillLoadException("Skill name must match its directory: " + filePath);
+        }
+        return name;
     }
 
     static void validateName(String name, Path filePath) {
