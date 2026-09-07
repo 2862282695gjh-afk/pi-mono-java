@@ -63,12 +63,12 @@ public class BuiltinCommandRequestVO {
     /**
      * 拒绝 Builtin 契约未声明的字段，包括附件；异常不携带输入内容。
      *
-     * @param name 未知字段名
+     * @param fieldName 未知字段名
      * @param value 未知字段值
      * @throws IllegalArgumentException 始终抛出以阻止未知字段
      */
     @JsonAnySetter
-    public void rejectUnknownField(String name, Object value) {
+    public void rejectUnknownField(String fieldName, Object value) {
         throw new IllegalArgumentException("unknown builtin command field");
     }
 

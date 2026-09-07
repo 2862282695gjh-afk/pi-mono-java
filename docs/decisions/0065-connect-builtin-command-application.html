@@ -13,7 +13,7 @@
 </head>
 <body><main>
   <h1>ADR-0065：接通 Builtin 执行应用</h1>
-  <p>Status：Accepted · Date：2026-09-07 · Version：1.0.0</p>
+  <p>Status：Accepted · Date：2026-09-07 · Version：1.0.1</p>
   <p>实现基线 <code>53496bbec9d8368b19e3b9a03030eed7ce15c182</code>；只读设计
   <code>88f4df16bc24bbfcd28e1ec374feb2de0db8be3b</code>，Builtin 2.9.0 / Slash 1.6.0 / 操作13。</p>
   <p>交付前正常合并 #240 的 main <code>18bf7026d75cf28a9652025eaa19800eb36c4c64</code>；
@@ -43,7 +43,8 @@
     <li>代价：通用完成结果需要组装器维护受支持 DTO 白名单；未知或空结果失败关闭，不直接序列化。</li>
     <li>约束：现有 Service 返回载体现在用于 Session 相关业务 VO；只有完整 Session 结果带 ETag，Web 不序列化载体本身。</li>
     <li>后续：共享类别识别、Header、HTTP 状态/ResultBean、虚拟请求线程等待及跨进程验收仍由最终 HTTP 切片完成。</li>
-    <li>范围：不修改设计仓、GET Catalog 新接口、Runtime 生命周期、数据库表、升级脚本或 Skill 未决协议。</li>
+    <li>2026-09-07 用户补充确认：Skill 执行沿用普通消息 SSE，Builtin JSON 不变；后续复用普通消息的持久化与恢复，额外 Skill 私有快照按现有 Skill 设计不属当前要求，不作为开发前置。</li>
+    <li>范围：不修改设计仓、GET Catalog 新接口、Runtime 生命周期、数据库表或升级脚本，不在本 PR 实现 Skill 执行。</li>
   </ul>
   <h2>Validation</h2>
   <p>验证包含严格输入、单次来源解析、Definition 身份、准入拒绝、七个真实 Contributor 的应用接通、业务投影/ETag同源、
@@ -57,6 +58,7 @@
     <li><a href="0063-command-response-projection.html">ADR-0063：共享业务响应</a></li>
   </ul>
   <h2>版本历史</h2>
+  <p>1.0.1 · 2026-09-07：记录用户已确认 Skill SSE；修正 VO 未知字段参数遮蔽，Builtin 行为和图结构不变。</p>
   <p>1.0.0 · 2026-09-07：接通显式 Builtin 内部执行应用，不发布公共路由。</p>
 </main></body>
 </html>
