@@ -1,20 +1,12 @@
--- CampusClaw Session storage full installation DDL for centralized GaussDB.
--- The database release platform must connect with the target Session schema as current_schema.
--- AgentService must never execute this file.
--- WARNING: This script destructively rebuilds the complete Session schema baseline.
--- Use upgrade scripts for an existing installation that must retain data.
+\c claw;
+CREATE SCHEMA claw;
+SET search_path TO claw;
+ALTER USER {dbUser} SET search_path TO claw;
+ALTER DATABASE claw OWNER TO {dbUser};
+ALTER SCHEMA claw OWNER TO {dbUser};
+GRANT all privileges ON DATABASE claw TO {dbUser};
 
-BEGIN;
-
-DROP TABLE IF EXISTS t_session_materialized;
-DROP TABLE IF EXISTS t_session_stats;
-DROP TABLE IF EXISTS t_session_records;
-DROP TABLE IF EXISTS t_session_sequences;
-DROP TABLE IF EXISTS t_session_entries;
-DROP TABLE IF EXISTS t_session_cleanup_task;
-DROP TABLE IF EXISTS t_session_tombstone;
 DROP TABLE IF EXISTS t_sessions;
-
 CREATE TABLE t_sessions (
     id                 VARCHAR(128)   PRIMARY KEY,
     agent_id           VARCHAR(64)    NOT NULL,
@@ -65,6 +57,7 @@ ALTER TABLE t_sessions
     ADD CONSTRAINT ck_t_sessions_display_name
     CHECK (display_name IS NULL OR octet_length(display_name) BETWEEN 1 AND 80);
 
+DROP TABLE IF EXISTS t_session_tombstone;
 CREATE TABLE t_session_tombstone (
     session_id  VARCHAR(128)   PRIMARY KEY,
     deleted_at  TIMESTAMPTZ(3) NOT NULL
@@ -74,6 +67,7 @@ COMMENT ON TABLE t_session_tombstone IS '会话永久删除墓碑表，只保留
 COMMENT ON COLUMN t_session_tombstone.session_id IS '已删除且永不复用的会话 ID';
 COMMENT ON COLUMN t_session_tombstone.deleted_at IS '会话完成逻辑删除的时间';
 
+DROP TABLE IF EXISTS t_session_cleanup_task;
 CREATE TABLE t_session_cleanup_task (
     session_id      VARCHAR(128)   PRIMARY KEY,
     state           VARCHAR(16)    NOT NULL,
@@ -102,6 +96,7 @@ ALTER TABLE t_session_cleanup_task
 CREATE INDEX idx_t_session_cleanup_due
     ON t_session_cleanup_task (state, next_attempt_at, updated_at, created_at);
 
+DROP TABLE IF EXISTS t_session_entries;
 CREATE TABLE t_session_entries (
     session_id  VARCHAR(128)   NOT NULL,
     id          VARCHAR(128)   NOT NULL,
@@ -131,6 +126,7 @@ CREATE INDEX idx_t_session_entries_session_parent
 CREATE INDEX idx_t_session_entries_session_type
     ON t_session_entries (session_id, type);
 
+DROP TABLE IF EXISTS t_session_records;
 CREATE TABLE t_session_records (
     session_id  VARCHAR(128)   NOT NULL,
     id          VARCHAR(128)   NOT NULL,
@@ -165,6 +161,7 @@ CREATE INDEX idx_t_session_records_session_type
 CREATE INDEX idx_t_session_records_session_lane
     ON t_session_records (session_id, lane, record_seq);
 
+DROP TABLE IF EXISTS t_session_stats;
 CREATE TABLE t_session_stats (
     session_id         VARCHAR(128)  PRIMARY KEY,
     message_count      BIGINT        NOT NULL,
@@ -215,6 +212,7 @@ ALTER TABLE t_session_stats
         AND cost_total >= 0
     );
 
+DROP TABLE IF EXISTS t_session_sequences;
 CREATE TABLE t_session_sequences (
     session_id  VARCHAR(128) PRIMARY KEY,
     next_seq    BIGINT       NOT NULL
@@ -224,6 +222,7 @@ COMMENT ON TABLE t_session_sequences IS '会话序号表，为 Entry 和内部 R
 COMMENT ON COLUMN t_session_sequences.session_id IS '这行序号记录属于哪个会话；对应 t_sessions.id，每个会话一行';
 COMMENT ON COLUMN t_session_sequences.next_seq IS '下一条 Entry 或内部 Record 要使用的顺序号；新建会话时为 1，每次成功追加后加 1';
 
+DROP TABLE IF EXISTS t_session_materialized;
 CREATE TABLE t_session_materialized (
     session_id  VARCHAR(128) PRIMARY KEY,
     payload     JSONB        NOT NULL
@@ -232,5 +231,3 @@ CREATE TABLE t_session_materialized (
 COMMENT ON TABLE t_session_materialized IS '会话汇总表，保存当前路径等可重建的物化数据';
 COMMENT ON COLUMN t_session_materialized.session_id IS '这份汇总属于哪个会话；对应 t_sessions.id，每个会话一行';
 COMMENT ON COLUMN t_session_materialized.payload IS '会话汇总 JSON；可保存当前路径名称、模型和思考级别等可重建视图，不保存 Usage';
-
-COMMIT;

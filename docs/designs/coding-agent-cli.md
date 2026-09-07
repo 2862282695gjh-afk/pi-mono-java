@@ -1,6 +1,6 @@
 # Coding Agent Runtime HTTP 与受管 Session 设计
 
-> 文档版本：3.8.0
+> 文档版本：3.9.0
 >
 > PR 167 修订基线：`f60cc3e78bb8b700527ac082c7c8e10524ede095`
 >
@@ -25,6 +25,8 @@
 > GaussDB 脚本布局源码基线：`origin/main@d84dd3d6a306b7587c70b29e0100e741dacef989`
 >
 > GaussDB 脚本布局实现：`c1335026`
+>
+> GaussDB 公司初始化样式源码基线：`origin/main@18bf7026d75cf28a9652025eaa19800eb36c4c64`
 >
 > 源码仓库：本仓库 `pi-mono-java`
 
@@ -62,7 +64,7 @@ Assistant/Compaction 完成保存本次 Usage，模型/思考/压缩形成持久
 | 类型化资源 ID 与 Session 默认值 | `modules/common/src/main/java/com/campusclaw/common/constant/ClawConstants.java`、`runtimeapi/web/*Controller` 的 `@PathVariable` 参数约束、`RuntimeExceptionHandler#handleInvalidParameter`、`MateServiceClient#getAgentRuntime`、`MateServiceClient#querySkillInfo`、`AgentRuntimeManager#prepare`、`HttpMateToolClient#listTools`、`RandomSessionIdGenerator#nextId`、`RuntimeSessionService#newSession` |
 | lowerCamelCase HTTP 边界 | `runtimeapi/web/*Controller`、`runtimeapi/vo/*RequestVO`、`runtimeapi/vo/*ResponseVO`、`RuntimeEntryCodec#toSseData`、`RuntimeEntryCodec#toHistoryEvent`、`RuntimeEventProjector` |
 | Session 与事件持久化使用 MyBatis | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/persistence/MyBatisRuntimeSessionRepository.java` |
-| GaussDB DDL 与公司交付布局 | `modules/coding-agent-cli/src/main/resources/db/gaussdb/install/session_schema.sql`；`scripts/sync-campusclaw.sh` 的 `SYNCED_RESOURCES`、`stage_database_install_script` 和公司脚本 apply 逻辑；`campusclaw/scripts/install/initdb_gaussdbv5.sql` |
+| GaussDB DDL 与公司交付布局 | `modules/coding-agent-cli/src/main/resources/db/gaussdb/install/session_schema.sql`；`scripts/templates/initdb_gaussdbv5-header.sql`；`scripts/sync-campusclaw.sh` 的 `stage_database_install_script`、`validate_table_ddl`、`validate_database_install_script` 和公司脚本 apply 逻辑；`campusclaw/scripts/install/initdb_gaussdbv5.sql` |
 | 事件接受、历史查询和执行生命周期相互分离 | `RuntimeEventService`、`RuntimeEventQueryService`、`RuntimeExecutionCoordinator` |
 | 源码基线由调用方配对操作锁 | `RuntimeSessionEngineRegistry#lockOperation`、`RuntimeSessionEngineRegistry#unlockOperation`，存在于 `origin/main@eb318f32830f15b3657c71e8be31bfbfd316652f` |
 | 审查实现收口同一 Session 的事件接受、控制和执行收尾串行化 | `RuntimeSessionEngineRegistry#withOperationLock`、`RuntimeEventService#prepareAndSubmit`、`RuntimeSessionControlService#accept`、`RuntimeSessionControlService#prepareAbort`、`RuntimeExecutionCoordinator#finish`，存在于 `812bf407d9fef9088b6bef8f8b86bd8f2bbb1f7e` |
@@ -283,17 +285,22 @@ Runtime V1 事件名 `tool.execution.started` 与 `tool.execution.completed` 是
 `campusclaw/src/main/resources/db/gaussdb/`。这些文件会进入 Maven classpath 和打包产物，
 不符合公司工程对数据库安装资产的目录与单文件约束。
 
-模块侧布局保持不变，继续供 `start-dev.sh` 和独立工程使用。公司镜像同步改为读取规范
-`session_schema.sql`，字节级复制为
-`campusclaw/scripts/install/initdb_gaussdbv5.sql`，并删除公司镜像中的旧 classpath 目录。
-`campusclaw/scripts/install/` 是由同步脚本完整管理的生成目录，只允许该文件；空初始化数据、
-授权占位和 upgrade README 不进入公司交付目录。`--skip-resources` 只跳过 classpath 资源，
-不会跳过这个独立安装资产。
+模块侧布局保持不变，继续供 `start-dev.sh` 和独立工程使用。在本次源码基线中，
+`session_schema.sql` 以英文说明和 `BEGIN` 开头，先集中倒序删除全部表，再按顺序创建，
+最后以 `COMMIT` 结束；同步脚本将它字节级复制为公司交付脚本。这是已观察源码行为。
 
-目录和文件名属于公司交付产品约束；由同一规范 DDL 自动生成公司单文件、让 dry-run、pre-push
-与 CI 共同检查一致性，属于镜像同步架构变化。SQL 内容、表结构、应用 DML 权限和 Runtime
-行为均不改变。方案与取舍见
-[ADR-0049](../decisions/0049-publish-corporate-gaussdb-init-script.html)。
+目标设计保留模块 DDL 的事务和本地开发语义。公司头部独立保存在
+`scripts/templates/initdb_gaussdbv5-header.sql`，同步脚本先输出该模板，然后过滤模块脚本的说明、
+集中 DROP 块和 `BEGIN`/`COMMIT`，并在每个 `CREATE TABLE` 紧邻前插入同表
+`DROP TABLE IF EXISTS`。因此公司文件
+以 `\c claw;`、建 Schema、`search_path`、`{dbUser}` Owner 和数据库授权七行固定语句开头，
+而模块本地开发脚本不包含公司占位符。`campusclaw/scripts/install/` 仍是同步脚本完整管理的
+生成目录，只允许 `initdb_gaussdbv5.sql`；空初始化数据、授权占位和 upgrade README 不进入交付目录。
+
+固定头部和逐表删建样式属于公司交付产品约束；用头部模板和规范表 DDL 生成单文件属于镜像同步架构变化；
+公司文件去除事务包裹后改为逐语句执行，失败时可能保留已完成的前置 DDL。表、列、索引、约束、中文
+`COMMENT ON` 与 Runtime 行为均不改变。无新 Maven 依赖。方案与取舍见
+[ADR-0065](../decisions/0065-corporate-gaussdb-init-script-convention.html)。
 
 ## 7. 质量约束
 
@@ -303,8 +310,8 @@ Runtime V1 事件名 `tool.execution.started` 与 `tool.execution.completed` 是
 - 新增或修改的 Java 方法不超过 50 个非空物理行；
 - Java 与 XML 源文件遵循公司版权、中文 Javadoc 和 XML DTD 规则；
 - 主模块与 `campusclaw` 镜像必须通过同一套测试。
-- 公司镜像不得在 classpath resources 下包含 GaussDB 脚本；`scripts/install/` 必须只含与规范
-  DDL 字节级一致的 `initdb_gaussdbv5.sql`。
+- 公司镜像不得在 classpath resources 下包含 GaussDB 脚本；`scripts/install/` 必须只含
+  `initdb_gaussdbv5.sql`，且其头部、无事务包裹和逐表 `DROP`/`CREATE` 顺序必须通过生成门禁。
 - 国际化实现必须验证无基础资源包时应用上下文可启动、双资源 key 集相等且覆盖
   `RuntimeErrorCode`，并覆盖语言权重、英文回退、HTTP 中文错误和 SSE 中文错误。
 
@@ -312,6 +319,7 @@ Runtime V1 事件名 `tool.execution.started` 与 `tool.execution.completed` 是
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 3.9.0 | 2026-09-07 | 公司 GaussDB 脚本以固定库与 Schema 头部开始，去除事务包裹，并将每个删表语句紧邻放在对应建表语句前。 |
 | 3.8.0 | 2026-09-04 | 更新资源 ID、HTTP 路径和请求限制的归属至底层 common 的 ClawConstants，外部契约不变。 |
 | 3.7.0 | 2026-09-03 | 将公司镜像 GaussDB DDL 改为 `scripts/install/initdb_gaussdbv5.sql` 单文件交付，保留模块侧多文件布局并由同步脚本保证一致性。 |
 | 3.6.1 | 2026-09-03 | 模型可用性错误码转换保留原始异常 cause，同时维持对外 `MODEL_NOT_AVAILABLE` 防枚举语义。 |
