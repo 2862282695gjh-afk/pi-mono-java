@@ -1,6 +1,6 @@
 # Builtin Command 分层核心
 
-> 版本：1.1.1 · 日期：2026-09-07 · 状态：核心切片已实现，尚无 Command HTTP 路由
+> 版本：1.2.0 · 日期：2026-09-07 · 状态：核心切片已实现，尚无 Command HTTP 路由
 
 ## 1. Context
 
@@ -8,11 +8,13 @@
 共用核心，不注册占位命令，也不提前发布 GET/POST。Builtin、Skill 与共享 HTTP
 由用户统一负责设计、实现和集成，Skill 执行属于整体实施与验收范围。
 
-当前依据为设计仓 main `fd8604956632c880264434791465d1f59917038d` 的
+统一责任边界的历史依据为设计仓 `fd8604956632c880264434791465d1f59917038d` 的
 `04-命令与技能/00-Slash-Command通用模块/README.md` §1/§5 及 Skill 专题 §1/§4。
 原设计 PR #4 的“Skill 执行延期”和后来的“同事并行负责”均已被替代（superseded），
 仅保留为历史记录。Builtin 过滤只是来源视图，不是产品命令白名单。
 最终共享 HTTP 命名、请求类型和发现清单统一对齐后发布，不用 Builtin 正则封锁 `skill:*`。
+当前响应依据为设计仓 `88f4df16bc24bbfcd28e1ec374feb2de0db8be3b` 的 Builtin 2.9.0 §8/8.1、Slash 1.6.0：
+复用业务资源 VO，旧独立命令回执方向已 superseded。第 6 节按用户最新授权修正交付流程；历史图和测试数字保持原适用范围。
 
 ## 2. 源码证据与关键定义
 
@@ -92,12 +94,14 @@ NONE 输入模式固定不可带参，原因是 COMMAND_ARGUMENTS_NOT_SUPPORTED�
 Name、Model、Thinking、Compact 的权威写入必须在窄服务所属锁或事务内重新检查。
 
 Handler 返回 CompletionStage&lt;? extends CommandResultDTO&gt;。未来应用层只把内部结果转换为
-独立只读响应 VO，Web 再包装 ResultBean；核心没有 Controller 或结果类型分派。
+业务资源只读 VO，Web 再包装 ResultBean；Session/Models 复用既有 VO，Help/Compact/Skills 仅最小业务 VO，
+不新增七类 Command VO。公开成功结果禁止 command/changed/sourceEventSeq 或替代回执，内部领域信息可保留。
+核心没有 Controller 或结果类型分派；当前结果通道见 [权威 Session 修复](builtin-session-snapshot.md)。
 本 PR 不承诺 CompletionStage 的取消隔离已实现，Compact 生命周期 PR 必须单独提供
 不传播客户端取消的终态句柄。
 
 固定元数据只读，列表均复制；placeholder 允许 null，保持已确认的无输入提示契约。
-Controller 和七个具体 Handler/DTO/VO、数据库变更、Compact 生命周期均未在本 PR 发布。
+Controller、具体 Handler 及内部结果、响应组装、数据库变更、Compact 生命周期均未在原核心 PR 发布。
 
 ## 5. 边界情况与 DFX
 
@@ -119,11 +123,15 @@ Controller 和七个具体 Handler/DTO/VO、数据库变更、Compact 生命周�
 旧 list(Session) 发现接口与无过滤 resolve(Session) 保留。下游实现 Source 时需补 kind()；
 无需重写现有 Skill 读取或路径安全逻辑。
 
-这是同一负责人下的职责拆分，不是人员分工。按依赖串行提交，前一 PR 合并后再从最新 main
-创建下一切片；公共路由仍待完整集成。实现主线 `7b3769a5eabe2d131af3023631d7ad24e6d9a9e1`
+这是同一负责人下的职责拆分，不是人员分工。2026-09-07 用户已授权并行开发、独立复审、串行合并，
+原“前一 PR 合并后才能开始下一切片”安排 superseded。各切片从最新 origin/main 创建独立 worktree，
+不使用堆叠分支；后合方普通 merge 最新 main 并复验，不 force-push，公共路由仍待完整集成。
+每 PR 保持模块新增 ≤850、镜像后 ≤1800 软上限/2000 硬上限。历史实现主线 `7b3769a5eabe2d131af3023631d7ad24e6d9a9e1`
 已有核心、Help/Status/Skills、Name/Model/Thinking 及 Compact 6a；本记录不宣称剩余执行能力已发布。
 
 ## 7. 测试与验证
+
+以下为原核心/包整改切片的历史验证，不用于证明本次交付说明纠正或未来 HTTP 已验收。
 
 - 九项核心测试：七名排序/来源隔离、Spring 重名失败/空核心启动、Skill 共存、
   单次解析与 Handler 身份、Session 复制、不可变集合及跨来源一致性，以及新增的真实组件扫描与装配。
@@ -144,6 +152,7 @@ Controller 和七个具体 Handler/DTO/VO、数据库变更、Compact 生命周�
 
 | 版本 | 日期 | 变更 |
 |---|---|---|
+| 1.2.0 | 2026-09-07 | R08：将当前响应指导对齐业务 VO 复用与禁止公开回执，旧串行开发安排 superseded；保留历史图、提交和测试证据。 |
 | 1.1.1 | 2026-09-07 | 按已合入 fd86049 明确统一实施责任；替代旧延期/同事分工，纠正 Context 与图中的 Help 清单说明。 |
 | 1.1.0 | 2026-09-04 | 按 #218 评论拆分 DTO、Spring Service 与核心职责包；明确无环依赖，补组件扫描回归，同步镜像和当前源码路径。 |
 | 1.0.0 | 2026-09-04 | 核心切片、来源隔离、单次 Catalog 与 Skill 并行开发边界；未发布 HTTP。 |
