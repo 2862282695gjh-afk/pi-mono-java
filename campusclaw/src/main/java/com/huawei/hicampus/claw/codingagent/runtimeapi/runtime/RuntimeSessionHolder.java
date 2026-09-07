@@ -14,6 +14,7 @@ import com.huawei.hicampus.claw.ai.types.Message;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.agent.AgentDirectorySnapshotDTO;
 import com.huawei.hicampus.claw.codingagent.session.ManagedAgentSession;
 import com.huawei.hicampus.claw.codingagent.session.compaction.SessionCompactionEvent;
+import com.huawei.hicampus.claw.codingagent.session.compaction.SessionCompactionResult;
 
 /**
  * 单个 Runtime Session 的进程内执行对象。
@@ -74,6 +75,13 @@ public class RuntimeSessionHolder {
 
     public CompletableFuture<Void> continueQueuedExecution() {
         return managedSession == null ? agent.continueQueuedExecution() : managedSession.continueQueuedExecution();
+    }
+
+    public CompletableFuture<SessionCompactionResult> compact() {
+        if (managedSession == null) {
+            throw new IllegalStateException("runtime compaction requires a managed session");
+        }
+        return managedSession.compact(null);
     }
 
     public Runnable subscribeCompaction(Consumer<SessionCompactionEvent> listener) {

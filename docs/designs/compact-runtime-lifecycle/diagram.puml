@@ -1,0 +1,59 @@
+@startuml compact_admitted_execution
+title Compact Runtime - Admitted Execution Only
+' Source baseline: pi-mono-java@bfc7ad88 modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/runtime/RuntimeSessionEngineRegistry.java:register,withOperationLock,complete.
+' Source baseline: pi-mono-java@bfc7ad88 modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/session/ManagedAgentSession.java:compact,close.
+' This PR: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/compaction/RuntimeCompactionCoordinator.java:CompactionRun.
+' This PR: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/compaction/RuntimeCompactionExecution.java:result.
+' Design baseline: pi-mono-java-design@0a113ce8 Built-in README section 7.
+' Observed pi behavior: pi@4af9d21d packages/coding-agent/src/core/agent-session.ts:compact persists then rebuilds messages.
+' Java divergence: idle-only admission, global capacity, database projection and cancellation-isolated completion.
+' Design reason: Compact must never enter the POST Events control-queue continuation path.
+' Target-only: row-locked admission and empty-history observation are implemented in the next slice.
+skinparam shadowing false
+participant "Future admission service\n(not wired in this PR)" as Caller
+participant "Compaction coordinator\nper-run state under shared operation lock" as Run
+participant "Active Holder\nManaged Session" as Holder
+participant "Shared Projector\npersistence-only output" as Projector
+database "Session Repository" as Repository
+participant "Shared Registry\ncapacity + timeout scheduler" as Registry
+participant "Independent result\nminimal CompletionStage" as Result
+note over Caller,Holder
+  Precondition: accepted running state, registered Holder,
+  shared capacity acquired, internal Usage run ID assigned.
+  Execution rejects controls from construction time.
+end note
+Caller -> Run : start(holder, execution)
+Run -> Holder : subscribe compaction events
+Run -> Registry : schedule default 30-minute timeout
+Run -> Holder : compact(no custom instructions)
+Run --> Caller : cancellation-isolated result handle
+alt completed normally
+  Holder -> Run : completed domain event
+  Run -> Projector : project under operation lock
+  Projector -> Repository : append Compaction Entry + Usage
+  Repository --> Projector : actual Entry sequence
+  Holder -> Run : compaction Future completed
+else failure or timeout
+  Registry -> Run : timeout (or execution failure)
+  note right of Run
+    Do not wait for an uncooperative Future.
+    Do not persist generic command lifecycle.
+  end note
+end
+group one-time terminal cleanup under operation lock
+  Run -> Run : mark finished; clear callback target
+  Run -> Holder : unsubscribe
+  Run -> Registry : complete only matching execution
+  Registry -> Holder : close (abort compaction; clear queues)
+  Registry -> Registry : release capacity even if close throws
+  Run -> Repository : finishExecution (running -> idle)
+  note right of Run
+    Attempt every cleanup step; preserve failures.
+    Failed idle persistence means failed result.
+    No Steer, FollowUp or queued continuation.
+  end note
+  Run -> Result : complete with actual sequence or failure
+end
+Holder -> Run : late event or completion
+Run -> Run : ignore detached or finished callback
+@enduml

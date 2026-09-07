@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ADR-0057：隔离 Compact Runtime 执行生命周期</title>
+  <style>
+    :root { color-scheme: light; font-family: Inter, "PingFang SC", sans-serif; color: #25272a; background: #f2f5f7; }
+    body { margin: 0; } main { width: min(920px, calc(100% - 40px)); margin: 40px auto; padding: 40px; box-sizing: border-box; background: #fff; border: 1px solid #d7dde2; border-radius: 16px; }
+    h1 { margin-top: 0; font-size: 30px; } h2 { margin-top: 30px; font-size: 20px; }
+    p, li { line-height: 1.75; } code { overflow-wrap: anywhere; background: #edf2f5; } a { color: #1769aa; }
+    @media (max-width: 640px) { main { width: 100%; margin: 0; padding: 24px 18px; border: 0; border-radius: 0; } }
+  </style>
+</head>
+<body><main>
+  <h1>ADR-0057：隔离 Compact Runtime 执行生命周期</h1>
+  <p>Status：Accepted · 已确认 Compact 计划的 6b1 内部执行切片<br>Date：2026-09-07 · Version：1.0.0</p>
+  <p>Java 基线：<code>bfc7ad88520a3f31c7d43b6b8c67a5a2bbfca30e</code>。目标设计：
+  <code>pi-mono-java-design@0a113ce8e12cc65bd6e5589087bd4642a7d016e1</code>，
+  <code>04-命令与技能/01-内置命令/README.md</code> 第 7 节。设计仓只读，未修改。</p>
+  <h2>Context</h2>
+  <p>6a 已解耦持久化与请求流，但旧 RuntimeExecutionCoordinator 会续跑控制队列。
+  最新 Compact 明确不支持 Steer/FollowUp，凭据只能存活到本次压缩终态；调用方取消不能终止已接受工作。</p>
+  <p>Java 源码前缀为 <code>modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/</code>：
+  <code>runtimeapi/event/RuntimeExecutionCoordinator.java:continueQueuedExecution</code>、
+  <code>runtimeapi/runtime/RuntimeSessionEngineRegistry.java:register/complete/withOperationLock</code>、
+  <code>runtimeapi/event/RuntimeEventProjector.java:projectCompactionCompleted</code>、
+  <code>session/ManagedAgentSession.java:compact/close</code> 是本次复用与隔离的基线证据。</p>
+  <h2>选项与取舍</h2>
+  <ul>
+    <li>复用普通执行协调器并增加模式分支：代码较少，但队列、SSE 终态和压缩结果生命周期交叉，不采用。</li>
+    <li>另建容量、线程池、持久化链路：可完全独立，但会绕过全局预算并分裂领域语义，不采用。</li>
+    <li>专属协调器复用底层机制：增加少量编排代码，但保持锁、容量、Holder、Projector 和超时一致，采用。</li>
+  </ul>
+  <h2>Decision 与理由</h2>
+  <ul>
+    <li>RuntimeCompactionExecution 构造即关闭控制输入、选择无流输出；独立 minimalCompletionStage 隔离调用方取消和人为完成。</li>
+    <li>RuntimeCompactionCoordinator 的 Spring 单例仅有 final 协作者；每次执行的状态在局部 CompactionRun 中，
+    所有事件和终态进入同一 Session 操作锁。</li>
+    <li>默认 30 分钟使用既有调度器。超时不依赖底层 Future 响应；先固定终态并清空回调目标，
+    再解绑、关闭 Holder、释放容量、尝试恢复 idle，最后完成内部结果。</li>
+    <li>只接受本次 Projector 成功追加的 Compaction Entry 序号。Usage、通用命令身份、SSE 终态和控制队列均不参与结果分派。</li>
+    <li>共享 Registry 只移除匹配执行，close 异常通过 finally 归还容量。清理异常保留在内部结果中，
+    新协调器日志不记录外部异常正文/堆栈，防止凭据泄漏。</li>
+  </ul>
+  <p>pi <code>4af9d21d3b4d664e4a29fcabfec85171077248e3</code> 的
+  <code>packages/coding-agent/src/core/agent-session.ts:compact/abortCompaction</code> 提供手动压缩与取消，
+  写历史并重建消息后通知终态，其监听器仍可提交排队 prompt。
+  Java 的 idle-only、禁止控制队列、JSON 和客户端取消隔离是产品约束；数据库锁、共享容量和专属协调器是架构差异，
+  不能宣称是 pi 已有 HTTP 行为。安全日志策略属于安全加固。</p>
+  <h2>Consequences</h2>
+  <ul>
+    <li>正面：不续跑队列、不延长 Mate 凭据生命周期；复用权威投影，终态不受客户端 Future 取消控制。</li>
+    <li>代价：与普通执行协调器分别维护小型收尾编排；数据库不可用时只能尝试 idle 恢复并返回失败，不能伪报已恢复。</li>
+    <li>边界：本切片仅执行已接受任务。没有实现原子准入、空历史观察、Handler、HTTP 或命令专属中断协议。</li>
+    <li>后续：6b2 在前一 PR 合并后实现操作锁/行锁准入、空历史无副作用与注册失败回收，再接入命令。
+    通用 Events V2、旧控制路由退役和前端迁移不属于当前交付前置条件。</li>
+  </ul>
+  <h2>验证与交付</h2>
+  <p>组合真实操作锁、Registry、Holder、Projector、Codec 的定向测试覆盖完成、超时、迟到回调、调用方取消、
+  重入和多重清理失败；另验证真实 Managed Session 的 Holder 桥接与关闭取消。
+  数据库准入和公共路由未接通，不冒充 openGauss 跨进程或 HTTP 断线验证。</p>
+  <p>新增 22 项测试，完整 mvnw verify 共 1646 项通过；质量脚本归档副本 0 errors，9 个旧测试命名警告。
+  模块新增 801 行、镜像后 1602/2000 行。16 个 Java 文件通过 AST 检查，record 排版已人工核验。
+  公司 NativeParent 无法解析，本地显式跳过公司编译完成 8 对镜像同步，公司编译未验证。</p>
+  <h2>Related</h2>
+  <ul>
+    <li><a href="../designs/compact-runtime-lifecycle.md">实现设计、验证与后续范围</a></li>
+    <li><a href="../designs/compact-runtime-lifecycle/diagram.puml#L1">PlantUML 源码</a></li>
+    <li><a href="0055-runtime-persistence-without-request-stream.html">ADR-0055：可选输出决策与 R04 纠正</a></li>
+    <li><a href="0048-limit-added-code-lines-per-pull-request.html">PR 新增行数门禁</a></li>
+  </ul>
+  <h2>版本历史</h2>
+  <p>1.0.0 · 2026-09-07：专属 Compact 执行器、隔离完成句柄、无队列续跑和一次性资源清理。</p>
+</main></body>
+</html>
