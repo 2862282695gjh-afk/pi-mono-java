@@ -4,6 +4,8 @@
 
 package com.huawei.hicampus.claw.codingagent.runtimeapi.service.command;
 
+import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeCompactionResultDTO;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.command.CommandResultDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.command.HelpCommandResultDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.command.ModelCommandResultDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.command.SessionCommandResultDTO;
@@ -13,6 +15,7 @@ import com.huawei.hicampus.claw.codingagent.runtimeapi.session.RuntimeSessionVie
 import com.huawei.hicampus.claw.codingagent.runtimeapi.vo.AgentHelpResponseVO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.vo.AvailableModelsResponseVO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.vo.BoundSkillsResponseVO;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.vo.CompactionResponseVO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.vo.GetSessionResponseVO;
 
 import org.springframework.stereotype.Component;
@@ -29,6 +32,18 @@ public class CommandResponseAssembler {
 
     public CommandResponseAssembler(RuntimeSessionResponseAssembler sessions) {
         this.sessions = sessions;
+    }
+
+    public RuntimeSessionView<?> assemble(CommandResultDTO result) {
+        return switch (result) {
+            case SessionCommandResultDTO value -> session(value);
+            case ModelCommandResultDTO value -> new RuntimeSessionView<>(models(value), null);
+            case HelpCommandResultDTO value -> new RuntimeSessionView<>(help(value), null);
+            case SkillsCommandResultDTO value -> new RuntimeSessionView<>(skills(value), null);
+            case RuntimeCompactionResultDTO value ->
+                new RuntimeSessionView<>(new CompactionResponseVO(value.compacted()), null);
+            default -> throw new IllegalArgumentException("unsupported command result type");
+        };
     }
 
     public RuntimeSessionView<GetSessionResponseVO> session(SessionCommandResultDTO result) {
