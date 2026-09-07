@@ -1,0 +1,45 @@
+@startuml skill_command_admission
+' Java source baseline: b7f077d59b09362dc366241920a85b6d218d1189
+' modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/runtime/RuntimeSessionEngineRegistry.java: register/createSession
+' modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/session/AgentSessionFactory.java: create
+' modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/session/ManagedAgentSessionRequest.java: runtimeValidator
+' modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtime/PreparedAgentRuntime.java: findSkill
+' Implementation commit: a143a00798a319e1404f393e4b50fea02de53eb2
+' modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/command/skill/SkillCommandAdmission.java: accept/requireBoundSkill
+' modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/runtime/RuntimeSessionEngineRegistry.java: validator register overload
+' Observed behavior: the common factory validates the actual prepared runtime before tool assembly.
+' Design reason: reuse the existing validator and capacity cleanup, without a parallel execution lifecycle.
+' Java divergence: explicit unknown Skill is rejected; pi local _expandSkillCommand falls back to raw text.
+title Actual runtime Skill admission - internal prerequisite
+hide footbox
+autonumber
+participant "Skill application\n(future caller)" as Caller
+participant "RuntimeSessionEngineRegistry\n(existing singleton)" as Registry
+participant "AgentSessionFactory\n(existing singleton)" as Factory
+participant "AgentRuntimeManager\n(existing singleton)" as Manager
+participant "SkillCommandAdmission\n(per invocation)" as Admission
+Caller -> Registry : register(..., admission)
+Registry -> Registry : acquire existing capacity
+Registry -> Factory : create(request with runtimeValidator)
+Factory -> Manager : prepare(agentId)
+Manager --> Factory : actual PreparedAgentRuntime
+Factory -> Admission : accept(actual runtime)
+Admission -> Admission : verify identity, enabled, exact binding
+alt admission rejected
+  Admission --> Factory : RuntimeApiException
+  Factory --> Registry : RuntimeApiException
+  Registry -> Registry : release capacity; no Holder registered
+  Registry --> Caller : stable error
+else admission accepted
+  Admission --> Factory : accepted
+  Factory -> Factory : resolve model; assemble tools and Agent
+  Factory --> Registry : ManagedAgentSession
+  Registry -> Registry : restore messages; register Holder
+  Registry --> Caller : active Holder
+end
+note over Caller, Admission
+No Skill HTTP or submitSkill entry point in this slice.
+No body expansion, history type, private snapshot, or version lease.
+Existing ordinary callers retain the no-op validator.
+end note
+@enduml
