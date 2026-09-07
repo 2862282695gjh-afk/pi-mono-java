@@ -458,6 +458,73 @@ class RuntimeCompactionCoordinatorTest {
         return coordinator.start(holder, execution, Locale.US).toCompletableFuture();
     }
 
+    @Test
+    void shouldInterruptOnlyTheBoundExecutionAndReleaseWithoutCooperativeCompletion() {
+        var result = start();
+        var call = new RuntimeCompactionCall(execution.result(), execution::interrupt);
+
+        assertThat(call.interrupt()).isTrue();
+
+        assertThatThrownBy(result::join).hasCauseInstanceOf(CancellationException.class);
+        assertThat(compaction).isNotDone();
+        assertThat(execution.abortRequested()).isTrue();
+        assertReleased();
+        var replacement = new RuntimeCompactionExecution();
+        var next = register("session", replacement);
+        assertThat(call.interrupt()).isFalse();
+        assertThat(registry.find("session")).containsSame(next);
+        assertThat(replacement.abortRequested()).isFalse();
+        succeed();
+        verify(repository, never()).appendEntryWithUsage(any(), any(), any());
+        verify(repository).finishExecution("session", now);
+        registry.complete(next, replacement);
+    }
+
+    @Test
+    void shouldRejectAStaleInterruptBindingEvenWhenItsResultIsStillPending() {
+        var result = start();
+        registry.complete(holder, execution);
+        var replacement = new RuntimeCompactionExecution();
+        var next = register("session", replacement);
+
+        assertThat(execution.interrupt()).isFalse();
+
+        assertThat(result).isNotDone();
+        assertThat(execution.abortRequested()).isFalse();
+        assertThat(replacement.abortRequested()).isFalse();
+        assertThat(registry.find("session")).containsSame(next);
+        verify(repository, never()).finishExecution(any(), any());
+        registry.complete(next, replacement);
+    }
+
+    @Test
+    void shouldSerializeExplicitInterruptBehindTheSharedOperationLock() throws Exception {
+        var result = start();
+        CountDownLatch entered = new CountDownLatch(1);
+        try (var workers = Executors.newVirtualThreadPerTaskExecutor()) {
+            var pending = registry.withOperationLock("session", () -> {
+                var attempt = CompletableFuture.supplyAsync(
+                        () -> {
+                            entered.countDown();
+                            return execution.interrupt();
+                        },
+                        workers);
+                try {
+                    assertThat(entered.await(2L, TimeUnit.SECONDS)).isTrue();
+                } catch (InterruptedException error) {
+                    Thread.currentThread().interrupt();
+                    throw new IllegalStateException(error);
+                }
+                assertThat(attempt).isNotDone();
+                assertThat(execution.abortRequested()).isFalse();
+                return attempt;
+            });
+            assertThat(pending.get(2L, TimeUnit.SECONDS)).isTrue();
+        }
+        assertThatThrownBy(result::join).hasCauseInstanceOf(CancellationException.class);
+        assertReleased();
+    }
+
     private void succeed() {
         listener.get().accept(completedEvent());
         compaction.complete(compactionResult());
@@ -480,6 +547,7 @@ class RuntimeCompactionCoordinatorTest {
         assertThat(registry.find("session")).isEmpty();
         assertThat(holder.activeExecution()).isEmpty();
         assertThat(execution.completion()).isDone();
+        assertThat(execution.interrupt()).isFalse();
         verify(session).close();
         verify(repository).finishExecution("session", now);
     }

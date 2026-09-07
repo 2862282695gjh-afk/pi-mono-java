@@ -84,11 +84,22 @@ public class RuntimeCompactionService {
      */
     public CompletionStage<RuntimeCompactionResultDTO> compact(
             String sessionId, MateCredentials credentials, Locale locale) {
+        return start(sessionId, credentials, locale).result();
+    }
+
+    /**
+     * 接受压缩并返回仅作用于本次执行的中断能力；空上下文没有中断目标。
+     *
+     * @param sessionId 已授权的 Session 标识
+     * @param credentials 本次请求的 Mate 凭据
+     * @param locale 本次领域投影语言
+     * @return 独立结果与中断能力
+     */
+    public RuntimeCompactionCall start(String sessionId, MateCredentials credentials, Locale locale) {
         return registry.withOperationLock(sessionId, () -> prepare(sessionId, credentials, locale));
     }
 
-    private CompletionStage<RuntimeCompactionResultDTO> prepare(
-            String sessionId, MateCredentials credentials, Locale locale) {
+    private RuntimeCompactionCall prepare(String sessionId, MateCredentials credentials, Locale locale) {
         RuntimeCompactionSnapshotDTO observed = repository
                 .observeCompaction(sessionId)
                 .orElseThrow(() -> new RuntimeApiException(RuntimeErrorCode.SESSION_NOT_FOUND));
@@ -97,7 +108,8 @@ public class RuntimeCompactionService {
             throw new RuntimeApiException(RuntimeErrorCode.SESSION_BUSY);
         }
         if (codec.toAgentContextEntryIds(observed.entries()).isEmpty()) {
-            return CompletableFuture.completedStage(new RuntimeCompactionResultDTO(false, null));
+            return new RuntimeCompactionCall(
+                    CompletableFuture.completedStage(new RuntimeCompactionResultDTO(false, null)), () -> false);
         }
         AgentDirectorySnapshotDTO directory = directories.resolve(session.getAgentId());
         Model model = models.resolveAvailableModel(directory, session.getModelId());
@@ -114,7 +126,7 @@ public class RuntimeCompactionService {
         return acceptAndStart(session, holder, execution, locale);
     }
 
-    private CompletionStage<RuntimeCompactionResultDTO> acceptAndStart(
+    private RuntimeCompactionCall acceptAndStart(
             RuntimeSessionDTO observed,
             RuntimeSessionHolder holder,
             RuntimeCompactionExecution execution,
@@ -129,7 +141,7 @@ public class RuntimeCompactionService {
                                 : RuntimeErrorCode.SESSION_BUSY);
             }
             accepted = true;
-            return coordinator.start(holder, execution, locale);
+            return new RuntimeCompactionCall(coordinator.start(holder, execution, locale), execution::interrupt);
         } catch (RuntimeException error) {
             if (!execution.completion().isDone()) {
                 cleanup(error, () -> registry.complete(holder, execution));

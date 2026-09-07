@@ -29,6 +29,7 @@ import com.huawei.hicampus.claw.codingagent.runtimeapi.command.execution.Command
 import com.huawei.hicampus.claw.codingagent.runtimeapi.command.source.CommandDefinitionSource;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.command.type.CommandInputMode;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.command.type.CommandKind;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.compaction.RuntimeCompactionService;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.command.BuiltinCommandMetadataDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.command.CommandResultDTO;
@@ -103,6 +104,7 @@ class BuiltinCommandCoreTest {
                 .withBean(RuntimeModelManager.class, () -> mock(RuntimeModelManager.class))
                 .withBean(RuntimeEntryCodec.class, () -> mock(RuntimeEntryCodec.class))
                 .withBean(RuntimeEntryIdGenerator.class, () -> mock(RuntimeEntryIdGenerator.class))
+                .withBean(RuntimeCompactionService.class, () -> mock(RuntimeCompactionService.class))
                 .run(context -> {
                     assertThat(context)
                             .hasSingleBean(BuiltinCommandSource.class)
@@ -112,7 +114,7 @@ class BuiltinCommandCoreTest {
                                     .resolve(session)
                                     .list())
                             .extracting(ResolvedCommandDTO::name)
-                            .containsExactly("help", "model", "name", "skills", "status", "thinking");
+                            .containsExactly("compact", "help", "model", "name", "skills", "status", "thinking");
                 });
     }
 

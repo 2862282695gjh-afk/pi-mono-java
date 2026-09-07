@@ -4,6 +4,8 @@
 
 package com.campusclaw.codingagent.runtimeapi.dto;
 
+import com.campusclaw.codingagent.runtimeapi.dto.command.CommandResultDTO;
+
 /**
  * 单次 Runtime 压缩的内部终态数据，不携带摘要、凭据或公共命令身份。
  *
@@ -12,4 +14,4 @@ package com.campusclaw.codingagent.runtimeapi.dto;
  * @version [br_eCampusCore 26.0.0, 2026/09/07]
  * @since [br_eCampusCore 26.0.0]
  */
-public record RuntimeCompactionResultDTO(boolean compacted, Long sourceEventSeq) {}
+public record RuntimeCompactionResultDTO(boolean compacted, Long sourceEventSeq) implements CommandResultDTO {}

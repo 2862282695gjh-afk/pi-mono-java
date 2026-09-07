@@ -6,6 +6,7 @@ package com.huawei.hicampus.claw.codingagent.runtimeapi.command.execution;
 
 import java.util.Locale;
 import java.util.Objects;
+import java.util.Optional;
 
 import com.huawei.hicampus.claw.codingagent.runtimeapi.command.catalog.ResolvedCommandCatalog;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.command.CommandSessionSnapshotDTO;
@@ -22,9 +23,17 @@ public final class CommandExecutionContext {
 
     private final ResolvedCommandCatalog catalog;
 
+    private final CommandRuntimeInvocation runtimeInvocation;
+
     public CommandExecutionContext(Locale locale, ResolvedCommandCatalog catalog) {
+        this(locale, catalog, null);
+    }
+
+    public CommandExecutionContext(
+            Locale locale, ResolvedCommandCatalog catalog, CommandRuntimeInvocation runtimeInvocation) {
         this.locale = Objects.requireNonNull(locale);
         this.catalog = Objects.requireNonNull(catalog);
+        this.runtimeInvocation = runtimeInvocation;
     }
 
     public Locale locale() {
@@ -37,5 +46,9 @@ public final class CommandExecutionContext {
 
     public CommandSessionSnapshotDTO session() {
         return catalog.session();
+    }
+
+    public Optional<CommandRuntimeInvocation> runtimeInvocation() {
+        return Optional.ofNullable(runtimeInvocation);
     }
 }
