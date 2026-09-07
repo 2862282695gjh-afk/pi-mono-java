@@ -22,6 +22,8 @@
 实现基线：`pi-mono-java@53496bbec9d8368b19e3b9a03030eed7ce15c182`（#238/#239 均已合入）。
 交付前正常合并 #240 的 main `18bf7026d75cf28a9652025eaa19800eb36c4c64`，无冲突；
 组合提交 `4291dd8d6e6bde63a08819379bb8d97450f7859f` 保留既有 Builtin-only 入口，本 PR 未修改 Registry。
+审查修复时再正常合入 #242 的 main `b7f077d59b09362dc366241920a85b6d218d1189`，保留远端同步提交；
+因该 main 已占用 ADR-0065，本 PR 的决策编号调整为 ADR-0066。以下已有行为仍对应原证据基线。
 只读设计：`pi-mono-java-design@88f4df16bc24bbfcd28e1ec374feb2de0db8be3b`，
 Slash 1.6.0 §3/4、Builtin 2.9.0 §8、Runtime 操作 `13-execute-session-command.json`。
 以下 Java 路径前缀为 `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/`。
@@ -93,11 +95,11 @@ Header 捕获/拒绝 If-Match 和 Idempotency-Key、真实 HTTP 状态/ResultBea
 最终净新增模块788行、镜像后1576行，正式新增行门禁通过。每个 PR 模块新增上限850、镜像后软上限1800/硬上限2000，
 使用独立已合入 main 起点，后合方正常同步最新 main；不 force-push。
 公司 NativeParent 不可解析时显式同步镜像并校验一致性，公司侧编译仍标注未验证。
-实现决策见 [ADR-0065](../../decisions/0065-connect-builtin-command-application.html)。
+实现决策见 [ADR-0066](../../decisions/0066-connect-builtin-command-application.html)。
 
 ## 版本历史
 
 | 版本 | 日期 | 变更 |
 |---|---|---|
-| 1.0.1 | 2026-09-07 | 记录 Skill 复用普通消息 SSE/恢复，额外私有快照不属当前要求；修正请求 VO 未知字段参数的命名遮蔽，不改变 Builtin 行为。 |
+| 1.0.1 | 2026-09-07 | 记录 Skill 复用普通消息 SSE/恢复，额外私有快照不属当前要求；修正参数遮蔽并在同步 main 后调整 ADR 编号，不改变 Builtin 行为。 |
 | 1.0.0 | 2026-09-07 | 接通显式 Builtin 应用与结果分派，保留共享 HTTP/Skill 待决边界。 |

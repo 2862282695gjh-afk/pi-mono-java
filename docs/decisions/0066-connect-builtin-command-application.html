@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>ADR-0065：接通 Builtin 执行应用</title>
+  <title>ADR-0066：接通 Builtin 执行应用</title>
   <style>
     body{margin:0;font:16px/1.75 system-ui,sans-serif;color:#24292f;background:#f6f8fa}
     main{max-width:980px;margin:32px auto;padding:32px;background:white;border:1px solid #d0d7de;border-radius:12px}
@@ -12,12 +12,14 @@
   </style>
 </head>
 <body><main>
-  <h1>ADR-0065：接通 Builtin 执行应用</h1>
+  <h1>ADR-0066：接通 Builtin 执行应用</h1>
   <p>Status：Accepted · Date：2026-09-07 · Version：1.0.1</p>
   <p>实现基线 <code>53496bbec9d8368b19e3b9a03030eed7ce15c182</code>；只读设计
   <code>88f4df16bc24bbfcd28e1ec374feb2de0db8be3b</code>，Builtin 2.9.0 / Slash 1.6.0 / 操作13。</p>
   <p>交付前正常合并 #240 的 main <code>18bf7026d75cf28a9652025eaa19800eb36c4c64</code>；
   组合提交 <code>4291dd8d6e6bde63a08819379bb8d97450f7859f</code> 无冲突，不修改 Registry 或堆叠未合入分支。</p>
+  <p>审查修复时继续保留远端同步提交，合入 #242 的 main <code>b7f077d59b09362dc366241920a85b6d218d1189</code>。
+  因 #242 已占用 ADR-0065，本决策在合并前改为未占用的 ADR-0066，旧源码证据基线保持不变。</p>
   <h2>Context</h2>
   <p>七个内部 Builtin 与业务投影已合入，但应用层尚未把一次请求的定义选择、准入、调用及结果连接起来。
   共享 GET 完整缓存切片独立开发；POST Builtin 可使用 main 已有的来源过滤入口，不应为并行引入占位路由或未合入依赖。</p>
@@ -58,7 +60,7 @@
     <li><a href="0063-command-response-projection.html">ADR-0063：共享业务响应</a></li>
   </ul>
   <h2>版本历史</h2>
-  <p>1.0.1 · 2026-09-07：记录用户已确认 Skill SSE；修正 VO 未知字段参数遮蔽，Builtin 行为和图结构不变。</p>
+  <p>1.0.1 · 2026-09-07：记录用户已确认 Skill SSE；修正 VO 参数遮蔽，同步 main 后调整 ADR 编号；Builtin 行为和图结构不变。</p>
   <p>1.0.0 · 2026-09-07：接通显式 Builtin 内部执行应用，不发布公共路由。</p>
 </main></body>
 </html>
