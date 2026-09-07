@@ -27,12 +27,13 @@ import com.campusclaw.ai.types.Model;
 import com.campusclaw.codingagent.runtimeapi.agent.AgentDirectoryResolver;
 import com.campusclaw.codingagent.runtimeapi.agent.AgentDirectorySnapshotDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
+import com.campusclaw.codingagent.runtimeapi.dto.SessionConfigurationUpdateDTO;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
 import com.campusclaw.codingagent.runtimeapi.event.RuntimeEntryCodec;
 import com.campusclaw.codingagent.runtimeapi.model.RuntimeModelManager;
 import com.campusclaw.codingagent.runtimeapi.persistence.RuntimeSessionRepository;
-import com.campusclaw.codingagent.runtimeapi.persistence.SessionConfigurationUpdate;
+import com.campusclaw.codingagent.runtimeapi.service.command.SessionModelConfigurationService;
 import com.campusclaw.codingagent.runtimeapi.vo.ChangeModelRequestVO;
 import com.campusclaw.codingagent.runtimeapi.vo.ChangeThinkingRequestVO;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -82,6 +83,16 @@ class RuntimeSessionConfigurationServiceTest {
                 repository,
                 directoryResolver,
                 modelManager,
+                new SessionModelConfigurationService(
+                        repository,
+                        directoryResolver,
+                        modelManager,
+                        new RuntimeEntryCodec(
+                                new ObjectMapper(),
+                                new com.campusclaw.codingagent.runtimeapi.RuntimeMessageSourceConfiguration()
+                                        .messageSource()),
+                        () -> "entry-model",
+                        Clock.fixed(Instant.parse("2026-08-18T02:00:00Z"), ZoneOffset.UTC)),
                 etagFactory,
                 new RuntimeSessionResponseAssembler(etagFactory),
                 new RuntimeEntryCodec(
@@ -129,7 +140,7 @@ class RuntimeSessionConfigurationServiceTest {
         when(repository.find(SESSION_ID)).thenReturn(Optional.of(current));
         when(modelManager.resolveAvailableModel(snapshot, "model-b")).thenReturn(model);
         when(repository.updateModel(eq(SESSION_ID), eq(1L), eq("model-b"), eq(false), any(), any()))
-                .thenReturn(update(SessionConfigurationUpdate.Status.UPDATED, updated));
+                .thenReturn(update(SessionConfigurationUpdateDTO.Status.UPDATED, updated));
 
         var view = service.changeModel(SESSION_ID, etagFactory.create(SESSION_ID, 1L), modelRequest("model-b"));
 
@@ -158,7 +169,7 @@ class RuntimeSessionConfigurationServiceTest {
         RuntimeSessionDTO updated = session("model-a", "idle", false, 2L);
         when(repository.find(SESSION_ID)).thenReturn(Optional.of(current));
         when(repository.updateThinking(eq(SESSION_ID), eq(1L), eq(false), any(), any()))
-                .thenReturn(update(SessionConfigurationUpdate.Status.UPDATED, updated));
+                .thenReturn(update(SessionConfigurationUpdateDTO.Status.UPDATED, updated));
 
         var view = service.changeThinking(SESSION_ID, etagFactory.create(SESSION_ID, 1L), thinkingRequest(false));
 
@@ -185,9 +196,9 @@ class RuntimeSessionConfigurationServiceTest {
         return model;
     }
 
-    private static SessionConfigurationUpdate update(
-            SessionConfigurationUpdate.Status status, RuntimeSessionDTO session) {
-        return new SessionConfigurationUpdate(status, session);
+    private static SessionConfigurationUpdateDTO update(
+            SessionConfigurationUpdateDTO.Status status, RuntimeSessionDTO session) {
+        return new SessionConfigurationUpdateDTO(status, session);
     }
 
     private static RuntimeSessionDTO session(String modelId, String state, boolean thinking, long version) {

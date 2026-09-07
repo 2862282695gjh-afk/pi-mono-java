@@ -16,17 +16,18 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.function.Function;
 
 import com.campusclaw.ai.types.Model;
 import com.campusclaw.codingagent.runtimeapi.agent.AgentDirectoryResolver;
 import com.campusclaw.codingagent.runtimeapi.agent.AgentDirectorySnapshotDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
+import com.campusclaw.codingagent.runtimeapi.dto.SessionConfigurationUpdateDTO;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
 import com.campusclaw.codingagent.runtimeapi.event.RuntimeEntryCodec;
 import com.campusclaw.codingagent.runtimeapi.model.RuntimeModelManager;
 import com.campusclaw.codingagent.runtimeapi.persistence.RuntimeSessionRepository;
-import com.campusclaw.codingagent.runtimeapi.persistence.SessionConfigurationUpdate;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import org.junit.jupiter.api.Test;
@@ -58,7 +59,7 @@ class RuntimeSessionModelReconcilerTest {
                 .thenThrow(new RuntimeApiException(RuntimeErrorCode.MODEL_NOT_AVAILABLE));
         when(modelManager.resolveAvailableModel(snapshot, "model-new")).thenReturn(fallback);
         when(repository.updateModel(eq(current.getId()), eq(1L), eq("model-new"), eq(false), any(), any()))
-                .thenReturn(new SessionConfigurationUpdate(SessionConfigurationUpdate.Status.UPDATED, updated));
+                .thenReturn(new SessionConfigurationUpdateDTO(SessionConfigurationUpdateDTO.Status.UPDATED, updated));
         RuntimeSessionModelReconciler reconciler = new RuntimeSessionModelReconciler(
                 repository,
                 resolver,
@@ -75,11 +76,11 @@ class RuntimeSessionModelReconcilerTest {
         assertThat(result.configurationEntries())
                 .extracting(com.campusclaw.codingagent.runtimeapi.dto.RuntimeEntryDTO::getType)
                 .containsExactly("session.model.changed", "session.thinking.changed");
-        ArgumentCaptor<List<com.campusclaw.codingagent.runtimeapi.dto.RuntimeEntryDTO>> entries =
-                ArgumentCaptor.forClass(List.class);
+        ArgumentCaptor<Function<RuntimeSessionDTO, List<com.campusclaw.codingagent.runtimeapi.dto.RuntimeEntryDTO>>>
+                entries = ArgumentCaptor.forClass(Function.class);
         verify(repository)
                 .updateModel(eq(current.getId()), eq(1L), eq("model-new"), eq(false), entries.capture(), any());
-        assertThat(entries.getValue()).isEqualTo(result.configurationEntries());
+        assertThat(entries.getValue().apply(current)).isEqualTo(result.configurationEntries());
     }
 
     private static RuntimeSessionDTO session() {

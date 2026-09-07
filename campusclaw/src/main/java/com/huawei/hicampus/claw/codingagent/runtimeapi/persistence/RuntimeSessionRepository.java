@@ -7,11 +7,13 @@ package com.huawei.hicampus.claw.codingagent.runtimeapi.persistence;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Optional;
+import java.util.function.Function;
 
 import com.huawei.hicampus.claw.ai.types.Usage;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeEntryDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeRecordDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.SessionConfigurationUpdateDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.SessionNameUpdateDTO;
 
 /**
@@ -39,15 +41,26 @@ public interface RuntimeSessionRepository {
 
     List<RuntimeEntryDTO> listCurrentBranchEntries(String sessionId, long afterSeq, int limit);
 
-    SessionConfigurationUpdate updateModel(
+    /**
+     * 在行锁内复核版本和状态，再调用只生成领域 Entry 的本地函数。
+     *
+     * @param sessionId Session 标识
+     * @param expectedVersion 条件更新版本；null 表示使用锁内当前值
+     * @param modelId 目标模型
+     * @param modelSupportsThinking 目标模型能力
+     * @param entriesFactory 基于锁内旧值生成事件，不得执行远端调用或修改 Session
+     * @param updatedAt 更新时间
+     * @return 更新状态、当前 Session 和本次最后事件序号
+     */
+    SessionConfigurationUpdateDTO updateModel(
             String sessionId,
-            long expectedVersion,
+            Long expectedVersion,
             String modelId,
             boolean modelSupportsThinking,
-            List<RuntimeEntryDTO> entries,
+            Function<RuntimeSessionDTO, List<RuntimeEntryDTO>> entriesFactory,
             OffsetDateTime updatedAt);
 
-    SessionConfigurationUpdate updateThinking(
+    SessionConfigurationUpdateDTO updateThinking(
             String sessionId, long expectedVersion, boolean thinking, RuntimeEntryDTO entry, OffsetDateTime updatedAt);
 
     SessionDeletionStatus beginDeletion(String sessionId, OffsetDateTime deletedAt);

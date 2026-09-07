@@ -20,6 +20,7 @@ import javax.sql.DataSource;
 
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeEntryDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.SessionConfigurationUpdateDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.SessionNameUpdateDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.mapper.RuntimeSessionMapper;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.persistence.UserEventAcceptance.Status;
@@ -408,10 +409,10 @@ class RuntimeSessionRepositoryOpenGaussIT {
         repository.create(session);
         OffsetDateTime updatedAt = session.getCreatedAt().plusMinutes(1);
 
-        SessionConfigurationUpdate update =
-                repository.updateModel(session.getId(), 1L, "model-next", false, List.of(), updatedAt);
+        SessionConfigurationUpdateDTO update =
+                repository.updateModel(session.getId(), 1L, "model-next", false, locked -> List.of(), updatedAt);
 
-        assertThat(update.status()).isEqualTo(SessionConfigurationUpdate.Status.UPDATED);
+        assertThat(update.status()).isEqualTo(SessionConfigurationUpdateDTO.Status.UPDATED);
         RuntimeSessionDTO stored = repository.find(session.getId()).orElseThrow();
         assertThat(stored.getModelId()).isEqualTo("model-next");
         assertThat(stored.isThinking()).isFalse();
@@ -425,15 +426,15 @@ class RuntimeSessionRepositoryOpenGaussIT {
         session.setThinking(true);
         repository.create(session);
 
-        SessionConfigurationUpdate update = repository.updateModel(
+        SessionConfigurationUpdateDTO update = repository.updateModel(
                 session.getId(),
                 1L,
                 session.getModelId(),
                 false,
-                List.of(),
+                locked -> List.of(),
                 session.getCreatedAt().plusHours(1));
 
-        assertThat(update.status()).isEqualTo(SessionConfigurationUpdate.Status.UNCHANGED);
+        assertThat(update.status()).isEqualTo(SessionConfigurationUpdateDTO.Status.UNCHANGED);
         RuntimeSessionDTO stored = repository.find(session.getId()).orElseThrow();
         assertThat(stored.isThinking()).isTrue();
         assertThat(stored.getResourceVersion()).isEqualTo(1L);
@@ -451,8 +452,8 @@ class RuntimeSessionRepositoryOpenGaussIT {
             start.countDown();
             assertThat(List.of(model.get(5, TimeUnit.SECONDS), thinking.get(5, TimeUnit.SECONDS)))
                     .containsExactlyInAnyOrder(
-                            SessionConfigurationUpdate.Status.UPDATED,
-                            SessionConfigurationUpdate.Status.VERSION_MISMATCH);
+                            SessionConfigurationUpdateDTO.Status.UPDATED,
+                            SessionConfigurationUpdateDTO.Status.VERSION_MISMATCH);
         }
 
         assertThat(repository.find(session.getId()).orElseThrow().getResourceVersion())
@@ -463,6 +464,87 @@ class RuntimeSessionRepositoryOpenGaussIT {
         Integer result = jdbcTemplate.queryForObject(
                 "SELECT COUNT(1) FROM " + table + " WHERE session_id = ?", Integer.class, sessionId);
         return result == null ? 0 : result;
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"first", "second"})
+    void shouldSerializeUnconditionalModelChangesUsingLockedPreviousValue(String secondModel) throws Exception {
+        var session = newSession("session_model_command_race");
+        repository.create(session);
+        var start = new CountDownLatch(1);
+        try (var executor = Executors.newFixedThreadPool(2)) {
+            var first = executor.submit(() -> changeUnconditionally(start, session, "first"));
+            var second = executor.submit(() -> changeUnconditionally(start, session, secondModel));
+            start.countDown();
+            var updates = List.of(first.get(5, TimeUnit.SECONDS), second.get(5, TimeUnit.SECONDS));
+            var events = repository.listCurrentBranch(session.getId(), 0L, 10, true);
+            int expectedChanges = secondModel.equals("first") ? 1 : 2;
+            assertThat(events).hasSize(expectedChanges);
+            assertThat(updates.stream()
+                            .filter(update -> update.status() == SessionConfigurationUpdateDTO.Status.UPDATED))
+                    .hasSize(expectedChanges);
+            assertThat(updates.stream()
+                            .map(SessionConfigurationUpdateDTO::sourceEventSeq)
+                            .filter(java.util.Objects::nonNull))
+                    .containsExactlyInAnyOrderElementsOf(
+                            events.stream().map(RuntimeEntryDTO::getEntrySeq).toList());
+            assertThat(events.getFirst().getPayload()).contains("model-db-it");
+            if (expectedChanges == 2) {
+                assertThat(events.getLast().getParentId())
+                        .isEqualTo(events.getFirst().getId());
+                assertThat(events.getLast().getPayload())
+                        .contains(events.getFirst().getId());
+            }
+            assertThat(repository.find(session.getId()).orElseThrow().getResourceVersion())
+                    .isEqualTo(1L + expectedChanges);
+        }
+    }
+
+    @Test
+    void shouldRollbackModelAndSequenceWhenEventInsertionFails() throws Exception {
+        var session = newSession("session_model_command_rollback");
+        repository.create(session);
+        assertThatThrownBy(() -> repository.updateModel(
+                        session.getId(),
+                        null,
+                        "next",
+                        false,
+                        locked -> List.of(
+                                newEntry(
+                                        locked.getId(),
+                                        "duplicate",
+                                        "session.model.changed",
+                                        session.getCreatedAt(),
+                                        "{}"),
+                                newEntry(
+                                        locked.getId(),
+                                        "duplicate",
+                                        "session.thinking.changed",
+                                        session.getCreatedAt(),
+                                        "{}")),
+                        session.getCreatedAt().plusMinutes(1)))
+                .isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
+        assertThat(repository.find(session.getId())).contains(session);
+        assertThat(repository.listCurrentBranch(session.getId(), 0L, 10, true)).isEmpty();
+        assertThat(changeUnconditionally(new CountDownLatch(0), session, "next").sourceEventSeq())
+                .isEqualTo(1L);
+    }
+
+    private SessionConfigurationUpdateDTO changeUnconditionally(
+            CountDownLatch start, RuntimeSessionDTO observed, String modelId) throws InterruptedException {
+        assertThat(start.await(5, TimeUnit.SECONDS)).isTrue();
+        return repository.updateModel(
+                observed.getId(),
+                null,
+                modelId,
+                true,
+                locked -> List.of(newEntry(
+                        locked.getId(),
+                        modelId,
+                        "session.model.changed",
+                        observed.getCreatedAt(),
+                        "{\"previousModelId\":\"" + locked.getModelId() + "\",\"modelId\":\"" + modelId + "\"}")),
+                observed.getCreatedAt().plusMinutes(1));
     }
 
     private int countSession(String sessionId) {
@@ -520,7 +602,7 @@ class RuntimeSessionRepositoryOpenGaussIT {
                 .status();
     }
 
-    private SessionConfigurationUpdate.Status updateModelAfterLatch(CountDownLatch start, RuntimeSessionDTO session)
+    private SessionConfigurationUpdateDTO.Status updateModelAfterLatch(CountDownLatch start, RuntimeSessionDTO session)
             throws InterruptedException {
         assertThat(start.await(5, TimeUnit.SECONDS)).isTrue();
         return repository
@@ -529,7 +611,7 @@ class RuntimeSessionRepositoryOpenGaussIT {
                         1L,
                         "model-race",
                         true,
-                        List.of(newEntry(
+                        locked -> List.of(newEntry(
                                 session.getId(),
                                 "entry-model-race",
                                 "session.model.changed",
@@ -539,8 +621,8 @@ class RuntimeSessionRepositoryOpenGaussIT {
                 .status();
     }
 
-    private SessionConfigurationUpdate.Status updateThinkingAfterLatch(CountDownLatch start, RuntimeSessionDTO session)
-            throws InterruptedException {
+    private SessionConfigurationUpdateDTO.Status updateThinkingAfterLatch(
+            CountDownLatch start, RuntimeSessionDTO session) throws InterruptedException {
         assertThat(start.await(5, TimeUnit.SECONDS)).isTrue();
         return repository
                 .updateThinking(
