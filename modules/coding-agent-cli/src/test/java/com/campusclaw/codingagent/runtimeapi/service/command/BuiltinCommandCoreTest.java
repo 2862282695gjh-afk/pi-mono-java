@@ -46,6 +46,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.validation.beanvalidation.LocalValidatorFactoryBean;
 
 /**
  * 验证 Builtin 核心的来源隔离、启动查重、请求快照和分派身份。
@@ -109,11 +110,13 @@ class BuiltinCommandCoreTest {
                 .withBean(RuntimeCompactionService.class, () -> mock(RuntimeCompactionService.class))
                 .withBean(SessionEtagFactory.class)
                 .withBean(RuntimeSessionResponseAssembler.class)
+                .withBean(LocalValidatorFactoryBean.class)
                 .run(context -> {
                     assertThat(context)
                             .hasSingleBean(BuiltinCommandSource.class)
                             .hasSingleBean(SkillCommandSource.class)
                             .hasSingleBean(CompositeCommandRegistry.class)
+                            .hasSingleBean(CommandExecutionService.class)
                             .hasSingleBean(CommandResponseAssembler.class)
                             .hasSingleBean(CommandDiscoveryResponseAssembler.class);
                     assertThat(context.getBean(CompositeCommandRegistry.class)
