@@ -30,18 +30,34 @@
 
     <insert id="insertStats">
         INSERT INTO t_session_stats (
-            session_id, message_count, cached_tokens, uncached_tokens, total_tokens, cost_total
+            session_id, message_count, cached_tokens, uncached_tokens, total_tokens, cost_total,
+            input_tokens, output_tokens, cache_read_tokens, cache_write_tokens,
+            cost_input, cost_output, cost_cache_read, cost_cache_write
         ) VALUES (
-            #{sessionId}, 0, 0, 0, 0, 0
+            #{sessionId}, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
         )
     </insert>
 
     <select id="findSession" resultType="com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeSessionDTO">
         SELECT id, agent_id, model_id, state, thinking,
                resource_version, created_at, updated_at, cwd, parent_session_id,
-               metadata::text AS metadata, active_leaf_id, display_name
-        FROM t_sessions
+               metadata::text AS metadata, active_leaf_id, display_name,
+               stats.input_tokens AS "lifetimeUsage.input", stats.output_tokens AS "lifetimeUsage.output",
+               stats.cache_read_tokens AS "lifetimeUsage.cacheRead",
+               stats.cache_write_tokens AS "lifetimeUsage.cacheWrite",
+               stats.total_tokens AS "lifetimeUsage.totalTokens", stats.cost_input AS "lifetimeUsage.costInput",
+               stats.cost_output AS "lifetimeUsage.costOutput", stats.cost_cache_read AS "lifetimeUsage.costCacheRead",
+               stats.cost_cache_write AS "lifetimeUsage.costCacheWrite", stats.cost_total AS "lifetimeUsage.costTotal"
+        FROM t_sessions JOIN t_session_stats stats ON stats.session_id = t_sessions.id
         WHERE id = #{sessionId}
+    </select>
+
+    <select id="findLifetimeUsage" resultType="com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeLifetimeUsageDTO">
+        SELECT input_tokens AS input, output_tokens AS output, cache_read_tokens AS cache_read,
+               cache_write_tokens AS cache_write, total_tokens,
+               cost_input, cost_output, cost_cache_read, cost_cache_write, cost_total
+        FROM t_session_stats
+        WHERE session_id = #{sessionId}
     </select>
 
     <select id="lockSessionForUpdate" resultType="com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeSessionDTO">
@@ -90,10 +106,18 @@
 
     <update id="accumulateUsageStats">
         UPDATE t_session_stats
-        SET cached_tokens = cached_tokens + #{cachedTokens},
-            uncached_tokens = uncached_tokens + #{uncachedTokens},
-            total_tokens = total_tokens + #{totalTokens},
-            cost_total = cost_total + #{costTotal}
+        SET cached_tokens = cached_tokens + #{usage.cacheRead},
+            uncached_tokens = uncached_tokens + #{usage.input} + #{usage.cacheWrite},
+            total_tokens = total_tokens + #{usage.totalTokens},
+            input_tokens = input_tokens + #{usage.input},
+            output_tokens = output_tokens + #{usage.output},
+            cache_read_tokens = cache_read_tokens + #{usage.cacheRead},
+            cache_write_tokens = cache_write_tokens + #{usage.cacheWrite},
+            cost_input = cost_input + #{usage.costInput},
+            cost_output = cost_output + #{usage.costOutput},
+            cost_cache_read = cost_cache_read + #{usage.costCacheRead},
+            cost_cache_write = cost_cache_write + #{usage.costCacheWrite},
+            cost_total = cost_total + #{usage.costTotal}
         WHERE session_id = #{sessionId}
     </update>
 
