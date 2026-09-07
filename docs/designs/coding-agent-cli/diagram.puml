@@ -139,22 +139,31 @@ title Corporate GaussDB Script Packaging
 left to right direction
 skinparam backgroundColor white
 
-' Source baseline: origin/main commit d84dd3d6a306b7587c70b29e0100e741dacef989.
+' Source baseline: origin/main commit 18bf7026d75cf28a9652025eaa19800eb36c4c64.
 ' Source: modules/coding-agent-cli/src/main/resources/db/gaussdb/install/session_schema.sql.
-' Source: scripts/sync-campusclaw.sh, SYNCED_RESOURCES and the resource apply loop.
-' Observed behavior: the baseline sync copies the complete db/gaussdb tree into corporate classpath resources.
-' Product constraint: the corporate module must publish one initdb_gaussdbv5.sql under scripts/install.
-' Architecture change: mirror sync derives the corporate install file from canonical DDL and removes the classpath tree.
-' Design reason: keep one schema source while meeting the corporate delivery layout without packaging SQL in the JAR.
+' Source: scripts/sync-campusclaw.sh, stage_database_install_script and validate_staged_tree.
+' Source: campusclaw/scripts/install/initdb_gaussdbv5.sql.
+' Observed behavior: sync copies canonical DDL byte-for-byte; the DDL has one transaction and a centralized drop block.
+' Product constraint: corporate SQL starts with the required database header and puts each drop before its create.
+' Architecture change: sync assembles the corporate header and transformed canonical table DDL instead of a byte-identical copy.
+' Design reason: preserve local development input while enforcing the corporate installation convention.
 
-artifact "Canonical module DDL\nsession_schema.sql" as Canonical
+artifact "Corporate SQL header\ninitdb_gaussdbv5-header.sql" as CorporateHeader
+artifact "Canonical module schema\nsession_schema.sql" as Canonical
 component "Mirror sync\nstage and apply" as Sync
 folder "Corporate install scripts\ncampusclaw/scripts/install" as Install
-artifact "initdb_gaussdbv5.sql\nDDL only" as InitScript
+artifact "initdb_gaussdbv5.sql\ncorporate init SQL" as InitScript
 folder "Corporate classpath resources" as Resources
 
-Canonical --> Sync : read
-Sync --> InitScript : byte-identical copy
+CorporateHeader --> Sync : read header
+Canonical --> Sync : transform table DDL
+Sync --> InitScript : assemble and validate
 Install *-- InitScript
 Sync ..> Resources : remove db/gaussdb
+
+note right of InitScript
+  Exact corporate header
+  No BEGIN or COMMIT
+  DROP immediately before CREATE
+end note
 @enduml
