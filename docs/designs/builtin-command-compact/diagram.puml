@@ -1,0 +1,71 @@
+@startuml compact_command_invocation
+' Source baseline: pi-mono-java ca2600da15dfaf8dda1f16b9d2f3d130b5d9ace5
+' Observed: runtimeapi/compaction/RuntimeCompactionService.java compact/prepare/acceptAndStart
+' Observed: runtimeapi/compaction/RuntimeCompactionCoordinator.java CompactionRun.finishLocked
+' Observed: runtimeapi/runtime/RuntimeSessionEngineRegistry.java complete/withOperationLock
+' Java paths above are relative to modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/
+' New in this PR: runtimeapi/service/command/CompactionCommandInvocation.java invoke/close/interrupt
+' New in this PR: runtimeapi/service/command/SessionCompactionApplicationService.java execute
+' pi 4af9d21d: packages/coding-agent/src/core/agent-session.ts compact/abortCompaction
+' Design reason: detach request lifetime from accepted execution; bind interruption to exact identity.
+' Java divergence: idle-only, no queue, database authority, JSON boundary remains future work.
+skinparam monochrome true
+skinparam shadowing false
+skinparam classAttributeIconSize 0
+hide empty members
+title Compact Command - Request Capability and Runtime Ownership
+
+package "Command Core" {
+  class CommandExecutionContext <<request>>
+  interface CommandRuntimeInvocation {
+    invoke(sessionId, locale)
+  }
+}
+package "Command Adapter" {
+  class CompactCommandContributor <<singleton>>
+  class SessionCompactionApplicationService <<singleton>>
+  class CompactionCommandInvocation <<request, one-shot>> {
+    invoke(sessionId, locale)
+    interrupt()
+    close()
+  }
+}
+package "Runtime" {
+  class RuntimeCompactionService <<singleton>>
+  class RuntimeCompactionCall <<per invocation>> {
+    result()
+    interrupt()
+  }
+  class RuntimeCompactionExecution <<active execution>>
+  class RuntimeCompactionCoordinator <<singleton>>
+  class CompactionRun <<per execution>>
+  class RuntimeSessionHolder <<active only>>
+  class RuntimeSessionEngineRegistry <<singleton>>
+}
+CommandExecutionContext o-- "0..1" CommandRuntimeInvocation : capability only
+CompactionCommandInvocation ..|> CommandRuntimeInvocation
+CompactCommandContributor --> SessionCompactionApplicationService : handler delegate
+SessionCompactionApplicationService ..> CommandExecutionContext : execute
+SessionCompactionApplicationService ..> CompactionCommandInvocation : creates scope
+CompactionCommandInvocation --> RuntimeCompactionService : one handoff
+CompactionCommandInvocation o-- "0..1" RuntimeCompactionCall
+RuntimeCompactionService --> RuntimeCompactionCoordinator : start
+RuntimeCompactionService ..> RuntimeCompactionCall : creates
+RuntimeCompactionCall --> "0..1" RuntimeCompactionExecution : detached result / interrupt
+RuntimeCompactionCoordinator ..> CompactionRun : creates per execution
+RuntimeCompactionExecution --> "0..1" CompactionRun : clearable interrupt target
+CompactionRun --> RuntimeSessionEngineRegistry : lock / identity check / release
+CompactionRun --> "1" RuntimeSessionHolder : exact target
+RuntimeSessionHolder o-- "0..1" RuntimeCompactionExecution
+note bottom of CompactionCommandInvocation
+  Clear credentials before handoff or on unused close.
+  Never hold request monitor across Runtime calls.
+  Scope close and Future cancellation do not interrupt.
+end note
+note bottom of CompactionRun
+  Under the shared operation lock:
+  match Holder and Execution, mark abort, clean up once.
+  Terminal state clears callbacks and interrupt target.
+  Public HTTP interruption remains outside this PR.
+end note
+@enduml

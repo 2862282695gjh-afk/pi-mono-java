@@ -107,6 +107,7 @@ public class RuntimeCompactionCoordinator {
         private void start(Locale locale) {
             AtomicReference<CompactionRun> target = callbackTarget;
             try {
+                execution.bindInterrupt(this::interrupt);
                 projector = projectorFactory.createForCompaction(holder, execution, locale);
                 unsubscribe = holder.subscribeCompaction(event -> {
                     CompactionRun active = target.get();
@@ -147,6 +148,19 @@ public class RuntimeCompactionCoordinator {
 
         private void finish(Throwable error) {
             engineRegistry.withOperationLock(holder.sessionId(), () -> finishLocked(error));
+        }
+
+        private boolean interrupt() {
+            return engineRegistry.withOperationLock(holder.sessionId(), () -> {
+                if (finished
+                        || engineRegistry.find(holder.sessionId()).orElse(null) != holder
+                        || holder.activeExecution().orElse(null) != execution) {
+                    return false;
+                }
+                execution.requestAbort();
+                finishLocked(new CancellationException("runtime compaction was interrupted"));
+                return true;
+            });
         }
 
         private void finishLocked(Throwable error) {

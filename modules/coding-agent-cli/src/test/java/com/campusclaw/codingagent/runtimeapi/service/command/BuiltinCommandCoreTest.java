@@ -29,6 +29,7 @@ import com.campusclaw.codingagent.runtimeapi.command.execution.CommandExecutionC
 import com.campusclaw.codingagent.runtimeapi.command.source.CommandDefinitionSource;
 import com.campusclaw.codingagent.runtimeapi.command.type.CommandInputMode;
 import com.campusclaw.codingagent.runtimeapi.command.type.CommandKind;
+import com.campusclaw.codingagent.runtimeapi.compaction.RuntimeCompactionService;
 import com.campusclaw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.command.BuiltinCommandMetadataDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.command.CommandResultDTO;
@@ -105,6 +106,7 @@ class BuiltinCommandCoreTest {
                 .withBean(RuntimeModelManager.class, () -> mock(RuntimeModelManager.class))
                 .withBean(RuntimeEntryCodec.class, () -> mock(RuntimeEntryCodec.class))
                 .withBean(RuntimeEntryIdGenerator.class, () -> mock(RuntimeEntryIdGenerator.class))
+                .withBean(RuntimeCompactionService.class, () -> mock(RuntimeCompactionService.class))
                 .withBean(SessionEtagFactory.class)
                 .withBean(RuntimeSessionResponseAssembler.class)
                 .run(context -> {
@@ -118,7 +120,7 @@ class BuiltinCommandCoreTest {
                                     .resolve(session)
                                     .list())
                             .extracting(ResolvedCommandDTO::name)
-                            .containsExactly("help", "model", "name", "skills", "status", "thinking");
+                            .containsExactly("compact", "help", "model", "name", "skills", "status", "thinking");
                 });
     }
 

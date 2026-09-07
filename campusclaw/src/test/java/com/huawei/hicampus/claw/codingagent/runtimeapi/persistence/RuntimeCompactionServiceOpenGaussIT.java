@@ -33,6 +33,7 @@ import com.huawei.hicampus.claw.ai.types.StopReason;
 import com.huawei.hicampus.claw.ai.types.TextContent;
 import com.huawei.hicampus.claw.ai.types.Usage;
 import com.huawei.hicampus.claw.ai.types.UserMessage;
+import com.huawei.hicampus.claw.codingagent.common.client.mate.MateCredentials;
 import com.huawei.hicampus.claw.codingagent.runtime.AgentRuntimeManager;
 import com.huawei.hicampus.claw.codingagent.runtime.MateServiceClient.AgentRuntime;
 import com.huawei.hicampus.claw.codingagent.runtime.PreparedAgentRuntime;
@@ -40,12 +41,15 @@ import com.huawei.hicampus.claw.codingagent.runtimeapi.RuntimeMessageSourceConfi
 import com.huawei.hicampus.claw.codingagent.runtimeapi.agent.AgentDirectoryResolver;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.agent.AgentDirectorySnapshotDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.agent.RuntimeAgentPromptLoader;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.command.catalog.ResolvedCommandCatalog;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.command.execution.CommandExecutionContext;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.compaction.RuntimeCompactionCoordinator;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.compaction.RuntimeCompactionExecution;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.compaction.RuntimeCompactionService;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeCompactionResultDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeEntryDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.command.CommandSessionSnapshotDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.error.RuntimeErrorCode;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeEntryCodec;
@@ -56,6 +60,8 @@ import com.huawei.hicampus.claw.codingagent.runtimeapi.persistence.RuntimeSessio
 import com.huawei.hicampus.claw.codingagent.runtimeapi.runtime.RuntimeExecutionProperties;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.runtime.RuntimeExecutionTimeoutScheduler;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.runtime.RuntimeSessionEngineRegistry;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.service.command.SessionCompactionApplicationService;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.service.command.contributor.CompactCommandContributor;
 import com.huawei.hicampus.claw.codingagent.session.AgentSessionFactory;
 import com.huawei.hicampus.claw.codingagent.session.compaction.CompactionProperties;
 import com.huawei.hicampus.claw.codingagent.session.compaction.SessionCompactor;
@@ -291,6 +297,52 @@ class RuntimeCompactionServiceOpenGaussIT {
                 new StaticListableBeanFactory().getBeanProvider(MateToolsetFactory.class),
                 prompt,
                 new SessionCompactor(ai, properties));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"empty", "success", "interrupt"})
+    void shouldExecuteTheBuiltinThroughItsRequestScopeAndRealRuntime(String outcome) throws Exception {
+        if (!outcome.equals("empty")) {
+            seedHistory();
+        }
+        var before = persistentState();
+        var application = new SessionCompactionApplicationService(service);
+        try (var invocation = application.openInvocation(MateCredentials.appKey("test-id", "test-key", "test-token"))) {
+            var catalog = new ResolvedCommandCatalog(CommandSessionSnapshotDTO.from(session), List.of(), Map.of());
+            var request = new CommandExecutionContext(Locale.CHINA, catalog, invocation);
+            var result = new CompactCommandContributor(application)
+                    .definition()
+                    .handler()
+                    .execute(request, "")
+                    .toCompletableFuture();
+            invocation.close();
+            if (outcome.equals("empty")) {
+                assertThat(result.join()).isEqualTo(new RuntimeCompactionResultDTO(false, null));
+                assertThat(persistentState()).isEqualTo(before);
+                assertThat(invocation.interrupt()).isFalse();
+                verifyNoInteractions(ai, directories, models, ids);
+                return;
+            }
+            assertThat(result).isNotDone();
+            if (outcome.equals("interrupt")) {
+                assertThat(invocation.interrupt()).isTrue();
+                assertThatThrownBy(result::join).hasRootCauseMessage("COMMAND_EXECUTION_FAILED");
+                assertThat(repository.listCurrentBranchEntries(session.getId(), 0L, 500))
+                        .hasSize(2);
+                assertThat(jdbc.queryForList("SELECT * FROM t_session_records WHERE session_id=?", session.getId()))
+                        .isEmpty();
+            } else {
+                assertThat(summary.tryEmitValue(response(StopReason.STOP))).isEqualTo(Sinks.EmitResult.OK);
+                assertThat(result.get(5L, TimeUnit.SECONDS)).isEqualTo(new RuntimeCompactionResultDTO(true, 3L));
+                assertThat(repository
+                                .listCurrentBranchEntries(session.getId(), 0L, 500)
+                                .getLast()
+                                .getType())
+                        .isEqualTo("session.compaction.completed");
+            }
+            assertThat(invocation.interrupt()).isFalse();
+            assertReleased(7L);
+        }
     }
 
     private void seedHistory() {

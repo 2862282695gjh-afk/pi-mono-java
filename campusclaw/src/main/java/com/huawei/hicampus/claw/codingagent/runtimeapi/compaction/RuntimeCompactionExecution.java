@@ -6,6 +6,8 @@ package com.huawei.hicampus.claw.codingagent.runtimeapi.compaction;
 
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.BooleanSupplier;
 
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeCompactionResultDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeEventOutput;
@@ -20,6 +22,8 @@ import com.huawei.hicampus.claw.codingagent.runtimeapi.runtime.RuntimeActiveExec
 public final class RuntimeCompactionExecution extends RuntimeActiveExecution {
     private final CompletableFuture<RuntimeCompactionResultDTO> result = new CompletableFuture<>();
 
+    private final AtomicReference<BooleanSupplier> interruption = new AtomicReference<>();
+
     private boolean started;
 
     public RuntimeCompactionExecution() {
@@ -31,6 +35,15 @@ public final class RuntimeCompactionExecution extends RuntimeActiveExecution {
         return result.minimalCompletionStage();
     }
 
+    boolean interrupt() {
+        BooleanSupplier target = interruption.get();
+        return target != null && target.getAsBoolean();
+    }
+
+    void bindInterrupt(BooleanSupplier target) {
+        interruption.set(target);
+    }
+
     synchronized void beginCompaction() {
         if (started || completion().isDone()) {
             throw new IllegalStateException("compaction execution is already started or completed");
@@ -40,6 +53,7 @@ public final class RuntimeCompactionExecution extends RuntimeActiveExecution {
     }
 
     void finishCompaction(Long sequence, Throwable failure) {
+        interruption.set(null);
         complete(failure);
         if (failure == null) {
             result.complete(new RuntimeCompactionResultDTO(true, sequence));
