@@ -7,6 +7,7 @@ package com.huawei.hicampus.claw.codingagent.runtimeapi.persistence;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Optional;
+import java.util.function.Consumer;
 import java.util.function.Function;
 
 import com.huawei.hicampus.claw.ai.types.Usage;
@@ -60,8 +61,24 @@ public interface RuntimeSessionRepository {
             Function<RuntimeSessionDTO, List<RuntimeEntryDTO>> entriesFactory,
             OffsetDateTime updatedAt);
 
+    /**
+     * 在行锁内复核当前模型能力，同值不生成事件或推进版本。
+     *
+     * @param sessionId Session 标识
+     * @param expectedVersion 条件更新版本；null 表示使用锁内当前值
+     * @param thinking 目标开关
+     * @param admission 只进行本地能力检查，不得刷新目录、远端调用或修改 Session
+     * @param entryFactory 基于锁内旧值生成事件，不得修改 Session 或执行远端调用
+     * @param updatedAt 更新时间
+     * @return 更新状态、当前 Session 和本次事件序号
+     */
     SessionConfigurationUpdateDTO updateThinking(
-            String sessionId, long expectedVersion, boolean thinking, RuntimeEntryDTO entry, OffsetDateTime updatedAt);
+            String sessionId,
+            Long expectedVersion,
+            boolean thinking,
+            Consumer<RuntimeSessionDTO> admission,
+            Function<RuntimeSessionDTO, RuntimeEntryDTO> entryFactory,
+            OffsetDateTime updatedAt);
 
     SessionDeletionStatus beginDeletion(String sessionId, OffsetDateTime deletedAt);
 

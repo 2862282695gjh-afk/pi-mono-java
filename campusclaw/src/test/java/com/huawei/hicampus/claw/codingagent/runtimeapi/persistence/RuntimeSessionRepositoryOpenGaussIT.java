@@ -6,7 +6,10 @@ package com.huawei.hicampus.claw.codingagent.runtimeapi.persistence;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
+import java.nio.file.Path;
 import java.time.Clock;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -18,15 +21,25 @@ import java.util.concurrent.TimeoutException;
 
 import javax.sql.DataSource;
 
+import com.huawei.hicampus.claw.ai.types.Model;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.RuntimeMessageSourceConfiguration;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.agent.AgentDirectorySnapshotDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeEntryDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.SessionConfigurationUpdateDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.SessionNameUpdateDTO;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.command.ThinkingCommandResultDTO;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.error.RuntimeApiException;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.error.RuntimeErrorCode;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeEntryCodec;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.mapper.RuntimeSessionMapper;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.model.RuntimeModelManager;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.persistence.UserEventAcceptance.Status;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.service.command.SessionNamingService;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.service.command.SessionThinkingConfigurationService;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.session.RuntimeSessionResponseAssembler;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.session.SessionEtagFactory;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 
@@ -553,6 +566,128 @@ class RuntimeSessionRepositoryOpenGaussIT {
         return result == null ? 0 : result;
     }
 
+    @Test
+    void shouldSerializeSameThinkingCommandsAndRestoreWithoutNewEvent() throws Exception {
+        var session = newSession("session_thinking_commands");
+        repository.create(session);
+        var service = thinkingService(new CountDownLatch(0));
+        var start = new CountDownLatch(1);
+        try (var executor = Executors.newFixedThreadPool(2)) {
+            var first = executor.submit(() -> {
+                awaitLatch(start);
+                return service.execute(session.getId(), "on");
+            });
+            var second = executor.submit(() -> {
+                awaitLatch(start);
+                return service.execute(session.getId(), "on");
+            });
+            start.countDown();
+            assertThat(List.of(first.get(5, TimeUnit.SECONDS), second.get(5, TimeUnit.SECONDS)))
+                    .containsExactlyInAnyOrder(
+                            new ThinkingCommandResultDTO(true, true, 1L),
+                            new ThinkingCommandResultDTO(true, false, null));
+        }
+        assertThat(repository.find(session.getId()).orElseThrow().getResourceVersion())
+                .isEqualTo(2L);
+        assertThat(repository.listCurrentBranch(session.getId(), 0L, 10, true))
+                .extracting(RuntimeEntryDTO::getType)
+                .containsExactly("session.thinking.changed");
+        context.close();
+        context = new AnnotationConfigApplicationContext(OpenGaussTestConfiguration.class);
+        repository = context.getBean(RuntimeSessionRepository.class);
+        assertThat(thinkingService(new CountDownLatch(0)).execute(session.getId(), ""))
+                .isEqualTo(new ThinkingCommandResultDTO(true, false, null));
+        assertThat(repository.listCurrentBranch(session.getId(), 0L, 10, true)).hasSize(1);
+    }
+
+    @Test
+    void shouldRejectThinkingWhenConcurrentModelCommitRemovesCapability() throws Exception {
+        var session = newSession("session_thinking_model_race");
+        repository.create(session);
+        var locked = new CountDownLatch(1);
+        var release = new CountDownLatch(1);
+        var capabilityChecked = new CountDownLatch(1);
+        var service = thinkingService(capabilityChecked);
+        var transaction = new TransactionTemplate(context.getBean(PlatformTransactionManager.class));
+        var executor = Executors.newFixedThreadPool(2);
+        try {
+            var model = executor.submit(() -> transaction.execute(status -> {
+                var update = repository.updateModel(
+                        session.getId(),
+                        null,
+                        "unsupported",
+                        false,
+                        current -> List.of(newEntry(
+                                current.getId(), "model-entry", "session.model.changed", session.getCreatedAt(), "{}")),
+                        session.getCreatedAt());
+                locked.countDown();
+                awaitLatch(release);
+                return update;
+            }));
+            awaitLatch(locked);
+            var thinking = executor.submit(() -> service.execute(session.getId(), "on"));
+            awaitLatch(capabilityChecked);
+            assertThatThrownBy(() -> thinking.get(200, TimeUnit.MILLISECONDS)).isInstanceOf(TimeoutException.class);
+            release.countDown();
+            assertThat(model.get(5, TimeUnit.SECONDS).sourceEventSeq()).isEqualTo(1L);
+            assertThatThrownBy(() -> thinking.get(5, TimeUnit.SECONDS))
+                    .hasCauseInstanceOf(RuntimeApiException.class)
+                    .satisfies(error -> assertThat(((RuntimeApiException) error.getCause()).errorCode())
+                            .isEqualTo(RuntimeErrorCode.THINKING_NOT_SUPPORTED));
+            var stored = repository.find(session.getId()).orElseThrow();
+            assertThat(stored.getModelId()).isEqualTo("unsupported");
+            assertThat(stored.isThinking()).isFalse();
+            assertThat(stored.getResourceVersion()).isEqualTo(2L);
+            assertThat(repository.listCurrentBranch(session.getId(), 0L, 10, true))
+                    .hasSize(1);
+        } finally {
+            release.countDown();
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
+    void shouldRollbackThinkingVersionLeafAndSequenceWhenEntryFails() throws Exception {
+        var session = newSession("session_thinking_rollback");
+        repository.create(session);
+        var service = thinkingService(new CountDownLatch(0));
+        assertThat(service.execute(session.getId(), "on").sourceEventSeq()).isEqualTo(1L);
+        var before = repository.find(session.getId()).orElseThrow();
+        assertThatThrownBy(() -> service.execute(session.getId(), "off"))
+                .isInstanceOfSatisfying(RuntimeApiException.class, error -> assertThat(error.errorCode())
+                        .isEqualTo(RuntimeErrorCode.COMMAND_EXECUTION_FAILED));
+        assertThat(repository.find(session.getId())).contains(before);
+        assertThat(repository.listCurrentBranch(session.getId(), 0L, 10, true))
+                .extracting(RuntimeEntryDTO::getEntrySeq)
+                .containsExactly(1L);
+        assertThat(changeUnconditionally(new CountDownLatch(0), session, "next").sourceEventSeq())
+                .isEqualTo(2L);
+    }
+
+    private SessionThinkingConfigurationService thinkingService(CountDownLatch capabilityChecked) {
+        var snapshot = new AgentDirectorySnapshotDTO(
+                "agent",
+                "model-db-it",
+                List.of("model-db-it", "unsupported"),
+                Path.of("/runtime/agent"),
+                Path.of("/runtime/agent/.campusclaw"));
+        var manager = mock(RuntimeModelManager.class);
+        var capable = mock(Model.class);
+        when(capable.reasoning()).thenReturn(true);
+        when(manager.resolveModel(snapshot, "model-db-it")).thenAnswer(call -> {
+            capabilityChecked.countDown();
+            return capable;
+        });
+        when(manager.resolveModel(snapshot, "unsupported")).thenReturn(mock(Model.class));
+        return new SessionThinkingConfigurationService(
+                repository,
+                agentId -> snapshot,
+                manager,
+                new RuntimeEntryCodec(new ObjectMapper(), new RuntimeMessageSourceConfiguration().messageSource()),
+                () -> "entry-thinking",
+                Clock.systemUTC());
+    }
+
     private String cleanupState(String sessionId) {
         return jdbcTemplate.queryForObject(
                 "SELECT state FROM t_session_cleanup_task WHERE session_id = ?", String.class, sessionId);
@@ -629,7 +764,8 @@ class RuntimeSessionRepositoryOpenGaussIT {
                         session.getId(),
                         1L,
                         true,
-                        newEntry(
+                        locked -> assertThat(locked.getModelId()).isEqualTo("model-db-it"),
+                        locked -> newEntry(
                                 session.getId(),
                                 "entry-thinking-race",
                                 "session.thinking.changed",

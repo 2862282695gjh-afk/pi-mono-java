@@ -34,6 +34,7 @@ import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeEntryCodec;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.model.RuntimeModelManager;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.persistence.RuntimeSessionRepository;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.service.command.SessionModelConfigurationService;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.service.command.SessionThinkingConfigurationService;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.vo.ChangeModelRequestVO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.vo.ChangeThinkingRequestVO;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -81,8 +82,6 @@ class RuntimeSessionConfigurationServiceTest {
         when(directoryResolver.resolve(AGENT_ID)).thenReturn(snapshot);
         service = new RuntimeSessionConfigurationService(
                 repository,
-                directoryResolver,
-                modelManager,
                 new SessionModelConfigurationService(
                         repository,
                         directoryResolver,
@@ -93,13 +92,18 @@ class RuntimeSessionConfigurationServiceTest {
                                         .messageSource()),
                         () -> "entry-model",
                         Clock.fixed(Instant.parse("2026-08-18T02:00:00Z"), ZoneOffset.UTC)),
+                new SessionThinkingConfigurationService(
+                        repository,
+                        directoryResolver,
+                        modelManager,
+                        new RuntimeEntryCodec(
+                                new ObjectMapper(),
+                                new com.huawei.hicampus.claw.codingagent.runtimeapi.RuntimeMessageSourceConfiguration()
+                                        .messageSource()),
+                        () -> "entry-config",
+                        Clock.fixed(Instant.parse("2026-08-18T02:00:00Z"), ZoneOffset.UTC)),
                 etagFactory,
-                new RuntimeSessionResponseAssembler(etagFactory),
-                new RuntimeEntryCodec(
-                        new ObjectMapper(),
-                        new com.huawei.hicampus.claw.codingagent.runtimeapi.RuntimeMessageSourceConfiguration().messageSource()),
-                () -> "entry-config",
-                Clock.fixed(Instant.parse("2026-08-18T02:00:00Z"), ZoneOffset.UTC));
+                new RuntimeSessionResponseAssembler(etagFactory));
     }
 
     @Test
@@ -160,7 +164,7 @@ class RuntimeSessionConfigurationServiceTest {
                         service.changeThinking(SESSION_ID, etagFactory.create(SESSION_ID, 1L), thinkingRequest(true)))
                 .isInstanceOfSatisfying(RuntimeApiException.class, error -> assertThat(error.errorCode())
                         .isEqualTo(RuntimeErrorCode.THINKING_NOT_SUPPORTED));
-        verify(repository, never()).updateThinking(any(), anyLong(), anyBoolean(), any(), any());
+        verify(repository, never()).updateThinking(any(), anyLong(), anyBoolean(), any(), any(), any());
     }
 
     @Test
@@ -168,7 +172,7 @@ class RuntimeSessionConfigurationServiceTest {
         RuntimeSessionDTO current = session("model-a", "idle", true, 1L);
         RuntimeSessionDTO updated = session("model-a", "idle", false, 2L);
         when(repository.find(SESSION_ID)).thenReturn(Optional.of(current));
-        when(repository.updateThinking(eq(SESSION_ID), eq(1L), eq(false), any(), any()))
+        when(repository.updateThinking(eq(SESSION_ID), eq(1L), eq(false), any(), any(), any()))
                 .thenReturn(update(SessionConfigurationUpdateDTO.Status.UPDATED, updated));
 
         var view = service.changeThinking(SESSION_ID, etagFactory.create(SESSION_ID, 1L), thinkingRequest(false));

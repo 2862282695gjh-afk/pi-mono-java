@@ -8,6 +8,7 @@ import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.function.Consumer;
 import java.util.function.Function;
 
 import com.campusclaw.ai.types.Cost;
@@ -166,12 +167,22 @@ public class MyBatisRuntimeSessionRepository implements RuntimeSessionRepository
     @Override
     @Transactional
     public SessionConfigurationUpdateDTO updateThinking(
-            String sessionId, long expectedVersion, boolean thinking, RuntimeEntryDTO entry, OffsetDateTime updatedAt) {
+            String sessionId,
+            Long expectedVersion,
+            boolean thinking,
+            Consumer<RuntimeSessionDTO> admission,
+            Function<RuntimeSessionDTO, RuntimeEntryDTO> entryFactory,
+            OffsetDateTime updatedAt) {
         RuntimeSessionDTO session = mapper.lockSessionForUpdate(sessionId);
         SessionConfigurationUpdateDTO rejected = rejectConfigurationUpdate(session, expectedVersion);
-        if (rejected != null || session.isThinking() == thinking) {
-            return rejected != null ? rejected : unchanged(session);
+        if (rejected != null) {
+            return rejected;
         }
+        admission.accept(session);
+        if (session.isThinking() == thinking) {
+            return unchanged(session);
+        }
+        RuntimeEntryDTO entry = entryFactory.apply(session);
         requireOne(
                 mapper.updateSessionThinking(sessionId, thinking, updatedAt),
                 "session thinking setting was not updated");
