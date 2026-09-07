@@ -4,11 +4,12 @@
 ' modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/session/AgentSessionFactory.java: create
 ' modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/session/ManagedAgentSessionRequest.java: runtimeValidator
 ' modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtime/PreparedAgentRuntime.java: findSkill
-' Implementation commit: a143a00798a319e1404f393e4b50fea02de53eb2
-' modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/command/skill/SkillCommandAdmission.java: accept/requireBoundSkill
+' Implementation commit after package correction: 9053ac3c785d6aa3c54d1e8fc82b5352de38b8b6
+' modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/service/command/skill/SkillCommandAdmission.java: accept/requireBoundSkill
 ' modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/runtime/RuntimeSessionEngineRegistry.java: validator register overload
 ' Observed behavior: the common factory validates the actual prepared runtime before tool assembly.
 ' Design reason: reuse the existing validator and capacity cleanup, without a parallel execution lifecycle.
+' Architecture correction: HTTP-aware RuntimeApiException translation belongs in the application adapter, not Command Core.
 ' Java divergence: explicit unknown Skill is rejected; pi local _expandSkillCommand falls back to raw text.
 title Actual runtime Skill admission - internal prerequisite
 hide footbox
@@ -17,7 +18,7 @@ participant "Skill application\n(future caller)" as Caller
 participant "RuntimeSessionEngineRegistry\n(existing singleton)" as Registry
 participant "AgentSessionFactory\n(existing singleton)" as Factory
 participant "AgentRuntimeManager\n(existing singleton)" as Manager
-participant "SkillCommandAdmission\n(per invocation)" as Admission
+participant "SkillCommandAdmission\n(application adapter, per invocation)" as Admission
 Caller -> Registry : register(..., admission)
 Registry -> Registry : acquire existing capacity
 Registry -> Factory : create(request with runtimeValidator)

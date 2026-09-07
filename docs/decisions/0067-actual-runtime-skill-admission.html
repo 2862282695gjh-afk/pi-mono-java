@@ -13,13 +13,15 @@
 </head>
 <body><main>
   <h1>ADR-0067：实际运行快照上的 Skill 准入</h1>
-  <p>Status：Accepted · Date：2026-09-07 · Version：1.0.0</p>
+  <p>Status：Accepted · Date：2026-09-07 · Version：1.0.1</p>
   <h2>Context</h2>
   <p>实现基线 <code>b7f077d59b09362dc366241920a85b6d218d1189</code> 已有公共 Session 工厂准入接点，
   Runtime 注册表却固定传 null。显式 Skill 的名称和直接绑定需要在本次实际 Agent 快照上检查，
-  不能把展示清单当作执行授权。本片不依赖未合入的 Builtin 应用代码。</p>
-  <p>本片新增 <code>runtimeapi/command/skill/SkillCommandAdmission.java</code> 与 Registry validator 重载的
-  代码证据为 <code>a143a00798a319e1404f393e4b50fea02de53eb2</code>，不归入起始基线的已有行为。</p>
+  不能把展示清单当作执行授权。本片不依赖 Builtin 应用类型；交付前正常合入包含 #241 的主线
+  <code>739602f3b147221716ca7c93fc070a001995e151</code>。</p>
+  <p>初始实现提交为 <code>a143a00798a319e1404f393e4b50fea02de53eb2</code>。包分层修正后，
+  <code>runtimeapi/service/command/skill/SkillCommandAdmission.java</code> 与 Registry validator 重载的
+  当前源码证据为 <code>9053ac3c785d6aa3c54d1e8fc82b5352de38b8b6</code>，不归入起始基线的已有行为。</p>
   <p>源码根为 <code>modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/</code>：
   <code>session/AgentSessionFactory.java:create</code> 在 prepare 后先执行 validator；
   <code>session/ManagedAgentSessionRequest.java</code> 已定义该 Consumer；
@@ -39,6 +41,9 @@
   <h2>Decision 与理由</h2>
   <ul>
     <li>SkillCommandAdmission 是单次调用的不可变策略，仅持有目标 Agent ID 与无前缀 Skill 名称。</li>
+    <li>该策略将 Runtime 准入失败适配为携带 HTTP 状态的 <code>RuntimeApiException/RuntimeErrorCode</code>，
+    因此归属 <code>runtimeapi.service.command.skill</code> 应用层，不属于 Command Core。
+    按 Builtin Core 实现设计 §3.1 与 F243-S1 仅迁移包和测试，不新增错误框架或改变准入行为。</li>
     <li>名称复用 ClawConstants.Skill.isValidName，不增加第二套正则；精确直接绑定缺失返回 COMMAND_NOT_FOUND。</li>
     <li>实际快照缺失、身份不一致或禁用返回 AGENT_NOT_AVAILABLE；不会回退为普通消息执行。</li>
     <li>Registry 的兼容重载透传 Consumer；既有七参数入口保持无 Skill 检查，容量与 Holder 清理不另建系统。</li>
@@ -56,7 +61,8 @@
   </ul>
   <h2>验证</h2>
   <p>17 个名称与绑定用例、3 个真实工厂/注册表集成用例，验证失败不装工具、不留 Holder、容量释放及普通登记兼容。
-  原有 Events 和注册表测试回归。完整模块、镜像、Java AST、格式、文档渲染与新增行数门禁结果见 PR。
+  原有 Events 和注册表测试回归；包迁移和主线同步后 clean 重编译，包含公共工厂的 29 个定向用例通过。
+  完整模块的原始证据、镜像、Java AST、格式、文档渲染与新增行数门禁结果见 PR。
   这些测试不证明尚未实现的跨进程 Skill HTTP 或正文恢复；公司 NativeParent 不可用时镜像编译仍未验证。</p>
   <h2>Related</h2>
   <ul>
@@ -65,6 +71,7 @@
     <li><a href="0064-complete-command-catalog.html">ADR-0064：清单展示与执行准入职责不同</a></li>
   </ul>
   <h2>版本历史</h2>
+  <p>1.0.1 · 2026-09-07：按 F243-S1 将 HTTP 错误适配置于应用层，更新实际提交和路径，准入行为不变。</p>
   <p>1.0.0 · 2026-09-07：记录实际运行快照的 Skill 窄准入前置能力。</p>
 </main></body>
 </html>

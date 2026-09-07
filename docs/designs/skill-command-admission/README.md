@@ -1,6 +1,6 @@
 # 实际运行快照上的 Skill 准入
 
-版本：1.0.0 · 日期：2026-09-07 · 范围：内部前置能力，未发布 Skill 执行入口或 HTTP 路由。
+版本：1.0.1 · 日期：2026-09-07 · 范围：内部前置能力，未发布 Skill 执行入口或 HTTP 路由。
 
 ## Context
 
@@ -9,9 +9,10 @@
 并提供无共享请求状态的 Skill 策略；没有新增通用命令框架。
 
 实现起点为 `pi-mono-java@b7f077d59b09362dc366241920a85b6d218d1189`。
-本片代码提交为 `a143a00798a319e1404f393e4b50fea02de53eb2`；新增策略与 Registry 重载
-均以此提交为证据，不归入起始基线的已观察行为。
-不依赖未合入的 PR #241。设计仓以只读方式核对
+初始实现提交为 `a143a00798a319e1404f393e4b50fea02de53eb2`；包分层修正后，当前策略路径
+与 Registry 重载以 `9053ac3c785d6aa3c54d1e8fc82b5352de38b8b6` 为证据，不归入起始基线的已观察行为。
+本片不依赖 Builtin 应用类型；交付前正常合入已包含 #241 的主线
+`739602f3b147221716ca7c93fc070a001995e151`。设计仓以只读方式核对
 `88f4df16bc24bbfcd28e1ec374feb2de0db8be3b` 的
 `04-命令与技能/02-技能命令/README.md`（3.2.0，§3–4）与
 `04-命令与技能/00-Slash-Command通用模块/README.md`（1.6.0，§3–4）。
@@ -29,7 +30,7 @@
 | 已观察 Java 基线 | `runtimeapi/runtime/RuntimeSessionEngineRegistry.java:register/createSession` | 容量先获取；构造失败释放容量；Runtime 原本传 null validator。 |
 | 已观察 Java 基线 | `runtime/PreparedAgentRuntime.java:findSkill`；`runtime/AgentRuntimeManager.java:loadSnapshot/loadSkill` | 完整快照保存已校验的绑定 Skill；显式准入可直接精确匹配，不再次读文件或刷新管理器。 |
 | 已确认产品规则 | `modules/common/src/main/java/com/campusclaw/common/constant/ClawConstants.java:Skill.isValidName` | 加载、发现与显式调用共享 1–64 字符及严格名称规则；不新增 Command 专属正则。 |
-| 本片 Java 架构变更，`a143a007` | `runtimeapi/command/skill/SkillCommandAdmission.java`；`runtimeapi/runtime/RuntimeSessionEngineRegistry.java:register` 的 validator 重载 | 本次调用对象持有目标 Agent ID 与无前缀 Skill 名称；核对实际快照的身份、启用和精确直接绑定。 |
+| 本片 Java 架构变更，`9053ac3c` | `runtimeapi/service/command/skill/SkillCommandAdmission.java`；`runtimeapi/runtime/RuntimeSessionEngineRegistry.java:register` 的 validator 重载 | 应用适配器持有本次目标 Agent ID 与无前缀 Skill 名称；核对实际快照的身份、启用和精确直接绑定，并转换为既有 API 错误。 |
 | 上游观察 | pi `4af9d21d3b4d664e4a29fcabfec85171077248e3`，`packages/coding-agent/src/core/agent-session.ts:_expandSkillCommand` | pi 展开本地 Skill 正文，未知 Skill 或读取失败时回退原文；Java 显式未绑定名称拒绝，不照搬本地 fallback（产品约束与安全加固）。 |
 
 `PreparedAgentRuntime` 是当前创建 Agent 的完整快照，不是 Session 全生命周期版本租约。
@@ -51,6 +52,10 @@
 
 策略不是 Spring Bean，也不保存 Manager、文件、正文、请求凭据或执行句柄。
 只持有不可变的两项身份；没有中央命令名称分派、伪 Handler 或新数据表。
+它位于 `runtimeapi.service.command.skill` 应用适配层：`RuntimeApiException` 与
+`RuntimeErrorCode` 携带 HTTP 状态，不能作为 Command Core 的依赖。
+这与 `docs/designs/builtin-command-core.md` §3.1 的实际包依赖边界一致；
+PR #243 的 F243-S1 修正只移动类、测试及 import，不改变准入行为或引入新错误框架。
 
 ## 设计决策
 
@@ -98,6 +103,8 @@ Skill 设计 §4 明确额外私有 Skill 版本/正文快照不作为当前要�
 - `RuntimeSkillAdmissionTest`：3 个用例使用真实 `AgentSessionFactory`、Registry、Agent，
   以受控 Manager 返回实际快照，验证无绑定失败、建模前拒绝、容量回收、每次准入和普通登记不变。
 - 原 `RuntimeEventServiceTest` 6 个、`RuntimeSessionEngineRegistryTest` 2 个回归通过，包含普通 Slash 原样处理。
+- 包迁移并同步主线后，先 `clean` 清除旧包编译产物，再运行上述 28 个用例与
+  `AgentSessionFactoryTest` 1 个用例；29 个用例全部通过，方法体与迁移前逐字一致。
 - 交付前执行完整相关模块测试、Spotless/Checkstyle、测试质量脚本、Java AST 方法长度检查、
   镜像同步、PlantUML/SVG/HTML 校验、渲染检查、`git diff --check` 与最终新增行数门禁。
 - 公司镜像编译需要 `NativeParent`；若环境无法解析，明确报告未验证并显式使用 `--no-verify` 同步。
@@ -109,4 +116,5 @@ Skill 设计 §4 明确额外私有 Skill 版本/正文快照不作为当前要�
 
 | 版本 | 日期 | 变更 |
 |---|---|---|
+| 1.0.1 | 2026-09-07 | 按 F243-S1 将 HTTP 错误适配移至应用包；更新实际源码证据，保持准入行为不变。 |
 | 1.0.0 | 2026-09-07 | 贯通真实运行快照的内部 Skill 准入与既有容量清理；不发布调用入口或决定正文策略。 |
