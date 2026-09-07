@@ -1,0 +1,60 @@
+@startuml compact_runtime_integration
+' Java baseline: 6f52fddc87a03c20916fc7b6ef1de87f6a7a8cf5
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/persistence/MyBatisRuntimeSessionRepository.java
+' Symbols: observeCompaction, acceptCompaction
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/compaction/RuntimeCompactionCoordinator.java:start
+' Observed behavior: atomic database admission and admitted execution already exist separately.
+' Added here: runtimeapi/compaction/RuntimeCompactionService.java:prepare, acceptAndStart
+' Design reason: empty context must precede resources; only confirmed admission permits state cleanup.
+' pi baseline: 4af9d21d3b4d664e4a29fcabfec85171077248e3
+' Source: packages/coding-agent/src/core/agent-session.ts:compact, abortCompaction
+' Java divergence: idle-only atomic admission, detached completion, no queued continuation.
+title Compact Runtime integration - slice 6b2b
+hide footbox
+participant "Internal caller" as Caller
+participant "Compaction Service" as Service
+participant "Repository" as Repo
+participant "Registry / Managed Session" as Registry
+participant "Coordinator / Projector" as Run
+Caller -> Service : compact(sessionId, credentials, locale)
+group Shared Session operation lock
+  Service -> Repo : observeCompaction (row lock)
+  Repo --> Service : Session + full current branch
+  alt missing or running
+    Service --> Caller : NOT_FOUND / BUSY
+  else effective context empty
+    Service --> Caller : completed result(false, null)
+    note over Service, Registry : No Agent, Usage ID, capacity, Holder, or database writes
+  else effective context nonempty
+    Service -> Service : resolve Agent / model; allocate internal Usage ID
+    Service -> Registry : register and restore messages
+    alt initialization failure
+      Registry -> Registry : close created session; release capacity
+      Registry --> Service : original error (retain close failure)
+    else registered
+      Service -> Repo : acceptCompaction (row lock + recheck)
+      alt explicit rejection or uncertain commit
+        Service -> Registry : remove only this Holder; close; release capacity
+        note over Service, Repo : Do not blindly restore idle or replay uncertain acceptance
+        Service --> Caller : failure
+      else confirmed ACCEPTED
+        Service -> Run : start(holder, execution, locale)
+        Run -> Registry : compact without request SSE or control queue
+        Service --> Caller : detached completion handle
+      end
+    end
+  end
+end
+group Accepted execution terminal (shared operation lock)
+  Registry -> Run : compaction completed / failed / timeout
+  Run -> Repo : persist Compaction Entry + Usage on success
+  Run -> Registry : unsubscribe; remove; close; release capacity
+  Run -> Repo : attempt finishExecution
+  Run --> Caller : result(true, actual Entry sequence) or failure
+end
+note over Caller, Run
+Caller cancellation cannot cancel accepted execution.
+No public Command or HTTP route is added here.
+Credentials are not retained for queued continuation.
+end note
+@enduml
