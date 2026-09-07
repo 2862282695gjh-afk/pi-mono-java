@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>ADR-0068：复用 Runtime HTTP 跨进程测试夹具</title>
+  <title>ADR-0068：复用 Runtime HTTP 服务启动测试代码</title>
   <style>
     :root { font-family: Inter, "PingFang SC", sans-serif; color: #25272a; background: #f2f5f7; }
     body { margin: 0; } main { max-width: 920px; margin: 32px auto; padding: 32px; background: white; box-sizing: border-box; }
@@ -12,8 +12,10 @@
   </style>
 </head>
 <body><main>
-  <h1>ADR-0068：复用 Runtime HTTP 跨进程测试夹具</h1>
+  <h1>ADR-0068：复用 Runtime HTTP 服务启动测试代码</h1>
   <p>Status：Accepted · Date：2026-09-07 · Version：1.0.0</p>
+  <p>共享测试辅助代码负责启动真实后端服务、发送 HTTP 请求，并在测试结束后关闭服务和相关资源。
+  各测试场景保留自己的业务断言。</p>
   <h2>Context</h2>
   <p>Java 基线 <code>b7f077d59b09362dc366241920a85b6d218d1189</code> 的
   <code>modules/coding-agent-cli/src/test/java/com/campusclaw/codingagent/runtimeapi/web/RuntimeHttpProcessOpenGaussIT.java</code>
@@ -22,7 +24,7 @@
   <p>当前行为证据：<code>runtime/AgentRuntimeManager.java:prepareCached/loadSnapshot</code>、
   <code>runtimeapi/model/MateRuntimeModelManager.java:resolveModel</code>，相对 coding-agent-cli Java 包根；
   <code>modules/ai/src/main/java/com/campusclaw/ai/provider/mate/MateServiceModelManagerProvider.java:eventFlux</code>。
-  完整路径、断言依据和图见实现说明。本方案是 Java 测试架构调整，不以 pi 为夹具基线。</p>
+  完整路径、断言依据和图见实现说明。本方案是 Java 测试架构调整，不以 pi 为测试辅助代码的设计基线。</p>
   <p>新增源码单独绑定实现提交 <code>0a2c00b945f43bea7528875f1503bb662e2e3b56</code>：
   <code>RuntimeHttpProcessFixture.prepareRuntimeFiles/startRuntime/ModelStub.close</code>、
   <code>RuntimeHttpProcessFixtureTest</code> 和
@@ -33,7 +35,7 @@
     <li>在每个 Commands 场景复制旧 IT：短期方便，但重复行数高且继承过期入口，拒绝。</li>
     <li>只用 MockMvc 或替换生产 Bean：快速，但无法证明打包启动、真实网络与数据库恢复，拒绝。</li>
     <li>新增通用测试服务或公开调试接口：扩展范围和产品风险，不需要，拒绝。</li>
-    <li>提取当前用到的包级夹具，同时让旧场景消费：可复用并有真实验收约束，采用。</li>
+    <li>提取当前用到的包内测试辅助代码，同时供旧场景调用：可复用并有真实验收约束，采用。</li>
   </ul>
   <h2>Decision 与理由</h2>
   <ul>
@@ -51,7 +53,7 @@
     <li>未修改设计仓、未使用未合入应用代码；各实现独立开发，依赖合入后再串行集成。</li>
   </ul>
   <h2>验证</h2>
-  <p>夹具单元验证真实 prepareCached、Skill 摘要可见性、HTTP gate 和资源关闭；两个真实 IT 验证原 Events
+  <p>辅助代码单元测试验证真实 prepareCached、Skill 摘要可见性、HTTP gate 和资源关闭；两个真实 IT 验证原 Events
   场景与进程重启。公司镜像编译依赖 NativeParent，无法解析时显式保留未验证限制。</p>
   <h2>Related</h2>
   <ul>
@@ -60,6 +62,6 @@
     <li><a href="../designs/agent-skill-runtime.md">既有受管运行目录实现</a></li>
   </ul>
   <h2>版本历史</h2>
-  <p>1.0.0 · 2026-09-07：建立共享真实进程夹具并恢复主干配置验收。</p>
+  <p>1.0.0 · 2026-09-07：共享服务启动测试代码并恢复主干配置验收。</p>
 </main></body>
 </html>

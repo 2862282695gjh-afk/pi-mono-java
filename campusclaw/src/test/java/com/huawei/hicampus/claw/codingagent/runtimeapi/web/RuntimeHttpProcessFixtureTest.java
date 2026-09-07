@@ -36,7 +36,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * 验证共享跨进程夹具的完整受管快照、协议桩及关闭行为。
+ * 验证测试辅助代码准备的完整 Agent 快照、模拟模型响应及资源关闭行为。
  *
  * @version [br_eCampusCore 26.0.0, 2026/09/07]
  * @since [br_eCampusCore 26.0.0]
