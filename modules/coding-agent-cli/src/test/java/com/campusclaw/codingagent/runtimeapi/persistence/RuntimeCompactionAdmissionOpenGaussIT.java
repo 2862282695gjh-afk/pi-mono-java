@@ -9,6 +9,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.OffsetDateTime;
@@ -200,7 +201,8 @@ class RuntimeCompactionAdmissionOpenGaussIT {
             Process child = childReference.get();
             assertThat(child.waitFor(20, TimeUnit.SECONDS)).isTrue();
             assertThat(child.exitValue()).isZero();
-            assertThat(Files.readString(result)).isEqualTo(contender.equals("observe") ? "running:0" : "BUSY");
+            assertThat(Files.readString(result, StandardCharsets.UTF_8))
+                    .isEqualTo(contender.equals("observe") ? "running:0" : "BUSY");
             assertThat(repository.listCurrentBranchEntries(session.getId(), 0L, 500))
                     .hasSize(contender.equals("compact") ? 1 : 2);
         } finally {
@@ -280,19 +282,21 @@ class RuntimeCompactionAdmissionOpenGaussIT {
             try (var childContext = new AnnotationConfigApplicationContext(OpenGaussTestConfiguration.class)) {
                 var childRepository = childContext.getBean(RuntimeSessionRepository.class);
                 RuntimeSessionDTO observed = childRepository.find(args[0]).orElseThrow();
-                Files.writeString(Path.of(args[2]), "ready");
+                Files.writeString(Path.of(args[2]), "ready", StandardCharsets.UTF_8);
                 if (args[1].equals("observe")) {
                     var snapshot = childRepository.observeCompaction(args[0]).orElseThrow();
                     Files.writeString(
                             Path.of(args[3]),
                             snapshot.session().getState() + ":"
-                                    + snapshot.entries().size());
+                                    + snapshot.entries().size(),
+                            StandardCharsets.UTF_8);
                 } else {
                     Files.writeString(
                             Path.of(args[3]),
                             childRepository
                                     .acceptCompaction(observed, OffsetDateTime.now())
-                                    .name());
+                                    .name(),
+                            StandardCharsets.UTF_8);
                 }
             }
         }
