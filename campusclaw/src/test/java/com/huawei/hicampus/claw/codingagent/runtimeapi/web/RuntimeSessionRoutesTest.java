@@ -19,6 +19,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 
 import com.huawei.hicampus.claw.codingagent.runtimeapi.RuntimeMessageSourceConfiguration;
@@ -32,6 +33,8 @@ import com.huawei.hicampus.claw.codingagent.runtimeapi.session.RuntimeSessionVie
 import com.huawei.hicampus.claw.codingagent.runtimeapi.session.SessionEtagFactory;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.vo.CreateSessionResponseVO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.vo.GetSessionResponseVO;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.vo.LifetimeCostResponseVO;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.vo.LifetimeUsageResponseVO;
 import com.fasterxml.jackson.databind.json.JsonMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 
@@ -86,6 +89,8 @@ class RuntimeSessionRoutesTest {
                 .andExpect(jsonPath("$.result", org.hamcrest.Matchers.hasKey("displayName")))
                 .andExpect(jsonPath("$.result.displayName").value(org.hamcrest.Matchers.nullValue()))
                 .andExpect(jsonPath("$.result.thinking").value(true))
+                .andExpect(jsonPath("$.result.lifetimeUsage.input").value(0))
+                .andExpect(jsonPath("$.result.lifetimeUsage.cost.total").value(0))
                 .andExpect(jsonPath("$.result.updatedAt").doesNotExist());
         verify(service).create(AGENT_ID);
     }
@@ -101,6 +106,7 @@ class RuntimeSessionRoutesTest {
                 .andExpect(header().string(HttpHeaders.ETAG, "\"snp-resource\""))
                 .andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store"))
                 .andExpect(jsonPath("$.result.modelId").value("model-default"))
+                .andExpect(jsonPath("$.result.lifetimeUsage.totalTokens").value(0))
                 .andExpect(jsonPath("$.result", org.hamcrest.Matchers.hasKey("displayName")))
                 .andExpect(jsonPath("$.result.displayName").value(org.hamcrest.Matchers.nullValue()))
                 .andExpect(jsonPath("$.result.updatedAt").value("2026-08-18T00:00:00Z"));
@@ -196,7 +202,16 @@ class RuntimeSessionRoutesTest {
 
     private static RuntimeSessionView<GetSessionResponseVO> getView() {
         OffsetDateTime time = OffsetDateTime.parse("2026-08-18T00:00:00Z");
-        var response = new GetSessionResponseVO(SESSION_ID, AGENT_ID, null, "model-default", "idle", false, time, time);
+        var usage = new LifetimeUsageResponseVO(
+                0L,
+                0L,
+                0L,
+                0L,
+                0L,
+                new LifetimeCostResponseVO(
+                        BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO));
+        var response =
+                new GetSessionResponseVO(SESSION_ID, AGENT_ID, null, "model-default", "idle", false, usage, time, time);
         return new RuntimeSessionView<>(response, "\"snp-resource\"");
     }
 }

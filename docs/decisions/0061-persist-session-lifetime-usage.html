@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ADR-0061：原子累计 Session lifetimeUsage 分项</title>
+  <style>
+    :root { color-scheme: light; font-family: Inter, "PingFang SC", sans-serif; color: #25272a; background: #f2f5f7; }
+    body { margin: 0; } main { width: min(920px, calc(100% - 40px)); margin: 40px auto; padding: 40px; box-sizing: border-box; background: white; border: 1px solid #d7dde2; border-radius: 16px; }
+    h1 { margin-top: 0; font-size: 30px; } h2 { margin-top: 30px; font-size: 20px; }
+    p, li { line-height: 1.75; } code { overflow-wrap: anywhere; background: #edf2f5; } a { color: #1769aa; }
+    @media (max-width: 640px) { main { width: 100%; margin: 0; padding: 24px 18px; border: 0; border-radius: 0; } }
+  </style>
+</head>
+<body><main>
+  <h1>ADR-0061：原子累计 Session lifetimeUsage 分项</h1>
+  <p>Status：Accepted · Date：2026-09-07 · Version：1.0.0</p>
+  <h2>Context</h2>
+  <p>Java 基线 <code>6f52fddc87a03c20916fc7b6ef1de87f6a7a8cf5</code> 的 Session 响应缺少已确认的 lifetimeUsage。
+  设计只读基线 <code>pi-mono-java-design@88f4df16bc24bbfcd28e1ec374feb2de0db8be3b</code>，
+  Builtin README §8/§8.1 与操作 01/02/07/08 要求完整资源复用，不能将旧 cached/uncached 反推为原始分项。</p>
+  <p>源码 <code>modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/event/RuntimeEntryCodec.java:usageRecord</code>
+  已保存完整原始 Usage；同包 <code>RuntimeEventProjector:persistAssistant/projectCompactionCompleted</code>
+  共用 <code>runtimeapi/persistence/MyBatisRuntimeSessionRepository.java:appendEntryWithUsage</code> 的原子事务。</p>
+  <h2>选项与取舍</h2>
+  <ul>
+    <li>从旧 cached/uncached/total 推导分项：无需改表，但信息不足，不采用。</li>
+    <li>每次读取扫描全部 Usage Record：保持来源，但查询成本随生命周期增长，不采用。</li>
+    <li>原事务累计真实分项并按主键读取：新增八列及一次锁内读取，具有固定查询成本，采用。</li>
+  </ul>
+  <h2>Decision 与理由</h2>
+  <ul>
+    <li>保留 Entry、Record、序号、叶节点及 Stats 同一事务；新增 input/output/cacheRead/cacheWrite 与费用分项。</li>
+    <li>保留上游 totalTokens/cost.total，不假定它们等于当前可见分项和；旧粗粒度指标继续维护但不成为公开分项来源。</li>
+    <li>GET 一条 SQL 联表读；写事务先锁主行，再读取 Stats，避免等待锁之后携带过时统计。</li>
+    <li>累计计数用 long/BIGINT，费用用 BigDecimal/原有 NUMERIC(24,8)。DTO 只传数据，Assembler 转为只读嵌套 VO。</li>
+    <li>资源与 ETag 共用 RuntimeSessionDTO；Usage 不推动配置版本或 updatedAt，不削弱既有 PUT If-Match。</li>
+    <li>创建零值、GET 与 PUT 复用业务资源；未来 Slash 禁止公开 command/changed/sourceEventSeq，不新增七个命令 VO。</li>
+  </ul>
+  <h2>Consequences</h2>
+  <ul>
+    <li>正面：完整分项不会丢失，真实数据库可验证原子回滚、并发累计和跨 JVM 恢复；不泄漏内部 AI/DTO 类型。</li>
+    <li>代价：更新路径增加固定一次短事务 Stats 读取；存储仍受 NUMERIC(24,8) 精度限制。</li>
+    <li>首版只更新全量安装 SQL；不新增升级、回填或依赖，不把这次修复扩展成 Events V2 或前端迁移。</li>
+    <li>Command 完整结果通道由并行 R06 对齐；共享 Command 应用/HTTP 尚未实现，本 ADR 不表示路由已发布。</li>
+  </ul>
+  <h2>Related</h2>
+  <ul>
+    <li><a href="../designs/session-lifetime-usage.md">实现设计与验收</a></li>
+    <li><a href="../designs/session-lifetime-usage/diagram.puml#L1">PlantUML 源码</a></li>
+    <li><a href="../designs/compact-runtime-output.md">保留原始输出/持久化证据的历史切片</a></li>
+  </ul>
+  <h2>版本历史</h2>
+  <p>1.0.0 · 2026-09-07：记录 Usage 分项持久化与业务资源复用，不更改设计仓。</p>
+</main></body>
+</html>

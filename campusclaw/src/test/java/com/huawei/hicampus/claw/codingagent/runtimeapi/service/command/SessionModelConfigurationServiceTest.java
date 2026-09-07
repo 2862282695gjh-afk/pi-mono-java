@@ -32,6 +32,7 @@ import com.huawei.hicampus.claw.codingagent.runtimeapi.agent.AgentDirectorySnaps
 import com.huawei.hicampus.claw.codingagent.runtimeapi.command.catalog.ResolvedCommandCatalog;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.command.execution.CommandExecutionContext;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeEntryDTO;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeLifetimeUsageDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.command.CommandSessionSnapshotDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.command.ModelCommandResultDTO;
@@ -89,6 +90,7 @@ class SessionModelConfigurationServiceTest {
 
     @BeforeEach
     void setUp() {
+        when(mapper.findLifetimeUsage("session")).thenReturn(new RuntimeLifetimeUsageDTO());
         when(mapper.findSession("session")).thenReturn(session("old", "idle", false, 1L));
         when(mapper.lockSessionForUpdate("session")).thenReturn(session("latest", "idle", true, 4L));
         when(resolver.resolve("agent")).thenReturn(snapshot);
