@@ -13,7 +13,7 @@
 </head>
 <body><main>
   <h1>ADR-0071：Skill 复用普通消息执行</h1>
-  <p>Status：Accepted · Date：2026-09-08 · Version：1.0.0</p>
+  <p>Status：Accepted · Date：2026-09-08 · Version：1.0.1</p>
   <h2>Context</h2>
   <p>用户于2026-09-08明确接受共享 Skill 请求方案，以及完整 Skill 说明与本次输入组合文本
   发送模型、普通消息保存、随SSE/历史返回、按保存文本恢复。此决定补充设计
@@ -44,9 +44,12 @@
   <p>后续共享POST负责严格联合请求VO、Header处理、Builtin JSON与Skill普通SSE分流及真实HTTP验收。
   本片不发布路由、不迁移Events v2、不增加commandId、通用命令生命周期、升级脚本或私有快照。</p>
   <h2>Validation</h2>
-  <p>单元测试覆盖归一化、错误和消息边界；openGauss专项使用真实公共工厂、Agent、Repository及执行协调，
-  覆盖同次正文的模型/保存/SSE/历史/重连恢复，以及detach、准入、容量和接受竞争。
-  具体命令及完成结果见下方实现说明，不将内部服务测试表述为共享HTTP验收。</p>
+  <p>单元测试覆盖归一化、错误和消息边界；openGauss专项使用真实数据库、公共工厂、Agent、Repository、
+  Coordinator和Projector。AI、运行时获取、提示词加载、工具组装、目录解析、模型管理、Subagent/Cron提供者
+  使用替代组件，Mate工具Bean提供者为空；具体类型见下方实现说明。</p>
+  <p>覆盖同次正文的模型/保存/SSE/历史/重连恢复，以及detach、准入和容量。
+  接受竞争由prepare同步回调经同一Repository先接受另一条消息，验证当前请求被拒绝后保留已有状态，
+  不据此宣称跨连接并发接受已验证。本片未验证真实文件加载、完整工具组装、真实模型服务或跨JVM HTTP。</p>
   <h2>Related</h2>
   <ul>
     <li><a href="../designs/skill-command-execution/README.md">Skill 实际执行说明与源码证据</a></li>
@@ -54,6 +57,7 @@
     <li><a href="0067-actual-runtime-skill-admission.html">实际 Skill 绑定准入</a></li>
   </ul>
   <h2>版本历史</h2>
+  <p>1.0.1 · 2026-09-08：修正集成测试替代组件与接受竞争的验证范围，生产与测试代码不变。</p>
   <p>1.0.0 · 2026-09-08：确认实际快照展开与普通消息同源执行，公共路由后续交付。</p>
 </main></body>
 </html>

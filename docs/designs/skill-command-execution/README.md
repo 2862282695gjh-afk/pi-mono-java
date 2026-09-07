@@ -1,6 +1,6 @@
 # Skill 实际输入与普通消息执行
 
-版本：1.0.0 · 2026-09-08。
+版本：1.0.1 · 2026-09-08。
 
 ## Context 与范围
 
@@ -83,9 +83,14 @@ Service 把绑定/展开函数交给 `RuntimeEventService.submitPreparedMessage`
 ## 测试与验证
 
 - `SkillCommandExecutionServiceTest`：参数原值/缺省、附件复制与顺序、非法输入、展开长度边界、稳定错误与无正文泄漏。
-- `SkillCommandExecutionOpenGaussIT`：真实 Repository、Session 工厂、Agent、Coordinator、Projector；只替换外部运行时获取及模型服务。
+- `SkillCommandExecutionOpenGaussIT`：真实数据库、Repository、`AgentSessionFactory`、Agent、Coordinator、Projector。
+  `assembleRuntime` 替换 `CampusClawAiService`、`AgentRuntimeManager`、`RuntimeAgentPromptLoader`、
+  `ConfiguredToolAssembler`、`AgentDirectoryResolver`、`RuntimeModelManager`、`SubagentExecutionService`、
+  `AgentScopedCronToolFactory`，并使用空的 `MateToolsetFactory` Bean 提供者。
   验证实际快照文本进入模型、普通Entry、SSE、历史、重新建立数据库连接后的恢复；验证detach继续执行、
-  绑定/禁用/超限/忙状态/容量失败与跨连接接受竞争。该测试不是跨JVM HTTP验收。
+  绑定/禁用/超限/忙状态/容量失败。接受竞争用例在 `prepare` 同步回调中经同一 Repository 先接受另一条消息，
+  再断言当前请求被拒绝且已有 Entry/running 状态保留；该用例未建立独立连接或并发线程。
+  本测试不验证真实文件加载、完整工具组装、真实模型服务或跨JVM HTTP；重连恢复不等于跨连接并发接受验证。
 - 原 `RuntimeEventServiceTest`、`RuntimeCompactionServiceOpenGaussIT` 与 `RuntimeSessionRepositoryOpenGaussIT` 作为回归。
 - 最终 `./mvnw -q spotless:apply checkstyle:check verify` 通过：394类、1889项普通测试，0失败/错误/跳过；
   其中新增服务单测25项。新增/修改测试质量脚本0错误、0警告。
@@ -105,4 +110,5 @@ Service 把绑定/展开函数交给 `RuntimeEventService.submitPreparedMessage`
 
 | 版本 | 日期 | 变更 |
 | --- | --- | --- |
+| 1.0.1 | 2026-09-08 | 准确列明集成测试的真实与替代组件，区分重连恢复和同步模拟的接受竞争；生产与测试代码不变。 |
 | 1.0.0 | 2026-09-08 | 根据用户确认接入真实 Skill 输入、实际绑定与普通消息执行；共享 HTTP 单独交付。 |
