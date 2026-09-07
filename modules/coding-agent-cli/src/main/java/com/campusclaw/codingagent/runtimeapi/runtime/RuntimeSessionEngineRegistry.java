@@ -132,12 +132,23 @@ public class RuntimeSessionEngineRegistry {
             RuntimeActiveExecution execution,
             MateCredentials credentials) {
         ManagedAgentSession session = createSession(snapshot, model, thinking, credentials);
-        session.agent().replaceMessages(messages);
-        RuntimeSessionHolder holder = new RuntimeSessionHolder(sessionId, snapshot, session, thinking);
-        if (!holder.begin(execution)) {
-            throw new IllegalStateException("new execution holder is already active");
+        try {
+            session.agent().replaceMessages(messages);
+            RuntimeSessionHolder holder = new RuntimeSessionHolder(sessionId, snapshot, session, thinking);
+            if (!holder.begin(execution)) {
+                throw new IllegalStateException("new execution holder is already active");
+            }
+            return holder;
+        } catch (RuntimeException error) {
+            try {
+                session.close();
+            } catch (RuntimeException closeError) {
+                if (closeError != error) {
+                    error.addSuppressed(closeError);
+                }
+            }
+            throw error;
         }
-        return holder;
     }
 
     private ManagedAgentSession createSession(
