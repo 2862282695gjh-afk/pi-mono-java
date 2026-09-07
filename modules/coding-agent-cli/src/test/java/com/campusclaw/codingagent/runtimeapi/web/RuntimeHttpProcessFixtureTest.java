@@ -88,7 +88,8 @@ class RuntimeHttpProcessFixtureTest {
         try (stub) {
             stub.start();
             var gate = stub.blockNextResponse();
-            var response = CLIENT.sendAsync(request(port, CHAT_PATH), HttpResponse.BodyHandlers.ofString());
+            var response = CLIENT.sendAsync(
+                    request(port, CHAT_PATH), HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
             gate.awaitRequest();
             assertThat(response).isNotDone();
             assertThat(stub.lastRequest().path("model").asText()).isEqualTo(MODEL_ID);
@@ -109,7 +110,8 @@ class RuntimeHttpProcessFixtureTest {
         try (stub) {
             stub.start();
             var gate = stub.blockNextResponse();
-            var response = CLIENT.sendAsync(request(port, CHAT_PATH), HttpResponse.BodyHandlers.ofString());
+            var response = CLIENT.sendAsync(
+                    request(port, CHAT_PATH), HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
             gate.awaitRequest();
             stub.close();
             assertThat(stub.executorTerminated()).isTrue();
@@ -124,7 +126,8 @@ class RuntimeHttpProcessFixtureTest {
         try (ModelStub stub = new ModelStub(port)) {
             stub.start();
             var response = CLIENT.send(
-                    request(port, "/mate-service/v1/agents/" + AGENT_ID), HttpResponse.BodyHandlers.ofString());
+                    request(port, "/mate-service/v1/agents/" + AGENT_ID),
+                    HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
             assertThat(response.statusCode()).isEqualTo(404);
             assertThat(response.body()).isEmpty();
         }

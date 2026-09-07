@@ -173,7 +173,7 @@ final class RuntimeHttpProcessFixture {
                                 .timeout(Duration.ofSeconds(1))
                                 .GET()
                                 .build(),
-                        HttpResponse.BodyHandlers.ofString());
+                        HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
                 if (response.statusCode() == 404) {
                     return;
                 }
@@ -203,7 +203,7 @@ final class RuntimeHttpProcessFixture {
                 .header("Authorization", "Bearer " + JWT)
                 .header("Content-Type", "application/json")
                 .header("Accept", "text/event-stream")
-                .POST(HttpRequest.BodyPublishers.ofString(body))
+                .POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8))
                 .build();
         return CLIENT.sendAsync(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
     }
