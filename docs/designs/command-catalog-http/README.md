@@ -1,6 +1,6 @@
 # 共享命令清单 HTTP 实现
 
-> 版本：1.0.0 · 日期：2026-09-07 · 状态：Implemented
+> 版本：1.0.1 · 日期：2026-09-07 · 状态：Implemented
 
 ## 1. 范围与结论
 
@@ -12,6 +12,7 @@
 规范来源是只读设计仓 `pi-mono-java-design@88f4df16bc24bbfcd28e1ec374feb2de0db8be3b`：
 
 - `01-总体架构/01-CampusClaw多Agent运行时/接口契约/操作/12-list-session-commands.json`；
+- `01-总体架构/01-CampusClaw多Agent运行时/chat-http-v1-design.md` §5，第 595–601 行的已冻结错误消息；
 - `04-命令与技能/00-Slash-Command通用模块/README.md` v1.6.0。
 
 本文仅记录实现映射，不建立第二份字段规范，不修改 `pi-mono-java-design`。
@@ -22,6 +23,11 @@
 本片实现提交为 `afee9bd333d0fc74ba0cef8b27b6df7357acdf30`；下表新增入口和错误投影以此提交为证据，
 不能归为合并基线已有行为。Java 路径前缀为
 `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/`。
+
+F245-C1 修复提交为 `ce03d9e1d92ab2e8b5711caca4df728625ce89d8`，基于已包含主线
+`0ed71babf3f4c0a1d6260f4101f702bb88e822ca` 的正常合并提交 `9a8701a7`。
+只修正 `modules/coding-agent-cli/src/main/resources/i18n/messages_{en_US,zh_CN}.properties`
+的 INVALID_SESSION_ID 文案及下文路由测试，其他消息、错误码和状态不变。
 
 | 类型 | 路径与符号 | 已观察行为、决定及原因 |
 |---|---|---|
@@ -34,6 +40,12 @@
 | Java 新增 | `modules/common/src/main/java/com/campusclaw/common/constant/ClawConstants.java` 的 `RuntimeApi.Command.CATALOG_RETRY_AFTER_SECONDS` | 重试秒数复用共享业务常量归属，不增加转发常量或配置框架。 |
 
 ## 3. 分层与生命周期
+
+### 设计决策
+
+复用既有 Catalog 服务可保持单次完整解析，集中错误处理可避免影响其他操作的 422 语义。
+独立发布 GET 及上述选择的取舍见
+[ADR-0069：独立发布共享命令清单 GET](../../decisions/0069-publish-command-catalog-http.html)。
 
 ![共享清单 HTTP 的依赖边界](command_catalog_http.svg)
 
@@ -64,8 +76,10 @@ Session 状态是在查询时读取的快照，不承诺返回后仍保持 idle�
 - 所有错误只包含 `resCode/resMsg`，沿用语言响应头；错误正文不包含内部异常原因。
   其他操作上的 AGENT_NOT_AVAILABLE 仍为 422，不附加此清单重试头。
 
-错误文本继续使用既有 `i18n/messages_en_US.properties` 与 `messages_zh_CN.properties`，
-例如“指定的 Agent 当前不可用。”；设计 JSON 的示例措辞不用于重写全部消息资源。
+错误文本由 `i18n/messages_en_US.properties` 与 `messages_zh_CN.properties` 集中维护，
+遵循主设计 §5 明确冻结的消息。INVALID_SESSION_ID 必须为“sessionId 格式不正确。”与
+“The sessionId format is invalid.”，不能当作可任意调整的示例措辞。
+AGENT_NOT_AVAILABLE 既有中英文消息与冻结表一致，继续保留，例如“指定的 Agent 当前不可用。”。
 客户端按稳定 resCode 分支，不解析 resMsg。描述文本沿用 Contributor 元数据，不引入命令描述翻译系统。
 
 ## 5. 测试与交付证据
@@ -78,18 +92,18 @@ Session 状态是在查询时读取的快照，不承诺返回后仍保持 idle�
 
 | 检查 | 证据与边界 |
 |---|---|
-| HTTP 契约 | 18 个用例覆盖字段精确集合、idle/running、完整空绑定、缺缓存、异常脱敏、缺 Session、非法 ID、语言协商和现有 POST 422 回归；检查新 Controller 只注册 GET。 |
+| HTTP 契约 | 19 个用例覆盖字段精确集合、idle/running、完整空绑定、缺缓存、异常脱敏、缺 Session、非法 ID、语言协商和现有 POST 422 回归；检查新 Controller 只注册 GET，并从实际 GET 响应断言中英文冻结消息。 |
 | 一次解析 | 成功路径验证一次 Session 读取、一次 prepareCached、同一 PreparedAgentRuntime 的一次 resolveComplete，且无额外交互。 |
-| 针对性回归 | 清单路由 18、Catalog Service 20、既有配置路由 6，共 44 项通过。 |
-| 完整构建 | `./mvnw -q spotless:apply checkstyle:check verify`，393 个测试类、1860 项测试，0 失败、错误或跳过。 |
+| 针对性回归 | 初始 afee9bd3 的清单/应用/配置共 44 项通过；F245-C1 修复后，清单 19、既有四类路由 25、消息源/Locale/错误码 10、已合入测试辅助代码 5，共 59 项通过，0 失败、错误或跳过。 |
+| 完整构建 | afee9bd3 执行 `./mvnw -q spotless:apply checkstyle:check verify`，393 个测试类、1860 项测试，0 失败、错误或跳过；文字修正只重跑相关检查，不宣称本地重新完成全量。 |
 | 测试质量 | 用户指定脚本路径为失效链接；从本机原始 `java-ut-coverage-loop.skill` 归档执行同名脚本，0 错误、0 警告。 |
 | Java 规范 | Controller、Handler、测试的 AST 检查通过；ClawConstants 因既有 Unicode 转义需人工复核，新增常量格式与所有方法长度逐项确认，无超过 50 行的方法。 |
-| 公司镜像 | 四组 Java 源码与测试同步；布局测试及包名替换后的内容一致性检查通过。默认同步的公司编译因 NativeParent 无法解析而失败，显式 `--no-verify` 仅完成同步，不宣称公司编译通过。 |
-| 规模 | 模块侧新增 500 行，镜像后 1000 行；整个 PR 以 `scripts/check-commit-additions.sh origin/main HEAD` 为准，文档不计入。 |
+| 公司镜像 | 四组 Java 源码与测试、两组消息资源同步；布局测试及包名替换后的内容一致性检查通过。默认同步的公司编译因 NativeParent 无法解析而失败，显式 `--no-verify` 仅完成同步，不宣称公司编译通过。 |
+| 规模 | 模块侧新增 503 行，镜像后 1006 行；整个 PR 以 `scripts/check-commit-additions.sh origin/main HEAD` 为准，文档不计入。 |
 
 本片没有运行新增 GET 的真实 JAR/openGauss 跨进程测试；MVC 验证不等同于数据库部署验证，
-也不证明尚未发布的 POST Command/Skill 执行。后续组合验收复用独立交付的真实后端测试辅助代码，
-不在本片复制未合并测试基础代码。
+也不证明尚未发布的 POST Command/Skill 执行。真实后端测试辅助代码已随 #244 合入上述主线，
+后续组合验收复用它，不把已有服务测试算作新增 GET 已验收。
 
 文档需执行 PlantUML 生成及重生成一致性、ASCII、SVG XML、Markdown 链接与锚点、无 Mermaid、
 ADR 桌面/窄屏渲染和 `git diff --check`。最终执行结果记录在 PR。
@@ -98,4 +112,5 @@ ADR 桌面/窄屏渲染和 `git diff --check`。最终执行结果记录在 PR�
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 1.0.1 | 2026-09-07 | 按 F245-C1 对齐明确冻结的 Session 标识文案，补双语响应断言与证据归属；按 F245-S1 增加设计决策至 ADR 的正向链接。 |
 | 1.0.0 | 2026-09-07 | 独立发布共享清单 GET，记录精简响应、操作级 503 与验证边界。 |

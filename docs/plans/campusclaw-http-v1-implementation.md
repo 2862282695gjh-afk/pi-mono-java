@@ -186,7 +186,7 @@ AppKey/JWT 至少一种，否则不发送 execute 请求并返回工具执行失
 
 ## 6. 验证证据
 
-3.9.0 共享命令清单 GET 完成以下验证：
+3.9.0 共享命令清单 GET 的初始实现 `afee9bd3` 完成以下验证；后续修复的验证见该实现主题记录：
 
 - 新增 18 项真实 MVC 路由测试，复用实际 Catalog、Sources、Assembler 和 VO；与清单应用、配置路由共 44 项定向用例通过；
 - `./mvnw -q spotless:apply checkstyle:check verify`：393 个测试类、1860 项测试，0 失败、错误或跳过；

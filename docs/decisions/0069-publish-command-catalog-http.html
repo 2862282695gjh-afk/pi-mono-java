@@ -13,7 +13,7 @@
 </head>
 <body><main>
   <h1>ADR-0069：独立发布共享命令清单 GET</h1>
-  <p>Status：Accepted · Date：2026-09-07 · Version：1.0.0</p>
+  <p>Status：Accepted · Date：2026-09-07 · Version：1.0.1</p>
   <h2>背景</h2>
   <p>主线 <code>7d771ca802b781361e0e62e9014bafb6b0ed5e7a</code> 已具备完整 Catalog 应用能力，
   尚未发布命令清单 HTTP。设计仓只读基线 <code>88f4df16bc24bbfcd28e1ec374feb2de0db8be3b</code>
@@ -24,6 +24,8 @@
   新增 <code>runtimeapi/web/RuntimeCommandCatalogController.java#list</code>，修改
   <code>runtimeapi/web/RuntimeExceptionHandler.java#response</code>；既有
   <code>runtimeapi/service/command/CommandCatalogService.java#list</code> 负责一次缓存解析与响应组装。</p>
+  <p>F245-C1 修复证据为 <code>ce03d9e1d92ab2e8b5711caca4df728625ce89d8</code>，
+  已正常合入主线 <code>0ed71babf3f4c0a1d6260f4101f702bb88e822ca</code>；仅修两种语言的集中资源与路由断言。</p>
   <p>pi <code>5cd93f688aaab89dbb6dfa4aca535f21796ae185</code> 的
   <code>packages/coding-agent/src/core/slash-commands.ts:BuiltinSlashCommand</code> 只提供本地命令提示。
   Java HTTP、完整缓存与操作级错误投影是产品约束和架构接入，不是 pi 的已有协议。</p>
@@ -33,7 +35,10 @@
     <li>拒绝在 Controller 只返回 Builtin 的简化列表：它会掩盖完整缓存缺失，与共享发现契约不符。</li>
     <li>清单缺完整缓存必须为 503 且 Retry-After 为 3；集中错误处理器按实际 HandlerMethod 识别此操作。
     拒绝全局将 AGENT_NOT_AVAILABLE 从 422 改成 503，因为既有创建 Session 等操作仍要求 422。</li>
-    <li>沿用共享 ID 常量和 Jakarta 标量参数校验、语言协商与已有错误资源；不把设计示例措辞当作全局消息改写要求。</li>
+    <li>沿用共享 ID 常量、Jakarta 标量参数校验与语言协商；集中错误资源必须遵循
+    <code>chat-http-v1-design.md</code> §5 第 595–601 行明确冻结的消息。
+    INVALID_SESSION_ID 使用“sessionId 格式不正确。”及“The sessionId format is invalid.”；
+    不能把这项正文规定当作任意示例差异。AGENT_NOT_AVAILABLE 既有集中消息与冻结表一致，保持不变。</li>
     <li>GET 与 POST 分开交付，满足小 PR 限制；不安装伪 Skill Handler，也不通过普通消息回退模拟执行成功。</li>
   </ul>
   <h2>影响与边界</h2>
@@ -42,9 +47,10 @@
   <p>Spring 单例无请求状态；GET 不占容量、刷新 Agent、读取执行凭据或追加 Entry。清单读取的状态不是后续执行授权。
   不新增 SQL、升级脚本、依赖、认证器、POST 路由或事件类型；保留旧未注册命令原型，删除另行交付。</p>
   <h2>验证</h2>
-  <p>18 个新 MVC 用例通过实际 Source、Registry、应用层与响应投影验证 HTTP 字段、顺序、错误、语言、读取次数及无 POST；
-  与清单应用、现有配置路由合计 44 项定向用例通过。完整 verify 为 1860 项，0 失败、错误或跳过。
-  新增代码模块侧 500 行、镜像后 1000 行；整个 PR 继续执行新增行数门禁。</p>
+  <p>修复后有 19 个新 MVC 用例，通过实际响应验证中英文冻结文案及既有清单契约；
+  含原有路由、消息源、语言、错误码及已合入测试辅助代码，共 59 项定向测试通过。
+  初始 afee9bd3 的完整 verify 为 1860 项，0 失败、错误或跳过；本次文字修正未在本地重跑全量。
+  新增代码模块侧 503 行、镜像后 1006 行；整个 PR 继续执行新增行数门禁。</p>
   <p>公司镜像同步完成，但 NativeParent 不可用，不能宣称其独立编译通过。本片没有新增 GET 的真实 JAR/openGauss 测试，
   不把 MVC 测试当作跨进程验证。图生成、链接及桌面/窄屏渲染的最终证据见 PR。</p>
   <h2>相关材料</h2>
@@ -54,6 +60,7 @@
     <li><a href="0064-complete-command-catalog.html">ADR-0064：完整命令清单</a></li>
   </ul>
   <h2>版本历史</h2>
+  <p>1.0.1 · 2026-09-07：按 F245-C1 明确冻结文案并校准测试证据，README 按 F245-S1 补充本 ADR 正向链接；分层与路由决策不变。</p>
   <p>1.0.0 · 2026-09-07：记录独立 GET 发布、操作级错误投影及验证边界。</p>
 </main></body>
 </html>
