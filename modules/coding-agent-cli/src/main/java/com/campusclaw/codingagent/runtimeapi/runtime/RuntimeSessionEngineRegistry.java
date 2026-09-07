@@ -9,12 +9,14 @@ import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.Consumer;
 import java.util.function.Supplier;
 
 import com.campusclaw.ai.types.Message;
 import com.campusclaw.ai.types.Model;
 import com.campusclaw.ai.types.ThinkingLevel;
 import com.campusclaw.codingagent.common.client.mate.MateCredentials;
+import com.campusclaw.codingagent.runtime.PreparedAgentRuntime;
 import com.campusclaw.codingagent.runtimeapi.agent.AgentDirectorySnapshotDTO;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
@@ -74,10 +76,35 @@ public class RuntimeSessionEngineRegistry {
             List<Message> messages,
             RuntimeActiveExecution execution,
             MateCredentials credentials) {
+        return register(sessionId, snapshot, model, thinking, messages, execution, credentials, null);
+    }
+
+    /**
+     * 在本次实际准备的 Agent 快照上执行入口准入，再注册活动执行。
+     *
+     * @param sessionId Session 标识
+     * @param snapshot 模型解析时的目录快照
+     * @param model 已解析的模型
+     * @param thinking 是否启用 thinking
+     * @param messages 已恢复的历史
+     * @param execution 本次执行状态
+     * @param credentials 本次 Mate 凭据
+     * @param runtimeValidator 实际 Agent 快照的入口准入，可为空
+     * @return 已注册的活动句柄
+     */
+    public RuntimeSessionHolder register(
+            String sessionId,
+            AgentDirectorySnapshotDTO snapshot,
+            Model model,
+            boolean thinking,
+            List<Message> messages,
+            RuntimeActiveExecution execution,
+            MateCredentials credentials,
+            Consumer<PreparedAgentRuntime> runtimeValidator) {
         acquireCapacity();
         try {
-            RuntimeSessionHolder holder =
-                    createHolder(sessionId, snapshot, model, thinking, messages, execution, credentials);
+            RuntimeSessionHolder holder = createHolder(
+                    sessionId, snapshot, model, thinking, messages, execution, credentials, runtimeValidator);
             if (sessions.putIfAbsent(sessionId, holder) != null) {
                 holder.closeSession();
                 throw new RuntimeApiException(RuntimeErrorCode.SESSION_BUSY);
@@ -130,8 +157,9 @@ public class RuntimeSessionEngineRegistry {
             boolean thinking,
             List<Message> messages,
             RuntimeActiveExecution execution,
-            MateCredentials credentials) {
-        ManagedAgentSession session = createSession(snapshot, model, thinking, credentials);
+            MateCredentials credentials,
+            Consumer<PreparedAgentRuntime> runtimeValidator) {
+        ManagedAgentSession session = createSession(snapshot, model, thinking, credentials, runtimeValidator);
         try {
             session.agent().replaceMessages(messages);
             RuntimeSessionHolder holder = new RuntimeSessionHolder(sessionId, snapshot, session, thinking);
@@ -152,7 +180,11 @@ public class RuntimeSessionEngineRegistry {
     }
 
     private ManagedAgentSession createSession(
-            AgentDirectorySnapshotDTO snapshot, Model model, boolean thinking, MateCredentials credentials) {
+            AgentDirectorySnapshotDTO snapshot,
+            Model model,
+            boolean thinking,
+            MateCredentials credentials,
+            Consumer<PreparedAgentRuntime> runtimeValidator) {
         ThinkingLevel level = thinking ? ThinkingLevel.MEDIUM : ThinkingLevel.OFF;
         var request = new ManagedAgentSessionRequest(
                 snapshot.agentId(),
@@ -165,7 +197,7 @@ public class RuntimeSessionEngineRegistry {
                         runtime,
                         SubagentExecutionContext.root(runtime.agentId(), resolvedModel, level, credentials),
                         subagentExecutionService),
-                null,
+                runtimeValidator,
                 List.of(),
                 List.of());
         return sessionFactory.create(request);

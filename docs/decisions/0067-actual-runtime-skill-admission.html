@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ADR-0067：实际运行快照上的 Skill 准入</title>
+  <style>
+    :root { font-family: Inter, "PingFang SC", sans-serif; color: #25272a; background: #f2f5f7; }
+    body { margin: 0; } main { max-width: 920px; margin: 32px auto; padding: 32px; background: white; box-sizing: border-box; }
+    p, li { line-height: 1.75; } code { overflow-wrap: anywhere; } a { color: #1769aa; }
+    @media (max-width: 640px) { main { margin: 0; padding: 24px 18px; } }
+  </style>
+</head>
+<body><main>
+  <h1>ADR-0067：实际运行快照上的 Skill 准入</h1>
+  <p>Status：Accepted · Date：2026-09-07 · Version：1.0.1</p>
+  <h2>Context</h2>
+  <p>实现基线 <code>b7f077d59b09362dc366241920a85b6d218d1189</code> 已有公共 Session 工厂准入接点，
+  Runtime 注册表却固定传 null。显式 Skill 的名称和直接绑定需要在本次实际 Agent 快照上检查，
+  不能把展示清单当作执行授权。本片不依赖 Builtin 应用类型；交付前正常合入包含 #241 的主线
+  <code>739602f3b147221716ca7c93fc070a001995e151</code>。</p>
+  <p>初始实现提交为 <code>a143a00798a319e1404f393e4b50fea02de53eb2</code>。包分层修正后，
+  <code>runtimeapi/service/command/skill/SkillCommandAdmission.java</code> 与 Registry validator 重载的
+  当前源码证据为 <code>9053ac3c785d6aa3c54d1e8fc82b5352de38b8b6</code>，不归入起始基线的已有行为。</p>
+  <p>源码根为 <code>modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/</code>：
+  <code>session/AgentSessionFactory.java:create</code> 在 prepare 后先执行 validator；
+  <code>session/ManagedAgentSessionRequest.java</code> 已定义该 Consumer；
+  <code>runtimeapi/runtime/RuntimeSessionEngineRegistry.java:register/createSession</code> 已负责容量和失败释放；
+  <code>runtime/PreparedAgentRuntime.java:findSkill</code> 能从完整快照精确查找直接绑定。</p>
+  <p>设计仓只读基线 <code>88f4df16bc24bbfcd28e1ec374feb2de0db8be3b</code>，Skill 3.2.0 §3–4
+  要求共享严格名称、绑定复核，不要求额外私有 Skill 调用快照。pi
+  <code>4af9d21d3b4d664e4a29fcabfec85171077248e3</code> 的
+  <code>packages/coding-agent/src/core/agent-session.ts:_expandSkillCommand</code> 是本地展开及未知名称回退，
+  不作为 Java HTTP 或正文公开的授权。</p>
+  <h2>考虑过的选项及取舍</h2>
+  <ul>
+    <li>仅检查先前的命令清单：改动小，但不能证明实际执行对象的绑定，拒绝。</li>
+    <li>新建 Skill 专属 Session/容量/事件通道：隔离方便，但复制生命周期和失败处理，拒绝。</li>
+    <li>贯通现有 runtimeValidator：接点清晰、复用实际快照和失败清理，仅增加窄准入策略，采用。</li>
+  </ul>
+  <h2>Decision 与理由</h2>
+  <ul>
+    <li>SkillCommandAdmission 是单次调用的不可变策略，仅持有目标 Agent ID 与无前缀 Skill 名称。</li>
+    <li>该策略将 Runtime 准入失败适配为携带 HTTP 状态的 <code>RuntimeApiException/RuntimeErrorCode</code>，
+    因此归属 <code>runtimeapi.service.command.skill</code> 应用层，不属于 Command Core。
+    按 Builtin Core 实现设计 §3.1 与 F243-S1 仅迁移包和测试，不新增错误框架或改变准入行为。</li>
+    <li>名称复用 ClawConstants.Skill.isValidName，不增加第二套正则；精确直接绑定缺失返回 COMMAND_NOT_FOUND。</li>
+    <li>实际快照缺失、身份不一致或禁用返回 AGENT_NOT_AVAILABLE；不会回退为普通消息执行。</li>
+    <li>Registry 的兼容重载透传 Consumer；既有七参数入口保持无 Skill 检查，容量与 Holder 清理不另建系统。</li>
+    <li>复用接点属于 Java 架构变更；严格名称和拒绝未知显式调用属于已确认产品约束与安全加固。</li>
+  </ul>
+  <h2>Consequences</h2>
+  <ul>
+    <li>正面：后续入口能核对真实执行快照；不重新读 Skill 文件，不增加远程请求、锁或依赖。</li>
+    <li>代价：完整 Skill 调用仍需后续输入准备和应用集成；本片没有 submitSkill、HTTP 路由或伪 Handler。</li>
+    <li>边界：快照不是 Session 全生命周期版本绑定；测试替换输入只证明准入接点，不承诺热刷新。</li>
+    <li>后续：Skill SSE 已确认，但展开正文进入普通 message 会同时进入 SSE/GET 历史，正文呈现策略需精确确认。
+    本片不决定公开正文，也不创建额外私有快照；不得只展开执行用 UserMessage、却保存另一 message。
+    这不涉及既有 System Prompt 装配，本片不定义其与 Skill 正文的组合策略。</li>
+    <li>无 SQL、升级脚本、公共历史类型、通用 commandId 或设计仓改动。</li>
+  </ul>
+  <h2>验证</h2>
+  <p>17 个名称与绑定用例、3 个真实工厂/注册表集成用例，验证失败不装工具、不留 Holder、容量释放及普通登记兼容。
+  原有 Events 和注册表测试回归；包迁移和主线同步后 clean 重编译，包含公共工厂的 29 个定向用例通过。
+  完整模块的原始证据、镜像、Java AST、格式、文档渲染与新增行数门禁结果见 PR。
+  这些测试不证明尚未实现的跨进程 Skill HTTP 或正文恢复；公司 NativeParent 不可用时镜像编译仍未验证。</p>
+  <h2>Related</h2>
+  <ul>
+    <li><a href="../designs/skill-command-admission/README.md">实现说明、源码证据和边界</a></li>
+    <li><a href="../designs/skill-command-admission/diagram.puml#L1">实际快照准入 PlantUML</a></li>
+    <li><a href="0064-complete-command-catalog.html">ADR-0064：清单展示与执行准入职责不同</a></li>
+  </ul>
+  <h2>版本历史</h2>
+  <p>1.0.1 · 2026-09-07：按 F243-S1 将 HTTP 错误适配置于应用层，更新实际提交和路径，准入行为不变。</p>
+  <p>1.0.0 · 2026-09-07：记录实际运行快照的 Skill 窄准入前置能力。</p>
+</main></body>
+</html>
