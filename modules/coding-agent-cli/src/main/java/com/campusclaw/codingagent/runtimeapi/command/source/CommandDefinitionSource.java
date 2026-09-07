@@ -6,6 +6,7 @@ package com.campusclaw.codingagent.runtimeapi.command.source;
 
 import java.util.List;
 
+import com.campusclaw.codingagent.runtime.PreparedAgentRuntime;
 import com.campusclaw.codingagent.runtimeapi.command.definition.CommandDefinition;
 import com.campusclaw.codingagent.runtimeapi.command.definition.DisplayCommandDefinition;
 import com.campusclaw.codingagent.runtimeapi.command.type.CommandKind;
@@ -24,6 +25,17 @@ public interface CommandDefinitionSource {
 
     default List<? extends CommandDefinition> definitions(RuntimeSessionDTO session) {
         return list(session).stream().map(DisplayCommandDefinition::new).toList();
+    }
+
+    /**
+     * 从本次完整快照提供定义；依赖 Agent 数据的来源必须复用该快照，不再读取缓存或当前目录。
+     *
+     * @param session 已完成访问检查的 Session
+     * @param prepared 已经 AgentRuntimeManager 完整性与目录身份校验的同源快照
+     * @return 本次来源定义；不依赖 Agent 数据的来源可复用固定定义
+     */
+    default List<? extends CommandDefinition> definitions(RuntimeSessionDTO session, PreparedAgentRuntime prepared) {
+        return definitions(session);
     }
 
     /**
