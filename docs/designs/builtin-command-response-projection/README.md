@@ -95,6 +95,7 @@ Skill 执行返回协议及历史快照待决不由本次发现展示推断；�
 - 指定质量脚本原路径不存在，使用本机归档副本检查三份新增/修改测试：0 errors、0 warnings。
 - Java AST 方法/构造器长度、VO 布局及版权检查无 finding；公共新类型 Javadoc 与中文注释人工检查。
   ClawConstants 的既有 Unicode 转义由机械工具留作人工项，新增常量分组未改这些转义且源码布局已核对。
+  BuiltinCommandCoreTest 的既有 TestResultDTO record 布局同样保持不变并已人工核对。
 - 默认 mirror sync 因 NativeParent 无法解析失败；显式 `--no-verify` 同步后十对 Java 一致。
   **公司镜像编译未验证**，镜像一致性不能代替公司编译。
 - 本主题 PlantUML 生成/ASCII/SVG XML/二次生成字节一致、六个链接/锚点、无 Mermaid、
