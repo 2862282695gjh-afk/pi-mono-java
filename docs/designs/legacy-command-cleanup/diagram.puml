@@ -1,0 +1,43 @@
+@startuml legacy_command_cleanup
+' Java baseline: 146a6c9ecdc6eda987fcecd65b1e14416ce78bb1
+' Java removal: 1bf1ce6d631a5c394153bd8e8cce55a861d3a387
+' Source root: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/
+' command/SlashCommandRegistry.java: register, execute, parse (removed)
+' command/SlashCommandSession.java: no production implementation (removed)
+' runtimeapi/service/command/CommandExecutionService.java: executeBuiltin (unchanged)
+' runtimeapi/service/command/BuiltinCommandSource.java: constructor (unchanged)
+' runtimeapi/service/command/contributor/*CommandContributor.java: definition (unchanged)
+' session/ManagedAgentSession.java: compact (unchanged)
+' session/compaction/SessionCompactor.java: compact (unchanged)
+' pi 5cd93f688aaab89dbb6dfa4aca535f21796ae185:
+' packages/coding-agent/src/core/slash-commands.ts: BUILTIN_SLASH_COMMANDS
+' Observed behavior: old Java types have only their own test as an external consumer.
+' Design reason: remove the duplicate prototype without deleting shared compaction.
+' Java divergence: service architecture cleanup, not a claim about pi HTTP behavior.
+title Legacy command cleanup - deletion and retention boundaries
+skinparam monochrome true
+skinparam shadowing false
+package "Removed: codingagent.command" {
+  rectangle "5 core types\n4 text handlers\n1 dedicated test" as legacy
+}
+package "Retained: runtimeapi" {
+  rectangle "CompositeCommandRegistry\nBuiltinCommandSource\nCommandExecutionService" as app
+  rectangle "7 Builtin Contributors\nand narrow services" as builtins
+  rectangle "Runtime compaction lifecycle" as runtime
+  app --> builtins : definitions and handlers
+  builtins --> runtime : compact only
+}
+package "Retained: common Session" {
+  rectangle "ManagedAgentSession\nSessionCompactor\nSessionCompactionResult" as session
+}
+runtime --> session : existing compaction
+note bottom of legacy
+  No production consumer or Host registration.
+  No dependency from the retained command path.
+  Corporate mirror removes the same files.
+end note
+note bottom of app
+  Existing GET and execution behavior unchanged.
+  No POST Command published by this cleanup.
+end note
+@enduml

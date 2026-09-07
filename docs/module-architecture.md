@@ -1,6 +1,6 @@
 # CampusClaw 模块架构
 
-> 文档版本：2.4.0
+> 文档版本：2.5.0
 >
 > 状态：Implemented
 >
@@ -104,7 +104,6 @@ Spring Boot 服务装配模块。目录名保留 `cli` 仅为避免当前构建�
 | `com.campusclaw.codingagent.runtimeapi.command`、`runtimeapi.service.command` | 命令定义与共享 Catalog、Builtin 应用边界；清单 GET 已发布，Command POST 尚未发布 |
 | `com.campusclaw.codingagent.session` | 三入口公共 AgentSessionFactory |
 | `com.campusclaw.codingagent.session.compaction` | 公共上下文压缩与 Read 文件追踪 |
-| `com.campusclaw.codingagent.command` | 未注册的宿主无关 Slash Command 核心与四个处理器 |
 | `com.campusclaw.codingagent.runtime` | 受管目录 prepare/refresh 和 CampusMate 客户端 |
 | `com.campusclaw.codingagent.tool.builtin` | 八工具关闭枚举、严格配置和装配器 |
 | `com.campusclaw.codingagent.tool.ops` | 不调用 shell 的只读文件操作 |
@@ -115,11 +114,16 @@ Spring Boot 服务装配模块。目录名保留 `cli` 仅为避免当前构建�
 | `com.campusclaw.codingagent.model` | 服务端可用模型目录 |
 
 本模块不再包含 Picocli、TUI、RPC、终端 Session JSONL、Extension、动态 ToolCatalog 或用户级
-认证设置链。旧 `com.campusclaw.codingagent.command` 原型仍未注册，也不解析普通用户消息。
+认证设置链。旧 `com.campusclaw.codingagent.command` 原型及专属测试已删除，
+不影响现有分层命令与公共压缩；仍不解析普通用户消息中的斜杠命令。
 独立的 Runtime Command 实现通过 `RuntimeCommandCatalogController` 发布共享清单 GET，
 Controller 仅依赖应用 Service 和 ResultBeanAdapter，不执行 Builtin 或 Skill。
 源码证据为 `afee9bd333d0fc74ba0cef8b27b6df7357acdf30`，完整缓存、错误投影及层次见
 [共享清单 HTTP 实现](designs/command-catalog-http/README.md)。本片不改变 Maven 依赖图。
+
+旧原型删除基线为 #245 合并提交 `146a6c9ecdc6eda987fcecd65b1e14416ce78bb1`，
+清理实现为 `1bf1ce6d631a5c394153bd8e8cce55a861d3a387`。删除范围与保留能力见
+[命令原型清理](designs/legacy-command-cleanup/README.md)，不以历史 PR 167 的保留决定描述当前状态。
 
 ## 4. 运行与持久化边界
 
@@ -149,6 +153,7 @@ Controller 仅依赖应用 Service 和 ResultBeanAdapter，不执行 Builtin 或
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 2.5.0 | 2026-09-07 | 删除未注册的旧命令包与专属测试，保留现有 Runtime 命令及公共 Session 压缩。 |
 | 2.4.0 | 2026-09-07 | 区分未注册旧命令原型与 Runtime Command；记录已发布共享清单 GET，POST 仍未发布。 |
 | 2.3.0 | 2026-09-04 | 新增 common 模块与 ClawConstants，直接消费者显式声明底层依赖。 |
 | 2.2.0 | 2026-09-01 | 补充 CampusClaw 公司镜像的新目录、Java 包、公司 Maven 坐标与独立构建边界。 |

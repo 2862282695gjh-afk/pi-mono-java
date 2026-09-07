@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ADR-0070：删除未注册的旧命令原型</title>
+  <style>
+    :root { font-family: Inter, "PingFang SC", sans-serif; color: #25272a; background: #f2f5f7; }
+    body { margin: 0; } main { max-width: 920px; margin: 32px auto; padding: 32px; background: white; box-sizing: border-box; }
+    p, li { line-height: 1.75; } code { overflow-wrap: anywhere; } a { color: #1769aa; }
+    @media (max-width: 640px) { main { margin: 0; padding: 24px 18px; } }
+  </style>
+</head>
+<body><main>
+  <h1>ADR-0070：删除未注册的旧命令原型</h1>
+  <p>Status：Accepted · Date：2026-09-07 · Version：1.0.0</p>
+  <h2>Context</h2>
+  <p>基线 <code>146a6c9ecdc6eda987fcecd65b1e14416ce78bb1</code> 已合入共享清单 GET，
+  也已有独立的 Builtin 定义、七个 Contributor 和执行应用。旧
+  <code>com.campusclaw.codingagent.command</code> 仍保留四个文本处理器，只有专属测试调用；
+  其 Session 端口没有生产实现。原实施计划要求清理该原型，现可独立完成。</p>
+  <p>源码根为 <code>modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/</code>。
+  <code>command/SlashCommandRegistry.java#execute</code> 解析文本；
+  <code>runtimeapi/service/command/CommandExecutionService.java#executeBuiltin</code> 走独立分层体系，
+  不依赖旧包。删除提交为 <code>1bf1ce6d631a5c394153bd8e8cce55a861d3a387</code>。</p>
+  <p>pi <code>5cd93f688aaab89dbb6dfa4aca535f21796ae185</code> 的
+  <code>packages/coding-agent/src/core/slash-commands.ts#BUILTIN_SLASH_COMMANDS</code>
+  仅作为本地命令元数据对照。Java 包清理是服务架构决策，不代表 pi 已删除命令或具备 Java HTTP。</p>
+  <h2>Decision 与选项</h2>
+  <ul>
+    <li><strong>采用精确删除：</strong>删掉 9 个生产类型和 1 个专属测试，镜像同步删除。
+    优点是只保留一套当前命令实现，边界可用引用搜索和干净构建确认；缺点是仓外直接依赖旧 Java 类型的代码不再兼容。</li>
+    <li><strong>不继续保留原型：</strong>好处是保留历史代码方便比较；代价是两套参数与结果语义并存，
+    后续接入容易误选。历史比较已可通过 Git 完成，无需继续随 JAR 交付。</li>
+    <li><strong>不增加旧类型适配层：</strong>好处是可维持仓外源码兼容；代价是引入未要求的文本解析、
+    输出和生命周期适配。仓内没有调用方，且当前任务不要求兼容原型。</li>
+  </ul>
+  <p>本决定只替代 <a href="0023-retain-entry-independent-session-capabilities.html">ADR-0023</a>
+  中“保留未注册 Slash 原型”的部分。其公共压缩、Read 文件追踪和按职责确定删除范围的决定仍有效；
+  原记录的观察与当时规则保留为历史，不改写成当前实现。</p>
+  <h2>Consequences</h2>
+  <p>正面：减少重复实现与交付内容。负面：旧 Java 类型不再存在，不提供别名或运行时回退。
+  后续：POST Command 与 Skill 执行仍需单独完成；本片不更改设计仓、HTTP/SSE、控制端点或普通 Events 协议。</p>
+  <p>七个 Contributor、注册/应用服务、GET Controller、公共 ManagedAgentSession、SessionCompactor
+  和 SessionCompactionResult 均不修改。不新增状态、锁、凭据、数据表、升级脚本或 Maven 依赖。</p>
+  <h2>Validation</h2>
+  <p>本轮 clean、Spotless、Checkstyle 和 verify 通过：393 个测试类、1864 项测试，0 失败、错误或跳过。
+  删除的是旧测试的两个用例，现有七 Contributor 应用测试、MVC 清单与公共压缩测试保留并通过。
+  最终 JAR 不含旧包，仍包含上述现有命令与压缩类；这是打包检查，不是新增跨进程执行验收。</p>
+  <p>镜像同步与布局、内容核对通过。公司 NativeParent 无法解析，显式跳过独立公司编译，
+  不宣称公司 JAR 已验证。新增代码 0 行，删除代码含镜像 864 行；没有新增测试方法，质量脚本不适用。</p>
+  <h2>Related</h2>
+  <ul>
+    <li><a href="../designs/legacy-command-cleanup/README.md">删除清单、保留能力与验证边界</a></li>
+    <li><a href="../designs/legacy-command-cleanup/diagram.puml#L1">删除边界 PlantUML</a></li>
+    <li><a href="0069-publish-command-catalog-http.html">ADR-0069：共享清单 GET 与后续清理</a></li>
+  </ul>
+  <h2>版本历史</h2>
+  <p>1.0.0 · 2026-09-07：落实原型清理，保留公共能力和历史证据。</p>
+</main></body>
+</html>

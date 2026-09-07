@@ -1,6 +1,6 @@
 # CampusClaw HTTP V1 实施记录
 
-> 版本：3.9.0
+> 版本：3.10.0
 >
 > 状态：已实现并按 Runtime-only 现状校准
 >
@@ -96,6 +96,11 @@ Runtime-only 架构演进。当前形态为：
 入口 `runtimeapi/web/RuntimeCommandCatalogController.java#list` 只包装应用层 VO；
 `CommandCatalogService#list` 复用同一完整 Catalog，详细路径及验证边界见
 [共享清单 HTTP 实现](../designs/command-catalog-http/README.md)。按当前明确交付授权，GET 独立于 POST 发布。
+
+#245 合并基线 `146a6c9ecdc6eda987fcecd65b1e14416ce78bb1` 之后，
+`1bf1ce6d631a5c394153bd8e8cce55a861d3a387` 删除未注册旧命令原型及其专属测试。
+现有 Runtime 命令、公共压缩与上述 HTTP 路由不变；POST Command 仍未发布。
+删除清单与本轮验证见[命令原型清理](../designs/legacy-command-cleanup/README.md)。
 
 ## 4. 已观察行为、目标决策和差异分类
 
@@ -251,6 +256,7 @@ AppKey/JWT 至少一种，否则不发送 execute 请求并返回工具执行失
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 3.10.0 | 2026-09-07 | 删除无运行时消费者的旧命令原型；HTTP/SSE 和公共 Session 能力不变，POST Command 仍待实现。 |
 | 3.9.0 | 2026-09-07 | 发布共享命令清单 GET，记录独立契约基线、完整缓存和操作级 503；不发布 POST Command。 |
 | 3.8.0 | 2026-09-07 | 公司 GaussDB 脚本使用固定库与 Schema 头部、去除事务包裹，并将每个删表语句紧邻放到对应建表语句前。 |
 | 3.7.0 | 2026-09-04 | 更新资源 ID、HTTP 路径和请求限制的归属至底层 common 的 ClawConstants，外部契约不变。 |
