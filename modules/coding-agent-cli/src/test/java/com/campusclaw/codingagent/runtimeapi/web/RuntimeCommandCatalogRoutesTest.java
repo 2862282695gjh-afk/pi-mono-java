@@ -241,20 +241,21 @@ class RuntimeCommandCatalogRoutesTest {
     }
 
     @ParameterizedTest
-    @ValueSource(
-            strings = {
-                "bad",
-                "session-old",
-                "SESSION-0123456789abcdef0123456789abcdef",
-                "session-gggggggggggggggggggggggggggggggg"
-            })
-    void testInvalidIdentifierIsRejectedByMvcBeforeApplication(String sessionId) throws Exception {
-        MvcResult result = mvc.perform(get(ROUTE, sessionId).header(HttpHeaders.ACCEPT_LANGUAGE, "zh-CN"))
+    @CsvSource({
+        "bad,zh-CN,sessionId 格式不正确。",
+        "session-old,zh-CN,sessionId 格式不正确。",
+        "SESSION-0123456789abcdef0123456789abcdef,zh-CN,sessionId 格式不正确。",
+        "session-gggggggggggggggggggggggggggggggg,zh-CN,sessionId 格式不正确。",
+        "bad,en-US,The sessionId format is invalid."
+    })
+    void testInvalidIdentifierIsRejectedByMvcBeforeApplication(String sessionId, String language, String message)
+            throws Exception {
+        MvcResult result = mvc.perform(get(ROUTE, sessionId).header(HttpHeaders.ACCEPT_LANGUAGE, language))
                 .andExpect(status().isBadRequest())
                 .andExpect(header().doesNotExist(HttpHeaders.RETRY_AFTER))
                 .andReturn();
 
-        assertError(result, "INVALID_SESSION_ID", "session_id 格式不正确。", "zh-CN");
+        assertError(result, "INVALID_SESSION_ID", message, language);
         verifyNoInteractions(repository, manager);
     }
 
