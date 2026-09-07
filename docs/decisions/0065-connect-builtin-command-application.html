@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>ADR-0065：接通 Builtin 执行应用</title>
+  <style>
+    body{margin:0;font:16px/1.75 system-ui,sans-serif;color:#24292f;background:#f6f8fa}
+    main{max-width:980px;margin:32px auto;padding:32px;background:white;border:1px solid #d0d7de;border-radius:12px}
+    h1,h2{line-height:1.35}h2{margin-top:28px}a{color:#0969da}code{overflow-wrap:anywhere;font-size:.9em}
+    li{margin:8px 0}@media(max-width:600px){main{margin:0;padding:20px;border:0;border-radius:0}h1{font-size:26px}ul{padding-left:22px}}
+  </style>
+</head>
+<body><main>
+  <h1>ADR-0065：接通 Builtin 执行应用</h1>
+  <p>Status：Accepted · Date：2026-09-07 · Version：1.0.0</p>
+  <p>实现基线 <code>53496bbec9d8368b19e3b9a03030eed7ce15c182</code>；只读设计
+  <code>88f4df16bc24bbfcd28e1ec374feb2de0db8be3b</code>，Builtin 2.9.0 / Slash 1.6.0 / 操作13。</p>
+  <h2>Context</h2>
+  <p>七个内部 Builtin 与业务投影已合入，但应用层尚未把一次请求的定义选择、准入、调用及结果连接起来。
+  共享 GET 完整缓存切片独立开发；POST Builtin 可使用 main 已有的来源过滤入口，不应为并行引入占位路由或未合入依赖。</p>
+  <h2>Options</h2>
+  <ul>
+    <li>在 Controller 按 name 分派七个窄服务：混合 Web 与执行职责，并丢失 Definition 的扩展边界；不采用。</li>
+    <li>用 Builtin 正则作为共享 POST 的全局请求约束：会错误拒绝 Skill 类别；不采用。</li>
+    <li>显式 Builtin 应用入口，使用已有 Registry 与独立响应组装器：职责完整、无未合入依赖；采用。</li>
+  </ul>
+  <h2>Decision</h2>
+  <ul>
+    <li>CommandExecutionService.executeBuiltin 只消费已选定 Builtin 类别的 VO；未来共享入口独立选择请求类型。</li>
+    <li>VO 声明标准 Jakarta 约束，Service 验证自己的归一副本，缺省只在 Service 应用；严格 JSON 类型与未知字段沿既有 VO 模式拒绝。</li>
+    <li>一次 Catalog 固定 Definition 身份，预览准入后委托 Handler；业务参数与事务/操作锁内复核保持原职责。</li>
+    <li>只有 CommandResponseAssembler 按结果类型分派。复用 RuntimeSessionView 携带业务 VO 与可选 ETag，不作为公开 result 包装序列化。</li>
+    <li>完整 Session/ETag 同取 Handler 的权威 DTO；不从旧 Catalog 拼字段、不在投影中重新查数据库。</li>
+    <li>请求级 Compact 能力用 try-with-resources 清理，关闭或取消派生完成视图不取消已接受执行。</li>
+    <li>统一稳定错误白名单并移除敏感 cause，不将 PUT 专属错误或第三方信息泄漏给 Command 调用方。</li>
+  </ul>
+  <h2>Consequences</h2>
+  <ul>
+    <li>正面：新的 Contributor 无需修改中央命令名分派；请求、结果及凭据生命周期均有可测试的应用边界。</li>
+    <li>代价：通用完成结果需要组装器维护受支持 DTO 白名单；未知或空结果失败关闭，不直接序列化。</li>
+    <li>约束：现有 Service 返回载体现在用于 Session 相关业务 VO；只有完整 Session 结果带 ETag，Web 不序列化载体本身。</li>
+    <li>后续：共享类别识别、Header、HTTP 状态/ResultBean、虚拟请求线程等待及跨进程验收仍由最终 HTTP 切片完成。</li>
+    <li>范围：不修改设计仓、GET Catalog 新接口、Runtime 生命周期、数据库表、升级脚本或 Skill 未决协议。</li>
+  </ul>
+  <h2>Validation</h2>
+  <p>验证包含严格输入、单次来源解析、Definition 身份、准入拒绝、七个真实 Contributor 的应用接通、业务投影/ETag同源、
+  错误白名单、请求作用域及取消隔离。测试的外部业务数据由 mock 控制，不称作真实数据库或 HTTP 验收。
+  具体提交/测试数/预算见 PR 交付记录；公司 NativeParent 不可用时明确报告公司编译未验证。</p>
+  <h2>Related</h2>
+  <ul>
+    <li><a href="../designs/builtin-command-application/README.md">实现说明与源码证据</a></li>
+    <li><a href="../designs/builtin-command-application/diagram.puml#L1">PlantUML 源码</a></li>
+    <li><a href="0062-bind-compact-command-invocation.html">ADR-0062：Compact 请求作用域</a></li>
+    <li><a href="0063-command-response-projection.html">ADR-0063：共享业务响应</a></li>
+  </ul>
+  <h2>版本历史</h2>
+  <p>1.0.0 · 2026-09-07：接通显式 Builtin 内部执行应用，不发布公共路由。</p>
+</main></body>
+</html>

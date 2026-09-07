@@ -1,0 +1,86 @@
+@startuml builtin_command_application
+title Builtin Application and Business Response Boundary
+left to right direction
+skinparam backgroundColor white
+skinparam shadowing false
+skinparam packageStyle rectangle
+skinparam classAttributeIconSize 0
+skinparam nodesep 30
+skinparam ranksep 45
+
+' Source baseline: pi-mono-java@53496bbec9d8368b19e3b9a03030eed7ce15c182.
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/service/command/CompositeCommandRegistry.java#resolve.
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/command/builtin/BuiltinCommandDefinition.java#admission,handler.
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/session/RuntimeSessionResponseAssembler.java#getView.
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/service/command/CompactionCommandInvocation.java#invoke,close.
+' New: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/service/command/CommandExecutionService.java#executeBuiltin.
+' Source: pi@4af9d21d3b4d664e4a29fcabfec85171077248e3 packages/coding-agent/src/core/agent-session.ts#_tryExecuteExtensionCommand.
+' Observed behavior: registry, stable definitions, narrow services and business projections already exist.
+' Design reason: one request snapshot selects a handler; only the assembler dispatches result types.
+' Java divergence: structured input, database rechecks, isolated completion and JSON projection are not pi HTTP behavior.
+
+package "Application - singleton" {
+  class CommandExecutionService {
+    +executeBuiltin(sessionId, request, locale, credentials)
+  }
+  interface Validator
+  class CommandResponseAssembler {
+    +assemble(result)
+  }
+  class RuntimeSessionResponseAssembler
+  interface RuntimeSessionRepository
+  class SessionCompactionApplicationService
+}
+package "Existing registry and command core" {
+  class CompositeCommandRegistry <<singleton>>
+  class BuiltinCommandSource <<singleton>>
+  class BuiltinCommandDefinition <<immutable>>
+  interface CommandAdmissionPolicy
+  interface CommandHandler
+  class "Narrow business services" as NarrowServices <<singleton>>
+}
+package "Request and completion scope" {
+  class BuiltinCommandRequestVO
+  class ResolvedCommandCatalog
+  class CommandExecutionContext
+  class CompactionCommandInvocation
+  class "RuntimeSessionView<?>" as ResultView {
+    resource: business VO
+    etag: optional
+  }
+}
+CommandExecutionService --> Validator : validates owned input
+CommandExecutionService --> RuntimeSessionRepository : find Session
+CommandExecutionService --> CompositeCommandRegistry : resolve BUILTIN once
+CompositeCommandRegistry --> BuiltinCommandSource : filter before resolution
+BuiltinCommandSource o-- "0..*" BuiltinCommandDefinition
+ResolvedCommandCatalog o-- "0..*" BuiltinCommandDefinition : fixed identity
+BuiltinCommandDefinition *-- CommandAdmissionPolicy
+BuiltinCommandDefinition *-- CommandHandler
+CommandHandler --> NarrowServices : delegate / locked recheck
+CommandExecutionService --> BuiltinCommandDefinition : select / admit / invoke
+CommandExecutionService ..> BuiltinCommandRequestVO : normalize owned copy
+CommandExecutionService ..> CommandExecutionContext : creates
+CommandExecutionContext --> ResolvedCommandCatalog
+CommandExecutionContext --> CompactionCommandInvocation : optional capability
+CommandExecutionService --> SessionCompactionApplicationService : open invocation
+SessionCompactionApplicationService ..> CompactionCommandInvocation : creates
+CommandExecutionService --> CommandResponseAssembler : completion result only
+CommandResponseAssembler --> RuntimeSessionResponseAssembler : authoritative Session / ETag
+CommandResponseAssembler ..> ResultView : projects business VO
+note bottom of ResultView
+This carrier is not serialized as result.
+Only business VO enters the public body.
+Non-Session results have no ETag.
+end note
+note bottom of CompactionCommandInvocation
+One-shot request-local credentials.
+close() does not cancel accepted Compact.
+Caller cancellation affects only its view.
+end note
+legend bottom left
+No public Controller is registered by this slice.
+Builtin request validation is not global Skill routing.
+GET complete-catalog application is an independent slice.
+endlegend
+@enduml
