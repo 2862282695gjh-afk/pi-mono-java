@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CampusClaw 工具结果总结机制分析</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({ startOnLoad: true, theme: 'default', themeVariables: { fontSize: '14px' }, flowchart: { curve: 'basis', padding: 15 } });</script>
+<style>
+:root { --bg:#0d1117; --card:#161b22; --border:#30363d; --text:#e6edf3; --dim:#8b949e; --accent:#58a6ff; --green:#3fb950; --orange:#d29922; --red:#f85149; --purple:#bc8cff; --cyan:#39d2c0; }
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--text); font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; line-height: 1.75; margin: 0; }
+.container { max-width: 780px; margin: 0 auto; padding: 2rem 3rem 4rem; }
+h1 { font-size: 1.7rem; border-bottom: 1px solid var(--border); padding-bottom: .8rem; }
+h2 { font-size: 1.25rem; margin-top: 2.6rem; display: flex; align-items: center; gap: .6rem; }
+h3 { font-size: 1.05rem; color: var(--accent); }
+.subtitle { color: var(--dim); font-size: .88rem; margin-bottom: 2rem; }
+.subtitle code { color: var(--accent); }
+section { margin-bottom: 2rem; }
+.card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 1.25rem; margin: 1rem 0; }
+.card b { color: var(--accent); }
+.note { border-left: 3px solid var(--accent); background: #1a1f2b; padding: .8rem 1rem; border-radius: 0 8px 8px 0; margin: 1rem 0; font-size: .92rem; }
+.note.blue { border-color: var(--accent); }
+.note.orange { border-color: var(--orange); }
+.note.green { border-color: var(--green); }
+.note.red { border-color: var(--red); }
+.note.purple { border-color: var(--purple); }
+.src { font-family: 'SF Mono', Menlo, Consolas, monospace; font-size: .78rem; color: var(--dim); margin: 1.2rem 0 .3rem; }
+.src::before { content: "◈ "; color: var(--cyan); }
+.code-block { background: #0a0e14; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; max-width: 88%; margin: 0 auto; }
+.code-block .head { background: #1c2128; padding: .35rem .9rem; font-size: .75rem; color: var(--dim); font-family: 'SF Mono', Menlo, monospace; }
+.code-block pre { margin: 0; padding: .9rem 1rem; font-family: 'SF Mono', Menlo, Consolas, monospace; font-size: .8rem; line-height: 1.6; white-space: pre-wrap; word-break: break-all; color: var(--text); }
+.cc { color: #7d8590; font-style: italic; }
+.ck { color: #bc8cff; }
+.cf { color: #3fb950; }
+.cs { color: #d29922; }
+.ct { color: #58a6ff; }
+.cn { color: #79c0ff; }
+.ch { border-left: 3px solid var(--accent); background: rgba(88,166,255,.08); display: block; margin: 0 -1rem; padding: 0 1rem; }
+table.params, table.cmp { border-collapse: collapse; width: 88%; margin: 1rem auto; font-size: .86rem; }
+table.params th, table.cmp th { background: #1c2128; color: var(--text); text-align: left; padding: .5rem .8rem; }
+table.params td, table.cmp td { border-top: 1px solid var(--border); padding: .5rem .8rem; color: var(--dim); }
+table.params td:first-child, table.cmp td:first-child { color: var(--text); }
+table.params code, table.cmp code { background: rgba(88,166,255,.12); color: var(--accent); padding: .1rem .35rem; border-radius: 4px; font-size: .82rem; }
+.badge-green, .badge-orange, .badge-red, .badge-purple, .badge-cyan { display: inline-block; font-size: .72rem; padding: .1rem .6rem; border-radius: 999px; vertical-align: middle; }
+.badge-green { color: var(--green); background: rgba(63,185,80,.12); border: 1px solid rgba(63,185,80,.4); }
+.badge-orange { color: var(--orange); background: rgba(210,153,34,.12); border: 1px solid rgba(210,153,34,.4); }
+.badge-red { color: var(--red); background: rgba(248,81,73,.12); border: 1px solid rgba(248,81,73,.4); }
+.badge-purple { color: var(--purple); background: rgba(188,140,255,.12); border: 1px solid rgba(188,140,255,.4); }
+.badge-cyan { color: var(--cyan); background: rgba(57,210,192,.12); border: 1px solid rgba(57,210,192,.4); }
+.mermaid-wrap { background: #ffffff; border-radius: 10px; width: 88%; margin: 1.2rem auto; padding: 1rem; }
+.mermaid-wrap.wide { width: 95%; }
+.mermaid-caption { text-align: center; color: #333; font-size: .82rem; padding-top: .4rem; }
+.stack { display: flex; flex-direction: column; gap: 3px; width: 88%; margin: 1rem auto; font-family: 'SF Mono', Menlo, monospace; font-size: .8rem; }
+.stack-box { padding: .45rem .9rem; border-radius: 6px; }
+.stack-box.g { background: rgba(63,185,80,.12); border: 1px solid rgba(63,185,80,.25); }
+.stack-box.o { background: rgba(210,153,34,.12); border: 1px solid rgba(210,153,34,.25); }
+.stack-box.r { background: rgba(248,81,73,.12); border: 1px solid rgba(248,81,73,.25); }
+.stack-box.a { background: rgba(88,166,255,.12); border: 1px solid rgba(88,166,255,.25); }
+.stack-box.p { background: rgba(188,140,255,.12); border: 1px solid rgba(188,140,255,.25); }
+.stack-box.dim { background: rgba(139,148,158,.08); border: 1px solid rgba(139,148,158,.2); color: var(--dim); }
+.stack-label { text-align: center; color: var(--dim); font-size: .78rem; margin-top: .3rem; }
+details.diag { width: 88%; margin: 1.2rem auto; }
+details.diag.wide { width: 95%; }
+details.diag summary { cursor: pointer; color: var(--accent); font-size: .85rem; padding: .4rem 0; }
+details.diag[open] summary { margin-bottom: .4rem; }
+footer { border-top: 1px solid var(--border); margin-top: 3rem; padding-top: 1rem; color: var(--dim); font-size: .8rem; }
+</style>
+</head>
+<body>
+<div class="container">
+
+<h1>CampusClaw 工具结果总结机制分析</h1>
+<div class="subtitle">
+源码：<code>modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/session/compaction/</code> ·
+设计依据：<code>docs/designs/tool-system-v2.md §10</code>（对齐 pi <code>agent-session.ts / compaction.ts / overflow.ts</code>）· 分析日期 2026-09-05
+</div>
+
+<section>
+<h2><span class="badge-cyan">总览</span> 一句话定位</h2>
+<div class="card">
+CampusClaw 中不存在独立的「工具结果总结器」——<b>工具结果的总结是上下文压缩（Compaction）链路的一部分</b>：当会话上下文逼近模型窗口（阈值触发）或已经溢出（错误触发）时，
+<code>SessionCompactor</code> 把历史消息（含全部工具结果）交给压缩模型生成结构化摘要。
+工具结果在该链路中有三个关键待遇：
+<b>① 进入总结提示词前被截断到 2000 字符</b>；
+<b>② 以 <code>[Tool result]</code> 段落参与结构化摘要提炼</b>；
+<b>③ 被压缩掉的 Read 工具所读文件路径由 FileOperationTracker 追踪</b>，以 <code>&lt;read-files&gt;</code> 附加到摘要，保证「读过什么」可追溯。
+保留窗口（<code>keepRecentTokens</code>）内的工具结果则原样保留、不参与总结。
+</div>
+<div class="mermaid-wrap">
+<pre class="mermaid">
+flowchart LR
+    A[工具执行] --> B[ToolResultMessage<br/>完整结果]
+    B --> C{所在位置?}
+    C -->|保留窗口内<br/>keepRecentTokens| D[原样保留<br/>不参与总结]
+    C -->|被压缩的历史| E[序列化进总结提示词<br/>截断至 2000 chars]
+    E --> F[压缩模型按结构化格式<br/>提炼进 Summary]
+    B -.-> G[FileOperationTracker<br/>记录 Read 文件路径]
+    G --> H[summary 追加 read-files]
+    F --> I[summaryMessage<br/>+ retainedMessages<br/>替换模型上下文]
+    H --> I
+</pre>
+<div class="mermaid-caption">工具结果在压缩链路中的三条去向</div>
+</div>
+</section>
+
+<section>
+<h2><span class="badge-purple">组件</span> 压缩包组件全景</h2>
+<table class="cmp">
+<tr><th>类</th><th>职责</th><th>工具结果相关点</th></tr>
+<tr><td><code>CompactionPromptBuilder</code></td><td>四种提示词构建 + 会话序列化</td><td><code>TOOL_RESULT_MAX_CHARS=2000</code> 截断；<code>[Tool result]</code> 段落</td></tr>
+<tr><td><code>SessionCompactor</code></td><td>决策 / 准备 / 执行 / 结果</td><td>split-turn 双摘要；摘要 maxTokens 分级</td></tr>
+<tr><td><code>CompactionTokenEstimator</code></td><td>上下文 Token 估算</td><td>文本与 JSON 参数 <code>ceil(chars/4)</code>、image 4800 chars</td></tr>
+<tr><td><code>ContextOverflowDetector</code></td><td>溢出检测</td><td>20+ 供应商错误正则 + 99% 静默溢出</td></tr>
+<tr><td><code>CompactionMessageSupport</code></td><td>摘要消息包装 / 提取</td><td><code>&lt;summary&gt;</code> 与 <code>&lt;read-files&gt;</code> 段落协议</td></tr>
+<tr><td><code>FileOperationTracker</code></td><td>读文件追踪</td><td>从 Assistant 的 <code>Read</code> ToolCall 提取路径</td></tr>
+<tr><td><code>CompactionRetryClassifier</code></td><td>瞬态失败判定</td><td>摘要调用重试（3 次退避 2s）</td></tr>
+<tr><td><code>CompactionProperties</code></td><td>配置</td><td><code>campusclaw.runtime.compaction.*</code></td></tr>
+</table>
+</section>
+
+<section>
+<h2><span class="badge-orange">核心</span> 工具结果如何被序列化与截断</h2>
+<div class="card">
+压缩时，<code>CompactionPromptBuilder.serializeConversation</code> 把每条消息转成文本段落。
+<b>工具结果</b>（<code>ToolResultMessage</code>）以 <code>[Tool result]: </code> 前缀出现，
+内容超过 <code>TOOL_RESULT_MAX_CHARS = 2000</code> 字符时截断并追加计数提示；
+<b>工具调用</b>本身则以 <code>[Assistant tool calls]: name(key=json, ...)</code> 形式完整保留参数（这是刻意设计——
+工具参数是"做过什么"的精确记录，压缩后仍需可追溯）。
+</div>
+<div class="src">modules/coding-agent-cli/.../session/compaction/CompactionPromptBuilder.java</div>
+<div class="code-block"><div class="head">serializeConversation 中的消息分派（节选）</div>
+<pre><span class="ck">private static void</span> <span class="cf">appendMessage</span>(List&lt;String&gt; parts, Message message) {
+    <span class="ck">if</span> (message <span class="ck">instanceof</span> <span class="ct">UserMessage</span> user) {
+        appendIfPresent(parts, <span class="cs">"[User]: "</span>, contentText(user.content()));
+    } <span class="ck">else if</span> (message <span class="ck">instanceof</span> <span class="ct">AssistantMessage</span> assistant) {
+        appendAssistant(parts, assistant);   <span class="cc">// thinking / 正文 / tool calls 三段</span>
+    } <span class="ck">else if</span> (message <span class="ck">instanceof</span> <span class="ct">ToolResultMessage</span> result) {
+        <span class="ch">appendIfPresent(parts, <span class="cs">"[Tool result]: "</span>, truncate(contentText(result.content())));</span>
+    }
+}
+
+<span class="ck">private static final int</span> <span class="ct">TOOL_RESULT_MAX_CHARS</span> = <span class="cn">2_000</span>;
+
+<span class="ck">private static</span> String <span class="cf">truncate</span>(String text) {
+    <span class="ck">if</span> (text.length() &lt;= <span class="ct">TOOL_RESULT_MAX_CHARS</span>) { <span class="ck">return</span> text; }
+    <span class="ck">int</span> removed = text.length() - <span class="ct">TOOL_RESULT_MAX_CHARS</span>;
+    <span class="ck">return</span> text.substring(<span class="cn">0</span>, <span class="ct">TOOL_RESULT_MAX_CHARS</span>)
+            + <span class="cs">"\n\n[... "</span> + removed + <span class="cs">" more characters truncated]"</span>;
+}</pre></div>
+<div class="note blue">
+工具调用参数（<code>toolCall</code>）走 <code>json()</code> 序列化且<b>不截断</b>——参数体积通常远小于结果，且是摘要中「关键操作」的锚点；
+只有<b>结果</b>被截断。摘要提示词同时要求模型「Preserve exact file paths, function names, and error messages」，
+即截断丢失的正文细节由模型在摘要中优先挽救路径、函数名与报错三类高价值信息。
+</div>
+</section>
+
+<section>
+<h2><span class="badge-green">提示词</span> 四种总结提示词的分工</h2>
+<table class="params">
+<tr><th>提示词</th><th>常量</th><th>触发形态</th><th>要点</th></tr>
+<tr><td>系统提示词</td><td><code>SYSTEM_PROMPT</code></td><td>所有摘要调用的 system</td><td>「只输出结构化摘要，不继续对话」</td></tr>
+<tr><td>全量摘要</td><td><code>SUMMARY_PROMPT</code></td><td>无既往摘要</td><td>固定六节：Goal / Constraints / Progress(Done·In Progress·Blocked) / Key Decisions / Next Steps / Critical Context</td></tr>
+<tr><td>增量更新</td><td><code>UPDATE_PROMPT</code></td><td>存在 <code>&lt;previous-summary&gt;</code></td><td>保留旧信息、推进 Done、更新 Next Steps；允许可控删减</td></tr>
+<tr><td>轮次前缀</td><td><code>TURN_PREFIX_PROMPT</code></td><td>单轮过大被切分（split-turn）</td><td>只总结轮次前缀（Original Request / Early Progress / Context for Suffix），后缀原样保留</td></tr>
+</table>
+<div class="note orange">
+拆分轮次（<code>splitTurn</code>）时走 <code>compactSplitTurn</code>：<b>历史摘要</b>与<b>轮次前缀摘要</b>分别生成后以
+<code>--- **Turn Context (split turn):**</code> 拼接。两者 maxTokens 预算不同——历史摘要 <code>0.8 × reserveTokens</code>，
+轮次前缀 <code>0.5 × reserveTokens</code>。
+</div>
+</section>
+
+<section>
+<h2><span class="badge-cyan">流程</span> 决策 → 准备 → 执行 → 落地</h2>
+<div class="card">
+触发点在 <code>ManagedAgentSession</code>（Runtime / Cron / Child 三入口同一语义）：
+每轮结束后 <code>decide()</code> 判定是否压缩，运行中溢出走恢复路径；判定通过后 <code>prepare → compact → agent.replaceMessages(compactedMessages(result))</code>。
+</div>
+<div class="mermaid-wrap wide">
+<pre class="mermaid">
+sequenceDiagram
+    participant S as ManagedAgentSession
+    participant C as SessionCompactor
+    participant P as CompactionPromptBuilder
+    participant M as 压缩模型(aiService)
+    participant DB as Runtime 历史
+    S->>S: 回合结束 / 溢出错误
+    S->>C: decide(messages, model)
+    C->>C: ContextOverflowDetector<br/>或阈值 contextWindow−reserveTokens
+    C-->>S: Action(THRESHOLD / OVERFLOW_RETRY / OVERFLOW_PRESERVE)
+    S->>C: prepare(messages)
+    C->>C: findSplitIndex(keepRecentTokens)<br/>findTurnStart / readFiles 追踪
+    C-->>S: PreparedCompaction(history, turnPrefix, retained)
+    S->>C: compact(prepared, model, thinking, instructions)
+    C->>P: historyPrompt / turnPrefixPrompt
+    P->>P: [Tool result] 截断 2000 chars
+    C->>M: completeSummary(SYSTEM_PROMPT, 重试≤3)
+    M-->>C: 结构化 Summary
+    C->>C: appendReadFiles(<read-files>)
+    C-->>S: SessionCompactionResult
+    S->>S: replaceMessages(summary + retained)
+    S->>DB: session.compaction.completed entry
+</pre>
+<div class="mermaid-caption">压缩完整时序（自动阈值 / 溢出 / 手动 /compact 同一链路）</div>
+</div>
+
+<h3>决策分支（decide）</h3>
+<table class="params">
+<tr><th>条件</th><th>判定</th><th>动作</th></tr>
+<tr><td>模型报错且错误匹配 20+ 溢出正则</td><td>显式溢出</td><td><code>OVERFLOW_RETRY</code>（stop≠STOP 时）</td></tr>
+<tr><td>正常 STOP 但 Usage ≥ contextWindow（99%）</td><td>静默溢出</td><td><code>OVERFLOW_PRESERVE</code></td></tr>
+<tr><td>有效 Usage &gt; contextWindow − reserveTokens</td><td>阈值触发</td><td><code>THRESHOLD</code></td></tr>
+<tr><td>Usage 过期（早于最新压缩边界）</td><td>放弃本轮</td><td><code>NONE</code></td></tr>
+<tr><td>stopReason=ABORTED 且未 includeAborted</td><td>放弃</td><td><code>NONE</code></td></tr>
+</table>
+<div class="note green">
+Usage 优先策略：优先取<b>同 provider、同 model</b> 且晚于最新压缩边界的最后一条有效 Assistant Usage
+（<code>totalTokens</code>，否则四项相加）；无有效 Usage 才退化为对尾部消息逐条估算。
+</div>
+</section>
+
+<section>
+<h2><span class="badge-purple">可追溯</span> 被压缩工具结果的文件清单（read-files）</h2>
+<div class="card">
+工具结果被截断甚至整段消失后，「模型之前读过哪些文件」仍需可追溯。
+<code>FileOperationTracker.filesRead</code> 扫描历史中所有 <code>AssistantMessage</code> 的
+<code>ToolCall</code>，过滤 <code>name == "Read"</code>，提取文件路径参数，与既有摘要中的
+<code>&lt;read-files&gt;</code> 集合合并（跨次压缩累加，<code>TreeSet</code> 去重排序），
+最终由 <code>CompactionMessageSupport.appendReadFiles</code> 以 <code>&lt;read-files&gt;</code> 段落追加到摘要尾部。
+</div>
+<div class="src">.../session/compaction/FileOperationTracker.java（节选）</div>
+<div class="code-block"><div class="head">filesRead — 从 ToolCall 提取 Read 路径</div>
+<pre><span class="ck">for</span> (Message message : messages) {
+    <span class="ck">if</span> (message <span class="ck">instanceof</span> <span class="ct">AssistantMessage</span> assistant) {
+        assistant.content().stream()
+                .filter(<span class="ct">ToolCall</span>.class::isInstance)
+                .map(<span class="ct">ToolCall</span>.class::cast)
+                <span class="ch">.filter(call -> <span class="cs">"Read"</span>.equals(call.name()))</span>
+                .map(ToolCall::arguments)
+                .map(FileOperationTracker::readPath)
+                .filter(path -> path != null && !path.isBlank())
+                .forEach(result::add);
+    }
+}</pre></div>
+<div class="note purple">
+摘要消息的完整形态（下次压缩时被 <code>previousSummary</code> 识别并增量更新）：
+<code>The conversation history before this point was compacted... &lt;summary&gt;…&lt;/summary&gt; &lt;read-files&gt;…&lt;/read-files&gt;</code>
+——包装协议由 <code>CompactionMessageSupport</code> 的常量统一定义。
+</div>
+</section>
+
+<section>
+<h2><span class="badge-orange">配置</span> 参数表</h2>
+<table class="params">
+<tr><th>配置项（campusclaw.runtime.compaction.*）</th><th>默认值</th><th>作用</th></tr>
+<tr><td><code>enabled</code></td><td><code>true</code></td><td>关闭同时禁用阈值与溢出自动压缩</td></tr>
+<tr><td><code>reserve-tokens</code></td><td><code>16384</code></td><td>窗口预留；阈值 = contextWindow − reserveTokens（严格大于触发）；摘要 maxTokens 按比例（0.8 / 0.5）取自该值</td></tr>
+<tr><td><code>keep-recent-tokens</code></td><td><code>20000</code></td><td>原样保留的近期消息预算；从尾部累加确定切分点</td></tr>
+<tr><td><code>summary-retry-enabled / summary-max-retries / summary-retry-base-delay-ms</code></td><td><code>true / 3 / 2000</code></td><td>摘要瞬态失败退避重试</td></tr>
+<tr><td>代码内常量 <code>TOOL_RESULT_MAX_CHARS</code></td><td><code>2000</code></td><td>单条工具结果进入总结提示词的截断上限</td></tr>
+<tr><td>代码内常量 <code>ESTIMATED_IMAGE_CHARS</code></td><td><code>4800</code></td><td>图片消息的字符折算</td></tr>
+</table>
+</section>
+
+<section>
+<h2><span class="badge-red">边界</span> 防护与失败语义</h2>
+<div class="card">
+摘要调用本身有严格的产物校验（<code>summaryResponse</code>）：
+<b>ABORTED → CancellationException</b>（手动取消不产生摘要）、
+<b>ERROR → IllegalStateException</b>、
+<b>摘要里出现 ToolCall → 拒绝</b>（总结模型绝不允许反向调工具）、
+<b>空白文本 → 拒绝</b>。瞬态失败由 <code>CompactionRetryClassifier</code> 过滤后指数退避重试；
+所有失败路径最终以 <code>session.compaction.failed</code> 事件落地，不影响原上下文。
+</div>
+<div class="note red">
+压缩与普通消息<b>互斥</b>：/<code>compact</code> 命令或自动压缩在运行态被拒（busy）；「读取历史 → 压缩 → 写终态」期间普通消息不得并发，
+避免摘要覆盖新消息。多实例下超时进入持久化禁止态，不按时间自动放行。
+</div>
+</section>
+
+<section>
+<h2><span class="badge-green">对比</span> 设计对齐（pi-mono 对照）</h2>
+<table class="cmp">
+<tr><th>能力</th><th>CampusClaw 实现</th><th>pi-mono 参照</th></tr>
+<tr><td>压缩决策</td><td><code>decide()</code>：OverflowDetector + Usage 阈值</td><td><code>agent-session.ts _checkCompaction / _runAutoCompaction</code></td></tr>
+<tr><td>切分与准备</td><td><code>findSplitIndex / findTurnStart / prepare</code></td><td><code>compaction.ts findCutPoint / prepareCompaction</code></td></tr>
+<tr><td>Token 估算</td><td>Usage 优先 + <code>ceil(chars/4)</code>、image 4800</td><td><code>compaction.ts estimateContextTokens</code></td></tr>
+<tr><td>溢出识别</td><td><code>ContextOverflowDetector</code> 正则族 + 99% 静默</td><td><code>overflow.ts</code></td></tr>
+<tr><td>工具结果截断</td><td>总结提示词内 2000 chars 截断 + read-files 追溯</td><td>pi 无完全对应，属 CampusClaw 增强</td></tr>
+<tr><td>摘要协议</td><td><code>&lt;summary&gt;</code> / <code>&lt;read-files&gt;</code> 包装 + 六节结构化格式</td><td>同类 checkpoint 摘要思路</td></tr>
+</table>
+</section>
+
+<footer>
+分析来源：modules/coding-agent-cli <code>session/compaction/</code> 包（CompactionPromptBuilder / SessionCompactor / CompactionTokenEstimator / ContextOverflowDetector / CompactionMessageSupport / FileOperationTracker / CompactionProperties / CompactionRetryClassifier）+ ManagedAgentSession 触发点 + docs/designs/tool-system-v2.md §10 · 生成于 2026-09-05
+</footer>
+
+</div>
+<script>
+document.querySelectorAll('.mermaid-wrap, .diagram').forEach(el => {
+  const cap = el.querySelector('.mermaid-caption, .stack-label');
+  const text = cap ? cap.textContent.trim() : '图表';
+  if (cap) cap.style.display = 'none';
+  const d = document.createElement('details');
+  d.open = true;
+  d.className = 'diag' + (el.classList.contains('wide') ? ' wide' : '');
+  const s = document.createElement('summary');
+  s.textContent = text;
+  el.parentNode.insertBefore(d, el);
+  d.appendChild(s);
+  d.appendChild(el);
+});
+</script>
+</body>
+</html>
