@@ -93,6 +93,7 @@ class RuntimeHttpProcessFixtureTest {
             gate.awaitRequest();
             assertThat(response).isNotDone();
             assertThat(stub.lastRequest().path("model").asText()).isEqualTo(MODEL_ID);
+            assertThat(stub.requestCount()).isOne();
             gate.release();
             var completed = response.get(5, TimeUnit.SECONDS);
             assertThat(completed.statusCode()).isEqualTo(200);
@@ -125,11 +126,13 @@ class RuntimeHttpProcessFixtureTest {
         int port = RuntimeHttpProcessFixture.freePort();
         try (ModelStub stub = new ModelStub(port)) {
             stub.start();
+            assertThat(stub.requestCount()).isZero();
             var response = CLIENT.send(
                     request(port, "/mate-service/v1/agents/" + AGENT_ID),
                     HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
             assertThat(response.statusCode()).isEqualTo(404);
             assertThat(response.body()).isEmpty();
+            assertThat(stub.requestCount()).isOne();
         }
     }
 
