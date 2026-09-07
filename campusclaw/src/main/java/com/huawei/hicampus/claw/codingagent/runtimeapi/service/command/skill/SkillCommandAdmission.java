@@ -2,16 +2,16 @@
  * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
  */
 
-package com.campusclaw.codingagent.runtimeapi.command.skill;
+package com.huawei.hicampus.claw.codingagent.runtimeapi.service.command.skill;
 
 import java.util.Objects;
 import java.util.function.Consumer;
 
-import com.campusclaw.codingagent.runtime.MateServiceClient.SkillInfo;
-import com.campusclaw.codingagent.runtime.PreparedAgentRuntime;
-import com.campusclaw.codingagent.runtimeapi.error.RuntimeApiException;
-import com.campusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
-import com.campusclaw.common.constant.ClawConstants;
+import com.huawei.hicampus.claw.codingagent.runtime.MateServiceClient.SkillInfo;
+import com.huawei.hicampus.claw.codingagent.runtime.PreparedAgentRuntime;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.error.RuntimeApiException;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.error.RuntimeErrorCode;
+import com.huawei.hicampus.claw.common.constant.ClawConstants;
 
 /**
  * 在本次实际执行的 Agent 快照上核对显式 Skill 名称及直接绑定。

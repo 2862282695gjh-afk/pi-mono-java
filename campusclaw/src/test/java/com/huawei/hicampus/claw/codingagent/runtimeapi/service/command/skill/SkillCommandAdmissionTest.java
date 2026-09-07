@@ -2,7 +2,7 @@
  * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
  */
 
-package com.campusclaw.codingagent.runtimeapi.command.skill;
+package com.huawei.hicampus.claw.codingagent.runtimeapi.service.command.skill;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -10,11 +10,11 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import java.nio.file.Path;
 import java.util.List;
 
-import com.campusclaw.codingagent.runtime.MateServiceClient.AgentRuntime;
-import com.campusclaw.codingagent.runtime.MateServiceClient.SkillInfo;
-import com.campusclaw.codingagent.runtime.PreparedAgentRuntime;
-import com.campusclaw.codingagent.runtimeapi.error.RuntimeApiException;
-import com.campusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
+import com.huawei.hicampus.claw.codingagent.runtime.MateServiceClient.AgentRuntime;
+import com.huawei.hicampus.claw.codingagent.runtime.MateServiceClient.SkillInfo;
+import com.huawei.hicampus.claw.codingagent.runtime.PreparedAgentRuntime;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.error.RuntimeApiException;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.error.RuntimeErrorCode;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
