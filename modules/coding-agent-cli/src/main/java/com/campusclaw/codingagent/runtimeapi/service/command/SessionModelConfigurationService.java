@@ -15,7 +15,9 @@ import com.campusclaw.codingagent.runtimeapi.agent.AgentDirectoryResolver;
 import com.campusclaw.codingagent.runtimeapi.dto.RuntimeEntryDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.SessionConfigurationUpdateDTO;
+import com.campusclaw.codingagent.runtimeapi.dto.command.CommandResultDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.command.ModelCommandResultDTO;
+import com.campusclaw.codingagent.runtimeapi.dto.command.SessionCommandResultDTO;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
 import com.campusclaw.codingagent.runtimeapi.event.RuntimeEntryCodec;
@@ -68,10 +70,10 @@ public class SessionModelConfigurationService {
     public ModelCommandResultDTO query(String sessionId) {
         var current = requireSession(sessionId);
         var snapshot = directoryResolver.resolve(current.getAgentId());
-        return new ModelCommandResultDTO(current.getModelId(), modelManager.listAvailableModels(snapshot), false, null);
+        return new ModelCommandResultDTO(current.getModelId(), modelManager.listAvailableModels(snapshot));
     }
 
-    public ModelCommandResultDTO execute(String sessionId, String arguments) {
+    public CommandResultDTO execute(String sessionId, String arguments) {
         try {
             if (arguments == null || arguments.isEmpty()) {
                 return query(sessionId);
@@ -81,12 +83,10 @@ public class SessionModelConfigurationService {
                 throw new RuntimeApiException(RuntimeErrorCode.SESSION_BUSY);
             }
             var snapshot = directoryResolver.resolve(current.getAgentId());
-            var models = List.copyOf(modelManager.listAvailableModels(snapshot));
             var model = modelManager.resolveAvailableModel(snapshot, arguments);
             var update = update(current.getId(), null, model);
-            return new ModelCommandResultDTO(
-                    update.session().getModelId(),
-                    models,
+            return new SessionCommandResultDTO(
+                    update.session(),
                     update.status() == SessionConfigurationUpdateDTO.Status.UPDATED,
                     update.sourceEventSeq());
         } catch (RuntimeApiException error) {

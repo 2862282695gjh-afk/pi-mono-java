@@ -13,6 +13,7 @@ import java.nio.file.Path;
 import java.time.Clock;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
@@ -27,14 +28,14 @@ import com.huawei.hicampus.claw.codingagent.runtimeapi.agent.AgentDirectorySnaps
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeEntryDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.SessionConfigurationUpdateDTO;
-import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.SessionNameUpdateDTO;
-import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.command.ThinkingCommandResultDTO;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.command.SessionCommandResultDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.error.RuntimeErrorCode;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeEntryCodec;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.mapper.RuntimeSessionMapper;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.model.RuntimeModelManager;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.persistence.UserEventAcceptance.Status;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.service.command.SessionModelConfigurationService;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.service.command.SessionNamingService;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.service.command.SessionThinkingConfigurationService;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.session.RuntimeSessionResponseAssembler;
@@ -127,8 +128,10 @@ class RuntimeSessionRepositoryOpenGaussIT {
         var assembler = new RuntimeSessionResponseAssembler(new SessionEtagFactory());
         var service = new SessionNamingService(
                 repository, Clock.fixed(now.plusSeconds(1).toInstant(), ZoneOffset.UTC));
-        assertThat(service.execute(session.getId(), "  中文  name  ").changed()).isTrue();
+        var result = service.execute(session.getId(), "  中文  name  ");
+        assertThat(result.changed()).isTrue();
         var renamed = repository.find(session.getId()).orElseThrow();
+        assertThat(result.session()).isEqualTo(renamed);
         assertThat(renamed.getDisplayName()).isEqualTo("中文  name");
         assertThat(renamed.getState()).isEqualTo("running");
         assertThat(renamed.getActiveLeafId()).isEqualTo(before.getActiveLeafId());
@@ -180,10 +183,16 @@ class RuntimeSessionRepositoryOpenGaussIT {
             assertThat(secondStarted.await(5, TimeUnit.SECONDS)).isTrue();
             assertThatThrownBy(() -> second.get(200, TimeUnit.MILLISECONDS)).isInstanceOf(TimeoutException.class);
             release.countDown();
-            assertThat(first.get(5, TimeUnit.SECONDS)).contains(new SessionNameUpdateDTO("first", true));
-            assertThat(second.get(5, TimeUnit.SECONDS))
-                    .contains(new SessionNameUpdateDTO(nextName, !nextName.equals("first")));
+            var firstResult = first.get(5, TimeUnit.SECONDS).orElseThrow();
+            var secondResult = second.get(5, TimeUnit.SECONDS).orElseThrow();
+            assertThat(firstResult.changed()).isTrue();
+            assertThat(firstResult.session().getDisplayName()).isEqualTo("first");
+            assertThat(firstResult.session().getResourceVersion()).isEqualTo(2L);
+            assertThat(firstResult.session().getUpdatedAt())
+                    .isEqualTo(session.getUpdatedAt().plusSeconds(1));
+            assertThat(secondResult.changed()).isEqualTo(!nextName.equals("first"));
             var current = repository.find(session.getId()).orElseThrow();
+            assertThat(secondResult.session()).isEqualTo(current);
             assertThat(current.getDisplayName()).isEqualTo(nextName);
             assertThat(current.getResourceVersion()).isEqualTo(nextName.equals("first") ? 2L : 3L);
             assertThat(count("t_session_entries", session.getId())).isZero();
@@ -215,6 +224,50 @@ class RuntimeSessionRepositoryOpenGaussIT {
             Thread.currentThread().interrupt();
             throw new IllegalStateException(exception);
         }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"name", "model", "thinking"})
+    void shouldReturnExactlyStoredTimestampPrecisionForConfigurationChanges(String command) {
+        var session = newSession("session_timestamp");
+        repository.create(session);
+        var updatedAt = session.getUpdatedAt().plusSeconds(1).withNano(123_999_999);
+        var changed = executeConfigurationCommand(
+                command, session.getId(), Clock.fixed(updatedAt.toInstant(), ZoneOffset.UTC));
+        assertThat(changed.changed()).isTrue();
+        assertThat(changed.session()).isEqualTo(repository.find(session.getId()).orElseThrow());
+        assertThat(changed.session().getUpdatedAt()).isEqualTo(updatedAt.truncatedTo(ChronoUnit.MILLIS));
+        assertThat(changed.session().getResourceVersion()).isEqualTo(2L);
+        var unchanged = executeConfigurationCommand(
+                command, session.getId(), Clock.fixed(updatedAt.plusDays(1).toInstant(), ZoneOffset.UTC));
+        assertThat(unchanged.changed()).isFalse();
+        assertThat(unchanged.sourceEventSeq()).isNull();
+        assertThat(unchanged.session()).isEqualTo(changed.session());
+        assertThat(repository.find(session.getId())).contains(changed.session());
+    }
+
+    private SessionCommandResultDTO executeConfigurationCommand(String command, String sessionId, Clock clock) {
+        var snapshot = new AgentDirectorySnapshotDTO(
+                "agent", "model-db-it", List.of("next"), Path.of("/runtime"), Path.of("/runtime/.campusclaw"));
+        var manager = mock(RuntimeModelManager.class);
+        var model = mock(Model.class);
+        when(model.id()).thenReturn("next");
+        when(model.reasoning()).thenReturn(true);
+        when(manager.resolveAvailableModel(snapshot, "next")).thenReturn(model);
+        when(manager.resolveModel(snapshot, "model-db-it")).thenReturn(model);
+        var codec = new RuntimeEntryCodec(new ObjectMapper(), new RuntimeMessageSourceConfiguration().messageSource());
+        return switch (command) {
+            case "name" -> new SessionNamingService(repository, clock).execute(sessionId, "name");
+            case "model" ->
+                (SessionCommandResultDTO) new SessionModelConfigurationService(
+                                repository, agentId -> snapshot, manager, codec, () -> "model-entry", clock)
+                        .execute(sessionId, "next");
+            case "thinking" ->
+                new SessionThinkingConfigurationService(
+                                repository, agentId -> snapshot, manager, codec, () -> "thinking-entry", clock)
+                        .execute(sessionId, "on");
+            default -> throw new AssertionError(command);
+        };
     }
 
     @Test
@@ -582,10 +635,13 @@ class RuntimeSessionRepositoryOpenGaussIT {
                 return service.execute(session.getId(), "on");
             });
             start.countDown();
-            assertThat(List.of(first.get(5, TimeUnit.SECONDS), second.get(5, TimeUnit.SECONDS)))
-                    .containsExactlyInAnyOrder(
-                            new ThinkingCommandResultDTO(true, true, 1L),
-                            new ThinkingCommandResultDTO(true, false, null));
+            var results = List.of(first.get(5, TimeUnit.SECONDS), second.get(5, TimeUnit.SECONDS));
+            assertThat(results).extracting(SessionCommandResultDTO::changed).containsExactlyInAnyOrder(true, false);
+            assertThat(results)
+                    .extracting(SessionCommandResultDTO::sourceEventSeq)
+                    .containsExactlyInAnyOrder(1L, null);
+            var current = repository.find(session.getId()).orElseThrow();
+            assertThat(results).extracting(SessionCommandResultDTO::session).containsOnly(current);
         }
         assertThat(repository.find(session.getId()).orElseThrow().getResourceVersion())
                 .isEqualTo(2L);
@@ -595,8 +651,12 @@ class RuntimeSessionRepositoryOpenGaussIT {
         context.close();
         context = new AnnotationConfigApplicationContext(OpenGaussTestConfiguration.class);
         repository = context.getBean(RuntimeSessionRepository.class);
-        assertThat(thinkingService(new CountDownLatch(0)).execute(session.getId(), ""))
-                .isEqualTo(new ThinkingCommandResultDTO(true, false, null));
+        var restored = thinkingService(new CountDownLatch(0)).execute(session.getId(), "");
+        assertThat(restored.session())
+                .isEqualTo(repository.find(session.getId()).orElseThrow());
+        assertThat(restored.session().isThinking()).isTrue();
+        assertThat(restored.changed()).isFalse();
+        assertThat(restored.sourceEventSeq()).isNull();
         assertThat(repository.listCurrentBranch(session.getId(), 0L, 10, true)).hasSize(1);
     }
 

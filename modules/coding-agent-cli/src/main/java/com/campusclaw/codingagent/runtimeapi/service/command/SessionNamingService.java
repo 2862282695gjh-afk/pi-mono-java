@@ -9,7 +9,7 @@ import java.time.Clock;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 
-import com.campusclaw.codingagent.runtimeapi.dto.command.NameCommandResultDTO;
+import com.campusclaw.codingagent.runtimeapi.dto.command.SessionCommandResultDTO;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
 import com.campusclaw.codingagent.runtimeapi.persistence.RuntimeSessionRepository;
@@ -38,19 +38,19 @@ public class SessionNamingService {
         this.clock = clock;
     }
 
-    public NameCommandResultDTO execute(String sessionId, String arguments) {
+    public SessionCommandResultDTO execute(String sessionId, String arguments) {
         if (arguments == null || arguments.isEmpty()) {
             var session = repository
                     .find(sessionId)
                     .orElseThrow(() -> new RuntimeApiException(RuntimeErrorCode.SESSION_NOT_FOUND));
-            return new NameCommandResultDTO(session.getDisplayName(), false);
+            return new SessionCommandResultDTO(session, false, null);
         }
         String displayName = normalizeName(arguments);
         try {
             var update = repository
                     .updateName(sessionId, displayName, OffsetDateTime.ofInstant(clock.instant(), ZoneOffset.UTC))
                     .orElseThrow(() -> new RuntimeApiException(RuntimeErrorCode.SESSION_NOT_FOUND));
-            return new NameCommandResultDTO(update.displayName(), update.changed());
+            return new SessionCommandResultDTO(update.session(), update.changed(), null);
         } catch (RuntimeApiException exception) {
             throw exception;
         } catch (RuntimeException exception) {

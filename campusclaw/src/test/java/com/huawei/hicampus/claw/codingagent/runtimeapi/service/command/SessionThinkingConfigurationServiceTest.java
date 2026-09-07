@@ -34,7 +34,7 @@ import com.huawei.hicampus.claw.codingagent.runtimeapi.command.execution.Command
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeEntryDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.command.CommandSessionSnapshotDTO;
-import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.command.ThinkingCommandResultDTO;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.command.SessionCommandResultDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.error.RuntimeErrorCode;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeEntryCodec;
@@ -112,8 +112,10 @@ class SessionThinkingConfigurationServiceTest {
     @ParameterizedTest
     @NullAndEmptySource
     void shouldQueryPersistedRunningStateWithoutAgentOrModelLookup(String arguments) {
-        when(mapper.findSession("session")).thenReturn(session("old", "running", true, 1L));
-        assertThat(service.execute("session", arguments)).isEqualTo(new ThinkingCommandResultDTO(true, false, null));
+        var current = session("old", "running", true, 1L);
+        when(mapper.findSession("session")).thenReturn(current);
+        assertThat(service.execute("session", arguments)).isEqualTo(new SessionCommandResultDTO(current, false, null));
+        verify(mapper).findSession("session");
         verifyNoInteractions(resolver, manager);
         verify(mapper, never()).lockSessionForUpdate(any());
         assertThat(ids).hasValue(0);
@@ -132,7 +134,9 @@ class SessionThinkingConfigurationServiceTest {
     void shouldEnableAgainstLockedModelAndAppendOneAuthoritativeEntry() {
         var locked = session("latest", "idle", false, 4L);
         when(mapper.lockSessionForUpdate("session")).thenReturn(locked);
-        assertThat(service.execute("session", "on")).isEqualTo(new ThinkingCommandResultDTO(true, true, 17L));
+        assertThat(service.execute("session", "on")).isEqualTo(new SessionCommandResultDTO(locked, true, 17L));
+        assertThat(locked.isThinking()).isTrue();
+        verify(mapper).findSession("session");
         verify(manager).resolveModel(snapshot, "latest");
         verify(resolver).resolve("agent");
         assertThat(appended).extracting(RuntimeEntryDTO::getType).containsExactly("session.thinking.changed");
@@ -148,8 +152,10 @@ class SessionThinkingConfigurationServiceTest {
 
     @Test
     void shouldDisableUsingLatestPreviousValueWithoutRequiringModelAvailability() {
-        when(mapper.lockSessionForUpdate("session")).thenReturn(session("latest", "idle", true, 4L));
-        assertThat(service.execute("session", "off")).isEqualTo(new ThinkingCommandResultDTO(false, true, 17L));
+        var locked = session("latest", "idle", true, 4L);
+        when(mapper.lockSessionForUpdate("session")).thenReturn(locked);
+        assertThat(service.execute("session", "off")).isEqualTo(new SessionCommandResultDTO(locked, true, 17L));
+        assertThat(locked.isThinking()).isFalse();
         assertThat(codec.toHistoryEvent(appended.getFirst()))
                 .containsEntry("previousThinking", true)
                 .containsEntry("thinking", false);
@@ -162,7 +168,7 @@ class SessionThinkingConfigurationServiceTest {
         var locked = session("latest", "idle", thinking, 4L);
         when(mapper.lockSessionForUpdate("session")).thenReturn(locked);
         assertThat(service.execute("session", thinking ? "on" : "off"))
-                .isEqualTo(new ThinkingCommandResultDTO(thinking, false, null));
+                .isEqualTo(new SessionCommandResultDTO(locked, false, null));
         assertThat(locked.getResourceVersion()).isEqualTo(4L);
         assertThat(locked.getUpdatedAt()).isEqualTo(now.minusHours(1));
         assertThat(locked.getActiveLeafId()).isEqualTo("prior");
@@ -284,7 +290,7 @@ class SessionThinkingConfigurationServiceTest {
                             .execute(new CommandExecutionContext(Locale.US, catalog), "")
                             .toCompletableFuture()
                             .get())
-                    .isEqualTo(new ThinkingCommandResultDTO(false, false, null));
+                    .isEqualTo(new SessionCommandResultDTO(session("old", "idle", false, 1L), false, null));
         }
     }
 

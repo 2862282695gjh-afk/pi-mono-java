@@ -15,7 +15,9 @@ import com.huawei.hicampus.claw.codingagent.runtimeapi.agent.AgentDirectoryResol
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeEntryDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.SessionConfigurationUpdateDTO;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.command.CommandResultDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.command.ModelCommandResultDTO;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.command.SessionCommandResultDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.error.RuntimeErrorCode;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeEntryCodec;
@@ -68,10 +70,10 @@ public class SessionModelConfigurationService {
     public ModelCommandResultDTO query(String sessionId) {
         var current = requireSession(sessionId);
         var snapshot = directoryResolver.resolve(current.getAgentId());
-        return new ModelCommandResultDTO(current.getModelId(), modelManager.listAvailableModels(snapshot), false, null);
+        return new ModelCommandResultDTO(current.getModelId(), modelManager.listAvailableModels(snapshot));
     }
 
-    public ModelCommandResultDTO execute(String sessionId, String arguments) {
+    public CommandResultDTO execute(String sessionId, String arguments) {
         try {
             if (arguments == null || arguments.isEmpty()) {
                 return query(sessionId);
@@ -81,12 +83,10 @@ public class SessionModelConfigurationService {
                 throw new RuntimeApiException(RuntimeErrorCode.SESSION_BUSY);
             }
             var snapshot = directoryResolver.resolve(current.getAgentId());
-            var models = List.copyOf(modelManager.listAvailableModels(snapshot));
             var model = modelManager.resolveAvailableModel(snapshot, arguments);
             var update = update(current.getId(), null, model);
-            return new ModelCommandResultDTO(
-                    update.session().getModelId(),
-                    models,
+            return new SessionCommandResultDTO(
+                    update.session(),
                     update.status() == SessionConfigurationUpdateDTO.Status.UPDATED,
                     update.sourceEventSeq());
         } catch (RuntimeApiException error) {

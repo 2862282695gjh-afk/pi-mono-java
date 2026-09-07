@@ -12,7 +12,7 @@ import com.campusclaw.codingagent.runtimeapi.agent.AgentDirectoryResolver;
 import com.campusclaw.codingagent.runtimeapi.agent.AgentDirectorySnapshotDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.SessionConfigurationUpdateDTO;
-import com.campusclaw.codingagent.runtimeapi.dto.command.ThinkingCommandResultDTO;
+import com.campusclaw.codingagent.runtimeapi.dto.command.SessionCommandResultDTO;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
 import com.campusclaw.codingagent.runtimeapi.event.RuntimeEntryCodec;
@@ -62,10 +62,10 @@ public class SessionThinkingConfigurationService {
         this.clock = clock;
     }
 
-    public ThinkingCommandResultDTO execute(String sessionId, String arguments) {
+    public SessionCommandResultDTO execute(String sessionId, String arguments) {
         try {
             if (arguments == null || arguments.isEmpty()) {
-                return new ThinkingCommandResultDTO(requireSession(sessionId).isThinking(), false, null);
+                return new SessionCommandResultDTO(requireSession(sessionId), false, null);
             }
             boolean requested = parseThinking(arguments);
             var current = requireSession(sessionId);
@@ -73,8 +73,8 @@ public class SessionThinkingConfigurationService {
                 throw new RuntimeApiException(RuntimeErrorCode.SESSION_BUSY);
             }
             var update = change(current, requested, null);
-            return new ThinkingCommandResultDTO(
-                    update.session().isThinking(),
+            return new SessionCommandResultDTO(
+                    update.session(),
                     update.status() == SessionConfigurationUpdateDTO.Status.UPDATED,
                     update.sourceEventSeq());
         } catch (RuntimeApiException error) {

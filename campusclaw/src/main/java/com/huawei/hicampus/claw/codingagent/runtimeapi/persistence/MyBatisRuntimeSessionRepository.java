@@ -5,6 +5,7 @@
 package com.huawei.hicampus.claw.codingagent.runtimeapi.persistence;
 
 import java.time.OffsetDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -69,10 +70,13 @@ public class MyBatisRuntimeSessionRepository implements RuntimeSessionRepository
             return Optional.empty();
         }
         if (Objects.equals(session.getDisplayName(), displayName)) {
-            return Optional.of(new SessionNameUpdateDTO(session.getDisplayName(), false));
+            return Optional.of(new SessionNameUpdateDTO(session, false));
         }
-        requireOne(mapper.updateSessionName(sessionId, displayName, updatedAt), "session name was not updated");
-        return Optional.of(new SessionNameUpdateDTO(displayName, true));
+        OffsetDateTime storedAt = updatedAt.truncatedTo(ChronoUnit.MILLIS);
+        requireOne(mapper.updateSessionName(sessionId, displayName, storedAt), "session name was not updated");
+        session.setDisplayName(displayName);
+        markConfigurationUpdated(session, storedAt);
+        return Optional.of(new SessionNameUpdateDTO(session, true));
     }
 
     @Override
@@ -200,11 +204,12 @@ public class MyBatisRuntimeSessionRepository implements RuntimeSessionRepository
         }
         boolean thinking = session.isThinking() && modelSupportsThinking;
         List<RuntimeEntryDTO> entries = entriesFactory.apply(session);
-        requireOne(mapper.updateSessionModel(sessionId, modelId, thinking, updatedAt), "session model was not updated");
+        OffsetDateTime storedAt = updatedAt.truncatedTo(ChronoUnit.MILLIS);
+        requireOne(mapper.updateSessionModel(sessionId, modelId, thinking, storedAt), "session model was not updated");
         session.setModelId(modelId);
         session.setThinking(thinking);
         appendConfigurationEntries(session, entries);
-        markConfigurationUpdated(session, updatedAt);
+        markConfigurationUpdated(session, storedAt);
         Long sourceEventSeq = entries.isEmpty() ? null : entries.getLast().getEntrySeq();
         return new SessionConfigurationUpdateDTO(SessionConfigurationUpdateDTO.Status.UPDATED, session, sourceEventSeq);
     }
@@ -228,12 +233,13 @@ public class MyBatisRuntimeSessionRepository implements RuntimeSessionRepository
             return unchanged(session);
         }
         RuntimeEntryDTO entry = entryFactory.apply(session);
+        OffsetDateTime storedAt = updatedAt.truncatedTo(ChronoUnit.MILLIS);
         requireOne(
-                mapper.updateSessionThinking(sessionId, thinking, updatedAt),
+                mapper.updateSessionThinking(sessionId, thinking, storedAt),
                 "session thinking setting was not updated");
         session.setThinking(thinking);
         appendConfigurationEntries(session, List.of(entry));
-        markConfigurationUpdated(session, updatedAt);
+        markConfigurationUpdated(session, storedAt);
         return new SessionConfigurationUpdateDTO(
                 SessionConfigurationUpdateDTO.Status.UPDATED, session, entry.getEntrySeq());
     }
