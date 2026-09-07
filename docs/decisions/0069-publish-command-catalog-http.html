@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ADR-0069：独立发布共享命令清单 GET</title>
+  <style>
+    :root { font-family: Inter, "PingFang SC", sans-serif; color: #25272a; background: #f2f5f7; }
+    body { margin: 0; } main { max-width: 920px; margin: 32px auto; padding: 32px; background: white; box-sizing: border-box; }
+    p, li { line-height: 1.75; } code { overflow-wrap: anywhere; } a { color: #1769aa; }
+    @media (max-width: 640px) { main { margin: 0; padding: 24px 18px; } }
+  </style>
+</head>
+<body><main>
+  <h1>ADR-0069：独立发布共享命令清单 GET</h1>
+  <p>Status：Accepted · Date：2026-09-07 · Version：1.0.0</p>
+  <h2>背景</h2>
+  <p>主线 <code>7d771ca802b781361e0e62e9014bafb6b0ed5e7a</code> 已具备完整 Catalog 应用能力，
+  尚未发布命令清单 HTTP。设计仓只读基线 <code>88f4df16bc24bbfcd28e1ec374feb2de0db8be3b</code>
+  的操作 12 和 Slash Command 1.6.0 定义共享的 Builtin/Skill 轻量清单。开发协调已明确授权 GET
+  独立交付，不等待 POST 或 Skill 正文公开策略；这仅改变交付顺序，不修改设计仓。</p>
+  <p>本片实现证据为 <code>afee9bd333d0fc74ba0cef8b27b6df7357acdf30</code>。
+  源码根 <code>modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/</code> 下，
+  新增 <code>runtimeapi/web/RuntimeCommandCatalogController.java#list</code>，修改
+  <code>runtimeapi/web/RuntimeExceptionHandler.java#response</code>；既有
+  <code>runtimeapi/service/command/CommandCatalogService.java#list</code> 负责一次缓存解析与响应组装。</p>
+  <p>pi <code>5cd93f688aaab89dbb6dfa4aca535f21796ae185</code> 的
+  <code>packages/coding-agent/src/core/slash-commands.ts:BuiltinSlashCommand</code> 只提供本地命令提示。
+  Java HTTP、完整缓存与操作级错误投影是产品约束和架构接入，不是 pi 的已有协议。</p>
+  <h2>选择与理由</h2>
+  <ul>
+    <li>采用独立只读 Controller，依赖既有应用 Service 与 ResultBeanAdapter；不复制 Source 读取、状态过滤或 DTO 组装。</li>
+    <li>拒绝在 Controller 只返回 Builtin 的简化列表：它会掩盖完整缓存缺失，与共享发现契约不符。</li>
+    <li>清单缺完整缓存必须为 503 且 Retry-After 为 3；集中错误处理器按实际 HandlerMethod 识别此操作。
+    拒绝全局将 AGENT_NOT_AVAILABLE 从 422 改成 503，因为既有创建 Session 等操作仍要求 422。</li>
+    <li>沿用共享 ID 常量和 Jakarta 标量参数校验、语言协商与已有错误资源；不把设计示例措辞当作全局消息改写要求。</li>
+    <li>GET 与 POST 分开交付，满足小 PR 限制；不安装伪 Skill Handler，也不通过普通消息回退模拟执行成功。</li>
+  </ul>
+  <h2>影响与边界</h2>
+  <p>新增普通 JSON 读取入口。idle 返回固定顺序七个 Builtin 和名称排序的 Skill；running 移除 compact/Skill，
+  并去掉 model/thinking 输入提示。完整空绑定可成功，缺缓存整体失败。返回值不暴露 Skill ID、版本、路径或正文。</p>
+  <p>Spring 单例无请求状态；GET 不占容量、刷新 Agent、读取执行凭据或追加 Entry。清单读取的状态不是后续执行授权。
+  不新增 SQL、升级脚本、依赖、认证器、POST 路由或事件类型；保留旧未注册命令原型，删除另行交付。</p>
+  <h2>验证</h2>
+  <p>18 个新 MVC 用例通过实际 Source、Registry、应用层与响应投影验证 HTTP 字段、顺序、错误、语言、读取次数及无 POST；
+  与清单应用、现有配置路由合计 44 项定向用例通过。完整 verify 为 1860 项，0 失败、错误或跳过。
+  新增代码模块侧 500 行、镜像后 1000 行；整个 PR 继续执行新增行数门禁。</p>
+  <p>公司镜像同步完成，但 NativeParent 不可用，不能宣称其独立编译通过。本片没有新增 GET 的真实 JAR/openGauss 测试，
+  不把 MVC 测试当作跨进程验证。图生成、链接及桌面/窄屏渲染的最终证据见 PR。</p>
+  <h2>相关材料</h2>
+  <ul>
+    <li><a href="../designs/command-catalog-http/README.md">实现说明与逐项证据</a></li>
+    <li><a href="../designs/command-catalog-http/diagram.puml#L1">HTTP 分层 PlantUML</a></li>
+    <li><a href="0064-complete-command-catalog.html">ADR-0064：完整命令清单</a></li>
+  </ul>
+  <h2>版本历史</h2>
+  <p>1.0.0 · 2026-09-07：记录独立 GET 发布、操作级错误投影及验证边界。</p>
+</main></body>
+</html>

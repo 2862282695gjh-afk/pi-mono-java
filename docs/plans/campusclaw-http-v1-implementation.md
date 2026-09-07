@@ -1,6 +1,6 @@
 # CampusClaw HTTP V1 实施记录
 
-> 版本：3.8.0
+> 版本：3.9.0
 >
 > 状态：已实现并按 Runtime-only 现状校准
 >
@@ -38,7 +38,7 @@ Runtime-only 架构演进。当前形态为：
 - 默认 `java -jar` 启动 Spring Boot MVC HTTP 服务；
 - 不再提供 CLI、TUI、RPC 或其他模式分发入口；
 - Runtime 对外统一为 HTTP + 请求范围 SSE；
-- 按已确认契约实现 11 个 Session 接口；
+- 按已确认契约实现 11 个既有 Session 接口，以及共享命令清单 GET；
 - openGauss 作为 Session/Entry 持久化源；
 - `campusclaw` 由同步脚本生成并验证；
 - 删除旧公开 WebSocket、ServerMode、WebFlux 路由和本仓 OpenAPI 副本。
@@ -89,6 +89,13 @@ Runtime-only 架构演进。当前形态为：
 | 9 | `POST /campusclaw-service/v1/sessions/{sessionId}/steers` | running 时加入高优先级队列 | 已实现 |
 | 10 | `POST /campusclaw-service/v1/sessions/{sessionId}/follow-ups` | running 时加入 FIFO 队列 | 已实现 |
 | 11 | `POST /campusclaw-service/v1/sessions/{sessionId}/abort` | 幂等中止，清空未投递队列 | 已实现 |
+| 12 | `GET /campusclaw-service/v1/sessions/{sessionId}/commands` | 一次完整缓存的 Builtin/Skill 轻量清单；按状态过滤；缺缓存为 503 与 Retry-After 3 | 已实现；POST Command 未发布 |
+
+操作 12 的契约基线为只读设计仓 `88f4df16bc24bbfcd28e1ec374feb2de0db8be3b`，
+实现提交为 `afee9bd333d0fc74ba0cef8b27b6df7357acdf30`，不沿用上方历史 HTTP 1.38 对该新增操作作证。
+入口 `runtimeapi/web/RuntimeCommandCatalogController.java#list` 只包装应用层 VO；
+`CommandCatalogService#list` 复用同一完整 Catalog，详细路径及验证边界见
+[共享清单 HTTP 实现](../designs/command-catalog-http/README.md)。按当前明确交付授权，GET 独立于 POST 发布。
 
 ## 4. 已观察行为、目标决策和差异分类
 
@@ -109,7 +116,7 @@ Runtime-only 架构演进。当前形态为：
 | 文件 | 曾设计 Runtime 文件解析 port | `fileIds` 原样组成固定提示块 | 产品约束：文件内容不由 Runtime 下载 |
 | Agent 运行根目录 | 模板快照把 `revisions/{bundleRevision}` 目录作为 Runtime 根目录 | 文件工具以 `agent/{agentId}` 为 `AgentWorkspaceBoundary`；配置、Prompt 和 Skill 位于其 `.campusclaw` 子目录 | 架构变更：分离工作区与受管配置树；安全加固：文件工具继续执行规范化路径、真实路径和符号链接边界检查 |
 | 事件业务职责 | 单个 `RuntimeEventService` 同时承担接受、分页、历史恢复和异步执行收尾 | 拆分接受、查询、上下文准备和执行协调 | 架构变更：降低构造依赖和修改影响面 |
-| 错误语义 | 调用点分别指定 HTTP 状态和错误码 | 错误枚举集中状态、i18n key 与重试时间 | 安全加固：避免同一错误码出现不同 HTTP 语义 |
+| 错误语义 | 调用点分别指定 HTTP 状态和错误码 | 错误枚举集中默认状态、i18n key 与重试时间；操作 12 的 AGENT_NOT_AVAILABLE 由集中处理器按匹配的 HandlerMethod 投影 503/Retry-After 3，其他操作保持 422 | 安全加固：默认统一映射；操作级差异必须有明确契约，不在各调用点随意指定 |
 | 国际化资源与协商 | 根目录基础英文资源包加中文资源包；请求头只按 `zh-CN` 前缀判断 | 仅保留 `i18n/messages_en_US.properties` 与 `messages_zh_CN.properties`；显式消息源按标准语言范围和 `q` 权重协商 | 架构变更：支持 Locale、默认语言、编码和回退规则均显式，消除基础英文资源副本 |
 | 多实例执行归属 | `running` Session 未命中本机 Registry 时落入通用 500 | 返回 `503 SESSION_EXECUTION_UNAVAILABLE` | 架构约束：明确需要路由到执行实例，但不臆造转发设施 |
 
@@ -179,6 +186,14 @@ AppKey/JWT 至少一种，否则不发送 execute 请求并返回工具执行失
 
 ## 6. 验证证据
 
+3.9.0 共享命令清单 GET 完成以下验证：
+
+- 新增 18 项真实 MVC 路由测试，复用实际 Catalog、Sources、Assembler 和 VO；与清单应用、配置路由共 44 项定向用例通过；
+- `./mvnw -q spotless:apply checkstyle:check verify`：393 个测试类、1860 项测试，0 失败、错误或跳过；
+- 同步四组 Java 文件及测试，镜像布局与内容一致性检查通过；公司 NativeParent 不可用，独立公司编译未验证；
+- 本片没有新增 GET 的真实 JAR/openGauss 测试，也没有发布 POST Command；测试范围不代表未发布操作已完成；
+- 模块侧新增 500 行、镜像后 1000 行，文档与最终 PR 门禁证据见该 PR。
+
 3.8.0 公司 GaussDB 初始化样式完成以下验证：
 
 - 镜像布局回归脚本验证公司头部逐字一致、镜像与暂存输出一致，且表 DDL
@@ -236,6 +251,7 @@ AppKey/JWT 至少一种，否则不发送 execute 请求并返回工具执行失
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 3.9.0 | 2026-09-07 | 发布共享命令清单 GET，记录独立契约基线、完整缓存和操作级 503；不发布 POST Command。 |
 | 3.8.0 | 2026-09-07 | 公司 GaussDB 脚本使用固定库与 Schema 头部、去除事务包裹，并将每个删表语句紧邻放到对应建表语句前。 |
 | 3.7.0 | 2026-09-04 | 更新资源 ID、HTTP 路径和请求限制的归属至底层 common 的 ClawConstants，外部契约不变。 |
 | 3.6.0 | 2026-09-03 | 公司镜像只在 `scripts/install/` 交付单一 GaussDB 初始化 DDL，不再将数据库发布材料打入 classpath。 |
