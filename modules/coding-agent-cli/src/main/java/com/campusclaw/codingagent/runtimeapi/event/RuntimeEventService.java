@@ -10,8 +10,10 @@ import java.time.ZoneOffset;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.function.BiFunction;
 
 import com.campusclaw.codingagent.common.client.mate.MateCredentials;
+import com.campusclaw.codingagent.runtime.PreparedAgentRuntime;
 import com.campusclaw.codingagent.runtimeapi.dto.RuntimeEntryDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.RuntimeExecutionContextDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
@@ -96,22 +98,55 @@ public class RuntimeEventService {
     private RuntimeEventStream prepareAndSubmit(
             String sessionId, ValidatedUserEvent request, Locale locale, MateCredentials credentials) {
         return engineRegistry.withOperationLock(
-                sessionId, () -> prepareAndSubmitLocked(sessionId, request, locale, credentials));
+                sessionId, () -> prepareAndSubmitLocked(sessionId, request, null, locale, credentials));
+    }
+
+    /**
+     * 在实际 Agent 工厂准备的同一快照上生成消息，随后复用普通消息接受与执行。
+     *
+     * @param sessionId Session 标识
+     * @param messageFactory 无外部副作用的消息准备回调，在实际快照上同步执行一次
+     * @param fileIds 已由调用服务校验并归一的附件列表
+     * @param locale 本次语言
+     * @param credentials 本次透传凭据
+     * @return 普通消息 SSE 流
+     */
+    public RuntimeEventStream submitPreparedMessage(
+            String sessionId,
+            BiFunction<String, PreparedAgentRuntime, String> messageFactory,
+            List<String> fileIds,
+            Locale locale,
+            MateCredentials credentials) {
+        var request = new ValidatedUserEvent(null, List.copyOf(fileIds));
+        return engineRegistry.withOperationLock(
+                sessionId, () -> prepareAndSubmitLocked(sessionId, request, messageFactory, locale, credentials));
     }
 
     private RuntimeEventStream prepareAndSubmitLocked(
-            String sessionId, ValidatedUserEvent request, Locale locale, MateCredentials credentials) {
+            String sessionId,
+            ValidatedUserEvent request,
+            BiFunction<String, PreparedAgentRuntime, String> messageFactory,
+            Locale locale,
+            MateCredentials credentials) {
         RuntimeExecutionContextDTO context = null;
         try {
             RuntimeSessionDTO session = requireIdleSession(sessionId);
             var reconciled = modelReconciler.reconcile(session);
-            context = executionContextFactory.create(
-                    reconciled.session(),
-                    reconciled.agentSnapshot(),
-                    reconciled.model(),
-                    request.message(),
-                    request.fileIds(),
-                    credentials);
+            context = messageFactory == null
+                    ? executionContextFactory.create(
+                            reconciled.session(),
+                            reconciled.agentSnapshot(),
+                            reconciled.model(),
+                            request.message(),
+                            request.fileIds(),
+                            credentials)
+                    : executionContextFactory.createPreparedMessage(
+                            reconciled.session(),
+                            reconciled.agentSnapshot(),
+                            reconciled.model(),
+                            runtime -> messageFactory.apply(session.getAgentId(), runtime),
+                            request.fileIds(),
+                            credentials);
             emitConfigurationEntries(context.eventStream(), reconciled.configurationEntries(), locale);
             acceptUserEntry(sessionId, request, context, locale);
             executionCoordinator.start(context.holder(), context.execution(), context.userMessage(), locale);
@@ -132,7 +167,7 @@ public class RuntimeEventService {
     private void acceptUserEntry(
             String sessionId, ValidatedUserEvent request, RuntimeExecutionContextDTO context, Locale locale) {
         RuntimeEntryDTO entry =
-                codec.userEntry(sessionId, idGenerator.nextId(), request.message(), request.fileIds(), now());
+                codec.userEntry(sessionId, idGenerator.nextId(), context.message(), request.fileIds(), now());
         UserEventAcceptance acceptance = repository.acceptUserEvent(sessionId, entry, now());
         requireAccepted(acceptance);
         context.execution().beginRun(entry.getId());

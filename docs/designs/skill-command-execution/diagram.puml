@@ -1,0 +1,43 @@
+@startuml skill_message_execution
+' Java baseline: 8d61c767d09d47ef6c8d76c05535fcbb58c48373
+' modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/session/AgentSessionFactory.java#create
+' modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/event/RuntimeEventService.java#acceptUserEntry
+' pi baseline: 4af9d21d3b4d664e4a29fcabfec85171077248e3
+' packages/coding-agent/src/core/agent-session.ts#_expandSkillCommand
+' Observed behavior: factory validates one prepared runtime before assembling the session.
+' Design reason: expand and execute against that same runtime; persist only one ordinary user message.
+' Java divergence: explicit structured input, fail closed, no added server path, ordinary domain persistence.
+hide footbox
+skinparam shadowing false
+title Skill execution in the ordinary message lifecycle
+participant "SkillCommandExecutionService\n(singleton, stateless)" as Skill
+participant "RuntimeEventService\n(singleton, stateless)" as Events
+participant "ContextFactory / Registry\n(singletons, operation lock)" as Runtime
+participant "AgentSessionFactory\n(singleton)" as Factory
+participant "PreparedAgentRuntime\n(one actual snapshot)" as Snapshot
+database "Session Repository" as Repo
+participant "Holder / Coordinator / Projector\n(active execution)" as Execution
+Skill -> Skill: Normalize a defensive input copy
+Skill -> Events: submitPreparedMessage(input function)
+group Existing operation lock
+Events -> Repo: Require idle and reconcile model
+Events -> Runtime: Prepare context and acquire capacity
+Runtime -> Factory: create(runtimeValidator)
+Factory -> Snapshot: prepare once
+Factory -> Skill: Callback with the actual snapshot
+Skill -> Snapshot: requireBoundSkill and read content
+Skill --> Runtime: One effective message
+Runtime -> Runtime: Build UserMessage from that message
+Factory --> Runtime: Session using the same snapshot
+Runtime --> Events: Context with message and UserMessage
+Events -> Repo: Accept ordinary user.message
+Events -> Execution: Start the ordinary lifecycle
+end
+Execution -> Repo: Project existing domain events
+Execution --> Skill: Ordinary SSE; detach does not abort
+Repo -> Execution: Restore the saved message after restart
+note over Runtime,Execution
+Preparation failure releases capacity.
+No command lifecycle or private skill snapshot is created.
+end note
+@enduml
