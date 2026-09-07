@@ -4,6 +4,9 @@
 
 package com.huawei.hicampus.claw.codingagent.runtimeapi.vo;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import com.huawei.hicampus.claw.common.constant.ClawConstants;
 import com.fasterxml.jackson.annotation.JsonAnySetter;
 import com.fasterxml.jackson.annotation.JsonSetter;
@@ -22,9 +25,9 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 /**
- * 已选定 Builtin 类别后的请求约束，不承担共享入口的命令类别识别。
+ * Skill 命令的原始请求，仅定义字段类型和边界约束，不归一化可选输入。
  *
- * @version [br_eCampusCore 26.0.0, 2026/09/07]
+ * @version [br_eCampusCore 26.0.0, 2026/09/08]
  * @since [br_eCampusCore 26.0.0]
  */
 @Data
@@ -32,10 +35,10 @@ import lombok.Setter;
 @NoArgsConstructor
 @AllArgsConstructor
 @JsonDeserialize(using = JsonDeserializer.None.class)
-public final class BuiltinCommandRequestVO implements CommandRequestVO {
+public final class SkillCommandRequestVO implements CommandRequestVO {
     @NotBlank
-    @Size(max = ClawConstants.Skill.MAX_NAME_LENGTH)
-    @Pattern(regexp = ClawConstants.Skill.NAME_REGEX)
+    @Size(max = ClawConstants.Skill.MAX_COMMAND_NAME_LENGTH)
+    @Pattern(regexp = ClawConstants.Skill.COMMAND_NAME_REGEX)
     @Setter(AccessLevel.NONE)
     private String name;
 
@@ -43,44 +46,46 @@ public final class BuiltinCommandRequestVO implements CommandRequestVO {
     @Setter(AccessLevel.NONE)
     private String arguments;
 
-    /**
-     * 严格读取命令名称；必填和格式约束由 Jakarta 校验。
-     *
-     * @param value 原始 JSON 字段
-     */
+    @Size(max = ClawConstants.RuntimeApi.MAX_FILE_IDS)
+    @Setter(AccessLevel.NONE)
+    private List<@NotBlank String> fileIds;
+
     @JsonSetter("name")
     public void readName(JsonNode value) {
-        name = readText(value);
+        name = readOptionalText(value);
     }
 
-    /**
-     * 保留可选参数的原值与 null，不在请求对象中设置缺省值。
-     *
-     * @param value 原始 JSON 字段
-     */
     @JsonSetter("arguments")
     public void readArguments(JsonNode value) {
-        arguments = readText(value);
+        arguments = readOptionalText(value);
     }
 
-    /**
-     * 拒绝 Builtin 契约未声明的字段，包括附件；异常不携带输入内容。
-     *
-     * @param fieldName 未知字段名
-     * @param value 未知字段值
-     * @throws IllegalArgumentException 始终抛出以阻止未知字段
-     */
+    @JsonSetter("fileIds")
+    public void readFileIds(JsonNode value) {
+        if (value == null || value.isNull()) {
+            fileIds = null;
+            return;
+        }
+        if (!value.isArray()) {
+            throw new IllegalArgumentException("skill command fileIds must be an array");
+        }
+        var parsed = new ArrayList<String>();
+        value.forEach(item -> parsed.add(requireText(item)));
+        fileIds = List.copyOf(parsed);
+    }
+
     @JsonAnySetter
     public void rejectUnknownField(String fieldName, Object value) {
-        throw new IllegalArgumentException("unknown builtin command field");
+        throw new IllegalArgumentException("unknown skill command field");
     }
 
-    private static String readText(JsonNode value) {
-        if (value == null || value.isNull()) {
-            return null;
-        }
+    private static String readOptionalText(JsonNode value) {
+        return value == null || value.isNull() ? null : requireText(value);
+    }
+
+    private static String requireText(JsonNode value) {
         if (!value.isTextual()) {
-            throw new IllegalArgumentException("builtin command fields must be strings");
+            throw new IllegalArgumentException("skill command fields must be strings");
         }
         return value.textValue();
     }
