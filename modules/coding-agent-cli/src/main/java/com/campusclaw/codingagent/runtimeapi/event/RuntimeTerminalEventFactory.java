@@ -32,28 +32,32 @@ public class RuntimeTerminalEventFactory {
     }
 
     public void emit(
-            RuntimeEventStream stream,
+            RuntimeEventOutput output,
             RuntimeActiveExecution execution,
             StopReason reason,
             Throwable failure,
             Locale locale) {
         if (failure != null || reason == StopReason.ERROR || execution.timedOut()) {
-            emitError(stream, locale);
+            emitError(output, locale);
             return;
         }
-        stream.emit(new RuntimeSseEventVO(
+        output.emit(() -> new RuntimeSseEventVO(
                 null,
                 RuntimeEventType.SESSION_STATUS_IDLE.value(),
                 Map.of("status", RuntimeSessionState.IDLE.value())));
         String value = execution.abortRequested() || reason == StopReason.ABORTED ? "aborted" : "completed";
-        stream.emit(new RuntimeSseEventVO(null, RuntimeEventType.STREAM_END.value(), Map.of("reason", value)));
+        output.emit(() -> new RuntimeSseEventVO(null, RuntimeEventType.STREAM_END.value(), Map.of("reason", value)));
     }
 
-    private void emitError(RuntimeEventStream stream, Locale locale) {
+    private void emitError(RuntimeEventOutput output, Locale locale) {
+        output.emit(() -> errorEvent(locale));
+    }
+
+    private RuntimeSseEventVO errorEvent(Locale locale) {
         RuntimeErrorCode code = RuntimeErrorCode.SESSION_EXECUTION_FAILED;
         LinkedHashMap<String, Object> data = new LinkedHashMap<>();
         data.put("resCode", code.name());
         data.put("resMsg", messageSource.getMessage(code.messageKey(), null, locale));
-        stream.emit(new RuntimeSseEventVO(null, RuntimeEventType.STREAM_ERROR.value(), data));
+        return new RuntimeSseEventVO(null, RuntimeEventType.STREAM_ERROR.value(), data);
     }
 }

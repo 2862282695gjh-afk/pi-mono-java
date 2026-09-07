@@ -51,12 +51,17 @@ public class RuntimeEventProjectorFactory {
                 repository,
                 codec,
                 idGenerator,
-                execution.eventStream(),
+                execution.output(),
                 clock,
                 holder::abort,
                 execution,
                 initialUserMessage,
                 holder.thinking(),
                 locale);
+    }
+
+    public RuntimeEventProjector createForCompaction(
+            RuntimeSessionHolder holder, RuntimeActiveExecution execution, Locale locale) {
+        return create(holder, execution, null, locale);
     }
 }

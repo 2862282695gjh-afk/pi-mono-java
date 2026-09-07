@@ -2,28 +2,25 @@
  * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
  */
 
-package com.huawei.hicampus.claw.codingagent.runtimeapi.event;
-
-import java.util.Objects;
+package com.huawei.hicampus.claw.codingagent.runtimeapi.dto;
 
 import com.huawei.hicampus.claw.ai.types.UserMessage;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeEventStream;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.runtime.RuntimeActiveExecution;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.runtime.RuntimeSessionHolder;
 
 /**
- * 单次已准备但尚未提交给 Agent 的执行上下文。
+ * POST Events 已准备但尚未提交给 Agent 的执行上下文。
  *
  * @param holder 活动 Session 引擎句柄
  * @param execution 活动执行状态
  * @param userMessage 交给 Agent 的初始用户消息
+ * @param eventStream 本次 POST Events 的请求流
  * @version [br_eCampusCore 26.0.0, 2026/08/19]
  * @since [br_eCampusCore 26.0.0]
  */
-public record RuntimeExecutionContext(
-        RuntimeSessionHolder holder, RuntimeActiveExecution execution, UserMessage userMessage) {
-    public RuntimeExecutionContext {
-        Objects.requireNonNull(holder, "holder");
-        Objects.requireNonNull(execution, "execution");
-        Objects.requireNonNull(userMessage, "userMessage");
-    }
-}
+public record RuntimeExecutionContextDTO(
+        RuntimeSessionHolder holder,
+        RuntimeActiveExecution execution,
+        UserMessage userMessage,
+        RuntimeEventStream eventStream) {}

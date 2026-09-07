@@ -163,8 +163,8 @@ public class RuntimeExecutionCoordinator {
         failure = finishPersistence(holder.sessionId(), failure);
         failure = releaseExecution(holder, execution, subscriptions, failure);
         recordFailure(holder.sessionId(), projector, failure);
-        terminalEventFactory.emit(execution.eventStream(), execution, projector.terminalReason(), failure, locale);
-        execution.eventStream().complete();
+        terminalEventFactory.emit(execution.output(), execution, projector.terminalReason(), failure, locale);
+        execution.output().complete();
         execution.complete(failure);
     }
 
