@@ -8,6 +8,7 @@ import java.time.OffsetDateTime;
 import java.util.List;
 
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeEntryDTO;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeLifetimeUsageDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeRecordDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
 
@@ -34,6 +35,8 @@ public interface RuntimeSessionMapper {
 
     RuntimeSessionDTO lockSessionForUpdate(@Param("sessionId") String sessionId);
 
+    RuntimeLifetimeUsageDTO findLifetimeUsage(@Param("sessionId") String sessionId);
+
     Long lockNextSequence(@Param("sessionId") String sessionId);
 
     int incrementSequence(@Param("sessionId") String sessionId);
@@ -44,12 +47,7 @@ public interface RuntimeSessionMapper {
 
     int incrementMessageCount(@Param("sessionId") String sessionId);
 
-    int accumulateUsageStats(
-            @Param("sessionId") String sessionId,
-            @Param("cachedTokens") long cachedTokens,
-            @Param("uncachedTokens") long uncachedTokens,
-            @Param("totalTokens") long totalTokens,
-            @Param("costTotal") double costTotal);
+    int accumulateUsageStats(@Param("sessionId") String sessionId, @Param("usage") RuntimeLifetimeUsageDTO usage);
 
     int markSessionRunning(
             @Param("sessionId") String sessionId,

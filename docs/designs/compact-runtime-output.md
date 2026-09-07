@@ -1,6 +1,6 @@
 # Compact Runtime：无请求流的持久化投影
 
-版本：1.0.1 · 日期：2026-09-07 · 串行计划第 6a 个切片及后续边界纠正。
+版本：1.0.2 · 日期：2026-09-07 · 原 6a 切片及后续边界纠正。
 
 ## 1. Context 与范围
 
@@ -107,14 +107,20 @@ createForCompaction 仅表示没有初始 UserMessage；调用者另选 persiste
 | 6b1：已准入 Compact 执行 | 共用操作锁/容量/Holder/Projector；30 分钟超时；独立且不传播调用方取消的完成句柄；禁止控制输入与队列续跑；终态后 Holder、Session、容量清理 |
 | 6b2：Compact 准入与观察 | 操作锁/数据库行锁下 idle 复核；空历史在容量、状态、Entry 前无副作用返回；实际压缩注册与准入、内部 Usage 身份；并发接受与恢复验证 |
 | 7：Compact 命令接入 | 窄应用服务与 Contributor/Handler；错误翻译、实际领域序号与无变化结果；Mate Header 只保留至本次压缩结束 |
-| 最终应用/HTTP | 七类 DTO→VO、普通 JSON、共享 Skill 契约对齐、客户端断线不取消、不自动重放、真实 openGauss 跨进程恢复与 POST Events 回归 |
+| 最终应用/HTTP | 复用既有 Session/Models 业务 VO；Help、Compact、Skills 仅最小业务结果；普通 JSON、共享 Skill 契约对齐、客户端断线不取消、不自动重放、真实 openGauss 跨进程恢复与 POST Events 回归 |
 
-6b 如仍超过预算则继续按可验证职责拆分，仍保持仅一个待合并 PR；不发布不完整公共入口。
+上述切片序列保留历史证据。2026-09-07 用户最新授权覆盖“仅一个待合并 PR”：独立 worktree 从最新 main
+并行开发、独立复审、串行合并；仍按可验证职责和原行数预算交付，不使用堆叠基线，不发布不完整公共入口。
+设计 `88f4df16bc24bbfcd28e1ec374feb2de0db8be3b` Builtin 2.9.0 §8 已取代旧“七类命令 DTO→VO”的公开方向：
+所有成功 result 不返回 command、changed、sourceEventSeq 或替代回执。内部领域序号保留，仍不变成公开契约。
+本页旧图只说明历史输出/持久化结构，不声明 Command HTTP 已实现；Session 的完整 Usage 复用基础见
+[R07 实现设计](session-lifetime-usage.md)。
 通用 Events V2、旧控制路由退役和前端迁移不纳入当前待交付清单；不恢复旧 Abort 204 契约。
 
 ## 8. 版本历史
 
 | 版本 | 日期 | 变更 |
 |---|---|---|
+| 1.0.2 | 2026-09-07 | R08：明确旧七类响应方向 superseded，改为业务资源 VO 复用；保留历史图与源码基线，并记录最新并行开发、串行合并授权。 |
 | 1.0.1 | 2026-09-07 | 按最新设计纠正 R04：撤销 Compact 队列续跑和凭据延寿指导，区分历史 POST Events 测试与 Compact 目标；按 850 行预算拆分 6b1/6b2。 |
 | 1.0.0 | 2026-09-07 | 记录无请求流输出、压缩权威序号及恢复验证，明确 6a 范围与剩余生命周期交接。 |

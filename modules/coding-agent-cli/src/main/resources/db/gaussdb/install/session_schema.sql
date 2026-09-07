@@ -166,12 +166,20 @@ CREATE INDEX idx_t_session_records_session_lane
     ON t_session_records (session_id, lane, record_seq);
 
 CREATE TABLE t_session_stats (
-    session_id       VARCHAR(128)  PRIMARY KEY,
-    message_count    BIGINT        NOT NULL,
-    cached_tokens    BIGINT        NOT NULL,
-    uncached_tokens  BIGINT        NOT NULL,
-    total_tokens     BIGINT        NOT NULL,
-    cost_total       NUMERIC(24,8) NOT NULL
+    session_id         VARCHAR(128)  PRIMARY KEY,
+    message_count      BIGINT        NOT NULL,
+    cached_tokens      BIGINT        NOT NULL,
+    uncached_tokens    BIGINT        NOT NULL,
+    total_tokens       BIGINT        NOT NULL,
+    input_tokens       BIGINT        NOT NULL,
+    output_tokens      BIGINT        NOT NULL,
+    cache_read_tokens  BIGINT        NOT NULL,
+    cache_write_tokens BIGINT        NOT NULL,
+    cost_input         NUMERIC(24,8) NOT NULL,
+    cost_output        NUMERIC(24,8) NOT NULL,
+    cost_cache_read    NUMERIC(24,8) NOT NULL,
+    cost_cache_write   NUMERIC(24,8) NOT NULL,
+    cost_total         NUMERIC(24,8) NOT NULL
 );
 
 COMMENT ON TABLE t_session_stats IS '会话生命周期消息数、Token 和费用累计统计表';
@@ -180,6 +188,14 @@ COMMENT ON COLUMN t_session_stats.message_count IS '已持久化的用户、助�
 COMMENT ON COLUMN t_session_stats.cached_tokens IS '模型调用命中缓存的 Token 累计数';
 COMMENT ON COLUMN t_session_stats.uncached_tokens IS '模型调用输入与缓存写入 Token 的累计数';
 COMMENT ON COLUMN t_session_stats.total_tokens IS '模型调用上报的总 Token 累计数';
+COMMENT ON COLUMN t_session_stats.input_tokens IS '模型调用上报的非缓存输入 Token 累计数';
+COMMENT ON COLUMN t_session_stats.output_tokens IS '模型调用上报的输出 Token 累计数';
+COMMENT ON COLUMN t_session_stats.cache_read_tokens IS '模型调用上报的缓存读取 Token 累计数';
+COMMENT ON COLUMN t_session_stats.cache_write_tokens IS '模型调用上报的缓存写入 Token 累计数';
+COMMENT ON COLUMN t_session_stats.cost_input IS '模型调用输入 Token 的 USD 费用累计额';
+COMMENT ON COLUMN t_session_stats.cost_output IS '模型调用输出 Token 的 USD 费用累计额';
+COMMENT ON COLUMN t_session_stats.cost_cache_read IS '模型调用缓存读取 Token 的 USD 费用累计额';
+COMMENT ON COLUMN t_session_stats.cost_cache_write IS '模型调用缓存写入 Token 的 USD 费用累计额';
 COMMENT ON COLUMN t_session_stats.cost_total IS '模型调用费用的累计总额';
 
 ALTER TABLE t_session_stats
@@ -188,6 +204,14 @@ ALTER TABLE t_session_stats
         AND cached_tokens >= 0
         AND uncached_tokens >= 0
         AND total_tokens >= 0
+        AND input_tokens >= 0
+        AND output_tokens >= 0
+        AND cache_read_tokens >= 0
+        AND cache_write_tokens >= 0
+        AND cost_input >= 0
+        AND cost_output >= 0
+        AND cost_cache_read >= 0
+        AND cost_cache_write >= 0
         AND cost_total >= 0
     );
 

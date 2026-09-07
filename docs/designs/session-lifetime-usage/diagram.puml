@@ -1,0 +1,47 @@
+@startuml lifetime_usage_flow
+title Session Lifetime Usage - Atomic Persistence and Authoritative Snapshots
+' Source baseline: pi-mono-java@6f52fddc87a03c20916fc7b6ef1de87f6a7a8cf5.
+' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/event/RuntimeEventProjector.java:persistAssistant,projectCompactionCompleted.
+' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/persistence/MyBatisRuntimeSessionRepository.java:appendEntryWithUsage,accumulateUsageStats.
+' Source evidence: modules/coding-agent-cli/src/main/resources/mapper/session/RuntimeSessionMapper.xml:findSession,lockSessionForUpdate.
+' Observed behavior: Entry, Usage Record, sequence, leaf and coarse stats already share one transaction.
+' Design reason: preserve original usage parts and read stats after acquiring the authoritative session lock.
+' Java divergence: this is a Java database and HTTP resource extension, not a claim about pi HTTP behavior.
+skinparam shadowing false
+participant "RuntimeEventProjector\nper execution" as Projector
+participant "Session Repository\nstateless singleton" as Repository
+database "Session + Entry + Record + Stats" as Database
+participant "Existing Session services\nstateless singletons" as Service
+participant "RuntimeSessionResponseAssembler\nstateless singleton" as Assembler
+participant "Read-only Session VO\nper response" as Response
+
+group Atomic usage append
+  Projector -> Repository : appendEntryWithUsage(entry, record, usage)
+  Repository -> Database : lock Session row
+  Repository -> Database : read Stats after lock
+  Repository -> Database : append Entry + Record / advance sequence + leaf
+  Repository -> Database : increment original token and cost parts
+  Repository -> Database : commit all or roll back all
+  Repository --> Projector : persisted domain Entry
+end
+group Query or configuration result
+  Service -> Repository : read or update Session
+  alt read
+    Repository -> Database : one SELECT joins Session + Stats
+  else configuration transaction
+    Repository -> Database : lock Session row
+    Repository -> Database : read Stats after lock wait
+    Repository -> Database : preserve or update configuration
+  end
+  Repository --> Service : one authoritative RuntimeSessionDTO
+  Service -> Assembler : project same DTO
+  Assembler -> Response : copy Session + long counters + decimal costs
+  Assembler --> Service : response VO + existing configuration ETag
+end
+note over Assembler,Response
+  No mutable DTO reference escapes.
+  Usage append does not advance the configuration version.
+  Future Slash application reuses this projection;
+  no Command HTTP route is introduced in this slice.
+end note
+@enduml

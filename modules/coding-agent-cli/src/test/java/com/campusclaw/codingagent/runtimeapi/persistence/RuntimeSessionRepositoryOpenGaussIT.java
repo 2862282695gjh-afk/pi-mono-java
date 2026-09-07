@@ -110,7 +110,10 @@ class RuntimeSessionRepositoryOpenGaussIT {
 
         repository.create(session);
 
-        assertThat(repository.find(session.getId())).contains(session);
+        assertThat(repository.find(session.getId()).orElseThrow())
+                .usingRecursiveComparison()
+                .withComparatorForType(java.math.BigDecimal::compareTo, java.math.BigDecimal.class)
+                .isEqualTo(session);
         assertThat(countSession(session.getId())).isOne();
         assertThat(count("t_session_sequences", session.getId())).isOne();
         assertThat(count("t_session_stats", session.getId())).isOne();
@@ -200,7 +203,10 @@ class RuntimeSessionRepositoryOpenGaussIT {
         repository.create(session);
         assertThatThrownBy(() -> repository.updateName(session.getId(), "中".repeat(27), session.getUpdatedAt()))
                 .isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
-        assertThat(repository.find(session.getId())).contains(session);
+        assertThat(repository.find(session.getId()).orElseThrow())
+                .usingRecursiveComparison()
+                .withComparatorForType(java.math.BigDecimal::compareTo, java.math.BigDecimal.class)
+                .isEqualTo(session);
         assertThat(repository.beginDeletion(session.getId(), session.getUpdatedAt()))
                 .isEqualTo(SessionDeletionStatus.DELETED);
         assertThat(repository.updateName(session.getId(), "deleted", session.getUpdatedAt()))
@@ -280,7 +286,10 @@ class RuntimeSessionRepositoryOpenGaussIT {
         assertThatThrownBy(() -> repository.beginDeletion(session.getId(), session.getUpdatedAt()))
                 .isInstanceOf(RuntimeException.class);
 
-        assertThat(repository.find(session.getId())).contains(session);
+        assertThat(repository.find(session.getId()).orElseThrow())
+                .usingRecursiveComparison()
+                .withComparatorForType(java.math.BigDecimal::compareTo, java.math.BigDecimal.class)
+                .isEqualTo(session);
         assertThat(count("t_session_cleanup_task", session.getId())).isZero();
     }
 
@@ -537,7 +546,10 @@ class RuntimeSessionRepositoryOpenGaussIT {
                                         "{}")),
                         session.getCreatedAt().plusMinutes(1)))
                 .isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
-        assertThat(repository.find(session.getId())).contains(session);
+        assertThat(repository.find(session.getId()).orElseThrow())
+                .usingRecursiveComparison()
+                .withComparatorForType(java.math.BigDecimal::compareTo, java.math.BigDecimal.class)
+                .isEqualTo(session);
         assertThat(repository.listCurrentBranch(session.getId(), 0L, 10, true)).isEmpty();
         assertThat(changeUnconditionally(new CountDownLatch(0), session, "next").sourceEventSeq())
                 .isEqualTo(1L);
