@@ -1,0 +1,96 @@
+@startuml builtin_thinking_layers
+' Java baseline: 7fb2737f1220b92e4cea130505467905a8616daf
+' Implementation: de3716d4b6404d34df3b15e0604c60d6df582ddd
+' Java root: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/
+' Sources: session/RuntimeSessionConfigurationService.java:changeThinking
+' Sources: service/command/SessionThinkingConfigurationService.java:execute,change,requireThinkingSupported
+' Sources: persistence/MyBatisRuntimeSessionRepository.java:updateThinking
+' Observed behavior: PUT has mandatory If-Match and row-lock CAS.
+' Design reason: recheck the locked model without generating an entry for a no-op.
+' Java divergence: boolean switch and local capability admission replace pi level clamping.
+title Thinking command - target layer dependencies
+set namespaceSeparator none
+skinparam shadowing false
+skinparam classAttributeIconSize 0
+hide empty members
+package "web" {
+  class "RuntimeSessionConfigurationController" as Web
+}
+package "session" {
+  class "RuntimeSessionConfigurationService" as Api
+}
+package "service.command" {
+  class "SessionThinkingConfigurationService" as Service
+}
+package "service.command.contributor" {
+  class "ThinkingCommandContributor" as Contributor
+}
+package "persistence" {
+  interface "RuntimeSessionRepository" as Port
+  class "MyBatisRuntimeSessionRepository" as Repo
+}
+package "model / agent" {
+  interface "RuntimeModelManager" as Models
+  interface "AgentDirectoryResolver" as Directory
+}
+package "dto.command" {
+  class "ThinkingCommandResultDTO" as Result
+}
+Web --> Api : existing VO and ETag
+Api --> Service : conditional change
+Contributor --> Service : command query / change
+Service --> Port : local admission + entry factory
+Repo ..|> Port
+Service --> Models : local capability only
+Service --> Directory : outside DB lock
+Service ..> Result : internal immutable result
+@enduml
+
+@startuml builtin_thinking_transaction
+' Implementation: de3716d4b6404d34df3b15e0604c60d6df582ddd
+' Sources: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/
+' service/command/SessionThinkingConfigurationService.java:change,requireThinkingSupported
+' persistence/MyBatisRuntimeSessionRepository.java:updateThinking,appendConfigurationEntries,appendLocked
+' pi baseline: 4af9d21d3b4d664e4a29fcabfec85171077248e3
+' pi sources: packages/coding-agent/src/core/agent-session.ts:setThinkingLevel
+' pi sources: packages/coding-agent/src/core/session-manager.ts:appendThinkingLevelChange
+' Observed behavior: pi persists thinking only when the effective level changes.
+' Java divergence: locked model capability errors instead of level clamping.
+' Design reason: serialize model and thinking decisions with authoritative entry sequence.
+title Thinking change - local admission and one DB transaction
+skinparam shadowing false
+participant "Thinking service" as Service
+participant "Local model manager" as Models
+participant "Repository transaction" as Repo
+database "Session / Entry / Sequence" as DB
+Service -> Models : if on: preflight using outside-lock Agent snapshot
+Service -> Repo : updateThinking(expectedVersion?, requested, admission, factory)
+activate Repo
+Repo -> DB : lock Session row
+DB --> Repo : current model, thinking and version
+alt missing / supplied version mismatch / running
+  Repo --> Service : stable rejection
+else admitted state
+  Repo -> Service : admission(locked Session)
+  Service -> Models : if on: recheck locked model; local only
+  Models --> Service : capability or stable error
+  alt unsupported / lookup failure
+    Service --> Repo : reject, no write
+  else identical thinking
+    Repo --> Service : unchanged, sourceEventSeq = null
+  else changed thinking
+    Repo -> Service : entryFactory(locked previousThinking)
+    Service --> Repo : one thinking Entry, reason=requested
+    Repo -> DB : update thinking + version + time
+    Repo -> DB : allocate sequence, append Entry and link parent
+    Repo -> DB : update active leaf; commit
+    Repo --> Service : updated Session + actual entrySeq
+  end
+end
+deactivate Repo
+note over Service, DB
+  Off and query do not resolve Agent or model capability.
+  No request state, credentials, Holder or command lifecycle.
+  Any transactional failure rolls back all writes.
+end note
+@enduml
