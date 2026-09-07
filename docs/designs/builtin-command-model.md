@@ -1,6 +1,10 @@
 # Builtin Command：Model 实现切片
 
-> 版本：1.0.0 · 日期：2026-09-06 · 状态：内部执行与既有 PUT 复用已实现；Command HTTP 待统一发布
+> 版本：1.1.0 · 日期：2026-09-07 · 状态：内部执行与既有 PUT 复用已实现；Command HTTP 待统一发布
+
+设计仓 `88f4df16bc24bbfcd28e1ec374feb2de0db8be3b` Builtin 2.9.0 已 supersede 旧公开回执方向。
+Model 查询使用模型清单，修改/同值使用完整 Session 与 ETag；当前结构与验证见
+[权威 Session 修复](builtin-session-snapshot.md)、[ADR-0060](../decisions/0060-builtin-authoritative-session-result.html)。以下原提交和测试数字仍为历史证据。
 
 ## 1. Context 与范围
 
@@ -35,7 +39,7 @@ Java 的 boolean Thinking、idle 写入限制和同模型不写 Entry 是**产�
 
 ## 3. 架构与数据流
 
-![Model 分层依赖](builtin-command-model/builtin_model_layers.svg)
+![历史 Model 分层依赖（统一 Model 结果已 superseded，当前分型见权威 Session 修复）](builtin-command-model/builtin_model_layers.svg)
 
 [PlantUML 源码](builtin-command-model/diagram.puml#L1)
 
@@ -62,8 +66,9 @@ Java 的 boolean Thinking、idle 写入限制和同模型不写 Entry 是**产�
    均由通过准入后的锁内 Session 决定。并发无版本修改串行执行，不因版本推进而错误返回 412。
 3. 同值不调用事件工厂、不生成 Entry ID、不分配序号、不更新 timestamp/version/Thinking。
    模型真实切换只追加 session.model.changed，必要时随后追加 session.thinking.changed。
-4. sourceEventSeq 从 Repository 实际分配的最后一条 Entry 读取，不使用资源版本或 GET 历史末序号。
-   查询与同值为 null；最终响应 VO 再按确认契约省略此字段。共享配置结果也能携带既有 Thinking PUT 的实际事件序号。
+4. sourceEventSeq 从 Repository 实际分配的最后一条 Entry 读取，只保留内部，不使用资源版本或 GET 历史末序号。
+   查询返回 ModelCommandResultDTO（currentModelId/models），修改/同值返回共用 SessionCommandResultDTO，
+   完整保留 update.session()。未来公开结果始终禁止 command/changed/sourceEventSeq；模型修改不再读取或返回候选模型。
 5. 既有 Model PUT 仍先检查 If-Match，再模型解析，最后锁内 CAS；缺失为 428、过期为 412；
    成功经原组装器返回 Session VO 和新强 ETag。Model/Thinking 的现有领域事件名称、parent 链和 HTTP 字段不变。
 6. 同一事务更新模型/Thinking、追加 Entry、推进 Sequence 与 active leaf；后续 Entry 失败整体回滚。
@@ -100,4 +105,5 @@ Java 的 boolean Thinking、idle 写入限制和同模型不写 Entry 是**产�
 
 | 版本 | 日期 | 变更 |
 |---|---|---|
+| 1.1.0 | 2026-09-07 | 按 88f4df16 分离模型查询与 Session 修改结果，权威序号仅供内部使用；旧响应方向 superseded。 |
 | 1.0.0 | 2026-09-06 | Model Contributor/窄服务、可选版本与锁内事件工厂、权威序号、既有 PUT 复用与并发验证。 |

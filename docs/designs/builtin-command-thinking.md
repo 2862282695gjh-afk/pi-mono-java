@@ -1,6 +1,10 @@
 # Builtin Command：Thinking 实现切片
 
-> 版本：1.0.0 · 日期：2026-09-07 · 状态：内部执行与既有 PUT 复用已实现，Command HTTP 待统一发布
+> 版本：1.1.0 · 日期：2026-09-07 · 状态：内部执行与既有 PUT 复用已实现，Command HTTP 待统一发布
+
+设计仓 `88f4df16bc24bbfcd28e1ec374feb2de0db8be3b` Builtin 2.9.0 已 supersede 旧开关子集与公开序号方向。
+查询、修改和同值统一保留完整 Session；当前结构与验证见
+[权威 Session 修复](builtin-session-snapshot.md)、[ADR-0060](../decisions/0060-builtin-authoritative-session-result.html)。历史提交与验证数字仍保留原适用范围。
 
 ## 1. Context 与范围
 
@@ -36,7 +40,7 @@ Java 的 boolean on/off、idle 写入限制与不支持时报错（不静默 cla
 
 ## 3. 架构与数据流
 
-![Thinking 分层依赖](builtin-command-thinking/builtin_thinking_layers.svg)
+![历史 Thinking 分层依赖（结果子集已 superseded，当前结构见权威 Session 修复）](builtin-command-thinking/builtin_thinking_layers.svg)
 
 [PlantUML 源码](builtin-command-thinking/diagram.puml#L1)
 
@@ -45,7 +49,8 @@ Java 的 boolean on/off、idle 写入限制与不支持时报错（不静默 cla
 - 查询允许 running，不刷新 Agent、不查询模型能力、不写 Entry；关闭也完全不解析 Agent/模型能力。
 - 开启在锁外取得一次 Agent 目录快照并进行预检查，锁内以最新 Session.modelId 调用本地 resolveModel 再验证。
   resolveModel 明确禁止刷新 Agent、远端调用或获取请求凭据。快照和闭包仅在本次调用栈中存在。
-- DTO 只承载 thinking、changed、sourceEventSeq；不执行参数校验、不添加 JSON 注解。响应 VO 组装留到应用/HTTP 切片。
+- 共用 SessionCommandResultDTO 原样携带查询或锁内完整 RuntimeSessionDTO，并保留内部 changed/sourceEventSeq；
+  不执行参数校验、不添加 JSON 注解。未来应用层复用既有 Session VO/ETag 投影，不在提交后 GET。
 - 既有配置应用服务只保留 VO、If-Match、错误翻译和 Session 响应组装，不再生成 Thinking Entry。
 
 ![Thinking 锁内准入](builtin-command-thinking/builtin_thinking_transaction.svg)
@@ -63,7 +68,8 @@ Java 的 boolean on/off、idle 写入限制与不支持时报错（不静默 cla
 4. Command 开启使用锁内最新模型，previousThinking 同样来自锁内旧值；不能把无版本更新当成取消原 CAS 即可。
    模型先切到不支持 Thinking 时，后到的开启拒绝；Thinking 先开启时，后到的 Model 更新仍自动关闭。
 5. 实际变化只追加一条 session.thinking.changed，reason=requested。sourceEventSeq 来自该 Entry 的实际序号；
-   查询/同值为 null，后续响应 VO 按契约省略。失败整体回滚配置、版本、leaf、Entry 和 Sequence。
+   查询/同值为 null，仅内部保留。公开资源始终禁止 command/changed/sourceEventSeq，完整 Session 与 ETag 同源。
+   失败整体回滚配置、版本、leaf、Entry 和 Sequence。
 6. Command 将 AGENT_MODEL_NOT_CONFIGURED 映射为 MODEL_NOT_AVAILABLE；其他稳定业务错误原样保留，
    非业务异常转 COMMAND_EXECUTION_FAILED 且不暴露原因。既有 PUT 保留原业务错误与 SESSION_THINKING_UPDATE_FAILED。
 
@@ -93,4 +99,5 @@ Java 的 boolean on/off、idle 写入限制与不支持时报错（不静默 cla
 
 | 版本 | 日期 | 变更 |
 |---|---|---|
+| 1.1.0 | 2026-09-07 | 按 88f4df16 保留查询/锁内完整 Session；撤销开关子集与公开回执方向，关联 R06。 |
 | 1.0.0 | 2026-09-07 | Thinking 窄服务、锁内能力准入、可选版本、同值无副作用、权威序号与并发回滚验证。 |

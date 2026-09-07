@@ -1,6 +1,10 @@
 # Builtin Command：Name 实现切片
 
-> 版本：1.0.1 · 日期：2026-09-05 · 状态：Name 内部执行与创建/GET Session 名称已实现；Command HTTP 待统一发布
+> 版本：1.1.0 · 日期：2026-09-07 · 状态：Name 内部执行与创建/GET Session 名称已实现；Command HTTP 待统一发布
+
+设计仓 `88f4df16bc24bbfcd28e1ec374feb2de0db8be3b` Builtin 2.9.0 已 supersede 旧 Name 专属响应方向：
+查询、修改和同值均返回完整 Session 与同源 ETag。当前结果通道及新验证见
+[权威 Session 修复](builtin-session-snapshot.md)和 [ADR-0060](../decisions/0060-builtin-authoritative-session-result.html)；历史提交及测试数字保留原适用范围。
 
 ## 1. Context
 
@@ -43,7 +47,7 @@ Java 不复制 pi 的名称历史与清空行为：只保留当前名称属于**
 
 ## 3. 架构与数据流
 
-![Name 类职责与依赖](builtin-command-name/builtin_name_layers.svg)
+![历史 Name 类职责（结果类型已 superseded，当前结构见权威 Session 修复）](builtin-command-name/builtin_name_layers.svg)
 
 [PlantUML 源码](builtin-command-name/diagram.puml#L1)
 
@@ -54,10 +58,11 @@ Java 不复制 pi 的名称历史与清空行为：只保留当前名称属于**
 - Name Contributor 贡献 OPTIONAL 输入，idle/running 的查询和修改均可用；发现阶段不读取数据库或 Agent。
 - Handler 使用本次 Catalog 的 Session ID，调用窄服务。查询重新读取持久化当前名称；修改不依赖 Catalog 中的旧版本。
 - Spring 事务代理执行 Repository 的锁内比较。数据库负责跨进程互斥，没有进程内名称缓存或锁。
-- `SessionNameUpdateDTO` 与 `NameCommandResultDTO` 是无校验的数据 record。后续统一应用层才转换 Name 响应 VO。
+- `SessionNameUpdateDTO` 与共用 `SessionCommandResultDTO` 是无校验的数据 record，携带完整权威 Session。
+  后续统一应用层委派既有 RuntimeSessionResponseAssembler，不创建 Name 专属响应 VO。
 - 所有单例只保存固定协作者；不捕获 Mate Header、不刷新 Agent、不占运行容量。
 
-![Name 锁内更新时序](builtin-command-name/builtin_name_update.svg)
+![历史 Name 锁内更新时序（返回对象已 superseded；行锁与无事件规则保留）](builtin-command-name/builtin_name_update.svg)
 
 [PlantUML 源码](builtin-command-name/diagram.puml#L69)
 
@@ -84,7 +89,8 @@ Java 不复制 pi 的名称历史与清空行为：只保留当前名称属于**
 - 创建 Session 成功响应必须包含 `displayName: null`；GET Session 与既有配置 PUT 同样始终保留该字段。
   CreateSessionResponseVO 和 GetSessionResponseVO 均为只读 VO，Service 组装器分别映射。
   前端共享 Session 类型声明为必有的 `displayName: string | null`；创建响应仍不包含 updatedAt。
-- Name 内部结果仅含 displayName/changed；未来普通 JSON 响应再添加 `command=name`，不添加 sourceEventSeq。
+- Name 查询原样传递一次读取的 Session，修改和同值原样传递锁内资源，不在提交后 GET。
+  未来 JSON 复用完整 Session 和同源 ETag，禁止 command/changed/sourceEventSeq；changed 仅保留内部。
   没有发布 GET/POST Command 路由，没有新增请求级 SSE。
 - 非法名称为 INVALID_COMMAND_REQUEST（400），不存在为 SESSION_NOT_FOUND（404）；
   修改持久化失败翻译为 SESSION_NAME_UPDATE_FAILED（500），提供中英文文案，不将名称或数据库异常文本写入日志和响应。
@@ -115,5 +121,6 @@ Java 不复制 pi 的名称历史与清空行为：只保留当前名称属于**
 
 | 版本 | 日期 | 变更 |
 |---|---|---|
+| 1.1.0 | 2026-09-07 | 按 88f4df16 传递锁内完整资源，撤销 Name 专属公开回执；关联 R06 与新 ADR，保留历史证据。 |
 | 1.0.1 | 2026-09-05 | 根据 #224 评论补齐创建响应 displayName:null、前端必有字段与回归；同步已确认的 Builtin/Skill 统一责任。 |
 | 1.0.0 | 2026-09-05 | Name 内部执行、首版当前名称存储、GET Session 字段、并发与恢复验证；不增加升级脚本或 Command 路由。 |

@@ -14,7 +14,10 @@
 </head>
 <body><main>
   <h1>ADR-0053：Model 命令复用锁内配置事务</h1>
-  <p>Status：Accepted · 已确认分层计划的 Model 实现切片<br>Date：2026-09-06 · Version：1.0.0</p>
+  <p>Status：Accepted（锁内事务）；Superseded（混合 Model 结果与旧响应方向）<br>Date：2026-09-07 · Version：1.1.0</p>
+  <p>响应与结果通道由 <a href="0060-builtin-authoritative-session-result.html">ADR-0060</a> 替代：
+  查询复用模型清单，修改/同值复用完整 Session 与 ETag；sourceEventSeq 仅供内部使用。
+  以下原实现类型及测试数字保留历史证据，不作为新响应方向的验收结论。</p>
   <p>Java 变更前：<code>c70f02bc9deabae9b442406d98806a33a6602fdb</code><br>
   本次实现：<code>16ee86ab1dcacd7e76a8c66ade99f52ddd8e3573</code><br>
   已确认设计：<code>pi-mono-java-design@41304c1f3df0e8eca53141312724d7a684a1d07f</code>，
@@ -68,6 +71,7 @@
     <li><a href="0048-limit-added-code-lines-per-pull-request.html">PR 新增行数门禁</a></li>
   </ul>
   <h2>版本历史</h2>
+  <p>1.1.0 · 2026-09-07：标注结果通道的局部替代；锁内事务、可选版本和领域事件语义保持。</p>
   <p>1.0.0 · 2026-09-06：记录 Model 共用窄服务、锁内事件工厂与可选条件版本。</p>
 </main></body>
 </html>

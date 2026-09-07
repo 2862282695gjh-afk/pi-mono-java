@@ -1,6 +1,11 @@
 # Builtin Command 只读命令切片
 
-> 版本：1.1.1 · 日期：2026-09-07 · 状态：Help / Status / Skills 已实现；未发布 Command HTTP 路由
+> 版本：1.2.0 · 日期：2026-09-07 · 状态：Help / Status / Skills 已实现；未发布 Command HTTP 路由
+
+响应方向已按设计仓 `88f4df16bc24bbfcd28e1ec374feb2de0db8be3b` Builtin 2.9.0 修订。
+旧“Status 裁剪字段、未来添加 command”的决定 superseded；当前完整结果通道见
+[权威 Session 修复](builtin-session-snapshot.md)与 [ADR-0060](../decisions/0060-builtin-authoritative-session-result.html)。
+以下历史提交和验证数字仍只证明原切片，不作为本轮验收结果。
 
 ## 1. Context
 
@@ -36,14 +41,14 @@ Java 基线为 `6d7ba8483f69e8cccab04489a0111a27fde1315d`；初始只读切片�
 | pi `4af9d21d3b4d664e4a29fcabfec85171077248e3` | `packages/coding-agent/src/core/agent-session.ts:1289` · `_tryExecuteExtensionCommand` | 扩展命令按名称查找并调用 `handler(args, ctx)`；不是 Java Builtin HTTP 实现 |
 | 同一 pi 提交 | 同文件 `getSessionStats:3247`、`_bindExtensionCore:2464` | 前者聚合消息、用量和成本；后者把扩展、模板和 Skill 组合成命令元数据 |
 
-pi 仅提供 Handler/上下文分离和资源元数据读取的行为参考。Java Status 不统计用量属于
-已确认的产品约束；Java Skills 只返回名称、描述属于最小信息暴露约束；使用 Spring
+pi 仅提供 Handler/上下文分离和资源元数据读取的行为参考。Java Status 不估算上下文用量，
+但必须传递完整 Session 的已持久化 lifetimeUsage（补齐工作见 R07），不再裁剪资源；Java Skills 只返回名称、描述属于最小信息暴露约束；使用 Spring
 Contributor、请求 Catalog 和内部 DTO 属于架构变化，不宣称这些类型已存在于 pi。
 跨进程数据库与 HTTP 序列化验收仍是后续目标，不能把本 PR 的服务测试描述为该验收已通过。
 
 ## 3. 架构与数据流
 
-![只读命令目标类结构](builtin-command-readonly/builtin_command_readonly.svg)
+![历史只读命令类结构（Status 结果通道已 superseded，当前结构见权威 Session 修复）](builtin-command-readonly/builtin_command_readonly.svg)
 
 [PlantUML 源码](builtin-command-readonly/diagram.puml#L1)
 
@@ -52,7 +57,7 @@ Contributor、请求 Catalog 和内部 DTO 属于架构变化，不宣称这些�
 | 命令 | Spring 装配 `service.command.contributor` | 窄服务 `service.command.readonly` | 内部结果 `dto.command` |
 |---|---|---|---|
 | Help | HelpCommandContributor | AgentHelpQueryService | HelpCommandResultDTO |
-| Status | StatusCommandContributor | RuntimeSessionStatusService | StatusCommandResultDTO |
+| Status | StatusCommandContributor | RuntimeSessionStatusService | SessionCommandResultDTO |
 | Skills | SkillsCommandContributor | BoundSkillQueryService | SkillsCommandResultDTO / SkillDTO |
 
 Contributor 只依赖窄服务和核心 SPI，窄服务不反向依赖 Contributor。核心 SPI 保留在
@@ -61,11 +66,11 @@ Contributor 只依赖窄服务和核心 SPI，窄服务不反向依赖 Contribut
 
 1. 后续应用层负责授权和读取持久化 Session，调用一次 Builtin 来源解析。
 2. 本切片从 Catalog 取同一原始定义，Handler 使用 Context 中的 Catalog / Session。
-3. Help 与 Skills 分别按 Session Agent ID 调用一次 `prepareCached`；Status 使用请求内 Session 观察值。
+3. Help 与 Skills 分别按 Session Agent ID 调用一次 `prepareCached`；Status 按 Context 的 Session ID 读取一次完整持久化资源，不从 Catalog 子集重建。
    `prepareCached` 与刷新发布共用 Agent 锁，因此不会跨原子目录切换拼接两代文件。
 4. 窄服务同步返回内部 DTO，Handler 用已完成的 CompletionStage 返回结果。
    服务错误可在取得 Stage 之前同步抛出，后续应用层须统一捕获同步异常与异步失败。
-5. 后续应用层将 DTO 转为独立响应 VO，Controller 才返回 ResultBean；本 PR 不增加 VO 或路由。
+5. 后续应用层复用 Session 的既有响应 VO 和 ETag 投影；Help/Skills 使用最小业务 VO，Controller 才返回 ResultBean；本轮不增加 VO 或路由。
 
 ## 4. 设计决策
 
@@ -78,8 +83,8 @@ Contributor 只依赖窄服务和核心 SPI，窄服务不反向依赖 Contribut
 - **缓存提供完整指南快照**：`agent.json` 在既有 schemaVersion 下保存 `userCases`，重启后恢复；
   旧缓存缺字段时返回空列表。缓存中的 null、数字、布尔或对象文本项使快照不可用，Mate 响应中的
   同类值映射为无效响应。显式刷新失败保留上一完整快照。
-- **Status 使用持久化观察值**：不根据 Holder 推测状态、不补算 Token 或费用；同一请求
-  内保持模型与 Thinking 的一致观察。下一请求重新读取最新 Session。
+- **Status 使用完整持久化资源**：不根据 Holder 推测状态、不补算 Token 或费用；同一次查询的
+  RuntimeSessionDTO 完整传递到结果。Catalog 只供准入预览，不用于拼接资源正文或版本。
 - **Skills 执行时读缓存，不刷新**：不在目录发现时读取 Agent；执行时缺少完整快照返回
   `AGENT_NOT_AVAILABLE`，完整空快照返回 `[]`。每次执行重新读取，不在单例中保存旧结果。
   不调用 SkillCommandSource，不暴露 Skill ID、版本、文件路径、正文或使用场景。
@@ -89,8 +94,8 @@ Contributor 只依赖窄服务和核心 SPI，窄服务不反向依赖 Contribut
 - **DTO 是数据载体**：只含结果字段及列表防御复制，不在 DTO 中校验参数或业务状态。
   服务直接调用时也把 null 视为空参数；Help 接受纯空白，Status / Skills 的空格、
   换行及其他非空参数均拒绝。统一请求长度、未知字段、Header 与名称格式在后续应用/HTTP 边界实现。
-- **不提前发布公共接口**：三个内部结果不包含 `command` 或 `sourceEventSeq`；未来 VO
-  组装器添加命令名，查询不返回领域事件序号。不把 DTO 的序列化测试当作 HTTP 契约测试。
+- **不提前发布公共接口**：公开结果禁止 command/changed/sourceEventSeq，不增加替代回执。
+  内部 Session 结果保留 changed/sourceEventSeq，但应用层只投影业务资源；不把 DTO 测试当作 HTTP 契约验收。
 
 ## 5. 边界情况与性能（DFX）
 
@@ -131,6 +136,7 @@ Contributor 只依赖窄服务和核心 SPI，窄服务不反向依赖 Contribut
 
 | 版本 | 日期 | 变更 |
 |---|---|---|
+| 1.2.0 | 2026-09-07 | 依据 88f4df16 撤销公开命令回执与 Status 子集，改用完整 Session 通道；保留历史证据并链接 R06。 |
 | 1.1.1 | 2026-09-07 | 以 fd86049 的统一责任替代旧人员分工；区分历史只读切片证据与后续已合入进度。 |
 | 1.1.0 | 2026-09-05 | 按已确认的新设计将 Help 改为 Agent 使用指南，并记录 userCases 缓存、严格文本类型和并发快照一致性。 |
 | 1.0.0 | 2026-09-04 | 记录 Help / Status / Skills 只读切片、DTO 边界、测试与串行 PR 行数预算；不改设计仓、不发布 HTTP。 |
