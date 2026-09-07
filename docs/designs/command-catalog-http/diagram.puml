@@ -1,0 +1,61 @@
+@startuml command_catalog_http
+' Java baseline: 7d771ca802b781361e0e62e9014bafb6b0ed5e7a
+' Java implementation: afee9bd333d0fc74ba0cef8b27b6df7357acdf30
+' Source root: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/
+' runtimeapi/web/RuntimeCommandCatalogController.java: list
+' runtimeapi/web/RuntimeExceptionHandler.java: response, isCommandCatalogRequest
+' runtimeapi/service/command/CommandCatalogService.java: list
+' runtimeapi/service/command/CommandDiscoveryResponseAssembler.java: assemble
+' runtimeapi/service/command/CompositeCommandRegistry.java: resolveComplete
+' pi 5cd93f688aaab89dbb6dfa4aca535f21796ae185:
+' packages/coding-agent/src/core/slash-commands.ts: BuiltinSlashCommand
+' Observed behavior: existing application resolves one complete cached catalog.
+' Design reason: publish a narrow GET boundary without execution or DTO leakage.
+' Java divergence: HTTP, shared cache and operation-specific 503 are product decisions.
+title Shared command catalog HTTP - implemented dependencies
+skinparam monochrome true
+skinparam shadowing false
+skinparam classAttributeIconSize 0
+hide empty members
+class RuntimeCommandCatalogController <<singleton>> {
+  +list(sessionId, request)
+}
+interface ResultBeanAdapter {
+  +normal(responseVO)
+}
+class CommandCatalogService <<singleton>> {
+  +list(sessionId): CommandListResponseVO
+}
+class RuntimeExceptionHandler <<singleton>> {
+  -isCommandCatalogRequest(request)
+}
+interface RuntimeSessionRepository {
+  +find(sessionId)
+}
+class AgentRuntimeManager <<singleton>> {
+  +prepareCached(agentId)
+}
+class CompositeCommandRegistry <<singleton>> {
+  +resolveComplete(session, prepared)
+}
+class CommandDiscoveryResponseAssembler <<singleton>> {
+  +assemble(catalog)
+}
+RuntimeCommandCatalogController --> ResultBeanAdapter : wraps response VO
+RuntimeCommandCatalogController --> CommandCatalogService : delegates
+RuntimeExceptionHandler ..> RuntimeCommandCatalogController : matched handler type
+CommandCatalogService --> RuntimeSessionRepository : reads once
+CommandCatalogService --> AgentRuntimeManager : cached snapshot once
+CommandCatalogService --> CompositeCommandRegistry : complete catalog once
+CommandCatalogService --> CommandDiscoveryResponseAssembler : DTO to read-only VO
+note bottom of RuntimeExceptionHandler
+  AGENT_NOT_AVAILABLE:
+  catalog GET -> 503, Retry-After 3
+  other handlers -> existing 422
+end note
+note bottom of CommandCatalogService
+  Request values stay local.
+  No refresh, write, capacity or execution.
+  Read state is not execution admission.
+end note
+@enduml

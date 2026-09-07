@@ -104,6 +104,8 @@ public final class ClawConstants {
          * 命令发现响应的固定展示顺序与输入提示，不承担执行分派。
          */
         public static final class Command {
+            public static final int CATALOG_RETRY_AFTER_SECONDS = 3;
+
             public static final List<String> BUILTIN_ORDER =
                     List.of("help", "status", "name", "model", "thinking", "compact", "skills");
 
