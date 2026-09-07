@@ -94,10 +94,15 @@ public class RuntimeSessionEngineRegistry {
     }
 
     public void complete(RuntimeSessionHolder holder, RuntimeActiveExecution execution) {
-        holder.complete(execution);
+        if (!holder.complete(execution)) {
+            return;
+        }
         if (sessions.remove(holder.sessionId(), holder)) {
-            holder.closeSession();
-            capacity.release();
+            try {
+                holder.closeSession();
+            } finally {
+                capacity.release();
+            }
         }
     }
 

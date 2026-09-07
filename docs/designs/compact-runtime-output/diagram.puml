@@ -42,7 +42,8 @@ end note
 title Compaction Projection - Commit Before Sequence Publication
 ' Source evidence: pi-mono-java@defb6880 modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/event/RuntimeEventProjector.java:projectCompactionCompleted,lastCompactionEntrySeq.
 ' Source evidence: pi-mono-java@ee89ff00 modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/event/RuntimeEntryCodec.java:toAgentContextEntryIds,effectiveContextEntries.
-' Design reason: usage and queued messages must not replace the compaction entry sequence.
+' Design reason: usage must not replace the compaction entry sequence; Compact never continues a control queue.
+' Current contract: pi-mono-java-design@0a113ce8 Built-in README section 7 prohibits queued continuation.
 ' Target-only: Compact acceptance and its independent completion handle are delivered in later slices.
 skinparam shadowing false
 participant "Session compaction event" as Session
@@ -66,6 +67,7 @@ end
 deactivate Projector
 note over Projector,Output
   This slice does not start Compact or return command JSON.
-  Later coordinator captures result before queued continuation.
+  Later coordinator captures this result and releases the holder.
+  Compact accepts no Steer or FollowUp and never continues queues.
 end note
 @enduml

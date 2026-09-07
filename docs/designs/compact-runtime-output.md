@@ -1,6 +1,6 @@
 # Compact Runtime：无请求流的持久化投影
 
-版本：1.0.0 · 日期：2026-09-07 · 串行计划第 6a 个切片。
+版本：1.0.1 · 日期：2026-09-07 · 串行计划第 6a 个切片及后续边界纠正。
 
 ## 1. Context 与范围
 
@@ -8,9 +8,11 @@
 Projector 保存权威领域 Entry 与 Usage。本 PR **没有可调用的 Compact 入口**；不接入
 Contributor、Handler、Command Application Service、Controller 或 Skill 执行。
 
-完整生命周期还包含原子准入、历史观察、容量、取消、独立完成句柄和队列续跑。
+完整生命周期还包含原子准入、历史观察、容量、超时、独立完成句柄和资源清理。
+最新 Compact 约束明确禁止控制队列及续跑；本文 1.0.0 的队列续跑交接已撤销。
 本次在“输出与持久化解耦”处独立交付，避免将这些职责及并发测试同时塞入 850 模块行预算。
 下一切片必须等本 PR 合并后从最新 main 创建，不使用堆叠分支。
+6b1 的实际进展与验证见 [已准入执行生命周期](compact-runtime-lifecycle.md)，不要把 6a 历史验证当作完整准入证据。
 
 ## 2. 关键定义与源码证据
 
@@ -31,8 +33,10 @@ Java 变更前基线：`ee89ff00e516c01444bd120034a936d6203dffc0`（Thinking #23
 已确认设计：`pi-mono-java-design@41304c1f3df0e8eca53141312724d7a684a1d07f`，
 `04-命令与技能/01-内置命令/README.md` 第 7 节与
 `04-命令与技能/01-内置命令/设计图/diagram.puml:compact_command_execution`。
-设计仓只读，未修改。已核对最新设计 main `2d0dba26f442f2e34f95aed6eae34a4a563c252a`：
-Events V2 的分页/中断目标仍另行实施，不据此改动本 PR 的现有 POST Events。
+以上为 6a 历史设计基线。后续以设计 main `0a113ce8e12cc65bd6e5589087bd4642a7d016e1`
+相同 README 第 7 节为准：Compact 不支持 Steer/FollowUp，不排队续跑，Mate Header 只保留至本次压缩结束。
+设计仓只读，未修改。通用 Events V2、旧控制路由退役及前端迁移由用户另行开发，
+不属于当前 Slash Command 工作，也不是本系列发布前置条件。命令专属中断绑定/响应若未确认，单独说明该边界。
 
 Java 的 idle-only、JSON、独立压缩终态是已确认的**产品约束**；可选输出与数据库投影解耦是
 **架构变化**。保留已存领域事件，不引入通用命令生命周期、Name 历史或公开 commandId。
@@ -52,7 +56,8 @@ RuntimeEventStream 仍使用原队列、字节预算、心跳和 detach 机制�
 Projector 与 ActiveExecution 各自属于一次执行，Spring Factory 只有 final 协作者。
 createForCompaction 仅表示没有初始 UserMessage；调用者另选 persistenceOnly 输出策略，
 并须在持久化前提供现有 Usage 所需的内部 runId。这个 ID 不变成命令身份或公共字段。
-排队 UserMessage 不会被误认为初始输入而跳过持久化。
+6a 还验证了通用 Projector 的排队 UserMessage 不会被误认为初始输入；
+这是既有 POST Events 的兼容性证据，不表示 Compact 接受排队输入。
 
 ![压缩 Entry 保存与序号读取](compact-runtime-output/compact_persistence_sequence.svg)
 
@@ -66,7 +71,7 @@ createForCompaction 仅表示没有初始 UserMessage；调用者另选 persiste
 - Entry/Usage 仍在既有 Repository 事务中保存；只有成功返回后才更新 lastCompactionEntrySeq。
   它不是 Usage 序号，也不随排队 UserMessage 更新。读取与写入共用 Projector 的 synchronized 边界。
 - lastCompactionEntrySeq 是投影器最近成功的压缩记录，不是命令结果：后续失败保留旧值。
-  后续 Runtime 协调器必须检查本次错误，并在队列续跑前固定本次结果，不能等整个 Holder 结束后再读取。
+  Compact 协调器必须检查本次错误，并在本次投影与资源收尾后固定结果；它不消费控制队列。
 - 分页读取当前分支后按恢复上下文身份定位保留点；不存在的点在写入前失败。重试的精确丢弃身份保持原样。
 - 保存失败沿用 failure 标记与一次 abort 回调；之后忽略投影。此处没有新增失败清理事务或恢复执行机制。
 - 无流策略 complete 只完成输出动作，不取消或完成 ActiveExecution；各执行 Future 不受共享无状态策略影响。
@@ -76,7 +81,8 @@ createForCompaction 仅表示没有初始 UserMessage；调用者另选 persiste
 
 无流执行不分配 SSE 缓冲、心跳线程或订阅者，不新增依赖/配置/数据库表/SQL/后台线程。
 持久化和恢复复杂度沿用现有当前分支读取；按 500 条分批加载，不在本切片修改历史算法。
-不新增 Header 捕获或凭据存储；Mate Header 的整个 Compact/续跑 Holder 生存期需由后续生命周期切片验证。
+不新增 Header 捕获或凭据存储；Mate Header 只属于本次 Compact 的 Active Holder，
+压缩终态必须释放 Holder，不允许通过续跑延长凭据生命周期。
 无公开 API、JSON/SSE schema 或前端类型变更。DTO 更名仅影响内部工厂与 Service。
 
 ## 6. 测试与验证
@@ -98,15 +104,17 @@ createForCompaction 仅表示没有初始 UserMessage；调用者另选 persiste
 
 | 切片 | 尚需实现和验证 |
 |---|---|
-| 6b：剩余 Compact Runtime | 共用操作锁/行锁下 idle 复核；空历史在容量、状态、Entry 前无副作用返回；实际压缩准入与注册；内部 Usage 身份；30 分钟超时；独立且不传播调用方取消的压缩完成句柄；异常/取消/超时后 Holder、Session、容量清理 |
-| 7：Compact 命令接入 | 窄应用服务与 Contributor/Handler；压缩终态先完成、同 Holder 再消费 Steer/FollowUp；Abort 清队列；Mate Header 只保留至本 Holder 结束；错误翻译、实际领域序号与无变化结果 |
+| 6b1：已准入 Compact 执行 | 共用操作锁/容量/Holder/Projector；30 分钟超时；独立且不传播调用方取消的完成句柄；禁止控制输入与队列续跑；终态后 Holder、Session、容量清理 |
+| 6b2：Compact 准入与观察 | 操作锁/数据库行锁下 idle 复核；空历史在容量、状态、Entry 前无副作用返回；实际压缩注册与准入、内部 Usage 身份；并发接受与恢复验证 |
+| 7：Compact 命令接入 | 窄应用服务与 Contributor/Handler；错误翻译、实际领域序号与无变化结果；Mate Header 只保留至本次压缩结束 |
 | 最终应用/HTTP | 七类 DTO→VO、普通 JSON、共享 Skill 契约对齐、客户端断线不取消、不自动重放、真实 openGauss 跨进程恢复与 POST Events 回归 |
 
 6b 如仍超过预算则继续按可验证职责拆分，仍保持仅一个待合并 PR；不发布不完整公共入口。
-Events V2 跨实例中断/权威终态属于另外的已确认目标及待评审细节，本切片没有提前实现或否定这些决定。
+通用 Events V2、旧控制路由退役和前端迁移不纳入当前待交付清单；不恢复旧 Abort 204 契约。
 
 ## 8. 版本历史
 
 | 版本 | 日期 | 变更 |
 |---|---|---|
+| 1.0.1 | 2026-09-07 | 按最新设计纠正 R04：撤销 Compact 队列续跑和凭据延寿指导，区分历史 POST Events 测试与 Compact 目标；按 850 行预算拆分 6b1/6b2。 |
 | 1.0.0 | 2026-09-07 | 记录无请求流输出、压缩权威序号及恢复验证，明确 6a 范围与剩余生命周期交接。 |
