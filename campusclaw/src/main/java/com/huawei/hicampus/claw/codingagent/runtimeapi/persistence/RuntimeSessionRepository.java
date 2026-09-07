@@ -11,6 +11,7 @@ import java.util.function.Consumer;
 import java.util.function.Function;
 
 import com.huawei.hicampus.claw.ai.types.Usage;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeCompactionSnapshotDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeEntryDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeRecordDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
@@ -31,6 +32,24 @@ public interface RuntimeSessionRepository {
     Optional<SessionNameUpdateDTO> updateName(String sessionId, String displayName, OffsetDateTime updatedAt);
 
     UserEventAcceptance acceptUserEvent(String sessionId, RuntimeEntryDTO entry, OffsetDateTime acceptedAt);
+
+    /**
+     * 行锁内观察当前 Session 与完整分支，不修改持久化状态，也不准备 Agent。
+     *
+     * @param sessionId Session 标识
+     * @return 缺失时为空；忙状态只返回 Session，不查询历史
+     */
+    Optional<RuntimeCompactionSnapshotDTO> observeCompaction(String sessionId);
+
+    /**
+     * 在行锁内复核 idle、当前叶节点及模型配置；保留并发名称修改，不追加 Entry。
+     * 调用方须先确认观察历史有可恢复上下文并准备执行资源；本端口不执行压缩或分配容量。
+     *
+     * @param observed 准备压缩前在行锁内观察的 Session，调用方不得修改
+     * @param acceptedAt 接受时间
+     * @return 准入状态，历史或配置已改变时返回 BUSY
+     */
+    CompactionAcceptanceStatus acceptCompaction(RuntimeSessionDTO observed, OffsetDateTime acceptedAt);
 
     RuntimeEntryDTO appendEntry(RuntimeEntryDTO entry);
 

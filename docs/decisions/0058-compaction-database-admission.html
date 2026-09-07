@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ADR-0058：分离压缩数据库观察与原子准入</title>
+  <style>
+    :root { color-scheme: light; font-family: Inter, "PingFang SC", sans-serif; color: #25272a; background: #f2f5f7; }
+    body { margin: 0; } main { width: min(920px, calc(100% - 40px)); margin: 40px auto; padding: 40px; box-sizing: border-box; background: white; border: 1px solid #d7dde2; border-radius: 16px; }
+    h1 { margin-top: 0; font-size: 30px; } h2 { margin-top: 30px; font-size: 20px; }
+    p, li { line-height: 1.75; } code { overflow-wrap: anywhere; background: #edf2f5; } a { color: #1769aa; }
+    @media (max-width: 640px) { main { width: 100%; margin: 0; padding: 24px 18px; border: 0; border-radius: 0; } }
+  </style>
+</head>
+<body><main>
+  <h1>ADR-0058：分离压缩数据库观察与原子准入</h1>
+  <p>Status：Accepted · 已确认的 6b2a 实施切片<br>Date：2026-09-07 · Version：1.0.0</p>
+  <h2>Context</h2>
+  <p>6b1 仅支持已准入执行；在严格模块 850 行、含镜像 1800 行软上限下，完整准入与 Runtime 接入应按职责串行交付。
+  本 PR 只实现 Repository 观察、复核和事务验证，空历史的整个命令行为仍属于 6b2b。</p>
+  <p>Java 基线 <code>14769188538eaa2f1df1e25ef2fef40d87ceafed</code>；目标设计只读基线
+  <code>pi-mono-java-design@2734a36b6f3cee2ebe16f1133d50ccb3eaaeb4e9</code>，
+  <code>04-命令与技能/01-内置命令/README.md</code> §3、§7，版本 2.7.1。</p>
+  <p>基线源码：<code>modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/persistence/MyBatisRuntimeSessionRepository.java</code>
+  的 <code>acceptUserEvent/updateName/updateModel/updateThinking</code> 已以 Session 行锁串行化；
+  <code>modules/coding-agent-cli/src/main/resources/mapper/session/RuntimeSessionMapper.xml</code> 的
+  <code>lockSessionForUpdate/listCurrentBranchEntries/markSessionRunning</code> 提供复用的 SQL。</p>
+  <h2>选项与取舍</h2>
+  <ul>
+    <li>单事务内做完整 Agent 准备：无需再次复核，但长时间占用行锁，并混入文件/网络/资源责任，不采用。</li>
+    <li>普通无锁读取后直接标 running：简单，但可能恢复过期分支或配置，不采用。</li>
+    <li>行锁观察、锁外准备、行锁复核：增加一次事务，但划清持久化与执行职责，采用。锁外准备和执行在 6b2b 实现。</li>
+  </ul>
+  <h2>Decision 与理由</h2>
+  <ul>
+    <li>新增 observeCompaction 返回仅数据的 DTO；同一行锁读取 Session 与完整当前分支，空或忙观察不写数据。</li>
+    <li>新增 acceptCompaction 复核 idle、activeLeafId、modelId、thinking，拒绝过期历史与配置。</li>
+    <li>不比较旧 resourceVersion，因 Name-only 更新不影响压缩上下文；状态写入使用当前版本加 1，保留名称和叶节点。</li>
+    <li>不生成合成 Entry、Usage、公开 commandId 或生命周期存储；不更改现有 PUT、POST Events 和 schema。</li>
+    <li>通过已有 SQL 的受影响行数检查及 Spring 事务保持失败回滚；资源准备、接入和清理仍须由后续 Service 完成。</li>
+  </ul>
+  <p>pi 基线 <code>4af9d21d3b4d664e4a29fcabfec85171077248e3</code> 的
+  <code>packages/coding-agent/src/core/agent-session.ts:compact/abortCompaction</code> 观察分支、准备并写压缩结果，
+  不提供 Java 数据库准入。idle-only、空历史 no-op、禁止队列是产品约束；两阶段事务是架构差异，不能归为 pi 现有行为。</p>
+  <h2>Consequences</h2>
+  <ul>
+    <li>正面：观察与接受有明确线性化时点，防止跨进程用旧上下文启动，允许并发改名。</li>
+    <li>代价：完整历史 O(N) 内存，现有递归分页有重复回溯成本；繁忙 Session 的更新需等待短期数据库事务。</li>
+    <li>边界：本次仅证明空观察零写入；未交付容量跳过、内部 Usage 身份、Runtime 接入、失败资源回收或命令/HTTP。</li>
+    <li>后续：6b2a 合入后从最新 main 开始 6b2b，补上述能力与完整链路测试，不将其他 Events/前端迁移加入前置条件。</li>
+    <li>提交结果不确定不能盲目恢复 idle 或重放；当前 PR 不宣称提供数据库失联或进程崩溃的执行恢复。</li>
+  </ul>
+  <h2>验证</h2>
+  <p>单元测试检查分支、分页、无额外写入及受影响行数。真实 openGauss 验证 Spring/MyBatis 事务、501 条完整分页、
+  空观察/拒绝零写入、并发 Name 保留、回滚和跨 JVM 的 Compact/POST Events 竞争；具体运行结果见实现设计。</p>
+  <h2>Related</h2>
+  <ul>
+    <li><a href="../designs/compact-runtime-admission.md">6b2a 实现设计与验证</a></li>
+    <li><a href="../designs/compact-runtime-admission/diagram.puml#L1">PlantUML 源码</a></li>
+    <li><a href="0057-isolate-compact-runtime-lifecycle.html">ADR-0057：已准入执行生命周期</a></li>
+    <li><a href="0048-limit-added-code-lines-per-pull-request.html">PR 新增行数门禁</a></li>
+  </ul>
+  <h2>版本历史</h2>
+  <p>1.0.0 · 2026-09-07：数据库切片独立交付，保留后续 Runtime 接入验收清单。</p>
+</main></body>
+</html>
