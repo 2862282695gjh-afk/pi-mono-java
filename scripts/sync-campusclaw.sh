@@ -10,8 +10,9 @@
 #   2. APPLY  — rsync staged Java sources into campusclaw/ with --delete
 #               (so renames/removals propagate), preserving paths listed in
 #               scripts/sync-campusclaw-exclude.txt (mirror-only files).
-#               Classpath resources use a small whitelist. The canonical GaussDB
-#               DDL is published separately as scripts/install/initdb_gaussdbv5.sql.
+#               Classpath resources use a small whitelist. The corporate GaussDB
+#               header and canonical table DDL are assembled separately as
+#               scripts/install/initdb_gaussdbv5.sql.
 #               Application config (.yml/.properties) is hand-tuned and never
 #               touched except for the message bundles.
 #
@@ -39,6 +40,7 @@ MIRROR="$ROOT/campusclaw"
 EXCLUDE_FILE="$ROOT/scripts/sync-campusclaw-exclude.txt"
 MODULES=(common ai agent-core cron coding-agent-cli)
 DATABASE_SCHEMA="$ROOT/modules/coding-agent-cli/src/main/resources/db/gaussdb/install/session_schema.sql"
+DATABASE_SCRIPT_HEADER="$ROOT/scripts/templates/initdb_gaussdbv5-header.sql"
 DATABASE_SCRIPT_REL="scripts/install/initdb_gaussdbv5.sql"
 
 # Resources we DO want to keep in sync from modules/* — anything else under
@@ -83,10 +85,85 @@ stage_database_install_script() {
     echo "missing canonical database schema: $DATABASE_SCHEMA" >&2
     return 1
   fi
+  if [ ! -f "$DATABASE_SCRIPT_HEADER" ]; then
+    echo "missing corporate database script header: $DATABASE_SCRIPT_HEADER" >&2
+    return 1
+  fi
 
   rm -rf "$OUT/src/main/resources/db/gaussdb"
   mkdir -p "$(dirname "$staged_script")"
-  cp "$DATABASE_SCHEMA" "$staged_script"
+  {
+    cat "$DATABASE_SCRIPT_HEADER"
+    printf '\n'
+    emit_corporate_table_ddl
+  } > "$staged_script"
+}
+
+emit_corporate_table_ddl() {
+  awk '
+    function emit(line) {
+      while (pending_blank_lines > 0) {
+        print ""
+        pending_blank_lines--
+      }
+      print line
+    }
+    $1 == "CREATE" && $2 == "TABLE" {
+      emitting = 1
+      emit("DROP TABLE IF EXISTS " $3 ";")
+      emit($0)
+      next
+    }
+    !emitting { next }
+    $1 == "COMMIT;" { next }
+    /^[[:space:]]*$/ {
+      pending_blank_lines++
+      next
+    }
+    { emit($0) }
+  ' "$DATABASE_SCHEMA"
+}
+
+validate_table_ddl() {
+  local database_script="$1"
+
+  if grep -Eiq '^[[:space:]]*(BEGIN|COMMIT)[[:space:]]*;' "$database_script"; then
+    echo "database script must not contain BEGIN or COMMIT: $database_script" >&2
+    return 1
+  fi
+
+  awk '
+    $1 == "DROP" && $2 == "TABLE" && $3 == "IF" && $4 == "EXISTS" {
+      drop_count++
+    }
+    $1 == "CREATE" && $2 == "TABLE" {
+      create_count++
+      expected = "DROP TABLE IF EXISTS " $3 ";"
+      if (previous_line != expected) {
+        printf "CREATE TABLE %s is not immediately preceded by %s\n", $3, expected > "/dev/stderr"
+        failed = 1
+      }
+    }
+    { previous_line = $0 }
+    END {
+      if (create_count == 0 || create_count != drop_count) {
+        printf "table DDL count mismatch: creates=%d drops=%d\n", create_count, drop_count > "/dev/stderr"
+        failed = 1
+      }
+      exit failed
+    }
+  ' "$database_script"
+}
+
+validate_database_install_script() {
+  local database_script="$1" header_line_count
+
+  header_line_count="$(wc -l < "$DATABASE_SCRIPT_HEADER" | tr -d ' ')"
+  if ! head -n "$header_line_count" "$database_script" | cmp -s "$DATABASE_SCRIPT_HEADER" -; then
+    echo "database install script does not start with the corporate header" >&2
+    return 1
+  fi
+  validate_table_ddl "$database_script"
 }
 
 validate_staged_tree() {
@@ -114,10 +191,7 @@ validate_staged_tree() {
   fi
 
   database_script="$OUT/$DATABASE_SCRIPT_REL"
-  if ! cmp -s "$DATABASE_SCHEMA" "$database_script"; then
-    echo "staged database install script differs from canonical schema" >&2
-    return 1
-  fi
+  validate_database_install_script "$database_script"
 
   file_count="$(find "$OUT/scripts/install" -mindepth 1 -maxdepth 1 -type f | wc -l | tr -d ' ')"
   if [ "$file_count" -ne 1 ]; then
