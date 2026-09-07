@@ -333,6 +333,8 @@ final class RuntimeHttpProcessFixture {
 
         private final AtomicInteger responseCount = new AtomicInteger();
 
+        private final AtomicInteger requestCount = new AtomicInteger();
+
         private volatile JsonNode lastRequest;
 
         ModelStub(int port) throws IOException {
@@ -347,6 +349,10 @@ final class RuntimeHttpProcessFixture {
 
         String requestPath() {
             return requestPath;
+        }
+
+        int requestCount() {
+            return requestCount.get();
         }
 
         JsonNode lastRequest() {
@@ -367,6 +373,7 @@ final class RuntimeHttpProcessFixture {
 
         private void respond(HttpExchange exchange) throws IOException {
             try {
+                requestCount.incrementAndGet();
                 requestPath = exchange.getRequestURI().getPath();
                 if (!CHAT_PATH.equals(requestPath)) {
                     exchange.sendResponseHeaders(404, -1L);
