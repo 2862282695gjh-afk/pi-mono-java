@@ -204,7 +204,7 @@ class SkillLoaderTest {
         }
 
         @Test
-        void defaultsNameToParentDirectoryName() throws IOException {
+        void shouldRejectMissingNameWithoutDirectoryFallback() throws IOException {
             Path skillDir = tempDir.resolve("commit");
             Files.createDirectories(skillDir);
             Path skillFile = skillDir.resolve("SKILL.md");
@@ -217,9 +217,7 @@ class SkillLoaderTest {
                     Body.
                     """);
 
-            Skill skill = loader.loadFromFile(skillFile, "user");
-
-            assertEquals("commit", skill.name());
+            assertThrows(SkillLoadException.class, () -> loader.loadFromFile(skillFile, "user"));
         }
 
         @Test
@@ -279,7 +277,8 @@ class SkillLoaderTest {
                     skillFile,
                     """
                     ---
-                    description: Has invalid name from directory
+                    name: INVALID
+                    description: Has invalid name
                     ---
                     Body.
                     """);
@@ -295,19 +294,6 @@ class SkillLoaderTest {
                     skillFile,
                     "---\nname: '" + name + "'\ndescription: Invalid skill\n---\nBody.",
                     StandardCharsets.UTF_8);
-
-            SkillLoadException error =
-                    assertThrows(SkillLoadException.class, () -> loader.loadFromFile(skillFile, "managed"));
-
-            assertTrue(error.getMessage().contains("single separating hyphens"));
-        }
-
-        @ParameterizedTest
-        @ValueSource(strings = {"-pdf", "pdf-", "pdf--tools", "-"})
-        void rejectsInvalidHyphensInDirectoryFallback(String name) throws IOException {
-            Path skillDir = Files.createDirectory(tempDir.resolve(name));
-            Path skillFile = skillDir.resolve("SKILL.md");
-            Files.writeString(skillFile, "---\ndescription: Invalid skill\n---\nBody.", StandardCharsets.UTF_8);
 
             SkillLoadException error =
                     assertThrows(SkillLoadException.class, () -> loader.loadFromFile(skillFile, "managed"));

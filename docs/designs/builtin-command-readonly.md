@@ -1,6 +1,6 @@
 # Builtin Command 只读命令切片
 
-> 版本：1.1.0 · 日期：2026-09-05 · 状态：Help / Status / Skills 已实现；未发布 Command HTTP 路由
+> 版本：1.1.1 · 日期：2026-09-07 · 状态：Help / Status / Skills 已实现；未发布 Command HTTP 路由
 
 ## 1. Context
 
@@ -10,8 +10,11 @@ Builtin，不为剩余四个命令安装占位 Handler。Help 根据后续确认
 不再承担命令目录展示职责；命令目录仍由最终 GET Commands 接口提供。
 
 本记录只维护实现仓的交付证据，不变更 `pi-mono-java-design` 的任何文件或接口决策。
-Skill 执行由同事并行开发，本 PR 的 Builtin Help 视图不代表全产品禁止 `skill:*`。
-Name、Model、Thinking、Compact、应用边界及 HTTP 发布仍按已确认的后续切片交付。
+按已合入设计 `fd8604956632c880264434791465d1f59917038d` 的通用模块 §1/§5，
+Builtin、Skill 与共享 HTTP 由用户统一负责；旧“同事并行开发”说明已被替代（superseded）。
+Skill 真实执行及共享 HTTP 属于整体验收，不因本切片只实现 Builtin 而被排除。
+本文保留只读 PR #222 的交付证据；实现主线 `7b3769a5` 已另行合入 Name、Model、Thinking
+和 Compact 6a，剩余 Compact 生命周期、应用边界、Skill 执行及 HTTP 集成继续按依赖交付。
 
 ## 2. 源码证据与关键定义
 
@@ -105,7 +108,7 @@ Contributor 只依赖窄服务和核心 SPI，窄服务不反向依赖 Contribut
 只增加内部结果类型、三个 Contributor 和窄服务，补充 RuntimeErrorCode 的
 `INVALID_COMMAND_REQUEST`（400）及 `COMMAND_NOT_FOUND`（404）和中英文错误文案。
 复用 `AGENT_NOT_AVAILABLE`（422）。本 PR 不新增任何 HTTP 路由、鉴权入口、SQL 或持久化结构。
-共享 HTTP 契约仍需在最终发布切片与 Skill 开发线对齐，不在此决定其命令执行请求形状。
+共享 HTTP 契约由用户在最终发布切片统一对齐 Builtin 与 Skill，不在只读切片决定 Skill 请求形状。
 
 ## 7. 测试与验证
 
@@ -128,5 +131,6 @@ Contributor 只依赖窄服务和核心 SPI，窄服务不反向依赖 Contribut
 
 | 版本 | 日期 | 变更 |
 |---|---|---|
+| 1.1.1 | 2026-09-07 | 以 fd86049 的统一责任替代旧人员分工；区分历史只读切片证据与后续已合入进度。 |
 | 1.1.0 | 2026-09-05 | 按已确认的新设计将 Help 改为 Agent 使用指南，并记录 userCases 缓存、严格文本类型和并发快照一致性。 |
 | 1.0.0 | 2026-09-04 | 记录 Help / Status / Skills 只读切片、DTO 边界、测试与串行 PR 行数预算；不改设计仓、不发布 HTTP。 |

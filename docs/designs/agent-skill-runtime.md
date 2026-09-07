@@ -1,10 +1,10 @@
 # Agent 与 Skill 受管运行目录
 
-> 文档版本：3.6.1
+> 文档版本：3.6.2
 >
 > 状态：Implemented
 >
-> 更新日期：2026-09-04
+> 更新日期：2026-09-07
 > 规范性工具契约：[CampusClaw 受管 Agent 工具系统 v2](tool-system-v2.md)
 
 ## 1. 源码基线
@@ -181,10 +181,12 @@ Skill 文件的 canonical 路径必须位于 Agent 根目录，且等于该根�
 
 [PlantUML 源码](command-discovery/diagram.puml#L1)
 
-只读发现层不提供 Handler、Controller 或命令执行。Skill 命令执行延期，Builtin 来源过滤、
-七个 Contributor 和最终 HTTP JSON 路由按设计先修
-[PR #4](https://github.com/superheromeZzh/pi-mono-java-design/pull/4) 串行交付；
-此链接为待合并设计，不表示产品已发布。后续不得复用旧的请求级 Command SSE 或 Name 边车方案。
+PR #210 的只读发现层不提供 Handler、Controller 或命令执行。历史设计
+[PR #4](https://github.com/superheromeZzh/pi-mono-java-design/pull/4) 已合入；其“Skill 执行延期”
+以及之后的同事分工均已被替代（superseded）。当前设计 main `fd8604956632c880264434791465d1f59917038d`
+的通用模块 §1/§5 与 Skill 专题 §1/§4 明确：Builtin、Skill 和共享 HTTP 由用户统一负责，
+Skill 真实执行纳入整体实施验收。发现骨架不等于已发布执行能力；各实现 PR 继续串行交付。
+不得复用旧的请求级 Command SSE 或 Name 边车方案，也不混入尚未整体确认的 Events V2 候选迁移。
 
 验证包括稳定排序、重名拒绝、同一来源仅调用一次、建议列表不可修改、版本快照、
 不刷新 Agent、三类符号链接别名；当时还测试旧格式 Skill 仍能 prepare，该测试预期已由 6.2
@@ -224,7 +226,7 @@ Loader 与命令发现使用同一判定，删除 LEGACY/STRICT 分支和旧方�
 
 | 入口 | 非法名称处理 |
 |---|---|
-| `SkillLoader.loadFromFile` | 抛出 `SkillLoadException`；frontmatter 名称和缺省的父目录名称均须合法。 |
+| `SkillLoader.loadFromFile` | 原始 name 必须是非空字符串，符合统一严格规则且与文件夹逐字符一致；否则抛 `SkillLoadException`，不回退、裁剪或强制转换。 |
 | 受管目录首次 `prepare` / `refresh` | 发布前复核失败，抛出 `AgentRuntimeException`；首次不发布目录，刷新保留原有效目录。 |
 | `prepareCached` / `prepare` 缓存命中 | 非法名称使缓存无效；前者返回空且不访问 Mate，后者重新拉取；远端仍非法则失败。 |
 | 提示词加载 / 目录扫描 | 沿用现有非法文件处理方式，跳过该 Skill，不加入提示词或加载结果。 |
@@ -261,15 +263,43 @@ Loader 与命令发现使用同一判定，删除 LEGACY/STRICT 分支和旧方�
 需要上游提供合法且与文件、元数据一致的名称；不通过去掉或折叠连字符来改变资源身份。
 判定仍复用预编译 Pattern，不增加网络或数据库操作；缓存无效后的拉取沿用既有 prepare 流程。
 
-测试覆盖三类连字符错误的文件加载、目录名称回退、首次发布失败、刷新保留旧目录、缓存拒绝并重建、
+历史测试覆盖三类连字符错误的文件加载、首次发布失败、刷新保留旧目录、缓存拒绝并重建、
 提示词排除以及存在实际 SKILL.md 文件时的命令过滤，并保留合法名称、空值和长度边界验证。
 原有“兼容加载成功”测试已删除。ID 定义迁移复用 MateServiceClientTest、HttpMateToolClientTest
 及 Runtime 回归，验证合法请求路径和非法 ID 在出站请求前被拒绝；验证结果记录在本次 Draft PR 中。
+
+### 6.3 原始名称与目录身份补齐（3.6.2）
+
+复核源码基线为 `7b3769a5eabe2d131af3023631d7ad24e6d9a9e1`。该基线的
+`modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/skill/SkillLoader.java:parseSkillFile`
+仍对缺少 name 回退父目录，并使用 `String.valueOf` 接受 null、数字和布尔值，未比较目录名。
+旧 `SkillLoaderTest.defaultsNameToParentDirectoryName` 固定了这一错误预期；此前“目录名称回退”
+验证记录仅代表历史行为，不是被批准的兼容策略。已合入设计 fd86049 的
+`04-命令与技能/02-技能命令/README.md` §3 与通用模块 §3.1 明确禁止这些行为。
+
+本次落实已有**产品约束与安全加固**：共享 Loader 先判断原始非空 String，再复用
+`ClawConstants.Skill` 校验，最后要求与父目录名逐字符一致。保留单文件异常与批量跳过语义，
+不引入第二个 Validator、正则或自动改名。受管绑定一致性仍由 `AgentRuntimeManager.requireSessionLoadable`
+检查；`writeSkills/loadSkill` 都调用它，发布失败不替换目录，缓存失败不返回半完整快照。
+`RuntimeAgentPromptLoader.loadSkill` 捕获加载异常后跳过；`SkillCommandSource.list` 只消费
+`prepareCached` 的完整快照，因此非法缓存不产生发现结果。上述消费者均在同一源码基线可核实。
+
+pi `4af9d21d3b4d664e4a29fcabfec85171077248e3` 的
+`packages/coding-agent/src/core/skills.ts:validateName/loadSkillFromFile` 会回退文件夹名，
+名称错误只给 warning，描述有效时仍加载。Java 有意不采用该容忍策略；严格拒绝是目标约束，
+不是对 pi 既有行为的描述。决策、影响与选项见
+[ADR-0056](../decisions/0056-enforce-declared-skill-name.html)。
+
+`SkillNameContractTest` 使用相同样例检查加载、扫描、提示词、prepare/refresh、重启缓存读取和
+命令发现：缺少/null/非字符串、目录不一致、空白与换行、非法字符/连字符、65 字符均拒绝；
+1/64 字符和带引号的 `null`/`true`/`123` 保留合法字符串身份。断言失败刷新保留旧文件与发现结果，
+损坏缓存只读发现无 Mate 调用，后续 prepare 才重建。它不代替未来 Skill 执行或共享 HTTP 验收。
 
 ## 7. 版本历史
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 3.6.2 | 2026-09-07 | 补齐原始字符串类型、显式名称与目录同名校验，撤销目录回退测试预期；统一实施责任并保留历史证据。 |
 | 3.6.1 | 2026-09-04 | 为 resolve 的 agentId 实参和 toFile 的 expectedAgentRoot 接收对象补齐显式 validatePath 前置校验。 |
 | 3.6.0 | 2026-09-04 | 将 Skill 与 Runtime 共享定义迁入底层 common 的 ClawConstants 领域分组。 |
 | 3.5.2 | 2026-09-04 | 以 SkillConstants 统一正则、长度和大小限制、目录与文件名、命令前缀；Skill 仅承载数据。 |

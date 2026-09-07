@@ -23,6 +23,11 @@ title Skill Constants: One Domain Owner for Shared Rules
 ' Architecture change: ClawConstants.Skill owns patterns, shared limits, directory and file names, and command prefix; Skill carries data only.
 ' Target product constraint: remove invalid-name compatibility; ClawConstants.Skill owns NAME_REGEX, NAME_PATTERN and isValidName.
 ' Design reason: one accepted name set prevents inconsistent loading and discovery without renaming resource identities.
+' Alignment baseline: pi-mono-java@7b3769a5eabe2d131af3023631d7ad24e6d9a9e1.
+' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/skill/SkillLoader.java parseSkillFile.
+' Observed behavior: the alignment baseline still coerces names and falls back to the parent directory.
+' Confirmed target: pi-mono-java-design@fd8604956632c880264434791465d1f59917038d Skill command section 3.
+' Java divergence: reject invalid raw names; pi@4af9d21d packages/coding-agent/src/core/skills.ts loadSkillFromFile warns and falls back.
 skinparam shadowing false
 skinparam componentStyle rectangle
 left to right direction
@@ -59,6 +64,13 @@ Reject invalid cache and refetch on prepare.
 end note
 note bottom of Prompt
 Invalid skills are omitted from the prompt.
+end note
+note top of Loader
+Require an explicit nonempty String.
+Validate with the shared strict name rule.
+Match the directory name exactly.
+No fallback, coercion, trim, or rename.
+Single load fails; bulk scan skips invalid files.
 end note
 note bottom of Commands
 Invalid names produce no command.

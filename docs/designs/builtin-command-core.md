@@ -1,16 +1,18 @@
 # Builtin Command 分层核心
 
-> 版本：1.1.0 · 日期：2026-09-04 · 状态：核心切片已实现，尚无 Command HTTP 路由
+> 版本：1.1.1 · 日期：2026-09-07 · 状态：核心切片已实现，尚无 Command HTTP 路由
 
 ## 1. Context
 
-七个 Builtin 按独立 Contributor、Handler 和窄服务逐批交付。本 PR 只交付共用核心，
-不注册占位命令，也不提前发布 GET/POST。Skill Command 由其他同事并行开发，
-不是产品延期或禁用；Builtin 串行 PR 规则不限制 Skill 开发线。
+七个 Builtin 按独立 Contributor、Handler 和窄服务逐批交付。核心切片（PR #218）只交付
+共用核心，不注册占位命令，也不提前发布 GET/POST。Builtin、Skill 与共享 HTTP
+由用户统一负责设计、实现和集成，Skill 执行属于整体实施与验收范围。
 
-原设计仓 PR #4 的“Skill 执行延期”表述由本次用户分工澄清取代。Builtin 过滤只是一个
-来源视图，不是整个产品的命令白名单。最终共享 HTTP 命名、请求类型和发现清单必须与
-Skill 开发线对齐后发布，不能把 Builtin 名称正则当作禁止 skill:* 的全局规则。
+当前依据为设计仓 main `fd8604956632c880264434791465d1f59917038d` 的
+`04-命令与技能/00-Slash-Command通用模块/README.md` §1/§5 及 Skill 专题 §1/§4。
+原设计 PR #4 的“Skill 执行延期”和后来的“同事并行负责”均已被替代（superseded），
+仅保留为历史记录。Builtin 过滤只是来源视图，不是产品命令白名单。
+最终共享 HTTP 命名、请求类型和发现清单统一对齐后发布，不用 Builtin 正则封锁 `skill:*`。
 
 ## 2. 源码证据与关键定义
 
@@ -21,7 +23,7 @@ Skill 开发线对齐后发布，不能把 Builtin 名称正则当作禁止 skil
 | 本 PR 核心实现 8a402bc794f33e12c756b32b9b7274ad0c289b45 | 同包 BuiltinCommandSource.java · 构造器；BuiltinCommandDefinition.java · describe | 启动时聚合定义并查重；固定元数据、纯准入策略和 Handler 生成请求描述符 |
 | 同一核心实现 | 同包 CompositeCommandRegistry.java · resolve；ResolvedCommandCatalog.java · findDefinition；CommandExecutionContext.java | 调用来源前过滤、描述符只解析一次、原定义身份与 Session 观察值固定在 Catalog |
 | pi 4af9d21d3b4d664e4a29fcabfec85171077248e3 | packages/coding-agent/src/core/agent-session.ts:1289 · _tryExecuteExtensionCommand | 按名称解析命令并调用 handler(args, ctx)，属于本地扩展命令，不是 Java HTTP Builtin 的实现 |
-| 设计输入 eec7baf1d52f9f982f7ab4836600cfa2386b3e7c（设计仓） | 04-命令与技能/00-Slash-Command通用模块/README.md；04-命令与技能/01-内置命令/README.md | 七个 Builtin、单次 Catalog 与串行九 PR 方案；Skill 分工以上述用户最新澄清为准 |
+| 历史设计输入 eec7baf1d52f9f982f7ab4836600cfa2386b3e7c（设计仓） | 04-命令与技能/00-Slash-Command通用模块/README.md；04-命令与技能/01-内置命令/README.md | 七个 Builtin、单次 Catalog 与串行切片；当时的 Skill 分工已被 §1 当前决定替代 |
 
 Java 新类型不能归因于合并前基线。pi 只提供 Handler 与上下文分离的行为参考；
 Spring 来源装配、DTO/VO 和企业 HTTP 均为 Java 架构决策。
@@ -66,7 +68,7 @@ Catalog 构造器仅因注册服务跨包创建快照而改为 public；排序�
 - 单例 BuiltinCommandSource 在构造时调用各 Contributor 一次，拒绝同名定义并复制集合。
   核心 PR 允许零 Contributor；后续七个具体命令逐个落地，不安装假 Handler。
 - CommandDefinition 只定义 describe；DisplayCommandDefinition 包装现有 Skill 发现 DTO。
-  接口不 sealed，独立 Skill 开发线可以增加真实可执行定义，而无需继承 Builtin。
+  接口不 sealed，Skill 真实执行可增加专用定义，无需继承 Builtin。
 - CommandDefinitionSource 新增 kind；默认 definitions 用展示定义适配现有 list。
   Builtin 覆盖 definitions 返回启动期定义。来源必须显式声明类型，不能默认假定 Skill。
 - resolve(session, BUILTIN) 先检查来源类型，再解析所选来源；resolve(session) 保留全来源视图。
@@ -74,7 +76,8 @@ Catalog 构造器仅因注册服务跨包创建快照而改为 public；排序�
 - Registry 每个定义只调用一次 describe，再将排序描述符与原定义索引一起固定。
   list/find 只读描述符；findDefinition 返回同一 Handler 所属的定义，不重新访问 Source。
 - CommandExecutionContext 从 Catalog 读取同一 Session 快照及清单，并持有 Locale。
-  不保存可变 RuntimeSessionDTO、Repository、Holder 或 Mate 凭据。
+  Catalog 用于定义身份、准入与分派，不是 Help 内容来源；Help 窄服务读取完整 Agent 元数据。
+  Context 不保存可变 RuntimeSessionDTO、Repository、Holder 或 Mate 凭据。
 
 ## 4. 设计决策
 
@@ -105,16 +108,20 @@ Controller 和七个具体 Handler/DTO/VO、数据库变更、Compact 生命周�
 - Spring 单例只保存固定协作者；准入策略和 Handler 必须无请求字段，不能闭包捕获凭据。
 - 不引入 commandId、通用生命周期存储或 Name 历史；既有消息 SSE 不变。
 
-## 6. 并行开发衔接
+## 6. 统一实施衔接
 
-| 所有者 | 本次交付 | 不代替另一条开发线决定 |
+| 实施切片 | 交付职责 | 依赖与后续边界 |
 |---|---|---|
-| Builtin 核心 PR | kind、definitions、固定 Catalog、Builtin Contributor/Handler/准入 | Skill 执行、参数、快照持久化与恢复 |
-| Skill 开发线 | 在 CommandDefinitionSource 上声明 SKILL；按需覆盖 definitions | Builtin 的七个窄服务和 JSON 成功结果 |
-| 最终 HTTP 集成 | 合并双方确认的命名、请求联合类型、清单与分派，补跨类型测试 | 不直接套用 Builtin-only 请求校验封锁 Skill |
+| 共享核心 | kind、definitions、固定 Catalog、Builtin Contributor/Handler/准入 | 发现定义不代替 Skill 真实执行与失败恢复 |
+| Skill 执行 | 在 SKILL 来源上补齐真实可执行定义；未确认契约继续统一评审 | 不使用伪 Handler，不强制继承 Builtin |
+| 最终 HTTP 集成 | 用户统一对齐命名、请求类型、清单与分派，补跨类型验收 | 不直接套用 Builtin-only 请求校验封锁 Skill |
 
 旧 list(Session) 发现接口与无过滤 resolve(Session) 保留。下游实现 Source 时需补 kind()；
 无需重写现有 Skill 读取或路径安全逻辑。
+
+这是同一负责人下的职责拆分，不是人员分工。按依赖串行提交，前一 PR 合并后再从最新 main
+创建下一切片；公共路由仍待完整集成。实现主线 `7b3769a5eabe2d131af3023631d7ad24e6d9a9e1`
+已有核心、Help/Status/Skills、Name/Model/Thinking 及 Compact 6a；本记录不宣称剩余执行能力已发布。
 
 ## 7. 测试与验证
 
@@ -137,5 +144,6 @@ Controller 和七个具体 Handler/DTO/VO、数据库变更、Compact 生命周�
 
 | 版本 | 日期 | 变更 |
 |---|---|---|
+| 1.1.1 | 2026-09-07 | 按已合入 fd86049 明确统一实施责任；替代旧延期/同事分工，纠正 Context 与图中的 Help 清单说明。 |
 | 1.1.0 | 2026-09-04 | 按 #218 评论拆分 DTO、Spring Service 与核心职责包；明确无环依赖，补组件扫描回归，同步镜像和当前源码路径。 |
 | 1.0.0 | 2026-09-04 | 核心切片、来源隔离、单次 Catalog 与 Skill 并行开发边界；未发布 HTTP。 |

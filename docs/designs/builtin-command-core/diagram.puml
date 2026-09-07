@@ -9,6 +9,9 @@ title Builtin Command Core: Package Layers
 ' Observed behavior: one catalog preserves descriptor and definition identity; behavior is unchanged by moving packages.
 ' Java architecture change: separate service, DTO, and core packages; generic definitions never depend on Builtin definitions.
 ' Design reason: the catalog references generic definitions, avoiding a Builtin -> execution -> catalog -> Builtin cycle.
+' Alignment baseline: pi-mono-java@7b3769a5eabe2d131af3023631d7ad24e6d9a9e1.
+' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/service/command/readonly/AgentHelpQueryService.java query.
+' Observed behavior: Help reads Agent metadata, not the catalog; context preserves definition and session identity only.
 skinparam shadowing false
 skinparam classAttributeIconSize 0
 skinparam packageStyle rectangle
@@ -75,7 +78,7 @@ CompositeCommandRegistry --> ResolvedCommandCatalog : filter before resolving
 ResolvedCommandCatalog o-- "0..*" CommandDefinition : preserve identity
 ResolvedCommandCatalog *-- "0..*" ResolvedCommandDTO : describe once
 ResolvedCommandCatalog *-- CommandSessionSnapshotDTO
-CommandExecutionContext --> ResolvedCommandCatalog : same Help view
+CommandExecutionContext --> ResolvedCommandCatalog : definition and session identity
 CommandDefinition --> ResolvedCommandDTO
 ResolvedCommandDTO --> CommandKind
 BuiltinCommandDefinition --> CommandInputMode

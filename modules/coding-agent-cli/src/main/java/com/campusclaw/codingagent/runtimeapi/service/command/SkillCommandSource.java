@@ -32,7 +32,7 @@ import org.springframework.stereotype.Service;
 
 /**
  * 从最新完整缓存发现直接绑定 Skill，不触发刷新，保留版本身份但不公开正文与路径。
- * 本类只提供内部发现能力；Skill 命令执行由独立开发线负责。
+ * 本类只提供内部发现能力，不承担 Skill 命令执行。
  *
  * @version [br_eCampusCore 26.0.0, 2026/09/04]
  * @since [br_eCampusCore 26.0.0]
