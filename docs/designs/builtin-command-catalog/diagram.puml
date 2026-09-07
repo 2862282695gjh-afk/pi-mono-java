@@ -1,0 +1,61 @@
+@startuml complete_command_catalog
+' Source baseline: pi-mono-java 53496bbec9d8368b19e3b9a03030eed7ce15c182.
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtime/
+' AgentRuntimeManager.java:prepareCached,requireAgentRoot,loadSnapshot,loadSkill,withAgentLock.
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/
+' command/source/CommandDefinitionSource.java; service/command/CompositeCommandRegistry.java:resolve.
+' Observed behavior: the Manager validates one complete cached tree under its Agent lock.
+' Design reason: pass that exact snapshot to every source; never re-read the publication path.
+' Java divergence: snapshot discovery is neither execution authority nor a persistent lease.
+skinparam classAttributeIconSize 0
+hide empty members
+top to bottom direction
+class CommandCatalogService <<singleton>> {
+  list(sessionId) : CommandListResponseVO
+}
+interface RuntimeSessionRepository <<existing>>
+class AgentRuntimeManager <<existing singleton>> {
+  prepareCached(agentId)
+}
+class PreparedAgentRuntime <<request snapshot>>
+class CompositeCommandRegistry <<singleton>> {
+  resolveComplete(session, prepared)
+}
+interface CommandDefinitionSource <<internal source SPI>> {
+  definitions(session, prepared)
+}
+class BuiltinCommandSource <<singleton>>
+class SkillCommandSource <<singleton>>
+class ResolvedCommandCatalog <<request snapshot>>
+class CommandDiscoveryResponseAssembler <<existing singleton>>
+class CommandListResponseVO <<read-only response>>
+CommandCatalogService --> "1" RuntimeSessionRepository : 1. existence check
+CommandCatalogService --> "1" AgentRuntimeManager : 2. one cached read
+AgentRuntimeManager ..> PreparedAgentRuntime : complete validated data
+CommandCatalogService --> "1" CompositeCommandRegistry : 3. pass the same snapshot
+CompositeCommandRegistry --> "0..*" CommandDefinitionSource : one resolution each
+CommandDefinitionSource ..> PreparedAgentRuntime : data only
+CommandDefinitionSource <|.. BuiltinCommandSource
+CommandDefinitionSource <|.. SkillCommandSource
+CompositeCommandRegistry ..> ResolvedCommandCatalog : stable definition identities
+CommandCatalogService --> "1" CommandDiscoveryResponseAssembler : 4. whitelist projection
+CommandDiscoveryResponseAssembler ..> ResolvedCommandCatalog
+CommandDiscoveryResponseAssembler ..> CommandListResponseVO
+note right of AgentRuntimeManager
+  Existing Agent lock protects cache read/publication.
+  Exact canonical Agent directory identity.
+  No symlink tree; complete files and bindings.
+  Directory/manifest/frontmatter identity checks.
+  No refresh or Mate request during discovery.
+end note
+note bottom of SkillCommandSource
+  Explicit complete-snapshot path: memory only.
+  Legacy list(session): existing file checks remain.
+  No execution Handler or retained Runtime object.
+end note
+note bottom of CommandListResponseVO
+  HTTP wiring remains target-only.
+  Future GET cache absence: 503 + Retry-After: 3.
+  Existing POST Help remains 422.
+end note
+@enduml
