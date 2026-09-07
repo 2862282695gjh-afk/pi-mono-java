@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ADR-0063：命令业务响应与发现白名单投影</title>
+  <style>
+    :root { font-family: Inter, "PingFang SC", sans-serif; color: #25272a; background: #f2f5f7; }
+    body { margin: 0; } main { max-width: 920px; margin: 32px auto; padding: 32px; background: white; box-sizing: border-box; }
+    p, li { line-height: 1.75; } code { overflow-wrap: anywhere; } a { color: #1769aa; }
+    @media (max-width: 640px) { main { margin: 0; padding: 24px 18px; } }
+  </style>
+</head>
+<body><main>
+  <h1>ADR-0063：命令业务响应与发现白名单投影</h1>
+  <p>Status：Accepted · Date：2026-09-07 · Version：1.0.0</p>
+  <h2>Context</h2>
+  <p>基线 <code>pi-mono-java@ca2600da15dfaf8dda1f16b9d2f3d130b5d9ace5</code> 已提供完整权威
+  Session 内部结果和 Session/Models 业务 VO。内部 Command DTO 仍包含准入原因、输入候选和私有快照，
+  不能直接用于公共 JSON。设计只读依据为 <code>pi-mono-java-design@88f4df16bc24bbfcd28e1ec374feb2de0db8be3b</code>，
+  Builtin 2.9.0 §8/8.1、Slash 1.6.0 §3.1、Help 1.2.0。</p>
+  <p>源码根 <code>modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/</code>：
+  <code>dto/command/SessionCommandResultDTO.java</code>、<code>session/RuntimeSessionResponseAssembler.java:getView</code>、
+  <code>vo/AvailableModelsResponseVO.java</code>、<code>command/catalog/ResolvedCommandCatalog.java:list</code>、
+  <code>service/command/SkillCommandSource.java:list</code>。本次以 Java API 为基线，不宣称 pi 已有 HTTP 投影。</p>
+  <h2>考虑过的选项与取舍</h2>
+  <ul>
+    <li>直接序列化 DTO：代码少，但泄漏内部回执、快照和数据层类型，拒绝。</li>
+    <li>为每个命令复制一份响应：调用局部化，但 Session 字段及 ETag 规则会漂移，拒绝。</li>
+    <li>一次实现完整 GET/POST：整体连通，但突破本次独立职责与 PR 预算，留到依赖完整后。</li>
+    <li>先交付类型化业务投影和 Catalog 纯投影：可独立验证，不改变执行与路由，采用。</li>
+  </ul>
+  <h2>Decision 与理由</h2>
+  <ul>
+    <li>CommandResponseAssembler 委派 Session 组装器，模型直接复用 AvailableModelsResponseVO。
+    Help/Compaction/Skills 仅增加三个最小业务 VO，不回显 command/changed/sourceEventSeq。</li>
+    <li>Session 正文和 ETag 取自同一个结果 DTO；不提交后 GET，不使用旧 Catalog 拼字段。</li>
+    <li>发现只消费一个已解析 Catalog 的 availability；固定 Builtin 顺序后追加 Skill 字典序。
+    name/kind/description/可选 input 为白名单；hint 固定，附件只在 Skill true 时输出。</li>
+    <li>新 VO 使用只读 final 字段与防御复制，嵌套 Skill 和描述符均为 VO。
+    字段级省略不影响 Session 的 null 显示名或其他成功数组。</li>
+    <li>这属于已确认的产品字段约束、Java 架构复用与安全边界落实，不是新的产品契约。</li>
+  </ul>
+  <h2>Consequences</h2>
+  <ul>
+    <li>正面：响应资源只有一份定义，内部元数据不能随着 DTO 扩展意外进入 JSON。</li>
+    <li>代价：类型化叶子投影与统一执行分派分步交付；本片未注册 HTTP，也不执行 Compact。</li>
+    <li>后续：共享发现应用必须读取单个完整 Agent 缓存，无缓存整体 503 和 Retry-After: 3。
+    当前空 Catalog 投影成功不代表缓存缺失可返回空清单；POST Help 的既有 422 不变。</li>
+    <li>后续：统一结果类型分派、Compact DTO 接入和共享 HTTP 在依赖合入后完成，不堆叠未合入分支。</li>
+    <li>无新 Maven 依赖、数据库或升级脚本；设计仓保持只读，Skill 执行待决内容未被代决。</li>
+  </ul>
+  <h2>验证与范围</h2>
+  <p>精确 JSON、Session/ETag 同源、非零 Usage、列表不可变、发现顺序和字段省略由新测试覆盖。
+  交付验证记录在实现说明及 PR；纯投影测试不等于完整 HTTP 或跨进程执行验收。
+  公司 NativeParent 未解析时明确保留镜像编译未验证限制。</p>
+  <h2>Related</h2>
+  <ul>
+    <li><a href="../designs/builtin-command-response-projection/README.md">本片实现说明与边界</a></li>
+    <li><a href="../designs/builtin-command-response-projection/diagram.puml#L1">本片 PlantUML</a></li>
+    <li><a href="0060-builtin-authoritative-session-result.html">ADR-0060：既有权威结果通道，继续有效</a></li>
+  </ul>
+  <h2>版本历史</h2>
+  <p>1.0.0 · 2026-09-07：独立业务响应与发现纯投影片，不发布未完成路由。</p>
+</main></body>
+</html>

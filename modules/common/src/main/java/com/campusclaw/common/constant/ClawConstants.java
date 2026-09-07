@@ -4,6 +4,8 @@
 
 package com.campusclaw.common.constant;
 
+import java.util.List;
+import java.util.Map;
 import java.util.regex.Pattern;
 
 /**
@@ -97,6 +99,21 @@ public final class ClawConstants {
         public static final int MAX_MESSAGE_CHARACTERS = 262144;
 
         public static final int MAX_FILE_IDS = 32;
+
+        /**
+         * 命令发现响应的固定展示顺序与输入提示，不承担执行分派。
+         */
+        public static final class Command {
+            public static final List<String> BUILTIN_ORDER =
+                    List.of("help", "status", "name", "model", "thinking", "compact", "skills");
+
+            public static final Map<String, String> BUILTIN_INPUT_HINTS =
+                    Map.of("name", "[displayName]", "model", "[modelId]", "thinking", "[on|off]");
+
+            public static final String SKILL_INPUT_HINT = "[request]";
+
+            private Command() {}
+        }
 
         private RuntimeApi() {}
     }
