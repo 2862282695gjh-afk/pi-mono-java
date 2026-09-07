@@ -7,20 +7,19 @@ package com.campusclaw.codingagent.runtimeapi.session;
 import java.time.Clock;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
-import java.util.ArrayList;
-import java.util.List;
 
 import com.campusclaw.ai.types.Model;
 import com.campusclaw.codingagent.runtimeapi.agent.AgentDirectoryResolver;
 import com.campusclaw.codingagent.runtimeapi.agent.AgentDirectorySnapshotDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
+import com.campusclaw.codingagent.runtimeapi.dto.SessionConfigurationUpdateDTO;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
 import com.campusclaw.codingagent.runtimeapi.event.RuntimeEntryCodec;
 import com.campusclaw.codingagent.runtimeapi.event.RuntimeEntryIdGenerator;
 import com.campusclaw.codingagent.runtimeapi.model.RuntimeModelManager;
 import com.campusclaw.codingagent.runtimeapi.persistence.RuntimeSessionRepository;
-import com.campusclaw.codingagent.runtimeapi.persistence.SessionConfigurationUpdate;
+import com.campusclaw.codingagent.runtimeapi.service.command.SessionModelConfigurationService;
 import com.campusclaw.codingagent.runtimeapi.vo.AvailableModelsResponseVO;
 import com.campusclaw.codingagent.runtimeapi.vo.ChangeModelRequestVO;
 import com.campusclaw.codingagent.runtimeapi.vo.ChangeThinkingRequestVO;
@@ -46,6 +45,8 @@ public class RuntimeSessionConfigurationService {
 
     private final RuntimeModelManager modelManager;
 
+    private final SessionModelConfigurationService modelService;
+
     private final SessionEtagFactory etagFactory;
 
     private final RuntimeSessionResponseAssembler responseAssembler;
@@ -60,6 +61,7 @@ public class RuntimeSessionConfigurationService {
             RuntimeSessionRepository repository,
             AgentDirectoryResolver agentDirectoryResolver,
             RuntimeModelManager modelManager,
+            SessionModelConfigurationService modelService,
             SessionEtagFactory etagFactory,
             RuntimeSessionResponseAssembler responseAssembler,
             RuntimeEntryCodec entryCodec,
@@ -68,6 +70,7 @@ public class RuntimeSessionConfigurationService {
         this.repository = repository;
         this.agentDirectoryResolver = agentDirectoryResolver;
         this.modelManager = modelManager;
+        this.modelService = modelService;
         this.etagFactory = etagFactory;
         this.responseAssembler = responseAssembler;
         this.entryCodec = entryCodec;
@@ -76,9 +79,8 @@ public class RuntimeSessionConfigurationService {
     }
 
     public AvailableModelsResponseVO listModels(String sessionId) {
-        RuntimeSessionDTO session = requireSession(sessionId);
-        var models = modelManager.listAvailableModels(resolveAgent(session));
-        return new AvailableModelsResponseVO(session.getModelId(), models);
+        var result = modelService.query(sessionId);
+        return new AvailableModelsResponseVO(result.currentModelId(), result.models());
     }
 
     public RuntimeSessionView<GetSessionResponseVO> changeModel(
@@ -86,15 +88,8 @@ public class RuntimeSessionConfigurationService {
         requireModelRequest(request);
         try {
             RuntimeSessionDTO current = requireMutableSession(sessionId, ifMatch);
-            Model model = modelManager.resolveAvailableModel(resolveAgent(current), request.getModelId());
-            OffsetDateTime updatedAt = now();
-            SessionConfigurationUpdate update = repository.updateModel(
-                    sessionId,
-                    current.getResourceVersion(),
-                    model.id(),
-                    model.reasoning(),
-                    modelChangeEntries(current, model, "requested", updatedAt),
-                    updatedAt);
+            SessionConfigurationUpdateDTO update =
+                    modelService.change(current, request.getModelId(), current.getResourceVersion());
             return responseAssembler.getView(requireUpdated(update));
         } catch (RuntimeApiException error) {
             throw error;
@@ -128,7 +123,7 @@ public class RuntimeSessionConfigurationService {
                     request.getThinking(),
                     "requested",
                     updatedAt);
-            SessionConfigurationUpdate update = repository.updateThinking(
+            SessionConfigurationUpdateDTO update = repository.updateThinking(
                     sessionId, current.getResourceVersion(), request.getThinking(), entry, updatedAt);
             return responseAssembler.getView(requireUpdated(update));
         } catch (RuntimeApiException error) {
@@ -172,24 +167,6 @@ public class RuntimeSessionConfigurationService {
         return agentDirectoryResolver.resolve(session.getAgentId());
     }
 
-    private List<com.campusclaw.codingagent.runtimeapi.dto.RuntimeEntryDTO> modelChangeEntries(
-            RuntimeSessionDTO current, Model model, String reason, OffsetDateTime updatedAt) {
-        List<com.campusclaw.codingagent.runtimeapi.dto.RuntimeEntryDTO> entries = new ArrayList<>();
-        entries.add(entryCodec.modelChangedEntry(
-                current.getId(), entryIdGenerator.nextId(), current.getModelId(), model.id(), reason, updatedAt));
-        boolean nextThinking = current.isThinking() && model.reasoning();
-        if (current.isThinking() != nextThinking) {
-            entries.add(entryCodec.thinkingChangedEntry(
-                    current.getId(),
-                    entryIdGenerator.nextId(),
-                    current.isThinking(),
-                    nextThinking,
-                    "modelCapability",
-                    updatedAt));
-        }
-        return List.copyOf(entries);
-    }
-
     private void requireThinkingSupported(RuntimeSessionDTO session, boolean requested) {
         if (!requested) {
             return;
@@ -200,7 +177,7 @@ public class RuntimeSessionConfigurationService {
         }
     }
 
-    private RuntimeSessionDTO requireUpdated(SessionConfigurationUpdate update) {
+    private RuntimeSessionDTO requireUpdated(SessionConfigurationUpdateDTO update) {
         return switch (update.status()) {
             case UPDATED, UNCHANGED -> update.session();
             case NOT_FOUND -> throw new RuntimeApiException(RuntimeErrorCode.SESSION_NOT_FOUND);

@@ -5,9 +5,12 @@
 package com.huawei.hicampus.claw.codingagent.runtimeapi.persistence;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 
 import java.time.OffsetDateTime;
@@ -17,6 +20,7 @@ import com.huawei.hicampus.claw.ai.types.Usage;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeEntryDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeRecordDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.SessionNameUpdateDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.mapper.RuntimeSessionMapper;
 
 import org.junit.jupiter.api.Test;
@@ -69,6 +73,51 @@ class MyBatisRuntimeSessionRepositoryTest {
         when(mapper.incrementMessageCount("session")).thenReturn(1);
         when(mapper.accumulateUsageStats("session", 2L, 11L, 18L, 0.33)).thenReturn(1);
         return mapper;
+    }
+
+    @Test
+    void shouldUpdateRunningNameOnlyAfterLockingWithoutWritingHistory() {
+        RuntimeSessionMapper mapper = mock(RuntimeSessionMapper.class);
+        RuntimeSessionDTO session = session();
+        session.setState("running");
+        OffsetDateTime now = OffsetDateTime.parse("2026-09-05T00:00:00Z");
+        when(mapper.lockSessionForUpdate("session")).thenReturn(session);
+        when(mapper.updateSessionName("session", "next", now)).thenReturn(1);
+        assertThat(new MyBatisRuntimeSessionRepository(mapper).updateName("session", "next", now))
+                .contains(new SessionNameUpdateDTO("next", true));
+        var order = inOrder(mapper);
+        order.verify(mapper).lockSessionForUpdate("session");
+        order.verify(mapper).updateSessionName("session", "next", now);
+        verifyNoMoreInteractions(mapper);
+    }
+
+    @Test
+    void shouldLeaveIdenticalNameVersionTimestampAndHistoryUntouched() {
+        RuntimeSessionMapper mapper = mock(RuntimeSessionMapper.class);
+        RuntimeSessionDTO session = session();
+        session.setDisplayName("same");
+        when(mapper.lockSessionForUpdate("session")).thenReturn(session);
+        assertThat(new MyBatisRuntimeSessionRepository(mapper)
+                        .updateName("session", "same", OffsetDateTime.parse("2026-09-05T00:00:00Z")))
+                .contains(new SessionNameUpdateDTO("same", false));
+        verify(mapper).lockSessionForUpdate("session");
+        verifyNoMoreInteractions(mapper);
+    }
+
+    @Test
+    void shouldDetectDeletionAndFailedAffectedRowCount() {
+        RuntimeSessionMapper mapper = mock(RuntimeSessionMapper.class);
+        var repository = new MyBatisRuntimeSessionRepository(mapper);
+        OffsetDateTime now = OffsetDateTime.parse("2026-09-05T00:00:00Z");
+        assertThat(repository.updateName("missing", "next", now)).isEmpty();
+        when(mapper.lockSessionForUpdate("session")).thenReturn(session());
+        assertThatThrownBy(() -> repository.updateName("session", "next", now))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("session name was not updated");
+        verify(mapper).lockSessionForUpdate("missing");
+        verify(mapper).lockSessionForUpdate("session");
+        verify(mapper).updateSessionName("session", "next", now);
+        verifyNoMoreInteractions(mapper);
     }
 
     private static RuntimeSessionDTO session() {

@@ -15,13 +15,13 @@ import com.huawei.hicampus.claw.codingagent.runtimeapi.agent.AgentDirectoryResol
 import com.huawei.hicampus.claw.codingagent.runtimeapi.agent.AgentDirectorySnapshotDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeEntryDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.SessionConfigurationUpdateDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.error.RuntimeErrorCode;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeEntryCodec;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeEntryIdGenerator;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.model.RuntimeModelManager;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.persistence.RuntimeSessionRepository;
-import com.huawei.hicampus.claw.codingagent.runtimeapi.persistence.SessionConfigurationUpdate;
 
 import org.springframework.stereotype.Service;
 
@@ -69,8 +69,13 @@ public class RuntimeSessionModelReconciler {
         Model fallback = resolveFallback(snapshot);
         OffsetDateTime updatedAt = now();
         List<RuntimeEntryDTO> entries = changeEntries(session, fallback, updatedAt);
-        SessionConfigurationUpdate update = repository.updateModel(
-                session.getId(), session.getResourceVersion(), fallback.id(), fallback.reasoning(), entries, updatedAt);
+        SessionConfigurationUpdateDTO update = repository.updateModel(
+                session.getId(),
+                session.getResourceVersion(),
+                fallback.id(),
+                fallback.reasoning(),
+                locked -> entries,
+                updatedAt);
         return new ReconciledRuntimeSession(requireUpdated(update), snapshot, fallback, entries);
     }
 
@@ -113,7 +118,7 @@ public class RuntimeSessionModelReconciler {
         return List.copyOf(entries);
     }
 
-    private RuntimeSessionDTO requireUpdated(SessionConfigurationUpdate update) {
+    private RuntimeSessionDTO requireUpdated(SessionConfigurationUpdateDTO update) {
         return switch (update.status()) {
             case UPDATED -> update.session();
             case NOT_FOUND -> throw new RuntimeApiException(RuntimeErrorCode.SESSION_NOT_FOUND);

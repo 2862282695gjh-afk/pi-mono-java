@@ -12,6 +12,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.time.Clock;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -19,6 +20,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import com.huawei.hicampus.claw.codingagent.runtime.AgentRuntimeManager;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.agent.AgentDirectoryResolver;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.command.builtin.BuiltinCommandContributor;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.command.builtin.BuiltinCommandDefinition;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.command.catalog.ResolvedCommandCatalog;
@@ -32,6 +34,10 @@ import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.command.BuiltinComman
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.command.CommandResultDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.command.CommandSessionSnapshotDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.command.ResolvedCommandDTO;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeEntryCodec;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeEntryIdGenerator;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.model.RuntimeModelManager;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.persistence.RuntimeSessionRepository;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
@@ -91,6 +97,12 @@ class BuiltinCommandCoreTest {
         new ApplicationContextRunner()
                 .withUserConfiguration(CommandServiceScan.class)
                 .withBean(AgentRuntimeManager.class, () -> mock(AgentRuntimeManager.class))
+                .withBean(RuntimeSessionRepository.class, () -> mock(RuntimeSessionRepository.class))
+                .withBean(Clock.class, Clock::systemUTC)
+                .withBean(AgentDirectoryResolver.class, () -> mock(AgentDirectoryResolver.class))
+                .withBean(RuntimeModelManager.class, () -> mock(RuntimeModelManager.class))
+                .withBean(RuntimeEntryCodec.class, () -> mock(RuntimeEntryCodec.class))
+                .withBean(RuntimeEntryIdGenerator.class, () -> mock(RuntimeEntryIdGenerator.class))
                 .run(context -> {
                     assertThat(context)
                             .hasSingleBean(BuiltinCommandSource.class)
@@ -100,7 +112,7 @@ class BuiltinCommandCoreTest {
                                     .resolve(session)
                                     .list())
                             .extracting(ResolvedCommandDTO::name)
-                            .containsExactly("help", "skills", "status");
+                            .containsExactly("help", "model", "name", "skills", "status");
                 });
     }
 

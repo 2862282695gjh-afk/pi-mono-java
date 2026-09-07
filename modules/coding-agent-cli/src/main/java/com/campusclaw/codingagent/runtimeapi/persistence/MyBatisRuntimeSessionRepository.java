@@ -6,13 +6,17 @@ package com.campusclaw.codingagent.runtimeapi.persistence;
 
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
+import java.util.function.Function;
 
 import com.campusclaw.ai.types.Cost;
 import com.campusclaw.ai.types.Usage;
 import com.campusclaw.codingagent.runtimeapi.dto.RuntimeEntryDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.RuntimeRecordDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
+import com.campusclaw.codingagent.runtimeapi.dto.SessionConfigurationUpdateDTO;
+import com.campusclaw.codingagent.runtimeapi.dto.SessionNameUpdateDTO;
 import com.campusclaw.codingagent.runtimeapi.mapper.RuntimeSessionMapper;
 import com.campusclaw.codingagent.runtimeapi.persistence.UserEventAcceptance.Status;
 import com.campusclaw.codingagent.runtimeapi.session.RuntimeSessionState;
@@ -50,6 +54,20 @@ public class MyBatisRuntimeSessionRepository implements RuntimeSessionRepository
     @Transactional(readOnly = true)
     public Optional<RuntimeSessionDTO> find(String sessionId) {
         return Optional.ofNullable(mapper.findSession(sessionId));
+    }
+
+    @Override
+    @Transactional
+    public Optional<SessionNameUpdateDTO> updateName(String sessionId, String displayName, OffsetDateTime updatedAt) {
+        RuntimeSessionDTO session = mapper.lockSessionForUpdate(sessionId);
+        if (session == null) {
+            return Optional.empty();
+        }
+        if (Objects.equals(session.getDisplayName(), displayName)) {
+            return Optional.of(new SessionNameUpdateDTO(session.getDisplayName(), false));
+        }
+        requireOne(mapper.updateSessionName(sessionId, displayName, updatedAt), "session name was not updated");
+        return Optional.of(new SessionNameUpdateDTO(displayName, true));
     }
 
     @Override
@@ -122,33 +140,35 @@ public class MyBatisRuntimeSessionRepository implements RuntimeSessionRepository
 
     @Override
     @Transactional
-    public SessionConfigurationUpdate updateModel(
+    public SessionConfigurationUpdateDTO updateModel(
             String sessionId,
-            long expectedVersion,
+            Long expectedVersion,
             String modelId,
             boolean modelSupportsThinking,
-            List<RuntimeEntryDTO> entries,
+            Function<RuntimeSessionDTO, List<RuntimeEntryDTO>> entriesFactory,
             OffsetDateTime updatedAt) {
         RuntimeSessionDTO session = mapper.lockSessionForUpdate(sessionId);
-        SessionConfigurationUpdate rejected = rejectConfigurationUpdate(session, expectedVersion);
+        SessionConfigurationUpdateDTO rejected = rejectConfigurationUpdate(session, expectedVersion);
         if (rejected != null || session.getModelId().equals(modelId)) {
             return rejected != null ? rejected : unchanged(session);
         }
         boolean thinking = session.isThinking() && modelSupportsThinking;
+        List<RuntimeEntryDTO> entries = entriesFactory.apply(session);
         requireOne(mapper.updateSessionModel(sessionId, modelId, thinking, updatedAt), "session model was not updated");
         session.setModelId(modelId);
         session.setThinking(thinking);
         appendConfigurationEntries(session, entries);
         markConfigurationUpdated(session, updatedAt);
-        return updated(session);
+        Long sourceEventSeq = entries.isEmpty() ? null : entries.getLast().getEntrySeq();
+        return new SessionConfigurationUpdateDTO(SessionConfigurationUpdateDTO.Status.UPDATED, session, sourceEventSeq);
     }
 
     @Override
     @Transactional
-    public SessionConfigurationUpdate updateThinking(
+    public SessionConfigurationUpdateDTO updateThinking(
             String sessionId, long expectedVersion, boolean thinking, RuntimeEntryDTO entry, OffsetDateTime updatedAt) {
         RuntimeSessionDTO session = mapper.lockSessionForUpdate(sessionId);
-        SessionConfigurationUpdate rejected = rejectConfigurationUpdate(session, expectedVersion);
+        SessionConfigurationUpdateDTO rejected = rejectConfigurationUpdate(session, expectedVersion);
         if (rejected != null || session.isThinking() == thinking) {
             return rejected != null ? rejected : unchanged(session);
         }
@@ -158,7 +178,8 @@ public class MyBatisRuntimeSessionRepository implements RuntimeSessionRepository
         session.setThinking(thinking);
         appendConfigurationEntries(session, List.of(entry));
         markConfigurationUpdated(session, updatedAt);
-        return updated(session);
+        return new SessionConfigurationUpdateDTO(
+                SessionConfigurationUpdateDTO.Status.UPDATED, session, entry.getEntrySeq());
     }
 
     @Override
@@ -267,16 +288,16 @@ public class MyBatisRuntimeSessionRepository implements RuntimeSessionRepository
         }
     }
 
-    private static SessionConfigurationUpdate rejectConfigurationUpdate(
-            RuntimeSessionDTO session, long expectedVersion) {
+    private static SessionConfigurationUpdateDTO rejectConfigurationUpdate(
+            RuntimeSessionDTO session, Long expectedVersion) {
         if (session == null) {
-            return new SessionConfigurationUpdate(SessionConfigurationUpdate.Status.NOT_FOUND, null);
+            return new SessionConfigurationUpdateDTO(SessionConfigurationUpdateDTO.Status.NOT_FOUND, null);
         }
-        if (session.getResourceVersion() != expectedVersion) {
-            return new SessionConfigurationUpdate(SessionConfigurationUpdate.Status.VERSION_MISMATCH, session);
+        if (expectedVersion != null && session.getResourceVersion() != expectedVersion) {
+            return new SessionConfigurationUpdateDTO(SessionConfigurationUpdateDTO.Status.VERSION_MISMATCH, session);
         }
         if (!RuntimeSessionState.IDLE.matches(session.getState())) {
-            return new SessionConfigurationUpdate(SessionConfigurationUpdate.Status.BUSY, session);
+            return new SessionConfigurationUpdateDTO(SessionConfigurationUpdateDTO.Status.BUSY, session);
         }
         return null;
     }
@@ -286,11 +307,7 @@ public class MyBatisRuntimeSessionRepository implements RuntimeSessionRepository
         session.setUpdatedAt(updatedAt);
     }
 
-    private static SessionConfigurationUpdate updated(RuntimeSessionDTO session) {
-        return new SessionConfigurationUpdate(SessionConfigurationUpdate.Status.UPDATED, session);
-    }
-
-    private static SessionConfigurationUpdate unchanged(RuntimeSessionDTO session) {
-        return new SessionConfigurationUpdate(SessionConfigurationUpdate.Status.UNCHANGED, session);
+    private static SessionConfigurationUpdateDTO unchanged(RuntimeSessionDTO session) {
+        return new SessionConfigurationUpdateDTO(SessionConfigurationUpdateDTO.Status.UNCHANGED, session);
     }
 }

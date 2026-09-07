@@ -22,11 +22,14 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import java.time.OffsetDateTime;
 
 import com.campusclaw.codingagent.runtimeapi.RuntimeMessageSourceConfiguration;
+import com.campusclaw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
 import com.campusclaw.codingagent.runtimeapi.result.StandaloneResultBeanAdapter;
+import com.campusclaw.codingagent.runtimeapi.session.RuntimeSessionResponseAssembler;
 import com.campusclaw.codingagent.runtimeapi.session.RuntimeSessionService;
 import com.campusclaw.codingagent.runtimeapi.session.RuntimeSessionView;
+import com.campusclaw.codingagent.runtimeapi.session.SessionEtagFactory;
 import com.campusclaw.codingagent.runtimeapi.vo.CreateSessionResponseVO;
 import com.campusclaw.codingagent.runtimeapi.vo.GetSessionResponseVO;
 import com.fasterxml.jackson.databind.json.JsonMapper;
@@ -80,8 +83,11 @@ class RuntimeSessionRoutesTest {
                 .andExpect(jsonPath("$.resMsg").value("success"))
                 .andExpect(jsonPath("$.result.sessionId").value(SESSION_ID))
                 .andExpect(jsonPath("$.result.agentId").value(AGENT_ID))
+                .andExpect(jsonPath("$.result", org.hamcrest.Matchers.hasKey("displayName")))
+                .andExpect(jsonPath("$.result.displayName").value(org.hamcrest.Matchers.nullValue()))
                 .andExpect(jsonPath("$.result.thinking").value(true))
                 .andExpect(jsonPath("$.result.updatedAt").doesNotExist());
+        verify(service).create(AGENT_ID);
     }
 
     @Test
@@ -95,7 +101,26 @@ class RuntimeSessionRoutesTest {
                 .andExpect(header().string(HttpHeaders.ETAG, "\"snp-resource\""))
                 .andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store"))
                 .andExpect(jsonPath("$.result.modelId").value("model-default"))
+                .andExpect(jsonPath("$.result", org.hamcrest.Matchers.hasKey("displayName")))
+                .andExpect(jsonPath("$.result.displayName").value(org.hamcrest.Matchers.nullValue()))
                 .andExpect(jsonPath("$.result.updatedAt").value("2026-08-18T00:00:00Z"));
+        verify(service).get(SESSION_ID);
+    }
+
+    @Test
+    void shouldReturnStoredNameThroughResponseAssemblerAndJsonBoundary() throws Exception {
+        RuntimeSessionDTO session = new RuntimeSessionDTO();
+        session.setId(SESSION_ID);
+        session.setDisplayName("中文  name");
+        session.setResourceVersion(2L);
+        var view = new RuntimeSessionResponseAssembler(new SessionEtagFactory()).getView(session);
+        when(service.get(SESSION_ID)).thenReturn(view);
+        mvc.perform(get("/campusclaw-service/v1/sessions/{sessionId}", SESSION_ID))
+                .andExpect(status().isOk())
+                .andExpect(header().string(HttpHeaders.ETAG, view.etag()))
+                .andExpect(jsonPath("$.result.displayName").value("中文  name"))
+                .andExpect(jsonPath("$.result.resourceVersion").doesNotExist());
+        verify(service).get(SESSION_ID);
     }
 
     @Test
@@ -158,13 +183,20 @@ class RuntimeSessionRoutesTest {
 
     private static RuntimeSessionView<CreateSessionResponseVO> createView() {
         OffsetDateTime time = OffsetDateTime.parse("2026-08-18T00:00:00Z");
-        var response = new CreateSessionResponseVO(SESSION_ID, AGENT_ID, "model-default", "idle", true, time);
-        return new RuntimeSessionView<>(response, "\"snp-create\"");
+        RuntimeSessionDTO session = new RuntimeSessionDTO();
+        session.setId(SESSION_ID);
+        session.setAgentId(AGENT_ID);
+        session.setModelId("model-default");
+        session.setState("idle");
+        session.setThinking(true);
+        session.setResourceVersion(1L);
+        session.setCreatedAt(time);
+        return new RuntimeSessionResponseAssembler(new SessionEtagFactory()).createView(session);
     }
 
     private static RuntimeSessionView<GetSessionResponseVO> getView() {
         OffsetDateTime time = OffsetDateTime.parse("2026-08-18T00:00:00Z");
-        var response = new GetSessionResponseVO(SESSION_ID, AGENT_ID, "model-default", "idle", false, time, time);
+        var response = new GetSessionResponseVO(SESSION_ID, AGENT_ID, null, "model-default", "idle", false, time, time);
         return new RuntimeSessionView<>(response, "\"snp-resource\"");
     }
 }

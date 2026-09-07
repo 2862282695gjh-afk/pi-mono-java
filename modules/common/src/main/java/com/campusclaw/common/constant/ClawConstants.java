@@ -60,6 +60,12 @@ public final class ClawConstants {
 
         public static final Pattern ID_PATTERN = Pattern.compile(ID_REGEX);
 
+        public static final int MAX_DISPLAY_NAME_BYTES = 80;
+
+        public static final String FORBIDDEN_DISPLAY_NAME_REGEX = "[\\p{Cc}\\p{Cs}\\u202A-\\u202E\\u2066-\\u2069]";
+
+        public static final Pattern FORBIDDEN_DISPLAY_NAME_PATTERN = Pattern.compile(FORBIDDEN_DISPLAY_NAME_REGEX);
+
         private Session() {}
     }
 
