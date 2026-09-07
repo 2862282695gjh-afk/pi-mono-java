@@ -15,6 +15,7 @@ import static org.mockito.Mockito.when;
 
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
 
 import com.huawei.hicampus.claw.codingagent.runtime.AgentRuntimeManager;
 import com.huawei.hicampus.claw.codingagent.runtime.MateServiceClient.AgentRuntime;
@@ -27,9 +28,10 @@ import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.command.CommandResultDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.command.HelpCommandResultDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.command.ResolvedCommandDTO;
-import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.command.StatusCommandResultDTO;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.command.SessionCommandResultDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.error.RuntimeErrorCode;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.persistence.RuntimeSessionRepository;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.service.command.contributor.HelpCommandContributor;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.service.command.contributor.SkillsCommandContributor;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.service.command.contributor.StatusCommandContributor;
@@ -50,6 +52,8 @@ import org.junit.jupiter.params.provider.ValueSource;
  */
 class ReadonlyBuiltinCommandTest {
     private final AgentRuntimeManager manager = mock(AgentRuntimeManager.class);
+
+    private final RuntimeSessionRepository repository = mock(RuntimeSessionRepository.class);
 
     @ParameterizedTest
     @ValueSource(strings = {"idle", "running"})
@@ -109,23 +113,42 @@ class ReadonlyBuiltinCommandTest {
     @NullAndEmptySource
     void shouldReturnPersistedStatusWithoutReadingAgent(String arguments) {
         for (String state : List.of("idle", "running")) {
-            assertThat(execute(session(state), "status", arguments))
-                    .isEqualTo(new StatusCommandResultDTO(state, "provider/model", true));
+            var current = session(state);
+            when(repository.find("session")).thenReturn(Optional.of(current));
+            assertThat(execute(current, "status", arguments))
+                    .isEqualTo(new SessionCommandResultDTO(current, false, null));
         }
+        verify(repository, times(2)).find("session");
+        verifyNoMoreInteractions(repository);
         verifyNoInteractions(manager);
     }
 
     @Test
-    void shouldKeepStatusBoundToTheRequestSnapshot() {
+    void shouldReadCompleteStatusInsteadOfReconstructingFromCatalog() {
         RuntimeSessionDTO session = session("idle");
         ResolvedCommandCatalog first = new CompositeCommandRegistry(List.of(source())).resolve(session);
         session.setState("running");
         session.setModelId(null);
         session.setThinking(false);
+        session.setDisplayName("latest name");
+        session.setResourceVersion(9L);
+        when(repository.find("session")).thenReturn(Optional.of(session));
+        assertThat(new RuntimeSessionStatusService(repository)
+                        .query(first.session().id(), ""))
+                .isEqualTo(new SessionCommandResultDTO(session, false, null));
+        assertThat(first.session().state()).isEqualTo("idle");
+        verify(repository).find("session");
+        verifyNoMoreInteractions(repository);
+        verifyNoInteractions(manager);
+    }
 
-        assertThat(new RuntimeSessionStatusService().query(first.session(), ""))
-                .isEqualTo(new StatusCommandResultDTO("idle", "provider/model", true));
-        assertThat(execute(session, "status", "")).isEqualTo(new StatusCommandResultDTO("running", null, false));
+    @Test
+    void shouldRejectStatusForSessionDeletedAfterCatalogResolution() {
+        assertThatThrownBy(() -> execute(session("idle"), "status", ""))
+                .isInstanceOf(RuntimeApiException.class)
+                .hasMessage("SESSION_NOT_FOUND");
+        verify(repository).find("session");
+        verifyNoMoreInteractions(repository);
         verifyNoInteractions(manager);
     }
 
@@ -168,12 +191,13 @@ class ReadonlyBuiltinCommandTest {
     private BuiltinCommandSource source() {
         return new BuiltinCommandSource(List.of(
                 new HelpCommandContributor(new AgentHelpQueryService(manager)),
-                new StatusCommandContributor(new RuntimeSessionStatusService()),
+                new StatusCommandContributor(new RuntimeSessionStatusService(repository)),
                 new SkillsCommandContributor(new BoundSkillQueryService(manager))));
     }
 
     private RuntimeSessionDTO session(String state) {
         RuntimeSessionDTO session = new RuntimeSessionDTO();
+        session.setId("session");
         session.setAgentId("agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
         session.setState(state);
         session.setModelId("provider/model");

@@ -95,7 +95,12 @@ class MyBatisRuntimeSessionRepositoryTest {
         when(mapper.lockSessionForUpdate("session")).thenReturn(session);
         when(mapper.updateSessionName("session", "next", now)).thenReturn(1);
         assertThat(new MyBatisRuntimeSessionRepository(mapper).updateName("session", "next", now))
-                .contains(new SessionNameUpdateDTO("next", true));
+                .contains(new SessionNameUpdateDTO(session, true));
+        assertThat(session.getDisplayName()).isEqualTo("next");
+        assertThat(session.getResourceVersion()).isEqualTo(1L);
+        assertThat(session.getUpdatedAt()).isEqualTo(now);
+        assertThat(session.getState()).isEqualTo("running");
+        assertThat(session.getActiveLeafId()).isEqualTo("user");
         var order = inOrder(mapper);
         order.verify(mapper).lockSessionForUpdate("session");
         order.verify(mapper).findLifetimeUsage("session");
@@ -112,7 +117,9 @@ class MyBatisRuntimeSessionRepositoryTest {
         when(mapper.lockSessionForUpdate("session")).thenReturn(session);
         assertThat(new MyBatisRuntimeSessionRepository(mapper)
                         .updateName("session", "same", OffsetDateTime.parse("2026-09-05T00:00:00Z")))
-                .contains(new SessionNameUpdateDTO("same", false));
+                .contains(new SessionNameUpdateDTO(session, false));
+        assertThat(session.getResourceVersion()).isZero();
+        assertThat(session.getUpdatedAt()).isNull();
         verify(mapper).lockSessionForUpdate("session");
         verify(mapper).findLifetimeUsage("session");
         verifyNoMoreInteractions(mapper);

@@ -14,9 +14,13 @@
 </head>
 <body><main>
   <h1>ADR-0058：分离压缩数据库观察与原子准入</h1>
-  <p>Status：Accepted · 已确认的 6b2a 实施切片<br>Date：2026-09-07 · Version：1.0.0</p>
+  <p>Status：Accepted（数据库职责拆分）；Superseded（旧串行开发安排）<br>Date：2026-09-07 · Version：1.0.1</p>
+  <p>2026-09-07 用户已授权独立 worktree 从最新 main 并行开发、独立复审、串行合并；不堆叠、不 force-push，
+  后合方合入最新 main 并复验，原预算保持。响应方向按设计 <code>88f4df16bc24bbfcd28e1ec374feb2de0db8be3b</code>
+  Builtin 2.9.0 §8/8.1 复用业务资源 VO，不公开 command/changed/sourceEventSeq 或替代回执。
+  见<a href="../designs/compact-runtime-output.md">当前交付说明</a>；原源码、验证和图不改写为本轮新验收。</p>
   <h2>Context</h2>
-  <p>6b1 仅支持已准入执行；在严格模块 850 行、含镜像 1800 行软上限下，完整准入与 Runtime 接入应按职责串行交付。
+  <p>原 6b1 仅支持已准入执行；在严格模块 850 行、含镜像 1800 行软上限下，完整准入与 Runtime 接入当时按职责串行交付。
   本 PR 只实现 Repository 观察、复核和事务验证，空历史的整个命令行为仍属于 6b2b。</p>
   <p>Java 基线 <code>14769188538eaa2f1df1e25ef2fef40d87ceafed</code>；目标设计只读基线
   <code>pi-mono-java-design@2734a36b6f3cee2ebe16f1133d50ccb3eaaeb4e9</code>，
@@ -47,7 +51,7 @@
     <li>正面：观察与接受有明确线性化时点，防止跨进程用旧上下文启动，允许并发改名。</li>
     <li>代价：完整历史 O(N) 内存，现有递归分页有重复回溯成本；繁忙 Session 的更新需等待短期数据库事务。</li>
     <li>边界：本次仅证明空观察零写入；未交付容量跳过、内部 Usage 身份、Runtime 接入、失败资源回收或命令/HTTP。</li>
-    <li>后续：6b2a 合入后从最新 main 开始 6b2b，补上述能力与完整链路测试，不将其他 Events/前端迁移加入前置条件。</li>
+    <li>后续职责：6b2b 补上述能力与完整链路测试，不将其他 Events/前端迁移加入前置条件；旧先合入再开发安排仅保留为历史过程。</li>
     <li>提交结果不确定不能盲目恢复 idle 或重放；当前 PR 不宣称提供数据库失联或进程崩溃的执行恢复。</li>
   </ul>
   <h2>验证</h2>
@@ -61,6 +65,7 @@
     <li><a href="0048-limit-added-code-lines-per-pull-request.html">PR 新增行数门禁</a></li>
   </ul>
   <h2>版本历史</h2>
+  <p>1.0.1 · 2026-09-07：R08，旧串行开发指导 superseded；保持数据库职责和历史验证，对齐当前交付与响应规则。</p>
   <p>1.0.0 · 2026-09-07：数据库切片独立交付，保留后续 Runtime 接入验收清单。</p>
 </main></body>
 </html>

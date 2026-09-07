@@ -1,0 +1,45 @@
+@startuml builtin_session_snapshot
+' Observed baseline: 6f52fddc87a03c20916fc7b6ef1de87f6a7a8cf5
+' R06 implementation: b2506c1f2b2fcb36228d4114cd32f77c15c42ab0
+' Design: pi-mono-java-design@88f4df16bc24bbfcd28e1ec374feb2de0db8be3b, Builtin 2.9 section 8.1
+' Java root: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/
+' Sources: service/command/readonly/RuntimeSessionStatusService.java:query
+' Sources: service/command/{SessionNamingService,SessionModelConfigurationService,SessionThinkingConfigurationService}.java:execute
+' Sources: persistence/MyBatisRuntimeSessionRepository.java:updateName,updateModel,updateThinking
+' Sources: session/RuntimeSessionResponseAssembler.java:getView
+' Observed behavior: configuration transactions already return a Session DTO.
+' Design reason: preserve one authoritative resource and version without a post-commit GET.
+' Java divergence: shared business resource projection replaces per-command receipts.
+title Builtin authoritative Session - result channel
+skinparam shadowing false
+skinparam backgroundColor white
+skinparam classAttributeIconSize 0
+hide empty members
+set namespaceSeparator none
+class "Contributor / Handler" as Handler <<singleton>>
+class "Status / Name / Model / Thinking\nNarrow services" as Service <<singleton>>
+interface "RuntimeSessionRepository" as Repo
+class "RuntimeSessionDTO" as Session <<per call>>
+class "SessionCommandResultDTO" as Result <<internal>>
+class "ModelCommandResultDTO" as Models <<query only>>
+class "CommandResponseAssembler" as Future <<target-only>>
+class "RuntimeSessionResponseAssembler" as Assembler <<existing>>
+class "GetSessionResponseVO + ETag" as View
+class "AvailableModelsResponseVO" as ModelView <<existing>>
+Handler --> Service : Session ID
+Service --> Repo : query / locked mutation
+Repo ..> Session : authoritative resource
+Service ..> Result : Session query or mutation
+Service ..> Models : model query
+Result o-- "1" Session
+Future ..> Result : dispatch by result type
+Future ..> Models : dispatch by result type
+Future --> Assembler : same Session DTO
+Assembler ..> View : body and ETag
+Future ..> ModelView : no ETag
+note bottom of Result
+  changed and sourceEventSeq stay internal.
+  No post-commit GET or stale Catalog field patching.
+  R07 adds real lifetimeUsage to the same Session DTO.
+end note
+@enduml

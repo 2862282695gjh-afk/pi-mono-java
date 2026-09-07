@@ -36,6 +36,7 @@ import com.campusclaw.codingagent.runtimeapi.dto.RuntimeLifetimeUsageDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.command.CommandSessionSnapshotDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.command.ModelCommandResultDTO;
+import com.campusclaw.codingagent.runtimeapi.dto.command.SessionCommandResultDTO;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
 import com.campusclaw.codingagent.runtimeapi.event.RuntimeEntryCodec;
@@ -115,7 +116,7 @@ class SessionModelConfigurationServiceTest {
     void shouldQueryRunningSessionWithoutLockingOrWriting(String arguments) {
         when(mapper.findSession("session")).thenReturn(session("old", "running", true, 1L));
         assertThat(service.execute("session", arguments))
-                .isEqualTo(new ModelCommandResultDTO("old", List.of("next", "old"), false, null));
+                .isEqualTo(new ModelCommandResultDTO("old", List.of("next", "old")));
         verify(mapper, never()).lockSessionForUpdate(any());
         verify(manager, never()).resolveAvailableModel(any(), any());
         assertThat(ids).hasValue(0);
@@ -124,16 +125,22 @@ class SessionModelConfigurationServiceTest {
     @Test
     void shouldKeepEmptyModelListImmutableAndNonNull() {
         when(manager.listAvailableModels(snapshot)).thenReturn(List.of());
-        var result = service.execute("session", "");
+        var result = service.query("session");
         assertThat(result.models()).isEmpty();
         assertThatThrownBy(() -> result.models().add("unexpected")).isInstanceOf(UnsupportedOperationException.class);
-        assertThat(result.sourceEventSeq()).isNull();
     }
 
     @Test
     void shouldBuildBothEventsFromLockedStateAndReturnLastAuthoritativeSequence() {
-        var result = service.execute("session", "next");
-        assertThat(result).isEqualTo(new ModelCommandResultDTO("next", List.of("next", "old"), true, 18L));
+        var result = executeChange("next");
+        assertThat(result.changed()).isTrue();
+        assertThat(result.sourceEventSeq()).isEqualTo(18L);
+        assertThat(result.session().getModelId()).isEqualTo("next");
+        assertThat(result.session().getResourceVersion()).isEqualTo(5L);
+        assertThat(result.session().getUpdatedAt()).isEqualTo(now);
+        assertThat(result.session().getActiveLeafId()).isEqualTo("entry-2");
+        verify(mapper).findSession("session");
+        verify(manager, never()).listAvailableModels(any());
         assertThat(appended)
                 .extracting(RuntimeEntryDTO::getType)
                 .containsExactly("session.model.changed", "session.thinking.changed");
@@ -155,7 +162,7 @@ class SessionModelConfigurationServiceTest {
     @Test
     void shouldAppendOnlyModelEventWhenLatestThinkingIsOff() {
         when(mapper.lockSessionForUpdate("session")).thenReturn(session("latest", "idle", false, 4L));
-        assertThat(service.execute("session", "next").sourceEventSeq()).isEqualTo(17L);
+        assertThat(executeChange("next").sourceEventSeq()).isEqualTo(17L);
         assertThat(appended).extracting(RuntimeEntryDTO::getType).containsExactly("session.model.changed");
     }
 
@@ -165,7 +172,7 @@ class SessionModelConfigurationServiceTest {
         when(model.id()).thenReturn("next");
         when(model.reasoning()).thenReturn(true);
         when(manager.resolveAvailableModel(snapshot, "next")).thenReturn(model);
-        assertThat(service.execute("session", "next").changed()).isTrue();
+        assertThat(executeChange("next").changed()).isTrue();
         verify(mapper).updateSessionModel("session", "next", true, now);
         assertThat(appended).extracting(RuntimeEntryDTO::getType).containsExactly("session.model.changed");
     }
@@ -174,8 +181,11 @@ class SessionModelConfigurationServiceTest {
     void shouldSkipIdenticalModelWithoutChangingThinkingVersionOrSequence() {
         var locked = session("next", "idle", true, 9L);
         when(mapper.lockSessionForUpdate("session")).thenReturn(locked);
-        assertThat(service.execute("session", "next").changed()).isFalse();
-        assertThat(service.execute("session", "next").sourceEventSeq()).isNull();
+        var result = executeChange("next");
+        assertThat(result.changed()).isFalse();
+        assertThat(result.sourceEventSeq()).isNull();
+        assertThat(result.session()).isSameAs(locked);
+        assertThat(result.session().getUpdatedAt()).isEqualTo(now.minusHours(1));
         assertThat(locked.getResourceVersion()).isEqualTo(9L);
         assertThat(locked.isThinking()).isTrue();
         assertThat(ids).hasValue(0);
@@ -275,8 +285,14 @@ class SessionModelConfigurationServiceTest {
                     .execute(new CommandExecutionContext(Locale.US, catalog), "")
                     .toCompletableFuture()
                     .get();
-            assertThat(result).isEqualTo(new ModelCommandResultDTO("old", List.of("next", "old"), false, null));
+            assertThat(result).isEqualTo(new ModelCommandResultDTO("old", List.of("next", "old")));
         }
+    }
+
+    private SessionCommandResultDTO executeChange(String modelId) {
+        var result = service.execute("session", modelId);
+        assertThat(result).isInstanceOf(SessionCommandResultDTO.class);
+        return (SessionCommandResultDTO) result;
     }
 
     private RuntimeSessionDTO session(String modelId, String state, boolean thinking, long version) {

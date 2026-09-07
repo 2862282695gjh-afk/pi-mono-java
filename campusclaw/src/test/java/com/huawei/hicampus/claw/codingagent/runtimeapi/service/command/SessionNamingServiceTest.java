@@ -26,7 +26,7 @@ import com.huawei.hicampus.claw.codingagent.runtimeapi.command.execution.Command
 import com.huawei.hicampus.claw.codingagent.runtimeapi.command.type.CommandKind;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.SessionNameUpdateDTO;
-import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.command.NameCommandResultDTO;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.command.SessionCommandResultDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.error.RuntimeErrorCode;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.persistence.RuntimeSessionRepository;
@@ -57,7 +57,7 @@ class SessionNamingServiceTest {
     void shouldQueryNullableCurrentNameWithoutWriting(String arguments) {
         RuntimeSessionDTO session = session("idle");
         when(repository.find("session")).thenReturn(Optional.of(session));
-        assertThat(service.execute("session", arguments)).isEqualTo(new NameCommandResultDTO(null, false));
+        assertThat(service.execute("session", arguments)).isEqualTo(new SessionCommandResultDTO(session, false, null));
         verify(repository).find("session");
         verifyNoMoreInteractions(repository);
     }
@@ -86,15 +86,17 @@ class SessionNamingServiceTest {
                         .execute(context, "")
                         .toCompletableFuture()
                         .join())
-                .isEqualTo(new NameCommandResultDTO("latest name", false));
+                .isEqualTo(new SessionCommandResultDTO(current, false, null));
+        var renamed = session(state);
+        renamed.setDisplayName("new name");
         when(repository.updateName("session", "new name", now))
-                .thenReturn(Optional.of(new SessionNameUpdateDTO("new name", true)));
+                .thenReturn(Optional.of(new SessionNameUpdateDTO(renamed, true)));
         assertThat(definition
                         .handler()
                         .execute(context, " new name ")
                         .toCompletableFuture()
                         .join())
-                .isEqualTo(new NameCommandResultDTO("new name", true));
+                .isEqualTo(new SessionCommandResultDTO(renamed, true, null));
         verify(repository).find("session");
         verify(repository).updateName("session", "new name", now);
         verifyNoMoreInteractions(repository);
@@ -103,19 +105,23 @@ class SessionNamingServiceTest {
     @ParameterizedTest
     @MethodSource("validNames")
     void shouldTrimOnlyEdgesAndAcceptEightyUtf8Bytes(String normalized) {
+        var renamed = session("idle");
+        renamed.setDisplayName(normalized);
         when(repository.updateName("session", normalized, now))
-                .thenReturn(Optional.of(new SessionNameUpdateDTO(normalized, true)));
+                .thenReturn(Optional.of(new SessionNameUpdateDTO(renamed, true)));
         assertThat(service.execute("session", " \u2003" + normalized + "\u2003 "))
-                .isEqualTo(new NameCommandResultDTO(normalized, true));
+                .isEqualTo(new SessionCommandResultDTO(renamed, true, null));
         verify(repository).updateName("session", normalized, now);
         verifyNoMoreInteractions(repository);
     }
 
     @Test
     void shouldReturnUnchangedResultFromLockedRepositoryComparison() {
+        var locked = session("running");
+        locked.setDisplayName("same");
         when(repository.updateName("session", "same", now))
-                .thenReturn(Optional.of(new SessionNameUpdateDTO("same", false)));
-        assertThat(service.execute("session", " same ")).isEqualTo(new NameCommandResultDTO("same", false));
+                .thenReturn(Optional.of(new SessionNameUpdateDTO(locked, false)));
+        assertThat(service.execute("session", " same ")).isEqualTo(new SessionCommandResultDTO(locked, false, null));
         verify(repository).updateName("session", "same", now);
         verifyNoMoreInteractions(repository);
     }

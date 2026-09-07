@@ -39,6 +39,7 @@ public class StatusCommandContributor implements BuiltinCommandContributor {
                         null,
                         List.of()),
                 (session, withArguments) -> null,
-                (context, arguments) -> CompletableFuture.completedFuture(service.query(context.session(), arguments)));
+                (context, arguments) -> CompletableFuture.completedFuture(
+                        service.query(context.session().id(), arguments)));
     }
 }
