@@ -112,7 +112,7 @@ class BuiltinCommandCoreTest {
                                     .resolve(session)
                                     .list())
                             .extracting(ResolvedCommandDTO::name)
-                            .containsExactly("help", "model", "name", "skills", "status");
+                            .containsExactly("help", "model", "name", "skills", "status", "thinking");
                 });
     }
 

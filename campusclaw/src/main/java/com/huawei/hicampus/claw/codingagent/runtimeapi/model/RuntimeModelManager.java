@@ -20,6 +20,14 @@ import com.huawei.hicampus.claw.codingagent.runtimeapi.error.RuntimeErrorCode;
 public interface RuntimeModelManager {
     Model resolveDefaultModel(AgentDirectorySnapshotDTO snapshot);
 
+    /**
+     * 仅从本地配置及目录解析模型，可供 Session 锁内能力复核使用。
+     * 不得刷新 Agent、调用远端服务或获取请求凭据。
+     *
+     * @param snapshot 锁外取得的 Agent 目录快照
+     * @param modelId 当前模型标识
+     * @return 本地模型描述
+     */
     Model resolveModel(AgentDirectorySnapshotDTO snapshot, String modelId);
 
     List<String> listAvailableModels(AgentDirectorySnapshotDTO snapshot);

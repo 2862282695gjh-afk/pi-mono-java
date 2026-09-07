@@ -40,6 +40,8 @@ public class SchemaMapDeserializer extends JsonDeserializer<Map<String, Object>>
     private static final ObjectMapper STRICT_MAPPER =
             new ObjectMapper().enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
 
+    private static final ObjectMapper MAPPER = new ObjectMapper();
+
     private static final TypeRef TYPE = new TypeRef();
 
     /**
