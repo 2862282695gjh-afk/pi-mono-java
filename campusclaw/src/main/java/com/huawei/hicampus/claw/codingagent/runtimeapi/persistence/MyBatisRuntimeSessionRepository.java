@@ -5,6 +5,7 @@
 package com.huawei.hicampus.claw.codingagent.runtimeapi.persistence;
 
 import java.time.OffsetDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -13,6 +14,7 @@ import java.util.function.Function;
 
 import com.huawei.hicampus.claw.ai.types.Cost;
 import com.huawei.hicampus.claw.ai.types.Usage;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeCompactionSnapshotDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeEntryDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeRecordDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
@@ -33,6 +35,8 @@ import org.springframework.transaction.annotation.Transactional;
  */
 @Repository
 public class MyBatisRuntimeSessionRepository implements RuntimeSessionRepository {
+    private static final int COMPACTION_HISTORY_PAGE_SIZE = 500;
+
     private final RuntimeSessionMapper mapper;
 
     public MyBatisRuntimeSessionRepository(RuntimeSessionMapper mapper) {
@@ -90,6 +94,47 @@ public class MyBatisRuntimeSessionRepository implements RuntimeSessionRepository
         session.setResourceVersion(session.getResourceVersion() + 1);
         session.setActiveLeafId(entry.getId());
         return new UserEventAcceptance(Status.ACCEPTED, session);
+    }
+
+    @Override
+    @Transactional
+    public Optional<RuntimeCompactionSnapshotDTO> observeCompaction(String sessionId) {
+        RuntimeSessionDTO session = mapper.lockSessionForUpdate(sessionId);
+        if (session == null) {
+            return Optional.empty();
+        }
+        List<RuntimeEntryDTO> entries = new ArrayList<>();
+        if (RuntimeSessionState.IDLE.matches(session.getState())) {
+            long afterSeq = 0L;
+            List<RuntimeEntryDTO> page;
+            do {
+                page = mapper.listCurrentBranchEntries(sessionId, afterSeq, COMPACTION_HISTORY_PAGE_SIZE);
+                entries.addAll(page);
+                if (!page.isEmpty()) {
+                    afterSeq = page.getLast().getEntrySeq();
+                }
+            } while (page.size() == COMPACTION_HISTORY_PAGE_SIZE);
+        }
+        return Optional.of(new RuntimeCompactionSnapshotDTO(session, List.copyOf(entries)));
+    }
+
+    @Override
+    @Transactional
+    public CompactionAcceptanceStatus acceptCompaction(RuntimeSessionDTO observed, OffsetDateTime acceptedAt) {
+        RuntimeSessionDTO current = mapper.lockSessionForUpdate(observed.getId());
+        if (current == null) {
+            return CompactionAcceptanceStatus.NOT_FOUND;
+        }
+        if (!RuntimeSessionState.IDLE.matches(current.getState())
+                || !Objects.equals(current.getActiveLeafId(), observed.getActiveLeafId())
+                || !Objects.equals(current.getModelId(), observed.getModelId())
+                || current.isThinking() != observed.isThinking()) {
+            return CompactionAcceptanceStatus.BUSY;
+        }
+        requireOne(
+                mapper.markSessionRunning(current.getId(), current.getActiveLeafId(), acceptedAt),
+                "session did not enter running state");
+        return CompactionAcceptanceStatus.ACCEPTED;
     }
 
     @Override
