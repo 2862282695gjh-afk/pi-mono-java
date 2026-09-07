@@ -6,11 +6,12 @@ package com.huawei.hicampus.claw.codingagent.runtimeapi.runtime;
 
 import java.util.IdentityHashMap;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Future;
 
 import com.huawei.hicampus.claw.ai.types.Message;
-import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeEventStream;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeEventOutput;
 
 /**
  * 单个 Session 当前唯一活动执行的进程内句柄。
@@ -19,7 +20,7 @@ import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeEventStream;
  * @since [br_eCampusCore 26.0.0]
  */
 public class RuntimeActiveExecution {
-    private final RuntimeEventStream eventStream;
+    private final RuntimeEventOutput output;
 
     private final CompletableFuture<Void> completion = new CompletableFuture<>();
 
@@ -37,12 +38,12 @@ public class RuntimeActiveExecution {
 
     private String runId;
 
-    public RuntimeActiveExecution(RuntimeEventStream eventStream) {
-        this.eventStream = eventStream;
+    public RuntimeActiveExecution(RuntimeEventOutput output) {
+        this.output = Objects.requireNonNull(output, "output");
     }
 
-    public RuntimeEventStream eventStream() {
-        return eventStream;
+    public RuntimeEventOutput output() {
+        return output;
     }
 
     public synchronized void beginRun(String value) {

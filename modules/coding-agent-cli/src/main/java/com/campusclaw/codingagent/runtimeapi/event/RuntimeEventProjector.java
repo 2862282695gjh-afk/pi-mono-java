@@ -37,7 +37,7 @@ import com.campusclaw.codingagent.session.compaction.SessionCompactionFailedEven
 import com.campusclaw.codingagent.session.compaction.SessionCompactionStartedEvent;
 
 /**
- * 把 pi AgentEvent 和公共 Session 压缩事件投影为公共 SSE 与持久化 Entry。
+ * 把 pi AgentEvent 和公共 Session 压缩事件投影为权威 Entry，并按需输出公共事件。
  *
  * @version [br_eCampusCore 26.0.0, 2026/08/18]
  * @since [br_eCampusCore 26.0.0]
@@ -53,7 +53,7 @@ public class RuntimeEventProjector {
 
     private final RuntimeEntryIdGenerator idGenerator;
 
-    private final RuntimeEventStream stream;
+    private final RuntimeEventOutput output;
 
     private final Clock clock;
 
@@ -77,12 +77,14 @@ public class RuntimeEventProjector {
 
     private int assistantAttempt = 1;
 
+    private Long lastCompactionEntrySeq;
+
     public RuntimeEventProjector(
             String sessionId,
             RuntimeSessionRepository repository,
             RuntimeEntryCodec codec,
             RuntimeEntryIdGenerator idGenerator,
-            RuntimeEventStream stream,
+            RuntimeEventOutput output,
             Clock clock,
             Runnable abort,
             RuntimeActiveExecution execution,
@@ -93,7 +95,7 @@ public class RuntimeEventProjector {
         this.repository = repository;
         this.codec = codec;
         this.idGenerator = idGenerator;
-        this.stream = stream;
+        this.output = output;
         this.clock = clock;
         this.abort = abort;
         this.execution = execution;
@@ -125,6 +127,17 @@ public class RuntimeEventProjector {
 
     public String terminalErrorCode() {
         return terminalErrorCode;
+    }
+
+    /**
+     * 返回最近一次成功追加的压缩 Entry 序号，不使用后续 Usage 或排队消息序号。
+     *
+     * <p>后续压缩失败不会清除旧值；调用方须在本次压缩完成后、队列续跑前固定结果。
+     *
+     * @return 当前投影器尚未成功追加压缩 Entry 时为 null，否则为最近成功的序号
+     */
+    public synchronized Long lastCompactionEntrySeq() {
+        return lastCompactionEntrySeq;
     }
 
     private void project(AgentEvent event) {
@@ -168,7 +181,7 @@ public class RuntimeEventProjector {
         LinkedHashMap<String, Object> data = new LinkedHashMap<>();
         data.put("entryId", assistantEntryId);
         data.put("role", "assistant");
-        stream.emit(new RuntimeSseEventVO(null, RuntimeEventType.ASSISTANT_MESSAGE_STARTED.value(), data));
+        output.emit(() -> new RuntimeSseEventVO(null, RuntimeEventType.ASSISTANT_MESSAGE_STARTED.value(), data));
     }
 
     private void projectMessageUpdate(MessageUpdateEvent event) {
@@ -183,7 +196,7 @@ public class RuntimeEventProjector {
             LinkedHashMap<String, Object> data = new LinkedHashMap<>();
             data.put("entryId", assistantEntryId);
             data.put("delta", block);
-            stream.emit(new RuntimeSseEventVO(null, RuntimeEventType.ASSISTANT_MESSAGE_DELTA.value(), data));
+            output.emit(() -> new RuntimeSseEventVO(null, RuntimeEventType.ASSISTANT_MESSAGE_DELTA.value(), data));
         } else if (thinking) {
             projectThinking(messageEvent);
         }
@@ -200,7 +213,7 @@ public class RuntimeEventProjector {
 
     private void emitThinkingStarted(int contentIndex) {
         LinkedHashMap<String, Object> data = thinkingData(contentIndex);
-        stream.emit(new RuntimeSseEventVO(null, RuntimeEventType.ASSISTANT_THINKING_STARTED.value(), data));
+        output.emit(() -> new RuntimeSseEventVO(null, RuntimeEventType.ASSISTANT_THINKING_STARTED.value(), data));
     }
 
     private void emitThinkingDelta(AssistantMessageEvent.ThinkingDeltaEvent event) {
@@ -209,7 +222,7 @@ public class RuntimeEventProjector {
         block.put("text", event.delta());
         LinkedHashMap<String, Object> data = thinkingData(event.contentIndex());
         data.put("delta", block);
-        stream.emit(new RuntimeSseEventVO(null, RuntimeEventType.ASSISTANT_THINKING_DELTA.value(), data));
+        output.emit(() -> new RuntimeSseEventVO(null, RuntimeEventType.ASSISTANT_THINKING_DELTA.value(), data));
     }
 
     private void persistThinking(AssistantMessageEvent.ThinkingEndEvent event) {
@@ -273,7 +286,7 @@ public class RuntimeEventProjector {
         LinkedHashMap<String, Object> data = new LinkedHashMap<>();
         data.put("toolCallId", event.toolCallId());
         data.put("toolName", event.toolName());
-        stream.emit(new RuntimeSseEventVO(null, RuntimeEventType.TOOL_EXECUTION_STARTED.value(), data));
+        output.emit(() -> new RuntimeSseEventVO(null, RuntimeEventType.TOOL_EXECUTION_STARTED.value(), data));
     }
 
     private void projectToolUpdate(ToolExecutionUpdateEvent event) {
@@ -281,7 +294,7 @@ public class RuntimeEventProjector {
         data.put("toolCallId", event.toolCallId());
         data.put("toolName", event.toolName());
         data.put("delta", event.partialResult());
-        stream.emitBestEffort(new RuntimeSseEventVO(null, RuntimeEventType.TOOL_EXECUTION_DELTA.value(), data));
+        output.emitBestEffort(() -> new RuntimeSseEventVO(null, RuntimeEventType.TOOL_EXECUTION_DELTA.value(), data));
     }
 
     private void projectToolEnd(ToolExecutionEndEvent event) {
@@ -289,7 +302,7 @@ public class RuntimeEventProjector {
         data.put("toolCallId", event.toolCallId());
         data.put("toolName", event.toolName());
         data.put("isError", event.isError());
-        stream.emit(new RuntimeSseEventVO(null, RuntimeEventType.TOOL_EXECUTION_COMPLETED.value(), data));
+        output.emit(() -> new RuntimeSseEventVO(null, RuntimeEventType.TOOL_EXECUTION_COMPLETED.value(), data));
     }
 
     private void projectToolResults(List<ToolResultMessage> results) {
@@ -303,7 +316,7 @@ public class RuntimeEventProjector {
     private void projectCompactionStarted(SessionCompactionStartedEvent event) {
         LinkedHashMap<String, Object> data =
                 compactionLifecycleData(event.reason().value(), event.willRetry());
-        stream.emit(new RuntimeSseEventVO(null, RuntimeEventType.SESSION_COMPACTION_STARTED.value(), data));
+        output.emit(() -> new RuntimeSseEventVO(null, RuntimeEventType.SESSION_COMPACTION_STARTED.value(), data));
     }
 
     private void projectCompactionFailed(SessionCompactionFailedEvent event) {
@@ -311,7 +324,7 @@ public class RuntimeEventProjector {
                 compactionLifecycleData(event.reason().value(), event.willRetry());
         data.put("aborted", event.aborted());
         data.put("message", event.message());
-        stream.emit(new RuntimeSseEventVO(null, RuntimeEventType.SESSION_COMPACTION_FAILED.value(), data));
+        output.emit(() -> new RuntimeSseEventVO(null, RuntimeEventType.SESSION_COMPACTION_FAILED.value(), data));
     }
 
     private void projectCompactionCompleted(SessionCompactionCompletedEvent event) {
@@ -341,8 +354,10 @@ public class RuntimeEventProjector {
                 null,
                 event.result().usage(),
                 entry.getTimestamp());
-        repository.appendEntryWithUsage(entry, record, event.result().usage());
-        emitPersisted(entry);
+        RuntimeEntryDTO persisted =
+                repository.appendEntryWithUsage(entry, record, event.result().usage());
+        lastCompactionEntrySeq = persisted.getEntrySeq();
+        emitPersisted(persisted);
         if (event.willRetry()) {
             assistantAttempt++;
         }
@@ -380,7 +395,7 @@ public class RuntimeEventProjector {
     }
 
     private void emitPersisted(RuntimeEntryDTO entry) {
-        stream.emit(new RuntimeSseEventVO(
+        output.emit(() -> new RuntimeSseEventVO(
                 Long.toString(entry.getEntrySeq()), entry.getType(), codec.toSseData(entry, locale)));
     }
 

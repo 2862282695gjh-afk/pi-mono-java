@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ADR-0055：Runtime 持久化不依赖请求流</title>
+  <style>
+    :root { color-scheme: light; font-family: Inter, "PingFang SC", sans-serif; color: #25272a; background: #f2f5f7; }
+    body { margin: 0; } main { width: min(920px, calc(100% - 40px)); margin: 40px auto; padding: 40px; box-sizing: border-box; background: #fff; border: 1px solid #d7dde2; border-radius: 16px; }
+    h1 { margin-top: 0; font-size: 30px; } h2 { margin-top: 30px; font-size: 20px; }
+    p, li { line-height: 1.75; } code { overflow-wrap: anywhere; background: #edf2f5; } a { color: #1769aa; }
+    @media (max-width: 640px) { main { width: 100%; margin: 0; padding: 24px 18px; border: 0; border-radius: 0; } }
+  </style>
+</head>
+<body><main>
+  <h1>ADR-0055：Runtime 持久化不依赖请求流</h1>
+  <p>Status：Accepted · 已确认 Compact 分层计划的 6a 基础切片<br>Date：2026-09-07 · Version：1.0.0</p>
+  <p>变更前 Java：<code>ee89ff00e516c01444bd120034a936d6203dffc0</code><br>
+  本次实现：<code>defb688093e2237656516d66639d2548364cfa3f</code><br>
+  已确认设计：<code>pi-mono-java-design@41304c1f3df0e8eca53141312724d7a684a1d07f</code>，
+  <code>04-命令与技能/01-内置命令/README.md</code> 第 7 节。设计仓只读。</p>
+  <h2>Context</h2>
+  <p>Compact 要返回普通 JSON，且在没有请求 SSE 时保存权威领域历史。原 ActiveExecution、Projector 和执行收尾
+  直接依赖 RuntimeEventStream；执行上下文还要求一条初始用户消息。创建一个永远没有订阅者的流会引入无用缓冲。</p>
+  <p>Java 证据路径前缀为 <code>modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/</code>：
+  <code>runtime/RuntimeActiveExecution.java:eventStream</code>、<code>event/RuntimeEventProjector.java:emitPersisted</code>、
+  <code>event/RuntimeExecutionCoordinator.java:completeExecution</code>。这些是变更前行为，不是 Compact 已实现的证据。</p>
+  <h2>选项与取舍</h2>
+  <ul>
+    <li>无人订阅的 SSE：改动少，但仍缓存、构造响应事件和申请请求资源，不采用。</li>
+    <li>到处检查 null stream：简单但把传输条件散布到持久化和收尾，不采用。</li>
+    <li>复制第二套 Projector：局部独立但会分裂压缩边界、Usage 和恢复语义，不采用。</li>
+    <li>明确可选输出策略：增加一个接口与无状态实现，保留同一持久化路径，采用。</li>
+  </ul>
+  <h2>Decision 与理由</h2>
+  <ul>
+    <li>RuntimeEventOutput 同步求值或丢弃事件工厂，不保留闭包。原 RuntimeEventStream 适配旧队列；
+    persistenceOnly 不创建 SSE VO、不编码、不翻译终态文案、不申请缓冲。</li>
+    <li>Projector 先执行原 Repository 事务，再记录成功返回的 Compaction Entry 序号，最后调用可选输出。
+    不用 Usage 或后续排队消息的序号替换压缩结果。</li>
+    <li>createForCompaction 不伪造初始用户消息，不承担准入/启动。POST Events 使用独立纯载体 RuntimeExecutionContextDTO，
+    保存自己的流引用；Controller 不接触内部 DTO。</li>
+    <li>输出完成与执行完成分离；无流策略没有请求状态，不获得取消权。本切片不改变现有超时、队列和 Abort 决策。</li>
+  </ul>
+  <p>pi <code>4af9d21d3b4d664e4a29fcabfec85171077248e3</code> 的
+  <code>packages/coding-agent/src/core/agent-session.ts:compact</code> 先 abort、写 Compaction、重建消息后通知终态；
+  <code>abortCompaction</code> 取消压缩信号。Java 的 idle-only 与 JSON 是产品约束，可选输出和数据库序号是架构差异，
+  不能称为 pi 已有 HTTP 行为。</p>
+  <h2>Consequences</h2>
+  <ul>
+    <li>正面：不复制领域投影；无请求流仍可保存和恢复压缩，旧 SSE 路径继续使用原有缓冲。</li>
+    <li>代价：输出接口要求同步求值；未来实现不得异步保留捕获 Projector 状态的工厂。</li>
+    <li>限制：lastCompactionEntrySeq 是最近成功值，后续失败不清除。后续协调器必须在本次成功且队列续跑前固定结果。</li>
+    <li>后续：6b 实现原子准入/空历史/容量/30 分钟超时/独立完成句柄与失败清理；之后接入 Handler、
+    Steer/FollowUp 与 Abort 的 Compact 专项验证，再统一发布 Builtin/Skill HTTP。</li>
+  </ul>
+  <h2>验证与交付</h2>
+  <p>新增 15 项测试，完整 mvnw verify 的 1567 项模块/依赖测试通过；测试质量归档副本 0 errors、0 warnings。
+  模块新增 646 行、镜像后 1292/2000 行。无数据库/SQL 或公共接口变更，没有执行尚不可用的 Compact 跨 JVM 流程。</p>
+  <p>默认 sync 无法解析公司 NativeParent；本地显式跳过公司编译完成源码同步。公司镜像编译未验证，Git hook 不绕过。
+  该 PR 为 Draft 串行交付，合并前不创建下一待审 PR。</p>
+  <h2>Related</h2>
+  <ul>
+    <li><a href="../designs/compact-runtime-output.md">完整实现说明、测试与后续范围</a></li>
+    <li><a href="../designs/compact-runtime-output/diagram.puml#L1">PlantUML 源码</a></li>
+    <li><a href="0045-scope-runtime-operation-lock-release.html">Runtime 操作锁边界</a></li>
+    <li><a href="0048-limit-added-code-lines-per-pull-request.html">PR 新增行数门禁</a></li>
+  </ul>
+  <h2>版本历史</h2>
+  <p>1.0.0 · 2026-09-07：记录可选输出、权威压缩序号与 6a/6b 交付边界。</p>
+</main></body>
+</html>

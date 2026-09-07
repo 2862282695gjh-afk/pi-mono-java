@@ -13,6 +13,7 @@ import java.util.Locale;
 
 import com.huawei.hicampus.claw.codingagent.common.client.mate.MateCredentials;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeEntryDTO;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeExecutionContextDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.error.RuntimeErrorCode;
@@ -100,7 +101,7 @@ public class RuntimeEventService {
 
     private RuntimeEventStream prepareAndSubmitLocked(
             String sessionId, ValidatedUserEvent request, Locale locale, MateCredentials credentials) {
-        RuntimeExecutionContext context = null;
+        RuntimeExecutionContextDTO context = null;
         try {
             RuntimeSessionDTO session = requireIdleSession(sessionId);
             var reconciled = modelReconciler.reconcile(session);
@@ -111,10 +112,10 @@ public class RuntimeEventService {
                     request.message(),
                     request.fileIds(),
                     credentials);
-            emitConfigurationEntries(context.execution().eventStream(), reconciled.configurationEntries(), locale);
+            emitConfigurationEntries(context.eventStream(), reconciled.configurationEntries(), locale);
             acceptUserEntry(sessionId, request, context, locale);
             executionCoordinator.start(context.holder(), context.execution(), context.userMessage(), locale);
-            return context.execution().eventStream();
+            return context.eventStream();
         } catch (RuntimeException error) {
             releaseUnacceptedExecution(context);
             throw error;
@@ -129,14 +130,13 @@ public class RuntimeEventService {
     }
 
     private void acceptUserEntry(
-            String sessionId, ValidatedUserEvent request, RuntimeExecutionContext context, Locale locale) {
+            String sessionId, ValidatedUserEvent request, RuntimeExecutionContextDTO context, Locale locale) {
         RuntimeEntryDTO entry =
                 codec.userEntry(sessionId, idGenerator.nextId(), request.message(), request.fileIds(), now());
         UserEventAcceptance acceptance = repository.acceptUserEvent(sessionId, entry, now());
         requireAccepted(acceptance);
         context.execution().beginRun(entry.getId());
-        context.execution()
-                .eventStream()
+        context.eventStream()
                 .emit(new RuntimeSseEventVO(
                         Long.toString(entry.getEntrySeq()), entry.getType(), codec.toSseData(entry, locale)));
     }
@@ -173,10 +173,10 @@ public class RuntimeEventService {
         }
     }
 
-    private void releaseUnacceptedExecution(RuntimeExecutionContext context) {
+    private void releaseUnacceptedExecution(RuntimeExecutionContextDTO context) {
         if (context != null) {
             engineRegistry.complete(context.holder(), context.execution());
-            context.execution().eventStream().complete();
+            context.eventStream().complete();
             context.execution().complete(null);
         }
     }

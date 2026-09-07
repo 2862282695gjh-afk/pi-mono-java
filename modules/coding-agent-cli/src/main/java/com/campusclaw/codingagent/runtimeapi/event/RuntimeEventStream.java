@@ -9,6 +9,7 @@ import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.Iterator;
 import java.util.concurrent.Executor;
+import java.util.function.Supplier;
 import java.util.function.ToLongFunction;
 
 import com.campusclaw.codingagent.runtimeapi.vo.RuntimeSseEventVO;
@@ -19,7 +20,7 @@ import com.campusclaw.codingagent.runtimeapi.vo.RuntimeSseEventVO;
  * @version [br_eCampusCore 26.0.0, 2026/08/18]
  * @since [br_eCampusCore 26.0.0]
  */
-public class RuntimeEventStream {
+public class RuntimeEventStream implements RuntimeEventOutput {
     private final Deque<BufferedEvent> events = new ArrayDeque<>();
 
     private final int maxEvents;
@@ -44,6 +45,16 @@ public class RuntimeEventStream {
         this.maxBytes = maxBytes;
         this.heartbeatMillis = heartbeatInterval.toMillis();
         this.eventSizer = eventSizer;
+    }
+
+    @Override
+    public void emit(Supplier<RuntimeSseEventVO> event) {
+        emit(event.get());
+    }
+
+    @Override
+    public void emitBestEffort(Supplier<RuntimeSseEventVO> event) {
+        emitBestEffort(event.get());
     }
 
     public synchronized boolean emit(RuntimeSseEventVO event) {
@@ -81,6 +92,7 @@ public class RuntimeEventStream {
         return true;
     }
 
+    @Override
     public synchronized void complete() {
         completed = true;
         notifyAll();

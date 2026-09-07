@@ -12,6 +12,7 @@ import com.huawei.hicampus.claw.ai.types.Model;
 import com.huawei.hicampus.claw.ai.types.UserMessage;
 import com.huawei.hicampus.claw.codingagent.common.client.mate.MateCredentials;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.agent.AgentDirectorySnapshotDTO;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeExecutionContextDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.runtime.RuntimeActiveExecution;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.runtime.RuntimeSessionEngineRegistry;
@@ -50,7 +51,7 @@ public class RuntimeExecutionContextFactory {
         this.clock = clock;
     }
 
-    public RuntimeExecutionContext create(
+    public RuntimeExecutionContextDTO create(
             RuntimeSessionDTO session,
             AgentDirectorySnapshotDTO snapshot,
             Model model,
@@ -59,9 +60,10 @@ public class RuntimeExecutionContextFactory {
             MateCredentials credentials) {
         List<Message> history = queryService.restoreHistory(session.getId(), model);
         UserMessage userMessage = codec.toUserMessage(message, fileIds, clock.millis());
-        RuntimeActiveExecution execution = new RuntimeActiveExecution(streamFactory.create());
+        RuntimeEventStream stream = streamFactory.create();
+        RuntimeActiveExecution execution = new RuntimeActiveExecution(stream);
         RuntimeSessionHolder holder = engineRegistry.register(
                 session.getId(), snapshot, model, session.isThinking(), history, execution, credentials);
-        return new RuntimeExecutionContext(holder, execution, userMessage);
+        return new RuntimeExecutionContextDTO(holder, execution, userMessage, stream);
     }
 }
