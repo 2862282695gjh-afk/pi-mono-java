@@ -1,6 +1,6 @@
 # 共享命令清单 HTTP 实现
 
-> 版本：1.0.1 · 日期：2026-09-07 · 状态：Implemented
+> 版本：1.1.0 · 日期：2026-09-08 · 状态：Implemented
 
 ## 1. 范围与结论
 
@@ -101,16 +101,69 @@ AGENT_NOT_AVAILABLE 既有中英文消息与冻结表一致，继续保留，例
 | 公司镜像 | 四组 Java 源码与测试、两组消息资源同步；布局测试及包名替换后的内容一致性检查通过。默认同步的公司编译因 NativeParent 无法解析而失败，显式 `--no-verify` 仅完成同步，不宣称公司编译通过。 |
 | 规模 | 模块侧新增 503 行，镜像后 1006 行；整个 PR 以 `scripts/check-commit-additions.sh origin/main HEAD` 为准，文档不计入。 |
 
-本片没有运行新增 GET 的真实 JAR/openGauss 跨进程测试；MVC 验证不等同于数据库部署验证，
+上述 #245 开发阶段没有运行新增 GET 的真实 JAR/openGauss 跨进程测试；MVC 验证不等同于数据库部署验证，
 也不证明尚未发布的 POST Command/Skill 执行。真实后端测试辅助代码已随 #244 合入上述主线，
 后续组合验收复用它，不把已有服务测试算作新增 GET 已验收。
 
 文档需执行 PlantUML 生成及重生成一致性、ASCII、SVG XML、Markdown 链接与锚点、无 Mermaid、
 ADR 桌面/窄屏渲染和 `git diff --check`。最终执行结果记录在 PR。
 
+### 5.1 实际服务的命令清单回归测试
+
+后续测试切片以合并主线 `7007d4a1af86e84a600f5ae7c67edddc3de66ab9` 为最终基线。
+该基线已有共享 GET、实际服务启动辅助代码及旧原型清理；本次不修改生产代码、数据库结构或公开契约。
+新增测试实现提交为 `94567779ff1341c293f89028847228e626b222de`，不归为上述主线已有内容。
+新增测试路径为
+`modules/coding-agent-cli/src/test/java/com/campusclaw/codingagent/runtimeapi/web/RuntimeCommandCatalogOpenGaussIT.java`。
+这是 Java 自动化验收补充，不是 pi 的既有行为，也不修改独立设计仓。
+
+复用 [ADR-0068](../../decisions/0068-reuse-runtime-http-process-fixture.html) 的测试资源管理方式和
+[ADR-0069](../../decisions/0069-publish-command-catalog-http.html) 的已确认 GET 决策，不新增产品设计决定：
+
+- `testActualCatalogDuringIdleRunningAndFailures` 分别使用 zh-CN/en-US 启动真实 JAR。
+  先检查完整闲置清单，再提交普通 Events 并等待真实模型 HTTP 请求到达，验证 running 过滤；
+  临时移出当前测试目录的 agent.json，分别验证 idle/running 的 503；finally 恢复文件和放行模型响应。
+  还验证真实 400/404、精确错误正文、语言响应头和仅 503 附带的 Retry-After。
+- `testCompleteEmptyBindingsStillReturnSevenBuiltins` 将测试 Skill 移出完整绑定目录，验证空绑定仍返回七个 Builtin，
+  而不是把完整空快照误判为缓存缺失。
+- `readOnlyCatalog` 比较请求前后的 GET Session（含 ETag）及 GET Events；模拟 Mate 服务的
+  `RuntimeHttpProcessFixture.ModelStub.requestCount` 统计包括非 Chat 路径在内的所有 HTTP 请求，
+  验证清单读取未引起上游访问。辅助代码单测同时验证 Chat 和非 Chat 请求都计数。
+- 成功响应断言精确字段集合、固定顺序、输入提示及字段省略规则；清单不暴露 Skill 正文或路径。
+  真实普通消息仍生成两条消息历史并正常完成 SSE。每个测试断言服务进程退出、模拟服务 executor 终止。
+
+测试只使用新建 Session ID、JUnit 临时目录和外部提供的专用测试数据库，不运行安装 DDL 或全表清理。
+缺少 JAR/数据库参数时沿用辅助代码的显式跳过，不能据此报告跨进程验收成功。
+原 `RuntimeHttpProcessOpenGaussIT` 的 Events/重启场景保留并回归，不复制到新类。
+
+运行当前 JAR 及定向回归：
+
+```bash
+./mvnw -q -pl :campusclaw-coding-agent -am package -DskipTests
+./mvnw -q -pl :campusclaw-coding-agent -am test \
+  -Dtest=RuntimeCommandCatalogOpenGaussIT,RuntimeHttpProcessFixtureTest,RuntimeHttpProcessOpenGaussIT,RuntimeCommandCatalogRoutesTest \
+  -Dsurefire.failIfNoSpecifiedTests=false \
+  -Druntime.it.jar=/absolute/path/to/campusclaw-agent.jar \
+  -Dgaussdb.it.url=jdbc:postgresql://127.0.0.1:45433/catalog_it \
+  -Dgaussdb.it.username=catalog_it -Dgaussdb.it.password='<test-only-password>'
+```
+
+上述实际 GET 验收不证明共享 POST、Skill 执行或其正文公开策略已经完成。
+最终提交、执行次数、JAR 和自有数据库资源清理结果记录在本次 PR，不复用 #245 审查阶段临时测试报告充当新提交证据。
+
+本次代码验证：最新主线上的 `clean spotless:apply checkstyle:check verify` 通过 393 类、1864 项普通测试，
+0 失败/错误/跳过。随后使用该次新打包 JAR 及单独创建的 openGauss 7.0.0-RC3 数据库执行上面四类定向回归：
+新 IT 3 项（15 次命令清单 GET）、辅助代码单元 5 项、原进程 IT 2 项、MVC 19 项，共 29 项，
+0 失败/错误/跳过。两个语言场景均覆盖 idle/running 缺缓存。
+测试通过后专用容器及其数据库已删除，核查无该容器或该 JAR 的残留进程；JUnit 临时目录沿用自动清理机制。
+测试质量脚本为 0 error / 0 warning；AST 无方法长度违规，既有两个 DTO record 的布局人工核对。
+模块侧新增 283 行，镜像后 566 行；镜像同步和布局检查通过，公司 NativeParent 仍不可解析，
+显式 `--no-verify` 只证明源码同步，不证明公司制品编译。
+
 ## 6. 版本历史
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 1.1.0 | 2026-09-08 | 增加实际服务 GET 回归测试说明，覆盖状态过滤、双语错误、空绑定、无副作用和资源清理；生产契约不变。 |
 | 1.0.1 | 2026-09-07 | 按 F245-C1 对齐明确冻结的 Session 标识文案，补双语响应断言与证据归属；按 F245-S1 增加设计决策至 ADR 的正向链接。 |
 | 1.0.0 | 2026-09-07 | 独立发布共享清单 GET，记录精简响应、操作级 503 与验证边界。 |

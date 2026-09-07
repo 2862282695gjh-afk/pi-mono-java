@@ -13,7 +13,7 @@
 </head>
 <body><main>
   <h1>ADR-0069：独立发布共享命令清单 GET</h1>
-  <p>Status：Accepted · Date：2026-09-07 · Version：1.0.1</p>
+  <p>Status：Accepted · Date：2026-09-07 · Version：1.1.0</p>
   <h2>背景</h2>
   <p>主线 <code>7d771ca802b781361e0e62e9014bafb6b0ed5e7a</code> 已具备完整 Catalog 应用能力，
   尚未发布命令清单 HTTP。设计仓只读基线 <code>88f4df16bc24bbfcd28e1ec374feb2de0db8be3b</code>
@@ -53,6 +53,17 @@
   新增代码模块侧 503 行、镜像后 1006 行；整个 PR 继续执行新增行数门禁。</p>
   <p>公司镜像同步完成，但 NativeParent 不可用，不能宣称其独立编译通过。本片没有新增 GET 的真实 JAR/openGauss 测试，
   不把 MVC 测试当作跨进程验证。图生成、链接及桌面/窄屏渲染的最终证据见 PR。</p>
+  <p>2026-09-08 后续测试切片：基于已合入主线 <code>7007d4a1af86e84a600f5ae7c67edddc3de66ab9</code>，
+  新增 <code>runtimeapi/web/RuntimeCommandCatalogOpenGaussIT.java</code>（位于 coding-agent-cli 的测试源码中），
+  复用既有服务启动辅助代码验证实际 JAR/openGauss 上的闲置与运行中清单、双语 400/404/503、完整空绑定和只读行为。
+  新增测试实现提交为 <code>94567779ff1341c293f89028847228e626b222de</code>，不归为主线原有内容。
+  辅助代码新增所有上游 HTTP 请求计数，并验证进程及 executor 关闭。原 Events/重启测试保留；
+  不增加生产 API、数据库脚本或共享 POST。此项补充验收，不改变本 ADR 决策。
+  新提交的实际执行与资源清理证据见<a href="../designs/command-catalog-http/README.md">实现说明 §5.1</a>及对应 PR。</p>
+  <p>该后续代码完成最新主线上的 clean verify：393 类、1864 项普通测试全部通过。
+  新打包 JAR 对专用 openGauss 执行 29 项定向回归全部通过，其中新 IT 为 3 项、15 次命令清单 GET；
+  无失败、错误或跳过，已清理自有数据库容器并核查无服务进程残留。
+  新增代码模块侧 283 行、镜像后 566 行；公司 NativeParent 编译缺口仍单独披露，不扩大 GET 验收结论。</p>
   <h2>相关材料</h2>
   <ul>
     <li><a href="../designs/command-catalog-http/README.md">实现说明与逐项证据</a></li>
@@ -60,6 +71,7 @@
     <li><a href="0064-complete-command-catalog.html">ADR-0064：完整命令清单</a></li>
   </ul>
   <h2>版本历史</h2>
+  <p>1.1.0 · 2026-09-08：补充实际服务命令清单回归测试的范围及证据入口，保留原 #245 的历史验证边界，决策不变。</p>
   <p>1.0.1 · 2026-09-07：按 F245-C1 明确冻结文案并校准测试证据，README 按 F245-S1 补充本 ADR 正向链接；分层与路由决策不变。</p>
   <p>1.0.0 · 2026-09-07：记录独立 GET 发布、操作级错误投影及验证边界。</p>
 </main></body>
