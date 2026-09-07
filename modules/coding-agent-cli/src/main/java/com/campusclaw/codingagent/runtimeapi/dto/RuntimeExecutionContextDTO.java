@@ -16,7 +16,7 @@ import com.campusclaw.codingagent.runtimeapi.runtime.RuntimeSessionHolder;
  * @param execution 活动执行状态
  * @param userMessage 交给 Agent 的初始用户消息
  * @param eventStream 本次 POST Events 的请求流
- * @version [br_eCampusCore 26.0.0, 2026/08/19]
+ * @version [br_eCampusCore 26.0.0, 2026/09/07]
  * @since [br_eCampusCore 26.0.0]
  */
 public record RuntimeExecutionContextDTO(

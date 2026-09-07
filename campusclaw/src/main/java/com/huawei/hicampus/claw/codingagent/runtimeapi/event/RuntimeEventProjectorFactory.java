@@ -60,6 +60,14 @@ public class RuntimeEventProjectorFactory {
                 locale);
     }
 
+    /**
+     * 创建没有初始用户消息的压缩投影器，不负责命令准入、容量分配或压缩启动。
+     *
+     * @param holder 本次活动 Session
+     * @param execution 已选择输出策略且在持久化前分配内部 Usage 运行身份的执行
+     * @param locale 公共事件输出语言
+     * @return 本次执行独享的投影器
+     */
     public RuntimeEventProjector createForCompaction(
             RuntimeSessionHolder holder, RuntimeActiveExecution execution, Locale locale) {
         return create(holder, execution, null, locale);

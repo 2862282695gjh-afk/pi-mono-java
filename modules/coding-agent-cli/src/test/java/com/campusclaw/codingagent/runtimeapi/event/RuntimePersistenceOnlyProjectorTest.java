@@ -239,6 +239,7 @@ class RuntimePersistenceOnlyProjectorTest {
         }
         when(repository.listCurrentBranchEntries("session", 0L, 500)).thenReturn(List.copyOf(history.subList(0, 500)));
         when(repository.listCurrentBranchEntries("session", 500L, 500)).thenReturn(List.of(history.getLast()));
+        sequence.set(502);
 
         complete(CompactionReason.MANUAL, 500, false);
 

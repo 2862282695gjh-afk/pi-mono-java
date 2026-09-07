@@ -129,6 +129,13 @@ public class RuntimeEventProjector {
         return terminalErrorCode;
     }
 
+    /**
+     * 返回最近一次成功追加的压缩 Entry 序号，不使用后续 Usage 或排队消息序号。
+     *
+     * <p>后续压缩失败不会清除旧值；调用方须在本次压缩完成后、队列续跑前固定结果。
+     *
+     * @return 当前投影器尚未成功追加压缩 Entry 时为 null，否则为最近成功的序号
+     */
     public synchronized Long lastCompactionEntrySeq() {
         return lastCompactionEntrySeq;
     }
