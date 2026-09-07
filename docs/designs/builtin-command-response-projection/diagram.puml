@@ -1,0 +1,63 @@
+@startuml command_response_projection
+' Source baseline: pi-mono-java ca2600da15dfaf8dda1f16b9d2f3d130b5d9ace5.
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/
+' dto/command/SessionCommandResultDTO.java; session/RuntimeSessionResponseAssembler.java:getView.
+' command/catalog/ResolvedCommandCatalog.java:list; service/command/CompositeCommandRegistry.java:resolve.
+' Observed behavior: one resource DTO supplies both Session response and ETag.
+' Design reason: reuse business projection; keep internal receipts and discovery state private.
+' Java divergence: application projection is not a command execution dispatcher.
+skinparam classAttributeIconSize 0
+hide empty members
+left to right direction
+package "Later integration (target-only)" {
+  class CommandApplication <<request orchestration>>
+  note bottom of CommandApplication
+    Access check and complete cache required.
+    GET cache absence: 503, not partial results.
+    No HTTP route is added in this slice.
+  end note
+}
+package "Application projection (this slice)" {
+  class CommandResponseAssembler <<singleton>> {
+    session(SessionCommandResultDTO)
+    models(ModelCommandResultDTO)
+    help(HelpCommandResultDTO)
+    skills(SkillsCommandResultDTO)
+  }
+  class CommandDiscoveryResponseAssembler <<singleton>> {
+    assemble(ResolvedCommandCatalog)
+  }
+}
+package "Existing authoritative data" {
+  class SessionCommandResultDTO <<request DTO>>
+  class ResolvedCommandCatalog <<request snapshot>>
+  class RuntimeSessionResponseAssembler <<singleton>>
+}
+package "Read-only business responses" {
+  class GetSessionResponseVO <<existing VO>>
+  class AvailableModelsResponseVO <<existing VO>>
+  class AgentHelpResponseVO <<new VO>>
+  class BoundSkillsResponseVO <<new VO>>
+  class CompactionResponseVO <<new VO>>
+  class CommandListResponseVO <<new VO>>
+  class DescriptorResponseVO <<nested VO>>
+  class InputResponseVO <<nested VO>>
+}
+CommandApplication ..> CommandResponseAssembler : later result type dispatch
+CommandApplication ..> CommandDiscoveryResponseAssembler : one complete catalog
+CommandResponseAssembler ..> SessionCommandResultDTO : input only
+CommandResponseAssembler --> "1" RuntimeSessionResponseAssembler : constructor dependency
+RuntimeSessionResponseAssembler ..> GetSessionResponseVO : resource plus ETag
+CommandResponseAssembler ..> AvailableModelsResponseVO
+CommandResponseAssembler ..> AgentHelpResponseVO
+CommandResponseAssembler ..> BoundSkillsResponseVO
+CommandDiscoveryResponseAssembler ..> ResolvedCommandCatalog : input only
+CommandDiscoveryResponseAssembler ..> CommandListResponseVO : whitelist and order
+CommandListResponseVO "1" *-- "0..*" DescriptorResponseVO
+DescriptorResponseVO "1" *-- "0..1" InputResponseVO
+note bottom of CompactionResponseVO
+  compacted only.
+  Runtime DTO wiring follows after
+  the independent Compact slice merges.
+end note
+@enduml

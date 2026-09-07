@@ -38,6 +38,8 @@ import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeEntryCodec;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeEntryIdGenerator;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.model.RuntimeModelManager;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.persistence.RuntimeSessionRepository;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.session.RuntimeSessionResponseAssembler;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.session.SessionEtagFactory;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
@@ -103,11 +105,15 @@ class BuiltinCommandCoreTest {
                 .withBean(RuntimeModelManager.class, () -> mock(RuntimeModelManager.class))
                 .withBean(RuntimeEntryCodec.class, () -> mock(RuntimeEntryCodec.class))
                 .withBean(RuntimeEntryIdGenerator.class, () -> mock(RuntimeEntryIdGenerator.class))
+                .withBean(SessionEtagFactory.class)
+                .withBean(RuntimeSessionResponseAssembler.class)
                 .run(context -> {
                     assertThat(context)
                             .hasSingleBean(BuiltinCommandSource.class)
                             .hasSingleBean(SkillCommandSource.class)
-                            .hasSingleBean(CompositeCommandRegistry.class);
+                            .hasSingleBean(CompositeCommandRegistry.class)
+                            .hasSingleBean(CommandResponseAssembler.class)
+                            .hasSingleBean(CommandDiscoveryResponseAssembler.class);
                     assertThat(context.getBean(CompositeCommandRegistry.class)
                                     .resolve(session)
                                     .list())
