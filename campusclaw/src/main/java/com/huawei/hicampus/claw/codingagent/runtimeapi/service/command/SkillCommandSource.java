@@ -16,6 +16,8 @@ import java.util.Optional;
 import com.huawei.hicampus.claw.codingagent.runtime.AgentRuntimeManager;
 import com.huawei.hicampus.claw.codingagent.runtime.MateServiceClient.SkillInfo;
 import com.huawei.hicampus.claw.codingagent.runtime.PreparedAgentRuntime;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.command.definition.CommandDefinition;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.command.definition.DisplayCommandDefinition;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.command.source.CommandDefinitionSource;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.command.type.CommandInputMode;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.command.type.CommandKind;
@@ -73,20 +75,33 @@ public class SkillCommandSource implements CommandDefinitionSource {
             LOGGER.warn("Ignoring invalid Runtime skill command: name={}", skillName);
             return Optional.empty();
         }
+        return Optional.of(descriptor(session, prepared, skill));
+    }
+
+    @Override
+    public List<? extends CommandDefinition> definitions(RuntimeSessionDTO session, PreparedAgentRuntime prepared) {
+        // 完整快照已在 Manager 的 Agent 锁内验证文件身份，不能在发布新版本后再观察当前目录。
+        return prepared.skills().stream()
+                .map(skill -> descriptor(session, prepared, skill))
+                .map(DisplayCommandDefinition::new)
+                .toList();
+    }
+
+    private ResolvedCommandDTO descriptor(RuntimeSessionDTO session, PreparedAgentRuntime prepared, SkillInfo skill) {
         boolean idle = RuntimeSessionState.IDLE.matches(session.getState());
         String busyCode = RuntimeErrorCode.SESSION_BUSY.name();
         ResolvedCommandDTO.InputDTO input = new ResolvedCommandDTO.InputDTO(
                 CommandInputMode.OPTIONAL.value(), idle, idle ? null : busyCode, true, "request", List.of());
         SkillCommandSnapshotDTO snapshot = new SkillCommandSnapshotDTO(
                 prepared.agentId(), agentVersion(prepared), skill.id(), skill.version(), skill.content());
-        return Optional.of(new ResolvedCommandDTO(
-                ClawConstants.Skill.COMMAND_PREFIX + skillName,
+        return new ResolvedCommandDTO(
+                ClawConstants.Skill.COMMAND_PREFIX + skill.name(),
                 CommandKind.SKILL,
                 skill.description(),
                 idle,
                 idle ? null : busyCode,
                 input,
-                snapshot));
+                snapshot);
     }
 
     private String agentVersion(PreparedAgentRuntime prepared) {
