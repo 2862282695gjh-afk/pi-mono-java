@@ -12,7 +12,7 @@ Events 和重启恢复测试共用这些代码，各自保留业务断言。
 
 | 源码路径与符号 | 基线观察行为 |
 |---|---|
-| `modules/coding-agent-cli/src/test/java/com/campusclaw/codingagent/runtimeapi/web/RuntimeHttpProcessOpenGaussIT.java`：`prepareRuntimeFiles/startRuntime/ModelStub` | 一个 694 行测试类内私有地管理目录、JAR 进程、HTTP 和模型桩；旧测试环境只写 settings/SYSTEM，使用本地 customModels 与 `/v1/chat/completions`。 |
+| `modules/coding-agent-cli/src/test/java/com/campusclaw/codingagent/runtimeapi/web/RuntimeHttpProcessOpenGaussIT.java`：`prepareRuntimeFiles/startRuntime/ModelStub` | 一个 694 行测试类内私有地管理目录、JAR 进程、HTTP 和模拟模型服务；旧测试环境只写 settings/SYSTEM，使用本地 customModels 与 `/v1/chat/completions`。 |
 | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtime/AgentRuntimeManager.java`：`prepareCached/loadSnapshot/loadSkills` | 完整缓存要求 agent.json、settings.json、SYSTEM.md、agents 与 skills 子目录，并校验 manifest、目录和 Skill 正文身份。 |
 | `modules/coding-agent-cli/src/main/resources/application.yml`：`campusmate` | 实际部署要求共享 Mate base-url，受管目录由 `campusmate.runtime.agents-root` 配置。 |
 | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/model/MateRuntimeModelManager.java`：`resolveModel` | 从绑定模型 ID 创建 Mate Provider 模型，不消费旧测试环境的本地 customModels。 |
@@ -33,7 +33,7 @@ Events 和重启恢复测试共用这些代码，各自保留业务断言。
 ## 关键定义
 
 - `RuntimeHttpProcessFixture`：同包可复用的测试辅助代码，负责准备完整目录、启动真实后端服务、发送 HTTP 请求及关闭资源。
-- `ModelStub/ModelGate`：只在当前 Mate Chat 路径提供真实 SSE；其他路径返回 404，不能伪装 Manager 元数据。
+- `ModelStub/ModelGate`：模拟模型接口，并控制响应返回时机；只在当前 Mate Chat 路径提供真实 SSE，其他路径返回 404，不能伪装 Manager 元数据。
 - `ProcessTestConfigDTO/SessionViewDTO`：测试内部传递的连接参数与带 ETag 的 Session JSON，不是公开契约。
 - `RuntimeHttpProcessOpenGaussIT`：保留业务断言的测试类；既有 Events 场景和新增重启场景共用上述辅助代码。
 
@@ -49,7 +49,7 @@ Skill 仍属于完整绑定快照，但当前 `RuntimeAgentPromptLoader` 不将�
 这不是 Skill 执行或 Command HTTP 已经通过验收的声明。
 
 `startRuntime` 启动实际打包 JAR，隔离工作目录、Home、监听地址、数据库和 Mate 地址；不注入测试 Bean。
-模型桩只服务 Chat，完整缓存缺损导致的 Manager 请求不能误得到模型成功响应。启动探针调用现有
+模拟模型服务只支持 Chat，完整缓存缺损导致的 Manager 请求不能误得到模型成功响应。启动探针调用现有
 GET Session，直到出现预期 404 或进程退出/超时；每次启动日志按端口区分。
 
 ## 设计决策
@@ -61,14 +61,14 @@ GET Session，直到出现预期 404 或进程退出/超时；每次启动日志
 3. 删除旧全表 TRUNCATE。数据库断言都按本次创建的 Session ID 过滤，不需要清空其他测试数据。
 4. 使用者必须指向预先初始化的专用测试数据库；测试辅助代码不初始化表，也不对用户数据库运行安装 DDL。
 5. 模型响应计数用 AtomicInteger；测试辅助代码管理虚拟线程 executor。关闭先停止服务，再中断并关闭 executor，
-   已由 handler 取得的 gate 也能解除等待；每个 exchange 在 finally 关闭。
+   正在等待返回响应的请求处理线程也能退出；每个 exchange 在 finally 关闭。
 
 ## 边界情况与 DFX
 
 - 缺少连接参数或打包 JAR 时明确跳过，不能把该结果当作真实验收成功。
 - 缓存损坏在 prepareCached 返回空，单元验证无 Mate 访问；不放松生产完整性规则来配合测试。
 - 每次新建 Session 使用服务生成的 ID；同一专用数据库连续运行无需 TRUNCATE。
-- 模型 gate 等待、HTTP 连接和进程就绪使用有限超时；停止进程先正常退出，再强制终止兜底。
+- 等待模型响应、HTTP 连接和进程就绪使用有限超时；停止进程先正常退出，再强制终止兜底。
 - 本次测试期间的端口及临时文件不属于生产配置；进程日志只保留在测试临时目录。
 - 资源拥有者均采用 try-with-resources，断言失败同样清理；无生产单例或数据库结构修改。
 
@@ -80,11 +80,11 @@ GET Session，直到出现预期 404 或进程退出/超时；每次启动日志
 
 ## 测试
 
-- 5 个辅助代码单元测试：完整真实缓存与重新读取、损坏缓存拒绝、真实模型 HTTP/gate、活动 gate 关闭和非 Chat 路径拒绝。
+- 5 个辅助代码单元测试：完整真实缓存与重新读取、损坏缓存拒绝、通过真实 HTTP 请求控制响应时机、关闭正在等待的响应和非 Chat 路径拒绝。
 - 原真实 Events 场景：SSE 顺序、Steer/FollowUp、分页、Model/Thinking、ETag 幂等与 412、数据库状态、删除、Abort。
 - 新真实重启场景：第一 JVM 实际退出后，第二 JVM 读取同一 Session/ETag 和历史；再次提交普通 Events，
-  检查真正到达 Mate 桩的请求同时包含持久化用户和助手消息。
-- 未来 Commands IT 可复用包内启动、目录、Session、HTTP 和模型 gate；最终路由验收仍由对应 HTTP PR 实现。
+  检查真正到达模拟 Mate 服务的请求同时包含持久化用户和助手消息。
+- 未来 Commands IT 可复用包内启动、目录、Session、HTTP 和响应时机控制；最终路由验收仍由对应 HTTP PR 实现。
 
 ## 验证与运行
 

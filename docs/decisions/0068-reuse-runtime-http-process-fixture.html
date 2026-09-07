@@ -19,7 +19,7 @@
   <h2>Context</h2>
   <p>Java 基线 <code>b7f077d59b09362dc366241920a85b6d218d1189</code> 的
   <code>modules/coding-agent-cli/src/test/java/com/campusclaw/codingagent/runtimeapi/web/RuntimeHttpProcessOpenGaussIT.java</code>
-  把进程、协议桩、HTTP 与断言放在一个 694 行类里。旧 prepareRuntimeFiles 缺少完整受管目录，
+  把进程、模拟模型服务、HTTP 与断言放在一个 694 行类里。旧 prepareRuntimeFiles 缺少完整受管目录，
   本地 customModels 和 /v1/chat/completions 也已不是主干真实 Mate 模型入口。</p>
   <p>当前行为证据：<code>runtime/AgentRuntimeManager.java:prepareCached/loadSnapshot</code>、
   <code>runtimeapi/model/MateRuntimeModelManager.java:resolveModel</code>，相对 coding-agent-cli Java 包根；
@@ -39,8 +39,9 @@
   </ul>
   <h2>Decision 与理由</h2>
   <ul>
-    <li>共享完整 Agent/Skill 缓存、JAR 启动、HTTP 帮助方法与模型 gate；消费者保留领域断言。</li>
-    <li>使用当前 campusmate.base-url 和 Mate Chat 路径；其他路径返回 404，禁止模型桩掩盖 Manager 缓存缺陷。</li>
+    <li>共享完整 Agent/Skill 缓存、JAR 启动、HTTP 帮助方法及响应时机控制；各测试保留业务断言。</li>
+    <li>ModelStub/ModelGate 模拟模型接口，并控制响应返回时机。</li>
+    <li>使用当前 campusmate.base-url 和 Mate Chat 路径；其他路径返回 404，禁止模拟模型服务掩盖 Manager 缓存缺陷。</li>
     <li>测试显式提供专用数据库；移除无必要的全表 TRUNCATE，所有读取按本次 Session ID 隔离。</li>
     <li>修复提取触达的资源所有权：计数原子化、exchange finally 关闭、executor 中断与关闭。</li>
     <li>加入真实重启场景，验证同一 Session/ETag/历史和下一轮模型实际输入，不只是再次启动成功。</li>
@@ -53,7 +54,7 @@
     <li>未修改设计仓、未使用未合入应用代码；各实现独立开发，依赖合入后再串行集成。</li>
   </ul>
   <h2>验证</h2>
-  <p>辅助代码单元测试验证真实 prepareCached、Skill 摘要可见性、HTTP gate 和资源关闭；两个真实 IT 验证原 Events
+  <p>辅助代码单元测试验证真实 prepareCached、Skill 摘要可见性、通过真实 HTTP 请求控制响应时机和关闭正在等待的响应；两个真实 IT 验证原 Events
   场景与进程重启。公司镜像编译依赖 NativeParent，无法解析时显式保留未验证限制。</p>
   <h2>Related</h2>
   <ul>
