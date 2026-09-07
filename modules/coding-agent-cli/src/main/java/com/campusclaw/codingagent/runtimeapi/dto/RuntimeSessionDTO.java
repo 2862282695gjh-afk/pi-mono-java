@@ -28,6 +28,8 @@ public class RuntimeSessionDTO {
 
     private boolean thinking;
 
+    private RuntimeLifetimeUsageDTO lifetimeUsage = new RuntimeLifetimeUsageDTO();
+
     private long resourceVersion;
 
     private OffsetDateTime createdAt;

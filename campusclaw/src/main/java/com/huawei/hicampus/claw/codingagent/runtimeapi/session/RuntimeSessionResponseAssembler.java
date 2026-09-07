@@ -4,9 +4,12 @@
 
 package com.huawei.hicampus.claw.codingagent.runtimeapi.session;
 
+import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeLifetimeUsageDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.vo.CreateSessionResponseVO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.vo.GetSessionResponseVO;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.vo.LifetimeCostResponseVO;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.vo.LifetimeUsageResponseVO;
 
 import org.springframework.stereotype.Component;
 
@@ -32,6 +35,7 @@ public class RuntimeSessionResponseAssembler {
                 session.getModelId(),
                 session.getState(),
                 session.isThinking(),
+                lifetimeUsage(session.getLifetimeUsage()),
                 session.getCreatedAt());
         return new RuntimeSessionView<>(resource, etag(session));
     }
@@ -44,6 +48,7 @@ public class RuntimeSessionResponseAssembler {
                 session.getModelId(),
                 session.getState(),
                 session.isThinking(),
+                lifetimeUsage(session.getLifetimeUsage()),
                 session.getCreatedAt(),
                 session.getUpdatedAt());
         return new RuntimeSessionView<>(resource, etag(session));
@@ -51,5 +56,21 @@ public class RuntimeSessionResponseAssembler {
 
     private String etag(RuntimeSessionDTO session) {
         return etagFactory.create(session.getId(), session.getResourceVersion());
+    }
+
+    private LifetimeUsageResponseVO lifetimeUsage(RuntimeLifetimeUsageDTO usage) {
+        var cost = new LifetimeCostResponseVO(
+                usage.getCostInput(),
+                usage.getCostOutput(),
+                usage.getCostCacheRead(),
+                usage.getCostCacheWrite(),
+                usage.getCostTotal());
+        return new LifetimeUsageResponseVO(
+                usage.getInput(),
+                usage.getOutput(),
+                usage.getCacheRead(),
+                usage.getCacheWrite(),
+                usage.getTotalTokens(),
+                cost);
     }
 }

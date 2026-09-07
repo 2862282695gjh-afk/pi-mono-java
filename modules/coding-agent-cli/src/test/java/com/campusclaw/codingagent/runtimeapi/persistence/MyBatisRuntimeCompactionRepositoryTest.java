@@ -18,9 +18,11 @@ import java.util.List;
 import java.util.stream.LongStream;
 
 import com.campusclaw.codingagent.runtimeapi.dto.RuntimeEntryDTO;
+import com.campusclaw.codingagent.runtimeapi.dto.RuntimeLifetimeUsageDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
 import com.campusclaw.codingagent.runtimeapi.mapper.RuntimeSessionMapper;
 
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -38,6 +40,11 @@ class MyBatisRuntimeCompactionRepositoryTest {
 
     private final OffsetDateTime now = OffsetDateTime.parse("2026-09-07T00:00:00Z");
 
+    @BeforeEach
+    void supplyUsageSnapshot() {
+        when(mapper.findLifetimeUsage("session")).thenReturn(new RuntimeLifetimeUsageDTO());
+    }
+
     @ParameterizedTest
     @ValueSource(strings = {"missing", "running"})
     void shouldAvoidHistoryReadsForMissingOrBusySession(String state) {
@@ -50,6 +57,9 @@ class MyBatisRuntimeCompactionRepositoryTest {
         assertThat(observed.isEmpty()).isEqualTo(state.equals("missing"));
         observed.ifPresent(snapshot -> assertThat(snapshot.entries()).isEmpty());
         verify(mapper).lockSessionForUpdate("session");
+        if (state.equals("running")) {
+            verify(mapper).findLifetimeUsage("session");
+        }
         verifyNoMoreInteractions(mapper);
     }
 
@@ -74,6 +84,7 @@ class MyBatisRuntimeCompactionRepositoryTest {
         verify(mapper).lockSessionForUpdate("session");
         verify(mapper).listCurrentBranchEntries("session", 0L, 500);
         verify(mapper).listCurrentBranchEntries("session", 500L, 500);
+        verify(mapper).findLifetimeUsage("session");
         verifyNoMoreInteractions(mapper);
     }
 
@@ -96,6 +107,9 @@ class MyBatisRuntimeCompactionRepositoryTest {
                                 ? CompactionAcceptanceStatus.NOT_FOUND
                                 : CompactionAcceptanceStatus.BUSY);
         verify(mapper).lockSessionForUpdate("session");
+        if (!change.equals("missing")) {
+            verify(mapper).findLifetimeUsage("session");
+        }
         verifyNoMoreInteractions(mapper);
     }
 
@@ -116,6 +130,7 @@ class MyBatisRuntimeCompactionRepositoryTest {
         }
         verify(mapper).lockSessionForUpdate("session");
         verify(mapper).markSessionRunning("session", "leaf", now);
+        verify(mapper).findLifetimeUsage("session");
         verify(mapper, never()).insertEntry(any());
         verify(mapper, never()).insertRecord(any());
         verifyNoMoreInteractions(mapper);

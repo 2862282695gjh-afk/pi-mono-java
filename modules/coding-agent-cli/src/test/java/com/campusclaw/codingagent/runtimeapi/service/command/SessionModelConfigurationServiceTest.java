@@ -32,6 +32,7 @@ import com.campusclaw.codingagent.runtimeapi.agent.AgentDirectorySnapshotDTO;
 import com.campusclaw.codingagent.runtimeapi.command.catalog.ResolvedCommandCatalog;
 import com.campusclaw.codingagent.runtimeapi.command.execution.CommandExecutionContext;
 import com.campusclaw.codingagent.runtimeapi.dto.RuntimeEntryDTO;
+import com.campusclaw.codingagent.runtimeapi.dto.RuntimeLifetimeUsageDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.command.CommandSessionSnapshotDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.command.ModelCommandResultDTO;
@@ -90,6 +91,7 @@ class SessionModelConfigurationServiceTest {
 
     @BeforeEach
     void setUp() {
+        when(mapper.findLifetimeUsage("session")).thenReturn(new RuntimeLifetimeUsageDTO());
         when(mapper.findSession("session")).thenReturn(session("old", "idle", false, 1L));
         when(mapper.lockSessionForUpdate("session")).thenReturn(session("latest", "idle", true, 4L));
         when(resolver.resolve("agent")).thenReturn(snapshot);

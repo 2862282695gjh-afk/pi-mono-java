@@ -116,7 +116,8 @@ createForCompaction 仅表示没有初始 UserMessage；调用者另选 persiste
 
 设计 `88f4df16bc24bbfcd28e1ec374feb2de0db8be3b` Builtin 2.9.0 §8/8.1 已取代旧“七类命令 DTO→VO”方向：
 所有成功 result 禁止 command、changed、sourceEventSeq 或替代回执；内部领域序号不变成公开契约。
-完整 Session 结果通道见 [R06 实现说明](builtin-session-snapshot.md)。这是业务资源复用的架构调整与公开字段的产品约束，
+完整 Session 结果通道见 [R06 实现说明](builtin-session-snapshot.md)，完整 Usage 复用基础见
+[R07 实现设计](session-lifetime-usage.md)。这是业务资源复用的架构调整与公开字段的产品约束，
 不是本历史输出切片已发布 HTTP 的证据；原图不重写。
 
 2026-09-07 用户最新授权已 supersede“仅一个待合并 PR”：独立 worktree 从最新 origin/main 并行开发，

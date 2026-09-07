@@ -17,6 +17,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.util.List;
 
@@ -29,6 +30,8 @@ import com.huawei.hicampus.claw.codingagent.runtimeapi.session.RuntimeSessionVie
 import com.huawei.hicampus.claw.codingagent.runtimeapi.vo.AvailableModelsResponseVO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.vo.ChangeModelRequestVO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.vo.GetSessionResponseVO;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.vo.LifetimeCostResponseVO;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.vo.LifetimeUsageResponseVO;
 import com.fasterxml.jackson.databind.json.JsonMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 
@@ -153,6 +156,14 @@ class RuntimeSessionConfigurationRoutesTest {
                 modelId,
                 "idle",
                 thinking,
+                new LifetimeUsageResponseVO(
+                        0L,
+                        0L,
+                        0L,
+                        0L,
+                        0L,
+                        new LifetimeCostResponseVO(
+                                BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO)),
                 created,
                 updated);
         return new RuntimeSessionView<>(response, etag);

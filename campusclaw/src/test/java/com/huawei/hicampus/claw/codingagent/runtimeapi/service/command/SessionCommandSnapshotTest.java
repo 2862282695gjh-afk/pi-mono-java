@@ -15,6 +15,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import java.math.BigDecimal;
 import java.nio.file.Path;
 import java.time.Clock;
 import java.time.OffsetDateTime;
@@ -134,6 +135,17 @@ class SessionCommandSnapshotTest {
         assertThat(view.resource().getCreatedAt()).isEqualTo(OffsetDateTime.parse("2026-09-01T00:00:00Z"));
         assertThat(view.resource().getUpdatedAt())
                 .isEqualTo(OffsetDateTime.parse("2026-09-07T00:00:00Z").plusSeconds(version));
+        assertThat(view.resource().getLifetimeUsage())
+                .extracting("input", "output", "cacheRead", "cacheWrite", "totalTokens")
+                .containsExactly(version, version + 1, version + 2, version + 3, version + 4);
+        assertThat(view.resource().getLifetimeUsage().getCost())
+                .extracting("input", "output", "cacheRead", "cacheWrite", "total")
+                .containsExactly(
+                        BigDecimal.valueOf(version),
+                        BigDecimal.valueOf(version + 1),
+                        BigDecimal.valueOf(version + 2),
+                        BigDecimal.valueOf(version + 3),
+                        BigDecimal.valueOf(version + 4));
     }
 
     private void configureModel() {
@@ -163,6 +175,17 @@ class SessionCommandSnapshotTest {
         value.setParentSessionId("parent-" + label);
         value.setMetadata("{\"from\":\"" + label + "\"}");
         value.setActiveLeafId("leaf-" + label);
+        var usage = value.getLifetimeUsage();
+        usage.setInput(version);
+        usage.setOutput(version + 1);
+        usage.setCacheRead(version + 2);
+        usage.setCacheWrite(version + 3);
+        usage.setTotalTokens(version + 4);
+        usage.setCostInput(BigDecimal.valueOf(version));
+        usage.setCostOutput(BigDecimal.valueOf(version + 1));
+        usage.setCostCacheRead(BigDecimal.valueOf(version + 2));
+        usage.setCostCacheWrite(BigDecimal.valueOf(version + 3));
+        usage.setCostTotal(BigDecimal.valueOf(version + 4));
         return value;
     }
 }

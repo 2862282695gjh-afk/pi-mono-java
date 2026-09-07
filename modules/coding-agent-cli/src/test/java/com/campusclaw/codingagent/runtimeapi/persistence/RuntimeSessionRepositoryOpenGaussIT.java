@@ -22,7 +22,9 @@ import java.util.concurrent.TimeoutException;
 
 import javax.sql.DataSource;
 
+import com.campusclaw.ai.types.Cost;
 import com.campusclaw.ai.types.Model;
+import com.campusclaw.ai.types.Usage;
 import com.campusclaw.codingagent.runtimeapi.RuntimeMessageSourceConfiguration;
 import com.campusclaw.codingagent.runtimeapi.agent.AgentDirectorySnapshotDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.RuntimeEntryDTO;
@@ -32,6 +34,7 @@ import com.campusclaw.codingagent.runtimeapi.dto.command.SessionCommandResultDTO
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
 import com.campusclaw.codingagent.runtimeapi.event.RuntimeEntryCodec;
+import com.campusclaw.codingagent.runtimeapi.event.RuntimeUsageCause;
 import com.campusclaw.codingagent.runtimeapi.mapper.RuntimeSessionMapper;
 import com.campusclaw.codingagent.runtimeapi.model.RuntimeModelManager;
 import com.campusclaw.codingagent.runtimeapi.persistence.UserEventAcceptance.Status;
@@ -111,7 +114,10 @@ class RuntimeSessionRepositoryOpenGaussIT {
 
         repository.create(session);
 
-        assertThat(repository.find(session.getId())).contains(session);
+        assertThat(repository.find(session.getId()).orElseThrow())
+                .usingRecursiveComparison()
+                .withComparatorForType(java.math.BigDecimal::compareTo, java.math.BigDecimal.class)
+                .isEqualTo(session);
         assertThat(countSession(session.getId())).isOne();
         assertThat(count("t_session_sequences", session.getId())).isOne();
         assertThat(count("t_session_stats", session.getId())).isOne();
@@ -209,7 +215,10 @@ class RuntimeSessionRepositoryOpenGaussIT {
         repository.create(session);
         assertThatThrownBy(() -> repository.updateName(session.getId(), "中".repeat(27), session.getUpdatedAt()))
                 .isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
-        assertThat(repository.find(session.getId())).contains(session);
+        assertThat(repository.find(session.getId()).orElseThrow())
+                .usingRecursiveComparison()
+                .withComparatorForType(java.math.BigDecimal::compareTo, java.math.BigDecimal.class)
+                .isEqualTo(session);
         assertThat(repository.beginDeletion(session.getId(), session.getUpdatedAt()))
                 .isEqualTo(SessionDeletionStatus.DELETED);
         assertThat(repository.updateName(session.getId(), "deleted", session.getUpdatedAt()))
@@ -231,19 +240,45 @@ class RuntimeSessionRepositoryOpenGaussIT {
     void shouldReturnExactlyStoredTimestampPrecisionForConfigurationChanges(String command) {
         var session = newSession("session_timestamp");
         repository.create(session);
+        appendUsageForPrecisionTest(session);
+        var storedUsage = repository.find(session.getId()).orElseThrow().getLifetimeUsage();
+        assertThat(storedUsage.getInput()).isEqualTo(11L);
+        assertThat(storedUsage.getCostTotal()).isEqualByComparingTo("0.5");
         var updatedAt = session.getUpdatedAt().plusSeconds(1).withNano(123_999_999);
         var changed = executeConfigurationCommand(
                 command, session.getId(), Clock.fixed(updatedAt.toInstant(), ZoneOffset.UTC));
         assertThat(changed.changed()).isTrue();
         assertThat(changed.session()).isEqualTo(repository.find(session.getId()).orElseThrow());
         assertThat(changed.session().getUpdatedAt()).isEqualTo(updatedAt.truncatedTo(ChronoUnit.MILLIS));
-        assertThat(changed.session().getResourceVersion()).isEqualTo(2L);
+        assertThat(changed.session().getResourceVersion()).isEqualTo(4L);
+        assertThat(changed.session().getLifetimeUsage()).isEqualTo(storedUsage);
         var unchanged = executeConfigurationCommand(
                 command, session.getId(), Clock.fixed(updatedAt.plusDays(1).toInstant(), ZoneOffset.UTC));
         assertThat(unchanged.changed()).isFalse();
         assertThat(unchanged.sourceEventSeq()).isNull();
         assertThat(unchanged.session()).isEqualTo(changed.session());
         assertThat(repository.find(session.getId())).contains(changed.session());
+    }
+
+    private void appendUsageForPrecisionTest(RuntimeSessionDTO session) {
+        var now = session.getUpdatedAt();
+        var codec = new RuntimeEntryCodec(new ObjectMapper(), new RuntimeMessageSourceConfiguration().messageSource());
+        var usage = new Usage(11, 7, 3, 2, 41, new Cost(0.1, 0.2, 0.03, 0.04, 0.5));
+        repository.acceptUserEvent(
+                session.getId(), newEntry(session.getId(), "usage-user", "user.message", now, "{}"), now);
+        var entry = newEntry(session.getId(), "usage-entry", "assistant.message.completed", now, "{}");
+        var record = codec.usageRecord(
+                session.getId(),
+                "usage-record",
+                "usage-user",
+                RuntimeUsageCause.ASSISTANT,
+                entry.getId(),
+                0,
+                null,
+                usage,
+                now);
+        repository.appendEntryWithUsage(entry, record, usage);
+        repository.finishExecution(session.getId(), now);
     }
 
     private SessionCommandResultDTO executeConfigurationCommand(String command, String sessionId, Clock clock) {
@@ -333,7 +368,10 @@ class RuntimeSessionRepositoryOpenGaussIT {
         assertThatThrownBy(() -> repository.beginDeletion(session.getId(), session.getUpdatedAt()))
                 .isInstanceOf(RuntimeException.class);
 
-        assertThat(repository.find(session.getId())).contains(session);
+        assertThat(repository.find(session.getId()).orElseThrow())
+                .usingRecursiveComparison()
+                .withComparatorForType(java.math.BigDecimal::compareTo, java.math.BigDecimal.class)
+                .isEqualTo(session);
         assertThat(count("t_session_cleanup_task", session.getId())).isZero();
     }
 
@@ -590,7 +628,10 @@ class RuntimeSessionRepositoryOpenGaussIT {
                                         "{}")),
                         session.getCreatedAt().plusMinutes(1)))
                 .isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
-        assertThat(repository.find(session.getId())).contains(session);
+        assertThat(repository.find(session.getId()).orElseThrow())
+                .usingRecursiveComparison()
+                .withComparatorForType(java.math.BigDecimal::compareTo, java.math.BigDecimal.class)
+                .isEqualTo(session);
         assertThat(repository.listCurrentBranch(session.getId(), 0L, 10, true)).isEmpty();
         assertThat(changeUnconditionally(new CountDownLatch(0), session, "next").sourceEventSeq())
                 .isEqualTo(1L);

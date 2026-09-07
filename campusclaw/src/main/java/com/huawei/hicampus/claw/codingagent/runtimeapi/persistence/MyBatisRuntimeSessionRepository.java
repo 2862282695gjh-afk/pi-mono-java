@@ -4,6 +4,7 @@
 
 package com.huawei.hicampus.claw.codingagent.runtimeapi.persistence;
 
+import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
@@ -17,6 +18,7 @@ import com.huawei.hicampus.claw.ai.types.Cost;
 import com.huawei.hicampus.claw.ai.types.Usage;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeCompactionSnapshotDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeEntryDTO;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeLifetimeUsageDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeRecordDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.SessionConfigurationUpdateDTO;
@@ -65,7 +67,7 @@ public class MyBatisRuntimeSessionRepository implements RuntimeSessionRepository
     @Override
     @Transactional
     public Optional<SessionNameUpdateDTO> updateName(String sessionId, String displayName, OffsetDateTime updatedAt) {
-        RuntimeSessionDTO session = mapper.lockSessionForUpdate(sessionId);
+        RuntimeSessionDTO session = lockSession(sessionId);
         if (session == null) {
             return Optional.empty();
         }
@@ -82,7 +84,7 @@ public class MyBatisRuntimeSessionRepository implements RuntimeSessionRepository
     @Override
     @Transactional
     public UserEventAcceptance acceptUserEvent(String sessionId, RuntimeEntryDTO entry, OffsetDateTime acceptedAt) {
-        RuntimeSessionDTO session = mapper.lockSessionForUpdate(sessionId);
+        RuntimeSessionDTO session = lockSession(sessionId);
         if (session == null) {
             return new UserEventAcceptance(Status.NOT_FOUND, null);
         }
@@ -103,7 +105,7 @@ public class MyBatisRuntimeSessionRepository implements RuntimeSessionRepository
     @Override
     @Transactional
     public Optional<RuntimeCompactionSnapshotDTO> observeCompaction(String sessionId) {
-        RuntimeSessionDTO session = mapper.lockSessionForUpdate(sessionId);
+        RuntimeSessionDTO session = lockSession(sessionId);
         if (session == null) {
             return Optional.empty();
         }
@@ -125,7 +127,7 @@ public class MyBatisRuntimeSessionRepository implements RuntimeSessionRepository
     @Override
     @Transactional
     public CompactionAcceptanceStatus acceptCompaction(RuntimeSessionDTO observed, OffsetDateTime acceptedAt) {
-        RuntimeSessionDTO current = mapper.lockSessionForUpdate(observed.getId());
+        RuntimeSessionDTO current = lockSession(observed.getId());
         if (current == null) {
             return CompactionAcceptanceStatus.NOT_FOUND;
         }
@@ -144,7 +146,7 @@ public class MyBatisRuntimeSessionRepository implements RuntimeSessionRepository
     @Override
     @Transactional
     public RuntimeEntryDTO appendEntry(RuntimeEntryDTO entry) {
-        RuntimeSessionDTO session = mapper.lockSessionForUpdate(entry.getSessionId());
+        RuntimeSessionDTO session = lockSession(entry.getSessionId());
         if (session == null) {
             throw new IllegalStateException("session disappeared during execution");
         }
@@ -157,7 +159,7 @@ public class MyBatisRuntimeSessionRepository implements RuntimeSessionRepository
     @Override
     @Transactional
     public RuntimeEntryDTO appendEntryWithUsage(RuntimeEntryDTO entry, RuntimeRecordDTO record, Usage usage) {
-        RuntimeSessionDTO session = mapper.lockSessionForUpdate(entry.getSessionId());
+        RuntimeSessionDTO session = lockSession(entry.getSessionId());
         if (session == null) {
             throw new IllegalStateException("session disappeared during execution");
         }
@@ -197,7 +199,7 @@ public class MyBatisRuntimeSessionRepository implements RuntimeSessionRepository
             boolean modelSupportsThinking,
             Function<RuntimeSessionDTO, List<RuntimeEntryDTO>> entriesFactory,
             OffsetDateTime updatedAt) {
-        RuntimeSessionDTO session = mapper.lockSessionForUpdate(sessionId);
+        RuntimeSessionDTO session = lockSession(sessionId);
         SessionConfigurationUpdateDTO rejected = rejectConfigurationUpdate(session, expectedVersion);
         if (rejected != null || session.getModelId().equals(modelId)) {
             return rejected != null ? rejected : unchanged(session);
@@ -223,7 +225,7 @@ public class MyBatisRuntimeSessionRepository implements RuntimeSessionRepository
             Consumer<RuntimeSessionDTO> admission,
             Function<RuntimeSessionDTO, RuntimeEntryDTO> entryFactory,
             OffsetDateTime updatedAt) {
-        RuntimeSessionDTO session = mapper.lockSessionForUpdate(sessionId);
+        RuntimeSessionDTO session = lockSession(sessionId);
         SessionConfigurationUpdateDTO rejected = rejectConfigurationUpdate(session, expectedVersion);
         if (rejected != null) {
             return rejected;
@@ -247,7 +249,7 @@ public class MyBatisRuntimeSessionRepository implements RuntimeSessionRepository
     @Override
     @Transactional
     public SessionDeletionStatus beginDeletion(String sessionId, OffsetDateTime deletedAt) {
-        RuntimeSessionDTO session = mapper.lockSessionForUpdate(sessionId);
+        RuntimeSessionDTO session = lockSession(sessionId);
         if (session == null) {
             return SessionDeletionStatus.NOT_FOUND;
         }
@@ -300,6 +302,16 @@ public class MyBatisRuntimeSessionRepository implements RuntimeSessionRepository
         session.setActiveLeafId(entry.getId());
     }
 
+    private RuntimeSessionDTO lockSession(String sessionId) {
+        RuntimeSessionDTO session = mapper.lockSessionForUpdate(sessionId);
+        if (session != null) {
+            // 先取得主行锁，再读取统计，避免锁等待后携带旧查询快照中的 Usage。
+            session.setLifetimeUsage(
+                    Objects.requireNonNull(mapper.findLifetimeUsage(sessionId), "session usage stats are missing"));
+        }
+        return session;
+    }
+
     private void appendConfigurationEntries(RuntimeSessionDTO session, List<RuntimeEntryDTO> entries) {
         for (RuntimeEntryDTO entry : entries) {
             appendLocked(session, entry);
@@ -330,14 +342,18 @@ public class MyBatisRuntimeSessionRepository implements RuntimeSessionRepository
     private void accumulateUsageStats(String sessionId, Usage usage) {
         Usage value = usage == null ? Usage.empty() : usage;
         Cost cost = value.cost() == null ? Cost.empty() : value.cost();
-        requireOne(
-                mapper.accumulateUsageStats(
-                        sessionId,
-                        value.cacheRead(),
-                        (long) value.input() + value.cacheWrite(),
-                        value.totalTokens(),
-                        cost.total()),
-                "session usage stats were not updated");
+        var delta = new RuntimeLifetimeUsageDTO();
+        delta.setInput(value.input());
+        delta.setOutput(value.output());
+        delta.setCacheRead(value.cacheRead());
+        delta.setCacheWrite(value.cacheWrite());
+        delta.setTotalTokens(value.totalTokens());
+        delta.setCostInput(BigDecimal.valueOf(cost.input()));
+        delta.setCostOutput(BigDecimal.valueOf(cost.output()));
+        delta.setCostCacheRead(BigDecimal.valueOf(cost.cacheRead()));
+        delta.setCostCacheWrite(BigDecimal.valueOf(cost.cacheWrite()));
+        delta.setCostTotal(BigDecimal.valueOf(cost.total()));
+        requireOne(mapper.accumulateUsageStats(sessionId, delta), "session usage stats were not updated");
     }
 
     private static boolean isMessageEntry(String type) {
