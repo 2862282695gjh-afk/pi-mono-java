@@ -16,6 +16,8 @@
   <p>Status：Accepted · Date：2026-09-07 · Version：1.0.0</p>
   <p>实现基线 <code>53496bbec9d8368b19e3b9a03030eed7ce15c182</code>；只读设计
   <code>88f4df16bc24bbfcd28e1ec374feb2de0db8be3b</code>，Builtin 2.9.0 / Slash 1.6.0 / 操作13。</p>
+  <p>交付前正常合并 #240 的 main <code>18bf7026d75cf28a9652025eaa19800eb36c4c64</code>；
+  组合提交 <code>4291dd8d6e6bde63a08819379bb8d97450f7859f</code> 无冲突，不修改 Registry 或堆叠未合入分支。</p>
   <h2>Context</h2>
   <p>七个内部 Builtin 与业务投影已合入，但应用层尚未把一次请求的定义选择、准入、调用及结果连接起来。
   共享 GET 完整缓存切片独立开发；POST Builtin 可使用 main 已有的来源过滤入口，不应为并行引入占位路由或未合入依赖。</p>

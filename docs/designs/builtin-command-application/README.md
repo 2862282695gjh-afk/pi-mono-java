@@ -17,6 +17,8 @@ Skill 请求联合类型、成功协议和私有快照保留仍由各自已确�
 ## 2. 固定证据
 
 实现基线：`pi-mono-java@53496bbec9d8368b19e3b9a03030eed7ce15c182`（#238/#239 均已合入）。
+交付前正常合并 #240 的 main `18bf7026d75cf28a9652025eaa19800eb36c4c64`，无冲突；
+组合提交 `4291dd8d6e6bde63a08819379bb8d97450f7859f` 保留既有 Builtin-only 入口，本 PR 未修改 Registry。
 只读设计：`pi-mono-java-design@88f4df16bc24bbfcd28e1ec374feb2de0db8be3b`，
 Slash 1.6.0 §3/4、Builtin 2.9.0 §8、Runtime 操作 `13-execute-session-command.json`。
 以下 Java 路径前缀为 `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/`。
@@ -82,7 +84,10 @@ Header 捕获/拒绝 If-Match 和 Idempotency-Key、真实 HTTP 状态/ResultBea
 七 Contributor 测试的窄业务数据和 Runtime 外部执行由 mock 控制，不把它称作真实数据库或 HTTP 验收。
 既有 Spring 包扫描同时验证新 Service 的 Validator 与命令协作者装配。
 
-最终验证数字、代码提交与门禁结果在 PR 交付记录中固定。每个 PR 模块新增上限850、镜像后软上限1800/硬上限2000，
+新增执行应用 41 项、输入 VO 22 项测试；质量检查0错误/0警告。规范脚本检查14个Java文件无finding，
+两种测试内私有纯数据record（含镜像）手工确认无可变状态或空行布局问题；7对镜像内容一致。
+组合提交上 `./mvnw -q spotless:apply checkstyle:check verify` 通过，1822项常规测试全部成功，无失败或跳过。
+最终净新增模块788行、镜像后1576行，正式新增行门禁通过。每个 PR 模块新增上限850、镜像后软上限1800/硬上限2000，
 使用独立已合入 main 起点，后合方正常同步最新 main；不 force-push。
 公司 NativeParent 不可解析时显式同步镜像并校验一致性，公司侧编译仍标注未验证。
 实现决策见 [ADR-0065](../../decisions/0065-connect-builtin-command-application.html)。
