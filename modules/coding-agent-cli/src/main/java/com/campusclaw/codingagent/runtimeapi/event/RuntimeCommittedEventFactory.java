@@ -5,6 +5,7 @@
 package com.campusclaw.codingagent.runtimeapi.event;
 
 import java.time.OffsetDateTime;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -18,6 +19,7 @@ import com.campusclaw.ai.types.ToolResultMessage;
 import com.campusclaw.ai.types.Usage;
 import com.campusclaw.codingagent.runtimeapi.dto.CommittedEventDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.RuntimeEntryDTO;
+import com.campusclaw.codingagent.tool.builtin.BuiltInToolName;
 import com.campusclaw.common.constant.ClawConstants;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -35,8 +37,6 @@ import org.springframework.stereotype.Component;
  */
 @Component
 public class RuntimeCommittedEventFactory {
-    private static final String GENERIC_TOOL_ERROR = "TOOL_EXECUTION_FAILED";
-
     private final ObjectMapper objectMapper;
 
     private final MessageSource messageSource;
@@ -78,7 +78,7 @@ public class RuntimeCommittedEventFactory {
         ObjectNode payload = sourcePayload(sourceEventId);
         payload.put("toolCallId", call.id());
         payload.put("toolName", call.name());
-        payload.set("arguments", objectMapper.valueToTree(call.arguments() == null ? Map.of() : call.arguments()));
+        payload.set("arguments", objectMapper.valueToTree(publicToolArguments(call)));
         payload.put("requiresConfirmation", requiresConfirmation);
         return create(entry, eventId, CommittedEventType.AGENT_TOOL_CALL, payload);
     }
@@ -170,7 +170,7 @@ public class RuntimeCommittedEventFactory {
     }
 
     private void appendUsage(ObjectNode payload, Usage usage) {
-        if (usage == null) {
+        if (usage == null || Usage.empty().equals(usage)) {
             return;
         }
         ObjectNode value = payload.putObject("usage");
@@ -183,7 +183,7 @@ public class RuntimeCommittedEventFactory {
     }
 
     private void appendCost(ObjectNode usage, Cost cost) {
-        if (cost == null) {
+        if (cost == null || Cost.empty().equals(cost)) {
             return;
         }
         ObjectNode value = usage.putObject("cost");
@@ -217,7 +217,17 @@ public class RuntimeCommittedEventFactory {
                 return value.toString();
             }
         }
-        return GENERIC_TOOL_ERROR;
+        return ClawConstants.RuntimeApi.DEFAULT_TOOL_ERROR_CODE;
+    }
+
+    private static Map<String, Object> publicToolArguments(ToolCall call) {
+        Map<String, Object> source = call.arguments() == null ? Map.of() : call.arguments();
+        if (!BuiltInToolName.CALL_MATE_TOOL.externalName().equals(call.name()) || source.containsKey("args")) {
+            return source;
+        }
+        Map<String, Object> normalized = new LinkedHashMap<>(source);
+        normalized.put("args", Map.of());
+        return normalized;
     }
 
     private CommittedEventDTO create(

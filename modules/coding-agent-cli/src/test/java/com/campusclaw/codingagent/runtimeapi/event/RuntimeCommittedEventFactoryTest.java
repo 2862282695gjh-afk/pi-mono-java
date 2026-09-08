@@ -97,7 +97,7 @@ class RuntimeCommittedEventFactoryTest {
     @Test
     void shouldKeepToolArgumentsAndFallbackToStableError() {
         RuntimeEntryDTO callEntry = entry("entry_call", "assistant.message.completed");
-        ToolCall call = new ToolCall("call-1", "CallMateTool", Map.of("tool", "inspect", "args", Map.of()));
+        ToolCall call = new ToolCall("call-1", "CallMateTool", Map.of("tool", "inspect"));
         var callFrame = encoder.committed(factory.agentToolCall(callEntry, "event_call", call, true, "event_user"));
         ToolResultMessage failed = new ToolResultMessage(
                 "call-1", "CallMateTool", List.of(new TextContent("private gateway failure")), null, true, 1L);
@@ -114,6 +114,37 @@ class RuntimeCommittedEventFactoryTest {
                         "content",
                         List.of(Map.of("type", "text", "text", "Tool execution failed. Check the execution outcome.")));
         assertThat(resultFrame.getData().toString()).doesNotContain("private gateway failure");
+    }
+
+    @Test
+    void shouldOmitUnknownUsageAndUnknownCost() {
+        var unknownUsage = encoder.committed(factory.agentMessage(
+                entry("entry_unknown", "assistant.message.completed"),
+                "event_unknown",
+                assistant(Usage.empty()),
+                "event_user"));
+        Usage knownTokens = new Usage(4, 2, 0, 0, 6, Cost.empty());
+        var unknownCost = encoder.committed(factory.agentMessage(
+                entry("entry_tokens", "assistant.message.completed"),
+                "event_tokens",
+                assistant(knownTokens),
+                "event_user"));
+
+        assertThat(unknownUsage.getData()).doesNotContainKey("usage");
+        assertThat(objectMapper.valueToTree(unknownCost.getData().get("usage")).has("cost"))
+                .isFalse();
+    }
+
+    @Test
+    void shouldUseFixedIdleFailureMessage() {
+        RuntimeEntryDTO entry = entry("event_idle", "session.status.idle");
+
+        var frame = encoder.committed(factory.sessionIdle(
+                entry, "event_idle", "failed", "event_user", "MODEL_REQUEST_FAILED", java.util.Locale.US));
+
+        assertThat(frame.getData())
+                .containsEntry("errorCode", "MODEL_REQUEST_FAILED")
+                .containsEntry("message", "The model request failed.");
     }
 
     @Test
@@ -140,6 +171,19 @@ class RuntimeCommittedEventFactoryTest {
                 .containsEntry("thinking", false)
                 .containsEntry("reason", "modelCapability")
                 .doesNotContainKey("entrySeq");
+    }
+
+    private static AssistantMessage assistant(Usage usage) {
+        return new AssistantMessage(
+                List.of(new TextContent("answer")),
+                "openai-responses",
+                "openai",
+                "gpt-test",
+                null,
+                usage,
+                StopReason.STOP,
+                null,
+                1L);
     }
 
     private static RuntimeEntryDTO entry(String id, String type) {
