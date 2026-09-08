@@ -4,6 +4,7 @@
 
 package com.campusclaw.codingagent.runtimeapi.runtime;
 
+import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
@@ -18,6 +19,7 @@ import com.campusclaw.ai.types.ThinkingLevel;
 import com.campusclaw.codingagent.common.client.mate.MateCredentials;
 import com.campusclaw.codingagent.runtime.PreparedAgentRuntime;
 import com.campusclaw.codingagent.runtimeapi.agent.AgentDirectorySnapshotDTO;
+import com.campusclaw.codingagent.runtimeapi.dto.ExecutionTargetDTO;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
 import com.campusclaw.codingagent.session.AgentSessionFactory;
@@ -120,6 +122,20 @@ public class RuntimeSessionEngineRegistry {
         return Optional.ofNullable(sessions.get(sessionId));
     }
 
+    public List<ExecutionTargetDTO> activeTargets(int limit) {
+        if (limit <= 0) {
+            return List.of();
+        }
+        return sessions.values().stream()
+                .flatMap(holder -> holder.activeExecution().stream())
+                .flatMap(execution -> execution.assignedTarget().stream())
+                .sorted(Comparator.comparing(ExecutionTargetDTO::sessionId)
+                        .thenComparing(ExecutionTargetDTO::executionId)
+                        .thenComparing(ExecutionTargetDTO::segmentId))
+                .limit(limit)
+                .toList();
+    }
+
     public void complete(RuntimeSessionHolder holder, RuntimeActiveExecution execution) {
         if (!holder.complete(execution)) {
             return;
@@ -159,8 +175,10 @@ public class RuntimeSessionEngineRegistry {
             RuntimeActiveExecution execution,
             MateCredentials credentials,
             Consumer<PreparedAgentRuntime> runtimeValidator) {
-        ManagedAgentSession session = createSession(snapshot, model, thinking, credentials, runtimeValidator);
+        ManagedAgentSession session =
+                createSession(snapshot, model, thinking, execution, credentials, runtimeValidator);
         try {
+            execution.bindToolPermissions(RuntimeToolPermissionPolicy.from(session.runtime()));
             session.agent().replaceMessages(messages);
             RuntimeSessionHolder holder = new RuntimeSessionHolder(sessionId, snapshot, session, thinking);
             if (!holder.begin(execution)) {
@@ -183,6 +201,7 @@ public class RuntimeSessionEngineRegistry {
             AgentDirectorySnapshotDTO snapshot,
             Model model,
             boolean thinking,
+            RuntimeActiveExecution execution,
             MateCredentials credentials,
             Consumer<PreparedAgentRuntime> runtimeValidator) {
         ThinkingLevel level = thinking ? ThinkingLevel.MEDIUM : ThinkingLevel.OFF;
@@ -198,7 +217,7 @@ public class RuntimeSessionEngineRegistry {
                         SubagentExecutionContext.root(runtime.agentId(), resolvedModel, level, credentials),
                         subagentExecutionService),
                 runtimeValidator,
-                List.of(),
+                List.of(execution::beforeToolCall),
                 List.of());
         return sessionFactory.create(request);
     }
