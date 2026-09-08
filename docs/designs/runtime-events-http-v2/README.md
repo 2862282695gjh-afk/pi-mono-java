@@ -49,7 +49,7 @@ POST 请求必须是 `{ "event": { ... } }`，且 `event.type` 只允许三种�
 交付相同信号。`user.tool_confirmation` 先以新结果段绑定响应，再使用旧 confirming target 恢复原 Holder；工具仍
 使用原执行凭据。完整事件统一从数据库结果读取，preview/delta 才可从原进程直推。
 
-SSE 不输出 legacy `id:`、`event:` 或内部包装字段，每个 data frame 的 JSON 与 GET 中相同公共事件逐字段一致；
+SSE 不输出 legacy `id:`、`event:` 或内部包装字段，每个完整事件 data frame 的 JSON 与 GET 中相同公共事件逐字段一致；
 keep-alive 字面为 `: ping`。请求被接受前的校验、冲突和容量错误返回普通 JSON 错误。首个完整回执入流后，后续
 执行错误使用完整 `session.status_idle` 收束或断开已经建立的流。
 
@@ -82,13 +82,15 @@ Compaction 生产调用；无生产消费者的普通 Agent 事件分支和公�
 
 在合入首次发布主线并收敛 Compaction 投影器后，聚焦命令执行 11 个测试类共 141 项，覆盖 Controller 路由、严格
 联合分派、data-only 输出、首帧前 JSON 错误、Skill 安全公开文本、旧路由 404、GET 查询和 Compaction 生产链；
-141 项全部通过。随后完整 Reactor 运行 `campusclaw-coding-agent` 1392 项单元测试，0 失败、0 错误、0 跳过。
+141 项全部通过。最终基线 `d946` 的完整 Reactor 共运行 2130 项单元测试：common 17 项、ai 505 项、agent 140 项、
+cron 70 项、coding-agent 1398 项，0 失败、0 错误、0 跳过；coding-agent 的 1398 项已经包含 5 项进程夹具。
 这些结果证明同 JVM HTTP 接线和共享模块回归，没有替代跨 JVM 或真实数据库验收。
 
-真实进程验证在等价产品集成 `ac19a892` 上使用全新 openGauss Schema、最新实际 JAR 和双 JVM：29 项 HTTP 场景
-与 5 项进程夹具全部通过，0 失败、0 错误、0 跳过。29 项覆盖普通消息与 GET 同形、跨 JVM interrupt、allow/deny、
-重复确认 409 JSON、确认中断、硬超时、旧三路由 404、Skill/Command 与 Compact；5 项夹具覆盖 Session 重启、配置和
-删除生命周期。该 34 项是独立集成层证据，不计入本片的 141 项单元验证。
+真实进程层另在等价产品集成 `ac19a892` 上使用全新 openGauss Schema 和最新实际 JAR 验证 29 项 Events v2 HTTP
+场景，全部通过且无跳过。场景覆盖普通消息与 GET 同形、跨 JVM interrupt 与 allow、deny、重复确认 409 JSON、
+确认中断、硬超时、旧三路由 404、Session 重启、配置、删除生命周期以及 Skill、Command、Compact。5 项进程夹具
+分别覆盖缓存完整恢复、缓存损坏拒绝、HTTP 响应时机、关闭时阻塞响应和非 Chat 路径拒绝；它们属于上述 Reactor
+统计，不与 29 项真实 HTTP 验收相加为一组跨 JVM 场景。
 
 Maven 测试同时执行 Checkstyle；`spotless:check` 和 `git diff --check` 通过。企业镜像由发布集成统一生成，本片没有
 独立验证企业 `NativeParent` 编译。
