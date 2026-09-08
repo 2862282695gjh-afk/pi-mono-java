@@ -22,6 +22,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.IntStream;
 
 import javax.sql.DataSource;
 
@@ -584,6 +585,57 @@ class RuntimeSessionRepositoryOpenGaussIT {
                 session.getId(), confirmingTarget.rootEventId(), interrupt, interruptEvent, interrupt.getTimestamp());
         assertThat(executionControls.find(accepted.target()).orElseThrow().getState())
                 .isEqualTo(RuntimeExecutionState.STOPPING);
+    }
+
+    @Test
+    void shouldBatchReadConfirmationAndLaterStopForOriginalInstanceTarget() {
+        RuntimeSessionDTO session = newSession("session_control_polling");
+        repository.create(session);
+        ExecutionTargetDTO confirmingTarget = acceptRootMessage(session, "control-polling");
+        persistConfirmingEvents(session, confirmingTarget);
+        ExecutionTargetDTO continued = acceptConfirmation(
+                        session, "control-polling-confirmed", ToolConfirmationResult.ALLOW, null)
+                .target();
+
+        var confirmingSignals = executionControls.findPendingControls(List.of(confirmingTarget, confirmingTarget));
+        assertThat(confirmingSignals).singleElement().satisfies(signal -> {
+            assertThat(signal.target()).isEqualTo(confirmingTarget);
+            assertThat(signal.isStopRequested()).isFalse();
+            assertThat(signal.getToolCallId()).isEqualTo(longToolCallId());
+        });
+        assertThat(executionControls.findPendingControls(List.of(continued))).isEmpty();
+
+        RuntimeEntryDTO interrupt = controlEntry(session, "polling-interrupt", "user.interrupt");
+        CommittedEventDTO interruptEvent = committedEvent(interrupt, "polling-interrupt-event", "user.interrupt");
+        executionPersistence.acceptInterrupt(
+                session.getId(), confirmingTarget.rootEventId(), interrupt, interruptEvent, interrupt.getTimestamp());
+
+        assertThat(executionControls.findPendingControls(List.of(confirmingTarget)))
+                .singleElement()
+                .satisfies(signal -> {
+                    assertThat(signal.isStopRequested()).isTrue();
+                    assertThat(signal.getToolCallId()).isEqualTo(longToolCallId());
+                });
+    }
+
+    @Test
+    void shouldQueryOneHundredActiveTargetsWithinConfiguredTimeout() {
+        List<ExecutionTargetDTO> targets = IntStream.range(0, 100)
+                .mapToObj(index -> new ExecutionTargetDTO(
+                        "poll-session-" + index,
+                        "poll-execution-" + index,
+                        "poll-root-" + index,
+                        "poll-segment-" + index))
+                .toList();
+        seedPollingExecutions(targets);
+
+        var signals = executionControls.findPendingControls(targets);
+
+        assertThat(signals).hasSize(50).allSatisfy(signal -> {
+            assertThat(signal.isStopRequested()).isTrue();
+            assertThat(signal.getToolCallId()).isNull();
+            assertThat(targets).contains(signal.target());
+        });
     }
 
     @Test
@@ -1608,6 +1660,34 @@ class RuntimeSessionRepositoryOpenGaussIT {
         assertThatThrownBy(() -> executionPersistence.commitTerminal(
                         target, lateIdle, lateEvent, RuntimeExecutionTerminalReason.DONE, lateIdle.getTimestamp()))
                 .isInstanceOf(IllegalStateException.class);
+    }
+
+    private void seedPollingExecutions(List<ExecutionTargetDTO> targets) {
+        String sql =
+                """
+                INSERT INTO t_session_executions (
+                    session_id, execution_id, root_event_id, state, current_segment_id,
+                    stop_event_id, created_at, updated_at
+                ) VALUES (?, ?, ?, 'RUNNING', ?, ?, ?, ?)
+                """;
+        OffsetDateTime createdAt = OffsetDateTime.of(2026, 9, 8, 1, 0, 0, 0, ZoneOffset.UTC);
+        List<Object[]> arguments = IntStream.range(0, targets.size())
+                .mapToObj(index -> pollingExecutionArguments(targets.get(index), index, createdAt))
+                .toList();
+        jdbcTemplate.batchUpdate(sql, arguments);
+    }
+
+    private static Object[] pollingExecutionArguments(ExecutionTargetDTO target, int index, OffsetDateTime createdAt) {
+        String stopEventId = index % 2 == 0 ? "poll-stop-" + index : null;
+        return new Object[] {
+            target.sessionId(),
+            target.executionId(),
+            target.rootEventId(),
+            target.segmentId(),
+            stopEventId,
+            createdAt,
+            createdAt
+        };
     }
 
     private static RuntimeSessionDTO newSession(String sessionId) {
