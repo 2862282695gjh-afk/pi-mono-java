@@ -245,6 +245,9 @@ class RuntimeSessionRepositoryOpenGaussIT {
         RuntimeSessionDTO session = newSession("session_atomic_rollback");
         repository.create(session);
         ExecutionTargetDTO completed = seedCompletedExecution(session);
+        RuntimeSessionDTO before = repository.find(session.getId()).orElseThrow();
+        long sequenceBefore =
+                scalarLong("SELECT next_seq FROM t_session_sequences WHERE session_id = ?", session.getId());
         executionIds.reset(completed.executionId(), completed.segmentId());
         RuntimeEntryDTO next = newEntry(
                 session.getId(),
@@ -258,10 +261,17 @@ class RuntimeSessionRepositoryOpenGaussIT {
                         () -> executionPersistence.acceptMessage(session.getId(), next, nextEvent, next.getTimestamp()))
                 .isInstanceOf(DataIntegrityViolationException.class);
 
-        assertThat(repository.find(session.getId()).orElseThrow().getState()).isEqualTo("idle");
+        assertThat(repository.find(session.getId())).contains(before);
         assertThat(count("t_session_entries", session.getId())).isEqualTo(2);
         assertThat(count("t_session_events", session.getId())).isEqualTo(2);
         assertThat(count("t_session_executions", session.getId())).isOne();
+        assertThat(count("t_session_records", session.getId())).isZero();
+        assertThat(scalarLong("SELECT message_count FROM t_session_stats WHERE session_id = ?", session.getId()))
+                .isOne();
+        assertThat(scalarLong("SELECT total_tokens FROM t_session_stats WHERE session_id = ?", session.getId()))
+                .isZero();
+        assertThat(scalarLong("SELECT next_seq FROM t_session_sequences WHERE session_id = ?", session.getId()))
+                .isEqualTo(sequenceBefore);
     }
 
     @Test
@@ -711,6 +721,11 @@ class RuntimeSessionRepositoryOpenGaussIT {
         Integer result = jdbcTemplate.queryForObject(
                 "SELECT COUNT(1) FROM " + table + " WHERE session_id = ?", Integer.class, sessionId);
         return result == null ? 0 : result;
+    }
+
+    private long scalarLong(String sql, String sessionId) {
+        Long result = jdbcTemplate.queryForObject(sql, Long.class, sessionId);
+        return result == null ? 0L : result;
     }
 
     @ParameterizedTest
