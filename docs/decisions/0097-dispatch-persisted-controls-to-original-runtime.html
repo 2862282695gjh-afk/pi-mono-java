@@ -7,6 +7,6 @@
 <h2>Decision</h2><p>实现窄 <code>RuntimeLocalControlDispatcher</code> 适配器。轮询器获取有界活动 target 并提交 stop 或 confirmation；适配器在 Session 操作锁内校验完整 target，再中止原 Agent或对原 pending future 单次 claim、恢复和 ack。确认续跑输出必须在完成 future 前绑定到新段，原凭据始终留在 Holder。</p>
 <h2>考虑过的选项及取舍</h2><ul><li>让轮询器直接访问 Registry 和 Holder：代码较少，但把数据库调度、Agent 状态和凭据生命周期耦合，因此不采用。</li><li>在受理实例重建 Agent：可避开本机路由，但无法保证原上下文、工具状态和凭据一致，因此不采用。</li><li>只按 Session 当前执行分发：查询简单，但迟到控制可能作用于下一轮执行，因此不采用。</li><li>选择固定 target 与窄接口，代价是需要本机注册表持续保留未提交终态的 Holder。</li></ul>
 <h2>Consequences</h2><p>跨实例控制最终到达实际执行进程；停止先设置取消信号再解除确认等待，确认决定至多消费一次。无匹配 Holder 或短暂失败返回 false，由轮询退避后重试。数据库不保存凭据。该片不启用 HTTP，也不新增 Maven 依赖。</p>
-<h2>Validation</h2><p>实现提交 <code>6a66f5b8</code> 的 Dispatcher 与 Registry 直接测试 5 项通过；权限策略引入后的 Compaction 回归 41 项通过，夹具修复为 <code>af0f69cc</code>。后者验证共享 Registry 改动没有破坏 Compaction，不计为 Dispatcher 功能用例。</p>
+<h2>Validation</h2><p>实现提交 <code>6a66f5b8</code> 的 Dispatcher 与 Registry 直接测试 5 项通过；权限策略引入后的 Compaction 回归 41 项通过，夹具修复为 <code>af0f69cc</code>；<code>AgentRuntimeManagerTest</code> 46 项通过，<code>347ee34a</code> 精确断言发布与缓存恢复后的受管工具仍为 ASK、未知工具为 DENY。后两组验证共享 Registry 和可信权限边界，不计为 Dispatcher 功能用例。</p>
 <h2>Related</h2><p><a href="../designs/runtime-events-dispatcher-v2/README.md">本机控制分发设计</a> · <a href="../designs/runtime-events-dispatcher-v2/diagram.puml#L1">PlantUML 源码</a> · <a href="0075-persist-runtime-execution-control.html">ADR-0075 固定执行控制</a></p>
 </main></body></html>

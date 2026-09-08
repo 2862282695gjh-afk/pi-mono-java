@@ -6,7 +6,7 @@
 | 日期 | 2026-09-08 |
 | 契约基线 | `pi-mono-java-design@2ee2a3211da68ad87b0d9cab353e691b00bdaebd` |
 | Java 变更前基线 | `pi-mono-java@1af21fd574817a7c18a48d05cc8975b4d3a98766` |
-| 实现提交 | `6a66f5b8c65e1cd112f790f79817a4ac381391c3`；测试夹具 `af0f69cc2c01c882ffd25b0b2ca420ba71c87414` |
+| 实现提交 | `6a66f5b8c65e1cd112f790f79817a4ac381391c3`；测试夹具 `af0f69cc2c01c882ffd25b0b2ca420ba71c87414`；权限回归 `347ee34a` |
 | pi 源码基线 | `pi-mono@4af9d21d3b4d664e4a29fcabfec85171077248e3` |
 | 单片 HTTP 状态 | 未启用；本片只实现持久控制信号到原进程 Holder 的分发适配器 |
 
@@ -73,7 +73,8 @@ Dispatcher 单片的直接测试为 `RuntimeSessionControlDispatcherTest` 2 项�
 注册表开始安装可信权限 before hook 后，另运行 `RuntimeCompactionCoordinatorTest` 24 项与
 `RuntimeCompactionServiceTest` 17 项，共 41 项回归。测试夹具提交 `af0f69cc` 只补完整
 `PreparedAgentRuntime`，证明 Compaction 不因空 mock 产生假失败；这 41 项不是 Dispatcher 行为用例。
-两层合计 46 项通过。Maven 测试同时执行 Checkstyle；`spotless:check` 和 `git diff --check` 通过。
+`AgentRuntimeManagerTest` 46 项也全部通过，其中权限断言精确验证发布和重启缓存恢复后的两个受管工具仍为 ASK，
+未知工具为 DENY。三个层次合计 92 项通过。Maven 测试同时执行 Checkstyle；`spotless:check` 和 `git diff --check` 通过。
 企业镜像由发布集成统一生成，本片没有独立验证企业 `NativeParent` 编译。
 
 ## 版本历史
