@@ -34,7 +34,7 @@ Events v2 要求 POST 的完整 SSE 帧与 GET 历史使用同一公共事件，
 | 已实现 | `resources/mapper/session/RuntimeSessionMapper.xml#countUnmappedCurrentBranchEntries` | 未知或已退休类型、缺标记、数量不符和不允许的公开/私有数量均关闭失败；零事件标记不能重新放行退休类型 |
 | 已删除 | `resources/db/gaussdb/upgrade/` | `45d7ece9` 删除升级 schema/data/verify、迁移回归与运行手册；当前首版不支持升级 |
 | 待 Events 集成线统一接入 | `java/com/campusclaw/codingagent/runtimeapi/web/RuntimeEventController.java` | HTTP 切换须与全部公共写入点一同交付；本次首版范围清理不单独切换 Controller |
-| 清理依据 | `RuntimeEventProjector`、`RuntimeTerminalEventFactory` 与 `e866db6b` | 当前主线旧类只把八个旧名称用于瞬时 SSE，从未写成 Entry；最终 HTTP 分支删除旧投影链后也删除对应枚举 |
+| 清理依据 | `RuntimeEventProjector`、`RuntimeTerminalEventFactory` 与 `e866db6b` | 该源码基线旧类只把八个旧名称用于瞬时 SSE，没有相应的 Entry 持久化写入者；最终 HTTP 分支删除旧投影链后也删除对应枚举 |
 
 pi 基线 `5cd93f688aaab89dbb6dfa4aca535f21796ae185` 的
 `packages/agent/src/agent-loop.ts#runAgentLoop` 和 `#prepareToolCall` 产生消息与工具生命周期通知，

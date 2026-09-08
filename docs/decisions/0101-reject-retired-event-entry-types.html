@@ -7,8 +7,8 @@
 <h2>Context</h2><p>Events v2 设计基线 <code>pi-mono-java-design@2ee2a321</code> 只把完整事件写入权威历史，
 preview delta 不持久化，流结束也不形成公共历史事件。Java 基线 <code>69b8ced3</code> 中，旧
 <code>RuntimeEventProjector</code> 和 <code>RuntimeTerminalEventFactory</code> 仍把八个旧名称用于瞬时 SSE，
-但生产代码没有把这些类型写为 <code>RuntimeEntryDTO</code>。最终 HTTP 分支先在 <code>465dd631</code>
-删除旧投影接口，再在 <code>e866db6b</code> 删除对应枚举。</p>
+但生产代码没有把这些类型写为 <code>RuntimeEntryDTO</code>。最终 HTTP 分支通过 <code>8ea0ba9f</code> 删除旧控制与终态链、<code>465dd631</code> 删除 Entry 历史投影、
+<code>c2fed32e</code> 删除普通 Agent 投影分支，随后在 <code>e866db6b</code> 删除对应枚举。</p>
 <p><code>RuntimeSessionMapper.xml#countUnmappedCurrentBranchEntries</code> 仍把这些类型登记为允许且必须
 投影零条公共事件。手工或缺陷写入的退休 Entry 只要附加 <code>event_count=0</code>，GET 就会把它当成
 完整记录并静默跳过，削弱首版运行时的关闭失败边界。</p>
