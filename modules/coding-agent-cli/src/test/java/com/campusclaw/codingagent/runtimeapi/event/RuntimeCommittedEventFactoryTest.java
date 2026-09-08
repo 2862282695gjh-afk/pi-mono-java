@@ -116,6 +116,32 @@ class RuntimeCommittedEventFactoryTest {
         assertThat(resultFrame.getData().toString()).doesNotContain("private gateway failure");
     }
 
+    @Test
+    void shouldTranslateInternalConfigurationTypesIntoPublicContract() {
+        RuntimeEntryDTO model = entry("entry_model", "session.model.changed");
+        model.setPayload("{\"previousModelId\":\"old\",\"modelId\":\"next\",\"reason\":\"agentRefresh\"}");
+        RuntimeEntryDTO thinking = entry("entry_thinking", "session.thinking.changed");
+        thinking.setPayload("{\"previousThinking\":true,\"thinking\":false,\"reason\":\"modelCapability\"}");
+
+        var modelFrame = encoder.committed(factory.sessionConfiguration(model));
+        var thinkingFrame = encoder.committed(factory.sessionConfiguration(thinking));
+
+        assertThat(modelFrame.getData())
+                .containsEntry("eventId", "entry_model")
+                .containsEntry("type", "session.model_changed")
+                .containsEntry("previousModelId", "old")
+                .containsEntry("modelId", "next")
+                .containsEntry("reason", "agentRefresh")
+                .doesNotContainKey("entrySeq");
+        assertThat(thinkingFrame.getData())
+                .containsEntry("eventId", "entry_thinking")
+                .containsEntry("type", "session.thinking_changed")
+                .containsEntry("previousThinking", true)
+                .containsEntry("thinking", false)
+                .containsEntry("reason", "modelCapability")
+                .doesNotContainKey("entrySeq");
+    }
+
     private static RuntimeEntryDTO entry(String id, String type) {
         RuntimeEntryDTO entry = new RuntimeEntryDTO();
         entry.setSessionId("session-v2");

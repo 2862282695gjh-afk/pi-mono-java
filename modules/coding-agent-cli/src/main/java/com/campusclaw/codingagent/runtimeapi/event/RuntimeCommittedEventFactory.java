@@ -19,6 +19,7 @@ import com.campusclaw.ai.types.Usage;
 import com.campusclaw.codingagent.runtimeapi.dto.CommittedEventDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.RuntimeEntryDTO;
 import com.campusclaw.common.constant.ClawConstants;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -127,6 +128,33 @@ public class RuntimeCommittedEventFactory {
         return create(entry, eventId, CommittedEventType.SESSION_COMPACTED, payload);
     }
 
+    public CommittedEventDTO sessionModelChanged(RuntimeEntryDTO entry) {
+        JsonNode source = entryPayload(entry, RuntimeEventType.SESSION_MODEL_CHANGED);
+        ObjectNode payload = objectMapper.createObjectNode();
+        payload.put("previousModelId", requiredText(source, "previousModelId"));
+        payload.put("modelId", requiredText(source, "modelId"));
+        payload.put("reason", requiredReason(source, "requested", "agentRefresh"));
+        return create(entry, entry.getId(), CommittedEventType.SESSION_MODEL_CHANGED, payload);
+    }
+
+    public CommittedEventDTO sessionThinkingChanged(RuntimeEntryDTO entry) {
+        JsonNode source = entryPayload(entry, RuntimeEventType.SESSION_THINKING_CHANGED);
+        ObjectNode payload = objectMapper.createObjectNode();
+        payload.put("previousThinking", requiredBoolean(source, "previousThinking"));
+        payload.put("thinking", requiredBoolean(source, "thinking"));
+        payload.put("reason", requiredReason(source, "requested", "modelCapability"));
+        return create(entry, entry.getId(), CommittedEventType.SESSION_THINKING_CHANGED, payload);
+    }
+
+    public CommittedEventDTO sessionConfiguration(RuntimeEntryDTO entry) {
+        RuntimeEventType type = RuntimeEventType.fromValue(entry.getType());
+        return switch (type) {
+            case SESSION_MODEL_CHANGED -> sessionModelChanged(entry);
+            case SESSION_THINKING_CHANGED -> sessionThinkingChanged(entry);
+            default -> throw new IllegalArgumentException("runtime entry is not a configuration event");
+        };
+    }
+
     private ObjectNode sourcePayload(String sourceEventId) {
         ObjectNode payload = objectMapper.createObjectNode();
         payload.put("sourceEventId", sourceEventId);
@@ -220,5 +248,46 @@ public class RuntimeCommittedEventFactory {
         } catch (Exception error) {
             throw new IllegalStateException("failed to encode committed event", error);
         }
+    }
+
+    private JsonNode entryPayload(RuntimeEntryDTO entry, RuntimeEventType expectedType) {
+        if (!expectedType.value().equals(entry.getType())) {
+            throw new IllegalArgumentException("runtime entry type does not match committed configuration event");
+        }
+        try {
+            JsonNode payload = objectMapper.readTree(entry.getPayload());
+            if (payload == null || !payload.isObject()) {
+                throw new IllegalArgumentException("runtime entry payload must be an object");
+            }
+            return payload;
+        } catch (IllegalArgumentException error) {
+            throw error;
+        } catch (Exception error) {
+            throw new IllegalArgumentException("runtime entry payload is invalid", error);
+        }
+    }
+
+    private String requiredText(JsonNode payload, String field) {
+        JsonNode value = payload.get(field);
+        if (value == null || !value.isTextual() || value.textValue().isBlank()) {
+            throw new IllegalArgumentException("runtime configuration text is invalid");
+        }
+        return value.textValue();
+    }
+
+    private boolean requiredBoolean(JsonNode payload, String field) {
+        JsonNode value = payload.get(field);
+        if (value == null || !value.isBoolean()) {
+            throw new IllegalArgumentException("runtime configuration boolean is invalid");
+        }
+        return value.booleanValue();
+    }
+
+    private String requiredReason(JsonNode payload, String first, String second) {
+        String reason = requiredText(payload, "reason");
+        if (!first.equals(reason) && !second.equals(reason)) {
+            throw new IllegalArgumentException("runtime configuration reason is invalid");
+        }
+        return reason;
     }
 }
