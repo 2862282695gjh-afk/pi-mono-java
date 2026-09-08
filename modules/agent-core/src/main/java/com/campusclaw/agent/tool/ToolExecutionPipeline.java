@@ -66,10 +66,10 @@ public class ToolExecutionPipeline {
             return invalid;
         }
         ToolResultMessage blocked = applyBeforeHook(tool, toolCall, validatedArgs, context, toolName);
+        throwIfCancelled(signal);
         if (blocked != null) {
             return blocked;
         }
-        throwIfCancelled(signal);
         eventListener.onEvent(new ToolExecutionStartEvent(toolCall.id(), toolName, validatedArgs));
         var outcome = invokeTool(tool, toolCall, validatedArgs, signal, eventListener);
         throwIfCancelled(signal);
