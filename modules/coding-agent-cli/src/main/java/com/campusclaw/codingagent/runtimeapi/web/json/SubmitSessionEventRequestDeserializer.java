@@ -56,8 +56,8 @@ public final class SubmitSessionEventRequestDeserializer extends JsonDeserialize
         return parser.getCodec().treeToValue(event, target);
     }
 
-    private static Class<? extends SessionUserEventRequestVO> eventType(
-            String type, DeserializationContext context) throws JsonMappingException {
+    private static Class<? extends SessionUserEventRequestVO> eventType(String type, DeserializationContext context)
+            throws JsonMappingException {
         if (CommittedEventType.USER_MESSAGE.value().equals(type)) {
             return UserMessageEventRequestVO.class;
         }
@@ -98,8 +98,8 @@ public final class SubmitSessionEventRequestDeserializer extends JsonDeserialize
         return Set.copyOf(names);
     }
 
-    private static void requireObject(
-            JsonNode node, DeserializationContext context, Class<?> target, String message) throws JsonMappingException {
+    private static void requireObject(JsonNode node, DeserializationContext context, Class<?> target, String message)
+            throws JsonMappingException {
         if (node == null || !node.isObject()) {
             context.reportInputMismatch(target, message);
         }
