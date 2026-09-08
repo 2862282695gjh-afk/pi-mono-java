@@ -46,7 +46,7 @@ pi 基线 `5cd93f688aaab89dbb6dfa4aca535f21796ae185` 的
 
 ## 设计决策
 
-见 [ADR-0074](../../decisions/0074-share-public-event-data-model.html)。持久化使用可变 `@Data` DTO；响应使用
+见 [ADR-0077](../../decisions/0077-share-public-event-data-model.html)。持久化使用可变 `@Data` DTO；响应使用
 只读字段和类型化 VO。`@JsonUnwrapped` 展开业务字段；工具结果显式声明 `isError` JSON 属性，
 避免 JavaBean 布尔命名推断产生错误的 `error` 字段。可选字段为 null 时省略；delta 的 `createdAt` 省略。
 参数校验仍由未来请求 VO 承担，响应对象不添加请求校验。投影对内容块列表与工具参数中的嵌套集合进行复制和冻结。
