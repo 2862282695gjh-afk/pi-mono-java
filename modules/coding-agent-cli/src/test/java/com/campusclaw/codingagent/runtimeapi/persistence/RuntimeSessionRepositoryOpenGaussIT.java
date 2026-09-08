@@ -30,6 +30,7 @@ import com.campusclaw.ai.types.Model;
 import com.campusclaw.ai.types.Usage;
 import com.campusclaw.codingagent.runtimeapi.RuntimeMessageSourceConfiguration;
 import com.campusclaw.codingagent.runtimeapi.agent.AgentDirectorySnapshotDTO;
+import com.campusclaw.codingagent.runtimeapi.dto.AcceptedControlDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.CommittedControlEventDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.CommittedEventDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.ExecutionTargetDTO;
@@ -56,6 +57,8 @@ import com.campusclaw.codingagent.runtimeapi.session.RuntimeExecutionState;
 import com.campusclaw.codingagent.runtimeapi.session.RuntimeExecutionTerminalReason;
 import com.campusclaw.codingagent.runtimeapi.session.RuntimeSessionResponseAssembler;
 import com.campusclaw.codingagent.runtimeapi.session.SessionEtagFactory;
+import com.campusclaw.codingagent.runtimeapi.session.ToolConfirmationResult;
+import com.campusclaw.codingagent.runtimeapi.session.ToolConfirmationState;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
@@ -130,6 +133,7 @@ class RuntimeSessionRepositoryOpenGaussIT {
         jdbcTemplate.update("TRUNCATE TABLE t_session_stats");
         jdbcTemplate.update("TRUNCATE TABLE t_session_records");
         jdbcTemplate.update("TRUNCATE TABLE t_session_sequences");
+        jdbcTemplate.update("TRUNCATE TABLE t_session_tool_confirmations");
         jdbcTemplate.update("TRUNCATE TABLE t_session_execution_segment_events");
         jdbcTemplate.update("TRUNCATE TABLE t_session_execution_segments");
         jdbcTemplate.update("TRUNCATE TABLE t_session_executions");
@@ -542,6 +546,124 @@ class RuntimeSessionRepositoryOpenGaussIT {
     }
 
     @Test
+    void shouldAcceptClaimAndAcknowledgeConfirmationBeforeLaterInterrupt() {
+        RuntimeSessionDTO session = newSession("session_confirmation_acceptance");
+        repository.create(session);
+        ExecutionTargetDTO confirmingTarget = acceptRootMessage(session, "confirmation");
+        persistConfirmingEvents(session, confirmingTarget);
+
+        var accepted = acceptConfirmation(session, "confirmed", ToolConfirmationResult.DENY, "已拒绝工具调用");
+        assertThat(accepted.target())
+                .isEqualTo(new ExecutionTargetDTO(
+                        session.getId(),
+                        confirmingTarget.executionId(),
+                        confirmingTarget.rootEventId(),
+                        "segment-confirmed"));
+        assertThat(accepted.receipt().getEntrySeq()).isEqualTo(7L);
+        assertThat(executionControls.find(accepted.target()).orElseThrow())
+                .extracting("state", "currentSegmentId", "pendingToolCallId")
+                .containsExactly(RuntimeExecutionState.RUNNING, "segment-confirmed", null);
+        assertThat(count("t_session_execution_segment_events", session.getId())).isEqualTo(4);
+
+        var decision = executionControls
+                .claimConfirmation(
+                        confirmingTarget,
+                        longToolCallId(),
+                        session.getCreatedAt().plusSeconds(3))
+                .orElseThrow();
+        assertThat(decision)
+                .extracting("segmentId", "result", "denyMessage", "state")
+                .containsExactly(
+                        "segment-confirmed", ToolConfirmationResult.DENY, "已拒绝工具调用", ToolConfirmationState.CLAIMED);
+        assertThat(executionControls.claimConfirmation(confirmingTarget, longToolCallId(), decision.getClaimedAt()))
+                .isEmpty();
+        assertThat(executionControls.acknowledgeConfirmation(
+                        decision, session.getCreatedAt().plusSeconds(4)))
+                .isTrue();
+        assertThat(executionControls.acknowledgeConfirmation(
+                        decision, session.getCreatedAt().plusSeconds(5)))
+                .isFalse();
+
+        RuntimeEntryDTO interrupt = controlEntry(session, "post-confirm-interrupt", "user.interrupt");
+        CommittedEventDTO interruptEvent = committedEvent(interrupt, "post-confirm-interrupt-event", "user.interrupt");
+        executionPersistence.acceptInterrupt(
+                session.getId(), confirmingTarget.rootEventId(), interrupt, interruptEvent, interrupt.getTimestamp());
+        assertThat(executionControls.find(accepted.target()).orElseThrow().getState())
+                .isEqualTo(RuntimeExecutionState.STOPPING);
+    }
+
+    @Test
+    void shouldRollbackConfirmationAndRejectItAfterInterruptWins() {
+        RuntimeSessionDTO session = newSession("session_confirmation_rollback");
+        repository.create(session);
+        ExecutionTargetDTO target = acceptRootMessage(session, "confirmation-rollback");
+        persistConfirmingEvents(session, target);
+
+        executionIds.reset("segment-rollback");
+        RuntimeEntryDTO rollback = controlEntry(session, "confirmation-rollback-entry", "user.tool_confirmation");
+        CommittedEventDTO duplicate = committedEvent(rollback, target.rootEventId(), "user.tool_confirmation");
+        assertThatThrownBy(() -> executionPersistence.acceptToolConfirmation(
+                        session.getId(),
+                        longToolCallId(),
+                        ToolConfirmationResult.ALLOW,
+                        null,
+                        rollback,
+                        duplicate,
+                        rollback.getTimestamp()))
+                .isInstanceOf(DataIntegrityViolationException.class);
+        assertThat(executionControls.find(target).orElseThrow().getState()).isEqualTo(RuntimeExecutionState.CONFIRMING);
+        assertThat(count("t_session_tool_confirmations", session.getId())).isZero();
+        assertThat(count("t_session_execution_segments", session.getId())).isOne();
+
+        RuntimeEntryDTO interrupt = controlEntry(session, "winning-interrupt", "user.interrupt");
+        CommittedEventDTO interruptEvent = committedEvent(interrupt, "winning-interrupt-event", "user.interrupt");
+        executionPersistence.acceptInterrupt(
+                session.getId(), target.rootEventId(), interrupt, interruptEvent, interrupt.getTimestamp());
+        assertConfirmationError(session, "late", RuntimeErrorCode.EXECUTION_STOPPING);
+        assertThat(count("t_session_tool_confirmations", session.getId())).isZero();
+    }
+
+    @Test
+    void shouldSerializeInterruptBeforeConfirmationClaim() throws Exception {
+        RuntimeSessionDTO session = newSession("session_confirmation_claim_race");
+        repository.create(session);
+        ExecutionTargetDTO confirmingTarget = acceptRootMessage(session, "confirmation-claim-race");
+        persistConfirmingEvents(session, confirmingTarget);
+        acceptConfirmation(session, "claim-race", ToolConfirmationResult.ALLOW, null);
+        var transaction = new TransactionTemplate(context.getBean(PlatformTransactionManager.class));
+        var interruptAccepted = new CountDownLatch(1);
+        var releaseInterrupt = new CountDownLatch(1);
+        var executor = Executors.newFixedThreadPool(2);
+        try {
+            var interrupt = executor.submit(() -> transaction.execute(status -> {
+                RuntimeEntryDTO receipt = controlEntry(session, "race-interrupt", "user.interrupt");
+                CommittedEventDTO event = committedEvent(receipt, "race-interrupt-event", "user.interrupt");
+                var accepted = executionPersistence.acceptInterrupt(
+                        session.getId(), confirmingTarget.rootEventId(), receipt, event, receipt.getTimestamp());
+                interruptAccepted.countDown();
+                awaitLatch(releaseInterrupt);
+                return accepted;
+            }));
+            awaitLatch(interruptAccepted);
+            var claim = executor.submit(() -> executionControls.claimConfirmation(
+                    confirmingTarget, longToolCallId(), session.getCreatedAt().plusSeconds(3)));
+            assertThatThrownBy(() -> claim.get(200, TimeUnit.MILLISECONDS)).isInstanceOf(TimeoutException.class);
+            releaseInterrupt.countDown();
+            assertThat(interrupt.get(5, TimeUnit.SECONDS).target().rootEventId())
+                    .isEqualTo(confirmingTarget.rootEventId());
+            assertThat(claim.get(5, TimeUnit.SECONDS)).isEmpty();
+            assertThat(jdbcTemplate.queryForObject(
+                            "SELECT state FROM t_session_tool_confirmations WHERE session_id = ?",
+                            String.class,
+                            session.getId()))
+                    .isEqualTo("PENDING");
+        } finally {
+            releaseInterrupt.countDown();
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
     void shouldReadFixedSegmentAfterSequenceUntilItsTerminalEvent() {
         RuntimeSessionDTO session = newSession("session_segment_result");
         repository.create(session);
@@ -824,7 +946,7 @@ class RuntimeSessionRepositoryOpenGaussIT {
     void createsExactTombstoneAndPendingCleanupTaskWhenDeleting() {
         RuntimeSessionDTO session = newSession("session_db_delete");
         repository.create(session);
-        seedClosedExecution(session);
+        seedCompletedConfirmedExecution(session);
         OffsetDateTime deletedAt = OffsetDateTime.of(2026, 8, 18, 1, 30, 0, 0, ZoneOffset.UTC);
 
         assertThat(repository.beginDeletion(session.getId(), deletedAt)).isEqualTo(SessionDeletionStatus.DELETED);
@@ -840,6 +962,7 @@ class RuntimeSessionRepositoryOpenGaussIT {
         assertThat(cleanupState(session.getId())).isEqualTo("RUNNING");
         repository.completeCleanup(session.getId());
 
+        assertThat(count("t_session_tool_confirmations", session.getId())).isZero();
         assertThat(count("t_session_execution_segment_events", session.getId())).isZero();
         assertThat(count("t_session_execution_segments", session.getId())).isZero();
         assertThat(count("t_session_executions", session.getId())).isZero();
@@ -1533,6 +1656,19 @@ class RuntimeSessionRepositoryOpenGaussIT {
         return accepted.target();
     }
 
+    private ExecutionTargetDTO seedCompletedConfirmedExecution(RuntimeSessionDTO session) {
+        ExecutionTargetDTO target = acceptRootMessage(session, "cleanup-confirmation");
+        persistConfirmingEvents(session, target);
+        ExecutionTargetDTO continued = acceptConfirmation(
+                        session, "cleanup-confirmed", ToolConfirmationResult.ALLOW, null)
+                .target();
+        RuntimeEntryDTO idle = controlEntry(session, "cleanup-idle", "session.status.idle");
+        CommittedEventDTO event = committedEvent(idle, "cleanup-idle-event", "session.status_idle");
+        executionPersistence.commitTerminal(
+                continued, idle, event, RuntimeExecutionTerminalReason.DONE, idle.getTimestamp());
+        return continued;
+    }
+
     private ExecutionTargetDTO acceptRootMessage(RuntimeSessionDTO session, String suffix) {
         executionIds.reset("execution-" + suffix, "segment-" + suffix);
         RuntimeEntryDTO root =
@@ -1561,7 +1697,23 @@ class RuntimeSessionRepositoryOpenGaussIT {
         RuntimeEntryDTO idle = controlEntry(session, "confirming-idle", "session.status.idle");
         CommittedEventDTO idleEvent = committedEvent(idle, "confirming-idle-event", "session.status_idle");
         executionPersistence.markToolConfirming(
-                target, "tool-call-" + "x".repeat(300), tool, toolEvent, idle, idleEvent, idle.getTimestamp());
+                target, longToolCallId(), tool, toolEvent, idle, idleEvent, idle.getTimestamp());
+    }
+
+    private AcceptedControlDTO acceptConfirmation(
+            RuntimeSessionDTO session, String suffix, ToolConfirmationResult result, String denyMessage) {
+        executionIds.reset("segment-" + suffix);
+        RuntimeEntryDTO receipt = controlEntry(session, "confirmation-" + suffix, "user.tool_confirmation");
+        CommittedEventDTO event =
+                committedEvent(receipt, "confirmation-" + suffix + "-event", "user.tool_confirmation");
+        return executionPersistence.acceptToolConfirmation(
+                session.getId(), longToolCallId(), result, denyMessage, receipt, event, receipt.getTimestamp());
+    }
+
+    private void assertConfirmationError(RuntimeSessionDTO session, String suffix, RuntimeErrorCode expected) {
+        assertThatThrownBy(() -> acceptConfirmation(session, suffix, ToolConfirmationResult.ALLOW, null))
+                .isInstanceOfSatisfying(RuntimeApiException.class, error -> assertThat(error.errorCode())
+                        .isEqualTo(expected));
     }
 
     private void assertInterruptError(
@@ -1576,6 +1728,10 @@ class RuntimeSessionRepositoryOpenGaussIT {
 
     private static RuntimeEntryDTO controlEntry(RuntimeSessionDTO session, String entryId, String type) {
         return newEntry(session.getId(), entryId, type, session.getCreatedAt().plusSeconds(1), "{}");
+    }
+
+    private static String longToolCallId() {
+        return "tool-call-" + "x".repeat(300);
     }
 
     private ExecutionTargetDTO seedConfirmingThenTerminatedSegment(RuntimeSessionDTO session) {
