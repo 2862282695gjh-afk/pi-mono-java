@@ -92,6 +92,27 @@ public interface RuntimeSessionRepository {
             OffsetDateTime updatedAt);
 
     /**
+     * 在同一事务内更新模型，并为每个配置 Entry 保存完整公共事件。
+     *
+     * @param sessionId 会话 ID
+     * @param expectedVersion 预期资源版本；空表示无条件更新
+     * @param modelId 新模型 ID
+     * @param modelSupportsThinking 新模型是否支持深度思考
+     * @param entriesFactory 锁内配置 Entry 工厂
+     * @param eventFactory 已定稿 Entry 对应的公共事件工厂
+     * @param updatedAt 更新时间
+     * @return 配置更新结果
+     */
+    SessionConfigurationUpdateDTO updateModel(
+            String sessionId,
+            Long expectedVersion,
+            String modelId,
+            boolean modelSupportsThinking,
+            Function<RuntimeSessionDTO, List<RuntimeEntryDTO>> entriesFactory,
+            Function<RuntimeEntryDTO, CommittedEventDTO> eventFactory,
+            OffsetDateTime updatedAt);
+
+    /**
      * 在行锁内复核当前模型能力，同值不生成事件或推进版本。
      *
      * @param sessionId Session 标识
@@ -108,6 +129,27 @@ public interface RuntimeSessionRepository {
             boolean thinking,
             Consumer<RuntimeSessionDTO> admission,
             Function<RuntimeSessionDTO, RuntimeEntryDTO> entryFactory,
+            OffsetDateTime updatedAt);
+
+    /**
+     * 在同一事务内更新深度思考配置，并保存完整公共事件。
+     *
+     * @param sessionId 会话 ID
+     * @param expectedVersion 预期资源版本；空表示无条件更新
+     * @param thinking 新深度思考开关
+     * @param admission 锁内业务准入检查
+     * @param entryFactory 锁内配置 Entry 工厂
+     * @param eventFactory 已定稿 Entry 对应的公共事件工厂
+     * @param updatedAt 更新时间
+     * @return 配置更新结果
+     */
+    SessionConfigurationUpdateDTO updateThinking(
+            String sessionId,
+            Long expectedVersion,
+            boolean thinking,
+            Consumer<RuntimeSessionDTO> admission,
+            Function<RuntimeSessionDTO, RuntimeEntryDTO> entryFactory,
+            Function<RuntimeEntryDTO, CommittedEventDTO> eventFactory,
             OffsetDateTime updatedAt);
 
     SessionDeletionStatus beginDeletion(String sessionId, OffsetDateTime deletedAt);

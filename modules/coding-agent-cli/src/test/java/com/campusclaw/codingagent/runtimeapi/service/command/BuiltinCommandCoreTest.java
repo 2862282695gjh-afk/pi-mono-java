@@ -35,6 +35,7 @@ import com.campusclaw.codingagent.runtimeapi.dto.command.BuiltinCommandMetadataD
 import com.campusclaw.codingagent.runtimeapi.dto.command.CommandResultDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.command.CommandSessionSnapshotDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.command.ResolvedCommandDTO;
+import com.campusclaw.codingagent.runtimeapi.event.RuntimeCommittedEventFactory;
 import com.campusclaw.codingagent.runtimeapi.event.RuntimeEntryCodec;
 import com.campusclaw.codingagent.runtimeapi.event.RuntimeEntryIdGenerator;
 import com.campusclaw.codingagent.runtimeapi.event.RuntimeEventService;
@@ -107,6 +108,7 @@ class BuiltinCommandCoreTest {
                 .withBean(Clock.class, Clock::systemUTC)
                 .withBean(AgentDirectoryResolver.class, () -> mock(AgentDirectoryResolver.class))
                 .withBean(RuntimeModelManager.class, () -> mock(RuntimeModelManager.class))
+                .withBean(RuntimeCommittedEventFactory.class, () -> mock(RuntimeCommittedEventFactory.class))
                 .withBean(RuntimeEntryCodec.class, () -> mock(RuntimeEntryCodec.class))
                 .withBean(RuntimeEntryIdGenerator.class, () -> mock(RuntimeEntryIdGenerator.class))
                 .withBean(RuntimeCompactionService.class, () -> mock(RuntimeCompactionService.class))

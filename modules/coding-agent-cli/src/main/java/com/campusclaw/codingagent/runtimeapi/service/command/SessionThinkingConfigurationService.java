@@ -15,6 +15,7 @@ import com.campusclaw.codingagent.runtimeapi.dto.SessionConfigurationUpdateDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.command.SessionCommandResultDTO;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
+import com.campusclaw.codingagent.runtimeapi.event.RuntimeCommittedEventFactory;
 import com.campusclaw.codingagent.runtimeapi.event.RuntimeEntryCodec;
 import com.campusclaw.codingagent.runtimeapi.event.RuntimeEntryIdGenerator;
 import com.campusclaw.codingagent.runtimeapi.model.RuntimeModelManager;
@@ -43,6 +44,8 @@ public class SessionThinkingConfigurationService {
 
     private final RuntimeEntryCodec entryCodec;
 
+    private final RuntimeCommittedEventFactory committedEventFactory;
+
     private final RuntimeEntryIdGenerator idGenerator;
 
     private final Clock clock;
@@ -52,12 +55,14 @@ public class SessionThinkingConfigurationService {
             AgentDirectoryResolver directoryResolver,
             RuntimeModelManager modelManager,
             RuntimeEntryCodec entryCodec,
+            RuntimeCommittedEventFactory committedEventFactory,
             RuntimeEntryIdGenerator idGenerator,
             Clock clock) {
         this.repository = repository;
         this.directoryResolver = directoryResolver;
         this.modelManager = modelManager;
         this.entryCodec = entryCodec;
+        this.committedEventFactory = committedEventFactory;
         this.idGenerator = idGenerator;
         this.clock = clock;
     }
@@ -100,6 +105,7 @@ public class SessionThinkingConfigurationService {
                 locked -> requireThinkingSupported(locked, snapshot, requested),
                 locked -> entryCodec.thinkingChangedEntry(
                         locked.getId(), idGenerator.nextId(), locked.isThinking(), requested, "requested", updatedAt),
+                committedEventFactory::sessionThinkingChanged,
                 updatedAt);
         return switch (update.status()) {
             case UPDATED, UNCHANGED -> update;
