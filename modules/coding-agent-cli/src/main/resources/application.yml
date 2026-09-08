@@ -71,12 +71,7 @@ campusclaw:
       max-active: ${CAMPUSCLAW_MAX_ACTIVE_EXECUTIONS:100}
       max-duration: ${CAMPUSCLAW_MAX_EXECUTION_DURATION:PT30M}
       terminal-retry-interval: ${CAMPUSCLAW_TERMINAL_RETRY_INTERVAL:PT1S}
-      max-control-messages: ${CAMPUSCLAW_MAX_CONTROL_MESSAGES:32}
-      max-control-bytes: ${CAMPUSCLAW_MAX_CONTROL_BYTES:1048576}
     events:
-      # 生产和多实例部署必须设置稳定的高熵密钥；缺失时使用仅限当前进程的随机密钥。
-      cursor-secret: ${CAMPUSCLAW_EVENT_CURSOR_SECRET:}
-      cursor-ttl: ${CAMPUSCLAW_EVENT_CURSOR_TTL:PT24H}
       stream-buffer-events: ${CAMPUSCLAW_STREAM_BUFFER_EVENTS:256}
       stream-buffer-bytes: ${CAMPUSCLAW_STREAM_BUFFER_BYTES:1048576}
       heartbeat-interval: ${CAMPUSCLAW_SSE_HEARTBEAT_INTERVAL:PT15S}

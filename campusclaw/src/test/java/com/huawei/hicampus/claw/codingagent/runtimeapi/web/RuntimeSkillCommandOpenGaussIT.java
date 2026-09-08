@@ -36,7 +36,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
-import java.util.stream.Collectors;
 
 import com.huawei.hicampus.claw.codingagent.runtimeapi.web.RuntimeHttpProcessFixture.ModelStub;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.web.RuntimeHttpProcessFixture.ProcessTestConfigDTO;
@@ -56,6 +55,10 @@ import org.junit.jupiter.params.provider.ValueSource;
  * @since [br_eCampusCore 26.0.0]
  */
 class RuntimeSkillCommandOpenGaussIT {
+    private static final String FILE_A = "0123456789abcdef0123456789abcdef";
+
+    private static final String FILE_B = "fedcba9876543210fedcba9876543210";
+
     @TempDir
     Path tempDir;
 
@@ -66,8 +69,9 @@ class RuntimeSkillCommandOpenGaussIT {
         prepareRuntimeFiles(tempDir);
         String original = Files.readString(skillFile(), StandardCharsets.UTF_8);
         String arguments = withAttachments ? "  分析订单甲\n并保留说明末尾空白  " : null;
-        List<String> files = withAttachments ? List.of("file_b", "file_a") : List.of();
+        List<String> files = withAttachments ? List.of(FILE_B, FILE_A) : List.of();
         String expected = arguments == null ? original : original + "\n\n" + arguments;
+        String publicInvocation = publicInvocation(arguments);
         String body = skillBody(arguments, files);
         assertThat(MAPPER.readTree(body).properties())
                 .extracting(Map.Entry::getKey)
@@ -81,7 +85,7 @@ class RuntimeSkillCommandOpenGaussIT {
             SavedSkillRunDTO saved;
             try (first) {
                 awaitHealth(first, firstPort);
-                saved = executeFirstSkill(config, model, firstPort, body, expected, files);
+                saved = executeFirstSkill(config, model, firstPort, body, expected, publicInvocation, files);
             }
             assertThat(first.process().isAlive()).isFalse();
             String updated = original.replace(
@@ -107,63 +111,84 @@ class RuntimeSkillCommandOpenGaussIT {
             try (runtime) {
                 awaitHealth(runtime, port);
                 String sessionId = createSession(port);
-                SessionViewDTO initial = getSession(port, sessionId);
-                assertUnboundRejected(port, sessionId);
-                assertError(
-                        send(skillRequest(port, sessionId, skillBody(null, List.of("file_a", "file_a")))
-                                .build()),
-                        400,
-                        "INVALID_COMMAND_REQUEST");
-                assertThat(history(port, sessionId)).isEmpty();
-                assertThat(databaseEntries(config, sessionId)).isEmpty();
-                assertThat(getSession(port, sessionId)).isEqualTo(initial);
-                assertThat(model.requestCount()).isZero();
-                var gate = model.blockNextResponse();
-                var response = submitSkill(port, sessionId, skillBody(null, List.of()));
-                try {
-                    gate.awaitRequest();
-                    SessionViewDTO running = getSession(port, sessionId);
-                    assertThat(running.result().path("state").asText()).isEqualTo("running");
-                    assertError(
-                            send(skillRequest(port, sessionId, skillBody(null, List.of()))
-                                    .build()),
-                            409,
-                            "SESSION_BUSY");
-                    assertThat(getSession(port, sessionId)).isEqualTo(running);
-                    assertTypes(databaseEntries(config, sessionId), "user.message");
-                    assertThat(model.requestCount()).isEqualTo(1);
-                } finally {
-                    gate.release();
-                }
-                assertThat(successfulSkill(response)).contains("event:stream.end");
-                assertTypes(databaseEntries(config, sessionId), "user.message", "assistant.message.completed");
-                assertThat(getSession(port, sessionId).result().path("state").asText())
-                        .isEqualTo("idle");
+                assertInitialRejections(config, model, port, sessionId);
+                assertBusyCallRejected(config, model, port, sessionId);
             }
             assertThat(runtime.process().isAlive()).isFalse();
         }
         assertThat(model.executorTerminated()).isTrue();
     }
 
+    private void assertInitialRejections(ProcessTestConfigDTO config, ModelStub model, int port, String sessionId)
+            throws Exception {
+        SessionViewDTO initial = getSession(port, sessionId);
+        assertUnboundRejected(port, sessionId);
+        assertError(
+                send(skillRequest(port, sessionId, skillBody(null, List.of(FILE_A, FILE_A)))
+                        .build()),
+                400,
+                "INVALID_COMMAND_REQUEST");
+        assertThat(history(port, sessionId)).isEmpty();
+        assertThat(databaseEntries(config, sessionId)).isEmpty();
+        assertThat(getSession(port, sessionId)).isEqualTo(initial);
+        assertThat(model.requestCount()).isZero();
+    }
+
+    private static void assertBusyCallRejected(ProcessTestConfigDTO config, ModelStub model, int port, String sessionId)
+            throws Exception {
+        var gate = model.blockNextResponse();
+        var response = submitSkill(port, sessionId, skillBody(null, List.of()));
+        try {
+            gate.awaitRequest();
+            SessionViewDTO running = getSession(port, sessionId);
+            assertThat(running.result().path("state").asText()).isEqualTo("running");
+            assertError(
+                    send(skillRequest(port, sessionId, skillBody(null, List.of()))
+                            .build()),
+                    409,
+                    "SESSION_BUSY");
+            assertThat(getSession(port, sessionId)).isEqualTo(running);
+            assertTypes(databaseEntries(config, sessionId), "user.message");
+            assertThat(model.requestCount()).isEqualTo(1);
+        } finally {
+            gate.release();
+        }
+        assertThat(successfulSkill(response))
+                .contains("\"type\":\"session.status_idle\"")
+                .doesNotContain("event:");
+        assertTypes(
+                databaseEntries(config, sessionId),
+                "user.message",
+                "assistant.message.completed",
+                "session.status.idle");
+        assertThat(getSession(port, sessionId).result().path("state").asText()).isEqualTo("idle");
+    }
+
     private SavedSkillRunDTO executeFirstSkill(
-            ProcessTestConfigDTO config, ModelStub model, int port, String body, String expected, List<String> files)
+            ProcessTestConfigDTO config,
+            ModelStub model,
+            int port,
+            String body,
+            String expected,
+            String publicInvocation,
+            List<String> files)
             throws Exception {
         String sessionId = createSession(port);
         String stream = successfulSkill(submitSkill(port, sessionId, body));
         JsonNode events = history(port, sessionId);
-        assertTypes(events, "user.message", "assistant.message.completed");
-        assertUserEntry(events.get(0), expected, files);
+        assertTypes(events, "user.message", "agent.message", "session.status_idle");
+        assertUserEvent(events.get(0), publicInvocation, files, expected);
         assertStreamMatchesHistory(stream, events);
         assertThat(userTexts(model)).containsExactly(modelText(expected, files));
         assertThat(model.lastRequest().path("model").asText()).isEqualTo(MODEL_ID);
         assertThat(model.requestCount()).isEqualTo(1);
         JsonNode stored = databaseEntries(config, sessionId);
-        assertTypes(stored, "user.message", "assistant.message.completed");
+        assertTypes(stored, "user.message", "assistant.message.completed", "session.status.idle");
         assertStoredUser(stored.get(0), events.get(0), expected, files);
         SessionViewDTO view = getSession(port, sessionId);
         assertThat(view.result().path("state").asText()).isEqualTo("idle");
         assertThat(expected).startsWith("---\nname: process-analysis\n");
-        return new SavedSkillRunDTO(sessionId, expected, files, view, events, stored);
+        return new SavedSkillRunDTO(sessionId, expected, publicInvocation, files, view, events, stored);
     }
 
     private void assertRestoredInNewJvm(
@@ -180,41 +205,51 @@ class RuntimeSkillCommandOpenGaussIT {
             assertThat(ordinary).contains("process-level answer 2").doesNotContain("event:stream.error");
             assertThat(userTexts(model)).containsExactly(modelText(saved.text(), saved.fileIds()), "process smoke");
             assertThat(userTexts(model)).noneMatch(text -> text.contains("New revision:"));
-            String stream = successfulSkill(submitSkill(port, saved.sessionId(), skillBody(null, List.of())));
-            JsonNode events = history(port, saved.sessionId());
-            assertTypes(
-                    events,
-                    "user.message",
-                    "assistant.message.completed",
-                    "user.message",
-                    "assistant.message.completed",
-                    "user.message",
-                    "assistant.message.completed");
-            assertUserEntry(events.get(0), saved.text(), saved.fileIds());
-            assertUserEntry(events.get(4), updated, List.of());
-            assertStreamMatchesHistory(
-                    stream, MAPPER.createArrayNode().add(events.get(4)).add(events.get(5)));
-            assertThat(userTexts(model))
-                    .containsExactly(modelText(saved.text(), saved.fileIds()), "process smoke", updated);
-            JsonNode stored = databaseEntries(config, saved.sessionId());
-            assertTypes(
-                    stored,
-                    "user.message",
-                    "assistant.message.completed",
-                    "user.message",
-                    "assistant.message.completed",
-                    "user.message",
-                    "assistant.message.completed");
-            assertStoredUser(stored.get(0), events.get(0), saved.text(), saved.fileIds());
-            assertStoredUser(stored.get(4), events.get(4), updated, List.of());
-            assertThat(model.requestCount()).isEqualTo(3);
-            assertThat(getSession(port, saved.sessionId())
-                            .result()
-                            .path("state")
-                            .asText())
-                    .isEqualTo("idle");
+            assertUpdatedSkillRun(config, model, port, saved, updated);
         }
         assertThat(runtime.process().isAlive()).isFalse();
+    }
+
+    private static void assertUpdatedSkillRun(
+            ProcessTestConfigDTO config, ModelStub model, int port, SavedSkillRunDTO saved, String updated)
+            throws Exception {
+        String stream = successfulSkill(submitSkill(port, saved.sessionId(), skillBody(null, List.of())));
+        JsonNode events = history(port, saved.sessionId());
+        assertTypes(
+                events,
+                "user.message",
+                "agent.message",
+                "session.status_idle",
+                "user.message",
+                "agent.message",
+                "session.status_idle",
+                "user.message",
+                "agent.message",
+                "session.status_idle");
+        assertUserEvent(events.get(0), saved.publicInvocation(), saved.fileIds(), saved.text());
+        assertUserEvent(events.get(6), publicInvocation(null), List.of(), updated);
+        assertStreamMatchesHistory(
+                stream,
+                MAPPER.createArrayNode().add(events.get(6)).add(events.get(7)).add(events.get(8)));
+        assertThat(userTexts(model))
+                .containsExactly(modelText(saved.text(), saved.fileIds()), "process smoke", updated);
+        JsonNode stored = databaseEntries(config, saved.sessionId());
+        assertTypes(
+                stored,
+                "user.message",
+                "assistant.message.completed",
+                "session.status.idle",
+                "user.message",
+                "assistant.message.completed",
+                "session.status.idle",
+                "user.message",
+                "assistant.message.completed",
+                "session.status.idle");
+        assertStoredUser(stored.get(0), events.get(0), saved.text(), saved.fileIds());
+        assertStoredUser(stored.get(6), events.get(6), updated, List.of());
+        assertThat(model.responseCount()).isEqualTo(3);
+        assertThat(getSession(port, saved.sessionId()).result().path("state").asText())
+                .isEqualTo("idle");
     }
 
     private void assertUnboundRejected(int port, String sessionId) throws Exception {
@@ -233,53 +268,44 @@ class RuntimeSkillCommandOpenGaussIT {
     }
 
     private static void assertStreamMatchesHistory(String stream, JsonNode history) throws Exception {
-        assertThat(stream).doesNotContain("event:stream.error", "event:command.");
-        assertThat(stream.indexOf("event:user.message")).isGreaterThanOrEqualTo(0);
-        assertThat(stream.indexOf("event:assistant.message.completed"))
-                .isGreaterThan(stream.indexOf("event:user.message"));
-        assertThat(stream.indexOf("event:stream.end"))
-                .isGreaterThan(stream.indexOf("event:assistant.message.completed"));
-        List<JsonNode> users = streamEvents(stream, "user.message");
-        List<JsonNode> assistants = streamEvents(stream, "assistant.message.completed");
-        assertThat(users).hasSize(1);
-        assertThat(assistants).hasSize(1);
-        ObjectNode expectedUser = history.get(0).deepCopy();
-        ObjectNode expectedAssistant = history.get(1).deepCopy();
-        expectedUser.remove("type");
-        expectedAssistant.remove("type");
-        assertThat(users.getFirst()).isEqualTo(expectedUser);
-        assertThat(assistants.getFirst()).isEqualTo(expectedAssistant);
+        assertThat(stream).doesNotContain("event:", "\"resCode\"", "\"commandId\"");
+        assertThat(stream.lines().filter(line -> !line.isBlank()))
+                .allMatch(line -> line.startsWith("data:") || line.startsWith(":"));
+        assertThat(streamEvents(stream)).containsExactlyElementsOf(history);
     }
 
-    private static List<JsonNode> streamEvents(String stream, String type) throws Exception {
+    private static List<JsonNode> streamEvents(String stream) throws Exception {
         List<JsonNode> events = new ArrayList<>();
         for (String frame : stream.replace("\r\n", "\n").split("\n\n")) {
-            if (frame.lines().noneMatch(line -> line.equals("event:" + type))) {
+            if (frame.isBlank() || frame.lines().allMatch(line -> line.startsWith(":"))) {
                 continue;
             }
-            String json = frame.lines()
-                    .filter(line -> line.startsWith("data:"))
-                    .map(line -> line.substring(5).stripLeading())
-                    .collect(Collectors.joining("\n"));
-            events.add(MAPPER.readTree(json));
+            StringBuilder json = new StringBuilder();
+            frame.lines()
+                    .forEach(
+                            line -> json.append(line.substring("data:".length()).stripLeading()));
+            JsonNode event = MAPPER.readTree(json.toString());
+            if (event.hasNonNull("createdAt")) {
+                events.add(event);
+            }
         }
-        return events;
+        return List.copyOf(events);
     }
 
-    private static void assertUserEntry(JsonNode entry, String expected, List<String> files) {
-        assertThat(entry.properties())
+    private static void assertUserEvent(JsonNode event, String invocation, List<String> files, String privateText) {
+        assertThat(event.properties())
                 .extracting(Map.Entry::getKey)
-                .containsExactlyInAnyOrder("type", "entryId", "entrySeq", "message", "fileIds", "createdAt");
-        assertThat(entry.path("message").asText()).isEqualTo(expected);
-        assertThat(entry.path("fileIds")).isEqualTo(MAPPER.valueToTree(files));
-        assertThat(entry.path("entryId").asText()).startsWith("entry_");
-        assertThat(entry.path("entrySeq").asLong()).isPositive();
+                .containsExactlyInAnyOrder("type", "eventId", "content", "createdAt");
+        assertThat(event.path("type").asText()).isEqualTo("user.message");
+        assertThat(event.path("eventId").asText()).startsWith("entry_");
+        assertThat(event.path("content").get(0).path("type").asText()).isEqualTo("text");
+        assertThat(event.path("content").get(0).path("text").asText()).isEqualTo(invocation);
+        assertThat(event.path("content").findValuesAsText("fileId")).containsExactlyElementsOf(files);
+        assertThat(event.toString()).doesNotContain(privateText);
     }
 
     private static void assertStoredUser(JsonNode row, JsonNode event, String text, List<String> files) {
-        assertThat(row.path("entryId")).isEqualTo(event.path("entryId"));
-        assertThat(row.path("entrySeq").asLong())
-                .isEqualTo(event.path("entrySeq").asLong());
+        assertThat(row.path("entryId")).isEqualTo(event.path("eventId"));
         assertThat(row.path("payload")).isEqualTo(MAPPER.valueToTree(Map.of("message", text, "file_ids", files)));
     }
 
@@ -294,7 +320,11 @@ class RuntimeSkillCommandOpenGaussIT {
     }
 
     private static String modelText(String text, List<String> files) {
-        return files.isEmpty() ? text : text + "\n\n[File IDs]\n- file_id: file_b\n- file_id: file_a";
+        return files.isEmpty() ? text : text + "\n\n[File IDs]\n- file_id: " + FILE_B + "\n- file_id: " + FILE_A;
+    }
+
+    private static String publicInvocation(String arguments) {
+        return arguments == null ? "/skill:" + SKILL_NAME : "/skill:" + SKILL_NAME + " " + arguments;
     }
 
     private static CompletableFuture<HttpResponse<String>> submitSkill(int port, String sessionId, String body) {
@@ -391,6 +421,7 @@ class RuntimeSkillCommandOpenGaussIT {
     private record SavedSkillRunDTO(
             String sessionId,
             String text,
+            String publicInvocation,
             List<String> fileIds,
             SessionViewDTO session,
             JsonNode events,

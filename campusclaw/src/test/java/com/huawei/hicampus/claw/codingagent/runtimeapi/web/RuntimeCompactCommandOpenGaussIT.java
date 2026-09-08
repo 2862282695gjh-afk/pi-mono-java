@@ -4,7 +4,9 @@
 
 package com.huawei.hicampus.claw.codingagent.runtimeapi.web;
 
+import static com.huawei.hicampus.claw.codingagent.runtimeapi.web.RuntimeHttpProcessFixture.CALLER_ID;
 import static com.huawei.hicampus.claw.codingagent.runtimeapi.web.RuntimeHttpProcessFixture.CLIENT;
+import static com.huawei.hicampus.claw.codingagent.runtimeapi.web.RuntimeHttpProcessFixture.JWT;
 import static com.huawei.hicampus.claw.codingagent.runtimeapi.web.RuntimeHttpProcessFixture.MAPPER;
 import static com.huawei.hicampus.claw.codingagent.runtimeapi.web.RuntimeHttpProcessFixture.awaitHealth;
 import static com.huawei.hicampus.claw.codingagent.runtimeapi.web.RuntimeHttpProcessFixture.createSession;
@@ -87,7 +89,7 @@ class RuntimeCompactCommandOpenGaussIT {
                 String competitor = createSession(port);
                 compactAndAwait(port, sessionId, competitor, model, disconnect);
                 assertCompactionStorage(
-                        config, sessionId, retainedEntry.path("entryId").asText());
+                        config, sessionId, retainedEntry.path("eventId").asText());
                 assertReleasedResources(port, sessionId, competitor, model);
                 savedHistory = history(port, sessionId);
                 savedSession = getSession(port, sessionId);
@@ -131,11 +133,11 @@ class RuntimeCompactCommandOpenGaussIT {
         assertUserStream(submitUser(port, sessionId, OLD_TEXT), OLD_TEXT, "process-level answer");
         assertUserStream(submitUser(port, sessionId, KEPT_TEXT), KEPT_TEXT, "process-level answer 2");
         JsonNode entries = history(port, sessionId);
-        assertThat(entries).hasSize(4);
-        assertThat(entries.get(2).path("message").asText()).isEqualTo(KEPT_TEXT);
-        assertThat(entries.get(2).path("type").asText()).isEqualTo("user.message");
+        assertThat(entries).hasSize(6);
+        assertThat(entries.get(3).path("content").get(0).path("text").asText()).isEqualTo(KEPT_TEXT);
+        assertThat(entries.get(3).path("type").asText()).isEqualTo("user.message");
         assertThat(model.requestCount()).isEqualTo(2);
-        return entries.get(2);
+        return entries.get(3);
     }
 
     private static void compactAndAwait(
@@ -171,7 +173,7 @@ class RuntimeCompactCommandOpenGaussIT {
 
     private static void assertPendingCompaction(int port, String sessionId, ModelStub model) throws Exception {
         assertThat(getSession(port, sessionId).result().path("state").asText()).isEqualTo("running");
-        assertThat(history(port, sessionId)).hasSize(4);
+        assertThat(history(port, sessionId)).hasSize(6);
         String summaryRequest = model.lastRequest().path("messages").toString();
         assertThat(summaryRequest)
                 .contains("context summarization assistant", OLD_TEXT, "process-level answer")
@@ -193,7 +195,7 @@ class RuntimeCompactCommandOpenGaussIT {
     private static void assertReleasedResources(int port, String sessionId, String competitor, ModelStub model)
             throws Exception {
         assertUserStream(submitUser(port, competitor, "capacity probe"), "capacity probe", "process-level answer 4");
-        assertThat(history(port, competitor)).hasSize(2);
+        assertThat(history(port, competitor)).hasSize(3);
         assertUserStream(
                 submitUser(port, sessionId, "same JVM continuation"),
                 "same JVM continuation",
@@ -209,15 +211,16 @@ class RuntimeCompactCommandOpenGaussIT {
         long deadline = System.nanoTime() + Duration.ofSeconds(10).toNanos();
         while (System.nanoTime() < deadline) {
             JsonNode entries = history(port, sessionId);
-            if (entries.size() == 5
+            if (entries.size() == 7
                     && getSession(port, sessionId)
                             .result()
                             .path("state")
                             .asText()
                             .equals("idle")) {
-                JsonNode compacted = entries.get(4);
-                assertThat(compacted.path("type").asText()).isEqualTo("session.compaction.completed");
-                assertThat(compacted.path("summary").asText()).isEqualTo(SUMMARY);
+                JsonNode compacted = entries.get(6);
+                assertThat(compacted.path("type").asText()).isEqualTo("session.compacted");
+                assertThat(compacted.path("reason").asText()).isEqualTo("manual");
+                assertThat(compacted.toString()).doesNotContain(SUMMARY);
                 return;
             }
             Thread.sleep(25L);
@@ -247,7 +250,7 @@ class RuntimeCompactCommandOpenGaussIT {
                     .doesNotContain(OLD_TEXT);
             assertThat(getSession(port, sessionId).result().path("state").asText())
                     .isEqualTo("idle");
-            assertThat(history(port, sessionId)).hasSize(9);
+            assertThat(history(port, sessionId)).hasSize(13);
             assertThat(model.requestCount()).isEqualTo(6);
         }
         assertThat(restarted.process().isAlive()).isFalse();
@@ -281,7 +284,7 @@ class RuntimeCompactCommandOpenGaussIT {
     }
 
     private static void assertCompactJson(HttpResponse<String> response, boolean compacted) throws Exception {
-        assertThat(response.statusCode()).isEqualTo(200);
+        assertThat(response.statusCode()).as(response.body()).isEqualTo(200);
         assertThat(response.headers().firstValue("Content-Type")).contains("application/json");
         assertThat(response.headers().firstValue("Cache-Control")).contains("no-store");
         assertThat(response.headers().firstValue("Content-Language")).contains("zh-CN");
@@ -293,18 +296,27 @@ class RuntimeCompactCommandOpenGaussIT {
 
     private static HttpResponse<String> submitUser(int port, String sessionId, String message) throws Exception {
         return send(HttpRequest.newBuilder(eventsUri(port, sessionId, null))
+                .header("X-HW-ID", CALLER_ID)
+                .header("Authorization", "Bearer " + JWT)
+                .header("access-token", "process-access-token")
                 .header("Content-Type", "application/json")
+                .header("Accept", "text/event-stream")
                 .timeout(Duration.ofSeconds(15))
-                .POST(HttpRequest.BodyPublishers.ofString(
-                        MAPPER.writeValueAsString(Map.of("message", message, "fileIds", List.of())),
-                        StandardCharsets.UTF_8))
+                .POST(HttpRequest.BodyPublishers.ofString(userMessageBody(message), StandardCharsets.UTF_8))
                 .build());
+    }
+
+    private static String userMessageBody(String message) throws Exception {
+        return MAPPER.writeValueAsString(Map.of(
+                "event", Map.of("type", "user.message", "content", List.of(Map.of("type", "text", "text", message)))));
     }
 
     private static void assertUserStream(HttpResponse<String> response, String message, String answer) {
         assertThat(response.statusCode()).isEqualTo(200);
         assertThat(response.headers().firstValue("Content-Type").orElseThrow()).startsWith("text/event-stream");
-        assertThat(response.body()).contains(message, answer).doesNotContain("event:stream.error");
+        assertThat(response.body())
+                .contains(message, answer, "\"type\":\"session.status_idle\"", "\"reason\":\"done\"")
+                .doesNotContain("event:", "stream.error");
     }
 
     private static JsonNode history(int port, String sessionId) throws Exception {
@@ -312,7 +324,7 @@ class RuntimeCompactCommandOpenGaussIT {
                 .timeout(Duration.ofSeconds(5))
                 .GET()
                 .build());
-        assertThat(response.statusCode()).isEqualTo(200);
+        assertThat(response.statusCode()).as(response.body()).isEqualTo(200);
         return MAPPER.readTree(response.body()).path("result").path("events");
     }
 
@@ -327,8 +339,10 @@ class RuntimeCompactCommandOpenGaussIT {
                 .containsExactly(
                         "user.message",
                         "assistant.message.completed",
+                        "session.status.idle",
                         "user.message",
                         "assistant.message.completed",
+                        "session.status.idle",
                         "session.compaction.completed");
         var entry = entries.getLast();
         JsonNode payload = MAPPER.readTree(entry.get("payload"));

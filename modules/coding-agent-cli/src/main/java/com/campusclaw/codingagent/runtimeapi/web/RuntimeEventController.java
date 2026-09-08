@@ -4,11 +4,11 @@
 
 package com.campusclaw.codingagent.runtimeapi.web;
 
-import com.campusclaw.codingagent.runtimeapi.event.RuntimeEventQueryService;
-import com.campusclaw.codingagent.runtimeapi.event.RuntimeEventService;
+import com.campusclaw.codingagent.runtimeapi.event.CommittedEventQueryService;
 import com.campusclaw.codingagent.runtimeapi.event.RuntimeSseDispatcher;
+import com.campusclaw.codingagent.runtimeapi.event.RuntimeV2EventService;
 import com.campusclaw.codingagent.runtimeapi.result.ResultBeanAdapter;
-import com.campusclaw.codingagent.runtimeapi.vo.UserEventRequestVO;
+import com.campusclaw.codingagent.runtimeapi.vo.SubmitSessionEventRequestVO;
 import com.campusclaw.common.constant.ClawConstants;
 
 import org.springframework.http.CacheControl;
@@ -26,6 +26,8 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 
@@ -38,17 +40,17 @@ import jakarta.validation.constraints.Pattern;
 @RestController
 @RequestMapping(ClawConstants.RuntimeApi.BASE_PATH + "/sessions/{sessionId}/events")
 public class RuntimeEventController {
-    private final RuntimeEventService service;
+    private final RuntimeV2EventService service;
 
-    private final RuntimeEventQueryService queryService;
+    private final CommittedEventQueryService queryService;
 
     private final ResultBeanAdapter resultBeanAdapter;
 
     private final RuntimeSseDispatcher sseDispatcher;
 
     public RuntimeEventController(
-            RuntimeEventService service,
-            RuntimeEventQueryService queryService,
+            RuntimeV2EventService service,
+            CommittedEventQueryService queryService,
             ResultBeanAdapter resultBeanAdapter,
             RuntimeSseDispatcher sseDispatcher) {
         this.service = service;
@@ -60,7 +62,7 @@ public class RuntimeEventController {
     @PostMapping(produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public ResponseEntity<SseEmitter> submit(
             @PathVariable("sessionId") @NotBlank @Pattern(regexp = ClawConstants.Session.ID_REGEX) String sessionId,
-            @Valid @RequestBody UserEventRequestVO body,
+            @Valid @RequestBody SubmitSessionEventRequestVO body,
             HttpServletRequest request) {
         SseEmitter emitter = new SseEmitter(0L);
         var events = service.submit(
@@ -68,7 +70,7 @@ public class RuntimeEventController {
         emitter.onCompletion(events::detach);
         emitter.onTimeout(events::detach);
         emitter.onError(error -> events.detach());
-        events.attach(sseDispatcher, new RuntimeSseEmitterSubscriber(emitter));
+        events.attach(sseDispatcher, new RuntimeSseEmitterSubscriber(emitter, true));
         return ResponseEntity.ok()
                 .cacheControl(CacheControl.noStore())
                 .header(HttpHeaders.CONTENT_LANGUAGE, RuntimeRequestContext.language(request))
@@ -78,10 +80,10 @@ public class RuntimeEventController {
     @GetMapping
     public ResponseEntity<Object> list(
             @PathVariable("sessionId") @NotBlank @Pattern(regexp = ClawConstants.Session.ID_REGEX) String sessionId,
-            @RequestParam(required = false) String limit,
-            @RequestParam(required = false) String page,
+            @RequestParam(required = false) @Min(1) @Max(ClawConstants.RuntimeApi.MAX_EVENT_PAGE_LIMIT) Integer limit,
+            @RequestParam(required = false) @Min(1) Long page,
             HttpServletRequest request) {
-        var result = queryService.list(sessionId, limit, page, RuntimeRequestContext.locale(request));
+        var result = queryService.list(sessionId, limit, page);
         return ResponseEntity.ok()
                 .cacheControl(CacheControl.noStore())
                 .header(HttpHeaders.CONTENT_LANGUAGE, RuntimeRequestContext.language(request))

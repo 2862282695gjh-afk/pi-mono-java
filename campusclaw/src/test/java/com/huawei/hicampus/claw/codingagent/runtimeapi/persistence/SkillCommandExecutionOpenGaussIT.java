@@ -52,26 +52,28 @@ import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.command.SkillCommandInputDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.error.RuntimeErrorCode;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.event.CommittedEventProjection;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.event.CommittedEventQueryService;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeCommittedEventFactory;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeEntryCodec;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeEntryIdGenerator;
-import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeEventCursorCodec;
-import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeEventProjectorFactory;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeEventProperties;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeEventQueryService;
-import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeEventService;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeEventStream;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeEventStreamFactory;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeEventSubscriber;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeExecutionContextFactory;
-import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeExecutionCoordinator;
-import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeTerminalEventFactory;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeV2EventEncoder;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeV2EventProjectorFactory;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeV2ExecutionCoordinator;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeV2MessageEventService;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.model.RuntimeModelManager;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.persistence.RuntimeSessionRepositoryOpenGaussIT.OpenGaussTestConfiguration;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.runtime.RuntimeActiveExecution;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.runtime.RuntimeExecutionProperties;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.runtime.RuntimeExecutionTimeoutScheduler;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.runtime.RuntimeSessionEngineRegistry;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.runtime.RuntimeTerminalRetryScheduler;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.service.command.skill.SkillCommandExecutionService;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.session.RuntimeSessionModelReconciler;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.vo.RuntimeSseEventVO;
@@ -101,6 +103,10 @@ import org.springframework.jdbc.core.JdbcTemplate;
  * @since [br_eCampusCore 26.0.0]
  */
 class SkillCommandExecutionOpenGaussIT {
+    private static final String FILE_B = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+
+    private static final String FILE_A = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+
     @TempDir
     Path temporary;
 
@@ -126,7 +132,11 @@ class SkillCommandExecutionOpenGaussIT {
 
     private RuntimeExecutionTimeoutScheduler scheduler;
 
+    private RuntimeTerminalRetryScheduler terminalRetries;
+
     private RuntimeEventQueryService queries;
+
+    private CommittedEventQueryService eventQueries;
 
     private RuntimeEntryCodec codec;
 
@@ -166,10 +176,19 @@ class SkillCommandExecutionOpenGaussIT {
         if (scheduler != null) {
             scheduler.close();
         }
+        if (terminalRetries != null) {
+            terminalRetries.close();
+        }
         if (database != null) {
             try {
                 var jdbc = database.getBean(JdbcTemplate.class);
                 for (String table : List.of(
+                        "t_session_event_projection",
+                        "t_session_tool_confirmations",
+                        "t_session_execution_segment_events",
+                        "t_session_execution_segments",
+                        "t_session_executions",
+                        "t_session_events",
                         "t_session_entries",
                         "t_session_records",
                         "t_session_sequences",
@@ -190,6 +209,7 @@ class SkillCommandExecutionOpenGaussIT {
     void testPersistsAndRestoresActualSnapshotTextEvenAfterDetach(boolean detach) throws Exception {
         String arguments = detach ? null : "  附加说明\n";
         String expected = detach ? "本次实际说明" : "本次实际说明\n\n" + arguments;
+        String publicInvocation = detach ? "/skill:pdf" : "/skill:pdf " + arguments;
         when(runtimes.prepare("agent")).thenReturn(runtime("本次实际说明", true));
         RuntimeEventStream stream = service.execute(
                 session.getId(),
@@ -200,7 +220,7 @@ class SkillCommandExecutionOpenGaussIT {
                 registry.find(session.getId()).orElseThrow().activeExecution().orElseThrow();
         assertThat(text((UserMessage)
                         modelInput.get(5, TimeUnit.SECONDS).messages().getLast()))
-                .isEqualTo(expected + "\n\n[File IDs]\n- file_id: file_b\n- file_id: file_a");
+                .isEqualTo(expected + "\n\n[File IDs]\n- file_id: " + FILE_B + "\n- file_id: " + FILE_A);
         if (detach) {
             stream.detach();
             assertThat(execution.completion()).isNotDone();
@@ -212,18 +232,23 @@ class SkillCommandExecutionOpenGaussIT {
         var entries = repository.listCurrentBranchEntries(session.getId(), 0L, 500);
         assertThat(entries)
                 .extracting(RuntimeEntryDTO::getType)
-                .containsExactly("user.message", "assistant.message.completed");
+                .containsExactly("user.message", "assistant.message.completed", "session.status.idle");
         assertThat(mapper.readTree(entries.getFirst().getPayload())
                         .path("message")
                         .asText())
                 .isEqualTo(expected);
-        assertThat(queries.list(session.getId(), null, null, Locale.CHINA)
-                        .getEvents()
-                        .getFirst())
-                .containsEntry("message", expected)
-                .containsEntry("fileIds", List.of("file_b", "file_a"));
+        var publicEvent =
+                eventQueries.list(session.getId(), null, null).getEvents().getFirst();
+        assertThat(mapper.valueToTree(publicEvent)
+                        .path("content")
+                        .get(0)
+                        .path("text")
+                        .asText())
+                .isEqualTo(publicInvocation);
         if (!detach) {
-            assertThat(collect(stream).getFirst().getData()).containsEntry("message", expected);
+            var receipt = mapper.valueToTree(collect(stream).getFirst().getData());
+            assertThat(receipt.path("content").get(0).path("text").asText()).isEqualTo(publicInvocation);
+            assertThat(receipt.toString()).doesNotContain("本次实际说明");
         }
         assertRestored(expected);
         verify(runtimes, times(1)).prepare("agent");
@@ -236,7 +261,7 @@ class SkillCommandExecutionOpenGaussIT {
                     reopened.getBean(RuntimeSessionRepository.class).listCurrentBranchEntries(session.getId(), 0L, 500);
             assertThat(text((UserMessage)
                             codec.toAgentMessages(restored, model()).getFirst()))
-                    .isEqualTo(expected + "\n\n[File IDs]\n- file_id: file_b\n- file_id: file_a");
+                    .isEqualTo(expected + "\n\n[File IDs]\n- file_id: " + FILE_B + "\n- file_id: " + FILE_A);
         }
     }
 
@@ -322,7 +347,7 @@ class SkillCommandExecutionOpenGaussIT {
     private void assembleRuntime() {
         var messages = new RuntimeMessageSourceConfiguration().messageSource();
         codec = new RuntimeEntryCodec(mapper, messages);
-        queries = new RuntimeEventQueryService(repository, codec, mock(RuntimeEventCursorCodec.class));
+        queries = new RuntimeEventQueryService(repository, codec);
         var properties = new RuntimeExecutionProperties();
         properties.setMaxActive(1);
         var prompt = mock(RuntimeAgentPromptLoader.class);
@@ -339,40 +364,57 @@ class SkillCommandExecutionOpenGaussIT {
         scheduler = new RuntimeExecutionTimeoutScheduler();
         Clock clock = Clock.fixed(now.toInstant(), ZoneOffset.UTC);
         RuntimeEntryIdGenerator ids = () -> UUID.randomUUID().toString();
-        var coordinator = new RuntimeExecutionCoordinator(
+        service = new SkillCommandExecutionService(messageEventService(messages, clock, ids, properties));
+    }
+
+    private RuntimeV2MessageEventService messageEventService(
+            org.springframework.context.MessageSource messages,
+            Clock clock,
+            RuntimeEntryIdGenerator ids,
+            RuntimeExecutionProperties properties) {
+        var projection = new CommittedEventProjection(mapper);
+        var eventFactory = new RuntimeCommittedEventFactory(mapper, messages);
+        var encoder = new RuntimeV2EventEncoder(projection, mapper);
+        var eventProperties = new RuntimeEventProperties();
+        var persistence = new RuntimeExecutionPersistenceService(
+                repository, database.getBean(RuntimeExecutionControlRepository.class), ids);
+        terminalRetries = new RuntimeTerminalRetryScheduler();
+        var projectorFactory = new RuntimeV2EventProjectorFactory(
+                repository, persistence, codec, ids, eventFactory, encoder, clock, eventProperties);
+        var coordinator = new RuntimeV2ExecutionCoordinator(
                 registry,
-                repository,
-                new RuntimeEventProjectorFactory(
-                        repository, codec, new RuntimeCommittedEventFactory(mapper, messages), ids, clock),
+                persistence,
+                projectorFactory,
                 scheduler,
+                terminalRetries,
                 properties,
-                new RuntimeTerminalEventFactory(messages),
+                codec,
+                ids,
+                eventFactory,
+                encoder,
                 clock);
         var directories = mock(AgentDirectoryResolver.class);
         var models = mock(RuntimeModelManager.class);
         when(directories.resolve("agent")).thenReturn(directory());
         when(models.resolveAvailableModel(directory(), "model")).thenReturn(model());
         var contextFactory = new RuntimeExecutionContextFactory(
-                queries, registry, codec, new RuntimeEventStreamFactory(new RuntimeEventProperties(), codec), clock);
-        service = new SkillCommandExecutionService(new RuntimeEventService(
+                queries, registry, codec, new RuntimeEventStreamFactory(eventProperties, codec), clock);
+        var reconciler =
+                new RuntimeSessionModelReconciler(repository, directories, models, codec, eventFactory, ids, clock);
+        var messageEvents = new RuntimeV2MessageEventService(
                 repository,
                 codec,
                 ids,
                 registry,
                 contextFactory,
                 coordinator,
-                reconciler(directories, models, ids, clock, messages),
-                clock));
-    }
-
-    private RuntimeSessionModelReconciler reconciler(
-            AgentDirectoryResolver directories,
-            RuntimeModelManager models,
-            RuntimeEntryIdGenerator ids,
-            Clock clock,
-            org.springframework.context.MessageSource messages) {
-        return new RuntimeSessionModelReconciler(
-                repository, directories, models, codec, new RuntimeCommittedEventFactory(mapper, messages), ids, clock);
+                reconciler,
+                persistence,
+                eventFactory,
+                encoder,
+                clock);
+        eventQueries = new CommittedEventQueryService(repository, projection);
+        return messageEvents;
     }
 
     private PreparedAgentRuntime runtime(String content, boolean enabled) {
@@ -391,7 +433,7 @@ class SkillCommandExecutionOpenGaussIT {
         var input = new SkillCommandInputDTO();
         input.setSkillName("pdf");
         input.setArguments(arguments);
-        input.setFileIds(List.of("file_b", "file_a"));
+        input.setFileIds(List.of(FILE_B, FILE_A));
         return input;
     }
 

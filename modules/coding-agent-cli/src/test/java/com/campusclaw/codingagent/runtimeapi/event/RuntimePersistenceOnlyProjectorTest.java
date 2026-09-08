@@ -23,7 +23,6 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import com.campusclaw.agent.event.MessageEndEvent;
 import com.campusclaw.ai.types.Api;
 import com.campusclaw.ai.types.AssistantMessage;
 import com.campusclaw.ai.types.ContentBlock;
@@ -166,27 +165,6 @@ class RuntimePersistenceOnlyProjectorTest {
     }
 
     @Test
-    void shouldPersistFirstQueuedUserWithoutFakeInitialMessageAndKeepCompactionSequence() {
-        addUser("old", "old task");
-        addUser("kept", "current task");
-        complete(CompactionReason.MANUAL, 1, false);
-        UserMessage queued = new UserMessage("queued", 2L);
-        assertThat(execution.queueControl(queued, 6L, 1, 6L)).isTrue();
-
-        projector.onEvent(new MessageEndEvent(queued));
-
-        assertThat(history)
-                .extracting(RuntimeEntryDTO::getType)
-                .containsExactly("user.message", "user.message", "session.compaction.completed", "user.message");
-        assertThat(history.getLast().getPayload()).contains("\"message\":\"queued\"", "\"file_ids\":[]");
-        assertThat(history.getLast().getEntrySeq()).isEqualTo(43L);
-        assertThat(projector.lastCompactionEntrySeq()).isEqualTo(41L);
-        assertThat(execution.queueControl(new UserMessage("next", 3L), 4L, 1, 6L))
-                .isTrue();
-        verify(codec, never()).toSseData(any(), any());
-    }
-
-    @Test
     void shouldPreserveRetryDiscardIdentityWithoutRequestStream() {
         addUser("old", "old");
         addUser("kept", "task");
@@ -195,13 +173,11 @@ class RuntimePersistenceOnlyProjectorTest {
 
         complete(CompactionReason.OVERFLOW, 1, true);
         RuntimeEntryDTO compaction = history.getLast();
-        projector.onEvent(new MessageEndEvent(assistant(List.of(new TextContent("done")), StopReason.STOP)));
 
         assertThat(compaction.getPayload()).contains("\"_discardedEntryId\":\"discarded\"");
-        assertThat(codec.toAgentContextEntryIds(history))
-                .containsExactly(compaction.getId(), "kept", history.getLast().getId());
-        assertThat(records).hasSize(2);
-        assertThat(records.getLast().getPayload()).contains("\"cause\":\"assistant\"", "\"attempt\":2");
+        assertThat(codec.toAgentContextEntryIds(history)).containsExactly(compaction.getId(), "kept");
+        assertThat(records).singleElement().satisfies(record -> assertThat(record.getPayload())
+                .contains("\"cause\":\"compaction\"", "\"attempt\":1"));
         assertThat(projector.lastCompactionEntrySeq()).isEqualTo(41L);
         assertThat(projector.failure()).isNull();
     }
@@ -214,7 +190,6 @@ class RuntimePersistenceOnlyProjectorTest {
 
         complete(CompactionReason.MANUAL, 0, false);
         complete(CompactionReason.MANUAL, 0, false);
-        projector.onEvent(new MessageEndEvent(new UserMessage("ignored", 2L)));
 
         assertThat(projector.failure()).isSameAs(error);
         assertThat(projector.lastCompactionEntrySeq()).isNull();

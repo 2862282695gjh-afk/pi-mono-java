@@ -29,7 +29,6 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
-import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
@@ -72,16 +71,16 @@ class RuntimeSkillLifecycleOpenGaussIT {
                 try {
                     try (Socket socket = openSkillSocket(port, sessionId, "断线前已接受")) {
                         gate.awaitRequest();
-                        assertAcceptedInput(port, sessionId, model, content + "\n\n断线前已接受");
+                        assertAcceptedInput(port, sessionId, model, "断线前已接受", content + "\n\n断线前已接受");
                         resetSocket(socket);
                     }
                     assertStillRunningAfterDisconnect(port, sessionId);
                     assertRejectedWithoutAcceptance(port, sessionId, 409, "SESSION_BUSY", model);
                     assertRejectedWithoutAcceptance(port, competitor, 503, "RUNTIME_CAPACITY_EXCEEDED", model);
                     gate.release();
-                    assertTerminalHistory(port, sessionId, "stop");
+                    assertTerminalHistory(port, sessionId, false, "done");
                     assertThat(model.requestCount()).isEqualTo(1);
-                    assertCapacityReusable(port, sessionId, competitor, model, content);
+                    assertCapacityReusable(port, sessionId, competitor, model, content, "断线前已接受");
                 } finally {
                     gate.release();
                 }
@@ -110,7 +109,7 @@ class RuntimeSkillLifecycleOpenGaussIT {
                 String sessionId = createSession(port);
                 String competitor = createSession(port);
                 timeoutBlockedSkill(port, sessionId, competitor, model, content, disconnect);
-                assertCapacityReusable(port, sessionId, competitor, model, content);
+                assertCapacityReusable(port, sessionId, competitor, model, content, "等待超时");
             }
             assertThat(runtime.process().isAlive()).isFalse();
         }
@@ -126,7 +125,7 @@ class RuntimeSkillLifecycleOpenGaussIT {
             if (disconnect) {
                 try (Socket socket = openSkillSocket(port, sessionId, "等待超时")) {
                     gate.awaitRequest();
-                    assertAcceptedInput(port, sessionId, model, content + "\n\n等待超时");
+                    assertAcceptedInput(port, sessionId, model, "等待超时", content + "\n\n等待超时");
                     resetSocket(socket);
                 }
             } else {
@@ -134,13 +133,13 @@ class RuntimeSkillLifecycleOpenGaussIT {
                         skillRequest(port, sessionId, "等待超时"),
                         HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
                 gate.awaitRequest();
-                assertAcceptedInput(port, sessionId, model, content + "\n\n等待超时");
+                assertAcceptedInput(port, sessionId, model, "等待超时", content + "\n\n等待超时");
                 assertRejectedWithoutAcceptance(port, competitor, 503, "RUNTIME_CAPACITY_EXCEEDED", model);
                 assertThat(response).isNotDone();
                 assertTimeoutStream(response.get(8, TimeUnit.SECONDS));
             }
-            JsonNode terminal = assertTerminalHistory(port, sessionId, "aborted");
-            assertThat(terminal.get(1).path("message").path("content")).isEmpty();
+            JsonNode terminal = assertTerminalHistory(port, sessionId, true, "terminated");
+            assertThat(terminal.get(1).path("content").asText()).isEmpty();
             assertThat(getSession(port, sessionId)
                             .result()
                             .required("lifetimeUsage")
@@ -188,14 +187,14 @@ class RuntimeSkillLifecycleOpenGaussIT {
                 StandardCharsets.UTF_8);
     }
 
-    private static void assertAcceptedInput(int port, String sessionId, ModelStub model, String expected)
-            throws Exception {
+    private static void assertAcceptedInput(
+            int port, String sessionId, ModelStub model, String arguments, String expected) throws Exception {
         assertThat(getSession(port, sessionId).result().path("state").asText()).isEqualTo("running");
         JsonNode entries = history(port, sessionId);
         assertThat(entries).hasSize(1);
         assertThat(entries.get(0).path("type").asText()).isEqualTo("user.message");
-        assertThat(entries.get(0).path("message").asText()).isEqualTo(expected);
-        assertThat(entries.get(0).path("fileIds")).isEmpty();
+        assertThat(entries.get(0).path("content").get(0).path("text").asText()).isEqualTo(publicInvocation(arguments));
+        assertThat(entries.get(0).toString()).doesNotContain(expected);
         assertThat(model.lastRequest().path("messages").toString()).contains(MAPPER.writeValueAsString(expected));
         assertThat(model.requestCount()).isEqualTo(1);
     }
@@ -214,45 +213,69 @@ class RuntimeSkillLifecycleOpenGaussIT {
         assertThat(model.requestCount()).isEqualTo(requests);
     }
 
-    private static JsonNode assertTerminalHistory(int port, String sessionId, String reason) throws Exception {
+    private static JsonNode assertTerminalHistory(int port, String sessionId, boolean emptyAgentMessage, String reason)
+            throws Exception {
+        int expectedSize = 3;
         long deadline = System.nanoTime() + Duration.ofSeconds(8).toNanos();
         while (System.nanoTime() < deadline) {
             JsonNode entries = history(port, sessionId);
-            if (entries.size() == 2
+            if (entries.size() == expectedSize
                     && "idle"
                             .equals(getSession(port, sessionId)
                                     .result()
                                     .path("state")
                                     .asText())) {
                 assertThat(entries.get(0).path("type").asText()).isEqualTo("user.message");
-                assertThat(entries.get(1).path("type").asText()).isEqualTo("assistant.message.completed");
-                assertThat(entries.get(1).path("finishReason").asText()).isEqualTo(reason);
+                assertThat(entries.get(1).path("type").asText()).isEqualTo("agent.message");
+                assertThat(entries.get(1).path("phase").asText()).isEqualTo("completed");
+                assertThat(entries.get(1).path("content").asText().isEmpty()).isEqualTo(emptyAgentMessage);
+                JsonNode terminal = entries.get(expectedSize - 1);
+                assertThat(terminal.path("type").asText()).isEqualTo("session.status_idle");
+                assertThat(terminal.path("reason").asText()).isEqualTo(reason);
+                assertThat(terminal.path("sourceEventId"))
+                        .isEqualTo(entries.get(0).path("eventId"));
                 return entries;
             }
             Thread.sleep(25L);
         }
-        throw new AssertionError("Accepted Skill did not finish with persisted idle state and two entries");
+        throw new AssertionError("Accepted Skill did not finish with the expected public terminal events");
     }
 
     private static void assertCapacityReusable(
-            int port, String sessionId, String competitor, ModelStub model, String content) throws Exception {
+            int port, String sessionId, String competitor, ModelStub model, String content, String initialArguments)
+            throws Exception {
         JsonNode saved = history(port, sessionId);
         assertSuccessfulSkill(send(skillRequest(port, sessionId, "原会话续跑")));
         assertThat(model.lastRequest().path("messages").toString())
-                .contains(MAPPER.writeValueAsString(saved.get(0).path("message").asText()))
+                .contains(MAPPER.writeValueAsString(content + "\n\n" + initialArguments))
                 .contains(MAPPER.writeValueAsString(content + "\n\n原会话续跑"));
         assertThat(model.lastRequest().path("messages").findValuesAsText("role"))
                 .filteredOn("assistant"::equals)
-                .hasSize("aborted".equals(saved.get(1).path("finishReason").asText()) ? 0 : 1);
+                .hasSize("terminated".equals(saved.get(2).path("reason").asText()) ? 0 : 1);
         JsonNode continued = history(port, sessionId);
-        assertThat(continued).hasSize(4);
-        assertThat(continued.get(0)).isEqualTo(saved.get(0));
-        assertThat(continued.get(1)).isEqualTo(saved.get(1));
-        assertThat(continued.get(2).path("message").asText()).isEqualTo(content + "\n\n原会话续跑");
+        assertThat(continued).hasSize(saved.size() + 3);
+        for (int index = 0; index < saved.size(); index++) {
+            assertThat(continued.get(index)).isEqualTo(saved.get(index));
+        }
+        assertThat(continued
+                        .get(saved.size())
+                        .path("content")
+                        .get(0)
+                        .path("text")
+                        .asText())
+                .isEqualTo(publicInvocation("原会话续跑"));
+        assertThat(continued.get(saved.size()).toString()).doesNotContain(content);
         assertThat(getSession(port, sessionId).result().path("state").asText()).isEqualTo("idle");
         assertSuccessfulSkill(send(skillRequest(port, competitor, "其他会话续跑")));
-        assertThat(history(port, competitor)).hasSize(2);
-        assertThat(history(port, competitor).get(0).path("message").asText()).isEqualTo(content + "\n\n其他会话续跑");
+        assertThat(history(port, competitor)).hasSize(3);
+        assertThat(history(port, competitor)
+                        .get(0)
+                        .path("content")
+                        .get(0)
+                        .path("text")
+                        .asText())
+                .isEqualTo(publicInvocation("其他会话续跑"));
+        assertThat(history(port, competitor).get(0).toString()).doesNotContain(content);
         assertThat(getSession(port, competitor).result().path("state").asText()).isEqualTo("idle");
         assertThat(history(port, sessionId)).isEqualTo(continued);
         assertThat(model.requestCount()).isEqualTo(3);
@@ -261,22 +284,19 @@ class RuntimeSkillLifecycleOpenGaussIT {
     private static void assertSuccessfulSkill(HttpResponse<String> response) {
         assertSseHeaders(response);
         assertThat(response.body())
-                .contains("event:stream.end", "\"reason\":\"completed\"")
-                .doesNotContain("event:stream.error");
+                .contains("\"type\":\"session.status_idle\"", "\"reason\":\"done\"")
+                .doesNotContain("event:", "stream.error");
     }
 
-    private static void assertTimeoutStream(HttpResponse<String> response) throws Exception {
+    private static void assertTimeoutStream(HttpResponse<String> response) {
         assertSseHeaders(response);
         assertThat(response.body())
-                .contains("event:stream.error")
-                .doesNotContain("event:stream.end", "event:session.status.idle", "TimeoutException");
-        List<String> frames = response.body().replace("\r\n", "\n").lines().toList();
-        int error = frames.indexOf("event:stream.error");
-        assertThat(error).isGreaterThanOrEqualTo(0);
-        JsonNode payload = MAPPER.readTree(frames.get(error + 1).substring("data:".length()));
-        assertThat(payload.path("resCode").asText()).isEqualTo("SESSION_EXECUTION_FAILED");
-        assertThat(payload.path("resMsg").asText()).isNotBlank();
-        assertThat(payload.size()).isEqualTo(2);
+                .contains(
+                        "\"type\":\"agent.message\"",
+                        "\"content\":\"\"",
+                        "\"type\":\"session.status_idle\"",
+                        "\"reason\":\"terminated\"")
+                .doesNotContain("event:", "stream.error", "TimeoutException");
     }
 
     private static void assertSseHeaders(HttpResponse<String> response) {
@@ -297,6 +317,10 @@ class RuntimeSkillLifecycleOpenGaussIT {
 
     private static String skillBody(String arguments) throws Exception {
         return MAPPER.writeValueAsString(Map.of("name", "skill:" + SKILL_NAME, "arguments", arguments));
+    }
+
+    private static String publicInvocation(String arguments) {
+        return "/skill:" + SKILL_NAME + " " + arguments;
     }
 
     private static JsonNode history(int port, String sessionId) throws Exception {

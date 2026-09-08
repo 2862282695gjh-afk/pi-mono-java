@@ -50,8 +50,6 @@ class RuntimeErrorCodeTest {
         assertThat(RuntimeErrorCode.MANAGER_UNAVAILABLE.retryAfterSeconds()).hasValue(3);
         assertThat(RuntimeErrorCode.RUNTIME_CAPACITY_EXCEEDED.retryAfterSeconds())
                 .hasValue(3);
-        assertThat(RuntimeErrorCode.SESSION_EXECUTION_UNAVAILABLE.retryAfterSeconds())
-                .hasValue(3);
         assertThat(RuntimeErrorCode.SESSION_BUSY.retryAfterSeconds()).isEmpty();
     }
 

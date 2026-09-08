@@ -28,7 +28,6 @@ public final class RuntimeCompactionExecution extends RuntimeActiveExecution {
 
     public RuntimeCompactionExecution() {
         super(RuntimeEventOutput.persistenceOnly());
-        closeControls();
     }
 
     public CompletionStage<RuntimeCompactionResultDTO> result() {

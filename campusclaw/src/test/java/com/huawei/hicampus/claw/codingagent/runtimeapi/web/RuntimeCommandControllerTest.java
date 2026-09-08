@@ -42,9 +42,9 @@ import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeCompactionResu
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.command.ModelCommandResultDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.command.SessionCommandResultDTO;
-import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeEventService;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeEventStream;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeSseDispatcher;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeV2MessageEventService;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.persistence.RuntimeSessionRepository;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.result.StandaloneResultBeanAdapter;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.service.command.BuiltinCommandSource;
@@ -104,7 +104,7 @@ class RuntimeCommandControllerTest {
 
     private final AgentRuntimeManager agents = mock(AgentRuntimeManager.class);
 
-    private final RuntimeEventService events = mock(RuntimeEventService.class);
+    private final RuntimeV2MessageEventService events = mock(RuntimeV2MessageEventService.class);
 
     private final RuntimeCompactionService runtime = mock(RuntimeCompactionService.class);
 
@@ -192,12 +192,14 @@ class RuntimeCommandControllerTest {
     @ValueSource(strings = {"application/json", "text/event-stream", "application/json, text/event-stream"})
     void shouldExecuteNameOnlySkillThroughRealExpansionAndSse(String accept) throws Exception {
         var stream = spy(new RuntimeEventStream(16, 65536L, Duration.ofMinutes(1), event -> 256L));
-        when(events.submitPreparedMessage(anyString(), any(), any(), any(), any()))
+        when(events.submitPreparedMessage(anyString(), anyString(), any(), any(), any(), any()))
                 .thenAnswer(call -> {
-                    BiFunction<String, PreparedAgentRuntime, String> prepare = call.getArgument(1);
+                    assertThat(call.<String>getArgument(1)).isEqualTo("/skill:pdf");
+                    BiFunction<String, PreparedAgentRuntime, String> prepare = call.getArgument(2);
                     String message = prepare.apply("agent", prepared());
                     assertThat(message).isEqualTo("完整 Skill 正文");
-                    assertThat(stream.emit(new RuntimeSseEventVO("1", "message.end", Map.of("message", message))))
+                    assertThat(stream.emit(RuntimeSseEventVO.dataOnly(
+                                    "user.message", Map.of("eventId", "event-skill", "content", List.of()))))
                             .isTrue();
                     return stream;
                 });
@@ -216,11 +218,18 @@ class RuntimeCommandControllerTest {
 
         assertHeaders(response, MediaType.TEXT_EVENT_STREAM_VALUE);
         assertThat(response.getHeader(HttpHeaders.ETAG)).isNull();
-        assertThat(response.getContentAsString(StandardCharsets.UTF_8))
-                .contains("id:1\n", "event:message.end\n", "data:{\"message\":\"完整 Skill 正文\"}\n")
+        String body = response.getContentAsString(StandardCharsets.UTF_8);
+        assertThat(body)
+                .startsWith("data:")
                 .endsWith("\n\n")
-                .doesNotContain("resCode", "private", "command.started");
-        verify(events).submitPreparedMessage(eq(SESSION_ID), any(), eq(List.of()), eq(Locale.CHINA), eq(credentials));
+                .doesNotContain("id:", "event:", "resCode", "private", "command.started");
+        JsonNode event = json.readTree(body.substring("data:".length()).trim());
+        assertThat(event.path("type").asText()).isEqualTo("user.message");
+        assertThat(event.path("eventId").asText()).isEqualTo("event-skill");
+        assertThat(event.path("content")).isEmpty();
+        verify(events)
+                .submitPreparedMessage(
+                        eq(SESSION_ID), eq("/skill:pdf"), any(), eq(List.of()), eq(Locale.CHINA), eq(credentials));
         verify(stream, atLeastOnce()).detach();
         verifyNoInteractions(repository, agents, runtime);
     }

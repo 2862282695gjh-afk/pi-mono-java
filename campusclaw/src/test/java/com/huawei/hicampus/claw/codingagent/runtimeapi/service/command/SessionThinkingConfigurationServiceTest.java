@@ -155,11 +155,6 @@ class SessionThinkingConfigurationServiceTest {
         verify(manager).resolveModel(snapshot, "latest");
         verify(resolver).resolve("agent");
         assertThat(appended).extracting(RuntimeEntryDTO::getType).containsExactly("session.thinking.changed");
-        assertThat(codec.toHistoryEvent(appended.getFirst()))
-                .containsEntry("previousThinking", false)
-                .containsEntry("thinking", true)
-                .containsEntry("reason", "requested")
-                .containsEntry("entrySeq", 17L);
         assertThat(appended.getFirst().getParentId()).isEqualTo("prior");
         assertThat(committed).singleElement().satisfies(event -> {
             assertThat(event.getType()).isEqualTo("session.thinking_changed");
@@ -177,9 +172,6 @@ class SessionThinkingConfigurationServiceTest {
         when(mapper.lockSessionForUpdate("session")).thenReturn(locked);
         assertThat(service.execute("session", "off")).isEqualTo(new SessionCommandResultDTO(locked, true, 17L));
         assertThat(locked.isThinking()).isFalse();
-        assertThat(codec.toHistoryEvent(appended.getFirst()))
-                .containsEntry("previousThinking", true)
-                .containsEntry("thinking", false);
         verifyNoInteractions(resolver, manager);
     }
 
