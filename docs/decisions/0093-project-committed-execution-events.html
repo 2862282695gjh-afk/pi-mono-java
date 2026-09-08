@@ -1,0 +1,11 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ADR-0093：持久化完成事件再输出</title><style>body{max-width:960px;margin:32px auto;padding:24px;font:16px/1.7 system-ui,sans-serif;color:#172033}a{color:#135dbe}code{overflow-wrap:anywhere}</style></head><body>
+<h1>ADR-0093：持久化完成事件再输出</h1><p>Status: Accepted · Date: 2026-09-08 · Version: 1.0.0</p>
+<h2>Context</h2><p>设计基线2ee2a321要求预览与权威历史分离，确认前后结果段共享根事件。Java前置40974151提供固定执行与持久化能力，实现bc8298fd增加事件转换器。</p>
+<h2>Decision</h2><p>完整帧先组装并校验体积，再组合写Entry、Usage与公共事件，提交后输出同形帧。仅公开Provider标记的安全summary。确认Tool Call与confirming idle原子写入，失败工具也保留对应tool_call。取消只根据真实退出证据判定。</p>
+<h2>Alternatives 与取舍</h2><p>直接公开Agent通知会混入私人消息，也无法提供可恢复的稳定历史；先发送再入库则可能向客户端展示未提交完成结果。选择先写后发，代价是完成帧受数据库延迟影响；预览仍可尽力发送。pi4af9d21d只提供进程内事件，公共持久结果段属于Java架构变化。</p>
+<h2>Consequences</h2><p>连接故障不能撤销已提交确认；远端续跑也执行相同体积检查。转换器不负责HTTP接纳、最终idle和凭据释放，后续协调器消费这些能力。无新增依赖、线程或升级流程。</p>
+<h2>Validation</h2><p>10项聚焦测试通过，零失败和跳过；格式、Checkstyle与两组镜像同步。测试替换仓储边界，不声称证明真实事务或HTTP已接入；企业NativeParent不可解析，公司编译未验证。</p>
+<h2>Related</h2><p><a href="../designs/runtime-events-v2-projection/README.md">源码依据与验证</a> · <a href="../designs/runtime-events-v2-projection/diagram.puml#L1">PlantUML图源</a></p>
+<h2>版本历史</h2><p>1.0.0 · 2026-09-08：定义完整事件持久化与安全输出边界。</p>
+</body></html>
