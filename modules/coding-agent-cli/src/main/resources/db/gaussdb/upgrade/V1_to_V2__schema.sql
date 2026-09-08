@@ -115,12 +115,12 @@ RETURNS BOOLEAN
 LANGUAGE SQL
 IMMUTABLE
 AS $$
-    SELECT value IS NULL OR REGEXP_REPLACE(
+    SELECT value IS NULL OR COALESCE(LENGTH(REGEXP_REPLACE(
         value,
         U&'[\0009-\000D\001C-\001F\0020\1680\2000-\2006\2008-\200A\2028-\2029\205F\3000]',
         '',
         'g'
-    ) IS NULL;
+    )), 0) = 0;
 $$;
 
 COMMENT ON FUNCTION f_session_event_is_java_blank(TEXT) IS '按 Java Character.isWhitespace 语义判断字符串是否全为空白';
