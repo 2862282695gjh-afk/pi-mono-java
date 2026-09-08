@@ -109,6 +109,10 @@ public final class ClawConstants {
 
         public static final int MAX_DENY_MESSAGE_CHARACTERS = 4096;
 
+        public static final String TOOL_CONFIRMATION_RESULT_REGEX = "^(allow|deny)$";
+
+        public static final Pattern TOOL_CONFIRMATION_RESULT_PATTERN = Pattern.compile(TOOL_CONFIRMATION_RESULT_REGEX);
+
         public static final Set<String> TOOL_ERROR_CODES = Set.of(
                 "TOOL_CALL_DENIED",
                 "TOOL_ARGUMENTS_INVALID",
