@@ -15,6 +15,7 @@ import com.campusclaw.codingagent.runtimeapi.dto.UserMessageAcceptanceDTO;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
 import com.campusclaw.codingagent.runtimeapi.event.RuntimeEntryIdGenerator;
+import com.campusclaw.codingagent.runtimeapi.session.RuntimeExecutionTerminalReason;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -59,7 +60,7 @@ public class RuntimeExecutionPersistenceService {
             ExecutionTargetDTO target,
             RuntimeEntryDTO entry,
             CommittedEventDTO event,
-            String terminalReason,
+            RuntimeExecutionTerminalReason terminalReason,
             OffsetDateTime terminalAt) {
         requireEvent(target.sessionId(), entry, event, "session.status.idle", "session.status_idle");
         sessions.appendEntry(entry, List.of(event));
