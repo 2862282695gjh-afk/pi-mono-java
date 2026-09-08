@@ -89,10 +89,8 @@ class OpenAIResponsesProviderIntegrationTest {
 
     @Nested
     class TextStreaming {
-
-        @Test
-        void streamsTextResponse() throws Exception {
-            String sseBody = sseEvent(
+        private String textSseBody() {
+            return sseEvent(
                             "response.created",
                             """
                     {"type":"response.created","response":{"id":"resp_123","object":"response","status":"in_progress","output":[],"usage":null}}""")
@@ -116,11 +114,15 @@ class OpenAIResponsesProviderIntegrationTest {
                             "response.completed",
                             """
                     {"type":"response.completed","response":{"id":"resp_123","object":"response","status":"completed","output":[{"type":"message","id":"msg_out1","role":"assistant","content":[{"type":"output_text","text":"Hello world"}],"status":"completed"}],"usage":{"input_tokens":10,"output_tokens":5,"input_tokens_details":{"cached_tokens":0},"output_tokens_details":{"reasoning_tokens":0}}}}""");
+        }
+
+        @Test
+        void streamsTextResponse() throws Exception {
 
             server.enqueue(new MockResponse()
                     .setResponseCode(200)
                     .setHeader("Content-Type", "text/event-stream")
-                    .setBody(sseBody)
+                    .setBody(textSseBody())
                     .setSocketPolicy(SocketPolicy.DISCONNECT_AT_END));
 
             String baseUrl = server.url("/").toString();
@@ -204,10 +206,8 @@ class OpenAIResponsesProviderIntegrationTest {
 
     @Nested
     class ToolCallStreaming {
-
-        @Test
-        void streamsToolCallResponse() throws Exception {
-            String sseBody = sseEvent(
+        private String toolCallSseBody() {
+            return sseEvent(
                             "response.created",
                             """
                     {"type":"response.created","response":{"id":"resp_tc","object":"response","status":"in_progress","output":[],"usage":null}}""")
@@ -231,11 +231,15 @@ class OpenAIResponsesProviderIntegrationTest {
                             "response.completed",
                             """
                     {"type":"response.completed","response":{"id":"resp_tc","object":"response","status":"completed","output":[{"type":"function_call","id":"fc_1","call_id":"call_xyz","name":"bash","arguments":"{\\"command\\":\\"ls\\"}","status":"completed"}],"usage":{"input_tokens":20,"output_tokens":15,"input_tokens_details":{"cached_tokens":0},"output_tokens_details":{"reasoning_tokens":0}}}}""");
+        }
+
+        @Test
+        void streamsToolCallResponse() throws Exception {
 
             server.enqueue(new MockResponse()
                     .setResponseCode(200)
                     .setHeader("Content-Type", "text/event-stream")
-                    .setBody(sseBody)
+                    .setBody(toolCallSseBody())
                     .setSocketPolicy(SocketPolicy.DISCONNECT_AT_END));
 
             String baseUrl = server.url("/").toString();
@@ -333,7 +337,7 @@ class OpenAIResponsesProviderIntegrationTest {
             assertTrue(events.stream()
                     .filter(AssistantMessageEvent.ThinkingStartEvent.class::isInstance)
                     .map(AssistantMessageEvent.ThinkingStartEvent.class::cast)
-                    .allMatch(AssistantMessageEvent.ThinkingStartEvent::publicSummary));
+                    .noneMatch(AssistantMessageEvent.ThinkingStartEvent::publicSummary));
             assertTrue(events.stream()
                     .filter(AssistantMessageEvent.ThinkingDeltaEvent.class::isInstance)
                     .map(AssistantMessageEvent.ThinkingDeltaEvent.class::cast)
@@ -352,6 +356,46 @@ class OpenAIResponsesProviderIntegrationTest {
             assertEquals(2, finalMsg.content().size());
             assertInstanceOf(ThinkingContent.class, finalMsg.content().get(0));
             assertInstanceOf(TextContent.class, finalMsg.content().get(1));
+        }
+
+        @Test
+        void keepsReasoningItemPrivateWithoutSummaryDelta() throws Exception {
+            String body = sseEvent(
+                            "response.created",
+                            """
+                            {"type":"response.created","response":{"id":"resp_private","object":"response","status":"in_progress","output":[],"usage":null}}""")
+                    + sseEvent(
+                            "response.output_item.added",
+                            """
+                            {"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning","id":"rs_private","summary":[]}}""")
+                    + sseEvent(
+                            "response.output_item.done",
+                            """
+                            {"type":"response.output_item.done","output_index":0,"item":{"type":"reasoning","id":"rs_private","summary":[]}}""")
+                    + sseEvent(
+                            "response.completed",
+                            """
+                            {"type":"response.completed","response":{"id":"resp_private","object":"response","status":"completed","output":[],"usage":null}}""");
+            server.enqueue(new MockResponse()
+                    .setResponseCode(200)
+                    .setHeader("Content-Type", "text/event-stream")
+                    .setBody(body)
+                    .setSocketPolicy(SocketPolicy.DISCONNECT_AT_END));
+            var stream = new AssistantMessageEventStream();
+
+            provider.executeStream(
+                    testModel(server.url("/").toString()),
+                    new Context(null, List.of(), null),
+                    "test-api-key",
+                    null,
+                    null,
+                    null,
+                    stream);
+
+            assertTrue(collectEvents(stream).stream()
+                    .filter(AssistantMessageEvent.ThinkingEndEvent.class::isInstance)
+                    .map(AssistantMessageEvent.ThinkingEndEvent.class::cast)
+                    .noneMatch(AssistantMessageEvent.ThinkingEndEvent::publicSummary));
         }
     }
 
