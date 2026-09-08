@@ -26,6 +26,7 @@ import com.huawei.hicampus.claw.ai.types.ToolResultMessage;
 import com.huawei.hicampus.claw.ai.types.Usage;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeEntryDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeRecordDTO;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.vo.RuntimeSseEventVO;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import org.junit.jupiter.api.Test;
@@ -37,6 +38,30 @@ import org.junit.jupiter.api.Test;
  * @since [br_eCampusCore 26.0.0]
  */
 class RuntimeEntryCodecTest {
+    @Test
+    void shouldSizeDataOnlyFrameFromTheJsonActuallyWrittenToSse() throws Exception {
+        RuntimeEntryCodec codec = codec();
+        RuntimeSseEventVO event = RuntimeSseEventVO.dataOnly("user.message", Map.of("eventId", "事件一"));
+
+        long encodedBytes = codec.encodedSseBytes(event);
+
+        assertThat(encodedBytes).isEqualTo(new ObjectMapper().writeValueAsBytes(event.getData()).length);
+        assertThat(encodedBytes).isLessThan(new ObjectMapper().writeValueAsBytes(event).length);
+    }
+
+    @Test
+    void shouldKeepLegacyFrameSizingAndJsonFieldsUnchanged() throws Exception {
+        RuntimeEntryCodec codec = codec();
+        RuntimeSseEventVO event = new RuntimeSseEventVO("17", "user.message", Map.of("entryId", "entry-1"));
+        ObjectMapper objectMapper = new ObjectMapper();
+
+        long encodedBytes = codec.encodedSseBytes(event);
+
+        assertThat(encodedBytes).isEqualTo(objectMapper.writeValueAsBytes(event).length);
+        assertThat(objectMapper.readTree(objectMapper.writeValueAsBytes(event)))
+                .hasToString("{\"id\":\"17\",\"event\":\"user.message\",\"data\":{\"entryId\":\"entry-1\"}}");
+    }
+
     @Test
     void projectsToolFailureAsStableCodeAndLocalizedMessage() {
         RuntimeEntryCodec codec = codec();

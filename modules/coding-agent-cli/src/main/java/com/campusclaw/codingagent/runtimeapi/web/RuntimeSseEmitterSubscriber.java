@@ -25,12 +25,24 @@ public class RuntimeSseEmitterSubscriber implements RuntimeEventSubscriber {
 
     private final SseEmitter emitter;
 
+    private final boolean dataOnly;
+
     public RuntimeSseEmitterSubscriber(SseEmitter emitter) {
+        this(emitter, false);
+    }
+
+    public RuntimeSseEmitterSubscriber(SseEmitter emitter, boolean dataOnly) {
         this.emitter = emitter;
+        this.dataOnly = dataOnly;
     }
 
     @Override
     public void onEvent(RuntimeSseEventVO event) {
+        if (dataOnly) {
+            requireDataOnly(event);
+            send(SseEmitter.event().data(event.getData()));
+            return;
+        }
         SseEmitter.SseEventBuilder builder =
                 SseEmitter.event().name(event.getEvent()).data(event.getData());
         if (event.getId() != null) {
@@ -41,7 +53,8 @@ public class RuntimeSseEmitterSubscriber implements RuntimeEventSubscriber {
 
     @Override
     public void onHeartbeat() {
-        send(SseEmitter.event().comment("heartbeat"));
+        String comment = dataOnly ? " ping" : "heartbeat";
+        send(SseEmitter.event().comment(comment));
     }
 
     @Override
@@ -60,6 +73,12 @@ public class RuntimeSseEmitterSubscriber implements RuntimeEventSubscriber {
             emitter.send(event);
         } catch (IOException error) {
             throw new UncheckedIOException(error);
+        }
+    }
+
+    private static void requireDataOnly(RuntimeSseEventVO event) {
+        if (!event.isDataOnly()) {
+            throw new IllegalArgumentException("v2 SSE output requires a data-only event");
         }
     }
 }

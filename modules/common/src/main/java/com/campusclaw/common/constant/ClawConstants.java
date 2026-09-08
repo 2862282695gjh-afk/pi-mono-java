@@ -109,6 +109,10 @@ public final class ClawConstants {
 
         public static final int MAX_DENY_MESSAGE_CHARACTERS = 4096;
 
+        public static final int DEFAULT_EVENT_PAGE_LIMIT = 50;
+
+        public static final int MAX_EVENT_PAGE_LIMIT = 200;
+
         public static final String TOOL_CONFIRMATION_RESULT_REGEX = "^(allow|deny)$";
 
         public static final Pattern TOOL_CONFIRMATION_RESULT_PATTERN = Pattern.compile(TOOL_CONFIRMATION_RESULT_REGEX);

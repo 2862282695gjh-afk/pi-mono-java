@@ -347,8 +347,15 @@ public class HttpMateToolClient implements MateToolClient {
                     true);
         }
         JsonNode resultNode = root.path("result");
-        String content = resultNode.isMissingNode() || resultNode.isNull() ? "" : resultNode.toString();
+        String content = toolResultContent(resultNode);
         return new ToolResult(content, null, false);
+    }
+
+    private static String toolResultContent(JsonNode resultNode) {
+        if (resultNode.isMissingNode() || resultNode.isNull()) {
+            return "";
+        }
+        return resultNode.isTextual() ? resultNode.asText() : resultNode.toString();
     }
 
     // 稳定错误码异常原样透出供公开边界映射;其余异常包装为通用失败。
