@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ADR-0102：Claw Runtime Events v2 前端迁移</title>
+<style>body{font:16px/1.75 system-ui,sans-serif;color:#2c2724;background:#f8f3f0;margin:0}main{max-width:900px;margin:32px auto;padding:28px;background:#fffcfa}code{overflow-wrap:anywhere}a{color:#8e3f29}</style>
+<main>
+<h1>ADR-0102：Claw Runtime Events v2 前端迁移</h1>
+<p>状态：Accepted，前端实现；真实后端联调待完成。日期：2026-09-08。</p>
+<h2>Context</h2>
+<p>用户确认后端会话开发 Claw Runtime，本任务仅交付前端。初始源码基线 <code>821418e7f2ece298a04a066ab8d11d3388ef2f16</code>，同步 <code>9b01a9f1e659359b6a7bff9ec622e6700ef6e384</code>。目标协议来自设计仓 <code>9b8c5b7</code> 的 Events B01～B15 与 Slash 1.3.0。证据见功能设计的路径/符号表。</p>
+<h2>Options</h2>
+<p>保留旧入口并自动兼容：无法可靠区分接受与执行终态，拒绝。改成公共 Mate：超出本次用户范围且桥接未完成，拒绝。内部工作台严格消费新契约，使用隔离 fixture 与后端并行联调：接受。</p>
+<h2>Decision</h2>
+<ul>
+<li>用 eventId / sourceEventId、data-only SSE 和数字历史页替换旧 wire；同文历史不能确认丢失回执。控制统一用三种 user.*，删除队列与旧停止入口。</li>
+<li>完整事件与预览共享 Store。Session 与 ETag 原子应用，Models 不覆盖资源版本，412 只读取、不自动重写。</li>
+<li>命令使用独立草稿及不可变调用快照，二次确认执行；Builtin 临时结果和 Skill SSE 分离。</li>
+<li>公开思考摘要与工具文本按文字显示，Assistant 保留安全 Markdown。保留暖灰样式和独立活动框，命令不加装饰图标。</li>
+<li>保持内部受控工作台定位，上传与公共 Mate 接入不开启，不修改后端。</li>
+</ul>
+<h2>Consequences</h2>
+<p>安全加固：拒绝旧 wire、未知形状与自动写重试；响应读取中止不被误报为业务停止。产品约束：不再提供运行中队列和调整方向。架构变化：共享事件 Store、命令调用快照和独立临时结果；代价是旧服务不再兼容，必须等待 v2 HTTP 接线。</p>
+<h2>Supersedes in part</h2>
+<p><a href="0020-campusclaw-product-frontend-boundary.html">ADR-0020</a> 的旧控制与同文确认；<a href="0030-runtime-thinking-and-activity-rich-text.md">ADR-0030</a> 的原始 thinking wire 和活动 Markdown；<a href="0031-debug-workbench-raw-tool-arguments.md">ADR-0031</a> 的截断参数呈现。内部部署限制、O1 品牌、Assistant 安全渲染和整轮复制继续有效。</p>
+<h2>Validation</h2>
+<p>运行 Vitest、类型检查、构建、依赖审计、浏览器契约 fixture 与 PlantUML 验证；不声称 Java 后端真实 E2E 或上传通过。</p>
+<p><a href="../designs/frontend-events-v2/README.md">功能设计、证据、限制与验收</a></p>
+</main>
+</html>

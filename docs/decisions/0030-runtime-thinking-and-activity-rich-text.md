@@ -1,5 +1,8 @@
 # ADR-0030：保持 Runtime 事件并统一活动富文本
 
+2026-09-08：原始 thinking wire 和 Thinking/Tool Markdown 部分由
+[ADR-0102](0102-runtime-events-v2-frontend.html) 替代；Assistant 安全渲染和暖灰活动框保留。
+
 | 属性 | 值 |
 |---|---|
 | 状态 | Superseded in part by [ADR-0031](0031-debug-workbench-raw-tool-arguments.md) |

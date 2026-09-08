@@ -57,6 +57,7 @@ defineExpose({ snapshot });
       <span class="debug-header-count">({{ validation.enabledCount }})</span>
     </summary>
     <div class="debug-headers-body">
+      <p>仅当前页面内存；分别附加到消息、命令、停止或确认 POST。读取请求不携带这些临时凭据。协议头由客户端固定。</p>
       <div class="debug-header-actions">
         <button type="button" @click="clearRows">全部清空</button>
       </div>

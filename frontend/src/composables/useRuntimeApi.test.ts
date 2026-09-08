@@ -1,257 +1,204 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useRuntimeApi } from './useRuntimeApi';
-import type { RuntimeEventData, RuntimeSession } from '../types/runtime';
+import { eventFixture, idleFixture, jsonResponse, sessionFixture, streamResponse, userFixture } from '../runtime/fixtures';
+import { freezeInvocation } from '../runtime/commands';
+import type { RuntimeEvent } from '../types/runtime';
 
-const SESSION_ID = 'session-550e8400e29b41d4a716446655440003';
-const AGENT_ID = 'agent-550e8400e29b41d4a716446655440000';
-
-describe('useRuntimeApi HTTP 1.38 contract', () => {
-  beforeEach(() => {
-    vi.stubGlobal('navigator', { language: 'zh-CN' });
+function setup(history: RuntimeEvent[] = [], state: 'idle' | 'running' = 'idle') {
+  const fetcher = vi.fn<(url: RequestInfo | URL, init?: RequestInit) => Promise<Response>>();
+  fetcher.mockImplementation(async (input) => {
+    const url = String(input);
+    if (url.includes('/events?')) return jsonResponse({ events: history, nextPage: null });
+    if (url.endsWith('/commands')) return jsonResponse({ commands: [{ name: 'help', kind: 'builtin', description: '介绍' }] });
+    if (url.endsWith('/models')) return jsonResponse({ currentModelId: 'query-only', models: ['model-primary'] }, { ETag: '"not-a-session-version"' });
+    return jsonResponse(sessionFixture({ state }), { ETag: '"v1"' });
   });
+  vi.stubGlobal('fetch', fetcher);
+  const runtime = useRuntimeApi();
+  runtime.session.value = sessionFixture();
+  runtime.etag.value = '"v0"';
+  return { runtime, fetcher };
+}
+function requestAt(fetcher: ReturnType<typeof vi.fn>, index = 0) {
+  const init = fetcher.mock.calls[index][1] as RequestInit;
+  return { ...init, json: init.body ? JSON.parse(String(init.body)) : undefined, headers: new Headers(init.headers) };
+}
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => { resolve = done; });
+  return { promise, resolve };
+}
+beforeEach(() => vi.stubGlobal('navigator', { language: 'zh-CN' }));
+afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
-  afterEach(() => {
-    vi.unstubAllGlobals();
-    vi.restoreAllMocks();
+describe('Claw Runtime Events v2 coordinator', () => {
+  it('sends the event wrapper and confirms only the first complete request receipt', async () => {
+    const events = [userFixture(), idleFixture()];
+    const { runtime, fetcher } = setup(events);
+    fetcher.mockResolvedValueOnce(streamResponse(events));
+    const submission = await runtime.sendMessage('检查订单');
+    await expect(submission.confirmation).resolves.toBe('confirmed');
+    await vi.waitFor(() => expect(runtime.streaming.value || runtime.recovering.value).toBe(false));
+    expect(requestAt(fetcher).json).toEqual({ event: { type: 'user.message', content: [{ type: 'text', text: '检查订单' }] } });
+    expect(requestAt(fetcher).headers.get('accept')).toBe('text/event-stream');
+    expect(runtime.events.value).toEqual(events);
   });
-
-  it('reads lowerCamelCase session and model responses', async () => {
-    const session = runtimeSession();
-    const fetchMock = vi.fn()
-      .mockResolvedValueOnce(resultResponse({ ...session, updatedAt: undefined }, {}, 201))
-      .mockResolvedValueOnce(resultResponse(session, { ETag: '"session-v1"' }))
-      .mockResolvedValueOnce(resultResponse({ currentModelId: session.modelId, models: [session.modelId] }));
-    vi.stubGlobal('fetch', fetchMock);
-    const runtime = useRuntimeApi();
-
-    const created = await runtime.createSession(AGENT_ID);
-
-    expect(created.sessionId).toBe(SESSION_ID);
-    expect(created).toHaveProperty('displayName', null);
-    expect(created).not.toHaveProperty('updatedAt');
-    expect(runtime.session.value).toHaveProperty('displayName', null);
-    expect(runtime.session.value?.agentId).toBe(AGENT_ID);
-    expect(runtime.session.value?.modelId).toBe('model-primary');
-    expect(runtime.etag.value).toBe('"session-v1"');
+  it('does not infer a lost receipt from identical history, or retry a POST', async () => {
+    const { runtime, fetcher } = setup([userFixture()]);
+    fetcher.mockResolvedValueOnce(streamResponse([]));
+    const submission = await runtime.sendMessage('检查订单');
+    expect(await submission.confirmation).toBe('uncertain');
+    await vi.waitFor(() => expect(runtime.streaming.value || runtime.recovering.value).toBe(false));
+    expect(runtime.receiptUnknown.value).toBe(true);
+    expect(runtime.canSend.value).toBe(false);
+    expect(runtime.uncertainty.value).toContain('相同文本');
+    expect(fetcher.mock.calls.filter((call) => (call[1] as RequestInit).method === 'POST')).toHaveLength(1);
+  });
+  it('retains uncertainty on a network failure before headers', async () => {
+    const { runtime, fetcher } = setup();
+    fetcher.mockRejectedValueOnce(new TypeError('offline'));
+    await expect(runtime.sendMessage('检查订单')).rejects.toMatchObject({ code: 'OUTCOME_UNCERTAIN' });
+    expect(runtime.receiptUnknown.value).toBe(true);
+    expect(runtime.messagePending.value).toBe(false);
+  });
+  it('blocks a second message before the first receipt and while confirming', async () => {
+    const { runtime, fetcher } = setup([userFixture(), idleFixture('confirming')], 'running');
+    const delayed = deferred<Response>();
+    fetcher.mockReturnValueOnce(delayed.promise);
+    const first = runtime.sendMessage('检查订单');
+    await expect(runtime.sendMessage('第二条')).rejects.toMatchObject({ code: 'SESSION_BUSY' });
+    delayed.resolve(streamResponse([userFixture(), idleFixture('confirming')]));
+    expect(await (await first).confirmation).toBe('confirmed');
+    await vi.waitFor(() => expect(runtime.streaming.value || runtime.recovering.value).toBe(false));
+    expect(runtime.canSend.value).toBe(false);
+    expect(runtime.messagePending.value).toBe(false);
+    expect(runtime.execution.value.confirming).toBe(true);
+  });
+  it('keeps Models separate from the atomic Session / ETag resource', async () => {
+    const { runtime } = setup();
+    await runtime.listModels();
     expect(runtime.models.value).toEqual(['model-primary']);
+    expect(runtime.session.value?.modelId).toBe('model-primary');
+    expect(runtime.etag.value).toBe('"v0"');
   });
-
-  it.each([null, '中文  name'])('preserves GET Session displayName %s', async (displayName) => {
-    const current = runtimeSession({ displayName });
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(resultResponse(current)));
-    const runtime = useRuntimeApi();
-
-    expect(await runtime.getSession(SESSION_ID)).toEqual(current);
-    expect(runtime.session.value).toHaveProperty('displayName', displayName);
+  it('loads integer pages and rejects repeated or opaque continuations without replacing visible history', async () => {
+    const { runtime, fetcher } = setup();
+    fetcher.mockResolvedValueOnce(jsonResponse({ events: [userFixture()], nextPage: 2 }))
+      .mockResolvedValueOnce(jsonResponse({ events: [idleFixture()], nextPage: null }));
+    await runtime.loadHistory();
+    expect(String(fetcher.mock.calls[1][0])).toContain('page=2');
+    fetcher.mockResolvedValueOnce(jsonResponse({ events: [], nextPage: 1 }));
+    await expect(runtime.loadHistory()).rejects.toMatchObject({ code: 'INVALID_RESPONSE' });
+    expect(runtime.events.value).toHaveLength(2);
   });
-
-  it('writes modelId and reads acceptedAt with exact lowerCamelCase keys', async () => {
-    const updated = runtimeSession({ modelId: 'model-secondary' });
-    const fetchMock = vi.fn()
-      .mockResolvedValueOnce(resultResponse(updated, { ETag: '"session-v2"' }))
-      .mockResolvedValueOnce(resultResponse({ sessionId: SESSION_ID, acceptedAt: '2026-08-21T12:00:00Z' }));
-    vi.stubGlobal('fetch', fetchMock);
-    const runtime = useRuntimeApi();
-    runtime.session.value = runtimeSession({ state: 'running' });
-    runtime.etag.value = '"session-v1"';
-
-    await runtime.changeModel('model-secondary');
-    const accepted = await runtime.steer('先定位异常');
-
-    expect(requestJson(fetchMock, 0)).toEqual({ modelId: 'model-secondary' });
-    expect(accepted.acceptedAt).toBe('2026-08-21T12:00:00Z');
-    expect(runtime.acceptedControls.value[0]?.acceptedAt).toBe('2026-08-21T12:00:00Z');
+  it('discards delayed Session / catalog / history from the previous view', async () => {
+    const { runtime, fetcher } = setup();
+    const delayed = deferred<Response>();
+    fetcher.mockReturnValueOnce(delayed.promise);
+    const reading = runtime.getSession();
+    runtime.clearSessionView(); runtime.session.value = sessionFixture({ sessionId: 'session-b' });
+    delayed.resolve(jsonResponse(sessionFixture(), { ETag: '"old"' }));
+    await expect(reading).rejects.toThrow();
+    expect(runtime.session.value.sessionId).toBe('session-b');
+    expect(runtime.etag.value).toBe('');
+    expect(runtime.lastError.value).toBe('');
   });
-
-  it('follows every nextPage returned by history pagination', async () => {
-    const fetchMock = vi.fn()
-      .mockResolvedValueOnce(resultResponse(historyPage([
-        userEvent('entry-1', 1, '第一条'),
-      ], 'page-opaque-2')))
-      .mockResolvedValueOnce(resultResponse(historyPage([
-        userEvent('entry-2', 2, '第二条'),
-      ], null)));
-    vi.stubGlobal('fetch', fetchMock);
-    const runtime = useRuntimeApi();
-    runtime.session.value = runtimeSession();
-
-    const events = await runtime.loadHistory();
-
-    expect(events.map((event) => event.data.entryId)).toEqual(['entry-1', 'entry-2']);
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(String(fetchMock.mock.calls[1]?.[0])).toContain('page=page-opaque-2');
-  });
-
-  it('keeps the submission uncertain when SSE disconnects before history confirmation', async () => {
-    const fetchMock = vi.fn()
-      .mockResolvedValueOnce(interruptedSseResponse())
-      .mockResolvedValueOnce(resultResponse(runtimeSession({ state: 'running' })))
-      .mockResolvedValueOnce(resultResponse(historyPage([], null)));
-    vi.stubGlobal('fetch', fetchMock);
-    const runtime = useRuntimeApi();
-    runtime.session.value = runtimeSession();
-
-    const submission = await runtime.sendMessage('检查订单', ['file-1']);
-
-    await expect(submission.confirmation).resolves.toBe('uncertain');
-    expect(requestJson(fetchMock, 0)).toEqual({ message: '检查订单', fileIds: ['file-1'] });
-    expect(runtime.lastErrorCode.value).toBe('OUTCOME_UNCERTAIN');
-    expect(runtime.lastError.value).toContain('不要重复提交');
-  });
-
-  it('confirms a submission from the lowerCamelCase user.message SSE event', async () => {
-    const persisted = userEvent('entry-sse', 21, '检查订单');
-    const fetchMock = vi.fn()
-      .mockResolvedValueOnce(sseResponse([
-        'id: 21',
-        'event: user.message',
-        `data: ${JSON.stringify(withoutType(persisted))}`,
-        '',
-        'event: session.status.idle',
-        'data: {"status":"idle"}',
-        '',
-        'event: stream.end',
-        'data: {"reason":"completed"}',
-        '',
-      ].join('\n')))
-      .mockResolvedValueOnce(resultResponse(runtimeSession()))
-      .mockResolvedValueOnce(resultResponse(historyPage([persisted], null)));
-    vi.stubGlobal('fetch', fetchMock);
-    const runtime = useRuntimeApi();
-    runtime.session.value = runtimeSession();
-
+  it('cancels detached readers and does not apply their final recovery to a new Session', async () => {
+    const { runtime, fetcher } = setup();
+    let cancelled = false;
+    fetcher.mockResolvedValueOnce(new Response(new ReadableStream({ cancel() { cancelled = true; } }), { headers: { 'Content-Type': 'text/event-stream' } }));
     const submission = await runtime.sendMessage('检查订单');
-
-    await expect(submission.confirmation).resolves.toBe('confirmed');
-    await vi.waitFor(() => expect(runtime.streaming.value).toBe(false));
-    expect(runtime.events.value[0]?.data.entryId).toBe('entry-sse');
-    expect(runtime.lastErrorCode.value).toBe('');
+    runtime.clearSessionView();
+    expect(await submission.confirmation).toBe('uncertain');
+    expect(cancelled).toBe(true);
+    expect(runtime.session.value).toBeNull();
+    expect(fetcher).toHaveBeenCalledTimes(1);
   });
-
-  it('confirms the submission from history after SSE disconnects', async () => {
-    const fetchMock = vi.fn()
-      .mockResolvedValueOnce(interruptedSseResponse())
-      .mockResolvedValueOnce(resultResponse(runtimeSession({ state: 'running' })))
-      .mockResolvedValueOnce(resultResponse(historyPage([
-        userEvent('entry-confirmed', 22, '检查订单'),
-      ], null)));
-    vi.stubGlobal('fetch', fetchMock);
-    const runtime = useRuntimeApi();
-    runtime.session.value = runtimeSession();
-
-    const submission = await runtime.sendMessage('检查订单');
-
-    await expect(submission.confirmation).resolves.toBe('confirmed');
-    await vi.waitFor(() => expect(runtime.streaming.value).toBe(false));
-    expect(runtime.lastErrorCode.value).toBe('STREAM_INTERRUPTED');
-    expect(runtime.events.value[0]?.data.entryId).toBe('entry-confirmed');
+  it('freezes interrupt target and awaits actual terminal, not its receipt', async () => {
+    const { runtime, fetcher } = setup([], 'running');
+    runtime.session.value = sessionFixture({ state: 'running' });
+    runtime.events.value = [userFixture()];
+    let stream!: ReadableStreamDefaultController<Uint8Array>;
+    const body = new ReadableStream<Uint8Array>({ start(controller) { stream = controller; } });
+    fetcher.mockResolvedValueOnce(new Response(body, { headers: { 'Content-Type': 'text/event-stream' } }));
+    const submission = await runtime.interrupt({ 'access-token': 'fixture-stop' });
+    stream.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(eventFixture({ eventId: 'stop', type: 'user.interrupt', targetEventId: 'root-a' }))}\n\n`));
+    expect(await submission.confirmation).toBe('confirmed');
+    expect(runtime.stopping.value).toBe(true);
+    expect(runtime.session.value.state).toBe('running');
+    expect(requestAt(fetcher).json).toEqual({ event: { type: 'user.interrupt', targetEventId: 'root-a' } });
+    runtime.clearSessionView();
   });
-
-  it('attaches custom headers only to the initial event POST and lets them override defaults', async () => {
-    const persisted = userEvent('entry-headers', 23, '检查订单');
-    const fetchMock = vi.fn()
-      .mockResolvedValueOnce(sseResponse([
-        'id: 23',
-        'event: user.message',
-        `data: ${JSON.stringify(withoutType(persisted))}`,
-        '',
-        'event: stream.end',
-        'data: {"reason":"completed"}',
-        '',
-      ].join('\n')))
-      .mockResolvedValueOnce(resultResponse(runtimeSession()))
-      .mockResolvedValueOnce(resultResponse(historyPage([persisted], null)));
-    vi.stubGlobal('fetch', fetchMock);
-    const runtime = useRuntimeApi();
-    runtime.session.value = runtimeSession();
-    const customHeaders = new Headers({
-      Authorization: 'Bearer fixture-token',
-      'access-token': 'fixture-access-token',
-      'X-HW-ID': 'debugger-override',
-    });
-
-    const submission = await runtime.sendMessage('检查订单', [], customHeaders);
-
-    await expect(submission.confirmation).resolves.toBe('confirmed');
-    await vi.waitFor(() => expect(runtime.streaming.value).toBe(false));
-    expect(requestHeaders(fetchMock, 0).get('authorization')).toBe('Bearer fixture-token');
-    expect(requestHeaders(fetchMock, 0).get('access-token')).toBe('fixture-access-token');
-    expect(requestHeaders(fetchMock, 0).get('x-hw-id')).toBe('debugger-override');
-    expect(requestHeaders(fetchMock, 1).get('authorization')).toBeNull();
-    expect(requestHeaders(fetchMock, 1).get('access-token')).toBeNull();
-    expect(requestHeaders(fetchMock, 1).get('x-hw-id')).toBe('campusclaw-web');
-    expect(requestHeaders(fetchMock, 2).get('authorization')).toBeNull();
-    expect(requestHeaders(fetchMock, 2).get('access-token')).toBeNull();
+  it('sends each confirmation credential snapshot independently, omits allow denyMessage', async () => {
+    const call = eventFixture({ eventId: 'call', type: 'agent.tool_call', toolCallId: 't', toolName: 'Read', arguments: {}, requiresConfirmation: true, sourceEventId: 'root-a' });
+    const receipt = eventFixture({ eventId: 'confirm', type: 'user.tool_confirmation', toolCallId: 't', result: 'allow' });
+    const { runtime, fetcher } = setup([userFixture(), call, receipt, idleFixture()]);
+    runtime.session.value = sessionFixture({ state: 'running' });
+    runtime.events.value = [userFixture(), call, idleFixture('confirming')];
+    fetcher.mockResolvedValueOnce(streamResponse([receipt, idleFixture()]));
+    const custom = new Headers({ 'access-token': 'fixture-confirm', 'If-Match': 'unexpected' });
+    const submission = await runtime.confirmTool('t', 'allow', '', custom);
+    expect(await submission.confirmation).toBe('confirmed');
+    await vi.waitFor(() => expect(runtime.streaming.value || runtime.recovering.value).toBe(false));
+    expect(requestAt(fetcher).json).toEqual({ event: { type: 'user.tool_confirmation', toolCallId: 't', result: 'allow' } });
+    expect(requestAt(fetcher).headers.get('access-token')).toBe('fixture-confirm');
+    expect(requestAt(fetcher).headers.has('if-match')).toBe(false);
+    expect(requestAt(fetcher, 1).headers.has('access-token')).toBe(false);
+  });
+  it('refreshes on 412 and never repeats the mutation', async () => {
+    const { runtime, fetcher } = setup();
+    fetcher.mockResolvedValueOnce(new Response(JSON.stringify({ resCode: 'SESSION_VERSION_MISMATCH', resMsg: 'changed' }), { status: 412 }));
+    await expect(runtime.changeThinking(false)).rejects.toMatchObject({ code: 'SESSION_VERSION_MISMATCH' });
+    expect(runtime.session.value?.thinking).toBe(true);
+    expect(requestAt(fetcher).headers.get('if-match')).toBe('"v0"');
+    expect(fetcher.mock.calls.filter((call) => (call[1] as RequestInit).method === 'PUT')).toHaveLength(1);
+  });
+  it('coalesces catalog reads and keeps Builtin results outside event history', async () => {
+    const { runtime, fetcher } = setup();
+    await Promise.all([runtime.listCommands(), runtime.listCommands()]);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    fetcher.mockResolvedValueOnce(jsonResponse({ displayName: '<script>x</script>', description: [], userCases: [] }));
+    await runtime.executeCommand(freezeInvocation(runtime.commands.value[0], '/help'));
+    expect(runtime.commandResult.value).toHaveProperty('kind', 'agentGuide');
+    expect(runtime.events.value).toEqual([]);
+    expect(String(fetcher.mock.calls[1][0])).toMatch(/\/command$/u);
+    expect(requestAt(fetcher, 1).headers.get('accept')).toBe('application/json');
+  });
+  it('uses Skill SSE receipt and no Builtin result', async () => {
+    const { runtime, fetcher } = setup([userFixture('root-a', '/skill:inspect'), idleFixture()]);
+    runtime.catalogStatus.value = 'ready';
+    fetcher.mockResolvedValueOnce(streamResponse([userFixture('root-a', '/skill:inspect'), idleFixture()]));
+    const invocation = freezeInvocation({ name: 'skill:inspect', kind: 'skill', description: '巡检' }, '/skill:inspect');
+    expect(await runtime.executeCommand(invocation)).toBe('confirmed');
+    expect(runtime.commandResult.value).toBeNull();
+    expect(requestAt(fetcher).json).toEqual({ name: 'skill:inspect' });
+    await vi.waitFor(() => expect(runtime.streaming.value || runtime.recovering.value).toBe(false));
+  });
+  it('does not use a previous confirming idle to complete an interrupted continuation', async () => {
+    const call = eventFixture({ eventId: 'call', type: 'agent.tool_call', toolCallId: 't', toolName: 'Read', arguments: {}, requiresConfirmation: true, sourceEventId: 'root-a' });
+    const receipt = eventFixture({ eventId: 'confirmation', type: 'user.tool_confirmation', toolCallId: 't', result: 'allow' });
+    const oldHistory = [userFixture(), call, idleFixture('confirming'), receipt];
+    const { runtime, fetcher } = setup(oldHistory, 'running');
+    runtime.events.value = oldHistory.slice(0, -1);
+    runtime.session.value = sessionFixture({ state: 'running' });
+    fetcher.mockResolvedValueOnce(streamResponse([receipt]));
+    const submission = await runtime.confirmTool('t', 'allow', '');
+    expect(await submission.confirmation).toBe('confirmed');
+    await vi.waitFor(() => expect(runtime.streaming.value || runtime.recovering.value).toBe(false));
+    expect(runtime.uncertainty.value).toContain('观察流中断');
+    expect(runtime.execution.value.confirming).toBe(false);
+    expect(runtime.canSend.value).toBe(false);
+  });
+  it('reloads a catalog invalidated while its old GET was in flight', async () => {
+    const { runtime, fetcher } = setup();
+    const delayed = deferred<Response>();
+    fetcher.mockReturnValueOnce(delayed.promise);
+    const reading = runtime.listCommands();
+    runtime.invalidateCatalog();
+    delayed.resolve(jsonResponse({ commands: [] }));
+    await reading;
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(runtime.catalogStatus.value).toBe('ready');
+    expect(runtime.commands.value[0].name).toBe('help');
   });
 });
-
-function runtimeSession(overrides: Partial<RuntimeSession> = {}): RuntimeSession {
-  return {
-    sessionId: SESSION_ID,
-    agentId: AGENT_ID,
-    displayName: null,
-    modelId: 'model-primary',
-    state: 'idle',
-    thinking: true,
-    createdAt: '2026-08-21T10:00:00Z',
-    updatedAt: '2026-08-21T10:00:00Z',
-    ...overrides,
-  };
-}
-
-function userEvent(entryId: string, entrySeq: number, message: string): RuntimeEventData {
-  return {
-    type: 'user.message',
-    entryId,
-    entrySeq,
-    message,
-    fileIds: [],
-    createdAt: '2026-08-21T10:00:00Z',
-  };
-}
-
-function historyPage(events: RuntimeEventData[], nextPage: string | null) {
-  return { events, nextPage };
-}
-
-function resultResponse<T>(result: T, headers: HeadersInit = {}, status = 200): Response {
-  return new Response(JSON.stringify({ resCode: '0', resMsg: 'success', result }), {
-    status,
-    headers: { 'Content-Type': 'application/json', ...headers },
-  });
-}
-
-function interruptedSseResponse(): Response {
-  const stream = new ReadableStream<Uint8Array>({
-    start(controller) {
-      controller.error(new Error('connection lost'));
-    },
-  });
-  return new Response(stream, {
-    status: 200,
-    headers: { 'Content-Type': 'text/event-stream' },
-  });
-}
-
-function sseResponse(body: string): Response {
-  return new Response(body, {
-    status: 200,
-    headers: { 'Content-Type': 'text/event-stream' },
-  });
-}
-
-function withoutType(event: RuntimeEventData): RuntimeEventData {
-  const data = { ...event };
-  delete data.type;
-  return data;
-}
-
-function requestJson(fetchMock: ReturnType<typeof vi.fn>, callIndex: number): unknown {
-  const init = fetchMock.mock.calls[callIndex]?.[1] as RequestInit | undefined;
-  return JSON.parse(String(init?.body));
-}
-
-function requestHeaders(fetchMock: ReturnType<typeof vi.fn>, callIndex: number): Headers {
-  const init = fetchMock.mock.calls[callIndex]?.[1] as RequestInit | undefined;
-  return new Headers(init?.headers);
-}

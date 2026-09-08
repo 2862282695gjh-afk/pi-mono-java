@@ -1,691 +1,376 @@
-import { computed, ref } from 'vue';
-import type {
-  AcceptedControl,
-  AvailableModels,
-  ControlAccepted,
-  ErrorBean,
-  FollowUpMode,
-  MessageSubmission,
-  ResultBean,
-  RuntimeEventData,
-  RuntimeEventEnvelope,
-  RuntimeHistoryPage,
-  RuntimeSession,
-  SubmissionOutcome,
-} from '../types/runtime';
+import { computed, ref, shallowRef } from 'vue';
+import type { MessageSubmission, RuntimeEvent, RuntimeSession, SubmissionOutcome, UserEvent } from '../types/runtime';
 import { RuntimeApiError } from '../types/runtime';
+import { decodeCatalog, decodeCommandResult } from '../runtime/commands';
+import type { CommandDescriptor, CommandInvocation, CommandResult } from '../runtime/commands';
+import { codePointLength, decodeHistory, decodeModels, decodeSession, invalidResponse, matchesReceipt, messageEvent, readEventStream, record } from '../runtime/protocol';
+import { executionState, mergeEvent, reconcileEvents } from '../runtime/eventStore';
 
 const API_PATH = '/campusclaw-service/v1';
-const apiBase = trimTrailingSlash(import.meta.env.VITE_CAMPUSCLAW_API_BASE ?? '');
+const apiBase = (import.meta.env.VITE_CAMPUSCLAW_API_BASE ?? '').replace(/\/+$/u, '');
 const callerId = import.meta.env.VITE_CAMPUSCLAW_CALLER_ID?.trim() || 'campusclaw-web';
+type Context = { generation: number; sessionId: string; signal: AbortSignal };
 
-interface PendingSubmission {
-  sessionId: string;
-  message: string;
-  fileIds: string[];
-  knownEntryIds: Set<string>;
-  confirmation: Promise<SubmissionOutcome>;
-  resolve: (outcome: SubmissionOutcome) => void;
-  settled: boolean;
-}
-
+/** 仅内部 Runtime 工作台装配；不兼容或回退到 Mate / Events v1。 */
 export function useRuntimeApi() {
   const session = ref<RuntimeSession | null>(null);
   const etag = ref('');
   const models = ref<string[]>([]);
-  const events = ref<RuntimeEventEnvelope[]>([]);
-  const streaming = ref(false);
+  const events = shallowRef<RuntimeEvent[]>([]);
+  const streamCount = ref(0);
+  const messagePending = ref(false);
+  const controlPending = ref(false);
+  const stopping = ref(false);
+  const recovering = ref(false);
+  const uncertainty = ref('');
+  const receiptUnknown = ref(false);
   const lastError = ref('');
   const lastErrorCode = ref('');
-  const acceptedControls = ref<AcceptedControl[]>([]);
+  const commands = ref<CommandDescriptor[]>([]);
+  const catalogStatus = ref<'stale' | 'loading' | 'ready' | 'error'>('stale');
+  const catalogError = ref('');
+  const commandResult = shallowRef<CommandResult | null>(null);
+  const commandPending = ref(false);
+  let generation = 0;
+  let revision = 0;
+  let catalogRevision = 0;
+  let messageTicket = 0;
+  let controlTicket = 0;
+  let sessionReadTicket = 0;
+  let viewController = new AbortController();
+  let catalogFlight: Promise<CommandDescriptor[]> | undefined;
+  let recoveryFlight: Promise<void> | undefined;
+  let interruptedObservation: { rootId: string; receiptId: string } | undefined;
+  const execution = computed(() => executionState(events.value));
   const hasSession = computed(() => session.value !== null);
-  let streamGeneration = 0;
-  let pendingSubmission: PendingSubmission | null = null;
+  const streaming = computed(() => streamCount.value > 0);
+  const running = computed(() => session.value?.state === 'running' || messagePending.value);
+  const canSend = computed(() => hasSession.value && !running.value && !receiptUnknown.value && !recovering.value && !commandPending.value);
+  const canStop = computed(() => running.value && !!execution.value.rootId && !execution.value.terminal
+    && !stopping.value && !controlPending.value && !messagePending.value);
 
-  async function createSession(agentId: string): Promise<RuntimeSession> {
-    clearError();
-    detachCurrentStream();
-    const created = await requestResult<RuntimeSession>(
-      `/agents/${encodeURIComponent(agentId)}/sessions`,
-      { method: 'POST' },
-      true,
-    );
-    session.value = created;
-    events.value = [];
-    acceptedControls.value = [];
-    etag.value = '';
-    await refreshSessionMetadata();
-    return created;
+  function context(): Context {
+    if (!session.value) throw new RuntimeApiError({ code: 'SESSION_REQUIRED', message: '请先新建或恢复会话。' });
+    return { generation, sessionId: session.value.sessionId, signal: viewController.signal };
   }
-
-  async function getSession(sessionId = session.value?.sessionId): Promise<RuntimeSession> {
-    if (!sessionId) throw missingSessionError();
-    clearError();
-    if (session.value && session.value.sessionId !== sessionId) {
-      detachCurrentStream();
-      events.value = [];
-      acceptedControls.value = [];
-    }
-    const current = await requestResult<RuntimeSession>(`/sessions/${encodeURIComponent(sessionId)}`);
-    session.value = current;
-    return current;
+  function current(ctx: Context): boolean { return generation === ctx.generation && !ctx.signal.aborted; }
+  function check(ctx: Context): void { if (!current(ctx)) throw new DOMException('View changed', 'AbortError'); }
+  function path(ctx: Context, suffix = ''): string { return `/sessions/${encodeURIComponent(ctx.sessionId)}${suffix}`; }
+  function clearError(): void { lastError.value = ''; lastErrorCode.value = ''; }
+  function publish(error: unknown, ctx: Context): RuntimeApiError {
+    const normalized = error instanceof RuntimeApiError ? error
+      : new RuntimeApiError({ message: '暂时无法读取服务，请检查连接后重新核对。' });
+    if (current(ctx)) { lastError.value = normalized.message; lastErrorCode.value = normalized.code; }
+    return normalized;
   }
-
-  async function deleteSession(): Promise<void> {
-    const sessionId = requireSessionId();
-    clearError();
-    await requestEmpty(`/sessions/${encodeURIComponent(sessionId)}`, { method: 'DELETE' }, true);
-    streamGeneration += 1;
-    streaming.value = false;
-    session.value = null;
-    etag.value = '';
-    models.value = [];
-    events.value = [];
-    acceptedControls.value = [];
-  }
-
-  async function listModels(): Promise<AvailableModels> {
-    const sessionId = requireSessionId();
-    clearError();
-    const available = await requestResult<AvailableModels>(
-      `/sessions/${encodeURIComponent(sessionId)}/models`,
-    );
-    models.value = available.models;
-    if (session.value) session.value.modelId = available.currentModelId;
-    return available;
-  }
-
-  async function changeModel(modelId: string): Promise<RuntimeSession> {
-    const sessionId = requireSessionId();
-    clearError();
-    await ensureEtag();
-    const updated = await requestResult<RuntimeSession>(
-      `/sessions/${encodeURIComponent(sessionId)}/model`,
-      {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json', 'If-Match': etag.value },
-        body: JSON.stringify({ modelId }),
-      },
-      true,
-    );
-    session.value = updated;
-    return updated;
-  }
-
-  async function changeThinking(thinking: boolean): Promise<RuntimeSession> {
-    const sessionId = requireSessionId();
-    clearError();
-    await ensureEtag();
-    const updated = await requestResult<RuntimeSession>(
-      `/sessions/${encodeURIComponent(sessionId)}/thinking`,
-      {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json', 'If-Match': etag.value },
-        body: JSON.stringify({ thinking }),
-      },
-      true,
-    );
-    session.value = updated;
-    await loadHistory();
-    return updated;
-  }
-
-  async function loadHistory(): Promise<RuntimeEventEnvelope[]> {
-    const sessionId = requireSessionId();
-    clearError();
-    const history: RuntimeEventEnvelope[] = [];
-    const seenPages = new Set<string>();
-    let page: string | null = null;
-
-    do {
-      const query = new URLSearchParams({ limit: '200' });
-      if (page) query.set('page', page);
-      const result = await requestResult<RuntimeHistoryPage>(
-        `/sessions/${encodeURIComponent(sessionId)}/events?${query.toString()}`,
-      );
-      history.push(...result.events.map(normalizeHistoryEvent));
-      page = result.nextPage ?? null;
-      if (page && seenPages.has(page)) break;
-      if (page) seenPages.add(page);
-    } while (page);
-
-    events.value = deduplicatePersistentEvents(history);
-    reconcileAcceptedControlsFromHistory();
-    return events.value;
-  }
-
-  async function sendMessage(
-    message: string,
-    fileIds: string[] = [],
-    requestHeaders?: HeadersInit,
-  ): Promise<MessageSubmission> {
-    const sessionId = requireSessionId();
-    clearError();
-    const normalizedMessage = message.trim();
-    const body: { message?: string; fileIds?: string[] } = {};
-    if (normalizedMessage) body.message = normalizedMessage;
-    if (fileIds.length > 0) body.fileIds = fileIds;
-
-    const response = await requestRaw(
-      `/sessions/${encodeURIComponent(sessionId)}/events`,
-      {
-        method: 'POST',
-        headers: mergeRequestHeaders(
-          { Accept: 'text/event-stream', 'Content-Type': 'application/json' },
-          requestHeaders,
-        ),
-        body: JSON.stringify(body),
-      },
-      true,
-    );
-    settlePendingSubmission('uncertain');
-    const submission = createPendingSubmission(sessionId, normalizedMessage, fileIds);
-    const generation = ++streamGeneration;
-    streaming.value = true;
-    if (session.value?.sessionId === sessionId) session.value.state = 'running';
-    void consumeSse(response, sessionId, generation);
-    return { confirmation: submission.confirmation };
-  }
-
-  async function steer(message: string): Promise<ControlAccepted> {
-    return appendControl('steer', message);
-  }
-
-  async function followUp(message: string): Promise<ControlAccepted> {
-    return appendControl('queue', message);
-  }
-
-  async function abort(): Promise<void> {
-    const sessionId = requireSessionId();
-    clearError();
-    await requestEmpty(`/sessions/${encodeURIComponent(sessionId)}/abort`, { method: 'POST' }, true);
-    detachCurrentStream();
-    acceptedControls.value = [];
-    if (session.value?.sessionId === sessionId) session.value.state = 'idle';
-  }
-
-  function clearError(): void {
-    lastError.value = '';
-    lastErrorCode.value = '';
-  }
-
+  function invalidateCatalog(): void { catalogRevision++; catalogStatus.value = 'stale'; }
   function clearSessionView(): void {
-    detachCurrentStream();
-    session.value = null;
-    etag.value = '';
-    models.value = [];
-    events.value = [];
-    acceptedControls.value = [];
-    clearError();
+    viewController.abort();
+    viewController = new AbortController();
+    generation++; revision++; catalogRevision++; messageTicket++; controlTicket++;
+    session.value = null; etag.value = ''; models.value = []; events.value = [];
+    streamCount.value = 0; messagePending.value = false; controlPending.value = false;
+    stopping.value = false; recovering.value = false; receiptUnknown.value = false; uncertainty.value = '';
+    commands.value = []; catalogStatus.value = 'stale'; catalogError.value = '';
+    commandResult.value = null; commandPending.value = false;
+    catalogFlight = undefined; recoveryFlight = undefined; interruptedObservation = undefined; clearError();
   }
-
-  function detachCurrentStream(): void {
-    streamGeneration += 1;
-    streaming.value = false;
-    settlePendingSubmission('uncertain');
-  }
-
-  async function appendControl(mode: FollowUpMode, message: string): Promise<ControlAccepted> {
-    const sessionId = requireSessionId();
-    clearError();
-    const resource = mode === 'steer' ? 'steers' : 'follow-ups';
-    const accepted = await requestResult<ControlAccepted>(
-      `/sessions/${encodeURIComponent(sessionId)}/${resource}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: message.trim() }),
-      },
-      true,
-    );
-    acceptedControls.value.push({
-      key: crypto.randomUUID(),
-      message: message.trim(),
-      mode,
-      acceptedAt: accepted.acceptedAt,
-    });
-    return accepted;
-  }
-
-  async function refreshSessionMetadata(): Promise<void> {
-    await getSession();
-    await listModels();
-  }
-
-  async function ensureEtag(): Promise<void> {
-    if (!etag.value) await getSession();
-  }
-
-  async function consumeSse(
-    response: Response,
-    sessionId: string,
-    generation: number,
-  ): Promise<void> {
-    if (!response.body) {
-      await finishInterruptedStream(sessionId, generation);
-      return;
-    }
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
-    let terminalObserved = false;
-    let transportInterrupted = false;
-
-    try {
-      while (true) {
-        const { done, value } = await reader.read();
-        buffer += decoder.decode(value, { stream: !done });
-        const frames = buffer.split(/\r?\n\r?\n/u);
-        buffer = frames.pop() ?? '';
-        for (const frame of frames) {
-          terminalObserved = dispatchSseFrame(frame, sessionId, generation) || terminalObserved;
-        }
-        if (done) break;
-      }
-      if (buffer.trim()) {
-        terminalObserved = dispatchSseFrame(buffer, sessionId, generation) || terminalObserved;
-      }
-    } catch {
-      transportInterrupted = true;
-    } finally {
-      if (generation === streamGeneration) {
-        streaming.value = false;
-        await reconcileAfterStream(sessionId);
-        if (hasPendingSubmission(sessionId)) {
-          settlePendingSubmission('uncertain');
-          publishError(outcomeUncertainError());
-        } else if (transportInterrupted || !terminalObserved) {
-          publishError(streamInterruptedError());
-        }
-      }
-    }
-  }
-
-  async function finishInterruptedStream(sessionId: string, generation: number): Promise<void> {
-    if (generation !== streamGeneration) return;
-    streaming.value = false;
-    await reconcileAfterStream(sessionId);
-    if (hasPendingSubmission(sessionId)) {
-      settlePendingSubmission('uncertain');
-      publishError(outcomeUncertainError());
-      return;
-    }
-    publishError(streamInterruptedError());
-  }
-
-  function dispatchSseFrame(frame: string, sessionId: string, generation: number): boolean {
-    if (generation !== streamGeneration || session.value?.sessionId !== sessionId) return false;
-    let event = 'message';
-    let id: string | undefined;
-    const dataLines: string[] = [];
-
-    for (const line of frame.split(/\r?\n/u)) {
-      if (line.startsWith('event:')) event = line.slice(6).trim();
-      if (line.startsWith('id:')) id = line.slice(3).trim();
-      if (line.startsWith('data:')) dataLines.push(line.slice(5).trimStart());
-    }
-    if (dataLines.length === 0) return false;
-
-    const data = parseEventData(dataLines.join('\n'));
-    if (event === 'stream.error') {
-      publishError(streamError(data));
-      return true;
-    }
-    if (event === 'session.status.idle') {
-      if (session.value) session.value.state = 'idle';
-      return false;
-    }
-    if (event === 'stream.end') return true;
-
-    mergeRuntimeEvent({ id, event, data });
-    if (event === 'user.message') {
-      confirmSubmission(data);
-      reconcileAcceptedControl(data);
-    }
-    return false;
-  }
-
-  function mergeRuntimeEvent(envelope: RuntimeEventEnvelope): void {
-    const entryId = readString(envelope.data.entryId);
-    if (entryId && isPersistentEvent(envelope.event)) {
-      const index = events.value.findIndex(
-        (item) => item.event === envelope.event && readString(item.data.entryId) === entryId,
-      );
-      if (index >= 0) {
-        events.value[index] = envelope;
-        return;
-      }
-    }
-    events.value.push(envelope);
-  }
-
-  function reconcileAcceptedControl(data: RuntimeEventData): void {
-    const message = readString(data.message);
-    const index = acceptedControls.value.findIndex((control) => control.message === message);
-    if (index >= 0) acceptedControls.value.splice(index, 1);
-  }
-
-  function createPendingSubmission(
-    sessionId: string,
-    message: string,
-    fileIds: string[],
-  ): PendingSubmission {
-    let resolveConfirmation: (outcome: SubmissionOutcome) => void = () => undefined;
-    const confirmation = new Promise<SubmissionOutcome>((resolve) => {
-      resolveConfirmation = resolve;
-    });
-    pendingSubmission = {
-      sessionId,
-      message,
-      fileIds: [...fileIds],
-      knownEntryIds: new Set(
-        events.value.map((event) => readString(event.data.entryId)).filter(Boolean),
-      ),
-      confirmation,
-      resolve: resolveConfirmation,
-      settled: false,
-    };
-    return pendingSubmission;
-  }
-
-  function confirmSubmission(data: RuntimeEventData): void {
-    const pending = pendingSubmission;
-    if (!pending || !matchesPendingSubmission(data, pending)) return;
-    settlePendingSubmission('confirmed');
-  }
-
-  function confirmSubmissionFromHistory(): void {
-    const pending = pendingSubmission;
-    if (!pending) return;
-    const confirmed = events.value.some((event) => {
-      const entryId = readString(event.data.entryId);
-      return event.event === 'user.message'
-        && !pending.knownEntryIds.has(entryId)
-        && matchesPendingSubmission(event.data, pending);
-    });
-    if (confirmed) settlePendingSubmission('confirmed');
-  }
-
-  function matchesPendingSubmission(
-    data: RuntimeEventData,
-    pending: PendingSubmission,
-  ): boolean {
-    return readString(data.message) === pending.message
-      && arraysEqual(readStringArray(data.fileIds), pending.fileIds);
-  }
-
-  function hasPendingSubmission(sessionId: string): boolean {
-    return pendingSubmission?.sessionId === sessionId && !pendingSubmission.settled;
-  }
-
-  function settlePendingSubmission(outcome: SubmissionOutcome): void {
-    const pending = pendingSubmission;
-    if (!pending || pending.settled) return;
-    pending.settled = true;
-    pending.resolve(outcome);
-    pendingSubmission = null;
-  }
-
-  function reconcileAcceptedControlsFromHistory(): void {
-    confirmSubmissionFromHistory();
-    if (session.value?.state === 'idle') {
-      acceptedControls.value = [];
-      return;
-    }
-    const deliveredMessages = new Set(
-      events.value
-        .filter((event) => event.event === 'user.message')
-        .map((event) => readString(event.data.message)),
-    );
-    acceptedControls.value = acceptedControls.value.filter(
-      (control) => !deliveredMessages.has(control.message),
-    );
-  }
-
-  async function reconcileAfterStream(sessionId: string): Promise<void> {
-    if (session.value?.sessionId !== sessionId) return;
-    const streamErrorMessage = lastError.value;
-    const streamErrorCode = lastErrorCode.value;
-    try {
-      await getSession(sessionId);
-      await loadHistory();
-    } catch {
-      // 保留当前投影和原始流错误，由结果确认状态决定是否可以清空草稿。
-    } finally {
-      if (streamErrorMessage) {
-        lastError.value = streamErrorMessage;
-        lastErrorCode.value = streamErrorCode;
-      }
-    }
-  }
-
-  async function requestResult<T>(
-    path: string,
-    init: RequestInit = {},
-    mutating = false,
-  ): Promise<T> {
-    const response = await requestRaw(path, init, mutating);
-    const body = await readJson<ResultBean<T> | ErrorBean>(response);
-    if (!isResultBean<T>(body)) {
-      throw publishAndReturn(new RuntimeApiError({
-        message: '服务响应格式不符合约定，请刷新后重试。',
-        status: response.status,
-        code: 'INVALID_RESPONSE',
-      }));
-    }
-    return body.result;
-  }
-
-  async function requestEmpty(
-    path: string,
-    init: RequestInit,
-    mutating = false,
-  ): Promise<void> {
-    await requestRaw(path, init, mutating);
-  }
-
-  async function requestRaw(
-    path: string,
-    init: RequestInit = {},
-    mutating = false,
-  ): Promise<Response> {
+  async function request(ctx: Context, suffix: string, init: RequestInit = {}): Promise<Response> {
+    check(ctx);
+    const headers = new Headers({ Accept: 'application/json', 'Accept-Language': navigator.language.startsWith('zh') ? 'zh-CN' : 'en-US', 'X-HW-ID': callerId });
+    new Headers(init.headers).forEach((value, key) => headers.set(key, value));
     let response: Response;
     try {
-      response = await fetch(`${apiBase}${API_PATH}${path}`, {
-        ...init,
-        headers: mergeRequestHeaders({
-          Accept: 'application/json',
-          'Accept-Language': navigator.language.startsWith('zh') ? 'zh-CN' : 'en-US',
-          'X-HW-ID': callerId,
-        }, init.headers),
-      });
+      response = await fetch(`${apiBase}${API_PATH}${suffix}`, { ...init, headers, signal: ctx.signal, cache: 'no-store' });
     } catch (error) {
-      throw publishAndReturn(normalizeError(error, mutating));
+      check(ctx);
+      const writes = !!init.method && init.method !== 'GET';
+      throw new RuntimeApiError({ code: writes ? 'OUTCOME_UNCERTAIN' : 'NETWORK_ERROR', outcomeUncertain: writes,
+        message: writes ? '提交结果不确定；请先核对历史，不要重复提交。' : '读取失败，请检查连接后重试。' });
     }
-
-    const responseEtag = response.headers.get('ETag');
-    if (responseEtag) etag.value = responseEtag;
-    if (!response.ok) throw publishAndReturn(await responseError(response));
+    check(ctx);
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}));
+      throw new RuntimeApiError({ status: response.status, code: typeof body.resCode === 'string' ? body.resCode : `HTTP_${response.status}`,
+        message: typeof body.resMsg === 'string' ? body.resMsg : '服务未接受本次操作，请重新核对。' });
+    }
     return response;
   }
-
-  async function responseError(response: Response): Promise<RuntimeApiError> {
-    const body = await readJson<ErrorBean>(response);
-    const code = body?.resCode || `HTTP_${response.status}`;
-    return new RuntimeApiError({
-      message: friendlyError(code, body?.resMsg),
-      status: response.status,
-      code,
-      retryAfter: response.headers.get('Retry-After') ?? undefined,
-    });
+  async function result(response: Response): Promise<unknown> {
+    if (response.headers.get('Content-Type')?.split(';')[0].trim() !== 'application/json') invalidResponse();
+    const body = record(await response.json().catch(invalidResponse));
+    if (body.resCode !== '0' || typeof body.resMsg !== 'string' || !('result' in body)) invalidResponse();
+    return body.result;
   }
-
-  function publishAndReturn(error: RuntimeApiError): RuntimeApiError {
-    publishError(error);
-    return error;
+  function applySession(value: RuntimeSession, response: Response, ctx: Context, expectedRevision: number): void {
+    check(ctx);
+    const version = response.headers.get('ETag');
+    if (value.sessionId !== ctx.sessionId || !version || !/^"[^"\r\n]+"$/u.test(version)) invalidResponse();
+    if (revision !== expectedRevision) return;
+    const old = session.value;
+    session.value = value; etag.value = version;
+    if (old?.state !== value.state || old?.modelId !== value.modelId || old?.thinking !== value.thinking) invalidateCatalog();
   }
-
-  function publishError(error: RuntimeApiError): void {
-    lastError.value = error.message;
-    lastErrorCode.value = error.code;
+  async function refreshSession(ctx: Context): Promise<RuntimeSession> {
+    const version = revision;
+    const ticket = ++sessionReadTicket;
+    const response = await request(ctx, path(ctx));
+    const value = decodeSession(await result(response));
+    if (ticket === sessionReadTicket) applySession(value, response, ctx, version);
+    return value;
   }
-
-  function requireSessionId(): string {
-    const sessionId = session.value?.sessionId;
-    if (!sessionId) throw publishAndReturn(missingSessionError());
-    return sessionId;
+  async function getSession(sessionId = session.value?.sessionId): Promise<RuntimeSession> {
+    if (!sessionId) throw new RuntimeApiError({ message: '请输入 Session ID。' });
+    if (sessionId !== session.value?.sessionId) clearSessionView();
+    const ctx = { generation, sessionId, signal: viewController.signal };
+    try { return await refreshSession(ctx); } catch (error) { throw publish(error, ctx); }
   }
-
-  return {
-    acceptedControls,
-    abort,
-    changeModel,
-    changeThinking,
-    clearError,
-    clearSessionView,
-    createSession,
-    deleteSession,
-    etag,
-    events,
-    followUp,
-    getSession,
-    hasSession,
-    lastError,
-    lastErrorCode,
-    listModels,
-    loadHistory,
-    models,
-    sendMessage,
-    session,
-    steer,
-    streaming,
-  };
-}
-
-function normalizeHistoryEvent(data: RuntimeEventData): RuntimeEventEnvelope {
-  const event = readString(data.type);
-  const normalized = { ...data };
-  delete normalized.type;
-  return { id: String(data.entrySeq ?? ''), event, data: normalized };
-}
-
-function deduplicatePersistentEvents(events: RuntimeEventEnvelope[]): RuntimeEventEnvelope[] {
-  const seen = new Set<string>();
-  return events.filter((event) => {
-    const key = `${event.event}:${readString(event.data.entryId)}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-}
-
-function parseEventData(value: string): RuntimeEventData {
-  try {
-    const parsed: unknown = JSON.parse(value);
-    return isRecord(parsed) ? parsed : { value: parsed };
-  } catch {
-    return { message: value };
+  async function createSession(agentId: string): Promise<RuntimeSession> {
+    clearSessionView();
+    const ctx = { generation, sessionId: '', signal: viewController.signal };
+    try {
+      const response = await request(ctx, `/agents/${encodeURIComponent(agentId)}/sessions`, { method: 'POST' });
+      const created = decodeSession(await result(response));
+      check(ctx);
+      await getSession(created.sessionId);
+      await listModels();
+      return created;
+    } catch (error) { throw publish(error, ctx); }
   }
-}
-
-function streamError(data: RuntimeEventData): RuntimeApiError {
-  const code = readString(data.resCode) || readString(data.code) || 'STREAM_ERROR';
-  const fallback = readString(data.resMsg) || readString(data.message);
-  return new RuntimeApiError({ message: friendlyError(code, fallback), code });
-}
-
-function normalizeError(error: unknown, outcomeUncertain: boolean): RuntimeApiError {
-  if (error instanceof RuntimeApiError) return error;
-  return outcomeUncertain
-    ? outcomeUncertainError()
-    : new RuntimeApiError({
-      message: '暂时无法连接服务，请检查网络后重试。',
-      code: 'NETWORK_ERROR',
-    });
-}
-
-function outcomeUncertainError(): RuntimeApiError {
-  return new RuntimeApiError({
-    message: '请求可能已被服务接受，但持久化历史中尚未确认。已保留草稿；请先刷新会话，不要重复提交。',
-    code: 'OUTCOME_UNCERTAIN',
-    outcomeUncertain: true,
-  });
-}
-
-function streamInterruptedError(): RuntimeApiError {
-  return new RuntimeApiError({
-    message: '消息已确认，但执行流已中断；执行可能仍在继续。请刷新会话查看最新结果，不要重复提交。',
-    code: 'STREAM_INTERRUPTED',
-  });
-}
-
-function friendlyError(code: string, fallback = ''): string {
-  const messages: Record<string, string> = {
-    CONTROL_QUEUE_FULL: '待处理要求已满，请等待当前要求开始执行后再添加。',
-    SESSION_BUSY: '任务正在执行。请使用“调整方向”或“加入队列”。',
-    SESSION_EXECUTION_UNAVAILABLE: '执行连接正在恢复，请稍后刷新会话。',
-    SESSION_NOT_RUNNING: '任务已结束，请直接发送一条新消息。',
-    SESSION_VERSION_MISMATCH: '会话设置已变化，请刷新后重新选择。',
-    SESSION_NOT_FOUND: '这个会话已不存在，请新建会话。',
-    AGENT_NOT_AVAILABLE: '这个 Agent 当前不可用，请稍后重试。',
-    MANAGER_UNAVAILABLE: '模型服务暂时不可用，请稍后重试。',
-  };
-  return messages[code] || fallback || '操作没有完成，请稍后重试。';
-}
-
-function missingSessionError(): RuntimeApiError {
-  return new RuntimeApiError({ message: '请先新建或恢复一个会话。', code: 'SESSION_REQUIRED' });
-}
-
-async function readJson<T>(response: Response): Promise<T | null> {
-  const text = await response.text();
-  if (!text) return null;
-  try {
-    return JSON.parse(text) as T;
-  } catch {
-    return null;
+  async function listModels() {
+    const ctx = context();
+    try {
+      const value = decodeModels(await result(await request(ctx, path(ctx, '/models'))));
+      check(ctx); models.value = value.models;
+      // Models 无 Session 版本，不能拆开覆盖 Session.modelId 或 ETag。
+      return value;
+    } catch (error) { throw publish(error, ctx); }
   }
-}
-
-function isResultBean<T>(value: ResultBean<T> | ErrorBean | null): value is ResultBean<T> {
-  return value !== null && 'result' in value;
-}
-
-function isPersistentEvent(event: string): boolean {
-  return [
-    'user.message',
-    'assistant.thinking.completed',
-    'assistant.message.completed',
-    'tool.result',
-  ].includes(event);
-}
-
-function isRecord(value: unknown): value is RuntimeEventData {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
-
-function readString(value: unknown): string {
-  return typeof value === 'string' ? value : '';
-}
-
-function readStringArray(value: unknown): string[] {
-  if (!Array.isArray(value)) return [];
-  return value.filter((item): item is string => typeof item === 'string');
-}
-
-function arraysEqual(left: string[], right: string[]): boolean {
-  return left.length === right.length && left.every((value, index) => value === right[index]);
-}
-
-function trimTrailingSlash(value: string): string {
-  return value.replace(/\/+$/u, '');
-}
-
-function mergeRequestHeaders(...sources: Array<HeadersInit | undefined>): Headers {
-  const merged = new Headers();
-  sources.forEach((source) => {
-    if (!source) return;
-    new Headers(source).forEach((value, key) => merged.set(key, value));
-  });
-  return merged;
+  async function loadHistory(): Promise<RuntimeEvent[]> {
+    const ctx = context();
+    let loaded: RuntimeEvent[] = [];
+    let page: number | null = 1;
+    try {
+      while (page !== null) {
+        const response = await request(ctx, path(ctx, `/events?limit=200&page=${page}`));
+        const value = decodeHistory(await result(response));
+        check(ctx);
+        if (value.nextPage !== null && value.nextPage !== page + 1) invalidResponse();
+        loaded = reconcileEvents([], [...loaded, ...value.events]);
+        page = value.nextPage;
+      }
+      check(ctx);
+      events.value = reconcileEvents(events.value, loaded);
+      return loaded;
+    } catch (error) { throw publish(error, ctx); }
+  }
+  function recover(): Promise<void> {
+    if (recoveryFlight) return recoveryFlight;
+    const ctx = context();
+    recovering.value = true;
+    const flight = (async () => {
+      try {
+        await loadHistory();
+        await refreshSession(ctx);
+        check(ctx);
+        if (!receiptUnknown.value && interruptedObservation) {
+          const receiptIndex = events.value.findIndex((event) => event.eventId === interruptedObservation?.receiptId);
+          const ended = receiptIndex >= 0 && events.value.slice(receiptIndex + 1).some((event) => event.type === 'session.status_idle' && event.sourceEventId === interruptedObservation?.rootId);
+          if (ended) { uncertainty.value = ''; interruptedObservation = undefined; }
+        }
+        stopping.value = execution.value.interruptPending;
+      } catch (error) { throw publish(error, ctx); }
+      finally { if (current(ctx)) { recovering.value = false; recoveryFlight = undefined; } }
+    })();
+    recoveryFlight = flight;
+    return flight;
+  }
+  async function changeSetting(suffix: string, body: unknown): Promise<RuntimeSession> {
+    const ctx = context();
+    try {
+      if (!etag.value) await refreshSession(ctx);
+      check(ctx);
+      const settingRevision = ++revision;
+      const response = await request(ctx, path(ctx, suffix), { method: 'PUT', headers: { 'Content-Type': 'application/json', 'If-Match': etag.value }, body: JSON.stringify(body) });
+      const value = decodeSession(await result(response));
+      applySession(value, response, ctx, settingRevision);
+      await loadHistory();
+      return value;
+    } catch (error) {
+      if (current(ctx) && error instanceof RuntimeApiError && (error.status === 412 || error.outcomeUncertain)) {
+        await recover().catch(() => undefined);
+        if (error.status === 412) error = new RuntimeApiError({ code: 'SESSION_VERSION_MISMATCH', message: '设置已被更新，已重新读取。请核对当前值，再明确选择；没有自动重试修改。' });
+      }
+      throw publish(error, ctx);
+    }
+  }
+  async function deleteSession(): Promise<void> {
+    const ctx = context();
+    try { await request(ctx, path(ctx), { method: 'DELETE' }); check(ctx); clearSessionView(); }
+    catch (error) { throw publish(error, ctx); }
+  }
+  function writeHeaders(custom?: HeadersInit, stream = true): Headers {
+    const headers = new Headers(custom);
+    // 临时凭据逐动作复制；不得覆盖协议头或引入不存在的幂等/版本机制。
+    headers.set('Accept', stream ? 'text/event-stream' : 'application/json');
+    headers.set('Content-Type', 'application/json');
+    headers.delete('If-Match'); headers.delete('Idempotency-Key'); headers.delete('Last-Event-ID');
+    return headers;
+  }
+  async function submitStream(input: UserEvent | CommandInvocation, custom?: HeadersInit): Promise<MessageSubmission> {
+    const ctx = context();
+    const skill = 'executionMode' in input;
+    const isMessage = skill || input.type === 'user.message';
+    if (isMessage ? !canSend.value : controlPending.value) throw new RuntimeApiError({ code: 'SESSION_BUSY', message: '请等待当前操作，或先重新核对会话。' });
+    const ticket = isMessage ? ++messageTicket : ++controlTicket;
+    if (isMessage) messagePending.value = true;
+    else controlPending.value = true;
+    revision++; clearError();
+    let response: Response;
+    try {
+      response = await request(ctx, path(ctx, skill ? '/command' : '/events'), {
+        method: 'POST', headers: writeHeaders(custom), body: JSON.stringify(skill ? input.request : { event: input }),
+      });
+    } catch (error) {
+      if (current(ctx)) {
+        messagePending.value = false; controlPending.value = false;
+        if (error instanceof RuntimeApiError && error.outcomeUncertain) { receiptUnknown.value = true; uncertainty.value = error.message; }
+        invalidateCatalog();
+      }
+      throw publish(error, ctx);
+    }
+    let settle!: (outcome: SubmissionOutcome) => void;
+    const confirmation = new Promise<SubmissionOutcome>((resolve) => { settle = resolve; });
+    streamCount.value++;
+    void consume(response, input, ctx, settle, ticket);
+    return { confirmation };
+  }
+  async function consume(response: Response, input: UserEvent | CommandInvocation, ctx: Context, settle: (outcome: SubmissionOutcome) => void, ticket: number): Promise<void> {
+    const isMessage = 'executionMode' in input || input.type === 'user.message';
+    const release = () => {
+      if (isMessage && messageTicket === ticket) messagePending.value = false;
+      if (!isMessage && controlTicket === ticket) controlPending.value = false;
+    };
+    let receipt: RuntimeEvent | undefined;
+    let rootId = execution.value.rootId;
+    let ended = false;
+    try {
+      await readEventStream(response, (event) => {
+        check(ctx);
+        if (!receipt) {
+          const skill = 'executionMode' in input;
+          if (event.type !== (skill ? 'user.message' : input.type)) invalidResponse();
+          if (!skill && !matchesReceipt(input, event)) invalidResponse();
+          receipt = event;
+          if (event.type === 'user.message') rootId = event.eventId;
+          if (event.type === 'user.interrupt') { rootId = event.targetEventId; stopping.value = true; }
+          release();
+          if (session.value) session.value = { ...session.value, state: 'running' };
+          invalidateCatalog(); settle('confirmed');
+        } else {
+          if (event.type.startsWith('user.')) invalidResponse();
+          if ('sourceEventId' in event && event.sourceEventId !== rootId) invalidResponse();
+        }
+        revision++;
+        events.value = mergeEvent(events.value, event);
+        if (event.type === 'session.status_idle' && event.sourceEventId === rootId) {
+          ended = true;
+          if (event.reason === 'failed') { lastError.value = event.message!; lastErrorCode.value = event.errorCode!; }
+          if (event.reason !== 'confirming') stopping.value = false;
+          invalidateCatalog();
+          return false;
+        }
+      }, ctx.signal);
+    } catch (error) { if (current(ctx) && error instanceof RuntimeApiError) publish(error, ctx); }
+    finally {
+      settle(receipt ? 'confirmed' : 'uncertain');
+      if (current(ctx)) {
+        streamCount.value--; release();
+        if (!receipt) {
+          receiptUnknown.value = true;
+          uncertainty.value = '未收到本次完整回执，提交结果不确定。草稿已保留；相同文本不能证明成功，请勿直接重发。';
+        } else if (!ended) {
+          interruptedObservation = { rootId, receiptId: receipt.eventId };
+          uncertainty.value = '回执已收到，但观察流中断。后台可能仍在执行，请重新核对；不要重复提交。';
+        }
+        await recover().catch(() => undefined);
+      }
+    }
+  }
+  function sendMessage(message: string, fileIds: string[] = [], headers?: HeadersInit) {
+    return submitStream(messageEvent(message, fileIds), headers);
+  }
+  function interrupt(headers?: HeadersInit) {
+    if (!canStop.value) throw new RuntimeApiError({ code: 'STOP_UNAVAILABLE', message: '尚未确认当前执行目标，请先重新核对。' });
+    return submitStream({ type: 'user.interrupt', targetEventId: execution.value.rootId }, headers);
+  }
+  function confirmTool(toolCallId: string, decision: 'allow' | 'deny', denyMessage: string, headers?: HeadersInit) {
+    if (session.value?.state !== 'running' || stopping.value || execution.value.pendingTool?.toolCallId !== toolCallId || !execution.value.confirming
+      || codePointLength(denyMessage) > 2048) throw new RuntimeApiError({ message: '待确认工具已变化或拒绝说明超长，请重新核对。' });
+    return submitStream({ type: 'user.tool_confirmation', toolCallId, result: decision,
+      ...(decision === 'deny' && denyMessage.trim() ? { denyMessage } : {}) }, headers);
+  }
+  function listCommands(): Promise<CommandDescriptor[]> {
+    if (catalogStatus.value === 'ready') return Promise.resolve(commands.value);
+    if (catalogFlight) return catalogFlight;
+    const ctx = context();
+    const version = catalogRevision;
+    catalogStatus.value = 'loading'; catalogError.value = '';
+    const flight = (async () => {
+      try {
+        const value = decodeCatalog(await result(await request(ctx, path(ctx, '/commands'))));
+        check(ctx);
+        if (version === catalogRevision) { commands.value = value; catalogStatus.value = 'ready'; }
+        else catalogStatus.value = 'stale';
+        return value;
+      } catch (error) {
+        if (current(ctx)) { catalogStatus.value = 'error'; catalogError.value = '命令清单读取失败，请重试清单。'; }
+        throw error;
+      } finally { if (current(ctx)) catalogFlight = undefined; }
+    })();
+    catalogFlight = flight;
+    return flight.then((value) => current(ctx) && catalogStatus.value === 'stale' ? listCommands() : value);
+  }
+  async function executeCommand(invocation: CommandInvocation, headers?: HeadersInit): Promise<SubmissionOutcome> {
+    const ctx = context();
+    if (commandPending.value || catalogStatus.value !== 'ready') throw new RuntimeApiError({ message: '请先读取最新命令清单。' });
+    if (invocation.executionMode === 'skillEvents') {
+      const submission = await submitStream(invocation, headers);
+      return submission.confirmation;
+    }
+    commandPending.value = true;
+    const commandRevision = ++revision;
+    clearError();
+    try {
+      const response = await request(ctx, path(ctx, '/command'), { method: 'POST', headers: writeHeaders(headers, false), body: JSON.stringify(invocation.request) });
+      const decoded = decodeCommandResult(invocation, await result(response));
+      check(ctx);
+      if (decoded.kind === 'session') applySession(decoded.value, response, ctx, commandRevision);
+      if (decoded.kind === 'models') models.value = decoded.value.models;
+      commandResult.value = decoded;
+      return 'confirmed';
+    } catch (error) {
+      if (current(ctx) && (!(error instanceof RuntimeApiError) || error.status === 0)) {
+        uncertainty.value = '命令结果未知，已保留命令草稿；请核对当前资源，不会自动再次运行。';
+        await recover().catch(() => undefined);
+      }
+      throw publish(error, ctx);
+    } finally {
+      if (current(ctx)) {
+        commandPending.value = false; invalidateCatalog();
+        await listCommands().catch(() => undefined);
+      }
+    }
+  }
+  function acknowledgeUnknown(): void {
+    if (recovering.value || session.value?.state !== 'idle') return;
+    receiptUnknown.value = false; uncertainty.value = '';
+  }
+  return { session, etag, models, events, hasSession, streaming, running, canSend, canStop, execution, stopping,
+    messagePending, controlPending, recovering, uncertainty, receiptUnknown, lastError, lastErrorCode,
+    commands, catalogStatus, catalogError, commandResult, commandPending, clearSessionView, clearError,
+    createSession, getSession, deleteSession, listModels, loadHistory, recover, sendMessage, interrupt, confirmTool,
+    changeModel: (modelId: string) => changeSetting('/model', { modelId }),
+    changeThinking: (thinking: boolean) => changeSetting('/thinking', { thinking }),
+    listCommands, executeCommand, invalidateCatalog, acknowledgeUnknown };
 }
