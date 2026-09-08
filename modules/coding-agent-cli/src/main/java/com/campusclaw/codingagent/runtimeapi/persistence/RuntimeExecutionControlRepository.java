@@ -12,6 +12,7 @@ import com.campusclaw.codingagent.runtimeapi.dto.CommittedControlEventDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.CommittedTerminalDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.ConfirmationAcceptanceDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.ConfirmingEventsDTO;
+import com.campusclaw.codingagent.runtimeapi.dto.ExecutionControlSignalDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.ExecutionStateDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.ExecutionTargetDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.InterruptRequestDTO;
@@ -54,6 +55,8 @@ public interface RuntimeExecutionControlRepository {
     boolean acknowledgeConfirmation(ToolConfirmationDecisionDTO decision, OffsetDateTime completedAt);
 
     TransitionStatus appendToSegment(ExecutionTargetDTO target, SegmentAppender appender);
+
+    List<ExecutionControlSignalDTO> findPendingControls(List<ExecutionTargetDTO> targets);
 
     TransitionStatus markTerminal(
             ExecutionTargetDTO target,
