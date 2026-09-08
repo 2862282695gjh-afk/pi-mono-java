@@ -87,6 +87,30 @@ class RuntimeResultWaitRegistryTest {
         assertThat(registry.claimTargets(1)).isEmpty();
     }
 
+    @Test
+    void shouldIgnoreLateResultFromReplacedWaitGroupClaim() {
+        RuntimeResultWaitRegistry registry = registry(1);
+        var first = registry.reserve(RuntimeResultWaitMode.SEGMENT_EVENTS, (events, terminal) -> true, () -> {})
+                .orElseThrow();
+        first.bind(target(), 100L);
+        var staleClaim = registry.claimTargets(1).getFirst();
+        first.close();
+        var delivered = new ArrayList<String>();
+        var replacement = registry.reserve(
+                        RuntimeResultWaitMode.SEGMENT_EVENTS, (events, terminal) -> accept(delivered, events), () -> {})
+                .orElseThrow();
+        replacement.bind(target(), 10L);
+        var currentClaim = registry.claimTargets(1).getFirst();
+
+        registry.deliver(staleClaim, List.of(), true);
+        registry.release(staleClaim);
+
+        assertThat(registry.registeredResponses()).isOne();
+        assertThat(registry.claimTargets(1)).isEmpty();
+        registry.deliver(currentClaim, List.of(event("current", 11L)), true);
+        assertThat(delivered).containsExactly("current");
+    }
+
     private static boolean accept(List<String> delivered, List<CommittedEventDTO> events) {
         delivered.addAll(events.stream().map(CommittedEventDTO::getEventId).toList());
         return true;

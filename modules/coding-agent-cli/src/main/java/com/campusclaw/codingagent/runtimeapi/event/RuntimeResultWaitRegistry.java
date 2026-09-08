@@ -49,6 +49,8 @@ public class RuntimeResultWaitRegistry {
 
     private long nextClaimOrder;
 
+    private long nextClaimId;
+
     public RuntimeResultWaitRegistry(RuntimeEventProperties properties) {
         this.maxResponses = properties.getResultWaitMaxResponses();
         this.waitNanos = properties.getResultWaitTimeout().toNanos();
@@ -146,7 +148,7 @@ public class RuntimeResultWaitRegistry {
      * @param claimed 已领取的固定等待目标
      */
     public synchronized void release(ResultWaitTargetDTO claimed) {
-        WaitGroup group = groups.get(new WaitKey(claimed.target(), claimed.mode()));
+        WaitGroup group = claimedGroup(claimed);
         if (group != null) {
             group.inFlight = false;
         }
@@ -188,18 +190,19 @@ public class RuntimeResultWaitRegistry {
         for (WaitGroup group : candidates) {
             group.inFlight = true;
             group.lastClaimOrder = ++nextClaimOrder;
+            group.claimId = ++nextClaimId;
             long afterSeq = group.waiters.stream()
                     .mapToLong(waiter -> waiter.afterSeq)
                     .min()
                     .orElse(0L);
-            claimed.add(new ResultWaitTargetDTO(group.key.target(), group.key.mode(), afterSeq));
+            claimed.add(new ResultWaitTargetDTO(group.key.target(), group.key.mode(), afterSeq, group.claimId));
         }
         return List.copyOf(claimed);
     }
 
     private WaitGroup claimedGroup(ResultWaitTargetDTO claimed) {
         WaitGroup group = groups.get(new WaitKey(claimed.target(), claimed.mode()));
-        return group != null && group.inFlight ? group : null;
+        return group != null && group.inFlight && group.claimId == claimed.claimId() ? group : null;
     }
 
     private List<DeliveryAttempt> deliveryAttempts(WaitGroup group, List<CommittedEventDTO> events, boolean terminal) {
@@ -225,7 +228,7 @@ public class RuntimeResultWaitRegistry {
     }
 
     private void finishDelivery(ResultWaitTargetDTO claimed, List<DeliveryAttempt> attempts) {
-        WaitGroup group = groups.get(new WaitKey(claimed.target(), claimed.mode()));
+        WaitGroup group = claimedGroup(claimed);
         if (group == null) {
             return;
         }
@@ -335,6 +338,8 @@ public class RuntimeResultWaitRegistry {
         private boolean inFlight;
 
         private long lastClaimOrder;
+
+        private long claimId;
 
         private WaitGroup(WaitKey key) {
             this.key = key;
