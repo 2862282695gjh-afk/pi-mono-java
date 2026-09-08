@@ -1,6 +1,6 @@
 # CampusClaw HTTP V1 实施记录
 
-> 版本：3.11.0
+> 版本：3.11.1
 >
 > 状态：已实现并按 Runtime-only 现状校准
 >
@@ -21,6 +21,8 @@
 > 公司 GaussDB 脚本布局实现：`c1335026`
 >
 > 公司 GaussDB 初始化样式源码基线：`origin/main@18bf7026d75cf28a9652025eaa19800eb36c4c64`
+>
+> 首版数据库范围基线：`17f91e20`（清理提交 `45d7ece9`）
 >
 > 初始实现提交：`8691e8800f05f28afe22499050c29220ef5b7475`
 >
@@ -165,7 +167,8 @@ DDL 使用 `t_` 前缀：`t_sessions`、`t_session_tombstone`、`t_session_clean
 
 助手完成和 Compaction 完成会各自追加一条 `usage` Runtime Record 到 `t_session_records`，并在同一事务内累计 `t_session_stats`。Entry 的 `entry_seq` 与 Record 的 `record_seq` 由 `t_session_sequences` 统一分配，因此两个通道共享 Session 内严格递增的持久化顺序。历史 API 只投影当前叶节点回溯得到的 Entry 分支；不参与消息分支的 Usage Record 不进入历史消息或模型上下文。
 
-模块侧继续以 `src/main/resources/db/gaussdb/` 保存独立开发所需的安装、授权和升级材料；公司镜像
+模块侧继续以 `src/main/resources/db/gaussdb/` 保存独立开发所需的全新安装与授权材料；当前产品是第一版，
+不提供已有安装升级材料。公司镜像
 不把它们放入 classpath，而是仅在 `scripts/install/` 交付
 `initdb_gaussdbv5.sql`。同步脚本把公司数据库、Schema、Owner 与授权头部模板放在文件最前，
 再从模块规范脚本生成表 DDL：过滤说明、集中 DROP 块和事务语句，并在每个
@@ -264,6 +267,7 @@ AppKey/JWT 至少一种，否则不发送 execute 请求并返回工具执行失
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 3.11.1 | 2026-09-08 | 明确首版数据库只交付全新安装与授权材料，不提供已有安装升级入口。 |
 | 3.11.0 | 2026-09-08 | 接通共享POST的Builtin JSON和Skill SSE，记录方法校验、日志及错误媒体类型边界；真实跨进程验收单独交付。 |
 | 3.10.0 | 2026-09-07 | 删除无运行时消费者的旧命令原型；HTTP/SSE 和公共 Session 能力不变，POST Command 仍待实现。 |
 | 3.9.0 | 2026-09-07 | 发布共享命令清单 GET，记录独立契约基线、完整缓存和操作级 503；不发布 POST Command。 |
