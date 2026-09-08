@@ -72,6 +72,16 @@ class RuntimeEventStreamTest {
     }
 
     @Test
+    void shouldPreflightRequiredEventWithoutMutatingStream() {
+        RuntimeEventStream stream = stream(1, 1);
+
+        assertThat(stream.canAcceptRequired(event("fits"))).isTrue();
+        assertThat(stream.canAcceptRequired(event("fits"))).isTrue();
+        assertThat(stream.emit(event("fits"))).isTrue();
+        assertThat(stream.canAcceptRequired(event("full"))).isFalse();
+    }
+
+    @Test
     void sendsHeartbeatWhileExecutionHasNoEvents() throws Exception {
         RuntimeEventStream stream = new RuntimeEventStream(2, 10, Duration.ofMillis(5), event -> 1L);
         CountDownLatch heartbeat = new CountDownLatch(1);
