@@ -1,0 +1,45 @@
+@startuml command_request_contract
+' Java baseline: 8d61c767d09d47ef6c8d76c05535fcbb58c48373
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/vo/BuiltinCommandRequestVO.java#readName
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/vo/UserEventRequestVO.java#readFileIds
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/service/command/CommandExecutionService.java#normalize
+' Observed behavior: Builtin validation and normalization already have separate owners.
+' Design reason: select a request namespace without weakening Builtin fields.
+' Java divergence: structured JSON, no local slash fallback, no HTTP route in this slice.
+title Shared Command Request Boundary
+skinparam classAttributeIconSize 0
+skinparam shadowing false
+skinparam backgroundColor white
+left to right direction
+
+class CommandRequestDeserializer <<stateless>> {
+  deserialize(parser, context)
+}
+interface CommandRequestVO <<sealed>> {
+  getName()
+  getArguments()
+}
+class BuiltinCommandRequestVO <<request scoped>> {
+  name : String
+  arguments : String
+}
+class SkillCommandRequestVO <<request scoped>> {
+  name : String
+  arguments : String
+  fileIds : List<String>
+}
+class "Jakarta Validator" as Validator
+
+CommandRequestVO <|.. BuiltinCommandRequestVO
+CommandRequestVO <|.. SkillCommandRequestVO
+CommandRequestDeserializer ..> CommandRequestVO : selects concrete type
+CommandRequestDeserializer ..> BuiltinCommandRequestVO : bare name
+CommandRequestDeserializer ..> SkillCommandRequestVO : skill: prefix
+Validator ..> BuiltinCommandRequestVO : field constraints
+Validator ..> SkillCommandRequestVO : field constraints
+note bottom of CommandRequestVO
+  Raw values only.
+  Actual services own normalization.
+  No HTTP route in this slice.
+end note
+@enduml
