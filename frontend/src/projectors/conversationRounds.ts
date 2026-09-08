@@ -3,6 +3,7 @@ import type {
   AssistantTurn,
   ConversationTurn,
   ThinkingTurn,
+  NoticeTurn,
   UserTurn,
 } from '../types/product';
 
@@ -15,7 +16,7 @@ export interface AgentMessageBlock {
 export interface AgentActivityBlock {
   kind: 'activity';
   key: string;
-  turn: ThinkingTurn | ActivityTurn;
+  turn: ThinkingTurn | ActivityTurn | NoticeTurn;
 }
 
 export interface AgentRound {
@@ -34,7 +35,7 @@ export interface UserTimelineItem {
 
 export type ConversationTimelineItem = UserTimelineItem | AgentRound;
 
-type AgentTurn = AssistantTurn | ThinkingTurn | ActivityTurn;
+type AgentTurn = AssistantTurn | ThinkingTurn | ActivityTurn | NoticeTurn;
 
 export function groupConversationTurns(turns: ConversationTurn[]): ConversationTimelineItem[] {
   const items: ConversationTimelineItem[] = [];
@@ -60,7 +61,7 @@ function appendAgentRound(items: ConversationTimelineItem[], turns: AgentTurn[])
     key: `round-${turns[0].key}`,
     blocks: groupAgentBlocks(turns),
     copySource: turns
-      .filter((turn): turn is AssistantTurn => turn.kind === 'assistant' && Boolean(turn.rawMarkdown))
+      .filter((turn): turn is AssistantTurn => turn.kind === 'assistant' && !turn.unconfirmed && Boolean(turn.rawMarkdown))
       .map((turn) => turn.rawMarkdown)
       .join('\n\n'),
     active: turns.some(isActiveTurn),
@@ -81,6 +82,7 @@ function groupAgentBlocks(turns: AgentTurn[]): Array<AgentMessageBlock | AgentAc
 }
 
 function isActiveTurn(turn: AgentTurn): boolean {
+  if (turn.kind === 'notice') return false;
   if (turn.kind === 'assistant') return turn.streaming;
   return turn.status === 'running';
 }

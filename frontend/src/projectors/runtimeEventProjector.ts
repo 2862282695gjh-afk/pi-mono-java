@@ -1,304 +1,52 @@
-import type {
-  ActivityTurn,
-  AssistantTurn,
-  ConversationTurn,
-  ThinkingTurn,
-  ToolArgumentRow,
-  UserTurn,
-} from '../types/product';
-import type { RuntimeEventData, RuntimeEventEnvelope } from '../types/runtime';
+import type { ActivityTurn, ConversationTurn } from '../types/product';
+import type { RuntimeEvent } from '../types/runtime';
 
-const MAX_TOOL_ARGUMENT_ROWS = 12;
-const MAX_TOOL_ARGUMENT_DEPTH = 3;
-const MAX_TOOL_VALUE_LENGTH = 240;
-const MAX_TOOL_RESULT_LENGTH = 4_000;
-
-interface AssistantProjection {
-  turn: AssistantTurn;
-  appended: boolean;
-}
-
-interface ToolSpec {
-  toolCallId: string;
-  toolName: string;
-  arguments: ToolArgumentRow[];
-}
-
-export function projectRuntimeEvents(events: RuntimeEventEnvelope[]): ConversationTurn[] {
+/** 输入是已按 eventId 合并的 Store，配置记录不冒充模型回答。 */
+export function projectRuntimeEvents(events: RuntimeEvent[], observing = false): ConversationTurn[] {
   const turns: ConversationTurn[] = [];
-  const assistantTurns = new Map<string, AssistantProjection>();
-  const thinkingTurns = new Map<string, ThinkingTurn>();
-  const activityTurns = new Map<string, ActivityTurn>();
-  const toolSpecs = new Map<string, ToolSpec>();
-
-  for (const envelope of events) {
-    if (envelope.event === 'user.message') {
-      appendUserTurn(turns, envelope.data);
-    } else if (envelope.event.startsWith('assistant.message.')) {
-      projectAssistantEvent(turns, assistantTurns, activityTurns, toolSpecs, envelope);
-    } else if (envelope.event.startsWith('assistant.thinking.')) {
-      projectThinkingEvent(turns, thinkingTurns, envelope);
-    } else if (envelope.event.startsWith('tool.')) {
-      projectToolEvent(turns, activityTurns, toolSpecs, envelope);
+  for (const event of events) {
+    const key = event.eventId;
+    switch (event.type) {
+      case 'user.message':
+        turns.push({ key, kind: 'user', text: event.content.filter((block) => block.type === 'text').map((block) => block.text).join(''),
+          fileIds: event.content.filter((block) => block.type === 'file').map((block) => block.fileId) });
+        break;
+      case 'agent.message':
+        if (event.content) turns.push({ key, kind: 'assistant', rawMarkdown: event.content,
+          streaming: observing && event.phase === 'delta', unconfirmed: event.phase === 'delta' });
+        break;
+      case 'agent.thinking':
+        turns.push({ key, kind: 'thinking', status: event.phase === 'completed' ? 'completed' : observing ? 'running' : 'unconfirmed',
+          title: '思考摘要', content: event.content });
+        break;
+      case 'agent.tool_call': {
+        const result = events.find((item) => item.type === 'agent.tool_result' && item.toolCallId === event.toolCallId && item.sourceEventId === event.sourceEventId);
+        const confirmed = events.some((item) => item.type === 'user.tool_confirmation' && item.toolCallId === event.toolCallId);
+        const terminal = events.some((item) => item.type === 'session.status_idle' && item.sourceEventId === event.sourceEventId && item.reason !== 'confirming');
+        let status: ActivityTurn['status'] = terminal || !observing ? 'unconfirmed' : 'running';
+        if (event.requiresConfirmation && !confirmed && !terminal) status = 'confirming';
+        if (result?.type === 'agent.tool_result') status = result.isError ? 'error' : 'completed';
+        turns.push({ key, kind: 'activity', toolCallId: event.toolCallId, toolName: event.toolName, status,
+          arguments: Object.entries(event.arguments).map(([key, value]) => ({ key, value: typeof value === 'string' ? value : JSON.stringify(value, null, 2) })),
+          result: result?.type === 'agent.tool_result' ? result.content.map((block) => block.text).join('\n') : '',
+          errorCode: result?.type === 'agent.tool_result' ? result.errorCode : undefined });
+        break;
+      }
+      case 'agent.tool_result':
+        if (!events.some((item) => item.type === 'agent.tool_call' && item.toolCallId === event.toolCallId && item.sourceEventId === event.sourceEventId)) {
+          turns.push({ key, kind: 'activity', toolCallId: event.toolCallId, toolName: '工具调用（调用记录尚未读到）',
+            status: event.isError ? 'error' : 'completed', arguments: [], result: event.content.map((block) => block.text).join('\n'), errorCode: event.errorCode });
+        }
+        break;
+      case 'user.interrupt': turns.push({ key, kind: 'notice', text: '停止请求已接受，等待原任务实际结束。' }); break;
+      case 'user.tool_confirmation': turns.push({ key, kind: 'notice', text: event.result === 'allow' ? '已允许本次工具调用。' : `已拒绝本次工具调用。${event.denyMessage ?? ''}` }); break;
+      case 'session.status_idle':
+        turns.push({ key, kind: 'notice', text: ({ done: '本轮已完成', terminated: '本轮已停止', confirming: '等待工具确认，任务尚未结束', failed: `本轮失败：${event.message ?? ''}` })[event.reason] });
+        break;
+      case 'session.model_changed': turns.push({ key, kind: 'notice', text: `模型已变更：${event.previousModelId} → ${event.modelId}` }); break;
+      case 'session.thinking_changed': turns.push({ key, kind: 'notice', text: `后续思考摘要已${event.thinking ? '开启' : '关闭'}；已有摘要保留。` }); break;
+      case 'session.compacted': turns.push({ key, kind: 'notice', text: `上下文已压缩：${event.tokensBefore} → 约 ${event.estimatedTokensAfter} tokens` }); break;
     }
   }
-
   return turns;
-}
-
-function appendUserTurn(turns: ConversationTurn[], data: RuntimeEventData): void {
-  const entryId = readString(data.entryId) || `user-${turns.length}`;
-  const turn: UserTurn = {
-    key: entryId,
-    kind: 'user',
-    text: readString(data.message),
-    fileIds: readStringArray(data.fileIds),
-  };
-  turns.push(turn);
-}
-
-function projectAssistantEvent(
-  turns: ConversationTurn[],
-  assistantTurns: Map<string, AssistantProjection>,
-  activityTurns: Map<string, ActivityTurn>,
-  toolSpecs: Map<string, ToolSpec>,
-  envelope: RuntimeEventEnvelope,
-): void {
-  const entryId = readString(envelope.data.entryId);
-  if (!entryId) return;
-  const projection = ensureAssistantTurn(assistantTurns, entryId);
-
-  if (envelope.event === 'assistant.message.delta') {
-    const delta = readTextContent(envelope.data.delta);
-    if (delta) {
-      appendAssistantTurn(turns, projection);
-      projection.turn.rawMarkdown += delta;
-    }
-  }
-  if (envelope.event === 'assistant.message.completed') {
-    projection.turn.rawMarkdown = readMessageText(envelope.data.message);
-    projection.turn.streaming = false;
-    registerToolSpecs(envelope.data.message, toolSpecs, activityTurns);
-    if (projection.turn.rawMarkdown) appendAssistantTurn(turns, projection);
-  }
-}
-
-function projectThinkingEvent(
-  turns: ConversationTurn[],
-  thinkingTurns: Map<string, ThinkingTurn>,
-  envelope: RuntimeEventEnvelope,
-): void {
-  const assistantEntryId = readString(envelope.data.assistantEntryId);
-  if (!assistantEntryId) return;
-  const contentIndex = readNumber(envelope.data.contentIndex);
-  const key = `thinking-${assistantEntryId}-${contentIndex}`;
-  let turn = thinkingTurns.get(key);
-  if (!turn) {
-    turn = {
-      key,
-      kind: 'thinking',
-      status: 'running',
-      title: '正在分析',
-      content: '',
-    };
-    thinkingTurns.set(key, turn);
-    turns.push(turn);
-  }
-
-  const completed = envelope.event === 'assistant.thinking.completed';
-  turn.status = completed ? 'completed' : 'running';
-  turn.title = completed ? '分析过程' : '正在分析';
-  if (envelope.event === 'assistant.thinking.delta') {
-    turn.content += readTextContent(envelope.data.delta);
-  }
-  if (completed) {
-    turn.content = readThinkingContent(envelope.data.content) || turn.content;
-  }
-}
-
-function projectToolEvent(
-  turns: ConversationTurn[],
-  activityTurns: Map<string, ActivityTurn>,
-  toolSpecs: Map<string, ToolSpec>,
-  envelope: RuntimeEventEnvelope,
-): void {
-  const toolCallId = readString(envelope.data.toolCallId);
-  if (!toolCallId) return;
-  const turn = ensureActivityTurn(turns, activityTurns, toolSpecs, toolCallId, envelope.data);
-
-  if (envelope.event === 'tool.execution.started' || envelope.event === 'tool.execution.delta') {
-    turn.status = 'running';
-  }
-  if (envelope.event === 'tool.execution.completed') {
-    turn.status = envelope.data.isError === true ? 'error' : 'completed';
-  }
-  if (envelope.event === 'tool.result') {
-    turn.status = envelope.data.isError === true ? 'error' : 'completed';
-    const content = readContentArrayText(envelope.data.content);
-    const errorMessage = readString(envelope.data.errorMessage);
-    turn.result = truncateToolResult(turn.status === 'error' && errorMessage ? errorMessage : content);
-  }
-}
-
-function ensureAssistantTurn(
-  assistantTurns: Map<string, AssistantProjection>,
-  entryId: string,
-): AssistantProjection {
-  const existing = assistantTurns.get(entryId);
-  if (existing) return existing;
-  const projection: AssistantProjection = {
-    turn: {
-      key: entryId,
-      kind: 'assistant',
-      rawMarkdown: '',
-      streaming: true,
-    },
-    appended: false,
-  };
-  assistantTurns.set(entryId, projection);
-  return projection;
-}
-
-function appendAssistantTurn(turns: ConversationTurn[], projection: AssistantProjection): void {
-  if (projection.appended) return;
-  projection.appended = true;
-  turns.push(projection.turn);
-}
-
-function ensureActivityTurn(
-  turns: ConversationTurn[],
-  activityTurns: Map<string, ActivityTurn>,
-  toolSpecs: Map<string, ToolSpec>,
-  toolCallId: string,
-  data: RuntimeEventData,
-): ActivityTurn {
-  const existing = activityTurns.get(toolCallId);
-  if (existing) return existing;
-  const spec = toolSpecs.get(toolCallId);
-  const turn: ActivityTurn = {
-    key: `tool-${toolCallId}`,
-    kind: 'activity',
-    toolCallId,
-    toolName: readString(data.toolName) || spec?.toolName || 'Agent 工具',
-    status: 'running',
-    arguments: spec?.arguments ?? [],
-    result: '',
-  };
-  activityTurns.set(toolCallId, turn);
-  turns.push(turn);
-  return turn;
-}
-
-function registerToolSpecs(
-  value: unknown,
-  toolSpecs: Map<string, ToolSpec>,
-  activityTurns: Map<string, ActivityTurn>,
-): void {
-  const message = readRecord(value);
-  if (!Array.isArray(message?.content)) return;
-  for (const item of message.content) {
-    const block = readRecord(item);
-    if (readString(block?.type) !== 'tool_call') continue;
-    const toolCallId = readString(block?.toolCallId);
-    if (!toolCallId) continue;
-    const spec: ToolSpec = {
-      toolCallId,
-      toolName: readString(block?.name) || 'Agent 工具',
-      arguments: projectToolArguments(block?.arguments),
-    };
-    toolSpecs.set(toolCallId, spec);
-    const activity = activityTurns.get(toolCallId);
-    if (activity) {
-      activity.toolName = spec.toolName;
-      activity.arguments = spec.arguments;
-    }
-  }
-}
-
-function projectToolArguments(value: unknown): ToolArgumentRow[] {
-  const rows: ToolArgumentRow[] = [];
-  const record = readRecord(value);
-  if (!record) return rows;
-  for (const [key, item] of Object.entries(record)) {
-    appendToolArgument(rows, key, item, 0);
-    if (rows.length >= MAX_TOOL_ARGUMENT_ROWS) break;
-  }
-  return rows;
-}
-
-function appendToolArgument(
-  rows: ToolArgumentRow[],
-  key: string,
-  value: unknown,
-  depth: number,
-): void {
-  if (rows.length >= MAX_TOOL_ARGUMENT_ROWS) return;
-  if (Array.isArray(value) && value.length > 0 && depth < MAX_TOOL_ARGUMENT_DEPTH) {
-    value.forEach((item, index) => appendToolArgument(rows, `${key}[${index}]`, item, depth + 1));
-    return;
-  }
-  const record = readRecord(value);
-  if (record && Object.keys(record).length > 0 && depth < MAX_TOOL_ARGUMENT_DEPTH) {
-    for (const [childKey, childValue] of Object.entries(record)) {
-      appendToolArgument(rows, `${key}.${childKey}`, childValue, depth + 1);
-      if (rows.length >= MAX_TOOL_ARGUMENT_ROWS) return;
-    }
-    return;
-  }
-  const formatted = formatToolValue(value);
-  rows.push({ key, value: formatted });
-}
-
-function formatToolValue(value: unknown): string {
-  if (typeof value === 'string') return truncate(value, MAX_TOOL_VALUE_LENGTH);
-  if (value === null) return 'null';
-  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
-  if (Array.isArray(value)) return value.length === 0 ? '[]' : '[…]';
-  if (readRecord(value)) return Object.keys(value as RuntimeEventData).length === 0 ? '{}' : '{…}';
-  return String(value ?? '');
-}
-
-function truncateToolResult(value: string): string {
-  return truncate(value, MAX_TOOL_RESULT_LENGTH, '\n…输出已截断');
-}
-
-function truncate(value: string, limit: number, suffix = '…'): string {
-  return value.length > limit ? `${value.slice(0, limit)}${suffix}` : value;
-}
-
-function readMessageText(value: unknown): string {
-  const message = readRecord(value);
-  return readContentArrayText(message?.content);
-}
-
-function readThinkingContent(value: unknown): string {
-  return readTextContent(value) || readContentArrayText(value);
-}
-
-function readContentArrayText(value: unknown): string {
-  if (!Array.isArray(value)) return '';
-  return value.map(readTextContent).filter(Boolean).join('\n');
-}
-
-function readTextContent(value: unknown): string {
-  const content = readRecord(value);
-  return readString(content?.text);
-}
-
-function readStringArray(value: unknown): string[] {
-  if (!Array.isArray(value)) return [];
-  return value.filter((item): item is string => typeof item === 'string');
-}
-
-function readString(value: unknown): string {
-  return typeof value === 'string' ? value : '';
-}
-
-function readNumber(value: unknown): number {
-  return typeof value === 'number' && Number.isFinite(value) ? value : 0;
-}
-
-function readRecord(value: unknown): RuntimeEventData | null {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
-  return value as RuntimeEventData;
 }

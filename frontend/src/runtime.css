@@ -1,0 +1,63 @@
+/* Events v2 与 Slash 共用原 O1 warm tokens；不新增深色导航或命令图标列。 */
+.workspace.has-session { grid-template-rows: var(--topbar-height) minmax(80px, 1fr) auto; }
+.has-session .conversation-scroll { padding-bottom: 24px; scroll-behavior: auto; }
+.has-session .conversation-empty { padding: 16px 8px; }
+.conversation-dock { display: flex; flex-direction: column; width: 100%; max-height: 70dvh; padding: 0 24px; }
+.conversation-dock .composer-wrap { position: static; display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; width: min(var(--content-width), 100%); background: var(--surface-primary); }
+.conversation-dock .composer, .conversation-dock .composer-note, .conversation-dock .recovery-bar { flex-shrink: 0; }
+.recovery-bar, .command-result, .tool-confirmation { width: min(var(--content-width), 100%); margin: 0 auto 10px; }
+.recovery-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; color: var(--text-secondary); font-size: 12px; }
+.recovery-bar > span { flex: 1; min-width: 100px; line-height: 1.6; overflow-wrap: anywhere; }
+.secondary-button { min-height: 44px; padding: 6px 12px; border: 1px solid var(--border-default); border-radius: 9px; background: var(--surface-secondary); }
+.secondary-button:hover:not(:disabled) { background: var(--surface-selected); }
+.command-result, .tool-confirmation { padding: 12px 16px; border: 1px solid var(--border-strong); border-radius: 14px; background: var(--surface-secondary); font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
+.command-result { max-height: 26dvh; overflow-y: auto; }
+.command-result h3, .command-result h4 { margin: 8px 0; }
+.command-result p, .tool-confirmation p { margin: 6px 0; }
+.region-header, .region-actions, .command-mode-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.region-header small { color: var(--text-secondary); }
+.region-actions { justify-content: flex-end; margin-top: 8px; }
+.tool-confirmation { max-height: 32dvh; overflow-y: auto; border-style: dashed; }
+.tool-confirmation textarea { display: block; width: 100%; margin-top: 4px; padding: 8px; border: 1px solid var(--border-default); border-radius: 8px; background: var(--surface-primary); resize: vertical; }
+.tool-confirmation summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+.plain-result { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; }
+.resource-summary { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 8px 16px; }
+.resource-summary dt { color: var(--text-secondary); }
+.resource-summary dd { margin: 0; }
+.event-notice { display: block; margin: 10px 0; color: var(--text-secondary); font-size: 12px; line-height: 1.7; overflow-wrap: anywhere; }
+.command-palette { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 70px; margin-bottom: 8px; overflow: hidden; border: 1px solid var(--border-strong); border-radius: 14px; background: var(--surface-primary); box-shadow: 0 6px 20px rgba(76, 50, 39, 0.06); }
+.command-palette > header { padding: 10px 16px; min-height: 44px; border-bottom: 1px solid var(--border-default); background: var(--surface-secondary); font-size: 13px; }
+.command-palette > p, .command-palette > div { padding: 12px 16px; font-size: 13px; }
+.command-palette ul { min-height: 0; max-height: min(360px, 35dvh); padding: 6px; margin: 0; list-style: none; overflow-y: auto; }
+.command-palette li { display: grid; grid-template-columns: minmax(0, 1fr) minmax(100px, 0.45fr); align-items: center; min-height: 64px; padding: 10px 12px; gap: 12px; border: 1px solid transparent; border-radius: 10px; overflow-wrap: anywhere; cursor: pointer; }
+.command-palette li.selected { border-color: var(--border-strong); background: var(--surface-selected); }
+.command-palette li strong { font: 600 15px ui-monospace, SFMono-Regular, monospace; }
+.command-palette li p { margin: 5px 0 0; color: var(--text-secondary); font-size: 13px; line-height: 1.5; }
+.command-palette li small { color: var(--text-secondary); font-size: 12px; }
+.command-kind { display: inline-block; margin-left: 8px; padding: 2px 6px; border-radius: 6px; color: var(--text-secondary); background: var(--surface-tertiary); font-size: 10px; text-transform: uppercase; }
+.command-palette li.palette-empty { display: block; color: var(--text-secondary); font-size: 13px; cursor: default; }
+.command-mode-header { padding: 6px 12px; font-size: 12px; background: var(--surface-secondary); }
+.command-hint, .composer-error { margin: 0; padding: 0 16px 8px; color: var(--text-secondary); font-size: 12px; }
+.composer-error { color: #8c3423; }
+.input-count { color: var(--text-secondary); font-size: 10px; margin-left: auto; }
+.composer-actions .icon-button, .composer-actions .submit-button { min-width: 44px; min-height: 44px; }
+.slash-button { font: 600 22px ui-monospace, monospace; }
+.composer textarea:focus-visible { outline: 2px solid var(--focus); outline-offset: -4px; border-radius: 8px; }
+.tool-arguments { grid-template-columns: minmax(60px, 0.4fr) minmax(0, 1fr); }
+.tool-arguments dt { overflow-wrap: anywhere; }
+.tool-arguments dd { white-space: pre-wrap; }
+.agent-heading { flex: 1; }
+.agent-heading > div:last-child { min-width: 0; }
+@media (max-width: 700px) {
+  .conversation-dock { padding: 0 10px; }
+  .command-palette li { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+  .command-palette > header { flex-wrap: wrap; gap: 4px; }
+  .command-palette ul { max-height: 35dvh; }
+  .command-result, .tool-confirmation { padding: 10px 12px; }
+  .tool-detail { margin-left: 0; padding-left: 8px; }
+  .tool-arguments { grid-template-columns: minmax(0, 1fr); }
+  .agent-round { grid-template-columns: 28px minmax(0, 1fr); gap: 8px; }
+  .agent-round .brand-mark { width: 28px; height: 28px; }
+  .recovery-bar { gap: 4px; }
+  .recovery-bar .secondary-button { padding: 5px 8px; font-size: 12px; }
+}

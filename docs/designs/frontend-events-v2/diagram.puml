@@ -1,0 +1,38 @@
+@startuml frontend_event_coordination
+!theme plain
+title Claw Runtime frontend coordination
+top to bottom direction
+skinparam shadowing false
+skinparam backgroundColor #FFFCFA
+' Source baseline: pi-mono-java@821418e7f2ece298a04a066ab8d11d3388ef2f16
+' frontend/src/App.vue: useRuntimeApi, submit, ComposerBox
+' runtimeapi/vo/SessionEventResponseVO.java: shared complete event fields
+' Full path: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/vo/SessionEventResponseVO.java
+' Observed behavior: legacy frontend has one active Session and no Slash mode.
+' Design reason: one authoritative store must serve live, recovery and control.
+' Target frontend is implemented in this change. HTTP v2 wiring is pending backend delivery.
+class "App / Composer" as App
+class "CommandInvocation\nimmutable request + result kind" as Invocation
+class "useRuntimeApi\nSession + ETag + view generation" as Coordinator
+class "Event store\neventId + complete / preview" as Store
+class "Timeline / Confirmation" as Timeline
+class "Builtin result region\nephemeral, plain text" as Result
+class "Protocol decoder\nstateless JSON / SSE" as Decoder
+class "Command result decoder\nstateless" as Commands
+interface "Claw HTTP v2\nbackend integration target" as HTTP
+App -right-> Invocation : freeze before POST
+App -down-> Coordinator : user intent
+Invocation -down-> Coordinator : fixed invocation
+Coordinator -right-> HTTP : Session / Events / Commands
+HTTP -down-> Decoder : strict wire validation
+Coordinator o-down- Store : one active Session
+Decoder -left-> Store : live + ordered history
+Store -down-> Timeline : complete + current root
+Coordinator -left-> Commands : invocation + JSON
+Commands -down-> Result : Builtin only
+note bottom of Store
+  All state belongs to the current view.
+  View generation rejects late responses.
+  Abort closes observation, not execution.
+end note
+@enduml
