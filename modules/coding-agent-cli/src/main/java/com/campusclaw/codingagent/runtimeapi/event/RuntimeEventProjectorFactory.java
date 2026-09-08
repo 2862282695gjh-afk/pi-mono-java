@@ -26,6 +26,8 @@ public class RuntimeEventProjectorFactory {
 
     private final RuntimeEntryCodec codec;
 
+    private final RuntimeCommittedEventFactory committedEvents;
+
     private final RuntimeEntryIdGenerator idGenerator;
 
     private final Clock clock;
@@ -33,10 +35,12 @@ public class RuntimeEventProjectorFactory {
     public RuntimeEventProjectorFactory(
             RuntimeSessionRepository repository,
             RuntimeEntryCodec codec,
+            RuntimeCommittedEventFactory committedEvents,
             RuntimeEntryIdGenerator idGenerator,
             Clock clock) {
         this.repository = repository;
         this.codec = codec;
+        this.committedEvents = committedEvents;
         this.idGenerator = idGenerator;
         this.clock = clock;
     }
@@ -50,6 +54,7 @@ public class RuntimeEventProjectorFactory {
                 holder.sessionId(),
                 repository,
                 codec,
+                committedEvents,
                 idGenerator,
                 execution.output(),
                 clock,

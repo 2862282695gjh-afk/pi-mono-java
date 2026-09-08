@@ -52,6 +52,7 @@ import com.campusclaw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.command.CommandSessionSnapshotDTO;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
+import com.campusclaw.codingagent.runtimeapi.event.RuntimeCommittedEventFactory;
 import com.campusclaw.codingagent.runtimeapi.event.RuntimeEntryCodec;
 import com.campusclaw.codingagent.runtimeapi.event.RuntimeEntryIdGenerator;
 import com.campusclaw.codingagent.runtimeapi.event.RuntimeEventProjectorFactory;
@@ -149,7 +150,13 @@ class RuntimeCompactionServiceOpenGaussIT {
         var coordinator = new RuntimeCompactionCoordinator(
                 registry,
                 repository,
-                new RuntimeEventProjectorFactory(repository, codec, ids, clock),
+                new RuntimeEventProjectorFactory(
+                        repository,
+                        codec,
+                        new RuntimeCommittedEventFactory(
+                                mapper, new RuntimeMessageSourceConfiguration().messageSource()),
+                        ids,
+                        clock),
                 scheduler,
                 properties,
                 clock);
@@ -221,6 +228,7 @@ class RuntimeCompactionServiceOpenGaussIT {
                         .path("firstKeptEntryId")
                         .asText())
                 .isEqualTo("second");
+        assertCommittedCompactionEvent(entries.getLast());
         var usage = jdbc.queryForMap("SELECT * FROM t_session_records WHERE session_id=?", session.getId());
         assertThat(usage).containsEntry("run_id", "internal-usage").containsEntry("record_seq", 4L);
         assertThat(mapper.readTree(usage.get("payload").toString())
@@ -367,6 +375,27 @@ class RuntimeCompactionServiceOpenGaussIT {
                 jdbc.queryForList("SELECT * FROM t_session_sequences WHERE session_id=?", session.getId()),
                 jdbc.queryForList("SELECT * FROM t_session_stats WHERE session_id=?", session.getId()),
                 jdbc.queryForList("SELECT * FROM t_session_materialized WHERE session_id=?", session.getId()));
+    }
+
+    private void assertCommittedCompactionEvent(RuntimeEntryDTO entry) throws Exception {
+        var event = jdbc.queryForMap(
+                "SELECT event_id, anchor_entry_id, type, payload FROM t_session_events WHERE session_id=?",
+                session.getId());
+        assertThat(event)
+                .containsEntry("event_id", entry.getId())
+                .containsEntry("anchor_entry_id", entry.getId())
+                .containsEntry("type", "session.compacted");
+        var payload = mapper.readTree(event.get("payload").toString());
+        assertThat(payload.path("reason").asText()).isEqualTo("manual");
+        assertThat(payload.path("tokensBefore").asLong()).isEqualTo(6L);
+        assertThat(payload.path("estimatedTokensAfter").asLong()).isEqualTo(31L);
+        assertThat(payload.has("summary")).isFalse();
+        assertThat(payload.has("sourceEventId")).isFalse();
+        assertThat(jdbc.queryForMap(
+                        "SELECT anchor_entry_id, event_count FROM t_session_event_projection WHERE session_id=?",
+                        session.getId()))
+                .containsEntry("anchor_entry_id", entry.getId())
+                .containsEntry("event_count", 1);
     }
 
     private void assertReleased(long expectedVersion) {

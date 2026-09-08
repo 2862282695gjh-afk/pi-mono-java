@@ -49,6 +49,7 @@ import com.campusclaw.codingagent.runtimeapi.dto.RuntimeEntryDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.RuntimeRecordDTO;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
+import com.campusclaw.codingagent.runtimeapi.event.RuntimeCommittedEventFactory;
 import com.campusclaw.codingagent.runtimeapi.event.RuntimeEntryCodec;
 import com.campusclaw.codingagent.runtimeapi.event.RuntimeEventProjectorFactory;
 import com.campusclaw.codingagent.runtimeapi.persistence.RuntimeSessionRepository;
@@ -141,14 +142,19 @@ class RuntimeCompactionCoordinatorTest {
         RuntimeEntryCodec codec =
                 new RuntimeEntryCodec(new ObjectMapper(), new RuntimeMessageSourceConfiguration().messageSource());
         AtomicInteger ids = new AtomicInteger();
-        projectors =
-                spy(new RuntimeEventProjectorFactory(repository, codec, () -> "entry-" + ids.incrementAndGet(), clock));
+        projectors = spy(new RuntimeEventProjectorFactory(
+                repository,
+                codec,
+                new RuntimeCommittedEventFactory(
+                        new ObjectMapper(), new RuntimeMessageSourceConfiguration().messageSource()),
+                () -> "entry-" + ids.incrementAndGet(),
+                clock));
         coordinator = new RuntimeCompactionCoordinator(registry, repository, projectors, scheduler, properties, clock);
         when(repository.listCurrentBranchEntries("session", 0L, 500))
                 .thenReturn(List.of(
                         codec.userEntry("session", "old", "old", List.of(), now),
                         codec.userEntry("session", "kept", "kept", List.of(), now)));
-        when(repository.appendEntryWithUsage(any(), any(), any())).thenAnswer(call -> {
+        when(repository.appendEntryWithUsage(any(), any(), any(), any())).thenAnswer(call -> {
             RuntimeEntryDTO persisted = new RuntimeEntryDTO();
             persisted.setEntrySeq(41L);
             return persisted;
@@ -181,13 +187,13 @@ class RuntimeCompactionCoordinatorTest {
         assertThat(releasedAtCompletion.get()).isTrue();
         assertThat(execution.completion()).isCompleted();
         var order = inOrder(repository, unsubscribe, session);
-        order.verify(repository).appendEntryWithUsage(any(), any(), any());
+        order.verify(repository).appendEntryWithUsage(any(), any(), any(), any());
         order.verify(unsubscribe).run();
         order.verify(session).close();
         order.verify(repository).finishExecution("session", now);
         ArgumentCaptor<RuntimeEntryDTO> entry = ArgumentCaptor.forClass(RuntimeEntryDTO.class);
         ArgumentCaptor<RuntimeRecordDTO> record = ArgumentCaptor.forClass(RuntimeRecordDTO.class);
-        verify(repository).appendEntryWithUsage(entry.capture(), record.capture(), eq(Usage.empty()));
+        verify(repository).appendEntryWithUsage(entry.capture(), record.capture(), eq(Usage.empty()), any());
         assertThat(entry.getValue().getType()).isEqualTo("session.compaction.completed");
         assertThat(entry.getValue().getPayload()).contains("\"firstKeptEntryId\":\"kept\"");
         assertThat(record.getValue().getRunId()).isEqualTo("internal-usage-run");
@@ -244,7 +250,7 @@ class RuntimeCompactionCoordinatorTest {
 
         assertThatThrownBy(result::join).hasCause(error);
         assertReleased();
-        verify(repository, never()).appendEntryWithUsage(any(), any(), any());
+        verify(repository, never()).appendEntryWithUsage(any(), any(), any(), any());
         if (stage.equals("schedule") || stage.equals("compact")) {
             verify(unsubscribe).run();
         }
@@ -261,7 +267,7 @@ class RuntimeCompactionCoordinatorTest {
         assertThatThrownBy(result::join).hasCause(error);
         assertThat(execution.timedOut()).isFalse();
         assertReleased();
-        verify(repository, never()).appendEntryWithUsage(any(), any(), any());
+        verify(repository, never()).appendEntryWithUsage(any(), any(), any(), any());
     }
 
     @Test
@@ -273,14 +279,14 @@ class RuntimeCompactionCoordinatorTest {
         assertThatThrownBy(result::join)
                 .hasRootCauseInstanceOf(IllegalStateException.class)
                 .hasRootCauseMessage("compaction completed without an authoritative entry");
-        verify(repository, never()).appendEntryWithUsage(any(), any(), any());
+        verify(repository, never()).appendEntryWithUsage(any(), any(), any(), any());
         assertReleased();
     }
 
     @Test
     void shouldExposeProjectionFailureInsteadOfSuccess() {
         IllegalStateException error = new IllegalStateException("database unavailable");
-        doThrow(error).when(repository).appendEntryWithUsage(any(), any(), any());
+        doThrow(error).when(repository).appendEntryWithUsage(any(), any(), any(), any());
         var result = start();
 
         succeed();
@@ -321,7 +327,7 @@ class RuntimeCompactionCoordinatorTest {
         assertThat(compaction).isNotDone();
         assertReleased();
         succeed();
-        verify(repository, never()).appendEntryWithUsage(any(), any(), any());
+        verify(repository, never()).appendEntryWithUsage(any(), any(), any(), any());
         verify(repository).finishExecution("session", now);
         verify(timeoutTask).cancel(false);
         assertThatThrownBy(execution.result().toCompletableFuture()::join).hasCauseInstanceOf(TimeoutException.class);
@@ -384,7 +390,7 @@ class RuntimeCompactionCoordinatorTest {
 
         assertThat(result.join()).isEqualTo(new RuntimeCompactionResultDTO(true, 41L));
         assertThat(execution.timedOut()).isFalse();
-        verify(repository).appendEntryWithUsage(any(), any(), any());
+        verify(repository).appendEntryWithUsage(any(), any(), any(), any());
         assertReleased();
     }
 
@@ -420,7 +426,7 @@ class RuntimeCompactionCoordinatorTest {
                 }
                 assertThat(pending).isNotDone();
                 assertThat(result).isNotDone();
-                verify(repository, never()).appendEntryWithUsage(any(), any(), any());
+                verify(repository, never()).appendEntryWithUsage(any(), any(), any(), any());
                 return pending;
             });
             work.get(2L, TimeUnit.SECONDS);
@@ -474,7 +480,7 @@ class RuntimeCompactionCoordinatorTest {
         assertThat(registry.find("session")).containsSame(next);
         assertThat(replacement.abortRequested()).isFalse();
         succeed();
-        verify(repository, never()).appendEntryWithUsage(any(), any(), any());
+        verify(repository, never()).appendEntryWithUsage(any(), any(), any(), any());
         verify(repository).finishExecution("session", now);
         registry.complete(next, replacement);
     }
