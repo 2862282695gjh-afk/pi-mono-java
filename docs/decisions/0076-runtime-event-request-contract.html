@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ADR-0076：Session Events v2 联合请求边界</title>
+<style>body{font:16px/1.65 system-ui,sans-serif;color:#172235;background:#f5f7fa;margin:0}main{max-width:920px;margin:32px auto;padding:32px;background:white;border-radius:12px}h1,h2{line-height:1.3}code{overflow-wrap:anywhere;background:#eef2f6;padding:2px 4px}a{color:#1457a6}li{margin:8px 0}</style></head>
+<body><main>
+<h1>ADR-0076：Session Events v2 联合请求边界</h1>
+<p><strong>Status:</strong> Accepted · <strong>Date:</strong> 2026-09-08 · <strong>Version:</strong> 1.0.0</p>
+<h2>Context</h2>
+<p>设计仓 <code>2ee2a3211da68ad87b0d9cab353e691b00bdaebd</code> 已确认同一 POST 接收
+<code>user.message</code>、<code>user.interrupt</code> 或 <code>user.tool_confirmation</code>。
+Java 基线 <code>fd556dce3cfa12e5e834b6e9b8f835f10e7d67c8</code> 的生产入口仍使用扁平
+<code>UserEventRequestVO</code>，无法精确表达三类字段和有序内容块。</p>
+<h2>Decision 与选项</h2>
+<ul>
+<li>采用只有 <code>event</code> 的顶层 RequestVO、封闭的三事件联合类型和封闭的文本/文件内容块联合类型。</li>
+<li>先用无状态 Jackson 解析器校验对象、准确 type、未知字段和显式 null，再由 Jakarta Validator 校验长度、格式、顺序和条件字段。</li>
+<li>状态相关校验留在事务应用服务：VO 不查询 Session、执行目标或待确认工具，也不设置请求默认值。</li>
+<li>不采用松散 Map 后置识别，因为未知或错配字段可能越过 Controller 边界；不在本片切生产 Controller，因为完整响应和三类 Handler 尚需一起启用。</li>
+</ul>
+<h2>Consequences</h2>
+<p>正面：每个 Handler 收到准确 RequestVO，结构错误在持久化前失败，未知字段不会被宽松忽略。
+代价：解析会暂存一个与请求大小同阶的 JSON 树，并增加专用 VO 与解析器类型。
+本片不改变现有 HTTP 行为；后续必须与完整公共事件、data-only SSE、idle 关闭及控制事务一起切换。</p>
+<p>pi <code>5cd93f688aaab89dbb6dfa4aca535f21796ae185</code> 的
+<code>packages/coding-agent/src/core/agent-session.ts#prompt</code> 只提供文本执行入口；
+结构化 HTTP 联合请求属于 CampusClaw 产品约束与安全加固。没有新增 Maven 依赖、表、线程或凭据存储。</p>
+<h2>Validation</h2>
+<p>真实 Jackson 与 Jakarta Validator 的 17 项聚焦测试覆盖三类选择、显式 null、未知字段、
+内容块、UTF-16 长度、文件规则与确认条件；Checkstyle 0 违规，测试质量检查 0 错误、0 警告。
+生产 Controller 尚未切换，因此这些测试不表示 v2 HTTP 已完成。</p>
+<h2>Related</h2>
+<ul><li><a href="../designs/runtime-event-request/README.md">联合请求源码对齐说明</a></li>
+<li><a href="../designs/runtime-event-request/diagram.puml#L1">PlantUML 类图</a></li></ul>
+<h2>版本历史</h2><p>1.0.0 · 2026-09-08：记录三类事件联合请求与严格 JSON/Jakarta 校验边界。</p>
+</main></body></html>

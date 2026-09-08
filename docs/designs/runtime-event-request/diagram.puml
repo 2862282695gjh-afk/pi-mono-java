@@ -1,0 +1,59 @@
+@startuml runtime_event_request
+' Java baseline: pi-mono-java fd556dce3cfa12e5e834b6e9b8f835f10e7d67c8
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/web/RuntimeEventController.java#submit
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/vo/UserEventRequestVO.java
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/web/json/SubmitSessionEventRequestDeserializer.java#deserialize
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/vo/UserMessageEventRequestVO.java#isContentOrderValid
+' Pi source: packages/coding-agent/src/core/agent-session.ts#prompt at 5cd93f688aaab89dbb6dfa4aca535f21796ae185
+' Observed behavior: the legacy controller accepts a flat message and fileIds request only.
+' Design reason: select one strict event shape before stateful application validation.
+' Java divergence: the HTTP union and explicit null rejection are CampusClaw product constraints.
+title Session Events v2 Request Boundary
+skinparam classAttributeIconSize 0
+skinparam shadowing false
+skinparam backgroundColor white
+left to right direction
+
+class SubmitSessionEventRequestDeserializer <<stateless>>
+class SubmitSessionEventRequestVO <<request scoped>> {
+  event : SessionUserEventRequestVO
+}
+interface SessionUserEventRequestVO <<sealed>> {
+  getType()
+}
+class UserMessageEventRequestVO {
+  content : List<UserMessageContentRequestVO>
+}
+class UserInterruptEventRequestVO {
+  targetEventId : String
+}
+class UserToolConfirmationEventRequestVO {
+  toolCallId : String
+  result : String
+  denyMessage : String
+}
+interface UserMessageContentRequestVO <<sealed>>
+class TextRequestVO {
+  text : String
+}
+class FileRequestVO {
+  fileId : String
+}
+class "Jakarta Validator" as Validator
+
+SubmitSessionEventRequestDeserializer --> SubmitSessionEventRequestVO : creates
+SubmitSessionEventRequestDeserializer ..> SessionUserEventRequestVO : selects by exact type
+SubmitSessionEventRequestVO *-- SessionUserEventRequestVO
+SessionUserEventRequestVO <|.. UserMessageEventRequestVO
+SessionUserEventRequestVO <|.. UserInterruptEventRequestVO
+SessionUserEventRequestVO <|.. UserToolConfirmationEventRequestVO
+UserMessageEventRequestVO *-- UserMessageContentRequestVO
+UserMessageContentRequestVO <|.. TextRequestVO
+UserMessageContentRequestVO <|.. FileRequestVO
+Validator ..> SubmitSessionEventRequestVO : cascaded constraints
+note bottom of SubmitSessionEventRequestVO
+  Request types are implemented.
+  The production controller still uses the legacy VO.
+  Stateful admission remains in application transactions.
+end note
+@enduml
