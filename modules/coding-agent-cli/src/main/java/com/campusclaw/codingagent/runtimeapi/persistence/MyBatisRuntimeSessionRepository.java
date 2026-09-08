@@ -481,8 +481,7 @@ public class MyBatisRuntimeSessionRepository implements RuntimeSessionRepository
             RuntimeEntryDTO entry, List<CommittedEventDTO> events, boolean projectionComplete) {
         if (projectionComplete) {
             requireOne(
-                    mapper.insertCommittedEventProjection(
-                            entry.getSessionId(), entry.getId(), events.size(), "runtime"),
+                    mapper.insertCommittedEventProjection(entry.getSessionId(), entry.getId(), events.size()),
                     "committed event projection was not recorded");
         }
     }
