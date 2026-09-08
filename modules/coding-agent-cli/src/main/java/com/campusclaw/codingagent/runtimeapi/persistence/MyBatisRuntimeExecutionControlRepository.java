@@ -9,6 +9,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.Objects;
 import java.util.Optional;
 
+import com.campusclaw.codingagent.runtimeapi.dto.CommittedControlEventDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.ConfirmingEventsDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.ExecutionSegmentDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.ExecutionStateDTO;
@@ -137,26 +138,28 @@ public class MyBatisRuntimeExecutionControlRepository implements RuntimeExecutio
     @Transactional
     public TransitionStatus markTerminal(
             ExecutionTargetDTO target,
-            String terminalEventId,
-            long terminalEventSeq,
+            TerminalAppender appender,
             RuntimeExecutionTerminalReason terminalReason,
             OffsetDateTime terminalAt) {
         if (terminalReason == null || !terminalReason.executionTerminal()) {
             throw new IllegalArgumentException("terminal reason is invalid");
         }
+        Objects.requireNonNull(appender, "appender");
         ExecutionStateDTO execution = lock(target);
         TransitionStatus rejected = rejectTarget(target, execution);
         if (rejected != null) {
             return rejected;
         }
+        CommittedControlEventDTO event = requireCommittedEvent(appender.append());
+        linkCommittedEvent(target, event.eventId(), event.eventSeq());
         OffsetDateTime storedAt = storedAt(terminalAt);
-        closeOpenSegment(target, terminalEventId, terminalEventSeq, terminalReason, storedAt);
+        closeOpenSegment(target, event.eventId(), event.eventSeq(), terminalReason, storedAt);
         requireOne(
                 mapper.markTerminal(
                         target.sessionId(),
                         target.executionId(),
                         target.segmentId(),
-                        terminalEventId,
+                        event.eventId(),
                         terminalReason.value(),
                         storedAt),
                 "execution did not enter terminal state");
@@ -302,6 +305,12 @@ public class MyBatisRuntimeExecutionControlRepository implements RuntimeExecutio
             throw new IllegalArgumentException("confirming event identities must be distinct");
         }
         return events;
+    }
+
+    private static CommittedControlEventDTO requireCommittedEvent(CommittedControlEventDTO event) {
+        Objects.requireNonNull(event, "committed control event");
+        requireTerminalEvent(event.eventId(), event.eventSeq());
+        return event;
     }
 
     private static void requireTerminalEvent(String eventId, long eventSeq) {

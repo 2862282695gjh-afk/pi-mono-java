@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.Objects;
 
 import com.campusclaw.codingagent.runtimeapi.dto.AcceptedControlDTO;
+import com.campusclaw.codingagent.runtimeapi.dto.CommittedControlEventDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.CommittedEventDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.ConfirmingEventsDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.ExecutionTargetDTO;
@@ -17,7 +18,9 @@ import com.campusclaw.codingagent.runtimeapi.dto.RuntimeEntryDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.UserMessageAcceptanceDTO;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
+import com.campusclaw.codingagent.runtimeapi.event.CommittedEventType;
 import com.campusclaw.codingagent.runtimeapi.event.RuntimeEntryIdGenerator;
+import com.campusclaw.codingagent.runtimeapi.event.RuntimeEventType;
 import com.campusclaw.codingagent.runtimeapi.session.RuntimeExecutionTerminalReason;
 
 import org.springframework.stereotype.Service;
@@ -65,7 +68,7 @@ public class RuntimeExecutionPersistenceService {
             RuntimeEntryDTO receipt,
             CommittedEventDTO event,
             OffsetDateTime acceptedAt) {
-        requireEvent(sessionId, receipt, event, "user.interrupt", "user.interrupt");
+        requireControlEvent(sessionId, receipt, event, CommittedEventType.USER_INTERRUPT);
         var request = controls.requestInterrupt(sessionId, targetEventId, event.getEventId(), acceptedAt);
         ExecutionTargetDTO target = requireAcceptedInterrupt(request);
         sessions.appendEntry(receipt, List.of(event));
@@ -81,8 +84,18 @@ public class RuntimeExecutionPersistenceService {
             RuntimeEntryDTO idle,
             CommittedEventDTO idleEvent,
             OffsetDateTime confirmingAt) {
-        requireEvent(target.sessionId(), toolCall, toolCallEvent, "tool.execution.started", "agent.tool_call");
-        requireEvent(target.sessionId(), idle, idleEvent, "session.status.idle", "session.status_idle");
+        requireEvent(
+                target.sessionId(),
+                toolCall,
+                toolCallEvent,
+                RuntimeEventType.TOOL_EXECUTION_STARTED,
+                CommittedEventType.AGENT_TOOL_CALL);
+        requireEvent(
+                target.sessionId(),
+                idle,
+                idleEvent,
+                RuntimeEventType.SESSION_STATUS_IDLE,
+                CommittedEventType.SESSION_STATUS_IDLE);
         var status = controls.markConfirming(
                 target,
                 toolCallId,
@@ -100,10 +113,13 @@ public class RuntimeExecutionPersistenceService {
             CommittedEventDTO event,
             RuntimeExecutionTerminalReason terminalReason,
             OffsetDateTime terminalAt) {
-        requireEvent(target.sessionId(), entry, event, "session.status.idle", "session.status_idle");
-        sessions.appendEntry(entry, List.of(event));
-        controls.linkCommittedEvent(target, event.getEventId(), event.getEventSeq());
-        var status = controls.markTerminal(target, event.getEventId(), event.getEventSeq(), terminalReason, terminalAt);
+        requireEvent(
+                target.sessionId(),
+                entry,
+                event,
+                RuntimeEventType.SESSION_STATUS_IDLE,
+                CommittedEventType.SESSION_STATUS_IDLE);
+        var status = controls.markTerminal(target, () -> appendControlEvent(entry, event), terminalReason, terminalAt);
         if (status != RuntimeExecutionControlRepository.TransitionStatus.APPLIED) {
             throw new IllegalStateException("terminal target is no longer active: " + status);
         }
@@ -112,10 +128,24 @@ public class RuntimeExecutionPersistenceService {
     }
 
     private static void requireMessageEvent(String sessionId, RuntimeEntryDTO receipt, CommittedEventDTO event) {
-        requireEvent(sessionId, receipt, event, "user.message", "user.message");
+        requireEvent(sessionId, receipt, event, RuntimeEventType.USER_MESSAGE, CommittedEventType.USER_MESSAGE);
     }
 
     private static void requireEvent(
+            String sessionId,
+            RuntimeEntryDTO entry,
+            CommittedEventDTO event,
+            RuntimeEventType expectedEntryType,
+            CommittedEventType expectedEventType) {
+        requireEventValues(sessionId, entry, event, expectedEntryType.value(), expectedEventType.value());
+    }
+
+    private static void requireControlEvent(
+            String sessionId, RuntimeEntryDTO entry, CommittedEventDTO event, CommittedEventType expectedType) {
+        requireEventValues(sessionId, entry, event, expectedType.value(), expectedType.value());
+    }
+
+    private static void requireEventValues(
             String sessionId,
             RuntimeEntryDTO entry,
             CommittedEventDTO event,
@@ -171,5 +201,10 @@ public class RuntimeExecutionPersistenceService {
                 toolCallEvent.getEventSeq(),
                 idleEvent.getEventId(),
                 idleEvent.getEventSeq());
+    }
+
+    private CommittedControlEventDTO appendControlEvent(RuntimeEntryDTO entry, CommittedEventDTO event) {
+        sessions.appendEntry(entry, List.of(event));
+        return new CommittedControlEventDTO(event.getEventId(), event.getEventSeq());
     }
 }

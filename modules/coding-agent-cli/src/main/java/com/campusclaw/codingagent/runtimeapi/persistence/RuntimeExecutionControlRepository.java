@@ -7,6 +7,7 @@ package com.campusclaw.codingagent.runtimeapi.persistence;
 import java.time.OffsetDateTime;
 import java.util.Optional;
 
+import com.campusclaw.codingagent.runtimeapi.dto.CommittedControlEventDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.ConfirmingEventsDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.ExecutionStateDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.ExecutionTargetDTO;
@@ -34,8 +35,7 @@ public interface RuntimeExecutionControlRepository {
 
     TransitionStatus markTerminal(
             ExecutionTargetDTO target,
-            String terminalEventId,
-            long terminalEventSeq,
+            TerminalAppender appender,
             RuntimeExecutionTerminalReason terminalReason,
             OffsetDateTime terminalAt);
 
@@ -55,5 +55,13 @@ public interface RuntimeExecutionControlRepository {
     @FunctionalInterface
     interface ConfirmingAppender {
         ConfirmingEventsDTO append();
+    }
+
+    /**
+     * 持有 Session 与执行行锁期间提交唯一权威终态事件的回调。
+     */
+    @FunctionalInterface
+    interface TerminalAppender {
+        CommittedControlEventDTO append();
     }
 }

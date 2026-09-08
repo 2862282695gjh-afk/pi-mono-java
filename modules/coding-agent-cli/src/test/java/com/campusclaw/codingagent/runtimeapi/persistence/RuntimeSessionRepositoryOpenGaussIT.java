@@ -21,6 +21,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import javax.sql.DataSource;
 
@@ -29,6 +30,7 @@ import com.campusclaw.ai.types.Model;
 import com.campusclaw.ai.types.Usage;
 import com.campusclaw.codingagent.runtimeapi.RuntimeMessageSourceConfiguration;
 import com.campusclaw.codingagent.runtimeapi.agent.AgentDirectorySnapshotDTO;
+import com.campusclaw.codingagent.runtimeapi.dto.CommittedControlEventDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.CommittedEventDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.ExecutionTargetDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.RuntimeEntryDTO;
@@ -178,28 +180,28 @@ class RuntimeSessionRepositoryOpenGaussIT {
         executionControls.register(target, root.getEntrySeq(), session.getCreatedAt());
 
         var stale = new ExecutionTargetDTO(session.getId(), "execution-1", "root-event", "old-segment");
+        var appended = new AtomicInteger();
         assertThat(executionControls.find(stale)).isEmpty();
         assertThat(executionControls.markTerminal(
                         stale,
-                        "idle-stale",
-                        root.getEntrySeq() + 1,
+                        () -> committedControlEvent("idle-stale", root.getEntrySeq() + 1, appended),
                         RuntimeExecutionTerminalReason.DONE,
                         session.getCreatedAt()))
                 .isEqualTo(RuntimeExecutionControlRepository.TransitionStatus.STALE_TARGET);
+        assertThat(appended).hasValue(0);
         assertThat(executionControls.markTerminal(
                         target,
-                        "idle-done",
-                        root.getEntrySeq() + 1,
+                        () -> committedControlEvent("idle-done", root.getEntrySeq() + 1, appended),
                         RuntimeExecutionTerminalReason.DONE,
                         session.getCreatedAt()))
                 .isEqualTo(RuntimeExecutionControlRepository.TransitionStatus.APPLIED);
         assertThat(executionControls.markTerminal(
                         target,
-                        "idle-duplicate",
-                        root.getEntrySeq() + 2,
+                        () -> committedControlEvent("idle-duplicate", root.getEntrySeq() + 2, appended),
                         RuntimeExecutionTerminalReason.DONE,
                         session.getCreatedAt()))
                 .isEqualTo(RuntimeExecutionControlRepository.TransitionStatus.STATE_CONFLICT);
+        assertThat(appended).hasValue(1);
         assertThat(executionControls.find(target).orElseThrow())
                 .extracting("state", "terminalEventId", "terminalReason")
                 .containsExactly(RuntimeExecutionState.TERMINAL, "idle-done", RuntimeExecutionTerminalReason.DONE);
@@ -235,6 +237,21 @@ class RuntimeSessionRepositoryOpenGaussIT {
         assertThat(count("t_session_entries", session.getId())).isEqualTo(2);
         assertThat(count("t_session_events", session.getId())).isEqualTo(2);
         assertThat(count("t_session_execution_segment_events", session.getId())).isEqualTo(2);
+
+        RuntimeEntryDTO lateIdle = controlEntry(session, "late-idle", "session.status.idle");
+        CommittedEventDTO lateEvent = committedEvent(lateIdle, "late-idle-event", "session.status_idle");
+        long sequenceBefore =
+                scalarLong("SELECT next_seq FROM t_session_sequences WHERE session_id = ?", session.getId());
+        assertThatThrownBy(() -> executionPersistence.commitTerminal(
+                        accepted.target(),
+                        lateIdle,
+                        lateEvent,
+                        RuntimeExecutionTerminalReason.DONE,
+                        lateIdle.getTimestamp()))
+                .isInstanceOf(IllegalStateException.class);
+        assertThat(count("t_session_entries", session.getId())).isEqualTo(2);
+        assertThat(scalarLong("SELECT next_seq FROM t_session_sequences WHERE session_id = ?", session.getId()))
+                .isEqualTo(sequenceBefore);
     }
 
     @Test
@@ -1106,11 +1123,9 @@ class RuntimeSessionRepositoryOpenGaussIT {
         var target = new ExecutionTargetDTO(session.getId(), "delete-execution", "delete-root-event", "delete-segment");
         executionControls.register(target, root.getEntrySeq(), root.getTimestamp());
         executionControls.linkCommittedEvent(target, target.rootEventId(), root.getEntrySeq());
-        executionControls.linkCommittedEvent(target, "delete-idle-event", root.getEntrySeq() + 1);
         assertThat(executionControls.markTerminal(
                         target,
-                        "delete-idle-event",
-                        root.getEntrySeq() + 1,
+                        () -> new CommittedControlEventDTO("delete-idle-event", root.getEntrySeq() + 1),
                         RuntimeExecutionTerminalReason.DONE,
                         root.getTimestamp().plusSeconds(1)))
                 .isEqualTo(RuntimeExecutionControlRepository.TransitionStatus.APPLIED);
@@ -1189,6 +1204,12 @@ class RuntimeSessionRepositoryOpenGaussIT {
         event.setCreatedAt(anchor.getTimestamp());
         event.setPayload("{}");
         return event;
+    }
+
+    private static CommittedControlEventDTO committedControlEvent(
+            String eventId, long eventSeq, AtomicInteger appended) {
+        appended.incrementAndGet();
+        return new CommittedControlEventDTO(eventId, eventSeq);
     }
 
     private static RuntimeSessionDTO newSession(String sessionId) {
