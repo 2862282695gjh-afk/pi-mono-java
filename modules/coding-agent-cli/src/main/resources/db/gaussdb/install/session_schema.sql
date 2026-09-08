@@ -8,6 +8,7 @@ BEGIN;
 
 DROP TABLE IF EXISTS t_session_materialized;
 DROP TABLE IF EXISTS t_session_stats;
+DROP TABLE IF EXISTS t_session_events;
 DROP TABLE IF EXISTS t_session_records;
 DROP TABLE IF EXISTS t_session_sequences;
 DROP TABLE IF EXISTS t_session_entries;
@@ -164,6 +165,32 @@ CREATE INDEX idx_t_session_records_session_type
 
 CREATE INDEX idx_t_session_records_session_lane
     ON t_session_records (session_id, lane, record_seq);
+
+CREATE TABLE t_session_events (
+    session_id      VARCHAR(128)   NOT NULL,
+    event_id        VARCHAR(128)   NOT NULL,
+    event_seq       BIGINT         NOT NULL,
+    anchor_entry_id VARCHAR(128)   NOT NULL,
+    type            VARCHAR(64)    NOT NULL,
+    created_at      TIMESTAMPTZ(3) NOT NULL,
+    payload         JSONB          NOT NULL,
+    PRIMARY KEY (session_id, event_id)
+);
+
+COMMENT ON TABLE t_session_events IS '会话公共事件权威表，保存 GET 历史与 POST 完整帧共享的安全投影';
+COMMENT ON COLUMN t_session_events.session_id IS '这条公共事件属于哪个会话；对应 t_sessions.id';
+COMMENT ON COLUMN t_session_events.event_id IS '对外公开且永不复用的稳定事件标识';
+COMMENT ON COLUMN t_session_events.event_seq IS '公共事件与 Entry、内部 Record 共享的会话提交顺序号';
+COMMENT ON COLUMN t_session_events.anchor_entry_id IS '公共事件所属的分支 Entry 标识，用于判断当前路径可见性';
+COMMENT ON COLUMN t_session_events.type IS '完整公共事件的 v2 类型字面值';
+COMMENT ON COLUMN t_session_events.created_at IS '形成权威公共记录时保存一次的 UTC 毫秒时间';
+COMMENT ON COLUMN t_session_events.payload IS '只包含该公共事件安全业务字段的 v2 JSON 对象';
+
+CREATE UNIQUE INDEX idx_t_session_events_session_seq
+    ON t_session_events (session_id, event_seq);
+
+CREATE INDEX idx_t_session_events_session_anchor
+    ON t_session_events (session_id, anchor_entry_id, event_seq);
 
 CREATE TABLE t_session_stats (
     session_id         VARCHAR(128)  PRIMARY KEY,

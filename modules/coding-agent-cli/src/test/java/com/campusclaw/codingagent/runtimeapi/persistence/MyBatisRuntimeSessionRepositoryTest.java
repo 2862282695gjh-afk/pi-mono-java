@@ -16,9 +16,11 @@ import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 
 import java.time.OffsetDateTime;
+import java.util.List;
 
 import com.campusclaw.ai.types.Cost;
 import com.campusclaw.ai.types.Usage;
+import com.campusclaw.codingagent.runtimeapi.dto.CommittedEventDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.RuntimeEntryDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.RuntimeLifetimeUsageDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.RuntimeRecordDTO;
@@ -37,19 +39,21 @@ import org.mockito.ArgumentCaptor;
  */
 class MyBatisRuntimeSessionRepositoryTest {
     @Test
-    void appendsEntryAndUsageRecordWithSharedSequenceAndPiStatsRules() {
+    void appendsEntryUsageAndCommittedEventWithSharedSequence() {
         RuntimeSessionMapper mapper = successfulMapper();
         RuntimeSessionDTO session = session();
         when(mapper.lockSessionForUpdate("session")).thenReturn(session);
-        when(mapper.lockNextSequence("session")).thenReturn(2L, 3L);
+        when(mapper.lockNextSequence("session")).thenReturn(2L, 3L, 4L);
         RuntimeEntryDTO entry = entry();
         RuntimeRecordDTO record = record();
+        CommittedEventDTO event = event("assistant");
         Usage usage = new Usage(10, 5, 2, 1, 18, new Cost(0.1, 0.2, 0.01, 0.02, 0.33));
 
-        new MyBatisRuntimeSessionRepository(mapper).appendEntryWithUsage(entry, record, usage);
+        new MyBatisRuntimeSessionRepository(mapper).appendEntryWithUsage(entry, record, usage, List.of(event));
 
         assertThat(entry.getEntrySeq()).isEqualTo(2L);
         assertThat(record.getRecordSeq()).isEqualTo(3L);
+        assertThat(event.getEventSeq()).isEqualTo(4L);
         verify(mapper).updateActiveLeaf("session", "assistant");
         verify(mapper).incrementMessageCount("session");
         var delta = ArgumentCaptor.forClass(RuntimeLifetimeUsageDTO.class);
@@ -58,7 +62,30 @@ class MyBatisRuntimeSessionRepositoryTest {
                 .extracting("input", "output", "cacheRead", "cacheWrite", "totalTokens")
                 .containsExactly(10L, 5L, 2L, 1L, 18L);
         assertThat(delta.getValue().getCostTotal()).isEqualByComparingTo("0.33");
-        verify(mapper, times(2)).incrementSequence("session");
+        verify(mapper).insertCommittedEvent(event);
+        verify(mapper, times(3)).incrementSequence("session");
+    }
+
+    @Test
+    void shouldAcceptUserEntryAndCommittedEventTogether() {
+        RuntimeSessionMapper mapper = successfulMapper();
+        RuntimeSessionDTO session = session();
+        RuntimeEntryDTO entry = entry();
+        entry.setId("next-user");
+        entry.setType("user.message");
+        CommittedEventDTO event = event("next-user");
+        OffsetDateTime acceptedAt = OffsetDateTime.parse("2026-09-08T01:00:00Z");
+        when(mapper.lockSessionForUpdate("session")).thenReturn(session);
+        when(mapper.lockNextSequence("session")).thenReturn(5L, 6L);
+        when(mapper.markSessionRunning("session", "next-user", acceptedAt)).thenReturn(1);
+
+        UserEventAcceptance result =
+                new MyBatisRuntimeSessionRepository(mapper).acceptUserEvent("session", entry, event, acceptedAt);
+
+        assertThat(result.status()).isEqualTo(UserEventAcceptance.Status.ACCEPTED);
+        assertThat(entry.getEntrySeq()).isEqualTo(5L);
+        assertThat(event.getEventSeq()).isEqualTo(6L);
+        verify(mapper).insertCommittedEvent(event);
     }
 
     @Test
@@ -78,6 +105,7 @@ class MyBatisRuntimeSessionRepositoryTest {
         when(mapper.findLifetimeUsage("session")).thenReturn(new RuntimeLifetimeUsageDTO());
         when(mapper.insertEntry(org.mockito.ArgumentMatchers.any())).thenReturn(1);
         when(mapper.insertRecord(org.mockito.ArgumentMatchers.any())).thenReturn(1);
+        when(mapper.insertCommittedEvent(org.mockito.ArgumentMatchers.any())).thenReturn(1);
         when(mapper.incrementSequence("session")).thenReturn(1);
         when(mapper.updateActiveLeaf("session", "assistant")).thenReturn(1);
         when(mapper.incrementMessageCount("session")).thenReturn(1);
@@ -147,6 +175,7 @@ class MyBatisRuntimeSessionRepositoryTest {
         RuntimeSessionDTO session = new RuntimeSessionDTO();
         session.setId("session");
         session.setActiveLeafId("user");
+        session.setState("idle");
         return session;
     }
 
@@ -170,5 +199,16 @@ class MyBatisRuntimeSessionRepositoryTest {
         record.setTimestamp(OffsetDateTime.parse("2026-08-25T00:00:00Z"));
         record.setPayload("{}");
         return record;
+    }
+
+    private static CommittedEventDTO event(String anchorEntryId) {
+        CommittedEventDTO event = new CommittedEventDTO();
+        event.setSessionId("session");
+        event.setEventId("event-" + anchorEntryId);
+        event.setAnchorEntryId(anchorEntryId);
+        event.setType("agent.message");
+        event.setCreatedAt(OffsetDateTime.parse("2026-09-08T01:00:00Z"));
+        event.setPayload("{}");
+        return event;
     }
 }

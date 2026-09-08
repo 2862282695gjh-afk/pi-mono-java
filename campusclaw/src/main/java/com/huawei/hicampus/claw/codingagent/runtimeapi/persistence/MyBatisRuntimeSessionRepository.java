@@ -6,6 +6,7 @@ package com.huawei.hicampus.claw.codingagent.runtimeapi.persistence;
 
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
@@ -16,6 +17,7 @@ import java.util.function.Function;
 
 import com.huawei.hicampus.claw.ai.types.Cost;
 import com.huawei.hicampus.claw.ai.types.Usage;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.CommittedEventDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeCompactionSnapshotDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeEntryDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeLifetimeUsageDTO;
@@ -84,6 +86,13 @@ public class MyBatisRuntimeSessionRepository implements RuntimeSessionRepository
     @Override
     @Transactional
     public UserEventAcceptance acceptUserEvent(String sessionId, RuntimeEntryDTO entry, OffsetDateTime acceptedAt) {
+        return acceptUserEvent(sessionId, entry, null, acceptedAt);
+    }
+
+    @Override
+    @Transactional
+    public UserEventAcceptance acceptUserEvent(
+            String sessionId, RuntimeEntryDTO entry, CommittedEventDTO event, OffsetDateTime acceptedAt) {
         RuntimeSessionDTO session = lockSession(sessionId);
         if (session == null) {
             return new UserEventAcceptance(Status.NOT_FOUND, null);
@@ -92,6 +101,7 @@ public class MyBatisRuntimeSessionRepository implements RuntimeSessionRepository
             return new UserEventAcceptance(Status.BUSY, session);
         }
         appendLocked(session, entry);
+        appendEventsLocked(entry, event == null ? List.of() : List.of(event));
         incrementMessageCount(entry);
         requireOne(
                 mapper.markSessionRunning(sessionId, entry.getId(), acceptedAt), "session did not enter running state");
@@ -146,11 +156,18 @@ public class MyBatisRuntimeSessionRepository implements RuntimeSessionRepository
     @Override
     @Transactional
     public RuntimeEntryDTO appendEntry(RuntimeEntryDTO entry) {
+        return appendEntry(entry, List.of());
+    }
+
+    @Override
+    @Transactional
+    public RuntimeEntryDTO appendEntry(RuntimeEntryDTO entry, List<CommittedEventDTO> events) {
         RuntimeSessionDTO session = lockSession(entry.getSessionId());
         if (session == null) {
             throw new IllegalStateException("session disappeared during execution");
         }
         appendLocked(session, entry);
+        appendEventsLocked(entry, events);
         requireOne(mapper.updateActiveLeaf(entry.getSessionId(), entry.getId()), "session active leaf was not updated");
         incrementMessageCount(entry);
         return entry;
@@ -159,6 +176,13 @@ public class MyBatisRuntimeSessionRepository implements RuntimeSessionRepository
     @Override
     @Transactional
     public RuntimeEntryDTO appendEntryWithUsage(RuntimeEntryDTO entry, RuntimeRecordDTO record, Usage usage) {
+        return appendEntryWithUsage(entry, record, usage, List.of());
+    }
+
+    @Override
+    @Transactional
+    public RuntimeEntryDTO appendEntryWithUsage(
+            RuntimeEntryDTO entry, RuntimeRecordDTO record, Usage usage, List<CommittedEventDTO> events) {
         RuntimeSessionDTO session = lockSession(entry.getSessionId());
         if (session == null) {
             throw new IllegalStateException("session disappeared during execution");
@@ -168,6 +192,7 @@ public class MyBatisRuntimeSessionRepository implements RuntimeSessionRepository
         incrementMessageCount(entry);
         appendRecordLocked(record);
         accumulateUsageStats(entry.getSessionId(), usage);
+        appendEventsLocked(entry, events);
         return entry;
     }
 
@@ -276,6 +301,7 @@ public class MyBatisRuntimeSessionRepository implements RuntimeSessionRepository
     @Override
     @Transactional
     public void completeCleanup(String sessionId) {
+        mapper.deleteCommittedEvents(sessionId);
         mapper.deleteEntries(sessionId);
         mapper.deleteRecords(sessionId);
         mapper.deleteStats(sessionId);
@@ -331,6 +357,33 @@ public class MyBatisRuntimeSessionRepository implements RuntimeSessionRepository
         record.setRecordSeq(sequence);
         requireOne(mapper.insertRecord(record), "runtime record was not inserted");
         requireOne(mapper.incrementSequence(record.getSessionId()), "session sequence was not incremented");
+    }
+
+    private void appendEventsLocked(RuntimeEntryDTO entry, List<CommittedEventDTO> events) {
+        for (CommittedEventDTO event : List.copyOf(events)) {
+            requireMatchingAnchor(entry, event);
+            event.setCreatedAt(normalizeEventTime(event.getCreatedAt()));
+            Long sequence = mapper.lockNextSequence(entry.getSessionId());
+            if (sequence == null) {
+                throw new IllegalStateException("session sequence is missing");
+            }
+            event.setEventSeq(sequence);
+            requireOne(mapper.insertCommittedEvent(event), "committed event was not inserted");
+            requireOne(mapper.incrementSequence(entry.getSessionId()), "session sequence was not incremented");
+        }
+    }
+
+    private OffsetDateTime normalizeEventTime(OffsetDateTime createdAt) {
+        return Objects.requireNonNull(createdAt, "committed event time is missing")
+                .withOffsetSameInstant(ZoneOffset.UTC)
+                .truncatedTo(ChronoUnit.MILLIS);
+    }
+
+    private void requireMatchingAnchor(RuntimeEntryDTO entry, CommittedEventDTO event) {
+        if (!Objects.equals(entry.getSessionId(), event.getSessionId())
+                || !Objects.equals(entry.getId(), event.getAnchorEntryId())) {
+            throw new IllegalArgumentException("committed event does not match its anchor entry");
+        }
     }
 
     private void incrementMessageCount(RuntimeEntryDTO entry) {
