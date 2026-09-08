@@ -1,0 +1,61 @@
+@startuml compact_process_acceptance
+' Java baseline: 72f3550eabbfbf0f1cc3768430e3fc0206cb7a11
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/compaction/RuntimeCompactionService.java:prepare
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/compaction/RuntimeCompactionCoordinator.java:CompactionRun.finishLocked
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/event/RuntimeEntryCodec.java:effectiveContextEntries
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/event/RuntimeEventProjector.java:projectCompactionCompleted
+' Observed behavior: JSON waits for compaction; persisted summary controls restored model context.
+' Design reason: verify actual HTTP, database and JVM boundaries with existing shared test code.
+' Test implementation: ee6523e71b85dcfe6baf39ddc0acc8f5f9ceb9ad
+' Ten-table no-op coverage: 9b959f15480f4ce14cc327d419ef65bbf605e076
+' Current PR adds the eleventh snapshot for t_session_event_projection.
+' Source: modules/coding-agent-cli/src/test/java/com/campusclaw/codingagent/runtimeapi/web/RuntimeCompactCommandOpenGaussIT.java:compactAndAwait,assertCapacityExhausted,assertReleasedResources,assertRestartedInput
+' Scope: Java acceptance only; no new product architecture or pi behavior claim.
+skinparam shadowing false
+skinparam backgroundColor #FFFFFF
+title Compact HTTP and JVM recovery acceptance
+actor "JUnit HTTP client" as Test
+participant "First JAR JVM\nmax-active = 1" as First
+database "Owned openGauss" as DB
+participant "Local simulated\nmodel HTTP service" as Model
+participant "Second JAR JVM" as Second
+Test -> First : POST Events: old turn, retained turn
+First -> Model : two ordinary Chat requests
+Model --> First : deterministic SSE responses
+First -> DB : four message Entries
+Test -> First : POST Command: compact
+First -> Model : summary request for old turn
+note over First,Model : Hold summary response until explicit release
+Test -> First : GET Session / Events
+First --> Test : running; no compaction Entry yet
+Test -> First : other Session: POST Events
+First --> Test : 503 capacity; no accepted message
+alt ordinary response
+  Test -> Test : assert command Future is pending
+else actual client disconnect
+  Test -> First : close accepted HTTP socket with TCP reset
+end
+Test -> Model : release summary response
+Model --> First : summary and usage
+First -> DB : Compaction Entry and Usage
+First -> First : release Holder and capacity
+First -> DB : finish execution as idle
+opt ordinary response
+  First --> Test : HTTP 200; ResultBean JSON
+end
+Test -> First : GET terminal state; both Sessions POST Events
+First -> Model : successful subsequent Chat requests
+Model --> First : deterministic SSE responses
+Test -> First : close; assert process exited
+Test -> Second : start same JAR with same cache and database
+Second -> DB : restore persisted history
+Test -> Second : compare Session / Events; POST next message
+Second -> Model : summary + retained + later messages; no old text
+Model --> Second : deterministic SSE response
+Test -> Second : close; assert process exited
+Test -> Model : close; assert executor terminated
+note over Test,DB
+  Separate empty-history test compares eleven persisted snapshots.
+  No model request, no database writes from test code, no TRUNCATE.
+end note
+@enduml

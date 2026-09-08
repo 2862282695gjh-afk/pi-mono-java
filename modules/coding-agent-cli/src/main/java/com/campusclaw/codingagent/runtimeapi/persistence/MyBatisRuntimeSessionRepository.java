@@ -366,6 +366,7 @@ public class MyBatisRuntimeSessionRepository implements RuntimeSessionRepository
         }
         entry.setParentId(session.getActiveLeafId());
         entry.setEntrySeq(sequence);
+        entry.setTimestamp(normalizeTimestamp(entry.getTimestamp(), "runtime entry time is missing"));
         requireOne(mapper.insertEntry(entry), "runtime entry was not inserted");
         requireOne(mapper.incrementSequence(session.getId()), "session sequence was not incremented");
         session.setActiveLeafId(entry.getId());
@@ -405,7 +406,7 @@ public class MyBatisRuntimeSessionRepository implements RuntimeSessionRepository
     private void appendEventsLocked(RuntimeEntryDTO entry, List<CommittedEventDTO> events) {
         for (CommittedEventDTO event : List.copyOf(events)) {
             requireMatchingAnchor(entry, event);
-            event.setCreatedAt(normalizeEventTime(event.getCreatedAt()));
+            event.setCreatedAt(normalizeTimestamp(event.getCreatedAt(), "committed event time is missing"));
             Long sequence = mapper.lockNextSequence(entry.getSessionId());
             if (sequence == null) {
                 throw new IllegalStateException("session sequence is missing");
@@ -426,8 +427,8 @@ public class MyBatisRuntimeSessionRepository implements RuntimeSessionRepository
         }
     }
 
-    private OffsetDateTime normalizeEventTime(OffsetDateTime createdAt) {
-        return Objects.requireNonNull(createdAt, "committed event time is missing")
+    private OffsetDateTime normalizeTimestamp(OffsetDateTime timestamp, String missingMessage) {
+        return Objects.requireNonNull(timestamp, missingMessage)
                 .withOffsetSameInstant(ZoneOffset.UTC)
                 .truncatedTo(ChronoUnit.MILLIS);
     }
