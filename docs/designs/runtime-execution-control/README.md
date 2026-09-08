@@ -2,12 +2,13 @@
 
 | 属性 | 值 |
 |---|---|
-| 版本 | 0.2.0 |
+| 版本 | 0.3.0 |
 | 日期 | 2026-09-08 |
 | 设计契约 | `pi-mono-java-design@2ee2a3211da68ad87b0d9cab353e691b00bdaebd` |
 | 变更前 Java 源码基线 | `pi-mono-java@fd556dce3cfa12e5e834b6e9b8f835f10e7d67c8` |
 | 存储实现提交 | `8ec383dd0ee6a5a8fe7e72b9e97bba8f71c8f8da`；主线集成 `4c580a7a`，权限补齐 `dae01509` |
 | 应用事务实现提交 | `92562f62`～`8e775f1c`；本分支主线合并 `30ae1952` |
+| 终态恢复与段内追加实现 | `9ad3553a`～`2ef30225`，基于 `3cf28323` |
 | pi 源码基线 | `pi@4af9d21d3b4d664e4a29fcabfec85171077248e3` |
 | 范围 | 固定执行存储，以及消息、中断、进入确认和真实终态的应用事务；不包含 Events v2 HTTP 路由和跨实例轮询 |
 
@@ -74,8 +75,24 @@ Session 生命周期，本片不把任意 running Session 推断为用户消息�
 
 ## 边界与后续
 
+0.3 版增加两个已实现的持久化边界：
+
+- `RuntimeExecutionControlRepository.java#appendToSegment` 在 Session、执行和结果段行锁下核验完整
+  target，仅允许 RUNNING/STOPPING 的当前 OPEN 段追加。`RuntimeExecutionPersistenceService.java`
+  的两个追加重载先检查 Entry、公共事件及 Usage Record 属于同一 Session，再原子写入 Entry、可选用量、
+  公共事件、精确标记和段关联。关联失败会回滚整个追加和序号；已关闭段或过期 target 不调用写入回调。
+- `MyBatisRuntimeExecutionControlRepository.java#findCommittedTerminal` 按固定执行、根事件、段关联和
+  终态 eventId/reason 恢复 `CommittedTerminalDTO`。同一终态重试返回原 Entry 与公共事件的 ID、序号、
+  时间和正文，不再调用追加回调或改写 Session。已 closed 的 confirming 段保留其第一个 idle；之后的真实
+  终态从 execution 的终态身份和段事件关联读取。即使后续新执行已使 Session running，恢复旧终态也不会
+  把新执行置为 idle。不同终态 ID、原因或执行身份仍被拒绝。
+
+上述三个 Java 文件均位于 `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/persistence/`；
+快照 DTO 位于同级 `dto/CommittedTerminalDTO.java`，查询位于
+`modules/coding-agent-cli/src/main/resources/mapper/session/RuntimeExecutionControlMapper.xml`。
+
 本片没有把 Events v2 HTTP 联合输入切换到这些应用事务，也没有实现工具确认决定受理与一次消费、
-提交结果不确定时的终态幂等恢复、普通 Agent 输出按固定段原子追加、本地提交后唤醒、批量控制检查、
+执行协调器的后台终态重试调度、本地提交后唤醒、批量控制检查、
 有界等待登记或结果补读，也没有退役旧控制接口。这些能力必须在后续切片单独验收。原执行凭据不会
 写入控制表，进入 confirming 后由原实例继续持有。
 
@@ -95,6 +112,9 @@ Session 生命周期，本片不把任意 running Session 推断为用户消息�
   无失败、错误或跳过；日志为 `/tmp/pi-events-v2-review/event-transactions/tests.log`。
 - 回归覆盖消息准入整体回滚、中断目标校验和回滚、confirming 两个完整事件与段关闭、过期终态回调零调用、
   终态段关联失败时 Entry、公共事件、完整性标记、执行状态、Session 状态和统一序号整体回滚。
+- 0.3 版在另一隔离数据库独立执行 Repository 39 项与公共事件 2 项，共 41 项通过，零跳过；新增回归覆盖
+  跨 Session 的 Entry/事件/Usage Record 拒绝、过期段零回调、段关联冲突整体回滚、STOPPING 状态的实际输出、
+  confirming 后中断终态恢复，以及旧终态重试不结束下一轮执行。
 - 新建非所有者角色先实际重现读取控制表权限不足，再执行权限模板；该角色对三张控制表及公共事件表的 SELECT 和零行 INSERT/UPDATE/DELETE 全部成功。该检查验证权限，事务行为由上述数据库回归验证。
 - `spotless:apply`、`checkstyle:check`、`test-compile`、聚焦真实数据库测试和 `git diff --check` 通过。
 
@@ -113,3 +133,4 @@ Session 生命周期，本片不把任意 running Session 推断为用户消息�
 | 0.1.0 | 2026-09-08 | 增加固定根执行、结果段、段内事件关联、typed 状态和 Session 清理边界 |
 | 0.1.1 | 2026-09-08 | 合并公共事件清理边界，补齐部署运行角色授权并增加非所有者权限验证 |
 | 0.2.0 | 2026-09-08 | 增加消息、中断、进入确认与真实终态的外层原子事务和真实数据库回归 |
+| 0.3.0 | 2026-09-08 | 增加固定段原子追加、终态幂等恢复和跨 Session 归属校验 |
