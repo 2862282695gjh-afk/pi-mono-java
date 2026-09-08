@@ -5,7 +5,7 @@
 <style>body{font:16px/1.65 system-ui,sans-serif;color:#172235;background:#f5f7fa;margin:0}main{max-width:920px;margin:32px auto;padding:32px;background:white;border-radius:12px}h1,h2{line-height:1.3}code{overflow-wrap:anywhere;background:#eef2f6;padding:2px 4px}a{color:#1457a6}li{margin:8px 0}</style></head>
 <body><main>
 <h1>ADR-0075：持久化固定执行与结果段身份</h1>
-<p><strong>Status:</strong> Accepted · <strong>Date:</strong> 2026-09-08 · <strong>Version:</strong> 1.1.0</p>
+<p><strong>Status:</strong> Accepted · <strong>Date:</strong> 2026-09-08 · <strong>Version:</strong> 1.2.0</p>
 <h2>Context</h2>
 <p>设计仓 <code>2ee2a3211da68ad87b0d9cab353e691b00bdaebd</code> 已确认：中断和工具确认必须绑定原始
 <code>user.message.eventId</code> 与不可复用的内部执行身份；每次初始响应或确认续跑使用固定结果段。
@@ -20,6 +20,8 @@ Java 基线 <code>fd556dce3cfa12e5e834b6e9b8f835f10e7d67c8</code> 只在当前 J
 <li>用 <code>RuntimeExecutionPersistenceService</code> 的 Spring 外层事务组合 Session Entry、公共完整事件、
 执行状态与段事件关联。进入 confirming 和真实终态均先锁定精确 target，再调用短写入回调。</li>
 <li>中断回执不关联原消息结果段；进入 confirming 的 tool call 与 idle 关联当前段。这样各 HTTP 响应只补读自己所属段的事件。</li>
+<li>普通完整输出仅能追加到同一 Session 下当前 RUNNING/STOPPING 执行的 OPEN 段，Entry、可选用量、公共事件、完整性标记和段关联同事务提交。</li>
+<li>相同执行、段、终态 ID 和原因的重试恢复原始终态，不再次分配序号或更新 Session；查询按真实终态与段事件关联定位，保留 confirming 段的首个 idle，也不受后续新执行状态影响。</li>
 <li>不采用仅有 <code>sessionId + stop=true</code> 的记录，因为迟到控制会重新选中下一轮执行。</li>
 <li>不采用只保存在 JVM 的 executionId，因为负载均衡后的请求可能由另一实例接受。</li>
 <li>不把 executionId 或 segmentId 暴露到 HTTP；公共关联继续使用已经确认的 eventId。</li>
@@ -30,16 +32,17 @@ Session 完整清理会删除全部控制表记录，tombstone 保留既有语�
 <p>正面：消息和控制受理、进入确认、真实终态都能把公开事件与固定执行状态作为一个提交单元；
 不同 HTTP 结果段可以读取各自完整事件；过期终态在写回调前被拒绝。负面：每个完整段事件增加一条关联写入，
 应用服务必须保持固定锁序，失败路径会扩大单个事务的回滚范围。</p>
-<p>本片尚未把 HTTP 路由切换到新事务，也未实现确认决定的一次消费、终态不确定结果的幂等恢复、普通输出
-按段追加、批量轮询、本地唤醒和有界等待；因此本 ADR 不宣称 Events v2 控制接口已经可用。</p>
+<p>本片尚未把 HTTP 路由切换到新事务，也未实现确认决定的一次消费、执行协调器后台终态重试调度、
+批量轮询、本地唤醒和有界等待；因此本 ADR 不宣称 Events v2 控制接口已经可用。</p>
 <p>不新增 Maven 依赖、Redis、实例间 HTTP 转发或凭据持久化。</p>
 <h2>Validation</h2>
 <p>真实 openGauss 验证登记、精确读取、confirming 关段、终态 CAS、300 字符 Tool Call ID，以及 Session
 清理后三张控制表归零。应用事务独立复验包含33项 Repository 与2项公共事件测试，共35项通过且零跳过；
 覆盖准入与关联失败的整体回滚、过期终态写回调零调用。非所有者角色经发布模板授权验证新增表 CRUD 权限。
 格式、编译和映射检查结果记录在关联设计中。</p>
+<p>恢复与段追加独立复验共41项真实数据库测试通过，覆盖跨Session输入、关联失败回滚、STOPPING输出、confirming后真实终态恢复、旧终态重试不结束新执行。</p>
 <h2>Related</h2>
 <ul><li><a href="../designs/runtime-execution-control/README.md">固定执行控制存储设计</a></li>
 <li><a href="../designs/runtime-execution-control/diagram.puml#L1">PlantUML 存储关系图</a></li></ul>
-<h2>版本历史</h2><p>1.1.0 · 2026-09-08：确定消息、中断、进入确认和真实终态的应用事务边界。</p><p>1.0.1 · 2026-09-08：补齐发布运行角色权限并验证公共事件与控制表清理共存。</p><p>1.0.0 · 2026-09-08：确定固定根执行、结果段、段事件关联和清理边界。</p>
+<h2>版本历史</h2><p>1.2.0 · 2026-09-08：增加固定段追加与终态幂等恢复。</p><p>1.1.0 · 2026-09-08：确定消息、中断、进入确认和真实终态的应用事务边界。</p><p>1.0.1 · 2026-09-08：补齐发布运行角色权限并验证公共事件与控制表清理共存。</p><p>1.0.0 · 2026-09-08：确定固定根执行、结果段、段事件关联和清理边界。</p>
 </main></body></html>
