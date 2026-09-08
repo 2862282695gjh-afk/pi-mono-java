@@ -51,8 +51,12 @@ import com.campusclaw.codingagent.runtimeapi.runtime.RuntimeTerminalRetrySchedul
 import com.campusclaw.codingagent.runtimeapi.runtime.RuntimeToolPermissionPolicy;
 import com.campusclaw.codingagent.runtimeapi.session.RuntimeExecutionTerminalReason;
 import com.campusclaw.codingagent.runtimeapi.vo.RuntimeSseEventVO;
+import com.campusclaw.codingagent.test.Log4j2TestAppender;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import org.apache.logging.log4j.Level;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.core.Logger;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
@@ -102,6 +106,30 @@ class RuntimeV2ExecutionCoordinatorTest {
         verify(fixture.engines).complete(fixture.holder, fixture.execution);
         verify(fixture.output).complete();
         assertThat(fixture.execution.completion()).isCompletedExceptionally();
+    }
+
+    @Test
+    void shouldPersistSafeChineseFailureAndWriteStructuredLog() {
+        Fixture fixture = fixture();
+        IllegalStateException failure = new IllegalStateException("private credential detail");
+        Logger logger = (Logger) LogManager.getLogger(RuntimeV2ExecutionCoordinator.class);
+        Log4j2TestAppender logs = new Log4j2TestAppender("runtime-v2-execution-failure-logs");
+        logs.start();
+        logger.addAppender(logs);
+        try {
+            fixture.coordinator.handleAcceptedStartFailure(
+                    fixture.holder, fixture.execution, failure, Locale.SIMPLIFIED_CHINESE);
+        } finally {
+            logger.removeAppender(logs);
+            logs.stop();
+        }
+
+        TerminalCaptureDTO terminal = captureTerminal(fixture);
+        assertThat(terminal.event().getPayload())
+                .contains("\"errorCode\":\"EXECUTION_START_FAILED\"")
+                .contains("消息已接受，但执行未能启动。")
+                .doesNotContain("private credential detail");
+        assertThat(logs.events()).anySatisfy(event -> assertFailureLog(event, failure));
     }
 
     @Test
@@ -395,6 +423,17 @@ class RuntimeV2ExecutionCoordinatorTest {
         verify(fixture.compactionSubscription).run();
         verify(fixture.timeout).cancel(false);
         verify(fixture.output).complete();
+    }
+
+    private static void assertFailureLog(org.apache.logging.log4j.core.LogEvent event, Throwable failure) {
+        assertThat(event.getLevel()).isEqualTo(Level.ERROR);
+        String operation = event.getContextData().getValue("operation");
+        String errorCode = event.getContextData().getValue("errorCode");
+        String sessionId = event.getContextData().getValue("sessionId");
+        assertThat(operation).isEqualTo("runtime.events.v2.execute");
+        assertThat(errorCode).isEqualTo("SESSION_EXECUTION_FAILED");
+        assertThat(sessionId).isEqualTo("session-v2");
+        assertThat(event.getThrown()).isSameAs(failure);
     }
 
     private record TerminalCaptureDTO(CommittedEventDTO event, RuntimeExecutionTerminalReason reason) {}

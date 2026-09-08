@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ADR-0096：普通消息先回执后启动执行</title>
+<style>body{font:16px/1.7 system-ui,sans-serif;background:#f5f7fa;color:#172235;margin:0}main{max-width:920px;margin:32px auto;padding:32px;background:white;border-radius:12px}code{overflow-wrap:anywhere;background:#eef2f6;padding:2px 4px}a{color:#1457a6}</style></head><body><main>
+<h1>ADR-0096：普通消息先回执后启动执行</h1><p>Status: Accepted · Date: 2026-09-08 · Version: 1.0.0</p>
+<h2>Context</h2><p>Events v2 要求完整 <code>user.message</code> 回执成为请求流首帧，并让回执 <code>eventId</code> 成为固定根执行身份。Java 基线 <code>ba9e497c</code> 的旧链会先输出配置事件，且接纳后启动失败可能再次进入未接纳释放路径。Skill 预准备消息还需要防止把受管展开正文写入公共事件。</p>
+<h2>Decision</h2><p>采用“准备可信运行快照、构造并预检公共回执、原子受理消息和固定执行、回执入队、启动 Agent”的顺序。普通消息的公开文本和实际内部 prompt 分开传递；Skill 只公开原始调用文本。事务返回后立即按已接受状态处理，任何启动异常均由固定终态链收尾。</p>
+<h2>考虑过的选项及取舍</h2><ul><li>先启动再写回执：实现直接，但模型事件可能早于回执，违反首帧契约，因此不采用。</li><li>准备运行快照前写 running：数据库提交较早，但无可用 Agent、模型或附件时会留下不可执行的已接受状态，因此不采用。</li><li>公开正文复用内部 prompt：参数较少，但会泄露 Skill 展开内容，因此不采用。</li><li>选择的顺序增加一次受理前编码与容量检查，换取线协议顺序、数据库状态和失败语义一致。</li></ul>
+<h2>Consequences</h2><p>正面结果是根事件身份稳定，配置校准不会抢占首帧，已接受启动失败不会重复接纳或错误释放。代价是运行快照在数据库事务前准备，并需要显式区分公开文本和内部正文。断开请求流不取消已接受执行；后续输出仍持久化。没有新增 Maven 依赖或数据库表。</p>
+<h2>HTTP 状态与验证</h2><p>本决策对应的 Message 单片不切换生产 Controller。实现提交 <code>346d7f8f</code>、回归提交 <code>ea202d17</code> 和夹具适配 <code>0bfd24a5</code> 的 20 项聚焦测试验证回执顺序、附件顺序、斜杠普通文本、文本隔离、容量和校准拒绝、接受后流关闭及安全中英文失败文本；HTTP 联合输入、data-only SSE 与控制事件由后续 ADR-0099 统一启用。</p>
+<h2>Related</h2><p><a href="../designs/runtime-events-message-v2/README.md">普通消息实施设计</a> · <a href="../designs/runtime-events-message-v2/diagram.puml#L1">PlantUML 源码</a> · <a href="0075-persist-runtime-execution-control.html">ADR-0075 固定执行控制</a></p>
+</main></body></html>

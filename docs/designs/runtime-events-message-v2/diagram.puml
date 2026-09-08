@@ -1,0 +1,42 @@
+@startuml message_event_acceptance
+title Events v2 Message Acceptance
+' Contract baseline: pi-mono-java-design 2ee2a3211da68ad87b0d9cab353e691b00bdaebd
+' Java baseline: ba9e497cd608fade88c97825bbd1d4b71a1c9e0e
+' Implementation: 346d7f8fb16b4202e12dc6331b585d3921bec0c4
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/event/RuntimeV2MessageEventService.java#submitPrepared
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/persistence/RuntimeExecutionPersistenceService.java#acceptMessage
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/event/RuntimeEventStream.java#canAcceptRequired
+' Pi source: packages/agent/src/agent-loop.ts#agentLoop and runAgentLoop at 4af9d21d3b4d664e4a29fcabfec85171077248e3
+' Observed behavior: the Java service prepares one runtime snapshot before database acceptance.
+' Design reason: a durable receipt must be queued before any execution output can be emitted.
+' Java divergence: public receipt text is separated from the expanded internal prompt for security.
+skinparam sequenceMessageAlign center
+actor "Future HTTP handler" as http
+participant "RuntimeV2MessageEventService" as service
+participant "Session operation lock" as lock
+participant "Runtime context factory" as context
+participant "V2 encoder" as encoder
+database "Execution persistence" as persistence
+queue "RuntimeEventStream" as stream
+participant "V2 coordinator" as coordinator
+
+http -> service : submit user.message
+service -> lock : serialize by session
+lock -> context : prepare snapshot and internal prompt
+context --> lock : context and holder
+lock -> encoder : encode public receipt preview
+encoder --> lock : required frame
+lock -> stream : check required capacity
+lock -> persistence : accept message and fixed target
+persistence --> lock : committed receipt and target
+lock -> stream : enqueue receipt first
+lock -> coordinator : start accepted execution
+coordinator --> lock : lifecycle attached
+lock --> service : request stream
+service --> http : stream
+
+note over persistence,stream
+Acceptance is one database transaction.
+Execution starts only after the receipt is queued.
+end note
+@enduml
