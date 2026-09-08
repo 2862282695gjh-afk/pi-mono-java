@@ -32,6 +32,8 @@ public interface RuntimeExecutionControlMapper {
 
     ExecutionStateDTO lockExecution(@Param("sessionId") String sessionId, @Param("executionId") String executionId);
 
+    ExecutionStateDTO lockCurrentExecution(@Param("sessionId") String sessionId);
+
     int insertSegmentEvent(
             @Param("sessionId") String sessionId,
             @Param("executionId") String executionId,
@@ -53,6 +55,13 @@ public interface RuntimeExecutionControlMapper {
             @Param("executionId") String executionId,
             @Param("segmentId") String segmentId,
             @Param("toolCallId") String toolCallId,
+            @Param("updatedAt") OffsetDateTime updatedAt);
+
+    int markStopping(
+            @Param("sessionId") String sessionId,
+            @Param("executionId") String executionId,
+            @Param("segmentId") String segmentId,
+            @Param("stopEventId") String stopEventId,
             @Param("updatedAt") OffsetDateTime updatedAt);
 
     int markTerminal(

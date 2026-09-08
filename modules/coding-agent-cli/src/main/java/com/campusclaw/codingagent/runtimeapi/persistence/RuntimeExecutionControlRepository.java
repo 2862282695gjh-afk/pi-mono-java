@@ -24,6 +24,9 @@ public interface RuntimeExecutionControlRepository {
 
     void linkCommittedEvent(ExecutionTargetDTO target, String eventId, long eventSeq);
 
+    InterruptRequest requestInterrupt(
+            String sessionId, String targetEventId, String stopEventId, OffsetDateTime requestedAt);
+
     TransitionStatus markConfirming(
             ExecutionTargetDTO target,
             String toolCallId,
@@ -47,4 +50,23 @@ public interface RuntimeExecutionControlRepository {
         STALE_TARGET,
         STATE_CONFLICT
     }
+
+    /**
+     * user.interrupt 在锁内复核并登记停止请求的结果。
+     */
+    enum InterruptStatus {
+        ACCEPTED,
+        SESSION_NOT_FOUND,
+        SESSION_NOT_RUNNING,
+        TARGET_MISMATCH,
+        ALREADY_REQUESTED
+    }
+
+    /**
+     * 停止请求结果及接受时固定的执行目标。
+     *
+     * @param status 锁内复核结果
+     * @param target 接受时固定的执行目标；拒绝时为空
+     */
+    record InterruptRequest(InterruptStatus status, ExecutionTargetDTO target) {}
 }

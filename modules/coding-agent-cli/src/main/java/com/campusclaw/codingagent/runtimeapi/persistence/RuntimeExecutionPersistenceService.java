@@ -8,6 +8,7 @@ import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Objects;
 
+import com.campusclaw.codingagent.runtimeapi.dto.AcceptedControlDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.CommittedEventDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.ExecutionTargetDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.RuntimeEntryDTO;
@@ -53,6 +54,20 @@ public class RuntimeExecutionPersistenceService {
         controls.register(target, event.getEventSeq(), acceptedAt);
         controls.linkCommittedEvent(target, event.getEventId(), event.getEventSeq());
         return new UserMessageAcceptanceDTO(receipt, target);
+    }
+
+    @Transactional
+    public AcceptedControlDTO acceptInterrupt(
+            String sessionId,
+            String targetEventId,
+            RuntimeEntryDTO receipt,
+            CommittedEventDTO event,
+            OffsetDateTime acceptedAt) {
+        requireEvent(sessionId, receipt, event, "user.interrupt", "user.interrupt");
+        var request = controls.requestInterrupt(sessionId, targetEventId, event.getEventId(), acceptedAt);
+        ExecutionTargetDTO target = requireAcceptedInterrupt(request);
+        sessions.appendEntry(receipt, List.of(event));
+        return new AcceptedControlDTO(receipt, target);
     }
 
     @Transactional
@@ -109,5 +124,16 @@ public class RuntimeExecutionPersistenceService {
             case NOT_FOUND -> throw new RuntimeApiException(RuntimeErrorCode.SESSION_NOT_FOUND);
             case BUSY -> throw new RuntimeApiException(RuntimeErrorCode.SESSION_BUSY);
         }
+    }
+
+    private static ExecutionTargetDTO requireAcceptedInterrupt(
+            RuntimeExecutionControlRepository.InterruptRequest request) {
+        return switch (request.status()) {
+            case ACCEPTED -> request.target();
+            case SESSION_NOT_FOUND -> throw new RuntimeApiException(RuntimeErrorCode.SESSION_NOT_FOUND);
+            case SESSION_NOT_RUNNING -> throw new RuntimeApiException(RuntimeErrorCode.SESSION_NOT_RUNNING);
+            case TARGET_MISMATCH -> throw new RuntimeApiException(RuntimeErrorCode.INTERRUPT_TARGET_MISMATCH);
+            case ALREADY_REQUESTED -> throw new RuntimeApiException(RuntimeErrorCode.INTERRUPT_ALREADY_REQUESTED);
+        };
     }
 }

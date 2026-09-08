@@ -275,6 +275,63 @@ class RuntimeSessionRepositoryOpenGaussIT {
     }
 
     @Test
+    void shouldAcceptInterruptAtomicallyWithoutLinkingItsReceiptToMessageSegment() {
+        RuntimeSessionDTO session = newSession("session_interrupt_acceptance");
+        repository.create(session);
+        var target = acceptRootMessage(session, "interrupt");
+        RuntimeEntryDTO rollbackReceipt = controlEntry(session, "interrupt-rollback", "user.interrupt");
+        CommittedEventDTO duplicate = committedEvent(rollbackReceipt, "interrupt-root-event", "user.interrupt");
+
+        assertThatThrownBy(() -> executionPersistence.acceptInterrupt(
+                        session.getId(),
+                        target.rootEventId(),
+                        rollbackReceipt,
+                        duplicate,
+                        rollbackReceipt.getTimestamp()))
+                .isInstanceOf(DataIntegrityViolationException.class);
+        assertThat(executionControls.find(target).orElseThrow())
+                .extracting("state", "stopEventId")
+                .containsExactly(RuntimeExecutionState.RUNNING, null);
+        assertThat(count("t_session_entries", session.getId())).isOne();
+        assertThat(scalarLong("SELECT next_seq FROM t_session_sequences WHERE session_id = ?", session.getId()))
+                .isEqualTo(3L);
+
+        RuntimeEntryDTO receipt = controlEntry(session, "interrupt-entry", "user.interrupt");
+        CommittedEventDTO event = committedEvent(receipt, "interrupt-event", "user.interrupt");
+        var accepted = executionPersistence.acceptInterrupt(
+                session.getId(), target.rootEventId(), receipt, event, receipt.getTimestamp());
+
+        assertThat(accepted.target()).isEqualTo(target);
+        assertThat(receipt.getEntrySeq()).isEqualTo(3L);
+        assertThat(event.getEventSeq()).isEqualTo(4L);
+        assertThat(executionControls.find(target).orElseThrow())
+                .extracting("state", "stopEventId")
+                .containsExactly(RuntimeExecutionState.STOPPING, "interrupt-event");
+        assertThat(count("t_session_execution_segment_events", session.getId())).isOne();
+        assertThat(repository.find(session.getId()).orElseThrow().getState()).isEqualTo("running");
+    }
+
+    @Test
+    void shouldRejectMismatchedRepeatedAndIdleInterruptsWithoutAppendingReceipts() {
+        RuntimeSessionDTO session = newSession("session_interrupt_conflict");
+        repository.create(session);
+        var target = acceptRootMessage(session, "conflict");
+        assertInterruptError(session, "wrong-root", "mismatch", RuntimeErrorCode.INTERRUPT_TARGET_MISMATCH);
+
+        RuntimeEntryDTO receipt = controlEntry(session, "interrupt-first", "user.interrupt");
+        CommittedEventDTO event = committedEvent(receipt, "interrupt-first-event", "user.interrupt");
+        executionPersistence.acceptInterrupt(
+                session.getId(), target.rootEventId(), receipt, event, receipt.getTimestamp());
+        assertInterruptError(session, target.rootEventId(), "duplicate", RuntimeErrorCode.INTERRUPT_ALREADY_REQUESTED);
+        assertThat(count("t_session_entries", session.getId())).isEqualTo(2);
+
+        RuntimeSessionDTO idle = newSession("session_interrupt_idle");
+        repository.create(idle);
+        assertInterruptError(idle, "missing-root", "idle", RuntimeErrorCode.SESSION_NOT_RUNNING);
+        assertThat(count("t_session_entries", idle.getId())).isZero();
+    }
+
+    @Test
     void shouldRestoreCurrentNameAfterContextRestartWithoutTouchingHistoryOrRunningState() {
         RuntimeSessionDTO session = newSession("session_name_restore");
         repository.create(session);
@@ -1079,6 +1136,30 @@ class RuntimeSessionRepositoryOpenGaussIT {
         executionPersistence.commitTerminal(
                 accepted.target(), idle, idleEvent, RuntimeExecutionTerminalReason.DONE, idle.getTimestamp());
         return accepted.target();
+    }
+
+    private ExecutionTargetDTO acceptRootMessage(RuntimeSessionDTO session, String suffix) {
+        executionIds.reset("execution-" + suffix, "segment-" + suffix);
+        RuntimeEntryDTO root =
+                newEntry(session.getId(), suffix + "-root-entry", "user.message", session.getCreatedAt(), "{}");
+        CommittedEventDTO event = committedEvent(root, suffix + "-root-event", "user.message");
+        return executionPersistence
+                .acceptMessage(session.getId(), root, event, root.getTimestamp())
+                .target();
+    }
+
+    private void assertInterruptError(
+            RuntimeSessionDTO session, String targetEventId, String suffix, RuntimeErrorCode expected) {
+        RuntimeEntryDTO receipt = controlEntry(session, "interrupt-" + suffix, "user.interrupt");
+        CommittedEventDTO event = committedEvent(receipt, "interrupt-" + suffix + "-event", "user.interrupt");
+        assertThatThrownBy(() -> executionPersistence.acceptInterrupt(
+                        session.getId(), targetEventId, receipt, event, receipt.getTimestamp()))
+                .isInstanceOfSatisfying(RuntimeApiException.class, error -> assertThat(error.errorCode())
+                        .isEqualTo(expected));
+    }
+
+    private static RuntimeEntryDTO controlEntry(RuntimeSessionDTO session, String entryId, String type) {
+        return newEntry(session.getId(), entryId, type, session.getCreatedAt().plusSeconds(1), "{}");
     }
 
     private static CommittedEventDTO committedEvent(RuntimeEntryDTO anchor, String eventId, String type) {
