@@ -139,11 +139,13 @@ class RuntimeCommittedEventFactoryTest {
         assertThat(unknownUsage.getData()).doesNotContainKey("usage");
         assertThat(objectMapper.valueToTree(unknownCost.getData().get("usage")).has("cost"))
                 .isFalse();
-        assertThat(objectMapper
-                        .valueToTree(knownZero.getData().get("usage"))
-                        .path("totalTokens")
-                        .longValue())
-                .isZero();
+        var zeroUsage = objectMapper.valueToTree(knownZero.getData().get("usage"));
+        assertThat(zeroUsage.isObject()).isTrue();
+        assertThat(zeroUsage.path("input").longValue()).isZero();
+        assertThat(zeroUsage.path("output").longValue()).isZero();
+        assertThat(zeroUsage.path("cacheRead").longValue()).isZero();
+        assertThat(zeroUsage.path("cacheWrite").longValue()).isZero();
+        assertThat(zeroUsage.path("totalTokens").longValue()).isZero();
     }
 
     @Test
