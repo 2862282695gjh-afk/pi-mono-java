@@ -117,12 +117,14 @@ public final class ClawConstants {
 
         public static final Pattern TOOL_CONFIRMATION_RESULT_PATTERN = Pattern.compile(TOOL_CONFIRMATION_RESULT_REGEX);
 
+        public static final String DEFAULT_TOOL_ERROR_CODE = "TOOL_EXECUTION_FAILED";
+
         public static final Set<String> TOOL_ERROR_CODES = Set.of(
                 "TOOL_CALL_DENIED",
                 "TOOL_ARGUMENTS_INVALID",
                 "TOOL_NOT_FOUND",
                 "TOOL_EXECUTION_TIMEOUT",
-                "TOOL_EXECUTION_FAILED");
+                DEFAULT_TOOL_ERROR_CODE);
 
         public static final Set<String> EXECUTION_ERROR_CODES = Set.of(
                 "AGENT_EXECUTION_FAILED",

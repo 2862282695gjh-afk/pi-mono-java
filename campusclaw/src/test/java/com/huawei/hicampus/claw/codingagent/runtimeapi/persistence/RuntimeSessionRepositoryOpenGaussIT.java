@@ -42,10 +42,12 @@ import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.SessionConfigurationU
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.command.SessionCommandResultDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.error.RuntimeErrorCode;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeCommittedEventFactory;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeEntryCodec;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeEntryIdGenerator;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeUsageCause;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.mapper.RuntimeExecutionControlMapper;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.mapper.RuntimeExecutionResultMapper;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.mapper.RuntimeSessionMapper;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.model.RuntimeModelManager;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.persistence.UserEventAcceptance.Status;
@@ -99,6 +101,8 @@ class RuntimeSessionRepositoryOpenGaussIT {
 
     private TestRuntimeEntryIdGenerator executionIds;
 
+    private RuntimeExecutionResultRepository executionResults;
+
     private JdbcTemplate jdbcTemplate;
 
     @BeforeAll
@@ -122,8 +126,10 @@ class RuntimeSessionRepositoryOpenGaussIT {
         executionControls = context.getBean(RuntimeExecutionControlRepository.class);
         executionPersistence = context.getBean(RuntimeExecutionPersistenceService.class);
         executionIds = context.getBean(TestRuntimeEntryIdGenerator.class);
+        executionResults = context.getBean(RuntimeExecutionResultRepository.class);
         jdbcTemplate = context.getBean(JdbcTemplate.class);
         jdbcTemplate.update("TRUNCATE TABLE t_session_event_projection");
+        jdbcTemplate.update("TRUNCATE TABLE t_session_events");
         jdbcTemplate.update("TRUNCATE TABLE t_session_materialized");
         jdbcTemplate.update("TRUNCATE TABLE t_session_stats");
         jdbcTemplate.update("TRUNCATE TABLE t_session_records");
@@ -710,6 +716,69 @@ class RuntimeSessionRepositoryOpenGaussIT {
     }
 
     @Test
+    void shouldReadFixedSegmentAfterSequenceUntilItsTerminalEvent() {
+        RuntimeSessionDTO session = newSession("session_segment_result");
+        repository.create(session);
+        ExecutionTargetDTO target = seedCommittedSegment(session);
+
+        var first = executionResults.readSegmentEvents(target, 2L, 1).orElseThrow();
+        assertThat(first.getEvents()).extracting(CommittedEventDTO::getEventId).containsExactly("agent-event");
+        assertThat(first.isTerminal()).isFalse();
+
+        var second = executionResults
+                .readSegmentEvents(target, first.getEvents().getLast().getEventSeq(), 1)
+                .orElseThrow();
+        assertThat(second.getEvents()).extracting(CommittedEventDTO::getEventId).containsExactly("idle-event");
+        assertThat(second.isTerminal()).isTrue();
+        var completed = executionResults
+                .readSegmentEvents(target, second.getEvents().getLast().getEventSeq(), 10)
+                .orElseThrow();
+        assertThat(completed.getEvents()).isEmpty();
+        assertThat(completed.isTerminal()).isTrue();
+    }
+
+    @Test
+    void shouldReadOnlyExecutionTerminalForInterruptResult() {
+        RuntimeSessionDTO session = newSession("session_execution_result");
+        repository.create(session);
+        ExecutionTargetDTO target = seedCommittedSegment(session);
+
+        assertThat(executionResults.findExecutionTerminal(target))
+                .get()
+                .extracting(CommittedEventDTO::getEventId)
+                .isEqualTo("idle-event");
+        var wrongRoot =
+                new ExecutionTargetDTO(target.sessionId(), target.executionId(), "wrong-root", target.segmentId());
+        var wrongSegment =
+                new ExecutionTargetDTO(target.sessionId(), target.executionId(), target.rootEventId(), "wrong-segment");
+        assertThat(executionResults.findExecutionTerminal(wrongRoot)).isEmpty();
+        assertThat(executionResults.findExecutionTerminal(wrongSegment)).isEmpty();
+        assertThat(executionResults.readSegmentEvents(wrongRoot, 0L, 10)).isEmpty();
+    }
+
+    @Test
+    void shouldStopSegmentResultAtFirstIdleWhenExecutionLaterTerminates() {
+        RuntimeSessionDTO session = newSession("session_segment_first_idle");
+        repository.create(session);
+        ExecutionTargetDTO target = seedConfirmingThenTerminatedSegment(session);
+
+        var result = executionResults.readSegmentEvents(target, 0L, 20).orElseThrow();
+        assertThat(result.getEvents())
+                .extracting(CommittedEventDTO::getEventId)
+                .containsExactly("confirm-root-event", "confirming-tool-event", "confirming-idle-event");
+        assertThat(result.isTerminal()).isTrue();
+        long confirmingSeq = result.getEvents().getLast().getEventSeq();
+        var completed =
+                executionResults.readSegmentEvents(target, confirmingSeq, 20).orElseThrow();
+        assertThat(completed.getEvents()).isEmpty();
+        assertThat(completed.isTerminal()).isTrue();
+        assertThat(executionResults.findExecutionTerminal(target))
+                .get()
+                .extracting(CommittedEventDTO::getEventId)
+                .isEqualTo("terminated-idle-event");
+    }
+
+    @Test
     void shouldRestoreCurrentNameAfterContextRestartWithoutTouchingHistoryOrRunningState() {
         RuntimeSessionDTO session = newSession("session_name_restore");
         repository.create(session);
@@ -837,12 +906,34 @@ class RuntimeSessionRepositoryOpenGaussIT {
         assertThat(changed.session().getUpdatedAt()).isEqualTo(updatedAt.truncatedTo(ChronoUnit.MILLIS));
         assertThat(changed.session().getResourceVersion()).isEqualTo(4L);
         assertThat(changed.session().getLifetimeUsage()).isEqualTo(storedUsage);
+        assertCommittedConfigurationEvent(command, session.getId(), updatedAt);
         var unchanged = executeConfigurationCommand(
                 command, session.getId(), Clock.fixed(updatedAt.plusDays(1).toInstant(), ZoneOffset.UTC));
         assertThat(unchanged.changed()).isFalse();
         assertThat(unchanged.sourceEventSeq()).isNull();
         assertThat(unchanged.session()).isEqualTo(changed.session());
         assertThat(repository.find(session.getId())).contains(changed.session());
+    }
+
+    private void assertCommittedConfigurationEvent(String command, String sessionId, OffsetDateTime updatedAt) {
+        if (command.equals("name")) {
+            assertThat(count("t_session_events", sessionId)).isZero();
+            return;
+        }
+        String expectedType = command.equals("model") ? "session.model_changed" : "session.thinking_changed";
+        String expectedId = command.equals("model") ? "model-entry" : "thinking-entry";
+        assertThat(jdbcTemplate.queryForObject(
+                        "SELECT type FROM t_session_events WHERE session_id = ?", String.class, sessionId))
+                .isEqualTo(expectedType);
+        assertThat(jdbcTemplate.queryForObject(
+                        "SELECT event_id FROM t_session_events WHERE session_id = ?", String.class, sessionId))
+                .isEqualTo(expectedId);
+        assertThat(jdbcTemplate.queryForObject(
+                        "SELECT created_at FROM t_session_events WHERE session_id = ?",
+                        OffsetDateTime.class,
+                        sessionId))
+                .isEqualTo(updatedAt.truncatedTo(ChronoUnit.MILLIS));
+        assertThat(count("t_session_event_projection", sessionId)).isOne();
     }
 
     private void appendUsageForPrecisionTest(RuntimeSessionDTO session) {
@@ -876,15 +967,28 @@ class RuntimeSessionRepositoryOpenGaussIT {
         when(manager.resolveAvailableModel(snapshot, "next")).thenReturn(model);
         when(manager.resolveModel(snapshot, "model-db-it")).thenReturn(model);
         var codec = new RuntimeEntryCodec(new ObjectMapper(), new RuntimeMessageSourceConfiguration().messageSource());
+        var eventFactory = committedEventFactory();
         return switch (command) {
             case "name" -> new SessionNamingService(repository, clock).execute(sessionId, "name");
             case "model" ->
                 (SessionCommandResultDTO) new SessionModelConfigurationService(
-                                repository, agentId -> snapshot, manager, codec, () -> "model-entry", clock)
+                                repository,
+                                agentId -> snapshot,
+                                manager,
+                                codec,
+                                eventFactory,
+                                () -> "model-entry",
+                                clock)
                         .execute(sessionId, "next");
             case "thinking" ->
                 new SessionThinkingConfigurationService(
-                                repository, agentId -> snapshot, manager, codec, () -> "thinking-entry", clock)
+                                repository,
+                                agentId -> snapshot,
+                                manager,
+                                codec,
+                                eventFactory,
+                                () -> "thinking-entry",
+                                clock)
                         .execute(sessionId, "on");
             default -> throw new AssertionError(command);
         };
@@ -1236,6 +1340,52 @@ class RuntimeSessionRepositoryOpenGaussIT {
                 .isEqualTo(1L);
     }
 
+    @Test
+    void shouldRollbackConfigurationEntryWhenCommittedEventInsertionFails() {
+        var session = newSession("session_public_event_rollback");
+        repository.create(session);
+        jdbcTemplate.update(
+                "INSERT INTO t_session_events "
+                        + "(session_id,event_id,event_seq,anchor_entry_id,type,created_at,payload) "
+                        + "VALUES (?,?,?,?,?,?,CAST(? AS JSONB))",
+                session.getId(),
+                "configuration-entry",
+                99L,
+                "existing-anchor",
+                "session.model_changed",
+                session.getCreatedAt(),
+                "{\"previousModelId\":\"old\",\"modelId\":\"existing\",\"reason\":\"requested\"}");
+        var codec = new RuntimeEntryCodec(new ObjectMapper(), new RuntimeMessageSourceConfiguration().messageSource());
+        var eventFactory = committedEventFactory();
+        var updatedAt = session.getCreatedAt().plusMinutes(1);
+
+        assertThatThrownBy(() -> repository.updateModel(
+                        session.getId(),
+                        null,
+                        "next",
+                        true,
+                        locked -> List.of(codec.modelChangedEntry(
+                                locked.getId(),
+                                "configuration-entry",
+                                locked.getModelId(),
+                                "next",
+                                "requested",
+                                updatedAt)),
+                        eventFactory::sessionConfiguration,
+                        updatedAt))
+                .isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
+        assertThat(repository.find(session.getId()).orElseThrow())
+                .usingRecursiveComparison()
+                .withComparatorForType(java.math.BigDecimal::compareTo, java.math.BigDecimal.class)
+                .isEqualTo(session);
+        assertThat(count("t_session_entries", session.getId())).isZero();
+        assertThat(count("t_session_events", session.getId())).isOne();
+        assertThat(count("t_session_event_projection", session.getId())).isZero();
+        assertThat(jdbcTemplate.queryForObject(
+                        "SELECT next_seq FROM t_session_sequences WHERE session_id = ?", Long.class, session.getId()))
+                .isEqualTo(1L);
+    }
+
     private SessionConfigurationUpdateDTO changeUnconditionally(
             CountDownLatch start, RuntimeSessionDTO observed, String modelId) throws InterruptedException {
         assertThat(start.await(5, TimeUnit.SECONDS)).isTrue();
@@ -1361,7 +1511,7 @@ class RuntimeSessionRepositoryOpenGaussIT {
                 .extracting(RuntimeEntryDTO::getEntrySeq)
                 .containsExactly(1L);
         assertThat(changeUnconditionally(new CountDownLatch(0), session, "next").sourceEventSeq())
-                .isEqualTo(2L);
+                .isEqualTo(3L);
     }
 
     private SessionThinkingConfigurationService thinkingService(CountDownLatch capabilityChecked) {
@@ -1384,8 +1534,14 @@ class RuntimeSessionRepositoryOpenGaussIT {
                 agentId -> snapshot,
                 manager,
                 new RuntimeEntryCodec(new ObjectMapper(), new RuntimeMessageSourceConfiguration().messageSource()),
+                committedEventFactory(),
                 () -> "entry-thinking",
                 Clock.systemUTC());
+    }
+
+    private static RuntimeCommittedEventFactory committedEventFactory() {
+        return new RuntimeCommittedEventFactory(
+                new ObjectMapper(), new RuntimeMessageSourceConfiguration().messageSource());
     }
 
     private String cleanupState(String sessionId) {
@@ -1484,6 +1640,37 @@ class RuntimeSessionRepositoryOpenGaussIT {
         entry.setTimestamp(timestamp);
         entry.setPayload(payload);
         return entry;
+    }
+
+    private ExecutionTargetDTO seedCommittedSegment(RuntimeSessionDTO session) {
+        RuntimeEntryDTO root = newEntry(session.getId(), "root-entry", "user.message", session.getCreatedAt(), "{}");
+        CommittedEventDTO rootEvent = committedEvent(root, "root-event", "user.message");
+        repository.acceptUserEvent(session.getId(), root, rootEvent, root.getTimestamp());
+        var target = new ExecutionTargetDTO(session.getId(), "execution-1", rootEvent.getEventId(), "segment-1");
+        executionControls.register(target, rootEvent.getEventSeq(), root.getTimestamp());
+        executionControls.linkCommittedEvent(target, rootEvent.getEventId(), rootEvent.getEventSeq());
+
+        RuntimeEntryDTO agent =
+                newEntry(session.getId(), "agent-entry", "assistant.message.completed", session.getCreatedAt(), "{}");
+        CommittedEventDTO agentEvent = committedEvent(agent, "agent-event", "agent.message");
+        repository.appendEntry(agent, List.of(agentEvent));
+        executionControls.linkCommittedEvent(target, agentEvent.getEventId(), agentEvent.getEventSeq());
+        RuntimeEntryDTO idle =
+                newEntry(session.getId(), "idle-entry", "session.status.idle", session.getCreatedAt(), "{}");
+        CommittedEventDTO idleEvent = committedEvent(idle, "idle-event", "session.status_idle");
+        assertThat(executionControls.markTerminal(
+                        target,
+                        idleEvent.getEventId(),
+                        () -> appendCommittedEvent(idle, idleEvent),
+                        RuntimeExecutionTerminalReason.DONE,
+                        idle.getTimestamp()))
+                .isEqualTo(RuntimeExecutionControlRepository.TransitionStatus.APPLIED);
+        return target;
+    }
+
+    private CommittedControlEventDTO appendCommittedEvent(RuntimeEntryDTO entry, CommittedEventDTO event) {
+        repository.appendEntry(entry, List.of(event));
+        return new CommittedControlEventDTO(event.getEventId(), event.getEventSeq());
     }
 
     private void seedClosedExecution(RuntimeSessionDTO session) {
@@ -1597,6 +1784,35 @@ class RuntimeSessionRepositoryOpenGaussIT {
 
     private static String longToolCallId() {
         return "tool-call-" + "x".repeat(300);
+    }
+
+    private ExecutionTargetDTO seedConfirmingThenTerminatedSegment(RuntimeSessionDTO session) {
+        RuntimeEntryDTO root =
+                newEntry(session.getId(), "confirm-root-entry", "user.message", session.getCreatedAt(), "{}");
+        CommittedEventDTO rootEvent = committedEvent(root, "confirm-root-event", "user.message");
+        repository.acceptUserEvent(session.getId(), root, rootEvent, root.getTimestamp());
+        var target =
+                new ExecutionTargetDTO(session.getId(), "confirm-execution", rootEvent.getEventId(), "confirm-segment");
+        executionControls.register(target, rootEvent.getEventSeq(), root.getTimestamp());
+        executionControls.linkCommittedEvent(target, rootEvent.getEventId(), rootEvent.getEventSeq());
+        RuntimeEntryDTO tool = newEntry(
+                session.getId(), "confirming-tool-entry", "tool.execution.started", session.getCreatedAt(), "{}");
+        CommittedEventDTO toolEvent = committedEvent(tool, "confirming-tool-event", "agent.tool_call");
+        RuntimeEntryDTO confirming =
+                newEntry(session.getId(), "confirming-idle-entry", "session.status.idle", session.getCreatedAt(), "{}");
+        CommittedEventDTO confirmingEvent = committedEvent(confirming, "confirming-idle-event", "session.status_idle");
+        executionPersistence.markToolConfirming(
+                target, "tool-call", tool, toolEvent, confirming, confirmingEvent, confirming.getTimestamp());
+        RuntimeEntryDTO terminated =
+                newEntry(session.getId(), "terminated-idle-entry", "session.status.idle", session.getCreatedAt(), "{}");
+        CommittedEventDTO terminatedEvent = committedEvent(terminated, "terminated-idle-event", "session.status_idle");
+        executionPersistence.commitTerminal(
+                target,
+                terminated,
+                terminatedEvent,
+                RuntimeExecutionTerminalReason.TERMINATED,
+                terminated.getTimestamp());
+        return target;
     }
 
     private static CommittedEventDTO committedEvent(RuntimeEntryDTO anchor, String eventId, String type) {
@@ -1771,6 +1987,11 @@ class RuntimeSessionRepositoryOpenGaussIT {
                 RuntimeExecutionControlRepository controls,
                 RuntimeEntryIdGenerator ids) {
             return new RuntimeExecutionPersistenceService(sessions, controls, ids);
+        }
+
+        @Bean
+        RuntimeExecutionResultRepository runtimeExecutionResultRepository(RuntimeExecutionResultMapper mapper) {
+            return new MyBatisRuntimeExecutionResultRepository(mapper);
         }
 
         @Bean
