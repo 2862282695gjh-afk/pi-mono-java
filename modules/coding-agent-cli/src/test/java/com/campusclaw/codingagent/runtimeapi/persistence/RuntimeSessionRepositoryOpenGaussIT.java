@@ -1396,6 +1396,7 @@ class RuntimeSessionRepositoryOpenGaussIT {
         CommittedEventDTO idleEvent = committedEvent(idle, "idle-event", "session.status_idle");
         assertThat(executionControls.markTerminal(
                         target,
+                        idleEvent.getEventId(),
                         () -> appendCommittedEvent(idle, idleEvent),
                         RuntimeExecutionTerminalReason.DONE,
                         idle.getTimestamp()))
