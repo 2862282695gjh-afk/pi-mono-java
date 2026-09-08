@@ -54,7 +54,7 @@ pi `packages/agent/src/agent-loop.ts#runAgentLoop` 使用调用方提供的 `Abo
 
 `RuntimeExecutionPersistenceService` 是应用事务边界。底层 Repository 使用 Spring `REQUIRED` 传播。
 消息准入持有 Session 行锁，先分配统一序号并写 Entry、公共事件和完整性标记，再创建新的执行身份与结果段；
-中断、进入确认和真实终态先锁已有 Session、固定执行和当前结果段，再由短回调分配统一序号并写完整事件，
+中断、进入确认和真实终态先锁已有 Session 和固定执行并校验当前结果段身份，再分配统一序号并写完整事件，
 最后写段关联。任一步失败都会回滚同一事务内已写的数据与统一序号。
 
 - `acceptMessage` 先通过 Session 准入事务写 `user.message` Entry 与公共事件，再登记根执行和初始段，
