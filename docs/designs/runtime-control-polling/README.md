@@ -75,9 +75,9 @@ Bean Validation 保证正数；定时任务使用原子标志避免同一实例�
 
 - `ExecutionControlPollingServiceTest` 7 项通过，覆盖空目标零查询、输入去重、停止优先、成功去重、
   本地未命中重试、数据库失败退避、提交后快路径和有界批次。
-- `RuntimeSessionRepositoryOpenGaussIT` 44 项在 openGauss 7.0.0-RC3 通过且零跳过。新增回归覆盖
+- `RuntimeSessionRepositoryOpenGaussIT` 48 项在 openGauss 7.0.0-RC3 通过且零跳过。新增回归覆盖
   确认决定的原段关联、后续停止优先，以及 100 个精确目标的单批查询。
-- root 在独立隔离数据库复验 Repository 44 项与轮询 7 项，共 51 项通过，零跳过；未使用开发 agent 的数据库。
+- 合并主线 `2bdcdcb2` 后，root 在独立全新数据库复验 Repository 48 项与轮询 7 项，共 55 项通过，零跳过；未使用开发 agent 的数据库。
 - Reactor `spotless:apply`、`checkstyle:check`、`test-compile` 已通过；企业镜像和最终差异检查见交付记录。
 
 企业镜像生成同步；本机无法解析 NativeParent 26.0.0-SNAPSHOT，企业 Maven 编译未验证。

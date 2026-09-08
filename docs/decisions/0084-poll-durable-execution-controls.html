@@ -32,7 +32,7 @@ CampusClaw 的共享数据库和跨实例交接。</p>
 仍由后续切片接入；Dispatcher 缺失时轮询服务不访问数据库，因此本决策不代表端到端跨实例控制已经上线。</p>
 <p>不新增 Maven 依赖、Redis、实例间 HTTP 转发或数据库表。</p>
 <h2>Validation</h2>
-<p>轮询单测7项通过，覆盖空目标、批次、停止优先、去重、重试、退避和快路径。openGauss 真实仓储测试44项通过且零跳过，
+<p>合并主线 2bdcdcb2 后，轮询单测7项通过，覆盖空目标、批次、停止优先、去重、重试、退避和快路径。全新 openGauss 数据库的真实仓储测试48项通过且零跳过，
 包括100目标批量查询、确认前段关联和确认后停止优先。格式、Checkstyle 和测试编译通过；企业镜像验证记录在实现交付中。</p>
 <h2>Related</h2>
 <p><a href="../designs/runtime-control-polling/README.md">轮询基础实现设计</a> ·
