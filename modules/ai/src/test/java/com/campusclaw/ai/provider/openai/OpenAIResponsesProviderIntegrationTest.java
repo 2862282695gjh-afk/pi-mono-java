@@ -5,6 +5,7 @@
 package com.campusclaw.ai.provider.openai;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -392,10 +393,13 @@ class OpenAIResponsesProviderIntegrationTest {
                     null,
                     stream);
 
-            assertTrue(collectEvents(stream).stream()
+            var endings = collectEvents(stream).stream()
                     .filter(AssistantMessageEvent.ThinkingEndEvent.class::isInstance)
                     .map(AssistantMessageEvent.ThinkingEndEvent.class::cast)
-                    .noneMatch(AssistantMessageEvent.ThinkingEndEvent::publicSummary));
+                    .toList();
+            assertEquals(1, endings.size());
+            assertFalse(endings.getFirst().publicSummary());
+            assertEquals("", endings.getFirst().content());
         }
     }
 
