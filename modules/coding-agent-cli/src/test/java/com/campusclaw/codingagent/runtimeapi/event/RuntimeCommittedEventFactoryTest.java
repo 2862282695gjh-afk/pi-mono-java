@@ -129,10 +129,21 @@ class RuntimeCommittedEventFactoryTest {
                 "event_tokens",
                 assistant(knownTokens),
                 "event_user"));
+        Usage reportedZero = new Usage(0, 0, 0, 0, 0, Cost.empty());
+        var knownZero = encoder.committed(factory.agentMessage(
+                entry("entry_zero", "assistant.message.completed"),
+                "event_zero",
+                assistant(reportedZero),
+                "event_user"));
 
         assertThat(unknownUsage.getData()).doesNotContainKey("usage");
         assertThat(objectMapper.valueToTree(unknownCost.getData().get("usage")).has("cost"))
                 .isFalse();
+        assertThat(objectMapper
+                        .valueToTree(knownZero.getData().get("usage"))
+                        .path("totalTokens")
+                        .longValue())
+                .isZero();
     }
 
     @Test

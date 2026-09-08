@@ -170,7 +170,7 @@ public class RuntimeCommittedEventFactory {
     }
 
     private void appendUsage(ObjectNode payload, Usage usage) {
-        if (usage == null || Usage.empty().equals(usage)) {
+        if (usage == null || !usage.known()) {
             return;
         }
         ObjectNode value = payload.putObject("usage");
