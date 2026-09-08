@@ -6,6 +6,7 @@ package com.campusclaw.codingagent.runtimeapi.persistence;
 
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
@@ -361,6 +362,7 @@ public class MyBatisRuntimeSessionRepository implements RuntimeSessionRepository
     private void appendEventsLocked(RuntimeEntryDTO entry, List<CommittedEventDTO> events) {
         for (CommittedEventDTO event : List.copyOf(events)) {
             requireMatchingAnchor(entry, event);
+            event.setCreatedAt(normalizeEventTime(event.getCreatedAt()));
             Long sequence = mapper.lockNextSequence(entry.getSessionId());
             if (sequence == null) {
                 throw new IllegalStateException("session sequence is missing");
@@ -369,6 +371,12 @@ public class MyBatisRuntimeSessionRepository implements RuntimeSessionRepository
             requireOne(mapper.insertCommittedEvent(event), "committed event was not inserted");
             requireOne(mapper.incrementSequence(entry.getSessionId()), "session sequence was not incremented");
         }
+    }
+
+    private OffsetDateTime normalizeEventTime(OffsetDateTime createdAt) {
+        return Objects.requireNonNull(createdAt, "committed event time is missing")
+                .withOffsetSameInstant(ZoneOffset.UTC)
+                .truncatedTo(ChronoUnit.MILLIS);
     }
 
     private void requireMatchingAnchor(RuntimeEntryDTO entry, CommittedEventDTO event) {
