@@ -120,6 +120,83 @@
           AND stop_event_id IS NULL
     </update>
 
+    <select id="nextSegmentOrdinal" resultType="int">
+        SELECT COALESCE(MAX(segment_ordinal), 0) + 1
+        FROM t_session_execution_segments
+        WHERE session_id = #{sessionId}
+          AND execution_id = #{executionId}
+    </select>
+
+    <insert id="insertConfirmation"
+            parameterType="com.huawei.hicampus.claw.codingagent.runtimeapi.dto.ToolConfirmationDecisionDTO">
+        INSERT INTO t_session_tool_confirmations (
+            session_id, execution_id, confirmation_event_id, previous_segment_id,
+            segment_id, tool_call_id, result, deny_message, state, created_at
+        ) VALUES (
+            #{sessionId}, #{executionId}, #{confirmationEventId}, #{previousSegmentId},
+            #{segmentId}, #{toolCallId}, LOWER(CAST(#{result} AS VARCHAR)),
+            #{denyMessage}, #{state}, #{createdAt}
+        )
+    </insert>
+
+    <update id="resumeAfterConfirmation">
+        UPDATE t_session_executions
+        SET state = 'RUNNING',
+            current_segment_id = #{segmentId},
+            pending_tool_call_id = NULL,
+            updated_at = #{updatedAt}
+        WHERE session_id = #{sessionId}
+          AND execution_id = #{executionId}
+          AND current_segment_id = #{previousSegmentId}
+          AND state = 'CONFIRMING'
+          AND pending_tool_call_id = #{toolCallId}
+          AND stop_event_id IS NULL
+    </update>
+
+    <update id="claimConfirmation">
+        UPDATE t_session_tool_confirmations decision
+        SET state = 'CLAIMED',
+            claimed_at = #{claimedAt}
+        WHERE decision.session_id = #{sessionId}
+          AND decision.execution_id = #{executionId}
+          AND decision.previous_segment_id = #{previousSegmentId}
+          AND decision.tool_call_id = #{toolCallId}
+          AND decision.state = 'PENDING'
+          AND EXISTS (
+              SELECT 1
+              FROM t_session_executions execution
+              WHERE execution.session_id = decision.session_id
+                AND execution.execution_id = decision.execution_id
+                AND execution.root_event_id = #{rootEventId}
+                AND execution.current_segment_id = decision.segment_id
+                AND execution.state = 'RUNNING'
+                AND execution.stop_event_id IS NULL
+          )
+    </update>
+
+    <select id="findClaimedConfirmation"
+            resultType="com.huawei.hicampus.claw.codingagent.runtimeapi.dto.ToolConfirmationDecisionDTO">
+        SELECT session_id, execution_id, confirmation_event_id, previous_segment_id,
+               segment_id, tool_call_id, UPPER(result) AS result, deny_message,
+               state, created_at, claimed_at, completed_at
+        FROM t_session_tool_confirmations
+        WHERE session_id = #{sessionId}
+          AND execution_id = #{executionId}
+          AND previous_segment_id = #{previousSegmentId}
+          AND tool_call_id = #{toolCallId}
+          AND state = 'CLAIMED'
+    </select>
+
+    <update id="acknowledgeConfirmation">
+        UPDATE t_session_tool_confirmations
+        SET state = 'COMPLETED',
+            completed_at = #{completedAt}
+        WHERE session_id = #{sessionId}
+          AND execution_id = #{executionId}
+          AND confirmation_event_id = #{confirmationEventId}
+          AND state = 'CLAIMED'
+    </update>
+
     <update id="markTerminal">
         UPDATE t_session_executions
         SET state = 'TERMINAL',
