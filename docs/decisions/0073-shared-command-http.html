@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ADR-0073：共享命令 POST 的 JSON 与 SSE 接入</title>
+  <style>
+    :root { font-family: Inter, "PingFang SC", sans-serif; color: #25272a; background: #f2f5f7; }
+    body { margin: 0; } main { max-width: 920px; margin: 32px auto; padding: 32px; background: white; box-sizing: border-box; }
+    p, li { line-height: 1.75; } code { overflow-wrap: anywhere; } a { color: #1769aa; }
+    @media (max-width: 640px) { main { margin: 0; padding: 24px 18px; } }
+  </style>
+</head>
+<body><main>
+  <h1>ADR-0073：共享命令 POST 的 JSON 与 SSE 接入</h1>
+  <p>Status：Accepted · Date：2026-09-08 · Version：1.0.0</p>
+  <h2>Context</h2>
+  <p>Java 基线 <code>2f52e9b80c95c5c27141362976b918227b1c5d60</code> 已包含两类请求VO、
+  Builtin执行与业务响应投影、Skill实际展开与普通消息执行。本片按已确认方案接通共享POST，不改变独立设计仓。</p>
+  <p>本片实现证据为 <code>1f0cb7ece4c5228b5d14f89c8072bb528443378f</code>，
+  新增 <code>runtimeapi/web/RuntimeCommandController.java#execute</code>，并补充应用适配和集中错误处理。</p>
+  <p>源码根为 <code>modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/</code>：
+  <code>runtimeapi/service/command/CommandExecutionService.java#executeBuiltin</code> 提供隔离Future；
+  <code>runtimeapi/service/command/skill/SkillCommandExecutionService.java#execute</code> 拥有归一化与实际执行；
+  <code>runtimeapi/web/RuntimeEventController.java#submit</code> 提供既有SSE订阅方式。</p>
+  <p>pi <code>4af9d21d3b4d664e4a29fcabfec85171077248e3</code> 的
+  <code>packages/coding-agent/src/core/agent-session.ts#_tryExecuteExtensionCommand/#_expandSkillCommand</code>
+  仅是本地调用与展开对照，不定义Java HTTP协议。</p>
+  <h2>Decision 与选项</h2>
+  <ul>
+    <li>同一Controller按请求VO类型选择Builtin JSON或Skill SSE；业务规则仍由已有Service处理。
+    优点是没有重复归一化或名称分派；代价是Web方法需要支持两种实际返回类型。</li>
+    <li>选择声明Object并直接返回实际ResultBean或SseEmitter，ServletResponse设置Header。
+    项目实际Spring 6.2.6实验表明ResponseEntity通配或Object泛型使SSE落入错误返回处理器；
+    不引入自定义处理器、第二条公开路由或伪JSON流。</li>
+    <li>Builtin由应用层等待隔离完成句柄并解包异常；不向MVC返回异步Future，不让断线取消已接受执行。
+    Skill复用现有有界事件流与detach-only回调。</li>
+    <li>按实际Controller识别Command，集中错误处理显式JSON、区分路径/请求体校验并去除敏感cause。
+    不全局改GET的503投影或普通Events的响应行为。</li>
+  </ul>
+  <h2>Consequences</h2>
+  <p>产品约束保持结构化命令、业务VO和已确认Skill正文公开；架构选择复用现有执行链；
+  安全加固限制未知输入、禁用Header及日志泄漏。无新增Maven直接或传递依赖，也无数据库变更。</p>
+  <p>Controller不访问Repository/Registry/Holder/内部DTO，不存请求状态。
+  Mate凭据仅沿既有本次执行对象传递至实际工具execute，不进入模型、Prompt、日志或持久化。</p>
+  <p>本片正式MVC验证不替代真实网络断线、数据库、工具装配及跨JVM恢复验收。
+  后续须在本片实际合入后，从最新main单独交付fresh JAR与自有openGauss验收，维持每PR预算。</p>
+  <h2>Related</h2>
+  <ul>
+    <li><a href="../designs/shared-command-http/README.md">共享命令POST实现与验证边界</a></li>
+    <li><a href="../designs/shared-command-http/diagram.puml#L1">共享入口PlantUML</a></li>
+    <li><a href="0071-skill-command-message-execution.html">Skill实际消息执行</a></li>
+    <li><a href="0072-command-request-contract.html">共享请求严格解析</a></li>
+  </ul>
+  <h2>版本历史</h2>
+  <p>1.0.0 · 2026-09-08：连接真实Builtin与Skill共享POST，明确框架返回与错误边界。</p>
+</main></body>
+</html>

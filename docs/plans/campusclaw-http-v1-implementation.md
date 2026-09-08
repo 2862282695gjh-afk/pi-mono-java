@@ -1,6 +1,6 @@
 # CampusClaw HTTP V1 实施记录
 
-> 版本：3.10.0
+> 版本：3.11.0
 >
 > 状态：已实现并按 Runtime-only 现状校准
 >
@@ -26,7 +26,7 @@
 >
 > 初始日期：2026-08-21
 >
-> 更新日期：2026-09-07
+> 更新日期：2026-09-08
 
 > 公司镜像相关路径和标识按 2026-09-03 的当前仓库位置展示；历史提交 SHA 仍是对应行为证据。
 
@@ -38,7 +38,7 @@ Runtime-only 架构演进。当前形态为：
 - 默认 `java -jar` 启动 Spring Boot MVC HTTP 服务；
 - 不再提供 CLI、TUI、RPC 或其他模式分发入口；
 - Runtime 对外统一为 HTTP + 请求范围 SSE；
-- 按已确认契约实现 11 个既有 Session 接口，以及共享命令清单 GET；
+- 按已确认契约实现 11 个既有 Session 接口，以及共享命令清单 GET 和执行 POST；
 - openGauss 作为 Session/Entry 持久化源；
 - `campusclaw` 由同步脚本生成并验证；
 - 删除旧公开 WebSocket、ServerMode、WebFlux 路由和本仓 OpenAPI 副本。
@@ -89,7 +89,8 @@ Runtime-only 架构演进。当前形态为：
 | 9 | `POST /campusclaw-service/v1/sessions/{sessionId}/steers` | running 时加入高优先级队列 | 已实现 |
 | 10 | `POST /campusclaw-service/v1/sessions/{sessionId}/follow-ups` | running 时加入 FIFO 队列 | 已实现 |
 | 11 | `POST /campusclaw-service/v1/sessions/{sessionId}/abort` | 幂等中止，清空未投递队列 | 已实现 |
-| 12 | `GET /campusclaw-service/v1/sessions/{sessionId}/commands` | 一次完整缓存的 Builtin/Skill 轻量清单；按状态过滤；缺缓存为 503 与 Retry-After 3 | 已实现；POST Command 未发布 |
+| 12 | `GET /campusclaw-service/v1/sessions/{sessionId}/commands` | 一次完整缓存的 Builtin/Skill 轻量清单；按状态过滤；缺缓存为 503 与 Retry-After 3 | 已实现 |
+| 13 | `POST /campusclaw-service/v1/sessions/{sessionId}/command` | 七Builtin业务JSON与Skill普通消息SSE；VO类型分流，执行前失败为JSON，断线不取消已接受执行 | 本片接入；跨进程验收另行交付 |
 
 操作 12 的契约基线为只读设计仓 `88f4df16bc24bbfcd28e1ec374feb2de0db8be3b`，
 实现提交为 `afee9bd333d0fc74ba0cef8b27b6df7357acdf30`，不沿用上方历史 HTTP 1.38 对该新增操作作证。
@@ -99,8 +100,15 @@ Runtime-only 架构演进。当前形态为：
 
 #245 合并基线 `146a6c9ecdc6eda987fcecd65b1e14416ce78bb1` 之后，
 `1bf1ce6d631a5c394153bd8e8cce55a861d3a387` 删除未注册旧命令原型及其专属测试。
-现有 Runtime 命令、公共压缩与上述 HTTP 路由不变；POST Command 仍未发布。
+该清理切片未修改现有 Runtime 命令、公共压缩与上述 HTTP 路由，当时尚未发布POST Command。
 删除清单与本轮验证见[命令原型清理](../designs/legacy-command-cleanup/README.md)。
+
+操作13接入基线为 `2f52e9b80c95c5c27141362976b918227b1c5d60`，
+契约依据为只读设计88f4df16及用户2026-09-08确认的Skill共享请求与正文同源公开方案。
+新增 `runtimeapi/web/RuntimeCommandController.java#execute`；应用层复用
+`CommandExecutionService#executeBuiltin` 与 `SkillCommandExecutionService#execute`，不新建执行框架。
+请求、Header、JSON/SSE选择、错误保护及精确测试范围见
+[共享命令 POST 实现](../designs/shared-command-http/README.md)。本片不迁移Events v2、控制路由或前端。
 
 ## 4. 已观察行为、目标决策和差异分类
 
@@ -256,6 +264,7 @@ AppKey/JWT 至少一种，否则不发送 execute 请求并返回工具执行失
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 3.11.0 | 2026-09-08 | 接通共享POST的Builtin JSON和Skill SSE，记录方法校验、日志及错误媒体类型边界；真实跨进程验收单独交付。 |
 | 3.10.0 | 2026-09-07 | 删除无运行时消费者的旧命令原型；HTTP/SSE 和公共 Session 能力不变，POST Command 仍待实现。 |
 | 3.9.0 | 2026-09-07 | 发布共享命令清单 GET，记录独立契约基线、完整缓存和操作级 503；不发布 POST Command。 |
 | 3.8.0 | 2026-09-07 | 公司 GaussDB 脚本使用固定库与 Schema 头部、去除事务包裹，并将每个删表语句紧邻放到对应建表语句前。 |

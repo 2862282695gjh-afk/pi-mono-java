@@ -1,0 +1,51 @@
+@startuml shared_command_http
+' Java baseline: 2f52e9b80c95c5c27141362976b918227b1c5d60
+' HTTP implementation: 1f0cb7ece4c5228b5d14f89c8072bb528443378f
+' modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/web/RuntimeCommandController.java#execute
+' modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/web/RuntimeExceptionHandler.java#response
+' modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/service/command/CommandExecutionService.java#executeBuiltin
+' modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/service/command/skill/SkillCommandExecutionService.java#execute
+' modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/web/RuntimeEventController.java#submit
+' Observed behavior: typed requests and both real execution services already exist.
+' Design reason: connect one public POST without duplicating normalization or execution lifecycle.
+' Java divergence: structured JSON request, fail-closed errors, no local slash fallback.
+hide footbox
+skinparam shadowing false
+skinparam backgroundColor white
+title Shared command POST: JSON or ordinary message SSE
+actor Client
+participant "MVC / Request VO\n(request validation)" as MVC
+participant "RuntimeCommandController\n(stateless singleton)" as Web
+participant "CommandExecutionService\n(stateless singleton)" as Builtin
+participant "Registry / Handler / Assembler\n(existing collaborators)" as Handlers
+participant "SkillCommandExecutionService\n(stateless singleton)" as Skill
+participant "Ordinary event execution\n(existing lifecycle)" as Events
+participant "RuntimeExceptionHandler\n(stateless singleton)" as Errors
+Client -> MVC: POST command: name, arguments, optional Skill files
+MVC -> Web: Validated CommandRequestVO
+Web -> Web: Reject forbidden headers by presence
+alt Builtin request
+  Web -> Builtin: executeBuiltinAndAwait
+  Builtin -> Handlers: One catalog, admission, handler, VO projection
+  Handlers --> Builtin: Isolated completion view
+  Builtin -> Builtin: Await on request thread; unwrap failure
+  Builtin --> Web: Business VO and optional ETag
+  Web --> Client: 200 application/json, ResultBean
+else Skill request
+  Web -> Skill: executeRequest: map VO to DTO
+  Skill -> Events: Existing normalization, actual binding, expanded message
+  Events --> Web: Ordinary RuntimeEventStream
+  Web --> Client: SseEmitter: ordinary domain events
+  Client -> Web: Disconnect
+  Web -> Events: Detach subscriber only
+end
+group Failure before response is committed
+  MVC -> Errors: Binding or method validation failure
+  Web -> Errors: Application failure
+  Errors --> Client: Stable HTTP status and JSON error
+end
+note over Web,Events
+No command lifecycle storage or public command id.
+Accepted execution is not cancelled by client disconnect.
+end note
+@enduml
