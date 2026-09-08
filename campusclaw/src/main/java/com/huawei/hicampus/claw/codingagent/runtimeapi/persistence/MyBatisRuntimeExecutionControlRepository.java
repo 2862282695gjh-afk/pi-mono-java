@@ -10,18 +10,21 @@ import java.util.Objects;
 import java.util.Optional;
 
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.CommittedControlEventDTO;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.ConfirmationAcceptanceDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.ConfirmingEventsDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.ExecutionSegmentDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.ExecutionStateDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.ExecutionTargetDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.InterruptRequestDTO;
-import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.InterruptRequestDTO.Status;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.ToolConfirmationDecisionDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.mapper.RuntimeExecutionControlMapper;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.mapper.RuntimeSessionMapper;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.session.RuntimeExecutionSegmentState;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.session.RuntimeExecutionState;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.session.RuntimeExecutionTerminalReason;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.session.RuntimeSessionState;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.session.ToolConfirmationResult;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.session.ToolConfirmationState;
 
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
@@ -87,13 +90,13 @@ public class MyBatisRuntimeExecutionControlRepository implements RuntimeExecutio
         requireControlEvent(sessionId, targetEventId, stopEventId);
         var session = sessionMapper.lockSessionForUpdate(sessionId);
         if (session == null) {
-            return new InterruptRequestDTO(Status.SESSION_NOT_FOUND, null);
+            return new InterruptRequestDTO(InterruptRequestDTO.Status.SESSION_NOT_FOUND, null);
         }
         if (!RuntimeSessionState.RUNNING.matches(session.getState())) {
-            return new InterruptRequestDTO(Status.SESSION_NOT_RUNNING, null);
+            return new InterruptRequestDTO(InterruptRequestDTO.Status.SESSION_NOT_RUNNING, null);
         }
         ExecutionStateDTO execution = mapper.lockCurrentExecution(sessionId);
-        Status rejected = rejectInterrupt(targetEventId, execution);
+        InterruptRequestDTO.Status rejected = rejectInterrupt(targetEventId, execution);
         if (rejected != null) {
             return new InterruptRequestDTO(rejected, null);
         }
@@ -102,7 +105,7 @@ public class MyBatisRuntimeExecutionControlRepository implements RuntimeExecutio
                 mapper.markStopping(
                         sessionId, target.executionId(), target.segmentId(), stopEventId, storedAt(requestedAt)),
                 "execution did not enter stopping state");
-        return new InterruptRequestDTO(Status.ACCEPTED, target);
+        return new InterruptRequestDTO(InterruptRequestDTO.Status.ACCEPTED, target);
     }
 
     @Override
@@ -132,6 +135,79 @@ public class MyBatisRuntimeExecutionControlRepository implements RuntimeExecutio
                         target.sessionId(), target.executionId(), target.segmentId(), toolCallId, storedAt),
                 "execution did not enter confirming state");
         return TransitionStatus.APPLIED;
+    }
+
+    @Override
+    @Transactional
+    public ConfirmationAcceptanceDTO acceptConfirmation(
+            String sessionId,
+            String toolCallId,
+            String confirmationEventId,
+            String segmentId,
+            ToolConfirmationResult result,
+            String denyMessage,
+            ConfirmationAppender appender,
+            OffsetDateTime acceptedAt) {
+        requireConfirmation(sessionId, toolCallId, confirmationEventId, segmentId, result, denyMessage, appender);
+        var session = sessionMapper.lockSessionForUpdate(sessionId);
+        if (session == null) {
+            return new ConfirmationAcceptanceDTO(ConfirmationAcceptanceDTO.Status.SESSION_NOT_FOUND, null);
+        }
+        if (!RuntimeSessionState.RUNNING.matches(session.getState())) {
+            return new ConfirmationAcceptanceDTO(ConfirmationAcceptanceDTO.Status.NOT_PENDING, null);
+        }
+        ExecutionStateDTO execution = mapper.lockCurrentExecution(sessionId);
+        ConfirmationAcceptanceDTO.Status rejected = rejectConfirmation(toolCallId, execution);
+        if (rejected != null) {
+            return new ConfirmationAcceptanceDTO(rejected, null);
+        }
+        CommittedControlEventDTO event = requireControlEvent(appender.append(), confirmationEventId);
+        OffsetDateTime storedAt = storedAt(acceptedAt);
+        ExecutionTargetDTO target = continuationTarget(execution, segmentId);
+        persistConfirmation(execution, target, event, toolCallId, result, denyMessage, storedAt);
+        return new ConfirmationAcceptanceDTO(ConfirmationAcceptanceDTO.Status.ACCEPTED, target);
+    }
+
+    @Override
+    @Transactional
+    public Optional<ToolConfirmationDecisionDTO> claimConfirmation(
+            ExecutionTargetDTO confirmingTarget, String toolCallId, OffsetDateTime claimedAt) {
+        requireTarget(confirmingTarget);
+        if (isBlank(toolCallId)) {
+            throw new IllegalArgumentException("tool call id is required");
+        }
+        ExecutionStateDTO execution = lockExecutionForClaim(confirmingTarget);
+        if (cannotClaim(execution, confirmingTarget)) {
+            return Optional.empty();
+        }
+        int affected = mapper.claimConfirmation(
+                confirmingTarget.sessionId(),
+                confirmingTarget.executionId(),
+                confirmingTarget.rootEventId(),
+                confirmingTarget.segmentId(),
+                toolCallId,
+                storedAt(claimedAt));
+        if (affected == 0) {
+            return Optional.empty();
+        }
+        return Optional.of(requireClaimedConfirmation(confirmingTarget, toolCallId));
+    }
+
+    @Override
+    @Transactional
+    public boolean acknowledgeConfirmation(ToolConfirmationDecisionDTO decision, OffsetDateTime completedAt) {
+        Objects.requireNonNull(decision, "decision");
+        if (isBlank(decision.getSessionId())
+                || isBlank(decision.getExecutionId())
+                || isBlank(decision.getConfirmationEventId())) {
+            throw new IllegalArgumentException("confirmation decision identity is incomplete");
+        }
+        return mapper.acknowledgeConfirmation(
+                        decision.getSessionId(),
+                        decision.getExecutionId(),
+                        decision.getConfirmationEventId(),
+                        storedAt(completedAt))
+                == 1;
     }
 
     @Override
@@ -183,6 +259,20 @@ public class MyBatisRuntimeExecutionControlRepository implements RuntimeExecutio
         return mapper.lockExecution(target.sessionId(), target.executionId());
     }
 
+    private ExecutionStateDTO lockExecutionForClaim(ExecutionTargetDTO target) {
+        if (sessionMapper.lockSessionForUpdate(target.sessionId()) == null) {
+            return null;
+        }
+        return mapper.lockExecution(target.sessionId(), target.executionId());
+    }
+
+    private static boolean cannotClaim(ExecutionStateDTO execution, ExecutionTargetDTO target) {
+        return execution == null
+                || !target.rootEventId().equals(execution.getRootEventId())
+                || execution.getState() != RuntimeExecutionState.RUNNING
+                || execution.getStopEventId() != null;
+    }
+
     private static TransitionStatus rejectTarget(ExecutionTargetDTO target, ExecutionStateDTO execution) {
         if (execution == null) {
             return TransitionStatus.NOT_FOUND;
@@ -194,17 +284,56 @@ public class MyBatisRuntimeExecutionControlRepository implements RuntimeExecutio
         return execution.getState() == RuntimeExecutionState.TERMINAL ? TransitionStatus.STATE_CONFLICT : null;
     }
 
-    private static Status rejectInterrupt(String targetEventId, ExecutionStateDTO execution) {
+    private static InterruptRequestDTO.Status rejectInterrupt(String targetEventId, ExecutionStateDTO execution) {
         if (execution == null) {
-            return Status.SESSION_NOT_RUNNING;
+            return InterruptRequestDTO.Status.SESSION_NOT_RUNNING;
         }
         if (!targetEventId.equals(execution.getRootEventId())) {
-            return Status.TARGET_MISMATCH;
+            return InterruptRequestDTO.Status.TARGET_MISMATCH;
         }
         if (execution.getState() == RuntimeExecutionState.STOPPING || execution.getStopEventId() != null) {
-            return Status.ALREADY_REQUESTED;
+            return InterruptRequestDTO.Status.ALREADY_REQUESTED;
         }
         return null;
+    }
+
+    private static ConfirmationAcceptanceDTO.Status rejectConfirmation(String toolCallId, ExecutionStateDTO execution) {
+        if (execution != null
+                && (execution.getState() == RuntimeExecutionState.STOPPING || execution.getStopEventId() != null)) {
+            return ConfirmationAcceptanceDTO.Status.EXECUTION_STOPPING;
+        }
+        if (execution == null
+                || execution.getState() != RuntimeExecutionState.CONFIRMING
+                || !toolCallId.equals(execution.getPendingToolCallId())) {
+            return ConfirmationAcceptanceDTO.Status.NOT_PENDING;
+        }
+        return null;
+    }
+
+    private void persistConfirmation(
+            ExecutionStateDTO execution,
+            ExecutionTargetDTO target,
+            CommittedControlEventDTO event,
+            String toolCallId,
+            ToolConfirmationResult result,
+            String denyMessage,
+            OffsetDateTime acceptedAt) {
+        var segment = newContinuationSegment(target, event, acceptedAt);
+        requireOne(mapper.insertSegment(segment), "confirmation segment was not inserted");
+        requireOne(
+                mapper.insertConfirmation(
+                        newConfirmation(execution, target, event, toolCallId, result, denyMessage, acceptedAt)),
+                "confirmation decision was not inserted");
+        requireOne(
+                mapper.resumeAfterConfirmation(
+                        target.sessionId(),
+                        target.executionId(),
+                        execution.getCurrentSegmentId(),
+                        target.segmentId(),
+                        toolCallId,
+                        acceptedAt),
+                "execution did not accept confirmation");
+        linkCommittedEvent(target, event.eventId(), event.eventSeq());
     }
 
     private static ExecutionTargetDTO targetOf(ExecutionStateDTO execution) {
@@ -213,6 +342,48 @@ public class MyBatisRuntimeExecutionControlRepository implements RuntimeExecutio
                 execution.getExecutionId(),
                 execution.getRootEventId(),
                 execution.getCurrentSegmentId());
+    }
+
+    private static ExecutionTargetDTO continuationTarget(ExecutionStateDTO execution, String segmentId) {
+        return new ExecutionTargetDTO(
+                execution.getSessionId(), execution.getExecutionId(), execution.getRootEventId(), segmentId);
+    }
+
+    private ExecutionSegmentDTO newContinuationSegment(
+            ExecutionTargetDTO target, CommittedControlEventDTO event, OffsetDateTime acceptedAt) {
+        var segment = new ExecutionSegmentDTO();
+        segment.setSessionId(target.sessionId());
+        segment.setExecutionId(target.executionId());
+        segment.setSegmentId(target.segmentId());
+        segment.setSegmentOrdinal(mapper.nextSegmentOrdinal(target.sessionId(), target.executionId()));
+        segment.setTriggerEventId(event.eventId());
+        segment.setTriggerEventSeq(event.eventSeq());
+        segment.setState(RuntimeExecutionSegmentState.OPEN);
+        segment.setCreatedAt(acceptedAt);
+        segment.setUpdatedAt(acceptedAt);
+        return segment;
+    }
+
+    private static ToolConfirmationDecisionDTO newConfirmation(
+            ExecutionStateDTO execution,
+            ExecutionTargetDTO target,
+            CommittedControlEventDTO event,
+            String toolCallId,
+            ToolConfirmationResult result,
+            String denyMessage,
+            OffsetDateTime acceptedAt) {
+        var decision = new ToolConfirmationDecisionDTO();
+        decision.setSessionId(target.sessionId());
+        decision.setExecutionId(target.executionId());
+        decision.setConfirmationEventId(event.eventId());
+        decision.setPreviousSegmentId(execution.getCurrentSegmentId());
+        decision.setSegmentId(target.segmentId());
+        decision.setToolCallId(toolCallId);
+        decision.setResult(result);
+        decision.setDenyMessage(denyMessage);
+        decision.setState(ToolConfirmationState.PENDING);
+        decision.setCreatedAt(acceptedAt);
+        return decision;
     }
 
     private void closeSegment(
@@ -305,6 +476,42 @@ public class MyBatisRuntimeExecutionControlRepository implements RuntimeExecutio
             throw new IllegalArgumentException("confirming event identities must be distinct");
         }
         return events;
+    }
+
+    private static void requireConfirmation(
+            String sessionId,
+            String toolCallId,
+            String eventId,
+            String segmentId,
+            ToolConfirmationResult result,
+            String denyMessage,
+            ConfirmationAppender appender) {
+        if (isBlank(sessionId) || isBlank(toolCallId) || isBlank(eventId) || isBlank(segmentId) || result == null) {
+            throw new IllegalArgumentException("confirmation identity is incomplete");
+        }
+        if (result == ToolConfirmationResult.ALLOW && denyMessage != null) {
+            throw new IllegalArgumentException("allow confirmation cannot carry deny message");
+        }
+        Objects.requireNonNull(appender, "appender");
+    }
+
+    private static CommittedControlEventDTO requireControlEvent(
+            CommittedControlEventDTO event, String expectedEventId) {
+        Objects.requireNonNull(event, "committed control event");
+        requireTerminalEvent(event.eventId(), event.eventSeq());
+        if (!expectedEventId.equals(event.eventId())) {
+            throw new IllegalArgumentException("confirmation event identity changed while appending");
+        }
+        return event;
+    }
+
+    private ToolConfirmationDecisionDTO requireClaimedConfirmation(ExecutionTargetDTO target, String toolCallId) {
+        ToolConfirmationDecisionDTO decision = mapper.findClaimedConfirmation(
+                target.sessionId(), target.executionId(), target.segmentId(), toolCallId);
+        if (decision == null) {
+            throw new IllegalStateException("claimed confirmation decision is missing");
+        }
+        return decision;
     }
 
     private static CommittedControlEventDTO requireCommittedEvent(CommittedControlEventDTO event) {

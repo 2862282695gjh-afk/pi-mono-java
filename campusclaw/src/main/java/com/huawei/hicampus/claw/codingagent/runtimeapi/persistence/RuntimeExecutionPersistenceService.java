@@ -11,6 +11,7 @@ import java.util.Objects;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.AcceptedControlDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.CommittedControlEventDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.CommittedEventDTO;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.ConfirmationAcceptanceDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.ConfirmingEventsDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.ExecutionTargetDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.InterruptRequestDTO;
@@ -22,6 +23,7 @@ import com.huawei.hicampus.claw.codingagent.runtimeapi.event.CommittedEventType;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeEntryIdGenerator;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeEventType;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.session.RuntimeExecutionTerminalReason;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.session.ToolConfirmationResult;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -107,6 +109,28 @@ public class RuntimeExecutionPersistenceService {
     }
 
     @Transactional
+    public AcceptedControlDTO acceptToolConfirmation(
+            String sessionId,
+            String toolCallId,
+            ToolConfirmationResult result,
+            String denyMessage,
+            RuntimeEntryDTO receipt,
+            CommittedEventDTO event,
+            OffsetDateTime acceptedAt) {
+        requireControlEvent(sessionId, receipt, event, CommittedEventType.USER_TOOL_CONFIRMATION);
+        var acceptance = controls.acceptConfirmation(
+                sessionId,
+                toolCallId,
+                event.getEventId(),
+                ids.nextId(),
+                result,
+                denyMessage,
+                () -> appendControlEvent(receipt, event),
+                acceptedAt);
+        return new AcceptedControlDTO(receipt, requireAcceptedConfirmation(acceptance));
+    }
+
+    @Transactional
     public RuntimeEntryDTO commitTerminal(
             ExecutionTargetDTO target,
             RuntimeEntryDTO entry,
@@ -186,6 +210,15 @@ public class RuntimeExecutionPersistenceService {
             case SESSION_NOT_RUNNING -> throw new RuntimeApiException(RuntimeErrorCode.SESSION_NOT_RUNNING);
             case TARGET_MISMATCH -> throw new RuntimeApiException(RuntimeErrorCode.INTERRUPT_TARGET_MISMATCH);
             case ALREADY_REQUESTED -> throw new RuntimeApiException(RuntimeErrorCode.INTERRUPT_ALREADY_REQUESTED);
+        };
+    }
+
+    private static ExecutionTargetDTO requireAcceptedConfirmation(ConfirmationAcceptanceDTO acceptance) {
+        return switch (acceptance.status()) {
+            case ACCEPTED -> acceptance.target();
+            case SESSION_NOT_FOUND -> throw new RuntimeApiException(RuntimeErrorCode.SESSION_NOT_FOUND);
+            case NOT_PENDING -> throw new RuntimeApiException(RuntimeErrorCode.TOOL_CONFIRMATION_NOT_PENDING);
+            case EXECUTION_STOPPING -> throw new RuntimeApiException(RuntimeErrorCode.EXECUTION_STOPPING);
         };
     }
 
