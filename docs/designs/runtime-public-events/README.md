@@ -7,6 +7,7 @@
 | 契约基线 | `pi-mono-java-design@2ee2a3211da68ad87b0d9cab353e691b00bdaebd` |
 | 实现基线 | `pi-mono-java@2f52e9b8` |
 | 子 agent 数据模型提交 | `b7034350`、`8ca53f58` 的 DTO、VO、类型和共享常量 |
+| 本片实现证据 | 公共投影 `8ca53f58`；组合事务 `d8276302`；时间精度修复与真实库回归 `87b3dadb` |
 | 本片范围 | v2 数据对象、安全公共投影、Entry/Usage/公共事件的原子写入；HTTP 入口尚未切换 |
 
 ## Context
