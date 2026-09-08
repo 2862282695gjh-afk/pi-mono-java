@@ -157,13 +157,21 @@ public final class ClawConstants {
 
         public static final int MAX_NAME_LENGTH = 64;
 
+        public static final int MAX_COMMAND_NAME_LENGTH = MAX_NAME_LENGTH + 6;
+
         public static final int MAX_DESCRIPTION_LENGTH = 1024;
 
         public static final long MAX_FILE_BYTES = 1024L * 1024L;
 
-        public static final String NAME_REGEX = "^[a-z0-9]+(?:-[a-z0-9]+)*$";
+        private static final String NAME_EXPRESSION = "[a-z0-9]+(?:-[a-z0-9]+)*";
+
+        public static final String NAME_REGEX = "^" + NAME_EXPRESSION + "$";
 
         public static final Pattern NAME_PATTERN = Pattern.compile(NAME_REGEX);
+
+        public static final String COMMAND_NAME_REGEX = "^" + COMMAND_PREFIX + NAME_EXPRESSION + "$";
+
+        public static final Pattern COMMAND_NAME_PATTERN = Pattern.compile(COMMAND_NAME_REGEX);
 
         private Skill() {}
 
