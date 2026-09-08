@@ -301,6 +301,7 @@
             entry.type IN (
                 'user.message', 'user.interrupt', 'user.tool_confirmation',
                 'assistant.message.completed', 'assistant.thinking.completed', 'tool.result',
+                'tool.execution.started',
                 'session.model.changed', 'session.thinking.changed', 'session.compaction.completed',
                 'session.status.idle'
             )
@@ -310,7 +311,7 @@
             entry.type IN (
                 'assistant.message.started', 'assistant.message.delta',
                 'assistant.thinking.started', 'assistant.thinking.delta',
-                'tool.execution.started', 'tool.execution.delta', 'tool.execution.completed',
+                'tool.execution.delta', 'tool.execution.completed',
                 'session.compaction.started', 'session.compaction.failed',
                 'stream.end', 'stream.error', 'leaf', 'branch_summary', 'label'
             )

@@ -124,6 +124,21 @@ class CommittedEventQueryRepositoryOpenGaussIT {
         assertThat(error).hasMessage("current branch event mapping is incomplete");
     }
 
+    @Test
+    void shouldRejectToolStartWithoutPublicToolCall() {
+        RuntimeSessionDTO session = session();
+        repository.create(session);
+        insertEntry(session.getId(), "entry-tool-start", 1L, null, "tool.execution.started");
+        insertProjection(session.getId(), "entry-tool-start", 0);
+        jdbcTemplate.update(
+                "UPDATE t_sessions SET active_leaf_id = ? WHERE id = ?", "entry-tool-start", session.getId());
+
+        IllegalStateException error =
+                assertThrows(IllegalStateException.class, () -> repository.findEventPage(session.getId(), 0L, 10));
+
+        assertThat(error).hasMessage("current branch event mapping is incomplete");
+    }
+
     private void insertEntry(String sessionId, String entryId, long sequence, String parentId) {
         insertEntry(sessionId, entryId, sequence, parentId, "user.message");
     }
