@@ -30,14 +30,21 @@ public class RuntimeExecutionProperties {
     @NotNull
     private Duration maxDuration = Duration.ofMinutes(30);
 
+    @NotNull
+    private Duration terminalRetryInterval = Duration.ofSeconds(1);
+
     @Min(1)
     private int maxControlMessages = 32;
 
     @Min(1)
     private long maxControlBytes = 1024L * 1024L;
 
-    @AssertTrue(message = "maxDuration must be positive")
+    @AssertTrue(message = "execution durations must be positive")
     public boolean isDurationConfigurationValid() {
-        return maxDuration != null && !maxDuration.isZero() && !maxDuration.isNegative();
+        return isPositive(maxDuration) && isPositive(terminalRetryInterval);
+    }
+
+    private static boolean isPositive(Duration duration) {
+        return duration != null && !duration.isZero() && !duration.isNegative();
     }
 }
