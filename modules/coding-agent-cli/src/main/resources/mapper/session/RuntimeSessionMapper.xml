@@ -293,6 +293,21 @@
         WHERE session_id = #{sessionId}
     </delete>
 
+    <delete id="deleteExecutionSegmentEvents">
+        DELETE FROM t_session_execution_segment_events
+        WHERE session_id = #{sessionId}
+    </delete>
+
+    <delete id="deleteExecutionSegments">
+        DELETE FROM t_session_execution_segments
+        WHERE session_id = #{sessionId}
+    </delete>
+
+    <delete id="deleteExecutions">
+        DELETE FROM t_session_executions
+        WHERE session_id = #{sessionId}
+    </delete>
+
     <delete id="deleteStats">
         DELETE FROM t_session_stats
         WHERE session_id = #{sessionId}

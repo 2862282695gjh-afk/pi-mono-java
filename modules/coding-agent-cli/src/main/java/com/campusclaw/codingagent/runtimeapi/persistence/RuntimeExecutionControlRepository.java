@@ -9,6 +9,7 @@ import java.util.Optional;
 
 import com.campusclaw.codingagent.runtimeapi.dto.ExecutionStateDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.ExecutionTargetDTO;
+import com.campusclaw.codingagent.runtimeapi.session.RuntimeExecutionTerminalReason;
 
 /**
  * 固定消息执行、续跑段和公共事件关联的持久化端口。
@@ -34,7 +35,7 @@ public interface RuntimeExecutionControlRepository {
             ExecutionTargetDTO target,
             String terminalEventId,
             long terminalEventSeq,
-            String terminalReason,
+            RuntimeExecutionTerminalReason terminalReason,
             OffsetDateTime terminalAt);
 
     /**

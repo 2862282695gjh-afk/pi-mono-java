@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ADR-0075：持久化固定执行与结果段身份</title>
+<style>body{font:16px/1.65 system-ui,sans-serif;color:#172235;background:#f5f7fa;margin:0}main{max-width:920px;margin:32px auto;padding:32px;background:white;border-radius:12px}h1,h2{line-height:1.3}code{overflow-wrap:anywhere;background:#eef2f6;padding:2px 4px}a{color:#1457a6}li{margin:8px 0}</style></head>
+<body><main>
+<h1>ADR-0075：持久化固定执行与结果段身份</h1>
+<p><strong>Status:</strong> Accepted · <strong>Date:</strong> 2026-09-08 · <strong>Version:</strong> 1.0.0</p>
+<h2>Context</h2>
+<p>设计仓 <code>2ee2a3211da68ad87b0d9cab353e691b00bdaebd</code> 已确认：中断和工具确认必须绑定原始
+<code>user.message.eventId</code> 与不可复用的内部执行身份；每次初始响应或确认续跑使用固定结果段。
+Java 基线 <code>fd556dce3cfa12e5e834b6e9b8f835f10e7d67c8</code> 只在当前 JVM 的
+<code>RuntimeActiveExecution</code> 保存 runId，其他实例无法参与事务校验或读取段结果。</p>
+<p>pi 基线 <code>4af9d21d3b4d664e4a29fcabfec85171077248e3</code> 的 Agent Loop 接受本地
+<code>AbortSignal</code>，但不拥有 CampusClaw 的数据库和 HTTP 生命周期。跨实例固定身份属于本项目架构变化。</p>
+<h2>Decision 与选项</h2>
+<ul>
+<li>采用三张关系表：根执行表、结果段表、段内完整事件关联表。根执行保存内部 executionId 和公开 rootEventId；段保存触发事件与唯一结束事件；关联表保存 eventId 和统一顺序。</li>
+<li>采用 Session 行锁后再锁执行行的固定顺序；状态迁移同时校验 sessionId、executionId、rootEventId 和当前 segmentId。</li>
+<li>不采用仅有 <code>sessionId + stop=true</code> 的记录，因为迟到控制会重新选中下一轮执行。</li>
+<li>不采用只保存在 JVM 的 executionId，因为负载均衡后的请求可能由另一实例接受。</li>
+<li>不把 executionId 或 segmentId 暴露到 HTTP；公共关联继续使用已经确认的 eventId。</li>
+</ul>
+<p>Tool Call ID 使用 TEXT，保留提供商原值。状态与结束原因由 Java enum 和数据库 CHECK 双重约束。
+Session 完整清理会删除全部控制表记录，tombstone 保留既有语义。</p>
+<h2>Consequences</h2>
+<p>正面：后续中断和确认事务可以精确锁定一轮根执行；不同 HTTP 结果段可以读取各自完整事件；
+过期终态不会覆盖当前段。负面：每个完整段事件增加一条关联写入，清理和事务锁序需要覆盖新增表。</p>
+<p>本片只提供低层存储。公共事件与 Entry 的共同事务、停止请求、确认决定、批量轮询、本地唤醒和有界等待
+仍由后续应用片实现；因此本 ADR 不宣称 Events v2 控制接口已经可用。</p>
+<p>不新增 Maven 依赖、Redis、实例间 HTTP 转发或凭据持久化。</p>
+<h2>Validation</h2>
+<p>真实 openGauss 验证登记、精确读取、confirming 关段、终态 CAS、300 字符 Tool Call ID，以及 Session
+清理后三张控制表归零。格式、编译和映射检查与聚焦测试结果记录在关联设计中。</p>
+<h2>Related</h2>
+<ul><li><a href="../designs/runtime-execution-control/README.md">固定执行控制存储设计</a></li>
+<li><a href="../designs/runtime-execution-control/diagram.puml#L1">PlantUML 存储关系图</a></li></ul>
+<h2>版本历史</h2><p>1.0.0 · 2026-09-08：确定固定根执行、结果段、段事件关联和清理边界。</p>
+</main></body></html>

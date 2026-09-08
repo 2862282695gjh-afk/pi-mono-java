@@ -32,7 +32,7 @@
             resultType="com.campusclaw.codingagent.runtimeapi.dto.ExecutionStateDTO">
         SELECT session_id, execution_id, root_event_id, state, current_segment_id,
                pending_tool_call_id, stop_event_id, terminal_event_id,
-               terminal_reason, created_at, updated_at, terminal_at
+               UPPER(terminal_reason) AS terminal_reason, created_at, updated_at, terminal_at
         FROM t_session_executions
         WHERE session_id = #{sessionId}
           AND execution_id = #{executionId}
@@ -44,7 +44,7 @@
             resultType="com.campusclaw.codingagent.runtimeapi.dto.ExecutionStateDTO">
         SELECT session_id, execution_id, root_event_id, state, current_segment_id,
                pending_tool_call_id, stop_event_id, terminal_event_id,
-               terminal_reason, created_at, updated_at, terminal_at
+               UPPER(terminal_reason) AS terminal_reason, created_at, updated_at, terminal_at
         FROM t_session_executions
         WHERE session_id = #{sessionId}
           AND execution_id = #{executionId}

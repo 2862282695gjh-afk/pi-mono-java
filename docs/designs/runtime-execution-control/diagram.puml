@@ -1,0 +1,63 @@
+@startuml runtime_execution_control_store
+title Durable Runtime Execution Control Store
+' Java source baseline: pi-mono-java fd556dce3cfa12e5e834b6e9b8f835f10e7d67c8
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/persistence/RuntimeExecutionControlRepository.java
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/persistence/MyBatisRuntimeExecutionControlRepository.java
+' Source: modules/coding-agent-cli/src/main/resources/mapper/session/RuntimeExecutionControlMapper.xml
+' Source: modules/coding-agent-cli/src/main/resources/db/gaussdb/install/session_schema.sql
+' Pi source baseline: pi 4af9d21d3b4d664e4a29fcabfec85171077248e3
+' Pi source: packages/agent/src/agent-loop.ts#runAgentLoop and #prepareToolCall
+' Observed behavior: Java kept the active execution identity only in one process.
+' Design reason: database rows bind later controls to one root message and one response segment.
+' Java divergence: durable cross-instance control identity is a CampusClaw architecture change.
+skinparam componentStyle rectangle
+
+class ExecutionTargetDTO {
+  sessionId
+  executionId
+  rootEventId
+  segmentId
+}
+
+interface RuntimeExecutionControlRepository {
+  register(target, triggerEventSeq, acceptedAt)
+  find(target)
+  linkCommittedEvent(target, eventId, eventSeq)
+  markConfirming(target, toolCallId, terminalEvent, terminalAt)
+  markTerminal(target, terminalEvent, reason, terminalAt)
+}
+
+class MyBatisRuntimeExecutionControlRepository
+class RuntimeExecutionControlMapper
+
+entity "t_session_executions" as t_session_executions {
+  session_id
+  execution_id
+  root_event_id
+  state
+  current_segment_id
+}
+
+entity "t_session_execution_segments" as t_session_execution_segments {
+  segment_id
+  segment_ordinal
+  trigger_event_id
+  state
+  terminal_event_id
+}
+
+entity "t_session_execution_segment_events" as t_session_execution_segment_events {
+  segment_id
+  event_id
+  event_seq
+}
+
+ExecutionTargetDTO --> RuntimeExecutionControlRepository
+RuntimeExecutionControlRepository <|.. MyBatisRuntimeExecutionControlRepository
+MyBatisRuntimeExecutionControlRepository --> RuntimeExecutionControlMapper
+RuntimeExecutionControlMapper --> t_session_executions
+RuntimeExecutionControlMapper --> t_session_execution_segments
+RuntimeExecutionControlMapper --> t_session_execution_segment_events
+t_session_executions ||--|{ t_session_execution_segments
+t_session_execution_segments ||--o{ t_session_execution_segment_events
+@enduml

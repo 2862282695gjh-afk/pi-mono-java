@@ -6,6 +6,9 @@ package com.campusclaw.codingagent.runtimeapi.dto;
 
 import java.time.OffsetDateTime;
 
+import com.campusclaw.codingagent.runtimeapi.session.RuntimeExecutionState;
+import com.campusclaw.codingagent.runtimeapi.session.RuntimeExecutionTerminalReason;
+
 import lombok.Data;
 
 /**
@@ -22,7 +25,7 @@ public class ExecutionStateDTO {
 
     private String rootEventId;
 
-    private String state;
+    private RuntimeExecutionState state;
 
     private String currentSegmentId;
 
@@ -32,7 +35,7 @@ public class ExecutionStateDTO {
 
     private String terminalEventId;
 
-    private String terminalReason;
+    private RuntimeExecutionTerminalReason terminalReason;
 
     private OffsetDateTime createdAt;
 

@@ -8,13 +8,16 @@ import java.time.OffsetDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.Set;
 
 import com.campusclaw.codingagent.runtimeapi.dto.ExecutionSegmentDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.ExecutionStateDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.ExecutionTargetDTO;
 import com.campusclaw.codingagent.runtimeapi.mapper.RuntimeExecutionControlMapper;
 import com.campusclaw.codingagent.runtimeapi.mapper.RuntimeSessionMapper;
+import com.campusclaw.codingagent.runtimeapi.session.RuntimeExecutionSegmentState;
+import com.campusclaw.codingagent.runtimeapi.session.RuntimeExecutionState;
+import com.campusclaw.codingagent.runtimeapi.session.RuntimeExecutionTerminalReason;
+import com.campusclaw.codingagent.runtimeapi.session.RuntimeSessionState;
 
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
@@ -27,12 +30,6 @@ import org.springframework.transaction.annotation.Transactional;
  */
 @Repository
 public class MyBatisRuntimeExecutionControlRepository implements RuntimeExecutionControlRepository {
-    private static final String RUNNING = "RUNNING";
-
-    private static final String OPEN = "OPEN";
-
-    private static final Set<String> TERMINAL_REASONS = Set.of("done", "failed", "terminated");
-
     private final RuntimeExecutionControlMapper mapper;
 
     private final RuntimeSessionMapper sessionMapper;
@@ -48,7 +45,7 @@ public class MyBatisRuntimeExecutionControlRepository implements RuntimeExecutio
     public void register(ExecutionTargetDTO target, long triggerEventSeq, OffsetDateTime acceptedAt) {
         requireTarget(target);
         var session = sessionMapper.lockSessionForUpdate(target.sessionId());
-        if (session == null || !"running".equals(session.getState())) {
+        if (session == null || !RuntimeSessionState.RUNNING.matches(session.getState())) {
             throw new IllegalStateException("running session is required for execution registration");
         }
         OffsetDateTime storedAt = storedAt(acceptedAt);
@@ -90,12 +87,12 @@ public class MyBatisRuntimeExecutionControlRepository implements RuntimeExecutio
         if (toolCallId == null || toolCallId.isBlank()) {
             throw new IllegalArgumentException("tool call id is required");
         }
-        TransitionStatus rejected = rejectTransition(target, RUNNING);
+        TransitionStatus rejected = rejectTransition(target, RuntimeExecutionState.RUNNING);
         if (rejected != null) {
             return rejected;
         }
         OffsetDateTime storedAt = storedAt(terminalAt);
-        closeSegment(target, terminalEventId, terminalEventSeq, "confirming", storedAt);
+        closeSegment(target, terminalEventId, terminalEventSeq, RuntimeExecutionTerminalReason.CONFIRMING, storedAt);
         requireOne(
                 mapper.markConfirming(
                         target.sessionId(), target.executionId(), target.segmentId(), toolCallId, storedAt),
@@ -109,9 +106,9 @@ public class MyBatisRuntimeExecutionControlRepository implements RuntimeExecutio
             ExecutionTargetDTO target,
             String terminalEventId,
             long terminalEventSeq,
-            String terminalReason,
+            RuntimeExecutionTerminalReason terminalReason,
             OffsetDateTime terminalAt) {
-        if (!TERMINAL_REASONS.contains(terminalReason)) {
+        if (terminalReason == null || !terminalReason.executionTerminal()) {
             throw new IllegalArgumentException("terminal reason is invalid");
         }
         ExecutionStateDTO execution = lock(target);
@@ -127,19 +124,19 @@ public class MyBatisRuntimeExecutionControlRepository implements RuntimeExecutio
                         target.executionId(),
                         target.segmentId(),
                         terminalEventId,
-                        terminalReason,
+                        terminalReason.value(),
                         storedAt),
                 "execution did not enter terminal state");
         return TransitionStatus.APPLIED;
     }
 
-    private TransitionStatus rejectTransition(ExecutionTargetDTO target, String expectedState) {
+    private TransitionStatus rejectTransition(ExecutionTargetDTO target, RuntimeExecutionState expectedState) {
         ExecutionStateDTO execution = lock(target);
         TransitionStatus rejected = rejectTarget(target, execution);
         if (rejected != null) {
             return rejected;
         }
-        return expectedState.equals(execution.getState()) ? null : TransitionStatus.STATE_CONFLICT;
+        return expectedState == execution.getState() ? null : TransitionStatus.STATE_CONFLICT;
     }
 
     private ExecutionStateDTO lock(ExecutionTargetDTO target) {
@@ -158,14 +155,14 @@ public class MyBatisRuntimeExecutionControlRepository implements RuntimeExecutio
                 || !target.segmentId().equals(execution.getCurrentSegmentId())) {
             return TransitionStatus.STALE_TARGET;
         }
-        return "TERMINAL".equals(execution.getState()) ? TransitionStatus.STATE_CONFLICT : null;
+        return execution.getState() == RuntimeExecutionState.TERMINAL ? TransitionStatus.STATE_CONFLICT : null;
     }
 
     private void closeSegment(
             ExecutionTargetDTO target,
             String terminalEventId,
             long terminalEventSeq,
-            String terminalReason,
+            RuntimeExecutionTerminalReason terminalReason,
             OffsetDateTime terminalAt) {
         requireTerminalEvent(terminalEventId, terminalEventSeq);
         requireOne(
@@ -175,7 +172,7 @@ public class MyBatisRuntimeExecutionControlRepository implements RuntimeExecutio
                         target.segmentId(),
                         terminalEventId,
                         terminalEventSeq,
-                        terminalReason,
+                        terminalReason.value(),
                         terminalAt),
                 "execution segment was not closed");
     }
@@ -184,7 +181,7 @@ public class MyBatisRuntimeExecutionControlRepository implements RuntimeExecutio
             ExecutionTargetDTO target,
             String terminalEventId,
             long terminalEventSeq,
-            String terminalReason,
+            RuntimeExecutionTerminalReason terminalReason,
             OffsetDateTime terminalAt) {
         requireTerminalEvent(terminalEventId, terminalEventSeq);
         mapper.closeSegment(
@@ -193,7 +190,7 @@ public class MyBatisRuntimeExecutionControlRepository implements RuntimeExecutio
                 target.segmentId(),
                 terminalEventId,
                 terminalEventSeq,
-                terminalReason,
+                terminalReason.value(),
                 terminalAt);
     }
 
@@ -202,7 +199,7 @@ public class MyBatisRuntimeExecutionControlRepository implements RuntimeExecutio
         execution.setSessionId(target.sessionId());
         execution.setExecutionId(target.executionId());
         execution.setRootEventId(target.rootEventId());
-        execution.setState(RUNNING);
+        execution.setState(RuntimeExecutionState.RUNNING);
         execution.setCurrentSegmentId(target.segmentId());
         execution.setCreatedAt(acceptedAt);
         execution.setUpdatedAt(acceptedAt);
@@ -221,7 +218,7 @@ public class MyBatisRuntimeExecutionControlRepository implements RuntimeExecutio
         segment.setSegmentOrdinal(1);
         segment.setTriggerEventId(target.rootEventId());
         segment.setTriggerEventSeq(triggerEventSeq);
-        segment.setState(OPEN);
+        segment.setState(RuntimeExecutionSegmentState.OPEN);
         segment.setCreatedAt(acceptedAt);
         segment.setUpdatedAt(acceptedAt);
         return segment;

@@ -43,6 +43,8 @@ import com.campusclaw.codingagent.runtimeapi.persistence.UserEventAcceptance.Sta
 import com.campusclaw.codingagent.runtimeapi.service.command.SessionModelConfigurationService;
 import com.campusclaw.codingagent.runtimeapi.service.command.SessionNamingService;
 import com.campusclaw.codingagent.runtimeapi.service.command.SessionThinkingConfigurationService;
+import com.campusclaw.codingagent.runtimeapi.session.RuntimeExecutionState;
+import com.campusclaw.codingagent.runtimeapi.session.RuntimeExecutionTerminalReason;
 import com.campusclaw.codingagent.runtimeapi.session.RuntimeSessionResponseAssembler;
 import com.campusclaw.codingagent.runtimeapi.session.SessionEtagFactory;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -152,7 +154,7 @@ class RuntimeSessionRepositoryOpenGaussIT {
         assertThat(status).isEqualTo(RuntimeExecutionControlRepository.TransitionStatus.APPLIED);
         assertThat(executionControls.find(target).orElseThrow())
                 .extracting("rootEventId", "state", "currentSegmentId", "terminalEventId")
-                .containsExactly("root-event", "CONFIRMING", "segment-1", null);
+                .containsExactly("root-event", RuntimeExecutionState.CONFIRMING, "segment-1", null);
         assertThat(repository.find(session.getId()).orElseThrow().getState()).isEqualTo("running");
         assertThat(count("t_session_execution_segment_events", session.getId())).isOne();
     }
@@ -169,17 +171,29 @@ class RuntimeSessionRepositoryOpenGaussIT {
         var stale = new ExecutionTargetDTO(session.getId(), "execution-1", "root-event", "old-segment");
         assertThat(executionControls.find(stale)).isEmpty();
         assertThat(executionControls.markTerminal(
-                        stale, "idle-stale", root.getEntrySeq() + 1, "done", session.getCreatedAt()))
+                        stale,
+                        "idle-stale",
+                        root.getEntrySeq() + 1,
+                        RuntimeExecutionTerminalReason.DONE,
+                        session.getCreatedAt()))
                 .isEqualTo(RuntimeExecutionControlRepository.TransitionStatus.STALE_TARGET);
         assertThat(executionControls.markTerminal(
-                        target, "idle-done", root.getEntrySeq() + 1, "done", session.getCreatedAt()))
+                        target,
+                        "idle-done",
+                        root.getEntrySeq() + 1,
+                        RuntimeExecutionTerminalReason.DONE,
+                        session.getCreatedAt()))
                 .isEqualTo(RuntimeExecutionControlRepository.TransitionStatus.APPLIED);
         assertThat(executionControls.markTerminal(
-                        target, "idle-duplicate", root.getEntrySeq() + 2, "done", session.getCreatedAt()))
+                        target,
+                        "idle-duplicate",
+                        root.getEntrySeq() + 2,
+                        RuntimeExecutionTerminalReason.DONE,
+                        session.getCreatedAt()))
                 .isEqualTo(RuntimeExecutionControlRepository.TransitionStatus.STATE_CONFLICT);
         assertThat(executionControls.find(target).orElseThrow())
                 .extracting("state", "terminalEventId", "terminalReason")
-                .containsExactly("TERMINAL", "idle-done", "done");
+                .containsExactly(RuntimeExecutionState.TERMINAL, "idle-done", RuntimeExecutionTerminalReason.DONE);
     }
 
     @Test
@@ -367,7 +381,7 @@ class RuntimeSessionRepositoryOpenGaussIT {
     void createsExactTombstoneAndPendingCleanupTaskWhenDeleting() {
         RuntimeSessionDTO session = newSession("session_db_delete");
         repository.create(session);
-        insertEntry(session.getId());
+        seedClosedExecution(session);
         OffsetDateTime deletedAt = OffsetDateTime.of(2026, 8, 18, 1, 30, 0, 0, ZoneOffset.UTC);
 
         assertThat(repository.beginDeletion(session.getId(), deletedAt)).isEqualTo(SessionDeletionStatus.DELETED);
@@ -383,6 +397,9 @@ class RuntimeSessionRepositoryOpenGaussIT {
         assertThat(cleanupState(session.getId())).isEqualTo("RUNNING");
         repository.completeCleanup(session.getId());
 
+        assertThat(count("t_session_execution_segment_events", session.getId())).isZero();
+        assertThat(count("t_session_execution_segments", session.getId())).isZero();
+        assertThat(count("t_session_executions", session.getId())).isZero();
         assertThat(count("t_session_entries", session.getId())).isZero();
         assertThat(count("t_session_records", session.getId())).isZero();
         assertThat(count("t_session_stats", session.getId())).isZero();
@@ -943,6 +960,24 @@ class RuntimeSessionRepositoryOpenGaussIT {
         entry.setTimestamp(timestamp);
         entry.setPayload(payload);
         return entry;
+    }
+
+    private void seedClosedExecution(RuntimeSessionDTO session) {
+        RuntimeEntryDTO root =
+                newEntry(session.getId(), "delete-root-entry", "user.message", session.getCreatedAt(), "{}");
+        repository.acceptUserEvent(session.getId(), root, root.getTimestamp());
+        var target = new ExecutionTargetDTO(session.getId(), "delete-execution", "delete-root-event", "delete-segment");
+        executionControls.register(target, root.getEntrySeq(), root.getTimestamp());
+        executionControls.linkCommittedEvent(target, target.rootEventId(), root.getEntrySeq());
+        executionControls.linkCommittedEvent(target, "delete-idle-event", root.getEntrySeq() + 1);
+        assertThat(executionControls.markTerminal(
+                        target,
+                        "delete-idle-event",
+                        root.getEntrySeq() + 1,
+                        RuntimeExecutionTerminalReason.DONE,
+                        root.getTimestamp().plusSeconds(1)))
+                .isEqualTo(RuntimeExecutionControlRepository.TransitionStatus.APPLIED);
+        repository.finishExecution(session.getId(), root.getTimestamp().plusSeconds(1));
     }
 
     private static RuntimeSessionDTO newSession(String sessionId) {
