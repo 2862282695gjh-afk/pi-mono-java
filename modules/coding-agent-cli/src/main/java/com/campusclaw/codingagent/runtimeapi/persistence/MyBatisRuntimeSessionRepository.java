@@ -340,6 +340,7 @@ public class MyBatisRuntimeSessionRepository implements RuntimeSessionRepository
     @Override
     @Transactional
     public void completeCleanup(String sessionId) {
+        mapper.deleteToolConfirmations(sessionId);
         mapper.deleteExecutionSegmentEvents(sessionId);
         mapper.deleteExecutionSegments(sessionId);
         mapper.deleteExecutions(sessionId);
