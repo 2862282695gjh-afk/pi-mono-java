@@ -70,6 +70,29 @@ public class RuntimeEntryCodec {
         return entry(sessionId, entryId, RuntimeEventType.USER_MESSAGE.value(), createdAt, payload);
     }
 
+    public RuntimeEntryDTO userInterruptEntry(
+            String sessionId, String entryId, String targetEventId, OffsetDateTime createdAt) {
+        ObjectNode payload = objectMapper.createObjectNode();
+        payload.put("target_event_id", targetEventId);
+        return entry(sessionId, entryId, CommittedEventType.USER_INTERRUPT.value(), createdAt, payload);
+    }
+
+    public RuntimeEntryDTO userToolConfirmationEntry(
+            String sessionId,
+            String entryId,
+            String toolCallId,
+            String result,
+            String denyMessage,
+            OffsetDateTime createdAt) {
+        ObjectNode payload = objectMapper.createObjectNode();
+        payload.put("tool_call_id", toolCallId);
+        payload.put("result", result);
+        if (denyMessage != null) {
+            payload.put("deny_message", denyMessage);
+        }
+        return entry(sessionId, entryId, CommittedEventType.USER_TOOL_CONFIRMATION.value(), createdAt, payload);
+    }
+
     public RuntimeEntryDTO assistantEntry(
             String sessionId, String entryId, AssistantMessage message, OffsetDateTime fallbackTime) {
         ObjectNode payload = objectMapper.createObjectNode();
@@ -129,6 +152,38 @@ public class RuntimeEntryCodec {
                 RuntimeEventType.TOOL_RESULT.value(),
                 eventTime(message.timestamp(), fallbackTime),
                 payload);
+    }
+
+    public RuntimeEntryDTO toolCallEntry(
+            String sessionId,
+            String entryId,
+            String toolCallId,
+            String toolName,
+            Map<String, Object> arguments,
+            boolean requiresConfirmation,
+            OffsetDateTime createdAt) {
+        ObjectNode payload = objectMapper.createObjectNode();
+        payload.put("tool_call_id", toolCallId);
+        payload.put("tool_name", toolName);
+        payload.set("arguments", objectMapper.valueToTree(arguments));
+        payload.put("requires_confirmation", requiresConfirmation);
+        return entry(sessionId, entryId, RuntimeEventType.TOOL_EXECUTION_STARTED.value(), createdAt, payload);
+    }
+
+    public RuntimeEntryDTO sessionIdleEntry(
+            String sessionId,
+            String entryId,
+            String reason,
+            String sourceEventId,
+            String errorCode,
+            OffsetDateTime createdAt) {
+        ObjectNode payload = objectMapper.createObjectNode();
+        payload.put("reason", reason);
+        payload.put("source_event_id", sourceEventId);
+        if (errorCode != null) {
+            payload.put("error_code", errorCode);
+        }
+        return entry(sessionId, entryId, RuntimeEventType.SESSION_STATUS_IDLE.value(), createdAt, payload);
     }
 
     public RuntimeEntryDTO modelChangedEntry(

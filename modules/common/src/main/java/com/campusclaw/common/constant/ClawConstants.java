@@ -119,8 +119,10 @@ public final class ClawConstants {
 
         public static final String DEFAULT_TOOL_ERROR_CODE = "TOOL_EXECUTION_FAILED";
 
+        public static final String TOOL_CALL_DENIED_ERROR_CODE = "TOOL_CALL_DENIED";
+
         public static final Set<String> TOOL_ERROR_CODES = Set.of(
-                "TOOL_CALL_DENIED",
+                TOOL_CALL_DENIED_ERROR_CODE,
                 "TOOL_ARGUMENTS_INVALID",
                 "TOOL_NOT_FOUND",
                 "TOOL_EXECUTION_TIMEOUT",
@@ -166,6 +168,10 @@ public final class ClawConstants {
         public static final String ACCESS_TOKEN = "access-token";
 
         public static final String TOOL_PERMISSION_ALLOW = "allow";
+
+        public static final String TOOL_PERMISSION_ASK = "ask";
+
+        public static final String TOOL_PERMISSION_DENY = "deny";
 
         public static final String TOOL_RESPONSE_INVALID = "MATE_TOOL_RESPONSE_INVALID";
 

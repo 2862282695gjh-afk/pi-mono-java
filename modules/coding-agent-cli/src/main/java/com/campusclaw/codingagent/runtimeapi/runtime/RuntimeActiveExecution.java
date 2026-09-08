@@ -7,10 +7,18 @@ package com.campusclaw.codingagent.runtimeapi.runtime;
 import java.util.IdentityHashMap;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Future;
+import java.util.function.Supplier;
 
+import com.campusclaw.agent.tool.BeforeToolCallContext;
+import com.campusclaw.agent.tool.BeforeToolCallHandler;
+import com.campusclaw.agent.tool.BeforeToolCallResult;
 import com.campusclaw.ai.types.Message;
+import com.campusclaw.ai.types.ToolCall;
+import com.campusclaw.codingagent.runtimeapi.dto.ExecutionTargetDTO;
+import com.campusclaw.codingagent.runtimeapi.dto.ToolConfirmationDecisionDTO;
 import com.campusclaw.codingagent.runtimeapi.event.RuntimeEventOutput;
 
 /**
@@ -20,7 +28,7 @@ import com.campusclaw.codingagent.runtimeapi.event.RuntimeEventOutput;
  * @since [br_eCampusCore 26.0.0]
  */
 public class RuntimeActiveExecution {
-    private final RuntimeEventOutput output;
+    private RuntimeEventOutput output;
 
     private final CompletableFuture<Void> completion = new CompletableFuture<>();
 
@@ -38,12 +46,123 @@ public class RuntimeActiveExecution {
 
     private String runId;
 
+    private ExecutionTargetDTO target;
+
+    private boolean terminalFinalizationStarted;
+
+    private boolean terminalRetryPending;
+
+    private RuntimeToolPermissionPolicy toolPermissions = RuntimeToolPermissionPolicy.builtInsOnly();
+
+    private BeforeToolCallHandler confirmationHandler;
+
+    private String pendingToolCallId;
+
+    private CompletableFuture<ToolConfirmationDecisionDTO> pendingConfirmation;
+
+    private ExecutionTargetDTO continuationTarget;
+
+    private RuntimeEventOutput continuationOutput;
+
     public RuntimeActiveExecution(RuntimeEventOutput output) {
         this.output = Objects.requireNonNull(output, "output");
     }
 
-    public RuntimeEventOutput output() {
+    public synchronized RuntimeEventOutput output() {
         return output;
+    }
+
+    public synchronized void bindToolPermissions(RuntimeToolPermissionPolicy value) {
+        toolPermissions = Objects.requireNonNull(value, "toolPermissions");
+    }
+
+    public synchronized RuntimeToolPermissionPolicy.Decision toolPermission(ToolCall call) {
+        return toolPermissions.decide(call);
+    }
+
+    public synchronized void installConfirmationHandler(BeforeToolCallHandler handler) {
+        confirmationHandler = Objects.requireNonNull(handler, "confirmationHandler");
+    }
+
+    public BeforeToolCallResult beforeToolCall(BeforeToolCallContext context) throws Exception {
+        RuntimeToolPermissionPolicy.Decision decision = toolPermission(context.toolCall());
+        if (decision == RuntimeToolPermissionPolicy.Decision.ALLOW) {
+            return BeforeToolCallResult.allow();
+        }
+        if (decision == RuntimeToolPermissionPolicy.Decision.DENY) {
+            throw new RuntimeToolCallDeniedException();
+        }
+        BeforeToolCallHandler handler = requireConfirmationHandler();
+        return handler.handle(context);
+    }
+
+    public synchronized CompletableFuture<ToolConfirmationDecisionDTO> beginToolConfirmation(String toolCallId) {
+        if (pendingConfirmation != null) {
+            throw new IllegalStateException("another tool confirmation is already pending");
+        }
+        pendingToolCallId = requireText(toolCallId, "toolCallId");
+        pendingConfirmation = new CompletableFuture<>();
+        return pendingConfirmation;
+    }
+
+    public synchronized boolean stageContinuationOutput(ExecutionTargetDTO value, RuntimeEventOutput valueOutput) {
+        return stageContinuationOutput(value, pendingToolCallId, valueOutput);
+    }
+
+    public synchronized boolean stageContinuationOutput(
+            ExecutionTargetDTO value, String toolCallId, RuntimeEventOutput valueOutput) {
+        if (!matchesExecution(value) || pendingConfirmation == null || !pendingToolCallId.equals(toolCallId)) {
+            return false;
+        }
+        continuationTarget = value;
+        continuationOutput = Objects.requireNonNull(valueOutput, "continuationOutput");
+        return true;
+    }
+
+    public boolean resumeToolConfirmation(ToolConfirmationDecisionDTO decision) {
+        CompletableFuture<ToolConfirmationDecisionDTO> future;
+        synchronized (this) {
+            if (!matchesPendingDecision(decision)) {
+                return false;
+            }
+            future = applyConfirmationDecision(decision);
+        }
+        return future.complete(decision);
+    }
+
+    public Optional<ToolConfirmationDecisionDTO> claimAndResumeToolConfirmation(
+            ExecutionTargetDTO confirmingTarget,
+            String toolCallId,
+            Supplier<Optional<ToolConfirmationDecisionDTO>> claim) {
+        ToolConfirmationDecisionDTO decision;
+        CompletableFuture<ToolConfirmationDecisionDTO> future;
+        synchronized (this) {
+            if (!matchesPendingTarget(confirmingTarget, toolCallId)) {
+                return Optional.empty();
+            }
+            Optional<ToolConfirmationDecisionDTO> claimed = Objects.requireNonNull(claim.get(), "claimed decision");
+            if (claimed.isEmpty()) {
+                return Optional.empty();
+            }
+            decision = claimed.get();
+            if (!matchesPendingDecision(decision)) {
+                throw new IllegalStateException("claimed confirmation does not match the pending tool call");
+            }
+            future = applyConfirmationDecision(decision);
+        }
+        future.complete(decision);
+        return Optional.of(decision);
+    }
+
+    public void cancelToolConfirmation(Throwable failure) {
+        CompletableFuture<ToolConfirmationDecisionDTO> future;
+        synchronized (this) {
+            future = pendingConfirmation;
+            clearPendingConfirmation();
+        }
+        if (future != null) {
+            future.completeExceptionally(failure);
+        }
     }
 
     public synchronized void beginRun(String value) {
@@ -60,12 +179,38 @@ public class RuntimeActiveExecution {
         return runId;
     }
 
-    public synchronized boolean acceptingControls() {
-        return acceptingControls;
+    public synchronized void bindTarget(ExecutionTargetDTO value) {
+        if (target != null) {
+            throw new IllegalStateException("execution target is already assigned");
+        }
+        target = Objects.requireNonNull(value, "target");
     }
 
-    public synchronized void closeControls() {
-        acceptingControls = false;
+    public synchronized ExecutionTargetDTO target() {
+        if (target == null) {
+            throw new IllegalStateException("execution target is not assigned");
+        }
+        return target;
+    }
+
+    public synchronized Optional<ExecutionTargetDTO> assignedTarget() {
+        return Optional.ofNullable(target);
+    }
+
+    public synchronized boolean beginTerminalFinalization() {
+        if (terminalFinalizationStarted) {
+            return false;
+        }
+        terminalFinalizationStarted = true;
+        return true;
+    }
+
+    public synchronized void markTerminalRetryPending() {
+        terminalRetryPending = true;
+    }
+
+    public synchronized boolean terminalRetryPending() {
+        return terminalRetryPending;
     }
 
     public synchronized void requestAbort() {
@@ -96,6 +241,36 @@ public class RuntimeActiveExecution {
         }
     }
 
+    public synchronized void cancelTimeoutTask() {
+        if (timeoutTask != null) {
+            timeoutTask.cancel(false);
+            timeoutTask = null;
+        }
+    }
+
+    public CompletableFuture<Void> completion() {
+        return completion;
+    }
+
+    public synchronized void complete(Throwable failure) {
+        cancelTimeoutTask();
+        clearQueuedControls();
+        terminalRetryPending = false;
+        if (failure == null) {
+            completion.complete(null);
+        } else {
+            completion.completeExceptionally(failure);
+        }
+    }
+
+    public synchronized boolean acceptingControls() {
+        return acceptingControls;
+    }
+
+    public synchronized void closeControls() {
+        acceptingControls = false;
+    }
+
     public synchronized boolean queueControl(Message message, long bytes, int maxMessages, long maxBytes) {
         if (!acceptingControls || queuedControls.size() >= maxMessages || queuedControlBytes + bytes > maxBytes) {
             return false;
@@ -121,20 +296,63 @@ public class RuntimeActiveExecution {
         queuedControlBytes = 0;
     }
 
-    public CompletableFuture<Void> completion() {
-        return completion;
+    private synchronized BeforeToolCallHandler requireConfirmationHandler() {
+        if (confirmationHandler == null) {
+            throw new IllegalStateException("tool confirmation handler is not installed");
+        }
+        return confirmationHandler;
     }
 
-    public synchronized void complete(Throwable failure) {
-        clearQueuedControls();
-        if (timeoutTask != null) {
-            timeoutTask.cancel(false);
-            timeoutTask = null;
+    private boolean matchesExecution(ExecutionTargetDTO value) {
+        return value != null
+                && target != null
+                && target.sessionId().equals(value.sessionId())
+                && target.executionId().equals(value.executionId())
+                && target.rootEventId().equals(value.rootEventId());
+    }
+
+    private boolean matchesPendingDecision(ToolConfirmationDecisionDTO decision) {
+        return decision != null
+                && pendingConfirmation != null
+                && target.sessionId().equals(decision.getSessionId())
+                && target.executionId().equals(decision.getExecutionId())
+                && target.segmentId().equals(decision.getPreviousSegmentId())
+                && pendingToolCallId.equals(decision.getToolCallId());
+    }
+
+    private boolean matchesPendingTarget(ExecutionTargetDTO value, String toolCallId) {
+        return pendingConfirmation != null && target.equals(value) && pendingToolCallId.equals(toolCallId);
+    }
+
+    private CompletableFuture<ToolConfirmationDecisionDTO> applyConfirmationDecision(
+            ToolConfirmationDecisionDTO decision) {
+        ExecutionTargetDTO resumed = decisionTarget(decision);
+        output = resumed.equals(continuationTarget) ? continuationOutput : RuntimeEventOutput.persistenceOnly();
+        target = resumed;
+        CompletableFuture<ToolConfirmationDecisionDTO> future = pendingConfirmation;
+        clearPendingConfirmation();
+        return future;
+    }
+
+    private ExecutionTargetDTO decisionTarget(ToolConfirmationDecisionDTO decision) {
+        return new ExecutionTargetDTO(
+                decision.getSessionId(),
+                decision.getExecutionId(),
+                target.rootEventId(),
+                requireText(decision.getSegmentId(), "segmentId"));
+    }
+
+    private void clearPendingConfirmation() {
+        pendingToolCallId = null;
+        pendingConfirmation = null;
+        continuationTarget = null;
+        continuationOutput = null;
+    }
+
+    private static String requireText(String value, String name) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException(name + " is required");
         }
-        if (failure == null) {
-            completion.complete(null);
-        } else {
-            completion.completeExceptionally(failure);
-        }
+        return value;
     }
 }
