@@ -2,13 +2,13 @@
 
 | 属性 | 值 |
 |---|---|
-| 版本 | 0.1.1 |
+| 版本 | 0.2.0 |
 | 日期 | 2026-09-08 |
 | 契约基线 | `pi-mono-java-design@2ee2a3211da68ad87b0d9cab353e691b00bdaebd` |
 | 变更前 Java | `pi-mono-java@f5c3a755` |
-| 实现提交 | `1120583b`、`f818a41f`、`2dd80793`、`d14e706d`；用量来源消费 `6c261865`、`eef4d0f1` |
+| 实现提交 | `1120583b`、`f818a41f`、`2dd80793`、`d14e706d`；用量来源消费 `6c261865`、`eef4d0f1`；首版端口收敛 `bfaedc7e` |
 | pi 基线 | `pi-mono@5cd93f688aaab89dbb6dfa4aca535f21796ae185` |
-| 当前范围 | 公共事件工厂、字段规范化，以及模型/Thinking 配置事件的原子写入；Events HTTP 的完整切换由后续集成片完成 |
+| 当前范围 | 公共事件工厂、字段规范化、模型/Thinking 配置事件原子写入与唯一配置更新仓储端口 |
 
 ## Context
 
@@ -17,15 +17,15 @@ Command 和接受消息前的模型校准都会产生模型或 Thinking 配置 E
 Entry，历史完整性门禁会拒绝读取；如果 Service 在配置事务提交后另写公共事件，进程故障又会留下
 无法修复的半份历史。
 
-本片建立一个公共事件工厂，并把配置状态、内部 Entry、公共事件和精确投影标记放入现有 Session
-Repository 事务。它不改变配置 HTTP 的响应模型，也不修改 Command 的请求分派。
+该能力建立一个公共事件工厂，并把配置状态、内部 Entry、公共事件和精确投影标记放入现有 Session
+Repository 事务。首版端口收敛删除绕过公共事件的旧仓储重载，不改变配置 HTTP 响应模型或 Command 请求分派。
 
 ## 源码证据与实现边界
 
 | 分类 | 仓库相对路径与符号 | 观察、决定和理由 |
 |---|---|---|
 | 已实现 | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/event/RuntimeCommittedEventFactory.java` · `sessionConfiguration` | 以已经定稿的 `RuntimeEntryDTO` 为锚点生成 `CommittedEventDTO`；配置内部点号类型转换为 v2 公共下划线类型 |
-| 已实现 | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/persistence/RuntimeSessionRepository.java` · `updateModel/updateThinking` | 组合重载接收 Entry 工厂和公共事件工厂，使配置写入只有一个事务边界 |
+| 已实现 | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/persistence/RuntimeSessionRepository.java` · `updateModel/updateThinking` | 唯一配置更新端口同时接收 Entry 工厂和公共事件工厂，使配置写入只有一个事务边界 |
 | 已实现 | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/persistence/MyBatisRuntimeSessionRepository.java` · `appendConfigurationEntries` | 在 Session 行锁下分配共享序号，依次写 Entry、公共事件和精确投影标记；任一步失败回滚配置状态与全部追加记录 |
 | 已实现 | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/service/command/SessionModelConfigurationService.java` · `update` | HTTP 模型配置与 Builtin `model` Command 共用同一个公共事件写入点；模型不再支持 Thinking 时，同一事务可产生两组 Entry/公共事件 |
 | 已实现 | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/service/command/SessionThinkingConfigurationService.java` · `change` | HTTP Thinking 配置与 Builtin `thinking` Command 共用同一个公共事件写入点 |
@@ -53,7 +53,7 @@ Repository 事务。它不改变配置 HTTP 的响应模型，也不修改 Comma
 
 `RuntimeSessionConfigurationController` 与 Builtin Command contributor 都进入
 `SessionModelConfigurationService` 或 `SessionThinkingConfigurationService`。自动模型回退从
-`RuntimeSessionModelReconciler` 进入相同 Repository 组合重载。Service 只负责配置准入、领域 Entry
+`RuntimeSessionModelReconciler` 进入相同 Repository 端口。Service 只负责配置准入、领域 Entry
 和调用编排；公共 JSON 字段由唯一工厂生成，Repository 负责锁、序号和事务。
 
 模型切换可能同时关闭 Thinking。此时 `entriesFactory` 产生 `session.model.changed` 和
@@ -81,8 +81,9 @@ Repository 事务。它不改变配置 HTTP 的响应模型，也不修改 Comma
 现有事务。Service 先写 Entry 再开启第二个事务无法保证故障原子性，因此不采用。把每个 HTTP、Command
 或校准入口分别编码 JSON 会产生字段和类型漂移，因此也不采用。
 
-接口中保留不带公共事件工厂的配置重载，供尚未切换的内部调用者使用。该入口不会证明 v2 投影完整，
-不能用于新的公开配置写入点；生产配置 Service 和自动校准已全部使用组合重载。
+在 `48aac44a` 基线扫描中，只有 `RuntimeSessionModelReconciler`、
+`SessionModelConfigurationService` 和 `SessionThinkingConfigurationService` 三个生产消费者，且它们已全部传入
+公共事件工厂。不带工厂的旧重载只剩 12 处模块测试调用，仍能写入没有权威事件和精确标记的配置 Entry。首版不存在兼容该内部端口的理由，因此删除旧重载，并在唯一端口进入事务前拒绝空 `eventFactory`。
 
 ## 边界情况与 DFX
 
@@ -98,13 +99,11 @@ Repository 事务。它不改变配置 HTTP 的响应模型，也不修改 Comma
 
 ## 契约与交付范围
 
-本片使 `PUT /sessions/{sessionId}/model`、`PUT /sessions/{sessionId}/thinking`、对应 Builtin Command
+该设计使 `PUT /sessions/{sessionId}/model`、`PUT /sessions/{sessionId}/thinking`、对应 Builtin Command
 以及自动模型校准共享配置公共事件写入点。配置接口仍返回原有 Session Response VO；Builtin Command
 仍使用现有 JSON 响应。公共事件将在 Events v2 历史中出现，不向配置响应额外嵌入事件。
 
-本片没有单独切换 `GET/POST /sessions/{sessionId}/events` 的生产 Controller，也不代表所有执行期写入点、
-运行时完整性门禁和 SSE 生命周期已经完成。完整 Events HTTP 只在公共写入点、读取和请求流一起通过集成
-验证后切换。当前产品是第一版，只使用全新安装 schema，不包含旧数据迁移。
+本次端口收敛只删除无事件写入能力，不改变上述 HTTP 和 Builtin Command 契约。当前产品是第一版，只使用全新安装 schema，不保留旧内部仓储重载作为兼容层。
 
 ## 测试与验证
 
@@ -115,8 +114,8 @@ Thinking 与名称 Command 的差异、事件时间毫秒精度、完整性标�
 整体回滚。
 
 writers 集成树已独立运行 121 项相关测试并通过；接入用量来源后重新运行公共工厂 6 项与压缩 14 项，
-共 20 项通过。Spotless、Checkstyle 和 Java AST 检查通过；ClawConstants 的 Unicode 正则解析缺口已
-手工核查，新增常量没有引入方法或布局问题。测试质量检查零错误，27 项既有命名提示已核查。
+共 20 项通过。端口收敛后，配置单元测试 19 项和真实 openGauss 仓储、压缩、Usage 测试 79 项通过；新增数据库断言证明空工厂在修改 Session 前被拒绝。
+Spotless、Checkstyle 和 Java AST 检查通过；ClawConstants 的 Unicode 正则解析缺口已手工核查，新增常量没有引入方法或布局问题。本次本地测试质量脚本不可用，已人工核查修改的真实断言。
 文档验证 PlantUML 生成、ASCII 限制、SVG XML、Markdown 链接/锚点和 `git diff --check`。
 企业镜像由生成脚本同步；本地无法解析 NativeParent:26.0.0-SNAPSHOT，企业镜像编译未验证。
 
@@ -124,5 +123,6 @@ writers 集成树已独立运行 121 项相关测试并通过；接入用量来�
 
 | 版本 | 日期 | 变更 |
 |---|---|---|
+| 0.2.0 | 2026-09-08 | 删除无公共事件工厂的配置仓储重载，首版只保留原子写入端口 |
 | 0.1.1 | 2026-09-08 | 明确首版全新安装范围，并保留当前版本运行时完整性门禁 |
 | 0.1.0 | 2026-09-08 | 记录统一公共事件工厂、字段规范化和配置公共事件原子写入 |
