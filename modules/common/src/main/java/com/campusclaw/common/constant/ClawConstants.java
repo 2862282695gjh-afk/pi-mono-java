@@ -109,6 +109,10 @@ public final class ClawConstants {
 
         public static final int MAX_DENY_MESSAGE_CHARACTERS = 4096;
 
+        public static final int DEFAULT_EVENT_PAGE_LIMIT = 50;
+
+        public static final int MAX_EVENT_PAGE_LIMIT = 200;
+
         public static final Set<String> TOOL_ERROR_CODES = Set.of(
                 "TOOL_CALL_DENIED",
                 "TOOL_ARGUMENTS_INVALID",

@@ -72,6 +72,9 @@ public interface RuntimeSessionMapper {
     List<RuntimeEntryDTO> listCurrentBranchEntries(
             @Param("sessionId") String sessionId, @Param("afterSeq") long afterSeq, @Param("limit") int limit);
 
+    List<CommittedEventDTO> listCommittedEvents(
+            @Param("sessionId") String sessionId, @Param("offset") long offset, @Param("limit") int limit);
+
     int updateSessionModel(
             @Param("sessionId") String sessionId,
             @Param("modelId") String modelId,

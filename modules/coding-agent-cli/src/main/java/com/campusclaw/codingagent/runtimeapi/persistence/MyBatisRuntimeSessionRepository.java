@@ -30,6 +30,7 @@ import com.campusclaw.codingagent.runtimeapi.persistence.UserEventAcceptance.Sta
 import com.campusclaw.codingagent.runtimeapi.session.RuntimeSessionState;
 
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
@@ -213,6 +214,15 @@ public class MyBatisRuntimeSessionRepository implements RuntimeSessionRepository
     @Transactional(readOnly = true)
     public List<RuntimeEntryDTO> listCurrentBranchEntries(String sessionId, long afterSeq, int limit) {
         return mapper.listCurrentBranchEntries(sessionId, afterSeq, limit);
+    }
+
+    @Override
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+    public Optional<List<CommittedEventDTO>> findEventPage(String sessionId, long offset, int limit) {
+        if (mapper.findSession(sessionId) == null) {
+            return Optional.empty();
+        }
+        return Optional.of(mapper.listCommittedEvents(sessionId, offset, limit));
     }
 
     @Override

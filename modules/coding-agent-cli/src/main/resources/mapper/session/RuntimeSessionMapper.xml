@@ -223,6 +223,33 @@
         LIMIT #{limit}
     </select>
 
+    <select id="listCommittedEvents" resultType="com.campusclaw.codingagent.runtimeapi.dto.CommittedEventDTO">
+        WITH RECURSIVE current_path (session_id, id, parent_id) AS (
+            SELECT entry.session_id, entry.id, entry.parent_id
+            FROM t_session_entries entry
+            JOIN t_sessions session
+              ON session.id = entry.session_id
+             AND session.active_leaf_id = entry.id
+            WHERE session.id = #{sessionId}
+            UNION ALL
+            SELECT parent.session_id, parent.id, parent.parent_id
+            FROM t_session_entries parent
+            JOIN current_path child
+              ON child.session_id = parent.session_id
+             AND child.parent_id = parent.id
+        )
+        SELECT event.session_id, event.event_id, event.event_seq, event.anchor_entry_id,
+               event.type, event.created_at, event.payload::text AS payload
+        FROM t_session_events event
+        JOIN current_path path
+          ON path.session_id = event.session_id
+         AND path.id = event.anchor_entry_id
+        WHERE event.session_id = #{sessionId}
+        ORDER BY event.event_seq
+        OFFSET #{offset}
+        LIMIT #{limit}
+    </select>
+
     <update id="updateSessionModel">
         UPDATE t_sessions
         SET model_id = #{modelId},
