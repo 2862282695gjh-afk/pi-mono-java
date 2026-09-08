@@ -1,0 +1,11 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ADR-0091：执行对象承载工具确认状态</title><style>body{max-width:960px;margin:32px auto;padding:24px;font:16px/1.7 system-ui,sans-serif;color:#172033}a{color:#135dbe}code{overflow-wrap:anywhere}</style></head><body>
+<h1>ADR-0091：执行对象承载工具确认状态</h1><p>Status: Accepted · Date: 2026-09-08 · Version: 1.0.0</p>
+<h2>Context</h2><p>Java 基线 2bdcdcb2 已持久化固定执行与确认决定，本地执行尚缺确认段切换和可信工具权限。Events v2 要求一次执行保留原身份，其他实例可接纳控制请求。</p>
+<h2>Decision</h2><p>实现 b9075a90 在活动执行内核对固定目标与 Tool Call，串行认领并切换段，离开 monitor 后完成 Future。权限只来自可信 Agent/Skill 快照；未知或冲突权限拒绝，ask 交确认处理器。取消清理待确认 Future，终态重试标志不代表数据库提交成功。</p>
+<h2>Alternatives 与理由</h2><p>不把请求中的权限当成可信值，也不按当前 Session 任意执行对象续跑。固定执行状态避免跨执行消费和凭据替换；代价是本地 monitor 内包含受限数据库认领事务。pi 基线 4af9d21d 的 prepareToolCall 仅提供进程内 hook 与取消检查，持久交接属于 Java 架构变化。</p>
+<h2>Consequences</h2><p>无本地响应时继续持久化，由接收实例补读。此片不接入 HTTP、不安装完整协调器、不新增线程或依赖；后续提交消费这些基础能力。首版不增加升级流程。</p>
+<h2>Validation</h2><p>三组聚焦测试共13项通过，零失败和跳过；Spotless、Checkstyle、方法长度与七组公司镜像检查通过。NativeParent 26.0.0-SNAPSHOT 本机不可解析，企业编译未验证。</p>
+<h2>Related</h2><p><a href="../designs/runtime-events-execution-support/README.md">源码依据与边界</a> · <a href="../designs/runtime-events-execution-support/diagram.puml#L1">PlantUML 图源</a></p>
+<h2>版本历史</h2><p>1.0.0 · 2026-09-08：定义固定执行确认基础和独立接入范围。</p>
+</body></html>
