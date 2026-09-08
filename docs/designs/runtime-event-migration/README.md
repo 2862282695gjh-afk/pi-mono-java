@@ -2,11 +2,11 @@
 
 | 属性 | 值 |
 |---|---|
-| 版本 | 0.1.0 |
+| 版本 | 0.1.1 |
 | 日期 | 2026-09-08 |
 | 契约基线 | `pi-mono-java-design@2ee2a3211da68ad87b0d9cab353e691b00bdaebd` |
 | 变更前 Java | `pi-mono-java@72f3550e` |
-| 实现提交 | `a2d9c104` |
+| 实现提交 | `247ee0af`（包含 `a2d9c104`、`4a9a91e9`） |
 | pi 基线 | `pi-mono@5cd93f688aaab89dbb6dfa4aca535f21796ae185` |
 | 当前范围 | 数据库发布平台执行的一次可重跑 Events v2 历史迁移；不增加应用启动迁移器 |
 
@@ -28,8 +28,8 @@ user.message 只有展开后的私有正文。查询时临时转换不能证明�
 | 契约要求 | `01-总体架构/01-CampusClaw多Agent运行时/chat-events-v2-history-design.md` · §2、§2.0 | 公开历史不得包含私有 Thinking、Skill 正文或内部身份；旧类型必须完整分类，缺少安全关联时关闭失败 |
 | 已实现 | `modules/coding-agent-cli/src/main/resources/db/gaussdb/upgrade/V1_to_V2__schema.sql` | 在发布目标 schema 中增加四张事件/审核表和仅供本次迁移使用的严格校验函数 |
 | 已实现 | `modules/coding-agent-cli/src/main/resources/db/gaussdb/upgrade/V1_to_V2__schema.sql` · `f_validate_session_event_v2` | 校验 11 个公共类型的精确字段、嵌套结构、枚举、Java long、UTF-16 长度和条件字段，不返回 payload |
-| 已实现 | `modules/coding-agent-cli/src/main/resources/db/gaussdb/upgrade/V1_to_V2__schema.sql` · `f_session_event_migration_gaps` | 复用 payload、旧类型映射和关联规则，输出 ID、内部类型和固定缺口原因 |
-| 已实现 | `modules/coding-agent-cli/src/main/resources/db/gaussdb/upgrade/V1_to_V2__data.sql` | 锁定相关表，先计算完整性问题，只选择最多 500 个无缺口 Session，在一个事务中写事件、标记和序号 |
+| 已实现 | `modules/coding-agent-cli/src/main/resources/db/gaussdb/upgrade/V1_to_V2__schema.sql` · `f_session_event_migration_gaps` | 复用 payload、旧类型映射、已有投影数量和关联规则，输出 ID、内部类型和固定缺口原因 |
+| 已实现 | `modules/coding-agent-cli/src/main/resources/db/gaussdb/upgrade/V1_to_V2__data.sql` | 锁定相关表，验证已有和待写投影的精确数量与类型，只选择最多 500 个无缺口 Session，在一个事务中写事件、标记和序号 |
 | 已实现 | `modules/coding-agent-cli/src/main/resources/db/gaussdb/upgrade/V1_to_V2__verify.sql` | 只读调用统一 gap 函数；零行才允许部署 v2 读取 |
 | 已实现 | `modules/coding-agent-cli/src/main/resources/db/gaussdb/upgrade/test/V1_to_V2__payload_validation_regression.sql` | 隔离 schema 中验证全部 11 个类型及非法字段、空白、溢出和私有字段 |
 | 已实现 | `modules/coding-agent-cli/src/main/resources/db/gaussdb/upgrade/test/V1_to_V2__migration_regression.sql` | 验证一对多、Thinking 双分类、失败 Session 不迁、跨 Session 关联拒绝和重跑稳定性 |
@@ -45,7 +45,8 @@ user.message 只有展开后的私有正文。查询时临时转换不能证明�
 - **人工审核决定**：`t_session_event_migration_review` 声明一个旧 Entry 应有的精确公共事件数量；
   正数必须在 `t_session_event_migration_events` 提供从 1 连续排列的全部公共事件。
 - **精确完整性**：每个旧 Entry 在 `t_session_event_projection` 恰好有一条 marker，event_count 必须与
-  `t_session_events` 的实际锚定数量一致。一条已有事件不能掩盖同一 Assistant Entry 缺少的其他事件。
+  `t_session_events` 的实际锚定数量一致，已有事件也必须满足旧类型到公共类型矩阵。一条已有事件不能
+  掩盖同一 Assistant Entry 缺少的其他事件，数量相等也不能掩盖错误的公共类型。
 - **迁移缺口**：未知旧类型、缺审核、数量不符、payload 非法、类型映射非法、孤儿记录或同 Session
   source/target/tool 关联缺失。缺口原因是固定字面值，不包含公共 payload 或审核正文。
 - **发布目标 schema**：升级 SQL 没有写死 schema 名称，表和函数属于数据库发布平台执行时选定的
@@ -98,8 +99,9 @@ schema 脚本在一个 DDL 事务中使用 `IF NOT EXISTS` 创建表/索引，�
 它支持同一版本、同一停写窗口内因发布重试而重复执行；它不会自动修复人为创建的同名不兼容表。
 
 data 在一个事务中先汇总全部问题，再选择无问题 Session。某个 Session 有一对多缺半、非法 payload、未知
-类型、缺关联或无审核时，该 Session 的 event、projection、sequence 和审核输入都不改变；其他无问题
-Session 可以进入本批。SQL 执行本身发生异常时，本批所有 Session 一起回滚。
+类型、缺关联、无审核、已有 projection 数量不符或已有公共类型不匹配时，该 Session 的 event、projection、
+sequence 和审核输入都不改变；其他无问题 Session 可以进入本批。SQL 执行本身发生异常时，本批所有
+Session 一起回滚。
 
 成功 Session 按旧 entry_seq、同 Entry event_order 和稳定 eventId 排序，从现有 next_seq 继续分配公共
 event_seq。事务随后写精确 marker、按新增事件数推进 sequence，并删除已消费的审核 payload 与 review。
@@ -174,10 +176,10 @@ Events HTTP 集成测试通过。本片不修改 Controller、Response VO、SSE 
 - payload 回归执行 43 个用例，覆盖全部 11 类型，以及空对象/null、额外字段、phase、Usage/Cost、
   Java long、UTF-16、Java 空白、fileId、CallMateTool、错误条件和压缩 source 规则；
 - 端到端回归重复执行 schema 两次、data 三次，覆盖一对多缺半、未知类型、旧 Skill 缺原回执、私有
-  Thinking 零事件、公开 Thinking 一事件、稳定 ID/序号、非法 payload、禁止零计数、类型映射错误和跨
-  Session sourceEventId。
+  Thinking 零事件、公开 Thinking 一事件、稳定 ID/序号、非法 payload、禁止零计数、待写及已有投影的
+  数量/类型错误和跨 Session sourceEventId；同 Session 后续可自动映射记录也不会绕过已有投影缺口被局部迁移。
 
-两份测试只创建并删除自己的隔离 schema。端到端 verify 输出 11 行故意保留的合成缺口，只含合成 ID、
+两份测试只创建并删除自己的隔离 schema。端到端 verify 输出 15 行故意保留的合成缺口，只含合成 ID、
 类型和固定原因；断言确认这些 Session 没有被迁移。另需验证 PlantUML 生成、ASCII、SVG XML、Markdown
 链接/锚点和 `git diff --check`。SQL 升级文件不进入企业镜像，本独立文档提交也不修改镜像。
 
@@ -185,4 +187,5 @@ Events HTTP 集成测试通过。本片不修改 Controller、Response VO、SSE 
 
 | 版本 | 日期 | 变更 |
 |---|---|---|
+| 0.1.1 | 2026-09-08 | 补充已有 projection 的精确数量/类型门禁和 15 行端到端缺口验证 |
 | 0.1.0 | 2026-09-08 | 记录维护窗口、安全审核、Session 原子批处理、重跑与函数回滚边界 |

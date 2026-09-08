@@ -22,8 +22,9 @@ rebuild the Session schema and must never be used as an upgrade.
 upgrading persisted Session events to the Events v2 public contract. They do not introduce a general
 application-side migration runner.
 
-The schema step is compatible with the V1 application because it only adds tables and indexes. Do not
-deploy the V2 reader until verification returns no rows. Once the V2 application writes public events,
+The schema step is compatible with the V1 application because it only adds tables, indexes, and
+migration-only validation functions that the V1 application never calls. Do not deploy the V2 reader
+until verification returns no rows. Once the V2 application writes public events,
 rolling the application back to V1 leaves the new tables intact; do not drop or reverse-convert them.
 Before any V2 write, a DDL rollback may drop the four new `t_session_event*` tables after their reviewed
 input has been archived according to the release procedure. It may also drop
@@ -72,10 +73,11 @@ use `IF NOT EXISTS`; payload validation and gap functions use `CREATE OR REPLACE
 signatures. `f_validate_session_event_v2(type, payload)` is the single payload rule used by migration and
 verification. It returns false without logging or returning payload content when a public type, exact
 field set, nested content, enum, Java `long`, Java UTF-16 string limit, or error-field condition is invalid.
-The data step refuses the complete Session if a staged or existing event fails this rule. It also refuses
-`event_count=0` for an old type that requires a public event; only explicitly reviewed optional public
-thinking may use zero. `f_session_event_migration_gaps()` exposes the same failures through fixed reasons,
-and the verification script only orders and returns those safe columns.
+The data step refuses the complete Session if a staged or existing event fails this rule, if an existing
+projection count differs from its anchored events, or if an existing public type is incompatible with the
+old Entry type. It also refuses `event_count=0` for an old type that requires a public event; only explicitly
+reviewed optional public thinking may use zero. `f_session_event_migration_gaps()` exposes the same failures
+through fixed reasons, and the verification script only orders and returns those safe columns.
 
 Run the payload validator regression against a disposable database before approving the schema step:
 
@@ -98,6 +100,8 @@ psql -X -v ON_ERROR_STOP=1 -d <disposable-database> \
 This fixture proves exact one-to-many mapping, an explicit private thinking record with zero public events,
 a reviewed public thinking summary, stable IDs and sequences across reruns, and fail-closed handling for an
 unknown type, a legacy Skill message without its original receipt, malformed public payload, a forbidden
-zero count, an incompatible old-to-public event type, and a `sourceEventId` that exists only in another
-Session. It prints only synthetic IDs, types, and fixed gap reasons. A successful run drops
+zero count, incompatible staged and existing old-to-public event types, an existing projection with a
+wrong count, and a `sourceEventId` that exists only in another Session. It also proves that later automatic
+records in either invalid Session are not partially migrated. It prints only synthetic IDs, types, and fixed
+gap reasons. A successful run drops
 `campusclaw_events_v2_migration_test`; a failed assertion keeps it for diagnosis.

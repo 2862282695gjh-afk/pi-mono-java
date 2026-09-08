@@ -3,15 +3,15 @@
 <title>ADR-0082：采用审核驱动且可重跑的存量事件迁移</title>
 <style>body{font:16px/1.7 system-ui,sans-serif;background:#f5f7fa;color:#172235;margin:0}main{max-width:920px;margin:32px auto;padding:32px;background:white;border-radius:12px}code{overflow-wrap:anywhere;background:#eef2f6;padding:2px 4px}a{color:#1457a6}</style></head>
 <body><main><h1>ADR-0082：采用审核驱动且可重跑的存量事件迁移</h1>
-<p>Status: Accepted · Date: 2026-09-08 · Version: 1.0.0</p>
+<p>Status: Accepted · Date: 2026-09-08 · Version: 1.0.1</p>
 <h2>Context</h2><p>设计仓 <code>2ee2a321</code> 的历史设计 §2.0 明确要求全部旧持久化类型逐类映射或说明
 不公开理由，并要求一次可重跑迁移或兼容读取。旧 Entry 无法证明 Skill 展开前回执、公开 Thinking 摘要、工具确认标记、
 固定错误文本和一对多完整数量。读取时猜测会泄露私有内容、反复生成身份或静默漏事件。</p>
 <p>Java 基线 <code>72f3550e</code> 已有权威公共事件表和查询完整性门禁，但没有存量审核输入和发布迁移。
 pi 基线 <code>5cd93f68</code> 的 Agent loop 生成运行时事件，不提供 CampusClaw 数据库历史迁移。</p>
 <h2>Decision</h2><p>由数据库发布平台在停写维护窗口执行 schema、data、verify 三步升级。自动映射只处理能从旧安全字段
-完整证明的模型配置、Thinking 配置、手动压缩和明确私有记录；其余旧 Entry 必须提供精确人工审核。公开事件 payload、
-旧到新类型、数量、顺序和同 Session 关联全部校验后，才允许迁移该 Session。</p>
+完整证明的模型配置、Thinking 配置、手动压缩和明确私有记录；其余旧 Entry 必须提供精确人工审核。待写与已有公开事件的
+payload、旧到新类型、数量、顺序和同 Session 关联全部校验后，才允许迁移该 Session。</p>
 <p>data 每次按 Session ID 选择最多 500 个无缺口 Session，在一个事务内写公共事件、精确 marker、共享序号并删除
 已消费审核输入。失败 Session 保持不变；SQL 异常回滚整批。verify 复用相同 validator 和关系规则，只输出 ID、旧类型和固定原因。
 只有 verify 零行后才能部署 v2 读取。</p>
@@ -36,5 +36,6 @@ pi 基线 <code>5cd93f68</code> 的 Agent loop 生成运行时事件，不提供
 <a href="../designs/runtime-event-migration/diagram.puml#L1">PlantUML 源码</a> ·
 <a href="0077-share-public-event-data-model.html">ADR-0077 公共事件数据模型</a> ·
 <a href="0078-authoritative-event-history.html">ADR-0078 权威事件历史</a></p>
-<h2>版本历史</h2><p>1.0.0 · 2026-09-08：确定审核驱动、Session 原子、停写窗口和可重跑的存量事件迁移。</p>
+<h2>版本历史</h2><p>1.0.1 · 2026-09-08：补充已有公开投影的精确数量与旧到新类型门禁。</p>
+<p>1.0.0 · 2026-09-08：确定审核驱动、Session 原子、停写窗口和可重跑的存量事件迁移。</p>
 </main></body></html>

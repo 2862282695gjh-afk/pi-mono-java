@@ -3,7 +3,7 @@ title Restart-safe Events v2 History Migration
 ' Contract baseline: pi-mono-java-design 2ee2a3211da68ad87b0d9cab353e691b00bdaebd
 ' Contract source: chat-events-v2-history-design.md section 2.0
 ' Java baseline: pi-mono-java 72f3550e
-' Implementation commit: a2d9c104
+' Implementation commit: 247ee0af
 ' Source: modules/coding-agent-cli/src/main/resources/db/gaussdb/upgrade/V1_to_V2__schema.sql
 ' Source: modules/coding-agent-cli/src/main/resources/db/gaussdb/upgrade/V1_to_V2__data.sql
 ' Source: modules/coding-agent-cli/src/main/resources/db/gaussdb/upgrade/V1_to_V2__verify.sql
@@ -24,7 +24,7 @@ while (Does verification return gaps?) is (yes)
   :Stage exact count, stable IDs, order, time, type, and safe payload;
   :Run one data transaction;
   :Lock Session, sequence, Entry, event, marker, and review tables;
-  :Validate payload, old-to-public type, count, and same-Session links;
+  :Validate existing and staged payload, type, count, and same-Session links;
   :Leave every incomplete or unsafe Session unchanged;
   :Select up to 500 complete Sessions in ID order;
   :Insert public events and exact markers;
