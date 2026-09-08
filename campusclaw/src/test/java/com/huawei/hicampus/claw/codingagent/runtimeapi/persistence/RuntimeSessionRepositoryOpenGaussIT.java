@@ -34,6 +34,7 @@ import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.SessionConfigurationU
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.command.SessionCommandResultDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.error.RuntimeErrorCode;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeCommittedEventFactory;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeEntryCodec;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeUsageCause;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.mapper.RuntimeExecutionControlMapper;
@@ -106,6 +107,7 @@ class RuntimeSessionRepositoryOpenGaussIT {
         executionControls = context.getBean(RuntimeExecutionControlRepository.class);
         jdbcTemplate = context.getBean(JdbcTemplate.class);
         jdbcTemplate.update("TRUNCATE TABLE t_session_event_projection");
+        jdbcTemplate.update("TRUNCATE TABLE t_session_events");
         jdbcTemplate.update("TRUNCATE TABLE t_session_materialized");
         jdbcTemplate.update("TRUNCATE TABLE t_session_stats");
         jdbcTemplate.update("TRUNCATE TABLE t_session_records");
@@ -325,12 +327,34 @@ class RuntimeSessionRepositoryOpenGaussIT {
         assertThat(changed.session().getUpdatedAt()).isEqualTo(updatedAt.truncatedTo(ChronoUnit.MILLIS));
         assertThat(changed.session().getResourceVersion()).isEqualTo(4L);
         assertThat(changed.session().getLifetimeUsage()).isEqualTo(storedUsage);
+        assertCommittedConfigurationEvent(command, session.getId(), updatedAt);
         var unchanged = executeConfigurationCommand(
                 command, session.getId(), Clock.fixed(updatedAt.plusDays(1).toInstant(), ZoneOffset.UTC));
         assertThat(unchanged.changed()).isFalse();
         assertThat(unchanged.sourceEventSeq()).isNull();
         assertThat(unchanged.session()).isEqualTo(changed.session());
         assertThat(repository.find(session.getId())).contains(changed.session());
+    }
+
+    private void assertCommittedConfigurationEvent(String command, String sessionId, OffsetDateTime updatedAt) {
+        if (command.equals("name")) {
+            assertThat(count("t_session_events", sessionId)).isZero();
+            return;
+        }
+        String expectedType = command.equals("model") ? "session.model_changed" : "session.thinking_changed";
+        String expectedId = command.equals("model") ? "model-entry" : "thinking-entry";
+        assertThat(jdbcTemplate.queryForObject(
+                        "SELECT type FROM t_session_events WHERE session_id = ?", String.class, sessionId))
+                .isEqualTo(expectedType);
+        assertThat(jdbcTemplate.queryForObject(
+                        "SELECT event_id FROM t_session_events WHERE session_id = ?", String.class, sessionId))
+                .isEqualTo(expectedId);
+        assertThat(jdbcTemplate.queryForObject(
+                        "SELECT created_at FROM t_session_events WHERE session_id = ?",
+                        OffsetDateTime.class,
+                        sessionId))
+                .isEqualTo(updatedAt.truncatedTo(ChronoUnit.MILLIS));
+        assertThat(count("t_session_event_projection", sessionId)).isOne();
     }
 
     private void appendUsageForPrecisionTest(RuntimeSessionDTO session) {
@@ -364,15 +388,28 @@ class RuntimeSessionRepositoryOpenGaussIT {
         when(manager.resolveAvailableModel(snapshot, "next")).thenReturn(model);
         when(manager.resolveModel(snapshot, "model-db-it")).thenReturn(model);
         var codec = new RuntimeEntryCodec(new ObjectMapper(), new RuntimeMessageSourceConfiguration().messageSource());
+        var eventFactory = committedEventFactory();
         return switch (command) {
             case "name" -> new SessionNamingService(repository, clock).execute(sessionId, "name");
             case "model" ->
                 (SessionCommandResultDTO) new SessionModelConfigurationService(
-                                repository, agentId -> snapshot, manager, codec, () -> "model-entry", clock)
+                                repository,
+                                agentId -> snapshot,
+                                manager,
+                                codec,
+                                eventFactory,
+                                () -> "model-entry",
+                                clock)
                         .execute(sessionId, "next");
             case "thinking" ->
                 new SessionThinkingConfigurationService(
-                                repository, agentId -> snapshot, manager, codec, () -> "thinking-entry", clock)
+                                repository,
+                                agentId -> snapshot,
+                                manager,
+                                codec,
+                                eventFactory,
+                                () -> "thinking-entry",
+                                clock)
                         .execute(sessionId, "on");
             default -> throw new AssertionError(command);
         };
@@ -713,6 +750,52 @@ class RuntimeSessionRepositoryOpenGaussIT {
                 .isEqualTo(1L);
     }
 
+    @Test
+    void shouldRollbackConfigurationEntryWhenCommittedEventInsertionFails() {
+        var session = newSession("session_public_event_rollback");
+        repository.create(session);
+        jdbcTemplate.update(
+                "INSERT INTO t_session_events "
+                        + "(session_id,event_id,event_seq,anchor_entry_id,type,created_at,payload) "
+                        + "VALUES (?,?,?,?,?,?,CAST(? AS JSONB))",
+                session.getId(),
+                "configuration-entry",
+                99L,
+                "existing-anchor",
+                "session.model_changed",
+                session.getCreatedAt(),
+                "{\"previousModelId\":\"old\",\"modelId\":\"existing\",\"reason\":\"requested\"}");
+        var codec = new RuntimeEntryCodec(new ObjectMapper(), new RuntimeMessageSourceConfiguration().messageSource());
+        var eventFactory = committedEventFactory();
+        var updatedAt = session.getCreatedAt().plusMinutes(1);
+
+        assertThatThrownBy(() -> repository.updateModel(
+                        session.getId(),
+                        null,
+                        "next",
+                        true,
+                        locked -> List.of(codec.modelChangedEntry(
+                                locked.getId(),
+                                "configuration-entry",
+                                locked.getModelId(),
+                                "next",
+                                "requested",
+                                updatedAt)),
+                        eventFactory::sessionConfiguration,
+                        updatedAt))
+                .isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
+        assertThat(repository.find(session.getId()).orElseThrow())
+                .usingRecursiveComparison()
+                .withComparatorForType(java.math.BigDecimal::compareTo, java.math.BigDecimal.class)
+                .isEqualTo(session);
+        assertThat(count("t_session_entries", session.getId())).isZero();
+        assertThat(count("t_session_events", session.getId())).isOne();
+        assertThat(count("t_session_event_projection", session.getId())).isZero();
+        assertThat(jdbcTemplate.queryForObject(
+                        "SELECT next_seq FROM t_session_sequences WHERE session_id = ?", Long.class, session.getId()))
+                .isEqualTo(1L);
+    }
+
     private SessionConfigurationUpdateDTO changeUnconditionally(
             CountDownLatch start, RuntimeSessionDTO observed, String modelId) throws InterruptedException {
         assertThat(start.await(5, TimeUnit.SECONDS)).isTrue();
@@ -838,7 +921,7 @@ class RuntimeSessionRepositoryOpenGaussIT {
                 .extracting(RuntimeEntryDTO::getEntrySeq)
                 .containsExactly(1L);
         assertThat(changeUnconditionally(new CountDownLatch(0), session, "next").sourceEventSeq())
-                .isEqualTo(2L);
+                .isEqualTo(3L);
     }
 
     private SessionThinkingConfigurationService thinkingService(CountDownLatch capabilityChecked) {
@@ -861,8 +944,14 @@ class RuntimeSessionRepositoryOpenGaussIT {
                 agentId -> snapshot,
                 manager,
                 new RuntimeEntryCodec(new ObjectMapper(), new RuntimeMessageSourceConfiguration().messageSource()),
+                committedEventFactory(),
                 () -> "entry-thinking",
                 Clock.systemUTC());
+    }
+
+    private static RuntimeCommittedEventFactory committedEventFactory() {
+        return new RuntimeCommittedEventFactory(
+                new ObjectMapper(), new RuntimeMessageSourceConfiguration().messageSource());
     }
 
     private String cleanupState(String sessionId) {

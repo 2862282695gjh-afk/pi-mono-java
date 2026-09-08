@@ -263,6 +263,32 @@ public class MyBatisRuntimeSessionRepository implements RuntimeSessionRepository
             boolean modelSupportsThinking,
             Function<RuntimeSessionDTO, List<RuntimeEntryDTO>> entriesFactory,
             OffsetDateTime updatedAt) {
+        return updateModelLocked(
+                sessionId, expectedVersion, modelId, modelSupportsThinking, entriesFactory, null, updatedAt);
+    }
+
+    @Override
+    @Transactional
+    public SessionConfigurationUpdateDTO updateModel(
+            String sessionId,
+            Long expectedVersion,
+            String modelId,
+            boolean modelSupportsThinking,
+            Function<RuntimeSessionDTO, List<RuntimeEntryDTO>> entriesFactory,
+            Function<RuntimeEntryDTO, CommittedEventDTO> eventFactory,
+            OffsetDateTime updatedAt) {
+        return updateModelLocked(
+                sessionId, expectedVersion, modelId, modelSupportsThinking, entriesFactory, eventFactory, updatedAt);
+    }
+
+    private SessionConfigurationUpdateDTO updateModelLocked(
+            String sessionId,
+            Long expectedVersion,
+            String modelId,
+            boolean modelSupportsThinking,
+            Function<RuntimeSessionDTO, List<RuntimeEntryDTO>> entriesFactory,
+            Function<RuntimeEntryDTO, CommittedEventDTO> eventFactory,
+            OffsetDateTime updatedAt) {
         RuntimeSessionDTO session = lockSession(sessionId);
         SessionConfigurationUpdateDTO rejected = rejectConfigurationUpdate(session, expectedVersion);
         if (rejected != null || session.getModelId().equals(modelId)) {
@@ -274,7 +300,7 @@ public class MyBatisRuntimeSessionRepository implements RuntimeSessionRepository
         requireOne(mapper.updateSessionModel(sessionId, modelId, thinking, storedAt), "session model was not updated");
         session.setModelId(modelId);
         session.setThinking(thinking);
-        appendConfigurationEntries(session, entries);
+        appendConfigurationEntries(session, entries, eventFactory);
         markConfigurationUpdated(session, storedAt);
         Long sourceEventSeq = entries.isEmpty() ? null : entries.getLast().getEntrySeq();
         return new SessionConfigurationUpdateDTO(SessionConfigurationUpdateDTO.Status.UPDATED, session, sourceEventSeq);
@@ -288,6 +314,31 @@ public class MyBatisRuntimeSessionRepository implements RuntimeSessionRepository
             boolean thinking,
             Consumer<RuntimeSessionDTO> admission,
             Function<RuntimeSessionDTO, RuntimeEntryDTO> entryFactory,
+            OffsetDateTime updatedAt) {
+        return updateThinkingLocked(sessionId, expectedVersion, thinking, admission, entryFactory, null, updatedAt);
+    }
+
+    @Override
+    @Transactional
+    public SessionConfigurationUpdateDTO updateThinking(
+            String sessionId,
+            Long expectedVersion,
+            boolean thinking,
+            Consumer<RuntimeSessionDTO> admission,
+            Function<RuntimeSessionDTO, RuntimeEntryDTO> entryFactory,
+            Function<RuntimeEntryDTO, CommittedEventDTO> eventFactory,
+            OffsetDateTime updatedAt) {
+        return updateThinkingLocked(
+                sessionId, expectedVersion, thinking, admission, entryFactory, eventFactory, updatedAt);
+    }
+
+    private SessionConfigurationUpdateDTO updateThinkingLocked(
+            String sessionId,
+            Long expectedVersion,
+            boolean thinking,
+            Consumer<RuntimeSessionDTO> admission,
+            Function<RuntimeSessionDTO, RuntimeEntryDTO> entryFactory,
+            Function<RuntimeEntryDTO, CommittedEventDTO> eventFactory,
             OffsetDateTime updatedAt) {
         RuntimeSessionDTO session = lockSession(sessionId);
         SessionConfigurationUpdateDTO rejected = rejectConfigurationUpdate(session, expectedVersion);
@@ -304,7 +355,7 @@ public class MyBatisRuntimeSessionRepository implements RuntimeSessionRepository
                 mapper.updateSessionThinking(sessionId, thinking, storedAt),
                 "session thinking setting was not updated");
         session.setThinking(thinking);
-        appendConfigurationEntries(session, List.of(entry));
+        appendConfigurationEntries(session, List.of(entry), eventFactory);
         markConfigurationUpdated(session, storedAt);
         return new SessionConfigurationUpdateDTO(
                 SessionConfigurationUpdateDTO.Status.UPDATED, session, entry.getEntrySeq());
@@ -381,9 +432,17 @@ public class MyBatisRuntimeSessionRepository implements RuntimeSessionRepository
         return session;
     }
 
-    private void appendConfigurationEntries(RuntimeSessionDTO session, List<RuntimeEntryDTO> entries) {
+    private void appendConfigurationEntries(
+            RuntimeSessionDTO session,
+            List<RuntimeEntryDTO> entries,
+            Function<RuntimeEntryDTO, CommittedEventDTO> eventFactory) {
         for (RuntimeEntryDTO entry : entries) {
             appendLocked(session, entry);
+            if (eventFactory != null) {
+                List<CommittedEventDTO> events = List.of(eventFactory.apply(entry));
+                appendEventsLocked(entry, events);
+                recordProjectionIfComplete(entry, events, true);
+            }
         }
         if (!entries.isEmpty()) {
             requireOne(

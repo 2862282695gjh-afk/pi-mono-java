@@ -6,7 +6,7 @@
 | 日期 | 2026-09-08 |
 | 契约基线 | `pi-mono-java-design@2ee2a3211da68ad87b0d9cab353e691b00bdaebd` |
 | 变更前 Java | `pi-mono-java@f5c3a755` |
-| 实现提交 | `1120583b`、`f818a41f`、`2dd80793`、`d14e706d` |
+| 实现提交 | `1120583b`、`f818a41f`、`2dd80793`、`d14e706d`；用量来源消费 `6c261865`、`eef4d0f1` |
 | pi 基线 | `pi-mono@5cd93f688aaab89dbb6dfa4aca535f21796ae185` |
 | 当前范围 | 公共事件工厂、字段规范化，以及模型/Thinking 配置事件的原子写入；Events HTTP 的完整切换由后续集成片完成 |
 
@@ -14,7 +14,7 @@
 
 Events v2 要求 POST SSE 的完整帧与 GET 历史读取同一份已提交公共事件。配置接口、Builtin
 Command 和接受消息前的模型校准都会产生模型或 Thinking 配置 Entry。如果这些入口只写内部
-Entry，历史完整性门禁会关闭失败；如果 Service 在配置事务提交后另写公共事件，进程故障又会留下
+Entry，历史完整性门禁会拒绝读取；如果 Service 在配置事务提交后另写公共事件，进程故障又会留下
 无法修复的半份历史。
 
 本片建立一个公共事件工厂，并把配置状态、内部 Entry、公共事件和精确投影标记放入现有 Session
@@ -30,7 +30,7 @@ Repository 事务。它不改变配置 HTTP 的响应模型，也不修改 Comma
 | 已实现 | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/service/command/SessionModelConfigurationService.java` · `update` | HTTP 模型配置与 Builtin `model` Command 共用同一个公共事件写入点；模型不再支持 Thinking 时，同一事务可产生两组 Entry/公共事件 |
 | 已实现 | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/service/command/SessionThinkingConfigurationService.java` · `change` | HTTP Thinking 配置与 Builtin `thinking` Command 共用同一个公共事件写入点 |
 | 已实现 | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/session/RuntimeSessionModelReconciler.java` · `reconcile` | 接受消息前发现模型失效时，自动回退也写入相同的配置公共事件 |
-| 已观察 Java 调用者 | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/web/RuntimeSessionConfigurationController.java`、`service/command/contributor/ModelCommandContributor.java`、`ThinkingCommandContributor.java` | HTTP 与 Builtin Command 只复用配置 Service；本片没有在这些入口复制事件构造逻辑 |
+| 已观察 Java 调用者 | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/web/RuntimeSessionConfigurationController.java`、`modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/service/command/contributor/ModelCommandContributor.java`、`modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/service/command/contributor/ThinkingCommandContributor.java` | HTTP 与 Builtin Command 只复用配置 Service；本片没有在这些入口复制事件构造逻辑 |
 | pi 观察 | `packages/agent/src/agent-loop.ts` · `runLoop` | pi 依次发出消息、工具和轮次事件，未提供 CampusClaw 的 Session 配置资源、数据库事务或 HTTP 公共事件投影 |
 
 公共事件表、完整性标记和配置资源是 CampusClaw 架构变化。内部点号类型继续服务既有 Entry 恢复，
@@ -69,7 +69,8 @@ Repository 事务。它不改变配置 HTTP 的响应模型，也不修改 Comma
 - Agent 正文只取文本块，不公开原始 Thinking；Thinking 摘要由调用者先证明来源可信；
 - CallMateTool 的公开参数保持 `{tool,args}`，缺少 `args` 时补空对象，其他空工具参数使用空对象；
 - 工具失败和 idle 失败保存接受时语言对应的固定公开文案，GET 不重新翻译；
-- 未知 Usage 或 Cost 省略，避免把缺失信息表达为已知零值。
+- 未知 Usage 依据内部 `known` 来源标志省略，明确报告的五项零值仍保留；可选 Cost 未提供时省略。
+  来源标志本身不进入公开字段，内部来源及历史 JSON 策略见 [ADR-0080](../../decisions/0080-runtime-usage-provenance.html)。
 
 ## 设计决策
 
@@ -112,9 +113,11 @@ Repository 事务。它不改变配置 HTTP 的响应模型，也不修改 Comma
 Thinking 与名称 Command 的差异、事件时间毫秒精度、完整性标记，以及事件主键冲突时配置、Entry 和序号
 整体回滚。
 
-writers 集成树已运行 121 项相关测试并通过，Spotless 与 Checkstyle 通过。文档交付另验证 PlantUML
-生成、ASCII 限制、SVG XML、Markdown 链接/锚点和 `git diff --check`。企业镜像由集成发布任务统一生成，
-本独立文档提交不修改镜像。
+writers 集成树已独立运行 121 项相关测试并通过；接入用量来源后重新运行公共工厂 6 项与压缩 14 项，
+共 20 项通过。Spotless、Checkstyle 和 Java AST 检查通过；ClawConstants 的 Unicode 正则解析缺口已
+手工核查，新增常量没有引入方法或布局问题。测试质量检查零错误，27 项既有命名提示已核查。
+文档验证 PlantUML 生成、ASCII 限制、SVG XML、Markdown 链接/锚点和 `git diff --check`。
+企业镜像由生成脚本同步；本地无法解析 NativeParent:26.0.0-SNAPSHOT，企业镜像编译未验证。
 
 ## 版本历史
 
