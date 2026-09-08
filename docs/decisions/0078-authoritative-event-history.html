@@ -3,7 +3,7 @@
 <title>ADR-0078：权威事件历史与安全迁移</title>
 <style>body{font:16px/1.7 system-ui,sans-serif;background:#f5f7fa;color:#172235;margin:0}main{max-width:920px;margin:32px auto;padding:32px;background:white;border-radius:12px}code{overflow-wrap:anywhere;background:#eef2f6;padding:2px 4px}a{color:#1457a6}</style></head>
 <body><main><h1>ADR-0078：权威事件历史与安全迁移</h1>
-<p>Status: Accepted · Date: 2026-09-08 · Version: 1.0.0</p>
+<p>Status: Accepted · Date: 2026-09-08 · Version: 1.0.1</p>
 <h2>Context</h2><p>设计仓 <code>2ee2a321</code> 要求 GET 与 POST 复用完整事件，并对全部旧持久化类型逐类映射。
 Java 基线 <code>d9a20777</code> 的旧 Entry 同时承载模型恢复和 HTTP 历史，无法证明 Skill 展开前正文、工具确认标记、
 公开 thinking 摘要、固定语言错误文本和原消息关联。逐次临时转换可能重新生成身份、泄露私有内容或遗漏一对多事件。</p>
@@ -21,8 +21,8 @@ Java 基线 <code>d9a20777</code> 的旧 Entry 同时承载模型恢复和 HTTP 
 合法 thinking completed 可经可信分类标零或标正数；旧 tool execution started 不能标零掩盖缺失工具调用。迁移每轮最多提交
 500 个完整 Session，成功后删除暂存 payload，verify 只返回 ID、类型和固定原因。HTTP 切换前仍保留旧生产 GET。</p>
 <h2>Validation</h2><p>单元与真实 openGauss 测试覆盖数字分页、当前分支、精确数量、未知类型、thinking 双分类、工具调用缺口、
-原子回滚和 UTC 毫秒一致。迁移从模拟 V1 状态重复执行 schema/data 后数量与序号不变；缺口输出不含 payload，处理后零行。</p>
+原子回滚和 UTC 毫秒一致。本片集成运行21个测试均通过，并以非所有者运行角色检查公共事件和完整性表的读写权限。迁移脚本由独立提交749dc828交付，其子任务验证报告尚待集成复核，不属于本片已完成的验证。企业镜像同步完成，企业NativeParent不可解析，企业编译未验证。</p>
 <h2>Related</h2><p><a href="../designs/runtime-event-history-v2/README.md">实现设计与源码证据</a> ·
 <a href="../designs/runtime-event-history-v2/diagram.puml#L1">查询 PlantUML</a> ·
-<a href="../designs/runtime-event-history-v2/diagram.puml#L47">迁移 PlantUML</a></p>
-<h2>版本历史</h2><p>1.0.0 · 2026-09-08：固定权威公共历史、精确完整性门禁和旧数据安全迁移。</p></main></body></html>
+<a href="../designs/runtime-event-history-v2/diagram.puml#L49">迁移 PlantUML</a></p>
+<h2>版本历史</h2><p>1.0.1 · 2026-09-08：明确迁移独立待审范围，补充查询与权限验证。</p><p>1.0.0 · 2026-09-08：固定权威公共历史、精确完整性门禁和旧数据安全迁移。</p></main></body></html>

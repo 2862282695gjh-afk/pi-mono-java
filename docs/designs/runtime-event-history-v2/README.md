@@ -2,12 +2,12 @@
 
 | 属性 | 值 |
 |---|---|
-| 版本 | 0.1.0 |
+| 版本 | 0.1.1 |
 | 日期 | 2026-09-08 |
 | 契约基线 | `pi-mono-java-design@2ee2a3211da68ad87b0d9cab353e691b00bdaebd` |
 | 实现基线 | `pi-mono-java@d9a20777` |
-| 实现提交 | `d8276302`、`87b3dadb`、`1784a3ef`、`b15c3a75`、`b98cafbf`、`fa354fe2`、`749dc828` |
-| 当前接入状态 | 公共投影、原子存储、整数分页、完整性门禁和升级脚本已实现；生产 GET 切换与全部写入点接入待最终集成 |
+| 实现提交 | `d8276302`、`87b3dadb`、`1784a3ef`、`b15c3a75`、`b98cafbf`、`fa354fe2` |
+| 当前接入状态 | 公共投影、原子存储、整数分页、完整性门禁已实现；迁移脚本为独立待审交付，生产 GET 切换与全部写入点接入待最终集成 |
 
 ## Context
 
@@ -26,13 +26,13 @@ Events v2 要求 POST 的完整 SSE 帧与 GET 历史逐字段相同，并按服
 
 | 分类 | 路径与符号 | 行为与理由 |
 |---|---|---|
-| 已观察旧行为 | `java/.../event/RuntimeEntryCodec.java#toHistoryEvent` | 从 Entry 读取旧字段并按读取语言生成工具错误文本；不能作为 v2 权威记录 |
-| 已实现 | `java/.../event/CommittedEventProjection.java#project` | 从已提交 DTO 严格产生类型化只读 Response VO；GET 不重新翻译持久化文本 |
-| 已实现 | `java/.../persistence/MyBatisRuntimeSessionRepository.java#appendEntryWithUsage` | Entry、Usage、公共事件与完整性标记共享一个 Spring 事务和 Session 序号 |
-| 已实现 | `java/.../persistence/MyBatisRuntimeSessionRepository.java#findEventPage` | 在一个 `REPEATABLE_READ` 事务内核验当前分支完整性并读取数字页 |
+| 已观察旧行为 | `java/com/campusclaw/codingagent/runtimeapi/event/RuntimeEntryCodec.java#toHistoryEvent` | 从 Entry 读取旧字段并按读取语言生成工具错误文本；不能作为 v2 权威记录 |
+| 已实现 | `java/com/campusclaw/codingagent/runtimeapi/event/CommittedEventProjection.java#project` | 从已提交 DTO 严格产生类型化只读 Response VO；GET 不重新翻译持久化文本 |
+| 已实现 | `java/com/campusclaw/codingagent/runtimeapi/persistence/MyBatisRuntimeSessionRepository.java#appendEntryWithUsage` | Entry、Usage、公共事件与完整性标记共享一个 Spring 事务和 Session 序号 |
+| 已实现 | `java/com/campusclaw/codingagent/runtimeapi/persistence/MyBatisRuntimeSessionRepository.java#findEventPage` | 在一个 `REPEATABLE_READ` 事务内核验当前分支完整性并读取数字页 |
 | 已实现 | `resources/mapper/session/RuntimeSessionMapper.xml#countUnmappedCurrentBranchEntries` | 未知类型、缺标记、数量不符和不允许的公开/私有数量均关闭失败 |
-| 已实现，独立交付 | `resources/db/gaussdb/upgrade/V1_to_V2__*.sql` | 提供可重跑的审核输入、分批转换与无敏感正文的验证输出 |
-| 待最终集成 | `java/.../web/RuntimeEventController.java#list` | 仍返回旧游标模型；必须和全部 v2 写入点一起切换 |
+| 独立待审，不含在本片 | `resources/db/gaussdb/upgrade/V1_to_V2__schema.sql`、`V1_to_V2__data.sql`、`V1_to_V2__verify.sql` | 子任务提交 `749dc828` 提供迁移实现；本片仅记录目标与后续依赖，尚未完成集成审查 |
+| 待最终集成 | `java/com/campusclaw/codingagent/runtimeapi/web/RuntimeEventController.java#list` | 仍返回旧游标模型；必须和全部 v2 写入点一起切换 |
 
 pi 基线 `5cd93f688aaab89dbb6dfa4aca535f21796ae185` 的
 `packages/agent/src/agent-loop.ts#runLoop` 产生消息和工具生命周期通知，但没有 CampusClaw 的 HTTP
@@ -59,9 +59,11 @@ delta 等明确私有类型必须为零；`assistant.thinking.completed` 只有�
 
 ## 旧历史迁移
 
+以下为独立迁移片的目标与实现说明。本片不包含升级脚本，不代表这些脚本已合入或通过集成审查。
+
 ![可重跑的旧历史迁移](migration_flow.svg)
 
-[PlantUML 源码](diagram.puml#L47)
+[PlantUML 源码](diagram.puml#L49)
 
 升级只在停止 Session 写入的维护窗口执行。schema 脚本增加权威表、完整性表和两张仅发布平台可写的
 审核输入表；runtime role 只获得权威表与完整性表权限。data 脚本每轮最多处理 500 个 Session，
@@ -93,10 +95,15 @@ schema 新表对旧应用向后兼容。verify 零行前不能部署 v2 读取�
 零事件、公开摘要一事件和缺审核三种结果。原子失败测试证明公共事件插入冲突时所有关联写入回滚，
 并证明写入 DTO、数据库读回和公共投影使用同一个 UTC 毫秒时间。
 
-迁移脚本在 openGauss 7.0.0-RC3 上从模拟 V1 状态执行：schema 和 data 各重复两次后，事件数、标记数
-与 Session 序号保持稳定；缺少 Skill 安全回执和未知类型只返回固定 verify 缺口，处理缺口后 verify
-零行。`spotless`、`checkstyle`、Java 方法长度、测试质量和 `git diff --check` 在各代码片均通过。
-企业镜像和生产 Controller 切换由最终集成片统一完成。
+集成审查独立运行 21 个测试（查询 Service 5、查询仓储 8、原子仓储 2、既有 MyBatis 仓储 6），
+全部通过。另用非表所有者的本地 runtime role 验证授权后对公共事件和完整性表的 SELECT 及
+零行 INSERT/UPDATE/DELETE 权限；该权限检查与事务集成测试分别验证权限和业务行为。
+Java 方法长度检查未报缺陷；测试质量脚本仅有既有测试命名提示，已人工复核断言。
+
+迁移子任务报告在 openGauss 7.0.0-RC3 上重复执行 schema/data 并验证稳定数量和序号；
+这部分尚待独立代码审查及集成复验，不计入本片的 21 个测试。
+本片同步 campusclaw 镜像，生产 Controller 待完整运行链集成。企业 NativeParent:26.0.0-SNAPSHOT
+在本地不可解析，按仓库允许的普通本地模式生成镜像，企业编译未验证。
 
 ## 决策与版本历史
 
@@ -104,4 +111,5 @@ schema 新表对旧应用向后兼容。verify 零行前不能部署 v2 读取�
 
 | 版本 | 日期 | 变更 |
 |---|---|---|
+| 0.1.1 | 2026-09-08 | 明确迁移独立交付边界，记录查询及运行角色权限验证 |
 | 0.1.0 | 2026-09-08 | 记录权威公共事件、整数分页、精确完整性门禁和可重跑旧历史迁移 |

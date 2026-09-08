@@ -70,6 +70,8 @@ public interface RuntimeSessionRepository {
 
     List<RuntimeEntryDTO> listCurrentBranchEntries(String sessionId, long afterSeq, int limit);
 
+    Optional<List<CommittedEventDTO>> findEventPage(String sessionId, long offset, int limit);
+
     /**
      * 在行锁内复核版本和状态，再调用只生成领域 Entry 的本地函数。
      *

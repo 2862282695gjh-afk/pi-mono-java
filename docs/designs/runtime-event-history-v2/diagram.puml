@@ -6,6 +6,8 @@ title Authoritative event history query
 ' Source: modules/coding-agent-cli/src/main/resources/mapper/session/RuntimeSessionMapper.xml#countUnmappedCurrentBranchEntries
 ' Observed behavior: the production controller still uses the legacy history path.
 ' Design reason: switch HTTP only after every public writer uses atomic committed events.
+' Pi baseline: 5cd93f688aaab89dbb6dfa4aca535f21796ae185
+' Pi source: packages/agent/src/agent-loop.ts#runLoop
 ' Java divergence: pi has no CampusClaw current-branch HTTP history store.
 actor Caller
 participant RuntimeEventController
@@ -46,7 +48,7 @@ end note
 
 @startuml migration_flow
 title Restart-safe legacy event migration
-' Source baseline: pi-mono-java d9a20777 plus commit 749dc828
+' Target migration delivered separately in commit 749dc828; integration review pending.
 ' Source: modules/coding-agent-cli/src/main/resources/db/gaussdb/upgrade/V1_to_V2__schema.sql
 ' Source: modules/coding-agent-cli/src/main/resources/db/gaussdb/upgrade/V1_to_V2__data.sql
 ' Source: modules/coding-agent-cli/src/main/resources/db/gaussdb/upgrade/V1_to_V2__verify.sql
