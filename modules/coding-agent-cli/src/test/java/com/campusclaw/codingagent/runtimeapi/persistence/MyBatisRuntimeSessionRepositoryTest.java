@@ -118,7 +118,7 @@ class MyBatisRuntimeSessionRepositoryTest {
                 .containsExactly(10L, 5L, 2L, 1L, 18L);
         assertThat(delta.getValue().getCostTotal()).isEqualByComparingTo("0.33");
         verify(mapper).insertCommittedEvent(event);
-        verify(mapper).insertCommittedEventProjection("session", "assistant", 1, "runtime");
+        verify(mapper).insertCommittedEventProjection("session", "assistant", 1);
         verify(mapper, times(3)).incrementSequence("session");
     }
 
@@ -142,7 +142,7 @@ class MyBatisRuntimeSessionRepositoryTest {
         assertThat(entry.getEntrySeq()).isEqualTo(5L);
         assertThat(event.getEventSeq()).isEqualTo(6L);
         verify(mapper).insertCommittedEvent(event);
-        verify(mapper).insertCommittedEventProjection("session", "next-user", 1, "runtime");
+        verify(mapper).insertCommittedEventProjection("session", "next-user", 1);
     }
 
     @Test
@@ -163,8 +163,7 @@ class MyBatisRuntimeSessionRepositoryTest {
         when(mapper.insertEntry(org.mockito.ArgumentMatchers.any())).thenReturn(1);
         when(mapper.insertRecord(org.mockito.ArgumentMatchers.any())).thenReturn(1);
         when(mapper.insertCommittedEvent(org.mockito.ArgumentMatchers.any())).thenReturn(1);
-        when(mapper.insertCommittedEventProjection(any(), any(), anyInt(), any()))
-                .thenReturn(1);
+        when(mapper.insertCommittedEventProjection(any(), any(), anyInt())).thenReturn(1);
         when(mapper.incrementSequence("session")).thenReturn(1);
         when(mapper.updateActiveLeaf("session", "assistant")).thenReturn(1);
         when(mapper.incrementMessageCount("session")).thenReturn(1);

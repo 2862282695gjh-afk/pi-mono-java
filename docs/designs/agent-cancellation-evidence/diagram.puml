@@ -1,0 +1,31 @@
+@startuml agent_cancellation_evidence
+' Java baseline: 58dd747a; implementation: 8bed9b10.
+' Source: modules/agent-core/src/main/java/com/campusclaw/agent/loop/AgentLoop.java#runInternal,#runTurns.
+' Source: modules/agent-core/src/main/java/com/campusclaw/agent/tool/ToolExecutionPipeline.java#execute,#applyBeforeHook.
+' Source: modules/agent-core/src/main/java/com/campusclaw/agent/event/AgentEndEvent.java.
+' Pi baseline: 4af9d21d3b4d664e4a29fcabfec85171077248e3.
+' Pi source: packages/agent/src/agent-loop.ts#runLoop,#prepareToolCall.
+' Observed behavior: Java can exit tool cancellation without another Assistant ABORTED message.
+' Java divergence: supplement agent_end with cancellation evidence; do not append a cancelled hook result.
+' Design reason: preserve natural completion when a cancellation request arrives late.
+title Agent cancellation evidence
+start
+:Run model and tool turns;
+if (Natural end returned?) then (yes)
+  :cancelled = false;
+else (no)
+  if (Token caused loop exit or cancellation?) then (yes)
+    :cancelled = true;
+  else (no)
+    :Propagate failure;
+    :cancelled = false;
+  endif
+endif
+:Emit AgentEnd in finally;
+note right
+  Assistant ABORTED and actual exceptions
+  remain separate outcome evidence.
+  A false flag does not prove success.
+end note
+stop
+@enduml

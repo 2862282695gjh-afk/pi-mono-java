@@ -2,7 +2,7 @@
 
 | 属性 | 值 |
 |---|---|
-| 版本 | 0.1.0 |
+| 版本 | 0.1.1 |
 | 日期 | 2026-09-08 |
 | 契约基线 | `pi-mono-java-design@2ee2a3211da68ad87b0d9cab353e691b00bdaebd` |
 | 变更前 Java | `pi-mono-java@f5c3a755` |
@@ -31,10 +31,10 @@ Repository 事务。它不改变配置 HTTP 的响应模型，也不修改 Comma
 | 已实现 | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/service/command/SessionThinkingConfigurationService.java` · `change` | HTTP Thinking 配置与 Builtin `thinking` Command 共用同一个公共事件写入点 |
 | 已实现 | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/session/RuntimeSessionModelReconciler.java` · `reconcile` | 接受消息前发现模型失效时，自动回退也写入相同的配置公共事件 |
 | 已观察 Java 调用者 | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/web/RuntimeSessionConfigurationController.java`、`modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/service/command/contributor/ModelCommandContributor.java`、`modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/service/command/contributor/ThinkingCommandContributor.java` | HTTP 与 Builtin Command 只复用配置 Service；本片没有在这些入口复制事件构造逻辑 |
-| pi 观察 | `packages/agent/src/agent-loop.ts` · `runLoop` | pi 依次发出消息、工具和轮次事件，未提供 CampusClaw 的 Session 配置资源、数据库事务或 HTTP 公共事件投影 |
+| pi 观察 | `packages/agent/src/agent-loop.ts` · `runAgentLoop`、`prepareToolCall` | pi 依次发出消息、工具和轮次事件，未提供 CampusClaw 的 Session 配置资源、数据库事务或 HTTP 公共事件投影 |
 
-公共事件表、完整性标记和配置资源是 CampusClaw 架构变化。内部点号类型继续服务既有 Entry 恢复，
-公共下划线类型是产品 HTTP 契约；两者分离也避免改写旧 Entry 和 SQL 类型集合。
+公共事件表、完整性标记和配置资源是 CampusClaw 架构变化。内部点号类型服务当前模型上下文恢复，
+公共下划线类型是产品 HTTP 契约；两者分离也避免公共命名改变内部 Entry 和 SQL 类型集合。
 
 ## 关键定义
 
@@ -74,13 +74,14 @@ Repository 事务。它不改变配置 HTTP 的响应模型，也不修改 Comma
 
 ## 设计决策
 
-见 [ADR-0081：统一公共事件工厂并原子持久化配置事件](../../decisions/0081-atomic-public-event-writers.html)。
+见 [ADR-0081：统一公共事件工厂并原子持久化配置事件](../../decisions/0081-atomic-public-event-writers.html) 和
+[ADR-0092：首版仅支持全新安装的权威事件历史](../../decisions/0092-first-release-authoritative-event-history.html)。
 
 采用 Repository 函数参数，使公共事件只能基于已经获得父节点和内部序号的最终 Entry 构造，同时沿用
 现有事务。Service 先写 Entry 再开启第二个事务无法保证故障原子性，因此不采用。把每个 HTTP、Command
 或校准入口分别编码 JSON 会产生字段和类型漂移，因此也不采用。
 
-接口中保留不带公共事件工厂的旧配置重载，供尚未迁移的内部调用者兼容。该入口不会证明 v2 投影完整，
+接口中保留不带公共事件工厂的配置重载，供尚未切换的内部调用者使用。该入口不会证明 v2 投影完整，
 不能用于新的公开配置写入点；生产配置 Service 和自动校准已全部使用组合重载。
 
 ## 边界情况与 DFX
@@ -102,8 +103,8 @@ Repository 事务。它不改变配置 HTTP 的响应模型，也不修改 Comma
 仍使用现有 JSON 响应。公共事件将在 Events v2 历史中出现，不向配置响应额外嵌入事件。
 
 本片没有单独切换 `GET/POST /sessions/{sessionId}/events` 的生产 Controller，也不代表所有执行期写入点、
-迁移门禁和 SSE 生命周期已经完成。完整 Events HTTP 只在公共写入点、旧数据安全迁移、读取和请求流一起
-通过集成验证后切换。
+运行时完整性门禁和 SSE 生命周期已经完成。完整 Events HTTP 只在公共写入点、读取和请求流一起通过集成
+验证后切换。当前产品是第一版，只使用全新安装 schema，不包含旧数据迁移。
 
 ## 测试与验证
 
@@ -123,4 +124,5 @@ writers 集成树已独立运行 121 项相关测试并通过；接入用量来�
 
 | 版本 | 日期 | 变更 |
 |---|---|---|
+| 0.1.1 | 2026-09-08 | 明确首版全新安装范围，并保留当前版本运行时完整性门禁 |
 | 0.1.0 | 2026-09-08 | 记录统一公共事件工厂、字段规范化和配置公共事件原子写入 |
