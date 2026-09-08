@@ -273,17 +273,6 @@ public class RuntimeEntryCodec {
         return result;
     }
 
-    public Map<String, Object> toHistoryEvent(RuntimeEntryDTO entry) {
-        return toHistoryEvent(entry, Locale.US);
-    }
-
-    public Map<String, Object> toHistoryEvent(RuntimeEntryDTO entry, Locale locale) {
-        LinkedHashMap<String, Object> result = new LinkedHashMap<>();
-        result.put("type", entry.getType());
-        result.putAll(toSseData(entry, locale));
-        return result;
-    }
-
     public long encodedSseBytes(RuntimeSseEventVO event) {
         try {
             Object encoded = event.isDataOnly() ? event.getData() : event;

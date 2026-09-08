@@ -1132,10 +1132,7 @@ class RuntimeSessionRepositoryOpenGaussIT {
         assertThat(thinking.getParentId()).isEqualTo(user.getId());
         assertThat(assistant.getEntrySeq()).isEqualTo(3L);
         assertThat(assistant.getParentId()).isEqualTo(thinking.getId());
-        assertThat(repository.listCurrentBranch(session.getId(), 0, 10, false))
-                .extracting(RuntimeEntryDTO::getId)
-                .containsExactly("entry_user", "entry_assistant");
-        assertThat(repository.listCurrentBranch(session.getId(), 0, 10, true))
+        assertThat(repository.listCurrentBranchEntries(session.getId(), 0, 10))
                 .extracting(RuntimeEntryDTO::getId)
                 .containsExactly("entry_user", "entry_thinking", "entry_assistant");
         RuntimeSessionDTO finished = repository.find(session.getId()).orElseThrow();
@@ -1194,7 +1191,7 @@ class RuntimeSessionRepositoryOpenGaussIT {
         insertBranchEntry(session.getId(), "entry_current", 3L, "entry_root");
         jdbcTemplate.update("UPDATE t_sessions SET active_leaf_id = ? WHERE id = ?", "entry_current", session.getId());
 
-        assertThat(repository.listCurrentBranch(session.getId(), 0, 10, false))
+        assertThat(repository.listCurrentBranchEntries(session.getId(), 0, 10))
                 .extracting(RuntimeEntryDTO::getId)
                 .containsExactly("entry_root", "entry_current");
     }
@@ -1284,7 +1281,7 @@ class RuntimeSessionRepositoryOpenGaussIT {
             var second = executor.submit(() -> changeUnconditionally(start, session, secondModel));
             start.countDown();
             var updates = List.of(first.get(5, TimeUnit.SECONDS), second.get(5, TimeUnit.SECONDS));
-            var events = repository.listCurrentBranch(session.getId(), 0L, 10, true);
+            var events = repository.listCurrentBranchEntries(session.getId(), 0L, 10);
             int expectedChanges = secondModel.equals("first") ? 1 : 2;
             assertThat(events).hasSize(expectedChanges);
             assertThat(updates.stream()
@@ -1335,7 +1332,7 @@ class RuntimeSessionRepositoryOpenGaussIT {
                 .usingRecursiveComparison()
                 .withComparatorForType(java.math.BigDecimal::compareTo, java.math.BigDecimal.class)
                 .isEqualTo(session);
-        assertThat(repository.listCurrentBranch(session.getId(), 0L, 10, true)).isEmpty();
+        assertThat(repository.listCurrentBranchEntries(session.getId(), 0L, 10)).isEmpty();
         assertThat(changeUnconditionally(new CountDownLatch(0), session, "next").sourceEventSeq())
                 .isEqualTo(1L);
     }
@@ -1435,7 +1432,7 @@ class RuntimeSessionRepositoryOpenGaussIT {
         }
         assertThat(repository.find(session.getId()).orElseThrow().getResourceVersion())
                 .isEqualTo(2L);
-        assertThat(repository.listCurrentBranch(session.getId(), 0L, 10, true))
+        assertThat(repository.listCurrentBranchEntries(session.getId(), 0L, 10))
                 .extracting(RuntimeEntryDTO::getType)
                 .containsExactly("session.thinking.changed");
         context.close();
@@ -1447,7 +1444,7 @@ class RuntimeSessionRepositoryOpenGaussIT {
         assertThat(restored.session().isThinking()).isTrue();
         assertThat(restored.changed()).isFalse();
         assertThat(restored.sourceEventSeq()).isNull();
-        assertThat(repository.listCurrentBranch(session.getId(), 0L, 10, true)).hasSize(1);
+        assertThat(repository.listCurrentBranchEntries(session.getId(), 0L, 10)).hasSize(1);
     }
 
     @Test
@@ -1488,7 +1485,7 @@ class RuntimeSessionRepositoryOpenGaussIT {
             assertThat(stored.getModelId()).isEqualTo("unsupported");
             assertThat(stored.isThinking()).isFalse();
             assertThat(stored.getResourceVersion()).isEqualTo(2L);
-            assertThat(repository.listCurrentBranch(session.getId(), 0L, 10, true))
+            assertThat(repository.listCurrentBranchEntries(session.getId(), 0L, 10))
                     .hasSize(1);
         } finally {
             release.countDown();
@@ -1507,7 +1504,7 @@ class RuntimeSessionRepositoryOpenGaussIT {
                 .isInstanceOfSatisfying(RuntimeApiException.class, error -> assertThat(error.errorCode())
                         .isEqualTo(RuntimeErrorCode.COMMAND_EXECUTION_FAILED));
         assertThat(repository.find(session.getId())).contains(before);
-        assertThat(repository.listCurrentBranch(session.getId(), 0L, 10, true))
+        assertThat(repository.listCurrentBranchEntries(session.getId(), 0L, 10))
                 .extracting(RuntimeEntryDTO::getEntrySeq)
                 .containsExactly(1L);
         assertThat(changeUnconditionally(new CountDownLatch(0), session, "next").sourceEventSeq())
