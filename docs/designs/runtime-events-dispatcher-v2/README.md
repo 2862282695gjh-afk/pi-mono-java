@@ -32,7 +32,7 @@ HTTP 请求，也不创建控制记录。控制事务、轮询和 HTTP 接入分
 | pi 观察 | `packages/agent/src/agent-loop.ts#runAgentLoop/prepareToolCall` | pi 使用调用方的 `AbortSignal` 在模型与工具边界检查取消，没有共享数据库、固定 target 或跨 JVM 分发器 |
 
 跨实例发现与固定身份校验是 CampusClaw 架构变化。只有受管 Agent/Skill 快照中的可信工具绑定可以产生 ASK；
-未知或不一致权限关闭失败。凭据留在 Holder 内存中，不进入控制 DTO、数据库或日志，这属于安全加固。
+未知或不一致的权限默认拒绝。凭据留在 Holder 内存中，不进入控制 DTO、数据库或日志，这属于安全加固。
 
 ## 架构与数据流
 
@@ -63,7 +63,7 @@ HTTP 请求，也不创建控制记录。控制事务、轮询和 HTTP 接入分
 - 活动目标包含 Agent future 已结束但唯一终态仍在重试的 Holder，避免控制和资源释放竞态。
 - `activeTargets` 返回有界、确定排序的快照；数据库轮询负责批量、退避和异步虚拟线程分发。
 - 同一目标的 stop 优先，确认 claim 必须在持久事务中仍为 PENDING 且执行未 STOPPING。
-- 本片不新增数据库写入、HTTP 字段或 Maven 依赖；生产 HTTP 路由保持不变。
+- 本片复用既有控制 claim/ack 事务，不新增数据库表、SQL、HTTP 字段或 Maven 依赖；生产 HTTP 路由保持不变。
 
 ## 测试与验证
 
