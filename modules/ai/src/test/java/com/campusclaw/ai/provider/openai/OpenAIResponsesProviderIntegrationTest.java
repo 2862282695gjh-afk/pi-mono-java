@@ -330,6 +330,18 @@ class OpenAIResponsesProviderIntegrationTest {
             assertHasEventType(events, AssistantMessageEvent.ThinkingStartEvent.class);
             assertHasEventType(events, AssistantMessageEvent.ThinkingDeltaEvent.class);
             assertHasEventType(events, AssistantMessageEvent.ThinkingEndEvent.class);
+            assertTrue(events.stream()
+                    .filter(AssistantMessageEvent.ThinkingStartEvent.class::isInstance)
+                    .map(AssistantMessageEvent.ThinkingStartEvent.class::cast)
+                    .allMatch(AssistantMessageEvent.ThinkingStartEvent::publicSummary));
+            assertTrue(events.stream()
+                    .filter(AssistantMessageEvent.ThinkingDeltaEvent.class::isInstance)
+                    .map(AssistantMessageEvent.ThinkingDeltaEvent.class::cast)
+                    .allMatch(AssistantMessageEvent.ThinkingDeltaEvent::publicSummary));
+            assertTrue(events.stream()
+                    .filter(AssistantMessageEvent.ThinkingEndEvent.class::isInstance)
+                    .map(AssistantMessageEvent.ThinkingEndEvent.class::cast)
+                    .allMatch(AssistantMessageEvent.ThinkingEndEvent::publicSummary));
 
             // Verify text events
             assertHasEventType(events, AssistantMessageEvent.TextStartEvent.class);

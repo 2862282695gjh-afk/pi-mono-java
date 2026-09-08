@@ -346,8 +346,8 @@ public class OpenAIResponsesProvider implements ApiProvider {
             acc.append(e.delta());
             state.contentBlocks.set(contentIdx, new ThinkingContent(acc.toString(), null, false));
         }
-        eventStream.push(
-                new AssistantMessageEvent.ThinkingDeltaEvent(contentIdx, e.delta(), partialFrom(state, model, null)));
+        eventStream.push(new AssistantMessageEvent.ThinkingDeltaEvent(
+                contentIdx, e.delta(), partialFrom(state, model, null), true));
     }
 
     private void applyToolArgsDelta(
@@ -410,7 +410,7 @@ public class OpenAIResponsesProvider implements ApiProvider {
             int contentIdx = contentBlocks.size() - 1;
             outputIndexToContentIndex.put(outputIdx, contentIdx);
             eventStream.push(new AssistantMessageEvent.ThinkingStartEvent(
-                    contentIdx, buildPartialMessage(model, responseId, contentBlocks, usage, null)));
+                    contentIdx, buildPartialMessage(model, responseId, contentBlocks, usage, null), true));
 
         } else if (item.isFunctionCall()) {
             // Tool/function call output — start tool call block
@@ -460,7 +460,7 @@ public class OpenAIResponsesProvider implements ApiProvider {
                     : "";
             contentBlocks.set(contentIdx, new ThinkingContent(thinking, null, false));
             eventStream.push(new AssistantMessageEvent.ThinkingEndEvent(
-                    contentIdx, thinking, buildPartialMessage(model, responseId, contentBlocks, usage, null)));
+                    contentIdx, thinking, buildPartialMessage(model, responseId, contentBlocks, usage, null), true));
 
         } else if (item.isFunctionCall()) {
             var fn = item.asFunctionCall();
