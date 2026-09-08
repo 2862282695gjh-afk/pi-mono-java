@@ -6,6 +6,7 @@ package com.huawei.hicampus.claw.common.constant;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.Pattern;
 
 /**
@@ -99,6 +100,28 @@ public final class ClawConstants {
         public static final int MAX_MESSAGE_CHARACTERS = 262144;
 
         public static final int MAX_FILE_IDS = 32;
+
+        public static final int MAX_EVENT_FILE_IDS = 4;
+
+        public static final String EVENT_FILE_ID_REGEX = "^[0-9a-fA-F]{32}$";
+
+        public static final Pattern EVENT_FILE_ID_PATTERN = Pattern.compile(EVENT_FILE_ID_REGEX);
+
+        public static final int MAX_DENY_MESSAGE_CHARACTERS = 4096;
+
+        public static final Set<String> TOOL_ERROR_CODES = Set.of(
+                "TOOL_CALL_DENIED",
+                "TOOL_ARGUMENTS_INVALID",
+                "TOOL_NOT_FOUND",
+                "TOOL_EXECUTION_TIMEOUT",
+                "TOOL_EXECUTION_FAILED");
+
+        public static final Set<String> EXECUTION_ERROR_CODES = Set.of(
+                "AGENT_EXECUTION_FAILED",
+                "MODEL_REQUEST_FAILED",
+                "EXECUTION_START_FAILED",
+                "EXECUTION_RESUME_FAILED",
+                "EVENT_PAYLOAD_TOO_LARGE");
 
         /**
          * 命令发现响应的固定展示顺序与输入提示，不承担执行分派。

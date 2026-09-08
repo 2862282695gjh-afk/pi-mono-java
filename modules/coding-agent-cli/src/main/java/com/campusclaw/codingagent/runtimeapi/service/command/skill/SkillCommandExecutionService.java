@@ -16,6 +16,7 @@ import com.campusclaw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
 import com.campusclaw.codingagent.runtimeapi.event.RuntimeEventService;
 import com.campusclaw.codingagent.runtimeapi.event.RuntimeEventStream;
+import com.campusclaw.codingagent.runtimeapi.vo.SkillCommandRequestVO;
 import com.campusclaw.common.constant.ClawConstants;
 
 import org.slf4j.Logger;
@@ -36,6 +37,30 @@ public class SkillCommandExecutionService {
 
     public SkillCommandExecutionService(RuntimeEventService events) {
         this.events = events;
+    }
+
+    /**
+     * 将请求原值映射为内部输入，默认值和附件检查仍由统一执行入口负责。
+     *
+     * @param sessionId Session 标识
+     * @param request Skill 请求
+     * @param locale 本次语言
+     * @param credentials 本次透传凭据
+     * @return 普通消息事件流
+     * @throws RuntimeApiException 请求缺失或命名空间无效
+     */
+    public RuntimeEventStream executeRequest(
+            String sessionId, SkillCommandRequestVO request, Locale locale, MateCredentials credentials) {
+        if (request == null
+                || request.getName() == null
+                || !request.getName().startsWith(ClawConstants.Skill.COMMAND_PREFIX)) {
+            throw new RuntimeApiException(RuntimeErrorCode.INVALID_COMMAND_REQUEST);
+        }
+        var input = new SkillCommandInputDTO();
+        input.setSkillName(request.getName().substring(ClawConstants.Skill.COMMAND_PREFIX.length()));
+        input.setArguments(request.getArguments());
+        input.setFileIds(request.getFileIds());
+        return execute(sessionId, input, locale, credentials);
     }
 
     public RuntimeEventStream execute(

@@ -6,6 +6,7 @@ package com.campusclaw.codingagent.runtimeapi.service.command;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doReturn;
@@ -24,6 +25,9 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
 import com.campusclaw.codingagent.common.client.mate.MateCredentials;
@@ -218,6 +222,43 @@ class CommandExecutionServiceTest {
         assertThat(view.etag()).isNull();
         verify(runtime).start("session", credentials, Locale.CHINA);
         verify(call, never()).interrupt();
+    }
+
+    @Test
+    void shouldAwaitCompletionOnVirtualRequestThread() throws Exception {
+        var entered = new CountDownLatch(1);
+        var terminal = new CompletableFuture<CommandResultDTO>();
+        var service = application(definition((context, arguments) -> {
+            assertThat(Thread.currentThread().isVirtual()).isTrue();
+            entered.countDown();
+            return terminal;
+        }));
+        try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+            var response = executor.submit(
+                    () -> service.executeBuiltinAndAwait("session", request("probe", ""), Locale.US, credentials));
+            try {
+                assertThat(entered.await(5, TimeUnit.SECONDS)).isTrue();
+                assertThat(response.isDone()).isFalse();
+                terminal.complete(guide());
+                assertThat(response.get(5, TimeUnit.SECONDS).resource())
+                        .isInstanceOf(com.campusclaw.codingagent.runtimeapi.vo.AgentHelpResponseVO.class);
+            } finally {
+                terminal.completeExceptionally(new IllegalStateException("测试结束"));
+            }
+        }
+    }
+
+    @Test
+    void shouldUnwrapAwaitedFailuresToSafeRuntimeApiErrors() {
+        var service = application(definition(
+                (context, arguments) -> CompletableFuture.failedStage(new CompletionException(new RuntimeApiException(
+                        RuntimeErrorCode.SESSION_BUSY, new IllegalStateException("private-token"))))));
+
+        var error = assertThrows(
+                RuntimeApiException.class,
+                () -> service.executeBuiltinAndAwait("session", request("probe", ""), Locale.US, credentials));
+        assertThat(error.errorCode()).isEqualTo(RuntimeErrorCode.SESSION_BUSY);
+        assertThat(error.getCause()).isNull();
     }
 
     @ParameterizedTest
