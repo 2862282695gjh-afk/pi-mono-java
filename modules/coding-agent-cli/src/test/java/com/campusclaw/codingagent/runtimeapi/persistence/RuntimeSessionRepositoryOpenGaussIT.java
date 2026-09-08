@@ -392,6 +392,28 @@ class RuntimeSessionRepositoryOpenGaussIT {
     }
 
     @Test
+    void shouldStopSegmentResultAtFirstIdleWhenExecutionLaterTerminates() {
+        RuntimeSessionDTO session = newSession("session_segment_first_idle");
+        repository.create(session);
+        ExecutionTargetDTO target = seedConfirmingThenTerminatedSegment(session);
+
+        var result = executionResults.readSegmentEvents(target, 0L, 20).orElseThrow();
+        assertThat(result.getEvents())
+                .extracting(CommittedEventDTO::getEventId)
+                .containsExactly("confirm-root-event", "confirming-tool-event", "confirming-idle-event");
+        assertThat(result.isTerminal()).isTrue();
+        long confirmingSeq = result.getEvents().getLast().getEventSeq();
+        var completed =
+                executionResults.readSegmentEvents(target, confirmingSeq, 20).orElseThrow();
+        assertThat(completed.getEvents()).isEmpty();
+        assertThat(completed.isTerminal()).isTrue();
+        assertThat(executionResults.findExecutionTerminal(target))
+                .get()
+                .extracting(CommittedEventDTO::getEventId)
+                .isEqualTo("terminated-idle-event");
+    }
+
+    @Test
     void shouldRestoreCurrentNameAfterContextRestartWithoutTouchingHistoryOrRunningState() {
         RuntimeSessionDTO session = newSession("session_name_restore");
         repository.create(session);
@@ -1269,6 +1291,35 @@ class RuntimeSessionRepositoryOpenGaussIT {
 
     private static RuntimeEntryDTO controlEntry(RuntimeSessionDTO session, String entryId, String type) {
         return newEntry(session.getId(), entryId, type, session.getCreatedAt().plusSeconds(1), "{}");
+    }
+
+    private ExecutionTargetDTO seedConfirmingThenTerminatedSegment(RuntimeSessionDTO session) {
+        RuntimeEntryDTO root =
+                newEntry(session.getId(), "confirm-root-entry", "user.message", session.getCreatedAt(), "{}");
+        CommittedEventDTO rootEvent = committedEvent(root, "confirm-root-event", "user.message");
+        repository.acceptUserEvent(session.getId(), root, rootEvent, root.getTimestamp());
+        var target =
+                new ExecutionTargetDTO(session.getId(), "confirm-execution", rootEvent.getEventId(), "confirm-segment");
+        executionControls.register(target, rootEvent.getEventSeq(), root.getTimestamp());
+        executionControls.linkCommittedEvent(target, rootEvent.getEventId(), rootEvent.getEventSeq());
+        RuntimeEntryDTO tool = newEntry(
+                session.getId(), "confirming-tool-entry", "tool.execution.started", session.getCreatedAt(), "{}");
+        CommittedEventDTO toolEvent = committedEvent(tool, "confirming-tool-event", "agent.tool_call");
+        RuntimeEntryDTO confirming =
+                newEntry(session.getId(), "confirming-idle-entry", "session.status.idle", session.getCreatedAt(), "{}");
+        CommittedEventDTO confirmingEvent = committedEvent(confirming, "confirming-idle-event", "session.status_idle");
+        executionPersistence.markToolConfirming(
+                target, "tool-call", tool, toolEvent, confirming, confirmingEvent, confirming.getTimestamp());
+        RuntimeEntryDTO terminated =
+                newEntry(session.getId(), "terminated-idle-entry", "session.status.idle", session.getCreatedAt(), "{}");
+        CommittedEventDTO terminatedEvent = committedEvent(terminated, "terminated-idle-event", "session.status_idle");
+        executionPersistence.commitTerminal(
+                target,
+                terminated,
+                terminatedEvent,
+                RuntimeExecutionTerminalReason.TERMINATED,
+                terminated.getTimestamp());
+        return target;
     }
 
     private static CommittedEventDTO committedEvent(RuntimeEntryDTO anchor, String eventId, String type) {

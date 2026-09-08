@@ -44,6 +44,8 @@
           AND segment.execution_id = #{executionId}
           AND segment.segment_id = #{segmentId}
           AND segment_event.event_seq &gt; #{afterSeq}
+          AND (segment.terminal_event_seq IS NULL
+               OR segment_event.event_seq &lt;= segment.terminal_event_seq)
         ORDER BY segment_event.event_seq ASC
         LIMIT #{limit}
     </select>
