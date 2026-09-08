@@ -5,8 +5,10 @@
 package com.huawei.hicampus.claw.codingagent.runtimeapi.mapper;
 
 import java.time.OffsetDateTime;
+import java.util.List;
 
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.CommittedTerminalDTO;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.ExecutionControlSignalDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.ExecutionSegmentDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.ExecutionStateDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.ExecutionTargetDTO;
@@ -103,6 +105,8 @@ public interface RuntimeExecutionControlMapper {
             @Param("executionId") String executionId,
             @Param("confirmationEventId") String confirmationEventId,
             @Param("completedAt") OffsetDateTime completedAt);
+
+    List<ExecutionControlSignalDTO> findPendingControls(@Param("targets") List<ExecutionTargetDTO> targets);
 
     int markTerminal(
             @Param("sessionId") String sessionId,
