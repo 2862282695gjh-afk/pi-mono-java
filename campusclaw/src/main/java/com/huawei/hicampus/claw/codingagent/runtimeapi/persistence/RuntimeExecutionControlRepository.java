@@ -12,6 +12,7 @@ import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.CommittedControlEvent
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.CommittedTerminalDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.ConfirmationAcceptanceDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.ConfirmingEventsDTO;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.ExecutionControlSignalDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.ExecutionStateDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.ExecutionTargetDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.InterruptRequestDTO;
@@ -54,6 +55,8 @@ public interface RuntimeExecutionControlRepository {
     boolean acknowledgeConfirmation(ToolConfirmationDecisionDTO decision, OffsetDateTime completedAt);
 
     TransitionStatus appendToSegment(ExecutionTargetDTO target, SegmentAppender appender);
+
+    List<ExecutionControlSignalDTO> findPendingControls(List<ExecutionTargetDTO> targets);
 
     TransitionStatus markTerminal(
             ExecutionTargetDTO target,

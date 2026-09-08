@@ -1,0 +1,59 @@
+@startuml runtime_control_polling
+title Durable execution control polling
+' Java baseline: 043fad7cc1e63b419b7099d22b1db14500a2182f.
+' Polling implementation: fccf1c2f; source slice bfc90fc4.
+' Java source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/runtime/ExecutionControlPollingService.java#poll.
+' Java source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/runtime/RuntimeLocalControlDispatcher.java.
+' Java source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/persistence/MyBatisRuntimeExecutionControlRepository.java#findPendingControls.
+' SQL source: modules/coding-agent-cli/src/main/resources/mapper/session/RuntimeExecutionControlMapper.xml#findPendingControls.
+' pi baseline: 4af9d21d3b4d664e4a29fcabfec85171077248e3.
+' pi source: packages/agent/src/agent-loop.ts#runAgentLoop and #prepareToolCall.
+' Observed behavior: Java and pi cancellation objects are local to one process.
+' Design reason: query durable controls only for exact executions held by this instance.
+' Java divergence: database polling is a CampusClaw cross-instance architecture change.
+participant Scheduler
+participant ExecutionControlPollingService as Poller
+participant RuntimeLocalControlDispatcher as Dispatcher
+participant RuntimeExecutionControlRepository as Repository
+database "Control tables" as Database
+participant "Dispatch executor" as Executor
+participant "Exact local execution" as Runtime
+
+Scheduler -> Poller : poll
+Poller -> Dispatcher : activeTargets(maxActive)
+alt no local targets
+  Dispatcher --> Poller : empty
+  note right of Poller
+    No database query
+  end note
+else exact local targets
+  Dispatcher --> Poller : distinct bounded targets
+  loop per bounded batch
+    Poller -> Repository : findPendingControls(targets)
+    Repository -> Database : match execution, stop, confirmation
+    Database --> Repository : committed signals only
+    Repository --> Poller : control signals
+    loop per signal
+      alt stop is committed
+        Poller -> Executor : dispatch stop
+        Executor -> Dispatcher : dispatchStop(exact target)
+      else pending confirmation
+        Poller -> Executor : dispatch confirmation
+        Executor -> Dispatcher : dispatchConfirmation(target, toolCallId)
+      end
+      Dispatcher -> Runtime : recheck identity and deliver
+    end
+  end
+end
+
+note over Poller,Database
+  One poll runs at a time per instance.
+  Query failures enter bounded backoff.
+  Durable controls remain for later retry.
+end note
+
+note over Poller,Runtime
+  Post-commit fast paths reuse the same dispatch and deduplication boundary.
+  This foundation still requires a local Dispatcher adapter.
+end note
+@enduml
