@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ADR-0073：用户事件接受后的失败处理</title>
+<style>body{font:16px/1.65 system-ui,sans-serif;color:#172235;background:#f5f7fa;margin:0}main{max-width:920px;margin:32px auto;padding:32px;background:white;border-radius:12px}h1,h2{line-height:1.3}code{overflow-wrap:anywhere;background:#eef2f6;padding:2px 4px}a{color:#1457a6}li{margin:8px 0}</style></head>
+<body><main>
+<h1>ADR-0073：用户事件接受后的失败处理</h1>
+<p><strong>Status:</strong> Accepted · <strong>Date:</strong> 2026-09-08 · <strong>Version:</strong> 1.0.0</p>
+<h2>Context</h2>
+<p>设计仓 <code>2ee2a3211da68ad87b0d9cab353e691b00bdaebd</code> 已确认：消息接受后失败不能被描述为未接受。
+变更前 Java <code>5e392e7ce28a4a4a66a5e4d752e9ce5ce1ebc657</code> 的
+<code>RuntimeEventService.prepareAndSubmitLocked</code> 用同一个 catch 覆盖数据库接受和后续启动，
+使已经保存的消息仍可能返回 EVENT_ACCEPTANCE_FAILED。调用方据此重试会产生重复业务执行。</p>
+<p>完整仓库相对路径与 pi 基线证据见关联设计。pi 内核循环不拥有本项目的数据库和 HTTP 事务边界。</p>
+<h2>Decision 与选项</h2>
+<ul>
+<li>采用事务前后分开的异常处理：数据库接受前释放预留对象，接受后由执行协调器完成已有执行，响应保留在原流中。
+优点是失败语义与已经发生的保存一致；代价是需要独立覆盖收尾本身的失败。</li>
+<li>不采用统一返回接收错误：代码较少，但会把已经发生的变更当成未发生，无法提供可靠对账依据。</li>
+<li>不自动重跑已接受消息：可以掩盖部分启动故障，但会带来重复模型请求或工具副作用，违背已确认的无自动重放边界。</li>
+</ul>
+<p>先将本次回执排入响应，再启动对应输出。队列操作和网络写出不扩展数据库事务范围。
+失败收尾的异常不得重新进入未接受错误映射；无法可靠输出时关闭观察响应，调用方按历史对账。</p>
+<h2>Consequences</h2>
+<p>正面：不会因启动或收尾异常诱导客户端把已接受消息当作可安全重发；预留资源和活动执行的职责分开。
+负面：未收到回执或终态时仍可能结果不确定，HTTP 200 不等于业务成功。
+后续：Events v2 还需要持久化唯一终态、三类输入、公共事件投影和跨实例控制；本片不宣称这些目标已经上线。</p>
+<p>不新增 Maven 依赖、数据库表、自动重试或后台线程。公司镜像按项目流程生成并单独披露企业编译结果。</p>
+<h2>Validation</h2>
+<p>验证消息回执与配置输出顺序、接受前失败回收、接受后投影器或启动失败、收尾再次失败，以及既有执行完成行为。
+实际命令结果记录在关联设计中。</p>
+<h2>Related</h2>
+<ul><li><a href="../designs/runtime-event-acceptance/README.md">接受生命周期修复设计与验证</a></li>
+<li><a href="../designs/runtime-event-acceptance/diagram.puml#L1">PlantUML 数据流</a></li></ul>
+<h2>版本历史</h2><p>1.0.0 · 2026-09-08：落实已经接受消息的失败处理边界，保留完整 v2 后续实施范围。</p>
+</main></body></html>
