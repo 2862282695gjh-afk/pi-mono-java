@@ -2,7 +2,7 @@
 
 | 属性 | 值 |
 |---|---|
-| 版本 | 0.2.0 |
+| 版本 | 0.3.0 |
 | 日期 | 2026-09-08 |
 | 契约基线 | `pi-mono-java-design@2ee2a3211da68ad87b0d9cab353e691b00bdaebd` |
 | 实现基线 | `pi-mono-java@2f52e9b8` |
@@ -28,10 +28,10 @@ Events v2 要求 POST 完整帧与 GET 历史使用同一事件对象，内部 E
 | 本片新增 | `event/CommittedEventType.java` | 关闭公共完整事件的 11 种类型集合，未知类型不作为已知事件处理 |
 | 本片新增 | `event/CommittedEventProjection.java#project` | 验证权威记录的完整字段，生成类型化只读响应，保留已经保存的语言文本 |
 | 本片新增 | `persistence/MyBatisRuntimeSessionRepository.java#acceptUserEvent/appendEntry/appendEntryWithUsage` | 重载方法在既有 Session 事务内写 Entry、内部 Record/Usage 和公共事件，保留旧签名供未切换的入口使用 |
-| 已确认目标，后续实现 | 设计仓 `接口契约-v2/common.json`、POST/GET 操作文档 | 分页、执行控制、旧数据迁移和 HTTP 输出尚未由本片接入 |
+| 已确认目标，后续实现 | 设计仓 `接口契约-v2/common.json`、POST/GET 操作文档 | 分页、执行控制和 HTTP 输出尚未由本片接入；首版不包含旧数据迁移 |
 
 pi 基线 `5cd93f688aaab89dbb6dfa4aca535f21796ae185` 的
-`packages/agent/src/agent-loop.ts#runLoop` 产生内核消息和工具生命周期通知。
+`packages/agent/src/agent-loop.ts#runAgentLoop` 和 `#prepareToolCall` 产生内核消息和工具生命周期通知。
 它没有本项目的 HTTP 公共事件表、毫秒形成时间和分支查询协议；这些是 CampusClaw 的架构变更。
 
 ## 架构与数据流
@@ -46,7 +46,8 @@ pi 基线 `5cd93f688aaab89dbb6dfa4aca535f21796ae185` 的
 
 ## 设计决策
 
-见 [ADR-0077](../../decisions/0077-share-public-event-data-model.html)。持久化使用可变 `@Data` DTO；响应使用
+见 [ADR-0077](../../decisions/0077-share-public-event-data-model.html) 和
+[ADR-0092](../../decisions/0092-first-release-authoritative-event-history.html)。持久化使用可变 `@Data` DTO；响应使用
 只读字段和类型化 VO。`@JsonUnwrapped` 展开业务字段；工具结果显式声明 `isError` JSON 属性，
 避免 JavaBean 布尔命名推断产生错误的 `error` 字段。可选字段为 null 时省略；delta 的 `createdAt` 省略。
 参数校验仍由未来请求 VO 承担，响应对象不添加请求校验。投影对内容块列表与工具参数中的嵌套集合进行复制和冻结。
@@ -74,7 +75,8 @@ pi 基线 `5cd93f688aaab89dbb6dfa4aca535f21796ae185` 的
 ## 契约与交付范围
 
 本片提供 11 类完整事件字段、安全投影和原子写入，未切换 Controller、请求格式、分页或旧 SSE。
-后续片必须将组合写入接到全部公开事件产生点，并实现旧数据的安全映射与固定执行控制，再切换 GET/POST。
+后续片必须将组合写入接到全部公开事件产生点，并实现固定执行控制，再切换 GET/POST。首版只使用全新安装
+schema，不读取或迁移早于当前版本的数据；当前版本的每条 Entry 仍必须写入精确完整性标记。
 不能根据数据类和表存在就认为完整 v2 已上线。
 内部旧类型字面值保留，由公共投影转换，避免只改枚举而遗漏 SQL 白名单和历史数据。
 
@@ -98,5 +100,6 @@ Entry、Record、Usage/cost、messageCount、activeLeaf 和共享序号全部回
 
 | 版本 | 日期 | 变更 |
 |---|---|---|
-| 0.2.0 | 2026-09-08 | 实现安全公共投影与原子存储，保留 HTTP 切换和旧数据迁移边界 |
+| 0.3.0 | 2026-09-08 | 明确首版只支持全新安装，旧数据迁移不进入产品，运行时精确完整性保持不变 |
+| 0.2.0 | 2026-09-08 | 实现安全公共投影与原子存储，保留 HTTP 切换和迁移候选边界 |
 | 0.1.0 | 2026-09-08 | 定义公共事件 DTO/VO 与共享类型，明确后续接入边界 |

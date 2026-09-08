@@ -10,7 +10,8 @@ title Atomic Configuration Public Event Write
 ' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/event/RuntimeCommittedEventFactory.java#sessionConfiguration
 ' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/persistence/MyBatisRuntimeSessionRepository.java#appendConfigurationEntries
 ' Pi baseline: 5cd93f688aaab89dbb6dfa4aca535f21796ae185
-' Pi source: packages/agent/src/agent-loop.ts#runLoop
+' Pi source: packages/agent/src/agent-loop.ts#runAgentLoop
+' Pi source: packages/agent/src/agent-loop.ts#prepareToolCall
 ' Observed behavior: pi emits runtime loop events but has no CampusClaw configuration transaction.
 ' Design reason: configuration state, Entry, public event, and exact marker must commit together.
 ' Java divergence: public configuration history is a CampusClaw architecture and HTTP contract change.

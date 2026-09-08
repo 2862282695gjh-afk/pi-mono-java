@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.CommittedEventDTO;
@@ -82,7 +83,9 @@ class RuntimeResultPollingServiceTest {
     void shouldUseSubmittedEventNotificationAsAsynchronousFastPath() throws Exception {
         RuntimeExecutionResultRepository results = mock(RuntimeExecutionResultRepository.class);
         RuntimeResultWaitRegistry waits = registry();
-        RuntimeResultPollingService service = new RuntimeResultPollingService(results, waits, properties());
+        ExecutorService executor =
+                Executors.newSingleThreadExecutor(Thread.ofVirtual().factory());
+        RuntimeResultPollingService service = new RuntimeResultPollingService(results, waits, properties(), executor);
         var delivered = new CountDownLatch(1);
         var reservation = waits.reserve(
                         RuntimeResultWaitMode.EXECUTION_TERMINAL,
@@ -97,10 +100,11 @@ class RuntimeResultPollingServiceTest {
         try {
             service.notifyCommitted(target());
             assertThat(delivered.await(5, TimeUnit.SECONDS)).isTrue();
+            executor.submit(() -> {}).get(5, TimeUnit.SECONDS);
+            assertThat(waits.registeredResponses()).isZero();
         } finally {
             service.close();
         }
-        assertThat(waits.registeredResponses()).isZero();
     }
 
     @Test
