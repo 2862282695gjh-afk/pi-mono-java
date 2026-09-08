@@ -79,6 +79,13 @@ campusclaw:
       stream-buffer-events: ${CAMPUSCLAW_STREAM_BUFFER_EVENTS:256}
       stream-buffer-bytes: ${CAMPUSCLAW_STREAM_BUFFER_BYTES:1048576}
       heartbeat-interval: ${CAMPUSCLAW_SSE_HEARTBEAT_INTERVAL:PT15S}
+      result-wait-max-responses: ${CAMPUSCLAW_RESULT_WAIT_MAX_RESPONSES:256}
+      result-wait-timeout: ${CAMPUSCLAW_RESULT_WAIT_TIMEOUT:PT30M}
+      result-poll-interval-ms: ${CAMPUSCLAW_RESULT_POLL_INTERVAL_MS:500}
+      result-poll-batch-size: ${CAMPUSCLAW_RESULT_POLL_BATCH_SIZE:100}
+      result-read-limit: ${CAMPUSCLAW_RESULT_READ_LIMIT:200}
+      result-query-timeout-seconds: ${CAMPUSCLAW_RESULT_QUERY_TIMEOUT_SECONDS:2}
+      result-poll-failure-backoff: ${CAMPUSCLAW_RESULT_POLL_FAILURE_BACKOFF:PT2S}
     cleanup:
       enabled: ${CAMPUSCLAW_CLEANUP_ENABLED:true}
       batch-size: ${CAMPUSCLAW_CLEANUP_BATCH_SIZE:10}
