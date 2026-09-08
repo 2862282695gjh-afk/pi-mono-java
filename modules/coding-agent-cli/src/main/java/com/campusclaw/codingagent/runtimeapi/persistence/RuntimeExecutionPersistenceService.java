@@ -71,6 +71,27 @@ public class RuntimeExecutionPersistenceService {
     }
 
     @Transactional
+    public void markToolConfirming(
+            ExecutionTargetDTO target,
+            String toolCallId,
+            RuntimeEntryDTO toolCall,
+            CommittedEventDTO toolCallEvent,
+            RuntimeEntryDTO idle,
+            CommittedEventDTO idleEvent,
+            OffsetDateTime confirmingAt) {
+        requireEvent(target.sessionId(), toolCall, toolCallEvent, "tool.execution.started", "agent.tool_call");
+        requireEvent(target.sessionId(), idle, idleEvent, "session.status.idle", "session.status_idle");
+        var status = controls.markConfirming(
+                target,
+                toolCallId,
+                () -> appendConfirmingEvents(toolCall, toolCallEvent, idle, idleEvent),
+                confirmingAt);
+        if (status != RuntimeExecutionControlRepository.TransitionStatus.APPLIED) {
+            throw new IllegalStateException("confirming target is no longer active: " + status);
+        }
+    }
+
+    @Transactional
     public RuntimeEntryDTO commitTerminal(
             ExecutionTargetDTO target,
             RuntimeEntryDTO entry,
@@ -135,5 +156,19 @@ public class RuntimeExecutionPersistenceService {
             case TARGET_MISMATCH -> throw new RuntimeApiException(RuntimeErrorCode.INTERRUPT_TARGET_MISMATCH);
             case ALREADY_REQUESTED -> throw new RuntimeApiException(RuntimeErrorCode.INTERRUPT_ALREADY_REQUESTED);
         };
+    }
+
+    private RuntimeExecutionControlRepository.ConfirmingEvents appendConfirmingEvents(
+            RuntimeEntryDTO toolCall,
+            CommittedEventDTO toolCallEvent,
+            RuntimeEntryDTO idle,
+            CommittedEventDTO idleEvent) {
+        sessions.appendEntry(toolCall, List.of(toolCallEvent));
+        sessions.appendEntry(idle, List.of(idleEvent));
+        return new RuntimeExecutionControlRepository.ConfirmingEvents(
+                toolCallEvent.getEventId(),
+                toolCallEvent.getEventSeq(),
+                idleEvent.getEventId(),
+                idleEvent.getEventSeq());
     }
 }

@@ -28,11 +28,7 @@ public interface RuntimeExecutionControlRepository {
             String sessionId, String targetEventId, String stopEventId, OffsetDateTime requestedAt);
 
     TransitionStatus markConfirming(
-            ExecutionTargetDTO target,
-            String toolCallId,
-            String terminalEventId,
-            long terminalEventSeq,
-            OffsetDateTime terminalAt);
+            ExecutionTargetDTO target, String toolCallId, ConfirmingAppender appender, OffsetDateTime terminalAt);
 
     TransitionStatus markTerminal(
             ExecutionTargetDTO target,
@@ -69,4 +65,22 @@ public interface RuntimeExecutionControlRepository {
      * @param target 接受时固定的执行目标；拒绝时为空
      */
     record InterruptRequest(InterruptStatus status, ExecutionTargetDTO target) {}
+
+    /**
+     * 持有 Session 与执行行锁期间提交 confirming 完整事件的回调。
+     */
+    @FunctionalInterface
+    interface ConfirmingAppender {
+        ConfirmingEvents append();
+    }
+
+    /**
+     * 已原子提交的工具调用和 confirming idle 事件身份。
+     *
+     * @param toolCallEventId 工具调用完整事件标识
+     * @param toolCallEventSeq 工具调用完整事件顺序号
+     * @param idleEventId confirming idle 完整事件标识
+     * @param idleEventSeq confirming idle 完整事件顺序号
+     */
+    record ConfirmingEvents(String toolCallEventId, long toolCallEventSeq, String idleEventId, long idleEventSeq) {}
 }

@@ -104,20 +104,25 @@ public class MyBatisRuntimeExecutionControlRepository implements RuntimeExecutio
     @Override
     @Transactional
     public TransitionStatus markConfirming(
-            ExecutionTargetDTO target,
-            String toolCallId,
-            String terminalEventId,
-            long terminalEventSeq,
-            OffsetDateTime terminalAt) {
+            ExecutionTargetDTO target, String toolCallId, ConfirmingAppender appender, OffsetDateTime terminalAt) {
         if (toolCallId == null || toolCallId.isBlank()) {
             throw new IllegalArgumentException("tool call id is required");
         }
+        Objects.requireNonNull(appender, "appender");
         TransitionStatus rejected = rejectTransition(target, RuntimeExecutionState.RUNNING);
         if (rejected != null) {
             return rejected;
         }
+        ConfirmingEvents events = requireConfirmingEvents(appender.append());
+        linkCommittedEvent(target, events.toolCallEventId(), events.toolCallEventSeq());
+        linkCommittedEvent(target, events.idleEventId(), events.idleEventSeq());
         OffsetDateTime storedAt = storedAt(terminalAt);
-        closeSegment(target, terminalEventId, terminalEventSeq, RuntimeExecutionTerminalReason.CONFIRMING, storedAt);
+        closeSegment(
+                target,
+                events.idleEventId(),
+                events.idleEventSeq(),
+                RuntimeExecutionTerminalReason.CONFIRMING,
+                storedAt);
         requireOne(
                 mapper.markConfirming(
                         target.sessionId(), target.executionId(), target.segmentId(), toolCallId, storedAt),
@@ -284,6 +289,16 @@ public class MyBatisRuntimeExecutionControlRepository implements RuntimeExecutio
         if (isBlank(sessionId) || isBlank(targetEventId) || isBlank(eventId)) {
             throw new IllegalArgumentException("interrupt identity is incomplete");
         }
+    }
+
+    private static ConfirmingEvents requireConfirmingEvents(ConfirmingEvents events) {
+        Objects.requireNonNull(events, "confirming events");
+        requireTerminalEvent(events.toolCallEventId(), events.toolCallEventSeq());
+        requireTerminalEvent(events.idleEventId(), events.idleEventSeq());
+        if (events.toolCallEventId().equals(events.idleEventId())) {
+            throw new IllegalArgumentException("confirming event identities must be distinct");
+        }
+        return events;
     }
 
     private static void requireTerminalEvent(String eventId, long eventSeq) {

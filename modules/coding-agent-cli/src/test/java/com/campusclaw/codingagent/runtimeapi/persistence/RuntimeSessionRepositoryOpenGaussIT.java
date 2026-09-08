@@ -150,25 +150,22 @@ class RuntimeSessionRepositoryOpenGaussIT {
     void shouldPersistFixedExecutionAndCloseExpectedSegmentAsConfirming() {
         RuntimeSessionDTO session = newSession("session_execution_segment");
         repository.create(session);
-        RuntimeEntryDTO root = newEntry(session.getId(), "root-entry", "user.message", session.getCreatedAt(), "{}");
-        repository.acceptUserEvent(session.getId(), root, session.getCreatedAt());
-        var target = new ExecutionTargetDTO(session.getId(), "execution-1", "root-event", "segment-1");
+        var target = acceptRootMessage(session, "confirming");
+        assertConfirmingWriteRollsBack(session, target);
+        persistConfirmingEvents(session, target);
 
-        executionControls.register(target, root.getEntrySeq(), session.getCreatedAt());
-        executionControls.linkCommittedEvent(target, "root-event", root.getEntrySeq());
-        var status = executionControls.markConfirming(
-                target,
-                "tool-call-" + "x".repeat(300),
-                "confirming-event",
-                root.getEntrySeq() + 1,
-                session.getCreatedAt().plusSeconds(1));
-
-        assertThat(status).isEqualTo(RuntimeExecutionControlRepository.TransitionStatus.APPLIED);
         assertThat(executionControls.find(target).orElseThrow())
                 .extracting("rootEventId", "state", "currentSegmentId", "terminalEventId")
-                .containsExactly("root-event", RuntimeExecutionState.CONFIRMING, "segment-1", null);
+                .containsExactly(target.rootEventId(), RuntimeExecutionState.CONFIRMING, target.segmentId(), null);
         assertThat(repository.find(session.getId()).orElseThrow().getState()).isEqualTo("running");
-        assertThat(count("t_session_execution_segment_events", session.getId())).isOne();
+        assertThat(count("t_session_entries", session.getId())).isEqualTo(3);
+        assertThat(count("t_session_events", session.getId())).isEqualTo(3);
+        assertThat(count("t_session_execution_segment_events", session.getId())).isEqualTo(3);
+        assertThat(jdbcTemplate.queryForObject(
+                        "SELECT terminal_reason FROM t_session_execution_segments WHERE session_id = ?",
+                        String.class,
+                        session.getId()))
+                .isEqualTo("confirming");
     }
 
     @Test
@@ -1146,6 +1143,27 @@ class RuntimeSessionRepositoryOpenGaussIT {
         return executionPersistence
                 .acceptMessage(session.getId(), root, event, root.getTimestamp())
                 .target();
+    }
+
+    private void assertConfirmingWriteRollsBack(RuntimeSessionDTO session, ExecutionTargetDTO target) {
+        RuntimeEntryDTO tool = controlEntry(session, "rollback-tool", "tool.execution.started");
+        CommittedEventDTO toolEvent = committedEvent(tool, "rollback-tool-event", "agent.tool_call");
+        RuntimeEntryDTO idle = controlEntry(session, "rollback-idle", "session.status.idle");
+        CommittedEventDTO duplicate = committedEvent(idle, target.rootEventId(), "session.status_idle");
+        assertThatThrownBy(() -> executionPersistence.markToolConfirming(
+                        target, "rollback-tool-call", tool, toolEvent, idle, duplicate, idle.getTimestamp()))
+                .isInstanceOf(DataIntegrityViolationException.class);
+        assertThat(executionControls.find(target).orElseThrow().getState()).isEqualTo(RuntimeExecutionState.RUNNING);
+        assertThat(count("t_session_entries", session.getId())).isOne();
+    }
+
+    private void persistConfirmingEvents(RuntimeSessionDTO session, ExecutionTargetDTO target) {
+        RuntimeEntryDTO tool = controlEntry(session, "tool-entry", "tool.execution.started");
+        CommittedEventDTO toolEvent = committedEvent(tool, "tool-event", "agent.tool_call");
+        RuntimeEntryDTO idle = controlEntry(session, "confirming-idle", "session.status.idle");
+        CommittedEventDTO idleEvent = committedEvent(idle, "confirming-idle-event", "session.status_idle");
+        executionPersistence.markToolConfirming(
+                target, "tool-call-" + "x".repeat(300), tool, toolEvent, idle, idleEvent, idle.getTimestamp());
     }
 
     private void assertInterruptError(
