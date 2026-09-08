@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<title>ADR-0084：按本机固定目标轮询权威执行控制</title>
+<style>body{max-width:960px;margin:40px auto;padding:0 24px;color:#172033;font:16px/1.75 system-ui,sans-serif}h1,h2{line-height:1.3}code{background:#eef2f6;padding:2px 5px}a{color:#135dbe}</style>
+<h1>ADR-0084：按本机固定目标轮询权威执行控制</h1>
+<p>Status: Accepted · Date: 2026-09-08 · Version: 1.0.0</p>
+<h2>Context</h2>
+<p>Events v2 要求中断和工具确认在接收实例与执行实例不同时仍能交付。设计基线
+<code>2ee2a3211da68ad87b0d9cab353e691b00bdaebd</code> 已选择数据库权威记录、执行实例批量检查和
+同实例提交后快路径。Java 基线 <code>043fad7c</code> 已保存固定执行、停止请求和一次确认决定，但尚无
+按本机执行目标检查并分发这些记录的应用服务。</p>
+<p>pi 基线 <code>4af9d21d3b4d664e4a29fcabfec85171077248e3</code> 在
+<code>packages/agent/src/agent-loop.ts</code> 使用进程内 AbortSignal，并在 Tool 准备前复查取消；它没有
+CampusClaw 的共享数据库和跨实例交接。</p>
+<h2>Decision</h2>
+<ul>
+<li>每个实例只从本地 Dispatcher 获取有界、去重的固定执行目标，再分批查询对应的非终态执行、停止请求和 PENDING 确认决定；空目标不查库。</li>
+<li>一条结果同时含停止和确认时先分发停止。Dispatcher 在接触执行对象前必须复核完整目标和 Tool Call ID。</li>
+<li>本地成功交付按固定目标去重；未命中或异常允许下一轮重试。分发使用独立虚拟线程，不阻塞检查批次。</li>
+<li>同实例受理成功后可以走共享快路径；只有事务确定提交后才能调用，失败仍由持久记录和轮询兜底。</li>
+<li>检查周期、批次、查询超时和失败退避配置化；当前默认值属于实施校准，不是服务等级承诺。</li>
+</ul>
+<h2>选项与取舍</h2>
+<p>粘性路由或实例间 HTTP 转发会把正确性交给部署路由并增加实例地址管理；Redis 通知会引入新的基础设施和故障面。
+对每个执行建立独立高频查询会放大连接竞争，全库扫描又无法利用本机对象范围。选择以共享数据库为权威、按本机固定目标
+批量查询，代价是周期性读负载和可配置的发现延迟；同实例快路径只用于降低常见路径延迟。</p>
+<h2>Consequences</h2>
+<p>执行实例能够发现由其他实例接受的停止或确认记录；重复读取不会重复启动已成功交付的本地任务，数据库故障也不会
+删除控制记录或伪造结束。查询只返回内部身份和控制小字段，不携带凭据、公共事件正文或工具参数。</p>
+<p>本片只定义 <code>RuntimeLocalControlDispatcher</code> 端口。执行对象适配器、Events v2 HTTP、等待响应和结果补读
+仍由后续切片接入；Dispatcher 缺失时轮询服务不访问数据库，因此本决策不代表端到端跨实例控制已经上线。</p>
+<p>不新增 Maven 依赖、Redis、实例间 HTTP 转发或数据库表。</p>
+<h2>Validation</h2>
+<p>轮询单测7项通过，覆盖空目标、批次、停止优先、去重、重试、退避和快路径。openGauss 真实仓储测试44项通过且零跳过，
+包括100目标批量查询、确认前段关联和确认后停止优先。格式、Checkstyle 和测试编译通过；企业镜像验证记录在实现交付中。</p>
+<h2>Related</h2>
+<p><a href="../designs/runtime-control-polling/README.md">轮询基础实现设计</a> ·
+<a href="../designs/runtime-control-polling/diagram.puml#L1">PlantUML 源码</a> ·
+<a href="0075-persist-runtime-execution-control.html">固定执行与确认持久化</a></p>
+</html>
