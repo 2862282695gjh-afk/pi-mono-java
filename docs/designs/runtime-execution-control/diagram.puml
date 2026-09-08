@@ -3,6 +3,7 @@ title Durable Runtime Execution Control Store
 ' Observed Java source baseline: pi-mono-java fd556dce3cfa12e5e834b6e9b8f835f10e7d67c8
 ' Store implementation commit: 8ec383dd0ee6a5a8fe7e72b9e97bba8f71c8f8da
 ' Application transaction implementation: 92562f62 through 8e775f1c
+' Tool confirmation foundation implementation: aa687e98
 ' Observed source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/runtime/RuntimeActiveExecution.java#runId
 ' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/persistence/RuntimeExecutionPersistenceService.java
 ' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/persistence/RuntimeExecutionControlRepository.java
@@ -19,6 +20,7 @@ class RuntimeExecutionPersistenceService {
   acceptMessage(...)
   acceptInterrupt(...)
   markToolConfirming(...)
+  acceptToolConfirmation(...)
   commitTerminal(...)
 }
 
@@ -33,6 +35,9 @@ interface RuntimeExecutionControlRepository {
   register(target, triggerEventSeq, acceptedAt)
   requestInterrupt(sessionId, targetEventId, eventId, acceptedAt)
   markConfirming(target, toolCallId, appender, terminalAt)
+  acceptConfirmation(sessionId, toolCallId, eventId, segmentId, result, appender, acceptedAt)
+  claimConfirmation(confirmingTarget, toolCallId, claimedAt)
+  acknowledgeConfirmation(decision, completedAt)
   markTerminal(target, appender, reason, terminalAt)
 }
 
@@ -67,6 +72,15 @@ entity "t_session_execution_segment_events" as t_session_execution_segment_event
   event_seq
 }
 
+entity "t_session_tool_confirmations" as t_session_tool_confirmations {
+  confirmation_event_id
+  previous_segment_id
+  segment_id
+  tool_call_id
+  result
+  state
+}
+
 entity "t_sessions" as t_sessions
 entity "t_session_entries" as t_session_entries
 entity "t_session_events" as t_session_events
@@ -80,17 +94,20 @@ MyBatisRuntimeExecutionControlRepository --> RuntimeExecutionControlMapper
 RuntimeExecutionControlMapper --> t_session_executions
 RuntimeExecutionControlMapper --> t_session_execution_segments
 RuntimeExecutionControlMapper --> t_session_execution_segment_events
+RuntimeExecutionControlMapper --> t_session_tool_confirmations
 RuntimeSessionRepository --> t_sessions
 RuntimeSessionRepository --> t_session_entries
 RuntimeSessionRepository --> t_session_events
 RuntimeSessionRepository --> t_session_event_projection
 t_session_executions ||--|{ t_session_execution_segments
 t_session_execution_segments ||--o{ t_session_execution_segment_events
+t_session_execution_segments ||--o| t_session_tool_confirmations
 t_session_events ||--o| t_session_execution_segment_events
 
 note bottom of RuntimeExecutionPersistenceService
   One outer Spring transaction
   locks Session and exact execution before terminal append.
   Interrupt receipts are not linked to the message segment.
+  A committed stop prevents confirmation accept or claim.
 end note
 @enduml
