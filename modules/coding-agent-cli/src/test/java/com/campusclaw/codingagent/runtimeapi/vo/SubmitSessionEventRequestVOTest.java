@@ -87,8 +87,7 @@ class SubmitSessionEventRequestVOTest {
                 "{\"event\":{\"type\":\"user.message\",\"content\":null}}",
                 "{\"event\":{\"type\":\"user.message\",\"content\":[0]}}",
                 "{\"event\":{\"type\":\"user.message\",\"content\":[{\"type\":\"image\"}]}}",
-                "{\"event\":{\"type\":\"user.message\",\"content\":["
-                        + "{\"type\":\"text\",\"text\":null}]}}",
+                "{\"event\":{\"type\":\"user.message\",\"content\":[" + "{\"type\":\"text\",\"text\":null}]}}",
                 "{\"event\":{\"type\":\"user.message\",\"content\":["
                         + "{\"type\":\"file\",\"fileId\":\"0123456789abcdef0123456789abcdef\",\"text\":\"x\"}]}}"
             })
@@ -100,16 +99,13 @@ class SubmitSessionEventRequestVOTest {
 
     @Test
     void shouldValidateMessageOrderDistinctFilesAndUtf16TextLimits() throws Exception {
-        var textAfterFile = read(messageJson(
-                "{\"type\":\"file\",\"fileId\":\"0123456789abcdef0123456789abcdef\"},"
-                        + "{\"type\":\"text\",\"text\":\"分析\"}"));
-        var duplicateFile = read(messageJson(
-                "{\"type\":\"file\",\"fileId\":\"0123456789abcdef0123456789abcdef\"},"
-                        + "{\"type\":\"file\",\"fileId\":\"0123456789abcdef0123456789abcdef\"}"));
+        var textAfterFile = read(messageJson("{\"type\":\"file\",\"fileId\":\"0123456789abcdef0123456789abcdef\"},"
+                + "{\"type\":\"text\",\"text\":\"分析\"}"));
+        var duplicateFile = read(messageJson("{\"type\":\"file\",\"fileId\":\"0123456789abcdef0123456789abcdef\"},"
+                + "{\"type\":\"file\",\"fileId\":\"0123456789abcdef0123456789abcdef\"}"));
         var blankText = read(messageJson("{\"type\":\"text\",\"text\":\"  \"}"));
         var invalidFile = read(messageJson("{\"type\":\"file\",\"fileId\":\"file-1\"}"));
-        var longText = read(messageJson(
-                "{\"type\":\"text\",\"text\":\"" + "😀".repeat(131_073) + "\"}"));
+        var longText = read(messageJson("{\"type\":\"text\",\"text\":\"" + "😀".repeat(131_073) + "\"}"));
         String fiveFiles = IntStream.range(0, 5)
                 .mapToObj(index -> "{\"type\":\"file\",\"fileId\":\"" + "%032x".formatted(index) + "\"}")
                 .collect(Collectors.joining(","));
@@ -136,6 +132,13 @@ class SubmitSessionEventRequestVOTest {
         assertThat(validationPaths(allowWithMessage)).contains("event.denyMessageValid");
         assertThat(validationPaths(denyWithBlank)).contains("event.denyMessageValid");
         assertThat(validationPaths(denyOverflow)).contains("event.denyMessage");
+    }
+
+    @Test
+    void shouldValidateDirectlyConstructedConfirmationResult() {
+        var unsupported = new SubmitSessionEventRequestVO(confirmation("call-1", "unexpected", null));
+
+        assertThat(validationPaths(unsupported)).contains("event.result");
     }
 
     private SubmitSessionEventRequestVO read(String input) throws JsonProcessingException {
