@@ -41,7 +41,9 @@ class CommandRequestVOTest {
     void shouldSelectRequestTypesAndRetainAllDeclaredFields() throws Exception {
         var builtin = json.readValue("{\"arguments\":\" model-a \",\"name\":\"model\"}", CommandRequestVO.class);
         var skill = json.readValue(
-                "{\"fileIds\":[\"file-b\",\"file-a\"],\"arguments\":\" 请分析 \",\"name\":\"skill:pdf\"}",
+                "{\"fileIds\":[\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\","
+                        + "\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"],"
+                        + "\"arguments\":\" 请分析 \",\"name\":\"skill:pdf\"}",
                 CommandRequestVO.class);
         assertThat(builtin).isExactlyInstanceOf(BuiltinCommandRequestVO.class);
         assertThat(builtin.getName()).isEqualTo("model");
@@ -49,7 +51,8 @@ class CommandRequestVOTest {
         assertThat(skill).isExactlyInstanceOf(SkillCommandRequestVO.class);
         assertThat(skill.getName()).isEqualTo("skill:pdf");
         assertThat(skill.getArguments()).isEqualTo(" 请分析 ");
-        assertThat(((SkillCommandRequestVO) skill).getFileIds()).containsExactly("file-b", "file-a");
+        assertThat(((SkillCommandRequestVO) skill).getFileIds())
+                .containsExactly("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
         assertThat(VALIDATION.getValidator().validate(skill)).isEmpty();
     }
 
@@ -179,25 +182,31 @@ class CommandRequestVOTest {
     }
 
     @Test
-    void shouldValidateAttachmentCountAndEachIdentifierWithoutInventingAFormat() {
-        var files = IntStream.range(0, 32).mapToObj(index -> "外部文件 " + index).toList();
+    void shouldValidateEventAttachmentCountAndIdentifierFormat() {
+        var files = IntStream.range(0, 4)
+                .mapToObj(index -> "%032x".formatted(index))
+                .toList();
         var allowed = new SkillCommandRequestVO("skill:pdf", null, files);
         assertThat(VALIDATION.getValidator().validate(allowed)).isEmpty();
-        var overflow = new SkillCommandRequestVO("skill:pdf", null, java.util.Collections.nCopies(33, "file-a"));
+        var overflow = new SkillCommandRequestVO(
+                "skill:pdf", null, java.util.Collections.nCopies(5, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"));
         assertThat(VALIDATION.getValidator().validate(overflow))
                 .extracting(value -> value.getPropertyPath().toString())
                 .containsExactly("fileIds");
-        var invalidItems = new SkillCommandRequestVO("skill:pdf", null, Arrays.asList("", "  ", null));
+        var invalidItems = new SkillCommandRequestVO("skill:pdf", null, Arrays.asList("file-a", "外部文件", null));
         assertThat(VALIDATION.getValidator().validate(invalidItems)).hasSize(3);
     }
 
     @Test
     void shouldRetainBlankArgumentsAndDuplicateFilesForServiceBusinessValidation() throws Exception {
         var request = (SkillCommandRequestVO) json.readValue(
-                "{\"name\":\"skill:pdf\",\"arguments\":\"  \",\"fileIds\":[\"file-a\",\"file-a\"]}",
+                "{\"name\":\"skill:pdf\",\"arguments\":\"  \","
+                        + "\"fileIds\":[\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\","
+                        + "\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"]}",
                 CommandRequestVO.class);
         assertThat(request.getArguments()).isEqualTo("  ");
-        assertThat(request.getFileIds()).containsExactly("file-a", "file-a");
+        assertThat(request.getFileIds())
+                .containsExactly("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
         assertThat(VALIDATION.getValidator().validate(request)).isEmpty();
     }
 
