@@ -126,8 +126,8 @@ public class RuntimeExceptionHandler {
         String message = messageSource.getMessage(errorCode.messageKey(), null, locale);
         HttpHeaders headers = new HttpHeaders();
         headers.set(HttpHeaders.CONTENT_LANGUAGE, locale.toLanguageTag());
-        if (isCommandExecutionRequest(request)) {
-            headers.setContentType(MediaType.APPLICATION_JSON);
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        if (isCommandExecutionRequest(request) || isEventSubmissionRequest(request)) {
             headers.setCacheControl("no-store");
         }
         errorCode
@@ -153,6 +153,13 @@ public class RuntimeExceptionHandler {
         Object handler = request.getAttribute(HandlerMapping.BEST_MATCHING_HANDLER_ATTRIBUTE);
         return handler instanceof HandlerMethod method
                 && RuntimeCommandController.class.isAssignableFrom(method.getBeanType());
+    }
+
+    private static boolean isEventSubmissionRequest(HttpServletRequest request) {
+        Object handler = request.getAttribute(HandlerMapping.BEST_MATCHING_HANDLER_ATTRIBUTE);
+        return handler instanceof HandlerMethod method
+                && RuntimeEventController.class.isAssignableFrom(method.getBeanType())
+                && method.getMethod().getName().equals("submit");
     }
 
     private static RuntimeErrorCode classifyInvalidBody(HttpServletRequest request) {

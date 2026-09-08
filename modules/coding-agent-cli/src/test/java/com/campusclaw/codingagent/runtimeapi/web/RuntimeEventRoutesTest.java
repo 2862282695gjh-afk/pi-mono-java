@@ -25,6 +25,8 @@ import java.util.Locale;
 
 import com.campusclaw.codingagent.common.client.mate.MateCredentials;
 import com.campusclaw.codingagent.runtimeapi.RuntimeMessageSourceConfiguration;
+import com.campusclaw.codingagent.runtimeapi.error.RuntimeApiException;
+import com.campusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
 import com.campusclaw.codingagent.runtimeapi.event.CommittedEventQueryService;
 import com.campusclaw.codingagent.runtimeapi.event.RuntimeEventStream;
 import com.campusclaw.codingagent.runtimeapi.event.RuntimeSseDispatcher;
@@ -135,6 +137,23 @@ class RuntimeEventRoutesTest {
                 .andExpect(jsonPath("$.resCode").value("INVALID_EVENT_REQUEST"))
                 .andExpect(jsonPath("$.result").doesNotExist());
         verify(service, never()).submit(any(), any(), any(Locale.class), any());
+    }
+
+    @Test
+    void shouldReturnJsonWhenEventIsRejectedBeforeTheFirstSseFrame() throws Exception {
+        when(service.submit(any(), any(), any(Locale.class), any()))
+                .thenThrow(new RuntimeApiException(RuntimeErrorCode.TOOL_CONFIRMATION_NOT_PENDING));
+
+        mvc.perform(authenticated(post("/campusclaw-service/v1/sessions/{sessionId}/events", SESSION_ID))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .accept(MediaType.TEXT_EVENT_STREAM)
+                        .content("{\"event\":{\"type\":\"user.tool_confirmation\","
+                                + "\"toolCallId\":\"call-1\",\"result\":\"allow\"}}"))
+                .andExpect(status().isConflict())
+                .andExpect(header().string(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE))
+                .andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store"))
+                .andExpect(jsonPath("$.resCode").value("TOOL_CONFIRMATION_NOT_PENDING"));
+        verify(service).submit(eq(SESSION_ID), any(), eq(Locale.US), any());
     }
 
     @Test
