@@ -12,6 +12,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -378,7 +379,79 @@ class AgentLoopIntegrationTest {
             assertInstanceOf(AssistantMessage.class, result.get(1));
 
             // 即使取消也必须投影 AgentEnd 事件。
-            assertInstanceOf(AgentEndEvent.class, events.getLast());
+            var end = assertInstanceOf(AgentEndEvent.class, events.getLast());
+            assertTrue(end.cancelled());
+        }
+
+        @Test
+        void lateCancellationKeepsNaturalStopEvidence() {
+            var signal = new CancellationToken();
+            var provider = new ScriptedProvider(List.of(textReply("completed")));
+            var state = new AgentState();
+            state.setSystemPrompt("system");
+            var context = new AgentContext(state);
+            var loop = new AgentLoop(new AgentLoopConfig(
+                    piAiService(provider),
+                    model,
+                    new DefaultMessageConverter(),
+                    null,
+                    toolPipeline,
+                    steeringQueue,
+                    followUpQueue,
+                    SimpleStreamOptions.empty()));
+
+            loop.run(
+                    List.of(new UserMessage("finish naturally", 1L)),
+                    context,
+                    event -> {
+                        events.add(event);
+                        if (event instanceof MessageEndEvent end
+                                && end.message() instanceof AssistantMessage assistant
+                                && assistant.stopReason() == StopReason.STOP) {
+                            signal.cancel();
+                        }
+                    },
+                    signal);
+
+            var end = assertInstanceOf(AgentEndEvent.class, events.getLast());
+            assertFalse(end.cancelled());
+        }
+
+        @Test
+        void cancellationReleasesPendingToolConfirmationWithoutAppendingToolResult() {
+            var signal = new CancellationToken();
+            var entered = new CompletableFuture<Void>();
+            var confirmation = new CompletableFuture<com.huawei.hicampus.claw.agent.tool.BeforeToolCallResult>();
+            toolPipeline.setBeforeToolCall(context -> {
+                entered.complete(null);
+                return confirmation.get();
+            });
+            var provider = new ScriptedProvider(List.of(toolCallReply("bash", Map.of("command", "ls"))));
+            var state = new AgentState();
+            state.setSystemPrompt("system");
+            state.setTools(List.of(simpleTool("bash", "Run command")));
+            var context = new AgentContext(state);
+            var loop = new AgentLoop(new AgentLoopConfig(
+                    piAiService(provider),
+                    model,
+                    new DefaultMessageConverter(),
+                    null,
+                    toolPipeline,
+                    steeringQueue,
+                    followUpQueue,
+                    SimpleStreamOptions.empty()));
+            var work = CompletableFuture.supplyAsync(() ->
+                    loop.run(List.of(new UserMessage("Wait for confirmation", 1L)), context, events::add, signal));
+
+            entered.join();
+            signal.cancel();
+            confirmation.completeExceptionally(new CancellationException("interrupted"));
+
+            var result = work.join();
+            assertEquals(2, result.size());
+            assertFalse(result.stream().anyMatch(ToolResultMessage.class::isInstance));
+            assertFalse(events.stream().anyMatch(TurnEndEvent.class::isInstance));
+            assertTrue(assertInstanceOf(AgentEndEvent.class, events.getLast()).cancelled());
         }
     }
 
