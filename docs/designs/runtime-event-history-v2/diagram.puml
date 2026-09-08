@@ -12,6 +12,7 @@ title Authoritative event history query
 ' Pi source: packages/agent/src/agent-loop.ts#runAgentLoop
 ' Pi source: packages/agent/src/agent-loop.ts#prepareToolCall
 ' Java divergence: pi has no CampusClaw current-branch HTTP history store.
+' Target integration: the Controller delegates to the current query service only after the Events HTTP switch.
 actor Caller
 participant RuntimeEventController
 participant CommittedEventQueryService
@@ -47,5 +48,9 @@ note over MyBatisRuntimeSessionRepository,t_session_events
   One REPEATABLE_READ transaction per request.
   No cross-request snapshot or total count.
   No legacy migration or read-time reconstruction.
+end note
+note over RuntimeEventController,CommittedEventQueryService
+  Controller wiring is part of the pending Events HTTP integration.
+  The query service and repository already exist.
 end note
 @enduml
