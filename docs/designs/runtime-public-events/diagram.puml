@@ -1,0 +1,34 @@
+@startuml public_event_types
+title Public event data model
+' Source baseline: pi-mono-java 2f52e9b8
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/event/RuntimeEntryCodec.java#toSseData
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/vo/RuntimeSseEventVO.java
+' Observed behavior: the existing HTTP path uses the legacy event wrapper.
+' Design reason: persistence identity must not leak through the public response.
+' Java divergence: the public event protocol is a CampusClaw architecture change.
+class CommittedEventDTO {
+  sessionId
+  eventId
+  eventSeq
+  anchorEntryId
+  type
+  createdAt
+  payload
+}
+class SessionEventResponseVO {
+  eventId
+  type
+  createdAt
+  details (unwrapped)
+}
+interface EventDetailsResponseVO
+enum CommittedEventType
+SessionEventResponseVO *-- EventDetailsResponseVO
+CommittedEventDTO ..> CommittedEventType : public type value
+CommittedEventDTO ..> SessionEventResponseVO : safe projection (next slice)
+note bottom of SessionEventResponseVO
+  Types introduced in this slice.
+  HTTP integration follows in later slices.
+  No internal sequence or branch anchor in JSON.
+end note
+@enduml
