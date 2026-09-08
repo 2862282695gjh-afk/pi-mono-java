@@ -39,6 +39,7 @@ import com.openai.client.okhttp.OpenAIOkHttpClient;
 import com.openai.core.http.StreamResponse;
 import com.openai.models.responses.EasyInputMessage;
 import com.openai.models.responses.FunctionTool;
+import com.openai.models.responses.Response;
 import com.openai.models.responses.ResponseCreateParams;
 import com.openai.models.responses.ResponseFunctionToolCall;
 import com.openai.models.responses.ResponseInputItem;
@@ -279,9 +280,9 @@ public class OpenAIResponsesProvider implements ApiProvider {
         event.reasoningSummaryTextDelta().ifPresent(e -> applyThinkingDelta(e, state, model, eventStream));
         event.functionCallArgumentsDelta().ifPresent(e -> applyToolArgsDelta(e, state, model, eventStream));
         event.outputItemDone().ifPresent(e -> handleOutputItemDoneEvent(e, state, model, eventStream));
-        event.completed().ifPresent(e -> handleCompleted(e, state));
-        event.failed().ifPresent(e -> state.stopReason = StopReason.ERROR);
-        event.incomplete().ifPresent(e -> state.stopReason = StopReason.LENGTH);
+        event.completed().ifPresent(e -> handleTerminalResponse(e.response(), state, StopReason.STOP));
+        event.failed().ifPresent(e -> handleTerminalResponse(e.response(), state, StopReason.ERROR));
+        event.incomplete().ifPresent(e -> handleTerminalResponse(e.response(), state, StopReason.LENGTH));
         event.error().ifPresent(e -> state.stopReason = StopReason.ERROR);
     }
 
@@ -379,14 +380,15 @@ public class OpenAIResponsesProvider implements ApiProvider {
                 new AssistantMessageEvent.ToolCallDeltaEvent(contentIdx, e.delta(), partialFrom(state, model, null)));
     }
 
-    private void handleCompleted(com.openai.models.responses.ResponseCompletedEvent e, ResponsesStreamState state) {
-        var resp = e.response();
-        state.responseId = resp.id();
-        resp.usage().ifPresent(u -> {
+    private void handleTerminalResponse(Response response, ResponsesStreamState state, StopReason fallback) {
+        state.responseId = response.id();
+        response.usage().ifPresent(u -> {
             parseUsage(u, state.accumulatedUsage);
             state.usageKnown = true;
         });
-        resp.status().ifPresent(s -> state.stopReason = mapResponseStatus(s, state.contentBlocks));
+        state.stopReason = response.status()
+                .map(status -> mapResponseStatus(status, state.contentBlocks))
+                .orElse(fallback);
     }
 
     private AssistantMessage partialFrom(ResponsesStreamState state, Model model, @Nullable StopReason stopReason) {

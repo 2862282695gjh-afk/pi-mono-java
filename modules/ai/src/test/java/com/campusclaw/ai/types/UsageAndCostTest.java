@@ -179,5 +179,27 @@ class UsageAndCostTest {
             var restored = mapper.readValue(json, Usage.class);
             assertEquals(original, restored);
         }
+
+        @Test
+        void shouldRoundTripReportedZeroAndUnknownZeroSeparately() throws JsonProcessingException {
+            Usage reported = new Usage(0, 0, 0, 0, 0, Cost.empty());
+
+            Usage restoredReported = mapper.readValue(mapper.writeValueAsString(reported), Usage.class);
+            Usage restoredUnknown = mapper.readValue(mapper.writeValueAsString(Usage.empty()), Usage.class);
+
+            assertTrue(restoredReported.known());
+            assertFalse(restoredUnknown.known());
+        }
+
+        @Test
+        void shouldInferKnownUsageFromLegacyNonZeroJson() throws JsonProcessingException {
+            var json =
+                    """
+                    {"input":1,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":1,"cost":null}""";
+
+            Usage restored = mapper.readValue(json, Usage.class);
+
+            assertTrue(restored.known());
+        }
     }
 }

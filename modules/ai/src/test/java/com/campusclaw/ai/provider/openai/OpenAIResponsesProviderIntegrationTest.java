@@ -534,6 +534,9 @@ class OpenAIResponsesProviderIntegrationTest {
 
             assertNotNull(finalMsg);
             assertEquals(StopReason.LENGTH, finalMsg.stopReason());
+            assertTrue(finalMsg.usage().known());
+            assertEquals(10, finalMsg.usage().input());
+            assertEquals(100, finalMsg.usage().output());
         }
     }
 
