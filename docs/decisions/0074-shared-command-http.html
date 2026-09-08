@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>ADR-0073：共享命令 POST 的 JSON 与 SSE 接入</title>
+  <title>ADR-0074：共享命令 POST 的 JSON 与 SSE 接入</title>
   <style>
     :root { font-family: Inter, "PingFang SC", sans-serif; color: #25272a; background: #f2f5f7; }
     body { margin: 0; } main { max-width: 920px; margin: 32px auto; padding: 32px; background: white; box-sizing: border-box; }
@@ -12,13 +12,17 @@
   </style>
 </head>
 <body><main>
-  <h1>ADR-0073：共享命令 POST 的 JSON 与 SSE 接入</h1>
-  <p>Status：Accepted · Date：2026-09-08 · Version：1.0.0</p>
+  <h1>ADR-0074：共享命令 POST 的 JSON 与 SSE 接入</h1>
+  <p>Status：Accepted · Date：2026-09-08 · Version：1.0.1</p>
   <h2>Context</h2>
   <p>Java 基线 <code>2f52e9b80c95c5c27141362976b918227b1c5d60</code> 已包含两类请求VO、
   Builtin执行与业务响应投影、Skill实际展开与普通消息执行。本片按已确认方案接通共享POST，不改变独立设计仓。</p>
   <p>本片实现证据为 <code>1f0cb7ece4c5228b5d14f89c8072bb528443378f</code>，
   新增 <code>runtimeapi/web/RuntimeCommandController.java#execute</code>，并补充应用适配和集中错误处理。</p>
+  <p>随后正常合入主线 <code>fd556dce3cfa12e5e834b6e9b8f835f10e7d67c8</code>，
+  <code>runtimeapi/event/RuntimeEventService.java#prepareAndSubmitLocked</code> 与
+  <code>RuntimeExecutionCoordinator.java#handleAcceptedStartFailure</code> 将接受后的启动失败留在原事件流。
+  共享 Skill 直接复用这项主线修复，不重新实施 Events v2。</p>
   <p>源码根为 <code>modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/</code>：
   <code>runtimeapi/service/command/CommandExecutionService.java#executeBuiltin</code> 提供隔离Future；
   <code>runtimeapi/service/command/skill/SkillCommandExecutionService.java#execute</code> 拥有归一化与实际执行；
@@ -53,6 +57,7 @@
     <li><a href="0072-command-request-contract.html">共享请求严格解析</a></li>
   </ul>
   <h2>版本历史</h2>
+  <p>1.0.1 · 2026-09-08：正常同步已接受事件失败处理主线；0073已被主线占用，本决策改用0074。</p>
   <p>1.0.0 · 2026-09-08：连接真实Builtin与Skill共享POST，明确框架返回与错误边界。</p>
 </main></body>
 </html>

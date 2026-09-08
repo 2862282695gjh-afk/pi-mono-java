@@ -1,11 +1,14 @@
 @startuml shared_command_http
 ' Java baseline: 2f52e9b80c95c5c27141362976b918227b1c5d60
-' HTTP implementation: 1f0cb7ece4c5228b5d14f89c8072bb528443378f
-' modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/web/RuntimeCommandController.java#execute
-' modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/web/RuntimeExceptionHandler.java#response
 ' modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/service/command/CommandExecutionService.java#executeBuiltin
 ' modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/service/command/skill/SkillCommandExecutionService.java#execute
 ' modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/web/RuntimeEventController.java#submit
+' HTTP implementation: 1f0cb7ece4c5228b5d14f89c8072bb528443378f
+' modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/web/RuntimeCommandController.java#execute
+' modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/web/RuntimeExceptionHandler.java#response
+' Integrated main: fd556dce3cfa12e5e834b6e9b8f835f10e7d67c8
+' modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/event/RuntimeEventService.java#prepareAndSubmitLocked
+' Observed behavior: accepted Skill startup failures stay on the existing ordinary stream.
 ' Observed behavior: typed requests and both real execution services already exist.
 ' Design reason: connect one public POST without duplicating normalization or execution lifecycle.
 ' Java divergence: structured JSON request, fail-closed errors, no local slash fallback.
@@ -39,7 +42,7 @@ else Skill request
   Client -> Web: Disconnect
   Web -> Events: Detach subscriber only
 end
-group Failure before response is committed
+group Validation failure or application call throws before response
   MVC -> Errors: Binding or method validation failure
   Web -> Errors: Application failure
   Errors --> Client: Stable HTTP status and JSON error

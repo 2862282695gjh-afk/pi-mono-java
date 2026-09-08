@@ -1,6 +1,6 @@
 # 共享命令 POST 接入
 
-版本：1.0.0 · 2026-09-08。
+版本：1.0.1 · 2026-09-08。
 
 ## Context 与范围
 
@@ -62,7 +62,7 @@ Builtin 普通处理结束后不继续持有；Compact 和 Skill 沿既有本次
 
 ## 设计决策与边界情况
 
-[ADR-0073](../../decisions/0073-shared-command-http.html)记录框架返回类型及错误边界的选择。
+[ADR-0074](../../decisions/0074-shared-command-http.html)记录框架返回类型及错误边界的选择。
 
 - Controller 声明 `Object`，实际返回 ResultBean 或 SseEmitter。Spring 6.2.6 对
   `ResponseEntity<?>`/`ResponseEntity<Object>` 的声明无法选择 SSE 处理器；临时确定性实验已复现。
@@ -101,11 +101,30 @@ Java AST检查16个源文件及镜像的方法/构造器均不超50非空行；�
 按普通本地环境流程显式 `scripts/sync-campusclaw.sh --no-verify` 同步后，布局检查、
 dry-run内容差异检查和8对源码的包名转换后逐字节比对通过。
 `bash scripts/check-commit-additions.sh origin/main HEAD` 为1692/2000行，其中模块846行，低于850预算。
-实现说明、ADR-0073、模块架构和实施状态同步；PlantUML重生成一致、SVG XML、ASCII、
+实现说明、ADR-0074、模块架构和实施状态同步；PlantUML重生成一致、SVG XML、ASCII、
 链接/行锚点、1280/360宽度ADR渲染及 `git diff --check` 已验证。
+
+### 主线同步
+
+正常合并提交 `5d490f4c168b618244d9829aa776eaa1ad2ef499` 的父提交分别为本片原head
+`d26f7ab2d97f32c283b32f14cb050a9addf81558` 和主线
+`fd556dce3cfa12e5e834b6e9b8f835f10e7d67c8`，没有代码冲突或额外合并修正。
+主线的 `runtimeapi/event/RuntimeEventService.java#prepareAndSubmitLocked` 在实际展开消息接受后先排入回执，
+`RuntimeExecutionCoordinator.java#handleAcceptedStartFailure` 负责接受后的启动失败收尾。
+共享 Skill 原样复用此行为：消息接受前的异常可返回错误 JSON；接受后的失败保留普通 SSE，
+即使此时 HTTP 尚未开始写出，也不把已接受消息重新解释成接收失败。
+此处记录主线观察和集成验证，不在本片扩展 Events v2 实施；详见主线
+[已接受事件失败处理](../runtime-event-acceptance/README.md)。主线已占用0073，本片ADR改用0074。
+
+合并后的 `./mvnw -q spotless:apply checkstyle:check` 与 `./mvnw -q clean verify` 再次通过：
+397类、2032项普通测试，0失败/错误/跳过。包括共享成功/错误MVC27/41、Builtin/Skill应用43/32、
+RuntimeEventService8、RuntimeEventOutput8（含协调器失败收尾）、GET清单19、Events路由5和PUT配置路由6。
+这些是同一全量报告中的分类，不额外相加；本片代码与新增77项用例不变。
+相对新主线的门禁仍为1692/2000，未将 #251 主线新增代码计入本PR，也没有豁免合并独有修改。
 
 ## 版本历史
 
 | 版本 | 日期 | 变更 |
 | --- | --- | --- |
+| 1.0.1 | 2026-09-08 | 正常合入fd556dce的事件接受后失败修复并重跑组合回归；ADR改用未占用的0074。 |
 | 1.0.0 | 2026-09-08 | 从已合入请求/执行能力接通共享 POST，保留后续独立跨进程验收。 |
