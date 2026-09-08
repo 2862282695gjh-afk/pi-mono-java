@@ -52,6 +52,7 @@ import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.command.SkillCommandInputDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.error.RuntimeErrorCode;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeCommittedEventFactory;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeEntryCodec;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeEntryIdGenerator;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeEventCursorCodec;
@@ -359,8 +360,18 @@ class SkillCommandExecutionOpenGaussIT {
                 registry,
                 contextFactory,
                 coordinator,
-                new RuntimeSessionModelReconciler(repository, directories, models, codec, ids, clock),
+                reconciler(directories, models, ids, clock, messages),
                 clock));
+    }
+
+    private RuntimeSessionModelReconciler reconciler(
+            AgentDirectoryResolver directories,
+            RuntimeModelManager models,
+            RuntimeEntryIdGenerator ids,
+            Clock clock,
+            org.springframework.context.MessageSource messages) {
+        return new RuntimeSessionModelReconciler(
+                repository, directories, models, codec, new RuntimeCommittedEventFactory(mapper, messages), ids, clock);
     }
 
     private PreparedAgentRuntime runtime(String content, boolean enabled) {

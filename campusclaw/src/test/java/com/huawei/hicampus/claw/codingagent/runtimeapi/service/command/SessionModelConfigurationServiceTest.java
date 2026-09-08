@@ -31,6 +31,7 @@ import com.huawei.hicampus.claw.codingagent.runtimeapi.agent.AgentDirectoryResol
 import com.huawei.hicampus.claw.codingagent.runtimeapi.agent.AgentDirectorySnapshotDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.command.catalog.ResolvedCommandCatalog;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.command.execution.CommandExecutionContext;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.CommittedEventDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeEntryDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeLifetimeUsageDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
@@ -39,6 +40,7 @@ import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.command.ModelCommandR
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.command.SessionCommandResultDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.error.RuntimeErrorCode;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeCommittedEventFactory;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeEntryCodec;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeEntryIdGenerator;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.mapper.RuntimeSessionMapper;
@@ -73,6 +75,9 @@ class SessionModelConfigurationServiceTest {
     private final RuntimeEntryCodec codec =
             new RuntimeEntryCodec(new ObjectMapper(), new RuntimeMessageSourceConfiguration().messageSource());
 
+    private final RuntimeCommittedEventFactory committedEventFactory = new RuntimeCommittedEventFactory(
+            new ObjectMapper(), new RuntimeMessageSourceConfiguration().messageSource());
+
     private final OffsetDateTime now = OffsetDateTime.parse("2026-09-06T00:00:00Z");
 
     private final Clock clock = Clock.fixed(now.toInstant(), ZoneOffset.UTC);
@@ -81,10 +86,12 @@ class SessionModelConfigurationServiceTest {
 
     private final RuntimeEntryIdGenerator idGenerator = () -> "entry-" + ids.incrementAndGet();
 
-    private final SessionModelConfigurationService service =
-            new SessionModelConfigurationService(repository, resolver, manager, codec, idGenerator, clock);
+    private final SessionModelConfigurationService service = new SessionModelConfigurationService(
+            repository, resolver, manager, codec, committedEventFactory, idGenerator, clock);
 
     private final List<RuntimeEntryDTO> appended = new ArrayList<>();
+
+    private final List<CommittedEventDTO> committed = new ArrayList<>();
 
     private final AgentDirectorySnapshotDTO snapshot = new AgentDirectorySnapshotDTO(
             "agent", "old", List.of("old", "next"), Path.of("/runtime/agent"), Path.of("/runtime/agent/.campusclaw"));
@@ -102,9 +109,15 @@ class SessionModelConfigurationServiceTest {
         when(manager.resolveAvailableModel(snapshot, "next")).thenReturn(model);
         when(mapper.updateSessionModel(eq("session"), eq("next"), anyBoolean(), eq(now)))
                 .thenReturn(1);
-        when(mapper.lockNextSequence("session")).thenReturn(17L, 18L);
+        when(mapper.lockNextSequence("session")).thenReturn(17L, 18L, 19L, 20L);
         when(mapper.incrementSequence("session")).thenReturn(1);
         when(mapper.updateActiveLeafAnyState(eq("session"), any())).thenReturn(1);
+        when(mapper.insertCommittedEvent(any())).thenAnswer(call -> {
+            committed.add(call.getArgument(0));
+            return 1;
+        });
+        when(mapper.insertCommittedEventProjection(any(), any(), any(Integer.class), any()))
+                .thenReturn(1);
         when(mapper.insertEntry(any())).thenAnswer(call -> {
             appended.add(call.getArgument(0));
             return 1;
@@ -134,7 +147,7 @@ class SessionModelConfigurationServiceTest {
     void shouldBuildBothEventsFromLockedStateAndReturnLastAuthoritativeSequence() {
         var result = executeChange("next");
         assertThat(result.changed()).isTrue();
-        assertThat(result.sourceEventSeq()).isEqualTo(18L);
+        assertThat(result.sourceEventSeq()).isEqualTo(19L);
         assertThat(result.session().getModelId()).isEqualTo("next");
         assertThat(result.session().getResourceVersion()).isEqualTo(5L);
         assertThat(result.session().getUpdatedAt()).isEqualTo(now);
@@ -153,8 +166,15 @@ class SessionModelConfigurationServiceTest {
                 .containsEntry("previousThinking", true)
                 .containsEntry("thinking", false)
                 .containsEntry("reason", "modelCapability")
-                .containsEntry("entrySeq", 18L);
+                .containsEntry("entrySeq", 19L);
         assertThat(appended).extracting(RuntimeEntryDTO::getParentId).containsExactly("prior", "entry-1");
+        assertThat(committed)
+                .extracting(CommittedEventDTO::getType)
+                .containsExactly("session.model_changed", "session.thinking_changed");
+        assertThat(committed).extracting(CommittedEventDTO::getEventSeq).containsExactly(18L, 20L);
+        assertThat(committed).extracting(CommittedEventDTO::getEventId).containsExactly("entry-1", "entry-2");
+        verify(mapper).insertCommittedEventProjection("session", "entry-1", 1, "runtime");
+        verify(mapper).insertCommittedEventProjection("session", "entry-2", 1, "runtime");
         verify(mapper).updateSessionModel("session", "next", false, now);
         verify(mapper).updateActiveLeafAnyState("session", "entry-2");
     }
@@ -267,6 +287,7 @@ class SessionModelConfigurationServiceTest {
             context.registerBean(AgentDirectoryResolver.class, () -> resolver);
             context.registerBean(RuntimeModelManager.class, () -> manager);
             context.registerBean(RuntimeEntryCodec.class, () -> codec);
+            context.registerBean(RuntimeCommittedEventFactory.class, () -> committedEventFactory);
             context.registerBean(RuntimeEntryIdGenerator.class, () -> idGenerator);
             context.registerBean(Clock.class, () -> clock);
             context.register(SessionModelConfigurationService.class, ModelCommandContributor.class);

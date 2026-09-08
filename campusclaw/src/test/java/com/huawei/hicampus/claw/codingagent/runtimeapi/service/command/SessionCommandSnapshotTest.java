@@ -29,6 +29,7 @@ import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.SessionConfigurationUpdateDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.SessionNameUpdateDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.command.SessionCommandResultDTO;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeCommittedEventFactory;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeEntryCodec;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.model.RuntimeModelManager;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.persistence.RuntimeSessionRepository;
@@ -53,6 +54,8 @@ class SessionCommandSnapshotTest {
     private final RuntimeModelManager models = mock(RuntimeModelManager.class);
 
     private final RuntimeEntryCodec codec = mock(RuntimeEntryCodec.class);
+
+    private final RuntimeCommittedEventFactory committedEventFactory = mock(RuntimeCommittedEventFactory.class);
 
     private final Clock clock = Clock.systemUTC();
 
@@ -95,9 +98,9 @@ class SessionCommandSnapshotTest {
         var update = new SessionConfigurationUpdateDTO(status, authoritative, sequence);
         when(repository.updateName(eq("session"), eq("locked"), any()))
                 .thenReturn(Optional.of(new SessionNameUpdateDTO(authoritative, changed)));
-        when(repository.updateModel(eq("session"), isNull(), eq("locked"), eq(false), any(), any()))
+        when(repository.updateModel(eq("session"), isNull(), eq("locked"), eq(false), any(), any(), any()))
                 .thenReturn(update);
-        when(repository.updateThinking(eq("session"), isNull(), eq(false), any(), any(), any()))
+        when(repository.updateThinking(eq("session"), isNull(), eq(false), any(), any(), any(), any()))
                 .thenReturn(update);
         configureModel();
         var result =
@@ -105,7 +108,13 @@ class SessionCommandSnapshotTest {
                     case "name" -> new SessionNamingService(repository, clock).execute("session", "locked");
                     case "model" ->
                         (SessionCommandResultDTO) new SessionModelConfigurationService(
-                                        repository, directories, models, codec, () -> "unused", clock)
+                                        repository,
+                                        directories,
+                                        models,
+                                        codec,
+                                        committedEventFactory,
+                                        () -> "unused",
+                                        clock)
                                 .execute("session", "locked");
                     case "thinking" -> thinkingService().execute("session", "off");
                     default -> throw new AssertionError(command);
@@ -158,7 +167,8 @@ class SessionCommandSnapshotTest {
     }
 
     private SessionThinkingConfigurationService thinkingService() {
-        return new SessionThinkingConfigurationService(repository, directories, models, codec, () -> "unused", clock);
+        return new SessionThinkingConfigurationService(
+                repository, directories, models, codec, committedEventFactory, () -> "unused", clock);
     }
 
     private RuntimeSessionDTO session(String label, long version) {
