@@ -38,7 +38,7 @@ import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.command.ResolvedComma
 import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeCommittedEventFactory;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeEntryCodec;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeEntryIdGenerator;
-import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeEventService;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeV2MessageEventService;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.model.RuntimeModelManager;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.persistence.RuntimeSessionRepository;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.service.command.skill.SkillCommandExecutionService;
@@ -112,7 +112,7 @@ class BuiltinCommandCoreTest {
                 .withBean(RuntimeEntryCodec.class, () -> mock(RuntimeEntryCodec.class))
                 .withBean(RuntimeEntryIdGenerator.class, () -> mock(RuntimeEntryIdGenerator.class))
                 .withBean(RuntimeCompactionService.class, () -> mock(RuntimeCompactionService.class))
-                .withBean(RuntimeEventService.class, () -> mock(RuntimeEventService.class))
+                .withBean(RuntimeV2MessageEventService.class, () -> mock(RuntimeV2MessageEventService.class))
                 .withBean(SessionEtagFactory.class)
                 .withBean(RuntimeSessionResponseAssembler.class)
                 .withBean(LocalValidatorFactoryBean.class)

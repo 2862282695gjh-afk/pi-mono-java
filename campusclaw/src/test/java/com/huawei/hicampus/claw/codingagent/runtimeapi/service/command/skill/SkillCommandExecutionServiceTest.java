@@ -31,8 +31,8 @@ import com.huawei.hicampus.claw.codingagent.runtime.PreparedAgentRuntime;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.command.SkillCommandInputDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.error.RuntimeErrorCode;
-import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeEventService;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeEventStream;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeV2MessageEventService;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.vo.SkillCommandRequestVO;
 import com.huawei.hicampus.claw.common.constant.ClawConstants;
 
@@ -43,7 +43,11 @@ import org.junit.jupiter.params.provider.NullAndEmptySource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 class SkillCommandExecutionServiceTest {
-    private final RuntimeEventService events = mock(RuntimeEventService.class);
+    private static final String FILE_B = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+
+    private static final String FILE_A = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+
+    private final RuntimeV2MessageEventService events = mock(RuntimeV2MessageEventService.class);
 
     private final SkillCommandExecutionService service = new SkillCommandExecutionService(events);
 
@@ -89,7 +93,7 @@ class SkillCommandExecutionServiceTest {
     @ValueSource(strings = {" \t\n", "  分析订单\n"})
     void testNormalizesOnlyAbsentInstructionsAndKeepsFilesInOrder(String arguments) {
         RuntimeEventStream stream = configureExpansion("完整 Skill 正文\n");
-        var input = input("pdf", arguments, List.of("file_b", "file_a"));
+        var input = input("pdf", arguments, List.of(FILE_B, FILE_A));
 
         assertThat(service.execute("session", input, Locale.CHINA, credentials)).isSameAs(stream);
         assertThat(prepared.get())
@@ -98,23 +102,30 @@ class SkillCommandExecutionServiceTest {
         assertThat(input.getArguments()).isEqualTo(arguments);
         verify(events)
                 .submitPreparedMessage(
-                        eq("session"), any(), eq(List.of("file_b", "file_a")), eq(Locale.CHINA), eq(credentials));
+                        eq("session"),
+                        eq("/skill:pdf" + (arguments == null || arguments.isBlank() ? "" : " " + arguments)),
+                        any(),
+                        eq(List.of(FILE_B, FILE_A)),
+                        eq(Locale.CHINA),
+                        eq(credentials));
     }
 
     @Test
     void testCopiesMutableInputBeforeDeferredPreparation() {
-        var input = input("pdf", "original", new ArrayList<>(List.of("file_a")));
-        when(events.submitPreparedMessage(any(), any(), any(), any(), any())).thenAnswer(call -> {
-            input.setSkillName("different");
-            input.setArguments("mutated");
-            input.getFileIds().clear();
-            BiFunction<String, PreparedAgentRuntime, String> prepare = call.getArgument(1);
-            prepared.set(prepare.apply("agent", runtime("body")));
-            List<String> files = call.getArgument(2);
-            assertThat(files).containsExactly("file_a");
-            assertThrows(UnsupportedOperationException.class, () -> files.add("other"));
-            return mock(RuntimeEventStream.class);
-        });
+        var input = input("pdf", "original", new ArrayList<>(List.of(FILE_A)));
+        when(events.submitPreparedMessage(any(), any(), any(), any(), any(), any()))
+                .thenAnswer(call -> {
+                    input.setSkillName("different");
+                    input.setArguments("mutated");
+                    input.getFileIds().clear();
+                    assertThat(call.<String>getArgument(1)).isEqualTo("/skill:pdf original");
+                    BiFunction<String, PreparedAgentRuntime, String> prepare = call.getArgument(2);
+                    prepared.set(prepare.apply("agent", runtime("body")));
+                    List<String> files = call.getArgument(3);
+                    assertThat(files).containsExactly(FILE_A);
+                    assertThrows(UnsupportedOperationException.class, () -> files.add("other"));
+                    return mock(RuntimeEventStream.class);
+                });
 
         service.execute("session", input, Locale.CHINA, credentials);
 
@@ -149,7 +160,7 @@ class SkillCommandExecutionServiceTest {
 
     @Test
     void testTranslatesFailuresWithoutExposingSecretsOrBody() {
-        when(events.submitPreparedMessage(any(), any(), any(), any(), any()))
+        when(events.submitPreparedMessage(any(), any(), any(), any(), any(), any()))
                 .thenThrow(new AgentRuntimeException("secret body"))
                 .thenThrow(new IllegalStateException("secret body"))
                 .thenThrow(new RuntimeApiException(RuntimeErrorCode.AGENT_MODEL_NOT_CONFIGURED));
@@ -168,11 +179,12 @@ class SkillCommandExecutionServiceTest {
 
     private RuntimeEventStream configureExpansion(String content) {
         var stream = mock(RuntimeEventStream.class);
-        when(events.submitPreparedMessage(any(), any(), any(), any(), any())).thenAnswer(call -> {
-            BiFunction<String, PreparedAgentRuntime, String> prepare = call.getArgument(1);
-            prepared.set(prepare.apply("agent", runtime(content)));
-            return stream;
-        });
+        when(events.submitPreparedMessage(any(), any(), any(), any(), any(), any()))
+                .thenAnswer(call -> {
+                    BiFunction<String, PreparedAgentRuntime, String> prepare = call.getArgument(2);
+                    prepared.set(prepare.apply("agent", runtime(content)));
+                    return stream;
+                });
         return stream;
     }
 
@@ -183,14 +195,14 @@ class SkillCommandExecutionServiceTest {
                 Stream.of(
                         null,
                         input("pdf", "x".repeat(262145), null),
-                        input("pdf", null, List.of("a", "a")),
+                        input("pdf", null, List.of(FILE_A, FILE_A)),
                         input("pdf", null, List.of(" ")),
                         input("pdf", null, Arrays.asList("a", null)),
                         input(
                                 "pdf",
                                 null,
-                                IntStream.range(0, 33)
-                                        .mapToObj(Integer::toString)
+                                IntStream.range(0, 5)
+                                        .mapToObj(index -> "%032x".formatted(index))
                                         .toList())));
     }
 

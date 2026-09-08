@@ -260,27 +260,12 @@ public class RuntimeEntryCodec {
         return record(sessionId, recordId, runId, timestamp, payload);
     }
 
-    public Map<String, Object> toSseData(RuntimeEntryDTO entry) {
-        return toSseData(entry, Locale.US);
-    }
-
     public Map<String, Object> toSseData(RuntimeEntryDTO entry, Locale locale) {
         LinkedHashMap<String, Object> result = new LinkedHashMap<>();
         result.put("entryId", entry.getId());
         result.put("entrySeq", entry.getEntrySeq());
         appendPublicPayload(result, entry, locale);
         result.put("createdAt", entry.getTimestamp().toString());
-        return result;
-    }
-
-    public Map<String, Object> toHistoryEvent(RuntimeEntryDTO entry) {
-        return toHistoryEvent(entry, Locale.US);
-    }
-
-    public Map<String, Object> toHistoryEvent(RuntimeEntryDTO entry, Locale locale) {
-        LinkedHashMap<String, Object> result = new LinkedHashMap<>();
-        result.put("type", entry.getType());
-        result.putAll(toSseData(entry, locale));
         return result;
     }
 

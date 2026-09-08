@@ -99,8 +99,6 @@ public final class ClawConstants {
 
         public static final int MAX_MESSAGE_CHARACTERS = 262144;
 
-        public static final int MAX_FILE_IDS = 32;
-
         public static final int MAX_EVENT_FILE_IDS = 4;
 
         public static final String EVENT_FILE_ID_REGEX = "^[0-9a-fA-F]{32}$";

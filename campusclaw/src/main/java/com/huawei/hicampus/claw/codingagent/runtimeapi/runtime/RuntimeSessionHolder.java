@@ -73,10 +73,6 @@ public class RuntimeSessionHolder {
         return managedSession == null ? agent.prompt(message) : managedSession.prompt(message);
     }
 
-    public CompletableFuture<Void> continueQueuedExecution() {
-        return managedSession == null ? agent.continueQueuedExecution() : managedSession.continueQueuedExecution();
-    }
-
     public CompletableFuture<SessionCompactionResult> compact() {
         if (managedSession == null) {
             throw new IllegalStateException("runtime compaction requires a managed session");
