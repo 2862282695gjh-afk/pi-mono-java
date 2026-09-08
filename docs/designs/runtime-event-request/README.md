@@ -2,12 +2,12 @@
 
 | 属性 | 值 |
 |---|---|
-| 版本 | 1.0.0 |
+| 版本 | 1.0.1 |
 | 日期 | 2026-09-08 |
 | 状态 | 请求类型与校验已实现，尚未切换生产 Controller |
 | 设计契约 | `pi-mono-java-design@2ee2a3211da68ad87b0d9cab353e691b00bdaebd` |
 | Java 变更前基线 | `fd556dce3cfa12e5e834b6e9b8f835f10e7d67c8` |
-| 请求代码提交 | `8dc32b2e` |
+| 请求代码提交 | `8dc32b2e`；边界校验修复 `bdf03c84`，集成提交 `cf2e40d6` |
 
 ## Context
 
@@ -71,11 +71,12 @@ VO 不裁剪、补默认值或静默去重。Session 状态、固定执行身份
 
 `SubmitSessionEventRequestVOTest` 使用真实 Jackson 和 Jakarta Validator，覆盖三种类型选择、
 字段原值、非对象、显式 null、非法 type、未知字段、内容块错配、文本顺序与 UTF-16 上限、
-文件格式/去重/数量，以及确认决定与 denyMessage 条件，共 17 项测试。
+文件格式/去重/数量，以及确认决定与 denyMessage 条件，共 18 项测试；另验证直接构造 VO 的非法 result 与 JSON 入口一致拒绝。
 
-- `./mvnw -pl modules/coding-agent-cli -am -DskipITs -Dtest=SubmitSessionEventRequestVOTest -Dsurefire.failIfNoSpecifiedTests=false test`：17 项通过，Checkstyle 0 违规。
+- `./mvnw -pl modules/coding-agent-cli -am -DskipITs -Dtest=SubmitSessionEventRequestVOTest -Dsurefire.failIfNoSpecifiedTests=false test`：18 项通过，Checkstyle 0 违规。
+- 根独立运行请求测试 18 项和共享常量测试 17 项，共 35 项通过，无失败、错误或跳过。
 - 测试质量脚本：0 错误、0 警告。
-- 未新增 Maven 依赖；本片未生成 `campusclaw` 镜像，由集成任务统一同步。
+- 未新增 Maven 依赖；`campusclaw` 镜像已生成同步。企业 `NativeParent:26.0.0-SNAPSHOT` 本地不可解析，企业镜像编译未验证。
 - PlantUML 生成、ASCII、SVG XML、Markdown 路径和 `git diff --check` 在交付前验证。
 
 ## 版本历史
@@ -83,3 +84,4 @@ VO 不裁剪、补默认值或静默去重。Session 状态、固定执行身份
 | 版本 | 日期 | 变更 |
 |---|---|---|
 | 1.0.0 | 2026-09-08 | 实现三类 Session 用户事件联合请求及严格 JSON/Jakarta 边界，保留生产入口后续原子切换 |
+| 1.0.1 | 2026-09-08 | 用共享正则和标准 Jakarta 注解统一 JSON 与直接构造 VO 的结果枚举校验，补充独立审查验证 |

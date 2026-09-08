@@ -5,7 +5,7 @@
 <style>body{font:16px/1.65 system-ui,sans-serif;color:#172235;background:#f5f7fa;margin:0}main{max-width:920px;margin:32px auto;padding:32px;background:white;border-radius:12px}h1,h2{line-height:1.3}code{overflow-wrap:anywhere;background:#eef2f6;padding:2px 4px}a{color:#1457a6}li{margin:8px 0}</style></head>
 <body><main>
 <h1>ADR-0076：Session Events v2 联合请求边界</h1>
-<p><strong>Status:</strong> Accepted · <strong>Date:</strong> 2026-09-08 · <strong>Version:</strong> 1.0.0</p>
+<p><strong>Status:</strong> Accepted · <strong>Date:</strong> 2026-09-08 · <strong>Version:</strong> 1.0.1</p>
 <h2>Context</h2>
 <p>设计仓 <code>2ee2a3211da68ad87b0d9cab353e691b00bdaebd</code> 已确认同一 POST 接收
 <code>user.message</code>、<code>user.interrupt</code> 或 <code>user.tool_confirmation</code>。
@@ -26,11 +26,11 @@ Java 基线 <code>fd556dce3cfa12e5e834b6e9b8f835f10e7d67c8</code> 的生产入�
 <code>packages/coding-agent/src/core/agent-session.ts#prompt</code> 只提供文本执行入口；
 结构化 HTTP 联合请求属于 CampusClaw 产品约束与安全加固。没有新增 Maven 依赖、表、线程或凭据存储。</p>
 <h2>Validation</h2>
-<p>真实 Jackson 与 Jakarta Validator 的 17 项聚焦测试覆盖三类选择、显式 null、未知字段、
-内容块、UTF-16 长度、文件规则与确认条件；Checkstyle 0 违规，测试质量检查 0 错误、0 警告。
+<p>真实 Jackson 与 Jakarta Validator 的 18 项聚焦测试覆盖三类选择、显式 null、未知字段、
+内容块、UTF-16 长度、文件规则与确认条件，以及直接构造 VO 的非法 result；Checkstyle 0 违规，测试质量检查 0 错误、0 警告。
 生产 Controller 尚未切换，因此这些测试不表示 v2 HTTP 已完成。</p>
 <h2>Related</h2>
 <ul><li><a href="../designs/runtime-event-request/README.md">联合请求源码对齐说明</a></li>
 <li><a href="../designs/runtime-event-request/diagram.puml#L1">PlantUML 类图</a></li></ul>
-<h2>版本历史</h2><p>1.0.0 · 2026-09-08：记录三类事件联合请求与严格 JSON/Jakarta 校验边界。</p>
+<h2>版本历史</h2><p>1.0.1 · 2026-09-08：共享正则统一 JSON 与直接构造 VO 的标准 Jakarta 校验，补充回归验证。</p><p>1.0.0 · 2026-09-08：记录三类事件联合请求与严格 JSON/Jakarta 校验边界。</p>
 </main></body></html>

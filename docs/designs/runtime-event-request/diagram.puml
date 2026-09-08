@@ -1,7 +1,8 @@
 @startuml runtime_event_request
-' Java baseline: pi-mono-java fd556dce3cfa12e5e834b6e9b8f835f10e7d67c8
+' Observed Java baseline: pi-mono-java fd556dce3cfa12e5e834b6e9b8f835f10e7d67c8
 ' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/web/RuntimeEventController.java#submit
 ' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/vo/UserEventRequestVO.java
+' Implementation commits: 8dc32b2e and bdf03c84; integration cf2e40d6
 ' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/web/json/SubmitSessionEventRequestDeserializer.java#deserialize
 ' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/vo/UserMessageEventRequestVO.java#isContentOrderValid
 ' Pi source: packages/coding-agent/src/core/agent-session.ts#prompt at 5cd93f688aaab89dbb6dfa4aca535f21796ae185
