@@ -95,6 +95,26 @@ public class CommandExecutionService {
         }
     }
 
+    /**
+     * 在请求线程等待隔离完成视图；不向已接受的执行传播客户端取消。
+     *
+     * @param sessionId Session 标识
+     * @param request Builtin 请求
+     * @param locale 本次语言
+     * @param credentials 本次透传凭据
+     * @return 业务 VO 与对应 ETag
+     */
+    public RuntimeSessionView<?> executeBuiltinAndAwait(
+            String sessionId, BuiltinCommandRequestVO request, Locale locale, MateCredentials credentials) {
+        try {
+            return executeBuiltin(sessionId, request, locale, credentials)
+                    .toCompletableFuture()
+                    .join();
+        } catch (CompletionException error) {
+            throw translate(error);
+        }
+    }
+
     private BuiltinCommandRequestVO normalize(BuiltinCommandRequestVO request) {
         if (request == null) {
             throw new RuntimeApiException(RuntimeErrorCode.INVALID_COMMAND_REQUEST);

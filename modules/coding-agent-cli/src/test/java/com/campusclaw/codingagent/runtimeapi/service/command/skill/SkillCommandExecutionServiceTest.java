@@ -33,6 +33,7 @@ import com.campusclaw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
 import com.campusclaw.codingagent.runtimeapi.event.RuntimeEventService;
 import com.campusclaw.codingagent.runtimeapi.event.RuntimeEventStream;
+import com.campusclaw.codingagent.runtimeapi.vo.SkillCommandRequestVO;
 import com.campusclaw.common.constant.ClawConstants;
 
 import org.junit.jupiter.api.Test;
@@ -49,6 +50,28 @@ class SkillCommandExecutionServiceTest {
     private final MateCredentials credentials = MateCredentials.jwt("caller", "secret", "token");
 
     private final AtomicReference<String> prepared = new AtomicReference<>();
+
+    @ParameterizedTest
+    @NullAndEmptySource
+    @ValueSource(strings = {"pdf", "skill:", "skill:PDF", "skill:pdf--x"})
+    void testRejectsInvalidRequestNamespaceWithoutRuntimeWork(String name) {
+        var request = SkillCommandRequestVO.builder().name(name).build();
+        RuntimeApiException error = assertThrows(
+                RuntimeApiException.class, () -> service.executeRequest("session", request, Locale.CHINA, credentials));
+
+        assertThat(error.errorCode()).isEqualTo(RuntimeErrorCode.INVALID_COMMAND_REQUEST);
+        assertThat(error.getCause()).isNull();
+        verifyNoInteractions(events);
+    }
+
+    @Test
+    void testRejectsAbsentRequestWithoutRuntimeWork() {
+        RuntimeApiException error = assertThrows(
+                RuntimeApiException.class, () -> service.executeRequest("session", null, Locale.CHINA, credentials));
+
+        assertThat(error.errorCode()).isEqualTo(RuntimeErrorCode.INVALID_COMMAND_REQUEST);
+        verifyNoInteractions(events);
+    }
 
     @ParameterizedTest
     @MethodSource("invalidInputs")
