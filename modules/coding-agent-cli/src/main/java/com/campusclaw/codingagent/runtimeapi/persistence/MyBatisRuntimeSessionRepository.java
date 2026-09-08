@@ -255,21 +255,9 @@ public class MyBatisRuntimeSessionRepository implements RuntimeSessionRepository
             String modelId,
             boolean modelSupportsThinking,
             Function<RuntimeSessionDTO, List<RuntimeEntryDTO>> entriesFactory,
-            OffsetDateTime updatedAt) {
-        return updateModelLocked(
-                sessionId, expectedVersion, modelId, modelSupportsThinking, entriesFactory, null, updatedAt);
-    }
-
-    @Override
-    @Transactional
-    public SessionConfigurationUpdateDTO updateModel(
-            String sessionId,
-            Long expectedVersion,
-            String modelId,
-            boolean modelSupportsThinking,
-            Function<RuntimeSessionDTO, List<RuntimeEntryDTO>> entriesFactory,
             Function<RuntimeEntryDTO, CommittedEventDTO> eventFactory,
             OffsetDateTime updatedAt) {
+        Objects.requireNonNull(eventFactory, "committed event factory is missing");
         return updateModelLocked(
                 sessionId, expectedVersion, modelId, modelSupportsThinking, entriesFactory, eventFactory, updatedAt);
     }
@@ -307,20 +295,9 @@ public class MyBatisRuntimeSessionRepository implements RuntimeSessionRepository
             boolean thinking,
             Consumer<RuntimeSessionDTO> admission,
             Function<RuntimeSessionDTO, RuntimeEntryDTO> entryFactory,
-            OffsetDateTime updatedAt) {
-        return updateThinkingLocked(sessionId, expectedVersion, thinking, admission, entryFactory, null, updatedAt);
-    }
-
-    @Override
-    @Transactional
-    public SessionConfigurationUpdateDTO updateThinking(
-            String sessionId,
-            Long expectedVersion,
-            boolean thinking,
-            Consumer<RuntimeSessionDTO> admission,
-            Function<RuntimeSessionDTO, RuntimeEntryDTO> entryFactory,
             Function<RuntimeEntryDTO, CommittedEventDTO> eventFactory,
             OffsetDateTime updatedAt) {
+        Objects.requireNonNull(eventFactory, "committed event factory is missing");
         return updateThinkingLocked(
                 sessionId, expectedVersion, thinking, admission, entryFactory, eventFactory, updatedAt);
     }
@@ -433,11 +410,9 @@ public class MyBatisRuntimeSessionRepository implements RuntimeSessionRepository
             Function<RuntimeEntryDTO, CommittedEventDTO> eventFactory) {
         for (RuntimeEntryDTO entry : entries) {
             appendLocked(session, entry);
-            if (eventFactory != null) {
-                List<CommittedEventDTO> events = List.of(eventFactory.apply(entry));
-                appendEventsLocked(entry, events);
-                recordProjectionIfComplete(entry, events, true);
-            }
+            List<CommittedEventDTO> events = List.of(eventFactory.apply(entry));
+            appendEventsLocked(entry, events);
+            recordProjectionIfComplete(entry, events, true);
         }
         if (!entries.isEmpty()) {
             requireOne(

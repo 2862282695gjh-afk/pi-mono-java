@@ -101,6 +101,9 @@ class RuntimeCompactionServiceOpenGaussIT {
     private final RuntimeEntryCodec codec =
             new RuntimeEntryCodec(mapper, new RuntimeMessageSourceConfiguration().messageSource());
 
+    private final RuntimeCommittedEventFactory eventFactory =
+            new RuntimeCommittedEventFactory(mapper, new RuntimeMessageSourceConfiguration().messageSource());
+
     private final CampusClawAiService ai = mock(CampusClawAiService.class);
 
     private final AgentDirectoryResolver directories = mock(AgentDirectoryResolver.class);
@@ -190,7 +193,9 @@ class RuntimeCompactionServiceOpenGaussIT {
                     null,
                     true,
                     ignored -> {},
-                    ignored -> codec.thinkingChangedEntry(session.getId(), "configuration", false, true, "user", now),
+                    ignored ->
+                            codec.thinkingChangedEntry(session.getId(), "configuration", false, true, "requested", now),
+                    eventFactory::sessionConfiguration,
                     now);
         } else if (kind.equals("failed-assistant")) {
             jdbc.update("UPDATE t_sessions SET state='running' WHERE id=?", session.getId());

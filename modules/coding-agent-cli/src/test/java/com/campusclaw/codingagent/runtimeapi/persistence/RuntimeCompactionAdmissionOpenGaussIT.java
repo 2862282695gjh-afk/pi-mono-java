@@ -22,6 +22,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import com.campusclaw.codingagent.runtimeapi.RuntimeMessageSourceConfiguration;
 import com.campusclaw.codingagent.runtimeapi.dto.RuntimeEntryDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
+import com.campusclaw.codingagent.runtimeapi.event.RuntimeCommittedEventFactory;
 import com.campusclaw.codingagent.runtimeapi.event.RuntimeEntryCodec;
 import com.campusclaw.codingagent.runtimeapi.persistence.RuntimeSessionRepositoryOpenGaussIT.OpenGaussTestConfiguration;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -60,6 +61,9 @@ class RuntimeCompactionAdmissionOpenGaussIT {
     private final RuntimeEntryCodec codec =
             new RuntimeEntryCodec(new ObjectMapper(), new RuntimeMessageSourceConfiguration().messageSource());
 
+    private final RuntimeCommittedEventFactory eventFactory = new RuntimeCommittedEventFactory(
+            new ObjectMapper(), new RuntimeMessageSourceConfiguration().messageSource());
+
     private final RuntimeSessionDTO session = new RuntimeSessionDTO();
 
     @BeforeEach
@@ -91,7 +95,13 @@ class RuntimeCompactionAdmissionOpenGaussIT {
     void shouldObserveEmptyContextWithoutMutatingPersistentData(boolean configurationOnly) {
         if (configurationOnly) {
             repository.updateThinking(
-                    session.getId(), null, true, ignored -> {}, ignored -> entry("session.thinking.changed"), now);
+                    session.getId(),
+                    null,
+                    true,
+                    ignored -> {},
+                    ignored -> thinkingChangedEntry(),
+                    eventFactory::sessionConfiguration,
+                    now);
         }
         List<Object> before = persistentState();
         var observed = repository.observeCompaction(session.getId()).orElseThrow();
@@ -131,10 +141,22 @@ class RuntimeCompactionAdmissionOpenGaussIT {
             case "history" -> seedHistory();
             case "model" ->
                 repository.updateModel(
-                        session.getId(), null, "other", true, ignored -> List.of(entry("session.model.changed")), now);
+                        session.getId(),
+                        null,
+                        "other",
+                        true,
+                        ignored -> List.of(modelChangedEntry()),
+                        eventFactory::sessionConfiguration,
+                        now);
             case "thinking" ->
                 repository.updateThinking(
-                        session.getId(), null, true, ignored -> {}, ignored -> entry("session.thinking.changed"), now);
+                        session.getId(),
+                        null,
+                        true,
+                        ignored -> {},
+                        ignored -> thinkingChangedEntry(),
+                        eventFactory::sessionConfiguration,
+                        now);
             case "deleted" -> repository.beginDeletion(session.getId(), now);
             default -> throw new AssertionError(change);
         }
@@ -256,6 +278,15 @@ class RuntimeCompactionAdmissionOpenGaussIT {
         var entry = codec.userEntry(session.getId(), UUID.randomUUID().toString(), "history", List.of(), now);
         entry.setType(type);
         return entry;
+    }
+
+    private RuntimeEntryDTO modelChangedEntry() {
+        return codec.modelChangedEntry(
+                session.getId(), UUID.randomUUID().toString(), "model", "other", "requested", now);
+    }
+
+    private RuntimeEntryDTO thinkingChangedEntry() {
+        return codec.thinkingChangedEntry(session.getId(), UUID.randomUUID().toString(), false, true, "requested", now);
     }
 
     private List<Object> persistentState() {

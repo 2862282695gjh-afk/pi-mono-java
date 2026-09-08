@@ -26,6 +26,7 @@ import com.campusclaw.codingagent.runtimeapi.dto.RuntimeEntryDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.RuntimeLifetimeUsageDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.SessionConfigurationUpdateDTO;
+import com.campusclaw.codingagent.runtimeapi.event.RuntimeCommittedEventFactory;
 import com.campusclaw.codingagent.runtimeapi.event.RuntimeEntryCodec;
 import com.campusclaw.codingagent.runtimeapi.event.RuntimeUsageCause;
 import com.campusclaw.codingagent.runtimeapi.persistence.RuntimeSessionRepositoryOpenGaussIT.OpenGaussTestConfiguration;
@@ -69,6 +70,9 @@ class RuntimeLifetimeUsageOpenGaussIT {
 
     private final RuntimeEntryCodec codec =
             new RuntimeEntryCodec(new ObjectMapper(), new RuntimeMessageSourceConfiguration().messageSource());
+
+    private final RuntimeCommittedEventFactory eventFactory = new RuntimeCommittedEventFactory(
+            new ObjectMapper(), new RuntimeMessageSourceConfiguration().messageSource());
 
     private final RuntimeSessionDTO session = new RuntimeSessionDTO();
 
@@ -229,7 +233,13 @@ class RuntimeLifetimeUsageOpenGaussIT {
                 pending.set(workers.submit(() -> {
                     started.countDown();
                     return repository.updateModel(
-                            session.getId(), null, "model", true, ignored -> List.of(), now.plusSeconds(2));
+                            session.getId(),
+                            null,
+                            "model",
+                            true,
+                            ignored -> List.of(),
+                            eventFactory::sessionConfiguration,
+                            now.plusSeconds(2));
                 }));
                 assertThat(startedAwait(started)).isTrue();
                 assertThatThrownBy(() -> pending.get().get(200, TimeUnit.MILLISECONDS))
