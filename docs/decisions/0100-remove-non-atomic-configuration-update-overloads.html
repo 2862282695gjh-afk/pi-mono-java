@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ADR-0100：删除非原子配置更新重载</title>
+<style>body{font:16px/1.7 system-ui,sans-serif;background:#f5f7fa;color:#172235;margin:0}main{max-width:920px;margin:32px auto;padding:32px;background:white;border-radius:12px}code{overflow-wrap:anywhere;background:#eef2f6;padding:2px 4px}a{color:#1457a6}</style></head>
+<body><main><h1>ADR-0100：删除非原子配置更新重载</h1>
+<p>Status: Accepted · Date: 2026-09-08 · Version: 1.0.0</p>
+<h2>Context</h2><p>Java 基线 <code>48aac44a</code> 的 <code>RuntimeSessionRepository</code> 同时公开两组
+<code>updateModel/updateThinking</code>。新端口在一个事务中写配置状态、Entry、权威公共事件和
+精确投影标记；旧六参端口把空事件工厂传入 MyBatis 实现，可以只写配置 Entry。</p>
+<p>调用扫描发现三个生产消费者已全部使用新端口：
+<code>RuntimeSessionModelReconciler</code>、<code>SessionModelConfigurationService</code> 和
+<code>SessionThinkingConfigurationService</code>。旧端口没有生产消费者，只剩 12 处模块测试调用。
+当前产品是第一版，没有保留该内部端口的兼容要求。</p>
+<h2>Decision</h2><p>删除 <code>RuntimeSessionRepository</code> 和 <code>MyBatisRuntimeSessionRepository</code>
+中不带公共事件工厂的配置更新重载。唯一端口在获取 Session 行锁和修改数据前检查
+<code>eventFactory</code> 非空；<code>appendConfigurationEntries</code> 对每个定稿 Entry 必然写权威公共事件和精确标记。</p>
+<p>原有 12 处仓储测试调用改用真实 <code>RuntimeCommittedEventFactory</code>。需要配置 Entry 的场景同时改用
+<code>RuntimeEntryCodec</code> 生成契约完整的模型或 Thinking payload，以保留原有并发、回滚、压缩观察和 Usage 快照语义。</p>
+<h2>考虑过的选项及取舍</h2><ul>
+<li><strong>保留旧重载作为内部兼容层。</strong> 测试调用无需修改，但生产代码仍能绕过权威事件和完整性标记，与首版安全边界冲突，不采用。</li>
+<li><strong>保留一个重载并内部自动构造事件。</strong> Repository 缺少请求语言和已安全定稿的公开字段，猜测 payload 会复制投影规则，不采用。</li>
+<li><strong>只保留强制事件工厂的原子端口。</strong> 编译期要求调用者选择公开事件构造规则，运行时再拒绝空工厂，采用此方案。</li>
+</ul>
+<h2>Consequences</h2><p>配置 Entry 不再有合法的仓储路径跳过 <code>t_session_events</code> 和
+<code>t_session_event_projection</code>。事件工厂构造、主键、入库或标记写入任一失败，仍由同一 Spring 事务回滚配置状态、Entry、序号和公共投影。</p>
+<p>本决策只收敛 Java 内部仓储端口，不改变 Events、配置 HTTP 或 Builtin Command 契约，不修改 slash command 分派，也不新增 Maven 依赖。镜像代码由标准生成流程同步。</p>
+<h2>源码证据</h2><p>Java 实现路径为
+<code>modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/persistence/RuntimeSessionRepository.java#updateModel</code>、
+<code>#updateThinking</code> 和 <code>MyBatisRuntimeSessionRepository.java#appendConfigurationEntries</code>；实现提交为
+<code>bfaedc7e</code>。契约基线为 <code>pi-mono-java-design@2ee2a321</code>。pi 基线 <code>5cd93f68</code> 的
+<code>packages/agent/src/agent-loop.ts#runAgentLoop</code> 和 <code>#prepareToolCall</code> 没有 CampusClaw 配置资源或数据库仓储端口；本决策是 Java 架构收敛。</p>
+<h2>Validation</h2><p>配置 Service、自动校准和 Command 快照单元测试 19 项通过。全新安装 schema 的真实 openGauss 上，Repository 49 项、压缩准入 11 项、压缩 Service 9 项和 Usage 10 项，共 79 项通过。Spotless、Checkstyle 和 <code>git diff --check</code> 通过。</p>
+<h2>Related</h2><p><a href="0081-atomic-public-event-writers.html">ADR-0081 配置公共事件原子写入</a> ·
+<a href="0092-first-release-authoritative-event-history.html">ADR-0092 首版全新安装范围</a> ·
+<a href="../designs/runtime-public-event-writers/README.md">实现设计与源码证据</a> ·
+<a href="../designs/runtime-public-event-writers/diagram.puml#L1">PlantUML 源码</a></p>
+<h2>版本历史</h2><p>1.0.0 · 2026-09-08：确定首版删除非原子配置写入重载。</p>
+</main></body></html>

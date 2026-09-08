@@ -1206,8 +1206,14 @@ class RuntimeSessionRepositoryOpenGaussIT {
         repository.create(session);
         OffsetDateTime updatedAt = session.getCreatedAt().plusMinutes(1);
 
-        SessionConfigurationUpdateDTO update =
-                repository.updateModel(session.getId(), 1L, "model-next", false, locked -> List.of(), updatedAt);
+        SessionConfigurationUpdateDTO update = repository.updateModel(
+                session.getId(),
+                1L,
+                "model-next",
+                false,
+                locked -> List.of(),
+                committedEventFactory()::sessionConfiguration,
+                updatedAt);
 
         assertThat(update.status()).isEqualTo(SessionConfigurationUpdateDTO.Status.UPDATED);
         RuntimeSessionDTO stored = repository.find(session.getId()).orElseThrow();
@@ -1229,6 +1235,7 @@ class RuntimeSessionRepositoryOpenGaussIT {
                 session.getModelId(),
                 false,
                 locked -> List.of(),
+                committedEventFactory()::sessionConfiguration,
                 session.getCreatedAt().plusHours(1));
 
         assertThat(update.status()).isEqualTo(SessionConfigurationUpdateDTO.Status.UNCHANGED);
@@ -1236,6 +1243,26 @@ class RuntimeSessionRepositoryOpenGaussIT {
         assertThat(stored.isThinking()).isTrue();
         assertThat(stored.getResourceVersion()).isEqualTo(1L);
         assertThat(stored.getUpdatedAt()).isEqualTo(session.getUpdatedAt());
+    }
+
+    @Test
+    void configurationUpdateRequiresCommittedEventFactory() {
+        RuntimeSessionDTO session = newSession("session_db_configuration_factory");
+        repository.create(session);
+        OffsetDateTime updatedAt = session.getCreatedAt().plusMinutes(1);
+
+        assertThatThrownBy(() -> repository.updateModel(
+                        session.getId(), null, "model-next", true, locked -> List.of(), null, updatedAt))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessage("committed event factory is missing");
+        assertThatThrownBy(() -> repository.updateThinking(
+                        session.getId(), null, true, locked -> {}, locked -> null, null, updatedAt))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessage("committed event factory is missing");
+        assertThat(repository.find(session.getId()).orElseThrow())
+                .usingRecursiveComparison()
+                .withComparatorForType(java.math.BigDecimal::compareTo, java.math.BigDecimal.class)
+                .isEqualTo(session);
     }
 
     @Test
@@ -1311,24 +1338,28 @@ class RuntimeSessionRepositoryOpenGaussIT {
     void shouldRollbackModelAndSequenceWhenEventInsertionFails() throws Exception {
         var session = newSession("session_model_command_rollback");
         repository.create(session);
+        var codec = new RuntimeEntryCodec(new ObjectMapper(), new RuntimeMessageSourceConfiguration().messageSource());
         assertThatThrownBy(() -> repository.updateModel(
                         session.getId(),
                         null,
                         "next",
                         false,
                         locked -> List.of(
-                                newEntry(
+                                codec.modelChangedEntry(
                                         locked.getId(),
                                         "duplicate",
-                                        "session.model.changed",
-                                        session.getCreatedAt(),
-                                        "{}"),
-                                newEntry(
+                                        locked.getModelId(),
+                                        "next",
+                                        "requested",
+                                        session.getCreatedAt()),
+                                codec.thinkingChangedEntry(
                                         locked.getId(),
                                         "duplicate",
-                                        "session.thinking.changed",
-                                        session.getCreatedAt(),
-                                        "{}")),
+                                        locked.isThinking(),
+                                        false,
+                                        "modelCapability",
+                                        session.getCreatedAt())),
+                        committedEventFactory()::sessionConfiguration,
                         session.getCreatedAt().plusMinutes(1)))
                 .isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
         assertThat(repository.find(session.getId()).orElseThrow())
@@ -1399,7 +1430,9 @@ class RuntimeSessionRepositoryOpenGaussIT {
                         modelId,
                         "session.model.changed",
                         observed.getCreatedAt(),
-                        "{\"previousModelId\":\"" + locked.getModelId() + "\",\"modelId\":\"" + modelId + "\"}")),
+                        "{\"previousModelId\":\"" + locked.getModelId() + "\",\"modelId\":\"" + modelId
+                                + "\",\"reason\":\"requested\"}")),
+                committedEventFactory()::sessionConfiguration,
                 observed.getCreatedAt().plusMinutes(1));
     }
 
@@ -1467,8 +1500,9 @@ class RuntimeSessionRepositoryOpenGaussIT {
                         null,
                         "unsupported",
                         false,
-                        current -> List.of(newEntry(
-                                current.getId(), "model-entry", "session.model.changed", session.getCreatedAt(), "{}")),
+                        current -> List.of(
+                                modelChangedEntry(current, "model-entry", "unsupported", session.getCreatedAt())),
+                        committedEventFactory()::sessionConfiguration,
                         session.getCreatedAt());
                 locked.countDown();
                 awaitLatch(release);
@@ -1607,7 +1641,9 @@ class RuntimeSessionRepositoryOpenGaussIT {
                                 "entry-model-race",
                                 "session.model.changed",
                                 session.getUpdatedAt().plusMinutes(1),
-                                "{}")),
+                                "{\"previousModelId\":\"model-db-it\",\"modelId\":\"model-race\","
+                                        + "\"reason\":\"requested\"}")),
+                        committedEventFactory()::sessionConfiguration,
                         session.getUpdatedAt().plusMinutes(1))
                 .status();
     }
@@ -1626,7 +1662,8 @@ class RuntimeSessionRepositoryOpenGaussIT {
                                 "entry-thinking-race",
                                 "session.thinking.changed",
                                 session.getUpdatedAt().plusMinutes(1),
-                                "{}"),
+                                "{\"previousThinking\":false,\"thinking\":true,\"reason\":\"requested\"}"),
+                        committedEventFactory()::sessionConfiguration,
                         session.getUpdatedAt().plusMinutes(1))
                 .status();
     }
@@ -1640,6 +1677,12 @@ class RuntimeSessionRepositoryOpenGaussIT {
         entry.setTimestamp(timestamp);
         entry.setPayload(payload);
         return entry;
+    }
+
+    private static RuntimeEntryDTO modelChangedEntry(
+            RuntimeSessionDTO session, String entryId, String modelId, OffsetDateTime timestamp) {
+        var codec = new RuntimeEntryCodec(new ObjectMapper(), new RuntimeMessageSourceConfiguration().messageSource());
+        return codec.modelChangedEntry(session.getId(), entryId, session.getModelId(), modelId, "requested", timestamp);
     }
 
     private ExecutionTargetDTO seedCommittedSegment(RuntimeSessionDTO session) {
