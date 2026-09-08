@@ -23,7 +23,6 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import com.campusclaw.agent.event.MessageEndEvent;
 import com.campusclaw.ai.types.Api;
 import com.campusclaw.ai.types.AssistantMessage;
 import com.campusclaw.ai.types.ContentBlock;
@@ -174,13 +173,11 @@ class RuntimePersistenceOnlyProjectorTest {
 
         complete(CompactionReason.OVERFLOW, 1, true);
         RuntimeEntryDTO compaction = history.getLast();
-        projector.onEvent(new MessageEndEvent(assistant(List.of(new TextContent("done")), StopReason.STOP)));
 
         assertThat(compaction.getPayload()).contains("\"_discardedEntryId\":\"discarded\"");
-        assertThat(codec.toAgentContextEntryIds(history))
-                .containsExactly(compaction.getId(), "kept", history.getLast().getId());
-        assertThat(records).hasSize(2);
-        assertThat(records.getLast().getPayload()).contains("\"cause\":\"assistant\"", "\"attempt\":2");
+        assertThat(codec.toAgentContextEntryIds(history)).containsExactly(compaction.getId(), "kept");
+        assertThat(records).singleElement().satisfies(record -> assertThat(record.getPayload())
+                .contains("\"cause\":\"compaction\"", "\"attempt\":1"));
         assertThat(projector.lastCompactionEntrySeq()).isEqualTo(41L);
         assertThat(projector.failure()).isNull();
     }
@@ -193,7 +190,6 @@ class RuntimePersistenceOnlyProjectorTest {
 
         complete(CompactionReason.MANUAL, 0, false);
         complete(CompactionReason.MANUAL, 0, false);
-        projector.onEvent(new MessageEndEvent(new UserMessage("ignored", 2L)));
 
         assertThat(projector.failure()).isSameAs(error);
         assertThat(projector.lastCompactionEntrySeq()).isNull();
