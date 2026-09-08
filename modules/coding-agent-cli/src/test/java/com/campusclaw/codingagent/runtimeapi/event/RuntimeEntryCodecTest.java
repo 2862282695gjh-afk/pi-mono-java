@@ -8,6 +8,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 import com.campusclaw.ai.types.Api;
@@ -145,7 +146,7 @@ class RuntimeEntryCodecTest {
                 codec.toAgentMessages(List.of(entry), model()).getFirst();
 
         assertThat(entry.getPayload()).contains("_thinking", "signature").doesNotContain("\"usage\"");
-        assertThat(codec.toSseData(entry)).doesNotContainKey("usage");
+        assertThat(codec.toSseData(entry, Locale.US)).doesNotContainKey("usage");
         assertThat(record.getPayload()).contains("\"cause\":\"assistant\"", "\"totalTokens\":18");
         assertThat(restored.usage()).isEqualTo(Usage.empty());
         assertThat(((ThinkingContent) restored.content().getFirst()).thinkingSignature())

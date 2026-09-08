@@ -5,31 +5,23 @@
 package com.campusclaw.codingagent.runtimeapi.event;
 
 /**
- * HTTP V1 对外持久化事件和瞬时 SSE 事件类型。
+ * Runtime 内部 Entry 与压缩瞬时 SSE 事件类型。
  *
  * @version [br_eCampusCore 26.0.0, 2026/08/19]
  * @since [br_eCampusCore 26.0.0]
  */
 public enum RuntimeEventType {
     USER_MESSAGE("user.message"),
-    ASSISTANT_MESSAGE_STARTED("assistant.message.started"),
-    ASSISTANT_THINKING_STARTED("assistant.thinking.started"),
-    ASSISTANT_THINKING_DELTA("assistant.thinking.delta"),
     ASSISTANT_THINKING_COMPLETED("assistant.thinking.completed"),
-    ASSISTANT_MESSAGE_DELTA("assistant.message.delta"),
     ASSISTANT_MESSAGE_COMPLETED("assistant.message.completed"),
     TOOL_EXECUTION_STARTED("tool.execution.started"),
-    TOOL_EXECUTION_DELTA("tool.execution.delta"),
-    TOOL_EXECUTION_COMPLETED("tool.execution.completed"),
     TOOL_RESULT("tool.result"),
     SESSION_MODEL_CHANGED("session.model.changed"),
     SESSION_THINKING_CHANGED("session.thinking.changed"),
     SESSION_COMPACTION_STARTED("session.compaction.started"),
     SESSION_COMPACTION_COMPLETED("session.compaction.completed"),
     SESSION_COMPACTION_FAILED("session.compaction.failed"),
-    SESSION_STATUS_IDLE("session.status.idle"),
-    STREAM_END("stream.end"),
-    STREAM_ERROR("stream.error");
+    SESSION_STATUS_IDLE("session.status.idle");
 
     private final String value;
 

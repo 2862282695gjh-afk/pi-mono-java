@@ -260,10 +260,6 @@ public class RuntimeEntryCodec {
         return record(sessionId, recordId, runId, timestamp, payload);
     }
 
-    public Map<String, Object> toSseData(RuntimeEntryDTO entry) {
-        return toSseData(entry, Locale.US);
-    }
-
     public Map<String, Object> toSseData(RuntimeEntryDTO entry, Locale locale) {
         LinkedHashMap<String, Object> result = new LinkedHashMap<>();
         result.put("entryId", entry.getId());
