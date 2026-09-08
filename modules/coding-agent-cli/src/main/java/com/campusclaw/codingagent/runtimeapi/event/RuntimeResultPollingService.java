@@ -20,6 +20,7 @@ import com.campusclaw.codingagent.runtimeapi.persistence.RuntimeExecutionResultR
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -47,14 +48,23 @@ public class RuntimeResultPollingService {
 
     private volatile long retryAfterEpochMilli;
 
+    @Autowired
     public RuntimeResultPollingService(
             RuntimeExecutionResultRepository results,
             RuntimeResultWaitRegistry waits,
             RuntimeEventProperties properties) {
+        this(results, waits, properties, newNotificationExecutor(properties.getResultPollBatchSize()));
+    }
+
+    RuntimeResultPollingService(
+            RuntimeExecutionResultRepository results,
+            RuntimeResultWaitRegistry waits,
+            RuntimeEventProperties properties,
+            ExecutorService notificationExecutor) {
         this.results = results;
         this.waits = waits;
         this.properties = properties;
-        this.notificationExecutor = newNotificationExecutor(properties.getResultPollBatchSize());
+        this.notificationExecutor = notificationExecutor;
     }
 
     /**
@@ -79,9 +89,15 @@ public class RuntimeResultPollingService {
      */
     public void notifyCommitted(ExecutionTargetDTO target) {
         try {
-            notificationExecutor.execute(() -> pollBatch(waits.claimTarget(target)));
+            notificationExecutor.execute(() -> pollNotified(target));
         } catch (RuntimeException exception) {
             LOGGER.debug("Runtime result fast-path queue is full; scheduled polling will retry", exception);
+        }
+    }
+
+    private void pollNotified(ExecutionTargetDTO target) {
+        if (readyToPoll()) {
+            pollBatch(waits.claimTarget(target));
         }
     }
 
@@ -103,9 +119,9 @@ public class RuntimeResultPollingService {
             }
             return true;
         } catch (RuntimeException exception) {
-            waits.release(claimed);
             retryAfterEpochMilli = System.currentTimeMillis()
                     + properties.getResultPollFailureBackoff().toMillis();
+            waits.release(claimed);
             LOGGER.warn("Runtime committed result polling failed; scheduled polling will retry", exception);
             return false;
         }

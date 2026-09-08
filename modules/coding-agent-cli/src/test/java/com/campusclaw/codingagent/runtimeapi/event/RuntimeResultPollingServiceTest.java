@@ -5,6 +5,8 @@
 package com.campusclaw.codingagent.runtimeapi.event;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -15,6 +17,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 
 import com.campusclaw.codingagent.runtimeapi.dto.CommittedEventDTO;
@@ -98,6 +101,30 @@ class RuntimeResultPollingServiceTest {
             service.close();
         }
         assertThat(waits.registeredResponses()).isZero();
+    }
+
+    @Test
+    void shouldKeepQueuedNotificationInsideDatabaseFailureBackoff() {
+        RuntimeExecutionResultRepository results = mock(RuntimeExecutionResultRepository.class);
+        RuntimeResultWaitRegistry waits = registry();
+        ExecutorService executor = mock(ExecutorService.class);
+        var tasks = new ArrayList<Runnable>();
+        doAnswer(invocation -> tasks.add(invocation.getArgument(0)))
+                .when(executor)
+                .execute(any());
+        RuntimeResultPollingService service = new RuntimeResultPollingService(results, waits, properties(), executor);
+        reserveTerminal(waits, new ArrayList<>());
+        when(results.findExecutionTerminal(target())).thenThrow(new IllegalStateException("database unavailable"));
+
+        service.notifyCommitted(target());
+        service.notifyCommitted(target());
+        assertThat(tasks).hasSize(2);
+        tasks.get(0).run();
+        tasks.get(1).run();
+
+        verify(results, times(1)).findExecutionTerminal(target());
+        assertThat(waits.registeredResponses()).isOne();
+        service.close();
     }
 
     private static void reserveTerminal(RuntimeResultWaitRegistry waits, List<String> delivered) {
