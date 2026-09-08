@@ -17,6 +17,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -62,7 +63,8 @@ final class RuntimeHttpProcessFixture {
     static final HttpClient CLIENT =
             HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(3)).build();
 
-    static RuntimeProcess startRuntime(ProcessTestConfigDTO config, Path tempDir, int port, int modelPort)
+    static RuntimeProcess startRuntime(
+            ProcessTestConfigDTO config, Path tempDir, int port, int modelPort, String... startupArguments)
             throws IOException {
         Path log = tempDir.resolve("runtime-process-" + port + ".log");
         ProcessBuilder builder = new ProcessBuilder(
@@ -74,6 +76,7 @@ final class RuntimeHttpProcessFixture {
                 .directory(tempDir.toFile())
                 .redirectErrorStream(true)
                 .redirectOutput(log.toFile());
+        builder.command().addAll(List.of(startupArguments));
         configureEnvironment(builder, config, tempDir, modelPort);
         return new RuntimeProcess(builder.start(), log);
     }
@@ -319,6 +322,7 @@ final class RuntimeHttpProcessFixture {
                 process.destroyForcibly();
                 process.waitFor(5, TimeUnit.SECONDS);
             }
+            assertThat(process.isAlive()).as("Runtime process stopped").isFalse();
         }
     }
 
