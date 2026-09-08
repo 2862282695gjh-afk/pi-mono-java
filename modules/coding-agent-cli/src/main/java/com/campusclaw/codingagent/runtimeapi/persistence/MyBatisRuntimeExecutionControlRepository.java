@@ -9,9 +9,13 @@ import java.time.temporal.ChronoUnit;
 import java.util.Objects;
 import java.util.Optional;
 
+import com.campusclaw.codingagent.runtimeapi.dto.CommittedControlEventDTO;
+import com.campusclaw.codingagent.runtimeapi.dto.ConfirmingEventsDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.ExecutionSegmentDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.ExecutionStateDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.ExecutionTargetDTO;
+import com.campusclaw.codingagent.runtimeapi.dto.InterruptRequestDTO;
+import com.campusclaw.codingagent.runtimeapi.dto.InterruptRequestDTO.Status;
 import com.campusclaw.codingagent.runtimeapi.mapper.RuntimeExecutionControlMapper;
 import com.campusclaw.codingagent.runtimeapi.mapper.RuntimeSessionMapper;
 import com.campusclaw.codingagent.runtimeapi.session.RuntimeExecutionSegmentState;
@@ -78,21 +82,51 @@ public class MyBatisRuntimeExecutionControlRepository implements RuntimeExecutio
 
     @Override
     @Transactional
+    public InterruptRequestDTO requestInterrupt(
+            String sessionId, String targetEventId, String stopEventId, OffsetDateTime requestedAt) {
+        requireControlEvent(sessionId, targetEventId, stopEventId);
+        var session = sessionMapper.lockSessionForUpdate(sessionId);
+        if (session == null) {
+            return new InterruptRequestDTO(Status.SESSION_NOT_FOUND, null);
+        }
+        if (!RuntimeSessionState.RUNNING.matches(session.getState())) {
+            return new InterruptRequestDTO(Status.SESSION_NOT_RUNNING, null);
+        }
+        ExecutionStateDTO execution = mapper.lockCurrentExecution(sessionId);
+        Status rejected = rejectInterrupt(targetEventId, execution);
+        if (rejected != null) {
+            return new InterruptRequestDTO(rejected, null);
+        }
+        var target = targetOf(execution);
+        requireOne(
+                mapper.markStopping(
+                        sessionId, target.executionId(), target.segmentId(), stopEventId, storedAt(requestedAt)),
+                "execution did not enter stopping state");
+        return new InterruptRequestDTO(Status.ACCEPTED, target);
+    }
+
+    @Override
+    @Transactional
     public TransitionStatus markConfirming(
-            ExecutionTargetDTO target,
-            String toolCallId,
-            String terminalEventId,
-            long terminalEventSeq,
-            OffsetDateTime terminalAt) {
+            ExecutionTargetDTO target, String toolCallId, ConfirmingAppender appender, OffsetDateTime terminalAt) {
         if (toolCallId == null || toolCallId.isBlank()) {
             throw new IllegalArgumentException("tool call id is required");
         }
+        Objects.requireNonNull(appender, "appender");
         TransitionStatus rejected = rejectTransition(target, RuntimeExecutionState.RUNNING);
         if (rejected != null) {
             return rejected;
         }
+        ConfirmingEventsDTO events = requireConfirmingEvents(appender.append());
+        linkCommittedEvent(target, events.toolCallEventId(), events.toolCallEventSeq());
+        linkCommittedEvent(target, events.idleEventId(), events.idleEventSeq());
         OffsetDateTime storedAt = storedAt(terminalAt);
-        closeSegment(target, terminalEventId, terminalEventSeq, RuntimeExecutionTerminalReason.CONFIRMING, storedAt);
+        closeSegment(
+                target,
+                events.idleEventId(),
+                events.idleEventSeq(),
+                RuntimeExecutionTerminalReason.CONFIRMING,
+                storedAt);
         requireOne(
                 mapper.markConfirming(
                         target.sessionId(), target.executionId(), target.segmentId(), toolCallId, storedAt),
@@ -104,26 +138,28 @@ public class MyBatisRuntimeExecutionControlRepository implements RuntimeExecutio
     @Transactional
     public TransitionStatus markTerminal(
             ExecutionTargetDTO target,
-            String terminalEventId,
-            long terminalEventSeq,
+            TerminalAppender appender,
             RuntimeExecutionTerminalReason terminalReason,
             OffsetDateTime terminalAt) {
         if (terminalReason == null || !terminalReason.executionTerminal()) {
             throw new IllegalArgumentException("terminal reason is invalid");
         }
+        Objects.requireNonNull(appender, "appender");
         ExecutionStateDTO execution = lock(target);
         TransitionStatus rejected = rejectTarget(target, execution);
         if (rejected != null) {
             return rejected;
         }
+        CommittedControlEventDTO event = requireCommittedEvent(appender.append());
+        linkCommittedEvent(target, event.eventId(), event.eventSeq());
         OffsetDateTime storedAt = storedAt(terminalAt);
-        closeOpenSegment(target, terminalEventId, terminalEventSeq, terminalReason, storedAt);
+        closeOpenSegment(target, event.eventId(), event.eventSeq(), terminalReason, storedAt);
         requireOne(
                 mapper.markTerminal(
                         target.sessionId(),
                         target.executionId(),
                         target.segmentId(),
-                        terminalEventId,
+                        event.eventId(),
                         terminalReason.value(),
                         storedAt),
                 "execution did not enter terminal state");
@@ -156,6 +192,27 @@ public class MyBatisRuntimeExecutionControlRepository implements RuntimeExecutio
             return TransitionStatus.STALE_TARGET;
         }
         return execution.getState() == RuntimeExecutionState.TERMINAL ? TransitionStatus.STATE_CONFLICT : null;
+    }
+
+    private static Status rejectInterrupt(String targetEventId, ExecutionStateDTO execution) {
+        if (execution == null) {
+            return Status.SESSION_NOT_RUNNING;
+        }
+        if (!targetEventId.equals(execution.getRootEventId())) {
+            return Status.TARGET_MISMATCH;
+        }
+        if (execution.getState() == RuntimeExecutionState.STOPPING || execution.getStopEventId() != null) {
+            return Status.ALREADY_REQUESTED;
+        }
+        return null;
+    }
+
+    private static ExecutionTargetDTO targetOf(ExecutionStateDTO execution) {
+        return new ExecutionTargetDTO(
+                execution.getSessionId(),
+                execution.getExecutionId(),
+                execution.getRootEventId(),
+                execution.getCurrentSegmentId());
     }
 
     private void closeSegment(
@@ -232,6 +289,28 @@ public class MyBatisRuntimeExecutionControlRepository implements RuntimeExecutio
                 || isBlank(target.segmentId())) {
             throw new IllegalArgumentException("execution target is incomplete");
         }
+    }
+
+    private static void requireControlEvent(String sessionId, String targetEventId, String eventId) {
+        if (isBlank(sessionId) || isBlank(targetEventId) || isBlank(eventId)) {
+            throw new IllegalArgumentException("interrupt identity is incomplete");
+        }
+    }
+
+    private static ConfirmingEventsDTO requireConfirmingEvents(ConfirmingEventsDTO events) {
+        Objects.requireNonNull(events, "confirming events");
+        requireTerminalEvent(events.toolCallEventId(), events.toolCallEventSeq());
+        requireTerminalEvent(events.idleEventId(), events.idleEventSeq());
+        if (events.toolCallEventId().equals(events.idleEventId())) {
+            throw new IllegalArgumentException("confirming event identities must be distinct");
+        }
+        return events;
+    }
+
+    private static CommittedControlEventDTO requireCommittedEvent(CommittedControlEventDTO event) {
+        Objects.requireNonNull(event, "committed control event");
+        requireTerminalEvent(event.eventId(), event.eventSeq());
+        return event;
     }
 
     private static void requireTerminalEvent(String eventId, long eventSeq) {
