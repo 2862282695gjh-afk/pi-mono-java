@@ -7,6 +7,7 @@ package com.huawei.hicampus.claw.codingagent.runtimeapi.mapper;
 import java.time.OffsetDateTime;
 import java.util.List;
 
+import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.CommittedEventDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeEntryDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeLifetimeUsageDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeRecordDTO;
@@ -44,6 +45,8 @@ public interface RuntimeSessionMapper {
     int insertEntry(RuntimeEntryDTO entry);
 
     int insertRecord(RuntimeRecordDTO record);
+
+    int insertCommittedEvent(CommittedEventDTO event);
 
     int incrementMessageCount(@Param("sessionId") String sessionId);
 
@@ -100,6 +103,8 @@ public interface RuntimeSessionMapper {
     int deleteEntries(@Param("sessionId") String sessionId);
 
     int deleteRecords(@Param("sessionId") String sessionId);
+
+    int deleteCommittedEvents(@Param("sessionId") String sessionId);
 
     int deleteStats(@Param("sessionId") String sessionId);
 

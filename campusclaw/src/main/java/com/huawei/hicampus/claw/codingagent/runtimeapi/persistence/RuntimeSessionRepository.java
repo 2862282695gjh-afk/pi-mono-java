@@ -11,6 +11,7 @@ import java.util.function.Consumer;
 import java.util.function.Function;
 
 import com.huawei.hicampus.claw.ai.types.Usage;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.CommittedEventDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeCompactionSnapshotDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeEntryDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeRecordDTO;
@@ -33,6 +34,9 @@ public interface RuntimeSessionRepository {
 
     UserEventAcceptance acceptUserEvent(String sessionId, RuntimeEntryDTO entry, OffsetDateTime acceptedAt);
 
+    UserEventAcceptance acceptUserEvent(
+            String sessionId, RuntimeEntryDTO entry, CommittedEventDTO event, OffsetDateTime acceptedAt);
+
     /**
      * 行锁内观察当前 Session 与完整分支，不修改持久化状态，也不准备 Agent。
      *
@@ -53,7 +57,12 @@ public interface RuntimeSessionRepository {
 
     RuntimeEntryDTO appendEntry(RuntimeEntryDTO entry);
 
+    RuntimeEntryDTO appendEntry(RuntimeEntryDTO entry, List<CommittedEventDTO> events);
+
     RuntimeEntryDTO appendEntryWithUsage(RuntimeEntryDTO entry, RuntimeRecordDTO record, Usage usage);
+
+    RuntimeEntryDTO appendEntryWithUsage(
+            RuntimeEntryDTO entry, RuntimeRecordDTO record, Usage usage, List<CommittedEventDTO> events);
 
     void finishExecution(String sessionId, OffsetDateTime finishedAt);
 
