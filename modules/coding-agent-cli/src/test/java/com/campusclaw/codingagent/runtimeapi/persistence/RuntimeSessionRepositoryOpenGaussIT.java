@@ -1190,7 +1190,6 @@ class RuntimeSessionRepositoryOpenGaussIT {
         event.setPayload("{}");
         return event;
     }
-    }
 
     private static RuntimeSessionDTO newSession(String sessionId) {
         OffsetDateTime now = OffsetDateTime.of(2026, 8, 18, 1, 0, 0, 0, ZoneOffset.UTC);
