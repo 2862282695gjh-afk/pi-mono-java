@@ -53,9 +53,7 @@ public class RuntimeExecutionProperties {
 
     @AssertTrue(message = "execution durations must be positive")
     public boolean isDurationConfigurationValid() {
-        return isPositive(maxDuration)
-                && isPositive(terminalRetryInterval)
-                && isPositive(controlPollFailureBackoff);
+        return isPositive(maxDuration) && isPositive(terminalRetryInterval) && isPositive(controlPollFailureBackoff);
     }
 
     private static boolean isPositive(Duration duration) {
