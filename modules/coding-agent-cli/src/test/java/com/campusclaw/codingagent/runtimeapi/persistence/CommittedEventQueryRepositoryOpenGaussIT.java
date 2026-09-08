@@ -92,7 +92,7 @@ class CommittedEventQueryRepositoryOpenGaussIT {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"user.message", "future.unknown"})
+    @ValueSource(strings = {"user.message", "assistant.thinking.completed", "future.unknown"})
     void shouldFailClosedWhenCurrentBranchMappingIsUnsafe(String type) {
         RuntimeSessionDTO session = session();
         repository.create(session);
@@ -122,6 +122,23 @@ class CommittedEventQueryRepositoryOpenGaussIT {
                 assertThrows(IllegalStateException.class, () -> repository.findEventPage(session.getId(), 0L, 10));
 
         assertThat(error).hasMessage("current branch event mapping is incomplete");
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {0, 1})
+    void shouldAcceptReviewedThinkingVisibility(int eventCount) {
+        RuntimeSessionDTO session = session();
+        repository.create(session);
+        insertEntry(session.getId(), "entry-thinking", 1L, null, "assistant.thinking.completed");
+        if (eventCount == 1) {
+            insertEvent(session.getId(), "event-thinking", 2L, "entry-thinking");
+        }
+        insertProjection(session.getId(), "entry-thinking", eventCount);
+        jdbcTemplate.update("UPDATE t_sessions SET active_leaf_id = ? WHERE id = ?", "entry-thinking", session.getId());
+
+        var events = repository.findEventPage(session.getId(), 0L, 10).orElseThrow();
+
+        assertThat(events).hasSize(eventCount);
     }
 
     @Test

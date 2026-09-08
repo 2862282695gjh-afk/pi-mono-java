@@ -300,7 +300,7 @@
         OR (
             entry.type IN (
                 'user.message', 'user.interrupt', 'user.tool_confirmation',
-                'assistant.message.completed', 'assistant.thinking.completed', 'tool.result',
+                'assistant.message.completed', 'tool.result',
                 'tool.execution.started',
                 'session.model.changed', 'session.thinking.changed', 'session.compaction.completed',
                 'session.status.idle'
