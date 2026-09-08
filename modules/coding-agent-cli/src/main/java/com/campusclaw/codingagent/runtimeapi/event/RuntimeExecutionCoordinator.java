@@ -68,7 +68,13 @@ public class RuntimeExecutionCoordinator {
 
     public void start(
             RuntimeSessionHolder holder, RuntimeActiveExecution execution, UserMessage message, Locale locale) {
-        RuntimeEventProjector projector = projectorFactory.create(holder, execution, message, locale);
+        RuntimeEventProjector projector;
+        try {
+            projector = projectorFactory.create(holder, execution, message, locale);
+        } catch (RuntimeException error) {
+            handleAcceptedStartFailure(holder, execution, error, locale);
+            return;
+        }
         RuntimeSubscriptions subscriptions = RuntimeSubscriptions.empty();
         try {
             subscriptions = subscribe(holder, projector);
@@ -80,6 +86,38 @@ public class RuntimeExecutionCoordinator {
         } catch (RuntimeException error) {
             finish(holder, execution, projector, subscriptions, error, locale);
         }
+    }
+
+    /**
+     * 已接受用户事件后启动失败时，按执行失败完成持久化并释放运行资源。
+     *
+     * @param holder 已注册的 Session 句柄
+     * @param execution 已接受事件对应的活动执行
+     * @param error 启动失败原因
+     * @param locale 本次响应语言
+     */
+    public void handleAcceptedStartFailure(
+            RuntimeSessionHolder holder, RuntimeActiveExecution execution, RuntimeException error, Locale locale) {
+        try {
+            engineRegistry.withOperationLock(
+                    holder.sessionId(), () -> completeAcceptedStartFailure(holder, execution, error, locale));
+        } catch (RuntimeException finalizationError) {
+            Throwable failure = combineFailures(error, finalizationError);
+            failure = completeOutput(execution, failure);
+            execution.complete(failure);
+            recordFailure(holder.sessionId(), failure, true);
+        }
+    }
+
+    private void completeAcceptedStartFailure(
+            RuntimeSessionHolder holder, RuntimeActiveExecution execution, RuntimeException error, Locale locale) {
+        execution.closeControls();
+        Throwable failure = finishPersistence(holder.sessionId(), error);
+        failure = releaseExecution(holder, execution, RuntimeSubscriptions.empty(), failure);
+        failure = emitTerminal(execution, StopReason.ERROR, failure, locale);
+        failure = completeOutput(execution, failure);
+        execution.complete(failure);
+        recordFailure(holder.sessionId(), failure, true);
     }
 
     private static RuntimeSubscriptions subscribe(RuntimeSessionHolder holder, RuntimeEventProjector projector) {
@@ -162,10 +200,10 @@ public class RuntimeExecutionCoordinator {
         Throwable failure = executionFailure(execution, executionError, projector);
         failure = finishPersistence(holder.sessionId(), failure);
         failure = releaseExecution(holder, execution, subscriptions, failure);
-        recordFailure(holder.sessionId(), projector, failure);
-        terminalEventFactory.emit(execution.output(), execution, projector.terminalReason(), failure, locale);
-        execution.output().complete();
+        failure = emitTerminal(execution, projector.terminalReason(), failure, locale);
+        failure = completeOutput(execution, failure);
         execution.complete(failure);
+        recordFailure(holder.sessionId(), failure, hasUnreportedTerminalError(projector));
     }
 
     private static Throwable executionFailure(
@@ -195,21 +233,49 @@ public class RuntimeExecutionCoordinator {
             subscriptions.unsubscribe();
         } catch (RuntimeException unsubscribeError) {
             result = combineFailures(result, unsubscribeError);
-        } finally {
+        }
+        try {
             engineRegistry.complete(holder, execution);
+        } catch (RuntimeException releaseError) {
+            result = combineFailures(result, releaseError);
         }
         return result;
+    }
+
+    private Throwable emitTerminal(
+            RuntimeActiveExecution execution, StopReason reason, Throwable failure, Locale locale) {
+        try {
+            terminalEventFactory.emit(execution.output(), execution, reason, failure, locale);
+            return failure;
+        } catch (RuntimeException terminalError) {
+            return combineFailures(failure, terminalError);
+        }
+    }
+
+    private static Throwable completeOutput(RuntimeActiveExecution execution, Throwable failure) {
+        try {
+            execution.output().complete();
+            return failure;
+        } catch (RuntimeException outputError) {
+            return combineFailures(failure, outputError);
+        }
     }
 
     private static Throwable combineFailures(Throwable primary, Throwable secondary) {
         if (primary == null) {
             return secondary;
         }
-        primary.addSuppressed(secondary);
+        if (primary != secondary) {
+            primary.addSuppressed(secondary);
+        }
         return primary;
     }
 
-    private static void recordFailure(String sessionId, RuntimeEventProjector projector, Throwable failure) {
+    private static boolean hasUnreportedTerminalError(RuntimeEventProjector projector) {
+        return projector.terminalReason() == StopReason.ERROR && projector.terminalErrorCode() == null;
+    }
+
+    private static void recordFailure(String sessionId, Throwable failure, boolean unreportedTerminalError) {
         if (failure != null) {
             LOGGER.atError()
                     .addKeyValue("event", "campusclaw.failure")
@@ -221,7 +287,7 @@ public class RuntimeExecutionCoordinator {
                             "CampusClaw failure: operation={}, errorCode={}",
                             "runtime.execution",
                             RuntimeErrorCode.SESSION_EXECUTION_FAILED.name());
-        } else if (projector.terminalReason() == StopReason.ERROR && projector.terminalErrorCode() == null) {
+        } else if (unreportedTerminalError) {
             LOGGER.atError()
                     .addKeyValue("event", "campusclaw.failure")
                     .addKeyValue("operation", "runtime.execution")

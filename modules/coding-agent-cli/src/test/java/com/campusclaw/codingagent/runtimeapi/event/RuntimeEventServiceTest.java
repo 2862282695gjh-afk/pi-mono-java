@@ -37,6 +37,7 @@ import com.campusclaw.codingagent.common.client.mate.MateCredentials;
 import com.campusclaw.codingagent.runtimeapi.agent.AgentDirectoryResolver;
 import com.campusclaw.codingagent.runtimeapi.agent.AgentDirectorySnapshotDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.RuntimeEntryDTO;
+import com.campusclaw.codingagent.runtimeapi.dto.RuntimeExecutionContextDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
@@ -49,6 +50,7 @@ import com.campusclaw.codingagent.runtimeapi.runtime.RuntimeExecutionProperties;
 import com.campusclaw.codingagent.runtimeapi.runtime.RuntimeExecutionTimeoutScheduler;
 import com.campusclaw.codingagent.runtimeapi.runtime.RuntimeSessionEngineRegistry;
 import com.campusclaw.codingagent.runtimeapi.runtime.RuntimeSessionHolder;
+import com.campusclaw.codingagent.runtimeapi.session.ReconciledRuntimeSession;
 import com.campusclaw.codingagent.runtimeapi.session.RuntimeSessionModelReconciler;
 import com.campusclaw.codingagent.runtimeapi.vo.RuntimeSseEventVO;
 import com.campusclaw.codingagent.runtimeapi.vo.UserEventRequestVO;
@@ -111,6 +113,51 @@ class RuntimeEventServiceTest {
         assertThat(collect(stream))
                 .extracting(RuntimeSseEventVO::getEvent)
                 .containsExactly("user.message", "session.status.idle", "stream.end");
+    }
+
+    @Test
+    void shouldEmitReceiptBeforePersistedConfigurationEvents() {
+        RuntimeSessionRepository repository = mock(RuntimeSessionRepository.class);
+        RuntimeEntryCodec codec = mock(RuntimeEntryCodec.class);
+        RuntimeSessionEngineRegistry registry = mock(RuntimeSessionEngineRegistry.class);
+        RuntimeExecutionContextFactory contextFactory = mock(RuntimeExecutionContextFactory.class);
+        RuntimeExecutionCoordinator coordinator = mock(RuntimeExecutionCoordinator.class);
+        RuntimeSessionModelReconciler reconciler = mock(RuntimeSessionModelReconciler.class);
+        RuntimeSessionDTO session = session();
+        RuntimeEntryDTO configuration = entry("entry_config", 1L, "session.model.changed");
+        RuntimeEntryDTO receipt = entry("entry_user", 2L, "user.message");
+        RuntimeEventStream stream = stream();
+        RuntimeActiveExecution execution = new RuntimeActiveExecution(stream);
+        RuntimeSessionHolder holder = mock(RuntimeSessionHolder.class);
+        UserMessage userMessage = new UserMessage("分析订单", 1L);
+        when(repository.find(SESSION_ID)).thenReturn(Optional.of(session));
+        when(reconciler.reconcile(session))
+                .thenReturn(new ReconciledRuntimeSession(
+                        session, mock(AgentDirectorySnapshotDTO.class), mock(Model.class), List.of(configuration)));
+        when(contextFactory.create(any(), any(), any(), any(), any(), any()))
+                .thenReturn(new RuntimeExecutionContextDTO(holder, execution, userMessage, stream));
+        when(codec.userEntry(anyString(), anyString(), any(), any(), any())).thenReturn(receipt);
+        when(repository.acceptUserEvent(eq(SESSION_ID), eq(receipt), any()))
+                .thenReturn(new UserEventAcceptance(Status.ACCEPTED, session));
+        when(codec.toSseData(any(), eq(Locale.US))).thenReturn(java.util.Map.of());
+        answerOperationLock(registry);
+        RuntimeEventService service = new RuntimeEventService(
+                repository,
+                codec,
+                () -> "entry_user",
+                registry,
+                contextFactory,
+                coordinator,
+                reconciler,
+                Clock.systemUTC());
+
+        RuntimeEventStream result =
+                service.submit(SESSION_ID, request("分析订单", List.of()), Locale.US, MateCredentials.empty());
+        result.complete();
+
+        assertThat(collect(result))
+                .extracting(RuntimeSseEventVO::getEvent)
+                .containsExactly("user.message", "session.model.changed");
     }
 
     @Test
@@ -212,6 +259,23 @@ class RuntimeEventServiceTest {
             }
         });
         return events;
+    }
+
+    private static RuntimeEntryDTO entry(String id, long entrySeq, String type) {
+        RuntimeEntryDTO entry = new RuntimeEntryDTO();
+        entry.setId(id);
+        entry.setEntrySeq(entrySeq);
+        entry.setType(type);
+        return entry;
+    }
+
+    private static RuntimeEventStream stream() {
+        return new RuntimeEventStream(8, 8_192, Duration.ofSeconds(1), ignored -> 1L);
+    }
+
+    private static void answerOperationLock(RuntimeSessionEngineRegistry registry) {
+        when(registry.withOperationLock(anyString(), any(Supplier.class)))
+                .thenAnswer(invocation -> ((Supplier<?>) invocation.getArgument(1)).get());
     }
 
     private static UserEventRequestVO request(String message, List<String> fileIds) {
