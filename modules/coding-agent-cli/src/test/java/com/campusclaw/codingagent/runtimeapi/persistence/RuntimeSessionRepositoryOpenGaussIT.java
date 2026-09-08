@@ -375,6 +375,41 @@ class RuntimeSessionRepositoryOpenGaussIT {
     }
 
     @Test
+    void shouldRestoreOldTerminalWithoutFinishingNewExecution() {
+        RuntimeSessionDTO session = newSession("session_old_terminal_retry");
+        repository.create(session);
+        ExecutionTargetDTO oldTarget = acceptRootMessage(session, "old-terminal-retry");
+        RuntimeEntryDTO oldIdle = controlEntry(session, "old-terminal-idle", "session.status.idle");
+        CommittedEventDTO oldEvent = committedEvent(oldIdle, "old-terminal-event", "session.status_idle");
+        executionPersistence.commitTerminal(
+                oldTarget, oldIdle, oldEvent, RuntimeExecutionTerminalReason.DONE, oldIdle.getTimestamp());
+        executionIds.reset("new-running-execution", "new-running-segment");
+        RuntimeEntryDTO next = controlEntry(session, "next-running-message", "user.message");
+        CommittedEventDTO nextEvent = committedEvent(next, "next-running-event", "user.message");
+        ExecutionTargetDTO newTarget = executionPersistence
+                .acceptMessage(session.getId(), next, nextEvent, next.getTimestamp())
+                .target();
+        long sequenceBefore =
+                scalarLong("SELECT next_seq FROM t_session_sequences WHERE session_id = ?", session.getId());
+        RuntimeEntryDTO retry = newEntry(
+                session.getId(),
+                oldIdle.getId(),
+                oldIdle.getType(),
+                oldIdle.getTimestamp().plusMinutes(1),
+                "{}");
+        CommittedEventDTO retryEvent = committedEvent(retry, oldEvent.getEventId(), oldEvent.getType());
+
+        executionPersistence.commitTerminal(
+                oldTarget, retry, retryEvent, RuntimeExecutionTerminalReason.DONE, retry.getTimestamp());
+
+        assertThat(repository.find(session.getId()).orElseThrow().getState()).isEqualTo("running");
+        assertThat(executionControls.find(newTarget).orElseThrow().getState()).isEqualTo(RuntimeExecutionState.RUNNING);
+        assertThat(retryEvent.getEventSeq()).isEqualTo(oldEvent.getEventSeq());
+        assertThat(scalarLong("SELECT next_seq FROM t_session_sequences WHERE session_id = ?", session.getId()))
+                .isEqualTo(sequenceBefore);
+    }
+
+    @Test
     void shouldRollbackAcceptedMessageWhenExecutionIdentityCannotBePersisted() {
         RuntimeSessionDTO session = newSession("session_atomic_rollback");
         repository.create(session);
