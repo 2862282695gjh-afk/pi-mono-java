@@ -39,9 +39,21 @@ public class RuntimeExecutionProperties {
     @Min(1)
     private long maxControlBytes = 1024L * 1024L;
 
+    @Min(1)
+    private int controlPollIntervalMs = 500;
+
+    @Min(1)
+    private int controlPollBatchSize = 100;
+
+    @Min(1)
+    private int controlQueryTimeoutSeconds = 2;
+
+    @NotNull
+    private Duration controlPollFailureBackoff = Duration.ofSeconds(2);
+
     @AssertTrue(message = "execution durations must be positive")
     public boolean isDurationConfigurationValid() {
-        return isPositive(maxDuration) && isPositive(terminalRetryInterval);
+        return isPositive(maxDuration) && isPositive(terminalRetryInterval) && isPositive(controlPollFailureBackoff);
     }
 
     private static boolean isPositive(Duration duration) {

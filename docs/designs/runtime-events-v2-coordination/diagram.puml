@@ -1,0 +1,32 @@
+@startuml terminal_commit_retry
+' Source ba9e497c: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/event/RuntimeV2ExecutionCoordinator.java
+' Symbols: start, terminalOutcome, commitAndRelease, deferTerminal, retryTerminal
+' Source ba9e497c: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/runtime/RuntimeTerminalRetryScheduler.java
+' Observed behavior: retain holder until authoritative terminal commit succeeds.
+' Java divergence: durable terminal recovery is outside the pi Agent loop.
+title Runtime terminal commit and retry
+participant Coordinator as C
+participant "Agent / Holder" as A
+database "Execution repository" as D
+participant "Response output" as O
+participant "Retry scheduler" as R
+C -> A : Install handlers and subscriptions
+C -> A : Schedule timeout and start prompt
+A --> C : Actual completion outcome
+C -> C : Freeze terminal ID, time and outcome
+C -> D : Commit fixed execution terminal
+alt Commit succeeds
+  D --> C : Committed
+  C -> O : Emit committed idle
+  C -> A : Release subscriptions and holder
+  C -> O : Complete output
+else Commit fails or is uncertain
+  D --> C : Error
+  C -> A : Remove subscriptions and timeout
+  C -> O : Close current output
+  note over C,A : Keep holder and credentials for pending terminal
+  C -> R : Schedule same terminal plan
+  R -> C : Retry without rerunning Agent
+  C -> D : Commit same terminal ID and time
+end
+@enduml

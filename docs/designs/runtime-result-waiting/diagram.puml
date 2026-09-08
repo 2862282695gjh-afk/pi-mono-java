@@ -1,0 +1,34 @@
+@startuml runtime_result_waiting
+title Bound and Read Results for Fixed Runtime Targets
+' Contract: pi-mono-java-design 2ee2a3211da68ad87b0d9cab353e691b00bdaebd
+' Java baseline: 43a8e000; implementation: 606e27a1, f5e904aa and bb8047fe
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/event/RuntimeResultWaitRegistry.java#reserve #bind #claimTargets #deliver
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/event/RuntimeResultPollingService.java#poll #notifyCommitted
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/dto/ResultWaitTargetDTO.java#claimId
+' Pi baseline: 4af9d21d3b4d664e4a29fcabfec85171077248e3
+' Pi source: packages/agent/src/agent-loop.ts#runAgentLoop
+' Observed behavior: queries run outside the registry lock and can finish after a group is replaced.
+' Design reason: a generation claim prevents an old read from closing a new response for the same target.
+' Java divergence: shared database result waiting is a CampusClaw architecture change.
+actor "Request handler" as Handler
+participant "Bounded response registry" as Registry
+participant "Periodic or local notifier" as Poller
+database "Committed result repository" as Database
+participant "Request response" as Response
+Handler -> Registry: Reserve one response slot
+note over Handler: HTTP acceptance wiring is a later integration.
+Handler -> Registry: Bind accepted exact target, mode and cursor
+Poller -> Poller: Check shared database failure backoff
+Poller -> Registry: Claim bounded fair groups with unique claimId
+Registry --> Poller: Exact target, mode, minimum cursor, claimId
+Poller -> Database: Read committed segment or actual execution terminal
+Database --> Poller: Ordered complete events and terminal state
+Poller -> Registry: Deliver only to the same active claim generation
+Registry -> Response: Per-response events after its own cursor
+Response -> Registry: Release on close or wait expiry
+note over Registry, Response
+  Callbacks run outside the registry lock.
+  Response expiry does not terminate the Agent.
+  Late results cannot affect a replacement group.
+end note
+@enduml
