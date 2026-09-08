@@ -18,6 +18,7 @@ import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.SessionConfigurationUpdateDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.error.RuntimeErrorCode;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeCommittedEventFactory;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeEntryCodec;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeEntryIdGenerator;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.model.RuntimeModelManager;
@@ -41,6 +42,8 @@ public class RuntimeSessionModelReconciler {
 
     private final RuntimeEntryCodec entryCodec;
 
+    private final RuntimeCommittedEventFactory committedEventFactory;
+
     private final RuntimeEntryIdGenerator idGenerator;
 
     private final Clock clock;
@@ -50,12 +53,14 @@ public class RuntimeSessionModelReconciler {
             AgentDirectoryResolver directoryResolver,
             RuntimeModelManager modelManager,
             RuntimeEntryCodec entryCodec,
+            RuntimeCommittedEventFactory committedEventFactory,
             RuntimeEntryIdGenerator idGenerator,
             Clock clock) {
         this.repository = repository;
         this.directoryResolver = directoryResolver;
         this.modelManager = modelManager;
         this.entryCodec = entryCodec;
+        this.committedEventFactory = committedEventFactory;
         this.idGenerator = idGenerator;
         this.clock = clock;
     }
@@ -75,6 +80,7 @@ public class RuntimeSessionModelReconciler {
                 fallback.id(),
                 fallback.reasoning(),
                 locked -> entries,
+                committedEventFactory::sessionConfiguration,
                 updatedAt);
         return new ReconciledRuntimeSession(requireUpdated(update), snapshot, fallback, entries);
     }

@@ -35,6 +35,7 @@ import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.command.BuiltinComman
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.command.CommandResultDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.command.CommandSessionSnapshotDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.command.ResolvedCommandDTO;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeCommittedEventFactory;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeEntryCodec;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeEntryIdGenerator;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeEventService;
@@ -107,6 +108,7 @@ class BuiltinCommandCoreTest {
                 .withBean(Clock.class, Clock::systemUTC)
                 .withBean(AgentDirectoryResolver.class, () -> mock(AgentDirectoryResolver.class))
                 .withBean(RuntimeModelManager.class, () -> mock(RuntimeModelManager.class))
+                .withBean(RuntimeCommittedEventFactory.class, () -> mock(RuntimeCommittedEventFactory.class))
                 .withBean(RuntimeEntryCodec.class, () -> mock(RuntimeEntryCodec.class))
                 .withBean(RuntimeEntryIdGenerator.class, () -> mock(RuntimeEntryIdGenerator.class))
                 .withBean(RuntimeCompactionService.class, () -> mock(RuntimeCompactionService.class))

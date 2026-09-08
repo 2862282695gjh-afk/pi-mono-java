@@ -31,6 +31,7 @@ import com.campusclaw.codingagent.runtimeapi.vo.RuntimeSseEventVO;
 import com.campusclaw.codingagent.session.compaction.CompactionMessageSupport;
 import com.campusclaw.codingagent.session.compaction.CompactionReason;
 import com.campusclaw.codingagent.session.compaction.SessionCompactionResult;
+import com.campusclaw.common.constant.ClawConstants;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -49,9 +50,6 @@ import org.springframework.stereotype.Component;
  */
 @Component
 public class RuntimeEntryCodec {
-    // 未收录的工具错误码使用的通用公开消息键。
-    private static final String TOOL_EXECUTION_FAILED = "TOOL_EXECUTION_FAILED";
-
     private final ObjectMapper objectMapper;
 
     private final MessageSource messageSource;
@@ -573,7 +571,8 @@ public class RuntimeEntryCodec {
         if (message != null) {
             return message;
         }
-        return messageSource.getMessage(TOOL_EXECUTION_FAILED, null, "Tool execution failed.", locale);
+        return messageSource.getMessage(
+                ClawConstants.RuntimeApi.DEFAULT_TOOL_ERROR_CODE, null, "Tool execution failed.", locale);
     }
 
     private void appendModelChangedPayload(LinkedHashMap<String, Object> target, JsonNode payload) {

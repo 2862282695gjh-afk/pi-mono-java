@@ -31,6 +31,7 @@ import com.campusclaw.codingagent.runtimeapi.agent.AgentDirectoryResolver;
 import com.campusclaw.codingagent.runtimeapi.agent.AgentDirectorySnapshotDTO;
 import com.campusclaw.codingagent.runtimeapi.command.catalog.ResolvedCommandCatalog;
 import com.campusclaw.codingagent.runtimeapi.command.execution.CommandExecutionContext;
+import com.campusclaw.codingagent.runtimeapi.dto.CommittedEventDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.RuntimeEntryDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.RuntimeLifetimeUsageDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
@@ -38,6 +39,7 @@ import com.campusclaw.codingagent.runtimeapi.dto.command.CommandSessionSnapshotD
 import com.campusclaw.codingagent.runtimeapi.dto.command.SessionCommandResultDTO;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
+import com.campusclaw.codingagent.runtimeapi.event.RuntimeCommittedEventFactory;
 import com.campusclaw.codingagent.runtimeapi.event.RuntimeEntryCodec;
 import com.campusclaw.codingagent.runtimeapi.event.RuntimeEntryIdGenerator;
 import com.campusclaw.codingagent.runtimeapi.mapper.RuntimeSessionMapper;
@@ -77,6 +79,9 @@ class SessionThinkingConfigurationServiceTest {
     private final RuntimeEntryCodec codec =
             new RuntimeEntryCodec(new ObjectMapper(), new RuntimeMessageSourceConfiguration().messageSource());
 
+    private final RuntimeCommittedEventFactory committedEventFactory = new RuntimeCommittedEventFactory(
+            new ObjectMapper(), new RuntimeMessageSourceConfiguration().messageSource());
+
     private final OffsetDateTime now = OffsetDateTime.parse("2026-09-07T00:00:00Z");
 
     private final Clock clock = Clock.fixed(now.toInstant(), ZoneOffset.UTC);
@@ -85,10 +90,12 @@ class SessionThinkingConfigurationServiceTest {
 
     private final RuntimeEntryIdGenerator idGenerator = () -> "entry-" + ids.incrementAndGet();
 
-    private final SessionThinkingConfigurationService service =
-            new SessionThinkingConfigurationService(repository, resolver, manager, codec, idGenerator, clock);
+    private final SessionThinkingConfigurationService service = new SessionThinkingConfigurationService(
+            repository, resolver, manager, codec, committedEventFactory, idGenerator, clock);
 
     private final List<RuntimeEntryDTO> appended = new ArrayList<>();
+
+    private final List<CommittedEventDTO> committed = new ArrayList<>();
 
     private final AgentDirectorySnapshotDTO snapshot = new AgentDirectorySnapshotDTO(
             "agent", "old", List.of("old", "latest"), Path.of("/runtime/agent"), Path.of("/runtime/agent/.campusclaw"));
@@ -102,9 +109,15 @@ class SessionThinkingConfigurationServiceTest {
         allowThinking("old", true);
         allowThinking("latest", true);
         when(mapper.updateSessionThinking(eq("session"), anyBoolean(), eq(now))).thenReturn(1);
-        when(mapper.lockNextSequence("session")).thenReturn(17L);
+        when(mapper.lockNextSequence("session")).thenReturn(17L, 18L);
         when(mapper.incrementSequence("session")).thenReturn(1);
         when(mapper.updateActiveLeafAnyState(eq("session"), any())).thenReturn(1);
+        when(mapper.insertCommittedEvent(any())).thenAnswer(call -> {
+            committed.add(call.getArgument(0));
+            return 1;
+        });
+        when(mapper.insertCommittedEventProjection(any(), any(), any(Integer.class), any()))
+                .thenReturn(1);
         when(mapper.insertEntry(any())).thenAnswer(call -> {
             appended.add(call.getArgument(0));
             return 1;
@@ -148,6 +161,12 @@ class SessionThinkingConfigurationServiceTest {
                 .containsEntry("reason", "requested")
                 .containsEntry("entrySeq", 17L);
         assertThat(appended.getFirst().getParentId()).isEqualTo("prior");
+        assertThat(committed).singleElement().satisfies(event -> {
+            assertThat(event.getType()).isEqualTo("session.thinking_changed");
+            assertThat(event.getEventId()).isEqualTo("entry-1");
+            assertThat(event.getEventSeq()).isEqualTo(18L);
+        });
+        verify(mapper).insertCommittedEventProjection("session", "entry-1", 1, "runtime");
         assertThat(locked.getResourceVersion()).isEqualTo(5L);
         assertThat(locked.getUpdatedAt()).isEqualTo(now);
     }
@@ -234,7 +253,8 @@ class SessionThinkingConfigurationServiceTest {
         var etags = new SessionEtagFactory();
         var api = new RuntimeSessionConfigurationService(
                 repository,
-                new SessionModelConfigurationService(repository, resolver, manager, codec, idGenerator, clock),
+                new SessionModelConfigurationService(
+                        repository, resolver, manager, codec, committedEventFactory, idGenerator, clock),
                 service,
                 etags,
                 new RuntimeSessionResponseAssembler(etags));
@@ -271,6 +291,7 @@ class SessionThinkingConfigurationServiceTest {
             context.registerBean(AgentDirectoryResolver.class, () -> resolver);
             context.registerBean(RuntimeModelManager.class, () -> manager);
             context.registerBean(RuntimeEntryCodec.class, () -> codec);
+            context.registerBean(RuntimeCommittedEventFactory.class, () -> committedEventFactory);
             context.registerBean(RuntimeEntryIdGenerator.class, () -> idGenerator);
             context.registerBean(Clock.class, () -> clock);
             context.register(SessionThinkingConfigurationService.class, ThinkingCommandContributor.class);
