@@ -34,12 +34,6 @@ public class RuntimeExecutionProperties {
     private Duration terminalRetryInterval = Duration.ofSeconds(1);
 
     @Min(1)
-    private int maxControlMessages = 32;
-
-    @Min(1)
-    private long maxControlBytes = 1024L * 1024L;
-
-    @Min(1)
     private int controlPollIntervalMs = 500;
 
     @Min(1)

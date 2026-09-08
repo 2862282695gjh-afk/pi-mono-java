@@ -100,7 +100,7 @@ class RuntimeBuiltinCommandOpenGaussIT {
                 sessionId = createSession(firstPort);
                 saved = assertChangesAndNoOps(config, firstPort, sessionId);
                 savedHistory = history(firstPort, sessionId);
-                assertTypes(savedHistory, "session.thinking.changed", "session.model.changed");
+                assertTypes(savedHistory, "session.thinking_changed", "session.model_changed");
                 assertDatabaseTypes(config, sessionId, "session.thinking.changed", "session.model.changed");
                 assertThat(model.requestCount()).isZero();
             }
@@ -113,7 +113,9 @@ class RuntimeBuiltinCommandOpenGaussIT {
                 assertThat(history(secondPort, sessionId)).isEqualTo(savedHistory);
                 assertSessionResult(command(secondPort, sessionId, "name", null, "en-US"), saved);
                 String stream = requireSuccessfulStream(submitUserEventAsync(secondPort, sessionId));
-                assertThat(stream).contains("event:user.message", "event:assistant.message.completed");
+                assertThat(stream)
+                        .contains("\"type\":\"user.message\"", "\"type\":\"agent.message\"")
+                        .doesNotContain("event:");
                 assertThat(model.lastRequest().path("model").asText()).isEqualTo(SECOND_MODEL_ID);
                 assertThat(model.lastRequest().path("messages").toString()).contains("process smoke");
                 assertThat(getSession(secondPort, sessionId)
@@ -158,8 +160,10 @@ class RuntimeBuiltinCommandOpenGaussIT {
             } finally {
                 gate.release();
             }
-            assertThat(requireSuccessfulStream(stream)).doesNotContain("event:stream.error");
-            assertTypes(history(port, sessionId), "user.message", "assistant.message.completed");
+            assertThat(requireSuccessfulStream(stream))
+                    .contains("\"type\":\"session.status_idle\"")
+                    .doesNotContain("event:", "stream.error");
+            assertTypes(history(port, sessionId), "user.message", "agent.message", "session.status_idle");
             assertThat(getSession(port, sessionId).result().path("displayName").asText())
                     .isEqualTo("运行中  名称");
         }
@@ -274,12 +278,12 @@ class RuntimeBuiltinCommandOpenGaussIT {
                 JsonNode changed = result(command(secondPort, sessionId, "model", SECOND_MODEL_ID, "en-US"));
                 assertThat(changed.path("modelId").asText()).isEqualTo(SECOND_MODEL_ID);
                 assertThat(changed.path("thinking").asBoolean()).isFalse();
-                assertTypes(history(secondPort, sessionId), "session.model.changed", "session.thinking.changed");
+                assertTypes(history(secondPort, sessionId), "session.model_changed", "session.thinking_changed");
                 SessionViewDTO saved = getSession(secondPort, sessionId);
                 assertError(command(secondPort, sessionId, "thinking", "on", "en-US"), 422, "THINKING_NOT_SUPPORTED");
                 assertSessionResult(command(secondPort, sessionId, "thinking", "off", "en-US"), saved);
                 assertThat(getSession(secondPort, sessionId)).isEqualTo(saved);
-                assertTypes(history(secondPort, sessionId), "session.model.changed", "session.thinking.changed");
+                assertTypes(history(secondPort, sessionId), "session.model_changed", "session.thinking_changed");
                 assertThat(model.requestCount()).isZero();
             }
             assertThat(second.process().isAlive()).isFalse();

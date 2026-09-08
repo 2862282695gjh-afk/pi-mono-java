@@ -46,9 +46,9 @@ public final class SkillCommandRequestVO implements CommandRequestVO {
     @Setter(AccessLevel.NONE)
     private String arguments;
 
-    @Size(max = ClawConstants.RuntimeApi.MAX_FILE_IDS)
+    @Size(max = ClawConstants.RuntimeApi.MAX_EVENT_FILE_IDS)
     @Setter(AccessLevel.NONE)
-    private List<@NotBlank String> fileIds;
+    private List<@NotBlank @Pattern(regexp = ClawConstants.RuntimeApi.EVENT_FILE_ID_REGEX) String> fileIds;
 
     @JsonSetter("name")
     public void readName(JsonNode value) {

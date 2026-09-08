@@ -229,7 +229,6 @@ class ManagedAgentSessionTest {
                 .containsExactly(SessionCompactionStartedEvent.class, SessionCompactionFailedEvent.class);
         verify(fixture.agent()).clearSteeringQueue();
         verify(fixture.agent()).clearFollowUpQueue();
-        verify(fixture.agent(), never()).continueQueuedExecution();
     }
 
     private static List<SessionCompactionEvent> subscribe(Fixture fixture) {

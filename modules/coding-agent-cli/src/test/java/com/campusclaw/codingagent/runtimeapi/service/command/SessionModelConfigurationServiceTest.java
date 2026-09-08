@@ -157,16 +157,6 @@ class SessionModelConfigurationServiceTest {
         assertThat(appended)
                 .extracting(RuntimeEntryDTO::getType)
                 .containsExactly("session.model.changed", "session.thinking.changed");
-        assertThat(codec.toHistoryEvent(appended.getFirst()))
-                .containsEntry("previousModelId", "latest")
-                .containsEntry("modelId", "next")
-                .containsEntry("reason", "requested")
-                .containsEntry("entrySeq", 17L);
-        assertThat(codec.toHistoryEvent(appended.getLast()))
-                .containsEntry("previousThinking", true)
-                .containsEntry("thinking", false)
-                .containsEntry("reason", "modelCapability")
-                .containsEntry("entrySeq", 19L);
         assertThat(appended).extracting(RuntimeEntryDTO::getParentId).containsExactly("prior", "entry-1");
         assertThat(committed)
                 .extracting(CommittedEventDTO::getType)

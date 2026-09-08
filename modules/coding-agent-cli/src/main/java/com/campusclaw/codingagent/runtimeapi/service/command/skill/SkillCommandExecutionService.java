@@ -14,8 +14,8 @@ import com.campusclaw.codingagent.runtime.PreparedAgentRuntime;
 import com.campusclaw.codingagent.runtimeapi.dto.command.SkillCommandInputDTO;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
-import com.campusclaw.codingagent.runtimeapi.event.RuntimeEventService;
 import com.campusclaw.codingagent.runtimeapi.event.RuntimeEventStream;
+import com.campusclaw.codingagent.runtimeapi.event.RuntimeV2MessageEventService;
 import com.campusclaw.codingagent.runtimeapi.vo.SkillCommandRequestVO;
 import com.campusclaw.common.constant.ClawConstants;
 
@@ -33,9 +33,9 @@ import org.springframework.stereotype.Service;
 public class SkillCommandExecutionService {
     private static final Logger LOGGER = LoggerFactory.getLogger(SkillCommandExecutionService.class);
 
-    private final RuntimeEventService events;
+    private final RuntimeV2MessageEventService events;
 
-    public SkillCommandExecutionService(RuntimeEventService events) {
+    public SkillCommandExecutionService(RuntimeV2MessageEventService events) {
         this.events = events;
     }
 
@@ -69,6 +69,7 @@ public class SkillCommandExecutionService {
             SkillCommandInputDTO normalized = normalize(input);
             return events.submitPreparedMessage(
                     sessionId,
+                    publicInvocation(normalized),
                     (agentId, runtime) -> expand(agentId, runtime, normalized),
                     normalized.getFileIds(),
                     locale,
@@ -80,6 +81,11 @@ public class SkillCommandExecutionService {
         }
     }
 
+    private static String publicInvocation(SkillCommandInputDTO input) {
+        String invocation = "/skill:" + input.getSkillName();
+        return input.getArguments().isEmpty() ? invocation : invocation + " " + input.getArguments();
+    }
+
     private static SkillCommandInputDTO normalize(SkillCommandInputDTO input) {
         if (input == null || !ClawConstants.Skill.isValidName(input.getSkillName())) {
             throw new RuntimeApiException(RuntimeErrorCode.INVALID_COMMAND_REQUEST);
@@ -87,8 +93,12 @@ public class SkillCommandExecutionService {
         String arguments = input.getArguments();
         List<String> files = input.getFileIds() == null ? List.of() : input.getFileIds();
         if ((arguments != null && arguments.length() > ClawConstants.RuntimeApi.MAX_MESSAGE_CHARACTERS)
-                || files.size() > ClawConstants.RuntimeApi.MAX_FILE_IDS
-                || files.stream().anyMatch(file -> file == null || file.isBlank())
+                || files.size() > ClawConstants.RuntimeApi.MAX_EVENT_FILE_IDS
+                || files.stream()
+                        .anyMatch(file -> file == null
+                                || !ClawConstants.RuntimeApi.EVENT_FILE_ID_PATTERN
+                                        .matcher(file)
+                                        .matches())
                 || new HashSet<>(files).size() != files.size()) {
             throw new RuntimeApiException(RuntimeErrorCode.INVALID_COMMAND_REQUEST);
         }

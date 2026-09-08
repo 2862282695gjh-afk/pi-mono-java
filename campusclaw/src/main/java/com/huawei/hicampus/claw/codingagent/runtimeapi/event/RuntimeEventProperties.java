@@ -15,7 +15,7 @@ import jakarta.validation.constraints.NotNull;
 import lombok.Data;
 
 /**
- * Runtime 事件分页游标配置。
+ * Runtime 事件流与结果轮询配置。
  *
  * @version [br_eCampusCore 26.0.0, 2026/08/18]
  * @since [br_eCampusCore 26.0.0]
@@ -24,11 +24,6 @@ import lombok.Data;
 @Validated
 @ConfigurationProperties(prefix = "campusclaw.runtime.events")
 public class RuntimeEventProperties {
-    private String cursorSecret;
-
-    @NotNull
-    private Duration cursorTtl = Duration.ofHours(24);
-
     @Min(1)
     private int streamBufferEvents = 256;
 
@@ -61,10 +56,7 @@ public class RuntimeEventProperties {
 
     @AssertTrue(message = "runtime event durations must be positive")
     public boolean isDurationConfigurationValid() {
-        return positive(cursorTtl)
-                && positive(heartbeatInterval)
-                && positive(resultWaitTimeout)
-                && positive(resultPollFailureBackoff);
+        return positive(heartbeatInterval) && positive(resultWaitTimeout) && positive(resultPollFailureBackoff);
     }
 
     private static boolean positive(Duration duration) {

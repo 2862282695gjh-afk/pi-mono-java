@@ -119,13 +119,13 @@ class RuntimeCommandCatalogOpenGaussIT {
             gate.release();
         }
         assertThat(requireSuccessfulStream(stream))
-                .contains("process-level answer", "event:session.status.idle", "event:stream.end")
-                .doesNotContain("event:stream.error");
+                .contains("process-level answer", "\"type\":\"session.status_idle\"")
+                .doesNotContain("event:", "stream.error");
         assertThat(getSession(port, sessionId).result().path("state").asText()).isEqualTo("idle");
         assertThat(StreamSupport.stream(history(port, sessionId).spliterator(), false)
                         .map(event -> event.path("type").asText())
                         .toList())
-                .containsExactly("user.message", "assistant.message.completed");
+                .containsExactly("user.message", "agent.message", "session.status_idle");
     }
 
     private static void assertSessionErrors(int port, String language) throws Exception {

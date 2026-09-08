@@ -4,8 +4,6 @@
 
 package com.huawei.hicampus.claw.codingagent.runtimeapi.runtime;
 
-import java.util.IdentityHashMap;
-import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
@@ -15,7 +13,6 @@ import java.util.function.Supplier;
 import com.huawei.hicampus.claw.agent.tool.BeforeToolCallContext;
 import com.huawei.hicampus.claw.agent.tool.BeforeToolCallHandler;
 import com.huawei.hicampus.claw.agent.tool.BeforeToolCallResult;
-import com.huawei.hicampus.claw.ai.types.Message;
 import com.huawei.hicampus.claw.ai.types.ToolCall;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.ExecutionTargetDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.ToolConfirmationDecisionDTO;
@@ -31,12 +28,6 @@ public class RuntimeActiveExecution {
     private RuntimeEventOutput output;
 
     private final CompletableFuture<Void> completion = new CompletableFuture<>();
-
-    private final Map<Message, Long> queuedControls = new IdentityHashMap<>();
-
-    private long queuedControlBytes;
-
-    private boolean acceptingControls = true;
 
     private boolean abortRequested;
 
@@ -215,14 +206,10 @@ public class RuntimeActiveExecution {
 
     public synchronized void requestAbort() {
         abortRequested = true;
-        acceptingControls = false;
-        clearQueuedControls();
     }
 
     public synchronized void requestTimeout() {
         timedOut = true;
-        acceptingControls = false;
-        clearQueuedControls();
     }
 
     public synchronized boolean abortRequested() {
@@ -254,46 +241,12 @@ public class RuntimeActiveExecution {
 
     public synchronized void complete(Throwable failure) {
         cancelTimeoutTask();
-        clearQueuedControls();
         terminalRetryPending = false;
         if (failure == null) {
             completion.complete(null);
         } else {
             completion.completeExceptionally(failure);
         }
-    }
-
-    public synchronized boolean acceptingControls() {
-        return acceptingControls;
-    }
-
-    public synchronized void closeControls() {
-        acceptingControls = false;
-    }
-
-    public synchronized boolean queueControl(Message message, long bytes, int maxMessages, long maxBytes) {
-        if (!acceptingControls || queuedControls.size() >= maxMessages || queuedControlBytes + bytes > maxBytes) {
-            return false;
-        }
-        queuedControls.put(message, bytes);
-        queuedControlBytes += bytes;
-        return true;
-    }
-
-    public synchronized void controlDelivered(Message message) {
-        Long bytes = queuedControls.remove(message);
-        if (bytes != null) {
-            queuedControlBytes -= bytes;
-        }
-    }
-
-    public synchronized void removeQueuedControl(Message message) {
-        controlDelivered(message);
-    }
-
-    public synchronized void clearQueuedControls() {
-        queuedControls.clear();
-        queuedControlBytes = 0;
     }
 
     private synchronized BeforeToolCallHandler requireConfirmationHandler() {
