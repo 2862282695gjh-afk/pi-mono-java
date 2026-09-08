@@ -2,7 +2,7 @@
 title Unified Events v2 HTTP Activation
 ' Contract baseline: pi-mono-java-design 2ee2a3211da68ad87b0d9cab353e691b00bdaebd
 ' Java baseline: ffab13a69127e5e605df3b0319bf19f55f0e1d3f
-' Implementation tip: 77348ee9e2e6d8b68cf2a86572b09754eeb6ae49
+' Implementation tip: b6d490a130f8483b1047c661b39c904e5c309dae
 ' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/web/RuntimeEventController.java#submit and list
 ' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/event/RuntimeV2EventService.java#submit
 ' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/event/RuntimeResultBackedEventOutput.java#emit
@@ -31,11 +31,12 @@ service --> message : user.message
 service --> control : interrupt or confirmation
 control --> dispatcher : local fast path
 dispatcher ..> store : remote polling fallback
-message --> store : receipt and execution events
-control --> store : control receipt
-store --> result : fixed execution or segment results
-result --> sse : committed complete events
-message --> sse : receipt and previews
+message --> store : atomically commit receipt and events
+message --> sse : post-commit receipt, complete, preview, and delta
+control --> store : commit control receipt and results
+control --> sse : post-commit receipt and preview
+store --> result : fixed control response results
+result --> sse : committed control result frames
 sse --> client : JSON data frames
 
 client --> controller : GET page and limit
@@ -46,5 +47,7 @@ query --> client : result envelope
 note bottom of controller
 Retired abort, steers, and follow-ups routes are absent.
 Pre-acceptance errors use application/json.
+Complete frames align with GET.
+Preview and delta frames are transient.
 end note
 @enduml

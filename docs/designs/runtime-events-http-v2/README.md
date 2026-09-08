@@ -26,9 +26,9 @@
 | 已确认契约 | `01-总体架构/01-CampusClaw多Agent运行时/chat-events-v2-design.md`、`chat-events-v2-stream-design.md` 和 `接口契约-v2/操作/01-submit-session-event.json` | POST 接收严格联合事件，SSE 每帧只有公共事件 JSON，GET 与完整 SSE 同形 |
 | HTTP 接入 | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/web/RuntimeEventController.java#submit/list` | 同一路径承载 POST 与 GET；POST 使用 data-only subscriber，GET 使用数字 page/limit 查询公共投影 |
 | 联合分派 | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/event/RuntimeV2EventService.java#submit` | 密封请求只分派 `user.message`、`user.interrupt` 和 `user.tool_confirmation`，控制事务后触发本机快路径 |
-| 完整输出 | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/event/RuntimeResultBackedEventOutput.java#emit/emitBestEffort` | confirmation 的 preview 可直推，完整事件只通过已提交结果补读交付，避免本机重复 completed/idle |
+| 控制结果输出 | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/event/RuntimeResultBackedEventOutput.java#emit/emitBestEffort` | 已提交的控制回执先入流，confirmation preview 可直推；后续完整结果只通过已提交结果补读交付，避免本机重复 completed/idle |
 | HTTP 错误 | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/web/RuntimeExceptionHandler.java#response` | 首帧前错误显式返回 `application/json`，不受请求 `Accept: text/event-stream` 的内容协商影响 |
-| Skill 边界 | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/skill/SkillCommandExecutionService.java#execute` | 公共回执只保存 `/skill:name arguments`，实际展开 Skill 正文仅进入内部 prompt |
+| Skill 边界 | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/service/command/skill/SkillCommandExecutionService.java#execute` | 公共回执只保存 `/skill:name arguments`，实际展开 Skill 正文仅进入内部 prompt |
 | Compaction 保留 | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/event/RuntimeEventProjectorFactory.java#createForCompaction` | 旧普通 Agent 投影分支已删除；Compaction 专用路径仍原子写 Entry、Usage、`session.compacted` 和完整性标记 |
 | pi 观察 | `packages/server/src/sessions.ts#LiveSessionManager.executeCommand`、`packages/agent/src/agent-loop.ts#runAgentLoop` | pi 在已连接的本地 Session 上执行命令和事件，没有公共 HTTP 事件表、跨 JVM 控制结果等待或 data-only SSE 契约 |
 
@@ -47,9 +47,12 @@ POST 请求必须是 `{ "event": { ... } }`，且 `event.type` 只允许三种�
 
 `user.message` 直接进入 Message 受理链。`user.interrupt` 事务成功后尝试本机 stop；若执行在其他实例，控制轮询器
 交付相同信号。`user.tool_confirmation` 先以新结果段绑定响应，再使用旧 confirming target 恢复原 Holder；工具仍
-使用原执行凭据。完整事件统一从数据库结果读取，preview/delta 才可从原进程直推。
+使用原执行凭据。普通消息回执由受理事务提交后入流，后续完整事件由 `RuntimeV2EventProjector` 原子提交后直推当前
+响应。控制回执同样在事务提交后入流，后续完整结果按固定执行或结果段从数据库 waiter 读取。preview/delta 可由
+执行进程直推，但不写入公共历史。
 
-SSE 不输出 legacy `id:`、`event:` 或内部包装字段，每个完整事件 data frame 的 JSON 与 GET 中相同公共事件逐字段一致；
+SSE 不输出 legacy `id:`、`event:` 或内部包装字段，每个完整事件 data frame 的 JSON 与 GET 中相同公共事件逐字段
+一致；
 keep-alive 字面为 `: ping`。请求被接受前的校验、冲突和容量错误返回普通 JSON 错误。首个完整回执入流后，后续
 执行错误使用完整 `session.status_idle` 收束或断开已经建立的流。
 
@@ -82,7 +85,7 @@ Compaction 生产调用；无生产消费者的普通 Agent 事件分支和公�
 
 在合入首次发布主线并收敛 Compaction 投影器后，聚焦命令执行 11 个测试类共 141 项，覆盖 Controller 路由、严格
 联合分派、data-only 输出、首帧前 JSON 错误、Skill 安全公开文本、旧路由 404、GET 查询和 Compaction 生产链；
-141 项全部通过。最终基线 `d946` 的完整 Reactor 共运行 2130 项单元测试：common 17 项、ai 505 项、agent 140 项、
+141 项全部通过。已有集成验证基线 `d9466919` 的完整 Reactor 共运行 2130 项单元测试：common 17 项、ai 505 项、agent 140 项、
 cron 70 项、coding-agent 1398 项，0 失败、0 错误、0 跳过；coding-agent 的 1398 项已经包含 5 项进程夹具。
 这些结果证明同 JVM HTTP 接线和共享模块回归，没有替代跨 JVM 或真实数据库验收。
 
@@ -92,8 +95,9 @@ cron 70 项、coding-agent 1398 项，0 失败、0 错误、0 跳过；coding-ag
 分别覆盖缓存完整恢复、缓存损坏拒绝、HTTP 响应时机、关闭时阻塞响应和非 Chat 路径拒绝；它们属于上述 Reactor
 统计，不与 29 项真实 HTTP 验收相加为一组跨 JVM 场景。
 
-Maven 测试同时执行 Checkstyle；`spotless:check` 和 `git diff --check` 通过。企业镜像由发布集成统一生成，本片没有
-独立验证企业 `NativeParent` 编译。
+最终依赖合并 `b6d490a1` 另通过 274 项聚焦单元测试、49 项真实 Repository openGauss 测试和 20 项实际 JAR 的
+Command、Skill、Compact HTTP 测试，全部无失败、错误或跳过。Maven 测试同时执行 Checkstyle；`spotless:check` 和
+`git diff --check` 通过。企业镜像已同步；公司 Maven 因企业 `NativeParent` 当前不可获得，未完成编译验证。
 
 ## 版本历史
 
