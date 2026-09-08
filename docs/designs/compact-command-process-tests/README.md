@@ -10,7 +10,9 @@
 
 从已合入的 Java `744c871742502bb19ea76eee30d1bfb25072b00e` 独立开发，随后正常同步到
 `43ba1759a0dc025ace758dcc2b52a706ffb16a57`（#255 已合入），再合并
-`5e200f5361e0d2944d7f7a04d97a89bfe7720228`（#254 已合入）。每次同步后重新打包、执行真实测试；
+`5e200f5361e0d2944d7f7a04d97a89bfe7720228`（#254 已合入），最终同步到
+`156aa48616d678051940d1b70537ab7b6bc7dd6b`（#259 已合入）及
+`72f3550eabbfbf0f1cc3768430e3fc0206cb7a11`（#258 已合入）。每次同步后重新打包、执行真实测试；
 最终使用最新完整安装 SQL 初始化新的专用数据库，不在旧数据库上执行覆盖安装。
 以下路径相对于实现仓；生产 Java 路径统一加前缀
 `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/`。
@@ -32,6 +34,7 @@
 `modules/coding-agent-cli/src/test/java/com/campusclaw/codingagent/runtimeapi/web/RuntimeCompactCommandOpenGaussIT.java`
 中的 `compactAndAwait/assertCapacityExhausted/assertReleasedResources/assertRestartedInput/assertCompactionStorage`。
 同步 #254 后，`9b959f15480f4ce14cc327d419ef65bbf605e076` 为 `persistentState` 补入最新三张控制表的只读快照。
+同步 #259 后再补入 `t_session_event_projection`，覆盖十一张活动会话表；该增量随本 PR 交付，不归入主分支基线。
 
 本切片沿用 [ADR-0068 测试辅助代码](../../decisions/0068-reuse-runtime-http-process-fixture.html)、
 [ADR-0059 压缩准入](../../decisions/0059-connect-compaction-runtime-admission.html) 和
@@ -44,8 +47,9 @@
 
 [PlantUML 源码](diagram.puml#L1)
 
-1. 通过现有 POST Events 写入两轮真实历史。第二轮超过默认保留窗口，第一轮成为摘要输入，第二轮原样保留。
-2. 在临时工作目录写 `application.properties`，将既有 `campusclaw.runtime.execution.max-active` 设为 1。
+1. 启动 JVM 前，在临时工作目录写 `application.properties`，将既有 `campusclaw.runtime.execution.max-active` 设为 1。
+   通过现有 POST Events 写入两轮真实历史。第二轮超过默认保留窗口，第一轮成为摘要输入，第二轮原样保留。
+2. 执行 Compact 并阻塞摘要响应。
    阻塞摘要响应时检查 Session 为 running、历史尚无 Compaction，另一个 Session 的普通消息返回
    `503 RUNTIME_CAPACITY_EXCEEDED`，且该请求未改变 Session/ETag、历史或模型请求次数。该行为证明配置实际生效。
 3. 正常分支等待模型响应前，Command HTTP Future 尚未完成；放行后校验 HTTP 200、JSON、no-store、语言及精确响应字段。
@@ -57,9 +61,9 @@
    不包含已经压缩的第一轮原文。最后确认第二 JVM 退出、模拟模型服务的 executor 已关闭。
 
 独立空历史场景返回精确 `compacted=false` JSON，模型请求数为 0，Session/ETag、GET 历史以及
-`t_sessions/t_session_entries/t_session_records/t_session_sequences/t_session_stats/t_session_materialized/t_session_events`
+`t_sessions/t_session_entries/t_session_records/t_session_sequences/t_session_stats/t_session_materialized/t_session_events/t_session_event_projection`
 及 `t_session_executions/t_session_execution_segments/t_session_execution_segment_events`
-十类按 Session ID 读取的持久化快照不变。测试不写数据库数据、不执行 TRUNCATE；安装 SQL 由测试运行者在专用数据库预先执行。
+十一类按 Session ID 读取的持久化快照不变。测试不写数据库数据、不执行 TRUNCATE；安装 SQL 由测试运行者在专用数据库预先执行。
 
 ## 验证命令与结果
 
@@ -71,12 +75,14 @@
   -Dtest=RuntimeCompactCommandOpenGaussIT \
   -Dsurefire.failIfNoSpecifiedTests=false \
   -Druntime.it.jar=/absolute/path/to/campusclaw-agent.jar \
-  '-Dgaussdb.it.url=jdbc:postgresql://127.0.0.1:32814/compact_process_main254?sslmode=disable' \
+  '-Dgaussdb.it.url=jdbc:postgresql://127.0.0.1:32814/compact_process_main259?sslmode=disable' \
   -Dgaussdb.it.username=compact_user -Dgaussdb.it.password='<test-only-password>'
 ```
 
 同步后代码的 3 项真实测试均通过，0 failure/error/skip；普通与断线分支为同一参数化场景的两次执行，
 空历史为第三项。补入三张新控制表后再次单独执行空历史场景，1 项通过且无跳过。
+后续 #259 增加投影表，#258 未改表结构；新库从 #259 完整安装 SQL 初始化后运行三项 Compact、
+五项共享辅助测试和两项普通 Events/重启回归，结果与 JAR 基线分别保留，不把旧测试数字算到新版本。
 缺少 JAR 或数据库参数会跳过，不能称为通过。新测试还通过 Spotless、Checkstyle、
 测试质量检查（0 error / 0 warning）及 Java AST 方法长度检查（每方法不超过 50 个非空物理行，含注释）。
 JAR 校验值、实际命令、Surefire XML、镜像同步和最终新增行数以交付记录为准。

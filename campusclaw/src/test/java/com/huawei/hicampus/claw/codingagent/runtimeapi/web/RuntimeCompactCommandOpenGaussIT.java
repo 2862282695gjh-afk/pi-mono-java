@@ -2,20 +2,20 @@
  * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
  */
 
-package com.campusclaw.codingagent.runtimeapi.web;
+package com.huawei.hicampus.claw.codingagent.runtimeapi.web;
 
-import static com.campusclaw.codingagent.runtimeapi.web.RuntimeHttpProcessFixture.CLIENT;
-import static com.campusclaw.codingagent.runtimeapi.web.RuntimeHttpProcessFixture.MAPPER;
-import static com.campusclaw.codingagent.runtimeapi.web.RuntimeHttpProcessFixture.awaitHealth;
-import static com.campusclaw.codingagent.runtimeapi.web.RuntimeHttpProcessFixture.createSession;
-import static com.campusclaw.codingagent.runtimeapi.web.RuntimeHttpProcessFixture.eventsUri;
-import static com.campusclaw.codingagent.runtimeapi.web.RuntimeHttpProcessFixture.freePort;
-import static com.campusclaw.codingagent.runtimeapi.web.RuntimeHttpProcessFixture.getSession;
-import static com.campusclaw.codingagent.runtimeapi.web.RuntimeHttpProcessFixture.loadConfiguration;
-import static com.campusclaw.codingagent.runtimeapi.web.RuntimeHttpProcessFixture.prepareRuntimeFiles;
-import static com.campusclaw.codingagent.runtimeapi.web.RuntimeHttpProcessFixture.send;
-import static com.campusclaw.codingagent.runtimeapi.web.RuntimeHttpProcessFixture.sessionUri;
-import static com.campusclaw.codingagent.runtimeapi.web.RuntimeHttpProcessFixture.startRuntime;
+import static com.huawei.hicampus.claw.codingagent.runtimeapi.web.RuntimeHttpProcessFixture.CLIENT;
+import static com.huawei.hicampus.claw.codingagent.runtimeapi.web.RuntimeHttpProcessFixture.MAPPER;
+import static com.huawei.hicampus.claw.codingagent.runtimeapi.web.RuntimeHttpProcessFixture.awaitHealth;
+import static com.huawei.hicampus.claw.codingagent.runtimeapi.web.RuntimeHttpProcessFixture.createSession;
+import static com.huawei.hicampus.claw.codingagent.runtimeapi.web.RuntimeHttpProcessFixture.eventsUri;
+import static com.huawei.hicampus.claw.codingagent.runtimeapi.web.RuntimeHttpProcessFixture.freePort;
+import static com.huawei.hicampus.claw.codingagent.runtimeapi.web.RuntimeHttpProcessFixture.getSession;
+import static com.huawei.hicampus.claw.codingagent.runtimeapi.web.RuntimeHttpProcessFixture.loadConfiguration;
+import static com.huawei.hicampus.claw.codingagent.runtimeapi.web.RuntimeHttpProcessFixture.prepareRuntimeFiles;
+import static com.huawei.hicampus.claw.codingagent.runtimeapi.web.RuntimeHttpProcessFixture.send;
+import static com.huawei.hicampus.claw.codingagent.runtimeapi.web.RuntimeHttpProcessFixture.sessionUri;
+import static com.huawei.hicampus.claw.codingagent.runtimeapi.web.RuntimeHttpProcessFixture.startRuntime;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.net.InetSocketAddress;
@@ -34,10 +34,10 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
-import com.campusclaw.codingagent.runtimeapi.web.RuntimeHttpProcessFixture.ModelStub;
-import com.campusclaw.codingagent.runtimeapi.web.RuntimeHttpProcessFixture.ProcessTestConfigDTO;
-import com.campusclaw.codingagent.runtimeapi.web.RuntimeHttpProcessFixture.RuntimeProcess;
-import com.campusclaw.codingagent.runtimeapi.web.RuntimeHttpProcessFixture.SessionViewDTO;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.web.RuntimeHttpProcessFixture.ModelStub;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.web.RuntimeHttpProcessFixture.ProcessTestConfigDTO;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.web.RuntimeHttpProcessFixture.RuntimeProcess;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.web.RuntimeHttpProcessFixture.SessionViewDTO;
 import com.fasterxml.jackson.databind.JsonNode;
 
 import org.junit.jupiter.api.Test;
