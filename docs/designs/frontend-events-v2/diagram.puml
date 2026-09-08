@@ -4,14 +4,25 @@ title Claw Runtime frontend coordination
 top to bottom direction
 skinparam shadowing false
 skinparam backgroundColor #FFFCFA
-' Source baseline: pi-mono-java@821418e7f2ece298a04a066ab8d11d3388ef2f16
-' frontend/src/App.vue: useRuntimeApi, submit, ComposerBox
+' Initial source baseline: pi-mono-java@821418e7f2ece298a04a066ab8d11d3388ef2f16
+' Interaction source baseline: pi-mono-java@4cc8dd86f601417c22cf9306e52152acbb59bb60
+' frontend/src/App.vue: message, drafts, submit, ComposerBox Session key
+' frontend/src/components/ComposerBox.vue: enter, choose, submit
+' frontend/src/components/DebugHeaders.vue: rows, ensureTrailingRow, snapshot
+' frontend/src/runtime/commands.ts: freezeInvocation
+' frontend/src/composables/useRuntimeApi.ts: listCommands, executeCommand
 ' runtimeapi/vo/SessionEventResponseVO.java: shared complete event fields
 ' Full path: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/vo/SessionEventResponseVO.java
-' Observed behavior: legacy frontend has one active Session and no Slash mode.
+' Observed behavior: 4cc8dd8 already has Slash drafts and separate Builtin / Skill execution.
 ' Design reason: one authoritative store must serve live, recovery and control.
-' Target frontend is implemented in this change. HTTP v2 wiring is pending backend delivery.
-class "App / Composer" as App
+' Design reason: separate command arguments preserve ordinary drafts and verbatim input.
+' New target implemented here: frontend/src/composables/useCommandComposer.ts
+' New target implemented here: frontend/src/runtime/commands.ts: freezeCommandArguments
+' Real backend E2E remains outside this interaction validation.
+class "App\nordinary drafts per Session" as App
+class "ComposerBox\nmenu / palette / chip / arguments" as Composer
+class "useCommandComposer\nselected / replacement / pending" as Draft
+class "DebugHeaders\npage memory / three optional presets" as Headers
 class "CommandInvocation\nimmutable request + result kind" as Invocation
 class "useRuntimeApi\nSession + ETag + view generation" as Coordinator
 class "Event store\neventId + complete / preview" as Store
@@ -19,8 +30,13 @@ class "Timeline / Confirmation" as Timeline
 class "Builtin result region\nephemeral, plain text" as Result
 class "Protocol decoder\nstateless JSON / SSE" as Decoder
 class "Command result decoder\nstateless" as Commands
-interface "Claw HTTP v2\nbackend integration target" as HTTP
-App -right-> Invocation : freeze before POST
+interface "Claw HTTP v2" as HTTP
+App *-left- Composer : active Session view
+Composer *-down- Draft : owns command draft
+App *-right- Headers : DEV page lifetime
+Headers -down-> App : snapshot for each write
+Draft -down-> Invocation : freeze Descriptor + arguments
+Draft -right-> App : execute callback / message intent
 App -down-> Coordinator : user intent
 Invocation -down-> Coordinator : fixed invocation
 Coordinator -right-> HTTP : Session / Events / Commands
@@ -34,5 +50,11 @@ note bottom of Store
   All state belongs to the current view.
   View generation rejects late responses.
   Abort closes observation, not execution.
+end note
+note left of Draft
+  Catalog remains authoritative.
+  Selection does not execute.
+  Cancel / success restores ordinary draft.
+  Disposal ignores late completion.
 end note
 @enduml

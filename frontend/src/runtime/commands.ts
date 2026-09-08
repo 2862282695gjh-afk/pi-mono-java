@@ -51,16 +51,21 @@ export function decodeCatalog(value: unknown): CommandDescriptor[] {
 }
 export function freezeInvocation(descriptor: CommandDescriptor, raw: string): CommandInvocation {
   const parsed = parseCommand(raw);
-  if (!parsed || parsed.nameToken !== descriptor.name || (!descriptor.input && parsed.argumentsText.length)
-    || codePointLength(parsed.argumentsText) > 2048) {
+  if (!parsed || parsed.nameToken !== descriptor.name) {
+    throw new RuntimeApiError({ code: 'INVALID_COMMAND_INPUT', message: '请从当前清单选择命令。' });
+  }
+  return freezeCommandArguments(descriptor, parsed.argumentsText);
+}
+export function freezeCommandArguments(descriptor: CommandDescriptor, argumentsText: string): CommandInvocation {
+  if ((!descriptor.input && argumentsText.length) || codePointLength(argumentsText) > 2048) {
     throw new RuntimeApiError({ code: 'INVALID_COMMAND_INPUT', message: '请从当前清单选择命令，并检查参数（最多 2048 个字符）。' });
   }
-  const request = Object.freeze({ name: descriptor.name, ...(parsed.argumentsText ? { arguments: parsed.argumentsText } : {}) });
+  const request = Object.freeze({ name: descriptor.name, ...(argumentsText ? { arguments: argumentsText } : {}) });
   const base = { request, startedAt: new Date().toISOString() };
   if (descriptor.kind === 'skill') return Object.freeze({ ...base, executionMode: 'skillEvents' });
   const kinds: Record<string, BuiltinResultKind> = {
     help: 'agentGuide', status: 'session', name: 'session', thinking: 'session',
-    model: parsed.argumentsText.trim() ? 'session' : 'models', compact: 'compaction', skills: 'skills',
+    model: argumentsText.trim() ? 'session' : 'models', compact: 'compaction', skills: 'skills',
   };
   if (!Object.hasOwn(kinds, descriptor.name)) return invalidResponse();
   return Object.freeze({ ...base, executionMode: 'builtinJson', expectedResultKind: kinds[descriptor.name] });

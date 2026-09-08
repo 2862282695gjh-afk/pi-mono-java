@@ -1,7 +1,32 @@
 import { describe, expect, it } from 'vitest';
-import { revealFirstDebugHeaderError, validateDebugHeaders } from './debugHeaders';
+import { createDebugHeaderPresets, revealFirstDebugHeaderError, validateDebugHeaders } from './debugHeaders';
 
 describe('debug header validation', () => {
+  it('offers three optional presets without sending empty credentials', () => {
+    const rows = createDebugHeaderPresets();
+    expect(rows.map((row) => row.key)).toEqual(['access-token', 'X-HW-ID', 'Authorization']);
+    const empty = validateDebugHeaders(rows);
+    expect(empty.valid).toBe(true);
+    expect(empty.enabledCount).toBe(0);
+    expect([...empty.headers]).toEqual([]);
+    rows[0].value = 'fixture-token';
+    const filled = validateDebugHeaders(rows);
+    expect(filled.valid).toBe(true);
+    expect(filled.enabledCount).toBe(1);
+    expect([...filled.headers]).toEqual([['access-token', 'fixture-token']]);
+    expect([...empty.headers]).toEqual([]);
+    expect(createDebugHeaderPresets()[0].value).toBe('');
+  });
+
+  it('validates edited presets and custom rows normally and permits zero rows', () => {
+    const rows = createDebugHeaderPresets();
+    rows[0].key = 'X-Custom';
+    expect(validateDebugHeaders(rows).errorFields[0]).toBe('value');
+    expect(validateDebugHeaders([{ enabled: true, key: 'Authorization', value: '' }]).valid).toBe(false);
+    expect(validateDebugHeaders([]).valid).toBe(true);
+    expect(validateDebugHeaders([]).enabledCount).toBe(0);
+  });
+
   it('returns enabled complete rows without preset header names', () => {
     const result = validateDebugHeaders([
       { enabled: true, key: 'Authorization', value: 'Bearer fixture-token' },
