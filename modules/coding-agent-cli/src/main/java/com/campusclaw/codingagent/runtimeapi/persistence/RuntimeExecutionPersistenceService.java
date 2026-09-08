@@ -81,7 +81,7 @@ public class RuntimeExecutionPersistenceService {
     @Transactional
     public RuntimeEntryDTO appendEntry(
             ExecutionTargetDTO target, RuntimeEntryDTO entry, List<CommittedEventDTO> events) {
-        List<CommittedEventDTO> committedEvents = List.copyOf(events);
+        List<CommittedEventDTO> committedEvents = requireSegmentPayload(target, entry, events);
         var status = controls.appendToSegment(target, () -> {
             sessions.appendEntry(entry, committedEvents);
             return controlEvents(committedEvents);
@@ -97,7 +97,8 @@ public class RuntimeExecutionPersistenceService {
             RuntimeRecordDTO record,
             Usage usage,
             List<CommittedEventDTO> events) {
-        List<CommittedEventDTO> committedEvents = List.copyOf(events);
+        List<CommittedEventDTO> committedEvents = requireSegmentPayload(target, entry, events);
+        requireSegmentSession(target, record == null ? null : record.getSessionId(), "runtime record");
         var status = controls.appendToSegment(target, () -> {
             sessions.appendEntryWithUsage(entry, record, usage, committedEvents);
             return controlEvents(committedEvents);
@@ -279,6 +280,24 @@ public class RuntimeExecutionPersistenceService {
         return events.stream()
                 .map(event -> new CommittedControlEventDTO(event.getEventId(), event.getEventSeq()))
                 .toList();
+    }
+
+    private static List<CommittedEventDTO> requireSegmentPayload(
+            ExecutionTargetDTO target, RuntimeEntryDTO entry, List<CommittedEventDTO> events) {
+        Objects.requireNonNull(target, "target");
+        Objects.requireNonNull(entry, "entry");
+        requireSegmentSession(target, entry.getSessionId(), "runtime entry");
+        List<CommittedEventDTO> committedEvents = List.copyOf(events);
+        for (CommittedEventDTO event : committedEvents) {
+            requireSegmentSession(target, event.getSessionId(), "committed event");
+        }
+        return committedEvents;
+    }
+
+    private static void requireSegmentSession(ExecutionTargetDTO target, String sessionId, String valueName) {
+        if (!Objects.equals(target.sessionId(), sessionId)) {
+            throw new IllegalArgumentException(valueName + " does not belong to the execution target");
+        }
     }
 
     private static void requireSegmentAppend(RuntimeExecutionControlRepository.TransitionStatus status) {

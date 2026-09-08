@@ -34,6 +34,7 @@ import com.campusclaw.codingagent.runtimeapi.dto.CommittedControlEventDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.CommittedEventDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.ExecutionTargetDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.RuntimeEntryDTO;
+import com.campusclaw.codingagent.runtimeapi.dto.RuntimeRecordDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.SessionConfigurationUpdateDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.command.SessionCommandResultDTO;
@@ -267,6 +268,40 @@ class RuntimeSessionRepositoryOpenGaussIT {
 
         assertThat(status).isEqualTo(RuntimeExecutionControlRepository.TransitionStatus.STALE_TARGET);
         assertThat(appended).hasValue(0);
+    }
+
+    @Test
+    void shouldRejectCrossSessionSegmentPayloadBeforeSequenceAllocation() {
+        RuntimeSessionDTO owner = newSession("session_segment_owner");
+        RuntimeSessionDTO other = newSession("session_segment_other");
+        repository.create(owner);
+        repository.create(other);
+        ExecutionTargetDTO target = acceptRootMessage(owner, "segment-owner");
+        long ownerSequence = scalarLong("SELECT next_seq FROM t_session_sequences WHERE session_id = ?", owner.getId());
+        long otherSequence = scalarLong("SELECT next_seq FROM t_session_sequences WHERE session_id = ?", other.getId());
+        RuntimeEntryDTO foreignEntry =
+                newEntry(other.getId(), "foreign-entry", "assistant.message.completed", owner.getCreatedAt(), "{}");
+        assertThatThrownBy(() -> executionPersistence.appendEntry(target, foreignEntry, List.of()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("runtime entry");
+
+        RuntimeEntryDTO localEntry =
+                newEntry(owner.getId(), "local-entry", "assistant.message.completed", owner.getCreatedAt(), "{}");
+        CommittedEventDTO foreignEvent = committedEvent(localEntry, "foreign-event", "agent.message");
+        foreignEvent.setSessionId(other.getId());
+        assertThatThrownBy(() -> executionPersistence.appendEntry(target, localEntry, List.of(foreignEvent)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("committed event");
+
+        var foreignRecord = new RuntimeRecordDTO();
+        foreignRecord.setSessionId(other.getId());
+        assertThatThrownBy(() -> executionPersistence.appendEntryWithUsage(
+                        target, localEntry, foreignRecord, Usage.empty(), List.of()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("runtime record");
+        assertSequence(owner, ownerSequence);
+        assertSequence(other, otherSequence);
+        assertThat(count("t_session_entries", other.getId())).isZero();
     }
 
     @Test
@@ -952,6 +987,11 @@ class RuntimeSessionRepositoryOpenGaussIT {
     private long scalarLong(String sql, String sessionId) {
         Long result = jdbcTemplate.queryForObject(sql, Long.class, sessionId);
         return result == null ? 0L : result;
+    }
+
+    private void assertSequence(RuntimeSessionDTO session, long expected) {
+        assertThat(scalarLong("SELECT next_seq FROM t_session_sequences WHERE session_id = ?", session.getId()))
+                .isEqualTo(expected);
     }
 
     @ParameterizedTest
