@@ -10,7 +10,6 @@ GRANT SELECT, INSERT, UPDATE, DELETE
        t_session_entries,
        t_session_events,
        t_session_records,
-       t_session_events,
        t_session_event_projection,
        t_session_stats,
        t_session_sequences,
