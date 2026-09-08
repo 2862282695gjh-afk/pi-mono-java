@@ -83,7 +83,7 @@ Repository 事务。首版端口收敛删除绕过公共事件的旧仓储重载
 
 在 `48aac44a` 基线扫描中，只有 `RuntimeSessionModelReconciler`、
 `SessionModelConfigurationService` 和 `SessionThinkingConfigurationService` 三个生产消费者，且它们已全部传入
-公共事件工厂。不带工厂的旧重载只剩 12 处模块测试调用，仍能写入没有权威事件和精确标记的配置 Entry。首版不存在兼容该内部端口的理由，因此删除旧重载，并在唯一端口进入事务前拒绝空 `eventFactory`。
+公共事件工厂。不带工厂的旧重载只剩 12 处模块测试调用，仍能写入没有权威事件和精确标记的配置 Entry。首版不存在兼容该内部端口的理由，因此删除旧重载，并在唯一端口在获取行锁和修改数据前拒绝空 `eventFactory`。
 
 ## 边界情况与 DFX
 
@@ -115,7 +115,7 @@ Thinking 与名称 Command 的差异、事件时间毫秒精度、完整性标�
 
 writers 集成树已独立运行 121 项相关测试并通过；接入用量来源后重新运行公共工厂 6 项与压缩 14 项，
 共 20 项通过。端口收敛后，配置单元测试 19 项和真实 openGauss 仓储、压缩、Usage 测试 79 项通过；新增数据库断言证明空工厂在修改 Session 前被拒绝。
-Spotless、Checkstyle 和 Java AST 检查通过；ClawConstants 的 Unicode 正则解析缺口已手工核查，新增常量没有引入方法或布局问题。本次本地测试质量脚本不可用，已人工核查修改的真实断言。
+Spotless、Checkstyle 和 Java AST 检查通过；ClawConstants 的 Unicode 正则解析缺口已手工核查，新增常量没有引入方法或布局问题。本次对 4 个修改 IT 的测试质量检查为零 error、15 个命名建议；建议已逐条核查，包括新增空工厂测试的异常和状态不变断言。
 文档验证 PlantUML 生成、ASCII 限制、SVG XML、Markdown 链接/锚点和 `git diff --check`。
 企业镜像由生成脚本同步；本地无法解析 NativeParent:26.0.0-SNAPSHOT，企业镜像编译未验证。
 
