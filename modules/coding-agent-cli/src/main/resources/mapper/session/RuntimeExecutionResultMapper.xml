@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
+-->
+
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.campusclaw.codingagent.runtimeapi.mapper.RuntimeExecutionResultMapper">
+    <select id="findSegment"
+            resultType="com.campusclaw.codingagent.runtimeapi.dto.ExecutionSegmentDTO">
+        SELECT segment.session_id, segment.execution_id, segment.segment_id,
+               segment.segment_ordinal, segment.trigger_event_id, segment.trigger_event_seq,
+               segment.state, segment.terminal_event_id, segment.terminal_event_seq,
+               UPPER(segment.terminal_reason) AS terminal_reason,
+               segment.created_at, segment.updated_at
+        FROM t_session_execution_segments segment
+        INNER JOIN t_session_executions execution
+                ON execution.session_id = segment.session_id
+               AND execution.execution_id = segment.execution_id
+        WHERE segment.session_id = #{sessionId}
+          AND segment.execution_id = #{executionId}
+          AND execution.root_event_id = #{rootEventId}
+          AND segment.segment_id = #{segmentId}
+    </select>
+
+    <select id="listSegmentEvents"
+            resultType="com.campusclaw.codingagent.runtimeapi.dto.CommittedEventDTO">
+        SELECT event.session_id, event.event_id, event.event_seq,
+               event.anchor_entry_id, event.type, event.created_at, event.payload
+        FROM t_session_execution_segments segment
+        INNER JOIN t_session_executions execution
+                ON execution.session_id = segment.session_id
+               AND execution.execution_id = segment.execution_id
+               AND execution.root_event_id = #{rootEventId}
+        INNER JOIN t_session_execution_segment_events segment_event
+                ON segment_event.session_id = segment.session_id
+               AND segment_event.execution_id = segment.execution_id
+               AND segment_event.segment_id = segment.segment_id
+        INNER JOIN t_session_events event
+                ON event.session_id = segment_event.session_id
+               AND event.event_id = segment_event.event_id
+               AND event.event_seq = segment_event.event_seq
+        WHERE segment.session_id = #{sessionId}
+          AND segment.execution_id = #{executionId}
+          AND segment.segment_id = #{segmentId}
+          AND segment_event.event_seq &gt; #{afterSeq}
+          AND (segment.terminal_event_seq IS NULL
+               OR segment_event.event_seq &lt;= segment.terminal_event_seq)
+        ORDER BY segment_event.event_seq ASC
+        LIMIT #{limit}
+    </select>
+
+    <select id="findExecutionTerminal"
+            resultType="com.campusclaw.codingagent.runtimeapi.dto.CommittedEventDTO">
+        SELECT event.session_id, event.event_id, event.event_seq,
+               event.anchor_entry_id, event.type, event.created_at, event.payload
+        FROM t_session_executions execution
+        INNER JOIN t_session_execution_segments segment
+                ON segment.session_id = execution.session_id
+               AND segment.execution_id = execution.execution_id
+               AND segment.segment_id = #{segmentId}
+        INNER JOIN t_session_execution_segment_events segment_event
+                ON segment_event.session_id = execution.session_id
+               AND segment_event.execution_id = execution.execution_id
+               AND segment_event.event_id = execution.terminal_event_id
+        INNER JOIN t_session_events event
+                ON event.session_id = segment_event.session_id
+               AND event.event_id = segment_event.event_id
+               AND event.event_seq = segment_event.event_seq
+        WHERE execution.session_id = #{sessionId}
+          AND execution.execution_id = #{executionId}
+          AND execution.root_event_id = #{rootEventId}
+          AND execution.state = 'TERMINAL'
+    </select>
+</mapper>
