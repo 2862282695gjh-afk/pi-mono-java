@@ -67,11 +67,12 @@ HTTP 接受服务保留已经建立的响应流，避免把后续失败翻译成
 ## 测试与验证
 
 聚焦验证回执顺序、接受前资源回收、接受后启动失败、失败收尾再次异常，以及既有执行输出与资源完成行为。
+已合并 `origin/main@2f52e9b8` 的 Skill 消息执行入口，接纳保存使用实际快照展开的 `context.message()`。
 2026-09-08 本地 JDK 21 验证结果：
 
 - `./mvnw -q -pl modules/coding-agent-cli -am spotless:apply checkstyle:check test
-  -Dtest=RuntimeEventServiceTest,RuntimeEventOutputTest,RuntimeSessionControlServiceTest,RuntimeEventRoutesTest
-  -Dsurefire.failIfNoSpecifiedTests=false`：30 项测试，0 失败、0 错误、0 跳过。
+  -Dtest=RuntimeEventServiceTest,RuntimeEventOutputTest,RuntimeSessionControlServiceTest,RuntimeEventRoutesTest,SkillCommandExecutionServiceTest
+  -Dsurefire.failIfNoSpecifiedTests=false`：55 项测试，0 失败、0 错误、0 跳过。
 - AST 版权和方法长度检查未发现问题；两个私有 record 的布局由人工补查，未将脚本的待人工项表述为自动通过。
 - 测试质量检查使用本机既有缓存脚本，0 错误、6 个既有测试命名提示；约定的原技能脚本链接目标缺失。
 - `./scripts/sync-campusclaw.sh` 因无法解析 `com.huawei.hicampus:NativeParent:26.0.0-SNAPSHOT` 停止；
