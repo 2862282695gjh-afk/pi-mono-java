@@ -351,7 +351,8 @@ public class SessionCompactor {
                 left.cacheRead() + right.cacheRead(),
                 left.cacheWrite() + right.cacheWrite(),
                 left.totalTokens() + right.totalTokens(),
-                cost);
+                cost,
+                left.known() || right.known());
     }
 
     private static boolean sameModel(AssistantMessage assistant, Model model) {
