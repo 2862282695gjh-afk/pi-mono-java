@@ -1,13 +1,16 @@
 @startuml query_pipeline
 title Authoritative event history query
-' Source baseline: pi-mono-java d9a20777 plus commits through fa354fe2
+' Source baseline: pi-mono-java 17f91e20
 ' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/event/CommittedEventQueryService.java#list
 ' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/persistence/MyBatisRuntimeSessionRepository.java#findEventPage
 ' Source: modules/coding-agent-cli/src/main/resources/mapper/session/RuntimeSessionMapper.xml#countUnmappedCurrentBranchEntries
-' Observed behavior: the production controller still uses the legacy history path.
-' Design reason: switch HTTP only after every public writer uses atomic committed events.
+' Source: modules/coding-agent-cli/src/main/resources/db/gaussdb/install/session_schema.sql
+' Observed behavior: current-version writers persist exact public-event markers atomically.
+' Product constraint: the first release supports fresh installation only and has no legacy migration.
+' Design reason: history reads fail closed on incomplete current-version projections.
 ' Pi baseline: 5cd93f688aaab89dbb6dfa4aca535f21796ae185
-' Pi source: packages/agent/src/agent-loop.ts#runLoop
+' Pi source: packages/agent/src/agent-loop.ts#runAgentLoop
+' Pi source: packages/agent/src/agent-loop.ts#prepareToolCall
 ' Java divergence: pi has no CampusClaw current-branch HTTP history store.
 actor Caller
 participant RuntimeEventController
@@ -20,16 +23,16 @@ database t_session_events
 participant CommittedEventProjection
 participant ListSessionEventsResponseVO
 
-Caller -> RuntimeEventController : GET page and limit (target switch pending)
+Caller -> RuntimeEventController : GET page and limit
 RuntimeEventController -> CommittedEventQueryService : list(sessionId, limit, page)
 CommittedEventQueryService -> MyBatisRuntimeSessionRepository : findEventPage(offset, limit + 1)
 activate MyBatisRuntimeSessionRepository
 MyBatisRuntimeSessionRepository -> t_sessions : read session and active leaf
 MyBatisRuntimeSessionRepository -> t_session_entries : resolve recursive current path
 MyBatisRuntimeSessionRepository -> t_session_event_projection : verify exact completeness
-alt unknown, missing, or partial mapping
+alt unknown, missing, or partial projection
   MyBatisRuntimeSessionRepository --> CommittedEventQueryService : fail closed
-else complete mapping
+else complete projection
   MyBatisRuntimeSessionRepository -> t_session_events : read stable order with offset and limit
   t_session_events --> MyBatisRuntimeSessionRepository : committed event DTOs
   MyBatisRuntimeSessionRepository --> CommittedEventQueryService : one page plus lookahead
@@ -43,56 +46,6 @@ ListSessionEventsResponseVO --> Caller : JSON result
 note over MyBatisRuntimeSessionRepository,t_session_events
   One REPEATABLE_READ transaction per request.
   No cross-request snapshot or total count.
-end note
-@enduml
-
-@startuml migration_flow
-title Restart-safe legacy event migration
-' Target migration delivered separately in commit 749dc828; integration review pending.
-' Source: modules/coding-agent-cli/src/main/resources/db/gaussdb/upgrade/V1_to_V2__schema.sql
-' Source: modules/coding-agent-cli/src/main/resources/db/gaussdb/upgrade/V1_to_V2__data.sql
-' Source: modules/coding-agent-cli/src/main/resources/db/gaussdb/upgrade/V1_to_V2__verify.sql
-' Observed behavior: legacy entries lack enough safe data for a complete v2 projection.
-' Design reason: exact reviewed mappings prevent Skill body and private thinking disclosure.
-' Java divergence: this is a CampusClaw release migration, not a pi runtime behavior.
-actor ReleaseOperator
-participant SchemaScript
-participant DataScript
-participant VerifyScript
-database t_session_entries
-database t_session_sequences
-database t_session_event_migration_review
-database t_session_event_migration_events
-database t_session_events
-database t_session_event_projection
-
-ReleaseOperator -> SchemaScript : run during maintenance window
-SchemaScript -> t_session_events : create public authority
-SchemaScript -> t_session_event_projection : create exact marker
-SchemaScript -> t_session_event_migration_review : create release-only decisions
-SchemaScript -> t_session_event_migration_events : create release-only events
-ReleaseOperator -> t_session_event_migration_review : exact count and safe reason
-ReleaseOperator -> t_session_event_migration_events : stable reviewed events
-ReleaseOperator -> DataScript : run a bounded pass
-DataScript -> t_session_entries : classify every legacy entry
-DataScript -> t_session_event_migration_review : require unresolved decisions
-DataScript -> t_session_event_migration_events : verify count, order, and references
-alt complete session
-  DataScript -> t_session_events : insert in stable legacy order
-  DataScript -> t_session_event_projection : record exact completeness
-  DataScript -> t_session_sequences : advance once
-  DataScript -> t_session_event_migration_events : clear successful payloads
-else gap or unknown type
-  DataScript --> ReleaseOperator : leave session unchanged
-end
-ReleaseOperator -> VerifyScript : verify after each pass
-VerifyScript -> t_session_entries : find missing or unknown mappings
-VerifyScript -> t_session_events : verify counts and safe references
-VerifyScript --> ReleaseOperator : IDs, types, fixed reasons only
-
-note over DataScript,t_session_event_projection
-  At most 500 complete sessions per pass.
-  One session is committed as one atomic unit.
-  A rerun never regenerates an event ID.
+  No legacy migration or read-time reconstruction.
 end note
 @enduml

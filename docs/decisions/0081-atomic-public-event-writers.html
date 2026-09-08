@@ -3,12 +3,12 @@
 <title>ADR-0081：统一公共事件工厂并原子持久化配置事件</title>
 <style>body{font:16px/1.7 system-ui,sans-serif;background:#f5f7fa;color:#172235;margin:0}main{max-width:920px;margin:32px auto;padding:32px;background:white;border-radius:12px}code{overflow-wrap:anywhere;background:#eef2f6;padding:2px 4px}a{color:#1457a6}</style></head>
 <body><main><h1>ADR-0081：统一公共事件工厂并原子持久化配置事件</h1>
-<p>Status: Accepted · Date: 2026-09-08 · Version: 1.0.0</p>
+<p>Status: Accepted · Date: 2026-09-08 · Version: 1.0.1</p>
 <h2>Context</h2><p>Events v2 要求 SSE 完整帧与 GET 历史读取同一份权威公共事件。模型/Thinking HTTP、
 Builtin Command 和消息接受前的模型校准共用配置 Service，但变更前只写内部配置 Entry。若在配置事务之后另写公共事件，
 故障会留下已变更配置却缺少历史的半份状态；若各调用者自行编码，内部点号类型、公共下划线类型和字段规则会发生漂移。</p>
 <p>设计基线为 <code>pi-mono-java-design@2ee2a321</code>，变更前 Java 为 <code>f5c3a755</code>。
-pi 基线 <code>5cd93f68</code> 的 <code>packages/agent/src/agent-loop.ts#runLoop</code> 负责模型和工具事件循环，
+pi 基线 <code>5cd93f68</code> 的 <code>packages/agent/src/agent-loop.ts#runAgentLoop</code> 和 <code>#prepareToolCall</code> 负责模型和工具事件循环，
 没有 CampusClaw 的配置资源、数据库事务或 HTTP 公共事件表。</p>
 <h2>Decision</h2><p>使用唯一的 <code>RuntimeCommittedEventFactory</code> 从已安全定稿领域对象构造
 <code>CommittedEventDTO</code>。配置工厂读取最终 <code>RuntimeEntryDTO</code>，将内部
@@ -17,7 +17,7 @@ pi 基线 <code>5cd93f68</code> 的 <code>packages/agent/src/agent-loop.ts#runLo
 <p>为 <code>RuntimeSessionRepository.updateModel/updateThinking</code> 增加接收公共事件工厂的组合重载。
 MyBatis 实现在现有 Session 行锁和 Spring 事务内完成配置状态更新、Entry、公共事件、精确投影标记、active leaf、
 resource version 与共享序号。公共事件时间在入库前统一到 UTC 毫秒；任一步失败都回滚。</p>
-<p>生产模型/Thinking 配置 Service 和自动模型校准只使用组合重载。旧重载暂供尚未迁移的内部调用兼容，
+<p>生产模型/Thinking 配置 Service 和自动模型校准只使用组合重载。旧重载暂供尚未切换的内部调用，
 不能作为新的公开配置写入点。配置 HTTP 与 Builtin Command 的响应形态保持不变，事件只进入权威历史。</p>
 <h2>考虑过的选项及取舍</h2><ul>
 <li><strong>Service 在配置提交后另开事务写公共事件。</strong> Pro：Repository 接口较少。Con：进程故障和第二次提交失败会永久留下半份历史，违反完整性门禁，因此不采用。</li>
@@ -30,12 +30,15 @@ resource version 与共享序号。公共事件时间在入库前统一到 UTC �
 <h2>Consequences</h2><p>正面结果是 HTTP、Builtin Command 和自动校准产生完全相同的配置公共事件；模型切换自动关闭
 Thinking 时，两条事件保持锁内顺序；同值请求不增加事件。每条配置 Entry 增加一条公共事件和一条完整性标记写入，
 没有新增线程、网络请求或 Maven 依赖。</p>
-<p>负面影响是 Repository 暂时保留两组配置重载，旧入口不提供 v2 完整性保证，需要在所有内部调用迁移后清理。
-本决策只接通配置写入，并不单独切换 Events GET/POST；执行期事件、迁移门禁和请求级 SSE 必须在后续集成验证后统一上线。</p>
+<p>负面影响是 Repository 暂时保留两组配置重载，旧入口不提供 v2 完整性保证，需要在所有内部调用切换后清理。
+本决策只接通配置写入，并不单独切换 Events GET/POST；执行期事件、运行时完整性门禁和请求级 SSE 必须在后续集成验证后统一上线。
+当前产品是第一版，只使用全新安装 schema，不提供旧数据迁移。</p>
 <h2>Related</h2><p><a href="../designs/runtime-public-event-writers/README.md">实现设计与源码证据</a> ·
 <a href="../designs/runtime-public-event-writers/diagram.puml#L1">PlantUML 源码</a> ·
 <a href="0077-share-public-event-data-model.html">ADR-0077 公共事件数据模型</a> ·
 <a href="0078-authoritative-event-history.html">ADR-0078 权威事件历史</a> ·
-<a href="0079-public-stream-boundary.html">ADR-0079 公共事件流边界</a></p>
-<h2>版本历史</h2><p>1.0.0 · 2026-09-08：确定统一工厂与配置公共事件的组合事务写入。</p>
+<a href="0079-public-stream-boundary.html">ADR-0079 公共事件流边界</a> ·
+<a href="0092-first-release-authoritative-event-history.html">ADR-0092 首版全新安装范围</a></p>
+<h2>版本历史</h2><p>1.0.1 · 2026-09-08：明确首版全新安装范围，取消旧数据迁移交付。</p>
+<p>1.0.0 · 2026-09-08：确定统一工厂与配置公共事件的组合事务写入。</p>
 </main></body></html>
