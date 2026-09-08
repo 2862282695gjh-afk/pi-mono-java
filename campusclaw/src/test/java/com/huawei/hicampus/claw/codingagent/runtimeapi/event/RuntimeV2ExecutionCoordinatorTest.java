@@ -2,7 +2,7 @@
  * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
  */
 
-package com.campusclaw.codingagent.runtimeapi.event;
+package com.huawei.hicampus.claw.codingagent.runtimeapi.event;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
@@ -31,27 +31,27 @@ import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeoutException;
 import java.util.function.Supplier;
 
-import com.campusclaw.agent.Agent;
-import com.campusclaw.agent.tool.BeforeToolCallContext;
-import com.campusclaw.agent.tool.BeforeToolCallResult;
-import com.campusclaw.ai.types.StopReason;
-import com.campusclaw.ai.types.ToolCall;
-import com.campusclaw.ai.types.UserMessage;
-import com.campusclaw.codingagent.runtimeapi.RuntimeMessageSourceConfiguration;
-import com.campusclaw.codingagent.runtimeapi.dto.CommittedEventDTO;
-import com.campusclaw.codingagent.runtimeapi.dto.ExecutionTargetDTO;
-import com.campusclaw.codingagent.runtimeapi.dto.RuntimeEntryDTO;
-import com.campusclaw.codingagent.runtimeapi.persistence.RuntimeExecutionPersistenceService;
-import com.campusclaw.codingagent.runtimeapi.runtime.RuntimeActiveExecution;
-import com.campusclaw.codingagent.runtimeapi.runtime.RuntimeExecutionProperties;
-import com.campusclaw.codingagent.runtimeapi.runtime.RuntimeExecutionTimeoutScheduler;
-import com.campusclaw.codingagent.runtimeapi.runtime.RuntimeSessionEngineRegistry;
-import com.campusclaw.codingagent.runtimeapi.runtime.RuntimeSessionHolder;
-import com.campusclaw.codingagent.runtimeapi.runtime.RuntimeTerminalRetryScheduler;
-import com.campusclaw.codingagent.runtimeapi.runtime.RuntimeToolPermissionPolicy;
-import com.campusclaw.codingagent.runtimeapi.session.RuntimeExecutionTerminalReason;
-import com.campusclaw.codingagent.runtimeapi.vo.RuntimeSseEventVO;
-import com.campusclaw.codingagent.test.Log4j2TestAppender;
+import com.huawei.hicampus.claw.agent.Agent;
+import com.huawei.hicampus.claw.agent.tool.BeforeToolCallContext;
+import com.huawei.hicampus.claw.agent.tool.BeforeToolCallResult;
+import com.huawei.hicampus.claw.ai.types.StopReason;
+import com.huawei.hicampus.claw.ai.types.ToolCall;
+import com.huawei.hicampus.claw.ai.types.UserMessage;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.RuntimeMessageSourceConfiguration;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.CommittedEventDTO;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.ExecutionTargetDTO;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeEntryDTO;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.persistence.RuntimeExecutionPersistenceService;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.runtime.RuntimeActiveExecution;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.runtime.RuntimeExecutionProperties;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.runtime.RuntimeExecutionTimeoutScheduler;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.runtime.RuntimeSessionEngineRegistry;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.runtime.RuntimeSessionHolder;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.runtime.RuntimeTerminalRetryScheduler;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.runtime.RuntimeToolPermissionPolicy;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.session.RuntimeExecutionTerminalReason;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.vo.RuntimeSseEventVO;
+import com.huawei.hicampus.claw.codingagent.test.Log4j2TestAppender;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import org.apache.logging.log4j.Level;

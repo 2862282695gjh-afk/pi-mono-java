@@ -2,7 +2,7 @@
  * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
  */
 
-package com.campusclaw.codingagent.runtimeapi.event;
+package com.huawei.hicampus.claw.codingagent.runtimeapi.event;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -25,41 +25,41 @@ import java.util.Locale;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
 
-import com.campusclaw.agent.Agent;
-import com.campusclaw.ai.types.Model;
-import com.campusclaw.ai.types.TextContent;
-import com.campusclaw.ai.types.UserMessage;
-import com.campusclaw.codingagent.common.client.mate.MateCredentials;
-import com.campusclaw.codingagent.runtime.MateServiceClient.AgentRuntime;
-import com.campusclaw.codingagent.runtime.PreparedAgentRuntime;
-import com.campusclaw.codingagent.runtimeapi.RuntimeMessageSourceConfiguration;
-import com.campusclaw.codingagent.runtimeapi.agent.AgentDirectorySnapshotDTO;
-import com.campusclaw.codingagent.runtimeapi.dto.CommittedEventDTO;
-import com.campusclaw.codingagent.runtimeapi.dto.ExecutionTargetDTO;
-import com.campusclaw.codingagent.runtimeapi.dto.RuntimeEntryDTO;
-import com.campusclaw.codingagent.runtimeapi.dto.RuntimeExecutionContextDTO;
-import com.campusclaw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
-import com.campusclaw.codingagent.runtimeapi.dto.UserMessageAcceptanceDTO;
-import com.campusclaw.codingagent.runtimeapi.error.RuntimeApiException;
-import com.campusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
-import com.campusclaw.codingagent.runtimeapi.persistence.RuntimeExecutionPersistenceService;
-import com.campusclaw.codingagent.runtimeapi.persistence.RuntimeSessionRepository;
-import com.campusclaw.codingagent.runtimeapi.runtime.RuntimeActiveExecution;
-import com.campusclaw.codingagent.runtimeapi.runtime.RuntimeExecutionProperties;
-import com.campusclaw.codingagent.runtimeapi.runtime.RuntimeSessionEngineRegistry;
-import com.campusclaw.codingagent.runtimeapi.runtime.RuntimeSessionHolder;
-import com.campusclaw.codingagent.runtimeapi.session.ReconciledRuntimeSession;
-import com.campusclaw.codingagent.runtimeapi.session.RuntimeSessionModelReconciler;
-import com.campusclaw.codingagent.runtimeapi.session.RuntimeSessionState;
-import com.campusclaw.codingagent.runtimeapi.vo.RuntimeSseEventVO;
-import com.campusclaw.codingagent.runtimeapi.vo.UserMessageContentRequestVO;
-import com.campusclaw.codingagent.runtimeapi.vo.UserMessageContentRequestVO.FileRequestVO;
-import com.campusclaw.codingagent.runtimeapi.vo.UserMessageContentRequestVO.TextRequestVO;
-import com.campusclaw.codingagent.runtimeapi.vo.UserMessageEventRequestVO;
-import com.campusclaw.codingagent.session.AgentSessionFactory;
-import com.campusclaw.codingagent.session.ManagedAgentSession;
-import com.campusclaw.codingagent.tool.agent.SubagentExecutionService;
-import com.campusclaw.codingagent.tool.cron.AgentScopedCronToolFactory;
+import com.huawei.hicampus.claw.agent.Agent;
+import com.huawei.hicampus.claw.ai.types.Model;
+import com.huawei.hicampus.claw.ai.types.TextContent;
+import com.huawei.hicampus.claw.ai.types.UserMessage;
+import com.huawei.hicampus.claw.codingagent.common.client.mate.MateCredentials;
+import com.huawei.hicampus.claw.codingagent.runtime.MateServiceClient.AgentRuntime;
+import com.huawei.hicampus.claw.codingagent.runtime.PreparedAgentRuntime;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.RuntimeMessageSourceConfiguration;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.agent.AgentDirectorySnapshotDTO;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.CommittedEventDTO;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.ExecutionTargetDTO;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeEntryDTO;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeExecutionContextDTO;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.UserMessageAcceptanceDTO;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.error.RuntimeApiException;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.error.RuntimeErrorCode;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.persistence.RuntimeExecutionPersistenceService;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.persistence.RuntimeSessionRepository;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.runtime.RuntimeActiveExecution;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.runtime.RuntimeExecutionProperties;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.runtime.RuntimeSessionEngineRegistry;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.runtime.RuntimeSessionHolder;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.session.ReconciledRuntimeSession;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.session.RuntimeSessionModelReconciler;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.session.RuntimeSessionState;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.vo.RuntimeSseEventVO;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.vo.UserMessageContentRequestVO;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.vo.UserMessageContentRequestVO.FileRequestVO;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.vo.UserMessageContentRequestVO.TextRequestVO;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.vo.UserMessageEventRequestVO;
+import com.huawei.hicampus.claw.codingagent.session.AgentSessionFactory;
+import com.huawei.hicampus.claw.codingagent.session.ManagedAgentSession;
+import com.huawei.hicampus.claw.codingagent.tool.agent.SubagentExecutionService;
+import com.huawei.hicampus.claw.codingagent.tool.cron.AgentScopedCronToolFactory;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import org.junit.jupiter.api.Test;
@@ -372,7 +372,7 @@ class RuntimeV2MessageEventServiceTest {
                     .thenReturn(new ReconciledRuntimeSession(
                             session,
                             mock(AgentDirectorySnapshotDTO.class),
-                            mock(com.campusclaw.ai.types.Model.class),
+                            mock(com.huawei.hicampus.claw.ai.types.Model.class),
                             List.of()));
             when(contexts.create(any(), any(), any(), any(), any(), any())).thenReturn(context);
             when(engines.withOperationLock(anyString(), any(Supplier.class)))

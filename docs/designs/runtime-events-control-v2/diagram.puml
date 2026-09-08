@@ -1,0 +1,42 @@
+@startuml control_event_acceptance
+title Events v2 Control Acceptance and Result Waiting
+' Contract baseline: pi-mono-java-design 2ee2a3211da68ad87b0d9cab353e691b00bdaebd
+' Java baseline: 808b5a1535316352fbf9c5644c02f717c1be5c2c
+' Implementation: c70cc57fb34dafe2acddfd8559a6c90c7a4edf90
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/event/RuntimeV2ControlEventService.java#accept
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/event/RuntimeEventStream.java#onClose
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/event/RuntimeResultWaitRegistry.java#reserve and bind
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/event/RuntimeResultPollingService.java#notifyCommitted
+' Pi source: packages/server/src/sessions.ts#LiveSessionManager.executeCommand at 4af9d21d3b4d664e4a29fcabfec85171077248e3
+' Observed behavior: Java control acceptance persists a receipt before observing authoritative results.
+' Design reason: reserve response capacity before committing a side effect that clients cannot safely replay.
+' Java divergence: fixed result waiting across processes is a CampusClaw architecture change.
+skinparam sequenceMessageAlign center
+actor "Future HTTP handler" as http
+participant "V2 control service" as service
+queue "RuntimeEventStream" as stream
+participant "Result wait registry" as waits
+participant "V2 encoder" as encoder
+database "Execution persistence" as persistence
+participant "Result polling service" as poller
+database "Committed result reader" as reader
+
+http -> service : interrupt or confirmation
+service -> stream : create bounded stream
+service -> waits : reserve response slot
+service -> stream : register one close action
+service -> encoder : encode receipt preview
+encoder --> service : required data frame
+service -> stream : check required capacity
+service -> persistence : accept control transaction
+persistence --> service : receipt and fixed target
+service -> stream : enqueue receipt first
+service -> waits : bind target and receipt sequence
+service -> poller : notify committed target
+poller -> reader : read authoritative results
+reader --> poller : committed events and terminal flag
+poller -> waits : deliver per response cursor
+waits -> stream : enqueue complete events
+waits -> stream : complete at terminal
+stream -> waits : close reservation once
+@enduml

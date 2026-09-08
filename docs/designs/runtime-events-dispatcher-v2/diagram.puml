@@ -1,0 +1,35 @@
+@startuml local_control_dispatch
+title Persisted Control Dispatch to the Original Runtime
+' Contract baseline: pi-mono-java-design 2ee2a3211da68ad87b0d9cab353e691b00bdaebd
+' Java baseline: 1af21fd574817a7c18a48d05cc8975b4d3a98766
+' Implementation: 6a66f5b8c65e1cd112f790f79817a4ac381391c3
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/runtime/ExecutionControlPollingService.java#poll
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/runtime/RuntimeSessionControlDispatcher.java#dispatchStop and dispatchConfirmation
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/runtime/RuntimeSessionEngineRegistry.java#activeTargets
+' Pi source: packages/agent/src/agent-loop.ts#runAgentLoop and prepareToolCall at 4af9d21d3b4d664e4a29fcabfec85171077248e3
+' Observed behavior: the original Java holder owns the agent, credentials, and pending confirmation future.
+' Design reason: database signals must be applied only to the exact in-memory execution.
+' Java divergence: fixed cross-process targets and polling are CampusClaw architecture changes.
+skinparam componentStyle rectangle
+database "Persistent control store" as store
+component "Control polling service" as poller
+interface "RuntimeLocalControlDispatcher" as port
+component "RuntimeSessionControlDispatcher" as dispatcher
+component "RuntimeSessionEngineRegistry" as registry
+component "RuntimeActiveExecution" as execution
+component "Original Agent and credentials" as agent
+
+registry --> poller : bounded active targets
+store --> poller : pending stop or confirmation
+poller --> port : dispatch exact target
+dispatcher -up-|> port
+dispatcher --> registry : session operation lock
+registry --> execution : exact fixed target
+execution --> agent : abort signal or resume future
+dispatcher --> store : claim and acknowledge decision
+
+note right of execution
+The holder remains local.
+Credentials never enter the control store.
+end note
+@enduml

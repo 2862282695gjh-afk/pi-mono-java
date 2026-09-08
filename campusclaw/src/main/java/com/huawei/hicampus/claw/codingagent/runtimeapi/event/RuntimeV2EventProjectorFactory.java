@@ -8,6 +8,7 @@ import java.time.Clock;
 import java.util.Locale;
 
 import com.huawei.hicampus.claw.ai.types.UserMessage;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.persistence.RuntimeExecutionPersistenceService;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.persistence.RuntimeSessionRepository;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.runtime.RuntimeActiveExecution;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.runtime.RuntimeSessionHolder;
@@ -15,66 +16,68 @@ import com.huawei.hicampus.claw.codingagent.runtimeapi.runtime.RuntimeSessionHol
 import org.springframework.stereotype.Component;
 
 /**
- * 使用统一持久化依赖创建单次执行的 Agent 事件投影器。
+ * 使用共享持久化与公共投影依赖创建单个 v2 执行段投影器。
  *
- * @version [br_eCampusCore 26.0.0, 2026/08/19]
+ * @version [br_eCampusCore 26.0.0, 2026/09/08]
  * @since [br_eCampusCore 26.0.0]
  */
 @Component
-public class RuntimeEventProjectorFactory {
+public class RuntimeV2EventProjectorFactory {
     private final RuntimeSessionRepository repository;
+
+    private final RuntimeExecutionPersistenceService persistence;
 
     private final RuntimeEntryCodec codec;
 
-    private final RuntimeCommittedEventFactory committedEvents;
+    private final RuntimeEntryIdGenerator ids;
 
-    private final RuntimeEntryIdGenerator idGenerator;
+    private final RuntimeCommittedEventFactory events;
+
+    private final RuntimeV2EventEncoder encoder;
 
     private final Clock clock;
 
-    public RuntimeEventProjectorFactory(
+    private final RuntimeEventProperties properties;
+
+    public RuntimeV2EventProjectorFactory(
             RuntimeSessionRepository repository,
+            RuntimeExecutionPersistenceService persistence,
             RuntimeEntryCodec codec,
-            RuntimeCommittedEventFactory committedEvents,
-            RuntimeEntryIdGenerator idGenerator,
-            Clock clock) {
+            RuntimeEntryIdGenerator ids,
+            RuntimeCommittedEventFactory events,
+            RuntimeV2EventEncoder encoder,
+            Clock clock,
+            RuntimeEventProperties properties) {
         this.repository = repository;
+        this.persistence = persistence;
         this.codec = codec;
-        this.committedEvents = committedEvents;
-        this.idGenerator = idGenerator;
+        this.ids = ids;
+        this.events = events;
+        this.encoder = encoder;
         this.clock = clock;
+        this.properties = properties;
     }
 
-    public RuntimeEventProjector create(
+    public RuntimeV2EventProjector create(
             RuntimeSessionHolder holder,
             RuntimeActiveExecution execution,
             UserMessage initialUserMessage,
             Locale locale) {
-        return new RuntimeEventProjector(
+        return new RuntimeV2EventProjector(
                 holder.sessionId(),
+                execution.target().rootEventId(),
                 repository,
+                persistence,
                 codec,
-                committedEvents,
-                idGenerator,
-                execution.output(),
+                ids,
+                events,
+                encoder,
                 clock,
+                properties.getStreamBufferBytes(),
                 holder::abort,
                 execution,
                 initialUserMessage,
                 holder.thinking(),
                 locale);
-    }
-
-    /**
-     * 创建没有初始用户消息的压缩投影器，不负责命令准入、容量分配或压缩启动。
-     *
-     * @param holder 本次活动 Session
-     * @param execution 已选择输出策略且在持久化前分配内部 Usage 运行身份的执行
-     * @param locale 公共事件输出语言
-     * @return 本次执行独享的投影器
-     */
-    public RuntimeEventProjector createForCompaction(
-            RuntimeSessionHolder holder, RuntimeActiveExecution execution, Locale locale) {
-        return create(holder, execution, null, locale);
     }
 }
