@@ -256,6 +256,7 @@ public class OpenAICompletionsProvider implements ApiProvider {
         final HashMap<Integer, ToolCallAccumulator> toolAccumulators = new HashMap<>();
         String responseId;
         StopReason stopReason;
+        boolean usageKnown;
         boolean textBlockStarted;
         boolean thinkingBlockStarted;
     }
@@ -277,7 +278,10 @@ public class OpenAICompletionsProvider implements ApiProvider {
     private void handleChunk(
             ChatCompletionChunk chunk, StreamState state, Model model, AssistantMessageEventStream eventStream) {
         state.responseId = chunk.id();
-        chunk.usage().ifPresent(usage -> parseUsage(usage, state.accumulatedUsage));
+        chunk.usage().ifPresent(usage -> {
+            parseUsage(usage, state.accumulatedUsage);
+            state.usageKnown = true;
+        });
         if (chunk.choices().isEmpty()) {
             return;
         }
@@ -406,7 +410,8 @@ public class OpenAICompletionsProvider implements ApiProvider {
     }
 
     private AssistantMessage partialFrom(StreamState state, Model model, @Nullable StopReason stopReason) {
-        return buildPartialMessage(model, state.responseId, state.contentBlocks, state.accumulatedUsage, stopReason);
+        return buildPartialMessage(
+                model, state.responseId, state.contentBlocks, state.accumulatedUsage, stopReason, state.usageKnown);
     }
 
     // -- Message conversion --
@@ -564,15 +569,18 @@ public class OpenAICompletionsProvider implements ApiProvider {
             String responseId,
             List<ContentBlock> contentBlocks,
             long[] usage,
-            @Nullable StopReason stopReason) {
+            @Nullable StopReason stopReason,
+            boolean usageKnown) {
 
-        var piUsage = new Usage(
-                (int) usage[0],
-                (int) usage[1],
-                (int) usage[2],
-                (int) usage[3],
-                (int) (usage[0] + usage[1] + usage[2]),
-                computeCost(model.cost(), usage));
+        var piUsage = usageKnown
+                ? new Usage(
+                        (int) usage[0],
+                        (int) usage[1],
+                        (int) usage[2],
+                        (int) usage[3],
+                        (int) (usage[0] + usage[1] + usage[2]),
+                        computeCost(model.cost(), usage))
+                : Usage.empty();
 
         return new AssistantMessage(
                 List.copyOf(contentBlocks),
