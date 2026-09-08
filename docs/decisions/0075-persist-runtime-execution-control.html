@@ -5,7 +5,7 @@
 <style>body{font:16px/1.65 system-ui,sans-serif;color:#172235;background:#f5f7fa;margin:0}main{max-width:920px;margin:32px auto;padding:32px;background:white;border-radius:12px}h1,h2{line-height:1.3}code{overflow-wrap:anywhere;background:#eef2f6;padding:2px 4px}a{color:#1457a6}li{margin:8px 0}</style></head>
 <body><main>
 <h1>ADR-0075：持久化固定执行与结果段身份</h1>
-<p><strong>Status:</strong> Accepted · <strong>Date:</strong> 2026-09-08 · <strong>Version:</strong> 1.0.0</p>
+<p><strong>Status:</strong> Accepted · <strong>Date:</strong> 2026-09-08 · <strong>Version:</strong> 1.0.1</p>
 <h2>Context</h2>
 <p>设计仓 <code>2ee2a3211da68ad87b0d9cab353e691b00bdaebd</code> 已确认：中断和工具确认必须绑定原始
 <code>user.message.eventId</code> 与不可复用的内部执行身份；每次初始响应或确认续跑使用固定结果段。
@@ -22,7 +22,7 @@ Java 基线 <code>fd556dce3cfa12e5e834b6e9b8f835f10e7d67c8</code> 只在当前 J
 <li>不把 executionId 或 segmentId 暴露到 HTTP；公共关联继续使用已经确认的 eventId。</li>
 </ul>
 <p>Tool Call ID 使用 TEXT，保留提供商原值。状态与结束原因由 Java enum 表达；数据库 CHECK 约束状态取值，以及终态所需字段的完整性。
-Session 完整清理会删除全部控制表记录，tombstone 保留既有语义。</p>
+Session 完整清理会删除全部控制表记录，tombstone 保留既有语义。发布权限模板同时授予运行角色新增表的 CRUD 权限，避免仅用表所有者测试而遗漏实际部署权限。</p>
 <h2>Consequences</h2>
 <p>正面：后续中断和确认事务可以精确锁定一轮根执行；不同 HTTP 结果段可以读取各自完整事件；
 过期终态不会覆盖当前段。负面：每个完整段事件增加一条关联写入，清理和事务锁序需要覆盖新增表。</p>
@@ -31,9 +31,9 @@ Session 完整清理会删除全部控制表记录，tombstone 保留既有语�
 <p>不新增 Maven 依赖、Redis、实例间 HTTP 转发或凭据持久化。</p>
 <h2>Validation</h2>
 <p>真实 openGauss 验证登记、精确读取、confirming 关段、终态 CAS、300 字符 Tool Call ID，以及 Session
-清理后三张控制表归零。格式、编译和映射检查与聚焦测试结果记录在关联设计中。</p>
+清理后三张控制表归零。合并公共事件后的31项数据库回归通过；非所有者角色先重现权限不足，再经发布模板授权验证新增表CRUD权限。格式、编译和映射检查与聚焦测试结果记录在关联设计中。</p>
 <h2>Related</h2>
 <ul><li><a href="../designs/runtime-execution-control/README.md">固定执行控制存储设计</a></li>
 <li><a href="../designs/runtime-execution-control/diagram.puml#L1">PlantUML 存储关系图</a></li></ul>
-<h2>版本历史</h2><p>1.0.0 · 2026-09-08：确定固定根执行、结果段、段事件关联和清理边界。</p>
+<h2>版本历史</h2><p>1.0.1 · 2026-09-08：补齐发布运行角色权限并验证公共事件与控制表清理共存。</p><p>1.0.0 · 2026-09-08：确定固定根执行、结果段、段事件关联和清理边界。</p>
 </main></body></html>
