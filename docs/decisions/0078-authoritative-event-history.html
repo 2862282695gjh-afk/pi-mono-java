@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ADR-0078：权威事件历史与安全迁移</title>
+<style>body{font:16px/1.7 system-ui,sans-serif;background:#f5f7fa;color:#172235;margin:0}main{max-width:920px;margin:32px auto;padding:32px;background:white;border-radius:12px}code{overflow-wrap:anywhere;background:#eef2f6;padding:2px 4px}a{color:#1457a6}</style></head>
+<body><main><h1>ADR-0078：权威事件历史与安全迁移</h1>
+<p>Status: Accepted · Date: 2026-09-08 · Version: 1.0.1</p>
+<h2>Context</h2><p>设计仓 <code>2ee2a321</code> 要求 GET 与 POST 复用完整事件，并对全部旧持久化类型逐类映射。
+Java 基线 <code>d9a20777</code> 的旧 Entry 同时承载模型恢复和 HTTP 历史，无法证明 Skill 展开前正文、工具确认标记、
+公开 thinking 摘要、固定语言错误文本和原消息关联。逐次临时转换可能重新生成身份、泄露私有内容或遗漏一对多事件。</p>
+<h2>Decision</h2><p>使用 <code>t_session_events</code> 保存一次稳定公共事件，并以
+<code>t_session_event_projection</code> 的每 Entry 精确数量证明投影完整。运行时通过组合仓储在同一事务写 Entry、Usage、
+公共事件、标记和序号。GET 在单个 REPEATABLE_READ 事务内核验当前分支后按普通整数页读取，再由唯一严格投影器产生只读 VO。</p>
+<p>旧历史使用发布平台执行的一次可重跑迁移。只有安全字段明确的配置、手动压缩和已分类私有记录自动处理；其余记录必须提供
+稳定 ID、完整安全 payload、精确数量和非敏感审核理由。未知类型、缺少关联、部分映射和旧 Skill 展开正文均关闭失败。
+生产 GET 只在全部公开写入点接入并且迁移验证零行后统一切换。</p>
+<h2>选项与取舍</h2><ul><li>权威公共表使 POST 与 GET 逐字段一致，也支持一条 Entry 映射多条事件；代价是每次写入增加事件和完整性记录。</li>
+<li>查询时动态转换旧 Entry 无需迁移表，但不能安全恢复 Skill 原始回执、确认标记和因果关联，因此不采用。</li>
+<li>只检查“至少一条公共记录”无法发现 Assistant 工具调用遗漏；精确数量标记增加一个写入，却能拒绝半份历史。</li>
+<li>全量自动猜测迁移较省运维工作，但会泄露私有正文或生成虚假字段；采用安全自动映射加显式审核缺口。</li></ul>
+<h2>Consequences</h2><p>公开事件写入锁序固定为 Session、execution、sequence、Entry/Usage、公共事件、完整性标记、控制关联。
+合法 thinking completed 可经可信分类标零或标正数；旧 tool execution started 不能标零掩盖缺失工具调用。迁移每轮最多提交
+500 个完整 Session，成功后删除暂存 payload，verify 只返回 ID、类型和固定原因。HTTP 切换前仍保留旧生产 GET。</p>
+<h2>Validation</h2><p>单元与真实 openGauss 测试覆盖数字分页、当前分支、精确数量、未知类型、thinking 双分类、工具调用缺口、
+原子回滚和 UTC 毫秒一致。本片集成运行21个测试均通过，并以非所有者运行角色检查公共事件和完整性表的读写权限。迁移脚本由独立提交749dc828交付，其子任务验证报告尚待集成复核，不属于本片已完成的验证。企业镜像同步完成，企业NativeParent不可解析，企业编译未验证。</p>
+<h2>Related</h2><p><a href="../designs/runtime-event-history-v2/README.md">实现设计与源码证据</a> ·
+<a href="../designs/runtime-event-history-v2/diagram.puml#L1">查询 PlantUML</a> ·
+<a href="../designs/runtime-event-history-v2/diagram.puml#L49">迁移 PlantUML</a></p>
+<h2>版本历史</h2><p>1.0.1 · 2026-09-08：明确迁移独立待审范围，补充查询与权限验证。</p><p>1.0.0 · 2026-09-08：固定权威公共历史、精确完整性门禁和旧数据安全迁移。</p></main></body></html>

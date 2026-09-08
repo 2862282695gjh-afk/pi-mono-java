@@ -118,6 +118,7 @@ class RuntimeSessionRepositoryOpenGaussIT {
         executionPersistence = context.getBean(RuntimeExecutionPersistenceService.class);
         executionIds = context.getBean(TestRuntimeEntryIdGenerator.class);
         jdbcTemplate = context.getBean(JdbcTemplate.class);
+        jdbcTemplate.update("TRUNCATE TABLE t_session_event_projection");
         jdbcTemplate.update("TRUNCATE TABLE t_session_materialized");
         jdbcTemplate.update("TRUNCATE TABLE t_session_stats");
         jdbcTemplate.update("TRUNCATE TABLE t_session_records");
