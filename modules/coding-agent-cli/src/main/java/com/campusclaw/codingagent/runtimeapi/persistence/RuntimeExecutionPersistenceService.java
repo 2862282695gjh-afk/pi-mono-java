@@ -8,13 +8,16 @@ import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Objects;
 
+import com.campusclaw.ai.types.Usage;
 import com.campusclaw.codingagent.runtimeapi.dto.AcceptedControlDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.CommittedControlEventDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.CommittedEventDTO;
+import com.campusclaw.codingagent.runtimeapi.dto.CommittedTerminalDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.ConfirmingEventsDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.ExecutionTargetDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.InterruptRequestDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.RuntimeEntryDTO;
+import com.campusclaw.codingagent.runtimeapi.dto.RuntimeRecordDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.UserMessageAcceptanceDTO;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
@@ -76,6 +79,35 @@ public class RuntimeExecutionPersistenceService {
     }
 
     @Transactional
+    public RuntimeEntryDTO appendEntry(
+            ExecutionTargetDTO target, RuntimeEntryDTO entry, List<CommittedEventDTO> events) {
+        List<CommittedEventDTO> committedEvents = requireSegmentPayload(target, entry, events);
+        var status = controls.appendToSegment(target, () -> {
+            sessions.appendEntry(entry, committedEvents);
+            return controlEvents(committedEvents);
+        });
+        requireSegmentAppend(status);
+        return entry;
+    }
+
+    @Transactional
+    public RuntimeEntryDTO appendEntryWithUsage(
+            ExecutionTargetDTO target,
+            RuntimeEntryDTO entry,
+            RuntimeRecordDTO record,
+            Usage usage,
+            List<CommittedEventDTO> events) {
+        List<CommittedEventDTO> committedEvents = requireSegmentPayload(target, entry, events);
+        requireSegmentSession(target, record == null ? null : record.getSessionId(), "runtime record");
+        var status = controls.appendToSegment(target, () -> {
+            sessions.appendEntryWithUsage(entry, record, usage, committedEvents);
+            return controlEvents(committedEvents);
+        });
+        requireSegmentAppend(status);
+        return entry;
+    }
+
+    @Transactional
     public void markToolConfirming(
             ExecutionTargetDTO target,
             String toolCallId,
@@ -119,12 +151,48 @@ public class RuntimeExecutionPersistenceService {
                 event,
                 RuntimeEventType.SESSION_STATUS_IDLE,
                 CommittedEventType.SESSION_STATUS_IDLE);
-        var status = controls.markTerminal(target, () -> appendControlEvent(entry, event), terminalReason, terminalAt);
-        if (status != RuntimeExecutionControlRepository.TransitionStatus.APPLIED) {
-            throw new IllegalStateException("terminal target is no longer active: " + status);
+        var status = controls.markTerminal(
+                target, event.getEventId(), () -> appendControlEvent(entry, event), terminalReason, terminalAt);
+        if (status == RuntimeExecutionControlRepository.TransitionStatus.ALREADY_APPLIED) {
+            return restoreCommittedTerminal(target, entry, event, terminalReason);
         }
-        sessions.finishExecution(target.sessionId(), terminalAt);
+        if (status == RuntimeExecutionControlRepository.TransitionStatus.APPLIED) {
+            sessions.finishExecution(target.sessionId(), terminalAt);
+            return entry;
+        }
+        throw new IllegalStateException("terminal target is no longer active: " + status);
+    }
+
+    private RuntimeEntryDTO restoreCommittedTerminal(
+            ExecutionTargetDTO target,
+            RuntimeEntryDTO entry,
+            CommittedEventDTO event,
+            RuntimeExecutionTerminalReason terminalReason) {
+        CommittedTerminalDTO terminal = controls.findCommittedTerminal(target, event.getEventId(), terminalReason)
+                .orElseThrow(() -> new IllegalStateException("committed terminal projection is unavailable"));
+        copyEntry(terminal, entry);
+        copyEvent(terminal, event);
         return entry;
+    }
+
+    private static void copyEntry(CommittedTerminalDTO terminal, RuntimeEntryDTO entry) {
+        entry.setSessionId(terminal.getSessionId());
+        entry.setId(terminal.getEntryId());
+        entry.setEntrySeq(terminal.getEntrySeq());
+        entry.setParentId(terminal.getEntryParentId());
+        entry.setType(terminal.getEntryType());
+        entry.setTimestamp(terminal.getEntryTimestamp());
+        entry.setPayload(terminal.getEntryPayload());
+    }
+
+    private static void copyEvent(CommittedTerminalDTO terminal, CommittedEventDTO event) {
+        event.setSessionId(terminal.getSessionId());
+        event.setEventId(terminal.getEventId());
+        event.setEventSeq(terminal.getEventSeq());
+        event.setAnchorEntryId(terminal.getAnchorEntryId());
+        event.setType(terminal.getEventType());
+        event.setCreatedAt(terminal.getCreatedAt());
+        event.setPayload(terminal.getEventPayload());
     }
 
     private static void requireMessageEvent(String sessionId, RuntimeEntryDTO receipt, CommittedEventDTO event) {
@@ -206,5 +274,35 @@ public class RuntimeExecutionPersistenceService {
     private CommittedControlEventDTO appendControlEvent(RuntimeEntryDTO entry, CommittedEventDTO event) {
         sessions.appendEntry(entry, List.of(event));
         return new CommittedControlEventDTO(event.getEventId(), event.getEventSeq());
+    }
+
+    private static List<CommittedControlEventDTO> controlEvents(List<CommittedEventDTO> events) {
+        return events.stream()
+                .map(event -> new CommittedControlEventDTO(event.getEventId(), event.getEventSeq()))
+                .toList();
+    }
+
+    private static List<CommittedEventDTO> requireSegmentPayload(
+            ExecutionTargetDTO target, RuntimeEntryDTO entry, List<CommittedEventDTO> events) {
+        Objects.requireNonNull(target, "target");
+        Objects.requireNonNull(entry, "entry");
+        requireSegmentSession(target, entry.getSessionId(), "runtime entry");
+        List<CommittedEventDTO> committedEvents = List.copyOf(events);
+        for (CommittedEventDTO event : committedEvents) {
+            requireSegmentSession(target, event.getSessionId(), "committed event");
+        }
+        return committedEvents;
+    }
+
+    private static void requireSegmentSession(ExecutionTargetDTO target, String sessionId, String valueName) {
+        if (!Objects.equals(target.sessionId(), sessionId)) {
+            throw new IllegalArgumentException(valueName + " does not belong to the execution target");
+        }
+    }
+
+    private static void requireSegmentAppend(RuntimeExecutionControlRepository.TransitionStatus status) {
+        if (status != RuntimeExecutionControlRepository.TransitionStatus.APPLIED) {
+            throw new IllegalStateException("execution segment is no longer appendable: " + status);
+        }
     }
 }
