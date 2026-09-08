@@ -1,10 +1,10 @@
 # Agent 与 Skill 受管运行目录
 
-> 文档版本：3.6.2
+> 文档版本：3.7.0
 >
 > 状态：Implemented
 >
-> 更新日期：2026-09-07
+> 更新日期：2026-09-08
 > 规范性工具契约：[CampusClaw 受管 Agent 工具系统 v2](tool-system-v2.md)
 
 ## 1. 源码基线
@@ -31,10 +31,17 @@
   符号 `toolResultEntry`/`toSseData`/`toHistoryEvent`；
   `modules/cron/src/main/java/com/campusclaw/cron/engine/CronJobExecutor.java`，符号 `stableCodeOf`；
   `frontend/src/projectors/runtimeEventProjector.ts`，符号 `projectToolEvent`。
+- 工具权限缓存修复分析基线：`80ca6cc96d35fef2aa86bbd032a980945db4ecbd`；
+  实现提交：`2b76bbf9`。源码证据为
+  `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtime/AgentRuntimeManager.java` 的
+  `writeSkills`、`loadSkill`、`toSettings`、`toRuntime`、`validSettings` 和 `validCachedSkill`，以及
+  `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtime/MateServiceClient.java` 的
+  `AgentRuntime`、`SkillInfo` 与 `BoundTool`。
 
 基线源码观察到 CLI 生成运行目录与 HTTP 只读目录采用不同文件名，并在 Skill
 `references/tools.json` 保存远端工具快照。本次把两条链收敛为服务端三入口共同使用的一个
-受管目录；这是架构改造。远端工具不落盘，由 Mate 工具在 Session 内实时发现。
+受管目录；这是架构改造。工具调用定义与参数 Schema 不落盘，仍由 Mate 工具在 Session 内实时
+发现；Agent 与 Skill 绑定中的可信工具身份及权限元数据属于运行时快照，必须随受管目录持久化。
 
 ## 2. 目录契约
 
@@ -51,9 +58,11 @@ agent/{agentId}/.campusclaw/
     └── templates/
 ```
 
-根 `agent.json` 是当前 Agent 身份；`agents/{agentName}.json` 是一个直接绑定 Child 的轻量
-身份与固定版本；`skill.json` 保存 `schemaVersion=1`、`id`、`name`、`version`。名称必须与
-路径精确一致且大小写折叠后唯一。目录拒绝符号链接和任何 `tools.json`。
+根 `agent.json` 是当前 Agent 身份；`settings.json` 保存模型绑定和 Agent 级 `bindingTools`；
+`agents/{agentName}.json` 是一个直接绑定 Child 的轻量身份与固定版本；`skill.json` 保存
+`schemaVersion=1`、`id`、`name`、`version` 和 Skill 级 `bindingTools`。两个工具绑定字段都必须
+显式出现，合法的无绑定状态写为 `[]`。名称必须与路径精确一致且大小写折叠后唯一。目录拒绝
+符号链接和任何 `tools.json`。
 
 ## 3. prepare 与 refresh
 
@@ -82,6 +91,12 @@ locale 输出 `errorCode` 及 MessageSource 生成的 `errorMessage`；前端失
 HTTP Session 创建、Cron 触发和 Child Execution 均调用 prepare，因此冷目录可以自动创建，
 完整热目录不产生远端访问。
 
+缓存完整性还包括 Agent 与每个 Skill 的 `bindingTools`。旧缓存缺少该字段时，JSON 读取保留
+`null` 以表示“未记录”，不得把它归一化为合法空列表。`prepareCached(agentId)` 对这种快照返回
+空结果且不访问 Mate；`prepare(agentId)` 通过既有冷加载路径重新获取并原子发布完整快照。
+显式 `[]` 代表经上游确认没有绑定工具，可正常命中缓存。该规则不回查当前 Skill 正文，也不猜测
+旧权限。
+
 ## 4. Session 消费
 
 `AgentSessionFactory` 从 `PreparedAgentRuntime` 取得 SYSTEM、Skill 名称到 ID 映射、直接 Child
@@ -90,6 +105,11 @@ HTTP Session 创建、Cron 触发和 Child Execution 均调用 prepare，因此�
 
 目录缓存和 Session 生命周期分离：refresh 只影响随后创建的 Session，不修改正在执行的
 Session 快照。工具配置也只在应用启动时解析，不由 refresh 变更。
+
+`PreparedAgentRuntime` 同时携带 Agent 与 Skill 的完整 `BoundTool` 记录，权限判定消费者必须使用
+这一固定快照。权限消费属于 Events v2 后续接线的目标要求；本片实现元数据保存与恢复。
+该目标要求未知权限值、工具身份冲突和缺少可信绑定按 DENY 处理；ASK 只能由快照中明确的
+可信权限触发确认。该约束不把工具调用定义或参数 Schema 引入磁盘缓存。
 
 ## 5. 安全边界与设计决策
 
@@ -295,10 +315,42 @@ pi `4af9d21d3b4d664e4a29fcabfec85171077248e3` 的
 1/64 字符和带引号的 `null`/`true`/`123` 保留合法字符串身份。断言失败刷新保留旧文件与发现结果，
 损坏缓存只读发现无 Mate 调用，后续 prepare 才重建。它不代替未来 Skill 执行或共享 HTTP 验收。
 
+### 6.4 工具权限缓存完整性（3.7.0）
+
+分析基线 `80ca6cc96d35fef2aa86bbd032a980945db4ecbd` 已在 `MateServiceClient.AgentRuntime` 与
+`SkillInfo` 接收 `bindingTools`，但 `AgentRuntimeManager#toSettings`、`writeSkills` 写盘时丢弃该
+字段，`toRuntime` 与 `loadSkill` 又固定恢复为空列表。因此首次远端准备完成后重新读取已发布目录、
+同进程缓存命中和进程重启都会丢失 ASK 等权限元数据。这是观察到的实现缺陷。
+
+![工具权限缓存流程](agent-tool-permission-cache/agent_tool_permission_cache.svg)
+
+[PlantUML 源码](agent-tool-permission-cache/diagram.puml#L1)
+
+实现提交 `2b76bbf9` 把 Agent 工具绑定写入 `settings.json`，把 Skill 工具绑定写入对应
+`skill.json`，并在缓存重建时恢复完整 `BoundTool`。发布、缓存命中与重启读取使用同一字段；
+列表元素为 `null` 或字段缺失都会使整个快照无效，避免返回只恢复部分权限的运行时。
+
+本次保留 `schemaVersion=1`。该版本标识继续描述既有受管目录整体布局，新增字段通过必需字段
+存在性形成严格完整性门禁：新写入始终包含数组，显式 `[]` 合法，旧文件缺少字段无效。选择不把
+缺失字段默认成空列表，是为了避免把“没有记录权限”解释为“已确认没有绑定”；选择不升级整个目录
+版本，是因为读取器已经能够逐字段识别并重建不完整快照，无需让未变化的身份、Child 和正文文件
+采用新格式。只读 `prepareCached` 不产生网络副作用；允许远端访问的 `prepare` 才执行重建。
+
+该设计是 CampusClaw 的安全加固。pi 基线
+`4af9d21d3b4d664e4a29fcabfec85171077248e3` 中不存在 `AgentRuntimeManager`、`bindingTools` 或
+`RuntimeToolPermissionPolicy` 对应实现，因此这里属于 Java 目标运行目录契约，不能表述为 pi
+现有缓存行为。已核对 `packages/agent/src/agent-loop.ts` 的 `runAgentLoop`、`prepareToolCall`：
+pi 接收进程内上下文和调用前钩子，此路径不负责 CampusClaw 受管权限目录。决策与兼容处理见
+[ADR-0089](../decisions/0089-persist-agent-tool-permissions.html)。测试使用完整 `BoundTool` 值验证
+首次发布、同进程缓存命中和全新 Manager 重启读取保持一致，并分别覆盖缺字段重建与显式空数组。
+没有新增 Maven 依赖。独立复验 51 项通过；生成镜像与源码一致。企业 Maven 父工程
+NativeParent 26.0.0-SNAPSHOT 在本机不可解析，企业镜像编译未验证。
+
 ## 7. 版本历史
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 3.7.0 | 2026-09-08 | 将 Agent 与 Skill 工具权限纳入受管快照，区分旧缓存缺字段与合法空数组，并记录不升级整体 schemaVersion 的兼容理由。 |
 | 3.6.2 | 2026-09-07 | 补齐原始字符串类型、显式名称与目录同名校验，撤销目录回退测试预期；统一实施责任并保留历史证据。 |
 | 3.6.1 | 2026-09-04 | 为 resolve 的 agentId 实参和 toFile 的 expectedAgentRoot 接收对象补齐显式 validatePath 前置校验。 |
 | 3.6.0 | 2026-09-04 | 将 Skill 与 Runtime 共享定义迁入底层 common 的 ClawConstants 领域分组。 |
