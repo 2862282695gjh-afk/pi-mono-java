@@ -94,7 +94,7 @@ public class RuntimeCommandController {
         emitter.onCompletion(events::detach);
         emitter.onTimeout(events::detach);
         emitter.onError(error -> events.detach());
-        events.attach(sseDispatcher, new RuntimeSseEmitterSubscriber(emitter));
+        events.attach(sseDispatcher, new RuntimeSseEmitterSubscriber(emitter, true));
         return emitter;
     }
 
