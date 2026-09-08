@@ -109,9 +109,9 @@
 
     <insert id="insertCommittedEventProjection">
         INSERT INTO t_session_event_projection (
-            session_id, anchor_entry_id, event_count, mapping_source
+            session_id, anchor_entry_id, event_count
         ) VALUES (
-            #{sessionId}, #{anchorEntryId}, #{eventCount}, #{mappingSource}
+            #{sessionId}, #{anchorEntryId}, #{eventCount}
         )
     </insert>
 
