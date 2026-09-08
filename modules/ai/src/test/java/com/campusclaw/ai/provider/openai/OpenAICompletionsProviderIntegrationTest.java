@@ -5,6 +5,7 @@
 package com.campusclaw.ai.provider.openai;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -134,6 +135,29 @@ class OpenAICompletionsProviderIntegrationTest {
             assertEquals(1, finalMsg.content().size());
             assertInstanceOf(TextContent.class, finalMsg.content().get(0));
             assertEquals("Hello world", ((TextContent) finalMsg.content().get(0)).text());
+            assertTrue(finalMsg.usage().known());
+        }
+
+        @Test
+        void shouldKeepMissingUsageUnknown() throws Exception {
+            String sseBody = chunk(
+                            """
+                    {"id":"chatcmpl-no-usage","object":"chat.completion.chunk","created":1234567890,"model":"gpt-4o","choices":[{"index":0,"delta":{"role":"assistant","content":"OK"},"finish_reason":"stop"}]}""")
+                    + "data: [DONE]\n\n";
+            server.enqueue(new MockResponse()
+                    .setResponseCode(200)
+                    .setHeader("Content-Type", "text/event-stream")
+                    .setBody(sseBody)
+                    .setSocketPolicy(SocketPolicy.DISCONNECT_AT_END));
+            var model = testModel(server.url("/").toString());
+            var context = new Context(null, List.of(new UserMessage("Hi", 1L)), null);
+            var eventStream = new AssistantMessageEventStream();
+
+            provider.executeStream(model, context, "test-api-key", null, null, null, eventStream);
+
+            var finalMsg = eventStream.result().block();
+            assertNotNull(finalMsg);
+            assertFalse(finalMsg.usage().known());
         }
 
         @Test

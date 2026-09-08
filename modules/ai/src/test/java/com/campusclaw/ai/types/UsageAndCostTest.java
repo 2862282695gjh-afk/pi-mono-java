@@ -5,6 +5,7 @@
 package com.campusclaw.ai.types;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -104,6 +105,7 @@ class UsageAndCostTest {
             assertEquals(100, usage.cacheWrite());
             assertEquals(1800, usage.totalTokens());
             assertEquals(cost, usage.cost());
+            assertTrue(usage.known());
         }
 
         @Test
@@ -115,6 +117,7 @@ class UsageAndCostTest {
             assertEquals(0, usage.cacheWrite());
             assertEquals(0, usage.totalTokens());
             assertEquals(Cost.empty(), usage.cost());
+            assertFalse(usage.known());
         }
 
         @Test
@@ -129,6 +132,7 @@ class UsageAndCostTest {
             assertEquals(1500, json.get("totalTokens").asInt());
             assertTrue(json.has("cost"));
             assertEquals(0.04, json.get("cost").get("total").asDouble());
+            assertTrue(json.get("known").asBoolean());
         }
 
         @Test
@@ -157,6 +161,7 @@ class UsageAndCostTest {
             assertEquals(1800, usage.totalTokens());
             assertEquals(0.01, usage.cost().input());
             assertEquals(0.047, usage.cost().total());
+            assertTrue(usage.known());
         }
 
         @Test

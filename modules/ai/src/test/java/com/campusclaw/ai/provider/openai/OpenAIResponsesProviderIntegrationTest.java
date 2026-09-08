@@ -153,6 +153,7 @@ class OpenAIResponsesProviderIntegrationTest {
             // Verify usage
             assertEquals(10, finalMsg.usage().input());
             assertEquals(5, finalMsg.usage().output());
+            assertTrue(finalMsg.usage().known());
         }
 
         @Test
