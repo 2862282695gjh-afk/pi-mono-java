@@ -51,6 +51,17 @@
         FOR UPDATE
     </select>
 
+    <select id="lockCurrentExecution"
+            resultType="com.huawei.hicampus.claw.codingagent.runtimeapi.dto.ExecutionStateDTO">
+        SELECT session_id, execution_id, root_event_id, state, current_segment_id,
+               pending_tool_call_id, stop_event_id, terminal_event_id,
+               UPPER(terminal_reason) AS terminal_reason, created_at, updated_at, terminal_at
+        FROM t_session_executions
+        WHERE session_id = #{sessionId}
+          AND state &lt;&gt; 'TERMINAL'
+        FOR UPDATE
+    </select>
+
     <insert id="insertSegmentEvent">
         INSERT INTO t_session_execution_segment_events (
             session_id, execution_id, segment_id, event_id, event_seq
@@ -81,6 +92,18 @@
           AND execution_id = #{executionId}
           AND current_segment_id = #{segmentId}
           AND state = 'RUNNING'
+          AND stop_event_id IS NULL
+    </update>
+
+    <update id="markStopping">
+        UPDATE t_session_executions
+        SET state = 'STOPPING',
+            stop_event_id = #{stopEventId},
+            updated_at = #{updatedAt}
+        WHERE session_id = #{sessionId}
+          AND execution_id = #{executionId}
+          AND current_segment_id = #{segmentId}
+          AND state IN ('RUNNING', 'CONFIRMING')
           AND stop_event_id IS NULL
     </update>
 
