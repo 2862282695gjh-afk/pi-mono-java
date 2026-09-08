@@ -1,6 +1,8 @@
 @startuml runtime_execution_control_store
 title Durable Runtime Execution Control Store
-' Java source baseline: pi-mono-java fd556dce3cfa12e5e834b6e9b8f835f10e7d67c8
+' Observed Java source baseline: pi-mono-java fd556dce3cfa12e5e834b6e9b8f835f10e7d67c8
+' Implementation commit: 8ec383dd0ee6a5a8fe7e72b9e97bba8f71c8f8da
+' Observed source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/runtime/RuntimeActiveExecution.java#runId
 ' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/persistence/RuntimeExecutionControlRepository.java
 ' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/persistence/MyBatisRuntimeExecutionControlRepository.java
 ' Source: modules/coding-agent-cli/src/main/resources/mapper/session/RuntimeExecutionControlMapper.xml

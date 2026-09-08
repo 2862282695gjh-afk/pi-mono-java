@@ -21,7 +21,7 @@ Java 基线 <code>fd556dce3cfa12e5e834b6e9b8f835f10e7d67c8</code> 只在当前 J
 <li>不采用只保存在 JVM 的 executionId，因为负载均衡后的请求可能由另一实例接受。</li>
 <li>不把 executionId 或 segmentId 暴露到 HTTP；公共关联继续使用已经确认的 eventId。</li>
 </ul>
-<p>Tool Call ID 使用 TEXT，保留提供商原值。状态与结束原因由 Java enum 和数据库 CHECK 双重约束。
+<p>Tool Call ID 使用 TEXT，保留提供商原值。状态与结束原因由 Java enum 表达；数据库 CHECK 约束状态取值，以及终态所需字段的完整性。
 Session 完整清理会删除全部控制表记录，tombstone 保留既有语义。</p>
 <h2>Consequences</h2>
 <p>正面：后续中断和确认事务可以精确锁定一轮根执行；不同 HTTP 结果段可以读取各自完整事件；

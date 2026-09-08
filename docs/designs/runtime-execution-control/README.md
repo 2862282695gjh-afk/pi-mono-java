@@ -5,7 +5,8 @@
 | 版本 | 0.1.0 |
 | 日期 | 2026-09-08 |
 | 设计契约 | `pi-mono-java-design@2ee2a3211da68ad87b0d9cab353e691b00bdaebd` |
-| Java 源码基线 | `pi-mono-java@fd556dce3cfa12e5e834b6e9b8f835f10e7d67c8` |
+| 变更前 Java 源码基线 | `pi-mono-java@fd556dce3cfa12e5e834b6e9b8f835f10e7d67c8` |
+| 本片实现提交 | `8ec383dd0ee6a5a8fe7e72b9e97bba8f71c8f8da` |
 | pi 源码基线 | `pi@4af9d21d3b4d664e4a29fcabfec85171077248e3` |
 | 范围 | 固定执行、结果段和完整事件关联的低层数据库存储；不包含 Events v2 HTTP 受理和跨实例轮询 |
 
@@ -71,7 +72,10 @@ running。后续应用片会在同一外层事务中继续分配 Session 统一�
 - 固定根执行与初始段能登记和读取，300 字符 Tool Call ID 可进入 confirming；Session 仍保持 running。
 - 过期 segment 和重复终态不能覆盖已提交终态。
 - 删除完成的 Session 后，段事件、段和根执行三张控制表全部清空，tombstone 继续保留。
+- 独立审查执行完整 `RuntimeSessionRepositoryOpenGaussIT`：29 项通过，无失败、错误或跳过。
 - `spotless:apply`、`checkstyle:check`、`test-compile`、聚焦真实数据库测试和 `git diff --check` 通过。
+
+企业镜像通过生成同步检查；本地无法解析企业 `NativeParent:26.0.0-SNAPSHOT`，企业镜像编译尚未验证。
 
 该数据库环境证明 SQL、MyBatis 映射和事务行为可运行，不构成企业生产性能或延迟承诺。
 
