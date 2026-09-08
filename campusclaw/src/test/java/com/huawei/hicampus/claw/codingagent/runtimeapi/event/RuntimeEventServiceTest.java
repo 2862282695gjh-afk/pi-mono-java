@@ -365,8 +365,7 @@ class RuntimeEventServiceTest {
             Clock clock = Clock.fixed(Instant.parse("2026-08-18T00:00:00Z"), ZoneOffset.UTC);
             RuntimeEntryIdGenerator idGenerator = () -> "entry_" + ids.getAndIncrement();
             RuntimeEventQueryService queryService = new RuntimeEventQueryService(repository, codec, cursorCodec);
-            RuntimeEventProjectorFactory projectorFactory =
-                    new RuntimeEventProjectorFactory(repository, codec, idGenerator, clock);
+            RuntimeEventProjectorFactory projectorFactory = projectorFactory(idGenerator, clock);
             RuntimeTerminalEventFactory terminalEventFactory = new RuntimeTerminalEventFactory(messages());
             RuntimeExecutionCoordinator coordinator = new RuntimeExecutionCoordinator(
                     registry,
@@ -398,6 +397,15 @@ class RuntimeEventServiceTest {
                     .when(registry)
                     .withOperationLock(anyString(), any(Runnable.class));
             prepareAcceptedExecution();
+        }
+
+        private RuntimeEventProjectorFactory projectorFactory(RuntimeEntryIdGenerator idGenerator, Clock clock) {
+            return new RuntimeEventProjectorFactory(
+                    repository,
+                    codec,
+                    new RuntimeCommittedEventFactory(new ObjectMapper(), messages()),
+                    idGenerator,
+                    clock);
         }
 
         private void prepareAcceptedExecution() {

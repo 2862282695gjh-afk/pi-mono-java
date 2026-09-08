@@ -116,7 +116,7 @@ class SessionThinkingConfigurationServiceTest {
             committed.add(call.getArgument(0));
             return 1;
         });
-        when(mapper.insertCommittedEventProjection(any(), any(), any(Integer.class), any()))
+        when(mapper.insertCommittedEventProjection(any(), any(), any(Integer.class)))
                 .thenReturn(1);
         when(mapper.insertEntry(any())).thenAnswer(call -> {
             appended.add(call.getArgument(0));
@@ -166,7 +166,7 @@ class SessionThinkingConfigurationServiceTest {
             assertThat(event.getEventId()).isEqualTo("entry-1");
             assertThat(event.getEventSeq()).isEqualTo(18L);
         });
-        verify(mapper).insertCommittedEventProjection("session", "entry-1", 1, "runtime");
+        verify(mapper).insertCommittedEventProjection("session", "entry-1", 1);
         assertThat(locked.getResourceVersion()).isEqualTo(5L);
         assertThat(locked.getUpdatedAt()).isEqualTo(now);
     }

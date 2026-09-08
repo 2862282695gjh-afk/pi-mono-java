@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>ADR-0085：有界等待固定执行结果</title>
+<style>body{font:16px/1.65 system-ui,sans-serif;color:#172235;background:#f5f7fa;margin:0}main{max-width:920px;margin:32px auto;padding:32px;background:white;border-radius:12px}h1,h2{line-height:1.3}a{color:#1457a6}</style></head><body><main>
+<h1>ADR-0085：有界等待固定执行结果</h1><p>Status: Accepted · Date: 2026-09-08 · Version: 1.0.0</p>
+<h2>Context</h2><p>设计仓2ee2a321要求跨实例控制请求等待原执行结果。Java读取基线43a8e000提供固定结果段与真实终态查询，
+需要补上请求容量、共享补读和独立响应游标。pi4af9的本地Agent循环没有此跨实例登记机制。</p>
+<h2>Decision</h2><p>按实际响应预留容量，按完整执行目标和读取模式共享查询；查询领取附唯一claimId。
+同目标等待组被替换后，旧查询不再投递、关闭或释放新组。查询及响应回调在登记锁外执行。</p>
+<h2>选项与理由</h2><p>仅按去重目标限制容量会让多个同目标响应绕过上限；仅按组键校验无法隔离迟到查询。
+选择响应计数、目标查询合并与领取身份三者组合。周期检查保证兜底，本机提交通知缩短可见延迟且有界。</p>
+<h2>Consequences</h2><p>查询数和等待响应资源受控，响应关闭不影响已接受执行。增加登记状态和失败退避，调用方必须在接受前预留、
+排好完整回执后绑定，并将实际断连接回释放动作。HTTP接线与流去重由后续集成验收。</p>
+<p>无新依赖、凭据持久化、Redis或实例间转发。默认配置和测试限制记录在关联设计。</p>
+<h2>Validation</h2><p>回归验证容量、独立游标、查询合并、并发领取、退避与过期结果隔离；精确结果读取沿用ADR0083。</p>
+<h2>Related</h2><p><a href="../designs/runtime-result-waiting/README.md">实现设计与验证</a> ·
+<a href="../designs/runtime-result-waiting/diagram.puml#L1">PlantUML源码</a> ·
+<a href="0083-read-fixed-execution-results.html">固定结果读取</a></p>
+<h2>版本历史</h2><p>1.0.0 · 2026-09-08：有界响应登记及过期领取隔离。</p>
+</main></body></html>

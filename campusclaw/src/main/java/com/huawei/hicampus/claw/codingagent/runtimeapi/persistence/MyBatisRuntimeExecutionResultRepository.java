@@ -33,7 +33,7 @@ public class MyBatisRuntimeExecutionResultRepository implements RuntimeExecution
     }
 
     @Override
-    @Transactional(readOnly = true)
+    @Transactional(readOnly = true, timeoutString = "${campusclaw.runtime.events.result-query-timeout-seconds:2}")
     public Optional<SegmentEventBatchDTO> readSegmentEvents(ExecutionTargetDTO target, long afterSeq, int limit) {
         requireTarget(target);
         if (afterSeq < 0 || limit < 1) {
@@ -53,7 +53,7 @@ public class MyBatisRuntimeExecutionResultRepository implements RuntimeExecution
     }
 
     @Override
-    @Transactional(readOnly = true)
+    @Transactional(readOnly = true, timeoutString = "${campusclaw.runtime.events.result-query-timeout-seconds:2}")
     public Optional<CommittedEventDTO> findExecutionTerminal(ExecutionTargetDTO target) {
         requireTarget(target);
         return Optional.ofNullable(mapper.findExecutionTerminal(
