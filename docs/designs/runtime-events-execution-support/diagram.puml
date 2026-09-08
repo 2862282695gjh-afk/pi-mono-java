@@ -1,0 +1,32 @@
+@startuml execution_confirmation_state
+' Java baseline: 2bdcdcb2; implementation: b9075a90 from 46ad4d89.
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/runtime/RuntimeActiveExecution.java#claimAndResumeToolConfirmation,#cancelToolConfirmation.
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/runtime/RuntimeToolPermissionPolicy.java#from,#decide.
+' Pi baseline: 4af9d21d3b4d664e4a29fcabfec85171077248e3.
+' Pi source: packages/agent/src/agent-loop.ts#prepareToolCall.
+' Java divergence: durable confirmation identity and trusted Mate permission snapshot.
+' Design reason: preserve one execution while changing the accepted result segment.
+title Local execution confirmation state
+start
+:Read trusted runtime permission;
+if (Permission?) then (allow)
+  :Continue existing tool pipeline;
+elseif (Permission?) then (deny)
+  :Return stable denial;
+else (ask)
+  :Install pending Tool Call Future;
+  :Wait for accepted database decision;
+  if (Exact execution and Tool Call match?) then (yes)
+    :Claim decision and switch segment under monitor;
+    :Select local output or persistence-only output;
+    :Complete Future outside monitor;
+  else (no)
+    :Keep pending state;
+  endif
+endif
+note right
+  The HTTP coordinator installs the handler later.
+  Cancellation clears and fails the pending Future.
+end note
+stop
+@enduml
