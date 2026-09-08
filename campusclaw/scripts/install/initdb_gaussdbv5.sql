@@ -180,6 +180,58 @@ CREATE UNIQUE INDEX idx_t_session_execution_segment_events_seq
 ALTER TABLE t_session_execution_segment_events
     ADD CONSTRAINT ck_t_session_execution_segment_events_seq CHECK (event_seq > 0);
 
+DROP TABLE IF EXISTS t_session_tool_confirmations;
+CREATE TABLE t_session_tool_confirmations (
+    session_id           VARCHAR(128)   NOT NULL,
+    execution_id         VARCHAR(128)   NOT NULL,
+    confirmation_event_id VARCHAR(128)  NOT NULL,
+    previous_segment_id  VARCHAR(128)   NOT NULL,
+    segment_id           VARCHAR(128)   NOT NULL,
+    tool_call_id         TEXT           NOT NULL,
+    result               VARCHAR(8)     NOT NULL,
+    deny_message         TEXT,
+    state                VARCHAR(16)    NOT NULL,
+    created_at           TIMESTAMPTZ(3) NOT NULL,
+    claimed_at           TIMESTAMPTZ(3),
+    completed_at         TIMESTAMPTZ(3),
+    PRIMARY KEY (session_id, confirmation_event_id)
+);
+
+COMMENT ON TABLE t_session_tool_confirmations IS '工具确认决定表，由原执行实例至多消费一次';
+COMMENT ON COLUMN t_session_tool_confirmations.session_id IS '确认决定所属的 Session 标识';
+COMMENT ON COLUMN t_session_tool_confirmations.execution_id IS '确认决定所属的固定根执行标识';
+COMMENT ON COLUMN t_session_tool_confirmations.confirmation_event_id IS 'user.tool_confirmation 的公共 eventId';
+COMMENT ON COLUMN t_session_tool_confirmations.previous_segment_id IS '进入确认等待时已经关闭的结果段标识';
+COMMENT ON COLUMN t_session_tool_confirmations.segment_id IS '本次确认续跑使用的新结果段标识';
+COMMENT ON COLUMN t_session_tool_confirmations.tool_call_id IS '原始 Tool Call 标识，不限制提供商长度';
+COMMENT ON COLUMN t_session_tool_confirmations.result IS '确认决定：allow 或 deny';
+COMMENT ON COLUMN t_session_tool_confirmations.deny_message IS '拒绝决定携带的可选用户说明；允许决定时为空';
+COMMENT ON COLUMN t_session_tool_confirmations.state IS '一次消费状态：PENDING、CLAIMED 或 COMPLETED';
+COMMENT ON COLUMN t_session_tool_confirmations.created_at IS '确认决定与回执提交的时间';
+COMMENT ON COLUMN t_session_tool_confirmations.claimed_at IS '原执行实例取得决定的时间';
+COMMENT ON COLUMN t_session_tool_confirmations.completed_at IS '原执行实例完成决定处理的时间';
+
+CREATE UNIQUE INDEX idx_t_session_tool_confirmations_segment
+    ON t_session_tool_confirmations (session_id, execution_id, segment_id);
+
+CREATE INDEX idx_t_session_tool_confirmations_pending
+    ON t_session_tool_confirmations (session_id, execution_id, state, created_at);
+
+ALTER TABLE t_session_tool_confirmations
+    ADD CONSTRAINT ck_t_session_tool_confirmations_result CHECK (result IN ('allow', 'deny'));
+
+ALTER TABLE t_session_tool_confirmations
+    ADD CONSTRAINT ck_t_session_tool_confirmations_state CHECK (state IN ('PENDING', 'CLAIMED', 'COMPLETED'));
+
+ALTER TABLE t_session_tool_confirmations
+    ADD CONSTRAINT ck_t_session_tool_confirmations_message CHECK (result = 'deny' OR deny_message IS NULL);
+
+ALTER TABLE t_session_tool_confirmations
+    ADD CONSTRAINT ck_t_session_tool_confirmations_claim
+    CHECK ((state = 'PENDING' AND claimed_at IS NULL AND completed_at IS NULL)
+        OR (state = 'CLAIMED' AND claimed_at IS NOT NULL AND completed_at IS NULL)
+        OR (state = 'COMPLETED' AND claimed_at IS NOT NULL AND completed_at IS NOT NULL));
+
 DROP TABLE IF EXISTS t_session_tombstone;
 CREATE TABLE t_session_tombstone (
     session_id  VARCHAR(128)   PRIMARY KEY,

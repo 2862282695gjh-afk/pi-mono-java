@@ -403,6 +403,11 @@
         WHERE session_id = #{sessionId}
     </delete>
 
+    <delete id="deleteToolConfirmations">
+        DELETE FROM t_session_tool_confirmations
+        WHERE session_id = #{sessionId}
+    </delete>
+
     <delete id="deleteExecutionSegments">
         DELETE FROM t_session_execution_segments
         WHERE session_id = #{sessionId}

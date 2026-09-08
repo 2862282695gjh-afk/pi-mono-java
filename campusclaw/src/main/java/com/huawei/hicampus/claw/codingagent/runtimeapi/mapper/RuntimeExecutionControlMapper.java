@@ -10,6 +10,7 @@ import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.CommittedTerminalDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.ExecutionSegmentDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.ExecutionStateDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.ExecutionTargetDTO;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.ToolConfirmationDecisionDTO;
 
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
@@ -70,6 +71,38 @@ public interface RuntimeExecutionControlMapper {
             @Param("segmentId") String segmentId,
             @Param("stopEventId") String stopEventId,
             @Param("updatedAt") OffsetDateTime updatedAt);
+
+    int nextSegmentOrdinal(@Param("sessionId") String sessionId, @Param("executionId") String executionId);
+
+    int insertConfirmation(ToolConfirmationDecisionDTO decision);
+
+    int resumeAfterConfirmation(
+            @Param("sessionId") String sessionId,
+            @Param("executionId") String executionId,
+            @Param("previousSegmentId") String previousSegmentId,
+            @Param("segmentId") String segmentId,
+            @Param("toolCallId") String toolCallId,
+            @Param("updatedAt") OffsetDateTime updatedAt);
+
+    int claimConfirmation(
+            @Param("sessionId") String sessionId,
+            @Param("executionId") String executionId,
+            @Param("rootEventId") String rootEventId,
+            @Param("previousSegmentId") String previousSegmentId,
+            @Param("toolCallId") String toolCallId,
+            @Param("claimedAt") OffsetDateTime claimedAt);
+
+    ToolConfirmationDecisionDTO findClaimedConfirmation(
+            @Param("sessionId") String sessionId,
+            @Param("executionId") String executionId,
+            @Param("previousSegmentId") String previousSegmentId,
+            @Param("toolCallId") String toolCallId);
+
+    int acknowledgeConfirmation(
+            @Param("sessionId") String sessionId,
+            @Param("executionId") String executionId,
+            @Param("confirmationEventId") String confirmationEventId,
+            @Param("completedAt") OffsetDateTime completedAt);
 
     int markTerminal(
             @Param("sessionId") String sessionId,
