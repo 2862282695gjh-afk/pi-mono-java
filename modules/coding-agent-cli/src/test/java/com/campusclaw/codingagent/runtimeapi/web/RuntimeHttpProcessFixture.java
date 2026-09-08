@@ -138,6 +138,7 @@ final class RuntimeHttpProcessFixture {
         manifest.put("id", SKILL_ID);
         manifest.put("name", SKILL_NAME);
         manifest.put("version", "1");
+        manifest.putArray("bindingTools");
         Files.writeString(skillDirectory.resolve("skill.json"), manifest.toString(), StandardCharsets.UTF_8);
         Files.writeString(
                 skillDirectory.resolve("SKILL.md"),
@@ -157,6 +158,7 @@ final class RuntimeHttpProcessFixture {
         settings.put("schemaVersion", 1);
         settings.put("defaultModel", MODEL_ID);
         settings.putArray("bindingModels").add(MODEL_ID).add(SECOND_MODEL_ID);
+        settings.putArray("bindingTools");
         return settings.toString();
     }
 

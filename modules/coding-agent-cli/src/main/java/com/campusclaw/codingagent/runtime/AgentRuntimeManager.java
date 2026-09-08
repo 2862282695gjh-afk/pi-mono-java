@@ -26,6 +26,7 @@ import java.util.regex.Pattern;
 
 import com.campusclaw.codingagent.runtime.MateServiceClient.AgentReference;
 import com.campusclaw.codingagent.runtime.MateServiceClient.AgentRuntime;
+import com.campusclaw.codingagent.runtime.MateServiceClient.BoundTool;
 import com.campusclaw.codingagent.runtime.MateServiceClient.DependentSkill;
 import com.campusclaw.codingagent.runtime.MateServiceClient.SkillFile;
 import com.campusclaw.codingagent.runtime.MateServiceClient.SkillInfo;
@@ -200,7 +201,7 @@ public class AgentRuntimeManager {
             Files.createDirectories(skillDirectory.resolve("templates"));
             writeJson(
                     skillDirectory.resolve(ClawConstants.Skill.MANIFEST_FILE_NAME),
-                    new SkillManifest(SCHEMA_VERSION, skill.id(), skill.name(), skill.version()));
+                    new SkillManifest(SCHEMA_VERSION, skill.id(), skill.name(), skill.version(), skill.bindingTools()));
             Path skillFile = skillDirectory.resolve(ClawConstants.Skill.MARKDOWN_FILE_NAME);
             writeFile(skillFile, skill.content());
             requireSessionLoadable(skill.name(), skillFile);
@@ -342,8 +343,10 @@ public class AgentRuntimeManager {
         }
         SkillManifest manifest =
                 readJson(directory.resolve(ClawConstants.Skill.MANIFEST_FILE_NAME), SkillManifest.class);
-        if (manifest.schemaVersion() != SCHEMA_VERSION
-                || !directory.getFileName().toString().equals(manifest.name())) {
+        if (manifest.schemaVersion() != SCHEMA_VERSION || manifest.bindingTools() == null) {
+            throw new IOException("Skill manifest is incomplete");
+        }
+        if (!directory.getFileName().toString().equals(manifest.name())) {
             throw new IOException("Skill name does not match its path");
         }
         Path skillFile = directory.resolve(ClawConstants.Skill.MARKDOWN_FILE_NAME);
@@ -359,7 +362,7 @@ public class AgentRuntimeManager {
                 loaded.description(),
                 null,
                 skillMarkdown,
-                List.of(),
+                manifest.bindingTools(),
                 List.<DependentSkill>of(),
                 List.of(),
                 List.of());
@@ -481,7 +484,10 @@ public class AgentRuntimeManager {
                 || !matches(runtime.id(), ClawConstants.Agent.ID_PATTERN)) {
             throw new AgentRuntimeException("Mate returned an invalid Agent identity");
         }
-        if (!isSafeName(runtime.name()) || isBlank(runtime.version()) || !validModels(runtime.bindingModels())) {
+        if (!isSafeName(runtime.name())
+                || isBlank(runtime.version())
+                || !validModels(runtime.bindingModels())
+                || !validToolBindings(runtime.bindingTools())) {
             throw new AgentRuntimeException("Mate returned invalid Agent metadata");
         }
         runtime.bindingSkills().forEach(AgentRuntimeManager::requireValidSkillReference);
@@ -496,7 +502,7 @@ public class AgentRuntimeManager {
         if (isBlank(reference.version()) || !reference.version().equals(skill.version())) {
             throw new AgentRuntimeException("Mate returned a different Skill version");
         }
-        if (!isSafeName(skill.name()) || isBlank(skill.version())) {
+        if (!isSafeName(skill.name()) || isBlank(skill.version()) || !validToolBindings(skill.bindingTools())) {
             throw new AgentRuntimeException("Mate returned invalid Skill metadata");
         }
     }
@@ -534,6 +540,7 @@ public class AgentRuntimeManager {
         return settings != null
                 && settings.schemaVersion() == SCHEMA_VERSION
                 && validModels(settings.bindingModels())
+                && validToolBindings(settings.bindingTools())
                 && validDefaultModel(settings);
     }
 
@@ -552,7 +559,8 @@ public class AgentRuntimeManager {
         return skill != null
                 && matches(skill.id(), ClawConstants.Skill.ID_PATTERN)
                 && isSafeName(skill.name())
-                && !isBlank(skill.version());
+                && !isBlank(skill.version())
+                && validToolBindings(skill.bindingTools());
     }
 
     private static boolean validCachedChild(AgentReference child) {
@@ -572,6 +580,10 @@ public class AgentRuntimeManager {
             }
         }
         return true;
+    }
+
+    private static boolean validToolBindings(List<BoundTool> tools) {
+        return tools != null && tools.stream().allMatch(java.util.Objects::nonNull);
     }
 
     private static void requireSafeUniqueName(String name, Set<String> names, String type) {
@@ -642,7 +654,7 @@ public class AgentRuntimeManager {
 
     private static AgentSettings toSettings(AgentRuntime runtime) {
         String defaultModel = runtime.defaultModel().orElse(null);
-        return new AgentSettings(SCHEMA_VERSION, defaultModel, runtime.bindingModels());
+        return new AgentSettings(SCHEMA_VERSION, defaultModel, runtime.bindingModels(), runtime.bindingTools());
     }
 
     private static AgentRuntime toRuntime(
@@ -657,7 +669,7 @@ public class AgentRuntimeManager {
         return new AgentRuntime(
                 settings.bindingModels(),
                 skillReferences,
-                List.of(),
+                settings.bindingTools(),
                 children,
                 identity.description(),
                 identity.displayName(),
@@ -726,9 +738,11 @@ public class AgentRuntimeManager {
             Boolean enabled,
             @JsonDeserialize(contentUsing = AgentMetadataTextDeserializer.class) List<String> userCases) {}
 
-    private record AgentSettings(int schemaVersion, String defaultModel, List<String> bindingModels) {
+    private record AgentSettings(
+            int schemaVersion, String defaultModel, List<String> bindingModels, List<BoundTool> bindingTools) {
         private AgentSettings {
             bindingModels = bindingModels == null ? List.of() : List.copyOf(bindingModels);
+            bindingTools = bindingTools == null ? null : List.copyOf(bindingTools);
         }
     }
 
@@ -741,7 +755,12 @@ public class AgentRuntimeManager {
             String version,
             Boolean enabled) {}
 
-    private record SkillManifest(int schemaVersion, String id, String name, String version) {}
+    private record SkillManifest(
+            int schemaVersion, String id, String name, String version, List<BoundTool> bindingTools) {
+        private SkillManifest {
+            bindingTools = bindingTools == null ? null : List.copyOf(bindingTools);
+        }
+    }
 
     @FunctionalInterface
     private interface SupplierWithException<T> {
