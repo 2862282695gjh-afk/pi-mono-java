@@ -98,6 +98,15 @@
         )
     </insert>
 
+    <insert id="insertCommittedEvent" parameterType="com.campusclaw.codingagent.runtimeapi.dto.CommittedEventDTO">
+        INSERT INTO t_session_events (
+            session_id, event_id, event_seq, anchor_entry_id, type, created_at, payload
+        ) VALUES (
+            #{sessionId}, #{eventId}, #{eventSeq}, #{anchorEntryId},
+            #{type}, #{createdAt}, CAST(#{payload} AS JSONB)
+        )
+    </insert>
+
     <update id="incrementMessageCount">
         UPDATE t_session_stats
         SET message_count = message_count + 1
@@ -305,6 +314,11 @@
 
     <delete id="deleteExecutions">
         DELETE FROM t_session_executions
+        WHERE session_id = #{sessionId}
+    </delete>
+
+    <delete id="deleteCommittedEvents">
+        DELETE FROM t_session_events
         WHERE session_id = #{sessionId}
     </delete>
 
