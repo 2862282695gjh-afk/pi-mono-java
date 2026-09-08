@@ -1,0 +1,39 @@
+@startuml agent_tool_permission_cache
+title Managed Runtime Tool Permission Cache
+' Source baseline: pi-mono-java@80ca6cc96d35fef2aa86bbd032a980945db4ecbd.
+' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtime/MateServiceClient.java AgentRuntime, SkillInfo, BoundTool.
+' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtime/AgentRuntimeManager.java writeSkills, loadSkill, toSettings, toRuntime, validSettings, validCachedSkill.
+' Implementation commit: pi-mono-java@2b76bbf9.
+' Pi baseline: pi-mono@4af9d21d3b4d664e4a29fcabfec85171077248e3 has no matching managed permission cache.
+' Observed behavior: the source baseline discarded Agent and Skill bindingTools while writing and loading the managed snapshot.
+' Security hardening: missing permission fields invalidate the snapshot, while explicit empty arrays remain valid.
+' Design reason: a trusted fixed permission snapshot must survive publication, cache hits, and process restarts.
+
+actor Mate
+participant AgentRuntimeManager as Manager
+database "Staging directory" as Staging
+database "Published directory" as Cache
+participant PreparedAgentRuntime as Prepared
+participant "Permission policy" as Policy
+
+Mate -> Manager: AgentRuntime and SkillInfo\nwith bindingTools
+Manager -> Staging: Write settings.json\nand skill.json arrays
+Manager -> Staging: Validate complete snapshot
+Manager -> Cache: Atomic publish
+
+Manager -> Cache: Read managed snapshot
+alt bindingTools field is missing or invalid
+    Cache --> Manager: Incomplete snapshot
+    Manager --> Manager: prepareCached returns empty
+    Manager -> Mate: prepare refetches snapshot
+else bindingTools is present, including empty array
+    Cache --> Manager: Complete snapshot
+    Manager -> Prepared: Restore exact BoundTool records
+    Prepared -> Policy: Fixed Agent and Skill permissions
+    note right of Policy
+      ASK requires an explicit trusted value.
+      Unknown or conflicting values are DENY.
+      Tool schemas are not cached here.
+    end note
+end
+@enduml
