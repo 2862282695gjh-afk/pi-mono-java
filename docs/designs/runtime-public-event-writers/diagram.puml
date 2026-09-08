@@ -1,8 +1,8 @@
 @startuml configuration_event_write
 title Atomic Configuration Public Event Write
 ' Contract baseline: pi-mono-java-design 2ee2a3211da68ad87b0d9cab353e691b00bdaebd
-' Java baseline: pi-mono-java f5c3a755
-' Implementation commits: 1120583b, f818a41f, 2dd80793, d14e706d
+' Java baseline before cleanup: pi-mono-java 48aac44a
+' Cleanup implementation: bfaedc7e
 ' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/web/RuntimeSessionConfigurationController.java
 ' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/service/command/SessionModelConfigurationService.java#update
 ' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/service/command/SessionThinkingConfigurationService.java#change
@@ -32,6 +32,10 @@ command -> service : execute model or thinking
 reconciler -> repository : updateModel with eventFactory
 service -> repository : updateModel/updateThinking with eventFactory
 activate repository
+note over repository,factory
+The only configuration update port requires eventFactory.
+No Entry-only overload remains in the first release.
+end note
 repository -> sessions : lock and recheck state/version
 alt missing, busy, stale, or unchanged
   repository --> service : status without event writes
@@ -57,7 +61,7 @@ Any failure rolls the transaction back.
 end note
 
 note over events
-Events HTTP switching and execution lifecycle
-integration are delivered in separate slices.
+The HTTP response contract is unchanged.
+GET reads these committed public events.
 end note
 @enduml
