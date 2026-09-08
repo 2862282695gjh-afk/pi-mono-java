@@ -73,9 +73,9 @@ interrupt 使用 `EXECUTION_TERMINAL`，只交付根执行最终 `session.status
 
 ## 测试与验证
 
-聚焦命令选择 6 个测试类，共 33 项：`RuntimeV2ControlEventServiceTest` 5 项、`RuntimeEventStreamTest` 10 项、
+聚焦命令选择 6 个测试类，共 38 项：`RuntimeV2ControlEventServiceTest` 5 项、`RuntimeEventStreamTest` 10 项、
 `RuntimeCommittedEventFactoryTest` 7 项、`RuntimeResultWaitRegistryTest` 4 项、
-`RuntimeResultPollingServiceTest` 4 项和 Message 流回归 3 项。覆盖：
+`RuntimeResultPollingServiceTest` 4 项和 Message 流回归 8 项。覆盖：
 
 - waiter 容量、预编码异常和事务失败均立即释放预留且不产生旁路写入；
 - 回执先行、事务后绑定、提交后通知和断线一次清理；
@@ -83,7 +83,7 @@ interrupt 使用 `EXECUTION_TERMINAL`，只交付根执行最终 `session.status
 - data-only 必需帧可以淘汰 preview，完整帧超限时关闭响应；
 - 同目标等待去重、逐响应游标、超时、失败退避和异步快通知。
 
-33 项是 Control 与直接依赖的单元验证，不是 Controller 或跨 JVM HTTP 验收。Maven 测试同时执行 Checkstyle；
+38 项是 Control 与直接依赖的单元验证，不是 Controller 或跨 JVM HTTP 验收。Maven 测试同时执行 Checkstyle；
 `spotless:check` 和 `git diff --check` 通过。企业镜像由发布集成统一生成，本片没有独立验证企业
 `NativeParent` 编译。
 

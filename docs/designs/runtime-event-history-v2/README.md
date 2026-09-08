@@ -2,11 +2,12 @@
 
 | 属性 | 值 |
 |---|---|
-| 版本 | 1.0.0 |
+| 版本 | 1.1.0 |
 | 日期 | 2026-09-08 |
 | 契约基线 | `pi-mono-java-design@2ee2a3211da68ad87b0d9cab353e691b00bdaebd` |
-| 实现基线 | `pi-mono-java@17f91e20` |
+| 实现基线 | `pi-mono-java@69b8ced3` |
 | 首版清理提交 | `45d7ece9` |
+| 退休类型收紧提交 | `ab0f2637` |
 | 当前范围 | 全新安装的权威公共事件、精确完整性门禁与整数分页；不包含旧版本升级或存量数据迁移 |
 
 ## Context
@@ -30,9 +31,10 @@ Events v2 要求 POST 的完整 SSE 帧与 GET 历史使用同一公共事件，
 | 已实现 | `java/com/campusclaw/codingagent/runtimeapi/event/CommittedEventProjection.java#project` | 将已提交 DTO 严格投影为类型化只读 Response VO；GET 不重新翻译已保存文本 |
 | 已实现 | `java/com/campusclaw/codingagent/runtimeapi/persistence/MyBatisRuntimeSessionRepository.java#appendEntryWithUsage` | 在同一 Spring 事务写 Entry、Usage、公共事件、完整性标记和共享序号 |
 | 已实现 | `java/com/campusclaw/codingagent/runtimeapi/persistence/MyBatisRuntimeSessionRepository.java#findEventPage` | 在一个 `REPEATABLE_READ` 事务内固定当前分支、核验完整性并读取数字页 |
-| 已实现 | `resources/mapper/session/RuntimeSessionMapper.xml#countUnmappedCurrentBranchEntries` | 未知类型、缺标记、数量不符和不允许的公开/私有数量均关闭失败 |
+| 已实现 | `resources/mapper/session/RuntimeSessionMapper.xml#countUnmappedCurrentBranchEntries` | 未知或已退休类型、缺标记、数量不符和不允许的公开/私有数量均关闭失败；零事件标记不能重新放行退休类型 |
 | 已删除 | `resources/db/gaussdb/upgrade/` | `45d7ece9` 删除升级 schema/data/verify、迁移回归与运行手册；当前首版不支持升级 |
 | 待 Events 集成线统一接入 | `java/com/campusclaw/codingagent/runtimeapi/web/RuntimeEventController.java` | HTTP 切换须与全部公共写入点一同交付；本次首版范围清理不单独切换 Controller |
+| 清理依据 | `RuntimeEventProjector`、`RuntimeTerminalEventFactory` 与 `e866db6b` | 该源码基线旧类只把八个旧名称用于瞬时 SSE，没有相应的 Entry 持久化写入者；最终 HTTP 分支删除旧投影链后也删除对应枚举 |
 
 pi 基线 `5cd93f688aaab89dbb6dfa4aca535f21796ae185` 的
 `packages/agent/src/agent-loop.ts#runAgentLoop` 和 `#prepareToolCall` 产生消息与工具生命周期通知，
@@ -56,9 +58,16 @@ Repository 在同一个读取事务中固定 active leaf、完整性判断和事
 ## 首版写入完整性
 
 `t_session_event_projection` 为每个当前版本 Entry 保存精确公共事件数量。公开类型通常至少一条；
-连接、delta 等明确私有类型必须为零。`assistant.thinking.completed` 只有在写入时已取得可信公开摘要，
+保留的内部压缩和结构辅助类型必须为零。`assistant.thinking.completed` 只有在写入时已取得可信公开摘要，
 才写正数；已明确为私有的内容写零。`tool.execution.started` 必须映射完整 `agent.tool_call`，不能用
 零掩盖缺失的参数或确认信息。未知内部类型即使存在标记也会失败。
+
+`assistant.message.started`、`assistant.message.delta`、`assistant.thinking.started`、
+`assistant.thinking.delta`、`tool.execution.delta`、`tool.execution.completed`、`stream.end` 和
+`stream.error` 属于已退休的旧 SSE/Entry 协议名称。preview 不持久化，完整工具事件由当前内部类型承载，
+流关闭也不是权威历史事件；因此这八种类型即使手工写入 `event_count=0` 也必须关闭失败。该规则不影响
+`session.compaction.started`、`session.compaction.failed`、`leaf`、`branch_summary` 和 `label` 等仍登记的
+零事件内部记录。
 
 完整性标记与公共事件必须由当前运行时在同一事务产生。GET 对当前分支逐 Entry 校验以下条件：
 
@@ -82,8 +91,8 @@ Repository 在同一个读取事务中固定 active leaf、完整性判断和事
 ## 测试与验证
 
 既有单元测试覆盖 1/50 默认值、1/200 边界、数字 `nextPage`、空页、乘法溢出、未知公共 payload 和稳定
-错误。真实 openGauss 测试覆盖当前分支过滤、缺标记、数量不符、未知类型、工具调用缺口，以及 Thinking
-私有零事件、公开摘要一事件和缺标记三种结果。原子失败测试证明公共事件插入冲突时关联写入全部回滚，
+错误。真实 openGauss 测试覆盖当前分支过滤、缺标记、数量不符、未知类型、八种退休类型即使有零事件
+标记也失败、工具调用缺口，以及 Thinking 私有零事件、公开摘要一事件和缺标记三种结果。原子失败测试证明公共事件插入冲突时关联写入全部回滚，
 并证明写入 DTO、数据库读回和公共投影使用同一个 UTC 毫秒时间。
 
 提交 `45d7ece9` 删除全部升级脚本和迁移回归，移除 `mapping_source` 列、约束、Mapper 参数与镜像测试参数；
@@ -91,11 +100,13 @@ Repository 在同一个读取事务中固定 active leaf、完整性判断和事
 
 ## 决策与版本历史
 
-见 [ADR-0078](../../decisions/0078-authoritative-event-history.html) 和
-[ADR-0092](../../decisions/0092-first-release-authoritative-event-history.html)。
+见 [ADR-0078](../../decisions/0078-authoritative-event-history.html)、
+[ADR-0092](../../decisions/0092-first-release-authoritative-event-history.html) 和
+[ADR-0101](../../decisions/0101-reject-retired-event-entry-types.html)。
 
 | 版本 | 日期 | 变更 |
 |---|---|---|
+| 1.1.0 | 2026-09-08 | 删除八种退休 SSE/Entry 类型的零事件兼容白名单，手工标零仍关闭失败；保留当前 Compact 与结构辅助类型 |
 | 1.0.0 | 2026-09-08 | 按首版产品范围移除存量迁移，保留权威事件、原子写入、完整性门禁与数字分页 |
 | 0.1.1 | 2026-09-08 | 明确迁移独立交付边界，记录查询及运行角色权限验证 |
 | 0.1.0 | 2026-09-08 | 记录权威公共事件、整数分页、精确完整性门禁和旧历史迁移候选方案 |
