@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
+-->
+
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.campusclaw.codingagent.runtimeapi.mapper.RuntimeExecutionControlMapper">
+    <insert id="insertExecution"
+            parameterType="com.campusclaw.codingagent.runtimeapi.dto.ExecutionStateDTO">
+        INSERT INTO t_session_executions (
+            session_id, execution_id, root_event_id, state, current_segment_id,
+            created_at, updated_at
+        ) VALUES (
+            #{sessionId}, #{executionId}, #{rootEventId}, #{state}, #{currentSegmentId},
+            #{createdAt}, #{updatedAt}
+        )
+    </insert>
+
+    <insert id="insertSegment"
+            parameterType="com.campusclaw.codingagent.runtimeapi.dto.ExecutionSegmentDTO">
+        INSERT INTO t_session_execution_segments (
+            session_id, execution_id, segment_id, segment_ordinal,
+            trigger_event_id, trigger_event_seq, state, created_at, updated_at
+        ) VALUES (
+            #{sessionId}, #{executionId}, #{segmentId}, #{segmentOrdinal},
+            #{triggerEventId}, #{triggerEventSeq}, #{state}, #{createdAt}, #{updatedAt}
+        )
+    </insert>
+
+    <select id="findExecution"
+            resultType="com.campusclaw.codingagent.runtimeapi.dto.ExecutionStateDTO">
+        SELECT session_id, execution_id, root_event_id, state, current_segment_id,
+               pending_tool_call_id, stop_event_id, terminal_event_id,
+               terminal_reason, created_at, updated_at, terminal_at
+        FROM t_session_executions
+        WHERE session_id = #{sessionId}
+          AND execution_id = #{executionId}
+          AND root_event_id = #{rootEventId}
+          AND current_segment_id = #{segmentId}
+    </select>
+
+    <select id="lockExecution"
+            resultType="com.campusclaw.codingagent.runtimeapi.dto.ExecutionStateDTO">
+        SELECT session_id, execution_id, root_event_id, state, current_segment_id,
+               pending_tool_call_id, stop_event_id, terminal_event_id,
+               terminal_reason, created_at, updated_at, terminal_at
+        FROM t_session_executions
+        WHERE session_id = #{sessionId}
+          AND execution_id = #{executionId}
+        FOR UPDATE
+    </select>
+
+    <insert id="insertSegmentEvent">
+        INSERT INTO t_session_execution_segment_events (
+            session_id, execution_id, segment_id, event_id, event_seq
+        ) VALUES (
+            #{sessionId}, #{executionId}, #{segmentId}, #{eventId}, #{eventSeq}
+        )
+    </insert>
+
+    <update id="closeSegment">
+        UPDATE t_session_execution_segments
+        SET state = 'CLOSED',
+            terminal_event_id = #{terminalEventId},
+            terminal_event_seq = #{terminalEventSeq},
+            terminal_reason = #{terminalReason},
+            updated_at = #{updatedAt}
+        WHERE session_id = #{sessionId}
+          AND execution_id = #{executionId}
+          AND segment_id = #{segmentId}
+          AND state = 'OPEN'
+    </update>
+
+    <update id="markConfirming">
+        UPDATE t_session_executions
+        SET state = 'CONFIRMING',
+            pending_tool_call_id = #{toolCallId},
+            updated_at = #{updatedAt}
+        WHERE session_id = #{sessionId}
+          AND execution_id = #{executionId}
+          AND current_segment_id = #{segmentId}
+          AND state = 'RUNNING'
+          AND stop_event_id IS NULL
+    </update>
+
+    <update id="markTerminal">
+        UPDATE t_session_executions
+        SET state = 'TERMINAL',
+            pending_tool_call_id = NULL,
+            terminal_event_id = #{terminalEventId},
+            terminal_reason = #{terminalReason},
+            updated_at = #{terminalAt},
+            terminal_at = #{terminalAt}
+        WHERE session_id = #{sessionId}
+          AND execution_id = #{executionId}
+          AND current_segment_id = #{segmentId}
+          AND state IN ('RUNNING', 'CONFIRMING', 'STOPPING')
+    </update>
+</mapper>

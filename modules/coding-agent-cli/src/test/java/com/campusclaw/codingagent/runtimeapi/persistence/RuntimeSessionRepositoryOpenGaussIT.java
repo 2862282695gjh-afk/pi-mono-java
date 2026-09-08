@@ -27,6 +27,7 @@ import com.campusclaw.ai.types.Model;
 import com.campusclaw.ai.types.Usage;
 import com.campusclaw.codingagent.runtimeapi.RuntimeMessageSourceConfiguration;
 import com.campusclaw.codingagent.runtimeapi.agent.AgentDirectorySnapshotDTO;
+import com.campusclaw.codingagent.runtimeapi.dto.ExecutionTargetDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.RuntimeEntryDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.SessionConfigurationUpdateDTO;
@@ -35,6 +36,7 @@ import com.campusclaw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
 import com.campusclaw.codingagent.runtimeapi.event.RuntimeEntryCodec;
 import com.campusclaw.codingagent.runtimeapi.event.RuntimeUsageCause;
+import com.campusclaw.codingagent.runtimeapi.mapper.RuntimeExecutionControlMapper;
 import com.campusclaw.codingagent.runtimeapi.mapper.RuntimeSessionMapper;
 import com.campusclaw.codingagent.runtimeapi.model.RuntimeModelManager;
 import com.campusclaw.codingagent.runtimeapi.persistence.UserEventAcceptance.Status;
@@ -77,6 +79,8 @@ class RuntimeSessionRepositoryOpenGaussIT {
 
     private RuntimeSessionRepository repository;
 
+    private RuntimeExecutionControlRepository executionControls;
+
     private JdbcTemplate jdbcTemplate;
 
     @BeforeAll
@@ -97,11 +101,15 @@ class RuntimeSessionRepositoryOpenGaussIT {
     @BeforeEach
     void resetDatabase() {
         repository = context.getBean(RuntimeSessionRepository.class);
+        executionControls = context.getBean(RuntimeExecutionControlRepository.class);
         jdbcTemplate = context.getBean(JdbcTemplate.class);
         jdbcTemplate.update("TRUNCATE TABLE t_session_materialized");
         jdbcTemplate.update("TRUNCATE TABLE t_session_stats");
         jdbcTemplate.update("TRUNCATE TABLE t_session_records");
         jdbcTemplate.update("TRUNCATE TABLE t_session_sequences");
+        jdbcTemplate.update("TRUNCATE TABLE t_session_execution_segment_events");
+        jdbcTemplate.update("TRUNCATE TABLE t_session_execution_segments");
+        jdbcTemplate.update("TRUNCATE TABLE t_session_executions");
         jdbcTemplate.update("TRUNCATE TABLE t_session_entries");
         jdbcTemplate.update("TRUNCATE TABLE t_session_cleanup_task");
         jdbcTemplate.update("TRUNCATE TABLE t_session_tombstone");
@@ -122,6 +130,56 @@ class RuntimeSessionRepositoryOpenGaussIT {
         assertThat(count("t_session_sequences", session.getId())).isOne();
         assertThat(count("t_session_stats", session.getId())).isOne();
         assertThat(count("t_session_materialized", session.getId())).isOne();
+    }
+
+    @Test
+    void shouldPersistFixedExecutionAndCloseExpectedSegmentAsConfirming() {
+        RuntimeSessionDTO session = newSession("session_execution_segment");
+        repository.create(session);
+        RuntimeEntryDTO root = newEntry(session.getId(), "root-entry", "user.message", session.getCreatedAt(), "{}");
+        repository.acceptUserEvent(session.getId(), root, session.getCreatedAt());
+        var target = new ExecutionTargetDTO(session.getId(), "execution-1", "root-event", "segment-1");
+
+        executionControls.register(target, root.getEntrySeq(), session.getCreatedAt());
+        executionControls.linkCommittedEvent(target, "root-event", root.getEntrySeq());
+        var status = executionControls.markConfirming(
+                target,
+                "tool-call-" + "x".repeat(300),
+                "confirming-event",
+                root.getEntrySeq() + 1,
+                session.getCreatedAt().plusSeconds(1));
+
+        assertThat(status).isEqualTo(RuntimeExecutionControlRepository.TransitionStatus.APPLIED);
+        assertThat(executionControls.find(target).orElseThrow())
+                .extracting("rootEventId", "state", "currentSegmentId", "terminalEventId")
+                .containsExactly("root-event", "CONFIRMING", "segment-1", null);
+        assertThat(repository.find(session.getId()).orElseThrow().getState()).isEqualTo("running");
+        assertThat(count("t_session_execution_segment_events", session.getId())).isOne();
+    }
+
+    @Test
+    void shouldRejectStaleAndRepeatedExecutionTerminalUpdates() {
+        RuntimeSessionDTO session = newSession("session_execution_terminal");
+        repository.create(session);
+        RuntimeEntryDTO root = newEntry(session.getId(), "root-entry", "user.message", session.getCreatedAt(), "{}");
+        repository.acceptUserEvent(session.getId(), root, session.getCreatedAt());
+        var target = new ExecutionTargetDTO(session.getId(), "execution-1", "root-event", "segment-1");
+        executionControls.register(target, root.getEntrySeq(), session.getCreatedAt());
+
+        var stale = new ExecutionTargetDTO(session.getId(), "execution-1", "root-event", "old-segment");
+        assertThat(executionControls.find(stale)).isEmpty();
+        assertThat(executionControls.markTerminal(
+                        stale, "idle-stale", root.getEntrySeq() + 1, "done", session.getCreatedAt()))
+                .isEqualTo(RuntimeExecutionControlRepository.TransitionStatus.STALE_TARGET);
+        assertThat(executionControls.markTerminal(
+                        target, "idle-done", root.getEntrySeq() + 1, "done", session.getCreatedAt()))
+                .isEqualTo(RuntimeExecutionControlRepository.TransitionStatus.APPLIED);
+        assertThat(executionControls.markTerminal(
+                        target, "idle-duplicate", root.getEntrySeq() + 2, "done", session.getCreatedAt()))
+                .isEqualTo(RuntimeExecutionControlRepository.TransitionStatus.STATE_CONFLICT);
+        assertThat(executionControls.find(target).orElseThrow())
+                .extracting("state", "terminalEventId", "terminalReason")
+                .containsExactly("TERMINAL", "idle-done", "done");
     }
 
     @Test
@@ -937,7 +995,7 @@ class RuntimeSessionRepositoryOpenGaussIT {
             factory.setDataSource(dataSource);
             factory.setConfiguration(configuration);
             factory.setMapperLocations(new PathMatchingResourcePatternResolver()
-                    .getResources("classpath*:mapper/session/RuntimeSessionMapper.xml"));
+                    .getResources("classpath*:mapper/session/Runtime*Mapper.xml"));
             return factory.getObject();
         }
 
@@ -949,6 +1007,12 @@ class RuntimeSessionRepositoryOpenGaussIT {
         @Bean
         RuntimeSessionRepository runtimeSessionRepository(RuntimeSessionMapper mapper) {
             return new MyBatisRuntimeSessionRepository(mapper);
+        }
+
+        @Bean
+        RuntimeExecutionControlRepository runtimeExecutionControlRepository(
+                RuntimeExecutionControlMapper mapper, RuntimeSessionMapper sessionMapper) {
+            return new MyBatisRuntimeExecutionControlRepository(mapper, sessionMapper);
         }
 
         @Bean
