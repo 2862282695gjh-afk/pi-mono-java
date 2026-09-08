@@ -20,7 +20,9 @@ INSERT INTO t_sessions (
     ('session_cross', 'agent', 'model', 'idle', TRUE, 1, '2026-09-08T01:00:00Z', '2026-09-08T01:00:00Z', '/tmp', 'entry_cross'),
     ('session_invalid', 'agent', 'model', 'idle', TRUE, 1, '2026-09-08T01:00:00Z', '2026-09-08T01:00:00Z', '/tmp', 'entry_invalid'),
     ('session_mapping', 'agent', 'model', 'idle', TRUE, 1, '2026-09-08T01:00:00Z', '2026-09-08T01:00:00Z', '/tmp', 'entry_mapping'),
-    ('session_zero', 'agent', 'model', 'idle', TRUE, 1, '2026-09-08T01:00:00Z', '2026-09-08T01:00:00Z', '/tmp', 'entry_zero');
+    ('session_zero', 'agent', 'model', 'idle', TRUE, 1, '2026-09-08T01:00:00Z', '2026-09-08T01:00:00Z', '/tmp', 'entry_zero'),
+    ('session_existing_count', 'agent', 'model', 'idle', TRUE, 1, '2026-09-08T01:00:00Z', '2026-09-08T01:00:00Z', '/tmp', 'entry_existing_count_model'),
+    ('session_existing_mapping', 'agent', 'model', 'idle', TRUE, 1, '2026-09-08T01:00:00Z', '2026-09-08T01:00:00Z', '/tmp', 'entry_existing_mapping_model');
 
 INSERT INTO t_session_sequences (session_id, next_seq) VALUES
     ('session_good', 100),
@@ -31,7 +33,9 @@ INSERT INTO t_session_sequences (session_id, next_seq) VALUES
     ('session_cross', 600),
     ('session_invalid', 700),
     ('session_mapping', 750),
-    ('session_zero', 800);
+    ('session_zero', 800),
+    ('session_existing_count', 850),
+    ('session_existing_mapping', 900);
 
 INSERT INTO t_session_entries (session_id, id, entry_seq, parent_id, type, timestamp, payload) VALUES
     ('session_good', 'entry_good_user', 1, NULL, 'user.message', '2026-09-08T01:00:01.111Z', '{"message":"ordinary"}'),
@@ -45,7 +49,13 @@ INSERT INTO t_session_entries (session_id, id, entry_seq, parent_id, type, times
     ('session_cross', 'entry_cross', 1, NULL, 'assistant.message.completed', '2026-09-08T01:05:01Z', '{"message":"answer"}'),
     ('session_invalid', 'entry_invalid', 1, NULL, 'user.message', '2026-09-08T01:06:01Z', '{"message":"ordinary"}'),
     ('session_mapping', 'entry_mapping', 1, NULL, 'user.message', '2026-09-08T01:06:31Z', '{"message":"ordinary"}'),
-    ('session_zero', 'entry_zero', 1, NULL, 'user.message', '2026-09-08T01:07:01Z', '{"message":"ordinary"}');
+    ('session_zero', 'entry_zero', 1, NULL, 'user.message', '2026-09-08T01:07:01Z', '{"message":"ordinary"}'),
+    ('session_existing_count', 'entry_existing_count_user', 1, NULL, 'user.message', '2026-09-08T01:08:01Z', '{"message":"ordinary"}'),
+    ('session_existing_count', 'entry_existing_count_model', 2, 'entry_existing_count_user', 'session.model.changed', '2026-09-08T01:08:02Z',
+        '{"previousModelId":"model","modelId":"next","reason":"requested"}'),
+    ('session_existing_mapping', 'entry_existing_mapping_user', 1, NULL, 'user.message', '2026-09-08T01:09:01Z', '{"message":"ordinary"}'),
+    ('session_existing_mapping', 'entry_existing_mapping_model', 2, 'entry_existing_mapping_user', 'session.model.changed', '2026-09-08T01:09:02Z',
+        '{"previousModelId":"model","modelId":"next","reason":"requested"}');
 
 INSERT INTO t_session_event_migration_review (
     session_id, anchor_entry_id, event_count, mapping_reason
@@ -83,6 +93,21 @@ INSERT INTO t_session_event_migration_events (
     'session_mapping', 'entry_mapping', 1, 'event_mapping', 'agent.message', '2026-09-08T01:06:31Z',
     '{"phase":"completed","content":"wrong type","sourceEventId":"event_mapping"}'
 );
+
+INSERT INTO t_session_events (
+    session_id, event_id, event_seq, anchor_entry_id, type, created_at, payload
+) VALUES
+    ('session_existing_count', 'event_existing_count_1', 10, 'entry_existing_count_user',
+        'user.message', '2026-09-08T01:08:01Z', '{"content":[{"type":"text","text":"one"}]}'),
+    ('session_existing_count', 'event_existing_count_2', 11, 'entry_existing_count_user',
+        'user.message', '2026-09-08T01:08:01Z', '{"content":[{"type":"text","text":"two"}]}'),
+    ('session_existing_mapping', 'event_existing_mapping', 10, 'entry_existing_mapping_user',
+        'session.model_changed', '2026-09-08T01:09:01Z',
+        '{"previousModelId":"model","modelId":"next","reason":"requested"}');
+
+INSERT INTO t_session_event_projection (session_id, anchor_entry_id, event_count, mapping_source) VALUES
+    ('session_existing_count', 'entry_existing_count_user', 2, 'migration'),
+    ('session_existing_mapping', 'entry_existing_mapping_user', 1, 'migration');
 
 \ir ../V1_to_V2__data.sql
 
@@ -122,6 +147,15 @@ BEGIN
         RAISE EXCEPTION 'Events v2 fail-closed migration regression failed';
     END IF;
 
+    IF (SELECT COUNT(1) FROM t_session_events WHERE session_id = 'session_existing_count') != 2
+            OR (SELECT COUNT(1) FROM t_session_event_projection
+                WHERE session_id = 'session_existing_count') != 1
+            OR (SELECT COUNT(1) FROM t_session_events WHERE session_id = 'session_existing_mapping') != 1
+            OR (SELECT COUNT(1) FROM t_session_event_projection
+                WHERE session_id = 'session_existing_mapping') != 1 THEN
+        RAISE EXCEPTION 'Events v2 existing mapping fail-closed regression failed';
+    END IF;
+
     IF NOT EXISTS (
         SELECT 1 FROM f_session_event_migration_gaps()
         WHERE session_id = 'session_unknown' AND gap_reason = 'UNKNOWN_ENTRY_TYPE'
@@ -140,6 +174,12 @@ BEGIN
     ) OR NOT EXISTS (
         SELECT 1 FROM f_session_event_migration_gaps()
         WHERE session_id = 'session_zero' AND gap_reason = 'INVALID_REVIEW_COUNT'
+    ) OR NOT EXISTS (
+        SELECT 1 FROM f_session_event_migration_gaps()
+        WHERE session_id = 'session_existing_count' AND gap_reason = 'INVALID_MAPPING_COUNT'
+    ) OR NOT EXISTS (
+        SELECT 1 FROM f_session_event_migration_gaps()
+        WHERE session_id = 'session_existing_mapping' AND gap_reason = 'INVALID_EVENT_MAPPING'
     ) THEN
         RAISE EXCEPTION 'Events v2 fixed migration gap regression failed';
     END IF;

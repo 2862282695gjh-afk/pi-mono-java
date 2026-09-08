@@ -262,6 +262,14 @@ LEFT JOIN t_tmp_session_event_decisions decision
 WHERE decision.anchor_entry_id IS NULL;
 
 INSERT INTO t_tmp_session_event_migration_issues
+SELECT DISTINCT decision.session_id, 'INVALID_MAPPING_COUNT'
+FROM t_tmp_session_event_decisions decision
+JOIN t_session_entries entry
+  ON entry.session_id = decision.session_id
+ AND entry.id = decision.anchor_entry_id
+WHERE f_session_event_mapping_count_valid(entry.type, decision.event_count) IS NOT TRUE;
+
+INSERT INTO t_tmp_session_event_migration_issues
 SELECT DISTINCT projection.session_id, 'EVENT_COUNT_MISMATCH'
 FROM t_session_event_projection projection
 LEFT JOIN t_session_events event
@@ -338,6 +346,14 @@ INSERT INTO t_tmp_session_event_migration_issues
 SELECT DISTINCT event.session_id, 'INVALID_PUBLIC_PAYLOAD'
 FROM t_tmp_session_all_public_events event
 WHERE f_validate_session_event_v2(event.type, event.payload) IS NOT TRUE;
+
+INSERT INTO t_tmp_session_event_migration_issues
+SELECT DISTINCT event.session_id, 'INVALID_EVENT_MAPPING'
+FROM t_tmp_session_all_public_events event
+JOIN t_session_entries entry
+  ON entry.session_id = event.session_id
+ AND entry.id = event.anchor_entry_id
+WHERE f_session_event_mapping_type_valid(entry.type, event.type) IS NOT TRUE;
 
 INSERT INTO t_tmp_session_event_migration_issues
 SELECT DISTINCT event.session_id, 'SOURCE_EVENT_MISSING'

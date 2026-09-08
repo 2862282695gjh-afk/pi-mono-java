@@ -424,11 +424,18 @@ AS $$
             'tool.execution.started', 'tool.result', 'session.model.changed',
             'session.thinking.changed', 'session.compaction.completed', 'session.status.idle'
         ) THEN event_count = 1
+        WHEN entry_type IN (
+            'assistant.message.started', 'assistant.message.delta',
+            'assistant.thinking.started', 'assistant.thinking.delta',
+            'tool.execution.delta', 'tool.execution.completed',
+            'session.compaction.started', 'session.compaction.failed',
+            'stream.end', 'stream.error', 'leaf', 'branch_summary', 'label'
+        ) THEN event_count = 0
         ELSE FALSE
     END, FALSE);
 $$;
 
-COMMENT ON FUNCTION f_session_event_mapping_count_valid(VARCHAR, INTEGER) IS '校验旧 Entry 审核映射所需的精确公共事件数量';
+COMMENT ON FUNCTION f_session_event_mapping_count_valid(VARCHAR, INTEGER) IS '校验旧 Entry 公共事件映射允许的精确数量';
 
 CREATE OR REPLACE FUNCTION f_session_event_mapping_type_valid(entry_type VARCHAR, event_type VARCHAR)
 RETURNS BOOLEAN
@@ -494,6 +501,8 @@ WITH event_counts AS (
                    'session.compaction.started', 'session.compaction.failed',
                    'stream.end', 'stream.error', 'leaf', 'branch_summary', 'label'
                ) AND projection.event_count != 0 THEN 'PRIVATE_ENTRY_HAS_EVENT'
+               WHEN f_session_event_mapping_count_valid(entry.type, projection.event_count) IS NOT TRUE
+                   THEN 'INVALID_MAPPING_COUNT'
            END AS gap_reason
     FROM t_session_entries entry
     LEFT JOIN t_session_event_projection projection
@@ -586,7 +595,7 @@ WHERE review.anchor_entry_id IS NOT NULL
 UNION ALL
 
 SELECT event.session_id, event.anchor_entry_id, entry.type, 'INVALID_EVENT_MAPPING'
-FROM t_session_event_migration_events event
+FROM all_reviewed_events event
 JOIN t_session_entries entry
   ON entry.session_id = event.session_id
  AND entry.id = event.anchor_entry_id
