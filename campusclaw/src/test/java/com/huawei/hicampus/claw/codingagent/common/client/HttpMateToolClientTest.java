@@ -394,6 +394,29 @@ class HttpMateToolClientTest {
     }
 
     @Test
+    void shouldPreserveResultJsonKindsWhenInvokingTool() {
+        server.enqueue(json("{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":\"plain text\"}"));
+        server.enqueue(json("{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":{\"answer\":42}}"));
+        server.enqueue(json("{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":[\"first\",2]}"));
+        server.enqueue(json("{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":null}"));
+        MateCredentials credentials = MateCredentials.appKey("hw-id-1", "key-1", "access-token-1");
+
+        MateToolClient.ToolResult text =
+                client.callTool("tool-11111111111111111111111111111111", java.util.Map.of(), credentials);
+        MateToolClient.ToolResult object =
+                client.callTool("tool-11111111111111111111111111111111", java.util.Map.of(), credentials);
+        MateToolClient.ToolResult array =
+                client.callTool("tool-11111111111111111111111111111111", java.util.Map.of(), credentials);
+        MateToolClient.ToolResult empty =
+                client.callTool("tool-11111111111111111111111111111111", java.util.Map.of(), credentials);
+
+        assertThat(text.content()).isEqualTo("plain text");
+        assertThat(object.content()).isEqualTo("{\"answer\":42}");
+        assertThat(array.content()).isEqualTo("[\"first\",2]");
+        assertThat(empty.content()).isEmpty();
+    }
+
+    @Test
     void invokeToolWithBlankCredentialsIsRefusedBeforeRequest() {
         for (MateCredentials bad : new MateCredentials[] {
             new MateCredentials(null, null, null, null),

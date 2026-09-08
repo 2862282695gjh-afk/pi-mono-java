@@ -95,8 +95,15 @@ public sealed interface AssistantMessageEvent
      * A new thinking content block begins at the given index.
      */
     record ThinkingStartEvent(
-            @JsonProperty("contentIndex") int contentIndex, @JsonProperty("partial") AssistantMessage partial)
-            implements AssistantMessageEvent {}
+            @JsonProperty("contentIndex") int contentIndex,
+            @JsonProperty("partial") AssistantMessage partial,
+            @JsonProperty("publicSummary") boolean publicSummary)
+            implements AssistantMessageEvent {
+
+        public ThinkingStartEvent(int contentIndex, AssistantMessage partial) {
+            this(contentIndex, partial, false);
+        }
+    }
 
     /**
      * Incremental thinking content delta.
@@ -104,8 +111,14 @@ public sealed interface AssistantMessageEvent
     record ThinkingDeltaEvent(
             @JsonProperty("contentIndex") int contentIndex,
             @JsonProperty("delta") String delta,
-            @JsonProperty("partial") AssistantMessage partial)
-            implements AssistantMessageEvent {}
+            @JsonProperty("partial") AssistantMessage partial,
+            @JsonProperty("publicSummary") boolean publicSummary)
+            implements AssistantMessageEvent {
+
+        public ThinkingDeltaEvent(int contentIndex, String delta, AssistantMessage partial) {
+            this(contentIndex, delta, partial, false);
+        }
+    }
 
     /**
      * Thinking content block at the given index is complete.
@@ -113,8 +126,14 @@ public sealed interface AssistantMessageEvent
     record ThinkingEndEvent(
             @JsonProperty("contentIndex") int contentIndex,
             @JsonProperty("content") String content,
-            @JsonProperty("partial") AssistantMessage partial)
-            implements AssistantMessageEvent {}
+            @JsonProperty("partial") AssistantMessage partial,
+            @JsonProperty("publicSummary") boolean publicSummary)
+            implements AssistantMessageEvent {
+
+        public ThinkingEndEvent(int contentIndex, String content, AssistantMessage partial) {
+            this(contentIndex, content, partial, false);
+        }
+    }
 
     // --- Tool call events ---
 

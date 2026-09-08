@@ -233,7 +233,8 @@ public class RuntimeEntryCodec {
 
     public long encodedSseBytes(RuntimeSseEventVO event) {
         try {
-            return objectMapper.writeValueAsBytes(event).length;
+            Object encoded = event.isDataOnly() ? event.getData() : event;
+            return objectMapper.writeValueAsBytes(encoded).length;
         } catch (Exception error) {
             throw new IllegalStateException("failed to size runtime SSE event", error);
         }

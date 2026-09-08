@@ -1,0 +1,10 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ADR-0079：公共事件流输出边界</title><style>body{font:16px/1.65 system-ui,sans-serif;color:#172235;background:#f5f7fa;margin:0}main{max-width:920px;margin:32px auto;padding:32px;background:white}code{overflow-wrap:anywhere}a{color:#1457a6}</style></head><body><main>
+<h1>ADR-0079：公共事件流输出边界</h1><p>Status: Accepted · Date: 2026-09-08 · Version: 1.0.1</p>
+<h2>Context</h2><p>设计仓2ee2a321确认Events v2只写SSE data，并且只公开可信提供商摘要。Java基线d9a20777的旧订阅器仍写event/id，thinking事件缺少来源标志。</p>
+<h2>Decision 与选项</h2><p>增加独立data-only模式，保留旧入口当前行为；把publicSummary作为AI层的内部来源信息，只有明确reasoning_summary_text.delta能赋予公开标志。旧构造器默认false。后续应用投影层消费标志并构造公共事件。</p><p>不依据通用ThinkingContent猜测可公开性，因为不同提供商的内容含义不同。也不立即修改所有生产SSE输出，因为只有完整受理、持久化、结果段和idle关闭全部接入后才满足v2契约。</p>
+<p>Mate网关内容为字符串时直接取文本，对象和数组保留JSON文本，缺失或null变为空串；不改变既有凭据及权限处理。</p>
+<h2>Consequences</h2><p>正面：后续v2输出可以明确区分摘要与原始思考，实际data字节计数与输出一致；旧字段和容量兼容。代价：AI内部事件增加boolean属性，每轮Responses输出保留一个小型集合；其他提供商需逐个确认安全摘要来源。没有新增Maven依赖。</p><p>pi基线5cd93f68的packages/ai/src/api/openai-responses-shared.ts在完成时还允许item.content回退；本项目不把该内核内容自动作为公开摘要。此差异属于CampusClaw安全加固，data-only为产品HTTP契约变化。</p>
+<h2>Validation</h2><p>真实SseEventBuilder与Jackson检查协议片段、心跳、字节计数和旧字段；MockWebServer覆盖摘要流与无摘要的reasoning结束事件。集成复验共85个测试通过（AI 41、SSE 9、Mate 35），另检查AST方法长度、格式和镜像。Mate质量脚本的6项既有异常/辅助断言提示经过人工复核，实际断言存在。企业NativeParent本地不可解析，企业编译未验证。本片不代表生产v2端到端接口已经切换。</p>
+<h2>Related</h2><p><a href="../designs/runtime-public-stream/README.md">设计与源码证据</a> · <a href="../designs/runtime-public-stream/diagram.puml#L1">PlantUML源码</a></p><h2>版本历史</h2><p>1.0.1 · 2026-09-08：补充Mate文本转换和集成复验。</p><p>1.0.0 · 2026-09-08：确定data-only模式与可信摘要来源标志。</p>
+</main></body></html>
