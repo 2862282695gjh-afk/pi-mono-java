@@ -26,6 +26,7 @@ import com.huawei.hicampus.claw.ai.types.StopReason;
 import com.huawei.hicampus.claw.ai.types.TextContent;
 import com.huawei.hicampus.claw.ai.types.ToolResultMessage;
 import com.huawei.hicampus.claw.ai.types.UserMessage;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.CommittedEventDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeEntryDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeRecordDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.persistence.RuntimeSessionRepository;
@@ -50,6 +51,8 @@ public class RuntimeEventProjector {
     private final RuntimeSessionRepository repository;
 
     private final RuntimeEntryCodec codec;
+
+    private final RuntimeCommittedEventFactory committedEvents;
 
     private final RuntimeEntryIdGenerator idGenerator;
 
@@ -83,6 +86,7 @@ public class RuntimeEventProjector {
             String sessionId,
             RuntimeSessionRepository repository,
             RuntimeEntryCodec codec,
+            RuntimeCommittedEventFactory committedEvents,
             RuntimeEntryIdGenerator idGenerator,
             RuntimeEventOutput output,
             Clock clock,
@@ -94,6 +98,7 @@ public class RuntimeEventProjector {
         this.sessionId = sessionId;
         this.repository = repository;
         this.codec = codec;
+        this.committedEvents = committedEvents;
         this.idGenerator = idGenerator;
         this.output = output;
         this.clock = clock;
@@ -354,8 +359,15 @@ public class RuntimeEventProjector {
                 null,
                 event.result().usage(),
                 entry.getTimestamp());
+        CommittedEventDTO committed = committedEvents.sessionCompacted(
+                entry,
+                entry.getId(),
+                event.reason().value(),
+                event.result().tokensBefore(),
+                event.result().estimatedTokensAfter(),
+                null);
         RuntimeEntryDTO persisted =
-                repository.appendEntryWithUsage(entry, record, event.result().usage());
+                repository.appendEntryWithUsage(entry, record, event.result().usage(), List.of(committed));
         lastCompactionEntrySeq = persisted.getEntrySeq();
         emitPersisted(persisted);
         if (event.willRetry()) {

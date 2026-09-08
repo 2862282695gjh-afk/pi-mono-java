@@ -37,6 +37,7 @@ import com.campusclaw.ai.types.ToolResultMessage;
 import com.campusclaw.ai.types.Usage;
 import com.campusclaw.ai.types.UserMessage;
 import com.campusclaw.codingagent.runtimeapi.RuntimeMessageSourceConfiguration;
+import com.campusclaw.codingagent.runtimeapi.dto.CommittedEventDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.RuntimeEntryDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.RuntimeRecordDTO;
 import com.campusclaw.codingagent.runtimeapi.persistence.RuntimeSessionRepository;
@@ -74,6 +75,8 @@ class RuntimePersistenceOnlyProjectorTest {
 
     private final List<RuntimeRecordDTO> records = new ArrayList<>();
 
+    private final List<CommittedEventDTO> committedEvents = new ArrayList<>();
+
     private final AtomicInteger sequence = new AtomicInteger(41);
 
     private final RuntimeActiveExecution execution = new RuntimeActiveExecution(RuntimeEventOutput.persistenceOnly());
@@ -87,12 +90,22 @@ class RuntimePersistenceOnlyProjectorTest {
         var factory = new RuntimeEventProjectorFactory(
                 repository,
                 codec,
+                new RuntimeCommittedEventFactory(
+                        new ObjectMapper(), new RuntimeMessageSourceConfiguration().messageSource()),
                 () -> "entry-" + ids.incrementAndGet(),
                 Clock.fixed(now.toInstant(), ZoneOffset.UTC));
         projector = factory.createForCompaction(holder, execution, Locale.US);
         when(repository.listCurrentBranchEntries("session", 0L, 500)).thenAnswer(call -> List.copyOf(history));
         when(repository.appendEntry(any())).thenAnswer(call -> saveEntry(call.getArgument(0)));
         when(repository.appendEntryWithUsage(any(), any(), any())).thenAnswer(call -> {
+            RuntimeEntryDTO persisted = saveEntry(call.getArgument(0));
+            RuntimeRecordDTO record = call.getArgument(1);
+            record.setRecordSeq(sequence.getAndIncrement());
+            records.add(record);
+            return persisted;
+        });
+        when(repository.appendEntryWithUsage(any(), any(), any(), any())).thenAnswer(call -> {
+            committedEvents.addAll(call.getArgument(3));
             RuntimeEntryDTO persisted = saveEntry(call.getArgument(0));
             RuntimeRecordDTO record = call.getArgument(1);
             record.setRecordSeq(sequence.getAndIncrement());
@@ -127,6 +140,14 @@ class RuntimePersistenceOnlyProjectorTest {
             assertThat(record.getRecordSeq()).isEqualTo(42L);
             assertThat(record.getRunId()).isEqualTo("internal-compaction-run");
             assertThat(record.getPayload()).contains("\"cause\":\"compaction\"", "\"entryId\":\"" + persisted.getId());
+        });
+        assertThat(committedEvents).singleElement().satisfies(event -> {
+            assertThat(event.getEventId()).isEqualTo(persisted.getId());
+            assertThat(event.getAnchorEntryId()).isEqualTo(persisted.getId());
+            assertThat(event.getType()).isEqualTo("session.compacted");
+            assertThat(event.getPayload())
+                    .contains("\"reason\":\"manual\"", "\"tokensBefore\":100", "\"estimatedTokensAfter\":20")
+                    .doesNotContain("summary", "sourceEventId");
         });
         Model model = mock(Model.class);
         when(model.api()).thenReturn(Api.ANTHROPIC_MESSAGES);
@@ -189,7 +210,7 @@ class RuntimePersistenceOnlyProjectorTest {
     void shouldAbortOnceAndExposeNoSequenceAfterPersistenceFailure() {
         addUser("kept", "task");
         IllegalStateException error = new IllegalStateException("database unavailable");
-        doThrow(error).when(repository).appendEntryWithUsage(any(), any(), any());
+        doThrow(error).when(repository).appendEntryWithUsage(any(), any(), any(), any());
 
         complete(CompactionReason.MANUAL, 0, false);
         complete(CompactionReason.MANUAL, 0, false);
@@ -199,7 +220,7 @@ class RuntimePersistenceOnlyProjectorTest {
         assertThat(projector.lastCompactionEntrySeq()).isNull();
         assertThat(history).hasSize(1);
         verify(holder).abort();
-        verify(repository).appendEntryWithUsage(any(), any(), any());
+        verify(repository).appendEntryWithUsage(any(), any(), any(), any());
         verify(repository, never()).appendEntry(any());
     }
 
@@ -215,7 +236,7 @@ class RuntimePersistenceOnlyProjectorTest {
                 .hasMessage("compaction retained boundary is not present in runtime history");
         assertThat(projector.lastCompactionEntrySeq()).isNull();
         verify(holder).abort();
-        verify(repository, never()).appendEntryWithUsage(any(), any(), any());
+        verify(repository, never()).appendEntryWithUsage(any(), any(), any(), any());
     }
 
     @Test
@@ -227,7 +248,7 @@ class RuntimePersistenceOnlyProjectorTest {
         assertThat(projector.lastCompactionEntrySeq()).isNull();
         assertThat(projector.failure()).isNull();
         verify(repository, never()).appendEntry(any());
-        verify(repository, never()).appendEntryWithUsage(any(), any(), any());
+        verify(repository, never()).appendEntryWithUsage(any(), any(), any(), any());
         verify(repository, never()).listCurrentBranchEntries(any(), any(Long.class), any(Integer.class));
     }
 
@@ -257,7 +278,7 @@ class RuntimePersistenceOnlyProjectorTest {
 
         assertThat(projector.lastCompactionEntrySeq()).isEqualTo(43L);
         assertThat(records).extracting(RuntimeRecordDTO::getRecordSeq).containsExactly(42L, 44L);
-        verify(repository, times(2)).appendEntryWithUsage(any(), any(), any());
+        verify(repository, times(2)).appendEntryWithUsage(any(), any(), any(), any());
     }
 
     private void addUser(String id, String text) {
