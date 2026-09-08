@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ADR-0098：控制副作用提交前预留结果响应</title>
+<style>body{font:16px/1.7 system-ui,sans-serif;background:#f5f7fa;color:#172235;margin:0}main{max-width:920px;margin:32px auto;padding:32px;background:white;border-radius:12px}code{overflow-wrap:anywhere;background:#eef2f6;padding:2px 4px}a{color:#1457a6}</style></head><body><main>
+<h1>ADR-0098：控制副作用提交前预留结果响应</h1><p>Status: Accepted · Date: 2026-09-08 · Version: 1.0.0</p>
+<h2>Context</h2><p>interrupt 与 tool confirmation 是不可通过网络失败安全重放的控制副作用。请求要先返回自身回执，再等待原执行的权威终态或新结果段。接受实例可能没有原 Agent，因此响应不能依赖本地事件监听。</p>
+<h2>Decision</h2><p>在控制事务前按真实 HTTP 响应数量预留 waiter，并预编码、预检完整回执。事务成功后先把回执入队，再以固定 target 和回执序号绑定 waiter，随后异步触发与周期轮询相同的权威结果补读。complete、detach、容量溢出和超时通过流的一次性关闭动作注销等待。</p>
+<h2>考虑过的选项及取舍</h2><ul><li>事务提交后再登记：实现顺序简单，但容量不足会留下客户端无法观察且不能安全重放的副作用，因此不采用。</li><li>本机监听 Agent、远程实例补读数据库：本机延迟较低，但两条交付路径会产生不同语义和重复完整事件，因此不采用。</li><li>一个 waiter 持有 Holder 和凭据：恢复直接，但扩大资源生命周期和泄露边界，因此不采用。</li><li>选择固定 target 的权威补读，代价是增加有界登记、异步通知和周期查询。</li></ul>
+<h2>Consequences</h2><p>本机与跨实例响应具有相同完整事件来源；回执保持首帧，确认段和根执行采用不同终点。受理后流失败不回滚已提交控制，超时只结束观察。等待和通知都有容量上限及失败退避。没有新增 Maven 依赖。</p>
+<h2>HTTP 状态与验证</h2><p>Control 单片提供内部应用 Service，尚未切换生产 Controller。实现提交 <code>c70cc57f</code> 合并消息与分发依赖后的聚焦命令执行 38 项单元测试，其中控制受理直接测试 5 项，其余验证流、工厂、waiter、poller 和消息回归；跨 JVM HTTP 验收由 ADR-0099 的统一接入片负责。</p>
+<h2>Related</h2><p><a href="../designs/runtime-events-control-v2/README.md">控制受理与结果等待设计</a> · <a href="../designs/runtime-events-control-v2/diagram.puml#L1">PlantUML 源码</a> · <a href="0083-read-fixed-execution-results.html">ADR-0083 固定执行结果读取</a></p>
+</main></body></html>

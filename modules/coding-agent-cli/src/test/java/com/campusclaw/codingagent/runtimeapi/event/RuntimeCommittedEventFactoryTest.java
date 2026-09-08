@@ -65,6 +65,23 @@ class RuntimeCommittedEventFactoryTest {
     }
 
     @Test
+    void shouldCreateCompleteControlReceipts() {
+        var interrupt =
+                encoder.committed(factory.userInterrupt(entry("event_interrupt", "user.interrupt"), "event_user"));
+        var confirmation = encoder.committed(factory.userToolConfirmation(
+                entry("event_confirmation", "user.tool_confirmation"), "call-1", "deny", "请先说明风险"));
+
+        assertThat(interrupt.getData())
+                .containsEntry("type", "user.interrupt")
+                .containsEntry("targetEventId", "event_user");
+        assertThat(confirmation.getData())
+                .containsEntry("type", "user.tool_confirmation")
+                .containsEntry("toolCallId", "call-1")
+                .containsEntry("result", "deny")
+                .containsEntry("denyMessage", "请先说明风险");
+    }
+
+    @Test
     void shouldExposeTextAndUsageWithoutPrivateThinking() {
         RuntimeEntryDTO entry = entry("entry_assistant", "assistant.message.completed");
         AssistantMessage message = new AssistantMessage(

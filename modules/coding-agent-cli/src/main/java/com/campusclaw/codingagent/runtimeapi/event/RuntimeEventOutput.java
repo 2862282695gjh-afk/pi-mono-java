@@ -18,6 +18,14 @@ import com.campusclaw.codingagent.runtimeapi.vo.RuntimeSseEventVO;
  * @since [br_eCampusCore 26.0.0]
  */
 public interface RuntimeEventOutput {
+    default boolean canAcceptRequired(RuntimeSseEventVO event) {
+        return true;
+    }
+
+    default boolean isWithinRequiredEventLimit(RuntimeSseEventVO event) {
+        return true;
+    }
+
     void emit(Supplier<RuntimeSseEventVO> event);
 
     void emitBestEffort(Supplier<RuntimeSseEventVO> event);

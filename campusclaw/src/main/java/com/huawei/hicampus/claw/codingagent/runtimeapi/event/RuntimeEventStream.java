@@ -8,11 +8,15 @@ import java.time.Duration;
 import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.Iterator;
+import java.util.Objects;
 import java.util.concurrent.Executor;
 import java.util.function.Supplier;
 import java.util.function.ToLongFunction;
 
 import com.huawei.hicampus.claw.codingagent.runtimeapi.vo.RuntimeSseEventVO;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * 使用事件数和字节数双重上限隔离模型执行与单个 SSE 客户端。
@@ -21,6 +25,8 @@ import com.huawei.hicampus.claw.codingagent.runtimeapi.vo.RuntimeSseEventVO;
  * @since [br_eCampusCore 26.0.0]
  */
 public class RuntimeEventStream implements RuntimeEventOutput {
+    private static final Logger LOGGER = LoggerFactory.getLogger(RuntimeEventStream.class);
+
     private final Deque<BufferedEvent> events = new ArrayDeque<>();
 
     private final int maxEvents;
@@ -38,6 +44,10 @@ public class RuntimeEventStream implements RuntimeEventOutput {
     private boolean completed;
 
     private boolean detached;
+
+    private boolean closeActionRegistered;
+
+    private Runnable closeAction;
 
     public RuntimeEventStream(
             int maxEvents, long maxBytes, Duration heartbeatInterval, ToLongFunction<RuntimeSseEventVO> eventSizer) {
@@ -57,20 +67,26 @@ public class RuntimeEventStream implements RuntimeEventOutput {
         emitBestEffort(event.get());
     }
 
-    public synchronized boolean emit(RuntimeSseEventVO event) {
-        if (completed || detached) {
-            return false;
+    public boolean emit(RuntimeSseEventVO event) {
+        Runnable action = null;
+        boolean accepted = false;
+        synchronized (this) {
+            if (completed || detached) {
+                return false;
+            }
+            long bytes = eventSizer.applyAsLong(event);
+            evictBestEffortEvents(bytes);
+            if (events.size() >= maxEvents || bytes > maxBytes - bufferedBytes) {
+                action = detachInternal();
+            } else {
+                events.addLast(new BufferedEvent(event, bytes, false));
+                bufferedBytes += bytes;
+                accepted = true;
+                notifyAll();
+            }
         }
-        long bytes = eventSizer.applyAsLong(event);
-        evictBestEffortEvents(bytes);
-        if (events.size() >= maxEvents || bytes > maxBytes - bufferedBytes) {
-            detachInternal();
-            return false;
-        }
-        events.addLast(new BufferedEvent(event, bytes, false));
-        bufferedBytes += bytes;
-        notifyAll();
-        return true;
+        runCloseAction(action);
+        return accepted;
     }
 
     public synchronized boolean emitBestEffort(RuntimeSseEventVO event) {
@@ -92,22 +108,67 @@ public class RuntimeEventStream implements RuntimeEventOutput {
         return true;
     }
 
+    @Override
     public synchronized boolean canAcceptRequired(RuntimeSseEventVO event) {
-        if (completed || detached || events.size() >= maxEvents) {
+        if (completed || detached) {
             return false;
         }
         long bytes = eventSizer.applyAsLong(event);
-        return bytes <= maxBytes - bufferedBytes;
+        int requiredEvents = 0;
+        long requiredBytes = 0L;
+        for (BufferedEvent buffered : events) {
+            if (!buffered.bestEffort()) {
+                requiredEvents++;
+                requiredBytes += buffered.bytes();
+            }
+        }
+        return requiredEvents < maxEvents && bytes <= maxBytes - requiredBytes;
     }
 
     @Override
-    public synchronized void complete() {
-        completed = true;
-        notifyAll();
+    public boolean isWithinRequiredEventLimit(RuntimeSseEventVO event) {
+        return maxEvents > 0 && eventSizer.applyAsLong(event) <= maxBytes;
     }
 
-    public synchronized void detach() {
-        detachInternal();
+    @Override
+    public void complete() {
+        Runnable action;
+        synchronized (this) {
+            completed = true;
+            action = takeCloseAction();
+            notifyAll();
+        }
+        runCloseAction(action);
+    }
+
+    public void detach() {
+        Runnable action;
+        synchronized (this) {
+            action = detachInternal();
+        }
+        runCloseAction(action);
+    }
+
+    /**
+     * 注册流结束时执行的一次性清理动作。
+     *
+     * @param action 清理动作
+     * @throws IllegalStateException 已注册过清理动作时抛出
+     */
+    public void onClose(Runnable action) {
+        Objects.requireNonNull(action, "close action");
+        boolean runImmediately;
+        synchronized (this) {
+            if (closeActionRegistered) {
+                throw new IllegalStateException("runtime event stream close action is already registered");
+            }
+            closeActionRegistered = true;
+            runImmediately = completed || detached;
+            if (!runImmediately) {
+                closeAction = action;
+            }
+        }
+        runCloseAction(runImmediately ? action : null);
     }
 
     public void attach(Executor executor, RuntimeEventSubscriber subscriber) {
@@ -146,37 +207,63 @@ public class RuntimeEventStream implements RuntimeEventOutput {
         return false;
     }
 
-    private synchronized Delivery awaitDelivery() {
-        long deadline = System.currentTimeMillis() + heartbeatMillis;
-        while (events.isEmpty() && !completed && !detached) {
-            long remaining = deadline - System.currentTimeMillis();
-            if (remaining <= 0) {
-                return Delivery.heartbeat();
+    private Delivery awaitDelivery() {
+        Runnable action = null;
+        Delivery delivery;
+        synchronized (this) {
+            long deadline = System.currentTimeMillis() + heartbeatMillis;
+            while (events.isEmpty() && !completed && !detached) {
+                long remaining = deadline - System.currentTimeMillis();
+                if (remaining <= 0) {
+                    return Delivery.heartbeat();
+                }
+                action = waitForEvent(remaining);
             }
-            waitForEvent(remaining);
+            if (!events.isEmpty()) {
+                BufferedEvent buffered = events.removeFirst();
+                bufferedBytes -= buffered.bytes();
+                delivery = Delivery.event(buffered.event());
+            } else {
+                delivery = Delivery.terminal();
+            }
         }
-        if (!events.isEmpty()) {
-            BufferedEvent buffered = events.removeFirst();
-            bufferedBytes -= buffered.bytes();
-            return Delivery.event(buffered.event());
-        }
-        return Delivery.terminal();
+        runCloseAction(action);
+        return delivery;
     }
 
-    private void waitForEvent(long millis) {
+    private Runnable waitForEvent(long millis) {
         try {
             wait(millis);
+            return null;
         } catch (InterruptedException error) {
             Thread.currentThread().interrupt();
-            detachInternal();
+            return detachInternal();
         }
     }
 
-    private void detachInternal() {
+    private Runnable detachInternal() {
         detached = true;
         events.clear();
         bufferedBytes = 0;
         notifyAll();
+        return takeCloseAction();
+    }
+
+    private Runnable takeCloseAction() {
+        Runnable action = closeAction;
+        closeAction = null;
+        return action;
+    }
+
+    private static void runCloseAction(Runnable action) {
+        if (action == null) {
+            return;
+        }
+        try {
+            action.run();
+        } catch (RuntimeException exception) {
+            LOGGER.warn("Failed to clean up a closed Runtime event stream", exception);
+        }
     }
 
     private void evictBestEffortEvents(long requiredBytes) {
