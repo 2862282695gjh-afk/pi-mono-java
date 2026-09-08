@@ -38,7 +38,7 @@ import com.campusclaw.codingagent.runtimeapi.dto.command.ResolvedCommandDTO;
 import com.campusclaw.codingagent.runtimeapi.event.RuntimeCommittedEventFactory;
 import com.campusclaw.codingagent.runtimeapi.event.RuntimeEntryCodec;
 import com.campusclaw.codingagent.runtimeapi.event.RuntimeEntryIdGenerator;
-import com.campusclaw.codingagent.runtimeapi.event.RuntimeEventService;
+import com.campusclaw.codingagent.runtimeapi.event.RuntimeV2MessageEventService;
 import com.campusclaw.codingagent.runtimeapi.model.RuntimeModelManager;
 import com.campusclaw.codingagent.runtimeapi.persistence.RuntimeSessionRepository;
 import com.campusclaw.codingagent.runtimeapi.service.command.skill.SkillCommandExecutionService;
@@ -112,7 +112,7 @@ class BuiltinCommandCoreTest {
                 .withBean(RuntimeEntryCodec.class, () -> mock(RuntimeEntryCodec.class))
                 .withBean(RuntimeEntryIdGenerator.class, () -> mock(RuntimeEntryIdGenerator.class))
                 .withBean(RuntimeCompactionService.class, () -> mock(RuntimeCompactionService.class))
-                .withBean(RuntimeEventService.class, () -> mock(RuntimeEventService.class))
+                .withBean(RuntimeV2MessageEventService.class, () -> mock(RuntimeV2MessageEventService.class))
                 .withBean(SessionEtagFactory.class)
                 .withBean(RuntimeSessionResponseAssembler.class)
                 .withBean(LocalValidatorFactoryBean.class)

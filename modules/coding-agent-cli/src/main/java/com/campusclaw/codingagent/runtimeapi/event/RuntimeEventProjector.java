@@ -271,7 +271,6 @@ public class RuntimeEventProjector {
         if (message == initialUserMessage) {
             return;
         }
-        execution.controlDelivered(message);
         String text = message.content().stream()
                 .filter(TextContent.class::isInstance)
                 .map(TextContent.class::cast)

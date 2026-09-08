@@ -156,10 +156,7 @@ class RuntimeCompactionCoordinatorTest {
     }
 
     @Test
-    void shouldRejectControlsBeforeRegistrationAndUseSharedCapacity() {
-        assertThat(execution.acceptingControls()).isFalse();
-        assertThat(execution.queueControl(new UserMessage("control", 1L), 7L, 10, 100L))
-                .isFalse();
+    void shouldUseSharedCapacity() {
         assertThatThrownBy(() -> register("other", new RuntimeCompactionExecution()))
                 .isInstanceOfSatisfying(RuntimeApiException.class, error -> assertThat(error.errorCode())
                         .isEqualTo(RuntimeErrorCode.RUNTIME_CAPACITY_EXCEEDED));
@@ -195,7 +192,6 @@ class RuntimeCompactionCoordinatorTest {
         assertThat(entry.getValue().getPayload()).contains("\"firstKeptEntryId\":\"kept\"");
         assertThat(record.getValue().getRunId()).isEqualTo("internal-usage-run");
         verify(repository, never()).appendEntry(any());
-        verify(session, never()).continueQueuedExecution();
         verify(agent, never()).hasQueuedControlMessages();
         verify(agent, never()).subscribe(any());
         verify(timeoutTask).cancel(false);

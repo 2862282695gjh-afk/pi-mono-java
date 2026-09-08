@@ -96,7 +96,6 @@ final class RuntimeHttpProcessFixture {
 
     private static String springConfiguration(Path tempDir) {
         ObjectNode runtime = MAPPER.createObjectNode();
-        runtime.putObject("events").put("cursor-secret", "process-cursor-secret-at-least-32-bytes");
         ObjectNode root = MAPPER.createObjectNode();
         root.putObject("campusclaw").set("runtime", runtime);
         ObjectNode mate = root.putObject("campusmate");
@@ -202,7 +201,8 @@ final class RuntimeHttpProcessFixture {
 
     static CompletableFuture<HttpResponse<String>> submitUserEventAsync(int port, String sessionId) {
         URI uri = eventsUri(port, sessionId, null);
-        String body = "{\"message\":\"process smoke\",\"fileIds\":[]}";
+        String body = "{\"event\":{\"type\":\"user.message\","
+                + "\"content\":[{\"type\":\"text\",\"text\":\"process smoke\"}]}}";
         HttpRequest request = HttpRequest.newBuilder(uri)
                 .header("X-HW-ID", CALLER_ID)
                 .header("Authorization", "Bearer " + JWT)

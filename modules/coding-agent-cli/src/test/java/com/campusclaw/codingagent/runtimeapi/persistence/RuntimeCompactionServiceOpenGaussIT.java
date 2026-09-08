@@ -208,7 +208,6 @@ class RuntimeCompactionServiceOpenGaussIT {
         var execution = (RuntimeCompactionExecution) holder.activeExecution().orElseThrow();
         assertThat(repository.find(session.getId()).orElseThrow().getState()).isEqualTo("running");
         assertThat(execution.runId()).isEqualTo("internal-usage");
-        assertThat(execution.acceptingControls()).isFalse();
         assertThat(caller.cancel(true)).isTrue();
         assertThat(execution.completion()).isNotDone();
         assertThat(summary.tryEmitValue(response(StopReason.STOP))).isEqualTo(Sinks.EmitResult.OK);

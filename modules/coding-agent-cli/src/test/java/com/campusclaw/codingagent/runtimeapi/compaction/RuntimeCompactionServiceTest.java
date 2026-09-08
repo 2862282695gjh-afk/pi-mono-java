@@ -163,7 +163,6 @@ class RuntimeCompactionServiceTest {
         var holder = registry.find("session").orElseThrow();
         var execution = (RuntimeCompactionExecution) holder.activeExecution().orElseThrow();
         assertThat(execution.runId()).isEqualTo("internal-usage");
-        assertThat(execution.acceptingControls()).isFalse();
         assertThat(holder.thinking()).isTrue();
         verify(agent)
                 .replaceMessages(
