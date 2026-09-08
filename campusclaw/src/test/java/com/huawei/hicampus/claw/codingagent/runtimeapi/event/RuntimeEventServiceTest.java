@@ -379,8 +379,14 @@ class RuntimeEventServiceTest {
             RuntimeEventStreamFactory streamFactory = new RuntimeEventStreamFactory(eventProperties, codec);
             RuntimeExecutionContextFactory contextFactory =
                     new RuntimeExecutionContextFactory(queryService, registry, codec, streamFactory, clock);
-            RuntimeSessionModelReconciler reconciler =
-                    new RuntimeSessionModelReconciler(repository, resolver, modelManager, codec, idGenerator, clock);
+            RuntimeSessionModelReconciler reconciler = new RuntimeSessionModelReconciler(
+                    repository,
+                    resolver,
+                    modelManager,
+                    codec,
+                    mock(RuntimeCommittedEventFactory.class),
+                    idGenerator,
+                    clock);
             service = new RuntimeEventService(
                     repository, codec, idGenerator, registry, contextFactory, coordinator, reconciler, clock);
             when(registry.withOperationLock(anyString(), any(Supplier.class)))

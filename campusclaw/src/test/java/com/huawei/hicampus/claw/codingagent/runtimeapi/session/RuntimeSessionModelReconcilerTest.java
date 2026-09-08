@@ -25,6 +25,7 @@ import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.SessionConfigurationUpdateDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.error.RuntimeErrorCode;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeCommittedEventFactory;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeEntryCodec;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.model.RuntimeModelManager;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.persistence.RuntimeSessionRepository;
@@ -58,7 +59,7 @@ class RuntimeSessionModelReconcilerTest {
         when(modelManager.resolveAvailableModel(snapshot, "model-old"))
                 .thenThrow(new RuntimeApiException(RuntimeErrorCode.MODEL_NOT_AVAILABLE));
         when(modelManager.resolveAvailableModel(snapshot, "model-new")).thenReturn(fallback);
-        when(repository.updateModel(eq(current.getId()), eq(1L), eq("model-new"), eq(false), any(), any()))
+        when(repository.updateModel(eq(current.getId()), eq(1L), eq("model-new"), eq(false), any(), any(), any()))
                 .thenReturn(new SessionConfigurationUpdateDTO(SessionConfigurationUpdateDTO.Status.UPDATED, updated));
         RuntimeSessionModelReconciler reconciler = new RuntimeSessionModelReconciler(
                 repository,
@@ -67,6 +68,7 @@ class RuntimeSessionModelReconcilerTest {
                 new RuntimeEntryCodec(
                         new ObjectMapper(),
                         new com.huawei.hicampus.claw.codingagent.runtimeapi.RuntimeMessageSourceConfiguration().messageSource()),
+                mock(RuntimeCommittedEventFactory.class),
                 new SequenceIds(),
                 Clock.fixed(Instant.parse("2026-08-24T00:00:00Z"), ZoneOffset.UTC));
 
@@ -79,7 +81,7 @@ class RuntimeSessionModelReconcilerTest {
         ArgumentCaptor<Function<RuntimeSessionDTO, List<com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeEntryDTO>>>
                 entries = ArgumentCaptor.forClass(Function.class);
         verify(repository)
-                .updateModel(eq(current.getId()), eq(1L), eq("model-new"), eq(false), entries.capture(), any());
+                .updateModel(eq(current.getId()), eq(1L), eq("model-new"), eq(false), entries.capture(), any(), any());
         assertThat(entries.getValue().apply(current)).isEqualTo(result.configurationEntries());
     }
 
