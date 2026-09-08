@@ -5,8 +5,10 @@
 package com.campusclaw.codingagent.runtimeapi.mapper;
 
 import java.time.OffsetDateTime;
+import java.util.List;
 
 import com.campusclaw.codingagent.runtimeapi.dto.CommittedTerminalDTO;
+import com.campusclaw.codingagent.runtimeapi.dto.ExecutionControlSignalDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.ExecutionSegmentDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.ExecutionStateDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.ExecutionTargetDTO;
@@ -103,6 +105,8 @@ public interface RuntimeExecutionControlMapper {
             @Param("executionId") String executionId,
             @Param("confirmationEventId") String confirmationEventId,
             @Param("completedAt") OffsetDateTime completedAt);
+
+    List<ExecutionControlSignalDTO> findPendingControls(@Param("targets") List<ExecutionTargetDTO> targets);
 
     int markTerminal(
             @Param("sessionId") String sessionId,

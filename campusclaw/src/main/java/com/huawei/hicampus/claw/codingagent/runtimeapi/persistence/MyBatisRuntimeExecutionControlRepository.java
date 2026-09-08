@@ -14,6 +14,7 @@ import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.CommittedControlEvent
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.CommittedTerminalDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.ConfirmationAcceptanceDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.ConfirmingEventsDTO;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.ExecutionControlSignalDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.ExecutionSegmentDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.ExecutionStateDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.ExecutionTargetDTO;
@@ -210,6 +211,18 @@ public class MyBatisRuntimeExecutionControlRepository implements RuntimeExecutio
                         decision.getConfirmationEventId(),
                         storedAt(completedAt))
                 == 1;
+    }
+
+    @Override
+    @Transactional(readOnly = true, timeoutString = "${campusclaw.runtime.execution.control-query-timeout-seconds:2}")
+    public List<ExecutionControlSignalDTO> findPendingControls(List<ExecutionTargetDTO> targets) {
+        Objects.requireNonNull(targets, "targets");
+        List<ExecutionTargetDTO> distinctTargets = targets.stream().distinct().toList();
+        if (distinctTargets.isEmpty()) {
+            return List.of();
+        }
+        distinctTargets.forEach(MyBatisRuntimeExecutionControlRepository::requireTarget);
+        return mapper.findPendingControls(distinctTargets);
     }
 
     @Override

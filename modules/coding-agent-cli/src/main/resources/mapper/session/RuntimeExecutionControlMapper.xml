@@ -197,6 +197,44 @@
           AND state = 'CLAIMED'
     </update>
 
+    <select id="findPendingControls"
+            resultType="com.campusclaw.codingagent.runtimeapi.dto.ExecutionControlSignalDTO">
+        WITH targets (session_id, execution_id, root_event_id, segment_id) AS (
+            <foreach collection="targets" item="target" separator=" UNION ALL ">
+                SELECT CAST(#{target.sessionId} AS VARCHAR(128)),
+                       CAST(#{target.executionId} AS VARCHAR(128)),
+                       CAST(#{target.rootEventId} AS VARCHAR(128)),
+                       CAST(#{target.segmentId} AS VARCHAR(128))
+            </foreach>
+        )
+        SELECT target.session_id, target.execution_id, target.root_event_id, target.segment_id,
+               CASE WHEN execution.stop_event_id IS NULL THEN FALSE ELSE TRUE END AS stop_requested,
+               confirmation.tool_call_id
+        FROM targets target
+        JOIN LATERAL (
+            SELECT current_segment_id, stop_event_id
+            FROM t_session_executions
+            WHERE session_id = target.session_id
+              AND execution_id = target.execution_id
+              AND root_event_id = target.root_event_id
+              AND state &lt;&gt; 'TERMINAL'
+            LIMIT 1
+        ) execution ON TRUE
+        LEFT JOIN LATERAL (
+            SELECT confirmation_event_id, tool_call_id
+            FROM t_session_tool_confirmations
+            WHERE session_id = target.session_id
+              AND execution_id = target.execution_id
+              AND previous_segment_id = target.segment_id
+              AND segment_id = execution.current_segment_id
+              AND state = 'PENDING'
+            LIMIT 1
+        ) confirmation ON TRUE
+        WHERE execution.stop_event_id IS NOT NULL
+           OR confirmation.confirmation_event_id IS NOT NULL
+        ORDER BY target.session_id, target.execution_id
+    </select>
+
     <update id="markTerminal">
         UPDATE t_session_executions
         SET state = 'TERMINAL',
