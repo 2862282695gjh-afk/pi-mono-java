@@ -104,6 +104,12 @@ public interface RuntimeSessionMapper {
 
     int deleteRecords(@Param("sessionId") String sessionId);
 
+    int deleteExecutionSegmentEvents(@Param("sessionId") String sessionId);
+
+    int deleteExecutionSegments(@Param("sessionId") String sessionId);
+
+    int deleteExecutions(@Param("sessionId") String sessionId);
+
     int deleteCommittedEvents(@Param("sessionId") String sessionId);
 
     int deleteStats(@Param("sessionId") String sessionId);
