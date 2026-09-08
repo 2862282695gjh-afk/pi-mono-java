@@ -1,0 +1,11 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ADR-0095：压缩完成同时提交公共历史</title><style>body{max-width:960px;margin:32px auto;padding:24px;font:16px/1.7 system-ui,sans-serif;color:#172033}a{color:#135dbe}code{overflow-wrap:anywhere}</style></head><body>
+<h1>ADR-0095：压缩完成同时提交公共历史</h1><p>Status: Accepted · Date: 2026-09-08 · Version: 1.0.0</p>
+<h2>Context</h2><p>Java基线2bdcdcb2的压缩完成写入缺少session.compacted和完整性marker，完整Events集成中的后续历史查询因此返回EVENT_LIST_FAILED。</p>
+<h2>Decision</h2><p>实现43980f51通过共享工厂构造安全公共事件，并调用既有组合仓储，在同一事务提交Entry、Usage、公共事件、marker和序号。事件与内部Entry共享ID和锚点；手动压缩不公开summary，也不编造根用户事件。</p>
+<h2>Alternatives 与理由</h2><p>关闭GET完整性检查会掩盖当前写入缺陷，事务外补写又会留下失败窗口。选择复用组合事务，代价是每次成功压缩增加两条记录。pi4af9d21d的内核事件没有本项目的公共数据库历史，这属于Java架构变化。</p>
+<h2>Consequences</h2><p>保留Command业务语义、原压缩保留边界和重启恢复，只修复公共事件写入衔接。完整Events HTTP由独立提交接入。无新增依赖、表、线程或升级流程。</p>
+<h2>Validation</h2><p>独立主线分支46项单测、17项Skill/Compact真实数据库测试通过；root在独立全新数据库再次复验17项通过，零失败和跳过。完整集成20项Command/Skill真实HTTP场景通过。源码/镜像及格式检查通过；企业NativeParent不可解析，公司编译未验证。</p>
+<h2>Related</h2><p><a href="../designs/runtime-compaction-public-event/README.md">源码依据和验证</a> · <a href="../designs/runtime-compaction-public-event/diagram.puml#L1">PlantUML图源</a></p>
+<h2>版本历史</h2><p>1.0.0 · 2026-09-08：修复压缩公共历史写入缺口。</p>
+</body></html>

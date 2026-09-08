@@ -1,0 +1,28 @@
+@startuml compaction_public_event
+' Java baseline: 2bdcdcb2; implementation: 43980f51; test consumers: 4a53c6d5.
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/event/RuntimeEventProjector.java#projectCompaction.
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/persistence/MyBatisRuntimeSessionRepository.java#appendEntryWithUsage.
+' Pi baseline: 4af9d21d3b4d664e4a29fcabfec85171077248e3.
+' Pi source: packages/agent/src/agent-loop.ts#runLoop.
+' Observed behavior: compaction previously wrote Entry and Usage without its public event marker.
+' Java divergence: atomic public history records are a CampusClaw persistence capability.
+' Design reason: a successful compaction must not leave an incomplete readable history.
+title Compaction public history write
+start
+:Receive successful compaction result;
+:Resolve exact retained Entry boundary;
+:Build private Entry and Usage;
+:Build safe session.compacted with Entry identity;
+:Commit Entry, Usage, public event and exact marker together;
+if (Transaction committed?) then (yes)
+  :Expose committed compaction sequence;
+else (no)
+  :Preserve failure and release through coordinator;
+endif
+note right
+  Command response semantics remain unchanged.
+  HTTP history wiring is integrated separately.
+  Summary text stays private.
+end note
+stop
+@enduml
