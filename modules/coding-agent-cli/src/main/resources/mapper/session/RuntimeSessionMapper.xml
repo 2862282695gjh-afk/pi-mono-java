@@ -107,6 +107,14 @@
         )
     </insert>
 
+    <insert id="insertCommittedEventProjection">
+        INSERT INTO t_session_event_projection (
+            session_id, anchor_entry_id, event_count, mapping_source
+        ) VALUES (
+            #{sessionId}, #{anchorEntryId}, #{eventCount}, #{mappingSource}
+        )
+    </insert>
+
     <update id="incrementMessageCount">
         UPDATE t_session_stats
         SET message_count = message_count + 1
@@ -250,6 +258,66 @@
         LIMIT #{limit}
     </select>
 
+    <select id="countUnmappedCurrentBranchEntries" resultType="long">
+        WITH RECURSIVE current_path (session_id, id, parent_id, type) AS (
+            SELECT entry.session_id, entry.id, entry.parent_id, entry.type
+            FROM t_session_entries entry
+            JOIN t_sessions session
+              ON session.id = entry.session_id
+             AND session.active_leaf_id = entry.id
+            WHERE session.id = #{sessionId}
+            UNION ALL
+            SELECT parent.session_id, parent.id, parent.parent_id, parent.type
+            FROM t_session_entries parent
+            JOIN current_path child
+              ON child.session_id = parent.session_id
+             AND child.parent_id = parent.id
+        ), event_counts AS (
+            SELECT event.session_id, event.anchor_entry_id, COUNT(1) AS event_count
+            FROM t_session_events event
+            WHERE event.session_id = #{sessionId}
+            GROUP BY event.session_id, event.anchor_entry_id
+        )
+        SELECT COUNT(1)
+        FROM current_path entry
+        LEFT JOIN t_session_event_projection projection
+          ON projection.session_id = entry.session_id
+         AND projection.anchor_entry_id = entry.id
+        LEFT JOIN event_counts actual
+          ON actual.session_id = entry.session_id
+         AND actual.anchor_entry_id = entry.id
+        WHERE entry.type NOT IN (
+            'user.message', 'user.interrupt', 'user.tool_confirmation',
+            'assistant.message.started', 'assistant.message.delta', 'assistant.message.completed',
+            'assistant.thinking.started', 'assistant.thinking.delta', 'assistant.thinking.completed',
+            'tool.execution.started', 'tool.execution.delta', 'tool.execution.completed', 'tool.result',
+            'session.model.changed', 'session.thinking.changed', 'session.compaction.started',
+            'session.compaction.completed', 'session.compaction.failed', 'session.status.idle',
+            'stream.end', 'stream.error', 'leaf', 'branch_summary', 'label'
+        )
+        OR projection.anchor_entry_id IS NULL
+        OR projection.event_count != COALESCE(actual.event_count, 0)
+        OR (
+            entry.type IN (
+                'user.message', 'user.interrupt', 'user.tool_confirmation',
+                'assistant.message.completed', 'assistant.thinking.completed', 'tool.result',
+                'session.model.changed', 'session.thinking.changed', 'session.compaction.completed',
+                'session.status.idle'
+            )
+            AND projection.event_count &lt; 1
+        )
+        OR (
+            entry.type IN (
+                'assistant.message.started', 'assistant.message.delta',
+                'assistant.thinking.started', 'assistant.thinking.delta',
+                'tool.execution.started', 'tool.execution.delta', 'tool.execution.completed',
+                'session.compaction.started', 'session.compaction.failed',
+                'stream.end', 'stream.error', 'leaf', 'branch_summary', 'label'
+            )
+            AND projection.event_count != 0
+        )
+    </select>
+
     <update id="updateSessionModel">
         UPDATE t_sessions
         SET model_id = #{modelId},
@@ -331,6 +399,11 @@
 
     <delete id="deleteCommittedEvents">
         DELETE FROM t_session_events
+        WHERE session_id = #{sessionId}
+    </delete>
+
+    <delete id="deleteEventProjections">
+        DELETE FROM t_session_event_projection
         WHERE session_id = #{sessionId}
     </delete>
 

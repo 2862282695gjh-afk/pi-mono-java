@@ -5,6 +5,7 @@
 package com.campusclaw.codingagent.runtimeapi.persistence;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -17,6 +18,8 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 import org.springframework.jdbc.core.JdbcTemplate;
 
@@ -55,6 +58,7 @@ class CommittedEventQueryRepositoryOpenGaussIT {
         repository = context.getBean(RuntimeSessionRepository.class);
         jdbcTemplate = context.getBean(JdbcTemplate.class);
         jdbcTemplate.update("TRUNCATE TABLE t_session_events");
+        jdbcTemplate.update("TRUNCATE TABLE t_session_event_projection");
         jdbcTemplate.update("TRUNCATE TABLE t_session_entries");
         jdbcTemplate.update("TRUNCATE TABLE t_session_stats");
         jdbcTemplate.update("TRUNCATE TABLE t_session_sequences");
@@ -69,10 +73,15 @@ class CommittedEventQueryRepositoryOpenGaussIT {
         insertEntry(session.getId(), "entry-root", 1L, null);
         insertEntry(session.getId(), "entry-abandoned", 3L, "entry-root");
         insertEntry(session.getId(), "entry-current", 5L, "entry-root");
+        insertEntry(session.getId(), "entry-private", 7L, "entry-current", "stream.end");
         insertEvent(session.getId(), "event-root", 2L, "entry-root");
         insertEvent(session.getId(), "event-abandoned", 4L, "entry-abandoned");
         insertEvent(session.getId(), "event-current", 6L, "entry-current");
-        jdbcTemplate.update("UPDATE t_sessions SET active_leaf_id = ? WHERE id = ?", "entry-current", session.getId());
+        insertProjection(session.getId(), "entry-root", 1);
+        insertProjection(session.getId(), "entry-abandoned", 1);
+        insertProjection(session.getId(), "entry-current", 1);
+        insertProjection(session.getId(), "entry-private", 0);
+        jdbcTemplate.update("UPDATE t_sessions SET active_leaf_id = ? WHERE id = ?", "entry-private", session.getId());
 
         var firstPage = repository.findEventPage(session.getId(), 0L, 1).orElseThrow();
         var secondPage = repository.findEventPage(session.getId(), 1L, 2).orElseThrow();
@@ -82,7 +91,44 @@ class CommittedEventQueryRepositoryOpenGaussIT {
         assertThat(repository.findEventPage("session-missing", 0L, 1)).isEmpty();
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"user.message", "future.unknown"})
+    void shouldFailClosedWhenCurrentBranchMappingIsUnsafe(String type) {
+        RuntimeSessionDTO session = session();
+        repository.create(session);
+        insertEntry(session.getId(), "entry-unmapped", 1L, null, type);
+        if ("future.unknown".equals(type)) {
+            insertProjection(session.getId(), "entry-unmapped", 0);
+        }
+        jdbcTemplate.update("UPDATE t_sessions SET active_leaf_id = ? WHERE id = ?", "entry-unmapped", session.getId());
+
+        IllegalStateException error =
+                assertThrows(IllegalStateException.class, () -> repository.findEventPage(session.getId(), 0L, 1));
+
+        assertThat(error).hasMessage("current branch event mapping is incomplete");
+    }
+
+    @Test
+    void shouldRejectPartiallyMappedAssistantEntry() {
+        RuntimeSessionDTO session = session();
+        repository.create(session);
+        insertEntry(session.getId(), "entry-assistant", 1L, null, "assistant.message.completed");
+        insertEvent(session.getId(), "event-message", 2L, "entry-assistant");
+        insertProjection(session.getId(), "entry-assistant", 2);
+        jdbcTemplate.update(
+                "UPDATE t_sessions SET active_leaf_id = ? WHERE id = ?", "entry-assistant", session.getId());
+
+        IllegalStateException error =
+                assertThrows(IllegalStateException.class, () -> repository.findEventPage(session.getId(), 0L, 10));
+
+        assertThat(error).hasMessage("current branch event mapping is incomplete");
+    }
+
     private void insertEntry(String sessionId, String entryId, long sequence, String parentId) {
+        insertEntry(sessionId, entryId, sequence, parentId, "user.message");
+    }
+
+    private void insertEntry(String sessionId, String entryId, long sequence, String parentId, String type) {
         jdbcTemplate.update(
                 "INSERT INTO t_session_entries "
                         + "(session_id,id,entry_seq,parent_id,type,timestamp,payload) "
@@ -91,7 +137,7 @@ class CommittedEventQueryRepositoryOpenGaussIT {
                 entryId,
                 sequence,
                 parentId,
-                "user.message",
+                type,
                 NOW,
                 "{}");
     }
@@ -108,6 +154,15 @@ class CommittedEventQueryRepositoryOpenGaussIT {
                 "user.message",
                 NOW,
                 "{\"content\":[{\"type\":\"text\",\"text\":\"hello\"}]}");
+    }
+
+    private void insertProjection(String sessionId, String entryId, int eventCount) {
+        jdbcTemplate.update(
+                "INSERT INTO t_session_event_projection "
+                        + "(session_id,anchor_entry_id,event_count,mapping_source) VALUES (?,?,?,'migration')",
+                sessionId,
+                entryId,
+                eventCount);
     }
 
     private static RuntimeSessionDTO session() {
