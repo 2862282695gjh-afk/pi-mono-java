@@ -137,19 +137,15 @@
                event.created_at,
                event.payload AS event_payload
         FROM t_session_executions execution
-        JOIN t_sessions session
-          ON session.id = execution.session_id
-         AND session.state = 'idle'
-        JOIN t_session_execution_segments segment
-          ON segment.session_id = execution.session_id
-         AND segment.execution_id = execution.execution_id
-         AND segment.segment_id = #{target.segmentId}
-         AND segment.state = 'CLOSED'
-         AND segment.terminal_event_id = execution.terminal_event_id
+        JOIN t_session_execution_segment_events segment_event
+          ON segment_event.session_id = execution.session_id
+         AND segment_event.execution_id = execution.execution_id
+         AND segment_event.segment_id = #{target.segmentId}
+         AND segment_event.event_id = execution.terminal_event_id
         JOIN t_session_events event
           ON event.session_id = execution.session_id
          AND event.event_id = execution.terminal_event_id
-         AND event.event_seq = segment.terminal_event_seq
+         AND event.event_seq = segment_event.event_seq
         JOIN t_session_entries entry
           ON entry.session_id = event.session_id
          AND entry.id = event.anchor_entry_id

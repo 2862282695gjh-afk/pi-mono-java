@@ -252,6 +252,44 @@ class RuntimeSessionRepositoryOpenGaussIT {
     }
 
     @Test
+    void shouldRestoreTerminatedTerminalAfterConfirmingSegmentClosed() {
+        RuntimeSessionDTO session = newSession("session_confirming_terminal_retry");
+        repository.create(session);
+        ExecutionTargetDTO target = acceptRootMessage(session, "confirming-terminal-retry");
+        persistConfirmingEvents(session, target);
+        RuntimeEntryDTO interrupt = controlEntry(session, "terminal-retry-interrupt", "user.interrupt");
+        CommittedEventDTO interruptEvent =
+                committedEvent(interrupt, "terminal-retry-interrupt-event", "user.interrupt");
+        executionPersistence.acceptInterrupt(
+                session.getId(), target.rootEventId(), interrupt, interruptEvent, interrupt.getTimestamp());
+
+        RuntimeEntryDTO idle = controlEntry(session, "terminated-idle", "session.status.idle");
+        CommittedEventDTO event = committedEvent(idle, "terminated-idle-event", "session.status_idle");
+        executionPersistence.commitTerminal(
+                target, idle, event, RuntimeExecutionTerminalReason.TERMINATED, idle.getTimestamp());
+        RuntimeEntryDTO retry = newEntry(
+                session.getId(),
+                idle.getId(),
+                idle.getType(),
+                idle.getTimestamp().plusMinutes(1),
+                "{}");
+        CommittedEventDTO retryEvent = committedEvent(retry, event.getEventId(), event.getType());
+
+        executionPersistence.commitTerminal(
+                target, retry, retryEvent, RuntimeExecutionTerminalReason.TERMINATED, retry.getTimestamp());
+
+        assertThat(retryEvent)
+                .extracting("eventSeq", "createdAt", "anchorEntryId")
+                .containsExactly(event.getEventSeq(), event.getCreatedAt(), event.getAnchorEntryId());
+        assertThat(count("t_session_execution_segment_events", session.getId())).isEqualTo(4);
+        assertThat(jdbcTemplate.queryForObject(
+                        "SELECT terminal_reason FROM t_session_execution_segments WHERE session_id = ?",
+                        String.class,
+                        session.getId()))
+                .isEqualTo("confirming");
+    }
+
+    @Test
     void shouldRollbackAcceptedMessageWhenExecutionIdentityCannotBePersisted() {
         RuntimeSessionDTO session = newSession("session_atomic_rollback");
         repository.create(session);
