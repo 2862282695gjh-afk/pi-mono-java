@@ -107,7 +107,8 @@ HTTP Session 创建、Cron 触发和 Child Execution 均调用 prepare，因此�
 Session 快照。工具配置也只在应用启动时解析，不由 refresh 变更。
 
 `PreparedAgentRuntime` 同时携带 Agent 与 Skill 的完整 `BoundTool` 记录，权限判定消费者必须使用
-这一固定快照。未知权限值、工具身份冲突和缺少可信绑定仍按 DENY 处理；ASK 只能由快照中明确的
+这一固定快照。权限消费属于 Events v2 后续接线的目标要求；本片实现元数据保存与恢复。
+该目标要求未知权限值、工具身份冲突和缺少可信绑定按 DENY 处理；ASK 只能由快照中明确的
 可信权限触发确认。该约束不把工具调用定义或参数 Schema 引入磁盘缓存。
 
 ## 5. 安全边界与设计决策
@@ -338,10 +339,12 @@ pi `4af9d21d3b4d664e4a29fcabfec85171077248e3` 的
 该设计是 CampusClaw 的安全加固。pi 基线
 `4af9d21d3b4d664e4a29fcabfec85171077248e3` 中不存在 `AgentRuntimeManager`、`bindingTools` 或
 `RuntimeToolPermissionPolicy` 对应实现，因此这里属于 Java 目标运行目录契约，不能表述为 pi
-现有缓存行为。决策与兼容处理见
+现有缓存行为。已核对 `packages/agent/src/agent-loop.ts` 的 `runAgentLoop`、`prepareToolCall`：
+pi 接收进程内上下文和调用前钩子，此路径不负责 CampusClaw 受管权限目录。决策与兼容处理见
 [ADR-0089](../decisions/0089-persist-agent-tool-permissions.html)。测试使用完整 `BoundTool` 值验证
 首次发布、同进程缓存命中和全新 Manager 重启读取保持一致，并分别覆盖缺字段重建与显式空数组。
-没有新增 Maven 依赖。
+没有新增 Maven 依赖。独立复验 51 项通过；生成镜像与源码一致。企业 Maven 父工程
+NativeParent 26.0.0-SNAPSHOT 在本机不可解析，企业镜像编译未验证。
 
 ## 7. 版本历史
 

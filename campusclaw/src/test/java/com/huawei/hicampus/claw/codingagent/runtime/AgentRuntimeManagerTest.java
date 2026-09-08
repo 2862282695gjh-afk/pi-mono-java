@@ -28,6 +28,7 @@ import java.util.concurrent.TimeoutException;
 
 import com.huawei.hicampus.claw.codingagent.runtime.MateServiceClient.AgentReference;
 import com.huawei.hicampus.claw.codingagent.runtime.MateServiceClient.AgentRuntime;
+import com.huawei.hicampus.claw.codingagent.runtime.MateServiceClient.BoundTool;
 import com.huawei.hicampus.claw.codingagent.runtime.MateServiceClient.SkillFile;
 import com.huawei.hicampus.claw.codingagent.runtime.MateServiceClient.SkillInfo;
 import com.huawei.hicampus.claw.codingagent.runtime.MateServiceClient.SkillReference;
@@ -153,6 +154,54 @@ class AgentRuntimeManagerTest {
         new ObjectMapper().writeValue(identityFile.toFile(), identity);
         assertNull(restarted.prepareCached(AGENT_ID));
         verifyNoInteractions(restartedClient);
+    }
+
+    @Test
+    void shouldPreserveToolPermissionsWhenPublishedCachedAndRestarted() throws Exception {
+        BoundTool agentTool = tool("isolate_port", "ask", "Agent tool", "7");
+        BoundTool unknownTool = tool("future_tool", "unexpected", "Future tool", "8");
+        BoundTool skillTool = tool("rotate_secret", "ask", "Skill tool", "9");
+        List<BoundTool> agentTools = List.of(agentTool, unknownTool);
+        List<BoundTool> skillTools = List.of(skillTool);
+        when(client.getAgentRuntime(AGENT_ID))
+                .thenReturn(runtime(List.of(child("researcher", CHILD_ID)), "prompt-v1", "1.0.0", agentTools));
+        when(client.querySkillInfo(SKILL_ID)).thenReturn(skill(skillContent(), skillTools));
+
+        PreparedAgentRuntime published = manager.prepare(AGENT_ID);
+        assertBindingTools(published, agentTools, skillTools);
+        assertBindingTools(manager.prepare(AGENT_ID), agentTools, skillTools);
+        MateServiceClient restartedClient = mock(MateServiceClient.class);
+        var restarted = new AgentRuntimeManager(
+                new AgentRuntimeProperties(tempDir.resolve("agent"), Duration.ofSeconds(1L), Duration.ofSeconds(2L)),
+                restartedClient,
+                new ObjectMapper());
+
+        assertBindingTools(restarted.prepareCached(AGENT_ID), agentTools, skillTools);
+        verify(client).getAgentRuntime(AGENT_ID);
+        verify(client).querySkillInfo(SKILL_ID);
+        verifyNoInteractions(restartedClient);
+    }
+
+    @Test
+    void shouldRejectOldCacheWhenAgentToolBindingsAreMissing() throws Exception {
+        stubRuntime("1.0.0", "prompt-v1");
+        Path settings = manager.prepare(AGENT_ID).agentRoot().resolve(".campusclaw/settings.json");
+        removeJsonField(settings, "bindingTools");
+
+        assertNull(manager.prepareCached(AGENT_ID));
+        manager.prepare(AGENT_ID);
+        verify(client, times(2)).getAgentRuntime(AGENT_ID);
+    }
+
+    @Test
+    void shouldRejectOldCacheWhenSkillToolBindingsAreMissing() throws Exception {
+        stubRuntime("1.0.0", "prompt-v1");
+        Path manifest = manager.prepare(AGENT_ID).agentRoot().resolve(".campusclaw/skills/calendar/skill.json");
+        removeJsonField(manifest, "bindingTools");
+
+        assertNull(manager.prepareCached(AGENT_ID));
+        manager.prepare(AGENT_ID);
+        verify(client, times(2)).querySkillInfo(SKILL_ID);
     }
 
     @Test
@@ -502,10 +551,15 @@ class AgentRuntimeManagerTest {
     }
 
     private static AgentRuntime runtime(List<AgentReference> children, String prompt, String version) {
+        return runtime(children, prompt, version, List.of());
+    }
+
+    private static AgentRuntime runtime(
+            List<AgentReference> children, String prompt, String version, List<BoundTool> bindingTools) {
         return new AgentRuntime(
                 List.of("gpt-4o"),
                 List.of(new SkillReference(SKILL_ID, "1.0.0")),
-                List.of(),
+                bindingTools,
                 children,
                 List.of("description"),
                 "Agent A",
@@ -522,6 +576,10 @@ class AgentRuntimeManagerTest {
     }
 
     private static SkillInfo skill(String content) {
+        return skill(content, List.of());
+    }
+
+    private static SkillInfo skill(String content, List<BoundTool> bindingTools) {
         return new SkillInfo(
                 "calendar",
                 SKILL_ID,
@@ -529,7 +587,7 @@ class AgentRuntimeManagerTest {
                 "Calendar workflow",
                 "booking",
                 content,
-                List.of(),
+                bindingTools,
                 List.of(),
                 List.of(new SkillFile("template-1", "request", "Template", "txt")),
                 List.of(new SkillFile("reference-1", "guide", "Reference", "md")));
@@ -537,5 +595,30 @@ class AgentRuntimeManagerTest {
 
     private static String skillContent() {
         return "---\nname: calendar\ndescription: Calendar workflow\n---\n\nUse the calendar workflow.\n";
+    }
+
+    private static BoundTool tool(String name, String permission, String displayName, String version) {
+        return new BoundTool(
+                "Tool description",
+                displayName,
+                "tool-22222222222222222222222222222222",
+                "false",
+                name,
+                permission,
+                "mate",
+                version);
+    }
+
+    private static void assertBindingTools(
+            PreparedAgentRuntime runtime, List<BoundTool> agentTools, List<BoundTool> skillTools) {
+        assertEquals(agentTools, runtime.metadata().bindingTools());
+        assertEquals(skillTools, runtime.skills().get(0).bindingTools());
+    }
+
+    private static void removeJsonField(Path file, String field) throws Exception {
+        ObjectMapper objectMapper = new ObjectMapper();
+        var value = (com.fasterxml.jackson.databind.node.ObjectNode) objectMapper.readTree(file.toFile());
+        value.remove(field);
+        objectMapper.writeValue(file.toFile(), value);
     }
 }

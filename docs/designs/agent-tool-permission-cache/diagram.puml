@@ -4,6 +4,7 @@ title Managed Runtime Tool Permission Cache
 ' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtime/MateServiceClient.java AgentRuntime, SkillInfo, BoundTool.
 ' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtime/AgentRuntimeManager.java writeSkills, loadSkill, toSettings, toRuntime, validSettings, validCachedSkill.
 ' Implementation commit: pi-mono-java@2b76bbf9.
+' Pi source evidence: packages/agent/src/agent-loop.ts runAgentLoop and prepareToolCall use in-process context and hooks.
 ' Pi baseline: pi-mono@4af9d21d3b4d664e4a29fcabfec85171077248e3 has no matching managed permission cache.
 ' Observed behavior: the source baseline discarded Agent and Skill bindingTools while writing and loading the managed snapshot.
 ' Security hardening: missing permission fields invalidate the snapshot, while explicit empty arrays remain valid.
@@ -14,7 +15,7 @@ participant AgentRuntimeManager as Manager
 database "Staging directory" as Staging
 database "Published directory" as Cache
 participant PreparedAgentRuntime as Prepared
-participant "Permission policy" as Policy
+participant "Permission policy\n(target integration)" as Policy
 
 Mate -> Manager: AgentRuntime and SkillInfo\nwith bindingTools
 Manager -> Staging: Write settings.json\nand skill.json arrays
