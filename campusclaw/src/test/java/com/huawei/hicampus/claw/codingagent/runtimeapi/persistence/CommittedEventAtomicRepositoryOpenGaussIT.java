@@ -65,6 +65,7 @@ class CommittedEventAtomicRepositoryOpenGaussIT {
         repository = context.getBean(RuntimeSessionRepository.class);
         jdbcTemplate = context.getBean(JdbcTemplate.class);
         jdbcTemplate.update("TRUNCATE TABLE t_session_events");
+        jdbcTemplate.update("TRUNCATE TABLE t_session_event_projection");
         jdbcTemplate.update("TRUNCATE TABLE t_session_records");
         jdbcTemplate.update("TRUNCATE TABLE t_session_entries");
         jdbcTemplate.update("TRUNCATE TABLE t_session_stats");
@@ -116,6 +117,7 @@ class CommittedEventAtomicRepositoryOpenGaussIT {
         assertThat(count("t_session_entries", sessionId)).isOne();
         assertThat(count("t_session_records", sessionId)).isZero();
         assertThat(count("t_session_events", sessionId)).isOne();
+        assertThat(count("t_session_event_projection", sessionId)).isOne();
         assertThat(value("SELECT next_seq FROM t_session_sequences WHERE session_id = ?", Long.class, sessionId))
                 .isEqualTo(3L);
         assertThat(value("SELECT input_tokens FROM t_session_stats WHERE session_id = ?", Long.class, sessionId))
