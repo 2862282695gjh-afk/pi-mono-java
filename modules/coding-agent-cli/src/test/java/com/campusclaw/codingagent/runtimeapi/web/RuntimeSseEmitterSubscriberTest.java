@@ -46,8 +46,7 @@ class RuntimeSseEmitterSubscriberTest {
         RuntimeSseEmitterSubscriber subscriber = new RuntimeSseEmitterSubscriber(new CapturingSseEmitter(), true);
         RuntimeSseEventVO legacy = new RuntimeSseEventVO("17", "user.message", Map.of("eventId", "event_1"));
 
-        IllegalArgumentException error =
-                assertThrows(IllegalArgumentException.class, () -> subscriber.onEvent(legacy));
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class, () -> subscriber.onEvent(legacy));
 
         assertThat(error).hasMessageContaining("data-only");
     }
