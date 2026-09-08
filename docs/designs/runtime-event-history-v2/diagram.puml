@@ -1,6 +1,6 @@
 @startuml query_pipeline
 title Authoritative event history query
-' Source baseline: pi-mono-java 17f91e20
+' Source baseline: pi-mono-java 69b8ced3 plus change ab0f2637
 ' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/event/CommittedEventQueryService.java#list
 ' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/persistence/MyBatisRuntimeSessionRepository.java#findEventPage
 ' Source: modules/coding-agent-cli/src/main/resources/mapper/session/RuntimeSessionMapper.xml#countUnmappedCurrentBranchEntries
@@ -30,8 +30,8 @@ CommittedEventQueryService -> MyBatisRuntimeSessionRepository : findEventPage(of
 activate MyBatisRuntimeSessionRepository
 MyBatisRuntimeSessionRepository -> t_sessions : read session and active leaf
 MyBatisRuntimeSessionRepository -> t_session_entries : resolve recursive current path
-MyBatisRuntimeSessionRepository -> t_session_event_projection : verify exact completeness
-alt unknown, missing, or partial projection
+MyBatisRuntimeSessionRepository -> t_session_event_projection : verify registered type and exact completeness
+alt unknown, retired, missing, or partial projection
   MyBatisRuntimeSessionRepository --> CommittedEventQueryService : fail closed
 else complete projection
   MyBatisRuntimeSessionRepository -> t_session_events : read stable order with offset and limit
@@ -48,6 +48,12 @@ note over MyBatisRuntimeSessionRepository,t_session_events
   One REPEATABLE_READ transaction per request.
   No cross-request snapshot or total count.
   No legacy migration or read-time reconstruction.
+end note
+note over t_session_entries,t_session_event_projection
+  Retired preview and stream entry types fail closed
+  even when a zero-event marker exists.
+  Current internal compaction and structure types may
+  carry an explicit zero-event marker.
 end note
 note over RuntimeEventController,CommittedEventQueryService
   Controller wiring is part of the pending Events HTTP integration.

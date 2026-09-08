@@ -73,7 +73,7 @@ class CommittedEventQueryRepositoryOpenGaussIT {
         insertEntry(session.getId(), "entry-root", 1L, null);
         insertEntry(session.getId(), "entry-abandoned", 3L, "entry-root");
         insertEntry(session.getId(), "entry-current", 5L, "entry-root");
-        insertEntry(session.getId(), "entry-private", 7L, "entry-current", "stream.end");
+        insertEntry(session.getId(), "entry-private", 7L, "entry-current", "session.compaction.started");
         insertEvent(session.getId(), "event-root", 2L, "entry-root");
         insertEvent(session.getId(), "event-abandoned", 4L, "entry-abandoned");
         insertEvent(session.getId(), "event-current", 6L, "entry-current");
@@ -101,6 +101,31 @@ class CommittedEventQueryRepositoryOpenGaussIT {
             insertProjection(session.getId(), "entry-unmapped", 0);
         }
         jdbcTemplate.update("UPDATE t_sessions SET active_leaf_id = ? WHERE id = ?", "entry-unmapped", session.getId());
+
+        IllegalStateException error =
+                assertThrows(IllegalStateException.class, () -> repository.findEventPage(session.getId(), 0L, 1));
+
+        assertThat(error).hasMessage("current branch event mapping is incomplete");
+    }
+
+    @ParameterizedTest
+    @ValueSource(
+            strings = {
+                "assistant.message.started",
+                "assistant.message.delta",
+                "assistant.thinking.started",
+                "assistant.thinking.delta",
+                "tool.execution.delta",
+                "tool.execution.completed",
+                "stream.end",
+                "stream.error"
+            })
+    void shouldRejectRetiredEntryTypeEvenWithZeroEventProjection(String type) {
+        RuntimeSessionDTO session = session();
+        repository.create(session);
+        insertEntry(session.getId(), "entry-retired", 1L, null, type);
+        insertProjection(session.getId(), "entry-retired", 0);
+        jdbcTemplate.update("UPDATE t_sessions SET active_leaf_id = ? WHERE id = ?", "entry-retired", session.getId());
 
         IllegalStateException error =
                 assertThrows(IllegalStateException.class, () -> repository.findEventPage(session.getId(), 0L, 1));

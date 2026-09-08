@@ -288,12 +288,11 @@
          AND actual.anchor_entry_id = entry.id
         WHERE entry.type NOT IN (
             'user.message', 'user.interrupt', 'user.tool_confirmation',
-            'assistant.message.started', 'assistant.message.delta', 'assistant.message.completed',
-            'assistant.thinking.started', 'assistant.thinking.delta', 'assistant.thinking.completed',
-            'tool.execution.started', 'tool.execution.delta', 'tool.execution.completed', 'tool.result',
+            'assistant.message.completed', 'assistant.thinking.completed',
+            'tool.execution.started', 'tool.result',
             'session.model.changed', 'session.thinking.changed', 'session.compaction.started',
             'session.compaction.completed', 'session.compaction.failed', 'session.status.idle',
-            'stream.end', 'stream.error', 'leaf', 'branch_summary', 'label'
+            'leaf', 'branch_summary', 'label'
         )
         OR projection.anchor_entry_id IS NULL
         OR projection.event_count != COALESCE(actual.event_count, 0)
@@ -309,11 +308,8 @@
         )
         OR (
             entry.type IN (
-                'assistant.message.started', 'assistant.message.delta',
-                'assistant.thinking.started', 'assistant.thinking.delta',
-                'tool.execution.delta', 'tool.execution.completed',
                 'session.compaction.started', 'session.compaction.failed',
-                'stream.end', 'stream.error', 'leaf', 'branch_summary', 'label'
+                'leaf', 'branch_summary', 'label'
             )
             AND projection.event_count != 0
         )
