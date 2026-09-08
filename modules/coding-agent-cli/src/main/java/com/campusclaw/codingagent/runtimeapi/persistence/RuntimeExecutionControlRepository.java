@@ -7,8 +7,11 @@ package com.campusclaw.codingagent.runtimeapi.persistence;
 import java.time.OffsetDateTime;
 import java.util.Optional;
 
+import com.campusclaw.codingagent.runtimeapi.dto.CommittedControlEventDTO;
+import com.campusclaw.codingagent.runtimeapi.dto.ConfirmingEventsDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.ExecutionStateDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.ExecutionTargetDTO;
+import com.campusclaw.codingagent.runtimeapi.dto.InterruptRequestDTO;
 import com.campusclaw.codingagent.runtimeapi.session.RuntimeExecutionTerminalReason;
 
 /**
@@ -24,17 +27,15 @@ public interface RuntimeExecutionControlRepository {
 
     void linkCommittedEvent(ExecutionTargetDTO target, String eventId, long eventSeq);
 
+    InterruptRequestDTO requestInterrupt(
+            String sessionId, String targetEventId, String stopEventId, OffsetDateTime requestedAt);
+
     TransitionStatus markConfirming(
-            ExecutionTargetDTO target,
-            String toolCallId,
-            String terminalEventId,
-            long terminalEventSeq,
-            OffsetDateTime terminalAt);
+            ExecutionTargetDTO target, String toolCallId, ConfirmingAppender appender, OffsetDateTime terminalAt);
 
     TransitionStatus markTerminal(
             ExecutionTargetDTO target,
-            String terminalEventId,
-            long terminalEventSeq,
+            TerminalAppender appender,
             RuntimeExecutionTerminalReason terminalReason,
             OffsetDateTime terminalAt);
 
@@ -46,5 +47,21 @@ public interface RuntimeExecutionControlRepository {
         NOT_FOUND,
         STALE_TARGET,
         STATE_CONFLICT
+    }
+
+    /**
+     * 持有 Session 与执行行锁期间提交 confirming 完整事件的回调。
+     */
+    @FunctionalInterface
+    interface ConfirmingAppender {
+        ConfirmingEventsDTO append();
+    }
+
+    /**
+     * 持有 Session 与执行行锁期间提交唯一权威终态事件的回调。
+     */
+    @FunctionalInterface
+    interface TerminalAppender {
+        CommittedControlEventDTO append();
     }
 }

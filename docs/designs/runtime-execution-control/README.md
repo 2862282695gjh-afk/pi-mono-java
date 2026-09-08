@@ -1,14 +1,15 @@
-# 固定执行控制存储基础
+# 固定执行控制与应用事务
 
 | 属性 | 值 |
 |---|---|
-| 版本 | 0.1.1 |
+| 版本 | 0.2.0 |
 | 日期 | 2026-09-08 |
 | 设计契约 | `pi-mono-java-design@2ee2a3211da68ad87b0d9cab353e691b00bdaebd` |
 | 变更前 Java 源码基线 | `pi-mono-java@fd556dce3cfa12e5e834b6e9b8f835f10e7d67c8` |
-| 本片实现提交 | `8ec383dd0ee6a5a8fe7e72b9e97bba8f71c8f8da`；主线集成 `4c580a7a`，权限补齐 `dae01509` |
+| 存储实现提交 | `8ec383dd0ee6a5a8fe7e72b9e97bba8f71c8f8da`；主线集成 `4c580a7a`，权限补齐 `dae01509` |
+| 应用事务实现提交 | `92562f62`～`8e775f1c`；本分支主线合并 `30ae1952` |
 | pi 源码基线 | `pi@4af9d21d3b4d664e4a29fcabfec85171077248e3` |
-| 范围 | 固定执行、结果段和完整事件关联的低层数据库存储；不包含 Events v2 HTTP 受理和跨实例轮询 |
+| 范围 | 固定执行存储，以及消息、中断、进入确认和真实终态的应用事务；不包含 Events v2 HTTP 路由和跨实例轮询 |
 
 ## Context
 
@@ -17,7 +18,8 @@
 这样迟到的中断不能只凭 Session 当前状态误停下一轮，确认续跑也不会把新输出写回已经关闭的响应。
 
 变更前 Java 仅在 `RuntimeActiveExecution.runId` 保存进程内标识；另一个服务实例不能据此绑定控制目标。
-本片增加低层持久化边界，为后续原子受理、停止和确认竞争提供数据库依据。
+0.1 版增加低层持久化边界。0.2 版在 Spring 外层事务中组合 Session Entry、公共完整事件、
+执行身份和结果段关联，使消息受理、中断受理、进入确认和真实终态具有一个提交点。
 
 ## 源码证据与设计理由
 
@@ -29,14 +31,16 @@
 | 本片实现 | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/persistence/MyBatisRuntimeExecutionControlRepository.java` | 统一先锁 Session，再锁固定执行；拒绝过期 segment 和重复终态 |
 | 本片实现 | `modules/coding-agent-cli/src/main/resources/db/gaussdb/install/session_schema.sql` | 三张 `t_` 表保存根执行、结果段和段内完整事件顺序；toolCallId 使用 TEXT |
 | 本片实现 | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/persistence/MyBatisRuntimeSessionRepository.java#completeCleanup` | Session 清理先删除段事件、段和根执行，避免控制数据永久残留 |
+| 0.2 应用事务 | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/persistence/RuntimeExecutionPersistenceService.java#acceptMessage/acceptInterrupt/markToolConfirming/commitTerminal` | 用外层 Spring 事务组合 Session、Entry、公共事件和固定执行状态 |
+| 0.2 锁内回调 | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/persistence/RuntimeExecutionControlRepository.java#ConfirmingAppender/TerminalAppender` | 在写权威事件前先锁定并复核精确目标，过期目标不会调用写入回调 |
 
 pi `packages/agent/src/agent-loop.ts#runAgentLoop` 使用调用方提供的 `AbortSignal` 驱动一轮循环，
 `prepareToolCall` 在工具执行前再次检查该信号。pi 没有 CampusClaw 的共享数据库、HTTP Session 资源或
 跨实例路由。本片的固定数据库身份属于 CampusClaw 架构变化，不把它描述为 pi 已有能力。
 
-## 存储关系
+## 架构与数据流
 
-![固定执行、结果段和事件关联](runtime_execution_control_store.svg)
+![固定执行控制与应用事务](runtime_execution_control_store.svg)
 
 [PlantUML 源码](diagram.puml#L1)
 
@@ -48,19 +52,32 @@ pi `packages/agent/src/agent-loop.ts#runAgentLoop` 使用调用方提供的 `Abo
 
 ## 事务与锁顺序
 
-本片 Repository 的状态迁移使用短事务，先锁 `t_sessions`，再锁固定执行；登记要求 Session 已经是
-running。后续应用片会在同一外层事务中继续分配 Session 统一序号、写 Entry 和公共完整事件，最后写
-段关联。该组合事务不在本片，当前低层 API 不能单独证明 Events v2 已完成原子受理。
+`RuntimeExecutionPersistenceService` 是应用事务边界。底层 Repository 使用 Spring `REQUIRED` 传播。
+消息准入持有 Session 行锁，先分配统一序号并写 Entry、公共事件和完整性标记，再创建新的执行身份与结果段；
+中断、进入确认和真实终态先锁已有 Session 和固定执行并校验当前结果段身份，再分配统一序号并写完整事件，
+最后写段关联。任一步失败都会回滚同一事务内已写的数据与统一序号。
 
-`markConfirming` 只关闭当前结果段并把根执行保留为 CONFIRMING；它不会把 Session 改为 idle。
+- `acceptMessage` 先通过 Session 准入事务写 `user.message` Entry 与公共事件，再登记根执行和初始段，
+  最后把该回执关联到初始段。公开 `eventId` 同时成为不可变 `rootEventId`。
+- `acceptInterrupt` 先锁 Session 和当前执行，校验必填 `targetEventId` 与根事件完全一致，并把执行改为
+  STOPPING；随后写 `user.interrupt` Entry 与公共事件。该受理回执不关联到原消息结果段；中断 HTTP
+  响应继续等待同一实际终态的能力尚未接入。
+- `markToolConfirming` 在锁内确认执行仍为 RUNNING，再由回调依次写 `agent.tool_call` 和
+  `session.status_idle` 完整事件、关联当前段并以 CONFIRMING 关闭该段；根执行进入 CONFIRMING，
+  Session 保持 running。
+- `commitTerminal` 在调用回调前锁定并复核完整 target；回调写唯一 `session.status_idle` Entry 与公共事件，
+  然后关联段、关闭尚未关闭的当前段、终结根执行并把同一轮 Session 置为 idle。过期 target 不会触发回调。
+
 `markTerminal` 同时校验 executionId、rootEventId 和当前 segmentId，只允许 done、failed、terminated
-三个真实结束原因。状态与原因使用 typed enum；数据库保存既定大小写字面值。
+三个真实结束原因。状态与原因使用 typed enum；数据库保存既定大小写字面值。`compact` 保持自己的
+Session 生命周期，本片不把任意 running Session 推断为用户消息执行。
 
 ## 边界与后续
 
-本片没有实现 `user.interrupt` 或 `user.tool_confirmation` 的 HTTP 联合输入、公共事件原子组合写、
-确认决定一次消费、本地提交后唤醒、批量控制检查、有界等待登记或结果补读，也没有退役旧控制接口。
-这些能力必须在后续应用片接入本存储后单独验收。原执行凭据不会写入三张表。
+本片没有把 Events v2 HTTP 联合输入切换到这些应用事务，也没有实现工具确认决定受理与一次消费、
+提交结果不确定时的终态幂等恢复、普通 Agent 输出按固定段原子追加、本地提交后唤醒、批量控制检查、
+有界等待登记或结果补读，也没有退役旧控制接口。这些能力必须在后续切片单独验收。原执行凭据不会
+写入控制表，进入 confirming 后由原实例继续持有。
 
 没有新增 Maven 依赖。SQL 只进入首次发布的全量安装脚本；表名为小写蛇形 `t_` 前缀，所有
 `COMMENT ON` 描述使用中文。`pending_tool_call_id` 使用 TEXT，不对提供商 Tool Call ID 增加未确认上限。
@@ -74,8 +91,10 @@ running。后续应用片会在同一外层事务中继续分配 Session 统一�
 - 固定根执行与初始段能登记和读取，300 字符 Tool Call ID 可进入 confirming；Session 仍保持 running。
 - 过期 segment 和重复终态不能覆盖已提交终态。
 - 删除完成的 Session 后，段事件、段和根执行三张控制表全部清空，tombstone 继续保留。
-- 独立审查执行完整 `RuntimeSessionRepositoryOpenGaussIT`：29 项通过，无失败、错误或跳过。
-- 合入公共事件主线后，完整 Session Repository 29 项与原子公共事件 2 项真实数据库回归共 31 项通过。
+- 应用事务独立审查执行 `RuntimeSessionRepositoryOpenGaussIT` 33 项与原子公共事件 2 项，共 35 项通过，
+  无失败、错误或跳过；日志为 `/tmp/pi-events-v2-review/event-transactions/tests.log`。
+- 回归覆盖消息准入整体回滚、中断目标校验和回滚、confirming 两个完整事件与段关闭、过期终态回调零调用、
+  终态段关联失败时 Entry、公共事件、完整性标记、执行状态、Session 状态和统一序号整体回滚。
 - 新建非所有者角色先实际重现读取控制表权限不足，再执行权限模板；该角色对三张控制表及公共事件表的 SELECT 和零行 INSERT/UPDATE/DELETE 全部成功。该检查验证权限，事务行为由上述数据库回归验证。
 - `spotless:apply`、`checkstyle:check`、`test-compile`、聚焦真实数据库测试和 `git diff --check` 通过。
 
@@ -93,3 +112,4 @@ running。后续应用片会在同一外层事务中继续分配 Session 统一�
 |---|---|---|
 | 0.1.0 | 2026-09-08 | 增加固定根执行、结果段、段内事件关联、typed 状态和 Session 清理边界 |
 | 0.1.1 | 2026-09-08 | 合并公共事件清理边界，补齐部署运行角色授权并增加非所有者权限验证 |
+| 0.2.0 | 2026-09-08 | 增加消息、中断、进入确认与真实终态的外层原子事务和真实数据库回归 |
