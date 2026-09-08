@@ -1,0 +1,49 @@
+@startuml skill_lifecycle_acceptance
+' Java baseline: 72f3550eabbfbf0f1cc3768430e3fc0206cb7a11
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/web/RuntimeCommandController.java:executeSkill
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/event/RuntimeExecutionCoordinator.java:timeoutExecution,completeExecution
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/event/RuntimeTerminalEventFactory.java:emit
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/event/RuntimeEntryCodec.java:isRecoverableMessageEntry
+' Observed behavior: disconnect detaches output; execution timeout aborts independently.
+' Design reason: exercise real network, process and persistence boundaries using the existing test fixture.
+' New test in this PR: modules/coding-agent-cli/src/test/java/com/campusclaw/codingagent/runtimeapi/web/RuntimeSkillLifecycleOpenGaussIT.java
+' Scope: Java acceptance only; no new product architecture or pi HTTP behavior claim.
+skinparam shadowing false
+skinparam backgroundColor #FFFFFF
+title Skill disconnect and execution timeout acceptance
+actor "JUnit HTTP client" as Client
+participant "Actual JAR JVM\nmax-active = 1" as Runtime
+database "Owned openGauss" as DB
+participant "Local model HTTP\nresponse gate" as Model
+Client -> Runtime : POST skill with full managed-file input
+Runtime -> DB : accept one user.message
+Runtime -> Model : expanded Skill and arguments
+Runtime --> Client : HTTP 200; ordinary SSE headers
+note over Runtime,Model : Hold model response before headers
+alt disconnect and normal completion
+  Client -> Runtime : TCP reset
+  Client -> Runtime : GET state/history across heartbeat periods
+  Runtime --> Client : running; one user.message
+  Client -> Runtime : same / other Session: new Skill
+  Runtime --> Client : 409 busy / 503 capacity; no acceptance
+  Client -> Model : release response
+  Model --> Runtime : deterministic response
+  Runtime -> DB : normal Assistant and Usage; idle
+else execution timeout, connected or disconnected
+  opt disconnect
+    Client -> Runtime : TCP reset
+  end
+  Runtime -> Runtime : existing 3-second deadline aborts model
+  Runtime -> DB : empty aborted Assistant; zero Usage; idle
+  opt still connected
+    Runtime --> Client : stream.error; no idle/end frames
+  end
+  Client -> Model : release late response only after terminal checks
+end
+Client -> Runtime : same / other Session: new Skill
+Runtime -> Model : restored users; exclude aborted Assistant
+Model --> Runtime : successful response
+Runtime --> Client : SSE completed; old history unchanged
+Client -> Runtime : close and assert JVM exited
+Client -> Model : close and assert executor terminated
+@enduml
