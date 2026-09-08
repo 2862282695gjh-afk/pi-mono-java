@@ -52,6 +52,7 @@ import com.campusclaw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.command.CommandSessionSnapshotDTO;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
+import com.campusclaw.codingagent.runtimeapi.event.RuntimeCommittedEventFactory;
 import com.campusclaw.codingagent.runtimeapi.event.RuntimeEntryCodec;
 import com.campusclaw.codingagent.runtimeapi.event.RuntimeEntryIdGenerator;
 import com.campusclaw.codingagent.runtimeapi.event.RuntimeEventProjectorFactory;
@@ -99,6 +100,9 @@ class RuntimeCompactionServiceOpenGaussIT {
 
     private final RuntimeEntryCodec codec =
             new RuntimeEntryCodec(mapper, new RuntimeMessageSourceConfiguration().messageSource());
+
+    private final RuntimeCommittedEventFactory eventFactory =
+            new RuntimeCommittedEventFactory(mapper, new RuntimeMessageSourceConfiguration().messageSource());
 
     private final CampusClawAiService ai = mock(CampusClawAiService.class);
 
@@ -183,7 +187,9 @@ class RuntimeCompactionServiceOpenGaussIT {
                     null,
                     true,
                     ignored -> {},
-                    ignored -> codec.thinkingChangedEntry(session.getId(), "configuration", false, true, "user", now),
+                    ignored ->
+                            codec.thinkingChangedEntry(session.getId(), "configuration", false, true, "requested", now),
+                    eventFactory::sessionConfiguration,
                     now);
         } else if (kind.equals("failed-assistant")) {
             jdbc.update("UPDATE t_sessions SET state='running' WHERE id=?", session.getId());
