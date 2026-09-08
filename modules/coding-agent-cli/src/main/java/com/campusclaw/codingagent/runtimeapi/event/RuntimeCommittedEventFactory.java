@@ -56,6 +56,23 @@ public class RuntimeCommittedEventFactory {
         return create(entry, entry.getId(), CommittedEventType.USER_MESSAGE, payload);
     }
 
+    public CommittedEventDTO userInterrupt(RuntimeEntryDTO entry, String targetEventId) {
+        ObjectNode payload = objectMapper.createObjectNode();
+        payload.put("targetEventId", targetEventId);
+        return create(entry, entry.getId(), CommittedEventType.USER_INTERRUPT, payload);
+    }
+
+    public CommittedEventDTO userToolConfirmation(
+            RuntimeEntryDTO entry, String toolCallId, String result, String denyMessage) {
+        ObjectNode payload = objectMapper.createObjectNode();
+        payload.put("toolCallId", toolCallId);
+        payload.put("result", result);
+        if (denyMessage != null) {
+            payload.put("denyMessage", denyMessage);
+        }
+        return create(entry, entry.getId(), CommittedEventType.USER_TOOL_CONFIRMATION, payload);
+    }
+
     public CommittedEventDTO agentMessage(
             RuntimeEntryDTO entry, String eventId, AssistantMessage message, String sourceEventId) {
         ObjectNode payload = sourcePayload(sourceEventId);
