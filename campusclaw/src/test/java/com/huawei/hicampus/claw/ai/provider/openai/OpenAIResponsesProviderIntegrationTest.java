@@ -153,6 +153,7 @@ class OpenAIResponsesProviderIntegrationTest {
             // Verify usage
             assertEquals(10, finalMsg.usage().input());
             assertEquals(5, finalMsg.usage().output());
+            assertTrue(finalMsg.usage().known());
         }
 
         @Test
@@ -533,6 +534,9 @@ class OpenAIResponsesProviderIntegrationTest {
 
             assertNotNull(finalMsg);
             assertEquals(StopReason.LENGTH, finalMsg.stopReason());
+            assertTrue(finalMsg.usage().known());
+            assertEquals(10, finalMsg.usage().input());
+            assertEquals(100, finalMsg.usage().output());
         }
     }
 

@@ -39,6 +39,7 @@ import com.openai.client.okhttp.OpenAIOkHttpClient;
 import com.openai.core.http.StreamResponse;
 import com.openai.models.responses.EasyInputMessage;
 import com.openai.models.responses.FunctionTool;
+import com.openai.models.responses.Response;
 import com.openai.models.responses.ResponseCreateParams;
 import com.openai.models.responses.ResponseFunctionToolCall;
 import com.openai.models.responses.ResponseInputItem;
@@ -248,6 +249,7 @@ public class OpenAIResponsesProvider implements ApiProvider {
         final HashSet<Integer> publicThinkingOutputs = new HashSet<>();
         String responseId;
         StopReason stopReason;
+        boolean usageKnown;
     }
 
     private void processStream(
@@ -258,7 +260,12 @@ public class OpenAIResponsesProvider implements ApiProvider {
         }
         var finalStopReason = state.stopReason != null ? state.stopReason : StopReason.STOP;
         var finalMessage = buildPartialMessage(
-                model, state.responseId, state.contentBlocks, state.accumulatedUsage, finalStopReason);
+                model,
+                state.responseId,
+                state.contentBlocks,
+                state.accumulatedUsage,
+                finalStopReason,
+                state.usageKnown);
         eventStream.pushDone(finalStopReason, finalMessage);
     }
 
@@ -273,9 +280,9 @@ public class OpenAIResponsesProvider implements ApiProvider {
         event.reasoningSummaryTextDelta().ifPresent(e -> applyThinkingDelta(e, state, model, eventStream));
         event.functionCallArgumentsDelta().ifPresent(e -> applyToolArgsDelta(e, state, model, eventStream));
         event.outputItemDone().ifPresent(e -> handleOutputItemDoneEvent(e, state, model, eventStream));
-        event.completed().ifPresent(e -> handleCompleted(e, state));
-        event.failed().ifPresent(e -> state.stopReason = StopReason.ERROR);
-        event.incomplete().ifPresent(e -> state.stopReason = StopReason.LENGTH);
+        event.completed().ifPresent(e -> handleTerminalResponse(e.response(), state, StopReason.STOP));
+        event.failed().ifPresent(e -> handleTerminalResponse(e.response(), state, StopReason.ERROR));
+        event.incomplete().ifPresent(e -> handleTerminalResponse(e.response(), state, StopReason.LENGTH));
         event.error().ifPresent(e -> state.stopReason = StopReason.ERROR);
     }
 
@@ -373,15 +380,20 @@ public class OpenAIResponsesProvider implements ApiProvider {
                 new AssistantMessageEvent.ToolCallDeltaEvent(contentIdx, e.delta(), partialFrom(state, model, null)));
     }
 
-    private void handleCompleted(com.openai.models.responses.ResponseCompletedEvent e, ResponsesStreamState state) {
-        var resp = e.response();
-        state.responseId = resp.id();
-        resp.usage().ifPresent(u -> parseUsage(u, state.accumulatedUsage));
-        resp.status().ifPresent(s -> state.stopReason = mapResponseStatus(s, state.contentBlocks));
+    private void handleTerminalResponse(Response response, ResponsesStreamState state, StopReason fallback) {
+        state.responseId = response.id();
+        response.usage().ifPresent(u -> {
+            parseUsage(u, state.accumulatedUsage);
+            state.usageKnown = true;
+        });
+        state.stopReason = response.status()
+                .map(status -> mapResponseStatus(status, state.contentBlocks))
+                .orElse(fallback);
     }
 
     private AssistantMessage partialFrom(ResponsesStreamState state, Model model, @Nullable StopReason stopReason) {
-        return buildPartialMessage(model, state.responseId, state.contentBlocks, state.accumulatedUsage, stopReason);
+        return buildPartialMessage(
+                model, state.responseId, state.contentBlocks, state.accumulatedUsage, stopReason, state.usageKnown);
     }
 
     private void handleOutputItemAdded(
@@ -625,13 +637,26 @@ public class OpenAIResponsesProvider implements ApiProvider {
             long[] usage,
             @Nullable StopReason stopReason) {
 
-        var piUsage = new Usage(
-                (int) usage[0],
-                (int) usage[1],
-                (int) usage[2],
-                (int) usage[3],
-                (int) (usage[0] + usage[1] + usage[2]),
-                computeCost(model.cost(), usage));
+        return buildPartialMessage(model, responseId, contentBlocks, usage, stopReason, false);
+    }
+
+    private AssistantMessage buildPartialMessage(
+            Model model,
+            String responseId,
+            List<ContentBlock> contentBlocks,
+            long[] usage,
+            @Nullable StopReason stopReason,
+            boolean usageKnown) {
+
+        var piUsage = usageKnown
+                ? new Usage(
+                        (int) usage[0],
+                        (int) usage[1],
+                        (int) usage[2],
+                        (int) usage[3],
+                        (int) (usage[0] + usage[1] + usage[2]),
+                        computeCost(model.cost(), usage))
+                : Usage.empty();
 
         return new AssistantMessage(
                 List.copyOf(contentBlocks),

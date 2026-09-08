@@ -1,0 +1,29 @@
+@startuml runtime_usage_provenance
+' Source baseline: Java 001a37d0; pi 4af9d21d3b4d664e4a29fcabfec85171077248e3.
+' Java: modules/ai/src/main/java/com/campusclaw/ai/types/Usage.java#fromJson/empty.
+' Java: modules/ai/src/main/java/com/campusclaw/ai/provider/openai/OpenAICompletionsProvider.java#handleChunk.
+' Java: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/event/RuntimeEntryCodec.java#usageRecord.
+' pi: packages/ai/src/types.ts:382; packages/ai/src/api/openai-responses.ts:118.
+' Observed behavior: numeric zero alone does not prove a provider usage report.
+' Design reason: preserve reported zero without inventing usage for missing reports.
+' Java divergence: internal provenance supports the CampusClaw public omission contract.
+title Usage provenance and JSON restoration
+start
+if (Provider reports usage?) then (yes)
+  :Usage with known = true;
+else (no)
+  :Usage.empty with known = false;
+endif
+:Persist internal Usage JSON;
+if (JSON contains known?) then (yes)
+  :Restore the explicit provenance;
+else (legacy)
+  if (Any token value is nonzero?) then (yes)
+    :Restore known = true;
+  else (no)
+    :Restore known = false;
+  endif
+endif
+:Return internal Usage to its caller;
+stop
+@enduml
