@@ -94,8 +94,10 @@ class RuntimeHttpProcessFixtureTest {
             assertThat(response).isNotDone();
             assertThat(stub.lastRequest().path("model").asText()).isEqualTo(MODEL_ID);
             assertThat(stub.requestCount()).isOne();
+            assertThat(stub.responseCount()).isZero();
             gate.release();
             var completed = response.get(5, TimeUnit.SECONDS);
+            assertThat(stub.responseCount()).isOne();
             assertThat(completed.statusCode()).isEqualTo(200);
             assertThat(completed.headers().firstValue("Content-Type")).contains("text/event-stream");
             assertThat(completed.body()).contains("process-level answer", "data: [DONE]");

@@ -206,6 +206,7 @@ final class RuntimeHttpProcessFixture {
         HttpRequest request = HttpRequest.newBuilder(uri)
                 .header("X-HW-ID", CALLER_ID)
                 .header("Authorization", "Bearer " + JWT)
+                .header("access-token", "process-access-token")
                 .header("Content-Type", "application/json")
                 .header("Accept", "text/event-stream")
                 .POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8))
@@ -359,6 +360,10 @@ final class RuntimeHttpProcessFixture {
 
         int requestCount() {
             return requestCount.get();
+        }
+
+        int responseCount() {
+            return responseCount.get();
         }
 
         JsonNode lastRequest() {
