@@ -31,6 +31,8 @@ import com.campusclaw.agent.Agent;
 import com.campusclaw.ai.types.Model;
 import com.campusclaw.ai.types.UserMessage;
 import com.campusclaw.codingagent.common.client.mate.MateCredentials;
+import com.campusclaw.codingagent.runtime.MateServiceClient.AgentRuntime;
+import com.campusclaw.codingagent.runtime.PreparedAgentRuntime;
 import com.campusclaw.codingagent.runtimeapi.RuntimeMessageSourceConfiguration;
 import com.campusclaw.codingagent.runtimeapi.agent.AgentDirectoryResolver;
 import com.campusclaw.codingagent.runtimeapi.agent.AgentDirectorySnapshotDTO;
@@ -115,6 +117,7 @@ class RuntimeCompactionServiceTest {
         when(models.resolveAvailableModel(directory, "model")).thenReturn(mock(Model.class));
         when(factory.create(any())).thenReturn(managed);
         when(managed.agent()).thenReturn(agent);
+        when(managed.runtime()).thenReturn(preparedRuntime());
         when(ids.nextId()).thenReturn("internal-usage");
         when(repository.acceptCompaction(session, now)).thenReturn(CompactionAcceptanceStatus.ACCEPTED);
         when(coordinator.start(any(), any(), any())).thenAnswer(call -> {
@@ -297,6 +300,23 @@ class RuntimeCompactionServiceTest {
     private RuntimeSessionHolder registerOther() {
         return registry.register(
                 "other", directory, mock(Model.class), false, List.of(), new RuntimeCompactionExecution(), null);
+    }
+
+    private static PreparedAgentRuntime preparedRuntime() {
+        var metadata = new AgentRuntime(
+                List.of("model"),
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                "Agent",
+                true,
+                "agent",
+                "agent",
+                "System",
+                List.of(),
+                "v1");
+        return new PreparedAgentRuntime("agent", Path.of("/agent"), metadata, List.of());
     }
 
     private void assertError(RuntimeErrorCode expected) {

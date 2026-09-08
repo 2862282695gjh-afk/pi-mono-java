@@ -21,11 +21,13 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
+import com.campusclaw.ai.types.ToolCall;
 import com.campusclaw.codingagent.runtime.MateServiceClient.AgentReference;
 import com.campusclaw.codingagent.runtime.MateServiceClient.AgentRuntime;
 import com.campusclaw.codingagent.runtime.MateServiceClient.BoundTool;
@@ -33,6 +35,7 @@ import com.campusclaw.codingagent.runtime.MateServiceClient.SkillFile;
 import com.campusclaw.codingagent.runtime.MateServiceClient.SkillInfo;
 import com.campusclaw.codingagent.runtime.MateServiceClient.SkillReference;
 import com.campusclaw.codingagent.runtimeapi.agent.RuntimeAgentPromptLoader;
+import com.campusclaw.codingagent.runtimeapi.runtime.RuntimeToolPermissionPolicy;
 import com.campusclaw.codingagent.skill.SkillLoadException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -169,6 +172,7 @@ class AgentRuntimeManagerTest {
 
         PreparedAgentRuntime published = manager.prepare(AGENT_ID);
         assertBindingTools(published, agentTools, skillTools);
+        assertAskPermissions(published);
         assertBindingTools(manager.prepare(AGENT_ID), agentTools, skillTools);
         MateServiceClient restartedClient = mock(MateServiceClient.class);
         var restarted = new AgentRuntimeManager(
@@ -176,7 +180,9 @@ class AgentRuntimeManagerTest {
                 restartedClient,
                 new ObjectMapper());
 
-        assertBindingTools(restarted.prepareCached(AGENT_ID), agentTools, skillTools);
+        PreparedAgentRuntime restored = restarted.prepareCached(AGENT_ID);
+        assertBindingTools(restored, agentTools, skillTools);
+        assertAskPermissions(restored);
         verify(client).getAgentRuntime(AGENT_ID);
         verify(client).querySkillInfo(SKILL_ID);
         verifyNoInteractions(restartedClient);
@@ -613,6 +619,17 @@ class AgentRuntimeManagerTest {
             PreparedAgentRuntime runtime, List<BoundTool> agentTools, List<BoundTool> skillTools) {
         assertEquals(agentTools, runtime.metadata().bindingTools());
         assertEquals(skillTools, runtime.skills().get(0).bindingTools());
+    }
+
+    private static void assertAskPermissions(PreparedAgentRuntime runtime) {
+        RuntimeToolPermissionPolicy policy = RuntimeToolPermissionPolicy.from(runtime);
+        assertEquals(RuntimeToolPermissionPolicy.Decision.ASK, policy.decide(toolCall("isolate_port")));
+        assertEquals(RuntimeToolPermissionPolicy.Decision.ASK, policy.decide(toolCall("rotate_secret")));
+        assertEquals(RuntimeToolPermissionPolicy.Decision.DENY, policy.decide(toolCall("future_tool")));
+    }
+
+    private static ToolCall toolCall(String toolName) {
+        return new ToolCall("call-1", "CallMateTool", Map.of("tool", toolName, "args", Map.of()));
     }
 
     private static void removeJsonField(Path file, String field) throws Exception {

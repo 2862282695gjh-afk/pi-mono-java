@@ -40,6 +40,8 @@ import com.huawei.hicampus.claw.ai.types.Model;
 import com.huawei.hicampus.claw.ai.types.Usage;
 import com.huawei.hicampus.claw.ai.types.UserMessage;
 import com.huawei.hicampus.claw.codingagent.common.client.mate.MateCredentials;
+import com.huawei.hicampus.claw.codingagent.runtime.MateServiceClient.AgentRuntime;
+import com.huawei.hicampus.claw.codingagent.runtime.PreparedAgentRuntime;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.RuntimeMessageSourceConfiguration;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.agent.AgentDirectorySnapshotDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeCompactionResultDTO;
@@ -124,6 +126,7 @@ class RuntimeCompactionCoordinatorTest {
                 properties);
         when(sessionFactory.create(any())).thenReturn(session);
         when(session.agent()).thenReturn(agent);
+        when(session.runtime()).thenReturn(preparedRuntime());
         when(session.compact(null)).thenReturn(compaction);
         when(session.subscribeCompaction(any())).thenAnswer(call -> {
             listener.set(call.getArgument(0));
@@ -547,6 +550,23 @@ class RuntimeCompactionCoordinatorTest {
     private RuntimeSessionHolder register(String sessionId, RuntimeCompactionExecution active) {
         return registry.register(
                 sessionId, snapshot, model, false, List.of(), active, MateCredentials.appKey("caller", "key", "token"));
+    }
+
+    private static PreparedAgentRuntime preparedRuntime() {
+        var metadata = new AgentRuntime(
+                List.of("model"),
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                "Agent",
+                true,
+                "agent",
+                "agent",
+                "System",
+                List.of(),
+                "v1");
+        return new PreparedAgentRuntime("agent", Path.of("/agent"), metadata, List.of());
     }
 
     private void assertReleased() {
