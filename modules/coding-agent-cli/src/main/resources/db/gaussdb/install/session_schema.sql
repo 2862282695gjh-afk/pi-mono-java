@@ -2,7 +2,7 @@
 -- The database release platform must connect with the target Session schema as current_schema.
 -- AgentService must never execute this file.
 -- WARNING: This script destructively rebuilds the complete Session schema baseline.
--- Use upgrade scripts for an existing installation that must retain data.
+-- Existing-installation upgrades are outside the current first-version product scope.
 
 BEGIN;
 
@@ -372,17 +372,14 @@ CREATE TABLE t_session_event_projection (
     session_id      VARCHAR(128) NOT NULL,
     anchor_entry_id VARCHAR(128) NOT NULL,
     event_count     INTEGER      NOT NULL,
-    mapping_source  VARCHAR(16)  NOT NULL,
     PRIMARY KEY (session_id, anchor_entry_id),
-    CONSTRAINT ck_session_event_projection_count CHECK (event_count >= 0),
-    CONSTRAINT ck_session_event_projection_source CHECK (mapping_source IN ('runtime', 'migration'))
+    CONSTRAINT ck_session_event_projection_count CHECK (event_count >= 0)
 );
 
-COMMENT ON TABLE t_session_event_projection IS '会话 Entry 公共事件投影完整性记录，用精确数量区分完整映射、显式私有记录和迁移缺口';
+COMMENT ON TABLE t_session_event_projection IS '会话 Entry 公共事件投影完整性记录，用精确数量区分完整映射和显式私有记录';
 COMMENT ON COLUMN t_session_event_projection.session_id IS '被核验 Entry 所属的会话标识';
 COMMENT ON COLUMN t_session_event_projection.anchor_entry_id IS '已完成公共投影核验的 Entry 标识';
 COMMENT ON COLUMN t_session_event_projection.event_count IS '该 Entry 应有的完整公共事件精确数量；零表示经确认不公开';
-COMMENT ON COLUMN t_session_event_projection.mapping_source IS '完整性结论来源；runtime 表示新写入，migration 表示经升级迁移审核';
 
 CREATE TABLE t_session_stats (
     session_id         VARCHAR(128)  PRIMARY KEY,

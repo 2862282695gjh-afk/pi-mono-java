@@ -116,7 +116,7 @@ class SessionModelConfigurationServiceTest {
             committed.add(call.getArgument(0));
             return 1;
         });
-        when(mapper.insertCommittedEventProjection(any(), any(), any(Integer.class), any()))
+        when(mapper.insertCommittedEventProjection(any(), any(), any(Integer.class)))
                 .thenReturn(1);
         when(mapper.insertEntry(any())).thenAnswer(call -> {
             appended.add(call.getArgument(0));
@@ -173,8 +173,8 @@ class SessionModelConfigurationServiceTest {
                 .containsExactly("session.model_changed", "session.thinking_changed");
         assertThat(committed).extracting(CommittedEventDTO::getEventSeq).containsExactly(18L, 20L);
         assertThat(committed).extracting(CommittedEventDTO::getEventId).containsExactly("entry-1", "entry-2");
-        verify(mapper).insertCommittedEventProjection("session", "entry-1", 1, "runtime");
-        verify(mapper).insertCommittedEventProjection("session", "entry-2", 1, "runtime");
+        verify(mapper).insertCommittedEventProjection("session", "entry-1", 1);
+        verify(mapper).insertCommittedEventProjection("session", "entry-2", 1);
         verify(mapper).updateSessionModel("session", "next", false, now);
         verify(mapper).updateActiveLeafAnyState("session", "entry-2");
     }
