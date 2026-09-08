@@ -43,6 +43,7 @@ import com.campusclaw.codingagent.runtimeapi.event.RuntimeEntryCodec;
 import com.campusclaw.codingagent.runtimeapi.event.RuntimeEntryIdGenerator;
 import com.campusclaw.codingagent.runtimeapi.event.RuntimeUsageCause;
 import com.campusclaw.codingagent.runtimeapi.mapper.RuntimeExecutionControlMapper;
+import com.campusclaw.codingagent.runtimeapi.mapper.RuntimeExecutionResultMapper;
 import com.campusclaw.codingagent.runtimeapi.mapper.RuntimeSessionMapper;
 import com.campusclaw.codingagent.runtimeapi.model.RuntimeModelManager;
 import com.campusclaw.codingagent.runtimeapi.persistence.UserEventAcceptance.Status;
@@ -94,6 +95,8 @@ class RuntimeSessionRepositoryOpenGaussIT {
 
     private TestRuntimeEntryIdGenerator executionIds;
 
+    private RuntimeExecutionResultRepository executionResults;
+
     private JdbcTemplate jdbcTemplate;
 
     @BeforeAll
@@ -117,6 +120,7 @@ class RuntimeSessionRepositoryOpenGaussIT {
         executionControls = context.getBean(RuntimeExecutionControlRepository.class);
         executionPersistence = context.getBean(RuntimeExecutionPersistenceService.class);
         executionIds = context.getBean(TestRuntimeEntryIdGenerator.class);
+        executionResults = context.getBean(RuntimeExecutionResultRepository.class);
         jdbcTemplate = context.getBean(JdbcTemplate.class);
         jdbcTemplate.update("TRUNCATE TABLE t_session_event_projection");
         jdbcTemplate.update("TRUNCATE TABLE t_session_materialized");
@@ -344,6 +348,47 @@ class RuntimeSessionRepositoryOpenGaussIT {
         repository.create(idle);
         assertInterruptError(idle, "missing-root", "idle", RuntimeErrorCode.SESSION_NOT_RUNNING);
         assertThat(count("t_session_entries", idle.getId())).isZero();
+    }
+
+    @Test
+    void shouldReadFixedSegmentAfterSequenceUntilItsTerminalEvent() {
+        RuntimeSessionDTO session = newSession("session_segment_result");
+        repository.create(session);
+        ExecutionTargetDTO target = seedCommittedSegment(session);
+
+        var first = executionResults.readSegmentEvents(target, 2L, 1).orElseThrow();
+        assertThat(first.getEvents()).extracting(CommittedEventDTO::getEventId).containsExactly("agent-event");
+        assertThat(first.isTerminal()).isFalse();
+
+        var second = executionResults
+                .readSegmentEvents(target, first.getEvents().getLast().getEventSeq(), 1)
+                .orElseThrow();
+        assertThat(second.getEvents()).extracting(CommittedEventDTO::getEventId).containsExactly("idle-event");
+        assertThat(second.isTerminal()).isTrue();
+        var completed = executionResults
+                .readSegmentEvents(target, second.getEvents().getLast().getEventSeq(), 10)
+                .orElseThrow();
+        assertThat(completed.getEvents()).isEmpty();
+        assertThat(completed.isTerminal()).isTrue();
+    }
+
+    @Test
+    void shouldReadOnlyExecutionTerminalForInterruptResult() {
+        RuntimeSessionDTO session = newSession("session_execution_result");
+        repository.create(session);
+        ExecutionTargetDTO target = seedCommittedSegment(session);
+
+        assertThat(executionResults.findExecutionTerminal(target))
+                .get()
+                .extracting(CommittedEventDTO::getEventId)
+                .isEqualTo("idle-event");
+        var wrongRoot =
+                new ExecutionTargetDTO(target.sessionId(), target.executionId(), "wrong-root", target.segmentId());
+        var wrongSegment =
+                new ExecutionTargetDTO(target.sessionId(), target.executionId(), target.rootEventId(), "wrong-segment");
+        assertThat(executionResults.findExecutionTerminal(wrongRoot)).isEmpty();
+        assertThat(executionResults.findExecutionTerminal(wrongSegment)).isEmpty();
+        assertThat(executionResults.readSegmentEvents(wrongRoot, 0L, 10)).isEmpty();
     }
 
     @Test
@@ -1117,6 +1162,36 @@ class RuntimeSessionRepositoryOpenGaussIT {
         return entry;
     }
 
+    private ExecutionTargetDTO seedCommittedSegment(RuntimeSessionDTO session) {
+        RuntimeEntryDTO root = newEntry(session.getId(), "root-entry", "user.message", session.getCreatedAt(), "{}");
+        CommittedEventDTO rootEvent = committedEvent(root, "root-event", "user.message");
+        repository.acceptUserEvent(session.getId(), root, rootEvent, root.getTimestamp());
+        var target = new ExecutionTargetDTO(session.getId(), "execution-1", rootEvent.getEventId(), "segment-1");
+        executionControls.register(target, rootEvent.getEventSeq(), root.getTimestamp());
+        executionControls.linkCommittedEvent(target, rootEvent.getEventId(), rootEvent.getEventSeq());
+
+        RuntimeEntryDTO agent =
+                newEntry(session.getId(), "agent-entry", "assistant.message.completed", session.getCreatedAt(), "{}");
+        CommittedEventDTO agentEvent = committedEvent(agent, "agent-event", "agent.message");
+        repository.appendEntry(agent, List.of(agentEvent));
+        executionControls.linkCommittedEvent(target, agentEvent.getEventId(), agentEvent.getEventSeq());
+        RuntimeEntryDTO idle =
+                newEntry(session.getId(), "idle-entry", "session.status.idle", session.getCreatedAt(), "{}");
+        CommittedEventDTO idleEvent = committedEvent(idle, "idle-event", "session.status_idle");
+        assertThat(executionControls.markTerminal(
+                        target,
+                        () -> appendCommittedEvent(idle, idleEvent),
+                        RuntimeExecutionTerminalReason.DONE,
+                        idle.getTimestamp()))
+                .isEqualTo(RuntimeExecutionControlRepository.TransitionStatus.APPLIED);
+        return target;
+    }
+
+    private CommittedControlEventDTO appendCommittedEvent(RuntimeEntryDTO entry, CommittedEventDTO event) {
+        repository.appendEntry(entry, List.of(event));
+        return new CommittedControlEventDTO(event.getEventId(), event.getEventSeq());
+    }
+
     private void seedClosedExecution(RuntimeSessionDTO session) {
         RuntimeEntryDTO root =
                 newEntry(session.getId(), "delete-root-entry", "user.message", session.getCreatedAt(), "{}");
@@ -1294,6 +1369,11 @@ class RuntimeSessionRepositoryOpenGaussIT {
                 RuntimeExecutionControlRepository controls,
                 RuntimeEntryIdGenerator ids) {
             return new RuntimeExecutionPersistenceService(sessions, controls, ids);
+        }
+
+        @Bean
+        RuntimeExecutionResultRepository runtimeExecutionResultRepository(RuntimeExecutionResultMapper mapper) {
+            return new MyBatisRuntimeExecutionResultRepository(mapper);
         }
 
         @Bean
