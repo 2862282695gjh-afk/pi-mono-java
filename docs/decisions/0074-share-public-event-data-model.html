@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ADR-0074：公共事件数据模型</title>
+<style>body{font:16px/1.7 system-ui,sans-serif;background:#f5f7fa;color:#172235;margin:0}main{max-width:920px;margin:32px auto;padding:32px;background:white;border-radius:12px}code{overflow-wrap:anywhere;background:#eef2f6;padding:2px 4px}a{color:#1457a6}</style></head>
+<body><main><h1>ADR-0074：公共事件数据模型</h1>
+<p>Status: Accepted · Date: 2026-09-08 · Version: 1.0.0</p>
+<h2>Context</h2><p>设计仓 <code>2ee2a321</code> 已确认 POST 完整帧与 GET 历史共享事件对象。
+Java 基线 <code>2f52e9b8</code> 的 RuntimeEntryCodec 与 RuntimeSseEventVO 仍实现旧入口，内部记录包含不应公开的恢复信息。</p>
+<h2>Decision</h2><p>新增内部 CommittedEventDTO、公共 SessionEventResponseVO 及关闭的 11 类事件集合。
+公共业务字段使用类型化响应 VO 并展开到根对象；事件序号和分支锚点只保留在 DTO。
+工具结果显式使用 isError 属性；可选字段按已确认契约省略。常量集中在 common，不新增 Maven 依赖。</p>
+<h2>选项与取舍</h2><ul><li>采用 DTO 与 VO 分离：可独立管理数据库排序和客户端字段，代价是后续需要显式投影。</li>
+<li>直接返回内部 Entry 会耦合上下文存储并暴露私有结构，因此不采用。</li>
+<li>全部响应使用任意 Map 虽代码较少，但无法在类型层面约束不同事件的业务字段，因此仅工具 arguments 保留业务 JSON 对象。</li></ul>
+<h2>Consequences</h2><p>本片建立数据对象与序列化边界，尚未切换 HTTP。后续投影必须验证完整字段、冻结集合并过滤私有内容；
+公共事件持久化、整数分页、SSE 和跨实例控制继续由各自实施片接入。pi 的内核通知不提供本项目 HTTP 契约，这属于架构变更。</p>
+<h2>Validation</h2><p>独立 JSON 序列化测试覆盖工具成功/失败布尔字段、delta 省略规则和根对象展开。
+完整验证命令与企业编译缺口见关联设计。</p>
+<h2>Related</h2><p><a href="../designs/runtime-public-events/README.md">公共事件数据模型设计与源码证据</a> ·
+<a href="../designs/runtime-public-events/diagram.puml#L1">PlantUML 源码</a></p>
+<h2>版本历史</h2><p>1.0.0 · 2026-09-08：固定公共响应与内部持久化对象边界。</p></main></body></html>
