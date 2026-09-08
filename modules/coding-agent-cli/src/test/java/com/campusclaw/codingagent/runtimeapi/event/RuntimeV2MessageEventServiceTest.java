@@ -419,8 +419,7 @@ class RuntimeV2MessageEventServiceTest {
             var messages = new RuntimeMessageSourceConfiguration().messageSource();
             codec = new RuntimeEntryCodec(mapper, messages);
             RuntimeExecutionContextFactory contexts = new RuntimeExecutionContextFactory(
-                    new RuntimeEventQueryService(
-                            repository, codec, new RuntimeEventCursorCodec(new RuntimeEventProperties(), CLOCK)),
+                    new RuntimeEventQueryService(repository, codec),
                     engines,
                     codec,
                     new RuntimeEventStreamFactory(new RuntimeEventProperties(), codec),
