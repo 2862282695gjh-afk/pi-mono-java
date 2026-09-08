@@ -120,4 +120,45 @@
           AND current_segment_id = #{segmentId}
           AND state IN ('RUNNING', 'CONFIRMING', 'STOPPING')
     </update>
+
+    <select id="findCommittedTerminal"
+            resultType="com.campusclaw.codingagent.runtimeapi.dto.CommittedTerminalDTO">
+        SELECT entry.session_id,
+               entry.id AS entry_id,
+               entry.entry_seq,
+               entry.parent_id AS entry_parent_id,
+               entry.type AS entry_type,
+               entry.timestamp AS entry_timestamp,
+               entry.payload AS entry_payload,
+               event.event_id,
+               event.event_seq,
+               event.anchor_entry_id,
+               event.type AS event_type,
+               event.created_at,
+               event.payload AS event_payload
+        FROM t_session_executions execution
+        JOIN t_sessions session
+          ON session.id = execution.session_id
+         AND session.state = 'idle'
+        JOIN t_session_execution_segments segment
+          ON segment.session_id = execution.session_id
+         AND segment.execution_id = execution.execution_id
+         AND segment.segment_id = #{target.segmentId}
+         AND segment.state = 'CLOSED'
+         AND segment.terminal_event_id = execution.terminal_event_id
+        JOIN t_session_events event
+          ON event.session_id = execution.session_id
+         AND event.event_id = execution.terminal_event_id
+         AND event.event_seq = segment.terminal_event_seq
+        JOIN t_session_entries entry
+          ON entry.session_id = event.session_id
+         AND entry.id = event.anchor_entry_id
+        WHERE execution.session_id = #{target.sessionId}
+          AND execution.execution_id = #{target.executionId}
+          AND execution.root_event_id = #{target.rootEventId}
+          AND execution.current_segment_id = #{target.segmentId}
+          AND execution.state = 'TERMINAL'
+          AND execution.terminal_event_id = #{terminalEventId}
+          AND execution.terminal_reason = #{terminalReason}
+    </select>
 </mapper>

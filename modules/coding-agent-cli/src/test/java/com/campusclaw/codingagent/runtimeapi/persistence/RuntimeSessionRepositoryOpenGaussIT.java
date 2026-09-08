@@ -185,6 +185,7 @@ class RuntimeSessionRepositoryOpenGaussIT {
         assertThat(executionControls.find(stale)).isEmpty();
         assertThat(executionControls.markTerminal(
                         stale,
+                        "idle-stale",
                         () -> committedControlEvent("idle-stale", root.getEntrySeq() + 1, appended),
                         RuntimeExecutionTerminalReason.DONE,
                         session.getCreatedAt()))
@@ -192,12 +193,21 @@ class RuntimeSessionRepositoryOpenGaussIT {
         assertThat(appended).hasValue(0);
         assertThat(executionControls.markTerminal(
                         target,
+                        "idle-done",
                         () -> committedControlEvent("idle-done", root.getEntrySeq() + 1, appended),
                         RuntimeExecutionTerminalReason.DONE,
                         session.getCreatedAt()))
                 .isEqualTo(RuntimeExecutionControlRepository.TransitionStatus.APPLIED);
         assertThat(executionControls.markTerminal(
                         target,
+                        "idle-done",
+                        () -> committedControlEvent("idle-done", root.getEntrySeq() + 1, appended),
+                        RuntimeExecutionTerminalReason.DONE,
+                        session.getCreatedAt()))
+                .isEqualTo(RuntimeExecutionControlRepository.TransitionStatus.ALREADY_APPLIED);
+        assertThat(executionControls.markTerminal(
+                        target,
+                        "idle-duplicate",
                         () -> committedControlEvent("idle-duplicate", root.getEntrySeq() + 2, appended),
                         RuntimeExecutionTerminalReason.DONE,
                         session.getCreatedAt()))
@@ -238,21 +248,7 @@ class RuntimeSessionRepositoryOpenGaussIT {
         assertThat(count("t_session_entries", session.getId())).isEqualTo(2);
         assertThat(count("t_session_events", session.getId())).isEqualTo(2);
         assertThat(count("t_session_execution_segment_events", session.getId())).isEqualTo(2);
-
-        RuntimeEntryDTO lateIdle = controlEntry(session, "late-idle", "session.status.idle");
-        CommittedEventDTO lateEvent = committedEvent(lateIdle, "late-idle-event", "session.status_idle");
-        long sequenceBefore =
-                scalarLong("SELECT next_seq FROM t_session_sequences WHERE session_id = ?", session.getId());
-        assertThatThrownBy(() -> executionPersistence.commitTerminal(
-                        accepted.target(),
-                        lateIdle,
-                        lateEvent,
-                        RuntimeExecutionTerminalReason.DONE,
-                        lateIdle.getTimestamp()))
-                .isInstanceOf(IllegalStateException.class);
-        assertThat(count("t_session_entries", session.getId())).isEqualTo(2);
-        assertThat(scalarLong("SELECT next_seq FROM t_session_sequences WHERE session_id = ?", session.getId()))
-                .isEqualTo(sequenceBefore);
+        assertTerminalRetryRestoresCommittedProjection(session, accepted.target(), idle, idleEvent);
     }
 
     @Test
@@ -1126,6 +1122,7 @@ class RuntimeSessionRepositoryOpenGaussIT {
         executionControls.linkCommittedEvent(target, target.rootEventId(), root.getEntrySeq());
         assertThat(executionControls.markTerminal(
                         target,
+                        "delete-idle-event",
                         () -> new CommittedControlEventDTO("delete-idle-event", root.getEntrySeq() + 1),
                         RuntimeExecutionTerminalReason.DONE,
                         root.getTimestamp().plusSeconds(1)))
@@ -1211,6 +1208,52 @@ class RuntimeSessionRepositoryOpenGaussIT {
             String eventId, long eventSeq, AtomicInteger appended) {
         appended.incrementAndGet();
         return new CommittedControlEventDTO(eventId, eventSeq);
+    }
+
+    private void assertTerminalRetryRestoresCommittedProjection(
+            RuntimeSessionDTO session, ExecutionTargetDTO target, RuntimeEntryDTO idle, CommittedEventDTO idleEvent) {
+        long sequenceBefore =
+                scalarLong("SELECT next_seq FROM t_session_sequences WHERE session_id = ?", session.getId());
+        RuntimeEntryDTO retriedIdle = newEntry(
+                session.getId(),
+                "idle-entry",
+                "session.status.idle",
+                idle.getTimestamp().plusMinutes(1),
+                "{}");
+        CommittedEventDTO retriedEvent = committedEvent(retriedIdle, "idle-event", "session.status_idle");
+        executionPersistence.commitTerminal(
+                target, retriedIdle, retriedEvent, RuntimeExecutionTerminalReason.DONE, retriedIdle.getTimestamp());
+        assertThat(retriedIdle)
+                .extracting("entrySeq", "parentId", "timestamp")
+                .containsExactly(idle.getEntrySeq(), idle.getParentId(), idle.getTimestamp());
+        assertThat(retriedEvent)
+                .extracting("eventSeq", "anchorEntryId", "createdAt", "payload")
+                .containsExactly(
+                        idleEvent.getEventSeq(),
+                        idleEvent.getAnchorEntryId(),
+                        idleEvent.getCreatedAt(),
+                        idleEvent.getPayload());
+        assertMismatchedTerminalRetriesFail(target, retriedIdle, retriedEvent);
+        assertThat(count("t_session_entries", session.getId())).isEqualTo(2);
+        assertThat(scalarLong("SELECT next_seq FROM t_session_sequences WHERE session_id = ?", session.getId()))
+                .isEqualTo(sequenceBefore);
+    }
+
+    private void assertMismatchedTerminalRetriesFail(
+            ExecutionTargetDTO target, RuntimeEntryDTO retriedIdle, CommittedEventDTO retriedEvent) {
+        assertThatThrownBy(() -> executionPersistence.commitTerminal(
+                        target,
+                        retriedIdle,
+                        retriedEvent,
+                        RuntimeExecutionTerminalReason.FAILED,
+                        retriedIdle.getTimestamp()))
+                .isInstanceOf(IllegalStateException.class);
+        RuntimeEntryDTO lateIdle =
+                newEntry(target.sessionId(), "late-idle", "session.status.idle", retriedIdle.getTimestamp(), "{}");
+        CommittedEventDTO lateEvent = committedEvent(lateIdle, "late-idle-event", "session.status_idle");
+        assertThatThrownBy(() -> executionPersistence.commitTerminal(
+                        target, lateIdle, lateEvent, RuntimeExecutionTerminalReason.DONE, lateIdle.getTimestamp()))
+                .isInstanceOf(IllegalStateException.class);
     }
 
     private static RuntimeSessionDTO newSession(String sessionId) {

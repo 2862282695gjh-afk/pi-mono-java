@@ -6,8 +6,10 @@ package com.campusclaw.codingagent.runtimeapi.mapper;
 
 import java.time.OffsetDateTime;
 
+import com.campusclaw.codingagent.runtimeapi.dto.CommittedTerminalDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.ExecutionSegmentDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.ExecutionStateDTO;
+import com.campusclaw.codingagent.runtimeapi.dto.ExecutionTargetDTO;
 
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
@@ -71,4 +73,9 @@ public interface RuntimeExecutionControlMapper {
             @Param("terminalEventId") String terminalEventId,
             @Param("terminalReason") String terminalReason,
             @Param("terminalAt") OffsetDateTime terminalAt);
+
+    CommittedTerminalDTO findCommittedTerminal(
+            @Param("target") ExecutionTargetDTO target,
+            @Param("terminalEventId") String terminalEventId,
+            @Param("terminalReason") String terminalReason);
 }

@@ -11,6 +11,7 @@ import java.util.Objects;
 import com.campusclaw.codingagent.runtimeapi.dto.AcceptedControlDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.CommittedControlEventDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.CommittedEventDTO;
+import com.campusclaw.codingagent.runtimeapi.dto.CommittedTerminalDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.ConfirmingEventsDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.ExecutionTargetDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.InterruptRequestDTO;
@@ -119,12 +120,48 @@ public class RuntimeExecutionPersistenceService {
                 event,
                 RuntimeEventType.SESSION_STATUS_IDLE,
                 CommittedEventType.SESSION_STATUS_IDLE);
-        var status = controls.markTerminal(target, () -> appendControlEvent(entry, event), terminalReason, terminalAt);
-        if (status != RuntimeExecutionControlRepository.TransitionStatus.APPLIED) {
-            throw new IllegalStateException("terminal target is no longer active: " + status);
+        var status = controls.markTerminal(
+                target, event.getEventId(), () -> appendControlEvent(entry, event), terminalReason, terminalAt);
+        if (status == RuntimeExecutionControlRepository.TransitionStatus.ALREADY_APPLIED) {
+            return restoreCommittedTerminal(target, entry, event, terminalReason);
         }
-        sessions.finishExecution(target.sessionId(), terminalAt);
+        if (status == RuntimeExecutionControlRepository.TransitionStatus.APPLIED) {
+            sessions.finishExecution(target.sessionId(), terminalAt);
+            return entry;
+        }
+        throw new IllegalStateException("terminal target is no longer active: " + status);
+    }
+
+    private RuntimeEntryDTO restoreCommittedTerminal(
+            ExecutionTargetDTO target,
+            RuntimeEntryDTO entry,
+            CommittedEventDTO event,
+            RuntimeExecutionTerminalReason terminalReason) {
+        CommittedTerminalDTO terminal = controls.findCommittedTerminal(target, event.getEventId(), terminalReason)
+                .orElseThrow(() -> new IllegalStateException("committed terminal projection is unavailable"));
+        copyEntry(terminal, entry);
+        copyEvent(terminal, event);
         return entry;
+    }
+
+    private static void copyEntry(CommittedTerminalDTO terminal, RuntimeEntryDTO entry) {
+        entry.setSessionId(terminal.getSessionId());
+        entry.setId(terminal.getEntryId());
+        entry.setEntrySeq(terminal.getEntrySeq());
+        entry.setParentId(terminal.getEntryParentId());
+        entry.setType(terminal.getEntryType());
+        entry.setTimestamp(terminal.getEntryTimestamp());
+        entry.setPayload(terminal.getEntryPayload());
+    }
+
+    private static void copyEvent(CommittedTerminalDTO terminal, CommittedEventDTO event) {
+        event.setSessionId(terminal.getSessionId());
+        event.setEventId(terminal.getEventId());
+        event.setEventSeq(terminal.getEventSeq());
+        event.setAnchorEntryId(terminal.getAnchorEntryId());
+        event.setType(terminal.getEventType());
+        event.setCreatedAt(terminal.getCreatedAt());
+        event.setPayload(terminal.getEventPayload());
     }
 
     private static void requireMessageEvent(String sessionId, RuntimeEntryDTO receipt, CommittedEventDTO event) {
