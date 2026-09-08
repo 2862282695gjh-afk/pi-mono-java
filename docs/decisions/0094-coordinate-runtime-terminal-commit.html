@@ -1,0 +1,11 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ADR-0094：提交执行终态后释放资源</title><style>body{max-width:960px;margin:32px auto;padding:24px;font:16px/1.7 system-ui,sans-serif;color:#172033}a{color:#135dbe}code{overflow-wrap:anywhere}</style></head><body>
+<h1>ADR-0094：提交执行终态后释放资源</h1><p>Status: Accepted · Date: 2026-09-08 · Version: 1.0.0</p>
+<h2>Context</h2><p>已接纳执行的模型结束与数据库提交可能分别失败；中断被接纳也不代表 Agent 实际因中断退出。</p>
+<h2>Decision</h2><p>实现 ba9e497c 按实际 STOP/ERROR/ABORTED 形成 done/failed/terminated。以固定目标提交内部和公共 idle 后释放 Holder。失败时取消监听和超时、关闭输出，保留原执行对象、凭据与固定终态计划；独立线程重试同一 ID 和时间，不重跑模型。</p>
+<h2>Alternatives 与理由</h2><p>先释放会失去重试对象并误报容量可用，重跑模型可能重复副作用。选择保留执行至终态提交，代价是数据库故障期间仍占用容量。pi4af9d21的Agent循环不提供数据库终态事务，这属于Java架构变化。</p>
+<h2>Consequences</h2><p>增加一个延迟调度线程，支持运行时故障恢复；不新增依赖、表或升级流程。HTTP由后续服务接入并删除旧开发实现。</p>
+<h2>Validation</h2><p>root协调器11项及轮询7项测试通过，配置合并格式修正后Spotless/Checkstyle通过。固定Clock及可控任务验证同一终态重试和资源释放。企业NativeParent不可解析，公司编译未验证。</p>
+<h2>Related</h2><p><a href="../designs/runtime-events-v2-coordination/README.md">源码依据和验证</a> · <a href="../designs/runtime-events-v2-coordination/diagram.puml#L1">PlantUML源图</a></p>
+<h2>版本历史</h2><p>1.0.0 · 2026-09-08：记录固定终态提交与首次发布的运行时恢复。</p>
+</body></html>
