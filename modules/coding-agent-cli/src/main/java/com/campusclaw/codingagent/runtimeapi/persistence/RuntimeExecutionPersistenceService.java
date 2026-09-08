@@ -10,7 +10,9 @@ import java.util.Objects;
 
 import com.campusclaw.codingagent.runtimeapi.dto.AcceptedControlDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.CommittedEventDTO;
+import com.campusclaw.codingagent.runtimeapi.dto.ConfirmingEventsDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.ExecutionTargetDTO;
+import com.campusclaw.codingagent.runtimeapi.dto.InterruptRequestDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.RuntimeEntryDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.UserMessageAcceptanceDTO;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeApiException;
@@ -147,8 +149,7 @@ public class RuntimeExecutionPersistenceService {
         }
     }
 
-    private static ExecutionTargetDTO requireAcceptedInterrupt(
-            RuntimeExecutionControlRepository.InterruptRequest request) {
+    private static ExecutionTargetDTO requireAcceptedInterrupt(InterruptRequestDTO request) {
         return switch (request.status()) {
             case ACCEPTED -> request.target();
             case SESSION_NOT_FOUND -> throw new RuntimeApiException(RuntimeErrorCode.SESSION_NOT_FOUND);
@@ -158,14 +159,14 @@ public class RuntimeExecutionPersistenceService {
         };
     }
 
-    private RuntimeExecutionControlRepository.ConfirmingEvents appendConfirmingEvents(
+    private ConfirmingEventsDTO appendConfirmingEvents(
             RuntimeEntryDTO toolCall,
             CommittedEventDTO toolCallEvent,
             RuntimeEntryDTO idle,
             CommittedEventDTO idleEvent) {
         sessions.appendEntry(toolCall, List.of(toolCallEvent));
         sessions.appendEntry(idle, List.of(idleEvent));
-        return new RuntimeExecutionControlRepository.ConfirmingEvents(
+        return new ConfirmingEventsDTO(
                 toolCallEvent.getEventId(),
                 toolCallEvent.getEventSeq(),
                 idleEvent.getEventId(),

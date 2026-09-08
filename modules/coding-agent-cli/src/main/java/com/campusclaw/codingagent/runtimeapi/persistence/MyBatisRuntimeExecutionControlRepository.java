@@ -9,9 +9,12 @@ import java.time.temporal.ChronoUnit;
 import java.util.Objects;
 import java.util.Optional;
 
+import com.campusclaw.codingagent.runtimeapi.dto.ConfirmingEventsDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.ExecutionSegmentDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.ExecutionStateDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.ExecutionTargetDTO;
+import com.campusclaw.codingagent.runtimeapi.dto.InterruptRequestDTO;
+import com.campusclaw.codingagent.runtimeapi.dto.InterruptRequestDTO.Status;
 import com.campusclaw.codingagent.runtimeapi.mapper.RuntimeExecutionControlMapper;
 import com.campusclaw.codingagent.runtimeapi.mapper.RuntimeSessionMapper;
 import com.campusclaw.codingagent.runtimeapi.session.RuntimeExecutionSegmentState;
@@ -78,27 +81,27 @@ public class MyBatisRuntimeExecutionControlRepository implements RuntimeExecutio
 
     @Override
     @Transactional
-    public InterruptRequest requestInterrupt(
+    public InterruptRequestDTO requestInterrupt(
             String sessionId, String targetEventId, String stopEventId, OffsetDateTime requestedAt) {
         requireControlEvent(sessionId, targetEventId, stopEventId);
         var session = sessionMapper.lockSessionForUpdate(sessionId);
         if (session == null) {
-            return new InterruptRequest(InterruptStatus.SESSION_NOT_FOUND, null);
+            return new InterruptRequestDTO(Status.SESSION_NOT_FOUND, null);
         }
         if (!RuntimeSessionState.RUNNING.matches(session.getState())) {
-            return new InterruptRequest(InterruptStatus.SESSION_NOT_RUNNING, null);
+            return new InterruptRequestDTO(Status.SESSION_NOT_RUNNING, null);
         }
         ExecutionStateDTO execution = mapper.lockCurrentExecution(sessionId);
-        InterruptStatus rejected = rejectInterrupt(targetEventId, execution);
+        Status rejected = rejectInterrupt(targetEventId, execution);
         if (rejected != null) {
-            return new InterruptRequest(rejected, null);
+            return new InterruptRequestDTO(rejected, null);
         }
         var target = targetOf(execution);
         requireOne(
                 mapper.markStopping(
                         sessionId, target.executionId(), target.segmentId(), stopEventId, storedAt(requestedAt)),
                 "execution did not enter stopping state");
-        return new InterruptRequest(InterruptStatus.ACCEPTED, target);
+        return new InterruptRequestDTO(Status.ACCEPTED, target);
     }
 
     @Override
@@ -113,7 +116,7 @@ public class MyBatisRuntimeExecutionControlRepository implements RuntimeExecutio
         if (rejected != null) {
             return rejected;
         }
-        ConfirmingEvents events = requireConfirmingEvents(appender.append());
+        ConfirmingEventsDTO events = requireConfirmingEvents(appender.append());
         linkCommittedEvent(target, events.toolCallEventId(), events.toolCallEventSeq());
         linkCommittedEvent(target, events.idleEventId(), events.idleEventSeq());
         OffsetDateTime storedAt = storedAt(terminalAt);
@@ -188,15 +191,15 @@ public class MyBatisRuntimeExecutionControlRepository implements RuntimeExecutio
         return execution.getState() == RuntimeExecutionState.TERMINAL ? TransitionStatus.STATE_CONFLICT : null;
     }
 
-    private static InterruptStatus rejectInterrupt(String targetEventId, ExecutionStateDTO execution) {
+    private static Status rejectInterrupt(String targetEventId, ExecutionStateDTO execution) {
         if (execution == null) {
-            return InterruptStatus.SESSION_NOT_RUNNING;
+            return Status.SESSION_NOT_RUNNING;
         }
         if (!targetEventId.equals(execution.getRootEventId())) {
-            return InterruptStatus.TARGET_MISMATCH;
+            return Status.TARGET_MISMATCH;
         }
         if (execution.getState() == RuntimeExecutionState.STOPPING || execution.getStopEventId() != null) {
-            return InterruptStatus.ALREADY_REQUESTED;
+            return Status.ALREADY_REQUESTED;
         }
         return null;
     }
@@ -291,7 +294,7 @@ public class MyBatisRuntimeExecutionControlRepository implements RuntimeExecutio
         }
     }
 
-    private static ConfirmingEvents requireConfirmingEvents(ConfirmingEvents events) {
+    private static ConfirmingEventsDTO requireConfirmingEvents(ConfirmingEventsDTO events) {
         Objects.requireNonNull(events, "confirming events");
         requireTerminalEvent(events.toolCallEventId(), events.toolCallEventSeq());
         requireTerminalEvent(events.idleEventId(), events.idleEventSeq());

@@ -7,8 +7,10 @@ package com.campusclaw.codingagent.runtimeapi.persistence;
 import java.time.OffsetDateTime;
 import java.util.Optional;
 
+import com.campusclaw.codingagent.runtimeapi.dto.ConfirmingEventsDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.ExecutionStateDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.ExecutionTargetDTO;
+import com.campusclaw.codingagent.runtimeapi.dto.InterruptRequestDTO;
 import com.campusclaw.codingagent.runtimeapi.session.RuntimeExecutionTerminalReason;
 
 /**
@@ -24,7 +26,7 @@ public interface RuntimeExecutionControlRepository {
 
     void linkCommittedEvent(ExecutionTargetDTO target, String eventId, long eventSeq);
 
-    InterruptRequest requestInterrupt(
+    InterruptRequestDTO requestInterrupt(
             String sessionId, String targetEventId, String stopEventId, OffsetDateTime requestedAt);
 
     TransitionStatus markConfirming(
@@ -48,39 +50,10 @@ public interface RuntimeExecutionControlRepository {
     }
 
     /**
-     * user.interrupt 在锁内复核并登记停止请求的结果。
-     */
-    enum InterruptStatus {
-        ACCEPTED,
-        SESSION_NOT_FOUND,
-        SESSION_NOT_RUNNING,
-        TARGET_MISMATCH,
-        ALREADY_REQUESTED
-    }
-
-    /**
-     * 停止请求结果及接受时固定的执行目标。
-     *
-     * @param status 锁内复核结果
-     * @param target 接受时固定的执行目标；拒绝时为空
-     */
-    record InterruptRequest(InterruptStatus status, ExecutionTargetDTO target) {}
-
-    /**
      * 持有 Session 与执行行锁期间提交 confirming 完整事件的回调。
      */
     @FunctionalInterface
     interface ConfirmingAppender {
-        ConfirmingEvents append();
+        ConfirmingEventsDTO append();
     }
-
-    /**
-     * 已原子提交的工具调用和 confirming idle 事件身份。
-     *
-     * @param toolCallEventId 工具调用完整事件标识
-     * @param toolCallEventSeq 工具调用完整事件顺序号
-     * @param idleEventId confirming idle 完整事件标识
-     * @param idleEventSeq confirming idle 完整事件顺序号
-     */
-    record ConfirmingEvents(String toolCallEventId, long toolCallEventSeq, String idleEventId, long idleEventSeq) {}
 }
