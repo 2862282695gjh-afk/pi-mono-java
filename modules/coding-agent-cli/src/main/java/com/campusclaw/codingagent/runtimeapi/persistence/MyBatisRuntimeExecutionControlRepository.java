@@ -6,10 +6,12 @@ package com.campusclaw.codingagent.runtimeapi.persistence;
 
 import java.time.OffsetDateTime;
 import java.time.temporal.ChronoUnit;
+import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 
 import com.campusclaw.codingagent.runtimeapi.dto.CommittedControlEventDTO;
+import com.campusclaw.codingagent.runtimeapi.dto.CommittedTerminalDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.ConfirmationAcceptanceDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.ConfirmingEventsDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.ExecutionSegmentDTO;
@@ -212,21 +214,45 @@ public class MyBatisRuntimeExecutionControlRepository implements RuntimeExecutio
 
     @Override
     @Transactional
+    public TransitionStatus appendToSegment(ExecutionTargetDTO target, SegmentAppender appender) {
+        Objects.requireNonNull(appender, "appender");
+        ExecutionStateDTO execution = lock(target);
+        TransitionStatus rejected = rejectSegmentAppend(target, execution);
+        if (rejected != null) {
+            return rejected;
+        }
+        ExecutionSegmentDTO segment = mapper.lockSegment(target.sessionId(), target.executionId(), target.segmentId());
+        if (segment == null || segment.getState() != RuntimeExecutionSegmentState.OPEN) {
+            return TransitionStatus.STATE_CONFLICT;
+        }
+        List<CommittedControlEventDTO> events = List.copyOf(Objects.requireNonNull(appender.append(), "events"));
+        events.forEach(MyBatisRuntimeExecutionControlRepository::requireCommittedEvent);
+        events.forEach(event -> linkCommittedEvent(target, event.eventId(), event.eventSeq()));
+        return TransitionStatus.APPLIED;
+    }
+
+    @Override
+    @Transactional
     public TransitionStatus markTerminal(
             ExecutionTargetDTO target,
+            String terminalEventId,
             TerminalAppender appender,
             RuntimeExecutionTerminalReason terminalReason,
             OffsetDateTime terminalAt) {
         if (terminalReason == null || !terminalReason.executionTerminal()) {
             throw new IllegalArgumentException("terminal reason is invalid");
         }
+        requireEventId(terminalEventId);
         Objects.requireNonNull(appender, "appender");
         ExecutionStateDTO execution = lock(target);
-        TransitionStatus rejected = rejectTarget(target, execution);
+        TransitionStatus rejected = rejectTerminal(target, execution, terminalEventId, terminalReason);
         if (rejected != null) {
             return rejected;
         }
         CommittedControlEventDTO event = requireCommittedEvent(appender.append());
+        if (!terminalEventId.equals(event.eventId())) {
+            throw new IllegalArgumentException("terminal event id changed during append");
+        }
         linkCommittedEvent(target, event.eventId(), event.eventSeq());
         OffsetDateTime storedAt = storedAt(terminalAt);
         closeOpenSegment(target, event.eventId(), event.eventSeq(), terminalReason, storedAt);
@@ -240,6 +266,18 @@ public class MyBatisRuntimeExecutionControlRepository implements RuntimeExecutio
                         storedAt),
                 "execution did not enter terminal state");
         return TransitionStatus.APPLIED;
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Optional<CommittedTerminalDTO> findCommittedTerminal(
+            ExecutionTargetDTO target, String terminalEventId, RuntimeExecutionTerminalReason terminalReason) {
+        requireTarget(target);
+        requireEventId(terminalEventId);
+        if (terminalReason == null || !terminalReason.executionTerminal()) {
+            throw new IllegalArgumentException("terminal reason is invalid");
+        }
+        return Optional.ofNullable(mapper.findCommittedTerminal(target, terminalEventId, terminalReason.value()));
     }
 
     private TransitionStatus rejectTransition(ExecutionTargetDTO target, RuntimeExecutionState expectedState) {
@@ -282,6 +320,30 @@ public class MyBatisRuntimeExecutionControlRepository implements RuntimeExecutio
             return TransitionStatus.STALE_TARGET;
         }
         return execution.getState() == RuntimeExecutionState.TERMINAL ? TransitionStatus.STATE_CONFLICT : null;
+    }
+
+    private static TransitionStatus rejectTerminal(
+            ExecutionTargetDTO target,
+            ExecutionStateDTO execution,
+            String terminalEventId,
+            RuntimeExecutionTerminalReason terminalReason) {
+        TransitionStatus rejected = rejectTarget(target, execution);
+        if (rejected != TransitionStatus.STATE_CONFLICT) {
+            return rejected;
+        }
+        boolean sameTerminal = terminalEventId.equals(execution.getTerminalEventId())
+                && terminalReason == execution.getTerminalReason();
+        return sameTerminal ? TransitionStatus.ALREADY_APPLIED : TransitionStatus.STATE_CONFLICT;
+    }
+
+    private static TransitionStatus rejectSegmentAppend(ExecutionTargetDTO target, ExecutionStateDTO execution) {
+        TransitionStatus rejected = rejectTarget(target, execution);
+        if (rejected != null) {
+            return rejected;
+        }
+        boolean appendable = execution.getState() == RuntimeExecutionState.RUNNING
+                || execution.getState() == RuntimeExecutionState.STOPPING;
+        return appendable ? null : TransitionStatus.STATE_CONFLICT;
     }
 
     private static InterruptRequestDTO.Status rejectInterrupt(String targetEventId, ExecutionStateDTO execution) {
@@ -523,6 +585,12 @@ public class MyBatisRuntimeExecutionControlRepository implements RuntimeExecutio
     private static void requireTerminalEvent(String eventId, long eventSeq) {
         if (eventId == null || eventId.isBlank() || eventSeq < 1) {
             throw new IllegalArgumentException("terminal event identity is invalid");
+        }
+    }
+
+    private static void requireEventId(String eventId) {
+        if (eventId == null || eventId.isBlank()) {
+            throw new IllegalArgumentException("terminal event id is invalid");
         }
     }
 

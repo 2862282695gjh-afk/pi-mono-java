@@ -35,6 +35,7 @@ import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.CommittedControlEvent
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.CommittedEventDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.ExecutionTargetDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeEntryDTO;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeRecordDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.SessionConfigurationUpdateDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.command.SessionCommandResultDTO;
@@ -189,6 +190,7 @@ class RuntimeSessionRepositoryOpenGaussIT {
         assertThat(executionControls.find(stale)).isEmpty();
         assertThat(executionControls.markTerminal(
                         stale,
+                        "idle-stale",
                         () -> committedControlEvent("idle-stale", root.getEntrySeq() + 1, appended),
                         RuntimeExecutionTerminalReason.DONE,
                         session.getCreatedAt()))
@@ -196,12 +198,21 @@ class RuntimeSessionRepositoryOpenGaussIT {
         assertThat(appended).hasValue(0);
         assertThat(executionControls.markTerminal(
                         target,
+                        "idle-done",
                         () -> committedControlEvent("idle-done", root.getEntrySeq() + 1, appended),
                         RuntimeExecutionTerminalReason.DONE,
                         session.getCreatedAt()))
                 .isEqualTo(RuntimeExecutionControlRepository.TransitionStatus.APPLIED);
         assertThat(executionControls.markTerminal(
                         target,
+                        "idle-done",
+                        () -> committedControlEvent("idle-done", root.getEntrySeq() + 1, appended),
+                        RuntimeExecutionTerminalReason.DONE,
+                        session.getCreatedAt()))
+                .isEqualTo(RuntimeExecutionControlRepository.TransitionStatus.ALREADY_APPLIED);
+        assertThat(executionControls.markTerminal(
+                        target,
+                        "idle-duplicate",
                         () -> committedControlEvent("idle-duplicate", root.getEntrySeq() + 2, appended),
                         RuntimeExecutionTerminalReason.DONE,
                         session.getCreatedAt()))
@@ -242,19 +253,197 @@ class RuntimeSessionRepositoryOpenGaussIT {
         assertThat(count("t_session_entries", session.getId())).isEqualTo(2);
         assertThat(count("t_session_events", session.getId())).isEqualTo(2);
         assertThat(count("t_session_execution_segment_events", session.getId())).isEqualTo(2);
+        assertTerminalRetryRestoresCommittedProjection(session, accepted.target(), idle, idleEvent);
+    }
 
-        RuntimeEntryDTO lateIdle = controlEntry(session, "late-idle", "session.status.idle");
-        CommittedEventDTO lateEvent = committedEvent(lateIdle, "late-idle-event", "session.status_idle");
+    @Test
+    void shouldRejectStaleSegmentBeforeInvokingAppender() {
+        RuntimeSessionDTO session = newSession("session_stale_segment_append");
+        repository.create(session);
+        ExecutionTargetDTO target = acceptRootMessage(session, "stale-segment-append");
+        ExecutionTargetDTO stale =
+                new ExecutionTargetDTO(target.sessionId(), target.executionId(), target.rootEventId(), "stale-segment");
+        var appended = new AtomicInteger();
+
+        var status = executionControls.appendToSegment(stale, () -> {
+            appended.incrementAndGet();
+            return List.of();
+        });
+
+        assertThat(status).isEqualTo(RuntimeExecutionControlRepository.TransitionStatus.STALE_TARGET);
+        assertThat(appended).hasValue(0);
+    }
+
+    @Test
+    void shouldRejectCrossSessionSegmentPayloadBeforeSequenceAllocation() {
+        RuntimeSessionDTO owner = newSession("session_segment_owner");
+        RuntimeSessionDTO other = newSession("session_segment_other");
+        repository.create(owner);
+        repository.create(other);
+        ExecutionTargetDTO target = acceptRootMessage(owner, "segment-owner");
+        long ownerSequence = scalarLong("SELECT next_seq FROM t_session_sequences WHERE session_id = ?", owner.getId());
+        long otherSequence = scalarLong("SELECT next_seq FROM t_session_sequences WHERE session_id = ?", other.getId());
+        RuntimeEntryDTO foreignEntry =
+                newEntry(other.getId(), "foreign-entry", "assistant.message.completed", owner.getCreatedAt(), "{}");
+        assertThatThrownBy(() -> executionPersistence.appendEntry(target, foreignEntry, List.of()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("runtime entry");
+
+        RuntimeEntryDTO localEntry =
+                newEntry(owner.getId(), "local-entry", "assistant.message.completed", owner.getCreatedAt(), "{}");
+        CommittedEventDTO foreignEvent = committedEvent(localEntry, "foreign-event", "agent.message");
+        foreignEvent.setSessionId(other.getId());
+        assertThatThrownBy(() -> executionPersistence.appendEntry(target, localEntry, List.of(foreignEvent)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("committed event");
+
+        var foreignRecord = new RuntimeRecordDTO();
+        foreignRecord.setSessionId(other.getId());
+        assertThatThrownBy(() -> executionPersistence.appendEntryWithUsage(
+                        target, localEntry, foreignRecord, Usage.empty(), List.of()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("runtime record");
+        assertSequence(owner, ownerSequence);
+        assertSequence(other, otherSequence);
+        assertThat(count("t_session_entries", other.getId())).isZero();
+    }
+
+    @Test
+    void shouldRollbackEntryAndPublicEventWhenSegmentLinkFails() {
+        RuntimeSessionDTO session = newSession("session_segment_link_rollback");
+        repository.create(session);
+        ExecutionTargetDTO target = acceptRootMessage(session, "segment-link-rollback");
         long sequenceBefore =
                 scalarLong("SELECT next_seq FROM t_session_sequences WHERE session_id = ?", session.getId());
-        assertThatThrownBy(() -> executionPersistence.commitTerminal(
-                        accepted.target(),
-                        lateIdle,
-                        lateEvent,
-                        RuntimeExecutionTerminalReason.DONE,
-                        lateIdle.getTimestamp()))
-                .isInstanceOf(IllegalStateException.class);
-        assertThat(count("t_session_entries", session.getId())).isEqualTo(2);
+        jdbcTemplate.update(
+                """
+                INSERT INTO t_session_execution_segment_events (
+                    session_id, execution_id, segment_id, event_id, event_seq
+                ) VALUES (?, ?, ?, ?, ?)
+                """,
+                target.sessionId(),
+                target.executionId(),
+                target.segmentId(),
+                "reserved-segment-event",
+                sequenceBefore + 1L);
+        RuntimeEntryDTO entry = newEntry(
+                session.getId(), "rolled-back-assistant", "assistant.message.completed", session.getCreatedAt(), "{}");
+        CommittedEventDTO event = committedEvent(entry, "rolled-back-agent-message", "agent.message");
+
+        assertThatThrownBy(() -> executionPersistence.appendEntry(target, entry, List.of(event)))
+                .isInstanceOf(DataIntegrityViolationException.class);
+
+        assertThat(count("t_session_entries", session.getId())).isOne();
+        assertThat(count("t_session_events", session.getId())).isOne();
+        assertThat(count("t_session_event_projection", session.getId())).isOne();
+        assertThat(count("t_session_execution_segment_events", session.getId())).isEqualTo(2);
+        assertThat(scalarLong("SELECT next_seq FROM t_session_sequences WHERE session_id = ?", session.getId()))
+                .isEqualTo(sequenceBefore);
+    }
+
+    @Test
+    void shouldAppendUsageEventWhileExecutionIsStopping() {
+        RuntimeSessionDTO session = newSession("session_stopping_segment_append");
+        repository.create(session);
+        ExecutionTargetDTO target = acceptRootMessage(session, "stopping-segment-append");
+        RuntimeEntryDTO interrupt = controlEntry(session, "stopping-interrupt", "user.interrupt");
+        CommittedEventDTO interruptEvent = committedEvent(interrupt, "stopping-interrupt-event", "user.interrupt");
+        executionPersistence.acceptInterrupt(
+                session.getId(), target.rootEventId(), interrupt, interruptEvent, interrupt.getTimestamp());
+        RuntimeEntryDTO entry = newEntry(
+                session.getId(), "stopping-assistant", "assistant.message.completed", session.getCreatedAt(), "{}");
+        var usage = new Usage(11, 7, 3, 2, 41, new Cost(0.1, 0.2, 0.03, 0.04, 0.5));
+        var codec = new RuntimeEntryCodec(new ObjectMapper(), new RuntimeMessageSourceConfiguration().messageSource());
+        var record = codec.usageRecord(
+                session.getId(),
+                "stopping-usage-record",
+                target.rootEventId(),
+                RuntimeUsageCause.ASSISTANT,
+                entry.getId(),
+                0,
+                null,
+                usage,
+                entry.getTimestamp());
+        CommittedEventDTO event = committedEvent(entry, "stopping-agent-message", "agent.message");
+
+        executionPersistence.appendEntryWithUsage(target, entry, record, usage, List.of(event));
+
+        assertThat(executionControls.find(target).orElseThrow().getState()).isEqualTo(RuntimeExecutionState.STOPPING);
+        assertThat(count("t_session_records", session.getId())).isOne();
+        assertThat(count("t_session_execution_segment_events", session.getId())).isEqualTo(2);
+        assertThat(scalarLong("SELECT total_tokens FROM t_session_stats WHERE session_id = ?", session.getId()))
+                .isEqualTo(41L);
+    }
+
+    @Test
+    void shouldRestoreTerminatedTerminalAfterConfirmingSegmentClosed() {
+        RuntimeSessionDTO session = newSession("session_confirming_terminal_retry");
+        repository.create(session);
+        ExecutionTargetDTO target = acceptRootMessage(session, "confirming-terminal-retry");
+        persistConfirmingEvents(session, target);
+        RuntimeEntryDTO interrupt = controlEntry(session, "terminal-retry-interrupt", "user.interrupt");
+        CommittedEventDTO interruptEvent =
+                committedEvent(interrupt, "terminal-retry-interrupt-event", "user.interrupt");
+        executionPersistence.acceptInterrupt(
+                session.getId(), target.rootEventId(), interrupt, interruptEvent, interrupt.getTimestamp());
+
+        RuntimeEntryDTO idle = controlEntry(session, "terminated-idle", "session.status.idle");
+        CommittedEventDTO event = committedEvent(idle, "terminated-idle-event", "session.status_idle");
+        executionPersistence.commitTerminal(
+                target, idle, event, RuntimeExecutionTerminalReason.TERMINATED, idle.getTimestamp());
+        RuntimeEntryDTO retry = newEntry(
+                session.getId(),
+                idle.getId(),
+                idle.getType(),
+                idle.getTimestamp().plusMinutes(1),
+                "{}");
+        CommittedEventDTO retryEvent = committedEvent(retry, event.getEventId(), event.getType());
+
+        executionPersistence.commitTerminal(
+                target, retry, retryEvent, RuntimeExecutionTerminalReason.TERMINATED, retry.getTimestamp());
+
+        assertThat(retryEvent)
+                .extracting("eventSeq", "createdAt", "anchorEntryId")
+                .containsExactly(event.getEventSeq(), event.getCreatedAt(), event.getAnchorEntryId());
+        assertThat(count("t_session_execution_segment_events", session.getId())).isEqualTo(4);
+        assertThat(jdbcTemplate.queryForObject(
+                        "SELECT terminal_reason FROM t_session_execution_segments WHERE session_id = ?",
+                        String.class,
+                        session.getId()))
+                .isEqualTo("confirming");
+    }
+
+    @Test
+    void shouldRestoreOldTerminalWithoutFinishingNewExecution() {
+        RuntimeSessionDTO session = newSession("session_old_terminal_retry");
+        repository.create(session);
+        ExecutionTargetDTO oldTarget = acceptRootMessage(session, "old-terminal-retry");
+        RuntimeEntryDTO oldIdle = controlEntry(session, "old-terminal-idle", "session.status.idle");
+        CommittedEventDTO oldEvent = committedEvent(oldIdle, "old-terminal-event", "session.status_idle");
+        executionPersistence.commitTerminal(
+                oldTarget, oldIdle, oldEvent, RuntimeExecutionTerminalReason.DONE, oldIdle.getTimestamp());
+        executionIds.reset("new-running-execution", "new-running-segment");
+        RuntimeEntryDTO next = controlEntry(session, "next-running-message", "user.message");
+        CommittedEventDTO nextEvent = committedEvent(next, "next-running-event", "user.message");
+        ExecutionTargetDTO newTarget = executionPersistence
+                .acceptMessage(session.getId(), next, nextEvent, next.getTimestamp())
+                .target();
+        long sequenceBefore =
+                scalarLong("SELECT next_seq FROM t_session_sequences WHERE session_id = ?", session.getId());
+        RuntimeEntryDTO retry = newEntry(
+                session.getId(),
+                oldIdle.getId(),
+                oldIdle.getType(),
+                oldIdle.getTimestamp().plusMinutes(1),
+                "{}");
+        CommittedEventDTO retryEvent = committedEvent(retry, oldEvent.getEventId(), oldEvent.getType());
+
+        executionPersistence.commitTerminal(
+                oldTarget, retry, retryEvent, RuntimeExecutionTerminalReason.DONE, retry.getTimestamp());
+
+        assertThat(repository.find(session.getId()).orElseThrow().getState()).isEqualTo("running");
+        assertThat(executionControls.find(newTarget).orElseThrow().getState()).isEqualTo(RuntimeExecutionState.RUNNING);
+        assertThat(retryEvent.getEventSeq()).isEqualTo(oldEvent.getEventSeq());
         assertThat(scalarLong("SELECT next_seq FROM t_session_sequences WHERE session_id = ?", session.getId()))
                 .isEqualTo(sequenceBefore);
     }
@@ -923,6 +1112,11 @@ class RuntimeSessionRepositoryOpenGaussIT {
         return result == null ? 0L : result;
     }
 
+    private void assertSequence(RuntimeSessionDTO session, long expected) {
+        assertThat(scalarLong("SELECT next_seq FROM t_session_sequences WHERE session_id = ?", session.getId()))
+                .isEqualTo(expected);
+    }
+
     @ParameterizedTest
     @ValueSource(strings = {"first", "second"})
     void shouldSerializeUnconditionalModelChangesUsingLockedPreviousValue(String secondModel) throws Exception {
@@ -1249,6 +1443,7 @@ class RuntimeSessionRepositoryOpenGaussIT {
         executionControls.linkCommittedEvent(target, target.rootEventId(), root.getEntrySeq());
         assertThat(executionControls.markTerminal(
                         target,
+                        "delete-idle-event",
                         () -> new CommittedControlEventDTO("delete-idle-event", root.getEntrySeq() + 1),
                         RuntimeExecutionTerminalReason.DONE,
                         root.getTimestamp().plusSeconds(1)))
@@ -1367,6 +1562,52 @@ class RuntimeSessionRepositoryOpenGaussIT {
             String eventId, long eventSeq, AtomicInteger appended) {
         appended.incrementAndGet();
         return new CommittedControlEventDTO(eventId, eventSeq);
+    }
+
+    private void assertTerminalRetryRestoresCommittedProjection(
+            RuntimeSessionDTO session, ExecutionTargetDTO target, RuntimeEntryDTO idle, CommittedEventDTO idleEvent) {
+        long sequenceBefore =
+                scalarLong("SELECT next_seq FROM t_session_sequences WHERE session_id = ?", session.getId());
+        RuntimeEntryDTO retriedIdle = newEntry(
+                session.getId(),
+                "idle-entry",
+                "session.status.idle",
+                idle.getTimestamp().plusMinutes(1),
+                "{}");
+        CommittedEventDTO retriedEvent = committedEvent(retriedIdle, "idle-event", "session.status_idle");
+        executionPersistence.commitTerminal(
+                target, retriedIdle, retriedEvent, RuntimeExecutionTerminalReason.DONE, retriedIdle.getTimestamp());
+        assertThat(retriedIdle)
+                .extracting("entrySeq", "parentId", "timestamp")
+                .containsExactly(idle.getEntrySeq(), idle.getParentId(), idle.getTimestamp());
+        assertThat(retriedEvent)
+                .extracting("eventSeq", "anchorEntryId", "createdAt", "payload")
+                .containsExactly(
+                        idleEvent.getEventSeq(),
+                        idleEvent.getAnchorEntryId(),
+                        idleEvent.getCreatedAt(),
+                        idleEvent.getPayload());
+        assertMismatchedTerminalRetriesFail(target, retriedIdle, retriedEvent);
+        assertThat(count("t_session_entries", session.getId())).isEqualTo(2);
+        assertThat(scalarLong("SELECT next_seq FROM t_session_sequences WHERE session_id = ?", session.getId()))
+                .isEqualTo(sequenceBefore);
+    }
+
+    private void assertMismatchedTerminalRetriesFail(
+            ExecutionTargetDTO target, RuntimeEntryDTO retriedIdle, CommittedEventDTO retriedEvent) {
+        assertThatThrownBy(() -> executionPersistence.commitTerminal(
+                        target,
+                        retriedIdle,
+                        retriedEvent,
+                        RuntimeExecutionTerminalReason.FAILED,
+                        retriedIdle.getTimestamp()))
+                .isInstanceOf(IllegalStateException.class);
+        RuntimeEntryDTO lateIdle =
+                newEntry(target.sessionId(), "late-idle", "session.status.idle", retriedIdle.getTimestamp(), "{}");
+        CommittedEventDTO lateEvent = committedEvent(lateIdle, "late-idle-event", "session.status_idle");
+        assertThatThrownBy(() -> executionPersistence.commitTerminal(
+                        target, lateIdle, lateEvent, RuntimeExecutionTerminalReason.DONE, lateIdle.getTimestamp()))
+                .isInstanceOf(IllegalStateException.class);
     }
 
     private static RuntimeSessionDTO newSession(String sessionId) {

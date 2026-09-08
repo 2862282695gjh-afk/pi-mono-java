@@ -6,8 +6,10 @@ package com.campusclaw.codingagent.runtimeapi.mapper;
 
 import java.time.OffsetDateTime;
 
+import com.campusclaw.codingagent.runtimeapi.dto.CommittedTerminalDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.ExecutionSegmentDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.ExecutionStateDTO;
+import com.campusclaw.codingagent.runtimeapi.dto.ExecutionTargetDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.ToolConfirmationDecisionDTO;
 
 import org.apache.ibatis.annotations.Mapper;
@@ -34,6 +36,11 @@ public interface RuntimeExecutionControlMapper {
     ExecutionStateDTO lockExecution(@Param("sessionId") String sessionId, @Param("executionId") String executionId);
 
     ExecutionStateDTO lockCurrentExecution(@Param("sessionId") String sessionId);
+
+    ExecutionSegmentDTO lockSegment(
+            @Param("sessionId") String sessionId,
+            @Param("executionId") String executionId,
+            @Param("segmentId") String segmentId);
 
     int insertSegmentEvent(
             @Param("sessionId") String sessionId,
@@ -104,4 +111,9 @@ public interface RuntimeExecutionControlMapper {
             @Param("terminalEventId") String terminalEventId,
             @Param("terminalReason") String terminalReason,
             @Param("terminalAt") OffsetDateTime terminalAt);
+
+    CommittedTerminalDTO findCommittedTerminal(
+            @Param("target") ExecutionTargetDTO target,
+            @Param("terminalEventId") String terminalEventId,
+            @Param("terminalReason") String terminalReason);
 }

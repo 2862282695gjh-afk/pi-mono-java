@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ADR-0082：采用审核驱动且可重跑的存量事件迁移</title>
+<style>body{font:16px/1.7 system-ui,sans-serif;background:#f5f7fa;color:#172235;margin:0}main{max-width:920px;margin:32px auto;padding:32px;background:white;border-radius:12px}code{overflow-wrap:anywhere;background:#eef2f6;padding:2px 4px}a{color:#1457a6}</style></head>
+<body><main><h1>ADR-0082：采用审核驱动且可重跑的存量事件迁移</h1>
+<p>Status: Accepted · Date: 2026-09-08 · Version: 1.0.1</p>
+<h2>Context</h2><p>设计仓 <code>2ee2a321</code> 的历史设计 §2.0 明确要求全部旧持久化类型逐类映射或说明
+不公开理由，并要求一次可重跑迁移或兼容读取。旧 Entry 无法证明 Skill 展开前回执、公开 Thinking 摘要、工具确认标记、
+固定错误文本和一对多完整数量。读取时猜测会泄露私有内容、反复生成身份或静默漏事件。</p>
+<p>Java 基线 <code>72f3550e</code> 已有权威公共事件表和查询完整性门禁，但没有存量审核输入和发布迁移。
+pi 基线 <code>5cd93f68</code> 的 Agent loop 生成运行时事件，不提供 CampusClaw 数据库历史迁移。</p>
+<h2>Decision</h2><p>由数据库发布平台在停写维护窗口执行 schema、data、verify 三步升级。自动映射只处理能从旧安全字段
+完整证明的模型配置、Thinking 配置、手动压缩和明确私有记录；其余旧 Entry 必须提供精确人工审核。待写与已有公开事件的
+payload、旧到新类型、数量、顺序和同 Session 关联全部校验后，才允许迁移该 Session。</p>
+<p>data 每次按 Session ID 选择最多 500 个无缺口 Session，在一个事务内写公共事件、精确 marker、共享序号并删除
+已消费审核输入。失败 Session 保持不变；SQL 异常回滚整批。verify 复用相同 validator 和关系规则，只输出 ID、旧类型和固定原因。
+只有 verify 零行后才能部署 v2 读取。</p>
+<p>表与函数安装在发布平台选定的目标 <code>search_path</code>。这是一项明确的 Events v2 升级，不增加应用启动 migration runner，
+也不扩展为通用数据库迁移框架。</p>
+<h2>考虑过的选项及取舍</h2><ul>
+<li><strong>GET 时动态兼容旧 Entry。</strong> Pro：无需发布数据步骤。Con：无法稳定恢复身份、安全原始回执和一对多完整性，每次读取还可能重新翻译错误，因此不采用。</li>
+<li><strong>把所有旧字段自动转换为公共事件。</strong> Pro：运维输入较少。Con：会把 Skill 正文或私有 Thinking 暴露，并为缺失关联编造值，因此不采用。</li>
+<li><strong>逐 Entry 独立提交。</strong> Pro：单次事务小。Con：同 Session 内 source/tool 关联和一对多记录可能形成半份迁移，查询仍无法证明完整，因此不采用。</li>
+<li><strong>安全自动映射、精确审核与 Session 原子批处理。</strong> Pro：安全字段减少人工量，不能证明的内容保持显式缺口，重跑不改变 ID/序号。Con：需要维护窗口、可信审核来源和多轮发布操作。采用此方案。</li>
+</ul>
+<h2>所选方案与理由</h2><p>Session 是历史分支、关联和共享序号的一致性边界。先对整个 Session 的候选事件、既有事件和 marker
+做完整性检查，再提交该 Session，可以避免“有一条公共事件就误判完整”。审核表保留稳定 eventId 和顺序，成功后同事务删除 payload，
+使重跑既可继续处理缺口，又不会重复公开内容。</p>
+<h2>Consequences</h2><p>正面结果是旧配置、私有生命周期和手动压缩可以确定性迁移；completed Thinking 可明确分类为私有零事件或公开摘要一事件；
+未知类型、旧 Skill 缺回执、非法 payload、错误类型映射和跨 Session 关联均关闭失败。公共历史在后续分支切换时仍有完整 marker。</p>
+<p>代价是 data 使用表锁并建立临时集合，必须停写并评估最大 Session；人工审核理由的非敏感性依赖发布流程，数据库只保证 verify 不输出它。
+每批最多 500 个 Session，超大 Session 不拆分。没有新增 Maven 依赖或应用后台任务。</p>
+<p>v2 尚未写入前可以归档审核输入，并按依赖顺序、无 <code>CASCADE</code> 删除迁移函数和四张新表。v2 已经写入后只允许应用回退并保留新表，
+不能逆向转换或删除权威事件。迁移完成后可通过后续发布变更删除仅迁移使用的审核表和函数。</p>
+<h2>Related</h2><p><a href="../designs/runtime-event-migration/README.md">实现设计、运行手册与验证</a> ·
+<a href="../designs/runtime-event-migration/diagram.puml#L1">PlantUML 源码</a> ·
+<a href="0077-share-public-event-data-model.html">ADR-0077 公共事件数据模型</a> ·
+<a href="0078-authoritative-event-history.html">ADR-0078 权威事件历史</a></p>
+<h2>版本历史</h2><p>1.0.1 · 2026-09-08：补充已有公开投影的精确数量与旧到新类型门禁。</p>
+<p>1.0.0 · 2026-09-08：确定审核驱动、Session 原子、停写窗口和可重跑的存量事件迁移。</p>
+</main></body></html>
