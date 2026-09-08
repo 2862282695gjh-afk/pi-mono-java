@@ -30,6 +30,9 @@ public class RuntimeExecutionProperties {
     @NotNull
     private Duration maxDuration = Duration.ofMinutes(30);
 
+    @NotNull
+    private Duration terminalRetryInterval = Duration.ofSeconds(1);
+
     @Min(1)
     private int maxControlMessages = 32;
 
@@ -50,7 +53,7 @@ public class RuntimeExecutionProperties {
 
     @AssertTrue(message = "execution durations must be positive")
     public boolean isDurationConfigurationValid() {
-        return isPositive(maxDuration) && isPositive(controlPollFailureBackoff);
+        return isPositive(maxDuration) && isPositive(terminalRetryInterval) && isPositive(controlPollFailureBackoff);
     }
 
     private static boolean isPositive(Duration duration) {

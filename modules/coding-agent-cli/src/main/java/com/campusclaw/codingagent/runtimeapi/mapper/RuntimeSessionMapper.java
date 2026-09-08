@@ -51,8 +51,7 @@ public interface RuntimeSessionMapper {
     int insertCommittedEventProjection(
             @Param("sessionId") String sessionId,
             @Param("anchorEntryId") String anchorEntryId,
-            @Param("eventCount") int eventCount,
-            @Param("mappingSource") String mappingSource);
+            @Param("eventCount") int eventCount);
 
     int incrementMessageCount(@Param("sessionId") String sessionId);
 

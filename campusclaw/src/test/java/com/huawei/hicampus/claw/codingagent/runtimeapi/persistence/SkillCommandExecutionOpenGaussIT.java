@@ -342,7 +342,8 @@ class SkillCommandExecutionOpenGaussIT {
         var coordinator = new RuntimeExecutionCoordinator(
                 registry,
                 repository,
-                new RuntimeEventProjectorFactory(repository, codec, ids, clock),
+                new RuntimeEventProjectorFactory(
+                        repository, codec, new RuntimeCommittedEventFactory(mapper, messages), ids, clock),
                 scheduler,
                 properties,
                 new RuntimeTerminalEventFactory(messages),

@@ -53,6 +53,7 @@ import com.campusclaw.ai.types.ThinkingContent;
 import com.campusclaw.ai.types.ToolCall;
 import com.campusclaw.ai.types.Usage;
 import com.campusclaw.ai.types.UserMessage;
+import com.campusclaw.codingagent.runtimeapi.dto.CommittedEventDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.RuntimeEntryDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.RuntimeRecordDTO;
 import com.campusclaw.codingagent.runtimeapi.persistence.RuntimeSessionRepository;
@@ -93,6 +94,7 @@ class RuntimeEventProjectorTest {
                 "session_event_test",
                 repository,
                 codec(),
+                committedEvents(),
                 idGenerator,
                 stream,
                 Clock.fixed(Instant.parse("2026-08-18T00:00:00Z"), ZoneOffset.UTC),
@@ -230,8 +232,11 @@ class RuntimeEventProjectorTest {
         RuntimeSessionRepository repository = mock(RuntimeSessionRepository.class);
         when(repository.listCurrentBranchEntries("session_event_test", 0L, 500)).thenReturn(List.of(user, discarded));
         AtomicReference<RuntimeEntryDTO> compaction = new AtomicReference<>();
-        when(repository.appendEntryWithUsage(any(), any(), any()))
-                .thenAnswer(invocation -> persistCompaction(invocation.getArgument(0), compaction));
+        AtomicReference<CommittedEventDTO> committed = new AtomicReference<>();
+        when(repository.appendEntryWithUsage(any(), any(), any(), any())).thenAnswer(invocation -> {
+            committed.set(invocation.<List<CommittedEventDTO>>getArgument(3).getFirst());
+            return persistCompaction(invocation.getArgument(0), compaction);
+        });
         RuntimeEventStream stream = eventStream();
         RuntimeEventProjector projector = projector(repository, stream, false, codec);
         SessionCompactionResult result =
@@ -247,6 +252,14 @@ class RuntimeEventProjectorTest {
         stream.complete();
 
         assertThat(compaction.get().getPayload()).contains("\"_discardedEntryId\":\"entry_length\"");
+        assertThat(committed.get()).satisfies(event -> {
+            assertThat(event.getEventId()).isEqualTo(compaction.get().getId());
+            assertThat(event.getAnchorEntryId()).isEqualTo(compaction.get().getId());
+            assertThat(event.getType()).isEqualTo("session.compacted");
+            assertThat(event.getPayload())
+                    .contains("\"reason\":\"overflow\"", "\"tokensBefore\":100", "\"estimatedTokensAfter\":20")
+                    .doesNotContain("summary", "sourceEventId");
+        });
         assertThat(codec.toAgentContextEntryIds(List.of(user, discarded, compaction.get(), retry)))
                 .containsExactly(compaction.get().getId(), "entry_user", "entry_retry");
         List<AssistantMessage> assistants = restored.stream()
@@ -274,6 +287,7 @@ class RuntimeEventProjectorTest {
                 "session_event_test",
                 repository,
                 codec,
+                committedEvents(),
                 () -> "entry_" + ids.getAndIncrement(),
                 stream,
                 Clock.fixed(Instant.parse("2026-08-18T00:00:00Z"), ZoneOffset.UTC),
@@ -306,6 +320,12 @@ class RuntimeEventProjectorTest {
 
     private static RuntimeEntryCodec codec() {
         return new RuntimeEntryCodec(
+                new ObjectMapper(),
+                new com.campusclaw.codingagent.runtimeapi.RuntimeMessageSourceConfiguration().messageSource());
+    }
+
+    private static RuntimeCommittedEventFactory committedEvents() {
+        return new RuntimeCommittedEventFactory(
                 new ObjectMapper(),
                 new com.campusclaw.codingagent.runtimeapi.RuntimeMessageSourceConfiguration().messageSource());
     }

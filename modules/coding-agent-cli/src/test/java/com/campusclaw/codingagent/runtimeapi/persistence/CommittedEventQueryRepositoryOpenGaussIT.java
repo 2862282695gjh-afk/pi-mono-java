@@ -190,8 +190,7 @@ class CommittedEventQueryRepositoryOpenGaussIT {
 
     private void insertProjection(String sessionId, String entryId, int eventCount) {
         jdbcTemplate.update(
-                "INSERT INTO t_session_event_projection "
-                        + "(session_id,anchor_entry_id,event_count,mapping_source) VALUES (?,?,?,'migration')",
+                "INSERT INTO t_session_event_projection " + "(session_id,anchor_entry_id,event_count) VALUES (?,?,?)",
                 sessionId,
                 entryId,
                 eventCount);

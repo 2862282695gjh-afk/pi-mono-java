@@ -92,6 +92,14 @@ public class RuntimeEventStream implements RuntimeEventOutput {
         return true;
     }
 
+    public synchronized boolean canAcceptRequired(RuntimeSseEventVO event) {
+        if (completed || detached || events.size() >= maxEvents) {
+            return false;
+        }
+        long bytes = eventSizer.applyAsLong(event);
+        return bytes <= maxBytes - bufferedBytes;
+    }
+
     @Override
     public synchronized void complete() {
         completed = true;
