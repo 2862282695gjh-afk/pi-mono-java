@@ -1,10 +1,10 @@
 # CampusClaw 模块架构
 
-> 文档版本：2.5.0
+> 文档版本：2.6.0
 >
 > 状态：Implemented
 >
-> 更新日期：2026-09-07
+> 更新日期：2026-09-08
 >
 > 实现前源码基线：`d649866a6cae967ace18ceaeb9597edd47e5721e`
 >
@@ -101,7 +101,7 @@ Spring Boot 服务装配模块。目录名保留 `cli` 仅为避免当前构建�
 | 包 | 职责 |
 |---|---|
 | `com.campusclaw.codingagent.runtimeapi` | Runtime HTTP、SSE、Session 持久化和执行 Host |
-| `com.campusclaw.codingagent.runtimeapi.command`、`runtimeapi.service.command` | 命令定义与共享 Catalog、Builtin 应用边界；清单 GET 已发布，Command POST 尚未发布 |
+| `com.campusclaw.codingagent.runtimeapi.command`、`runtimeapi.service.command` | 命令定义与共享 Catalog、Builtin/Skill 应用边界；共享 GET 清单与 POST 执行 |
 | `com.campusclaw.codingagent.session` | 三入口公共 AgentSessionFactory |
 | `com.campusclaw.codingagent.session.compaction` | 公共上下文压缩与 Read 文件追踪 |
 | `com.campusclaw.codingagent.runtime` | 受管目录 prepare/refresh 和 CampusMate 客户端 |
@@ -120,6 +120,12 @@ Spring Boot 服务装配模块。目录名保留 `cli` 仅为避免当前构建�
 Controller 仅依赖应用 Service 和 ResultBeanAdapter，不执行 Builtin 或 Skill。
 源码证据为 `afee9bd333d0fc74ba0cef8b27b6df7357acdf30`，完整缓存、错误投影及层次见
 [共享清单 HTTP 实现](designs/command-catalog-http/README.md)。本片不改变 Maven 依赖图。
+
+在 `2f52e9b80c95c5c27141362976b918227b1c5d60` 已合入请求解析和 Skill 实际执行后，
+本片新增 `runtimeapi/web/RuntimeCommandController.java#execute` 接通共享 POST：
+七 Builtin 返回已有业务 JSON，Skill 返回普通消息 SSE，薄 VO 适配和完成等待位于 Service。
+集中错误处理按实际匹配的 Controller 提供 JSON 错误与校验日志保护，不改既有 GET/Events/PUT。
+实现证据与 MVC/跨进程验证边界见[共享命令 POST](designs/shared-command-http/README.md)。
 
 旧原型删除基线为 #245 合并提交 `146a6c9ecdc6eda987fcecd65b1e14416ce78bb1`，
 清理实现为 `1bf1ce6d631a5c394153bd8e8cce55a861d3a387`。删除范围与保留能力见
@@ -153,6 +159,7 @@ Controller 仅依赖应用 Service 和 ResultBeanAdapter，不执行 Builtin 或
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 2.6.0 | 2026-09-08 | 接通七Builtin JSON与Skill SSE的共享POST；复用已有服务，无新模块或依赖。 |
 | 2.5.0 | 2026-09-07 | 删除未注册的旧命令包与专属测试，保留现有 Runtime 命令及公共 Session 压缩。 |
 | 2.4.0 | 2026-09-07 | 区分未注册旧命令原型与 Runtime Command；记录已发布共享清单 GET，POST 仍未发布。 |
 | 2.3.0 | 2026-09-04 | 新增 common 模块与 ClawConstants，直接消费者显式声明底层依赖。 |
