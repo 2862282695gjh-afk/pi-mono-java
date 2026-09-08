@@ -1,0 +1,30 @@
+@startuml runtime_execution_result_read
+title Read Committed Results for an Exact Execution Target
+' Contract: pi-mono-java-design 2ee2a3211da68ad87b0d9cab353e691b00bdaebd
+' Java baseline: 201d75ed; implementation sources: 0aa0cf8f and 1e9ab28c
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/persistence/MyBatisRuntimeExecutionResultRepository.java#readSegmentEvents
+' Source: modules/coding-agent-cli/src/main/resources/mapper/session/RuntimeExecutionResultMapper.xml#listSegmentEvents and #findExecutionTerminal
+' Pi baseline: 4af9d21d3b4d664e4a29fcabfec85171077248e3
+' Pi source: packages/agent/src/agent-loop.ts#runAgentLoop and #prepareToolCall
+' Observed behavior: a confirming segment may later also link the actual execution terminal event.
+' Design reason: a segment response must stop at its first idle while an interrupt waits for the actual terminal.
+' Java divergence: shared database result segments are a CampusClaw architecture change.
+start
+:Receive the accepted exact Session, execution, root and segment identity;
+if (Exact identity exists?) then (yes)
+if (Read segment events?) then (yes)
+  :Validate afterSeq >= 0 and limit > 0;
+  :Read linked committed events in ascending sequence;
+  :Keep afterSeq < eventSeq <= first segment terminal sequence;
+  :Read the exact segment state;
+  :Return batch and whether its first idle has been reached;
+else (no)
+  :Verify the requested segment belongs to the exact root execution;
+  :Require execution state TERMINAL;
+  :Read only the actual committed execution terminal event;
+endif
+else (no)
+  :Return empty;
+endif
+stop
+@enduml

@@ -46,6 +46,7 @@ import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeEntryCodec;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeEntryIdGenerator;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeUsageCause;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.mapper.RuntimeExecutionControlMapper;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.mapper.RuntimeExecutionResultMapper;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.mapper.RuntimeSessionMapper;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.model.RuntimeModelManager;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.persistence.UserEventAcceptance.Status;
@@ -99,6 +100,8 @@ class RuntimeSessionRepositoryOpenGaussIT {
 
     private TestRuntimeEntryIdGenerator executionIds;
 
+    private RuntimeExecutionResultRepository executionResults;
+
     private JdbcTemplate jdbcTemplate;
 
     @BeforeAll
@@ -122,6 +125,7 @@ class RuntimeSessionRepositoryOpenGaussIT {
         executionControls = context.getBean(RuntimeExecutionControlRepository.class);
         executionPersistence = context.getBean(RuntimeExecutionPersistenceService.class);
         executionIds = context.getBean(TestRuntimeEntryIdGenerator.class);
+        executionResults = context.getBean(RuntimeExecutionResultRepository.class);
         jdbcTemplate = context.getBean(JdbcTemplate.class);
         jdbcTemplate.update("TRUNCATE TABLE t_session_event_projection");
         jdbcTemplate.update("TRUNCATE TABLE t_session_events");
@@ -657,6 +661,69 @@ class RuntimeSessionRepositoryOpenGaussIT {
             releaseInterrupt.countDown();
             executor.shutdownNow();
         }
+    }
+
+    @Test
+    void shouldReadFixedSegmentAfterSequenceUntilItsTerminalEvent() {
+        RuntimeSessionDTO session = newSession("session_segment_result");
+        repository.create(session);
+        ExecutionTargetDTO target = seedCommittedSegment(session);
+
+        var first = executionResults.readSegmentEvents(target, 2L, 1).orElseThrow();
+        assertThat(first.getEvents()).extracting(CommittedEventDTO::getEventId).containsExactly("agent-event");
+        assertThat(first.isTerminal()).isFalse();
+
+        var second = executionResults
+                .readSegmentEvents(target, first.getEvents().getLast().getEventSeq(), 1)
+                .orElseThrow();
+        assertThat(second.getEvents()).extracting(CommittedEventDTO::getEventId).containsExactly("idle-event");
+        assertThat(second.isTerminal()).isTrue();
+        var completed = executionResults
+                .readSegmentEvents(target, second.getEvents().getLast().getEventSeq(), 10)
+                .orElseThrow();
+        assertThat(completed.getEvents()).isEmpty();
+        assertThat(completed.isTerminal()).isTrue();
+    }
+
+    @Test
+    void shouldReadOnlyExecutionTerminalForInterruptResult() {
+        RuntimeSessionDTO session = newSession("session_execution_result");
+        repository.create(session);
+        ExecutionTargetDTO target = seedCommittedSegment(session);
+
+        assertThat(executionResults.findExecutionTerminal(target))
+                .get()
+                .extracting(CommittedEventDTO::getEventId)
+                .isEqualTo("idle-event");
+        var wrongRoot =
+                new ExecutionTargetDTO(target.sessionId(), target.executionId(), "wrong-root", target.segmentId());
+        var wrongSegment =
+                new ExecutionTargetDTO(target.sessionId(), target.executionId(), target.rootEventId(), "wrong-segment");
+        assertThat(executionResults.findExecutionTerminal(wrongRoot)).isEmpty();
+        assertThat(executionResults.findExecutionTerminal(wrongSegment)).isEmpty();
+        assertThat(executionResults.readSegmentEvents(wrongRoot, 0L, 10)).isEmpty();
+    }
+
+    @Test
+    void shouldStopSegmentResultAtFirstIdleWhenExecutionLaterTerminates() {
+        RuntimeSessionDTO session = newSession("session_segment_first_idle");
+        repository.create(session);
+        ExecutionTargetDTO target = seedConfirmingThenTerminatedSegment(session);
+
+        var result = executionResults.readSegmentEvents(target, 0L, 20).orElseThrow();
+        assertThat(result.getEvents())
+                .extracting(CommittedEventDTO::getEventId)
+                .containsExactly("confirm-root-event", "confirming-tool-event", "confirming-idle-event");
+        assertThat(result.isTerminal()).isTrue();
+        long confirmingSeq = result.getEvents().getLast().getEventSeq();
+        var completed =
+                executionResults.readSegmentEvents(target, confirmingSeq, 20).orElseThrow();
+        assertThat(completed.getEvents()).isEmpty();
+        assertThat(completed.isTerminal()).isTrue();
+        assertThat(executionResults.findExecutionTerminal(target))
+                .get()
+                .extracting(CommittedEventDTO::getEventId)
+                .isEqualTo("terminated-idle-event");
     }
 
     @Test
@@ -1523,6 +1590,37 @@ class RuntimeSessionRepositoryOpenGaussIT {
         return entry;
     }
 
+    private ExecutionTargetDTO seedCommittedSegment(RuntimeSessionDTO session) {
+        RuntimeEntryDTO root = newEntry(session.getId(), "root-entry", "user.message", session.getCreatedAt(), "{}");
+        CommittedEventDTO rootEvent = committedEvent(root, "root-event", "user.message");
+        repository.acceptUserEvent(session.getId(), root, rootEvent, root.getTimestamp());
+        var target = new ExecutionTargetDTO(session.getId(), "execution-1", rootEvent.getEventId(), "segment-1");
+        executionControls.register(target, rootEvent.getEventSeq(), root.getTimestamp());
+        executionControls.linkCommittedEvent(target, rootEvent.getEventId(), rootEvent.getEventSeq());
+
+        RuntimeEntryDTO agent =
+                newEntry(session.getId(), "agent-entry", "assistant.message.completed", session.getCreatedAt(), "{}");
+        CommittedEventDTO agentEvent = committedEvent(agent, "agent-event", "agent.message");
+        repository.appendEntry(agent, List.of(agentEvent));
+        executionControls.linkCommittedEvent(target, agentEvent.getEventId(), agentEvent.getEventSeq());
+        RuntimeEntryDTO idle =
+                newEntry(session.getId(), "idle-entry", "session.status.idle", session.getCreatedAt(), "{}");
+        CommittedEventDTO idleEvent = committedEvent(idle, "idle-event", "session.status_idle");
+        assertThat(executionControls.markTerminal(
+                        target,
+                        idleEvent.getEventId(),
+                        () -> appendCommittedEvent(idle, idleEvent),
+                        RuntimeExecutionTerminalReason.DONE,
+                        idle.getTimestamp()))
+                .isEqualTo(RuntimeExecutionControlRepository.TransitionStatus.APPLIED);
+        return target;
+    }
+
+    private CommittedControlEventDTO appendCommittedEvent(RuntimeEntryDTO entry, CommittedEventDTO event) {
+        repository.appendEntry(entry, List.of(event));
+        return new CommittedControlEventDTO(event.getEventId(), event.getEventSeq());
+    }
+
     private void seedClosedExecution(RuntimeSessionDTO session) {
         RuntimeEntryDTO root =
                 newEntry(session.getId(), "delete-root-entry", "user.message", session.getCreatedAt(), "{}");
@@ -1634,6 +1732,35 @@ class RuntimeSessionRepositoryOpenGaussIT {
 
     private static String longToolCallId() {
         return "tool-call-" + "x".repeat(300);
+    }
+
+    private ExecutionTargetDTO seedConfirmingThenTerminatedSegment(RuntimeSessionDTO session) {
+        RuntimeEntryDTO root =
+                newEntry(session.getId(), "confirm-root-entry", "user.message", session.getCreatedAt(), "{}");
+        CommittedEventDTO rootEvent = committedEvent(root, "confirm-root-event", "user.message");
+        repository.acceptUserEvent(session.getId(), root, rootEvent, root.getTimestamp());
+        var target =
+                new ExecutionTargetDTO(session.getId(), "confirm-execution", rootEvent.getEventId(), "confirm-segment");
+        executionControls.register(target, rootEvent.getEventSeq(), root.getTimestamp());
+        executionControls.linkCommittedEvent(target, rootEvent.getEventId(), rootEvent.getEventSeq());
+        RuntimeEntryDTO tool = newEntry(
+                session.getId(), "confirming-tool-entry", "tool.execution.started", session.getCreatedAt(), "{}");
+        CommittedEventDTO toolEvent = committedEvent(tool, "confirming-tool-event", "agent.tool_call");
+        RuntimeEntryDTO confirming =
+                newEntry(session.getId(), "confirming-idle-entry", "session.status.idle", session.getCreatedAt(), "{}");
+        CommittedEventDTO confirmingEvent = committedEvent(confirming, "confirming-idle-event", "session.status_idle");
+        executionPersistence.markToolConfirming(
+                target, "tool-call", tool, toolEvent, confirming, confirmingEvent, confirming.getTimestamp());
+        RuntimeEntryDTO terminated =
+                newEntry(session.getId(), "terminated-idle-entry", "session.status.idle", session.getCreatedAt(), "{}");
+        CommittedEventDTO terminatedEvent = committedEvent(terminated, "terminated-idle-event", "session.status_idle");
+        executionPersistence.commitTerminal(
+                target,
+                terminated,
+                terminatedEvent,
+                RuntimeExecutionTerminalReason.TERMINATED,
+                terminated.getTimestamp());
+        return target;
     }
 
     private static CommittedEventDTO committedEvent(RuntimeEntryDTO anchor, String eventId, String type) {
@@ -1780,6 +1907,11 @@ class RuntimeSessionRepositoryOpenGaussIT {
                 RuntimeExecutionControlRepository controls,
                 RuntimeEntryIdGenerator ids) {
             return new RuntimeExecutionPersistenceService(sessions, controls, ids);
+        }
+
+        @Bean
+        RuntimeExecutionResultRepository runtimeExecutionResultRepository(RuntimeExecutionResultMapper mapper) {
+            return new MyBatisRuntimeExecutionResultRepository(mapper);
         }
 
         @Bean
