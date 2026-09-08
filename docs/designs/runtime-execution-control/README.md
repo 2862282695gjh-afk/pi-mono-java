@@ -2,11 +2,11 @@
 
 | 属性 | 值 |
 |---|---|
-| 版本 | 0.1.0 |
+| 版本 | 0.1.1 |
 | 日期 | 2026-09-08 |
 | 设计契约 | `pi-mono-java-design@2ee2a3211da68ad87b0d9cab353e691b00bdaebd` |
 | 变更前 Java 源码基线 | `pi-mono-java@fd556dce3cfa12e5e834b6e9b8f835f10e7d67c8` |
-| 本片实现提交 | `8ec383dd0ee6a5a8fe7e72b9e97bba8f71c8f8da` |
+| 本片实现提交 | `8ec383dd0ee6a5a8fe7e72b9e97bba8f71c8f8da`；主线集成 `4c580a7a`，权限补齐 `dae01509` |
 | pi 源码基线 | `pi@4af9d21d3b4d664e4a29fcabfec85171077248e3` |
 | 范围 | 固定执行、结果段和完整事件关联的低层数据库存储；不包含 Events v2 HTTP 受理和跨实例轮询 |
 
@@ -64,6 +64,8 @@ running。后续应用片会在同一外层事务中继续分配 Session 统一�
 
 没有新增 Maven 依赖。SQL 只进入首次发布的全量安装脚本；表名为小写蛇形 `t_` 前缀，所有
 `COMMENT ON` 描述使用中文。`pending_tool_call_id` 使用 TEXT，不对提供商 Tool Call ID 增加未确认上限。
+全量安装后通过 `modules/coding-agent-cli/src/main/resources/db/gaussdb/install/session_privileges.sql`
+给运行角色授予新增控制表和公共事件表的 SELECT/INSERT/UPDATE/DELETE；表所有者权限不能代替部署角色授权。
 
 ## 验证
 
@@ -73,6 +75,8 @@ running。后续应用片会在同一外层事务中继续分配 Session 统一�
 - 过期 segment 和重复终态不能覆盖已提交终态。
 - 删除完成的 Session 后，段事件、段和根执行三张控制表全部清空，tombstone 继续保留。
 - 独立审查执行完整 `RuntimeSessionRepositoryOpenGaussIT`：29 项通过，无失败、错误或跳过。
+- 合入公共事件主线后，完整 Session Repository 29 项与原子公共事件 2 项真实数据库回归共 31 项通过。
+- 新建非所有者角色先实际重现读取控制表权限不足，再执行权限模板；该角色对三张控制表及公共事件表的 SELECT 和零行 INSERT/UPDATE/DELETE 全部成功。该检查验证权限，事务行为由上述数据库回归验证。
 - `spotless:apply`、`checkstyle:check`、`test-compile`、聚焦真实数据库测试和 `git diff --check` 通过。
 
 企业镜像通过生成同步检查；本地无法解析企业 `NativeParent:26.0.0-SNAPSHOT`，企业镜像编译尚未验证。
@@ -88,3 +92,4 @@ running。后续应用片会在同一外层事务中继续分配 Session 统一�
 | 版本 | 日期 | 变更 |
 |---|---|---|
 | 0.1.0 | 2026-09-08 | 增加固定根执行、结果段、段内事件关联、typed 状态和 Session 清理边界 |
+| 0.1.1 | 2026-09-08 | 合并公共事件清理边界，补齐部署运行角色授权并增加非所有者权限验证 |
