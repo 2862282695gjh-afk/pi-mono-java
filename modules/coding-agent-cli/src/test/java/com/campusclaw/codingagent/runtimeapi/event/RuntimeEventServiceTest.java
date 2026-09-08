@@ -6,12 +6,16 @@ package com.campusclaw.codingagent.runtimeapi.event;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -158,6 +162,21 @@ class RuntimeEventServiceTest {
         assertThat(collect(result))
                 .extracting(RuntimeSseEventVO::getEvent)
                 .containsExactly("user.message", "session.model.changed");
+    }
+
+    @Test
+    void shouldReturnAcceptedStreamWhenReceiptAndTerminalOutputFail() {
+        Fixture fixture = new Fixture(true);
+
+        RuntimeEventStream stream = assertDoesNotThrow(() ->
+                fixture.service.submit(SESSION_ID, request("分析订单", List.of()), Locale.US, MateCredentials.empty()));
+
+        assertThat(stream).isSameAs(fixture.execution.output());
+        assertThat(collect(stream)).isEmpty();
+        assertThat(fixture.execution.completion()).isCompletedExceptionally();
+        verify(fixture.repository, times(1)).acceptUserEvent(eq(SESSION_ID), any(), any());
+        verify(fixture.repository, times(1)).finishExecution(eq(SESSION_ID), any());
+        verify(fixture.registry, times(1)).complete(any(RuntimeSessionHolder.class), eq(fixture.execution));
     }
 
     @Test
@@ -321,6 +340,8 @@ class RuntimeEventServiceTest {
 
         private final AtomicInteger ids = new AtomicInteger(100);
 
+        private final RuntimeEntryCodec codec;
+
         private final RuntimeEventService service;
 
         private RuntimeActiveExecution execution;
@@ -328,10 +349,19 @@ class RuntimeEventServiceTest {
         private RuntimeEntryDTO acceptedEntry;
 
         private Fixture() {
+            this(false);
+        }
+
+        private Fixture(boolean failEventOutput) {
             RuntimeEventProperties eventProperties = new RuntimeEventProperties();
             RuntimeExecutionProperties executionProperties = new RuntimeExecutionProperties();
             RuntimeEventCursorCodec cursorCodec = mock(RuntimeEventCursorCodec.class);
-            RuntimeEntryCodec codec = new RuntimeEntryCodec(new ObjectMapper(), messages());
+            codec = spy(new RuntimeEntryCodec(new ObjectMapper(), messages()));
+            if (failEventOutput) {
+                doThrow(new IllegalStateException("event output unavailable"))
+                        .when(codec)
+                        .encodedSseBytes(any(RuntimeSseEventVO.class));
+            }
             Clock clock = Clock.fixed(Instant.parse("2026-08-18T00:00:00Z"), ZoneOffset.UTC);
             RuntimeEntryIdGenerator idGenerator = () -> "entry_" + ids.getAndIncrement();
             RuntimeEventQueryService queryService = new RuntimeEventQueryService(repository, codec, cursorCodec);

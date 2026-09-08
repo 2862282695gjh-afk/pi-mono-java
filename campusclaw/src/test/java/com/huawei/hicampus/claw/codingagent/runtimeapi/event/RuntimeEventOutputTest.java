@@ -9,8 +9,10 @@ import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -122,6 +124,77 @@ class RuntimeEventOutputTest {
 
         verifyNoInteractions(messages);
         assertThat(execution.completion()).isNotDone();
+    }
+
+    @Test
+    void shouldFinalizeAcceptedExecutionWhenProjectorCreationFails() {
+        RuntimeSessionEngineRegistry registry = mock(RuntimeSessionEngineRegistry.class);
+        RuntimeSessionRepository repository = mock(RuntimeSessionRepository.class);
+        RuntimeSessionHolder holder = mock(RuntimeSessionHolder.class);
+        RuntimeEventProjectorFactory projectors = mock(RuntimeEventProjectorFactory.class);
+        RuntimeActiveExecution execution = new RuntimeActiveExecution(RuntimeEventOutput.persistenceOnly());
+        UserMessage message = new UserMessage("accepted message", 1L);
+        when(holder.sessionId()).thenReturn("session");
+        when(projectors.create(holder, execution, message, Locale.US))
+                .thenThrow(new IllegalStateException("projector unavailable"));
+        doAnswer(call -> {
+                    call.<Runnable>getArgument(1).run();
+                    return null;
+                })
+                .when(registry)
+                .withOperationLock(eq("session"), any(Runnable.class));
+        var coordinator = new RuntimeExecutionCoordinator(
+                registry,
+                repository,
+                projectors,
+                mock(RuntimeExecutionTimeoutScheduler.class),
+                new RuntimeExecutionProperties(),
+                new RuntimeTerminalEventFactory(mock(MessageSource.class)),
+                Clock.systemUTC());
+
+        assertDoesNotThrow(() -> coordinator.start(holder, execution, message, Locale.US));
+
+        assertThat(execution.completion()).isCompletedExceptionally();
+        assertThat(execution.acceptingControls()).isFalse();
+        verify(repository).finishExecution(eq("session"), any());
+        verify(registry).complete(holder, execution);
+    }
+
+    @Test
+    void shouldNotEscapeWhenAcceptedFailureTerminalCannotBeWritten() {
+        RuntimeSessionEngineRegistry registry = mock(RuntimeSessionEngineRegistry.class);
+        RuntimeSessionRepository repository = mock(RuntimeSessionRepository.class);
+        RuntimeSessionHolder holder = mock(RuntimeSessionHolder.class);
+        RuntimeTerminalEventFactory terminals = mock(RuntimeTerminalEventFactory.class);
+        RuntimeEventOutput output = mock(RuntimeEventOutput.class);
+        RuntimeActiveExecution execution = new RuntimeActiveExecution(output);
+        IllegalStateException startFailure = new IllegalStateException("start failed");
+        when(holder.sessionId()).thenReturn("session");
+        doAnswer(call -> {
+                    call.<Runnable>getArgument(1).run();
+                    return null;
+                })
+                .when(registry)
+                .withOperationLock(eq("session"), any(Runnable.class));
+        doThrow(new IllegalStateException("terminal failed"))
+                .when(terminals)
+                .emit(output, execution, StopReason.ERROR, startFailure, Locale.US);
+        var coordinator = new RuntimeExecutionCoordinator(
+                registry,
+                repository,
+                mock(RuntimeEventProjectorFactory.class),
+                mock(RuntimeExecutionTimeoutScheduler.class),
+                new RuntimeExecutionProperties(),
+                terminals,
+                Clock.systemUTC());
+
+        assertDoesNotThrow(() -> coordinator.handleAcceptedStartFailure(holder, execution, startFailure, Locale.US));
+
+        assertThat(execution.completion()).isCompletedExceptionally();
+        assertThat(startFailure.getSuppressed()).hasSize(1);
+        verify(repository).finishExecution(eq("session"), any());
+        verify(registry, times(1)).complete(holder, execution);
+        verify(output).complete();
     }
 
     @ParameterizedTest

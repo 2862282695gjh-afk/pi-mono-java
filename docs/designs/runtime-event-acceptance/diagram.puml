@@ -1,0 +1,31 @@
+@startuml accepted_event_failure
+title Accepted user event failure handling
+' Source baseline: pi-mono-java 5e392e7ce28a4a4a66a5e4d752e9ce5ce1ebc657
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/event/RuntimeEventService.java#prepareAndSubmitLocked
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/event/RuntimeExecutionCoordinator.java#start
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/persistence/MyBatisRuntimeSessionRepository.java#acceptUserEvent
+' Observed behavior: one catch previously covered both pre-accept and post-accept failures.
+' Design reason: a committed message must never be reported as unaccepted.
+' Java divergence: database acceptance and HTTP failure semantics are CampusClaw architecture constraints.
+start
+:Prepare execution and response;
+:Accept user event in a short transaction;
+if (Accepted result returned?) then (yes)
+  :Enqueue this request receipt;
+  :Start execution;
+  if (Start failed?) then (yes)
+    :Coordinate accepted execution cleanup;
+    if (Failure output available?) then (yes)
+      :Finish existing stream with failure;
+    else (no)
+      :Close observation as uncertain;
+    endif
+  else (no)
+    :Continue execution on existing stream;
+  endif
+else (no)
+  :Release unaccepted reservation;
+  :Return pre-acceptance error;
+endif
+stop
+@enduml

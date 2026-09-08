@@ -6,12 +6,16 @@ package com.huawei.hicampus.claw.codingagent.runtimeapi.event;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -37,6 +41,7 @@ import com.huawei.hicampus.claw.codingagent.common.client.mate.MateCredentials;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.agent.AgentDirectoryResolver;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.agent.AgentDirectorySnapshotDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeEntryDTO;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeExecutionContextDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.error.RuntimeErrorCode;
@@ -49,6 +54,7 @@ import com.huawei.hicampus.claw.codingagent.runtimeapi.runtime.RuntimeExecutionP
 import com.huawei.hicampus.claw.codingagent.runtimeapi.runtime.RuntimeExecutionTimeoutScheduler;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.runtime.RuntimeSessionEngineRegistry;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.runtime.RuntimeSessionHolder;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.session.ReconciledRuntimeSession;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.session.RuntimeSessionModelReconciler;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.vo.RuntimeSseEventVO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.vo.UserEventRequestVO;
@@ -111,6 +117,66 @@ class RuntimeEventServiceTest {
         assertThat(collect(stream))
                 .extracting(RuntimeSseEventVO::getEvent)
                 .containsExactly("user.message", "session.status.idle", "stream.end");
+    }
+
+    @Test
+    void shouldEmitReceiptBeforePersistedConfigurationEvents() {
+        RuntimeSessionRepository repository = mock(RuntimeSessionRepository.class);
+        RuntimeEntryCodec codec = mock(RuntimeEntryCodec.class);
+        RuntimeSessionEngineRegistry registry = mock(RuntimeSessionEngineRegistry.class);
+        RuntimeExecutionContextFactory contextFactory = mock(RuntimeExecutionContextFactory.class);
+        RuntimeExecutionCoordinator coordinator = mock(RuntimeExecutionCoordinator.class);
+        RuntimeSessionModelReconciler reconciler = mock(RuntimeSessionModelReconciler.class);
+        RuntimeSessionDTO session = session();
+        RuntimeEntryDTO configuration = entry("entry_config", 1L, "session.model.changed");
+        RuntimeEntryDTO receipt = entry("entry_user", 2L, "user.message");
+        RuntimeEventStream stream = stream();
+        RuntimeActiveExecution execution = new RuntimeActiveExecution(stream);
+        RuntimeSessionHolder holder = mock(RuntimeSessionHolder.class);
+        UserMessage userMessage = new UserMessage("分析订单", 1L);
+        when(repository.find(SESSION_ID)).thenReturn(Optional.of(session));
+        when(reconciler.reconcile(session))
+                .thenReturn(new ReconciledRuntimeSession(
+                        session, mock(AgentDirectorySnapshotDTO.class), mock(Model.class), List.of(configuration)));
+        when(contextFactory.create(any(), any(), any(), any(), any(), any()))
+                .thenReturn(new RuntimeExecutionContextDTO(holder, execution, userMessage, stream));
+        when(codec.userEntry(anyString(), anyString(), any(), any(), any())).thenReturn(receipt);
+        when(repository.acceptUserEvent(eq(SESSION_ID), eq(receipt), any()))
+                .thenReturn(new UserEventAcceptance(Status.ACCEPTED, session));
+        when(codec.toSseData(any(), eq(Locale.US))).thenReturn(java.util.Map.of());
+        answerOperationLock(registry);
+        RuntimeEventService service = new RuntimeEventService(
+                repository,
+                codec,
+                () -> "entry_user",
+                registry,
+                contextFactory,
+                coordinator,
+                reconciler,
+                Clock.systemUTC());
+
+        RuntimeEventStream result =
+                service.submit(SESSION_ID, request("分析订单", List.of()), Locale.US, MateCredentials.empty());
+        result.complete();
+
+        assertThat(collect(result))
+                .extracting(RuntimeSseEventVO::getEvent)
+                .containsExactly("user.message", "session.model.changed");
+    }
+
+    @Test
+    void shouldReturnAcceptedStreamWhenReceiptAndTerminalOutputFail() {
+        Fixture fixture = new Fixture(true);
+
+        RuntimeEventStream stream = assertDoesNotThrow(() ->
+                fixture.service.submit(SESSION_ID, request("分析订单", List.of()), Locale.US, MateCredentials.empty()));
+
+        assertThat(stream).isSameAs(fixture.execution.output());
+        assertThat(collect(stream)).isEmpty();
+        assertThat(fixture.execution.completion()).isCompletedExceptionally();
+        verify(fixture.repository, times(1)).acceptUserEvent(eq(SESSION_ID), any(), any());
+        verify(fixture.repository, times(1)).finishExecution(eq(SESSION_ID), any());
+        verify(fixture.registry, times(1)).complete(any(RuntimeSessionHolder.class), eq(fixture.execution));
     }
 
     @Test
@@ -214,6 +280,23 @@ class RuntimeEventServiceTest {
         return events;
     }
 
+    private static RuntimeEntryDTO entry(String id, long entrySeq, String type) {
+        RuntimeEntryDTO entry = new RuntimeEntryDTO();
+        entry.setId(id);
+        entry.setEntrySeq(entrySeq);
+        entry.setType(type);
+        return entry;
+    }
+
+    private static RuntimeEventStream stream() {
+        return new RuntimeEventStream(8, 8_192, Duration.ofSeconds(1), ignored -> 1L);
+    }
+
+    private static void answerOperationLock(RuntimeSessionEngineRegistry registry) {
+        when(registry.withOperationLock(anyString(), any(Supplier.class)))
+                .thenAnswer(invocation -> ((Supplier<?>) invocation.getArgument(1)).get());
+    }
+
     private static UserEventRequestVO request(String message, List<String> fileIds) {
         UserEventRequestVO request = new UserEventRequestVO();
         request.readMessage(
@@ -257,6 +340,8 @@ class RuntimeEventServiceTest {
 
         private final AtomicInteger ids = new AtomicInteger(100);
 
+        private final RuntimeEntryCodec codec;
+
         private final RuntimeEventService service;
 
         private RuntimeActiveExecution execution;
@@ -264,10 +349,19 @@ class RuntimeEventServiceTest {
         private RuntimeEntryDTO acceptedEntry;
 
         private Fixture() {
+            this(false);
+        }
+
+        private Fixture(boolean failEventOutput) {
             RuntimeEventProperties eventProperties = new RuntimeEventProperties();
             RuntimeExecutionProperties executionProperties = new RuntimeExecutionProperties();
             RuntimeEventCursorCodec cursorCodec = mock(RuntimeEventCursorCodec.class);
-            RuntimeEntryCodec codec = new RuntimeEntryCodec(new ObjectMapper(), messages());
+            codec = spy(new RuntimeEntryCodec(new ObjectMapper(), messages()));
+            if (failEventOutput) {
+                doThrow(new IllegalStateException("event output unavailable"))
+                        .when(codec)
+                        .encodedSseBytes(any(RuntimeSseEventVO.class));
+            }
             Clock clock = Clock.fixed(Instant.parse("2026-08-18T00:00:00Z"), ZoneOffset.UTC);
             RuntimeEntryIdGenerator idGenerator = () -> "entry_" + ids.getAndIncrement();
             RuntimeEventQueryService queryService = new RuntimeEventQueryService(repository, codec, cursorCodec);
