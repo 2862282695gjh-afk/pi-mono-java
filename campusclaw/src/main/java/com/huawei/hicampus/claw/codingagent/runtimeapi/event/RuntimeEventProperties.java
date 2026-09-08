@@ -38,9 +38,33 @@ public class RuntimeEventProperties {
     @NotNull
     private Duration heartbeatInterval = Duration.ofSeconds(15);
 
-    @AssertTrue(message = "cursorTtl and heartbeatInterval must be positive")
+    @Min(1)
+    private int resultWaitMaxResponses = 256;
+
+    @NotNull
+    private Duration resultWaitTimeout = Duration.ofMinutes(30);
+
+    @Min(1)
+    private int resultPollIntervalMs = 500;
+
+    @Min(1)
+    private int resultPollBatchSize = 100;
+
+    @Min(1)
+    private int resultReadLimit = 200;
+
+    @Min(1)
+    private int resultQueryTimeoutSeconds = 2;
+
+    @NotNull
+    private Duration resultPollFailureBackoff = Duration.ofSeconds(2);
+
+    @AssertTrue(message = "runtime event durations must be positive")
     public boolean isDurationConfigurationValid() {
-        return positive(cursorTtl) && positive(heartbeatInterval);
+        return positive(cursorTtl)
+                && positive(heartbeatInterval)
+                && positive(resultWaitTimeout)
+                && positive(resultPollFailureBackoff);
     }
 
     private static boolean positive(Duration duration) {
