@@ -139,7 +139,7 @@ class RuntimeEventServiceTest {
                 .thenReturn(new ReconciledRuntimeSession(
                         session, mock(AgentDirectorySnapshotDTO.class), mock(Model.class), List.of(configuration)));
         when(contextFactory.create(any(), any(), any(), any(), any(), any()))
-                .thenReturn(new RuntimeExecutionContextDTO(holder, execution, userMessage, stream));
+                .thenReturn(new RuntimeExecutionContextDTO(holder, execution, userMessage, "分析订单", stream));
         when(codec.userEntry(anyString(), anyString(), any(), any(), any())).thenReturn(receipt);
         when(repository.acceptUserEvent(eq(SESSION_ID), eq(receipt), any()))
                 .thenReturn(new UserEventAcceptance(Status.ACCEPTED, session));

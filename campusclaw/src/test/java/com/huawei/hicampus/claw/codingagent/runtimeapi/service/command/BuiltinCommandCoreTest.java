@@ -37,8 +37,10 @@ import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.command.CommandSessio
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.command.ResolvedCommandDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeEntryCodec;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeEntryIdGenerator;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeEventService;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.model.RuntimeModelManager;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.persistence.RuntimeSessionRepository;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.service.command.skill.SkillCommandExecutionService;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.session.RuntimeSessionResponseAssembler;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.session.SessionEtagFactory;
 
@@ -108,6 +110,7 @@ class BuiltinCommandCoreTest {
                 .withBean(RuntimeEntryCodec.class, () -> mock(RuntimeEntryCodec.class))
                 .withBean(RuntimeEntryIdGenerator.class, () -> mock(RuntimeEntryIdGenerator.class))
                 .withBean(RuntimeCompactionService.class, () -> mock(RuntimeCompactionService.class))
+                .withBean(RuntimeEventService.class, () -> mock(RuntimeEventService.class))
                 .withBean(SessionEtagFactory.class)
                 .withBean(RuntimeSessionResponseAssembler.class)
                 .withBean(LocalValidatorFactoryBean.class)
@@ -115,6 +118,7 @@ class BuiltinCommandCoreTest {
                     assertThat(context)
                             .hasSingleBean(BuiltinCommandSource.class)
                             .hasSingleBean(SkillCommandSource.class)
+                            .hasSingleBean(SkillCommandExecutionService.class)
                             .hasSingleBean(CompositeCommandRegistry.class)
                             .hasSingleBean(CommandExecutionService.class)
                             .hasSingleBean(CommandResponseAssembler.class)

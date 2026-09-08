@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ADR-0071：Skill 复用普通消息执行</title>
+  <style>
+    :root { font-family: Inter, "PingFang SC", sans-serif; color: #25272a; background: #f2f5f7; }
+    body { margin: 0; } main { max-width: 920px; margin: 32px auto; padding: 32px; background: white; box-sizing: border-box; }
+    p, li { line-height: 1.75; } code { overflow-wrap: anywhere; } a { color: #1769aa; }
+    @media (max-width: 640px) { main { margin: 0; padding: 24px 18px; } }
+  </style>
+</head>
+<body><main>
+  <h1>ADR-0071：Skill 复用普通消息执行</h1>
+  <p>Status：Accepted · Date：2026-09-08 · Version：1.0.1</p>
+  <h2>Context</h2>
+  <p>用户于2026-09-08明确接受共享 Skill 请求方案，以及完整 Skill 说明与本次输入组合文本
+  发送模型、普通消息保存、随SSE/历史返回、按保存文本恢复。此决定补充设计
+  <code>88f4df16bc24bbfcd28e1ec374feb2de0db8be3b</code> 的旧待确认标记；本片不修改独立设计仓。</p>
+  <p>Java 基线 <code>8d61c767d09d47ef6c8d76c05535fcbb58c48373</code> 已有实际绑定准入和普通消息生命周期。
+  源码根为 <code>modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/</code>：
+  <code>session/AgentSessionFactory.java#create</code> 一次prepare后复用同一runtime；
+  <code>runtimeapi/event/RuntimeEventService.java#acceptUserEntry</code> 保存普通消息，
+  <code>runtimeapi/event/RuntimeEntryCodec.java</code> 负责公开投影与恢复。</p>
+  <p>pi <code>4af9d21d3b4d664e4a29fcabfec85171077248e3</code> 的
+  <code>packages/coding-agent/src/core/agent-session.ts#_expandSkillCommand</code> 是本地展开行为，
+  会去frontmatter并加入本地路径；Java保留受管缓存完整说明且不添加路径，不复制未知命令回退。</p>
+  <h2>Decision 与选项</h2>
+  <ul>
+    <li><strong>采用同次实际快照展开：</strong>Skill服务提供无外部副作用的输入函数，在工厂准入回调中
+    检查直接绑定并组合正文。优点是准入、正文和实际Agent同源；代价是输入准备需要进入现有受管工厂流程。</li>
+    <li><strong>采用单份普通消息：</strong>同一文本交给模型、Repository、SSE和历史恢复。
+    优点是无需新存储或恢复协议；代价是具有Session读取权限的客户端能看见完整Skill说明，这已获用户确认。</li>
+    <li><strong>不先展开旧缓存再提交：</strong>实现表面简单，但第二次prepare可能得到不同绑定或正文，不能保证同源。</li>
+    <li><strong>不建立第二份私有正文快照：</strong>可实现展示与执行分离，但带来额外保留期和恢复规则，既无需要也未获授权。</li>
+  </ul>
+  <h2>Consequences</h2>
+  <p>复用原操作锁、容量、Holder、超时、Projector和收尾，Spring单例不存请求状态。
+  原始参数和实际展开消息均受262144个UTF-16单元约束；附件最多32项且唯一、保序。
+  Skill name-only允许执行；错误不回退普通输入，不向消息人为添加服务器路径或凭据。</p>
+  <p>原模型纠正可能先保存Model/Thinking领域Entry，保留该语义；绑定或展开失败不接受新的用户消息、
+  不启动模型，并释放准备期间资源。数据库竞争方状态不能被失败请求清理。</p>
+  <p>后续共享POST负责严格联合请求VO、Header处理、Builtin JSON与Skill普通SSE分流及真实HTTP验收。
+  本片不发布路由、不迁移Events v2、不增加commandId、通用命令生命周期、升级脚本或私有快照。</p>
+  <h2>Validation</h2>
+  <p>单元测试覆盖归一化、错误和消息边界；openGauss专项使用真实数据库、公共工厂、Agent、Repository、
+  Coordinator和Projector。AI、运行时获取、提示词加载、工具组装、目录解析、模型管理、Subagent/Cron提供者
+  使用替代组件，Mate工具Bean提供者为空；具体类型见下方实现说明。</p>
+  <p>覆盖同次正文的模型/保存/SSE/历史/重连恢复，以及detach、准入和容量。
+  接受竞争由prepare同步回调经同一Repository先接受另一条消息，验证当前请求被拒绝后保留已有状态，
+  不据此宣称跨连接并发接受已验证。本片未验证真实文件加载、完整工具组装、真实模型服务或跨JVM HTTP。</p>
+  <h2>Related</h2>
+  <ul>
+    <li><a href="../designs/skill-command-execution/README.md">Skill 实际执行说明与源码证据</a></li>
+    <li><a href="../designs/skill-command-execution/diagram.puml#L1">实际快照与消息链 PlantUML</a></li>
+    <li><a href="0067-actual-runtime-skill-admission.html">实际 Skill 绑定准入</a></li>
+  </ul>
+  <h2>版本历史</h2>
+  <p>1.0.1 · 2026-09-08：修正集成测试替代组件与接受竞争的验证范围，生产与测试代码不变。</p>
+  <p>1.0.0 · 2026-09-08：确认实际快照展开与普通消息同源执行，公共路由后续交付。</p>
+</main></body>
+</html>
