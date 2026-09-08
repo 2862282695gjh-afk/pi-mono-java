@@ -48,6 +48,12 @@ public interface RuntimeSessionMapper {
 
     int insertCommittedEvent(CommittedEventDTO event);
 
+    int insertCommittedEventProjection(
+            @Param("sessionId") String sessionId,
+            @Param("anchorEntryId") String anchorEntryId,
+            @Param("eventCount") int eventCount,
+            @Param("mappingSource") String mappingSource);
+
     int incrementMessageCount(@Param("sessionId") String sessionId);
 
     int accumulateUsageStats(@Param("sessionId") String sessionId, @Param("usage") RuntimeLifetimeUsageDTO usage);
@@ -71,6 +77,11 @@ public interface RuntimeSessionMapper {
 
     List<RuntimeEntryDTO> listCurrentBranchEntries(
             @Param("sessionId") String sessionId, @Param("afterSeq") long afterSeq, @Param("limit") int limit);
+
+    List<CommittedEventDTO> listCommittedEvents(
+            @Param("sessionId") String sessionId, @Param("offset") long offset, @Param("limit") int limit);
+
+    long countUnmappedCurrentBranchEntries(@Param("sessionId") String sessionId);
 
     int updateSessionModel(
             @Param("sessionId") String sessionId,
@@ -111,6 +122,8 @@ public interface RuntimeSessionMapper {
     int deleteExecutions(@Param("sessionId") String sessionId);
 
     int deleteCommittedEvents(@Param("sessionId") String sessionId);
+
+    int deleteEventProjections(@Param("sessionId") String sessionId);
 
     int deleteStats(@Param("sessionId") String sessionId);
 
