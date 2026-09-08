@@ -11,6 +11,7 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
@@ -30,6 +31,8 @@ import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.SessionNameUpdateDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.mapper.RuntimeSessionMapper;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.mockito.ArgumentCaptor;
 
 /**
@@ -39,6 +42,57 @@ import org.mockito.ArgumentCaptor;
  * @since [br_eCampusCore 26.0.0]
  */
 class MyBatisRuntimeSessionRepositoryTest {
+    @ParameterizedTest
+    @CsvSource({
+        "2026-09-08T02:52:44.375344Z, 2026-09-08T02:52:44.375Z",
+        "2026-09-08T10:52:50.882857+08:00, 2026-09-08T02:52:50.882Z",
+        "2026-09-08T02:52:44.375Z, 2026-09-08T02:52:44.375Z",
+        "2026-09-08T02:52:44Z, 2026-09-08T02:52:44Z"
+    })
+    void shouldNormalizeEntryTimeBeforeInsertAndReturnTheStoredValue(String input, String expected) {
+        RuntimeSessionMapper mapper = successfulMapper();
+        when(mapper.lockSessionForUpdate("session")).thenReturn(session());
+        when(mapper.lockNextSequence("session")).thenReturn(2L);
+        RuntimeEntryDTO entry = entry();
+        entry.setTimestamp(OffsetDateTime.parse(input));
+        when(mapper.insertEntry(entry)).thenAnswer(invocation -> {
+            RuntimeEntryDTO inserted = invocation.getArgument(0);
+            assertThat(inserted.getTimestamp().toString()).isEqualTo(expected);
+            return 1;
+        });
+
+        RuntimeEntryDTO result = new MyBatisRuntimeSessionRepository(mapper).appendEntry(entry);
+
+        assertThat(result).isSameAs(entry);
+        assertThat(result.getTimestamp().toString()).isEqualTo(expected);
+        var order = inOrder(mapper);
+        order.verify(mapper).lockSessionForUpdate("session");
+        order.verify(mapper).findLifetimeUsage("session");
+        order.verify(mapper).lockNextSequence("session");
+        order.verify(mapper).insertEntry(entry);
+        order.verify(mapper).incrementSequence("session");
+        order.verify(mapper).updateActiveLeaf("session", "assistant");
+        order.verify(mapper).incrementMessageCount("session");
+        verifyNoMoreInteractions(mapper);
+    }
+
+    @Test
+    void shouldRejectMissingEntryTimeWithoutWritingOrAdvancingSequence() {
+        RuntimeSessionMapper mapper = successfulMapper();
+        when(mapper.lockSessionForUpdate("session")).thenReturn(session());
+        when(mapper.lockNextSequence("session")).thenReturn(2L);
+        RuntimeEntryDTO entry = entry();
+        entry.setTimestamp(null);
+
+        assertThatThrownBy(() -> new MyBatisRuntimeSessionRepository(mapper).appendEntry(entry))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessage("runtime entry time is missing");
+
+        verify(mapper, never()).insertEntry(any());
+        verify(mapper, never()).incrementSequence(any());
+        verify(mapper, never()).updateActiveLeaf(any(), any());
+    }
+
     @Test
     void appendsEntryUsageAndCommittedEventWithSharedSequence() {
         RuntimeSessionMapper mapper = successfulMapper();
