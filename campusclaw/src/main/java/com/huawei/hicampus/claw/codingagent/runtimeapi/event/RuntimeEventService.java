@@ -96,7 +96,7 @@ public class RuntimeEventService {
     }
 
     private RuntimeEventStream prepareAndSubmit(
-            String sessionId, ValidatedUserEvent request, Locale locale, MateCredentials credentials) {
+            String sessionId, ValidatedUserEventDTO request, Locale locale, MateCredentials credentials) {
         return engineRegistry.withOperationLock(
                 sessionId, () -> prepareAndSubmitLocked(sessionId, request, null, locale, credentials));
     }
@@ -117,63 +117,79 @@ public class RuntimeEventService {
             List<String> fileIds,
             Locale locale,
             MateCredentials credentials) {
-        var request = new ValidatedUserEvent(null, List.copyOf(fileIds));
+        var request = new ValidatedUserEventDTO(null, List.copyOf(fileIds));
         return engineRegistry.withOperationLock(
                 sessionId, () -> prepareAndSubmitLocked(sessionId, request, messageFactory, locale, credentials));
     }
 
     private RuntimeEventStream prepareAndSubmitLocked(
             String sessionId,
-            ValidatedUserEvent request,
+            ValidatedUserEventDTO request,
             BiFunction<String, PreparedAgentRuntime, String> messageFactory,
             Locale locale,
             MateCredentials credentials) {
-        RuntimeExecutionContextDTO context = null;
+        PreparedExecutionDTO prepared = prepareExecution(sessionId, request, messageFactory, credentials);
+        RuntimeExecutionContextDTO context = prepared.context();
+        RuntimeEntryDTO entry;
         try {
-            RuntimeSessionDTO session = requireIdleSession(sessionId);
-            var reconciled = modelReconciler.reconcile(session);
-            context = messageFactory == null
-                    ? executionContextFactory.create(
-                            reconciled.session(),
-                            reconciled.agentSnapshot(),
-                            reconciled.model(),
-                            request.message(),
-                            request.fileIds(),
-                            credentials)
-                    : executionContextFactory.createPreparedMessage(
-                            reconciled.session(),
-                            reconciled.agentSnapshot(),
-                            reconciled.model(),
-                            runtime -> messageFactory.apply(session.getAgentId(), runtime),
-                            request.fileIds(),
-                            credentials);
-            emitConfigurationEntries(context.eventStream(), reconciled.configurationEntries(), locale);
-            acceptUserEntry(sessionId, request, context, locale);
-            executionCoordinator.start(context.holder(), context.execution(), context.userMessage(), locale);
-            return context.eventStream();
+            entry = acceptUserEntry(sessionId, context.message(), request.fileIds());
         } catch (RuntimeException error) {
             releaseUnacceptedExecution(context);
             throw error;
         }
+        try {
+            context.execution().beginRun(entry.getId());
+            emitEntry(context.eventStream(), entry, locale);
+            emitConfigurationEntries(context.eventStream(), prepared.configurationEntries(), locale);
+        } catch (RuntimeException error) {
+            executionCoordinator.handleAcceptedStartFailure(context.holder(), context.execution(), error, locale);
+            return context.eventStream();
+        }
+        executionCoordinator.start(context.holder(), context.execution(), context.userMessage(), locale);
+        return context.eventStream();
+    }
+
+    private PreparedExecutionDTO prepareExecution(
+            String sessionId,
+            ValidatedUserEventDTO request,
+            BiFunction<String, PreparedAgentRuntime, String> messageFactory,
+            MateCredentials credentials) {
+        RuntimeSessionDTO session = requireIdleSession(sessionId);
+        var reconciled = modelReconciler.reconcile(session);
+        RuntimeExecutionContextDTO context = messageFactory == null
+                ? executionContextFactory.create(
+                        reconciled.session(),
+                        reconciled.agentSnapshot(),
+                        reconciled.model(),
+                        request.message(),
+                        request.fileIds(),
+                        credentials)
+                : executionContextFactory.createPreparedMessage(
+                        reconciled.session(),
+                        reconciled.agentSnapshot(),
+                        reconciled.model(),
+                        runtime -> messageFactory.apply(session.getAgentId(), runtime),
+                        request.fileIds(),
+                        credentials);
+        return new PreparedExecutionDTO(context, reconciled.configurationEntries());
     }
 
     private void emitConfigurationEntries(RuntimeEventStream stream, List<RuntimeEntryDTO> entries, Locale locale) {
         for (RuntimeEntryDTO entry : entries) {
-            stream.emit(new RuntimeSseEventVO(
-                    Long.toString(entry.getEntrySeq()), entry.getType(), codec.toSseData(entry, locale)));
+            emitEntry(stream, entry, locale);
         }
     }
 
-    private void acceptUserEntry(
-            String sessionId, ValidatedUserEvent request, RuntimeExecutionContextDTO context, Locale locale) {
-        RuntimeEntryDTO entry =
-                codec.userEntry(sessionId, idGenerator.nextId(), context.message(), request.fileIds(), now());
+    private RuntimeEntryDTO acceptUserEntry(String sessionId, String message, List<String> fileIds) {
+        RuntimeEntryDTO entry = codec.userEntry(sessionId, idGenerator.nextId(), message, fileIds, now());
         UserEventAcceptance acceptance = repository.acceptUserEvent(sessionId, entry, now());
         requireAccepted(acceptance);
-        context.execution().beginRun(entry.getId());
-        context.eventStream()
-                .emit(new RuntimeSseEventVO(
-                        Long.toString(entry.getEntrySeq()), entry.getType(), codec.toSseData(entry, locale)));
+        return entry;
+    }
+
+    private void emitEntry(RuntimeEventStream stream, RuntimeEntryDTO entry, Locale locale) {
+        stream.emit(new RuntimeSseEventVO(
+                Long.toString(entry.getEntrySeq()), entry.getType(), codec.toSseData(entry, locale)));
     }
 
     private RuntimeSessionDTO requireIdleSession(String sessionId) {
@@ -186,7 +202,7 @@ public class RuntimeEventService {
         return session;
     }
 
-    private static ValidatedUserEvent validate(UserEventRequestVO request) {
+    private static ValidatedUserEventDTO validate(UserEventRequestVO request) {
         if (request == null) {
             throw invalidEventRequest();
         }
@@ -197,7 +213,7 @@ public class RuntimeEventService {
                 || new HashSet<>(fileIds).size() != fileIds.size()) {
             throw invalidEventRequest();
         }
-        return new ValidatedUserEvent(message, fileIds);
+        return new ValidatedUserEventDTO(message, fileIds);
     }
 
     private static void requireAccepted(UserEventAcceptance acceptance) {
@@ -224,5 +240,8 @@ public class RuntimeEventService {
         return OffsetDateTime.ofInstant(clock.instant(), ZoneOffset.UTC);
     }
 
-    private record ValidatedUserEvent(String message, List<String> fileIds) {}
+    private record PreparedExecutionDTO(
+            RuntimeExecutionContextDTO context, List<RuntimeEntryDTO> configurationEntries) {}
+
+    private record ValidatedUserEventDTO(String message, List<String> fileIds) {}
 }
