@@ -99,7 +99,8 @@ class RuntimeCommittedEventFactoryTest {
         RuntimeEntryDTO callEntry = entry("entry_call", "assistant.message.completed");
         ToolCall call = new ToolCall("call-1", "CallMateTool", Map.of("tool", "inspect", "args", Map.of()));
         var callFrame = encoder.committed(factory.agentToolCall(callEntry, "event_call", call, true, "event_user"));
-        ToolResultMessage failed = new ToolResultMessage("call-1", "CallMateTool", List.of(), null, true, 1L);
+        ToolResultMessage failed = new ToolResultMessage(
+                "call-1", "CallMateTool", List.of(new TextContent("private gateway failure")), null, true, 1L);
         var resultFrame = encoder.committed(factory.agentToolResult(
                 entry("entry_result", "tool.result"), "event_result", failed, "event_user", java.util.Locale.US));
 
@@ -109,7 +110,10 @@ class RuntimeCommittedEventFactoryTest {
         assertThat(resultFrame.getData())
                 .containsEntry("errorCode", "TOOL_EXECUTION_FAILED")
                 .containsEntry("isError", true)
-                .containsEntry("content", List.of(Map.of("type", "text", "text", "Tool execution failed.")));
+                .containsEntry(
+                        "content",
+                        List.of(Map.of("type", "text", "text", "Tool execution failed. Check the execution outcome.")));
+        assertThat(resultFrame.getData().toString()).doesNotContain("private gateway failure");
     }
 
     private static RuntimeEntryDTO entry(String id, String type) {

@@ -167,15 +167,16 @@ public class RuntimeCommittedEventFactory {
     }
 
     private void appendToolContent(ArrayNode content, ToolResultMessage result, Locale locale) {
+        if (result.isError()) {
+            content.addObject()
+                    .put("type", "text")
+                    .put("text", messageSource.getMessage(toolErrorCode(result), null, locale));
+            return;
+        }
         result.content().stream()
                 .filter(TextContent.class::isInstance)
                 .map(TextContent.class::cast)
                 .forEach(text -> content.addObject().put("type", "text").put("text", text.text()));
-        if (content.isEmpty() && result.isError()) {
-            content.addObject()
-                    .put("type", "text")
-                    .put("text", messageSource.getMessage(toolErrorCode(result), null, locale));
-        }
         if (content.isEmpty()) {
             throw new IllegalArgumentException("tool result must contain text content");
         }
