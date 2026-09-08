@@ -365,7 +365,10 @@ class RuntimeCompactCommandOpenGaussIT {
                 "t_session_sequences",
                 "t_session_stats",
                 "t_session_materialized",
-                "t_session_events")) {
+                "t_session_events",
+                "t_session_executions",
+                "t_session_execution_segments",
+                "t_session_execution_segment_events")) {
             state.add(query(config, "SELECT * FROM campusclaw_session." + table + " WHERE session_id=?", sessionId));
         }
         return state;
