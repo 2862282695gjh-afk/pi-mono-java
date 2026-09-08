@@ -5,6 +5,7 @@
 package com.campusclaw.codingagent.runtimeapi.persistence;
 
 import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.Optional;
 
 import com.campusclaw.codingagent.runtimeapi.dto.CommittedControlEventDTO;
@@ -34,6 +35,8 @@ public interface RuntimeExecutionControlRepository {
     TransitionStatus markConfirming(
             ExecutionTargetDTO target, String toolCallId, ConfirmingAppender appender, OffsetDateTime terminalAt);
 
+    TransitionStatus appendToSegment(ExecutionTargetDTO target, SegmentAppender appender);
+
     TransitionStatus markTerminal(
             ExecutionTargetDTO target,
             String terminalEventId,
@@ -61,6 +64,14 @@ public interface RuntimeExecutionControlRepository {
     @FunctionalInterface
     interface ConfirmingAppender {
         ConfirmingEventsDTO append();
+    }
+
+    /**
+     * 持有 Session、执行和结果段行锁期间提交普通完整事件的回调。
+     */
+    @FunctionalInterface
+    interface SegmentAppender {
+        List<CommittedControlEventDTO> append();
     }
 
     /**

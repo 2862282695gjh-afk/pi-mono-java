@@ -36,6 +36,11 @@ public interface RuntimeExecutionControlMapper {
 
     ExecutionStateDTO lockCurrentExecution(@Param("sessionId") String sessionId);
 
+    ExecutionSegmentDTO lockSegment(
+            @Param("sessionId") String sessionId,
+            @Param("executionId") String executionId,
+            @Param("segmentId") String segmentId);
+
     int insertSegmentEvent(
             @Param("sessionId") String sessionId,
             @Param("executionId") String executionId,

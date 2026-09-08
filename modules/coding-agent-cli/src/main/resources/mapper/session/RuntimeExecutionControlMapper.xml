@@ -62,6 +62,19 @@
         FOR UPDATE
     </select>
 
+    <select id="lockSegment"
+            resultType="com.campusclaw.codingagent.runtimeapi.dto.ExecutionSegmentDTO">
+        SELECT session_id, execution_id, segment_id, segment_ordinal,
+               trigger_event_id, trigger_event_seq, state, terminal_event_id,
+               terminal_event_seq, UPPER(terminal_reason) AS terminal_reason,
+               created_at, updated_at
+        FROM t_session_execution_segments
+        WHERE session_id = #{sessionId}
+          AND execution_id = #{executionId}
+          AND segment_id = #{segmentId}
+        FOR UPDATE
+    </select>
+
     <insert id="insertSegmentEvent">
         INSERT INTO t_session_execution_segment_events (
             session_id, execution_id, segment_id, event_id, event_seq

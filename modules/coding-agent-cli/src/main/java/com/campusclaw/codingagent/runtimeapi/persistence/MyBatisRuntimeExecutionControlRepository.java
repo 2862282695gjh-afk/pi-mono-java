@@ -6,6 +6,7 @@ package com.campusclaw.codingagent.runtimeapi.persistence;
 
 import java.time.OffsetDateTime;
 import java.time.temporal.ChronoUnit;
+import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 
@@ -137,6 +138,25 @@ public class MyBatisRuntimeExecutionControlRepository implements RuntimeExecutio
 
     @Override
     @Transactional
+    public TransitionStatus appendToSegment(ExecutionTargetDTO target, SegmentAppender appender) {
+        Objects.requireNonNull(appender, "appender");
+        ExecutionStateDTO execution = lock(target);
+        TransitionStatus rejected = rejectSegmentAppend(target, execution);
+        if (rejected != null) {
+            return rejected;
+        }
+        ExecutionSegmentDTO segment = mapper.lockSegment(target.sessionId(), target.executionId(), target.segmentId());
+        if (segment == null || segment.getState() != RuntimeExecutionSegmentState.OPEN) {
+            return TransitionStatus.STATE_CONFLICT;
+        }
+        List<CommittedControlEventDTO> events = List.copyOf(Objects.requireNonNull(appender.append(), "events"));
+        events.forEach(MyBatisRuntimeExecutionControlRepository::requireCommittedEvent);
+        events.forEach(event -> linkCommittedEvent(target, event.eventId(), event.eventSeq()));
+        return TransitionStatus.APPLIED;
+    }
+
+    @Override
+    @Transactional
     public TransitionStatus markTerminal(
             ExecutionTargetDTO target,
             String terminalEventId,
@@ -224,6 +244,16 @@ public class MyBatisRuntimeExecutionControlRepository implements RuntimeExecutio
         boolean sameTerminal = terminalEventId.equals(execution.getTerminalEventId())
                 && terminalReason == execution.getTerminalReason();
         return sameTerminal ? TransitionStatus.ALREADY_APPLIED : TransitionStatus.STATE_CONFLICT;
+    }
+
+    private static TransitionStatus rejectSegmentAppend(ExecutionTargetDTO target, ExecutionStateDTO execution) {
+        TransitionStatus rejected = rejectTarget(target, execution);
+        if (rejected != null) {
+            return rejected;
+        }
+        boolean appendable = execution.getState() == RuntimeExecutionState.RUNNING
+                || execution.getState() == RuntimeExecutionState.STOPPING;
+        return appendable ? null : TransitionStatus.STATE_CONFLICT;
     }
 
     private static Status rejectInterrupt(String targetEventId, ExecutionStateDTO execution) {

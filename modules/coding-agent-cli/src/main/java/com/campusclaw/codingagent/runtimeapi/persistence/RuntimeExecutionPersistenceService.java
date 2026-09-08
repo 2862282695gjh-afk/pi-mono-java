@@ -8,6 +8,7 @@ import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Objects;
 
+import com.campusclaw.ai.types.Usage;
 import com.campusclaw.codingagent.runtimeapi.dto.AcceptedControlDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.CommittedControlEventDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.CommittedEventDTO;
@@ -16,6 +17,7 @@ import com.campusclaw.codingagent.runtimeapi.dto.ConfirmingEventsDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.ExecutionTargetDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.InterruptRequestDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.RuntimeEntryDTO;
+import com.campusclaw.codingagent.runtimeapi.dto.RuntimeRecordDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.UserMessageAcceptanceDTO;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
@@ -74,6 +76,34 @@ public class RuntimeExecutionPersistenceService {
         ExecutionTargetDTO target = requireAcceptedInterrupt(request);
         sessions.appendEntry(receipt, List.of(event));
         return new AcceptedControlDTO(receipt, target);
+    }
+
+    @Transactional
+    public RuntimeEntryDTO appendEntry(
+            ExecutionTargetDTO target, RuntimeEntryDTO entry, List<CommittedEventDTO> events) {
+        List<CommittedEventDTO> committedEvents = List.copyOf(events);
+        var status = controls.appendToSegment(target, () -> {
+            sessions.appendEntry(entry, committedEvents);
+            return controlEvents(committedEvents);
+        });
+        requireSegmentAppend(status);
+        return entry;
+    }
+
+    @Transactional
+    public RuntimeEntryDTO appendEntryWithUsage(
+            ExecutionTargetDTO target,
+            RuntimeEntryDTO entry,
+            RuntimeRecordDTO record,
+            Usage usage,
+            List<CommittedEventDTO> events) {
+        List<CommittedEventDTO> committedEvents = List.copyOf(events);
+        var status = controls.appendToSegment(target, () -> {
+            sessions.appendEntryWithUsage(entry, record, usage, committedEvents);
+            return controlEvents(committedEvents);
+        });
+        requireSegmentAppend(status);
+        return entry;
     }
 
     @Transactional
@@ -243,5 +273,17 @@ public class RuntimeExecutionPersistenceService {
     private CommittedControlEventDTO appendControlEvent(RuntimeEntryDTO entry, CommittedEventDTO event) {
         sessions.appendEntry(entry, List.of(event));
         return new CommittedControlEventDTO(event.getEventId(), event.getEventSeq());
+    }
+
+    private static List<CommittedControlEventDTO> controlEvents(List<CommittedEventDTO> events) {
+        return events.stream()
+                .map(event -> new CommittedControlEventDTO(event.getEventId(), event.getEventSeq()))
+                .toList();
+    }
+
+    private static void requireSegmentAppend(RuntimeExecutionControlRepository.TransitionStatus status) {
+        if (status != RuntimeExecutionControlRepository.TransitionStatus.APPLIED) {
+            throw new IllegalStateException("execution segment is no longer appendable: " + status);
+        }
     }
 }

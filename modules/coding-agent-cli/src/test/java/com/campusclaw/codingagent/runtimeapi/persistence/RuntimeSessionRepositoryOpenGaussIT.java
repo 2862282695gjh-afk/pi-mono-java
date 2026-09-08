@@ -252,6 +252,91 @@ class RuntimeSessionRepositoryOpenGaussIT {
     }
 
     @Test
+    void shouldRejectStaleSegmentBeforeInvokingAppender() {
+        RuntimeSessionDTO session = newSession("session_stale_segment_append");
+        repository.create(session);
+        ExecutionTargetDTO target = acceptRootMessage(session, "stale-segment-append");
+        ExecutionTargetDTO stale =
+                new ExecutionTargetDTO(target.sessionId(), target.executionId(), target.rootEventId(), "stale-segment");
+        var appended = new AtomicInteger();
+
+        var status = executionControls.appendToSegment(stale, () -> {
+            appended.incrementAndGet();
+            return List.of();
+        });
+
+        assertThat(status).isEqualTo(RuntimeExecutionControlRepository.TransitionStatus.STALE_TARGET);
+        assertThat(appended).hasValue(0);
+    }
+
+    @Test
+    void shouldRollbackEntryAndPublicEventWhenSegmentLinkFails() {
+        RuntimeSessionDTO session = newSession("session_segment_link_rollback");
+        repository.create(session);
+        ExecutionTargetDTO target = acceptRootMessage(session, "segment-link-rollback");
+        long sequenceBefore =
+                scalarLong("SELECT next_seq FROM t_session_sequences WHERE session_id = ?", session.getId());
+        jdbcTemplate.update(
+                """
+                INSERT INTO t_session_execution_segment_events (
+                    session_id, execution_id, segment_id, event_id, event_seq
+                ) VALUES (?, ?, ?, ?, ?)
+                """,
+                target.sessionId(),
+                target.executionId(),
+                target.segmentId(),
+                "reserved-segment-event",
+                sequenceBefore + 1L);
+        RuntimeEntryDTO entry = newEntry(
+                session.getId(), "rolled-back-assistant", "assistant.message.completed", session.getCreatedAt(), "{}");
+        CommittedEventDTO event = committedEvent(entry, "rolled-back-agent-message", "agent.message");
+
+        assertThatThrownBy(() -> executionPersistence.appendEntry(target, entry, List.of(event)))
+                .isInstanceOf(DataIntegrityViolationException.class);
+
+        assertThat(count("t_session_entries", session.getId())).isOne();
+        assertThat(count("t_session_events", session.getId())).isOne();
+        assertThat(count("t_session_event_projection", session.getId())).isOne();
+        assertThat(count("t_session_execution_segment_events", session.getId())).isEqualTo(2);
+        assertThat(scalarLong("SELECT next_seq FROM t_session_sequences WHERE session_id = ?", session.getId()))
+                .isEqualTo(sequenceBefore);
+    }
+
+    @Test
+    void shouldAppendUsageEventWhileExecutionIsStopping() {
+        RuntimeSessionDTO session = newSession("session_stopping_segment_append");
+        repository.create(session);
+        ExecutionTargetDTO target = acceptRootMessage(session, "stopping-segment-append");
+        RuntimeEntryDTO interrupt = controlEntry(session, "stopping-interrupt", "user.interrupt");
+        CommittedEventDTO interruptEvent = committedEvent(interrupt, "stopping-interrupt-event", "user.interrupt");
+        executionPersistence.acceptInterrupt(
+                session.getId(), target.rootEventId(), interrupt, interruptEvent, interrupt.getTimestamp());
+        RuntimeEntryDTO entry = newEntry(
+                session.getId(), "stopping-assistant", "assistant.message.completed", session.getCreatedAt(), "{}");
+        var usage = new Usage(11, 7, 3, 2, 41, new Cost(0.1, 0.2, 0.03, 0.04, 0.5));
+        var codec = new RuntimeEntryCodec(new ObjectMapper(), new RuntimeMessageSourceConfiguration().messageSource());
+        var record = codec.usageRecord(
+                session.getId(),
+                "stopping-usage-record",
+                target.rootEventId(),
+                RuntimeUsageCause.ASSISTANT,
+                entry.getId(),
+                0,
+                null,
+                usage,
+                entry.getTimestamp());
+        CommittedEventDTO event = committedEvent(entry, "stopping-agent-message", "agent.message");
+
+        executionPersistence.appendEntryWithUsage(target, entry, record, usage, List.of(event));
+
+        assertThat(executionControls.find(target).orElseThrow().getState()).isEqualTo(RuntimeExecutionState.STOPPING);
+        assertThat(count("t_session_records", session.getId())).isOne();
+        assertThat(count("t_session_execution_segment_events", session.getId())).isEqualTo(2);
+        assertThat(scalarLong("SELECT total_tokens FROM t_session_stats WHERE session_id = ?", session.getId()))
+                .isEqualTo(41L);
+    }
+
+    @Test
     void shouldRestoreTerminatedTerminalAfterConfirmingSegmentClosed() {
         RuntimeSessionDTO session = newSession("session_confirming_terminal_retry");
         repository.create(session);
