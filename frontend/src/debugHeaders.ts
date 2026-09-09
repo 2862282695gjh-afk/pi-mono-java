@@ -2,6 +2,7 @@ export interface DebugHeaderInput {
   enabled: boolean;
   key: string;
   value: string;
+  presetKey?: string;
 }
 
 export type DebugHeaderField = 'key' | 'value';
@@ -54,6 +55,12 @@ interface HeaderValidationError {
   message: string;
 }
 
+export function createDebugHeaderPresets(): DebugHeaderInput[] {
+  return ['access-token', 'X-HW-ID', 'Authorization'].map((key) => ({
+    enabled: true, key, value: '', presetKey: key,
+  }));
+}
+
 export function validateDebugHeaders(rows: readonly DebugHeaderInput[]): DebugHeaderValidation {
   const errors = rows.map(() => '');
   const errorFields: Array<DebugHeaderField | null> = rows.map(() => null);
@@ -62,6 +69,7 @@ export function validateDebugHeaders(rows: readonly DebugHeaderInput[]): DebugHe
 
   rows.forEach((row, index) => {
     if (!row.enabled) return;
+    if (row.presetKey && row.key === row.presetKey && row.value === '') return;
     const key = row.key.trim();
     if (key === '' && row.value === '') return;
     const error = validateHeaderValue(key, row.value);

@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ADR-0103：命令 Composer 与请求头交互</title>
+<style>body{font:16px/1.75 system-ui,sans-serif;color:#2c2724;background:#f8f3f0;margin:0}main{max-width:900px;margin:32px auto;padding:28px;background:#fffcfa}code{overflow-wrap:anywhere}a{color:#8e3f29}</style>
+<main>
+<h1>ADR-0103：命令 Composer 与请求头交互</h1>
+<p>状态：Accepted，已实现。日期：2026-09-09。</p>
+<h2>Context</h2>
+<p>用户已批准请求头和命令前端更新，要求同步 Vue 实现。源码基线为 <code>4cc8dd86f601417c22cf9306e52152acbb59bb60</code>；批准的设计仓提交为 <code>1eb85523fe1d210856851c5185d64858562db0c6</code>（Headers）和 <code>759e72d25903da76b3e37a6712dde63fe2d4255a</code>（Slash 1.4.0）。原界面自动补请求头空行，并通过独立 Slash 按钮、模式栏与完整命令文本交互。</p>
+<h2>Options</h2>
+<p>仅替换文案仍会保留自动补行和完整文本编辑的歧义。将前端改为公共 Mate Gateway 超出当前内部工作台范围。选择在现有 Runtime 适配上落实标签式命令编辑和显式请求头增删。</p>
+<h2>Decision</h2>
+<ul>
+<li>产品约束：预置三个可删除请求头，空预置不校验、不计数、不发送；新增按钮每次增加一行，清空允许零行，移除冗余说明。</li>
+<li>产品约束：空草稿首字符 / 或 + 菜单进入清单；清单与标签名称不带前导斜杠，只保留名称和简短说明。选择后显示可更换、删除的标签，参数单独编辑。</li>
+<li>产品约束：统一圆形上箭头；选择和执行必须是两次独立操作，重复 Enter 和 IME 不触发执行。Escape 分级收起/退出，更换取消恢复原参数，退出或成功恢复普通草稿。</li>
+<li>架构变化：视图级 useCommandComposer 管理命令草稿，App 继续持有普通草稿；命令由最新 Descriptor 与原样参数冻结，页面卸载后忽略迟到完成与焦点。</li>
+<li>保持已有契约：Builtin JSON 和内部 Runtime Skill SSE 继续通过 useRuntimeApi 执行；服务端清单决定运行中可用命令及 input。命令失效或参数不再允许时保留输入并阻止提交。</li>
+</ul>
+<h2>Consequences</h2>
+<p>清单、参数和普通消息的编辑边界更明确。代价是需要保存更换前的命令快照，并处理清单刷新与提交期间的状态竞争。没有新增 npm 或 Maven 依赖；不改变 HTTP 接口、Thinking、上传能力或公共 Mate 门禁。</p>
+<h2>Validation</h2>
+<p>Vitest 验证命令与 Headers 状态、参数冻结、并发和失效边界；运行类型检查、Vite 构建与依赖审计。实际 Vue + 本地契约 fixture 验证键盘、鼠标、请求头增删和多宽度布局；不代表真实 Java 后端 E2E、真实 IME 或读屏器验收。</p>
+<p>本决策补充 <a href="0102-runtime-events-v2-frontend.html">ADR-0102</a> 的界面交互，不替代其传输、结果和恢复约束。</p>
+<p><a href="../designs/frontend-events-v2/README.md">实现设计、源码证据与验收结果</a></p>
+</main>
+</html>

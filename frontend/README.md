@@ -10,13 +10,18 @@ v0.13.0，Vue 3 + TypeScript + Vite 的内部 Claw Runtime 联调工作台。
 - 三类 user.* event 包装、POST data-only SSE、eventId 合并、数字历史分页。
 - 工具允许/拒绝，绑定原消息的停止；confirming 仍占用执行状态。
 - 完整事件覆盖预览；无回执保留草稿并明确结果未知，断流只重读、不重发。
-- Slash 独立草稿、稳定前缀过滤、二次 Enter 执行；Builtin 临时卡与 Skill SSE 分离。
+- 空消息首字符 `/` 或“+ → 命令”打开精简清单；名称不带前导斜杠，选中后显示可更换、删除的标签。
+- 参数单独编辑，统一圆形上箭头提交；第一次 Enter 只选择，第二次才执行，长按 Enter 不执行。
+- 首次 Escape 收起清单，再次退出；更换时 Escape 恢复原命令和参数，取消或成功后恢复普通消息草稿。
+- Catalog 变化时保留参数并重新校验；Builtin 临时卡与现有内部 Runtime Skill SSE 分离。
 - 公开摘要与工具结果纯文本；Assistant 安全 Markdown、整轮复制和原暖灰活动框。
+- DEV Headers 预置 `access-token`、`X-HW-ID`、`Authorization`，Value 留空且空预置不发送。
+- 请求头可编辑、删除；“增加请求头”每次只新增一行，删除或全部清空允许零行，不自动补空行。
 - DEV Headers 每次消息/命令/停止/确认 POST 各自快照，仅内存、不进入历史读取。
 
-**必须使用已完成 v2 HTTP 接线的后端。** 源码同步基线 `9b01a9f1` 的新 VO 和底层服务已存在，
-`RuntimeEventController` 仍接旧消息请求；本任务不修改它。新前端不回退旧 wire。
-后端准备完成后，再按下述同源代理方式真实联调。不能用本地 fixture 通过替代真实服务验收。
+**必须使用 Events v2 HTTP 后端。** 1.0.0 的源码同步基线 `9b01a9f1` 中，
+`RuntimeEventController` 仍接旧消息请求；这是历史基线说明。当前交互更新不修改后端，
+也不回退旧 wire。真实联调按下述同源代理方式进行，本地 fixture 通过不能替代真实服务验收。
 运行中不再有 Steer/FollowUp/旧 Abort 入口；先实际停止，再提交新消息。
 
 上传接口未接入，附件按钮禁用；有序 content 构造及纯附件/最多 4 个 fileId 有单元测试，
@@ -73,4 +78,5 @@ npm audit --audit-level=high
 
 [实现设计及源码基线](../docs/designs/frontend-events-v2/README.md) ·
 [ADR-0102](../docs/decisions/0102-runtime-events-v2-frontend.html) ·
+[交互更新 ADR-0103](../docs/decisions/0103-composer-command-and-header-interaction.html) ·
 [历史视觉设计](../docs/designs/campusclaw-frontend.md)
