@@ -5,6 +5,7 @@
 package com.huawei.hicampus.claw.codingagent.session;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.inOrder;
@@ -17,6 +18,7 @@ import static org.mockito.Mockito.when;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 
 import com.huawei.hicampus.claw.agent.Agent;
@@ -34,6 +36,7 @@ import com.huawei.hicampus.claw.ai.types.ThinkingLevel;
 import com.huawei.hicampus.claw.ai.types.Usage;
 import com.huawei.hicampus.claw.ai.types.UserMessage;
 import com.huawei.hicampus.claw.codingagent.runtime.PreparedAgentRuntime;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.runtime.RuntimeSessionHolder;
 import com.huawei.hicampus.claw.codingagent.session.compaction.AutomaticCompactionDecision;
 import com.huawei.hicampus.claw.codingagent.session.compaction.AutomaticCompactionDecision.Action;
 import com.huawei.hicampus.claw.codingagent.session.compaction.SessionCompactionCompletedEvent;
@@ -204,6 +207,28 @@ class ManagedAgentSessionTest {
         assertThat(events.getLast()).isInstanceOf(SessionCompactionFailedEvent.class);
         assertThat(((SessionCompactionFailedEvent) events.getLast()).aborted()).isTrue();
         assertThat(pending).isCancelled();
+    }
+
+    @Test
+    void shouldBridgeRuntimeCompactionAndCancelManagedWorkWhenHolderCloses() {
+        Fixture fixture = fixture();
+        CompletableFuture<SessionCompactionResult> pending = new CompletableFuture<>();
+        when(fixture.compactor().prepare(fixture.messages())).thenReturn(prepared(fixture.messages()));
+        when(fixture.compactor().compact(any(), any(), any(), eq(null))).thenReturn(pending);
+        RuntimeSessionHolder holder = new RuntimeSessionHolder("session", null, fixture.session(), false);
+        List<SessionCompactionEvent> events = new ArrayList<>();
+        holder.subscribeCompaction(events::add);
+
+        var result = holder.compact();
+        holder.closeSession();
+
+        assertThat(pending).isCancelled();
+        assertThatThrownBy(result::join).hasCauseInstanceOf(CancellationException.class);
+        assertThat(events)
+                .extracting(Object::getClass)
+                .containsExactly(SessionCompactionStartedEvent.class, SessionCompactionFailedEvent.class);
+        verify(fixture.agent()).clearSteeringQueue();
+        verify(fixture.agent()).clearFollowUpQueue();
     }
 
     private static List<SessionCompactionEvent> subscribe(Fixture fixture) {

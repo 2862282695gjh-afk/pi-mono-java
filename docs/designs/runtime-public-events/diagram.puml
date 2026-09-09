@@ -1,0 +1,57 @@
+@startuml public_event_types
+title Public event data model
+' Source baseline: pi-mono-java 2f52e9b8
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/event/RuntimeEntryCodec.java#toSseData
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/vo/RuntimeSseEventVO.java
+' Observed behavior: the existing HTTP path uses the legacy event wrapper.
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/persistence/MyBatisRuntimeSessionRepository.java#appendEntryWithUsage
+' Design reason: persistence identity must not leak through the public response; related writes share one transaction.
+' Java divergence: the public event protocol is a CampusClaw architecture change.
+class CommittedEventDTO {
+  sessionId
+  eventId
+  eventSeq
+  anchorEntryId
+  type
+  createdAt
+  payload
+}
+class SessionEventResponseVO {
+  eventId
+  type
+  createdAt
+  details (unwrapped)
+}
+interface EventDetailsResponseVO
+enum CommittedEventType
+SessionEventResponseVO *-- EventDetailsResponseVO
+CommittedEventDTO ..> CommittedEventType : public type value
+CommittedEventDTO ..> SessionEventResponseVO : validated safe projection
+note bottom of SessionEventResponseVO
+  Types and projection are implemented.
+  HTTP integration follows in later slices.
+  No internal sequence or branch anchor in JSON.
+end note
+@enduml
+
+@startuml public_event_transaction
+title Atomic public event persistence
+' Source baseline: pi-mono-java d8276302
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/persistence/MyBatisRuntimeSessionRepository.java#appendEntryWithUsage/appendEventsLocked
+' Observed behavior: one Spring transaction owns the existing Entry and Usage writes.
+' Design reason: no committed Entry or Usage change may lose its associated public event.
+' Java divergence: public event persistence is a CampusClaw architecture change.
+start
+:Begin transaction and lock Session;
+:Allocate shared sequence and append Entry;
+:Append internal Record and accumulate Usage if present;
+:Normalize public formation time to UTC milliseconds;
+:Allocate shared sequence and insert public events;
+if (All writes succeeded?) then (yes)
+  :Commit transaction;
+  :Return committed identities to caller;
+else (no)
+  :Roll back all related writes;
+endif
+stop
+@enduml

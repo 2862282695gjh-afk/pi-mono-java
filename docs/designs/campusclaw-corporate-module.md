@@ -4,9 +4,9 @@
 
 | 项目 | 内容 |
 |---|---|
-| 文档版本 | 1.3.0 |
+| 文档版本 | 1.4.0 |
 | 状态 | Implemented |
-| 日期 | 2026-09-01 |
+| 日期 | 2026-09-04 |
 | 源码基线 | `98d3999ec6d57e099d7bf02aaa4fcf9607fc61aa` |
 | 配置默认值变更前基线 | `2cb1661fd4dc27f2bc02579c44878d7a69775c3d` |
 | 显式日志依赖修复前基线 | `294e6d90bcad8c4214b08807bfd1cfdee5cc2404` |
@@ -19,7 +19,7 @@
 
 ## 1. Context
 
-主工程以根 Maven Reactor 中的四个 `modules/*` 模块作为唯一源码。公司交付同时需要一个单模块
+主工程以根 Maven Reactor 中的五个 `modules/*` 模块作为唯一源码。公司交付同时需要一个单模块
 镜像，但其目录、Java 包、Maven 坐标和父 POM 必须符合公司集成约束。若继续把公司元数据混入
 根 Reactor，普通开发构建会依赖公司仓库；若独立维护两份 Java 源码，又会产生功能漂移。
 
@@ -77,7 +77,7 @@ Actuator 管理属性或自动配置排除，最终管理策略由公司运行�
 
 [PlantUML 源码：`campusclaw_corporate_module`](campusclaw-corporate-module/diagram.puml#L1)
 
-同步脚本先把四个主模块复制到 `build/campusclaw`，将 `com.campusclaw` 重写为
+同步脚本先把 common、ai、agent-core、cron、coding-agent-cli 五个主模块复制到 `build/campusclaw`，将 `com.campusclaw` 重写为
 `com.huawei.hicampus.claw`，并验证 Stage 中不存在源包残留或包树外 Java 文件。Apply 阶段再将
 Stage 结果同步到 `campusclaw/src`。`application.properties`、公司 POM 和受保护测试不由主模块
 覆盖。
@@ -95,8 +95,8 @@ Stage 结果同步到 `campusclaw/src`。`application.properties`、公司 POM �
 
 ### 4.2 只保留单向生成
 
-生产与测试 Java 源码只在 `modules/*` 修改。同步脚本生成 337 个生产 Java 文件和 140 个通用
-测试文件，排除清单额外保护 1 个公司专有测试，镜像最终共有 141 个测试文件。
+生产与测试 Java 源码只在 `modules/*` 修改。同步脚本覆盖全部主模块，按当前源码逐文件比对
+包名转换结果；排除清单额外保护公司专有测试，不以历史文件总数作为新模块完整性的判断依据。
 
 ### 4.3 不提供兼容入口
 
@@ -138,6 +138,15 @@ CampusClaw 在公司中作为独立服务运行，不再需要以 `management.*`
 如果 `NativeParent` 或公司运行平台最终引入 Actuator，其端口和暴露范围由独立服务的标准
 部署配置决定。该决策见 [ADR-0043](../decisions/0043-remove-campusclaw-standalone-actuator-configuration.html)。
 
+### 4.8 同步新增底层 common 模块
+
+复核基线 `ee3fdb4893228045f06b9b1d1b3b3bb505812c73` 的 `scripts/sync-campusclaw.sh:MODULES`
+仅列出四个模块。新增 common 后，将其纳入 Stage，生成
+`campusclaw/src/main/java/com/huawei/hicampus/claw/common/constant/ClawConstants.java`，
+并由现有 Apply 传播旧常量文件删除。`scripts/tests/sync-campusclaw-layout-test.sh` 比对 common 源码
+和 Stage 包名转换结果，防止模块漏同步。公司镜像仍是单模块，不新增 common Maven 依赖。
+此项属于架构调整，见[ADR-0051](../decisions/0051-centralize-shared-claw-constants.md)。
+
 ## 5. 边界情况
 
 - 无法解析 `NativeParent`：默认同步失败并提示配置公司 Maven 仓库；只允许显式
@@ -175,7 +184,7 @@ CampusClaw 在公司中作为独立服务运行，不再需要以 `management.*`
 
 ## 8. 测试与验证
 
-仓库内验证包括根工程 `./mvnw verify`、同步后 dry-run 零漂移、337/141 文件计数、POM 坐标和
+仓库内验证包括根工程 `./mvnw verify`、同步后 dry-run 零漂移、全部模块 Java 转换结果比对、common 布局回归、POM 坐标和
 `finalName` 缺失检查、公司镜像缺省地址与环境变量覆盖测试、Actuator 专用配置零残留、受控文件旧标识零残留、PlantUML/SVG
 验证、公司镜像 Log4j2 依赖树检查以及 `git diff --check`。
 
@@ -187,6 +196,7 @@ CampusClaw 在公司中作为独立服务运行，不再需要以 `management.*`
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 1.4.0 | 2026-09-04 | 将 common 加入镜像生成源并增加防漏同步回归，按实际源码比对替代历史固定计数。 |
 | 1.3.0 | 2026-09-01 | 对齐公司独立服务拓扑，删除镜像 Actuator 属性和自动配置排除，并重命名专有配置测试。 |
 | 1.2.0 | 2026-09-01 | 公司镜像显式声明 SLF4J 和 Log4j2 Starter，修复切换 `NativeParent` 后丢失根 POM 公共日志依赖的问题。 |
 | 1.1.0 | 2026-09-01 | 公司镜像为 `campusmate.base-url` 增加 `https://localhost:8591` 缺省值并保留环境变量覆盖；通用主模块仍为必填。 |

@@ -8,13 +8,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.List;
+import java.util.Map;
 
-import com.huawei.hicampus.claw.codingagent.common.client.mate.MateCredentialHeaders;
 import com.huawei.hicampus.claw.codingagent.common.client.mate.MateCredentials;
 import com.huawei.hicampus.claw.codingagent.common.client.mate.MateToolClient;
 import com.huawei.hicampus.claw.codingagent.common.client.mate.MateToolMeta;
 import com.huawei.hicampus.claw.codingagent.common.client.mate.MateToolResponseException;
 import com.huawei.hicampus.claw.codingagent.common.util.MateRestUtil;
+import com.huawei.hicampus.claw.common.constant.ClawConstants;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -157,6 +158,102 @@ class HttpMateToolClientTest {
     }
 
     @Test
+    void stringEncodedSchemaWithCamelCaseKeysIsNormalized() throws Exception {
+        server.enqueue(json("{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":{\"bindingTools\":"
+                + "[{\"toolId\":\"tool-11111111111111111111111111111111\",\"version\":\"2\"}]}}"));
+        server.enqueue(json("{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":{\"data\":["
+                + "{\"id\":\"tool-11111111111111111111111111111111\",\"name\":\"query\",\"description\":\"d1\","
+                + "\"inputSchema\":\"{\\\"type\\\":\\\"object\\\",\\\"properties\\\":{\\\"path\\\":{\\\"type\\\":\\\"string\\\"}},\\\"required\\\":[\\\"path\\\"]}\","
+                + "\"outputSchema\":\"{\\\"type\\\":\\\"object\\\"}\"}]}}"));
+
+        List<MateToolMeta> tools = client.listAgentTools("agent-11111111111111111111111111111111");
+
+        assertThat(tools).hasSize(1);
+        assertThat(tools.getFirst().inputSchema())
+                .containsEntry("type", "object")
+                .containsKey("properties");
+        assertThat(tools.getFirst().outputSchema()).containsEntry("type", "object");
+    }
+
+    @Test
+    void malformedSchemaStringDegradesToNullInsteadOfFailingBatch() throws Exception {
+        server.enqueue(json("{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":{\"bindingTools\":"
+                + "[{\"toolId\":\"tool-11111111111111111111111111111111\",\"version\":\"2\"}]}}"));
+        server.enqueue(json("{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":{\"data\":["
+                + "{\"id\":\"tool-11111111111111111111111111111111\",\"name\":\"query\",\"description\":\"d1\","
+                + "\"inputSchema\":\"not-a-json\"}]}}"));
+
+        List<MateToolMeta> tools = client.listAgentTools("agent-11111111111111111111111111111111");
+
+        assertThat(tools).hasSize(1);
+        assertThat(tools.getFirst().inputSchema()).isNull();
+    }
+
+    @Test
+    void trailingGarbageAfterValidJsonDegradesToNull() throws Exception {
+        server.enqueue(json("{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":{\"bindingTools\":"
+                + "[{\"toolId\":\"tool-11111111111111111111111111111111\",\"version\":\"2\"}]}}"));
+        server.enqueue(json("{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":{\"data\":["
+                + "{\"id\":\"tool-11111111111111111111111111111111\",\"name\":\"query\",\"description\":\"d1\","
+                + "\"inputSchema\":\"{\\\"type\\\":\\\"object\\\"}garbage\"}]}}"));
+
+        List<MateToolMeta> tools = client.listAgentTools("agent-11111111111111111111111111111111");
+
+        assertThat(tools).hasSize(1);
+        assertThat(tools.getFirst().inputSchema()).isNull();
+    }
+
+    @Test
+    void multipleRootJsonValuesDegradeToNull() throws Exception {
+        server.enqueue(json("{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":{\"bindingTools\":"
+                + "[{\"toolId\":\"tool-11111111111111111111111111111111\",\"version\":\"2\"}]}}"));
+        server.enqueue(json("{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":{\"data\":["
+                + "{\"id\":\"tool-11111111111111111111111111111111\",\"name\":\"query\",\"description\":\"d1\","
+                + "\"inputSchema\":\"{} {\\\"required\\\":[\\\"path\\\"]}\"}]}}"));
+
+        List<MateToolMeta> tools = client.listAgentTools("agent-11111111111111111111111111111111");
+
+        assertThat(tools).hasSize(1);
+        assertThat(tools.getFirst().inputSchema()).isNull();
+    }
+
+    @Test
+    void snakeCaseStringSchemaPreservesNestedConstraints() throws Exception {
+        server.enqueue(json("{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":{\"bindingTools\":"
+                + "[{\"toolId\":\"tool-11111111111111111111111111111111\",\"version\":\"2\"}]}}"));
+        server.enqueue(json("{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":{\"data\":["
+                + "{\"id\":\"tool-11111111111111111111111111111111\",\"name\":\"query\",\"description\":\"d1\","
+                + "\"input_schema\":\"{\\\"type\\\":\\\"object\\\",\\\"properties\\\":{\\\"path\\\":{\\\"type\\\":\\\"string\\\",\\\"minLength\\\":1}},"
+                + "\\\"required\\\":[\\\"path\\\",\\\"mode\\\"]}\"}]}}"));
+
+        List<MateToolMeta> tools = client.listAgentTools("agent-11111111111111111111111111111111");
+
+        Map<String, Object> schema = tools.getFirst().inputSchema();
+        assertThat(schema.get("required")).isEqualTo(List.of("path", "mode"));
+        assertThat(schema).containsKey("properties");
+    }
+
+    @Test
+    void mixedBatchWithInvalidSchemaIsolatesDamagePerTool() throws Exception {
+        server.enqueue(json("{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":{\"bindingTools\":"
+                + "[{\"toolId\":\"tool-11111111111111111111111111111111\",\"version\":\"2\"},"
+                + "{\"toolId\":\"tool-22222222222222222222222222222222\",\"version\":\"1\"}]}}"));
+        server.enqueue(
+                json(
+                        "{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":{\"data\":["
+                                + "{\"id\":\"tool-11111111111111111111111111111111\",\"name\":\"query\",\"description\":\"d1\","
+                                + "\"input_schema\":\"not-a-json\"},"
+                                + "{\"id\":\"tool-22222222222222222222222222222222\",\"name\":\"chart\",\"description\":\"d2\","
+                                + "\"input_schema\":\"{\\\"type\\\":\\\"object\\\",\\\"properties\\\":{\\\"scope\\\":{\\\"type\\\":\\\"string\\\"}}}\"}]}}"));
+
+        List<MateToolMeta> tools = client.listAgentTools("agent-11111111111111111111111111111111");
+
+        assertThat(tools).hasSize(2);
+        assertThat(tools.get(0).inputSchema()).isNull();
+        assertThat(tools.get(1).inputSchema()).containsEntry("type", "object");
+    }
+
+    @Test
     void missingToolNameFallsBackToToolId() throws Exception {
         server.enqueue(
                 json(
@@ -292,8 +389,31 @@ class HttpMateToolClientTest {
         assertThat(request.getHeader("X-HW-ID")).isEqualTo("hw-id-1");
         assertThat(request.getHeader("X-HW-APPKEY")).isEqualTo("key-1");
         assertThat(request.getHeader("Authorization")).isNull();
-        assertThat(request.getHeader(MateCredentialHeaders.ACCESS_TOKEN)).isEqualTo("access-token-1");
+        assertThat(request.getHeader(ClawConstants.Mate.ACCESS_TOKEN)).isEqualTo("access-token-1");
         assertThat(request.getHeader("X-Access-Token")).isNull();
+    }
+
+    @Test
+    void shouldPreserveResultJsonKindsWhenInvokingTool() {
+        server.enqueue(json("{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":\"plain text\"}"));
+        server.enqueue(json("{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":{\"answer\":42}}"));
+        server.enqueue(json("{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":[\"first\",2]}"));
+        server.enqueue(json("{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":null}"));
+        MateCredentials credentials = MateCredentials.appKey("hw-id-1", "key-1", "access-token-1");
+
+        MateToolClient.ToolResult text =
+                client.callTool("tool-11111111111111111111111111111111", java.util.Map.of(), credentials);
+        MateToolClient.ToolResult object =
+                client.callTool("tool-11111111111111111111111111111111", java.util.Map.of(), credentials);
+        MateToolClient.ToolResult array =
+                client.callTool("tool-11111111111111111111111111111111", java.util.Map.of(), credentials);
+        MateToolClient.ToolResult empty =
+                client.callTool("tool-11111111111111111111111111111111", java.util.Map.of(), credentials);
+
+        assertThat(text.content()).isEqualTo("plain text");
+        assertThat(object.content()).isEqualTo("{\"answer\":42}");
+        assertThat(array.content()).isEqualTo("[\"first\",2]");
+        assertThat(empty.content()).isEmpty();
     }
 
     @Test
@@ -366,7 +486,7 @@ class HttpMateToolClientTest {
         assertThat(request.getHeader("X-HW-ID")).isEqualTo("hw-id-2");
         assertThat(request.getHeader("Authorization")).isEqualTo("Bearer jwt-token");
         assertThat(request.getHeader("X-HW-APPKEY")).isNull();
-        assertThat(request.getHeader(MateCredentialHeaders.ACCESS_TOKEN)).isEqualTo("access-token-2");
+        assertThat(request.getHeader(ClawConstants.Mate.ACCESS_TOKEN)).isEqualTo("access-token-2");
     }
 
     @Test
@@ -383,7 +503,7 @@ class HttpMateToolClientTest {
         assertThat(request.getHeader("X-HW-ID")).isEqualTo("hw-id-3");
         assertThat(request.getHeader("X-HW-APPKEY")).isEqualTo("app-key-3");
         assertThat(request.getHeader("Authorization")).isEqualTo("Bearer jwt-token-3");
-        assertThat(request.getHeader(MateCredentialHeaders.ACCESS_TOKEN)).isEqualTo("access-token-3");
+        assertThat(request.getHeader(ClawConstants.Mate.ACCESS_TOKEN)).isEqualTo("access-token-3");
     }
 
     @Test
@@ -476,10 +596,10 @@ class HttpMateToolClientTest {
     private static void assertNoCredentialHeaders(okhttp3.mockwebserver.RecordedRequest request) {
         assertThat(request.getHeader("Content-Type")).isEqualTo("application/json");
         assertThat(request.getHeader("Accept")).isEqualTo("application/json");
-        assertThat(request.getHeader(MateCredentialHeaders.X_HW_ID)).isNull();
-        assertThat(request.getHeader(MateCredentialHeaders.X_HW_APPKEY)).isNull();
-        assertThat(request.getHeader(MateCredentialHeaders.AUTHORIZATION)).isNull();
-        assertThat(request.getHeader(MateCredentialHeaders.ACCESS_TOKEN)).isNull();
+        assertThat(request.getHeader(ClawConstants.Mate.X_HW_ID)).isNull();
+        assertThat(request.getHeader(ClawConstants.Mate.X_HW_APPKEY)).isNull();
+        assertThat(request.getHeader(ClawConstants.Mate.AUTHORIZATION)).isNull();
+        assertThat(request.getHeader(ClawConstants.Mate.ACCESS_TOKEN)).isNull();
         assertThat(request.getHeader("X-Access-Token")).isNull();
     }
 }

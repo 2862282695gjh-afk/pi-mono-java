@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ADR-0092：首版仅支持全新安装的权威事件历史</title>
+<style>body{font:16px/1.7 system-ui,sans-serif;background:#f5f7fa;color:#172235;margin:0}main{max-width:920px;margin:32px auto;padding:32px;background:white;border-radius:12px}code{overflow-wrap:anywhere;background:#eef2f6;padding:2px 4px}a{color:#1457a6}</style></head>
+<body><main><h1>ADR-0092：首版仅支持全新安装的权威事件历史</h1>
+<p>Status: Accepted · Date: 2026-09-08 · Version: 1.0.0</p>
+<h2>Context</h2><p>产品当前处于第一版，没有受支持的旧 schema、旧应用版本或需要保留的存量 Session。
+设计仓基线 <code>2ee2a321</code> 曾在“存在旧数据”的前提下要求一次迁移或兼容读取；用户已明确该前提
+不适用于本次交付。</p>
+<p>Java 基线 <code>17f91e20</code> 的安装 schema 已直接包含 <code>t_session_events</code> 和
+<code>t_session_event_projection</code>。提交 <code>45d7ece9</code> 删除升级目录，并从投影表、Mapper、
+仓储和测试中移除只服务迁移来源区分的 <code>mapping_source</code>。</p>
+<h2>Decision</h2><p>首版只支持通过 <code>resources/db/gaussdb/install/session_schema.sql</code> 全新建立 Session schema。
+产品不交付 V1 到 V2 升级 SQL、存量审核输入表、迁移校验函数、迁移回归或维护窗口运行手册，也不承诺
+读取任何早于当前首版运行时写入的数据。</p>
+<p>保留权威公共事件和精确完整性门禁。所有当前版本 Entry 都必须在同一事务写公共事件及精确
+<code>event_count</code>；明确私有记录可以标零。GET 遇到未知类型、缺 marker 或数量不符时继续关闭失败，
+不得在读取时猜测或补造事件。</p>
+<h2>考虑过的选项及取舍</h2><ul>
+<li><strong>保留已经开发的迁移脚本。</strong> 它能处理未来假设的存量数据，但会制造首版不存在的升级承诺、发布入口和长期维护成本，因此删除。</li>
+<li><strong>同时删除公共事件完整性表。</strong> schema 更小，但当前版本发生部分写入或数据损坏时 GET 会静默返回半份历史，因此不采用。</li>
+<li><strong>全新安装并保留运行时精确门禁。</strong> 与当前产品阶段一致，同时保住 POST/GET 同形和关闭失败安全边界，采用此方案。</li>
+</ul>
+<h2>Consequences</h2><p>安装脚本是首版 schema 的唯一数据库基线，并保持破坏性重建语义。部署方不能把它当作已有环境升级工具。
+代码和文档不再包含迁移表、函数、SQL 步骤或验证入口，权限脚本也只覆盖当前运行时表。</p>
+<p>若未来第一次提出保留数据的升级需求，必须记录新的源/目标版本、数据来源、安全映射、事务和回滚证据，
+再形成新的 ADR 与发布实现。ADR-0082 只保留为历史事实，不能直接恢复执行。</p>
+<h2>Validation</h2><p>提交 <code>45d7ece9</code> 的产品与镜像差异确认升级目录和迁移来源已移除，当前事件表、投影表和
+关闭失败查询保留。全新 openGauss 数据库上独立运行 Repository 46 项、原子事务 2 项和 Query 8 项，
+共 56 项通过。</p>
+<h2>Related</h2><p><a href="0078-authoritative-event-history.html">ADR-0078 权威事件历史</a> ·
+<a href="0082-restart-safe-event-history-migration.html">ADR-0082 已取消的迁移提案</a> ·
+<a href="../designs/runtime-event-history-v2/README.md">现行实现设计</a> ·
+<a href="../designs/runtime-event-migration/README.md">历史迁移提案摘要</a></p>
+<h2>版本历史</h2><p>1.0.0 · 2026-09-08：确定首版全新安装范围，删除旧版本迁移能力并保留运行时完整性门禁。</p>
+</main></body></html>

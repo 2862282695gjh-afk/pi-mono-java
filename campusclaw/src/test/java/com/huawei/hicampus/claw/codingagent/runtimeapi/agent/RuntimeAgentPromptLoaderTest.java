@@ -16,6 +16,8 @@ import com.huawei.hicampus.claw.codingagent.runtimeapi.error.RuntimeErrorCode;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /**
  * Runtime Agent 系统提示词和 Skill 安全装载测试。
@@ -41,6 +43,19 @@ class RuntimeAgentPromptLoaderTest {
         assertThat(prompt).contains("<name>a-skill</name>", "<name>b-skill</name>");
         assertThat(prompt.indexOf("a-skill")).isLessThan(prompt.indexOf("b-skill"));
         assertThat(prompt).doesNotContain("<name>hidden</name>");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"-pdf", "pdf-", "pdf--tools"})
+    void excludesInvalidSkillNamesFromPrompt(String name) throws Exception {
+        Path managed = Files.createDirectory(temporaryDirectory.resolve(".campusclaw"));
+        writeSkill(managed.resolve("skills/good-name/SKILL.md"), "good-name", false);
+        writeSkill(managed.resolve("skills").resolve(name).resolve("SKILL.md"), name, false);
+
+        String prompt = new RuntimeAgentPromptLoader().load(managed);
+
+        assertThat(prompt).contains("<name>good-name</name>");
+        assertThat(prompt).doesNotContain(name);
     }
 
     @Test

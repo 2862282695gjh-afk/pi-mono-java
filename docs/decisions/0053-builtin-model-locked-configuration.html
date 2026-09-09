@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ADR-0053：Model 命令复用锁内配置事务</title>
+  <style>
+    :root { color-scheme: light; font-family: Inter, "PingFang SC", sans-serif; color: #25272a; background: #f2f5f7; }
+    body { margin: 0; } main { width: min(920px, calc(100% - 40px)); margin: 40px auto; padding: 40px; box-sizing: border-box; background: #fff; border: 1px solid #d7dde2; border-radius: 16px; }
+    h1 { margin-top: 0; font-size: 30px; } h2 { margin-top: 30px; font-size: 20px; }
+    p, li { line-height: 1.75; } code { overflow-wrap: anywhere; background: #edf2f5; } a { color: #1769aa; }
+    @media (max-width: 640px) { main { width: 100%; margin: 0; padding: 24px 18px; border: 0; border-radius: 0; } }
+  </style>
+</head>
+<body><main>
+  <h1>ADR-0053：Model 命令复用锁内配置事务</h1>
+  <p>Status：Accepted（锁内事务）；Superseded（混合 Model 结果与旧响应方向）<br>Date：2026-09-07 · Version：1.1.0</p>
+  <p>响应与结果通道由 <a href="0060-builtin-authoritative-session-result.html">ADR-0060</a> 替代：
+  查询复用模型清单，修改/同值复用完整 Session 与 ETag；sourceEventSeq 仅供内部使用。
+  以下原实现类型及测试数字保留历史证据，不作为新响应方向的验收结论。</p>
+  <p>Java 变更前：<code>c70f02bc9deabae9b442406d98806a33a6602fdb</code><br>
+  本次实现：<code>16ee86ab1dcacd7e76a8c66ade99f52ddd8e3573</code><br>
+  已确认设计：<code>pi-mono-java-design@41304c1f3df0e8eca53141312724d7a684a1d07f</code>，
+  <code>04-命令与技能/01-内置命令/README.md</code> 第 6 节和 Runtime 操作 13。设计仓只读。</p>
+  <h2>Context</h2>
+  <p>既有 Model PUT 先检查 If-Match，并在数据库行锁下重检同一版本。它可以安全使用锁前生成的领域 Entry；
+  Command 不携带该条件，若只把 expectedVersion 改为可空，事件可能记录陈旧的 previousModelId，
+  或漏掉并发开启 Thinking 后应追加的自动关闭事件。</p>
+  <p>Java 源根为 <code>modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/</code>。
+  基线证据为 <code>session/RuntimeSessionConfigurationService.java:changeModel/modelChangeEntries</code>
+  与 <code>persistence/MyBatisRuntimeSessionRepository.java:updateModel/rejectConfigurationUpdate</code>。</p>
+  <h2>选项及取舍</h2>
+  <ul>
+    <li>复制一套 Command 配置事务：入口独立，但会分裂条件更新、能力和历史规则，不采用。</li>
+    <li>只取消 expectedVersion：代码少，但丢失保护锁前事件的条件，不采用。</li>
+    <li>共享窄服务与事务，锁内调用本地事件工厂：增加一个函数参数，但同一事务负责权威旧值和序号，采用。</li>
+  </ul>
+  <h2>Decision 与理由</h2>
+  <ul>
+    <li><code>service.command.SessionModelConfigurationService</code> 负责模型查询/切换；
+    <code>service.command.contributor.ModelCommandContributor</code> 贡献准入和真实 Handler，不引入中央名称 switch。</li>
+    <li>Repository 的可选版本只放宽 Command；既有 PUT 和 <code>RuntimeSessionModelReconciler.reconcile</code>
+    继续传实际版本。状态与同值检查顺序不变，running 同值仍不能作为修改被接受。</li>
+    <li>Model Service 的 <code>modelChangeEntries</code> 作为本地工厂在锁内读取旧模型和 Thinking，
+    不执行网络请求。Model 更新失败时，配置、Entry、Sequence 和 active leaf 全部回滚。</li>
+    <li>配置结果迁入 <code>dto.SessionConfigurationUpdateDTO</code>，携带最后实际追加的 Entry 序号；
+    <code>dto.command.ModelCommandResultDTO</code> 只承载结果，HTTP VO 组装仍留给后续切片。</li>
+    <li>查询/同值不产生 Entry；不创建 commandId、命令生命周期或 Name 历史。Spring 单例不保存请求和凭据。</li>
+  </ul>
+  <p>pi <code>4af9d21d3b4d664e4a29fcabfec85171077248e3</code>：
+  <code>packages/coding-agent/src/core/agent-session.ts:setModel/setThinkingLevel</code> 验证凭据、保存模型并调整思考级别；
+  <code>packages/coding-agent/src/core/session-manager.ts:appendModelChange</code> 按当前 leaf 追加。
+  Java 的 boolean Thinking、同模型不写入及 idle 修改限制属于产品约束，行锁和可选版本属于架构变化，不是 pi 的 HTTP 行为。</p>
+  <h2>Consequences</h2>
+  <ul>
+    <li>正面：Command 并发使用锁内最新值，旧 PUT 保留 428/412/ETag 行为，两者复用模型能力与事件语义。</li>
+    <li>代价：同一 Session 的配置和其他数据库操作仍竞争一把行锁；工厂必须保持本地、短小且无外部副作用。</li>
+    <li>范围：不改设计仓、不发布 Command HTTP、不增加升级脚本；Builtin/Skill 由用户统一负责集成，
+    共享入口验收不因本切片只实现 Model 而缩减。Thinking Handler 留待合并后下一独立 PR。</li>
+  </ul>
+  <h2>验证及未验证边界</h2>
+  <p>1519 项模块及依赖测试、完整 mvnw verify、21 项真实 openGauss Repository 测试通过；
+  后者为单 JVM 多连接事务竞争，不代表最终跨 JVM Command HTTP 流程。
+  原测试质量脚本路径缺失，归档副本结果为 0 errors、21 项旧命名 warnings。
+  模块新增 701 行，含镜像 1402/2000。镜像同步完成；公司 NativeParent 不可解析，镜像编译未验证。</p>
+  <h2>Related</h2>
+  <ul>
+    <li><a href="../designs/builtin-command-model.md">Model 实现与完整证据</a></li>
+    <li><a href="../designs/builtin-command-model/diagram.puml#L1">Model PlantUML 源码</a></li>
+    <li><a href="0049-builtin-command-json-execution.html">Builtin 分层核心决策</a></li>
+    <li><a href="0048-limit-added-code-lines-per-pull-request.html">PR 新增行数门禁</a></li>
+  </ul>
+  <h2>版本历史</h2>
+  <p>1.1.0 · 2026-09-07：标注结果通道的局部替代；锁内事务、可选版本和领域事件语义保持。</p>
+  <p>1.0.0 · 2026-09-06：记录 Model 共用窄服务、锁内事件工厂与可选条件版本。</p>
+</main></body>
+</html>

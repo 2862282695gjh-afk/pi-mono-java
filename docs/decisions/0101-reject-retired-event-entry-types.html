@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ADR-0101：拒绝退休事件类型进入权威历史</title>
+<style>body{font:16px/1.7 system-ui,sans-serif;background:#f5f7fa;color:#172235;margin:0}main{max-width:920px;margin:32px auto;padding:32px;background:white;border-radius:12px}code{overflow-wrap:anywhere;background:#eef2f6;padding:2px 4px}a{color:#1457a6}</style></head>
+<body><main><h1>ADR-0101：拒绝退休事件类型进入权威历史</h1>
+<p>Status: Accepted · Date: 2026-09-08 · Version: 1.0.0</p>
+<h2>Context</h2><p>Events v2 设计基线 <code>pi-mono-java-design@2ee2a321</code> 只把完整事件写入权威历史，
+preview delta 不持久化，流结束也不形成公共历史事件。Java 基线 <code>69b8ced3</code> 中，旧
+<code>RuntimeEventProjector</code> 和 <code>RuntimeTerminalEventFactory</code> 仍把八个旧名称用于瞬时 SSE，
+但生产代码没有把这些类型写为 <code>RuntimeEntryDTO</code>。最终 HTTP 分支通过 <code>8ea0ba9f</code> 删除旧控制与终态链、<code>465dd631</code> 删除 Entry 历史投影、
+<code>c2fed32e</code> 删除普通 Agent 投影分支，随后在 <code>e866db6b</code> 删除对应枚举。</p>
+<p><code>RuntimeSessionMapper.xml#countUnmappedCurrentBranchEntries</code> 仍把这些类型登记为允许且必须
+投影零条公共事件。手工或缺陷写入的退休 Entry 只要附加 <code>event_count=0</code>，GET 就会把它当成
+完整记录并静默跳过，削弱首版运行时的关闭失败边界。</p>
+<h2>Decision</h2><p>从权威历史的已登记 Entry 类型和零事件类型集合中同时删除以下八种类型：
+<code>assistant.message.started</code>、<code>assistant.message.delta</code>、
+<code>assistant.thinking.started</code>、<code>assistant.thinking.delta</code>、
+<code>tool.execution.delta</code>、<code>tool.execution.completed</code>、
+<code>stream.end</code>、<code>stream.error</code>。</p>
+<p>GET 在当前分支遇到其中任何一种类型时按未知或退休类型处理，即使存在精确的零事件 marker 也返回
+<code>EVENT_LIST_FAILED</code>。保留当前运行时明确使用的完整事件类型，以及允许零事件的
+<code>assistant.thinking.completed</code>、内部 Compact 状态和结构辅助记录。当前产品是第一版，不为退休类型
+增加迁移、兼容读取或恢复入口。</p>
+<h2>考虑过的选项及取舍</h2><ul>
+<li><strong>保留零事件兼容白名单。</strong> 可以继续跳过旧类型，但首版没有需要兼容的已发布历史，并会让无合法写入者的数据被误判为完整，因此不采用。</li>
+<li><strong>只删除 Java 枚举。</strong> 能收敛编译期类型，却不能阻止数据库中的手工或缺陷记录绕过完整性门禁，因此不采用。</li>
+<li><strong>Java 与 SQL 按各自职责收紧。</strong> 最终 HTTP 集成删除旧瞬时编码器，本决策让权威历史立即拒绝退休 Entry，采用此方案。</li>
+</ul>
+<h2>Consequences</h2><p>当前版本不会为 preview、工具过程增量或流结束生成历史 Entry。若数据库出现退休类型，GET 明确失败，
+便于发现事务外写入、程序缺陷或数据损坏，不会返回看似成功但缺项的历史。Compact 私有记录和结构辅助记录
+仍可用显式零事件 marker 参与当前分支完整性检查。</p>
+<p>本决策不修改前端或 <code>agent-core</code>，不增加 Maven 依赖，也不改变 Events v2 的公共响应类型。</p>
+<h2>Validation</h2><p>提交 <code>ab0f2637</code> 增加真实 openGauss 参数化回归，逐一手工插入八种退休 Entry 和
+<code>event_count=0</code> marker，16 项查询测试全部通过；同一组测试保留当前分支、数字分页、Thinking
+可见性、工具调用和 Compact 零投影行为。</p>
+<h2>Related</h2><p><a href="0078-authoritative-event-history.html">ADR-0078 权威事件历史</a> ·
+<a href="0079-public-stream-boundary.html">ADR-0079 公共流边界</a> ·
+<a href="0092-first-release-authoritative-event-history.html">ADR-0092 首版权威历史</a> ·
+<a href="0095-persist-compaction-public-history.html">ADR-0095 Compact 公共历史</a> ·
+<a href="../designs/runtime-event-history-v2/README.md">现行完整性设计</a></p>
+<h2>版本历史</h2><p>1.0.0 · 2026-09-08：删除八种退休协议类型的零事件兼容白名单，并保留当前运行时零投影类型。</p>
+</main></body></html>

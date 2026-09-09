@@ -22,11 +22,15 @@ public class CreateSessionResponseVO {
 
     private final String agentId;
 
+    private final String displayName;
+
     private final String modelId;
 
     private final String state;
 
     private final boolean thinking;
+
+    private final LifetimeUsageResponseVO lifetimeUsage;
 
     @JsonFormat(shape = JsonFormat.Shape.STRING)
     private final OffsetDateTime createdAt;
@@ -34,15 +38,19 @@ public class CreateSessionResponseVO {
     public CreateSessionResponseVO(
             String sessionId,
             String agentId,
+            String displayName,
             String modelId,
             String state,
             boolean thinking,
+            LifetimeUsageResponseVO lifetimeUsage,
             OffsetDateTime createdAt) {
         this.sessionId = sessionId;
         this.agentId = agentId;
+        this.displayName = displayName;
         this.modelId = modelId;
         this.state = state;
         this.thinking = thinking;
+        this.lifetimeUsage = lifetimeUsage;
         this.createdAt = createdAt;
     }
 }

@@ -1,0 +1,38 @@
+@startuml commit_addition_limit
+' Pre-change source evidence: .github/workflows/ci.yml:3-24, scripts/check-commit-additions.sh:40-202, and scripts/tests/check-commit-additions-test.sh:109-116 at 2df1ffd0b15044221ea1facd43b0797f5cdbb098.
+' Reviewed implementation evidence: scripts/check-commit-additions.sh:53-132 and scripts/tests/check-commit-additions-test.sh:109-133 at e7b68fd5a1b9c4699d30635d06b9467f3b8bdf2f.
+' Observed behavior: CI enforced the 2000-line limit independently for each commit.
+' Product constraint: the final pull-request additions must not exceed 2000 code lines in total.
+' Architecture change: the gate measures one final diff from the merge base to the pull-request head.
+' Design reason: prevent commit splitting from bypassing the pull-request review-size limit.
+title Pull-request addition limit
+
+actor Contributor
+participant "GitHub Actions" as Actions
+database "Git history" as Git
+participant "Pull-request addition gate" as Gate
+participant "Existing build gates" as Build
+
+Contributor -> Actions: Push pull-request changes
+Actions -> Git: Checkout full history
+Actions -> Gate: Provide base SHA and head SHA
+Gate -> Git: Validate revisions
+Gate -> Git: Resolve merge base
+Gate -> Git: Read rename-aware final diff numstat
+Gate -> Gate: Classify old and new paths
+
+opt Documentation moved into code
+  Gate -> Git: Read full destination blob at head
+end
+
+Gate -> Gate: Sum final added code lines
+alt Total exceeds 2000
+  Gate --> Actions: Fail with total and file details
+else Total is at most 2000
+  Gate --> Actions: Report pull-request pass
+end
+
+Actions -> Gate: Run gate regression tests
+Actions -> Build: Set up JDK, format check, verify
+Build --> Contributor: CI result
+@enduml

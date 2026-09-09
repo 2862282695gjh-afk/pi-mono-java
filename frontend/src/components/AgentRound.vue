@@ -49,12 +49,14 @@ async function copyRound(): Promise<void> {
             :streaming="block.turn.streaming"
             completion-message="回答已完成"
           />
+          <small v-if="block.turn.unconfirmed" class="event-notice">临时预览，等待完整记录</small>
           <div v-else-if="block.turn.streaming" class="assistant-working">
             <span class="spinner" aria-hidden="true"></span>
             正在思考…
           </div>
         </div>
 
+        <p v-else-if="block.turn.kind === 'notice'" class="event-notice">{{ block.turn.text }}</p>
         <section
           v-else
           class="agent-activity-panel"

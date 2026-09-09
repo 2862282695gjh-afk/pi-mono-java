@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ADR-0064：完整缓存与同源命令清单</title>
+  <style>
+    :root { font-family: Inter, "PingFang SC", sans-serif; color: #25272a; background: #f2f5f7; }
+    body { margin: 0; } main { max-width: 920px; margin: 32px auto; padding: 32px; background: white; box-sizing: border-box; }
+    p, li { line-height: 1.75; } code { overflow-wrap: anywhere; } a { color: #1769aa; }
+    @media (max-width: 640px) { main { margin: 0; padding: 24px 18px; } }
+  </style>
+</head>
+<body><main>
+  <h1>ADR-0064：完整缓存与同源命令清单</h1>
+  <p>Status：Accepted · Date：2026-09-07 · Version：1.0.0</p>
+  <h2>Context</h2>
+  <p>Java 起始基线 <code>56d9e389a730a9e9658ebcf7a1189db0937722b1</code> 已有轻量发现投影；
+  在 #239 合入后正常同步至 <code>53496bbec9d8368b19e3b9a03030eed7ce15c182</code>，验证七个真实 Contributor。
+  <code>SkillCommandSource.list</code> 仍独立读取缓存并再次观察文件；应用若先检查完整缓存再调用它，
+  会把两次发布拼进同一请求。设计仓只读基线 <code>88f4df16bc24bbfcd28e1ec374feb2de0db8be3b</code>
+  的 Slash 1.6.0 §3.1 要求完整来源与一次快照，缺失缓存不能返回部分 Builtin。</p>
+  <p>源码根 <code>modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/</code>：
+  <code>runtime/AgentRuntimeManager.java:prepareCached/requireAgentRoot/loadSnapshot/loadSkill</code>、
+  <code>runtime/PreparedAgentRuntime.java</code>、<code>runtimeapi/service/command/CompositeCommandRegistry.java:resolve</code>、
+  <code>runtimeapi/service/command/SkillCommandSource.java:list/hasSkillMarkdown</code>。</p>
+  <h2>考虑过的选项及取舍</h2>
+  <ul>
+    <li>先检查缓存，再走原 resolve：改动少，但 Skill Source 二次读取可换版，拒绝。</li>
+    <li>共享单例缓存 PreparedAgentRuntime：调用方便，但跨请求过期、混用身份和保留文案，拒绝。</li>
+    <li>把 Registry 整体放进 Manager 发布锁：可避免再次观察不同目录，但扩大锁职责且引入 Manager→Command 依赖，拒绝。</li>
+    <li>显式传递本次已验证完整快照，Skill 来源纯内存解析：依赖清楚、无第二次文件观察，采用。</li>
+  </ul>
+  <h2>Decision 与理由</h2>
+  <ul>
+    <li>CommandCatalogService 先查 Session，再调用一次 prepareCached；完整空绑定成功，缺失缓存整体失败。</li>
+    <li>resolveComplete 校验快照 Agent 身份与 Session 一致，然后将同一 PreparedAgentRuntime 传入所有来源。</li>
+    <li>来源 SPI 仅依赖既有数据快照，不依赖 Manager Bean、Holder、凭据或执行接口；无反向依赖或新环。</li>
+    <li>固定 Builtin 复用原定义；Skill 的显式完整快照入口不再查看当前磁盘，旧独立入口保留原安全检查。</li>
+    <li>安全检查不是被删除，而是在 Manager 锁内提前完成：精确规范 Agent 目录、整树无链接、文件完整性、
+    manifest/目录/frontmatter 名称和严格加载规则。真实 Manager 文件测试证明该路径仍拒绝不安全目录。</li>
+    <li>Catalog 和 VO 都是本请求结果，不在单例保存运行对象、路径、正文或凭据；保留原定义身份及公开白名单。</li>
+  </ul>
+  <p>完整性前置属于已确认产品约束；显式快照传递属于 Java 架构变更；目录身份和公开字段限制继续作为安全边界。</p>
+  <h2>Consequences</h2>
+  <ul>
+    <li>正面：不会在一次 GET 内拼接两次发布；省去重复磁盘读取，保留 Builtin-only 无 Skill 读取路径。</li>
+    <li>代价：内部完整入口要求调用方提供 Manager 已验证快照；这不是对任意反序列化对象的可信声明，也不是执行租约。</li>
+    <li>边界：只读 Service 使用既有 AGENT_NOT_AVAILABLE，不全局改 POST Help 的 422。GET 503/Retry-After: 3 留 Web 按操作映射。</li>
+    <li>后续：Controller、执行类型分派、Skill 成功协议/私有快照保留和公共 Events 中断仍未实现，不由本片代决。</li>
+    <li>无 Runtime 生命周期、Repository 事务、SQL、依赖或设计仓修改；公共 HTTP 未发布。</li>
+  </ul>
+  <h2>验证</h2>
+  <p>覆盖 Session 优先、缓存仅读一次、空/缺失/运行状态、真实发布切换、目录安全与来源身份。
+  交付命令和精确结果见实现说明与 PR；真实文件测试不等于跨进程 HTTP 验收。
+  公司 NativeParent 无法解析时保留镜像编译未验证限制。</p>
+  <h2>Related</h2>
+  <ul>
+    <li><a href="../designs/builtin-command-catalog/README.md">实现说明、源码证据和验收</a></li>
+    <li><a href="../designs/builtin-command-catalog/diagram.puml#L1">同源解析 PlantUML</a></li>
+    <li><a href="0063-command-response-projection.html">ADR-0063：复用既有轻量投影，继续有效</a></li>
+  </ul>
+  <h2>版本历史</h2>
+  <p>1.0.0 · 2026-09-07：建立显式完整快照的共享 Catalog 应用，保留目录安全与 HTTP 边界。</p>
+</main></body>
+</html>

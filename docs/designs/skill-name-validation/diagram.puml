@@ -1,0 +1,78 @@
+@startuml skill_name_validation
+title Skill Constants: One Domain Owner for Shared Rules
+' Source baseline: pi-mono-java@2c2092f2fa764a7aa7b47da841299f8866d7a151.
+' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/skill/SkillLoader.java validateName, loadFromFile.
+' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/skill/SkillNamePatterns.java LEGACY_REGEX, STRICT_REGEX.
+' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtime/AgentRuntimeManager.java requireSessionLoadable, writeSkills, loadSkill.
+' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/agent/RuntimeAgentPromptLoader.java loadSkill.
+' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/service/command/SkillCommandSource.java resolved.
+' Observed behavior: the baseline loads names with invalid hyphens but excludes them from command discovery.
+' Follow-up baseline: pi-mono-java@cf4f929af2d407d3673bfabac0c311831fb570c7.
+' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/common/identifier/ResourceIdentifierPatterns.java SKILL_ID_REGEX, SKILL_ID_PATTERN.
+' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtime/MateServiceClient.java querySkillInfo.
+' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/common/client/HttpMateToolClient.java listSkillTools.
+' Constant ownership baseline: pi-mono-java@c0e2915230e73f626a5ede99f0fc3b3412bbff0b.
+' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/skill/Skill.java MAX_DESCRIPTION_LENGTH, MAX_FILE_BYTES.
+' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/skill/SkillPatterns.java MAX_NAME_LENGTH, ID_PATTERN, NAME_PATTERN.
+' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/skill/SkillLoader.java SKILL_FILENAME.
+' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtime/AgentRuntimeManager.java SKILL_FILE, SKILL_MANIFEST_FILE.
+' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/service/command/SkillCommandSource.java COMMAND_PREFIX, SKILL_MARKDOWN_FILE.
+' Shared constant baseline: ee3fdb4893228045f06b9b1d1b3b3bb505812c73.
+' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/skill/SkillConstants.java.
+' Target owner: modules/common/src/main/java/com/campusclaw/common/constant/ClawConstants.java Skill.
+' Architecture change: ClawConstants.Skill owns patterns, shared limits, directory and file names, and command prefix; Skill carries data only.
+' Target product constraint: remove invalid-name compatibility; ClawConstants.Skill owns NAME_REGEX, NAME_PATTERN and isValidName.
+' Design reason: one accepted name set prevents inconsistent loading and discovery without renaming resource identities.
+' Alignment baseline: pi-mono-java@7b3769a5eabe2d131af3023631d7ad24e6d9a9e1.
+' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/skill/SkillLoader.java parseSkillFile.
+' Observed behavior: the alignment baseline still coerces names and falls back to the parent directory.
+' Confirmed target: pi-mono-java-design@fd8604956632c880264434791465d1f59917038d Skill command section 3.
+' Java divergence: reject invalid raw names; pi@4af9d21d packages/coding-agent/src/core/skills.ts loadSkillFromFile warns and falls back.
+skinparam shadowing false
+skinparam componentStyle rectangle
+left to right direction
+component AgentRuntimeManager as Runtime
+component RuntimeAgentPromptLoader as Prompt
+component SkillLoader as Loader
+component SkillCommandSource as Commands
+component "ClawConstants.Skill\n(common module)" as Constants
+component MateServiceClient as MetadataClient
+component HttpMateToolClient as ToolClient
+Runtime --> Loader : publish and cache reload
+Prompt --> Loader : load prompt skills
+Loader --> Constants : name validation, description limit, file name
+Commands --> Constants : name validation, paths, command prefix
+Runtime --> Constants : ID_PATTERN, file limit, paths
+Prompt --> Constants : file limit, paths
+MetadataClient --> Constants : ID_PATTERN
+ToolClient --> Constants : ID_PATTERN
+note bottom of Constants
+ID: skill- followed by 32 hex characters.
+Name: 1 to 64 ASCII characters.
+Lowercase letters and digits.
+Single hyphens separate nonempty groups.
+No leading, trailing or repeated hyphens.
+Description: at most 1024 characters.
+File size: at most 1 MiB.
+Directory and files: skills, SKILL.md, skill.json.
+Command prefix: skill:
+end note
+note bottom of Runtime
+Reject invalid publication.
+Preserve the last valid directory on refresh failure.
+Reject invalid cache and refetch on prepare.
+end note
+note bottom of Prompt
+Invalid skills are omitted from the prompt.
+end note
+note top of Loader
+Require an explicit nonempty String.
+Validate with the shared strict name rule.
+Match the directory name exactly.
+No fallback, coercion, trim, or rename.
+Single load fails; bulk scan skips invalid files.
+end note
+note bottom of Commands
+Invalid names produce no command.
+end note
+@enduml

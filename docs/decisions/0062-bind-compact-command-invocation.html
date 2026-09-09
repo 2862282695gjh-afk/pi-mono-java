@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>ADR-0062：Compact 请求能力与精确中断</title>
+  <style>
+    body{margin:0;font:16px/1.75 system-ui,sans-serif;color:#24292f;background:#f6f8fa}
+    main{max-width:980px;margin:32px auto;padding:32px;background:white;border:1px solid #d0d7de;border-radius:12px}
+    h1,h2{line-height:1.35}h2{margin-top:28px}a{color:#0969da}code{overflow-wrap:anywhere;font-size:.9em}
+    li{margin:8px 0}@media(max-width:600px){main{margin:0;padding:20px;border:0;border-radius:0}h1{font-size:26px}ul{padding-left:22px}}
+  </style>
+</head>
+<body><main>
+  <h1>ADR-0062：Compact 请求能力与精确中断</h1>
+  <p>Status：Accepted · Date：2026-09-07 · Version：1.0.0</p>
+  <p>分析基线 <code>pi-mono-java@ca2600da15dfaf8dda1f16b9d2f3d130b5d9ace5</code>；
+  只读设计 <code>pi-mono-java-design@88f4df16bc24bbfcd28e1ec374feb2de0db8be3b</code> Builtin 2.9.0 §7/8。</p>
+  <h2>Context</h2>
+  <p>RuntimeCompactionService 已具备空历史观察、共享锁和容量、数据库准入及独立终态，
+  但 CommandExecutionContext 没有本次 Runtime 调用能力。直接在单例服务保存 Header 或依赖线程上下文会越过请求作用域，
+  仅按 sessionId 中断则可能误伤后继执行。需要最小内部适配，不在本切片设计新的公开控制协议。</p>
+  <h2>考虑过的选项</h2>
+  <ul>
+    <li>Context 直接携带 MateCredentials：调用简单，但 Core 暴露凭据且易被 Catalog/异步回调延长保留；不采用。</li>
+    <li>ThreadLocal 或 Spring 单例缓存本次凭据：减少参数，却带来清理、异步转移和跨请求隔离问题；不采用。</li>
+    <li>请求级一次性能力，结果观察和显式中断分离：增加少量对象，但凭据可及时交接且生命周期明确；采用。</li>
+  </ul>
+  <h2>Decision</h2>
+  <ul>
+    <li>Contributor 绑定窄服务 Handler 与 idle 预览准入；参数及最终可变状态仍分别在 Service 和 Runtime 锁内检查。</li>
+    <li>Context 仅携带 CommandRuntimeInvocation；CompactionCommandInvocation 在首次调用前清除本地凭据引用，未使用时由 close 清除。</li>
+    <li>请求监视器不跨 Runtime 调用持有；close 不取消已接受执行，避免断线传播与锁顺序反转。</li>
+    <li>RuntimeCompactionCall 提供隔离结果及本次 Execution 中断能力；操作锁内同时核验注册 Holder 和 active Execution，终态解除目标。</li>
+    <li>内部结果复用 RuntimeCompactionResultDTO，公开 VO 仅投影 compacted，不能泄漏 sourceEventSeq；本 PR 不发布 HTTP。</li>
+    <li>异步/同步错误清除敏感 cause，并保持允许的稳定错误码。日志不含 Header、参数、第三方异常正文或堆栈。</li>
+  </ul>
+  <h2>Consequences</h2>
+  <ul>
+    <li>正面：接受后的执行不依赖请求存活；旧中断能力不影响下一执行；原 compact API 保持兼容。</li>
+    <li>代价：应用入口必须使用一次性作用域并保证 close；增加一个窄能力接口与内部调用句柄。</li>
+    <li>后续：共享 Command 应用/HTTP 必须复用业务 VO；公开 Events 中断身份和响应仍由其独立契约确定。</li>
+    <li>范围：不加队列、升级 SQL、Maven 依赖、通用命令日志或设计仓修改；Skill 两项未决不影响本切片。</li>
+  </ul>
+  <h2>验证</h2>
+  <p>参数/准入、一次性凭据、结果取消隔离、同步异步错误、Spring 装配、精确中断、操作锁竞争和真实数据库链路均有定向测试。
+  最终完整 verify 通过 1715 项常规测试，另有 57 项真实 openGauss 测试通过；测试质量为 0 errors / 0 warnings，
+  14 对模块与镜像文件一致。PlantUML 生成、ASCII/XML/同步性、链接及宽窄屏渲染检查通过。
+  公司 NativeParent 无法解析，公司侧编译未验证；完整 HTTP 与跨 JVM 公共路由验收不在本切片。</p>
+  <h2>Related</h2>
+  <ul>
+    <li><a href="../designs/builtin-command-compact.md">Compact 实现说明与源码证据</a></li>
+    <li><a href="../designs/builtin-command-compact/diagram.puml#L1">PlantUML 源码</a></li>
+    <li><a href="0059-connect-compaction-runtime-admission.html">ADR-0059：Runtime 接入</a></li>
+    <li><a href="0057-isolate-compact-runtime-lifecycle.html">ADR-0057：独立生命周期</a></li>
+  </ul>
+  <h2>版本历史</h2>
+  <p>1.0.0 · 2026-09-07：确定请求能力与精确内部中断，不变更公开协议。</p>
+</main></body>
+</html>

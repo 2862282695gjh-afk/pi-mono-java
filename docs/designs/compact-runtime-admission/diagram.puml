@@ -1,0 +1,55 @@
+@startuml compact_database_admission
+' Java baseline: 14769188538eaa2f1df1e25ef2fef40d87ceafed
+' Source: modules/coding-agent-cli/src/main/resources/mapper/session/RuntimeSessionMapper.xml
+' Symbols: lockSessionForUpdate, listCurrentBranchEntries, markSessionRunning
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/persistence/MyBatisRuntimeSessionRepository.java
+' Observed behavior: user events and configuration writes serialize on the Session row.
+' Java target added here: observeCompaction and acceptCompaction; not existing pi behavior.
+' Design reason: prepare outside the database lock, then reject stale history or configuration.
+' pi baseline: 4af9d21d3b4d664e4a29fcabfec85171077248e3
+' Source: packages/coding-agent/src/core/agent-session.ts:compact, abortCompaction
+' Java divergence: idle-only database admission; no synthetic command lifecycle entries.
+title Compact database admission - slice 6b2a
+hide footbox
+participant "Future Runtime Service\n(6b2b, not delivered here)" as Caller
+participant "Repository" as Repo
+database "Session + current branch" as DB
+Caller -> Repo : observeCompaction(sessionId)
+group Observation transaction
+  Repo -> DB : SELECT Session FOR UPDATE
+  alt missing or running
+    DB --> Repo : absent or Session only
+  else idle
+    loop pages of 500 while full
+      Repo -> DB : read current branch after last sequence
+      DB --> Repo : ordered entries
+    end
+  end
+end
+Repo --> Caller : snapshot (no writes)
+note over Caller
+Future work: reject busy, detect empty context,
+prepare Agent and execution resources.
+Empty observation alone is not command completion.
+end note
+Caller -> Repo : acceptCompaction(observedSession, time)
+group Acceptance transaction
+  Repo -> DB : SELECT Session FOR UPDATE
+  alt missing, busy, or changed leaf/model/thinking
+    Repo --> Caller : NOT_FOUND / BUSY (no writes)
+  else same context (Name may differ)
+    Repo -> DB : mark running; current version + 1
+    note right of DB
+    Preserve Name and active leaf.
+    No Entry, Usage, sequence, or stats writes.
+    Require exactly one affected row.
+    Roll back on transaction failure.
+    end note
+    Repo --> Caller : ACCEPTED after commit
+  end
+end
+note over Caller
+Future work: connect slice 6b1 and own cleanup.
+No public Command or HTTP route in this slice.
+end note
+@enduml

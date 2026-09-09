@@ -18,8 +18,8 @@ import com.campusclaw.codingagent.common.dto.AgentInfo;
 import com.campusclaw.codingagent.common.dto.RequestHeaderInfo;
 import com.campusclaw.codingagent.common.dto.SkillInfoResult;
 import com.campusclaw.codingagent.common.dto.ToolInfo;
-import com.campusclaw.codingagent.common.identifier.ResourceIdentifierPatterns;
 import com.campusclaw.codingagent.common.util.MateRestUtil;
+import com.campusclaw.common.constant.ClawConstants;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -94,7 +94,7 @@ public class HttpMateToolClient implements MateToolClient {
 
     @Override
     public List<MateToolMeta> listAgentTools(String agentId) {
-        requireScopedId(agentId, ResourceIdentifierPatterns.AGENT_ID_PATTERN, "agent");
+        requireScopedId(agentId, ClawConstants.Agent.ID_PATTERN, "agent");
         try {
             return queryOrderedToolMeta(queryToolIdsByAgentId(agentId));
         } catch (Exception exception) {
@@ -105,7 +105,7 @@ public class HttpMateToolClient implements MateToolClient {
 
     @Override
     public List<MateToolMeta> listSkillTools(String skillId) {
-        requireScopedId(skillId, ResourceIdentifierPatterns.SKILL_ID_PATTERN, "skill");
+        requireScopedId(skillId, ClawConstants.Skill.ID_PATTERN, "skill");
         try {
             return queryOrderedToolMeta(queryToolIdsBySkillId(skillId));
         } catch (Exception exception) {
@@ -223,10 +223,7 @@ public class HttpMateToolClient implements MateToolClient {
 
     private static void requireToolIds(List<String> toolIds) {
         for (String toolId : toolIds) {
-            if (toolId == null
-                    || !ResourceIdentifierPatterns.TOOL_ID_PATTERN
-                            .matcher(toolId)
-                            .matches()) {
+            if (toolId == null || !ClawConstants.Tool.ID_PATTERN.matcher(toolId).matches()) {
                 throw new IllegalArgumentException("Invalid tool id: " + toolId);
             }
         }
@@ -290,7 +287,7 @@ public class HttpMateToolClient implements MateToolClient {
                     info.getInputSchema(),
                     info.getOutputSchema(),
                     Boolean.TRUE.equals(info.getIsConcurrencySafe()),
-                    info.getPermission() != null ? info.getPermission() : "allow"));
+                    info.getPermission() != null ? info.getPermission() : ClawConstants.Mate.TOOL_PERMISSION_ALLOW));
         }
         return metas;
     }
@@ -311,8 +308,7 @@ public class HttpMateToolClient implements MateToolClient {
      * @throws IllegalArgumentException 工具标识不满足路径段约束时抛出
      */
     protected ToolResult invokeTool(String toolId, Map<String, Object> args, MateCredentials credentials) {
-        if (toolId == null
-                || !ResourceIdentifierPatterns.TOOL_ID_PATTERN.matcher(toolId).matches()) {
+        if (toolId == null || !ClawConstants.Tool.ID_PATTERN.matcher(toolId).matches()) {
             throw new IllegalArgumentException("Invalid tool id for path segment");
         }
         if (credentials == null || !credentials.isComplete()) {
@@ -334,22 +330,32 @@ public class HttpMateToolClient implements MateToolClient {
             String body = mapper.writeValueAsString(Map.of("arguments", args != null ? args : Map.of()));
             String path = expandPathTemplate(toolExecutePathTemplate, toolId);
             String raw = mateRestUtil.executePostRawRequest(campusMateBaseUrl, path, headerInfo, body);
-            JsonNode root = mapper.readTree(raw);
-            String resCode = root.path("resCode").asText("");
-            if (!"0".equals(resCode)) {
-                return new ToolResult(
-                        "tool execute failed: resCode=" + resCode + " resMsg="
-                                + root.path("resMsg").asText(""),
-                        null,
-                        true);
-            }
-            JsonNode resultNode = root.path("result");
-            String content = resultNode.isMissingNode() || resultNode.isNull() ? "" : resultNode.toString();
-            return new ToolResult(content, null, false);
+            return toToolResult(mapper.readTree(raw));
         } catch (Exception e) {
             log.error("invokeTool failed: toolId={}", toolId, e);
             return new ToolResult("Mate tool execution request failed", null, true);
         }
+    }
+
+    private static ToolResult toToolResult(JsonNode root) {
+        String resCode = root.path("resCode").asText("");
+        if (!"0".equals(resCode)) {
+            return new ToolResult(
+                    "tool execute failed: resCode=" + resCode + " resMsg="
+                            + root.path("resMsg").asText(""),
+                    null,
+                    true);
+        }
+        JsonNode resultNode = root.path("result");
+        String content = toolResultContent(resultNode);
+        return new ToolResult(content, null, false);
+    }
+
+    private static String toolResultContent(JsonNode resultNode) {
+        if (resultNode.isMissingNode() || resultNode.isNull()) {
+            return "";
+        }
+        return resultNode.isTextual() ? resultNode.asText() : resultNode.toString();
     }
 
     // 稳定错误码异常原样透出供公开边界映射;其余异常包装为通用失败。

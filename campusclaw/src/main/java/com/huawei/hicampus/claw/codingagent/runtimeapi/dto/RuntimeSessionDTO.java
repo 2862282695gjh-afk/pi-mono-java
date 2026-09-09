@@ -20,11 +20,15 @@ public class RuntimeSessionDTO {
 
     private String agentId;
 
+    private String displayName;
+
     private String modelId;
 
     private String state;
 
     private boolean thinking;
+
+    private RuntimeLifetimeUsageDTO lifetimeUsage = new RuntimeLifetimeUsageDTO();
 
     private long resourceVersion;
 

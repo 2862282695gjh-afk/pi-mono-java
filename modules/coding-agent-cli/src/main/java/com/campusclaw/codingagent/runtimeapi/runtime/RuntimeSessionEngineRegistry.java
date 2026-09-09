@@ -4,17 +4,22 @@
 
 package com.campusclaw.codingagent.runtimeapi.runtime;
 
+import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.Consumer;
+import java.util.function.Supplier;
 
 import com.campusclaw.ai.types.Message;
 import com.campusclaw.ai.types.Model;
 import com.campusclaw.ai.types.ThinkingLevel;
 import com.campusclaw.codingagent.common.client.mate.MateCredentials;
+import com.campusclaw.codingagent.runtime.PreparedAgentRuntime;
 import com.campusclaw.codingagent.runtimeapi.agent.AgentDirectorySnapshotDTO;
+import com.campusclaw.codingagent.runtimeapi.dto.ExecutionTargetDTO;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
 import com.campusclaw.codingagent.session.AgentSessionFactory;
@@ -73,10 +78,35 @@ public class RuntimeSessionEngineRegistry {
             List<Message> messages,
             RuntimeActiveExecution execution,
             MateCredentials credentials) {
+        return register(sessionId, snapshot, model, thinking, messages, execution, credentials, null);
+    }
+
+    /**
+     * 在本次实际准备的 Agent 快照上执行入口准入，再注册活动执行。
+     *
+     * @param sessionId Session 标识
+     * @param snapshot 模型解析时的目录快照
+     * @param model 已解析的模型
+     * @param thinking 是否启用 thinking
+     * @param messages 已恢复的历史
+     * @param execution 本次执行状态
+     * @param credentials 本次 Mate 凭据
+     * @param runtimeValidator 实际 Agent 快照的入口准入，可为空
+     * @return 已注册的活动句柄
+     */
+    public RuntimeSessionHolder register(
+            String sessionId,
+            AgentDirectorySnapshotDTO snapshot,
+            Model model,
+            boolean thinking,
+            List<Message> messages,
+            RuntimeActiveExecution execution,
+            MateCredentials credentials,
+            Consumer<PreparedAgentRuntime> runtimeValidator) {
         acquireCapacity();
         try {
-            RuntimeSessionHolder holder =
-                    createHolder(sessionId, snapshot, model, thinking, messages, execution, credentials);
+            RuntimeSessionHolder holder = createHolder(
+                    sessionId, snapshot, model, thinking, messages, execution, credentials, runtimeValidator);
             if (sessions.putIfAbsent(sessionId, holder) != null) {
                 holder.closeSession();
                 throw new RuntimeApiException(RuntimeErrorCode.SESSION_BUSY);
@@ -92,20 +122,48 @@ public class RuntimeSessionEngineRegistry {
         return Optional.ofNullable(sessions.get(sessionId));
     }
 
+    public List<ExecutionTargetDTO> activeTargets(int limit) {
+        if (limit <= 0) {
+            return List.of();
+        }
+        return sessions.values().stream()
+                .flatMap(holder -> holder.activeExecution().stream())
+                .flatMap(execution -> execution.assignedTarget().stream())
+                .sorted(Comparator.comparing(ExecutionTargetDTO::sessionId)
+                        .thenComparing(ExecutionTargetDTO::executionId)
+                        .thenComparing(ExecutionTargetDTO::segmentId))
+                .limit(limit)
+                .toList();
+    }
+
     public void complete(RuntimeSessionHolder holder, RuntimeActiveExecution execution) {
-        holder.complete(execution);
+        if (!holder.complete(execution)) {
+            return;
+        }
         if (sessions.remove(holder.sessionId(), holder)) {
-            holder.closeSession();
-            capacity.release();
+            try {
+                holder.closeSession();
+            } finally {
+                capacity.release();
+            }
         }
     }
 
-    public void lockOperation(String sessionId) {
-        operationLock(sessionId).lock();
+    public <T> T withOperationLock(String sessionId, Supplier<T> operation) {
+        ReentrantLock lock = operationLock(sessionId);
+        lock.lock();
+        try {
+            return operation.get();
+        } finally {
+            lock.unlock();
+        }
     }
 
-    public void unlockOperation(String sessionId) {
-        operationLock(sessionId).unlock();
+    public void withOperationLock(String sessionId, Runnable operation) {
+        withOperationLock(sessionId, () -> {
+            operation.run();
+            return null;
+        });
     }
 
     private RuntimeSessionHolder createHolder(
@@ -115,18 +173,37 @@ public class RuntimeSessionEngineRegistry {
             boolean thinking,
             List<Message> messages,
             RuntimeActiveExecution execution,
-            MateCredentials credentials) {
-        ManagedAgentSession session = createSession(snapshot, model, thinking, credentials);
-        session.agent().replaceMessages(messages);
-        RuntimeSessionHolder holder = new RuntimeSessionHolder(sessionId, snapshot, session, thinking);
-        if (!holder.begin(execution)) {
-            throw new IllegalStateException("new execution holder is already active");
+            MateCredentials credentials,
+            Consumer<PreparedAgentRuntime> runtimeValidator) {
+        ManagedAgentSession session =
+                createSession(snapshot, model, thinking, execution, credentials, runtimeValidator);
+        try {
+            execution.bindToolPermissions(RuntimeToolPermissionPolicy.from(session.runtime()));
+            session.agent().replaceMessages(messages);
+            RuntimeSessionHolder holder = new RuntimeSessionHolder(sessionId, snapshot, session, thinking);
+            if (!holder.begin(execution)) {
+                throw new IllegalStateException("new execution holder is already active");
+            }
+            return holder;
+        } catch (RuntimeException error) {
+            try {
+                session.close();
+            } catch (RuntimeException closeError) {
+                if (closeError != error) {
+                    error.addSuppressed(closeError);
+                }
+            }
+            throw error;
         }
-        return holder;
     }
 
     private ManagedAgentSession createSession(
-            AgentDirectorySnapshotDTO snapshot, Model model, boolean thinking, MateCredentials credentials) {
+            AgentDirectorySnapshotDTO snapshot,
+            Model model,
+            boolean thinking,
+            RuntimeActiveExecution execution,
+            MateCredentials credentials,
+            Consumer<PreparedAgentRuntime> runtimeValidator) {
         ThinkingLevel level = thinking ? ThinkingLevel.MEDIUM : ThinkingLevel.OFF;
         var request = new ManagedAgentSessionRequest(
                 snapshot.agentId(),
@@ -139,8 +216,8 @@ public class RuntimeSessionEngineRegistry {
                         runtime,
                         SubagentExecutionContext.root(runtime.agentId(), resolvedModel, level, credentials),
                         subagentExecutionService),
-                null,
-                List.of(),
+                runtimeValidator,
+                List.of(execution::beforeToolCall),
                 List.of());
         return sessionFactory.create(request);
     }

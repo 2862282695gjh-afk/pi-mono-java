@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ADR-0054：Thinking 锁内模型能力与配置事务</title>
+  <style>
+    :root { color-scheme: light; font-family: Inter, "PingFang SC", sans-serif; color: #25272a; background: #f2f5f7; }
+    body { margin: 0; } main { width: min(920px, calc(100% - 40px)); margin: 40px auto; padding: 40px; box-sizing: border-box; background: #fff; border: 1px solid #d7dde2; border-radius: 16px; }
+    h1 { margin-top: 0; font-size: 30px; } h2 { margin-top: 30px; font-size: 20px; }
+    p, li { line-height: 1.75; } code { overflow-wrap: anywhere; background: #edf2f5; } a { color: #1769aa; }
+    @media (max-width: 640px) { main { width: 100%; margin: 0; padding: 24px 18px; border: 0; border-radius: 0; } }
+  </style>
+</head>
+<body><main>
+  <h1>ADR-0054：Thinking 锁内模型能力与配置事务</h1>
+  <p>Status：Accepted（锁内能力与事务）；Superseded（Thinking 子集与旧响应方向）<br>Date：2026-09-07 · Version：1.1.0</p>
+  <p>响应与结果通道由 <a href="0060-builtin-authoritative-session-result.html">ADR-0060</a> 替代：
+  查询、修改和同值均保留完整 Session 与 ETag；sourceEventSeq 仅供内部使用。
+  以下原切片类型及测试数字保留历史证据，不作为新响应方向的验收结论。</p>
+  <p>Java 基线：<code>7fb2737f1220b92e4cea130505467905a8616daf</code><br>
+  本次实现：<code>de3716d4b6404d34df3b15e0604c60d6df582ddd</code><br>
+  已确认设计：<code>pi-mono-java-design@41304c1f3df0e8eca53141312724d7a684a1d07f</code>，
+  <code>04-命令与技能/01-内置命令/README.md</code> 第 6 节与 Runtime 操作 12/13。设计仓只读。</p>
+  <h2>Context</h2>
+  <p>既有 Thinking PUT 在锁外检查模型能力并生成事件，由锁内相同版本保护。Command 不提供版本，
+  因此仅把 expectedVersion 设为可空会使锁前通过的能力检查在并发 Model 提交后失效，或者记录过时的 previousThinking。</p>
+  <p>Java 源根：<code>modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/</code>。
+  基线证据：<code>session/RuntimeSessionConfigurationService.java:changeThinking/requireThinkingSupported</code>、
+  <code>persistence/MyBatisRuntimeSessionRepository.java:updateThinking</code>。
+  <code>model/MateRuntimeModelManager.java:resolveModel</code> 和 <code>model/CatalogRuntimeModelManager.java:resolveModel</code>
+  当前都读取本地目录/配置，无远端请求。</p>
+  <h2>选项与取舍</h2>
+  <ul>
+    <li>锁前验证后直接无版本写入：简单，但能力和旧值可能失效，不采用。</li>
+    <li>复制 Command 专用事务或不断乐观重试：增加第二套配置语义或重试路径，不采用。</li>
+    <li>共享 Repository，分开本地 admission 与 entryFactory：参数增加，但能力和事件均消费同一锁内状态，采用。</li>
+  </ul>
+  <h2>Decision 与理由</h2>
+  <ul>
+    <li><code>SessionThinkingConfigurationService</code> 负责精确 on/off、查询、能力检查与领域事件构造；
+    Contributor 只绑定元数据、独立准入和 Handler，无中央名称 switch。</li>
+    <li>复用既有行锁事务。锁内先存在/可选版本/idle，再本地能力、同值、事件工厂。
+    同值仍检查开启能力，但不调用工厂、不分配 ID/序号、不升版本。</li>
+    <li>Agent 目录快照只在锁外取得。开启保留预检查，锁内用最新 modelId 复核；
+    resolveModel 明确只读本地配置，不刷新 Agent、不远端调用、不取请求凭据。关闭与查询不依赖能力服务。</li>
+    <li>既有 PUT 保留请求 VO、强 If-Match、428/412、新 ETag 及原错误转换；Model/运行前校准不改契约。</li>
+    <li>实际变化追加一条 session.thinking.changed；sourceEventSeq 来自实际 Entry 序号，查询/同值为 null。
+    DTO 只传数据，公共响应 VO 和共享 HTTP 留待后续切片。</li>
+  </ul>
+  <p>pi <code>4af9d21d3b4d664e4a29fcabfec85171077248e3</code>：
+  <code>packages/coding-agent/src/core/agent-session.ts:setThinkingLevel</code> 按能力 clamp，实际变化才追加；
+  <code>packages/coding-agent/src/core/session-manager.ts:appendThinkingLevelChange</code> 以当前 leaf 为父节点。
+  Java boolean、idle、能力不足时报错是产品约束；数据库锁内复核与内部领域序号是架构差异，不是 pi 现有 HTTP 行为。</p>
+  <h2>Consequences</h2>
+  <ul>
+    <li>正面：Model/Thinking 并发遵循行锁提交次序，不支持模型不能被开启 Thinking；同值无持久化副作用。</li>
+    <li>代价：开启进行预检查和锁内检查，本地 Model Manager 必须保持短小且不能发展成远端调用。</li>
+    <li>范围：不改设计仓、不加升级 SQL、不发布 Command HTTP；Builtin/Skill 共享入口仍需统一验收。
+    本 PR 合并后才推进 Compact Runtime，不同时打开下一待审切片。</li>
+  </ul>
+  <h2>验证与边界</h2>
+  <p>27 项 Thinking 组合测试、1552 项模块/依赖测试及完整 mvnw verify 通过；
+  24 项真实 openGauss Repository IT 通过，覆盖相同命令竞争、模型先提交后的能力拒绝、事务/序号回滚及重启查询。
+  数据库并发为单 JVM 多连接，不冒充最终跨 JVM HTTP 验收。质量脚本原路径缺失，归档副本 0 errors/20 项旧命名 warnings。</p>
+  <p>模块新增 708 行、镜像后 1418/2000 行（含最新 main 的镜像声明补齐 2 行）。
+  公司 NativeParent 无法解析，镜像源同步完成但公司镜像编译未验证。</p>
+  <h2>Related</h2>
+  <ul>
+    <li><a href="../designs/builtin-command-thinking.md">Thinking 实现说明与完整证据</a></li>
+    <li><a href="../designs/builtin-command-thinking/diagram.puml#L1">Thinking PlantUML 源码</a></li>
+    <li><a href="0053-builtin-model-locked-configuration.html">Model 共享事务决策</a></li>
+    <li><a href="0048-limit-added-code-lines-per-pull-request.html">PR 新增行数门禁</a></li>
+  </ul>
+  <h2>版本历史</h2>
+  <p>1.1.0 · 2026-09-07：标注完整 Session 结果对原子集的替代；能力、事务及内部领域序号保持。</p>
+  <p>1.0.0 · 2026-09-07：记录 Thinking 本地准入、锁内事件及可选版本边界。</p>
+</main></body>
+</html>

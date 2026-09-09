@@ -1,0 +1,121 @@
+@startuml runtime_execution_control_store
+title Durable Runtime Execution Control Store
+' Observed Java source baseline: pi-mono-java fd556dce3cfa12e5e834b6e9b8f835f10e7d67c8
+' Store implementation commit: 8ec383dd0ee6a5a8fe7e72b9e97bba8f71c8f8da
+' Application transaction implementation: 92562f62 through 8e775f1c
+' Tool confirmation foundation implementation: aa687e98
+' Recovery and segment append implementation: 9ad3553a through 2ef30225
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/persistence/RuntimeExecutionPersistenceService.java#appendEntry/appendEntryWithUsage/restoreCommittedTerminal
+' Observed source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/runtime/RuntimeActiveExecution.java#runId
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/persistence/RuntimeExecutionPersistenceService.java
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/persistence/RuntimeExecutionControlRepository.java
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/persistence/MyBatisRuntimeExecutionControlRepository.java
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/persistence/RuntimeSessionRepository.java
+' Source: modules/coding-agent-cli/src/main/resources/mapper/session/RuntimeExecutionControlMapper.xml
+' Source: modules/coding-agent-cli/src/main/resources/db/gaussdb/install/session_schema.sql
+' Pi source baseline: pi 4af9d21d3b4d664e4a29fcabfec85171077248e3
+' Pi source: packages/agent/src/agent-loop.ts#runAgentLoop and #prepareToolCall
+' Observed behavior: Java kept the active execution identity only in one process.
+' Design reason: one Spring transaction binds accepted events and terminal events to an exact execution segment.
+' Java divergence: durable cross-instance control identity is a CampusClaw architecture change.
+class RuntimeExecutionPersistenceService {
+  acceptMessage(...)
+  acceptInterrupt(...)
+  markToolConfirming(...)
+  acceptToolConfirmation(...)
+  commitTerminal(...)
+  appendEntry(target, entry, events)
+  appendEntryWithUsage(target, entry, record, usage, events)
+}
+
+class ExecutionTargetDTO {
+  sessionId
+  executionId
+  rootEventId
+  segmentId
+}
+
+interface RuntimeExecutionControlRepository {
+  register(target, triggerEventSeq, acceptedAt)
+  requestInterrupt(sessionId, targetEventId, eventId, acceptedAt)
+  markConfirming(target, toolCallId, appender, terminalAt)
+  acceptConfirmation(sessionId, toolCallId, eventId, segmentId, result, appender, acceptedAt)
+  claimConfirmation(confirmingTarget, toolCallId, claimedAt)
+  acknowledgeConfirmation(decision, completedAt)
+  markTerminal(target, eventId, appender, reason, terminalAt)
+  appendToSegment(target, appender)
+  findCommittedTerminal(target, eventId, reason)
+}
+
+interface RuntimeSessionRepository {
+  acceptUserEvent(sessionId, entry, event, acceptedAt)
+  appendEntry(entry, events)
+  finishExecution(sessionId, terminalAt)
+}
+
+class MyBatisRuntimeExecutionControlRepository
+class RuntimeExecutionControlMapper
+
+entity "t_session_executions" as t_session_executions {
+  session_id
+  execution_id
+  root_event_id
+  state
+  current_segment_id
+}
+
+entity "t_session_execution_segments" as t_session_execution_segments {
+  segment_id
+  segment_ordinal
+  trigger_event_id
+  state
+  terminal_event_id
+}
+
+entity "t_session_execution_segment_events" as t_session_execution_segment_events {
+  segment_id
+  event_id
+  event_seq
+}
+
+entity "t_session_tool_confirmations" as t_session_tool_confirmations {
+  confirmation_event_id
+  previous_segment_id
+  segment_id
+  tool_call_id
+  result
+  state
+}
+
+entity "t_sessions" as t_sessions
+entity "t_session_entries" as t_session_entries
+entity "t_session_events" as t_session_events
+entity "t_session_event_projection" as t_session_event_projection
+
+RuntimeExecutionPersistenceService --> ExecutionTargetDTO
+RuntimeExecutionPersistenceService --> RuntimeExecutionControlRepository
+RuntimeExecutionPersistenceService --> RuntimeSessionRepository
+RuntimeExecutionControlRepository <|.. MyBatisRuntimeExecutionControlRepository
+MyBatisRuntimeExecutionControlRepository --> RuntimeExecutionControlMapper
+RuntimeExecutionControlMapper --> t_session_executions
+RuntimeExecutionControlMapper --> t_session_execution_segments
+RuntimeExecutionControlMapper --> t_session_execution_segment_events
+RuntimeExecutionControlMapper --> t_session_tool_confirmations
+RuntimeSessionRepository --> t_sessions
+RuntimeSessionRepository --> t_session_entries
+RuntimeSessionRepository --> t_session_events
+RuntimeSessionRepository --> t_session_event_projection
+t_session_executions ||--|{ t_session_execution_segments
+t_session_execution_segments ||--o{ t_session_execution_segment_events
+t_session_execution_segments ||--o| t_session_tool_confirmations
+t_session_events ||--o| t_session_execution_segment_events
+
+note bottom of RuntimeExecutionPersistenceService
+  One outer Spring transaction
+  locks Session and exact execution before terminal append.
+  Interrupt receipts are not linked to the message segment.
+  A committed stop prevents confirmation accept or claim.
+  Segment append requires same Session and current OPEN segment.
+  Exact terminal retries restore original data without new writes.
+end note
+@enduml

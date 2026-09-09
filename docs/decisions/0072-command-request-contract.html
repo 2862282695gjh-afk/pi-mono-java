@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ADR-0072：共享命令请求的严格联合类型</title>
+  <style>
+    :root { font-family: Inter, "PingFang SC", sans-serif; color: #25272a; background: #f2f5f7; }
+    body { margin: 0; } main { max-width: 920px; margin: 32px auto; padding: 32px; background: white; box-sizing: border-box; }
+    p, li { line-height: 1.75; } code { overflow-wrap: anywhere; } a { color: #1769aa; }
+    @media (max-width: 640px) { main { margin: 0; padding: 24px 18px; } }
+  </style>
+</head>
+<body><main>
+  <h1>ADR-0072：共享命令请求的严格联合类型</h1>
+  <p>Status：Accepted · Date：2026-09-08 · Version：1.0.0</p>
+  <h2>Context</h2>
+  <p>分析基线 <code>8d61c767d09d47ef6c8d76c05535fcbb58c48373</code> 已有 Builtin 执行应用，
+  但其请求不接收附件，不可直接覆盖 Skill。设计仓 <code>88f4df16bc24bbfcd28e1ec374feb2de0db8be3b</code>
+  保留的 Skill 联合请求待评审标记，由用户 2026-09-08 对 v1.2.1 建议的“建议执行”回复补充确认。</p>
+  <p>用户确认同一 POST 以 name 区分裸名 Builtin 和 skill: 前缀 Skill，不增加 kind/message 别名。
+  Builtin 返回普通业务 JSON；Skill 使用普通消息 SSE，实际展开文本进入普通消息保存及公开历史。
+  本片只完成请求解析，不把用户确认误述为完整服务已经上线，也不修改独立设计仓。</p>
+  <p>源码根为 <code>modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/</code>。
+  <code>runtimeapi/vo/BuiltinCommandRequestVO.java#readName</code> 和
+  <code>runtimeapi/vo/UserEventRequestVO.java#readFileIds</code> 已提供严格 JSON 字段读取方式；
+  <code>runtimeapi/service/command/CommandExecutionService.java#normalize</code> 已拥有 Builtin 默认值处理。</p>
+  <p>pi <code>4af9d21d3b4d664e4a29fcabfec85171077248e3</code> 的
+  <code>packages/coding-agent/src/core/agent-session.ts#_expandSkillCommand</code> 解析本地 Slash 文本并允许回退。
+  Java 的联合 JSON、严格拒绝与无普通消息回退是产品和安全边界，不是 pi 已有 HTTP 行为。</p>
+  <h2>Decision 与选项</h2>
+  <ul>
+    <li><strong>采用封闭联合请求：</strong>CommandRequestVO 只有 Builtin/Skill 两种子类型。
+    自定义解析器按名称前缀选择，标准 Jakarta 注解检查字段，子类型显式关闭继承的自定义解析。
+    优点是附件只能出现在 Skill；代价是增加一个很小的 JSON 适配器及线性大小的解析树。</li>
+    <li><strong>不采用一个宽松大 VO：</strong>字段少、写法简单，但会让 Builtin 接受未声明的附件，
+    或将字段存在性校验藏入执行服务，因此不选。</li>
+    <li><strong>不增加 kind 或按 Accept 选类别：</strong>可简化传统多态配置，但重复 name 已携带的信息，
+    会产生不一致输入；用户已确认使用名称命名空间，因此不选。</li>
+  </ul>
+  <p>裸名与 Skill 完整名从 ClawConstants.Skill 同一编译期表达式生成标准正则，
+  Skill 完整名上限为 70，不复制独立业务规则。未注册或未绑定仍由执行层判断。</p>
+  <h2>Consequences</h2>
+  <p>正面：严格未知字段与类型保护贯穿联合解析；现有 Builtin 路径不放宽。
+  负面：类型选择不等于完成业务准入，不能单凭反序列化成功执行请求。
+  后续：实际 Skill Service 统一默认、空白说明、附件防御复制与重复检查，HTTP 应用仅做 VO→DTO 适配。</p>
+  <p>共享 Controller、Header 拒绝、实际 @Valid、错误 JSON、Builtin 完成等待与 Skill SSE 分流，
+  必须在真实执行服务接通后再发布。本片不新增生产配置、路由、存储、凭据或私有 Skill 正文机制。</p>
+  <h2>Validation</h2>
+  <p>真实 Jackson/Jakarta 测试验证联合接口与直接子类绑定、非法 JSON 类型、未知字段、必填名称、
+  长度边界和原值保留；既有 Builtin 请求及执行应用测试同时回归。验证范围不是 Command HTTP 或真实 Skill 执行。</p>
+  <p>执行代码格式与静态检查、测试质量检查、镜像同步和图/链接校验；详细实际结果见实现说明。
+  公司 NativeParent 不可解析时显式披露企业编译缺口，不将普通本地测试等同企业 JAR 验证。</p>
+  <h2>Related</h2>
+  <ul>
+    <li><a href="../designs/command-request-contract/README.md">共享请求实现与验证边界</a></li>
+    <li><a href="../designs/command-request-contract/diagram.puml#L1">请求联合类型 PlantUML</a></li>
+    <li><a href="0066-connect-builtin-command-application.html">ADR-0066：既有 Builtin 执行应用</a></li>
+  </ul>
+  <h2>版本历史</h2>
+  <p>1.0.0 · 2026-09-08：落实共享命令请求联合类型，不提前发布未完成路由。</p>
+</main></body>
+</html>

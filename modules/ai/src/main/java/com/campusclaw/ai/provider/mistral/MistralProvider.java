@@ -282,9 +282,7 @@ public class MistralProvider implements ApiProvider {
         for (var acc : state.toolCallAccs.values()) {
             finalBlocks.add(acc.toToolCall());
         }
-        var cost = computeCost(model, state.usage);
-        var finalUsage = new Usage(
-                state.usage.input(), state.usage.output(), 0, 0, state.usage.input() + state.usage.output(), cost);
+        var finalUsage = finalUsage(model, state.usage);
         var finalMessage = new AssistantMessage(
                 List.copyOf(finalBlocks),
                 Api.MISTRAL_CONVERSATIONS.value(),
@@ -296,6 +294,14 @@ public class MistralProvider implements ApiProvider {
                 null,
                 System.currentTimeMillis());
         eventStream.pushDone(state.stop, finalMessage);
+    }
+
+    private Usage finalUsage(Model model, Usage usage) {
+        if (!usage.known()) {
+            return Usage.empty();
+        }
+        var cost = computeCost(model, usage);
+        return new Usage(usage.input(), usage.output(), 0, 0, usage.input() + usage.output(), cost);
     }
 
     private AssistantMessage partialFrom(MistralStreamState state, Model model) {

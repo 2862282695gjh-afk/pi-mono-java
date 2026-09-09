@@ -31,6 +31,7 @@ import com.campusclaw.codingagent.runtimeapi.vo.RuntimeSseEventVO;
 import com.campusclaw.codingagent.session.compaction.CompactionMessageSupport;
 import com.campusclaw.codingagent.session.compaction.CompactionReason;
 import com.campusclaw.codingagent.session.compaction.SessionCompactionResult;
+import com.campusclaw.common.constant.ClawConstants;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -49,9 +50,6 @@ import org.springframework.stereotype.Component;
  */
 @Component
 public class RuntimeEntryCodec {
-    // 未收录的工具错误码使用的通用公开消息键。
-    private static final String TOOL_EXECUTION_FAILED = "TOOL_EXECUTION_FAILED";
-
     private final ObjectMapper objectMapper;
 
     private final MessageSource messageSource;
@@ -70,6 +68,29 @@ public class RuntimeEntryCodec {
         ArrayNode files = payload.putArray("file_ids");
         fileIds.forEach(files::add);
         return entry(sessionId, entryId, RuntimeEventType.USER_MESSAGE.value(), createdAt, payload);
+    }
+
+    public RuntimeEntryDTO userInterruptEntry(
+            String sessionId, String entryId, String targetEventId, OffsetDateTime createdAt) {
+        ObjectNode payload = objectMapper.createObjectNode();
+        payload.put("target_event_id", targetEventId);
+        return entry(sessionId, entryId, CommittedEventType.USER_INTERRUPT.value(), createdAt, payload);
+    }
+
+    public RuntimeEntryDTO userToolConfirmationEntry(
+            String sessionId,
+            String entryId,
+            String toolCallId,
+            String result,
+            String denyMessage,
+            OffsetDateTime createdAt) {
+        ObjectNode payload = objectMapper.createObjectNode();
+        payload.put("tool_call_id", toolCallId);
+        payload.put("result", result);
+        if (denyMessage != null) {
+            payload.put("deny_message", denyMessage);
+        }
+        return entry(sessionId, entryId, CommittedEventType.USER_TOOL_CONFIRMATION.value(), createdAt, payload);
     }
 
     public RuntimeEntryDTO assistantEntry(
@@ -131,6 +152,38 @@ public class RuntimeEntryCodec {
                 RuntimeEventType.TOOL_RESULT.value(),
                 eventTime(message.timestamp(), fallbackTime),
                 payload);
+    }
+
+    public RuntimeEntryDTO toolCallEntry(
+            String sessionId,
+            String entryId,
+            String toolCallId,
+            String toolName,
+            Map<String, Object> arguments,
+            boolean requiresConfirmation,
+            OffsetDateTime createdAt) {
+        ObjectNode payload = objectMapper.createObjectNode();
+        payload.put("tool_call_id", toolCallId);
+        payload.put("tool_name", toolName);
+        payload.set("arguments", objectMapper.valueToTree(arguments));
+        payload.put("requires_confirmation", requiresConfirmation);
+        return entry(sessionId, entryId, RuntimeEventType.TOOL_EXECUTION_STARTED.value(), createdAt, payload);
+    }
+
+    public RuntimeEntryDTO sessionIdleEntry(
+            String sessionId,
+            String entryId,
+            String reason,
+            String sourceEventId,
+            String errorCode,
+            OffsetDateTime createdAt) {
+        ObjectNode payload = objectMapper.createObjectNode();
+        payload.put("reason", reason);
+        payload.put("source_event_id", sourceEventId);
+        if (errorCode != null) {
+            payload.put("error_code", errorCode);
+        }
+        return entry(sessionId, entryId, RuntimeEventType.SESSION_STATUS_IDLE.value(), createdAt, payload);
     }
 
     public RuntimeEntryDTO modelChangedEntry(
@@ -207,10 +260,6 @@ public class RuntimeEntryCodec {
         return record(sessionId, recordId, runId, timestamp, payload);
     }
 
-    public Map<String, Object> toSseData(RuntimeEntryDTO entry) {
-        return toSseData(entry, Locale.US);
-    }
-
     public Map<String, Object> toSseData(RuntimeEntryDTO entry, Locale locale) {
         LinkedHashMap<String, Object> result = new LinkedHashMap<>();
         result.put("entryId", entry.getId());
@@ -220,20 +269,10 @@ public class RuntimeEntryCodec {
         return result;
     }
 
-    public Map<String, Object> toHistoryEvent(RuntimeEntryDTO entry) {
-        return toHistoryEvent(entry, Locale.US);
-    }
-
-    public Map<String, Object> toHistoryEvent(RuntimeEntryDTO entry, Locale locale) {
-        LinkedHashMap<String, Object> result = new LinkedHashMap<>();
-        result.put("type", entry.getType());
-        result.putAll(toSseData(entry, locale));
-        return result;
-    }
-
     public long encodedSseBytes(RuntimeSseEventVO event) {
         try {
-            return objectMapper.writeValueAsBytes(event).length;
+            Object encoded = event.isDataOnly() ? event.getData() : event;
+            return objectMapper.writeValueAsBytes(encoded).length;
         } catch (Exception error) {
             throw new IllegalStateException("failed to size runtime SSE event", error);
         }
@@ -572,7 +611,8 @@ public class RuntimeEntryCodec {
         if (message != null) {
             return message;
         }
-        return messageSource.getMessage(TOOL_EXECUTION_FAILED, null, "Tool execution failed.", locale);
+        return messageSource.getMessage(
+                ClawConstants.RuntimeApi.DEFAULT_TOOL_ERROR_CODE, null, "Tool execution failed.", locale);
     }
 
     private void appendModelChangedPayload(LinkedHashMap<String, Object> target, JsonNode payload) {

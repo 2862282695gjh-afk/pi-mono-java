@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<title>ADR-0080：保存模型用量来源</title>
+<style>body{max-width:960px;margin:40px auto;padding:0 24px;color:#172033;font:16px/1.75 system-ui,sans-serif}h1,h2{line-height:1.3}code{background:#eef2f6;padding:2px 5px}a{color:#135dbe}</style>
+<h1>ADR-0080：保存模型用量来源</h1>
+<p>Status: Accepted · Date: 2026-09-08 · Version: 1.0.0</p>
+<h2>Context</h2>
+<p>Events v2 要求未知用量省略、已报告零值保留。Java 基线 72f3550e 的 Usage.empty 与实际零值数值相同，仅比较数字会丢失这一区别。</p>
+<h2>Decision</h2>
+<p>内部 Usage 增加 known 标志，在提供商明确报告 usage 时建立，并通过 Jackson 保存。六参数构造代表已报告数据，empty 代表未知。无标志的历史 JSON 仅在存在非零 Token 时恢复为已知。</p>
+<h2>选项与取舍</h2>
+<p>数值推断不增加字段，但不能区分已知零。改为可空 Usage 会改变大量内部调用者的空值假设。显式标志保持现有非空数值对象，代价是内部 JSON 增加字段及历史恢复逻辑；因此选择显式标志。</p>
+<h2>Consequences</h2>
+<p>后续公共写入器可以正确省略未知数据，保留已知零。旧全零记录的来源不可恢复，按未知处理。此变更不切换 HTTP 接口，不增加 Maven 依赖、数据库列、查询或后台线程。企业镜像编译仍需要可解析的 NativeParent。</p>
+<h2>Related</h2>
+<p><a href="../designs/runtime-usage-provenance/README.md">实现设计与源代码证据</a> · <a href="0079-public-stream-boundary.html">公共流输出基础</a></p>
+</html>

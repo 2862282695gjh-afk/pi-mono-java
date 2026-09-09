@@ -24,12 +24,13 @@ export interface AssistantTurn {
   kind: 'assistant';
   rawMarkdown: string;
   streaming: boolean;
+  unconfirmed?: boolean;
 }
 
 export interface ThinkingTurn {
   key: string;
   kind: 'thinking';
-  status: 'running' | 'completed';
+  status: 'running' | 'completed' | 'unconfirmed';
   title: string;
   content: string;
 }
@@ -44,9 +45,16 @@ export interface ActivityTurn {
   kind: 'activity';
   toolCallId: string;
   toolName: string;
-  status: 'running' | 'completed' | 'error';
+  status: 'running' | 'completed' | 'error' | 'confirming' | 'unconfirmed';
   arguments: ToolArgumentRow[];
   result: string;
+  errorCode?: string;
 }
 
-export type ConversationTurn = UserTurn | ThinkingTurn | AssistantTurn | ActivityTurn;
+export interface NoticeTurn {
+  key: string;
+  kind: 'notice';
+  text: string;
+}
+
+export type ConversationTurn = UserTurn | ThinkingTurn | AssistantTurn | ActivityTurn | NoticeTurn;

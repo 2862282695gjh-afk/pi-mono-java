@@ -4,23 +4,13 @@
 
 package com.campusclaw.codingagent.runtimeapi.session;
 
-import java.time.Clock;
-import java.time.OffsetDateTime;
-import java.time.ZoneOffset;
-import java.util.ArrayList;
-import java.util.List;
-
-import com.campusclaw.ai.types.Model;
-import com.campusclaw.codingagent.runtimeapi.agent.AgentDirectoryResolver;
-import com.campusclaw.codingagent.runtimeapi.agent.AgentDirectorySnapshotDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
+import com.campusclaw.codingagent.runtimeapi.dto.SessionConfigurationUpdateDTO;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
-import com.campusclaw.codingagent.runtimeapi.event.RuntimeEntryCodec;
-import com.campusclaw.codingagent.runtimeapi.event.RuntimeEntryIdGenerator;
-import com.campusclaw.codingagent.runtimeapi.model.RuntimeModelManager;
 import com.campusclaw.codingagent.runtimeapi.persistence.RuntimeSessionRepository;
-import com.campusclaw.codingagent.runtimeapi.persistence.SessionConfigurationUpdate;
+import com.campusclaw.codingagent.runtimeapi.service.command.SessionModelConfigurationService;
+import com.campusclaw.codingagent.runtimeapi.service.command.SessionThinkingConfigurationService;
 import com.campusclaw.codingagent.runtimeapi.vo.AvailableModelsResponseVO;
 import com.campusclaw.codingagent.runtimeapi.vo.ChangeModelRequestVO;
 import com.campusclaw.codingagent.runtimeapi.vo.ChangeThinkingRequestVO;
@@ -42,43 +32,30 @@ public class RuntimeSessionConfigurationService {
 
     private final RuntimeSessionRepository repository;
 
-    private final AgentDirectoryResolver agentDirectoryResolver;
+    private final SessionModelConfigurationService modelService;
 
-    private final RuntimeModelManager modelManager;
+    private final SessionThinkingConfigurationService thinkingService;
 
     private final SessionEtagFactory etagFactory;
 
     private final RuntimeSessionResponseAssembler responseAssembler;
 
-    private final RuntimeEntryCodec entryCodec;
-
-    private final RuntimeEntryIdGenerator entryIdGenerator;
-
-    private final Clock clock;
-
     public RuntimeSessionConfigurationService(
             RuntimeSessionRepository repository,
-            AgentDirectoryResolver agentDirectoryResolver,
-            RuntimeModelManager modelManager,
+            SessionModelConfigurationService modelService,
+            SessionThinkingConfigurationService thinkingService,
             SessionEtagFactory etagFactory,
-            RuntimeSessionResponseAssembler responseAssembler,
-            RuntimeEntryCodec entryCodec,
-            RuntimeEntryIdGenerator entryIdGenerator,
-            Clock clock) {
+            RuntimeSessionResponseAssembler responseAssembler) {
         this.repository = repository;
-        this.agentDirectoryResolver = agentDirectoryResolver;
-        this.modelManager = modelManager;
+        this.modelService = modelService;
+        this.thinkingService = thinkingService;
         this.etagFactory = etagFactory;
         this.responseAssembler = responseAssembler;
-        this.entryCodec = entryCodec;
-        this.entryIdGenerator = entryIdGenerator;
-        this.clock = clock;
     }
 
     public AvailableModelsResponseVO listModels(String sessionId) {
-        RuntimeSessionDTO session = requireSession(sessionId);
-        var models = modelManager.listAvailableModels(resolveAgent(session));
-        return new AvailableModelsResponseVO(session.getModelId(), models);
+        var result = modelService.query(sessionId);
+        return new AvailableModelsResponseVO(result.currentModelId(), result.models());
     }
 
     public RuntimeSessionView<GetSessionResponseVO> changeModel(
@@ -86,15 +63,8 @@ public class RuntimeSessionConfigurationService {
         requireModelRequest(request);
         try {
             RuntimeSessionDTO current = requireMutableSession(sessionId, ifMatch);
-            Model model = modelManager.resolveAvailableModel(resolveAgent(current), request.getModelId());
-            OffsetDateTime updatedAt = now();
-            SessionConfigurationUpdate update = repository.updateModel(
-                    sessionId,
-                    current.getResourceVersion(),
-                    model.id(),
-                    model.reasoning(),
-                    modelChangeEntries(current, model, "requested", updatedAt),
-                    updatedAt);
+            SessionConfigurationUpdateDTO update =
+                    modelService.change(current, request.getModelId(), current.getResourceVersion());
             return responseAssembler.getView(requireUpdated(update));
         } catch (RuntimeApiException error) {
             throw error;
@@ -119,17 +89,8 @@ public class RuntimeSessionConfigurationService {
         requireThinkingRequest(request);
         try {
             RuntimeSessionDTO current = requireMutableSession(sessionId, ifMatch);
-            requireThinkingSupported(current, request.getThinking());
-            OffsetDateTime updatedAt = now();
-            var entry = entryCodec.thinkingChangedEntry(
-                    sessionId,
-                    entryIdGenerator.nextId(),
-                    current.isThinking(),
-                    request.getThinking(),
-                    "requested",
-                    updatedAt);
-            SessionConfigurationUpdate update = repository.updateThinking(
-                    sessionId, current.getResourceVersion(), request.getThinking(), entry, updatedAt);
+            SessionConfigurationUpdateDTO update =
+                    thinkingService.change(current, request.getThinking(), current.getResourceVersion());
             return responseAssembler.getView(requireUpdated(update));
         } catch (RuntimeApiException error) {
             throw error;
@@ -168,39 +129,7 @@ public class RuntimeSessionConfigurationService {
                 .orElseThrow(() -> new RuntimeApiException(RuntimeErrorCode.SESSION_NOT_FOUND));
     }
 
-    private AgentDirectorySnapshotDTO resolveAgent(RuntimeSessionDTO session) {
-        return agentDirectoryResolver.resolve(session.getAgentId());
-    }
-
-    private List<com.campusclaw.codingagent.runtimeapi.dto.RuntimeEntryDTO> modelChangeEntries(
-            RuntimeSessionDTO current, Model model, String reason, OffsetDateTime updatedAt) {
-        List<com.campusclaw.codingagent.runtimeapi.dto.RuntimeEntryDTO> entries = new ArrayList<>();
-        entries.add(entryCodec.modelChangedEntry(
-                current.getId(), entryIdGenerator.nextId(), current.getModelId(), model.id(), reason, updatedAt));
-        boolean nextThinking = current.isThinking() && model.reasoning();
-        if (current.isThinking() != nextThinking) {
-            entries.add(entryCodec.thinkingChangedEntry(
-                    current.getId(),
-                    entryIdGenerator.nextId(),
-                    current.isThinking(),
-                    nextThinking,
-                    "modelCapability",
-                    updatedAt));
-        }
-        return List.copyOf(entries);
-    }
-
-    private void requireThinkingSupported(RuntimeSessionDTO session, boolean requested) {
-        if (!requested) {
-            return;
-        }
-        Model model = modelManager.resolveModel(resolveAgent(session), session.getModelId());
-        if (!model.reasoning()) {
-            throw new RuntimeApiException(RuntimeErrorCode.THINKING_NOT_SUPPORTED);
-        }
-    }
-
-    private RuntimeSessionDTO requireUpdated(SessionConfigurationUpdate update) {
+    private RuntimeSessionDTO requireUpdated(SessionConfigurationUpdateDTO update) {
         return switch (update.status()) {
             case UPDATED, UNCHANGED -> update.session();
             case NOT_FOUND -> throw new RuntimeApiException(RuntimeErrorCode.SESSION_NOT_FOUND);
@@ -225,9 +154,5 @@ public class RuntimeSessionConfigurationService {
         if (ifMatch == null || ifMatch.isBlank()) {
             throw new RuntimeApiException(RuntimeErrorCode.IF_MATCH_REQUIRED);
         }
-    }
-
-    private OffsetDateTime now() {
-        return OffsetDateTime.ofInstant(clock.instant(), ZoneOffset.UTC);
     }
 }

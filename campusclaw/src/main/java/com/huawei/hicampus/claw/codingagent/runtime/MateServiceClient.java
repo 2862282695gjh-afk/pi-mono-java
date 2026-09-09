@@ -13,12 +13,13 @@ import java.util.List;
 import java.util.Optional;
 import java.util.regex.Pattern;
 
-import com.huawei.hicampus.claw.codingagent.common.identifier.ResourceIdentifierPatterns;
 import com.huawei.hicampus.claw.codingagent.config.CampusMateClientProperties;
+import com.huawei.hicampus.claw.common.constant.ClawConstants;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
@@ -69,7 +70,7 @@ public class MateServiceClient {
      * @throws AgentRuntimeException HTTP 请求或响应无效时抛出
      */
     public AgentRuntime getAgentRuntime(String agentId) {
-        requireIdentifier(agentId, ResourceIdentifierPatterns.AGENT_ID_PATTERN, "agentId");
+        requireIdentifier(agentId, ClawConstants.Agent.ID_PATTERN, "agentId");
         String path = expandPathTemplate(campusMateProperties.endpoints().agentRuntimePathTemplate(), agentId);
         HttpRequest request = HttpRequest.newBuilder(campusMateProperties.endpoint(path))
                 .timeout(properties.requestTimeout())
@@ -99,7 +100,7 @@ public class MateServiceClient {
      * @throws AgentRuntimeException HTTP 请求或响应无效时抛出
      */
     public SkillInfo querySkillInfo(String skillId) {
-        requireIdentifier(skillId, ResourceIdentifierPatterns.SKILL_ID_PATTERN, "skillId");
+        requireIdentifier(skillId, ClawConstants.Skill.ID_PATTERN, "skillId");
         String path = expandPathTemplate(campusMateProperties.endpoints().skillInfoPathTemplate(), skillId);
         HttpRequest request = HttpRequest.newBuilder(campusMateProperties.endpoint(path))
                 .timeout(properties.requestTimeout())
@@ -191,13 +192,15 @@ public class MateServiceClient {
             @JsonFormat(with = JsonFormat.Feature.ACCEPT_SINGLE_VALUE_AS_ARRAY) List<SkillReference> bindingSkills,
             List<BoundTool> bindingTools,
             @JsonFormat(with = JsonFormat.Feature.ACCEPT_SINGLE_VALUE_AS_ARRAY) List<AgentReference> bindingAgents,
-            @JsonFormat(with = JsonFormat.Feature.ACCEPT_SINGLE_VALUE_AS_ARRAY) List<String> description,
+            @JsonFormat(with = JsonFormat.Feature.ACCEPT_SINGLE_VALUE_AS_ARRAY)
+                    @JsonDeserialize(contentUsing = AgentMetadataTextDeserializer.class)
+                    List<String> description,
             String displayName,
             Boolean enabled,
             String id,
             String name,
             String systemPrompt,
-            List<String> userCases,
+            @JsonDeserialize(contentUsing = AgentMetadataTextDeserializer.class) List<String> userCases,
             String version) {
 
         public AgentRuntime {

@@ -31,14 +31,12 @@ Notes:
 
 Module dependency graph (from `docs/module-architecture.md`):
 
-```
-ai ──→ agent-core ──→ cron ──→ coding-agent-cli
- └────────────────────────────→ coding-agent-cli
-        └─────────────────────→ coding-agent-cli
-```
+Direct dependencies: ai → common; agent-core → ai; cron → agent-core;
+coding-agent-cli → common, ai, agent-core, cron. Common has no business-module dependency.
 
 | Module | Artifact | Role |
 |---|---|---|
+| `modules/common` | `campusclaw-common` | Shared business constants in `com.campusclaw.common.constant.ClawConstants`, grouped by domain. |
 | `modules/ai` | `campusclaw-ai` | Unified LLM abstraction. Providers (Anthropic, OpenAI, Google GenAI/Vertex, Bedrock, Mistral, and ~18 OpenAI-compatible flavors) live under `provider/`; types under `types/`; model registry under `model/`. |
 | `modules/agent-core` | `campusclaw-agent-core` | Agent runtime. `Agent` is the façade; `AgentLoop` drives the LLM↔tool cycle; `ToolExecutionPipeline` runs tools with before/after hooks and JSON-schema validation; sealed `AgentEvent` hierarchy emits state transitions. |
 | `modules/cron` | `campusclaw-cron` | JobRunr-backed scheduled agent runs, exposed as an `AgentTool` for agents to self-schedule. |
@@ -52,6 +50,8 @@ Key runtime concepts:
 - **Reactive stack**: `ai` and `agent-core` use Reactor `Mono/Flux` throughout for streaming LLM responses. Don't `.block()` on the event stream path.
 
 ## Conventions to preserve
+
+- Shared business constants belong in the bottom-level common module's `ClawConstants`, using nested domain groups. Keep regex strings and compiled patterns together, remove old aliases, and retain private implementation details and injected configuration in their owning code.
 
 - Java 21 features are in active use (records, sealed interfaces, pattern matching) — don't downgrade.
 - Spotless is enforced via `spotless-maven-plugin` with **palantirJavaFormat 2.66.0**; run `./mvnw spotless:apply` before committing or CI-equivalent checks will diverge. **Requires JDK 21** (palantir 不兼容 JDK 25 的 javac 内部 API)。
@@ -732,11 +732,13 @@ Stop 钩子会自动跑 `spotless:check` + `checkstyle:check`。主动修复：
 | `./scripts/sync-campusclaw.sh --no-verify` | Explicitly skip company-parent resolution and mirror compile (ordinary local environments only) |
 
 Phases:
-1. **Stage** — copy `modules/{ai,agent-core,cron,coding-agent-cli}` into `build/campusclaw/`, rewriting the package in `.java/.yml/.properties/.imports/...`.
-2. **Apply** — `rsync --delete` from `build/` to in-tree `campusclaw/`. Paths listed in `scripts/sync-campusclaw-exclude.txt` are preserved (corporate-mirror-only files that have no counterpart in `modules/*`).
+1. **Stage** — copy `modules/{common,ai,agent-core,cron,coding-agent-cli}` into `build/campusclaw/`, rewriting the package in `.java/.yml/.properties/.imports/...`. Remove GaussDB files from staged classpath resources and assemble `build/campusclaw/scripts/install/initdb_gaussdbv5.sql` from the corporate header template plus the table DDL in canonical `session_schema.sql`.
+2. **Apply** — `rsync --delete` from `build/` to in-tree `campusclaw/`. Paths listed in `scripts/sync-campusclaw-exclude.txt` are preserved (corporate-mirror-only files that have no counterpart in `modules/*`). The generated `campusclaw/scripts/install/` directory contains only `initdb_gaussdbv5.sql`, and the legacy `campusclaw/src/main/resources/db/gaussdb/` directory is removed.
 3. **Verify** — resolve `NativeParent` and compile `campusclaw/` with the sync script's auto-detected JDK 21. Failure to resolve the company parent is fatal; the script never silently skips this gate.
 
 When adding a new file directly under `campusclaw/` that has no counterpart in `modules/*`, append its path to `scripts/sync-campusclaw-exclude.txt`, otherwise the next `--delete` will remove it. The current exclusions protect the corporate Skill tree and `CampusMateConfigurationTest`. The hand-tuned `application.properties` is environment-specific, contains no Actuator-specific overrides for the standalone service, and is never touched by the script; only `META-INF/spring/*.imports` propagate from `modules/*`.
+
+The module-side GaussDB release files remain under `modules/coding-agent-cli/src/main/resources/db/gaussdb/` for standalone development. The corporate mirror publishes only `campusclaw/scripts/install/initdb_gaussdbv5.sql`, assembled from `scripts/templates/initdb_gaussdbv5-header.sql` and the table DDL in `install/session_schema.sql`; it does not publish the empty initial-data script, privilege placeholders, or upgrade README. The generated company script must start with the exact corporate database/schema/owner/grant header, must not contain `BEGIN` or `COMMIT`, and must place the matching `DROP TABLE IF EXISTS` immediately before every `CREATE TABLE`. `campusclaw/scripts/install/` is generated and must not contain hand-maintained files. Because the corporate SQL is an external install artifact rather than a classpath resource, `--skip-resources` does not skip it.
 
 ### pre-push guard
 
@@ -746,7 +748,7 @@ When adding a new file directly under `campusclaw/` that has no counterpart in `
 git config core.hooksPath scripts/git-hooks
 ```
 
-The hook runs the sync script in dry-run + no-verify mode and parses rsync's `--itemize-changes` output. Pushes that don't touch `modules/`, `campusclaw/`, or `scripts/sync-campusclaw*` skip the check. Bypass with `git push --no-verify` when intentional.
+The hook runs the sync script in dry-run + no-verify mode and parses rsync's `--itemize-changes` output together with managed asset update/deletion markers. Pushes that don't touch `modules/`, `campusclaw/`, or `scripts/sync-campusclaw*` skip the check. Bypass with `git push --no-verify` when intentional.
 
 ## Git workflow
 

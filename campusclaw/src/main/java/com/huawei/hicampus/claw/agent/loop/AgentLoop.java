@@ -91,43 +91,56 @@ public class AgentLoop {
         if (!prompts.isEmpty()) {
             context.appendMessages(prompts);
         }
-        List<Message> pendingTurnInputs = List.copyOf(prompts);
+        boolean naturalEnd = false;
+        boolean cancelledEnd = false;
         eventListener.onEvent(new AgentStartEvent());
         try {
-            while (!signal.isCancelled()) {
-                eventListener.onEvent(new TurnStartEvent());
-                emitPendingInputs(pendingTurnInputs, eventListener);
-                AssistantMessage assistantMessage = invokeModel(context, eventListener, signal);
-                context.appendMessage(assistantMessage);
-                context.setAssistantMessage(assistantMessage);
-                eventListener.onEvent(new MessageEndEvent(assistantMessage));
-                if (assistantMessage.stopReason() == StopReason.ERROR
-                        || assistantMessage.stopReason() == StopReason.ABORTED) {
-                    eventListener.onEvent(new TurnEndEvent(assistantMessage, List.of()));
-                    break;
-                }
-                var toolCalls = extractToolCalls(assistantMessage);
-                if (!toolCalls.isEmpty()) {
-                    pendingTurnInputs = runToolPhase(context, signal, eventListener, assistantMessage, toolCalls);
-                    continue;
-                }
-                var controlMessages = drainNextControlMessages();
-                eventListener.onEvent(new TurnEndEvent(assistantMessage, List.of()));
-                if (controlMessages.isEmpty()) {
-                    break;
-                }
-                context.appendMessages(controlMessages);
-                pendingTurnInputs = controlMessages;
-            }
+            naturalEnd = runTurns(prompts, context, eventListener, signal);
+            cancelledEnd = signal.isCancelled() && !naturalEnd;
             return context.messages();
         } catch (CancellationException error) {
             if (!signal.isCancelled()) {
                 throw error;
             }
+            cancelledEnd = true;
             return context.messages();
         } finally {
-            eventListener.onEvent(new AgentEndEvent(context.messages()));
+            eventListener.onEvent(new AgentEndEvent(context.messages(), cancelledEnd));
         }
+    }
+
+    private boolean runTurns(
+            List<Message> prompts, AgentContext context, AgentEventListener eventListener, CancellationToken signal) {
+        List<Message> pendingTurnInputs = List.copyOf(prompts);
+        while (!signal.isCancelled()) {
+            eventListener.onEvent(new TurnStartEvent());
+            emitPendingInputs(pendingTurnInputs, eventListener);
+            AssistantMessage assistantMessage = invokeModel(context, eventListener, signal);
+            context.appendMessage(assistantMessage);
+            context.setAssistantMessage(assistantMessage);
+            eventListener.onEvent(new MessageEndEvent(assistantMessage));
+            if (isTerminalAssistant(assistantMessage)) {
+                eventListener.onEvent(new TurnEndEvent(assistantMessage, List.of()));
+                return true;
+            }
+            var toolCalls = extractToolCalls(assistantMessage);
+            if (!toolCalls.isEmpty()) {
+                pendingTurnInputs = runToolPhase(context, signal, eventListener, assistantMessage, toolCalls);
+                continue;
+            }
+            var controlMessages = drainNextControlMessages();
+            eventListener.onEvent(new TurnEndEvent(assistantMessage, List.of()));
+            if (controlMessages.isEmpty()) {
+                return true;
+            }
+            context.appendMessages(controlMessages);
+            pendingTurnInputs = controlMessages;
+        }
+        return false;
+    }
+
+    private static boolean isTerminalAssistant(AssistantMessage message) {
+        return message.stopReason() == StopReason.ERROR || message.stopReason() == StopReason.ABORTED;
     }
 
     private List<Message> runToolPhase(

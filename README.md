@@ -174,6 +174,7 @@ Agent 目录、Session 或工具缓存。
 ```text
 .
 ├── modules/
+│   ├── common/              # ClawConstants 共享业务常量，文件内按领域分组
 │   ├── ai/                  # LLM 抽象、供应商适配和模型注册
 │   ├── agent-core/          # Agent 循环、Session、事件和工具 Pipeline
 │   ├── cron/                # 定时任务模型、引擎、存储和 Agent 工具
@@ -183,15 +184,15 @@ Agent 目录、Session 或工具缓存。
 ├── agent/                   # 受管 Agent 示例和运行素材
 ├── docs/                    # 设计、部署和运行文档
 ├── scripts/                 # 镜像同步、Git hook 和辅助脚本
-└── pom.xml                  # Maven 根工程，声明四个 Java 模块
+└── pom.xml                  # Maven 根工程，声明五个 Java 模块
 ```
 
 模块依赖关系：
 
-```text
-ai -> agent-core -> cron -> coding-agent-cli
-          \-----------------> coding-agent-cli
-```
+直接依赖：ai → common；agent-core → ai；cron → agent-core；
+coding-agent-cli → common、ai、agent-core、cron。common 不依赖业务模块。
+
+常量组织方式见[共享常量设计](docs/designs/shared-constants.md)。
 
 ## 开发与验证
 
@@ -212,7 +213,7 @@ ai -> agent-core -> cron -> coding-agent-cli
 ```
 
 `campusclaw/` 是生成镜像，主源码只在 `modules/*` 修改。同步脚本从
-`modules/{ai,agent-core,cron,coding-agent-cli}` 生成镜像并把 Java 根包重写为
+`modules/{common,ai,agent-core,cron,coding-agent-cli}` 生成镜像并把 Java 根包重写为
 `com.huawei.hicampus.claw`；不要双份手工维护。镜像使用公司父 POM
 `com.huawei.hicampus:NativeParent:26.0.0-SNAPSHOT`，项目坐标为
 `com.huawei.campus:claw:1.0-SNAPSHOT`，默认产物为

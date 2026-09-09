@@ -95,3 +95,75 @@ Projector --> Sse
 Engine --> Prompt
 Repository --> Db
 @enduml
+
+@startuml runtime-operation-lock
+title Runtime Session Operation Lock Scope
+skinparam backgroundColor white
+
+' Source baseline: origin/main commit eb318f32830f15b3657c71e8be31bfbfd316652f.
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/runtime/RuntimeSessionEngineRegistry.java, lockOperation and unlockOperation.
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/event/RuntimeEventService.java, prepareAndSubmit.
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/session/RuntimeSessionControlService.java, accept and prepareAbort.
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/event/RuntimeExecutionCoordinator.java, finish.
+' Reviewed implementation: commit 812bf407d9fef9088b6bef8f8b86bd8f2bbb1f7e.
+' Reviewed source: RuntimeSessionEngineRegistry.java, withOperationLock.
+' Observed behavior: callers acquire and release the striped operation lock through separate registry methods.
+' Architecture change: withOperationLock owns acquisition and finally-based release around the submitted operation.
+' Design reason: lock release must remain guaranteed when the submitted operation throws.
+
+participant "Runtime caller" as Caller
+participant "Engine Registry" as Registry
+participant "Striped Lock" as Lock
+participant "Submitted Operation" as Operation
+
+Caller -> Registry : withOperationLock(sessionId, operation)
+activate Registry
+Registry -> Lock : lock()
+activate Lock
+Registry -> Operation : get() / run()
+activate Operation
+alt operation returns
+    Operation --> Registry : result
+else operation throws
+    Operation --> Registry : RuntimeException
+end
+deactivate Operation
+Registry -> Lock : unlock() in finally
+deactivate Lock
+Registry --> Caller : result or exception
+deactivate Registry
+@enduml
+
+@startuml corporate-gaussdb-script-layout
+title Corporate GaussDB Script Packaging
+left to right direction
+skinparam backgroundColor white
+
+' Source baseline: origin/main commit 18bf7026d75cf28a9652025eaa19800eb36c4c64.
+' Source: modules/coding-agent-cli/src/main/resources/db/gaussdb/install/session_schema.sql.
+' Source: scripts/sync-campusclaw.sh, stage_database_install_script and validate_staged_tree.
+' Source: campusclaw/scripts/install/initdb_gaussdbv5.sql.
+' Observed behavior: sync copies canonical DDL byte-for-byte; the DDL has one transaction and a centralized drop block.
+' Product constraint: corporate SQL starts with the required database header and puts each drop before its create.
+' Architecture change: sync assembles the corporate header and transformed canonical table DDL instead of a byte-identical copy.
+' Design reason: preserve local development input while enforcing the corporate installation convention.
+
+artifact "Corporate SQL header\ninitdb_gaussdbv5-header.sql" as CorporateHeader
+artifact "Canonical module schema\nsession_schema.sql" as Canonical
+component "Mirror sync\nstage and apply" as Sync
+folder "Corporate install scripts\ncampusclaw/scripts/install" as Install
+artifact "initdb_gaussdbv5.sql\ncorporate init SQL" as InitScript
+folder "Corporate classpath resources" as Resources
+
+CorporateHeader --> Sync : read header
+Canonical --> Sync : transform table DDL
+Sync --> InitScript : assemble and validate
+Install *-- InitScript
+Sync ..> Resources : remove db/gaussdb
+
+note right of InitScript
+  Exact corporate header
+  No BEGIN or COMMIT
+  DROP immediately before CREATE
+end note
+@enduml

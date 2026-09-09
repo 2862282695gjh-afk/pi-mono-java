@@ -1,41 +1,43 @@
 <script setup lang="ts">
 import { computed, nextTick, ref } from 'vue';
-import { revealFirstDebugHeaderError, validateDebugHeaders } from '../debugHeaders';
+import { createDebugHeaderPresets, revealFirstDebugHeaderError, validateDebugHeaders } from '../debugHeaders';
 import type { DebugHeaderInput } from '../debugHeaders';
 
 interface DebugHeaderRow extends DebugHeaderInput {
   id: number;
 }
 
-const rows = ref<DebugHeaderRow[]>([createRow()]);
+let nextRowId = 1;
+const rows = ref<DebugHeaderRow[]>(createDebugHeaderPresets().map(createRow));
 const root = ref<HTMLDetailsElement | null>(null);
+const addButton = ref<HTMLButtonElement | null>(null);
 const validation = computed(() => validateDebugHeaders(rows.value));
-let nextRowId = 2;
 
-function createRow(): DebugHeaderRow {
-  return { id: 1, enabled: true, key: '', value: '' };
+function createRow(input: DebugHeaderInput): DebugHeaderRow {
+  return { ...input, id: nextRowId++ };
 }
 
 function appendRow(): void {
-  rows.value.push({ id: nextRowId, enabled: true, key: '', value: '' });
-  nextRowId += 1;
-}
-
-function ensureTrailingRow(): void {
-  const last = rows.value.at(-1);
-  if (!last || last.key.trim() !== '' || last.value !== '') appendRow();
+  rows.value.push(createRow({ enabled: true, key: '', value: '' }));
+  focusRow(rows.value.length - 1);
 }
 
 function deleteRow(id: number): void {
+  const index = rows.value.findIndex((row) => row.id === id);
   rows.value = rows.value.filter((row) => row.id !== id);
-  if (rows.value.length === 0) appendRow();
-  ensureTrailingRow();
+  focusRow(Math.min(index, rows.value.length - 1));
 }
 
 function clearRows(): void {
   rows.value = [];
-  appendRow();
-  void nextTick(() => root.value?.querySelector<HTMLInputElement>('.debug-header-key')?.focus());
+  focusRow(-1);
+}
+
+function focusRow(index: number): void {
+  void nextTick(() => {
+    const input = root.value?.querySelectorAll<HTMLInputElement>('.debug-header-key')[index];
+    (input ?? addButton.value)?.focus();
+  });
 }
 
 async function snapshot(): Promise<Headers | null> {
@@ -58,6 +60,7 @@ defineExpose({ snapshot });
     </summary>
     <div class="debug-headers-body">
       <div class="debug-header-actions">
+        <button ref="addButton" type="button" @click="appendRow">增加请求头</button>
         <button type="button" @click="clearRows">全部清空</button>
       </div>
       <div class="debug-header-grid-head" aria-hidden="true">
@@ -84,7 +87,6 @@ defineExpose({ snapshot });
               autocomplete="off"
               spellcheck="false"
               :aria-invalid="validation.errorFields[index] === 'key'"
-              @input="ensureTrailingRow"
             >
           </label>
           <label class="debug-header-field">
@@ -97,7 +99,6 @@ defineExpose({ snapshot });
               autocomplete="off"
               spellcheck="false"
               :aria-invalid="validation.errorFields[index] === 'value'"
-              @input="ensureTrailingRow"
             >
             <span v-if="validation.errors[index]" class="debug-header-error" role="alert">
               {{ validation.errors[index] }}

@@ -1,6 +1,6 @@
 # Coding Agent Runtime HTTP 与受管 Session 设计
 
-> 文档版本：3.5.0
+> 文档版本：3.9.0
 >
 > PR 167 修订基线：`f60cc3e78bb8b700527ac082c7c8e10524ede095`
 >
@@ -14,9 +14,23 @@
 >
 > Agent 根目录配置清理基线：`1b3b519419ca9bf9025ba2c88335382b9a5b3b02`
 >
+> Runtime 操作锁源码基线：`origin/main@eb318f32830f15b3657c71e8be31bfbfd316652f`
+>
+> Runtime 操作锁审查实现：`812bf407d9fef9088b6bef8f8b86bd8f2bbb1f7e`
+>
+> 模型异常因果链修复前基线：`c9d858bc8261bf07f5585f545b53495bf2226a56`
+>
+> 模型异常因果链已审查实现：`f3e2a31c6f0692fec429567c5535c6ec9bec7343`
+>
+> GaussDB 脚本布局源码基线：`origin/main@d84dd3d6a306b7587c70b29e0100e741dacef989`
+>
+> GaussDB 脚本布局实现：`c1335026`
+>
+> GaussDB 公司初始化样式源码基线：`origin/main@18bf7026d75cf28a9652025eaa19800eb36c4c64`
+>
 > 源码仓库：本仓库 `pi-mono-java`
 
-> 公司镜像相关路径和标识按 2026-09-01 的当前仓库位置展示；历史提交 SHA 仍是对应行为证据。
+> 公司镜像相关路径和标识按 2026-09-03 的当前仓库位置展示；历史提交 SHA 仍是对应行为证据。
 
 ## 1. 结论
 
@@ -36,6 +50,10 @@ Assistant/Compaction 完成保存本次 Usage，模型/思考/压缩形成持久
 
 ## 2. 源码证据
 
+共享常量迁移复核基线为 `ee3fdb4893228045f06b9b1d1b3b3bb505812c73`：该版仍使用独立常量类；本次架构调整
+将 ID、HTTP 路径及请求限制迁入新 common 模块的 ClawConstants，以下对应路径已更新至目标实现。
+常量值、Jakarta 校验触发位置和 HTTP 契约保持不变，见[共享常量设计](shared-constants.md)。
+
 | 事实 | 源码位置与符号 |
 |---|---|
 | 默认启动 Spring Boot Web 应用 | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/CampusClawApplication.java`，`CampusClawApplication#main` |
@@ -43,10 +61,13 @@ Assistant/Compaction 完成保存本次 Usage，模型/思考/压缩形成持久
 | HTTP 创建前准备受管目录 | `runtimeapi/runtime/RuntimeSessionEngineRegistry.java`、`runtime/AgentRuntimeManager.java`；根目录由 `AgentRuntimeProperties` 的 `campusmate.runtime.agents-root` 绑定，主模块和 Mate 配置分别位于 `modules/coding-agent-cli/src/main/resources/application.yml` 与 `campusclaw/src/main/resources/application.properties` |
 | Runtime 使用 Spring MVC Controller | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/web/*Controller.java` |
 | Runtime 不安装入站认证拦截器 | `runtimeapi/web` 不再包含 `RuntimeAuthenticationInterceptor` 与 `RuntimeWebMvcConfiguration`；路由测试覆盖 Header 缺失与共存 |
-| 类型化资源 ID 与 Session 默认值 | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/common/identifier/ResourceIdentifierPatterns.java`、`runtimeapi/web/*Controller` 的 `@PathVariable` 参数约束、`RuntimeExceptionHandler#handleInvalidParameter`、`MateServiceClient#getAgentRuntime`、`MateServiceClient#querySkillInfo`、`AgentRuntimeManager#prepare`、`HttpMateToolClient#listTools`、`RandomSessionIdGenerator#nextId`、`RuntimeSessionService#newSession` |
+| 类型化资源 ID 与 Session 默认值 | `modules/common/src/main/java/com/campusclaw/common/constant/ClawConstants.java`、`runtimeapi/web/*Controller` 的 `@PathVariable` 参数约束、`RuntimeExceptionHandler#handleInvalidParameter`、`MateServiceClient#getAgentRuntime`、`MateServiceClient#querySkillInfo`、`AgentRuntimeManager#prepare`、`HttpMateToolClient#listTools`、`RandomSessionIdGenerator#nextId`、`RuntimeSessionService#newSession` |
 | lowerCamelCase HTTP 边界 | `runtimeapi/web/*Controller`、`runtimeapi/vo/*RequestVO`、`runtimeapi/vo/*ResponseVO`、`RuntimeEntryCodec#toSseData`、`RuntimeEntryCodec#toHistoryEvent`、`RuntimeEventProjector` |
 | Session 与事件持久化使用 MyBatis | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/persistence/MyBatisRuntimeSessionRepository.java` |
+| GaussDB DDL 与公司交付布局 | `modules/coding-agent-cli/src/main/resources/db/gaussdb/install/session_schema.sql`；`scripts/templates/initdb_gaussdbv5-header.sql`；`scripts/sync-campusclaw.sh` 的 `stage_database_install_script`、`validate_table_ddl`、`validate_database_install_script` 和公司脚本 apply 逻辑；`campusclaw/scripts/install/initdb_gaussdbv5.sql` |
 | 事件接受、历史查询和执行生命周期相互分离 | `RuntimeEventService`、`RuntimeEventQueryService`、`RuntimeExecutionCoordinator` |
+| 源码基线由调用方配对操作锁 | `RuntimeSessionEngineRegistry#lockOperation`、`RuntimeSessionEngineRegistry#unlockOperation`，存在于 `origin/main@eb318f32830f15b3657c71e8be31bfbfd316652f` |
+| 审查实现收口同一 Session 的事件接受、控制和执行收尾串行化 | `RuntimeSessionEngineRegistry#withOperationLock`、`RuntimeEventService#prepareAndSubmit`、`RuntimeSessionControlService#accept`、`RuntimeSessionControlService#prepareAbort`、`RuntimeExecutionCoordinator#finish`，存在于 `812bf407d9fef9088b6bef8f8b86bd8f2bbb1f7e` |
 | thinking 实时投影、持久化和查询过滤 | `RuntimeEventProjector#projectThinking`、`RuntimeEntryCodec#thinkingEntry`、`RuntimeEventQueryService#list`、`RuntimeEventCursorCodec` |
 | SSE 使用有界请求级订阅 | `RuntimeEventStream`、`RuntimeSseDispatcher`、`RuntimeSseEmitterSubscriber` |
 | 压缩取消释放 Mate SSE | `SessionCompactor#completeSummary`、`EventStream#result`、`MateServiceModelManagerProvider#subscribe`、`MateServiceModelManagerProvider#cancel` |
@@ -54,6 +75,7 @@ Assistant/Compaction 完成保存本次 Usage，模型/思考/压缩形成持久
 | 国际化资源显式区分两个 Locale | `modules/coding-agent-cli/src/main/resources/i18n/messages_{en_US,zh_CN}.properties`、`RuntimeMessageSourceConfiguration` |
 | 语言选择按范围和权重协商 | `RuntimeRequestContext#locale`、`RuntimeRequestContext#language` |
 | HTTP 与 SSE 错误通过 MessageSource 取文案 | `RuntimeExceptionHandler#response`、`RuntimeTerminalEventFactory#emitError` |
+| 模型可用性校验与稳定错误码映射 | `runtimeapi/model/RuntimeModelManager.java`，`RuntimeModelManager#resolveAvailableModel`；`runtimeapi/error/RuntimeApiException.java` 的构造器 |
 | 内置工具由关闭枚举和 profile 装配 | `tool/builtin/BuiltInToolName.java`、`BuiltInToolProperties.java`、`DefaultConfiguredToolAssembler.java` |
 | MateService 工具通过专用客户端查询和调用 | `common/client/mate/MateToolClient.java`、`tool/mate/ListMateToolsTool.java`、`CallMateTool.java` |
 
@@ -143,7 +165,7 @@ Assistant 完成与压缩完成都持久化完整 `Usage`；`t_session_materiali
 
 Session、Entry、严格序号、物化数据、删除墓碑和异步清理任务持久化到 openGauss。删除活动 Session 返回 409；成功删除的墓碑只包含 `session_id` 与 `deleted_at`。
 
-Agent、Tool、Skill 和 Session ID 分别匹配 `agent-`、`tool-`、`skill-`、`session-` 加 32 位十六进制 UUID（UUID 内部连字符已移除）。四类资源 ID 的正则字符串与编译后的 `Pattern` 统一由中立的 `common.identifier.ResourceIdentifierPatterns` 提供；业务类不重复编译，也不依赖 HTTP 专用常量类。HTTP 路径中的 Agent 与 Session ID 直接在 Controller 的标量 `@PathVariable` 参数上使用 Jakarta `@NotBlank` 和 `@Pattern`，Spring MVC 方法参数校验失败后由 `RuntimeExceptionHandler` 映射为稳定错误码，不再维护命令式路径 ID Validator。`RandomSessionIdGenerator` 只生成该 Session 格式；创建 Session 持久化 `thinking=true`，默认模型不支持 reasoning 时按无有效默认模型返回 `AGENT_MODEL_NOT_CONFIGURED`，避免对外状态与实际事件能力不一致。`t_sessions.agent_id` 使用 `VARCHAR(64)`，可容纳完整类型化 Agent ID。
+Agent、Tool、Skill 和 Session ID 分别匹配 `agent-`、`tool-`、`skill-`、`session-` 加 32 位十六进制 UUID（UUID 内部连字符已移除）。四类资源 ID 的正则字符串与编译后的 `Pattern` 统一由底层 `common.constant.ClawConstants` 的 Agent、Tool、Skill、Session 分组提供；业务类不重复编译，也不依赖 HTTP 专用常量类。HTTP 路径中的 Agent 与 Session ID 直接在 Controller 的标量 `@PathVariable` 参数上使用 Jakarta `@NotBlank` 和 `@Pattern`，Spring MVC 方法参数校验失败后由 `RuntimeExceptionHandler` 映射为稳定错误码，不再维护命令式路径 ID Validator。`RandomSessionIdGenerator` 只生成该 Session 格式；创建 Session 持久化 `thinking=true`，默认模型不支持 reasoning 时按无有效默认模型返回 `AGENT_MODEL_NOT_CONFIGURED`，避免对外状态与实际事件能力不一致。`t_sessions.agent_id` 使用 `VARCHAR(64)`，可容纳完整类型化 Agent ID。
 
 Agent 配置由 `AgentRuntimeManager.prepare(agentId)` 准备到
 `agent/{agentId}/.campusclaw/`；部署可通过 `CAMPUSCLAW_AGENTS_ROOT` 替换 `agent` 根目录。
@@ -182,6 +204,18 @@ Provider 则持有独立的 WebClient SSE `Disposable`。目标决策是事件 F
 
 `RuntimeErrorCode` 是错误码、HTTP 状态、国际化 key 和可选 `Retry-After` 的唯一目录。
 错误消息资源 key 与枚举名称一致，异常调用点不能自行拼装 HTTP 状态。
+
+修复前基线中的 `RuntimeModelManager#resolveAvailableModel` 会把
+`AGENT_MODEL_NOT_CONFIGURED` 等内部模型解析错误统一映射为 `MODEL_NOT_AVAILABLE`，以免公开接口
+泄露模型配置状态；但包装时没有关联已捕获的 `RuntimeApiException`，导致内部错误码随新异常丢失。
+已审查实现为 `RuntimeApiException` 增加保留 cause、但仍禁用包装异常自身栈跟踪的构造器，并仅在该
+错误码映射分支使用。`MANAGER_UNAVAILABLE` 继续原样传播，首次可用性检查失败仍直接生成无 cause 的
+`MODEL_NOT_AVAILABLE`。`RuntimeExceptionHandler` 仍只读取外层 `errorCode` 构造 HTTP 响应，因此该
+调整不改变状态码、响应体或国际化文案，也不向客户端暴露 cause。
+
+这是一项内部错误传播架构修正：在保留防枚举产品约束的同时，让进程内调用方和诊断代码可以沿
+异常因果链定位原始分类。方案与取舍见
+[ADR-0046](../decisions/0046-preserve-runtime-model-resolution-cause.html)。
 
 活动执行仍是进程内资源。如果数据库状态为 `running`，但 Steer、FollowUp 或 Abort 请求没有命中执行实例，
 服务返回 `503 SESSION_EXECUTION_UNAVAILABLE` 和 `Retry-After: 3`。这是对现有执行归属边界的显式表达；
@@ -223,6 +257,51 @@ Runtime V1 事件名 `tool.execution.started` 与 `tool.execution.completed` 是
 事件类型，不是工具配置项，必须继续保留。完整契约见[工具系统 v2](tool-system-v2.md)和
 [ADR-0022](../decisions/0022-managed-agent-tool-system-v2.html)。
 
+### 6.10 操作锁作用域
+
+![Runtime Session 操作锁作用域](coding-agent-cli/runtime-operation-lock.svg)
+
+[PlantUML 源码](coding-agent-cli/diagram.puml#L99)
+
+源码基线中的 `RuntimeSessionEngineRegistry#lockOperation` 和 `#unlockOperation` 向调用方分别暴露
+加锁与解锁。当前三个调用类都用 `finally` 成对释放，但注册表本身无法保证未来调用者遵守该协议，
+静态分析也无法在加锁方法内证明锁一定释放。这是已观察的 Java 行为，不是 pi 行为。
+
+审查实现由 `RuntimeSessionEngineRegistry#withOperationLock` 接收 `Supplier` 或 `Runnable`，在同一方法
+内获取条带锁，并在 `finally` 中统一释放。事件接受、Steer/FollowUp、Abort 和执行收尾只提交临界区
+操作，不再获得独立的 `unlock` 能力；操作正常返回和抛出运行时异常都经过同一释放路径。同一 Session
+以及哈希到同一条带的 Session 仍保持原有串行语义，HTTP、SSE、持久化与错误契约不变。该差异分类为
+内部架构变更，目的是让锁释放成为注册表保证而非调用方约定。决策见
+[ADR-0045](../decisions/0045-scope-runtime-operation-lock-release.html)。
+
+### 6.11 公司镜像 GaussDB 脚本交付
+
+![公司镜像 GaussDB 脚本交付](coding-agent-cli/corporate-gaussdb-script-layout.svg)
+
+[PlantUML 源码](coding-agent-cli/diagram.puml#L137)
+
+源码基线中，`scripts/sync-campusclaw.sh` 把模块侧整个 `db/gaussdb` 目录列入资源白名单，因而将
+安装 DDL、空初始化数据脚本、授权占位脚本和 upgrade README 一并复制到
+`campusclaw/src/main/resources/db/gaussdb/`。这些文件会进入 Maven classpath 和打包产物，
+不符合公司工程对数据库安装资产的目录与单文件约束。
+
+模块侧布局保持不变，继续供 `start-dev.sh` 和独立工程使用。在本次源码基线中，
+`session_schema.sql` 以英文说明和 `BEGIN` 开头，先集中倒序删除全部表，再按顺序创建，
+最后以 `COMMIT` 结束；同步脚本将它字节级复制为公司交付脚本。这是已观察源码行为。
+
+目标设计保留模块 DDL 的事务和本地开发语义。公司头部独立保存在
+`scripts/templates/initdb_gaussdbv5-header.sql`，同步脚本先输出该模板，然后过滤模块脚本的说明、
+集中 DROP 块和 `BEGIN`/`COMMIT`，并在每个 `CREATE TABLE` 紧邻前插入同表
+`DROP TABLE IF EXISTS`。因此公司文件
+以 `\c claw;`、建 Schema、`search_path`、`{dbUser}` Owner 和数据库授权七行固定语句开头，
+而模块本地开发脚本不包含公司占位符。`campusclaw/scripts/install/` 仍是同步脚本完整管理的
+生成目录，只允许 `initdb_gaussdbv5.sql`；空初始化数据、授权占位和 upgrade README 不进入交付目录。
+
+固定头部和逐表删建样式属于公司交付产品约束；用头部模板和规范表 DDL 生成单文件属于镜像同步架构变化；
+公司文件去除事务包裹后改为逐语句执行，失败时可能保留已完成的前置 DDL。表、列、索引、约束、中文
+`COMMENT ON` 与 Runtime 行为均不改变。无新 Maven 依赖。方案与取舍见
+[ADR-0065](../decisions/0065-corporate-gaussdb-init-script-convention.html)。
+
 ## 7. 质量约束
 
 - Controller 只接收和返回 VO，Service 负责业务规则和 VO/DTO 转换，Mapper 使用 DTO；
@@ -231,6 +310,8 @@ Runtime V1 事件名 `tool.execution.started` 与 `tool.execution.completed` 是
 - 新增或修改的 Java 方法不超过 50 个非空物理行；
 - Java 与 XML 源文件遵循公司版权、中文 Javadoc 和 XML DTD 规则；
 - 主模块与 `campusclaw` 镜像必须通过同一套测试。
+- 公司镜像不得在 classpath resources 下包含 GaussDB 脚本；`scripts/install/` 必须只含
+  `initdb_gaussdbv5.sql`，且其头部、无事务包裹和逐表 `DROP`/`CREATE` 顺序必须通过生成门禁。
 - 国际化实现必须验证无基础资源包时应用上下文可启动、双资源 key 集相等且覆盖
   `RuntimeErrorCode`，并覆盖语言权重、英文回退、HTTP 中文错误和 SSE 中文错误。
 
@@ -238,6 +319,11 @@ Runtime V1 事件名 `tool.execution.started` 与 `tool.execution.completed` 是
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 3.9.0 | 2026-09-07 | 公司 GaussDB 脚本以固定库与 Schema 头部开始，去除事务包裹，并将每个删表语句紧邻放在对应建表语句前。 |
+| 3.8.0 | 2026-09-04 | 更新资源 ID、HTTP 路径和请求限制的归属至底层 common 的 ClawConstants，外部契约不变。 |
+| 3.7.0 | 2026-09-03 | 将公司镜像 GaussDB DDL 改为 `scripts/install/initdb_gaussdbv5.sql` 单文件交付，保留模块侧多文件布局并由同步脚本保证一致性。 |
+| 3.6.1 | 2026-09-03 | 模型可用性错误码转换保留原始异常 cause，同时维持对外 `MODEL_NOT_AVAILABLE` 防枚举语义。 |
+| 3.6.0 | 2026-09-03 | 将 Runtime Session 操作锁收口为作用域 API，保证正常与异常路径都在 `finally` 中释放。 |
 | 3.5.0 | 2026-09-01 | 对齐 CampusClaw 公司镜像的新目录、Java 包、同步入口和独立公司构建边界。 |
 | 3.4.0 | 2026-08-31 | 统一事件 Flux 与结果 Mono 的取消传播；压缩中止时释放 Mate SSE 订阅并终止事件累积。 |
 | 3.3.1 | 2026-08-31 | 删除 Mate 配置中未绑定的旧 Agent 根目录配置，统一使用 `campusmate.runtime.agents-root` 和 `CAMPUSCLAW_AGENTS_ROOT`。 |

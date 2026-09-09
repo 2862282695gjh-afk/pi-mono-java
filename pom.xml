@@ -15,6 +15,7 @@
     <name>campusclaw</name>
 
     <modules>
+        <module>modules/common</module>
         <module>modules/ai</module>
         <module>modules/agent-core</module>
         <module>modules/cron</module>
@@ -55,7 +56,12 @@
                 <scope>import</scope>
             </dependency>
 
-            <!-- Internal modules -->
+            <!-- 内部模块 -->
+            <dependency>
+                <groupId>com.campusclaw</groupId>
+                <artifactId>campusclaw-common</artifactId>
+                <version>${project.version}</version>
+            </dependency>
             <dependency>
                 <groupId>com.campusclaw</groupId>
                 <artifactId>campusclaw-ai</artifactId>

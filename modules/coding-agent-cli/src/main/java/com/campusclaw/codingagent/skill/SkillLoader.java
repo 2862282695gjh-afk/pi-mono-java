@@ -12,7 +12,8 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.regex.Pattern;
+
+import com.campusclaw.common.constant.ClawConstants;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -34,8 +35,6 @@ public class SkillLoader {
 
     private static final Logger log = LoggerFactory.getLogger(SkillLoader.class);
 
-    static final String SKILL_FILENAME = "SKILL.md";
-    private static final Pattern NAME_REGEX = Pattern.compile(Skill.NAME_PATTERN);
     private static final String FRONTMATTER_DELIMITER = "---";
 
     /**
@@ -67,7 +66,7 @@ public class SkillLoader {
     }
 
     private void scanDirectory(Path dir, String source, List<Skill> skills) {
-        Path skillFile = dir.resolve(SKILL_FILENAME);
+        Path skillFile = dir.resolve(ClawConstants.Skill.MARKDOWN_FILE_NAME);
         if (Files.isRegularFile(skillFile)) {
             // 当前目录是 Skill 根目录，加载后不再向下递归。
             try {
@@ -112,12 +111,7 @@ public class SkillLoader {
         Map<String, Object> frontmatter = parseFrontmatter(content);
 
         Path baseDir = filePath.getParent();
-        String parentDirName = baseDir != null ? baseDir.getFileName().toString() : "";
-
-        // 名称优先取 frontmatter，其次取父目录名。
-        String name = frontmatter.containsKey("name") ? String.valueOf(frontmatter.get("name")) : parentDirName;
-
-        validateName(name, filePath);
+        String name = requireDeclaredName(frontmatter.get("name"), filePath);
 
         // 描述为必填字段。
         String description =
@@ -126,9 +120,9 @@ public class SkillLoader {
         if (description == null || description.isBlank()) {
             throw new SkillLoadException("Skill description is required: " + filePath);
         }
-        if (description.length() > Skill.MAX_DESCRIPTION_LENGTH) {
-            throw new SkillLoadException(
-                    "Skill description exceeds " + Skill.MAX_DESCRIPTION_LENGTH + " characters: " + filePath);
+        if (description.length() > ClawConstants.Skill.MAX_DESCRIPTION_LENGTH) {
+            throw new SkillLoadException("Skill description exceeds " + ClawConstants.Skill.MAX_DESCRIPTION_LENGTH
+                    + " characters: " + filePath);
         }
 
         // 解析禁止模型调用标记。
@@ -137,16 +131,30 @@ public class SkillLoader {
         return new Skill(name, description, filePath, baseDir, source, disableModelInvocation);
     }
 
+    private static String requireDeclaredName(Object rawName, Path filePath) {
+        if (!(rawName instanceof String name)) {
+            throw new SkillLoadException("Skill name must be a nonempty string: " + filePath);
+        }
+        validateName(name, filePath);
+        Path baseDir = filePath.getParent();
+        Path directoryName = baseDir == null ? null : baseDir.getFileName();
+        if (directoryName == null || !name.equals(directoryName.toString())) {
+            throw new SkillLoadException("Skill name must match its directory: " + filePath);
+        }
+        return name;
+    }
+
     static void validateName(String name, Path filePath) {
         if (name == null || name.isEmpty()) {
             throw new SkillLoadException("Skill name is required: " + filePath);
         }
-        if (name.length() > Skill.MAX_NAME_LENGTH) {
-            throw new SkillLoadException("Skill name exceeds " + Skill.MAX_NAME_LENGTH + " characters: " + filePath);
-        }
-        if (!NAME_REGEX.matcher(name).matches()) {
+        if (name.length() > ClawConstants.Skill.MAX_NAME_LENGTH) {
             throw new SkillLoadException(
-                    "Skill name contains invalid characters (must be lowercase a-z, 0-9, hyphens): " + filePath);
+                    "Skill name exceeds " + ClawConstants.Skill.MAX_NAME_LENGTH + " characters: " + filePath);
+        }
+        if (!ClawConstants.Skill.isValidName(name)) {
+            throw new SkillLoadException(
+                    "Skill name must use lowercase a-z, 0-9 and single separating hyphens: " + filePath);
         }
     }
 

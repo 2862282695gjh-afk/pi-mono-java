@@ -1,16 +1,19 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue';
+import { computed, nextTick, onUnmounted, ref, watch } from 'vue';
 import AgentWelcome from './components/AgentWelcome.vue';
 import AppSidebar from './components/AppSidebar.vue';
 import ComposerBox from './components/ComposerBox.vue';
 import ConversationTimeline from './components/ConversationTimeline.vue';
 import DevDiagnostics from './components/DevDiagnostics.vue';
 import DebugHeaders from './components/DebugHeaders.vue';
+import CommandResultRegion from './components/CommandResultRegion.vue';
+import ToolConfirmation from './components/ToolConfirmation.vue';
 import { useRuntimeApi } from './composables/useRuntimeApi';
 import type { DebugHeadersExpose } from './debugHeaders';
 import { projectRuntimeEvents } from './projectors/runtimeEventProjector';
 import type { AgentOption, ThreadSummary } from './types/product';
-import type { FollowUpMode } from './types/runtime';
+import type { CommandInvocation } from './runtime/commands';
+import type { SubmissionOutcome } from './types/runtime';
 
 const runtime = useRuntimeApi();
 const isDevelopment = import.meta.env.DEV;
@@ -30,29 +33,46 @@ const busy = ref(false);
 const submitting = ref(false);
 const sidebarCompact = ref(window.innerWidth <= 800);
 const scrollRegion = ref<HTMLElement | null>(null);
-const followUpMode = ref<FollowUpMode>(readFollowUpMode());
 const debugHeaders = ref<DebugHeadersExpose | null>(null);
+const followingTail = ref(true);
+const drafts = new Map<string, string>();
+let runGeneration = 0;
 
-const turns = computed(() => projectRuntimeEvents(runtime.events.value));
-const running = computed(
-  () => runtime.streaming.value || runtime.session.value?.state === 'running',
-);
+const turns = computed(() => projectRuntimeEvents(runtime.events.value, runtime.streaming.value));
+const running = runtime.running;
 const currentThread = computed(() =>
   threads.value.find((thread) => thread.sessionId === runtime.session.value?.sessionId),
 );
-const title = computed(() => currentThread.value?.title || agent.name);
+const title = computed(() => runtime.session.value?.displayName ?? currentThread.value?.title ?? agent.name);
+const statusLabel = computed(() => runtime.stopping.value ? '正在停止' : running.value && runtime.execution.value.confirming ? '等待确认' : runtime.uncertainty.value ? '待核对' : running.value ? '执行中' : '已就绪');
 
 watch(
-  () => runtime.events.value.length,
+  () => runtime.events.value,
   async () => {
     await nextTick();
-    scrollRegion.value?.scrollTo({ top: scrollRegion.value.scrollHeight, behavior: 'smooth' });
+    if (followingTail.value) scrollRegion.value?.scrollTo({ top: scrollRegion.value.scrollHeight, behavior: 'auto' });
   },
 );
 
-watch(followUpMode, (mode) => localStorage.setItem('campusclaw.followUpMode', mode));
+watch(() => runtime.session.value?.sessionId, (id, previous) => {
+  if (previous) drafts.set(previous, message.value);
+  message.value = id ? drafts.get(id) ?? '' : '';
+  submitting.value = false;
+  followingTail.value = true;
+}, { flush: 'sync' });
+onUnmounted(runtime.clearSessionView);
+
+function trackScroll(): void {
+  const element = scrollRegion.value;
+  if (element) followingTail.value = element.scrollHeight - element.scrollTop - element.clientHeight < 80;
+}
+function scrollToLatest(): void {
+  followingTail.value = true;
+  scrollRegion.value?.scrollTo({ top: scrollRegion.value.scrollHeight });
+}
 
 async function run(action: () => Promise<unknown>): Promise<boolean> {
+  const generation = ++runGeneration;
   busy.value = true;
   try {
     await action();
@@ -60,7 +80,7 @@ async function run(action: () => Promise<unknown>): Promise<boolean> {
   } catch {
     return false;
   } finally {
-    busy.value = false;
+    if (generation === runGeneration) busy.value = false;
   }
 }
 
@@ -76,7 +96,7 @@ async function createSession(agentId = configuredAgentId): Promise<void> {
 async function resumeSession(sessionId: string): Promise<void> {
   const succeeded = await run(async () => {
     const resumed = await runtime.getSession(sessionId);
-    await Promise.all([runtime.listModels(), runtime.loadHistory()]);
+    await Promise.all([runtime.listModels(), runtime.recover()]);
     upsertThread(resumed.sessionId, '已恢复的会话');
   });
   if (succeeded && window.innerWidth <= 800) sidebarCompact.value = true;
@@ -96,42 +116,52 @@ async function deleteConversation(): Promise<void> {
   if (succeeded) threads.value = threads.value.filter((thread) => thread.sessionId !== sessionId);
 }
 
-async function submit(overrideMode?: FollowUpMode): Promise<void> {
+async function submit(): Promise<void> {
   const draft = message.value;
-  const text = draft.trim();
-  if (!text || submitting.value || !runtime.hasSession.value) return;
+  const sessionId = runtime.session.value?.sessionId;
+  if (!draft.trim() || submitting.value || !runtime.canSend.value) return;
   submitting.value = true;
-  if (!running.value) {
-    const requestHeaders = isDevelopment ? await debugHeaders.value?.snapshot() : undefined;
-    if (requestHeaders === null) {
-      submitting.value = false;
-      return;
-    }
-    try {
-      const submission = await runtime.sendMessage(text, [], requestHeaders);
-      touchCurrentThread(text);
-      submitting.value = false;
-      const outcome = await submission.confirmation;
-      if (outcome === 'confirmed' && message.value === draft) message.value = '';
-    } catch {
-      // 服务拒绝或结果尚未确认时保留草稿，防止丢失内容或重复提交。
-    } finally {
-      submitting.value = false;
-    }
-    return;
-  }
-
   try {
-    const mode = overrideMode ?? followUpMode.value;
-    if (mode === 'steer') await runtime.steer(text);
-    else await runtime.followUp(text);
-    touchCurrentThread();
-    message.value = '';
+    const requestHeaders = isDevelopment ? await debugHeaders.value?.snapshot() : undefined;
+    if (requestHeaders === null || sessionId !== runtime.session.value?.sessionId) return;
+    const submission = await runtime.sendMessage(draft, [], requestHeaders);
+    const outcome = await submission.confirmation;
+    if (sessionId === runtime.session.value?.sessionId && outcome === 'confirmed') {
+      touchCurrentThread(draft);
+      if (message.value === draft) message.value = '';
+    }
   } catch {
-    // 请求不确定或被服务拒绝时保留输入，避免用户丢失内容。
+    // 没有本次回执时保留草稿，不以同文历史确认，也不自动重发。
   } finally {
-    submitting.value = false;
+    if (sessionId === runtime.session.value?.sessionId) submitting.value = false;
   }
+}
+
+async function executeCommand(invocation: CommandInvocation): Promise<SubmissionOutcome> {
+  const sessionId = runtime.session.value?.sessionId;
+  const headers = isDevelopment ? await debugHeaders.value?.snapshot() : undefined;
+  if (headers === null || sessionId !== runtime.session.value?.sessionId) return 'uncertain';
+  return runtime.executeCommand(invocation, headers);
+}
+
+async function stop(): Promise<void> {
+  const sessionId = runtime.session.value?.sessionId;
+  const rootId = runtime.execution.value.rootId;
+  const headers = isDevelopment ? await debugHeaders.value?.snapshot() : undefined;
+  if (headers === null || sessionId !== runtime.session.value?.sessionId || rootId !== runtime.execution.value.rootId) return;
+  await run(async () => { await runtime.interrupt(headers); });
+}
+
+async function decideTool(decision: 'allow' | 'deny', reason: string): Promise<void> {
+  const sessionId = runtime.session.value?.sessionId;
+  const toolCallId = runtime.execution.value.pendingTool?.toolCallId;
+  const headers = isDevelopment ? await debugHeaders.value?.snapshot() : undefined;
+  if (!toolCallId || headers === null || sessionId !== runtime.session.value?.sessionId) return;
+  await run(async () => { await runtime.confirmTool(toolCallId, decision, reason, headers); });
+}
+
+function acknowledgeUnknown(): void {
+  if (window.confirm('请先检查历史是否已有本次内容。确认已人工核对后，只解除编辑锁定，不会自动发送。')) runtime.acknowledgeUnknown();
 }
 
 async function changeModel(event: Event): Promise<void> {
@@ -170,15 +200,7 @@ function touchCurrentThread(firstMessage?: string): void {
 }
 
 function modelLabel(modelId: string): string {
-  return modelId
-    .replace(/^model[_-]/u, '')
-    .replace(/[-_]/gu, ' ')
-    .replace(/\b\w/gu, (letter) => letter.toUpperCase());
-}
-
-function readFollowUpMode(): FollowUpMode {
-  const stored = localStorage.getItem('campusclaw.followUpMode');
-  return stored === 'queue' ? 'queue' : 'steer';
+  return modelId;
 }
 </script>
 
@@ -193,7 +215,7 @@ function readFollowUpMode(): FollowUpMode {
       @toggle="sidebarCompact = !sidebarCompact"
     />
 
-    <main class="workspace">
+    <main class="workspace" :class="{ 'has-session': runtime.hasSession.value }">
       <header class="topbar">
         <button
           v-if="sidebarCompact"
@@ -246,11 +268,11 @@ function readFollowUpMode(): FollowUpMode {
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 10 4 4 4-4" /></svg>
           </label>
           <span class="state-badge" :class="{ running }" role="status" aria-live="polite">
-            <span></span>{{ running ? '执行中' : '已就绪' }}
+            <span></span>{{ statusLabel }}
           </span>
-          <button v-if="running" class="stop-button" type="button" :disabled="busy" @click="run(runtime.abort)">
+          <button v-if="running" class="stop-button" type="button" :disabled="!runtime.canStop.value || busy" @click="stop">
             <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="1" /></svg>
-            停止
+            {{ runtime.stopping.value ? '正在停止' : '停止' }}
           </button>
           <button v-else class="icon-button more-button" type="button" aria-label="删除当前会话" title="删除当前会话" @click="deleteConversation">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M8 10v7M12 10v7M16 10v7M6 7l1 14h10l1-14" /></svg>
@@ -283,18 +305,35 @@ function readFollowUpMode(): FollowUpMode {
       </template>
 
       <template v-else>
-        <section ref="scrollRegion" class="conversation-scroll" aria-label="会话内容">
-          <ConversationTimeline :turns="turns" :running="running" />
+        <section ref="scrollRegion" class="conversation-scroll" aria-label="会话内容" @scroll="trackScroll">
+          <ConversationTimeline :turns="turns" :running="runtime.streaming.value && !runtime.execution.value.confirming" />
         </section>
-        <ComposerBox
-          v-model="message"
-          v-model:mode="followUpMode"
-          :running="running"
-          :submitting="submitting"
-          :accepted-controls="runtime.acceptedControls.value"
-          :disabled="busy"
-          @submit="submit"
-        />
+        <div class="conversation-dock">
+          <div class="recovery-bar" role="status">
+            <span>{{ runtime.uncertainty.value || statusLabel }}</span>
+            <button v-if="!followingTail" class="secondary-button" type="button" @click="scrollToLatest">回到最新</button>
+            <button class="secondary-button" type="button" :disabled="runtime.recovering.value || busy" @click="run(runtime.recover)">{{ runtime.recovering.value ? '核对中…' : '重新核对' }}</button>
+            <button v-if="runtime.uncertainty.value && !running" class="secondary-button" type="button" :disabled="runtime.recovering.value" @click="acknowledgeUnknown">已人工核对</button>
+          </div>
+          <ToolConfirmation v-if="running && runtime.execution.value.pendingTool && runtime.execution.value.confirming"
+            :key="runtime.execution.value.pendingTool.toolCallId" :tool="runtime.execution.value.pendingTool"
+            :disabled="runtime.controlPending.value || runtime.stopping.value || runtime.receiptUnknown.value || busy" @decide="decideTool" />
+          <CommandResultRegion v-if="runtime.commandResult.value" :result="runtime.commandResult.value" @close="runtime.commandResult.value = null" />
+          <ComposerBox
+            :key="runtime.session.value?.sessionId"
+            v-model="message"
+            :running="running"
+            :submitting="submitting"
+            :can-send="runtime.canSend.value"
+            :disabled="busy"
+            :commands="runtime.commands.value"
+            :catalog-status="runtime.catalogStatus.value"
+            :catalog-error="runtime.catalogError.value"
+            :load-commands="runtime.listCommands"
+            :execute-command="executeCommand"
+            @submit="submit"
+          />
+        </div>
       </template>
     </main>
   </div>

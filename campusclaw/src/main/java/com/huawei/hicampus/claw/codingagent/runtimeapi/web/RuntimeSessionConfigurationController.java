@@ -4,14 +4,13 @@
 
 package com.huawei.hicampus.claw.codingagent.runtimeapi.web;
 
-import com.huawei.hicampus.claw.codingagent.common.identifier.ResourceIdentifierPatterns;
-import com.huawei.hicampus.claw.codingagent.runtimeapi.RuntimeApiConstants;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.result.ResultBeanAdapter;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.session.RuntimeSessionConfigurationService;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.session.RuntimeSessionView;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.vo.ChangeModelRequestVO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.vo.ChangeThinkingRequestVO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.vo.GetSessionResponseVO;
+import com.huawei.hicampus.claw.common.constant.ClawConstants;
 
 import org.springframework.http.CacheControl;
 import org.springframework.http.HttpHeaders;
@@ -36,7 +35,7 @@ import jakarta.validation.constraints.Pattern;
  * @since [br_eCampusCore 26.0.0]
  */
 @RestController
-@RequestMapping(RuntimeApiConstants.BASE_PATH + "/sessions/{sessionId}")
+@RequestMapping(ClawConstants.RuntimeApi.BASE_PATH + "/sessions/{sessionId}")
 public class RuntimeSessionConfigurationController {
     private final RuntimeSessionConfigurationService service;
 
@@ -50,8 +49,7 @@ public class RuntimeSessionConfigurationController {
 
     @GetMapping("/models")
     public ResponseEntity<Object> listModels(
-            @PathVariable("sessionId") @NotBlank @Pattern(regexp = ResourceIdentifierPatterns.SESSION_ID_REGEX)
-                    String sessionId,
+            @PathVariable("sessionId") @NotBlank @Pattern(regexp = ClawConstants.Session.ID_REGEX) String sessionId,
             HttpServletRequest request) {
         Object result = service.listModels(sessionId);
         return success(result, request);
@@ -59,8 +57,7 @@ public class RuntimeSessionConfigurationController {
 
     @PutMapping("/model")
     public ResponseEntity<Object> changeModel(
-            @PathVariable("sessionId") @NotBlank @Pattern(regexp = ResourceIdentifierPatterns.SESSION_ID_REGEX)
-                    String sessionId,
+            @PathVariable("sessionId") @NotBlank @Pattern(regexp = ClawConstants.Session.ID_REGEX) String sessionId,
             @RequestHeader(value = HttpHeaders.IF_MATCH, required = false) String ifMatch,
             @Valid @RequestBody ChangeModelRequestVO body,
             HttpServletRequest request) {
@@ -70,8 +67,7 @@ public class RuntimeSessionConfigurationController {
 
     @PutMapping("/thinking")
     public ResponseEntity<Object> changeThinking(
-            @PathVariable("sessionId") @NotBlank @Pattern(regexp = ResourceIdentifierPatterns.SESSION_ID_REGEX)
-                    String sessionId,
+            @PathVariable("sessionId") @NotBlank @Pattern(regexp = ClawConstants.Session.ID_REGEX) String sessionId,
             @RequestHeader(value = HttpHeaders.IF_MATCH, required = false) String ifMatch,
             @Valid @RequestBody ChangeThinkingRequestVO body,
             HttpServletRequest request) {

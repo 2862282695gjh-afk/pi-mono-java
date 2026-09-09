@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ADR-0046：保留 Runtime 模型解析异常因果链</title>
+  <style>
+    :root { color-scheme: light; font-family: Inter, "PingFang SC", sans-serif; color: #25272a; background: #f2f5f7; }
+    body { margin: 0; }
+    main { width: min(920px, calc(100% - 40px)); margin: 40px auto; padding: 40px; box-sizing: border-box; background: #fff; border: 1px solid #d7dde2; border-radius: 16px; }
+    h1 { margin-top: 0; font-size: 30px; }
+    h2 { margin-top: 32px; font-size: 20px; }
+    h3 { margin-top: 22px; font-size: 17px; }
+    p, li { line-height: 1.75; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 10px 12px; border: 1px solid #d7dde2; text-align: left; vertical-align: top; }
+    th { width: 190px; background: #edf2f5; }
+    code { padding: 2px 5px; border-radius: 5px; background: #edf2f5; overflow-wrap: anywhere; }
+    a { color: #1769aa; }
+    .status { display: inline-flex; padding: 4px 9px; border-radius: 999px; color: #12633a; background: #e8f7ed; font-weight: 650; }
+    @media (max-width: 640px) { main { width: 100%; margin: 0; padding: 24px 18px; border: 0; border-radius: 0; } th { width: 120px; } }
+  </style>
+</head>
+<body>
+<main>
+  <h1>ADR-0046：保留 Runtime 模型解析异常因果链</h1>
+  <table>
+    <tr><th>Status</th><td><span class="status">Accepted</span></td></tr>
+    <tr><th>Date</th><td>2026-09-03</td></tr>
+    <tr><th>Pre-change baseline</th><td><code>origin/main@c9d858bc8261bf07f5585f545b53495bf2226a56</code></td></tr>
+    <tr><th>Reviewed implementation</th><td><code>f3e2a31c6f0692fec429567c5535c6ec9bec7343</code></td></tr>
+    <tr><th>Observed source</th><td><code>modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/model/RuntimeModelManager.java</code> 的 <code>resolveAvailableModel</code>；<code>modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/error/RuntimeApiException.java</code> 的构造器</td></tr>
+  </table>
+
+  <h2>Context</h2>
+  <p>源码基线先校验模型是否位于 Agent 的可用列表，再调用具体 Model Manager 解析模型。除 <code>MANAGER_UNAVAILABLE</code> 外，解析阶段抛出的 <code>RuntimeApiException</code> 会被转换为公开的 <code>MODEL_NOT_AVAILABLE</code>，避免客户端区分“未授权使用”和“未配置”等内部状态。</p>
+  <p>转换分支创建新异常时没有保留已捕获异常。由于 <code>RuntimeApiException</code> 同时禁用了自身栈跟踪，原始错误码和因果关系会完全丢失，进程内诊断也无法恢复。</p>
+
+  <h2>Decision drivers</h2>
+  <ul>
+    <li>继续保持公开接口的防枚举错误语义。</li>
+    <li>保留异常转换前的内部错误分类和因果关系。</li>
+    <li>不恢复稳定业务异常自身的栈跟踪开销。</li>
+    <li>不改变 HTTP 状态、响应字段或国际化消息。</li>
+  </ul>
+
+  <h2>Considered options</h2>
+  <h3>继续丢弃原异常</h3>
+  <p><strong>优点：</strong>无需修改异常类型。<br><strong>缺点：</strong>错误转换后无法定位原始分类，也会持续触发异常信息丢失检查。拒绝。</p>
+
+  <h3>在默认接口中记录日志后丢弃 cause</h3>
+  <p><strong>优点：</strong>日志中可以留下原始错误。<br><strong>缺点：</strong>接口默认方法需要承担日志策略，进程内调用方仍无法检查因果链，并可能与更外层的失败日志重复。拒绝。</p>
+
+  <h3>由包装异常保留 cause</h3>
+  <p><strong>优点：</strong>使用 Java 标准异常链保留原始错误，调用方可按需记录或检查；HTTP 边界仍只使用外层错误码。<br><strong>缺点：</strong>异常存活期间会同时引用原异常。接受。</p>
+
+  <h2>Decision</h2>
+  <ul>
+    <li>为 <code>RuntimeApiException</code> 增加接受 <code>Throwable cause</code> 的构造器。</li>
+    <li>新构造器保留 cause，同时继续关闭 suppression 和包装异常自身的 writable stack trace。</li>
+    <li><code>resolveAvailableModel</code> 将非 <code>MANAGER_UNAVAILABLE</code> 的原异常作为 <code>MODEL_NOT_AVAILABLE</code> 的 cause。</li>
+    <li><code>MANAGER_UNAVAILABLE</code> 仍原样传播；可用列表直接拒绝仍不创建虚假的 cause。</li>
+  </ul>
+
+  <h2>Intentional difference</h2>
+  <p><strong>内部错误传播架构变化：</strong>稳定业务异常可在错误码转换时携带内部 cause。<strong>产品约束保持不变：</strong>HTTP 错误处理器只序列化外层 <code>MODEL_NOT_AVAILABLE</code>，不向客户端暴露原始错误类型、消息或栈。</p>
+
+  <h2>Consequences</h2>
+  <ul>
+    <li>正面：静态检查和运行时诊断均可确认原始异常没有在 catch 块中丢失。</li>
+    <li>正面：模型存在性与 Agent 配置状态仍不能通过公开响应枚举。</li>
+    <li>边界：cause 仅存在于服务进程内，除非上层显式记录，否则不会自动写入日志。</li>
+    <li>测试：必须同时断言外层错误码为 <code>MODEL_NOT_AVAILABLE</code> 且 cause 与原异常为同一实例。</li>
+  </ul>
+
+  <h2>Validation</h2>
+  <ul>
+    <li>运行 <code>RuntimeModelManagerTest</code> 和 <code>RuntimeErrorCodeTest</code>。</li>
+    <li>运行 coding-agent 模块相关测试、Spotless、Checkstyle 和 Git diff 检查。</li>
+    <li>同步并验证 <code>campusclaw</code> 公司镜像。</li>
+  </ul>
+
+  <h2>Related</h2>
+  <ul>
+    <li><a href="../designs/coding-agent-cli.md">Coding Agent Runtime HTTP 与受管 Session 设计</a></li>
+    <li><a href="0018-runtime-http-v137-contract-alignment.html">ADR-0018：Runtime HTTP 契约对齐</a></li>
+  </ul>
+</main>
+</body>
+</html>

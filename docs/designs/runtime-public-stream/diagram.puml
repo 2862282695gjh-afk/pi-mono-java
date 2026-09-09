@@ -1,0 +1,38 @@
+@startuml public_stream_support
+title Public Summary Provenance and Data-only SSE
+' Observed Java baseline: d9a207779911eb286e1579119fb45a972092efe4
+' Implementation commits: 4687ef06, c0004604, 8bf2f997, 46d3e13e
+' Source: modules/ai/src/main/java/com/campusclaw/ai/provider/openai/OpenAIResponsesProvider.java#applyThinkingDelta
+' Source: modules/ai/src/main/java/com/campusclaw/ai/stream/AssistantMessageEvent.java#ThinkingEndEvent
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/vo/RuntimeSseEventVO.java#dataOnly
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/web/RuntimeSseEmitterSubscriber.java#onEvent
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/event/RuntimeEntryCodec.java#encodedSseBytes
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/common/client/HttpMateToolClient.java#toToolResult
+' Pi baseline: 5cd93f688aaab89dbb6dfa4aca535f21796ae185
+' Pi source: packages/ai/src/api/openai-responses-shared.ts lines 602 and 685
+' Observed behavior: legacy SSE includes event/id and generic thinking has no public provenance.
+' Design reason: distinguish provider summary output before exposing a public event.
+' Java divergence: strict summary provenance is CampusClaw security hardening.
+skinparam componentStyle rectangle
+component "OpenAI Responses summary delta" as summary
+component "Generic thinking" as generic
+component "Thinking event\npublicSummary" as thinking
+component "Future v2 event projection" as projection #EEEEEE
+component "RuntimeSseEventVO.dataOnly" as frame
+component "Data-only subscriber" as subscriber
+component "HTTP SSE data" as wire
+component "Mate JSON content" as mate
+component "HttpMateToolClient" as client
+mate --> client : text / JSON / empty normalization
+client ..> projection : normalized tool result
+summary --> thinking : true for observed summary output
+generic --> thinking : false by default
+thinking ..> projection : explicit provenance
+projection ..> frame : future integration
+frame --> subscriber : strict mode
+subscriber --> wire : data only; ping comment
+note bottom of projection
+The current production controller and
+legacy projector are not switched here.
+end note
+@enduml

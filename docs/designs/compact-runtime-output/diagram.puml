@@ -1,0 +1,73 @@
+@startuml compact_output_layers
+title Compact Runtime - Optional Request Output
+' Source evidence: pi-mono-java@ee89ff00 modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/event/RuntimeEventProjector.java:projectCompactionCompleted.
+' Implementation: pi-mono-java@defb6880 modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/event/RuntimeEventOutput.java.
+' Implementation: pi-mono-java@defb6880 modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/dto/RuntimeExecutionContextDTO.java.
+' Observed behavior: the same projector persists domain entries and usage before optional output.
+' Java divergence: pi@4af9d21d packages/coding-agent/src/core/agent-session.ts:compact has no HTTP request output boundary.
+' Design reason: absence of SSE must not imply absence of durable projection.
+skinparam shadowing false
+set namespaceSeparator none
+package "POST Events application" {
+  class RuntimeEventService <<singleton>>
+  class RuntimeExecutionContextDTO <<request carrier>>
+}
+package "Runtime projection" {
+  class RuntimeActiveExecution <<per execution>>
+  class RuntimeEventProjector <<per execution>>
+  class RuntimeExecutionCoordinator <<singleton>>
+}
+package "Optional public output" {
+  interface RuntimeEventOutput
+  class RuntimeEventStream <<bounded request buffer>>
+  enum PersistenceOnlyRuntimeEventOutput <<stateless>>
+}
+class "Session Repository\nEntry + Usage" as Repository <<persistence>>
+RuntimeEventService --> RuntimeExecutionContextDTO
+RuntimeExecutionContextDTO --> RuntimeEventStream : POST response
+RuntimeExecutionContextDTO --> RuntimeActiveExecution
+RuntimeActiveExecution --> RuntimeEventOutput
+RuntimeEventProjector --> RuntimeEventOutput : optional event factory
+RuntimeExecutionCoordinator --> RuntimeEventOutput : terminal output
+RuntimeEventStream ..|> RuntimeEventOutput
+PersistenceOnlyRuntimeEventOutput ..|> RuntimeEventOutput
+RuntimeEventProjector --> Repository : authoritative persistence
+note bottom of PersistenceOnlyRuntimeEventOutput
+  No buffer or subscriber.
+  Never evaluates or retains factories.
+end note
+@enduml
+
+@startuml compact_persistence_sequence
+title Compaction Projection - Commit Before Sequence Publication
+' Source evidence: pi-mono-java@defb6880 modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/event/RuntimeEventProjector.java:projectCompactionCompleted,lastCompactionEntrySeq.
+' Source evidence: pi-mono-java@ee89ff00 modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/event/RuntimeEntryCodec.java:toAgentContextEntryIds,effectiveContextEntries.
+' Design reason: usage must not replace the compaction entry sequence; Compact never continues a control queue.
+' Current contract: pi-mono-java-design@0a113ce8 Built-in README section 7 prohibits queued continuation.
+' Target-only: Compact acceptance and its independent completion handle are delivered in later slices.
+skinparam shadowing false
+participant "Session compaction event" as Session
+participant "RuntimeEventProjector\nper execution" as Projector
+database Repository
+participant "Persistence-only output" as Output
+Session -> Projector : completed(result, reason, willRetry)
+activate Projector
+Projector -> Repository : load current branch in batches
+Repository --> Projector : authoritative entries
+Projector -> Projector : map retained and discarded identities
+alt invalid boundary or persistence failure
+  Projector -> Projector : record failure and request abort once
+else valid result
+  Projector -> Repository : appendEntryWithUsage
+  Repository --> Projector : persisted Entry with actual sequence
+  Projector -> Projector : publish lastCompactionEntrySeq
+  Projector -> Output : emit(event factory)
+  Output --> Projector : discard factory without evaluation
+end
+deactivate Projector
+note over Projector,Output
+  This slice does not start Compact or return command JSON.
+  Later coordinator captures this result and releases the holder.
+  Compact accepts no Steer or FollowUp and never continues queues.
+end note
+@enduml

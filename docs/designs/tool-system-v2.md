@@ -1,16 +1,21 @@
 # CampusClaw 受管 Agent 工具系统 v2
 
-> 文档版本：1.8.0
+> 文档版本：1.9.0
 >
 > 状态：Implemented
 >
-> 日期：2026-09-01
+> 日期：2026-09-07
 > 决策记录：[ADR-0022](../decisions/0022-managed-agent-tool-system-v2.html)、
 > [ADR-0032](../decisions/0032-tool-execution-credential-boundary.html)、
 > [ADR-0024](../decisions/0024-mate-tool-execution-credential-chain.html)、
 > [ADR-0036](../decisions/0036-read-text-only.html)
 
 > 公司镜像相关路径和标识按 2026-09-01 的当前仓库位置展示；历史提交 SHA 仍是对应行为证据。
+
+> 2026-09-07 当前状态补记：本页 Slash 保留与首版未发布说明是 PR 167 时点的历史决定。
+> 后续已建立独立 Runtime 命令体系并发布清单 GET；旧原型已在 `1bf1ce6d631a5c394153bd8e8cce55a861d3a387`
+> 删除。清理边界与保留能力见[命令原型清理](legacy-command-cleanup/README.md)及
+> [ADR-0070](../decisions/0070-remove-legacy-command-prototype.html)，不改变本页工具与公共压缩行为。
 
 ## 1. 结论与源码基线
 
@@ -64,7 +69,7 @@ Session；各 Session 的消息、工作目录、工具实例、Mate 缓存和 E
 - `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/event/RuntimeEntryCodec.java`、
   `RuntimeEventProjector.java`：压缩保留边界、重试候选排除和重载上下文恢复；
 - `modules/ai/src/main/java/com/campusclaw/ai/utils/ContextOverflowDetector.java`：显式、静默及可恢复 length 溢出识别；
-- `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/command/SlashCommandRegistry.java`：未注册到 Host 的 Slash Command 核心；
+- `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/command/SlashCommandRegistry.java`：PR 167 审查基线 `bf28e72f` 中未注册到 Host 的 Slash 核心，当前已删除，路径仅作历史证据；
 - `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/session/RuntimeSessionModelReconciler.java`：refresh 后下一次执行的模型懒校准；
 - `modules/cron/src/main/java/com/campusclaw/cron/tool/CronTool.java`、
   `modules/cron/src/main/java/com/campusclaw/cron/engine/CronJobExecutor.java`：Agent 隔离管理与触发执行。
@@ -84,7 +89,7 @@ Session；各 Session 的消息、工作目录、工具实例、Mate 缓存和 E
 | Cron | payload 固化 model/system/tools，并由旧本地 Session 执行 | Job 只保存 agentId/prompt，触发时 prepare 并使用 cron profile | 架构改造：配置随 Agent 当前绑定生效 |
 | CLI | 服务入口可分发到 CLI/TUI，Loop 属于 CLI Session | 产品只保留服务入口；无 CLI profile、Loop 或 `/reload` | 产品约束：CampusClaw 是 ToB 服务 |
 | Session 压缩 | 压缩、文件追踪和溢出恢复耦合在旧 TUI/CLI 大型 Session | 压缩迁入 `ManagedAgentSession`；阈值、溢出和一次重试对三入口一致 | 架构改造：入口删除不能连带删除公共上下文能力 |
-| Slash Command | 处理器位于 CLI/TUI 编排树，依赖旧 Session 与终端输出 | 保留核心、Registry 和四个处理器，改用宿主无关端口；首版无 Host 注册 | 架构改造：保留可复用命令语义，不新增产品入口 |
+| Slash Command（PR 167 时点） | 处理器位于 CLI/TUI 编排树，依赖旧 Session 与终端输出 | 当时保留核心、Registry 和四个处理器，首版无 Host 注册；该原型现已删除，见页首补记 | 架构改造：当时先解耦公共能力，后续按真实消费者清理原型 |
 | 写与命令 | Bash/Edit/Write 可作为模型工具 | 底层代码可保留，但不在枚举、配置、工厂或 Spring 工具发现链 | 安全加固：当前 Agent 只具备只读本地能力 |
 
 ## 3. 总体架构
@@ -292,10 +297,10 @@ CampusClaw 不恢复 pi 的 JSONL/tree/Extension、Bash/Edit/Write 文件追踪�
 | JSONL Session、tree/navigation、本机 Auth、旧 SettingsManager | 删除 | Runtime 使用数据库和受管设置 |
 | import/export/copy/share、剪贴板、外部编辑器、Prompt Template | 删除 | 终端交互专属 |
 | PackageManager、Skill 本地安装/链接/导入、Extension、主题、快捷键 | 删除 | Skill 只来自受管目录 |
-| Slash core、Registry、`/model`、`/thinking`、`/compact`、`/name` | 保留并解耦 | `command` 包只依赖宿主无关 Session/Output 端口 |
+| Slash core、Registry、`/model`、`/thinking`、`/compact`、`/name` | 当时保留并解耦，现已删除原型 | 历史 `command` 包仅有测试端口消费者；当前 Runtime 命令另有分层实现 |
 | 阈值/溢出压缩、Read 文件追踪 | 迁移 | 公共 `ManagedAgentSession` 与 `session.compaction` |
 
-首版任何 Host 都不注册 Slash Command，不增加 HTTP Slash 或 Compact 接口，也不拦截
+以下为 PR 167 当时的首版范围，不作为当前命令开发约束：任何 Host 都不注册 Slash Command，不增加 HTTP Slash 或 Compact 接口，也不拦截
 `POST /events` 中以 `/` 开头的普通消息。`/name` 的未来端口只能由 Host 适配 mate-service，
 不得把 Chat 名称写入 Runtime Session。
 
@@ -306,7 +311,7 @@ CampusClaw 不恢复 pi 的 JSONL/tree/Extension、Bash/Edit/Write 文件追踪�
   `EditDiff` 不属于活动工具集合。
 - 动态 ToolCatalog/Extension、旧外部 SubAgent backend 不再由 Spring 自动发现。
 - TUI 产品模块、动态 ToolCatalog/Extension、旧 Child backend 和旧工具入口源码已删除；
-  Slash Command 核心及四个处理器保留，但未被 Spring 或 HTTP Host 注册；
+  Slash Command 核心及四个处理器当时保留且未注册，现按 [ADR-0070](../decisions/0070-remove-legacy-command-prototype.html) 删除；
   `Bash`、`Edit`、`Write` 的底层实现只作为未装配代码保留，且不是 Spring Bean。
 - 本变更不提供旧名称别名、旧 Cron payload 或 CLI 兼容入口。
 
@@ -330,6 +335,7 @@ git diff --check
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 1.9.0 | 2026-09-07 | 标明 Slash 原型保留决定的历史范围，关联当前删除实现；工具与公共压缩不变。 |
 | 1.8.0 | 2026-09-01 | 对齐 CampusClaw 公司镜像的新目录、Java 包和同步入口；工具契约不变。 |
 | 1.7.2 | 2026-08-31 | 修正 Find/Grep 的 `.gitignore` 根锚定规则：`/dist`、`/*.txt` 仅相对规则文件所在目录的根生效，不再误过滤嵌套同名路径。 |
 | 1.7.1 | 2026-08-31 | 修正 Read 末尾 LF 的逻辑行边界：空文件为 0 行，末尾换行不增加 `totalLines` 或误触发截断，同时保留原始末尾换行。 |

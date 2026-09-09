@@ -4,10 +4,12 @@
 
 package com.campusclaw.codingagent.runtime;
 
+import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -22,9 +24,9 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.regex.Pattern;
 
-import com.campusclaw.codingagent.common.identifier.ResourceIdentifierPatterns;
 import com.campusclaw.codingagent.runtime.MateServiceClient.AgentReference;
 import com.campusclaw.codingagent.runtime.MateServiceClient.AgentRuntime;
+import com.campusclaw.codingagent.runtime.MateServiceClient.BoundTool;
 import com.campusclaw.codingagent.runtime.MateServiceClient.DependentSkill;
 import com.campusclaw.codingagent.runtime.MateServiceClient.SkillFile;
 import com.campusclaw.codingagent.runtime.MateServiceClient.SkillInfo;
@@ -32,7 +34,9 @@ import com.campusclaw.codingagent.runtime.MateServiceClient.SkillReference;
 import com.campusclaw.codingagent.skill.Skill;
 import com.campusclaw.codingagent.skill.SkillLoadException;
 import com.campusclaw.codingagent.skill.SkillLoader;
+import com.campusclaw.common.constant.ClawConstants;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -50,12 +54,6 @@ public class AgentRuntimeManager {
     private static final Logger LOGGER = LoggerFactory.getLogger(AgentRuntimeManager.class);
 
     private static final int SCHEMA_VERSION = 1;
-    private static final String CAMPUSCLAW_DIRECTORY = ".campusclaw";
-    private static final String AGENT_FILE = "agent.json";
-    private static final String SETTINGS_FILE = "settings.json";
-    private static final String SYSTEM_FILE = "SYSTEM.md";
-    private static final String SKILL_FILE = "SKILL.md";
-    private static final String SKILL_MANIFEST_FILE = "skill.json";
 
     private final AgentRuntimeProperties properties;
     private final MateServiceClient mateServiceClient;
@@ -98,7 +96,7 @@ public class AgentRuntimeManager {
      */
     public PreparedAgentRuntime prepareCached(String agentId) {
         Path agentRoot = requireAgentRoot(agentId);
-        return loadIfComplete(agentId, agentRoot);
+        return withAgentLock(agentId, () -> loadIfComplete(agentId, agentRoot));
     }
 
     /**
@@ -120,7 +118,9 @@ public class AgentRuntimeManager {
      * @throws AgentRuntimeException 系统提示词无法读取时抛出
      */
     public String readSystemPrompt(PreparedAgentRuntime runtime) {
-        Path systemFile = runtime.agentRoot().resolve(CAMPUSCLAW_DIRECTORY).resolve(SYSTEM_FILE);
+        Path systemFile = runtime.agentRoot()
+                .resolve(ClawConstants.Runtime.DIRECTORY_NAME)
+                .resolve(ClawConstants.Runtime.SYSTEM_FILE_NAME);
         try {
             return Files.readString(systemFile, StandardCharsets.UTF_8);
         } catch (IOException exception) {
@@ -154,7 +154,7 @@ public class AgentRuntimeManager {
 
     private Path createStagingDirectory(Path agentRoot) {
         try {
-            Files.createDirectories(properties.agentsRoot().toAbsolutePath().normalize());
+            Files.createDirectories(agentRoot.getParent());
             Files.createDirectories(agentRoot);
             if (Files.isSymbolicLink(agentRoot)) {
                 throw new IOException("Agent root must not be a symbolic link");
@@ -167,12 +167,12 @@ public class AgentRuntimeManager {
 
     private void writeRuntimeTree(Path campusClawDir, AgentRuntime runtime, List<SkillInfo> skills) throws IOException {
         Files.createDirectories(campusClawDir.resolve("agents"));
-        Files.createDirectories(campusClawDir.resolve("skills"));
-        writeJson(campusClawDir.resolve(AGENT_FILE), toIdentity(runtime));
-        writeJson(campusClawDir.resolve(SETTINGS_FILE), toSettings(runtime));
-        writeFile(campusClawDir.resolve(SYSTEM_FILE), runtime.systemPrompt());
+        Files.createDirectories(campusClawDir.resolve(ClawConstants.Skill.DIRECTORY_NAME));
+        writeJson(campusClawDir.resolve(ClawConstants.Runtime.AGENT_FILE_NAME), toIdentity(runtime));
+        writeJson(campusClawDir.resolve(ClawConstants.Runtime.SETTINGS_FILE_NAME), toSettings(runtime));
+        writeFile(campusClawDir.resolve(ClawConstants.Runtime.SYSTEM_FILE_NAME), runtime.systemPrompt());
         writeChildren(campusClawDir.resolve("agents"), runtime.bindingAgents());
-        writeSkills(campusClawDir.resolve("skills"), skills);
+        writeSkills(campusClawDir.resolve(ClawConstants.Skill.DIRECTORY_NAME), skills);
     }
 
     private void writeChildren(Path agentsDirectory, List<AgentReference> children) throws IOException {
@@ -200,9 +200,9 @@ public class AgentRuntimeManager {
             Files.createDirectories(skillDirectory.resolve("references"));
             Files.createDirectories(skillDirectory.resolve("templates"));
             writeJson(
-                    skillDirectory.resolve(SKILL_MANIFEST_FILE),
-                    new SkillManifest(SCHEMA_VERSION, skill.id(), skill.name(), skill.version()));
-            Path skillFile = skillDirectory.resolve(SKILL_FILE);
+                    skillDirectory.resolve(ClawConstants.Skill.MANIFEST_FILE_NAME),
+                    new SkillManifest(SCHEMA_VERSION, skill.id(), skill.name(), skill.version(), skill.bindingTools()));
+            Path skillFile = skillDirectory.resolve(ClawConstants.Skill.MARKDOWN_FILE_NAME);
             writeFile(skillFile, skill.content());
             requireSessionLoadable(skill.name(), skillFile);
             writeResources(skillDirectory.resolve("references"), skill.references());
@@ -217,7 +217,7 @@ public class AgentRuntimeManager {
         if (isBlank(content)) {
             throw new AgentRuntimeException("Skill content is empty: " + skill.name());
         }
-        if (content.getBytes(StandardCharsets.UTF_8).length > Skill.MAX_FILE_BYTES) {
+        if (content.getBytes(StandardCharsets.UTF_8).length > ClawConstants.Skill.MAX_FILE_BYTES) {
             throw new AgentRuntimeException("Skill content exceeds size limit: " + skill.name());
         }
         Map<String, Object> frontmatter = SkillLoader.parseFrontmatter(content);
@@ -235,7 +235,7 @@ public class AgentRuntimeManager {
     // 解析出的名称还必须与期望名称一致。
     private Skill requireSessionLoadable(String expectedName, Path skillFile) {
         try {
-            if (Files.size(skillFile) > Skill.MAX_FILE_BYTES) {
+            if (Files.size(skillFile) > ClawConstants.Skill.MAX_FILE_BYTES) {
                 throw new AgentRuntimeException("SKILL.md exceeds size limit: " + expectedName);
             }
         } catch (IOException exception) {
@@ -273,7 +273,7 @@ public class AgentRuntimeManager {
     }
 
     private PreparedAgentRuntime loadIfComplete(String agentId, Path agentRoot) {
-        return loadSnapshot(agentId, agentRoot, agentRoot.resolve(CAMPUSCLAW_DIRECTORY));
+        return loadSnapshot(agentId, agentRoot, agentRoot.resolve(ClawConstants.Runtime.DIRECTORY_NAME));
     }
 
     private PreparedAgentRuntime loadSnapshot(String agentId, Path agentRoot, Path campusClawDir) {
@@ -281,16 +281,18 @@ public class AgentRuntimeManager {
             return null;
         }
         try {
-            AgentIdentity identity = readJson(campusClawDir.resolve(AGENT_FILE), AgentIdentity.class);
-            AgentSettings settings = readJson(campusClawDir.resolve(SETTINGS_FILE), AgentSettings.class);
-            String systemPrompt = readRequiredFile(campusClawDir.resolve(SYSTEM_FILE));
+            AgentIdentity identity =
+                    readJson(campusClawDir.resolve(ClawConstants.Runtime.AGENT_FILE_NAME), AgentIdentity.class);
+            AgentSettings settings =
+                    readJson(campusClawDir.resolve(ClawConstants.Runtime.SETTINGS_FILE_NAME), AgentSettings.class);
+            String systemPrompt = readRequiredFile(campusClawDir.resolve(ClawConstants.Runtime.SYSTEM_FILE_NAME));
             List<AgentReference> children = loadChildren(campusClawDir.resolve("agents"));
-            List<SkillInfo> skills = loadSkills(campusClawDir.resolve("skills"));
+            List<SkillInfo> skills = loadSkills(campusClawDir.resolve(ClawConstants.Skill.DIRECTORY_NAME));
             if (!validSnapshot(agentId, identity, settings, children, skills)) {
                 return null;
             }
             AgentRuntime metadata = toRuntime(identity, settings, systemPrompt, children, skills);
-            return new PreparedAgentRuntime(agentId, agentRoot.toAbsolutePath().normalize(), metadata, skills);
+            return new PreparedAgentRuntime(agentId, agentRoot, metadata, skills);
         } catch (IOException | RuntimeException exception) {
             return null;
         }
@@ -339,12 +341,15 @@ public class AgentRuntimeManager {
                 || !isSafeDirectory(directory.resolve("templates"))) {
             throw new IOException("Skill directory is incomplete");
         }
-        SkillManifest manifest = readJson(directory.resolve(SKILL_MANIFEST_FILE), SkillManifest.class);
-        if (manifest.schemaVersion() != SCHEMA_VERSION
-                || !directory.getFileName().toString().equals(manifest.name())) {
+        SkillManifest manifest =
+                readJson(directory.resolve(ClawConstants.Skill.MANIFEST_FILE_NAME), SkillManifest.class);
+        if (manifest.schemaVersion() != SCHEMA_VERSION || manifest.bindingTools() == null) {
+            throw new IOException("Skill manifest is incomplete");
+        }
+        if (!directory.getFileName().toString().equals(manifest.name())) {
             throw new IOException("Skill name does not match its path");
         }
-        Path skillFile = directory.resolve(SKILL_FILE);
+        Path skillFile = directory.resolve(ClawConstants.Skill.MARKDOWN_FILE_NAME);
 
         // 缓存读取与发布前复核共用同一校验入口(字节上限 + SkillLoader 完整规则):
         // 任一规则不过即判缓存不完整,触发重新拉取,而不是带着缺陷命中缓存。
@@ -357,7 +362,7 @@ public class AgentRuntimeManager {
                 loaded.description(),
                 null,
                 skillMarkdown,
-                List.of(),
+                manifest.bindingTools(),
                 List.<DependentSkill>of(),
                 List.of(),
                 List.of());
@@ -368,7 +373,7 @@ public class AgentRuntimeManager {
         if (Files.isSymbolicLink(agentRoot)) {
             throw new IOException("Agent root must not be a symbolic link");
         }
-        Path target = agentRoot.resolve(CAMPUSCLAW_DIRECTORY);
+        Path target = agentRoot.resolve(ClawConstants.Runtime.DIRECTORY_NAME);
         Path backup = agentRoot.resolve(".campusclaw-backup-" + UUID.randomUUID());
         boolean hadTarget = Files.exists(target, LinkOption.NOFOLLOW_LINKS);
         try {
@@ -411,15 +416,56 @@ public class AgentRuntimeManager {
     }
 
     private Path requireAgentRoot(String agentId) {
-        if (!matches(agentId, ResourceIdentifierPatterns.AGENT_ID_PATTERN)) {
+        if (!matches(agentId, ClawConstants.Agent.ID_PATTERN)) {
             throw new IllegalArgumentException("Invalid agentId");
         }
-        return properties
-                .agentsRoot()
-                .toAbsolutePath()
-                .normalize()
-                .resolve(agentId)
-                .normalize();
+        if (!validatePath(properties.agentsRoot())) {
+            throw new IllegalArgumentException("Invalid agents root path");
+        }
+        try {
+            Path agentsRoot = Path.of(properties.agentsRoot().toFile().getCanonicalPath());
+            if (!validatePath(agentId)) {
+                throw new IllegalArgumentException("Invalid agentId path");
+            }
+            Path expectedAgentRoot = agentsRoot.resolve(agentId);
+            if (!validatePath(expectedAgentRoot)) {
+                throw new IllegalArgumentException("Invalid Agent root path");
+            }
+            File agentDirectory = expectedAgentRoot.toFile();
+            Path agentRoot = Path.of(agentDirectory.getCanonicalPath());
+            if (!agentRoot.startsWith(agentsRoot)) {
+                throw new IllegalArgumentException("Canonical Agent path escapes agents root");
+            }
+            if (!agentRoot.equals(expectedAgentRoot)) {
+                throw new IllegalArgumentException("Canonical Agent path does not match requested Agent directory");
+            }
+            return agentRoot;
+        } catch (IOException exception) {
+            throw new AgentRuntimeException("Failed to resolve canonical Agent root", exception);
+        }
+    }
+
+    private static boolean validatePath(String path) {
+        if (path == null) {
+            return false;
+        }
+        try {
+            return validatePath(Path.of(path));
+        } catch (InvalidPathException exception) {
+            return false;
+        }
+    }
+
+    private static boolean validatePath(Path path) {
+        if (path == null || path.toString().isBlank() || !path.equals(path.normalize())) {
+            return false;
+        }
+        for (Path segment : path) {
+            if (segment.toString().equals(".") || segment.toString().equals("..")) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private <T> T withAgentLock(String agentId, SupplierWithException<T> action) {
@@ -435,10 +481,13 @@ public class AgentRuntimeManager {
     private static void requireValidRuntime(AgentRuntime runtime, String requestedId) {
         if (runtime == null
                 || !requestedId.equals(runtime.id())
-                || !matches(runtime.id(), ResourceIdentifierPatterns.AGENT_ID_PATTERN)) {
+                || !matches(runtime.id(), ClawConstants.Agent.ID_PATTERN)) {
             throw new AgentRuntimeException("Mate returned an invalid Agent identity");
         }
-        if (!isSafeName(runtime.name()) || isBlank(runtime.version()) || !validModels(runtime.bindingModels())) {
+        if (!isSafeName(runtime.name())
+                || isBlank(runtime.version())
+                || !validModels(runtime.bindingModels())
+                || !validToolBindings(runtime.bindingTools())) {
             throw new AgentRuntimeException("Mate returned invalid Agent metadata");
         }
         runtime.bindingSkills().forEach(AgentRuntimeManager::requireValidSkillReference);
@@ -446,14 +495,14 @@ public class AgentRuntimeManager {
     }
 
     private static void requireValidSkill(SkillInfo skill, SkillReference reference) {
-        requireIdentifier(skill == null ? null : skill.id(), ResourceIdentifierPatterns.SKILL_ID_PATTERN);
+        requireIdentifier(skill == null ? null : skill.id(), ClawConstants.Skill.ID_PATTERN);
         if (!skill.id().equals(reference.id())) {
             throw new AgentRuntimeException("Mate returned a different Skill identity");
         }
         if (isBlank(reference.version()) || !reference.version().equals(skill.version())) {
             throw new AgentRuntimeException("Mate returned a different Skill version");
         }
-        if (!isSafeName(skill.name()) || isBlank(skill.version())) {
+        if (!isSafeName(skill.name()) || isBlank(skill.version()) || !validToolBindings(skill.bindingTools())) {
             throw new AgentRuntimeException("Mate returned invalid Skill metadata");
         }
     }
@@ -481,7 +530,7 @@ public class AgentRuntimeManager {
     }
 
     private static boolean validIdentityFields(AgentIdentity identity) {
-        return matches(identity.id(), ResourceIdentifierPatterns.AGENT_ID_PATTERN)
+        return matches(identity.id(), ClawConstants.Agent.ID_PATTERN)
                 && isSafeName(identity.name())
                 && !isBlank(identity.version())
                 && identity.enabled() != null;
@@ -491,6 +540,7 @@ public class AgentRuntimeManager {
         return settings != null
                 && settings.schemaVersion() == SCHEMA_VERSION
                 && validModels(settings.bindingModels())
+                && validToolBindings(settings.bindingTools())
                 && validDefaultModel(settings);
     }
 
@@ -507,14 +557,15 @@ public class AgentRuntimeManager {
 
     private static boolean validCachedSkill(SkillInfo skill) {
         return skill != null
-                && matches(skill.id(), ResourceIdentifierPatterns.SKILL_ID_PATTERN)
+                && matches(skill.id(), ClawConstants.Skill.ID_PATTERN)
                 && isSafeName(skill.name())
-                && !isBlank(skill.version());
+                && !isBlank(skill.version())
+                && validToolBindings(skill.bindingTools());
     }
 
     private static boolean validCachedChild(AgentReference child) {
         return child != null
-                && matches(child.id(), ResourceIdentifierPatterns.AGENT_ID_PATTERN)
+                && matches(child.id(), ClawConstants.Agent.ID_PATTERN)
                 && isSafeName(child.name())
                 && !isBlank(child.version())
                 && child.enabled() != null;
@@ -529,6 +580,10 @@ public class AgentRuntimeManager {
             }
         }
         return true;
+    }
+
+    private static boolean validToolBindings(List<BoundTool> tools) {
+        return tools != null && tools.stream().allMatch(java.util.Objects::nonNull);
     }
 
     private static void requireSafeUniqueName(String name, Set<String> names, String type) {
@@ -593,12 +648,13 @@ public class AgentRuntimeManager {
                 runtime.displayName(),
                 runtime.description(),
                 runtime.version(),
-                runtime.enabled());
+                runtime.enabled(),
+                runtime.userCases());
     }
 
     private static AgentSettings toSettings(AgentRuntime runtime) {
         String defaultModel = runtime.defaultModel().orElse(null);
-        return new AgentSettings(SCHEMA_VERSION, defaultModel, runtime.bindingModels());
+        return new AgentSettings(SCHEMA_VERSION, defaultModel, runtime.bindingModels(), runtime.bindingTools());
     }
 
     private static AgentRuntime toRuntime(
@@ -613,7 +669,7 @@ public class AgentRuntimeManager {
         return new AgentRuntime(
                 settings.bindingModels(),
                 skillReferences,
-                List.of(),
+                settings.bindingTools(),
                 children,
                 identity.description(),
                 identity.displayName(),
@@ -621,7 +677,7 @@ public class AgentRuntimeManager {
                 identity.id(),
                 identity.name(),
                 systemPrompt,
-                List.of(),
+                identity.userCases() == null ? List.of() : identity.userCases(),
                 identity.version());
     }
 
@@ -632,14 +688,14 @@ public class AgentRuntimeManager {
     }
 
     private static void requireValidSkillReference(SkillReference reference) {
-        requireIdentifier(reference == null ? null : reference.id(), ResourceIdentifierPatterns.SKILL_ID_PATTERN);
+        requireIdentifier(reference == null ? null : reference.id(), ClawConstants.Skill.ID_PATTERN);
         if (isBlank(reference.version())) {
             throw new AgentRuntimeException("Mate returned a Skill binding without a fixed version");
         }
     }
 
     private static void requireValidChildReference(AgentReference child) {
-        requireIdentifier(child == null ? null : child.id(), ResourceIdentifierPatterns.AGENT_ID_PATTERN);
+        requireIdentifier(child == null ? null : child.id(), ClawConstants.Agent.ID_PATTERN);
         if (!isSafeName(child.name()) || isBlank(child.version()) || child.enabled() == null) {
             throw new AgentRuntimeException("Mate returned invalid Child Agent metadata");
         }
@@ -677,13 +733,16 @@ public class AgentRuntimeManager {
             String id,
             String name,
             String displayName,
-            List<String> description,
+            @JsonDeserialize(contentUsing = AgentMetadataTextDeserializer.class) List<String> description,
             String version,
-            Boolean enabled) {}
+            Boolean enabled,
+            @JsonDeserialize(contentUsing = AgentMetadataTextDeserializer.class) List<String> userCases) {}
 
-    private record AgentSettings(int schemaVersion, String defaultModel, List<String> bindingModels) {
+    private record AgentSettings(
+            int schemaVersion, String defaultModel, List<String> bindingModels, List<BoundTool> bindingTools) {
         private AgentSettings {
             bindingModels = bindingModels == null ? List.of() : List.copyOf(bindingModels);
+            bindingTools = bindingTools == null ? null : List.copyOf(bindingTools);
         }
     }
 
@@ -696,7 +755,12 @@ public class AgentRuntimeManager {
             String version,
             Boolean enabled) {}
 
-    private record SkillManifest(int schemaVersion, String id, String name, String version) {}
+    private record SkillManifest(
+            int schemaVersion, String id, String name, String version, List<BoundTool> bindingTools) {
+        private SkillManifest {
+            bindingTools = bindingTools == null ? null : List.copyOf(bindingTools);
+        }
+    }
 
     @FunctionalInterface
     private interface SupplierWithException<T> {

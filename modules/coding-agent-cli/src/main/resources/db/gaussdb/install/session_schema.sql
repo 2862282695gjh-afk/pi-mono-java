@@ -2,14 +2,20 @@
 -- The database release platform must connect with the target Session schema as current_schema.
 -- AgentService must never execute this file.
 -- WARNING: This script destructively rebuilds the complete Session schema baseline.
--- Use upgrade scripts for an existing installation that must retain data.
+-- Existing-installation upgrades are outside the current first-version product scope.
 
 BEGIN;
 
 DROP TABLE IF EXISTS t_session_materialized;
 DROP TABLE IF EXISTS t_session_stats;
+DROP TABLE IF EXISTS t_session_event_projection;
+DROP TABLE IF EXISTS t_session_events;
 DROP TABLE IF EXISTS t_session_records;
 DROP TABLE IF EXISTS t_session_sequences;
+DROP TABLE IF EXISTS t_session_tool_confirmations;
+DROP TABLE IF EXISTS t_session_execution_segment_events;
+DROP TABLE IF EXISTS t_session_execution_segments;
+DROP TABLE IF EXISTS t_session_executions;
 DROP TABLE IF EXISTS t_session_entries;
 DROP TABLE IF EXISTS t_session_cleanup_task;
 DROP TABLE IF EXISTS t_session_tombstone;
@@ -18,6 +24,7 @@ DROP TABLE IF EXISTS t_sessions;
 CREATE TABLE t_sessions (
     id                 VARCHAR(128)   PRIMARY KEY,
     agent_id           VARCHAR(64)    NOT NULL,
+    display_name       VARCHAR(80),
     model_id           VARCHAR(128)   NOT NULL,
     state              VARCHAR(16)    NOT NULL,
     thinking           BOOLEAN        NOT NULL,
@@ -33,6 +40,7 @@ CREATE TABLE t_sessions (
 COMMENT ON TABLE t_sessions IS '会话主表，保存会话元数据和当前路径末端';
 COMMENT ON COLUMN t_sessions.id IS '会话的唯一 ID，用于关联该会话的历史记录、序号和汇总数据';
 COMMENT ON COLUMN t_sessions.agent_id IS '创建会话时固定且不可变的 Agent 标识';
+COMMENT ON COLUMN t_sessions.display_name IS '用户设置的当前会话名称；未设置时为空，最多 80 个 UTF-8 字节';
 COMMENT ON COLUMN t_sessions.model_id IS '后续用户事件默认使用的当前模型标识';
 COMMENT ON COLUMN t_sessions.state IS '会话粗粒度运行状态，仅允许 idle 或 running';
 COMMENT ON COLUMN t_sessions.thinking IS '后续用户事件是否启用深度思考';
@@ -58,6 +66,181 @@ ALTER TABLE t_sessions
 
 ALTER TABLE t_sessions
     ADD CONSTRAINT ck_t_sessions_resource_version CHECK (resource_version > 0);
+
+ALTER TABLE t_sessions
+    ADD CONSTRAINT ck_t_sessions_display_name
+    CHECK (display_name IS NULL OR octet_length(display_name) BETWEEN 1 AND 80);
+
+CREATE TABLE t_session_executions (
+    session_id           VARCHAR(128)   NOT NULL,
+    execution_id         VARCHAR(128)   NOT NULL,
+    root_event_id        VARCHAR(128)   NOT NULL,
+    state                VARCHAR(16)    NOT NULL,
+    current_segment_id   VARCHAR(128)   NOT NULL,
+    pending_tool_call_id TEXT,
+    stop_event_id        VARCHAR(128),
+    terminal_event_id    VARCHAR(128),
+    terminal_reason      VARCHAR(16),
+    created_at           TIMESTAMPTZ(3) NOT NULL,
+    updated_at           TIMESTAMPTZ(3) NOT NULL,
+    terminal_at          TIMESTAMPTZ(3),
+    PRIMARY KEY (session_id, execution_id)
+);
+
+COMMENT ON TABLE t_session_executions IS '消息根执行状态表，保存跨实例控制所需的固定执行身份';
+COMMENT ON COLUMN t_session_executions.session_id IS '执行所属的 Session 标识';
+COMMENT ON COLUMN t_session_executions.execution_id IS '只在服务内部使用且不向调用方公开的固定执行标识';
+COMMENT ON COLUMN t_session_executions.root_event_id IS '原始 user.message 的公共 eventId，续跑与终态始终引用该值';
+COMMENT ON COLUMN t_session_executions.state IS '执行控制状态：RUNNING、CONFIRMING、STOPPING 或 TERMINAL';
+COMMENT ON COLUMN t_session_executions.current_segment_id IS '当前初始执行段或确认续跑段的内部标识';
+COMMENT ON COLUMN t_session_executions.pending_tool_call_id IS '当前唯一等待确认的原始 Tool Call 标识，不限制提供商长度';
+COMMENT ON COLUMN t_session_executions.stop_event_id IS '已经提交的 user.interrupt 公共 eventId；没有停止请求时为空';
+COMMENT ON COLUMN t_session_executions.terminal_event_id IS '实际执行结束时唯一 session.status_idle 的公共 eventId';
+COMMENT ON COLUMN t_session_executions.terminal_reason IS '实际执行结束原因：done、failed 或 terminated';
+COMMENT ON COLUMN t_session_executions.created_at IS '根执行接受并持久化的时间';
+COMMENT ON COLUMN t_session_executions.updated_at IS '执行控制状态最后更新时间';
+COMMENT ON COLUMN t_session_executions.terminal_at IS '实际执行终态提交时间；未结束时为空';
+
+CREATE UNIQUE INDEX idx_t_session_executions_root
+    ON t_session_executions (session_id, root_event_id);
+
+CREATE UNIQUE INDEX idx_t_session_executions_active
+    ON t_session_executions (session_id)
+    WHERE state <> 'TERMINAL';
+
+CREATE INDEX idx_t_session_executions_state
+    ON t_session_executions (session_id, state, updated_at);
+
+ALTER TABLE t_session_executions
+    ADD CONSTRAINT ck_t_session_executions_state
+    CHECK (state IN ('RUNNING', 'CONFIRMING', 'STOPPING', 'TERMINAL'));
+
+ALTER TABLE t_session_executions
+    ADD CONSTRAINT ck_t_session_executions_terminal
+    CHECK ((state = 'TERMINAL') =
+        (terminal_event_id IS NOT NULL AND terminal_reason IS NOT NULL AND terminal_at IS NOT NULL));
+
+CREATE TABLE t_session_execution_segments (
+    session_id        VARCHAR(128)   NOT NULL,
+    execution_id      VARCHAR(128)   NOT NULL,
+    segment_id        VARCHAR(128)   NOT NULL,
+    segment_ordinal   INTEGER        NOT NULL,
+    trigger_event_id  VARCHAR(128)   NOT NULL,
+    trigger_event_seq BIGINT         NOT NULL,
+    state             VARCHAR(16)    NOT NULL,
+    terminal_event_id VARCHAR(128),
+    terminal_event_seq BIGINT,
+    terminal_reason   VARCHAR(16),
+    created_at        TIMESTAMPTZ(3) NOT NULL,
+    updated_at        TIMESTAMPTZ(3) NOT NULL,
+    PRIMARY KEY (session_id, execution_id, segment_id)
+);
+
+COMMENT ON TABLE t_session_execution_segments IS '执行结果段表，每次初始消息或确认续跑固定一个段';
+COMMENT ON COLUMN t_session_execution_segments.session_id IS '结果段所属的 Session 标识';
+COMMENT ON COLUMN t_session_execution_segments.execution_id IS '结果段所属的固定根执行标识';
+COMMENT ON COLUMN t_session_execution_segments.segment_id IS '结果轮询与本地等待登记使用的固定段标识';
+COMMENT ON COLUMN t_session_execution_segments.segment_ordinal IS '同一根执行中的段序号，从 1 开始递增';
+COMMENT ON COLUMN t_session_execution_segments.trigger_event_id IS '启动该段的 user.message 或 user.tool_confirmation 公共 eventId';
+COMMENT ON COLUMN t_session_execution_segments.trigger_event_seq IS '启动事件的 Session 内部已提交顺序号';
+COMMENT ON COLUMN t_session_execution_segments.state IS '结果段状态：OPEN 或 CLOSED';
+COMMENT ON COLUMN t_session_execution_segments.terminal_event_id IS '结束该 HTTP 结果段的 session.status_idle 公共 eventId';
+COMMENT ON COLUMN t_session_execution_segments.terminal_event_seq IS '结束事件的 Session 内部已提交顺序号';
+COMMENT ON COLUMN t_session_execution_segments.terminal_reason IS '结果段结束原因，包含 confirming 或实际执行终态原因';
+COMMENT ON COLUMN t_session_execution_segments.created_at IS '结果段创建时间';
+COMMENT ON COLUMN t_session_execution_segments.updated_at IS '结果段状态最后更新时间';
+
+CREATE UNIQUE INDEX idx_t_session_execution_segments_ordinal
+    ON t_session_execution_segments (session_id, execution_id, segment_ordinal);
+
+CREATE UNIQUE INDEX idx_t_session_execution_segments_trigger
+    ON t_session_execution_segments (session_id, trigger_event_id);
+
+ALTER TABLE t_session_execution_segments
+    ADD CONSTRAINT ck_t_session_execution_segments_state CHECK (state IN ('OPEN', 'CLOSED'));
+
+ALTER TABLE t_session_execution_segments
+    ADD CONSTRAINT ck_t_session_execution_segments_terminal
+    CHECK ((state = 'CLOSED') =
+        (terminal_event_id IS NOT NULL AND terminal_event_seq IS NOT NULL AND terminal_reason IS NOT NULL));
+
+ALTER TABLE t_session_execution_segments
+    ADD CONSTRAINT ck_t_session_execution_segments_sequence
+    CHECK (segment_ordinal > 0 AND trigger_event_seq > 0
+        AND (terminal_event_seq IS NULL OR terminal_event_seq >= trigger_event_seq));
+
+CREATE TABLE t_session_execution_segment_events (
+    session_id   VARCHAR(128) NOT NULL,
+    execution_id VARCHAR(128) NOT NULL,
+    segment_id   VARCHAR(128) NOT NULL,
+    event_id     VARCHAR(128) NOT NULL,
+    event_seq    BIGINT       NOT NULL,
+    PRIMARY KEY (session_id, event_id)
+);
+
+COMMENT ON TABLE t_session_execution_segment_events IS '执行段与已提交公共事件的内部关联表';
+COMMENT ON COLUMN t_session_execution_segment_events.session_id IS '公共事件所属的 Session 标识';
+COMMENT ON COLUMN t_session_execution_segment_events.execution_id IS '公共事件所属的固定根执行标识';
+COMMENT ON COLUMN t_session_execution_segment_events.segment_id IS '公共事件所属的固定结果段标识';
+COMMENT ON COLUMN t_session_execution_segment_events.event_id IS '已提交公共事件的 eventId';
+COMMENT ON COLUMN t_session_execution_segment_events.event_seq IS '已提交公共事件的 Session 内部顺序号';
+
+CREATE UNIQUE INDEX idx_t_session_execution_segment_events_seq
+    ON t_session_execution_segment_events (session_id, execution_id, segment_id, event_seq);
+
+ALTER TABLE t_session_execution_segment_events
+    ADD CONSTRAINT ck_t_session_execution_segment_events_seq CHECK (event_seq > 0);
+
+CREATE TABLE t_session_tool_confirmations (
+    session_id           VARCHAR(128)   NOT NULL,
+    execution_id         VARCHAR(128)   NOT NULL,
+    confirmation_event_id VARCHAR(128)  NOT NULL,
+    previous_segment_id  VARCHAR(128)   NOT NULL,
+    segment_id           VARCHAR(128)   NOT NULL,
+    tool_call_id         TEXT           NOT NULL,
+    result               VARCHAR(8)     NOT NULL,
+    deny_message         TEXT,
+    state                VARCHAR(16)    NOT NULL,
+    created_at           TIMESTAMPTZ(3) NOT NULL,
+    claimed_at           TIMESTAMPTZ(3),
+    completed_at         TIMESTAMPTZ(3),
+    PRIMARY KEY (session_id, confirmation_event_id)
+);
+
+COMMENT ON TABLE t_session_tool_confirmations IS '工具确认决定表，由原执行实例至多消费一次';
+COMMENT ON COLUMN t_session_tool_confirmations.session_id IS '确认决定所属的 Session 标识';
+COMMENT ON COLUMN t_session_tool_confirmations.execution_id IS '确认决定所属的固定根执行标识';
+COMMENT ON COLUMN t_session_tool_confirmations.confirmation_event_id IS 'user.tool_confirmation 的公共 eventId';
+COMMENT ON COLUMN t_session_tool_confirmations.previous_segment_id IS '进入确认等待时已经关闭的结果段标识';
+COMMENT ON COLUMN t_session_tool_confirmations.segment_id IS '本次确认续跑使用的新结果段标识';
+COMMENT ON COLUMN t_session_tool_confirmations.tool_call_id IS '原始 Tool Call 标识，不限制提供商长度';
+COMMENT ON COLUMN t_session_tool_confirmations.result IS '确认决定：allow 或 deny';
+COMMENT ON COLUMN t_session_tool_confirmations.deny_message IS '拒绝决定携带的可选用户说明；允许决定时为空';
+COMMENT ON COLUMN t_session_tool_confirmations.state IS '一次消费状态：PENDING、CLAIMED 或 COMPLETED';
+COMMENT ON COLUMN t_session_tool_confirmations.created_at IS '确认决定与回执提交的时间';
+COMMENT ON COLUMN t_session_tool_confirmations.claimed_at IS '原执行实例取得决定的时间';
+COMMENT ON COLUMN t_session_tool_confirmations.completed_at IS '原执行实例完成决定处理的时间';
+
+CREATE UNIQUE INDEX idx_t_session_tool_confirmations_segment
+    ON t_session_tool_confirmations (session_id, execution_id, segment_id);
+
+CREATE INDEX idx_t_session_tool_confirmations_pending
+    ON t_session_tool_confirmations (session_id, execution_id, state, created_at);
+
+ALTER TABLE t_session_tool_confirmations
+    ADD CONSTRAINT ck_t_session_tool_confirmations_result CHECK (result IN ('allow', 'deny'));
+
+ALTER TABLE t_session_tool_confirmations
+    ADD CONSTRAINT ck_t_session_tool_confirmations_state CHECK (state IN ('PENDING', 'CLAIMED', 'COMPLETED'));
+
+ALTER TABLE t_session_tool_confirmations
+    ADD CONSTRAINT ck_t_session_tool_confirmations_message CHECK (result = 'deny' OR deny_message IS NULL);
+
+ALTER TABLE t_session_tool_confirmations
+    ADD CONSTRAINT ck_t_session_tool_confirmations_claim
+    CHECK ((state = 'PENDING' AND claimed_at IS NULL AND completed_at IS NULL)
+        OR (state = 'CLAIMED' AND claimed_at IS NOT NULL AND completed_at IS NULL)
+        OR (state = 'COMPLETED' AND claimed_at IS NOT NULL AND completed_at IS NOT NULL));
 
 CREATE TABLE t_session_tombstone (
     session_id  VARCHAR(128)   PRIMARY KEY,
@@ -159,13 +342,60 @@ CREATE INDEX idx_t_session_records_session_type
 CREATE INDEX idx_t_session_records_session_lane
     ON t_session_records (session_id, lane, record_seq);
 
+CREATE TABLE t_session_events (
+    session_id      VARCHAR(128)   NOT NULL,
+    event_id        VARCHAR(128)   NOT NULL,
+    event_seq       BIGINT         NOT NULL,
+    anchor_entry_id VARCHAR(128)   NOT NULL,
+    type            VARCHAR(64)    NOT NULL,
+    created_at      TIMESTAMPTZ(3) NOT NULL,
+    payload         JSONB          NOT NULL,
+    PRIMARY KEY (session_id, event_id)
+);
+
+COMMENT ON TABLE t_session_events IS '会话公共事件权威表，保存 GET 历史与 POST 完整帧共享的安全投影';
+COMMENT ON COLUMN t_session_events.session_id IS '这条公共事件属于哪个会话；对应 t_sessions.id';
+COMMENT ON COLUMN t_session_events.event_id IS '对外公开且永不复用的稳定事件标识';
+COMMENT ON COLUMN t_session_events.event_seq IS '公共事件与 Entry、内部 Record 共享的会话提交顺序号';
+COMMENT ON COLUMN t_session_events.anchor_entry_id IS '公共事件所属的分支 Entry 标识，用于判断当前路径可见性';
+COMMENT ON COLUMN t_session_events.type IS '完整公共事件的 v2 类型字面值';
+COMMENT ON COLUMN t_session_events.created_at IS '形成权威公共记录时保存一次的 UTC 毫秒时间';
+COMMENT ON COLUMN t_session_events.payload IS '只包含该公共事件安全业务字段的 v2 JSON 对象';
+
+CREATE UNIQUE INDEX idx_t_session_events_session_seq
+    ON t_session_events (session_id, event_seq);
+
+CREATE INDEX idx_t_session_events_session_anchor
+    ON t_session_events (session_id, anchor_entry_id, event_seq);
+
+CREATE TABLE t_session_event_projection (
+    session_id      VARCHAR(128) NOT NULL,
+    anchor_entry_id VARCHAR(128) NOT NULL,
+    event_count     INTEGER      NOT NULL,
+    PRIMARY KEY (session_id, anchor_entry_id),
+    CONSTRAINT ck_session_event_projection_count CHECK (event_count >= 0)
+);
+
+COMMENT ON TABLE t_session_event_projection IS '会话 Entry 公共事件投影完整性记录，用精确数量区分完整映射和显式私有记录';
+COMMENT ON COLUMN t_session_event_projection.session_id IS '被核验 Entry 所属的会话标识';
+COMMENT ON COLUMN t_session_event_projection.anchor_entry_id IS '已完成公共投影核验的 Entry 标识';
+COMMENT ON COLUMN t_session_event_projection.event_count IS '该 Entry 应有的完整公共事件精确数量；零表示经确认不公开';
+
 CREATE TABLE t_session_stats (
-    session_id       VARCHAR(128)  PRIMARY KEY,
-    message_count    BIGINT        NOT NULL,
-    cached_tokens    BIGINT        NOT NULL,
-    uncached_tokens  BIGINT        NOT NULL,
-    total_tokens     BIGINT        NOT NULL,
-    cost_total       NUMERIC(24,8) NOT NULL
+    session_id         VARCHAR(128)  PRIMARY KEY,
+    message_count      BIGINT        NOT NULL,
+    cached_tokens      BIGINT        NOT NULL,
+    uncached_tokens    BIGINT        NOT NULL,
+    total_tokens       BIGINT        NOT NULL,
+    input_tokens       BIGINT        NOT NULL,
+    output_tokens      BIGINT        NOT NULL,
+    cache_read_tokens  BIGINT        NOT NULL,
+    cache_write_tokens BIGINT        NOT NULL,
+    cost_input         NUMERIC(24,8) NOT NULL,
+    cost_output        NUMERIC(24,8) NOT NULL,
+    cost_cache_read    NUMERIC(24,8) NOT NULL,
+    cost_cache_write   NUMERIC(24,8) NOT NULL,
+    cost_total         NUMERIC(24,8) NOT NULL
 );
 
 COMMENT ON TABLE t_session_stats IS '会话生命周期消息数、Token 和费用累计统计表';
@@ -174,6 +404,14 @@ COMMENT ON COLUMN t_session_stats.message_count IS '已持久化的用户、助�
 COMMENT ON COLUMN t_session_stats.cached_tokens IS '模型调用命中缓存的 Token 累计数';
 COMMENT ON COLUMN t_session_stats.uncached_tokens IS '模型调用输入与缓存写入 Token 的累计数';
 COMMENT ON COLUMN t_session_stats.total_tokens IS '模型调用上报的总 Token 累计数';
+COMMENT ON COLUMN t_session_stats.input_tokens IS '模型调用上报的非缓存输入 Token 累计数';
+COMMENT ON COLUMN t_session_stats.output_tokens IS '模型调用上报的输出 Token 累计数';
+COMMENT ON COLUMN t_session_stats.cache_read_tokens IS '模型调用上报的缓存读取 Token 累计数';
+COMMENT ON COLUMN t_session_stats.cache_write_tokens IS '模型调用上报的缓存写入 Token 累计数';
+COMMENT ON COLUMN t_session_stats.cost_input IS '模型调用输入 Token 的 USD 费用累计额';
+COMMENT ON COLUMN t_session_stats.cost_output IS '模型调用输出 Token 的 USD 费用累计额';
+COMMENT ON COLUMN t_session_stats.cost_cache_read IS '模型调用缓存读取 Token 的 USD 费用累计额';
+COMMENT ON COLUMN t_session_stats.cost_cache_write IS '模型调用缓存写入 Token 的 USD 费用累计额';
 COMMENT ON COLUMN t_session_stats.cost_total IS '模型调用费用的累计总额';
 
 ALTER TABLE t_session_stats
@@ -182,6 +420,14 @@ ALTER TABLE t_session_stats
         AND cached_tokens >= 0
         AND uncached_tokens >= 0
         AND total_tokens >= 0
+        AND input_tokens >= 0
+        AND output_tokens >= 0
+        AND cache_read_tokens >= 0
+        AND cache_write_tokens >= 0
+        AND cost_input >= 0
+        AND cost_output >= 0
+        AND cost_cache_read >= 0
+        AND cost_cache_write >= 0
         AND cost_total >= 0
     );
 

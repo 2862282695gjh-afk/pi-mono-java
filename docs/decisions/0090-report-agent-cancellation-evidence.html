@@ -1,0 +1,10 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ADR-0090：补充 Agent 实际取消退出证据</title><style>body{font:16px/1.65 system-ui,sans-serif;color:#172235;background:#f5f7fa;margin:0}main{max-width:920px;margin:32px auto;padding:32px;background:white}code{overflow-wrap:anywhere}a{color:#1457a6}</style></head><body><main>
+<h1>ADR-0090：补充 Agent 实际取消退出证据</h1><p>Status: Accepted · Date: 2026-09-08 · Version: 1.0.0</p>
+<h2>Context</h2><p>Java 基线 <code>58dd747a</code> 的工具阶段可以在没有新 Assistant ABORTED 消息时取消退出。仅查看最后一条模型消息会遗漏这次中断；直接查看用户停止请求则可能把迟到的取消覆盖到自然完成上。Events v2 要求终态反映真实结局。</p>
+<h2>Decision</h2><p>在内部 <code>AgentEndEvent</code> 添加默认 false 的 <code>cancelled</code>，由循环实际退出路径填写。保留既有构造器，false 不输出为 JSON 字段。before hook 返回后先检查取消，再决定是否返回工具失败结果。自然结束不受迟到取消覆盖；Assistant ABORTED 和实际异常仍是独立证据。</p>
+<h2>Alternatives 与影响</h2><p>不采用“存在停止请求就判取消”，也不依赖最后一条模型消息猜测工具阶段结局。新增标志是 Java 架构变更，pi 基线 <code>4af9d21d</code> 的 agent_end 没有该字段。该提交不切换 Runtime HTTP，后续协调器再消费证据并持久化权威终态。取消仍是协作式的，不承诺强制杀死任意工具。没有新增依赖、线程或数据库对象。</p>
+<h2>Validation</h2><p>代码 <code>8bed9b10</code> 的真实 Agent 循环、当前事件序列化和工具流水线共 47 项测试通过，零失败、零跳过；五组公司镜像按命名空间转换逐字核对。方法长度、格式和图源验证在提交前完成。本机 NativeParent 26.0.0-SNAPSHOT 不可解析，公司编译未验证。</p>
+<h2>Related</h2><p><a href="../designs/agent-cancellation-evidence/README.md">源码证据与设计</a> · <a href="../designs/agent-cancellation-evidence/diagram.puml#L1">PlantUML 图源</a></p>
+<h2>版本历史</h2><p>1.0.0 · 2026-09-08：定义实际取消证据、自然结局保护和独立 Runtime 接入范围。</p>
+</main></body></html>

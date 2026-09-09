@@ -10,18 +10,24 @@ import java.util.Optional;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.error.RuntimeErrorCode;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.vo.ErrorResponseVO;
+import com.huawei.hicampus.claw.common.constant.ClawConstants;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.MessageSource;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.HandlerMethod;
 import org.springframework.web.method.annotation.HandlerMethodValidationException;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.servlet.HandlerMapping;
 
 import jakarta.servlet.http.HttpServletRequest;
@@ -56,7 +62,7 @@ public class RuntimeExceptionHandler {
                 .addKeyValue("errorCode", errorCode.name())
                 .addKeyValue("method", request.getMethod())
                 .addKeyValue("path", request.getRequestURI())
-                .setCause(error)
+                .setCause(isCommandExecutionRequest(request) ? null : error)
                 .log("CampusClaw failure: operation={}, errorCode={}", "runtime.http.body.validate", errorCode.name());
         return response(errorCode, request);
     }
@@ -64,14 +70,14 @@ public class RuntimeExceptionHandler {
     @ExceptionHandler(HandlerMethodValidationException.class)
     public ResponseEntity<ErrorResponseVO> handleInvalidParameter(
             HandlerMethodValidationException error, HttpServletRequest request) {
-        RuntimeErrorCode errorCode = classifyInvalidParameter(error);
+        RuntimeErrorCode errorCode = classifyInvalidParameter(error, request);
         log.atWarn()
                 .addKeyValue("event", "campusclaw.failure")
                 .addKeyValue("operation", "runtime.http.parameter.validate")
                 .addKeyValue("errorCode", errorCode.name())
                 .addKeyValue("method", request.getMethod())
                 .addKeyValue("path", request.getRequestURI())
-                .setCause(error)
+                .setCause(isCommandExecutionRequest(request) ? null : error)
                 .log(
                         "CampusClaw failure: operation={}, errorCode={}",
                         "runtime.http.parameter.validate",
@@ -79,20 +85,40 @@ public class RuntimeExceptionHandler {
         return response(errorCode, request);
     }
 
-    @ExceptionHandler(Exception.class)
-    public ResponseEntity<ErrorResponseVO> handleUnexpectedError(Exception error, HttpServletRequest request) {
-        log.atError()
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<ErrorResponseVO> handleInvalidParameterType(
+            MethodArgumentTypeMismatchException error, HttpServletRequest request) {
+        RuntimeErrorCode errorCode = isEventListRequest(request)
+                ? RuntimeErrorCode.INVALID_EVENT_LIST_QUERY
+                : RuntimeErrorCode.INTERNAL_ERROR;
+        log.atWarn()
                 .addKeyValue("event", "campusclaw.failure")
-                .addKeyValue("operation", "runtime.http.request")
-                .addKeyValue("errorCode", RuntimeErrorCode.INTERNAL_ERROR.name())
+                .addKeyValue("operation", "runtime.http.parameter.convert")
+                .addKeyValue("errorCode", errorCode.name())
                 .addKeyValue("method", request.getMethod())
                 .addKeyValue("path", request.getRequestURI())
                 .setCause(error)
                 .log(
                         "CampusClaw failure: operation={}, errorCode={}",
-                        "runtime.http.request",
-                        RuntimeErrorCode.INTERNAL_ERROR.name());
-        return response(RuntimeErrorCode.INTERNAL_ERROR, request);
+                        "runtime.http.parameter.convert",
+                        errorCode.name());
+        return response(errorCode, request);
+    }
+
+    @ExceptionHandler(Exception.class)
+    public ResponseEntity<ErrorResponseVO> handleUnexpectedError(Exception error, HttpServletRequest request) {
+        RuntimeErrorCode errorCode = isCommandExecutionRequest(request)
+                ? RuntimeErrorCode.COMMAND_EXECUTION_FAILED
+                : RuntimeErrorCode.INTERNAL_ERROR;
+        log.atError()
+                .addKeyValue("event", "campusclaw.failure")
+                .addKeyValue("operation", "runtime.http.request")
+                .addKeyValue("errorCode", errorCode.name())
+                .addKeyValue("method", request.getMethod())
+                .addKeyValue("path", request.getRequestURI())
+                .setCause(isCommandExecutionRequest(request) ? null : error)
+                .log("CampusClaw failure: operation={}, errorCode={}", "runtime.http.request", errorCode.name());
+        return response(errorCode, request);
     }
 
     private ResponseEntity<ErrorResponseVO> response(RuntimeErrorCode errorCode, HttpServletRequest request) {
@@ -100,26 +126,58 @@ public class RuntimeExceptionHandler {
         String message = messageSource.getMessage(errorCode.messageKey(), null, locale);
         HttpHeaders headers = new HttpHeaders();
         headers.set(HttpHeaders.CONTENT_LANGUAGE, locale.toLanguageTag());
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        if (isCommandExecutionRequest(request) || isEventSubmissionRequest(request)) {
+            headers.setCacheControl("no-store");
+        }
         errorCode
                 .retryAfterSeconds()
                 .ifPresent(seconds -> headers.set(HttpHeaders.RETRY_AFTER, Integer.toString(seconds)));
-        return new ResponseEntity<>(new ErrorResponseVO(errorCode.name(), message), headers, errorCode.status());
+        HttpStatus status = errorCode.status();
+        if (errorCode == RuntimeErrorCode.AGENT_NOT_AVAILABLE && isCommandCatalogRequest(request)) {
+            status = HttpStatus.SERVICE_UNAVAILABLE;
+            headers.set(
+                    HttpHeaders.RETRY_AFTER,
+                    Integer.toString(ClawConstants.RuntimeApi.Command.CATALOG_RETRY_AFTER_SECONDS));
+        }
+        return new ResponseEntity<>(new ErrorResponseVO(errorCode.name(), message), headers, status);
+    }
+
+    private static boolean isCommandCatalogRequest(HttpServletRequest request) {
+        Object handler = request.getAttribute(HandlerMapping.BEST_MATCHING_HANDLER_ATTRIBUTE);
+        return handler instanceof HandlerMethod method
+                && RuntimeCommandCatalogController.class.isAssignableFrom(method.getBeanType());
+    }
+
+    private static boolean isCommandExecutionRequest(HttpServletRequest request) {
+        Object handler = request.getAttribute(HandlerMapping.BEST_MATCHING_HANDLER_ATTRIBUTE);
+        return handler instanceof HandlerMethod method
+                && RuntimeCommandController.class.isAssignableFrom(method.getBeanType());
+    }
+
+    private static boolean isEventSubmissionRequest(HttpServletRequest request) {
+        Object handler = request.getAttribute(HandlerMapping.BEST_MATCHING_HANDLER_ATTRIBUTE);
+        return handler instanceof HandlerMethod method
+                && RuntimeEventController.class.isAssignableFrom(method.getBeanType())
+                && method.getMethod().getName().equals("submit");
     }
 
     private static RuntimeErrorCode classifyInvalidBody(HttpServletRequest request) {
+        if (isCommandExecutionRequest(request)) {
+            return RuntimeErrorCode.INVALID_COMMAND_REQUEST;
+        }
         Object value = request.getAttribute(HandlerMapping.BEST_MATCHING_PATTERN_ATTRIBUTE);
         String pattern = value instanceof String path ? path : "";
         return switch (pattern) {
             case "/campusclaw-service/v1/sessions/{sessionId}/events" -> RuntimeErrorCode.INVALID_EVENT_REQUEST;
             case "/campusclaw-service/v1/sessions/{sessionId}/model" -> RuntimeErrorCode.INVALID_MODEL_REQUEST;
             case "/campusclaw-service/v1/sessions/{sessionId}/thinking" -> RuntimeErrorCode.INVALID_THINKING_REQUEST;
-            case "/campusclaw-service/v1/sessions/{sessionId}/steers" -> RuntimeErrorCode.INVALID_STEER_REQUEST;
-            case "/campusclaw-service/v1/sessions/{sessionId}/follow-ups" -> RuntimeErrorCode.INVALID_FOLLOW_UP_REQUEST;
             default -> RuntimeErrorCode.INTERNAL_ERROR;
         };
     }
 
-    private static RuntimeErrorCode classifyInvalidParameter(HandlerMethodValidationException error) {
+    private static RuntimeErrorCode classifyInvalidParameter(
+            HandlerMethodValidationException error, HttpServletRequest request) {
         return error.getParameterValidationResults().stream()
                 .map(result -> result.getMethodParameter().getParameterAnnotation(PathVariable.class))
                 .filter(annotation -> annotation != null)
@@ -127,7 +185,32 @@ public class RuntimeExceptionHandler {
                 .map(RuntimeExceptionHandler::identifierErrorCode)
                 .flatMap(Optional::stream)
                 .findFirst()
-                .orElse(RuntimeErrorCode.INTERNAL_ERROR);
+                .orElseGet(() -> classifyNonIdentifierParameter(error, request));
+    }
+
+    private static RuntimeErrorCode classifyNonIdentifierParameter(
+            HandlerMethodValidationException error, HttpServletRequest request) {
+        if (isEventListRequest(request)) {
+            return RuntimeErrorCode.INVALID_EVENT_LIST_QUERY;
+        }
+        return hasInvalidCommandBody(error, request)
+                ? RuntimeErrorCode.INVALID_COMMAND_REQUEST
+                : RuntimeErrorCode.INTERNAL_ERROR;
+    }
+
+    private static boolean isEventListRequest(HttpServletRequest request) {
+        Object handler = request.getAttribute(HandlerMapping.BEST_MATCHING_HANDLER_ATTRIBUTE);
+        return handler instanceof HandlerMethod method
+                && RuntimeEventController.class.isAssignableFrom(method.getBeanType())
+                && method.getMethod().getName().equals("list")
+                && request.getMethod().equals("GET");
+    }
+
+    private static boolean hasInvalidCommandBody(HandlerMethodValidationException error, HttpServletRequest request) {
+        return isCommandExecutionRequest(request)
+                && !error.isForReturnValue()
+                && error.getParameterValidationResults().stream()
+                        .anyMatch(result -> result.getMethodParameter().hasParameterAnnotation(RequestBody.class));
     }
 
     private static String pathVariableName(PathVariable annotation) {

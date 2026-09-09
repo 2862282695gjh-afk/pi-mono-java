@@ -1,0 +1,98 @@
+@startuml builtin_model_layers
+' Java baseline: c70f02bc9deabae9b442406d98806a33a6602fdb
+' Implementation: 16ee86ab1dcacd7e76a8c66ade99f52ddd8e3573
+' Java root: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/
+' Sources: session/RuntimeSessionConfigurationService.java:listModels,changeModel
+' Sources: service/command/SessionModelConfigurationService.java:execute,update,modelChangeEntries
+' Sources: persistence/MyBatisRuntimeSessionRepository.java:updateModel,rejectConfigurationUpdate
+' Observed behavior: existing PUT checks If-Match before lookup and repeats CAS under a row lock.
+' Design reason: reuse model rules while preserving transport-specific concurrency policies.
+' Java divergence: command updates use locked current state and skip identical model changes.
+title Model command - target layer dependencies
+skinparam shadowing false
+skinparam classAttributeIconSize 0
+hide empty members
+set namespaceSeparator none
+package "web" {
+  class "RuntimeSessionConfigurationController" as Web
+}
+package "session" {
+  class "RuntimeSessionConfigurationService" as Api
+}
+package "service.command.contributor" {
+  class "ModelCommandContributor" as Contributor
+}
+package "service.command" {
+  class "SessionModelConfigurationService" as ModelService
+}
+package "model / agent" {
+  interface "RuntimeModelManager" as Models
+  interface "AgentDirectoryResolver" as Directory
+}
+package "persistence" {
+  interface "RuntimeSessionRepository" as Port
+  class "MyBatisRuntimeSessionRepository" as Repo
+}
+package "dto" {
+  class "SessionConfigurationUpdateDTO" as Update
+}
+package "dto.command" {
+  class "ModelCommandResultDTO" as Result
+}
+Web --> Api : existing VO boundary
+Api --> ModelService : query / conditional change
+Contributor --> ModelService : execute / no expected version
+ModelService --> Models : configured availability
+ModelService --> Directory : existing Agent resolution
+ModelService --> Port : local entry factory
+Repo ..|> Port
+Repo ..> Update : locked current state + last sequence
+ModelService ..> Result : internal command result
+note bottom of ModelService
+  Singleton dependencies only.
+  Local entry factory runs under the DB lock.
+  No credentials, Holder or command lifecycle.
+end note
+@enduml
+
+@startuml builtin_model_transaction
+' Implementation: 16ee86ab1dcacd7e76a8c66ade99f52ddd8e3573
+' Sources: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/
+' service/command/SessionModelConfigurationService.java:update,modelChangeEntries
+' persistence/MyBatisRuntimeSessionRepository.java:updateModel,appendConfigurationEntries,appendLocked
+' pi baseline: 4af9d21d3b4d664e4a29fcabfec85171077248e3
+' pi sources: packages/coding-agent/src/core/agent-session.ts:setModel,setThinkingLevel
+' pi sources: packages/coding-agent/src/core/session-manager.ts:appendModelChange
+' Observed behavior: pi persists model selection and adjusts thinking for the selected model.
+' Java divergence: no-op writes are skipped; boolean thinking and DB row transactions are product choices.
+' Design reason: create previous-value event payloads only after locking authoritative state.
+title Model change - one transaction and authoritative sequence
+skinparam shadowing false
+participant "Model service" as Service
+participant "Repository transaction" as Repo
+participant "Local entry factory" as Factory
+database "Session / Entry / Sequence" as DB
+Service -> Repo : updateModel(expectedVersion?, target, factory)
+activate Repo
+Repo -> DB : lock Session row
+DB --> Repo : current state and version
+alt missing / supplied version mismatch / running
+  Repo --> Service : stable rejection; no factory call
+else identical model
+  Repo --> Service : unchanged; sourceEventSeq = null
+else changed model
+  Repo -> Factory : create entries from locked previous state
+  Factory --> Repo : model entry + optional thinking-off entry
+  Repo -> DB : update model, thinking, version and time
+  loop one or two authoritative entries
+    Repo -> DB : allocate shared sequence, append and link parent
+  end
+  Repo -> DB : update active leaf; commit
+  Repo --> Service : updated Session + last appended entrySeq
+end
+deactivate Repo
+note over Repo, DB
+  Any failure rolls back model, entries and sequence.
+  Existing PUT keeps mandatory expectedVersion.
+end note
+@enduml

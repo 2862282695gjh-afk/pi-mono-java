@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ADR-0065：公司 GaussDB 初始化脚本样式</title>
+  <style>
+    :root { color-scheme: light; font-family: Inter, "PingFang SC", sans-serif; color: #25272a; background: #f2f5f7; }
+    body { margin: 0; }
+    main { width: min(920px, calc(100% - 40px)); margin: 40px auto; padding: 40px; box-sizing: border-box; background: #fff; border: 1px solid #d7dde2; border-radius: 16px; }
+    h1 { margin-top: 0; font-size: 30px; }
+    h2 { margin-top: 32px; font-size: 20px; }
+    h3 { margin-top: 22px; font-size: 17px; }
+    p, li { line-height: 1.75; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 10px 12px; border: 1px solid #d7dde2; text-align: left; vertical-align: top; }
+    th { width: 190px; background: #edf2f5; }
+    code { padding: 2px 5px; border-radius: 5px; background: #edf2f5; overflow-wrap: anywhere; }
+    a { color: #1769aa; }
+    .status { display: inline-flex; padding: 4px 9px; border-radius: 999px; color: #12633a; background: #e8f7ed; font-weight: 650; }
+    @media (max-width: 640px) { main { width: 100%; margin: 0; padding: 24px 18px; border: 0; border-radius: 0; } th { width: 120px; } }
+  </style>
+</head>
+<body>
+<main>
+  <h1>ADR-0065：公司 GaussDB 初始化脚本样式</h1>
+  <table>
+    <tr><th>Status</th><td><span class="status">Accepted</span></td></tr>
+    <tr><th>Date</th><td>2026-09-07</td></tr>
+    <tr><th>Version</th><td>1.0.0</td></tr>
+    <tr><th>Source baseline</th><td><code>origin/main@18bf7026d75cf28a9652025eaa19800eb36c4c64</code></td></tr>
+    <tr><th>Observed source</th><td><code>modules/coding-agent-cli/src/main/resources/db/gaussdb/install/session_schema.sql</code>、<code>start-dev.sh:initialize_database</code>、<code>scripts/sync-campusclaw.sh:stage_database_install_script</code>、<code>scripts/tests/sync-campusclaw-layout-test.sh</code>、<code>campusclaw/scripts/install/initdb_gaussdbv5.sql</code></td></tr>
+    <tr><th>Change class</th><td>公司交付产品约束、镜像同步架构变化、初始化执行语义变化</td></tr>
+  </table>
+
+  <h2>Context</h2>
+  <p>源码基线中，模块 <code>session_schema.sql</code> 以说明注释和 <code>BEGIN</code> 开头，先集中倒序删除全部表，再按顺序创建表，并以 <code>COMMIT</code> 结束。同步脚本把该文件字节级复制成公司交付脚本。</p>
+  <p>公司代码仓要求交付脚本以固定的 <code>claw</code> 数据库、Schema、<code>{dbUser}</code> Owner 和授权语句开头，不使用 <code>BEGIN</code>/<code>COMMIT</code>，并将每个 <code>DROP TABLE IF EXISTS</code> 紧邻放在对应 <code>CREATE TABLE</code> 之前。</p>
+  <p><code>start-dev.sh:initialize_database</code> 会直接在已选定的本地数据库和 Schema 中执行模块脚本。如果把公司 <code>{dbUser}</code> 占位头部写入模块脚本，独立开发流程将无法直接执行。</p>
+
+  <h2>Considered options</h2>
+  <h3>只手工修改公司镜像文件</h3>
+  <p><strong>优点：</strong>改动小。<br><strong>缺点：</strong><code>campusclaw/scripts/install</code> 是生成目录，下次同步会覆盖修改，预推送门禁也会拒绝漂移。拒绝。</p>
+
+  <h3>把公司头部直接写入模块规范脚本</h3>
+  <p><strong>优点：</strong>仍可字节级复制。<br><strong>缺点：</strong>本地开发脚本会执行未替换的 <code>{dbUser}</code>，并重复承担已由 <code>start-dev.sh</code> 完成的数据库与 Schema 选择。拒绝。</p>
+
+  <h3>用公司头部模板与模块表 DDL 生成交付文件</h3>
+  <p><strong>优点：</strong>头部和通用表结构各有单一可编辑源，同时保留本地开发与公司交付语义。<br><strong>缺点：</strong>同步脚本需要组合两段 SQL，不再能用整文件 <code>cmp</code> 验证。接受。</p>
+
+  <h2>Decision</h2>
+  <ul>
+    <li><code>scripts/templates/initdb_gaussdbv5-header.sql</code> 保存公司要求的七行头部：<code>\c claw;</code>、建立 <code>claw</code> Schema、设置 <code>search_path</code>、设置 <code>{dbUser}</code> 用户路径、转移数据库与 Schema Owner，以及授予数据库全部权限。</li>
+    <li>模块 <code>session_schema.sql</code> 保留本地开发说明、集中 DROP 块和事务语义，不包含公司占位头部。</li>
+    <li>公司交付文件不包含 <code>BEGIN</code> 或 <code>COMMIT</code>；八张 <code>t_</code> 表的每个 <code>CREATE TABLE</code> 必须由同表 <code>DROP TABLE IF EXISTS</code> 在紧邻前一行引导。</li>
+    <li><code>stage_database_install_script</code> 先输出公司头部，留一个空行，再由 <code>emit_corporate_table_ddl</code> 过滤说明、原集中 DROP 块和事务语句，为每个建表语句注入对应删表语句。</li>
+    <li>生成门禁逐字校验头部，拒绝事务包裹，校验 <code>DROP</code>/<code>CREATE</code> 名称、数量和紧邻顺序，并保持镜像与暂存输出一致。</li>
+    <li>表、列、索引、约束和中文 <code>COMMENT ON</code> 内容不变；不新增 Maven 依赖。</li>
+  </ul>
+
+  <h2>Intentional differences</h2>
+  <ul>
+    <li><strong>产品约束：</strong>公司文件使用固定的 <code>claw</code> 数据库与 Schema 头部、<code>{dbUser}</code> 占位符和逐表删建样式。</li>
+    <li><strong>架构变化：</strong>公司文件由整体字节级复制改为“头部模板 + 规范表 DDL”组合生成。</li>
+    <li><strong>执行语义：</strong>公司交付脚本移除事务包裹后，初始化失败可能保留已完成的前置语句；部署平台必须显式报告失败并由操作人员处理部分初始化状态。模块本地开发脚本的事务语义不变。</li>
+  </ul>
+
+  <h2>Consequences</h2>
+  <ul>
+    <li>正面：公司交付文件的首行和执行顺序可由自动化门禁精确验证。</li>
+    <li>正面：通用表结构仍只有一份规范源，公司头部和无事务样式不会影响本地开发。</li>
+    <li>代价：公司脚本不再与模块脚本整文件相同，需要分别校验头部和表 DDL 主体。</li>
+    <li>代价：无事务初始化不具备全或无原子性，这是明确接受的公司脚本规范。</li>
+    <li>边界：头部中的 <code>CREATE SCHEMA claw;</code> 和 Owner/授权语句由公司发布平台在目标环境执行；AgentService 不执行该文件。</li>
+  </ul>
+
+  <h2>Validation</h2>
+  <ul>
+    <li>执行镜像布局回归，验证公司头部、镜像/暂存一致、表 DDL 主体同源与安装目录唯一性。</li>
+    <li>执行 Bash 语法和 ShellCheck，并重复执行同步 dry-run 验证无漂移。</li>
+    <li>校验公司 SQL 无 <code>BEGIN</code>/<code>COMMIT</code>，八个 <code>DROP</code>/<code>CREATE</code> 名称和紧邻顺序一致，并与模块脚本的建表清单一致。</li>
+    <li>执行 PlantUML/SVG/XML、Markdown 图路径和源链接、以及 <code>git diff --check</code> 验证。</li>
+  </ul>
+
+  <h2>Related</h2>
+  <ul>
+    <li><a href="../designs/coding-agent-cli.md">Coding Agent Runtime HTTP 与受管 Session 设计 v3.9.0</a></li>
+    <li><a href="../designs/coding-agent-cli/diagram.puml#L137">PlantUML 源文件</a></li>
+    <li><a href="0049-publish-corporate-gaussdb-init-script.html">ADR-0049：被本决策取代的整文件字节复制方案</a></li>
+  </ul>
+
+  <h2>版本历史</h2>
+  <p>1.0.0 · 2026-09-07：落实公司 GaussDB 头部、无事务包裹和逐表删建规范。</p>
+</main>
+</body>
+</html>

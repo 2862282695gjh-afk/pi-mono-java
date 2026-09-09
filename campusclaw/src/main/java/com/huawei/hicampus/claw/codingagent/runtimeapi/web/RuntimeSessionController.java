@@ -6,10 +6,9 @@ package com.huawei.hicampus.claw.codingagent.runtimeapi.web;
 
 import java.net.URI;
 
-import com.huawei.hicampus.claw.codingagent.common.identifier.ResourceIdentifierPatterns;
-import com.huawei.hicampus.claw.codingagent.runtimeapi.RuntimeApiConstants;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.result.ResultBeanAdapter;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.session.RuntimeSessionService;
+import com.huawei.hicampus.claw.common.constant.ClawConstants;
 
 import org.springframework.http.CacheControl;
 import org.springframework.http.HttpHeaders;
@@ -32,7 +31,7 @@ import jakarta.validation.constraints.Pattern;
  * @since [br_eCampusCore 26.0.0]
  */
 @RestController
-@RequestMapping(RuntimeApiConstants.BASE_PATH)
+@RequestMapping(ClawConstants.RuntimeApi.BASE_PATH)
 public class RuntimeSessionController {
     private final RuntimeSessionService service;
 
@@ -45,12 +44,11 @@ public class RuntimeSessionController {
 
     @PostMapping("/agents/{agentId}/sessions")
     public ResponseEntity<Object> create(
-            @PathVariable("agentId") @NotBlank @Pattern(regexp = ResourceIdentifierPatterns.AGENT_ID_REGEX)
-                    String agentId,
+            @PathVariable("agentId") @NotBlank @Pattern(regexp = ClawConstants.Agent.ID_REGEX) String agentId,
             HttpServletRequest request) {
         var view = service.create(agentId);
-        URI location = URI.create(
-                RuntimeApiConstants.BASE_PATH + "/sessions/" + view.resource().getSessionId());
+        URI location = URI.create(ClawConstants.RuntimeApi.BASE_PATH + "/sessions/"
+                + view.resource().getSessionId());
         return ResponseEntity.created(location)
                 .header(HttpHeaders.CONTENT_LANGUAGE, RuntimeRequestContext.language(request))
                 .body(resultBeanAdapter.normal(view.resource()));
@@ -58,8 +56,7 @@ public class RuntimeSessionController {
 
     @GetMapping("/sessions/{sessionId}")
     public ResponseEntity<Object> get(
-            @PathVariable("sessionId") @NotBlank @Pattern(regexp = ResourceIdentifierPatterns.SESSION_ID_REGEX)
-                    String sessionId,
+            @PathVariable("sessionId") @NotBlank @Pattern(regexp = ClawConstants.Session.ID_REGEX) String sessionId,
             HttpServletRequest request) {
         var view = service.get(sessionId);
         return ResponseEntity.ok()
@@ -71,8 +68,7 @@ public class RuntimeSessionController {
 
     @DeleteMapping("/sessions/{sessionId}")
     public ResponseEntity<Void> delete(
-            @PathVariable("sessionId") @NotBlank @Pattern(regexp = ResourceIdentifierPatterns.SESSION_ID_REGEX)
-                    String sessionId) {
+            @PathVariable("sessionId") @NotBlank @Pattern(regexp = ClawConstants.Session.ID_REGEX) String sessionId) {
         service.delete(sessionId);
         return ResponseEntity.noContent().cacheControl(CacheControl.noStore()).build();
     }

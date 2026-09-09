@@ -85,6 +85,17 @@ class AgentEventTest {
 
             assertEquals(2, event.messages().size());
             assertInstanceOf(UserMessage.class, event.messages().getFirst());
+            assertFalse(event.cancelled());
+        }
+
+        @Test
+        void agentEndEventCarriesCancellationEvidence() throws Exception {
+            var event = new AgentEndEvent(List.of(sampleUserMessage()), true);
+
+            var json = mapper.writeValueAsString(event);
+            var restored = assertInstanceOf(AgentEndEvent.class, mapper.readValue(json, AgentEvent.class));
+
+            assertTrue(restored.cancelled());
         }
 
         @Test

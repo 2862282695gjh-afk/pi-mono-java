@@ -10,11 +10,11 @@
         INSERT INTO t_sessions (
             id, agent_id, model_id, state, thinking,
             resource_version, created_at, updated_at, cwd, parent_session_id,
-            metadata, active_leaf_id
+            metadata, active_leaf_id, display_name
         ) VALUES (
             #{id}, #{agentId}, #{modelId}, #{state}, #{thinking},
             #{resourceVersion}, #{createdAt}, #{updatedAt}, #{cwd}, #{parentSessionId},
-            CAST(#{metadata} AS JSONB), #{activeLeafId}
+            CAST(#{metadata} AS JSONB), #{activeLeafId}, #{displayName}
         )
     </insert>
 
@@ -30,24 +30,40 @@
 
     <insert id="insertStats">
         INSERT INTO t_session_stats (
-            session_id, message_count, cached_tokens, uncached_tokens, total_tokens, cost_total
+            session_id, message_count, cached_tokens, uncached_tokens, total_tokens, cost_total,
+            input_tokens, output_tokens, cache_read_tokens, cache_write_tokens,
+            cost_input, cost_output, cost_cache_read, cost_cache_write
         ) VALUES (
-            #{sessionId}, 0, 0, 0, 0, 0
+            #{sessionId}, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
         )
     </insert>
 
     <select id="findSession" resultType="com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeSessionDTO">
         SELECT id, agent_id, model_id, state, thinking,
                resource_version, created_at, updated_at, cwd, parent_session_id,
-               metadata::text AS metadata, active_leaf_id
-        FROM t_sessions
+               metadata::text AS metadata, active_leaf_id, display_name,
+               stats.input_tokens AS "lifetimeUsage.input", stats.output_tokens AS "lifetimeUsage.output",
+               stats.cache_read_tokens AS "lifetimeUsage.cacheRead",
+               stats.cache_write_tokens AS "lifetimeUsage.cacheWrite",
+               stats.total_tokens AS "lifetimeUsage.totalTokens", stats.cost_input AS "lifetimeUsage.costInput",
+               stats.cost_output AS "lifetimeUsage.costOutput", stats.cost_cache_read AS "lifetimeUsage.costCacheRead",
+               stats.cost_cache_write AS "lifetimeUsage.costCacheWrite", stats.cost_total AS "lifetimeUsage.costTotal"
+        FROM t_sessions JOIN t_session_stats stats ON stats.session_id = t_sessions.id
         WHERE id = #{sessionId}
+    </select>
+
+    <select id="findLifetimeUsage" resultType="com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeLifetimeUsageDTO">
+        SELECT input_tokens AS input, output_tokens AS output, cache_read_tokens AS cache_read,
+               cache_write_tokens AS cache_write, total_tokens,
+               cost_input, cost_output, cost_cache_read, cost_cache_write, cost_total
+        FROM t_session_stats
+        WHERE session_id = #{sessionId}
     </select>
 
     <select id="lockSessionForUpdate" resultType="com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeSessionDTO">
         SELECT id, agent_id, model_id, state, thinking,
                resource_version, created_at, updated_at, cwd, parent_session_id,
-               metadata::text AS metadata, active_leaf_id
+               metadata::text AS metadata, active_leaf_id, display_name
         FROM t_sessions
         WHERE id = #{sessionId}
         FOR UPDATE
@@ -82,6 +98,23 @@
         )
     </insert>
 
+    <insert id="insertCommittedEvent" parameterType="com.huawei.hicampus.claw.codingagent.runtimeapi.dto.CommittedEventDTO">
+        INSERT INTO t_session_events (
+            session_id, event_id, event_seq, anchor_entry_id, type, created_at, payload
+        ) VALUES (
+            #{sessionId}, #{eventId}, #{eventSeq}, #{anchorEntryId},
+            #{type}, #{createdAt}, CAST(#{payload} AS JSONB)
+        )
+    </insert>
+
+    <insert id="insertCommittedEventProjection">
+        INSERT INTO t_session_event_projection (
+            session_id, anchor_entry_id, event_count
+        ) VALUES (
+            #{sessionId}, #{anchorEntryId}, #{eventCount}
+        )
+    </insert>
+
     <update id="incrementMessageCount">
         UPDATE t_session_stats
         SET message_count = message_count + 1
@@ -90,10 +123,18 @@
 
     <update id="accumulateUsageStats">
         UPDATE t_session_stats
-        SET cached_tokens = cached_tokens + #{cachedTokens},
-            uncached_tokens = uncached_tokens + #{uncachedTokens},
-            total_tokens = total_tokens + #{totalTokens},
-            cost_total = cost_total + #{costTotal}
+        SET cached_tokens = cached_tokens + #{usage.cacheRead},
+            uncached_tokens = uncached_tokens + #{usage.input} + #{usage.cacheWrite},
+            total_tokens = total_tokens + #{usage.totalTokens},
+            input_tokens = input_tokens + #{usage.input},
+            output_tokens = output_tokens + #{usage.output},
+            cache_read_tokens = cache_read_tokens + #{usage.cacheRead},
+            cache_write_tokens = cache_write_tokens + #{usage.cacheWrite},
+            cost_input = cost_input + #{usage.costInput},
+            cost_output = cost_output + #{usage.costOutput},
+            cost_cache_read = cost_cache_read + #{usage.costCacheRead},
+            cost_cache_write = cost_cache_write + #{usage.costCacheWrite},
+            cost_total = cost_total + #{usage.costTotal}
         WHERE session_id = #{sessionId}
     </update>
 
@@ -129,39 +170,6 @@
           AND state = 'running'
     </update>
 
-    <select id="listCurrentBranch" resultType="com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeEntryDTO">
-        WITH RECURSIVE current_path (
-            session_id, id, entry_seq, parent_id, type, timestamp, payload
-        ) AS (
-            SELECT entry.session_id, entry.id, entry.entry_seq, entry.parent_id,
-                   entry.type, entry.timestamp, entry.payload
-            FROM t_session_entries entry
-            JOIN t_sessions session
-              ON session.id = entry.session_id
-             AND session.active_leaf_id = entry.id
-            WHERE session.id = #{sessionId}
-            UNION ALL
-            SELECT parent.session_id, parent.id, parent.entry_seq, parent.parent_id,
-                   parent.type, parent.timestamp, parent.payload
-            FROM t_session_entries parent
-            JOIN current_path child
-              ON child.session_id = parent.session_id
-             AND child.parent_id = parent.id
-        )
-        SELECT session_id, id, entry_seq, parent_id, type, timestamp,
-               payload::text AS payload
-        FROM current_path
-        WHERE entry_seq &gt; #{afterSeq}
-          AND (
-              type IN (
-                  'user.message', 'assistant.message.completed', 'tool.result',
-                  'session.model.changed', 'session.thinking.changed', 'session.compaction.completed'
-              )
-              OR (#{includeThinking} = TRUE AND type = 'assistant.thinking.completed')
-          )
-        ORDER BY entry_seq
-        LIMIT #{limit}
-    </select>
 
     <select id="listCurrentBranchEntries" resultType="com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeEntryDTO">
         WITH RECURSIVE current_path (
@@ -190,6 +198,90 @@
         LIMIT #{limit}
     </select>
 
+    <select id="listCommittedEvents" resultType="com.huawei.hicampus.claw.codingagent.runtimeapi.dto.CommittedEventDTO">
+        WITH RECURSIVE current_path (session_id, id, parent_id) AS (
+            SELECT entry.session_id, entry.id, entry.parent_id
+            FROM t_session_entries entry
+            JOIN t_sessions session
+              ON session.id = entry.session_id
+             AND session.active_leaf_id = entry.id
+            WHERE session.id = #{sessionId}
+            UNION ALL
+            SELECT parent.session_id, parent.id, parent.parent_id
+            FROM t_session_entries parent
+            JOIN current_path child
+              ON child.session_id = parent.session_id
+             AND child.parent_id = parent.id
+        )
+        SELECT event.session_id, event.event_id, event.event_seq, event.anchor_entry_id,
+               event.type, event.created_at, event.payload::text AS payload
+        FROM t_session_events event
+        JOIN current_path path
+          ON path.session_id = event.session_id
+         AND path.id = event.anchor_entry_id
+        WHERE event.session_id = #{sessionId}
+        ORDER BY event.event_seq
+        OFFSET #{offset}
+        LIMIT #{limit}
+    </select>
+
+    <select id="countUnmappedCurrentBranchEntries" resultType="long">
+        WITH RECURSIVE current_path (session_id, id, parent_id, type) AS (
+            SELECT entry.session_id, entry.id, entry.parent_id, entry.type
+            FROM t_session_entries entry
+            JOIN t_sessions session
+              ON session.id = entry.session_id
+             AND session.active_leaf_id = entry.id
+            WHERE session.id = #{sessionId}
+            UNION ALL
+            SELECT parent.session_id, parent.id, parent.parent_id, parent.type
+            FROM t_session_entries parent
+            JOIN current_path child
+              ON child.session_id = parent.session_id
+             AND child.parent_id = parent.id
+        ), event_counts AS (
+            SELECT event.session_id, event.anchor_entry_id, COUNT(1) AS event_count
+            FROM t_session_events event
+            WHERE event.session_id = #{sessionId}
+            GROUP BY event.session_id, event.anchor_entry_id
+        )
+        SELECT COUNT(1)
+        FROM current_path entry
+        LEFT JOIN t_session_event_projection projection
+          ON projection.session_id = entry.session_id
+         AND projection.anchor_entry_id = entry.id
+        LEFT JOIN event_counts actual
+          ON actual.session_id = entry.session_id
+         AND actual.anchor_entry_id = entry.id
+        WHERE entry.type NOT IN (
+            'user.message', 'user.interrupt', 'user.tool_confirmation',
+            'assistant.message.completed', 'assistant.thinking.completed',
+            'tool.execution.started', 'tool.result',
+            'session.model.changed', 'session.thinking.changed', 'session.compaction.started',
+            'session.compaction.completed', 'session.compaction.failed', 'session.status.idle',
+            'leaf', 'branch_summary', 'label'
+        )
+        OR projection.anchor_entry_id IS NULL
+        OR projection.event_count != COALESCE(actual.event_count, 0)
+        OR (
+            entry.type IN (
+                'user.message', 'user.interrupt', 'user.tool_confirmation',
+                'assistant.message.completed', 'tool.result',
+                'tool.execution.started',
+                'session.model.changed', 'session.thinking.changed', 'session.compaction.completed',
+                'session.status.idle'
+            )
+            AND projection.event_count &lt; 1
+        )
+        OR (
+            entry.type IN (
+                'session.compaction.started', 'session.compaction.failed',
+                'leaf', 'branch_summary', 'label'
+            )
+            AND projection.event_count != 0
+        )
+    </select>
+
     <update id="updateSessionModel">
         UPDATE t_sessions
         SET model_id = #{modelId},
@@ -207,6 +299,14 @@
             updated_at = #{updatedAt}
         WHERE id = #{sessionId}
           AND state = 'idle'
+    </update>
+
+    <update id="updateSessionName">
+        UPDATE t_sessions
+        SET display_name = #{displayName},
+            resource_version = resource_version + 1,
+            updated_at = #{updatedAt}
+        WHERE id = #{sessionId}
     </update>
 
     <insert id="insertTombstone">
@@ -258,6 +358,36 @@
 
     <delete id="deleteRecords">
         DELETE FROM t_session_records
+        WHERE session_id = #{sessionId}
+    </delete>
+
+    <delete id="deleteExecutionSegmentEvents">
+        DELETE FROM t_session_execution_segment_events
+        WHERE session_id = #{sessionId}
+    </delete>
+
+    <delete id="deleteToolConfirmations">
+        DELETE FROM t_session_tool_confirmations
+        WHERE session_id = #{sessionId}
+    </delete>
+
+    <delete id="deleteExecutionSegments">
+        DELETE FROM t_session_execution_segments
+        WHERE session_id = #{sessionId}
+    </delete>
+
+    <delete id="deleteExecutions">
+        DELETE FROM t_session_executions
+        WHERE session_id = #{sessionId}
+    </delete>
+
+    <delete id="deleteCommittedEvents">
+        DELETE FROM t_session_events
+        WHERE session_id = #{sessionId}
+    </delete>
+
+    <delete id="deleteEventProjections">
+        DELETE FROM t_session_event_projection
         WHERE session_id = #{sessionId}
     </delete>
 

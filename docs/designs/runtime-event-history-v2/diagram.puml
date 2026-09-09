@@ -1,0 +1,62 @@
+@startuml query_pipeline
+title Authoritative event history query
+' Source baseline: pi-mono-java 69b8ced3 plus change ab0f2637
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/event/CommittedEventQueryService.java#list
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/persistence/MyBatisRuntimeSessionRepository.java#findEventPage
+' Source: modules/coding-agent-cli/src/main/resources/mapper/session/RuntimeSessionMapper.xml#countUnmappedCurrentBranchEntries
+' Source: modules/coding-agent-cli/src/main/resources/db/gaussdb/install/session_schema.sql
+' Observed behavior: current-version writers persist exact public-event markers atomically.
+' Product constraint: the first release supports fresh installation only and has no legacy migration.
+' Design reason: history reads fail closed on incomplete current-version projections.
+' Pi baseline: 5cd93f688aaab89dbb6dfa4aca535f21796ae185
+' Pi source: packages/agent/src/agent-loop.ts#runAgentLoop
+' Pi source: packages/agent/src/agent-loop.ts#prepareToolCall
+' Java divergence: pi has no CampusClaw current-branch HTTP history store.
+' Target integration: the Controller delegates to the current query service only after the Events HTTP switch.
+actor Caller
+participant RuntimeEventController
+participant CommittedEventQueryService
+participant MyBatisRuntimeSessionRepository
+database t_sessions
+database t_session_entries
+database t_session_event_projection
+database t_session_events
+participant CommittedEventProjection
+participant ListSessionEventsResponseVO
+
+Caller -> RuntimeEventController : GET page and limit
+RuntimeEventController -> CommittedEventQueryService : list(sessionId, limit, page)
+CommittedEventQueryService -> MyBatisRuntimeSessionRepository : findEventPage(offset, limit + 1)
+activate MyBatisRuntimeSessionRepository
+MyBatisRuntimeSessionRepository -> t_sessions : read session and active leaf
+MyBatisRuntimeSessionRepository -> t_session_entries : resolve recursive current path
+MyBatisRuntimeSessionRepository -> t_session_event_projection : verify registered type and exact completeness
+alt unknown, retired, missing, or partial projection
+  MyBatisRuntimeSessionRepository --> CommittedEventQueryService : fail closed
+else complete projection
+  MyBatisRuntimeSessionRepository -> t_session_events : read stable order with offset and limit
+  t_session_events --> MyBatisRuntimeSessionRepository : committed event DTOs
+  MyBatisRuntimeSessionRepository --> CommittedEventQueryService : one page plus lookahead
+end
+deactivate MyBatisRuntimeSessionRepository
+CommittedEventQueryService -> CommittedEventProjection : project each complete event
+CommittedEventProjection --> CommittedEventQueryService : immutable public event VOs
+CommittedEventQueryService -> ListSessionEventsResponseVO : events and nextPage
+ListSessionEventsResponseVO --> Caller : JSON result
+
+note over MyBatisRuntimeSessionRepository,t_session_events
+  One REPEATABLE_READ transaction per request.
+  No cross-request snapshot or total count.
+  No legacy migration or read-time reconstruction.
+end note
+note over t_session_entries,t_session_event_projection
+  Retired preview and stream entry types fail closed
+  even when a zero-event marker exists.
+  Current internal compaction and structure types may
+  carry an explicit zero-event marker.
+end note
+note over RuntimeEventController,CommittedEventQueryService
+  Controller wiring is part of the pending Events HTTP integration.
+  The query service and repository already exist.
+end note
+@enduml

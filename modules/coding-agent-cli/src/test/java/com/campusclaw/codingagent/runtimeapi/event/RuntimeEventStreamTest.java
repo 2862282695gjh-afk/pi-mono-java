@@ -13,6 +13,7 @@ import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import com.campusclaw.codingagent.runtimeapi.vo.RuntimeSseEventVO;
 
@@ -69,6 +70,74 @@ class RuntimeEventStreamTest {
 
         assertThat(subscriber.events).isEmpty();
         assertThat(subscriber.completed).isTrue();
+    }
+
+    @Test
+    void shouldPreflightRequiredEventWithoutMutatingStream() {
+        RuntimeEventStream stream = stream(1, 1);
+
+        assertThat(stream.canAcceptRequired(event("fits"))).isTrue();
+        assertThat(stream.canAcceptRequired(event("fits"))).isTrue();
+        assertThat(stream.emit(event("fits"))).isTrue();
+        assertThat(stream.canAcceptRequired(event("full"))).isFalse();
+    }
+
+    @Test
+    void shouldPreflightAfterEvictingBestEffortEvents() {
+        RuntimeEventStream stream = new RuntimeEventStream(1, 10, Duration.ofSeconds(15), ignored -> 10L);
+        assertThat(stream.emitBestEffort(event("delta"))).isTrue();
+
+        assertThat(stream.canAcceptRequired(event("complete"))).isTrue();
+        assertThat(stream.emit(event("complete"))).isTrue();
+    }
+
+    @Test
+    void shouldCheckSingleEventLimitIndependentlyFromClientState() {
+        RuntimeEventStream stream = new RuntimeEventStream(1, 1, Duration.ofSeconds(15), event -> 1L);
+        stream.detach();
+
+        assertThat(stream.isWithinRequiredEventLimit(event("fits"))).isTrue();
+        RuntimeEventStream oversized = new RuntimeEventStream(1, 1, Duration.ofSeconds(15), event -> 2L);
+        assertThat(oversized.isWithinRequiredEventLimit(event("large"))).isFalse();
+    }
+
+    @Test
+    void shouldRunCloseActionOnlyOnce() {
+        RuntimeEventStream stream = stream(1, 10);
+        var closed = new AtomicInteger();
+        stream.onClose(closed::incrementAndGet);
+
+        stream.complete();
+        stream.complete();
+        stream.detach();
+
+        assertThat(closed).hasValue(1);
+    }
+
+    @Test
+    void shouldRunLateCloseActionAndIgnoreItsFailure() {
+        RuntimeEventStream stream = stream(1, 10);
+        stream.detach();
+        var closed = new AtomicInteger();
+
+        stream.onClose(() -> {
+            closed.incrementAndGet();
+            throw new IllegalStateException("cleanup failure");
+        });
+
+        assertThat(closed).hasValue(1);
+        assertThat(stream.emit(event("after-close"))).isFalse();
+    }
+
+    @Test
+    void shouldRunCloseActionWhenRequiredEventOverflows() {
+        RuntimeEventStream stream = new RuntimeEventStream(1, 1, Duration.ofSeconds(15), event -> 2L);
+        var closed = new AtomicInteger();
+        stream.onClose(closed::incrementAndGet);
+
+        assertThat(stream.emit(event("too-large"))).isFalse();
+
+        assertThat(closed).hasValue(1);
     }
 
     @Test

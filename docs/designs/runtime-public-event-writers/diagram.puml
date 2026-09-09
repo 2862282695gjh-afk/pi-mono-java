@@ -1,0 +1,67 @@
+@startuml configuration_event_write
+title Atomic Configuration Public Event Write
+' Contract baseline: pi-mono-java-design 2ee2a3211da68ad87b0d9cab353e691b00bdaebd
+' Java baseline before cleanup: pi-mono-java 48aac44a
+' Cleanup implementation: bfaedc7e
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/web/RuntimeSessionConfigurationController.java
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/service/command/SessionModelConfigurationService.java#update
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/service/command/SessionThinkingConfigurationService.java#change
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/session/RuntimeSessionModelReconciler.java#reconcile
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/event/RuntimeCommittedEventFactory.java#sessionConfiguration
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/persistence/MyBatisRuntimeSessionRepository.java#appendConfigurationEntries
+' Pi baseline: 5cd93f688aaab89dbb6dfa4aca535f21796ae185
+' Pi source: packages/agent/src/agent-loop.ts#runAgentLoop
+' Pi source: packages/agent/src/agent-loop.ts#prepareToolCall
+' Observed behavior: pi emits runtime loop events but has no CampusClaw configuration transaction.
+' Design reason: configuration state, Entry, public event, and exact marker must commit together.
+' Java divergence: public configuration history is a CampusClaw architecture and HTTP contract change.
+actor "Model/Thinking HTTP" as http
+actor "Builtin Command" as command
+participant "Configuration Service" as service
+participant "Model Reconciler" as reconciler
+participant "RuntimeSessionRepository" as repository
+participant "RuntimeCommittedEventFactory" as factory
+database "t_sessions" as sessions
+database "shared sequence" as sequence
+database "t_session_entries" as entries
+database "t_session_events" as events
+database "t_session_event_projection" as marker
+
+http -> service : change model or thinking
+command -> service : execute model or thinking
+reconciler -> repository : updateModel with eventFactory
+service -> repository : updateModel/updateThinking with eventFactory
+activate repository
+note over repository,factory
+The only configuration update port requires eventFactory.
+No Entry-only overload remains in the first release.
+end note
+repository -> sessions : lock and recheck state/version
+alt missing, busy, stale, or unchanged
+  repository --> service : status without event writes
+else updated
+  repository -> sessions : update configuration
+  loop each finalized configuration Entry
+    repository -> sequence : allocate Entry sequence
+    repository -> entries : insert dotted internal type
+    repository -> factory : sessionConfiguration(final Entry)
+    factory --> repository : underscored public event
+    repository -> sequence : allocate public event sequence
+    repository -> events : insert stable event and UTC millisecond time
+    repository -> marker : insert exact event count
+  end
+  repository -> sessions : update active leaf and resource version
+  repository --> service : updated Session and source sequence
+end
+deactivate repository
+
+note over sessions,marker
+One Spring transaction owns all writes.
+Any failure rolls the transaction back.
+end note
+
+note over events
+The HTTP response contract is unchanged.
+GET reads these committed public events.
+end note
+@enduml

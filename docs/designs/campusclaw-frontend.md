@@ -1,9 +1,15 @@
 # CampusClaw 前端调试工作台设计
 
+当前 v0.13.0 的 Events v2 / Slash / 确认与恢复以
+[Claw Runtime 前端实现专题](frontend-events-v2/README.md) 为权威。
+下方第 1～17 节、旧评审稿和旧图保留为 v0.12.x 历史记录；其中旧队列/独立 Abort、
+原始 Thinking wire、同文历史确认和活动富文本不再代表当前代码。
+视觉 O1 暖灰基线、内部部署边界、Assistant 安全 Markdown 与整轮复制继续有效。
+
 | 属性 | 值 |
 |---|---|
-| 文档版本 | 0.12.2 |
-| 状态 | Implemented（内部调试工作台）；独立 `Headers` 面板、请求级 Header 快照、原始 Thinking、原始 Tool 参数、全活动安全富文本、独立虚线框、整轮复制与 O1 品牌已落地 |
+| 文档版本 | 0.13.0 |
+| 状态 | 内部工作台；当前实现见 Events v2 专题，下方旧版行为归档 |
 | 界面评审状态 | `debugHeaders`、`firstUse`、`idleConversation`、`runningConversation` 已实现；Headers 桌面 736 px 与移动 360 px 已通过本地浏览器验收 |
 | 主设计依据 | 本文件，维护源码证据、目标差异、设计理由、状态与 Design Token |
 | 人类评审界面 | [`frontend-review.html`](campusclaw-frontend/frontend-review.html)，集中展示低保真、高保真、富文本与 Agent 活动评审面 |
@@ -21,7 +27,7 @@
 | 流式预览术语修订基线 | `origin/main@28b3235e5cff0da2f768cbfc6b7b9ce5e2b51193` |
 | 实现源码 | `frontend/src/App.vue`、`frontend/src/debugHeaders.ts`、`frontend/src/components/DebugHeaders.vue`、`frontend/src/composables/useRuntimeApi.ts`、`frontend/src/assets/campusclaw-mark-o1.png`、`frontend/src/components/AgentRound.vue`、`frontend/src/components/SafeRichText.ts`、`frontend/src/components/ThinkingDisclosure.vue`、`frontend/src/components/ToolActivity.vue`、`frontend/src/markdown/richText.ts`、`frontend/src/projectors/conversationRounds.ts`、`frontend/src/projectors/runtimeEventProjector.ts`、`frontend/src/style.css` |
 | Postman 核对 | 2026-08-20；只读核对 `Agent Runtime` collection 及真实 SSE 响应 |
-| 更新日期 | 2026-08-28 |
+| 更新日期 | 2026-09-08 |
 
 ## 1. 结论
 
@@ -584,6 +590,7 @@ spinner/进度文本和 check/“已完成”标签区分，不能只依赖颜�
 
 | 版本 | 日期 | 变更 |
 |---|---|---|
+| 0.13.0 | 2026-09-08 | 新增独立 Events v2 前端实现专题，旧行为和图明确归档；新增 Slash、确认/停止和可靠恢复，保留视觉基线。 |
 | 0.12.2 | 2026-08-28 | 统一 Runtime Event 术语：将只随当前 SSE 发送且不进入 GET Events 的 Assistant 和工具执行事件称为“流式预览事件”；同步断流提示文案，不改变前端代码或线上契约。 |
 | 0.12.1 | 2026-08-28 | 合并 `origin/main@a7a245b4079b53f79eacb96475a1b58a9c3713c7` 并响应 PR #184 评审：折叠 Headers 校验失败时先展开并聚焦精确 Key/Value；按 WHATWG Fetch 名称+值算法校验禁止请求 Header；补充初始实现与修正提交证据；因主分支编号冲突将本决策顺延为 ADR-0034。 |
 | 0.12.0 | 2026-08-28 | 基于 `origin/main@dee709fc584dd722d2e94eb381338b997659e35a` 和设计基线 `pi-mono-java-design@2748497`：开发模式新增独立通用 `Headers` 面板；不预设凭据模式、不展示自动 Header，临时值只存在当前页面并仅附加到下一次初始 Events POST；手工同名值覆盖适配器默认值；新增校验、请求边界测试、初始 ADR 和链路图。 |

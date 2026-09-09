@@ -1,0 +1,31 @@
+@startuml committed_event_projection
+' Java implementation: bc8298fd; prerequisite baseline: 40974151.
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/event/RuntimeV2EventProjector.java#persistAssistant,#persistConfirming,#requireCommittedFrame.
+' Pi baseline: 4af9d21d3b4d664e4a29fcabfec85171077248e3.
+' Pi source: packages/agent/src/agent-loop.ts#runLoop,#prepareToolCall.
+' Observed behavior: Agent emits process notifications; they are not public database history.
+' Java divergence: fixed execution segments and committed public events.
+' Design reason: validate safe complete payload before atomic persistence and delivery.
+title Committed execution event projection
+start
+:Receive Agent notification;
+if (Safe nonempty preview?) then (yes)
+  :Emit best-effort delta without persistence;
+else (no)
+  :Assemble complete safe event with stable identity;
+  if (Encoded frame within limit?) then (yes)
+    if (Tool confirmation pending?) then (yes)
+      :Validate both Tool Call and confirming idle frames;
+      :Commit Tool Call and confirming idle atomically;
+      :Emit both committed frames;
+      :Close current response and await decision;
+    else (no)
+      :Write Entry, Usage and public event to fixed target;
+      :Emit the same committed frame;
+    endif
+  else (no)
+    :Record first failure and request cancellation;
+  endif
+endif
+stop
+@enduml

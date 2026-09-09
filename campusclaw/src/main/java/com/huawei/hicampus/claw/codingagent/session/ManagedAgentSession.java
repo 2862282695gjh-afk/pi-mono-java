@@ -98,10 +98,6 @@ public final class ManagedAgentSession implements AutoCloseable {
                 .thenCompose(ignored -> compactAfterExecution(false));
     }
 
-    public CompletableFuture<Void> continueQueuedExecution() {
-        return agent.continueQueuedExecution().thenCompose(ignored -> compactAfterExecution(false));
-    }
-
     public CompletableFuture<SessionCompactionResult> compact(String customInstructions) {
         agent.abort();
         return agent.waitForIdle().thenCompose(ignored -> manualCompaction(customInstructions));

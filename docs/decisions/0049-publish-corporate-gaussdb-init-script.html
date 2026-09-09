@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ADR-0049：以独立单文件交付公司 GaussDB 初始化 DDL</title>
+  <style>
+    :root { color-scheme: light; font-family: Inter, "PingFang SC", sans-serif; color: #25272a; background: #f2f5f7; }
+    body { margin: 0; }
+    main { width: min(920px, calc(100% - 40px)); margin: 40px auto; padding: 40px; box-sizing: border-box; background: #fff; border: 1px solid #d7dde2; border-radius: 16px; }
+    h1 { margin-top: 0; font-size: 30px; }
+    h2 { margin-top: 32px; font-size: 20px; }
+    h3 { margin-top: 22px; font-size: 17px; }
+    p, li { line-height: 1.75; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 10px 12px; border: 1px solid #d7dde2; text-align: left; vertical-align: top; }
+    th { width: 190px; background: #edf2f5; }
+    code { padding: 2px 5px; border-radius: 5px; background: #edf2f5; overflow-wrap: anywhere; }
+    a { color: #1769aa; }
+    .status { display: inline-flex; padding: 4px 9px; border-radius: 999px; color: #12633a; background: #e8f7ed; font-weight: 650; }
+    @media (max-width: 640px) { main { width: 100%; margin: 0; padding: 24px 18px; border: 0; border-radius: 0; } th { width: 120px; } }
+  </style>
+</head>
+<body>
+<main>
+  <h1>ADR-0049：以独立单文件交付公司 GaussDB 初始化 DDL</h1>
+  <table>
+    <tr><th>Status</th><td><span class="status">Superseded by <a href="0065-corporate-gaussdb-init-script-convention.html">ADR-0065</a></span></td></tr>
+    <tr><th>Date</th><td>2026-09-03</td></tr>
+    <tr><th>Source baseline</th><td><code>origin/main@d84dd3d6a306b7587c70b29e0100e741dacef989</code></td></tr>
+    <tr><th>Reviewed implementation</th><td><code>c1335026</code></td></tr>
+    <tr><th>Observed source</th><td><code>scripts/sync-campusclaw.sh:42-50,164-245</code>、<code>modules/coding-agent-cli/src/main/resources/db/gaussdb/</code>、<code>campusclaw/src/main/resources/db/gaussdb/</code></td></tr>
+    <tr><th>Change class</th><td>公司交付产品约束、镜像同步架构变化</td></tr>
+  </table>
+
+  <h2>Context</h2>
+  <p>源码基线把模块侧完整 <code>db/gaussdb</code> 树作为资源白名单同步到公司镜像，其中包含安装 DDL、空初始化数据、授权占位和 upgrade README。它们位于 <code>src/main/resources</code>，会进入 classpath 和公司 JAR。</p>
+  <p>公司交付要求数据库脚本位于 <code>campusclaw/scripts/install</code>，并且该目录只包含 <code>initdb_gaussdbv5.sql</code>。模块侧现有文件仍被本地开发脚本使用，不能因公司打包约束而破坏独立工程流程。</p>
+
+  <h2>Decision drivers</h2>
+  <ul>
+    <li>公司 JAR 不得包含 GaussDB 发布脚本。</li>
+    <li>公司安装目录只交付一个固定名称的完整 DDL。</li>
+    <li>模块侧开发与发布材料保持兼容。</li>
+    <li>公司文件必须自动跟随规范 Schema，不能形成手工维护副本。</li>
+    <li>同步 dry-run、pre-push 与 CI 必须能发现路径或内容漂移。</li>
+  </ul>
+
+  <h2>Considered options</h2>
+  <h3>模块侧和公司镜像同时迁移为单文件</h3>
+  <p><strong>优点：</strong>两个工程目录完全一致。<br><strong>缺点：</strong>会修改 <code>start-dev.sh</code> 依赖的开发入口，并删除模块侧授权与升级材料，把公司交付约束扩大到独立工程。拒绝。</p>
+
+  <h3>在公司目录手工维护独立 SQL</h3>
+  <p><strong>优点：</strong>同步脚本无需特殊转换。<br><strong>缺点：</strong>同一 Schema 出现两个可编辑来源，后续表结构变化可能只更新一侧。拒绝。</p>
+
+  <h3>由同步脚本从规范 DDL 生成公司单文件</h3>
+  <p><strong>优点：</strong>保留单一 Schema 来源，同时满足公司目录、文件名与 classpath 边界；现有镜像一致性门禁可继续工作。<br><strong>缺点：</strong>同步不再是完全对称的目录复制，需要显式维护一条公司资产转换。接受。</p>
+
+  <h2>Decision</h2>
+  <ul>
+    <li>保留模块侧 <code>src/main/resources/db/gaussdb</code> 及 <code>start-dev.sh</code> 行为。</li>
+    <li>同步脚本将规范 <code>session_schema.sql</code> 字节级复制为 <code>campusclaw/scripts/install/initdb_gaussdbv5.sql</code>。</li>
+    <li><code>campusclaw/scripts/install</code> 是生成目录，通过删除同步保证只存在目标文件。</li>
+    <li>公司镜像删除 <code>src/main/resources/db/gaussdb</code>，不交付空初始化数据、授权占位或 upgrade README。</li>
+    <li><code>--skip-resources</code> 只跳过 classpath 资源；公司安装 SQL 始终参与镜像同步。</li>
+    <li>pre-push 识别文件更新与旧目录删除，CI 回归验证目录唯一性和 SQL 字节一致性。</li>
+  </ul>
+
+  <h2>Intentional difference</h2>
+  <p><strong>产品约束：</strong>公司镜像使用固定安装目录和单一文件名，不把数据库发布材料打入 classpath。<strong>架构变化：</strong>镜像同步从目录直拷贝调整为由模块规范 DDL 生成公司专用交付物。SQL 内容和数据库 Schema 不变。</p>
+
+  <h2>Consequences</h2>
+  <ul>
+    <li>正面：公司 JAR 不再携带数据库初始化或升级材料。</li>
+    <li>正面：公司安装脚本与模块规范 DDL 自动保持一致。</li>
+    <li>正面：模块侧开发脚本和多文件发布材料不受影响。</li>
+    <li>代价：公司交付不再包含独立授权脚本；权限配置由外部部署流程负责。</li>
+    <li>边界：目标 DDL 仍具有规范源声明的破坏性重建语义，只用于全新初始化。</li>
+  </ul>
+
+  <h2>Validation</h2>
+  <ul>
+    <li>验证镜像和暂存区都不存在 classpath GaussDB 目录。</li>
+    <li>验证公司安装目录只有目标文件，且与规范 DDL 字节级一致。</li>
+    <li>执行同步、dry-run、pre-push 解析回归、Bash 语法检查和 ShellCheck。</li>
+    <li>执行公司 Maven package 并确认 JAR 不含 GaussDB SQL。</li>
+    <li>执行主仓 Maven verify、PlantUML/SVG/XML、文档链接和 Git diff 检查。</li>
+  </ul>
+
+  <h2>Related</h2>
+  <ul>
+    <li><a href="../designs/coding-agent-cli.md">Coding Agent Runtime HTTP 与受管 Session 设计 v3.7.0</a></li>
+    <li><a href="../designs/coding-agent-cli/diagram.puml#L137">PlantUML 源文件</a></li>
+    <li><a href="0065-corporate-gaussdb-init-script-convention.html">ADR-0065：公司 GaussDB 初始化脚本样式</a></li>
+  </ul>
+</main>
+</body>
+</html>

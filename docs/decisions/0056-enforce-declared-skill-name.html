@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ADR-0056：落实 Skill 原始名称与目录身份约束</title>
+  <style>
+    :root { font-family: Inter, "PingFang SC", sans-serif; color: #25272a; background: #f2f5f7; }
+    body { margin: 0; }
+    main { width: min(920px, calc(100% - 40px)); margin: 40px auto; padding: 40px; box-sizing: border-box; background: #fff; border: 1px solid #d7dde2; border-radius: 16px; }
+    h1 { margin-top: 0; font-size: 28px; } h2 { margin-top: 30px; font-size: 20px; }
+    p, li { line-height: 1.75; } code { overflow-wrap: anywhere; } a { color: #1769aa; }
+    @media (max-width: 640px) { main { width: 100%; margin: 0; padding: 24px 18px; border: 0; border-radius: 0; } }
+  </style>
+</head>
+<body><main>
+  <h1>ADR-0056：落实 Skill 原始名称与目录身份约束</h1>
+  <p>Status：Accepted（落实已确认约束，不新增产品设计）<br>Date：2026-09-07<br>文档版本：1.0.0</p>
+  <h2>Context 与源码证据</h2>
+  <p>Java 复核基线：<code>7b3769a5eabe2d131af3023631d7ad24e6d9a9e1</code>。
+  以下路径相对 <code>modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/</code>：
+  <code>skill/SkillLoader.java:parseSkillFile</code> 缺少 name 时回退目录名，已有值用
+  <code>String.valueOf</code> 转换且未比较父目录。<code>validateName</code> 已调用共享严格规则，
+  但字符合法不能证明原始类型或目录身份合法。</p>
+  <p><code>runtime/AgentRuntimeManager.java:writeSkills/loadSkill/requireSessionLoadable</code>
+  通过同一 Loader 验证发布与缓存；<code>runtimeapi/agent/RuntimeAgentPromptLoader.java:loadSkill</code>
+  直接消费 Loader；<code>runtimeapi/service/command/SkillCommandSource.java:list</code>
+  通过 prepareCached 间接消费。只改受管发布入口会遗漏共享加载与缓存入口。</p>
+  <p>设计依据为 <code>pi-mono-java-design@fd8604956632c880264434791465d1f59917038d</code> 的
+  <code>04-命令与技能/02-技能命令/README.md</code> §3 和通用模块 §3.1：name 必须是原始非空
+  String，与目录及绑定逐字符一致，禁止回退、转换、裁剪和自动改名。本次只改实现仓。</p>
+  <p>pi 对照 <code>4af9d21d3b4d664e4a29fcabfec85171077248e3</code> 的
+  <code>packages/coding-agent/src/core/skills.ts:validateName/loadSkillFromFile</code>
+  对缺少名称回退目录，名称错误只产生 warning，描述有效时仍加载。
+  Java 拒绝该容忍行为，分类为已确认的产品约束与安全加固，不声称是 pi 现状。</p>
+  <h2>Decision</h2>
+  <ol>
+    <li>共享 Loader 首先要求原始名称是 String，再执行现有非空、长度和严格正则检查，最后比较目录名。</li>
+    <li>复用 <code>ClawConstants.Skill</code>，不新增 Validator、别名、正则或策略开关。
+    绑定元数据一致性继续由受管 Manager 检查，不放入 DTO。</li>
+    <li>单文件失败抛 SkillLoadException；批量扫描和提示词略过非法项；不改变异常翻译、锁与原子发布流程。</li>
+    <li>更新旧回退成功测试和跨消费者回归。合法的带引号字符串 null、true、123 仍允许，不能把类型检查变成关键字禁用。</li>
+  </ol>
+  <h2>选项、取舍与所选理由</h2>
+  <ul>
+    <li>保留回退或自动修正：减少上游修正成本，但违反已确认规则且改变资源身份，拒绝。</li>
+    <li>仅在 Command 或发布入口拦截：局部改动少，但共享加载与缓存仍可能放行，拒绝。</li>
+    <li>在共享 Loader 拒绝：所有真实消费者复用既有错误路径，且不复制规则，选择。</li>
+  </ul>
+  <h2>Consequences</h2>
+  <p>正面：加载、提示词和命令发现不再接受缺省或强制转换名称；非法刷新不替换旧完整目录。
+  代价：来源方必须提供合法显式名称；非法缓存不再命中，prepare 可能触发既有的重新拉取。
+  不新增存储、网络入口、数据库或线程，不改变合法名称和领域 ID 格式。</p>
+  <p>后续：Builtin、Skill 与共享 HTTP 由用户统一实施；Skill 真实执行仍需专门切片，
+  不把发现回归视为执行验收。本次不推进 Compact 6b，不引入 Events V2 候选迁移。</p>
+  <h2>验证边界</h2>
+  <p>SkillNameContractTest 用相同样例验证单文件、批量、提示词、发布、刷新保留、重启缓存与命令发现；
+  覆盖缺少/null/非字符串、目录不一致、空白/换行、非法字符/连字符、1/64/65 字符。
+  旧实现上 61 项中 12 项失败，证明旧绿色回归未覆盖这些契约。
+  本次构建、质量、镜像、行数及图形验证结果随修复 Draft PR 记录，不沿用旧 PR 的通过数量。</p>
+  <h2>Related</h2>
+  <ul>
+    <li><a href="../designs/agent-skill-runtime.md#63-原始名称与目录身份补齐362">运行目录实施说明</a></li>
+    <li><a href="0050-unify-skill-name-validation.md">ADR-0050：共享严格名称规则（继续有效）</a></li>
+    <li><a href="../designs/skill-name-validation/diagram.puml#L1">Skill 校验 PlantUML</a></li>
+    <li><a href="../designs/skill-name-validation/skill_name_validation.svg">生成图</a></li>
+    <li><a href="../designs/builtin-command-core.md">Builtin 核心与统一实施责任</a></li>
+  </ul>
+  <h2>版本历史</h2>
+  <p>1.0.0 · 2026-09-07：落实已合入设计的原始名称和目录身份要求，保留历史实现差距及 pi 对照。</p>
+</main></body>
+</html>

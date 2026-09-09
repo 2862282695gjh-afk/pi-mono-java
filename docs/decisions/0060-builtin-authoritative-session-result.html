@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ADR-0060：Builtin 传递完整权威 Session</title>
+  <style>
+    :root { font-family: Inter, "PingFang SC", sans-serif; color: #25272a; background: #f2f5f7; }
+    body { margin: 0; } main { max-width: 920px; margin: 32px auto; padding: 32px; background: white; box-sizing: border-box; }
+    p, li { line-height: 1.75; } code { overflow-wrap: anywhere; } a { color: #1769aa; }
+    @media (max-width: 640px) { main { margin: 0; padding: 24px 18px; } }
+  </style>
+</head>
+<body><main>
+  <h1>ADR-0060：Builtin 传递完整权威 Session</h1>
+  <p>Status：Accepted · Date：2026-09-07 · Version：1.1.0</p>
+  <p>设计依据：<code>pi-mono-java-design@88f4df16bc24bbfcd28e1ec374feb2de0db8be3b</code>，
+  <code>04-命令与技能/01-内置命令/README.md</code> 2.9.0 §8/8.1；设计仓只读。
+  Java 变更前基线：<code>6f52fddc87a03c20916fc7b6ef1de87f6a7a8cf5</code>；
+  本轮实现：<code>b2506c1f2b2fcb36228d4114cd32f77c15c42ab0</code>。</p>
+  <h2>Context</h2>
+  <p>Slash 成功结果改为复用业务资源。已有 Model/Thinking Repository 返回完整 Session，
+  命令窄服务却只保留标量；Name 事务结果也只保留名称；Status 读取的是 Catalog 子集。
+  在提交后重新 GET 补资源，会把其他并发提交混入本次结果。</p>
+  <p>源码根 <code>modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/</code>：
+  <code>service/command/{SessionNamingService,SessionModelConfigurationService,SessionThinkingConfigurationService}.java:execute</code>、
+  <code>service/command/readonly/RuntimeSessionStatusService.java:query</code>、
+  <code>persistence/MyBatisRuntimeSessionRepository.java:updateName/updateModel/updateThinking</code> 与
+  <code>session/RuntimeSessionResponseAssembler.java:getView</code>。</p>
+  <h2>考虑过的选项及取舍</h2>
+  <ul>
+    <li>提交后 GET：调用简单，但可能读到并发新版本，不采用。</li>
+    <li>用旧 Catalog 拼接字段：少一次查询，但会产生新旧字段混合资源，不采用。</li>
+    <li>每个命令维护完整资源副本和响应 VO：调用局部化，但复制字段和投影规则，不采用。</li>
+    <li>共用完整 Session 结果：携带的内部数据更多，但可复用已有资源与 ETag 投影，采用。</li>
+  </ul>
+  <h2>Decision 与理由</h2>
+  <ul>
+    <li>SessionCommandResultDTO 原样携带一次查询或锁内提交结果；changed/sourceEventSeq 只供内部使用。</li>
+    <li>Status/Name/Thinking 查询及 Name/Model/Thinking 修改或同值统一走该结果；Model 查询独立返回模型清单。</li>
+    <li>Name 同值保留原对象；更新后同步锁内对象的名称、版本和时间，不改状态、leaf 或历史。</li>
+    <li>配置更新写入时间与返回时间统一为数据库 TIMESTAMPTZ(3) 毫秒精度，避免修改结果与查询结果不同。</li>
+    <li>后续应用层仅按结果类型投影：Session 委派已有 Assembler，Models 使用已有业务 VO。
+    公开成功结果禁止 command/changed/sourceEventSeq，不增加替代回执，不新建七种 Command VO。</li>
+    <li>保留 PUT 的 If-Match/ETag、事务准入、同值不写和领域 Entry；不新增对实时 state/usage 的 ETag 缓存承诺。</li>
+  </ul>
+  <p>业务资源复用和结果分型属于 Java 架构变更，删除公开回执属于产品约束。
+  本轮以既有 Java API 为主基线，不把新 HTTP 或数据库事务行为表述为 pi 已有能力。</p>
+  <h2>Consequences</h2>
+  <ul>
+    <li>正面：正文与 ETag 同源；新增 Session 字段可沿同一结果通道传递，无需逐命令复制。</li>
+    <li>代价：Status 增加一次完整查询；内部结果含持久化字段，应用层必须白名单投影，不能直接序列化。</li>
+    <li>组合：R07 已随 main <code>b143aec605ca444f8af62ce47034004446cc2e33</code> 合入，本分支普通合并提交
+    <code>ab88af5335f40bb371736bc0f143328d3eb7caf1</code> 保留锁后 Usage 读取、完整结果及毫秒精度。
+    随后普通合并含 #235 的 main <code>188b1c3fd22fe9a943391f313a677d40da7530fd</code>，
+    组合代码提交为 <code>9dcd938fdde1daafc221a97e24b5de438991d379</code>，无额外生产修改。
+    CommandResponseAssembler/HTTP 尚未发布，不能把内部测试视为完整公开契约验收。</li>
+    <li>范围：不新增 Maven 依赖、升级 SQL、Events V2、旧控制接口迁移或 Skill 待决执行契约。</li>
+  </ul>
+  <h2>验证</h2>
+  <p>精确代码提交、测试和未验证项统一维护在关联实现说明。重点验证变化/同值完整对象、
+  不提交后重读、实际 Session/ETag 投影、真实 openGauss 并发与时间精度，以及原条件 PUT 回归。</p>
+  <h2>Related 与被替代决定</h2>
+  <ul>
+    <li><a href="../designs/builtin-session-snapshot.md">实现说明、源码及验收证据</a></li>
+    <li><a href="../designs/builtin-session-snapshot/diagram.puml#L1">当前结果通道 PlantUML</a></li>
+    <li><a href="0049-builtin-command-json-execution.html">ADR-0049：局部替代 Session 子集与独立命令响应方向，分层保持</a></li>
+    <li><a href="0053-builtin-model-locked-configuration.html">ADR-0053：局部替代 Model 混合结果，锁内事务保持</a></li>
+    <li><a href="0054-builtin-thinking-locked-capability.html">ADR-0054：局部替代 Thinking 子集与公开序号方向，能力与事务保持</a></li>
+  </ul>
+  <h2>版本历史</h2>
+  <p>1.1.0 · 2026-09-07：记录已合入 R07、Compact 接入的两次组合代码与非零 Usage 回归，完整结果决策不变。</p>
+  <p>1.0.0 · 2026-09-07：确定权威 Session 传递、共享结果与业务投影边界。</p>
+</main></body>
+</html>

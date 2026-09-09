@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ADR-0082：采用审核驱动且可重跑的存量事件迁移（已取代）</title>
+<style>body{font:16px/1.7 system-ui,sans-serif;background:#f5f7fa;color:#172235;margin:0}main{max-width:920px;margin:32px auto;padding:32px;background:white;border-radius:12px}code{overflow-wrap:anywhere;background:#eef2f6;padding:2px 4px}a{color:#1457a6}</style></head>
+<body><main><h1>ADR-0082：采用审核驱动且可重跑的存量事件迁移（已取代）</h1>
+<p>Status: Superseded by <a href="0092-first-release-authoritative-event-history.html">ADR-0092</a> ·
+Date: 2026-09-08 · Version: 2.0.0</p>
+<h2>历史 Context</h2><p>本决策曾假设 Events v2 需要保留既有安装中的内部 Entry。旧 Entry 无法证明 Skill 展开前回执、
+公开 Thinking 摘要、工具确认标记、固定错误文本和一对多完整数量，因此当时拒绝读取时猜测和无审核转换。</p>
+<p>历史实现提交 <code>247ee0af</code> 曾提供迁移审核表、严格 payload 校验函数、Session 原子批处理、
+schema/data/verify 脚本和隔离 openGauss 回归。它是已完成开发和验证的候选方案，不是当前可执行产品能力。</p>
+<h2>历史 Decision</h2><p>原决定是在停写维护窗口由数据库发布平台执行三步升级。只有能从旧安全字段完整证明的配置和私有记录
+自动处理，其余旧 Entry 必须提供精确人工审核；数量、类型、顺序和同 Session 关联全部通过校验后，
+才按 Session 原子迁移并允许重跑。</p>
+<h2>取代原因</h2><p>用户明确当前产品是第一版，不存在受支持的旧安装或升级场景。继续保留迁移入口会形成没有产品需求的
+schema 兼容和运维承诺。提交 <code>45d7ece9</code> 因此删除整个 <code>resources/db/gaussdb/upgrade/</code>
+目录、迁移测试和 <code>mapping_source</code>，只保留首版运行时使用的权威事件表与精确完整性门禁。</p>
+<p>该取代只取消旧数据升级范围。拒绝私有 Thinking、Skill 正文、未知类型、缺失关联和部分公共投影的
+安全理由仍有效，并由当前版本的原子写入和 GET 完整性校验落实。</p>
+<h2>Consequences</h2><p>本 ADR 不再提供发布步骤、维护窗口、SQL 函数回滚或可执行链接。历史迁移设计只用于解释已经发生的
+设计探索；未来若提出保留数据的升级，需要按当时实现重新评审，不能恢复旧脚本直接使用。</p>
+<h2>Related</h2><p><a href="../designs/runtime-event-migration/README.md">历史设计摘要</a> ·
+<a href="0077-share-public-event-data-model.html">ADR-0077 公共事件数据模型</a> ·
+<a href="0078-authoritative-event-history.html">ADR-0078 权威事件历史</a> ·
+<a href="0092-first-release-authoritative-event-history.html">ADR-0092 首版全新安装范围</a></p>
+<h2>版本历史</h2><p>2.0.0 · 2026-09-08：按首版产品决定标记为已取代，并删除可执行迁移指导。</p>
+<p>1.0.1 · 2026-09-08：补充已有公开投影的精确数量与旧到新类型门禁。</p>
+<p>1.0.0 · 2026-09-08：历史上确定审核驱动、Session 原子、停写窗口和可重跑的存量事件迁移。</p>
+</main></body></html>

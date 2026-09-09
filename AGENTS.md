@@ -28,15 +28,19 @@
   implementation comments.
 - Continue to use Javadoc where required for top-level public types and public
   API contracts by `CLAUDE.md` or higher-level instructions.
-- Define reusable constants in the domain-specific `*Constants` or `*Patterns`
-  file that owns the concept. Keep regular-expression strings and their
-  compiled `Pattern` objects together in that source of truth, and make all
-  consumers reference it instead of duplicating literals or calls to
-  `Pattern.compile`.
-- Do not create an unscoped global `Constants` container or place a domain
-  constraint in a protocol-specific constants class unless that protocol owns
-  the constraint. Constants used only by one class as implementation details
-  may remain private in that class.
+- Define shared business constants in
+  `modules/common/src/main/java/com/campusclaw/common/constant/ClawConstants.java`.
+  Use nested domain groups such as `ClawConstants.Skill` and
+  `ClawConstants.RuntimeApi`; keep regex strings and compiled `Pattern` objects
+  together and make all consumers reuse that source. Do not keep forwarding
+  aliases or separate domain constants/patterns files.
+- Keep `common` at the same package level as `ai`, `agent`, `cron`, and
+  `codingagent`. Its Maven module must not depend on business modules; modules
+  that directly consume its constants must declare the common dependency.
+- Class-private parsing and algorithm details may remain in their owning
+  classes. Preserve typed enums and singleton instances in their owning types,
+  and keep deployment-varying values in injected configuration rather than
+  moving them into `ClawConstants`.
 - Use standard Jakarta Bean Validation annotations for constraints on request
   VOs and scalar Controller parameters, including path variables, when the
   standard annotations can express the rule. Ensure method validation is

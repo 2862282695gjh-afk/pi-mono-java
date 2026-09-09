@@ -7,7 +7,9 @@ package com.campusclaw.codingagent.runtimeapi.mapper;
 import java.time.OffsetDateTime;
 import java.util.List;
 
+import com.campusclaw.codingagent.runtimeapi.dto.CommittedEventDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.RuntimeEntryDTO;
+import com.campusclaw.codingagent.runtimeapi.dto.RuntimeLifetimeUsageDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.RuntimeRecordDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
 
@@ -34,6 +36,8 @@ public interface RuntimeSessionMapper {
 
     RuntimeSessionDTO lockSessionForUpdate(@Param("sessionId") String sessionId);
 
+    RuntimeLifetimeUsageDTO findLifetimeUsage(@Param("sessionId") String sessionId);
+
     Long lockNextSequence(@Param("sessionId") String sessionId);
 
     int incrementSequence(@Param("sessionId") String sessionId);
@@ -42,14 +46,16 @@ public interface RuntimeSessionMapper {
 
     int insertRecord(RuntimeRecordDTO record);
 
+    int insertCommittedEvent(CommittedEventDTO event);
+
+    int insertCommittedEventProjection(
+            @Param("sessionId") String sessionId,
+            @Param("anchorEntryId") String anchorEntryId,
+            @Param("eventCount") int eventCount);
+
     int incrementMessageCount(@Param("sessionId") String sessionId);
 
-    int accumulateUsageStats(
-            @Param("sessionId") String sessionId,
-            @Param("cachedTokens") long cachedTokens,
-            @Param("uncachedTokens") long uncachedTokens,
-            @Param("totalTokens") long totalTokens,
-            @Param("costTotal") double costTotal);
+    int accumulateUsageStats(@Param("sessionId") String sessionId, @Param("usage") RuntimeLifetimeUsageDTO usage);
 
     int markSessionRunning(
             @Param("sessionId") String sessionId,
@@ -62,19 +68,23 @@ public interface RuntimeSessionMapper {
 
     int markSessionIdle(@Param("sessionId") String sessionId, @Param("updatedAt") OffsetDateTime updatedAt);
 
-    List<RuntimeEntryDTO> listCurrentBranch(
-            @Param("sessionId") String sessionId,
-            @Param("afterSeq") long afterSeq,
-            @Param("limit") int limit,
-            @Param("includeThinking") boolean includeThinking);
-
     List<RuntimeEntryDTO> listCurrentBranchEntries(
             @Param("sessionId") String sessionId, @Param("afterSeq") long afterSeq, @Param("limit") int limit);
+
+    List<CommittedEventDTO> listCommittedEvents(
+            @Param("sessionId") String sessionId, @Param("offset") long offset, @Param("limit") int limit);
+
+    long countUnmappedCurrentBranchEntries(@Param("sessionId") String sessionId);
 
     int updateSessionModel(
             @Param("sessionId") String sessionId,
             @Param("modelId") String modelId,
             @Param("thinking") boolean thinking,
+            @Param("updatedAt") OffsetDateTime updatedAt);
+
+    int updateSessionName(
+            @Param("sessionId") String sessionId,
+            @Param("displayName") String displayName,
             @Param("updatedAt") OffsetDateTime updatedAt);
 
     int updateSessionThinking(
@@ -97,6 +107,18 @@ public interface RuntimeSessionMapper {
     int deleteEntries(@Param("sessionId") String sessionId);
 
     int deleteRecords(@Param("sessionId") String sessionId);
+
+    int deleteExecutionSegmentEvents(@Param("sessionId") String sessionId);
+
+    int deleteToolConfirmations(@Param("sessionId") String sessionId);
+
+    int deleteExecutionSegments(@Param("sessionId") String sessionId);
+
+    int deleteExecutions(@Param("sessionId") String sessionId);
+
+    int deleteCommittedEvents(@Param("sessionId") String sessionId);
+
+    int deleteEventProjections(@Param("sessionId") String sessionId);
 
     int deleteStats(@Param("sessionId") String sessionId);
 
