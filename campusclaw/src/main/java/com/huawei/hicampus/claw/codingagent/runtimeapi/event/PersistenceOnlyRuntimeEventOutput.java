@@ -8,7 +8,15 @@ import java.util.function.Supplier;
 
 import com.huawei.hicampus.claw.codingagent.runtimeapi.vo.RuntimeSseEventVO;
 
-// 无请求状态的输出策略；持久化始终由 Projector 在调用输出前完成。
+/**
+ * 仅需持久化、无需请求响应流的无状态事件输出策略。
+ *
+ * <p>持久化由 Projector 在调用输出前完成；本策略直接丢弃事件工厂，不求值、不保留，
+ * 因而不构造 SSE 事件，也不持有请求连接或缓冲。输出完成不影响活动执行的完成或取消状态。
+ *
+ * @version [br_eCampusCore 26.0.0, 2026/09/07]
+ * @since [br_eCampusCore 26.0.0]
+ */
 enum PersistenceOnlyRuntimeEventOutput implements RuntimeEventOutput {
     INSTANCE;
 
