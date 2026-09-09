@@ -231,12 +231,6 @@ public class MyBatisRuntimeSessionRepository implements RuntimeSessionRepository
 
     @Override
     @Transactional(readOnly = true)
-    public List<String> findRunningSessionIds() {
-        return mapper.findRunningSessionIds();
-    }
-
-    @Override
-    @Transactional(readOnly = true)
     public List<RuntimeEntryDTO> listCurrentBranchEntries(String sessionId, long afterSeq, int limit) {
         return mapper.listCurrentBranchEntries(sessionId, afterSeq, limit);
     }

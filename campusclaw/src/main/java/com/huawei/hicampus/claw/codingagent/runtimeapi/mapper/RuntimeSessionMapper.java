@@ -68,8 +68,6 @@ public interface RuntimeSessionMapper {
 
     int markSessionIdle(@Param("sessionId") String sessionId, @Param("updatedAt") OffsetDateTime updatedAt);
 
-    List<String> findRunningSessionIds();
-
     List<RuntimeEntryDTO> listCurrentBranchEntries(
             @Param("sessionId") String sessionId, @Param("afterSeq") long afterSeq, @Param("limit") int limit);
 
