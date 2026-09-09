@@ -280,10 +280,12 @@ class RuntimeEventProjectorTest {
                     .contains("\"tokensBefore\":120", "\"estimatedTokensAfter\":30")
                     .contains("\"sourceEventId\":\"event-root\"");
         });
-        assertThat(fixture.projector.lastCompactionEntrySeq()).isEqualTo(1L);
+        verify(fixture.persistence)
+                .appendEntryWithUsage(eq(fixture.execution.target()), any(), any(), eq(result.usage()), anyList());
         assertThat(fixture.output.committed)
                 .extracting(event -> event.getData().get("type"))
                 .containsExactly("session.compacted");
+        assertThat(fixture.projector.failure()).isNull();
     }
 
     @Test

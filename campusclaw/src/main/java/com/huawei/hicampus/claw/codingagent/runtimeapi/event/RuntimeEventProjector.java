@@ -108,8 +108,6 @@ public class RuntimeEventProjector {
 
     private int assistantAttempt = 1;
 
-    private Long lastCompactionEntrySeq;
-
     public RuntimeEventProjector(
             String sessionId,
             String sourceEventId,
@@ -165,10 +163,6 @@ public class RuntimeEventProjector {
 
     public String terminalErrorCode() {
         return terminalErrorCode;
-    }
-
-    public synchronized Long lastCompactionEntrySeq() {
-        return lastCompactionEntrySeq;
     }
 
     public BeforeToolCallResult beforeToolCall(BeforeToolCallContext context) throws Exception {
@@ -462,9 +456,8 @@ public class RuntimeEventProjector {
                 event.result().estimatedTokensAfter(),
                 sourceEventId);
         RuntimeSseEventVO frame = requireCommittedFrame(committed);
-        RuntimeEntryDTO persisted = persistence.appendEntryWithUsage(
+        persistence.appendEntryWithUsage(
                 execution.target(), entry, record, event.result().usage(), List.of(committed));
-        lastCompactionEntrySeq = persisted.getEntrySeq();
         execution.output().emit(() -> frame);
         if (event.willRetry()) {
             assistantAttempt++;

@@ -45,7 +45,9 @@ public sealed interface UserMessageContentRequestVO
 
         @JsonSetter("type")
         public void readType(JsonNode value) {
-            requireExact(value, "text");
+            if (!"text".equals(requireText(value))) {
+                throw new IllegalArgumentException("user message content type does not match fields");
+            }
         }
 
         @JsonSetter("text")
@@ -56,6 +58,13 @@ public sealed interface UserMessageContentRequestVO
         @JsonAnySetter
         public void rejectUnknownField(String fieldName, Object value) {
             throw new IllegalArgumentException("unknown user message text field");
+        }
+
+        private static String requireText(JsonNode value) {
+            if (value == null || !value.isTextual()) {
+                throw new IllegalArgumentException("user message content fields must be strings");
+            }
+            return value.textValue();
         }
     }
 
@@ -76,7 +85,9 @@ public sealed interface UserMessageContentRequestVO
 
         @JsonSetter("type")
         public void readType(JsonNode value) {
-            requireExact(value, "file");
+            if (!"file".equals(requireText(value))) {
+                throw new IllegalArgumentException("user message content type does not match fields");
+            }
         }
 
         @JsonSetter("fileId")
@@ -88,18 +99,12 @@ public sealed interface UserMessageContentRequestVO
         public void rejectUnknownField(String fieldName, Object value) {
             throw new IllegalArgumentException("unknown user message file field");
         }
-    }
 
-    private static void requireExact(JsonNode value, String expected) {
-        if (!expected.equals(requireText(value))) {
-            throw new IllegalArgumentException("user message content type does not match fields");
+        private static String requireText(JsonNode value) {
+            if (value == null || !value.isTextual()) {
+                throw new IllegalArgumentException("user message content fields must be strings");
+            }
+            return value.textValue();
         }
-    }
-
-    private static String requireText(JsonNode value) {
-        if (value == null || !value.isTextual()) {
-            throw new IllegalArgumentException("user message content fields must be strings");
-        }
-        return value.textValue();
     }
 }
