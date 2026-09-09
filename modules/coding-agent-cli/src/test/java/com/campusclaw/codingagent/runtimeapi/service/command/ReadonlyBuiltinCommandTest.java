@@ -86,8 +86,10 @@ class ReadonlyBuiltinCommandTest {
         when(prepared.metadata()).thenReturn(metadata);
         when(metadata.displayName()).thenReturn("  Agent display  ", " \n");
         when(metadata.name()).thenReturn("  agent-name  ");
-        when(metadata.description()).thenReturn(List.of("  Purpose\nline  ", "  "), null);
-        when(metadata.userCases()).thenReturn(List.of("  Case one  ", ""), null);
+        when(metadata.description())
+                .thenReturn(List.of("  Purpose\nline  ", "  "))
+                .thenReturn(null);
+        when(metadata.userCases()).thenReturn(List.of("  Case one  ", "")).thenReturn(null);
         when(manager.prepareCached("agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")).thenReturn(prepared);
 
         assertThat(execute(session("idle"), "help", ""))
