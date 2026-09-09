@@ -2,11 +2,15 @@
 
 ## Scope and engineering source of truth
 
-- These instructions apply to the entire repository.
-- Before changing code, tests, build files, or design documents, read
-  `CLAUDE.md` and the relevant source and design files. `CLAUDE.md` is the
-  detailed repository handbook for builds, Java conventions, tests, design
-  records, and the `campusclaw` mirror.
+- These instructions govern this CampusClaw repository and its tracked files.
+  If this checkout is in a home directory, personal agent configuration,
+  downloaded material and independent nested repositories are outside this
+  project's Java build, mirror and publishing workflow.
+- Use `CLAUDE.md` as a task-specific reference: Build & Run for build changes,
+  Architecture for service boundaries, Java conventions for Java edits, and
+  the mirror section when changing `modules/*` or generated mirror content.
+  Read the source and design records needed for the affected behavior; a
+  typo or documentation edit does not require a whole-repository survey.
 - Follow more specific `AGENTS.md` or `AGENTS.override.md` files if they are
   added under a subdirectory.
 - Treat macOS and Linux as the only supported local launch and installation
@@ -18,6 +22,19 @@
 - Preserve unrelated user changes. Never stage, rewrite, stash, or discard
   them unless the user explicitly asks. Use a separate Git worktree when the
   current worktree is dirty or is needed for another task.
+
+## Execution and completion
+
+Complete the requested change, affected checks and required delivery within
+its authorized scope. Make routine reversible implementation decisions and
+continue; ask only when missing information materially changes the outcome or
+an action exceeds existing authorization. Continue independent work while
+waiting. An implementation is not finished while relevant validation remains.
+
+User instructions take precedence over skill workflow and style preferences,
+subject to platform permissions. Select skills for their actual contribution
+and read only the references needed for the task. If a skill blocks progress,
+identify the file and exact instruction instead of inventing an approval gate.
 
 ## Java comment, constant, and validation organization
 
@@ -93,8 +110,14 @@
 
 - Inspect `git status -sb`, the task-scoped diff, and the staged diff before
   committing.
-- Run `git diff --check` and the smallest relevant build, formatting, and test
-  commands described in `CLAUDE.md`. Report any validation that could not run.
+- Run `git diff --check` and the checks relevant to the changed behavior.
+  For documentation or prompt-only edits, inspect formatting, links, scope
+  and instruction consistency; Java builds and mirror compilation are not
+  required. For Java changes, use the relevant `CLAUDE.md` commands and
+  required project checks. Report anything that could not run.
+- Once the affected checks pass, publish the result. Broaden or repeat tests
+  only for new changes, failures or a concrete unresolved concern; do not add
+  tests that merely restate low-impact edits.
 - When `modules/*` changes, update and verify the `campusclaw` mirror as
   required by `CLAUDE.md` before pushing.
 - Do not claim a task is complete when required tests, the branch push, or the
