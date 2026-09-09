@@ -16,7 +16,7 @@ const emit = defineEmits<{ start: [] }>();
     <div class="welcome-mark"><BrandMark /></div>
     <p class="eyebrow">CAMPUSCLAW RUNTIME DEBUG</p>
     <h1 id="welcome-title">选择要调试的 Agent</h1>
-    <p class="welcome-intro">连接配置的 Claw Runtime，检查消息、公开思考摘要、工具确认和命令。仅限受控联调环境。</p>
+    <p class="welcome-intro">连接配置的 Claw Runtime，检查消息、模型原始推理、工具确认和命令。仅限受控联调环境。</p>
 
     <article class="agent-card" :class="{ unavailable: !configured }">
       <div class="agent-icon" aria-hidden="true">
@@ -37,7 +37,7 @@ const emit = defineEmits<{ start: [] }>();
       当前环境尚未配置默认 Agent。开发环境可在下方诊断入口临时指定。
     </p>
     <div class="welcome-promises" aria-label="调试工作台能力">
-      <span>公开思考摘要</span><span>工具确认与停止</span><span>Slash 命令</span>
+      <span>模型原始推理</span><span>工具确认与停止</span><span>Slash 命令</span>
     </div>
   </section>
 </template>

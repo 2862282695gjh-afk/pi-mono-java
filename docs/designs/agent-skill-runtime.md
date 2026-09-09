@@ -107,7 +107,7 @@ HTTP Session 创建、Cron 触发和 Child Execution 均调用 prepare，因此�
 Session 快照。工具配置也只在应用启动时解析，不由 refresh 变更。
 
 `PreparedAgentRuntime` 同时携带 Agent 与 Skill 的完整 `BoundTool` 记录，权限判定消费者必须使用
-这一固定快照。权限消费属于 Events v2 后续接线的目标要求；本片实现元数据保存与恢复。
+这一固定快照。权限消费属于 Session Events 后续接线的目标要求；本片实现元数据保存与恢复。
 该目标要求未知权限值、工具身份冲突和缺少可信绑定按 DENY 处理；ASK 只能由快照中明确的
 可信权限触发确认。该约束不把工具调用定义或参数 Schema 引入磁盘缓存。
 

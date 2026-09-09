@@ -22,10 +22,10 @@ pi 基线为 `4af9d21d3b4d664e4a29fcabfec85171077248e3`，
 `packages/agent/src/agent-loop.ts#runLoop` 根据 Assistant error/aborted 结束循环，
 `#prepareToolCall` 在 before hook 后检查 AbortSignal。pi 的 agent_end 只携带消息；本次新增
 Java 标志是架构变更，并非复刻一个已经存在的 pi 字段。Java 在确认取消后不追加失败 ToolResult，
-是为了满足 Events v2 已关闭确认段的产品约束；pi 可以为 aborted 工具返回错误结果。
+是为了满足 Session Events 已关闭确认段的产品约束；pi 可以为 aborted 工具返回错误结果。
 
 规范设计来自 `pi-mono-java-design@2ee2a3211da68ad87b0d9cab353e691b00bdaebd` 的
-`01-总体架构/01-CampusClaw多Agent运行时/chat-events-v2-design.md`：接纳中断不证明执行已经停止，
+`01-总体架构/01-CampusClaw多Agent运行时/chat-events-design.md`：接纳中断不证明执行已经停止，
 必须保留实际 done、failed 或 terminated 结局。
 
 ## 退出与消费边界

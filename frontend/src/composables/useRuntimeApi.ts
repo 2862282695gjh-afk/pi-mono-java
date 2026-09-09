@@ -11,7 +11,7 @@ const apiBase = (import.meta.env.VITE_CAMPUSCLAW_API_BASE ?? '').replace(/\/+$/u
 const callerId = import.meta.env.VITE_CAMPUSCLAW_CALLER_ID?.trim() || 'campusclaw-web';
 type Context = { generation: number; sessionId: string; signal: AbortSignal };
 
-/** 仅内部 Runtime 工作台装配；不兼容或回退到 Mate / Events v1。 */
+/** 仅内部 Runtime 工作台装配；不兼容或回退到 Mate 公共接口。 */
 export function useRuntimeApi() {
   const session = ref<RuntimeSession | null>(null);
   const etag = ref('');

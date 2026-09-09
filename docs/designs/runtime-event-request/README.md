@@ -1,4 +1,4 @@
-# Session Events v2 联合请求边界
+# Session Events 联合请求边界
 
 | 属性 | 值 |
 |---|---|
@@ -16,7 +16,7 @@
 变更前 `RuntimeEventController.submit` 直接接收扁平的 `UserEventRequestVO`，只表达旧
 `message/fileIds`，不能安全承载三种目标结构。本片先实现请求 VO、严格 JSON 选择和
 Jakarta 校验，供后续 Handler 与完整 SSE 生命周期一次接入；生产 Controller 仍使用旧请求，
-因此本片不宣称 v2 HTTP 已上线。
+当前 HTTP 接线见[统一 Events 接入](../runtime-events-http/README.md)。
 
 ## 源码证据与设计依据
 
@@ -29,7 +29,7 @@ Java 路径均相对 `modules/coding-agent-cli/src/main/java/com/campusclaw/codi
 | 已实现目标 | `runtimeapi/vo/SubmitSessionEventRequestVO.java`、`SessionUserEventRequestVO.java` | 顶层只含一个 `event`；封闭联合类型固定三种用户事件 |
 | 已实现目标 | `runtimeapi/web/json/SubmitSessionEventRequestDeserializer.java` | 先验证对象形态、唯一顶层字段和显式 null，再按准确 type 选择具体 RequestVO |
 | 已实现目标 | `runtimeapi/vo/UserMessageContentRequestVO.java` | 文本与文件是封闭内容块联合；每个子类型拒绝另一类型字段和未知字段 |
-| 已确认契约 | 设计仓 `接口契约-v2/操作/01-submit-session-event.json` | content 顺序、数量、文件格式、控制目标及确认字段均已定稿 |
+| 已确认契约 | 设计仓 `事件契约/操作/01-submit-session-event.json` | content 顺序、数量、文件格式、控制目标及确认字段均已定稿 |
 
 pi 固定证据为 `pi@5cd93f688aaab89dbb6dfa4aca535f21796ae185` 的
 `packages/coding-agent/src/core/agent-session.ts#prompt`：内核入口接收文本并处理 Agent 执行，
@@ -38,7 +38,7 @@ CampusClaw 的产品约束与安全加固，不能表述成 pi 已有 HTTP 行�
 
 ## 请求结构与校验流程
 
-![Session Events v2 联合请求选择与校验](runtime_event_request.svg)
+![Session Events 联合请求选择与校验](runtime_event_request.svg)
 
 [PlantUML 源码](diagram.puml#L1)
 

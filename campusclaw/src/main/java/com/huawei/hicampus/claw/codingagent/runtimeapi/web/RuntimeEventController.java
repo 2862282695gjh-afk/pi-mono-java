@@ -5,8 +5,8 @@
 package com.huawei.hicampus.claw.codingagent.runtimeapi.web;
 
 import com.huawei.hicampus.claw.codingagent.runtimeapi.event.CommittedEventQueryService;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeEventService;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeSseDispatcher;
-import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeV2EventService;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.result.ResultBeanAdapter;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.vo.SubmitSessionEventRequestVO;
 import com.huawei.hicampus.claw.common.constant.ClawConstants;
@@ -40,7 +40,7 @@ import jakarta.validation.constraints.Pattern;
 @RestController
 @RequestMapping(ClawConstants.RuntimeApi.BASE_PATH + "/sessions/{sessionId}/events")
 public class RuntimeEventController {
-    private final RuntimeV2EventService service;
+    private final RuntimeEventService service;
 
     private final CommittedEventQueryService queryService;
 
@@ -49,7 +49,7 @@ public class RuntimeEventController {
     private final RuntimeSseDispatcher sseDispatcher;
 
     public RuntimeEventController(
-            RuntimeV2EventService service,
+            RuntimeEventService service,
             CommittedEventQueryService queryService,
             ResultBeanAdapter resultBeanAdapter,
             RuntimeSseDispatcher sseDispatcher) {

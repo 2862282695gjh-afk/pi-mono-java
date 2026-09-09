@@ -24,7 +24,7 @@ defineEmits<{ close: [] }>();
       <dl class="resource-summary">
         <dt>运行状态</dt><dd>{{ result.value.state === 'running' ? '执行中（可能等待确认）' : '空闲' }}</dd>
         <dt>模型</dt><dd>{{ result.value.modelId }}</dd>
-        <dt>后续思考摘要</dt><dd>{{ result.value.thinking ? '开启' : '关闭' }}</dd>
+        <dt>后续思考展示</dt><dd>{{ result.value.thinking ? '开启' : '关闭' }}</dd>
       </dl>
     </template>
     <template v-else-if="result.kind === 'models'">

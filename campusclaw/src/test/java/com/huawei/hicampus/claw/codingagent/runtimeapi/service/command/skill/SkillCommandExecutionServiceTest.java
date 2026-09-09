@@ -32,7 +32,7 @@ import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.command.SkillCommandI
 import com.huawei.hicampus.claw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.error.RuntimeErrorCode;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeEventStream;
-import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeV2MessageEventService;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeMessageEventService;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.vo.SkillCommandRequestVO;
 import com.huawei.hicampus.claw.common.constant.ClawConstants;
 
@@ -47,7 +47,7 @@ class SkillCommandExecutionServiceTest {
 
     private static final String FILE_A = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
-    private final RuntimeV2MessageEventService events = mock(RuntimeV2MessageEventService.class);
+    private final RuntimeMessageEventService events = mock(RuntimeMessageEventService.class);
 
     private final SkillCommandExecutionService service = new SkillCommandExecutionService(events);
 

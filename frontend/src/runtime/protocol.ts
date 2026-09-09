@@ -2,9 +2,10 @@ import { RuntimeApiError } from '../types/runtime';
 import type { AvailableModels, RuntimeEvent, RuntimeHistoryPage, RuntimeSession, UserEvent } from '../types/runtime';
 
 export const MAX_INPUT_CHARACTERS = 2048;
+export const MAX_DENY_MESSAGE_UTF16_UNITS = 4096;
 export const codePointLength = (value: string): number => Array.from(value).length;
 export function invalidResponse(): never {
-  throw new RuntimeApiError({ code: 'INVALID_RESPONSE', message: '响应不符合 Claw Events v2 契约，请核对后端版本。' });
+  throw new RuntimeApiError({ code: 'INVALID_RESPONSE', message: '事件响应格式不正确，请核对服务端接口。' });
 }
 export function record(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return invalidResponse();
@@ -98,7 +99,7 @@ export function decodeEvent(value: unknown, history = false): RuntimeEvent {
     case 'user.interrupt': nonempty(data.targetEventId); break;
     case 'user.tool_confirmation':
       nonempty(data.toolCallId); oneOf(data.result, ['allow', 'deny']);
-      if (data.denyMessage !== undefined && (data.result !== 'deny' || codePointLength(nonempty(data.denyMessage)) > MAX_INPUT_CHARACTERS)) invalidResponse();
+      if (data.denyMessage !== undefined && (data.result !== 'deny' || nonempty(data.denyMessage).length > MAX_DENY_MESSAGE_UTF16_UNITS)) invalidResponse();
       break;
     case 'agent.message': case 'agent.thinking':
       oneOf(data.phase, ['delta', 'completed']); text(data.content);
@@ -106,9 +107,7 @@ export function decodeEvent(value: unknown, history = false): RuntimeEvent {
       break;
     case 'agent.tool_call':
       nonempty(data.toolCallId); nonempty(data.toolName); record(data.arguments); bool(data.requiresConfirmation);
-      if (data.toolName === 'CallMateTool') {
-        const args = record(data.arguments); nonempty(args.tool); record(args.args);
-      }
+      // 模型参数的业务错误由工具执行校验处理，失败调用仍是可展示的事件。
       break;
     case 'agent.tool_result':
       nonempty(data.toolCallId); bool(data.isError);

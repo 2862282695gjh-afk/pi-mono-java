@@ -17,7 +17,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 /**
- * Runtime v2 data-only SSE 写出约束测试。
+ * Runtime data-only SSE 写出约束测试。
  *
  * @version [br_eCampusCore 26.0.0, 2026/09/08]
  * @since [br_eCampusCore 26.0.0]

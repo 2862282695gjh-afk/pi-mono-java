@@ -28,9 +28,9 @@ import com.campusclaw.codingagent.runtimeapi.RuntimeMessageSourceConfiguration;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
 import com.campusclaw.codingagent.runtimeapi.event.CommittedEventQueryService;
+import com.campusclaw.codingagent.runtimeapi.event.RuntimeEventService;
 import com.campusclaw.codingagent.runtimeapi.event.RuntimeEventStream;
 import com.campusclaw.codingagent.runtimeapi.event.RuntimeSseDispatcher;
-import com.campusclaw.codingagent.runtimeapi.event.RuntimeV2EventService;
 import com.campusclaw.codingagent.runtimeapi.result.StandaloneResultBeanAdapter;
 import com.campusclaw.codingagent.runtimeapi.vo.ListSessionEventsResponseVO;
 import com.campusclaw.codingagent.runtimeapi.vo.RuntimeSseEventVO;
@@ -61,7 +61,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 class RuntimeEventRoutesTest {
     private static final String SESSION_ID = "session-0123456789abcdef0123456789abcdef";
 
-    private RuntimeV2EventService service;
+    private RuntimeEventService service;
 
     private CommittedEventQueryService queryService;
 
@@ -71,7 +71,7 @@ class RuntimeEventRoutesTest {
 
     @BeforeEach
     void setUp() {
-        service = mock(RuntimeV2EventService.class);
+        service = mock(RuntimeEventService.class);
         queryService = mock(CommittedEventQueryService.class);
         dispatcher = new RuntimeSseDispatcher();
         var controller =

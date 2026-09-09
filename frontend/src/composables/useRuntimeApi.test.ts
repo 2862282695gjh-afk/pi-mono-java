@@ -31,7 +31,7 @@ function deferred<T>() {
 beforeEach(() => vi.stubGlobal('navigator', { language: 'zh-CN' }));
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
-describe('Claw Runtime Events v2 coordinator', () => {
+describe('Claw Runtime Session Events coordinator', () => {
   it('sends the event wrapper and confirms only the first complete request receipt', async () => {
     const events = [userFixture(), idleFixture()];
     const { runtime, fetcher } = setup(events);

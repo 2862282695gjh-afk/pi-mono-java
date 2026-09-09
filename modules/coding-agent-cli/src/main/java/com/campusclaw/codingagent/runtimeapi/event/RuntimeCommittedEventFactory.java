@@ -30,7 +30,7 @@ import org.springframework.context.MessageSource;
 import org.springframework.stereotype.Component;
 
 /**
- * 从已安全定稿的运行时对象生成 v2 权威公共事件。
+ * 从已安全定稿的运行时对象生成 权威公共事件。
  *
  * @version [br_eCampusCore 26.0.0, 2026/09/08]
  * @since [br_eCampusCore 26.0.0]

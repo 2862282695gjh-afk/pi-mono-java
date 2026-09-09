@@ -1,16 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { decodeEvent, decodeHistory, matchesReceipt, messageEvent, readEventStream } from './protocol';
-import { executionState, mergeEvent, reconcileEvents } from './eventStore';
+import { executionState, hasToolConfirmation, mergeEvent, reconcileEvents } from './eventStore';
 import { decodeCatalog, decodeCommandResult, filterCommands, freezeInvocation, parseCommand } from './commands';
 import { eventFixture, idleFixture, streamResponse, userFixture } from './fixtures';
 import type { RuntimeEvent } from '../types/runtime';
 
-const call = eventFixture({ eventId: 'call', type: 'agent.tool_call', sourceEventId: 'root-a', toolCallId: 'tool-a', toolName: 'CallMateTool', arguments: { tool: 'query', args: {} }, requiresConfirmation: true });
+const call = eventFixture({ eventId: 'call', type: 'agent.tool_call', sourceEventId: 'root-a', toolCallId: 'tool-a', toolName: 'CallMateTool', arguments: { tool: 'query', args: {} }, requiresConfirmation: true }) as Extract<RuntimeEvent, { type: 'agent.tool_call' }>;
 const result = eventFixture({ eventId: 'result', type: 'agent.tool_result', sourceEventId: 'root-a', toolCallId: 'tool-a', content: [{ type: 'text', text: '' }], isError: false });
 const preview = (content: string): RuntimeEvent => ({ eventId: 'answer', type: 'agent.message', phase: 'delta', content, sourceEventId: 'root-a' });
 const completed = eventFixture({ ...preview('完整正文'), phase: 'completed' });
 
-describe('Events v2 protocol and authoritative store', () => {
+describe('Session Events protocol and authoritative store', () => {
   it('accepts completed and preview shapes, text-only tool blocks including empty text', () => {
     [userFixture(), idleFixture(), call, result, preview('增量'), completed].forEach((event) => expect(decodeEvent(event)).toEqual(event));
     expect(decodeEvent({ ...result, content: [{ type: 'text', text: 'one' }, { type: 'text', text: '' }] })).toBeTruthy();
@@ -18,7 +18,7 @@ describe('Events v2 protocol and authoritative store', () => {
   it.each([
     { ...result, isError: 'false' }, { ...result, isError: true }, { ...result, errorCode: 'TOOL_FAILED' },
     { ...result, content: [] }, { ...result, content: 'text' }, { ...result, content: [{ type: 'image', url: 'https://invalid.test' }] },
-    { ...call, requiresConfirmation: undefined }, { ...call, arguments: [] }, { ...call, arguments: { tool: 'query' } },
+    { ...call, requiresConfirmation: undefined }, { ...call, arguments: [] },
     { ...completed, sourceEventId: undefined }, { ...completed, internalSequence: 1 },
     { ...preview('x'), createdAt: '2026-09-08T00:00:00.000Z' }, { ...preview('x'), usage: {} },
     { ...idleFixture('failed') }, { ...idleFixture(), errorCode: 'ERR' },
@@ -28,6 +28,32 @@ describe('Events v2 protocol and authoritative store', () => {
     expect(decodeHistory({ events: [], nextPage: null })).toEqual({ events: [], nextPage: null });
     [undefined, '2', 0, -1, 1.5].forEach((nextPage) => expect(() => decodeHistory({ events: [], nextPage })).toThrow());
     expect(() => decodeHistory({ events: [preview('x')], nextPage: null })).toThrow();
+  });
+  it.each([{}, { tool: 'query' }, { tool: 'query', args: null }, { tool: 42, args: [] }])('reads failed model arguments in both SSE and history: %j', async (args) => {
+    const failedCall = { ...call, arguments: args, requiresConfirmation: false };
+    const failedResult = { ...result, isError: true, errorCode: 'TOOL_EXECUTION_FAILED' };
+    const events = [userFixture(), failedCall, failedResult, idleFixture()];
+    const received: RuntimeEvent[] = [];
+    await readEventStream(streamResponse(events), (event) => { received.push(event); }, new AbortController().signal);
+    expect(received).toEqual(events);
+    expect(decodeHistory({ events, nextPage: null }).events).toEqual(events);
+  });
+  it.each(['中'.repeat(4096), '😀'.repeat(2048)])('accepts Runtime denial limits independently of composer limits', (denyMessage) => {
+    const receipt = eventFixture({ eventId: 'deny', type: 'user.tool_confirmation', toolCallId: 'tool-a', result: 'deny', denyMessage });
+    expect(decodeEvent(receipt)).toEqual(receipt);
+    expect(decodeHistory({ events: [receipt], nextPage: null }).events).toEqual([receipt]);
+    expect(() => decodeEvent({ ...receipt, denyMessage: denyMessage + 'x' })).toThrow();
+  });
+  it('keeps confirmations within their message when providers reuse a tool ID', () => {
+    const previousCall = { ...call, eventId: 'old-call', sourceEventId: 'old-root' };
+    const previousReceipt = eventFixture({ eventId: 'old-confirm', type: 'user.tool_confirmation', toolCallId: call.toolCallId, result: 'allow' });
+    const previousResult = { ...result, eventId: 'old-result', sourceEventId: 'old-root' };
+    const history = [userFixture('old-root'), previousCall, previousReceipt, previousResult,
+      { ...idleFixture(), eventId: 'old-idle', sourceEventId: 'old-root' }, userFixture(), call, idleFixture('confirming')];
+    expect(executionState(history)).toMatchObject({ confirming: true, pendingTool: call });
+    const currentReceipt = { ...previousReceipt, eventId: 'current-confirm' };
+    expect(executionState([...history, currentReceipt]).pendingTool).toBeUndefined();
+    expect(hasToolConfirmation([userFixture('old-root'), previousCall, ...history.slice(5), currentReceipt], previousCall)).toBe(false);
   });
   it('validates Unicode message limits and canonical file-only requests', () => {
     expect(messageEvent('😀'.repeat(2048)).type).toBe('user.message');

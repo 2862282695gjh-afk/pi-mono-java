@@ -75,7 +75,7 @@ Service 把绑定/展开函数交给 `RuntimeEventService.submitPreparedMessage`
   或启动模型，已取得容量/Holder 必须释放。数据库竞争方的 running 状态不能被本请求清理。
 - 字符串长度先以 long 计算，超限不拼接超大结果；附件列表至多复制32项。无新存储表、后台线程、通用锁或定时器。
 - SSE detach 沿用普通消息语义，仅解除订阅，不取消已接受执行；终态由原 Coordinator 清理。
-  不在本片迁移 Events v2、退役控制端点或更改压缩行为。
+  不在本片迁移 Session Events、退役控制端点或更改压缩行为。
 
 ## 契约改动与验收边界
 
@@ -138,7 +138,7 @@ Service 把绑定/展开函数交给 `RuntimeEventService.submitPreparedMessage`
 真实组件是新打包JAR和子JVM、Spring Web、应用及Runtime、实际完整缓存加载、公共Session/工具装配、
 MyBatis/JDBC与自有openGauss。外部Mate模型Chat由本地确定性HTTP/SSE服务替代，Agent/Skill由测试目录提供。
 没有调用真实Mate、真实大模型或真正执行工具/下载附件；附件验收范围是既定ID引用在模型/消息中的保序传递。
-本片不测试Skill真实断线、Compact摘要/实际Socket断线，也不迁移Events v2或增加私有Skill快照。
+本片不测试Skill真实断线、Compact摘要/实际Socket断线，也不迁移Session Events或增加私有Skill快照。
 
 ### 真实验收发现的时间精度修复
 
@@ -155,7 +155,7 @@ MyBatis/JDBC与自有openGauss。外部Mate模型Chat由本地确定性HTTP/SSE�
 修复在现有行锁内、调用 `insertEntry` 前将时间统一为UTC并截断至毫秒，SSE使用同一已保存值。
 Entry与主线已有CommittedEvent共用 `normalizeTimestamp`，不在Codec或各命令新增重复策略。
 null时间仍为非法内部状态，在写入和推进序号前失败；已有CommittedEvent的缺失时间错误消息不变。
-这属于既有单份持久化消息决定的一致性修复，不是新产品契约或Events v2接入。
+这属于既有单份持久化消息决定的一致性修复，不是新产品契约或Session Events接入。
 
 影响路径包括用户接受、Thinking、assistant、排队用户、工具结果、Compaction及Model/Thinking配置Entry；
 它们继续经同一 `appendLocked`，保留原事务边界、领域顺序、正文和附件。Usage Record没有公开SSE时间，
@@ -167,7 +167,7 @@ null时间仍为非法内部状态，在写入和推进序号前失败；已有C
 缺参跳过不算验收通过；新测试不执行DDL、全表清理或修改用户配置，资源在try-with-resources和JUnit临时目录内管理。
 
 发布前正常同步 #253 的main `de5a784b`，重新生成JAR与初始化专用数据库；该主线增加公共事件事务重载，
-本片保持当前Skill/普通Events接口，不负责接入Events v2。
+本片保持当前Skill/普通Events接口，不负责接入Session Events。
 同步后的修复前普通测试为399类2044项通过；真实HTTP验收随后发现上述两项失败。
 最终交付以修复后重新生成的JAR和全部验证结果为准，不以修复前的普通测试代替真实验收。
 修复后de5a基线的399类2049项普通测试及153项定向测试均零失败/错误/跳过。

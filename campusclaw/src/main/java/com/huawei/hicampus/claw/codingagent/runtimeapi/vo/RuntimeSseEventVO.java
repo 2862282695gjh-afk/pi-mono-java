@@ -42,7 +42,7 @@ public class RuntimeSseEventVO {
     }
 
     /**
-     * 构造不使用 SSE event/id 字段的 v2 完整 data 帧。
+     * 构造不使用 SSE event/id 字段的 完整 data 帧。
      *
      * @param type 公共事件类型
      * @param payload 不含 type 的事件字段

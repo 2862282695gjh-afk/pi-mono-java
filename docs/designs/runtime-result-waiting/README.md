@@ -19,7 +19,7 @@
 
 | 分类 | 仓库相对路径与符号 | 观察与理由 |
 |---|---|---|
-| 契约 | `01-总体架构/01-CampusClaw多Agent运行时/chat-events-v2-design.md` §4.4～§4.5 | 固定执行身份、数据库结果补读、本机快速通知和轮询兜底，不通过超时推断执行结束 |
+| 契约 | `01-总体架构/01-CampusClaw多Agent运行时/chat-events-design.md` §4.4～§4.5 | 固定执行身份、数据库结果补读、本机快速通知和轮询兜底，不通过超时推断执行结束 |
 | 已实现 | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/event/RuntimeResultWaitRegistry.java` · `reserve` / `bind` / `claimTargets` / `deliver` | 按实际响应计数；同模式、同完整目标共享查询，每个响应独立推进游标 |
 | 已实现 | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/dto/ResultWaitTargetDTO.java` · `claimId` | 每次领取生成身份，迟到查询不能关闭或释放同目标的新一代等待组 |
 | 已实现 | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/event/RuntimeResultPollingService.java` · `poll` / `notifyCommitted` | 周期补读与单工作线程通知共用登记表，数据库失败后退避，队列满时保留周期兜底 |

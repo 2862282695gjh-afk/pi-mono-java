@@ -316,7 +316,7 @@ function modelLabel(modelId: string): string {
             <button v-if="runtime.uncertainty.value && !running" class="secondary-button" type="button" :disabled="runtime.recovering.value" @click="acknowledgeUnknown">已人工核对</button>
           </div>
           <ToolConfirmation v-if="running && runtime.execution.value.pendingTool && runtime.execution.value.confirming"
-            :key="runtime.execution.value.pendingTool.toolCallId" :tool="runtime.execution.value.pendingTool"
+            :key="runtime.execution.value.pendingTool.eventId" :tool="runtime.execution.value.pendingTool"
             :disabled="runtime.controlPending.value || runtime.stopping.value || runtime.receiptUnknown.value || busy" @decide="decideTool" />
           <CommandResultRegion v-if="runtime.commandResult.value" :result="runtime.commandResult.value" @close="runtime.commandResult.value = null" />
           <ComposerBox

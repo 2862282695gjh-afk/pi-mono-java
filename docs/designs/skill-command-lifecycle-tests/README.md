@@ -13,7 +13,7 @@
 不依赖尚在评审的 #257/#260。请求和正文语义沿用已合入的
 [共享命令入口](../shared-command-http/README.md)与[Skill 执行](../skill-command-execution/README.md)，
 以及用户2026-09-08对设计基线 `88f4df16bc24bbfcd28e1ec374feb2de0db8be3b` 的确认补充。
-本片不重新设计 Skill、Events v2 或控制接口。
+本片不重新设计 Skill、Session Events 或控制接口。
 
 ## 源码证据与验收理由
 

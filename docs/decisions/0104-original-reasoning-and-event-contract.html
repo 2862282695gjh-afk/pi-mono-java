@@ -1,0 +1,9 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ADR-0104：原始推理与事件消费边界</title><style>body{max-width:960px;margin:32px auto;padding:24px;font:16px/1.7 system-ui,sans-serif;color:#172033}a{color:#135dbe}code{overflow-wrap:anywhere}</style></head><body>
+<h1>ADR-0104：原始推理与事件消费边界</h1><p>Status: Accepted · Date: 2026-09-09 · Version: 1.0.0</p>
+<h2>Context</h2><p>模型返回的可读推理需要直接展示。Java af858b85 的 publicSummary 默认 false，使 Mate/GLM 的 Thinking 事件无法进入公共流；客户端还会把工具业务参数错误当作协议错误，并误用跨轮 toolCallId 与输入长度限制。</p>
+<h2>Decision</h2><p>移除 publicSummary，按执行快照将模型返回的可读推理原样发送和保存，前端纯文本展示。Provider 签名与加密载荷保持在内部恢复上下文。事件读取校验外层协议，工具执行层校验业务参数；工具关联限定根消息与提交顺序，读取长度采用 Runtime 契约。当前 Session Events 类和文档按职责命名，HTTP 路径仍为 /campusclaw-service/v1。</p>
+<h2>Alternatives 与取舍</h2><p>统一原文规则能覆盖默认 Thinking 生产者，且不增加模型请求或内容加工。逐 Provider 添加摘要白名单会改变已有展示能力并带来额外适配；在前端复制工具 Schema 则会使失败调用无法展示。保留强类型事件结构和执行校验，同时允许读取业务失败记录，职责更明确。</p>
+<h2>Consequences</h2><p>原文展示是产品约束；不透明恢复数据与凭据仍不进入公共事件。完整事件先持久化再输出，保留权威历史与实时预览的分层。AI 内部 Thinking 构造器删除布尔参数，生产者、消费者、测试与企业镜像必须同步。无新增依赖或数据库升级。真实 GLM/Mate 联调与企业 NativeParent 编译仍需对应环境。</p>
+<h2>Related</h2><p><a href="../designs/runtime-public-stream/README.md">当前设计、源码基线与验收</a> · <a href="../designs/runtime-public-stream/diagram.puml#L1">PlantUML 源码</a> · <a href="0079-public-stream-boundary.html">ADR-0079（原摘要标记规则被替代）</a> · <a href="0093-project-committed-execution-events.html">ADR-0093（原摘要过滤规则被替代）</a></p>
+</body></html>

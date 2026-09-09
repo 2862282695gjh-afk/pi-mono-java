@@ -43,8 +43,8 @@ import com.campusclaw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.command.ModelCommandResultDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.command.SessionCommandResultDTO;
 import com.campusclaw.codingagent.runtimeapi.event.RuntimeEventStream;
+import com.campusclaw.codingagent.runtimeapi.event.RuntimeMessageEventService;
 import com.campusclaw.codingagent.runtimeapi.event.RuntimeSseDispatcher;
-import com.campusclaw.codingagent.runtimeapi.event.RuntimeV2MessageEventService;
 import com.campusclaw.codingagent.runtimeapi.persistence.RuntimeSessionRepository;
 import com.campusclaw.codingagent.runtimeapi.result.StandaloneResultBeanAdapter;
 import com.campusclaw.codingagent.runtimeapi.service.command.BuiltinCommandSource;
@@ -104,7 +104,7 @@ class RuntimeCommandControllerTest {
 
     private final AgentRuntimeManager agents = mock(AgentRuntimeManager.class);
 
-    private final RuntimeV2MessageEventService events = mock(RuntimeV2MessageEventService.class);
+    private final RuntimeMessageEventService events = mock(RuntimeMessageEventService.class);
 
     private final RuntimeCompactionService runtime = mock(RuntimeCompactionService.class);
 

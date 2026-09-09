@@ -32,7 +32,7 @@ import com.campusclaw.codingagent.runtimeapi.dto.command.SkillCommandInputDTO;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
 import com.campusclaw.codingagent.runtimeapi.event.RuntimeEventStream;
-import com.campusclaw.codingagent.runtimeapi.event.RuntimeV2MessageEventService;
+import com.campusclaw.codingagent.runtimeapi.event.RuntimeMessageEventService;
 import com.campusclaw.codingagent.runtimeapi.vo.SkillCommandRequestVO;
 import com.campusclaw.common.constant.ClawConstants;
 
@@ -47,7 +47,7 @@ class SkillCommandExecutionServiceTest {
 
     private static final String FILE_A = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
-    private final RuntimeV2MessageEventService events = mock(RuntimeV2MessageEventService.class);
+    private final RuntimeMessageEventService events = mock(RuntimeMessageEventService.class);
 
     private final SkillCommandExecutionService service = new SkillCommandExecutionService(events);
 

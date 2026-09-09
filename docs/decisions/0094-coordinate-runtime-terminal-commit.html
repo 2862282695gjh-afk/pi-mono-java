@@ -6,6 +6,6 @@
 <h2>Alternatives 与理由</h2><p>先释放会失去重试对象并误报容量可用，重跑模型可能重复副作用。选择保留执行至终态提交，代价是数据库故障期间仍占用容量。pi4af9d21的Agent循环不提供数据库终态事务，这属于Java架构变化。</p>
 <h2>Consequences</h2><p>增加一个延迟调度线程，支持运行时故障恢复；不新增依赖、表或升级流程。HTTP由后续服务接入并删除旧开发实现。</p>
 <h2>Validation</h2><p>root协调器11项及轮询7项测试通过，配置合并格式修正后Spotless/Checkstyle通过。固定Clock及可控任务验证同一终态重试和资源释放。企业NativeParent不可解析，公司编译未验证。</p>
-<h2>Related</h2><p><a href="../designs/runtime-events-v2-coordination/README.md">源码依据和验证</a> · <a href="../designs/runtime-events-v2-coordination/diagram.puml#L1">PlantUML源图</a></p>
+<h2>Related</h2><p><a href="../designs/runtime-events-coordination/README.md">源码依据和验证</a> · <a href="../designs/runtime-events-coordination/diagram.puml#L1">PlantUML源图</a></p>
 <h2>版本历史</h2><p>1.0.0 · 2026-09-08：记录固定终态提交与首次发布的运行时恢复。</p>
 </body></html>

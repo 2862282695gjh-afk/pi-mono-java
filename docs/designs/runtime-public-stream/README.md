@@ -1,79 +1,83 @@
-# 公共事件流输出基础
+# 原始推理与公共事件边界
 
 | 属性 | 值 |
 |---|---|
-| 版本 | 0.1.1 |
-| 日期 | 2026-09-08 |
-| 设计契约 | `pi-mono-java-design@2ee2a3211da68ad87b0d9cab353e691b00bdaebd` |
-| 变更前 Java | `d9a207779911eb286e1579119fb45a972092efe4` |
-| 本片实现 | SSE 净补丁 `4687ef06`；摘要标志 `c0004604`、`8bf2f997`、`46d3e13e`；Mate 内容 `74569cd3` |
-| pi 基线 | `5cd93f688aaab89dbb6dfa4aca535f21796ae185` |
-| 范围 | data-only SSE 编码、可信公开摘要标志和 Mate 工具结果文本规范化；当前生产 Controller 和旧投影器尚未切换 |
+| 版本 | 0.2.0 |
+| 日期 | 2026-09-09 |
+| Java 分析基线 | `af858b85ad2a5d2894360ce64accfdbe33d1418c` |
+| 设计基线 | `pi-mono-java-design@81a9d6617ff56188bae9008d22d150fa7e5b61bf` |
+| pi 源码基线 | `5cd93f688aaab89dbb6dfa4aca535f21796ae185` |
+| 范围 | Thinking 原文、事件解码、工具确认归属与 Events 命名；实现随本变更交付 |
 
-## Context
+## 当前设计与理由
 
-Events v2 要求事件只通过 SSE 的 data 字段发送，不使用 event/id 字段；完整事件和增量的
-公开字段由应用投影层决定。历史与 SSE 也只能公开提供商明确产生的推理摘要，不能根据通用
-ThinkingContent 的存在推断其可公开。本片为后续完整事件运行链提供这些基础能力。
+**展示模型返回的原始推理。** 执行快照启用 Thinking 且模型返回可读文本时，将文字、空格、换行和
+片段顺序保留到 `agent.thinking`。CampusClaw 不生成摘要，也不要求 Provider 提供公开摘要标记。
+该行为是产品约束；Provider 类型化适配、公共事件身份、授权和内部恢复数据仍各有边界。
 
-## 源码证据与分类
+delta 是临时预览，completed 保存一次并使用同一个 eventId；GET 返回相同的完整记录。
+关闭 Thinking 影响后续执行，不隐藏已保存原文。没有文本的签名和加密载荷留在内部模型上下文。
+前端使用纯文本显示原文，不将其中的 HTML 或 Markdown 作为可执行内容。
 
-| 分类 | 仓库相对路径与符号 | 观察、决定和理由 |
+公共协议只校验事件外层与 arguments 的对象类型。模型可能生成不符合工具 Schema 的参数，
+这些调用仍必须出现在 SSE 和历史中；工具执行层负责拒绝执行并产生失败结果。
+CallMateTool 保留 `{tool,args}` 包装，缺省 args 补 `{}`，不凭空修复缺失 tool 或非法业务参数。
+
+工具结果用 `sourceEventId + toolCallId` 关联。确认回执没有 sourceEventId，客户端按提交顺序在
+对应 tool_call 之后、下一条 user.message 之前匹配；表单实例以 eventId 标识。
+不同根消息复用 Provider toolCallId 时，旧确认和旧结果不能解除新调用的确认状态。
+
+拒绝说明的 Runtime 契约上限是 4096 UTF-16 单元；前端读取 SSE/历史按此解码。
+Composer 的 2048 Unicode code point 输入限制是界面产品约束，不能用它拒绝其他合法调用方的响应。
+
+## 源码依据与实现差距
+
+下列 Java 路径相对实现仓，观察对应上表基线；“本变更”列描述本分支实现。
+
+| 基线源码 / 符号 | 观察 | 本变更与理由 |
 |---|---|---|
-| 变更前 Java | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/web/RuntimeSseEmitterSubscriber.java#onEvent/onHeartbeat` | 旧协议写 event、可选 id 和 data，心跳文本为 heartbeat；v2 必须选择独立编码模式 |
-| 变更前 Java | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/event/RuntimeEntryCodec.java#encodedSseBytes` | 旧容量计数序列化整个内部 VO；v2 data-only 模式应计算实际 data JSON 的 UTF-8 字节数 |
-| 变更前 Java | `modules/ai/src/main/java/com/campusclaw/ai/provider/openai/OpenAIResponsesProvider.java#handleResponseEvent/applyThinkingDelta/handleOutputItemDone` | Responses 的 reasoningSummaryTextDelta 已有独立入口，但通用 thinking 事件没有携带安全来源标志 |
-| 既有消费者 | `modules/agent-core/src/main/java/com/campusclaw/agent/loop/AgentLoop.java#extractAssistantMessage` | 内部循环读取 partial；增加标志不改变模型上下文内容 |
-| 既有消费者 | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/event/RuntimeEventProjector.java#projectThinking` | 旧投影器尚不消费新标志；本片不宣称旧 HTTP 已获得 v2 隐私投影保证 |
-| 已实现 | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/common/client/HttpMateToolClient.java#toToolResult` | JSON 字符串使用 asText，对象或数组保留 JSON 文本，缺失或 null 变为空字符串；避免工具结果二次引号与转义 |
-| pi 观察 | `packages/ai/src/api/openai-responses-shared.ts:602`、`:685` | pi 的 delta 源于 reasoning_summary_text；完成时还允许从 item.content 回退。这是内核思考内容，不等同 CampusClaw 公开摘要 |
+| `modules/ai/src/main/java/com/campusclaw/ai/provider/mate/MateChatSseParser.java#appendReasoningText/#finishThinking` | 已将 GLM 等提供商的可读推理转换为默认 Thinking 事件 | 保留原文解析，无需 Provider 新增字段 |
+| `modules/ai/src/main/java/com/campusclaw/ai/stream/AssistantMessageEvent.java` · Thinking 记录 | `publicSummary` 默认 false | 删除字段和来源门禁，恢复默认构造事件的展示能力 |
+| `modules/ai/src/main/java/com/campusclaw/ai/provider/openai/OpenAIResponsesProvider.java#applyThinkingDelta/#handleOutputItemDone` | SDK 的 reasoning summary 文本进入 Thinking，并附加来源标记 | 保留 Provider 实际返回的文本，移除 CampusClaw 标记；SDK 原有协议名称不变 |
+| `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/event/RuntimeV2EventProjector.java#projectThinking/#persistThinking` | 标记为 false 的 Mate 事件被过滤 | 当前类名为 RuntimeEventProjector；按执行快照与非空文本投影 |
+| 同目录 `RuntimeCommittedEventFactory.java#publicToolArguments`；`modules/agent-core/src/main/java/com/campusclaw/agent/tool/ToolExecutionPipeline.java#validate` | 工具参数先进入调用事件，业务校验失败形成工具结果 | 客户端保留失败调用，不能把它当坏帧 |
+| `frontend/src/runtime/protocol.ts#decodeEvent` | CallMateTool 内层 Schema 与输入长度校验误用于读取 | 事件结构校验与工具业务校验分层，响应长度使用 Runtime 上限 |
+| `frontend/src/runtime/eventStore.ts#executionState`；`frontend/src/projectors/runtimeEventProjector.ts#projectRuntimeEvents` | 在整个 Session 中只按 toolCallId 寻找结果或确认 | 按根消息及调用后的提交顺序关联，避免跨轮干扰 |
+| `modules/common/src/main/java/com/campusclaw/common/constant/ClawConstants.java` · RuntimeApi | denyMessage 上限 4096 UTF-16 单元 | 客户端读取沿用相同单位，保留更小的界面输入上限 |
+| pi `packages/ai/src/types.ts` · ThinkingContent/AssistantMessageEvent；`packages/agent/src/agent-loop.ts#streamAssistantResponse` | 文本与 signature 分离，Thinking start/delta/end 进入 message_update，不要求公开摘要标记 | 保持内核生命周期；公共 HTTP 身份与持久化是 CampusClaw 架构变化 |
 
-严格区分摘要来源属于 CampusClaw 安全加固。HTTP 的 data-only 模式是产品契约变化；pi
-内核的事件对象不能直接当作本服务的 SSE wire 格式。
+## 架构与命名
 
-## 架构与数据流
+![原始推理与公共事件输出](public_stream_support.svg)
 
-![公开摘要标志与 SSE 输出](public_stream_support.svg)
+[PlantUML 源码](diagram.puml#L1) · [原尺寸](public_stream_support.svg)
 
-[PlantUML 源码](diagram.puml#L1)
+Provider 负责原始 SSE 到领域事件，RuntimeEventProjector 负责公共投影；完整记录先持久化再输出。
+RuntimeSseEmitterSubscriber 的生产入口使用 data-only SSE，心跳为 `: ping\n\n`。
+观察断开不自动重发写请求；客户端读取历史进行对账。
 
-`RuntimeSseEventVO.dataOnly` 构造含 type 的 data，拒绝空 type 和重复 type；内部 dataOnly
-字段用 JsonIgnore 排除，保留旧 VO 的 JSON 字段集合。`RuntimeSseEmitterSubscriber` 的新模式
-只接受 data-only 事件，写出 data 和空行；心跳严格为 `: ping\n\n`。旧构造器保留当前调用行为。
+当前只有一套 Session Events 契约，内部类按职责命名。RuntimeV2EventService、RuntimeV2MessageEventService、
+RuntimeV2ControlEventService、RuntimeV2ExecutionCoordinator、RuntimeV2EventProjector、
+RuntimeV2EventProjectorFactory 和 RuntimeV2EventEncoder 去掉 V2。
+原压缩专用 RuntimeEventProjector/Factory 命名为 RuntimeCompactionEventProjector/Factory；
+内部模型上下文查询 RuntimeEventQueryService 命名为 RuntimeContextHistoryService，避免与公共历史混淆。
+HTTP 仍使用 `/campusclaw-service/v1`，此处命名调整不创建新的 HTTP 版本或兼容别名。
 
-ThinkingStart/Delta/End 的旧构造器默认 publicSummary=false。OpenAI Responses 只有收到明确
-的 reasoning_summary_text.delta 后才把该 output 标为公开；结束事件使用该 output 的标志，
-正文仍来自已收集摘要。单纯 reasoning item 的开始或结束不证明有可公开摘要。其他提供商
-保持默认私有，后续需依据各自可信来源增加适配。
+## 边界、性能与验收
 
-Mate 工具结果只在网关适配边界规范化正文：字符串直接成为文本，对象和数组序列化为 JSON 文本，
-缺失或 null 统一为空字符串。认证头、工具权限和错误分类沿用既有处理。
+- 不新增 Maven/npm 依赖、表、后台线程或版本兼容层；数据仍通过既有容量限制与有界输出队列。
+- 工具错误仍由 ToolExecutionPipeline 校验并拒绝执行；放宽的是读取业务失败事件的能力。
+- 验证原文空白和 HTML 样文本、预览与完整事件同一身份、完整事件与历史同形、关闭开关和仅签名无正文。
+- 验证不合法 CallMateTool 参数可读、跨根消息同名 toolCallId 再次确认、4096 UTF-16 边界及 emoji 单位。
+- 执行 `./mvnw clean verify`、前端测试与构建、镜像生成与一致性、PlantUML 和链接校验。
+- 企业 NativeParent 未能在本机解析，企业镜像编译未验证；单元与 fixture 验证不替代真实 GLM、Mate 和企业数据库联调。
 
-## 边界、性能与决策
-
-- 模型正文、通用原始推理和私有签名不因本片自动公开；后续 v2 投影器必须消费可信标志。
-- 本片没有实现事件受理、eventId 持久化、结果段订阅或 idle 关闭；应在完整运行链接入后验证这些性质。
-- data 容量计算包含实际 JSON UTF-8 字节，不把内部开关计入旧帧容量；后续响应队列继续承担容量和慢消费者处理。
-- 摘要标志保存在每次模型流的内存集合，大小随该响应的 output 数量增长，并随流状态释放；不增加后台线程、网络请求或数据库表。
-- 不新增 Maven 依赖，复用已有 Spring MVC、Jackson、OpenAI SDK 与测试依赖。
-
-见 [ADR-0079](../../decisions/0079-public-stream-boundary.html)。
-
-## 测试与验证
-
-测试使用真实 SseEventBuilder 检查 data-only 帧、精确心跳和拒绝旧帧；使用真实 Jackson 比较
-新模式与旧模式的字节计数及字段；提供商测试由 MockWebServer 返回摘要流和无摘要 reasoning
-item，验证至少一个真实事件及相应标志。集成审查独立运行 AI 事件与提供商测试 41 个、SSE 与字节计数测试 9 个、Mate 客户端测试 35 个，
-共 85 个测试通过。Mate 测试同时断言四种 JSON 内容的精确输出。Java 方法长度、格式和镜像另行检查。
-测试质量脚本对 Mate 既有异常与辅助断言报告的 6 项已逐一人工核查：均有真实异常或请求头断言，
-并非缺少断言；保留脚本结果，不将其描述为脚本零错误。
-
-企业镜像同步使用普通本地环境允许的生成模式；企业 NativeParent:26.0.0-SNAPSHOT 在本地
-不可解析，企业镜像编译尚未验证。测试不构成生产性能或端到端 v2 HTTP 已完成的证明。
+设计取舍见 [ADR-0104](../../decisions/0104-original-reasoning-and-event-contract.html)。
 
 ## 版本历史
 
 | 版本 | 日期 | 变更 |
 |---|---|---|
-| 0.1.1 | 2026-09-08 | 补充 Mate 工具文本规范化和 85 个集成复验结果 |
-| 0.1.0 | 2026-09-08 | 增加 data-only SSE 支持和基于真实提供商摘要事件的公开标志 |
+| 0.2.0 | 2026-09-09 | 展示原始推理，修正事件读取与确认归属，统一 Session Events 命名。 |
+| 0.1.1 | 2026-09-08 | 规范 Mate 工具结果文本与 SSE 输出校验。 |
+| 0.1.0 | 2026-09-08 | 增加 data-only SSE 编码。 |
