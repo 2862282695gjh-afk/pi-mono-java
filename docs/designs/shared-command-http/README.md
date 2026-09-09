@@ -114,7 +114,7 @@ dry-run内容差异检查和8对源码的包名转换后逐字节比对通过。
 `RuntimeExecutionCoordinator.java#handleAcceptedStartFailure` 负责接受后的启动失败收尾。
 共享 Skill 原样复用此行为：消息接受前的异常可返回错误 JSON；接受后的失败保留普通 SSE，
 即使此时 HTTP 尚未开始写出，也不把已接受消息重新解释成接收失败。
-此处记录主线观察和集成验证，不在本片扩展 Events v2 实施；详见主线
+此处记录主线观察和集成验证，不在本片扩展 Session Events 实施；详见主线
 [已接受事件失败处理](../runtime-event-acceptance/README.md)。主线已占用0073，本片ADR改用0074。
 
 合并后的 `./mvnw -q spotless:apply checkstyle:check` 与 `./mvnw -q clean verify` 再次通过：
@@ -162,7 +162,7 @@ Mate模型Chat由本地确定性HTTP/SSE服务替代，Agent/Skill来自测试�
 Skill正文同源/新JVM恢复、真实压缩摘要、实际Socket断线后完成及容量释放仍是后续验收，
 不由空历史Compact、普通Events恢复或MockMvc测试替代；本片没有实际等待30分钟超时。
 
-发布前正常同步 #252 主线 `d9a20777`；主线新增公共事件类型，本片不接入或迁移Events v2。
+发布前正常同步 #252 主线 `d9a20777`；主线新增公共事件类型，本片不接入或迁移Session Events。
 同步后 `./mvnw -q spotless:apply checkstyle:check clean verify` 通过398类2035项普通测试，零失败/错误/跳过。
 随后使用同次新JAR及独占openGauss运行92项定向测试，零失败/错误/跳过：新Builtin IT 8、
 原GET清单IT 3、原Events/重启IT 2、Fixture单元5、共享成功/错误MVC 27/41、旧PUT路由6。

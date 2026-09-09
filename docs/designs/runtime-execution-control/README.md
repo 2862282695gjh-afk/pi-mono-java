@@ -11,11 +11,11 @@
 | 终态恢复与段内追加实现 | `9ad3553a`～`2ef30225`，基于 `3cf28323` |
 | 工具确认基础实现 | `aa687e98`；来源 tip `d575f2d9` 的功能净差 |
 | pi 源码基线 | `pi@4af9d21d3b4d664e4a29fcabfec85171077248e3` |
-| 范围 | 固定执行存储，消息/中断/进入确认/确认决定/真实终态事务；不包含 Events v2 HTTP、轮询或 waiter |
+| 范围 | 固定执行存储，消息/中断/进入确认/确认决定/真实终态事务；不包含 Session Events HTTP、轮询或 waiter |
 
 ## Context
 
-设计仓的 `chat-events-v2-design.md` §4.4～§4.5 要求在执行开始前固定内部执行身份，
+设计仓的 `chat-events-design.md` §4.4～§4.5 要求在执行开始前固定内部执行身份，
 把原 `user.message.eventId` 作为根事件，并为初始响应和每次确认续跑建立不同结果段。
 这样迟到的中断不能只凭 Session 当前状态误停下一轮，确认续跑也不会把新输出写回已经关闭的响应。
 
@@ -102,7 +102,7 @@ Session 生命周期，本片不把任意 running Session 推断为用户消息�
 快照 DTO 位于同级 `dto/CommittedTerminalDTO.java`，查询位于
 `modules/coding-agent-cli/src/main/resources/mapper/session/RuntimeExecutionControlMapper.xml`。
 
-本片没有把 Events v2 HTTP 联合输入切换到这些应用事务，也没有实现确认 HTTP 的请求验证与状态映射、
+本片没有把 Session Events HTTP 联合输入切换到这些应用事务，也没有实现确认 HTTP 的请求验证与状态映射、
 执行协调器的后台终态重试调度、本地提交后唤醒、批量控制检查、有界等待登记或结果补读，
 也没有退役旧控制接口。这些能力必须在后续切片单独验收。原执行凭据不会写入控制表，
 进入 confirming 后由原实例继续持有；确认决定表只提供持久化交接点。

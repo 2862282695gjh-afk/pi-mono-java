@@ -1,5 +1,6 @@
 import type { ActivityTurn, ConversationTurn } from '../types/product';
 import type { RuntimeEvent } from '../types/runtime';
+import { hasToolConfirmation } from '../runtime/eventStore';
 
 /** 输入是已按 eventId 合并的 Store，配置记录不冒充模型回答。 */
 export function projectRuntimeEvents(events: RuntimeEvent[], observing = false): ConversationTurn[] {
@@ -17,11 +18,11 @@ export function projectRuntimeEvents(events: RuntimeEvent[], observing = false):
         break;
       case 'agent.thinking':
         turns.push({ key, kind: 'thinking', status: event.phase === 'completed' ? 'completed' : observing ? 'running' : 'unconfirmed',
-          title: '思考摘要', content: event.content });
+          title: '思考过程', content: event.content });
         break;
       case 'agent.tool_call': {
         const result = events.find((item) => item.type === 'agent.tool_result' && item.toolCallId === event.toolCallId && item.sourceEventId === event.sourceEventId);
-        const confirmed = events.some((item) => item.type === 'user.tool_confirmation' && item.toolCallId === event.toolCallId);
+        const confirmed = hasToolConfirmation(events, event);
         const terminal = events.some((item) => item.type === 'session.status_idle' && item.sourceEventId === event.sourceEventId && item.reason !== 'confirming');
         let status: ActivityTurn['status'] = terminal || !observing ? 'unconfirmed' : 'running';
         if (event.requiresConfirmation && !confirmed && !terminal) status = 'confirming';
@@ -44,7 +45,7 @@ export function projectRuntimeEvents(events: RuntimeEvent[], observing = false):
         turns.push({ key, kind: 'notice', text: ({ done: '本轮已完成', terminated: '本轮已停止', confirming: '等待工具确认，任务尚未结束', failed: `本轮失败：${event.message ?? ''}` })[event.reason] });
         break;
       case 'session.model_changed': turns.push({ key, kind: 'notice', text: `模型已变更：${event.previousModelId} → ${event.modelId}` }); break;
-      case 'session.thinking_changed': turns.push({ key, kind: 'notice', text: `后续思考摘要已${event.thinking ? '开启' : '关闭'}；已有摘要保留。` }); break;
+      case 'session.thinking_changed': turns.push({ key, kind: 'notice', text: `后续思考展示已${event.thinking ? '开启' : '关闭'}；已有思考记录保留。` }); break;
       case 'session.compacted': turns.push({ key, kind: 'notice', text: `上下文已压缩：${event.tokensBefore} → 约 ${event.estimatedTokensAfter} tokens` }); break;
     }
   }

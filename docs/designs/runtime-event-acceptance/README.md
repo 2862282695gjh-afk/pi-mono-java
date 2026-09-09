@@ -7,13 +7,13 @@
 | 设计契约 | `pi-mono-java-design@2ee2a3211da68ad87b0d9cab353e691b00bdaebd` |
 | 变更前实现 | `5e392e7ce28a4a4a66a5e4d752e9ce5ce1ebc657` |
 | 生命周期代码提交 | `77af6f5c058fc0c4e8dcc61fa068ada5c47cfbad`；追加服务入口异常回归随本片交付 |
-| 范围 | Events v2 实施的接纳生命周期修复；本片不代表完整 v2 接口上线 |
+| 范围 | Session Events 实施的接纳生命周期修复；本片不代表完整 v2 接口上线 |
 
 ## Context
 
 用户消息已经在数据库保存并将 Session 改为 running 后，调用方不能再收到表示“未接受”的错误。
-设计仓 `01-总体架构/01-CampusClaw多Agent运行时/chat-events-v2-stream-design.md` 第 5 节和
-`接口契约-v2/操作/01-submit-session-event.json` 已确认这一语义。
+设计仓 `01-总体架构/01-CampusClaw多Agent运行时/chat-events-stream-design.md` 第 5 节和
+`事件契约/操作/01-submit-session-event.json` 已确认这一语义。
 本片先修复现有执行入口的责任边界，为后续统一完整事件、数据库终态和三输入 SSE 提供基础。
 
 ## 关键定义与源码证据

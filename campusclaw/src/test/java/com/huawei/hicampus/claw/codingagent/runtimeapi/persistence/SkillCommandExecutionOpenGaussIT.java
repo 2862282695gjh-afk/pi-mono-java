@@ -55,18 +55,18 @@ import com.huawei.hicampus.claw.codingagent.runtimeapi.error.RuntimeErrorCode;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.event.CommittedEventProjection;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.event.CommittedEventQueryService;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeCommittedEventFactory;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeContextHistoryService;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeEntryCodec;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeEntryIdGenerator;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeEventEncoder;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeEventProjectorFactory;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeEventProperties;
-import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeEventQueryService;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeEventStream;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeEventStreamFactory;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeEventSubscriber;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeExecutionContextFactory;
-import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeV2EventEncoder;
-import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeV2EventProjectorFactory;
-import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeV2ExecutionCoordinator;
-import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeV2MessageEventService;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeExecutionCoordinator;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeMessageEventService;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.model.RuntimeModelManager;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.persistence.RuntimeSessionRepositoryOpenGaussIT.OpenGaussTestConfiguration;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.runtime.RuntimeActiveExecution;
@@ -134,7 +134,7 @@ class SkillCommandExecutionOpenGaussIT {
 
     private RuntimeTerminalRetryScheduler terminalRetries;
 
-    private RuntimeEventQueryService queries;
+    private RuntimeContextHistoryService queries;
 
     private CommittedEventQueryService eventQueries;
 
@@ -347,7 +347,7 @@ class SkillCommandExecutionOpenGaussIT {
     private void assembleRuntime() {
         var messages = new RuntimeMessageSourceConfiguration().messageSource();
         codec = new RuntimeEntryCodec(mapper, messages);
-        queries = new RuntimeEventQueryService(repository, codec);
+        queries = new RuntimeContextHistoryService(repository, codec);
         var properties = new RuntimeExecutionProperties();
         properties.setMaxActive(1);
         var prompt = mock(RuntimeAgentPromptLoader.class);
@@ -367,21 +367,21 @@ class SkillCommandExecutionOpenGaussIT {
         service = new SkillCommandExecutionService(messageEventService(messages, clock, ids, properties));
     }
 
-    private RuntimeV2MessageEventService messageEventService(
+    private RuntimeMessageEventService messageEventService(
             org.springframework.context.MessageSource messages,
             Clock clock,
             RuntimeEntryIdGenerator ids,
             RuntimeExecutionProperties properties) {
         var projection = new CommittedEventProjection(mapper);
         var eventFactory = new RuntimeCommittedEventFactory(mapper, messages);
-        var encoder = new RuntimeV2EventEncoder(projection, mapper);
+        var encoder = new RuntimeEventEncoder(projection, mapper);
         var eventProperties = new RuntimeEventProperties();
         var persistence = new RuntimeExecutionPersistenceService(
                 repository, database.getBean(RuntimeExecutionControlRepository.class), ids);
         terminalRetries = new RuntimeTerminalRetryScheduler();
-        var projectorFactory = new RuntimeV2EventProjectorFactory(
+        var projectorFactory = new RuntimeEventProjectorFactory(
                 repository, persistence, codec, ids, eventFactory, encoder, clock, eventProperties);
-        var coordinator = new RuntimeV2ExecutionCoordinator(
+        var coordinator = new RuntimeExecutionCoordinator(
                 registry,
                 persistence,
                 projectorFactory,
@@ -401,7 +401,7 @@ class SkillCommandExecutionOpenGaussIT {
                 queries, registry, codec, new RuntimeEventStreamFactory(eventProperties, codec), clock);
         var reconciler =
                 new RuntimeSessionModelReconciler(repository, directories, models, codec, eventFactory, ids, clock);
-        var messageEvents = new RuntimeV2MessageEventService(
+        var messageEvents = new RuntimeMessageEventService(
                 repository,
                 codec,
                 ids,

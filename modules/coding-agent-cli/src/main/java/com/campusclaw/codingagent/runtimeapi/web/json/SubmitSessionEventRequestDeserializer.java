@@ -20,7 +20,7 @@ import com.fasterxml.jackson.databind.JsonMappingException;
 import com.fasterxml.jackson.databind.JsonNode;
 
 /**
- * 严格解析 Session Events v2 单事件外壳并选择联合请求类型。
+ * 严格解析 Session Session Events 单事件外壳并选择联合请求类型。
  *
  * @version [br_eCampusCore 26.0.0, 2026/09/08]
  * @since [br_eCampusCore 26.0.0]

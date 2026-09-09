@@ -1,4 +1,4 @@
-# Runtime Events v2 存量历史迁移（历史提案）
+# Runtime Session Events 存量历史迁移（历史提案）
 
 | 属性 | 值 |
 |---|---|
@@ -11,7 +11,7 @@
 
 ## 历史背景
 
-本目录曾记录一个面向已有安装的 Events v2 存量历史迁移候选方案。方案通过审核输入、严格 payload
+本目录曾记录一个面向已有安装的 Session Events 存量历史迁移候选方案。方案通过审核输入、严格 payload
 校验、Session 原子批处理和可重跑 ID，把能证明安全的旧 Entry 转为公共事件，并对旧 Skill 正文、私有
 Thinking、未知类型和缺失关联关闭失败。相关 SQL 曾在隔离 openGauss 数据库中完成回归验证。
 
@@ -33,7 +33,7 @@ runtime/migration 而存在的 `mapping_source` 字段。
 
 历史方案见 [ADR-0082](../../decisions/0082-restart-safe-event-history-migration.html)。当前决定见
 [ADR-0092](../../decisions/0092-first-release-authoritative-event-history.html)。权威历史的现行设计见
-[Runtime Events v2 权威历史与完整性](../runtime-event-history-v2/README.md)。
+[Runtime Session Events 权威历史与完整性](../runtime-event-history/README.md)。
 
 | 版本 | 日期 | 变更 |
 |---|---|---|

@@ -26,7 +26,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 /**
- * v2 权威事件构造与 data-only 编码测试。
+ * 权威事件构造与 data-only 编码测试。
  *
  * @version [br_eCampusCore 26.0.0, 2026/09/08]
  * @since [br_eCampusCore 26.0.0]
@@ -36,13 +36,13 @@ class RuntimeCommittedEventFactoryTest {
 
     private RuntimeCommittedEventFactory factory;
 
-    private RuntimeV2EventEncoder encoder;
+    private RuntimeEventEncoder encoder;
 
     @BeforeEach
     void setUp() {
         factory =
                 new RuntimeCommittedEventFactory(objectMapper, new RuntimeMessageSourceConfiguration().messageSource());
-        encoder = new RuntimeV2EventEncoder(new CommittedEventProjection(objectMapper), objectMapper);
+        encoder = new RuntimeEventEncoder(new CommittedEventProjection(objectMapper), objectMapper);
     }
 
     @Test

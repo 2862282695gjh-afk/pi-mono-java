@@ -78,7 +78,7 @@ public class RuntimeSseEmitterSubscriber implements RuntimeEventSubscriber {
 
     private static void requireDataOnly(RuntimeSseEventVO event) {
         if (!event.isDataOnly()) {
-            throw new IllegalArgumentException("v2 SSE output requires a data-only event");
+            throw new IllegalArgumentException("SSE output requires a data-only event");
         }
     }
 }

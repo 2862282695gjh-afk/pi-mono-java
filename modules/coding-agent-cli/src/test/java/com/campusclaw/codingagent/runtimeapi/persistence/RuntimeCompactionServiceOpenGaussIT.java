@@ -53,9 +53,9 @@ import com.campusclaw.codingagent.runtimeapi.dto.command.CommandSessionSnapshotD
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
 import com.campusclaw.codingagent.runtimeapi.event.RuntimeCommittedEventFactory;
+import com.campusclaw.codingagent.runtimeapi.event.RuntimeCompactionEventProjectorFactory;
 import com.campusclaw.codingagent.runtimeapi.event.RuntimeEntryCodec;
 import com.campusclaw.codingagent.runtimeapi.event.RuntimeEntryIdGenerator;
-import com.campusclaw.codingagent.runtimeapi.event.RuntimeEventProjectorFactory;
 import com.campusclaw.codingagent.runtimeapi.model.RuntimeModelManager;
 import com.campusclaw.codingagent.runtimeapi.persistence.RuntimeSessionRepositoryOpenGaussIT.OpenGaussTestConfiguration;
 import com.campusclaw.codingagent.runtimeapi.runtime.RuntimeExecutionProperties;
@@ -153,7 +153,7 @@ class RuntimeCompactionServiceOpenGaussIT {
         var coordinator = new RuntimeCompactionCoordinator(
                 registry,
                 repository,
-                new RuntimeEventProjectorFactory(
+                new RuntimeCompactionEventProjectorFactory(
                         repository,
                         codec,
                         new RuntimeCommittedEventFactory(

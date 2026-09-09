@@ -4,12 +4,12 @@
 
 ## Context 与源码依据
 
-Events v2 的一次执行可以经过多个工具确认段，但必须保留原执行身份和凭据。
+Session Events 的一次执行可以经过多个工具确认段，但必须保留原执行身份和凭据。
 本片为本地活动执行增加固定目标、待确认状态和终态重试标志，并从可信 Agent/Skill 快照解析工具权限。
 
 变更前 Java 为 `2bdcdcb2`，实现 `b9075a90` 来自子任务最终提交 `46ad4d89`。
 以下路径均相对于实现仓；规范设计为 `pi-mono-java-design@2ee2a3211da68ad87b0d9cab353e691b00bdaebd`
-的 `01-总体架构/01-CampusClaw多Agent运行时/chat-events-v2-design.md`。
+的 `01-总体架构/01-CampusClaw多Agent运行时/chat-events-design.md`。
 
 | 源码 | 观察、决定与理由 |
 |---|---|

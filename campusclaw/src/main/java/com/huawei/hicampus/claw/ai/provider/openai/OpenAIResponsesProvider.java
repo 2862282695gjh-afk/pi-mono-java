@@ -6,10 +6,8 @@ package com.huawei.hicampus.claw.ai.provider.openai;
 
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 import com.huawei.hicampus.claw.ai.provider.ApiProvider;
 import com.huawei.hicampus.claw.ai.stream.AssistantMessageEvent;
@@ -246,7 +244,6 @@ public class OpenAIResponsesProvider implements ApiProvider {
         final HashMap<Integer, StringBuilder> thinkingAccumulators = new HashMap<>();
         final HashMap<Integer, ToolCallAccumulator> toolAccumulators = new HashMap<>();
         final HashMap<Integer, Integer> outputIndexToContentIndex = new HashMap<>();
-        final HashSet<Integer> publicThinkingOutputs = new HashSet<>();
         String responseId;
         StopReason stopReason;
         boolean usageKnown;
@@ -319,7 +316,6 @@ public class OpenAIResponsesProvider implements ApiProvider {
                 state.thinkingAccumulators,
                 state.toolAccumulators,
                 state.outputIndexToContentIndex,
-                state.publicThinkingOutputs,
                 eventStream);
     }
 
@@ -357,9 +353,8 @@ public class OpenAIResponsesProvider implements ApiProvider {
             acc.append(e.delta());
             state.contentBlocks.set(contentIdx, new ThinkingContent(acc.toString(), null, false));
         }
-        state.publicThinkingOutputs.add(outputIdx);
-        eventStream.push(new AssistantMessageEvent.ThinkingDeltaEvent(
-                contentIdx, e.delta(), partialFrom(state, model, null), true));
+        eventStream.push(
+                new AssistantMessageEvent.ThinkingDeltaEvent(contentIdx, e.delta(), partialFrom(state, model, null)));
     }
 
     private void applyToolArgsDelta(
@@ -454,7 +449,6 @@ public class OpenAIResponsesProvider implements ApiProvider {
             Map<Integer, StringBuilder> thinkingAccumulators,
             Map<Integer, ToolCallAccumulator> toolAccumulators,
             Map<Integer, Integer> outputIndexToContentIndex,
-            Set<Integer> publicThinkingOutputs,
             AssistantMessageEventStream eventStream) {
 
         int outputIdx = (int) e.outputIndex();
@@ -478,10 +472,7 @@ public class OpenAIResponsesProvider implements ApiProvider {
                     : "";
             contentBlocks.set(contentIdx, new ThinkingContent(thinking, null, false));
             eventStream.push(new AssistantMessageEvent.ThinkingEndEvent(
-                    contentIdx,
-                    thinking,
-                    buildPartialMessage(model, responseId, contentBlocks, usage, null),
-                    publicThinkingOutputs.contains(outputIdx)));
+                    contentIdx, thinking, buildPartialMessage(model, responseId, contentBlocks, usage, null)));
 
         } else if (item.isFunctionCall()) {
             var fn = item.asFunctionCall();

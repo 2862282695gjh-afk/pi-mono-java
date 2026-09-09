@@ -53,9 +53,9 @@ import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.command.CommandSessio
 import com.huawei.hicampus.claw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.error.RuntimeErrorCode;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeCommittedEventFactory;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeCompactionEventProjectorFactory;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeEntryCodec;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeEntryIdGenerator;
-import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeEventProjectorFactory;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.model.RuntimeModelManager;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.persistence.RuntimeSessionRepositoryOpenGaussIT.OpenGaussTestConfiguration;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.runtime.RuntimeExecutionProperties;
@@ -153,7 +153,7 @@ class RuntimeCompactionServiceOpenGaussIT {
         var coordinator = new RuntimeCompactionCoordinator(
                 registry,
                 repository,
-                new RuntimeEventProjectorFactory(
+                new RuntimeCompactionEventProjectorFactory(
                         repository,
                         codec,
                         new RuntimeCommittedEventFactory(

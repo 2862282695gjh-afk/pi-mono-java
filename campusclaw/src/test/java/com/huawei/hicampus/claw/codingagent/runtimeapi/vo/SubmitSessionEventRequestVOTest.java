@@ -25,7 +25,7 @@ import jakarta.validation.Validation;
 import jakarta.validation.ValidatorFactory;
 
 /**
- * Session Events v2 三类联合请求的严格解析与边界校验测试。
+ * Session Session Events 三类联合请求的严格解析与边界校验测试。
  *
  * @version [br_eCampusCore 26.0.0, 2026/09/08]
  * @since [br_eCampusCore 26.0.0]

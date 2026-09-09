@@ -80,13 +80,13 @@ class RuntimePersistenceOnlyProjectorTest {
 
     private final RuntimeActiveExecution execution = new RuntimeActiveExecution(RuntimeEventOutput.persistenceOnly());
 
-    private final RuntimeEventProjector projector;
+    private final RuntimeCompactionEventProjector projector;
 
     RuntimePersistenceOnlyProjectorTest() {
         when(holder.sessionId()).thenReturn("session");
         execution.beginRun("internal-compaction-run");
         AtomicInteger ids = new AtomicInteger();
-        var factory = new RuntimeEventProjectorFactory(
+        var factory = new RuntimeCompactionEventProjectorFactory(
                 repository,
                 codec,
                 new RuntimeCommittedEventFactory(

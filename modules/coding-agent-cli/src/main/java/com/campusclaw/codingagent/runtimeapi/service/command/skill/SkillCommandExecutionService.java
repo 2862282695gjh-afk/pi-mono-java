@@ -15,7 +15,7 @@ import com.campusclaw.codingagent.runtimeapi.dto.command.SkillCommandInputDTO;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
 import com.campusclaw.codingagent.runtimeapi.event.RuntimeEventStream;
-import com.campusclaw.codingagent.runtimeapi.event.RuntimeV2MessageEventService;
+import com.campusclaw.codingagent.runtimeapi.event.RuntimeMessageEventService;
 import com.campusclaw.codingagent.runtimeapi.vo.SkillCommandRequestVO;
 import com.campusclaw.common.constant.ClawConstants;
 
@@ -33,9 +33,9 @@ import org.springframework.stereotype.Service;
 public class SkillCommandExecutionService {
     private static final Logger LOGGER = LoggerFactory.getLogger(SkillCommandExecutionService.class);
 
-    private final RuntimeV2MessageEventService events;
+    private final RuntimeMessageEventService events;
 
-    public SkillCommandExecutionService(RuntimeV2MessageEventService events) {
+    public SkillCommandExecutionService(RuntimeMessageEventService events) {
         this.events = events;
     }
 

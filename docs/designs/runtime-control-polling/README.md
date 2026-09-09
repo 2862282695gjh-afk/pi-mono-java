@@ -4,7 +4,7 @@
 |---|---|
 | 版本 | 0.1.0 |
 | 日期 | 2026-09-08 |
-| 设计契约 | `pi-mono-java-design@2ee2a3211da68ad87b0d9cab353e691b00bdaebd`，Events v2 M5、M7、B08、B09、B11 |
+| 设计契约 | `pi-mono-java-design@2ee2a3211da68ad87b0d9cab353e691b00bdaebd`，Session Events M5、M7、B08、B09、B11 |
 | 变更前 Java | 确认、段追加与终态恢复集成基线 `043fad7cc1e63b419b7099d22b1db14500a2182f` |
 | 本片实现 | `fccf1c2f`，来源净差 `bfc90fc4` |
 | pi 基线 | `4af9d21d3b4d664e4a29fcabfec85171077248e3` |
@@ -12,11 +12,11 @@
 
 ## Context
 
-Events v2 允许消息执行与后续中断或工具确认由不同服务实例接收。执行对象和取消信号只存在于原
+Session Events 允许消息执行与后续中断或工具确认由不同服务实例接收。执行对象和取消信号只存在于原
 实例，共享数据库已经保存固定 `sessionId/executionId/rootEventId/segmentId`、停止请求和确认决定。
 本片增加执行实例发现这些已提交控制信号所需的基础能力，同时保持数据库记录为权威来源。
 
-本片没有实现 `RuntimeLocalControlDispatcher` 的执行对象适配器，也没有把 Events v2 Controller、
+本片没有实现 `RuntimeLocalControlDispatcher` 的执行对象适配器，也没有把 Session Events Controller、
 等待响应或结果补读接到轮询服务。Spring 容器未提供 Dispatcher 时，服务直接返回且不访问数据库。
 
 ## 源码证据与设计理由

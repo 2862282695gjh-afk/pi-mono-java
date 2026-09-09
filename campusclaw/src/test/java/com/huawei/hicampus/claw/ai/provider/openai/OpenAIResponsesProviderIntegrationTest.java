@@ -5,7 +5,6 @@
 package com.huawei.hicampus.claw.ai.provider.openai;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -336,18 +335,6 @@ class OpenAIResponsesProviderIntegrationTest {
             assertHasEventType(events, AssistantMessageEvent.ThinkingStartEvent.class);
             assertHasEventType(events, AssistantMessageEvent.ThinkingDeltaEvent.class);
             assertHasEventType(events, AssistantMessageEvent.ThinkingEndEvent.class);
-            assertTrue(events.stream()
-                    .filter(AssistantMessageEvent.ThinkingStartEvent.class::isInstance)
-                    .map(AssistantMessageEvent.ThinkingStartEvent.class::cast)
-                    .noneMatch(AssistantMessageEvent.ThinkingStartEvent::publicSummary));
-            assertTrue(events.stream()
-                    .filter(AssistantMessageEvent.ThinkingDeltaEvent.class::isInstance)
-                    .map(AssistantMessageEvent.ThinkingDeltaEvent.class::cast)
-                    .allMatch(AssistantMessageEvent.ThinkingDeltaEvent::publicSummary));
-            assertTrue(events.stream()
-                    .filter(AssistantMessageEvent.ThinkingEndEvent.class::isInstance)
-                    .map(AssistantMessageEvent.ThinkingEndEvent.class::cast)
-                    .allMatch(AssistantMessageEvent.ThinkingEndEvent::publicSummary));
 
             // Verify text events
             assertHasEventType(events, AssistantMessageEvent.TextStartEvent.class);
@@ -361,7 +348,7 @@ class OpenAIResponsesProviderIntegrationTest {
         }
 
         @Test
-        void keepsReasoningItemPrivateWithoutSummaryDelta() throws Exception {
+        void keepsEmptyReasoningWithoutReadableText() throws Exception {
             String body = sseEvent(
                             "response.created",
                             """
@@ -399,7 +386,6 @@ class OpenAIResponsesProviderIntegrationTest {
                     .map(AssistantMessageEvent.ThinkingEndEvent.class::cast)
                     .toList();
             assertEquals(1, endings.size());
-            assertFalse(endings.getFirst().publicSummary());
             assertEquals("", endings.getFirst().content());
         }
     }

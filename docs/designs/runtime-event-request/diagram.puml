@@ -9,7 +9,7 @@
 ' Observed behavior: the legacy controller accepts a flat message and fileIds request only.
 ' Design reason: select one strict event shape before stateful application validation.
 ' Java divergence: the HTTP union and explicit null rejection are CampusClaw product constraints.
-title Session Events v2 Request Boundary
+title Session Events Request Boundary
 skinparam classAttributeIconSize 0
 skinparam shadowing false
 skinparam backgroundColor white
@@ -54,7 +54,7 @@ UserMessageContentRequestVO <|.. FileRequestVO
 Validator ..> SubmitSessionEventRequestVO : cascaded constraints
 note bottom of SubmitSessionEventRequestVO
   Request types are implemented.
-  The production controller still uses the legacy VO.
+  The production controller accepts this request VO.
   Stateful admission remains in application transactions.
 end note
 @enduml

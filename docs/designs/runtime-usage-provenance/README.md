@@ -4,14 +4,14 @@
 |---|---|
 | 版本 | 0.1.0 |
 | 日期 | 2026-09-08 |
-| 设计契约 | `pi-mono-java-design@2ee2a3211da68ad87b0d9cab353e691b00bdaebd`，Events v2 Usage |
+| 设计契约 | `pi-mono-java-design@2ee2a3211da68ad87b0d9cab353e691b00bdaebd`，Session Events Usage |
 | 变更前 Java | `72f3550e` |
 | 实现基线 | `001a37d0`，终态报告与 JSON 回归 `80481c53` |
 | pi 基线 | `4af9d21d3b4d664e4a29fcabfec85171077248e3` |
 
 ## Context 与定义
 
-Events v2 要求未知用量省略，明确报告的零用量仍保留五个 Token 字段。旧 Java 的
+Session Events 要求未知用量省略，明确报告的零用量仍保留五个 Token 字段。旧 Java 的
 `Usage.empty()` 和提供商报告的五项零值相等，公共投影无法从数值判断来源。
 `known` 表示上游明确报告过用量；它是内部来源信息，公开事件仍由独立 VO 映射限定字段。
 

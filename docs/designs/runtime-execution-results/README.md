@@ -20,7 +20,7 @@
 
 | 分类 | 仓库相对路径与符号 | 观察与理由 |
 |---|---|---|
-| 契约 | `01-总体架构/01-CampusClaw多Agent运行时/chat-events-v2-design.md` §4.4～§4.5 | 控制请求绑定不可复用执行身份；确认续跑使用新结果段 |
+| 契约 | `01-总体架构/01-CampusClaw多Agent运行时/chat-events-design.md` §4.4～§4.5 | 控制请求绑定不可复用执行身份；确认续跑使用新结果段 |
 | 已实现 | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/persistence/MyBatisRuntimeExecutionResultRepository.java` · `readSegmentEvents` | 返回固定段在游标之后的一批完整事件，并判断该段首个 idle 是否已到达 |
 | 已实现 | `modules/coding-agent-cli/src/main/resources/mapper/session/RuntimeExecutionResultMapper.xml` · `listSegmentEvents` | 同时校验 Session、execution、root、segment，按统一序号读取且不超过该段固定 terminal_event_seq |
 | 已实现 | `modules/coding-agent-cli/src/main/resources/mapper/session/RuntimeExecutionResultMapper.xml` · `findExecutionTerminal` | 要求原 segment 属于同一根执行，只返回 execution.state=TERMINAL 指向的真实结束事件 |

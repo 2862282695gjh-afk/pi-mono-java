@@ -31,7 +31,7 @@ import org.springframework.stereotype.Component;
  */
 @Component
 public class RuntimeExecutionContextFactory {
-    private final RuntimeEventQueryService queryService;
+    private final RuntimeContextHistoryService queryService;
 
     private final RuntimeSessionEngineRegistry engineRegistry;
 
@@ -42,7 +42,7 @@ public class RuntimeExecutionContextFactory {
     private final Clock clock;
 
     public RuntimeExecutionContextFactory(
-            RuntimeEventQueryService queryService,
+            RuntimeContextHistoryService queryService,
             RuntimeSessionEngineRegistry engineRegistry,
             RuntimeEntryCodec codec,
             RuntimeEventStreamFactory streamFactory,

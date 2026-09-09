@@ -43,8 +43,8 @@ import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.command.ModelCommandResultDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.command.SessionCommandResultDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeEventStream;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeMessageEventService;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeSseDispatcher;
-import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeV2MessageEventService;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.persistence.RuntimeSessionRepository;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.result.StandaloneResultBeanAdapter;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.service.command.BuiltinCommandSource;
@@ -104,7 +104,7 @@ class RuntimeCommandControllerTest {
 
     private final AgentRuntimeManager agents = mock(AgentRuntimeManager.class);
 
-    private final RuntimeV2MessageEventService events = mock(RuntimeV2MessageEventService.class);
+    private final RuntimeMessageEventService events = mock(RuntimeMessageEventService.class);
 
     private final RuntimeCompactionService runtime = mock(RuntimeCompactionService.class);
 

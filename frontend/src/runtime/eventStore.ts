@@ -24,6 +24,16 @@ export function reconcileEvents(current: RuntimeEvent[], history: RuntimeEvent[]
   const ids = new Set(ordered.map((event) => event.eventId));
   return [...ordered, ...current.filter((event) => !ids.has(event.eventId))];
 }
+/** 确认回执没有 sourceEventId，按权威顺序在调用之后、下一条用户消息之前匹配。 */
+export function hasToolConfirmation(events: RuntimeEvent[], call: Extract<RuntimeEvent, { type: 'agent.tool_call' }>): boolean {
+  const index = events.findIndex((event) => event.eventId === call.eventId);
+  if (index < 0) return false;
+  for (const event of events.slice(index + 1)) {
+    if (event.type === 'user.message') return false;
+    if (event.type === 'user.tool_confirmation' && event.toolCallId === call.toolCallId) return true;
+  }
+  return false;
+}
 export function executionState(events: RuntimeEvent[]) {
   const latest = [...events].reverse();
   const root = latest.find((event) => event.type === 'user.message');
@@ -32,7 +42,8 @@ export function executionState(events: RuntimeEvent[]) {
   const terminal = idle?.type === 'session.status_idle' && idle.reason !== 'confirming' ? idle : undefined;
   const pendingTool = latest.find((event) => event.type === 'agent.tool_call'
     && event.sourceEventId === rootId && event.requiresConfirmation
-    && !events.some((item) => (item.type === 'agent.tool_result' || item.type === 'user.tool_confirmation') && item.toolCallId === event.toolCallId));
+    && !events.some((item) => item.type === 'agent.tool_result' && item.sourceEventId === rootId && item.toolCallId === event.toolCallId)
+    && !hasToolConfirmation(events, event));
   const interruptPending = !terminal && events.some((event) => event.type === 'user.interrupt' && event.targetEventId === rootId);
   const continued = idle && events.slice(events.indexOf(idle) + 1).some((event) => event.type === 'user.tool_confirmation'
     || event.type === 'user.interrupt' || ('sourceEventId' in event && event.sourceEventId === rootId));

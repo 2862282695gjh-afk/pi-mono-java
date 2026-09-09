@@ -15,8 +15,8 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeCompactionResultDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.error.RuntimeErrorCode;
-import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeEventProjector;
-import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeEventProjectorFactory;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeCompactionEventProjector;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeCompactionEventProjectorFactory;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.persistence.RuntimeSessionRepository;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.runtime.RuntimeExecutionProperties;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.runtime.RuntimeExecutionTimeoutScheduler;
@@ -42,7 +42,7 @@ public class RuntimeCompactionCoordinator {
 
     private final RuntimeSessionRepository repository;
 
-    private final RuntimeEventProjectorFactory projectorFactory;
+    private final RuntimeCompactionEventProjectorFactory projectorFactory;
 
     private final RuntimeExecutionTimeoutScheduler timeoutScheduler;
 
@@ -53,7 +53,7 @@ public class RuntimeCompactionCoordinator {
     public RuntimeCompactionCoordinator(
             RuntimeSessionEngineRegistry engineRegistry,
             RuntimeSessionRepository repository,
-            RuntimeEventProjectorFactory projectorFactory,
+            RuntimeCompactionEventProjectorFactory projectorFactory,
             RuntimeExecutionTimeoutScheduler timeoutScheduler,
             RuntimeExecutionProperties properties,
             Clock clock) {
@@ -92,7 +92,7 @@ public class RuntimeCompactionCoordinator {
 
         private final AtomicReference<CompactionRun> callbackTarget = new AtomicReference<>(this);
 
-        private RuntimeEventProjector projector;
+        private RuntimeCompactionEventProjector projector;
 
         private Runnable unsubscribe = () -> {};
 

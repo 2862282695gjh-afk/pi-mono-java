@@ -50,8 +50,8 @@ import com.campusclaw.codingagent.runtimeapi.dto.RuntimeRecordDTO;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
 import com.campusclaw.codingagent.runtimeapi.event.RuntimeCommittedEventFactory;
+import com.campusclaw.codingagent.runtimeapi.event.RuntimeCompactionEventProjectorFactory;
 import com.campusclaw.codingagent.runtimeapi.event.RuntimeEntryCodec;
-import com.campusclaw.codingagent.runtimeapi.event.RuntimeEventProjectorFactory;
 import com.campusclaw.codingagent.runtimeapi.persistence.RuntimeSessionRepository;
 import com.campusclaw.codingagent.runtimeapi.runtime.RuntimeExecutionProperties;
 import com.campusclaw.codingagent.runtimeapi.runtime.RuntimeExecutionTimeoutScheduler;
@@ -112,7 +112,7 @@ class RuntimeCompactionCoordinatorTest {
 
     private final RuntimeSessionHolder holder;
 
-    private final RuntimeEventProjectorFactory projectors;
+    private final RuntimeCompactionEventProjectorFactory projectors;
 
     private final RuntimeCompactionCoordinator coordinator;
 
@@ -142,7 +142,7 @@ class RuntimeCompactionCoordinatorTest {
         RuntimeEntryCodec codec =
                 new RuntimeEntryCodec(new ObjectMapper(), new RuntimeMessageSourceConfiguration().messageSource());
         AtomicInteger ids = new AtomicInteger();
-        projectors = spy(new RuntimeEventProjectorFactory(
+        projectors = spy(new RuntimeCompactionEventProjectorFactory(
                 repository,
                 codec,
                 new RuntimeCommittedEventFactory(

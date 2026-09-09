@@ -5,7 +5,7 @@
 package com.campusclaw.codingagent.runtimeapi.vo;
 
 /**
- * Session Events v2 支持的三种用户事件请求联合类型。
+ * Session Session Events 支持的三种用户事件请求联合类型。
  *
  * @version [br_eCampusCore 26.0.0, 2026/09/08]
  * @since [br_eCampusCore 26.0.0]

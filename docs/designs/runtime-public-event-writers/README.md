@@ -12,7 +12,7 @@
 
 ## Context
 
-Events v2 要求 POST SSE 的完整帧与 GET 历史读取同一份已提交公共事件。配置接口、Builtin
+Session Events 要求 POST SSE 的完整帧与 GET 历史读取同一份已提交公共事件。配置接口、Builtin
 Command 和接受消息前的模型校准都会产生模型或 Thinking 配置 Entry。如果这些入口只写内部
 Entry，历史完整性门禁会拒绝读取；如果 Service 在配置事务提交后另写公共事件，进程故障又会留下
 无法修复的半份历史。
@@ -101,7 +101,7 @@ Repository 事务。首版端口收敛删除绕过公共事件的旧仓储重载
 
 该设计使 `PUT /sessions/{sessionId}/model`、`PUT /sessions/{sessionId}/thinking`、对应 Builtin Command
 以及自动模型校准共享配置公共事件写入点。配置接口仍返回原有 Session Response VO；Builtin Command
-仍使用现有 JSON 响应。公共事件将在 Events v2 历史中出现，不向配置响应额外嵌入事件。
+仍使用现有 JSON 响应。公共事件将在 Session Events 历史中出现，不向配置响应额外嵌入事件。
 
 本次端口收敛只删除无事件写入能力，不改变上述 HTTP 和 Builtin Command 契约。当前产品是第一版，只使用全新安装 schema，不保留旧内部仓储重载作为兼容层。
 

@@ -112,21 +112,18 @@ class AssistantMessageEventTest {
             var partial = samplePartial();
             var event = new ThinkingStartEvent(0, partial);
             assertEquals(0, event.contentIndex());
-            assertFalse(event.publicSummary());
         }
 
         @Test
         void thinkingDeltaEvent() {
             var event = new ThinkingDeltaEvent(0, "let me think", samplePartial());
             assertEquals("let me think", event.delta());
-            assertFalse(event.publicSummary());
         }
 
         @Test
         void thinkingEndEvent() {
             var event = new ThinkingEndEvent(0, "full thinking", samplePartial());
             assertEquals("full thinking", event.content());
-            assertFalse(event.publicSummary());
         }
 
         @Test
@@ -214,11 +211,11 @@ class AssistantMessageEventTest {
 
         @Test
         void thinkingDeltaEventSerializesToJson() throws JsonProcessingException {
-            var event = new ThinkingDeltaEvent(0, "hmm", samplePartial(), true);
+            var event = new ThinkingDeltaEvent(0, "hmm", samplePartial());
             var json = mapper.readTree(mapper.writeValueAsString(event));
             assertEquals("thinking_delta", json.get("type").asText());
             assertEquals("hmm", json.get("delta").asText());
-            assertTrue(json.get("publicSummary").asBoolean());
+            assertFalse(json.has("publicSummary"));
         }
 
         @Test

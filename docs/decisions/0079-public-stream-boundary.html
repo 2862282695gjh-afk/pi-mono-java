@@ -1,6 +1,7 @@
 <!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ADR-0079：公共事件流输出边界</title><style>body{font:16px/1.65 system-ui,sans-serif;color:#172235;background:#f5f7fa;margin:0}main{max-width:920px;margin:32px auto;padding:32px;background:white}code{overflow-wrap:anywhere}a{color:#1457a6}</style></head><body><main>
-<h1>ADR-0079：公共事件流输出边界</h1><p>Status: Accepted · Date: 2026-09-08 · Version: 1.0.1</p>
+<h1>ADR-0079：公共事件流输出边界</h1><p>Status: Superseded（Thinking 规则；其他持久化与传输规则保持有效） · Date: 2026-09-08 · Version: 1.0.1</p>
+<p>当前 Thinking 规则见 <a href="0104-original-reasoning-and-event-contract.html">ADR-0104</a>。</p>
 <h2>Context</h2><p>设计仓2ee2a321确认Events v2只写SSE data，并且只公开可信提供商摘要。Java基线d9a20777的旧订阅器仍写event/id，thinking事件缺少来源标志。</p>
 <h2>Decision 与选项</h2><p>增加独立data-only模式，保留旧入口当前行为；把publicSummary作为AI层的内部来源信息，只有明确reasoning_summary_text.delta能赋予公开标志。旧构造器默认false。后续应用投影层消费标志并构造公共事件。</p><p>不依据通用ThinkingContent猜测可公开性，因为不同提供商的内容含义不同。也不立即修改所有生产SSE输出，因为只有完整受理、持久化、结果段和idle关闭全部接入后才满足v2契约。</p>
 <p>Mate网关内容为字符串时直接取文本，对象和数组保留JSON文本，缺失或null变为空串；不改变既有凭据及权限处理。</p>

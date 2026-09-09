@@ -28,9 +28,9 @@ import com.huawei.hicampus.claw.codingagent.runtimeapi.RuntimeMessageSourceConfi
 import com.huawei.hicampus.claw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.error.RuntimeErrorCode;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.event.CommittedEventQueryService;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeEventService;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeEventStream;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeSseDispatcher;
-import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeV2EventService;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.result.StandaloneResultBeanAdapter;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.vo.ListSessionEventsResponseVO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.vo.RuntimeSseEventVO;
@@ -61,7 +61,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 class RuntimeEventRoutesTest {
     private static final String SESSION_ID = "session-0123456789abcdef0123456789abcdef";
 
-    private RuntimeV2EventService service;
+    private RuntimeEventService service;
 
     private CommittedEventQueryService queryService;
 
@@ -71,7 +71,7 @@ class RuntimeEventRoutesTest {
 
     @BeforeEach
     void setUp() {
-        service = mock(RuntimeV2EventService.class);
+        service = mock(RuntimeEventService.class);
         queryService = mock(CommittedEventQueryService.class);
         dispatcher = new RuntimeSseDispatcher();
         var controller =

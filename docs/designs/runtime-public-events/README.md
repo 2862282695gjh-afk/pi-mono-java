@@ -2,7 +2,7 @@
 
 | 属性 | 值 |
 |---|---|
-| 版本 | 0.3.0 |
+| 版本 | 0.4.0 |
 | 日期 | 2026-09-08 |
 | 契约基线 | `pi-mono-java-design@2ee2a3211da68ad87b0d9cab353e691b00bdaebd` |
 | 实现基线 | `pi-mono-java@2f52e9b8` |
@@ -12,7 +12,7 @@
 
 ## Context
 
-Events v2 要求 POST 完整帧与 GET 历史使用同一事件对象，内部 Entry 与 Record 仍服务于上下文恢复和累计 Usage。
+Session Events 要求 POST 完整帧与 GET 历史使用同一事件对象，内部 Entry 与 Record 仍服务于上下文恢复和累计 Usage。
 不能将内部持久化对象直接作为响应返回，也不能把当前旧 SSE 的 `event/id/data` 包装当成新契约。
 数据模型片建立共用类型，本片继续实现公共字段投影与同事务存储，为历史查询和 SSE 接入提供基础。
 
@@ -28,7 +28,7 @@ Events v2 要求 POST 完整帧与 GET 历史使用同一事件对象，内部 E
 | 本片新增 | `event/CommittedEventType.java` | 关闭公共完整事件的 11 种类型集合，未知类型不作为已知事件处理 |
 | 本片新增 | `event/CommittedEventProjection.java#project` | 验证权威记录的完整字段，生成类型化只读响应，保留已经保存的语言文本 |
 | 本片新增 | `persistence/MyBatisRuntimeSessionRepository.java#acceptUserEvent/appendEntry/appendEntryWithUsage` | 重载方法在既有 Session 事务内写 Entry、内部 Record/Usage 和公共事件，保留旧签名供未切换的入口使用 |
-| 已确认目标，后续实现 | 设计仓 `接口契约-v2/common.json`、POST/GET 操作文档 | 分页、执行控制和 HTTP 输出尚未由本片接入；首版不包含旧数据迁移 |
+| 已确认目标，后续实现 | 设计仓 `事件契约/common.json`、POST/GET 操作文档 | 分页、执行控制和 HTTP 输出尚未由本片接入；首版不包含旧数据迁移 |
 
 pi 基线 `5cd93f688aaab89dbb6dfa4aca535f21796ae185` 的
 `packages/agent/src/agent-loop.ts#runAgentLoop` 和 `#prepareToolCall` 产生内核消息和工具生命周期通知。
@@ -63,11 +63,12 @@ pi 基线 `5cd93f688aaab89dbb6dfa4aca535f21796ae185` 的
 
 ## 边界情况与性能
 
-投影只接受完整事件；正文和摘要必须为 `phase=completed`，Usage/cost 必须为非负数值。
+投影只接受完整事件；正文和思考必须为 `phase=completed`，Usage/cost 必须为非负数值。
 缺失字段、未知类型、非法内容块和不安全错误码使本次读取失败，不静默过滤后声称历史完整。
 工具结果必须有 `isError`，失败必须有受支持错误码，成功不能携带错误码；执行失败必须有保存的安全错误消息。
-投影不负责把原始 Provider 思考归为可公开摘要，不能把未经判定的 thinking 记录直接写入公共表。
-公共工具结果只定义文本块；思考只承载允许公开的摘要，不意味着可以公开内核所有 thinking 内容。
+Thinking 展示模型返回的可读推理原文，执行快照控制后续输出；不透明签名留在内部上下文。
+具体规则与源码依据见[原始推理与公共事件边界](../runtime-public-stream/README.md)。
+工具 arguments 的对象结构由协议验证，模型给出的业务参数由工具执行层校验；失败调用仍是有效事件。
 消息附件最多 4 个、标识为 32 位十六进制、拒绝说明最多 4096 字符；共同约束集中在 `ClawConstants.RuntimeApi`。
 每条公共事件增加一次插入和一次共享序号递增；Session 行锁保持数据库事务内的提交顺序。
 不在锁内等待 HTTP 写出、模型执行或工具确认；不新增线程、缓存或 Maven 依赖，使用已有 Jackson、Lombok 和 JDK 21。
@@ -100,6 +101,7 @@ Entry、Record、Usage/cost、messageCount、activeLeaf 和共享序号全部回
 
 | 版本 | 日期 | 变更 |
 |---|---|---|
+| 0.4.0 | 2026-09-09 | 展示模型返回的原始推理，并区分工具业务参数错误与协议错误。 |
 | 0.3.0 | 2026-09-08 | 明确首版只支持全新安装，旧数据迁移不进入产品，运行时精确完整性保持不变 |
 | 0.2.0 | 2026-09-08 | 实现安全公共投影与原子存储，保留 HTTP 切换和迁移候选边界 |
 | 0.1.0 | 2026-09-08 | 定义公共事件 DTO/VO 与共享类型，明确后续接入边界 |
