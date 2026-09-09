@@ -170,6 +170,10 @@
           AND state = 'running'
     </update>
 
+    <select id="findRunningSessionIds" resultType="string">
+        SELECT id FROM t_sessions WHERE state = 'running' ORDER BY id
+    </select>
+
 
     <select id="listCurrentBranchEntries" resultType="com.campusclaw.codingagent.runtimeapi.dto.RuntimeEntryDTO">
         WITH RECURSIVE current_path (

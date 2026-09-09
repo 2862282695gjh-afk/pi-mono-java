@@ -66,6 +66,8 @@ public interface RuntimeSessionRepository {
 
     void finishExecution(String sessionId, OffsetDateTime finishedAt);
 
+    List<String> findRunningSessionIds();
+
     List<RuntimeEntryDTO> listCurrentBranchEntries(String sessionId, long afterSeq, int limit);
 
     Optional<List<CommittedEventDTO>> findEventPage(String sessionId, long offset, int limit);
