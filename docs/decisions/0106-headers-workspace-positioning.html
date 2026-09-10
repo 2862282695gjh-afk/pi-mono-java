@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ADR-0106：Headers 面板按工作区定位</title>
+<style>body{font:16px/1.75 system-ui,sans-serif;color:#2c2724;background:#f8f3f0;margin:0}main{max-width:900px;margin:32px auto;padding:28px;background:#fffcfa}code{overflow-wrap:anywhere}a{color:#8e3f29}</style>
+<main>
+<h1>ADR-0106：Headers 面板按工作区定位</h1>
+<p>状态：Accepted。日期：2026-09-10。分类：工作区布局正确性修复。</p>
+<h2>Context</h2>
+<p>源码基线 <code>f61906b9136246ca60f333704b6fc92b5420d0ec</code> 的 <code>frontend/src/style.css</code> 让 <code>.debug-headers-body</code> 相对按钮向左展开；顶栏层级 5 低于会话导航层级 10。在 1024px 窗口运行会话时，面板左边界为 47px，而导航占据左侧 224px，遮住了勾选框和 Key。面板自身的层级 12 无法越过顶栏的层叠上下文。</p>
+<h2>Options</h2>
+<ul>
+<li>提高顶栏或浮层层级：修改少，但仍让面板越过工作区，遮住会话导航，且无法解决可用宽度计算的问题。</li>
+<li>以工作区顶栏定位：面板尺寸与可用空间一致，导航收起后自动适配；面板右边缘与工作区内边距对齐，不再始终贴住触发按钮右边缘。</li>
+<li>增加 Teleport 和脚本测量：可以逐次贴住按钮并避让边界，但需要维护滚动、窗口变化和组件清理；当前固定顶栏布局不需要这些额外机制。</li>
+</ul>
+<h2>Decision</h2>
+<p>选用工作区顶栏作为定位容器，移除按钮容器的相对定位。顶栏与面板共享响应式内边距，面板宽度为 680px 与实际工作区可用宽度的较小值；桌面和手机统一定位规则。高度受动态视口约束，超高内容在面板内滚动。保留现有请求头编辑、计数、快照和认证流程。</p>
+<h2>Consequences</h2>
+<p>面板不会伸入桌面会话列表，导航收起时也不会继续扣除原导航宽度。无需新增依赖、运行时事件监听或公共接口。手机导航仍遵循已有抽屉层级，打开抽屉时优先显示导航；编辑 Headers 时先收起导航。布局修复不涉及 Runtime 内核或新的类结构，现有前端协调图保持不变。</p>
+<h2>Validation</h2>
+<p>Chrome 与本地契约 fixture 复现后验证 320、390、768、801、1024、1440px、导航展开/收起、执行等待确认和停止后空闲；输入控件不被会话列表或会话内容覆盖，勾选、Key 聚焦和 Value 编辑可用。320×480px 聚焦末行只滚动面板，页面根容器保持 scrollTop=0。构建、既有单元测试及文档校验结果记录于实现设计；真实认证中心和 Java 后端 E2E 不在此 CSS 修复的验证范围。</p>
+<h2>Related</h2>
+<p><a href="../designs/frontend-events/README.md">前端实现设计与源码证据</a> · <a href="0105-workbench-session-stop-and-auth.html">ADR-0105：工作台交互</a></p>
+</main>
+</html>

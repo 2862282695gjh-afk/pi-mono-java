@@ -2,15 +2,16 @@
 
 | 属性 | 值 |
 |---|---|
-| 版本 | 1.3.0 |
+| 版本 | 1.3.1 |
 | 日期 | 2026-09-10 |
 | 状态 | 前端已实现；本次以契约 fixture 验收，真实后端 E2E 未验收；不是生产 Mate 前端 |
 | 初始源码基线 | `pi-mono-java@821418e7f2ece298a04a066ab8d11d3388ef2f16` |
 | 同步源码基线 | `pi-mono-java@9b01a9f1e659359b6a7bff9ec622e6700ef6e384`；经 c57db26d 同步消息受理/控制分发，再同步控制受理与旧 Entry 拒绝；本文消费的 VO 不变 |
 | 工作台源码基线 | `pi-mono-java@8fbafdb0b7ea5cdb8f22704610e5a86fc6f91bf1`；同步 `5add3aef18138e9197cc8bd9a37805d6ac4b742b` 仅涉及独立 Java 测试，前端未变 |
+| Headers 定位修复基线 | `pi-mono-java@f61906b9136246ca60f333704b6fc92b5420d0ec` |
 | 已确认工作台设计 | `pi-mono-java-design@db3223c498e50c383cb620abe3a3fde2e3872845`；前端 1.10.0、Slash 前端 1.5.0、`runtime-workbench-alignment.md` |
 | 已确认目标契约 | `pi-mono-java-design@9b8c5b7`；Claw Events B01～B15、Slash 前端 1.3.0；用户本次明确对接 Claw Runtime |
-| 决策 | [ADR-0102](../../decisions/0102-runtime-events-v2-frontend.html)、[工作台 ADR-0105](../../decisions/0105-workbench-session-stop-and-auth.html) |
+| 决策 | [ADR-0102](../../decisions/0102-runtime-events-v2-frontend.html)、[工作台 ADR-0105](../../decisions/0105-workbench-session-stop-and-auth.html)、[Headers 定位 ADR-0106](../../decisions/0106-headers-workspace-positioning.html) |
 
 ## 背景、定义与交付边界
 
@@ -111,6 +112,22 @@ Builtin Renderer 消费相同快照；Skill 不进入临时结果区。响应解
 - 视觉保留 O1 品牌、浅暖灰导航和独立虚线活动框；命令行没有装饰图标列。窄屏清单单列，
   可滚动区带键盘入口，输入动作区不随 Palette 膨胀而被挤出视口。
 
+### Headers 面板定位
+
+源码基线 `f61906b9` 的 `frontend/src/style.css` 中，`.debug-headers-body` 相对
+`.debug-headers` 按钮向左展开，`.topbar` 的层级为 5，左侧 `.sidebar` 为 10；面板自身的
+层级 12 不能越过顶栏的层叠上下文。1024px 窗口、会话执行等待确认时，面板左边界为 47px，
+会话列表右边界为 224px，勾选框和 Key 被列表覆盖。这是已复现的定位缺陷。
+
+当前方案以 `.topbar` 为定位容器，面板在顶栏下方展开并与工作区右侧内边距对齐，宽度取
+680px 与工作区可用宽度的较小值；顶栏与面板共享响应式内边距。导航收起时按实际工作区宽度计算，
+手机宽度沿用同一定位规则，Key/Value 继续分行。面板高度受动态视口约束，超高内容在面板内滚动。
+这是工作区布局的正确性修复，不改变 Runtime、请求快照或认证契约；不引入依赖、监听器或新的组件生命周期。
+定位选择及取舍见 [ADR-0106](../../decisions/0106-headers-workspace-positioning.html)。
+
+验收要求：执行中和空闲时不伸入桌面会话列表；320/390/768/801/1024/1440px 无面板横向溢出；
+导航展开/收起后控件仍可操作；短屏聚焦最后一个 Value 时只滚动面板，不推移页面根容器。
+
 ## 错误、恢复与 DFX
 
 | 情况 | 行为与安全边界 |
@@ -199,6 +216,12 @@ Accept/Content-Type 固定并剔除禁止的版本/幂等/续流头，不把凭�
 - 实际 Vue + 本地 fixture：刷新和新标签页恢复、运行中独立 Help、两次 Enter、输入框 Enter 不停止、
   停止终态后恢复箭头并保留草稿、+ 禁用附件项、Headers 0→1、认证缺配置提示。
   320/390/768/1440px 无横向溢出；390px 验证并修复无障碍提示越界引起的根容器滚动。
+- Headers 定位回归使用 Chrome + 本地 fixture：上述六种宽度下可见输入框和按钮均命中自身，
+  没有被会话列表或会话内容覆盖；1024px 面板边界修正为 326～1006px，801px 为 242～783px。
+  实际操作勾选、Key 聚焦和 Value 编辑；执行等待确认及停止后的空闲状态正常。
+  320×480px 聚焦末行后面板 scrollTop=125、根容器 scrollTop=0，末行仍可点击。
+  定位修复的 125 项测试、类型检查、构建、依赖审计和 Spotless 均通过；协调图重新生成后与基线一致，
+  ASCII/XML/链接/行锚点及原尺寸、缩放视图检查通过。
 - 必须通过类型检查、生产构建、`npm audit --audit-level=high`、生产 DEV 路由缺席检查、
   PlantUML 生成/ASCII/XML/链接/同步、SVG 原尺寸与缩放检查、`git diff --check`、2000 行新增代码门禁。
 - 未验收：真实认证中心与 Java 后端 E2E、上传、生产 Mate、真实 IME/读屏器/200% 缩放、长历史压测。
@@ -208,6 +231,7 @@ Accept/Content-Type 固定并剔除禁止的版本/幂等/续流头，不把凭�
 
 | 版本 | 日期 | 变更 |
 |---|---|---|
+| 1.3.1 | 2026-09-10 | 将 Headers 面板限制在实际工作区内，避免较窄窗口的会话列表遮挡输入控件。 |
 | 1.3.0 | 2026-09-10 | 保存会话恢复索引，统一停止槽与独立命令操作，并接入本地 IP 获取 Token。 |
 | 1.2.0 | 2026-09-09 | 展示原始推理，修正失败工具事件读取、跨轮确认与拒绝说明长度。 |
 | 1.1.0 | 2026-09-09 | 落实 Headers 预置与显式增删、命令标签与独立参数、统一箭头及草稿恢复；保留内部 Skill SSE。 |
