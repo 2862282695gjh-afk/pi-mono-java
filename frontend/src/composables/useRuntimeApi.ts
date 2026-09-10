@@ -4,6 +4,7 @@ import { RuntimeApiError } from '../types/runtime';
 import { decodeCatalog, decodeCommandResult } from '../runtime/commands';
 import type { CommandDescriptor, CommandInvocation, CommandResult } from '../runtime/commands';
 import { codePointLength, decodeHistory, decodeModels, decodeSession, invalidResponse, matchesReceipt, messageEvent, readEventStream, record } from '../runtime/protocol';
+import type { PendingOperation, PendingStore } from '../runtime/sessionIndex';
 import { executionState, mergeEvent, reconcileEvents } from '../runtime/eventStore';
 
 const API_PATH = '/campusclaw-service/v1';
@@ -12,7 +13,7 @@ const callerId = import.meta.env.VITE_CAMPUSCLAW_CALLER_ID?.trim() || 'campuscla
 type Context = { generation: number; sessionId: string; signal: AbortSignal };
 
 /** 仅内部 Runtime 工作台装配；不兼容或回退到 Mate 公共接口。 */
-export function useRuntimeApi() {
+export function useRuntimeApi(pendingStore?: PendingStore, onCreated?: (session: RuntimeSession) => void) {
   const session = ref<RuntimeSession | null>(null);
   const etag = ref('');
   const models = ref<string[]>([]);
@@ -22,6 +23,7 @@ export function useRuntimeApi() {
   const controlPending = ref(false);
   const stopping = ref(false);
   const recovering = ref(false);
+  const historyReady = ref(false);
   const uncertainty = ref('');
   const receiptUnknown = ref(false);
   const lastError = ref('');
@@ -40,13 +42,15 @@ export function useRuntimeApi() {
   let viewController = new AbortController();
   let catalogFlight: Promise<CommandDescriptor[]> | undefined;
   let recoveryFlight: Promise<void> | undefined;
-  let interruptedObservation: { rootId: string; receiptId: string } | undefined;
+  const pendingOperations = ref<PendingOperation[]>([]);
   const execution = computed(() => executionState(events.value));
   const hasSession = computed(() => session.value !== null);
   const streaming = computed(() => streamCount.value > 0);
-  const running = computed(() => session.value?.state === 'running' || messagePending.value);
-  const canSend = computed(() => hasSession.value && !running.value && !receiptUnknown.value && !recovering.value && !commandPending.value);
-  const canStop = computed(() => running.value && !!execution.value.rootId && !execution.value.terminal
+  const running = computed(() => hasSession.value && (session.value?.state === 'running' || messagePending.value
+    || (!!execution.value.rootId && !execution.value.terminal)));
+  const canSend = computed(() => hasSession.value && historyReady.value && !running.value && !receiptUnknown.value && !uncertainty.value && !pendingOperations.value.length
+    && !recovering.value && !streaming.value && !controlPending.value && !stopping.value && !commandPending.value);
+  const canStop = computed(() => session.value?.state === 'running' && !receiptUnknown.value && !recovering.value && !!execution.value.rootId && !execution.value.terminal
     && !stopping.value && !controlPending.value && !messagePending.value);
 
   function context(): Context {
@@ -70,10 +74,10 @@ export function useRuntimeApi() {
     generation++; revision++; catalogRevision++; messageTicket++; controlTicket++;
     session.value = null; etag.value = ''; models.value = []; events.value = [];
     streamCount.value = 0; messagePending.value = false; controlPending.value = false;
-    stopping.value = false; recovering.value = false; receiptUnknown.value = false; uncertainty.value = '';
+    stopping.value = false; recovering.value = false; historyReady.value = false; receiptUnknown.value = false; uncertainty.value = '';
     commands.value = []; catalogStatus.value = 'stale'; catalogError.value = '';
     commandResult.value = null; commandPending.value = false;
-    catalogFlight = undefined; recoveryFlight = undefined; interruptedObservation = undefined; clearError();
+    catalogFlight = undefined; recoveryFlight = undefined; pendingOperations.value = []; clearError();
   }
   async function request(ctx: Context, suffix: string, init: RequestInit = {}): Promise<Response> {
     check(ctx);
@@ -116,12 +120,18 @@ export function useRuntimeApi() {
     const ticket = ++sessionReadTicket;
     const response = await request(ctx, path(ctx));
     const value = decodeSession(await result(response));
+    check(ctx);
     if (ticket === sessionReadTicket) applySession(value, response, ctx, version);
     return value;
   }
   async function getSession(sessionId = session.value?.sessionId): Promise<RuntimeSession> {
     if (!sessionId) throw new RuntimeApiError({ message: '请输入 Session ID。' });
-    if (sessionId !== session.value?.sessionId) clearSessionView();
+    if (sessionId !== session.value?.sessionId) {
+      clearSessionView();
+      pendingOperations.value = pendingStore?.list(sessionId) ?? [];
+      receiptUnknown.value = pendingOperations.value.some((item) => !item.receiptId);
+      if (pendingOperations.value.length) uncertainty.value = '正在核对上次提交的结果，不会重复发送。';
+    }
     const ctx = { generation, sessionId, signal: viewController.signal };
     try { return await refreshSession(ctx); } catch (error) { throw publish(error, ctx); }
   }
@@ -132,7 +142,9 @@ export function useRuntimeApi() {
       const response = await request(ctx, `/agents/${encodeURIComponent(agentId)}/sessions`, { method: 'POST' });
       const created = decodeSession(await result(response));
       check(ctx);
+      onCreated?.(created);
       await getSession(created.sessionId);
+      historyReady.value = true;
       await listModels();
       return created;
     } catch (error) { throw publish(error, ctx); }
@@ -173,12 +185,17 @@ export function useRuntimeApi() {
         await loadHistory();
         await refreshSession(ctx);
         check(ctx);
-        if (!receiptUnknown.value && interruptedObservation) {
-          const receiptIndex = events.value.findIndex((event) => event.eventId === interruptedObservation?.receiptId);
-          const ended = receiptIndex >= 0 && events.value.slice(receiptIndex + 1).some((event) => event.type === 'session.status_idle' && event.sourceEventId === interruptedObservation?.rootId);
-          if (ended) { uncertainty.value = ''; interruptedObservation = undefined; }
+        for (const operation of [...pendingOperations.value]) {
+          const receiptIndex = events.value.findIndex((event) => event.eventId === operation.receiptId);
+          const ended = receiptIndex >= 0 && events.value.slice(receiptIndex + 1).some((event) =>
+            event.type === 'session.status_idle' && event.sourceEventId === operation.rootId);
+          if (ended) finishOperation(ctx, operation);
         }
+        receiptUnknown.value = pendingOperations.value.some((item) => !item.receiptId);
+        if (!pendingOperations.value.length) uncertainty.value = execution.value.rootId && !execution.value.terminal && session.value?.state === 'idle'
+          ? '尚未读到本轮结束记录，请刷新状态；不能仅按空闲状态再次发送。' : '';
         stopping.value = execution.value.interruptPending;
+        historyReady.value = true;
       } catch (error) { throw publish(error, ctx); }
       finally { if (current(ctx)) { recovering.value = false; recoveryFlight = undefined; } }
     })();
@@ -217,23 +234,36 @@ export function useRuntimeApi() {
     headers.delete('If-Match'); headers.delete('Idempotency-Key'); headers.delete('Last-Event-ID');
     return headers;
   }
+  function beginOperation(ctx: Context, kind: PendingOperation['kind'], rootId?: string): PendingOperation {
+    const operation: PendingOperation = { id: crypto.randomUUID(), kind, ...(rootId ? { rootId } : {}) };
+    pendingOperations.value = [...pendingOperations.value, operation];
+    pendingStore?.put(ctx.sessionId, operation);
+    return operation;
+  }
+  function finishOperation(ctx: Context, operation: PendingOperation): void {
+    pendingStore?.remove(ctx.sessionId, operation.id);
+    if (current(ctx)) pendingOperations.value = pendingOperations.value.filter((item) => item.id !== operation.id);
+  }
   async function submitStream(input: UserEvent | CommandInvocation, custom?: HeadersInit): Promise<MessageSubmission> {
     const ctx = context();
     const skill = 'executionMode' in input;
     const isMessage = skill || input.type === 'user.message';
     if (isMessage ? !canSend.value : controlPending.value) throw new RuntimeApiError({ code: 'SESSION_BUSY', message: '请等待当前操作，或先重新核对会话。' });
+    const init = { method: 'POST', headers: writeHeaders(custom), body: JSON.stringify(skill ? input.request : { event: input }) };
+    const operation = beginOperation(ctx, skill ? 'skill' : input.type === 'user.message' ? 'message'
+      : input.type === 'user.interrupt' ? 'interrupt' : 'confirmation', isMessage ? undefined : execution.value.rootId);
     const ticket = isMessage ? ++messageTicket : ++controlTicket;
     if (isMessage) messagePending.value = true;
     else controlPending.value = true;
     revision++; clearError();
     let response: Response;
     try {
-      response = await request(ctx, path(ctx, skill ? '/command' : '/events'), {
-        method: 'POST', headers: writeHeaders(custom), body: JSON.stringify(skill ? input.request : { event: input }),
-      });
+      response = await request(ctx, path(ctx, skill ? '/command' : '/events'), init);
     } catch (error) {
       if (current(ctx)) {
-        messagePending.value = false; controlPending.value = false;
+        if (isMessage) messagePending.value = false;
+        else controlPending.value = false;
+        if (error instanceof RuntimeApiError && error.status > 0) finishOperation(ctx, operation);
         if (error instanceof RuntimeApiError && error.outcomeUncertain) { receiptUnknown.value = true; uncertainty.value = error.message; }
         invalidateCatalog();
       }
@@ -242,10 +272,10 @@ export function useRuntimeApi() {
     let settle!: (outcome: SubmissionOutcome) => void;
     const confirmation = new Promise<SubmissionOutcome>((resolve) => { settle = resolve; });
     streamCount.value++;
-    void consume(response, input, ctx, settle, ticket);
+    void consume(response, input, ctx, settle, ticket, operation);
     return { confirmation };
   }
-  async function consume(response: Response, input: UserEvent | CommandInvocation, ctx: Context, settle: (outcome: SubmissionOutcome) => void, ticket: number): Promise<void> {
+  async function consume(response: Response, input: UserEvent | CommandInvocation, ctx: Context, settle: (outcome: SubmissionOutcome) => void, ticket: number, operation: PendingOperation): Promise<void> {
     const isMessage = 'executionMode' in input || input.type === 'user.message';
     const release = () => {
       if (isMessage && messageTicket === ticket) messagePending.value = false;
@@ -264,6 +294,8 @@ export function useRuntimeApi() {
           receipt = event;
           if (event.type === 'user.message') rootId = event.eventId;
           if (event.type === 'user.interrupt') { rootId = event.targetEventId; stopping.value = true; }
+          operation.receiptId = receipt.eventId; operation.rootId = rootId;
+          pendingStore?.put(ctx.sessionId, operation);
           release();
           if (session.value) session.value = { ...session.value, state: 'running' };
           invalidateCatalog(); settle('confirmed');
@@ -275,6 +307,7 @@ export function useRuntimeApi() {
         events.value = mergeEvent(events.value, event);
         if (event.type === 'session.status_idle' && event.sourceEventId === rootId) {
           ended = true;
+          finishOperation(ctx, operation);
           if (event.reason === 'failed') { lastError.value = event.message!; lastErrorCode.value = event.errorCode!; }
           if (event.reason !== 'confirming') stopping.value = false;
           invalidateCatalog();
@@ -290,7 +323,6 @@ export function useRuntimeApi() {
           receiptUnknown.value = true;
           uncertainty.value = '未收到本次完整回执，提交结果不确定。草稿已保留；相同文本不能证明成功，请勿直接重发。';
         } else if (!ended) {
-          interruptedObservation = { rootId, receiptId: receipt.eventId };
           uncertainty.value = '回执已收到，但观察流中断。后台可能仍在执行，请重新核对；不要重复提交。';
         }
         await recover().catch(() => undefined);
@@ -338,18 +370,22 @@ export function useRuntimeApi() {
       const submission = await submitStream(invocation, headers);
       return submission.confirmation;
     }
+    const init = { method: 'POST', headers: writeHeaders(headers, false), body: JSON.stringify(invocation.request) };
+    const operation = beginOperation(ctx, 'command');
     commandPending.value = true;
     const commandRevision = ++revision;
     clearError();
     try {
-      const response = await request(ctx, path(ctx, '/command'), { method: 'POST', headers: writeHeaders(headers, false), body: JSON.stringify(invocation.request) });
+      const response = await request(ctx, path(ctx, '/command'), init);
       const decoded = decodeCommandResult(invocation, await result(response));
       check(ctx);
       if (decoded.kind === 'session') applySession(decoded.value, response, ctx, commandRevision);
       if (decoded.kind === 'models') models.value = decoded.value.models;
       commandResult.value = decoded;
+      finishOperation(ctx, operation);
       return 'confirmed';
     } catch (error) {
+      if (current(ctx) && error instanceof RuntimeApiError && error.status > 0) finishOperation(ctx, operation);
       if (current(ctx) && (!(error instanceof RuntimeApiError) || error.status === 0)) {
         uncertainty.value = '命令结果未知，已保留命令草稿；请核对当前资源，不会自动再次运行。';
         await recover().catch(() => undefined);
@@ -363,12 +399,15 @@ export function useRuntimeApi() {
     }
   }
   function acknowledgeUnknown(): void {
-    if (recovering.value || session.value?.state !== 'idle') return;
+    if (recovering.value || running.value || session.value?.state !== 'idle'
+      || pendingOperations.value.some((item) => item.receiptId)) return;
+    const ctx = context();
+    for (const operation of [...pendingOperations.value]) finishOperation(ctx, operation);
     receiptUnknown.value = false; uncertainty.value = '';
   }
   return { session, etag, models, events, hasSession, streaming, running, canSend, canStop, execution, stopping,
-    messagePending, controlPending, recovering, uncertainty, receiptUnknown, lastError, lastErrorCode,
-    commands, catalogStatus, catalogError, commandResult, commandPending, clearSessionView, clearError,
+    messagePending, controlPending, recovering, historyReady, uncertainty, receiptUnknown, lastError, lastErrorCode,
+    commands, catalogStatus, catalogError, commandResult, commandPending, pendingOperations, clearSessionView, clearError,
     createSession, getSession, deleteSession, listModels, loadHistory, recover, sendMessage, interrupt, confirmTool,
     changeModel: (modelId: string) => changeSetting('/model', { modelId }),
     changeThinking: (thinking: boolean) => changeSetting('/thinking', { thinking }),

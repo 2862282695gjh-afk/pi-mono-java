@@ -6,7 +6,7 @@
 <style>body{font:16px/1.75 system-ui,sans-serif;color:#2c2724;background:#f8f3f0;margin:0}main{max-width:900px;margin:32px auto;padding:28px;background:#fffcfa}code{overflow-wrap:anywhere}a{color:#8e3f29}</style>
 <main>
 <h1>ADR-0103：命令 Composer 与请求头交互</h1>
-<p>状态：Accepted，已实现。日期：2026-09-09。</p>
+<p>状态：Superseded（部分交互），由 <a href="0105-workbench-session-stop-and-auth.html">ADR-0105</a> 替代（加号入口、运行中主按钮与普通草稿归属）；其余规则有效。日期：2026-09-09。</p>
 <h2>Context</h2>
 <p>用户已批准请求头和命令前端更新，要求同步 Vue 实现。源码基线为 <code>4cc8dd86f601417c22cf9306e52152acbb59bb60</code>；批准的设计仓提交为 <code>1eb85523fe1d210856851c5185d64858562db0c6</code>（Headers）和 <code>759e72d25903da76b3e37a6712dde63fe2d4255a</code>（Slash 1.4.0）。原界面自动补请求头空行，并通过独立 Slash 按钮、模式栏与完整命令文本交互。</p>
 <h2>Options</h2>

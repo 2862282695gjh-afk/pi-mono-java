@@ -1,9 +1,12 @@
 /* Events v2 与 Slash 共用原 O1 warm tokens；不新增深色导航或命令图标列。 */
+.app-shell { position: relative; }
 .workspace.has-session { grid-template-rows: var(--topbar-height) minmax(80px, 1fr) auto; }
-.has-session .conversation-scroll { padding-bottom: 24px; scroll-behavior: auto; }
+.has-session .conversation-scroll { position: relative; padding-bottom: 24px; scroll-behavior: auto; }
 .has-session .conversation-empty { padding: 16px 8px; }
 .conversation-dock { display: flex; flex-direction: column; width: 100%; max-height: 70dvh; padding: 0 24px; }
-.conversation-dock .composer-wrap { position: static; display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; width: min(var(--content-width), 100%); background: var(--surface-primary); }
+.conversation-dock .composer-wrap { position: relative; inset: auto; display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; width: min(var(--content-width), 100%); background: var(--surface-primary); }
+.composer-wrap > .sr-only { top: 0; left: 0; }
+.conversation-dock .composer-wrap:not(:has(.command-palette)) { flex: 0 0 auto; }
 .conversation-dock .composer, .conversation-dock .composer-note, .conversation-dock .recovery-bar { flex-shrink: 0; }
 .recovery-bar, .command-result, .tool-confirmation { width: min(var(--content-width), 100%); margin: 0 auto 10px; }
 .recovery-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; color: var(--text-secondary); font-size: 12px; }
@@ -69,3 +72,11 @@
   .recovery-bar { gap: 4px; }
   .recovery-bar .secondary-button { padding: 5px 8px; font-size: 12px; }
 }
+
+.debug-auth-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 12px; }
+.debug-auth-row input { flex: 1; min-width: 120px; min-height: 38px; padding: 8px 10px; border: 1px solid var(--border-default); border-radius: 8px; background: var(--surface-primary); color: inherit; }
+.debug-auth-row button { min-height: 38px; padding: 8px 12px; border: 1px solid var(--border-default); border-radius: 8px; background: var(--surface-secondary); color: inherit; cursor: pointer; }
+.debug-auth-status { margin: 8px 0; color: var(--text-secondary); font-size: 13px; }
+.composer-command-run { margin: 4px 14px 10px; }
+.submit-button .stop-glyph { fill: currentColor; stroke: none; }
+.thread-forget { margin: 0 12px 8px; padding: 4px; border: 0; background: transparent; color: var(--text-secondary); text-align: left; cursor: pointer; }

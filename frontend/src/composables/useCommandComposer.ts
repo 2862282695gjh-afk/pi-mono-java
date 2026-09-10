@@ -8,6 +8,9 @@ export interface CommandComposerProps {
   modelValue: string;
   running: boolean;
   submitting: boolean;
+  stopMode?: boolean;
+  canStop?: boolean;
+  stopping?: boolean;
   canSend: boolean;
   disabled: boolean;
   commands: CommandDescriptor[];
@@ -20,7 +23,7 @@ export interface CommandComposerProps {
 interface ComposerActions {
   updateMessage: (value: string) => void;
   submitMessage: () => void;
-  focus: (target: 'input' | 'submit' | 'chip' | 'more' | 'menu') => void;
+  focus: (target: 'input' | 'submit' | 'command' | 'chip' | 'more' | 'menu') => void;
 }
 
 export function useCommandComposer(props: CommandComposerProps, actions: ComposerActions) {
@@ -56,7 +59,7 @@ export function useCommandComposer(props: CommandComposerProps, actions: Compose
   const feedback = computed(() => count.value > 2048 ? '最多 2048 个字符，请精简内容。' : selectionError.value || error.value);
   const canRun = computed(() => !!selection.value && !!current.value && props.catalogStatus === 'ready'
     && !selectionError.value && count.value <= 2048);
-  const submitDisabled = computed(() => locked.value || props.submitting || paletteOpen.value
+  const submitDisabled = computed(() => locked.value || props.submitting || props.stopping || paletteOpen.value
     || (commandMode.value ? !canRun.value : !props.canSend || !props.modelValue.trim() || count.value > 2048));
   const text = computed(() => selection.value ? argumentsText.value : commandMode.value ? query.value : props.modelValue);
   const placeholder = computed(() => selected.value?.input?.hint || (commandMode.value ? '查找命令'
@@ -69,7 +72,7 @@ export function useCommandComposer(props: CommandComposerProps, actions: Compose
 
   function focusEditor(): void {
     if (!alive) return;
-    actions.focus(showInput.value ? 'input' : submitDisabled.value ? 'chip' : 'submit');
+    actions.focus(showInput.value ? 'input' : submitDisabled.value ? 'chip' : props.stopMode ? 'command' : 'submit');
   }
   async function load(): Promise<void> {
     const generation = draftGeneration;
@@ -171,7 +174,8 @@ export function useCommandComposer(props: CommandComposerProps, actions: Compose
       if (!alive) return;
       executing.value = false;
       if (outcome === 'confirmed') resetDraft();
-      else error.value = '未确认接收，命令草稿已保留，请先核对历史。';
+      else error.value = outcome === 'not-submitted' ? '命令尚未提交，请修正请求头后重新执行。'
+        : '未确认接收，命令草稿已保留，请先核对历史。';
     } catch {
       if (alive) error.value = '命令未完成，草稿已保留。请核对页面错误和最新清单。';
     } finally {

@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ADR-0105：会话恢复、停止按钮与本地认证助手</title>
+<style>body{font:16px/1.75 system-ui,sans-serif;color:#2c2724;background:#f8f3f0;margin:0}main{max-width:900px;margin:32px auto;padding:28px;background:#fffcfa}code{overflow-wrap:anywhere}a{color:#8e3f29}</style>
+<main>
+<h1>ADR-0105：会话恢复、停止按钮与本地认证助手</h1>
+<p>状态：Accepted，前端已实现；真实认证中心及 Java 后端 E2E 待本地联调。日期：2026-09-10。</p>
+<h2>Context</h2>
+<p>源码基线 <code>8fbafdb0b7ea5cdb8f22704610e5a86fc6f91bf1</code> 的会话列表仅在页面内存，停止入口位于顶栏，Composer 的加号用于命令。用户批准设计仓 <code>db3223c498e50c383cb620abe3a3fde2e3872845</code> 的工作台方案，要求刷新及重新打开恢复会话、提交按钮转为停止、运行中命令独立执行，并通过页面 IP 获取请求头 Token。同步主线 <code>5add3aef18138e9197cc8bd9a37805d6ac4b742b</code> 只修改独立 Java 测试，前端依据不变。</p>
+<h2>Options</h2>
+<p>把 Session ID 写进源码配置文件无法提供浏览器按用户及环境更新的列表；保存整段历史会产生第二份权威副本并增加数据留存。选择 localStorage 保存最小索引，正文从后端恢复。浏览器不能读取 HttpOnly 的 Set-Cookie；不让页面持有登录密码，改用已有本地 Node 开发服务完成固定目标的登录。</p>
+<h2>Decision</h2>
+<ul>
+<li>架构变化：useWorkbenchSessions 管理选择与内存草稿，SessionIndexRepository 保存 API base、配置 Agent、caller 隔离的索引；创建返回 ID 后即保存，恢复失败不自动重建。</li>
+<li>安全加固：写入前保存最小提交身份，回执后补充 rootId/receiptId；刷新不重放任何 POST，不凭相同文本或资源 idle 宣布已受理请求完成。页面卸载只终止观察。</li>
+<li>产品约束：消息/Skill 提交时右下角转停止，目标可信后启用，实际终态后恢复发送并保留草稿。运行中命令由独立“执行命令”按钮执行；+ 只提供附件/上下文，上传未接入时禁用。</li>
+<li>架构变化：POST /__debug/auth/token 是 Vite DEV 私有接口，页面只提交 IP，账号密码从非 VITE 前缀的本地配置读取。固定 HTTPS 443 登录路径，提取唯一有效 access-token；不转发 JSESSIONID、不写浏览器 Cookie。</li>
+<li>安全加固：校验本机回环、Host 和同源 Origin，保留 TLS 校验，拒绝重定向，10 秒与 64 KiB 上限；错误不返回原始认证响应。Token/IP 仅页面内存，迟到回填不能覆盖用户编辑。</li>
+<li>正确性修复：先规范化 Header SP/HTAB 再计数，CR/LF 先拒绝；历史未完整恢复时不开放新消息；窄屏定位滚动区域并防止焦点推移根容器。</li>
+</ul>
+<h2>Consequences</h2>
+<p>刷新可恢复对话入口和真实历史，控制目标与当前请求一致。浏览器清理数据仍会丢失索引；localStorage 不是跨页签事务或后端目录。状态观察最多六轮只读恢复，耗尽后交还显式刷新；生产认证、上传、Steer/FollowUp 不属于此实现。</p>
+<p>新增开发依赖 <code>@types/node@24.13.3</code> 及其类型依赖 <code>undici-types@7.18.2</code>，已核对 lockfile 并在安装前告知用户。这是对设计“无新增直接依赖”的类型检查调整；未类型化 JS 或手写声明会削弱校验。HTTP 使用 Node 内置库，无新增运行时或 Maven 依赖。</p>
+<h2>Validation</h2>
+<p>Vitest 125 项覆盖恢复、未知写入、迟到响应、命令与停止、Token 回填竞争、Cookie 提取、固定 HTTPS、超时及来源限制；类型检查同时覆盖 Node middleware 测试。实际 Vue 与显式 fixture 验收刷新、重新打开、命令焦点、停止和草稿、Headers 计数及窄屏。构建、审计、图生成和发布门禁见实现设计；真实认证中心、真实后端 E2E、IME/读屏器和长历史压测未验收。</p>
+<p>本决策替代 <a href="0103-composer-command-and-header-interaction.html">ADR-0103</a> 的加号命令入口、始终统一箭头和 App 草稿归属；其余 Header 增删、标签、参数与既有传输约束继续有效。<a href="0102-runtime-events-v2-frontend.html">ADR-0102</a> 与 <a href="0104-original-reasoning-and-event-contract.html">ADR-0104</a> 的公共事件语义保持有效。</p>
+<p><a href="../designs/frontend-events/README.md">实现设计、源码依据和验证范围</a></p>
+</main>
+</html>
