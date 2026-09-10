@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ADR-0107：开发代理设置 secure=false</title>
+<style>body{font:16px/1.75 system-ui,sans-serif;color:#2c2724;background:#f8f3f0;margin:0}main{max-width:900px;margin:32px auto;padding:28px;background:#fffcfa}code{overflow-wrap:anywhere}a{color:#8e3f29}</style>
+<main>
+<h1>ADR-0107：开发代理设置 secure=false</h1>
+<p>状态：Accepted。日期：2026-09-10。分类：本地联调产品约束。</p>
+<h2>Context</h2>
+<p>用户要求在 <code>frontend/vite.config.ts</code> 设置 <code>secure: false</code>。源码基线 <code>33c3951ddecb8585881c8ec75265c6aa63145e83</code> 的 <code>server.proxy['/campusclaw-service']</code> 仅设置 target 和 changeOrigin。</p>
+<h2>Options</h2>
+<p>保留证书校验并配置受信任 CA 可以验证上游身份，但需要维护本地证书配置；显式 secure=false 便于连接联调 HTTPS 后端，但跳过此代理的上游证书验证。按用户指定采用后者。</p>
+<h2>Decision</h2>
+<p>在现有 /campusclaw-service 代理中增加 secure=false，保留目标地址与 changeOrigin。此选项仅属于 Vite 开发代理；认证助手的独立 HTTPS 请求继续校验证书。</p>
+<h2>Consequences</h2>
+<p>开发代理可以连接未被本机信任的 HTTPS 后端；该代理不再验证上游证书。没有新增依赖、公共接口或组件结构变化，现有协调图保持不变。</p>
+<h2>Validation</h2>
+<p>通过 Vite resolveConfig 检查生效选项，并执行类型检查、生产构建、Spotless 和差异检查；不以配置检查代替真实 HTTPS 后端联调。</p>
+<h2>Related</h2>
+<p><a href="../designs/frontend-events/README.md">前端实现设计</a> · <a href="0105-workbench-session-stop-and-auth.html">ADR-0105：独立认证助手</a></p>
+</main>
+</html>

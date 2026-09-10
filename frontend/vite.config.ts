@@ -14,6 +14,7 @@ export default defineConfig(({ mode }) => {
         '/campusclaw-service': {
           target: env.VITE_BACKEND_URL ?? 'http://localhost:8080',
           changeOrigin: true,
+          secure: false,
         },
       },
     },
