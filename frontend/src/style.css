@@ -322,12 +322,13 @@ svg {
 }
 
 .topbar {
+  --topbar-inline-padding: 24px;
   position: relative;
   z-index: 5;
   display: flex;
   align-items: center;
   min-width: 0;
-  padding: 0 24px;
+  padding: 0 var(--topbar-inline-padding);
   gap: 14px;
   border-bottom: 1px solid var(--border-default);
   background: rgba(255, 252, 250, 0.94);
@@ -699,7 +700,8 @@ svg {
 }
 
 .debug-headers {
-  position: relative;
+  /* 浮层以整个 topbar 为定位容器，避免从按钮向左越过工作区。 */
+  position: static;
   flex: 0 0 auto;
   margin-left: auto;
   color: var(--text-secondary);
@@ -742,10 +744,10 @@ svg {
 .debug-headers-body {
   position: absolute;
   z-index: 12;
-  top: calc(100% + 12px);
-  right: 0;
-  width: min(680px, calc(100vw - var(--sidebar-width) - 48px));
-  max-height: calc(100vh - var(--topbar-height) - 28px);
+  top: calc(100% + 10px);
+  right: var(--topbar-inline-padding);
+  width: min(680px, calc(100% - 2 * var(--topbar-inline-padding)));
+  max-height: calc(100dvh - var(--topbar-height) - 20px);
   padding: 12px 16px;
   overflow-y: auto;
   border: 1px dashed var(--border-strong);
@@ -1669,7 +1671,7 @@ svg {
   }
 
   .topbar {
-    padding: 0 18px;
+    --topbar-inline-padding: 18px;
   }
 
   .state-badge {
@@ -1729,7 +1731,7 @@ svg {
   }
 
   .topbar {
-    padding: 0 10px;
+    --topbar-inline-padding: 10px;
     gap: 8px;
   }
 
@@ -1754,14 +1756,6 @@ svg {
 
   .debug-header-count {
     display: none;
-  }
-
-  .debug-headers-body {
-    position: fixed;
-    top: calc(var(--topbar-height) + 10px);
-    right: 10px;
-    width: calc(100vw - 20px);
-    max-height: calc(100vh - var(--topbar-height) - 20px);
   }
 
   .debug-header-grid-head {
