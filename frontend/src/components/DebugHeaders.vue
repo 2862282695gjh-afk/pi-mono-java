@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, ref } from 'vue';
 import { createDebugHeaderPresets, revealFirstDebugHeaderError, validateDebugHeaders } from '../debugHeaders';
+import { useDebugAuth } from '../composables/useDebugAuth';
 import type { DebugHeaderInput } from '../debugHeaders';
 
 interface DebugHeaderRow extends DebugHeaderInput {
@@ -12,6 +13,11 @@ const rows = ref<DebugHeaderRow[]>(createDebugHeaderPresets().map(createRow));
 const root = ref<HTMLDetailsElement | null>(null);
 const addButton = ref<HTMLButtonElement | null>(null);
 const validation = computed(() => validateDebugHeaders(rows.value));
+const auth = useDebugAuth(rows, () => {
+  const row = createRow({ enabled: true, key: 'access-token', value: '', presetKey: 'access-token' });
+  rows.value.push(row);
+  return rows.value[rows.value.length - 1];
+});
 
 function createRow(input: DebugHeaderInput): DebugHeaderRow {
   return { ...input, id: nextRowId++ };
@@ -59,6 +65,12 @@ defineExpose({ snapshot });
       <span class="debug-header-count">({{ validation.enabledCount }})</span>
     </summary>
     <div class="debug-headers-body">
+      <div class="debug-auth-row">
+        <label for="debug-auth-ip">认证中心 IP</label>
+        <input id="debug-auth-ip" v-model="auth.ip.value" autocomplete="off" spellcheck="false" placeholder="192.0.2.10">
+        <button type="button" :disabled="auth.pending.value" @click="auth.getToken">{{ auth.pending.value ? '获取中…' : '获取 Token' }}</button>
+      </div>
+      <p v-if="auth.status.value" class="debug-auth-status" role="status">{{ auth.status.value }}</p>
       <div class="debug-header-actions">
         <button ref="addButton" type="button" @click="appendRow">增加请求头</button>
         <button type="button" @click="clearRows">全部清空</button>

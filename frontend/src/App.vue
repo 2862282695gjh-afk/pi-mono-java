@@ -1,22 +1,21 @@
 <script setup lang="ts">
-import { computed, nextTick, onUnmounted, ref, watch } from 'vue';
+import { computed, defineAsyncComponent, nextTick, ref, watch } from 'vue';
 import AgentWelcome from './components/AgentWelcome.vue';
 import AppSidebar from './components/AppSidebar.vue';
 import ComposerBox from './components/ComposerBox.vue';
 import ConversationTimeline from './components/ConversationTimeline.vue';
 import DevDiagnostics from './components/DevDiagnostics.vue';
-import DebugHeaders from './components/DebugHeaders.vue';
 import CommandResultRegion from './components/CommandResultRegion.vue';
 import ToolConfirmation from './components/ToolConfirmation.vue';
-import { useRuntimeApi } from './composables/useRuntimeApi';
+import { useWorkbenchSessions } from './composables/useWorkbenchSessions';
 import type { DebugHeadersExpose } from './debugHeaders';
 import { projectRuntimeEvents } from './projectors/runtimeEventProjector';
-import type { AgentOption, ThreadSummary } from './types/product';
+import type { AgentOption } from './types/product';
 import type { CommandInvocation } from './runtime/commands';
 import type { SubmissionOutcome } from './types/runtime';
 
-const runtime = useRuntimeApi();
 const isDevelopment = import.meta.env.DEV;
+const DebugHeaders = import.meta.env.DEV ? defineAsyncComponent(() => import('./components/DebugHeaders.vue')) : undefined;
 const configuredAgentId = import.meta.env.VITE_CAMPUSCLAW_AGENT_ID?.trim() || '';
 const agent: AgentOption = {
   id: configuredAgentId,
@@ -27,24 +26,26 @@ const agent: AgentOption = {
   category: import.meta.env.VITE_CAMPUSCLAW_AGENT_CATEGORY?.trim() || '校园运营',
 };
 
-const threads = ref<ThreadSummary[]>([]);
-const message = ref('');
+const workbench = useWorkbenchSessions(agent);
+const { runtime, threads, message, currentThread } = workbench;
 const busy = ref(false);
 const submitting = ref(false);
 const sidebarCompact = ref(window.innerWidth <= 800);
 const scrollRegion = ref<HTMLElement | null>(null);
 const debugHeaders = ref<DebugHeadersExpose | null>(null);
 const followingTail = ref(true);
-const drafts = new Map<string, string>();
 let runGeneration = 0;
 
 const turns = computed(() => projectRuntimeEvents(runtime.events.value, runtime.streaming.value));
 const running = runtime.running;
-const currentThread = computed(() =>
-  threads.value.find((thread) => thread.sessionId === runtime.session.value?.sessionId),
-);
 const title = computed(() => runtime.session.value?.displayName ?? currentThread.value?.title ?? agent.name);
-const statusLabel = computed(() => runtime.stopping.value ? '正在停止' : running.value && runtime.execution.value.confirming ? '等待确认' : runtime.uncertainty.value ? '待核对' : running.value ? '执行中' : '已就绪');
+const stopMode = computed(() => running.value || submitting.value || runtime.receiptUnknown.value || !!runtime.uncertainty.value);
+const statusLabel = computed(() => workbench.restoring.value ? '正在恢复会话' : runtime.stopping.value ? '正在停止'
+  : running.value && runtime.execution.value.confirming ? '等待确认' : runtime.uncertainty.value ? '待核对'
+  : running.value ? '正在执行' : '空闲');
+const showRecovery = computed(() => runtime.recovering.value || runtime.uncertainty.value || workbench.restoreError.value
+  || workbench.recoveryExhausted.value);
+
 
 watch(
   () => runtime.events.value,
@@ -54,13 +55,10 @@ watch(
   },
 );
 
-watch(() => runtime.session.value?.sessionId, (id, previous) => {
-  if (previous) drafts.set(previous, message.value);
-  message.value = id ? drafts.get(id) ?? '' : '';
+watch(() => runtime.session.value?.sessionId, () => {
   submitting.value = false;
   followingTail.value = true;
 }, { flush: 'sync' });
-onUnmounted(runtime.clearSessionView);
 
 function trackScroll(): void {
   const element = scrollRegion.value;
@@ -84,27 +82,13 @@ async function run(action: () => Promise<unknown>): Promise<boolean> {
   }
 }
 
-async function createSession(agentId = configuredAgentId): Promise<void> {
-  if (!agentId) return;
-  const succeeded = await run(async () => {
-    const created = await runtime.createSession(agentId);
-    upsertThread(created.sessionId, '新会话');
-  });
-  if (succeeded) message.value = '';
-}
-
+async function createSession(agentId = configuredAgentId): Promise<void> { await run(() => workbench.createSession(agentId)); }
 async function resumeSession(sessionId: string): Promise<void> {
-  const succeeded = await run(async () => {
-    const resumed = await runtime.getSession(sessionId);
-    await Promise.all([runtime.listModels(), runtime.recover()]);
-    upsertThread(resumed.sessionId, '已恢复的会话');
-  });
-  if (succeeded && window.innerWidth <= 800) sidebarCompact.value = true;
+  await workbench.resumeSession(sessionId);
+  if (window.innerWidth <= 800) sidebarCompact.value = true;
 }
-
 function newConversation(): void {
-  runtime.clearSessionView();
-  message.value = '';
+  workbench.newConversation();
   if (window.innerWidth <= 800) sidebarCompact.value = true;
 }
 
@@ -113,13 +97,13 @@ async function deleteConversation(): Promise<void> {
   if (!sessionId) return;
   if (!window.confirm('确认删除当前会话？删除后无法恢复。')) return;
   const succeeded = await run(runtime.deleteSession);
-  if (succeeded) threads.value = threads.value.filter((thread) => thread.sessionId !== sessionId);
+  if (succeeded) workbench.forgetSession(sessionId);
 }
 
 async function submit(): Promise<void> {
   const draft = message.value;
   const sessionId = runtime.session.value?.sessionId;
-  if (!draft.trim() || submitting.value || !runtime.canSend.value) return;
+  if (!draft.trim() || submitting.value || !workbench.canSend.value) return;
   submitting.value = true;
   try {
     const requestHeaders = isDevelopment ? await debugHeaders.value?.snapshot() : undefined;
@@ -127,7 +111,7 @@ async function submit(): Promise<void> {
     const submission = await runtime.sendMessage(draft, [], requestHeaders);
     const outcome = await submission.confirmation;
     if (sessionId === runtime.session.value?.sessionId && outcome === 'confirmed') {
-      touchCurrentThread(draft);
+      workbench.touchCurrentThread(draft);
       if (message.value === draft) message.value = '';
     }
   } catch {
@@ -140,7 +124,7 @@ async function submit(): Promise<void> {
 async function executeCommand(invocation: CommandInvocation): Promise<SubmissionOutcome> {
   const sessionId = runtime.session.value?.sessionId;
   const headers = isDevelopment ? await debugHeaders.value?.snapshot() : undefined;
-  if (headers === null || sessionId !== runtime.session.value?.sessionId) return 'uncertain';
+  if (headers === null || sessionId !== runtime.session.value?.sessionId) return 'not-submitted';
   return runtime.executeCommand(invocation, headers);
 }
 
@@ -175,30 +159,6 @@ async function toggleThinking(): Promise<void> {
   await run(() => runtime.changeThinking(!runtime.session.value!.thinking));
 }
 
-function upsertThread(sessionId: string, fallbackTitle: string): void {
-  const existing = threads.value.find((thread) => thread.sessionId === sessionId);
-  if (existing) {
-    existing.updatedAt = new Date().toISOString();
-    return;
-  }
-  threads.value.unshift({
-    sessionId,
-    title: fallbackTitle,
-    agentName: agent.name,
-    updatedAt: new Date().toISOString(),
-  });
-}
-
-function touchCurrentThread(firstMessage?: string): void {
-  const thread = currentThread.value;
-  if (!thread) return;
-  if (firstMessage && ['新会话', '已恢复的会话'].includes(thread.title)) {
-    thread.title = firstMessage.length > 24 ? `${firstMessage.slice(0, 24)}…` : firstMessage;
-  }
-  thread.updatedAt = new Date().toISOString();
-  threads.value = [thread, ...threads.value.filter((item) => item !== thread)];
-}
-
 function modelLabel(modelId: string): string {
   return modelId;
 }
@@ -208,7 +168,9 @@ function modelLabel(modelId: string): string {
   <div class="app-shell" :class="{ 'sidebar-compact': sidebarCompact }">
     <AppSidebar
       :threads="threads"
-      :current-session-id="runtime.session.value?.sessionId"
+      :current-session-id="workbench.activeSessionId.value ?? undefined"
+      :unavailable="workbench.unavailable.value"
+      @forget="workbench.forgetSession"
       :compact="sidebarCompact"
       @new="newConversation"
       @select="resumeSession"
@@ -244,7 +206,7 @@ function modelLabel(modelId: string): string {
             type="button"
             :class="{ active: runtime.session.value?.thinking }"
             :aria-pressed="runtime.session.value?.thinking"
-            :disabled="running || busy"
+            :disabled="running || busy || workbench.restoring.value || Boolean(runtime.uncertainty.value)"
             @click="toggleThinking"
           >
             <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M19.1 4.9l-1.4 1.4M6.3 17.7l-1.4 1.4" /></svg>
@@ -254,7 +216,7 @@ function modelLabel(modelId: string): string {
             <span class="sr-only">选择模型</span>
             <select
               :value="runtime.session.value?.modelId"
-              :disabled="running || busy"
+              :disabled="running || busy || workbench.restoring.value || Boolean(runtime.uncertainty.value)"
               @change="changeModel"
             >
               <option
@@ -270,11 +232,7 @@ function modelLabel(modelId: string): string {
           <span class="state-badge" :class="{ running }" role="status" aria-live="polite">
             <span></span>{{ statusLabel }}
           </span>
-          <button v-if="running" class="stop-button" type="button" :disabled="!runtime.canStop.value || busy" @click="stop">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="1" /></svg>
-            {{ runtime.stopping.value ? '正在停止' : '停止' }}
-          </button>
-          <button v-else class="icon-button more-button" type="button" aria-label="删除当前会话" title="删除当前会话" @click="deleteConversation">
+          <button v-if="!running" class="icon-button more-button" type="button" aria-label="删除当前会话" title="删除当前会话" @click="deleteConversation">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M8 10v7M12 10v7M16 10v7M6 7l1 14h10l1-14" /></svg>
           </button>
         </div>
@@ -286,11 +244,16 @@ function modelLabel(modelId: string): string {
         <button type="button" aria-label="关闭错误提示" @click="runtime.clearError">关闭</button>
       </div>
 
+      <div v-if="workbench.storageNotice.value" class="error-banner" role="status">{{ workbench.storageNotice.value }}</div>
+      <div v-if="!runtime.hasSession.value && (workbench.restoring.value || workbench.restoreError.value)" class="recovery-bar" role="status">
+        <span>{{ workbench.restoring.value ? '正在恢复会话…' : workbench.restoreError.value }}</span>
+        <button v-if="!workbench.restoring.value" class="secondary-button" @click="run(workbench.refreshState)">重试恢复</button>
+      </div>
       <template v-if="!runtime.hasSession.value">
         <div class="welcome-scroll">
           <AgentWelcome
             :agent="agent"
-            :creating="busy"
+            :creating="busy || workbench.restoring.value"
             :configured="Boolean(configuredAgentId)"
             @start="createSession()"
           />
@@ -309,11 +272,11 @@ function modelLabel(modelId: string): string {
           <ConversationTimeline :turns="turns" :running="runtime.streaming.value && !runtime.execution.value.confirming" />
         </section>
         <div class="conversation-dock">
-          <div class="recovery-bar" role="status">
-            <span>{{ runtime.uncertainty.value || statusLabel }}</span>
+          <div v-if="showRecovery || !followingTail" class="recovery-bar" role="status">
+            <span v-if="showRecovery">{{ runtime.uncertainty.value || workbench.restoreError.value || (runtime.recovering.value ? '正在刷新状态…' : '后台仍在执行') }}</span>
             <button v-if="!followingTail" class="secondary-button" type="button" @click="scrollToLatest">回到最新</button>
-            <button class="secondary-button" type="button" :disabled="runtime.recovering.value || busy" @click="run(runtime.recover)">{{ runtime.recovering.value ? '核对中…' : '重新核对' }}</button>
-            <button v-if="runtime.uncertainty.value && !running" class="secondary-button" type="button" :disabled="runtime.recovering.value" @click="acknowledgeUnknown">已人工核对</button>
+            <button v-if="showRecovery" class="secondary-button" type="button" :disabled="runtime.recovering.value || busy" @click="run(workbench.refreshState)">刷新状态</button>
+            <button v-if="runtime.uncertainty.value && !running && !runtime.pendingOperations.value.some((item) => item.receiptId)" class="secondary-button" type="button" :disabled="runtime.recovering.value" @click="acknowledgeUnknown">已人工核对</button>
           </div>
           <ToolConfirmation v-if="running && runtime.execution.value.pendingTool && runtime.execution.value.confirming"
             :key="runtime.execution.value.pendingTool.eventId" :tool="runtime.execution.value.pendingTool"
@@ -324,7 +287,10 @@ function modelLabel(modelId: string): string {
             v-model="message"
             :running="running"
             :submitting="submitting"
-            :can-send="runtime.canSend.value"
+            :can-send="workbench.canSend.value"
+            :stop-mode="stopMode"
+            :can-stop="runtime.canStop.value && !busy && !workbench.restoring.value"
+            :stopping="runtime.stopping.value || runtime.controlPending.value"
             :disabled="busy"
             :commands="runtime.commands.value"
             :catalog-status="runtime.catalogStatus.value"
@@ -332,6 +298,7 @@ function modelLabel(modelId: string): string {
             :load-commands="runtime.listCommands"
             :execute-command="executeCommand"
             @submit="submit"
+            @stop="stop"
           />
         </div>
       </template>

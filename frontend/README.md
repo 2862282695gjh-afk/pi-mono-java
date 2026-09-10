@@ -1,17 +1,17 @@
 # CampusClaw Frontend
 
-v0.13.0，Vue 3 + TypeScript + Vite 的内部 Claw Runtime 联调工作台。
+v0.14.0，Vue 3 + TypeScript + Vite 的内部 Claw Runtime 联调工作台。
 保留 O1 暖灰界面，新增 Session Events、Slash、工具确认与恢复。仅用于受控开发环境，
 不作为生产 Mate 产品前端或安全边界。
 
 ## 已实现与联调边界
 
-- Session 创建/恢复/删除，模型与后续思考展示设置；Session 与 ETag 一起应用。
+- Session 创建/恢复/删除，刷新和重开恢复最近列表及选中会话；Session 与 ETag 一起应用。
 - 三类 user.* event 包装、POST data-only SSE、eventId 合并、数字历史分页。
 - 工具允许/拒绝，绑定原消息的停止；confirming 仍占用执行状态。
 - 完整事件覆盖预览；无回执保留草稿并明确结果未知，断流只重读、不重发。
-- 空消息首字符 `/` 或“+ → 命令”打开精简清单；名称不带前导斜杠，选中后显示可更换、删除的标签。
-- 参数单独编辑，统一圆形上箭头提交；第一次 Enter 只选择，第二次才执行，长按 Enter 不执行。
+- 空消息首字符 `/` 打开精简清单；名称不带前导斜杠，选中后显示可更换、删除的标签。
+- 参数单独编辑；空闲时上箭头提交，消息提交及执行中变为停止按钮。运行中命令在独立“执行命令”按钮执行；第一次 Enter 只选择，长按 Enter 不执行。
 - 首次 Escape 收起清单，再次退出；更换时 Escape 恢复原命令和参数，取消或成功后恢复普通消息草稿。
 - Catalog 变化时保留参数并重新校验；Builtin 临时卡与现有内部 Runtime Skill SSE 分离。
 - 原始推理与工具结果纯文本；Assistant 安全 Markdown、整轮复制和原暖灰活动框。
@@ -24,7 +24,7 @@ Thinking 展示模型返回的原始推理；业务参数错误的工具调用�
 真实联调按下述同源代理方式进行，本地 fixture 通过不能替代真实服务验收。
 运行中不再有 Steer/FollowUp/旧 Abort 入口；先实际停止，再提交新消息。
 
-上传接口未接入，附件按钮禁用；有序 content 构造及纯附件/最多 4 个 fileId 有单元测试，
+“+”打开附件/上下文入口，不再提供命令。上传接口未接入，菜单中的附件项禁用；有序 content 构造及纯附件/最多 4 个 fileId 有单元测试，
 不代表实际上传已可用。公共 Mate Chat 不在本次范围内。
 
 ## 启动真实联调
@@ -36,7 +36,7 @@ VITE_BACKEND_URL=http://localhost:8080 npm run dev
 ```
 
 浏览器打开 `http://localhost:5173`；`/campusclaw-service` 被代理到后端。
-`.env.example` 中的非秘密参数可复制到 `.env.local`：
+复制 `.env.example` 为 `.env.local` 并填写本地配置；修改后重启 Vite：
 
 | 变量 | 用途 |
 |---|---|
@@ -45,11 +45,37 @@ VITE_BACKEND_URL=http://localhost:8080 npm run dev
 | `VITE_CAMPUSCLAW_API_BASE` | 默认留空同源；内部跨源需服务端 CORS 放行 ETag |
 | `VITE_BACKEND_URL` | Vite 开发代理目标，默认 localhost:8080 |
 | `VITE_CAMPUSCLAW_CALLER_ID` | 非秘密调用方标识，默认 campusclaw-web |
+| `CAMPUSCLAW_DEV_AUTH_ACCOUNT` | 认证中心账号，仅本地 Node 开发服务读取 |
+| `CAMPUSCLAW_DEV_AUTH_PASSWORD` | 认证中心密码，仅本地 Node 开发服务读取 |
 
 不要把 JWT、APPKEY、Provider 凭据或 access-token 写入 `VITE_*`，它们会进入浏览器产物。
 DEV 的 Headers 值仅在当前页面；GET/配置不携带临时凭据。协议 Accept/Content-Type 固定，
 If-Match/Idempotency-Key/Last-Event-ID 不进入 Events/Command POST。配置 PUT 独立使用资源 ETag。
 当前工作台直接显示后端返回的调用参数，部署及截图流转必须受控。
+
+## 自动获取请求头 Token
+
+本地配置账号、密码后，在 Headers 中填写认证中心 IP，再点击“获取 Token”。开发服务固定访问
+该 IP 的 HTTPS 443 `/service/AuthCenter/0.1.0/auth/login`，读取独立 `Set-Cookie` 中的
+`access-token`，回填并启用对应请求头；不会转发 JSESSIONID 或把 Cookie 写入浏览器。
+地址不接受协议、端口、域名或路径。请求不自动发起或重试，失败保留手工值；编辑/清空请求头、
+修改 IP 或离开页面后，迟到响应不会覆盖当前输入。修改 IP 时仅清除仍未被手工修改的自动 Token。
+
+认证助手只在 `vite dev` 注册，要求本机回环连接、匹配的 Host 与同源 Origin；默认绑定 127.0.0.1。
+保留 TLS 校验；企业 CA 可通过 Node 的 `NODE_EXTRA_CA_CERTS` 指向受信任 PEM 配置，不关闭证书验证。
+本地凭据不得使用 `VITE_` 前缀；IP、Token 和所有请求头仅保存在当前页面内存。
+生产构建与 `vite preview` 不提供此认证接口。真实认证中心登录仍需在用户本地配置后联调。
+
+## 会话恢复
+
+浏览器 localStorage 的 `campusclaw.session-index.v1:` 名称空间只保存会话标识、最近列表、
+当前选择和未确认请求的身份标记，按 API base、配置 Agent、caller 区分。消息正文及模型上下文
+重新从后端历史读取；草稿、命令参数、Headers 和凭据均不落盘。清除浏览器数据会丢失恢复入口。
+这份索引不是前端源码配置文件，也不是后端会话内容的备份。
+
+恢复失败保留列表并提供重试；403/404 可从列表移除。恢复不会自动创建会话或重放 POST。
+运行中断流后进行最多六轮只读状态核对（1、2、5、5、5、5 秒间隔），隐藏页面或切换会话取消，
+耗尽后显示“刷新状态”；确认等待仍属于运行中，只有真实终态解除停止状态。
 
 ## 无后端的浏览器契约验收
 
@@ -78,5 +104,5 @@ npm audit --audit-level=high
 
 [实现设计及源码基线](../docs/designs/frontend-events/README.md) ·
 [ADR-0102](../docs/decisions/0102-runtime-events-v2-frontend.html) ·
-[交互更新 ADR-0103](../docs/decisions/0103-composer-command-and-header-interaction.html) ·
+[工作台恢复与认证 ADR-0105](../docs/decisions/0105-workbench-session-stop-and-auth.html) ·
 [历史视觉设计](../docs/designs/campusclaw-frontend.md)

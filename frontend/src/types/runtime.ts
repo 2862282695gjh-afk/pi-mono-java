@@ -28,7 +28,7 @@ export type RuntimeEvent = EventIdentity & (UserEvent
   | { type: 'session.compacted'; tokensBefore: number; estimatedTokensAfter: number; reason: string; sourceEventId?: string });
 
 export interface RuntimeHistoryPage { events: RuntimeEvent[]; nextPage: number | null }
-export type SubmissionOutcome = 'confirmed' | 'uncertain';
+export type SubmissionOutcome = 'confirmed' | 'uncertain' | 'not-submitted';
 export interface MessageSubmission { confirmation: Promise<SubmissionOutcome> }
 
 export class RuntimeApiError extends Error {

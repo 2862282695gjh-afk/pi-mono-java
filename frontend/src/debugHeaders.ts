@@ -69,17 +69,21 @@ export function validateDebugHeaders(rows: readonly DebugHeaderInput[]): DebugHe
 
   rows.forEach((row, index) => {
     if (!row.enabled) return;
-    if (row.presetKey && row.key === row.presetKey && row.value === '') return;
+    const value = trimHttpWhitespace(row.value);
+    if (/\r|\n/u.test(row.value)) {
+      errors[index] = 'Header Value 不能包含换行'; errorFields[index] = 'value'; return;
+    }
+    if (row.presetKey && row.key === row.presetKey && value === '') return;
     const key = row.key.trim();
-    if (key === '' && row.value === '') return;
-    const error = validateHeaderValue(key, row.value);
+    if (key === '' && value === '') return;
+    const error = validateHeaderValue(key, value);
     if (error) {
       errors[index] = error.message;
       errorFields[index] = error.field;
       return;
     }
     const normalized = key.toLowerCase();
-    candidates.push({ index, key, normalized, value: row.value });
+    candidates.push({ index, key, normalized, value });
     nameCounts.set(normalized, (nameCounts.get(normalized) ?? 0) + 1);
   });
 

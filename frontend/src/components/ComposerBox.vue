@@ -4,13 +4,14 @@ import { useCommandComposer } from '../composables/useCommandComposer';
 import type { CommandComposerProps } from '../composables/useCommandComposer';
 
 const props = defineProps<CommandComposerProps>();
-const emit = defineEmits<{ 'update:modelValue': [value: string]; submit: [] }>();
+const emit = defineEmits<{ 'update:modelValue': [value: string]; submit: []; stop: [] }>();
 const root = ref<HTMLElement | null>(null);
 const textarea = ref<HTMLTextAreaElement | null>(null);
 const submitButton = ref<HTMLButtonElement | null>(null);
 const chipButton = ref<HTMLButtonElement | null>(null);
 const moreButton = ref<HTMLButtonElement | null>(null);
-const menuItem = ref<HTMLButtonElement | null>(null);
+const menuItem = ref<HTMLDivElement | null>(null);
+const commandButton = ref<HTMLButtonElement | null>(null);
 const id = useId();
 const listId = 'command-list-' + id;
 const hintId = 'command-hint-' + id;
@@ -25,12 +26,19 @@ const {
   focus: (target) => {
     void nextTick(() => {
       if (!root.value) return;
-      const controls = { input: textarea, submit: submitButton, chip: chipButton, more: moreButton, menu: menuItem };
-      controls[target].value?.focus();
+      const controls = { input: textarea, submit: submitButton, command: commandButton, chip: chipButton, more: moreButton, menu: menuItem };
+      controls[target].value?.focus({ preventScroll: true });
     });
   },
 });
 
+function primaryKeydown(event: KeyboardEvent): void {
+  if (!props.stopMode) { keydown(event); return; }
+  if (event.key === 'Enter' || event.key === ' ') {
+    event.preventDefault();
+    if (!event.repeat && !event.isComposing && event.keyCode !== 229 && !composing.value && props.canStop) emit('stop');
+  }
+}
 function optionId(index: number): string { return listId + '-option-' + index; }
 function resizeInput(): void {
   const element = textarea.value;
@@ -106,6 +114,8 @@ onUnmounted(() => document.removeEventListener('click', outsideClick));
           :placeholder="placeholder" @input="onInput" @keydown="keydown"
           @compositionstart="composing = true" @compositionend="composing = false" />
       </div>
+      <button v-if="stopMode && selection" ref="commandButton" class="secondary-button composer-command-run" type="button"
+        :disabled="submitDisabled" :aria-label="'运行 ' + selection.name" @click="submit" @keydown="keydown">执行命令</button>
       <span v-if="selection && selected?.input" :id="hintId" class="sr-only">{{ selected.input.hint }}</span>
       <p v-if="feedback" class="composer-error" role="alert">{{ feedback }}</p>
       <p v-else-if="commandMode && !paletteOpen && !selection && !visible.length" class="composer-error">没有匹配命令</p>
@@ -116,19 +126,18 @@ onUnmounted(() => document.removeEventListener('click', outsideClick));
         <div class="composer-more">
           <button ref="moreButton" class="icon-button composer-more-button" type="button" aria-label="添加"
             aria-haspopup="menu" :aria-expanded="moreOpen" :aria-controls="menuId" :disabled="locked || submitting" @click="toggleMore">+</button>
-          <div v-if="moreOpen" :id="menuId" class="composer-menu" role="menu" aria-label="添加"
+          <div v-if="moreOpen" ref="menuItem" :id="menuId" tabindex="-1" class="composer-menu" role="menu" aria-label="添加"
             @keydown="menuKeydown" @focusout="menuFocusout">
-            <button ref="menuItem" type="button" role="menuitem" @click="enter">命令</button>
+            <button type="button" role="menuitem" disabled title="暂未接入附件上传">添加附件 · 暂未接入</button>
           </div>
         </div>
-        <button class="icon-button attach-button" type="button" disabled title="上传接口尚未接入；已存在的附件引用可在历史中查看" aria-label="添加附件（上传尚未接入）">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 12 5-5a3 3 0 0 1 4 4l-7 7a5 5 0 0 1-7-7l7-7" /></svg>
-        </button>
         <small v-if="count > 1800" class="input-count">{{ count }}/2048</small>
-        <button ref="submitButton" class="submit-button" type="button" :disabled="submitDisabled"
-          :aria-label="selection ? '运行 ' + selection.name : '发送消息'"
-          :title="selection ? '运行 ' + selection.name : '发送消息'" @click="submit" @keydown="keydown">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5m-6 6 6-6 6 6" /></svg>
+        <button ref="submitButton" class="submit-button" type="button" :disabled="stopMode ? !canStop : submitDisabled"
+          :aria-label="stopMode ? '停止生成' : selection ? '运行 ' + selection.name : '发送消息'"
+          :title="stopMode ? stopping ? '正在停止' : canStop ? '停止生成' : '正在确认执行状态，暂不可停止' : selection ? '运行 ' + selection.name : '发送消息'"
+          @click="stopMode ? emit('stop') : submit()" @keydown="primaryKeydown">
+          <svg v-if="stopMode" viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="1" class="stop-glyph" /></svg>
+          <svg v-else viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5m-6 6 6-6 6 6" /></svg>
         </button>
       </div>
     </div>

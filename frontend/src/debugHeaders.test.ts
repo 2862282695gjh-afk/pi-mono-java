@@ -150,3 +150,17 @@ describe('debug header validation', () => {
     expect(focused).toBe(true);
   });
 });
+
+
+describe('HTTP whitespace normalization', () => {
+  it('omits whitespace-only presets, normalizes values and rejects CR/LF before omission', () => {
+    const rows = createDebugHeaderPresets();
+    rows[0].value = ' \t ';
+    expect(validateDebugHeaders(rows).enabledCount).toBe(0);
+    rows[0].value = ' \t synthetic-token \t';
+    expect(validateDebugHeaders(rows).headers.get('access-token')).toBe('synthetic-token');
+    rows[0].value = '\r\n';
+    expect(validateDebugHeaders(rows).valid).toBe(false);
+    expect(validateDebugHeaders(rows).errors[0]).toContain('换行');
+  });
+});

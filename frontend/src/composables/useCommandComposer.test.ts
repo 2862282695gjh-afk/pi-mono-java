@@ -59,7 +59,7 @@ describe('command Composer user interactions', () => {
     expect(c.commandMode.value).toBe(false);
   });
 
-  it('preserves an ordinary draft when entering from the menu, cancelling or succeeding', async () => {
+  it('preserves an ordinary draft across selection, cancellation and success', async () => {
     const { composer: c, props, select } = setup({ modelValue: '待发送消息' });
     c.toggleMore();
     expect(c.moreOpen.value).toBe(true);
@@ -284,4 +284,26 @@ describe('command Composer user interactions', () => {
     expect(props.modelValue).toBe('/');
     expect(c.commandMode.value).toBe(false);
   });
+  it('focuses independent command execution while Stop keeps the primary slot', async () => {
+    const { composer: c, select, actions, props } = setup({ running: true, stopMode: true, canStop: true, canSend: false });
+    select('help');
+    expect(actions.focus).toHaveBeenLastCalledWith('command');
+    await c.submit();
+    expect(props.executeCommand).toHaveBeenCalledTimes(1);
+    expect(props.stopMode).toBe(true);
+    c.updateText('继续写草稿'); c.keydown(key('Enter'));
+    expect(actions.submitMessage).not.toHaveBeenCalled();
+  });
+  it('opens only the adding menu and distinguishes local validation from an unknown submission', async () => {
+    const { composer: c, props, select } = setup();
+    c.toggleMore();
+    expect(c.commandMode.value).toBe(false);
+    expect(props.loadCommands).not.toHaveBeenCalled();
+    select('help');
+    vi.mocked(props.executeCommand).mockResolvedValueOnce('not-submitted');
+    await c.submit();
+    expect(c.feedback.value).toContain('尚未提交');
+    expect(c.selection.value?.name).toBe('help');
+  });
+
 });

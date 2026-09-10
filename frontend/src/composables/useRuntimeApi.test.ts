@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useRuntimeApi } from './useRuntimeApi';
 import { eventFixture, idleFixture, jsonResponse, sessionFixture, streamResponse, userFixture } from '../runtime/fixtures';
+import { memoryStorage } from '../runtime/storageFixture';
+import { SessionIndexRepository } from '../runtime/sessionIndex';
 import { freezeInvocation } from '../runtime/commands';
 import type { RuntimeEvent } from '../types/runtime';
 
@@ -17,6 +19,7 @@ function setup(history: RuntimeEvent[] = [], state: 'idle' | 'running' = 'idle')
   const runtime = useRuntimeApi();
   runtime.session.value = sessionFixture();
   runtime.etag.value = '"v0"';
+  runtime.historyReady.value = true;
   return { runtime, fetcher };
 }
 function requestAt(fetcher: ReturnType<typeof vi.fn>, index = 0) {
@@ -201,4 +204,50 @@ describe('Claw Runtime Session Events coordinator', () => {
     expect(runtime.catalogStatus.value).toBe('ready');
     expect(runtime.commands.value[0].name).toBe('help');
   });
+  it('blocks idle resources without a matching root terminal, including manual acknowledgement', async () => {
+    const { runtime, fetcher } = setup([userFixture()]);
+    fetcher.mockResolvedValueOnce(streamResponse([userFixture()]));
+    await (await runtime.sendMessage('检查订单')).confirmation;
+    await vi.waitFor(() => expect(runtime.streaming.value || runtime.recovering.value).toBe(false));
+    expect(runtime.canSend.value).toBe(false);
+    runtime.acknowledgeUnknown();
+    expect(runtime.canSend.value).toBe(false);
+    expect(runtime.canStop.value).toBe(false);
+  });
+  it('restores accepted request identities, waits for the correct terminal and never replays POST', async () => {
+    const { fetcher } = setup([userFixture()]);
+    const store = new SessionIndexRepository({ apiBase: '', agentId: 'a', callerId: 'c' }, () => storage, vi.fn());
+    const storage = memoryStorage();
+    store.upsert({ sessionId: 'session-a', agentId: 'a', title: '历史', agentName: 'A', updatedAt: new Date().toISOString() });
+    store.put('session-a', { id: 'pending', kind: 'message', rootId: 'root-a', receiptId: 'root-a' });
+    const runtime = useRuntimeApi(store);
+    await runtime.getSession('session-a'); await runtime.recover();
+    expect(runtime.canSend.value).toBe(false);
+    expect(store.list('session-a')).toHaveLength(1);
+    fetcher.mockImplementation(async (input) => String(input).includes('/events?')
+      ? jsonResponse({ events: [userFixture(), idleFixture()], nextPage: null })
+      : jsonResponse(sessionFixture(), { ETag: '"v2"' }));
+    await runtime.recover();
+    expect(runtime.canSend.value).toBe(true);
+    expect(store.list('session-a')).toEqual([]);
+    expect(fetcher.mock.calls.every((call) => !call[1]?.method || call[1]?.method === 'GET')).toBe(true);
+  });
+  it('writes a pending marker before POST and retains it if a view detaches before receipt', async () => {
+    const { fetcher } = setup();
+    const marks = new Map();
+    const store = { list: () => [], put: vi.fn((_id, value) => { marks.set(value.id, value); }), remove: vi.fn((_id, id) => { marks.delete(id); }) };
+    const runtime = useRuntimeApi(store);
+    runtime.session.value = sessionFixture(); runtime.historyReady.value = true;
+    fetcher.mockImplementationOnce(async () => {
+      expect(marks.size).toBe(1);
+      expect([...marks.values()][0]).toEqual({ id: expect.any(String), kind: 'message' });
+      return new Response(new ReadableStream(), { headers: { 'Content-Type': 'text/event-stream' } });
+    });
+    const submission = await runtime.sendMessage('秘密正文', [], { 'access-token': 'synthetic-private' });
+    runtime.clearSessionView();
+    expect(await submission.confirmation).toBe('uncertain');
+    expect(marks.size).toBe(1);
+    expect(JSON.stringify([...marks.values()])).not.toMatch(/秘密|synthetic-private/);
+  });
+
 });
