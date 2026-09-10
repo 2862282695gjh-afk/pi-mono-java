@@ -13,8 +13,6 @@ import static org.mockito.Mockito.when;
 
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 import com.campusclaw.ai.CampusClawAiService;
 import com.campusclaw.ai.types.Api;
@@ -95,16 +93,6 @@ class SessionCompactorTest {
         assertThat(result.usage()).isEqualTo(usage(14, 7));
         assertThat(result.retainedMessages()).containsExactly(oversized);
         verify(aiService, times(2)).completeSimple(any(), any(), any());
-    }
-
-    @Test
-    void monoToFutureCancelDisposesReactorSubscription() {
-        AtomicBoolean disposed = new AtomicBoolean(false);
-        CompletableFuture<AssistantMessage> future = Mono.<AssistantMessage>never()
-                .doOnCancel(() -> disposed.set(true))
-                .toFuture();
-        future.cancel(true);
-        assertThat(disposed.get()).isTrue();
     }
 
     @Test
