@@ -109,7 +109,8 @@ public class SessionCompactor {
         }
         return summarizeHistory(
                         prepared.historyMessages(), prepared.previousSummary(), model, thinking, customInstructions)
-                .thenApply(summary -> result(prepared, summary.text(), summary.usage()));
+                .map(summary -> result(prepared, summary.text(), summary.usage()))
+                .toFuture();
     }
 
     public int estimateTokens(List<Message> messages) {
@@ -169,12 +170,14 @@ public class SessionCompactor {
 
     private CompletableFuture<SessionCompactionResult> compactSplitTurn(
             PreparedCompaction prepared, Model model, ThinkingLevel thinking, String customInstructions) {
-        CompletableFuture<SummaryResponse> history = prepared.historyMessages().isEmpty()
-                ? CompletableFuture.completedFuture(new SummaryResponse("No prior history.", Usage.empty()))
+        Mono<SummaryResponse> historyMono = prepared.historyMessages().isEmpty()
+                ? Mono.just(new SummaryResponse("No prior history.", Usage.empty()))
                 : summarizeHistory(
                         prepared.historyMessages(), prepared.previousSummary(), model, thinking, customInstructions);
-        return history.thenCompose(historySummary -> summarizeTurnPrefix(prepared.turnPrefixMessages(), model, thinking)
-                .thenApply(prefix -> mergeSplit(prepared, historySummary, prefix)));
+        return historyMono
+                .flatMap(historySummary -> summarizeTurnPrefix(prepared.turnPrefixMessages(), model, thinking)
+                        .map(prefix -> mergeSplit(prepared, historySummary, prefix)))
+                .toFuture();
     }
 
     private SessionCompactionResult mergeSplit(
@@ -183,7 +186,7 @@ public class SessionCompactor {
         return result(prepared, summary, combineUsage(history.usage(), prefix.usage()));
     }
 
-    private CompletableFuture<SummaryResponse> summarizeHistory(
+    private Mono<SummaryResponse> summarizeHistory(
             List<Message> messages,
             String previousSummary,
             Model model,
@@ -194,15 +197,13 @@ public class SessionCompactor {
         return completeSummary(prompt, model, thinking, maxTokens);
     }
 
-    private CompletableFuture<SummaryResponse> summarizeTurnPrefix(
-            List<Message> messages, Model model, ThinkingLevel thinking) {
+    private Mono<SummaryResponse> summarizeTurnPrefix(List<Message> messages, Model model, ThinkingLevel thinking) {
         String prompt = CompactionPromptBuilder.turnPrefixPrompt(messages);
         int maxTokens = summaryMaxTokens(model, 0.5);
         return completeSummary(prompt, model, thinking, maxTokens);
     }
 
-    private CompletableFuture<SummaryResponse> completeSummary(
-            String prompt, Model model, ThinkingLevel thinking, int maxTokens) {
+    private Mono<SummaryResponse> completeSummary(String prompt, Model model, ThinkingLevel thinking, int maxTokens) {
         Context context = new Context(
                 CompactionPromptBuilder.SYSTEM_PROMPT,
                 List.of(new UserMessage(prompt, System.currentTimeMillis())),
@@ -210,7 +211,7 @@ public class SessionCompactor {
         SimpleStreamOptions options = summaryOptions(model, thinking, maxTokens);
         Mono<AssistantMessage> call = Mono.defer(() -> aiService.completeSimple(model, context, options))
                 .flatMap(SessionCompactor::retryableSummaryResponse);
-        return withSummaryRetry(call).map(SessionCompactor::summaryResponse).toFuture();
+        return withSummaryRetry(call).map(SessionCompactor::summaryResponse);
     }
 
     private Mono<AssistantMessage> withSummaryRetry(Mono<AssistantMessage> call) {
