@@ -2,13 +2,14 @@
 
 | 属性 | 值 |
 |---|---|
-| 版本 | 1.3.1 |
+| 版本 | 1.3.2 |
 | 日期 | 2026-09-10 |
 | 状态 | 前端已实现；本次以契约 fixture 验收，真实后端 E2E 未验收；不是生产 Mate 前端 |
 | 初始源码基线 | `pi-mono-java@821418e7f2ece298a04a066ab8d11d3388ef2f16` |
 | 同步源码基线 | `pi-mono-java@9b01a9f1e659359b6a7bff9ec622e6700ef6e384`；经 c57db26d 同步消息受理/控制分发，再同步控制受理与旧 Entry 拒绝；本文消费的 VO 不变 |
 | 工作台源码基线 | `pi-mono-java@8fbafdb0b7ea5cdb8f22704610e5a86fc6f91bf1`；同步 `5add3aef18138e9197cc8bd9a37805d6ac4b742b` 仅涉及独立 Java 测试，前端未变 |
 | Headers 定位修复基线 | `pi-mono-java@f61906b9136246ca60f333704b6fc92b5420d0ec` |
+| 开发代理配置基线 | `pi-mono-java@33c3951ddecb8585881c8ec75265c6aa63145e83` |
 | 已确认工作台设计 | `pi-mono-java-design@db3223c498e50c383cb620abe3a3fde2e3872845`；前端 1.10.0、Slash 前端 1.5.0、`runtime-workbench-alignment.md` |
 | 已确认目标契约 | `pi-mono-java-design@9b8c5b7`；Claw Events B01～B15、Slash 前端 1.3.0；用户本次明确对接 Claw Runtime |
 | 决策 | [ADR-0102](../../decisions/0102-runtime-events-v2-frontend.html)、[工作台 ADR-0105](../../decisions/0105-workbench-session-stop-and-auth.html)、[Headers 定位 ADR-0106](../../decisions/0106-headers-workspace-positioning.html) |
@@ -173,6 +174,11 @@ Accept/Content-Type 固定并剔除禁止的版本/幂等/续流头，不把凭�
 
 ### 本地 DEV 认证接口
 
+开发服务的 `/campusclaw-service` 代理在 `frontend/vite.config.ts` 中显式配置 `secure: false`，
+连接 HTTPS 后端时跳过上游证书验证。这是用户指定的本地联调产品约束；基线 `33c3951d` 的
+`server.proxy['/campusclaw-service']` 未设置该选项。它仅作用于此代理，本地认证助手仍使用独立
+HTTPS 客户端并保留 TLS 校验。配置与取舍见 [ADR-0107](../../decisions/0107-dev-proxy-secure-false.html)。
+
 接口为 **`POST /__debug/auth/token`**，不是企业公共 API；DEV 私有路径、固定中文错误和
 本机来源约束是产品范围例外，不增加公共登录资源、JWT/APPKEY 验证器或 Java Controller。
 仅 `configureServer` 注册，DEV 组件条件异步加载；生产 bundle 不含认证请求代码，`vite preview` 无此路由。
@@ -231,6 +237,7 @@ Accept/Content-Type 固定并剔除禁止的版本/幂等/续流头，不把凭�
 
 | 版本 | 日期 | 变更 |
 |---|---|---|
+| 1.3.2 | 2026-09-10 | 开发代理显式设置 secure=false，允许连接本地联调的 HTTPS 后端。 |
 | 1.3.1 | 2026-09-10 | 将 Headers 面板限制在实际工作区内，避免较窄窗口的会话列表遮挡输入控件。 |
 | 1.3.0 | 2026-09-10 | 保存会话恢复索引，统一停止槽与独立命令操作，并接入本地 IP 获取 Token。 |
 | 1.2.0 | 2026-09-09 | 展示原始推理，修正失败工具事件读取、跨轮确认与拒绝说明长度。 |
