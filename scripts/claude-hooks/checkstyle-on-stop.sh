@@ -61,6 +61,6 @@ Fix:
   ./mvnw -q spotless:apply       # auto-fix formatting (palantir)
   ./mvnw -q checkstyle:check     # see remaining violations
 
-Style rules: see "Coding conventions enforced by build" in CLAUDE.md.
+Style rules: see "编码规范" in AGENTS.md.
 EOF
 exit 2

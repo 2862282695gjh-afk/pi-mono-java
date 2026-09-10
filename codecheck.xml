@@ -167,7 +167,7 @@
         <!-- explicit_charset_*: 字符 ↔ 字节互转 API 必须显式传 Charset（统一 StandardCharsets.UTF_8）。
              覆盖最常见的「单凭语法即可判定无歧义错误」的几个调用点；语义模糊的（如
              new String(byte[]) vs new String(char[]) 类型相关、Files.readString 默认即 UTF-8）
-             保留为 CLAUDE.md 中的软约束，靠 review 把关。
+             保留为 AGENTS.md 中需人工核对的规范，靠 review 把关。
              检测思路：行内出现违规调用，且整行没有任何 Charset/UTF_x/ASCII/ISO_8859 字样
              即报错——`Charset.forName(...)` 或 `, StandardCharsets.UTF_8)` 都能算作豁免。
              副作用：调用被换行折断时（new InputStreamReader( 和参数分两行）可能误报，
@@ -384,12 +384,11 @@
             <property name="switchBlockAsSingleDecisionPoint" value="true"/>
         </module>
 
-        <!-- huge_method: 方法的非空非（行）注释行数不得超过 50。
-             countEmpty=false: 跳过空行；Checkstyle 同时跳过仅含 `//` 单行注释的行。
-             仍计入：方法签名行、`}`、含代码的行尾注释、块注释 `/* ... */` 内部行。
-             50 行是经验线：超过这条线的方法几乎都在做多件事，拆出子方法可读性
-             明显更好；想保留就用 @SuppressWarnings("checkstyle:huge_method")
-             并在 PR description 里写明保留理由。 -->
+        <!-- huge_method: 本规则仅提供部分方法长度检查，countEmpty=false 的工具计数
+             不等同于 AGENTS.md 规定的非空物理行计数，仍需人工核对。
+             方法和构造器从声明行到匹配的右大括号（含）不得超过 50 个非空物理行；
+             内部注释行计入，声明前的注解和 Javadoc 不计入。超限时按职责拆分，
+             不新增 huge_method 抑制；严格计数和修改范围以 AGENTS.md 为准。 -->
         <module name="MethodLength">
             <property name="id" value="huge_method"/>
             <property name="max" value="50"/>

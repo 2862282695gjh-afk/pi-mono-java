@@ -196,6 +196,8 @@ coding-agent-cli → common、ai、agent-core、cron。common 不依赖业务模
 
 ## 开发与验证
 
+开发流程、编码规范和验证要求统一维护在 [AGENTS.md](AGENTS.md)。修改前先阅读该手册及相关源码与设计文档。
+
 ```bash
 # 格式化并执行构建规则
 ./mvnw spotless:apply checkstyle:check
