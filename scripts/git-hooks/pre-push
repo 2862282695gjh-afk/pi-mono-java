@@ -2,7 +2,6 @@
 #
 # Aborts `git push` if campusclaw/ is out of sync with modules/*.
 # Skipped automatically when the push range doesn't touch either tree.
-# Bypass with `git push --no-verify` when you intentionally want to defer the sync.
 #
 # Activated repo-wide by:  git config core.hooksPath scripts/git-hooks
 
@@ -77,7 +76,5 @@ Resolve:
   git commit -m 'chore(campusclaw): 同步 modules 到公司镜像'
   git push
 
-Bypass (not recommended):
-  git push --no-verify
 EOF
 exit 1
