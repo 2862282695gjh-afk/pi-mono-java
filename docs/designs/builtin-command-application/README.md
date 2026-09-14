@@ -1,6 +1,6 @@
 # Builtin 执行应用与业务响应
 
-版本：1.0.1 · 日期：2026-09-07 · 状态：内部 Builtin 应用接入，公共 HTTP 未发布。
+版本：1.0.2 · 日期：2026-09-14 · 状态：内部 Builtin 应用接入，公共 HTTP 未发布。
 
 ## 1. 范围与理由
 
@@ -92,7 +92,7 @@ Header 捕获/拒绝 If-Match 和 Idempotency-Key、真实 HTTP 状态/ResultBea
 新增执行应用 41 项、输入 VO 22 项测试；质量检查0错误/0警告。规范脚本检查14个Java文件无finding，
 两种测试内私有纯数据record（含镜像）手工确认无可变状态或空行布局问题；7对镜像内容一致。
 组合提交上 `./mvnw -q spotless:apply checkstyle:check verify` 通过，1822项常规测试全部成功，无失败或跳过。
-最终净新增模块788行、镜像后1576行，正式新增行门禁通过。每个 PR 模块新增上限850、镜像后软上限1800/硬上限2000，
+原切片新增模块788行、镜像后1576行。开发规模按[统一交付规则](../commit-addition-limit.md)执行；
 使用独立已合入 main 起点，后合方正常同步最新 main；不 force-push。
 公司 NativeParent 不可解析时显式同步镜像并校验一致性，公司侧编译仍标注未验证。
 实现决策见 [ADR-0066](../../decisions/0066-connect-builtin-command-application.html)。
@@ -101,5 +101,6 @@ Header 捕获/拒绝 If-Match 和 Idempotency-Key、真实 HTTP 状态/ResultBea
 
 | 版本 | 日期 | 变更 |
 |---|---|---|
+| 1.0.2 | 2026-09-14 | 取消新增行数预算，按职责和验收边界组织交付。 |
 | 1.0.1 | 2026-09-07 | 记录 Skill 复用普通消息 SSE/恢复，额外私有快照不属当前要求；修正参数遮蔽并在同步 main 后调整 ADR 编号，不改变 Builtin 行为。 |
 | 1.0.0 | 2026-09-07 | 接通显式 Builtin 应用与结果分派，保留共享 HTTP/Skill 待决边界。 |
