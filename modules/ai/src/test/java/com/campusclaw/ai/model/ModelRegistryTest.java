@@ -14,6 +14,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.UUID;
 
 import com.campusclaw.ai.types.Api;
 import com.campusclaw.ai.types.Cost;
@@ -260,15 +261,23 @@ class ModelRegistryTest {
         }
 
         @Test
-        void loadFromClasspathResourceRegistersModels() {
-            int loaded = registry.loadFromClasspathResource("/model-registry-test-models.json");
+        void loadFromClasspathResourceRegistersModels() throws Exception {
+            String resourceName = "model-registry-test-" + UUID.randomUUID() + ".json";
+            Path fixture = classpathFixture(resourceName);
+            writeModels(fixture, List.of(model(Provider.CUSTOM, "classpath-model", "Classpath")));
 
-            assertEquals(1, loaded);
-            assertEquals(
-                    "Classpath",
-                    registry.getModel(Provider.CUSTOM, "classpath-model")
-                            .orElseThrow()
-                            .name());
+            try {
+                int loaded = registry.loadFromClasspathResource("/" + resourceName);
+
+                assertEquals(1, loaded);
+                assertEquals(
+                        "Classpath",
+                        registry.getModel(Provider.CUSTOM, "classpath-model")
+                                .orElseThrow()
+                                .name());
+            } finally {
+                Files.deleteIfExists(fixture);
+            }
         }
 
         @Test
@@ -332,6 +341,15 @@ class ModelRegistryTest {
     private void writeModels(Path file, List<Model> definitions) throws Exception {
         Files.createDirectories(file.getParent());
         new ObjectMapper().writeValue(file.toFile(), definitions);
+    }
+
+    private Path classpathFixture(String name) throws Exception {
+        return Path.of(ModelRegistryTest.class
+                        .getProtectionDomain()
+                        .getCodeSource()
+                        .getLocation()
+                        .toURI())
+                .resolve(name);
     }
 
     private static Model model(Provider provider, String id, String name) {
