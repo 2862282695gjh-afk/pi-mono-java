@@ -1,14 +1,12 @@
 # Compact Runtime：数据库观察与原子准入
 
-版本：1.0.2 · 日期：2026-09-07 · 原 6b2a 切片，当前交付规则见第 7 节。
+版本：1.0.3 · 日期：2026-09-14 · 原 6b2a 切片，当前交付规则见第 7 节。
 
 ## 1. Context 与交付边界
 
-[6b1](compact-runtime-lifecycle.md) 仅执行已经准入的压缩。完整 6b2 的格式化 WIP 达到模块新增
-858 行，尚需补接入链路验证，超过 850 行预算。当时按已确认的相邻职责边界拆为两个串行 PR，
-本切片只交付数据库端口；Runtime 接入及资源回收当时安排由 6b2b 在本 PR 合入后另建分支完成。
-上述是历史交付过程，不作为限制后续并行开发的当前规则。
-这不是减少验收项，更不提前公开 Command/HTTP 路由。
+[6b1](compact-runtime-lifecycle.md) 仅执行已经准入的压缩。本切片交付数据库端口；
+Runtime 接入及资源回收由 [Runtime 接入设计](compact-runtime-integration.md)维护。
+数据库观察和准入可独立验证，Command/HTTP 路由仍须完成整体接入后发布。
 
 本次已实现：同一行锁内读取 Session 与完整当前分支、再次行锁内复核 idle/历史/配置、
 无人工 Entry 的 running 准入、保留并发名称、缺失/冲突拒绝及事务回滚。
@@ -19,7 +17,7 @@ Registry、Holder、Coordinator、请求 Header、控制队列和旧 POST Events
 
 实现基线：`pi-mono-java@14769188538eaa2f1df1e25ef2fef40d87ceafed`（#233 合并）。
 目标设计只读基线：`pi-mono-java-design@2734a36b6f3cee2ebe16f1133d50ccb3eaaeb4e9`，
-`04-命令与技能/01-内置命令/README.md` §3（预算拆分）、§7（Compact），版本 2.7.1。
+`04-命令与技能/01-内置命令/README.md` §3（实施切片）、§7（Compact），版本 2.7.1。
 本次未修改设计仓。
 
 Java 路径前缀为 `modules/coding-agent-cli/src/main/`。
@@ -120,7 +118,7 @@ Repository Spring 单例只保留 final Mapper，临时列表与游标均为方�
 Compact 不支持控制队列；通用 Events V2、旧控制接口退役和其他前端迁移仍不属本任务前置条件。
 以上保留原交接职责，实际完成状态须对照当前 main。旧串行开发安排已 superseded：2026-09-07 用户授权
 独立 worktree 从最新 main 并行开发、独立复审、串行合并；不堆叠、不 force-push，后合方合入最新 main 并复验。
-模块新增 ≤850、含镜像 ≤1800 软上限/2000 硬上限不变。公共结果按设计
+开发规模按[统一交付规则](commit-addition-limit.md)执行，按职责和验收边界组织 PR。公共结果按设计
 `88f4df16bc24bbfcd28e1ec374feb2de0db8be3b` Builtin 2.9.0 §8/8.1 复用业务资源 VO，禁止公开
 command/changed/sourceEventSeq 或替代回执；细则见 [当前交付说明](compact-runtime-output.md)，原图与源码证据不重写。
 
@@ -128,6 +126,7 @@ command/changed/sourceEventSeq 或替代回执；细则见 [当前交付说明](
 
 | 版本 | 日期 | 变更 |
 |---|---|---|
+| 1.0.3 | 2026-09-14 | 取消新增行数预算，按职责和验收边界组织交付。 |
 | 1.0.2 | 2026-09-07 | R08：明确串行拆分仅为历史过程；后续按并行开发/独立复审/串行合并交付，公共结果复用业务资源。 |
 | 1.0.1 | 2026-09-07 | 按 R05 为跨 JVM 测试四处 Files 文本读写显式声明 UTF-8，同步镜像并更新行数；事务与设计行为不变。 |
 | 1.0.0 | 2026-09-07 | 6b2a 独立交付数据库观察与准入；明确 6b2b 尚未交付的资源、执行与空历史整体行为。 |

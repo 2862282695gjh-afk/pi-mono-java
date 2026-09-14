@@ -1,6 +1,6 @@
 # 仓库开发指引
 
-版本：1.0.0；更新日期：2026-09-10。
+版本：1.0.1；更新日期：2026-09-14。
 
 ## 适用范围与工作流程
 
@@ -8,6 +8,7 @@
 - 保留无关工作区改动，不擅自暂存、改写、stash 或丢弃。工作区不干净或被其他任务使用时另建 Git worktree。
 - 本地启动与安装仅支持 macOS、Linux；不新增或维护 Windows batch、PowerShell、`mvnw.cmd`、Task Scheduler 入口。POSIX `mvnw` 可保留上游 Cygwin/MinGW 兼容，但不承诺 Windows 支持或验证。
 - 每个主题从最新 `origin/main` 创建独立 `codex/<topic>` 分支和 PR；禁止直接向 `main` / `master` 提交或推送。
+- 单次开发、提交和 PR 不设新增代码行数上限，模块与镜像不设配套预算；按职责和验收边界组织交付，详见[开发规模与 CI 验证](docs/designs/commit-addition-limit.md)。
 - 只暂存本次任务的明确路径，混合工作区禁止 `git add -A`。提交采用中文 Conventional Commits：`type(scope): 中文描述`。
 - 提交前检查 `git status -sb`、任务 diff、staged diff，运行 `git diff --check` 和相关最小验证。Java 改动先格式化；模块改动按下文同步镜像。
 - 只推送主题分支并创建面向 `main` 的 Draft PR。正文说明改动、原因、用户/开发者影响和验证；交付前核实 PR 存在并提供 URL。用户未要求时不转 ready、不合并。
