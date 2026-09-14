@@ -42,7 +42,7 @@ public class MateRuntimeModelManager implements RuntimeModelManager {
                 modelId,
                 modelId,
                 Api.OPENAI_COMPLETIONS,
-                Provider.MATE_MODEL_MANAGER,
+                Provider.CAMPUSMATE,
                 null,
                 properties.isReasoning(),
                 List.of(InputModality.TEXT),

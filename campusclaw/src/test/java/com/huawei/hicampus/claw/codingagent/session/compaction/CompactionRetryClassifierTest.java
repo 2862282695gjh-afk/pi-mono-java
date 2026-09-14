@@ -9,6 +9,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.util.List;
 
 import com.huawei.hicampus.claw.ai.types.AssistantMessage;
+import com.huawei.hicampus.claw.ai.types.Provider;
 import com.huawei.hicampus.claw.ai.types.StopReason;
 import com.huawei.hicampus.claw.ai.types.Usage;
 
@@ -37,7 +38,7 @@ class CompactionRetryClassifierTest {
         return new AssistantMessage(
                 List.of(),
                 "openai-completions",
-                "mate-model-manager",
+                Provider.CAMPUSMATE.value(),
                 "model_test",
                 null,
                 null,

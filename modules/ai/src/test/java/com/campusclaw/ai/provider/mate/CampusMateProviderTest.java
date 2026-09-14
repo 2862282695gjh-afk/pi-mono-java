@@ -16,6 +16,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
+import com.campusclaw.ai.provider.ProviderAuth;
 import com.campusclaw.ai.stream.AssistantMessageEvent;
 import com.campusclaw.ai.test.Log4j2TestAppender;
 import com.campusclaw.ai.types.Api;
@@ -53,12 +54,12 @@ import okhttp3.mockwebserver.MockResponse;
 import okhttp3.mockwebserver.MockWebServer;
 import reactor.netty.http.client.HttpClient;
 
-class MateServiceModelManagerProviderTest {
+class CampusMateProviderTest {
     private final ObjectMapper mapper = new ObjectMapper();
 
     private MockWebServer mate;
 
-    private MateServiceModelManagerProvider provider;
+    private CampusMateProvider provider;
 
     private List<Logger> failureLoggers;
 
@@ -73,7 +74,7 @@ class MateServiceModelManagerProviderTest {
         failureLoggers = List.of(
                 (Logger) LogManager.getLogger(MateChatRequestMapper.class),
                 (Logger) LogManager.getLogger(MateChatSseParser.class),
-                (Logger) LogManager.getLogger(MateServiceModelManagerProvider.class));
+                (Logger) LogManager.getLogger(CampusMateProvider.class));
         originalFailureLogLevels = failureLoggers.stream().map(Logger::getLevel).toList();
         failureLoggers.forEach(logger -> {
             Configurator.setLevel(logger.getName(), Level.WARN);
@@ -84,7 +85,7 @@ class MateServiceModelManagerProviderTest {
         WebClient client = WebClient.builder()
                 .clientConnector(new ReactorClientHttpConnector(HttpClient.create()))
                 .build();
-        provider = new MateServiceModelManagerProvider(
+        provider = new CampusMateProvider(
                 mapper, client, mate.url("/mate-service/v1/LLM/chat").uri(), "openai-completions");
         provider.validateConfiguration();
     }
@@ -98,6 +99,12 @@ class MateServiceModelManagerProviderTest {
         }
         failureLogs.stop();
         mate.shutdown();
+    }
+
+    @Test
+    void exposesCampusMateIdentityWithoutAuthentication() {
+        assertEquals("campusmate", provider.id().value());
+        assertEquals(ProviderAuth.none(), provider.auth());
     }
 
     @Test
@@ -219,7 +226,7 @@ class MateServiceModelManagerProviderTest {
                 .toList();
         assertTrue(
                 failureLogs.events().stream()
-                        .anyMatch(event -> event.getLoggerName().equals(MateServiceModelManagerProvider.class.getName())
+                        .anyMatch(event -> event.getLoggerName().equals(CampusMateProvider.class.getName())
                                 && event.getMessage().getFormattedMessage().contains("errorCode=MODEL_RATE_LIMITED")
                                 && !event.getMessage().getFormattedMessage().contains("private upstream detail")),
                 loggedFailures::toString);
@@ -257,7 +264,7 @@ class MateServiceModelManagerProviderTest {
 
     @Test
     void rejectsUnregisteredProtocolAtStartup() {
-        var invalid = new MateServiceModelManagerProvider(
+        var invalid = new CampusMateProvider(
                 mapper,
                 WebClient.create(),
                 mate.url("/mate-service/v1/LLM/chat").uri(),
@@ -270,7 +277,7 @@ class MateServiceModelManagerProviderTest {
     void rejectsInvalidSharedBaseUrlAtStartup() {
         assertThrows(
                 IllegalArgumentException.class,
-                () -> new MateServiceModelManagerProvider(
+                () -> new CampusMateProvider(
                         mapper,
                         "ftp://campusmate.example.com",
                         "/mate-service/v1/LLM/chat",
@@ -283,7 +290,7 @@ class MateServiceModelManagerProviderTest {
     void rejectsChatPathOutsideMateServiceAtStartup() {
         assertThrows(
                 IllegalArgumentException.class,
-                () -> new MateServiceModelManagerProvider(
+                () -> new CampusMateProvider(
                         mapper,
                         "https://campusmate.example.com",
                         "/other-service/v1/LLM/chat",
@@ -296,7 +303,7 @@ class MateServiceModelManagerProviderTest {
     void rejectsDotSegmentInChatPathAtStartup() {
         assertThrows(
                 IllegalArgumentException.class,
-                () -> new MateServiceModelManagerProvider(
+                () -> new CampusMateProvider(
                         mapper,
                         "https://campusmate.example.com",
                         "/mate-service/v1/LLM/./chat",
@@ -350,7 +357,7 @@ class MateServiceModelManagerProviderTest {
                         new ThinkingContent("prior reasoning", signature, false),
                         new ToolCall("call-old", "read_file", Map.of("path", "README.md"))),
                 Api.OPENAI_COMPLETIONS.value(),
-                Provider.MATE_MODEL_MANAGER.value(),
+                Provider.CAMPUSMATE.value(),
                 "managed-model",
                 "old-response",
                 Usage.empty(),
@@ -381,7 +388,7 @@ class MateServiceModelManagerProviderTest {
                 "managed-model",
                 "Managed model",
                 Api.OPENAI_COMPLETIONS,
-                Provider.MATE_MODEL_MANAGER,
+                Provider.CAMPUSMATE,
                 null,
                 true,
                 List.of(InputModality.TEXT),

@@ -12,11 +12,16 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import com.campusclaw.ai.model.ModelRegistry;
+import com.campusclaw.ai.provider.AiProvider;
+import com.campusclaw.ai.provider.AiProviderRegistry;
 import com.campusclaw.ai.provider.ApiProvider;
 import com.campusclaw.ai.provider.ApiProviderRegistry;
 import com.campusclaw.ai.provider.MockApiProvider;
+import com.campusclaw.ai.provider.ProviderAuth;
+import com.campusclaw.ai.provider.ProviderId;
 import com.campusclaw.ai.stream.AssistantMessageEvent;
 import com.campusclaw.ai.stream.AssistantMessageEventStream;
 import com.campusclaw.ai.types.Api;
@@ -73,6 +78,36 @@ class CampusClawAiServiceTest {
             null,
             null);
 
+    private static final Model CAMPUSMATE_MODEL = new Model(
+            "managed-model",
+            "Managed Model",
+            Api.OPENAI_COMPLETIONS,
+            Provider.CAMPUSMATE,
+            null,
+            true,
+            List.of(InputModality.TEXT),
+            new ModelCost(0, 0, 0, 0),
+            128000,
+            8192,
+            null,
+            null,
+            null);
+
+    private static final Model CUSTOM_OPENAI_COMPLETIONS_MODEL = new Model(
+            "custom-model",
+            "Custom Model",
+            Api.OPENAI_COMPLETIONS,
+            Provider.CUSTOM,
+            null,
+            false,
+            List.of(InputModality.TEXT),
+            new ModelCost(0, 0, 0, 0),
+            128000,
+            8192,
+            null,
+            null,
+            null);
+
     private ApiProviderRegistry providerRegistry;
     private ModelRegistry modelRegistry;
     private CampusClawAiService service;
@@ -84,7 +119,7 @@ class CampusClawAiServiceTest {
         service = new CampusClawAiService(providerRegistry, modelRegistry);
     }
 
-    // --- Construction ---
+    // --- 构造 ---
 
     @Nested
     class Construction {
@@ -106,7 +141,7 @@ class CampusClawAiServiceTest {
         }
     }
 
-    // --- stream ---
+    // --- 完整选项流式调用 ---
 
     @Nested
     class Stream {
@@ -144,7 +179,7 @@ class CampusClawAiServiceTest {
 
         @Test
         void passesOptionsToProvider() {
-            // Use a custom provider that captures the options
+            // 使用自定义 Provider 捕获调用选项。
             var capturedOptions = new Object() {
                 StreamOptions value;
             };
@@ -177,7 +212,7 @@ class CampusClawAiServiceTest {
         }
     }
 
-    // --- streamSimple ---
+    // --- 简化选项流式调用 ---
 
     @Nested
     class StreamSimple {
@@ -240,9 +275,84 @@ class CampusClawAiServiceTest {
 
             assertSame(options, capturedOptions.value);
         }
+
+        @Test
+        void prefersProviderIdentityOverApiFallback() {
+            var expected = new AssistantMessageEventStream();
+            var managedCalled = new AtomicBoolean();
+            var fallbackCalled = new AtomicBoolean();
+            AiProvider managed = managedProvider(expected, managedCalled);
+            ApiProvider fallback = fallbackProvider(fallbackCalled);
+            providerRegistry.register(fallback, "test");
+            service =
+                    new CampusClawAiService(providerRegistry, modelRegistry, new AiProviderRegistry(List.of(managed)));
+            var context = new Context(null, List.of(new UserMessage("hi", 1L)), null);
+
+            assertSame(expected, service.streamSimple(CAMPUSMATE_MODEL, context, null));
+            assertTrue(managedCalled.get());
+            assertFalse(fallbackCalled.get());
+        }
+
+        @Test
+        void unknownIdentityDoesNotFallThroughToCampusMateProvider() {
+            var managedCalled = new AtomicBoolean();
+            AiProvider campusMate = managedProvider(new AssistantMessageEventStream(), managedCalled);
+            service = new CampusClawAiService(
+                    providerRegistry, modelRegistry, new AiProviderRegistry(List.of(campusMate)));
+            var context = new Context(null, List.of(new UserMessage("hi", 1L)), null);
+
+            assertThrows(
+                    IllegalArgumentException.class,
+                    () -> service.streamSimple(CUSTOM_OPENAI_COMPLETIONS_MODEL, context, null));
+            assertFalse(managedCalled.get());
+        }
+
+        private AiProvider managedProvider(AssistantMessageEventStream expected, AtomicBoolean called) {
+            return new AiProvider() {
+                @Override
+                public ProviderId id() {
+                    return new ProviderId("campusmate");
+                }
+
+                @Override
+                public ProviderAuth auth() {
+                    return ProviderAuth.none();
+                }
+
+                @Override
+                public AssistantMessageEventStream streamSimple(
+                        Model model, Context context, SimpleStreamOptions options) {
+                    assertSame(CAMPUSMATE_MODEL, model);
+                    called.set(true);
+                    return expected;
+                }
+            };
+        }
+
+        private ApiProvider fallbackProvider(AtomicBoolean called) {
+            return new ApiProvider() {
+                @Override
+                public Api getApi() {
+                    return Api.OPENAI_COMPLETIONS;
+                }
+
+                @Override
+                public AssistantMessageEventStream stream(Model model, Context context, StreamOptions options) {
+                    called.set(true);
+                    return new AssistantMessageEventStream();
+                }
+
+                @Override
+                public AssistantMessageEventStream streamSimple(
+                        Model model, Context context, SimpleStreamOptions options) {
+                    called.set(true);
+                    return new AssistantMessageEventStream();
+                }
+            };
+        }
     }
 
-    // --- complete ---
+    // --- 完整响应调用 ---
 
     @Nested
     class Complete {
@@ -306,7 +416,7 @@ class CampusClawAiServiceTest {
         }
     }
 
-    // --- completeSimple ---
+    // --- 简化选项完整响应调用 ---
 
     @Nested
     class CompleteSimple {
@@ -327,7 +437,7 @@ class CampusClawAiServiceTest {
         }
     }
 
-    // --- Convenience complete(Model, String) ---
+    // --- 文本便捷调用 ---
 
     @Nested
     class ConvenienceComplete {
@@ -353,7 +463,7 @@ class CampusClawAiServiceTest {
         }
     }
 
-    // --- Multiple providers ---
+    // --- 多 Provider 路由 ---
 
     @Nested
     class MultipleProviders {
@@ -368,8 +478,7 @@ class CampusClawAiServiceTest {
 
             var context = new Context(null, List.of(new UserMessage("hi", 1)), null);
 
-            // Each stream's first event should carry the api value of the provider that produced it,
-            // proving registry-by-api dispatch worked.
+            // 每条流的首事件携带实际 Provider 的 API 值，用于证明按 API 路由正确。
             var anthropicStream = service.stream(ANTHROPIC_MODEL, context, null);
             StepVerifier.create(anthropicStream.asFlux())
                     .expectNextMatches(e -> e instanceof AssistantMessageEvent.StartEvent s
@@ -386,7 +495,7 @@ class CampusClawAiServiceTest {
         }
     }
 
-    // --- Error event handling ---
+    // --- 错误事件处理 ---
 
     @Nested
     class ErrorEventHandling {

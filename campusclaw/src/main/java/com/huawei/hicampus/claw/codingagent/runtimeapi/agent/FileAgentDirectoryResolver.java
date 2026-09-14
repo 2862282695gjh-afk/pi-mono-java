@@ -4,12 +4,8 @@
 
 package com.huawei.hicampus.claw.codingagent.runtimeapi.agent;
 
-import java.util.LinkedHashSet;
-import java.util.List;
-
 import com.huawei.hicampus.claw.codingagent.runtime.AgentRuntimeException;
 import com.huawei.hicampus.claw.codingagent.runtime.AgentRuntimeManager;
-import com.huawei.hicampus.claw.codingagent.runtime.PreparedAgentRuntime;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.error.RuntimeErrorCode;
 
@@ -35,7 +31,7 @@ public class FileAgentDirectoryResolver implements AgentDirectoryResolver {
     @Override
     public AgentDirectorySnapshotDTO resolve(String agentId) {
         try {
-            return snapshot(runtimeManager.prepare(agentId));
+            return AgentDirectorySnapshots.from(runtimeManager.prepare(agentId));
         } catch (IllegalArgumentException error) {
             RuntimeErrorCode errorCode = RuntimeErrorCode.AGENT_NOT_FOUND;
             LOGGER.atWarn()
@@ -57,34 +53,5 @@ public class FileAgentDirectoryResolver implements AgentDirectoryResolver {
                     .log("CampusClaw failure: operation={}, errorCode={}", "runtime.agent.prepare", errorCode.name());
             throw new RuntimeApiException(errorCode);
         }
-    }
-
-    private static AgentDirectorySnapshotDTO snapshot(PreparedAgentRuntime runtime) {
-        if (!Boolean.TRUE.equals(runtime.metadata().enabled())) {
-            throw new RuntimeApiException(RuntimeErrorCode.AGENT_NOT_AVAILABLE);
-        }
-        String defaultModel = runtime.metadata()
-                .defaultModel()
-                .orElseThrow(() -> new RuntimeApiException(RuntimeErrorCode.AGENT_MODEL_NOT_CONFIGURED));
-        List<String> models = validModels(runtime.metadata().bindingModels(), defaultModel);
-        return new AgentDirectorySnapshotDTO(
-                runtime.agentId(),
-                defaultModel,
-                models,
-                runtime.agentRoot(),
-                runtime.agentRoot().resolve(".campusclaw"));
-    }
-
-    private static List<String> validModels(List<String> configured, String defaultModel) {
-        LinkedHashSet<String> models = new LinkedHashSet<>();
-        for (String model : configured) {
-            if (model == null || model.isBlank() || !models.add(model)) {
-                throw new RuntimeApiException(RuntimeErrorCode.AGENT_MODEL_NOT_CONFIGURED);
-            }
-        }
-        if (!models.contains(defaultModel)) {
-            throw new RuntimeApiException(RuntimeErrorCode.AGENT_MODEL_NOT_CONFIGURED);
-        }
-        return List.copyOf(models);
     }
 }

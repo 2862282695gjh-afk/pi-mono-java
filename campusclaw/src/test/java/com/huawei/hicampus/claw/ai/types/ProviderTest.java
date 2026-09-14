@@ -21,6 +21,7 @@ class ProviderTest {
             assertEquals("anthropic", Provider.ANTHROPIC.value());
             assertEquals("openai", Provider.OPENAI.value());
             assertEquals("mistral", Provider.MISTRAL.value());
+            assertEquals("campusmate", Provider.CAMPUSMATE.value());
         }
     }
 
@@ -32,11 +33,13 @@ class ProviderTest {
             assertEquals(Provider.ANTHROPIC, Provider.fromValue("anthropic"));
             assertEquals(Provider.OPENAI, Provider.fromValue("openai"));
             assertEquals(Provider.MISTRAL, Provider.fromValue("mistral"));
+            assertEquals(Provider.CAMPUSMATE, Provider.fromValue("campusmate"));
         }
 
         @Test
         void unknownThrows() {
             assertThrows(IllegalArgumentException.class, () -> Provider.fromValue("not-a-real-provider"));
+            assertThrows(IllegalArgumentException.class, () -> Provider.fromValue("mate-model-manager"));
         }
     }
 
@@ -74,6 +77,7 @@ class ProviderTest {
         @Test
         void unknownYieldsEmpty() {
             assertTrue(Provider.tryFromValue("mystery").isEmpty());
+            assertTrue(Provider.tryFromValue("mate-model-manager").isEmpty());
         }
     }
 }

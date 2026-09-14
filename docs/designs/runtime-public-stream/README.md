@@ -2,8 +2,8 @@
 
 | 属性 | 值 |
 |---|---|
-| 版本 | 0.2.0 |
-| 日期 | 2026-09-09 |
+| 版本 | 0.2.1 |
+| 日期 | 2026-09-15 |
 | Java 分析基线 | `af858b85ad2a5d2894360ce64accfdbe33d1418c` |
 | 设计基线 | `pi-mono-java-design@81a9d6617ff56188bae9008d22d150fa7e5b61bf` |
 | pi 源码基线 | `5cd93f688aaab89dbb6dfa4aca535f21796ae185` |
@@ -46,6 +46,10 @@ Composer 的 2048 Unicode code point 输入限制是界面产品约束，不能�
 | `modules/common/src/main/java/com/campusclaw/common/constant/ClawConstants.java` · RuntimeApi | denyMessage 上限 4096 UTF-16 单元 | 客户端读取沿用相同单位，保留更小的界面输入上限 |
 | pi `packages/ai/src/types.ts` · ThinkingContent/AssistantMessageEvent；`packages/agent/src/agent-loop.ts#streamAssistantResponse` | 文本与 signature 分离，Thinking start/delta/end 进入 message_update，不要求公开摘要标记 | 保持内核生命周期；公共 HTTP 身份与持久化是 CampusClaw 架构变化 |
 
+表中的 `OpenAIResponsesProvider` 是固定分析基线的历史证据。当前产品默认入口是
+[`CampusMateProvider`](../ai.md)，并继续由 `MateChatSseParser` 产生 Thinking 领域事件；Provider
+收敛不改变本专题的公共投影与原始推理规则。
+
 ## 架构与命名
 
 ![原始推理与公共事件输出](public_stream_support.svg)
@@ -78,6 +82,7 @@ HTTP 仍使用 `/campusclaw-service/v1`，此处命名调整不创建新的 HTTP
 
 | 版本 | 日期 | 变更 |
 |---|---|---|
+| 0.2.1 | 2026-09-15 | 指向当前 CampusMate Provider 入口，保留固定提交中的第三方适配器证据。 |
 | 0.2.0 | 2026-09-09 | 展示原始推理，修正事件读取与确认归属，统一 Session Events 命名。 |
 | 0.1.1 | 2026-09-08 | 规范 Mate 工具结果文本与 SSE 输出校验。 |
 | 0.1.0 | 2026-09-08 | 增加 data-only SSE 编码。 |

@@ -3,79 +3,91 @@ title AI Module Context
 left to right direction
 skinparam componentStyle rectangle
 
-' Source evidence: modules/ai/pom.xml; CampusClawAiService; ApiProviderRegistry.
-' Analyzed source commit: cc2f58d9e24bae1d7c99b9f54e86b71940d86115.
-' Observed behavior: the AI module adapts provider SDKs for agent-core consumers.
+' Implementation starting point: pi-mono-java 29ebec6a8cad99896414211cda28c6fffec71bee.
+' Observed source: modules/ai/pom.xml and modules/ai/src/main/java/com/campusclaw/ai/CampusClawAiService.java#streamSimple.
+' Observed source: modules/ai/src/main/java/com/campusclaw/ai/provider/mate/MateServiceModelManagerProvider.java#streamSimple.
+' This change: CampusMateProvider replaces MateServiceModelManagerProvider and vendor adapters are removed.
+' Architecture change: the product default has one CampusMate provider and no vendor SDK adapters.
 
+cloud CampusMate
 component "campusclaw-ai" as ai
 component "campusclaw-agent-core" as core
 component "campusclaw-cron" as cron
-component "campusclaw-coding-agent" as cli
-component "anthropic-java" as anthropic
-component "openai-java" as openai
+component "campusclaw-coding-agent" as service
 component "reactor-core + webflux" as reactor
 component "jackson + json-schema" as jackson
 
-anthropic --> ai
-openai --> ai
-reactor --> ai
-jackson --> ai
-ai --> core
-core --> cron
-core --> cli
+ai --> CampusMate : calls Chat SSE
+ai --> reactor : uses HTTP and streams
+ai --> jackson : uses JSON and schema
+core --> ai : uses model loop types
+cron --> core : uses Agent runtime
+service --> ai : assembles Provider
+service --> core : assembles Session
+service --> cron : assembles scheduler
 @enduml
 
 @startuml streaming-sequence
-title AI Provider Streaming Sequence
+title CampusMate Provider Streaming Sequence
 
-' Source evidence: CampusClawAiService#streamSimple; ApiProviderRegistry#getProvider.
-' Source evidence: AnthropicProvider; AssistantMessageEventStream.
-' Observed behavior: a provider virtual thread translates SDK chunks into normalized events.
+' Source evidence: modules/ai/src/main/java/com/campusclaw/ai/CampusClawAiService.java#streamSimple.
+' Source evidence: modules/ai/src/main/java/com/campusclaw/ai/provider/AiProviderRegistry.java#getProvider.
+' This change: modules/ai/src/main/java/com/campusclaw/ai/provider/mate/CampusMateProvider.java#streamSimple.
+' Preserved source: modules/ai/src/main/java/com/campusclaw/ai/provider/mate/MateChatRequestMapper.java#map.
+' Preserved source: modules/ai/src/main/java/com/campusclaw/ai/provider/mate/MateChatSseParser.java#accept.
+' Observed behavior: provider identity wins before the optional ApiProvider fallback.
 
 participant Caller
 participant CampusClawAiService
-participant ApiProviderRegistry
-participant AnthropicProvider
+participant AiProviderRegistry
+participant CampusMateProvider
+participant MateChatRequestMapper
+participant CampusMate
+participant MateChatSseParser
 participant AssistantMessageEventStream
-participant "anthropic-java SDK" as SDK
 
 Caller -> CampusClawAiService : streamSimple(model, context, options)
-CampusClawAiService -> ApiProviderRegistry : getProvider(model.api)
-ApiProviderRegistry --> CampusClawAiService : AnthropicProvider
-CampusClawAiService -> AnthropicProvider : streamSimple(...)
-AnthropicProvider -> AssistantMessageEventStream : create
-AnthropicProvider --> Caller : event stream
-note over AnthropicProvider : run SDK stream on virtual thread
-AnthropicProvider -> SDK : messages.createStreaming(...)
-loop SSE chunks
-  SDK --> AnthropicProvider : raw stream event
-  AnthropicProvider -> AssistantMessageEventStream : push normalized delta
-end
-AnthropicProvider -> AssistantMessageEventStream : pushDone(reason, message)
-AssistantMessageEventStream --> Caller : Flux and Mono complete
+CampusClawAiService -> AiProviderRegistry : getProvider(model.provider)
+AiProviderRegistry --> CampusClawAiService : CampusMateProvider
+CampusClawAiService -> CampusMateProvider : streamSimple(...)
+CampusMateProvider -> MateChatRequestMapper : map context and model
+CampusMateProvider -> CampusMate : POST /mate-service/v1/LLM/chat
+CampusMate --> CampusMateProvider : OpenAI Chat SSE
+CampusMateProvider -> MateChatSseParser : accept chunk
+MateChatSseParser -> AssistantMessageEventStream : push normalized event
+CampusMateProvider --> CampusClawAiService : AssistantMessageEventStream
+CampusClawAiService --> Caller : AssistantMessageEventStream
+Caller -> AssistantMessageEventStream : read asFlux() or result()
+Caller -> AssistantMessageEventStream : cancel
+AssistantMessageEventStream -> CampusMateProvider : cancel callback
+CampusMateProvider -> CampusMate : close HTTP/SSE subscription
 @enduml
 
 @startuml core-classes
-title AI Module Core Classes
+title AI Module Recommended Target Class Diagram
 skinparam classAttributeIconSize 0
 
-' Source evidence: modules/ai/src/main/java/com/campusclaw/ai/.
-' Design reason: show provider, registry, event stream, and message type boundaries.
+' Source evidence: modules/ai/src/main/java/com/campusclaw/ai/CampusClawAiService.java#streamSimple.
+' Source evidence: modules/ai/src/main/java/com/campusclaw/ai/provider/AiProviderRegistry.java#getProvider.
+' Source evidence: modules/ai/src/main/java/com/campusclaw/ai/provider/ApiProviderRegistry.java#register.
+' Source evidence: modules/ai/src/main/java/com/campusclaw/ai/model/ModelRegistry.java#init.
+' This change: modules/ai/src/main/java/com/campusclaw/ai/provider/mate/CampusMateProvider.java.
+' Design reason: keep identity routing, optional protocol extensions, and model loading explicit.
+' Lifecycle: CampusMateProvider, MateChatRequestMapper, and WebClient are shared by one Spring singleton.
+' Lifecycle: MateChatSseParser and AssistantMessageEventStream are created once per model call.
 
 class CampusClawAiService
+interface AiProvider
+class AiProviderRegistry
+class CampusMateProvider <<Spring singleton>>
 interface ApiProvider
 class ApiProviderRegistry
 class ModelRegistry
-interface ProviderConfigResolver
-class EnvProviderConfigResolver
-class EnvApiKeyResolver
-class ResolvedProviderConfig
-class AnthropicProvider
-class OpenAICompletionsProvider
-class OpenAIResponsesProvider
-class MistralProvider
+class MateChatRequestMapper <<singleton-owned>>
+class WebClient <<singleton-owned>>
+class MateChatSseParser <<per call>>
 interface AssistantMessageEvent
-class AssistantMessageEventStream
+class AssistantMessageEventStream <<per call>>
 class EventStream
 interface Message
 interface ContentBlock
@@ -83,21 +95,21 @@ class Model
 class Context
 class MessageTransformer
 
-CampusClawAiService --> ApiProviderRegistry : resolves via
+CampusClawAiService --> AiProviderRegistry : resolves identity first
+CampusClawAiService --> ApiProviderRegistry : optional fallback
 CampusClawAiService --> ModelRegistry : exposes
-ApiProviderRegistry o-- ApiProvider : indexes
-AnthropicProvider ..|> ApiProvider
-OpenAICompletionsProvider ..|> ApiProvider
-OpenAIResponsesProvider ..|> ApiProvider
-MistralProvider ..|> ApiProvider
-ApiProvider --> AssistantMessageEventStream : returns
+AiProviderRegistry "1" o-- "0..*" AiProvider : indexes by ProviderId
+CampusMateProvider ..|> AiProvider
+ApiProviderRegistry "1" o-- "0..*" ApiProvider : indexes by Api
+CampusMateProvider "1" *-- "1" MateChatRequestMapper : shares
+CampusMateProvider "1" *-- "1" WebClient : shares
+CampusMateProvider "1" ..> "0..*" MateChatSseParser : creates per call
+CampusMateProvider "1" ..> "0..*" AssistantMessageEventStream : creates per call
+MateChatSseParser "1" --> "1" AssistantMessageEventStream : publishes into
 AssistantMessageEventStream *-- EventStream
-AssistantMessageEventStream ..> AssistantMessageEvent : pushes
-ApiProvider ..> ProviderConfigResolver : resolves config
-EnvProviderConfigResolver ..|> ProviderConfigResolver
-EnvProviderConfigResolver --> EnvApiKeyResolver
-ProviderConfigResolver --> ResolvedProviderConfig : returns
-ApiProvider ..> MessageTransformer : normalizes
+AssistantMessageEventStream ..> AssistantMessageEvent : publishes
 Context o-- Message
-ApiProvider ..> Model : reads
+Message o-- ContentBlock
+AiProvider ..> Model : reads
+ApiProvider ..> MessageTransformer : may normalize
 @enduml
