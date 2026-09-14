@@ -12,12 +12,15 @@ package com.campusclaw.codingagent.runtimeapi.event;
  */
 public enum RuntimeEventType {
     USER_MESSAGE("user.message"),
+    AGENT_PLAN("agent.plan"),
+    USER_PLAN_CONFIRMATION("user.plan_confirmation"),
     ASSISTANT_THINKING_COMPLETED("assistant.thinking.completed"),
     ASSISTANT_MESSAGE_COMPLETED("assistant.message.completed"),
     TOOL_EXECUTION_STARTED("tool.execution.started"),
     TOOL_RESULT("tool.result"),
     SESSION_MODEL_CHANGED("session.model.changed"),
     SESSION_THINKING_CHANGED("session.thinking.changed"),
+    SESSION_MODE_CHANGED("session.mode.changed"),
     SESSION_COMPACTION_STARTED("session.compaction.started"),
     SESSION_COMPACTION_COMPLETED("session.compaction.completed"),
     SESSION_COMPACTION_FAILED("session.compaction.failed"),

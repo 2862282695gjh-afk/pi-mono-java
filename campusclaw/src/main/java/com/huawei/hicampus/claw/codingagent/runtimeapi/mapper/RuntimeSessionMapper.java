@@ -92,6 +92,11 @@ public interface RuntimeSessionMapper {
             @Param("thinking") boolean thinking,
             @Param("updatedAt") OffsetDateTime updatedAt);
 
+    int updateSessionConfiguration(
+            @Param("session") RuntimeSessionDTO session, @Param("updatedAt") OffsetDateTime updatedAt);
+
+    int approvePlanMode(@Param("sessionId") String sessionId, @Param("updatedAt") OffsetDateTime updatedAt);
+
     int insertTombstone(@Param("sessionId") String sessionId, @Param("deletedAt") OffsetDateTime deletedAt);
 
     int insertCleanupTask(@Param("sessionId") String sessionId, @Param("createdAt") OffsetDateTime createdAt);
@@ -111,6 +116,8 @@ public interface RuntimeSessionMapper {
     int deleteExecutionSegmentEvents(@Param("sessionId") String sessionId);
 
     int deleteToolConfirmations(@Param("sessionId") String sessionId);
+
+    int deletePlanConfirmations(@Param("sessionId") String sessionId);
 
     int deleteExecutionSegments(@Param("sessionId") String sessionId);
 

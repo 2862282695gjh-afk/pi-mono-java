@@ -67,6 +67,7 @@ import com.campusclaw.codingagent.runtimeapi.event.RuntimeEventSubscriber;
 import com.campusclaw.codingagent.runtimeapi.event.RuntimeExecutionContextFactory;
 import com.campusclaw.codingagent.runtimeapi.event.RuntimeExecutionCoordinator;
 import com.campusclaw.codingagent.runtimeapi.event.RuntimeMessageEventService;
+import com.campusclaw.codingagent.runtimeapi.event.RuntimeTodoEventMapper;
 import com.campusclaw.codingagent.runtimeapi.model.RuntimeModelManager;
 import com.campusclaw.codingagent.runtimeapi.persistence.RuntimeSessionRepositoryOpenGaussIT.OpenGaussTestConfiguration;
 import com.campusclaw.codingagent.runtimeapi.runtime.RuntimeActiveExecution;
@@ -358,7 +359,8 @@ class SkillCommandExecutionOpenGaussIT {
                 mock(ConfiguredToolAssembler.class),
                 new StaticListableBeanFactory().getBeanProvider(MateToolsetFactory.class),
                 prompt,
-                new SessionCompactor(ai, new CompactionProperties()));
+                new SessionCompactor(ai, new CompactionProperties()),
+                new com.campusclaw.codingagent.session.PlanPolicyPromptComposer());
         registry = new RuntimeSessionEngineRegistry(
                 factory, mock(SubagentExecutionService.class), mock(AgentScopedCronToolFactory.class), properties);
         scheduler = new RuntimeExecutionTimeoutScheduler();
@@ -379,8 +381,7 @@ class SkillCommandExecutionOpenGaussIT {
         var persistence = new RuntimeExecutionPersistenceService(
                 repository, database.getBean(RuntimeExecutionControlRepository.class), ids);
         terminalRetries = new RuntimeTerminalRetryScheduler();
-        var projectorFactory = new RuntimeEventProjectorFactory(
-                repository, persistence, codec, ids, eventFactory, encoder, clock, eventProperties);
+        var projectorFactory = projectorFactory(persistence, ids, eventFactory, encoder, clock, eventProperties);
         var coordinator = new RuntimeExecutionCoordinator(
                 registry,
                 persistence,
@@ -415,6 +416,25 @@ class SkillCommandExecutionOpenGaussIT {
                 clock);
         eventQueries = new CommittedEventQueryService(repository, projection);
         return messageEvents;
+    }
+
+    private RuntimeEventProjectorFactory projectorFactory(
+            RuntimeExecutionPersistenceService persistence,
+            RuntimeEntryIdGenerator ids,
+            RuntimeCommittedEventFactory eventFactory,
+            RuntimeEventEncoder encoder,
+            Clock clock,
+            RuntimeEventProperties eventProperties) {
+        return new RuntimeEventProjectorFactory(
+                repository,
+                persistence,
+                codec,
+                ids,
+                eventFactory,
+                encoder,
+                clock,
+                eventProperties,
+                new RuntimeTodoEventMapper());
     }
 
     private PreparedAgentRuntime runtime(String content, boolean enabled) {

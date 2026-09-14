@@ -9,7 +9,12 @@ import type { ConversationTurn } from '../types/product';
 const props = defineProps<{
   turns: ConversationTurn[];
   running: boolean;
+  pendingPlanEventId?: string;
+  reviewDisabled: boolean;
+  reviewPending: boolean;
+  sessionId: string;
 }>();
+const emit = defineEmits<{ decidePlan: [eventId: string, decision: 'approve' | 'revise', feedback: string] }>();
 
 const timelineItems = computed(() => groupConversationTurns(props.turns));
 const trailingAgentIndex = computed(() => findTrailingAgentIndex(timelineItems.value));
@@ -51,6 +56,11 @@ function hasVisibleRunningTurn(turns: ConversationTurn[]): boolean {
         v-else
         :round="item"
         :active="item.active || (running && index === trailingAgentIndex)"
+        :pending-plan-event-id="pendingPlanEventId"
+        :review-disabled="reviewDisabled"
+        :review-pending="reviewPending"
+        :session-id="sessionId"
+        @decide-plan="(eventId, decision, feedback) => emit('decidePlan', eventId, decision, feedback)"
       />
     </template>
 

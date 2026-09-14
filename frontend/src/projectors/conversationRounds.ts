@@ -4,6 +4,7 @@ import type {
   ConversationTurn,
   ThinkingTurn,
   NoticeTurn,
+  PlanTurn,
   UserTurn,
 } from '../types/product';
 
@@ -19,10 +20,16 @@ export interface AgentActivityBlock {
   turn: ThinkingTurn | ActivityTurn | NoticeTurn;
 }
 
+export interface AgentPlanBlock {
+  kind: 'plan';
+  key: string;
+  turn: PlanTurn;
+}
+
 export interface AgentRound {
   kind: 'agent';
   key: string;
-  blocks: Array<AgentMessageBlock | AgentActivityBlock>;
+  blocks: Array<AgentMessageBlock | AgentActivityBlock | AgentPlanBlock>;
   copySource: string;
   active: boolean;
 }
@@ -35,7 +42,7 @@ export interface UserTimelineItem {
 
 export type ConversationTimelineItem = UserTimelineItem | AgentRound;
 
-type AgentTurn = AssistantTurn | ThinkingTurn | ActivityTurn | NoticeTurn;
+type AgentTurn = AssistantTurn | ThinkingTurn | ActivityTurn | NoticeTurn | PlanTurn;
 
 export function groupConversationTurns(turns: ConversationTurn[]): ConversationTimelineItem[] {
   const items: ConversationTimelineItem[] = [];
@@ -68,12 +75,14 @@ function appendAgentRound(items: ConversationTimelineItem[], turns: AgentTurn[])
   });
 }
 
-function groupAgentBlocks(turns: AgentTurn[]): Array<AgentMessageBlock | AgentActivityBlock> {
-  const blocks: Array<AgentMessageBlock | AgentActivityBlock> = [];
+function groupAgentBlocks(turns: AgentTurn[]): Array<AgentMessageBlock | AgentActivityBlock | AgentPlanBlock> {
+  const blocks: Array<AgentMessageBlock | AgentActivityBlock | AgentPlanBlock> = [];
 
   for (const turn of turns) {
     if (turn.kind === 'assistant') {
       blocks.push({ kind: 'assistant', key: turn.key, turn });
+    } else if (turn.kind === 'plan') {
+      blocks.push({ kind: 'plan', key: turn.key, turn });
     } else {
       blocks.push({ kind: 'activity', key: `activity-${turn.key}`, turn });
     }
@@ -82,7 +91,7 @@ function groupAgentBlocks(turns: AgentTurn[]): Array<AgentMessageBlock | AgentAc
 }
 
 function isActiveTurn(turn: AgentTurn): boolean {
-  if (turn.kind === 'notice') return false;
+  if (turn.kind === 'notice' || turn.kind === 'plan') return false;
   if (turn.kind === 'assistant') return turn.streaming;
   return turn.status === 'running';
 }

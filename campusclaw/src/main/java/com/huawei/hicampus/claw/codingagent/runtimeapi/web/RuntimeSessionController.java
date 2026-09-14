@@ -8,6 +8,8 @@ import java.net.URI;
 
 import com.huawei.hicampus.claw.codingagent.runtimeapi.result.ResultBeanAdapter;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.session.RuntimeSessionService;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.session.RuntimeSessionUpdateService;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.vo.UpdateSessionRequestVO;
 import com.huawei.hicampus.claw.common.constant.ClawConstants;
 
 import org.springframework.http.CacheControl;
@@ -17,15 +19,18 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 
 /**
- * Runtime Session 创建、查询与删除接口。
+ * Runtime Session 创建、查询、统一部分更新与删除接口。
  *
  * @version [br_eCampusCore 26.0.0, 2026/08/18]
  * @since [br_eCampusCore 26.0.0]
@@ -37,9 +42,15 @@ public class RuntimeSessionController {
 
     private final ResultBeanAdapter resultBeanAdapter;
 
-    public RuntimeSessionController(RuntimeSessionService service, ResultBeanAdapter resultBeanAdapter) {
+    private final RuntimeSessionUpdateService updateService;
+
+    public RuntimeSessionController(
+            RuntimeSessionService service,
+            ResultBeanAdapter resultBeanAdapter,
+            RuntimeSessionUpdateService updateService) {
         this.service = service;
         this.resultBeanAdapter = resultBeanAdapter;
+        this.updateService = updateService;
     }
 
     @PostMapping("/agents/{agentId}/sessions")
@@ -59,6 +70,20 @@ public class RuntimeSessionController {
             @PathVariable("sessionId") @NotBlank @Pattern(regexp = ClawConstants.Session.ID_REGEX) String sessionId,
             HttpServletRequest request) {
         var view = service.get(sessionId);
+        return ResponseEntity.ok()
+                .cacheControl(CacheControl.noStore())
+                .eTag(view.etag())
+                .header(HttpHeaders.CONTENT_LANGUAGE, RuntimeRequestContext.language(request))
+                .body(resultBeanAdapter.normal(view.resource()));
+    }
+
+    @PostMapping("/sessions/{sessionId}")
+    public ResponseEntity<Object> update(
+            @PathVariable("sessionId") @NotBlank @Pattern(regexp = ClawConstants.Session.ID_REGEX) String sessionId,
+            @RequestHeader(value = HttpHeaders.IF_MATCH, required = false) String ifMatch,
+            @Valid @RequestBody UpdateSessionRequestVO body,
+            HttpServletRequest request) {
+        var view = updateService.update(sessionId, ifMatch, body);
         return ResponseEntity.ok()
                 .cacheControl(CacheControl.noStore())
                 .eTag(view.etag())

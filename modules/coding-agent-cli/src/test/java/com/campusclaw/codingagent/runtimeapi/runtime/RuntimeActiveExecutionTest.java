@@ -8,14 +8,18 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import com.campusclaw.agent.tool.BeforeToolCallContext;
 import com.campusclaw.agent.tool.BeforeToolCallResult;
 import com.campusclaw.ai.types.ToolCall;
 import com.campusclaw.codingagent.runtimeapi.dto.ExecutionTargetDTO;
+import com.campusclaw.codingagent.runtimeapi.dto.PlanReviewDecisionDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.ToolConfirmationDecisionDTO;
 import com.campusclaw.codingagent.runtimeapi.event.RuntimeEventOutput;
+import com.campusclaw.codingagent.runtimeapi.session.PlanConfirmationResult;
+import com.campusclaw.common.constant.ClawConstants;
 
 import org.junit.jupiter.api.Test;
 
@@ -72,6 +76,45 @@ class RuntimeActiveExecutionTest {
         assertThat(execution.target().segmentId()).isEqualTo("segment-1");
     }
 
+    @Test
+    void shouldDeliverApprovalClaimedBeforeToolStartsWaiting() throws Exception {
+        RuntimeActiveExecution execution = planExecution();
+        AtomicInteger applied = new AtomicInteger();
+        execution.installModeApplier(applied::incrementAndGet);
+        execution.beginPlanReview("exit-1", "plan-1", "# 方案");
+        PlanReviewDecisionDTO decision = planDecision(PlanConfirmationResult.APPROVE);
+
+        assertThat(execution.claimAndResumePlanReview(
+                        new ExecutionTargetDTO("session", "execution", "root", "segment-1"),
+                        "plan-1",
+                        () -> Optional.of(decision)))
+                .contains(decision);
+
+        assertThat(execution.await("exit-1", "# 方案"))
+                .extracting("approved", "feedback")
+                .containsExactly(true, null);
+        assertThat(execution.mode()).isEqualTo(ClawConstants.Agent.MODE_BUILD);
+        assertThat(applied).hasValue(1);
+    }
+
+    @Test
+    void shouldDeliverRevisionClaimedBeforeToolStartsWaiting() throws Exception {
+        RuntimeActiveExecution execution = planExecution();
+        execution.beginPlanReview("exit-1", "plan-1", "# 方案");
+        PlanReviewDecisionDTO decision = planDecision(PlanConfirmationResult.REVISE);
+        decision.setFeedback("补充回滚步骤");
+
+        execution.claimAndResumePlanReview(
+                new ExecutionTargetDTO("session", "execution", "root", "segment-1"),
+                "plan-1",
+                () -> Optional.of(decision));
+
+        assertThat(execution.await("exit-1", "# 方案"))
+                .extracting("approved", "feedback")
+                .containsExactly(false, "补充回滚步骤");
+        assertThat(execution.mode()).isEqualTo(ClawConstants.Agent.MODE_PLAN);
+    }
+
     private static BeforeToolCallContext context(ToolCall call) {
         return new BeforeToolCallContext(null, call, call.arguments(), null);
     }
@@ -84,6 +127,26 @@ class RuntimeActiveExecutionTest {
         decision.setPreviousSegmentId(previous);
         decision.setSegmentId(segment);
         decision.setToolCallId(toolCallId);
+        return decision;
+    }
+
+    private static RuntimeActiveExecution planExecution() {
+        RuntimeActiveExecution execution = new RuntimeActiveExecution(RuntimeEventOutput.persistenceOnly());
+        execution.applyMode(ClawConstants.Agent.MODE_PLAN);
+        execution.bindTarget(new ExecutionTargetDTO("session", "execution", "root", "segment-1"));
+        return execution;
+    }
+
+    private static PlanReviewDecisionDTO planDecision(PlanConfirmationResult result) {
+        var decision = new PlanReviewDecisionDTO();
+        decision.setSessionId("session");
+        decision.setExecutionId("execution");
+        decision.setConfirmationEventId("confirmation");
+        decision.setTargetEventId("plan-1");
+        decision.setPreviousSegmentId("segment-1");
+        decision.setSegmentId("segment-2");
+        decision.setToolCallId("exit-1");
+        decision.setResult(result);
         return decision;
     }
 

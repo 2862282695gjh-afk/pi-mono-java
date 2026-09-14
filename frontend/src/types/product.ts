@@ -57,4 +57,14 @@ export interface NoticeTurn {
   text: string;
 }
 
-export type ConversationTurn = UserTurn | ThinkingTurn | AssistantTurn | ActivityTurn | NoticeTurn;
+export interface PlanTurn {
+  key: string;
+  kind: 'plan';
+  eventId: string;
+  sourceEventId: string;
+  rawMarkdown: string;
+  decision?: 'approve' | 'revise';
+  lifecycle?: 'stopping' | 'stopped' | 'failed' | 'ended';
+}
+
+export type ConversationTurn = UserTurn | ThinkingTurn | AssistantTurn | ActivityTurn | NoticeTurn | PlanTurn;

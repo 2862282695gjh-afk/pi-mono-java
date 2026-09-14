@@ -2,9 +2,10 @@ import type { ThreadSummary } from '../types/product';
 
 export interface PendingOperation {
   id: string;
-  kind: 'message' | 'skill' | 'command' | 'interrupt' | 'confirmation';
+  kind: 'message' | 'skill' | 'command' | 'interrupt' | 'confirmation' | 'plan-confirmation';
   rootId?: string;
   receiptId?: string;
+  targetEventId?: string;
 }
 export interface PendingStore {
   list(sessionId: string): PendingOperation[];
@@ -18,12 +19,14 @@ export interface SessionIndexEntry extends ThreadSummary {
 interface SessionIndex { schemaVersion: 1; activeSessionId: string | null; entries: SessionIndexEntry[] }
 const emptyIndex = (): SessionIndex => ({ schemaVersion: 1, activeSessionId: null, entries: [] });
 const isText = (value: unknown): value is string => typeof value === 'string' && value.length > 0 && value.length <= 2048;
-const kinds = new Set(['message', 'skill', 'command', 'interrupt', 'confirmation']);
+const kinds = new Set(['message', 'skill', 'command', 'interrupt', 'confirmation', 'plan-confirmation']);
 function decodeOperation(value: unknown): PendingOperation {
   const item = value as PendingOperation;
   if (!item || !isText(item.id) || !kinds.has(item.kind)
-    || (item.rootId !== undefined && !isText(item.rootId)) || (item.receiptId !== undefined && !isText(item.receiptId))) throw new Error('Invalid operation');
-  return { id: item.id, kind: item.kind, ...(item.rootId ? { rootId: item.rootId } : {}), ...(item.receiptId ? { receiptId: item.receiptId } : {}) };
+    || (item.rootId !== undefined && !isText(item.rootId)) || (item.receiptId !== undefined && !isText(item.receiptId))
+    || (item.targetEventId !== undefined && !isText(item.targetEventId))) throw new Error('Invalid operation');
+  return { id: item.id, kind: item.kind, ...(item.rootId ? { rootId: item.rootId } : {}),
+    ...(item.receiptId ? { receiptId: item.receiptId } : {}), ...(item.targetEventId ? { targetEventId: item.targetEventId } : {}) };
 }
 function decodeIndex(raw: string): SessionIndex {
   const value = JSON.parse(raw) as SessionIndex;

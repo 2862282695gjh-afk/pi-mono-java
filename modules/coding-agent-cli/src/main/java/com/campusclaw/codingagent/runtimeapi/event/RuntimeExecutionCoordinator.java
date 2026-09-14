@@ -160,9 +160,19 @@ public class RuntimeExecutionCoordinator {
         if (holder.activeExecution().filter(active -> active == execution).isEmpty()) {
             return;
         }
+        alignTimeoutTarget(execution);
         execution.requestTimeout();
         holder.abort();
         execution.cancelToolConfirmation(new TimeoutException("runtime execution exceeded its maximum duration"));
+        execution.cancelPlanReview(new TimeoutException("runtime execution exceeded its maximum duration"));
+    }
+
+    private void alignTimeoutTarget(RuntimeActiveExecution execution) {
+        try {
+            persistence.findCurrentTarget(execution.target()).ifPresent(execution::prepareStop);
+        } catch (RuntimeException error) {
+            LOGGER.warn("Failed to align Runtime timeout with the persisted execution segment", error);
+        }
     }
 
     private void finish(
@@ -258,6 +268,9 @@ public class RuntimeExecutionCoordinator {
     }
 
     private CommittedEventDTO commitTerminal(RuntimeActiveExecution execution, TerminalPlanDTO plan) {
+        if (execution.timedOut()) {
+            alignTimeoutTarget(execution);
+        }
         RuntimeEntryDTO entry = codec.sessionIdleEntry(
                 execution.target().sessionId(),
                 plan.eventId(),

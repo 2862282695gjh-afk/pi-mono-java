@@ -16,7 +16,12 @@ import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.ExecutionControlSigna
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.ExecutionStateDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.ExecutionTargetDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.InterruptRequestDTO;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.PlanConfirmationAcceptanceDTO;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.PlanConfirmationEventsDTO;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.PlanConfirmingEventsDTO;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.PlanReviewDecisionDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.ToolConfirmationDecisionDTO;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.session.PlanConfirmationResult;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.session.RuntimeExecutionTerminalReason;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.session.ToolConfirmationResult;
 
@@ -31,6 +36,8 @@ public interface RuntimeExecutionControlRepository {
 
     Optional<ExecutionStateDTO> find(ExecutionTargetDTO target);
 
+    Optional<ExecutionTargetDTO> findCurrentTarget(ExecutionTargetDTO executionIdentity);
+
     void linkCommittedEvent(ExecutionTargetDTO target, String eventId, long eventSeq);
 
     InterruptRequestDTO requestInterrupt(
@@ -38,6 +45,13 @@ public interface RuntimeExecutionControlRepository {
 
     TransitionStatus markConfirming(
             ExecutionTargetDTO target, String toolCallId, ConfirmingAppender appender, OffsetDateTime terminalAt);
+
+    TransitionStatus markPlanConfirming(
+            ExecutionTargetDTO target,
+            String toolCallId,
+            String planEventId,
+            PlanConfirmingAppender appender,
+            OffsetDateTime terminalAt);
 
     ConfirmationAcceptanceDTO acceptConfirmation(
             String sessionId,
@@ -52,7 +66,22 @@ public interface RuntimeExecutionControlRepository {
     Optional<ToolConfirmationDecisionDTO> claimConfirmation(
             ExecutionTargetDTO confirmingTarget, String toolCallId, OffsetDateTime claimedAt);
 
+    PlanConfirmationAcceptanceDTO acceptPlanConfirmation(
+            String sessionId,
+            String targetEventId,
+            String confirmationEventId,
+            String segmentId,
+            PlanConfirmationResult result,
+            String feedback,
+            PlanConfirmationAppender appender,
+            OffsetDateTime acceptedAt);
+
+    Optional<PlanReviewDecisionDTO> claimPlanConfirmation(
+            ExecutionTargetDTO confirmingTarget, String planEventId, OffsetDateTime claimedAt);
+
     boolean acknowledgeConfirmation(ToolConfirmationDecisionDTO decision, OffsetDateTime completedAt);
+
+    boolean acknowledgePlanConfirmation(PlanReviewDecisionDTO decision, OffsetDateTime completedAt);
 
     TransitionStatus appendToSegment(ExecutionTargetDTO target, SegmentAppender appender);
 
@@ -85,6 +114,22 @@ public interface RuntimeExecutionControlRepository {
     @FunctionalInterface
     interface ConfirmingAppender {
         ConfirmingEventsDTO append();
+    }
+
+    /**
+     * 持有 Session 与执行行锁期间提交计划和 confirming 事件的回调。
+     */
+    @FunctionalInterface
+    interface PlanConfirmingAppender {
+        PlanConfirmingEventsDTO append();
+    }
+
+    /**
+     * 持有 Session 与执行行锁期间提交计划审核回执和可选模式事件的回调。
+     */
+    @FunctionalInterface
+    interface PlanConfirmationAppender {
+        PlanConfirmationEventsDTO append(String sourceEventId);
     }
 
     /**

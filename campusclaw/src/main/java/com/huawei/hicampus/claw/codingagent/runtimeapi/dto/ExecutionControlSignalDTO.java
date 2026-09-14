@@ -26,6 +26,8 @@ public class ExecutionControlSignalDTO {
 
     private String toolCallId;
 
+    private String planEventId;
+
     public ExecutionTargetDTO target() {
         return new ExecutionTargetDTO(sessionId, executionId, rootEventId, segmentId);
     }

@@ -28,6 +28,7 @@ import com.campusclaw.codingagent.tool.workspace.AgentWorkspaceBoundary;
  * @param mateToolSessionState 当前 Session 的 Mate 工具发现状态
  * @param cronToolFactory 当前 Runtime 的 Cron 工具工厂
  * @param agentToolFactory 当前父 Session 的 Agent 工具工厂
+ * @param exitPlanModeToolFactory 当前 Runtime 的计划审核工具工厂
  *
  * @version [br_eCampusCore 26.0.0, 2026/08/23]
  * @since [br_eCampusCore 26.0.0]
@@ -42,10 +43,36 @@ public record ToolAssemblyContext(
         List<String> childAgentNames,
         MateToolSessionState mateToolSessionState,
         Supplier<AgentTool> cronToolFactory,
-        Supplier<AgentTool> agentToolFactory) {
+        Supplier<AgentTool> agentToolFactory,
+        Supplier<AgentTool> exitPlanModeToolFactory) {
 
     public ToolAssemblyContext {
         skillIdsByName = skillIdsByName == null ? Map.of() : Map.copyOf(skillIdsByName);
         childAgentNames = childAgentNames == null ? List.of() : List.copyOf(childAgentNames);
+    }
+
+    public ToolAssemblyContext(
+            ToolEntryPoint entryPoint,
+            PreparedAgentRuntime runtime,
+            Model model,
+            ThinkingLevel thinkingLevel,
+            AgentWorkspaceBoundary workspaceBoundary,
+            Map<String, String> skillIdsByName,
+            List<String> childAgentNames,
+            MateToolSessionState mateToolSessionState,
+            Supplier<AgentTool> cronToolFactory,
+            Supplier<AgentTool> agentToolFactory) {
+        this(
+                entryPoint,
+                runtime,
+                model,
+                thinkingLevel,
+                workspaceBoundary,
+                skillIdsByName,
+                childAgentNames,
+                mateToolSessionState,
+                cronToolFactory,
+                agentToolFactory,
+                null);
     }
 }

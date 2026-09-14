@@ -154,7 +154,24 @@ describe('Claw Runtime Session Events coordinator', () => {
     await expect(runtime.changeThinking(false)).rejects.toMatchObject({ code: 'SESSION_VERSION_MISMATCH' });
     expect(runtime.session.value?.thinking).toBe(true);
     expect(requestAt(fetcher).headers.get('if-match')).toBe('"v0"');
-    expect(fetcher.mock.calls.filter((call) => (call[1] as RequestInit).method === 'PUT')).toHaveLength(1);
+    expect(fetcher.mock.calls.filter((call) => (call[1] as RequestInit).method === 'POST')).toHaveLength(1);
+    expect(String(fetcher.mock.calls[0][0])).toMatch(/\/sessions\/session-a$/u);
+    expect(requestAt(fetcher).json).toEqual({ thinking: false });
+  });
+  it('submits an exact plan decision and keeps review separate from the message draft', async () => {
+    const plan = eventFixture({ eventId: 'plan-a', type: 'agent.plan', sourceEventId: 'root-a', toolCallId: 'exit-a', content: '# 方案\n\n执行步骤' });
+    const receipt = eventFixture({ eventId: 'review-a', type: 'user.plan_confirmation', targetEventId: 'plan-a', result: 'approve' });
+    const mode = eventFixture({ eventId: 'mode-a', type: 'session.mode_changed', previousMode: 'plan', mode: 'build', reason: 'planApproved',
+      sourceEventId: 'root-a', confirmationEventId: 'review-a' });
+    const { runtime, fetcher } = setup([userFixture(), plan, idleFixture('confirming'), receipt, mode, idleFixture()], 'running');
+    runtime.session.value = sessionFixture({ state: 'running', mode: 'plan' });
+    runtime.events.value = [userFixture(), plan, idleFixture('confirming')];
+    fetcher.mockResolvedValueOnce(streamResponse([receipt, mode, idleFixture()]));
+    const submission = await runtime.confirmPlan('plan-a', 'approve', '', { 'access-token': 'fixture-plan' });
+    expect(await submission.confirmation).toBe('confirmed');
+    await vi.waitFor(() => expect(runtime.streaming.value || runtime.recovering.value).toBe(false));
+    expect(requestAt(fetcher).json).toEqual({ event: { type: 'user.plan_confirmation', targetEventId: 'plan-a', result: 'approve' } });
+    expect(runtime.events.value.some((event) => event.type === 'user.plan_confirmation')).toBe(true);
   });
   it('coalesces catalog reads and keeps Builtin results outside event history', async () => {
     const { runtime, fetcher } = setup();

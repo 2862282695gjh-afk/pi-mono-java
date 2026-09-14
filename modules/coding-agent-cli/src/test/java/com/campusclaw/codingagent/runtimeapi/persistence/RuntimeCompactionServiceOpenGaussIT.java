@@ -308,7 +308,8 @@ class RuntimeCompactionServiceOpenGaussIT {
                 mock(ConfiguredToolAssembler.class),
                 new StaticListableBeanFactory().getBeanProvider(MateToolsetFactory.class),
                 prompt,
-                new SessionCompactor(ai, properties));
+                new SessionCompactor(ai, properties),
+                new com.campusclaw.codingagent.session.PlanPolicyPromptComposer());
     }
 
     @ParameterizedTest

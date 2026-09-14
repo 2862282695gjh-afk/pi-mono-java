@@ -71,6 +71,7 @@ public class FileAgentDirectoryResolver implements AgentDirectoryResolver {
                 runtime.agentId(),
                 defaultModel,
                 models,
+                runtime.metadata().mode(),
                 runtime.agentRoot(),
                 runtime.agentRoot().resolve(".campusclaw"));
     }

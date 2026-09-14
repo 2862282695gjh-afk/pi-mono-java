@@ -99,6 +99,35 @@ class AgentRuntimeManagerTest {
     }
 
     @Test
+    void missingRemoteModeDefaultsToBuildAndExplicitNullIsRejected() throws Exception {
+        ObjectMapper mapper = new ObjectMapper();
+        AgentRuntime missing = mapper.readValue("{}", AgentRuntime.class);
+        AgentRuntime explicitNull = mapper.readValue("{\"mode\":null}", AgentRuntime.class);
+
+        assertEquals("build", missing.mode());
+        assertEquals(AgentModeDeserializer.INVALID_NULL, explicitNull.mode());
+        when(client.getAgentRuntime(AGENT_ID)).thenReturn(explicitNull);
+        assertThrows(AgentRuntimeException.class, () -> manager.refresh(AGENT_ID));
+    }
+
+    @Test
+    void missingLocalSettingsModeDefaultsToBuildAndInvalidModeInvalidatesCache() throws Exception {
+        stubRuntime("1.0.0", "prompt-v1");
+        PreparedAgentRuntime prepared = manager.prepare(AGENT_ID);
+        Path settingsFile = prepared.agentRoot().resolve(".campusclaw/settings.json");
+        ObjectMapper mapper = new ObjectMapper();
+        var settings = (com.fasterxml.jackson.databind.node.ObjectNode) mapper.readTree(settingsFile.toFile());
+        settings.remove("mode");
+        mapper.writeValue(settingsFile.toFile(), settings);
+
+        assertEquals("build", manager.prepareCached(AGENT_ID).metadata().mode());
+
+        settings.put("mode", "invalid");
+        mapper.writeValue(settingsFile.toFile(), settings);
+        assertNull(manager.prepareCached(AGENT_ID));
+    }
+
+    @Test
     void completeCacheAvoidsMateAndRefreshRebuildsIt() {
         stubRuntime("1.0.0", "prompt-v1");
         manager.prepare(AGENT_ID);

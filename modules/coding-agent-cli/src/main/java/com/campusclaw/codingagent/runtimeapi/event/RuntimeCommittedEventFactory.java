@@ -20,6 +20,7 @@ import com.campusclaw.ai.types.Usage;
 import com.campusclaw.codingagent.runtimeapi.dto.CommittedEventDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.RuntimeEntryDTO;
 import com.campusclaw.codingagent.tool.builtin.BuiltInToolName;
+import com.campusclaw.codingagent.tool.todo.TodoSnapshotDTO;
 import com.campusclaw.common.constant.ClawConstants;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -71,6 +72,25 @@ public class RuntimeCommittedEventFactory {
             payload.put("denyMessage", denyMessage);
         }
         return create(entry, entry.getId(), CommittedEventType.USER_TOOL_CONFIRMATION, payload);
+    }
+
+    public CommittedEventDTO userPlanConfirmation(
+            RuntimeEntryDTO entry, String targetEventId, String result, String feedback) {
+        ObjectNode payload = objectMapper.createObjectNode();
+        payload.put("targetEventId", targetEventId);
+        payload.put("result", result);
+        if (feedback != null) {
+            payload.put("feedback", feedback);
+        }
+        return create(entry, entry.getId(), CommittedEventType.USER_PLAN_CONFIRMATION, payload);
+    }
+
+    public CommittedEventDTO agentPlan(
+            RuntimeEntryDTO entry, String eventId, String toolCallId, String content, String sourceEventId) {
+        ObjectNode payload = sourcePayload(sourceEventId);
+        payload.put("toolCallId", toolCallId);
+        payload.put("content", content);
+        return create(entry, eventId, CommittedEventType.AGENT_PLAN, payload);
     }
 
     public CommittedEventDTO agentMessage(
@@ -168,8 +188,36 @@ public class RuntimeCommittedEventFactory {
         return switch (type) {
             case SESSION_MODEL_CHANGED -> sessionModelChanged(entry);
             case SESSION_THINKING_CHANGED -> sessionThinkingChanged(entry);
+            case SESSION_MODE_CHANGED -> sessionModeChanged(entry);
             default -> throw new IllegalArgumentException("runtime entry is not a configuration event");
         };
+    }
+
+    public CommittedEventDTO sessionModeChanged(RuntimeEntryDTO entry) {
+        JsonNode source = entryPayload(entry, RuntimeEventType.SESSION_MODE_CHANGED);
+        ObjectNode payload = objectMapper.createObjectNode();
+        payload.put("previousMode", requiredText(source, "previousMode"));
+        payload.put("mode", requiredText(source, "mode"));
+        payload.put("reason", requiredReason(source, "requested", "planApproved"));
+        copyOptionalText(source, payload, "sourceEventId");
+        copyOptionalText(source, payload, "confirmationEventId");
+        return create(entry, entry.getId(), CommittedEventType.SESSION_MODE_CHANGED, payload);
+    }
+
+    public CommittedEventDTO agentTodoUpdated(
+            RuntimeEntryDTO entry, String eventId, String toolCallId, String sourceEventId, TodoSnapshotDTO snapshot) {
+        ObjectNode payload = objectMapper.createObjectNode();
+        payload.put("sourceEventId", sourceEventId);
+        payload.put("toolCallId", toolCallId);
+        payload.set("todos", objectMapper.valueToTree(snapshot.todos()));
+        return create(entry, eventId, CommittedEventType.AGENT_TODO_UPDATED, payload);
+    }
+
+    private static void copyOptionalText(JsonNode source, ObjectNode target, String field) {
+        JsonNode value = source.get(field);
+        if (value != null && value.isTextual() && !value.textValue().isBlank()) {
+            target.put(field, value.textValue());
+        }
     }
 
     private ObjectNode sourcePayload(String sourceEventId) {

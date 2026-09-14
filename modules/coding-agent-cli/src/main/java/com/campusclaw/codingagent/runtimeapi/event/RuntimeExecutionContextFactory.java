@@ -65,6 +65,7 @@ public class RuntimeExecutionContextFactory {
         UserMessage userMessage = codec.toUserMessage(message, fileIds, clock.millis());
         RuntimeEventStream stream = streamFactory.create();
         RuntimeActiveExecution execution = new RuntimeActiveExecution(stream);
+        execution.applyMode(session.getMode());
         RuntimeSessionHolder holder = engineRegistry.register(
                 session.getId(), snapshot, model, session.isThinking(), history, execution, credentials);
         return new RuntimeExecutionContextDTO(holder, execution, userMessage, message, stream);
@@ -80,6 +81,7 @@ public class RuntimeExecutionContextFactory {
         List<Message> history = queryService.restoreHistory(session.getId(), model);
         RuntimeEventStream stream = streamFactory.create();
         RuntimeActiveExecution execution = new RuntimeActiveExecution(stream);
+        execution.applyMode(session.getMode());
 
         // 准备回调在注册调用内同步执行；引用只属于本次请求，不存放到 Spring 单例。
         var message = new AtomicReference<String>();

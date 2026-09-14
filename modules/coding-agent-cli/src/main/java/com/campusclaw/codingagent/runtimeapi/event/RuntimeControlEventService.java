@@ -13,12 +13,15 @@ import java.util.function.Supplier;
 import com.campusclaw.codingagent.runtimeapi.dto.AcceptedControlDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.AcceptedControlStreamDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.CommittedEventDTO;
+import com.campusclaw.codingagent.runtimeapi.dto.PlanModeEventDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.RuntimeEntryDTO;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
 import com.campusclaw.codingagent.runtimeapi.persistence.RuntimeExecutionPersistenceService;
+import com.campusclaw.codingagent.runtimeapi.session.PlanConfirmationResult;
 import com.campusclaw.codingagent.runtimeapi.session.ToolConfirmationResult;
 import com.campusclaw.codingagent.runtimeapi.vo.RuntimeSseEventVO;
+import com.campusclaw.common.constant.ClawConstants;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -94,6 +97,47 @@ public class RuntimeControlEventService {
                 event,
                 () -> persistence.acceptToolConfirmation(
                         sessionId, toolCallId, result, denyMessage, receipt, event, acceptedAt));
+    }
+
+    public AcceptedControlStreamDTO acceptPlanConfirmation(
+            String sessionId, String targetEventId, PlanConfirmationResult result, String feedback) {
+        OffsetDateTime acceptedAt = now();
+        RuntimeEntryDTO receipt = codec.userPlanConfirmationEntry(
+                sessionId, ids.nextId(), targetEventId, result.value(), feedback, acceptedAt);
+        CommittedEventDTO receiptEvent = events.userPlanConfirmation(receipt, targetEventId, result.value(), feedback);
+        return accept(
+                RuntimeResultWaitMode.SEGMENT_EVENTS,
+                receiptEvent,
+                () -> persistence.acceptPlanConfirmation(
+                        sessionId,
+                        targetEventId,
+                        result,
+                        feedback,
+                        receipt,
+                        receiptEvent,
+                        sourceEventId -> planModeEvent(sessionId, sourceEventId, receiptEvent, result, acceptedAt),
+                        acceptedAt));
+    }
+
+    private PlanModeEventDTO planModeEvent(
+            String sessionId,
+            String sourceEventId,
+            CommittedEventDTO receiptEvent,
+            PlanConfirmationResult result,
+            OffsetDateTime acceptedAt) {
+        if (!result.isApproved()) {
+            return null;
+        }
+        RuntimeEntryDTO entry = codec.modeChangedEntry(
+                sessionId,
+                ids.nextId(),
+                ClawConstants.Agent.MODE_PLAN,
+                ClawConstants.Agent.MODE_BUILD,
+                "planApproved",
+                sourceEventId,
+                receiptEvent.getEventId(),
+                acceptedAt);
+        return new PlanModeEventDTO(entry, events.sessionModeChanged(entry));
     }
 
     private AcceptedControlStreamDTO accept(

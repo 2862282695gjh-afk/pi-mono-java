@@ -80,3 +80,48 @@
 .composer-command-run { margin: 4px 14px 10px; }
 .submit-button .stop-glyph { fill: currentColor; stroke: none; }
 .thread-forget { margin: 0 12px 8px; padding: 4px; border: 0; background: transparent; color: var(--text-secondary); text-align: left; cursor: pointer; }
+
+.primary-button { min-height: 44px; padding: 8px 14px; border: 1px solid var(--action-primary); border-radius: 9px; color: var(--surface-primary); background: var(--action-primary); font-weight: 620; }
+.primary-button:hover:not(:disabled) { background: var(--action-primary-hover); }
+.plan-card { margin: 12px 0; overflow: hidden; border: 1px solid var(--border-default); border-radius: 14px; background: var(--surface-secondary); }
+.plan-card.approved { background: var(--surface-primary); }
+.plan-card > header { padding: 0 14px; }
+.plan-toggle { display: flex; align-items: center; justify-content: space-between; width: 100%; min-height: 48px; gap: 16px; border: 0; background: transparent; color: inherit; text-align: left; font-weight: 650; }
+.plan-toggle span:last-child { color: var(--text-secondary); font-size: 12px; font-weight: 500; }
+.plan-content { padding: 4px 16px 14px; border-top: 1px solid var(--border-default); line-height: 1.8; }
+.plan-content pre, .plan-content table { max-width: 100%; overflow-x: auto; }
+.plan-actions, .plan-feedback > div { display: flex; flex-wrap: wrap; gap: 8px; padding: 10px 14px 14px; }
+.plan-feedback { padding: 0 14px 14px; }
+.plan-feedback label { display: block; color: var(--text-secondary); font-size: 12px; }
+.plan-feedback textarea { display: block; width: 100%; margin-top: 5px; padding: 9px 10px; border: 1px solid var(--border-default); border-radius: 8px; background: var(--surface-primary); color: inherit; resize: vertical; font: inherit; }
+.plan-feedback p { margin: 5px 0; color: #8c3423; font-size: 12px; }
+.plan-feedback > div { padding: 8px 0 0; }
+.plan-card > .event-notice { padding: 0 14px 12px; }
+.composer-config, .progress-disclosure { width: min(var(--content-width), 100%); margin: 0 auto 8px; }
+.composer-config { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.mode-control { display: inline-flex; padding: 2px; border: 1px solid var(--border-default); border-radius: 10px; background: var(--surface-secondary); }
+.mode-control button { min-height: 38px; padding: 6px 11px; border: 0; border-radius: 7px; background: transparent; color: var(--text-secondary); }
+.mode-control button.active { color: var(--text-primary); background: var(--surface-primary); box-shadow: 0 1px 4px rgba(76, 50, 39, 0.08); }
+.composer-config .thinking-control, .composer-config .model-select select { min-height: 44px; }
+.mobile-session-settings { display: none; }
+.progress-disclosure { overflow: hidden; border: 1px solid var(--border-default); border-radius: 12px; background: var(--surface-secondary); }
+.progress-disclosure > button { display: flex; align-items: center; justify-content: space-between; width: 100%; min-height: 44px; padding: 8px 13px; gap: 12px; border: 0; background: transparent; color: inherit; text-align: left; }
+.progress-disclosure > button span { color: var(--text-secondary); font-size: 12px; }
+.progress-disclosure ol { max-height: 30dvh; padding: 2px 13px 10px; margin: 0; list-style: none; overflow-y: auto; }
+.progress-disclosure li { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; align-items: start; padding: 6px 0; gap: 6px; line-height: 1.5; }
+.progress-disclosure li small { color: var(--text-secondary); }
+.progress-disclosure li.completed > span:nth-child(2) { color: var(--text-secondary); text-decoration: line-through; }
+.progress-disclosure > p { margin: 0; padding: 0 13px 12px; color: var(--text-secondary); }
+@media (max-width: 700px) {
+  .composer-config .thinking-control, .composer-config .model-select { display: none; }
+  .mobile-session-settings { display: block; margin-left: auto; color: var(--text-secondary); font-size: 13px; }
+  .mobile-session-settings[open] { flex: 1 1 100%; margin-left: 0; }
+  .mobile-session-settings summary { min-height: 44px; padding: 11px 8px; cursor: pointer; text-align: right; }
+  .mobile-session-settings[open] summary { text-align: left; }
+  .mobile-session-settings > div { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; padding: 8px; border: 1px solid var(--border-default); border-radius: 10px; background: var(--surface-secondary); }
+  .mobile-session-settings button, .mobile-session-settings select { width: 100%; min-height: 44px; }
+  .mobile-session-settings button { border: 1px solid var(--border-default); border-radius: 8px; background: var(--surface-primary); color: inherit; }
+  .mobile-session-settings button.active { border-color: var(--action-primary); }
+  .mobile-session-settings label span { display: block; margin-bottom: 4px; }
+  .plan-actions > button, .plan-feedback > div > button { flex: 1 1 140px; }
+}

@@ -34,6 +34,9 @@ export function hasToolConfirmation(events: RuntimeEvent[], call: Extract<Runtim
   }
   return false;
 }
+export function hasPlanConfirmation(events: RuntimeEvent[], planEventId: string): boolean {
+  return events.some((event) => event.type === 'user.plan_confirmation' && event.targetEventId === planEventId);
+}
 export function executionState(events: RuntimeEvent[]) {
   const latest = [...events].reverse();
   const root = latest.find((event) => event.type === 'user.message');
@@ -44,9 +47,30 @@ export function executionState(events: RuntimeEvent[]) {
     && event.sourceEventId === rootId && event.requiresConfirmation
     && !events.some((item) => item.type === 'agent.tool_result' && item.sourceEventId === rootId && item.toolCallId === event.toolCallId)
     && !hasToolConfirmation(events, event));
+  const plan = latest.find((event) => event.type === 'agent.plan' && event.sourceEventId === rootId);
   const interruptPending = !terminal && events.some((event) => event.type === 'user.interrupt' && event.targetEventId === rootId);
-  const continued = idle && events.slice(events.indexOf(idle) + 1).some((event) => event.type === 'user.tool_confirmation'
+  const continued = idle && events.slice(events.indexOf(idle) + 1).some((event) => event.type === 'user.tool_confirmation' || event.type === 'user.plan_confirmation'
     || event.type === 'user.interrupt' || ('sourceEventId' in event && event.sourceEventId === rootId));
+  const confirming = !terminal && !continued && idle?.type === 'session.status_idle' && idle.reason === 'confirming';
   return { rootId, terminal, interruptPending, pendingTool: !terminal && pendingTool?.type === 'agent.tool_call' ? pendingTool : undefined,
-    confirming: !terminal && !continued && idle?.type === 'session.status_idle' && idle.reason === 'confirming' };
+    pendingPlan: confirming && plan?.type === 'agent.plan' && !hasPlanConfirmation(events, plan.eventId) ? plan : undefined,
+    confirming };
+}
+
+export function executionTodos(events: RuntimeEvent[]) {
+  const rootId = [...events].reverse().find((event) => event.type === 'user.message')?.eventId;
+  const snapshot = [...events].reverse().find((event) => event.type === 'agent.todo_updated' && event.sourceEventId === rootId);
+  return snapshot?.type === 'agent.todo_updated' ? snapshot : undefined;
+}
+
+export function canReviewPlan(options: {
+  mode?: string;
+  state?: string;
+  hasPendingPlan: boolean;
+  historyReady: boolean;
+  controlLocked: boolean;
+  uncertain: boolean;
+}): boolean {
+  return options.mode === 'plan' && options.state === 'running' && options.hasPendingPlan
+    && options.historyReady && !options.controlLocked && !options.uncertain;
 }

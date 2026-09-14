@@ -181,6 +181,8 @@ public class RuntimeSessionEngineRegistry {
             execution.bindToolPermissions(RuntimeToolPermissionPolicy.from(session.runtime()));
             session.agent().replaceMessages(messages);
             RuntimeSessionHolder holder = new RuntimeSessionHolder(sessionId, snapshot, session, thinking);
+            execution.installModeApplier(
+                    () -> holder.applyMode(com.huawei.hicampus.claw.common.constant.ClawConstants.Agent.MODE_BUILD));
             if (!holder.begin(execution)) {
                 throw new IllegalStateException("new execution holder is already active");
             }
@@ -214,11 +216,14 @@ public class RuntimeSessionEngineRegistry {
                 (runtime, ignored) -> cronToolFactory.create(runtime.agentId()),
                 (runtime, resolvedModel) -> new BoundAgentTool(
                         runtime,
-                        SubagentExecutionContext.root(runtime.agentId(), resolvedModel, level, credentials),
+                        SubagentExecutionContext.root(
+                                runtime.agentId(), resolvedModel, level, credentials, execution::mode),
                         subagentExecutionService),
                 runtimeValidator,
                 List.of(execution::beforeToolCall),
-                List.of());
+                List.of(),
+                execution.mode(),
+                (runtime, ignored) -> new com.huawei.hicampus.claw.codingagent.tool.plan.ExitPlanModeTool(execution));
         return sessionFactory.create(request);
     }
 

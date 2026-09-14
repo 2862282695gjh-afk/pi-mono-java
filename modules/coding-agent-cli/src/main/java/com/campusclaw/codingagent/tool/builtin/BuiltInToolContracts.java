@@ -32,6 +32,8 @@ final class BuiltInToolContracts {
             case LIST_MATE_TOOLS -> "List live Mate tools for the current Agent or one directly bound Skill.";
             case CALL_MATE_TOOL -> "Call a Mate tool by name.";
             case AGENT -> "Run one directly bound child Agent and return its final answer.";
+            case EXIT_PLAN_MODE -> "Submit the complete proposed plan for user review.";
+            case TODO_UPDATE -> "Track implementation progress in build mode.";
         };
     }
 
@@ -41,8 +43,22 @@ final class BuiltInToolContracts {
             case LIST_MATE_TOOLS -> listMateToolsSchema();
             case CALL_MATE_TOOL -> callMateToolSchema();
             case AGENT -> agentSchema(childAgentNames);
+            case EXIT_PLAN_MODE -> exitPlanModeSchema();
+            case TODO_UPDATE -> todoUpdateSchema();
             default -> emptySchema();
         };
+    }
+
+    private static ObjectNode exitPlanModeSchema() {
+        ObjectNode properties = MAPPER.createObjectNode();
+        properties.set("plan", stringProperty("Complete Markdown plan beginning with a level-one heading."));
+        return objectSchema(properties, List.of("plan"));
+    }
+
+    private static ObjectNode todoUpdateSchema() {
+        return new com.campusclaw.codingagent.tool.todo.TodoUpdateTool()
+                .parameters()
+                .deepCopy();
     }
 
     private static ObjectNode listMateToolsSchema() {

@@ -5,6 +5,7 @@
 package com.campusclaw.codingagent.runtimeapi.event;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
@@ -60,6 +61,7 @@ import com.campusclaw.codingagent.runtimeapi.vo.RuntimeSseEventVO;
 import com.campusclaw.codingagent.session.compaction.CompactionReason;
 import com.campusclaw.codingagent.session.compaction.SessionCompactionCompletedEvent;
 import com.campusclaw.codingagent.session.compaction.SessionCompactionResult;
+import com.campusclaw.codingagent.tool.plan.PlanReviewException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import org.junit.jupiter.api.Test;
@@ -346,6 +348,42 @@ class RuntimeEventProjectorTest {
         verify(fixture.persistence).appendEntry(eq(resumed), any(), anyList());
     }
 
+    @Test
+    void duplicateToolCallIdsDoNotSatisfyExclusivePlanReview() {
+        Fixture fixture = fixture(false);
+        fixture.execution.applyMode("plan");
+        fixture.execution.installConfirmationHandler(fixture.projector::beforeToolCall);
+        ToolCall call = new ToolCall("duplicate-exit", "ExitPlanMode", Map.of("plan", "# 方案"));
+        AssistantMessage assistant = assistant(List.of(call, call));
+        fixture.projector.onEvent(new MessageStartEvent(assistant));
+        fixture.projector.onEvent(new MessageEndEvent(assistant));
+
+        assertThatThrownBy(() -> fixture.execution.beforeToolCall(
+                        new BeforeToolCallContext(assistant, call, call.arguments(), null)))
+                .isInstanceOf(PlanReviewException.class)
+                .satisfies(error -> assertThat(((PlanReviewException) error).stableErrorCode())
+                        .isEqualTo("PLAN_REVIEW_UNAVAILABLE"));
+        verify(fixture.persistence, never()).markPlanConfirming(any(), any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void textPreambleDoesNotCountAsAnotherPlanToolCall() throws Exception {
+        Fixture fixture = fixture(false);
+        fixture.execution.applyMode("plan");
+        fixture.execution.installConfirmationHandler(fixture.projector::beforeToolCall);
+        ToolCall call = new ToolCall("single-exit", "ExitPlanMode", Map.of("plan", "# 方案"));
+        AssistantMessage assistant = assistant(List.of(new TextContent("请审核以下方案。"), call));
+        fixture.projector.onEvent(new MessageStartEvent(assistant));
+        fixture.projector.onEvent(new MessageEndEvent(assistant));
+
+        BeforeToolCallResult result =
+                fixture.execution.beforeToolCall(new BeforeToolCallContext(assistant, call, call.arguments(), null));
+
+        assertThat(result).isEqualTo(BeforeToolCallResult.allow());
+        verify(fixture.persistence).markPlanConfirming(any(), any(), any(), any(), any(), any(), any());
+        fixture.execution.cancelPlanReview(new IllegalStateException("test complete"));
+    }
+
     private static void bindAskPermission(RuntimeActiveExecution execution, ToolCall call) {
         RuntimeToolPermissionPolicy policy = mock(RuntimeToolPermissionPolicy.class);
         when(policy.decide(call)).thenReturn(RuntimeToolPermissionPolicy.Decision.ASK);
@@ -409,7 +447,8 @@ class RuntimeEventProjectorTest {
                 execution,
                 new UserMessage("question", 1L),
                 thinking,
-                Locale.US);
+                Locale.US,
+                new RuntimeTodoEventMapper());
         return new Fixture(repository, persistence, codec, execution, projector, output, persistedEvents, aborts);
     }
 
@@ -442,6 +481,19 @@ class RuntimeEventProjectorTest {
                 })
                 .when(persistence)
                 .markToolConfirming(any(), any(), any(), any(), any(), any(), any());
+        doAnswer(invocation -> {
+                    RuntimeEntryDTO plan = invocation.getArgument(2);
+                    CommittedEventDTO planEvent = invocation.getArgument(3);
+                    RuntimeEntryDTO idle = invocation.getArgument(4);
+                    CommittedEventDTO idleEvent = invocation.getArgument(5);
+                    plan.setEntrySeq(sequences.incrementAndGet());
+                    idle.setEntrySeq(sequences.incrementAndGet());
+                    persistedEvents.add(planEvent);
+                    persistedEvents.add(idleEvent);
+                    return null;
+                })
+                .when(persistence)
+                .markPlanConfirming(any(), any(), any(), any(), any(), any(), any());
     }
 
     private static AssistantMessage assistant(List<com.campusclaw.ai.types.ContentBlock> content) {

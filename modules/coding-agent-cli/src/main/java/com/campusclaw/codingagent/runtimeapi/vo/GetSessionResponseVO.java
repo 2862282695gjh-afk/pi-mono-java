@@ -30,6 +30,8 @@ public class GetSessionResponseVO {
 
     private final boolean thinking;
 
+    private final String mode;
+
     private final LifetimeUsageResponseVO lifetimeUsage;
 
     @JsonFormat(shape = JsonFormat.Shape.STRING)
@@ -47,15 +49,30 @@ public class GetSessionResponseVO {
             boolean thinking,
             LifetimeUsageResponseVO lifetimeUsage,
             OffsetDateTime createdAt,
-            OffsetDateTime updatedAt) {
+            OffsetDateTime updatedAt,
+            String mode) {
         this.sessionId = sessionId;
         this.agentId = agentId;
         this.displayName = displayName;
         this.modelId = modelId;
         this.state = state;
         this.thinking = thinking;
+        this.mode = mode;
         this.lifetimeUsage = lifetimeUsage;
         this.createdAt = createdAt;
         this.updatedAt = updatedAt;
+    }
+
+    public GetSessionResponseVO(
+            String sessionId,
+            String agentId,
+            String displayName,
+            String modelId,
+            String state,
+            boolean thinking,
+            LifetimeUsageResponseVO lifetimeUsage,
+            OffsetDateTime createdAt,
+            OffsetDateTime updatedAt) {
+        this(sessionId, agentId, displayName, modelId, state, thinking, lifetimeUsage, createdAt, updatedAt, "build");
     }
 }

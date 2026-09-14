@@ -52,4 +52,19 @@ expected_common="$(sed 's/com\.campusclaw/com.huawei.hicampus.claw/g' "$COMMON_S
 staged_common="$(cat "$STAGED_COMMON")" || fail "cannot read staged common constants"
 [ "$expected_common" = "$staged_common" ] || fail "staged common constants differ from canonical source"
 
-printf '[layout-test] CampusClaw database script and common-module layouts are valid.\n'
+for prompt in PLAN_COMMON.txt PLAN_ROOT_REVIEW.txt PLAN_CHILD.txt BUILD_ROOT.txt EXECUTION_TODOS.txt; do
+  canonical="$ROOT/modules/coding-agent-cli/src/main/resources/prompts/plan/$prompt"
+  staged="$ROOT/build/campusclaw/src/main/resources/prompts/plan/$prompt"
+  mirrored="$ROOT/campusclaw/src/main/resources/prompts/plan/$prompt"
+  [ -f "$staged" ] || fail "staged plan prompt is missing: $prompt"
+  [ -f "$mirrored" ] || fail "mirrored plan prompt is missing: $prompt"
+  cmp -s "$canonical" "$staged" || fail "staged plan prompt differs: $prompt"
+  cmp -s "$canonical" "$mirrored" || fail "mirrored plan prompt differs: $prompt"
+done
+
+grep -Fxq \
+  'spring.jackson.deserialization.fail-on-ignored-properties=true' \
+  "$ROOT/campusclaw/src/main/resources/application.properties" \
+  || fail "corporate runtime does not reject ignored JSON properties"
+
+printf '[layout-test] CampusClaw database, common-module, and plan-prompt layouts are valid.\n'

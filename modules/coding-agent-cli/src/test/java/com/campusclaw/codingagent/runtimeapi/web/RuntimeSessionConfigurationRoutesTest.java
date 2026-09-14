@@ -12,7 +12,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -26,12 +26,14 @@ import com.campusclaw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
 import com.campusclaw.codingagent.runtimeapi.result.StandaloneResultBeanAdapter;
 import com.campusclaw.codingagent.runtimeapi.session.RuntimeSessionConfigurationService;
+import com.campusclaw.codingagent.runtimeapi.session.RuntimeSessionService;
+import com.campusclaw.codingagent.runtimeapi.session.RuntimeSessionUpdateService;
 import com.campusclaw.codingagent.runtimeapi.session.RuntimeSessionView;
 import com.campusclaw.codingagent.runtimeapi.vo.AvailableModelsResponseVO;
-import com.campusclaw.codingagent.runtimeapi.vo.ChangeModelRequestVO;
 import com.campusclaw.codingagent.runtimeapi.vo.GetSessionResponseVO;
 import com.campusclaw.codingagent.runtimeapi.vo.LifetimeCostResponseVO;
 import com.campusclaw.codingagent.runtimeapi.vo.LifetimeUsageResponseVO;
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.json.JsonMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 
@@ -54,15 +56,23 @@ class RuntimeSessionConfigurationRoutesTest {
 
     private RuntimeSessionConfigurationService service;
 
+    private RuntimeSessionUpdateService updateService;
+
     private MockMvc mvc;
 
     @BeforeEach
     void setUp() {
         service = mock(RuntimeSessionConfigurationService.class);
-        var controller = new RuntimeSessionConfigurationController(service, new StandaloneResultBeanAdapter());
+        updateService = mock(RuntimeSessionUpdateService.class);
+        var adapter = new StandaloneResultBeanAdapter();
+        var configurationController = new RuntimeSessionConfigurationController(service, adapter);
+        var sessionController = new RuntimeSessionController(mock(RuntimeSessionService.class), adapter, updateService);
         var messages = new RuntimeMessageSourceConfiguration().messageSource();
-        var objectMapper = JsonMapper.builder().addModule(new JavaTimeModule()).build();
-        mvc = MockMvcBuilders.standaloneSetup(controller)
+        var objectMapper = JsonMapper.builder()
+                .addModule(new JavaTimeModule())
+                .enable(DeserializationFeature.FAIL_ON_IGNORED_PROPERTIES)
+                .build();
+        mvc = MockMvcBuilders.standaloneSetup(configurationController, sessionController)
                 .setControllerAdvice(new RuntimeExceptionHandler(messages))
                 .setMessageConverters(new MappingJackson2HttpMessageConverter(objectMapper))
                 .build();
@@ -83,13 +93,13 @@ class RuntimeSessionConfigurationRoutesTest {
 
     @Test
     void changeModelReturnsFullSessionAndNewEtag() throws Exception {
-        when(service.changeModel(eq(SESSION_ID), eq("\"snp-old\""), any(ChangeModelRequestVO.class)))
+        when(updateService.update(eq(SESSION_ID), eq("\"snp-old\""), any()))
                 .thenReturn(view("model-b", false, "\"snp-new\""));
 
-        mvc.perform(authenticated(put("/campusclaw-service/v1/sessions/{sessionId}/model", SESSION_ID))
+        mvc.perform(authenticated(post("/campusclaw-service/v1/sessions/{sessionId}", SESSION_ID))
                         .header(HttpHeaders.IF_MATCH, "\"snp-old\"")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"modelId\":\"model-b\"}"))
+                        .content("{\"modelId\":\"model-b\",\"thinking\":false,\"mode\":\"plan\"}"))
                 .andExpect(status().isOk())
                 .andExpect(header().string(HttpHeaders.ETAG, "\"snp-new\""))
                 .andExpect(jsonPath("$.result.modelId").value("model-b"))
@@ -98,24 +108,24 @@ class RuntimeSessionConfigurationRoutesTest {
 
     @Test
     void snakeCaseModelFieldIsRejectedBeforeService() throws Exception {
-        mvc.perform(authenticated(put("/campusclaw-service/v1/sessions/{sessionId}/model", SESSION_ID))
+        mvc.perform(authenticated(post("/campusclaw-service/v1/sessions/{sessionId}", SESSION_ID))
                         .header(HttpHeaders.IF_MATCH, "\"snp-old\"")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"model_id\":\"model-b\"}"))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.resCode").value("INVALID_MODEL_REQUEST"))
+                .andExpect(jsonPath("$.resCode").value("INVALID_SESSION_UPDATE_REQUEST"))
                 .andExpect(jsonPath("$.result").doesNotExist());
-        verify(service, never()).changeModel(any(), any(), any());
+        verify(updateService, never()).update(any(), any(), any());
     }
 
     @Test
     void thinkingStringCoercionIsRejected() throws Exception {
-        mvc.perform(authenticated(put("/campusclaw-service/v1/sessions/{sessionId}/thinking", SESSION_ID))
+        mvc.perform(authenticated(post("/campusclaw-service/v1/sessions/{sessionId}", SESSION_ID))
                         .header(HttpHeaders.IF_MATCH, "\"snp-old\"")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"thinking\":\"true\"}"))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.resCode").value("INVALID_THINKING_REQUEST"));
+                .andExpect(jsonPath("$.resCode").value("INVALID_SESSION_UPDATE_REQUEST"));
     }
 
     @Test
@@ -130,15 +140,31 @@ class RuntimeSessionConfigurationRoutesTest {
 
     @Test
     void missingIfMatchUsesConfirmed428Error() throws Exception {
-        when(service.changeModel(eq(SESSION_ID), eq(null), any(ChangeModelRequestVO.class)))
+        when(updateService.update(eq(SESSION_ID), eq(null), any()))
                 .thenThrow(new RuntimeApiException(RuntimeErrorCode.IF_MATCH_REQUIRED));
 
-        mvc.perform(authenticated(put("/campusclaw-service/v1/sessions/{sessionId}/model", SESSION_ID))
+        mvc.perform(authenticated(post("/campusclaw-service/v1/sessions/{sessionId}", SESSION_ID))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"modelId\":\"model-b\"}"))
                 .andExpect(status().isPreconditionRequired())
                 .andExpect(jsonPath("$.resCode").value("IF_MATCH_REQUIRED"))
                 .andExpect(jsonPath("$.result").doesNotExist());
+    }
+
+    @Test
+    void ignoredAndDuplicatePropertiesAreRejectedBeforeService() throws Exception {
+        for (String body : List.of(
+                "{\"mode\":\"build\",\"modeSubmitted\":true}",
+                "{\"displayName\":\"x\",\"nonEmptyUpdate\":true}",
+                "{\"mode\":\"build\",\"mode\":\"plan\"}")) {
+            mvc.perform(authenticated(post("/campusclaw-service/v1/sessions/{sessionId}", SESSION_ID))
+                            .header(HttpHeaders.IF_MATCH, "\"snp-old\"")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(body))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.resCode").value("INVALID_SESSION_UPDATE_REQUEST"));
+        }
+        verify(updateService, never()).update(any(), any(), any());
     }
 
     private static org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder authenticated(

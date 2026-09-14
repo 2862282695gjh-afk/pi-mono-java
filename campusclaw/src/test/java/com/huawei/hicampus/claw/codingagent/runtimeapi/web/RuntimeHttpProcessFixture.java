@@ -18,7 +18,10 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
+import java.util.Queue;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -344,6 +347,10 @@ final class RuntimeHttpProcessFixture {
 
         private volatile JsonNode lastRequest;
 
+        private final List<JsonNode> requests = new CopyOnWriteArrayList<>();
+
+        private final Queue<byte[]> scriptedResponses = new ConcurrentLinkedQueue<>();
+
         ModelStub(int port) throws IOException {
             server = HttpServer.create(new InetSocketAddress("127.0.0.1", port), 0);
             server.setExecutor(executor);
@@ -370,6 +377,14 @@ final class RuntimeHttpProcessFixture {
             return lastRequest;
         }
 
+        JsonNode request(int index) {
+            return requests.get(index);
+        }
+
+        void enqueueResponse(String response) {
+            scriptedResponses.add(response.getBytes(StandardCharsets.UTF_8));
+        }
+
         boolean executorTerminated() {
             return executor.isTerminated();
         }
@@ -391,14 +406,20 @@ final class RuntimeHttpProcessFixture {
                     return;
                 }
                 lastRequest = MAPPER.readTree(exchange.getRequestBody());
+                requests.add(lastRequest.deepCopy());
                 awaitGate();
-                byte[] response = response(responseCount.incrementAndGet());
+                byte[] response = nextResponse(responseCount.incrementAndGet());
                 exchange.getResponseHeaders().set("Content-Type", "text/event-stream");
                 exchange.sendResponseHeaders(200, response.length);
                 exchange.getResponseBody().write(response);
             } finally {
                 exchange.close();
             }
+        }
+
+        private byte[] nextResponse(int responseNumber) {
+            byte[] scripted = scriptedResponses.poll();
+            return scripted == null ? response(responseNumber) : scripted;
         }
 
         private void awaitGate() throws IOException {

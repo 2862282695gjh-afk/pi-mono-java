@@ -134,6 +134,7 @@ class RuntimeSessionRepositoryOpenGaussIT {
         jdbcTemplate.update("TRUNCATE TABLE t_session_stats");
         jdbcTemplate.update("TRUNCATE TABLE t_session_records");
         jdbcTemplate.update("TRUNCATE TABLE t_session_sequences");
+        jdbcTemplate.update("TRUNCATE TABLE t_session_plan_confirmations");
         jdbcTemplate.update("TRUNCATE TABLE t_session_tool_confirmations");
         jdbcTemplate.update("TRUNCATE TABLE t_session_execution_segment_events");
         jdbcTemplate.update("TRUNCATE TABLE t_session_execution_segments");
@@ -238,7 +239,8 @@ class RuntimeSessionRepositoryOpenGaussIT {
         RuntimeEntryDTO root = newEntry(session.getId(), "root-entry", "user.message", session.getCreatedAt(), "{}");
         CommittedEventDTO rootEvent = committedEvent(root, "root-event", "user.message");
 
-        var accepted = executionPersistence.acceptMessage(session.getId(), root, rootEvent, session.getCreatedAt());
+        var accepted =
+                executionPersistence.acceptMessage(session.getId(), root, rootEvent, true, session.getCreatedAt());
         assertThat(accepted.target())
                 .isEqualTo(new ExecutionTargetDTO(session.getId(), "execution-atomic", "root-event", "segment-atomic"));
         assertThat(root.getEntrySeq()).isOne();
@@ -433,7 +435,7 @@ class RuntimeSessionRepositoryOpenGaussIT {
         RuntimeEntryDTO next = controlEntry(session, "next-running-message", "user.message");
         CommittedEventDTO nextEvent = committedEvent(next, "next-running-event", "user.message");
         ExecutionTargetDTO newTarget = executionPersistence
-                .acceptMessage(session.getId(), next, nextEvent, next.getTimestamp())
+                .acceptMessage(session.getId(), next, nextEvent, true, next.getTimestamp())
                 .target();
         long sequenceBefore =
                 scalarLong("SELECT next_seq FROM t_session_sequences WHERE session_id = ?", session.getId());
@@ -472,8 +474,8 @@ class RuntimeSessionRepositoryOpenGaussIT {
                 "{}");
         CommittedEventDTO nextEvent = committedEvent(next, "next-event", "user.message");
 
-        assertThatThrownBy(
-                        () -> executionPersistence.acceptMessage(session.getId(), next, nextEvent, next.getTimestamp()))
+        assertThatThrownBy(() ->
+                        executionPersistence.acceptMessage(session.getId(), next, nextEvent, true, next.getTimestamp()))
                 .isInstanceOf(DataIntegrityViolationException.class);
 
         assertThat(repository.find(session.getId())).contains(before);
@@ -1735,7 +1737,7 @@ class RuntimeSessionRepositoryOpenGaussIT {
         RuntimeEntryDTO root =
                 newEntry(session.getId(), "old-root-entry", "user.message", session.getCreatedAt(), "{}");
         CommittedEventDTO rootEvent = committedEvent(root, "old-root-event", "user.message");
-        var accepted = executionPersistence.acceptMessage(session.getId(), root, rootEvent, root.getTimestamp());
+        var accepted = executionPersistence.acceptMessage(session.getId(), root, rootEvent, true, root.getTimestamp());
         RuntimeEntryDTO idle = newEntry(
                 session.getId(),
                 "old-idle-entry",
@@ -1767,7 +1769,7 @@ class RuntimeSessionRepositoryOpenGaussIT {
                 newEntry(session.getId(), suffix + "-root-entry", "user.message", session.getCreatedAt(), "{}");
         CommittedEventDTO event = committedEvent(root, suffix + "-root-event", "user.message");
         return executionPersistence
-                .acceptMessage(session.getId(), root, event, root.getTimestamp())
+                .acceptMessage(session.getId(), root, event, true, root.getTimestamp())
                 .target();
     }
 
@@ -1954,6 +1956,7 @@ class RuntimeSessionRepositoryOpenGaussIT {
         session.setModelId("model-db-it");
         session.setState("idle");
         session.setThinking(false);
+        session.setMode("build");
         session.setResourceVersion(1L);
         session.setCreatedAt(now);
         session.setUpdatedAt(now);

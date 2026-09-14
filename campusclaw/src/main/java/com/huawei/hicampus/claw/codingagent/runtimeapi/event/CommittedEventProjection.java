@@ -5,21 +5,26 @@
 package com.huawei.hicampus.claw.codingagent.runtimeapi.event;
 
 import static com.huawei.hicampus.claw.codingagent.runtimeapi.vo.SessionEventResponseVO.AgentMessageResponseVO;
+import static com.huawei.hicampus.claw.codingagent.runtimeapi.vo.SessionEventResponseVO.AgentPlanResponseVO;
 import static com.huawei.hicampus.claw.codingagent.runtimeapi.vo.SessionEventResponseVO.AgentThinkingResponseVO;
+import static com.huawei.hicampus.claw.codingagent.runtimeapi.vo.SessionEventResponseVO.AgentTodoUpdatedResponseVO;
 import static com.huawei.hicampus.claw.codingagent.runtimeapi.vo.SessionEventResponseVO.AgentToolCallResponseVO;
 import static com.huawei.hicampus.claw.codingagent.runtimeapi.vo.SessionEventResponseVO.AgentToolResultResponseVO;
 import static com.huawei.hicampus.claw.codingagent.runtimeapi.vo.SessionEventResponseVO.CostResponseVO;
 import static com.huawei.hicampus.claw.codingagent.runtimeapi.vo.SessionEventResponseVO.EventDetailsResponseVO;
 import static com.huawei.hicampus.claw.codingagent.runtimeapi.vo.SessionEventResponseVO.FileContentResponseVO;
 import static com.huawei.hicampus.claw.codingagent.runtimeapi.vo.SessionEventResponseVO.SessionCompactedResponseVO;
+import static com.huawei.hicampus.claw.codingagent.runtimeapi.vo.SessionEventResponseVO.SessionModeChangedResponseVO;
 import static com.huawei.hicampus.claw.codingagent.runtimeapi.vo.SessionEventResponseVO.SessionModelChangedResponseVO;
 import static com.huawei.hicampus.claw.codingagent.runtimeapi.vo.SessionEventResponseVO.SessionStatusIdleResponseVO;
 import static com.huawei.hicampus.claw.codingagent.runtimeapi.vo.SessionEventResponseVO.SessionThinkingChangedResponseVO;
 import static com.huawei.hicampus.claw.codingagent.runtimeapi.vo.SessionEventResponseVO.TextContentResponseVO;
+import static com.huawei.hicampus.claw.codingagent.runtimeapi.vo.SessionEventResponseVO.TodoItemResponseVO;
 import static com.huawei.hicampus.claw.codingagent.runtimeapi.vo.SessionEventResponseVO.UsageResponseVO;
 import static com.huawei.hicampus.claw.codingagent.runtimeapi.vo.SessionEventResponseVO.UserContentResponseVO;
 import static com.huawei.hicampus.claw.codingagent.runtimeapi.vo.SessionEventResponseVO.UserInterruptResponseVO;
 import static com.huawei.hicampus.claw.codingagent.runtimeapi.vo.SessionEventResponseVO.UserMessageResponseVO;
+import static com.huawei.hicampus.claw.codingagent.runtimeapi.vo.SessionEventResponseVO.UserPlanConfirmationResponseVO;
 import static com.huawei.hicampus.claw.codingagent.runtimeapi.vo.SessionEventResponseVO.UserToolConfirmationResponseVO;
 
 import java.math.BigDecimal;
@@ -86,13 +91,17 @@ public class CommittedEventProjection {
             case USER_MESSAGE -> projectUserMessage(payload);
             case USER_INTERRUPT -> new UserInterruptResponseVO(requiredText(payload, "targetEventId"));
             case USER_TOOL_CONFIRMATION -> projectConfirmation(payload);
+            case USER_PLAN_CONFIRMATION -> projectPlanConfirmation(payload);
             case AGENT_MESSAGE -> projectAgentMessage(payload);
             case AGENT_THINKING -> projectAgentThinking(payload);
             case AGENT_TOOL_CALL -> projectToolCall(payload);
             case AGENT_TOOL_RESULT -> projectToolResult(payload);
+            case AGENT_PLAN -> projectPlan(payload);
+            case AGENT_TODO_UPDATED -> projectTodoUpdated(payload);
             case SESSION_STATUS_IDLE -> projectIdle(payload);
             case SESSION_MODEL_CHANGED -> projectModelChanged(payload);
             case SESSION_THINKING_CHANGED -> projectThinkingChanged(payload);
+            case SESSION_MODE_CHANGED -> projectModeChanged(payload);
             case SESSION_COMPACTED -> projectCompacted(payload);
         };
     }
@@ -132,6 +141,37 @@ public class CommittedEventProjection {
             throw invalid(null);
         }
         return new UserToolConfirmationResponseVO(requiredText(payload, "toolCallId"), result, denyMessage);
+    }
+
+    private UserPlanConfirmationResponseVO projectPlanConfirmation(JsonNode payload) {
+        String result = requiredOneOf(payload, "result", Set.of("approve", "revise"));
+        String feedback = optionalText(payload, "feedback");
+        if (("approve".equals(result) && feedback != null)
+                || (feedback != null && feedback.length() > ClawConstants.RuntimeApi.MAX_PLAN_FEEDBACK_CHARACTERS)) {
+            throw invalid(null);
+        }
+        String target = requiredText(payload, "targetEventId");
+        if (target.length() > 128) {
+            throw invalid(null);
+        }
+        return new UserPlanConfirmationResponseVO(target, result, feedback);
+    }
+
+    private AgentPlanResponseVO projectPlan(JsonNode payload) {
+        String content = requiredString(payload, "content");
+        if (content.length() > ClawConstants.RuntimeApi.MAX_PLAN_CHARACTERS || !hasLevelOneHeading(content)) {
+            throw invalid(null);
+        }
+        return new AgentPlanResponseVO(
+                requiredText(payload, "sourceEventId"), requiredText(payload, "toolCallId"), content);
+    }
+
+    private static boolean hasLevelOneHeading(String plan) {
+        return plan.lines()
+                .filter(line -> !line.isBlank())
+                .findFirst()
+                .filter(line -> line.startsWith("# "))
+                .isPresent();
     }
 
     private AgentMessageResponseVO projectAgentMessage(JsonNode payload) {
@@ -183,6 +223,30 @@ public class CommittedEventProjection {
                 requiredText(payload, "sourceEventId"));
     }
 
+    private AgentTodoUpdatedResponseVO projectTodoUpdated(JsonNode payload) {
+        JsonNode todos = requiredArray(payload, "todos");
+        if (todos.size() > ClawConstants.RuntimeApi.MAX_TODOS) {
+            throw invalid(null);
+        }
+        List<TodoItemResponseVO> items = new ArrayList<>();
+        Set<String> contents = new java.util.HashSet<>();
+        int active = 0;
+        for (JsonNode todo : todos) {
+            String content = requiredText(todo, "content");
+            String status = requiredOneOf(todo, "status", Set.of("pending", "in_progress", "completed"));
+            if (content.length() > ClawConstants.RuntimeApi.MAX_TODO_CONTENT_CHARACTERS || !contents.add(content)) {
+                throw invalid(null);
+            }
+            active += "in_progress".equals(status) ? 1 : 0;
+            items.add(new TodoItemResponseVO(content, status));
+        }
+        if (active > 1) {
+            throw invalid(null);
+        }
+        return new AgentTodoUpdatedResponseVO(
+                requiredText(payload, "sourceEventId"), requiredText(payload, "toolCallId"), List.copyOf(items));
+    }
+
     private SessionStatusIdleResponseVO projectIdle(JsonNode payload) {
         String reason = requiredOneOf(payload, "reason", Set.of("done", "failed", "terminated", "confirming"));
         String errorCode = optionalText(payload, "errorCode");
@@ -211,6 +275,33 @@ public class CommittedEventProjection {
                 requiredBoolean(payload, "previousThinking"),
                 requiredBoolean(payload, "thinking"),
                 requiredOneOf(payload, "reason", Set.of("requested", "modelCapability")));
+    }
+
+    private SessionModeChangedResponseVO projectModeChanged(JsonNode payload) {
+        String reason = requiredOneOf(payload, "reason", Set.of("requested", "planApproved"));
+        String previousMode = requiredOneOf(payload, "previousMode", ClawConstants.Agent.MODES);
+        String mode = requiredOneOf(payload, "mode", ClawConstants.Agent.MODES);
+        String sourceEventId = optionalText(payload, "sourceEventId");
+        String confirmationEventId = optionalText(payload, "confirmationEventId");
+        if (previousMode.equals(mode)
+                || !hasValidModeChangeReferences(reason, sourceEventId, confirmationEventId)
+                || !hasValidApprovedModeChange(reason, previousMode, mode)) {
+            throw invalid(null);
+        }
+        return new SessionModeChangedResponseVO(previousMode, mode, reason, sourceEventId, confirmationEventId);
+    }
+
+    private static boolean hasValidModeChangeReferences(
+            String reason, String sourceEventId, String confirmationEventId) {
+        if ("requested".equals(reason)) {
+            return sourceEventId == null && confirmationEventId == null;
+        }
+        return sourceEventId != null && confirmationEventId != null;
+    }
+
+    private static boolean hasValidApprovedModeChange(String reason, String previousMode, String mode) {
+        return !"planApproved".equals(reason)
+                || (ClawConstants.Agent.MODE_PLAN.equals(previousMode) && ClawConstants.Agent.MODE_BUILD.equals(mode));
     }
 
     private SessionCompactedResponseVO projectCompacted(JsonNode payload) {

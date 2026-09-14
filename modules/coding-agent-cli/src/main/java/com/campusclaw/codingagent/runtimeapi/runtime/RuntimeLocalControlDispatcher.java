@@ -39,4 +39,13 @@ public interface RuntimeLocalControlDispatcher {
      * @return 是否命中并消费了确认结果
      */
     boolean dispatchConfirmation(ExecutionTargetDTO confirmingTarget, String toolCallId);
+
+    /**
+     * 向完整身份和计划事件均匹配的本机执行交付审核结果。
+     *
+     * @param confirmingTarget 审核前的固定执行目标
+     * @param planEventId 待审核计划事件标识
+     * @return 是否命中并消费了审核结果
+     */
+    boolean dispatchPlanConfirmation(ExecutionTargetDTO confirmingTarget, String planEventId);
 }

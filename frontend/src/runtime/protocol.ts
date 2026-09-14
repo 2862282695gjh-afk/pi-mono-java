@@ -39,11 +39,15 @@ function oneOf(value: unknown, values: string[]): string {
 function only(data: Record<string, unknown>, allowed: string[]): void {
   if (Object.keys(data).some((key) => !allowed.includes(key))) invalidResponse();
 }
+function javaStrip(value: string): string {
+  return value.replace(/^[\u0009-\u000d\u001c-\u0020\u1680\u2000-\u2006\u2008-\u200a\u2028\u2029\u205f\u3000]+|[\u0009-\u000d\u001c-\u0020\u1680\u2000-\u2006\u2008-\u200a\u2028\u2029\u205f\u3000]+$/gu, '');
+}
 export function decodeSession(value: unknown): RuntimeSession {
   const data = record(value);
   nonempty(data.sessionId); nonempty(data.agentId); nonempty(data.modelId);
   if (data.displayName !== null) text(data.displayName);
   oneOf(data.state, ['idle', 'running']); bool(data.thinking); nonempty(data.createdAt);
+  oneOf(data.mode, ['build', 'plan']);
   if (data.updatedAt !== undefined) nonempty(data.updatedAt);
   if (data.lifetimeUsage !== undefined) record(data.lifetimeUsage);
   return data as unknown as RuntimeSession;
@@ -60,13 +64,17 @@ export function decodeEvent(value: unknown, history = false): RuntimeEvent {
     'user.message': ['content'],
     'user.interrupt': ['targetEventId'],
     'user.tool_confirmation': ['toolCallId', 'result', 'denyMessage'],
+    'user.plan_confirmation': ['targetEventId', 'result', 'feedback'],
     'agent.message': ['phase', 'content', 'sourceEventId', 'usage'],
     'agent.thinking': ['phase', 'content', 'sourceEventId'],
     'agent.tool_call': ['toolCallId', 'toolName', 'arguments', 'requiresConfirmation', 'sourceEventId'],
     'agent.tool_result': ['toolCallId', 'content', 'isError', 'errorCode', 'sourceEventId'],
+    'agent.plan': ['toolCallId', 'content', 'sourceEventId'],
+    'agent.todo_updated': ['toolCallId', 'todos', 'sourceEventId'],
     'session.status_idle': ['reason', 'sourceEventId', 'errorCode', 'message'],
     'session.model_changed': ['previousModelId', 'modelId', 'reason'],
     'session.thinking_changed': ['previousThinking', 'thinking', 'reason'],
+    'session.mode_changed': ['previousMode', 'mode', 'reason', 'sourceEventId', 'confirmationEventId'],
     'session.compacted': ['reason', 'tokensBefore', 'estimatedTokensAfter', 'sourceEventId'],
   };
   if (!Object.hasOwn(fields, type)) return invalidResponse();
@@ -101,6 +109,12 @@ export function decodeEvent(value: unknown, history = false): RuntimeEvent {
       nonempty(data.toolCallId); oneOf(data.result, ['allow', 'deny']);
       if (data.denyMessage !== undefined && (data.result !== 'deny' || nonempty(data.denyMessage).length > MAX_DENY_MESSAGE_UTF16_UNITS)) invalidResponse();
       break;
+    case 'user.plan_confirmation':
+      if (nonempty(data.targetEventId).length > 128) invalidResponse();
+      oneOf(data.result, ['approve', 'revise']);
+      if (data.feedback !== undefined && (data.result !== 'revise' || !text(data.feedback).trim()
+        || text(data.feedback).length > MAX_DENY_MESSAGE_UTF16_UNITS)) invalidResponse();
+      break;
     case 'agent.message': case 'agent.thinking':
       oneOf(data.phase, ['delta', 'completed']); text(data.content);
       if (data.usage !== undefined) record(data.usage);
@@ -119,6 +133,29 @@ export function decodeEvent(value: unknown, history = false): RuntimeEvent {
       if (data.isError) nonempty(data.errorCode);
       else if (data.errorCode !== undefined) invalidResponse();
       break;
+    case 'agent.plan': {
+      nonempty(data.toolCallId);
+      const plan = nonempty(data.content);
+      const first = plan.split(/\r\n|[\r\n]/u).find((line) => javaStrip(line));
+      if (plan.length > 262_144 || !first?.startsWith('# ')) invalidResponse();
+      break;
+    }
+    case 'agent.todo_updated': {
+      nonempty(data.toolCallId);
+      if (!Array.isArray(data.todos) || data.todos.length > 100) return invalidResponse();
+      const contents = new Set<string>();
+      let active = 0;
+      data.todos.forEach((value) => {
+        const todo = record(value); only(todo, ['content', 'status']);
+        const rawContent = text(todo.content);
+        const content = javaStrip(rawContent);
+        if (!content || content !== rawContent || content.length > 1024 || contents.has(content)) invalidResponse();
+        contents.add(content);
+        if (oneOf(todo.status, ['pending', 'in_progress', 'completed']) === 'in_progress') active++;
+      });
+      if (active > 1) invalidResponse();
+      break;
+    }
     case 'session.status_idle':
       oneOf(data.reason, ['done', 'failed', 'terminated', 'confirming']);
       if (data.reason === 'failed') { nonempty(data.errorCode); nonempty(data.message); }
@@ -126,6 +163,17 @@ export function decodeEvent(value: unknown, history = false): RuntimeEvent {
       break;
     case 'session.model_changed': nonempty(data.previousModelId); nonempty(data.modelId); nonempty(data.reason); break;
     case 'session.thinking_changed': bool(data.previousThinking); bool(data.thinking); nonempty(data.reason); break;
+    case 'session.mode_changed': {
+      const previous = oneOf(data.previousMode, ['build', 'plan']);
+      const mode = oneOf(data.mode, ['build', 'plan']);
+      if (previous === mode) invalidResponse();
+      const reason = oneOf(data.reason, ['requested', 'planApproved']);
+      if (reason === 'planApproved') {
+        if (previous !== 'plan' || mode !== 'build') invalidResponse();
+        nonempty(data.sourceEventId); nonempty(data.confirmationEventId);
+      } else if (data.sourceEventId !== undefined || data.confirmationEventId !== undefined) invalidResponse();
+      break;
+    }
     case 'session.compacted':
       count(data.tokensBefore); count(data.estimatedTokensAfter); nonempty(data.reason);
       if (data.sourceEventId !== undefined) nonempty(data.sourceEventId);
@@ -160,8 +208,11 @@ export function matchesReceipt(input: UserEvent, event: RuntimeEvent): boolean {
     });
   }
   if (input.type === 'user.interrupt' && event.type === 'user.interrupt') return input.targetEventId === event.targetEventId;
-  return input.type === 'user.tool_confirmation' && event.type === 'user.tool_confirmation'
-    && input.toolCallId === event.toolCallId && input.result === event.result && input.denyMessage === event.denyMessage;
+  if (input.type === 'user.tool_confirmation' && event.type === 'user.tool_confirmation') {
+    return input.toolCallId === event.toolCallId && input.result === event.result && input.denyMessage === event.denyMessage;
+  }
+  return input.type === 'user.plan_confirmation' && event.type === 'user.plan_confirmation'
+    && input.targetEventId === event.targetEventId && input.result === event.result && input.feedback === event.feedback;
 }
 
 /** POST 专用 data-only SSE 读取器；中止只关闭观察，不代表业务停止。 */

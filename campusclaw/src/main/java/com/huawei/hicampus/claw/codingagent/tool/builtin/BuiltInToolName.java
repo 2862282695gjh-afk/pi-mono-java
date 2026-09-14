@@ -22,7 +22,9 @@ public enum BuiltInToolName {
     CRON("Cron", ToolExecutionMode.SEQUENTIAL),
     LIST_MATE_TOOLS("ListMateTools", ToolExecutionMode.PARALLEL),
     CALL_MATE_TOOL("CallMateTool", ToolExecutionMode.SEQUENTIAL),
-    AGENT("Agent", ToolExecutionMode.SEQUENTIAL);
+    AGENT("Agent", ToolExecutionMode.SEQUENTIAL),
+    EXIT_PLAN_MODE("ExitPlanMode", ToolExecutionMode.SEQUENTIAL),
+    TODO_UPDATE("TodoUpdate", ToolExecutionMode.SEQUENTIAL);
 
     private final String externalName;
 

@@ -290,6 +290,66 @@ class RuntimeExecutionCoordinatorTest {
         assertThatThrownBy(pending::join).hasCauseInstanceOf(TimeoutException.class);
     }
 
+    @Test
+    void shouldCommitTimeoutAgainstApprovedContinuationBeforeDecisionClaim() {
+        Fixture fixture = fixture();
+        ExecutionTargetDTO original = fixture.execution.target();
+        var resumed = new ExecutionTargetDTO("session-v2", "execution-v2", "event-root", "segment-approved");
+        fixture.execution.applyMode("plan");
+        var pending = fixture.execution.beginPlanReview("call-plan", "event-plan", "# 方案\n正文");
+        when(fixture.persistence.findCurrentTarget(original)).thenReturn(Optional.of(resumed));
+        fixture.coordinator.start(fixture.holder, fixture.execution, fixture.message, Locale.US);
+        ArgumentCaptor<Runnable> timeoutAction = ArgumentCaptor.forClass(Runnable.class);
+        verify(fixture.timeouts).schedule(timeoutAction.capture(), eq(Duration.ofMinutes(30)));
+
+        timeoutAction.getValue().run();
+        fixture.work.completeExceptionally(new TimeoutException("stopped"));
+
+        assertThat(fixture.execution.target()).isEqualTo(resumed);
+        assertThatThrownBy(pending::join).hasCauseInstanceOf(TimeoutException.class);
+        verify(fixture.persistence).commitTerminal(eq(resumed), any(), any(), any(), any());
+    }
+
+    @Test
+    void shouldRealignWhenApprovalCommitsAfterTheTimeoutSnapshot() {
+        Fixture fixture = fixture();
+        ExecutionTargetDTO original = fixture.execution.target();
+        var resumed = new ExecutionTargetDTO("session-v2", "execution-v2", "event-root", "segment-approved-late");
+        when(fixture.persistence.findCurrentTarget(original)).thenReturn(Optional.of(original), Optional.of(resumed));
+        fixture.coordinator.start(fixture.holder, fixture.execution, fixture.message, Locale.US);
+        ArgumentCaptor<Runnable> timeoutAction = ArgumentCaptor.forClass(Runnable.class);
+        verify(fixture.timeouts).schedule(timeoutAction.capture(), eq(Duration.ofMinutes(30)));
+
+        timeoutAction.getValue().run();
+        fixture.work.completeExceptionally(new TimeoutException("stopped"));
+
+        assertThat(fixture.execution.target()).isEqualTo(resumed);
+        verify(fixture.persistence).commitTerminal(eq(resumed), any(), any(), any(), any());
+    }
+
+    @Test
+    void shouldRealignEveryTimeoutTerminalRetryUntilTheNewSegmentCommits() {
+        Fixture fixture = fixture();
+        ExecutionTargetDTO original = fixture.execution.target();
+        var resumed = new ExecutionTargetDTO("session-v2", "execution-v2", "event-root", "segment-approved-race");
+        when(fixture.persistence.findCurrentTarget(original))
+                .thenReturn(Optional.of(original), Optional.of(original), Optional.of(resumed));
+        when(fixture.persistence.commitTerminal(eq(original), any(), any(), any(), any()))
+                .thenThrow(new IllegalStateException("stale target"));
+        fixture.coordinator.start(fixture.holder, fixture.execution, fixture.message, Locale.US);
+        ArgumentCaptor<Runnable> timeoutAction = ArgumentCaptor.forClass(Runnable.class);
+        verify(fixture.timeouts).schedule(timeoutAction.capture(), eq(Duration.ofMinutes(30)));
+
+        timeoutAction.getValue().run();
+        fixture.work.completeExceptionally(new TimeoutException("stopped"));
+        ArgumentCaptor<Runnable> retry = ArgumentCaptor.forClass(Runnable.class);
+        verify(fixture.terminalRetries).schedule(retry.capture(), eq(Duration.ofSeconds(1)));
+        retry.getValue().run();
+
+        assertThat(fixture.execution.target()).isEqualTo(resumed);
+        verify(fixture.persistence).commitTerminal(eq(resumed), any(), any(), any(), any());
+    }
+
     private static Fixture fixture() {
         RuntimeSessionEngineRegistry engines = mock(RuntimeSessionEngineRegistry.class);
         RuntimeExecutionPersistenceService persistence = mock(RuntimeExecutionPersistenceService.class);

@@ -39,6 +39,8 @@ public class RuntimeEventProjectorFactory {
 
     private final RuntimeEventProperties properties;
 
+    private final RuntimeTodoEventMapper todoMapper;
+
     public RuntimeEventProjectorFactory(
             RuntimeSessionRepository repository,
             RuntimeExecutionPersistenceService persistence,
@@ -47,7 +49,8 @@ public class RuntimeEventProjectorFactory {
             RuntimeCommittedEventFactory events,
             RuntimeEventEncoder encoder,
             Clock clock,
-            RuntimeEventProperties properties) {
+            RuntimeEventProperties properties,
+            RuntimeTodoEventMapper todoMapper) {
         this.repository = repository;
         this.persistence = persistence;
         this.codec = codec;
@@ -56,6 +59,7 @@ public class RuntimeEventProjectorFactory {
         this.encoder = encoder;
         this.clock = clock;
         this.properties = properties;
+        this.todoMapper = todoMapper;
     }
 
     public RuntimeEventProjector create(
@@ -78,6 +82,7 @@ public class RuntimeEventProjectorFactory {
                 execution,
                 initialUserMessage,
                 holder.thinking(),
-                locale);
+                locale,
+                todoMapper);
     }
 }

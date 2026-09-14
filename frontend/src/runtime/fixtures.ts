@@ -3,7 +3,7 @@ import type { RuntimeEvent, RuntimeSession } from '../types/runtime';
 // 仅测试使用的已确认内部协议样本，不含真实凭据或私有推理。
 export const sessionFixture = (overrides: Partial<RuntimeSession> = {}): RuntimeSession => ({
   sessionId: 'session-a', agentId: 'agent-a', displayName: null, modelId: 'model-primary',
-  state: 'idle', thinking: true, createdAt: '2026-09-08T00:00:00.000Z', ...overrides,
+  state: 'idle', thinking: true, mode: 'build', createdAt: '2026-09-08T00:00:00.000Z', ...overrides,
 });
 export function eventFixture(data: Record<string, unknown>): RuntimeEvent {
   return { createdAt: '2026-09-08T00:00:00.000Z', ...data } as RuntimeEvent;

@@ -281,7 +281,7 @@ class RuntimeCommandControllerTest {
                     default ->
                         """
                     {"sessionId":"%s","agentId":"agent","displayName":null,"modelId":"model",
-                     "state":"idle","thinking":false,"lifetimeUsage":{"input":0,"output":0,"cacheRead":0,
+                     "state":"idle","thinking":false,"mode":"build","lifetimeUsage":{"input":0,"output":0,"cacheRead":0,
                       "cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},
                      "createdAt":"2026-09-01T00:00:00Z","updatedAt":"2026-09-01T00:00:00Z"}
                     """
@@ -313,6 +313,7 @@ class RuntimeCommandControllerTest {
         value.setAgentId("agent");
         value.setState("idle");
         value.setModelId("model");
+        value.setMode(ClawConstants.Agent.MODE_BUILD);
         value.setResourceVersion(3L);
         value.setCreatedAt(OffsetDateTime.parse("2026-09-01T00:00:00Z"));
         value.setUpdatedAt(value.getCreatedAt());

@@ -172,6 +172,7 @@ public class RuntimeExceptionHandler {
             case "/campusclaw-service/v1/sessions/{sessionId}/events" -> RuntimeErrorCode.INVALID_EVENT_REQUEST;
             case "/campusclaw-service/v1/sessions/{sessionId}/model" -> RuntimeErrorCode.INVALID_MODEL_REQUEST;
             case "/campusclaw-service/v1/sessions/{sessionId}/thinking" -> RuntimeErrorCode.INVALID_THINKING_REQUEST;
+            case "/campusclaw-service/v1/sessions/{sessionId}" -> RuntimeErrorCode.INVALID_SESSION_UPDATE_REQUEST;
             default -> RuntimeErrorCode.INTERNAL_ERROR;
         };
     }

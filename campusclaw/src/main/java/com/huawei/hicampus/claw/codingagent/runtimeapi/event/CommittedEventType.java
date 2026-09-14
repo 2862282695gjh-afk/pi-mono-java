@@ -14,13 +14,17 @@ public enum CommittedEventType {
     USER_MESSAGE("user.message"),
     USER_INTERRUPT("user.interrupt"),
     USER_TOOL_CONFIRMATION("user.tool_confirmation"),
+    USER_PLAN_CONFIRMATION("user.plan_confirmation"),
     AGENT_MESSAGE("agent.message"),
     AGENT_THINKING("agent.thinking"),
     AGENT_TOOL_CALL("agent.tool_call"),
     AGENT_TOOL_RESULT("agent.tool_result"),
+    AGENT_PLAN("agent.plan"),
+    AGENT_TODO_UPDATED("agent.todo_updated"),
     SESSION_STATUS_IDLE("session.status_idle"),
     SESSION_MODEL_CHANGED("session.model_changed"),
     SESSION_THINKING_CHANGED("session.thinking_changed"),
+    SESSION_MODE_CHANGED("session.mode_changed"),
     SESSION_COMPACTED("session.compacted");
 
     private final String value;

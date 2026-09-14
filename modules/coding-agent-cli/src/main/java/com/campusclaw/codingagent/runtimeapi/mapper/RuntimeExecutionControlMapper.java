@@ -12,6 +12,7 @@ import com.campusclaw.codingagent.runtimeapi.dto.ExecutionControlSignalDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.ExecutionSegmentDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.ExecutionStateDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.ExecutionTargetDTO;
+import com.campusclaw.codingagent.runtimeapi.dto.PlanReviewDecisionDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.ToolConfirmationDecisionDTO;
 
 import org.apache.ibatis.annotations.Mapper;
@@ -34,6 +35,11 @@ public interface RuntimeExecutionControlMapper {
             @Param("executionId") String executionId,
             @Param("rootEventId") String rootEventId,
             @Param("segmentId") String segmentId);
+
+    ExecutionStateDTO findExecutionIdentity(
+            @Param("sessionId") String sessionId,
+            @Param("executionId") String executionId,
+            @Param("rootEventId") String rootEventId);
 
     ExecutionStateDTO lockExecution(@Param("sessionId") String sessionId, @Param("executionId") String executionId);
 
@@ -67,6 +73,14 @@ public interface RuntimeExecutionControlMapper {
             @Param("toolCallId") String toolCallId,
             @Param("updatedAt") OffsetDateTime updatedAt);
 
+    int markPlanConfirming(
+            @Param("sessionId") String sessionId,
+            @Param("executionId") String executionId,
+            @Param("segmentId") String segmentId,
+            @Param("toolCallId") String toolCallId,
+            @Param("planEventId") String planEventId,
+            @Param("updatedAt") OffsetDateTime updatedAt);
+
     int markStopping(
             @Param("sessionId") String sessionId,
             @Param("executionId") String executionId,
@@ -78,12 +92,23 @@ public interface RuntimeExecutionControlMapper {
 
     int insertConfirmation(ToolConfirmationDecisionDTO decision);
 
+    int insertPlanConfirmation(PlanReviewDecisionDTO decision);
+
     int resumeAfterConfirmation(
             @Param("sessionId") String sessionId,
             @Param("executionId") String executionId,
             @Param("previousSegmentId") String previousSegmentId,
             @Param("segmentId") String segmentId,
             @Param("toolCallId") String toolCallId,
+            @Param("updatedAt") OffsetDateTime updatedAt);
+
+    int resumeAfterPlanConfirmation(
+            @Param("sessionId") String sessionId,
+            @Param("executionId") String executionId,
+            @Param("previousSegmentId") String previousSegmentId,
+            @Param("segmentId") String segmentId,
+            @Param("toolCallId") String toolCallId,
+            @Param("planEventId") String planEventId,
             @Param("updatedAt") OffsetDateTime updatedAt);
 
     int claimConfirmation(
@@ -100,7 +125,27 @@ public interface RuntimeExecutionControlMapper {
             @Param("previousSegmentId") String previousSegmentId,
             @Param("toolCallId") String toolCallId);
 
+    int claimPlanConfirmation(
+            @Param("sessionId") String sessionId,
+            @Param("executionId") String executionId,
+            @Param("rootEventId") String rootEventId,
+            @Param("previousSegmentId") String previousSegmentId,
+            @Param("planEventId") String planEventId,
+            @Param("claimedAt") OffsetDateTime claimedAt);
+
+    PlanReviewDecisionDTO findClaimedPlanConfirmation(
+            @Param("sessionId") String sessionId,
+            @Param("executionId") String executionId,
+            @Param("previousSegmentId") String previousSegmentId,
+            @Param("planEventId") String planEventId);
+
     int acknowledgeConfirmation(
+            @Param("sessionId") String sessionId,
+            @Param("executionId") String executionId,
+            @Param("confirmationEventId") String confirmationEventId,
+            @Param("completedAt") OffsetDateTime completedAt);
+
+    int acknowledgePlanConfirmation(
             @Param("sessionId") String sessionId,
             @Param("executionId") String executionId,
             @Param("confirmationEventId") String confirmationEventId,

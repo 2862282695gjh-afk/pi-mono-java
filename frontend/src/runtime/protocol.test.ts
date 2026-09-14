@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { decodeEvent, decodeHistory, matchesReceipt, messageEvent, readEventStream } from './protocol';
-import { executionState, hasToolConfirmation, mergeEvent, reconcileEvents } from './eventStore';
+import { canReviewPlan, executionState, executionTodos, hasToolConfirmation, mergeEvent, reconcileEvents } from './eventStore';
 import { decodeCatalog, decodeCommandResult, filterCommands, freezeInvocation, parseCommand } from './commands';
 import { eventFixture, idleFixture, streamResponse, userFixture } from './fixtures';
 import type { RuntimeEvent } from '../types/runtime';
@@ -85,6 +85,51 @@ describe('Session Events protocol and authoritative store', () => {
     expect(executionState([userFixture(), call, idleFixture('confirming')])).toMatchObject({ confirming: true, pendingTool: call, terminal: undefined });
     expect(executionState([userFixture(), idleFixture(), userFixture('root-b')])).toMatchObject({ rootId: 'root-b', terminal: undefined });
     expect(executionState([userFixture(), call, idleFixture('terminated')]).pendingTool).toBeUndefined();
+  });
+  it('projects an exact plan wait and replaces todo snapshots only within the current root', () => {
+    const plan = eventFixture({ eventId: 'plan-a', type: 'agent.plan', sourceEventId: 'root-a', toolCallId: 'exit-a', content: '# 方案\n\n步骤' });
+    const todo = eventFixture({ eventId: 'todo-a', type: 'agent.todo_updated', sourceEventId: 'root-a', toolCallId: 'todo-call',
+      todos: [{ content: '验证结果', status: 'in_progress' }] });
+    const waiting = [userFixture(), plan, idleFixture('confirming')];
+    expect(decodeHistory({ events: [...waiting, todo], nextPage: null }).events).toHaveLength(4);
+    expect(executionState(waiting).pendingPlan).toEqual(plan);
+    expect(executionTodos([...waiting, todo])?.todos).toEqual([{ content: '验证结果', status: 'in_progress' }]);
+    expect(executionTodos([...waiting, todo, userFixture('root-b')])).toBeUndefined();
+    const approved = eventFixture({ eventId: 'approve-a', type: 'user.plan_confirmation', targetEventId: 'plan-a', result: 'approve' });
+    expect(executionState([...waiting, approved]).pendingPlan).toBeUndefined();
+    expect(matchesReceipt({ type: 'user.plan_confirmation', targetEventId: 'plan-a', result: 'approve' }, approved)).toBe(true);
+  });
+  it.each([
+    { type: 'agent.plan', sourceEventId: 'root-a', toolCallId: 'x', content: '没有标题' },
+    { type: 'agent.plan', sourceEventId: 'root-a', toolCallId: 'x', content: '## 二级标题' },
+    { type: 'agent.plan', sourceEventId: 'root-a', toolCallId: 'x', content: '  # 缩进标题' },
+    { type: 'agent.todo_updated', sourceEventId: 'root-a', toolCallId: 'x', todos: [{ content: '重复', status: 'pending' }, { content: '重复', status: 'completed' }] },
+    { type: 'agent.todo_updated', sourceEventId: 'root-a', toolCallId: 'x', todos: [{ content: '一', status: 'in_progress' }, { content: '二', status: 'in_progress' }] },
+    { type: 'session.mode_changed', previousMode: 'plan', mode: 'build', reason: 'planApproved' },
+  ])('rejects malformed plan mode events %j', (partial) => {
+    expect(() => decodeEvent(eventFixture({ eventId: 'invalid', ...partial }))).toThrow();
+  });
+  it('uses Java String.strip whitespace for Todo content', () => {
+    const event = eventFixture({ eventId: 'todo-nbsp', type: 'agent.todo_updated', sourceEventId: 'root-a', toolCallId: 'x',
+      todos: [{ content: '\u00a0任务', status: 'pending' }] });
+    expect(decodeEvent(event)).toEqual(event);
+    expect(decodeEvent({ ...event, todos: [{ content: '\u00a0', status: 'pending' }] })).toMatchObject({
+      todos: [{ content: '\u00a0', status: 'pending' }],
+    });
+    expect(() => decodeEvent({ ...event, todos: [{ content: ' 任务', status: 'pending' }] })).toThrow();
+  });
+  it('accepts the same standalone carriage-return plan lines as Java String.lines', () => {
+    const event = eventFixture({ eventId: 'plan-cr', type: 'agent.plan', sourceEventId: 'root-a', toolCallId: 'x',
+      content: '\r# 方案\r正文' });
+    expect(decodeEvent(event)).toEqual(event);
+  });
+  it('allows plan review while the Session is running but keeps other control locks', () => {
+    const waiting = { mode: 'plan', state: 'running', hasPendingPlan: true, historyReady: true,
+      controlLocked: false, uncertain: false };
+    expect(canReviewPlan(waiting)).toBe(true);
+    expect(canReviewPlan({ ...waiting, state: 'idle' })).toBe(false);
+    expect(canReviewPlan({ ...waiting, controlLocked: true })).toBe(false);
+    expect(canReviewPlan({ ...waiting, historyReady: false })).toBe(false);
   });
   it('reads data-only SSE split at every byte, comments and CRLF; cancels after terminal', async () => {
     const bytes = new TextEncoder().encode(`: ping\r\n\r\ndata: ${JSON.stringify(userFixture('root-a', '中文😀'))}\r\n\r\n`);

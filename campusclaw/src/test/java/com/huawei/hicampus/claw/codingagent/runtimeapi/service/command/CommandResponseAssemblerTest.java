@@ -24,6 +24,7 @@ import com.huawei.hicampus.claw.codingagent.runtimeapi.vo.AgentHelpResponseVO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.vo.AvailableModelsResponseVO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.vo.BoundSkillsResponseVO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.vo.CompactionResponseVO;
+import com.huawei.hicampus.claw.common.constant.ClawConstants;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.json.JsonMapper;
 
@@ -59,11 +60,13 @@ class CommandResponseAssemblerTest {
                         "modelId",
                         "state",
                         "thinking",
+                        "mode",
                         "lifetimeUsage",
                         "createdAt",
                         "updatedAt");
         assertThat(body.get("displayName").isNull()).isTrue();
         assertThat(body.get("state").asText()).isEqualTo(state);
+        assertThat(body.get("mode").asText()).isEqualTo(ClawConstants.Agent.MODE_BUILD);
         assertThat(body.at("/lifetimeUsage/input").asLong()).isEqualTo(11L);
         assertThat(body.at("/lifetimeUsage/totalTokens").asLong()).isEqualTo(41L);
         assertThat(body.at("/lifetimeUsage/cost/total").decimalValue()).isEqualByComparingTo("0.5");
@@ -154,6 +157,7 @@ class CommandResponseAssemblerTest {
         value.setModelId("provider/model");
         value.setState(state);
         value.setThinking(true);
+        value.setMode(ClawConstants.Agent.MODE_BUILD);
         value.setResourceVersion(8L);
         value.setCreatedAt(OffsetDateTime.parse("2026-09-01T00:00:00Z"));
         value.setUpdatedAt(OffsetDateTime.parse("2026-09-07T00:00:00Z"));

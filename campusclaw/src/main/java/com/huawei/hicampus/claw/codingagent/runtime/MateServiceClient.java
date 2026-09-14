@@ -201,7 +201,8 @@ public class MateServiceClient {
             String name,
             String systemPrompt,
             @JsonDeserialize(contentUsing = AgentMetadataTextDeserializer.class) List<String> userCases,
-            String version) {
+            String version,
+            @JsonDeserialize(using = AgentModeDeserializer.class) String mode) {
 
         public AgentRuntime {
             // 旧快照缺省 enabled 字段（反序列化为 null）视为启用；归一化保证 enabled() 永不返回 null
@@ -212,6 +213,36 @@ public class MateServiceClient {
             bindingAgents = bindingAgents == null ? List.of() : List.copyOf(bindingAgents);
             description = description == null ? List.of() : List.copyOf(description);
             userCases = userCases == null ? List.of() : List.copyOf(userCases);
+            mode = mode == null ? ClawConstants.Agent.MODE_BUILD : mode;
+        }
+
+        public AgentRuntime(
+                List<String> bindingModels,
+                List<SkillReference> bindingSkills,
+                List<BoundTool> bindingTools,
+                List<AgentReference> bindingAgents,
+                List<String> description,
+                String displayName,
+                Boolean enabled,
+                String id,
+                String name,
+                String systemPrompt,
+                List<String> userCases,
+                String version) {
+            this(
+                    bindingModels,
+                    bindingSkills,
+                    bindingTools,
+                    bindingAgents,
+                    description,
+                    displayName,
+                    enabled,
+                    id,
+                    name,
+                    systemPrompt,
+                    userCases,
+                    version,
+                    ClawConstants.Agent.MODE_BUILD);
         }
 
         /**

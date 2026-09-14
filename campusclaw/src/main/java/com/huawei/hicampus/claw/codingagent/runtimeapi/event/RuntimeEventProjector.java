@@ -47,6 +47,8 @@ import com.huawei.hicampus.claw.codingagent.runtimeapi.vo.SessionEventResponseVO
 import com.huawei.hicampus.claw.codingagent.runtimeapi.vo.SessionEventResponseVO.AgentThinkingResponseVO;
 import com.huawei.hicampus.claw.codingagent.session.compaction.SessionCompactionCompletedEvent;
 import com.huawei.hicampus.claw.codingagent.session.compaction.SessionCompactionEvent;
+import com.huawei.hicampus.claw.codingagent.tool.builtin.BuiltInToolName;
+import com.huawei.hicampus.claw.common.constant.ClawConstants;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -94,6 +96,8 @@ public class RuntimeEventProjector {
 
     private final AtomicReference<Throwable> failure = new AtomicReference<>();
 
+    private final RuntimeTodoEventMapper todoMapper;
+
     private final Map<Integer, String> thinkingEntryIds = new LinkedHashMap<>();
 
     private final Map<String, String> toolCallEntryIds = new LinkedHashMap<>();
@@ -123,7 +127,8 @@ public class RuntimeEventProjector {
             RuntimeActiveExecution execution,
             UserMessage initialUserMessage,
             boolean thinking,
-            Locale locale) {
+            Locale locale,
+            RuntimeTodoEventMapper todoMapper) {
         this.sessionId = sessionId;
         this.sourceEventId = sourceEventId;
         this.repository = repository;
@@ -139,6 +144,7 @@ public class RuntimeEventProjector {
         this.initialUserMessage = initialUserMessage;
         this.thinking = thinking;
         this.locale = locale;
+        this.todoMapper = todoMapper;
     }
 
     public synchronized void onEvent(AgentEvent event) {
@@ -166,6 +172,12 @@ public class RuntimeEventProjector {
     }
 
     public BeforeToolCallResult beforeToolCall(BeforeToolCallContext context) throws Exception {
+        if (BuiltInToolName.EXIT_PLAN_MODE
+                .externalName()
+                .equals(context.toolCall().name())) {
+            beginPlanReview(context);
+            return BeforeToolCallResult.allow();
+        }
         var pending = beginConfirmation(context.toolCall());
         ToolConfirmationDecisionDTO decision = pending.get();
         if (decision.getResult() == ToolConfirmationResult.ALLOW) {
@@ -306,11 +318,13 @@ public class RuntimeEventProjector {
     }
 
     private void persistToolCall(ToolExecutionStartEvent event) {
-        if (toolCallEntryIds.containsKey(event.toolCallId())) {
-            return;
-        }
         Map<String, Object> arguments = requireArguments(event.args());
-        persistToolCall(new ToolCall(event.toolCallId(), event.toolName(), arguments), false);
+        ToolCall call = new ToolCall(event.toolCallId(), event.toolName(), arguments);
+        ToolCall finalized = finalizedToolCalls.get(call.id());
+        if (finalized == null || !finalized.equals(call)) {
+            throw new IllegalStateException("started tool call does not match finalized assistant response");
+        }
+        persistToolCall(call, false);
     }
 
     private void persistFinalizedToolCalls(AssistantMessage message) {
@@ -360,10 +374,24 @@ public class RuntimeEventProjector {
             persistMissingToolCall(result.toolCallId());
             RuntimeEntryDTO entry = codec.toolResultEntry(sessionId, ids.nextId(), result, now());
             CommittedEventDTO committed = events.agentToolResult(entry, entry.getId(), result, sourceEventId, locale);
-            RuntimeSseEventVO frame = requireCommittedFrame(committed);
-            persistence.appendEntry(execution.target(), entry, List.of(committed));
-            execution.output().emit(() -> frame);
+            List<CommittedEventDTO> committedEvents = toolResultEvents(entry, committed, result);
+            List<RuntimeSseEventVO> frames =
+                    committedEvents.stream().map(this::requireCommittedFrame).toList();
+            persistence.appendEntry(execution.target(), entry, committedEvents);
+            frames.forEach(frame -> execution.output().emit(() -> frame));
         }
+    }
+
+    private List<CommittedEventDTO> toolResultEvents(
+            RuntimeEntryDTO entry, CommittedEventDTO toolResult, ToolResultMessage result) {
+        ToolCall call = finalizedToolCalls.get(result.toolCallId());
+        var snapshot = todoMapper.map(call, result);
+        if (snapshot.isEmpty()) {
+            return List.of(toolResult);
+        }
+        CommittedEventDTO todo =
+                events.agentTodoUpdated(entry, ids.nextId(), result.toolCallId(), sourceEventId, snapshot.get());
+        return List.of(toolResult, todo);
     }
 
     private void persistMissingToolCall(String toolCallId) {
@@ -410,6 +438,57 @@ public class RuntimeEventProjector {
                 execution.target(), call.id(), toolCall, toolCallEvent, idle, idleEvent, confirmingAt);
         toolCallEntryIds.put(call.id(), toolCall.getId());
         finishConfirmingOutput(output, toolCallFrame, idleFrame);
+    }
+
+    private void beginPlanReview(BeforeToolCallContext context) {
+        ToolCall call = context.toolCall();
+        ToolCall finalized = finalizedToolCalls.get(call.id());
+        if (finalized == null || !finalized.equals(call)) {
+            throw new com.huawei.hicampus.claw.codingagent.tool.plan.PlanReviewException("PLAN_REVIEW_UNAVAILABLE");
+        }
+        if (!ClawConstants.Agent.MODE_PLAN.equals(execution.mode())) {
+            throw new com.huawei.hicampus.claw.codingagent.tool.plan.PlanReviewException("PLAN_MODE_INACTIVE");
+        }
+        long toolCallCount = context.assistantMessage().content().stream()
+                .filter(ToolCall.class::isInstance)
+                .count();
+        if (toolCallCount != 1) {
+            throw new com.huawei.hicampus.claw.codingagent.tool.plan.PlanReviewException("PLAN_REVIEW_UNAVAILABLE");
+        }
+        String plan = requirePlanArgument(call);
+        OffsetDateTime confirmingAt = now();
+        RuntimeEntryDTO planEntry = codec.planEntry(sessionId, ids.nextId(), call.id(), plan, confirmingAt);
+        CommittedEventDTO planEvent = events.agentPlan(planEntry, planEntry.getId(), call.id(), plan, sourceEventId);
+        RuntimeEntryDTO idle =
+                codec.sessionIdleEntry(sessionId, ids.nextId(), "confirming", sourceEventId, null, confirmingAt);
+        CommittedEventDTO idleEvent = events.sessionIdle(idle, idle.getId(), "confirming", sourceEventId, null, locale);
+        RuntimeSseEventVO planFrame = requireCommittedFrame(planEvent);
+        RuntimeSseEventVO idleFrame = requireCommittedFrame(idleEvent);
+        RuntimeEventOutput output = execution.output();
+        execution.beginPlanReview(call.id(), planEvent.getEventId(), plan);
+        try {
+            persistence.markPlanConfirming(
+                    execution.target(), call.id(), planEntry, planEvent, idle, idleEvent, confirmingAt);
+        } catch (RuntimeException error) {
+            execution.cancelPlanReview(error);
+            throw error;
+        }
+        finishConfirmingOutput(output, planFrame, idleFrame);
+    }
+
+    private static String requirePlanArgument(ToolCall call) {
+        if (call.arguments() == null
+                || !call.arguments().keySet().equals(java.util.Set.of("plan"))
+                || !(call.arguments().get("plan") instanceof String plan)
+                || plan.length() > ClawConstants.RuntimeApi.MAX_PLAN_CHARACTERS
+                || plan.lines()
+                        .filter(line -> !line.isBlank())
+                        .findFirst()
+                        .filter(line -> line.startsWith("# "))
+                        .isEmpty()) {
+            throw new com.huawei.hicampus.claw.codingagent.tool.plan.PlanReviewException("TOOL_ARGUMENTS_INVALID");
+        }
+        return plan;
     }
 
     private static void finishConfirmingOutput(

@@ -73,6 +73,23 @@ class RuntimeSessionControlDispatcherTest {
         verify(fixture.controls).acknowledgeConfirmation(eq(decision), any());
     }
 
+    @Test
+    void shouldStopAuthoritativeContinuationBeforePlanDecisionIsClaimed() {
+        Fixture fixture = fixture();
+        fixture.execution.applyMode("plan");
+        var pending = fixture.execution.beginPlanReview("call-1", "plan-1", "# 方案\n正文");
+        RuntimeEventOutput continuation = mock(RuntimeEventOutput.class);
+        assertThat(fixture.execution.stagePlanContinuationOutput(fixture.resumed, "plan-1", continuation))
+                .isTrue();
+
+        assertThat(fixture.dispatcher.dispatchStop(fixture.resumed)).isTrue();
+
+        assertThat(fixture.execution.target()).isEqualTo(fixture.resumed);
+        assertThat(fixture.execution.output()).isSameAs(continuation);
+        assertThat(fixture.execution.abortRequested()).isTrue();
+        assertThatThrownBy(pending::join).isInstanceOf(CancellationException.class);
+    }
+
     @SuppressWarnings("unchecked")
     private static Fixture fixture() {
         RuntimeSessionEngineRegistry engines = mock(RuntimeSessionEngineRegistry.class);

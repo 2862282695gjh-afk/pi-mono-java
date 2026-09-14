@@ -7,9 +7,11 @@ import ConversationTimeline from './components/ConversationTimeline.vue';
 import DevDiagnostics from './components/DevDiagnostics.vue';
 import CommandResultRegion from './components/CommandResultRegion.vue';
 import ToolConfirmation from './components/ToolConfirmation.vue';
+import ProgressDisclosure from './components/ProgressDisclosure.vue';
 import { useWorkbenchSessions } from './composables/useWorkbenchSessions';
 import type { DebugHeadersExpose } from './debugHeaders';
 import { projectRuntimeEvents } from './projectors/runtimeEventProjector';
+import { canReviewPlan } from './runtime/eventStore';
 import type { AgentOption } from './types/product';
 import type { CommandInvocation } from './runtime/commands';
 import type { SubmissionOutcome } from './types/runtime';
@@ -45,6 +47,12 @@ const statusLabel = computed(() => workbench.restoring.value ? '正在恢复会�
   : running.value ? '正在执行' : '空闲');
 const showRecovery = computed(() => runtime.recovering.value || runtime.uncertainty.value || workbench.restoreError.value
   || workbench.recoveryExhausted.value);
+const configurationDisabled = computed(() => running.value || busy.value || workbench.restoring.value
+  || Boolean(runtime.uncertainty.value) || !runtime.historyReady.value);
+const reviewDisabled = computed(() => !canReviewPlan({ mode: runtime.session.value?.mode, state: runtime.session.value?.state,
+  hasPendingPlan: Boolean(runtime.execution.value.pendingPlan), historyReady: runtime.historyReady.value,
+  controlLocked: runtime.controlPending.value || runtime.stopping.value || busy.value || runtime.recovering.value,
+  uncertain: runtime.receiptUnknown.value || Boolean(runtime.uncertainty.value) }));
 
 
 watch(
@@ -144,6 +152,14 @@ async function decideTool(decision: 'allow' | 'deny', reason: string): Promise<v
   await run(async () => { await runtime.confirmTool(toolCallId, decision, reason, headers); });
 }
 
+async function decidePlan(eventId: string, decision: 'approve' | 'revise', feedback: string): Promise<void> {
+  const sessionId = runtime.session.value?.sessionId;
+  const headers = isDevelopment ? await debugHeaders.value?.snapshot() : undefined;
+  if (headers === null || sessionId !== runtime.session.value?.sessionId
+    || eventId !== runtime.execution.value.pendingPlan?.eventId) return;
+  await run(async () => { await runtime.confirmPlan(eventId, decision, feedback, headers); });
+}
+
 function acknowledgeUnknown(): void {
   if (window.confirm('请先检查历史是否已有本次内容。确认已人工核对后，只解除编辑锁定，不会自动发送。')) runtime.acknowledgeUnknown();
 }
@@ -157,6 +173,11 @@ async function changeModel(event: Event): Promise<void> {
 async function toggleThinking(): Promise<void> {
   if (!runtime.session.value) return;
   await run(() => runtime.changeThinking(!runtime.session.value!.thinking));
+}
+
+async function changeMode(mode: 'build' | 'plan'): Promise<void> {
+  if (mode === runtime.session.value?.mode) return;
+  await run(() => runtime.changeMode(mode));
 }
 
 function modelLabel(modelId: string): string {
@@ -201,34 +222,6 @@ function modelLabel(modelId: string): string {
         <DebugHeaders v-if="isDevelopment" ref="debugHeaders" />
 
         <div v-if="runtime.hasSession.value" class="session-controls">
-          <button
-            class="thinking-control"
-            type="button"
-            :class="{ active: runtime.session.value?.thinking }"
-            :aria-pressed="runtime.session.value?.thinking"
-            :disabled="running || busy || workbench.restoring.value || Boolean(runtime.uncertainty.value)"
-            @click="toggleThinking"
-          >
-            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M19.1 4.9l-1.4 1.4M6.3 17.7l-1.4 1.4" /></svg>
-            <span>深度思考</span>
-          </button>
-          <label class="model-select">
-            <span class="sr-only">选择模型</span>
-            <select
-              :value="runtime.session.value?.modelId"
-              :disabled="running || busy || workbench.restoring.value || Boolean(runtime.uncertainty.value)"
-              @change="changeModel"
-            >
-              <option
-                v-if="runtime.session.value && !runtime.models.value.includes(runtime.session.value.modelId)"
-                :value="runtime.session.value.modelId"
-              >{{ modelLabel(runtime.session.value.modelId) }}</option>
-              <option v-for="model in runtime.models.value" :key="model" :value="model">
-                {{ modelLabel(model) }}
-              </option>
-            </select>
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 10 4 4 4-4" /></svg>
-          </label>
           <span class="state-badge" :class="{ running }" role="status" aria-live="polite">
             <span></span>{{ statusLabel }}
           </span>
@@ -269,7 +262,10 @@ function modelLabel(modelId: string): string {
 
       <template v-else>
         <section ref="scrollRegion" class="conversation-scroll" aria-label="会话内容" @scroll="trackScroll">
-          <ConversationTimeline :turns="turns" :running="runtime.streaming.value && !runtime.execution.value.confirming" />
+          <ConversationTimeline :turns="turns" :running="runtime.streaming.value && !runtime.execution.value.confirming"
+            :session-id="runtime.session.value!.sessionId"
+            :pending-plan-event-id="runtime.execution.value.pendingPlan?.eventId" :review-disabled="reviewDisabled"
+            :review-pending="runtime.controlPending.value || busy" @decide-plan="decidePlan" />
         </section>
         <div class="conversation-dock">
           <div v-if="showRecovery || !followingTail" class="recovery-bar" role="status">
@@ -282,6 +278,45 @@ function modelLabel(modelId: string): string {
             :key="runtime.execution.value.pendingTool.eventId" :tool="runtime.execution.value.pendingTool"
             :disabled="runtime.controlPending.value || runtime.stopping.value || runtime.receiptUnknown.value || busy" @decide="decideTool" />
           <CommandResultRegion v-if="runtime.commandResult.value" :result="runtime.commandResult.value" @close="runtime.commandResult.value = null" />
+          <ProgressDisclosure v-if="runtime.todoSnapshot.value" :todos="runtime.todoSnapshot.value.todos"
+            :terminal="Boolean(runtime.execution.value.terminal)" />
+          <div class="composer-config" aria-label="会话配置">
+            <div class="mode-control" role="group" aria-label="选择执行模式">
+              <button type="button" :class="{ active: runtime.session.value?.mode === 'build' }"
+                :disabled="configurationDisabled" @click="changeMode('build')">普通模式</button>
+              <button type="button" :class="{ active: runtime.session.value?.mode === 'plan' }"
+                :disabled="configurationDisabled" @click="changeMode('plan')">计划模式</button>
+            </div>
+            <button class="thinking-control" type="button" :class="{ active: runtime.session.value?.thinking }"
+              :aria-pressed="runtime.session.value?.thinking" :disabled="configurationDisabled" @click="toggleThinking">
+              <span>深度思考</span>
+            </button>
+            <label class="model-select">
+              <span class="sr-only">选择模型</span>
+              <select :value="runtime.session.value?.modelId" :disabled="configurationDisabled" @change="changeModel">
+                <option v-if="runtime.session.value && !runtime.models.value.includes(runtime.session.value.modelId)"
+                  :value="runtime.session.value.modelId">{{ modelLabel(runtime.session.value.modelId) }}</option>
+                <option v-for="model in runtime.models.value" :key="model" :value="model">{{ modelLabel(model) }}</option>
+              </select>
+            </label>
+            <details class="mobile-session-settings">
+              <summary>模型与思考设置</summary>
+              <div>
+                <button type="button" :class="{ active: runtime.session.value?.thinking }"
+                  :aria-pressed="runtime.session.value?.thinking" :disabled="configurationDisabled" @click="toggleThinking">
+                  深度思考：{{ runtime.session.value?.thinking ? '开' : '关' }}
+                </button>
+                <label>
+                  <span>模型</span>
+                  <select :value="runtime.session.value?.modelId" :disabled="configurationDisabled" @change="changeModel">
+                    <option v-if="runtime.session.value && !runtime.models.value.includes(runtime.session.value.modelId)"
+                      :value="runtime.session.value.modelId">{{ modelLabel(runtime.session.value.modelId) }}</option>
+                    <option v-for="model in runtime.models.value" :key="model" :value="model">{{ modelLabel(model) }}</option>
+                  </select>
+                </label>
+              </div>
+            </details>
+          </div>
           <ComposerBox
             :key="runtime.session.value?.sessionId"
             v-model="message"

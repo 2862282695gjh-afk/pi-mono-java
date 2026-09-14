@@ -25,6 +25,8 @@ import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeRecordDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.SessionConfigurationUpdateDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.SessionNameUpdateDTO;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.SessionUpdateChangesDTO;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.SessionUpdateSpecificationDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.mapper.RuntimeSessionMapper;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.persistence.UserEventAcceptance.Status;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.session.RuntimeSessionState;
@@ -87,14 +89,25 @@ public class MyBatisRuntimeSessionRepository implements RuntimeSessionRepository
     @Override
     @Transactional
     public UserEventAcceptance acceptUserEvent(String sessionId, RuntimeEntryDTO entry, OffsetDateTime acceptedAt) {
-        return acceptUserEventLocked(sessionId, entry, List.of(), false, acceptedAt);
+        return acceptUserEventLocked(sessionId, entry, List.of(), false, true, acceptedAt);
     }
 
     @Override
     @Transactional
     public UserEventAcceptance acceptUserEvent(
             String sessionId, RuntimeEntryDTO entry, CommittedEventDTO event, OffsetDateTime acceptedAt) {
-        return acceptUserEventLocked(sessionId, entry, List.of(event), true, acceptedAt);
+        return acceptUserEvent(sessionId, entry, event, true, acceptedAt);
+    }
+
+    @Override
+    @Transactional
+    public UserEventAcceptance acceptUserEvent(
+            String sessionId,
+            RuntimeEntryDTO entry,
+            CommittedEventDTO event,
+            boolean planReviewAvailable,
+            OffsetDateTime acceptedAt) {
+        return acceptUserEventLocked(sessionId, entry, List.of(event), true, planReviewAvailable, acceptedAt);
     }
 
     private UserEventAcceptance acceptUserEventLocked(
@@ -102,6 +115,7 @@ public class MyBatisRuntimeSessionRepository implements RuntimeSessionRepository
             RuntimeEntryDTO entry,
             List<CommittedEventDTO> events,
             boolean projectionComplete,
+            boolean planReviewAvailable,
             OffsetDateTime acceptedAt) {
         RuntimeSessionDTO session = lockSession(sessionId);
         if (session == null) {
@@ -109,6 +123,10 @@ public class MyBatisRuntimeSessionRepository implements RuntimeSessionRepository
         }
         if (!RuntimeSessionState.IDLE.matches(session.getState())) {
             return new UserEventAcceptance(Status.BUSY, session);
+        }
+        if (com.huawei.hicampus.claw.common.constant.ClawConstants.Agent.MODE_PLAN.equals(session.getMode())
+                && !planReviewAvailable) {
+            return new UserEventAcceptance(Status.PLAN_UNAVAILABLE, session);
         }
         appendLocked(session, entry);
         appendEventsLocked(entry, events);
@@ -302,6 +320,88 @@ public class MyBatisRuntimeSessionRepository implements RuntimeSessionRepository
                 sessionId, expectedVersion, thinking, admission, entryFactory, eventFactory, updatedAt);
     }
 
+    @Override
+    @Transactional
+    public SessionConfigurationUpdateDTO updateSession(
+            String sessionId,
+            SessionUpdateSpecificationDTO specification,
+            Function<SessionUpdateChangesDTO, List<RuntimeEntryDTO>> entriesFactory,
+            Function<RuntimeEntryDTO, CommittedEventDTO> eventFactory) {
+        RuntimeSessionDTO session = lockSession(sessionId);
+        SessionConfigurationUpdateDTO rejected = rejectUnifiedUpdate(session, specification);
+        if (rejected != null) {
+            return rejected;
+        }
+        SessionUpdateChangesDTO changes = mergeUpdate(session, specification);
+        boolean nameChanged = specification.isDisplayNameSubmitted()
+                && !Objects.equals(session.getDisplayName(), specification.getDisplayName());
+        if (!nameChanged && !changes.modelChanged() && !changes.thinkingChanged() && !changes.modeChanged()) {
+            return unchanged(session);
+        }
+        List<RuntimeEntryDTO> entries = entriesFactory.apply(changes);
+        applyMergedUpdate(session, specification, changes);
+        requireOne(
+                mapper.updateSessionConfiguration(session, specification.getUpdatedAt()),
+                "session configuration was not updated");
+        appendConfigurationEntries(session, entries, eventFactory);
+        markConfigurationUpdated(session, specification.getUpdatedAt());
+        Long sourceEventSeq = entries.isEmpty() ? null : entries.getLast().getEntrySeq();
+        return new SessionConfigurationUpdateDTO(SessionConfigurationUpdateDTO.Status.UPDATED, session, sourceEventSeq);
+    }
+
+    private static SessionConfigurationUpdateDTO rejectUnifiedUpdate(
+            RuntimeSessionDTO session, SessionUpdateSpecificationDTO specification) {
+        if (session == null) {
+            return new SessionConfigurationUpdateDTO(SessionConfigurationUpdateDTO.Status.NOT_FOUND, null);
+        }
+        if (session.getResourceVersion() != specification.getExpectedVersion()) {
+            return new SessionConfigurationUpdateDTO(SessionConfigurationUpdateDTO.Status.VERSION_MISMATCH, session);
+        }
+        if (specification.hasExecutionConfiguration() && !RuntimeSessionState.IDLE.matches(session.getState())) {
+            return new SessionConfigurationUpdateDTO(SessionConfigurationUpdateDTO.Status.BUSY, session);
+        }
+        return null;
+    }
+
+    private static SessionUpdateChangesDTO mergeUpdate(
+            RuntimeSessionDTO session, SessionUpdateSpecificationDTO specification) {
+        String modelId = specification.isModelIdSubmitted() ? specification.getModelId() : session.getModelId();
+        boolean modelChanged = !session.getModelId().equals(modelId);
+        boolean thinking = mergedThinking(session, specification, modelChanged);
+        String mode = specification.isModeSubmitted() ? specification.getMode() : session.getMode();
+        String thinkingReason = specification.isThinkingSubmitted() ? "requested" : "modelCapability";
+        return new SessionUpdateChangesDTO(
+                session,
+                modelId,
+                thinking,
+                mode,
+                modelChanged,
+                session.isThinking() != thinking,
+                thinkingReason,
+                !session.getMode().equals(mode));
+    }
+
+    private static boolean mergedThinking(
+            RuntimeSessionDTO session, SessionUpdateSpecificationDTO specification, boolean modelChanged) {
+        if (specification.isThinkingSubmitted()) {
+            return specification.isThinking();
+        }
+        if (modelChanged && session.isThinking() && !specification.isTargetModelSupportsThinking()) {
+            return false;
+        }
+        return session.isThinking();
+    }
+
+    private static void applyMergedUpdate(
+            RuntimeSessionDTO session, SessionUpdateSpecificationDTO specification, SessionUpdateChangesDTO changes) {
+        if (specification.isDisplayNameSubmitted()) {
+            session.setDisplayName(specification.getDisplayName());
+        }
+        session.setModelId(changes.modelId());
+        session.setThinking(changes.thinking());
+        session.setMode(changes.mode());
+    }
+
     private SessionConfigurationUpdateDTO updateThinkingLocked(
             String sessionId,
             Long expectedVersion,
@@ -362,6 +462,7 @@ public class MyBatisRuntimeSessionRepository implements RuntimeSessionRepository
     @Transactional
     public void completeCleanup(String sessionId) {
         mapper.deleteToolConfirmations(sessionId);
+        mapper.deletePlanConfirmations(sessionId);
         mapper.deleteExecutionSegmentEvents(sessionId);
         mapper.deleteExecutionSegments(sessionId);
         mapper.deleteExecutions(sessionId);

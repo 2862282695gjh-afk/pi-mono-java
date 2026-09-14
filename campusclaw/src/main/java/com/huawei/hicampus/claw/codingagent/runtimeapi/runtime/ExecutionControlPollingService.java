@@ -103,6 +103,13 @@ public class ExecutionControlPollingService {
         }
     }
 
+    public void dispatchCommittedPlanConfirmation(ExecutionTargetDTO confirmingTarget, String planEventId) {
+        RuntimeLocalControlDispatcher dispatcher = dispatcherProvider.getIfAvailable();
+        if (dispatcher != null) {
+            dispatchPlanConfirmation(dispatcher, confirmingTarget, planEventId);
+        }
+    }
+
     private boolean readyToPoll() {
         return System.currentTimeMillis() >= retryAfterEpochMilli;
     }
@@ -150,6 +157,8 @@ public class ExecutionControlPollingService {
     private void dispatch(RuntimeLocalControlDispatcher dispatcher, ExecutionControlSignalDTO signal) {
         if (signal.isStopRequested()) {
             dispatchStop(dispatcher, signal.target());
+        } else if (signal.getPlanEventId() != null && !signal.getPlanEventId().isBlank()) {
+            dispatchPlanConfirmation(dispatcher, signal.target(), signal.getPlanEventId());
         } else if (signal.getToolCallId() != null && !signal.getToolCallId().isBlank()) {
             dispatchConfirmation(dispatcher, signal.target(), signal.getToolCallId());
         }
@@ -190,6 +199,26 @@ public class ExecutionControlPollingService {
         } catch (RuntimeException exception) {
             deliveredConfirmations.remove(target, toolCallId);
             LOGGER.warn("Failed to dispatch tool confirmation to the local Runtime execution", exception);
+        }
+    }
+
+    private void dispatchPlanConfirmation(
+            RuntimeLocalControlDispatcher dispatcher, ExecutionTargetDTO target, String planEventId) {
+        if (deliveredConfirmations.putIfAbsent(target, planEventId) != null) {
+            return;
+        }
+        dispatchExecutor.submit(() -> deliverPlanConfirmation(dispatcher, target, planEventId));
+    }
+
+    private void deliverPlanConfirmation(
+            RuntimeLocalControlDispatcher dispatcher, ExecutionTargetDTO target, String planEventId) {
+        try {
+            if (!dispatcher.dispatchPlanConfirmation(target, planEventId)) {
+                deliveredConfirmations.remove(target, planEventId);
+            }
+        } catch (RuntimeException exception) {
+            deliveredConfirmations.remove(target, planEventId);
+            LOGGER.warn("Failed to dispatch plan confirmation to the local Runtime execution", exception);
         }
     }
 

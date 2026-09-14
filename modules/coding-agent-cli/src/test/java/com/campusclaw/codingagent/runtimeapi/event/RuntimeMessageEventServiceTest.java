@@ -7,6 +7,7 @@ package com.campusclaw.codingagent.runtimeapi.event;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -118,7 +119,7 @@ class RuntimeMessageEventServiceTest {
                         "session-v2", requestWithFiles("分析订单", List.of()), Locale.US, MateCredentials.empty()))
                 .isInstanceOfSatisfying(RuntimeApiException.class, error -> assertThat(error.errorCode())
                         .isEqualTo(RuntimeErrorCode.RUNTIME_CAPACITY_EXCEEDED));
-        verify(fixture.persistence, never()).acceptMessage(anyString(), any(), any(), any());
+        verify(fixture.persistence, never()).acceptMessage(anyString(), any(), any(), anyBoolean(), any());
         verify(fixture.coordinator, never()).start(any(), any(), any(), any());
     }
 
@@ -132,14 +133,14 @@ class RuntimeMessageEventServiceTest {
                         "session-v2", requestWithFiles("分析订单", List.of()), Locale.US, MateCredentials.empty()))
                 .isInstanceOfSatisfying(RuntimeApiException.class, error -> assertThat(error.errorCode())
                         .isEqualTo(RuntimeErrorCode.MODEL_NOT_AVAILABLE));
-        verify(fixture.persistence, never()).acceptMessage(anyString(), any(), any(), any());
+        verify(fixture.persistence, never()).acceptMessage(anyString(), any(), any(), anyBoolean(), any());
         verify(fixture.contexts, never()).create(any(), any(), any(), any(), any(), any());
     }
 
     @Test
     void shouldReturnAcceptedStreamWhenReceiptCannotBeEmitted() {
         Fixture fixture = new Fixture(stream(16, 8192));
-        when(fixture.persistence.acceptMessage(eq("session-v2"), any(), any(), any()))
+        when(fixture.persistence.acceptMessage(eq("session-v2"), any(), any(), anyBoolean(), any()))
                 .thenAnswer(invocation -> {
                     UserMessageAcceptanceDTO accepted =
                             fixture.captureAcceptance(invocation.getArgument(1), invocation.getArgument(2));
@@ -154,7 +155,8 @@ class RuntimeMessageEventServiceTest {
         assertThat(collect(result)).isEmpty();
         assertThat(fixture.execution.target()).isEqualTo(fixture.target);
         verify(fixture.persistence)
-                .acceptMessage(eq("session-v2"), eq(fixture.acceptedEntry), eq(fixture.acceptedEvent), any());
+                .acceptMessage(
+                        eq("session-v2"), eq(fixture.acceptedEntry), eq(fixture.acceptedEvent), anyBoolean(), any());
         verify(fixture.coordinator)
                 .handleAcceptedStartFailure(
                         eq(fixture.holder), eq(fixture.execution), any(IllegalStateException.class), eq(Locale.US));
@@ -207,7 +209,7 @@ class RuntimeMessageEventServiceTest {
                         "session-v2", request("analysis", null), Locale.US, MateCredentials.empty()))
                 .isInstanceOfSatisfying(RuntimeApiException.class, error -> assertThat(error.errorCode())
                         .isEqualTo(RuntimeErrorCode.EVENT_SERVICE_UNAVAILABLE));
-        verify(fixture.persistence, never()).acceptMessage(anyString(), any(), any(), any());
+        verify(fixture.persistence, never()).acceptMessage(anyString(), any(), any(), anyBoolean(), any());
         verify(fixture.engines).complete(fixture.holder, fixture.execution);
         assertThat(fixture.execution.completion()).isCompleted();
     }
@@ -377,7 +379,7 @@ class RuntimeMessageEventServiceTest {
             when(contexts.create(any(), any(), any(), any(), any(), any())).thenReturn(context);
             when(engines.withOperationLock(anyString(), any(Supplier.class)))
                     .thenAnswer(invocation -> ((Supplier<?>) invocation.getArgument(1)).get());
-            when(persistence.acceptMessage(eq("session-v2"), any(), any(), any()))
+            when(persistence.acceptMessage(eq("session-v2"), any(), any(), anyBoolean(), any()))
                     .thenAnswer(invocation -> captureAcceptance(invocation.getArgument(1), invocation.getArgument(2)));
         }
 
@@ -386,7 +388,7 @@ class RuntimeMessageEventServiceTest {
             acceptedEvent = event;
             acceptedEntry.setEntrySeq(1L);
             acceptedEvent.setEventSeq(1L);
-            return new UserMessageAcceptanceDTO(acceptedEntry, target);
+            return new UserMessageAcceptanceDTO(acceptedEntry, target, "build");
         }
 
         private static RuntimeSessionDTO session() {
@@ -394,6 +396,7 @@ class RuntimeMessageEventServiceTest {
             session.setId("session-v2");
             session.setAgentId("agent-v2");
             session.setState(RuntimeSessionState.IDLE.value());
+            session.setMode("build");
             return session;
         }
     }
@@ -454,7 +457,7 @@ class RuntimeMessageEventServiceTest {
                             return holder;
                         });
             }
-            when(persistence.acceptMessage(eq("session-v2"), any(), any(), any()))
+            when(persistence.acceptMessage(eq("session-v2"), any(), any(), anyBoolean(), any()))
                     .thenAnswer(invocation -> accept(invocation.getArgument(1), invocation.getArgument(2)));
         }
 
@@ -464,7 +467,7 @@ class RuntimeMessageEventServiceTest {
             acceptedEntry.setEntrySeq(1L);
             acceptedEvent.setEventSeq(1L);
             return new UserMessageAcceptanceDTO(
-                    entry, new ExecutionTargetDTO("session-v2", "execution-v2", "event-user", "segment-v2"));
+                    entry, new ExecutionTargetDTO("session-v2", "execution-v2", "event-user", "segment-v2"), "build");
         }
 
         private UserMessage startedMessage() {

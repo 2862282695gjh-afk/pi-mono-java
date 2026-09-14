@@ -49,6 +49,7 @@ SYNCED_RESOURCES=(
   "mapper"
   "schema.sql"
   "i18n"
+  "prompts"
   "META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports"
 )
 
@@ -341,7 +342,7 @@ else
 fi
 
 if $SYNC_RESOURCES; then
-  note "Applying whitelisted classpath resources (mapper, schema.sql, i18n, AutoConfiguration.imports)"
+  note "Applying whitelisted classpath resources (mapper, schema.sql, i18n, prompts, AutoConfiguration.imports)"
   for f in "${SYNCED_RESOURCES[@]}"; do
     src="$OUT/src/main/resources/$f"
     dst="$MIRROR/src/main/resources/$f"

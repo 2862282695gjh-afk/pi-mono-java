@@ -72,7 +72,8 @@ class AgentSessionFactoryTest {
                 assembler,
                 provider,
                 promptLoader,
-                mock(com.huawei.hicampus.claw.codingagent.session.compaction.SessionCompactor.class));
+                mock(com.huawei.hicampus.claw.codingagent.session.compaction.SessionCompactor.class),
+                new PlanPolicyPromptComposer());
         MateCredentials credentials = MateCredentials.jwt("caller-1", "token-1", "access-token-1");
         when(mateToolsetFactory.createSession(runtime.agentId(), Map.of(), credentials))
                 .thenReturn(mock(MateToolSessionState.class));
@@ -94,7 +95,7 @@ class AgentSessionFactoryTest {
         assertThat(first).isNotSameAs(second);
         assertThat(first.agent()).isNotSameAs(second.agent());
         assertThat(first.tools().getFirst()).isNotSameAs(second.tools().getFirst());
-        assertThat(first.agent().getState().getSystemPrompt()).isEqualTo("system prompt");
+        assertBuildPrompt(first);
         assertThat(first.agent().getState().getThinkingLevel()).isEqualTo(ThinkingLevel.MEDIUM);
         verify(assembler, org.mockito.Mockito.times(2)).assemble(eq(ToolEntryPoint.RUNTIME), any());
         verify(runtimeManager, org.mockito.Mockito.times(2)).prepare(runtime.agentId());
@@ -118,6 +119,13 @@ class AgentSessionFactoryTest {
                 List.of(),
                 "1.0.0");
         return new PreparedAgentRuntime(id, agentRoot, metadata, List.of());
+    }
+
+    private static void assertBuildPrompt(ManagedAgentSession session) {
+        assertThat(session.agent().getState().getSystemPrompt())
+                .startsWith("system prompt")
+                .contains("你当前处于 build 模式。")
+                .doesNotContain("TodoUpdate 用于 build 阶段的实施进度。");
     }
 
     private static Model model() {

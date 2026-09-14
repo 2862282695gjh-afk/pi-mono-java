@@ -12,6 +12,7 @@ import com.campusclaw.codingagent.runtimeapi.vo.SessionUserEventRequestVO;
 import com.campusclaw.codingagent.runtimeapi.vo.SubmitSessionEventRequestVO;
 import com.campusclaw.codingagent.runtimeapi.vo.UserInterruptEventRequestVO;
 import com.campusclaw.codingagent.runtimeapi.vo.UserMessageEventRequestVO;
+import com.campusclaw.codingagent.runtimeapi.vo.UserPlanConfirmationEventRequestVO;
 import com.campusclaw.codingagent.runtimeapi.vo.UserToolConfirmationEventRequestVO;
 import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.databind.DeserializationContext;
@@ -29,6 +30,7 @@ public final class SubmitSessionEventRequestDeserializer extends JsonDeserialize
     @Override
     public SubmitSessionEventRequestVO deserialize(JsonParser parser, DeserializationContext context)
             throws IOException {
+        parser.enable(JsonParser.Feature.STRICT_DUPLICATE_DETECTION);
         JsonNode input = parser.getCodec().readTree(parser);
         requireObject(input, context, SubmitSessionEventRequestVO.class, "event request must be an object");
         if (!fieldNames(input).equals(Set.of("event"))) {
@@ -66,6 +68,9 @@ public final class SubmitSessionEventRequestDeserializer extends JsonDeserialize
         }
         if (CommittedEventType.USER_TOOL_CONFIRMATION.value().equals(type)) {
             return UserToolConfirmationEventRequestVO.class;
+        }
+        if (CommittedEventType.USER_PLAN_CONFIRMATION.value().equals(type)) {
+            return UserPlanConfirmationEventRequestVO.class;
         }
         return context.reportInputMismatch(SessionUserEventRequestVO.class, "user event type is unsupported");
     }

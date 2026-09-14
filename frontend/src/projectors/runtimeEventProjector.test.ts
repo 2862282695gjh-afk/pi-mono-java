@@ -33,4 +33,34 @@ describe('Runtime Events presentation', () => {
     const turns = projectRuntimeEvents([userFixture('old-root'), call, receipt, userFixture(), currentCall, idleFixture('confirming')], true);
     expect(turns.find((turn) => turn.key === 'new-call')).toMatchObject({ kind: 'activity', status: 'confirming' });
   });
+  it('renders the authoritative plan once and never parses TodoUpdate text for progress', () => {
+    const call = eventFixture({ eventId: 'exit-call', type: 'agent.tool_call', toolCallId: 'exit', sourceEventId: 'root-a',
+      toolName: 'ExitPlanMode', arguments: { plan: '# 方案' }, requiresConfirmation: false });
+    const plan = eventFixture({ eventId: 'plan', type: 'agent.plan', sourceEventId: 'root-a', toolCallId: 'exit', content: '# 方案' });
+    const result = eventFixture({ eventId: 'exit-result', type: 'agent.tool_result', sourceEventId: 'root-a', toolCallId: 'exit',
+      content: [{ type: 'text', text: '{"result":"approved"}' }], isError: false });
+    const turns = projectRuntimeEvents([userFixture(), call, plan, result]);
+    expect(turns.filter((turn) => turn.kind === 'plan')).toEqual([
+      expect.objectContaining({ eventId: 'plan', rawMarkdown: '# 方案' }),
+    ]);
+    expect(turns.some((turn) => turn.kind === 'activity' && turn.toolName === 'ExitPlanMode')).toBe(false);
+  });
+  it('keeps a failed ExitPlanMode call visible when no agent.plan was committed', () => {
+    const call = eventFixture({ eventId: 'exit-call', type: 'agent.tool_call', toolCallId: 'exit', sourceEventId: 'root-a',
+      toolName: 'ExitPlanMode', arguments: { plan: 'invalid' }, requiresConfirmation: false });
+    const result = eventFixture({ eventId: 'exit-result', type: 'agent.tool_result', sourceEventId: 'root-a', toolCallId: 'exit',
+      content: [{ type: 'text', text: '工具参数不符合约束，本次调用未执行。' }], isError: true, errorCode: 'TOOL_ARGUMENTS_INVALID' });
+    expect(projectRuntimeEvents([userFixture(), call, result])).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: 'activity', toolName: 'ExitPlanMode', status: 'error' }),
+    ]));
+  });
+  it('marks an undecided plan as stopped after its root terminates', () => {
+    const plan = eventFixture({ eventId: 'plan', type: 'agent.plan', sourceEventId: 'root-a',
+      toolCallId: 'exit', content: '# 方案' });
+    const terminal = idleFixture('terminated');
+
+    expect(projectRuntimeEvents([userFixture(), plan, terminal])).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: 'plan', eventId: 'plan', lifecycle: 'stopped' }),
+    ]));
+  });
 });

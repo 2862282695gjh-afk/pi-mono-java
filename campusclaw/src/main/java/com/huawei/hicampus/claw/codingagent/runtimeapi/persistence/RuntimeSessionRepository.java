@@ -18,6 +18,8 @@ import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeRecordDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.SessionConfigurationUpdateDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.SessionNameUpdateDTO;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.SessionUpdateChangesDTO;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.SessionUpdateSpecificationDTO;
 
 /**
  * Runtime Session 持久化的事务边界端口。
@@ -36,6 +38,13 @@ public interface RuntimeSessionRepository {
 
     UserEventAcceptance acceptUserEvent(
             String sessionId, RuntimeEntryDTO entry, CommittedEventDTO event, OffsetDateTime acceptedAt);
+
+    UserEventAcceptance acceptUserEvent(
+            String sessionId,
+            RuntimeEntryDTO entry,
+            CommittedEventDTO event,
+            boolean planReviewAvailable,
+            OffsetDateTime acceptedAt);
 
     /**
      * 行锁内观察当前 Session 与完整分支，不修改持久化状态，也不准备 Agent。
@@ -111,6 +120,12 @@ public interface RuntimeSessionRepository {
             Function<RuntimeSessionDTO, RuntimeEntryDTO> entryFactory,
             Function<RuntimeEntryDTO, CommittedEventDTO> eventFactory,
             OffsetDateTime updatedAt);
+
+    SessionConfigurationUpdateDTO updateSession(
+            String sessionId,
+            SessionUpdateSpecificationDTO specification,
+            Function<SessionUpdateChangesDTO, List<RuntimeEntryDTO>> entriesFactory,
+            Function<RuntimeEntryDTO, CommittedEventDTO> eventFactory);
 
     SessionDeletionStatus beginDeletion(String sessionId, OffsetDateTime deletedAt);
 

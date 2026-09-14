@@ -15,8 +15,14 @@ import com.huawei.hicampus.claw.agent.tool.BeforeToolCallHandler;
 import com.huawei.hicampus.claw.agent.tool.BeforeToolCallResult;
 import com.huawei.hicampus.claw.ai.types.ToolCall;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.ExecutionTargetDTO;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.PlanReviewDecisionDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.ToolConfirmationDecisionDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeEventOutput;
+import com.huawei.hicampus.claw.codingagent.tool.builtin.BuiltInToolName;
+import com.huawei.hicampus.claw.codingagent.tool.plan.PlanReviewException;
+import com.huawei.hicampus.claw.codingagent.tool.plan.PlanReviewPort;
+import com.huawei.hicampus.claw.codingagent.tool.plan.PlanReviewResultDTO;
+import com.huawei.hicampus.claw.common.constant.ClawConstants;
 
 /**
  * 单个 Session 当前唯一活动执行的进程内句柄。
@@ -24,7 +30,7 @@ import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeEventOutput;
  * @version [br_eCampusCore 26.0.0, 2026/08/18]
  * @since [br_eCampusCore 26.0.0]
  */
-public class RuntimeActiveExecution {
+public class RuntimeActiveExecution implements PlanReviewPort {
     private RuntimeEventOutput output;
 
     private final CompletableFuture<Void> completion = new CompletableFuture<>();
@@ -55,12 +61,70 @@ public class RuntimeActiveExecution {
 
     private RuntimeEventOutput continuationOutput;
 
+    private String mode = ClawConstants.Agent.MODE_BUILD;
+
+    private String pendingPlanEventId;
+
+    private String pendingPlan;
+
+    private CompletableFuture<PlanReviewDecisionDTO> pendingPlanReview;
+
+    private Runnable modeApplier = () -> {};
+
     public RuntimeActiveExecution(RuntimeEventOutput output) {
         this.output = Objects.requireNonNull(output, "output");
     }
 
     public synchronized RuntimeEventOutput output() {
         return output;
+    }
+
+    public synchronized void applyMode(String value) {
+        if (!ClawConstants.Agent.MODES.contains(value)) {
+            throw new IllegalArgumentException("runtime execution mode is invalid");
+        }
+        mode = value;
+    }
+
+    public synchronized String mode() {
+        return mode;
+    }
+
+    public synchronized void installModeApplier(Runnable value) {
+        modeApplier = Objects.requireNonNull(value, "modeApplier");
+    }
+
+    public synchronized CompletableFuture<PlanReviewDecisionDTO> beginPlanReview(
+            String toolCallId, String planEventId, String plan) {
+        if (!ClawConstants.Agent.MODE_PLAN.equals(mode)) {
+            throw new PlanReviewException("PLAN_MODE_INACTIVE");
+        }
+        if (pendingConfirmation != null || pendingPlanReview != null) {
+            throw new PlanReviewException("PLAN_REVIEW_UNAVAILABLE");
+        }
+        pendingToolCallId = requireText(toolCallId, "toolCallId");
+        pendingPlanEventId = requireText(planEventId, "planEventId");
+        pendingPlan = requireText(plan, "plan");
+        pendingPlanReview = new CompletableFuture<>();
+        return pendingPlanReview;
+    }
+
+    @Override
+    public PlanReviewResultDTO await(String toolCallId, String plan) throws Exception {
+        CompletableFuture<PlanReviewDecisionDTO> future;
+        synchronized (this) {
+            if (pendingPlanReview == null || !pendingToolCallId.equals(toolCallId) || !pendingPlan.equals(plan)) {
+                throw new PlanReviewException("PLAN_REVIEW_UNAVAILABLE");
+            }
+            future = pendingPlanReview;
+        }
+        PlanReviewDecisionDTO decision = future.get();
+        synchronized (this) {
+            if (pendingPlanReview == future) {
+                clearPendingPlanReview();
+            }
+        }
+        return new PlanReviewResultDTO(decision.getResult().isApproved(), decision.getFeedback());
     }
 
     public synchronized void bindToolPermissions(RuntimeToolPermissionPolicy value) {
@@ -76,6 +140,11 @@ public class RuntimeActiveExecution {
     }
 
     public BeforeToolCallResult beforeToolCall(BeforeToolCallContext context) throws Exception {
+        if (BuiltInToolName.EXIT_PLAN_MODE
+                .externalName()
+                .equals(context.toolCall().name())) {
+            return requireConfirmationHandler().handle(context);
+        }
         RuntimeToolPermissionPolicy.Decision decision = toolPermission(context.toolCall());
         if (decision == RuntimeToolPermissionPolicy.Decision.ALLOW) {
             return BeforeToolCallResult.allow();
@@ -88,7 +157,7 @@ public class RuntimeActiveExecution {
     }
 
     public synchronized CompletableFuture<ToolConfirmationDecisionDTO> beginToolConfirmation(String toolCallId) {
-        if (pendingConfirmation != null) {
+        if (pendingConfirmation != null || pendingPlanReview != null) {
             throw new IllegalStateException("another tool confirmation is already pending");
         }
         pendingToolCallId = requireText(toolCallId, "toolCallId");
@@ -103,6 +172,16 @@ public class RuntimeActiveExecution {
     public synchronized boolean stageContinuationOutput(
             ExecutionTargetDTO value, String toolCallId, RuntimeEventOutput valueOutput) {
         if (!matchesExecution(value) || pendingConfirmation == null || !pendingToolCallId.equals(toolCallId)) {
+            return false;
+        }
+        continuationTarget = value;
+        continuationOutput = Objects.requireNonNull(valueOutput, "continuationOutput");
+        return true;
+    }
+
+    public synchronized boolean stagePlanContinuationOutput(
+            ExecutionTargetDTO value, String planEventId, RuntimeEventOutput valueOutput) {
+        if (!matchesExecution(value) || pendingPlanReview == null || !pendingPlanEventId.equals(planEventId)) {
             return false;
         }
         continuationTarget = value;
@@ -150,6 +229,40 @@ public class RuntimeActiveExecution {
         synchronized (this) {
             future = pendingConfirmation;
             clearPendingConfirmation();
+        }
+        if (future != null) {
+            future.completeExceptionally(failure);
+        }
+    }
+
+    public Optional<PlanReviewDecisionDTO> claimAndResumePlanReview(
+            ExecutionTargetDTO confirmingTarget, String planEventId, Supplier<Optional<PlanReviewDecisionDTO>> claim) {
+        PlanReviewDecisionDTO decision;
+        CompletableFuture<PlanReviewDecisionDTO> future;
+        synchronized (this) {
+            if (!matchesPendingPlanTarget(confirmingTarget, planEventId)) {
+                return Optional.empty();
+            }
+            Optional<PlanReviewDecisionDTO> claimed = Objects.requireNonNull(claim.get(), "claimed plan decision");
+            if (claimed.isEmpty()) {
+                return Optional.empty();
+            }
+            decision = claimed.get();
+            requirePendingPlanDecision(decision);
+            future = applyPlanDecision(decision);
+        }
+        future.complete(decision);
+        return Optional.of(decision);
+    }
+
+    public void cancelPlanReview(Throwable failure) {
+        CompletableFuture<PlanReviewDecisionDTO> future;
+        synchronized (this) {
+            future = pendingPlanReview;
+            if (future != null && future.isDone() && !future.isCompletedExceptionally()) {
+                return;
+            }
+            clearPendingPlanReview();
         }
         if (future != null) {
             future.completeExceptionally(failure);
@@ -206,6 +319,20 @@ public class RuntimeActiveExecution {
 
     public synchronized void requestAbort() {
         abortRequested = true;
+    }
+
+    public synchronized boolean prepareStop(ExecutionTargetDTO value) {
+        if (!matchesExecution(value)) {
+            return false;
+        }
+        if (!target.equals(value)) {
+            target = value;
+            if (value.equals(continuationTarget) && continuationOutput != null) {
+                output = continuationOutput;
+            }
+        }
+        abortRequested = true;
+        return true;
     }
 
     public synchronized void requestTimeout() {
@@ -277,6 +404,10 @@ public class RuntimeActiveExecution {
         return pendingConfirmation != null && target.equals(value) && pendingToolCallId.equals(toolCallId);
     }
 
+    private boolean matchesPendingPlanTarget(ExecutionTargetDTO value, String planEventId) {
+        return pendingPlanReview != null && target.equals(value) && pendingPlanEventId.equals(planEventId);
+    }
+
     private CompletableFuture<ToolConfirmationDecisionDTO> applyConfirmationDecision(
             ToolConfirmationDecisionDTO decision) {
         ExecutionTargetDTO resumed = decisionTarget(decision);
@@ -295,9 +426,47 @@ public class RuntimeActiveExecution {
                 requireText(decision.getSegmentId(), "segmentId"));
     }
 
+    private void requirePendingPlanDecision(PlanReviewDecisionDTO decision) {
+        if (decision == null
+                || !target.sessionId().equals(decision.getSessionId())
+                || !target.executionId().equals(decision.getExecutionId())
+                || !target.segmentId().equals(decision.getPreviousSegmentId())
+                || !pendingPlanEventId.equals(decision.getTargetEventId())
+                || !pendingToolCallId.equals(decision.getToolCallId())) {
+            throw new IllegalStateException("claimed plan confirmation does not match the pending plan");
+        }
+    }
+
+    private CompletableFuture<PlanReviewDecisionDTO> applyPlanDecision(PlanReviewDecisionDTO decision) {
+        ExecutionTargetDTO resumed = new ExecutionTargetDTO(
+                decision.getSessionId(),
+                decision.getExecutionId(),
+                target.rootEventId(),
+                requireText(decision.getSegmentId(), "segmentId"));
+        output = resumed.equals(continuationTarget) ? continuationOutput : RuntimeEventOutput.persistenceOnly();
+        target = resumed;
+        if (decision.getResult().isApproved()) {
+            mode = ClawConstants.Agent.MODE_BUILD;
+            modeApplier.run();
+        }
+        CompletableFuture<PlanReviewDecisionDTO> future = pendingPlanReview;
+        continuationTarget = null;
+        continuationOutput = null;
+        return future;
+    }
+
     private void clearPendingConfirmation() {
         pendingToolCallId = null;
         pendingConfirmation = null;
+        continuationTarget = null;
+        continuationOutput = null;
+    }
+
+    private void clearPendingPlanReview() {
+        pendingToolCallId = null;
+        pendingPlanEventId = null;
+        pendingPlan = null;
+        pendingPlanReview = null;
         continuationTarget = null;
         continuationOutput = null;
     }

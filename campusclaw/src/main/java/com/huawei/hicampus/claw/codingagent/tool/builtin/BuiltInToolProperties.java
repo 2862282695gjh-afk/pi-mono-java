@@ -28,7 +28,9 @@ public class BuiltInToolProperties implements InitializingBean {
             BuiltInToolName.CRON,
             BuiltInToolName.LIST_MATE_TOOLS,
             BuiltInToolName.CALL_MATE_TOOL,
-            BuiltInToolName.AGENT));
+            BuiltInToolName.AGENT,
+            BuiltInToolName.EXIT_PLAN_MODE,
+            BuiltInToolName.TODO_UPDATE));
 
     private List<String> cron = externalNames(List.of(
             BuiltInToolName.READ,
