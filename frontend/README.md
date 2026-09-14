@@ -1,14 +1,17 @@
 # CampusClaw Frontend
 
-v0.14.0，Vue 3 + TypeScript + Vite 的内部 Claw Runtime 联调工作台。
-保留 O1 暖灰界面，新增 Session Events、Slash、工具确认与恢复。仅用于受控开发环境，
+v0.15.0，Vue 3 + TypeScript + Vite 的内部 Claw Runtime 联调工作台。
+保留 O1 暖灰界面，提供 Session Events、Slash、工具确认、计划审核与恢复。仅用于受控开发环境，
 不作为生产 Mate 产品前端或安全边界。
 
 ## 已实现与联调边界
 
 - Session 创建/恢复/删除，刷新和重开恢复最近列表及选中会话；Session 与 ETag 一起应用。
-- 三类 user.* event 包装、POST data-only SSE、eventId 合并、数字历史分页。
+- 四类 user.* event 包装、POST data-only SSE、eventId 合并、数字历史分页。
 - 工具允许/拒绝，绑定原消息的停止；confirming 仍占用执行状态。
+- 普通/计划模式控制与手机模型/思考设置，通过统一 Session POST 更新并携带 ETag。
+- 完整计划卡、批准并执行、修改意见；草稿按 Session 和计划事件隔离，审核按钮等待历史与状态对账。
+- 仅消费 `agent.todo_updated` 更新实施任务完整清单；新根消息重置，终态保留最终快照。
 - 完整事件覆盖预览；无回执保留草稿并明确结果未知，断流只重读、不重发。
 - 空消息首字符 `/` 打开精简清单；名称不带前导斜杠，选中后显示可更换、删除的标签。
 - 参数单独编辑；空闲时上箭头提交，消息提交及执行中变为停止按钮。运行中命令在独立“执行命令”按钮执行；第一次 Enter 只选择，长按 Enter 不执行。
@@ -20,6 +23,7 @@ v0.14.0，Vue 3 + TypeScript + Vite 的内部 Claw Runtime 联调工作台。
 - DEV Headers 每次消息/命令/停止/确认 POST 各自快照，仅内存、不进入历史读取。
 
 工作台消费 `/campusclaw-service/v1` 的 Session Events，服务端已接入联合事件、data-only SSE 和公共历史。
+计划正文使用安全 Markdown 渲染，失败的计划工具调用仍可见。
 Thinking 展示模型返回的原始推理；业务参数错误的工具调用保留为可读事件，结果与确认按所属根消息关联。
 真实联调按下述同源代理方式进行，本地 fixture 通过不能替代真实服务验收。
 运行中不再有 Steer/FollowUp/旧 Abort 入口；先实际停止，再提交新消息。
@@ -50,7 +54,7 @@ VITE_BACKEND_URL=http://localhost:8080 npm run dev
 
 不要把 JWT、APPKEY、Provider 凭据或 access-token 写入 `VITE_*`，它们会进入浏览器产物。
 DEV 的 Headers 值仅在当前页面；GET/配置不携带临时凭据。协议 Accept/Content-Type 固定，
-If-Match/Idempotency-Key/Last-Event-ID 不进入 Events/Command POST。配置 PUT 独立使用资源 ETag。
+If-Match/Idempotency-Key/Last-Event-ID 不进入 Events/Command POST。Session 配置 POST 独立使用资源 ETag。
 当前工作台直接显示后端返回的调用参数，部署及截图流转必须受控。
 
 ## 自动获取请求头 Token
@@ -94,6 +98,9 @@ VITE_BACKEND_URL=http://127.0.0.1:4319 VITE_CAMPUSCLAW_AGENT_ID=agent-fixture VI
 Vite 构建不引用 fixture 脚本；没有生产 Mock fallback。
 
 ## 验证与设计
+
+[计划模式实施说明](../docs/plans/campusclaw-plan-mode-implementation.md)记录源码接线与验证边界。
+浏览器契约 fixture 与组件测试只证明前端行为；真实 Runtime/JAR、数据库及企业 Mate 联调分别记录。
 
 ```bash
 npm test

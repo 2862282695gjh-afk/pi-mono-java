@@ -11,7 +11,8 @@ CampusClaw 不提供 CLI、TUI、RPC 或本地安装入口。`modules/coding-age
 
 - **HTTP Runtime V1**：创建和管理 Agent Session，以请求范围 SSE 投影执行事件；
 - **受管 Agent 目录**：从 CampusMate 准备 Agent、Skill 和直接绑定 Child 的运行目录；
-- **关闭的工具集合**：仅向模型公开八个 PascalCase 内置工具，不支持动态 ToolCatalog；
+- **固定工具集合**：按 Runtime、Cron、Child profile 装配 PascalCase 内置工具；
+- **计划模式**：先制作完整方案，审核批准后继续实施，并通过显式任务事件展示进度；
 - **工作区隔离**：本地文件工具只能读取当前 `agent/{agentId}`，拒绝符号链接和 realpath 越界；
 - **Mate 工具**：实时发现当前 Agent/Skill 的工具，按名称解析并执行；
 - **Cron 与 Child**：Cron Job 自动绑定当前 Agent，Child 只允许调用直接绑定身份；
@@ -63,7 +64,7 @@ export OPENAI_API_KEY="sk-..."
 
 ## 内置工具
 
-公共 `BuiltInToolName` 只有以下八个名称：
+公共 `BuiltInToolName` 包含以下名称；各入口按 profile 选择：
 
 | 工具 | 作用 | 执行模式 |
 |---|---|---|
@@ -75,6 +76,8 @@ export OPENAI_API_KEY="sk-..."
 | `ListMateTools` | 实时列出 Agent 或 Skill 的 Mate 工具 | PARALLEL |
 | `CallMateTool` | 按名称调用 Mate 工具 | SEQUENTIAL |
 | `Agent` | 执行当前 Agent 直接绑定的 Child | SEQUENTIAL |
+| `ExitPlanMode` | Runtime 根执行提交完整计划并等待审核 | SEQUENTIAL |
+| `TodoUpdate` | 返回实施任务的完整进度快照 | SEQUENTIAL |
 
 `Read`、`Find`、`Grep` 和 `Ls` 的工作区固定为当前 `agent/{agentId}`。`Bash`、`Edit`、
 `Write`、`Loop`、`Glob`、`EditDiff`、`activate_skill`、`spawn_agent` 和 `invoke_agent` 不属于
@@ -86,13 +89,15 @@ export OPENAI_API_KEY="sk-..."
 ```yaml
 campusclaw:
   tools:
-    runtime: [Read, Find, Grep, Ls, Cron, ListMateTools, CallMateTool, Agent]
+    runtime: [Read, Find, Grep, Ls, Cron, ListMateTools, CallMateTool, Agent, ExitPlanMode, TodoUpdate]
     cron: [Read, Find, Grep, Ls, ListMateTools, CallMateTool, Agent]
     child-agent: [Read, Find, Grep, Ls, ListMateTools, CallMateTool]
 ```
 
 配置列表完全替换缺省值，显式空数组表示不装配工具；未知、重复、大小写错误或已禁用的名称
 会导致启动失败。首版 Child 最大深度为 1，因此 Child profile 不公开 `Agent`。
+Runtime 的 plan/build 使用相同工具定义；进入 plan 需要实际装配 `ExitPlanMode`。
+计划模式通过固定提示词约束调研与实施阶段，具体业务权限仍由工具权限规则决定。
 
 ## 受管 Agent 目录
 
@@ -115,6 +120,8 @@ agent/{agentId}/
 `prepare(agentId)` 在完整缓存命中时不访问远端；目录缺失或不完整时先在同一 Agent 工作区内
 构建 staging 目录，完整校验后发布。管理面 `refresh(agentId)` 总是重新拉取，失败时保留旧目录。
 目录不生成或读取 `tools.json`；Mate 工具列表始终实时查询。
+Agent 元数据的 `mode` 为 `build|plan` 字符串，缺省为 `build`；只用于初始化新 Session。
+已有 Session 独立维护模式，刷新 Agent 元数据不会覆盖会话模式。
 
 ## HTTP Runtime
 
@@ -122,19 +129,21 @@ Runtime V1 的基础路径为 `/campusclaw-service/v1`，主要接口包括：
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| `POST` | `/agents/{agentId}/sessions` | 创建 Session |
+| `POST` | `/agents/{agentId}/sessions` | 创建 Session，继承 Agent 默认模式 |
 | `GET` / `DELETE` | `/sessions/{sessionId}` | 查询或删除 Session |
-| `POST` | `/sessions/{sessionId}/events` | 提交用户消息并返回本轮 SSE |
-| `GET` | `/sessions/{sessionId}/events` | 分页查询当前分支 Entry |
+| `POST` | `/sessions/{sessionId}` | 按提交字段更新 displayName、modelId、thinking、mode |
+| `POST` | `/sessions/{sessionId}/events` | 提交消息、停止、工具确认或计划确认，返回请求范围 SSE |
+| `GET` | `/sessions/{sessionId}/events` | 分页读取当前分支权威公共事件 |
 | `GET` | `/sessions/{sessionId}/models` | 查询当前及可用模型 |
-| `PUT` | `/sessions/{sessionId}/model` | 切换后续执行模型 |
-| `PUT` | `/sessions/{sessionId}/thinking` | 切换 thinking |
-| `POST` | `/sessions/{sessionId}/steers` | 提交高优先级控制消息 |
-| `POST` | `/sessions/{sessionId}/follow-ups` | 提交 FIFO 后续消息 |
-| `POST` | `/sessions/{sessionId}/abort` | 中止当前执行 |
+| `GET` | `/sessions/{sessionId}/commands` | 获取可用命令清单 |
+| `POST` | `/sessions/{sessionId}/command` | 执行 Builtin 或 Skill 命令 |
 
-字段级契约、SSE 生命周期和数据库说明见
-[`campusclaw-http-v1-implementation.md`](docs/plans/campusclaw-http-v1-implementation.md)。
+Session 更新要求强 `If-Match`，允许一次提交一个或多个字段；响应和 ETag 来自同一更新快照。
+仅修改名称允许在 running 状态执行，提交 modelId、thinking 或 mode 时要求 idle。
+计划审核通过 Events 接口提交；批准事务会在原执行中把模式改为 build。
+
+详见[HTTP 实施记录](docs/plans/campusclaw-http-v1-implementation.md)和
+[计划模式实施说明](docs/plans/campusclaw-plan-mode-implementation.md)。
 
 ## 模型供应商
 
@@ -227,7 +236,8 @@ coding-agent-cli → common、ai、agent-core、cron。common 不依赖业务模
 |---|---|
 | [`campusclaw-corporate-module.md`](docs/designs/campusclaw-corporate-module.md) | 公司镜像生成、包重写、父 POM 与构建边界 |
 | [`campusmate-shared-config.md`](docs/designs/campusmate-shared-config.md) | CampusMate 单一服务地址、六 operation 目录和配置迁移 |
-| [`tool-system-v2.md`](docs/designs/tool-system-v2.md) | 三入口、八工具、工作区和 Session 装配主设计 |
+| [`tool-system-v2.md`](docs/designs/tool-system-v2.md) | 三入口、工作区和 Session 装配；计划工具增量见下项 |
+| [计划模式实施说明](docs/plans/campusclaw-plan-mode-implementation.md) | 模式、审核、实施进度和外部 Mate 接入边界 |
 | [`coding-agent-cli.md`](docs/designs/coding-agent-cli.md) | Runtime HTTP 与公共 Session 设计 |
 | [`mate-tool-client.md`](docs/designs/mate-tool-client.md) | Mate 实时发现、Session 缓存和名称调用 |
 | [`cron.md`](docs/designs/cron.md) | Runtime-only Cron 与 Agent 隔离 |
