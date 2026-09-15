@@ -187,7 +187,9 @@ public class ModelRegistry {
         }
     }
 
-    /** 清空全部模型。 */
+    /**
+     * 清空全部模型。
+     */
     public void clear() {
         synchronized (lock) {
             models.clear();
@@ -211,7 +213,9 @@ public class ModelRegistry {
         log.debug("Unregistered {} model(s) for provider {}", removed, provider.value());
     }
 
-    /** 启动时依次加载 classpath 和用户模型定义。 */
+    /**
+     * 启动时依次加载 classpath 和用户模型定义。
+     */
     @PostConstruct
     void init() {
         int fromClasspath = loadFromClasspathResource("/campusclaw-models.json");
