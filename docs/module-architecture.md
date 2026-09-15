@@ -1,16 +1,18 @@
 # CampusClaw 模块架构
 
-> 文档版本：2.6.0
+> 文档版本：2.7.0
 >
 > 状态：Implemented
 >
-> 更新日期：2026-09-08
+> 更新日期：2026-09-15
 >
 > 实现前源码基线：`d649866a6cae967ace18ceaeb9597edd47e5721e`
 >
 > PR 167 修订基线：`f60cc3e78bb8b700527ac082c7c8e10524ede095`
 >
 > Spring Boot 3.4.5 实现：`994bdff13100ce363214e74abb70dfafbd1ce1b5`
+>
+> CampusMate Provider 收敛实施起点：`29ebec6a8cad99896414211cda28c6fffec71bee`
 
 > 公司镜像相关路径和标识按 2026-09-01 的当前仓库位置展示；历史提交 SHA 仍是对应行为证据。
 
@@ -50,18 +52,20 @@ CampusClaw 是 JDK 21 + Spring Boot 3.4.5 的 ToB Agent Runtime 服务。Maven R
 
 ### 3.1 ai (`campusclaw-ai`)
 
-统一 LLM 类型、Provider 适配、模型注册、凭据解析和流式协议。
+统一 LLM 类型、CampusMate Provider 适配、模型注册、可选扩展和流式协议。产品默认只通过
+稳定身份 `campusmate` 调用 CampusMate；第三方厂商适配器和内置模型已删除。
 
 | 包 | 职责 |
 |---|---|
 | `com.campusclaw.ai.types` | Message、ContentBlock、Tool、Model、Provider 等领域类型 |
-| `com.campusclaw.ai.provider` | Anthropic、OpenAI、Mistral 及兼容 Provider |
+| `com.campusclaw.ai.provider` | 身份/API 两组 Provider SPI、注册表与 CampusMate Chat 适配 |
 | `com.campusclaw.ai.stream` | 流式消息事件与终态聚合 |
-| `com.campusclaw.ai.model` | 内置模型注册表 |
-| `com.campusclaw.ai.env` | 部署环境凭据解析 |
+| `com.campusclaw.ai.model` | 空默认模型注册表、外部 JSON 加载与成本计算 |
+| `com.campusclaw.ai.env` | 自定义扩展可复用的部署环境配置解析 |
 
-服务侧 `ModelCatalogService` 只取 `ModelRegistry` 中当前部署凭据可用的模型，不加载用户级
-认证文件或自定义 CLI settings。
+受管 Runtime 使用 Agent 快照内的 Mate 模型 ID 构造 `Provider.CAMPUSMATE` 模型，不依赖
+`ModelRegistry` 的默认内容。`ModelRegistry` 仍可先加载 classpath JSON、再加载用户 JSON；
+两处都缺失时为空。默认 `ApiProviderRegistry` 也可为空，未知适配器明确失败。
 
 ### 3.2 agent-core (`campusclaw-agent-core`)
 
@@ -159,6 +163,7 @@ Controller 仅依赖应用 Service 和 ResultBeanAdapter，不执行 Builtin 或
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 2.7.0 | 2026-09-15 | AI 默认调用收敛为 CampusMate Provider，移除第三方适配器和内置模型。 |
 | 2.6.0 | 2026-09-08 | 接通七Builtin JSON与Skill SSE的共享POST；复用已有服务，无新模块或依赖。 |
 | 2.5.0 | 2026-09-07 | 删除未注册的旧命令包与专属测试，保留现有 Runtime 命令及公共 Session 压缩。 |
 | 2.4.0 | 2026-09-07 | 区分未注册旧命令原型与 Runtime Command；记录已发布共享清单 GET，POST 仍未发布。 |

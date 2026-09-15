@@ -17,6 +17,8 @@ import java.util.concurrent.CompletableFuture;
 
 import com.campusclaw.agent.Agent;
 import com.campusclaw.agent.state.AgentState;
+import com.campusclaw.ai.env.ProviderConfigResolver;
+import com.campusclaw.ai.model.ModelRegistry;
 import com.campusclaw.ai.types.Api;
 import com.campusclaw.ai.types.AssistantMessage;
 import com.campusclaw.ai.types.InputModality;
@@ -29,6 +31,8 @@ import com.campusclaw.ai.types.Usage;
 import com.campusclaw.codingagent.model.ModelCatalogService;
 import com.campusclaw.codingagent.runtime.MateServiceClient.AgentRuntime;
 import com.campusclaw.codingagent.runtime.PreparedAgentRuntime;
+import com.campusclaw.codingagent.runtimeapi.model.MateModelManagerProperties;
+import com.campusclaw.codingagent.runtimeapi.model.MateRuntimeModelManager;
 import com.campusclaw.codingagent.session.AgentSessionFactory;
 import com.campusclaw.codingagent.session.ManagedAgentSession;
 import com.campusclaw.codingagent.session.ManagedAgentSessionRequest;
@@ -51,7 +55,7 @@ class ManagedCronSessionRunnerTest {
 
     private AgentSessionFactory sessionFactory;
 
-    private ModelCatalogService modelCatalogService;
+    private ModelCatalogService emptyModelCatalog;
 
     private ManagedCronSessionRunner runner;
 
@@ -60,15 +64,16 @@ class ManagedCronSessionRunnerTest {
     @BeforeEach
     void setUp() {
         sessionFactory = mock(AgentSessionFactory.class);
-        modelCatalogService = mock(ModelCatalogService.class);
+        emptyModelCatalog = new ModelCatalogService(new ModelRegistry(), mock(ProviderConfigResolver.class));
         model = model();
-        runner =
-                new ManagedCronSessionRunner(sessionFactory, modelCatalogService, mock(SubagentExecutionService.class));
+        runner = new ManagedCronSessionRunner(
+                sessionFactory,
+                new MateRuntimeModelManager(modelManagerProperties()),
+                mock(SubagentExecutionService.class));
     }
 
     @Test
     void preparesAgentAndUsesCronProfileAtTriggerTime() {
-        when(modelCatalogService.getAvailableModels()).thenReturn(List.of(model));
         ManagedAgentSession session = completedSession("cron answer");
         when(sessionFactory.create(any())).thenReturn(session);
 
@@ -78,20 +83,37 @@ class ManagedCronSessionRunnerTest {
         assertThat(request.getValue().entryPoint()).isEqualTo(ToolEntryPoint.CRON);
         assertThat(request.getValue().agentId()).isEqualTo(AGENT_ID);
         assertThat(request.getValue().mateCredentials().isComplete()).isFalse();
-        assertThat(request.getValue().modelResolver().apply(runtime())).isSameAs(model);
+        assertThat(emptyModelCatalog.getAvailableModels()).isEmpty();
+        Model selected = request.getValue().modelResolver().apply(runtime());
+        assertThat(selected.id()).isEqualTo("model-a");
+        assertThat(selected.provider()).isEqualTo(Provider.CAMPUSMATE);
     }
 
     @Test
-    void rejectsDefaultModelWithoutUsableCredentials() {
-        when(modelCatalogService.getAvailableModels()).thenReturn(List.of());
+    void rejectsAgentWithoutDefaultModel() {
         ManagedAgentSession session = completedSession("unused");
         when(sessionFactory.create(any())).thenReturn(session);
 
         runner.execute(AGENT_ID, "scheduled task");
         ArgumentCaptor<ManagedAgentSessionRequest> request = ArgumentCaptor.forClass(ManagedAgentSessionRequest.class);
         verify(sessionFactory).create(request.capture());
-        assertThatThrownBy(() -> request.getValue().modelResolver().apply(runtime()))
-                .hasMessage("Cron Agent default model is unavailable");
+        assertThatThrownBy(() -> request.getValue().modelResolver().apply(runtime(List.of())))
+                .hasMessage("Cron Agent has no default model");
+    }
+
+    @Test
+    void doesNotNormalizeLegacyProviderTextToCurrentCampusMateIdentity() {
+        ManagedAgentSession session = completedSession("unused");
+        when(sessionFactory.create(any())).thenReturn(session);
+
+        runner.execute(AGENT_ID, "scheduled task");
+        ArgumentCaptor<ManagedAgentSessionRequest> request = ArgumentCaptor.forClass(ManagedAgentSessionRequest.class);
+        verify(sessionFactory).create(request.capture());
+
+        Model selected = request.getValue().modelResolver().apply(runtime("mate-model-manager/model-a"));
+        assertThat(selected.id()).isEqualTo("mate-model-manager/model-a");
+        assertThat(selected.id()).isNotEqualTo("model-a");
+        assertThat(selected.provider()).isEqualTo(Provider.CAMPUSMATE);
     }
 
     private ManagedAgentSession completedSession(String answer) {
@@ -115,8 +137,16 @@ class ManagedCronSessionRunnerTest {
     }
 
     private PreparedAgentRuntime runtime() {
+        return runtime(model.id());
+    }
+
+    private PreparedAgentRuntime runtime(String configuredModel) {
+        return runtime(List.of(configuredModel));
+    }
+
+    private PreparedAgentRuntime runtime(List<String> configuredModels) {
         AgentRuntime metadata = new AgentRuntime(
-                List.of(model.id()),
+                configuredModels,
                 List.of(),
                 List.of(),
                 List.of(),
@@ -135,9 +165,9 @@ class ManagedCronSessionRunnerTest {
         return new Model(
                 "model-a",
                 "Model A",
-                Api.ANTHROPIC_MESSAGES,
-                Provider.ANTHROPIC,
-                "https://example.com",
+                Api.OPENAI_COMPLETIONS,
+                Provider.CAMPUSMATE,
+                null,
                 true,
                 List.of(InputModality.TEXT),
                 new ModelCost(0, 0, 0, 0),
@@ -146,5 +176,12 @@ class ManagedCronSessionRunnerTest {
                 null,
                 null,
                 null);
+    }
+
+    private static MateModelManagerProperties modelManagerProperties() {
+        MateModelManagerProperties properties = new MateModelManagerProperties();
+        properties.setContextWindow(1_000);
+        properties.setMaxOutputTokens(100);
+        return properties;
     }
 }

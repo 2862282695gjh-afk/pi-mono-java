@@ -10,96 +10,84 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
+import java.util.UUID;
 
 import com.campusclaw.ai.types.Api;
+import com.campusclaw.ai.types.Cost;
 import com.campusclaw.ai.types.InputModality;
 import com.campusclaw.ai.types.Model;
 import com.campusclaw.ai.types.ModelCost;
 import com.campusclaw.ai.types.Provider;
+import com.campusclaw.ai.types.Usage;
+import com.campusclaw.common.constant.ClawConstants;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 class ModelRegistryTest {
+    @TempDir
+    Path tempDir;
 
     private ModelRegistry registry;
 
+    private String previousHome;
+
     @BeforeEach
     void setUp() {
+        previousHome = System.getProperty(ClawConstants.Home.PROPERTY);
+        System.setProperty(ClawConstants.Home.PROPERTY, tempDir.toString());
         registry = new ModelRegistry();
     }
 
-    private Model anthropicModel(String id, String name) {
-        return new Model(
-                id,
-                name,
-                Api.ANTHROPIC_MESSAGES,
-                Provider.ANTHROPIC,
-                "https://api.anthropic.com",
-                false,
-                List.of(InputModality.TEXT),
-                new ModelCost(3.0, 15.0, 0.3, 3.75),
-                200000,
-                8192,
-                null,
-                null,
-                null);
-    }
-
-    private Model openaiModel(String id, String name) {
-        return new Model(
-                id,
-                name,
-                Api.OPENAI_RESPONSES,
-                Provider.OPENAI,
-                "https://api.openai.com",
-                false,
-                List.of(InputModality.TEXT, InputModality.IMAGE),
-                new ModelCost(2.5, 10.0, 1.25, 2.5),
-                128000,
-                16384,
-                null,
-                null,
-                null);
+    @AfterEach
+    void tearDown() {
+        if (previousHome == null) {
+            System.clearProperty(ClawConstants.Home.PROPERTY);
+        } else {
+            System.setProperty(ClawConstants.Home.PROPERTY, previousHome);
+        }
     }
 
     @Nested
     class RegisterAndLookup {
-
         @Test
         void registerSingleModel() {
-            var model = anthropicModel("claude-test", "Claude Test");
+            var model = model(Provider.CAMPUSMATE, "model-a", "Model A");
             registry.register(model);
 
-            var result = registry.getModel(Provider.ANTHROPIC, "claude-test");
-            assertTrue(result.isPresent());
-            assertEquals(model, result.get());
+            assertEquals(
+                    model, registry.getModel(Provider.CAMPUSMATE, "model-a").orElseThrow());
         }
 
         @Test
         void registerReplacesExisting() {
-            var original = anthropicModel("claude-test", "Original");
-            var replacement = anthropicModel("claude-test", "Replacement");
+            registry.register(model(Provider.CAMPUSMATE, "model-a", "Original"));
+            registry.register(model(Provider.CAMPUSMATE, "model-a", "Replacement"));
 
-            registry.register(original);
-            registry.register(replacement);
-
-            var result = registry.getModel(Provider.ANTHROPIC, "claude-test");
-            assertTrue(result.isPresent());
-            assertEquals("Replacement", result.get().name());
+            assertEquals(
+                    "Replacement",
+                    registry.getModel(Provider.CAMPUSMATE, "model-a")
+                            .orElseThrow()
+                            .name());
         }
 
         @Test
         void registerAllMultipleModels() {
-            var models = List.of(
-                    anthropicModel("model-a", "A"), anthropicModel("model-b", "B"), openaiModel("model-c", "C"));
-            registry.registerAll(models);
+            registry.registerAll(List.of(
+                    model(Provider.CAMPUSMATE, "model-a", "A"),
+                    model(Provider.CAMPUSMATE, "model-b", "B"),
+                    model(Provider.CUSTOM, "model-c", "C")));
 
-            assertTrue(registry.getModel(Provider.ANTHROPIC, "model-a").isPresent());
-            assertTrue(registry.getModel(Provider.ANTHROPIC, "model-b").isPresent());
-            assertTrue(registry.getModel(Provider.OPENAI, "model-c").isPresent());
+            assertEquals(2, registry.getModels(Provider.CAMPUSMATE).size());
+            assertEquals(1, registry.getModels(Provider.CUSTOM).size());
         }
 
         @Test
@@ -115,67 +103,61 @@ class ModelRegistryTest {
 
     @Nested
     class GetModel {
-
         @Test
         void returnsEmptyForUnknownProvider() {
-            registry.register(anthropicModel("model-x", "X"));
-            assertTrue(registry.getModel(Provider.OPENAI, "model-x").isEmpty());
+            registry.register(model(Provider.CAMPUSMATE, "model-a", "A"));
+
+            assertTrue(registry.getModel(Provider.CUSTOM, "model-a").isEmpty());
         }
 
         @Test
         void returnsEmptyForUnknownModelId() {
-            registry.register(anthropicModel("model-x", "X"));
-            assertTrue(registry.getModel(Provider.ANTHROPIC, "nonexistent").isEmpty());
+            registry.register(model(Provider.CAMPUSMATE, "model-a", "A"));
+
+            assertTrue(registry.getModel(Provider.CAMPUSMATE, "missing").isEmpty());
         }
 
         @Test
         void returnsEmptyWhenRegistryIsEmpty() {
-            assertTrue(registry.getModel(Provider.ANTHROPIC, "any").isEmpty());
+            assertTrue(registry.getModel(Provider.CAMPUSMATE, "model-a").isEmpty());
         }
     }
 
     @Nested
     class GetModels {
-
         @Test
         void returnsAllModelsForProvider() {
-            registry.register(anthropicModel("a", "A"));
-            registry.register(anthropicModel("b", "B"));
-            registry.register(openaiModel("c", "C"));
+            registry.register(model(Provider.CAMPUSMATE, "model-a", "A"));
+            registry.register(model(Provider.CAMPUSMATE, "model-b", "B"));
+            registry.register(model(Provider.CUSTOM, "model-c", "C"));
 
-            var anthropicModels = registry.getModels(Provider.ANTHROPIC);
-            assertEquals(2, anthropicModels.size());
-
-            var openaiModels = registry.getModels(Provider.OPENAI);
-            assertEquals(1, openaiModels.size());
+            assertEquals(2, registry.getModels(Provider.CAMPUSMATE).size());
+            assertEquals(1, registry.getModels(Provider.CUSTOM).size());
         }
 
         @Test
         void returnsEmptyListForUnknownProvider() {
-            var result = registry.getModels(Provider.MISTRAL);
-            assertTrue(result.isEmpty(), "no models registered for MISTRAL must yield an empty list, not null");
+            assertTrue(registry.getModels(Provider.CUSTOM).isEmpty());
         }
 
         @Test
         void returnedListIsUnmodifiable() {
-            registry.register(anthropicModel("a", "A"));
-            var models = registry.getModels(Provider.ANTHROPIC);
-            assertThrows(UnsupportedOperationException.class, () -> models.add(null));
+            registry.register(model(Provider.CAMPUSMATE, "model-a", "A"));
+            var registered = registry.getModels(Provider.CAMPUSMATE);
+
+            assertThrows(UnsupportedOperationException.class, () -> registered.add(null));
         }
     }
 
     @Nested
     class GetProviders {
-
         @Test
         void returnsProvidersWithModels() {
-            registry.register(anthropicModel("a", "A"));
-            registry.register(openaiModel("b", "B"));
+            registry.register(model(Provider.CAMPUSMATE, "model-a", "A"));
+            registry.register(model(Provider.CUSTOM, "model-b", "B"));
 
-            var providers = registry.getProviders();
-            assertEquals(2, providers.size());
-            assertTrue(providers.contains(Provider.ANTHROPIC));
-            assertTrue(providers.contains(Provider.OPENAI));
+            assertEquals(2, registry.getProviders().size());
+            assertTrue(registry.getProviders().containsAll(List.of(Provider.CAMPUSMATE, Provider.CUSTOM)));
         }
 
         @Test
@@ -185,56 +167,52 @@ class ModelRegistryTest {
 
         @Test
         void returnedListIsUnmodifiable() {
-            registry.register(anthropicModel("a", "A"));
+            registry.register(model(Provider.CAMPUSMATE, "model-a", "A"));
             var providers = registry.getProviders();
+
             assertThrows(UnsupportedOperationException.class, () -> providers.add(null));
         }
     }
 
     @Nested
     class Clear {
-
         @Test
         void removesAllModels() {
-            registry.register(anthropicModel("a", "A"));
-            registry.register(openaiModel("b", "B"));
+            registry.register(model(Provider.CAMPUSMATE, "model-a", "A"));
+            registry.register(model(Provider.CUSTOM, "model-b", "B"));
 
             registry.clear();
 
+            assertTrue(registry.getAllModels().isEmpty());
             assertTrue(registry.getProviders().isEmpty());
-            assertTrue(registry.getModel(Provider.ANTHROPIC, "a").isEmpty());
-            assertTrue(registry.getModel(Provider.OPENAI, "b").isEmpty());
         }
 
         @Test
         void clearOnEmptyRegistryIsNoOp() {
-            assertDoesNotThrow(() -> registry.clear());
+            assertDoesNotThrow(registry::clear);
         }
     }
 
     @Nested
     class UnregisterByProvider {
-
         @Test
         void removesOnlyThatProvider() {
-            registry.register(anthropicModel("a1", "A1"));
-            registry.register(anthropicModel("a2", "A2"));
-            registry.register(openaiModel("o1", "O1"));
+            registry.register(model(Provider.CAMPUSMATE, "model-a", "A"));
+            registry.register(model(Provider.CAMPUSMATE, "model-b", "B"));
+            registry.register(model(Provider.CUSTOM, "model-c", "C"));
 
-            registry.unregisterByProvider(Provider.ANTHROPIC);
+            registry.unregisterByProvider(Provider.CAMPUSMATE);
 
-            assertTrue(registry.getModel(Provider.ANTHROPIC, "a1").isEmpty());
-            assertTrue(registry.getModel(Provider.ANTHROPIC, "a2").isEmpty());
-            assertTrue(registry.getModels(Provider.ANTHROPIC).isEmpty());
-            assertTrue(registry.getModel(Provider.OPENAI, "o1").isPresent());
-            assertEquals(1, registry.getModels(Provider.OPENAI).size());
+            assertTrue(registry.getModels(Provider.CAMPUSMATE).isEmpty());
+            assertEquals(1, registry.getModels(Provider.CUSTOM).size());
         }
 
         @Test
         void unregisterUnknownProviderIsNoOp() {
-            registry.register(openaiModel("o1", "O1"));
+            registry.register(model(Provider.CAMPUSMATE, "model-a", "A"));
+
             assertDoesNotThrow(() -> registry.unregisterByProvider(Provider.CUSTOM));
-            assertEquals(1, registry.getModels(Provider.OPENAI).size());
+            assertEquals(1, registry.getModels(Provider.CAMPUSMATE).size());
         }
 
         @Test
@@ -244,119 +222,150 @@ class ModelRegistryTest {
     }
 
     @Nested
-    class BuiltInModels {
-
-        @BeforeEach
-        void initRegistry() {
+    class ExternalLoading {
+        @Test
+        void initWithoutExternalJsonLeavesRegistryEmpty() {
             registry.init();
+
+            assertTrue(registry.getAllModels().isEmpty());
         }
 
         @Test
-        void containsAnthropicModels() {
-            var sonnet = registry.getModel(Provider.ANTHROPIC, "claude-sonnet-4-20250514");
-            assertTrue(sonnet.isPresent());
-            assertEquals("Claude Sonnet 4", sonnet.get().name());
-            assertEquals(Api.ANTHROPIC_MESSAGES, sonnet.get().api());
+        void initLoadsUserJsonAndOverridesExistingModel() throws Exception {
+            registry.register(model(Provider.CUSTOM, "external-model", "Original"));
+            Path file = tempDir.resolve("agent/models.json");
+            writeModels(file, List.of(model(Provider.CUSTOM, "external-model", "User override")));
 
-            var opus = registry.getModel(Provider.ANTHROPIC, "claude-opus-4-20250115");
-            assertTrue(opus.isPresent());
-            assertEquals("Claude Opus 4", opus.get().name());
-            assertTrue(opus.get().reasoning());
+            registry.init();
 
-            var haiku = registry.getModel(Provider.ANTHROPIC, "claude-haiku-3-5");
-            assertTrue(haiku.isPresent());
-            assertEquals("Claude 3.5 Haiku", haiku.get().name());
+            assertEquals(
+                    "User override",
+                    registry.getModel(Provider.CUSTOM, "external-model")
+                            .orElseThrow()
+                            .name());
         }
 
         @Test
-        void containsOpenaiModels() {
-            var gpt4o = registry.getModel(Provider.OPENAI, "gpt-4o");
-            assertTrue(gpt4o.isPresent());
-            assertEquals("GPT-4o", gpt4o.get().name());
-            assertFalse(gpt4o.get().reasoning());
+        void loadFromJsonFileRegistersModels() throws Exception {
+            Path file = tempDir.resolve("models.json");
+            writeModels(file, List.of(model(Provider.CUSTOM, "external-model", "External")));
 
-            var gpt4oMini = registry.getModel(Provider.OPENAI, "gpt-4o-mini");
-            assertTrue(gpt4oMini.isPresent());
+            int loaded = registry.loadFromJsonFile(file);
 
-            var o3 = registry.getModel(Provider.OPENAI, "o3");
-            assertTrue(o3.isPresent());
-            assertTrue(o3.get().reasoning());
-
-            var o4mini = registry.getModel(Provider.OPENAI, "o4-mini");
-            assertTrue(o4mini.isPresent());
-            assertTrue(o4mini.get().reasoning());
+            assertEquals(1, loaded);
+            assertEquals(
+                    "External",
+                    registry.getModel(Provider.CUSTOM, "external-model")
+                            .orElseThrow()
+                            .name());
         }
 
         @Test
-        void builtInModelsHaveValidCosts() {
-            for (var model : ModelRegistry.builtInModels()) {
-                assertTrue(model.cost().input() >= 0, "input cost must be non-negative: " + model.id());
-                assertTrue(model.cost().output() >= 0, "output cost must be non-negative: " + model.id());
-                assertTrue(model.cost().cacheRead() >= 0, "cacheRead cost must be non-negative: " + model.id());
-                assertTrue(model.cost().cacheWrite() >= 0, "cacheWrite cost must be non-negative: " + model.id());
+        void loadFromClasspathResourceRegistersModels() throws Exception {
+            String resourceName = "model-registry-test-" + UUID.randomUUID() + ".json";
+            Path fixture = classpathFixture(resourceName);
+            writeModels(fixture, List.of(model(Provider.CUSTOM, "classpath-model", "Classpath")));
+
+            try {
+                int loaded = registry.loadFromClasspathResource("/" + resourceName);
+
+                assertEquals(1, loaded);
+                assertEquals(
+                        "Classpath",
+                        registry.getModel(Provider.CUSTOM, "classpath-model")
+                                .orElseThrow()
+                                .name());
+            } finally {
+                Files.deleteIfExists(fixture);
             }
         }
 
         @Test
-        void builtInModelsHaveValidContextAndTokenLimits() {
-            for (var model : ModelRegistry.builtInModels()) {
-                assertTrue(model.contextWindow() > 0, "contextWindow must be positive: " + model.id());
-                assertTrue(model.maxTokens() > 0, "maxTokens must be positive: " + model.id());
-                assertTrue(
-                        model.maxTokens() <= model.contextWindow(),
-                        "maxTokens should not exceed contextWindow: " + model.id());
-            }
+        void invalidJsonReturnsZeroWithoutChangingRegistry() throws Exception {
+            Path file = tempDir.resolve("invalid.json");
+            Files.writeString(file, "{invalid", StandardCharsets.UTF_8);
+
+            assertEquals(0, registry.loadFromJsonFile(file));
+            assertTrue(registry.getAllModels().isEmpty());
+        }
+    }
+
+    @Nested
+    class Utilities {
+        @Test
+        void calculatesCostFromTokenUsage() {
+            Model priced = model(Provider.CUSTOM, "priced", "Priced");
+            Usage usage = new Usage(2_000_000, 3_000_000, 4_000_000, 5_000_000, 14_000_000, Cost.empty());
+
+            Cost cost = ModelRegistry.calculateCost(priced, usage);
+
+            assertEquals(new Cost(2.0, 6.0, 2.0, 0.0, 10.0), cost);
         }
 
         @Test
-        void builtInProviderCount() {
-            var providers = registry.getProviders();
-            assertEquals(15, providers.size());
-            assertTrue(providers.contains(Provider.ANTHROPIC));
-            assertTrue(providers.contains(Provider.OPENAI));
-            assertTrue(providers.contains(Provider.ZAI));
-            assertTrue(providers.contains(Provider.KIMI_CODING));
-            assertTrue(providers.contains(Provider.MINIMAX));
-            assertTrue(providers.contains(Provider.MINIMAX_CN));
-            assertTrue(providers.contains(Provider.MISTRAL));
-            assertTrue(providers.contains(Provider.AZURE_OPENAI));
-            assertTrue(providers.contains(Provider.XAI));
-            assertTrue(providers.contains(Provider.GROQ));
-            assertTrue(providers.contains(Provider.OPENROUTER));
-            assertTrue(providers.contains(Provider.OPENAI_CODEX));
-            assertTrue(providers.contains(Provider.GITHUB_COPILOT));
-            assertTrue(providers.contains(Provider.CEREBRAS));
-            assertTrue(providers.contains(Provider.HUGGINGFACE));
+        void returnsEmptyCostWhenModelHasNoPricing() {
+            Model unpriced = new Model(
+                    "unpriced",
+                    "Unpriced",
+                    Api.OPENAI_COMPLETIONS,
+                    Provider.CUSTOM,
+                    null,
+                    false,
+                    List.of(InputModality.TEXT),
+                    null,
+                    128_000,
+                    8_192,
+                    null,
+                    null,
+                    null);
+
+            assertEquals(Cost.empty(), ModelRegistry.calculateCost(unpriced, Usage.empty()));
         }
 
         @Test
-        void anthropicModelCount() {
-            assertEquals(3, registry.getModels(Provider.ANTHROPIC).size());
+        void comparesProviderAndModelIdentityExactly() {
+            Model campusMate = model(Provider.CAMPUSMATE, "same-id", "CampusMate");
+            Model legacy = model(Provider.CUSTOM, "same-id", "Legacy");
+
+            assertTrue(ModelRegistry.modelsAreEqual(campusMate, campusMate));
+            assertFalse(ModelRegistry.modelsAreEqual(campusMate, legacy));
         }
 
         @Test
-        void openaiModelCount() {
-            assertEquals(4, registry.getModels(Provider.OPENAI).size());
+        void recognizesSupportedXhighFamilies() {
+            assertTrue(ModelRegistry.supportsXhigh(model(Provider.CUSTOM, "gpt-5.4", "GPT")));
+            assertFalse(ModelRegistry.supportsXhigh(model(Provider.CUSTOM, "ordinary", "Ordinary")));
         }
+    }
 
-        @Test
-        void zaiModelCount() {
-            assertEquals(10, registry.getModels(Provider.ZAI).size());
-        }
+    private void writeModels(Path file, List<Model> definitions) throws Exception {
+        Files.createDirectories(file.getParent());
+        new ObjectMapper().writeValue(file.toFile(), definitions);
+    }
 
-        @Test
-        void kimiCodingModelCount() {
-            assertEquals(2, registry.getModels(Provider.KIMI_CODING).size());
-        }
+    private Path classpathFixture(String name) throws Exception {
+        return Path.of(ModelRegistryTest.class
+                        .getProtectionDomain()
+                        .getCodeSource()
+                        .getLocation()
+                        .toURI())
+                .resolve(name);
+    }
 
-        @Test
-        void minimaxModelCount() {
-            assertEquals(2, registry.getModels(Provider.MINIMAX).size());
-        }
-
-        @Test
-        void minimaxCnModelCount() {
-            assertEquals(2, registry.getModels(Provider.MINIMAX_CN).size());
-        }
+    private static Model model(Provider provider, String id, String name) {
+        return new Model(
+                id,
+                name,
+                Api.OPENAI_COMPLETIONS,
+                provider,
+                null,
+                false,
+                List.of(InputModality.TEXT),
+                new ModelCost(1.0, 2.0, 0.5, 0.0),
+                128_000,
+                8_192,
+                null,
+                null,
+                null);
     }
 }

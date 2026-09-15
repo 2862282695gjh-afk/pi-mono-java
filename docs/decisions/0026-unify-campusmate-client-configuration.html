@@ -32,9 +32,11 @@
 <body>
 <main>
   <header>
-    <p><span class="status">Accepted</span> ADR-0026 · 2026-08-26</p>
+    <p><span class="status">Accepted；旧 Provider 身份条目被部分取代</span> ADR-0026 · 2026-08-26</p>
     <h1>统一 CampusMate 客户端的服务身份、地址与 Endpoint 目录</h1>
     <p>决策范围：CampusClaw 的 Model、受管 Runtime、Tool 客户端配置和安装变量映射。</p>
+    <p>Provider ID 由 <a href="0109-use-campusmate-only-provider.md">ADR-0109</a> 切换为
+      <code>campusmate</code>；共享配置树、HTTP operation 和部署变量决策继续有效。</p>
   </header>
 
   <section>
@@ -108,6 +110,7 @@
       <code>c250e3f07536871d3d676242e552a5eb4346b0c7</code>；详细实现与源码证据见
       <a href="../designs/campusmate-shared-config.md">CampusMate 客户端共享配置设计</a>。
       Model Chat 的协议决策仍见 <a href="0025-mate-chat-provider-and-usage-records.html">ADR-0025</a>；
+      当前 Provider 身份与默认适配器范围见 <a href="0109-use-campusmate-only-provider.md">ADR-0109</a>；
       旧部署变量兼容的后续修订见
       <a href="0035-remove-legacy-campusmate-environment-adapter.html">ADR-0035</a>；公司镜像本地缺省值见
       <a href="0042-default-campusmate-base-url-for-corporate-mirror.html">ADR-0042</a>。</p>

@@ -1,6 +1,6 @@
 # Coding Agent Runtime HTTP 与受管 Session 设计
 
-> 文档版本：3.9.0
+> 文档版本：3.10.0
 >
 > PR 167 修订基线：`f60cc3e78bb8b700527ac082c7c8e10524ede095`
 >
@@ -21,6 +21,8 @@
 > 模型异常因果链修复前基线：`c9d858bc8261bf07f5585f545b53495bf2226a56`
 >
 > 模型异常因果链已审查实现：`f3e2a31c6f0692fec429567c5535c6ec9bec7343`
+>
+> CampusMate Provider 收敛实施起点：`29ebec6a8cad99896414211cda28c6fffec71bee`
 >
 > GaussDB 脚本布局源码基线：`origin/main@d84dd3d6a306b7587c70b29e0100e741dacef989`
 >
@@ -70,7 +72,7 @@ Assistant/Compaction 完成保存本次 Usage，模型/思考/压缩形成持久
 | 审查实现收口同一 Session 的事件接受、控制和执行收尾串行化 | `RuntimeSessionEngineRegistry#withOperationLock`、`RuntimeEventService#prepareAndSubmit`、`RuntimeSessionControlService#accept`、`RuntimeSessionControlService#prepareAbort`、`RuntimeExecutionCoordinator#finish`，存在于 `812bf407d9fef9088b6bef8f8b86bd8f2bbb1f7e` |
 | thinking 实时投影、持久化和查询过滤 | `RuntimeEventProjector#projectThinking`、`RuntimeEntryCodec#thinkingEntry`、`RuntimeEventQueryService#list`、`RuntimeEventCursorCodec` |
 | SSE 使用有界请求级订阅 | `RuntimeEventStream`、`RuntimeSseDispatcher`、`RuntimeSseEmitterSubscriber` |
-| 压缩取消释放 Mate SSE | `SessionCompactor#completeSummary`、`EventStream#result`、`MateServiceModelManagerProvider#subscribe`、`MateServiceModelManagerProvider#cancel` |
+| 压缩取消释放 Mate SSE | `SessionCompactor#completeSummary`、`EventStream#result`、`CampusMateProvider#subscribe`、`CampusMateProvider#cancel` |
 | 公司响应包装保留适配点 | `runtimeapi/result/ResultBeanAdapter.java`、`StandaloneResultBeanAdapter.java` |
 | 国际化资源显式区分两个 Locale | `modules/coding-agent-cli/src/main/resources/i18n/messages_{en_US,zh_CN}.properties`、`RuntimeMessageSourceConfiguration` |
 | 语言选择按范围和权重协商 | `RuntimeRequestContext#locale`、`RuntimeRequestContext#language` |
@@ -319,6 +321,7 @@ Runtime V1 事件名 `tool.execution.started` 与 `tool.execution.completed` 是
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 3.10.0 | 2026-09-15 | Runtime、压缩、Child 与 Cron 使用 `campusmate` Provider 身份并保留 Mate SSE 取消语义。 |
 | 3.9.0 | 2026-09-07 | 公司 GaussDB 脚本以固定库与 Schema 头部开始，去除事务包裹，并将每个删表语句紧邻放在对应建表语句前。 |
 | 3.8.0 | 2026-09-04 | 更新资源 ID、HTTP 路径和请求限制的归属至底层 common 的 ClawConstants，外部契约不变。 |
 | 3.7.0 | 2026-09-03 | 将公司镜像 GaussDB DDL 改为 `scripts/install/initdb_gaussdbv5.sql` 单文件交付，保留模块侧多文件布局并由同步脚本保证一致性。 |

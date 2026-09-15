@@ -2,8 +2,8 @@
 
 | 属性 | 值 |
 |---|---|
-| 版本 | 0.1.0 |
-| 日期 | 2026-09-08 |
+| 版本 | 0.1.1 |
+| 日期 | 2026-09-15 |
 | 设计契约 | `pi-mono-java-design@2ee2a3211da68ad87b0d9cab353e691b00bdaebd`，Session Events Usage |
 | 变更前 Java | `72f3550e` |
 | 实现基线 | `001a37d0`，终态报告与 JSON 回归 `80481c53` |
@@ -28,8 +28,12 @@ Session Events 要求未知用量省略，明确报告的零用量仍保留五�
 | Java 持久化 | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/event/RuntimeEntryCodec.java#usageRecord` | 内部 JSON 通过 Jackson 保存来源标志，不新增数据库列 |
 | pi 观察 | `packages/ai/src/types.ts:382`、`packages/ai/src/api/openai-responses.ts:118`、`packages/ai/src/api/openai-responses-shared.ts:560` | pi 定义用量数值并在流开始时初始化零；没有同名 known 标志，不能直接满足本产品的公开省略语义 |
 
-新增来源标志属于 CampusClaw 产品约束引起的架构变化，不宣称 pi 已有相同语义。
-不新增 Maven 依赖，复用已有 Jackson、提供商 SDK 和测试依赖。
+新增来源标志属于 CampusClaw 产品约束引起的架构变化，不宣称 pi 已有相同语义。该专题原实施
+没有新增 Maven 依赖，当时复用了已有 Jackson、提供商 SDK 和测试依赖。
+
+表中的 OpenAI、Mistral 适配器及 SDK 是各自固定实现基线的历史证据。当前默认
+[`CampusMateProvider`](../ai.md) 通过 `MateChatSseParser#parseUsage` 设置同一 `Usage.known` 语义；
+本次移除第三方适配器和 SDK，不改变用量来源、压缩合计或内部 JSON 恢复契约。
 
 ## 架构与数据流
 
@@ -64,4 +68,5 @@ Session Events 要求未知用量省略，明确报告的零用量仍保留五�
 
 | 版本 | 日期 | 变更 |
 |---|---|---|
+| 0.1.1 | 2026-09-15 | 指向当前 CampusMate Usage 入口，保留固定提交中的第三方适配器证据。 |
 | 0.1.0 | 2026-09-08 | 增加内部用量来源标志及历史 JSON 恢复策略 |

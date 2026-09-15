@@ -30,7 +30,7 @@ class ModelTest {
         mapper = new ObjectMapper();
     }
 
-    // --- Provider ---
+    // Provider 枚举。
 
     @Nested
     class ProviderTests {
@@ -43,6 +43,7 @@ class ModelTest {
             assertEquals("openrouter", Provider.OPENROUTER.value());
             assertEquals("azure-openai-responses", Provider.AZURE_OPENAI.value());
             assertEquals("openai-codex", Provider.OPENAI_CODEX.value());
+            assertEquals("campusmate", Provider.CAMPUSMATE.value());
         }
 
         @Test
@@ -69,7 +70,7 @@ class ModelTest {
         }
     }
 
-    // --- Api ---
+    // API 枚举。
 
     @Nested
     class ApiTests {
@@ -106,7 +107,7 @@ class ModelTest {
         }
     }
 
-    // --- InputModality ---
+    // 输入模态。
 
     @Nested
     class InputModalityTests {

@@ -2,7 +2,7 @@
  * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
  */
 
-package com.huawei.hicampus.claw.ai.provider.mate;
+package com.campusclaw.ai.provider.mate;
 
 import java.net.URI;
 import java.time.Duration;
@@ -10,17 +10,17 @@ import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.atomic.AtomicReference;
 
-import com.huawei.hicampus.claw.ai.provider.AiProvider;
-import com.huawei.hicampus.claw.ai.provider.ProviderAuth;
-import com.huawei.hicampus.claw.ai.provider.ProviderId;
-import com.huawei.hicampus.claw.ai.stream.AssistantMessageEventStream;
-import com.huawei.hicampus.claw.ai.types.Api;
-import com.huawei.hicampus.claw.ai.types.AssistantMessage;
-import com.huawei.hicampus.claw.ai.types.Context;
-import com.huawei.hicampus.claw.ai.types.Model;
-import com.huawei.hicampus.claw.ai.types.SimpleStreamOptions;
-import com.huawei.hicampus.claw.ai.types.StopReason;
-import com.huawei.hicampus.claw.ai.types.Usage;
+import com.campusclaw.ai.provider.AiProvider;
+import com.campusclaw.ai.provider.ProviderAuth;
+import com.campusclaw.ai.provider.ProviderId;
+import com.campusclaw.ai.stream.AssistantMessageEventStream;
+import com.campusclaw.ai.types.Api;
+import com.campusclaw.ai.types.AssistantMessage;
+import com.campusclaw.ai.types.Context;
+import com.campusclaw.ai.types.Model;
+import com.campusclaw.ai.types.SimpleStreamOptions;
+import com.campusclaw.ai.types.StopReason;
+import com.campusclaw.ai.types.Usage;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -47,14 +47,14 @@ import reactor.netty.http.client.HttpClient;
 /**
  * 通过内部网关免认证调用 CampusMate Chat 接口的通用 Provider。
  *
- * @version [br_eCampusCore 26.0.0, 2026/08/25]
+ * @version [br_eCampusCore 26.0.0, 2026/09/15]
  * @since [br_eCampusCore 26.0.0]
  */
 @Component
-public class MateServiceModelManagerProvider implements AiProvider {
-    public static final ProviderId PROVIDER_ID = new ProviderId("mate-model-manager");
+public class CampusMateProvider implements AiProvider {
+    public static final ProviderId PROVIDER_ID = new ProviderId("campusmate");
 
-    private static final Logger LOGGER = LoggerFactory.getLogger(MateServiceModelManagerProvider.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger(CampusMateProvider.class);
 
     private static final String SUPPORTED_API = "openai-completions";
 
@@ -72,7 +72,7 @@ public class MateServiceModelManagerProvider implements AiProvider {
     private final String api;
 
     @Autowired
-    public MateServiceModelManagerProvider(
+    public CampusMateProvider(
             ObjectMapper mapper,
             @Value("${campusmate.base-url}") String baseUrl,
             @Value("${campusmate.endpoints.model-chat-path}") String chatPath,
@@ -82,7 +82,7 @@ public class MateServiceModelManagerProvider implements AiProvider {
         this(mapper, createWebClient(connectTimeout, responseTimeout), endpoint(baseUrl, chatPath), api);
     }
 
-    MateServiceModelManagerProvider(ObjectMapper mapper, WebClient webClient, URI endpoint, String api) {
+    CampusMateProvider(ObjectMapper mapper, WebClient webClient, URI endpoint, String api) {
         this.mapper = mapper;
         this.requestMapper = new MateChatRequestMapper(mapper);
         this.webClient = webClient;

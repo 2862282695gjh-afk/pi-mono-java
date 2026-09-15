@@ -11,8 +11,9 @@ import com.huawei.hicampus.claw.ai.types.Model;
 import com.huawei.hicampus.claw.ai.types.TextContent;
 import com.huawei.hicampus.claw.ai.types.ThinkingLevel;
 import com.huawei.hicampus.claw.codingagent.common.client.mate.MateCredentials;
-import com.huawei.hicampus.claw.codingagent.model.ModelCatalogService;
 import com.huawei.hicampus.claw.codingagent.runtime.PreparedAgentRuntime;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.agent.AgentDirectorySnapshots;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.model.RuntimeModelManager;
 import com.huawei.hicampus.claw.codingagent.session.AgentSessionFactory;
 import com.huawei.hicampus.claw.codingagent.session.ManagedAgentSession;
 import com.huawei.hicampus.claw.codingagent.session.ManagedAgentSessionRequest;
@@ -35,16 +36,16 @@ public class ManagedCronSessionRunner implements CronAgentSessionRunner {
 
     private final AgentSessionFactory sessionFactory;
 
-    private final ModelCatalogService modelCatalogService;
+    private final RuntimeModelManager modelManager;
 
     private final SubagentExecutionService subagentExecutionService;
 
     public ManagedCronSessionRunner(
             AgentSessionFactory sessionFactory,
-            ModelCatalogService modelCatalogService,
+            RuntimeModelManager modelManager,
             SubagentExecutionService subagentExecutionService) {
         this.sessionFactory = sessionFactory;
-        this.modelCatalogService = modelCatalogService;
+        this.modelManager = modelManager;
         this.subagentExecutionService = subagentExecutionService;
     }
 
@@ -72,13 +73,10 @@ public class ManagedCronSessionRunner implements CronAgentSessionRunner {
     }
 
     private Model resolveDefaultModel(PreparedAgentRuntime runtime) {
-        String configured = runtime.metadata()
+        runtime.metadata()
                 .defaultModel()
                 .orElseThrow(() -> new IllegalStateException("Cron Agent has no default model"));
-        return modelCatalogService.getAvailableModels().stream()
-                .filter(model -> matchesConfiguredModel(model, configured))
-                .findFirst()
-                .orElseThrow(() -> new IllegalStateException("Cron Agent default model is unavailable"));
+        return modelManager.resolveDefaultModel(AgentDirectorySnapshots.from(runtime));
     }
 
     private static String extractAnswer(ManagedAgentSession session) {
@@ -98,15 +96,5 @@ public class ManagedCronSessionRunner implements CronAgentSessionRunner {
             }
         }
         return "";
-    }
-
-    private static boolean matchesConfiguredModel(Model model, String configured) {
-        int slash = configured.indexOf('/');
-        if (slash < 0) {
-            return model.id().equals(configured);
-        }
-        String provider = configured.substring(0, slash);
-        String modelId = configured.substring(slash + 1);
-        return model.provider().value().equals(provider) && model.id().equals(modelId);
     }
 }

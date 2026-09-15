@@ -20,6 +20,8 @@ import java.util.concurrent.CompletableFuture;
 import com.campusclaw.agent.Agent;
 import com.campusclaw.agent.state.AgentState;
 import com.campusclaw.agent.tool.CancellationToken;
+import com.campusclaw.ai.env.ProviderConfigResolver;
+import com.campusclaw.ai.model.ModelRegistry;
 import com.campusclaw.ai.types.Api;
 import com.campusclaw.ai.types.AssistantMessage;
 import com.campusclaw.ai.types.InputModality;
@@ -35,6 +37,11 @@ import com.campusclaw.codingagent.model.ModelCatalogService;
 import com.campusclaw.codingagent.runtime.MateServiceClient.AgentReference;
 import com.campusclaw.codingagent.runtime.MateServiceClient.AgentRuntime;
 import com.campusclaw.codingagent.runtime.PreparedAgentRuntime;
+import com.campusclaw.codingagent.runtimeapi.error.RuntimeApiException;
+import com.campusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
+import com.campusclaw.codingagent.runtimeapi.model.MateModelManagerProperties;
+import com.campusclaw.codingagent.runtimeapi.model.MateRuntimeModelManager;
+import com.campusclaw.codingagent.runtimeapi.model.RuntimeModelManager;
 import com.campusclaw.codingagent.session.AgentSessionFactory;
 import com.campusclaw.codingagent.session.ManagedAgentSession;
 import com.campusclaw.codingagent.session.ManagedAgentSessionRequest;
@@ -52,7 +59,9 @@ class SubagentExecutionServiceTest {
 
     private AgentSessionFactory sessionFactory;
 
-    private ModelCatalogService modelCatalogService;
+    private ModelCatalogService emptyModelCatalog;
+
+    private RuntimeModelManager modelManager;
 
     private Model model;
 
@@ -62,9 +71,9 @@ class SubagentExecutionServiceTest {
     void setUp() {
         sessionFactory = mock(AgentSessionFactory.class);
         model = model();
-        modelCatalogService = mock(ModelCatalogService.class);
-        when(modelCatalogService.getAvailableModels()).thenReturn(List.of(model));
-        service = new SubagentExecutionService(sessionFactory, modelCatalogService);
+        emptyModelCatalog = new ModelCatalogService(new ModelRegistry(), mock(ProviderConfigResolver.class));
+        modelManager = new MateRuntimeModelManager(modelManagerProperties());
+        service = new SubagentExecutionService(sessionFactory, modelManager);
     }
 
     @Test
@@ -104,14 +113,63 @@ class SubagentExecutionServiceTest {
     }
 
     @Test
-    void fallsBackToAllowedInheritedModelWhenChildDefaultIsUnavailable() {
+    void resolvesIndependentManagedDefaultWhenGlobalRegistryIsEmpty() {
         PreparedAgentRuntime parent = parentRuntime("1.0.0");
-        useRuntime(childRuntime("1.0.0", true), completedSession("child answer"));
-        when(modelCatalogService.getAvailableModels()).thenReturn(List.of());
+        PreparedAgentRuntime child = childRuntime("1.0.0", true, List.of("team/model-b"));
+        useRuntime(child, completedSession("child answer"));
 
         var result = execute(parent, rootContext(), new CancellationToken());
 
+        assertThat(emptyModelCatalog.getAvailableModels()).isEmpty();
         assertThat(((TextContent) result.content().getFirst()).text()).isEqualTo("child answer");
+        ArgumentCaptor<ManagedAgentSessionRequest> request = ArgumentCaptor.forClass(ManagedAgentSessionRequest.class);
+        verify(sessionFactory).create(request.capture());
+        Model selected = request.getValue().modelResolver().apply(child);
+        assertThat(selected.id()).isEqualTo("team/model-b");
+        assertThat(selected.provider()).isEqualTo(Provider.CAMPUSMATE);
+    }
+
+    @Test
+    void preservesLegacyQualifiedTextAsOpaqueManagedModelId() {
+        PreparedAgentRuntime parent = parentRuntime("1.0.0");
+        PreparedAgentRuntime child = childRuntime("1.0.0", true, List.of("mate-model-manager/model-a"));
+        useRuntime(child, completedSession("child answer"));
+
+        execute(parent, rootContext(), new CancellationToken());
+
+        ArgumentCaptor<ManagedAgentSessionRequest> request = ArgumentCaptor.forClass(ManagedAgentSessionRequest.class);
+        verify(sessionFactory).create(request.capture());
+        Model selected = request.getValue().modelResolver().apply(child);
+        assertThat(selected.id()).isEqualTo("mate-model-manager/model-a");
+        assertThat(selected.id()).isNotEqualTo("model-a");
+        assertThat(selected.provider()).isEqualTo(Provider.CAMPUSMATE);
+    }
+
+    @Test
+    void doesNotTreatLegacyQualifiedBindingAsCurrentCampusMateIdentity() {
+        RuntimeModelManager manager = mock(RuntimeModelManager.class);
+        when(manager.resolveDefaultModel(any())).thenReturn(model);
+        service = new SubagentExecutionService(sessionFactory, manager);
+        PreparedAgentRuntime parent = parentRuntime("1.0.0");
+        PreparedAgentRuntime child = childRuntime("1.0.0", true, List.of("mate-model-manager/model-a"));
+        useRuntime(child, completedSession("unused"));
+
+        assertThatThrownBy(() -> execute(parent, rootContext(), new CancellationToken()))
+                .hasMessage("Child Agent does not allow the selected model");
+    }
+
+    @Test
+    void propagatesExplicitChildDefaultResolutionFailureWithoutInheritingParentModel() {
+        RuntimeModelManager manager = mock(RuntimeModelManager.class);
+        when(manager.resolveDefaultModel(any()))
+                .thenThrow(new RuntimeApiException(RuntimeErrorCode.AGENT_MODEL_NOT_CONFIGURED));
+        service = new SubagentExecutionService(sessionFactory, manager);
+        PreparedAgentRuntime parent = parentRuntime("1.0.0");
+        useRuntime(childRuntime("1.0.0", true), completedSession("unused"));
+
+        assertThatThrownBy(() -> execute(parent, rootContext(), new CancellationToken()))
+                .isInstanceOfSatisfying(RuntimeApiException.class, error -> assertThat(error.errorCode())
+                        .isEqualTo(RuntimeErrorCode.AGENT_MODEL_NOT_CONFIGURED));
     }
 
     @Test
@@ -210,14 +268,28 @@ class SubagentExecutionServiceTest {
     }
 
     private PreparedAgentRuntime childRuntime(String version, boolean enabled) {
-        AgentRuntime runtime = runtime(CHILD_ID, "researcher", version, enabled, List.of());
+        return childRuntime(version, enabled, List.of(model.id()));
+    }
+
+    private PreparedAgentRuntime childRuntime(String version, boolean enabled, List<String> bindingModels) {
+        AgentRuntime runtime = runtime(CHILD_ID, "researcher", version, enabled, List.of(), bindingModels);
         return new PreparedAgentRuntime(CHILD_ID, Path.of("agent", CHILD_ID), runtime, List.of());
     }
 
     private AgentRuntime runtime(
             String id, String name, String version, boolean enabled, List<AgentReference> children) {
+        return runtime(id, name, version, enabled, children, List.of(model.id()));
+    }
+
+    private AgentRuntime runtime(
+            String id,
+            String name,
+            String version,
+            boolean enabled,
+            List<AgentReference> children,
+            List<String> bindingModels) {
         return new AgentRuntime(
-                List.of(model.id()),
+                bindingModels,
                 List.of(),
                 List.of(),
                 children,
@@ -235,9 +307,9 @@ class SubagentExecutionServiceTest {
         return new Model(
                 "model-a",
                 "Model A",
-                Api.ANTHROPIC_MESSAGES,
-                Provider.ANTHROPIC,
-                "https://example.com",
+                Api.OPENAI_COMPLETIONS,
+                Provider.CAMPUSMATE,
+                null,
                 true,
                 List.of(InputModality.TEXT),
                 new ModelCost(0, 0, 0, 0),
@@ -246,5 +318,12 @@ class SubagentExecutionServiceTest {
                 null,
                 null,
                 null);
+    }
+
+    private static MateModelManagerProperties modelManagerProperties() {
+        MateModelManagerProperties properties = new MateModelManagerProperties();
+        properties.setContextWindow(1_000);
+        properties.setMaxOutputTokens(100);
+        return properties;
     }
 }
