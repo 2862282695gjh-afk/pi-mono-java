@@ -20,14 +20,14 @@ const status = ref<HTMLElement | null>(null);
 const copyStatus = ref('');
 
 function statusLabel(): string {
-  if (props.plan.decision === 'approve') return '已批准方案';
+  if (props.plan.decision === 'approve') return '已批准';
   if (props.plan.decision === 'revise') return '已退回修改';
-  if (props.pending) return '正在提交决定';
-  if (props.plan.lifecycle === 'stopping') return '正在停止，方案尚未执行';
-  if (props.plan.lifecycle === 'stopped') return '本轮已停止，方案未执行';
-  if (props.plan.lifecycle === 'failed') return '本轮失败，方案未执行';
-  if (props.plan.lifecycle === 'ended') return '本轮已结束，方案未执行';
-  return props.actionable ? '方案已就绪 · 待审核' : '方案状态待核对';
+  if (props.pending) return '提交中';
+  if (props.plan.lifecycle === 'stopping') return '停止中';
+  if (props.plan.lifecycle === 'stopped') return '已停止';
+  if (props.plan.lifecycle === 'failed') return '执行失败';
+  if (props.plan.lifecycle === 'ended') return '已结束';
+  return props.actionable ? '待审核' : '同步中';
 }
 
 watch(() => props.plan.decision, (decision) => { if (decision === 'approve') expanded.value = false; });
@@ -63,15 +63,15 @@ async function copyPlan(): Promise<void> {
         <span ref="status" tabindex="-1">{{ statusLabel() }}</span>
         <span aria-hidden="true">{{ expanded ? '收起' : '展开' }}</span>
       </button>
-      <button type="button" class="secondary-button plan-copy" @click="copyPlan">复制方案</button>
+      <button type="button" class="secondary-button plan-copy" @click="copyPlan">复制计划</button>
     </header>
     <p class="plan-copy-status" aria-live="polite">{{ copyStatus }}</p>
     <div v-if="expanded" class="plan-content"><SafeRichText :source="plan.rawMarkdown" :streaming="false" /></div>
-    <div v-if="actionable" class="plan-actions">
-      <button class="primary-button" type="button" :disabled="pending" @click="approve">批准并执行</button>
-      <button ref="reviseButton" class="secondary-button" type="button" :disabled="pending" @click="openFeedback">修改方案</button>
+    <div v-if="actionable || pending" class="plan-actions">
+      <button class="primary-button" type="button" :disabled="pending" @click="approve">执行计划</button>
+      <button ref="reviseButton" class="secondary-button" type="button" :disabled="pending" @click="openFeedback">修改计划</button>
     </div>
-    <div v-if="actionable && editing" class="plan-feedback">
+    <div v-if="(actionable || pending) && editing" class="plan-feedback">
       <label>修改意见（可选）
         <textarea ref="textarea" v-model="feedback" maxlength="4096" rows="3" :disabled="pending"
           :aria-invalid="Boolean(feedback && !feedback.trim())" @keydown.esc.prevent="cancelFeedback" />
@@ -82,6 +82,6 @@ async function copyPlan(): Promise<void> {
         <button class="secondary-button" type="button" :disabled="pending" @click="cancelFeedback">取消</button>
       </div>
     </div>
-    <p v-if="!actionable && !plan.decision && !plan.lifecycle && !pending" class="event-notice">正在核对方案状态，暂不能审核。</p>
+    <p v-if="!actionable && !plan.decision && !plan.lifecycle && !pending" class="event-notice">计划尚未完整同步，暂不能审核。</p>
   </section>
 </template>

@@ -32,7 +32,7 @@ describe('literal command and tool content', () => {
     const plan = await renderToString(createSSRApp({ render: () => h(PlanCard, { plan: {
       key: 'plan', kind: 'plan', eventId: 'plan-event', sourceEventId: 'root', rawMarkdown: '# 完整方案',
     }, actionable: false, pending: false, sessionId: 'session' }) }));
-    expect(plan).toContain('复制方案');
+    expect(plan).toContain('复制计划');
     expect(plan).toContain('完整方案');
     const question = await renderToString(createSSRApp({ render: () => h(QuestionCard, { turn: {
       key: 'question', kind: 'question', eventId: 'unsafe-event-id', sourceEventId: 'root', questions: [{

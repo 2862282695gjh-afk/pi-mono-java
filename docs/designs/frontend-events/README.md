@@ -2,8 +2,8 @@
 
 | 属性 | 值 |
 |---|---|
-| 版本 | 1.3.3 |
-| 日期 | 2026-09-14 |
+| 版本 | 1.4.0 |
+| 日期 | 2026-09-16 |
 | 状态 | 前端已实现；本次以契约 fixture 验收，真实后端 E2E 未验收；不是生产 Mate 前端 |
 | 初始源码基线 | `pi-mono-java@821418e7f2ece298a04a066ab8d11d3388ef2f16` |
 | 同步源码基线 | `pi-mono-java@9b01a9f1e659359b6a7bff9ec622e6700ef6e384`；经 c57db26d 同步消息受理/控制分发，再同步控制受理与旧 Entry 拒绝；本文消费的 VO 不变 |
@@ -13,6 +13,13 @@
 | 已确认工作台设计 | `pi-mono-java-design@db3223c498e50c383cb620abe3a3fde2e3872845`；前端 1.10.0、Slash 前端 1.5.0、`runtime-workbench-alignment.md` |
 | 已确认目标契约 | `pi-mono-java-design@9b8c5b7`；Claw Events B01～B15、Slash 前端 1.3.0；用户本次明确对接 Claw Runtime |
 | 决策 | [ADR-0102](../../decisions/0102-runtime-events-v2-frontend.html)、[工作台 ADR-0105](../../decisions/0105-workbench-session-stop-and-auth.html)、[Headers 定位 ADR-0106](../../decisions/0106-headers-workspace-positioning.html) |
+
+## 当前体验与维护边界
+
+统一开发设置、持久化、环境切换、根浮层、侧栏删除、工具结构展示和逐题问答由
+[开发设置与 Build/Plan 交互实现](../frontend-experience.md)维护，设计基线为 `pi-mono-java-design@3e3d569`，
+实现起点为 `1d08f98e`。它替代本文的独立 Headers 定位、IP/Header 仅内存和账号密码只能编辑启动环境的旧规则；
+下方这三部分按所标注的旧提交保留证据。现有 Runtime 事件、请求范围、索引最小化及恢复权威继续有效。
 
 ## 背景、定义与交付边界
 
@@ -237,6 +244,7 @@ HTTPS 客户端并保留 TLS 校验。配置与取舍见 [ADR-0107](../../decisi
 
 | 版本 | 日期 | 变更 |
 |---|---|---|
+| 1.4.0 | 2026-09-16 | 接入统一开发设置、环境隔离、浮层删除、工具结构和逐题问答实现入口。 |
 | 1.3.3 | 2026-09-14 | 取消新增行数预算，按职责和验收边界组织交付。 |
 | 1.3.2 | 2026-09-10 | 开发代理显式设置 secure=false，允许连接本地联调的 HTTPS 后端。 |
 | 1.3.1 | 2026-09-10 | 将 Headers 面板限制在实际工作区内，避免较窄窗口的会话列表遮挡输入控件。 |

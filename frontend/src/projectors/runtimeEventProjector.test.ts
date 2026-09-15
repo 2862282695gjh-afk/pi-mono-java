@@ -3,6 +3,13 @@ import { projectRuntimeEvents } from './runtimeEventProjector';
 import { eventFixture, idleFixture, questionFixture, userFixture } from '../runtime/fixtures';
 
 describe('Runtime Events presentation', () => {
+  it('replaces a stopping notice with its terminal result without affecting another root', () => {
+    const interrupt = eventFixture({ eventId: 'stop', type: 'user.interrupt', targetEventId: 'root-a' });
+    expect(projectRuntimeEvents([interrupt])).toEqual([expect.objectContaining({ text: '停止中' })]);
+    expect(projectRuntimeEvents([interrupt, idleFixture('terminated')])).toEqual([expect.objectContaining({ text: '已停止' })]);
+    expect(projectRuntimeEvents([interrupt, eventFixture({ eventId: 'other-end', type: 'session.status_idle', reason: 'terminated', sourceEventId: 'other-root' })]))
+      .toEqual([expect.objectContaining({ text: '停止中' }), expect.objectContaining({ text: '已停止' })]);
+  });
   it('does not invent an answer for an empty authoritative message', () => {
     expect(projectRuntimeEvents([eventFixture({ eventId: 'a', type: 'agent.message', phase: 'completed', sourceEventId: 'root-a', content: '' })])).toEqual([]);
   });
@@ -21,7 +28,7 @@ describe('Runtime Events presentation', () => {
       eventFixture({ eventId: 'r', type: 'agent.tool_result', sourceEventId: 'root-a', toolCallId: 'tool', content: [{ type: 'text', text: long }, { type: 'text', text: '' }], isError: false }), idleFixture(),
     ]);
     expect(turns[1]).toMatchObject({ toolName: 'CallMateTool', status: 'completed', result: `${long}\n`, arguments: [{ key: 'tool', value: 'query' }, { key: 'args', value: '{\n  "area": "校园"\n}' }] });
-    expect(turns[2]).toMatchObject({ kind: 'notice', text: '本轮已完成' });
+    expect(turns[2]).toMatchObject({ kind: 'notice', text: '已完成' });
   });
   it('marks a disconnected preview as unconfirmed rather than completed', () => {
     expect(projectRuntimeEvents([{ eventId: 'p', type: 'agent.message', phase: 'delta', sourceEventId: 'root-a', content: '半条' }])[0]).toMatchObject({ streaming: false, unconfirmed: true });
@@ -77,10 +84,74 @@ describe('Runtime Events presentation', () => {
     const waiting = projectRuntimeEvents([userFixture(), eventFixture({ eventId: 'ask', type: 'agent.tool_call',
       sourceEventId: 'root-a', toolCallId: 'ask-a', toolName: 'AskUserQuestion', arguments: {}, requiresConfirmation: false }),
     questionFixture(), idleFixture('confirming')]);
-    expect(waiting.find((turn) => turn.kind === 'activity')).toMatchObject({ status: 'waiting_answer' });
+    expect(waiting.filter((turn) => turn.kind === 'question')).toHaveLength(1);
+    expect(waiting.some((turn) => turn.kind === 'activity' && turn.toolName === 'AskUserQuestion')).toBe(false);
+  });
+  it('absorbs only an exactly associated AskUserQuestion call and result', () => {
+    const call = eventFixture({ eventId: 'ask', type: 'agent.tool_call', sourceEventId: 'root-a', toolCallId: 'ask-a',
+      toolName: 'AskUserQuestion', arguments: { questions: [{ id: 'scope', question: '范围？' }] }, requiresConfirmation: false });
+    const result = eventFixture({ eventId: 'answer-result', type: 'agent.tool_result', sourceEventId: 'root-a', toolCallId: 'ask-a',
+      content: [{ type: 'text', text: '{"answers":[{"id":"scope","selected":["东区"]}]}' }], isError: false });
+    const exactQuestion = questionFixture();
+    const exact = projectRuntimeEvents([userFixture(), call, exactQuestion, result]);
+    expect(exact.filter((turn) => turn.kind === 'question')).toHaveLength(1);
+    expect(exact.some((turn) => turn.kind === 'activity' && turn.toolName === 'AskUserQuestion')).toBe(false);
+
+    const otherRootQuestion = { ...exactQuestion, eventId: 'other-question', sourceEventId: 'root-b' };
+    const unmatched = projectRuntimeEvents([userFixture(), call, otherRootQuestion, result]);
+    expect(unmatched.find((turn) => turn.kind === 'activity')).toMatchObject({
+      toolName: 'AskUserQuestion', status: 'unconfirmed', statusMessage: '问题记录尚未完整，正在同步', result: '',
+    });
+  });
+  it('keeps a brief AskUserQuestion failure visible without exposing its arguments in the conversation', () => {
+    const argumentsValue = { questions: [{ id: 'secret', question: '不应重复的原始参数' }] };
+    const call = eventFixture({ eventId: 'ask', type: 'agent.tool_call', sourceEventId: 'root-a', toolCallId: 'ask-a',
+      toolName: 'AskUserQuestion', arguments: argumentsValue, requiresConfirmation: false }) as Extract<
+        import('../types/runtime').RuntimeEvent, { type: 'agent.tool_call' }>;
+    const result = eventFixture({ eventId: 'failed', type: 'agent.tool_result', sourceEventId: 'root-a', toolCallId: 'ask-a',
+      content: [{ type: 'text', text: ` ${'失败详情 '.repeat(40)} ` }], isError: true,
+      errorCode: 'USER_QUESTION_UNAVAILABLE' }) as Extract<import('../types/runtime').RuntimeEvent, { type: 'agent.tool_result' }>;
+    const activity = projectRuntimeEvents([userFixture(), call, result]).find((turn) => turn.kind === 'activity');
+
+    expect(activity).toMatchObject({ toolName: 'AskUserQuestion', status: 'error', arguments: [], result: '',
+      errorCode: 'USER_QUESTION_UNAVAILABLE' });
+    expect(activity?.kind === 'activity' ? activity.statusMessage : '').toMatch(/^提问失败：.{1,160}…$/u);
+    expect(call.arguments).toBe(argumentsValue);
+    expect(result.content[0].text).toContain('失败详情');
+  });
+  it('does not expose an associated question result when its call record is still missing', () => {
+    const result = eventFixture({ eventId: 'answer-result', type: 'agent.tool_result', sourceEventId: 'root-a', toolCallId: 'ask-a',
+      content: [{ type: 'text', text: '{"answers":[{"id":"scope","selected":["东区"]}]}' }], isError: false });
+    const turns = projectRuntimeEvents([userFixture(), questionFixture(), result]);
+
+    expect(turns.filter((turn) => turn.kind === 'question')).toHaveLength(1);
+    expect(turns.some((turn) => turn.kind === 'activity')).toBe(false);
   });
   it('closes an unanswered question only on its root lifecycle', () => {
     const turns = projectRuntimeEvents([userFixture(), questionFixture(), idleFixture('terminated')]);
     expect(turns.find((turn) => turn.kind === 'question')).toMatchObject({ lifecycle: 'closed' });
+  });
+  it('keeps answered questions and superseded plans as immutable history beside the current cards', () => {
+    const oldQuestion = questionFixture();
+    const oldAnswer = eventFixture({ eventId: 'answer-a', type: 'user.question_answer', targetEventId: oldQuestion.eventId,
+      answers: [{ id: 'scope', selected: ['东区'] }, { id: 'note', selected: [], custom: '先试点' }] });
+    const currentQuestion = { ...questionFixture(), eventId: 'question-b', toolCallId: 'ask-b' };
+    const oldPlan = eventFixture({ eventId: 'plan-a', type: 'agent.plan', sourceEventId: 'root-a',
+      toolCallId: 'exit-a', content: '# 旧计划' });
+    const revision = eventFixture({ eventId: 'revision-a', type: 'user.plan_confirmation', targetEventId: 'plan-a',
+      result: 'revise', feedback: '补充验证' });
+    const currentPlan = eventFixture({ eventId: 'plan-b', type: 'agent.plan', sourceEventId: 'root-a',
+      toolCallId: 'exit-b', content: '# 当前计划' });
+    const questionTurns = projectRuntimeEvents([userFixture(), oldQuestion, oldAnswer, currentQuestion, idleFixture('confirming')]);
+    const planTurns = projectRuntimeEvents([userFixture(), oldPlan, revision, currentPlan, idleFixture('confirming')]);
+
+    expect(questionTurns.filter((turn) => turn.kind === 'question')).toEqual([
+      expect.objectContaining({ eventId: 'question-a', answer: oldAnswer.type === 'user.question_answer' ? oldAnswer.answers : undefined }),
+      expect.objectContaining({ eventId: 'question-b', answer: undefined }),
+    ]);
+    expect(planTurns.filter((turn) => turn.kind === 'plan')).toEqual([
+      expect.objectContaining({ eventId: 'plan-a', decision: 'revise', rawMarkdown: '# 旧计划' }),
+      expect.objectContaining({ eventId: 'plan-b', decision: undefined, rawMarkdown: '# 当前计划' }),
+    ]);
   });
 });

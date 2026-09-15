@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import { nextTick, onMounted, onUnmounted, ref, useId, watch } from 'vue';
+import { computed, nextTick, ref, useId, watch } from 'vue';
 import { useCommandComposer } from '../composables/useCommandComposer';
 import type { CommandComposerProps } from '../composables/useCommandComposer';
 import ModeControl from './ModeControl.vue';
+import OverlayHost from './OverlayHost.vue';
+import type { OverlayCloseReason } from '../composables/useOverlayHost';
 
 const props = defineProps<CommandComposerProps & {
   mode: 'build' | 'plan'; thinking: boolean; modelId: string; models: string[]; configurationDisabled: boolean;
@@ -15,11 +17,15 @@ const submitButton = ref<HTMLButtonElement | null>(null);
 const chipButton = ref<HTMLButtonElement | null>(null);
 const moreButton = ref<HTMLButtonElement | null>(null);
 const menuItem = ref<HTMLDivElement | null>(null);
+const paletteList = ref<HTMLElement | null>(null);
 const commandButton = ref<HTMLButtonElement | null>(null);
 const id = useId();
 const listId = 'command-list-' + id;
 const hintId = 'command-hint-' + id;
 const menuId = 'composer-menu-' + id;
+const waitingMessage = computed(() => props.waitingFor === 'question' ? '请回答上方问题'
+  : props.waitingFor === 'plan' ? '请审核上方计划'
+    : props.waitingFor === 'tool' ? '请处理上方确认' : '');
 const {
   commandMode, selection, selected, paletteOpen, moreOpen, activeIndex, composing, locked,
   visible, count, showInput, feedback, submitDisabled, text, placeholder,
@@ -54,44 +60,37 @@ function onInput(event: Event): void {
   updateText((event.target as HTMLTextAreaElement).value);
   resizeInput();
 }
-function outsideClick(event: MouseEvent): void {
-  if (root.value && !event.composedPath().includes(root.value)) dismiss();
-}
 function containerEscape(event: KeyboardEvent): void {
   if (!event.defaultPrevented && !event.isComposing && !composing.value && event.keyCode !== 229) {
     event.preventDefault(); escape();
   }
 }
-function menuKeydown(event: KeyboardEvent): void {
-  if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
-    event.preventDefault();
-    menuItem.value?.focus();
-  }
+function closePaletteOverlay(reason: OverlayCloseReason): void {
+  if (reason === 'escape') escape();
+  else dismiss();
 }
-function menuFocusout(event: FocusEvent): void {
-  if (!(event.relatedTarget instanceof Node) || !(event.currentTarget as HTMLElement).contains(event.relatedTarget)) {
-    moreOpen.value = false;
-  }
+function closeMoreOverlay(reason: OverlayCloseReason): void {
+  moreOpen.value = false;
+  if (reason === 'escape') void nextTick(() => moreButton.value?.focus({ preventScroll: true }));
 }
 watch(text, () => void nextTick(resizeInput));
 watch(paletteOpen, (open) => emit('palette-change', open), { immediate: true });
 watch(activeIndex, async () => {
   await nextTick();
-  root.value?.querySelector('#' + CSS.escape(optionId(activeIndex.value)))?.scrollIntoView({ block: 'nearest' });
+  paletteList.value?.querySelector('#' + CSS.escape(optionId(activeIndex.value)))?.scrollIntoView({ block: 'nearest' });
 });
-onMounted(() => document.addEventListener('click', outsideClick));
-onUnmounted(() => document.removeEventListener('click', outsideClick));
 </script>
 
 <template>
   <div ref="root" class="composer-wrap" @keydown.esc="containerEscape">
-    <section v-if="commandMode && paletteOpen" class="command-palette" aria-label="命令清单">
+    <OverlayHost :open="commandMode && paletteOpen" :anchor="root" placement="top-start" match-anchor-width
+      initial-focus="none" class="command-palette" aria-label="命令清单" @request-close="closePaletteOverlay">
       <p v-if="catalogStatus === 'loading' || catalogStatus === 'stale'" role="status">正在读取命令…</p>
       <div v-else-if="catalogStatus === 'error'" role="alert">
         <p>{{ catalogError || '命令清单读取失败' }}</p>
         <button class="secondary-button" type="button" @click="load">重试清单</button>
       </div>
-      <ul v-else :id="listId" role="listbox" aria-label="可用命令">
+      <ul v-else :id="listId" ref="paletteList" role="listbox" aria-label="可用命令">
         <li v-for="(command, index) in visible" :id="optionId(index)" :key="command.name"
           role="option" :aria-selected="index === activeIndex" :class="{ selected: index === activeIndex }"
           @pointermove="activeIndex = index" @mousedown.prevent @click="choose(command)">
@@ -99,8 +98,9 @@ onUnmounted(() => document.removeEventListener('click', outsideClick));
         </li>
         <li v-if="!visible.length" class="palette-empty" role="presentation">{{ commands.length ? '没有匹配命令' : '当前没有可用命令' }}</li>
       </ul>
-    </section>
+    </OverlayHost>
     <div class="composer">
+      <p v-if="waitingMessage && text" class="composer-waiting-hint" role="status">{{ waitingMessage }}</p>
       <div class="composer-editor">
         <div v-if="selection" class="command-chip">
           <button ref="chipButton" class="command-chip-name" type="button" :disabled="locked || submitting"
@@ -131,10 +131,12 @@ onUnmounted(() => document.removeEventListener('click', outsideClick));
         <div class="composer-more">
           <button ref="moreButton" class="icon-button composer-more-button" type="button" aria-label="添加"
             aria-haspopup="menu" :aria-expanded="moreOpen" :aria-controls="menuId" :disabled="locked || submitting" @click="toggleMore">+</button>
-          <div v-if="moreOpen" ref="menuItem" :id="menuId" tabindex="-1" class="composer-menu" role="menu" aria-label="添加"
-            @keydown="menuKeydown" @focusout="menuFocusout">
-            <button type="button" role="menuitem" disabled title="暂未接入附件上传">添加附件 · 暂未接入</button>
-          </div>
+          <OverlayHost :open="moreOpen" :anchor="moreButton" placement="top-start" initial-focus="surface"
+            :id="menuId" class="composer-menu" role="menu" aria-label="添加" @request-close="closeMoreOverlay">
+            <div ref="menuItem" tabindex="-1">
+              <button type="button" role="menuitem" disabled title="暂未接入附件上传">添加附件 · 暂未接入</button>
+            </div>
+          </OverlayHost>
         </div>
         <div class="composer-session-tools" aria-label="会话配置">
           <ModeControl :mode="mode" :disabled="configurationDisabled" @select="emit('change-mode', $event)" />

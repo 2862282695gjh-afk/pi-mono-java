@@ -6,6 +6,7 @@ defineProps<{
   agent: AgentOption;
   creating: boolean;
   configured: boolean;
+  connectionReady?: boolean;
 }>();
 
 const emit = defineEmits<{ start: [] }>();
@@ -27,14 +28,14 @@ const emit = defineEmits<{ start: [] }>();
         <h2>{{ agent.name }}</h2>
         <p>{{ agent.description }}</p>
       </div>
-      <button type="button" :disabled="creating || !configured" @click="emit('start')">
-        <span>{{ creating ? '正在创建…' : '开始会话' }}</span>
+      <button type="button" :disabled="creating || !configured || connectionReady === false" @click="emit('start')">
+        <span>{{ creating ? '创建中…' : connectionReady === false ? '连接未就绪' : '开始会话' }}</span>
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 7 7-7 7" /></svg>
       </button>
     </article>
 
     <p v-if="!configured" class="setup-note">
-      当前环境尚未配置默认 Agent。开发环境可在下方诊断入口临时指定。
+      请在开发者设置中配置默认 Agent，或从 Session 诊断创建会话。
     </p>
     <div class="welcome-promises" aria-label="调试工作台能力">
       <span>模型原始推理</span><span>工具确认与停止</span><span>Slash 命令</span>

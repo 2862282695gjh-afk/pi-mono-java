@@ -1,10 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { ref } from 'vue';
 import { useRuntimeApi } from './useRuntimeApi';
 import { eventFixture, idleFixture, jsonResponse, questionFixture, sessionFixture, streamResponse, userFixture } from '../runtime/fixtures';
 import { memoryStorage } from '../runtime/storageFixture';
 import { SessionIndexRepository } from '../runtime/sessionIndex';
 import { freezeInvocation } from '../runtime/commands';
 import type { RuntimeEvent } from '../types/runtime';
+import type { RuntimeEnvironmentSource } from '../runtime/runtimeConfiguration';
 
 function setup(history: RuntimeEvent[] = [], state: 'idle' | 'running' = 'idle') {
   const fetcher = vi.fn<(url: RequestInfo | URL, init?: RequestInit) => Promise<Response>>();
@@ -112,6 +114,36 @@ describe('Claw Runtime Session Events coordinator', () => {
     expect(requestAt(fetcher, 1).headers.get('if-match')).toBe('"b1"');
     expect(observed).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'session-b', displayName: '其他页签名称' }));
     expect(runtime.session.value?.sessionId).toBe('session-a');
+  });
+  it('freezes detached read and delete requests to their invocation connection without changing the active view', async () => {
+    let connection = { apiBase: 'https://backend-a.test', backendIdentity: 'direct:https://backend-a.test', callerId: 'caller-a' };
+    const environment: RuntimeEnvironmentSource = {
+      ready: ref(true), revision: ref(0), snapshot: () => ({ ...connection }),
+    };
+    const first = deferred<Response>();
+    const second = deferred<Response>();
+    const fetcher = vi.fn()
+      .mockReturnValueOnce(first.promise)
+      .mockReturnValueOnce(second.promise);
+    vi.stubGlobal('fetch', fetcher);
+    const runtime = useRuntimeApi(undefined, undefined, undefined, environment);
+    runtime.session.value = sessionFixture({ sessionId: 'active-session' });
+
+    const reading = runtime.readNamedSession('detached-session');
+    connection = { apiBase: 'https://backend-b.test', backendIdentity: 'direct:https://backend-b.test', callerId: 'caller-b' };
+    environment.revision.value += 1;
+    first.resolve(jsonResponse(sessionFixture({ sessionId: 'detached-session' }), { ETag: '"a1"' }));
+    await expect(reading).resolves.toMatchObject({ sessionId: 'detached-session' });
+    expect(String(fetcher.mock.calls[0][0])).toBe('https://backend-a.test/campusclaw-service/v1/sessions/detached-session');
+    expect(requestAt(fetcher, 0).headers.get('x-hw-id')).toBe('caller-a');
+    expect(runtime.session.value?.sessionId).toBe('active-session');
+
+    const deleting = runtime.deleteNamedSession('detached-session');
+    second.resolve(new Response(null, { status: 204 }));
+    await deleting;
+    expect(String(fetcher.mock.calls[1][0])).toBe('https://backend-b.test/campusclaw-service/v1/sessions/detached-session');
+    expect(requestAt(fetcher, 1).headers.get('x-hw-id')).toBe('caller-b');
+    expect(runtime.session.value?.sessionId).toBe('active-session');
   });
   it('loads integer pages and rejects repeated or opaque continuations without replacing visible history', async () => {
     const { runtime, fetcher } = setup();

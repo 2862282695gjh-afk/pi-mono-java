@@ -7,15 +7,20 @@ import { codePointLength, decodeHistory, decodeModels, decodeSession, invalidRes
 import type { PendingOperation, PendingStore } from '../runtime/sessionIndex';
 import { executionState, executionTodos, mergeEvent, reconcileEvents } from '../runtime/eventStore';
 import { normalizeQuestionAnswers, questionAnswerEvent } from '../runtime/questionInteraction';
+import { defaultRuntimeConnection } from '../runtime/runtimeConfiguration';
+import type { RuntimeConnectionSnapshot, RuntimeEnvironmentSource } from '../runtime/runtimeConfiguration';
 
 const API_PATH = '/campusclaw-service/v1';
-const apiBase = (import.meta.env.VITE_CAMPUSCLAW_API_BASE ?? '').replace(/\/+$/u, '');
-const callerId = import.meta.env.VITE_CAMPUSCLAW_CALLER_ID?.trim() || 'campusclaw-web';
-type Context = { generation: number; sessionId: string; signal: AbortSignal };
+type Context = {
+  generation: number;
+  sessionId: string;
+  signal: AbortSignal;
+  connection: RuntimeConnectionSnapshot;
+};
 
 /** 仅内部 Runtime 工作台装配；不兼容或回退到 Mate 公共接口。 */
 export function useRuntimeApi(pendingStore?: PendingStore, onCreated?: (session: RuntimeSession) => void,
-  onObservedSession?: (session: RuntimeSession) => void) {
+  onObservedSession?: (session: RuntimeSession) => void, environment?: RuntimeEnvironmentSource) {
   const session = ref<RuntimeSession | null>(null);
   const etag = ref('');
   const models = ref<string[]>([]);
@@ -55,10 +60,14 @@ export function useRuntimeApi(pendingStore?: PendingStore, onCreated?: (session:
     && !recovering.value && !streaming.value && !controlPending.value && !stopping.value && !commandPending.value);
   const canStop = computed(() => session.value?.state === 'running' && !receiptUnknown.value && !recovering.value && !!execution.value.rootId && !execution.value.terminal
     && !stopping.value && !controlPending.value && !messagePending.value);
+  const connectionSnapshot = () => environment?.snapshot() ?? defaultRuntimeConnection();
 
   function context(): Context {
     if (!session.value) throw new RuntimeApiError({ code: 'SESSION_REQUIRED', message: '请先新建或恢复会话。' });
-    return { generation, sessionId: session.value.sessionId, signal: viewController.signal };
+    return detachedContext(session.value.sessionId);
+  }
+  function detachedContext(sessionId: string): Context {
+    return { generation, sessionId, signal: viewController.signal, connection: connectionSnapshot() };
   }
   function current(ctx: Context): boolean { return generation === ctx.generation && !ctx.signal.aborted; }
   function check(ctx: Context): void { if (!current(ctx)) throw new DOMException('View changed', 'AbortError'); }
@@ -84,11 +93,18 @@ export function useRuntimeApi(pendingStore?: PendingStore, onCreated?: (session:
   }
   async function request(ctx: Context, suffix: string, init: RequestInit = {}): Promise<Response> {
     check(ctx);
-    const headers = new Headers({ Accept: 'application/json', 'Accept-Language': navigator.language.startsWith('zh') ? 'zh-CN' : 'en-US', 'X-HW-ID': callerId });
+    const headers = new Headers({ Accept: 'application/json', 'Accept-Language': navigator.language.startsWith('zh') ? 'zh-CN' : 'en-US', 'X-HW-ID': ctx.connection.callerId });
     new Headers(init.headers).forEach((value, key) => headers.set(key, value));
+    if (import.meta.env.DEV && environment && !ctx.connection.apiBase) {
+      if (ctx.connection.proxyVersion === undefined || !ctx.connection.proxyKey) {
+        throw new RuntimeApiError({ code: 'DEV_PROXY_CONFIG_REQUIRED', message: '请先读取并应用本地代理配置。' });
+      }
+      headers.set('X-CampusClaw-Proxy-Version', String(ctx.connection.proxyVersion));
+      headers.set('X-CampusClaw-Proxy-Key', ctx.connection.proxyKey);
+    }
     let response: Response;
     try {
-      response = await fetch(`${apiBase}${API_PATH}${suffix}`, { ...init, headers, signal: ctx.signal, cache: 'no-store' });
+      response = await fetch(`${ctx.connection.apiBase}${API_PATH}${suffix}`, { ...init, headers, signal: ctx.signal, cache: 'no-store' });
     } catch (error) {
       check(ctx);
       const writes = !!init.method && init.method !== 'GET';
@@ -135,12 +151,12 @@ export function useRuntimeApi(pendingStore?: PendingStore, onCreated?: (session:
       receiptUnknown.value = pendingOperations.value.some((item) => !item.receiptId);
       if (pendingOperations.value.length) uncertainty.value = '正在核对上次提交的结果，不会重复发送。';
     }
-    const ctx = { generation, sessionId, signal: viewController.signal };
+    const ctx = detachedContext(sessionId);
     try { return await refreshSession(ctx); } catch (error) { throw publish(error, ctx); }
   }
   async function createSession(agentId: string): Promise<RuntimeSession> {
     clearSessionView();
-    const ctx = { generation, sessionId: '', signal: viewController.signal };
+    const ctx = detachedContext('');
     try {
       const response = await request(ctx, `/agents/${encodeURIComponent(agentId)}/sessions`, { method: 'POST' });
       const created = decodeSession(await result(response));
@@ -235,9 +251,13 @@ export function useRuntimeApi(pendingStore?: PendingStore, onCreated?: (session:
     if (value.sessionId !== ctx.sessionId || !version || !/^"[^"\r\n]+"$/u.test(version)) invalidResponse();
     return { value, etag: version };
   }
+  async function readNamedSession(sessionId: string): Promise<RuntimeSession> {
+    if (!sessionId) throw new RuntimeApiError({ message: '请输入 Session ID。' });
+    return (await readDetachedSession(detachedContext(sessionId))).value;
+  }
   async function renameSession(sessionId: string, displayName: string): Promise<RuntimeSession> {
     if (sessionId === session.value?.sessionId) return changeSetting({ displayName });
-    const ctx = { generation, sessionId, signal: viewController.signal };
+    const ctx = detachedContext(sessionId);
     try {
       const resource = await readDetachedSession(ctx);
       const response = await request(ctx, path(ctx), { method: 'POST', headers: {
@@ -261,6 +281,12 @@ export function useRuntimeApi(pendingStore?: PendingStore, onCreated?: (session:
     const ctx = context();
     try { await request(ctx, path(ctx), { method: 'DELETE' }); check(ctx); clearSessionView(); }
     catch (error) { throw publish(error, ctx); }
+  }
+  async function deleteNamedSession(sessionId: string): Promise<void> {
+    if (!sessionId) throw new RuntimeApiError({ message: '请输入 Session ID。' });
+    const ctx = detachedContext(sessionId);
+    await request(ctx, path(ctx), { method: 'DELETE' });
+    check(ctx);
   }
   function writeHeaders(custom?: HeadersInit, stream = true): Headers {
     const headers = new Headers(custom);
@@ -469,7 +495,7 @@ export function useRuntimeApi(pendingStore?: PendingStore, onCreated?: (session:
   return { session, etag, models, events, hasSession, streaming, running, canSend, canStop, execution, todoSnapshot, stopping,
     messagePending, controlPending, recovering, historyReady, uncertainty, receiptUnknown, lastError, lastErrorCode,
     commands, catalogStatus, catalogError, commandResult, commandPending, pendingOperations, clearSessionView, clearError,
-    createSession, getSession, deleteSession, listModels, loadHistory, recover, sendMessage, interrupt, confirmTool, confirmPlan, answerQuestion,
+    createSession, getSession, readNamedSession, deleteSession, deleteNamedSession, listModels, loadHistory, recover, sendMessage, interrupt, confirmTool, confirmPlan, answerQuestion,
     changeModel: (modelId: string) => changeSetting({ modelId }),
     changeThinking: (thinking: boolean) => changeSetting({ thinking }),
     changeMode: (mode: 'build' | 'plan') => changeSetting({ mode }),

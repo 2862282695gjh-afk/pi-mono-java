@@ -38,7 +38,7 @@ async function copyRound(): Promise<void> {
     if (!navigator.clipboard) throw new Error('Clipboard API unavailable');
     await navigator.clipboard.writeText(props.round.copySource);
     copied.value = true;
-    copyFeedback.value = '本轮回答已复制';
+    copyFeedback.value = '已复制';
   } catch {
     copied.value = false;
     copyFeedback.value = '复制失败，请手动选择文本';
@@ -93,8 +93,8 @@ async function copyRound(): Promise<void> {
         <button
           class="round-copy-button"
           type="button"
-          :aria-label="copied ? '本轮回答已复制' : '复制本轮回答'"
-          :title="copied ? '已复制' : '复制本轮回答'"
+          :aria-label="copied ? '已复制' : '复制回答'"
+          :title="copied ? '已复制' : '复制回答'"
           @click="copyRound"
         >
           <svg v-if="copied" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6" /></svg>
