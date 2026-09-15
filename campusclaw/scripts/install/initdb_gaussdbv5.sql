@@ -6,22 +6,6 @@ ALTER DATABASE claw OWNER TO {dbUser};
 ALTER SCHEMA claw OWNER TO {dbUser};
 GRANT all privileges ON DATABASE claw TO {dbUser};
 
-DROP TABLE IF EXISTS t_session_materialized;
-DROP TABLE IF EXISTS t_session_stats;
-DROP TABLE IF EXISTS t_session_event_projection;
-DROP TABLE IF EXISTS t_session_question_answers;
-DROP TABLE IF EXISTS t_session_tool_confirmations;
-DROP TABLE IF EXISTS t_session_plan_confirmations;
-DROP TABLE IF EXISTS t_session_execution_segment_events;
-DROP TABLE IF EXISTS t_session_execution_segments;
-DROP TABLE IF EXISTS t_session_executions;
-DROP TABLE IF EXISTS t_session_events;
-DROP TABLE IF EXISTS t_session_records;
-DROP TABLE IF EXISTS t_session_sequences;
-DROP TABLE IF EXISTS t_session_entries;
-DROP TABLE IF EXISTS t_session_cleanup_task;
-DROP TABLE IF EXISTS t_session_tombstone;
-DROP TABLE IF EXISTS t_sessions;
 DROP TABLE IF EXISTS t_sessions;
 CREATE TABLE t_sessions (
     id                 VARCHAR(128)   PRIMARY KEY,

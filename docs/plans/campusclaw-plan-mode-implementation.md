@@ -1,6 +1,6 @@
 # CampusClaw 计划模式实施说明
 
-> 版本：1.2.0；日期：2026-09-15。
+> 版本：1.2.1；日期：2026-09-15。
 >
 > Java 变更前源码基线：`29ebec6a8cad99896414211cda28c6fffec71bee`。
 >
@@ -105,8 +105,8 @@ Prompt 实现，现有业务工具权限继续生效，不能据此宣称 plan �
 
 没有新增 Maven 或前端直接依赖。六个固定提示词位于
 `modules/coding-agent-cli/src/main/resources/prompts/plan/`，由同步脚本一并进入公司镜像；
-数据库变更只进入首版全量安装 Schema；产品尚未发布，不提供迁移或升级脚本。规范 SQL 和公司生成 SQL
-均按外键依赖顺序清理，可在同一专用 Schema 连续运行完整安装。
+数据库变更只进入首版全量安装 Schema；产品尚未发布，不提供迁移或升级脚本。模块 SQL 保留原有清理段；
+公司生成 SQL 沿用每张表一次 `DROP TABLE IF EXISTS` 紧邻 `CREATE TABLE` 的格式，不复制模块的集中清理段。
 
 ## 外部工程边界
 
@@ -123,11 +123,11 @@ JAR HTTP 测试使用受控模型响应，均不等同于企业 mate-service 或
 | 范围 | 必须证明的内容 | 当前记录 |
 |---|---|---|
 | Java / 格式 | JDK 21 编译、单元回归、Spotless、main/test Checkstyle、方法长度与边界规范 | 全 Reactor `clean verify` 通过：373 类、2085 项，0 失败、错误、跳过；Spotless/Checkstyle 复查通过 |
-| 真实数据库 | 双重完整安装；审核/问答交接、事务回滚、并发、停止和超时竞争 | 专用 openGauss 7.0.0-RC3：16 个 IT 类 140 项通过；新增问答 IT 4 项含真实约束失败整笔回滚；不宣称生产 GaussDB 验证 |
+| 真实数据库 | 模块 Schema 重复安装；审核/问答交接、事务回滚、并发、停止和超时竞争 | 专用 openGauss 7.0.0-RC3：16 个 IT 类 140 项通过；新增问答 IT 4 项含真实约束失败整笔回滚；不宣称生产 GaussDB 验证 |
 | 实际 JAR HTTP | question → answer → 原 plan 根 → approve/build/TODO；并发回答、停止及历史同形 | 受控模型与真实 JAR/openGauss 探针通过；模型历史只含原 user 与可信 tool answer，问答展示事件未重复注入 |
 | 前端 | 严格协议、问题卡、模式与 Dock 交互、会话索引迁移、直接改名、重复提交和未知写入不重发 | `npm test`：19 文件、189 项通过；`npm run build` 通过；项目没有独立 lint script |
 | 独立契约验收 | 160 个共享帧、50 个字段/Unicode 边界、4 个 Java 实际投影、10 个 reducer 场景及浏览器交互 | 214 个 decoder 契约、10 个状态场景和 18 项浏览器验收通过；合成浏览器验收不替代企业公共 Chat |
-| 公司镜像 | 代码、SQL 和六个 Prompt 同步，生成 SQL 可重复安装 | `sync-campusclaw.sh --no-verify` 及布局检查通过；公司编译因 `com.huawei.hicampus:NativeParent:26.0.0-SNAPSHOT` 无法解析而受阻，未进入源码编译 |
+| 公司镜像 | 代码、SQL 和六个 Prompt 同步；公司头不变，每张表仅一条 DROP 且紧邻 CREATE | `sync-campusclaw.sh --no-verify` 及布局检查通过；公司编译因 `com.huawei.hicampus:NativeParent:26.0.0-SNAPSHOT` 无法解析而受阻，未进入源码编译 |
 
 Java 测试质量脚本 `check_test_quality.py` 在本机不可用，脚本检查未执行；新增和修改测试已人工
 核对断言有效性、被测对象、边界与清理。AST 检查之外，Unicode 转义和 record/interface 的排版
@@ -141,3 +141,4 @@ Java 测试质量脚本 `check_test_quality.py` 在本机不可用，脚本检�
 | 1.0.0 | 2026-09-15 | 接入 Session 模式、完整计划审核与实施进度事件，记录运行时和企业适配边界。 |
 | 1.1.0 | 2026-09-15 | 接入严格结构化问答、跨实例答案交接和可恢复问题卡。 |
 | 1.2.0 | 2026-09-15 | 完成 Claw 前端模式菜单、问题与方案卡、Dock 折叠、会话索引及 Sidebar 交互对齐。 |
+| 1.2.1 | 2026-09-15 | 公司初始化脚本每张表只保留建表前的一条 DROP，并校验无额外清理段。 |

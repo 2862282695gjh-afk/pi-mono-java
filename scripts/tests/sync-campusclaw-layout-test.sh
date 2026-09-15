@@ -40,11 +40,10 @@ cmp -s \
   <(awk '$1 == "CREATE" && $2 == "TABLE" { print $3 }' "$MIRROR_SCRIPT") \
   || fail "corporate database tables differ from canonical schema"
 
-table_count="$(awk '$1 == "CREATE" && $2 == "TABLE" { count++ } END { print count }' "$CANONICAL_SCHEMA")"
 cmp -s \
-  <(awk -v limit="$table_count" '$1 == "DROP" && ++count <= limit { print }' "$CANONICAL_SCHEMA") \
-  <(awk -v limit="$table_count" '$1 == "DROP" && ++count <= limit { print }' "$MIRROR_SCRIPT") \
-  || fail "corporate database cleanup order differs from canonical schema"
+  <(awk '$1 == "CREATE" && $2 == "TABLE" { print "DROP TABLE IF EXISTS " $3 ";" }' "$CANONICAL_SCHEMA") \
+  <(awk '$1 == "DROP" && $2 == "TABLE" { print }' "$MIRROR_SCRIPT") \
+  || fail "corporate database script must drop each table exactly once in creation order"
 
 if grep -Eiq '^[[:space:]]*(BEGIN|COMMIT)[[:space:]]*;' "$MIRROR_SCRIPT"; then
   fail "corporate database install script contains BEGIN or COMMIT"

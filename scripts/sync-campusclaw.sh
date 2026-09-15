@@ -110,10 +110,6 @@ emit_corporate_table_ddl() {
       print line
     }
     $1 == "BEGIN;" || $1 == "COMMIT;" { next }
-    !emitting && $1 == "DROP" && $2 == "TABLE" {
-      emit($0)
-      next
-    }
     $1 == "CREATE" && $2 == "TABLE" {
       emitting = 1
       emit("DROP TABLE IF EXISTS " $3 ";")
@@ -151,7 +147,7 @@ validate_table_ddl() {
     }
     { previous_line = $0 }
     END {
-      if (create_count == 0 || drop_count != 2 * create_count) {
+      if (create_count == 0 || drop_count != create_count) {
         printf "table DDL count mismatch: creates=%d drops=%d\n", \
           create_count, drop_count > "/dev/stderr"
         failed = 1
