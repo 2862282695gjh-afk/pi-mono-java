@@ -117,7 +117,7 @@ class RuntimeEntryCodecTest {
     }
 
     @Test
-    void storesUsageOnlyInInternalRecordAndRestoresReasoningSignature() {
+    void storesUsageOnlyInInternalRecordAndPreservesLegacyProviderString() {
         RuntimeEntryCodec codec = codec();
         Usage usage = new Usage(10, 5, 2, 1, 18, new Cost(0.1, 0.2, 0.01, 0.02, 0.33));
         AssistantMessage original = new AssistantMessage(
@@ -149,6 +149,7 @@ class RuntimeEntryCodecTest {
         assertThat(codec.toSseData(entry, Locale.US)).doesNotContainKey("usage");
         assertThat(record.getPayload()).contains("\"cause\":\"assistant\"", "\"totalTokens\":18");
         assertThat(restored.usage()).isEqualTo(Usage.empty());
+        assertThat(restored.provider()).isEqualTo("mate-model-manager");
         assertThat(((ThinkingContent) restored.content().getFirst()).thinkingSignature())
                 .isEqualTo("signature");
     }

@@ -32,9 +32,11 @@
 <body>
 <main>
   <header>
-    <p><span class="status">Accepted</span> ADR-0025 · 2026-08-25</p>
+    <p><span class="status">Accepted；Provider 身份条目被部分取代</span> ADR-0025 · 2026-08-25</p>
     <h1>采用 Mate Chat 通用 Provider 与独立 Usage Record</h1>
     <p>决策范围：CampusClaw 模型调用、CampusMate 透明代理、Runtime Usage 持久化。</p>
+    <p>Provider ID 与默认适配器范围由 <a href="0109-use-campusmate-only-provider.md">ADR-0109</a>
+      取代；本 ADR 的 Chat、Usage、错误和取消决策继续有效。</p>
   </header>
 
   <section>
@@ -102,7 +104,8 @@
       如未来需要统计查询，应单独冻结接口。</p>
     <p>完整实现设计见 <a href="../designs/model-manager-chat-v2.md">Mate Chat 通用 Provider 2.0 实现设计</a>；
       CampusMate 单一服务地址与 Endpoint 目录见
-      <a href="0026-unify-campusmate-client-configuration.html">ADR-0026</a>。</p>
+      <a href="0026-unify-campusmate-client-configuration.html">ADR-0026</a>；当前 Provider 身份与适配器
+      范围见 <a href="0109-use-campusmate-only-provider.md">ADR-0109</a>。</p>
   </section>
 </main>
 </body>

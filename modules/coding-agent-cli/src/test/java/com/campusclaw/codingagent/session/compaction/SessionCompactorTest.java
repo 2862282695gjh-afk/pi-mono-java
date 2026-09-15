@@ -215,6 +215,53 @@ class SessionCompactorTest {
     }
 
     @Test
+    void doesNotTreatLegacyProviderIdentityAsCampusMate() {
+        Model current = new Model(
+                "managed-model",
+                "Managed model",
+                Api.OPENAI_COMPLETIONS,
+                Provider.CAMPUSMATE,
+                null,
+                true,
+                List.of(InputModality.TEXT),
+                new ModelCost(0, 0, 0, 0),
+                1_000,
+                200,
+                null,
+                null,
+                null);
+        AssistantMessage legacy = new AssistantMessage(
+                List.of(),
+                Api.OPENAI_COMPLETIONS.value(),
+                "mate-model-manager",
+                "managed-model",
+                null,
+                Usage.empty(),
+                StopReason.ERROR,
+                "prompt is too long",
+                2L);
+        AssistantMessage campusMate = new AssistantMessage(
+                List.of(),
+                Api.OPENAI_COMPLETIONS.value(),
+                Provider.CAMPUSMATE.value(),
+                "managed-model",
+                null,
+                Usage.empty(),
+                StopReason.ERROR,
+                "prompt is too long",
+                3L);
+
+        assertThat(compactor(true, 100, 10)
+                        .decide(List.of(legacy), current, false)
+                        .action())
+                .isEqualTo(AutomaticCompactionDecision.Action.NONE);
+        assertThat(compactor(true, 100, 10)
+                        .decide(List.of(campusMate), current, false)
+                        .action())
+                .isEqualTo(AutomaticCompactionDecision.Action.OVERFLOW_RETRY);
+    }
+
+    @Test
     void sendsStructuredPromptWithIsolatedSummaryOptions() {
         stubSummary("part onepart two", usage(10, 5));
         SessionCompactor compactor = compactor(true, 100, 1);

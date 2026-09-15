@@ -32,8 +32,6 @@
         <spring-boot.version>3.4.5</spring-boot.version>
 
         <!-- Third-party versions -->
-        <anthropic-java.version>2.18.0</anthropic-java.version>
-        <openai-java.version>4.29.1</openai-java.version>
         <json-schema-validator.version>1.5.2</json-schema-validator.version>
         <mockwebserver.version>4.12.0</mockwebserver.version>
         <spotless.version>2.44.4</spotless.version>
@@ -77,18 +75,6 @@
                 <artifactId>campusclaw-cron</artifactId>
                 <version>${project.version}</version>
             </dependency>
-            <!-- LLM SDKs -->
-            <dependency>
-                <groupId>com.anthropic</groupId>
-                <artifactId>anthropic-java</artifactId>
-                <version>${anthropic-java.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>com.openai</groupId>
-                <artifactId>openai-java</artifactId>
-                <version>${openai-java.version}</version>
-            </dependency>
-
             <!-- JSON Schema -->
             <dependency>
                 <groupId>com.networknt</groupId>

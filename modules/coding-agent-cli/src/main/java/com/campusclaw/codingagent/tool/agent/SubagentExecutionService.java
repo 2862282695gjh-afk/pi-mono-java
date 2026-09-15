@@ -17,9 +17,10 @@ import com.campusclaw.ai.types.AssistantMessage;
 import com.campusclaw.ai.types.ContentBlock;
 import com.campusclaw.ai.types.Model;
 import com.campusclaw.ai.types.TextContent;
-import com.campusclaw.codingagent.model.ModelCatalogService;
 import com.campusclaw.codingagent.runtime.MateServiceClient.AgentReference;
 import com.campusclaw.codingagent.runtime.PreparedAgentRuntime;
+import com.campusclaw.codingagent.runtimeapi.agent.AgentDirectorySnapshots;
+import com.campusclaw.codingagent.runtimeapi.model.RuntimeModelManager;
 import com.campusclaw.codingagent.session.AgentSessionFactory;
 import com.campusclaw.codingagent.session.ManagedAgentSession;
 import com.campusclaw.codingagent.session.ManagedAgentSessionRequest;
@@ -40,11 +41,11 @@ public class SubagentExecutionService {
 
     private final AgentSessionFactory sessionFactory;
 
-    private final ModelCatalogService modelCatalogService;
+    private final RuntimeModelManager modelManager;
 
-    public SubagentExecutionService(AgentSessionFactory sessionFactory, ModelCatalogService modelCatalogService) {
+    public SubagentExecutionService(AgentSessionFactory sessionFactory, RuntimeModelManager modelManager) {
         this.sessionFactory = sessionFactory;
-        this.modelCatalogService = modelCatalogService;
+        this.modelManager = modelManager;
     }
 
     public AgentToolResult execute(
@@ -121,11 +122,7 @@ public class SubagentExecutionService {
         if (configured.isEmpty()) {
             return inherited;
         }
-        String modelName = configured.get();
-        return modelCatalogService.getAvailableModels().stream()
-                .filter(model -> matchesConfiguredModel(model, modelName))
-                .findFirst()
-                .orElse(inherited);
+        return modelManager.resolveDefaultModel(AgentDirectorySnapshots.from(childRuntime));
     }
 
     private Model resolveAllowedChildModel(PreparedAgentRuntime childRuntime, Model inherited) {
@@ -217,13 +214,8 @@ public class SubagentExecutionService {
     }
 
     private static boolean matchesConfiguredModel(Model model, String configured) {
-        int slash = configured.indexOf('/');
-        if (slash < 0) {
-            return model.id().equals(configured);
-        }
-        String provider = configured.substring(0, slash);
-        String modelId = configured.substring(slash + 1);
-        return model.provider().value().equals(provider) && model.id().equals(modelId);
+        String qualified = model.provider().value() + "/" + model.id();
+        return model.id().equals(configured) || qualified.equals(configured);
     }
 
     private static AgentToolResult textResult(String text) {

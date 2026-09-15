@@ -34,7 +34,7 @@ public enum Provider {
     VERCEL_AI_GATEWAY("vercel-ai-gateway"),
     HUGGINGFACE("huggingface"),
     OPENCODE("opencode"),
-    MATE_MODEL_MANAGER("mate-model-manager"),
+    CAMPUSMATE("campusmate"),
     CUSTOM("custom");
 
     private final String value;

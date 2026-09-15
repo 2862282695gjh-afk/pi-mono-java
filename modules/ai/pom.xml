@@ -23,16 +23,6 @@
             <groupId>com.campusclaw</groupId>
             <artifactId>campusclaw-common</artifactId>
         </dependency>
-        <!-- LLM SDKs -->
-        <dependency>
-            <groupId>com.anthropic</groupId>
-            <artifactId>anthropic-java</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>com.openai</groupId>
-            <artifactId>openai-java</artifactId>
-        </dependency>
-
         <!-- Jakarta -->
         <dependency>
             <groupId>jakarta.annotation</groupId>

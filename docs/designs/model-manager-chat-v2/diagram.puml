@@ -1,33 +1,34 @@
 @startuml model_manager_chat_call
-' Source baseline: pi-mono-java 0d7a12e1dd89eed52f6e12db717fd5703b6b2125.
+' Implementation starting point: pi-mono-java 29ebec6a8cad99896414211cda28c6fffec71bee.
 ' Source evidence: modules/ai/src/main/java/com/campusclaw/ai/CampusClawAiService.java, CampusClawAiService.streamSimple.
-' Source evidence: modules/ai/src/main/java/com/campusclaw/ai/provider/mate/MateServiceModelManagerProvider.java, streamSimple.
+' Observed source: modules/ai/src/main/java/com/campusclaw/ai/provider/mate/MateServiceModelManagerProvider.java, streamSimple.
+' This change: modules/ai/src/main/java/com/campusclaw/ai/provider/mate/CampusMateProvider.java, streamSimple.
 ' Source evidence: modules/ai/src/main/java/com/campusclaw/ai/provider/mate/MateChatRequestMapper.java, map.
 ' Source evidence: modules/ai/src/main/java/com/campusclaw/ai/provider/mate/MateChatSseParser.java, accept.
-' Observed behavior: the merged baseline routes legacy providers by Api and has no Mate Chat provider.
-' Architecture change: managed providers are keyed by ProviderId and take precedence over legacy Api routing.
-' Product constraint: CampusClaw calls the five Model Manager operations without application credentials.
+' Observed behavior: the starting point routes Mate Chat through the mate-model-manager identity and retains vendor Api adapters.
+' Architecture change: the product default uses the campusmate ProviderId and removes vendor Api adapters.
+' Product constraint: CampusClaw calls the CampusMate Chat operation without application credentials.
 ' Security hardening: only Mate owns upstream endpoints, model identifiers, credentials, and controlled headers.
 title Mate Chat provider call
 actor AgentLoop
 component CampusClawAiService
 component AiProviderRegistry
-component MateServiceModelManagerProvider
+component CampusMateProvider
 component CampusMate
 cloud "Upstream LLM" as Upstream
 
 AgentLoop -> CampusClawAiService: Context and Model
-CampusClawAiService -> AiProviderRegistry: resolve mate-model-manager
+CampusClawAiService -> AiProviderRegistry: resolve campusmate
 AiProviderRegistry --> CampusClawAiService: ProviderAuth.none
-CampusClawAiService -> MateServiceModelManagerProvider: streamSimple
-MateServiceModelManagerProvider -> MateServiceModelManagerProvider: map Context to Chat JSON
-MateServiceModelManagerProvider -> CampusMate: POST /mate-service/v1/LLM/chat\nno application credentials
+CampusClawAiService -> CampusMateProvider: streamSimple
+CampusMateProvider -> CampusMateProvider: map Context to Chat JSON
+CampusMateProvider -> CampusMate: POST /mate-service/v1/LLM/chat\nno application credentials
 CampusMate -> Upstream: rewrite model and inject private route credentials
 Upstream --> CampusMate: raw OpenAI Chat SSE
-CampusMate --> MateServiceModelManagerProvider: byte-transparent SSE
-MateServiceModelManagerProvider --> AgentLoop: AssistantMessageEvent
-AgentLoop -> MateServiceModelManagerProvider: cancel subscription
-MateServiceModelManagerProvider -> CampusMate: close HTTP/SSE connection
+CampusMate --> CampusMateProvider: byte-transparent SSE
+CampusMateProvider --> AgentLoop: AssistantMessageEvent
+AgentLoop -> CampusMateProvider: cancel subscription
+CampusMateProvider -> CampusMate: close HTTP/SSE connection
 @enduml
 
 @startuml runtime_usage_persistence

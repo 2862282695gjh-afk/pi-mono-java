@@ -2,22 +2,24 @@
 
 | 属性 | 值 |
 |---|---|
-| 文档版本 | 1.2.0 |
+| 文档版本 | 1.3.0 |
 | 状态 | Implemented |
-| 更新日期 | 2026-09-01 |
-| 规范来源 | `/Users/z/设计/model-manager-provider-contract/README.md` 2.4.0 |
+| 更新日期 | 2026-09-15 |
+| 规范来源 | `pi-mono-java-design@0a74625e0dd4ea6387b6765c7cb0f9105970d05c`，`02-服务与接口/03-模型管理Provider契约/README.md` 2.7.0 |
 | pi-mono 基线 | `5cd93f688aaab89dbb6dfa4aca535f21796ae185` |
 | 设计分析时 pi-mono-java 基线 | `d649866a6cae967ace18ceaeb9597edd47e5721e` |
 | 实施前 pi-mono-java 主线 | `0d7a12e1dd89eed52f6e12db717fd5703b6b2125` |
 | 实施前 mate-service 主线 | `6d5e6f3714e1cf8744d187a4796ca06300ad7e33` |
 | 共享配置实施前源码基线 | `56be8eee59415a5f86658d6635a7b7e8891263d3` |
+| CampusMate 身份实施起点 | `29ebec6a8cad99896414211cda28c6fffec71bee` |
 | 配置决策 | [ADR-0026](../decisions/0026-unify-campusmate-client-configuration.html) |
+| 当前身份决策 | [ADR-0109](../decisions/0109-use-campusmate-only-provider.md) |
 
 > 公司镜像相关路径和标识按 2026-09-01 的当前仓库位置展示；历史提交 SHA 仍是对应行为证据。
 
 ## 1. 结论与边界
 
-CampusClaw 新增稳定身份为 `mate-model-manager` 的通用 Provider，调用
+CampusClaw 的模型调用使用稳定身份 `campusmate` 和 `CampusMateProvider`，调用
 `POST /mate-service/v1/LLM/chat`。调用方只发送 Mate 模型 ID 与 OpenAI Chat 风格请求，
 不发送 `agentId/sessionId/apiKey/baseUrl/providerId/upstreamModelId` 或身份头。CampusMate 负责
 私有上游路由、模型替换、凭据注入和字节透明 SSE 转发。
@@ -62,7 +64,7 @@ CampusClaw 新增稳定身份为 `mate-model-manager` 的通用 Provider，调�
 
 | 分类 | 决策 | 原因 |
 |---|---|---|
-| 架构改造 | 新增 `AiProviderRegistry`，按 `ProviderId` 优先路由。 | 同一 `Api` 可由多个 Provider 实现，不能互相覆盖。 |
+| 架构改造 | `AiProviderRegistry` 按 `ProviderId=campusmate` 优先路由。 | 同一 `Api` 可由多个 Provider 实现，不能互相覆盖。 |
 | 产品约束 | CampusClaw→CampusMate 模型调用固定 `ProviderAuth.none()`。 | 五个 Model Manager 接口处于内部网关信任边界。 |
 | 安全加固 | CampusClaw 不持有或发送上游 endpoint、私有模型 ID和凭据。 | 上游秘密只存在于 CampusMate。 |
 | 产品约束 | 首版只支持文本和 function tool。 | 图片、音频、文件及 Tool 图片结果在发起 HTTP 前明确失败。 |
@@ -71,7 +73,7 @@ CampusClaw 新增稳定身份为 `mate-model-manager` 的通用 Provider，调�
 
 ## 3. Provider 与 HTTP 实现
 
-配置默认值如下，`api` 未注册时在启动阶段失败：
+配置默认值如下，`api` 不是 `openai-completions` 时在启动阶段失败：
 
 ```yaml
 campusmate:
@@ -113,11 +115,21 @@ CampusMate 的 `LlmChatController/LlmChatService` 严格校验字段，按 Mate 
 替换请求模型并注入受控凭据。成功响应体不解析、不重编码、不改写；流建立前错误使用真实
 HTTP 状态与 `resCode/resMsg`，建立后的传输错误发送 `event:error` 后关闭流且不补 `[DONE]`。
 
+Provider 身份切换不改变以上 HTTP、请求、SSE、Usage、错误或取消语义。代码不保留
+`mate-model-manager` 别名、旧枚举解析或旧类转发，也不迁移历史记录。Runtime Entry 中既有
+`_provider` 原字符串保持原值；它与 `campusmate` 不构成相同模型身份。
+
+Runtime、Child 与 Cron 从同一次 `PreparedAgentRuntime` 构造 `AgentDirectorySnapshotDTO`，再交给
+同一个 `RuntimeModelManager` 解析默认模型，不经过允许为空的全局 `ModelRegistry`。Mate 模型 ID
+是不透明字符串，`/` 不触发 Provider 拆分；`CatalogRuntimeModelManager` 的
+`provider/modelId` 限定语法只用于显式自定义目录。Child 配置独立默认模型后，解析失败直接返回
+错误，不静默继承父模型。旧文本不会改写成新 Provider 身份。
+
 ## 4. Usage Record 与 Stats
 
 ![Runtime Usage 持久化事务](model-manager-chat-v2/runtime_usage_persistence.svg)
 
-[PlantUML 源码：`runtime_usage_persistence`](model-manager-chat-v2/diagram.puml#L33)
+[PlantUML 源码：`runtime_usage_persistence`](model-manager-chat-v2/diagram.puml#L34)
 
 新增表：
 
@@ -155,6 +167,7 @@ cost_total      += usage.cost.total
 ## 6. 验证要求
 
 - Provider：文本、多轮 ToolCall、reasoning 重放、`tool_choice=none`、usage 有/无、图片预检失败；
+- 身份：仅注册 `campusmate`，旧 ID 解析失败，历史原值保持且不参与新身份模型匹配；
 - SSE：response ID、response model、finish reason、断流错误、调用方取消和缺少 `[DONE]`；
 - Mate：未知字段、固定流参数、未知/停用模型、模型替换、私有凭据、限流和不重试；
 - SQL：Entry/Record 共享序号、Record 不改分支、Stats pi 累计规则、删除清理完整；
@@ -167,6 +180,7 @@ cost_total      += usage.cost.total
 
 | 版本 | 日期 | 变化 |
 |---|---|---|
+| 1.3.0 | 2026-09-15 | Provider 身份切换为 `campusmate`，保留既有 Chat、Usage、错误和取消契约。 |
 | 1.2.0 | 2026-09-01 | 对齐 CampusClaw 公司镜像的新目录和公司构建边界；Mate Chat 契约不变。 |
 | 1.1.0 | 2026-08-26 | Model 配置从 `model-manager` 收敛为 `model`，并复用 CampusMate 单一 base URL 与共享 Endpoint 目录。 |
 | 1.0.0 | 2026-08-25 | 实现 Mate Chat Provider、透明代理、断流取消、reasoning 重放和 pi 风格 Usage SQL。 |

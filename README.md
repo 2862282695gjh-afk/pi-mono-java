@@ -16,7 +16,7 @@ CampusClaw 不提供 CLI、TUI、RPC 或本地安装入口。`modules/coding-age
 - **工作区隔离**：本地文件工具只能读取当前 `agent/{agentId}`，拒绝符号链接和 realpath 越界；
 - **Mate 工具**：实时发现当前 Agent/Skill 的工具，按名称解析并执行；
 - **Cron 与 Child**：Cron Job 自动绑定当前 Agent，Child 只允许调用直接绑定身份；
-- **多模型支持**：模型来自内置 `ModelRegistry`，凭据由部署环境提供。
+- **CampusMate 模型调用**：受管 Agent 快照提供模型 ID，统一通过 `campusmate` Provider 调用。
 
 ## 快速开始
 
@@ -24,7 +24,6 @@ CampusClaw 不提供 CLI、TUI、RPC 或本地安装入口。`modules/coding-age
 
 - JDK 21；
 - openGauss 或 PostgreSQL 兼容数据库；
-- 至少一个受支持模型供应商的部署凭据；
 - 可访问的 CampusMate 服务。
 
 构建服务：
@@ -52,13 +51,6 @@ java -jar modules/coding-agent-cli/target/campusclaw-agent.jar
 | `CAMPUSMATE_RUNTIME_*` | CampusMate Runtime 客户端的超时参数 |
 | `CAMPUSMATE_*_PATH*` | 六个 CampusMate HTTP operation path 或 path template |
 | `CAMPUSCLAW_EVENT_CURSOR_SECRET` | Runtime 事件游标签名密钥 |
-
-模型凭据示例：
-
-```bash
-export ANTHROPIC_API_KEY="sk-ant-..."
-export OPENAI_API_KEY="sk-..."
-```
 
 生产环境应显式配置数据库密码、稳定高熵的事件游标密钥、服务地址和 TLS 参数。
 
@@ -145,38 +137,17 @@ Session 更新要求强 `If-Match`，允许一次提交一个或多个字段；�
 详见[HTTP 实施记录](docs/plans/campusclaw-http-v1-implementation.md)和
 [计划模式实施说明](docs/plans/campusclaw-plan-mode-implementation.md)。
 
-## 模型供应商
+<a id="模型供应商"></a>
 
-下表维护内置模型供应商及其部署凭据。供应商 ID 以代码中的 `Provider` 值为准。
+## 模型与 Provider
 
-<!-- supported-providers — SOURCE OF TRUTH: the Provider enum + ModelRegistry built-ins.
-     Pinned by SupportedProvidersDocTest (modules/ai); when that test fails, update BOTH
-     the canonical id list below AND the table that follows to match the code.
-     BEGIN supported-providers
-     anthropic, openai, mistral, azure-openai-responses, openai-codex, github-copilot,
-     zai, kimi-coding, minimax, minimax-cn, xai, groq, cerebras, openrouter, huggingface
-     END supported-providers -->
+产品默认只装配 `CampusMateProvider`，Provider ID 为 `campusmate`。Runtime 使用同一受管 Agent
+快照中的 `defaultModel` 与 `bindingModels` 构造模型；CampusClaw 不保存第三方模型端点或凭据。
 
-| 供应商 ID | 环境变量 |
-|---|---|
-| `anthropic` | `ANTHROPIC_API_KEY` / `ANTHROPIC_OAUTH_TOKEN` |
-| `openai` | `OPENAI_API_KEY` |
-| `mistral` | `MISTRAL_API_KEY` |
-| `azure-openai-responses` | `AZURE_OPENAI_API_KEY` |
-| `openai-codex` | `OPENAI_API_KEY` |
-| `github-copilot` | `COPILOT_GITHUB_TOKEN` / `GH_TOKEN` / `GITHUB_TOKEN` |
-| `zai` | `ZAI_API_KEY` |
-| `kimi-coding` | `KIMI_API_KEY` |
-| `minimax` | `MINIMAX_API_KEY` |
-| `minimax-cn` | `MINIMAX_CN_API_KEY` |
-| `xai` | `XAI_API_KEY` |
-| `groq` | `GROQ_API_KEY` |
-| `cerebras` | `CEREBRAS_API_KEY` |
-| `openrouter` | `OPENROUTER_API_KEY` |
-| `huggingface` | `HF_TOKEN` |
-
-模型目录只暴露当前部署凭据可用、且在受管 Agent `bindingModels` 内的模型。凭据不写入
-Agent 目录、Session 或工具缓存。
+`ModelRegistry` 不再提供内置模型。它保留运行时注册、查询、成本计算以及 classpath
+`/campusclaw-models.json`、用户 `~/.campusclaw/agent/models.json` 两级可选加载；没有外部 JSON
+时目录为空。`ApiProviderRegistry` 默认也可以为空，嵌入方仍可显式注册和注销自定义 API
+适配器。未知适配器会明确失败，不外联，也不自动转到 CampusMate。
 
 ## 项目结构
 

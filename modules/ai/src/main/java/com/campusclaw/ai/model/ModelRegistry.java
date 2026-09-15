@@ -4,6 +4,7 @@
 
 package com.campusclaw.ai.model;
 
+import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -14,11 +15,8 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 
-import com.campusclaw.ai.types.Api;
 import com.campusclaw.ai.types.Cost;
-import com.campusclaw.ai.types.InputModality;
 import com.campusclaw.ai.types.Model;
-import com.campusclaw.ai.types.ModelCost;
 import com.campusclaw.ai.types.Provider;
 import com.campusclaw.ai.types.Usage;
 import com.campusclaw.ai.utils.CampusClawHome;
@@ -32,34 +30,29 @@ import org.springframework.stereotype.Service;
 import jakarta.annotation.PostConstruct;
 
 /**
- * Registry for {@link Model} definitions, indexed by {@link Provider} and model id.
+ * 按 Provider 和模型标识维护模型定义。
  *
- * <p>Uses a two-level {@code Map<Provider, Map<String, Model>>} for efficient
- * lookup by provider + modelId. Pre-populates common models via {@link #init()}.
- *
- * <p>Thread-safe: all mutation methods synchronize on the internal lock.
+ * <p>注册表不提供内置厂商模型；启动时先加载可选的 classpath JSON，再加载用户 JSON。
+ * 所有写操作在内部锁上串行化，读取使用并发索引。
  *
  * @version [br_eCampusCore 26.0.0, 2026/05/06]
  * @since [br_eCampusCore 26.0.0]
  */
 @Service
 public class ModelRegistry {
-
     private static final Logger log = LoggerFactory.getLogger(ModelRegistry.class);
 
     private final Object lock = new Object();
 
-    /**
-     * Two-level index: Provider -> (modelId -> Model).
-     */
+    // 两级索引：Provider -> 模型标识 -> 模型。
     private final Map<Provider, Map<String, Model>> models = new ConcurrentHashMap<>();
 
     /**
-     * Looks up a model by provider and model id.
+     * 按 Provider 和模型标识查询模型。
      *
-     * @param provider the LLM provider
-     * @param modelId  the model identifier
-     * @return the model, or empty if not registered
+     * @param provider Provider 标识
+     * @param modelId 模型标识
+     * @return 已注册模型；未找到时为空
      */
     public Optional<Model> getModel(Provider provider, String modelId) {
         var byId = models.get(provider);
@@ -70,10 +63,10 @@ public class ModelRegistry {
     }
 
     /**
-     * Returns all models registered for a given provider.
+     * 返回指定 Provider 的全部模型。
      *
-     * @param provider the LLM provider
-     * @return an unmodifiable list of models (empty if none registered)
+     * @param provider Provider 标识
+     * @return 不可修改的模型快照
      */
     public List<Model> getModels(Provider provider) {
         var byId = models.get(provider);
@@ -86,9 +79,9 @@ public class ModelRegistry {
     }
 
     /**
-     * Returns all providers that have at least one model registered.
+     * 返回当前包含模型的全部 Provider。
      *
-     * @return an unmodifiable list of providers
+     * @return 不可修改的 Provider 快照
      */
     public List<Provider> getProviders() {
         synchronized (lock) {
@@ -97,16 +90,15 @@ public class ModelRegistry {
     }
 
     /**
-     * Registers a single model. Replaces any existing model with the same
-     * provider + id combination.
+     * 注册一个模型；相同 Provider 和模型标识的旧值会被替换。
      *
-     * @param model the model to register
-     * @throws NullPointerException if model is null
+     * @param model 待注册模型
+     * @throws NullPointerException 模型为空时抛出
      */
     public void register(Model model) {
         Objects.requireNonNull(model, "model must not be null");
         synchronized (lock) {
-            models.computeIfAbsent(model.provider(), k -> new ConcurrentHashMap<>())
+            models.computeIfAbsent(model.provider(), key -> new ConcurrentHashMap<>())
                     .put(model.id(), model);
         }
         log.debug(
@@ -116,49 +108,46 @@ public class ModelRegistry {
     }
 
     /**
-     * Registers multiple models at once.
+     * 批量注册模型。
      *
-     * @param modelList the models to register
-     * @throws NullPointerException if modelList is null
+     * @param modelList 待注册模型
+     * @throws NullPointerException 模型列表为空时抛出
      */
     public void registerAll(List<Model> modelList) {
         Objects.requireNonNull(modelList, "modelList must not be null");
         synchronized (lock) {
             for (var model : modelList) {
-                models.computeIfAbsent(model.provider(), k -> new ConcurrentHashMap<>())
+                models.computeIfAbsent(model.provider(), key -> new ConcurrentHashMap<>())
                         .put(model.id(), model);
             }
         }
         log.debug("Registered {} model(s)", modelList.size());
     }
 
-    // -- Static utility functions (aligned with TS models.ts) --
-
     /**
-     * Calculates cost breakdown for a model and usage.
+     * 根据模型价格和用量计算费用。
      *
-     * @param model the model whose pricing table is used
-     * @param usage observed token usage
-     * @return the computed {@link Cost} breakdown
+     * @param model 提供价格的模型
+     * @param usage Token 用量
+     * @return 费用明细
      */
     public static Cost calculateCost(Model model, Usage usage) {
         if (model.cost() == null) {
             return Cost.empty();
         }
-        var mc = model.cost();
-        double input = usage.input() * mc.input() / 1_000_000.0;
-        double output = usage.output() * mc.output() / 1_000_000.0;
-        double cacheRead = usage.cacheRead() * mc.cacheRead() / 1_000_000.0;
-        double cacheWrite = usage.cacheWrite() * mc.cacheWrite() / 1_000_000.0;
+        var modelCost = model.cost();
+        double input = usage.input() * modelCost.input() / 1_000_000.0;
+        double output = usage.output() * modelCost.output() / 1_000_000.0;
+        double cacheRead = usage.cacheRead() * modelCost.cacheRead() / 1_000_000.0;
+        double cacheWrite = usage.cacheWrite() * modelCost.cacheWrite() / 1_000_000.0;
         return new Cost(input, output, cacheRead, cacheWrite, input + output + cacheRead + cacheWrite);
     }
 
     /**
-     * Check if a model supports xhigh thinking level.
-     * Supported: GPT-5.x families, Opus 4.6 models.
+     * 判断模型是否支持 xhigh 推理级别。
      *
-     * @param model the model to test
-     * @return {@code true} when xhigh thinking is supported
+     * @param model 待检查模型
+     * @return 支持时为 true
      */
     public static boolean supportsXhigh(Model model) {
         String id = model.id();
@@ -170,23 +159,23 @@ public class ModelRegistry {
     }
 
     /**
-     * Check if two models are equal by comparing both id and provider.
+     * 按 Provider 和模型标识判断两个模型是否相同。
      *
-     * @param a left model, may be {@code null}
-     * @param b right model, may be {@code null}
-     * @return {@code true} when both are non-null and share the same id and provider
+     * @param first 第一个模型，可为空
+     * @param second 第二个模型，可为空
+     * @return 两个非空模型身份相同时为 true
      */
-    public static boolean modelsAreEqual(Model a, Model b) {
-        if (a == null || b == null) {
+    public static boolean modelsAreEqual(Model first, Model second) {
+        if (first == null || second == null) {
             return false;
         }
-        return a.id().equals(b.id()) && a.provider() == b.provider();
+        return first.id().equals(second.id()) && first.provider() == second.provider();
     }
 
     /**
-     * Returns all registered models across all providers.
+     * 返回所有已注册模型。
      *
-     * @return a snapshot of every currently registered model
+     * @return 当前模型快照
      */
     public List<Model> getAllModels() {
         synchronized (lock) {
@@ -199,7 +188,7 @@ public class ModelRegistry {
     }
 
     /**
-     * Removes all registered models.
+     * 清空全部模型。
      */
     public void clear() {
         synchronized (lock) {
@@ -209,13 +198,10 @@ public class ModelRegistry {
     }
 
     /**
-     * Removes every model registered under {@code provider}. Other providers'
-     * entries are left untouched. Used by {@code CustomModelLoader.refresh()}
-     * to surgically rebuild the {@link Provider#CUSTOM} bucket after the user
-     * edits {@code settings.json}.
+     * 删除指定 Provider 的全部模型。
      *
-     * @param provider the provider whose entries should be removed; must not be null
-     * @throws NullPointerException when {@code provider} is null
+     * @param provider 待清理的 Provider
+     * @throws NullPointerException Provider 为空时抛出
      */
     public void unregisterByProvider(Provider provider) {
         Objects.requireNonNull(provider, "provider must not be null");
@@ -228,56 +214,41 @@ public class ModelRegistry {
     }
 
     /**
-     * Pre-registers commonly used models after bean construction.
-     *
-     * <p>Order:
-     * <ol>
-     *   <li>Built-in models from {@link #builtInModels()} (compiled-in defaults)</li>
-     *   <li>Optional classpath resource {@code /campusclaw-models.json} (override / add)</li>
-     *   <li>Optional user file {@code ~/.campusclaw/agent/models.json} (override / add)</li>
-     * </ol>
+     * 启动时依次加载 classpath 和用户模型定义。
      */
     @PostConstruct
     void init() {
-        registerAll(builtInModels());
-        int builtIn = builtInModels().size();
         int fromClasspath = loadFromClasspathResource("/campusclaw-models.json");
         int fromUser = loadFromUserFile();
-        log.info(
-                "ModelRegistry initialized: {} built-in + {} classpath + {} user override(s)",
-                builtIn,
-                fromClasspath,
-                fromUser);
+        log.info("ModelRegistry initialized: {} classpath + {} user model(s)", fromClasspath, fromUser);
     }
 
     /**
-     * Loads additional models from a JSON file. The file should contain a
-     * top-level array of Model objects (matching the {@link Model} record
-     * shape). Existing entries with the same provider+id are overwritten.
+     * 从 JSON 文件加载模型；相同身份的旧值会被覆盖。
      *
-     * @param file the JSON file to read
-     * @return number of models loaded, or 0 on missing file / parse error
+     * @param file JSON 文件
+     * @return 加载的模型数；文件缺失或解析失败时为零
      */
     public int loadFromJsonFile(Path file) {
         if (file == null || !Files.exists(file)) {
             return 0;
         }
-        try (var in = Files.newInputStream(file)) {
-            return loadFromJsonStream(in, file.toString());
-        } catch (Exception e) {
-            log.warn("Failed to load models from {}: {}", file, e.getMessage());
+        try (var input = Files.newInputStream(file)) {
+            return loadFromJsonStream(input, file.toString());
+        } catch (IOException | RuntimeException error) {
+            log.warn("Failed to load models from {}: {}", file, error.getMessage());
             return 0;
         }
     }
 
-    private int loadFromClasspathResource(String resource) {
-        try (InputStream in = ModelRegistry.class.getResourceAsStream(resource)) {
-            if (in == null) {
+    int loadFromClasspathResource(String resource) {
+        try (InputStream input = ModelRegistry.class.getResourceAsStream(resource)) {
+            if (input == null) {
                 return 0;
             }
-            return loadFromJsonStream(in, "classpath:" + resource);
-        } catch (Exception e) {
-            log.warn("Failed to load models from {}: {}", resource, e.getMessage());
+            return loadFromJsonStream(input, "classpath:" + resource);
+        } catch (IOException | RuntimeException error) {
+            log.warn("Failed to load models from {}: {}", resource, error.getMessage());
             return 0;
         }
     }
@@ -287,604 +258,14 @@ public class ModelRegistry {
         return loadFromJsonFile(file);
     }
 
-    private int loadFromJsonStream(InputStream in, String source) throws java.io.IOException {
+    private int loadFromJsonStream(InputStream input, String source) throws IOException {
         var mapper = new ObjectMapper();
-        var loaded = mapper.readValue(in, new TypeReference<List<Model>>() {});
+        var loaded = mapper.readValue(input, new TypeReference<List<Model>>() {});
         if (loaded == null || loaded.isEmpty()) {
             return 0;
         }
         registerAll(loaded);
         log.debug("Loaded {} model(s) from {}", loaded.size(), source);
         return loaded.size();
-    }
-
-    /**
-     * Returns the list of built-in models to pre-register.
-     * Pieced together from per-provider helpers so each list of models can
-     * evolve and be reviewed independently.
-     *
-     * @return the compiled-in default model catalog
-     */
-    static List<Model> builtInModels() {
-        List<Model> all = new ArrayList<>();
-        all.addAll(anthropicModels());
-        all.addAll(openaiModels());
-        all.addAll(zaiModels());
-        all.addAll(kimiCodingModels());
-        all.addAll(minimaxModels());
-        all.addAll(minimaxCnModels());
-        all.addAll(mistralModels());
-        all.addAll(azureOpenaiModels());
-        all.addAll(xaiModels());
-        all.addAll(groqModels());
-        all.addAll(openrouterModels());
-        all.addAll(openaiCodexModels());
-        all.addAll(githubCopilotModels());
-        all.addAll(cerebrasModels());
-        all.addAll(huggingfaceModels());
-        return List.copyOf(all);
-    }
-
-    private static List<Model> anthropicModels() {
-        return List.of(
-                new Model(
-                        "claude-sonnet-4-20250514",
-                        "Claude Sonnet 4",
-                        Api.ANTHROPIC_MESSAGES,
-                        Provider.ANTHROPIC,
-                        "https://api.anthropic.com",
-                        true,
-                        List.of(InputModality.TEXT, InputModality.IMAGE),
-                        new ModelCost(3.0, 15.0, 0.3, 3.75),
-                        200000,
-                        16000,
-                        null,
-                        null,
-                        null),
-                new Model(
-                        "claude-opus-4-20250115",
-                        "Claude Opus 4",
-                        Api.ANTHROPIC_MESSAGES,
-                        Provider.ANTHROPIC,
-                        "https://api.anthropic.com",
-                        true,
-                        List.of(InputModality.TEXT, InputModality.IMAGE),
-                        new ModelCost(15.0, 75.0, 1.5, 18.75),
-                        200000,
-                        32000,
-                        null,
-                        null,
-                        null),
-                new Model(
-                        "claude-haiku-3-5",
-                        "Claude 3.5 Haiku",
-                        Api.ANTHROPIC_MESSAGES,
-                        Provider.ANTHROPIC,
-                        "https://api.anthropic.com",
-                        false,
-                        List.of(InputModality.TEXT, InputModality.IMAGE),
-                        new ModelCost(0.8, 4.0, 0.08, 1.0),
-                        200000,
-                        8192,
-                        null,
-                        null,
-                        null));
-    }
-
-    // Builds an OpenAI Model with provider/api/baseUrl/modalities pre-filled.
-    private static Model openaiModel(
-            String id, String name, boolean reasoning, ModelCost cost, int contextWindow, int maxTokens) {
-        return new Model(
-                id,
-                name,
-                Api.OPENAI_RESPONSES,
-                Provider.OPENAI,
-                "https://api.openai.com",
-                reasoning,
-                List.of(InputModality.TEXT, InputModality.IMAGE),
-                cost,
-                contextWindow,
-                maxTokens,
-                null,
-                null,
-                null);
-    }
-
-    private static List<Model> openaiModels() {
-        return List.of(
-                openaiModel("gpt-4o", "GPT-4o", false, new ModelCost(2.5, 10.0, 1.25, 2.5), 128000, 16384),
-                openaiModel("gpt-4o-mini", "GPT-4o Mini", false, new ModelCost(0.15, 0.6, 0.075, 0.15), 128000, 16384),
-                openaiModel("o3", "o3", true, new ModelCost(10.0, 40.0, 2.5, 10.0), 200000, 100000),
-                openaiModel("o4-mini", "o4-mini", true, new ModelCost(1.1, 4.4, 0.275, 1.1), 200000, 100000));
-    }
-
-    // Builds a ZAI text-only Model (provider/api/baseUrl/reasoning=true/thinkingFormat pre-filled).
-    private static Model zaiTextModel(String id, String name, ModelCost cost, int contextWindow, int maxTokens) {
-        return zaiModel(id, name, List.of(InputModality.TEXT), cost, contextWindow, maxTokens);
-    }
-
-    // Builds a ZAI vision-capable Model.
-    private static Model zaiVisionModel(String id, String name, ModelCost cost, int contextWindow, int maxTokens) {
-        return zaiModel(id, name, List.of(InputModality.TEXT, InputModality.IMAGE), cost, contextWindow, maxTokens);
-    }
-
-    private static Model zaiModel(
-            String id, String name, List<InputModality> modalities, ModelCost cost, int contextWindow, int maxTokens) {
-        return new Model(
-                id,
-                name,
-                Api.OPENAI_COMPLETIONS,
-                Provider.ZAI,
-                "https://api.z.ai/api/coding/paas/v4",
-                true,
-                modalities,
-                cost,
-                contextWindow,
-                maxTokens,
-                null,
-                "zai",
-                null);
-    }
-
-    private static List<Model> zaiModels() {
-        return List.of(
-                zaiTextModel("glm-4.5", "GLM-4.5", new ModelCost(0.6, 2.2, 0.11, 0), 131072, 98304),
-                zaiTextModel("glm-4.5-air", "GLM-4.5-Air", new ModelCost(0.2, 1.1, 0.03, 0), 131072, 98304),
-                zaiTextModel("glm-4.5-flash", "GLM-4.5-Flash", new ModelCost(0, 0, 0, 0), 131072, 98304),
-                zaiVisionModel("glm-4.5v", "GLM-4.5V", new ModelCost(0.6, 1.8, 0, 0), 64000, 16384),
-                zaiTextModel("glm-4.6", "GLM-4.6", new ModelCost(0.6, 2.2, 0.11, 0), 204800, 131072),
-                zaiVisionModel("glm-4.6v", "GLM-4.6V", new ModelCost(0.3, 0.9, 0, 0), 128000, 32768),
-                zaiTextModel("glm-4.7", "GLM-4.7", new ModelCost(0.6, 2.2, 0.11, 0), 204800, 131072),
-                zaiTextModel("glm-4.7-flash", "GLM-4.7-Flash", new ModelCost(0, 0, 0, 0), 200000, 131072),
-                zaiTextModel("glm-5", "GLM-5", new ModelCost(1.0, 3.2, 0.2, 0), 204800, 131072),
-                zaiTextModel("glm-5-turbo", "GLM-5-Turbo", new ModelCost(1.2, 4.0, 0.24, 0), 200000, 131072));
-    }
-
-    private static List<Model> kimiCodingModels() {
-        return List.of(
-                // --- Kimi Coding ---
-                new Model(
-                        "k2p5",
-                        "Kimi K2.5",
-                        Api.ANTHROPIC_MESSAGES,
-                        Provider.KIMI_CODING,
-                        "https://api.kimi.com/coding",
-                        true,
-                        List.of(InputModality.TEXT, InputModality.IMAGE),
-                        new ModelCost(0, 0, 0, 0),
-                        262144,
-                        32768,
-                        null,
-                        null,
-                        null),
-                new Model(
-                        "kimi-k2-thinking",
-                        "Kimi K2 Thinking",
-                        Api.ANTHROPIC_MESSAGES,
-                        Provider.KIMI_CODING,
-                        "https://api.kimi.com/coding",
-                        true,
-                        List.of(InputModality.TEXT),
-                        new ModelCost(0, 0, 0, 0),
-                        262144,
-                        32768,
-                        null,
-                        null,
-                        null));
-    }
-
-    private static List<Model> minimaxModels() {
-        return List.of(
-                // --- MiniMax ---
-                new Model(
-                        "MiniMax-M2.7",
-                        "MiniMax-M2.7",
-                        Api.ANTHROPIC_MESSAGES,
-                        Provider.MINIMAX,
-                        "https://api.minimax.io/anthropic",
-                        true,
-                        List.of(InputModality.TEXT),
-                        new ModelCost(0.3, 1.2, 0.06, 0.375),
-                        204800,
-                        131072,
-                        null,
-                        null,
-                        null),
-                new Model(
-                        "MiniMax-M2.7-highspeed",
-                        "MiniMax-M2.7-highspeed",
-                        Api.ANTHROPIC_MESSAGES,
-                        Provider.MINIMAX,
-                        "https://api.minimax.io/anthropic",
-                        true,
-                        List.of(InputModality.TEXT),
-                        new ModelCost(0.6, 2.4, 0.06, 0.375),
-                        204800,
-                        131072,
-                        null,
-                        null,
-                        null));
-    }
-
-    private static List<Model> minimaxCnModels() {
-        return List.of(
-                // --- MiniMax CN ---
-                new Model(
-                        "MiniMax-M2.7",
-                        "MiniMax-M2.7",
-                        Api.ANTHROPIC_MESSAGES,
-                        Provider.MINIMAX_CN,
-                        "https://api.minimaxi.com/anthropic",
-                        true,
-                        List.of(InputModality.TEXT),
-                        new ModelCost(0.3, 1.2, 0.06, 0.375),
-                        204800,
-                        131072,
-                        null,
-                        null,
-                        null),
-                new Model(
-                        "MiniMax-M2.7-highspeed",
-                        "MiniMax-M2.7-highspeed",
-                        Api.ANTHROPIC_MESSAGES,
-                        Provider.MINIMAX_CN,
-                        "https://api.minimaxi.com/anthropic",
-                        true,
-                        List.of(InputModality.TEXT),
-                        new ModelCost(0.6, 2.4, 0.06, 0.375),
-                        204800,
-                        131072,
-                        null,
-                        null,
-                        null));
-    }
-
-    private static Model mistralModel(
-            String id,
-            String name,
-            boolean reasoning,
-            List<InputModality> modalities,
-            ModelCost cost,
-            int contextWindow) {
-        return new Model(
-                id,
-                name,
-                Api.MISTRAL_CONVERSATIONS,
-                Provider.MISTRAL,
-                "https://api.mistral.ai/v1",
-                reasoning,
-                modalities,
-                cost,
-                contextWindow,
-                8192,
-                null,
-                null,
-                null);
-    }
-
-    private static List<Model> mistralModels() {
-        var textOnly = List.of(InputModality.TEXT);
-        var textImage = List.of(InputModality.TEXT, InputModality.IMAGE);
-        return List.of(
-                mistralModel(
-                        "mistral-large-latest",
-                        "Mistral Large",
-                        true,
-                        textImage,
-                        new ModelCost(2.0, 6.0, 0.5, 1.5),
-                        131072),
-                mistralModel(
-                        "mistral-medium-latest",
-                        "Mistral Medium",
-                        false,
-                        textOnly,
-                        new ModelCost(0.4, 2.0, 0.1, 0.5),
-                        131072),
-                mistralModel(
-                        "mistral-small-latest",
-                        "Mistral Small",
-                        false,
-                        textOnly,
-                        new ModelCost(0.1, 0.3, 0.025, 0.075),
-                        131072),
-                mistralModel(
-                        "codestral-latest",
-                        "Codestral",
-                        false,
-                        textOnly,
-                        new ModelCost(0.3, 0.9, 0.075, 0.225),
-                        262144));
-    }
-
-    private static List<Model> azureOpenaiModels() {
-        return List.of(
-                // --- Azure OpenAI ---
-                new Model(
-                        "gpt-4o",
-                        "GPT-4o (Azure)",
-                        Api.OPENAI_RESPONSES,
-                        Provider.AZURE_OPENAI,
-                        null,
-                        false,
-                        List.of(InputModality.TEXT, InputModality.IMAGE),
-                        new ModelCost(2.5, 10.0, 1.25, 2.5),
-                        128000,
-                        16384,
-                        null,
-                        null,
-                        null),
-                new Model(
-                        "gpt-4o-mini",
-                        "GPT-4o Mini (Azure)",
-                        Api.OPENAI_RESPONSES,
-                        Provider.AZURE_OPENAI,
-                        null,
-                        false,
-                        List.of(InputModality.TEXT, InputModality.IMAGE),
-                        new ModelCost(0.15, 0.6, 0.075, 0.15),
-                        128000,
-                        16384,
-                        null,
-                        null,
-                        null),
-                new Model(
-                        "o3",
-                        "o3 (Azure)",
-                        Api.OPENAI_RESPONSES,
-                        Provider.AZURE_OPENAI,
-                        null,
-                        true,
-                        List.of(InputModality.TEXT, InputModality.IMAGE),
-                        new ModelCost(10.0, 40.0, 2.5, 10.0),
-                        200000,
-                        100000,
-                        null,
-                        null,
-                        null));
-    }
-
-    private static List<Model> xaiModels() {
-        return List.of(
-                // --- xAI ---
-                new Model(
-                        "grok-3",
-                        "Grok 3",
-                        Api.OPENAI_COMPLETIONS,
-                        Provider.XAI,
-                        "https://api.x.ai/v1",
-                        true,
-                        List.of(InputModality.TEXT),
-                        new ModelCost(3.0, 15.0, 0.75, 3.75),
-                        131072,
-                        131072,
-                        null,
-                        null,
-                        null),
-                new Model(
-                        "grok-3-mini",
-                        "Grok 3 Mini",
-                        Api.OPENAI_COMPLETIONS,
-                        Provider.XAI,
-                        "https://api.x.ai/v1",
-                        true,
-                        List.of(InputModality.TEXT),
-                        new ModelCost(0.3, 0.5, 0.075, 0.125),
-                        131072,
-                        131072,
-                        null,
-                        null,
-                        null),
-                new Model(
-                        "grok-3-fast",
-                        "Grok 3 Fast",
-                        Api.OPENAI_COMPLETIONS,
-                        Provider.XAI,
-                        "https://api.x.ai/v1",
-                        false,
-                        List.of(InputModality.TEXT),
-                        new ModelCost(5.0, 25.0, 1.25, 6.25),
-                        131072,
-                        131072,
-                        null,
-                        null,
-                        null));
-    }
-
-    private static List<Model> groqModels() {
-        return List.of(
-                // --- Groq ---
-                new Model(
-                        "llama-3.3-70b-versatile",
-                        "Llama 3.3 70B (Groq)",
-                        Api.OPENAI_COMPLETIONS,
-                        Provider.GROQ,
-                        "https://api.groq.com/openai/v1",
-                        false,
-                        List.of(InputModality.TEXT),
-                        new ModelCost(0.59, 0.79, 0, 0),
-                        131072,
-                        32768,
-                        null,
-                        null,
-                        null),
-                new Model(
-                        "llama-4-maverick-17b-128e-instruct",
-                        "Llama 4 Maverick (Groq)",
-                        Api.OPENAI_COMPLETIONS,
-                        Provider.GROQ,
-                        "https://api.groq.com/openai/v1",
-                        false,
-                        List.of(InputModality.TEXT),
-                        new ModelCost(0.2, 0.6, 0, 0),
-                        131072,
-                        32768,
-                        null,
-                        null,
-                        null),
-                new Model(
-                        "deepseek-r1-distill-llama-70b",
-                        "DeepSeek R1 70B (Groq)",
-                        Api.OPENAI_COMPLETIONS,
-                        Provider.GROQ,
-                        "https://api.groq.com/openai/v1",
-                        true,
-                        List.of(InputModality.TEXT),
-                        new ModelCost(0.59, 0.79, 0, 0),
-                        131072,
-                        16384,
-                        null,
-                        null,
-                        null));
-    }
-
-    private static List<Model> openrouterModels() {
-        return List.of(
-                // --- OpenRouter ---
-                new Model(
-                        "anthropic/claude-sonnet-4",
-                        "Claude Sonnet 4 (OpenRouter)",
-                        Api.OPENAI_COMPLETIONS,
-                        Provider.OPENROUTER,
-                        "https://openrouter.ai/api/v1",
-                        true,
-                        List.of(InputModality.TEXT, InputModality.IMAGE),
-                        new ModelCost(3.0, 15.0, 0.3, 3.75),
-                        200000,
-                        16000,
-                        null,
-                        null,
-                        null),
-                new Model(
-                        "openai/gpt-4o",
-                        "GPT-4o (OpenRouter)",
-                        Api.OPENAI_COMPLETIONS,
-                        Provider.OPENROUTER,
-                        "https://openrouter.ai/api/v1",
-                        false,
-                        List.of(InputModality.TEXT, InputModality.IMAGE),
-                        new ModelCost(2.5, 10.0, 1.25, 2.5),
-                        128000,
-                        16384,
-                        null,
-                        null,
-                        null));
-    }
-
-    private static List<Model> openaiCodexModels() {
-        return List.of(
-                // --- OpenAI Codex ---
-                new Model(
-                        "codex-mini-latest",
-                        "Codex Mini",
-                        Api.OPENAI_RESPONSES,
-                        Provider.OPENAI_CODEX,
-                        "https://api.openai.com",
-                        true,
-                        List.of(InputModality.TEXT),
-                        new ModelCost(1.5, 6.0, 0.375, 1.5),
-                        192000,
-                        100000,
-                        null,
-                        null,
-                        null));
-    }
-
-    private static List<Model> githubCopilotModels() {
-        return List.of(
-                // --- GitHub Copilot ---
-                new Model(
-                        "claude-sonnet-4",
-                        "Claude Sonnet 4 (Copilot)",
-                        Api.ANTHROPIC_MESSAGES,
-                        Provider.GITHUB_COPILOT,
-                        "https://api.githubcopilot.com",
-                        true,
-                        List.of(InputModality.TEXT, InputModality.IMAGE),
-                        new ModelCost(0, 0, 0, 0),
-                        200000,
-                        16000,
-                        null,
-                        null,
-                        null),
-                new Model(
-                        "gpt-4o",
-                        "GPT-4o (Copilot)",
-                        Api.OPENAI_COMPLETIONS,
-                        Provider.GITHUB_COPILOT,
-                        "https://api.githubcopilot.com",
-                        false,
-                        List.of(InputModality.TEXT, InputModality.IMAGE),
-                        new ModelCost(0, 0, 0, 0),
-                        128000,
-                        16384,
-                        null,
-                        null,
-                        null));
-    }
-
-    private static List<Model> cerebrasModels() {
-        return List.of(
-                // --- Cerebras ---
-                new Model(
-                        "llama-4-scout-17b-16e-instruct",
-                        "Llama 4 Scout (Cerebras)",
-                        Api.OPENAI_COMPLETIONS,
-                        Provider.CEREBRAS,
-                        "https://api.cerebras.ai/v1",
-                        false,
-                        List.of(InputModality.TEXT),
-                        new ModelCost(0, 0, 0, 0),
-                        131072,
-                        16384,
-                        null,
-                        null,
-                        null),
-                new Model(
-                        "llama-3.3-70b",
-                        "Llama 3.3 70B (Cerebras)",
-                        Api.OPENAI_COMPLETIONS,
-                        Provider.CEREBRAS,
-                        "https://api.cerebras.ai/v1",
-                        false,
-                        List.of(InputModality.TEXT),
-                        new ModelCost(0, 0, 0, 0),
-                        131072,
-                        16384,
-                        null,
-                        null,
-                        null));
-    }
-
-    private static List<Model> huggingfaceModels() {
-        return List.of(
-                // --- HuggingFace ---
-                new Model(
-                        "Qwen/Qwen3-235B-A22B",
-                        "Qwen3 235B (HF)",
-                        Api.OPENAI_COMPLETIONS,
-                        Provider.HUGGINGFACE,
-                        "https://router.huggingface.co/v1",
-                        true,
-                        List.of(InputModality.TEXT),
-                        new ModelCost(0, 0, 0, 0),
-                        131072,
-                        32768,
-                        null,
-                        null,
-                        null),
-                new Model(
-                        "meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8",
-                        "Llama 4 Maverick (HF)",
-                        Api.OPENAI_COMPLETIONS,
-                        Provider.HUGGINGFACE,
-                        "https://router.huggingface.co/v1",
-                        false,
-                        List.of(InputModality.TEXT),
-                        new ModelCost(0, 0, 0, 0),
-                        131072,
-                        32768,
-                        null,
-                        null,
-                        null));
     }
 }

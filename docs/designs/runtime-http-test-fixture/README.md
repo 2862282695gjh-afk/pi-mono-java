@@ -1,6 +1,6 @@
 # Runtime HTTP 服务启动与重启测试
 
-> 版本：1.0.0 · 日期：2026-09-07 · 状态：Implemented
+> 版本：1.0.1 · 日期：2026-09-15 · 状态：Implemented
 
 本次提取可复用的测试辅助代码：启动真实后端服务、发送 HTTP 请求，并在测试结束后关闭服务和相关资源。
 Events 和重启恢复测试共用这些代码，各自保留业务断言。
@@ -29,6 +29,9 @@ Events 和重启恢复测试共用这些代码，各自保留业务断言。
 | `modules/coding-agent-cli/src/test/java/com/campusclaw/codingagent/runtimeapi/web/RuntimeHttpProcessFixture.java`：`prepareRuntimeFiles/startRuntime/loadConfiguration/ModelStub.close` | 完整缓存、当前 Mate 配置、外层配置读取、统一资源拥有者；两个 nested DTO 只承载数据。 |
 | `modules/coding-agent-cli/src/test/java/com/campusclaw/codingagent/runtimeapi/web/RuntimeHttpProcessFixtureTest.java`：`testCompleteCachePreservesSkillBinding/testCloseInterruptsGateAlreadyOwnedByHandler` | 真实 Manager 缓存和活动 handler 的关闭断言。 |
 | `modules/coding-agent-cli/src/test/java/com/campusclaw/codingagent/runtimeapi/web/RuntimeHttpProcessOpenGaussIT.java`：`testPackagedJarRestartsWithPersistedHistory` | 关闭第一 JVM，重启后断言 GET 结果及实际模型输入恢复。 |
+
+表内 `MateServiceModelManagerProvider` 是固定提交的历史证据。当前入口已由
+[`CampusMateProvider`](../ai.md) 取代，Chat path、SSE 与测试设施行为不变。
 
 ## 关键定义
 
@@ -112,4 +115,5 @@ Java AST 无方法长度违规，两个纯数据 record 的布局另作人工核
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 1.0.1 | 2026-09-15 | 指向当前 CampusMate Provider 入口，保留固定提交的旧类名证据。 |
 | 1.0.0 | 2026-09-07 | 提取可复用的真实进程设施，恢复主干 Mate/完整缓存入口，移除全表清理并增加重启验证。 |

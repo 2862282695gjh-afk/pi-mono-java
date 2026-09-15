@@ -2,17 +2,18 @@
 
 | 属性 | 值 |
 |---|---|
-| 文档版本 | 1.4.1 |
+| 文档版本 | 1.5.0 |
 | 状态 | Implemented |
-| 更新日期 | 2026-09-01 |
+| 更新日期 | 2026-09-15 |
 | 外部设计基线 | `/Users/z/设计`：`c250e3f07536871d3d676242e552a5eb4346b0c7` |
 | 外部设计文档 | `campusmate-shared-client-configuration/README.md` 2.1.0 |
 | 实施前源码基线 | `56be8eee59415a5f86658d6635a7b7e8891263d3` |
 | 受审实现基线 | `e8533b5ebf564f9d8d707faa115be638dc377556` |
 | 兼容清理源码基线 | `28b3235e5cff0da2f768cbfc6b7b9ce5e2b51193` |
 | 公司镜像默认值变更前基线 | `2cb1661fd4dc27f2bc02579c44878d7a69775c3d` |
+| CampusMate Provider 身份实施起点 | `29ebec6a8cad99896414211cda28c6fffec71bee` |
 | mate-service 观察基线 | `956b547f5ca12ca89e68f73012f92a4406b0c9fa` |
-| 决策记录 | [ADR-0026](../decisions/0026-unify-campusmate-client-configuration.html)、[ADR-0035](../decisions/0035-remove-legacy-campusmate-environment-adapter.html)、[ADR-0042](../decisions/0042-default-campusmate-base-url-for-corporate-mirror.html) |
+| 决策记录 | [ADR-0026](../decisions/0026-unify-campusmate-client-configuration.html)、[ADR-0035](../decisions/0035-remove-legacy-campusmate-environment-adapter.html)、[ADR-0042](../decisions/0042-default-campusmate-base-url-for-corporate-mirror.html)、[ADR-0109](../decisions/0109-use-campusmate-only-provider.md) |
 
 > 公司镜像相关路径和标识按 2026-09-01 的当前仓库位置展示；历史提交 SHA 仍是对应行为证据。
 
@@ -164,7 +165,8 @@ campusmate.base-url=${CAMPUSMATE_BASE_URL:https://localhost:8591}
 本次是配置架构改造，不修改任何 HTTP method、path、请求体、响应体、SSE 或认证语义。
 六个 operation 的 method 与 path 保持 pi-mono-java 实施前客户端调用值，只消除重复配置入口；
 其中三项已在 mate-service 观察基线中实现，Skill query 与两项 Tool operation 是目标态设计、
-服务端待实现。Provider 身份 `mate-model-manager` 也保持不变，`model` 仅是配置分组名称。
+服务端待实现。Provider 身份已按 ADR-0109 切换为 `campusmate`；这项身份变化不修改配置树，
+`model` 仍只是模型客户端的配置分组名称。
 
 ## 6. 验证
 
@@ -180,6 +182,7 @@ campusmate.base-url=${CAMPUSMATE_BASE_URL:https://localhost:8591}
 
 | 版本 | 日期 | 变化 |
 |---|---|---|
+| 1.5.0 | 2026-09-15 | 记录 Provider 身份切换为 `campusmate`，共享配置键与 HTTP operation 保持不变。 |
 | 1.4.1 | 2026-09-01 | CampusClaw 删除 Actuator 专用断言后，专有测试重命名为 `CampusMateConfigurationTest`；CampusMate 缺省值决策不变。 |
 | 1.4.0 | 2026-09-01 | 公司镜像为 `campusmate.base-url` 增加 `https://localhost:8591` 缺省值并保留环境变量覆盖；通用主模块仍为必填。 |
 | 1.3.0 | 2026-09-01 | 对齐 CampusClaw 公司镜像的新目录、Java 包和同步入口；历史行为继续以原提交 SHA 为准。 |

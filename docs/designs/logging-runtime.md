@@ -4,12 +4,13 @@
 
 | 项目 | 内容 |
 |---|---|
-| 文档版本 | v1.4 |
+| 文档版本 | v1.5 |
 | 变更前源码基线 | `origin/main@32db273125dc0a14d5f751dc0bfaa332ee87ceb8` |
 | 已评审日志实现 | `26d146f401a8557b687e1490f97a5899b22f79be` |
 | 管理面补充实现 | `65fb8eabbaa1a7dd63c2777280e19c8bdf5be8eb` |
 | 公司父 POM 切换后修复基线 | `origin/main@294e6d90bcad8c4214b08807bfd1cfdee5cc2404` |
 | 独立服务 Actuator 配置收敛基线 | `origin/main@b46b9d37e634dae12a777576062e2097516fe153` |
+| CampusMate Provider 重命名实施起点 | `29ebec6a8cad99896414211cda28c6fffec71bee` |
 | 实现分支 | `codex/align-log4j2` |
 | 适用范围 | Maven 日志依赖、Spring Boot 主程序与测试、`campusclaw` 镜像 |
 | 变更类型 | 架构变化、公司运行环境兼容 |
@@ -127,10 +128,10 @@ Log4j2 的默认控制台 Layout 不保证把 SLF4J 结构化键值渲染成与 
 |---|---|
 | 全模块统一继承 Log4j2 Starter | `pom.xml:122-131` |
 | CLI 排除主程序和测试默认日志 Starter | `modules/coding-agent-cli/pom.xml:39-49`、`:93-104` |
-| 独立镜像应用相同排除 | 当前 `campusclaw/pom.xml:49-58`、`:143-153` |
-| 目标：独立镜像显式声明 SLF4J 与 Log4j2 Starter | 当前 `campusclaw/pom.xml:38-46`；修复前基线 `294e6d90bcad8c4214b08807bfd1cfdee5cc2404` 未声明该段 |
+| 独立镜像应用相同排除 | 当前 `campusclaw/pom.xml:39-47`、`:133-143` |
+| 目标：独立镜像显式声明 SLF4J 与 Log4j2 Starter | 当前 `campusclaw/pom.xml:29-36`；修复前基线 `294e6d90bcad8c4214b08807bfd1cfdee5cc2404` 未声明该段 |
 | 测试 Appender 保存不可变 Log4j2 事件 | `modules/ai/src/test/java/com/campusclaw/ai/test/Log4j2TestAppender.java:20-34` |
-| Mate WARN/ERROR 日志按实际 logger 配置和恢复 | `modules/ai/src/test/java/com/campusclaw/ai/provider/mate/MateServiceModelManagerProviderTest.java:62-99` |
+| Mate WARN/ERROR 日志按实际 logger 配置和恢复 | 当前 `modules/ai/src/test/java/com/campusclaw/ai/provider/mate/CampusMateProviderTest.java`；旧名证据保留在第 2 节固定基线 |
 | 结构化字段和异常直接从 LogEvent 断言 | `modules/coding-agent-cli/src/test/java/com/campusclaw/codingagent/runtimeapi/agent/FileAgentDirectoryResolverTest.java:62-89` |
 
 ## 9. 测试与验证
@@ -148,6 +149,7 @@ Log4j2 的默认控制台 Layout 不保证把 SLF4J 结构化键值渲染成与 
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| v1.5 | 2026-09-15 | 更新当前 CampusMate Provider 日志测试入口；固定提交中的旧类名证据保持不变。 |
 | v1.4 | 2026-09-01 | 对齐 CampusClaw 公司独立服务边界：删除 Actuator 专用应用配置不影响 Log4j2 单 Provider 决策。 |
 | v1.3 | 2026-09-01 | 修复公司镜像切换 `NativeParent` 后丢失根 POM 公共日志依赖的问题，要求镜像显式声明 SLF4J 和 Log4j2 Starter。 |
 | v1.2 | 2026-09-01 | 对齐 CampusClaw 公司镜像的新目录、Java 包和公司父 POM 构建边界。 |
