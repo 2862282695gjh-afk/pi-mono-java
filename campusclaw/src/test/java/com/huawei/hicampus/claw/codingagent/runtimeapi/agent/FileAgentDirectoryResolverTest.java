@@ -50,6 +50,16 @@ class FileAgentDirectoryResolverTest {
     }
 
     @Test
+    void preservesPreparedPlanModeInResolvedSnapshot() {
+        AgentRuntimeManager manager = mock(AgentRuntimeManager.class);
+        when(manager.prepare(AGENT_ID)).thenReturn(prepared(List.of("model-a"), true, "plan"));
+
+        AgentDirectorySnapshotDTO snapshot = new FileAgentDirectoryResolver(manager).resolve(AGENT_ID);
+
+        assertThat(snapshot.mode()).isEqualTo("plan");
+    }
+
+    @Test
     void rejectsMissingOrDuplicateModelBinding() {
         AgentRuntimeManager manager = mock(AgentRuntimeManager.class);
         when(manager.prepare(AGENT_ID)).thenReturn(prepared(List.of("model-a", "model-a")));
@@ -121,9 +131,13 @@ class FileAgentDirectoryResolverTest {
     }
 
     private PreparedAgentRuntime prepared(List<String> models, boolean enabled) {
+        return prepared(models, enabled, "build");
+    }
+
+    private PreparedAgentRuntime prepared(List<String> models, boolean enabled, String mode) {
         var runtime = new AgentRuntime(
                 models, List.of(), List.of(), List.of(), List.of(), "Agent", enabled, AGENT_ID, "agent", "prompt",
-                List.of(), "1.0.0");
+                List.of(), "1.0.0", mode);
         return new PreparedAgentRuntime(AGENT_ID, temporaryDirectory, runtime, List.of());
     }
 }

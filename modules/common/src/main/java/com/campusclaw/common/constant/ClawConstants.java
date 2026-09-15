@@ -119,6 +119,26 @@ public final class ClawConstants {
 
         public static final int MAX_PLAN_FEEDBACK_CHARACTERS = 4096;
 
+        public static final String QUESTION_ID_REGEX = "^[A-Za-z][A-Za-z0-9_-]{0,63}$";
+
+        public static final Pattern QUESTION_ID_PATTERN = Pattern.compile(QUESTION_ID_REGEX);
+
+        public static final int MAX_QUESTIONS = 3;
+
+        public static final int MAX_QUESTION_ID_CHARACTERS = 64;
+
+        public static final int MAX_QUESTION_CHARACTERS = 2048;
+
+        public static final int MAX_QUESTION_HEADER_CHARACTERS = 64;
+
+        public static final int MAX_QUESTION_OPTIONS = 6;
+
+        public static final int MAX_QUESTION_OPTION_LABEL_CHARACTERS = 160;
+
+        public static final int MAX_QUESTION_OPTION_DESCRIPTION_CHARACTERS = 1024;
+
+        public static final int MAX_QUESTION_CUSTOM_ANSWER_CHARACTERS = 4096;
+
         public static final int MAX_TODOS = 100;
 
         public static final int MAX_TODO_CONTENT_CHARACTERS = 1024;
@@ -147,6 +167,8 @@ public final class ClawConstants {
 
         public static final String PLAN_REVIEW_UNAVAILABLE_ERROR_CODE = "PLAN_REVIEW_UNAVAILABLE";
 
+        public static final String USER_QUESTION_UNAVAILABLE_ERROR_CODE = "USER_QUESTION_UNAVAILABLE";
+
         public static final Set<String> TOOL_ERROR_CODES = Set.of(
                 TOOL_CALL_DENIED_ERROR_CODE,
                 TOOL_ARGUMENTS_INVALID_ERROR_CODE,
@@ -154,6 +176,7 @@ public final class ClawConstants {
                 "TOOL_EXECUTION_TIMEOUT",
                 PLAN_MODE_INACTIVE_ERROR_CODE,
                 PLAN_REVIEW_UNAVAILABLE_ERROR_CODE,
+                USER_QUESTION_UNAVAILABLE_ERROR_CODE,
                 DEFAULT_TOOL_ERROR_CODE);
 
         public static final Set<String> EXECUTION_ERROR_CODES = Set.of(

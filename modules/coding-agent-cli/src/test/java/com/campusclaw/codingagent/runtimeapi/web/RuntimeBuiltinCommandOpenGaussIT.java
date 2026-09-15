@@ -379,8 +379,8 @@ class RuntimeBuiltinCommandOpenGaussIT {
         assertSessionResult(changed, saved);
         assertThat(saved.etag()).isNotEqualTo(disabled.etag());
         assertNoOp(config, port, sessionId, "model", SECOND_MODEL_ID, saved);
-        assertStalePutRejected(port, sessionId, "model", named.etag(), "{\"modelId\":\"" + MODEL_ID + "\"}");
-        assertStalePutRejected(port, sessionId, "thinking", named.etag(), "{\"thinking\":true}");
+        assertStaleUpdateRejected(port, sessionId, named.etag(), "{\"modelId\":\"" + MODEL_ID + "\"}");
+        assertStaleUpdateRejected(port, sessionId, named.etag(), "{\"thinking\":true}");
         assertThat(getSession(port, sessionId)).isEqualTo(saved);
         return saved;
     }
@@ -458,13 +458,13 @@ class RuntimeBuiltinCommandOpenGaussIT {
         }
     }
 
-    private static void assertStalePutRejected(int port, String sessionId, String resource, String etag, String body)
+    private static void assertStaleUpdateRejected(int port, String sessionId, String etag, String body)
             throws Exception {
-        var response = send(HttpRequest.newBuilder(sessionUri(port, sessionId, resource))
+        var response = send(HttpRequest.newBuilder(sessionUri(port, sessionId, null))
                 .timeout(Duration.ofSeconds(5))
                 .header("If-Match", etag)
                 .header("Content-Type", "application/json")
-                .PUT(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8))
+                .POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8))
                 .build());
         assertError(response, 412, "SESSION_VERSION_MISMATCH");
     }
@@ -518,6 +518,7 @@ class RuntimeBuiltinCommandOpenGaussIT {
                         "modelId",
                         "state",
                         "thinking",
+                        "mode",
                         "lifetimeUsage",
                         "createdAt",
                         "updatedAt");

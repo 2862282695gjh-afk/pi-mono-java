@@ -25,7 +25,7 @@ import jakarta.validation.Validation;
 import jakarta.validation.ValidatorFactory;
 
 /**
- * Session Session Events 三类联合请求的严格解析与边界校验测试。
+ * Session Session Events 五类联合请求的严格解析与边界校验测试。
  *
  * @version [br_eCampusCore 26.0.0, 2026/09/08]
  * @since [br_eCampusCore 26.0.0]
@@ -141,12 +141,54 @@ class SubmitSessionEventRequestVOTest {
         assertThat(validationPaths(unsupported)).contains("event.result");
     }
 
+    @Test
+    void shouldStripQuestionCustomAnswerBeforeUtf16LengthValidation() throws Exception {
+        String maximum = "a".repeat(4096);
+        var jsonRequest = read(questionAnswerJson("\t" + maximum + "\n"));
+        var directAnswer = new QuestionAnswerRequestVO();
+        directAnswer.setId("details");
+        directAnswer.setSelected(List.of());
+        directAnswer.setCustom("\u2003" + maximum + "\u2003");
+        var directEvent = new UserQuestionAnswerEventRequestVO();
+        directEvent.setTargetEventId("question-1");
+        directEvent.setAnswers(List.of(directAnswer));
+
+        assertThat(validationPaths(jsonRequest)).isEmpty();
+        assertThat(((UserQuestionAnswerEventRequestVO) jsonRequest.getEvent())
+                        .getAnswers()
+                        .getFirst()
+                        .getCustom())
+                .isEqualTo(maximum);
+        assertThat(validationPaths(new SubmitSessionEventRequestVO(directEvent)))
+                .isEmpty();
+        assertThat(directAnswer.getCustom()).isEqualTo(maximum);
+    }
+
+    @Test
+    void shouldPreserveCharactersThatJavaStripDoesNotTreatAsWhitespace() throws Exception {
+        String value = "\u00a0\ufeff\u0085answer\u0085\ufeff\u00a0";
+        var request = read(questionAnswerJson(value));
+
+        assertThat(validationPaths(request)).isEmpty();
+        assertThat(((UserQuestionAnswerEventRequestVO) request.getEvent())
+                        .getAnswers()
+                        .getFirst()
+                        .getCustom())
+                .isEqualTo(value);
+    }
+
     private SubmitSessionEventRequestVO read(String input) throws JsonProcessingException {
         return json.readValue(input, SubmitSessionEventRequestVO.class);
     }
 
     private static String messageJson(String blocks) {
         return "{\"event\":{\"type\":\"user.message\",\"content\":[" + blocks + "]}}";
+    }
+
+    private static String questionAnswerJson(String custom) throws JsonProcessingException {
+        String quoted = JsonMapper.builder().build().writeValueAsString(custom);
+        return "{\"event\":{\"type\":\"user.question_answer\",\"targetEventId\":\"question-1\","
+                + "\"answers\":[{\"id\":\"details\",\"selected\":[],\"custom\":" + quoted + "}]}}";
     }
 
     private static List<String> validationPaths(SubmitSessionEventRequestVO request) {

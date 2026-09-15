@@ -57,13 +57,7 @@ class CommittedEventQueryRepositoryOpenGaussIT {
     void resetDatabase() {
         repository = context.getBean(RuntimeSessionRepository.class);
         jdbcTemplate = context.getBean(JdbcTemplate.class);
-        jdbcTemplate.update("TRUNCATE TABLE t_session_events");
-        jdbcTemplate.update("TRUNCATE TABLE t_session_event_projection");
-        jdbcTemplate.update("TRUNCATE TABLE t_session_entries");
-        jdbcTemplate.update("TRUNCATE TABLE t_session_stats");
-        jdbcTemplate.update("TRUNCATE TABLE t_session_sequences");
-        jdbcTemplate.update("TRUNCATE TABLE t_session_materialized");
-        jdbcTemplate.update("TRUNCATE TABLE t_sessions");
+        RuntimeOpenGaussTestCleaner.truncate(jdbcTemplate);
     }
 
     @Test
@@ -227,6 +221,7 @@ class CommittedEventQueryRepositoryOpenGaussIT {
         session.setAgentId("agent_0123456789ABCDEFGHJKMNP");
         session.setModelId("model-db-it");
         session.setState("idle");
+        session.setMode("build");
         session.setResourceVersion(1L);
         session.setCreatedAt(NOW);
         session.setUpdatedAt(NOW);

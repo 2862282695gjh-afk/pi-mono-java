@@ -9,9 +9,11 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Function;
+import java.util.function.Supplier;
 
 import com.campusclaw.ai.types.Usage;
 import com.campusclaw.codingagent.runtimeapi.dto.AcceptedControlDTO;
+import com.campusclaw.codingagent.runtimeapi.dto.AcceptedQuestionAnswerDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.CommittedControlEventDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.CommittedEventDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.CommittedTerminalDTO;
@@ -23,6 +25,9 @@ import com.campusclaw.codingagent.runtimeapi.dto.PlanConfirmationAcceptanceDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.PlanConfirmationEventsDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.PlanConfirmingEventsDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.PlanModeEventDTO;
+import com.campusclaw.codingagent.runtimeapi.dto.QuestionAnswerAcceptanceDTO;
+import com.campusclaw.codingagent.runtimeapi.dto.QuestionAnswerEventDTO;
+import com.campusclaw.codingagent.runtimeapi.dto.QuestionConfirmingEventsDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.RuntimeEntryDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.RuntimeRecordDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.UserMessageAcceptanceDTO;
@@ -181,6 +186,38 @@ public class RuntimeExecutionPersistenceService {
     }
 
     @Transactional
+    public void markQuestionConfirming(
+            ExecutionTargetDTO target,
+            String toolCallId,
+            RuntimeEntryDTO question,
+            CommittedEventDTO questionEvent,
+            RuntimeEntryDTO idle,
+            CommittedEventDTO idleEvent,
+            OffsetDateTime confirmingAt) {
+        requireEvent(
+                target.sessionId(),
+                question,
+                questionEvent,
+                RuntimeEventType.AGENT_QUESTION,
+                CommittedEventType.AGENT_QUESTION);
+        requireEvent(
+                target.sessionId(),
+                idle,
+                idleEvent,
+                RuntimeEventType.SESSION_STATUS_IDLE,
+                CommittedEventType.SESSION_STATUS_IDLE);
+        var status = controls.markQuestionConfirming(
+                target,
+                toolCallId,
+                questionEvent.getEventId(),
+                () -> appendQuestionConfirmingEvents(question, questionEvent, idle, idleEvent),
+                confirmingAt);
+        if (status != RuntimeExecutionControlRepository.TransitionStatus.APPLIED) {
+            throw new IllegalStateException("question confirming target is no longer active: " + status);
+        }
+    }
+
+    @Transactional
     public AcceptedControlDTO acceptToolConfirmation(
             String sessionId,
             String toolCallId,
@@ -225,6 +262,27 @@ public class RuntimeExecutionPersistenceService {
                         sessionId, result, receipt, receiptEvent, modeEventFactory.apply(sourceEventId)),
                 acceptedAt);
         return new AcceptedControlDTO(receipt, requireAcceptedPlanConfirmation(acceptance));
+    }
+
+    @Transactional
+    public AcceptedQuestionAnswerDTO acceptQuestionAnswer(
+            String sessionId,
+            String targetEventId,
+            String answerEventId,
+            Supplier<QuestionAnswerEventDTO> answerFactory,
+            OffsetDateTime acceptedAt) {
+        Objects.requireNonNull(answerFactory, "answerFactory");
+        var answer = new java.util.concurrent.atomic.AtomicReference<QuestionAnswerEventDTO>();
+        var acceptance = controls.acceptQuestionAnswer(
+                sessionId,
+                targetEventId,
+                answerEventId,
+                ids.nextId(),
+                () -> appendQuestionAnswer(answerFactory, answer),
+                acceptedAt);
+        ExecutionTargetDTO target = requireAcceptedQuestionAnswer(acceptance);
+        QuestionAnswerEventDTO committed = Objects.requireNonNull(answer.get(), "committed question answer");
+        return new AcceptedQuestionAnswerDTO(committed.entry(), committed.event(), target);
     }
 
     @Transactional
@@ -369,6 +427,15 @@ public class RuntimeExecutionPersistenceService {
         };
     }
 
+    private static ExecutionTargetDTO requireAcceptedQuestionAnswer(QuestionAnswerAcceptanceDTO acceptance) {
+        return switch (acceptance.status()) {
+            case ACCEPTED -> acceptance.target();
+            case SESSION_NOT_FOUND -> throw new RuntimeApiException(RuntimeErrorCode.SESSION_NOT_FOUND);
+            case NOT_PENDING -> throw new RuntimeApiException(RuntimeErrorCode.QUESTION_ANSWER_NOT_PENDING);
+            case EXECUTION_STOPPING -> throw new RuntimeApiException(RuntimeErrorCode.EXECUTION_STOPPING);
+        };
+    }
+
     private ConfirmingEventsDTO appendConfirmingEvents(
             RuntimeEntryDTO toolCall,
             CommittedEventDTO toolCallEvent,
@@ -389,6 +456,31 @@ public class RuntimeExecutionPersistenceService {
         sessions.appendEntry(idle, List.of(idleEvent));
         return new PlanConfirmingEventsDTO(
                 planEvent.getEventId(), planEvent.getEventSeq(), idleEvent.getEventId(), idleEvent.getEventSeq());
+    }
+
+    private QuestionConfirmingEventsDTO appendQuestionConfirmingEvents(
+            RuntimeEntryDTO question,
+            CommittedEventDTO questionEvent,
+            RuntimeEntryDTO idle,
+            CommittedEventDTO idleEvent) {
+        sessions.appendEntry(question, List.of(questionEvent));
+        sessions.appendEntry(idle, List.of(idleEvent));
+        return new QuestionConfirmingEventsDTO(
+                questionEvent.getEventId(),
+                questionEvent.getEventSeq(),
+                idleEvent.getEventId(),
+                idleEvent.getEventSeq());
+    }
+
+    private QuestionAnswerEventDTO appendQuestionAnswer(
+            Supplier<QuestionAnswerEventDTO> answerFactory,
+            java.util.concurrent.atomic.AtomicReference<QuestionAnswerEventDTO> accepted) {
+        QuestionAnswerEventDTO answer = Objects.requireNonNull(answerFactory.get(), "question answer event");
+        requireControlEvent(
+                answer.entry().getSessionId(), answer.entry(), answer.event(), CommittedEventType.USER_QUESTION_ANSWER);
+        sessions.appendEntry(answer.entry(), List.of(answer.event()));
+        accepted.set(answer);
+        return answer;
     }
 
     private PlanConfirmationEventsDTO appendPlanConfirmationEvents(

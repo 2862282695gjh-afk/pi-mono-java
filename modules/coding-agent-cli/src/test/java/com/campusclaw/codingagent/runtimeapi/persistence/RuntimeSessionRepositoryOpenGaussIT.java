@@ -128,22 +128,7 @@ class RuntimeSessionRepositoryOpenGaussIT {
         executionIds = context.getBean(TestRuntimeEntryIdGenerator.class);
         executionResults = context.getBean(RuntimeExecutionResultRepository.class);
         jdbcTemplate = context.getBean(JdbcTemplate.class);
-        jdbcTemplate.update("TRUNCATE TABLE t_session_event_projection");
-        jdbcTemplate.update("TRUNCATE TABLE t_session_events");
-        jdbcTemplate.update("TRUNCATE TABLE t_session_materialized");
-        jdbcTemplate.update("TRUNCATE TABLE t_session_stats");
-        jdbcTemplate.update("TRUNCATE TABLE t_session_records");
-        jdbcTemplate.update("TRUNCATE TABLE t_session_sequences");
-        jdbcTemplate.update("TRUNCATE TABLE t_session_plan_confirmations");
-        jdbcTemplate.update("TRUNCATE TABLE t_session_tool_confirmations");
-        jdbcTemplate.update("TRUNCATE TABLE t_session_execution_segment_events");
-        jdbcTemplate.update("TRUNCATE TABLE t_session_execution_segments");
-        jdbcTemplate.update("TRUNCATE TABLE t_session_executions");
-        jdbcTemplate.update("TRUNCATE TABLE t_session_events");
-        jdbcTemplate.update("TRUNCATE TABLE t_session_entries");
-        jdbcTemplate.update("TRUNCATE TABLE t_session_cleanup_task");
-        jdbcTemplate.update("TRUNCATE TABLE t_session_tombstone");
-        jdbcTemplate.update("TRUNCATE TABLE t_sessions");
+        RuntimeOpenGaussTestCleaner.truncate(jdbcTemplate);
     }
 
     @Test

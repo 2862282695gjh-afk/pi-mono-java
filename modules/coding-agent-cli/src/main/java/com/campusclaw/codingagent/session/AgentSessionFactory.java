@@ -96,7 +96,8 @@ public class AgentSessionFactory {
                 mateState,
                 contextualSupplier(request.cronToolFactory(), runtime, model),
                 contextualSupplier(request.agentToolFactory(), runtime, model),
-                contextualSupplier(request.exitPlanModeToolFactory(), runtime, model));
+                contextualSupplier(request.exitPlanModeToolFactory(), runtime, model),
+                contextualSupplier(request.askUserQuestionToolFactory(), runtime, model));
         List<AgentTool> tools = toolAssembler.assemble(request.entryPoint(), context);
         Agent agent = configureAgent(request, runtime, model, tools);
         String basePrompt = promptLoader.load(runtime.agentRoot().resolve(".campusclaw"));

@@ -45,7 +45,7 @@ export interface ActivityTurn {
   kind: 'activity';
   toolCallId: string;
   toolName: string;
-  status: 'running' | 'completed' | 'error' | 'confirming' | 'unconfirmed';
+  status: 'running' | 'completed' | 'error' | 'confirming' | 'waiting_answer' | 'unconfirmed';
   arguments: ToolArgumentRow[];
   result: string;
   errorCode?: string;
@@ -67,4 +67,14 @@ export interface PlanTurn {
   lifecycle?: 'stopping' | 'stopped' | 'failed' | 'ended';
 }
 
-export type ConversationTurn = UserTurn | ThinkingTurn | AssistantTurn | ActivityTurn | NoticeTurn | PlanTurn;
+export interface QuestionTurn {
+  key: string;
+  kind: 'question';
+  eventId: string;
+  sourceEventId: string;
+  questions: import('./runtime').RuntimeQuestion[];
+  answer?: import('./runtime').QuestionAnswer[];
+  lifecycle?: 'stopping' | 'closed';
+}
+
+export type ConversationTurn = UserTurn | ThinkingTurn | AssistantTurn | ActivityTurn | NoticeTurn | PlanTurn | QuestionTurn;

@@ -1,6 +1,6 @@
 import type { ActivityTurn, ConversationTurn } from '../types/product';
 import type { RuntimeEvent } from '../types/runtime';
-import { hasToolConfirmation } from '../runtime/eventStore';
+import { hasToolConfirmation, questionAnswer } from '../runtime/eventStore';
 
 /** 输入是已按 eventId 合并的 Store，配置记录不冒充模型回答。 */
 export function projectRuntimeEvents(events: RuntimeEvent[], observing = false): ConversationTurn[] {
@@ -24,10 +24,13 @@ export function projectRuntimeEvents(events: RuntimeEvent[], observing = false):
         if (event.toolName === 'ExitPlanMode' && events.some((item) => item.type === 'agent.plan'
           && item.toolCallId === event.toolCallId && item.sourceEventId === event.sourceEventId)) break;
         const result = events.find((item) => item.type === 'agent.tool_result' && item.toolCallId === event.toolCallId && item.sourceEventId === event.sourceEventId);
+        const question = events.find((item) => item.type === 'agent.question' && item.toolCallId === event.toolCallId
+          && item.sourceEventId === event.sourceEventId);
         const confirmed = hasToolConfirmation(events, event);
         const terminal = events.some((item) => item.type === 'session.status_idle' && item.sourceEventId === event.sourceEventId && item.reason !== 'confirming');
         let status: ActivityTurn['status'] = terminal || !observing ? 'unconfirmed' : 'running';
         if (event.requiresConfirmation && !confirmed && !terminal) status = 'confirming';
+        if (question?.type === 'agent.question' && !questionAnswer(events, question.eventId) && !terminal) status = 'waiting_answer';
         if (result?.type === 'agent.tool_result') status = result.isError ? 'error' : 'completed';
         turns.push({ key, kind: 'activity', toolCallId: event.toolCallId, toolName: event.toolName, status,
           arguments: Object.entries(event.arguments).map(([key, value]) => ({ key, value: typeof value === 'string' ? value : JSON.stringify(value, null, 2) })),
@@ -57,9 +60,22 @@ export function projectRuntimeEvents(events: RuntimeEvent[], observing = false):
         break;
       }
       case 'agent.todo_updated': break;
+      case 'agent.question': {
+        const answer = questionAnswer(events, event.eventId);
+        const index = events.indexOf(event);
+        const terminal = events.slice(index + 1).find((item) => item.type === 'session.status_idle'
+          && item.sourceEventId === event.sourceEventId && item.reason !== 'confirming');
+        const interrupted = events.slice(index + 1).some((item) => item.type === 'user.interrupt'
+          && item.targetEventId === event.sourceEventId);
+        turns.push({ key, kind: 'question', eventId: event.eventId, sourceEventId: event.sourceEventId,
+          questions: event.questions, answer: answer?.type === 'user.question_answer' ? answer.answers : undefined,
+          lifecycle: terminal ? 'closed' : interrupted ? 'stopping' : undefined });
+        break;
+      }
       case 'user.interrupt': turns.push({ key, kind: 'notice', text: '停止请求已接受，等待原任务实际结束。' }); break;
       case 'user.tool_confirmation': turns.push({ key, kind: 'notice', text: event.result === 'allow' ? '已允许本次工具调用。' : `已拒绝本次工具调用。${event.denyMessage ?? ''}` }); break;
       case 'user.plan_confirmation': turns.push({ key, kind: 'notice', text: event.result === 'approve' ? '方案已批准，正在继续执行。' : '方案已退回修改。' }); break;
+      case 'user.question_answer': break;
       case 'session.status_idle':
         turns.push({ key, kind: 'notice', text: ({ done: '本轮已完成', terminated: '本轮已停止', confirming: '等待确认，任务尚未结束', failed: `本轮失败：${event.message ?? ''}` })[event.reason] });
         break;

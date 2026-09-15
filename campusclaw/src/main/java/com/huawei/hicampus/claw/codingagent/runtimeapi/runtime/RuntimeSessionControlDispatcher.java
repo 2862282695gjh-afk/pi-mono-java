@@ -13,6 +13,7 @@ import java.util.concurrent.CancellationException;
 
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.ExecutionTargetDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.PlanReviewDecisionDTO;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.QuestionAnswerDecisionDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.ToolConfirmationDecisionDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeEventOutput;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.persistence.RuntimeExecutionControlRepository;
@@ -66,6 +67,12 @@ public class RuntimeSessionControlDispatcher implements RuntimeLocalControlDispa
                 confirmingTarget.sessionId(), () -> dispatchPlanConfirmationLocked(confirmingTarget, planEventId));
     }
 
+    @Override
+    public boolean dispatchQuestionAnswer(ExecutionTargetDTO confirmingTarget, String questionEventId) {
+        return engines.withOperationLock(
+                confirmingTarget.sessionId(), () -> dispatchQuestionAnswerLocked(confirmingTarget, questionEventId));
+    }
+
     public Optional<ExecutionTargetDTO> stageConfirmation(
             ExecutionTargetDTO resumedTarget, String toolCallId, RuntimeEventOutput output) {
         return engines.withOperationLock(
@@ -76,6 +83,12 @@ public class RuntimeSessionControlDispatcher implements RuntimeLocalControlDispa
             ExecutionTargetDTO resumedTarget, String planEventId, RuntimeEventOutput output) {
         return engines.withOperationLock(
                 resumedTarget.sessionId(), () -> stagePlanConfirmationLocked(resumedTarget, planEventId, output));
+    }
+
+    public Optional<ExecutionTargetDTO> stageQuestionAnswer(
+            ExecutionTargetDTO resumedTarget, String questionEventId, RuntimeEventOutput output) {
+        return engines.withOperationLock(
+                resumedTarget.sessionId(), () -> stageQuestionAnswerLocked(resumedTarget, questionEventId, output));
     }
 
     private boolean dispatchStopLocked(ExecutionTargetDTO target) {
@@ -92,6 +105,7 @@ public class RuntimeSessionControlDispatcher implements RuntimeLocalControlDispa
             holder.get().abort();
             execution.cancelToolConfirmation(new CancellationException("runtime execution was interrupted"));
             execution.cancelPlanReview(new CancellationException("runtime plan review was interrupted"));
+            execution.cancelQuestion(new CancellationException("runtime user question was interrupted"));
             return true;
         } catch (RuntimeException error) {
             logDispatchFailure("runtime.execution.interrupt", target, error);
@@ -141,6 +155,27 @@ public class RuntimeSessionControlDispatcher implements RuntimeLocalControlDispa
         return decision.isPresent();
     }
 
+    private boolean dispatchQuestionAnswerLocked(ExecutionTargetDTO confirmingTarget, String questionEventId) {
+        Optional<RuntimeActiveExecution> active =
+                exactExecution(engines.find(confirmingTarget.sessionId()), confirmingTarget);
+        if (active.isEmpty()) {
+            return false;
+        }
+        Optional<QuestionAnswerDecisionDTO> decision;
+        try {
+            decision = active.get()
+                    .claimAndResumeQuestionAnswer(
+                            confirmingTarget,
+                            questionEventId,
+                            () -> controls.claimQuestionAnswer(confirmingTarget, questionEventId, now()));
+        } catch (RuntimeException error) {
+            logDispatchFailure("runtime.execution.question-answer", confirmingTarget, error);
+            return false;
+        }
+        decision.ifPresent(this::acknowledgeQuestionAnswer);
+        return decision.isPresent();
+    }
+
     private Optional<ExecutionTargetDTO> stageConfirmationLocked(
             ExecutionTargetDTO resumedTarget, String toolCallId, RuntimeEventOutput output) {
         Optional<RuntimeActiveExecution> active = sameExecution(engines.find(resumedTarget.sessionId()), resumedTarget);
@@ -160,6 +195,17 @@ public class RuntimeSessionControlDispatcher implements RuntimeLocalControlDispa
         }
         ExecutionTargetDTO confirmingTarget = active.get().target();
         boolean staged = active.get().stagePlanContinuationOutput(resumedTarget, planEventId, output);
+        return staged ? Optional.of(confirmingTarget) : Optional.empty();
+    }
+
+    private Optional<ExecutionTargetDTO> stageQuestionAnswerLocked(
+            ExecutionTargetDTO resumedTarget, String questionEventId, RuntimeEventOutput output) {
+        Optional<RuntimeActiveExecution> active = sameExecution(engines.find(resumedTarget.sessionId()), resumedTarget);
+        if (active.isEmpty()) {
+            return Optional.empty();
+        }
+        ExecutionTargetDTO confirmingTarget = active.get().target();
+        boolean staged = active.get().stageQuestionContinuationOutput(resumedTarget, questionEventId, output);
         return staged ? Optional.of(confirmingTarget) : Optional.empty();
     }
 
@@ -202,6 +248,25 @@ public class RuntimeSessionControlDispatcher implements RuntimeLocalControlDispa
         } catch (RuntimeException error) {
             logPlanAcknowledgementFailure(decision, error);
         }
+    }
+
+    private void acknowledgeQuestionAnswer(QuestionAnswerDecisionDTO decision) {
+        try {
+            if (!controls.acknowledgeQuestionAnswer(decision, now())) {
+                logQuestionAcknowledgementFailure(decision, null);
+            }
+        } catch (RuntimeException error) {
+            logQuestionAcknowledgementFailure(decision, error);
+        }
+    }
+
+    private void logQuestionAcknowledgementFailure(QuestionAnswerDecisionDTO decision, RuntimeException error) {
+        LOGGER.atWarn()
+                .addKeyValue("operation", "runtime.execution.question-answer.acknowledge")
+                .addKeyValue("sessionId", decision.getSessionId())
+                .addKeyValue("executionId", decision.getExecutionId())
+                .setCause(error)
+                .log("Runtime question answer acknowledgement failed after local delivery");
     }
 
     private void logPlanAcknowledgementFailure(PlanReviewDecisionDTO decision, RuntimeException error) {

@@ -255,8 +255,9 @@
          AND actual.anchor_entry_id = entry.id
         WHERE entry.type NOT IN (
             'user.message', 'user.interrupt', 'user.tool_confirmation', 'user.plan_confirmation',
+            'user.question_answer',
             'assistant.message.completed', 'assistant.thinking.completed',
-            'tool.execution.started', 'tool.result', 'agent.plan',
+            'tool.execution.started', 'tool.result', 'agent.plan', 'agent.question',
             'session.model.changed', 'session.thinking.changed', 'session.mode.changed', 'session.compaction.started',
             'session.compaction.completed', 'session.compaction.failed', 'session.status.idle',
             'leaf', 'branch_summary', 'label'
@@ -266,7 +267,8 @@
         OR (
             entry.type IN (
                 'user.message', 'user.interrupt', 'user.tool_confirmation', 'user.plan_confirmation',
-                'assistant.message.completed', 'tool.result', 'agent.plan',
+                'user.question_answer',
+                'assistant.message.completed', 'tool.result', 'agent.plan', 'agent.question',
                 'tool.execution.started',
                 'session.model.changed', 'session.thinking.changed', 'session.mode.changed', 'session.compaction.completed',
                 'session.status.idle'
@@ -280,6 +282,15 @@
             )
             AND projection.event_count != 0
         )
+    </select>
+
+    <select id="findCommittedEvent"
+            resultType="com.huawei.hicampus.claw.codingagent.runtimeapi.dto.CommittedEventDTO">
+        SELECT session_id, event_id, event_seq, anchor_entry_id, type,
+               created_at, payload::text AS payload
+        FROM t_session_events
+        WHERE session_id = #{sessionId}
+          AND event_id = #{eventId}
     </select>
 
     <update id="updateSessionModel">
@@ -394,6 +405,11 @@
 
     <delete id="deletePlanConfirmations">
         DELETE FROM t_session_plan_confirmations
+        WHERE session_id = #{sessionId}
+    </delete>
+
+    <delete id="deleteQuestionAnswers">
+        DELETE FROM t_session_question_answers
         WHERE session_id = #{sessionId}
     </delete>
 

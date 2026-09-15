@@ -2,7 +2,7 @@ import type { ThreadSummary } from '../types/product';
 
 export interface PendingOperation {
   id: string;
-  kind: 'message' | 'skill' | 'command' | 'interrupt' | 'confirmation' | 'plan-confirmation';
+  kind: 'message' | 'skill' | 'command' | 'interrupt' | 'confirmation' | 'plan-confirmation' | 'question-answer';
   rootId?: string;
   receiptId?: string;
   targetEventId?: string;
@@ -19,7 +19,7 @@ export interface SessionIndexEntry extends ThreadSummary {
 interface SessionIndex { schemaVersion: 1; activeSessionId: string | null; entries: SessionIndexEntry[] }
 const emptyIndex = (): SessionIndex => ({ schemaVersion: 1, activeSessionId: null, entries: [] });
 const isText = (value: unknown): value is string => typeof value === 'string' && value.length > 0 && value.length <= 2048;
-const kinds = new Set(['message', 'skill', 'command', 'interrupt', 'confirmation', 'plan-confirmation']);
+const kinds = new Set(['message', 'skill', 'command', 'interrupt', 'confirmation', 'plan-confirmation', 'question-answer']);
 function decodeOperation(value: unknown): PendingOperation {
   const item = value as PendingOperation;
   if (!item || !isText(item.id) || !kinds.has(item.kind)

@@ -384,6 +384,36 @@ class RuntimeEventProjectorTest {
         fixture.execution.cancelPlanReview(new IllegalStateException("test complete"));
     }
 
+    @Test
+    void shouldPersistOriginalQuestionCallBeforeQuestionAndCloseConfirmingSegment() throws Exception {
+        Fixture fixture = fixture(false);
+        fixture.execution.installConfirmationHandler(fixture.projector::beforeToolCall);
+        ToolCall call = new ToolCall(
+                "ask-user",
+                "AskUserQuestion",
+                Map.of("questions", List.of(Map.of("id", "details", "question", "Which details?"))));
+        AssistantMessage assistant = assistant(List.of(new TextContent("I need one detail."), call));
+        fixture.projector.onEvent(new MessageStartEvent(assistant));
+        fixture.projector.onEvent(new MessageEndEvent(assistant));
+
+        BeforeToolCallResult result =
+                fixture.execution.beforeToolCall(new BeforeToolCallContext(assistant, call, call.arguments(), null));
+
+        assertThat(result).isEqualTo(BeforeToolCallResult.allow());
+        assertThat(fixture.output.closed.await(1, TimeUnit.SECONDS)).isTrue();
+        assertThat(fixture.persistedEvents)
+                .extracting(CommittedEventDTO::getType)
+                .containsExactly("agent.message", "agent.tool_call", "agent.question", "session.status_idle");
+        assertThat(fixture.persistedEvents.get(2).getPayload())
+                .contains("\"sourceEventId\":\"event-root\"", "\"toolCallId\":\"ask-user\"")
+                .contains("\"multiSelect\":false")
+                .doesNotContain("\"header\"", "\"options\"");
+        verify(fixture.persistence)
+                .markQuestionConfirming(
+                        eq(fixture.execution.target()), eq("ask-user"), any(), any(), any(), any(), any());
+        fixture.execution.cancelQuestion(new IllegalStateException("test complete"));
+    }
+
     private static void bindAskPermission(RuntimeActiveExecution execution, ToolCall call) {
         RuntimeToolPermissionPolicy policy = mock(RuntimeToolPermissionPolicy.class);
         when(policy.decide(call)).thenReturn(RuntimeToolPermissionPolicy.Decision.ASK);
@@ -494,6 +524,28 @@ class RuntimeEventProjectorTest {
                 })
                 .when(persistence)
                 .markPlanConfirming(any(), any(), any(), any(), any(), any(), any());
+        configureQuestionPersistence(persistence, persistedEvents, sequences);
+    }
+
+    private static void configureQuestionPersistence(
+            RuntimeExecutionPersistenceService persistence,
+            List<CommittedEventDTO> persistedEvents,
+            AtomicInteger sequences) {
+        doAnswer(invocation -> {
+                    RuntimeEntryDTO question = invocation.getArgument(2);
+                    CommittedEventDTO questionEvent = invocation.getArgument(3);
+                    RuntimeEntryDTO idle = invocation.getArgument(4);
+                    CommittedEventDTO idleEvent = invocation.getArgument(5);
+                    question.setEntrySeq(sequences.incrementAndGet());
+                    questionEvent.setEventSeq(sequences.incrementAndGet());
+                    idle.setEntrySeq(sequences.incrementAndGet());
+                    idleEvent.setEventSeq(sequences.incrementAndGet());
+                    persistedEvents.add(questionEvent);
+                    persistedEvents.add(idleEvent);
+                    return null;
+                })
+                .when(persistence)
+                .markQuestionConfirming(any(), any(), any(), any(), any(), any(), any());
     }
 
     private static AssistantMessage assistant(List<com.huawei.hicampus.claw.ai.types.ContentBlock> content) {

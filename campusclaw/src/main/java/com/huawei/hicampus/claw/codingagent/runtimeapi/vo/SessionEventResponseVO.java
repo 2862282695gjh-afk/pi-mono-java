@@ -43,11 +43,13 @@ public class SessionEventResponseVO {
                     UserInterruptResponseVO,
                     UserToolConfirmationResponseVO,
                     UserPlanConfirmationResponseVO,
+                    UserQuestionAnswerResponseVO,
                     AgentMessageResponseVO,
                     AgentThinkingResponseVO,
                     AgentToolCallResponseVO,
                     AgentToolResultResponseVO,
                     AgentPlanResponseVO,
+                    AgentQuestionResponseVO,
                     AgentTodoUpdatedResponseVO,
                     SessionStatusIdleResponseVO,
                     SessionModelChangedResponseVO,
@@ -126,6 +128,31 @@ public class SessionEventResponseVO {
 
         @JsonInclude(JsonInclude.Include.NON_NULL)
         private final String feedback;
+    }
+
+    /**
+     * 用户问题答案回执字段。
+     */
+    @Getter
+    @RequiredArgsConstructor
+    public static final class UserQuestionAnswerResponseVO implements EventDetailsResponseVO {
+        private final String targetEventId;
+
+        private final List<QuestionAnswerResponseVO> answers;
+    }
+
+    /**
+     * 单题答案响应。
+     */
+    @Getter
+    @RequiredArgsConstructor
+    public static final class QuestionAnswerResponseVO {
+        private final String id;
+
+        private final List<String> selected;
+
+        @JsonInclude(JsonInclude.Include.NON_NULL)
+        private final String custom;
     }
 
     /**
@@ -214,6 +241,50 @@ public class SessionEventResponseVO {
         private final String toolCallId;
 
         private final String content;
+    }
+
+    /**
+     * Agent 完整问题事件字段。
+     */
+    @Getter
+    @RequiredArgsConstructor
+    public static final class AgentQuestionResponseVO implements EventDetailsResponseVO {
+        private final String sourceEventId;
+
+        private final String toolCallId;
+
+        private final List<QuestionResponseVO> questions;
+    }
+
+    /**
+     * 单个问题响应。
+     */
+    @Getter
+    @RequiredArgsConstructor
+    public static final class QuestionResponseVO {
+        private final String id;
+
+        private final String question;
+
+        @JsonInclude(JsonInclude.Include.NON_NULL)
+        private final String header;
+
+        @JsonInclude(JsonInclude.Include.NON_EMPTY)
+        private final List<QuestionOptionResponseVO> options;
+
+        private final boolean multiSelect;
+    }
+
+    /**
+     * 问题选项响应。
+     */
+    @Getter
+    @RequiredArgsConstructor
+    public static final class QuestionOptionResponseVO {
+        private final String label;
+
+        @JsonInclude(JsonInclude.Include.NON_NULL)
+        private final String description;
     }
 
     /**

@@ -76,6 +76,7 @@ class RuntimeCompactionAdmissionOpenGaussIT {
         session.setAgentId("agent");
         session.setModelId("model");
         session.setState("idle");
+        session.setMode("build");
         session.setResourceVersion(1L);
         session.setCreatedAt(now);
         session.setUpdatedAt(now);

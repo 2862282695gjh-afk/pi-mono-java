@@ -266,6 +266,12 @@ public class MyBatisRuntimeSessionRepository implements RuntimeSessionRepository
     }
 
     @Override
+    @Transactional(readOnly = true)
+    public Optional<CommittedEventDTO> findCommittedEvent(String sessionId, String eventId) {
+        return Optional.ofNullable(mapper.findCommittedEvent(sessionId, eventId));
+    }
+
+    @Override
     @Transactional
     public SessionConfigurationUpdateDTO updateModel(
             String sessionId,
@@ -463,6 +469,7 @@ public class MyBatisRuntimeSessionRepository implements RuntimeSessionRepository
     public void completeCleanup(String sessionId) {
         mapper.deleteToolConfirmations(sessionId);
         mapper.deletePlanConfirmations(sessionId);
+        mapper.deleteQuestionAnswers(sessionId);
         mapper.deleteExecutionSegmentEvents(sessionId);
         mapper.deleteExecutionSegments(sessionId);
         mapper.deleteExecutions(sessionId);

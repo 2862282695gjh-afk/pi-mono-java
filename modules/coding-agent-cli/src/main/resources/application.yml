@@ -49,6 +49,7 @@ campusclaw:
       - Agent
       - ExitPlanMode
       - TodoUpdate
+      - AskUserQuestion
     cron:
       - Read
       - Find

@@ -31,6 +31,8 @@ import com.huawei.hicampus.claw.codingagent.runtimeapi.vo.RuntimeSseEventVO;
 import com.huawei.hicampus.claw.codingagent.session.compaction.CompactionMessageSupport;
 import com.huawei.hicampus.claw.codingagent.session.compaction.CompactionReason;
 import com.huawei.hicampus.claw.codingagent.session.compaction.SessionCompactionResult;
+import com.huawei.hicampus.claw.codingagent.tool.question.QuestionAnswerResultDTO;
+import com.huawei.hicampus.claw.codingagent.tool.question.QuestionRequestSnapshotDTO;
 import com.huawei.hicampus.claw.common.constant.ClawConstants;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -107,6 +109,30 @@ public class RuntimeEntryCodec {
             payload.put("feedback", feedback);
         }
         return entry(sessionId, entryId, RuntimeEventType.USER_PLAN_CONFIRMATION.value(), createdAt, payload);
+    }
+
+    public RuntimeEntryDTO userQuestionAnswerEntry(
+            String sessionId,
+            String entryId,
+            String targetEventId,
+            QuestionAnswerResultDTO answers,
+            OffsetDateTime createdAt) {
+        ObjectNode payload = objectMapper.createObjectNode();
+        payload.put("target_event_id", targetEventId);
+        payload.set("answers", objectMapper.valueToTree(answers.answers()));
+        return entry(sessionId, entryId, RuntimeEventType.USER_QUESTION_ANSWER.value(), createdAt, payload);
+    }
+
+    public RuntimeEntryDTO questionEntry(
+            String sessionId,
+            String entryId,
+            String toolCallId,
+            QuestionRequestSnapshotDTO snapshot,
+            OffsetDateTime createdAt) {
+        ObjectNode payload = objectMapper.createObjectNode();
+        payload.put("tool_call_id", toolCallId);
+        payload.set("questions", objectMapper.valueToTree(snapshot.questions()));
+        return entry(sessionId, entryId, RuntimeEventType.AGENT_QUESTION.value(), createdAt, payload);
     }
 
     public RuntimeEntryDTO planEntry(

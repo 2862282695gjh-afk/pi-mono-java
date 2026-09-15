@@ -23,6 +23,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
@@ -52,6 +53,8 @@ import com.campusclaw.codingagent.runtimeapi.runtime.RuntimeToolPermissionPolicy
 import com.campusclaw.codingagent.runtimeapi.session.RuntimeExecutionTerminalReason;
 import com.campusclaw.codingagent.runtimeapi.vo.RuntimeSseEventVO;
 import com.campusclaw.codingagent.test.Log4j2TestAppender;
+import com.campusclaw.codingagent.tool.question.QuestionDTO;
+import com.campusclaw.codingagent.tool.question.QuestionRequestSnapshotDTO;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import org.apache.logging.log4j.Level;
@@ -288,6 +291,28 @@ class RuntimeExecutionCoordinatorTest {
         verify(fixture.holder).abort();
         assertThat(fixture.execution.timedOut()).isTrue();
         assertThatThrownBy(pending::join).hasCauseInstanceOf(TimeoutException.class);
+    }
+
+    @Test
+    void shouldCancelUserQuestionAndFinalizeAnswerSegmentThatWinsTimeoutRace() {
+        Fixture fixture = fixture();
+        ExecutionTargetDTO original = fixture.execution.target();
+        var resumed = new ExecutionTargetDTO("session-v2", "execution-v2", "event-root", "segment-answer");
+        var pending = fixture.execution.beginQuestion(
+                "call-question",
+                "event-question",
+                new QuestionRequestSnapshotDTO(List.of(new QuestionDTO("details", "Details", null, List.of(), false))));
+        when(fixture.persistence.findCurrentTarget(original)).thenReturn(Optional.of(original), Optional.of(resumed));
+        fixture.coordinator.start(fixture.holder, fixture.execution, fixture.message, Locale.US);
+        ArgumentCaptor<Runnable> timeoutAction = ArgumentCaptor.forClass(Runnable.class);
+        verify(fixture.timeouts).schedule(timeoutAction.capture(), eq(Duration.ofMinutes(30)));
+
+        timeoutAction.getValue().run();
+        fixture.work.completeExceptionally(new TimeoutException("stopped"));
+
+        assertThatThrownBy(pending::join).hasCauseInstanceOf(TimeoutException.class);
+        assertThat(fixture.execution.target()).isEqualTo(resumed);
+        verify(fixture.persistence).commitTerminal(eq(resumed), any(), any(), any(), any());
     }
 
     @Test

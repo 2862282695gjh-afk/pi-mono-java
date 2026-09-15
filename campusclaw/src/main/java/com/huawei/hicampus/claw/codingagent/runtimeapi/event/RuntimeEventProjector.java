@@ -48,6 +48,7 @@ import com.huawei.hicampus.claw.codingagent.runtimeapi.vo.SessionEventResponseVO
 import com.huawei.hicampus.claw.codingagent.session.compaction.SessionCompactionCompletedEvent;
 import com.huawei.hicampus.claw.codingagent.session.compaction.SessionCompactionEvent;
 import com.huawei.hicampus.claw.codingagent.tool.builtin.BuiltInToolName;
+import com.huawei.hicampus.claw.codingagent.tool.question.QuestionRequestParser;
 import com.huawei.hicampus.claw.common.constant.ClawConstants;
 
 import org.slf4j.Logger;
@@ -98,6 +99,8 @@ public class RuntimeEventProjector {
 
     private final RuntimeTodoEventMapper todoMapper;
 
+    private final QuestionRequestParser questionParser;
+
     private final Map<Integer, String> thinkingEntryIds = new LinkedHashMap<>();
 
     private final Map<String, String> toolCallEntryIds = new LinkedHashMap<>();
@@ -129,6 +132,44 @@ public class RuntimeEventProjector {
             boolean thinking,
             Locale locale,
             RuntimeTodoEventMapper todoMapper) {
+        this(
+                sessionId,
+                sourceEventId,
+                repository,
+                persistence,
+                codec,
+                ids,
+                events,
+                encoder,
+                clock,
+                maxCommittedEventBytes,
+                abort,
+                execution,
+                initialUserMessage,
+                thinking,
+                locale,
+                todoMapper,
+                new QuestionRequestParser(new com.fasterxml.jackson.databind.ObjectMapper()));
+    }
+
+    public RuntimeEventProjector(
+            String sessionId,
+            String sourceEventId,
+            RuntimeSessionRepository repository,
+            RuntimeExecutionPersistenceService persistence,
+            RuntimeEntryCodec codec,
+            RuntimeEntryIdGenerator ids,
+            RuntimeCommittedEventFactory events,
+            RuntimeEventEncoder encoder,
+            Clock clock,
+            long maxCommittedEventBytes,
+            Runnable abort,
+            RuntimeActiveExecution execution,
+            UserMessage initialUserMessage,
+            boolean thinking,
+            Locale locale,
+            RuntimeTodoEventMapper todoMapper,
+            QuestionRequestParser questionParser) {
         this.sessionId = sessionId;
         this.sourceEventId = sourceEventId;
         this.repository = repository;
@@ -145,6 +186,7 @@ public class RuntimeEventProjector {
         this.thinking = thinking;
         this.locale = locale;
         this.todoMapper = todoMapper;
+        this.questionParser = questionParser;
     }
 
     public synchronized void onEvent(AgentEvent event) {
@@ -176,6 +218,12 @@ public class RuntimeEventProjector {
                 .externalName()
                 .equals(context.toolCall().name())) {
             beginPlanReview(context);
+            return BeforeToolCallResult.allow();
+        }
+        if (BuiltInToolName.ASK_USER_QUESTION
+                .externalName()
+                .equals(context.toolCall().name())) {
+            beginQuestion(context);
             return BeforeToolCallResult.allow();
         }
         var pending = beginConfirmation(context.toolCall());
@@ -474,6 +522,43 @@ public class RuntimeEventProjector {
             throw error;
         }
         finishConfirmingOutput(output, planFrame, idleFrame);
+    }
+
+    private void beginQuestion(BeforeToolCallContext context) {
+        ToolCall call = requireUniqueFinalizedCall(context);
+        var snapshot = questionParser.parse(call);
+        OffsetDateTime confirmingAt = now();
+        RuntimeEntryDTO question = codec.questionEntry(sessionId, ids.nextId(), call.id(), snapshot, confirmingAt);
+        CommittedEventDTO questionEvent =
+                events.agentQuestion(question, question.getId(), call.id(), snapshot, sourceEventId);
+        RuntimeEntryDTO idle =
+                codec.sessionIdleEntry(sessionId, ids.nextId(), "confirming", sourceEventId, null, confirmingAt);
+        CommittedEventDTO idleEvent = events.sessionIdle(idle, idle.getId(), "confirming", sourceEventId, null, locale);
+        RuntimeSseEventVO questionFrame = requireCommittedFrame(questionEvent);
+        RuntimeSseEventVO idleFrame = requireCommittedFrame(idleEvent);
+        RuntimeEventOutput output = execution.output();
+        execution.beginQuestion(call.id(), questionEvent.getEventId(), snapshot);
+        try {
+            persistence.markQuestionConfirming(
+                    execution.target(), call.id(), question, questionEvent, idle, idleEvent, confirmingAt);
+        } catch (RuntimeException error) {
+            execution.cancelQuestion(error);
+            throw error;
+        }
+        finishConfirmingOutput(output, questionFrame, idleFrame);
+    }
+
+    private ToolCall requireUniqueFinalizedCall(BeforeToolCallContext context) {
+        ToolCall call = context.toolCall();
+        ToolCall finalized = finalizedToolCalls.get(call.id());
+        long toolCallCount = context.assistantMessage().content().stream()
+                .filter(ToolCall.class::isInstance)
+                .count();
+        if (finalized == null || !finalized.equals(call) || toolCallCount != 1) {
+            throw new com.huawei.hicampus.claw.codingagent.tool.question.UserQuestionException(
+                    ClawConstants.RuntimeApi.USER_QUESTION_UNAVAILABLE_ERROR_CODE);
+        }
+        return finalized;
     }
 
     private static String requirePlanArgument(ToolCall call) {

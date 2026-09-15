@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { projectRuntimeEvents } from './runtimeEventProjector';
-import { eventFixture, idleFixture, userFixture } from '../runtime/fixtures';
+import { eventFixture, idleFixture, questionFixture, userFixture } from '../runtime/fixtures';
 
 describe('Runtime Events presentation', () => {
   it('does not invent an answer for an empty authoritative message', () => {
@@ -62,5 +62,25 @@ describe('Runtime Events presentation', () => {
     expect(projectRuntimeEvents([userFixture(), plan, terminal])).toEqual(expect.arrayContaining([
       expect.objectContaining({ kind: 'plan', eventId: 'plan', lifecycle: 'stopped' }),
     ]));
+  });
+  it('projects questions from their public event and attaches only the exact target answer', () => {
+    const oldAnswer = eventFixture({ eventId: 'old-answer', type: 'user.question_answer', targetEventId: 'old-question',
+      answers: [{ id: 'scope', selected: ['全部'] }] });
+    const answer = eventFixture({ eventId: 'answer', type: 'user.question_answer', targetEventId: 'question-a',
+      answers: [{ id: 'scope', selected: ['东区'] }, { id: 'note', selected: [], custom: '正文' }] }) as Extract<
+        import('../types/runtime').RuntimeEvent, { type: 'user.question_answer' }>;
+    const turns = projectRuntimeEvents([userFixture(), oldAnswer, questionFixture(), answer]);
+    expect(turns.find((turn) => turn.kind === 'question')).toEqual(expect.objectContaining({
+      kind: 'question', eventId: 'question-a', answer: answer.answers,
+    }));
+    expect(turns.some((turn) => turn.kind === 'notice' && turn.key === 'answer')).toBe(false);
+    const waiting = projectRuntimeEvents([userFixture(), eventFixture({ eventId: 'ask', type: 'agent.tool_call',
+      sourceEventId: 'root-a', toolCallId: 'ask-a', toolName: 'AskUserQuestion', arguments: {}, requiresConfirmation: false }),
+    questionFixture(), idleFixture('confirming')]);
+    expect(waiting.find((turn) => turn.kind === 'activity')).toMatchObject({ status: 'waiting_answer' });
+  });
+  it('closes an unanswered question only on its root lifecycle', () => {
+    const turns = projectRuntimeEvents([userFixture(), questionFixture(), idleFixture('terminated')]);
+    expect(turns.find((turn) => turn.kind === 'question')).toMatchObject({ lifecycle: 'closed' });
   });
 });

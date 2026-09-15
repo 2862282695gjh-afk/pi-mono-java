@@ -1,5 +1,5 @@
 import { RuntimeApiError } from '../types/runtime';
-import type { AvailableModels, RuntimeEvent, RuntimeHistoryPage, RuntimeSession, UserEvent } from '../types/runtime';
+import type { AvailableModels, QuestionAnswer, RuntimeEvent, RuntimeHistoryPage, RuntimeQuestion, RuntimeSession, UserEvent } from '../types/runtime';
 
 export const MAX_INPUT_CHARACTERS = 2048;
 export const MAX_DENY_MESSAGE_UTF16_UNITS = 4096;
@@ -39,8 +39,60 @@ function oneOf(value: unknown, values: string[]): string {
 function only(data: Record<string, unknown>, allowed: string[]): void {
   if (Object.keys(data).some((key) => !allowed.includes(key))) invalidResponse();
 }
-function javaStrip(value: string): string {
+export function javaStrip(value: string): string {
   return value.replace(/^[\u0009-\u000d\u001c-\u0020\u1680\u2000-\u2006\u2008-\u200a\u2028\u2029\u205f\u3000]+|[\u0009-\u000d\u001c-\u0020\u1680\u2000-\u2006\u2008-\u200a\u2028\u2029\u205f\u3000]+$/gu, '');
+}
+function normalized(value: unknown, max: number): string {
+  const result = text(value);
+  if (!result || javaStrip(result) !== result || result.length > max || codePointLength(result) > max) invalidResponse();
+  return result;
+}
+function questionId(value: unknown): string {
+  const result = text(value);
+  if (!/^[A-Za-z][A-Za-z0-9_-]{0,63}$/u.test(result)) invalidResponse();
+  return result;
+}
+function decodeQuestions(value: unknown): RuntimeQuestion[] {
+  if (!Array.isArray(value) || value.length < 1 || value.length > 3) return invalidResponse();
+  const ids = new Set<string>();
+  return value.map((item) => {
+    const data = record(item);
+    only(data, ['id', 'question', 'header', 'options', 'multiSelect']);
+    const id = questionId(data.id);
+    if (ids.has(id)) invalidResponse();
+    ids.add(id);
+    const question: RuntimeQuestion = { id, question: normalized(data.question, 2048), multiSelect: bool(data.multiSelect) };
+    if (data.header !== undefined) question.header = normalized(data.header, 64);
+    if (data.options !== undefined) {
+      if (!Array.isArray(data.options) || data.options.length < 2 || data.options.length > 6) return invalidResponse();
+      const labels = new Set<string>();
+      question.options = data.options.map((item) => {
+        const option = record(item);
+        only(option, ['label', 'description']);
+        const label = normalized(option.label, 160);
+        if (labels.has(label)) invalidResponse();
+        labels.add(label);
+        return { label, ...(option.description === undefined ? {} : { description: normalized(option.description, 1024) }) };
+      });
+    } else if (question.multiSelect) invalidResponse();
+    return question;
+  });
+}
+function decodeAnswers(value: unknown): QuestionAnswer[] {
+  if (!Array.isArray(value) || value.length < 1 || value.length > 3) return invalidResponse();
+  const ids = new Set<string>();
+  return value.map((item) => {
+    const data = record(item);
+    only(data, ['id', 'selected', 'custom']);
+    const id = questionId(data.id);
+    if (ids.has(id) || !Array.isArray(data.selected) || data.selected.length > 6) invalidResponse();
+    ids.add(id);
+    const selected = data.selected.map((label) => normalized(label, 160));
+    if (new Set(selected).size !== selected.length) invalidResponse();
+    const custom = data.custom === undefined ? undefined : normalized(data.custom, 4096);
+    if (!selected.length && custom === undefined) invalidResponse();
+    return { id, selected, ...(custom === undefined ? {} : { custom }) };
+  });
 }
 export function decodeSession(value: unknown): RuntimeSession {
   const data = record(value);
@@ -65,12 +117,14 @@ export function decodeEvent(value: unknown, history = false): RuntimeEvent {
     'user.interrupt': ['targetEventId'],
     'user.tool_confirmation': ['toolCallId', 'result', 'denyMessage'],
     'user.plan_confirmation': ['targetEventId', 'result', 'feedback'],
+    'user.question_answer': ['targetEventId', 'answers'],
     'agent.message': ['phase', 'content', 'sourceEventId', 'usage'],
     'agent.thinking': ['phase', 'content', 'sourceEventId'],
     'agent.tool_call': ['toolCallId', 'toolName', 'arguments', 'requiresConfirmation', 'sourceEventId'],
     'agent.tool_result': ['toolCallId', 'content', 'isError', 'errorCode', 'sourceEventId'],
     'agent.plan': ['toolCallId', 'content', 'sourceEventId'],
     'agent.todo_updated': ['toolCallId', 'todos', 'sourceEventId'],
+    'agent.question': ['toolCallId', 'questions', 'sourceEventId'],
     'session.status_idle': ['reason', 'sourceEventId', 'errorCode', 'message'],
     'session.model_changed': ['previousModelId', 'modelId', 'reason'],
     'session.thinking_changed': ['previousThinking', 'thinking', 'reason'],
@@ -115,6 +169,10 @@ export function decodeEvent(value: unknown, history = false): RuntimeEvent {
       if (data.feedback !== undefined && (data.result !== 'revise' || !text(data.feedback).trim()
         || text(data.feedback).length > MAX_DENY_MESSAGE_UTF16_UNITS)) invalidResponse();
       break;
+    case 'user.question_answer':
+      if (nonempty(data.targetEventId).length > 128) invalidResponse();
+      data.answers = decodeAnswers(data.answers);
+      break;
     case 'agent.message': case 'agent.thinking':
       oneOf(data.phase, ['delta', 'completed']); text(data.content);
       if (data.usage !== undefined) record(data.usage);
@@ -156,6 +214,10 @@ export function decodeEvent(value: unknown, history = false): RuntimeEvent {
       if (active > 1) invalidResponse();
       break;
     }
+    case 'agent.question':
+      nonempty(data.toolCallId);
+      data.questions = decodeQuestions(data.questions);
+      break;
     case 'session.status_idle':
       oneOf(data.reason, ['done', 'failed', 'terminated', 'confirming']);
       if (data.reason === 'failed') { nonempty(data.errorCode); nonempty(data.message); }
@@ -211,8 +273,11 @@ export function matchesReceipt(input: UserEvent, event: RuntimeEvent): boolean {
   if (input.type === 'user.tool_confirmation' && event.type === 'user.tool_confirmation') {
     return input.toolCallId === event.toolCallId && input.result === event.result && input.denyMessage === event.denyMessage;
   }
-  return input.type === 'user.plan_confirmation' && event.type === 'user.plan_confirmation'
-    && input.targetEventId === event.targetEventId && input.result === event.result && input.feedback === event.feedback;
+  if (input.type === 'user.plan_confirmation' && event.type === 'user.plan_confirmation') {
+    return input.targetEventId === event.targetEventId && input.result === event.result && input.feedback === event.feedback;
+  }
+  return input.type === 'user.question_answer' && event.type === 'user.question_answer'
+    && input.targetEventId === event.targetEventId && JSON.stringify(input.answers) === JSON.stringify(event.answers);
 }
 
 /** POST 专用 data-only SSE 读取器；中止只关闭观察，不代表业务停止。 */

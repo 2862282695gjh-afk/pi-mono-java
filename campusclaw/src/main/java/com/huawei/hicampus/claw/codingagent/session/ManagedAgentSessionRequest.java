@@ -34,6 +34,7 @@ import com.huawei.hicampus.claw.codingagent.tool.builtin.ToolEntryPoint;
  * @param afterHooks 创建时固定的后置 hook 链
  * @param mode 当前执行模式快照
  * @param exitPlanModeToolFactory Runtime 计划审核工具工厂
+ * @param askUserQuestionToolFactory Runtime 用户提问工具工厂
  * @version [br_eCampusCore 26.0.0, 2026/08/24]
  * @since [br_eCampusCore 26.0.0]
  */
@@ -49,7 +50,8 @@ public record ManagedAgentSessionRequest(
         List<BeforeToolCallHandler> beforeHooks,
         List<AfterToolCallHandler> afterHooks,
         String mode,
-        BiFunction<PreparedAgentRuntime, Model, AgentTool> exitPlanModeToolFactory) {
+        BiFunction<PreparedAgentRuntime, Model, AgentTool> exitPlanModeToolFactory,
+        BiFunction<PreparedAgentRuntime, Model, AgentTool> askUserQuestionToolFactory) {
 
     public ManagedAgentSessionRequest {
         if (agentId == null || agentId.isBlank()) {
@@ -88,6 +90,36 @@ public record ManagedAgentSessionRequest(
                 beforeHooks,
                 afterHooks,
                 com.huawei.hicampus.claw.common.constant.ClawConstants.Agent.MODE_BUILD,
+                null,
+                null);
+    }
+
+    public ManagedAgentSessionRequest(
+            String agentId,
+            ToolEntryPoint entryPoint,
+            Function<PreparedAgentRuntime, Model> modelResolver,
+            ThinkingLevel thinkingLevel,
+            MateCredentials mateCredentials,
+            BiFunction<PreparedAgentRuntime, Model, AgentTool> cronToolFactory,
+            BiFunction<PreparedAgentRuntime, Model, AgentTool> agentToolFactory,
+            Consumer<PreparedAgentRuntime> runtimeValidator,
+            List<BeforeToolCallHandler> beforeHooks,
+            List<AfterToolCallHandler> afterHooks,
+            String mode,
+            BiFunction<PreparedAgentRuntime, Model, AgentTool> exitPlanModeToolFactory) {
+        this(
+                agentId,
+                entryPoint,
+                modelResolver,
+                thinkingLevel,
+                mateCredentials,
+                cronToolFactory,
+                agentToolFactory,
+                runtimeValidator,
+                beforeHooks,
+                afterHooks,
+                mode,
+                exitPlanModeToolFactory,
                 null);
     }
 
@@ -106,6 +138,7 @@ public record ManagedAgentSessionRequest(
                 List.of(),
                 List.of(),
                 com.huawei.hicampus.claw.common.constant.ClawConstants.Agent.MODE_BUILD,
+                null,
                 null);
     }
 }

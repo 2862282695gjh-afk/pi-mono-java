@@ -11,10 +11,10 @@ import ProgressDisclosure from './components/ProgressDisclosure.vue';
 import { useWorkbenchSessions } from './composables/useWorkbenchSessions';
 import type { DebugHeadersExpose } from './debugHeaders';
 import { projectRuntimeEvents } from './projectors/runtimeEventProjector';
-import { canReviewPlan } from './runtime/eventStore';
+import { canAnswerQuestion, canReviewPlan } from './runtime/eventStore';
 import type { AgentOption } from './types/product';
 import type { CommandInvocation } from './runtime/commands';
-import type { SubmissionOutcome } from './types/runtime';
+import type { QuestionAnswer, SubmissionOutcome } from './types/runtime';
 
 const isDevelopment = import.meta.env.DEV;
 const DebugHeaders = import.meta.env.DEV ? defineAsyncComponent(() => import('./components/DebugHeaders.vue')) : undefined;
@@ -32,6 +32,7 @@ const workbench = useWorkbenchSessions(agent);
 const { runtime, threads, message, currentThread } = workbench;
 const busy = ref(false);
 const submitting = ref(false);
+const questionSubmittingId = ref('');
 const sidebarCompact = ref(window.innerWidth <= 800);
 const scrollRegion = ref<HTMLElement | null>(null);
 const debugHeaders = ref<DebugHeadersExpose | null>(null);
@@ -53,6 +54,10 @@ const reviewDisabled = computed(() => !canReviewPlan({ mode: runtime.session.val
   hasPendingPlan: Boolean(runtime.execution.value.pendingPlan), historyReady: runtime.historyReady.value,
   controlLocked: runtime.controlPending.value || runtime.stopping.value || busy.value || runtime.recovering.value,
   uncertain: runtime.receiptUnknown.value || Boolean(runtime.uncertainty.value) }));
+const questionDisabled = computed(() => !canAnswerQuestion({ state: runtime.session.value?.state,
+  hasPendingQuestion: Boolean(runtime.execution.value.pendingQuestion), historyReady: runtime.historyReady.value,
+  controlLocked: runtime.controlPending.value || runtime.stopping.value || busy.value || runtime.recovering.value,
+  uncertain: runtime.receiptUnknown.value || Boolean(runtime.uncertainty.value) }));
 
 
 watch(
@@ -65,6 +70,7 @@ watch(
 
 watch(() => runtime.session.value?.sessionId, () => {
   submitting.value = false;
+  questionSubmittingId.value = '';
   followingTail.value = true;
 }, { flush: 'sync' });
 
@@ -158,6 +164,22 @@ async function decidePlan(eventId: string, decision: 'approve' | 'revise', feedb
   if (headers === null || sessionId !== runtime.session.value?.sessionId
     || eventId !== runtime.execution.value.pendingPlan?.eventId) return;
   await run(async () => { await runtime.confirmPlan(eventId, decision, feedback, headers); });
+}
+
+async function answerQuestion(eventId: string, answers: QuestionAnswer[]): Promise<void> {
+  const sessionId = runtime.session.value?.sessionId;
+  if (!sessionId || questionSubmittingId.value || eventId !== runtime.execution.value.pendingQuestion?.eventId) return;
+  questionSubmittingId.value = eventId;
+  try {
+    const headers = isDevelopment ? await debugHeaders.value?.snapshot() : undefined;
+    if (headers === null || sessionId !== runtime.session.value?.sessionId
+      || eventId !== runtime.execution.value.pendingQuestion?.eventId) return;
+    await run(async () => { await runtime.answerQuestion(eventId, answers, headers); });
+  } finally {
+    if (sessionId === runtime.session.value?.sessionId && questionSubmittingId.value === eventId) {
+      questionSubmittingId.value = '';
+    }
+  }
 }
 
 function acknowledgeUnknown(): void {
@@ -265,7 +287,10 @@ function modelLabel(modelId: string): string {
           <ConversationTimeline :turns="turns" :running="runtime.streaming.value && !runtime.execution.value.confirming"
             :session-id="runtime.session.value!.sessionId"
             :pending-plan-event-id="runtime.execution.value.pendingPlan?.eventId" :review-disabled="reviewDisabled"
-            :review-pending="runtime.controlPending.value || busy" @decide-plan="decidePlan" />
+            :pending-question-event-id="runtime.execution.value.pendingQuestion?.eventId"
+            :review-pending="runtime.controlPending.value || busy" :question-disabled="questionDisabled"
+            :question-pending="Boolean(questionSubmittingId) || runtime.controlPending.value"
+            @decide-plan="decidePlan" @answer-question="answerQuestion" />
         </section>
         <div class="conversation-dock">
           <div v-if="showRecovery || !followingTail" class="recovery-bar" role="status">

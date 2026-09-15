@@ -79,6 +79,8 @@ public interface RuntimeSessionRepository {
 
     Optional<List<CommittedEventDTO>> findEventPage(String sessionId, long offset, int limit);
 
+    Optional<CommittedEventDTO> findCommittedEvent(String sessionId, String eventId);
+
     /**
      * 在同一事务内更新模型，并为每个配置 Entry 保存完整公共事件。
      *

@@ -4,6 +4,7 @@
 
 package com.campusclaw.codingagent.runtimeapi.event;
 
+import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.Optional;
@@ -21,7 +22,9 @@ import com.campusclaw.codingagent.runtimeapi.vo.SubmitSessionEventRequestVO;
 import com.campusclaw.codingagent.runtimeapi.vo.UserInterruptEventRequestVO;
 import com.campusclaw.codingagent.runtimeapi.vo.UserMessageEventRequestVO;
 import com.campusclaw.codingagent.runtimeapi.vo.UserPlanConfirmationEventRequestVO;
+import com.campusclaw.codingagent.runtimeapi.vo.UserQuestionAnswerEventRequestVO;
 import com.campusclaw.codingagent.runtimeapi.vo.UserToolConfirmationEventRequestVO;
+import com.campusclaw.codingagent.tool.question.QuestionAnswerDTO;
 
 import org.springframework.stereotype.Service;
 
@@ -62,6 +65,7 @@ public class RuntimeEventService {
             case UserInterruptEventRequestVO interrupt -> submitInterrupt(sessionId, interrupt);
             case UserToolConfirmationEventRequestVO confirmation -> submitConfirmation(sessionId, confirmation);
             case UserPlanConfirmationEventRequestVO confirmation -> submitPlanConfirmation(sessionId, confirmation);
+            case UserQuestionAnswerEventRequestVO answer -> submitQuestionAnswer(sessionId, answer);
         };
     }
 
@@ -93,6 +97,20 @@ public class RuntimeEventService {
         Optional<ExecutionTargetDTO> confirming =
                 dispatcher.stagePlanConfirmation(accepted.acceptance().target(), request.getTargetEventId(), output);
         confirming.ifPresent(target -> dispatcher.dispatchPlanConfirmation(target, request.getTargetEventId()));
+        return accepted.stream();
+    }
+
+    private RuntimeEventStream submitQuestionAnswer(String sessionId, UserQuestionAnswerEventRequestVO request) {
+        List<QuestionAnswerDTO> answers = request.getAnswers().stream()
+                .map(value -> new QuestionAnswerDTO(value.getId(), value.getSelected(), value.getCustom()))
+                .toList();
+        AcceptedControlStreamDTO accepted =
+                controls.acceptQuestionAnswer(sessionId, request.getTargetEventId(), answers);
+        RuntimeEventOutput output = new RuntimeResultBackedEventOutput(
+                accepted.stream(), accepted.acceptance().target(), results);
+        Optional<ExecutionTargetDTO> confirming =
+                dispatcher.stageQuestionAnswer(accepted.acceptance().target(), request.getTargetEventId(), output);
+        confirming.ifPresent(target -> dispatcher.dispatchQuestionAnswer(target, request.getTargetEventId()));
         return accepted.stream();
     }
 

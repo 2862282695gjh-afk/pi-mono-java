@@ -37,6 +37,9 @@ export function hasToolConfirmation(events: RuntimeEvent[], call: Extract<Runtim
 export function hasPlanConfirmation(events: RuntimeEvent[], planEventId: string): boolean {
   return events.some((event) => event.type === 'user.plan_confirmation' && event.targetEventId === planEventId);
 }
+export function questionAnswer(events: RuntimeEvent[], questionEventId: string) {
+  return events.find((event) => event.type === 'user.question_answer' && event.targetEventId === questionEventId);
+}
 export function executionState(events: RuntimeEvent[]) {
   const latest = [...events].reverse();
   const root = latest.find((event) => event.type === 'user.message');
@@ -48,12 +51,17 @@ export function executionState(events: RuntimeEvent[]) {
     && !events.some((item) => item.type === 'agent.tool_result' && item.sourceEventId === rootId && item.toolCallId === event.toolCallId)
     && !hasToolConfirmation(events, event));
   const plan = latest.find((event) => event.type === 'agent.plan' && event.sourceEventId === rootId);
+  const question = latest.find((event) => event.type === 'agent.question' && event.sourceEventId === rootId
+    && !questionAnswer(events, event.eventId));
   const interruptPending = !terminal && events.some((event) => event.type === 'user.interrupt' && event.targetEventId === rootId);
-  const continued = idle && events.slice(events.indexOf(idle) + 1).some((event) => event.type === 'user.tool_confirmation' || event.type === 'user.plan_confirmation'
+  const continued = idle && events.slice(events.indexOf(idle) + 1).some((event) => event.type === 'user.tool_confirmation'
+    || event.type === 'user.plan_confirmation'
+    || (event.type === 'user.question_answer' && event.targetEventId === question?.eventId)
     || event.type === 'user.interrupt' || ('sourceEventId' in event && event.sourceEventId === rootId));
   const confirming = !terminal && !continued && idle?.type === 'session.status_idle' && idle.reason === 'confirming';
   return { rootId, terminal, interruptPending, pendingTool: !terminal && pendingTool?.type === 'agent.tool_call' ? pendingTool : undefined,
     pendingPlan: confirming && plan?.type === 'agent.plan' && !hasPlanConfirmation(events, plan.eventId) ? plan : undefined,
+    pendingQuestion: confirming && question?.type === 'agent.question' ? question : undefined,
     confirming };
 }
 
@@ -73,4 +81,15 @@ export function canReviewPlan(options: {
 }): boolean {
   return options.mode === 'plan' && options.state === 'running' && options.hasPendingPlan
     && options.historyReady && !options.controlLocked && !options.uncertain;
+}
+
+export function canAnswerQuestion(options: {
+  state?: string;
+  hasPendingQuestion: boolean;
+  historyReady: boolean;
+  controlLocked: boolean;
+  uncertain: boolean;
+}): boolean {
+  return options.state === 'running' && options.hasPendingQuestion && options.historyReady
+    && !options.controlLocked && !options.uncertain;
 }

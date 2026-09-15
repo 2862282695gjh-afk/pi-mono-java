@@ -223,7 +223,8 @@ public class RuntimeSessionEngineRegistry {
                 List.of(execution::beforeToolCall),
                 List.of(),
                 execution.mode(),
-                (runtime, ignored) -> new com.campusclaw.codingagent.tool.plan.ExitPlanModeTool(execution));
+                (runtime, ignored) -> new com.campusclaw.codingagent.tool.plan.ExitPlanModeTool(execution),
+                (runtime, ignored) -> new com.campusclaw.codingagent.tool.question.AskUserQuestionTool(execution));
         return sessionFactory.create(request);
     }
 

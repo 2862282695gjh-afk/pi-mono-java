@@ -110,6 +110,13 @@ public class ExecutionControlPollingService {
         }
     }
 
+    public void dispatchCommittedQuestionAnswer(ExecutionTargetDTO confirmingTarget, String questionEventId) {
+        RuntimeLocalControlDispatcher dispatcher = dispatcherProvider.getIfAvailable();
+        if (dispatcher != null) {
+            dispatchQuestionAnswer(dispatcher, confirmingTarget, questionEventId);
+        }
+    }
+
     private boolean readyToPoll() {
         return System.currentTimeMillis() >= retryAfterEpochMilli;
     }
@@ -159,6 +166,9 @@ public class ExecutionControlPollingService {
             dispatchStop(dispatcher, signal.target());
         } else if (signal.getPlanEventId() != null && !signal.getPlanEventId().isBlank()) {
             dispatchPlanConfirmation(dispatcher, signal.target(), signal.getPlanEventId());
+        } else if (signal.getQuestionEventId() != null
+                && !signal.getQuestionEventId().isBlank()) {
+            dispatchQuestionAnswer(dispatcher, signal.target(), signal.getQuestionEventId());
         } else if (signal.getToolCallId() != null && !signal.getToolCallId().isBlank()) {
             dispatchConfirmation(dispatcher, signal.target(), signal.getToolCallId());
         }
@@ -219,6 +229,26 @@ public class ExecutionControlPollingService {
         } catch (RuntimeException exception) {
             deliveredConfirmations.remove(target, planEventId);
             LOGGER.warn("Failed to dispatch plan confirmation to the local Runtime execution", exception);
+        }
+    }
+
+    private void dispatchQuestionAnswer(
+            RuntimeLocalControlDispatcher dispatcher, ExecutionTargetDTO target, String questionEventId) {
+        if (deliveredConfirmations.putIfAbsent(target, questionEventId) != null) {
+            return;
+        }
+        dispatchExecutor.submit(() -> deliverQuestionAnswer(dispatcher, target, questionEventId));
+    }
+
+    private void deliverQuestionAnswer(
+            RuntimeLocalControlDispatcher dispatcher, ExecutionTargetDTO target, String questionEventId) {
+        try {
+            if (!dispatcher.dispatchQuestionAnswer(target, questionEventId)) {
+                deliveredConfirmations.remove(target, questionEventId);
+            }
+        } catch (RuntimeException exception) {
+            deliveredConfirmations.remove(target, questionEventId);
+            LOGGER.warn("Failed to dispatch question answer to the local Runtime execution", exception);
         }
     }
 

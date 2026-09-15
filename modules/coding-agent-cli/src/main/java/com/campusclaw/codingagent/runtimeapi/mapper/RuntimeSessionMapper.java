@@ -74,6 +74,8 @@ public interface RuntimeSessionMapper {
     List<CommittedEventDTO> listCommittedEvents(
             @Param("sessionId") String sessionId, @Param("offset") long offset, @Param("limit") int limit);
 
+    CommittedEventDTO findCommittedEvent(@Param("sessionId") String sessionId, @Param("eventId") String eventId);
+
     long countUnmappedCurrentBranchEntries(@Param("sessionId") String sessionId);
 
     int updateSessionModel(
@@ -118,6 +120,8 @@ public interface RuntimeSessionMapper {
     int deleteToolConfirmations(@Param("sessionId") String sessionId);
 
     int deletePlanConfirmations(@Param("sessionId") String sessionId);
+
+    int deleteQuestionAnswers(@Param("sessionId") String sessionId);
 
     int deleteExecutionSegments(@Param("sessionId") String sessionId);
 

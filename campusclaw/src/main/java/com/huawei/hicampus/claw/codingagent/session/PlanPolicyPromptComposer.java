@@ -34,9 +34,11 @@ public class PlanPolicyPromptComposer implements InitializingBean {
 
     private final String executionTodos = load("EXECUTION_TODOS");
 
+    private final String askUser = load("ASK_USER");
+
     @Override
     public void afterPropertiesSet() {
-        for (String prompt : List.of(planCommon, planRootReview, planChild, buildRoot, executionTodos)) {
+        for (String prompt : List.of(planCommon, planRootReview, planChild, buildRoot, executionTodos, askUser)) {
             if (prompt.isBlank()) {
                 throw new IllegalStateException("Plan policy prompt must not be blank");
             }
@@ -45,12 +47,15 @@ public class PlanPolicyPromptComposer implements InitializingBean {
 
     public String compose(String base, ToolEntryPoint entryPoint, String mode, List<String> toolNames) {
         if (ClawConstants.Agent.MODE_PLAN.equals(mode)) {
-            return planPrompt(base, entryPoint);
+            return planPrompt(base, entryPoint, toolNames);
         }
         if (entryPoint != ToolEntryPoint.RUNTIME) {
             return base;
         }
         String prompt = append(base, buildRoot);
+        if (toolNames.contains(BuiltInToolName.ASK_USER_QUESTION.externalName())) {
+            prompt = append(prompt, askUser);
+        }
         return toolNames.contains(BuiltInToolName.TODO_UPDATE.externalName()) ? append(prompt, executionTodos) : prompt;
     }
 
@@ -60,13 +65,17 @@ public class PlanPolicyPromptComposer implements InitializingBean {
                 && toolNames.contains(BuiltInToolName.EXIT_PLAN_MODE.externalName());
     }
 
-    private String planPrompt(String base, ToolEntryPoint entryPoint) {
+    private String planPrompt(String base, ToolEntryPoint entryPoint, List<String> toolNames) {
         String prompt = append(base, planCommon);
-        return switch (entryPoint) {
+        prompt = switch (entryPoint) {
             case RUNTIME -> append(prompt, planRootReview);
             case CHILD_AGENT -> append(prompt, planChild);
             case CRON -> base;
         };
+        return entryPoint == ToolEntryPoint.RUNTIME
+                        && toolNames.contains(BuiltInToolName.ASK_USER_QUESTION.externalName())
+                ? append(prompt, askUser)
+                : prompt;
     }
 
     private static String append(String current, String addition) {

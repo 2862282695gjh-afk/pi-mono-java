@@ -13,6 +13,7 @@ import com.campusclaw.codingagent.runtimeapi.vo.SubmitSessionEventRequestVO;
 import com.campusclaw.codingagent.runtimeapi.vo.UserInterruptEventRequestVO;
 import com.campusclaw.codingagent.runtimeapi.vo.UserMessageEventRequestVO;
 import com.campusclaw.codingagent.runtimeapi.vo.UserPlanConfirmationEventRequestVO;
+import com.campusclaw.codingagent.runtimeapi.vo.UserQuestionAnswerEventRequestVO;
 import com.campusclaw.codingagent.runtimeapi.vo.UserToolConfirmationEventRequestVO;
 import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.databind.DeserializationContext;
@@ -71,6 +72,9 @@ public final class SubmitSessionEventRequestDeserializer extends JsonDeserialize
         }
         if (CommittedEventType.USER_PLAN_CONFIRMATION.value().equals(type)) {
             return UserPlanConfirmationEventRequestVO.class;
+        }
+        if (CommittedEventType.USER_QUESTION_ANSWER.value().equals(type)) {
+            return UserQuestionAnswerEventRequestVO.class;
         }
         return context.reportInputMismatch(SessionUserEventRequestVO.class, "user event type is unsupported");
     }

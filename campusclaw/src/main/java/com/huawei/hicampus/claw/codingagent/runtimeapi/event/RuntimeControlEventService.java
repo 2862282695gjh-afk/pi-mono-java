@@ -8,12 +8,16 @@ import java.time.Clock;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Objects;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.AcceptedControlDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.AcceptedControlStreamDTO;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.AcceptedQuestionAnswerDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.CommittedEventDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.PlanModeEventDTO;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.QuestionAnswerEventDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeEntryDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.error.RuntimeErrorCode;
@@ -21,10 +25,13 @@ import com.huawei.hicampus.claw.codingagent.runtimeapi.persistence.RuntimeExecut
 import com.huawei.hicampus.claw.codingagent.runtimeapi.session.PlanConfirmationResult;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.session.ToolConfirmationResult;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.vo.RuntimeSseEventVO;
+import com.huawei.hicampus.claw.codingagent.tool.question.QuestionAnswerDTO;
+import com.huawei.hicampus.claw.codingagent.tool.question.QuestionAnswerResultDTO;
 import com.huawei.hicampus.claw.common.constant.ClawConstants;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 /**
@@ -55,6 +62,8 @@ public class RuntimeControlEventService {
 
     private final Clock clock;
 
+    private final RuntimeUserQuestionService questions;
+
     public RuntimeControlEventService(
             RuntimeEventStreamFactory streams,
             RuntimeResultWaitRegistry waits,
@@ -65,6 +74,21 @@ public class RuntimeControlEventService {
             RuntimeCommittedEventFactory events,
             RuntimeEventEncoder encoder,
             Clock clock) {
+        this(streams, waits, results, codec, ids, persistence, events, encoder, clock, null);
+    }
+
+    @Autowired
+    public RuntimeControlEventService(
+            RuntimeEventStreamFactory streams,
+            RuntimeResultWaitRegistry waits,
+            RuntimeResultPollingService results,
+            RuntimeEntryCodec codec,
+            RuntimeEntryIdGenerator ids,
+            RuntimeExecutionPersistenceService persistence,
+            RuntimeCommittedEventFactory events,
+            RuntimeEventEncoder encoder,
+            Clock clock,
+            RuntimeUserQuestionService questions) {
         this.streams = streams;
         this.waits = waits;
         this.results = results;
@@ -74,6 +98,7 @@ public class RuntimeControlEventService {
         this.events = events;
         this.encoder = encoder;
         this.clock = clock;
+        this.questions = questions;
     }
 
     public AcceptedControlStreamDTO acceptInterrupt(String sessionId, String targetEventId) {
@@ -119,6 +144,69 @@ public class RuntimeControlEventService {
                         acceptedAt));
     }
 
+    public AcceptedControlStreamDTO acceptQuestionAnswer(
+            String sessionId, String targetEventId, List<QuestionAnswerDTO> submittedAnswers) {
+        if (questions == null) {
+            throw new RuntimeApiException(RuntimeErrorCode.EVENT_SERVICE_UNAVAILABLE);
+        }
+        OffsetDateTime acceptedAt = now();
+        String answerEventId = ids.nextId();
+        RuntimeEventStream stream = streams.create();
+        RuntimeResultWaitRegistry.Reservation reservation = reserve(RuntimeResultWaitMode.SEGMENT_EVENTS, stream);
+        stream.onClose(reservation::close);
+        var prepared = new AtomicReference<RuntimeSseEventVO>();
+        AcceptedQuestionAnswerDTO accepted = runQuestionTransaction(
+                sessionId, targetEventId, submittedAnswers, answerEventId, acceptedAt, stream, prepared);
+        AcceptedControlDTO control = new AcceptedControlDTO(accepted.receipt(), accepted.target());
+        return finishAccepted(
+                stream, reservation, prepared.get(), control, accepted.event().getEventSeq());
+    }
+
+    private AcceptedQuestionAnswerDTO runQuestionTransaction(
+            String sessionId,
+            String targetEventId,
+            List<QuestionAnswerDTO> submittedAnswers,
+            String answerEventId,
+            OffsetDateTime acceptedAt,
+            RuntimeEventStream stream,
+            AtomicReference<RuntimeSseEventVO> prepared) {
+        try {
+            return persistence.acceptQuestionAnswer(
+                    sessionId,
+                    targetEventId,
+                    answerEventId,
+                    () -> questionAnswerEvent(
+                            sessionId, targetEventId, submittedAnswers, answerEventId, acceptedAt, stream, prepared),
+                    acceptedAt);
+        } catch (RuntimeApiException error) {
+            stream.detach();
+            throw error;
+        } catch (RuntimeException error) {
+            stream.detach();
+            throw acceptanceFailure(CommittedEventType.USER_QUESTION_ANSWER.value(), error);
+        }
+    }
+
+    private QuestionAnswerEventDTO questionAnswerEvent(
+            String sessionId,
+            String targetEventId,
+            List<QuestionAnswerDTO> submittedAnswers,
+            String answerEventId,
+            OffsetDateTime acceptedAt,
+            RuntimeEventStream stream,
+            AtomicReference<RuntimeSseEventVO> prepared) {
+        QuestionAnswerResultDTO normalized = questions.normalizeCurrent(sessionId, targetEventId, submittedAnswers);
+        RuntimeEntryDTO receipt =
+                codec.userQuestionAnswerEntry(sessionId, answerEventId, targetEventId, normalized, acceptedAt);
+        CommittedEventDTO event = events.userQuestionAnswer(receipt, targetEventId, normalized);
+        RuntimeSseEventVO frame = encoder.committed(event);
+        if (!stream.canAcceptRequired(frame)) {
+            throw new RuntimeApiException(RuntimeErrorCode.EVENT_SERVICE_UNAVAILABLE);
+        }
+        prepared.set(frame);
+        return new QuestionAnswerEventDTO(receipt, event);
+    }
+
     private PlanModeEventDTO planModeEvent(
             String sessionId,
             String sourceEventId,
@@ -147,15 +235,7 @@ public class RuntimeControlEventService {
         stream.onClose(reservation::close);
         RuntimeSseEventVO receipt = encodeBeforeAcceptance(stream, event);
         AcceptedControlDTO accepted = runTransaction(transaction, stream, event.getType());
-        if (!emitAccepted(stream, receipt, accepted, event)) {
-            return new AcceptedControlStreamDTO(stream, accepted);
-        }
-        if (!reservation.bind(accepted.target(), event.getEventSeq())) {
-            stream.complete();
-            return new AcceptedControlStreamDTO(stream, accepted);
-        }
-        results.notifyCommitted(accepted.target());
-        return new AcceptedControlStreamDTO(stream, accepted);
+        return finishAccepted(stream, reservation, receipt, accepted, event.getEventSeq());
     }
 
     private RuntimeResultWaitRegistry.Reservation reserve(RuntimeResultWaitMode mode, RuntimeEventStream stream) {
@@ -191,21 +271,28 @@ public class RuntimeControlEventService {
         }
     }
 
-    private boolean emitAccepted(
+    private AcceptedControlStreamDTO finishAccepted(
             RuntimeEventStream stream,
-            RuntimeSseEventVO preparedReceipt,
+            RuntimeResultWaitRegistry.Reservation reservation,
+            RuntimeSseEventVO receipt,
             AcceptedControlDTO accepted,
-            CommittedEventDTO event) {
+            long eventSeq) {
         try {
-            RuntimeSseEventVO receipt = event.getEventSeq() == 0L ? preparedReceipt : encoder.committed(event);
-            if (stream.emit(receipt)) {
-                return true;
+            if (!stream.emit(Objects.requireNonNull(receipt, "prepared receipt"))) {
+                stream.detach();
+                return new AcceptedControlStreamDTO(stream, accepted);
             }
         } catch (RuntimeException error) {
             logAcceptedStreamFailure(accepted, error);
+            stream.detach();
+            return new AcceptedControlStreamDTO(stream, accepted);
         }
-        stream.detach();
-        return false;
+        if (!reservation.bind(accepted.target(), eventSeq)) {
+            stream.complete();
+        } else {
+            results.notifyCommitted(accepted.target());
+        }
+        return new AcceptedControlStreamDTO(stream, accepted);
     }
 
     private boolean deliver(RuntimeEventStream stream, List<CommittedEventDTO> events, boolean terminal) {

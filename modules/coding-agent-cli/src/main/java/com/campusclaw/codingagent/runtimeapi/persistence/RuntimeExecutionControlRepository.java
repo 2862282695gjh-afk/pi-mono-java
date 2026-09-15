@@ -20,6 +20,10 @@ import com.campusclaw.codingagent.runtimeapi.dto.PlanConfirmationAcceptanceDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.PlanConfirmationEventsDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.PlanConfirmingEventsDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.PlanReviewDecisionDTO;
+import com.campusclaw.codingagent.runtimeapi.dto.QuestionAnswerAcceptanceDTO;
+import com.campusclaw.codingagent.runtimeapi.dto.QuestionAnswerDecisionDTO;
+import com.campusclaw.codingagent.runtimeapi.dto.QuestionAnswerEventDTO;
+import com.campusclaw.codingagent.runtimeapi.dto.QuestionConfirmingEventsDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.ToolConfirmationDecisionDTO;
 import com.campusclaw.codingagent.runtimeapi.session.PlanConfirmationResult;
 import com.campusclaw.codingagent.runtimeapi.session.RuntimeExecutionTerminalReason;
@@ -53,6 +57,13 @@ public interface RuntimeExecutionControlRepository {
             PlanConfirmingAppender appender,
             OffsetDateTime terminalAt);
 
+    TransitionStatus markQuestionConfirming(
+            ExecutionTargetDTO target,
+            String toolCallId,
+            String questionEventId,
+            QuestionConfirmingAppender appender,
+            OffsetDateTime terminalAt);
+
     ConfirmationAcceptanceDTO acceptConfirmation(
             String sessionId,
             String toolCallId,
@@ -79,9 +90,22 @@ public interface RuntimeExecutionControlRepository {
     Optional<PlanReviewDecisionDTO> claimPlanConfirmation(
             ExecutionTargetDTO confirmingTarget, String planEventId, OffsetDateTime claimedAt);
 
+    QuestionAnswerAcceptanceDTO acceptQuestionAnswer(
+            String sessionId,
+            String targetEventId,
+            String answerEventId,
+            String segmentId,
+            QuestionAnswerAppender appender,
+            OffsetDateTime acceptedAt);
+
+    Optional<QuestionAnswerDecisionDTO> claimQuestionAnswer(
+            ExecutionTargetDTO confirmingTarget, String questionEventId, OffsetDateTime claimedAt);
+
     boolean acknowledgeConfirmation(ToolConfirmationDecisionDTO decision, OffsetDateTime completedAt);
 
     boolean acknowledgePlanConfirmation(PlanReviewDecisionDTO decision, OffsetDateTime completedAt);
+
+    boolean acknowledgeQuestionAnswer(QuestionAnswerDecisionDTO decision, OffsetDateTime completedAt);
 
     TransitionStatus appendToSegment(ExecutionTargetDTO target, SegmentAppender appender);
 
@@ -122,6 +146,22 @@ public interface RuntimeExecutionControlRepository {
     @FunctionalInterface
     interface PlanConfirmingAppender {
         PlanConfirmingEventsDTO append();
+    }
+
+    /**
+     * 持有 Session 与执行行锁期间提交问题和 confirming 事件的回调。
+     */
+    @FunctionalInterface
+    interface QuestionConfirmingAppender {
+        QuestionConfirmingEventsDTO append();
+    }
+
+    /**
+     * 持有 Session 与执行行锁期间复核并提交用户问题答案回执的回调。
+     */
+    @FunctionalInterface
+    interface QuestionAnswerAppender {
+        QuestionAnswerEventDTO append();
     }
 
     /**

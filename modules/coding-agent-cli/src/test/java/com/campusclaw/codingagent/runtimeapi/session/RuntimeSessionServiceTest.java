@@ -98,6 +98,26 @@ class RuntimeSessionServiceTest {
     }
 
     @Test
+    void createUsesResolvedAgentPlanMode() {
+        AgentDirectorySnapshotDTO snapshot = new AgentDirectorySnapshotDTO(
+                AGENT_ID,
+                "model-default",
+                List.of("model-default"),
+                "plan",
+                Path.of("/runtime/agents").resolve(AGENT_ID),
+                Path.of("/runtime/agents").resolve(AGENT_ID).resolve(".campusclaw"));
+        Model model = mock(Model.class);
+        when(directoryResolver.resolve(AGENT_ID)).thenReturn(snapshot);
+        when(modelManager.resolveDefaultModel(snapshot)).thenReturn(model);
+        when(model.id()).thenReturn("model-default");
+        when(model.reasoning()).thenReturn(true);
+
+        service.create(AGENT_ID);
+
+        verify(repository).create(org.mockito.ArgumentMatchers.argThat(session -> "plan".equals(session.getMode())));
+    }
+
+    @Test
     void createMapsPersistenceFailureWithoutExposingInternalCause() {
         AgentDirectorySnapshotDTO snapshot = snapshot();
         Model model = mock(Model.class);

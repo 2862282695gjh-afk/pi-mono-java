@@ -20,6 +20,8 @@ import com.campusclaw.ai.types.Usage;
 import com.campusclaw.codingagent.runtimeapi.dto.CommittedEventDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.RuntimeEntryDTO;
 import com.campusclaw.codingagent.tool.builtin.BuiltInToolName;
+import com.campusclaw.codingagent.tool.question.QuestionAnswerResultDTO;
+import com.campusclaw.codingagent.tool.question.QuestionRequestSnapshotDTO;
 import com.campusclaw.codingagent.tool.todo.TodoSnapshotDTO;
 import com.campusclaw.common.constant.ClawConstants;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -85,12 +87,32 @@ public class RuntimeCommittedEventFactory {
         return create(entry, entry.getId(), CommittedEventType.USER_PLAN_CONFIRMATION, payload);
     }
 
+    public CommittedEventDTO userQuestionAnswer(
+            RuntimeEntryDTO entry, String targetEventId, QuestionAnswerResultDTO answers) {
+        ObjectNode payload = objectMapper.createObjectNode();
+        payload.put("targetEventId", targetEventId);
+        payload.set("answers", objectMapper.valueToTree(answers.answers()));
+        return create(entry, entry.getId(), CommittedEventType.USER_QUESTION_ANSWER, payload);
+    }
+
     public CommittedEventDTO agentPlan(
             RuntimeEntryDTO entry, String eventId, String toolCallId, String content, String sourceEventId) {
         ObjectNode payload = sourcePayload(sourceEventId);
         payload.put("toolCallId", toolCallId);
         payload.put("content", content);
         return create(entry, eventId, CommittedEventType.AGENT_PLAN, payload);
+    }
+
+    public CommittedEventDTO agentQuestion(
+            RuntimeEntryDTO entry,
+            String eventId,
+            String toolCallId,
+            QuestionRequestSnapshotDTO snapshot,
+            String sourceEventId) {
+        ObjectNode payload = sourcePayload(sourceEventId);
+        payload.put("toolCallId", toolCallId);
+        payload.set("questions", objectMapper.valueToTree(snapshot.questions()));
+        return create(entry, eventId, CommittedEventType.AGENT_QUESTION, payload);
     }
 
     public CommittedEventDTO agentMessage(

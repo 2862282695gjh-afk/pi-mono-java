@@ -23,6 +23,10 @@ import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.PlanConfirmationAccep
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.PlanConfirmationEventsDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.PlanConfirmingEventsDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.PlanReviewDecisionDTO;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.QuestionAnswerAcceptanceDTO;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.QuestionAnswerDecisionDTO;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.QuestionAnswerEventDTO;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.QuestionConfirmingEventsDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.ToolConfirmationDecisionDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.mapper.RuntimeExecutionControlMapper;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.mapper.RuntimeSessionMapper;
@@ -33,7 +37,10 @@ import com.huawei.hicampus.claw.codingagent.runtimeapi.session.RuntimeExecutionT
 import com.huawei.hicampus.claw.codingagent.runtimeapi.session.RuntimeSessionState;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.session.ToolConfirmationResult;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.session.ToolConfirmationState;
+import com.huawei.hicampus.claw.codingagent.tool.question.QuestionRequestParser;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -49,10 +56,21 @@ public class MyBatisRuntimeExecutionControlRepository implements RuntimeExecutio
 
     private final RuntimeSessionMapper sessionMapper;
 
+    private final QuestionRequestParser questionParser;
+
     public MyBatisRuntimeExecutionControlRepository(
             RuntimeExecutionControlMapper mapper, RuntimeSessionMapper sessionMapper) {
+        this(mapper, sessionMapper, new QuestionRequestParser(new ObjectMapper()));
+    }
+
+    @Autowired
+    public MyBatisRuntimeExecutionControlRepository(
+            RuntimeExecutionControlMapper mapper,
+            RuntimeSessionMapper sessionMapper,
+            QuestionRequestParser questionParser) {
         this.mapper = mapper;
         this.sessionMapper = sessionMapper;
+        this.questionParser = questionParser;
     }
 
     @Override
@@ -194,6 +212,42 @@ public class MyBatisRuntimeExecutionControlRepository implements RuntimeExecutio
 
     @Override
     @Transactional
+    public TransitionStatus markQuestionConfirming(
+            ExecutionTargetDTO target,
+            String toolCallId,
+            String questionEventId,
+            QuestionConfirmingAppender appender,
+            OffsetDateTime terminalAt) {
+        requirePlanIdentity(toolCallId, questionEventId);
+        Objects.requireNonNull(appender, "appender");
+        TransitionStatus rejected = rejectTransition(target, RuntimeExecutionState.RUNNING);
+        if (rejected != null) {
+            return rejected;
+        }
+        QuestionConfirmingEventsDTO events = requireQuestionConfirmingEvents(appender.append(), questionEventId);
+        linkCommittedEvent(target, events.questionEventId(), events.questionEventSeq());
+        linkCommittedEvent(target, events.idleEventId(), events.idleEventSeq());
+        OffsetDateTime storedAt = storedAt(terminalAt);
+        closeSegment(
+                target,
+                events.idleEventId(),
+                events.idleEventSeq(),
+                RuntimeExecutionTerminalReason.CONFIRMING,
+                storedAt);
+        requireOne(
+                mapper.markQuestionConfirming(
+                        target.sessionId(),
+                        target.executionId(),
+                        target.segmentId(),
+                        toolCallId,
+                        questionEventId,
+                        storedAt),
+                "execution did not enter question confirming state");
+        return TransitionStatus.APPLIED;
+    }
+
+    @Override
+    @Transactional
     public ConfirmationAcceptanceDTO acceptConfirmation(
             String sessionId,
             String toolCallId,
@@ -302,6 +356,58 @@ public class MyBatisRuntimeExecutionControlRepository implements RuntimeExecutio
 
     @Override
     @Transactional
+    public QuestionAnswerAcceptanceDTO acceptQuestionAnswer(
+            String sessionId,
+            String targetEventId,
+            String answerEventId,
+            String segmentId,
+            QuestionAnswerAppender appender,
+            OffsetDateTime acceptedAt) {
+        requireQuestionAnswer(sessionId, targetEventId, answerEventId, segmentId, appender);
+        var session = sessionMapper.lockSessionForUpdate(sessionId);
+        if (session == null) {
+            return new QuestionAnswerAcceptanceDTO(QuestionAnswerAcceptanceDTO.Status.SESSION_NOT_FOUND, null);
+        }
+        ExecutionStateDTO execution = mapper.lockCurrentExecution(sessionId);
+        QuestionAnswerAcceptanceDTO.Status rejected = rejectQuestionAnswer(targetEventId, execution);
+        if (rejected != null || !RuntimeSessionState.RUNNING.matches(session.getState())) {
+            return new QuestionAnswerAcceptanceDTO(
+                    rejected == null ? QuestionAnswerAcceptanceDTO.Status.NOT_PENDING : rejected, null);
+        }
+        QuestionAnswerEventDTO answer = requireQuestionAnswerEvent(appender.append(), answerEventId);
+        CommittedControlEventDTO event = new CommittedControlEventDTO(
+                answer.event().getEventId(), answer.event().getEventSeq());
+        ExecutionTargetDTO target = continuationTarget(execution, segmentId);
+        persistQuestionAnswer(execution, target, event, storedAt(acceptedAt));
+        return new QuestionAnswerAcceptanceDTO(QuestionAnswerAcceptanceDTO.Status.ACCEPTED, target);
+    }
+
+    @Override
+    @Transactional
+    public Optional<QuestionAnswerDecisionDTO> claimQuestionAnswer(
+            ExecutionTargetDTO confirmingTarget, String questionEventId, OffsetDateTime claimedAt) {
+        requireTarget(confirmingTarget);
+        if (isBlank(questionEventId)) {
+            throw new IllegalArgumentException("question event id is required");
+        }
+        ExecutionStateDTO execution = lockExecutionForClaim(confirmingTarget);
+        if (cannotClaim(execution, confirmingTarget)) {
+            return Optional.empty();
+        }
+        int affected = mapper.claimQuestionAnswer(
+                confirmingTarget.sessionId(),
+                confirmingTarget.executionId(),
+                confirmingTarget.rootEventId(),
+                confirmingTarget.segmentId(),
+                questionEventId,
+                storedAt(claimedAt));
+        return affected == 0
+                ? Optional.empty()
+                : Optional.of(requireClaimedQuestionAnswer(confirmingTarget, questionEventId));
+    }
+
+    @Override
+    @Transactional
     public boolean acknowledgeConfirmation(ToolConfirmationDecisionDTO decision, OffsetDateTime completedAt) {
         Objects.requireNonNull(decision, "decision");
         if (isBlank(decision.getSessionId())
@@ -330,6 +436,23 @@ public class MyBatisRuntimeExecutionControlRepository implements RuntimeExecutio
                         decision.getSessionId(),
                         decision.getExecutionId(),
                         decision.getConfirmationEventId(),
+                        storedAt(completedAt))
+                == 1;
+    }
+
+    @Override
+    @Transactional
+    public boolean acknowledgeQuestionAnswer(QuestionAnswerDecisionDTO decision, OffsetDateTime completedAt) {
+        Objects.requireNonNull(decision, "decision");
+        if (isBlank(decision.getSessionId())
+                || isBlank(decision.getExecutionId())
+                || isBlank(decision.getAnswerEventId())) {
+            throw new IllegalArgumentException("question answer decision identity is incomplete");
+        }
+        return mapper.acknowledgeQuestionAnswer(
+                        decision.getSessionId(),
+                        decision.getExecutionId(),
+                        decision.getAnswerEventId(),
                         storedAt(completedAt))
                 == 1;
     }
@@ -501,8 +624,23 @@ public class MyBatisRuntimeExecutionControlRepository implements RuntimeExecutio
         if (execution == null
                 || execution.getState() != RuntimeExecutionState.CONFIRMING
                 || execution.getPendingPlanEventId() != null
+                || execution.getPendingQuestionEventId() != null
                 || !toolCallId.equals(execution.getPendingToolCallId())) {
             return ConfirmationAcceptanceDTO.Status.NOT_PENDING;
+        }
+        return null;
+    }
+
+    private static QuestionAnswerAcceptanceDTO.Status rejectQuestionAnswer(
+            String targetEventId, ExecutionStateDTO execution) {
+        if (execution != null
+                && (execution.getState() == RuntimeExecutionState.STOPPING || execution.getStopEventId() != null)) {
+            return QuestionAnswerAcceptanceDTO.Status.EXECUTION_STOPPING;
+        }
+        if (execution == null
+                || execution.getState() != RuntimeExecutionState.CONFIRMING
+                || !targetEventId.equals(execution.getPendingQuestionEventId())) {
+            return QuestionAnswerAcceptanceDTO.Status.NOT_PENDING;
         }
         return null;
     }
@@ -584,6 +722,30 @@ public class MyBatisRuntimeExecutionControlRepository implements RuntimeExecutio
         return new PlanConfirmationAcceptanceDTO(PlanConfirmationAcceptanceDTO.Status.ACCEPTED, target);
     }
 
+    private void persistQuestionAnswer(
+            ExecutionStateDTO execution,
+            ExecutionTargetDTO target,
+            CommittedControlEventDTO event,
+            OffsetDateTime acceptedAt) {
+        requireOne(
+                mapper.insertSegment(newContinuationSegment(target, event, acceptedAt)),
+                "question answer segment was not inserted");
+        requireOne(
+                mapper.insertQuestionAnswer(newQuestionAnswer(execution, target, event, acceptedAt)),
+                "question answer decision was not inserted");
+        requireOne(
+                mapper.resumeAfterQuestionAnswer(
+                        target.sessionId(),
+                        target.executionId(),
+                        execution.getCurrentSegmentId(),
+                        target.segmentId(),
+                        execution.getPendingToolCallId(),
+                        execution.getPendingQuestionEventId(),
+                        acceptedAt),
+                "execution did not accept question answer");
+        linkCommittedEvent(target, event.eventId(), event.eventSeq());
+    }
+
     private static ExecutionTargetDTO targetOf(ExecutionStateDTO execution) {
         return new ExecutionTargetDTO(
                 execution.getSessionId(),
@@ -651,6 +813,24 @@ public class MyBatisRuntimeExecutionControlRepository implements RuntimeExecutio
         decision.setToolCallId(execution.getPendingToolCallId());
         decision.setResult(result);
         decision.setFeedback(feedback);
+        decision.setState(ToolConfirmationState.PENDING);
+        decision.setCreatedAt(acceptedAt);
+        return decision;
+    }
+
+    private static QuestionAnswerDecisionDTO newQuestionAnswer(
+            ExecutionStateDTO execution,
+            ExecutionTargetDTO target,
+            CommittedControlEventDTO event,
+            OffsetDateTime acceptedAt) {
+        var decision = new QuestionAnswerDecisionDTO();
+        decision.setSessionId(target.sessionId());
+        decision.setExecutionId(target.executionId());
+        decision.setAnswerEventId(event.eventId());
+        decision.setTargetEventId(execution.getPendingQuestionEventId());
+        decision.setPreviousSegmentId(execution.getCurrentSegmentId());
+        decision.setSegmentId(target.segmentId());
+        decision.setToolCallId(execution.getPendingToolCallId());
         decision.setState(ToolConfirmationState.PENDING);
         decision.setCreatedAt(acceptedAt);
         return decision;
@@ -760,6 +940,18 @@ public class MyBatisRuntimeExecutionControlRepository implements RuntimeExecutio
         return events;
     }
 
+    private static QuestionConfirmingEventsDTO requireQuestionConfirmingEvents(
+            QuestionConfirmingEventsDTO events, String expectedQuestionEventId) {
+        Objects.requireNonNull(events, "question confirming events");
+        requireTerminalEvent(events.questionEventId(), events.questionEventSeq());
+        requireTerminalEvent(events.idleEventId(), events.idleEventSeq());
+        if (!expectedQuestionEventId.equals(events.questionEventId())
+                || events.questionEventId().equals(events.idleEventId())) {
+            throw new IllegalArgumentException("question confirming event identities are invalid");
+        }
+        return events;
+    }
+
     private static void requirePlanIdentity(String toolCallId, String planEventId) {
         if (isBlank(toolCallId) || isBlank(planEventId)) {
             throw new IllegalArgumentException("plan review identity is incomplete");
@@ -798,6 +990,27 @@ public class MyBatisRuntimeExecutionControlRepository implements RuntimeExecutio
             throw new IllegalArgumentException("approved plan confirmation cannot carry feedback");
         }
         Objects.requireNonNull(appender, "appender");
+    }
+
+    private static void requireQuestionAnswer(
+            String sessionId, String targetEventId, String eventId, String segmentId, QuestionAnswerAppender appender) {
+        if (isBlank(sessionId) || isBlank(targetEventId) || isBlank(eventId) || isBlank(segmentId)) {
+            throw new IllegalArgumentException("question answer identity is incomplete");
+        }
+        Objects.requireNonNull(appender, "appender");
+    }
+
+    private static QuestionAnswerEventDTO requireQuestionAnswerEvent(
+            QuestionAnswerEventDTO answer, String expectedEventId) {
+        Objects.requireNonNull(answer, "question answer event");
+        Objects.requireNonNull(answer.entry(), "question answer entry");
+        Objects.requireNonNull(answer.event(), "question answer committed event");
+        requireTerminalEvent(answer.event().getEventId(), answer.event().getEventSeq());
+        if (!expectedEventId.equals(answer.event().getEventId())
+                || !answer.entry().getId().equals(answer.event().getAnchorEntryId())) {
+            throw new IllegalArgumentException("question answer event identity changed while appending");
+        }
+        return answer;
     }
 
     private static PlanConfirmationEventsDTO requirePlanConfirmationEvents(
@@ -844,6 +1057,16 @@ public class MyBatisRuntimeExecutionControlRepository implements RuntimeExecutio
         if (decision == null) {
             throw new IllegalStateException("claimed plan confirmation decision is missing");
         }
+        return decision;
+    }
+
+    private QuestionAnswerDecisionDTO requireClaimedQuestionAnswer(ExecutionTargetDTO target, String questionEventId) {
+        QuestionAnswerDecisionDTO decision = mapper.findClaimedQuestionAnswer(
+                target.sessionId(), target.executionId(), target.segmentId(), questionEventId);
+        if (decision == null) {
+            throw new IllegalStateException("claimed question answer decision is missing");
+        }
+        decision.setAnswers(questionParser.decodeCommittedAnswers(decision.getAnswerPayload(), questionEventId));
         return decision;
     }
 

@@ -48,4 +48,13 @@ public interface RuntimeLocalControlDispatcher {
      * @return 是否命中并消费了审核结果
      */
     boolean dispatchPlanConfirmation(ExecutionTargetDTO confirmingTarget, String planEventId);
+
+    /**
+     * 向完整身份和问题事件均匹配的本机执行交付整批答案。
+     *
+     * @param confirmingTarget 回答前的固定执行目标
+     * @param questionEventId 待回答问题事件标识
+     * @return 是否命中并消费了答案
+     */
+    boolean dispatchQuestionAnswer(ExecutionTargetDTO confirmingTarget, String questionEventId);
 }

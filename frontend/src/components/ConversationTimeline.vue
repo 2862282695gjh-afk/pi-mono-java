@@ -5,16 +5,23 @@ import BrandMark from './BrandMark.vue';
 import { groupConversationTurns } from '../projectors/conversationRounds';
 import type { ConversationTimelineItem } from '../projectors/conversationRounds';
 import type { ConversationTurn } from '../types/product';
+import type { QuestionAnswer } from '../types/runtime';
 
 const props = defineProps<{
   turns: ConversationTurn[];
   running: boolean;
   pendingPlanEventId?: string;
+  pendingQuestionEventId?: string;
   reviewDisabled: boolean;
   reviewPending: boolean;
+  questionDisabled: boolean;
+  questionPending: boolean;
   sessionId: string;
 }>();
-const emit = defineEmits<{ decidePlan: [eventId: string, decision: 'approve' | 'revise', feedback: string] }>();
+const emit = defineEmits<{
+  decidePlan: [eventId: string, decision: 'approve' | 'revise', feedback: string];
+  answerQuestion: [eventId: string, answers: QuestionAnswer[]];
+}>();
 
 const timelineItems = computed(() => groupConversationTurns(props.turns));
 const trailingAgentIndex = computed(() => findTrailingAgentIndex(timelineItems.value));
@@ -57,10 +64,14 @@ function hasVisibleRunningTurn(turns: ConversationTurn[]): boolean {
         :round="item"
         :active="item.active || (running && index === trailingAgentIndex)"
         :pending-plan-event-id="pendingPlanEventId"
+        :pending-question-event-id="pendingQuestionEventId"
         :review-disabled="reviewDisabled"
         :review-pending="reviewPending"
+        :question-disabled="questionDisabled"
+        :question-pending="questionPending"
         :session-id="sessionId"
         @decide-plan="(eventId, decision, feedback) => emit('decidePlan', eventId, decision, feedback)"
+        @answer-question="(eventId, answers) => emit('answerQuestion', eventId, answers)"
       />
     </template>
 

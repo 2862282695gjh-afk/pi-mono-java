@@ -24,7 +24,8 @@ public enum BuiltInToolName {
     CALL_MATE_TOOL("CallMateTool", ToolExecutionMode.SEQUENTIAL),
     AGENT("Agent", ToolExecutionMode.SEQUENTIAL),
     EXIT_PLAN_MODE("ExitPlanMode", ToolExecutionMode.SEQUENTIAL),
-    TODO_UPDATE("TodoUpdate", ToolExecutionMode.SEQUENTIAL);
+    TODO_UPDATE("TodoUpdate", ToolExecutionMode.SEQUENTIAL),
+    ASK_USER_QUESTION("AskUserQuestion", ToolExecutionMode.SEQUENTIAL);
 
     private final String externalName;
 

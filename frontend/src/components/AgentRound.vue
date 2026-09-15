@@ -5,17 +5,25 @@ import SafeRichText from './SafeRichText';
 import ThinkingDisclosure from './ThinkingDisclosure.vue';
 import ToolActivity from './ToolActivity.vue';
 import PlanCard from './PlanCard.vue';
+import QuestionCard from './QuestionCard.vue';
+import type { QuestionAnswer } from '../types/runtime';
 import type { AgentRound } from '../projectors/conversationRounds';
 
 const props = defineProps<{
   round: AgentRound;
   active: boolean;
   pendingPlanEventId?: string;
+  pendingQuestionEventId?: string;
   reviewDisabled: boolean;
   reviewPending: boolean;
+  questionDisabled: boolean;
+  questionPending: boolean;
   sessionId: string;
 }>();
-const emit = defineEmits<{ decidePlan: [eventId: string, decision: 'approve' | 'revise', feedback: string] }>();
+const emit = defineEmits<{
+  decidePlan: [eventId: string, decision: 'approve' | 'revise', feedback: string];
+  answerQuestion: [eventId: string, answers: QuestionAnswer[]];
+}>();
 
 const copied = ref(false);
 const copyFeedback = ref('');
@@ -52,6 +60,10 @@ async function copyRound(): Promise<void> {
           :actionable="block.turn.eventId === pendingPlanEventId && !reviewDisabled"
           :pending="block.turn.eventId === pendingPlanEventId && reviewPending"
           @decide="(decision, feedback) => emit('decidePlan', block.turn.eventId, decision, feedback)" />
+        <QuestionCard v-else-if="block.kind === 'question'" :turn="block.turn" :session-id="sessionId"
+          :actionable="block.turn.eventId === pendingQuestionEventId && !questionDisabled"
+          :pending="block.turn.eventId === pendingQuestionEventId && questionPending"
+          @answer="(eventId, answers) => emit('answerQuestion', eventId, answers)" />
         <div v-else-if="block.kind === 'assistant'" class="agent-message">
           <SafeRichText
             v-if="block.turn.rawMarkdown"

@@ -1,11 +1,12 @@
 import { computed, ref, shallowRef } from 'vue';
-import type { MessageSubmission, RuntimeEvent, RuntimeSession, SubmissionOutcome, UserEvent } from '../types/runtime';
+import type { MessageSubmission, QuestionAnswer, RuntimeEvent, RuntimeSession, SubmissionOutcome, UserEvent } from '../types/runtime';
 import { RuntimeApiError } from '../types/runtime';
 import { decodeCatalog, decodeCommandResult } from '../runtime/commands';
 import type { CommandDescriptor, CommandInvocation, CommandResult } from '../runtime/commands';
 import { codePointLength, decodeHistory, decodeModels, decodeSession, invalidResponse, matchesReceipt, messageEvent, readEventStream, record } from '../runtime/protocol';
 import type { PendingOperation, PendingStore } from '../runtime/sessionIndex';
 import { executionState, executionTodos, mergeEvent, reconcileEvents } from '../runtime/eventStore';
+import { normalizeQuestionAnswers, questionAnswerEvent } from '../runtime/questionInteraction';
 
 const API_PATH = '/campusclaw-service/v1';
 const apiBase = (import.meta.env.VITE_CAMPUSCLAW_API_BASE ?? '').replace(/\/+$/u, '');
@@ -180,7 +181,7 @@ export function useRuntimeApi(pendingStore?: PendingStore, onCreated?: (session:
   function recover(): Promise<void> {
     if (recoveryFlight) return recoveryFlight;
     const ctx = context();
-    recovering.value = true;
+    recovering.value = true; historyReady.value = false;
     const flight = (async () => {
       try {
         await loadHistory();
@@ -189,10 +190,12 @@ export function useRuntimeApi(pendingStore?: PendingStore, onCreated?: (session:
         for (const operation of [...pendingOperations.value]) {
           const acceptedPlan = operation.kind === 'plan-confirmation' && operation.targetEventId
             && events.value.some((event) => event.type === 'user.plan_confirmation' && event.targetEventId === operation.targetEventId);
+          const acceptedAnswer = operation.kind === 'question-answer' && operation.targetEventId
+            && events.value.some((event) => event.type === 'user.question_answer' && event.targetEventId === operation.targetEventId);
           const receiptIndex = events.value.findIndex((event) => event.eventId === operation.receiptId);
           const ended = receiptIndex >= 0 && events.value.slice(receiptIndex + 1).some((event) =>
             event.type === 'session.status_idle' && event.sourceEventId === operation.rootId);
-          if (acceptedPlan || ended) finishOperation(ctx, operation);
+          if (acceptedPlan || acceptedAnswer || ended) finishOperation(ctx, operation);
         }
         receiptUnknown.value = pendingOperations.value.some((item) => !item.receiptId);
         if (!pendingOperations.value.length) uncertainty.value = execution.value.rootId && !execution.value.terminal && session.value?.state === 'idle'
@@ -256,8 +259,10 @@ export function useRuntimeApi(pendingStore?: PendingStore, onCreated?: (session:
     if (isMessage ? !canSend.value : controlPending.value) throw new RuntimeApiError({ code: 'SESSION_BUSY', message: '请等待当前操作，或先重新核对会话。' });
     const init = { method: 'POST', headers: writeHeaders(custom), body: JSON.stringify(skill ? input.request : { event: input }) };
     const operation = beginOperation(ctx, skill ? 'skill' : user?.type === 'user.message' ? 'message'
-      : user?.type === 'user.interrupt' ? 'interrupt' : user?.type === 'user.plan_confirmation' ? 'plan-confirmation' : 'confirmation',
-    isMessage ? undefined : execution.value.rootId, user?.type === 'user.plan_confirmation' ? user.targetEventId : undefined);
+      : user?.type === 'user.interrupt' ? 'interrupt' : user?.type === 'user.plan_confirmation' ? 'plan-confirmation'
+      : user?.type === 'user.question_answer' ? 'question-answer' : 'confirmation',
+    isMessage ? undefined : execution.value.rootId,
+    user?.type === 'user.plan_confirmation' || user?.type === 'user.question_answer' ? user.targetEventId : undefined);
     const ticket = isMessage ? ++messageTicket : ++controlTicket;
     if (isMessage) messagePending.value = true;
     else controlPending.value = true;
@@ -273,7 +278,8 @@ export function useRuntimeApi(pendingStore?: PendingStore, onCreated?: (session:
         if (error instanceof RuntimeApiError && error.outcomeUncertain) { receiptUnknown.value = true; uncertainty.value = error.message; }
         invalidateCatalog();
       }
-      if (user?.type === 'user.plan_confirmation' && error instanceof RuntimeApiError && error.status === 409) {
+      if ((user?.type === 'user.plan_confirmation' || user?.type === 'user.question_answer')
+        && error instanceof RuntimeApiError && error.status === 409) {
         await recover().catch(() => undefined);
       }
       throw publish(error, ctx);
@@ -359,6 +365,14 @@ export function useRuntimeApi(pendingStore?: PendingStore, onCreated?: (session:
     return submitStream({ type: 'user.plan_confirmation', targetEventId, result: decision,
       ...(decision === 'revise' && feedback ? { feedback } : {}) }, headers);
   }
+  function answerQuestion(targetEventId: string, answers: QuestionAnswer[], headers?: HeadersInit) {
+    const pending = execution.value.pendingQuestion;
+    if (session.value?.state !== 'running' || stopping.value || pending?.eventId !== targetEventId
+      || !execution.value.confirming || !historyReady.value || recovering.value || receiptUnknown.value || uncertainty.value) {
+      throw new RuntimeApiError({ code: 'QUESTION_ANSWER_NOT_PENDING', message: '待回答问题已变化，请重新核对。' });
+    }
+    return submitStream(questionAnswerEvent(targetEventId, normalizeQuestionAnswers(pending.questions, answers)), headers);
+  }
   function listCommands(): Promise<CommandDescriptor[]> {
     if (catalogStatus.value === 'ready') return Promise.resolve(commands.value);
     if (catalogFlight) return catalogFlight;
@@ -425,7 +439,7 @@ export function useRuntimeApi(pendingStore?: PendingStore, onCreated?: (session:
   return { session, etag, models, events, hasSession, streaming, running, canSend, canStop, execution, todoSnapshot, stopping,
     messagePending, controlPending, recovering, historyReady, uncertainty, receiptUnknown, lastError, lastErrorCode,
     commands, catalogStatus, catalogError, commandResult, commandPending, pendingOperations, clearSessionView, clearError,
-    createSession, getSession, deleteSession, listModels, loadHistory, recover, sendMessage, interrupt, confirmTool, confirmPlan,
+    createSession, getSession, deleteSession, listModels, loadHistory, recover, sendMessage, interrupt, confirmTool, confirmPlan, answerQuestion,
     changeModel: (modelId: string) => changeSetting({ modelId }),
     changeThinking: (thinking: boolean) => changeSetting({ thinking }),
     changeMode: (mode: 'build' | 'plan') => changeSetting({ mode }),

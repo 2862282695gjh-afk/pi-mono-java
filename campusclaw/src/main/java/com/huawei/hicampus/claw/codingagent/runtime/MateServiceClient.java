@@ -185,7 +185,9 @@ public class MateServiceClient {
                         + ")");
     }
 
-    /** CampusMate GetAgentRuntime 响应。 */
+    /**
+     * CampusMate GetAgentRuntime 响应。
+     */
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record AgentRuntime(
             @JsonFormat(with = JsonFormat.Feature.ACCEPT_SINGLE_VALUE_AS_ARRAY) List<String> bindingModels,
@@ -257,7 +259,9 @@ public class MateServiceClient {
         }
     }
 
-    /** GetAgentRuntime 内嵌的 Skill 引用。 */
+    /**
+     * GetAgentRuntime 内嵌的 Skill 引用。
+     */
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record SkillReference(String id, String version) {}
 
@@ -278,7 +282,9 @@ public class MateServiceClient {
         }
     }
 
-    /** querySkillInfo 返回的完整 Skill 元数据。 */
+    /**
+     * querySkillInfo 返回的完整 Skill 元数据。
+     */
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record SkillInfo(
             String name,
@@ -300,15 +306,21 @@ public class MateServiceClient {
         }
     }
 
-    /** querySkillInfo 返回的 Skill 依赖。 */
+    /**
+     * querySkillInfo 返回的 Skill 依赖。
+     */
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record DependentSkill(String id, String version, String name, String description) {}
 
-    /** querySkillInfo 返回的模板或引用文件。 */
+    /**
+     * querySkillInfo 返回的模板或引用文件。
+     */
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record SkillFile(String id, String name, String content, String fileType) {}
 
-    /** Agent 或 Skill 元数据中内嵌的工具元数据与权限。 */
+    /**
+     * Agent 或 Skill 元数据中内嵌的工具元数据与权限。
+     */
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record BoundTool(
             String description,

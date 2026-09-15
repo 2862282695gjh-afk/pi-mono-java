@@ -14,6 +14,7 @@ public sealed interface SessionUserEventRequestVO
         permits UserMessageEventRequestVO,
                 UserInterruptEventRequestVO,
                 UserToolConfirmationEventRequestVO,
-                UserPlanConfirmationEventRequestVO {
+                UserPlanConfirmationEventRequestVO,
+                UserQuestionAnswerEventRequestVO {
     String getType();
 }

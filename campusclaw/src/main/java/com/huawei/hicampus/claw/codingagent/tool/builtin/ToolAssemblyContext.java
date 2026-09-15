@@ -29,6 +29,7 @@ import com.huawei.hicampus.claw.codingagent.tool.workspace.AgentWorkspaceBoundar
  * @param cronToolFactory 当前 Runtime 的 Cron 工具工厂
  * @param agentToolFactory 当前父 Session 的 Agent 工具工厂
  * @param exitPlanModeToolFactory 当前 Runtime 的计划审核工具工厂
+ * @param askUserQuestionToolFactory 当前 Runtime 的用户提问工具工厂
  *
  * @version [br_eCampusCore 26.0.0, 2026/08/23]
  * @since [br_eCampusCore 26.0.0]
@@ -44,7 +45,8 @@ public record ToolAssemblyContext(
         MateToolSessionState mateToolSessionState,
         Supplier<AgentTool> cronToolFactory,
         Supplier<AgentTool> agentToolFactory,
-        Supplier<AgentTool> exitPlanModeToolFactory) {
+        Supplier<AgentTool> exitPlanModeToolFactory,
+        Supplier<AgentTool> askUserQuestionToolFactory) {
 
     public ToolAssemblyContext {
         skillIdsByName = skillIdsByName == null ? Map.of() : Map.copyOf(skillIdsByName);
@@ -73,6 +75,34 @@ public record ToolAssemblyContext(
                 mateToolSessionState,
                 cronToolFactory,
                 agentToolFactory,
+                null,
+                null);
+    }
+
+    public ToolAssemblyContext(
+            ToolEntryPoint entryPoint,
+            PreparedAgentRuntime runtime,
+            Model model,
+            ThinkingLevel thinkingLevel,
+            AgentWorkspaceBoundary workspaceBoundary,
+            Map<String, String> skillIdsByName,
+            List<String> childAgentNames,
+            MateToolSessionState mateToolSessionState,
+            Supplier<AgentTool> cronToolFactory,
+            Supplier<AgentTool> agentToolFactory,
+            Supplier<AgentTool> exitPlanModeToolFactory) {
+        this(
+                entryPoint,
+                runtime,
+                model,
+                thinkingLevel,
+                workspaceBoundary,
+                skillIdsByName,
+                childAgentNames,
+                mateToolSessionState,
+                cronToolFactory,
+                agentToolFactory,
+                exitPlanModeToolFactory,
                 null);
     }
 }

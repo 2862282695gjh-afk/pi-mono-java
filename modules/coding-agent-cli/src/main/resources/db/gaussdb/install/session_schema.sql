@@ -9,14 +9,15 @@ BEGIN;
 DROP TABLE IF EXISTS t_session_materialized;
 DROP TABLE IF EXISTS t_session_stats;
 DROP TABLE IF EXISTS t_session_event_projection;
-DROP TABLE IF EXISTS t_session_events;
-DROP TABLE IF EXISTS t_session_records;
-DROP TABLE IF EXISTS t_session_sequences;
+DROP TABLE IF EXISTS t_session_question_answers;
 DROP TABLE IF EXISTS t_session_tool_confirmations;
 DROP TABLE IF EXISTS t_session_plan_confirmations;
 DROP TABLE IF EXISTS t_session_execution_segment_events;
 DROP TABLE IF EXISTS t_session_execution_segments;
 DROP TABLE IF EXISTS t_session_executions;
+DROP TABLE IF EXISTS t_session_events;
+DROP TABLE IF EXISTS t_session_records;
+DROP TABLE IF EXISTS t_session_sequences;
 DROP TABLE IF EXISTS t_session_entries;
 DROP TABLE IF EXISTS t_session_cleanup_task;
 DROP TABLE IF EXISTS t_session_tombstone;
@@ -85,6 +86,7 @@ CREATE TABLE t_session_executions (
     current_segment_id   VARCHAR(128)   NOT NULL,
     pending_tool_call_id TEXT,
     pending_plan_event_id VARCHAR(128),
+    pending_question_event_id VARCHAR(128),
     stop_event_id        VARCHAR(128),
     terminal_event_id    VARCHAR(128),
     terminal_reason      VARCHAR(16),
@@ -102,6 +104,7 @@ COMMENT ON COLUMN t_session_executions.state IS '执行控制状态：RUNNING、
 COMMENT ON COLUMN t_session_executions.current_segment_id IS '当前初始执行段或确认续跑段的内部标识';
 COMMENT ON COLUMN t_session_executions.pending_tool_call_id IS '当前唯一等待确认的原始 Tool Call 标识，不限制提供商长度';
 COMMENT ON COLUMN t_session_executions.pending_plan_event_id IS '当前计划审核等待的 agent.plan 公共事件标识；工具权限等待时为空';
+COMMENT ON COLUMN t_session_executions.pending_question_event_id IS '当前等待回答的 agent.question 公共事件标识；其他等待类型时为空';
 COMMENT ON COLUMN t_session_executions.stop_event_id IS '已经提交的 user.interrupt 公共 eventId；没有停止请求时为空';
 COMMENT ON COLUMN t_session_executions.terminal_event_id IS '实际执行结束时唯一 session.status_idle 的公共 eventId';
 COMMENT ON COLUMN t_session_executions.terminal_reason IS '实际执行结束原因：done、failed 或 terminated';
@@ -129,8 +132,16 @@ ALTER TABLE t_session_executions
         (terminal_event_id IS NOT NULL AND terminal_reason IS NOT NULL AND terminal_at IS NOT NULL));
 
 ALTER TABLE t_session_executions
-    ADD CONSTRAINT ck_t_session_executions_pending_plan
-    CHECK (pending_plan_event_id IS NULL OR (state = 'CONFIRMING' AND pending_tool_call_id IS NOT NULL));
+    ADD CONSTRAINT ck_t_session_executions_pending_interaction
+    CHECK (
+        NOT (pending_plan_event_id IS NOT NULL AND pending_question_event_id IS NOT NULL)
+        AND (state <> 'CONFIRMING' OR pending_tool_call_id IS NOT NULL)
+        AND (pending_plan_event_id IS NULL
+            OR (state = 'CONFIRMING' AND pending_tool_call_id IS NOT NULL))
+        AND (pending_question_event_id IS NULL
+            OR (state = 'CONFIRMING' AND pending_tool_call_id IS NOT NULL))
+        AND (pending_tool_call_id IS NULL OR state IN ('CONFIRMING', 'STOPPING'))
+    );
 
 CREATE TABLE t_session_execution_segments (
     session_id        VARCHAR(128)   NOT NULL,
@@ -435,6 +446,72 @@ CREATE UNIQUE INDEX idx_t_session_events_session_seq
 
 CREATE INDEX idx_t_session_events_session_anchor
     ON t_session_events (session_id, anchor_entry_id, event_seq);
+
+ALTER TABLE t_session_executions
+    ADD CONSTRAINT fk_t_session_executions_pending_question
+    FOREIGN KEY (session_id, pending_question_event_id)
+    REFERENCES t_session_events (session_id, event_id);
+
+CREATE TABLE t_session_question_answers (
+    session_id         VARCHAR(128)   NOT NULL,
+    execution_id       VARCHAR(128)   NOT NULL,
+    answer_event_id    VARCHAR(128)   NOT NULL,
+    target_event_id    VARCHAR(128)   NOT NULL,
+    previous_segment_id VARCHAR(128)  NOT NULL,
+    segment_id         VARCHAR(128)   NOT NULL,
+    tool_call_id       TEXT           NOT NULL,
+    state              VARCHAR(16)    NOT NULL,
+    created_at         TIMESTAMPTZ(3) NOT NULL,
+    claimed_at         TIMESTAMPTZ(3),
+    completed_at       TIMESTAMPTZ(3),
+    PRIMARY KEY (session_id, answer_event_id),
+    CONSTRAINT fk_t_session_question_answers_execution
+        FOREIGN KEY (session_id, execution_id)
+        REFERENCES t_session_executions (session_id, execution_id),
+    CONSTRAINT fk_t_session_question_answers_answer_event
+        FOREIGN KEY (session_id, answer_event_id)
+        REFERENCES t_session_events (session_id, event_id),
+    CONSTRAINT fk_t_session_question_answers_target_event
+        FOREIGN KEY (session_id, target_event_id)
+        REFERENCES t_session_events (session_id, event_id),
+    CONSTRAINT fk_t_session_question_answers_previous_segment
+        FOREIGN KEY (session_id, execution_id, previous_segment_id)
+        REFERENCES t_session_execution_segments (session_id, execution_id, segment_id),
+    CONSTRAINT fk_t_session_question_answers_segment
+        FOREIGN KEY (session_id, execution_id, segment_id)
+        REFERENCES t_session_execution_segments (session_id, execution_id, segment_id)
+);
+
+COMMENT ON TABLE t_session_question_answers IS '用户问题答案交接表，只引用已提交回执，由原执行实例至多消费一次';
+COMMENT ON COLUMN t_session_question_answers.session_id IS '答案所属的 Session 标识';
+COMMENT ON COLUMN t_session_question_answers.execution_id IS '答案所属的固定根执行标识';
+COMMENT ON COLUMN t_session_question_answers.answer_event_id IS '已提交 user.question_answer 的公共 eventId';
+COMMENT ON COLUMN t_session_question_answers.target_event_id IS '被回答 agent.question 的公共 eventId';
+COMMENT ON COLUMN t_session_question_answers.previous_segment_id IS '进入问题等待时已经关闭的结果段标识';
+COMMENT ON COLUMN t_session_question_answers.segment_id IS '本次答案续跑使用的新结果段标识';
+COMMENT ON COLUMN t_session_question_answers.tool_call_id IS '产生被回答问题的 AskUserQuestion 调用标识';
+COMMENT ON COLUMN t_session_question_answers.state IS '一次消费状态：PENDING、CLAIMED 或 COMPLETED';
+COMMENT ON COLUMN t_session_question_answers.created_at IS '答案回执提交的时间';
+COMMENT ON COLUMN t_session_question_answers.claimed_at IS '原执行实例取得答案的时间';
+COMMENT ON COLUMN t_session_question_answers.completed_at IS '原执行实例完成答案处理的时间';
+
+CREATE UNIQUE INDEX idx_t_session_question_answers_target
+    ON t_session_question_answers (session_id, target_event_id);
+
+CREATE UNIQUE INDEX idx_t_session_question_answers_segment
+    ON t_session_question_answers (session_id, execution_id, segment_id);
+
+CREATE INDEX idx_t_session_question_answers_pending
+    ON t_session_question_answers (session_id, execution_id, state, created_at);
+
+ALTER TABLE t_session_question_answers
+    ADD CONSTRAINT ck_t_session_question_answers_state CHECK (state IN ('PENDING', 'CLAIMED', 'COMPLETED'));
+
+ALTER TABLE t_session_question_answers
+    ADD CONSTRAINT ck_t_session_question_answers_claim
+    CHECK ((state = 'PENDING' AND claimed_at IS NULL AND completed_at IS NULL)
+        OR (state = 'CLAIMED' AND claimed_at IS NOT NULL AND completed_at IS NULL)
+        OR (state = 'COMPLETED' AND claimed_at IS NOT NULL AND completed_at IS NOT NULL));
 
 CREATE TABLE t_session_event_projection (
     session_id      VARCHAR(128) NOT NULL,

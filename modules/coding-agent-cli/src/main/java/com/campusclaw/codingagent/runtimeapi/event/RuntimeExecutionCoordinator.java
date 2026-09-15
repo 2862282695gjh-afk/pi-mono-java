@@ -165,6 +165,7 @@ public class RuntimeExecutionCoordinator {
         holder.abort();
         execution.cancelToolConfirmation(new TimeoutException("runtime execution exceeded its maximum duration"));
         execution.cancelPlanReview(new TimeoutException("runtime execution exceeded its maximum duration"));
+        execution.cancelQuestion(new TimeoutException("runtime execution exceeded its maximum duration"));
     }
 
     private void alignTimeoutTarget(RuntimeActiveExecution execution) {

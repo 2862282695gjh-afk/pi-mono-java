@@ -14,6 +14,8 @@ public enum RuntimeEventType {
     USER_MESSAGE("user.message"),
     AGENT_PLAN("agent.plan"),
     USER_PLAN_CONFIRMATION("user.plan_confirmation"),
+    USER_QUESTION_ANSWER("user.question_answer"),
+    AGENT_QUESTION("agent.question"),
     ASSISTANT_THINKING_COMPLETED("assistant.thinking.completed"),
     ASSISTANT_MESSAGE_COMPLETED("assistant.message.completed"),
     TOOL_EXECUTION_STARTED("tool.execution.started"),

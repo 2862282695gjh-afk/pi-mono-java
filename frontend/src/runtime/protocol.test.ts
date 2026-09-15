@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { decodeEvent, decodeHistory, matchesReceipt, messageEvent, readEventStream } from './protocol';
-import { canReviewPlan, executionState, executionTodos, hasToolConfirmation, mergeEvent, reconcileEvents } from './eventStore';
+import { canAnswerQuestion, canReviewPlan, executionState, executionTodos, hasToolConfirmation, mergeEvent, reconcileEvents } from './eventStore';
 import { decodeCatalog, decodeCommandResult, filterCommands, freezeInvocation, parseCommand } from './commands';
-import { eventFixture, idleFixture, streamResponse, userFixture } from './fixtures';
+import { eventFixture, idleFixture, questionFixture, streamResponse, userFixture } from './fixtures';
 import type { RuntimeEvent } from '../types/runtime';
 
 const call = eventFixture({ eventId: 'call', type: 'agent.tool_call', sourceEventId: 'root-a', toolCallId: 'tool-a', toolName: 'CallMateTool', arguments: { tool: 'query', args: {} }, requiresConfirmation: true }) as Extract<RuntimeEvent, { type: 'agent.tool_call' }>;
@@ -14,6 +14,66 @@ describe('Session Events protocol and authoritative store', () => {
   it('accepts completed and preview shapes, text-only tool blocks including empty text', () => {
     [userFixture(), idleFixture(), call, result, preview('增量'), completed].forEach((event) => expect(decodeEvent(event)).toEqual(event));
     expect(decodeEvent({ ...result, content: [{ type: 'text', text: 'one' }, { type: 'text', text: '' }] })).toBeTruthy();
+  });
+  it('decodes complete questions and answers identically in SSE and history', async () => {
+    const question = questionFixture();
+    const answer = eventFixture({ eventId: 'answer-question-a', type: 'user.question_answer', targetEventId: 'question-a',
+      answers: [{ id: 'scope', selected: ['东区'] }, { id: 'note', selected: [], custom: '补充' }] });
+    expect(decodeHistory({ events: [question, answer], nextPage: null }).events).toEqual([question, answer]);
+    const received: RuntimeEvent[] = [];
+    await readEventStream(streamResponse([question, answer]), (event) => { received.push(event); }, new AbortController().signal);
+    expect(received).toEqual([question, answer]);
+  });
+  it.each([
+    { ...questionFixture(), questions: [{ id: 'scope', question: '问题', multiSelect: false, unknown: true }] },
+    { ...questionFixture(), questions: [{ id: 'scope', question: ' 问题', multiSelect: false }] },
+    { ...questionFixture(), questions: [{ id: 'scope', question: '问题', multiSelect: true }] },
+    { ...questionFixture(), questions: [{ id: 'scope', question: '问题', options: [], multiSelect: false }] },
+    { ...questionFixture(), questions: [{ id: 'scope', question: '问题', options: [{ label: 'A' }, { label: 'A' }], multiSelect: false }] },
+    eventFixture({ eventId: 'answer', type: 'user.question_answer', targetEventId: 'question-a', answers: [{ id: 'scope', selected: [] }] }),
+    eventFixture({ eventId: 'answer', type: 'user.question_answer', targetEventId: 'question-a', answers: [{ id: 'scope', selected: [' A'] }] }),
+    eventFixture({ eventId: 'answer', type: 'user.question_answer', targetEventId: 'question-a', answers: [{ id: 'scope', selected: ['A', 'A'] }] }),
+  ])('rejects malformed question contracts %j', (event) => expect(() => decodeEvent(event)).toThrow());
+  it('uses Java strip and UTF-16 boundaries for question text and custom answers', () => {
+    const plain = eventFixture({ eventId: 'plain', type: 'agent.question', sourceEventId: 'root-a', toolCallId: 'ask',
+      questions: [{ id: 'plain', question: '\u00a0', multiSelect: false }] });
+    expect(decodeEvent(plain)).toEqual(plain);
+    expect(() => decodeEvent({ ...plain, questions: [{ id: 'plain', question: ' x', multiSelect: false }] })).toThrow();
+    expect(() => decodeEvent({ ...plain, questions: [{ id: 'plain', question: '😀'.repeat(1025), multiSelect: false }] })).toThrow();
+    const custom = eventFixture({ eventId: 'answer', type: 'user.question_answer', targetEventId: 'plain',
+      answers: [{ id: 'plain', selected: [], custom: '😀'.repeat(2048) }] });
+    expect(decodeEvent(custom)).toEqual(custom);
+    expect(() => decodeEvent({ ...custom, answers: [{ id: 'plain', selected: [], custom: '😀'.repeat(2049) }] })).toThrow();
+  });
+  it('decodes complete questions and answers identically in SSE and history', async () => {
+    const question = questionFixture();
+    const answer = eventFixture({ eventId: 'answer-question-a', type: 'user.question_answer', targetEventId: 'question-a',
+      answers: [{ id: 'scope', selected: ['东区'] }, { id: 'note', selected: [], custom: '补充' }] });
+    expect(decodeHistory({ events: [question, answer], nextPage: null }).events).toEqual([question, answer]);
+    const received: RuntimeEvent[] = [];
+    await readEventStream(streamResponse([question, answer]), (event) => { received.push(event); }, new AbortController().signal);
+    expect(received).toEqual([question, answer]);
+  });
+  it.each([
+    { ...questionFixture(), questions: [{ id: 'scope', question: '问题', multiSelect: false, unknown: true }] },
+    { ...questionFixture(), questions: [{ id: 'scope', question: ' 问题', multiSelect: false }] },
+    { ...questionFixture(), questions: [{ id: 'scope', question: '问题', multiSelect: true }] },
+    { ...questionFixture(), questions: [{ id: 'scope', question: '问题', options: [], multiSelect: false }] },
+    { ...questionFixture(), questions: [{ id: 'scope', question: '问题', options: [{ label: 'A' }, { label: 'A' }], multiSelect: false }] },
+    eventFixture({ eventId: 'answer', type: 'user.question_answer', targetEventId: 'question-a', answers: [{ id: 'scope', selected: [] }] }),
+    eventFixture({ eventId: 'answer', type: 'user.question_answer', targetEventId: 'question-a', answers: [{ id: 'scope', selected: [' A'] }] }),
+    eventFixture({ eventId: 'answer', type: 'user.question_answer', targetEventId: 'question-a', answers: [{ id: 'scope', selected: ['A', 'A'] }] }),
+  ])('rejects malformed question contracts %j', (event) => expect(() => decodeEvent(event)).toThrow());
+  it('uses Java strip and UTF-16 boundaries for question text and custom answers', () => {
+    const plain = eventFixture({ eventId: 'plain', type: 'agent.question', sourceEventId: 'root-a', toolCallId: 'ask',
+      questions: [{ id: 'plain', question: '\u00a0', multiSelect: false }] });
+    expect(decodeEvent(plain)).toEqual(plain);
+    expect(() => decodeEvent({ ...plain, questions: [{ id: 'plain', question: ' x', multiSelect: false }] })).toThrow();
+    expect(() => decodeEvent({ ...plain, questions: [{ id: 'plain', question: '😀'.repeat(1025), multiSelect: false }] })).toThrow();
+    const custom = eventFixture({ eventId: 'answer', type: 'user.question_answer', targetEventId: 'plain',
+      answers: [{ id: 'plain', selected: [], custom: '😀'.repeat(2048) }] });
+    expect(decodeEvent(custom)).toEqual(custom);
+    expect(() => decodeEvent({ ...custom, answers: [{ id: 'plain', selected: [], custom: '😀'.repeat(2049) }] })).toThrow();
   });
   it.each([
     { ...result, isError: 'false' }, { ...result, isError: true }, { ...result, errorCode: 'TOOL_FAILED' },
@@ -99,6 +159,17 @@ describe('Session Events protocol and authoritative store', () => {
     expect(executionState([...waiting, approved]).pendingPlan).toBeUndefined();
     expect(matchesReceipt({ type: 'user.plan_confirmation', targetEventId: 'plan-a', result: 'approve' }, approved)).toBe(true);
   });
+  it('binds a pending question and its answer by exact event id', () => {
+    const first = questionFixture('question-old');
+    const oldAnswer = eventFixture({ eventId: 'answer-old', type: 'user.question_answer', targetEventId: 'question-old',
+      answers: [{ id: 'scope', selected: ['东区'] }, { id: 'note', selected: [], custom: '旧回答' }] });
+    const current = questionFixture('question-current');
+    const waiting = [userFixture(), first, oldAnswer, current, idleFixture('confirming')];
+    expect(executionState(waiting).pendingQuestion).toEqual(current);
+    expect(executionState([...waiting, { ...oldAnswer, eventId: 'answer-old-duplicate' }]).pendingQuestion).toEqual(current);
+    const currentAnswer = { ...oldAnswer, eventId: 'answer-current', targetEventId: 'question-current' };
+    expect(executionState([...waiting, currentAnswer]).pendingQuestion).toBeUndefined();
+  });
   it.each([
     { type: 'agent.plan', sourceEventId: 'root-a', toolCallId: 'x', content: '没有标题' },
     { type: 'agent.plan', sourceEventId: 'root-a', toolCallId: 'x', content: '## 二级标题' },
@@ -130,6 +201,13 @@ describe('Session Events protocol and authoritative store', () => {
     expect(canReviewPlan({ ...waiting, state: 'idle' })).toBe(false);
     expect(canReviewPlan({ ...waiting, controlLocked: true })).toBe(false);
     expect(canReviewPlan({ ...waiting, historyReady: false })).toBe(false);
+  });
+  it('allows question answers only after complete history and outside the shared control lock', () => {
+    const waiting = { state: 'running', hasPendingQuestion: true, historyReady: true, controlLocked: false, uncertain: false };
+    expect(canAnswerQuestion(waiting)).toBe(true);
+    expect(canAnswerQuestion({ ...waiting, historyReady: false })).toBe(false);
+    expect(canAnswerQuestion({ ...waiting, controlLocked: true })).toBe(false);
+    expect(canAnswerQuestion({ ...waiting, uncertain: true })).toBe(false);
   });
   it('reads data-only SSE split at every byte, comments and CRLF; cancels after terminal', async () => {
     const bytes = new TextEncoder().encode(`: ping\r\n\r\ndata: ${JSON.stringify(userFixture('root-a', '中文😀'))}\r\n\r\n`);

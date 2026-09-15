@@ -13,6 +13,7 @@ import com.campusclaw.codingagent.runtimeapi.dto.ExecutionSegmentDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.ExecutionStateDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.ExecutionTargetDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.PlanReviewDecisionDTO;
+import com.campusclaw.codingagent.runtimeapi.dto.QuestionAnswerDecisionDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.ToolConfirmationDecisionDTO;
 
 import org.apache.ibatis.annotations.Mapper;
@@ -81,6 +82,14 @@ public interface RuntimeExecutionControlMapper {
             @Param("planEventId") String planEventId,
             @Param("updatedAt") OffsetDateTime updatedAt);
 
+    int markQuestionConfirming(
+            @Param("sessionId") String sessionId,
+            @Param("executionId") String executionId,
+            @Param("segmentId") String segmentId,
+            @Param("toolCallId") String toolCallId,
+            @Param("questionEventId") String questionEventId,
+            @Param("updatedAt") OffsetDateTime updatedAt);
+
     int markStopping(
             @Param("sessionId") String sessionId,
             @Param("executionId") String executionId,
@@ -93,6 +102,8 @@ public interface RuntimeExecutionControlMapper {
     int insertConfirmation(ToolConfirmationDecisionDTO decision);
 
     int insertPlanConfirmation(PlanReviewDecisionDTO decision);
+
+    int insertQuestionAnswer(QuestionAnswerDecisionDTO decision);
 
     int resumeAfterConfirmation(
             @Param("sessionId") String sessionId,
@@ -109,6 +120,15 @@ public interface RuntimeExecutionControlMapper {
             @Param("segmentId") String segmentId,
             @Param("toolCallId") String toolCallId,
             @Param("planEventId") String planEventId,
+            @Param("updatedAt") OffsetDateTime updatedAt);
+
+    int resumeAfterQuestionAnswer(
+            @Param("sessionId") String sessionId,
+            @Param("executionId") String executionId,
+            @Param("previousSegmentId") String previousSegmentId,
+            @Param("segmentId") String segmentId,
+            @Param("toolCallId") String toolCallId,
+            @Param("questionEventId") String questionEventId,
             @Param("updatedAt") OffsetDateTime updatedAt);
 
     int claimConfirmation(
@@ -139,6 +159,20 @@ public interface RuntimeExecutionControlMapper {
             @Param("previousSegmentId") String previousSegmentId,
             @Param("planEventId") String planEventId);
 
+    int claimQuestionAnswer(
+            @Param("sessionId") String sessionId,
+            @Param("executionId") String executionId,
+            @Param("rootEventId") String rootEventId,
+            @Param("previousSegmentId") String previousSegmentId,
+            @Param("questionEventId") String questionEventId,
+            @Param("claimedAt") OffsetDateTime claimedAt);
+
+    QuestionAnswerDecisionDTO findClaimedQuestionAnswer(
+            @Param("sessionId") String sessionId,
+            @Param("executionId") String executionId,
+            @Param("previousSegmentId") String previousSegmentId,
+            @Param("questionEventId") String questionEventId);
+
     int acknowledgeConfirmation(
             @Param("sessionId") String sessionId,
             @Param("executionId") String executionId,
@@ -149,6 +183,12 @@ public interface RuntimeExecutionControlMapper {
             @Param("sessionId") String sessionId,
             @Param("executionId") String executionId,
             @Param("confirmationEventId") String confirmationEventId,
+            @Param("completedAt") OffsetDateTime completedAt);
+
+    int acknowledgeQuestionAnswer(
+            @Param("sessionId") String sessionId,
+            @Param("executionId") String executionId,
+            @Param("answerEventId") String answerEventId,
             @Param("completedAt") OffsetDateTime completedAt);
 
     List<ExecutionControlSignalDTO> findPendingControls(@Param("targets") List<ExecutionTargetDTO> targets);

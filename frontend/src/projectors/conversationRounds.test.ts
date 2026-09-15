@@ -76,4 +76,11 @@ describe('groupConversationTurns', () => {
       active: true,
     }]);
   });
+  it('keeps a question as its own chronological agent block', () => {
+    const question: ConversationTurn = { key: 'question-a', kind: 'question', eventId: 'question-a', sourceEventId: 'root-a',
+      questions: [{ id: 'scope', question: '范围？', multiSelect: false }] };
+    expect(groupConversationTurns([question])).toEqual([expect.objectContaining({
+      kind: 'agent', blocks: [{ kind: 'question', key: 'question-a', turn: question }],
+    })]);
+  });
 });

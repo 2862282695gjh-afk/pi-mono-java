@@ -6,6 +6,7 @@ package com.campusclaw.codingagent.runtimeapi.event;
 
 import static com.campusclaw.codingagent.runtimeapi.vo.SessionEventResponseVO.AgentMessageResponseVO;
 import static com.campusclaw.codingagent.runtimeapi.vo.SessionEventResponseVO.AgentPlanResponseVO;
+import static com.campusclaw.codingagent.runtimeapi.vo.SessionEventResponseVO.AgentQuestionResponseVO;
 import static com.campusclaw.codingagent.runtimeapi.vo.SessionEventResponseVO.AgentThinkingResponseVO;
 import static com.campusclaw.codingagent.runtimeapi.vo.SessionEventResponseVO.AgentTodoUpdatedResponseVO;
 import static com.campusclaw.codingagent.runtimeapi.vo.SessionEventResponseVO.AgentToolCallResponseVO;
@@ -13,6 +14,9 @@ import static com.campusclaw.codingagent.runtimeapi.vo.SessionEventResponseVO.Ag
 import static com.campusclaw.codingagent.runtimeapi.vo.SessionEventResponseVO.CostResponseVO;
 import static com.campusclaw.codingagent.runtimeapi.vo.SessionEventResponseVO.EventDetailsResponseVO;
 import static com.campusclaw.codingagent.runtimeapi.vo.SessionEventResponseVO.FileContentResponseVO;
+import static com.campusclaw.codingagent.runtimeapi.vo.SessionEventResponseVO.QuestionAnswerResponseVO;
+import static com.campusclaw.codingagent.runtimeapi.vo.SessionEventResponseVO.QuestionOptionResponseVO;
+import static com.campusclaw.codingagent.runtimeapi.vo.SessionEventResponseVO.QuestionResponseVO;
 import static com.campusclaw.codingagent.runtimeapi.vo.SessionEventResponseVO.SessionCompactedResponseVO;
 import static com.campusclaw.codingagent.runtimeapi.vo.SessionEventResponseVO.SessionModeChangedResponseVO;
 import static com.campusclaw.codingagent.runtimeapi.vo.SessionEventResponseVO.SessionModelChangedResponseVO;
@@ -25,6 +29,7 @@ import static com.campusclaw.codingagent.runtimeapi.vo.SessionEventResponseVO.Us
 import static com.campusclaw.codingagent.runtimeapi.vo.SessionEventResponseVO.UserInterruptResponseVO;
 import static com.campusclaw.codingagent.runtimeapi.vo.SessionEventResponseVO.UserMessageResponseVO;
 import static com.campusclaw.codingagent.runtimeapi.vo.SessionEventResponseVO.UserPlanConfirmationResponseVO;
+import static com.campusclaw.codingagent.runtimeapi.vo.SessionEventResponseVO.UserQuestionAnswerResponseVO;
 import static com.campusclaw.codingagent.runtimeapi.vo.SessionEventResponseVO.UserToolConfirmationResponseVO;
 
 import java.math.BigDecimal;
@@ -41,12 +46,15 @@ import com.campusclaw.codingagent.runtimeapi.dto.CommittedEventDTO;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
 import com.campusclaw.codingagent.runtimeapi.vo.SessionEventResponseVO;
+import com.campusclaw.codingagent.tool.question.QuestionDTO;
+import com.campusclaw.codingagent.tool.question.QuestionRequestParser;
 import com.campusclaw.common.constant.ClawConstants;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 /**
@@ -62,8 +70,16 @@ public class CommittedEventProjection {
 
     private final ObjectMapper objectMapper;
 
+    private final QuestionRequestParser questionParser;
+
     public CommittedEventProjection(ObjectMapper objectMapper) {
+        this(objectMapper, new QuestionRequestParser(objectMapper));
+    }
+
+    @Autowired
+    public CommittedEventProjection(ObjectMapper objectMapper, QuestionRequestParser questionParser) {
         this.objectMapper = objectMapper;
+        this.questionParser = questionParser;
     }
 
     /**
@@ -92,11 +108,13 @@ public class CommittedEventProjection {
             case USER_INTERRUPT -> new UserInterruptResponseVO(requiredText(payload, "targetEventId"));
             case USER_TOOL_CONFIRMATION -> projectConfirmation(payload);
             case USER_PLAN_CONFIRMATION -> projectPlanConfirmation(payload);
+            case USER_QUESTION_ANSWER -> projectQuestionAnswer(payload);
             case AGENT_MESSAGE -> projectAgentMessage(payload);
             case AGENT_THINKING -> projectAgentThinking(payload);
             case AGENT_TOOL_CALL -> projectToolCall(payload);
             case AGENT_TOOL_RESULT -> projectToolResult(payload);
             case AGENT_PLAN -> projectPlan(payload);
+            case AGENT_QUESTION -> projectQuestion(payload);
             case AGENT_TODO_UPDATED -> projectTodoUpdated(payload);
             case SESSION_STATUS_IDLE -> projectIdle(payload);
             case SESSION_MODEL_CHANGED -> projectModelChanged(payload);
@@ -157,6 +175,47 @@ public class CommittedEventProjection {
         return new UserPlanConfirmationResponseVO(target, result, feedback);
     }
 
+    private UserQuestionAnswerResponseVO projectQuestionAnswer(JsonNode payload) {
+        requireFields(payload, Set.of("targetEventId", "answers"));
+        String target = requiredText(payload, "targetEventId");
+        JsonNode answers = requiredArray(payload, "answers");
+        if (target.length() > 128 || answers.isEmpty() || answers.size() > ClawConstants.RuntimeApi.MAX_QUESTIONS) {
+            throw invalid(null);
+        }
+        List<QuestionAnswerResponseVO> projected = new ArrayList<>();
+        Set<String> ids = new java.util.HashSet<>();
+        for (JsonNode answer : answers) {
+            projected.add(projectQuestionAnswerItem(answer, ids));
+        }
+        return new UserQuestionAnswerResponseVO(target, List.copyOf(projected));
+    }
+
+    private QuestionAnswerResponseVO projectQuestionAnswerItem(JsonNode answer, Set<String> ids) {
+        requireFields(answer, Set.of("id", "selected"), Set.of("custom"));
+        String id = requiredText(answer, "id");
+        JsonNode selected = requiredArray(answer, "selected");
+        if (!ClawConstants.RuntimeApi.QUESTION_ID_PATTERN.matcher(id).matches()
+                || !ids.add(id)
+                || selected.size() > ClawConstants.RuntimeApi.MAX_QUESTION_OPTIONS) {
+            throw invalid(null);
+        }
+        List<String> labels = new ArrayList<>();
+        selected.forEach(item -> labels.add(requiredStringValue(item)));
+        if (labels.stream().distinct().count() != labels.size()
+                || labels.stream()
+                        .anyMatch(value -> value.isEmpty()
+                                || value.length() > ClawConstants.RuntimeApi.MAX_QUESTION_OPTION_LABEL_CHARACTERS)) {
+            throw invalid(null);
+        }
+        String custom = optionalText(answer, "custom");
+        if (custom != null
+                && (custom.length() > ClawConstants.RuntimeApi.MAX_QUESTION_CUSTOM_ANSWER_CHARACTERS
+                        || !custom.equals(custom.strip()))) {
+            throw invalid(null);
+        }
+        return new QuestionAnswerResponseVO(id, List.copyOf(labels), custom);
+    }
+
     private AgentPlanResponseVO projectPlan(JsonNode payload) {
         String content = requiredString(payload, "content");
         if (content.length() > ClawConstants.RuntimeApi.MAX_PLAN_CHARACTERS || !hasLevelOneHeading(content)) {
@@ -164,6 +223,26 @@ public class CommittedEventProjection {
         }
         return new AgentPlanResponseVO(
                 requiredText(payload, "sourceEventId"), requiredText(payload, "toolCallId"), content);
+    }
+
+    private AgentQuestionResponseVO projectQuestion(JsonNode payload) {
+        requireFields(payload, Set.of("sourceEventId", "toolCallId", "questions"));
+        Map<String, Object> arguments = Map.of(
+                "questions",
+                objectMapper.convertValue(requiredArray(payload, "questions"), new TypeReference<List<Object>>() {}));
+        var snapshot = questionParser.parseArguments(arguments);
+        List<QuestionResponseVO> questions =
+                snapshot.questions().stream().map(this::projectQuestionItem).toList();
+        return new AgentQuestionResponseVO(
+                requiredText(payload, "sourceEventId"), requiredText(payload, "toolCallId"), questions);
+    }
+
+    private QuestionResponseVO projectQuestionItem(QuestionDTO question) {
+        List<QuestionOptionResponseVO> options = question.options().stream()
+                .map(option -> new QuestionOptionResponseVO(option.label(), option.description()))
+                .toList();
+        return new QuestionResponseVO(
+                question.id(), question.question(), question.header(), options, question.multiSelect());
     }
 
     private static boolean hasLevelOneHeading(String plan) {
@@ -421,6 +500,28 @@ public class CommittedEventProjection {
             throw invalid(null);
         }
         return value.textValue();
+    }
+
+    private String requiredStringValue(JsonNode value) {
+        if (value == null || !value.isTextual()) {
+            throw invalid(null);
+        }
+        return value.textValue();
+    }
+
+    private void requireFields(JsonNode node, Set<String> required) {
+        requireFields(node, required, Set.of());
+    }
+
+    private void requireFields(JsonNode node, Set<String> required, Set<String> optional) {
+        requireObject(node);
+        Set<String> fields = new java.util.HashSet<>();
+        node.fieldNames().forEachRemaining(fields::add);
+        Set<String> allowed = new java.util.HashSet<>(required);
+        allowed.addAll(optional);
+        if (!fields.containsAll(required) || !allowed.containsAll(fields)) {
+            throw invalid(null);
+        }
     }
 
     private String optionalText(JsonNode parent, String field) {
