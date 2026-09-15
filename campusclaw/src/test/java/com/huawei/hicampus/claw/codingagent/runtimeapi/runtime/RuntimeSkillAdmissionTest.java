@@ -128,7 +128,8 @@ class RuntimeSkillAdmissionTest {
                     assembler,
                     mateProvider,
                     promptLoader,
-                    mock(SessionCompactor.class));
+                    mock(SessionCompactor.class),
+                    new com.huawei.hicampus.claw.codingagent.session.PlanPolicyPromptComposer());
             RuntimeExecutionProperties properties = new RuntimeExecutionProperties();
             properties.setMaxActive(1);
             registry = new RuntimeSessionEngineRegistry(

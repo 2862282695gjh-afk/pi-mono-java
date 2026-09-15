@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useRuntimeApi } from './useRuntimeApi';
-import { eventFixture, idleFixture, jsonResponse, sessionFixture, streamResponse, userFixture } from '../runtime/fixtures';
+import { eventFixture, idleFixture, jsonResponse, questionFixture, sessionFixture, streamResponse, userFixture } from '../runtime/fixtures';
 import { memoryStorage } from '../runtime/storageFixture';
 import { SessionIndexRepository } from '../runtime/sessionIndex';
 import { freezeInvocation } from '../runtime/commands';
@@ -84,6 +84,35 @@ describe('Claw Runtime Session Events coordinator', () => {
     expect(runtime.session.value?.modelId).toBe('model-primary');
     expect(runtime.etag.value).toBe('"v0"');
   });
+  it('renames a running current session with only displayName and its current ETag', async () => {
+    const { runtime, fetcher } = setup([], 'running');
+    runtime.session.value = sessionFixture({ state: 'running' });
+    fetcher.mockResolvedValueOnce(jsonResponse(sessionFixture({ state: 'running', displayName: '新名称' }), { ETag: '"v1"' }));
+    await runtime.renameSession('session-a', '新名称');
+    expect(requestAt(fetcher).json).toEqual({ displayName: '新名称' });
+    expect(requestAt(fetcher).headers.get('if-match')).toBe('"v0"');
+    expect(runtime.session.value?.displayName).toBe('新名称');
+  });
+  it('refreshes a detached rename conflict, preserves 412, and never replays the POST', async () => {
+    const { fetcher } = setup();
+    const observed = vi.fn();
+    const runtime = useRuntimeApi(undefined, undefined, observed);
+    runtime.session.value = sessionFixture({ sessionId: 'session-a' });
+    runtime.etag.value = '"active"'; runtime.historyReady.value = true;
+    fetcher.mockResolvedValueOnce(jsonResponse(sessionFixture({ sessionId: 'session-b', displayName: '原名称' }), { ETag: '"b1"' }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ resCode: 'SESSION_VERSION_MISMATCH', resMsg: 'changed' }), {
+        status: 412, headers: { 'Content-Type': 'application/json' },
+      }))
+      .mockResolvedValueOnce(jsonResponse(sessionFixture({ sessionId: 'session-b', displayName: '其他页签名称' }), { ETag: '"b2"' }));
+    await expect(runtime.renameSession('session-b', '我的草稿')).rejects.toMatchObject({ status: 412,
+      code: 'SESSION_VERSION_MISMATCH' });
+    const posts = fetcher.mock.calls.filter((call) => (call[1] as RequestInit).method === 'POST');
+    expect(posts).toHaveLength(1);
+    expect(requestAt(fetcher, 1).json).toEqual({ displayName: '我的草稿' });
+    expect(requestAt(fetcher, 1).headers.get('if-match')).toBe('"b1"');
+    expect(observed).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'session-b', displayName: '其他页签名称' }));
+    expect(runtime.session.value?.sessionId).toBe('session-a');
+  });
   it('loads integer pages and rejects repeated or opaque continuations without replacing visible history', async () => {
     const { runtime, fetcher } = setup();
     fetcher.mockResolvedValueOnce(jsonResponse({ events: [userFixture()], nextPage: 2 }))
@@ -154,7 +183,76 @@ describe('Claw Runtime Session Events coordinator', () => {
     await expect(runtime.changeThinking(false)).rejects.toMatchObject({ code: 'SESSION_VERSION_MISMATCH' });
     expect(runtime.session.value?.thinking).toBe(true);
     expect(requestAt(fetcher).headers.get('if-match')).toBe('"v0"');
-    expect(fetcher.mock.calls.filter((call) => (call[1] as RequestInit).method === 'PUT')).toHaveLength(1);
+    expect(fetcher.mock.calls.filter((call) => (call[1] as RequestInit).method === 'POST')).toHaveLength(1);
+    expect(String(fetcher.mock.calls[0][0])).toMatch(/\/sessions\/session-a$/u);
+    expect(requestAt(fetcher).json).toEqual({ thinking: false });
+  });
+  it('submits an exact plan decision and keeps review separate from the message draft', async () => {
+    const plan = eventFixture({ eventId: 'plan-a', type: 'agent.plan', sourceEventId: 'root-a', toolCallId: 'exit-a', content: '# 方案\n\n执行步骤' });
+    const receipt = eventFixture({ eventId: 'review-a', type: 'user.plan_confirmation', targetEventId: 'plan-a', result: 'approve' });
+    const mode = eventFixture({ eventId: 'mode-a', type: 'session.mode_changed', previousMode: 'plan', mode: 'build', reason: 'planApproved',
+      sourceEventId: 'root-a', confirmationEventId: 'review-a' });
+    const { runtime, fetcher } = setup([userFixture(), plan, idleFixture('confirming'), receipt, mode, idleFixture()], 'running');
+    runtime.session.value = sessionFixture({ state: 'running', mode: 'plan' });
+    runtime.events.value = [userFixture(), plan, idleFixture('confirming')];
+    fetcher.mockResolvedValueOnce(streamResponse([receipt, mode, idleFixture()]));
+    const submission = await runtime.confirmPlan('plan-a', 'approve', '', { 'access-token': 'fixture-plan' });
+    expect(await submission.confirmation).toBe('confirmed');
+    await vi.waitFor(() => expect(runtime.streaming.value || runtime.recovering.value).toBe(false));
+    expect(requestAt(fetcher).json).toEqual({ event: { type: 'user.plan_confirmation', targetEventId: 'plan-a', result: 'approve' } });
+    expect(runtime.events.value.some((event) => event.type === 'user.plan_confirmation')).toBe(true);
+  });
+  it('submits one complete question answer and confirms only its exact receipt', async () => {
+    const question = questionFixture();
+    const waiting = [userFixture(), question, idleFixture('confirming')];
+    const answer = eventFixture({ eventId: 'question-answer', type: 'user.question_answer', targetEventId: question.eventId,
+      answers: [{ id: 'scope', selected: ['东区'] }, { id: 'note', selected: [], custom: '正文' }] }) as Extract<
+        RuntimeEvent, { type: 'user.question_answer' }>;
+    const { runtime, fetcher } = setup([...waiting, answer, idleFixture()], 'running');
+    runtime.session.value = sessionFixture({ state: 'running' });
+    runtime.events.value = waiting;
+    fetcher.mockResolvedValueOnce(streamResponse([answer, idleFixture()]));
+    const submission = await runtime.answerQuestion(question.eventId, answer.answers, { 'access-token': 'fixture-question' });
+    await expect(submission.confirmation).resolves.toBe('confirmed');
+    await vi.waitFor(() => expect(runtime.streaming.value || runtime.recovering.value).toBe(false));
+    expect(requestAt(fetcher).json).toEqual({ event: { type: 'user.question_answer', targetEventId: question.eventId,
+      answers: answer.answers } });
+    expect(runtime.events.value).toContainEqual(answer);
+  });
+  it('locks duplicate answer writes and never retries a missing receipt', async () => {
+    const question = questionFixture();
+    const waiting = [userFixture(), question, idleFixture('confirming')];
+    const { runtime, fetcher } = setup(waiting, 'running');
+    runtime.session.value = sessionFixture({ state: 'running' }); runtime.events.value = waiting;
+    const delayed = deferred<Response>();
+    fetcher.mockReturnValueOnce(delayed.promise);
+    const answers = [{ id: 'scope', selected: ['东区'] }, { id: 'note', selected: [], custom: '正文' }];
+    const first = runtime.answerQuestion(question.eventId, answers);
+    await expect(runtime.answerQuestion(question.eventId, answers)).rejects.toMatchObject({ code: 'SESSION_BUSY' });
+    delayed.resolve(streamResponse([]));
+    expect(await (await first).confirmation).toBe('uncertain');
+    await vi.waitFor(() => expect(runtime.streaming.value || runtime.recovering.value).toBe(false));
+    expect(fetcher.mock.calls.filter((call) => (call[1] as RequestInit).method === 'POST')).toHaveLength(1);
+    expect(runtime.receiptUnknown.value).toBe(true);
+  });
+  it('keeps a previously ready question read-only after failed recovery until a complete retry', async () => {
+    const question = questionFixture();
+    const waiting = [userFixture(), question, idleFixture('confirming')];
+    const { runtime, fetcher } = setup(waiting, 'running');
+    runtime.session.value = sessionFixture({ state: 'running' }); runtime.events.value = waiting;
+    fetcher.mockResolvedValueOnce(new Response(JSON.stringify({ resCode: 'TEMPORARY', resMsg: 'unavailable' }), { status: 503 }));
+    await expect(runtime.recover()).rejects.toThrow();
+    expect(runtime.historyReady.value).toBe(false);
+    const answers = [{ id: 'scope', selected: ['东区'] }, { id: 'note', selected: [], custom: '正文' }];
+    expect(() => runtime.answerQuestion(question.eventId, answers)).toThrowError();
+    expect(fetcher.mock.calls.filter((call) => (call[1] as RequestInit).method === 'POST')).toHaveLength(0);
+    await runtime.recover();
+    expect(runtime.historyReady.value).toBe(true);
+    const receipt = eventFixture({ eventId: 'question-answer', type: 'user.question_answer', targetEventId: question.eventId,
+      answers });
+    fetcher.mockResolvedValueOnce(streamResponse([receipt, idleFixture()]));
+    await (await runtime.answerQuestion(question.eventId, answers)).confirmation;
+    expect(fetcher.mock.calls.filter((call) => (call[1] as RequestInit).method === 'POST')).toHaveLength(1);
   });
   it('coalesces catalog reads and keeps Builtin results outside event history', async () => {
     const { runtime, fetcher } = setup();
@@ -218,7 +316,7 @@ describe('Claw Runtime Session Events coordinator', () => {
     const { fetcher } = setup([userFixture()]);
     const store = new SessionIndexRepository({ apiBase: '', agentId: 'a', callerId: 'c' }, () => storage, vi.fn());
     const storage = memoryStorage();
-    store.upsert({ sessionId: 'session-a', agentId: 'a', title: '历史', agentName: 'A', updatedAt: new Date().toISOString() });
+    store.recordActivity({ sessionId: 'session-a', agentId: 'a', title: '历史', agentName: 'A', lastActivityAt: new Date().toISOString() });
     store.put('session-a', { id: 'pending', kind: 'message', rootId: 'root-a', receiptId: 'root-a' });
     const runtime = useRuntimeApi(store);
     await runtime.getSession('session-a'); await runtime.recover();

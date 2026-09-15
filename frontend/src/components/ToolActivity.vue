@@ -12,6 +12,7 @@ const BUILT_IN_TOOL_LABELS: Record<string, string> = {
   ListMateTools: '查询可用工具',
   CallMateTool: '调用业务工具',
   Agent: '运行子 Agent',
+  AskUserQuestion: '向用户提问',
 };
 
 function toolLabel(name: string): string {
@@ -22,6 +23,7 @@ function statusLabel(status: ActivityTurn['status']): string {
   if (status === 'running') return '执行中';
   if (status === 'error') return '执行失败';
   if (status === 'confirming') return '等待确认';
+  if (status === 'waiting_answer') return '等待回答';
   if (status === 'unconfirmed') return '结果待核对';
   return '已完成';
 }
@@ -30,6 +32,7 @@ function emptyResult(status: ActivityTurn['status']): string {
   if (status === 'running') return '等待工具返回…';
   if (status === 'error') return '工具未返回错误详情。';
   if (status === 'confirming') return '请在输入框上方允许或拒绝本次调用。';
+  if (status === 'waiting_answer') return '请在下方问题卡填写并提交全部回答。';
   if (status === 'unconfirmed') return '尚未收到完整结果，请重新核对历史。';
   return '工具已完成，未返回内容。';
 }

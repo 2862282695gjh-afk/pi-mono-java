@@ -18,6 +18,8 @@ GRANT SELECT, INSERT, UPDATE, DELETE
        t_session_execution_segments,
        t_session_execution_segment_events,
        t_session_tool_confirmations,
+       t_session_plan_confirmations,
+       t_session_question_answers,
        t_session_tombstone,
        t_session_cleanup_task
     TO ${SESSION_RUNTIME_ROLE};

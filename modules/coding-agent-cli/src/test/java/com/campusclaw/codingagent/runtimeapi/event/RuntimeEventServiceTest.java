@@ -25,11 +25,14 @@ import com.campusclaw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.campusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
 import com.campusclaw.codingagent.runtimeapi.runtime.RuntimeSessionControlDispatcher;
 import com.campusclaw.codingagent.runtimeapi.session.ToolConfirmationResult;
+import com.campusclaw.codingagent.runtimeapi.vo.QuestionAnswerRequestVO;
 import com.campusclaw.codingagent.runtimeapi.vo.SubmitSessionEventRequestVO;
 import com.campusclaw.codingagent.runtimeapi.vo.UserInterruptEventRequestVO;
 import com.campusclaw.codingagent.runtimeapi.vo.UserMessageContentRequestVO;
 import com.campusclaw.codingagent.runtimeapi.vo.UserMessageEventRequestVO;
+import com.campusclaw.codingagent.runtimeapi.vo.UserQuestionAnswerEventRequestVO;
 import com.campusclaw.codingagent.runtimeapi.vo.UserToolConfirmationEventRequestVO;
+import com.campusclaw.codingagent.tool.question.QuestionAnswerDTO;
 
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -98,6 +101,28 @@ class RuntimeEventServiceTest {
     }
 
     @Test
+    void shouldStageQuestionAnswerStreamBeforeDispatchingExactTarget() {
+        Fixture fixture = fixture();
+        RuntimeEventStream stream = mock(RuntimeEventStream.class);
+        ExecutionTargetDTO confirming = target("segment-1");
+        ExecutionTargetDTO resumed = target("segment-2");
+        UserQuestionAnswerEventRequestVO answer = questionAnswer();
+        when(fixture.controls.acceptQuestionAnswer(eq("session"), eq("question-1"), any()))
+                .thenReturn(new AcceptedControlStreamDTO(stream, new AcceptedControlDTO(null, resumed)));
+        when(fixture.dispatcher.stageQuestionAnswer(eq(resumed), eq("question-1"), any()))
+                .thenReturn(Optional.of(confirming));
+
+        assertThat(fixture.service.submit("session", new SubmitSessionEventRequestVO(answer), Locale.US, CREDENTIALS))
+                .isSameAs(stream);
+
+        verify(fixture.controls)
+                .acceptQuestionAnswer(
+                        "session", "question-1", List.of(new QuestionAnswerDTO("details", List.of(), "answer")));
+        verify(fixture.dispatcher).stageQuestionAnswer(eq(resumed), eq("question-1"), any());
+        verify(fixture.dispatcher).dispatchQuestionAnswer(confirming, "question-1");
+    }
+
+    @Test
     void shouldRejectIncompleteCredentialsBeforeAcceptingAnyEvent() {
         Fixture fixture = fixture();
         UserInterruptEventRequestVO interrupt = new UserInterruptEventRequestVO();
@@ -124,6 +149,17 @@ class RuntimeEventServiceTest {
         request.setToolCallId("call-1");
         request.setResult("deny");
         request.setDenyMessage("denied");
+        return request;
+    }
+
+    private static UserQuestionAnswerEventRequestVO questionAnswer() {
+        var value = new QuestionAnswerRequestVO();
+        value.setId("details");
+        value.setSelected(List.of());
+        value.setCustom("answer");
+        var request = new UserQuestionAnswerEventRequestVO();
+        request.setTargetEventId("question-1");
+        request.setAnswers(List.of(value));
         return request;
     }
 

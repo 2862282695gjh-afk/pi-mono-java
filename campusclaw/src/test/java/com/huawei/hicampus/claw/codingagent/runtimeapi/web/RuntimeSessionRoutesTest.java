@@ -29,6 +29,7 @@ import com.huawei.hicampus.claw.codingagent.runtimeapi.error.RuntimeErrorCode;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.result.StandaloneResultBeanAdapter;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.session.RuntimeSessionResponseAssembler;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.session.RuntimeSessionService;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.session.RuntimeSessionUpdateService;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.session.RuntimeSessionView;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.session.SessionEtagFactory;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.vo.CreateSessionResponseVO;
@@ -63,7 +64,8 @@ class RuntimeSessionRoutesTest {
     @BeforeEach
     void setUp() {
         service = mock(RuntimeSessionService.class);
-        var controller = new RuntimeSessionController(service, new StandaloneResultBeanAdapter());
+        var controller = new RuntimeSessionController(
+                service, new StandaloneResultBeanAdapter(), mock(RuntimeSessionUpdateService.class));
         var messages = new RuntimeMessageSourceConfiguration().messageSource();
         var objectMapper = JsonMapper.builder().addModule(new JavaTimeModule()).build();
         mvc = MockMvcBuilders.standaloneSetup(controller)

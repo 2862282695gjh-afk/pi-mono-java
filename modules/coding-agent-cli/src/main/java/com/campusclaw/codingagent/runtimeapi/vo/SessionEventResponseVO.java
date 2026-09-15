@@ -42,13 +42,19 @@ public class SessionEventResponseVO {
             permits UserMessageResponseVO,
                     UserInterruptResponseVO,
                     UserToolConfirmationResponseVO,
+                    UserPlanConfirmationResponseVO,
+                    UserQuestionAnswerResponseVO,
                     AgentMessageResponseVO,
                     AgentThinkingResponseVO,
                     AgentToolCallResponseVO,
                     AgentToolResultResponseVO,
+                    AgentPlanResponseVO,
+                    AgentQuestionResponseVO,
+                    AgentTodoUpdatedResponseVO,
                     SessionStatusIdleResponseVO,
                     SessionModelChangedResponseVO,
                     SessionThinkingChangedResponseVO,
+                    SessionModeChangedResponseVO,
                     SessionCompactedResponseVO {}
 
     /**
@@ -108,6 +114,45 @@ public class SessionEventResponseVO {
 
         @JsonInclude(JsonInclude.Include.NON_NULL)
         private final String denyMessage;
+    }
+
+    /**
+     * 用户计划审核决定事件字段。
+     */
+    @Getter
+    @RequiredArgsConstructor
+    public static final class UserPlanConfirmationResponseVO implements EventDetailsResponseVO {
+        private final String targetEventId;
+
+        private final String result;
+
+        @JsonInclude(JsonInclude.Include.NON_NULL)
+        private final String feedback;
+    }
+
+    /**
+     * 用户问题答案回执字段。
+     */
+    @Getter
+    @RequiredArgsConstructor
+    public static final class UserQuestionAnswerResponseVO implements EventDetailsResponseVO {
+        private final String targetEventId;
+
+        private final List<QuestionAnswerResponseVO> answers;
+    }
+
+    /**
+     * 单题答案响应。
+     */
+    @Getter
+    @RequiredArgsConstructor
+    public static final class QuestionAnswerResponseVO {
+        private final String id;
+
+        private final List<String> selected;
+
+        @JsonInclude(JsonInclude.Include.NON_NULL)
+        private final String custom;
     }
 
     /**
@@ -186,6 +231,87 @@ public class SessionEventResponseVO {
     }
 
     /**
+     * Agent 待审核完整计划事件字段。
+     */
+    @Getter
+    @RequiredArgsConstructor
+    public static final class AgentPlanResponseVO implements EventDetailsResponseVO {
+        private final String sourceEventId;
+
+        private final String toolCallId;
+
+        private final String content;
+    }
+
+    /**
+     * Agent 完整问题事件字段。
+     */
+    @Getter
+    @RequiredArgsConstructor
+    public static final class AgentQuestionResponseVO implements EventDetailsResponseVO {
+        private final String sourceEventId;
+
+        private final String toolCallId;
+
+        private final List<QuestionResponseVO> questions;
+    }
+
+    /**
+     * 单个问题响应。
+     */
+    @Getter
+    @RequiredArgsConstructor
+    public static final class QuestionResponseVO {
+        private final String id;
+
+        private final String question;
+
+        @JsonInclude(JsonInclude.Include.NON_NULL)
+        private final String header;
+
+        @JsonInclude(JsonInclude.Include.NON_EMPTY)
+        private final List<QuestionOptionResponseVO> options;
+
+        private final boolean multiSelect;
+    }
+
+    /**
+     * 问题选项响应。
+     */
+    @Getter
+    @RequiredArgsConstructor
+    public static final class QuestionOptionResponseVO {
+        private final String label;
+
+        @JsonInclude(JsonInclude.Include.NON_NULL)
+        private final String description;
+    }
+
+    /**
+     * Agent 实施任务完整快照事件字段。
+     */
+    @Getter
+    @RequiredArgsConstructor
+    public static final class AgentTodoUpdatedResponseVO implements EventDetailsResponseVO {
+        private final String sourceEventId;
+
+        private final String toolCallId;
+
+        private final List<TodoItemResponseVO> todos;
+    }
+
+    /**
+     * 实施任务快照条目。
+     */
+    @Getter
+    @RequiredArgsConstructor
+    public static final class TodoItemResponseVO {
+        private final String content;
+
+        private final String status;
+    }
+
+    /**
      * Session 空闲状态事件字段。
      */
     @Getter
@@ -226,6 +352,25 @@ public class SessionEventResponseVO {
         private final boolean thinking;
 
         private final String reason;
+    }
+
+    /**
+     * Session 模式变更事件字段。
+     */
+    @Getter
+    @RequiredArgsConstructor
+    public static final class SessionModeChangedResponseVO implements EventDetailsResponseVO {
+        private final String previousMode;
+
+        private final String mode;
+
+        private final String reason;
+
+        @JsonInclude(JsonInclude.Include.NON_NULL)
+        private final String sourceEventId;
+
+        @JsonInclude(JsonInclude.Include.NON_NULL)
+        private final String confirmationEventId;
     }
 
     /**

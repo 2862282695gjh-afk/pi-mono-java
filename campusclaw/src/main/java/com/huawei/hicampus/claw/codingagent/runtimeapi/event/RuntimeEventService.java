@@ -4,6 +4,7 @@
 
 package com.huawei.hicampus.claw.codingagent.runtimeapi.event;
 
+import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.Optional;
@@ -14,12 +15,16 @@ import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.ExecutionTargetDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.error.RuntimeErrorCode;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.runtime.RuntimeSessionControlDispatcher;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.session.PlanConfirmationResult;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.session.ToolConfirmationResult;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.vo.SessionUserEventRequestVO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.vo.SubmitSessionEventRequestVO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.vo.UserInterruptEventRequestVO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.vo.UserMessageEventRequestVO;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.vo.UserPlanConfirmationEventRequestVO;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.vo.UserQuestionAnswerEventRequestVO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.vo.UserToolConfirmationEventRequestVO;
+import com.huawei.hicampus.claw.codingagent.tool.question.QuestionAnswerDTO;
 
 import org.springframework.stereotype.Service;
 
@@ -59,6 +64,8 @@ public class RuntimeEventService {
             case UserMessageEventRequestVO message -> messages.submit(sessionId, message, locale, credentials);
             case UserInterruptEventRequestVO interrupt -> submitInterrupt(sessionId, interrupt);
             case UserToolConfirmationEventRequestVO confirmation -> submitConfirmation(sessionId, confirmation);
+            case UserPlanConfirmationEventRequestVO confirmation -> submitPlanConfirmation(sessionId, confirmation);
+            case UserQuestionAnswerEventRequestVO answer -> submitQuestionAnswer(sessionId, answer);
         };
     }
 
@@ -79,10 +86,46 @@ public class RuntimeEventService {
         return accepted.stream();
     }
 
+    private RuntimeEventStream submitPlanConfirmation(String sessionId, UserPlanConfirmationEventRequestVO request) {
+        AcceptedControlStreamDTO accepted = controls.acceptPlanConfirmation(
+                sessionId,
+                request.getTargetEventId(),
+                planConfirmationResult(request.getResult()),
+                request.getFeedback());
+        RuntimeEventOutput output = new RuntimeResultBackedEventOutput(
+                accepted.stream(), accepted.acceptance().target(), results);
+        Optional<ExecutionTargetDTO> confirming =
+                dispatcher.stagePlanConfirmation(accepted.acceptance().target(), request.getTargetEventId(), output);
+        confirming.ifPresent(target -> dispatcher.dispatchPlanConfirmation(target, request.getTargetEventId()));
+        return accepted.stream();
+    }
+
+    private RuntimeEventStream submitQuestionAnswer(String sessionId, UserQuestionAnswerEventRequestVO request) {
+        List<QuestionAnswerDTO> answers = request.getAnswers().stream()
+                .map(value -> new QuestionAnswerDTO(value.getId(), value.getSelected(), value.getCustom()))
+                .toList();
+        AcceptedControlStreamDTO accepted =
+                controls.acceptQuestionAnswer(sessionId, request.getTargetEventId(), answers);
+        RuntimeEventOutput output = new RuntimeResultBackedEventOutput(
+                accepted.stream(), accepted.acceptance().target(), results);
+        Optional<ExecutionTargetDTO> confirming =
+                dispatcher.stageQuestionAnswer(accepted.acceptance().target(), request.getTargetEventId(), output);
+        confirming.ifPresent(target -> dispatcher.dispatchQuestionAnswer(target, request.getTargetEventId()));
+        return accepted.stream();
+    }
+
     private static ToolConfirmationResult confirmationResult(String value) {
         return switch (value) {
             case "allow" -> ToolConfirmationResult.ALLOW;
             case "deny" -> ToolConfirmationResult.DENY;
+            default -> throw new RuntimeApiException(RuntimeErrorCode.INVALID_EVENT_REQUEST);
+        };
+    }
+
+    private static PlanConfirmationResult planConfirmationResult(String value) {
+        return switch (value) {
+            case "approve" -> PlanConfirmationResult.APPROVE;
+            case "revise" -> PlanConfirmationResult.REVISE;
             default -> throw new RuntimeApiException(RuntimeErrorCode.INVALID_EVENT_REQUEST);
         };
     }

@@ -18,6 +18,8 @@ import com.campusclaw.codingagent.runtimeapi.dto.RuntimeRecordDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.SessionConfigurationUpdateDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.SessionNameUpdateDTO;
+import com.campusclaw.codingagent.runtimeapi.dto.SessionUpdateChangesDTO;
+import com.campusclaw.codingagent.runtimeapi.dto.SessionUpdateSpecificationDTO;
 
 /**
  * Runtime Session 持久化的事务边界端口。
@@ -36,6 +38,13 @@ public interface RuntimeSessionRepository {
 
     UserEventAcceptance acceptUserEvent(
             String sessionId, RuntimeEntryDTO entry, CommittedEventDTO event, OffsetDateTime acceptedAt);
+
+    UserEventAcceptance acceptUserEvent(
+            String sessionId,
+            RuntimeEntryDTO entry,
+            CommittedEventDTO event,
+            boolean planReviewAvailable,
+            OffsetDateTime acceptedAt);
 
     /**
      * 行锁内观察当前 Session 与完整分支，不修改持久化状态，也不准备 Agent。
@@ -69,6 +78,8 @@ public interface RuntimeSessionRepository {
     List<RuntimeEntryDTO> listCurrentBranchEntries(String sessionId, long afterSeq, int limit);
 
     Optional<List<CommittedEventDTO>> findEventPage(String sessionId, long offset, int limit);
+
+    Optional<CommittedEventDTO> findCommittedEvent(String sessionId, String eventId);
 
     /**
      * 在同一事务内更新模型，并为每个配置 Entry 保存完整公共事件。
@@ -111,6 +122,12 @@ public interface RuntimeSessionRepository {
             Function<RuntimeSessionDTO, RuntimeEntryDTO> entryFactory,
             Function<RuntimeEntryDTO, CommittedEventDTO> eventFactory,
             OffsetDateTime updatedAt);
+
+    SessionConfigurationUpdateDTO updateSession(
+            String sessionId,
+            SessionUpdateSpecificationDTO specification,
+            Function<SessionUpdateChangesDTO, List<RuntimeEntryDTO>> entriesFactory,
+            Function<RuntimeEntryDTO, CommittedEventDTO> eventFactory);
 
     SessionDeletionStatus beginDeletion(String sessionId, OffsetDateTime deletedAt);
 

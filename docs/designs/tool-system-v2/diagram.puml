@@ -28,7 +28,7 @@ Cron --> Factory : CRON
 Child --> Factory : CHILD_AGENT
 Factory --> Session : create isolated instance
 Factory --> Assembler
-Assembler --> ToolFactory : eight-name closed set
+Assembler --> ToolFactory : configured fixed-name set
 ToolFactory --> Mate : shared client dependency
 note right of Session
   Isolated messages, tools,

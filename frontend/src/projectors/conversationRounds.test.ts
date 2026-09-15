@@ -76,4 +76,17 @@ describe('groupConversationTurns', () => {
       active: true,
     }]);
   });
+  it('keeps a question as its own chronological agent block', () => {
+    const question: ConversationTurn = { key: 'question-a', kind: 'question', eventId: 'question-a', sourceEventId: 'root-a',
+      questions: [{ id: 'scope', question: '范围？', multiSelect: false }] };
+    expect(groupConversationTurns([question])).toEqual([expect.objectContaining({
+      kind: 'agent', blocks: [{ kind: 'question', key: 'question-a', turn: question }],
+    })]);
+  });
+  it('does not present a plan as an ordinary round-copy answer', () => {
+    const plan: ConversationTurn = { key: 'plan-a', kind: 'plan', eventId: 'plan-a', sourceEventId: 'root-a',
+      rawMarkdown: '# 权威方案' };
+    const round = groupConversationTurns([plan])[0];
+    expect(round).toMatchObject({ kind: 'agent', copySource: '' });
+  });
 });

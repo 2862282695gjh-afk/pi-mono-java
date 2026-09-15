@@ -74,6 +74,8 @@ public interface RuntimeSessionMapper {
     List<CommittedEventDTO> listCommittedEvents(
             @Param("sessionId") String sessionId, @Param("offset") long offset, @Param("limit") int limit);
 
+    CommittedEventDTO findCommittedEvent(@Param("sessionId") String sessionId, @Param("eventId") String eventId);
+
     long countUnmappedCurrentBranchEntries(@Param("sessionId") String sessionId);
 
     int updateSessionModel(
@@ -91,6 +93,11 @@ public interface RuntimeSessionMapper {
             @Param("sessionId") String sessionId,
             @Param("thinking") boolean thinking,
             @Param("updatedAt") OffsetDateTime updatedAt);
+
+    int updateSessionConfiguration(
+            @Param("session") RuntimeSessionDTO session, @Param("updatedAt") OffsetDateTime updatedAt);
+
+    int approvePlanMode(@Param("sessionId") String sessionId, @Param("updatedAt") OffsetDateTime updatedAt);
 
     int insertTombstone(@Param("sessionId") String sessionId, @Param("deletedAt") OffsetDateTime deletedAt);
 
@@ -111,6 +118,10 @@ public interface RuntimeSessionMapper {
     int deleteExecutionSegmentEvents(@Param("sessionId") String sessionId);
 
     int deleteToolConfirmations(@Param("sessionId") String sessionId);
+
+    int deletePlanConfirmations(@Param("sessionId") String sessionId);
+
+    int deleteQuestionAnswers(@Param("sessionId") String sessionId);
 
     int deleteExecutionSegments(@Param("sessionId") String sessionId);
 

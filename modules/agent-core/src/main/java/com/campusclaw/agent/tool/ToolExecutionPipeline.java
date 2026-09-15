@@ -256,7 +256,7 @@ public class ToolExecutionPipeline {
                     .sorted()
                     .reduce((left, right) -> left + "; " + right)
                     .orElse("Unknown schema validation error");
-            throw new IllegalArgumentException("Tool arguments failed validation: " + message);
+            throw new ToolArgumentsInvalidException("Tool arguments failed validation: " + message);
         }
     }
 

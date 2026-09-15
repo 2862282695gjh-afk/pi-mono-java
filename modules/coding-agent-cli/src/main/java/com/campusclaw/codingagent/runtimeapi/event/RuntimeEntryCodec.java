@@ -31,6 +31,8 @@ import com.campusclaw.codingagent.runtimeapi.vo.RuntimeSseEventVO;
 import com.campusclaw.codingagent.session.compaction.CompactionMessageSupport;
 import com.campusclaw.codingagent.session.compaction.CompactionReason;
 import com.campusclaw.codingagent.session.compaction.SessionCompactionResult;
+import com.campusclaw.codingagent.tool.question.QuestionAnswerResultDTO;
+import com.campusclaw.codingagent.tool.question.QuestionRequestSnapshotDTO;
 import com.campusclaw.common.constant.ClawConstants;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -91,6 +93,54 @@ public class RuntimeEntryCodec {
             payload.put("deny_message", denyMessage);
         }
         return entry(sessionId, entryId, CommittedEventType.USER_TOOL_CONFIRMATION.value(), createdAt, payload);
+    }
+
+    public RuntimeEntryDTO userPlanConfirmationEntry(
+            String sessionId,
+            String entryId,
+            String targetEventId,
+            String result,
+            String feedback,
+            OffsetDateTime createdAt) {
+        ObjectNode payload = objectMapper.createObjectNode();
+        payload.put("target_event_id", targetEventId);
+        payload.put("result", result);
+        if (feedback != null) {
+            payload.put("feedback", feedback);
+        }
+        return entry(sessionId, entryId, RuntimeEventType.USER_PLAN_CONFIRMATION.value(), createdAt, payload);
+    }
+
+    public RuntimeEntryDTO userQuestionAnswerEntry(
+            String sessionId,
+            String entryId,
+            String targetEventId,
+            QuestionAnswerResultDTO answers,
+            OffsetDateTime createdAt) {
+        ObjectNode payload = objectMapper.createObjectNode();
+        payload.put("target_event_id", targetEventId);
+        payload.set("answers", objectMapper.valueToTree(answers.answers()));
+        return entry(sessionId, entryId, RuntimeEventType.USER_QUESTION_ANSWER.value(), createdAt, payload);
+    }
+
+    public RuntimeEntryDTO questionEntry(
+            String sessionId,
+            String entryId,
+            String toolCallId,
+            QuestionRequestSnapshotDTO snapshot,
+            OffsetDateTime createdAt) {
+        ObjectNode payload = objectMapper.createObjectNode();
+        payload.put("tool_call_id", toolCallId);
+        payload.set("questions", objectMapper.valueToTree(snapshot.questions()));
+        return entry(sessionId, entryId, RuntimeEventType.AGENT_QUESTION.value(), createdAt, payload);
+    }
+
+    public RuntimeEntryDTO planEntry(
+            String sessionId, String entryId, String toolCallId, String plan, OffsetDateTime createdAt) {
+        ObjectNode payload = objectMapper.createObjectNode();
+        payload.put("tool_call_id", toolCallId);
+        payload.put("content", plan);
+        return entry(sessionId, entryId, RuntimeEventType.AGENT_PLAN.value(), createdAt, payload);
     }
 
     public RuntimeEntryDTO assistantEntry(
@@ -212,6 +262,28 @@ public class RuntimeEntryCodec {
         payload.put("thinking", thinking);
         payload.put("reason", reason);
         return entry(sessionId, entryId, RuntimeEventType.SESSION_THINKING_CHANGED.value(), createdAt, payload);
+    }
+
+    public RuntimeEntryDTO modeChangedEntry(
+            String sessionId,
+            String entryId,
+            String previousMode,
+            String mode,
+            String reason,
+            String sourceEventId,
+            String confirmationEventId,
+            OffsetDateTime createdAt) {
+        ObjectNode payload = objectMapper.createObjectNode();
+        payload.put("previousMode", previousMode);
+        payload.put("mode", mode);
+        payload.put("reason", reason);
+        if (sourceEventId != null) {
+            payload.put("sourceEventId", sourceEventId);
+        }
+        if (confirmationEventId != null) {
+            payload.put("confirmationEventId", confirmationEventId);
+        }
+        return entry(sessionId, entryId, RuntimeEventType.SESSION_MODE_CHANGED.value(), createdAt, payload);
     }
 
     public RuntimeEntryDTO compactionEntry(

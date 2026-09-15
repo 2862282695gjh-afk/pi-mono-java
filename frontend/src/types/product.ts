@@ -9,7 +9,8 @@ export interface ThreadSummary {
   sessionId: string;
   title: string;
   agentName: string;
-  updatedAt: string;
+  lastActivityAt: string;
+  pinned: boolean;
 }
 
 export interface UserTurn {
@@ -45,7 +46,7 @@ export interface ActivityTurn {
   kind: 'activity';
   toolCallId: string;
   toolName: string;
-  status: 'running' | 'completed' | 'error' | 'confirming' | 'unconfirmed';
+  status: 'running' | 'completed' | 'error' | 'confirming' | 'waiting_answer' | 'unconfirmed';
   arguments: ToolArgumentRow[];
   result: string;
   errorCode?: string;
@@ -57,4 +58,24 @@ export interface NoticeTurn {
   text: string;
 }
 
-export type ConversationTurn = UserTurn | ThinkingTurn | AssistantTurn | ActivityTurn | NoticeTurn;
+export interface PlanTurn {
+  key: string;
+  kind: 'plan';
+  eventId: string;
+  sourceEventId: string;
+  rawMarkdown: string;
+  decision?: 'approve' | 'revise';
+  lifecycle?: 'stopping' | 'stopped' | 'failed' | 'ended';
+}
+
+export interface QuestionTurn {
+  key: string;
+  kind: 'question';
+  eventId: string;
+  sourceEventId: string;
+  questions: import('./runtime').RuntimeQuestion[];
+  answer?: import('./runtime').QuestionAnswer[];
+  lifecycle?: 'stopping' | 'closed';
+}
+
+export type ConversationTurn = UserTurn | ThinkingTurn | AssistantTurn | ActivityTurn | NoticeTurn | PlanTurn | QuestionTurn;

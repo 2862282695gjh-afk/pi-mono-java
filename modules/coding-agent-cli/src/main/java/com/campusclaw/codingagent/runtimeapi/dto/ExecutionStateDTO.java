@@ -31,6 +31,10 @@ public class ExecutionStateDTO {
 
     private String pendingToolCallId;
 
+    private String pendingPlanEventId;
+
+    private String pendingQuestionEventId;
+
     private String stopEventId;
 
     private String terminalEventId;

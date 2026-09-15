@@ -2,9 +2,13 @@
 import { nextTick, onMounted, onUnmounted, ref, useId, watch } from 'vue';
 import { useCommandComposer } from '../composables/useCommandComposer';
 import type { CommandComposerProps } from '../composables/useCommandComposer';
+import ModeControl from './ModeControl.vue';
 
-const props = defineProps<CommandComposerProps>();
-const emit = defineEmits<{ 'update:modelValue': [value: string]; submit: []; stop: [] }>();
+const props = defineProps<CommandComposerProps & {
+  mode: 'build' | 'plan'; thinking: boolean; modelId: string; models: string[]; configurationDisabled: boolean;
+}>();
+const emit = defineEmits<{ 'update:modelValue': [value: string]; submit: []; stop: []; 'change-mode': [mode: 'build' | 'plan'];
+  'toggle-thinking': []; 'change-model': [event: Event]; 'palette-change': [open: boolean] }>();
 const root = ref<HTMLElement | null>(null);
 const textarea = ref<HTMLTextAreaElement | null>(null);
 const submitButton = ref<HTMLButtonElement | null>(null);
@@ -70,6 +74,7 @@ function menuFocusout(event: FocusEvent): void {
   }
 }
 watch(text, () => void nextTick(resizeInput));
+watch(paletteOpen, (open) => emit('palette-change', open), { immediate: true });
 watch(activeIndex, async () => {
   await nextTick();
   root.value?.querySelector('#' + CSS.escape(optionId(activeIndex.value)))?.scrollIntoView({ block: 'nearest' });
@@ -130,6 +135,29 @@ onUnmounted(() => document.removeEventListener('click', outsideClick));
             @keydown="menuKeydown" @focusout="menuFocusout">
             <button type="button" role="menuitem" disabled title="暂未接入附件上传">添加附件 · 暂未接入</button>
           </div>
+        </div>
+        <div class="composer-session-tools" aria-label="会话配置">
+          <ModeControl :mode="mode" :disabled="configurationDisabled" @select="emit('change-mode', $event)" />
+          <button class="thinking-control" type="button" :class="{ active: thinking }" :aria-pressed="thinking"
+            :disabled="configurationDisabled" @click="emit('toggle-thinking')">深度思考</button>
+          <label class="model-select">
+            <span class="sr-only">选择模型</span>
+            <select :value="modelId" :disabled="configurationDisabled" @change="emit('change-model', $event)">
+              <option v-if="!models.includes(modelId)" :value="modelId">{{ modelId }}</option>
+              <option v-for="model in models" :key="model" :value="model">{{ model }}</option>
+            </select>
+          </label>
+          <details class="mobile-session-settings">
+            <summary>模型与思考设置</summary>
+            <div>
+              <button type="button" :class="{ active: thinking }" :aria-pressed="thinking"
+                :disabled="configurationDisabled" @click="emit('toggle-thinking')">深度思考：{{ thinking ? '开' : '关' }}</button>
+              <label><span>模型</span><select :value="modelId" :disabled="configurationDisabled" @change="emit('change-model', $event)">
+                <option v-if="!models.includes(modelId)" :value="modelId">{{ modelId }}</option>
+                <option v-for="model in models" :key="model" :value="model">{{ model }}</option>
+              </select></label>
+            </div>
+          </details>
         </div>
         <small v-if="count > 1800" class="input-count">{{ count }}/2048</small>
         <button ref="submitButton" class="submit-button" type="button" :disabled="stopMode ? !canStop : submitDisabled"

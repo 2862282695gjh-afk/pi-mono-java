@@ -88,6 +88,17 @@ public class RuntimeSessionHolder {
         return thinking;
     }
 
+    public void applyMode(String mode) {
+        if (managedSession != null) {
+            managedSession.applyMode(mode);
+        }
+    }
+
+    public boolean hasTool(String name) {
+        return managedSession != null
+                && managedSession.tools().stream().anyMatch(tool -> tool.name().equals(name));
+    }
+
     public boolean begin(RuntimeActiveExecution execution) {
         return activeExecution.compareAndSet(null, execution);
     }

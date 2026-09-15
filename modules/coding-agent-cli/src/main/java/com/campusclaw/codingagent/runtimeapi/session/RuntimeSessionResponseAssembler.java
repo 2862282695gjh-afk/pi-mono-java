@@ -36,7 +36,8 @@ public class RuntimeSessionResponseAssembler {
                 session.getState(),
                 session.isThinking(),
                 lifetimeUsage(session.getLifetimeUsage()),
-                session.getCreatedAt());
+                session.getCreatedAt(),
+                session.getMode());
         return new RuntimeSessionView<>(resource, etag(session));
     }
 
@@ -50,7 +51,8 @@ public class RuntimeSessionResponseAssembler {
                 session.isThinking(),
                 lifetimeUsage(session.getLifetimeUsage()),
                 session.getCreatedAt(),
-                session.getUpdatedAt());
+                session.getUpdatedAt(),
+                session.getMode());
         return new RuntimeSessionView<>(resource, etag(session));
     }
 

@@ -11,6 +11,8 @@ import com.campusclaw.agent.tool.AgentToolResult;
 import com.campusclaw.agent.tool.AgentToolUpdateCallback;
 import com.campusclaw.agent.tool.CancellationToken;
 import com.campusclaw.agent.tool.ToolExecutionMode;
+import com.campusclaw.codingagent.tool.question.UserQuestionException;
+import com.campusclaw.common.constant.ClawConstants;
 import com.fasterxml.jackson.databind.JsonNode;
 
 /**
@@ -58,6 +60,9 @@ public class UnavailableBuiltInTool implements AgentTool {
     @Override
     public AgentToolResult execute(
             String toolCallId, Map<String, Object> params, CancellationToken signal, AgentToolUpdateCallback onUpdate) {
+        if (name == BuiltInToolName.ASK_USER_QUESTION) {
+            throw new UserQuestionException(ClawConstants.RuntimeApi.USER_QUESTION_UNAVAILABLE_ERROR_CODE);
+        }
         throw new IllegalStateException(name.externalName() + " is unavailable in the current execution context");
     }
 }

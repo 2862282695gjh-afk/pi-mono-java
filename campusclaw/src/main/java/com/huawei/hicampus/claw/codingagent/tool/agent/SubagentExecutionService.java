@@ -83,7 +83,9 @@ public class SubagentExecutionService {
                 null,
                 runtime -> validateChildRuntime(binding, runtime),
                 List.of(),
-                List.of());
+                List.of(),
+                context.mode(),
+                null);
         try (ManagedAgentSession session = sessionFactory.create(request)) {
             signal.onCancel(session::abort);
             Runnable unsubscribe = session.agent().subscribe(event -> projectProgress(event, onUpdate));

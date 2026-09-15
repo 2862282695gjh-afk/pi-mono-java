@@ -54,6 +54,10 @@ public final class ManagedAgentSession implements AutoCloseable {
 
     private final SessionCompactor compactor;
 
+    private final PlanPolicyPromptComposer promptComposer;
+
+    private final String baseSystemPrompt;
+
     private final CopyOnWriteArrayList<Consumer<SessionCompactionEvent>> compactionListeners =
             new CopyOnWriteArrayList<>();
 
@@ -65,11 +69,24 @@ public final class ManagedAgentSession implements AutoCloseable {
             Agent agent,
             List<AgentTool> tools,
             SessionCompactor compactor) {
+        this(runtime, entryPoint, agent, tools, compactor, null, null);
+    }
+
+    ManagedAgentSession(
+            PreparedAgentRuntime runtime,
+            ToolEntryPoint entryPoint,
+            Agent agent,
+            List<AgentTool> tools,
+            SessionCompactor compactor,
+            PlanPolicyPromptComposer promptComposer,
+            String baseSystemPrompt) {
         this.runtime = Objects.requireNonNull(runtime, "runtime");
         this.entryPoint = Objects.requireNonNull(entryPoint, "entryPoint");
         this.agent = Objects.requireNonNull(agent, "agent");
         this.tools = List.copyOf(tools);
         this.compactor = Objects.requireNonNull(compactor, "compactor");
+        this.promptComposer = promptComposer;
+        this.baseSystemPrompt = baseSystemPrompt;
     }
 
     public PreparedAgentRuntime runtime() {
@@ -86,6 +103,14 @@ public final class ManagedAgentSession implements AutoCloseable {
 
     public List<AgentTool> tools() {
         return tools;
+    }
+
+    public void applyMode(String mode) {
+        if (promptComposer == null || baseSystemPrompt == null) {
+            return;
+        }
+        List<String> names = tools.stream().map(AgentTool::name).toList();
+        agent.setSystemPrompt(promptComposer.compose(baseSystemPrompt, entryPoint, mode, names));
     }
 
     public CompletableFuture<Void> prompt(String message) {

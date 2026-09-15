@@ -12,7 +12,7 @@ let storage: Storage;
 let fetcher: ReturnType<typeof vi.fn>;
 function index() { return new SessionIndexRepository({ apiBase: '', agentId: agent.id, callerId: 'campusclaw-web' }, () => storage, vi.fn()); }
 function seed(id = 'session-a') {
-  index().upsert({ sessionId: id, agentId: agent.id, title: '恢复标题', agentName: 'Agent', updatedAt: new Date().toISOString() });
+  index().recordActivity({ sessionId: id, agentId: agent.id, title: '恢复标题', agentName: 'Agent', lastActivityAt: new Date().toISOString() });
   index().select(id);
 }
 function mount() {

@@ -4,6 +4,8 @@ import type {
   ConversationTurn,
   ThinkingTurn,
   NoticeTurn,
+  PlanTurn,
+  QuestionTurn,
   UserTurn,
 } from '../types/product';
 
@@ -19,10 +21,21 @@ export interface AgentActivityBlock {
   turn: ThinkingTurn | ActivityTurn | NoticeTurn;
 }
 
+export interface AgentPlanBlock {
+  kind: 'plan';
+  key: string;
+  turn: PlanTurn;
+}
+export interface AgentQuestionBlock {
+  kind: 'question';
+  key: string;
+  turn: QuestionTurn;
+}
+
 export interface AgentRound {
   kind: 'agent';
   key: string;
-  blocks: Array<AgentMessageBlock | AgentActivityBlock>;
+  blocks: Array<AgentMessageBlock | AgentActivityBlock | AgentPlanBlock | AgentQuestionBlock>;
   copySource: string;
   active: boolean;
 }
@@ -35,7 +48,7 @@ export interface UserTimelineItem {
 
 export type ConversationTimelineItem = UserTimelineItem | AgentRound;
 
-type AgentTurn = AssistantTurn | ThinkingTurn | ActivityTurn | NoticeTurn;
+type AgentTurn = AssistantTurn | ThinkingTurn | ActivityTurn | NoticeTurn | PlanTurn | QuestionTurn;
 
 export function groupConversationTurns(turns: ConversationTurn[]): ConversationTimelineItem[] {
   const items: ConversationTimelineItem[] = [];
@@ -68,12 +81,16 @@ function appendAgentRound(items: ConversationTimelineItem[], turns: AgentTurn[])
   });
 }
 
-function groupAgentBlocks(turns: AgentTurn[]): Array<AgentMessageBlock | AgentActivityBlock> {
-  const blocks: Array<AgentMessageBlock | AgentActivityBlock> = [];
+function groupAgentBlocks(turns: AgentTurn[]): Array<AgentMessageBlock | AgentActivityBlock | AgentPlanBlock | AgentQuestionBlock> {
+  const blocks: Array<AgentMessageBlock | AgentActivityBlock | AgentPlanBlock | AgentQuestionBlock> = [];
 
   for (const turn of turns) {
     if (turn.kind === 'assistant') {
       blocks.push({ kind: 'assistant', key: turn.key, turn });
+    } else if (turn.kind === 'plan') {
+      blocks.push({ kind: 'plan', key: turn.key, turn });
+    } else if (turn.kind === 'question') {
+      blocks.push({ kind: 'question', key: turn.key, turn });
     } else {
       blocks.push({ kind: 'activity', key: `activity-${turn.key}`, turn });
     }
@@ -82,7 +99,7 @@ function groupAgentBlocks(turns: AgentTurn[]): Array<AgentMessageBlock | AgentAc
 }
 
 function isActiveTurn(turn: AgentTurn): boolean {
-  if (turn.kind === 'notice') return false;
+  if (turn.kind === 'notice' || turn.kind === 'plan' || turn.kind === 'question') return false;
   if (turn.kind === 'assistant') return turn.streaming;
   return turn.status === 'running';
 }

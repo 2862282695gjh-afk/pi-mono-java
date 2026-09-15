@@ -185,7 +185,9 @@ public class MateServiceClient {
                         + ")");
     }
 
-    /** CampusMate GetAgentRuntime 响应。 */
+    /**
+     * CampusMate GetAgentRuntime 响应。
+     */
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record AgentRuntime(
             @JsonFormat(with = JsonFormat.Feature.ACCEPT_SINGLE_VALUE_AS_ARRAY) List<String> bindingModels,
@@ -201,7 +203,8 @@ public class MateServiceClient {
             String name,
             String systemPrompt,
             @JsonDeserialize(contentUsing = AgentMetadataTextDeserializer.class) List<String> userCases,
-            String version) {
+            String version,
+            @JsonDeserialize(using = AgentModeDeserializer.class) String mode) {
 
         public AgentRuntime {
             // 旧快照缺省 enabled 字段（反序列化为 null）视为启用；归一化保证 enabled() 永不返回 null
@@ -212,6 +215,36 @@ public class MateServiceClient {
             bindingAgents = bindingAgents == null ? List.of() : List.copyOf(bindingAgents);
             description = description == null ? List.of() : List.copyOf(description);
             userCases = userCases == null ? List.of() : List.copyOf(userCases);
+            mode = mode == null ? ClawConstants.Agent.MODE_BUILD : mode;
+        }
+
+        public AgentRuntime(
+                List<String> bindingModels,
+                List<SkillReference> bindingSkills,
+                List<BoundTool> bindingTools,
+                List<AgentReference> bindingAgents,
+                List<String> description,
+                String displayName,
+                Boolean enabled,
+                String id,
+                String name,
+                String systemPrompt,
+                List<String> userCases,
+                String version) {
+            this(
+                    bindingModels,
+                    bindingSkills,
+                    bindingTools,
+                    bindingAgents,
+                    description,
+                    displayName,
+                    enabled,
+                    id,
+                    name,
+                    systemPrompt,
+                    userCases,
+                    version,
+                    ClawConstants.Agent.MODE_BUILD);
         }
 
         /**
@@ -226,7 +259,9 @@ public class MateServiceClient {
         }
     }
 
-    /** GetAgentRuntime 内嵌的 Skill 引用。 */
+    /**
+     * GetAgentRuntime 内嵌的 Skill 引用。
+     */
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record SkillReference(String id, String version) {}
 
@@ -247,7 +282,9 @@ public class MateServiceClient {
         }
     }
 
-    /** querySkillInfo 返回的完整 Skill 元数据。 */
+    /**
+     * querySkillInfo 返回的完整 Skill 元数据。
+     */
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record SkillInfo(
             String name,
@@ -269,15 +306,21 @@ public class MateServiceClient {
         }
     }
 
-    /** querySkillInfo 返回的 Skill 依赖。 */
+    /**
+     * querySkillInfo 返回的 Skill 依赖。
+     */
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record DependentSkill(String id, String version, String name, String description) {}
 
-    /** querySkillInfo 返回的模板或引用文件。 */
+    /**
+     * querySkillInfo 返回的模板或引用文件。
+     */
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record SkillFile(String id, String name, String content, String fileType) {}
 
-    /** Agent 或 Skill 元数据中内嵌的工具元数据与权限。 */
+    /**
+     * Agent 或 Skill 元数据中内嵌的工具元数据与权限。
+     */
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record BoundTool(
             String description,

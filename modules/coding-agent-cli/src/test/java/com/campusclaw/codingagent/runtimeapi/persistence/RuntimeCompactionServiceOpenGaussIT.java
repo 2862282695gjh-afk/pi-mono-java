@@ -139,6 +139,7 @@ class RuntimeCompactionServiceOpenGaussIT {
         session.setAgentId("agent");
         session.setModelId("model");
         session.setState("idle");
+        session.setMode("build");
         session.setResourceVersion(1L);
         session.setCreatedAt(now);
         session.setUpdatedAt(now);
@@ -308,7 +309,8 @@ class RuntimeCompactionServiceOpenGaussIT {
                 mock(ConfiguredToolAssembler.class),
                 new StaticListableBeanFactory().getBeanProvider(MateToolsetFactory.class),
                 prompt,
-                new SessionCompactor(ai, properties));
+                new SessionCompactor(ai, properties),
+                new com.campusclaw.codingagent.session.PlanPolicyPromptComposer());
     }
 
     @ParameterizedTest

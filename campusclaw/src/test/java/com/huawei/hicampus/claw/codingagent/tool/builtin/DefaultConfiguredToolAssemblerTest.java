@@ -5,24 +5,34 @@
 package com.huawei.hicampus.claw.codingagent.tool.builtin;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
 
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 
+import com.huawei.hicampus.claw.agent.tool.AgentContext;
 import com.huawei.hicampus.claw.agent.tool.AgentTool;
 import com.huawei.hicampus.claw.agent.tool.AgentToolResult;
 import com.huawei.hicampus.claw.agent.tool.AgentToolUpdateCallback;
 import com.huawei.hicampus.claw.agent.tool.CancellationToken;
+import com.huawei.hicampus.claw.agent.tool.ToolExecutionPipeline;
 import com.huawei.hicampus.claw.ai.types.Api;
 import com.huawei.hicampus.claw.ai.types.InputModality;
 import com.huawei.hicampus.claw.ai.types.Model;
 import com.huawei.hicampus.claw.ai.types.ModelCost;
 import com.huawei.hicampus.claw.ai.types.Provider;
+import com.huawei.hicampus.claw.ai.types.TextContent;
 import com.huawei.hicampus.claw.ai.types.ThinkingLevel;
+import com.huawei.hicampus.claw.ai.types.ToolCall;
 import com.huawei.hicampus.claw.codingagent.runtime.MateServiceClient.AgentRuntime;
 import com.huawei.hicampus.claw.codingagent.runtime.PreparedAgentRuntime;
+import com.huawei.hicampus.claw.codingagent.tool.ops.FindOperations;
+import com.huawei.hicampus.claw.codingagent.tool.ops.GrepOperations;
+import com.huawei.hicampus.claw.codingagent.tool.ops.LsOperations;
+import com.huawei.hicampus.claw.codingagent.tool.ops.ReadOperations;
 import com.huawei.hicampus.claw.codingagent.tool.workspace.AgentWorkspaceBoundary;
+import com.huawei.hicampus.claw.codingagent.tool.workspace.WorkspacePathResolver;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -57,6 +67,54 @@ class DefaultConfiguredToolAssemblerTest {
         assertThat(second).extracting(AgentTool::name).containsExactly("Grep", "Read");
         assertThat(first.getFirst()).isNotSameAs(second.getFirst());
         assertThat(first.getLast()).isNotSameAs(second.getLast());
+    }
+
+    @Test
+    void nonInteractiveDefaultsOmitQuestionAndExplicitQuestionReturnsStableUnavailableCode(
+            @org.junit.jupiter.api.io.TempDir Path agentRoot) throws Exception {
+        var defaults = new BuiltInToolProperties();
+        defaults.afterPropertiesSet();
+        assertThat(defaults.toolsFor(ToolEntryPoint.CHILD_AGENT)).doesNotContain(BuiltInToolName.ASK_USER_QUESTION);
+        assertThat(defaults.toolsFor(ToolEntryPoint.CRON)).doesNotContain(BuiltInToolName.ASK_USER_QUESTION);
+        var explicit = new BuiltInToolProperties();
+        explicit.setChildAgent(List.of("AskUserQuestion"));
+        explicit.setCron(List.of("AskUserQuestion"));
+        explicit.afterPropertiesSet();
+        var factory = new DefaultBuiltInToolFactory(
+                mock(ReadOperations.class),
+                mock(FindOperations.class),
+                mock(GrepOperations.class),
+                mock(LsOperations.class),
+                mock(WorkspacePathResolver.class));
+        var assembler = new DefaultConfiguredToolAssembler(explicit, factory);
+        PreparedAgentRuntime runtime = prepared(agentRoot);
+        AgentWorkspaceBoundary workspace = AgentWorkspaceBoundary.create(runtime.agentId(), agentRoot);
+        assertUnavailableQuestion(assembler, runtime, workspace, ToolEntryPoint.CHILD_AGENT);
+        assertUnavailableQuestion(assembler, runtime, workspace, ToolEntryPoint.CRON);
+    }
+
+    private static void assertUnavailableQuestion(
+            DefaultConfiguredToolAssembler assembler,
+            PreparedAgentRuntime runtime,
+            AgentWorkspaceBoundary workspace,
+            ToolEntryPoint entryPoint)
+            throws Exception {
+        ToolAssemblyContext context = new ToolAssemblyContext(
+                entryPoint, runtime, model(), ThinkingLevel.OFF, workspace, Map.of(), List.of(), null, null, null);
+        AgentTool tool = assembler.assemble(entryPoint, context).getFirst();
+        Map<String, Object> arguments = Map.of("questions", List.of(Map.of("id", "q", "question", "Question")));
+        var result = new ToolExecutionPipeline()
+                .execute(
+                        tool,
+                        new ToolCall("call-1", "AskUserQuestion", arguments),
+                        arguments,
+                        new AgentContext(),
+                        new CancellationToken(),
+                        null);
+
+        assertThat(result.isError()).isTrue();
+        assertThat(((TextContent) result.content().getFirst()).text()).isEqualTo("USER_QUESTION_UNAVAILABLE");
+        assertThat(result.details()).isEqualTo(Map.of("errorCode", "USER_QUESTION_UNAVAILABLE"));
     }
 
     private static PreparedAgentRuntime prepared(Path agentRoot) {

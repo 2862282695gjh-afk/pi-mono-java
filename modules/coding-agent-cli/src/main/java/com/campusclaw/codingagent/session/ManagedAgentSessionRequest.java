@@ -32,6 +32,9 @@ import com.campusclaw.codingagent.tool.builtin.ToolEntryPoint;
  * @param runtimeValidator 入口专属运行时校验器
  * @param beforeHooks 创建时固定的前置 hook 链
  * @param afterHooks 创建时固定的后置 hook 链
+ * @param mode 当前执行模式快照
+ * @param exitPlanModeToolFactory Runtime 计划审核工具工厂
+ * @param askUserQuestionToolFactory Runtime 用户提问工具工厂
  * @version [br_eCampusCore 26.0.0, 2026/08/24]
  * @since [br_eCampusCore 26.0.0]
  */
@@ -45,7 +48,10 @@ public record ManagedAgentSessionRequest(
         BiFunction<PreparedAgentRuntime, Model, AgentTool> agentToolFactory,
         Consumer<PreparedAgentRuntime> runtimeValidator,
         List<BeforeToolCallHandler> beforeHooks,
-        List<AfterToolCallHandler> afterHooks) {
+        List<AfterToolCallHandler> afterHooks,
+        String mode,
+        BiFunction<PreparedAgentRuntime, Model, AgentTool> exitPlanModeToolFactory,
+        BiFunction<PreparedAgentRuntime, Model, AgentTool> askUserQuestionToolFactory) {
 
     public ManagedAgentSessionRequest {
         if (agentId == null || agentId.isBlank()) {
@@ -58,6 +64,63 @@ public record ManagedAgentSessionRequest(
         runtimeValidator = runtimeValidator == null ? ignored -> {} : runtimeValidator;
         beforeHooks = beforeHooks == null ? List.of() : List.copyOf(beforeHooks);
         afterHooks = afterHooks == null ? List.of() : List.copyOf(afterHooks);
+        mode = mode == null ? com.campusclaw.common.constant.ClawConstants.Agent.MODE_BUILD : mode;
+    }
+
+    public ManagedAgentSessionRequest(
+            String agentId,
+            ToolEntryPoint entryPoint,
+            Function<PreparedAgentRuntime, Model> modelResolver,
+            ThinkingLevel thinkingLevel,
+            MateCredentials mateCredentials,
+            BiFunction<PreparedAgentRuntime, Model, AgentTool> cronToolFactory,
+            BiFunction<PreparedAgentRuntime, Model, AgentTool> agentToolFactory,
+            Consumer<PreparedAgentRuntime> runtimeValidator,
+            List<BeforeToolCallHandler> beforeHooks,
+            List<AfterToolCallHandler> afterHooks) {
+        this(
+                agentId,
+                entryPoint,
+                modelResolver,
+                thinkingLevel,
+                mateCredentials,
+                cronToolFactory,
+                agentToolFactory,
+                runtimeValidator,
+                beforeHooks,
+                afterHooks,
+                com.campusclaw.common.constant.ClawConstants.Agent.MODE_BUILD,
+                null,
+                null);
+    }
+
+    public ManagedAgentSessionRequest(
+            String agentId,
+            ToolEntryPoint entryPoint,
+            Function<PreparedAgentRuntime, Model> modelResolver,
+            ThinkingLevel thinkingLevel,
+            MateCredentials mateCredentials,
+            BiFunction<PreparedAgentRuntime, Model, AgentTool> cronToolFactory,
+            BiFunction<PreparedAgentRuntime, Model, AgentTool> agentToolFactory,
+            Consumer<PreparedAgentRuntime> runtimeValidator,
+            List<BeforeToolCallHandler> beforeHooks,
+            List<AfterToolCallHandler> afterHooks,
+            String mode,
+            BiFunction<PreparedAgentRuntime, Model, AgentTool> exitPlanModeToolFactory) {
+        this(
+                agentId,
+                entryPoint,
+                modelResolver,
+                thinkingLevel,
+                mateCredentials,
+                cronToolFactory,
+                agentToolFactory,
+                runtimeValidator,
+                beforeHooks,
+                afterHooks,
+                mode,
+                exitPlanModeToolFactory,
+                null);
     }
 
     public static ManagedAgentSessionRequest create(
@@ -73,6 +136,9 @@ public record ManagedAgentSessionRequest(
                 null,
                 null,
                 List.of(),
-                List.of());
+                List.of(),
+                com.campusclaw.common.constant.ClawConstants.Agent.MODE_BUILD,
+                null,
+                null);
     }
 }

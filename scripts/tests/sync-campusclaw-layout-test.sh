@@ -40,6 +40,11 @@ cmp -s \
   <(awk '$1 == "CREATE" && $2 == "TABLE" { print $3 }' "$MIRROR_SCRIPT") \
   || fail "corporate database tables differ from canonical schema"
 
+cmp -s \
+  <(awk '$1 == "CREATE" && $2 == "TABLE" { print "DROP TABLE IF EXISTS " $3 ";" }' "$CANONICAL_SCHEMA") \
+  <(awk '$1 == "DROP" && $2 == "TABLE" { print }' "$MIRROR_SCRIPT") \
+  || fail "corporate database script must drop each table exactly once in creation order"
+
 if grep -Eiq '^[[:space:]]*(BEGIN|COMMIT)[[:space:]]*;' "$MIRROR_SCRIPT"; then
   fail "corporate database install script contains BEGIN or COMMIT"
 fi
@@ -52,4 +57,19 @@ expected_common="$(sed 's/com\.campusclaw/com.huawei.hicampus.claw/g' "$COMMON_S
 staged_common="$(cat "$STAGED_COMMON")" || fail "cannot read staged common constants"
 [ "$expected_common" = "$staged_common" ] || fail "staged common constants differ from canonical source"
 
-printf '[layout-test] CampusClaw database script and common-module layouts are valid.\n'
+for prompt in PLAN_COMMON.txt PLAN_ROOT_REVIEW.txt PLAN_CHILD.txt BUILD_ROOT.txt EXECUTION_TODOS.txt; do
+  canonical="$ROOT/modules/coding-agent-cli/src/main/resources/prompts/plan/$prompt"
+  staged="$ROOT/build/campusclaw/src/main/resources/prompts/plan/$prompt"
+  mirrored="$ROOT/campusclaw/src/main/resources/prompts/plan/$prompt"
+  [ -f "$staged" ] || fail "staged plan prompt is missing: $prompt"
+  [ -f "$mirrored" ] || fail "mirrored plan prompt is missing: $prompt"
+  cmp -s "$canonical" "$staged" || fail "staged plan prompt differs: $prompt"
+  cmp -s "$canonical" "$mirrored" || fail "mirrored plan prompt differs: $prompt"
+done
+
+grep -Fxq \
+  'spring.jackson.deserialization.fail-on-ignored-properties=true' \
+  "$ROOT/campusclaw/src/main/resources/application.properties" \
+  || fail "corporate runtime does not reject ignored JSON properties"
+
+printf '[layout-test] CampusClaw database, common-module, and plan-prompt layouts are valid.\n'

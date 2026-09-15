@@ -29,6 +29,7 @@ import com.campusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
 import com.campusclaw.codingagent.runtimeapi.result.StandaloneResultBeanAdapter;
 import com.campusclaw.codingagent.runtimeapi.session.RuntimeSessionResponseAssembler;
 import com.campusclaw.codingagent.runtimeapi.session.RuntimeSessionService;
+import com.campusclaw.codingagent.runtimeapi.session.RuntimeSessionUpdateService;
 import com.campusclaw.codingagent.runtimeapi.session.RuntimeSessionView;
 import com.campusclaw.codingagent.runtimeapi.session.SessionEtagFactory;
 import com.campusclaw.codingagent.runtimeapi.vo.CreateSessionResponseVO;
@@ -63,7 +64,8 @@ class RuntimeSessionRoutesTest {
     @BeforeEach
     void setUp() {
         service = mock(RuntimeSessionService.class);
-        var controller = new RuntimeSessionController(service, new StandaloneResultBeanAdapter());
+        var controller = new RuntimeSessionController(
+                service, new StandaloneResultBeanAdapter(), mock(RuntimeSessionUpdateService.class));
         var messages = new RuntimeMessageSourceConfiguration().messageSource();
         var objectMapper = JsonMapper.builder().addModule(new JavaTimeModule()).build();
         mvc = MockMvcBuilders.standaloneSetup(controller)

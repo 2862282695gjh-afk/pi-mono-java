@@ -11,6 +11,10 @@ package com.huawei.hicampus.claw.codingagent.runtimeapi.vo;
  * @since [br_eCampusCore 26.0.0]
  */
 public sealed interface SessionUserEventRequestVO
-        permits UserMessageEventRequestVO, UserInterruptEventRequestVO, UserToolConfirmationEventRequestVO {
+        permits UserMessageEventRequestVO,
+                UserInterruptEventRequestVO,
+                UserToolConfirmationEventRequestVO,
+                UserPlanConfirmationEventRequestVO,
+                UserQuestionAnswerEventRequestVO {
     String getType();
 }

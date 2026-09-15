@@ -7,12 +7,15 @@ import ConversationTimeline from './components/ConversationTimeline.vue';
 import DevDiagnostics from './components/DevDiagnostics.vue';
 import CommandResultRegion from './components/CommandResultRegion.vue';
 import ToolConfirmation from './components/ToolConfirmation.vue';
+import ProgressDisclosure from './components/ProgressDisclosure.vue';
 import { useWorkbenchSessions } from './composables/useWorkbenchSessions';
+import { useDockDisclosures } from './composables/useDockDisclosures';
 import type { DebugHeadersExpose } from './debugHeaders';
 import { projectRuntimeEvents } from './projectors/runtimeEventProjector';
+import { canAnswerQuestion, canReviewPlan } from './runtime/eventStore';
 import type { AgentOption } from './types/product';
 import type { CommandInvocation } from './runtime/commands';
-import type { SubmissionOutcome } from './types/runtime';
+import type { QuestionAnswer, SubmissionOutcome } from './types/runtime';
 
 const isDevelopment = import.meta.env.DEV;
 const DebugHeaders = import.meta.env.DEV ? defineAsyncComponent(() => import('./components/DebugHeaders.vue')) : undefined;
@@ -30,10 +33,12 @@ const workbench = useWorkbenchSessions(agent);
 const { runtime, threads, message, currentThread } = workbench;
 const busy = ref(false);
 const submitting = ref(false);
+const questionSubmittingId = ref('');
 const sidebarCompact = ref(window.innerWidth <= 800);
 const scrollRegion = ref<HTMLElement | null>(null);
 const debugHeaders = ref<DebugHeadersExpose | null>(null);
 const followingTail = ref(true);
+const dock = useDockDisclosures();
 let runGeneration = 0;
 
 const turns = computed(() => projectRuntimeEvents(runtime.events.value, runtime.streaming.value));
@@ -45,6 +50,16 @@ const statusLabel = computed(() => workbench.restoring.value ? '正在恢复会�
   : running.value ? '正在执行' : '空闲');
 const showRecovery = computed(() => runtime.recovering.value || runtime.uncertainty.value || workbench.restoreError.value
   || workbench.recoveryExhausted.value);
+const configurationDisabled = computed(() => running.value || busy.value || workbench.restoring.value
+  || Boolean(runtime.uncertainty.value) || !runtime.historyReady.value);
+const reviewDisabled = computed(() => !canReviewPlan({ mode: runtime.session.value?.mode, state: runtime.session.value?.state,
+  hasPendingPlan: Boolean(runtime.execution.value.pendingPlan), historyReady: runtime.historyReady.value,
+  controlLocked: runtime.controlPending.value || runtime.stopping.value || busy.value || runtime.recovering.value,
+  uncertain: runtime.receiptUnknown.value || Boolean(runtime.uncertainty.value) }));
+const questionDisabled = computed(() => !canAnswerQuestion({ state: runtime.session.value?.state,
+  hasPendingQuestion: Boolean(runtime.execution.value.pendingQuestion), historyReady: runtime.historyReady.value,
+  controlLocked: runtime.controlPending.value || runtime.stopping.value || busy.value || runtime.recovering.value,
+  uncertain: runtime.receiptUnknown.value || Boolean(runtime.uncertainty.value) }));
 
 
 watch(
@@ -57,8 +72,15 @@ watch(
 
 watch(() => runtime.session.value?.sessionId, () => {
   submitting.value = false;
+  questionSubmittingId.value = '';
   followingTail.value = true;
+  dock.reset();
 }, { flush: 'sync' });
+watch(() => runtime.commandResult.value, (result, previous) => {
+  if (result && result !== previous) dock.commandExpanded.value = true;
+});
+watch(() => runtime.execution.value.rootId, (rootId) => dock.observeRoot(rootId));
+watch(() => runtime.execution.value.terminal, (terminal) => dock.observeTerminal(Boolean(terminal)));
 
 function trackScroll(): void {
   const element = scrollRegion.value;
@@ -125,7 +147,12 @@ async function executeCommand(invocation: CommandInvocation): Promise<Submission
   const sessionId = runtime.session.value?.sessionId;
   const headers = isDevelopment ? await debugHeaders.value?.snapshot() : undefined;
   if (headers === null || sessionId !== runtime.session.value?.sessionId) return 'not-submitted';
-  return runtime.executeCommand(invocation, headers);
+  const outcome = await runtime.executeCommand(invocation, headers);
+  if (outcome === 'confirmed' && invocation.executionMode === 'skillEvents'
+    && sessionId === runtime.session.value?.sessionId) {
+    workbench.touchCurrentThread(`/${invocation.request.name}${invocation.request.arguments ? ` ${invocation.request.arguments}` : ''}`);
+  }
+  return outcome;
 }
 
 async function stop(): Promise<void> {
@@ -144,6 +171,30 @@ async function decideTool(decision: 'allow' | 'deny', reason: string): Promise<v
   await run(async () => { await runtime.confirmTool(toolCallId, decision, reason, headers); });
 }
 
+async function decidePlan(eventId: string, decision: 'approve' | 'revise', feedback: string): Promise<void> {
+  const sessionId = runtime.session.value?.sessionId;
+  const headers = isDevelopment ? await debugHeaders.value?.snapshot() : undefined;
+  if (headers === null || sessionId !== runtime.session.value?.sessionId
+    || eventId !== runtime.execution.value.pendingPlan?.eventId) return;
+  await run(async () => { await runtime.confirmPlan(eventId, decision, feedback, headers); });
+}
+
+async function answerQuestion(eventId: string, answers: QuestionAnswer[]): Promise<void> {
+  const sessionId = runtime.session.value?.sessionId;
+  if (!sessionId || questionSubmittingId.value || eventId !== runtime.execution.value.pendingQuestion?.eventId) return;
+  questionSubmittingId.value = eventId;
+  try {
+    const headers = isDevelopment ? await debugHeaders.value?.snapshot() : undefined;
+    if (headers === null || sessionId !== runtime.session.value?.sessionId
+      || eventId !== runtime.execution.value.pendingQuestion?.eventId) return;
+    await run(async () => { await runtime.answerQuestion(eventId, answers, headers); });
+  } finally {
+    if (sessionId === runtime.session.value?.sessionId && questionSubmittingId.value === eventId) {
+      questionSubmittingId.value = '';
+    }
+  }
+}
+
 function acknowledgeUnknown(): void {
   if (window.confirm('请先检查历史是否已有本次内容。确认已人工核对后，只解除编辑锁定，不会自动发送。')) runtime.acknowledgeUnknown();
 }
@@ -159,9 +210,11 @@ async function toggleThinking(): Promise<void> {
   await run(() => runtime.changeThinking(!runtime.session.value!.thinking));
 }
 
-function modelLabel(modelId: string): string {
-  return modelId;
+async function changeMode(mode: 'build' | 'plan'): Promise<void> {
+  if (mode === runtime.session.value?.mode) return;
+  await run(() => runtime.changeMode(mode));
 }
+
 </script>
 
 <template>
@@ -170,6 +223,8 @@ function modelLabel(modelId: string): string {
       :threads="threads"
       :current-session-id="workbench.activeSessionId.value ?? undefined"
       :unavailable="workbench.unavailable.value"
+      :rename-thread="workbench.renameThread"
+      :toggle-pinned="workbench.togglePinned"
       @forget="workbench.forgetSession"
       :compact="sidebarCompact"
       @new="newConversation"
@@ -201,34 +256,6 @@ function modelLabel(modelId: string): string {
         <DebugHeaders v-if="isDevelopment" ref="debugHeaders" />
 
         <div v-if="runtime.hasSession.value" class="session-controls">
-          <button
-            class="thinking-control"
-            type="button"
-            :class="{ active: runtime.session.value?.thinking }"
-            :aria-pressed="runtime.session.value?.thinking"
-            :disabled="running || busy || workbench.restoring.value || Boolean(runtime.uncertainty.value)"
-            @click="toggleThinking"
-          >
-            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M19.1 4.9l-1.4 1.4M6.3 17.7l-1.4 1.4" /></svg>
-            <span>深度思考</span>
-          </button>
-          <label class="model-select">
-            <span class="sr-only">选择模型</span>
-            <select
-              :value="runtime.session.value?.modelId"
-              :disabled="running || busy || workbench.restoring.value || Boolean(runtime.uncertainty.value)"
-              @change="changeModel"
-            >
-              <option
-                v-if="runtime.session.value && !runtime.models.value.includes(runtime.session.value.modelId)"
-                :value="runtime.session.value.modelId"
-              >{{ modelLabel(runtime.session.value.modelId) }}</option>
-              <option v-for="model in runtime.models.value" :key="model" :value="model">
-                {{ modelLabel(model) }}
-              </option>
-            </select>
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 10 4 4 4-4" /></svg>
-          </label>
           <span class="state-badge" :class="{ running }" role="status" aria-live="polite">
             <span></span>{{ statusLabel }}
           </span>
@@ -269,7 +296,13 @@ function modelLabel(modelId: string): string {
 
       <template v-else>
         <section ref="scrollRegion" class="conversation-scroll" aria-label="会话内容" @scroll="trackScroll">
-          <ConversationTimeline :turns="turns" :running="runtime.streaming.value && !runtime.execution.value.confirming" />
+          <ConversationTimeline :turns="turns" :running="runtime.streaming.value && !runtime.execution.value.confirming"
+            :session-id="runtime.session.value!.sessionId"
+            :pending-plan-event-id="runtime.execution.value.pendingPlan?.eventId" :review-disabled="reviewDisabled"
+            :pending-question-event-id="runtime.execution.value.pendingQuestion?.eventId"
+            :review-pending="runtime.controlPending.value || busy" :question-disabled="questionDisabled"
+            :question-pending="Boolean(questionSubmittingId) || runtime.controlPending.value"
+            @decide-plan="decidePlan" @answer-question="answerQuestion" />
         </section>
         <div class="conversation-dock">
           <div v-if="showRecovery || !followingTail" class="recovery-bar" role="status">
@@ -281,7 +314,16 @@ function modelLabel(modelId: string): string {
           <ToolConfirmation v-if="running && runtime.execution.value.pendingTool && runtime.execution.value.confirming"
             :key="runtime.execution.value.pendingTool.eventId" :tool="runtime.execution.value.pendingTool"
             :disabled="runtime.controlPending.value || runtime.stopping.value || runtime.receiptUnknown.value || busy" @decide="decideTool" />
-          <CommandResultRegion v-if="runtime.commandResult.value" :result="runtime.commandResult.value" @close="runtime.commandResult.value = null" />
+          <div v-if="runtime.commandResult.value || runtime.todoSnapshot.value" class="dock-disclosures">
+            <CommandResultRegion v-if="runtime.commandResult.value" :result="runtime.commandResult.value"
+              :expanded="dock.commandExpanded.value" :temporarily-collapsed="dock.paletteOpen.value"
+              @update:expanded="dock.commandExpanded.value = $event"
+              @close="runtime.commandResult.value = null" />
+            <ProgressDisclosure v-if="runtime.todoSnapshot.value" :todos="runtime.todoSnapshot.value.todos"
+              :terminal="Boolean(runtime.execution.value.terminal)" :expanded="dock.progressExpanded.value"
+              :temporarily-collapsed="dock.paletteOpen.value"
+              @update:expanded="dock.progressExpanded.value = $event" />
+          </div>
           <ComposerBox
             :key="runtime.session.value?.sessionId"
             v-model="message"
@@ -292,6 +334,11 @@ function modelLabel(modelId: string): string {
             :can-stop="runtime.canStop.value && !busy && !workbench.restoring.value"
             :stopping="runtime.stopping.value || runtime.controlPending.value"
             :disabled="busy"
+            :mode="runtime.session.value!.mode"
+            :thinking="runtime.session.value!.thinking"
+            :model-id="runtime.session.value!.modelId"
+            :models="runtime.models.value"
+            :configuration-disabled="configurationDisabled"
             :commands="runtime.commands.value"
             :catalog-status="runtime.catalogStatus.value"
             :catalog-error="runtime.catalogError.value"
@@ -299,6 +346,10 @@ function modelLabel(modelId: string): string {
             :execute-command="executeCommand"
             @submit="submit"
             @stop="stop"
+            @change-mode="changeMode"
+            @toggle-thinking="toggleThinking"
+            @change-model="changeModel"
+            @palette-change="dock.setPaletteOpen"
           />
         </div>
       </template>

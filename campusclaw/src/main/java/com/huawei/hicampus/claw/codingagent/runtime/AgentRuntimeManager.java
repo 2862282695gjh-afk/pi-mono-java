@@ -487,7 +487,8 @@ public class AgentRuntimeManager {
         if (!isSafeName(runtime.name())
                 || isBlank(runtime.version())
                 || !validModels(runtime.bindingModels())
-                || !validToolBindings(runtime.bindingTools())) {
+                || !validToolBindings(runtime.bindingTools())
+                || !ClawConstants.Agent.MODES.contains(runtime.mode())) {
             throw new AgentRuntimeException("Mate returned invalid Agent metadata");
         }
         runtime.bindingSkills().forEach(AgentRuntimeManager::requireValidSkillReference);
@@ -539,6 +540,7 @@ public class AgentRuntimeManager {
     private static boolean validSettings(AgentSettings settings) {
         return settings != null
                 && settings.schemaVersion() == SCHEMA_VERSION
+                && ClawConstants.Agent.MODES.contains(settings.mode())
                 && validModels(settings.bindingModels())
                 && validToolBindings(settings.bindingTools())
                 && validDefaultModel(settings);
@@ -654,7 +656,8 @@ public class AgentRuntimeManager {
 
     private static AgentSettings toSettings(AgentRuntime runtime) {
         String defaultModel = runtime.defaultModel().orElse(null);
-        return new AgentSettings(SCHEMA_VERSION, defaultModel, runtime.bindingModels(), runtime.bindingTools());
+        return new AgentSettings(
+                SCHEMA_VERSION, defaultModel, runtime.bindingModels(), runtime.bindingTools(), runtime.mode());
     }
 
     private static AgentRuntime toRuntime(
@@ -678,7 +681,8 @@ public class AgentRuntimeManager {
                 identity.name(),
                 systemPrompt,
                 identity.userCases() == null ? List.of() : identity.userCases(),
-                identity.version());
+                identity.version(),
+                settings.mode());
     }
 
     private static void requireIdentifier(String value, Pattern pattern) {
@@ -739,10 +743,15 @@ public class AgentRuntimeManager {
             @JsonDeserialize(contentUsing = AgentMetadataTextDeserializer.class) List<String> userCases) {}
 
     private record AgentSettings(
-            int schemaVersion, String defaultModel, List<String> bindingModels, List<BoundTool> bindingTools) {
+            int schemaVersion,
+            String defaultModel,
+            List<String> bindingModels,
+            List<BoundTool> bindingTools,
+            @JsonDeserialize(using = AgentModeDeserializer.class) String mode) {
         private AgentSettings {
             bindingModels = bindingModels == null ? List.of() : List.copyOf(bindingModels);
             bindingTools = bindingTools == null ? null : List.copyOf(bindingTools);
+            mode = mode == null ? ClawConstants.Agent.MODE_BUILD : mode;
         }
     }
 

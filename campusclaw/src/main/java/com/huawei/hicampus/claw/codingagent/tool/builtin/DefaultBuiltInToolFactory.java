@@ -15,6 +15,7 @@ import com.huawei.hicampus.claw.codingagent.tool.ops.GrepOperations;
 import com.huawei.hicampus.claw.codingagent.tool.ops.LsOperations;
 import com.huawei.hicampus.claw.codingagent.tool.ops.ReadOperations;
 import com.huawei.hicampus.claw.codingagent.tool.read.ReadTool;
+import com.huawei.hicampus.claw.codingagent.tool.todo.TodoUpdateTool;
 import com.huawei.hicampus.claw.codingagent.tool.workspace.WorkspacePathResolver;
 
 import org.springframework.stereotype.Component;
@@ -68,6 +69,9 @@ public class DefaultBuiltInToolFactory implements BuiltInToolFactory {
                         ? unavailable(name, context)
                         : context.mateToolSessionState().createCallTool();
             case AGENT -> contextualTool(name, context.agentToolFactory(), context);
+            case TODO_UPDATE -> new TodoUpdateTool();
+            case EXIT_PLAN_MODE -> contextualTool(name, context.exitPlanModeToolFactory(), context);
+            case ASK_USER_QUESTION -> contextualTool(name, context.askUserQuestionToolFactory(), context);
         };
     }
 

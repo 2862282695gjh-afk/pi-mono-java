@@ -127,6 +127,7 @@ public class RuntimeSessionService {
         session.setModelId(modelId);
         session.setState(RuntimeSessionState.IDLE.value());
         session.setThinking(true);
+        session.setMode(snapshot.mode());
         session.setResourceVersion(1);
         session.setCreatedAt(now);
         session.setUpdatedAt(now);

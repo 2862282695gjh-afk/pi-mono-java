@@ -1,15 +1,19 @@
 <script setup lang="ts">
 import type { CommandResult } from '../runtime/commands';
-defineProps<{ result: CommandResult }>();
-defineEmits<{ close: [] }>();
+withDefaults(defineProps<{ result: CommandResult; expanded: boolean; temporarilyCollapsed?: boolean }>(), { temporarilyCollapsed: false });
+defineEmits<{ close: []; 'update:expanded': [expanded: boolean] }>();
 </script>
 
 <template>
-  <section class="command-result" aria-label="命令结果" aria-live="polite" tabindex="0">
+  <section class="command-result" aria-label="命令结果" aria-live="polite">
     <header class="region-header">
-      <strong>命令结果 · 仅当前页面</strong>
+      <button type="button" class="region-toggle" :aria-expanded="expanded && !temporarilyCollapsed" :disabled="temporarilyCollapsed"
+        @click="$emit('update:expanded', !expanded)">
+        <strong>命令结果 · 仅当前页面</strong><span aria-hidden="true">{{ expanded && !temporarilyCollapsed ? '收起' : '展开' }}</span>
+      </button>
       <button type="button" class="icon-button" aria-label="关闭命令结果" @click="$emit('close')">×</button>
     </header>
+    <div v-if="expanded && !temporarilyCollapsed" class="command-result-body" tabindex="0">
     <p class="event-notice">/{{ result.invocation.request.name }}</p>
     <template v-if="result.kind === 'agentGuide'">
       <h3>{{ result.value.displayName }}</h3>
@@ -37,5 +41,6 @@ defineEmits<{ close: [] }>();
       <ul><li v-for="skill in result.value.skills" :key="skill.name"><strong>{{ skill.name }}</strong><p>{{ skill.description }}</p></li></ul>
       <p v-if="!result.value.skills.length">当前 Agent 未绑定 Skill。</p>
     </template>
+    </div>
   </section>
 </template>

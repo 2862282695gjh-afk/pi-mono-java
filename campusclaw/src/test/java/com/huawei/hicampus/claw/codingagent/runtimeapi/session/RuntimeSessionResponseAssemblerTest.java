@@ -10,6 +10,7 @@ import java.math.BigDecimal;
 import java.util.Map;
 
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
+import com.huawei.hicampus.claw.common.constant.ClawConstants;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -31,6 +32,7 @@ class RuntimeSessionResponseAssemblerTest {
     void shouldCreateCompleteZeroUsageAndKeepNullNameWithoutInternalFields() {
         var session = new RuntimeSessionDTO();
         session.setId("session");
+        session.setMode(ClawConstants.Agent.MODE_BUILD);
         session.setResourceVersion(1L);
         var view = assembler.createView(session);
         JsonNode resource = json.valueToTree(view.resource());
@@ -43,9 +45,11 @@ class RuntimeSessionResponseAssemblerTest {
                         "modelId",
                         "state",
                         "thinking",
+                        "mode",
                         "lifetimeUsage",
                         "createdAt");
         assertThat(resource.get("displayName").isNull()).isTrue();
+        assertThat(resource.get("mode").asText()).isEqualTo(ClawConstants.Agent.MODE_BUILD);
         assertThat(resource.get("lifetimeUsage").toString())
                 .isEqualTo("{\"input\":0,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"totalTokens\":0,"
                         + "\"cost\":{\"input\":0,\"output\":0,\"cacheRead\":0,\"cacheWrite\":0,\"total\":0}}");

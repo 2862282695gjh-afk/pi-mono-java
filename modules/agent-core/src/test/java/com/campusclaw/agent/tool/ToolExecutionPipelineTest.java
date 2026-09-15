@@ -186,7 +186,8 @@ class ToolExecutionPipelineTest {
                 tool, toolCall, Map.of("query", 1), sampleContext(), new CancellationToken(), events::add);
 
         assertTrue(result.isError());
-        assertTrue(text(result.content().getFirst()).contains("Tool arguments failed validation"));
+        assertEquals("TOOL_ARGUMENTS_INVALID", text(result.content().getFirst()));
+        assertEquals(Map.of("errorCode", "TOOL_ARGUMENTS_INVALID"), result.details());
         assertFalse(beforeCalled.get());
         assertFalse(tool.executed.get());
         assertTrue(events.isEmpty());

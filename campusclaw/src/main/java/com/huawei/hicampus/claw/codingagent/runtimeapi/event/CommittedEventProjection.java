@@ -5,21 +5,31 @@
 package com.huawei.hicampus.claw.codingagent.runtimeapi.event;
 
 import static com.huawei.hicampus.claw.codingagent.runtimeapi.vo.SessionEventResponseVO.AgentMessageResponseVO;
+import static com.huawei.hicampus.claw.codingagent.runtimeapi.vo.SessionEventResponseVO.AgentPlanResponseVO;
+import static com.huawei.hicampus.claw.codingagent.runtimeapi.vo.SessionEventResponseVO.AgentQuestionResponseVO;
 import static com.huawei.hicampus.claw.codingagent.runtimeapi.vo.SessionEventResponseVO.AgentThinkingResponseVO;
+import static com.huawei.hicampus.claw.codingagent.runtimeapi.vo.SessionEventResponseVO.AgentTodoUpdatedResponseVO;
 import static com.huawei.hicampus.claw.codingagent.runtimeapi.vo.SessionEventResponseVO.AgentToolCallResponseVO;
 import static com.huawei.hicampus.claw.codingagent.runtimeapi.vo.SessionEventResponseVO.AgentToolResultResponseVO;
 import static com.huawei.hicampus.claw.codingagent.runtimeapi.vo.SessionEventResponseVO.CostResponseVO;
 import static com.huawei.hicampus.claw.codingagent.runtimeapi.vo.SessionEventResponseVO.EventDetailsResponseVO;
 import static com.huawei.hicampus.claw.codingagent.runtimeapi.vo.SessionEventResponseVO.FileContentResponseVO;
+import static com.huawei.hicampus.claw.codingagent.runtimeapi.vo.SessionEventResponseVO.QuestionAnswerResponseVO;
+import static com.huawei.hicampus.claw.codingagent.runtimeapi.vo.SessionEventResponseVO.QuestionOptionResponseVO;
+import static com.huawei.hicampus.claw.codingagent.runtimeapi.vo.SessionEventResponseVO.QuestionResponseVO;
 import static com.huawei.hicampus.claw.codingagent.runtimeapi.vo.SessionEventResponseVO.SessionCompactedResponseVO;
+import static com.huawei.hicampus.claw.codingagent.runtimeapi.vo.SessionEventResponseVO.SessionModeChangedResponseVO;
 import static com.huawei.hicampus.claw.codingagent.runtimeapi.vo.SessionEventResponseVO.SessionModelChangedResponseVO;
 import static com.huawei.hicampus.claw.codingagent.runtimeapi.vo.SessionEventResponseVO.SessionStatusIdleResponseVO;
 import static com.huawei.hicampus.claw.codingagent.runtimeapi.vo.SessionEventResponseVO.SessionThinkingChangedResponseVO;
 import static com.huawei.hicampus.claw.codingagent.runtimeapi.vo.SessionEventResponseVO.TextContentResponseVO;
+import static com.huawei.hicampus.claw.codingagent.runtimeapi.vo.SessionEventResponseVO.TodoItemResponseVO;
 import static com.huawei.hicampus.claw.codingagent.runtimeapi.vo.SessionEventResponseVO.UsageResponseVO;
 import static com.huawei.hicampus.claw.codingagent.runtimeapi.vo.SessionEventResponseVO.UserContentResponseVO;
 import static com.huawei.hicampus.claw.codingagent.runtimeapi.vo.SessionEventResponseVO.UserInterruptResponseVO;
 import static com.huawei.hicampus.claw.codingagent.runtimeapi.vo.SessionEventResponseVO.UserMessageResponseVO;
+import static com.huawei.hicampus.claw.codingagent.runtimeapi.vo.SessionEventResponseVO.UserPlanConfirmationResponseVO;
+import static com.huawei.hicampus.claw.codingagent.runtimeapi.vo.SessionEventResponseVO.UserQuestionAnswerResponseVO;
 import static com.huawei.hicampus.claw.codingagent.runtimeapi.vo.SessionEventResponseVO.UserToolConfirmationResponseVO;
 
 import java.math.BigDecimal;
@@ -36,12 +46,15 @@ import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.CommittedEventDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.error.RuntimeErrorCode;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.vo.SessionEventResponseVO;
+import com.huawei.hicampus.claw.codingagent.tool.question.QuestionDTO;
+import com.huawei.hicampus.claw.codingagent.tool.question.QuestionRequestParser;
 import com.huawei.hicampus.claw.common.constant.ClawConstants;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 /**
@@ -57,8 +70,16 @@ public class CommittedEventProjection {
 
     private final ObjectMapper objectMapper;
 
+    private final QuestionRequestParser questionParser;
+
     public CommittedEventProjection(ObjectMapper objectMapper) {
+        this(objectMapper, new QuestionRequestParser(objectMapper));
+    }
+
+    @Autowired
+    public CommittedEventProjection(ObjectMapper objectMapper, QuestionRequestParser questionParser) {
         this.objectMapper = objectMapper;
+        this.questionParser = questionParser;
     }
 
     /**
@@ -86,13 +107,19 @@ public class CommittedEventProjection {
             case USER_MESSAGE -> projectUserMessage(payload);
             case USER_INTERRUPT -> new UserInterruptResponseVO(requiredText(payload, "targetEventId"));
             case USER_TOOL_CONFIRMATION -> projectConfirmation(payload);
+            case USER_PLAN_CONFIRMATION -> projectPlanConfirmation(payload);
+            case USER_QUESTION_ANSWER -> projectQuestionAnswer(payload);
             case AGENT_MESSAGE -> projectAgentMessage(payload);
             case AGENT_THINKING -> projectAgentThinking(payload);
             case AGENT_TOOL_CALL -> projectToolCall(payload);
             case AGENT_TOOL_RESULT -> projectToolResult(payload);
+            case AGENT_PLAN -> projectPlan(payload);
+            case AGENT_QUESTION -> projectQuestion(payload);
+            case AGENT_TODO_UPDATED -> projectTodoUpdated(payload);
             case SESSION_STATUS_IDLE -> projectIdle(payload);
             case SESSION_MODEL_CHANGED -> projectModelChanged(payload);
             case SESSION_THINKING_CHANGED -> projectThinkingChanged(payload);
+            case SESSION_MODE_CHANGED -> projectModeChanged(payload);
             case SESSION_COMPACTED -> projectCompacted(payload);
         };
     }
@@ -132,6 +159,98 @@ public class CommittedEventProjection {
             throw invalid(null);
         }
         return new UserToolConfirmationResponseVO(requiredText(payload, "toolCallId"), result, denyMessage);
+    }
+
+    private UserPlanConfirmationResponseVO projectPlanConfirmation(JsonNode payload) {
+        String result = requiredOneOf(payload, "result", Set.of("approve", "revise"));
+        String feedback = optionalText(payload, "feedback");
+        if (("approve".equals(result) && feedback != null)
+                || (feedback != null && feedback.length() > ClawConstants.RuntimeApi.MAX_PLAN_FEEDBACK_CHARACTERS)) {
+            throw invalid(null);
+        }
+        String target = requiredText(payload, "targetEventId");
+        if (target.length() > 128) {
+            throw invalid(null);
+        }
+        return new UserPlanConfirmationResponseVO(target, result, feedback);
+    }
+
+    private UserQuestionAnswerResponseVO projectQuestionAnswer(JsonNode payload) {
+        requireFields(payload, Set.of("targetEventId", "answers"));
+        String target = requiredText(payload, "targetEventId");
+        JsonNode answers = requiredArray(payload, "answers");
+        if (target.length() > 128 || answers.isEmpty() || answers.size() > ClawConstants.RuntimeApi.MAX_QUESTIONS) {
+            throw invalid(null);
+        }
+        List<QuestionAnswerResponseVO> projected = new ArrayList<>();
+        Set<String> ids = new java.util.HashSet<>();
+        for (JsonNode answer : answers) {
+            projected.add(projectQuestionAnswerItem(answer, ids));
+        }
+        return new UserQuestionAnswerResponseVO(target, List.copyOf(projected));
+    }
+
+    private QuestionAnswerResponseVO projectQuestionAnswerItem(JsonNode answer, Set<String> ids) {
+        requireFields(answer, Set.of("id", "selected"), Set.of("custom"));
+        String id = requiredText(answer, "id");
+        JsonNode selected = requiredArray(answer, "selected");
+        if (!ClawConstants.RuntimeApi.QUESTION_ID_PATTERN.matcher(id).matches()
+                || !ids.add(id)
+                || selected.size() > ClawConstants.RuntimeApi.MAX_QUESTION_OPTIONS) {
+            throw invalid(null);
+        }
+        List<String> labels = new ArrayList<>();
+        selected.forEach(item -> labels.add(requiredStringValue(item)));
+        if (labels.stream().distinct().count() != labels.size()
+                || labels.stream()
+                        .anyMatch(value -> value.isEmpty()
+                                || value.length() > ClawConstants.RuntimeApi.MAX_QUESTION_OPTION_LABEL_CHARACTERS)) {
+            throw invalid(null);
+        }
+        String custom = optionalText(answer, "custom");
+        if (custom != null
+                && (custom.length() > ClawConstants.RuntimeApi.MAX_QUESTION_CUSTOM_ANSWER_CHARACTERS
+                        || !custom.equals(custom.strip()))) {
+            throw invalid(null);
+        }
+        return new QuestionAnswerResponseVO(id, List.copyOf(labels), custom);
+    }
+
+    private AgentPlanResponseVO projectPlan(JsonNode payload) {
+        String content = requiredString(payload, "content");
+        if (content.length() > ClawConstants.RuntimeApi.MAX_PLAN_CHARACTERS || !hasLevelOneHeading(content)) {
+            throw invalid(null);
+        }
+        return new AgentPlanResponseVO(
+                requiredText(payload, "sourceEventId"), requiredText(payload, "toolCallId"), content);
+    }
+
+    private AgentQuestionResponseVO projectQuestion(JsonNode payload) {
+        requireFields(payload, Set.of("sourceEventId", "toolCallId", "questions"));
+        Map<String, Object> arguments = Map.of(
+                "questions",
+                objectMapper.convertValue(requiredArray(payload, "questions"), new TypeReference<List<Object>>() {}));
+        var snapshot = questionParser.parseArguments(arguments);
+        List<QuestionResponseVO> questions =
+                snapshot.questions().stream().map(this::projectQuestionItem).toList();
+        return new AgentQuestionResponseVO(
+                requiredText(payload, "sourceEventId"), requiredText(payload, "toolCallId"), questions);
+    }
+
+    private QuestionResponseVO projectQuestionItem(QuestionDTO question) {
+        List<QuestionOptionResponseVO> options = question.options().stream()
+                .map(option -> new QuestionOptionResponseVO(option.label(), option.description()))
+                .toList();
+        return new QuestionResponseVO(
+                question.id(), question.question(), question.header(), options, question.multiSelect());
+    }
+
+    private static boolean hasLevelOneHeading(String plan) {
+        return plan.lines()
+                .filter(line -> !line.isBlank())
+                .findFirst()
+                .filter(line -> line.startsWith("# "))
+                .isPresent();
     }
 
     private AgentMessageResponseVO projectAgentMessage(JsonNode payload) {
@@ -183,6 +302,30 @@ public class CommittedEventProjection {
                 requiredText(payload, "sourceEventId"));
     }
 
+    private AgentTodoUpdatedResponseVO projectTodoUpdated(JsonNode payload) {
+        JsonNode todos = requiredArray(payload, "todos");
+        if (todos.size() > ClawConstants.RuntimeApi.MAX_TODOS) {
+            throw invalid(null);
+        }
+        List<TodoItemResponseVO> items = new ArrayList<>();
+        Set<String> contents = new java.util.HashSet<>();
+        int active = 0;
+        for (JsonNode todo : todos) {
+            String content = requiredText(todo, "content");
+            String status = requiredOneOf(todo, "status", Set.of("pending", "in_progress", "completed"));
+            if (content.length() > ClawConstants.RuntimeApi.MAX_TODO_CONTENT_CHARACTERS || !contents.add(content)) {
+                throw invalid(null);
+            }
+            active += "in_progress".equals(status) ? 1 : 0;
+            items.add(new TodoItemResponseVO(content, status));
+        }
+        if (active > 1) {
+            throw invalid(null);
+        }
+        return new AgentTodoUpdatedResponseVO(
+                requiredText(payload, "sourceEventId"), requiredText(payload, "toolCallId"), List.copyOf(items));
+    }
+
     private SessionStatusIdleResponseVO projectIdle(JsonNode payload) {
         String reason = requiredOneOf(payload, "reason", Set.of("done", "failed", "terminated", "confirming"));
         String errorCode = optionalText(payload, "errorCode");
@@ -211,6 +354,33 @@ public class CommittedEventProjection {
                 requiredBoolean(payload, "previousThinking"),
                 requiredBoolean(payload, "thinking"),
                 requiredOneOf(payload, "reason", Set.of("requested", "modelCapability")));
+    }
+
+    private SessionModeChangedResponseVO projectModeChanged(JsonNode payload) {
+        String reason = requiredOneOf(payload, "reason", Set.of("requested", "planApproved"));
+        String previousMode = requiredOneOf(payload, "previousMode", ClawConstants.Agent.MODES);
+        String mode = requiredOneOf(payload, "mode", ClawConstants.Agent.MODES);
+        String sourceEventId = optionalText(payload, "sourceEventId");
+        String confirmationEventId = optionalText(payload, "confirmationEventId");
+        if (previousMode.equals(mode)
+                || !hasValidModeChangeReferences(reason, sourceEventId, confirmationEventId)
+                || !hasValidApprovedModeChange(reason, previousMode, mode)) {
+            throw invalid(null);
+        }
+        return new SessionModeChangedResponseVO(previousMode, mode, reason, sourceEventId, confirmationEventId);
+    }
+
+    private static boolean hasValidModeChangeReferences(
+            String reason, String sourceEventId, String confirmationEventId) {
+        if ("requested".equals(reason)) {
+            return sourceEventId == null && confirmationEventId == null;
+        }
+        return sourceEventId != null && confirmationEventId != null;
+    }
+
+    private static boolean hasValidApprovedModeChange(String reason, String previousMode, String mode) {
+        return !"planApproved".equals(reason)
+                || (ClawConstants.Agent.MODE_PLAN.equals(previousMode) && ClawConstants.Agent.MODE_BUILD.equals(mode));
     }
 
     private SessionCompactedResponseVO projectCompacted(JsonNode payload) {
@@ -330,6 +500,28 @@ public class CommittedEventProjection {
             throw invalid(null);
         }
         return value.textValue();
+    }
+
+    private String requiredStringValue(JsonNode value) {
+        if (value == null || !value.isTextual()) {
+            throw invalid(null);
+        }
+        return value.textValue();
+    }
+
+    private void requireFields(JsonNode node, Set<String> required) {
+        requireFields(node, required, Set.of());
+    }
+
+    private void requireFields(JsonNode node, Set<String> required, Set<String> optional) {
+        requireObject(node);
+        Set<String> fields = new java.util.HashSet<>();
+        node.fieldNames().forEachRemaining(fields::add);
+        Set<String> allowed = new java.util.HashSet<>(required);
+        allowed.addAll(optional);
+        if (!fields.containsAll(required) || !allowed.containsAll(fields)) {
+            throw invalid(null);
+        }
     }
 
     private String optionalText(JsonNode parent, String field) {

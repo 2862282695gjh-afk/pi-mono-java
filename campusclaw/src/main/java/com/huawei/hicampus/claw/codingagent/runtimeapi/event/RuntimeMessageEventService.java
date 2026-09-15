@@ -30,6 +30,7 @@ import com.huawei.hicampus.claw.codingagent.runtimeapi.session.RuntimeSessionSta
 import com.huawei.hicampus.claw.codingagent.runtimeapi.vo.RuntimeSseEventVO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.vo.UserMessageContentRequestVO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.vo.UserMessageEventRequestVO;
+import com.huawei.hicampus.claw.codingagent.tool.builtin.BuiltInToolName;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -180,7 +181,9 @@ public class RuntimeMessageEventService {
         if (!context.eventStream().canAcceptRequired(frame)) {
             throw new RuntimeApiException(RuntimeErrorCode.EVENT_SERVICE_UNAVAILABLE);
         }
-        UserMessageAcceptanceDTO acceptance = persistence.acceptMessage(sessionId, receipt, event, acceptedAt);
+        boolean planReviewAvailable = context.holder().hasTool(BuiltInToolName.EXIT_PLAN_MODE.externalName());
+        UserMessageAcceptanceDTO acceptance =
+                persistence.acceptMessage(sessionId, receipt, event, planReviewAvailable, acceptedAt);
         return new AcceptedMessageDTO(acceptance, event);
     }
 
@@ -188,6 +191,8 @@ public class RuntimeMessageEventService {
         try {
             context.execution().bindTarget(accepted.acceptance().target());
             context.execution().beginRun(accepted.acceptance().target().executionId());
+            context.execution().applyMode(accepted.acceptance().mode());
+            context.holder().applyMode(accepted.acceptance().mode());
             RuntimeSseEventVO receipt = encoder.committed(accepted.event());
             if (!context.eventStream().emit(receipt)) {
                 throw new IllegalStateException("accepted user message receipt could not be queued");

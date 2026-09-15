@@ -18,7 +18,7 @@ export function useWorkbenchSessions(agent: AgentOption) {
   const restoring = ref(false);
   const restoreError = ref('');
   const recoveryExhausted = ref(false);
-  const runtime = useRuntimeApi(repository, (created) => { recordSession(created); select(created.sessionId); });
+  const runtime = useRuntimeApi(repository, (created) => { recordCreatedSession(created); select(created.sessionId); }, patchSession);
   const canSend = computed(() => runtime.canSend.value && !restoring.value && !restoreError.value);
   const currentThread = computed(() => threads.value.find((thread) => thread.sessionId === activeSessionId.value));
   const message = ref('');
@@ -37,13 +37,20 @@ export function useWorkbenchSessions(agent: AgentOption) {
   function trackSession(): void {
     const session = runtime.session.value;
     if (!session) return;
-    recordSession(session);
+    patchSession(session);
   }
-  function recordSession(session: RuntimeSession): void {
+  function sessionEntry(session: RuntimeSession) {
     const previous = threads.value.find((thread) => thread.sessionId === session.sessionId);
-    repository.upsert({ sessionId: session.sessionId, agentId: session.agentId,
+    return { sessionId: session.sessionId, agentId: session.agentId,
       title: session.displayName || previous?.title || '新会话', agentName: previous?.agentName || agent.name,
-      updatedAt: new Date().toISOString() });
+      lastActivityAt: previous?.lastActivityAt || session.updatedAt || session.createdAt, pinned: previous?.pinned ?? false };
+  }
+  function patchSession(session: RuntimeSession): void {
+    repository.patchMetadata(sessionEntry(session));
+    syncThreads();
+  }
+  function recordCreatedSession(session: RuntimeSession): void {
+    repository.recordActivity({ ...sessionEntry(session), lastActivityAt: new Date().toISOString() });
     syncThreads();
   }
   async function resumeSession(id: string): Promise<void> {
@@ -94,11 +101,20 @@ export function useWorkbenchSessions(agent: AgentOption) {
   function touchCurrentThread(text: string): void {
     const entry = currentThread.value;
     if (!entry) return;
-    repository.upsert({ sessionId: entry.sessionId, agentId: entry.agentId, agentName: entry.agentName,
+    repository.recordActivity({ sessionId: entry.sessionId, agentId: entry.agentId, agentName: entry.agentName,
       title: ['新会话', '已恢复的会话'].includes(entry.title)
         ? Array.from(text).slice(0, 24).join('') + (Array.from(text).length > 24 ? '…' : '') : entry.title,
-      updatedAt: new Date().toISOString() });
+      lastActivityAt: new Date().toISOString() });
     syncThreads();
+  }
+  async function renameThread(sessionId: string, displayName: string): Promise<void> {
+    const renamed = await runtime.renameSession(sessionId, displayName);
+    patchSession(renamed);
+  }
+  function togglePinned(sessionId: string): void {
+    const entry = threads.value.find((thread) => thread.sessionId === sessionId);
+    if (!entry) return;
+    repository.setPinned(sessionId, !entry.pinned); syncThreads();
   }
   function stopPolling(): void { polling++; clearTimeout(timer); recoveryExhausted.value = false; }
   function restartPolling(): void {
@@ -135,5 +151,6 @@ export function useWorkbenchSessions(agent: AgentOption) {
   });
   onUnmounted(() => { navigation++; stopPolling(); runtime.clearSessionView(); document.removeEventListener('visibilitychange', visibility); });
   return { runtime, canSend, threads, currentThread, activeSessionId, message, restoring, restoreError, storageNotice, unavailable,
-    recoveryExhausted, resumeSession, createSession, newConversation, forgetSession, touchCurrentThread, refreshState };
+    recoveryExhausted, resumeSession, createSession, newConversation, forgetSession, touchCurrentThread, renameThread,
+    togglePinned, refreshState };
 }

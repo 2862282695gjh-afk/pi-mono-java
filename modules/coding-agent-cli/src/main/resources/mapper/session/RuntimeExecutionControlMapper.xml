@@ -31,7 +31,8 @@
     <select id="findExecution"
             resultType="com.campusclaw.codingagent.runtimeapi.dto.ExecutionStateDTO">
         SELECT session_id, execution_id, root_event_id, state, current_segment_id,
-               pending_tool_call_id, stop_event_id, terminal_event_id,
+               pending_tool_call_id, pending_plan_event_id, pending_question_event_id,
+               stop_event_id, terminal_event_id,
                UPPER(terminal_reason) AS terminal_reason, created_at, updated_at, terminal_at
         FROM t_session_executions
         WHERE session_id = #{sessionId}
@@ -40,10 +41,23 @@
           AND current_segment_id = #{segmentId}
     </select>
 
+    <select id="findExecutionIdentity"
+            resultType="com.campusclaw.codingagent.runtimeapi.dto.ExecutionStateDTO">
+        SELECT session_id, execution_id, root_event_id, state, current_segment_id,
+               pending_tool_call_id, pending_plan_event_id, pending_question_event_id,
+               stop_event_id, terminal_event_id,
+               UPPER(terminal_reason) AS terminal_reason, created_at, updated_at, terminal_at
+        FROM t_session_executions
+        WHERE session_id = #{sessionId}
+          AND execution_id = #{executionId}
+          AND root_event_id = #{rootEventId}
+    </select>
+
     <select id="lockExecution"
             resultType="com.campusclaw.codingagent.runtimeapi.dto.ExecutionStateDTO">
         SELECT session_id, execution_id, root_event_id, state, current_segment_id,
-               pending_tool_call_id, stop_event_id, terminal_event_id,
+               pending_tool_call_id, pending_plan_event_id, pending_question_event_id,
+               stop_event_id, terminal_event_id,
                UPPER(terminal_reason) AS terminal_reason, created_at, updated_at, terminal_at
         FROM t_session_executions
         WHERE session_id = #{sessionId}
@@ -54,7 +68,8 @@
     <select id="lockCurrentExecution"
             resultType="com.campusclaw.codingagent.runtimeapi.dto.ExecutionStateDTO">
         SELECT session_id, execution_id, root_event_id, state, current_segment_id,
-               pending_tool_call_id, stop_event_id, terminal_event_id,
+               pending_tool_call_id, pending_plan_event_id, pending_question_event_id,
+               stop_event_id, terminal_event_id,
                UPPER(terminal_reason) AS terminal_reason, created_at, updated_at, terminal_at
         FROM t_session_executions
         WHERE session_id = #{sessionId}
@@ -106,12 +121,51 @@
           AND current_segment_id = #{segmentId}
           AND state = 'RUNNING'
           AND stop_event_id IS NULL
+          AND pending_plan_event_id IS NULL
+          AND pending_question_event_id IS NULL
+    </update>
+
+    <update id="markPlanConfirming">
+        UPDATE t_session_executions
+        SET state = 'CONFIRMING',
+            pending_tool_call_id = #{toolCallId},
+            pending_plan_event_id = #{planEventId},
+            updated_at = #{updatedAt}
+        WHERE session_id = #{sessionId}
+          AND execution_id = #{executionId}
+          AND current_segment_id = #{segmentId}
+          AND state = 'RUNNING'
+          AND stop_event_id IS NULL
+          AND pending_plan_event_id IS NULL
+          AND pending_question_event_id IS NULL
+    </update>
+
+    <update id="markQuestionConfirming">
+        UPDATE t_session_executions
+        SET state = 'CONFIRMING',
+            pending_tool_call_id = #{toolCallId},
+            pending_question_event_id = #{questionEventId},
+            updated_at = #{updatedAt}
+        WHERE session_id = #{sessionId}
+          AND execution_id = #{executionId}
+          AND current_segment_id = #{segmentId}
+          AND state = 'RUNNING'
+          AND stop_event_id IS NULL
+          AND pending_plan_event_id IS NULL
+          AND pending_question_event_id IS NULL
     </update>
 
     <update id="markStopping">
         UPDATE t_session_executions
         SET state = 'STOPPING',
             stop_event_id = #{stopEventId},
+            pending_tool_call_id = CASE
+                WHEN pending_plan_event_id IS NULL AND pending_question_event_id IS NULL
+                    THEN pending_tool_call_id
+                ELSE NULL
+            END,
+            pending_plan_event_id = NULL,
+            pending_question_event_id = NULL,
             updated_at = #{updatedAt}
         WHERE session_id = #{sessionId}
           AND execution_id = #{executionId}
@@ -139,6 +193,29 @@
         )
     </insert>
 
+    <insert id="insertPlanConfirmation"
+            parameterType="com.campusclaw.codingagent.runtimeapi.dto.PlanReviewDecisionDTO">
+        INSERT INTO t_session_plan_confirmations (
+            session_id, execution_id, confirmation_event_id, target_event_id,
+            previous_segment_id, segment_id, tool_call_id, result, feedback, state, created_at
+        ) VALUES (
+            #{sessionId}, #{executionId}, #{confirmationEventId}, #{targetEventId},
+            #{previousSegmentId}, #{segmentId}, #{toolCallId}, LOWER(CAST(#{result} AS VARCHAR)),
+            #{feedback}, #{state}, #{createdAt}
+        )
+    </insert>
+
+    <insert id="insertQuestionAnswer"
+            parameterType="com.campusclaw.codingagent.runtimeapi.dto.QuestionAnswerDecisionDTO">
+        INSERT INTO t_session_question_answers (
+            session_id, execution_id, answer_event_id, target_event_id,
+            previous_segment_id, segment_id, tool_call_id, state, created_at
+        ) VALUES (
+            #{sessionId}, #{executionId}, #{answerEventId}, #{targetEventId},
+            #{previousSegmentId}, #{segmentId}, #{toolCallId}, #{state}, #{createdAt}
+        )
+    </insert>
+
     <update id="resumeAfterConfirmation">
         UPDATE t_session_executions
         SET state = 'RUNNING',
@@ -150,6 +227,42 @@
           AND current_segment_id = #{previousSegmentId}
           AND state = 'CONFIRMING'
           AND pending_tool_call_id = #{toolCallId}
+          AND pending_plan_event_id IS NULL
+          AND pending_question_event_id IS NULL
+          AND stop_event_id IS NULL
+    </update>
+
+    <update id="resumeAfterPlanConfirmation">
+        UPDATE t_session_executions
+        SET state = 'RUNNING',
+            current_segment_id = #{segmentId},
+            pending_tool_call_id = NULL,
+            pending_plan_event_id = NULL,
+            updated_at = #{updatedAt}
+        WHERE session_id = #{sessionId}
+          AND execution_id = #{executionId}
+          AND current_segment_id = #{previousSegmentId}
+          AND state = 'CONFIRMING'
+          AND pending_tool_call_id = #{toolCallId}
+          AND pending_plan_event_id = #{planEventId}
+          AND pending_question_event_id IS NULL
+          AND stop_event_id IS NULL
+    </update>
+
+    <update id="resumeAfterQuestionAnswer">
+        UPDATE t_session_executions
+        SET state = 'RUNNING',
+            current_segment_id = #{segmentId},
+            pending_tool_call_id = NULL,
+            pending_question_event_id = NULL,
+            updated_at = #{updatedAt}
+        WHERE session_id = #{sessionId}
+          AND execution_id = #{executionId}
+          AND current_segment_id = #{previousSegmentId}
+          AND state = 'CONFIRMING'
+          AND pending_tool_call_id = #{toolCallId}
+          AND pending_plan_event_id IS NULL
+          AND pending_question_event_id = #{questionEventId}
           AND stop_event_id IS NULL
     </update>
 
@@ -187,6 +300,78 @@
           AND state = 'CLAIMED'
     </select>
 
+    <update id="claimPlanConfirmation">
+        UPDATE t_session_plan_confirmations decision
+        SET state = 'CLAIMED',
+            claimed_at = #{claimedAt}
+        WHERE decision.session_id = #{sessionId}
+          AND decision.execution_id = #{executionId}
+          AND decision.previous_segment_id = #{previousSegmentId}
+          AND decision.target_event_id = #{planEventId}
+          AND decision.state = 'PENDING'
+          AND EXISTS (
+              SELECT 1
+              FROM t_session_executions execution
+              WHERE execution.session_id = decision.session_id
+                AND execution.execution_id = decision.execution_id
+                AND execution.root_event_id = #{rootEventId}
+                AND execution.current_segment_id = decision.segment_id
+                AND execution.state = 'RUNNING'
+                AND execution.stop_event_id IS NULL
+          )
+    </update>
+
+    <select id="findClaimedPlanConfirmation"
+            resultType="com.campusclaw.codingagent.runtimeapi.dto.PlanReviewDecisionDTO">
+        SELECT session_id, execution_id, confirmation_event_id, target_event_id,
+               previous_segment_id, segment_id, tool_call_id, UPPER(result) AS result,
+               feedback, state, created_at, claimed_at, completed_at
+        FROM t_session_plan_confirmations
+        WHERE session_id = #{sessionId}
+          AND execution_id = #{executionId}
+          AND previous_segment_id = #{previousSegmentId}
+          AND target_event_id = #{planEventId}
+          AND state = 'CLAIMED'
+    </select>
+
+    <update id="claimQuestionAnswer">
+        UPDATE t_session_question_answers answer
+        SET state = 'CLAIMED',
+            claimed_at = #{claimedAt}
+        WHERE answer.session_id = #{sessionId}
+          AND answer.execution_id = #{executionId}
+          AND answer.previous_segment_id = #{previousSegmentId}
+          AND answer.target_event_id = #{questionEventId}
+          AND answer.state = 'PENDING'
+          AND EXISTS (
+              SELECT 1
+              FROM t_session_executions execution
+              WHERE execution.session_id = answer.session_id
+                AND execution.execution_id = answer.execution_id
+                AND execution.root_event_id = #{rootEventId}
+                AND execution.current_segment_id = answer.segment_id
+                AND execution.state = 'RUNNING'
+                AND execution.stop_event_id IS NULL
+          )
+    </update>
+
+    <select id="findClaimedQuestionAnswer"
+            resultType="com.campusclaw.codingagent.runtimeapi.dto.QuestionAnswerDecisionDTO">
+        SELECT answer.session_id, answer.execution_id, answer.answer_event_id,
+               answer.target_event_id, answer.previous_segment_id, answer.segment_id,
+               answer.tool_call_id, answer.state, answer.created_at, answer.claimed_at,
+               answer.completed_at, event.payload::text AS answer_payload
+        FROM t_session_question_answers answer
+        JOIN t_session_events event
+          ON event.session_id = answer.session_id
+         AND event.event_id = answer.answer_event_id
+        WHERE answer.session_id = #{sessionId}
+          AND answer.execution_id = #{executionId}
+          AND answer.previous_segment_id = #{previousSegmentId}
+          AND answer.target_event_id = #{questionEventId}
+          AND answer.state = 'CLAIMED'
+    </select>
+
     <update id="acknowledgeConfirmation">
         UPDATE t_session_tool_confirmations
         SET state = 'COMPLETED',
@@ -194,6 +379,26 @@
         WHERE session_id = #{sessionId}
           AND execution_id = #{executionId}
           AND confirmation_event_id = #{confirmationEventId}
+          AND state = 'CLAIMED'
+    </update>
+
+    <update id="acknowledgePlanConfirmation">
+        UPDATE t_session_plan_confirmations
+        SET state = 'COMPLETED',
+            completed_at = #{completedAt}
+        WHERE session_id = #{sessionId}
+          AND execution_id = #{executionId}
+          AND confirmation_event_id = #{confirmationEventId}
+          AND state = 'CLAIMED'
+    </update>
+
+    <update id="acknowledgeQuestionAnswer">
+        UPDATE t_session_question_answers
+        SET state = 'COMPLETED',
+            completed_at = #{completedAt}
+        WHERE session_id = #{sessionId}
+          AND execution_id = #{executionId}
+          AND answer_event_id = #{answerEventId}
           AND state = 'CLAIMED'
     </update>
 
@@ -207,9 +412,13 @@
                        CAST(#{target.segmentId} AS VARCHAR(128))
             </foreach>
         )
-        SELECT target.session_id, target.execution_id, target.root_event_id, target.segment_id,
+        SELECT target.session_id, target.execution_id, target.root_event_id,
+               CASE WHEN execution.stop_event_id IS NULL
+                    THEN target.segment_id ELSE execution.current_segment_id END AS segment_id,
                CASE WHEN execution.stop_event_id IS NULL THEN FALSE ELSE TRUE END AS stop_requested,
-               confirmation.tool_call_id
+               confirmation.tool_call_id,
+               plan_confirmation.target_event_id AS plan_event_id,
+               question_answer.target_event_id AS question_event_id
         FROM targets target
         JOIN LATERAL (
             SELECT current_segment_id, stop_event_id
@@ -230,8 +439,30 @@
               AND state = 'PENDING'
             LIMIT 1
         ) confirmation ON TRUE
+        LEFT JOIN LATERAL (
+            SELECT confirmation_event_id, target_event_id
+            FROM t_session_plan_confirmations
+            WHERE session_id = target.session_id
+              AND execution_id = target.execution_id
+              AND previous_segment_id = target.segment_id
+              AND segment_id = execution.current_segment_id
+              AND state = 'PENDING'
+            LIMIT 1
+        ) plan_confirmation ON TRUE
+        LEFT JOIN LATERAL (
+            SELECT answer_event_id, target_event_id
+            FROM t_session_question_answers
+            WHERE session_id = target.session_id
+              AND execution_id = target.execution_id
+              AND previous_segment_id = target.segment_id
+              AND segment_id = execution.current_segment_id
+              AND state = 'PENDING'
+            LIMIT 1
+        ) question_answer ON TRUE
         WHERE execution.stop_event_id IS NOT NULL
            OR confirmation.confirmation_event_id IS NOT NULL
+           OR plan_confirmation.confirmation_event_id IS NOT NULL
+           OR question_answer.answer_event_id IS NOT NULL
         ORDER BY target.session_id, target.execution_id
     </select>
 
@@ -239,6 +470,8 @@
         UPDATE t_session_executions
         SET state = 'TERMINAL',
             pending_tool_call_id = NULL,
+            pending_plan_event_id = NULL,
+            pending_question_event_id = NULL,
             terminal_event_id = #{terminalEventId},
             terminal_reason = #{terminalReason},
             updated_at = #{terminalAt},

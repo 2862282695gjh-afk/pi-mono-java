@@ -16,6 +16,7 @@ import com.campusclaw.codingagent.runtimeapi.agent.RuntimeAgentPromptLoader;
 import com.campusclaw.codingagent.session.compaction.SessionCompactor;
 import com.campusclaw.codingagent.tool.builtin.ConfiguredToolAssembler;
 import com.campusclaw.codingagent.tool.builtin.ToolAssemblyContext;
+import com.campusclaw.codingagent.tool.builtin.ToolEntryPoint;
 import com.campusclaw.codingagent.tool.mate.MateToolSessionState;
 import com.campusclaw.codingagent.tool.mate.MateToolsetFactory;
 import com.campusclaw.codingagent.tool.workspace.AgentWorkspaceBoundary;
@@ -44,19 +45,23 @@ public class AgentSessionFactory {
 
     private final SessionCompactor compactor;
 
+    private final PlanPolicyPromptComposer promptComposer;
+
     public AgentSessionFactory(
             CampusClawAiService aiService,
             AgentRuntimeManager runtimeManager,
             ConfiguredToolAssembler toolAssembler,
             ObjectProvider<MateToolsetFactory> mateToolsetFactoryProvider,
             RuntimeAgentPromptLoader promptLoader,
-            SessionCompactor compactor) {
+            SessionCompactor compactor,
+            PlanPolicyPromptComposer promptComposer) {
         this.aiService = aiService;
         this.runtimeManager = runtimeManager;
         this.toolAssembler = toolAssembler;
         this.mateToolsetFactoryProvider = mateToolsetFactoryProvider;
         this.promptLoader = promptLoader;
         this.compactor = compactor;
+        this.promptComposer = promptComposer;
     }
 
     /**
@@ -90,10 +95,15 @@ public class AgentSessionFactory {
                 runtime.childAgentsByName().keySet().stream().toList(),
                 mateState,
                 contextualSupplier(request.cronToolFactory(), runtime, model),
-                contextualSupplier(request.agentToolFactory(), runtime, model));
+                contextualSupplier(request.agentToolFactory(), runtime, model),
+                contextualSupplier(request.exitPlanModeToolFactory(), runtime, model),
+                contextualSupplier(request.askUserQuestionToolFactory(), runtime, model));
         List<AgentTool> tools = toolAssembler.assemble(request.entryPoint(), context);
         Agent agent = configureAgent(request, runtime, model, tools);
-        return new ManagedAgentSession(runtime, request.entryPoint(), agent, tools, compactor);
+        String basePrompt = promptLoader.load(runtime.agentRoot().resolve(".campusclaw"));
+        applyPrompt(agent, basePrompt, request.entryPoint(), request.mode(), tools);
+        return new ManagedAgentSession(
+                runtime, request.entryPoint(), agent, tools, compactor, promptComposer, basePrompt);
     }
 
     private Agent configureAgent(
@@ -103,7 +113,6 @@ public class AgentSessionFactory {
             List<AgentTool> tools) {
         Agent agent = new Agent(aiService);
         agent.setModel(model);
-        agent.setSystemPrompt(promptLoader.load(runtime.agentRoot().resolve(".campusclaw")));
         agent.setThinkingLevel(request.thinkingLevel());
         agent.setTools(tools);
         agent.setSteeringMode(DeliveryMode.ONE_AT_A_TIME);
@@ -111,6 +120,12 @@ public class AgentSessionFactory {
         agent.setBeforeToolCall(AgentSessionHookChain.before(request.beforeHooks()));
         agent.setAfterToolCall(AgentSessionHookChain.after(request.afterHooks()));
         return agent;
+    }
+
+    private void applyPrompt(
+            Agent agent, String basePrompt, ToolEntryPoint entryPoint, String mode, List<AgentTool> tools) {
+        List<String> names = tools.stream().map(AgentTool::name).toList();
+        agent.setSystemPrompt(promptComposer.compose(basePrompt, entryPoint, mode, names));
     }
 
     private static java.util.function.Supplier<AgentTool> contextualSupplier(

@@ -1,10 +1,10 @@
 # CampusClaw 受管 Agent 工具系统 v2
 
-> 文档版本：1.9.0
+> 文档版本：1.10.0
 >
 > 状态：Implemented
 >
-> 日期：2026-09-07
+> 日期：2026-09-15
 > 决策记录：[ADR-0022](../decisions/0022-managed-agent-tool-system-v2.html)、
 > [ADR-0032](../decisions/0032-tool-execution-credential-boundary.html)、
 > [ADR-0024](../decisions/0024-mate-tool-execution-credential-chain.html)、
@@ -19,10 +19,15 @@
 
 ## 1. 结论与源码基线
 
-CampusClaw 产品运行面只公开八个 PascalCase 内置工具：`Read`、`Find`、`Grep`、`Ls`、
-`Cron`、`ListMateTools`、`CallMateTool`、`Agent`。Runtime、Cron 和 Child Agent 通过同一个
+CampusClaw 产品运行面通过固定枚举公开 PascalCase 内置工具：`Read`、`Find`、`Grep`、`Ls`、
+`Cron`、`ListMateTools`、`CallMateTool`、`Agent`、`ExitPlanMode`、`TodoUpdate`。Runtime、Cron 和 Child Agent 通过同一个
 `AgentSessionFactory` 创建相同类型、相同工具 Pipeline 和相同 hook/error/cancellation 语义的
 Session；各 Session 的消息、工作目录、工具实例、Mate 缓存和 Execution 上下文彼此隔离。
+
+计划工具实现核验提交为 `17dbb20ae998c58c2b3f5ae19c254922e9f93210`，变更前基线为
+`29ebec6a8cad99896414211cda28c6fffec71bee`；新增工具、
+固定 Prompt、审核窄端口和任务事件的当前实现证据与完整目标类图入口见
+[计划模式实施说明](../plans/campusclaw-plan-mode-implementation.md)。下表的历史基线只证明各自登记范围。
 
 本实现以以下只读源码基线为设计证据：
 
@@ -49,7 +54,7 @@ Session；各 Session 的消息、工作目录、工具实例、Mate 缓存和 E
 
 - `modules/agent-core/src/main/java/com/campusclaw/agent/tool/AgentTool.java`：`executionMode()`；
 - `modules/agent-core/src/main/java/com/campusclaw/agent/tool/ToolExecutionPipeline.java`：Schema 校验、并行批次与串行 barrier；
-- `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/tool/builtin/BuiltInToolName.java`：关闭的八工具集合；
+- `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/tool/builtin/BuiltInToolName.java`：固定工具集合与名称边界；
 - `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/session/AgentSessionFactory.java`：三入口公共 Session 装配；
 - `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtime/AgentRuntimeManager.java`：缓存优先 prepare、原子 refresh；
 - `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/tool/workspace/WorkspacePathResolver.java`：工作区和符号链接边界；
@@ -108,7 +113,7 @@ Host 决定持久化与生命周期；Session 只拥有 Agent、消息、工具�
 ```yaml
 campusclaw:
   tools:
-    runtime: [Read, Find, Grep, Ls, Cron, ListMateTools, CallMateTool, Agent]
+    runtime: [Read, Find, Grep, Ls, Cron, ListMateTools, CallMateTool, Agent, ExitPlanMode, TodoUpdate]
     cron: [Read, Find, Grep, Ls, ListMateTools, CallMateTool, Agent]
     child-agent: [Read, Find, Grep, Ls, ListMateTools, CallMateTool]
 ```
@@ -126,6 +131,11 @@ campusclaw:
 | `ListMateTools` | ✓ | ✓ | ✓ | PARALLEL |
 | `CallMateTool` | ✓ | ✓ | ✓ | SEQUENTIAL |
 | `Agent` | ✓ | ✓ |  | SEQUENTIAL |
+| `ExitPlanMode` | ✓ |  |  | SEQUENTIAL |
+| `TodoUpdate` | ✓ |  |  | SEQUENTIAL |
+
+Runtime 的 plan/build 复用相同工具定义。ExitPlanMode 仅用于根执行计划审核；TodoUpdate 仅记录
+build 实施进度，由提示词约束调用时机。计划模式不会重写业务工具权限或记录调研清单。
 
 同一模型响应中的相邻 PARALLEL 调用由虚拟线程并发执行；SEQUENTIAL 调用是前后批次的
 barrier。结果始终按模型原始 tool-call 顺序写回，包括已知与未知工具混排。参数先通过
@@ -192,6 +202,9 @@ agent/{agentId}/.campusclaw/
 完整校验后原子发布。管理面 `refresh(agentId)` 总是重新拉取，失败时保留旧目录。目录中的
 Agent/Skill 名称必须和文件路径精确一致且大小写折叠后唯一；任何 `tools.json` 或符号链接都
 使缓存无效。HTTP Session 创建、Cron 触发和 Child 执行都会先 prepare；工具配置不热更新。
+
+Agent.mode 缺省为 build，仅在新建交互 Session 时复制。已有会话模式由 Session 维护；
+Child 在实际调用时继承父模式，Cron 维持既有提示词策略。
 
 refresh 成功不修改正在执行的 Session 快照。空闲数据库 Session 在下一次接受用户 Entry 前读取
 最新目录：当前模型仍有效时保持不变；失效时原子切换到具备凭据的新 default，并先持久化
@@ -335,6 +348,7 @@ git diff --check
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 1.10.0 | 2026-09-15 | Runtime profile 增加计划审核与实施任务工具，关联固定提示词和 Session 模式实施说明。 |
 | 1.9.0 | 2026-09-07 | 标明 Slash 原型保留决定的历史范围，关联当前删除实现；工具与公共压缩不变。 |
 | 1.8.0 | 2026-09-01 | 对齐 CampusClaw 公司镜像的新目录、Java 包和同步入口；工具契约不变。 |
 | 1.7.2 | 2026-08-31 | 修正 Find/Grep 的 `.gitignore` 根锚定规则：`/dist`、`/*.txt` 仅相对规则文件所在目录的根生效，不再误过滤嵌套同名路径。 |

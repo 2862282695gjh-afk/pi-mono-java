@@ -21,17 +21,21 @@ import java.time.ZoneOffset;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Supplier;
 
 import com.huawei.hicampus.claw.codingagent.runtimeapi.RuntimeMessageSourceConfiguration;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.AcceptedControlDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.CommittedEventDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.ExecutionTargetDTO;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.QuestionAnswerEventDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeEntryDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.error.RuntimeErrorCode;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.persistence.RuntimeExecutionPersistenceService;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.session.ToolConfirmationResult;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.vo.RuntimeSseEventVO;
+import com.huawei.hicampus.claw.codingagent.tool.question.QuestionAnswerDTO;
+import com.huawei.hicampus.claw.codingagent.tool.question.QuestionAnswerResultDTO;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import org.junit.jupiter.api.Test;
@@ -134,6 +138,38 @@ class RuntimeControlEventServiceTest {
         verify(fixture.results, never()).notifyCommitted(any());
     }
 
+    @Test
+    void shouldRejectOversizedQuestionAnswerFrameInsideAcceptanceTransaction() {
+        Fixture fixture = Fixture.questionFixture(1L, null);
+        fixture.stubQuestionTransaction();
+
+        assertThatThrownBy(() -> fixture.service.acceptQuestionAnswer(
+                        "session", "question-event", List.of(new QuestionAnswerDTO("details", List.of(), "answer"))))
+                .isInstanceOfSatisfying(RuntimeApiException.class, error -> assertThat(error.errorCode())
+                        .isEqualTo(RuntimeErrorCode.EVENT_SERVICE_UNAVAILABLE));
+
+        verify(fixture.questions).normalizeCurrent(eq("session"), eq("question-event"), any());
+        verify(fixture.results, never()).notifyCommitted(any());
+        assertThat(fixture.waits.registeredResponses()).isZero();
+    }
+
+    @Test
+    void shouldMapQuestionAnswerEncodingFailureBeforeTransactionCanCommit() {
+        RuntimeEventEncoder failingEncoder = mock(RuntimeEventEncoder.class);
+        when(failingEncoder.committed(any())).thenThrow(new IllegalArgumentException("cannot encode"));
+        Fixture fixture = Fixture.questionFixture(64 * 1024L, failingEncoder);
+        fixture.stubQuestionTransaction();
+
+        assertThatThrownBy(() -> fixture.service.acceptQuestionAnswer(
+                        "session", "question-event", List.of(new QuestionAnswerDTO("details", List.of(), "answer"))))
+                .isInstanceOfSatisfying(RuntimeApiException.class, error -> assertThat(error.errorCode())
+                        .isEqualTo(RuntimeErrorCode.EVENT_ACCEPTANCE_FAILED));
+
+        verify(fixture.persistence).acceptQuestionAnswer(eq("session"), eq("question-event"), any(), any(), any());
+        verify(fixture.results, never()).notifyCommitted(any());
+        assertThat(fixture.waits.registeredResponses()).isZero();
+    }
+
     private static List<RuntimeSseEventVO> collect(RuntimeEventStream stream) {
         List<RuntimeSseEventVO> output = new ArrayList<>();
         stream.attach(Runnable::run, new RuntimeEventSubscriber() {
@@ -163,6 +199,8 @@ class RuntimeControlEventServiceTest {
 
         private final RuntimeResultPollingService results = mock(RuntimeResultPollingService.class);
 
+        private final RuntimeUserQuestionService questions = mock(RuntimeUserQuestionService.class);
+
         private final RuntimeResultWaitRegistry waits;
 
         private final ExecutionTargetDTO interruptTarget =
@@ -178,18 +216,28 @@ class RuntimeControlEventServiceTest {
         private RuntimeEntryDTO confirmationReceipt;
 
         private Fixture() {
-            this(null);
+            this(null, properties(), null, false);
         }
 
         private Fixture(RuntimeCommittedEventFactory eventFactory) {
+            this(eventFactory, properties(), null, false);
+        }
+
+        private Fixture(
+                RuntimeCommittedEventFactory eventFactory,
+                RuntimeEventProperties properties,
+                RuntimeEventEncoder suppliedEncoder,
+                boolean questionEnabled) {
             ObjectMapper mapper = new ObjectMapper();
             var messages = new RuntimeMessageSourceConfiguration().messageSource();
             RuntimeEntryCodec codec = new RuntimeEntryCodec(mapper, messages);
-            RuntimeEventProperties properties = properties();
             waits = new RuntimeResultWaitRegistry(properties);
-            var ids = new ArrayDeque<>(List.of("interrupt-event", "confirmation-event"));
+            var ids = new ArrayDeque<>(List.of("interrupt-event", "confirmation-event", "question-answer-event"));
             RuntimeCommittedEventFactory committedEvents =
                     eventFactory == null ? new RuntimeCommittedEventFactory(mapper, messages) : eventFactory;
+            RuntimeEventEncoder encoder = suppliedEncoder == null
+                    ? new RuntimeEventEncoder(new CommittedEventProjection(mapper), mapper)
+                    : suppliedEncoder;
             service = new RuntimeControlEventService(
                     new RuntimeEventStreamFactory(properties, codec),
                     waits,
@@ -198,8 +246,15 @@ class RuntimeControlEventServiceTest {
                     ids::removeFirst,
                     persistence,
                     committedEvents,
-                    new RuntimeEventEncoder(new CommittedEventProjection(mapper), mapper),
-                    Clock.fixed(Instant.parse("2026-09-08T01:02:03.456Z"), ZoneOffset.UTC));
+                    encoder,
+                    Clock.fixed(Instant.parse("2026-09-08T01:02:03.456Z"), ZoneOffset.UTC),
+                    questionEnabled ? questions : null);
+        }
+
+        private static Fixture questionFixture(long streamBytes, RuntimeEventEncoder encoder) {
+            RuntimeEventProperties properties = properties();
+            properties.setStreamBufferBytes(streamBytes);
+            return new Fixture(null, properties, encoder, true);
         }
 
         private void stubInterruptAccepted() {
@@ -222,6 +277,18 @@ class RuntimeControlEventServiceTest {
                     .thenAnswer(invocation -> {
                         confirmationReceipt = invocation.getArgument(4);
                         return accepted(invocation, 4, 5, continuationTarget);
+                    });
+        }
+
+        private void stubQuestionTransaction() {
+            when(questions.normalizeCurrent(eq("session"), eq("question-event"), any()))
+                    .thenReturn(new QuestionAnswerResultDTO(
+                            List.of(new QuestionAnswerDTO("details", List.of(), "answer"))));
+            when(persistence.acceptQuestionAnswer(eq("session"), eq("question-event"), any(), any(), any()))
+                    .thenAnswer(invocation -> {
+                        Supplier<QuestionAnswerEventDTO> answerFactory = invocation.getArgument(3);
+                        answerFactory.get();
+                        throw new AssertionError("question answer transaction must stop before commit");
                     });
         }
 

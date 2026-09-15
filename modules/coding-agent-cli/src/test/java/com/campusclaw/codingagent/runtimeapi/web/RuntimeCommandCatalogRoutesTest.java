@@ -56,6 +56,7 @@ import com.campusclaw.codingagent.runtimeapi.service.command.readonly.AgentHelpQ
 import com.campusclaw.codingagent.runtimeapi.service.command.readonly.BoundSkillQueryService;
 import com.campusclaw.codingagent.runtimeapi.service.command.readonly.RuntimeSessionStatusService;
 import com.campusclaw.codingagent.runtimeapi.session.RuntimeSessionService;
+import com.campusclaw.codingagent.runtimeapi.session.RuntimeSessionUpdateService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -406,6 +407,11 @@ class RuntimeCommandCatalogRoutesTest {
         @Bean
         RuntimeSessionService sessionService() {
             return mock(RuntimeSessionService.class);
+        }
+
+        @Bean
+        RuntimeSessionUpdateService sessionUpdateService() {
+            return mock(RuntimeSessionUpdateService.class);
         }
 
         @Bean
