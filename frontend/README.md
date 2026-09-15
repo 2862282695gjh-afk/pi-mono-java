@@ -8,7 +8,7 @@ v0.16.0，Vue 3 + TypeScript + Vite 的内部 Claw Runtime 联调工作台。
 
 - Session 创建/恢复/删除，刷新和重开恢复置顶/最近列表及选中会话；Session 与 ETag 一起应用。
 - Sidebar 支持本地会话搜索、直接重命名和置顶。重命名复用统一 Session POST 与 If-Match，运行中只改名称；412 刷新资源并保留名称草稿，不自动重放。
-- 四类 user.* event 包装、POST data-only SSE、eventId 合并、数字历史分页。
+- 五类 user.* event 包装、POST data-only SSE、eventId 合并、数字历史分页。
 - 工具允许/拒绝，绑定原消息的停止；confirming 仍占用执行状态。
 - Composer 工具栏常驻普通/计划模式菜单；模式、模型和思考通过统一 Session POST 更新并携带 ETag，900px 以下收纳模型与思考设置。
 - 完整计划卡、原始 Markdown 复制、批准并执行、修改意见；复制失败可见且不改变审核状态，草稿按 Session 和计划事件隔离。
