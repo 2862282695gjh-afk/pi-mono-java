@@ -9,7 +9,8 @@ export interface ThreadSummary {
   sessionId: string;
   title: string;
   agentName: string;
-  updatedAt: string;
+  lastActivityAt: string;
+  pinned: boolean;
 }
 
 export interface UserTurn {

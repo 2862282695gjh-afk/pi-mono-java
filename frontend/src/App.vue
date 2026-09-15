@@ -9,6 +9,7 @@ import CommandResultRegion from './components/CommandResultRegion.vue';
 import ToolConfirmation from './components/ToolConfirmation.vue';
 import ProgressDisclosure from './components/ProgressDisclosure.vue';
 import { useWorkbenchSessions } from './composables/useWorkbenchSessions';
+import { useDockDisclosures } from './composables/useDockDisclosures';
 import type { DebugHeadersExpose } from './debugHeaders';
 import { projectRuntimeEvents } from './projectors/runtimeEventProjector';
 import { canAnswerQuestion, canReviewPlan } from './runtime/eventStore';
@@ -37,6 +38,7 @@ const sidebarCompact = ref(window.innerWidth <= 800);
 const scrollRegion = ref<HTMLElement | null>(null);
 const debugHeaders = ref<DebugHeadersExpose | null>(null);
 const followingTail = ref(true);
+const dock = useDockDisclosures();
 let runGeneration = 0;
 
 const turns = computed(() => projectRuntimeEvents(runtime.events.value, runtime.streaming.value));
@@ -72,7 +74,13 @@ watch(() => runtime.session.value?.sessionId, () => {
   submitting.value = false;
   questionSubmittingId.value = '';
   followingTail.value = true;
+  dock.reset();
 }, { flush: 'sync' });
+watch(() => runtime.commandResult.value, (result, previous) => {
+  if (result && result !== previous) dock.commandExpanded.value = true;
+});
+watch(() => runtime.execution.value.rootId, (rootId) => dock.observeRoot(rootId));
+watch(() => runtime.execution.value.terminal, (terminal) => dock.observeTerminal(Boolean(terminal)));
 
 function trackScroll(): void {
   const element = scrollRegion.value;
@@ -139,7 +147,12 @@ async function executeCommand(invocation: CommandInvocation): Promise<Submission
   const sessionId = runtime.session.value?.sessionId;
   const headers = isDevelopment ? await debugHeaders.value?.snapshot() : undefined;
   if (headers === null || sessionId !== runtime.session.value?.sessionId) return 'not-submitted';
-  return runtime.executeCommand(invocation, headers);
+  const outcome = await runtime.executeCommand(invocation, headers);
+  if (outcome === 'confirmed' && invocation.executionMode === 'skillEvents'
+    && sessionId === runtime.session.value?.sessionId) {
+    workbench.touchCurrentThread(`/${invocation.request.name}${invocation.request.arguments ? ` ${invocation.request.arguments}` : ''}`);
+  }
+  return outcome;
 }
 
 async function stop(): Promise<void> {
@@ -202,9 +215,6 @@ async function changeMode(mode: 'build' | 'plan'): Promise<void> {
   await run(() => runtime.changeMode(mode));
 }
 
-function modelLabel(modelId: string): string {
-  return modelId;
-}
 </script>
 
 <template>
@@ -213,6 +223,8 @@ function modelLabel(modelId: string): string {
       :threads="threads"
       :current-session-id="workbench.activeSessionId.value ?? undefined"
       :unavailable="workbench.unavailable.value"
+      :rename-thread="workbench.renameThread"
+      :toggle-pinned="workbench.togglePinned"
       @forget="workbench.forgetSession"
       :compact="sidebarCompact"
       @new="newConversation"
@@ -302,45 +314,15 @@ function modelLabel(modelId: string): string {
           <ToolConfirmation v-if="running && runtime.execution.value.pendingTool && runtime.execution.value.confirming"
             :key="runtime.execution.value.pendingTool.eventId" :tool="runtime.execution.value.pendingTool"
             :disabled="runtime.controlPending.value || runtime.stopping.value || runtime.receiptUnknown.value || busy" @decide="decideTool" />
-          <CommandResultRegion v-if="runtime.commandResult.value" :result="runtime.commandResult.value" @close="runtime.commandResult.value = null" />
-          <ProgressDisclosure v-if="runtime.todoSnapshot.value" :todos="runtime.todoSnapshot.value.todos"
-            :terminal="Boolean(runtime.execution.value.terminal)" />
-          <div class="composer-config" aria-label="会话配置">
-            <div class="mode-control" role="group" aria-label="选择执行模式">
-              <button type="button" :class="{ active: runtime.session.value?.mode === 'build' }"
-                :disabled="configurationDisabled" @click="changeMode('build')">普通模式</button>
-              <button type="button" :class="{ active: runtime.session.value?.mode === 'plan' }"
-                :disabled="configurationDisabled" @click="changeMode('plan')">计划模式</button>
-            </div>
-            <button class="thinking-control" type="button" :class="{ active: runtime.session.value?.thinking }"
-              :aria-pressed="runtime.session.value?.thinking" :disabled="configurationDisabled" @click="toggleThinking">
-              <span>深度思考</span>
-            </button>
-            <label class="model-select">
-              <span class="sr-only">选择模型</span>
-              <select :value="runtime.session.value?.modelId" :disabled="configurationDisabled" @change="changeModel">
-                <option v-if="runtime.session.value && !runtime.models.value.includes(runtime.session.value.modelId)"
-                  :value="runtime.session.value.modelId">{{ modelLabel(runtime.session.value.modelId) }}</option>
-                <option v-for="model in runtime.models.value" :key="model" :value="model">{{ modelLabel(model) }}</option>
-              </select>
-            </label>
-            <details class="mobile-session-settings">
-              <summary>模型与思考设置</summary>
-              <div>
-                <button type="button" :class="{ active: runtime.session.value?.thinking }"
-                  :aria-pressed="runtime.session.value?.thinking" :disabled="configurationDisabled" @click="toggleThinking">
-                  深度思考：{{ runtime.session.value?.thinking ? '开' : '关' }}
-                </button>
-                <label>
-                  <span>模型</span>
-                  <select :value="runtime.session.value?.modelId" :disabled="configurationDisabled" @change="changeModel">
-                    <option v-if="runtime.session.value && !runtime.models.value.includes(runtime.session.value.modelId)"
-                      :value="runtime.session.value.modelId">{{ modelLabel(runtime.session.value.modelId) }}</option>
-                    <option v-for="model in runtime.models.value" :key="model" :value="model">{{ modelLabel(model) }}</option>
-                  </select>
-                </label>
-              </div>
-            </details>
+          <div v-if="runtime.commandResult.value || runtime.todoSnapshot.value" class="dock-disclosures">
+            <CommandResultRegion v-if="runtime.commandResult.value" :result="runtime.commandResult.value"
+              :expanded="dock.commandExpanded.value" :temporarily-collapsed="dock.paletteOpen.value"
+              @update:expanded="dock.commandExpanded.value = $event"
+              @close="runtime.commandResult.value = null" />
+            <ProgressDisclosure v-if="runtime.todoSnapshot.value" :todos="runtime.todoSnapshot.value.todos"
+              :terminal="Boolean(runtime.execution.value.terminal)" :expanded="dock.progressExpanded.value"
+              :temporarily-collapsed="dock.paletteOpen.value"
+              @update:expanded="dock.progressExpanded.value = $event" />
           </div>
           <ComposerBox
             :key="runtime.session.value?.sessionId"
@@ -352,6 +334,11 @@ function modelLabel(modelId: string): string {
             :can-stop="runtime.canStop.value && !busy && !workbench.restoring.value"
             :stopping="runtime.stopping.value || runtime.controlPending.value"
             :disabled="busy"
+            :mode="runtime.session.value!.mode"
+            :thinking="runtime.session.value!.thinking"
+            :model-id="runtime.session.value!.modelId"
+            :models="runtime.models.value"
+            :configuration-disabled="configurationDisabled"
             :commands="runtime.commands.value"
             :catalog-status="runtime.catalogStatus.value"
             :catalog-error="runtime.catalogError.value"
@@ -359,6 +346,10 @@ function modelLabel(modelId: string): string {
             :execute-command="executeCommand"
             @submit="submit"
             @stop="stop"
+            @change-mode="changeMode"
+            @toggle-thinking="toggleThinking"
+            @change-model="changeModel"
+            @palette-change="dock.setPaletteOpen"
           />
         </div>
       </template>

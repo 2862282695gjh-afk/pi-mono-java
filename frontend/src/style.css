@@ -210,6 +210,24 @@ svg {
   overflow-y: auto;
 }
 
+.thread-search {
+  display: block;
+  padding: 0 5px 12px;
+}
+
+.thread-search input {
+  width: 100%;
+  min-height: 40px;
+  padding: 0 11px;
+  border: 1px solid var(--border-default);
+  border-radius: 10px;
+  background: var(--surface-primary);
+}
+
+.thread-item {
+  position: relative;
+}
+
 .nav-label {
   margin: 3px 10px 8px;
   color: var(--text-tertiary);
@@ -225,13 +243,100 @@ svg {
   width: 100%;
   min-height: 62px;
   margin-bottom: 3px;
-  padding: 8px 9px;
+  padding: 8px 38px 8px 9px;
   gap: 9px;
   border: 0;
   border-radius: 10px;
   color: var(--text-secondary);
   text-align: left;
   background: transparent;
+}
+
+.thread-menu-button {
+  position: absolute;
+  z-index: 1;
+  top: 9px;
+  right: 4px;
+  width: 44px;
+  min-height: 44px;
+  border: 0;
+  border-radius: 8px;
+  color: var(--text-secondary);
+  background: transparent;
+}
+
+.thread-menu-button:hover,
+.thread-menu-button[aria-expanded="true"] {
+  color: var(--text-primary);
+  background: var(--surface-tertiary);
+}
+
+.thread-menu {
+  position: absolute;
+  z-index: 3;
+  top: 56px;
+  right: 5px;
+  width: 132px;
+  padding: 5px;
+  border: 1px solid var(--border-default);
+  border-radius: 10px;
+  background: var(--surface-primary);
+  box-shadow: 0 8px 24px rgba(76, 50, 39, 0.14);
+}
+
+.thread-menu button {
+  width: 100%;
+  min-height: 44px;
+  padding: 6px 9px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  text-align: left;
+}
+
+.thread-menu button:hover,
+.thread-menu button:focus-visible {
+  background: var(--surface-selected);
+}
+
+.thread-rename {
+  padding: 8px 5px 10px;
+}
+
+.thread-rename label,
+.thread-rename input {
+  display: block;
+  width: 100%;
+}
+
+.thread-rename input {
+  min-height: 40px;
+  padding: 0 9px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--surface-primary);
+}
+
+.thread-rename-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 6px;
+  gap: 5px;
+}
+
+.thread-rename-actions button {
+  min-height: 44px;
+  padding: 0 9px;
+  border: 1px solid var(--border-default);
+  border-radius: 7px;
+  background: var(--surface-primary);
+}
+
+.thread-rename p {
+  margin: 6px 2px 0;
+  color: var(--status-error);
+  font-size: 11px;
+  line-height: 1.45;
 }
 
 .thread-link:hover,

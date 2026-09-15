@@ -83,4 +83,10 @@ describe('groupConversationTurns', () => {
       kind: 'agent', blocks: [{ kind: 'question', key: 'question-a', turn: question }],
     })]);
   });
+  it('does not present a plan as an ordinary round-copy answer', () => {
+    const plan: ConversationTurn = { key: 'plan-a', kind: 'plan', eventId: 'plan-a', sourceEventId: 'root-a',
+      rawMarkdown: '# 权威方案' };
+    const round = groupConversationTurns([plan])[0];
+    expect(round).toMatchObject({ kind: 'agent', copySource: '' });
+  });
 });

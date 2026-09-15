@@ -1,17 +1,19 @@
 # CampusClaw Frontend
 
-v0.15.0，Vue 3 + TypeScript + Vite 的内部 Claw Runtime 联调工作台。
+v0.16.0，Vue 3 + TypeScript + Vite 的内部 Claw Runtime 联调工作台。
 保留 O1 暖灰界面，提供 Session Events、Slash、工具确认、计划审核与恢复。仅用于受控开发环境，
 不作为生产 Mate 产品前端或安全边界。
 
 ## 已实现与联调边界
 
-- Session 创建/恢复/删除，刷新和重开恢复最近列表及选中会话；Session 与 ETag 一起应用。
+- Session 创建/恢复/删除，刷新和重开恢复置顶/最近列表及选中会话；Session 与 ETag 一起应用。
+- Sidebar 支持本地会话搜索、直接重命名和置顶。重命名复用统一 Session POST 与 If-Match，运行中只改名称；412 刷新资源并保留名称草稿，不自动重放。
 - 四类 user.* event 包装、POST data-only SSE、eventId 合并、数字历史分页。
 - 工具允许/拒绝，绑定原消息的停止；confirming 仍占用执行状态。
-- 普通/计划模式控制与手机模型/思考设置，通过统一 Session POST 更新并携带 ETag。
-- 完整计划卡、批准并执行、修改意见；草稿按 Session 和计划事件隔离，审核按钮等待历史与状态对账。
-- 仅消费 `agent.todo_updated` 更新实施任务完整清单；新根消息重置，终态保留最终快照。
+- Composer 工具栏常驻普通/计划模式菜单；模式、模型和思考通过统一 Session POST 更新并携带 ETag，900px 以下收纳模型与思考设置。
+- 完整计划卡、原始 Markdown 复制、批准并执行、修改意见；复制失败可见且不改变审核状态，草稿按 Session 和计划事件隔离。
+- 问题卡可手动折叠；已回答后显示摘要并可展开权威答案。校验聚焦首个错误，提交与接受状态管理焦点和单次播报，客户端 DOM 身份不使用协议 question id。
+- 仅消费 `agent.todo_updated` 更新实施任务完整清单；新根消息重置，终态保留最终快照。任务清单和命令结果可分别折叠，Slash 清单打开时临时收起并在关闭后恢复选择。
 - 完整事件覆盖预览；无回执保留草稿并明确结果未知，断流只重读、不重发。
 - 空消息首字符 `/` 打开精简清单；名称不带前导斜杠，选中后显示可更换、删除的标签。
 - 参数单独编辑；空闲时上箭头提交，消息提交及执行中变为停止按钮。运行中命令在独立“执行命令”按钮执行；第一次 Enter 只选择，长按 Enter 不执行。
@@ -29,7 +31,7 @@ Thinking 展示模型返回的原始推理；业务参数错误的工具调用�
 运行中不再有 Steer/FollowUp/旧 Abort 入口；先实际停止，再提交新消息。
 
 “+”打开附件/上下文入口，不再提供命令。上传接口未接入，菜单中的附件项禁用；有序 content 构造及纯附件/最多 4 个 fileId 有单元测试，
-不代表实际上传已可用。公共 Mate Chat 不在本次范围内。
+不代表实际上传已可用。公共 Mate Chat、附件服务和用户 Agent 中心不在 Claw 前端实现范围内；Agent 中心保留禁用原因，不接入管理接口或假数据。
 
 ## 启动真实联调
 
@@ -72,8 +74,9 @@ If-Match/Idempotency-Key/Last-Event-ID 不进入 Events/Command POST。Session �
 
 ## 会话恢复
 
-浏览器 localStorage 的 `campusclaw.session-index.v1:` 名称空间只保存会话标识、最近列表、
-当前选择和未确认请求的身份标记，按 API base、配置 Agent、caller 区分。消息正文及模型上下文
+浏览器 localStorage 的 `campusclaw.session-index.v2:` 名称空间只保存会话标识、`lastActivityAt`、置顶状态、
+当前选择和未确认请求的身份标记，按 API base、配置 Agent、caller 区分。v1 首次读取时原序迁移；选择、恢复、
+重命名和配置只原位补丁，只有新建或消息收到确认回执后更新活动排序。消息正文及模型上下文
 重新从后端历史读取；草稿、命令参数、Headers 和凭据均不落盘。清除浏览器数据会丢失恢复入口。
 这份索引不是前端源码配置文件，也不是后端会话内容的备份。
 

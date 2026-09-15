@@ -6,6 +6,7 @@ const reviewDrafts = new Map<string, string>();
 import { nextTick, ref, watch } from 'vue';
 import type { PlanTurn } from '../types/product';
 import SafeRichText from './SafeRichText';
+import { copyPlanMarkdown } from '../runtime/planClipboard';
 
 const props = defineProps<{ plan: PlanTurn; actionable: boolean; pending: boolean; sessionId: string }>();
 const emit = defineEmits<{ decide: [decision: 'approve' | 'revise', feedback: string] }>();
@@ -16,6 +17,7 @@ const feedback = ref(reviewDrafts.get(draftKey) ?? '');
 const textarea = ref<HTMLTextAreaElement | null>(null);
 const reviseButton = ref<HTMLButtonElement | null>(null);
 const status = ref<HTMLElement | null>(null);
+const copyStatus = ref('');
 
 function statusLabel(): string {
   if (props.plan.decision === 'approve') return '已批准方案';
@@ -49,6 +51,9 @@ function approve(): void {
   emit('decide', 'approve', '');
   void nextTick(() => status.value?.focus());
 }
+async function copyPlan(): Promise<void> {
+  copyStatus.value = await copyPlanMarkdown(props.plan.rawMarkdown);
+}
 </script>
 
 <template>
@@ -58,7 +63,9 @@ function approve(): void {
         <span ref="status" tabindex="-1">{{ statusLabel() }}</span>
         <span aria-hidden="true">{{ expanded ? '收起' : '展开' }}</span>
       </button>
+      <button type="button" class="secondary-button plan-copy" @click="copyPlan">复制方案</button>
     </header>
+    <p class="plan-copy-status" aria-live="polite">{{ copyStatus }}</p>
     <div v-if="expanded" class="plan-content"><SafeRichText :source="plan.rawMarkdown" :streaming="false" /></div>
     <div v-if="actionable" class="plan-actions">
       <button class="primary-button" type="button" :disabled="pending" @click="approve">批准并执行</button>

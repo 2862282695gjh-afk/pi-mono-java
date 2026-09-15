@@ -1,6 +1,6 @@
 # CampusClaw 计划模式实施说明
 
-> 版本：1.1.0；日期：2026-09-15。
+> 版本：1.2.0；日期：2026-09-15。
 >
 > Java 变更前源码基线：`29ebec6a8cad99896414211cda28c6fffec71bee`。
 >
@@ -8,6 +8,9 @@
 >
 > 既有计划模式实现提交：`17dbb20ae998c58c2b3f5ae19c254922e9f93210`；本轮延续分支合并基线：
 > `79cfa34daef20adfa13ae1bee7cc9c41ba5c9dc7`。
+>
+> 本轮 Claw 前端对齐源码基线：`9f785bea3ffff8f6566cd1b2727285af46a2aead`；前端体验设计证据：
+> `pi-mono-java-design@9504bf3`；计划/问答设计证据：`pi-mono-java-design@c296624`。
 
 ## 范围与设计来源
 
@@ -41,7 +44,7 @@
 | Child 模式 | `tool/agent/SubagentExecutionContext.java#mode`、`SubagentExecutionService.java` | 在实际 Child 调用时复制父模式，不共享审核 Future；后续 Child 可看到已批准后的 build |
 | 实施任务 | `tool/todo/TodoUpdateTool.java`、`runtimeapi/event/RuntimeTodoEventMapper.java`、`RuntimeEventProjector.java#persistToolResults` | 校验完整清单；在 after hook 后重新解析最终成功 JSON，再生成任务事件 |
 | 公共投影 | `runtimeapi/event/CommittedEventProjection.java`、`RuntimeCommittedEventFactory.java` | 实时完整事件与历史共用公共形状，审核 Entry 不额外生成模型对话消息 |
-| 调试前端 | `frontend/src/composables/useRuntimeApi.ts`、`runtime/eventStore.ts`、`runtime/questionInteraction.ts`、`components/QuestionCard.vue` | 实时与历史共用严格 decoder/reducer；草稿按 Session 和问题事件隔离；答案单次提交，结果不确定时只读对账 |
+| 调试前端 | `frontend/src/composables/useRuntimeApi.ts`、`useWorkbenchSessions.ts`、`runtime/sessionIndex.ts`、`runtime/questionInteraction.ts`、`components/ComposerBox.vue`、`QuestionCard.vue`、`PlanCard.vue`、`AppSidebar.vue` | 实时与历史共用严格 decoder/reducer；模式入口、问题/方案卡和 Dock 完成键盘及折叠交互；SessionIndex v2 分离活动与置顶；名称更新复用统一 Session/ETag |
 
 底层 `modules/agent-core/src/main/java/com/campusclaw/agent/tool/AgentContext.java#systemPrompt` 读取同一 AgentState，
 `modules/agent-core/src/main/java/com/campusclaw/agent/loop/AgentLoop.java` 在每次 Provider 请求时组装 Context；因此批准后的 Prompt 更新可进入
@@ -107,7 +110,7 @@ Prompt 实现，现有业务工具权限继续生效，不能据此宣称 plan �
 
 ## 外部工程边界
 
-本仓没有企业 `mate-service` 公共 Chat Controller 和适配实现。外部工程仍需按共享契约接入
+本轮按用户明确范围只实现 Claw，不接入 `mate-service`。本仓没有企业 `mate-service` 公共 Chat Controller 和适配实现。外部工程仍需按共享契约接入
 Agent.mode 元数据、统一 Session 更新、计划确认和结构化问答，并完成企业认证、租户、审计和
 真实业务工具联调。公共 Chat 适配必须把外部会话身份映射到 Runtime 资源，不能把内部 sessionId、eventId、
 toolCallId 或执行凭据直接透传给浏览器。Runtime 的生产接线和内部调试工作台可交付，不表示这些企业适配已实现。
@@ -122,7 +125,7 @@ JAR HTTP 测试使用受控模型响应，均不等同于企业 mate-service 或
 | Java / 格式 | JDK 21 编译、单元回归、Spotless、main/test Checkstyle、方法长度与边界规范 | 全 Reactor `clean verify` 通过：373 类、2085 项，0 失败、错误、跳过；Spotless/Checkstyle 复查通过 |
 | 真实数据库 | 双重完整安装；审核/问答交接、事务回滚、并发、停止和超时竞争 | 专用 openGauss 7.0.0-RC3：16 个 IT 类 140 项通过；新增问答 IT 4 项含真实约束失败整笔回滚；不宣称生产 GaussDB 验证 |
 | 实际 JAR HTTP | question → answer → 原 plan 根 → approve/build/TODO；并发回答、停止及历史同形 | 受控模型与真实 JAR/openGauss 探针通过；模型历史只含原 user 与可信 tool answer，问答展示事件未重复注入 |
-| 前端 | 严格协议、问题卡、历史恢复、重复提交、切 Session 草稿和未知写入不重发 | `npm test`：14 文件、172 项通过；`npm run build` 通过；项目没有独立 lint script |
+| 前端 | 严格协议、问题卡、模式与 Dock 交互、会话索引迁移、直接改名、重复提交和未知写入不重发 | `npm test`：19 文件、189 项通过；`npm run build` 通过；项目没有独立 lint script |
 | 独立契约验收 | 160 个共享帧、50 个字段/Unicode 边界、4 个 Java 实际投影、10 个 reducer 场景及浏览器交互 | 214 个 decoder 契约、10 个状态场景和 18 项浏览器验收通过；合成浏览器验收不替代企业公共 Chat |
 | 公司镜像 | 代码、SQL 和六个 Prompt 同步，生成 SQL 可重复安装 | `sync-campusclaw.sh --no-verify` 及布局检查通过；公司编译因 `com.huawei.hicampus:NativeParent:26.0.0-SNAPSHOT` 无法解析而受阻，未进入源码编译 |
 
@@ -137,3 +140,4 @@ Java 测试质量脚本 `check_test_quality.py` 在本机不可用，脚本检�
 |---|---|---|
 | 1.0.0 | 2026-09-15 | 接入 Session 模式、完整计划审核与实施进度事件，记录运行时和企业适配边界。 |
 | 1.1.0 | 2026-09-15 | 接入严格结构化问答、跨实例答案交接和可恢复问题卡。 |
+| 1.2.0 | 2026-09-15 | 完成 Claw 前端模式菜单、问题与方案卡、Dock 折叠、会话索引及 Sidebar 交互对齐。 |

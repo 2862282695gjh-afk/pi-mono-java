@@ -14,7 +14,8 @@ const callerId = import.meta.env.VITE_CAMPUSCLAW_CALLER_ID?.trim() || 'campuscla
 type Context = { generation: number; sessionId: string; signal: AbortSignal };
 
 /** 仅内部 Runtime 工作台装配；不兼容或回退到 Mate 公共接口。 */
-export function useRuntimeApi(pendingStore?: PendingStore, onCreated?: (session: RuntimeSession) => void) {
+export function useRuntimeApi(pendingStore?: PendingStore, onCreated?: (session: RuntimeSession) => void,
+  onObservedSession?: (session: RuntimeSession) => void) {
   const session = ref<RuntimeSession | null>(null);
   const etag = ref('');
   const models = ref<string[]>([]);
@@ -222,9 +223,38 @@ export function useRuntimeApi(pendingStore?: PendingStore, onCreated?: (session:
     } catch (error) {
       if (current(ctx) && error instanceof RuntimeApiError && (error.status === 412 || error.outcomeUncertain)) {
         await recover().catch(() => undefined);
-        if (error.status === 412) error = new RuntimeApiError({ code: 'SESSION_VERSION_MISMATCH', message: '设置已被更新，已重新读取。请核对当前值，再明确选择；没有自动重试修改。' });
+        if (error.status === 412) error = new RuntimeApiError({ status: 412, code: 'SESSION_VERSION_MISMATCH', message: '设置已被更新，已重新读取。请核对当前值，再明确选择；没有自动重试修改。' });
       }
       throw publish(error, ctx);
+    }
+  }
+  async function readDetachedSession(ctx: Context): Promise<{ value: RuntimeSession; etag: string }> {
+    const response = await request(ctx, path(ctx));
+    const value = decodeSession(await result(response));
+    const version = response.headers.get('ETag');
+    if (value.sessionId !== ctx.sessionId || !version || !/^"[^"\r\n]+"$/u.test(version)) invalidResponse();
+    return { value, etag: version };
+  }
+  async function renameSession(sessionId: string, displayName: string): Promise<RuntimeSession> {
+    if (sessionId === session.value?.sessionId) return changeSetting({ displayName });
+    const ctx = { generation, sessionId, signal: viewController.signal };
+    try {
+      const resource = await readDetachedSession(ctx);
+      const response = await request(ctx, path(ctx), { method: 'POST', headers: {
+        'Content-Type': 'application/json', 'If-Match': resource.etag,
+      }, body: JSON.stringify({ displayName }) });
+      const value = decodeSession(await result(response));
+      const version = response.headers.get('ETag');
+      if (value.sessionId !== sessionId || !version || !/^"[^"\r\n]+"$/u.test(version)) invalidResponse();
+      onObservedSession?.(value);
+      return value;
+    } catch (error) {
+      if (error instanceof RuntimeApiError && (error.status === 412 || error.outcomeUncertain)) {
+        try { onObservedSession?.((await readDetachedSession(ctx)).value); } catch { /* 保留原写入结果。 */ }
+        if (error.status === 412) throw new RuntimeApiError({ status: 412, code: 'SESSION_VERSION_MISMATCH',
+          message: '名称保存时会话已更新。已刷新会话信息，请核对名称后再次保存；没有自动重试。' });
+      }
+      throw error;
     }
   }
   async function deleteSession(): Promise<void> {
@@ -443,5 +473,6 @@ export function useRuntimeApi(pendingStore?: PendingStore, onCreated?: (session:
     changeModel: (modelId: string) => changeSetting({ modelId }),
     changeThinking: (thinking: boolean) => changeSetting({ thinking }),
     changeMode: (mode: 'build' | 'plan') => changeSetting({ mode }),
+    renameSession,
     listCommands, executeCommand, invalidateCatalog, acknowledgeUnknown };
 }

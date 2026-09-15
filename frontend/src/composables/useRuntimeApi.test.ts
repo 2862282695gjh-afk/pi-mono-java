@@ -84,6 +84,35 @@ describe('Claw Runtime Session Events coordinator', () => {
     expect(runtime.session.value?.modelId).toBe('model-primary');
     expect(runtime.etag.value).toBe('"v0"');
   });
+  it('renames a running current session with only displayName and its current ETag', async () => {
+    const { runtime, fetcher } = setup([], 'running');
+    runtime.session.value = sessionFixture({ state: 'running' });
+    fetcher.mockResolvedValueOnce(jsonResponse(sessionFixture({ state: 'running', displayName: '新名称' }), { ETag: '"v1"' }));
+    await runtime.renameSession('session-a', '新名称');
+    expect(requestAt(fetcher).json).toEqual({ displayName: '新名称' });
+    expect(requestAt(fetcher).headers.get('if-match')).toBe('"v0"');
+    expect(runtime.session.value?.displayName).toBe('新名称');
+  });
+  it('refreshes a detached rename conflict, preserves 412, and never replays the POST', async () => {
+    const { fetcher } = setup();
+    const observed = vi.fn();
+    const runtime = useRuntimeApi(undefined, undefined, observed);
+    runtime.session.value = sessionFixture({ sessionId: 'session-a' });
+    runtime.etag.value = '"active"'; runtime.historyReady.value = true;
+    fetcher.mockResolvedValueOnce(jsonResponse(sessionFixture({ sessionId: 'session-b', displayName: '原名称' }), { ETag: '"b1"' }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ resCode: 'SESSION_VERSION_MISMATCH', resMsg: 'changed' }), {
+        status: 412, headers: { 'Content-Type': 'application/json' },
+      }))
+      .mockResolvedValueOnce(jsonResponse(sessionFixture({ sessionId: 'session-b', displayName: '其他页签名称' }), { ETag: '"b2"' }));
+    await expect(runtime.renameSession('session-b', '我的草稿')).rejects.toMatchObject({ status: 412,
+      code: 'SESSION_VERSION_MISMATCH' });
+    const posts = fetcher.mock.calls.filter((call) => (call[1] as RequestInit).method === 'POST');
+    expect(posts).toHaveLength(1);
+    expect(requestAt(fetcher, 1).json).toEqual({ displayName: '我的草稿' });
+    expect(requestAt(fetcher, 1).headers.get('if-match')).toBe('"b1"');
+    expect(observed).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'session-b', displayName: '其他页签名称' }));
+    expect(runtime.session.value?.sessionId).toBe('session-a');
+  });
   it('loads integer pages and rejects repeated or opaque continuations without replacing visible history', async () => {
     const { runtime, fetcher } = setup();
     fetcher.mockResolvedValueOnce(jsonResponse({ events: [userFixture()], nextPage: 2 }))
@@ -287,7 +316,7 @@ describe('Claw Runtime Session Events coordinator', () => {
     const { fetcher } = setup([userFixture()]);
     const store = new SessionIndexRepository({ apiBase: '', agentId: 'a', callerId: 'c' }, () => storage, vi.fn());
     const storage = memoryStorage();
-    store.upsert({ sessionId: 'session-a', agentId: 'a', title: '历史', agentName: 'A', updatedAt: new Date().toISOString() });
+    store.recordActivity({ sessionId: 'session-a', agentId: 'a', title: '历史', agentName: 'A', lastActivityAt: new Date().toISOString() });
     store.put('session-a', { id: 'pending', kind: 'message', rootId: 'root-a', receiptId: 'root-a' });
     const runtime = useRuntimeApi(store);
     await runtime.getSession('session-a'); await runtime.recover();
