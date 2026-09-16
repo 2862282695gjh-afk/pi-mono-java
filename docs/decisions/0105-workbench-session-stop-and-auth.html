@@ -7,6 +7,7 @@
 <main>
 <h1>ADR-0105：会话恢复、停止按钮与本地认证助手</h1>
 <p>状态：Accepted，前端已实现；真实认证中心及 Java 后端 E2E 待本地联调。日期：2026-09-10。</p>
+<p>持久化与配置来源：Superseded in part，由 <a href="0110-developer-settings-and-plan-interaction.md">ADR-0110</a> 采用按环境保存 IP/Header 和本地服务配置热应用；其余恢复与停止规则继续有效。</p>
 <h2>Context</h2>
 <p>源码基线 <code>8fbafdb0b7ea5cdb8f22704610e5a86fc6f91bf1</code> 的会话列表仅在页面内存，停止入口位于顶栏，Composer 的加号用于命令。用户批准设计仓 <code>db3223c498e50c383cb620abe3a3fde2e3872845</code> 的工作台方案，要求刷新及重新打开恢复会话、提交按钮转为停止、运行中命令独立执行，并通过页面 IP 获取请求头 Token。同步主线 <code>5add3aef18138e9197cc8bd9a37805d6ac4b742b</code> 只修改独立 Java 测试，前端依据不变。</p>
 <h2>Options</h2>

@@ -261,6 +261,17 @@ describe('command Composer user interactions', () => {
     expect(c.text.value).toBe('下一条消息');
   });
 
+  it.each([
+    ['question', '请回答上方问题'],
+    ['plan', '请审核上方计划'],
+    ['tool', '请处理上方确认'],
+  ] as const)('points the Composer to the pending %s interaction without changing its draft', (waitingFor, label) => {
+    const { composer: c, props } = setup({ running: true, canSend: false, modelValue: '保留中的草稿', waitingFor });
+    expect(c.placeholder.value).toBe(label);
+    expect(c.text.value).toBe('保留中的草稿');
+    expect(props.modelValue).toBe('保留中的草稿');
+  });
+
   it('counts Unicode code points and preserves over-limit input for correction', async () => {
     const { composer: c, props, select } = setup();
     select('name');

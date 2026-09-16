@@ -1,31 +1,49 @@
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
+import { computed, onMounted, onUnmounted, ref, toValue, watch } from 'vue';
+import type { MaybeRefOrGetter } from 'vue';
 import type { AgentOption } from '../types/product';
 import type { RuntimeSession } from '../types/runtime';
 import { RuntimeApiError } from '../types/runtime';
 import { SessionIndexRepository } from '../runtime/sessionIndex';
+import type { PendingStore } from '../runtime/sessionIndex';
+import type { RuntimeEnvironmentSource } from '../runtime/runtimeConfiguration';
 import { useRuntimeApi } from './useRuntimeApi';
 
-export function useWorkbenchSessions(agent: AgentOption) {
+export function useWorkbenchSessions(agent: MaybeRefOrGetter<AgentOption>, environment?: RuntimeEnvironmentSource) {
   const storageNotice = ref('');
-  const repository = new SessionIndexRepository({
-    apiBase: (import.meta.env.VITE_CAMPUSCLAW_API_BASE ?? '').replace(/\/+$/u, ''), agentId: agent.id,
-    callerId: import.meta.env.VITE_CAMPUSCLAW_CALLER_ID?.trim() || 'campusclaw-web',
-  }, () => window.localStorage, (notice) => { storageNotice.value = notice; });
-  const initial = repository.read();
+  const createRepository = () => {
+    const selected = toValue(agent);
+    const connection = environment?.snapshot();
+    return new SessionIndexRepository({
+      apiBase: connection?.backendIdentity ?? (import.meta.env.VITE_CAMPUSCLAW_API_BASE ?? '').replace(/\/+$/u, ''),
+      agentId: selected.id,
+      callerId: connection?.callerId ?? (import.meta.env.VITE_CAMPUSCLAW_CALLER_ID?.trim() || 'campusclaw-web'),
+    }, () => window.localStorage, (notice) => { storageNotice.value = notice; });
+  };
+  let repository = createRepository();
+  const initial = environment && !environment.ready.value
+    ? { entries: [], activeSessionId: null }
+    : repository.read();
   const threads = ref(initial.entries);
   const activeSessionId = ref(initial.activeSessionId);
   const unavailable = ref<string[]>([]);
   const restoring = ref(false);
   const restoreError = ref('');
   const recoveryExhausted = ref(false);
-  const runtime = useRuntimeApi(repository, (created) => { recordCreatedSession(created); select(created.sessionId); }, patchSession);
-  const canSend = computed(() => runtime.canSend.value && !restoring.value && !restoreError.value);
+  const pendingStore: PendingStore = {
+    list: (sessionId) => repository.list(sessionId),
+    put: (sessionId, operation) => repository.put(sessionId, operation),
+    remove: (sessionId, operationId) => repository.remove(sessionId, operationId),
+  };
+  const runtime = useRuntimeApi(pendingStore, (created) => { recordCreatedSession(created); select(created.sessionId); }, patchSession, environment);
+  const canSend = computed(() => runtime.canSend.value && !restoring.value && !restoreError.value
+    && (environment?.ready.value ?? true));
   const currentThread = computed(() => threads.value.find((thread) => thread.sessionId === activeSessionId.value));
   const message = ref('');
   const drafts = new Map<string, string>();
   let navigation = 0;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let polling = 0;
+  let mounted = false;
   const syncThreads = () => { threads.value = repository.read().entries; };
 
   function select(id: string | null): void {
@@ -42,7 +60,7 @@ export function useWorkbenchSessions(agent: AgentOption) {
   function sessionEntry(session: RuntimeSession) {
     const previous = threads.value.find((thread) => thread.sessionId === session.sessionId);
     return { sessionId: session.sessionId, agentId: session.agentId,
-      title: session.displayName || previous?.title || '新会话', agentName: previous?.agentName || agent.name,
+      title: session.displayName || previous?.title || '新会话', agentName: previous?.agentName || toValue(agent).name,
       lastActivityAt: previous?.lastActivityAt || session.updatedAt || session.createdAt, pinned: previous?.pinned ?? false };
   }
   function patchSession(session: RuntimeSession): void {
@@ -54,6 +72,10 @@ export function useWorkbenchSessions(agent: AgentOption) {
     syncThreads();
   }
   async function resumeSession(id: string): Promise<void> {
+    if (environment && !environment.ready.value) {
+      restoreError.value = '请先读取并应用连接设置。';
+      return;
+    }
     const turn = ++navigation;
     stopPolling();
     runtime.clearSessionView();
@@ -79,7 +101,11 @@ export function useWorkbenchSessions(agent: AgentOption) {
     navigation++; stopPolling(); runtime.clearSessionView(); select(null);
     restoring.value = false; restoreError.value = '';
   }
-  async function createSession(agentId = agent.id): Promise<void> {
+  async function createSession(agentId = toValue(agent).id): Promise<void> {
+    if (environment && !environment.ready.value) {
+      restoreError.value = '请先读取并应用连接设置。';
+      return;
+    }
     if (!agentId) return;
     newConversation();
     const turn = ++navigation;
@@ -119,11 +145,12 @@ export function useWorkbenchSessions(agent: AgentOption) {
   function stopPolling(): void { polling++; clearTimeout(timer); recoveryExhausted.value = false; }
   function restartPolling(): void {
     stopPolling();
-    if (restoring.value || !runtime.hasSession.value || !runtime.running.value || runtime.streaming.value || document.visibilityState === 'hidden') return;
+    if (restoring.value || !runtime.hasSession.value || !runtime.running.value || runtime.streaming.value
+      || runtime.execution.value.confirming || document.visibilityState === 'hidden') return;
     const turn = polling;
     let attempts = 0;
     const schedule = () => {
-      if (turn !== polling || !runtime.running.value || runtime.streaming.value) return;
+      if (turn !== polling || !runtime.running.value || runtime.streaming.value || runtime.execution.value.confirming) return;
       if (attempts === 6) { recoveryExhausted.value = true; return; }
       timer = setTimeout(async () => {
         attempts++;
@@ -135,21 +162,50 @@ export function useWorkbenchSessions(agent: AgentOption) {
     schedule();
   }
   async function refreshState(): Promise<void> {
+    if (environment && !environment.ready.value) {
+      restoreError.value = '请先读取并应用连接设置。';
+      return;
+    }
     restoreError.value = '';
     if (!runtime.hasSession.value) { if (activeSessionId.value) await resumeSession(activeSessionId.value); return; }
     try { await runtime.recover(); }
     finally { restartPolling(); }
   }
-  function visibility(): void { if (document.visibilityState === 'visible') restartPolling(); else stopPolling(); }
-  watch([() => runtime.session.value?.sessionId, runtime.running, runtime.streaming], restartPolling);
+  function visibility(): void {
+    if (document.visibilityState !== 'visible') { stopPolling(); return; }
+    if (runtime.execution.value.confirming) void refreshState();
+    else restartPolling();
+  }
+  watch([() => runtime.session.value?.sessionId, runtime.running, runtime.streaming,
+    () => runtime.execution.value.confirming], restartPolling);
   watch([() => runtime.session.value?.sessionId, () => runtime.session.value?.displayName], ([id]) => {
     if (id) { trackSession(); if (!activeSessionId.value) select(id); }
   }, { flush: 'sync' });
+  function applyEnvironment(): void {
+    navigation++;
+    stopPolling();
+    runtime.clearSessionView();
+    repository = createRepository();
+    drafts.clear();
+    threads.value = [];
+    activeSessionId.value = null;
+    message.value = '';
+    unavailable.value = [];
+    restoring.value = false;
+    restoreError.value = '';
+    if (!environment?.ready.value) return;
+    const next = repository.read();
+    threads.value = next.entries;
+    activeSessionId.value = next.activeSessionId;
+    if (mounted && next.activeSessionId) void resumeSession(next.activeSessionId);
+  }
+  if (environment) watch([environment.ready, environment.revision], applyEnvironment, { flush: 'sync' });
   onMounted(() => {
+    mounted = true;
     document.addEventListener('visibilitychange', visibility);
-    if (initial.activeSessionId) void resumeSession(initial.activeSessionId);
+    if ((!environment || environment.ready.value) && activeSessionId.value) void resumeSession(activeSessionId.value);
   });
-  onUnmounted(() => { navigation++; stopPolling(); runtime.clearSessionView(); document.removeEventListener('visibilitychange', visibility); });
+  onUnmounted(() => { mounted = false; navigation++; stopPolling(); runtime.clearSessionView(); document.removeEventListener('visibilitychange', visibility); });
   return { runtime, canSend, threads, currentThread, activeSessionId, message, restoring, restoreError, storageNotice, unavailable,
     recoveryExhausted, resumeSession, createSession, newConversation, forgetSession, touchCurrentThread, renameThread,
     togglePinned, refreshState };

@@ -21,29 +21,36 @@ export function projectRuntimeEvents(events: RuntimeEvent[], observing = false):
           title: '思考过程', content: event.content });
         break;
       case 'agent.tool_call': {
-        if (event.toolName === 'ExitPlanMode' && events.some((item) => item.type === 'agent.plan'
-          && item.toolCallId === event.toolCallId && item.sourceEventId === event.sourceEventId)) break;
-        const result = events.find((item) => item.type === 'agent.tool_result' && item.toolCallId === event.toolCallId && item.sourceEventId === event.sourceEventId);
-        const question = events.find((item) => item.type === 'agent.question' && item.toolCallId === event.toolCallId
-          && item.sourceEventId === event.sourceEventId);
+        const result = matchingToolResult(events, event);
+        const question = matchingQuestion(events, event);
+        if (event.toolName === 'ExitPlanMode' && matchingPlan(events, event)) break;
+        if (event.toolName === 'AskUserQuestion') {
+          if (question) break;
+          turns.push(questionToolStatus(event, result, observing));
+          break;
+        }
         const confirmed = hasToolConfirmation(events, event);
         const terminal = events.some((item) => item.type === 'session.status_idle' && item.sourceEventId === event.sourceEventId && item.reason !== 'confirming');
         let status: ActivityTurn['status'] = terminal || !observing ? 'unconfirmed' : 'running';
         if (event.requiresConfirmation && !confirmed && !terminal) status = 'confirming';
-        if (question?.type === 'agent.question' && !questionAnswer(events, question.eventId) && !terminal) status = 'waiting_answer';
         if (result?.type === 'agent.tool_result') status = result.isError ? 'error' : 'completed';
         turns.push({ key, kind: 'activity', toolCallId: event.toolCallId, toolName: event.toolName, status,
-          arguments: Object.entries(event.arguments).map(([key, value]) => ({ key, value: typeof value === 'string' ? value : JSON.stringify(value, null, 2) })),
+          arguments: argumentRows(event.arguments), argumentValue: event.arguments,
           result: result?.type === 'agent.tool_result' ? result.content.map((block) => block.text).join('\n') : '',
+          resultBlocks: result?.type === 'agent.tool_result' ? result.content.map((block) => block.text) : undefined,
+          hasResult: result?.type === 'agent.tool_result',
           errorCode: result?.type === 'agent.tool_result' ? result.errorCode : undefined });
         break;
       }
       case 'agent.tool_result':
         if (events.some((item) => item.type === 'agent.plan' && item.toolCallId === event.toolCallId
           && item.sourceEventId === event.sourceEventId)) break;
+        if (events.some((item) => item.type === 'agent.question' && item.toolCallId === event.toolCallId
+          && item.sourceEventId === event.sourceEventId)) break;
         if (!events.some((item) => item.type === 'agent.tool_call' && item.toolCallId === event.toolCallId && item.sourceEventId === event.sourceEventId)) {
           turns.push({ key, kind: 'activity', toolCallId: event.toolCallId, toolName: '工具调用（调用记录尚未读到）',
-            status: event.isError ? 'error' : 'completed', arguments: [], result: event.content.map((block) => block.text).join('\n'), errorCode: event.errorCode });
+            status: event.isError ? 'error' : 'completed', arguments: [], result: event.content.map((block) => block.text).join('\n'),
+            resultBlocks: event.content.map((block) => block.text), hasResult: true, errorCode: event.errorCode });
         }
         break;
       case 'agent.plan': {
@@ -72,18 +79,91 @@ export function projectRuntimeEvents(events: RuntimeEvent[], observing = false):
           lifecycle: terminal ? 'closed' : interrupted ? 'stopping' : undefined });
         break;
       }
-      case 'user.interrupt': turns.push({ key, kind: 'notice', text: '停止请求已接受，等待原任务实际结束。' }); break;
-      case 'user.tool_confirmation': turns.push({ key, kind: 'notice', text: event.result === 'allow' ? '已允许本次工具调用。' : `已拒绝本次工具调用。${event.denyMessage ?? ''}` }); break;
-      case 'user.plan_confirmation': turns.push({ key, kind: 'notice', text: event.result === 'approve' ? '方案已批准，正在继续执行。' : '方案已退回修改。' }); break;
-      case 'user.question_answer': break;
-      case 'session.status_idle':
-        turns.push({ key, kind: 'notice', text: ({ done: '本轮已完成', terminated: '本轮已停止', confirming: '等待确认，任务尚未结束', failed: `本轮失败：${event.message ?? ''}` })[event.reason] });
+      case 'user.interrupt': {
+        const ended = events.slice(events.indexOf(event) + 1).some((item) => item.type === 'session.status_idle'
+          && item.sourceEventId === event.targetEventId && item.reason !== 'confirming');
+        if (!ended) turns.push({ key, kind: 'notice', text: '停止中' });
         break;
+      }
+      case 'user.tool_confirmation': turns.push({ key, kind: 'notice', text: event.result === 'allow' ? '已允许本次工具调用。' : `已拒绝本次工具调用。${event.denyMessage ?? ''}` }); break;
+      case 'user.plan_confirmation': break;
+      case 'user.question_answer': break;
+      case 'session.status_idle': {
+        if (event.reason === 'confirming') break;
+        if (event.reason === 'done' && hasCompletedAnswer(events, event)) break;
+        const text = event.reason === 'done' ? '已完成'
+          : event.reason === 'terminated' ? '已停止'
+            : `执行失败${event.message ? `：${event.message}` : ''}`;
+        turns.push({ key, kind: 'notice', text });
+        break;
+      }
       case 'session.model_changed': turns.push({ key, kind: 'notice', text: `模型已变更：${event.previousModelId} → ${event.modelId}` }); break;
       case 'session.thinking_changed': turns.push({ key, kind: 'notice', text: `后续思考展示已${event.thinking ? '开启' : '关闭'}；已有思考记录保留。` }); break;
-      case 'session.mode_changed': turns.push({ key, kind: 'notice', text: event.mode === 'plan' ? '已切换到计划模式。' : '已切换到普通模式。' }); break;
+      case 'session.mode_changed': turns.push({ key, kind: 'notice', text: event.mode === 'plan' ? '已切换到 Plan。' : '已切换到 Build。' }); break;
       case 'session.compacted': turns.push({ key, kind: 'notice', text: `上下文已压缩：${event.tokensBefore} → 约 ${event.estimatedTokensAfter} tokens` }); break;
     }
   }
   return turns;
+}
+
+function matchingToolResult(events: RuntimeEvent[], call: Extract<RuntimeEvent, { type: 'agent.tool_call' }>) {
+  return events.find((item) => item.type === 'agent.tool_result' && item.toolCallId === call.toolCallId
+    && item.sourceEventId === call.sourceEventId);
+}
+
+function matchingQuestion(events: RuntimeEvent[], call: Extract<RuntimeEvent, { type: 'agent.tool_call' }>) {
+  return events.find((item) => item.type === 'agent.question' && item.toolCallId === call.toolCallId
+    && item.sourceEventId === call.sourceEventId);
+}
+
+function matchingPlan(events: RuntimeEvent[], call: Extract<RuntimeEvent, { type: 'agent.tool_call' }>): boolean {
+  return events.some((item) => item.type === 'agent.plan' && item.toolCallId === call.toolCallId
+    && item.sourceEventId === call.sourceEventId);
+}
+
+function argumentRows(argumentsValue: Record<string, unknown>) {
+  return Object.entries(argumentsValue).map(([key, value]) => ({
+    key,
+    value: typeof value === 'string' ? value : safeStringify(value),
+  }));
+}
+
+function safeStringify(value: unknown): string {
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
+  }
+}
+
+function questionToolStatus(call: Extract<RuntimeEvent, { type: 'agent.tool_call' }>, result: RuntimeEvent | undefined,
+  observing: boolean): ActivityTurn {
+  const failed = result?.type === 'agent.tool_result' && result.isError;
+  const completedWithoutQuestion = result?.type === 'agent.tool_result' && !result.isError;
+  return {
+    key: call.eventId,
+    kind: 'activity',
+    toolCallId: call.toolCallId,
+    toolName: call.toolName,
+    status: failed ? 'error' : completedWithoutQuestion || !observing ? 'unconfirmed' : 'running',
+    arguments: [],
+    result: '',
+    hasResult: result?.type === 'agent.tool_result',
+    statusMessage: failed ? briefQuestionError(result) : completedWithoutQuestion || !observing
+      ? '问题记录尚未完整，正在同步'
+      : '正在准备问题',
+    errorCode: failed && result?.type === 'agent.tool_result' ? result.errorCode : undefined,
+  };
+}
+
+function briefQuestionError(result: Extract<RuntimeEvent, { type: 'agent.tool_result' }>): string {
+  const detail = result.content.map((block) => block.text).join(' ').replace(/\s+/gu, ' ').trim();
+  if (!detail) return '提问失败';
+  return `提问失败：${detail.length > 160 ? `${detail.slice(0, 159)}…` : detail}`;
+}
+
+function hasCompletedAnswer(events: RuntimeEvent[], idle: Extract<RuntimeEvent, { type: 'session.status_idle' }>): boolean {
+  const idleIndex = events.indexOf(idle);
+  return events.slice(0, idleIndex).some((item) => item.type === 'agent.message' && item.sourceEventId === idle.sourceEventId
+    && item.phase === 'completed' && Boolean(item.content));
 }

@@ -7,6 +7,7 @@ interface ImportMetaEnv {
   readonly VITE_CAMPUSCLAW_AGENT_NAME?: string;
   readonly VITE_CAMPUSCLAW_AGENT_DESCRIPTION?: string;
   readonly VITE_CAMPUSCLAW_AGENT_CATEGORY?: string;
+  readonly VITE_BACKEND_URL?: string;
 }
 
 interface ImportMeta {

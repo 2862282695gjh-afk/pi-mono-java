@@ -1,9 +1,10 @@
-import { createRenderer, nextTick } from 'vue';
+import { createRenderer, nextTick, ref } from 'vue';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useWorkbenchSessions } from './useWorkbenchSessions';
 import { SessionIndexRepository } from '../runtime/sessionIndex';
 import { memoryStorage } from '../runtime/storageFixture';
-import { idleFixture, jsonResponse, sessionFixture, userFixture } from '../runtime/fixtures';
+import { eventFixture, idleFixture, jsonResponse, sessionFixture, userFixture } from '../runtime/fixtures';
+import type { RuntimeEnvironmentSource } from '../runtime/runtimeConfiguration';
 const renderer = createRenderer<object, object>({ patchProp() {}, insert() {}, remove() {}, createElement: () => ({}),
   createText: () => ({}), createComment: () => ({}), setText() {}, setElementText() {}, parentNode: () => null, nextSibling: () => null });
 const apps: { unmount(): void }[] = [];
@@ -15,9 +16,9 @@ function seed(id = 'session-a') {
   index().recordActivity({ sessionId: id, agentId: agent.id, title: '恢复标题', agentName: 'Agent', lastActivityAt: new Date().toISOString() });
   index().select(id);
 }
-function mount() {
+function mount(environment?: RuntimeEnvironmentSource) {
   let workbench!: ReturnType<typeof useWorkbenchSessions>;
-  const app = renderer.createApp({ setup() { workbench = useWorkbenchSessions(agent); return () => null; } });
+  const app = renderer.createApp({ setup() { workbench = useWorkbenchSessions(agent, environment); return () => null; } });
   apps.push(app); app.mount({}); return { workbench, app };
 }
 beforeEach(() => {
@@ -104,5 +105,55 @@ describe('workbench restore and navigation lifecycle', () => {
     expect(index().read().entries.map((entry) => entry.sessionId)).toEqual(['session-a']);
     expect(w.canSend.value).toBe(false);
     expect(w.restoreError.value).toContain('未完成');
+  });
+  it('uses a backend-scoped index and clears the old view synchronously when the environment changes', async () => {
+    let connection = { apiBase: '', backendIdentity: 'proxy:http://backend-a', callerId: 'caller-a',
+      proxyVersion: 1, proxyKey: 'key-a' };
+    const environment: RuntimeEnvironmentSource = {
+      ready: ref(false),
+      revision: ref(0),
+      snapshot: () => ({ ...connection }),
+    };
+    const scoped = new SessionIndexRepository({ apiBase: connection.backendIdentity, agentId: agent.id,
+      callerId: connection.callerId }, () => storage, vi.fn());
+    scoped.recordActivity({ sessionId: 'session-a', agentId: agent.id, title: '环境 A', agentName: 'Agent',
+      lastActivityAt: new Date().toISOString() });
+    scoped.select('session-a');
+
+    const w = mount(environment).workbench;
+    await nextTick();
+    expect(fetcher).not.toHaveBeenCalled();
+    environment.ready.value = true;
+    await vi.waitFor(() => expect(w.runtime.session.value?.sessionId).toBe('session-a'));
+
+    connection = { apiBase: '', backendIdentity: 'proxy:http://backend-b', callerId: 'caller-a',
+      proxyVersion: 2, proxyKey: 'key-b' };
+    environment.revision.value += 1;
+    expect(w.runtime.session.value).toBeNull();
+    expect(w.threads.value).toEqual([]);
+    expect(w.activeSessionId.value).toBeNull();
+    expect(scoped.read().activeSessionId).toBe('session-a');
+  });
+  it('stops background polling while a known confirmation is waiting but still allows manual refresh', async () => {
+    vi.useFakeTimers();
+    const confirming = [
+      userFixture(),
+      eventFixture({ eventId: 'plan-a', type: 'agent.plan', sourceEventId: 'root-a', toolCallId: 'plan-tool', content: '# Plan' }),
+      idleFixture('confirming'),
+    ];
+    fetcher.mockImplementation(async (input: string) => input.includes('/events?')
+      ? jsonResponse({ events: confirming, nextPage: null })
+      : input.endsWith('/models')
+        ? jsonResponse({ currentModelId: 'model-primary', models: ['model-primary'] })
+        : jsonResponse(sessionFixture({ state: 'running', mode: 'plan' }), { ETag: '"v1"' }));
+    const w = mount().workbench;
+    await w.resumeSession('session-a');
+    expect(w.runtime.events.value.map((event) => event.type)).toEqual(['user.message', 'agent.plan', 'session.status_idle']);
+    expect(w.runtime.execution.value.confirming).toBe(true);
+    const settledCalls = fetcher.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(fetcher).toHaveBeenCalledTimes(settledCalls);
+    await w.refreshState();
+    expect(fetcher.mock.calls.length).toBeGreaterThan(settledCalls);
   });
 });

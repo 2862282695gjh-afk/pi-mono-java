@@ -77,7 +77,7 @@ function hasVisibleRunningTurn(turns: ConversationTurn[]): boolean {
 
     <article v-if="running && !hasVisibleRunningTurn(turns)" class="turn agent-round running-placeholder">
       <BrandMark />
-      <div class="assistant-working"><span class="spinner" aria-hidden="true"></span>正在处理新的要求…</div>
+      <div class="assistant-working"><span class="spinner" aria-hidden="true"></span>处理中…</div>
     </article>
   </div>
 </template>

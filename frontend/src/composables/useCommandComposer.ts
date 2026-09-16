@@ -11,6 +11,7 @@ export interface CommandComposerProps {
   stopMode?: boolean;
   canStop?: boolean;
   stopping?: boolean;
+  waitingFor?: 'question' | 'plan' | 'tool';
   canSend: boolean;
   disabled: boolean;
   commands: CommandDescriptor[];
@@ -62,8 +63,11 @@ export function useCommandComposer(props: CommandComposerProps, actions: Compose
   const submitDisabled = computed(() => locked.value || props.submitting || props.stopping || paletteOpen.value
     || (commandMode.value ? !canRun.value : !props.canSend || !props.modelValue.trim() || count.value > 2048));
   const text = computed(() => selection.value ? argumentsText.value : commandMode.value ? query.value : props.modelValue);
+  const waitingPlaceholder = computed(() => props.waitingFor === 'question' ? '请回答上方问题'
+    : props.waitingFor === 'plan' ? '请审核上方计划'
+      : props.waitingFor === 'tool' ? '请处理上方确认' : '');
   const placeholder = computed(() => selected.value?.input?.hint || (commandMode.value ? '查找命令'
-    : props.running ? '当前任务结束后可发送，草稿可以继续编辑' : '描述任务，或输入 / 选择命令…'));
+    : waitingPlaceholder.value || (props.running ? '当前任务结束后可发送，草稿可以继续编辑' : '描述任务，或输入 / 选择命令…')));
 
   watch(visible, () => { activeIndex.value = 0; });
   watch(() => props.catalogStatus, (status) => {

@@ -49,6 +49,10 @@ export interface ActivityTurn {
   status: 'running' | 'completed' | 'error' | 'confirming' | 'waiting_answer' | 'unconfirmed';
   arguments: ToolArgumentRow[];
   result: string;
+  argumentValue?: Record<string, unknown>;
+  resultBlocks?: string[];
+  hasResult?: boolean;
+  statusMessage?: string;
   errorCode?: string;
 }
 

@@ -276,7 +276,7 @@ class RuntimePlanModeOpenGaussIT {
                 model.request(0).path("messages").get(0).path("content").asText();
         String buildPrompt =
                 model.request(1).path("messages").get(0).path("content").asText();
-        assertThat(planPrompt).contains("你当前处于计划模式。", "你负责与用户澄清并提交完整方案。");
+        assertThat(planPrompt).contains("你当前处于计划模式。", "你负责调研、必要澄清和提交完整方案。");
         assertThat(buildPrompt).contains("你当前处于 build 模式。", "TodoUpdate 用于 build 阶段的实施进度。");
         assertThat(buildPrompt).doesNotContain("你当前处于计划模式。");
     }

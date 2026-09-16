@@ -6,7 +6,7 @@
 <style>body{font:16px/1.75 system-ui,sans-serif;color:#2c2724;background:#f8f3f0;margin:0}main{max-width:900px;margin:32px auto;padding:28px;background:#fffcfa}code{overflow-wrap:anywhere}a{color:#8e3f29}</style>
 <main>
 <h1>ADR-0106：Headers 面板按工作区定位</h1>
-<p>状态：Accepted。日期：2026-09-10。分类：工作区布局正确性修复。</p>
+<p>状态：Superseded，由 <a href="0110-developer-settings-and-plan-interaction.md">ADR-0110</a> 的统一设置抽屉与根浮层替代。日期：2026-09-10。分类：工作区布局正确性修复。</p>
 <h2>Context</h2>
 <p>源码基线 <code>f61906b9136246ca60f333704b6fc92b5420d0ec</code> 的 <code>frontend/src/style.css</code> 让 <code>.debug-headers-body</code> 相对按钮向左展开；顶栏层级 5 低于会话导航层级 10。在 1024px 窗口运行会话时，面板左边界为 47px，而导航占据左侧 224px，遮住了勾选框和 Key。面板自身的层级 12 无法越过顶栏的层叠上下文。</p>
 <h2>Options</h2>
