@@ -28,6 +28,7 @@ import com.campusclaw.codingagent.runtimeapi.persistence.RuntimeSessionRepositor
 import com.campusclaw.codingagent.runtimeapi.runtime.RuntimeSessionEngineRegistry;
 import com.campusclaw.codingagent.runtimeapi.runtime.RuntimeSessionHolder;
 import com.campusclaw.codingagent.runtimeapi.session.RuntimeSessionState;
+import com.campusclaw.codingagent.session.compaction.SessionCompactor;
 
 import org.springframework.stereotype.Service;
 
@@ -49,6 +50,8 @@ public class RuntimeCompactionService {
 
     private final RuntimeEntryCodec codec;
 
+    private final SessionCompactor compactor;
+
     private final RuntimeCompactionCoordinator coordinator;
 
     private final RuntimeEntryIdGenerator ids;
@@ -61,6 +64,7 @@ public class RuntimeCompactionService {
             AgentDirectoryResolver directories,
             RuntimeModelManager models,
             RuntimeEntryCodec codec,
+            SessionCompactor compactor,
             RuntimeCompactionCoordinator coordinator,
             RuntimeEntryIdGenerator ids,
             Clock clock) {
@@ -69,13 +73,14 @@ public class RuntimeCompactionService {
         this.directories = directories;
         this.models = models;
         this.codec = codec;
+        this.compactor = compactor;
         this.coordinator = coordinator;
         this.ids = ids;
         this.clock = clock;
     }
 
     /**
-     * 观察并接受一次压缩；有效空上下文直接返回，不创建活动执行。
+     * 观察并接受一次压缩；无可安全压缩的前缀时直接返回，不创建活动执行。
      *
      * @param sessionId 已由应用层授权的 Session 标识
      * @param credentials 仅供本次受管 Session 使用的 Mate 凭据
@@ -88,7 +93,7 @@ public class RuntimeCompactionService {
     }
 
     /**
-     * 接受压缩并返回仅作用于本次执行的中断能力；空上下文没有中断目标。
+     * 接受压缩并返回仅作用于本次执行的中断能力；无需压缩时没有中断目标。
      *
      * @param sessionId 已授权的 Session 标识
      * @param credentials 本次请求的 Mate 凭据
@@ -108,22 +113,24 @@ public class RuntimeCompactionService {
             throw new RuntimeApiException(RuntimeErrorCode.SESSION_BUSY);
         }
         if (codec.toAgentContextEntryIds(observed.entries()).isEmpty()) {
-            return new RuntimeCompactionCall(
-                    CompletableFuture.completedStage(new RuntimeCompactionResultDTO(false, null)), () -> false);
+            return noCompaction();
         }
         AgentDirectorySnapshotDTO directory = directories.resolve(session.getAgentId());
         Model model = models.resolveAvailableModel(directory, session.getModelId());
+        var messages = codec.toAgentMessages(observed.entries(), model);
+        if (compactor.prepare(messages) == null) {
+            return noCompaction();
+        }
         RuntimeCompactionExecution execution = new RuntimeCompactionExecution();
         execution.beginRun(ids.nextId());
-        RuntimeSessionHolder holder = registry.register(
-                sessionId,
-                directory,
-                model,
-                session.isThinking(),
-                codec.toAgentMessages(observed.entries(), model),
-                execution,
-                credentials);
+        RuntimeSessionHolder holder =
+                registry.register(sessionId, directory, model, session.isThinking(), messages, execution, credentials);
         return acceptAndStart(session, holder, execution, locale);
+    }
+
+    private static RuntimeCompactionCall noCompaction() {
+        return new RuntimeCompactionCall(
+                CompletableFuture.completedStage(new RuntimeCompactionResultDTO(false, null)), () -> false);
     }
 
     private RuntimeCompactionCall acceptAndStart(

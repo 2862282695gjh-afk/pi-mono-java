@@ -6,6 +6,9 @@
 ' Observed behavior: atomic database admission and admitted execution already exist separately.
 ' Added here: runtimeapi/compaction/RuntimeCompactionService.java:prepare, acceptAndStart
 ' Design reason: empty context must precede resources; only confirmed admission permits state cleanup.
+' Java fix baseline: 8ca7295c1ab6bc00dada8ad660bcf1e9cd90fb18
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/session/compaction/SessionCompactor.java:prepare, findSplitIndex
+' Product constraint: a missing safe prefix is a no-op before resource allocation.
 ' pi baseline: 4af9d21d3b4d664e4a29fcabfec85171077248e3
 ' Source: packages/coding-agent/src/core/agent-session.ts:compact, abortCompaction
 ' Java divergence: idle-only atomic admission, detached completion, no queued continuation.
@@ -26,7 +29,12 @@ group Shared Session operation lock
     Service --> Caller : completed result(false, null)
     note over Service, Registry : No Agent, Usage ID, capacity, Holder, or database writes
   else effective context nonempty
-    Service -> Service : resolve Agent / model; allocate internal Usage ID
+    Service -> Service : resolve Agent / model; restore messages; prepare safe prefix
+    alt no safe prefix
+      Service --> Caller : completed result(false, null)
+      note over Service, Registry : No factory, model call, Usage ID, capacity, Holder, or writes
+    else safe prefix exists
+    Service -> Service : allocate internal Usage ID
     Service -> Registry : register and restore messages
     alt initialization failure
       Registry -> Registry : close created session; release capacity
@@ -42,6 +50,7 @@ group Shared Session operation lock
         Run -> Registry : compact without request SSE or control queue
         Service --> Caller : detached completion handle
       end
+    end
     end
   end
 end

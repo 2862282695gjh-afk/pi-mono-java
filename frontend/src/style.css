@@ -1221,7 +1221,7 @@ svg {
 }
 
 .thinking-disclosure summary::-webkit-details-marker,
-.tool-activity summary::-webkit-details-marker {
+.tool-activity > summary::-webkit-details-marker {
   display: none;
 }
 
@@ -1296,7 +1296,7 @@ svg {
   width: 100%;
 }
 
-.tool-activity summary {
+.tool-activity > summary {
   display: grid;
   grid-template-columns: 18px minmax(0, 1fr) auto 16px;
   align-items: center;
@@ -1309,7 +1309,7 @@ svg {
   font-size: 13px;
 }
 
-.tool-activity summary strong {
+.tool-activity > summary strong {
   overflow: hidden;
   color: var(--text-primary);
   font-weight: 590;

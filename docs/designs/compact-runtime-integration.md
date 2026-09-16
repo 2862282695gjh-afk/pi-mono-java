@@ -1,6 +1,6 @@
 # Compact Runtime：空上下文与执行接入
 
-版本：1.0.0 · 日期：2026-09-07 · 串行切片 6b2b。
+版本：1.0.1 · 日期：2026-09-16。
 
 ## 1. Context 与范围
 
@@ -40,12 +40,14 @@ idle-only、有效空上下文 no-op、不接队列是 Java **产品约束**；�
 1. 行锁观察完整当前分支。缺失抛 SESSION_NOT_FOUND；running 抛 SESSION_BUSY，优先于判空。
 2. 用 Codec 判断有效上下文；空时立即返回 `RuntimeCompactionResultDTO(false, null)`。
    不解析 Agent/Model、不调用工厂、不分配 Usage 身份、容量或 Holder，不改任何持久化数据。
-3. 解析当前 Agent 和已持久化模型，分配内部 Usage runId；恢复消息并注册本次 Managed Holder。
+3. 解析当前 Agent 和已持久化模型，恢复一次消息快照，复用 `SessionCompactor.prepare` 判断安全前缀。
+   无安全前缀时返回 `RuntimeCompactionResultDTO(false, null)`，不调用工厂、模型生成、分配 Usage 身份、
+   容量或 Holder，也不写数据库；有安全前缀才分配身份并用同一消息快照注册 Managed Holder。
    Agent 准备不占数据库行锁，未进行隐式模型回退或配置写入。
 4. 行锁内原子准入；ACCEPTED 后调用 6b1 Coordinator，复用 Projector、30 分钟预算及独立终态。
    结果只携带本次真实 Compaction Entry 序号，不把后续 Usage 序号当作 sourceEventSeq。
 
-空观察以数据库读事务为线性化时点。之后新消息到达不改变当次 no-op；非空观察则以第二次事务为
+无需压缩的观察以数据库读事务为线性化时点。之后新消息到达不改变当次 no-op；实际压缩以第二次事务为
 接受时点，历史或配置变化会拒绝过期准备结果。Name-only 更新继续由既有端口保留。
 
 ## 4. 决策与边界
@@ -62,7 +64,18 @@ idle-only、有效空上下文 no-op、不接队列是 Java **产品约束**；�
 
 Service 的状态回收只在已明确接受且执行尚未完成时补偿，避免重复收尾。
 此处没有数据库提交不确定或进程崩溃的持久化恢复协议；后续应用/HTTP 必须禁止自动重放结果不确定的压缩。
-非空但无法安全选择保留边界时，沿用底层压缩失败语义，不误报空历史 no-op。
+非空但无法安全选择保留边界时，在准入前正常返回“无需压缩”，不是执行错误，也不代表历史为空。
+判断复用底层安全边界算法，不另写 Token 阈值或强制丢弃近期消息；真实执行仍由 Managed Session
+计算边界并交给 Coordinator，缺少权威 Entry、模型失败、持久化或清理失败仍然报错。
+
+此行为基于 Java `8ca7295c1ab6bc00dada8ad660bcf1e9cd90fb18` 的
+`runtimeapi/compaction/RuntimeCompactionService.java:prepare` 和
+`session/compaction/SessionCompactor.java:prepare/findSplitIndex` 修正：原实现仅拦截有效空上下文，
+短历史会先准入，再由 `session/ManagedAgentSession.java:manualCompaction` 抛错。
+这是 **产品约束**：公共命令把正常的不可压缩状态表达为已有的 `compacted=false`，不改变底层压缩算法。
+补充核验 pi `5cd93f688aaab89dbb6dfa4aca535f21796ae185` 的
+`packages/coding-agent/src/core/agent-session.ts:compact`，相对上述旧 pi 基线，该符号仍在准备为空时抛错；
+本修复不声称该 no-op 为 pi 行为，也不更新其他符号的基线结论。无新增依赖。
 
 Mate 凭据由调用方传给本次工厂，供本次 Managed Session 的既有工具上下文使用；Service 不缓存、记录、
 持久化或写入 Prompt。终态关闭 Holder 并断开 Coordinator 回调，不续跑任何队列。
@@ -76,6 +89,11 @@ SQL、升级脚本、通用命令 Entry 或公开 commandId。Registry 初始化
 `CompletionStage` 的派生 Future 取消不传播到底层执行；真实 HTTP 断线仍需后续路由测试。
 
 ## 6. 测试与验证
+
+2026-09-16 修复验证：136 项相关 Java 单元测试、10 项独立 schema 的真实 openGauss IT 通过，
+覆盖默认保留窗口下短历史 no-op、无安全边界的单条长消息、真实压缩、模型失败及状态/历史/用量不变。
+同批工具展示修复通过 243 项前端测试、生产构建及浏览器嵌套 JSON 布局/折叠检查。
+以下为原接入切片的历史验收记录，不代表本次重新执行完整 Reactor 或全部数据库测试。
 
 单元测试组合真实 Registry/Codec，验证空上下文先于准备、缺失/忙状态、消息恢复、Thinking 与 Mate 凭据
 传递、内部 Usage 身份、隔离取消、初始化 close 异常、准备失败、容量耗尽、操作锁竞争、数据库拒绝/
@@ -107,4 +125,5 @@ PlantUML 重生成一致、SVG XML/ASCII、无 Mermaid、9 个链接/锚点、AD
 
 | 版本 | 日期 | 变更 |
 |---|---|---|
+| 1.0.1 | 2026-09-16 | 无安全压缩前缀时在准入前返回无需压缩，保留真实执行失败语义。 |
 | 1.0.0 | 2026-09-07 | 接通空上下文、资源准备、数据库接受及真实压缩执行；明确不确定提交边界与后续公共入口。 |
