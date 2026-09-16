@@ -54,8 +54,15 @@ public class SessionNamingService {
         } catch (RuntimeApiException exception) {
             throw exception;
         } catch (RuntimeException exception) {
-            LOGGER.error("CampusClaw failure: operation=runtime.session.name, errorCode=SESSION_NAME_UPDATE_FAILED");
-            throw new RuntimeApiException(RuntimeErrorCode.SESSION_NAME_UPDATE_FAILED);
+            RuntimeErrorCode errorCode = RuntimeErrorCode.SESSION_NAME_UPDATE_FAILED;
+            LOGGER.atError()
+                    .addKeyValue("event", "campusclaw.failure")
+                    .addKeyValue("operation", "runtime.session.name")
+                    .addKeyValue("errorCode", errorCode.name())
+                    .addKeyValue("sessionId", sessionId)
+                    .setCause(exception)
+                    .log("CampusClaw failure: operation={}, errorCode={}", "runtime.session.name", errorCode.name());
+            throw new RuntimeApiException(errorCode);
         }
     }
 

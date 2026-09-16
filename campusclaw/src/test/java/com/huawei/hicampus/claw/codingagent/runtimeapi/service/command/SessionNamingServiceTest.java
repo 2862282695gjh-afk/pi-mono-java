@@ -31,7 +31,11 @@ import com.huawei.hicampus.claw.codingagent.runtimeapi.error.RuntimeApiException
 import com.huawei.hicampus.claw.codingagent.runtimeapi.error.RuntimeErrorCode;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.persistence.RuntimeSessionRepository;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.service.command.contributor.NameCommandContributor;
+import com.huawei.hicampus.claw.codingagent.test.Log4j2TestAppender;
 
+import org.apache.logging.log4j.Level;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.core.Logger;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -146,16 +150,37 @@ class SessionNamingServiceTest {
     }
 
     @Test
-    void shouldTranslatePersistenceFailureWithoutExposingNameOrDatabaseMessage() {
-        when(repository.updateName("session", "private name", now))
-                .thenThrow(new IllegalStateException("database failure with private name"));
-        assertThatThrownBy(() -> service.execute("session", "private name"))
-                .isInstanceOfSatisfying(RuntimeApiException.class, error -> {
-                    assertThat(error.errorCode()).isEqualTo(RuntimeErrorCode.SESSION_NAME_UPDATE_FAILED);
-                    assertThat(error.status().value()).isEqualTo(500);
-                    assertThat(error.getMessage()).isEqualTo("SESSION_NAME_UPDATE_FAILED");
-                    assertThat(error.getCause()).isNull();
-                });
+    void shouldLogPersistenceFailureAndExposeOnlyStableError() {
+        RuntimeException failure = new IllegalStateException("database failure");
+        when(repository.updateName("session", "private name", now)).thenThrow(failure);
+        Logger logger = (Logger) LogManager.getLogger(SessionNamingService.class);
+        Log4j2TestAppender logs = new Log4j2TestAppender("session-name-failure-logs");
+        logs.start();
+        logger.addAppender(logs);
+        try {
+            assertThatThrownBy(() -> service.execute("session", "private name"))
+                    .isInstanceOfSatisfying(RuntimeApiException.class, error -> {
+                        assertThat(error.errorCode()).isEqualTo(RuntimeErrorCode.SESSION_NAME_UPDATE_FAILED);
+                        assertThat(error.status().value()).isEqualTo(500);
+                        assertThat(error.getMessage()).isEqualTo("SESSION_NAME_UPDATE_FAILED");
+                        assertThat(error).hasNoCause();
+                    });
+            assertThat(logs.events()).singleElement().satisfies(event -> {
+                assertThat(event.getLevel()).isEqualTo(Level.ERROR);
+                assertThat(event.getMessage().getFormattedMessage())
+                        .contains("operation=runtime.session.name")
+                        .contains("errorCode=SESSION_NAME_UPDATE_FAILED");
+                assertThat(event.getContextData().<String>getValue("event")).isEqualTo("campusclaw.failure");
+                assertThat(event.getContextData().<String>getValue("operation")).isEqualTo("runtime.session.name");
+                assertThat(event.getContextData().<String>getValue("errorCode"))
+                        .isEqualTo("SESSION_NAME_UPDATE_FAILED");
+                assertThat(event.getContextData().<String>getValue("sessionId")).isEqualTo("session");
+                assertThat(event.getThrown()).isSameAs(failure);
+            });
+        } finally {
+            logger.removeAppender(logs);
+            logs.stop();
+        }
     }
 
     private void assertError(String arguments, RuntimeErrorCode code, int status) {

@@ -65,9 +65,13 @@ import com.huawei.hicampus.claw.codingagent.runtimeapi.service.command.readonly.
 import com.huawei.hicampus.claw.codingagent.runtimeapi.session.RuntimeSessionResponseAssembler;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.session.SessionEtagFactory;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.vo.BuiltinCommandRequestVO;
+import com.huawei.hicampus.claw.codingagent.test.Log4j2TestAppender;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.json.JsonMapper;
 
+import org.apache.logging.log4j.Level;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.core.Logger;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -259,6 +263,64 @@ class CommandExecutionServiceTest {
                 () -> service.executeBuiltinAndAwait("session", request("probe", ""), Locale.US, credentials));
         assertThat(error.errorCode()).isEqualTo(RuntimeErrorCode.SESSION_BUSY);
         assertThat(error.getCause()).isNull();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"sync", "async"})
+    void shouldLogUnexpectedFailureOnlyOnceWhenAwaiting(String phase) {
+        RuntimeException failure = new IllegalStateException("unexpected handler failure");
+        var definition = definition((context, arguments) -> {
+            if (phase.equals("sync")) {
+                throw failure;
+            }
+            return CompletableFuture.failedStage(failure);
+        });
+        Logger logger = (Logger) LogManager.getLogger(CommandExecutionService.class);
+        Log4j2TestAppender logs = new Log4j2TestAppender("builtin-command-failure-logs-" + phase);
+        logs.start();
+        logger.addAppender(logs);
+        try {
+            var error = assertThrows(RuntimeApiException.class, () -> application(definition)
+                    .executeBuiltinAndAwait("session", request("probe", ""), Locale.US, credentials));
+            assertThat(error.errorCode()).isEqualTo(RuntimeErrorCode.COMMAND_EXECUTION_FAILED);
+            assertThat(error).hasNoCause();
+            assertThat(logs.events()).singleElement().satisfies(event -> {
+                assertThat(event.getLevel()).isEqualTo(Level.ERROR);
+                assertThat(event.getMessage().getFormattedMessage())
+                        .contains("operation=runtime.command.builtin.execute")
+                        .contains("errorCode=COMMAND_EXECUTION_FAILED");
+                assertThat(event.getContextData().<String>getValue("event")).isEqualTo("campusclaw.failure");
+                assertThat(event.getContextData().<String>getValue("operation"))
+                        .isEqualTo("runtime.command.builtin.execute");
+                assertThat(event.getContextData().<String>getValue("errorCode")).isEqualTo("COMMAND_EXECUTION_FAILED");
+                assertThat(event.getThrown()).isSameAs(failure);
+            });
+        } finally {
+            logger.removeAppender(logs);
+            logs.stop();
+        }
+    }
+
+    @Test
+    void shouldNotRelogCauseFreeClassifiedFailureWhenAwaiting() {
+        RuntimeApiException failure = new RuntimeApiException(RuntimeErrorCode.SESSION_NAME_UPDATE_FAILED);
+        var definition = definition((context, arguments) -> {
+            throw failure;
+        });
+        Logger logger = (Logger) LogManager.getLogger(CommandExecutionService.class);
+        Log4j2TestAppender logs = new Log4j2TestAppender("classified-command-failure-logs");
+        logs.start();
+        logger.addAppender(logs);
+        try {
+            var error = assertThrows(RuntimeApiException.class, () -> application(definition)
+                    .executeBuiltinAndAwait("session", request("probe", ""), Locale.US, credentials));
+            assertThat(error.errorCode()).isEqualTo(RuntimeErrorCode.SESSION_NAME_UPDATE_FAILED);
+            assertThat(error).hasNoCause();
+            assertThat(logs.events()).isEmpty();
+        } finally {
+            logger.removeAppender(logs);
+            logs.stop();
+        }
     }
 
     @ParameterizedTest
