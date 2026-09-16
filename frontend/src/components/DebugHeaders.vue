@@ -118,11 +118,11 @@ function focusRow(index: number): void {
 </template>
 
 <style scoped>
-.debug-headers { display: grid; gap: 12px; }
+.debug-headers { display: grid; gap: 12px; font-size: 13px; line-height: 1.5; }
 .header-title-row, .debug-header-actions, .group-save-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.header-title-row { justify-content: space-between; font-weight: 650; }
+.header-title-row { justify-content: space-between; font-weight: 600; }
 .storage-hint { color: #766f66; font-size: 12px; font-weight: 400; }
-button { min-height: 32px; border: 1px solid #cfc8be; border-radius: 8px; background: #fffdf9; color: #302d29; padding: 5px 10px; }
+button { font-size: 13px; min-height: 32px; border: 1px solid #cfc8be; border-radius: 8px; background: #fffdf9; color: #302d29; padding: 5px 10px; }
 button:hover { border-color: #9f968a; }
 button.primary { margin-left: auto; background: #2f2d2a; border-color: #2f2d2a; color: #fff; }
 .debug-header-grid-head, .debug-header-row { display: grid; grid-template-columns: 24px minmax(100px, .8fr) minmax(140px, 1.2fr) auto 32px; gap: 8px; align-items: start; }
