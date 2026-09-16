@@ -28,6 +28,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
 import com.huawei.hicampus.claw.agent.Agent;
+import com.huawei.hicampus.claw.ai.CampusClawAiService;
 import com.huawei.hicampus.claw.ai.types.Model;
 import com.huawei.hicampus.claw.ai.types.UserMessage;
 import com.huawei.hicampus.claw.codingagent.common.client.mate.MateCredentials;
@@ -53,6 +54,8 @@ import com.huawei.hicampus.claw.codingagent.runtimeapi.runtime.RuntimeSessionHol
 import com.huawei.hicampus.claw.codingagent.session.AgentSessionFactory;
 import com.huawei.hicampus.claw.codingagent.session.ManagedAgentSession;
 import com.huawei.hicampus.claw.codingagent.session.ManagedAgentSessionRequest;
+import com.huawei.hicampus.claw.codingagent.session.compaction.CompactionProperties;
+import com.huawei.hicampus.claw.codingagent.session.compaction.SessionCompactor;
 import com.huawei.hicampus.claw.codingagent.tool.agent.SubagentExecutionService;
 import com.huawei.hicampus.claw.codingagent.tool.cron.AgentScopedCronToolFactory;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -78,6 +81,10 @@ class RuntimeCompactionServiceTest {
     private final RuntimeCompactionCoordinator coordinator = mock(RuntimeCompactionCoordinator.class);
 
     private final RuntimeEntryIdGenerator ids = mock(RuntimeEntryIdGenerator.class);
+
+    private final CampusClawAiService ai = mock(CampusClawAiService.class);
+
+    private final CompactionProperties compactionProperties = new CompactionProperties();
 
     private final AgentSessionFactory factory = mock(AgentSessionFactory.class);
 
@@ -105,14 +112,25 @@ class RuntimeCompactionServiceTest {
         registry = new RuntimeSessionEngineRegistry(
                 factory, mock(SubagentExecutionService.class), mock(AgentScopedCronToolFactory.class), properties);
         Clock clock = Clock.fixed(now.toInstant(), ZoneOffset.UTC);
-        service =
-                new RuntimeCompactionService(repository, registry, directories, models, codec, coordinator, ids, clock);
+        compactionProperties.setKeepRecentTokens(1);
+        service = new RuntimeCompactionService(
+                repository,
+                registry,
+                directories,
+                models,
+                codec,
+                new SessionCompactor(ai, compactionProperties),
+                coordinator,
+                ids,
+                clock);
         session.setId("session");
         session.setAgentId("agent");
         session.setState("idle");
         session.setModelId("model");
         session.setThinking(true);
-        observe(List.of(codec.userEntry("session", "entry", "hello", List.of(), now)));
+        observe(List.of(
+                codec.userEntry("session", "entry", "hello", List.of(), now),
+                codec.userEntry("session", "recent", "recent", List.of(), now)));
         when(directories.resolve("agent")).thenReturn(directory);
         when(models.resolveAvailableModel(directory, "model")).thenReturn(mock(Model.class));
         when(factory.create(any())).thenReturn(managed);
@@ -144,6 +162,37 @@ class RuntimeCompactionServiceTest {
     }
 
     @ParameterizedTest
+    @ValueSource(strings = {"short-history", "single-large-message"})
+    void shouldReturnNoChangeWithoutAllocatingResourcesWhenNoSafePrefixExists(String kind) {
+        compactionProperties.setKeepRecentTokens(new CompactionProperties().getKeepRecentTokens());
+        if (kind.equals("single-large-message")) {
+            observe(List.of(codec.userEntry("session", "entry", "x".repeat(100000), List.of(), now)));
+        }
+        var call = service.start("session", null, Locale.CHINA);
+        assertThat(call.result().toCompletableFuture().join()).isEqualTo(new RuntimeCompactionResultDTO(false, null));
+        assertThat(call.interrupt()).isFalse();
+        verifyNoInteractions(factory, ids, coordinator, ai);
+        verify(repository, never()).acceptCompaction(any(), any());
+        verify(repository, never()).finishExecution(any(), any());
+        assertThat(registry.find("session")).isEmpty();
+        assertThat(registerOther().sessionId()).isEqualTo("other");
+    }
+
+    @Test
+    void shouldStillAdmitHistoryWithASafePrefixUnderDefaultRetention() {
+        compactionProperties.setKeepRecentTokens(new CompactionProperties().getKeepRecentTokens());
+        observe(List.of(
+                codec.userEntry("session", "entry", "hello", List.of(), now),
+                codec.userEntry("session", "recent", "x".repeat(100000), List.of(), now)));
+        var result = service.compact("session", null, Locale.CHINA).toCompletableFuture();
+        assertThat(result).isNotDone();
+        verify(repository).acceptCompaction(session, now);
+        verify(coordinator).start(any(), any(), any());
+        var holder = registry.find("session").orElseThrow();
+        registry.complete(holder, holder.activeExecution().orElseThrow());
+    }
+
+    @ParameterizedTest
     @ValueSource(strings = {"missing", "running"})
     void shouldRejectBeforeEmptyHistoryAndResourcePreparation(String kind) {
         if (kind.equals("missing")) {
@@ -165,8 +214,9 @@ class RuntimeCompactionServiceTest {
         assertThat(execution.runId()).isEqualTo("internal-usage");
         assertThat(holder.thinking()).isTrue();
         verify(agent)
-                .replaceMessages(
-                        List.of(new UserMessage("hello", now.toInstant().toEpochMilli())));
+                .replaceMessages(List.of(
+                        new UserMessage("hello", now.toInstant().toEpochMilli()),
+                        new UserMessage("recent", now.toInstant().toEpochMilli())));
         var request = ArgumentCaptor.forClass(ManagedAgentSessionRequest.class);
         verify(factory).create(request.capture());
         assertThat(request.getValue().mateCredentials()).isSameAs(credentials);

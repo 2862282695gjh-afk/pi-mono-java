@@ -106,6 +106,10 @@ class RuntimeCompactionServiceOpenGaussIT {
 
     private final CampusClawAiService ai = mock(CampusClawAiService.class);
 
+    private final CompactionProperties compactionProperties = new CompactionProperties();
+
+    private final SessionCompactor compactor = new SessionCompactor(ai, compactionProperties);
+
     private final AgentDirectoryResolver directories = mock(AgentDirectoryResolver.class);
 
     private final RuntimeModelManager models = mock(RuntimeModelManager.class);
@@ -132,6 +136,8 @@ class RuntimeCompactionServiceOpenGaussIT {
 
     @BeforeEach
     void createIsolatedRuntime() {
+        compactionProperties.setKeepRecentTokens(1);
+        compactionProperties.setSummaryRetryEnabled(false);
         context = new AnnotationConfigApplicationContext(OpenGaussTestConfiguration.class);
         repository = context.getBean(RuntimeSessionRepository.class);
         jdbc = context.getBean(JdbcTemplate.class);
@@ -145,6 +151,14 @@ class RuntimeCompactionServiceOpenGaussIT {
         session.setUpdatedAt(now);
         session.setCwd(temporary.toString());
         repository.create(session);
+        prepareRuntime();
+        when(ids.nextId()).thenReturn("internal-usage", "compaction-entry", "usage-record");
+        when(ai.completeSimple(any(), any(), any())).thenReturn(summary.asMono());
+        when(directories.resolve("agent")).thenReturn(directory());
+        when(models.resolveAvailableModel(directory(), "model")).thenReturn(model());
+    }
+
+    private void prepareRuntime() {
         var properties = new RuntimeExecutionProperties();
         properties.setMaxActive(1);
         registry = new RuntimeSessionEngineRegistry(
@@ -164,12 +178,8 @@ class RuntimeCompactionServiceOpenGaussIT {
                 scheduler,
                 properties,
                 clock);
-        service =
-                new RuntimeCompactionService(repository, registry, directories, models, codec, coordinator, ids, clock);
-        when(ids.nextId()).thenReturn("internal-usage", "compaction-entry", "usage-record");
-        when(ai.completeSimple(any(), any(), any())).thenReturn(summary.asMono());
-        when(directories.resolve("agent")).thenReturn(directory());
-        when(models.resolveAvailableModel(directory(), "model")).thenReturn(model());
+        service = new RuntimeCompactionService(
+                repository, registry, directories, models, codec, compactor, coordinator, ids, clock);
     }
 
     @AfterEach
@@ -300,24 +310,24 @@ class RuntimeCompactionServiceOpenGaussIT {
         when(runtimes.prepare("agent")).thenReturn(new PreparedAgentRuntime("agent", temporary, metadata, List.of()));
         var prompt = mock(RuntimeAgentPromptLoader.class);
         when(prompt.load(temporary.resolve(".campusclaw"))).thenReturn("system prompt");
-        var properties = new CompactionProperties();
-        properties.setKeepRecentTokens(1);
-        properties.setSummaryRetryEnabled(false);
         return new AgentSessionFactory(
                 ai,
                 runtimes,
                 mock(ConfiguredToolAssembler.class),
                 new StaticListableBeanFactory().getBeanProvider(MateToolsetFactory.class),
                 prompt,
-                new SessionCompactor(ai, properties),
+                compactor,
                 new com.huawei.hicampus.claw.codingagent.session.PlanPolicyPromptComposer());
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"empty", "success", "interrupt"})
+    @ValueSource(strings = {"empty", "short-history", "success", "interrupt"})
     void shouldExecuteTheBuiltinThroughItsRequestScopeAndRealRuntime(String outcome) throws Exception {
         if (!outcome.equals("empty")) {
             seedHistory();
+        }
+        if (outcome.equals("short-history")) {
+            compactionProperties.setKeepRecentTokens(new CompactionProperties().getKeepRecentTokens());
         }
         var before = persistentState();
         var application = new SessionCompactionApplicationService(service);
@@ -330,11 +340,11 @@ class RuntimeCompactionServiceOpenGaussIT {
                     .execute(request, "")
                     .toCompletableFuture();
             invocation.close();
-            if (outcome.equals("empty")) {
+            if (outcome.equals("empty") || outcome.equals("short-history")) {
                 assertThat(result.join()).isEqualTo(new RuntimeCompactionResultDTO(false, null));
                 assertThat(persistentState()).isEqualTo(before);
                 assertThat(invocation.interrupt()).isFalse();
-                verifyNoInteractions(ai, directories, models, ids);
+                verifyNoInteractions(ai, runtimes, ids);
                 return;
             }
             assertThat(result).isNotDone();
@@ -378,6 +388,8 @@ class RuntimeCompactionServiceOpenGaussIT {
                 repository.find(session.getId()).orElseThrow(),
                 jdbc.queryForList(
                         "SELECT * FROM t_session_entries WHERE session_id=? ORDER BY entry_seq", session.getId()),
+                jdbc.queryForList("SELECT * FROM t_session_events WHERE session_id=?", session.getId()),
+                jdbc.queryForList("SELECT * FROM t_session_executions WHERE session_id=?", session.getId()),
                 jdbc.queryForList("SELECT * FROM t_session_records WHERE session_id=?", session.getId()),
                 jdbc.queryForList("SELECT * FROM t_session_sequences WHERE session_id=?", session.getId()),
                 jdbc.queryForList("SELECT * FROM t_session_stats WHERE session_id=?", session.getId()),
