@@ -93,6 +93,8 @@ export class LocalConfigRepository {
           : 'saved',
         accountConfigured: Boolean(account),
         passwordConfigured: Boolean(password),
+        account,
+        password,
         accountSource: stored.account === undefined ? (this.startup.account ? 'startup' : 'cleared')
           : (stored.account ? 'saved' : 'cleared'),
         passwordSource: stored.password === undefined ? (this.startup.password ? 'startup' : 'cleared')

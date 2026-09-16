@@ -25,12 +25,12 @@ async function setup() {
 }
 
 describe('local development config repository', () => {
-  it('never returns secrets in public status and distinguishes clear from restoring startup defaults', async () => {
+  it('returns effective credentials to the local workbench and distinguishes clear from restoring startup defaults', async () => {
     const { service } = await setup();
     const initial = await service.status();
     expect(initial).toMatchObject({ version: 0, authVersion: 0, accountConfigured: true, passwordConfigured: true,
       accountSource: 'startup', passwordSource: 'startup' });
-    expect(JSON.stringify(initial)).not.toMatch(/startup-account|startup-password|"account"\s*:|"password"\s*:/u);
+    expect(initial).toMatchObject({ account: 'startup-account', password: 'startup-password' });
 
     const cleared = await service.update(0, {
       account: { operation: 'replace', value: 'saved-account' },
@@ -39,7 +39,7 @@ describe('local development config repository', () => {
     expect(cleared).toMatchObject({ version: 1, authVersion: 1, accountConfigured: true, passwordConfigured: false,
       accountSource: 'saved', passwordSource: 'cleared' });
     expect((await service.snapshot()).auth).toEqual({ account: 'saved-account', password: '' });
-    expect(JSON.stringify(cleared)).not.toContain('saved-account');
+    expect(cleared).toMatchObject({ account: 'saved-account', password: '' });
 
     const restored = await service.update(1, {
       account: { operation: 'restore-default' },
@@ -48,6 +48,7 @@ describe('local development config repository', () => {
     expect(restored).toMatchObject({ version: 2, authVersion: 2, accountConfigured: true, passwordConfigured: true,
       accountSource: 'startup', passwordSource: 'startup' });
     expect((await service.snapshot()).auth).toEqual({ account: 'startup-account', password: 'startup-password' });
+    expect(restored).toMatchObject({ account: 'startup-account', password: 'startup-password' });
   });
 
   it('atomically replaces a private file and keeps its directory and file permissions restrictive', async () => {

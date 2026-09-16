@@ -91,9 +91,10 @@ export function createDeveloperSettingsController(options: ControllerOptions = {
   }
 
   async function initialize(): Promise<void> {
+    const credentialDraft = pristineCredentialDraft();
     try {
       const status = await readLocalConfig(fetcher);
-      localStatus.value = status;
+      acceptLocalStatus(status, credentialDraft);
       reconcileLocalStatus(status);
     } catch {
       const direct = Boolean(applied.value.connection.apiBase);
@@ -147,6 +148,7 @@ export function createDeveloperSettingsController(options: ControllerOptions = {
     const authWasDirty = originalAuthDraft.trim() !== applied.value.authIp;
     const originalHeaders = cloneRows(headerRows.value);
     const headersWereDirty = !sameHeaderRows(originalHeaders, applied.value.headers);
+    const credentialDraft = pristineCredentialDraft();
     try {
       const status = await readLocalConfig(fetcher);
       const loaded = repository.read();
@@ -158,7 +160,7 @@ export function createDeveloperSettingsController(options: ControllerOptions = {
       record = loaded;
       savedConnection = Boolean(loaded.connection);
       storageIssue = '';
-      localStatus.value = status;
+      acceptLocalStatus(status, credentialDraft);
       const currentAuthDraft = authIpDraft.value;
       const currentHeaders = cloneRows(headerRows.value);
       const preserveAuth = authWasDirty || currentAuthDraft !== originalAuthDraft;
@@ -258,25 +260,25 @@ export function createDeveloperSettingsController(options: ControllerOptions = {
     if (ip && !isIpLiteral(ip)) return setResult(authStatus, false, '请输入有效的认证中心 IP。');
     const hasAccount = accountInput.length > 0;
     const hasPassword = passwordInput.length > 0;
-    if (hasAccount !== hasPassword) return setResult(authStatus, false, '替换认证配置时请同时填写账号和密码。');
+    if (hasAccount !== hasPassword) return setResult(authStatus, false, '请同时填写账号和密码，或同时清空。');
     settingsMutationPending = true;
     cancelToken();
     let status = localStatus.value;
     try {
       if (!status) return setResult(authStatus, false, '本地配置服务不可用，认证设置未保存。');
-      if (hasAccount && hasPassword) {
+      if (accountInput !== status.account || passwordInput !== status.password) {
         const patch: LocalConfigPatch = {
-          account: { operation: 'replace', value: accountInput },
-          password: { operation: 'replace', value: passwordInput },
+          account: hasAccount ? { operation: 'replace', value: accountInput } : { operation: 'clear' },
+          password: hasPassword ? { operation: 'replace', value: passwordInput } : { operation: 'clear' },
         };
         status = await saveLocalConfig(fetcher, status.version, patch);
-        localStatus.value = status;
-        clearSavedSecretDrafts(accountInput, passwordInput);
+        acceptLocalStatus(status, { account: accountInput, password: passwordInput });
       }
       record = repository.saveAuthIp(applied.value.browserRevision, backendAtStart, ip);
       const updateDraft = authIpDraft.value === authIpInput;
       applyAuthScope(record, ip, status.authVersion, status.authKey, updateDraft);
-      return setResult(authStatus, true, updateDraft ? '已保存' : '已保存；较新的草稿尚未应用');
+      const unchanged = updateDraft && credentialsMatch(status);
+      return setResult(authStatus, true, unchanged ? '已保存' : '已保存；较新的草稿尚未应用');
     } catch (error) {
       await refreshLocalStatus(fetcher, localStatus);
       if (status) applied.value = { ...applied.value, authVersion: status.authVersion, authKey: status.authKey };
@@ -313,10 +315,9 @@ export function createDeveloperSettingsController(options: ControllerOptions = {
     try {
       if (!status) return setResult(authStatus, false, '本地配置服务不可用，认证配置未保存。');
       const saved = await saveLocalConfig(fetcher, status.version, patch);
-      localStatus.value = saved;
+      acceptLocalStatus(saved, { account: accountInput, password: passwordInput });
       applied.value = { ...applied.value, authVersion: saved.authVersion, authKey: saved.authKey };
-      clearSavedSecretDrafts(accountInput, passwordInput);
-      return setResult(authStatus, true, success);
+      return setResult(authStatus, true, credentialsMatch(saved) ? success : `${success}；较新的草稿尚未应用`);
     } catch (error) {
       await refreshLocalStatus(fetcher, localStatus);
       return setResult(authStatus, false, apiMessage(error, '认证配置未保存。'));
@@ -425,12 +426,16 @@ export function createDeveloperSettingsController(options: ControllerOptions = {
 
   function tokenReadinessIssue(): string {
     const status = localStatus.value;
+    if (settingsMutationPending) return '设置正在保存，请稍候再获取 Token。';
     if (!applied.value.connectionAvailable || !ready.value) return '请先保存并应用连接设置。';
-    if (authIpDraft.value.trim() !== applied.value.authIp || accountDraft.value || passwordDraft.value) {
+    if (!status) return '本地配置服务不可用，请重新读取。';
+    if (authIpDraft.value.trim() !== applied.value.authIp || !credentialsMatch(status)) {
       return '认证设置尚未保存，请先保存并应用。';
     }
     if (!applied.value.authIp) return '请输入认证中心 IP 并保存。';
-    if (!status || status.authVersion !== applied.value.authVersion) return '认证配置已变化，请重新读取。';
+    if (status.authVersion !== applied.value.authVersion || status.authKey !== applied.value.authKey) {
+      return '认证配置已变化，请重新读取。';
+    }
     if (!status.accountConfigured || !status.passwordConfigured) return '请先配置认证账号和密码。';
     const tokenRows = headerRows.value.filter((row) => row.key.trim().toLowerCase() === 'access-token');
     if (tokenRows.length > 1) return '请先修正重复的 access-token。';
@@ -443,6 +448,8 @@ export function createDeveloperSettingsController(options: ControllerOptions = {
       environmentKey: applied.value.environmentKey,
       ip: applied.value.authIp,
       authIpDraft: authIpDraft.value.trim(),
+      account: accountDraft.value,
+      password: passwordDraft.value,
       authVersion: applied.value.authVersion,
       authKey: applied.value.authKey,
       tokenFingerprint: tokenFingerprint(headerRows.value),
@@ -454,6 +461,8 @@ export function createDeveloperSettingsController(options: ControllerOptions = {
       && expected.environmentKey === applied.value.environmentKey
       && expected.ip === applied.value.authIp
       && expected.authIpDraft === authIpDraft.value.trim()
+      && expected.account === accountDraft.value
+      && expected.password === passwordDraft.value
       && expected.authVersion === applied.value.authVersion
       && expected.authKey === applied.value.authKey
       && expected.tokenFingerprint === tokenFingerprint(headerRows.value);
@@ -538,9 +547,24 @@ export function createDeveloperSettingsController(options: ControllerOptions = {
     headerDrafts.set(applied.value.environmentKey, cloneRows(headerRows.value));
   }
 
-  function clearSavedSecretDrafts(account: string, password: string): void {
-    if (accountDraft.value === account) accountDraft.value = '';
-    if (passwordDraft.value === password) passwordDraft.value = '';
+  function credentialsMatch(status: LocalConfigStatus): boolean {
+    return accountDraft.value === status.account && passwordDraft.value === status.password;
+  }
+
+  function pristineCredentialDraft(): Partial<Pick<LocalConfigStatus, 'account' | 'password'>> {
+    return {
+      account: accountDraft.value === (localStatus.value?.account ?? '') ? accountDraft.value : undefined,
+      password: passwordDraft.value === (localStatus.value?.password ?? '') ? passwordDraft.value : undefined,
+    };
+  }
+
+  function acceptLocalStatus(
+    status: LocalConfigStatus,
+    original: Partial<Pick<LocalConfigStatus, 'account' | 'password'>>,
+  ): void {
+    localStatus.value = status;
+    if (accountDraft.value === original.account) accountDraft.value = status.account;
+    if (passwordDraft.value === original.password) passwordDraft.value = status.password;
   }
 
   function rememberHeaderDraft(): void {
@@ -584,7 +608,7 @@ export function createDeveloperSettingsController(options: ControllerOptions = {
   }
 
   function makeRow(row: DebugHeaderInput): DeveloperHeaderRow {
-    return { ...row, id: nextRowId++, revealed: false };
+    return { ...row, id: nextRowId++, revealed: true };
   }
 
   return {
@@ -782,7 +806,8 @@ async function decodeLocalConfigResponse(response: Response): Promise<LocalConfi
     || !Number.isSafeInteger(value.authVersion) || typeof value.proxyKey !== 'string'
     || typeof value.authKey !== 'string'
     || typeof value.backendUrl !== 'string' || typeof value.accountConfigured !== 'boolean'
-    || typeof value.passwordConfigured !== 'boolean') {
+    || typeof value.passwordConfigured !== 'boolean'
+    || typeof value.account !== 'string' || typeof value.password !== 'string') {
     throw new DeveloperSettingsApiError('INVALID_CONFIG_RESPONSE', 0, '本地配置服务返回了无效数据。');
   }
   return value as LocalConfigStatus;
