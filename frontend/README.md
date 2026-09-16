@@ -22,7 +22,7 @@ v0.17.0，Vue 3 + TypeScript + Vite 的内部 Claw Runtime 联调工作台。
 - 原始推理纯文本；Assistant 安全 Markdown、整轮复制和原暖灰活动框。工具 JSON 支持浅层树、原文与复制，保持数值原貌，超出预算回退原文；普通文本与 JSON 使用独立字体。问答工具由对应题卡吸收，避免重复展示 JSON。
 - DEV 开发者设置统一管理连接、认证、Headers 和 Session 诊断。Headers 预置 `access-token`、`X-HW-ID`、`Authorization`，Value 留空且空预置不发送。
 - 请求头可编辑、删除；“增加请求头”每次只新增一行，删除或全部清空允许零行，不自动补空行。
-- DEV Headers 按实际后端与认证 IP 持久保存，每次消息/命令/停止/确认 POST 各自快照，不进入历史读取。值默认遮罩；清空后刷新保持零行。
+- DEV Headers 按实际后端与认证 IP 持久保存，每次消息/命令/停止/确认 POST 各自快照，不进入历史读取。值默认明文，可手动隐藏；清空后刷新保持零行。
 
 工作台消费 `/campusclaw-service/v1` 的 Session Events，服务端已接入联合事件、data-only SSE 和公共历史。
 计划正文使用安全 Markdown 渲染，失败的计划工具调用仍可见。
@@ -52,8 +52,8 @@ VITE_BACKEND_URL=http://localhost:8080 npm run dev
 | `VITE_CAMPUSCLAW_API_BASE` | 默认留空同源；内部跨源需服务端 CORS 放行 ETag |
 | `VITE_BACKEND_URL` | Vite 开发代理目标，默认 localhost:8080 |
 | `VITE_CAMPUSCLAW_CALLER_ID` | 非秘密调用方标识，默认 campusclaw-web |
-| `CAMPUSCLAW_DEV_AUTH_ACCOUNT` | 认证中心账号，仅本地 Node 开发服务读取 |
-| `CAMPUSCLAW_DEV_AUTH_PASSWORD` | 认证中心密码，仅本地 Node 开发服务读取 |
+| `CAMPUSCLAW_DEV_AUTH_ACCOUNT` | 本地 Node 服务读取的默认认证账号，在验证工作台回显 |
+| `CAMPUSCLAW_DEV_AUTH_PASSWORD` | 本地 Node 服务读取的默认认证密码，在验证工作台回显 |
 
 不要把 JWT、APPKEY、Provider 凭据或 access-token 写入 `VITE_*`，它们会进入浏览器产物。
 DEV 的 IP 和 Header 存在浏览器 `campusclaw.developer-settings.v1`，按后端与认证 IP 隔离；仅用于受控联调环境。GET/Session 配置不携带这些凭据。协议 Accept/Content-Type 固定，
@@ -65,12 +65,14 @@ If-Match/Idempotency-Key/Last-Event-ID 不进入 Events/Command POST。Session �
 在“开发者设置”的认证区填写并保存 IP、账号和密码，再点击“获取 Token”。开发服务固定访问
 该 IP 的 HTTPS 443 `/service/AuthCenter/0.1.0/auth/login`，读取独立 `Set-Cookie` 中的
 `access-token`，回填并启用对应请求头；不会转发 JSESSIONID 或把 Cookie 写入浏览器。
+账号、密码和请求头默认明文展示；保存及刷新后回显已保存值。获取 Token 比较当前输入与已保存值，
+相同的非空凭据无需重复保存；实际修改才要求保存。账号密码同时留空并保存表示清除，也可使用“清除账号密码”。
 地址不接受协议、端口、域名或路径。请求不自动发起或重试，失败保留手工值；编辑/清空请求头、
 修改 IP 或离开页面后，迟到响应不会覆盖当前输入。修改 IP 时仅清除仍未被手工修改的自动 Token。
 
 认证助手只在 `vite dev` 注册，要求本机回环连接、匹配的 Host 与同源 Origin；默认绑定 127.0.0.1。
 保留 TLS 校验；企业 CA 可通过 Node 的 `NODE_EXTRA_CA_CERTS` 指向受信任 PEM 配置，不关闭证书验证。
-本地凭据不得使用 `VITE_` 前缀；账号和密码写入仓库根目录 `.campusclaw/frontend-dev-settings.json`，目录权限 0700、文件权限 0600，读取仅返回是否配置，不回显秘密；该目录被 Git 和 Vite 文件服务排除。
+本地凭据不得使用 `VITE_` 前缀；账号和密码写入仓库根目录 `.campusclaw/frontend-dev-settings.json`，目录权限 0700、文件权限 0600。仅本机同源配置接口以 `no-store` 返回有效账号密码，供验证工作台回显；不额外写入浏览器 localStorage，不进入生产构建或日志。该目录仍被 Git 和 Vite 文件服务排除。明文仅用于个人受控联调，截图和屏幕共享需自行避免泄露真实凭据。
 本地服务秘密保存、浏览器 IP/Header 保存分别显示结果，不把部分失败当作整体成功。显式清空和恢复启动默认值具有不同语义。
 生产构建与 `vite preview` 不提供开发设置组件、配置接口或认证接口。
 连接切换捕获实际后端身份及版本，旧请求不能转发到新后端；当前视图按新环境恢复，旧环境仍可恢复。

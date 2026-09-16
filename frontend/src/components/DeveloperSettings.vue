@@ -86,8 +86,9 @@ function cancel(event: Event): void {
               <span>账号：{{ settings.localStatus.value?.accountConfigured ? '已配置' : '未配置' }}</span>
               <span>密码：{{ settings.localStatus.value?.passwordConfigured ? '已配置' : '未配置' }}</span>
             </div>
-            <label>替换账号<input v-model="account" type="password" autocomplete="off" placeholder="保存后不回显"></label>
-            <label>替换密码<input v-model="password" type="password" autocomplete="new-password" placeholder="保存后不回显"></label>
+            <label>认证账号<input v-model="account" type="text" autocomplete="off" spellcheck="false"></label>
+            <label>认证密码<input v-model="password" type="text" autocomplete="off" spellcheck="false"></label>
+            <p>验证工作台会明文回显已保存凭据，请勿在截图或共享屏幕中暴露真实凭据。</p>
             <div class="authentication-actions">
               <button type="button" @click="settings.clearAuthentication">清除账号密码</button>
               <button type="button" @click="settings.restoreAuthenticationDefaults">恢复启动默认</button>

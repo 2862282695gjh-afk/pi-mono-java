@@ -19,6 +19,8 @@ const status = {
   authKey: 'auth-key',
   backendUrl: 'http://backend.test',
   backendSource: 'startup' as const,
+  account: 'startup-account',
+  password: 'startup-password',
   accountConfigured: true,
   passwordConfigured: true,
   accountSource: 'startup' as const,
@@ -184,12 +186,14 @@ describe('developer settings controller', () => {
     settings.passwordDraft.value = 'saved-password';
 
     const pending = settings.saveAuthentication();
+    await expect(settings.getToken()).resolves.toMatchObject({ ok: false, message: expect.stringContaining('正在保存') });
     settings.authIpDraft.value = '192.0.2.2';
     settings.accountDraft.value = 'newer-account';
     settings.passwordDraft.value = 'newer-password';
     settings.connectionDraft.value.backendUrl = 'http://other-backend.test';
     await expect(settings.saveConnection()).resolves.toMatchObject({ ok: false });
     saving.resolve(json({ ...status, version: 1, authVersion: 1, authKey: 'new-auth-key',
+      account: 'saved-account', password: 'saved-password',
       accountSource: 'saved', passwordSource: 'saved' }));
 
     await expect(pending).resolves.toMatchObject({ ok: true });
@@ -200,5 +204,56 @@ describe('developer settings controller', () => {
     expect(settings.passwordDraft.value).toBe('newer-password');
     expect(storage.getItem('campusclaw.developer-settings.v1')).toContain('192.0.2.1');
     expect(storage.getItem('campusclaw.developer-settings.v1')).not.toContain('192.0.2.2');
+  });
+
+  it.each(['account', 'password'] as const)('discards a late token when the %s draft changes', async (field) => {
+    const token = deferredResponse();
+    const storage = memoryStorage();
+    const fetcher = vi.fn((input: RequestInfo | URL) => String(input) === '/__debug/config'
+      ? Promise.resolve(json(status)) : token.promise);
+    const settings = createDeveloperSettingsController({ defaults, fetcher: fetcher as typeof fetch,
+      storage: () => storage, pageOrigin: 'http://localhost:4173', listenForStorage: false });
+    await settings.initialize();
+    settings.authIpDraft.value = '192.0.2.1';
+    await settings.saveAuthentication();
+    const pending = settings.getToken();
+    settings[field === 'account' ? 'accountDraft' : 'passwordDraft'].value = 'newer-value';
+    token.resolve(json({ accessToken: 'late-token' }));
+    await expect(pending).resolves.toMatchObject({ ok: false });
+    expect(settings.applied.value.headers.some((row) => row.value === 'late-token')).toBe(false);
+    expect(storage.getItem('campusclaw.developer-settings.v1')).not.toContain('late-token');
+  });
+
+  it('preserves credential edits made before or during configuration loading', async () => {
+    const loading = deferredResponse();
+    const settings = createDeveloperSettingsController({ defaults,
+      fetcher: vi.fn(() => loading.promise) as typeof fetch, storage: () => memoryStorage(),
+      pageOrigin: 'http://localhost:4173', listenForStorage: false });
+    settings.accountDraft.value = 'early-account';
+    const pending = settings.initialize();
+    settings.passwordDraft.value = 'newer-password';
+    loading.resolve(json(status));
+    await pending;
+    expect(settings.accountDraft.value).toBe('early-account');
+    expect(settings.passwordDraft.value).toBe('newer-password');
+    expect(settings.localStatus.value?.account).toBe('startup-account');
+  });
+
+  it('refreshes pristine credentials but preserves dirty drafts across external reloads', async () => {
+    const loading = deferredResponse();
+    const fetcher = vi.fn().mockResolvedValueOnce(json(status)).mockReturnValueOnce(loading.promise);
+    const storage = memoryStorage();
+    const settings = createDeveloperSettingsController({ defaults, fetcher: fetcher as typeof fetch,
+      storage: () => storage, pageOrigin: 'http://localhost:4173', listenForStorage: false });
+    await settings.initialize();
+    await settings.saveConnection();
+    settings.passwordDraft.value = 'unsaved-password';
+    const pending = settings.reloadExternalChanges();
+    loading.resolve(json({ ...status, authVersion: 1, account: 'external-account', password: 'external-password' }));
+    await expect(pending).resolves.toMatchObject({ ok: true });
+    expect(settings.accountDraft.value).toBe('external-account');
+    expect(settings.passwordDraft.value).toBe('unsaved-password');
+    expect(settings.localStatus.value?.password).toBe('external-password');
+    await expect(settings.getToken()).resolves.toMatchObject({ ok: false, message: expect.stringContaining('尚未保存') });
   });
 });

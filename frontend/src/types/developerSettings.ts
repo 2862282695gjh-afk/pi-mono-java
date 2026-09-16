@@ -25,6 +25,8 @@ export interface LocalConfigStatus {
   authKey: string;
   backendUrl: string;
   backendSource: 'saved' | 'startup' | 'default';
+  account: string;
+  password: string;
   accountConfigured: boolean;
   passwordConfigured: boolean;
   accountSource: 'saved' | 'startup' | 'cleared';

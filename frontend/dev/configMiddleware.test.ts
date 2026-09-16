@@ -86,7 +86,7 @@ function put(body: unknown, version = 0, headers: IncomingHttpHeaders = {}): Req
 }
 
 describe('development config middleware', () => {
-  it('allows controller GETs without Origin through browser same-origin evidence and never echoes secrets', async () => {
+  it('returns credentials only to local same-origin settings requests without caching them', async () => {
     const { middleware } = await setup();
     const result = await send(middleware, {
       headers: { ...localReadMarker, 'sec-fetch-site': 'same-origin' },
@@ -97,12 +97,21 @@ describe('development config middleware', () => {
     expect(result.json).toMatchObject({ resCode: '0', result: {
       version: 0, accountConfigured: true, passwordConfigured: true, accountSource: 'startup', passwordSource: 'startup',
     } });
-    expect(result.body).not.toMatch(/secret-account|secret-password|"account"\s*:|"password"\s*:/u);
+    expect(result.json).toMatchObject({ result: { account: 'secret-account', password: 'secret-password' } });
 
     const refererResult = await send(middleware, {
       headers: { ...localReadMarker, referer: `${localOrigin}/settings` },
     });
     expect(refererResult.statusCode).toBe(200);
+    for (const headers of [
+      { ...localReadMarker, origin: 'https://other.test' },
+      { ...localReadMarker, 'sec-fetch-site': 'cross-site' },
+      { 'sec-fetch-site': 'same-origin' },
+    ]) {
+      const rejected = await send(middleware, { headers });
+      expect(rejected.statusCode).toBe(403);
+      expect(rejected.body).not.toMatch(/secret-account|secret-password/u);
+    }
   });
 
   it('rejects unrelated paths, forged Host and Origin, cross-site GET, missing write Origin and unsupported methods', async () => {
