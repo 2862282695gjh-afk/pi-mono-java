@@ -5,6 +5,7 @@
 package com.huawei.hicampus.claw.codingagent.session;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatIllegalStateException;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -48,6 +49,25 @@ class AgentSessionFactoryTest {
 
     @TempDir
     Path temporaryDirectory;
+
+    @Test
+    void rejectsMissingPreparedRuntime() {
+        AgentRuntimeManager runtimeManager = mock(AgentRuntimeManager.class);
+        AgentSessionFactory factory = new AgentSessionFactory(
+                mock(CampusClawAiService.class),
+                runtimeManager,
+                mock(ConfiguredToolAssembler.class),
+                mock(ObjectProvider.class),
+                mock(RuntimeAgentPromptLoader.class),
+                mock(com.huawei.hicampus.claw.codingagent.session.compaction.SessionCompactor.class),
+                new PlanPolicyPromptComposer());
+        ManagedAgentSessionRequest request = mock(ManagedAgentSessionRequest.class);
+        when(request.agentId()).thenReturn("agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+
+        assertThatIllegalStateException()
+                .isThrownBy(() -> factory.create(request))
+                .withMessage("Prepared Agent runtime is unavailable");
+    }
 
     @Test
     void createsIsolatedCommonSessionsWithConfiguredEntryPoint() throws Exception {

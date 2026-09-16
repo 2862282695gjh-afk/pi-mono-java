@@ -1,6 +1,6 @@
 # Builtin Command：Name 实现切片
 
-> 版本：1.1.0 · 日期：2026-09-07 · 状态：Name 内部执行与创建/GET Session 名称已实现；Command HTTP 待统一发布
+> 版本：1.2.0 · 日期：2026-09-16 · 状态：Name 内部执行与创建/GET Session 名称已实现；Command HTTP 待统一发布
 
 设计仓 `88f4df16bc24bbfcd28e1ec374feb2de0db8be3b` Builtin 2.9.0 已 supersede 旧 Name 专属响应方向：
 查询、修改和同值均返回完整 Session 与同源 ETag。当前结果通道及新验证见
@@ -25,6 +25,10 @@ Java 变更前基线为上述 main；本切片实现提交为
 
 PR #224 评审基线为 `83cef886f17e08404611a53a21ac0ef2d4cfa087`，创建响应遗漏修复为
 `cf6c515305bd6ac67ca261f42d697be8ef03cf6d`。这是对已确认契约的补齐，不是新增产品决策。
+本次异常日志职责调整分析基线为 `pi-mono-java@0b81c168d816aed7864cc9fbb9caa0771407e880`；
+直接证据为 `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/service/command/SessionNamingService.java:execute`、
+同目录 `CommandExecutionService.java:translate` 和 `runtimeapi/web/RuntimeExceptionHandler.java:handleRuntimeError`。
+该基线观察到 Name 只记录稳定码、Command 每次翻译再次记录；本版本的目标行为见第 5 节。
 
 | 证据类别 | 仓库相对路径与符号 | 观察或决策 |
 |---|---|---|
@@ -93,7 +97,10 @@ Java 不复制 pi 的名称历史与清空行为：只保留当前名称属于**
   未来 JSON 复用完整 Session 和同源 ETag，禁止 command/changed/sourceEventSeq；changed 仅保留内部。
   没有发布 GET/POST Command 路由，没有新增请求级 SSE。
 - 非法名称为 INVALID_COMMAND_REQUEST（400），不存在为 SESSION_NOT_FOUND（404）；
-  修改持久化失败翻译为 SESSION_NAME_UPDATE_FAILED（500），提供中英文文案，不将名称或数据库异常文本写入日志和响应。
+  修改持久化的未知异常由 `SessionNamingService` 首次分类为 SESSION_NAME_UPDATE_FAILED（500），并以固定 operation、
+  稳定 errorCode、Session ID 和原始 Throwable 记录一次 ERROR；业务代码不显式记录名称、请求对象或凭据。
+  随后抛出无 cause 的稳定异常，Command 与 HTTP 层不重复记录，响应仍只提供稳定错误码和中英文文案。
+  Throwable 自身可能包含底层异常文本，属于受访问控制和脱敏策略约束的内部诊断信息。
 - 名称校验 O(n)，查询一次 SELECT，更新一次 SELECT FOR UPDATE 加至多一次 UPDATE。
   同一 Session 竞争只占用已有数据库事务连接，不引入异步队列、线程或额外运行容量。
 - 此阶段的 DTO/Handler 测试不代表未来 Command HTTP 的未知字段、Header、统一鉴权及断线行为已验收。
@@ -121,6 +128,7 @@ Java 不复制 pi 的名称历史与清空行为：只保留当前名称属于**
 
 | 版本 | 日期 | 变更 |
 |---|---|---|
+| 1.2.0 | 2026-09-16 | Name 持久化未知异常在所属服务记录一次原始 Throwable，对外继续使用无 cause 的稳定错误码。 |
 | 1.1.0 | 2026-09-07 | 按 88f4df16 传递锁内完整资源，撤销 Name 专属公开回执；关联 R06 与新 ADR，保留历史证据。 |
 | 1.0.1 | 2026-09-05 | 根据 #224 评论补齐创建响应 displayName:null、前端必有字段与回归；同步已确认的 Builtin/Skill 统一责任。 |
 | 1.0.0 | 2026-09-05 | Name 内部执行、首版当前名称存储、GET Session 字段、并发与恢复验证；不增加升级脚本或 Command 路由。 |

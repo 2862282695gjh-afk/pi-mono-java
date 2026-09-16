@@ -1,6 +1,6 @@
 # Builtin 执行应用与业务响应
 
-版本：1.0.2 · 日期：2026-09-14 · 状态：内部 Builtin 应用接入，公共 HTTP 未发布。
+版本：1.1.0 · 日期：2026-09-16 · 状态：内部 Builtin 应用接入，公共 HTTP 未发布。
 
 ## 1. 范围与理由
 
@@ -24,6 +24,10 @@
 组合提交 `4291dd8d6e6bde63a08819379bb8d97450f7859f` 保留既有 Builtin-only 入口，本 PR 未修改 Registry。
 审查修复时再正常合入 #242 的 main `b7f077d59b09362dc366241920a85b6d218d1189`，保留远端同步提交；
 因该 main 已占用 ADR-0065，本 PR 的决策编号调整为 ADR-0066。以下已有行为仍对应原证据基线。
+本次异常日志职责调整分析基线为 `pi-mono-java@0b81c168d816aed7864cc9fbb9caa0771407e880`；
+直接证据为 `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/service/command/SessionNamingService.java:execute`、
+同目录 `CommandExecutionService.java:translate` 和 `runtimeapi/web/RuntimeExceptionHandler.java:handleRuntimeError`。
+该基线观察到窄服务丢失 Throwable、应用层重复记录稳定码；本版本的目标职责见第 4 节。
 只读设计：`pi-mono-java-design@88f4df16bc24bbfcd28e1ec374feb2de0db8be3b`，
 Slash 1.6.0 §3/4、Builtin 2.9.0 §8、Runtime 操作 `13-execute-session-command.json`。
 以下 Java 路径前缀为 `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/`。
@@ -40,7 +44,7 @@ Slash 1.6.0 §3/4、Builtin 2.9.0 §8、Runtime 操作 `13-execute-session-comma
 | 本 PR 新增 | `runtimeapi/service/command/CommandExecutionService.java:executeBuiltin/normalize/requireAdmission` | 连接既有协作者；输入复制后只在本次处理内使用，响应来自 Handler 的权威结果而非旧 Catalog |
 
 普通 JSON、显式 Builtin 输入和禁止回执属于**产品约束**；请求级解析、业务投影复用和异步完成视图属于**架构选择**；
-错误去 cause、未知结果拒绝、凭据不进入日志/响应，以及 JSON 不宽松转换属于**安全加固**。
+对外错误去 cause、未知结果拒绝、不显式记录请求字段或凭据，以及 JSON 不宽松转换属于**安全加固**。
 它们不是 pi 已有 HTTP 行为；以上 main 观察与本次新增明确分开。
 
 ## 3. 类图与职责
@@ -74,7 +78,10 @@ resource 为已有业务 VO，etag 为 null。该载体**不作为 ResultBean.re
 
 错误保留操作 13 的稳定码白名单；AGENT_MODEL_NOT_CONFIGURED 翻译为 MODEL_NOT_AVAILABLE，
 其他内部/PUT 专属错误、未知策略码、未知 DTO 和第三方异常均归 COMMAND_EXECUTION_FAILED。
-不更改现有 PUT 的条件版本或错误规则。日志只有稳定错误码，没有请求字段、凭据、异常正文或 cause。
+不更改现有 PUT 的条件版本或错误规则。Name 窄服务首次分类未知持久化异常时，
+记录一次固定 operation、稳定错误码和原始 Throwable；`CommandExecutionService` 对已分类异常只做白名单映射与 cause 清理，
+不重复记录，对尚未被下层分类的异常则在该应用边界记录一次。
+对外异常和 HTTP 响应不携带 cause；业务代码不把请求字段、名称或凭据显式加入日志。
 
 所有 Spring 单例只持有 final 协作者。本次输入副本、Catalog、Context、invocation 和完成视图均为局部对象。
 没有 ThreadLocal、新线程池、通用事件、Name 边车、队列、数据库表、升级脚本或 Maven 依赖。
@@ -84,7 +91,8 @@ Header 捕获/拒绝 If-Match 和 Idempotency-Key、真实 HTTP 状态/ResultBea
 ## 5. 验证与交付
 
 新测试覆盖严格 JSON、宽松 Mapper 下仍拒绝未知字段、名称/UTF-16 边界、Builder/缺省归一与不修改原 VO；
-一次 Catalog/Definition 身份、来源过滤、准入前拒绝、同步/异步稳定错误及去 cause、空/未知结果、
+一次 Catalog/Definition 身份、来源过滤、准入前拒绝、同步/异步未知错误只记录一次原始 Throwable、
+已分类错误不重复记录、对外稳定错误去 cause、空/未知结果、
 请求作用域清理、取消观察隔离、两个在途请求乱序完成、权威 Session/ETag 同源，以及七个真实 Contributor 的应用接通。
 七 Contributor 测试的窄业务数据和 Runtime 外部执行由 mock 控制，不把它称作真实数据库或 HTTP 验收。
 既有 Spring 包扫描同时验证新 Service 的 Validator 与命令协作者装配。
@@ -101,6 +109,7 @@ Header 捕获/拒绝 If-Match 和 Idempotency-Key、真实 HTTP 状态/ResultBea
 
 | 版本 | 日期 | 变更 |
 |---|---|---|
+| 1.1.0 | 2026-09-16 | Name 持久化及 Command 未分类异常各自在首次分类边界记录 Throwable，已分类错误不重复记录且对外继续移除 cause。 |
 | 1.0.2 | 2026-09-14 | 取消新增行数预算，按职责和验收边界组织交付。 |
 | 1.0.1 | 2026-09-07 | 记录 Skill 复用普通消息 SSE/恢复，额外私有快照不属当前要求；修正参数遮蔽并在同步 main 后调整 ADR 编号，不改变 Builtin 行为。 |
 | 1.0.0 | 2026-09-07 | 接通显式 Builtin 应用与结果分派，保留共享 HTTP/Skill 待决边界。 |

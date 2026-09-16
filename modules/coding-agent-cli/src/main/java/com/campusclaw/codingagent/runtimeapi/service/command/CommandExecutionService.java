@@ -162,11 +162,24 @@ public class CommandExecutionService {
         while (cause instanceof CompletionException && cause.getCause() != null) {
             cause = cause.getCause();
         }
-        RuntimeErrorCode code = cause instanceof RuntimeApiException api
-                ? commandError(api.errorCode())
-                : RuntimeErrorCode.COMMAND_EXECUTION_FAILED;
-        LOGGER.error("Builtin command failed: errorCode={}", code.name());
-        return new RuntimeApiException(code);
+        if (cause instanceof RuntimeApiException apiError) {
+            RuntimeErrorCode errorCode = commandError(apiError.errorCode());
+            if (errorCode == apiError.errorCode() && apiError.getCause() == null) {
+                return apiError;
+            }
+            return new RuntimeApiException(errorCode);
+        }
+        RuntimeErrorCode errorCode = RuntimeErrorCode.COMMAND_EXECUTION_FAILED;
+        LOGGER.atError()
+                .addKeyValue("event", "campusclaw.failure")
+                .addKeyValue("operation", "runtime.command.builtin.execute")
+                .addKeyValue("errorCode", errorCode.name())
+                .setCause(cause)
+                .log(
+                        "CampusClaw failure: operation={}, errorCode={}",
+                        "runtime.command.builtin.execute",
+                        errorCode.name());
+        return new RuntimeApiException(errorCode);
     }
 
     private static RuntimeErrorCode commandError(RuntimeErrorCode code) {

@@ -69,10 +69,13 @@ public class AgentSessionFactory {
      *
      * @param request 不可变创建参数
      * @return 新 Session
-     * @throws IllegalStateException 受管 Agent 已禁用时抛出
+     * @throws IllegalStateException 运行时准备结果缺失或受管 Agent 已禁用时抛出
      */
     public ManagedAgentSession create(ManagedAgentSessionRequest request) {
         PreparedAgentRuntime runtime = runtimeManager.prepare(request.agentId());
+        if (runtime == null) {
+            throw new IllegalStateException("Prepared Agent runtime is unavailable");
+        }
         request.runtimeValidator().accept(runtime);
         if (!Boolean.TRUE.equals(runtime.metadata().enabled())) {
             throw new IllegalStateException("Managed Agent is disabled");
