@@ -11,7 +11,6 @@ import java.time.ZoneOffset;
 import com.huawei.hicampus.claw.ai.types.Model;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.agent.AgentDirectoryResolver;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.agent.AgentDirectorySnapshotDTO;
-import com.huawei.hicampus.claw.codingagent.runtimeapi.agent.RuntimeAgentPromptLoader;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.error.RuntimeErrorCode;
@@ -41,8 +40,6 @@ public class RuntimeSessionService {
 
     private final RuntimeModelManager modelManager;
 
-    private final RuntimeAgentPromptLoader promptLoader;
-
     private final SessionIdGenerator idGenerator;
 
     private final RuntimeSessionResponseAssembler responseAssembler;
@@ -53,14 +50,12 @@ public class RuntimeSessionService {
             RuntimeSessionRepository repository,
             AgentDirectoryResolver agentDirectoryResolver,
             RuntimeModelManager modelManager,
-            RuntimeAgentPromptLoader promptLoader,
             SessionIdGenerator idGenerator,
             RuntimeSessionResponseAssembler responseAssembler,
             Clock clock) {
         this.repository = repository;
         this.agentDirectoryResolver = agentDirectoryResolver;
         this.modelManager = modelManager;
-        this.promptLoader = promptLoader;
         this.idGenerator = idGenerator;
         this.responseAssembler = responseAssembler;
         this.clock = clock;
@@ -68,7 +63,6 @@ public class RuntimeSessionService {
 
     public RuntimeSessionView<CreateSessionResponseVO> create(String agentId) {
         AgentDirectorySnapshotDTO snapshot = agentDirectoryResolver.resolve(agentId);
-        promptLoader.validate(snapshot.runtimeDirectory());
         Model model = modelManager.resolveDefaultModel(snapshot);
         requireThinkingCapableDefaultModel(model);
         OffsetDateTime now = now();

@@ -29,18 +29,16 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 public class ExitPlanModeTool implements AgentTool {
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
-    private static final String DESCRIPTION = "Submit the complete proposed plan for user review while the root "
-            + "agent is in plan mode. Pass the full Markdown beginning with a level-one heading. This must be the "
+    private static final String DESCRIPTION = "Submit the complete proposed plan for user review while the Main "
+            + "Agent is in plan mode. Pass the full Markdown beginning with a level-one heading. This must be the "
             + "only tool call in the assistant response. Wait for the result: approved=true allows continuation "
             + "under the committed build mode, while approved=false requires revision using the feedback. A failed, "
             + "cancelled, or unavailable review never grants approval. This tool does not bypass business-tool "
             + "permissions.";
 
-    private static final String APPROVED_GUIDANCE = "方案已批准，Runtime 已切换为 build。按本次 ExitPlanMode 调用中的方案继续；"
-            + "多步骤实施且 TodoUpdate 可用时先创建完整执行清单，随后逐项实施并验证。具体工具权限仍须遵守。";
+    private static final String APPROVED_GUIDANCE = "方案已批准，Runtime 已切换为 build。按本次调用中的获批方案继续；具体工具权限仍须遵守。";
 
-    private static final String REVISED_GUIDANCE =
-            "方案需要修订，当前仍为 plan。根据 feedback 完善；关键问题无法确认时向用户澄清，" + "否则重新提交完整方案。不得开始实施或记录实施进度。";
+    private static final String REVISED_GUIDANCE = "当前仍为 plan。根据 feedback 修订，准备好后重新提交完整方案。";
 
     private final PlanReviewPort reviews;
 

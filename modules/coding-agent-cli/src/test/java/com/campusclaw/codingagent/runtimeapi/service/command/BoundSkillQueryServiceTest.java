@@ -137,7 +137,11 @@ class BoundSkillQueryServiceTest {
         AgentRuntimeManager cached = mock(AgentRuntimeManager.class);
         when(cached.prepareCached(AGENT_ID))
                 .thenReturn(new PreparedAgentRuntime(
-                        AGENT_ID, directory, runtime(true), List.of(skill("zebra", "Z"), skill("alpha", "A"))));
+                        AGENT_ID,
+                        directory,
+                        runtime(true),
+                        List.of(skill("zebra", "Z"), skill("alpha", "A")),
+                        com.campusclaw.codingagent.runtimeapi.agent.AgentPromptTestFixtures.prompts("system")));
         SkillsCommandResultDTO result = new BoundSkillQueryService(cached).query(session("running"), "");
 
         assertThat(result.skills()).containsExactly(new SkillDTO("alpha", "A"), new SkillDTO("zebra", "Z"));

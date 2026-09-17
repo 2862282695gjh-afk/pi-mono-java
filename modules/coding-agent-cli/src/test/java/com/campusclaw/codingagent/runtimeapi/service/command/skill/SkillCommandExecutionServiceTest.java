@@ -218,6 +218,11 @@ class SkillCommandExecutionServiceTest {
         var metadata = new AgentRuntime(
                 List.of("model"), null, null, null, null, "Agent", true, "agent", "agent", "system", null, "v2");
         var skill = new SkillInfo("pdf", "skill-1", "v2", "description", null, content, null, null, null, null);
-        return new PreparedAgentRuntime("agent", Path.of("/unread-private-path"), metadata, List.of(skill));
+        return new PreparedAgentRuntime(
+                "agent",
+                Path.of("/unread-private-path"),
+                metadata,
+                List.of(skill),
+                com.campusclaw.codingagent.runtimeapi.agent.AgentPromptTestFixtures.prompts("system"));
     }
 }

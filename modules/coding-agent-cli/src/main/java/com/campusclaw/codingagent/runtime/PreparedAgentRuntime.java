@@ -15,6 +15,7 @@ import com.campusclaw.codingagent.runtime.MateServiceClient.AgentReference;
 import com.campusclaw.codingagent.runtime.MateServiceClient.AgentRuntime;
 import com.campusclaw.codingagent.runtime.MateServiceClient.BoundTool;
 import com.campusclaw.codingagent.runtime.MateServiceClient.SkillInfo;
+import com.campusclaw.codingagent.runtimeapi.agent.AgentPromptSnapshotDTO;
 import com.campusclaw.common.constant.ClawConstants;
 
 /**
@@ -25,14 +26,17 @@ import com.campusclaw.common.constant.ClawConstants;
  * @param metadata 缓存的运行时元数据
  * @param skills 从已生成的 SKILL.md frontmatter 重建的绑定 Skill 身份快照；
  *               {@code skills/} 子目录本身表示绑定关系
+ * @param prompts 本次准备期间固定的基础与模式提示词快照
  *
  * @version [br_eCampusCore 26.0.0, 2026/08/17]
  * @since [br_eCampusCore 26.0.0]
  */
-public record PreparedAgentRuntime(String agentId, Path agentRoot, AgentRuntime metadata, List<SkillInfo> skills) {
+public record PreparedAgentRuntime(
+        String agentId, Path agentRoot, AgentRuntime metadata, List<SkillInfo> skills, AgentPromptSnapshotDTO prompts) {
 
     public PreparedAgentRuntime {
         skills = skills == null ? List.of() : List.copyOf(skills);
+        prompts = java.util.Objects.requireNonNull(prompts, "prompts");
     }
 
     /**

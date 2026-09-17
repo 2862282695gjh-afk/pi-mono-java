@@ -46,7 +46,8 @@ import com.huawei.hicampus.claw.codingagent.runtime.PreparedAgentRuntime;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.RuntimeMessageSourceConfiguration;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.agent.AgentDirectoryResolver;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.agent.AgentDirectorySnapshotDTO;
-import com.huawei.hicampus.claw.codingagent.runtimeapi.agent.RuntimeAgentPromptLoader;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.agent.AgentPromptSnapshotDTO;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.agent.AgentPromptSnapshotDTO.PromptSource;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeEntryDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.command.SkillCommandInputDTO;
@@ -352,14 +353,11 @@ class SkillCommandExecutionOpenGaussIT {
         queries = new RuntimeContextHistoryService(repository, codec);
         var properties = new RuntimeExecutionProperties();
         properties.setMaxActive(1);
-        var prompt = mock(RuntimeAgentPromptLoader.class);
-        when(prompt.load(any())).thenReturn("system");
         var factory = new AgentSessionFactory(
                 ai,
                 runtimes,
                 mock(ConfiguredToolAssembler.class),
                 new StaticListableBeanFactory().getBeanProvider(MateToolsetFactory.class),
-                prompt,
                 new SessionCompactor(ai, new CompactionProperties()),
                 new com.huawei.hicampus.claw.codingagent.session.PlanPolicyPromptComposer());
         registry = new RuntimeSessionEngineRegistry(
@@ -442,7 +440,9 @@ class SkillCommandExecutionOpenGaussIT {
         var metadata = mapper.convertValue(
                 Map.of("id", "agent", "bindingModels", List.of("model"), "enabled", enabled), AgentRuntime.class);
         var skill = new SkillInfo("pdf", "skill", "v2", "description", null, content, null, null, null, null);
-        return new PreparedAgentRuntime("agent", temporary, metadata, List.of(skill));
+        AgentPromptSnapshotDTO prompts =
+                new AgentPromptSnapshotDTO("system", "Plan", "Build", PromptSource.BUILTIN, PromptSource.BUILTIN);
+        return new PreparedAgentRuntime("agent", temporary, metadata, List.of(skill), prompts);
     }
 
     private AgentDirectorySnapshotDTO directory() {

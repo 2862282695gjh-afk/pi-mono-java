@@ -380,7 +380,12 @@ class RuntimeCommandCatalogRoutesTest {
                         List.of(),
                         List.of()))
                 .toList();
-        return new PreparedAgentRuntime(AGENT_ID, Path.of("/private-no-read"), metadata, skills);
+        return new PreparedAgentRuntime(
+                AGENT_ID,
+                Path.of("/private-no-read"),
+                metadata,
+                skills,
+                com.campusclaw.codingagent.runtimeapi.agent.AgentPromptTestFixtures.prompts("system"));
     }
 
     @Configuration(proxyBeanMethods = false)

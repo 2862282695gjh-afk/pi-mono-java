@@ -4,90 +4,55 @@
 
 package com.huawei.hicampus.claw.codingagent.session;
 
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.util.List;
 
+import com.huawei.hicampus.claw.codingagent.runtimeapi.agent.AgentPromptSnapshotDTO;
 import com.huawei.hicampus.claw.codingagent.tool.builtin.BuiltInToolName;
 import com.huawei.hicampus.claw.codingagent.tool.builtin.ToolEntryPoint;
 import com.huawei.hicampus.claw.common.constant.ClawConstants;
 
-import org.springframework.beans.factory.InitializingBean;
-import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Component;
 
 /**
- * 按已提交模式、入口和实际工具快照组合固定系统提示词。
+ * 按已提交模式和入口组合一次准备中固定的系统提示词快照。
  *
- * @version [br_eCampusCore 26.0.0, 2026/09/15]
+ * @version [br_eCampusCore 26.0.0, 2026/09/17]
  * @since [br_eCampusCore 26.0.0]
  */
 @Component
-public class PlanPolicyPromptComposer implements InitializingBean {
-    private final String planCommon = load("PLAN_COMMON");
+public class PlanPolicyPromptComposer {
+    private static final String MAIN_AGENT_ROLE = "当前执行角色：Main Agent。";
 
-    private final String planRootReview = load("PLAN_ROOT_REVIEW");
+    private static final String SUBAGENT_ROLE = "当前执行角色：Subagent；只向父 Agent 返回结果。";
 
-    private final String planChild = load("PLAN_CHILD");
-
-    private final String buildRoot = load("BUILD_ROOT");
-
-    private final String executionTodos = load("EXECUTION_TODOS");
-
-    private final String askUser = load("ASK_USER");
-
-    @Override
-    public void afterPropertiesSet() {
-        for (String prompt : List.of(planCommon, planRootReview, planChild, buildRoot, executionTodos, askUser)) {
-            if (prompt.isBlank()) {
-                throw new IllegalStateException("Plan policy prompt must not be blank");
-            }
+    /**
+     * 依据入口矩阵从同一快照完整重组 SYSTEM。
+     *
+     * @param prompts 本次执行的固定提示词快照
+     * @param mode 已提交的 Session 模式
+     * @param entryPoint 工具入口
+     * @return 最终 SYSTEM
+     */
+    public String compose(AgentPromptSnapshotDTO prompts, String mode, ToolEntryPoint entryPoint) {
+        if (entryPoint == ToolEntryPoint.CRON) {
+            return prompts.basePrompt();
         }
-    }
-
-    public String compose(String base, ToolEntryPoint entryPoint, String mode, List<String> toolNames) {
-        if (ClawConstants.Agent.MODE_PLAN.equals(mode)) {
-            return planPrompt(base, entryPoint, toolNames);
+        if (entryPoint == ToolEntryPoint.CHILD_AGENT && !ClawConstants.Agent.MODE_PLAN.equals(mode)) {
+            return prompts.basePrompt();
         }
-        if (entryPoint != ToolEntryPoint.RUNTIME) {
-            return base;
-        }
-        String prompt = append(base, buildRoot);
-        if (toolNames.contains(BuiltInToolName.ASK_USER_QUESTION.externalName())) {
-            prompt = append(prompt, askUser);
-        }
-        return toolNames.contains(BuiltInToolName.TODO_UPDATE.externalName()) ? append(prompt, executionTodos) : prompt;
+        String role = entryPoint == ToolEntryPoint.RUNTIME ? MAIN_AGENT_ROLE : SUBAGENT_ROLE;
+        String modePrompt = ClawConstants.Agent.MODE_PLAN.equals(mode) ? prompts.planPrompt() : prompts.buildPrompt();
+        return append(append(prompts.basePrompt(), role), modePrompt);
     }
 
     public boolean planModeAvailable(List<String> toolNames) {
-        return !planCommon.isBlank()
-                && !planRootReview.isBlank()
-                && toolNames.contains(BuiltInToolName.EXIT_PLAN_MODE.externalName());
-    }
-
-    private String planPrompt(String base, ToolEntryPoint entryPoint, List<String> toolNames) {
-        String prompt = append(base, planCommon);
-        prompt = switch (entryPoint) {
-            case RUNTIME -> append(prompt, planRootReview);
-            case CHILD_AGENT -> append(prompt, planChild);
-            case CRON -> base;
-        };
-        return entryPoint == ToolEntryPoint.RUNTIME
-                        && toolNames.contains(BuiltInToolName.ASK_USER_QUESTION.externalName())
-                ? append(prompt, askUser)
-                : prompt;
+        return toolNames.contains(BuiltInToolName.EXIT_PLAN_MODE.externalName());
     }
 
     private static String append(String current, String addition) {
-        return current.stripTrailing() + "\n\n" + addition.strip();
-    }
-
-    private static String load(String name) {
-        var resource = new ClassPathResource("prompts/plan/" + name + ".txt");
-        try {
-            return resource.getContentAsString(StandardCharsets.UTF_8);
-        } catch (IOException error) {
-            throw new IllegalStateException("Plan policy prompt is unavailable: " + name, error);
+        if (current.isBlank()) {
+            return addition.strip();
         }
+        return current.stripTrailing() + "\n\n" + addition.strip();
     }
 }

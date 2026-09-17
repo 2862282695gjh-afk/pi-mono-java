@@ -40,7 +40,8 @@ import com.campusclaw.codingagent.runtime.PreparedAgentRuntime;
 import com.campusclaw.codingagent.runtimeapi.RuntimeMessageSourceConfiguration;
 import com.campusclaw.codingagent.runtimeapi.agent.AgentDirectoryResolver;
 import com.campusclaw.codingagent.runtimeapi.agent.AgentDirectorySnapshotDTO;
-import com.campusclaw.codingagent.runtimeapi.agent.RuntimeAgentPromptLoader;
+import com.campusclaw.codingagent.runtimeapi.agent.AgentPromptSnapshotDTO;
+import com.campusclaw.codingagent.runtimeapi.agent.AgentPromptSnapshotDTO.PromptSource;
 import com.campusclaw.codingagent.runtimeapi.command.catalog.ResolvedCommandCatalog;
 import com.campusclaw.codingagent.runtimeapi.command.execution.CommandExecutionContext;
 import com.campusclaw.codingagent.runtimeapi.compaction.RuntimeCompactionCoordinator;
@@ -307,15 +308,15 @@ class RuntimeCompactionServiceOpenGaussIT {
     private AgentSessionFactory factory() {
         var metadata =
                 mapper.convertValue(Map.of("bindingModels", List.of("model"), "enabled", true), AgentRuntime.class);
-        when(runtimes.prepare("agent")).thenReturn(new PreparedAgentRuntime("agent", temporary, metadata, List.of()));
-        var prompt = mock(RuntimeAgentPromptLoader.class);
-        when(prompt.load(temporary.resolve(".campusclaw"))).thenReturn("system prompt");
+        AgentPromptSnapshotDTO prompts = new AgentPromptSnapshotDTO(
+                "system prompt", "Plan", "Build", PromptSource.BUILTIN, PromptSource.BUILTIN);
+        when(runtimes.prepare("agent"))
+                .thenReturn(new PreparedAgentRuntime("agent", temporary, metadata, List.of(), prompts));
         return new AgentSessionFactory(
                 ai,
                 runtimes,
                 mock(ConfiguredToolAssembler.class),
                 new StaticListableBeanFactory().getBeanProvider(MateToolsetFactory.class),
-                prompt,
                 compactor,
                 new com.campusclaw.codingagent.session.PlanPolicyPromptComposer());
     }

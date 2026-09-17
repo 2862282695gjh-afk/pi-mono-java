@@ -8,70 +8,60 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.List;
 
+import com.huawei.hicampus.claw.codingagent.runtimeapi.agent.AgentPromptSnapshotDTO;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.agent.AgentPromptSnapshotDTO.PromptSource;
 import com.huawei.hicampus.claw.codingagent.tool.builtin.ToolEntryPoint;
 
 import org.junit.jupiter.api.Test;
 
 /**
- * 验证六段固定提示词按入口、模式及真实工具快照隔离组合。
+ * 验证固定提示词快照按入口和模式矩阵完整组合。
  *
- * @version [br_eCampusCore 26.0.0, 2026/09/15]
+ * @version [br_eCampusCore 26.0.0, 2026/09/17]
  * @since [br_eCampusCore 26.0.0]
  */
 class PlanPolicyPromptComposerTest {
     private final PlanPolicyPromptComposer composer = new PlanPolicyPromptComposer();
 
-    @Test
-    void combinesRuntimePlanWithoutImplementationTodoGuidance() {
-        String prompt = composer.compose("BASE", ToolEntryPoint.RUNTIME, "plan", List.of("ExitPlanMode", "TodoUpdate"));
+    private final AgentPromptSnapshotDTO prompts = new AgentPromptSnapshotDTO(
+            "BASE", "PLAN BODY", "BUILD BODY", PromptSource.AGENT_FILE, PromptSource.BUILTIN);
 
-        assertThat(prompt)
-                .startsWith("BASE\n\n你当前处于计划模式")
-                .contains("你负责调研、必要澄清和提交完整方案")
-                .doesNotContain("你是规划任务的 Child Agent", "你当前处于 build 模式", "TodoUpdate 用于 build 阶段");
+    @Test
+    void combinesRuntimeModesFromTheSameSnapshot() {
+        assertThat(composer.compose(prompts, "plan", ToolEntryPoint.RUNTIME))
+                .isEqualTo("BASE\n\n当前执行角色：Main Agent。\n\nPLAN BODY");
+        assertThat(composer.compose(prompts, "build", ToolEntryPoint.RUNTIME))
+                .isEqualTo("BASE\n\n当前执行角色：Main Agent。\n\nBUILD BODY");
     }
 
     @Test
-    void combinesChildPlanWithoutRootReviewGuidance() {
-        String prompt = composer.compose("BASE", ToolEntryPoint.CHILD_AGENT, "plan", List.of());
-
-        assertThat(prompt)
-                .startsWith("BASE\n\n你当前处于计划模式")
-                .contains("你是规划任务的 Child Agent")
-                .doesNotContain("你负责调研、必要澄清和提交完整方案", "TodoUpdate 用于 build 阶段");
-    }
-
-    @Test
-    void keepsChildBuildAndCronPromptsUnchanged() {
-        assertThat(composer.compose("BASE", ToolEntryPoint.CHILD_AGENT, "build", List.of("TodoUpdate")))
-                .isEqualTo("BASE");
-        assertThat(composer.compose("BASE", ToolEntryPoint.CRON, "build", List.of("TodoUpdate")))
-                .isEqualTo("BASE");
-        assertThat(composer.compose("BASE", ToolEntryPoint.CRON, "plan", List.of("ExitPlanMode")))
+    void addsSubagentRoleOnlyForChildPlan() {
+        assertThat(composer.compose(prompts, "plan", ToolEntryPoint.CHILD_AGENT))
+                .isEqualTo("BASE\n\n当前执行角色：Subagent；只向父 Agent 返回结果。\n\nPLAN BODY");
+        assertThat(composer.compose(prompts, "build", ToolEntryPoint.CHILD_AGENT))
                 .isEqualTo("BASE");
     }
 
     @Test
-    void addsTodoGuidanceOnlyWhenRuntimeBuildActuallyHasTheTool() {
-        String withTodo = composer.compose("BASE", ToolEntryPoint.RUNTIME, "build", List.of("TodoUpdate"));
-        String withoutTodo = composer.compose("BASE", ToolEntryPoint.RUNTIME, "build", List.of());
+    void keepsCronUnchangedInBothModes() {
+        assertThat(composer.compose(prompts, "plan", ToolEntryPoint.CRON)).isEqualTo("BASE");
+        assertThat(composer.compose(prompts, "build", ToolEntryPoint.CRON)).isEqualTo("BASE");
+    }
 
-        assertThat(withTodo).contains("你当前处于 build 模式", "TodoUpdate 用于 build 阶段");
-        assertThat(withoutTodo).contains("你当前处于 build 模式").doesNotContain("TodoUpdate 用于 build 阶段");
+    @Test
+    void repeatedCompositionDoesNotAccumulateModeText() {
+        String plan = composer.compose(prompts, "plan", ToolEntryPoint.RUNTIME);
+        String build = composer.compose(prompts, "build", ToolEntryPoint.RUNTIME);
+
+        assertThat(plan).containsOnlyOnce("PLAN BODY").doesNotContain("BUILD BODY");
+        assertThat(build).containsOnlyOnce("BUILD BODY").doesNotContain("PLAN BODY");
+        assertThat(composer.compose(prompts, "plan", ToolEntryPoint.RUNTIME)).isEqualTo(plan);
+    }
+
+    @Test
+    void planAvailabilityDependsOnlyOnExitTool() {
         assertThat(composer.planModeAvailable(List.of("ExitPlanMode"))).isTrue();
-        assertThat(composer.planModeAvailable(List.of("TodoUpdate"))).isFalse();
-    }
-
-    @Test
-    void guidesRootToInspectFactsAndAskOnlyNecessaryQuestions() {
-        String plan =
-                composer.compose("BASE", ToolEntryPoint.RUNTIME, "plan", List.of("ExitPlanMode", "AskUserQuestion"));
-        String build = composer.compose("BASE", ToolEntryPoint.RUNTIME, "build", List.of("AskUserQuestion"));
-
-        assertThat(plan)
-                .contains("能够查明的事实自行查明", "没有待决问题就直接形成方案", "需要提问时优先只问当前一个关键问题")
-                .contains("不为用满工具容量而凑题", "工具 JSON 用于理解答案和继续执行")
-                .contains("问题回答不批准整份计划、不切换模式，也不代替业务工具权限确认");
-        assertThat(build).contains("先完成不依赖答案的必要检查", "上下文已足够时直接继续").contains("工具 JSON 用于理解答案和继续执行");
+        assertThat(composer.planModeAvailable(List.of("TodoUpdate", "AskUserQuestion")))
+                .isFalse();
     }
 }

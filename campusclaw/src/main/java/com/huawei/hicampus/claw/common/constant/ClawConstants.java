@@ -92,6 +92,10 @@ public final class ClawConstants {
 
         public static final String SYSTEM_FILE_NAME = "SYSTEM.md";
 
+        public static final String PLAN_PROMPT_FILE_NAME = "PLAN.md";
+
+        public static final String BUILD_PROMPT_FILE_NAME = "BUILD.md";
+
         private Runtime() {}
     }
 

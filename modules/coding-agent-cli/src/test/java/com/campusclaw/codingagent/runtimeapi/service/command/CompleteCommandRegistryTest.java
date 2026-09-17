@@ -69,7 +69,13 @@ class CompleteCommandRegistryTest {
         var failure = assertThrows(
                 IllegalArgumentException.class,
                 () -> registry.resolveComplete(
-                        session(), new PreparedAgentRuntime("agent", Path.of("/unused"), null, List.of())));
+                        session(),
+                        new PreparedAgentRuntime(
+                                "agent",
+                                Path.of("/unused"),
+                                null,
+                                List.of(),
+                                com.campusclaw.codingagent.runtimeapi.agent.AgentPromptTestFixtures.prompts(""))));
         assertThat(failure).hasMessageContaining("does not match Session Agent");
         verifyNoInteractions(source);
     }
@@ -112,6 +118,11 @@ class CompleteCommandRegistryTest {
                 "prompt",
                 List.of(),
                 "v1");
-        return new PreparedAgentRuntime(agentId, Path.of("/unused"), metadata, List.of());
+        return new PreparedAgentRuntime(
+                agentId,
+                Path.of("/unused"),
+                metadata,
+                List.of(),
+                com.campusclaw.codingagent.runtimeapi.agent.AgentPromptTestFixtures.prompts("system"));
     }
 }

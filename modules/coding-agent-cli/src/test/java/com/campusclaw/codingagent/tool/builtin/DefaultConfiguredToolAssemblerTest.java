@@ -132,7 +132,12 @@ class DefaultConfiguredToolAssemblerTest {
                 "prompt",
                 List.of(),
                 "1.0.0");
-        return new PreparedAgentRuntime(agentId, agentRoot, metadata, List.of());
+        return new PreparedAgentRuntime(
+                agentId,
+                agentRoot,
+                metadata,
+                List.of(),
+                com.campusclaw.codingagent.runtimeapi.agent.AgentPromptTestFixtures.prompts("system"));
     }
 
     private static Model model() {

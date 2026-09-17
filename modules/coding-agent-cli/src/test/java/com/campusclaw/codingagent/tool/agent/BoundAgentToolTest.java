@@ -84,7 +84,12 @@ class BoundAgentToolTest {
                 "prompt",
                 List.of(),
                 "1.0.0");
-        return new PreparedAgentRuntime(PARENT_ID, Path.of("agent", PARENT_ID), runtime, List.of());
+        return new PreparedAgentRuntime(
+                PARENT_ID,
+                Path.of("agent", PARENT_ID),
+                runtime,
+                List.of(),
+                com.campusclaw.codingagent.runtimeapi.agent.AgentPromptTestFixtures.prompts("system"));
     }
 
     private static AgentReference child(String name, String id) {

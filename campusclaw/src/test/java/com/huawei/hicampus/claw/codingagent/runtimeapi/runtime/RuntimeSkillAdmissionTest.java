@@ -25,7 +25,8 @@ import com.huawei.hicampus.claw.codingagent.runtime.MateServiceClient.AgentRunti
 import com.huawei.hicampus.claw.codingagent.runtime.MateServiceClient.SkillInfo;
 import com.huawei.hicampus.claw.codingagent.runtime.PreparedAgentRuntime;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.agent.AgentDirectorySnapshotDTO;
-import com.huawei.hicampus.claw.codingagent.runtimeapi.agent.RuntimeAgentPromptLoader;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.agent.AgentPromptSnapshotDTO;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.agent.AgentPromptSnapshotDTO.PromptSource;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.error.RuntimeErrorCode;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.service.command.skill.SkillCommandAdmission;
@@ -52,7 +53,7 @@ class RuntimeSkillAdmissionTest {
 
         assertThat(failure.errorCode()).isEqualTo(RuntimeErrorCode.COMMAND_NOT_FOUND);
         assertThat(fixture.registry.find("session-a")).isEmpty();
-        verifyNoInteractions(fixture.assembler, fixture.promptLoader, fixture.mateProvider);
+        verifyNoInteractions(fixture.assembler, fixture.mateProvider);
         RuntimeSessionHolder accepted = fixture.registerSkill();
         assertThat(fixture.registry.find("session-a")).containsSame(accepted);
         verify(fixture.manager, times(2)).prepare("agent-a");
@@ -104,8 +105,6 @@ class RuntimeSkillAdmissionTest {
 
         private final ConfiguredToolAssembler assembler = mock(ConfiguredToolAssembler.class);
 
-        private final RuntimeAgentPromptLoader promptLoader = mock(RuntimeAgentPromptLoader.class);
-
         private final ObjectProvider<MateToolsetFactory> mateProvider = mock(ObjectProvider.class);
 
         private final RuntimeActiveExecution execution = mock(RuntimeActiveExecution.class);
@@ -127,7 +126,6 @@ class RuntimeSkillAdmissionTest {
                     manager,
                     assembler,
                     mateProvider,
-                    promptLoader,
                     mock(SessionCompactor.class),
                     new com.huawei.hicampus.claw.codingagent.session.PlanPolicyPromptComposer());
             RuntimeExecutionProperties properties = new RuntimeExecutionProperties();
@@ -140,7 +138,6 @@ class RuntimeSkillAdmissionTest {
             when(model.id()).thenReturn("model-a");
             when(model.provider()).thenReturn(Provider.OPENAI);
             when(assembler.assemble(any(), any())).thenReturn(List.of());
-            when(promptLoader.load(any())).thenReturn("System");
         }
 
         private RuntimeSessionHolder registerSkill() {
@@ -169,7 +166,9 @@ class RuntimeSkillAdmissionTest {
                     "System",
                     List.of(),
                     "v1");
-            return new PreparedAgentRuntime("agent-a", directory, metadata, skills);
+            AgentPromptSnapshotDTO prompts =
+                    new AgentPromptSnapshotDTO("System", "Plan", "Build", PromptSource.BUILTIN, PromptSource.BUILTIN);
+            return new PreparedAgentRuntime("agent-a", directory, metadata, skills, prompts);
         }
     }
 }

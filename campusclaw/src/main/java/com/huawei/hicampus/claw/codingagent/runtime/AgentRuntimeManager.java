@@ -11,8 +11,10 @@ import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
 import java.nio.file.LinkOption;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
@@ -31,6 +33,8 @@ import com.huawei.hicampus.claw.codingagent.runtime.MateServiceClient.DependentS
 import com.huawei.hicampus.claw.codingagent.runtime.MateServiceClient.SkillFile;
 import com.huawei.hicampus.claw.codingagent.runtime.MateServiceClient.SkillInfo;
 import com.huawei.hicampus.claw.codingagent.runtime.MateServiceClient.SkillReference;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.agent.AgentPromptSnapshotDTO;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.agent.RuntimeAgentPromptLoader;
 import com.huawei.hicampus.claw.codingagent.skill.Skill;
 import com.huawei.hicampus.claw.codingagent.skill.SkillLoadException;
 import com.huawei.hicampus.claw.codingagent.skill.SkillLoader;
@@ -40,6 +44,7 @@ import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 /**
@@ -61,13 +66,24 @@ public class AgentRuntimeManager {
     // 复用真实会话的同一套 SKILL.md 加载校验,发布前确认落盘文件可被会话加载。
     private final SkillLoader skillLoader = new SkillLoader();
     private final ObjectMapper mapper;
+    private final RuntimeAgentPromptLoader promptLoader;
     private final ConcurrentHashMap<String, ReentrantLock> locks = new ConcurrentHashMap<>();
 
     public AgentRuntimeManager(
             AgentRuntimeProperties properties, MateServiceClient mateServiceClient, ObjectMapper mapper) {
+        this(properties, mateServiceClient, mapper, new RuntimeAgentPromptLoader());
+    }
+
+    @Autowired
+    public AgentRuntimeManager(
+            AgentRuntimeProperties properties,
+            MateServiceClient mateServiceClient,
+            ObjectMapper mapper,
+            RuntimeAgentPromptLoader promptLoader) {
         this.properties = properties;
         this.mateServiceClient = mateServiceClient;
         this.mapper = mapper;
+        this.promptLoader = promptLoader;
     }
 
     /**
@@ -78,13 +94,9 @@ public class AgentRuntimeManager {
      */
     public PreparedAgentRuntime prepare(String agentId) {
         Path agentRoot = requireAgentRoot(agentId);
-        PreparedAgentRuntime cached = loadIfComplete(agentId, agentRoot);
-        if (cached != null) {
-            return cached;
-        }
         return withAgentLock(agentId, () -> {
-            PreparedAgentRuntime rechecked = loadIfComplete(agentId, agentRoot);
-            return rechecked != null ? rechecked : rebuild(agentId, agentRoot);
+            PreparedAgentRuntime cached = loadIfComplete(agentId, agentRoot);
+            return cached != null ? cached : rebuild(agentId, agentRoot);
         });
     }
 
@@ -118,23 +130,17 @@ public class AgentRuntimeManager {
      * @throws AgentRuntimeException 系统提示词无法读取时抛出
      */
     public String readSystemPrompt(PreparedAgentRuntime runtime) {
-        Path systemFile = runtime.agentRoot()
-                .resolve(ClawConstants.Runtime.DIRECTORY_NAME)
-                .resolve(ClawConstants.Runtime.SYSTEM_FILE_NAME);
-        try {
-            return Files.readString(systemFile, StandardCharsets.UTF_8);
-        } catch (IOException exception) {
-            throw new AgentRuntimeException("Agent system prompt is unavailable", exception);
-        }
+        return runtime.metadata().systemPrompt();
     }
 
     private PreparedAgentRuntime rebuild(String agentId, Path agentRoot) {
+        Map<String, String> modeOverrides = loadExistingModeOverrides(agentRoot);
         AgentRuntime remote = mateServiceClient.getAgentRuntime(agentId);
         requireValidRuntime(remote, agentId);
         List<SkillInfo> skills = resolveSkills(remote.bindingSkills());
         Path staging = createStagingDirectory(agentRoot);
         try {
-            writeRuntimeTree(staging, remote, skills);
+            writeRuntimeTree(staging, remote, skills, modeOverrides);
             PreparedAgentRuntime validated = loadSnapshot(agentId, agentRoot, staging);
             if (validated == null) {
                 throw new AgentRuntimeException("Generated Agent runtime is incomplete");
@@ -165,14 +171,35 @@ public class AgentRuntimeManager {
         }
     }
 
-    private void writeRuntimeTree(Path campusClawDir, AgentRuntime runtime, List<SkillInfo> skills) throws IOException {
+    private void writeRuntimeTree(
+            Path campusClawDir, AgentRuntime runtime, List<SkillInfo> skills, Map<String, String> modeOverrides)
+            throws IOException {
         Files.createDirectories(campusClawDir.resolve("agents"));
         Files.createDirectories(campusClawDir.resolve(ClawConstants.Skill.DIRECTORY_NAME));
         writeJson(campusClawDir.resolve(ClawConstants.Runtime.AGENT_FILE_NAME), toIdentity(runtime));
         writeJson(campusClawDir.resolve(ClawConstants.Runtime.SETTINGS_FILE_NAME), toSettings(runtime));
         writeFile(campusClawDir.resolve(ClawConstants.Runtime.SYSTEM_FILE_NAME), runtime.systemPrompt());
+        for (Map.Entry<String, String> override : modeOverrides.entrySet()) {
+            writeFile(campusClawDir.resolve(override.getKey()), override.getValue());
+        }
         writeChildren(campusClawDir.resolve("agents"), runtime.bindingAgents());
         writeSkills(campusClawDir.resolve(ClawConstants.Skill.DIRECTORY_NAME), skills);
+    }
+
+    private Map<String, String> loadExistingModeOverrides(Path agentRoot) {
+        Path runtimeDirectory = agentRoot.resolve(ClawConstants.Runtime.DIRECTORY_NAME);
+        try {
+            BasicFileAttributes attributes =
+                    Files.readAttributes(runtimeDirectory, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
+            if (!attributes.isDirectory() || attributes.isSymbolicLink()) {
+                throw new AgentRuntimeException("Managed Agent runtime directory is invalid");
+            }
+            return promptLoader.loadOverrides(runtimeDirectory);
+        } catch (NoSuchFileException exception) {
+            return Map.of();
+        } catch (IOException exception) {
+            throw new AgentRuntimeException("Managed Agent runtime directory is unavailable", exception);
+        }
     }
 
     private void writeChildren(Path agentsDirectory, List<AgentReference> children) throws IOException {
@@ -280,6 +307,8 @@ public class AgentRuntimeManager {
         if (!isSafeDirectory(campusClawDir) || containsForbiddenEntry(campusClawDir)) {
             return null;
         }
+        AgentRuntime metadata;
+        List<SkillInfo> skills;
         try {
             AgentIdentity identity =
                     readJson(campusClawDir.resolve(ClawConstants.Runtime.AGENT_FILE_NAME), AgentIdentity.class);
@@ -287,15 +316,16 @@ public class AgentRuntimeManager {
                     readJson(campusClawDir.resolve(ClawConstants.Runtime.SETTINGS_FILE_NAME), AgentSettings.class);
             String systemPrompt = readRequiredFile(campusClawDir.resolve(ClawConstants.Runtime.SYSTEM_FILE_NAME));
             List<AgentReference> children = loadChildren(campusClawDir.resolve("agents"));
-            List<SkillInfo> skills = loadSkills(campusClawDir.resolve(ClawConstants.Skill.DIRECTORY_NAME));
+            skills = loadSkills(campusClawDir.resolve(ClawConstants.Skill.DIRECTORY_NAME));
             if (!validSnapshot(agentId, identity, settings, children, skills)) {
                 return null;
             }
-            AgentRuntime metadata = toRuntime(identity, settings, systemPrompt, children, skills);
-            return new PreparedAgentRuntime(agentId, agentRoot, metadata, skills);
+            metadata = toRuntime(identity, settings, systemPrompt, children, skills);
         } catch (IOException | RuntimeException exception) {
             return null;
         }
+        AgentPromptSnapshotDTO prompts = promptLoader.loadSnapshot(campusClawDir);
+        return new PreparedAgentRuntime(agentId, agentRoot, metadata, skills, prompts);
     }
 
     private List<AgentReference> loadChildren(Path agentsDirectory) throws IOException {

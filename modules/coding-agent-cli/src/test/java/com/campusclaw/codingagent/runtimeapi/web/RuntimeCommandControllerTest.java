@@ -335,6 +335,11 @@ class RuntimeCommandControllerTest {
                 List.of("场景"),
                 "v2");
         var skill = new SkillInfo("pdf", "skill-1", "v2", "description", null, "完整 Skill 正文", null, null, null, null);
-        return new PreparedAgentRuntime("agent", Path.of("/unread-private-path"), metadata, List.of(skill));
+        return new PreparedAgentRuntime(
+                "agent",
+                Path.of("/unread-private-path"),
+                metadata,
+                List.of(skill),
+                com.campusclaw.codingagent.runtimeapi.agent.AgentPromptTestFixtures.prompts("system"));
     }
 }

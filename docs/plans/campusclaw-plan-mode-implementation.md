@@ -1,10 +1,10 @@
 # CampusClaw 计划模式实施说明
 
-> 版本：1.3.0；日期：2026-09-16。
+> 版本：1.4.0；日期：2026-09-17。
 >
-> Java 变更前源码基线：`29ebec6a8cad99896414211cda28c6fffec71bee`。
+> 本次模式提示词变更前源码基线：`21c3f59be033e7bdd5506a2d9d48baa2581bc3c7`。
 >
-> 设计基线：`pi-mono-java-design@497d34a4f05def36d4e3c62085d9eb4848b70f69`。
+> 本次模式提示词设计基线：`pi-mono-java-design@648730b`。
 >
 > 既有计划模式实现提交：`17dbb20ae998c58c2b3f5ae19c254922e9f93210`；本轮延续分支合并基线：
 > `79cfa34daef20adfa13ae1bee7cc9c41ba5c9dc7`。
@@ -40,7 +40,8 @@ Plan 提示词先探索可查事实，只有影响方案的未知才提问，优
 | Agent 默认模式 | `runtime/MateServiceClient.java#AgentRuntime`、`runtime/AgentModeDeserializer.java`、`runtime/AgentRuntimeManager.java#toSettings` | mode 为严格字符串，缺省 build，显式 null 或非枚举值无效；发布至受管设置快照 |
 | Session 创建与读取 | `runtimeapi/session/RuntimeSessionService.java#newSession`、`RuntimeSessionResponseAssembler.java` | 新 Session 复制 Agent 默认模式；完整响应带 mode，已有 Session 不跟随 Agent 更新 |
 | 统一配置 | `runtimeapi/session/RuntimeSessionUpdateService.java#update`、`runtimeapi/persistence/MyBatisRuntimeSessionRepository.java#updateSession` | prepare 在锁外；锁内核对版本、状态和实际变化，原子提交配置及事件 |
-| 提示词组合 | `session/PlanPolicyPromptComposer.java#compose`、`session/ManagedAgentSession.java#applyMode` | 固定六个 classpath 资源启动时校验；从基础 Prompt 重新组合，避免重复追加 |
+| 提示词快照 | `runtimeapi/agent/RuntimeAgentPromptLoader.java#loadSnapshot`、`AgentPromptSnapshotDTO.java`、`runtime/AgentRuntimeManager.java#prepare` | 启动时校验两份内置模式资源；同一 Agent 锁内固定 BASE 与逐文件覆盖选择，业务文件仅在真正不存在时回退 |
+| 提示词组合 | `session/PlanPolicyPromptComposer.java#compose`、`session/ManagedAgentSession.java#applyMode` | 只消费执行准备时的不可变快照；批准、修订、重复切换和压缩不重新读盘或累计模式正文 |
 | 入口装配 | `tool/builtin/BuiltInToolProperties.java`、`session/AgentSessionFactory.java#create` | Runtime 默认包含 ExitPlanMode/TodoUpdate；plan/build 工具定义一致；Child/Cron 缺省 profile 保持既有集合 |
 | 实际执行模式 | `runtimeapi/event/RuntimeMessageEventService.java#startAccepted`、`runtimeapi/runtime/RuntimeSessionEngineRegistry.java` | 使用消息接受事务返回的 mode，启动前应用；批准后在返回工具结果前应用 build |
 | 计划工具 | `tool/plan/ExitPlanModeTool.java`、`tool/plan/PlanReviewPort.java` | 工具只等待窄端口决定，不依赖数据库或 HTTP；返回批准或修订结果 |
@@ -57,6 +58,18 @@ Plan 提示词先探索可查事实，只有影响方案的未知才提问，优
 底层 `modules/agent-core/src/main/java/com/campusclaw/agent/tool/AgentContext.java#systemPrompt` 读取同一 AgentState，
 `modules/agent-core/src/main/java/com/campusclaw/agent/loop/AgentLoop.java` 在每次 Provider 请求时组装 Context；因此批准后的 Prompt 更新可进入
 原执行的下一次模型请求。工具参数错误沿既有 Pipeline 转换为稳定工具失败，允许模型修正。
+
+### 模式提示词快照与业务覆盖
+
+classpath 只保留 `prompts/plan/PLAN.md` 和 `BUILD.md`。Runtime Main Agent 在 plan/build 中分别使用
+`BASE + 当前执行角色：Main Agent。 + 同名模式正文`；Child plan 使用自身 Agent 快照中的
+`BASE + 当前执行角色：Subagent；只向父 Agent 返回结果。 + PLAN.md`。Child build 与 Cron 保持 BASE，
+不追加模式正文。Composer 不按 AskUserQuestion 或 TodoUpdate 是否装配裁剪文件内容。
+
+每个业务 Agent 可以在自己的 `.campusclaw/PLAN.md`、`.campusclaw/BUILD.md` 中逐文件完整覆盖内置正文。
+覆盖文件不存在时仅对应模式回退；空白、目录、符号链接、非法 UTF-8、超过 1 MiB、无权限或读取失败都
+使准备失败，不能借重建删除错误文件后回退。刷新和重建保留两份合法可选文件，首次目录只有模式文件时也
+保留。当前执行持有 `AgentPromptSnapshotDTO`，磁盘后续变更只影响下一次新执行。
 
 ### 计划制作与执行
 
@@ -111,7 +124,7 @@ agent.todo_updated 使用不同事件 ID、同一个 Tool Result Entry，在同�
 目标关联和停止竞争处理属于安全加固。稳定元数据及仅记录实施进度属于产品约束。计划策略通过
 Prompt 实现，现有业务工具权限继续生效，不能据此宣称 plan 是强制只读沙箱。
 
-没有新增 Maven 或前端直接依赖。六个固定提示词位于
+没有新增 Maven 或前端直接依赖。两份固定模式提示词位于
 `modules/coding-agent-cli/src/main/resources/prompts/plan/`，由同步脚本一并进入公司镜像；
 数据库变更只进入首版全量安装 Schema；产品尚未发布，不提供迁移或升级脚本。模块 SQL 保留原有清理段；
 公司生成 SQL 沿用每张表一次 `DROP TABLE IF EXISTS` 紧邻 `CREATE TABLE` 的格式，不复制模块的集中清理段。
@@ -123,9 +136,36 @@ Agent.mode 元数据、统一 Session 更新、计划确认和结构化问答，
 真实业务工具联调。公共 Chat 适配必须把外部会话身份映射到 Runtime 资源，不能把内部 sessionId、eventId、
 toolCallId 或执行凭据直接透传给浏览器。Runtime 的生产接线和内部调试工作台可交付，不表示这些企业适配已实现。
 
+### BASE 通用行为发布待办
+
+本仓没有受版本管理的业务 `SYSTEM.md`；`AgentRuntimeManager` 将 Mate 返回的 `AgentRuntime.systemPrompt`
+发布为各 Agent 的受管 `SYSTEM.md`。因此下面三段必须由 Mate 业务 Agent 配置随本次迁移发布，本仓不能把
+它们当作已经上线，也不能据此声称 P15 已通过：
+
+```text
+在当前模式和授权范围内完成任务。先检查已有信息与工具能力，沿用已明确的目标和约束；可查询的事实自行查明，区分事实、假设和建议，不编造工具能力或执行结果。
+
+只为无法查明且影响下一步的信息或重要选择提问，优先一个问题；仅在独立问题必须同时解决时合并。Main Agent 使用可用的提问工具；工具未提供且必须回答时，用普通回复提问并结束，Subagent 将问题交给父 Agent，Cron 汇报缺失信息。无待决信息就继续，纯解释或状态查询直接回答。
+
+执行后完成必要验证，简洁说明实际结果、验证情况与未解决事项。失败、部分完成和无法验证时如实报告；工具返回成功或进度显示完成不能代替任务验收。工具结果用于继续工作，不将原始参数或 JSON 当作最终答复。
+```
+
+外部发布按以下步骤验收：
+
+1. 在 Mate 中把上述三段原文合入每个业务 Agent 的 `systemPrompt`，同时保留其身份和领域能力。
+2. 在部署窗口通过受控 Java 运维调用执行既有 `AgentRuntimeManager.refresh(agentId)`，或由部署方使用
+   既有受管目录发布流程；本仓没有公开刷新 API。确认新生成的 `.campusclaw/SYSTEM.md` 含三段完整文本，
+   且合法的业务 `PLAN.md`、`BUILD.md` 仍保留。
+3. 刷新后创建一条新执行。用受控 Provider 捕获最终 `Context.systemPrompt`，确认 BASE 三段各出现一次，
+   再按入口核对 Main Agent 角色和 PLAN/BUILD 正文；不要用刷新前的活动执行代替验证。
+4. 分别验证 plan、build、缺 AskUserQuestion/TodoUpdate、Subagent plan、Child build 和 Cron，确认不存在
+   通用行为缺口或重复注入。记录 Agent ID、refresh 结果、新执行 ID 和捕获文本摘要。
+
+完成以上外部步骤后才能关闭 P15；本仓单元测试只证明给定 BASE 会完整且不重复地进入模型请求。
+
 ## 验证
 
-Java、数据库、JAR、公司镜像及原 172 项前端验证对应 `9f785bea`；后续 Claw 前端交互补齐为 `fcae53829c2884ea1d3cc522c183f5a125a67f45`，独立复核其 189 项前端测试、类型检查和生产构建均通过。本次没有重跑未修改的 Java 与数据库。前端浏览器验收使用合成后端，
+Java、数据库、JAR、公司镜像及原 172 项前端验证对应 `9f785bea`；后续 Claw 前端交互补齐为 `fcae53829c2884ea1d3cc522c183f5a125a67f45`，独立复核其 189 项前端测试、类型检查和生产构建均通过。该固定版本当时没有重跑未修改的 Java 与数据库。前端浏览器验收使用合成后端，
 JAR HTTP 测试使用受控模型响应，均不等同于企业 mate-service 或真实模型遵循率验收。
 
 | 范围 | 必须证明的内容 | 当前记录 |
@@ -135,11 +175,19 @@ JAR HTTP 测试使用受控模型响应，均不等同于企业 mate-service 或
 | 实际 JAR HTTP | question → answer → 原 plan 根 → approve/build/TODO；并发回答、停止及历史同形 | 受控模型与真实 JAR/openGauss 探针通过；模型历史只含原 user 与可信 tool answer，问答展示事件未重复注入 |
 | 前端 | 严格协议、问题卡、模式与 Dock 交互、会话索引迁移、直接改名、重复提交和未知写入不重发 | `npm test`：19 文件、189 项通过；`npm run build` 通过；项目没有独立 lint script |
 | 独立契约验收 | 160 个共享帧、50 个字段/Unicode 边界、4 个 Java 实际投影、10 个 reducer 场景及浏览器交互 | 214 个 decoder 契约、10 个状态场景和 18 项浏览器验收通过；合成浏览器验收不替代企业公共 Chat |
-| 公司镜像 | 代码、SQL 和六个 Prompt 同步；公司头不变，每张表仅一条 DROP 且紧邻 CREATE | `sync-campusclaw.sh --no-verify` 及布局检查通过；公司编译因 `com.huawei.hicampus:NativeParent:26.0.0-SNAPSHOT` 无法解析而受阻，未进入源码编译 |
+| 公司镜像 | 代码、SQL 和模式 Prompt 同步；公司头不变，每张表仅一条 DROP 且紧邻 CREATE | 历史版本的 `sync-campusclaw.sh --no-verify` 及布局检查通过；公司编译因 `com.huawei.hicampus:NativeParent:26.0.0-SNAPSHOT` 无法解析而受阻，未进入源码编译 |
 
-Java 测试质量脚本 `check_test_quality.py` 在本机不可用，脚本检查未执行；新增和修改测试已人工
-核对断言有效性、被测对象、边界与清理。AST 检查之外，Unicode 转义和 record/interface 的排版
-另外人工核查；浏览器验收没有模拟系统输入法候选窗，但问题卡源码没有 Enter 提交处理。
+本次 1.4.0 变更的验证记录以实际分支日志为准：JDK 21 `test-compile` 与模式提示词定向测试通过；
+定向测试覆盖 Loader、Manager、Spring 装配、Composer、Factory/ManagedSession、Runtime Session、Child、
+Cron、ExitPlanMode 和 TodoUpdate，共 118 项，失败、错误、跳过均为 0。Spotless、main/test Checkstyle、
+JDK 21 编译、公司镜像同步和布局检查通过。公司镜像源码编译在读取项目模型前因本地无法解析
+`com.huawei.hicampus:NativeParent:26.0.0-SNAPSHOT` 而停止，未宣称编译通过。BASE 三段的 Mate 发布和
+新执行受控 Provider 验收仍是外部待办，P15 尚未通过。
+
+前一固定版本没有可用的 `check_test_quality.py`，仅人工核对测试。本次使用本机历史审查目录中的脚本副本
+辅助扫描 25 个变更测试文件：10 个 no-assertion 报告均由断言辅助方法或 AssertJ 异常链造成，100 个命名
+警告不符合本仓既有命名约定，人工复核后实际问题为 0。AST 检查之外，Unicode 转义和 record/interface
+的排版另外人工核查；浏览器验收没有模拟系统输入法候选窗，但问题卡源码没有 Enter 提交处理。
 编译或测试通过不能替代分层、状态竞争和契约审查。
 
 ## 版本历史
@@ -151,3 +199,4 @@ Java 测试质量脚本 `check_test_quality.py` 在本机不可用，脚本检�
 | 1.2.0 | 2026-09-15 | 完成 Claw 前端模式菜单、问题与方案卡、Dock 折叠、会话索引及 Sidebar 交互对齐。 |
 | 1.2.1 | 2026-09-15 | 公司初始化脚本每张表只保留建表前的一条 DROP，并校验无额外清理段。 |
 | 1.3.0 | 2026-09-16 | 逐题问答保留整批回答事务，提问工具展示汇聚到专用卡，并精简 Plan 澄清策略。 |
+| 1.4.0 | 2026-09-17 | 两份模式文件支持业务 Agent 独立覆盖并固定为执行快照，同时明确 BASE 外部发布验收。 |

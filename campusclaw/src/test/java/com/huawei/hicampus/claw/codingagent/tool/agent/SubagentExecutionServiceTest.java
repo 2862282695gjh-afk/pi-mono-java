@@ -264,7 +264,12 @@ class SubagentExecutionServiceTest {
 
     private PreparedAgentRuntime parentRuntime(AgentReference child) {
         AgentRuntime runtime = runtime(PARENT_ID, "parent", "1.0.0", true, List.of(child));
-        return new PreparedAgentRuntime(PARENT_ID, Path.of("agent", PARENT_ID), runtime, List.of());
+        return new PreparedAgentRuntime(
+                PARENT_ID,
+                Path.of("agent", PARENT_ID),
+                runtime,
+                List.of(),
+                com.huawei.hicampus.claw.codingagent.runtimeapi.agent.AgentPromptTestFixtures.prompts("parent"));
     }
 
     private PreparedAgentRuntime childRuntime(String version, boolean enabled) {
@@ -273,7 +278,12 @@ class SubagentExecutionServiceTest {
 
     private PreparedAgentRuntime childRuntime(String version, boolean enabled, List<String> bindingModels) {
         AgentRuntime runtime = runtime(CHILD_ID, "researcher", version, enabled, List.of(), bindingModels);
-        return new PreparedAgentRuntime(CHILD_ID, Path.of("agent", CHILD_ID), runtime, List.of());
+        return new PreparedAgentRuntime(
+                CHILD_ID,
+                Path.of("agent", CHILD_ID),
+                runtime,
+                List.of(),
+                com.huawei.hicampus.claw.codingagent.runtimeapi.agent.AgentPromptTestFixtures.prompts("child"));
     }
 
     private AgentRuntime runtime(
