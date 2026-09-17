@@ -30,9 +30,12 @@ import com.campusclaw.codingagent.tool.agent.SubagentExecutionContext;
 import com.campusclaw.codingagent.tool.agent.SubagentExecutionService;
 import com.campusclaw.codingagent.tool.builtin.ToolEntryPoint;
 import com.campusclaw.codingagent.tool.cron.AgentScopedCronToolFactory;
+import com.campusclaw.codingagent.tool.question.ShowcaseConfirmationAdapter;
+import com.campusclaw.codingagent.tool.question.ShowcaseConfirmationProperties;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 /**
@@ -59,15 +62,33 @@ public class RuntimeSessionEngineRegistry {
 
     private final Semaphore capacity;
 
+    private final ShowcaseConfirmationProperties showcase;
+
     public RuntimeSessionEngineRegistry(
             AgentSessionFactory sessionFactory,
             SubagentExecutionService subagentExecutionService,
             AgentScopedCronToolFactory cronToolFactory,
             RuntimeExecutionProperties properties) {
+        this(
+                sessionFactory,
+                subagentExecutionService,
+                cronToolFactory,
+                properties,
+                new ShowcaseConfirmationProperties());
+    }
+
+    @Autowired
+    public RuntimeSessionEngineRegistry(
+            AgentSessionFactory sessionFactory,
+            SubagentExecutionService subagentExecutionService,
+            AgentScopedCronToolFactory cronToolFactory,
+            RuntimeExecutionProperties properties,
+            ShowcaseConfirmationProperties showcase) {
         this.sessionFactory = sessionFactory;
         this.subagentExecutionService = subagentExecutionService;
         this.cronToolFactory = cronToolFactory;
         this.capacity = new Semaphore(properties.getMaxActive());
+        this.showcase = showcase;
     }
 
     public RuntimeSessionHolder register(
@@ -178,7 +199,13 @@ public class RuntimeSessionEngineRegistry {
         ManagedAgentSession session =
                 createSession(snapshot, model, thinking, execution, credentials, runtimeValidator);
         try {
-            execution.bindToolPermissions(RuntimeToolPermissionPolicy.from(session.runtime()));
+            RuntimeToolPermissionPolicy permissions = RuntimeToolPermissionPolicy.from(session.runtime());
+            execution.bindToolPermissions(permissions);
+            String trustedToolId = RuntimeToolPermissionPolicy.uniqueAllowedToolId(
+                            session.runtime(),
+                            com.campusclaw.common.constant.ClawConstants.RuntimeApi.SHOWCASE_CONFIRMATION_TOOL_NAME)
+                    .orElse(null);
+            execution.showcaseConfirmation().ifPresent(adapter -> adapter.bindPermissions(permissions, trustedToolId));
             session.agent().replaceMessages(messages);
             RuntimeSessionHolder holder = new RuntimeSessionHolder(sessionId, snapshot, session, thinking);
             execution.installModeApplier(
@@ -207,6 +234,9 @@ public class RuntimeSessionEngineRegistry {
             MateCredentials credentials,
             Consumer<PreparedAgentRuntime> runtimeValidator) {
         ThinkingLevel level = thinking ? ThinkingLevel.MEDIUM : ThinkingLevel.OFF;
+        var confirmation =
+                new ShowcaseConfirmationAdapter(showcase.isConfirmWithUserEnabled(), ToolEntryPoint.RUNTIME, execution);
+        execution.installShowcaseConfirmation(confirmation);
         var request = new ManagedAgentSessionRequest(
                 snapshot.agentId(),
                 ToolEntryPoint.RUNTIME,
@@ -224,7 +254,8 @@ public class RuntimeSessionEngineRegistry {
                 List.of(),
                 execution.mode(),
                 (runtime, ignored) -> new com.campusclaw.codingagent.tool.plan.ExitPlanModeTool(execution),
-                (runtime, ignored) -> new com.campusclaw.codingagent.tool.question.AskUserQuestionTool(execution));
+                (runtime, ignored) -> new com.campusclaw.codingagent.tool.question.AskUserQuestionTool(execution),
+                confirmation);
         return sessionFactory.create(request);
     }
 

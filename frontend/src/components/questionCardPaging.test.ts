@@ -58,4 +58,44 @@ describe('QuestionCard paging', () => {
     expect(html).not.toContain('&quot;selected&quot;');
     expect(html).not.toContain('提交回答');
   });
+
+  it('renders the showcase label as text, preserves context JSON and exposes only textarea plus Confirm', async () => {
+    const html = await renderToString(createSSRApp({ render: () => h(QuestionCard, {
+      turn: { key: 'showcase', kind: 'question', eventId: 'showcase-question', sourceEventId: 'root-a',
+        label: '<b>driver_design_confirm</b>', context: { '问题': '不要提取我', '空值': null, '嵌套': [1, { ok: true }] } },
+      sessionId: 'session-a', actionable: true, pending: false,
+    }) }));
+
+    expect(html).toContain('&lt;b&gt;driver_design_confirm&lt;/b&gt;');
+    expect(html).toContain('aria-label="确认上下文"');
+    expect(html).toContain('&quot;问题&quot;: &quot;不要提取我&quot;');
+    expect(html).toContain('<textarea');
+    expect(html).toContain('type="button"');
+    expect(html).toContain('确认</button>');
+    expect(html).not.toContain('question-options');
+    expect(html).not.toContain('下一步');
+    expect(html.match(/等待回答/gu)).toHaveLength(1);
+  });
+
+  it('distinguishes omitted and empty showcase context and keeps an answered value read-only', async () => {
+    const omitted = await renderToString(createSSRApp({ render: () => h(QuestionCard, {
+      turn: { key: 'omitted', kind: 'question', eventId: 'omitted', sourceEventId: 'root-a', label: '' },
+      sessionId: 'session-a', actionable: true, pending: false,
+    }) }));
+    const empty = await renderToString(createSSRApp({ render: () => h(QuestionCard, {
+      turn: { key: 'empty', kind: 'question', eventId: 'empty', sourceEventId: 'root-a', label: '', context: {} },
+      sessionId: 'session-a', actionable: false, pending: false,
+    }) }));
+    const answered = await renderToString(createSSRApp({ render: () => h(QuestionCard, {
+      turn: { key: 'answered', kind: 'question', eventId: 'answered', sourceEventId: 'root-a', label: '确认',
+        answer: [{ id: 'confirmation', selected: [], custom: '继续执行' }] },
+      sessionId: 'session-a', actionable: false, pending: false,
+    }) }));
+
+    expect(omitted).not.toContain('确认上下文');
+    expect(empty).toContain('确认上下文');
+    expect(empty).toContain('{}</pre>');
+    expect(answered).toContain('继续执行');
+    expect(answered).not.toContain('>确认</button>');
+  });
 });

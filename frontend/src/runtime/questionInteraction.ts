@@ -1,4 +1,4 @@
-import type { QuestionAnswer, RuntimeQuestion, UserEvent } from '../types/runtime';
+import type { AgentQuestionPayload, QuestionAnswer, RuntimeQuestion, UserEvent } from '../types/runtime';
 import { RuntimeApiError } from '../types/runtime';
 import { javaStrip } from './protocol';
 
@@ -18,6 +18,8 @@ export interface SingleQuestionDraftValidation {
   answer?: QuestionAnswer;
   error?: string;
 }
+
+export const SHOWCASE_CONFIRMATION_ID = 'confirmation';
 
 export function emptyQuestionDrafts(questions: RuntimeQuestion[]): QuestionDrafts {
   const drafts = Object.create(null) as QuestionDrafts;
@@ -72,6 +74,25 @@ export function normalizeQuestionAnswers(questions: RuntimeQuestion[], answers: 
   const validation = validateQuestionDrafts(questions, drafts);
   if (!validation.answers) throw invalidQuestionAnswer();
   return validation.answers;
+}
+
+export function validateShowcaseConfirmationDraft(draft: QuestionDraft | undefined): SingleQuestionDraftValidation {
+  const custom = javaStrip(draft?.custom ?? '');
+  if (custom.length > 4096) return { error: '回答最多 4096 个字符。' };
+  if (!custom) return { error: '请输入回答。' };
+  return { answer: { id: SHOWCASE_CONFIRMATION_ID, selected: [], custom } };
+}
+
+export function normalizeQuestionEventAnswers(payload: AgentQuestionPayload, answers: QuestionAnswer[]): QuestionAnswer[] {
+  if ('questions' in payload && payload.questions) return normalizeQuestionAnswers(payload.questions, answers);
+  if (answers.length !== 1) throw invalidQuestionAnswer();
+  const answer = answers[0];
+  if (answer.id !== SHOWCASE_CONFIRMATION_ID || !Array.isArray(answer.selected) || answer.selected.length) {
+    throw invalidQuestionAnswer();
+  }
+  const validation = validateShowcaseConfirmationDraft({ selected: [], custom: answer.custom ?? '' });
+  if (!validation.answer) throw invalidQuestionAnswer();
+  return [validation.answer];
 }
 
 export function copyQuestionDrafts(drafts: QuestionDrafts): QuestionDrafts {

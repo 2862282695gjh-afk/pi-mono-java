@@ -72,14 +72,28 @@ export interface PlanTurn {
   lifecycle?: 'stopping' | 'stopped' | 'failed' | 'ended';
 }
 
-export interface QuestionTurn {
+interface QuestionTurnBase {
   key: string;
   kind: 'question';
   eventId: string;
   sourceEventId: string;
-  questions: import('./runtime').RuntimeQuestion[];
   answer?: import('./runtime').QuestionAnswer[];
   lifecycle?: 'stopping' | 'closed';
 }
 
-export type ConversationTurn = UserTurn | ThinkingTurn | AssistantTurn | ActivityTurn | NoticeTurn | PlanTurn | QuestionTurn;
+export type StructuredQuestionTurn = QuestionTurnBase & {
+  questions: import('./runtime').RuntimeQuestion[];
+  label?: never;
+  context?: never;
+};
+
+export type ShowcaseQuestionTurn = QuestionTurnBase & {
+  label: string;
+  context?: Record<string, unknown>;
+  questions?: never;
+};
+
+export type QuestionTurn = StructuredQuestionTurn | ShowcaseQuestionTurn;
+
+export type ConversationTurn = UserTurn | ThinkingTurn | AssistantTurn | ActivityTurn | NoticeTurn | PlanTurn
+  | QuestionTurn;

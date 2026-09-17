@@ -13,6 +13,7 @@ import com.huawei.hicampus.claw.ai.types.Model;
 import com.huawei.hicampus.claw.ai.types.ThinkingLevel;
 import com.huawei.hicampus.claw.codingagent.runtime.PreparedAgentRuntime;
 import com.huawei.hicampus.claw.codingagent.tool.mate.MateToolSessionState;
+import com.huawei.hicampus.claw.codingagent.tool.question.ShowcaseConfirmationAdapter;
 import com.huawei.hicampus.claw.codingagent.tool.workspace.AgentWorkspaceBoundary;
 
 /**
@@ -30,6 +31,7 @@ import com.huawei.hicampus.claw.codingagent.tool.workspace.AgentWorkspaceBoundar
  * @param agentToolFactory 当前父 Session 的 Agent 工具工厂
  * @param exitPlanModeToolFactory 当前 Runtime 的计划审核工具工厂
  * @param askUserQuestionToolFactory 当前 Runtime 的用户提问工具工厂
+ * @param showcaseConfirmationAdapter 当前 Runtime 的展示确认适配器
  *
  * @version [br_eCampusCore 26.0.0, 2026/08/23]
  * @since [br_eCampusCore 26.0.0]
@@ -46,7 +48,8 @@ public record ToolAssemblyContext(
         Supplier<AgentTool> cronToolFactory,
         Supplier<AgentTool> agentToolFactory,
         Supplier<AgentTool> exitPlanModeToolFactory,
-        Supplier<AgentTool> askUserQuestionToolFactory) {
+        Supplier<AgentTool> askUserQuestionToolFactory,
+        ShowcaseConfirmationAdapter showcaseConfirmationAdapter) {
 
     public ToolAssemblyContext {
         skillIdsByName = skillIdsByName == null ? Map.of() : Map.copyOf(skillIdsByName);
@@ -76,6 +79,7 @@ public record ToolAssemblyContext(
                 cronToolFactory,
                 agentToolFactory,
                 null,
+                null,
                 null);
     }
 
@@ -103,6 +107,36 @@ public record ToolAssemblyContext(
                 cronToolFactory,
                 agentToolFactory,
                 exitPlanModeToolFactory,
+                null,
+                null);
+    }
+
+    public ToolAssemblyContext(
+            ToolEntryPoint entryPoint,
+            PreparedAgentRuntime runtime,
+            Model model,
+            ThinkingLevel thinkingLevel,
+            AgentWorkspaceBoundary workspaceBoundary,
+            Map<String, String> skillIdsByName,
+            List<String> childAgentNames,
+            MateToolSessionState mateToolSessionState,
+            Supplier<AgentTool> cronToolFactory,
+            Supplier<AgentTool> agentToolFactory,
+            Supplier<AgentTool> exitPlanModeToolFactory,
+            Supplier<AgentTool> askUserQuestionToolFactory) {
+        this(
+                entryPoint,
+                runtime,
+                model,
+                thinkingLevel,
+                workspaceBoundary,
+                skillIdsByName,
+                childAgentNames,
+                mateToolSessionState,
+                cronToolFactory,
+                agentToolFactory,
+                exitPlanModeToolFactory,
+                askUserQuestionToolFactory,
                 null);
     }
 }

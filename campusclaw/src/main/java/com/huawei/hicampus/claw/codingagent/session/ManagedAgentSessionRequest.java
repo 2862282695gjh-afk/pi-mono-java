@@ -18,6 +18,7 @@ import com.huawei.hicampus.claw.ai.types.ThinkingLevel;
 import com.huawei.hicampus.claw.codingagent.common.client.mate.MateCredentials;
 import com.huawei.hicampus.claw.codingagent.runtime.PreparedAgentRuntime;
 import com.huawei.hicampus.claw.codingagent.tool.builtin.ToolEntryPoint;
+import com.huawei.hicampus.claw.codingagent.tool.question.ShowcaseConfirmationAdapter;
 
 /**
  * 保存创建公共 Agent Session 所需的不可变参数。
@@ -35,6 +36,7 @@ import com.huawei.hicampus.claw.codingagent.tool.builtin.ToolEntryPoint;
  * @param mode 当前执行模式快照
  * @param exitPlanModeToolFactory Runtime 计划审核工具工厂
  * @param askUserQuestionToolFactory Runtime 用户提问工具工厂
+ * @param showcaseConfirmationAdapter Runtime 展示确认适配器
  * @version [br_eCampusCore 26.0.0, 2026/08/24]
  * @since [br_eCampusCore 26.0.0]
  */
@@ -51,7 +53,8 @@ public record ManagedAgentSessionRequest(
         List<AfterToolCallHandler> afterHooks,
         String mode,
         BiFunction<PreparedAgentRuntime, Model, AgentTool> exitPlanModeToolFactory,
-        BiFunction<PreparedAgentRuntime, Model, AgentTool> askUserQuestionToolFactory) {
+        BiFunction<PreparedAgentRuntime, Model, AgentTool> askUserQuestionToolFactory,
+        ShowcaseConfirmationAdapter showcaseConfirmationAdapter) {
 
     public ManagedAgentSessionRequest {
         if (agentId == null || agentId.isBlank()) {
@@ -91,6 +94,7 @@ public record ManagedAgentSessionRequest(
                 afterHooks,
                 com.huawei.hicampus.claw.common.constant.ClawConstants.Agent.MODE_BUILD,
                 null,
+                null,
                 null);
     }
 
@@ -120,6 +124,38 @@ public record ManagedAgentSessionRequest(
                 afterHooks,
                 mode,
                 exitPlanModeToolFactory,
+                null,
+                null);
+    }
+
+    public ManagedAgentSessionRequest(
+            String agentId,
+            ToolEntryPoint entryPoint,
+            Function<PreparedAgentRuntime, Model> modelResolver,
+            ThinkingLevel thinkingLevel,
+            MateCredentials mateCredentials,
+            BiFunction<PreparedAgentRuntime, Model, AgentTool> cronToolFactory,
+            BiFunction<PreparedAgentRuntime, Model, AgentTool> agentToolFactory,
+            Consumer<PreparedAgentRuntime> runtimeValidator,
+            List<BeforeToolCallHandler> beforeHooks,
+            List<AfterToolCallHandler> afterHooks,
+            String mode,
+            BiFunction<PreparedAgentRuntime, Model, AgentTool> exitPlanModeToolFactory,
+            BiFunction<PreparedAgentRuntime, Model, AgentTool> askUserQuestionToolFactory) {
+        this(
+                agentId,
+                entryPoint,
+                modelResolver,
+                thinkingLevel,
+                mateCredentials,
+                cronToolFactory,
+                agentToolFactory,
+                runtimeValidator,
+                beforeHooks,
+                afterHooks,
+                mode,
+                exitPlanModeToolFactory,
+                askUserQuestionToolFactory,
                 null);
     }
 
@@ -138,6 +174,7 @@ public record ManagedAgentSessionRequest(
                 List.of(),
                 List.of(),
                 com.huawei.hicampus.claw.common.constant.ClawConstants.Agent.MODE_BUILD,
+                null,
                 null,
                 null);
     }

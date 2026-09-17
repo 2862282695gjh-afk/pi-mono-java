@@ -15,6 +15,7 @@ import com.campusclaw.codingagent.runtimeapi.persistence.RuntimeSessionRepositor
 import com.campusclaw.codingagent.tool.question.QuestionAnswerDTO;
 import com.campusclaw.codingagent.tool.question.QuestionAnswerResultDTO;
 import com.campusclaw.codingagent.tool.question.QuestionRequestParser;
+import com.campusclaw.common.constant.ClawConstants;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -30,6 +31,11 @@ import org.springframework.stereotype.Service;
 @Service
 public class RuntimeUserQuestionService {
     private static final Set<String> QUESTION_EVENT_FIELDS = Set.of("sourceEventId", "toolCallId", "questions");
+
+    private static final Set<String> SHOWCASE_EVENT_FIELDS = Set.of("sourceEventId", "toolCallId", "label");
+
+    private static final Set<String> SHOWCASE_CONTEXT_EVENT_FIELDS =
+            Set.of("sourceEventId", "toolCallId", "label", "context");
 
     private final RuntimeSessionRepository sessions;
 
@@ -64,7 +70,10 @@ public class RuntimeUserQuestionService {
         }
         try {
             JsonNode payload = objectMapper.readTree(event.get().getPayload());
-            requireQuestionPayload(payload);
+            if (isShowcasePayload(payload)) {
+                return normalizeShowcaseAnswers(answers);
+            }
+            requireStructuredQuestionPayload(payload);
             Map<String, Object> arguments = Map.of(
                     "questions",
                     objectMapper.convertValue(payload.get("questions"), new TypeReference<List<Object>>() {}));
@@ -76,17 +85,41 @@ public class RuntimeUserQuestionService {
         }
     }
 
-    private static void requireQuestionPayload(JsonNode payload) {
+    private QuestionAnswerResultDTO normalizeShowcaseAnswers(List<QuestionAnswerDTO> answers) {
+        return parser.normalizeTextAnswer(ClawConstants.RuntimeApi.SHOWCASE_CONFIRMATION_ANSWER_ID, answers);
+    }
+
+    private static boolean isShowcasePayload(JsonNode payload) {
+        if (payload == null || !payload.isObject()) {
+            return false;
+        }
+        Set<String> names = fieldNames(payload);
+        if (!names.equals(SHOWCASE_EVENT_FIELDS) && !names.equals(SHOWCASE_CONTEXT_EVENT_FIELDS)) {
+            return false;
+        }
+        boolean identityValid = payload.get("sourceEventId").isTextual()
+                && payload.get("toolCallId").isTextual()
+                && payload.get("label").isTextual();
+        return identityValid
+                && (!payload.has("context") || payload.get("context").isObject());
+    }
+
+    private static void requireStructuredQuestionPayload(JsonNode payload) {
         if (payload == null || !payload.isObject()) {
             throw new IllegalArgumentException("question event payload is invalid");
         }
-        Set<String> names = new HashSet<>();
-        payload.fieldNames().forEachRemaining(names::add);
+        Set<String> names = fieldNames(payload);
         if (!names.equals(QUESTION_EVENT_FIELDS)
                 || !payload.get("sourceEventId").isTextual()
                 || !payload.get("toolCallId").isTextual()
                 || !payload.get("questions").isArray()) {
             throw new IllegalArgumentException("question event payload is invalid");
         }
+    }
+
+    private static Set<String> fieldNames(JsonNode payload) {
+        Set<String> names = new HashSet<>();
+        payload.fieldNames().forEachRemaining(names::add);
+        return names;
     }
 }

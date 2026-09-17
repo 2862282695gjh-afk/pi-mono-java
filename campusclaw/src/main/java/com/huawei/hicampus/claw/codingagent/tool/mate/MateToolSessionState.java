@@ -6,6 +6,7 @@ package com.huawei.hicampus.claw.codingagent.tool.mate;
 
 import com.huawei.hicampus.claw.codingagent.common.client.mate.MateCredentials;
 import com.huawei.hicampus.claw.codingagent.common.client.mate.MateToolClient;
+import com.huawei.hicampus.claw.codingagent.tool.question.ShowcaseConfirmationAdapter;
 
 /**
  * 保存单个 Session 共享的 Mate 发现状态并按需创建工具实例。
@@ -32,6 +33,12 @@ public class MateToolSessionState {
     }
 
     public CallMateTool createCallTool() {
-        return new CallMateTool(client, credentials, discovery);
+        return createCallTool(new ShowcaseConfirmationAdapter(
+                false, com.huawei.hicampus.claw.codingagent.tool.builtin.ToolEntryPoint.RUNTIME, null));
+    }
+
+    public CallMateTool createCallTool(ShowcaseConfirmationAdapter confirmation) {
+        confirmation.bindDiscovery(discovery);
+        return new CallMateTool(client, credentials, discovery, confirmation);
     }
 }

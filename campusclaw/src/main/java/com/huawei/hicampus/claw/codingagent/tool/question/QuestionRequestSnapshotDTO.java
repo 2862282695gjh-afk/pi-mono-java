@@ -6,15 +6,57 @@ package com.huawei.hicampus.claw.codingagent.tool.question;
 
 import java.util.List;
 
+import com.fasterxml.jackson.databind.JsonNode;
+
 /**
- * 单次 AskUserQuestion 调用的不可变问题快照。
- *
- * @param questions 保持调用顺序的问题
+ * 单次用户问题调用的不可变载荷快照。
  * @version [br_eCampusCore 26.0.0, 2026/09/15]
  * @since [br_eCampusCore 26.0.0]
  */
-public record QuestionRequestSnapshotDTO(List<QuestionDTO> questions) {
-    public QuestionRequestSnapshotDTO {
-        questions = List.copyOf(questions);
+public final class QuestionRequestSnapshotDTO {
+    private final List<QuestionDTO> questions;
+
+    private final String label;
+
+    private final JsonNode context;
+
+    private final boolean showcaseConfirmation;
+
+    public QuestionRequestSnapshotDTO(List<QuestionDTO> questions) {
+        this.questions = List.copyOf(questions);
+        this.label = null;
+        this.context = null;
+        this.showcaseConfirmation = false;
+    }
+
+    private QuestionRequestSnapshotDTO(String label, JsonNode context) {
+        this.questions = List.of();
+        this.label = java.util.Objects.requireNonNull(label, "label");
+        this.context = context == null ? null : context.deepCopy();
+        this.showcaseConfirmation = true;
+    }
+
+    public static QuestionRequestSnapshotDTO showcaseConfirmation(String label, JsonNode context) {
+        return new QuestionRequestSnapshotDTO(label, context);
+    }
+
+    public List<QuestionDTO> questions() {
+        return questions;
+    }
+
+    public boolean isShowcaseConfirmation() {
+        return showcaseConfirmation;
+    }
+
+    public String label() {
+        return label;
+    }
+
+    public boolean hasContext() {
+        return context != null;
+    }
+
+    public JsonNode context() {
+        return context == null ? null : context.deepCopy();
     }
 }

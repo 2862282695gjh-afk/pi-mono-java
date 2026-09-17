@@ -1,6 +1,6 @@
 # CampusClaw Frontend
 
-v0.17.0，Vue 3 + TypeScript + Vite 的内部 Claw Runtime 联调工作台。
+v0.18.0，Vue 3 + TypeScript + Vite 的内部 Claw Runtime 联调工作台。
 保留 O1 暖灰界面，提供 Session Events、Slash、工具确认、计划审核与恢复。仅用于受控开发环境，
 不作为生产 Mate 产品前端或安全边界。
 
@@ -13,6 +13,7 @@ v0.17.0，Vue 3 + TypeScript + Vite 的内部 Claw Runtime 联调工作台。
 - Composer 工具栏常驻 Build/Plan 模式菜单；模式、模型和思考通过统一 Session POST 更新并携带 ETag，900px 以下收纳模型与思考设置。
 - 完整计划卡、原始 Markdown 复制、批准并执行、修改意见；复制失败可见且不改变审核状态，草稿按 Session 和计划事件隔离。
 - 问题卡一次显示一题，支持前后导航，末题一次提交整批答案；已回答后显示摘要并可展开权威答案。回答不会批准计划。校验聚焦首个错误，提交与接受状态管理焦点和单次播报，客户端 DOM 身份不使用协议 question id。
+- Showcase 的 `agent.question` label/context 变体显示原始标签和格式化 JSON 上下文，只提供“你的回答”和“确认”；精确关联的 `confirm_with_user` CallMateTool 外壳由问题卡吸收，其他 CallMateTool 保持可见。
 - 仅消费 `agent.todo_updated` 更新实施任务完整清单；新根消息重置，终态保留最终快照。任务清单和命令结果可分别折叠，Slash 清单打开时临时收起并在关闭后恢复选择。
 - 完整事件覆盖预览；无回执保留草稿并明确结果未知，断流只重读、不重发。
 - 空消息首字符 `/` 打开精简清单；名称不带前导斜杠，选中后显示可更换、删除的标签。
@@ -104,6 +105,7 @@ VITE_BACKEND_URL=http://127.0.0.1:4319 VITE_CAMPUSCLAW_AGENT_ID=agent-fixture VI
 ```
 
 打开 `http://127.0.0.1:5177`。输入消息可验收确认等待→允许/拒绝→续跑，也可停止。
+精确输入 `showcase确认` 可验收业务确认问题卡、回答提交和原执行续跑；该 fixture 保留 `Session.state=running` 的等待语义，供 1440px 与 390px 布局检查。
 输入 / 验收清单与命令结果。fixture 不代表服务端校验、授权、并发或持久化实现。
 Vite 构建不引用 fixture 脚本；没有生产 Mock fallback。
 
@@ -111,6 +113,7 @@ Vite 构建不引用 fixture 脚本；没有生产 Mock fallback。
 
 [开发设置与 Build/Plan 交互](../docs/designs/frontend-experience.md)记录持久化、布局、交互及本次验证。
 [计划模式实施说明](../docs/plans/campusclaw-plan-mode-implementation.md)记录源码接线与验证边界。
+[Showcase 业务确认实施说明](../docs/plans/showcase-confirm-with-user-implementation.md)记录临时开关、前后端接线与契约验证边界。
 浏览器契约 fixture 与组件测试只证明前端行为；真实 Runtime/JAR、数据库及企业 Mate 联调分别记录。
 
 ```bash

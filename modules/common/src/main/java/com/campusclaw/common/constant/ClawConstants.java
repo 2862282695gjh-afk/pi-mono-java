@@ -179,6 +179,10 @@ public final class ClawConstants {
 
         public static final String USER_QUESTION_UNAVAILABLE_ERROR_CODE = "USER_QUESTION_UNAVAILABLE";
 
+        public static final String SHOWCASE_CONFIRMATION_TOOL_NAME = "confirm_with_user";
+
+        public static final String SHOWCASE_CONFIRMATION_ANSWER_ID = "confirmation";
+
         public static final Set<String> TOOL_ERROR_CODES = Set.of(
                 TOOL_CALL_DENIED_ERROR_CODE,
                 TOOL_ARGUMENTS_INVALID_ERROR_CODE,

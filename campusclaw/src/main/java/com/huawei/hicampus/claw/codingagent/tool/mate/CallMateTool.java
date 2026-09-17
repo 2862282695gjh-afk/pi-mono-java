@@ -16,6 +16,7 @@ import com.huawei.hicampus.claw.ai.types.ContentBlock;
 import com.huawei.hicampus.claw.ai.types.TextContent;
 import com.huawei.hicampus.claw.codingagent.common.client.mate.MateCredentials;
 import com.huawei.hicampus.claw.codingagent.common.client.mate.MateToolClient;
+import com.huawei.hicampus.claw.codingagent.tool.question.ShowcaseConfirmationAdapter;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -36,10 +37,26 @@ public class CallMateTool implements AgentTool {
 
     private final MateToolDiscovery discovery;
 
+    private final ShowcaseConfirmationAdapter confirmation;
+
     public CallMateTool(MateToolClient client, MateCredentials credentials, MateToolDiscovery discovery) {
+        this(
+                client,
+                credentials,
+                discovery,
+                new ShowcaseConfirmationAdapter(
+                        false, com.huawei.hicampus.claw.codingagent.tool.builtin.ToolEntryPoint.RUNTIME, null));
+    }
+
+    public CallMateTool(
+            MateToolClient client,
+            MateCredentials credentials,
+            MateToolDiscovery discovery,
+            ShowcaseConfirmationAdapter confirmation) {
         this.client = client;
         this.credentials = credentials;
         this.discovery = discovery;
+        this.confirmation = confirmation;
     }
 
     @Override
@@ -86,6 +103,11 @@ public class CallMateTool implements AgentTool {
     public AgentToolResult execute(
             String toolCallId, Map<String, Object> params, CancellationToken signal, AgentToolUpdateCallback onUpdate)
             throws Exception {
+        var localAnswer = confirmation.await(toolCallId, params, signal);
+        if (localAnswer.isPresent()) {
+            String content = MAPPER.writeValueAsString(Map.of("content", localAnswer.get()));
+            return new AgentToolResult(List.<ContentBlock>of(new TextContent(content)), null);
+        }
         ensureNotCancelled(signal);
         String toolName = (String) params.get("tool");
         Map<String, Object> args =

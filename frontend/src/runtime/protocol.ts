@@ -124,7 +124,7 @@ export function decodeEvent(value: unknown, history = false): RuntimeEvent {
     'agent.tool_result': ['toolCallId', 'content', 'isError', 'errorCode', 'sourceEventId'],
     'agent.plan': ['toolCallId', 'content', 'sourceEventId'],
     'agent.todo_updated': ['toolCallId', 'todos', 'sourceEventId'],
-    'agent.question': ['toolCallId', 'questions', 'sourceEventId'],
+    'agent.question': ['toolCallId', 'questions', 'label', 'context', 'sourceEventId'],
     'session.status_idle': ['reason', 'sourceEventId', 'errorCode', 'message'],
     'session.model_changed': ['previousModelId', 'modelId', 'reason'],
     'session.thinking_changed': ['previousThinking', 'thinking', 'reason'],
@@ -214,10 +214,18 @@ export function decodeEvent(value: unknown, history = false): RuntimeEvent {
       if (active > 1) invalidResponse();
       break;
     }
-    case 'agent.question':
+    case 'agent.question': {
       nonempty(data.toolCallId);
-      data.questions = decodeQuestions(data.questions);
+      const hasQuestions = Object.hasOwn(data, 'questions');
+      const hasLabel = Object.hasOwn(data, 'label');
+      if (hasQuestions === hasLabel || (Object.hasOwn(data, 'context') && !hasLabel)) invalidResponse();
+      if (hasQuestions) data.questions = decodeQuestions(data.questions);
+      else {
+        text(data.label);
+        if (Object.hasOwn(data, 'context')) record(data.context);
+      }
       break;
+    }
     case 'session.status_idle':
       oneOf(data.reason, ['done', 'failed', 'terminated', 'confirming']);
       if (data.reason === 'failed') { nonempty(data.errorCode); nonempty(data.message); }

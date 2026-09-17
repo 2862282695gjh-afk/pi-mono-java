@@ -25,6 +25,7 @@ import com.huawei.hicampus.claw.codingagent.tool.plan.PlanReviewPort;
 import com.huawei.hicampus.claw.codingagent.tool.plan.PlanReviewResultDTO;
 import com.huawei.hicampus.claw.codingagent.tool.question.QuestionAnswerResultDTO;
 import com.huawei.hicampus.claw.codingagent.tool.question.QuestionRequestSnapshotDTO;
+import com.huawei.hicampus.claw.codingagent.tool.question.ShowcaseConfirmationAdapter;
 import com.huawei.hicampus.claw.codingagent.tool.question.UserQuestionException;
 import com.huawei.hicampus.claw.codingagent.tool.question.UserQuestionPort;
 import com.huawei.hicampus.claw.common.constant.ClawConstants;
@@ -64,6 +65,8 @@ public class RuntimeActiveExecution implements PlanReviewPort, UserQuestionPort 
     private BeforeToolCallHandler confirmationHandler;
 
     private final RuntimePendingInteraction pending = new RuntimePendingInteraction();
+
+    private ShowcaseConfirmationAdapter showcaseConfirmation;
 
     private String mode = ClawConstants.Agent.MODE_BUILD;
 
@@ -142,7 +145,35 @@ public class RuntimeActiveExecution implements PlanReviewPort, UserQuestionPort 
         confirmationHandler = Objects.requireNonNull(handler, "confirmationHandler");
     }
 
+    public synchronized void installShowcaseConfirmation(ShowcaseConfirmationAdapter adapter) {
+        if (showcaseConfirmation != null) {
+            throw new IllegalStateException("showcase confirmation is already installed");
+        }
+        showcaseConfirmation = Objects.requireNonNull(adapter, "adapter");
+    }
+
+    public synchronized Optional<QuestionRequestSnapshotDTO> preparedShowcaseQuestion(ToolCall call) {
+        return showcaseConfirmation == null ? Optional.empty() : showcaseConfirmation.prepared(call);
+    }
+
+    public synchronized Optional<ShowcaseConfirmationAdapter> showcaseConfirmation() {
+        return Optional.ofNullable(showcaseConfirmation);
+    }
+
     public BeforeToolCallResult beforeToolCall(BeforeToolCallContext context) throws Exception {
+        ShowcaseConfirmationAdapter adapter;
+        synchronized (this) {
+            adapter = showcaseConfirmation;
+        }
+        if (adapter != null && adapter.matches(context.toolCall())) {
+            adapter.prepare(context.toolCall());
+            try {
+                return requireConfirmationHandler().handle(context);
+            } catch (Exception error) {
+                adapter.clearPrepared(context.toolCall().id());
+                throw error;
+            }
+        }
         if (BuiltInToolName.EXIT_PLAN_MODE
                         .externalName()
                         .equals(context.toolCall().name())
@@ -263,6 +294,7 @@ public class RuntimeActiveExecution implements PlanReviewPort, UserQuestionPort 
     }
 
     public void cancelQuestion(Throwable failure) {
+        showcaseConfirmation().ifPresent(ShowcaseConfirmationAdapter::clearPrepared);
         CompletableFuture<?> future = pending.cancel(RuntimePendingInteraction.Kind.USER_QUESTION);
         if (future != null) {
             future.completeExceptionally(failure);

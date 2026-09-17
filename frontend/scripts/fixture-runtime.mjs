@@ -5,8 +5,10 @@ let sequence = 0;
 let version = 1;
 let history = [];
 let rootId = '';
+let showcaseQuestionId = '';
+let showcaseToolCallId = '';
 const session = { sessionId: 'session-fixture', agentId: 'agent-fixture', displayName: null,
-  modelId: 'model-primary', state: 'idle', thinking: true, createdAt: new Date().toISOString() };
+  modelId: 'model-primary', state: 'idle', thinking: true, mode: 'build', createdAt: new Date().toISOString() };
 const make = (type, data = {}) => ({ eventId: `fixture-${++sequence}`, type, createdAt: new Date().toISOString(), ...data });
 const json = (response, result, status = 200, headers = {}) => {
   response.writeHead(status, { 'Content-Type': 'application/json', ...headers });
@@ -23,11 +25,28 @@ function stream(response, events) {
 function startMessage(response, input) {
   const receipt = make('user.message', { content: input.content });
   rootId = receipt.eventId; session.state = 'running'; version++;
+  const text = input.content.find((block) => block.type === 'text')?.text.trim();
+  if (text === 'showcase确认') return startShowcaseConfirmation(response, receipt);
   stream(response, [receipt,
     make('agent.thinking', { phase: 'completed', sourceEventId: rootId, content: '先核对巡检范围，再查询公开的园区记录。' }),
     make('agent.tool_call', { sourceEventId: rootId, toolCallId: `tool-${rootId}`, toolName: 'CallMateTool',
       arguments: { tool: 'query_inspections', args: { campus: '东区' } }, requiresConfirmation: true }),
     make('session.status_idle', { sourceEventId: rootId, reason: 'confirming' }),
+  ]);
+}
+function startShowcaseConfirmation(response, receipt) {
+  showcaseToolCallId = `tool-${rootId}`;
+  const call = make('agent.tool_call', { sourceEventId: rootId, toolCallId: showcaseToolCallId, toolName: 'CallMateTool',
+    arguments: { tool: 'confirm_with_user', args: { label: 'driver_design_confirm', context: {
+      '方案': '驱动配置方案', '超时秒数': 30, '补充说明': null,
+      '影响范围': ['东区设备', '夜间巡检'], '回退': { '策略': '保留当前配置', '需人工确认': true },
+    } } }, requiresConfirmation: false });
+  const question = make('agent.question', { sourceEventId: rootId, toolCallId: showcaseToolCallId,
+    label: call.arguments.args.label, context: call.arguments.args.context });
+  showcaseQuestionId = question.eventId;
+  stream(response, [receipt,
+    make('agent.thinking', { phase: 'completed', sourceEventId: rootId, content: '需要用户确认驱动配置方案后再继续。' }),
+    call, question, make('session.status_idle', { sourceEventId: rootId, reason: 'confirming' }),
   ]);
 }
 const server = createServer(async (request, response) => {
@@ -37,7 +56,7 @@ const server = createServer(async (request, response) => {
     for await (const chunk of request) { raw += chunk; if (raw.length > 128 * 1024) throw new Error('too large'); }
     const body = raw ? JSON.parse(raw) : {};
     if (request.method === 'POST' && /\/agents\/[^/]+\/sessions$/u.test(url.pathname)) {
-      history = []; session.state = 'idle'; return json(response, session, 201);
+      history = []; showcaseQuestionId = ''; showcaseToolCallId = ''; session.state = 'idle'; return json(response, session, 201);
     }
     if (request.method === 'GET' && url.pathname.endsWith('/events')) {
       const offset = (Number(url.searchParams.get('page') || 1) - 1) * 200;
@@ -66,9 +85,29 @@ const server = createServer(async (request, response) => {
     if (request.method === 'POST' && url.pathname.endsWith('/events')) {
       const input = body.event;
       if (input.type === 'user.message') return startMessage(response, input);
+      if (input.type === 'user.question_answer') {
+        const answer = input.answers?.[0];
+        if (input.targetEventId !== showcaseQuestionId || input.answers?.length !== 1
+          || answer?.id !== 'confirmation' || answer.selected?.length || !answer.custom?.trim()) throw new Error('invalid showcase answer');
+        const receipt = make(input.type, Object.fromEntries(Object.entries(input).filter(([key]) => key !== 'type')));
+        session.state = 'idle'; version++;
+        const content = answer.custom.trim();
+        const events = [receipt,
+          make('agent.tool_result', { sourceEventId: rootId, toolCallId: showcaseToolCallId,
+            content: [{ type: 'text', text: JSON.stringify({ content }) }], isError: false }),
+          make('agent.message', { sourceEventId: rootId, phase: 'completed',
+            content: `已收到确认：“${content}”。我会按该回答继续处理驱动配置。` }),
+          make('session.status_idle', { sourceEventId: rootId, reason: 'done' }),
+        ];
+        showcaseQuestionId = ''; showcaseToolCallId = '';
+        return stream(response, events);
+      }
       const receipt = make(input.type, Object.fromEntries(Object.entries(input).filter(([key]) => key !== 'type')));
       session.state = 'idle'; version++;
-      if (input.type === 'user.interrupt') return stream(response, [receipt, make('session.status_idle', { sourceEventId: rootId, reason: 'terminated' })]);
+      if (input.type === 'user.interrupt') {
+        showcaseQuestionId = ''; showcaseToolCallId = '';
+        return stream(response, [receipt, make('session.status_idle', { sourceEventId: rootId, reason: 'terminated' })]);
+      }
       const denied = input.result === 'deny';
       return stream(response, [receipt,
         make('agent.tool_result', { sourceEventId: rootId, toolCallId: input.toolCallId, content: [{ type: 'text', text: denied ? '本次调用被用户拒绝。' : '发现 3 条待处理巡检记录。' }], isError: denied, ...(denied ? { errorCode: 'TOOL_CONFIRMATION_DENIED' } : {}) }),

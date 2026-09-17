@@ -22,6 +22,9 @@ export interface RuntimeQuestion {
   multiSelect: boolean;
 }
 export interface QuestionAnswer { id: string; selected: string[]; custom?: string }
+export type AgentQuestionPayload =
+  | { questions: RuntimeQuestion[]; label?: never; context?: never }
+  | { label: string; context?: Record<string, unknown>; questions?: never };
 export type UserEvent =
   | { type: 'user.message'; content: UserContent[] }
   | { type: 'user.interrupt'; targetEventId: string }
@@ -39,7 +42,7 @@ export type RuntimeEvent = EventIdentity & (UserEvent
   | { type: 'agent.tool_result'; sourceEventId: string; toolCallId: string; content: { type: 'text'; text: string }[]; isError: boolean; errorCode?: string }
   | { type: 'agent.plan'; sourceEventId: string; toolCallId: string; content: string }
   | { type: 'agent.todo_updated'; sourceEventId: string; toolCallId: string; todos: RuntimeTodo[] }
-  | { type: 'agent.question'; sourceEventId: string; toolCallId: string; questions: RuntimeQuestion[] }
+  | ({ type: 'agent.question'; sourceEventId: string; toolCallId: string } & AgentQuestionPayload)
   | { type: 'session.status_idle'; sourceEventId: string; reason: 'done' | 'failed' | 'terminated' | 'confirming'; errorCode?: string; message?: string }
   | { type: 'session.model_changed'; previousModelId: string; modelId: string; reason: string }
   | { type: 'session.thinking_changed'; previousThinking: boolean; thinking: boolean; reason: string }

@@ -117,6 +117,32 @@ public class QuestionRequestParser {
     }
 
     /**
+     * 规范化只有固定自由文本槽的业务答案。
+     *
+     * @param answerId 固定回答槽标识
+     * @param answers 待校验答案
+     * @return 可信答案
+     * @throws IllegalArgumentException 答案不符合固定槽约束时抛出
+     */
+    public QuestionAnswerResultDTO normalizeTextAnswer(String answerId, List<QuestionAnswerDTO> answers) {
+        if (answers == null || answers.size() != 1) {
+            throw new IllegalArgumentException("the text answer must be submitted exactly once");
+        }
+        QuestionAnswerDTO answer = answers.getFirst();
+        if (answer == null
+                || !answerId.equals(answer.id())
+                || answer.selected() == null
+                || !answer.selected().isEmpty()) {
+            throw new IllegalArgumentException("the text answer shape is invalid");
+        }
+        String custom = normalizeCustom(answer.custom());
+        if (custom == null) {
+            throw new IllegalArgumentException("the text answer requires custom text");
+        }
+        return new QuestionAnswerResultDTO(List.of(new QuestionAnswerDTO(answerId, List.of(), custom)));
+    }
+
+    /**
      * 解码数据库中已通过准入的完整答案事件。
      *
      * @param payload 答案事件负载

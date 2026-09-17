@@ -31,6 +31,7 @@ import com.huawei.hicampus.claw.codingagent.tool.ops.FindOperations;
 import com.huawei.hicampus.claw.codingagent.tool.ops.GrepOperations;
 import com.huawei.hicampus.claw.codingagent.tool.ops.LsOperations;
 import com.huawei.hicampus.claw.codingagent.tool.ops.ReadOperations;
+import com.huawei.hicampus.claw.codingagent.tool.question.ShowcaseConfirmationProperties;
 import com.huawei.hicampus.claw.codingagent.tool.workspace.AgentWorkspaceBoundary;
 import com.huawei.hicampus.claw.codingagent.tool.workspace.WorkspacePathResolver;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -67,6 +68,28 @@ class DefaultConfiguredToolAssemblerTest {
         assertThat(second).extracting(AgentTool::name).containsExactly("Grep", "Read");
         assertThat(first.getFirst()).isNotSameAs(second.getFirst());
         assertThat(first.getLast()).isNotSameAs(second.getLast());
+    }
+
+    @Test
+    void enabledShowcaseShouldFilterQuestionFromDefaultAndExplicitProfiles(
+            @org.junit.jupiter.api.io.TempDir Path agentRoot) {
+        var properties = new BuiltInToolProperties();
+        properties.setRuntime(List.of("Read", "AskUserQuestion", "CallMateTool"));
+        properties.setCron(List.of("AskUserQuestion", "Read"));
+        properties.setChildAgent(List.of("AskUserQuestion", "Read"));
+        properties.afterPropertiesSet();
+        var showcase = new ShowcaseConfirmationProperties();
+        showcase.setConfirmWithUserEnabled(true);
+        var assembler = new DefaultConfiguredToolAssembler(properties, StubTool::new, showcase);
+        PreparedAgentRuntime runtime = prepared(agentRoot);
+        AgentWorkspaceBoundary workspace = AgentWorkspaceBoundary.create(runtime.agentId(), agentRoot);
+
+        assertThat(names(assembler, context(runtime, workspace, ToolEntryPoint.RUNTIME)))
+                .containsExactly("Read", "CallMateTool");
+        assertThat(names(assembler, context(runtime, workspace, ToolEntryPoint.CRON)))
+                .containsExactly("Read");
+        assertThat(names(assembler, context(runtime, workspace, ToolEntryPoint.CHILD_AGENT)))
+                .containsExactly("Read");
     }
 
     @Test
@@ -115,6 +138,18 @@ class DefaultConfiguredToolAssemblerTest {
         assertThat(result.isError()).isTrue();
         assertThat(((TextContent) result.content().getFirst()).text()).isEqualTo("USER_QUESTION_UNAVAILABLE");
         assertThat(result.details()).isEqualTo(Map.of("errorCode", "USER_QUESTION_UNAVAILABLE"));
+    }
+
+    private static ToolAssemblyContext context(
+            PreparedAgentRuntime runtime, AgentWorkspaceBoundary workspace, ToolEntryPoint entryPoint) {
+        return new ToolAssemblyContext(
+                entryPoint, runtime, model(), ThinkingLevel.OFF, workspace, Map.of(), List.of(), null, null, null);
+    }
+
+    private static List<String> names(DefaultConfiguredToolAssembler assembler, ToolAssemblyContext context) {
+        return assembler.assemble(context.entryPoint(), context).stream()
+                .map(AgentTool::name)
+                .toList();
     }
 
     private static PreparedAgentRuntime prepared(Path agentRoot) {

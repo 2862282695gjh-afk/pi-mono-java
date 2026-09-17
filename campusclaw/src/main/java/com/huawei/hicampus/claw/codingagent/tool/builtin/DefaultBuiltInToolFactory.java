@@ -14,10 +14,13 @@ import com.huawei.hicampus.claw.codingagent.tool.ops.FindOperations;
 import com.huawei.hicampus.claw.codingagent.tool.ops.GrepOperations;
 import com.huawei.hicampus.claw.codingagent.tool.ops.LsOperations;
 import com.huawei.hicampus.claw.codingagent.tool.ops.ReadOperations;
+import com.huawei.hicampus.claw.codingagent.tool.question.ShowcaseConfirmationAdapter;
+import com.huawei.hicampus.claw.codingagent.tool.question.ShowcaseConfirmationProperties;
 import com.huawei.hicampus.claw.codingagent.tool.read.ReadTool;
 import com.huawei.hicampus.claw.codingagent.tool.todo.TodoUpdateTool;
 import com.huawei.hicampus.claw.codingagent.tool.workspace.WorkspacePathResolver;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 /**
@@ -39,17 +42,37 @@ public class DefaultBuiltInToolFactory implements BuiltInToolFactory {
 
     private final WorkspacePathResolver pathResolver;
 
+    private final ShowcaseConfirmationProperties showcase;
+
     public DefaultBuiltInToolFactory(
             ReadOperations readOperations,
             FindOperations findOperations,
             GrepOperations grepOperations,
             LsOperations lsOperations,
             WorkspacePathResolver pathResolver) {
+        this(
+                readOperations,
+                findOperations,
+                grepOperations,
+                lsOperations,
+                pathResolver,
+                new ShowcaseConfirmationProperties());
+    }
+
+    @Autowired
+    public DefaultBuiltInToolFactory(
+            ReadOperations readOperations,
+            FindOperations findOperations,
+            GrepOperations grepOperations,
+            LsOperations lsOperations,
+            WorkspacePathResolver pathResolver,
+            ShowcaseConfirmationProperties showcase) {
         this.readOperations = readOperations;
         this.findOperations = findOperations;
         this.grepOperations = grepOperations;
         this.lsOperations = lsOperations;
         this.pathResolver = pathResolver;
+        this.showcase = showcase;
     }
 
     @Override
@@ -67,12 +90,19 @@ public class DefaultBuiltInToolFactory implements BuiltInToolFactory {
             case CALL_MATE_TOOL ->
                 context.mateToolSessionState() == null
                         ? unavailable(name, context)
-                        : context.mateToolSessionState().createCallTool();
+                        : context.mateToolSessionState().createCallTool(confirmationAdapter(context));
             case AGENT -> contextualTool(name, context.agentToolFactory(), context);
             case TODO_UPDATE -> new TodoUpdateTool();
             case EXIT_PLAN_MODE -> contextualTool(name, context.exitPlanModeToolFactory(), context);
             case ASK_USER_QUESTION -> contextualTool(name, context.askUserQuestionToolFactory(), context);
         };
+    }
+
+    private ShowcaseConfirmationAdapter confirmationAdapter(ToolAssemblyContext context) {
+        if (context.showcaseConfirmationAdapter() != null) {
+            return context.showcaseConfirmationAdapter();
+        }
+        return new ShowcaseConfirmationAdapter(showcase.isConfirmWithUserEnabled(), context.entryPoint(), null);
     }
 
     private static AgentTool contextualTool(

@@ -16,7 +16,7 @@
 
 ## Main Agent
 
-本节仅适用于 Runtime 指明的 Main Agent。需要澄清时遵守基础指令，使用实际可用的 AskUserQuestion；回答用于完善方案，不是批准。
+本节仅适用于 Runtime 指明的 Main Agent。需要澄清时遵守基础指令并使用实际提供的提问能力：工具清单有 AskUserQuestion 时使用它；若 AskUserQuestion 不可用且业务绑定包含 confirm_with_user，则本次 Assistant 只发出这一项 CallMateTool 调用，传入精确工具名 confirm_with_user 及原始 label/context，并等待工具真实返回。回答用于完善方案，不是批准。
 
 方案完整后，单独调用 ExitPlanMode 提交以一级标题开头的完整 Markdown。不要用普通回复、“是否继续”或提问工具代替正式审核。approved=true 后按 Runtime 已切换的 Build 指令继续；approved=false 时根据 feedback 修订并重新提交。
 

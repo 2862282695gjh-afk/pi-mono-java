@@ -6,6 +6,8 @@ package com.huawei.hicampus.claw.codingagent.runtimeapi.runtime;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import java.util.List;
 import java.util.Map;
@@ -21,10 +23,13 @@ import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.QuestionAnswerDecisio
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.ToolConfirmationDecisionDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeEventOutput;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.session.PlanConfirmationResult;
+import com.huawei.hicampus.claw.codingagent.tool.builtin.ToolEntryPoint;
+import com.huawei.hicampus.claw.codingagent.tool.mate.MateToolDiscovery;
 import com.huawei.hicampus.claw.codingagent.tool.question.QuestionAnswerDTO;
 import com.huawei.hicampus.claw.codingagent.tool.question.QuestionAnswerResultDTO;
 import com.huawei.hicampus.claw.codingagent.tool.question.QuestionDTO;
 import com.huawei.hicampus.claw.codingagent.tool.question.QuestionRequestSnapshotDTO;
+import com.huawei.hicampus.claw.codingagent.tool.question.ShowcaseConfirmationAdapter;
 import com.huawei.hicampus.claw.common.constant.ClawConstants;
 
 import org.junit.jupiter.api.Test;
@@ -49,6 +54,34 @@ class RuntimeActiveExecutionTest {
 
         assertThatThrownBy(() -> execution.beforeToolCall(context)).isInstanceOf(RuntimeToolCallDeniedException.class);
         assertThat(handled).hasValue(0);
+    }
+
+    @Test
+    void failedShowcaseHookShouldReleasePreparedSnapshotForNextQuestion() throws Exception {
+        RuntimeActiveExecution execution = new RuntimeActiveExecution(RuntimeEventOutput.persistenceOnly());
+        RuntimeToolPermissionPolicy permissions = mock(RuntimeToolPermissionPolicy.class);
+        MateToolDiscovery discovery = mock(MateToolDiscovery.class);
+        when(permissions.decide(org.mockito.ArgumentMatchers.any()))
+                .thenReturn(RuntimeToolPermissionPolicy.Decision.ALLOW);
+        when(discovery.resolveToolId(ClawConstants.RuntimeApi.SHOWCASE_CONFIRMATION_TOOL_NAME))
+                .thenReturn("tool-11111111111111111111111111111111");
+        var adapter = new ShowcaseConfirmationAdapter(true, ToolEntryPoint.RUNTIME, execution);
+        adapter.bindDiscovery(discovery);
+        adapter.bindPermissions(permissions, "tool-11111111111111111111111111111111");
+        execution.installShowcaseConfirmation(adapter);
+        AtomicInteger calls = new AtomicInteger();
+        execution.installConfirmationHandler(context -> {
+            if (calls.getAndIncrement() == 0) {
+                throw new IllegalStateException("projection failed");
+            }
+            return BeforeToolCallResult.allow();
+        });
+        ToolCall first = showcaseCall("call-1", "first");
+        ToolCall second = showcaseCall("call-2", "second");
+
+        assertThatThrownBy(() -> execution.beforeToolCall(context(first))).isInstanceOf(IllegalStateException.class);
+        assertThat(execution.beforeToolCall(context(second))).isEqualTo(BeforeToolCallResult.allow());
+        assertThat(execution.preparedShowcaseQuestion(second)).isPresent();
     }
 
     @Test
@@ -166,6 +199,17 @@ class RuntimeActiveExecutionTest {
 
     private static BeforeToolCallContext context(ToolCall call) {
         return new BeforeToolCallContext(null, call, call.arguments(), null);
+    }
+
+    private static ToolCall showcaseCall(String id, String label) {
+        return new ToolCall(
+                id,
+                "CallMateTool",
+                Map.of(
+                        "tool",
+                        ClawConstants.RuntimeApi.SHOWCASE_CONFIRMATION_TOOL_NAME,
+                        "args",
+                        Map.of("label", label)));
     }
 
     private static ToolConfirmationDecisionDTO decision(String toolCallId, String previous, String segment) {

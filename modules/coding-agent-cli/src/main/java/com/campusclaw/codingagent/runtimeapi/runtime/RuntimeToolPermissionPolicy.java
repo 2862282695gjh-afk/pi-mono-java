@@ -5,8 +5,10 @@
 package com.campusclaw.codingagent.runtimeapi.runtime;
 
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 
 import com.campusclaw.ai.types.ToolCall;
 import com.campusclaw.codingagent.runtime.MateServiceClient.BoundTool;
@@ -54,6 +56,19 @@ public final class RuntimeToolPermissionPolicy {
             Decision decision = parse(tool.permission());
             decisions.merge(tool.name(), decision, (left, right) -> left == right ? left : Decision.DENY);
         }
+    }
+
+    public static Optional<String> uniqueAllowedToolId(PreparedAgentRuntime runtime, String toolName) {
+        List<BoundTool> matches = java.util.stream.Stream.concat(
+                        runtime.metadata().bindingTools().stream(),
+                        runtime.skills().stream().flatMap(skill -> skill.bindingTools().stream()))
+                .filter(tool -> toolName.equals(tool.name()))
+                .filter(tool -> parse(tool.permission()) == Decision.ALLOW)
+                .toList();
+        if (matches.size() != 1 || from(runtime).decisions.get(toolName) != Decision.ALLOW) {
+            return Optional.empty();
+        }
+        return Optional.ofNullable(matches.getFirst().id()).filter(id -> !id.isBlank());
     }
 
     private static Decision parse(String value) {

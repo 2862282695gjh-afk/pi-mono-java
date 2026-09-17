@@ -214,6 +214,11 @@ public class RuntimeEventProjector {
     }
 
     public BeforeToolCallResult beforeToolCall(BeforeToolCallContext context) throws Exception {
+        var showcaseQuestion = execution.preparedShowcaseQuestion(context.toolCall());
+        if (showcaseQuestion.isPresent()) {
+            beginQuestion(context, showcaseQuestion.get());
+            return BeforeToolCallResult.allow();
+        }
         if (BuiltInToolName.EXIT_PLAN_MODE
                 .externalName()
                 .equals(context.toolCall().name())) {
@@ -527,6 +532,18 @@ public class RuntimeEventProjector {
     private void beginQuestion(BeforeToolCallContext context) {
         ToolCall call = requireUniqueFinalizedCall(context);
         var snapshot = questionParser.parse(call);
+        beginQuestion(call, snapshot);
+    }
+
+    private void beginQuestion(
+            BeforeToolCallContext context,
+            com.huawei.hicampus.claw.codingagent.tool.question.QuestionRequestSnapshotDTO snapshot) {
+        ToolCall call = requireUniqueFinalizedCall(context);
+        beginQuestion(call, snapshot);
+    }
+
+    private void beginQuestion(
+            ToolCall call, com.huawei.hicampus.claw.codingagent.tool.question.QuestionRequestSnapshotDTO snapshot) {
         OffsetDateTime confirmingAt = now();
         RuntimeEntryDTO question = codec.questionEntry(sessionId, ids.nextId(), call.id(), snapshot, confirmingAt);
         CommittedEventDTO questionEvent =
