@@ -82,7 +82,7 @@ public class CommittedEventQueryService {
         try {
             return Math.multiplyExact(page - 1L, limit);
         } catch (ArithmeticException error) {
-            throw invalidQuery();
+            throw invalidQuery(error);
         }
     }
 
@@ -90,12 +90,16 @@ public class CommittedEventQueryService {
         try {
             return Math.addExact(page, 1L);
         } catch (ArithmeticException error) {
-            throw invalidQuery();
+            throw invalidQuery(error);
         }
     }
 
     private static RuntimeApiException invalidQuery() {
         return new RuntimeApiException(RuntimeErrorCode.INVALID_EVENT_LIST_QUERY);
+    }
+
+    private static RuntimeApiException invalidQuery(ArithmeticException cause) {
+        return new RuntimeApiException(RuntimeErrorCode.INVALID_EVENT_LIST_QUERY, cause);
     }
 
     private static void logFailure(String sessionId, RuntimeException error) {

@@ -80,13 +80,38 @@ class CommittedEventQueryServiceTest {
     }
 
     @Test
-    void shouldRejectInvalidRangeAndOverflowBeforeRepositoryRead() {
+    void shouldRejectInvalidRangeBeforeRepositoryRead() {
         assertInvalid(0, 1L);
         assertInvalid(201, 1L);
         assertInvalid(200, 0L);
-        assertInvalid(200, Long.MAX_VALUE);
 
         verify(repository, never()).findEventPage(any(), anyLong(), anyInt());
+    }
+
+    @Test
+    void shouldPreserveOffsetOverflowCauseBeforeRepositoryRead() {
+        assertThatThrownBy(() -> service.list(SESSION_ID, 200, Long.MAX_VALUE))
+                .isInstanceOfSatisfying(RuntimeApiException.class, error -> {
+                    assertThat(error.errorCode()).isEqualTo(RuntimeErrorCode.INVALID_EVENT_LIST_QUERY);
+                    assertThat(error).hasCauseInstanceOf(ArithmeticException.class);
+                });
+
+        verify(repository, never()).findEventPage(any(), anyLong(), anyInt());
+    }
+
+    @Test
+    void shouldPreserveNextPageOverflowCause() {
+        CommittedEventDTO event = committedEvent("event-1");
+        CommittedEventDTO lookAhead = committedEvent("event-2");
+        when(repository.findEventPage(SESSION_ID, Long.MAX_VALUE - 1L, 2))
+                .thenReturn(Optional.of(List.of(event, lookAhead)));
+        when(projection.project(event)).thenReturn(response("event-1"));
+
+        assertThatThrownBy(() -> service.list(SESSION_ID, 1, Long.MAX_VALUE))
+                .isInstanceOfSatisfying(RuntimeApiException.class, error -> {
+                    assertThat(error.errorCode()).isEqualTo(RuntimeErrorCode.INVALID_EVENT_LIST_QUERY);
+                    assertThat(error).hasCauseInstanceOf(ArithmeticException.class);
+                });
     }
 
     @Test
@@ -102,8 +127,10 @@ class CommittedEventQueryServiceTest {
 
     private void assertInvalid(Integer limit, Long page) {
         assertThatThrownBy(() -> service.list(SESSION_ID, limit, page))
-                .isInstanceOfSatisfying(RuntimeApiException.class, error -> assertThat(error.errorCode())
-                        .isEqualTo(RuntimeErrorCode.INVALID_EVENT_LIST_QUERY));
+                .isInstanceOfSatisfying(RuntimeApiException.class, error -> {
+                    assertThat(error.errorCode()).isEqualTo(RuntimeErrorCode.INVALID_EVENT_LIST_QUERY);
+                    assertThat(error).hasNoCause();
+                });
     }
 
     private static CommittedEventDTO committedEvent(String eventId) {
