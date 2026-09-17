@@ -7,6 +7,7 @@ package com.huawei.hicampus.claw.codingagent.runtime;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.huawei.hicampus.claw.codingagent.config.CampusMateClientProperties;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.agent.RuntimeAgentPromptLoader;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import org.junit.jupiter.api.Test;
@@ -36,13 +37,14 @@ class AgentRuntimeWiringTest {
                             "campusmate.endpoints.tool-execute-path-template=/mate-service/v1/runtime/tools/%s/execute")
                     .applyTo(context);
             context.scan(AgentRuntimeProperties.class.getPackage().getName());
-            context.register(ObjectMapper.class, RuntimePropertiesConfig.class);
+            context.register(ObjectMapper.class, RuntimeAgentPromptLoader.class, RuntimePropertiesConfig.class);
             context.refresh();
 
             AgentRuntimeProperties properties = context.getBean(AgentRuntimeProperties.class);
             assertThat(properties.agentsRoot()).isNotNull();
             assertThat(properties.connectTimeout()).isNotNull();
             assertThat(context.getBean(MateServiceClient.class)).isNotNull();
+            assertThat(context.getBean(RuntimeAgentPromptLoader.class)).isNotNull();
             assertThat(context.getBean(AgentRuntimeManager.class)).isNotNull();
         }
     }

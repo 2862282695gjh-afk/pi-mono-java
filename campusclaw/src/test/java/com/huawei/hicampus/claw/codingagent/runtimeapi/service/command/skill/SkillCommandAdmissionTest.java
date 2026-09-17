@@ -73,7 +73,12 @@ class SkillCommandAdmissionTest {
                 runtime("agent-b", "agent-b", true, List.of(skill("pdf"))),
                 runtime("agent-a", "agent-b", true, List.of(skill("pdf"))),
                 runtime("agent-a", "agent-a", false, List.of(skill("pdf"))),
-                new PreparedAgentRuntime("agent-a", Path.of("/unread"), null, List.of(skill("pdf"))));
+                new PreparedAgentRuntime(
+                        "agent-a",
+                        Path.of("/unread"),
+                        null,
+                        List.of(skill("pdf")),
+                        com.huawei.hicampus.claw.codingagent.runtimeapi.agent.AgentPromptTestFixtures.prompts("")));
 
         for (PreparedAgentRuntime runtime : invalid) {
             RuntimeApiException failure = assertThrows(RuntimeApiException.class, () -> admission.accept(runtime));
@@ -98,7 +103,12 @@ class SkillCommandAdmissionTest {
                 "System",
                 List.of(),
                 "v1");
-        return new PreparedAgentRuntime(agentId, Path.of("/unread"), metadata, skills);
+        return new PreparedAgentRuntime(
+                agentId,
+                Path.of("/unread"),
+                metadata,
+                skills,
+                com.huawei.hicampus.claw.codingagent.runtimeapi.agent.AgentPromptTestFixtures.prompts("system"));
     }
 
     private static SkillInfo skill(String name) {

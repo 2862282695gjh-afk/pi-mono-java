@@ -365,7 +365,12 @@ class RuntimeCompactionServiceTest {
                 "System",
                 List.of(),
                 "v1");
-        return new PreparedAgentRuntime("agent", Path.of("/agent"), metadata, List.of());
+        return new PreparedAgentRuntime(
+                "agent",
+                Path.of("/agent"),
+                metadata,
+                List.of(),
+                com.huawei.hicampus.claw.codingagent.runtimeapi.agent.AgentPromptTestFixtures.prompts("system"));
     }
 
     private void assertError(RuntimeErrorCode expected) {

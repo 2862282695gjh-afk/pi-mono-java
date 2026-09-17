@@ -48,8 +48,17 @@ class ExitPlanModeToolTest {
         var result = tool.execute("exit-2", Map.of("plan", "# 方案"), new CancellationToken(), ignored -> {});
 
         String text = ((TextContent) result.content().getFirst()).text();
-        assertThat(text).startsWith("{\"approved\":false}\n\n方案需要修订");
+        assertThat(text).startsWith("{\"approved\":false}\n\n当前仍为 plan");
         assertThat(text.substring(0, text.indexOf("\n\n"))).doesNotContain("feedback");
+    }
+
+    @Test
+    void descriptionNamesTheMainAgentAndKeepsApprovalBoundaries() {
+        var tool = new ExitPlanModeTool((toolCallId, plan) -> new PlanReviewResultDTO(true, null));
+
+        assertThat(tool.description())
+                .contains("Main Agent", "approved=true", "approved=false")
+                .doesNotContain("root agent", "TodoUpdate");
     }
 
     @Test

@@ -89,7 +89,7 @@ campusclaw:
 配置列表完全替换缺省值，显式空数组表示不装配工具；未知、重复、大小写错误或已禁用的名称
 会导致启动失败。首版 Child 最大深度为 1，因此 Child profile 不公开 `Agent`。
 Runtime 的 plan/build 使用相同工具定义；进入 plan 需要实际装配 `ExitPlanMode`。
-计划模式通过固定提示词约束调研与实施阶段，具体业务权限仍由工具权限规则决定。
+计划模式通过 `PLAN.md`、`BUILD.md` 约束调研与实施阶段，具体业务权限仍由工具权限规则决定。
 
 ## 受管 Agent 目录
 
@@ -101,6 +101,8 @@ agent/{agentId}/
     ├── agent.json
     ├── settings.json
     ├── SYSTEM.md
+    ├── PLAN.md（可选）
+    ├── BUILD.md（可选）
     ├── agents/{agentName}.json
     └── skills/{skillName}/
         ├── skill.json
@@ -111,6 +113,9 @@ agent/{agentId}/
 
 `prepare(agentId)` 在完整缓存命中时不访问远端；目录缺失或不完整时先在同一 Agent 工作区内
 构建 staging 目录，完整校验后发布。管理面 `refresh(agentId)` 总是重新拉取，失败时保留旧目录。
+`PLAN.md` 和 `BUILD.md` 分别完整替换内置同名模式正文；单个文件不存在时只回退该模式的内置正文。
+每次执行准备时固定基础 SYSTEM、Skill 摘要和两种模式正文，批准续跑、修订与压缩都复用该快照。
+两个覆盖文件会随目录刷新保留；空白、目录、链接、非法 UTF-8、超限或不可读文件会使准备失败。
 目录不生成或读取 `tools.json`；Mate 工具列表始终实时查询。
 Agent 元数据的 `mode` 为 `build|plan` 字符串，缺省为 `build`；只用于初始化新 Session。
 已有 Session 独立维护模式，刷新 Agent 元数据不会覆盖会话模式。

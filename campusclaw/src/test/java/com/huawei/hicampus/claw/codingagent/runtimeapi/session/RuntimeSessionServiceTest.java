@@ -25,7 +25,6 @@ import java.util.Optional;
 import com.huawei.hicampus.claw.ai.types.Model;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.agent.AgentDirectoryResolver;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.agent.AgentDirectorySnapshotDTO;
-import com.huawei.hicampus.claw.codingagent.runtimeapi.agent.RuntimeAgentPromptLoader;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.error.RuntimeErrorCode;
@@ -53,8 +52,6 @@ class RuntimeSessionServiceTest {
 
     private RuntimeModelManager modelManager;
 
-    private RuntimeAgentPromptLoader promptLoader;
-
     private RuntimeSessionService service;
 
     @BeforeEach
@@ -62,13 +59,11 @@ class RuntimeSessionServiceTest {
         repository = mock(RuntimeSessionRepository.class);
         directoryResolver = mock(AgentDirectoryResolver.class);
         modelManager = mock(RuntimeModelManager.class);
-        promptLoader = mock(RuntimeAgentPromptLoader.class);
         Clock clock = Clock.fixed(Instant.parse("2026-08-18T00:00:00Z"), ZoneOffset.UTC);
         service = new RuntimeSessionService(
                 repository,
                 directoryResolver,
                 modelManager,
-                promptLoader,
                 () -> SESSION_ID,
                 new RuntimeSessionResponseAssembler(new SessionEtagFactory()),
                 clock);
@@ -89,7 +84,6 @@ class RuntimeSessionServiceTest {
         assertThat(view.resource().getDisplayName()).isNull();
         assertThat(view.resource().getState()).isEqualTo("idle");
         assertThat(view.resource().isThinking()).isTrue();
-        verify(promptLoader).validate(snapshot.runtimeDirectory());
         verify(repository)
                 .create(org.mockito.ArgumentMatchers.argThat(session -> SESSION_ID.equals(session.getId())
                         && AGENT_ID.equals(session.getAgentId())

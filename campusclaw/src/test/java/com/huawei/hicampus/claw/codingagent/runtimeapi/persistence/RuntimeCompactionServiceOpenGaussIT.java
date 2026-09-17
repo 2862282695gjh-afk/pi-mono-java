@@ -40,7 +40,8 @@ import com.huawei.hicampus.claw.codingagent.runtime.PreparedAgentRuntime;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.RuntimeMessageSourceConfiguration;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.agent.AgentDirectoryResolver;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.agent.AgentDirectorySnapshotDTO;
-import com.huawei.hicampus.claw.codingagent.runtimeapi.agent.RuntimeAgentPromptLoader;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.agent.AgentPromptSnapshotDTO;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.agent.AgentPromptSnapshotDTO.PromptSource;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.command.catalog.ResolvedCommandCatalog;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.command.execution.CommandExecutionContext;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.compaction.RuntimeCompactionCoordinator;
@@ -307,15 +308,15 @@ class RuntimeCompactionServiceOpenGaussIT {
     private AgentSessionFactory factory() {
         var metadata =
                 mapper.convertValue(Map.of("bindingModels", List.of("model"), "enabled", true), AgentRuntime.class);
-        when(runtimes.prepare("agent")).thenReturn(new PreparedAgentRuntime("agent", temporary, metadata, List.of()));
-        var prompt = mock(RuntimeAgentPromptLoader.class);
-        when(prompt.load(temporary.resolve(".campusclaw"))).thenReturn("system prompt");
+        AgentPromptSnapshotDTO prompts = new AgentPromptSnapshotDTO(
+                "system prompt", "Plan", "Build", PromptSource.BUILTIN, PromptSource.BUILTIN);
+        when(runtimes.prepare("agent"))
+                .thenReturn(new PreparedAgentRuntime("agent", temporary, metadata, List.of(), prompts));
         return new AgentSessionFactory(
                 ai,
                 runtimes,
                 mock(ConfiguredToolAssembler.class),
                 new StaticListableBeanFactory().getBeanProvider(MateToolsetFactory.class),
-                prompt,
                 compactor,
                 new com.huawei.hicampus.claw.codingagent.session.PlanPolicyPromptComposer());
     }

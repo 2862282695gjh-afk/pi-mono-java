@@ -148,6 +148,7 @@ class FileAgentDirectoryResolverTest {
         var runtime = new AgentRuntime(
                 models, List.of(), List.of(), List.of(), List.of(), "Agent", enabled, AGENT_ID, "agent", "prompt",
                 List.of(), "1.0.0", mode);
-        return new PreparedAgentRuntime(AGENT_ID, temporaryDirectory, runtime, List.of());
+        return new PreparedAgentRuntime(
+                AGENT_ID, temporaryDirectory, runtime, List.of(), AgentPromptTestFixtures.prompts("prompt"));
     }
 }

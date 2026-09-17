@@ -31,6 +31,15 @@ class TodoUpdateToolTest {
     private final TodoUpdateTool tool = new TodoUpdateTool();
 
     @Test
+    void descriptionKeepsFailureCancellationAndFinalAnswerRules() {
+        assertThat(tool.description())
+                .contains("Do not mark failed, partial, or unverified work completed")
+                .contains("remove cancelled items with an explanation instead of marking them completed")
+                .contains("do not claim a failed update was saved")
+                .contains("or replace the final answer");
+    }
+
+    @Test
     void returnsOneExactTextSnapshotAndRunsSequentially() {
         var result = tool.execute(
                 "todo-1",

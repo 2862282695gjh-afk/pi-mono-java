@@ -169,7 +169,12 @@ class SkillCommandSourceTest {
                 "prompt",
                 List.of(),
                 AGENT_VERSION);
-        return new PreparedAgentRuntime(AGENT_ID, agentRoot, metadata, List.of(skills));
+        return new PreparedAgentRuntime(
+                AGENT_ID,
+                agentRoot,
+                metadata,
+                List.of(skills),
+                com.campusclaw.codingagent.runtimeapi.agent.AgentPromptTestFixtures.prompts("system"));
     }
 
     private RuntimeSessionDTO session(String state) {

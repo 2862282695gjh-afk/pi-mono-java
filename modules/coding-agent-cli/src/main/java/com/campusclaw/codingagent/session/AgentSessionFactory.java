@@ -12,7 +12,6 @@ import com.campusclaw.agent.tool.AgentTool;
 import com.campusclaw.ai.CampusClawAiService;
 import com.campusclaw.codingagent.runtime.AgentRuntimeManager;
 import com.campusclaw.codingagent.runtime.PreparedAgentRuntime;
-import com.campusclaw.codingagent.runtimeapi.agent.RuntimeAgentPromptLoader;
 import com.campusclaw.codingagent.session.compaction.SessionCompactor;
 import com.campusclaw.codingagent.tool.builtin.ConfiguredToolAssembler;
 import com.campusclaw.codingagent.tool.builtin.ToolAssemblyContext;
@@ -41,8 +40,6 @@ public class AgentSessionFactory {
 
     private final ObjectProvider<MateToolsetFactory> mateToolsetFactoryProvider;
 
-    private final RuntimeAgentPromptLoader promptLoader;
-
     private final SessionCompactor compactor;
 
     private final PlanPolicyPromptComposer promptComposer;
@@ -52,14 +49,12 @@ public class AgentSessionFactory {
             AgentRuntimeManager runtimeManager,
             ConfiguredToolAssembler toolAssembler,
             ObjectProvider<MateToolsetFactory> mateToolsetFactoryProvider,
-            RuntimeAgentPromptLoader promptLoader,
             SessionCompactor compactor,
             PlanPolicyPromptComposer promptComposer) {
         this.aiService = aiService;
         this.runtimeManager = runtimeManager;
         this.toolAssembler = toolAssembler;
         this.mateToolsetFactoryProvider = mateToolsetFactoryProvider;
-        this.promptLoader = promptLoader;
         this.compactor = compactor;
         this.promptComposer = promptComposer;
     }
@@ -103,10 +98,8 @@ public class AgentSessionFactory {
                 contextualSupplier(request.askUserQuestionToolFactory(), runtime, model));
         List<AgentTool> tools = toolAssembler.assemble(request.entryPoint(), context);
         Agent agent = configureAgent(request, runtime, model, tools);
-        String basePrompt = promptLoader.load(runtime.agentRoot().resolve(".campusclaw"));
-        applyPrompt(agent, basePrompt, request.entryPoint(), request.mode(), tools);
-        return new ManagedAgentSession(
-                runtime, request.entryPoint(), agent, tools, compactor, promptComposer, basePrompt);
+        applyPrompt(agent, runtime, request.entryPoint(), request.mode());
+        return new ManagedAgentSession(runtime, request.entryPoint(), agent, tools, compactor, promptComposer);
     }
 
     private Agent configureAgent(
@@ -125,10 +118,8 @@ public class AgentSessionFactory {
         return agent;
     }
 
-    private void applyPrompt(
-            Agent agent, String basePrompt, ToolEntryPoint entryPoint, String mode, List<AgentTool> tools) {
-        List<String> names = tools.stream().map(AgentTool::name).toList();
-        agent.setSystemPrompt(promptComposer.compose(basePrompt, entryPoint, mode, names));
+    private void applyPrompt(Agent agent, PreparedAgentRuntime runtime, ToolEntryPoint entryPoint, String mode) {
+        agent.setSystemPrompt(promptComposer.compose(runtime.prompts(), mode, entryPoint));
     }
 
     private static java.util.function.Supplier<AgentTool> contextualSupplier(

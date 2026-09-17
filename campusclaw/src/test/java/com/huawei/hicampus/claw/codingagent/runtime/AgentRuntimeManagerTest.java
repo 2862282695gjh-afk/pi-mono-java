@@ -34,7 +34,9 @@ import com.huawei.hicampus.claw.codingagent.runtime.MateServiceClient.BoundTool;
 import com.huawei.hicampus.claw.codingagent.runtime.MateServiceClient.SkillFile;
 import com.huawei.hicampus.claw.codingagent.runtime.MateServiceClient.SkillInfo;
 import com.huawei.hicampus.claw.codingagent.runtime.MateServiceClient.SkillReference;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.agent.AgentPromptSnapshotDTO.PromptSource;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.agent.RuntimeAgentPromptLoader;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.error.RuntimeApiException;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.runtime.RuntimeToolPermissionPolicy;
 import com.huawei.hicampus.claw.codingagent.skill.SkillLoadException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -143,6 +145,80 @@ class AgentRuntimeManagerTest {
     }
 
     @Test
+    void firstPreparePreservesModeFileFromOtherwiseIncompleteDirectory() throws Exception {
+        Path managed = Files.createDirectories(
+                tempDir.resolve("agent").resolve(AGENT_ID).resolve(".campusclaw"));
+        Files.writeString(managed.resolve("PLAN.md"), "# Agent Plan", StandardCharsets.UTF_8);
+        stubRuntime("1.0.0", "prompt-v1");
+
+        PreparedAgentRuntime prepared = manager.prepare(AGENT_ID);
+
+        assertEquals("# Agent Plan", Files.readString(managed.resolve("PLAN.md"), StandardCharsets.UTF_8));
+        assertEquals("# Agent Plan", prepared.prompts().planPrompt());
+        assertEquals(PromptSource.AGENT_FILE, prepared.prompts().planSource());
+        assertEquals(PromptSource.BUILTIN, prepared.prompts().buildSource());
+    }
+
+    @Test
+    void refreshPreservesBothModeOverridesAndLoadsNewBaseInOneSnapshot() throws Exception {
+        stubRuntime("1.0.0", "prompt-v1");
+        Path managed = manager.prepare(AGENT_ID).agentRoot().resolve(".campusclaw");
+        Files.writeString(managed.resolve("PLAN.md"), "# Agent Plan", StandardCharsets.UTF_8);
+        Files.writeString(managed.resolve("BUILD.md"), "# Agent Build", StandardCharsets.UTF_8);
+        when(client.getAgentRuntime(AGENT_ID)).thenReturn(runtime("2.0.0", "prompt-v2"));
+
+        PreparedAgentRuntime refreshed = manager.refresh(AGENT_ID);
+
+        assertEquals("prompt-v2", refreshed.prompts().basePrompt().substring(0, "prompt-v2".length()));
+        assertEquals("# Agent Plan", refreshed.prompts().planPrompt());
+        assertEquals("# Agent Build", refreshed.prompts().buildPrompt());
+        assertEquals(PromptSource.AGENT_FILE, refreshed.prompts().planSource());
+        assertEquals(PromptSource.AGENT_FILE, refreshed.prompts().buildSource());
+    }
+
+    @Test
+    void deletingOneOverrideBeforeRefreshUsesBuiltinWithoutRestoringDeletedFile() throws Exception {
+        stubRuntime("1.0.0", "prompt-v1");
+        Path managed = manager.prepare(AGENT_ID).agentRoot().resolve(".campusclaw");
+        Files.writeString(managed.resolve("PLAN.md"), "# Agent Plan", StandardCharsets.UTF_8);
+        Files.writeString(managed.resolve("BUILD.md"), "# Agent Build", StandardCharsets.UTF_8);
+        manager.refresh(AGENT_ID);
+        Files.delete(managed.resolve("PLAN.md"));
+
+        PreparedAgentRuntime refreshed = manager.refresh(AGENT_ID);
+
+        assertFalse(Files.exists(managed.resolve("PLAN.md")));
+        assertEquals(PromptSource.BUILTIN, refreshed.prompts().planSource());
+        assertEquals("# Agent Build", refreshed.prompts().buildPrompt());
+    }
+
+    @Test
+    void invalidOverrideFailsPrepareWithoutMateRebuildOrFileLoss() throws Exception {
+        stubRuntime("1.0.0", "prompt-v1");
+        Path managed = manager.prepare(AGENT_ID).agentRoot().resolve(".campusclaw");
+        Files.writeString(managed.resolve("PLAN.md"), " \n", StandardCharsets.UTF_8);
+
+        assertThrows(RuntimeApiException.class, () -> manager.prepare(AGENT_ID));
+
+        assertEquals(" \n", Files.readString(managed.resolve("PLAN.md"), StandardCharsets.UTF_8));
+        verify(client).getAgentRuntime(AGENT_ID);
+    }
+
+    @Test
+    void preparedPromptSnapshotDoesNotChangeWhenOverrideChangesOnDisk() throws Exception {
+        stubRuntime("1.0.0", "prompt-v1");
+        Path managed = manager.prepare(AGENT_ID).agentRoot().resolve(".campusclaw");
+        Files.writeString(managed.resolve("BUILD.md"), "# Build One", StandardCharsets.UTF_8);
+        PreparedAgentRuntime firstExecution = manager.prepare(AGENT_ID);
+
+        Files.writeString(managed.resolve("BUILD.md"), "# Build Two", StandardCharsets.UTF_8);
+        PreparedAgentRuntime nextExecution = manager.prepare(AGENT_ID);
+
+        assertEquals("# Build One", firstExecution.prompts().buildPrompt());
+        assertEquals("# Build Two", nextExecution.prompts().buildPrompt());
+    }
+
+    @Test
     void failedRefreshPreservesLastCompleteDirectory() {
         stubRuntime("1.0.0", "prompt-v1");
         manager.prepare(AGENT_ID);
@@ -242,7 +318,9 @@ class AgentRuntimeManagerTest {
     @Test
     void cachedReadWaitsForRefreshToPublishOneSnapshot() throws Exception {
         stubRuntime("1.0.0", "prompt-v1");
-        manager.prepare(AGENT_ID);
+        Path managed = manager.prepare(AGENT_ID).agentRoot().resolve(".campusclaw");
+        Files.writeString(managed.resolve("PLAN.md"), "# Locked Plan", StandardCharsets.UTF_8);
+        Files.writeString(managed.resolve("BUILD.md"), "# Locked Build", StandardCharsets.UTF_8);
         var refreshStarted = new CountDownLatch(1);
         var releaseRefresh = new CountDownLatch(1);
         when(client.getAgentRuntime(AGENT_ID)).thenAnswer(ignored -> {
@@ -254,12 +332,14 @@ class AgentRuntimeManagerTest {
         try {
             var refresh = executor.submit(() -> manager.refresh(AGENT_ID));
             assertTrue(refreshStarted.await(2L, TimeUnit.SECONDS));
-            var cached = executor.submit(() -> manager.prepareCached(AGENT_ID));
+            var cached = executor.submit(() -> manager.prepare(AGENT_ID));
             assertThrows(TimeoutException.class, () -> cached.get(100L, TimeUnit.MILLISECONDS));
             releaseRefresh.countDown();
-            assertEquals(
-                    List.of("Use 2.0.0"),
-                    cached.get(2L, TimeUnit.SECONDS).metadata().userCases());
+            PreparedAgentRuntime prepared = cached.get(2L, TimeUnit.SECONDS);
+            assertEquals(List.of("Use 2.0.0"), prepared.metadata().userCases());
+            assertTrue(prepared.prompts().basePrompt().startsWith("prompt-v2"));
+            assertEquals("# Locked Plan", prepared.prompts().planPrompt());
+            assertEquals("# Locked Build", prepared.prompts().buildPrompt());
             refresh.get(2L, TimeUnit.SECONDS);
         } finally {
             releaseRefresh.countDown();
@@ -440,6 +520,9 @@ class AgentRuntimeManagerTest {
     void failedRefreshKeepsPreviouslyPublishedCache() throws Exception {
         stubRuntime("1.0.0", "prompt-v1");
         PreparedAgentRuntime first = manager.prepare(AGENT_ID);
+        Path managed = first.agentRoot().resolve(".campusclaw");
+        Files.writeString(managed.resolve("PLAN.md"), "# Preserved Plan", StandardCharsets.UTF_8);
+        Files.writeString(managed.resolve("BUILD.md"), "# Preserved Build", StandardCharsets.UTF_8);
         Path skillFile = first.agentRoot().resolve(".campusclaw/skills/calendar/SKILL.md");
         assertEquals(skillContent(), Files.readString(skillFile, StandardCharsets.UTF_8));
 
@@ -447,6 +530,8 @@ class AgentRuntimeManagerTest {
         assertThrows(AgentRuntimeException.class, () -> manager.refresh(AGENT_ID));
 
         assertEquals(skillContent(), Files.readString(skillFile, StandardCharsets.UTF_8));
+        assertEquals("# Preserved Plan", Files.readString(managed.resolve("PLAN.md"), StandardCharsets.UTF_8));
+        assertEquals("# Preserved Build", Files.readString(managed.resolve("BUILD.md"), StandardCharsets.UTF_8));
     }
 
     @Test

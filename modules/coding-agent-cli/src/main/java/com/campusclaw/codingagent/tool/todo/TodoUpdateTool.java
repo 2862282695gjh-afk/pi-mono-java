@@ -41,8 +41,12 @@ public class TodoUpdateTool implements AgentTool {
             + "work and required verification finish; do not batch independent completions. The same call may "
             + "complete the previous task and start the next one. Send the entire list every time, retaining "
             + "completed tasks that should remain visible; use pending, in_progress, or completed with at most one "
-            + "task in_progress. Skip trivial work. This tool reports progress only and does not execute tasks, "
-            + "approve proposals, or change session mode.";
+            + "task in_progress. Skip trivial work. Do not mark failed, partial, or unverified work completed. Adjust "
+            + "the list when the work changes within the authorized scope; remove cancelled items with an "
+            + "explanation instead of marking them completed. Read the result and do not claim a failed update was "
+            + "saved. Submit the required full list again when a new user-message execution continues earlier work. "
+            + "This tool reports progress only and does not execute tasks, approve proposals, change session mode, "
+            + "or replace the final answer.";
 
     @Override
     public String name() {

@@ -57,7 +57,7 @@ expected_common="$(sed 's/com\.campusclaw/com.huawei.hicampus.claw/g' "$COMMON_S
 staged_common="$(cat "$STAGED_COMMON")" || fail "cannot read staged common constants"
 [ "$expected_common" = "$staged_common" ] || fail "staged common constants differ from canonical source"
 
-for prompt in PLAN_COMMON.txt PLAN_ROOT_REVIEW.txt PLAN_CHILD.txt BUILD_ROOT.txt EXECUTION_TODOS.txt; do
+for prompt in PLAN.md BUILD.md; do
   canonical="$ROOT/modules/coding-agent-cli/src/main/resources/prompts/plan/$prompt"
   staged="$ROOT/build/campusclaw/src/main/resources/prompts/plan/$prompt"
   mirrored="$ROOT/campusclaw/src/main/resources/prompts/plan/$prompt"
@@ -65,6 +65,14 @@ for prompt in PLAN_COMMON.txt PLAN_ROOT_REVIEW.txt PLAN_CHILD.txt BUILD_ROOT.txt
   [ -f "$mirrored" ] || fail "mirrored plan prompt is missing: $prompt"
   cmp -s "$canonical" "$staged" || fail "staged plan prompt differs: $prompt"
   cmp -s "$canonical" "$mirrored" || fail "mirrored plan prompt differs: $prompt"
+done
+
+for removed_prompt in \
+  ASK_USER.txt BUILD_ROOT.txt EXECUTION_TODOS.txt PLAN_CHILD.txt PLAN_COMMON.txt PLAN_ROOT_REVIEW.txt; do
+  [ ! -e "$ROOT/build/campusclaw/src/main/resources/prompts/plan/$removed_prompt" ] \
+    || fail "removed staged plan prompt remains: $removed_prompt"
+  [ ! -e "$ROOT/campusclaw/src/main/resources/prompts/plan/$removed_prompt" ] \
+    || fail "removed mirrored plan prompt remains: $removed_prompt"
 done
 
 grep -Fxq \
