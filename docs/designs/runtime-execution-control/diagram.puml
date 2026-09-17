@@ -1,28 +1,27 @@
 @startuml runtime_execution_control_store
 title Durable Runtime Execution Control Store
-' Observed Java source baseline: pi-mono-java fd556dce3cfa12e5e834b6e9b8f835f10e7d67c8
-' Store implementation commit: 8ec383dd0ee6a5a8fe7e72b9e97bba8f71c8f8da
-' Application transaction implementation: 92562f62 through 8e775f1c
-' Tool confirmation foundation implementation: aa687e98
-' Recovery and segment append implementation: 9ad3553a through 2ef30225
+' Java baseline: pi-mono-java 74f1b8314c9a5eb3d1659dfed2ab90b787dd647f
+' CANCELED is implemented by the companion change, not present in the baseline.
 ' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/persistence/RuntimeExecutionPersistenceService.java#appendEntry/appendEntryWithUsage/restoreCommittedTerminal
-' Observed source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/runtime/RuntimeActiveExecution.java#runId
 ' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/persistence/RuntimeExecutionPersistenceService.java
 ' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/persistence/RuntimeExecutionControlRepository.java
-' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/persistence/MyBatisRuntimeExecutionControlRepository.java
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/persistence/MyBatisRuntimeExecutionControlRepository.java#markTerminal/cancelPendingDecisions
 ' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/persistence/RuntimeSessionRepository.java
-' Source: modules/coding-agent-cli/src/main/resources/mapper/session/RuntimeExecutionControlMapper.xml
+' Source: modules/coding-agent-cli/src/main/resources/mapper/session/RuntimeExecutionControlMapper.xml#cancelPendingConfirmations/cancelPendingPlanConfirmations/cancelPendingQuestionAnswers
 ' Source: modules/coding-agent-cli/src/main/resources/db/gaussdb/install/session_schema.sql
 ' Pi source baseline: pi 4af9d21d3b4d664e4a29fcabfec85171077248e3
 ' Pi source: packages/agent/src/agent-loop.ts#runAgentLoop and #prepareToolCall
-' Observed behavior: Java kept the active execution identity only in one process.
+' Observed behavior: claims check the exact execution and reject stopped executions.
 ' Design reason: one Spring transaction binds accepted events and terminal events to an exact execution segment.
-' Java divergence: durable cross-instance control identity is a CampusClaw architecture change.
+' Design reason: terminal commit also cancels unclaimed decisions without deleting accepted user input.
+' Java divergence: durable control and consumption cancellation are CampusClaw architecture changes.
 class RuntimeExecutionPersistenceService {
   acceptMessage(...)
   acceptInterrupt(...)
   markToolConfirming(...)
   acceptToolConfirmation(...)
+  acceptPlanConfirmation(...)
+  acceptQuestionAnswer(...)
   commitTerminal(...)
   appendEntry(target, entry, events)
   appendEntryWithUsage(target, entry, record, usage, events)
@@ -53,8 +52,16 @@ interface RuntimeSessionRepository {
   finishExecution(sessionId, terminalAt)
 }
 
-class MyBatisRuntimeExecutionControlRepository
-class RuntimeExecutionControlMapper
+class MyBatisRuntimeExecutionControlRepository {
+  markTerminal(...)
+  - cancelPendingDecisions(target, terminalAt)
+}
+class RuntimeExecutionControlMapper {
+  markTerminal(...)
+  cancelPendingConfirmations(sessionId, executionId, terminalAt)
+  cancelPendingPlanConfirmations(sessionId, executionId, terminalAt)
+  cancelPendingQuestionAnswers(sessionId, executionId, terminalAt)
+}
 
 entity "t_session_executions" as t_session_executions {
   session_id
@@ -85,6 +92,24 @@ entity "t_session_tool_confirmations" as t_session_tool_confirmations {
   tool_call_id
   result
   state
+  claimed_at
+  completed_at
+}
+
+entity "t_session_plan_confirmations" as t_session_plan_confirmations {
+  confirmation_event_id
+  target_event_id
+  state
+  claimed_at
+  completed_at
+}
+
+entity "t_session_question_answers" as t_session_question_answers {
+  answer_event_id
+  target_event_id
+  state
+  claimed_at
+  completed_at
 }
 
 entity "t_sessions" as t_sessions
@@ -101,6 +126,8 @@ RuntimeExecutionControlMapper --> t_session_executions
 RuntimeExecutionControlMapper --> t_session_execution_segments
 RuntimeExecutionControlMapper --> t_session_execution_segment_events
 RuntimeExecutionControlMapper --> t_session_tool_confirmations
+RuntimeExecutionControlMapper --> t_session_plan_confirmations
+RuntimeExecutionControlMapper --> t_session_question_answers
 RuntimeSessionRepository --> t_sessions
 RuntimeSessionRepository --> t_session_entries
 RuntimeSessionRepository --> t_session_events
@@ -108,6 +135,8 @@ RuntimeSessionRepository --> t_session_event_projection
 t_session_executions ||--|{ t_session_execution_segments
 t_session_execution_segments ||--o{ t_session_execution_segment_events
 t_session_execution_segments ||--o| t_session_tool_confirmations
+t_session_execution_segments ||--o| t_session_plan_confirmations
+t_session_execution_segments ||--o| t_session_question_answers
 t_session_events ||--o| t_session_execution_segment_events
 
 note bottom of RuntimeExecutionPersistenceService
@@ -117,5 +146,41 @@ note bottom of RuntimeExecutionPersistenceService
   A committed stop prevents confirmation accept or claim.
   Segment append requires same Session and current OPEN segment.
   Exact terminal retries restore original data without new writes.
+  Terminal commit cancels PENDING decisions in all three tables.
+  The session and execution IDs bound the update across all segments.
+  CLAIMED and COMPLETED records keep their original state.
+end note
+@enduml
+
+@startuml runtime_decision_consumption_state
+title Durable Decision Consumption State
+' Java baseline: pi-mono-java 74f1b8314c9a5eb3d1659dfed2ab90b787dd647f plus companion change
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/session/ToolConfirmationState.java
+' Source: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/persistence/MyBatisRuntimeExecutionControlRepository.java#markTerminal/cancelPendingDecisions
+' Source: modules/coding-agent-cli/src/main/resources/mapper/session/RuntimeExecutionControlMapper.xml#cancelPendingConfirmations/cancelPendingPlanConfirmations/cancelPendingQuestionAnswers
+' Source: modules/coding-agent-cli/src/main/resources/db/gaussdb/install/session_schema.sql
+' Observed behavior: claims require RUNNING and no committed stop request.
+' Design reason: terminal execution and unclaimed-decision cancellation share one transaction.
+' Java divergence: CANCELED ends consumption; it does not retract accepted user decisions.
+hide empty description
+[*] --> PENDING : accept and persist user decision
+PENDING --> CLAIMED : claim once while execution can run
+CLAIMED --> COMPLETED : acknowledge handling
+PENDING --> CANCELED : execution commits TERMINAL\n(done, failed, terminated)
+COMPLETED --> [*]
+CANCELED --> [*]
+note right of PENDING
+  STOPPING blocks claims but keeps PENDING.
+  CONFIRMING closes a segment, not the execution.
+end note
+note right of CANCELED
+  claimed_at stays NULL.
+  completed_at equals execution.terminal_at.
+  Accepted input and public receipt remain stored.
+  Terminal retries retain the original timestamp.
+end note
+note bottom of CLAIMED
+  Terminal commit does not cancel claimed decisions.
+  Their existing acknowledgement may still complete.
 end note
 @enduml

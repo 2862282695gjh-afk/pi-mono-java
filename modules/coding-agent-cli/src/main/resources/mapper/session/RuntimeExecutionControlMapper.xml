@@ -466,6 +466,33 @@
         ORDER BY target.session_id, target.execution_id
     </select>
 
+    <update id="cancelPendingConfirmations">
+        UPDATE t_session_tool_confirmations
+        SET state = 'CANCELED',
+            completed_at = #{completedAt}
+        WHERE session_id = #{sessionId}
+          AND execution_id = #{executionId}
+          AND state = 'PENDING'
+    </update>
+
+    <update id="cancelPendingPlanConfirmations">
+        UPDATE t_session_plan_confirmations
+        SET state = 'CANCELED',
+            completed_at = #{completedAt}
+        WHERE session_id = #{sessionId}
+          AND execution_id = #{executionId}
+          AND state = 'PENDING'
+    </update>
+
+    <update id="cancelPendingQuestionAnswers">
+        UPDATE t_session_question_answers
+        SET state = 'CANCELED',
+            completed_at = #{completedAt}
+        WHERE session_id = #{sessionId}
+          AND execution_id = #{executionId}
+          AND state = 'PENDING'
+    </update>
+
     <update id="markTerminal">
         UPDATE t_session_executions
         SET state = 'TERMINAL',
