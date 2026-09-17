@@ -85,6 +85,9 @@ public class AskUserQuestionTool implements AgentTool {
             throw new java.util.concurrent.CancellationException("User question was cancelled");
         }
         QuestionAnswerResultDTO result = questions.await(toolCallId, signal);
+        if (result == null) {
+            throw new IllegalStateException("User question returned no answer");
+        }
         String text = MAPPER.writeValueAsString(Map.of("answers", result.answers()));
         return new AgentToolResult(List.<ContentBlock>of(new TextContent(text)), result);
     }
