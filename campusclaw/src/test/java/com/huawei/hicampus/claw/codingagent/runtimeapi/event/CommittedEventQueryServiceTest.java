@@ -22,7 +22,12 @@ import com.huawei.hicampus.claw.codingagent.runtimeapi.error.RuntimeApiException
 import com.huawei.hicampus.claw.codingagent.runtimeapi.error.RuntimeErrorCode;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.persistence.RuntimeSessionRepository;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.vo.SessionEventResponseVO;
+import com.huawei.hicampus.claw.codingagent.test.Log4j2TestAppender;
 
+import org.apache.logging.log4j.Level;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.core.Logger;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -35,11 +40,25 @@ class CommittedEventQueryServiceTest {
 
     private CommittedEventQueryService service;
 
+    private Logger logger;
+
+    private Log4j2TestAppender logs;
+
     @BeforeEach
     void setUp() {
         repository = mock(RuntimeSessionRepository.class);
         projection = mock(CommittedEventProjection.class);
         service = new CommittedEventQueryService(repository, projection);
+        logger = (Logger) LogManager.getLogger(CommittedEventQueryService.class);
+        logs = new Log4j2TestAppender("committed-event-query-service-logs");
+        logs.start();
+        logger.addAppender(logs);
+    }
+
+    @AfterEach
+    void tearDown() {
+        logger.removeAppender(logs);
+        logs.stop();
     }
 
     @Test
@@ -80,13 +99,40 @@ class CommittedEventQueryServiceTest {
     }
 
     @Test
-    void shouldRejectInvalidRangeAndOverflowBeforeRepositoryRead() {
+    void shouldRejectInvalidRangeBeforeRepositoryRead() {
         assertInvalid(0, 1L);
         assertInvalid(201, 1L);
         assertInvalid(200, 0L);
-        assertInvalid(200, Long.MAX_VALUE);
 
         verify(repository, never()).findEventPage(any(), anyLong(), anyInt());
+    }
+
+    @Test
+    void shouldLogOffsetOverflowBeforeRepositoryRead() {
+        assertThatThrownBy(() -> service.list(SESSION_ID, 200, Long.MAX_VALUE))
+                .isInstanceOfSatisfying(RuntimeApiException.class, error -> {
+                    assertThat(error.errorCode()).isEqualTo(RuntimeErrorCode.INVALID_EVENT_LIST_QUERY);
+                    assertThat(error).hasNoCause();
+                });
+
+        verify(repository, never()).findEventPage(any(), anyLong(), anyInt());
+        assertOverflowLog("offset");
+    }
+
+    @Test
+    void shouldLogNextPageOverflow() {
+        CommittedEventDTO event = committedEvent("event-1");
+        CommittedEventDTO lookAhead = committedEvent("event-2");
+        when(repository.findEventPage(SESSION_ID, Long.MAX_VALUE - 1L, 2))
+                .thenReturn(Optional.of(List.of(event, lookAhead)));
+        when(projection.project(event)).thenReturn(response("event-1"));
+
+        assertThatThrownBy(() -> service.list(SESSION_ID, 1, Long.MAX_VALUE))
+                .isInstanceOfSatisfying(RuntimeApiException.class, error -> {
+                    assertThat(error.errorCode()).isEqualTo(RuntimeErrorCode.INVALID_EVENT_LIST_QUERY);
+                    assertThat(error).hasNoCause();
+                });
+        assertOverflowLog("nextPage");
     }
 
     @Test
@@ -102,8 +148,21 @@ class CommittedEventQueryServiceTest {
 
     private void assertInvalid(Integer limit, Long page) {
         assertThatThrownBy(() -> service.list(SESSION_ID, limit, page))
-                .isInstanceOfSatisfying(RuntimeApiException.class, error -> assertThat(error.errorCode())
-                        .isEqualTo(RuntimeErrorCode.INVALID_EVENT_LIST_QUERY));
+                .isInstanceOfSatisfying(RuntimeApiException.class, error -> {
+                    assertThat(error.errorCode()).isEqualTo(RuntimeErrorCode.INVALID_EVENT_LIST_QUERY);
+                    assertThat(error).hasNoCause();
+                });
+    }
+
+    private void assertOverflowLog(String calculation) {
+        assertThat(logs.events()).singleElement().satisfies(event -> {
+            assertThat(event.getLevel()).isEqualTo(Level.ERROR);
+            assertThat(event.getContextData().<String>getValue("operation")).isEqualTo("runtime.events.list");
+            assertThat(event.getContextData().<String>getValue("calculation")).isEqualTo(calculation);
+            assertThat(event.getContextData().<String>getValue("errorCode"))
+                    .isEqualTo(RuntimeErrorCode.INVALID_EVENT_LIST_QUERY.name());
+            assertThat(event.getThrown()).isInstanceOf(ArithmeticException.class);
+        });
     }
 
     private static CommittedEventDTO committedEvent(String eventId) {

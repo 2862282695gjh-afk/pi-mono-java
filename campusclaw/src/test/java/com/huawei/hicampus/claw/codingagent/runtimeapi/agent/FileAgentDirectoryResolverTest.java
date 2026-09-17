@@ -60,6 +60,16 @@ class FileAgentDirectoryResolverTest {
     }
 
     @Test
+    void rejectsMissingPreparedRuntime() {
+        AgentRuntimeManager manager = mock(AgentRuntimeManager.class);
+        when(manager.prepare(AGENT_ID)).thenReturn(null);
+
+        assertThatThrownBy(() -> new FileAgentDirectoryResolver(manager).resolve(AGENT_ID))
+                .isInstanceOfSatisfying(RuntimeApiException.class, error -> assertThat(error.errorCode())
+                        .isEqualTo(RuntimeErrorCode.AGENT_NOT_AVAILABLE));
+    }
+
+    @Test
     void rejectsMissingOrDuplicateModelBinding() {
         AgentRuntimeManager manager = mock(AgentRuntimeManager.class);
         when(manager.prepare(AGENT_ID)).thenReturn(prepared(List.of("model-a", "model-a")));

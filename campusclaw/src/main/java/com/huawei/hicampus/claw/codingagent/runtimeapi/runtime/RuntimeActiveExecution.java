@@ -25,8 +25,12 @@ import com.huawei.hicampus.claw.codingagent.tool.plan.PlanReviewPort;
 import com.huawei.hicampus.claw.codingagent.tool.plan.PlanReviewResultDTO;
 import com.huawei.hicampus.claw.codingagent.tool.question.QuestionAnswerResultDTO;
 import com.huawei.hicampus.claw.codingagent.tool.question.QuestionRequestSnapshotDTO;
+import com.huawei.hicampus.claw.codingagent.tool.question.UserQuestionException;
 import com.huawei.hicampus.claw.codingagent.tool.question.UserQuestionPort;
 import com.huawei.hicampus.claw.common.constant.ClawConstants;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * 单个 Session 当前唯一活动执行的进程内句柄。
@@ -35,6 +39,8 @@ import com.huawei.hicampus.claw.common.constant.ClawConstants;
  * @since [br_eCampusCore 26.0.0]
  */
 public class RuntimeActiveExecution implements PlanReviewPort, UserQuestionPort {
+    private static final Logger LOGGER = LoggerFactory.getLogger(RuntimeActiveExecution.class);
+
     private RuntimeEventOutput output;
 
     private final CompletableFuture<Void> completion = new CompletableFuture<>();
@@ -93,8 +99,17 @@ public class RuntimeActiveExecution implements PlanReviewPort, UserQuestionPort 
         }
         try {
             return pending.beginPlan(toolCallId, planEventId, plan);
-        } catch (com.huawei.hicampus.claw.codingagent.tool.question.UserQuestionException error) {
-            throw new PlanReviewException("PLAN_REVIEW_UNAVAILABLE");
+        } catch (UserQuestionException error) {
+            String errorCode = "PLAN_REVIEW_UNAVAILABLE";
+            LOGGER.atError()
+                    .addKeyValue("event", "campusclaw.failure")
+                    .addKeyValue("operation", "runtime.plan.review.begin")
+                    .addKeyValue("errorCode", errorCode)
+                    .addKeyValue("toolCallId", toolCallId)
+                    .addKeyValue("planEventId", planEventId)
+                    .setCause(error)
+                    .log("CampusClaw failure: operation={}, errorCode={}", "runtime.plan.review.begin", errorCode);
+            throw new PlanReviewException(errorCode);
         }
     }
 
