@@ -522,7 +522,14 @@ public class MyBatisRuntimeExecutionControlRepository implements RuntimeExecutio
                         terminalReason.value(),
                         storedAt),
                 "execution did not enter terminal state");
+        cancelPendingDecisions(target, storedAt);
         return TransitionStatus.APPLIED;
+    }
+
+    private void cancelPendingDecisions(ExecutionTargetDTO target, OffsetDateTime terminalAt) {
+        mapper.cancelPendingConfirmations(target.sessionId(), target.executionId(), terminalAt);
+        mapper.cancelPendingPlanConfirmations(target.sessionId(), target.executionId(), terminalAt);
+        mapper.cancelPendingQuestionAnswers(target.sessionId(), target.executionId(), terminalAt);
     }
 
     @Override

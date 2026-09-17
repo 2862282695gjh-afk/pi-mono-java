@@ -193,6 +193,21 @@ public interface RuntimeExecutionControlMapper {
 
     List<ExecutionControlSignalDTO> findPendingControls(@Param("targets") List<ExecutionTargetDTO> targets);
 
+    int cancelPendingConfirmations(
+            @Param("sessionId") String sessionId,
+            @Param("executionId") String executionId,
+            @Param("completedAt") OffsetDateTime completedAt);
+
+    int cancelPendingPlanConfirmations(
+            @Param("sessionId") String sessionId,
+            @Param("executionId") String executionId,
+            @Param("completedAt") OffsetDateTime completedAt);
+
+    int cancelPendingQuestionAnswers(
+            @Param("sessionId") String sessionId,
+            @Param("executionId") String executionId,
+            @Param("completedAt") OffsetDateTime completedAt);
+
     int markTerminal(
             @Param("sessionId") String sessionId,
             @Param("executionId") String executionId,

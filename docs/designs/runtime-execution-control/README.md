@@ -2,46 +2,42 @@
 
 | 属性 | 值 |
 |---|---|
-| 版本 | 0.4.0 |
-| 日期 | 2026-09-08 |
-| 设计契约 | `pi-mono-java-design@2ee2a3211da68ad87b0d9cab353e691b00bdaebd` |
-| 变更前 Java 源码基线 | `pi-mono-java@fd556dce3cfa12e5e834b6e9b8f835f10e7d67c8` |
-| 存储实现提交 | `8ec383dd0ee6a5a8fe7e72b9e97bba8f71c8f8da`；主线集成 `4c580a7a`，权限补齐 `dae01509` |
-| 应用事务实现提交 | `92562f62`～`8e775f1c`；本分支主线合并 `30ae1952` |
-| 终态恢复与段内追加实现 | `9ad3553a`～`2ef30225`，基于 `3cf28323` |
-| 工具确认基础实现 | `aa687e98`；来源 tip `d575f2d9` 的功能净差 |
+| 版本 | 0.5.0 |
+| 日期 | 2026-09-17 |
+| 设计契约 | `pi-mono-java-design@1ae37aa31ccfe3f371b9e08a7cb89591b97037a8` |
+| 变更前 Java 源码基线 | `pi-mono-java@74f1b8314c9a5eb3d1659dfed2ab90b787dd647f` |
+| Java 实现范围 | 上述基线及本设计配套的未领取决定终结实现；源码入口见下表 |
 | pi 源码基线 | `pi@4af9d21d3b4d664e4a29fcabfec85171077248e3` |
-| 范围 | 固定执行存储，消息/中断/进入确认/确认决定/真实终态事务；不包含 Session Events HTTP、轮询或 waiter |
+| 范围 | 固定执行存储，消息/中断/进入确认/三类决定/真实终态事务；HTTP、轮询和等待登记由各自设计维护 |
 
 ## Context
 
-设计仓的 `chat-events-design.md` §4.4～§4.5 要求在执行开始前固定内部执行身份，
+设计仓的 `chat-events-design.md` §4.4～§4.6 要求在执行开始前固定内部执行身份，
 把原 `user.message.eventId` 作为根事件，并为初始响应和每次确认续跑建立不同结果段。
 这样迟到的中断不能只凭 Session 当前状态误停下一轮，确认续跑也不会把新输出写回已经关闭的响应。
 
-变更前 Java 仅在 `RuntimeActiveExecution.runId` 保存进程内标识；另一个服务实例不能据此绑定控制目标。
-0.1 版增加低层持久化边界。0.2 版在 Spring 外层事务中组合 Session Entry、公共完整事件、
-执行身份和结果段关联，使消息受理、中断受理、进入确认和真实终态具有一个提交点。0.3 版增加
-固定段追加与终态幂等恢复；0.4 版增加工具确认决定的原子受理、原执行实例单次 claim 和处理完成 ack，并让已经受理的停止请求阻止后续 claim。
+工具确认、计划确认和问题答案在受理后保存为持久化决定，由原执行实例至多领取一次。执行可能在
+决定受理后、领取前停止或超时；这时决定不得继续消费。执行真实终结时，将尚未领取的决定统一置为
+`CANCELED`，明确表达“本次执行不再消费”，同时保留用户提交的决定及其公共回执。
 
 ## 源码证据与设计理由
 
 | 分类 | 路径与符号 | 观察与理由 |
 |---|---|---|
-| 变更前 Java | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/runtime/RuntimeActiveExecution.java#beginRun/runId` | 标识随 JVM 内对象存在，不能用于跨实例事务校验 |
-| 变更前 Java | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/persistence/MyBatisRuntimeSessionRepository.java#acceptUserEvent/finishExecution` | Session 已有 idle/running 准入事务，但没有根执行、结果段和控制事件关联 |
-| 本片实现 | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/persistence/RuntimeExecutionControlRepository.java` | 定义登记、精确读取、完整事件关联、确认 accept/claim/ack、confirming 关段和真实终态 CAS |
-| 本片实现 | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/persistence/MyBatisRuntimeExecutionControlRepository.java` | 统一先锁 Session，再锁固定执行；停止状态优先于确认 claim，拒绝过期 segment 和重复终态 |
-| 本片实现 | `modules/coding-agent-cli/src/main/resources/db/gaussdb/install/session_schema.sql` | 四张 `t_` 表保存根执行、结果段、段内事件顺序和一次消费的确认决定；toolCallId 使用 TEXT |
-| 本片实现 | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/persistence/MyBatisRuntimeSessionRepository.java#completeCleanup` | Session 清理先删除确认决定，再删除段事件、段和根执行，避免控制数据永久残留 |
-| 0.2 应用事务 | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/persistence/RuntimeExecutionPersistenceService.java#acceptMessage/acceptInterrupt/markToolConfirming/commitTerminal` | 用外层 Spring 事务组合 Session、Entry、公共事件和固定执行状态 |
-| 0.2 锁内回调 | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/persistence/RuntimeExecutionControlRepository.java#ConfirmingAppender/TerminalAppender` | 在写权威事件前先锁定并复核精确目标，过期目标不会调用写入回调 |
-| 0.4 确认事务 | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/persistence/RuntimeExecutionPersistenceService.java#acceptToolConfirmation` | 锁内写 `user.tool_confirmation`、新续跑段、决定和段事件关联，返回固定续跑 target |
-| 0.4 单次消费 | `modules/coding-agent-cli/src/main/resources/mapper/session/RuntimeExecutionControlMapper.xml#claimConfirmation/acknowledgeConfirmation` | 仅把 PENDING 决定变为 CLAIMED 一次，处理完成后再 CAS 为 COMPLETED |
+| 基线实现 | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/persistence/RuntimeExecutionControlRepository.java` | 定义登记、精确读取、完整事件关联、决定 accept/claim/ack、confirming 关段和真实终态 CAS |
+| 基线实现 | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/persistence/MyBatisRuntimeExecutionControlRepository.java#lock/lockExecutionForClaim` | 统一先锁 Session，再锁固定执行；停止状态优先于领取，拒绝过期 segment 和重复终态 |
+| 基线实现 | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/persistence/RuntimeExecutionPersistenceService.java#acceptMessage/acceptInterrupt/acceptToolConfirmation/acceptPlanConfirmation/acceptQuestionAnswer/commitTerminal` | 外层 Spring 事务组合 Session、Entry、公共事件和固定执行状态 |
+| 基线实现 | `modules/coding-agent-cli/src/main/resources/mapper/session/RuntimeExecutionControlMapper.xml#claimConfirmation/claimPlanConfirmation/claimQuestionAnswer/findPendingControls` | 领取要求原执行仍为 RUNNING 且未接受停止；控制轮询排除 TERMINAL 执行，固定身份阻止旧决定进入新执行 |
+| 配套实现 | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/persistence/MyBatisRuntimeExecutionControlRepository.java#markTerminal/cancelPendingDecisions` | 执行成功转为 TERMINAL 后，同一事务取消三类决定表中尚未领取的记录 |
+| 配套实现 | `modules/coding-agent-cli/src/main/resources/mapper/session/RuntimeExecutionControlMapper.xml#cancelPendingConfirmations/cancelPendingPlanConfirmations/cancelPendingQuestionAnswers` | 按 sessionId/executionId 取消全部段的 PENDING 决定，completed_at 使用执行终态时间 |
+| 配套实现 | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/session/ToolConfirmationState.java` 与 `modules/coding-agent-cli/src/main/resources/db/gaussdb/install/session_schema.sql` | 三类决定共用 PENDING/CLAIMED/COMPLETED/CANCELED；CHECK 约束状态与领取、结束时间一致 |
+| 基线实现 | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/persistence/MyBatisRuntimeSessionRepository.java#beginDeletion/completeCleanup` | 显式删除 idle Session 才登记异步清理；物理删除不承担执行终态时的消费状态收尾 |
+
+`CANCELED` 是配套实现增加的消费终结状态，未包含在变更前 Java 基线中。
 
 pi `packages/agent/src/agent-loop.ts#runAgentLoop` 使用调用方提供的 `AbortSignal` 驱动一轮循环，
 `prepareToolCall` 在工具执行前再次检查该信号。pi 没有 CampusClaw 的共享数据库、HTTP Session 资源或
-跨实例路由。本片的固定数据库身份属于 CampusClaw 架构变化，不把它描述为 pi 已有能力。
+跨实例路由。固定数据库身份与消费终结状态属于 CampusClaw 架构变化，不把它们描述为 pi 已有能力。
 
 ## 架构与数据流
 
@@ -53,8 +49,30 @@ pi `packages/agent/src/agent-loop.ts#runAgentLoop` 使用调用方提供的 `Abo
 `segment_id` 和控制状态。同一 Session 只允许一条非 TERMINAL 执行。
 `t_session_execution_segments` 按序保存初始段和确认续跑段；关闭段时固定唯一 idle 事件及原因。
 `t_session_execution_segment_events` 只关联实际属于该 HTTP 结果段的完整事件，后续中断回执不会
-因此自动进入原消息段。`t_session_tool_confirmations` 保存确认回执事件、前后段、Tool Call、allow/deny
-决定和 PENDING/CLAIMED/COMPLETED 状态；确认凭据仍不落库。
+因此自动进入原消息段。三类决定分别保存在 `t_session_tool_confirmations`、
+`t_session_plan_confirmations` 和 `t_session_question_answers`，共同关联固定执行、确认前后段和
+公共回执。问题答案通过回执关联保留；工具与计划确认保留其结果和用户说明。确认凭据不落库。
+
+## 消费状态
+
+![三类决定的消费状态](runtime_decision_consumption_state.svg)
+
+[PlantUML 源码](diagram.puml#L155)
+
+| 状态 | 含义 | `claimed_at` | `completed_at` |
+|---|---|---|---|
+| `PENDING` | 已受理，尚未被原执行实例领取 | NULL | NULL |
+| `CLAIMED` | 已被原执行实例领取，尚未确认处理结束 | 非 NULL | NULL |
+| `COMPLETED` | 已领取的决定处理结束 | 非 NULL | 非 NULL |
+| `CANCELED` | 执行已真实终结，尚未领取的决定不再消费 | NULL | 执行的 `terminal_at` |
+
+`CANCELED` 只描述消费终结，不表示用户撤回，也不等于工具执行成功或失败。`completed_at` 表示
+处理完成或取消消费的时间，具体语义由 `state` 区分；不伪造领取时间，不把未消费决定改成 `COMPLETED`。
+取消消费保留用户已提交的决定和公共回执，不撤销计划批准时已提交的模式切换。
+
+停止进入 `STOPPING` 时，决定暂时仍为 `PENDING`，领取条件已阻止继续消费。只有执行进入真实
+`TERMINAL` 时才取消消费。`done`、`failed`、`terminated` 使用同一收尾规则；进入 `CONFIRMING`
+的段结束不是执行终结，不触发取消。`CLAIMED`、`COMPLETED` 和既有 `CANCELED` 均不被改写。
 
 ## 事务与锁顺序
 
@@ -66,8 +84,7 @@ pi `packages/agent/src/agent-loop.ts#runAgentLoop` 使用调用方提供的 `Abo
 - `acceptMessage` 先通过 Session 准入事务写 `user.message` Entry 与公共事件，再登记根执行和初始段，
   最后把该回执关联到初始段。公开 `eventId` 同时成为不可变 `rootEventId`。
 - `acceptInterrupt` 先锁 Session 和当前执行，校验必填 `targetEventId` 与根事件完全一致，并把执行改为
-  STOPPING；随后写 `user.interrupt` Entry 与公共事件。该受理回执不关联到原消息结果段；中断 HTTP
-  响应继续等待同一实际终态的能力尚未接入。
+  STOPPING；随后写 `user.interrupt` Entry 与公共事件。该回执不关联到原消息结果段，也不取消决定。
 - `markToolConfirming` 在锁内确认执行仍为 RUNNING，再由回调依次写 `agent.tool_call` 和
   `session.status_idle` 完整事件、关联当前段并以 CONFIRMING 关闭该段；根执行进入 CONFIRMING，
   Session 保持 running。
@@ -78,15 +95,25 @@ pi `packages/agent/src/agent-loop.ts#runAgentLoop` 使用调用方提供的 `Abo
   PENDING 到 CLAIMED 一次。若中断已经把执行改为 STOPPING，claim 返回空；`acknowledgeConfirmation`
   只允许已 claim 的同一 confirmationEventId 从 CLAIMED 变为 COMPLETED，重复 ack 返回 false。
 - `commitTerminal` 在调用回调前锁定并复核完整 target；回调写唯一 `session.status_idle` Entry 与公共事件，
-  然后关联段、关闭尚未关闭的当前段、终结根执行并把同一轮 Session 置为 idle。过期 target 不会触发回调。
+  然后关联段、关闭尚未关闭的当前段、终结根执行。`markTerminal` 成功后调用 `cancelPendingDecisions`，
+  按 `sessionId + executionId` 将三类表的全部 PENDING 决定置为 CANCELED，记录相同的终态时间，
+  最后使同一轮 Session 回到 idle。过期 target 不会触发回调。
+
+计划确认和问题答案沿用相同的受理、单次领取与处理结束确认边界。取消消费覆盖原执行的全部段，
+不依赖已清空的 `pending_*` 指针，也不只查当前段。任何一次取消更新失败，终态事件、段、执行和
+其他决定更新都随外层事务回滚；取消更新影响零行是正常情况，表示没有尚未领取的决定。
+
+领取与终态使用同一锁序。领取先提交时，终态保留 CLAIMED，原有处理结束确认仍可完成；
+终态先提交时，决定变为 CANCELED，后续领取返回空。同一终态重试恢复原始事件和时间，
+不再次取消、不改写取消时间，也不影响之后启动的新执行。
 
 `markTerminal` 同时校验 executionId、rootEventId 和当前 segmentId，只允许 done、failed、terminated
 三个真实结束原因。状态与原因使用 typed enum；数据库保存既定大小写字面值。`compact` 保持自己的
 Session 生命周期，本片不把任意 running Session 推断为用户消息执行。
 
-## 边界与后续
+## 边界与保留
 
-0.3 版增加两个已实现的持久化边界：
+固定段追加和终态恢复具有以下边界：
 
 - `RuntimeExecutionControlRepository.java#appendToSegment` 在 Session、执行和结果段行锁下核验完整
   target，仅允许 RUNNING/STOPPING 的当前 OPEN 段追加。`RuntimeExecutionPersistenceService.java`
@@ -102,43 +129,46 @@ Session 生命周期，本片不把任意 running Session 推断为用户消息�
 快照 DTO 位于同级 `dto/CommittedTerminalDTO.java`，查询位于
 `modules/coding-agent-cli/src/main/resources/mapper/session/RuntimeExecutionControlMapper.xml`。
 
-本片没有把 Session Events HTTP 联合输入切换到这些应用事务，也没有实现确认 HTTP 的请求验证与状态映射、
-执行协调器的后台终态重试调度、本地提交后唤醒、批量控制检查、有界等待登记或结果补读，
-也没有退役旧控制接口。这些能力必须在后续切片单独验收。原执行凭据不会写入控制表，
-进入 confirming 后由原实例继续持有；确认决定表只提供持久化交接点。
+原执行凭据不会写入控制表，进入 confirming 后由原实例继续持有。HTTP、控制分发、轮询和结果等待
+使用这些持久化边界，各自行为由对应设计维护。
 
-没有新增 Maven 依赖。SQL 只进入首次发布的全量安装脚本；表名为小写蛇形 `t_` 前缀，所有
+决定记录作为已受理事实保留至 Session 删除。`beginDeletion` 只接受 idle Session，登记清理任务后
+由异步 worker 调用 `completeCleanup`，先删除三类决定，再删除段事件、段、执行和历史。
+没有按 Session 年龄自动过期删除的策略；取消消费与历史物理删除是独立边界。
+
+终态增加三次按固定执行和 PENDING 状态过滤的更新，复用三类表已有的
+`(session_id, execution_id, state, created_at)` 索引，不新增表、后台扫描或定时任务。
+
+没有新增 Maven 依赖。SQL 只进入首次发布的全量安装脚本，并同步生成公司镜像，不新增升级脚本；
+表名为小写蛇形 `t_` 前缀，所有
 `COMMENT ON` 描述使用中文。`pending_tool_call_id` 使用 TEXT，不对提供商 Tool Call ID 增加未确认上限。
 全量安装后通过 `modules/coding-agent-cli/src/main/resources/db/gaussdb/install/session_privileges.sql`
 给运行角色授予新增控制表和公共事件表的 SELECT/INSERT/UPDATE/DELETE；表所有者权限不能代替部署角色授权。
 
-## 验证
+## 验收与验证
 
-2026-09-08 在 Docker amd64 仿真的 openGauss 7.0.0-RC3 build01b7e318 上验证：
+以下是配套实现必须验证的行为，测试执行结果以交付记录为准：
 
-- 固定根执行与初始段能登记和读取，300 字符 Tool Call ID 可进入 confirming；Session 仍保持 running。
-- 过期 segment 和重复终态不能覆盖已提交终态。
-- 删除完成的 Session 后，确认决定、段事件、段和根执行四张控制表全部清空，tombstone 继续保留。
-- 工具确认基础片在最新主线独立执行 `RuntimeSessionRepositoryOpenGaussIT` 36 项，无失败、错误或跳过；
-  其中新增回归覆盖确认受理/claim/ack、事务回滚、确认与中断的行锁串行化及 Session 清理。
-- 回归覆盖消息准入整体回滚、中断目标校验和回滚、confirming 两个完整事件与段关闭、过期终态回调零调用、
-  终态段关联失败时 Entry、公共事件、完整性标记、执行状态、Session 状态和统一序号整体回滚。
-- 0.3 版在另一隔离数据库独立执行 Repository 39 项与公共事件 2 项，共 41 项通过，零跳过；新增回归覆盖
-  跨 Session 的 Entry/事件/Usage Record 拒绝、过期段零回调、段关联冲突整体回滚、STOPPING 状态的实际输出、
-  confirming 后中断终态恢复，以及旧终态重试不结束下一轮执行。
-- 确认回执写入失败时新段、决定、执行状态、Entry、公共事件和统一序号整体回滚；中断先提交时，后续
-  确认受理返回 EXECUTION_STOPPING，等待中的 claim 在行锁释放后返回空，决定保持 PENDING。
-- 新建非所有者角色先实际重现读取控制表权限不足，再执行权限模板；该角色对四张控制表及公共事件表的 SELECT 和零行 INSERT/UPDATE/DELETE 全部成功。该检查验证权限，事务行为由上述数据库回归验证。
-- 合并主线 `80ca6cc9` 的恢复与段内追加实现后，在同一隔离数据库重新执行 Repository 42 项与公共事件原子事务 2 项，共 44 项通过，零跳过。
-- `spotless:apply`、`checkstyle:check`、`test-compile`、聚焦真实数据库测试和 `git diff --check` 通过。
+- 工具确认、计划确认、问题答案在受理后、领取前发生停止或超时，真实终态提交后变为 CANCELED，
+  claimed_at 保持 NULL，completed_at 等于执行 terminal_at，回执和原决定内容保留。
+- STOPPING 和 CONFIRMING 不提前取消决定；done、failed、terminated 均收尾原执行的 PENDING。
+- 无待消费决定时正常终结；CLAIMED、COMPLETED 和其他执行的记录保持原状，已领取决定仍可确认处理结束。
+- 领取与终态竞争满足同一锁序；取消 SQL 失败时整个终态事务回滚，重试可完整提交。
+- 同一终态重试不追加事件、不改变取消时间，不影响新执行；Session 删除仍完整清理三类决定。
+- 数据库 CHECK 拒绝 CANCELED 携带领取时间或缺少结束时间；枚举、MyBatis 映射和首次安装结构一致。
+- PlantUML 生成成功、源码为 ASCII、SVG 为有效 XML、Markdown 引用及源码锚点有效，git diff --check 通过。
 
-企业镜像通过生成同步检查；本地无法解析企业 `NativeParent:26.0.0-SNAPSHOT`，企业镜像编译尚未验证。
-
-该数据库环境证明 SQL、MyBatis 映射和事务行为可运行，不构成企业生产性能或延迟承诺。
+2026-09-17 在隔离 openGauss 7.0.0-RC3 数据库应用全量安装结构后，新增
+`RuntimeDecisionCancellationOpenGaussIT` 17 项、已有 Session Repository 49 项、计划审核 8 项、
+问题答案 4 项全部通过；执行协调器 16 项和控制分发器 3 项通过，共 97 项，无失败、错误或跳过。
+Spotless、Checkstyle、Java 方法长度检查和测试质量检查通过；测试质量脚本无 errors，测试命名提示
+按仓库既有行为式命名人工核对。公司镜像已同步并核对一致，因无法解析
+`com.huawei.hicampus:NativeParent:26.0.0-SNAPSHOT`，公司镜像编译尚未验证。
 
 ## 设计决策
 
-见 [ADR-0075](../../decisions/0075-persist-runtime-execution-control.html)。
+固定身份、锁顺序和应用事务的基础取舍见 [ADR-0075](../../decisions/0075-persist-runtime-execution-control.html)。
+取消消费在已有真实终态事务中完成，使停止、超时和其他结束路径具有相同收尾行为，并复用终态幂等边界。
 
 ## 版本历史
 
@@ -149,3 +179,4 @@ Session 生命周期，本片不把任意 running Session 推断为用户消息�
 | 0.2.0 | 2026-09-08 | 增加消息、中断、进入确认与真实终态的外层原子事务和真实数据库回归 |
 | 0.3.0 | 2026-09-08 | 增加固定段原子追加、终态幂等恢复和跨 Session 归属校验 |
 | 0.4.0 | 2026-09-08 | 增加工具确认原子受理、单次 claim/ack、停止优先和确认数据清理 |
+| 0.5.0 | 2026-09-17 | 在真实终态事务中将三类未领取决定置为 CANCELED，保留用户决定并区分取消消费与 Session 物理清理 |

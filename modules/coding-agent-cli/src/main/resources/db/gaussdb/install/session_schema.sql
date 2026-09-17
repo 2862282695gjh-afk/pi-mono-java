@@ -239,10 +239,10 @@ COMMENT ON COLUMN t_session_tool_confirmations.segment_id IS '本次确认续跑
 COMMENT ON COLUMN t_session_tool_confirmations.tool_call_id IS '原始 Tool Call 标识，不限制提供商长度';
 COMMENT ON COLUMN t_session_tool_confirmations.result IS '确认决定：allow 或 deny';
 COMMENT ON COLUMN t_session_tool_confirmations.deny_message IS '拒绝决定携带的可选用户说明；允许决定时为空';
-COMMENT ON COLUMN t_session_tool_confirmations.state IS '一次消费状态：PENDING、CLAIMED 或 COMPLETED';
+COMMENT ON COLUMN t_session_tool_confirmations.state IS '一次消费状态：PENDING 待领取、CLAIMED 已领取、COMPLETED 已处理、CANCELED 因根执行结束而取消消费';
 COMMENT ON COLUMN t_session_tool_confirmations.created_at IS '确认决定与回执提交的时间';
 COMMENT ON COLUMN t_session_tool_confirmations.claimed_at IS '原执行实例取得决定的时间';
-COMMENT ON COLUMN t_session_tool_confirmations.completed_at IS '原执行实例完成决定处理的时间';
+COMMENT ON COLUMN t_session_tool_confirmations.completed_at IS '决定处理完成或因根执行结束而取消消费的时间';
 
 CREATE UNIQUE INDEX idx_t_session_tool_confirmations_segment
     ON t_session_tool_confirmations (session_id, execution_id, segment_id);
@@ -254,7 +254,7 @@ ALTER TABLE t_session_tool_confirmations
     ADD CONSTRAINT ck_t_session_tool_confirmations_result CHECK (result IN ('allow', 'deny'));
 
 ALTER TABLE t_session_tool_confirmations
-    ADD CONSTRAINT ck_t_session_tool_confirmations_state CHECK (state IN ('PENDING', 'CLAIMED', 'COMPLETED'));
+    ADD CONSTRAINT ck_t_session_tool_confirmations_state CHECK (state IN ('PENDING', 'CLAIMED', 'COMPLETED', 'CANCELED'));
 
 ALTER TABLE t_session_tool_confirmations
     ADD CONSTRAINT ck_t_session_tool_confirmations_message CHECK (result = 'deny' OR deny_message IS NULL);
@@ -263,7 +263,8 @@ ALTER TABLE t_session_tool_confirmations
     ADD CONSTRAINT ck_t_session_tool_confirmations_claim
     CHECK ((state = 'PENDING' AND claimed_at IS NULL AND completed_at IS NULL)
         OR (state = 'CLAIMED' AND claimed_at IS NOT NULL AND completed_at IS NULL)
-        OR (state = 'COMPLETED' AND claimed_at IS NOT NULL AND completed_at IS NOT NULL));
+        OR (state = 'COMPLETED' AND claimed_at IS NOT NULL AND completed_at IS NOT NULL)
+        OR (state = 'CANCELED' AND claimed_at IS NULL AND completed_at IS NOT NULL));
 
 CREATE TABLE t_session_plan_confirmations (
     session_id            VARCHAR(128)   NOT NULL,
@@ -292,10 +293,10 @@ COMMENT ON COLUMN t_session_plan_confirmations.segment_id IS '本次审核续跑
 COMMENT ON COLUMN t_session_plan_confirmations.tool_call_id IS '产生被审核计划的 ExitPlanMode 调用标识';
 COMMENT ON COLUMN t_session_plan_confirmations.result IS '审核决定：approve 或 revise';
 COMMENT ON COLUMN t_session_plan_confirmations.feedback IS '退回修改时携带的可选用户意见';
-COMMENT ON COLUMN t_session_plan_confirmations.state IS '一次消费状态：PENDING、CLAIMED 或 COMPLETED';
+COMMENT ON COLUMN t_session_plan_confirmations.state IS '一次消费状态：PENDING 待领取、CLAIMED 已领取、COMPLETED 已处理、CANCELED 因根执行结束而取消消费';
 COMMENT ON COLUMN t_session_plan_confirmations.created_at IS '审核决定与回执提交的时间';
 COMMENT ON COLUMN t_session_plan_confirmations.claimed_at IS '原执行实例取得决定的时间';
-COMMENT ON COLUMN t_session_plan_confirmations.completed_at IS '原执行实例完成决定处理的时间';
+COMMENT ON COLUMN t_session_plan_confirmations.completed_at IS '决定处理完成或因根执行结束而取消消费的时间';
 
 CREATE UNIQUE INDEX idx_t_session_plan_confirmations_target
     ON t_session_plan_confirmations (session_id, target_event_id);
@@ -310,7 +311,7 @@ ALTER TABLE t_session_plan_confirmations
     ADD CONSTRAINT ck_t_session_plan_confirmations_result CHECK (result IN ('approve', 'revise'));
 
 ALTER TABLE t_session_plan_confirmations
-    ADD CONSTRAINT ck_t_session_plan_confirmations_state CHECK (state IN ('PENDING', 'CLAIMED', 'COMPLETED'));
+    ADD CONSTRAINT ck_t_session_plan_confirmations_state CHECK (state IN ('PENDING', 'CLAIMED', 'COMPLETED', 'CANCELED'));
 
 ALTER TABLE t_session_plan_confirmations
     ADD CONSTRAINT ck_t_session_plan_confirmations_feedback CHECK (result = 'revise' OR feedback IS NULL);
@@ -319,7 +320,8 @@ ALTER TABLE t_session_plan_confirmations
     ADD CONSTRAINT ck_t_session_plan_confirmations_claim
     CHECK ((state = 'PENDING' AND claimed_at IS NULL AND completed_at IS NULL)
         OR (state = 'CLAIMED' AND claimed_at IS NOT NULL AND completed_at IS NULL)
-        OR (state = 'COMPLETED' AND claimed_at IS NOT NULL AND completed_at IS NOT NULL));
+        OR (state = 'COMPLETED' AND claimed_at IS NOT NULL AND completed_at IS NOT NULL)
+        OR (state = 'CANCELED' AND claimed_at IS NULL AND completed_at IS NOT NULL));
 
 CREATE TABLE t_session_tombstone (
     session_id  VARCHAR(128)   PRIMARY KEY,
@@ -490,10 +492,10 @@ COMMENT ON COLUMN t_session_question_answers.target_event_id IS '被回答 agent
 COMMENT ON COLUMN t_session_question_answers.previous_segment_id IS '进入问题等待时已经关闭的结果段标识';
 COMMENT ON COLUMN t_session_question_answers.segment_id IS '本次答案续跑使用的新结果段标识';
 COMMENT ON COLUMN t_session_question_answers.tool_call_id IS '产生被回答问题的 AskUserQuestion 调用标识';
-COMMENT ON COLUMN t_session_question_answers.state IS '一次消费状态：PENDING、CLAIMED 或 COMPLETED';
+COMMENT ON COLUMN t_session_question_answers.state IS '一次消费状态：PENDING 待领取、CLAIMED 已领取、COMPLETED 已处理、CANCELED 因根执行结束而取消消费';
 COMMENT ON COLUMN t_session_question_answers.created_at IS '答案回执提交的时间';
 COMMENT ON COLUMN t_session_question_answers.claimed_at IS '原执行实例取得答案的时间';
-COMMENT ON COLUMN t_session_question_answers.completed_at IS '原执行实例完成答案处理的时间';
+COMMENT ON COLUMN t_session_question_answers.completed_at IS '答案处理完成或因根执行结束而取消消费的时间';
 
 CREATE UNIQUE INDEX idx_t_session_question_answers_target
     ON t_session_question_answers (session_id, target_event_id);
@@ -505,13 +507,14 @@ CREATE INDEX idx_t_session_question_answers_pending
     ON t_session_question_answers (session_id, execution_id, state, created_at);
 
 ALTER TABLE t_session_question_answers
-    ADD CONSTRAINT ck_t_session_question_answers_state CHECK (state IN ('PENDING', 'CLAIMED', 'COMPLETED'));
+    ADD CONSTRAINT ck_t_session_question_answers_state CHECK (state IN ('PENDING', 'CLAIMED', 'COMPLETED', 'CANCELED'));
 
 ALTER TABLE t_session_question_answers
     ADD CONSTRAINT ck_t_session_question_answers_claim
     CHECK ((state = 'PENDING' AND claimed_at IS NULL AND completed_at IS NULL)
         OR (state = 'CLAIMED' AND claimed_at IS NOT NULL AND completed_at IS NULL)
-        OR (state = 'COMPLETED' AND claimed_at IS NOT NULL AND completed_at IS NOT NULL));
+        OR (state = 'COMPLETED' AND claimed_at IS NOT NULL AND completed_at IS NOT NULL)
+        OR (state = 'CANCELED' AND claimed_at IS NULL AND completed_at IS NOT NULL));
 
 CREATE TABLE t_session_event_projection (
     session_id      VARCHAR(128) NOT NULL,
