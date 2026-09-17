@@ -82,7 +82,17 @@ public class CommittedEventQueryService {
         try {
             return Math.multiplyExact(page - 1L, limit);
         } catch (ArithmeticException error) {
-            throw invalidQuery(error);
+            RuntimeErrorCode errorCode = RuntimeErrorCode.INVALID_EVENT_LIST_QUERY;
+            LOGGER.atError()
+                    .addKeyValue("event", "campusclaw.failure")
+                    .addKeyValue("operation", "runtime.events.list")
+                    .addKeyValue("calculation", "offset")
+                    .addKeyValue("errorCode", errorCode.name())
+                    .addKeyValue("page", page)
+                    .addKeyValue("limit", limit)
+                    .setCause(error)
+                    .log("CampusClaw failure: operation={}, errorCode={}", "runtime.events.list", errorCode.name());
+            throw new RuntimeApiException(errorCode);
         }
     }
 
@@ -90,16 +100,21 @@ public class CommittedEventQueryService {
         try {
             return Math.addExact(page, 1L);
         } catch (ArithmeticException error) {
-            throw invalidQuery(error);
+            RuntimeErrorCode errorCode = RuntimeErrorCode.INVALID_EVENT_LIST_QUERY;
+            LOGGER.atError()
+                    .addKeyValue("event", "campusclaw.failure")
+                    .addKeyValue("operation", "runtime.events.list")
+                    .addKeyValue("calculation", "nextPage")
+                    .addKeyValue("errorCode", errorCode.name())
+                    .addKeyValue("page", page)
+                    .setCause(error)
+                    .log("CampusClaw failure: operation={}, errorCode={}", "runtime.events.list", errorCode.name());
+            throw new RuntimeApiException(errorCode);
         }
     }
 
     private static RuntimeApiException invalidQuery() {
         return new RuntimeApiException(RuntimeErrorCode.INVALID_EVENT_LIST_QUERY);
-    }
-
-    private static RuntimeApiException invalidQuery(ArithmeticException cause) {
-        return new RuntimeApiException(RuntimeErrorCode.INVALID_EVENT_LIST_QUERY, cause);
     }
 
     private static void logFailure(String sessionId, RuntimeException error) {
