@@ -34,7 +34,8 @@ export function projectRuntimeEvents(events: RuntimeEvent[], observing = false):
         let status: ActivityTurn['status'] = terminal || !observing ? 'unconfirmed' : 'running';
         if (event.requiresConfirmation && !confirmed && !terminal) status = 'confirming';
         if (result?.type === 'agent.tool_result') status = result.isError ? 'error' : 'completed';
-        turns.push({ key, kind: 'activity', toolCallId: event.toolCallId, toolName: event.toolName, status,
+        turns.push({ key, kind: 'activity', toolCallId: event.toolCallId, toolName: event.toolName,
+          ...(event.displayName ? { displayName: event.displayName } : {}), status,
           arguments: argumentRows(event.arguments), argumentValue: event.arguments,
           result: result?.type === 'agent.tool_result' ? result.content.map((block) => block.text).join('\n') : '',
           resultBlocks: result?.type === 'agent.tool_result' ? result.content.map((block) => block.text) : undefined,
@@ -145,6 +146,7 @@ function questionToolStatus(call: Extract<RuntimeEvent, { type: 'agent.tool_call
     kind: 'activity',
     toolCallId: call.toolCallId,
     toolName: call.toolName,
+    ...(call.displayName ? { displayName: call.displayName } : {}),
     status: failed ? 'error' : completedWithoutQuestion || !observing ? 'unconfirmed' : 'running',
     arguments: [],
     result: '',

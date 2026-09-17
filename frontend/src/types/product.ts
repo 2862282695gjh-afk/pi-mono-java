@@ -46,6 +46,7 @@ export interface ActivityTurn {
   kind: 'activity';
   toolCallId: string;
   toolName: string;
+  displayName?: string;
   status: 'running' | 'completed' | 'error' | 'confirming' | 'waiting_answer' | 'unconfirmed';
   arguments: ToolArgumentRow[];
   result: string;

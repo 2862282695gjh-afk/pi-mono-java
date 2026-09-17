@@ -107,6 +107,8 @@ public class RuntimeEventProjector {
 
     private final Map<String, ToolCall> finalizedToolCalls = new LinkedHashMap<>();
 
+    private final Map<String, String> toolDisplayNames = new LinkedHashMap<>();
+
     private String assistantEntryId;
 
     private StopReason terminalReason = StopReason.STOP;
@@ -384,6 +386,10 @@ public class RuntimeEventProjector {
 
     private void persistFinalizedToolCall(ToolCall call) {
         finalizedToolCalls.put(call.id(), call);
+        String displayName = execution.resolveToolDisplayName(call);
+        if (displayName != null) {
+            toolDisplayNames.put(call.id(), displayName);
+        }
         if (execution.toolPermission(call) != RuntimeToolPermissionPolicy.Decision.ASK) {
             persistToolCall(call, false);
         }
@@ -396,7 +402,8 @@ public class RuntimeEventProjector {
         String entryId = ids.nextId();
         RuntimeEntryDTO entry = codec.toolCallEntry(
                 sessionId, entryId, call.id(), call.name(), call.arguments(), requiresConfirmation, now());
-        CommittedEventDTO committed = events.agentToolCall(entry, entryId, call, requiresConfirmation, sourceEventId);
+        CommittedEventDTO committed = events.agentToolCall(
+                entry, entryId, call, requiresConfirmation, sourceEventId, toolDisplayNames.get(call.id()));
         RuntimeSseEventVO frame = requireCommittedFrame(committed);
         persistence.appendEntry(execution.target(), entry, List.of(committed));
         toolCallEntryIds.put(call.id(), entryId);
@@ -475,7 +482,8 @@ public class RuntimeEventProjector {
         OffsetDateTime confirmingAt = now();
         RuntimeEntryDTO toolCall = codec.toolCallEntry(
                 sessionId, ids.nextId(), call.id(), call.name(), call.arguments(), true, confirmingAt);
-        CommittedEventDTO toolCallEvent = events.agentToolCall(toolCall, toolCall.getId(), call, true, sourceEventId);
+        CommittedEventDTO toolCallEvent = events.agentToolCall(
+                toolCall, toolCall.getId(), call, true, sourceEventId, toolDisplayNames.get(call.id()));
         RuntimeEntryDTO idle =
                 codec.sessionIdleEntry(sessionId, ids.nextId(), "confirming", sourceEventId, null, confirmingAt);
         CommittedEventDTO idleEvent = events.sessionIdle(idle, idle.getId(), "confirming", sourceEventId, null, locale);

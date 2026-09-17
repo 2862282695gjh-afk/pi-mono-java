@@ -11,6 +11,7 @@ import java.util.Map;
  *
  * @param toolId 工具标识(满足 TOOL_ID_PATTERN,入执行路径)
  * @param toolName 工具名(模型可见、callMateTool 入参语义)
+ * @param displayName 可选的工具展示名称
  * @param description 可读描述
  * @param inputSchema 输入 JSON Schema
  * @param outputSchema 输出 JSON Schema
@@ -22,6 +23,7 @@ import java.util.Map;
 public record MateToolMeta(
         String toolId,
         String toolName,
+        String displayName,
         String description,
         Map<String, Object> inputSchema,
         Map<String, Object> outputSchema,

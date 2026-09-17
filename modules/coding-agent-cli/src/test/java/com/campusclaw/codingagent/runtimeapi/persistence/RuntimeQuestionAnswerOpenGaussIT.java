@@ -254,7 +254,9 @@ class RuntimeQuestionAnswerOpenGaussIT {
         RuntimeEntryDTO tool = codec.toolCallEntry(
                 session.getId(), suffix + "-tool", call.id(), call.name(), call.arguments(), false, NOW.plusSeconds(1));
         persistence.appendEntry(
-                target, tool, List.of(events.agentToolCall(tool, tool.getId(), call, false, target.rootEventId())));
+                target,
+                tool,
+                List.of(events.agentToolCall(tool, tool.getId(), call, false, target.rootEventId(), null)));
         String questionEventId = suffix + "-question-event";
         RuntimeEntryDTO question =
                 codec.questionEntry(session.getId(), suffix + "-question", toolCallId, snapshot, NOW.plusSeconds(1));

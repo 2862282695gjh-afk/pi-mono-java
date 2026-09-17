@@ -127,7 +127,7 @@ class MateToolAutoConfigurationTest {
     void mateErrorPropagatesThroughPipelineAsIsError() {
         MockMateToolClient client = new MockMateToolClient();
         String toolId = "tool-44444444444444444444444444444444";
-        client.addTool(new MateToolMeta(toolId, "Explode", "", Map.of(), Map.of(), false, "allow"));
+        client.addTool(new MateToolMeta(toolId, "Explode", null, "", Map.of(), Map.of(), false, "allow"));
         client.bindAgent("agent-1", List.of(toolId));
         client.overrideCallResult(new MateToolClient.ToolResult("mate exploded", null, true));
         CallMateTool callMateTool = new com.campusclaw.codingagent.tool.mate.MateToolsetFactory(client)

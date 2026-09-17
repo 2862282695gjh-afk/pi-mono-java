@@ -40,7 +40,14 @@ class ListMateToolsToolTest {
     void setUp() {
         client = new MockMateToolClient();
         client.addTool(new MateToolMeta(
-                QUERY_ID, "Query", "Query records", Map.of("type", "object"), Map.of("hidden", true), true, "allow"));
+                QUERY_ID,
+                "Query",
+                null,
+                "Query records",
+                Map.of("type", "object"),
+                Map.of("hidden", true),
+                true,
+                "allow"));
         client.bindAgent("agent-1", List.of(QUERY_ID));
         client.bindSkill("skill-1", List.of(QUERY_ID));
         state = new MateToolsetFactory(client).createSession("agent-1", Map.of("research", "skill-1"), CREDENTIALS);
@@ -85,7 +92,7 @@ class ListMateToolsToolTest {
         Map<String, Object> schema = new LinkedHashMap<>();
         schema.put("zeta", Map.of("type", "string"));
         schema.put("alpha", Map.of("type", "number"));
-        client.addTool(new MateToolMeta(QUERY_ID, "Query", "Query records", schema, Map.of(), true, "allow"));
+        client.addTool(new MateToolMeta(QUERY_ID, "Query", null, "Query records", schema, Map.of(), true, "allow"));
 
         var result = state.createListTool().execute("call", Map.of(), null, null);
         String json = ((TextContent) result.content().getFirst()).text();

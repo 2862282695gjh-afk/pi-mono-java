@@ -15,6 +15,17 @@ describe('Session Events protocol and authoritative store', () => {
     [userFixture(), idleFixture(), call, result, preview('增量'), completed].forEach((event) => expect(decodeEvent(event)).toEqual(event));
     expect(decodeEvent({ ...result, content: [{ type: 'text', text: 'one' }, { type: 'text', text: '' }] })).toBeTruthy();
   });
+  it('normalizes a valid tool displayName and degrades invalid optional values to absence', () => {
+    expect(decodeEvent({ ...call, displayName: '  查询教室  ' })).toMatchObject({ displayName: '查询教室' });
+    for (const displayName of [undefined, null, 42, {}, ' \t ']) {
+      expect(decodeEvent({ ...call, displayName })).not.toHaveProperty('displayName');
+    }
+    expect(() => decodeEvent({ ...call, displayLabel: '未知字段' })).toThrow();
+  });
+  it('keeps the first committed tool displayName when a duplicate event arrives', () => {
+    const original = { ...call, displayName: '原名称' };
+    expect(mergeEvent([original], { ...original, displayName: '后来的目录名称' })[0]).toEqual(original);
+  });
   it('decodes complete questions and answers identically in SSE and history', async () => {
     const question = questionFixture();
     const answer = eventFixture({ eventId: 'answer-question-a', type: 'user.question_answer', targetEventId: 'question-a',

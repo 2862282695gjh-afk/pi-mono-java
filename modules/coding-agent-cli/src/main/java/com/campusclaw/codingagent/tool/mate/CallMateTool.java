@@ -6,6 +6,7 @@ package com.campusclaw.codingagent.tool.mate;
 
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 import com.campusclaw.agent.tool.AgentTool;
 import com.campusclaw.agent.tool.AgentToolResult;
@@ -20,6 +21,9 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 /**
  * 按模型给出的名称解析并执行一个 Mate 工具。
  *
@@ -28,6 +32,8 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
  */
 public class CallMateTool implements AgentTool {
 
+    private static final Logger LOGGER = LoggerFactory.getLogger(CallMateTool.class);
+
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private final MateToolClient client;
@@ -35,6 +41,8 @@ public class CallMateTool implements AgentTool {
     private final MateCredentials credentials;
 
     private final MateToolDiscovery discovery;
+
+    private final Map<String, InvocationBinding> invocationBindings = new ConcurrentHashMap<>();
 
     public CallMateTool(MateToolClient client, MateCredentials credentials, MateToolDiscovery discovery) {
         this.client = client;
@@ -81,6 +89,25 @@ public class CallMateTool implements AgentTool {
         return schema;
     }
 
+    /**
+     * 在首次调用事件提交前固定具体 Mate 工具解析结果。
+     *
+     * @param toolCallId 模型工具调用标识
+     * @param toolName 模型使用的工具名称
+     * @return 可选的用户展示名称
+     * @throws IllegalStateException 同一调用标识尝试绑定不同工具名时抛出
+     */
+    public String bindInvocation(String toolCallId, String toolName) {
+        if (toolCallId == null || toolName == null || toolName.isBlank()) {
+            return null;
+        }
+        InvocationBinding binding = invocationBindings.computeIfAbsent(toolCallId, ignored -> resolve(toolName));
+        if (!binding.toolName().equals(toolName)) {
+            throw new IllegalStateException("Mate tool call id was rebound to a different name");
+        }
+        return binding.resolution() == null ? null : binding.resolution().displayName();
+    }
+
     @SuppressWarnings("unchecked")
     @Override
     public AgentToolResult execute(
@@ -93,12 +120,19 @@ public class CallMateTool implements AgentTool {
         if (!credentials.isComplete()) {
             throw new MateToolExecutionException(toolName, "Mate execution credentials are unavailable");
         }
-        String toolId = discovery.resolveToolId(toolName);
-        if (toolId == null) {
+        InvocationBinding binding = invocationBindings.computeIfAbsent(toolCallId, ignored -> resolve(toolName));
+        if (!binding.toolName().equals(toolName)) {
+            throw new IllegalStateException("Mate tool call id was rebound to a different name");
+        }
+        if (binding.failure() != null) {
+            throw binding.failure();
+        }
+        MateToolResolutionDTO resolution = binding.resolution();
+        if (resolution == null) {
             throw new MateToolExecutionException(toolName, "unknown Mate tool name");
         }
         ensureNotCancelled(signal);
-        MateToolClient.ToolResult result = client.callTool(toolId, args, credentials);
+        MateToolClient.ToolResult result = client.callTool(resolution.toolId(), args, credentials);
         if (result.isError()) {
             throw new MateToolExecutionException(toolName, result.content());
         }
@@ -110,6 +144,22 @@ public class CallMateTool implements AgentTool {
             throw new InterruptedException("Tool execution was cancelled");
         }
     }
+
+    private InvocationBinding resolve(String toolName) {
+        try {
+            return new InvocationBinding(toolName, discovery.resolveTool(toolName), null);
+        } catch (RuntimeException failure) {
+            LOGGER.atWarn()
+                    .addKeyValue("event", "campusclaw.failure")
+                    .addKeyValue("operation", "mate.tool.resolve")
+                    .addKeyValue("toolName", toolName)
+                    .setCause(failure)
+                    .log("Mate tool resolution failed");
+            return new InvocationBinding(toolName, null, failure);
+        }
+    }
+
+    private record InvocationBinding(String toolName, MateToolResolutionDTO resolution, RuntimeException failure) {}
 
     /**
      * 将发现或执行错误交给工具 Pipeline 投影为 {@code isError=true}。

@@ -144,8 +144,29 @@ class CallMateToolTest {
         assertThat(client.executeCalls()).isEqualTo(1);
     }
 
+    @Test
+    void boundInvocationShouldKeepIdentityAndDisplayNameAcrossDiscoveryRefresh() throws Exception {
+        CallMateTool tool = state.createCallTool();
+        client.addTool(meta(QUERY_ID, "Query", "Original query"));
+
+        assertThat(tool.bindInvocation("call", "Query")).isEqualTo("Original query");
+
+        String replacementId = "tool-22222222222222222222222222222222";
+        client.addTool(meta(replacementId, "Query", "Renamed query"));
+        client.bindAgent("agent-1", List.of(replacementId));
+        state.createListTool().execute("list", Map.of(), null, null);
+        tool.execute("call", Map.of("tool", "Query"), null, null);
+
+        assertThat(client.lastCalledTool()).isEqualTo(QUERY_ID);
+        assertThat(tool.bindInvocation("call", "Query")).isEqualTo("Original query");
+    }
+
     private static MateToolMeta meta(String id, String name) {
-        return new MateToolMeta(id, name, "description", Map.of(), Map.of(), true, "allow");
+        return new MateToolMeta(id, name, null, "description", Map.of(), Map.of(), true, "allow");
+    }
+
+    private static MateToolMeta meta(String id, String name, String displayName) {
+        return new MateToolMeta(id, name, displayName, "description", Map.of(), Map.of(), true, "allow");
     }
 
     private static void call(MateToolSessionState state) {

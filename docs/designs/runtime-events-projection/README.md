@@ -1,6 +1,6 @@
 # Session Events 执行事件转换
 
-> 版本：1.1.0 · 日期：2026-09-09 · 状态：由执行协调器接入 Session Events HTTP
+> 版本：1.2.0 · 日期：2026-09-18 · 状态：由执行协调器接入 Session Events HTTP
 
 ## Context 与证据
 
@@ -39,19 +39,55 @@ AgentEnd 的取消标志补充实际退出证据；false 不代表成功，仍�
 转换器拒绝新的排队 UserMessage；HTTP 中断和确认由独立服务接纳，不作为排队文本执行。
 转换器经协调器接入 HTTP；接纳回执、最终 idle 提交和执行凭据释放仍由协调器和应用服务负责。
 
+## 工具调用展示名称
+
+本增量依据设计仓 `3e5f1189987c425c9987cce2fc261a5d3c59f1c8` 的工具系统 §9.2.1、
+Session Events §2.3 与前端 §9.7，实现起点为 `19870445a3a8bd559919fe24580330be8227488f`；仅扩展工具元数据和公开调用事件字段，
+不改变上文历史 pi 证据、Agent 内核事件或模型工具参数。
+
+`RuntimeSessionEngineRegistry` 从本次装配的 `ManagedAgentSession.tools()` 创建
+`RuntimeToolCallSnapshotResolver`，按执行隔离并绑定至 `RuntimeActiveExecution`。
+普通工具的 `label()` 映射为可选 `displayName`；`CallMateTool` 使用具体业务工具的
+`MateToolResolutionDTO`，把 ID、技术名与展示名一并固定到本次调用。
+Mate 不可用或没有有效业务展示名时省略该字段，不能使用外层 `CallMateTool` 标签。
+`HttpMateToolClient` 保留网关 `display_name`，`MateToolSessionCache` 原子更新来源快照；
+同名不同 ID 仍拒绝，同名同 ID 的展示名冲突仅省略展示字段。
+
+`RuntimeEventProjector.persistFinalizedToolCall` 在首次调用提交前解析快照，覆盖直接执行、
+拒绝与等待确认；网络发现不进入追加事务。调用与确认续跑共享已绑定工具 ID，目录刷新不改变
+本次执行对象。`RuntimeCommittedEventFactory.agentToolCall` 将规范化展示名写入现有 JSON payload，
+`CommittedEventProjection` 和 `AgentToolCallResponseVO` 供实时与历史共用；无有效值时省略字段。
+名称不进入模型上下文，不从模型 arguments 或结果文本取值，不参与执行授权。
+解析失败仍保存调用并由工具执行路径返回失败结果；执行凭据和现有权限检查保持。
+
+前端 `runtime/toolDisplay.ts` 统一活动行和确认卡标题：有效 displayName、原始技术名、名称缺失提示。
+CallMateTool 的技术名来自 arguments.tool；普通工具来自 toolName。详情和可访问名称保留完整标题，
+仅视觉摘要可省略。内部 Runtime 本次贯通，公共 Mate Chat bridge 不在此实现仓中。
+不设计存量记录迁移、回填或兼容，不新增数据库对象或依赖，现有流程图结构保持。
+
 ## 性能、验证与决策
 
 转换按事件处理，保存当前 Assistant 和工具身份映射；压缩时按 500 条批量读取当前分支。
 不新增线程、数据库对象、依赖或升级流程。单次完整事件体积受配置上限限制，预览队列容量由输出实现控制。
 
-root 聚焦测试 10 项通过，零失败、零跳过；覆盖完整帧、空预览、Thinking 开关与原文一致性、无 start 的失败工具、
-确认续跑、自动压缩、数据库失败一次取消和本地/远端完整事件超限。Spotless、Checkstyle 通过。
-两组公司镜像与源码一致；企业 NativeParent 26.0.0-SNAPSHOT 本机不可解析，企业 Maven 编译未验证。
-真实数据库事务和 HTTP 行为由组合写入及后续接入测试覆盖，本片的 mock 仓储测试不替代它们。
+JDK 21 下相关后端测试合计 104 个通过，零失败、零跳过；覆盖网关元数据、缓存冲突与刷新、
+调用身份固定、框架标签映射、不可用 Mate、确认前快照、实时与历史投影一致性，以及装配和权限回归。
+根 Reactor 的 Spotless、Checkstyle 通过；Java 方法长度、字段布局和新增类型文档经机械与人工检查。
+测试质量脚本在新增或修改的测试方法中无错误；对未修改方法报告的 7 个缺断言告警已核实为
+未识别 `assertThatThrownBy` 或辅助断言的误报。
+
+前端 35 个文件、262 项测试通过，类型检查和构建通过。使用本地契约 fixture 在 390×844 与
+1440×1000 视口核验具体名称、长名称省略、完整详情与可访问名称、允许/拒绝及刷新恢复。
+浏览器验收不代表真实 Mate 或 Java HTTP 端到端联调；本增量未运行真实 openGauss 集成测试。
+
+公司镜像已同步并逐文件核对生成内容；企业 `NativeParent:26.0.0-SNAPSHOT` 本机不可解析，
+企业 Maven 编译未验证。PlantUML 重新生成与现有 SVG 一致，XML、ASCII、图片及源码链接检查通过；
+`git diff --check` 通过。
 
 [ADR-0093](../../decisions/0093-project-committed-execution-events.html)；原始推理规则见 [ADR-0104](../../decisions/0104-original-reasoning-and-event-contract.html)。
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 1.2.0 | 2026-09-18 | 工具调用保存 displayName 快照，贯通框架 label、业务元数据与前端展示。 |
 | 1.1.0 | 2026-09-09 | 按执行开关展示原始推理，统一 Events 类名。 |
 | 1.0.0 | 2026-09-08 | 记录固定目标事件转换、确认段、安全投影和失败边界。 |

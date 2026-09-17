@@ -6,7 +6,7 @@ let version = 1;
 let history = [];
 let rootId = '';
 const session = { sessionId: 'session-fixture', agentId: 'agent-fixture', displayName: null,
-  modelId: 'model-primary', state: 'idle', thinking: true, createdAt: new Date().toISOString() };
+  modelId: 'model-primary', state: 'idle', thinking: true, mode: 'build', createdAt: new Date().toISOString() };
 const make = (type, data = {}) => ({ eventId: `fixture-${++sequence}`, type, createdAt: new Date().toISOString(), ...data });
 const json = (response, result, status = 200, headers = {}) => {
   response.writeHead(status, { 'Content-Type': 'application/json', ...headers });
@@ -25,7 +25,7 @@ function startMessage(response, input) {
   rootId = receipt.eventId; session.state = 'running'; version++;
   stream(response, [receipt,
     make('agent.thinking', { phase: 'completed', sourceEventId: rootId, content: '先核对巡检范围，再查询公开的园区记录。' }),
-    make('agent.tool_call', { sourceEventId: rootId, toolCallId: `tool-${rootId}`, toolName: 'CallMateTool',
+    make('agent.tool_call', { sourceEventId: rootId, toolCallId: `tool-${rootId}`, toolName: 'CallMateTool', displayName: '查询园区巡检记录',
       arguments: { tool: 'query_inspections', args: { campus: '东区' } }, requiresConfirmation: true }),
     make('session.status_idle', { sourceEventId: rootId, reason: 'confirming' }),
   ]);

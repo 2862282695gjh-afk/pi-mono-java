@@ -36,6 +36,7 @@ import com.huawei.hicampus.claw.agent.event.MessageStartEvent;
 import com.huawei.hicampus.claw.agent.event.MessageUpdateEvent;
 import com.huawei.hicampus.claw.agent.event.ToolExecutionStartEvent;
 import com.huawei.hicampus.claw.agent.event.TurnEndEvent;
+import com.huawei.hicampus.claw.agent.tool.AgentTool;
 import com.huawei.hicampus.claw.agent.tool.BeforeToolCallContext;
 import com.huawei.hicampus.claw.agent.tool.BeforeToolCallResult;
 import com.huawei.hicampus.claw.ai.stream.AssistantMessageEvent;
@@ -47,6 +48,8 @@ import com.huawei.hicampus.claw.ai.types.ToolCall;
 import com.huawei.hicampus.claw.ai.types.ToolResultMessage;
 import com.huawei.hicampus.claw.ai.types.Usage;
 import com.huawei.hicampus.claw.ai.types.UserMessage;
+import com.huawei.hicampus.claw.codingagent.common.client.mate.MateCredentials;
+import com.huawei.hicampus.claw.codingagent.common.client.mate.MateToolClient;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.RuntimeMessageSourceConfiguration;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.CommittedEventDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.ExecutionTargetDTO;
@@ -55,12 +58,15 @@ import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.ToolConfirmationDecis
 import com.huawei.hicampus.claw.codingagent.runtimeapi.persistence.RuntimeExecutionPersistenceService;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.persistence.RuntimeSessionRepository;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.runtime.RuntimeActiveExecution;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.runtime.RuntimeToolCallSnapshotResolver;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.runtime.RuntimeToolPermissionPolicy;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.session.ToolConfirmationResult;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.vo.RuntimeSseEventVO;
 import com.huawei.hicampus.claw.codingagent.session.compaction.CompactionReason;
 import com.huawei.hicampus.claw.codingagent.session.compaction.SessionCompactionCompletedEvent;
 import com.huawei.hicampus.claw.codingagent.session.compaction.SessionCompactionResult;
+import com.huawei.hicampus.claw.codingagent.tool.mate.CallMateTool;
+import com.huawei.hicampus.claw.codingagent.tool.mate.MateToolsetFactory;
 import com.huawei.hicampus.claw.codingagent.tool.plan.PlanReviewException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -346,6 +352,60 @@ class RuntimeEventProjectorTest {
                 .extracting(event -> event.getData().get("type"))
                 .containsExactly("agent.tool_result");
         verify(fixture.persistence).appendEntry(eq(resumed), any(), anyList());
+    }
+
+    @Test
+    void shouldSnapshotDisplayNameBeforeConfirmationAndReuseCommittedProjection() throws Exception {
+        Fixture fixture = fixture(false);
+        ToolCall call = new ToolCall("call-confirm", "Read", Map.of("path", "input"));
+        AgentTool tool = mock(AgentTool.class);
+        when(tool.name()).thenReturn("Read");
+        when(tool.label()).thenReturn("  Read file  ");
+        fixture.execution.bindToolCallSnapshots(RuntimeToolCallSnapshotResolver.from(List.of(tool)));
+        bindAskPermission(fixture.execution, call);
+        fixture.execution.installConfirmationHandler(fixture.projector::beforeToolCall);
+        AssistantMessage assistant = assistant(List.of(call));
+        fixture.projector.onEvent(new MessageStartEvent(assistant));
+        fixture.projector.onEvent(new MessageEndEvent(assistant));
+        when(tool.label()).thenReturn("Renamed later");
+
+        CompletableFuture<BeforeToolCallResult> confirmation = runBeforeHook(fixture.execution, assistant, call);
+        assertThat(fixture.output.closed.await(1, TimeUnit.SECONDS)).isTrue();
+        CommittedEventDTO persisted = fixture.persistedEvents.get(1);
+        RuntimeSseEventVO live = fixture.output.committed.get(1);
+        var encoder = new RuntimeEventEncoder(new CommittedEventProjection(new ObjectMapper()), new ObjectMapper());
+
+        assertThat(persisted.getPayload()).contains("\"displayName\":\"Read file\"");
+        assertThat(live.getData()).isEqualTo(encoder.committed(persisted).getData());
+        fixture.execution.cancelToolConfirmation(new IllegalStateException("test complete"));
+        assertThat(confirmation.handle((value, failure) -> failure).get(1, TimeUnit.SECONDS))
+                .isNotNull();
+    }
+
+    @Test
+    void failedMateDisplayResolutionShouldKeepCallAndResult() {
+        Fixture fixture = fixture(false);
+        MateToolClient client = mock(MateToolClient.class);
+        when(client.listAgentTools("agent-1")).thenThrow(new IllegalStateException("metadata unavailable"));
+        CallMateTool tool = new MateToolsetFactory(client)
+                .createSession("agent-1", Map.of(), MateCredentials.jwt("caller", "token", "access"))
+                .createCallTool();
+        fixture.execution.bindToolCallSnapshots(RuntimeToolCallSnapshotResolver.from(List.of(tool)));
+        ToolCall call = new ToolCall("call-failed", "CallMateTool", Map.of("tool", "Query"));
+        AssistantMessage assistant = assistant(List.of(call));
+        ToolResultMessage result =
+                new ToolResultMessage(call.id(), call.name(), List.of(new TextContent("failed")), null, true, 1L);
+
+        fixture.projector.onEvent(new MessageStartEvent(assistant));
+        fixture.projector.onEvent(new MessageEndEvent(assistant));
+        fixture.projector.onEvent(new TurnEndEvent(assistant, List.of(result)));
+
+        assertThat(fixture.persistedEvents)
+                .extracting(CommittedEventDTO::getType)
+                .containsExactly("agent.message", "agent.tool_call", "agent.tool_result");
+        assertThat(fixture.persistedEvents.get(1).getPayload()).doesNotContain("displayName");
+        assertThat(fixture.projector.failure()).isNull();
+        verify(client).listAgentTools("agent-1");
     }
 
     @Test

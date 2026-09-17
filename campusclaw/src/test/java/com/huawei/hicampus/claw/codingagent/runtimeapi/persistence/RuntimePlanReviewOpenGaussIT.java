@@ -309,7 +309,7 @@ class RuntimePlanReviewOpenGaussIT {
         RuntimeEntryDTO tool = codec.toolCallEntry(
                 session.getId(), suffix + "-tool-entry", call.id(), call.name(), call.arguments(), true, NOW);
         CommittedEventDTO toolEvent =
-                events.agentToolCall(tool, suffix + "-tool-event", call, true, target.rootEventId());
+                events.agentToolCall(tool, suffix + "-tool-event", call, true, target.rootEventId(), null);
         RuntimeEntryDTO idle = codec.sessionIdleEntry(
                 session.getId(), suffix + "-idle", "confirming", target.rootEventId(), null, NOW.plusSeconds(1));
         CommittedEventDTO idleEvent = events.sessionIdle(
