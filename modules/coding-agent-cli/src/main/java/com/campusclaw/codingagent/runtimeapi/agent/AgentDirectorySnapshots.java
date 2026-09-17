@@ -25,10 +25,10 @@ public final class AgentDirectorySnapshots {
      *
      * @param runtime 已准备的受管 Agent 运行时
      * @return 可用于 RuntimeModelManager 的不可变快照
-     * @throws RuntimeApiException Agent 已禁用或模型绑定无效时抛出
+     * @throws RuntimeApiException Agent 运行时缺失、已禁用或模型绑定无效时抛出
      */
     public static AgentDirectorySnapshotDTO from(PreparedAgentRuntime runtime) {
-        if (!Boolean.TRUE.equals(runtime.metadata().enabled())) {
+        if (runtime == null || !Boolean.TRUE.equals(runtime.metadata().enabled())) {
             throw new RuntimeApiException(RuntimeErrorCode.AGENT_NOT_AVAILABLE);
         }
         String defaultModel = runtime.metadata()
