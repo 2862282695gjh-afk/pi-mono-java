@@ -49,8 +49,6 @@ public class RuntimeAgentPromptLoader {
 
     private static final int MAX_SCAN_DEPTH = 8;
 
-    private static final String PROMPT_RESOURCE_DIRECTORY = "prompts/plan/";
-
     private final SkillLoader skillLoader = new SkillLoader();
 
     private final String builtinPlanPrompt;
@@ -233,7 +231,7 @@ public class RuntimeAgentPromptLoader {
     }
 
     private static String loadBuiltinPrompt(String fileName) {
-        var resource = new ClassPathResource(PROMPT_RESOURCE_DIRECTORY + fileName);
+        var resource = new ClassPathResource(ClawConstants.Runtime.PROMPT_RESOURCE_DIRECTORY + fileName);
         try {
             byte[] content = resource.getContentAsByteArray();
             String prompt = decodeUtf8(content);

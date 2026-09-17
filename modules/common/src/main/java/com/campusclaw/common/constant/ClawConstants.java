@@ -81,7 +81,7 @@ public final class ClawConstants {
     }
 
     /**
-     * 受管 Agent 运行目录的共享文件约定。
+     * 受管 Agent 运行目录、模式资源与执行角色的共享约定。
      */
     public static final class Runtime {
         public static final String DIRECTORY_NAME = ".campusclaw";
@@ -95,6 +95,12 @@ public final class ClawConstants {
         public static final String PLAN_PROMPT_FILE_NAME = "PLAN.md";
 
         public static final String BUILD_PROMPT_FILE_NAME = "BUILD.md";
+
+        public static final String PROMPT_RESOURCE_DIRECTORY = "prompts/plan/";
+
+        public static final String MAIN_AGENT_ROLE = "当前执行角色：Main Agent。";
+
+        public static final String SUBAGENT_ROLE = "当前执行角色：Subagent；只向父 Agent 返回结果。";
 
         private Runtime() {}
     }

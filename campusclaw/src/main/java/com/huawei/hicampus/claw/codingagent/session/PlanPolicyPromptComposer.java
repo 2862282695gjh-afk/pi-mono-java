@@ -21,10 +21,6 @@ import org.springframework.stereotype.Component;
  */
 @Component
 public class PlanPolicyPromptComposer {
-    private static final String MAIN_AGENT_ROLE = "当前执行角色：Main Agent。";
-
-    private static final String SUBAGENT_ROLE = "当前执行角色：Subagent；只向父 Agent 返回结果。";
-
     /**
      * 依据入口矩阵从同一快照完整重组 SYSTEM。
      *
@@ -40,7 +36,9 @@ public class PlanPolicyPromptComposer {
         if (entryPoint == ToolEntryPoint.CHILD_AGENT && !ClawConstants.Agent.MODE_PLAN.equals(mode)) {
             return prompts.basePrompt();
         }
-        String role = entryPoint == ToolEntryPoint.RUNTIME ? MAIN_AGENT_ROLE : SUBAGENT_ROLE;
+        String role = entryPoint == ToolEntryPoint.RUNTIME
+                ? ClawConstants.Runtime.MAIN_AGENT_ROLE
+                : ClawConstants.Runtime.SUBAGENT_ROLE;
         String modePrompt = ClawConstants.Agent.MODE_PLAN.equals(mode) ? prompts.planPrompt() : prompts.buildPrompt();
         return append(append(prompts.basePrompt(), role), modePrompt);
     }
