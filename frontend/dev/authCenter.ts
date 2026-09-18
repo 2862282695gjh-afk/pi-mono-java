@@ -40,6 +40,8 @@ export function loginAuthCenter(ip: string, config: AuthConfig, signal: AbortSig
   return new Promise((resolve, reject) => {
     const body = JSON.stringify({ loginAccount: config.account, password: config.password });
     const upstream = request({ hostname: ip, port: 443, method: 'POST', path: '/service/AuthCenter/0.1.0/auth/login',
+      // 本地联调认证请求跳过证书校验，不修改进程级 TLS 配置。
+      rejectUnauthorized: false,
       headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body), Accept: 'application/json' }, signal }, (response) => {
       let bytes = 0;
       response.on('data', (chunk: Buffer) => {
