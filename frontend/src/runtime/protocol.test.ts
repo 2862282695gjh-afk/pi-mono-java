@@ -11,6 +11,32 @@ const preview = (content: string): RuntimeEvent => ({ eventId: 'answer', type: '
 const completed = eventFixture({ ...preview('完整正文'), phase: 'completed' });
 
 describe('Session Events protocol and authoritative store', () => {
+  it.each([
+    'USER_QUESTION_ENTRY_UNSUPPORTED',
+    'USER_QUESTION_PORT_MISSING',
+    'USER_QUESTION_ADAPTER_UNBOUND',
+    'USER_QUESTION_BINDING_MISSING',
+    'USER_QUESTION_BINDING_AMBIGUOUS',
+    'USER_QUESTION_PERMISSION_DENIED',
+    'USER_QUESTION_PERMISSION_REQUIRED',
+    'USER_QUESTION_DISCOVERY_FAILED',
+    'USER_QUESTION_TOOL_NOT_FOUND',
+    'USER_QUESTION_TOOL_ID_MISMATCH',
+    'USER_QUESTION_PREPARATION_CONFLICT',
+    'USER_QUESTION_NOT_PREPARED',
+    'USER_QUESTION_CALL_MISMATCH',
+    'USER_QUESTION_ANSWER_INVALID',
+    'USER_QUESTION_MULTIPLE_TOOL_CALLS',
+    'USER_QUESTION_CALL_NOT_FINALIZED',
+    'USER_QUESTION_PENDING_CONFLICT',
+    'USER_QUESTION_WAIT_MISSING',
+  ])('preserves question failure code %s in live events and history', async (errorCode) => {
+    const failure = { ...result, isError: true, errorCode, content: [{ type: 'text', text: '具体失败原因' }] };
+    const received: RuntimeEvent[] = [];
+    await readEventStream(streamResponse([failure]), (event) => { received.push(event); }, new AbortController().signal);
+    expect(received).toEqual([failure]);
+    expect(decodeHistory({ events: [failure], nextPage: null }).events).toEqual([failure]);
+  });
   it('accepts completed and preview shapes, text-only tool blocks including empty text', () => {
     [userFixture(), idleFixture(), call, result, preview('增量'), completed].forEach((event) => expect(decodeEvent(event)).toEqual(event));
     expect(decodeEvent({ ...result, content: [{ type: 'text', text: 'one' }, { type: 'text', text: '' }] })).toBeTruthy();

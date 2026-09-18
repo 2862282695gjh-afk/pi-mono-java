@@ -6,6 +6,7 @@ package com.huawei.hicampus.claw.codingagent.runtimeapi.event;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
@@ -61,9 +62,15 @@ import com.huawei.hicampus.claw.codingagent.runtimeapi.vo.RuntimeSseEventVO;
 import com.huawei.hicampus.claw.codingagent.session.compaction.CompactionReason;
 import com.huawei.hicampus.claw.codingagent.session.compaction.SessionCompactionCompletedEvent;
 import com.huawei.hicampus.claw.codingagent.session.compaction.SessionCompactionResult;
+import com.huawei.hicampus.claw.codingagent.test.Log4j2TestAppender;
 import com.huawei.hicampus.claw.codingagent.tool.plan.PlanReviewException;
+import com.huawei.hicampus.claw.codingagent.tool.question.UserQuestionException;
+import com.huawei.hicampus.claw.common.constant.ClawConstants;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import org.apache.logging.log4j.Level;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.core.Logger;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -414,10 +421,82 @@ class RuntimeEventProjectorTest {
         fixture.execution.cancelQuestion(new IllegalStateException("test complete"));
     }
 
+    @Test
+    void shouldDiagnoseQuestionWithMultipleToolCalls() {
+        Fixture fixture = fixture(false);
+        ToolCall question = questionCall("ask-multiple", "Which details?");
+        AssistantMessage assistant = assistant(List.of(question, new ToolCall("read-1", "Read", Map.of())));
+        fixture.projector.onEvent(new MessageStartEvent(assistant));
+        fixture.projector.onEvent(new MessageEndEvent(assistant));
+        Logger logger = (Logger) LogManager.getLogger(UserQuestionException.class);
+        Log4j2TestAppender logs = new Log4j2TestAppender("question-projector-multiple-logs");
+        logs.start();
+        logger.addAppender(logs);
+        try {
+            UserQuestionException failure = assertThrows(
+                    UserQuestionException.class,
+                    () -> fixture.projector.beforeToolCall(
+                            new BeforeToolCallContext(assistant, question, question.arguments(), null)));
+
+            assertThat(failure.stableErrorCode())
+                    .isEqualTo(ClawConstants.RuntimeApi.USER_QUESTION_MULTIPLE_TOOL_CALLS_ERROR_CODE);
+            assertThat(logs.events()).singleElement().satisfies(event -> {
+                assertThat(event.getLevel()).isEqualTo(Level.ERROR);
+                assertThat(event.getContextData().<String>getValue("sessionId")).isEqualTo("session-v2");
+                assertThat(event.getContextData().<String>getValue("toolCallId"))
+                        .isEqualTo("ask-multiple");
+                assertThat(event.getContextData().<String>getValue("toolCallCount"))
+                        .isEqualTo("2");
+            });
+        } finally {
+            logger.removeAppender(logs);
+            logs.stop();
+        }
+    }
+
+    @Test
+    void shouldDiagnoseQuestionCallThatWasNotFinalized() {
+        Fixture fixture = fixture(false);
+        ToolCall question = questionCall("ask-unfinalized", "Which details?");
+        AssistantMessage assistant = assistant(List.of(question));
+
+        UserQuestionException failure = assertThrows(
+                UserQuestionException.class,
+                () -> fixture.projector.beforeToolCall(
+                        new BeforeToolCallContext(assistant, question, question.arguments(), null)));
+
+        assertThat(failure.stableErrorCode())
+                .isEqualTo(ClawConstants.RuntimeApi.USER_QUESTION_CALL_NOT_FINALIZED_ERROR_CODE);
+    }
+
+    @Test
+    void shouldDiagnoseQuestionCallThatDiffersFromFinalizedCall() {
+        Fixture fixture = fixture(false);
+        ToolCall finalized = questionCall("ask-mismatch", "First question");
+        AssistantMessage finalizedAssistant = assistant(List.of(finalized));
+        fixture.projector.onEvent(new MessageStartEvent(finalizedAssistant));
+        fixture.projector.onEvent(new MessageEndEvent(finalizedAssistant));
+        ToolCall changed = questionCall("ask-mismatch", "Changed question");
+        AssistantMessage changedAssistant = assistant(List.of(changed));
+
+        UserQuestionException failure = assertThrows(
+                UserQuestionException.class,
+                () -> fixture.projector.beforeToolCall(
+                        new BeforeToolCallContext(changedAssistant, changed, changed.arguments(), null)));
+
+        assertThat(failure.stableErrorCode())
+                .isEqualTo(ClawConstants.RuntimeApi.USER_QUESTION_CALL_MISMATCH_ERROR_CODE);
+    }
+
     private static void bindAskPermission(RuntimeActiveExecution execution, ToolCall call) {
         RuntimeToolPermissionPolicy policy = mock(RuntimeToolPermissionPolicy.class);
         when(policy.decide(call)).thenReturn(RuntimeToolPermissionPolicy.Decision.ASK);
         execution.bindToolPermissions(policy);
+    }
+
+    private static ToolCall questionCall(String id, String question) {
+        return new ToolCall(
+                id, "AskUserQuestion", Map.of("questions", List.of(Map.of("id", "details", "question", question))));
     }
 
     private static CompletableFuture<BeforeToolCallResult> runBeforeHook(

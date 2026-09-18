@@ -181,11 +181,13 @@ public class RuntimeSessionEngineRegistry {
         try {
             RuntimeToolPermissionPolicy permissions = RuntimeToolPermissionPolicy.from(session.runtime());
             execution.bindToolPermissions(permissions);
-            String trustedToolId = RuntimeToolPermissionPolicy.uniqueAllowedToolId(
-                            session.runtime(),
-                            com.campusclaw.common.constant.ClawConstants.RuntimeApi.SHOWCASE_CONFIRMATION_TOOL_NAME)
-                    .orElse(null);
-            execution.showcaseConfirmation().ifPresent(adapter -> adapter.bindPermissions(permissions, trustedToolId));
+            var binding = RuntimeToolPermissionPolicy.diagnoseBinding(
+                    session.runtime(),
+                    com.campusclaw.common.constant.ClawConstants.RuntimeApi.SHOWCASE_CONFIRMATION_TOOL_NAME);
+            execution.showcaseConfirmation().ifPresent(adapter -> {
+                adapter.bindContext(sessionId, snapshot.agentId());
+                adapter.bindPermissions(permissions, binding);
+            });
             session.agent().replaceMessages(messages);
             RuntimeSessionHolder holder = new RuntimeSessionHolder(sessionId, snapshot, session, thinking);
             execution.installModeApplier(

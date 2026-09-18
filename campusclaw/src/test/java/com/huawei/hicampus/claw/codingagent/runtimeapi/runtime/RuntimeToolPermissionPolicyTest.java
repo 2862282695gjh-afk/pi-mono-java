@@ -16,6 +16,7 @@ import com.huawei.hicampus.claw.codingagent.runtime.MateServiceClient.AgentRunti
 import com.huawei.hicampus.claw.codingagent.runtime.MateServiceClient.BoundTool;
 import com.huawei.hicampus.claw.codingagent.runtime.MateServiceClient.SkillInfo;
 import com.huawei.hicampus.claw.codingagent.runtime.PreparedAgentRuntime;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.runtime.RuntimeToolPermissionPolicy.BindingStatus;
 
 import org.junit.jupiter.api.Test;
 
@@ -49,6 +50,53 @@ class RuntimeToolPermissionPolicyTest {
                 .isEqualTo(RuntimeToolPermissionPolicy.Decision.DENY);
     }
 
+    @Test
+    void shouldDiagnoseMissingBlankUniqueAndAmbiguousBindings() {
+        PreparedAgentRuntime missing = runtime(List.of(), List.of(tool("other", "other-id", "allow")));
+        PreparedAgentRuntime blank = runtime(List.of(tool("target", " ", "allow")), List.of());
+        PreparedAgentRuntime unique = runtime(List.of(tool("target", "target-id", "allow")), List.of());
+        PreparedAgentRuntime ambiguous =
+                runtime(List.of(tool("target", "first-id", "allow")), List.of(tool("target", "second-id", "allow")));
+
+        assertThat(RuntimeToolPermissionPolicy.diagnoseBinding(missing, "target"))
+                .satisfies(diagnosis -> {
+                    assertThat(diagnosis.status()).isEqualTo(BindingStatus.MISSING);
+                    assertThat(diagnosis.toolId()).isNull();
+                    assertThat(diagnosis.matchingCount()).isZero();
+                });
+        assertThat(RuntimeToolPermissionPolicy.diagnoseBinding(blank, "target")).satisfies(diagnosis -> {
+            assertThat(diagnosis.status()).isEqualTo(BindingStatus.MISSING);
+            assertThat(diagnosis.matchingCount()).isEqualTo(1);
+        });
+        assertThat(RuntimeToolPermissionPolicy.diagnoseBinding(unique, "target"))
+                .satisfies(diagnosis -> {
+                    assertThat(diagnosis.status()).isEqualTo(BindingStatus.BOUND);
+                    assertThat(diagnosis.toolId()).isEqualTo("target-id");
+                    assertThat(diagnosis.matchingCount()).isEqualTo(1);
+                });
+        assertThat(RuntimeToolPermissionPolicy.diagnoseBinding(ambiguous, "target"))
+                .satisfies(diagnosis -> {
+                    assertThat(diagnosis.status()).isEqualTo(BindingStatus.AMBIGUOUS);
+                    assertThat(diagnosis.toolId()).isNull();
+                    assertThat(diagnosis.matchingCount()).isEqualTo(2);
+                });
+    }
+
+    @Test
+    void uniqueAllowedToolIdShouldRetainExistingAdmissionBehavior() {
+        PreparedAgentRuntime allowed = runtime(List.of(tool("target", "target-id", "allow")), List.of());
+        PreparedAgentRuntime denied = runtime(List.of(tool("target", "target-id", "deny")), List.of());
+        PreparedAgentRuntime conflicting =
+                runtime(List.of(tool("target", "target-id", "allow")), List.of(tool("target", "other-id", "ask")));
+
+        assertThat(RuntimeToolPermissionPolicy.uniqueAllowedToolId(allowed, "target"))
+                .contains("target-id");
+        assertThat(RuntimeToolPermissionPolicy.uniqueAllowedToolId(denied, "target"))
+                .isEmpty();
+        assertThat(RuntimeToolPermissionPolicy.uniqueAllowedToolId(conflicting, "target"))
+                .isEmpty();
+    }
+
     private static PreparedAgentRuntime runtime(List<BoundTool> agentTools, List<BoundTool> skillTools) {
         PreparedAgentRuntime runtime = mock(PreparedAgentRuntime.class);
         AgentRuntime metadata = mock(AgentRuntime.class);
@@ -61,7 +109,11 @@ class RuntimeToolPermissionPolicyTest {
     }
 
     private static BoundTool tool(String name, String permission) {
-        return new BoundTool(null, null, "tool-id", null, name, permission, null, null);
+        return tool(name, "tool-id", permission);
+    }
+
+    private static BoundTool tool(String name, String id, String permission) {
+        return new BoundTool(null, null, id, null, name, permission, null, null);
     }
 
     private static ToolCall call(String tool) {

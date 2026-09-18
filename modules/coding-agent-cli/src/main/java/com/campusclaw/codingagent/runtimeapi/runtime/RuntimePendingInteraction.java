@@ -4,6 +4,7 @@
 
 package com.campusclaw.codingagent.runtimeapi.runtime;
 
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Supplier;
@@ -67,7 +68,7 @@ public class RuntimePendingInteraction {
     private ExecutionTargetDTO waitingTarget;
 
     public synchronized CompletableFuture<ToolConfirmationDecisionDTO> beginTool(String callId) {
-        requireAvailable();
+        requireAvailable(Kind.TOOL_PERMISSION, callId, null);
         kind = Kind.TOOL_PERMISSION;
         toolCallId = requireText(callId, "toolCallId");
         var created = new CompletableFuture<ToolConfirmationDecisionDTO>();
@@ -77,7 +78,7 @@ public class RuntimePendingInteraction {
 
     public synchronized CompletableFuture<PlanReviewDecisionDTO> beginPlan(
             String callId, String eventId, String content) {
-        requireAvailable();
+        requireAvailable(Kind.PLAN_REVIEW, callId, eventId);
         kind = Kind.PLAN_REVIEW;
         toolCallId = requireText(callId, "toolCallId");
         targetEventId = requireText(eventId, "planEventId");
@@ -89,7 +90,7 @@ public class RuntimePendingInteraction {
 
     public synchronized CompletableFuture<QuestionAnswerDecisionDTO> beginQuestion(
             String callId, String eventId, QuestionRequestSnapshotDTO snapshot) {
-        requireAvailable();
+        requireAvailable(Kind.USER_QUESTION, callId, eventId);
         kind = Kind.USER_QUESTION;
         toolCallId = requireText(callId, "toolCallId");
         targetEventId = requireText(eventId, "questionEventId");
@@ -116,7 +117,7 @@ public class RuntimePendingInteraction {
         CompletableFuture<QuestionAnswerDecisionDTO> waiting;
         synchronized (this) {
             if (!matchesCall(Kind.USER_QUESTION, callId)) {
-                throw unavailable();
+                throw waitMissing(callId);
             }
             waiting = castFuture();
         }
@@ -286,9 +287,13 @@ public class RuntimePendingInteraction {
         return (CompletableFuture<T>) future;
     }
 
-    private void requireAvailable() {
+    private void requireAvailable(Kind requestedKind, String requestedToolCallId, String requestedTargetEventId) {
         if (future != null) {
-            throw unavailable();
+            throw UserQuestionException.failure(
+                    ClawConstants.RuntimeApi.USER_QUESTION_PENDING_CONFLICT_ERROR_CODE,
+                    "runtime.interaction.begin",
+                    pendingContext(requestedKind, requestedToolCallId, requestedTargetEventId),
+                    null);
         }
     }
 
@@ -303,8 +308,28 @@ public class RuntimePendingInteraction {
         clearContinuation();
     }
 
-    private static UserQuestionException unavailable() {
-        return new UserQuestionException(ClawConstants.RuntimeApi.USER_QUESTION_UNAVAILABLE_ERROR_CODE);
+    private UserQuestionException waitMissing(String requestedToolCallId) {
+        return UserQuestionException.failure(
+                ClawConstants.RuntimeApi.USER_QUESTION_WAIT_MISSING_ERROR_CODE,
+                "runtime.question.await",
+                pendingContext(Kind.USER_QUESTION, requestedToolCallId, null),
+                null);
+    }
+
+    private Map<String, Object> pendingContext(
+            Kind requestedKind, String requestedToolCallId, String requestedTargetEventId) {
+        Map<String, Object> context = new java.util.LinkedHashMap<>();
+        context.put("requestedKind", diagnosticValue(requestedKind));
+        context.put("requestedToolCallId", diagnosticValue(requestedToolCallId));
+        context.put("requestedTargetEventId", diagnosticValue(requestedTargetEventId));
+        context.put("existingKind", diagnosticValue(kind));
+        context.put("existingToolCallId", diagnosticValue(toolCallId));
+        context.put("existingTargetEventId", diagnosticValue(targetEventId));
+        return context;
+    }
+
+    private static String diagnosticValue(Object value) {
+        return value == null ? "<missing>" : value.toString();
     }
 
     private static String requireText(String value, String name) {

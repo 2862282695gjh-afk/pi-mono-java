@@ -49,6 +49,7 @@ import com.campusclaw.codingagent.session.compaction.SessionCompactionCompletedE
 import com.campusclaw.codingagent.session.compaction.SessionCompactionEvent;
 import com.campusclaw.codingagent.tool.builtin.BuiltInToolName;
 import com.campusclaw.codingagent.tool.question.QuestionRequestParser;
+import com.campusclaw.codingagent.tool.question.UserQuestionException;
 import com.campusclaw.common.constant.ClawConstants;
 
 import org.slf4j.Logger;
@@ -567,15 +568,37 @@ public class RuntimeEventProjector {
 
     private ToolCall requireUniqueFinalizedCall(BeforeToolCallContext context) {
         ToolCall call = context.toolCall();
-        ToolCall finalized = finalizedToolCalls.get(call.id());
         long toolCallCount = context.assistantMessage().content().stream()
                 .filter(ToolCall.class::isInstance)
                 .count();
-        if (finalized == null || !finalized.equals(call) || toolCallCount != 1) {
-            throw new com.campusclaw.codingagent.tool.question.UserQuestionException(
-                    ClawConstants.RuntimeApi.USER_QUESTION_UNAVAILABLE_ERROR_CODE);
+        if (toolCallCount != 1) {
+            throw questionCallFailure(
+                    ClawConstants.RuntimeApi.USER_QUESTION_MULTIPLE_TOOL_CALLS_ERROR_CODE, call.id(), toolCallCount);
+        }
+        ToolCall finalized = finalizedToolCalls.get(call.id());
+        if (finalized == null) {
+            throw questionCallFailure(
+                    ClawConstants.RuntimeApi.USER_QUESTION_CALL_NOT_FINALIZED_ERROR_CODE, call.id(), toolCallCount);
+        }
+        if (!finalized.equals(call)) {
+            throw questionCallFailure(
+                    ClawConstants.RuntimeApi.USER_QUESTION_CALL_MISMATCH_ERROR_CODE, call.id(), toolCallCount);
         }
         return finalized;
+    }
+
+    private UserQuestionException questionCallFailure(String errorCode, String toolCallId, long toolCallCount) {
+        return UserQuestionException.failure(
+                errorCode,
+                "runtime.question.project",
+                Map.of(
+                        "sessionId",
+                        String.valueOf(sessionId),
+                        "toolCallId",
+                        String.valueOf(toolCallId),
+                        "toolCallCount",
+                        toolCallCount),
+                null);
     }
 
     private static String requirePlanArgument(ToolCall call) {

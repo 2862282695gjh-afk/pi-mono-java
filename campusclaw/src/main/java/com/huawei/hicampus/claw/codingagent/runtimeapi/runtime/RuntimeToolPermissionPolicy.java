@@ -59,16 +59,28 @@ public final class RuntimeToolPermissionPolicy {
     }
 
     public static Optional<String> uniqueAllowedToolId(PreparedAgentRuntime runtime, String toolName) {
+        BindingDiagnosisDTO diagnosis = diagnoseBinding(runtime, toolName);
+        if (diagnosis.status() != BindingStatus.BOUND || from(runtime).decisions.get(toolName) != Decision.ALLOW) {
+            return Optional.empty();
+        }
+        return Optional.of(diagnosis.toolId());
+    }
+
+    public static BindingDiagnosisDTO diagnoseBinding(PreparedAgentRuntime runtime, String toolName) {
         List<BoundTool> matches = java.util.stream.Stream.concat(
                         runtime.metadata().bindingTools().stream(),
                         runtime.skills().stream().flatMap(skill -> skill.bindingTools().stream()))
                 .filter(tool -> toolName.equals(tool.name()))
-                .filter(tool -> parse(tool.permission()) == Decision.ALLOW)
                 .toList();
-        if (matches.size() != 1 || from(runtime).decisions.get(toolName) != Decision.ALLOW) {
-            return Optional.empty();
+        if (matches.size() > 1) {
+            return new BindingDiagnosisDTO(BindingStatus.AMBIGUOUS, null, matches.size());
         }
-        return Optional.ofNullable(matches.getFirst().id()).filter(id -> !id.isBlank());
+        if (matches.isEmpty()
+                || matches.getFirst().id() == null
+                || matches.getFirst().id().isBlank()) {
+            return new BindingDiagnosisDTO(BindingStatus.MISSING, null, matches.size());
+        }
+        return new BindingDiagnosisDTO(BindingStatus.BOUND, matches.getFirst().id(), 1);
     }
 
     private static Decision parse(String value) {
@@ -88,4 +100,22 @@ public final class RuntimeToolPermissionPolicy {
         ASK,
         DENY
     }
+
+    /**
+     * 可信快照中的工具绑定诊断状态。
+     */
+    public enum BindingStatus {
+        BOUND,
+        MISSING,
+        AMBIGUOUS
+    }
+
+    /**
+     * 工具绑定诊断结果，只携带安全的工具标识和匹配数量。
+     *
+     * @param status 绑定状态
+     * @param toolId 唯一绑定的工具标识
+     * @param matchingCount 同名绑定数量
+     */
+    public record BindingDiagnosisDTO(BindingStatus status, String toolId, int matchingCount) {}
 }

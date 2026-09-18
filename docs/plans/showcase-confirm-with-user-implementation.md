@@ -1,6 +1,6 @@
 # Showcase 业务确认开发与演示
 
-版本：1.0.1；日期：2026-09-18。仅用于 `codex/showcase-confirm-with-user` 分支，不合入 main。
+版本：1.0.2；日期：2026-09-18。仅用于 `codex/showcase-confirm-with-user` 分支，不合入 main。
 
 实现起点为 `19870445a3a8bd559919fe24580330be8227488f`。设计依据为
 [showcase 业务确认设计](https://github.com/superheromeZzh/pi-mono-java-design/blob/106f9f5a79af78386717371e1ba52330d26013bf/01-总体架构/06-CampusClaw计划模式/showcase-confirm-with-user.md)；
@@ -57,6 +57,43 @@ java -jar modules/coding-agent-cli/target/campusclaw-agent.jar
 工具绑定为 deny/ask、缺失或歧义时应明确失败，不产生问题等待，不调用远端同名工具。
 用户回答不批准计划、不改变 mode、不创建新根，也不授予其他业务操作权限。
 
+## 失败诊断
+
+源码起点：`40fa05f99fe1b3bb4363e0918b1ab0a63d6939ae`。问答失败在 `ShowcaseConfirmationAdapter`、`RuntimeEventProjector#requireUniqueFinalizedCall` 和 `RuntimePendingInteraction` 的失败分支记录 ERROR 日志，并通过 `UserQuestionException` 携带独立错误码。`RuntimeToolPermissionPolicy#diagnoseBinding` 区分绑定缺失与多条绑定；已有准入规则保持不变。
+
+日志正文和结构化字段均包含 `errorCode`、`operation`、工具调用标识及可用的 sessionId/agentId。发现异常保留 cause；诊断字段不包含 label/context、答案或凭据。工具 Pipeline、实时 `agent.tool_result.errorCode`、持久化和历史查询保留具体码值；客户端显示对应的中英文安全文案。旧 `USER_QUESTION_UNAVAILABLE` 仅保留兼容历史。
+
+| 错误码 | 含义 |
+|---|---|
+| `USER_QUESTION_ENTRY_UNSUPPORTED` | 当前执行入口不支持向用户提问。 |
+| `USER_QUESTION_PORT_MISSING` | 用户提问等待端口未就绪。 |
+| `USER_QUESTION_ADAPTER_UNBOUND` | 用户确认适配器尚未完成初始化。 |
+| `USER_QUESTION_BINDING_MISSING` | 当前 Agent 或 Skill 缺少有效的用户确认工具绑定。 |
+| `USER_QUESTION_BINDING_AMBIGUOUS` | 用户确认工具存在多个绑定，无法确定唯一绑定。 |
+| `USER_QUESTION_PERMISSION_DENIED` | 用户确认工具的绑定权限不允许调用。 |
+| `USER_QUESTION_PERMISSION_REQUIRED` | 用户确认工具配置为需审批，当前确认入口要求 allow 权限。 |
+| `USER_QUESTION_DISCOVERY_FAILED` | 查询用户确认工具失败，请根据工具调用标识检查服务端日志。 |
+| `USER_QUESTION_TOOL_NOT_FOUND` | 工具发现结果中未找到用户确认工具。 |
+| `USER_QUESTION_TOOL_ID_MISMATCH` | 用户确认工具的发现 ID 与绑定 ID 不一致。 |
+| `USER_QUESTION_PREPARATION_CONFLICT` | 已有另一项用户确认调用正在准备或等待。 |
+| `USER_QUESTION_NOT_PREPARED` | 用户确认调用尚未完成问题准备。 |
+| `USER_QUESTION_CALL_MISMATCH` | 用户确认调用与已记录的调用不一致。 |
+| `USER_QUESTION_ANSWER_INVALID` | 用户确认返回的答案结构无效。 |
+| `USER_QUESTION_MULTIPLE_TOOL_CALLS` | 提问必须是当前 Assistant 消息中唯一的工具调用。 |
+| `USER_QUESTION_CALL_NOT_FINALIZED` | 用户确认调用尚未记录为完整工具调用。 |
+| `USER_QUESTION_PENDING_CONFLICT` | 当前执行已有未完成的交互，无法创建新的用户问题。 |
+| `USER_QUESTION_WAIT_MISSING` | 找不到当前工具调用对应的用户问题等待。 |
+
+参数类型错误继续使用 `TOOL_ARGUMENTS_INVALID`，日志 `reason` 区分 `args_not_object`、`label_not_string`、`context_not_object`。
+
+部署包含此改动的新构建后，可按失败时段检索实际日志目录：
+
+```bash
+rg -n -C 10 'User question failed:|USER_QUESTION_|runtime.user-question.confirmation' /actual/log/directory
+```
+
+按日志中的 toolCallId 和 sessionId 缩小范围。发现失败还可检索 `listAgentTools failed` / `listSkillTools failed` 的底层日志。新增日志不能补回旧部署未记录的历史原因；无需额外开启 DEBUG。
+
 ## 退出演示
 
 停止接受新展示执行，完成或中断已有等待，再切换回正式构建。
@@ -68,12 +105,12 @@ java -jar modules/coding-agent-cli/target/campusclaw-agent.jar
 
 | 范围 | 结果 |
 |---|---|
-| 后端定向回归 | JDK 21，10 类 76 项，0 失败、错误、跳过；覆盖适配器、旧 CallMateTool、工具装配、Runtime 固定接线、等待清理、事件投影、历史、答案及 HTTP 输入边界 |
+| 后端定向回归 | JDK 21，15 类 118 项，0 失败、错误、跳过；覆盖各失败分支的细分码、诊断日志与 cause、18 种码的工具管线/双语实时事件/历史投影、旧 CallMateTool、工具装配、等待清理及 HTTP 输入边界 |
 | 实际 HTTP / AgentLoop / openGauss | 3 项通过，独立合成测试库且未传 showcase 配置；确认闭环、原根续跑、等待无后续模型请求/远端执行、context 变体、4096/4097 答案边界及停止 |
-| 前端 | 34 文件 266 项测试通过，类型检查与生产构建通过 |
+| 前端 | 原功能基线 34 文件 266 项测试、类型检查与生产构建通过；本次协议和投影定向回归 2 文件 115 项通过，包含 18 种新失败码的实时与历史读取 |
 | 浏览器 | 1440px/390px 原样问题、可滚动按钮、空回答提示、Enter 换行、确认续跑及刷新恢复通过；未模拟系统输入法候选窗 |
 | 前后端实际载荷 | 实际 JAR 的 10 个 live 帧和 9 个历史帧通过前端 decoder/projector；保留 label/context，只有一张关联问题卡 |
-| 静态规范 | Spotless check、main/test Checkstyle、29 个修改/新增源 Java 文件的 AST 方法长度检查、git diff --check 通过 |
+| 静态规范 | Spotless check、main/test Checkstyle、本次修改/新增 Java 文件的 AST 方法长度检查、git diff --check 通过 |
 | 测试质量 | 扫描 errors=0；命名启发式警告及既有 catch 重抛提示已人工核对，无吞异常或恒真断言 |
 | 公司镜像 | sync-campusclaw.sh --no-verify 与布局检查通过；公司构建无法解析 NativeParent:26.0.0-SNAPSHOT，未进入源码编译 |
 
