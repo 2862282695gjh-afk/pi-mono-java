@@ -7,6 +7,7 @@
 <main>
 <h1>ADR-0107：开发代理设置 secure=false</h1>
 <p>状态：Accepted。日期：2026-09-10。分类：本地联调产品约束。</p>
+<p>认证助手证书策略：Superseded in part，当前认证请求也独立跳过证书校验，见<a href="../designs/frontend-events/README.md#本地-dev-认证接口">前端实现设计 1.4.1</a>；Runtime 代理的取舍继续有效。</p>
 <h2>Context</h2>
 <p>用户要求在 <code>frontend/vite.config.ts</code> 设置 <code>secure: false</code>。源码基线 <code>33c3951ddecb8585881c8ec75265c6aa63145e83</code> 的 <code>server.proxy['/campusclaw-service']</code> 仅设置 target 和 changeOrigin。</p>
 <h2>Options</h2>
