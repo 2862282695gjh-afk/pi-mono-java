@@ -2,14 +2,15 @@
 
 | 属性 | 值 |
 |---|---|
-| 版本 | 1.4.0 |
-| 日期 | 2026-09-16 |
+| 版本 | 1.4.1 |
+| 日期 | 2026-09-18 |
 | 状态 | 前端已实现；本次以契约 fixture 验收，真实后端 E2E 未验收；不是生产 Mate 前端 |
 | 初始源码基线 | `pi-mono-java@821418e7f2ece298a04a066ab8d11d3388ef2f16` |
 | 同步源码基线 | `pi-mono-java@9b01a9f1e659359b6a7bff9ec622e6700ef6e384`；经 c57db26d 同步消息受理/控制分发，再同步控制受理与旧 Entry 拒绝；本文消费的 VO 不变 |
 | 工作台源码基线 | `pi-mono-java@8fbafdb0b7ea5cdb8f22704610e5a86fc6f91bf1`；同步 `5add3aef18138e9197cc8bd9a37805d6ac4b742b` 仅涉及独立 Java 测试，前端未变 |
 | Headers 定位修复基线 | `pi-mono-java@f61906b9136246ca60f333704b6fc92b5420d0ec` |
 | 开发代理配置基线 | `pi-mono-java@33c3951ddecb8585881c8ec75265c6aa63145e83` |
+| 本地认证证书配置基线 | `pi-mono-java@19870445a3a8bd559919fe24580330be8227488f`；`frontend/dev/authCenter.ts:loginAuthCenter` 原先使用 Node 默认的证书校验 |
 | 已确认工作台设计 | `pi-mono-java-design@db3223c498e50c383cb620abe3a3fde2e3872845`；前端 1.10.0、Slash 前端 1.5.0、`runtime-workbench-alignment.md` |
 | 已确认目标契约 | `pi-mono-java-design@9b8c5b7`；Claw Events B01～B15、Slash 前端 1.3.0；用户本次明确对接 Claw Runtime |
 | 决策 | [ADR-0102](../../decisions/0102-runtime-events-v2-frontend.html)、[工作台 ADR-0105](../../decisions/0105-workbench-session-stop-and-auth.html)、[Headers 定位 ADR-0106](../../decisions/0106-headers-workspace-positioning.html) |
@@ -181,10 +182,13 @@ Accept/Content-Type 固定并剔除禁止的版本/幂等/续流头，不把凭�
 
 ### 本地 DEV 认证接口
 
-开发服务的 `/campusclaw-service` 代理在 `frontend/vite.config.ts` 中显式配置 `secure: false`，
-连接 HTTPS 后端时跳过上游证书验证。这是用户指定的本地联调产品约束；基线 `33c3951d` 的
-`server.proxy['/campusclaw-service']` 未设置该选项。它仅作用于此代理，本地认证助手仍使用独立
-HTTPS 客户端并保留 TLS 校验。配置与取舍见 [ADR-0107](../../decisions/0107-dev-proxy-secure-false.html)。
+开发服务的 `/campusclaw-service` 代理由 `frontend/dev/runtimeProxy.ts:forward` 发起 HTTPS 请求，
+显式设置 `rejectUnauthorized: false`；其联调取舍见 [ADR-0107](../../decisions/0107-dev-proxy-secure-false.html)。
+本地认证助手在 `frontend/dev/authCenter.ts:loginAuthCenter` 的独立 HTTPS 请求上同样设置
+`rejectUnauthorized: false`，与 Postman 关闭证书校验的联调方式一致。
+这属于用户指定的本地联调产品约束：同一前端在不同开发机上不再依赖额外 CA 或全局关闭 TLS 校验才能登录。
+代价是这些请求不验证上游证书身份；HTTPS 传输、本机来源校验、固定目标路径、重定向拒绝和资源限制继续保留。
+请求选项不修改进程级 TLS 配置，不新增依赖、界面开关或组件关系；现有目标图与 Agent 架构对比结论不变。
 
 接口为 **`POST /__debug/auth/token`**，不是企业公共 API；DEV 私有路径、固定中文错误和
 本机来源约束是产品范围例外，不增加公共登录资源、JWT/APPKEY 验证器或 Java Controller。
@@ -195,7 +199,7 @@ HTTPS 客户端并保留 TLS 校验。配置与取舍见 [ADR-0107](../../decisi
 | 请求 | 同源 JSON `{ "ip": "192.0.2.10" }`；仅一个必填 IP 字段，接受裸 IPv4/IPv6，拒绝 URL、域名、端口和额外字段；最多 2 KiB |
 | 凭据 | 本地 `.env.local` 的 `CAMPUSCLAW_DEV_AUTH_ACCOUNT` / `CAMPUSCLAW_DEV_AUTH_PASSWORD`，不得有 `VITE_` 前缀 |
 | 来源 | 本机回环 socket、localhost/127.0.0.1/::1 Host 及实际端口、同源 Origin；不开放跨源 |
-| 上游 | 固定 HTTPS 443 `/service/AuthCenter/0.1.0/auth/login`，JSON `loginAccount/password`；不转发浏览器 Cookie/Headers，不跟随跳转，保留 TLS 校验 |
+| 上游 | 固定 HTTPS 443 `/service/AuthCenter/0.1.0/auth/login`，JSON `loginAccount/password`；不转发浏览器 Cookie/Headers，不跟随跳转，仅此认证请求跳过证书校验 |
 | 资源限制 | 上游总超时 10 秒，响应体最多 64 KiB；浏览器 12 秒超时，页面取消同步 abort 本地请求 |
 | 提取 | 仅 2xx 接受独立 Set-Cookie 数组中唯一非空、非删除的 access-token；Expires 逗号不拆分 Cookie，Max-Age 优先；忽略 JSESSIONID，不向浏览器写 Cookie |
 | 成功 | HTTP 200，`{ "resCode": "0", "resMsg": "Token 已获取", "result": { "accessToken": "synthetic-token" } }` |
@@ -223,6 +227,8 @@ HTTPS 客户端并保留 TLS 校验。配置与取舍见 [ADR-0107](../../decisi
 执行入口为 `frontend/package.json` 的 test/typecheck/build；Node middleware 及其测试均纳入严格类型检查。
 本地运行及配置见 [frontend/README.md](../../../frontend/README.md)。
 
+认证证书策略验证（1.4.1）：在 `NODE_TLS_REJECT_UNAUTHORIZED=1` 下，认证客户端、中间件、认证工作台与开发设置的 4 个测试文件、22 项测试通过，覆盖独立请求选项、来源限制、重定向拒绝、超时与错误脱敏；类型检查、生产构建和依赖审计通过。生产 JS 不含认证端点，preview 的认证 POST 返回 404；PlantUML 重新生成的 SVG 与基线逐字节一致，ASCII/XML/图源行锚点和链接校验通过。真实公司认证中心尚未联调。
+
 - Vitest 13 个文件、125 项：协议/SSE/分页、最新 Header 快照、空白归一化、命令/草稿、停止和控制、
   刷新/重开索引、创建后读取失败、迟到视图、六轮 GET 上限、未知提交不重放、Token 回填竞争、Cookie
   提取、来源/Host 校验、固定 HTTPS 请求、重定向拒绝、超时、大小限制及错误脱敏。
@@ -244,6 +250,7 @@ HTTPS 客户端并保留 TLS 校验。配置与取舍见 [ADR-0107](../../decisi
 
 | 版本 | 日期 | 变更 |
 |---|---|---|
+| 1.4.1 | 2026-09-18 | 本地认证请求独立跳过证书校验，统一开发机的认证中心联调方式。 |
 | 1.4.0 | 2026-09-16 | 接入统一开发设置、环境隔离、浮层删除、工具结构和逐题问答实现入口。 |
 | 1.3.3 | 2026-09-14 | 取消新增行数预算，按职责和验收边界组织交付。 |
 | 1.3.2 | 2026-09-10 | 开发代理显式设置 secure=false，允许连接本地联调的 HTTPS 后端。 |
