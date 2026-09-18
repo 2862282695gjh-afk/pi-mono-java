@@ -1,25 +1,23 @@
 # Showcase 业务确认开发与演示
 
-版本：1.0.0；日期：2026-09-17。仅用于 `codex/showcase-confirm-with-user` 分支，不合入 main。
+版本：1.0.1；日期：2026-09-18。仅用于 `codex/showcase-confirm-with-user` 分支，不合入 main。
 
 实现起点为 `19870445a3a8bd559919fe24580330be8227488f`。设计依据为
 [showcase 业务确认设计](https://github.com/superheromeZzh/pi-mono-java-design/blob/106f9f5a79af78386717371e1ba52330d26013bf/01-总体架构/06-CampusClaw计划模式/showcase-confirm-with-user.md)；
 事件字段、原样载荷与答案规则以该设计链接的共享契约为准。本说明记录实现与演示操作，不复制公共接口 Schema。
 
-## 演示配置
+## 分支行为
 
-部署参数 `campusclaw.showcase.confirm-with-user-enabled=true` 或环境变量
-`CAMPUSCLAW_SHOWCASE_CONFIRM_WITH_USER_ENABLED=true` 启用临时适配，缺省 false。
-后端与该分支前端必须配套发布；开关在新执行准备时固定。启用后 Runtime 默认与显式工具列表均移除 AskUserQuestion，保留旧问题历史读取。
+该分支固化启用临时适配，不读取额外 Spring 参数或环境变量。后端与该分支前端必须配套发布；
+Runtime 默认与显式工具列表均移除 AskUserQuestion，保留旧问题历史读取。
 
 独立服务可用以下参数启动，数据库、模型及 Mate 连接仍使用已有部署配置：
 
 ```bash
-java -jar modules/coding-agent-cli/target/campusclaw-agent.jar \
-  --campusclaw.showcase.confirm-with-user-enabled=true
+java -jar modules/coding-agent-cli/target/campusclaw-agent.jar
 ```
 
-公司镜像使用相同 Spring 属性，具体启动入口沿用公司部署流程。该分支没有新增数据库表、字段或 Maven/npm 依赖。
+公司镜像不需要 showcase 专属配置，具体启动入口沿用公司部署流程。该分支没有新增数据库表、字段或 Maven/npm 依赖。
 
 在业务 Agent 的可信工具绑定中配置精确名称 `confirm_with_user`，权限必须为 allow，发现结果必须唯一。
 输入 label 为必填字符串，context 为可选对象；context 内部不约定字段。模型仍通过 CallMateTool 调用它。
@@ -38,7 +36,7 @@ java -jar modules/coding-agent-cli/target/campusclaw-agent.jar \
 
 | 职责 | 路径与符号 |
 |---|---|
-| 开关与清单过滤 | `tool/question/ShowcaseConfirmationProperties`、`tool/builtin/DefaultConfiguredToolAssembler#assemble` |
+| 分支固定清单过滤 | `tool/builtin/DefaultConfiguredToolAssembler#assemble` |
 | 每执行适配器与可信绑定 | `runtimeapi/runtime/RuntimeSessionEngineRegistry#createSession`、`tool/question/ShowcaseConfirmationAdapter#prepare` |
 | 原问题等待与失败清理 | `runtimeapi/runtime/RuntimeActiveExecution#beforeToolCall`、`runtimeapi/event/RuntimeEventProjector#beginQuestion` |
 | 本地工具结果 | `tool/mate/CallMateTool#execute`、`ShowcaseConfirmationAdapter#await` |
@@ -61,17 +59,17 @@ java -jar modules/coding-agent-cli/target/campusclaw-agent.jar \
 
 ## 退出演示
 
-停止接受新展示执行，完成或中断已有等待，再关闭开关或切换构建。
+停止接受新展示执行，完成或中断已有等待，再切换回正式构建。
 含 label/context 的历史继续要求联合载荷解码；不把新历史交给只认识 questions 的旧二进制，不清表回退。
 
 ## 验证记录
 
-2026-09-17 对最终代码完成以下验证。未新增或修改图源，沿用设计分支的目标结构与时序图。
+2026-09-18 对最终代码完成以下验证。未新增或修改图源，沿用设计分支的目标结构与时序图。
 
 | 范围 | 结果 |
 |---|---|
-| 后端定向回归 | JDK 21，9 类 74 项，0 失败、错误、跳过；覆盖适配器、旧 CallMateTool、工具装配、等待清理、事件投影、历史、答案及 HTTP 输入边界 |
-| 实际 HTTP / AgentLoop / openGauss | 4 项通过，独立合成测试库；确认闭环、原根续跑、等待无后续模型请求/远端执行、context 变体、4096/4097 答案边界、停止及开关关闭后的旧问答 |
+| 后端定向回归 | JDK 21，10 类 76 项，0 失败、错误、跳过；覆盖适配器、旧 CallMateTool、工具装配、Runtime 固定接线、等待清理、事件投影、历史、答案及 HTTP 输入边界 |
+| 实际 HTTP / AgentLoop / openGauss | 3 项通过，独立合成测试库且未传 showcase 配置；确认闭环、原根续跑、等待无后续模型请求/远端执行、context 变体、4096/4097 答案边界及停止 |
 | 前端 | 34 文件 266 项测试通过，类型检查与生产构建通过 |
 | 浏览器 | 1440px/390px 原样问题、可滚动按钮、空回答提示、Enter 换行、确认续跑及刷新恢复通过；未模拟系统输入法候选窗 |
 | 前后端实际载荷 | 实际 JAR 的 10 个 live 帧和 9 个历史帧通过前端 decoder/projector；保留 label/context，只有一张关联问题卡 |

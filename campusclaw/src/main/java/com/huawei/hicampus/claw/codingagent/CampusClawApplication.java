@@ -9,7 +9,6 @@ import com.huawei.hicampus.claw.codingagent.config.CampusMateClientProperties;
 import com.huawei.hicampus.claw.codingagent.runtime.AgentRuntimeProperties;
 import com.huawei.hicampus.claw.codingagent.session.compaction.CompactionProperties;
 import com.huawei.hicampus.claw.codingagent.tool.builtin.BuiltInToolProperties;
-import com.huawei.hicampus.claw.codingagent.tool.question.ShowcaseConfirmationProperties;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -29,7 +28,6 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
     CampusMateClientProperties.class,
     AgentRuntimeProperties.class,
     BuiltInToolProperties.class,
-    ShowcaseConfirmationProperties.class,
     CompactionProperties.class
 })
 public class CampusClawApplication {

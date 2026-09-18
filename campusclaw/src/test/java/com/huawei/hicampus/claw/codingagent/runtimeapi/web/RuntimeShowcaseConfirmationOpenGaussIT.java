@@ -145,51 +145,10 @@ class RuntimeShowcaseConfirmationOpenGaussIT {
         }
     }
 
-    @Test
-    void keepsLegacyQuestionFlowWhenShowcaseIsDisabled(@TempDir Path directory) throws Exception {
-        ProcessTestConfigDTO config = loadConfiguration();
-        prepareRuntimeFiles(directory);
-        Map<String, Object> arguments = Map.of("questions", List.of(Map.of("id", "legacy", "question", "旧问题仍可回答")));
-        int runtimePort = freePort();
-        try (ShowcaseMateStub mate = new ShowcaseMateStub(freePort());
-                RuntimeProcess runtime = startRuntime(config, directory, runtimePort, mate.port())) {
-            mate.enqueueModel(toolResponse("legacy-call", "AskUserQuestion", arguments));
-            mate.enqueueModel(textResponse("legacy complete"));
-            mate.start();
-            awaitHealth(runtime, runtimePort);
-            String sessionId = createSession(runtimePort);
-            List<JsonNode> first = frames(requireSuccessfulStream(submitUserEventAsync(runtimePort, sessionId)));
-            JsonNode question = one(first, "agent.question");
-            assertThat(question.path("questions")).hasSize(1);
-            assertThat(question.path("questions").get(0).path("id").asText()).isEqualTo("legacy");
-            assertThat(question.has("label")).isFalse();
-            assertThat(question.has("context")).isFalse();
-
-            List<JsonNode> continuation = frames(requireSuccessfulStream(answerQuestion(
-                    runtimePort, sessionId, question.path("eventId").asText(), "旧答案", "legacy")));
-
-            JsonNode result = toolResult(continuation, "legacy-call");
-            assertThat(MAPPER.readTree(
-                                    result.path("content").get(0).path("text").asText())
-                            .path("answers")
-                            .get(0)
-                            .path("custom")
-                            .asText())
-                    .isEqualTo("旧答案");
-            assertThat(one(history(runtimePort, sessionId), "agent.question").path("questions"))
-                    .hasSize(1);
-        }
-    }
-
     private static RuntimeProcess startShowcaseRuntime(
             ProcessTestConfigDTO config, Path directory, int runtimePort, int matePort) throws IOException {
         return startRuntime(
-                config,
-                directory,
-                runtimePort,
-                matePort,
-                "--campusclaw.showcase.confirm-with-user-enabled=true",
-                "--campusclaw.runtime.events.heartbeat-interval=100ms");
+                config, directory, runtimePort, matePort, "--campusclaw.runtime.events.heartbeat-interval=100ms");
     }
 
     private static void prepareShowcaseRuntime(Path directory) throws Exception {
@@ -484,16 +443,12 @@ class RuntimeShowcaseConfirmationOpenGaussIT {
     }
 
     private static String toolResponse(String callId, Map<String, Object> arguments) throws Exception {
-        return toolResponse(callId, "CallMateTool", arguments);
-    }
-
-    private static String toolResponse(String callId, String toolName, Map<String, Object> arguments) throws Exception {
         ObjectNode first = chunk(null);
         ObjectNode delta = (ObjectNode) first.path("choices").get(0).path("delta");
         delta.put("role", "assistant");
         ObjectNode call = delta.putArray("tool_calls").addObject();
         call.put("index", 0).put("id", callId).put("type", "function");
-        call.putObject("function").put("name", toolName).put("arguments", MAPPER.writeValueAsString(arguments));
+        call.putObject("function").put("name", "CallMateTool").put("arguments", MAPPER.writeValueAsString(arguments));
         return data(first) + data(usageChunk("tool_calls")) + "data: [DONE]\n\n";
     }
 

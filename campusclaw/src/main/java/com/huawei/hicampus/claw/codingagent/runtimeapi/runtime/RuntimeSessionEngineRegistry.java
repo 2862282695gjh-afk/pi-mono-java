@@ -31,11 +31,9 @@ import com.huawei.hicampus.claw.codingagent.tool.agent.SubagentExecutionService;
 import com.huawei.hicampus.claw.codingagent.tool.builtin.ToolEntryPoint;
 import com.huawei.hicampus.claw.codingagent.tool.cron.AgentScopedCronToolFactory;
 import com.huawei.hicampus.claw.codingagent.tool.question.ShowcaseConfirmationAdapter;
-import com.huawei.hicampus.claw.codingagent.tool.question.ShowcaseConfirmationProperties;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 /**
@@ -62,33 +60,15 @@ public class RuntimeSessionEngineRegistry {
 
     private final Semaphore capacity;
 
-    private final ShowcaseConfirmationProperties showcase;
-
     public RuntimeSessionEngineRegistry(
             AgentSessionFactory sessionFactory,
             SubagentExecutionService subagentExecutionService,
             AgentScopedCronToolFactory cronToolFactory,
             RuntimeExecutionProperties properties) {
-        this(
-                sessionFactory,
-                subagentExecutionService,
-                cronToolFactory,
-                properties,
-                new ShowcaseConfirmationProperties());
-    }
-
-    @Autowired
-    public RuntimeSessionEngineRegistry(
-            AgentSessionFactory sessionFactory,
-            SubagentExecutionService subagentExecutionService,
-            AgentScopedCronToolFactory cronToolFactory,
-            RuntimeExecutionProperties properties,
-            ShowcaseConfirmationProperties showcase) {
         this.sessionFactory = sessionFactory;
         this.subagentExecutionService = subagentExecutionService;
         this.cronToolFactory = cronToolFactory;
         this.capacity = new Semaphore(properties.getMaxActive());
-        this.showcase = showcase;
     }
 
     public RuntimeSessionHolder register(
@@ -234,8 +214,7 @@ public class RuntimeSessionEngineRegistry {
             MateCredentials credentials,
             Consumer<PreparedAgentRuntime> runtimeValidator) {
         ThinkingLevel level = thinking ? ThinkingLevel.MEDIUM : ThinkingLevel.OFF;
-        var confirmation =
-                new ShowcaseConfirmationAdapter(showcase.isConfirmWithUserEnabled(), ToolEntryPoint.RUNTIME, execution);
+        var confirmation = new ShowcaseConfirmationAdapter(true, ToolEntryPoint.RUNTIME, execution);
         execution.installShowcaseConfirmation(confirmation);
         var request = new ManagedAgentSessionRequest(
                 snapshot.agentId(),

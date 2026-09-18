@@ -7,9 +7,7 @@ package com.campusclaw.codingagent.tool.builtin;
 import java.util.List;
 
 import com.campusclaw.agent.tool.AgentTool;
-import com.campusclaw.codingagent.tool.question.ShowcaseConfirmationProperties;
 
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 /**
@@ -25,18 +23,9 @@ public class DefaultConfiguredToolAssembler implements ConfiguredToolAssembler {
 
     private final BuiltInToolFactory factory;
 
-    private final ShowcaseConfirmationProperties showcase;
-
     public DefaultConfiguredToolAssembler(BuiltInToolProperties properties, BuiltInToolFactory factory) {
-        this(properties, factory, new ShowcaseConfirmationProperties());
-    }
-
-    @Autowired
-    public DefaultConfiguredToolAssembler(
-            BuiltInToolProperties properties, BuiltInToolFactory factory, ShowcaseConfirmationProperties showcase) {
         this.properties = properties;
         this.factory = factory;
-        this.showcase = showcase;
     }
 
     @Override
@@ -48,6 +37,6 @@ public class DefaultConfiguredToolAssembler implements ConfiguredToolAssembler {
     }
 
     private boolean disabledQuestion(BuiltInToolName name) {
-        return showcase.isConfirmWithUserEnabled() && name == BuiltInToolName.ASK_USER_QUESTION;
+        return name == BuiltInToolName.ASK_USER_QUESTION;
     }
 }

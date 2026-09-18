@@ -9,7 +9,6 @@ import com.campusclaw.codingagent.config.CampusMateClientProperties;
 import com.campusclaw.codingagent.runtime.AgentRuntimeProperties;
 import com.campusclaw.codingagent.session.compaction.CompactionProperties;
 import com.campusclaw.codingagent.tool.builtin.BuiltInToolProperties;
-import com.campusclaw.codingagent.tool.question.ShowcaseConfirmationProperties;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -29,7 +28,6 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
     CampusMateClientProperties.class,
     AgentRuntimeProperties.class,
     BuiltInToolProperties.class,
-    ShowcaseConfirmationProperties.class,
     CompactionProperties.class
 })
 public class CampusClawApplication {
