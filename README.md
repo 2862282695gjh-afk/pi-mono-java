@@ -70,10 +70,12 @@ java -jar modules/coding-agent-cli/target/campusclaw-agent.jar
 | `Agent` | 执行当前 Agent 直接绑定的 Child | SEQUENTIAL |
 | `ExitPlanMode` | Runtime 根执行提交完整计划并等待审核 | SEQUENTIAL |
 | `TodoUpdate` | 返回实施任务的完整进度快照 | SEQUENTIAL |
+| `AskUserQuestion` | Runtime 根执行提交结构化问题并等待整批回答 | SEQUENTIAL |
 
 `Read`、`Find`、`Grep` 和 `Ls` 的工作区固定为当前 `agent/{agentId}`。`Bash`、`Edit`、
 `Write`、`Loop`、`Glob`、`EditDiff`、`activate_skill`、`spawn_agent` 和 `invoke_agent` 不属于
-产品工具契约，也不会进入模型工具列表。
+产品工具契约，也不会进入模型工具列表。仓库不保留 `Bash`、`Edit`、`Write` 的工具本体、
+专用执行器、文件操作抽象、配置或兼容入口。
 
 三入口缺省配置位于
 [`application.yml`](modules/coding-agent-cli/src/main/resources/application.yml)：
@@ -81,7 +83,7 @@ java -jar modules/coding-agent-cli/target/campusclaw-agent.jar
 ```yaml
 campusclaw:
   tools:
-    runtime: [Read, Find, Grep, Ls, Cron, ListMateTools, CallMateTool, Agent, ExitPlanMode, TodoUpdate]
+    runtime: [Read, Find, Grep, Ls, Cron, ListMateTools, CallMateTool, Agent, ExitPlanMode, TodoUpdate, AskUserQuestion]
     cron: [Read, Find, Grep, Ls, ListMateTools, CallMateTool, Agent]
     child-agent: [Read, Find, Grep, Ls, ListMateTools, CallMateTool]
 ```

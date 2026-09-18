@@ -1,6 +1,6 @@
 # Coding Agent Runtime HTTP 与受管 Session 设计
 
-> 文档版本：3.10.0
+> 文档版本：3.11.0
 >
 > PR 167 修订基线：`f60cc3e78bb8b700527ac082c7c8e10524ede095`
 >
@@ -251,8 +251,9 @@ Locale 获取 `resMsg`，HTTP `Content-Language` 返回实际语言。成功 Res
 
 ### 6.9 工具所有权与 Agent 边界
 
-Runtime 只公开工具系统 v2 的八个名称。`Bash`、`Edit`、`Write`、`Loop` 和动态
-ToolCatalog/Extension 不进入模型工具列表。`Read`、`Find`、`Grep`、`Ls` 只能读取当前
+Runtime 只公开工具系统 v2 的十一个名称。`Bash`、`Edit`、`Write`、`Loop` 和动态
+ToolCatalog/Extension 不进入模型工具列表；其中 `Bash`、`Edit`、`Write` 的工具本体、专用
+执行层和无消费者辅助代码也不再保留。`Read`、`Find`、`Grep`、`Ls` 只能读取当前
 `agent/{agentId}`，且拒绝符号链接和 realpath 越界；Mate 工具由 MateService 最终授权执行。
 
 Runtime V1 事件名 `tool.execution.started` 与 `tool.execution.completed` 是 HTTP/SSE
@@ -321,6 +322,7 @@ Runtime V1 事件名 `tool.execution.started` 与 `tool.execution.completed` 是
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 3.11.0 | 2026-09-18 | 删除 Bash、Edit、Write 工具实现及专用代码，并更新十一项活动工具边界。 |
 | 3.10.0 | 2026-09-15 | Runtime、压缩、Child 与 Cron 使用 `campusmate` Provider 身份并保留 Mate SSE 取消语义。 |
 | 3.9.0 | 2026-09-07 | 公司 GaussDB 脚本以固定库与 Schema 头部开始，去除事务包裹，并将每个删表语句紧邻放在对应建表语句前。 |
 | 3.8.0 | 2026-09-04 | 更新资源 ID、HTTP 路径和请求限制的归属至底层 common 的 ClawConstants，外部契约不变。 |
