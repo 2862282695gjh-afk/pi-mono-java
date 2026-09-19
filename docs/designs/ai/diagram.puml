@@ -70,9 +70,9 @@ skinparam classAttributeIconSize 0
 ' Source evidence: modules/ai/src/main/java/com/campusclaw/ai/CampusClawAiService.java#streamSimple.
 ' Source evidence: modules/ai/src/main/java/com/campusclaw/ai/provider/AiProviderRegistry.java#getProvider.
 ' Source evidence: modules/ai/src/main/java/com/campusclaw/ai/provider/ApiProviderRegistry.java#register.
-' Source evidence: modules/ai/src/main/java/com/campusclaw/ai/model/ModelRegistry.java#init.
-' This change: modules/ai/src/main/java/com/campusclaw/ai/provider/mate/CampusMateProvider.java.
-' Design reason: keep identity routing, optional protocol extensions, and model loading explicit.
+' Source evidence: modules/ai/src/main/java/com/campusclaw/ai/model/ModelCostCalculator.java#calculate.
+' Model cleanup baseline: pi-mono-java 840d04405d2bcc80a41b9d3b3f16606cc4845338.
+' Design reason: AI only routes resolved Models; business Agent settings own model selection.
 ' Lifecycle: CampusMateProvider, MateChatRequestMapper, and WebClient are shared by one Spring singleton.
 ' Lifecycle: MateChatSseParser and AssistantMessageEventStream are created once per model call.
 
@@ -82,7 +82,7 @@ class AiProviderRegistry
 class CampusMateProvider <<Spring singleton>>
 interface ApiProvider
 class ApiProviderRegistry
-class ModelRegistry
+class ModelCostCalculator <<stateless>>
 class MateChatRequestMapper <<singleton-owned>>
 class WebClient <<singleton-owned>>
 class MateChatSseParser <<per call>>
@@ -97,7 +97,6 @@ class MessageTransformer
 
 CampusClawAiService --> AiProviderRegistry : resolves identity first
 CampusClawAiService --> ApiProviderRegistry : optional fallback
-CampusClawAiService --> ModelRegistry : exposes
 AiProviderRegistry "1" o-- "0..*" AiProvider : indexes by ProviderId
 CampusMateProvider ..|> AiProvider
 ApiProviderRegistry "1" o-- "0..*" ApiProvider : indexes by Api
@@ -106,6 +105,7 @@ CampusMateProvider "1" *-- "1" WebClient : shares
 CampusMateProvider "1" ..> "0..*" MateChatSseParser : creates per call
 CampusMateProvider "1" ..> "0..*" AssistantMessageEventStream : creates per call
 MateChatSseParser "1" --> "1" AssistantMessageEventStream : publishes into
+MateChatSseParser ..> ModelCostCalculator : calculates usage cost
 AssistantMessageEventStream *-- EventStream
 AssistantMessageEventStream ..> AssistantMessageEvent : publishes
 Context o-- Message

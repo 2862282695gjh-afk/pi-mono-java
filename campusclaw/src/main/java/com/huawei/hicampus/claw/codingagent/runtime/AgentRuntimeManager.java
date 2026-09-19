@@ -307,13 +307,16 @@ public class AgentRuntimeManager {
         if (!isSafeDirectory(campusClawDir) || containsForbiddenEntry(campusClawDir)) {
             return null;
         }
+        AgentSettings settings = loadSettings(campusClawDir);
+        if (settings == null) {
+            return null;
+        }
         AgentRuntime metadata;
         List<SkillInfo> skills;
+        String defaultModel;
         try {
             AgentIdentity identity =
                     readJson(campusClawDir.resolve(ClawConstants.Runtime.AGENT_FILE_NAME), AgentIdentity.class);
-            AgentSettings settings =
-                    readJson(campusClawDir.resolve(ClawConstants.Runtime.SETTINGS_FILE_NAME), AgentSettings.class);
             String systemPrompt = readRequiredFile(campusClawDir.resolve(ClawConstants.Runtime.SYSTEM_FILE_NAME));
             List<AgentReference> children = loadChildren(campusClawDir.resolve("agents"));
             skills = loadSkills(campusClawDir.resolve(ClawConstants.Skill.DIRECTORY_NAME));
@@ -321,11 +324,36 @@ public class AgentRuntimeManager {
                 return null;
             }
             metadata = toRuntime(identity, settings, systemPrompt, children, skills);
+            defaultModel = settings.defaultModel();
         } catch (IOException | RuntimeException exception) {
             return null;
         }
         AgentPromptSnapshotDTO prompts = promptLoader.loadSnapshot(campusClawDir);
-        return new PreparedAgentRuntime(agentId, agentRoot, metadata, skills, prompts);
+        return new PreparedAgentRuntime(agentId, agentRoot, metadata, skills, prompts, defaultModel);
+    }
+
+    private AgentSettings loadSettings(Path runtimeDirectory) {
+        Path settingsFile = runtimeDirectory.resolve(ClawConstants.Runtime.SETTINGS_FILE_NAME);
+        try {
+            AgentSettings settings = readJson(settingsFile, AgentSettings.class);
+            if (!validSettings(settings)) {
+                throw new IOException("Published Agent settings failed validation");
+            }
+            return settings;
+        } catch (IOException exception) {
+            if (!hasPublishedRuntimeFiles(runtimeDirectory)) {
+                return null;
+            }
+            throw new AgentRuntimeException("Published Agent settings are invalid", exception);
+        }
+    }
+
+    private static boolean hasPublishedRuntimeFiles(Path runtimeDirectory) {
+        return Files.exists(runtimeDirectory.resolve(ClawConstants.Runtime.AGENT_FILE_NAME), LinkOption.NOFOLLOW_LINKS)
+                || Files.exists(
+                        runtimeDirectory.resolve(ClawConstants.Runtime.SETTINGS_FILE_NAME), LinkOption.NOFOLLOW_LINKS)
+                || Files.exists(
+                        runtimeDirectory.resolve(ClawConstants.Runtime.SYSTEM_FILE_NAME), LinkOption.NOFOLLOW_LINKS);
     }
 
     private List<AgentReference> loadChildren(Path agentsDirectory) throws IOException {
@@ -577,14 +605,14 @@ public class AgentRuntimeManager {
     }
 
     private static boolean validDefaultModel(AgentSettings settings) {
-        return settings.defaultModel() == null
-                ? settings.bindingModels().isEmpty()
-                : settings.bindingModels().contains(settings.defaultModel());
+        return !isBlank(settings.defaultModel()) && settings.bindingModels().contains(settings.defaultModel());
     }
 
     private static boolean validModels(List<String> models) {
         Set<String> unique = new HashSet<>();
-        return models != null && models.stream().allMatch(model -> !isBlank(model) && unique.add(model));
+        return models != null
+                && !models.isEmpty()
+                && models.stream().allMatch(model -> !isBlank(model) && unique.add(model));
     }
 
     private static boolean validCachedSkill(SkillInfo skill) {

@@ -38,7 +38,6 @@ import com.campusclaw.agent.tool.AgentToolUpdateCallback;
 import com.campusclaw.agent.tool.CancellationToken;
 import com.campusclaw.agent.tool.ToolExecutionPipeline;
 import com.campusclaw.ai.CampusClawAiService;
-import com.campusclaw.ai.model.ModelRegistry;
 import com.campusclaw.ai.provider.ApiProvider;
 import com.campusclaw.ai.provider.ApiProviderRegistry;
 import com.campusclaw.ai.stream.AssistantMessageEvent;
@@ -665,9 +664,7 @@ class AgentLoopIntegrationTest {
 
     private CampusClawAiService piAiService(ApiProvider provider) {
         var providerRegistry = new ApiProviderRegistry(List.of(provider));
-        var modelRegistry = new ModelRegistry();
-        modelRegistry.register(model);
-        return new CampusClawAiService(providerRegistry, modelRegistry);
+        return new CampusClawAiService(providerRegistry);
     }
 
     // -- Reply builders --
