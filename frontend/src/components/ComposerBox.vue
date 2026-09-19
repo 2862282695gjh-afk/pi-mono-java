@@ -100,7 +100,8 @@ watch(activeIndex, async () => {
       </ul>
     </OverlayHost>
     <div class="composer">
-      <p v-if="waitingMessage && text" class="composer-waiting-hint" role="status">{{ waitingMessage }}</p>
+      <p v-if="submissionStatus" class="composer-waiting-hint" role="status">{{ submissionStatus }}</p>
+      <p v-else-if="waitingMessage && text" class="composer-waiting-hint" role="status">{{ waitingMessage }}</p>
       <div class="composer-editor">
         <div v-if="selection" class="command-chip">
           <button ref="chipButton" class="command-chip-name" type="button" :disabled="locked || submitting"
@@ -163,8 +164,9 @@ watch(activeIndex, async () => {
         </div>
         <small v-if="count > 1800" class="input-count">{{ count }}/2048</small>
         <button ref="submitButton" class="submit-button" type="button" :disabled="stopMode ? !canStop : submitDisabled"
-          :aria-label="stopMode ? '停止生成' : selection ? '运行 ' + selection.name : '发送消息'"
-          :title="stopMode ? stopping ? '正在停止' : canStop ? '停止生成' : '正在确认执行状态，暂不可停止' : selection ? '运行 ' + selection.name : '发送消息'"
+          :aria-label="stopMode ? stopStatus || '停止生成' : submissionStatus || (selection ? '运行 ' + selection.name : '发送消息')"
+          :title="stopMode ? stopStatus || (stopping ? '正在停止' : canStop ? '停止生成' : '正在确认执行状态，暂不可停止')
+            : submissionStatus || (selection ? '运行 ' + selection.name : '发送消息')"
           @click="stopMode ? emit('stop') : submit()" @keydown="primaryKeydown">
           <svg v-if="stopMode" viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="1" class="stop-glyph" /></svg>
           <svg v-else viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5m-6 6 6-6 6 6" /></svg>

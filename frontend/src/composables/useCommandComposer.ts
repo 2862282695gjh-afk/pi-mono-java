@@ -8,9 +8,11 @@ export interface CommandComposerProps {
   modelValue: string;
   running: boolean;
   submitting: boolean;
+  submissionStatus?: string;
   stopMode?: boolean;
   canStop?: boolean;
   stopping?: boolean;
+  stopStatus?: string;
   waitingFor?: 'question' | 'plan' | 'tool';
   canSend: boolean;
   disabled: boolean;
@@ -178,7 +180,7 @@ export function useCommandComposer(props: CommandComposerProps, actions: Compose
       if (!alive) return;
       executing.value = false;
       if (outcome === 'confirmed') resetDraft();
-      else error.value = outcome === 'not-submitted' ? '命令尚未提交，请修正请求头后重新执行。'
+      else error.value = outcome === 'not-submitted' ? '命令尚未提交，请检查开发者设置后重试。'
         : '未确认接收，命令草稿已保留，请先核对历史。';
     } catch {
       if (alive) error.value = '命令未完成，草稿已保留。请核对页面错误和最新清单。';
