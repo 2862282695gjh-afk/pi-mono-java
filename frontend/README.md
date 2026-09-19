@@ -1,6 +1,6 @@
 # CampusClaw Frontend
 
-v0.17.1，Vue 3 + TypeScript + Vite 的内部 Claw Runtime 联调工作台。
+v0.18.0，Vue 3 + TypeScript + Vite 的内部 Claw Runtime 联调工作台。
 保留 O1 暖灰界面，提供 Session Events、Slash、工具确认、计划审核与恢复。仅用于受控开发环境，
 不作为生产 Mate 产品前端或安全边界。
 
@@ -23,6 +23,7 @@ v0.17.1，Vue 3 + TypeScript + Vite 的内部 Claw Runtime 联调工作台。
 - DEV 开发者设置统一管理连接、认证、Headers 和 Session 诊断。Headers 预置 `access-token`、`X-HW-ID`、`Authorization`，Value 留空且空预置不发送。
 - 请求头可编辑、删除；“增加请求头”每次只新增一行，删除或全部清空允许零行，不自动补空行。
 - DEV Headers 按实际后端与认证 IP 持久保存，每次消息/命令/停止/确认 POST 各自快照，不进入历史读取。值默认明文，可手动隐藏；清空后刷新保持零行。
+- DEV 的消息、命令、停止、工具确认、计划审核和问题回答在派发前各自重新获取一次 Token；刷新成功只显示动作进度，失败不提交业务请求并保留草稿。
 
 工作台消费 `/campusclaw-service/v1` 的 Session Events，服务端已接入联合事件、data-only SSE 和公共历史。
 计划正文使用安全 Markdown 渲染，失败的计划工具调用仍可见。
@@ -62,13 +63,19 @@ If-Match/Idempotency-Key/Last-Event-ID 不进入 Events/Command POST。Session �
 
 ## 自动获取请求头 Token
 
-在“开发者设置”的认证区填写并保存 IP、账号和密码，再点击“获取 Token”。开发服务固定访问
+在“开发者设置”的认证区填写并保存一次 IP、账号和密码。之后发送消息、执行命令、停止、工具确认、
+计划审核和问题回答会在业务请求派发前自动获取一次 Token，无需先打开设置或点击“获取 Token”。开发服务固定访问
 该 IP 的 HTTPS 443 `/service/AuthCenter/0.1.0/auth/login`，读取独立 `Set-Cookie` 中的
 `access-token`，回填并启用对应请求头；不会转发 JSESSIONID 或把 Cookie 写入浏览器。
 账号、密码和请求头默认明文展示；保存及刷新后回显已保存值。获取 Token 比较当前输入与已保存值，
 相同的非空凭据无需重复保存；实际修改才要求保存。账号密码同时留空并保存表示清除，也可使用“清除账号密码”。
-地址不接受协议、端口、域名或路径。请求不自动发起或重试，失败保留手工值；编辑/清空请求头、
+地址不接受协议、端口、域名或路径。保存设置、键入和切换环境本身不发起登录；每个写动作只发起一次，
+认证或业务请求均不自动重试。失败保留手工值；编辑/清空请求头、
 修改 IP 或离开页面后，迟到响应不会覆盖当前输入。修改 IP 时仅清除仍未被手工修改的自动 Token。
+
+“获取 Token”按钮保留为开发者设置中的诊断入口。自动刷新成功不弹提示，对话区统一显示“正在发送…”；
+认证失败只说明消息未发送或操作尚未提交，技术原因在主动打开的开发者设置中查看。刷新期间关闭设置面板
+不会取消由写动作持有的请求；切换环境或会话、保存认证或 Header、编辑 Token 行会取消尚未派发的动作。
 
 认证助手只在 `vite dev` 注册，要求本机回环连接、匹配的 Host 与同源 Origin；默认绑定 127.0.0.1。
 认证中心的独立 HTTPS 请求设置 `rejectUnauthorized: false`，与 Postman 关闭证书校验的联调方式一致；
@@ -104,8 +111,8 @@ node scripts/fixture-runtime.mjs
 VITE_BACKEND_URL=http://127.0.0.1:4319 VITE_CAMPUSCLAW_AGENT_ID=agent-fixture VITE_CAMPUSCLAW_AGENT_NAME='园区运维助手（契约模拟）' npm run dev -- --host 127.0.0.1 --port 5177 --strictPort
 ```
 
-打开 `http://127.0.0.1:5177`。输入消息可验收确认等待→允许/拒绝→续跑，也可停止。
-输入 / 验收清单与命令结果。fixture 不代表服务端校验、授权、并发或持久化实现。
+打开 `http://127.0.0.1:5177`。该基础 fixture 不模拟认证中心，不能单独验收需要自动刷新 Token 的写动作；
+写动作的合成认证与六类派发顺序由前端测试覆盖，真实页面联调需配置认证中心。fixture 仍可验收只读恢复与展示。
 Vite 构建不引用 fixture 脚本；没有生产 Mock fallback。
 
 ## 验证与设计
