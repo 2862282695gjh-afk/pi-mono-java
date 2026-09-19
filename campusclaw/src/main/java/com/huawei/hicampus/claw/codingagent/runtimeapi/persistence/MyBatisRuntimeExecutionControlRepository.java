@@ -178,6 +178,7 @@ public class MyBatisRuntimeExecutionControlRepository implements RuntimeExecutio
     @Transactional
     public TransitionStatus markPlanConfirming(
             ExecutionTargetDTO target,
+            String assistantEntryId,
             String toolCallId,
             String planEventId,
             PlanConfirmingAppender appender,
@@ -188,6 +189,7 @@ public class MyBatisRuntimeExecutionControlRepository implements RuntimeExecutio
         if (rejected != null) {
             return rejected;
         }
+        requirePlanReviewSource(target.sessionId(), assistantEntryId, toolCallId);
         PlanConfirmingEventsDTO events = requirePlanConfirmingEvents(appender.append(), planEventId);
         linkCommittedEvent(target, events.planEventId(), events.planEventSeq());
         linkCommittedEvent(target, events.idleEventId(), events.idleEventSeq());
@@ -208,6 +210,14 @@ public class MyBatisRuntimeExecutionControlRepository implements RuntimeExecutio
                         storedAt),
                 "execution did not enter plan confirming state");
         return TransitionStatus.APPLIED;
+    }
+
+    private void requirePlanReviewSource(String sessionId, String assistantEntryId, String toolCallId) {
+        if (assistantEntryId == null
+                || assistantEntryId.isBlank()
+                || mapper.countPlanReviewSource(sessionId, assistantEntryId, toolCallId) != 1) {
+            throw new IllegalStateException("plan review source is no longer the active assistant response");
+        }
     }
 
     @Override

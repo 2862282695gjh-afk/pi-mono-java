@@ -13,8 +13,10 @@ import java.util.function.Supplier;
 import com.huawei.hicampus.claw.agent.tool.BeforeToolCallContext;
 import com.huawei.hicampus.claw.agent.tool.BeforeToolCallHandler;
 import com.huawei.hicampus.claw.agent.tool.BeforeToolCallResult;
+import com.huawei.hicampus.claw.agent.tool.CancellationToken;
 import com.huawei.hicampus.claw.ai.types.ToolCall;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.ExecutionTargetDTO;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.PlanProposalSnapshotDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.PlanReviewDecisionDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.QuestionAnswerDecisionDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.ToolConfirmationDecisionDTO;
@@ -94,24 +96,33 @@ public class RuntimeActiveExecution implements PlanReviewPort, UserQuestionPort 
         modeApplier = Objects.requireNonNull(value, "modeApplier");
     }
 
-    public synchronized CompletableFuture<PlanReviewDecisionDTO> beginPlanReview(
-            String toolCallId, String planEventId, String plan) {
+    public synchronized CompletableFuture<PlanReviewDecisionDTO> beginPlanReview(PlanProposalSnapshotDTO proposal) {
         if (!ClawConstants.Agent.MODE_PLAN.equals(mode)) {
             throw new PlanReviewException("PLAN_MODE_INACTIVE");
         }
+        requireCurrentPlanProposal(proposal);
         try {
-            return pending.beginPlan(toolCallId, planEventId, plan);
+            return pending.beginPlan(proposal);
         } catch (UserQuestionException error) {
             String errorCode = "PLAN_REVIEW_UNAVAILABLE";
             LOGGER.atError()
                     .addKeyValue("event", "campusclaw.failure")
                     .addKeyValue("operation", "runtime.plan.review.begin")
                     .addKeyValue("errorCode", errorCode)
-                    .addKeyValue("toolCallId", toolCallId)
-                    .addKeyValue("planEventId", planEventId)
+                    .addKeyValue("toolCallId", proposal.toolCallId())
+                    .addKeyValue("planEventId", proposal.planEventId())
                     .setCause(error)
                     .log("CampusClaw failure: operation={}, errorCode={}", "runtime.plan.review.begin", errorCode);
             throw new PlanReviewException(errorCode);
+        }
+    }
+
+    private void requireCurrentPlanProposal(PlanProposalSnapshotDTO proposal) {
+        if (proposal == null
+                || target == null
+                || !target.equals(proposal.target())
+                || !target.rootEventId().equals(proposal.sourceEventId())) {
+            throw new PlanReviewException("PLAN_REVIEW_UNAVAILABLE");
         }
     }
 
@@ -121,8 +132,8 @@ public class RuntimeActiveExecution implements PlanReviewPort, UserQuestionPort 
     }
 
     @Override
-    public PlanReviewResultDTO await(String toolCallId, String plan) throws Exception {
-        PlanReviewDecisionDTO decision = pending.awaitPlan(toolCallId, plan);
+    public PlanReviewResultDTO review(String toolCallId, CancellationToken signal) throws Exception {
+        PlanReviewDecisionDTO decision = pending.awaitPlan(toolCallId, signal);
         return new PlanReviewResultDTO(decision.getResult().isApproved(), decision.getFeedback());
     }
 

@@ -6,7 +6,6 @@ package com.campusclaw.codingagent.tool.plan;
 
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 import com.campusclaw.agent.tool.AgentTool;
 import com.campusclaw.agent.tool.AgentToolResult;
@@ -16,12 +15,11 @@ import com.campusclaw.agent.tool.ToolArgumentsInvalidException;
 import com.campusclaw.ai.types.ContentBlock;
 import com.campusclaw.ai.types.TextContent;
 import com.campusclaw.codingagent.tool.builtin.BuiltInToolName;
-import com.campusclaw.common.constant.ClawConstants;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 /**
- * 提交完整 Markdown 计划并等待用户审核的 Runtime 根工具。
+ * 绑定当前响应中的完整计划并等待用户审核的 Runtime 根工具。
  *
  * @version [br_eCampusCore 26.0.0, 2026/09/15]
  * @since [br_eCampusCore 26.0.0]
@@ -29,14 +27,18 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 public class ExitPlanModeTool implements AgentTool {
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
-    private static final String DESCRIPTION = "Submit the complete proposed plan for user review while the Main "
-            + "Agent is in plan mode. Pass the full Markdown beginning with a level-one heading. This must be the "
-            + "only tool call in the assistant response. Wait for the result: approved=true allows continuation "
-            + "under the committed build mode, while approved=false requires revision using the feedback. A failed, "
-            + "cancelled, or unavailable review never grants approval. This tool does not bypass business-tool "
-            + "permissions.";
+    private static final String DESCRIPTION = "Submit the proposed plan for review while the Main Agent is in plan "
+            + "mode. First write one complete Markdown plan, beginning with a level-one heading, inside "
+            + "<proposed_plan> and </proposed_plan> in this same assistant response. Put each exact tag on its own "
+            + "line, with any explanation before the block and no non-whitespace text after it. Do not nest blocks "
+            + "or wrap them in a code fence. Then call ExitPlanMode with empty arguments {}. This must be the only "
+            + "tool call in the response, with no text after it. Do not repeat the plan in arguments or end a "
+            + "separate text-only response before submitting. Wait for the result: approved=true allows continuation "
+            + "under the committed build mode; approved=false requires a new complete plan using the feedback. "
+            + "Failed, cancelled, or unavailable review never grants approval. Business-tool permissions still apply.";
 
-    private static final String APPROVED_GUIDANCE = "方案已批准，Runtime 已切换为 build。按本次调用中的获批方案继续；具体工具权限仍须遵守。";
+    private static final String APPROVED_GUIDANCE =
+            "方案已批准，Runtime 已切换为 build。按与本次调用同一 Assistant 响应中 " + "proposed_plan 块内的获批正文继续；具体工具权限仍须遵守。";
 
     private static final String REVISED_GUIDANCE = "当前仍为 plan。根据 feedback 修订，准备好后重新提交完整方案。";
 
@@ -64,12 +66,7 @@ public class ExitPlanModeTool implements AgentTool {
     @Override
     public JsonNode parameters() {
         var schema = MAPPER.createObjectNode().put("type", "object");
-        schema.putObject("properties")
-                .putObject("plan")
-                .put("type", "string")
-                .put("minLength", 1)
-                .put("maxLength", ClawConstants.RuntimeApi.MAX_PLAN_CHARACTERS);
-        schema.putArray("required").add("plan");
+        schema.putObject("properties");
         return schema.put("additionalProperties", false);
     }
 
@@ -77,8 +74,8 @@ public class ExitPlanModeTool implements AgentTool {
     public AgentToolResult execute(
             String toolCallId, Map<String, Object> params, CancellationToken signal, AgentToolUpdateCallback onUpdate)
             throws Exception {
-        String plan = requirePlan(params);
-        PlanReviewResultDTO result = reviews.await(toolCallId, plan);
+        requireEmpty(params);
+        PlanReviewResultDTO result = reviews.review(toolCallId, signal);
         String guidance = result.approved() ? APPROVED_GUIDANCE : REVISED_GUIDANCE;
         var json = MAPPER.createObjectNode().put("approved", result.approved());
         if (result.feedback() != null) {
@@ -88,21 +85,9 @@ public class ExitPlanModeTool implements AgentTool {
         return new AgentToolResult(List.<ContentBlock>of(new TextContent(text)), result);
     }
 
-    private static String requirePlan(Map<String, Object> params) {
-        if (params == null || !params.keySet().equals(Set.of("plan")) || !(params.get("plan") instanceof String plan)) {
-            throw new ToolArgumentsInvalidException("plan must be the only parameter and must be a string");
+    private static void requireEmpty(Map<String, Object> params) {
+        if (params == null || !params.isEmpty()) {
+            throw new ToolArgumentsInvalidException("arguments must be an empty object");
         }
-        if (plan.length() > ClawConstants.RuntimeApi.MAX_PLAN_CHARACTERS || !hasLevelOneHeading(plan)) {
-            throw new ToolArgumentsInvalidException("plan must begin with a level-one heading and fit the size limit");
-        }
-        return plan;
-    }
-
-    private static boolean hasLevelOneHeading(String plan) {
-        return plan.lines()
-                .filter(line -> !line.isBlank())
-                .findFirst()
-                .filter(line -> line.startsWith("# "))
-                .isPresent();
     }
 }

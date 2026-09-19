@@ -137,7 +137,20 @@ public class RuntimeEntryCodec {
 
     public RuntimeEntryDTO planEntry(
             String sessionId, String entryId, String toolCallId, String plan, OffsetDateTime createdAt) {
+        return planEntry(sessionId, entryId, null, toolCallId, plan, createdAt);
+    }
+
+    public RuntimeEntryDTO planEntry(
+            String sessionId,
+            String entryId,
+            String assistantEntryId,
+            String toolCallId,
+            String plan,
+            OffsetDateTime createdAt) {
         ObjectNode payload = objectMapper.createObjectNode();
+        if (assistantEntryId != null) {
+            payload.put("_assistant_entry_id", assistantEntryId);
+        }
         payload.put("tool_call_id", toolCallId);
         payload.put("content", plan);
         return entry(sessionId, entryId, RuntimeEventType.AGENT_PLAN.value(), createdAt, payload);

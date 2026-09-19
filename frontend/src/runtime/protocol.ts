@@ -122,7 +122,7 @@ export function decodeEvent(value: unknown, history = false): RuntimeEvent {
     'agent.thinking': ['phase', 'content', 'sourceEventId'],
     'agent.tool_call': ['toolCallId', 'toolName', 'displayName', 'arguments', 'requiresConfirmation', 'sourceEventId'],
     'agent.tool_result': ['toolCallId', 'content', 'isError', 'errorCode', 'sourceEventId'],
-    'agent.plan': ['toolCallId', 'content', 'sourceEventId'],
+    'agent.plan': ['phase', 'toolCallId', 'content', 'sourceEventId'],
     'agent.todo_updated': ['toolCallId', 'todos', 'sourceEventId'],
     'agent.question': ['toolCallId', 'questions', 'sourceEventId'],
     'session.status_idle': ['reason', 'sourceEventId', 'errorCode', 'message'],
@@ -194,9 +194,14 @@ export function decodeEvent(value: unknown, history = false): RuntimeEvent {
       else if (data.errorCode !== undefined) invalidResponse();
       break;
     case 'agent.plan': {
+      const plan = text(data.content);
+      if (data.phase === 'delta') {
+        if (!plan || data.toolCallId !== undefined) invalidResponse();
+        break;
+      }
+      if (data.phase !== undefined) oneOf(data.phase, ['completed']);
       nonempty(data.toolCallId);
-      const plan = nonempty(data.content);
-      const first = plan.split(/\r\n|[\r\n]/u).find((line) => javaStrip(line));
+      const first = nonempty(plan).split(/\r\n|[\r\n]/u).find((line) => javaStrip(line));
       if (plan.length > 262_144 || !first?.startsWith('# ')) invalidResponse();
       break;
     }

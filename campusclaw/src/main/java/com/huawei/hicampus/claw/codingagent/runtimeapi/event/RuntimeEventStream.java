@@ -63,8 +63,8 @@ public class RuntimeEventStream implements RuntimeEventOutput {
     }
 
     @Override
-    public void emitBestEffort(Supplier<RuntimeSseEventVO> event) {
-        emitBestEffort(event.get());
+    public boolean emitBestEffort(Supplier<RuntimeSseEventVO> event) {
+        return emitBestEffort(event.get());
     }
 
     public boolean emit(RuntimeSseEventVO event) {

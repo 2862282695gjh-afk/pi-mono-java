@@ -82,6 +82,11 @@ public interface RuntimeExecutionControlMapper {
             @Param("planEventId") String planEventId,
             @Param("updatedAt") OffsetDateTime updatedAt);
 
+    int countPlanReviewSource(
+            @Param("sessionId") String sessionId,
+            @Param("assistantEntryId") String assistantEntryId,
+            @Param("toolCallId") String toolCallId);
+
     int markQuestionConfirming(
             @Param("sessionId") String sessionId,
             @Param("executionId") String executionId,

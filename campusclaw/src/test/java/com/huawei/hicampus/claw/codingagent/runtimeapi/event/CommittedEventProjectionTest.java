@@ -99,6 +99,27 @@ class CommittedEventProjectionTest {
     }
 
     @Test
+    void shouldReadCompletedAndLegacyPlanButRejectPersistedDelta() throws Exception {
+        String completed = "{\"phase\":\"completed\",\"content\":\"# 方案\","
+                + "\"sourceEventId\":\"evt_root\",\"toolCallId\":\"exit\"}";
+        String legacy = "{\"content\":\"# 旧方案\",\"sourceEventId\":\"evt_root\"," + "\"toolCallId\":\"old-exit\"}";
+
+        JsonNode current = serialize(project("agent.plan", completed));
+        JsonNode old = serialize(project("agent.plan", legacy));
+
+        assertThat(current.path("phase").textValue()).isEqualTo("completed");
+        assertThat(current.path("toolCallId").textValue()).isEqualTo("exit");
+        assertThat(old.has("phase")).isFalse();
+        assertThat(old.path("content").textValue()).isEqualTo("# 旧方案");
+        assertThrows(
+                RuntimeApiException.class,
+                () -> project(
+                        "agent.plan",
+                        "{\"phase\":\"delta\",\"content\":\"# 草稿\","
+                                + "\"sourceEventId\":\"evt_root\",\"toolCallId\":\"exit\"}"));
+    }
+
+    @Test
     void shouldRejectUnknownOrUnsafePersistedEvents() {
         RuntimeApiException unknown = assertThrows(RuntimeApiException.class, () -> project("future.event", "{}"));
         RuntimeApiException missingCode = assertThrows(

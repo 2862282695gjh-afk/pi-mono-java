@@ -20,22 +20,22 @@ import com.campusclaw.ai.types.Usage;
 import org.junit.jupiter.api.Test;
 
 /**
- * 验证计划审核工具参数、完整正文传递及模型可见结果格式。
+ * 验证计划审核工具空参数、取消传递及模型可见结果格式。
  *
  * @version [br_eCampusCore 26.0.0, 2026/09/15]
  * @since [br_eCampusCore 26.0.0]
  */
 class ExitPlanModeToolTest {
     @Test
-    void passesTheExactPlanAndOmitsNullFeedbackFromApproval() throws Exception {
-        String plan = "# 方案\n\n保留完整正文  ";
+    void passesTheCancellationTokenAndOmitsNullFeedbackFromApproval() throws Exception {
+        CancellationToken signal = new CancellationToken();
         var tool = new ExitPlanModeTool((toolCallId, actual) -> {
             assertThat(toolCallId).isEqualTo("exit-1");
-            assertThat(actual).isEqualTo(plan);
+            assertThat(actual).isSameAs(signal);
             return new PlanReviewResultDTO(true, null);
         });
 
-        var result = tool.execute("exit-1", Map.of("plan", plan), new CancellationToken(), ignored -> {});
+        var result = tool.execute("exit-1", Map.of(), signal, ignored -> {});
 
         String text = ((TextContent) result.content().getFirst()).text();
         assertThat(text).startsWith("{\"approved\":true}\n\n方案已批准").doesNotContain("feedback");
@@ -43,9 +43,9 @@ class ExitPlanModeToolTest {
 
     @Test
     void omitsAbsentRevisionFeedbackAndKeepsRevisionGuidance() throws Exception {
-        var tool = new ExitPlanModeTool((toolCallId, plan) -> new PlanReviewResultDTO(false, null));
+        var tool = new ExitPlanModeTool((toolCallId, signal) -> new PlanReviewResultDTO(false, null));
 
-        var result = tool.execute("exit-2", Map.of("plan", "# 方案"), new CancellationToken(), ignored -> {});
+        var result = tool.execute("exit-2", Map.of(), new CancellationToken(), ignored -> {});
 
         String text = ((TextContent) result.content().getFirst()).text();
         assertThat(text).startsWith("{\"approved\":false}\n\n当前仍为 plan");
@@ -54,17 +54,19 @@ class ExitPlanModeToolTest {
 
     @Test
     void descriptionNamesTheMainAgentAndKeepsApprovalBoundaries() {
-        var tool = new ExitPlanModeTool((toolCallId, plan) -> new PlanReviewResultDTO(true, null));
+        var tool = new ExitPlanModeTool((toolCallId, signal) -> new PlanReviewResultDTO(true, null));
 
         assertThat(tool.description())
-                .contains("Main Agent", "approved=true", "approved=false")
+                .contains("Main Agent", "<proposed_plan>", "empty arguments {}", "approved=true", "approved=false")
                 .doesNotContain("root agent", "TodoUpdate");
+        assertThat(tool.parameters().path("properties").isEmpty()).isTrue();
+        assertThat(tool.parameters().path("additionalProperties").asBoolean()).isFalse();
     }
 
     @Test
     void semanticArgumentFailureUsesTheStablePublicCode() {
-        var tool = new ExitPlanModeTool((toolCallId, plan) -> new PlanReviewResultDTO(true, null));
-        ToolCall call = new ToolCall("exit-3", tool.name(), Map.of("plan", "## 二级标题"));
+        var tool = new ExitPlanModeTool((toolCallId, signal) -> new PlanReviewResultDTO(true, null));
+        ToolCall call = new ToolCall("exit-3", tool.name(), Map.of("plan", "# 重复方案"));
 
         var result = new ToolExecutionPipeline()
                 .execute(tool, call, call.arguments(), context(call), new CancellationToken(), ignored -> {});

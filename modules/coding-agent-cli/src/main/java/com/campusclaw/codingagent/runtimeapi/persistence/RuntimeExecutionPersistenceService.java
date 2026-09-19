@@ -161,6 +161,7 @@ public class RuntimeExecutionPersistenceService {
     @Transactional
     public void markPlanConfirming(
             ExecutionTargetDTO target,
+            String assistantEntryId,
             String toolCallId,
             RuntimeEntryDTO plan,
             CommittedEventDTO planEvent,
@@ -176,6 +177,7 @@ public class RuntimeExecutionPersistenceService {
                 CommittedEventType.SESSION_STATUS_IDLE);
         var status = controls.markPlanConfirming(
                 target,
+                assistantEntryId,
                 toolCallId,
                 planEvent.getEventId(),
                 () -> appendPlanConfirmingEvents(plan, planEvent, idle, idleEvent),

@@ -85,8 +85,13 @@ describe('groupConversationTurns', () => {
   });
   it('does not present a plan as an ordinary round-copy answer', () => {
     const plan: ConversationTurn = { key: 'plan-a', kind: 'plan', eventId: 'plan-a', sourceEventId: 'root-a',
-      rawMarkdown: '# 权威方案' };
+      rawMarkdown: '# 权威方案', streaming: false, unconfirmed: false };
     const round = groupConversationTurns([plan])[0];
     expect(round).toMatchObject({ kind: 'agent', copySource: '' });
+  });
+  it('keeps a streaming plan round active without copying plan text as an answer', () => {
+    const plan: ConversationTurn = { key: 'plan-stream', kind: 'plan', eventId: 'plan-stream', sourceEventId: 'root-a',
+      rawMarkdown: '# 生成中', streaming: true, unconfirmed: true };
+    expect(groupConversationTurns([plan])[0]).toMatchObject({ kind: 'agent', active: true, copySource: '' });
   });
 });
