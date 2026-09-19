@@ -1,10 +1,10 @@
 # CampusClaw 模块架构
 
-> 文档版本：2.7.0
+> 文档版本：2.9.0
 >
 > 状态：Implemented
 >
-> 更新日期：2026-09-15
+> 更新日期：2026-09-19
 >
 > 实现前源码基线：`d649866a6cae967ace18ceaeb9597edd47e5721e`
 >
@@ -13,6 +13,8 @@
 > Spring Boot 3.4.5 实现：`994bdff13100ce363214e74abb70dfafbd1ce1b5`
 >
 > CampusMate Provider 收敛实施起点：`29ebec6a8cad99896414211cda28c6fffec71bee`
+>
+> Model 唯一来源清理起点：`840d04405d2bcc80a41b9d3b3f16606cc4845338`
 
 > 公司镜像相关路径和标识按 2026-09-01 的当前仓库位置展示；历史提交 SHA 仍是对应行为证据。
 
@@ -21,7 +23,7 @@
 CampusClaw 是 JDK 21 + Spring Boot 3.4.5 的 ToB Agent Runtime 服务。Maven Reactor 只包含
 `common`、`ai`、`agent-core`、`cron` 和 `coding-agent-cli` 五个 Java 模块；CLI/TUI 产品入口和
 `modules/tui` 已删除。`coding-agent-cli` 只是历史目录名，当前职责是组装 Spring Boot HTTP
-服务、受管 Agent Session 和八个内置工具。
+服务、受管 Agent Session 和十一个内置工具。
 
 上述收敛相对源码基线属于产品约束和架构改造，不表示 pi 具备相同服务结构。规范性工具契约见
 [CampusClaw 受管 Agent 工具系统 v2](designs/tool-system-v2.md)。
@@ -52,7 +54,7 @@ CampusClaw 是 JDK 21 + Spring Boot 3.4.5 的 ToB Agent Runtime 服务。Maven R
 
 ### 3.1 ai (`campusclaw-ai`)
 
-统一 LLM 类型、CampusMate Provider 适配、模型注册、可选扩展和流式协议。产品默认只通过
+统一 LLM 类型、CampusMate Provider 适配、成本计算、可选协议扩展和流式事件。产品默认只通过
 稳定身份 `campusmate` 调用 CampusMate；第三方厂商适配器和内置模型已删除。
 
 | 包 | 职责 |
@@ -60,12 +62,12 @@ CampusClaw 是 JDK 21 + Spring Boot 3.4.5 的 ToB Agent Runtime 服务。Maven R
 | `com.campusclaw.ai.types` | Message、ContentBlock、Tool、Model、Provider 等领域类型 |
 | `com.campusclaw.ai.provider` | 身份/API 两组 Provider SPI、注册表与 CampusMate Chat 适配 |
 | `com.campusclaw.ai.stream` | 流式消息事件与终态聚合 |
-| `com.campusclaw.ai.model` | 空默认模型注册表、外部 JSON 加载与成本计算 |
-| `com.campusclaw.ai.env` | 自定义扩展可复用的部署环境配置解析 |
+| `com.campusclaw.ai.model` | 无状态模型用量成本计算，不加载模型目录 |
 
-受管 Runtime 使用 Agent 快照内的 Mate 模型 ID 构造 `Provider.CAMPUSMATE` 模型，不依赖
-`ModelRegistry` 的默认内容。`ModelRegistry` 仍可先加载 classpath JSON、再加载用户 JSON；
-两处都缺失时为空。默认 `ApiProviderRegistry` 也可为空，未知适配器明确失败。
+受管 Runtime 只使用业务 Agent `.campusclaw/settings.json` 的默认模型和绑定列表，
+从同一次准备的不可变快照构造 `Provider.CAMPUSMATE` 模型。无效设置明确失败；
+不存在 classpath、用户 Home 或环境凭据目录回退。默认 `ApiProviderRegistry` 可为空，
+它只路由已解析 Model，未知适配器明确失败。具体边界见[Model 实现](designs/ai.md)。
 
 ### 3.2 agent-core (`campusclaw-agent-core`)
 
@@ -109,13 +111,13 @@ Spring Boot 服务装配模块。目录名保留 `cli` 仅为避免当前构建�
 | `com.campusclaw.codingagent.session` | 三入口公共 AgentSessionFactory |
 | `com.campusclaw.codingagent.session.compaction` | 公共上下文压缩与 Read 文件追踪 |
 | `com.campusclaw.codingagent.runtime` | 受管目录 prepare/refresh 和 CampusMate 客户端 |
-| `com.campusclaw.codingagent.tool.builtin` | 八工具关闭枚举、严格配置和装配器 |
+| `com.campusclaw.codingagent.tool.builtin` | 十一工具关闭枚举、严格配置和装配器 |
 | `com.campusclaw.codingagent.tool.ops` | 不调用 shell 的只读文件操作 |
 | `com.campusclaw.codingagent.tool.mate` | Mate 实时发现、Session 缓存和名称调用 |
 | `com.campusclaw.codingagent.tool.agent` | 直接绑定 Child Execution |
 | `com.campusclaw.codingagent.tool.cron` | Agent scoped Cron 和触发 Session |
 | `com.campusclaw.codingagent.skill` | Skill 目录解析和提示词格式化 |
-| `com.campusclaw.codingagent.model` | 服务端可用模型目录 |
+| `com.campusclaw.codingagent.runtimeapi.model` | 从业务 Agent 快照解析默认模型和允许列表 |
 
 本模块不再包含 Picocli、TUI、RPC、终端 Session JSONL、Extension、动态 ToolCatalog 或用户级
 认证设置链。旧 `com.campusclaw.codingagent.command` 原型及专属测试已删除，
@@ -163,6 +165,8 @@ Controller 仅依赖应用 Service 和 ResultBeanAdapter，不执行 Builtin 或
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 2.9.0 | 2026-09-19 | 模型选择只读取业务 Agent 设置快照，删除全局目录与专用环境凭据链。 |
+| 2.8.0 | 2026-09-18 | 删除 Bash、Edit、Write 及无消费者专用代码，并将活动工具清单更新为十一项。 |
 | 2.7.0 | 2026-09-15 | AI 默认调用收敛为 CampusMate Provider，移除第三方适配器和内置模型。 |
 | 2.6.0 | 2026-09-08 | 接通七Builtin JSON与Skill SSE的共享POST；复用已有服务，无新模块或依赖。 |
 | 2.5.0 | 2026-09-07 | 删除未注册的旧命令包与专属测试，保留现有 Runtime 命令及公共 Session 压缩。 |

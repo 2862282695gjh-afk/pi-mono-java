@@ -20,8 +20,6 @@ import java.util.concurrent.CompletableFuture;
 import com.huawei.hicampus.claw.agent.Agent;
 import com.huawei.hicampus.claw.agent.state.AgentState;
 import com.huawei.hicampus.claw.agent.tool.CancellationToken;
-import com.huawei.hicampus.claw.ai.env.ProviderConfigResolver;
-import com.huawei.hicampus.claw.ai.model.ModelRegistry;
 import com.huawei.hicampus.claw.ai.types.Api;
 import com.huawei.hicampus.claw.ai.types.AssistantMessage;
 import com.huawei.hicampus.claw.ai.types.InputModality;
@@ -33,7 +31,6 @@ import com.huawei.hicampus.claw.ai.types.TextContent;
 import com.huawei.hicampus.claw.ai.types.ThinkingLevel;
 import com.huawei.hicampus.claw.ai.types.Usage;
 import com.huawei.hicampus.claw.codingagent.common.client.mate.MateCredentials;
-import com.huawei.hicampus.claw.codingagent.model.ModelCatalogService;
 import com.huawei.hicampus.claw.codingagent.runtime.MateServiceClient.AgentReference;
 import com.huawei.hicampus.claw.codingagent.runtime.MateServiceClient.AgentRuntime;
 import com.huawei.hicampus.claw.codingagent.runtime.PreparedAgentRuntime;
@@ -59,8 +56,6 @@ class SubagentExecutionServiceTest {
 
     private AgentSessionFactory sessionFactory;
 
-    private ModelCatalogService emptyModelCatalog;
-
     private RuntimeModelManager modelManager;
 
     private Model model;
@@ -71,7 +66,6 @@ class SubagentExecutionServiceTest {
     void setUp() {
         sessionFactory = mock(AgentSessionFactory.class);
         model = model();
-        emptyModelCatalog = new ModelCatalogService(new ModelRegistry(), mock(ProviderConfigResolver.class));
         modelManager = new MateRuntimeModelManager(modelManagerProperties());
         service = new SubagentExecutionService(sessionFactory, modelManager);
     }
@@ -113,20 +107,33 @@ class SubagentExecutionServiceTest {
     }
 
     @Test
-    void resolvesIndependentManagedDefaultWhenGlobalRegistryIsEmpty() {
+    void resolvesChildDefaultFromItsOwnManagedSnapshot() {
         PreparedAgentRuntime parent = parentRuntime("1.0.0");
         PreparedAgentRuntime child = childRuntime("1.0.0", true, List.of("team/model-b"));
         useRuntime(child, completedSession("child answer"));
 
         var result = execute(parent, rootContext(), new CancellationToken());
 
-        assertThat(emptyModelCatalog.getAvailableModels()).isEmpty();
         assertThat(((TextContent) result.content().getFirst()).text()).isEqualTo("child answer");
         ArgumentCaptor<ManagedAgentSessionRequest> request = ArgumentCaptor.forClass(ManagedAgentSessionRequest.class);
         verify(sessionFactory).create(request.capture());
         Model selected = request.getValue().modelResolver().apply(child);
         assertThat(selected.id()).isEqualTo("team/model-b");
         assertThat(selected.provider()).isEqualTo(Provider.CAMPUSMATE);
+    }
+
+    @Test
+    void resolvesPublishedChildDefaultWhenItIsNotFirstBinding() {
+        PreparedAgentRuntime parent = parentRuntime("1.0.0");
+        PreparedAgentRuntime child = childRuntime("1.0.0", true, List.of("model-a", "model-b"), "model-b");
+        useRuntime(child, completedSession("child answer"));
+
+        execute(parent, rootContext(), new CancellationToken());
+
+        ArgumentCaptor<ManagedAgentSessionRequest> request = ArgumentCaptor.forClass(ManagedAgentSessionRequest.class);
+        verify(sessionFactory).create(request.capture());
+        Model selected = request.getValue().modelResolver().apply(child);
+        assertThat(selected.id()).isEqualTo("model-b");
     }
 
     @Test
@@ -277,13 +284,20 @@ class SubagentExecutionServiceTest {
     }
 
     private PreparedAgentRuntime childRuntime(String version, boolean enabled, List<String> bindingModels) {
+        String defaultModel = bindingModels.isEmpty() ? null : bindingModels.getFirst();
+        return childRuntime(version, enabled, bindingModels, defaultModel);
+    }
+
+    private PreparedAgentRuntime childRuntime(
+            String version, boolean enabled, List<String> bindingModels, String defaultModel) {
         AgentRuntime runtime = runtime(CHILD_ID, "researcher", version, enabled, List.of(), bindingModels);
         return new PreparedAgentRuntime(
                 CHILD_ID,
                 Path.of("agent", CHILD_ID),
                 runtime,
                 List.of(),
-                com.huawei.hicampus.claw.codingagent.runtimeapi.agent.AgentPromptTestFixtures.prompts("child"));
+                com.huawei.hicampus.claw.codingagent.runtimeapi.agent.AgentPromptTestFixtures.prompts("child"),
+                defaultModel);
     }
 
     private AgentRuntime runtime(

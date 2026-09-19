@@ -50,6 +50,17 @@ class FileAgentDirectoryResolverTest {
     }
 
     @Test
+    void usesPublishedDefaultWhenItIsNotFirstBinding() {
+        AgentRuntimeManager manager = mock(AgentRuntimeManager.class);
+        when(manager.prepare(AGENT_ID)).thenReturn(prepared(List.of("model-a", "model-b"), "model-b"));
+
+        AgentDirectorySnapshotDTO snapshot = new FileAgentDirectoryResolver(manager).resolve(AGENT_ID);
+
+        assertThat(snapshot.defaultModelId()).isEqualTo("model-b");
+        assertThat(snapshot.enabledModelIds()).containsExactly("model-a", "model-b");
+    }
+
+    @Test
     void preservesPreparedPlanModeInResolvedSnapshot() {
         AgentRuntimeManager manager = mock(AgentRuntimeManager.class);
         when(manager.prepare(AGENT_ID)).thenReturn(prepared(List.of("model-a"), true, "plan"));
@@ -75,6 +86,22 @@ class FileAgentDirectoryResolverTest {
         when(manager.prepare(AGENT_ID)).thenReturn(prepared(List.of("model-a", "model-a")));
 
         assertThatThrownBy(() -> new FileAgentDirectoryResolver(manager).resolve(AGENT_ID))
+                .isInstanceOfSatisfying(RuntimeApiException.class, error -> assertThat(error.errorCode())
+                        .isEqualTo(RuntimeErrorCode.AGENT_MODEL_NOT_CONFIGURED));
+    }
+
+    @Test
+    void rejectsBlankDefaultModelOrDefaultOutsideBindings() {
+        AgentRuntimeManager manager = mock(AgentRuntimeManager.class);
+        PreparedAgentRuntime blankDefault = prepared(List.of("model-a"), " ");
+        PreparedAgentRuntime outsideDefault = prepared(List.of("model-a"), "model-b");
+        when(manager.prepare(AGENT_ID)).thenReturn(blankDefault, outsideDefault);
+        FileAgentDirectoryResolver resolver = new FileAgentDirectoryResolver(manager);
+
+        assertThatThrownBy(() -> resolver.resolve(AGENT_ID))
+                .isInstanceOfSatisfying(RuntimeApiException.class, error -> assertThat(error.errorCode())
+                        .isEqualTo(RuntimeErrorCode.AGENT_MODEL_NOT_CONFIGURED));
+        assertThatThrownBy(() -> resolver.resolve(AGENT_ID))
                 .isInstanceOfSatisfying(RuntimeApiException.class, error -> assertThat(error.errorCode())
                         .isEqualTo(RuntimeErrorCode.AGENT_MODEL_NOT_CONFIGURED));
     }
@@ -150,5 +177,16 @@ class FileAgentDirectoryResolverTest {
                 List.of(), "1.0.0", mode);
         return new PreparedAgentRuntime(
                 AGENT_ID, temporaryDirectory, runtime, List.of(), AgentPromptTestFixtures.prompts("prompt"));
+    }
+
+    private PreparedAgentRuntime prepared(List<String> models, String defaultModel) {
+        PreparedAgentRuntime runtime = prepared(models);
+        return new PreparedAgentRuntime(
+                runtime.agentId(),
+                runtime.agentRoot(),
+                runtime.metadata(),
+                runtime.skills(),
+                runtime.prompts(),
+                defaultModel);
     }
 }

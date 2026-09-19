@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, inject, nextTick, ref, watch } from 'vue';
+import { computed, defineAsyncComponent, inject, nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import AgentWelcome from './components/AgentWelcome.vue';
 import AppSidebar from './components/AppSidebar.vue';
 import DeleteConversationDialog from './components/DeleteConversationDialog.vue';
@@ -11,12 +11,11 @@ import ToolConfirmation from './components/ToolConfirmation.vue';
 import ProgressDisclosure from './components/ProgressDisclosure.vue';
 import { useWorkbenchSessions } from './composables/useWorkbenchSessions';
 import { useDockDisclosures } from './composables/useDockDisclosures';
+import { useWorkbenchWriteActions } from './composables/useWorkbenchWriteActions';
 import type { DeveloperSettingsController } from './types/developerSettings';
 import { projectRuntimeEvents } from './projectors/runtimeEventProjector';
 import { canAnswerQuestion, canReviewPlan } from './runtime/eventStore';
 import type { AgentOption } from './types/product';
-import type { CommandInvocation } from './runtime/commands';
-import type { QuestionAnswer, SubmissionOutcome } from './types/runtime';
 
 const isDevelopment = import.meta.env.DEV;
 const DeveloperSettings = import.meta.env.DEV ? defineAsyncComponent(() => import('./components/DeveloperSettings.vue')) : undefined;
@@ -36,14 +35,11 @@ const configuredAgentId = computed(() => agent.value.id);
 const workbench = useWorkbenchSessions(agent, settings);
 const { runtime, threads, message, currentThread } = workbench;
 const busy = ref(false);
-const submitting = ref(false);
-const questionSubmittingId = ref('');
 const sidebarCompact = ref(window.innerWidth <= 900);
 const scrollRegion = ref<HTMLElement | null>(null);
 const followingTail = ref(true);
 const dock = useDockDisclosures();
 let runGeneration = 0;
-let viewGeneration = 0;
 const environmentGeneration = settings?.connectionEpoch ?? ref(0);
 // 组件草稿按环境与会话隔离；此标识仅用于 UI，不传给 Runtime。
 const sessionViewKey = computed(() => JSON.stringify([
@@ -58,11 +54,23 @@ const deletion = useConversationDeletion({
   forget: workbench.forgetSession,
   environment: () => environmentGeneration.value,
 });
+const write = useWorkbenchWriteActions({
+  development: isDevelopment,
+  settings,
+  runtime,
+  canSend: workbench.canSend,
+  message,
+  touchCurrentThread: workbench.touchCurrentThread,
+  controlLocked: () => busy.value || workbench.restoring.value,
+  runControl: run,
+});
+const { submit, executeCommand, stop, decideTool, decidePlan, answerQuestion } = write;
 
 const turns = computed(() => projectRuntimeEvents(runtime.events.value, runtime.streaming.value));
 const running = runtime.running;
 const title = computed(() => runtime.session.value?.displayName ?? currentThread.value?.title ?? agent.value.name);
-const stopMode = computed(() => running.value || submitting.value || runtime.receiptUnknown.value || !!runtime.uncertainty.value);
+const stopMode = computed(() => running.value || write.messageSubmitting.value
+  || runtime.receiptUnknown.value || !!runtime.uncertainty.value);
 const waitingFor = computed(() => runtime.execution.value.pendingQuestion ? 'question'
   : runtime.execution.value.pendingPlan ? 'plan' : runtime.execution.value.pendingTool ? 'tool' : undefined);
 const statusLabel = computed(() => workbench.restoring.value || runtime.recovering.value ? '同步中'
@@ -73,14 +81,16 @@ const statusLabel = computed(() => workbench.restoring.value || runtime.recoveri
 const showRecovery = computed(() => runtime.recovering.value || runtime.uncertainty.value || workbench.restoreError.value
   || workbench.recoveryExhausted.value);
 const configurationDisabled = computed(() => running.value || busy.value || workbench.restoring.value
-  || Boolean(runtime.uncertainty.value) || !runtime.historyReady.value);
+  || write.pending.value || Boolean(runtime.uncertainty.value) || !runtime.historyReady.value);
 const reviewDisabled = computed(() => !canReviewPlan({ mode: runtime.session.value?.mode, state: runtime.session.value?.state,
   hasPendingPlan: Boolean(runtime.execution.value.pendingPlan), historyReady: runtime.historyReady.value,
-  controlLocked: runtime.controlPending.value || runtime.stopping.value || busy.value || runtime.recovering.value,
+  controlLocked: runtime.controlPending.value || runtime.stopping.value || write.pending.value
+    || busy.value || runtime.recovering.value,
   uncertain: runtime.receiptUnknown.value || Boolean(runtime.uncertainty.value) }));
 const questionDisabled = computed(() => !canAnswerQuestion({ state: runtime.session.value?.state,
   hasPendingQuestion: Boolean(runtime.execution.value.pendingQuestion), historyReady: runtime.historyReady.value,
-  controlLocked: runtime.controlPending.value || runtime.stopping.value || busy.value || runtime.recovering.value,
+  controlLocked: runtime.controlPending.value || runtime.stopping.value || write.pending.value
+    || busy.value || runtime.recovering.value,
   uncertain: runtime.receiptUnknown.value || Boolean(runtime.uncertainty.value) }));
 
 
@@ -93,14 +103,12 @@ watch(
 );
 
 watch(() => runtime.session.value?.sessionId, () => {
-  viewGeneration++;
-  submitting.value = false;
-  questionSubmittingId.value = '';
+  write.cancel();
   followingTail.value = true;
   dock.reset();
 }, { flush: 'sync' });
 watch(environmentGeneration, () => {
-  viewGeneration++; runGeneration++; busy.value = false; submitting.value = false; questionSubmittingId.value = '';
+  runGeneration++; busy.value = false; write.cancel();
   deletion.close(); dock.reset();
 }, { flush: 'sync' });
 watch(() => runtime.commandResult.value, (result, previous) => {
@@ -117,6 +125,7 @@ function scrollToLatest(): void {
   followingTail.value = true;
   scrollRegion.value?.scrollTo({ top: scrollRegion.value.scrollHeight });
 }
+onBeforeUnmount(write.cancel);
 
 async function run(action: () => Promise<unknown>): Promise<boolean> {
   const generation = ++runGeneration;
@@ -153,82 +162,6 @@ async function deleteConversation(sessionId = runtime.session.value?.sessionId):
   if (!sessionId) return;
   const thread = threads.value.find((entry) => entry.sessionId === sessionId);
   await deletion.open({ sessionId, title: thread?.title || runtime.session.value?.displayName || '会话' });
-}
-
-async function submit(): Promise<void> {
-  const view = viewGeneration;
-  const draft = message.value;
-  const sessionId = runtime.session.value?.sessionId;
-  if (!draft.trim() || submitting.value || !workbench.canSend.value) return;
-  submitting.value = true;
-  try {
-    const requestHeaders = isDevelopment ? settings?.snapshotHeaders() : undefined;
-    if (requestHeaders === null || (view !== viewGeneration || sessionId !== runtime.session.value?.sessionId)) return;
-    const submission = await runtime.sendMessage(draft, [], requestHeaders);
-    const outcome = await submission.confirmation;
-    if (view === viewGeneration && sessionId === runtime.session.value?.sessionId && outcome === 'confirmed') {
-      workbench.touchCurrentThread(draft);
-      if (message.value === draft) message.value = '';
-    }
-  } catch {
-    // 没有本次回执时保留草稿，不以同文历史确认，也不自动重发。
-  } finally {
-    if (view === viewGeneration && sessionId === runtime.session.value?.sessionId) submitting.value = false;
-  }
-}
-
-async function executeCommand(invocation: CommandInvocation): Promise<SubmissionOutcome> {
-  const view = viewGeneration;
-  const sessionId = runtime.session.value?.sessionId;
-  const headers = isDevelopment ? settings?.snapshotHeaders() : undefined;
-  if (headers === null || (view !== viewGeneration || sessionId !== runtime.session.value?.sessionId)) return 'not-submitted';
-  const outcome = await runtime.executeCommand(invocation, headers);
-  if (outcome === 'confirmed' && invocation.executionMode === 'skillEvents'
-    && view === viewGeneration && sessionId === runtime.session.value?.sessionId) {
-    workbench.touchCurrentThread(`/${invocation.request.name}${invocation.request.arguments ? ` ${invocation.request.arguments}` : ''}`);
-  }
-  return outcome;
-}
-
-async function stop(): Promise<void> {
-  const sessionId = runtime.session.value?.sessionId;
-  const rootId = runtime.execution.value.rootId;
-  const headers = isDevelopment ? settings?.snapshotHeaders() : undefined;
-  if (headers === null || sessionId !== runtime.session.value?.sessionId || rootId !== runtime.execution.value.rootId) return;
-  await run(async () => { await runtime.interrupt(headers); });
-}
-
-async function decideTool(decision: 'allow' | 'deny', reason: string): Promise<void> {
-  const sessionId = runtime.session.value?.sessionId;
-  const toolCallId = runtime.execution.value.pendingTool?.toolCallId;
-  const headers = isDevelopment ? settings?.snapshotHeaders() : undefined;
-  if (!toolCallId || headers === null || sessionId !== runtime.session.value?.sessionId) return;
-  await run(async () => { await runtime.confirmTool(toolCallId, decision, reason, headers); });
-}
-
-async function decidePlan(eventId: string, decision: 'approve' | 'revise', feedback: string): Promise<void> {
-  const sessionId = runtime.session.value?.sessionId;
-  const headers = isDevelopment ? settings?.snapshotHeaders() : undefined;
-  if (headers === null || sessionId !== runtime.session.value?.sessionId
-    || eventId !== runtime.execution.value.pendingPlan?.eventId) return;
-  await run(async () => { await runtime.confirmPlan(eventId, decision, feedback, headers); });
-}
-
-async function answerQuestion(eventId: string, answers: QuestionAnswer[]): Promise<void> {
-  const view = viewGeneration;
-  const sessionId = runtime.session.value?.sessionId;
-  if (!sessionId || questionSubmittingId.value || eventId !== runtime.execution.value.pendingQuestion?.eventId) return;
-  questionSubmittingId.value = eventId;
-  try {
-    const headers = isDevelopment ? settings?.snapshotHeaders() : undefined;
-    if (headers === null || (view !== viewGeneration || sessionId !== runtime.session.value?.sessionId)
-      || eventId !== runtime.execution.value.pendingQuestion?.eventId) return;
-    await run(async () => { await runtime.answerQuestion(eventId, answers, headers); });
-  } finally {
-    if (view === viewGeneration && sessionId === runtime.session.value?.sessionId && questionSubmittingId.value === eventId) {
-      questionSubmittingId.value = '';
-    }
-  }
 }
 
 function acknowledgeUnknown(): void {
@@ -307,6 +240,11 @@ async function changeMode(mode: 'build' | 'plan'): Promise<void> {
         <span>{{ runtime.lastError.value }}</span>
         <button type="button" aria-label="关闭错误提示" @click="runtime.clearError">关闭</button>
       </div>
+      <div v-if="write.notice.value" class="error-banner" role="alert">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 7v6M12 17h.01" /></svg>
+        <span>{{ write.notice.value }}</span>
+        <button type="button" aria-label="关闭错误提示" @click="write.clearNotice">关闭</button>
+      </div>
 
       <div v-if="workbench.storageNotice.value" class="error-banner" role="status">{{ workbench.storageNotice.value }}</div>
       <div v-if="!runtime.hasSession.value && (workbench.restoring.value || workbench.restoreError.value)" class="recovery-bar" role="status">
@@ -333,8 +271,9 @@ async function changeMode(mode: 'build' | 'plan'): Promise<void> {
             :session-id="sessionViewKey"
             :pending-plan-event-id="runtime.execution.value.pendingPlan?.eventId" :review-disabled="reviewDisabled"
             :pending-question-event-id="runtime.execution.value.pendingQuestion?.eventId"
-            :review-pending="runtime.controlPending.value || busy" :question-disabled="questionDisabled"
-            :question-pending="Boolean(questionSubmittingId) || runtime.controlPending.value"
+            :review-pending="runtime.controlPending.value || write.controlPending.value || busy"
+            :question-disabled="questionDisabled"
+            :question-pending="Boolean(write.questionSubmittingId.value) || runtime.controlPending.value"
             @decide-plan="decidePlan" @answer-question="answerQuestion" />
         </section>
         <div class="conversation-dock">
@@ -344,9 +283,13 @@ async function changeMode(mode: 'build' | 'plan'): Promise<void> {
             <button v-if="showRecovery" class="secondary-button" type="button" :disabled="runtime.recovering.value || busy" @click="run(workbench.refreshState)">刷新状态</button>
             <button v-if="runtime.uncertainty.value && !running && !runtime.pendingOperations.value.some((item) => item.receiptId)" class="secondary-button" type="button" :disabled="runtime.recovering.value" @click="acknowledgeUnknown">已人工核对</button>
           </div>
+          <div v-if="write.controlProgress.value" class="recovery-bar" role="status">
+            <span>{{ write.controlProgress.value }}</span>
+          </div>
           <ToolConfirmation v-if="running && runtime.execution.value.pendingTool && runtime.execution.value.confirming"
             :key="runtime.execution.value.pendingTool.eventId" :tool="runtime.execution.value.pendingTool"
-            :disabled="runtime.controlPending.value || runtime.stopping.value || runtime.receiptUnknown.value || busy" @decide="decideTool" />
+            :disabled="runtime.controlPending.value || runtime.stopping.value || runtime.receiptUnknown.value
+              || write.pending.value || busy" @decide="decideTool" />
           <div v-if="runtime.commandResult.value || runtime.todoSnapshot.value" class="dock-disclosures">
             <CommandResultRegion v-if="runtime.commandResult.value" :result="runtime.commandResult.value"
               :expanded="dock.commandExpanded.value" :temporarily-collapsed="dock.paletteOpen.value"
@@ -362,12 +305,14 @@ async function changeMode(mode: 'build' | 'plan'): Promise<void> {
             v-model="message"
             :running="running"
             :waiting-for="running ? waitingFor : undefined"
-            :submitting="submitting"
+            :submitting="write.messagePending.value"
+            :submission-status="write.messageProgress.value"
             :can-send="workbench.canSend.value"
             :stop-mode="stopMode"
-            :can-stop="runtime.canStop.value && !busy && !workbench.restoring.value"
-            :stopping="runtime.stopping.value || runtime.controlPending.value"
-            :disabled="busy"
+            :can-stop="runtime.canStop.value && !write.pending.value && !busy && !workbench.restoring.value"
+            :stopping="runtime.stopping.value"
+            :stop-status="write.stopPending.value ? write.controlProgress.value : undefined"
+            :disabled="busy || write.controlPending.value"
             :mode="runtime.session.value!.mode"
             :thinking="runtime.session.value!.thinking"
             :model-id="runtime.session.value!.modelId"

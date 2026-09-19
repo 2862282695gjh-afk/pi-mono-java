@@ -20,6 +20,8 @@ import type {
   DeveloperSettingsDefaults,
   LocalConfigPatch,
   LocalConfigStatus,
+  PrepareWriteFailure,
+  PrepareWriteResult,
   SaveResult,
 } from '../types/developerSettings';
 
@@ -35,6 +37,13 @@ class DeveloperSettingsApiError extends Error {
   constructor(readonly code: string, readonly status: number, message: string) {
     super(message);
   }
+}
+
+type TokenRequestOwner = 'manual' | 'write';
+
+interface TokenRefreshResult extends SaveResult {
+  reason?: PrepareWriteFailure;
+  prepared?: Extract<PrepareWriteResult, { ok: true }>;
 }
 
 export function createDeveloperSettingsController(options: ControllerOptions = {}): DeveloperSettingsController {
@@ -57,6 +66,7 @@ export function createDeveloperSettingsController(options: ControllerOptions = {
   let nextRowId = 1;
   let tokenGeneration = 0;
   let tokenController: AbortController | undefined;
+  let tokenOwner: TokenRequestOwner | undefined;
   let restoreBackendDefault = false;
   let restoreBackendGeneration = 0;
   let settingsMutationPending = false;
@@ -376,13 +386,40 @@ export function createDeveloperSettingsController(options: ControllerOptions = {
     headerRows.value = headerRows.value.filter((row) => row.id !== id);
   }
 
-  async function getToken(): Promise<SaveResult> {
-    if (tokenPending.value) return setResult(authStatus, false, 'Token 正在获取。');
+  function authenticationDraftChanged(): void {
+    cancelToken();
+  }
+
+  function headerDraftChanged(): void {
+    if (tokenHeaderFingerprint(headerRows.value) !== tokenHeaderFingerprint(applied.value.headers)) cancelToken();
+  }
+
+  function getToken(): Promise<SaveResult> {
+    return refreshToken('manual');
+  }
+
+  async function prepareWrite(): Promise<PrepareWriteResult> {
+    const refreshed = await refreshToken('write');
+    if (!refreshed.ok) {
+      return { ok: false, reason: refreshed.reason ?? 'authentication', message: refreshed.message };
+    }
+    return refreshed.prepared!;
+  }
+
+  async function refreshToken(owner: TokenRequestOwner): Promise<TokenRefreshResult> {
+    if (tokenPending.value) {
+      const result = setResult(authStatus, false, 'Token 正在获取。');
+      return { ...result, reason: 'busy' };
+    }
     const issue = tokenReadinessIssue();
-    if (issue) return setResult(authStatus, false, issue);
+    if (issue) {
+      const result = setResult(authStatus, false, issue);
+      return { ...result, reason: 'configuration' };
+    }
     const expected = tokenExpectation();
     const controller = new AbortController();
     tokenController = controller;
+    tokenOwner = owner;
     tokenPending.value = true;
     authStatus.value = '正在获取…';
     try {
@@ -394,31 +431,39 @@ export function createDeveloperSettingsController(options: ControllerOptions = {
         controller.signal,
       );
       if (!tokenExpectationMatches(expected)) {
-        return tokenController === controller && expected.generation === tokenGeneration
+        const result = tokenController === controller && expected.generation === tokenGeneration
           ? setResult(authStatus, false, '设置已变化，请重新获取 Token。')
           : { ok: false, message: '设置已变化，请重新获取 Token。' };
+        return { ...result, reason: 'cancelled' };
       }
       const merged = mergeToken(applied.value.headers, token);
       const saved = repository.saveHeaders(applied.value.browserRevision, expected.environmentKey, merged);
       if (!tokenExpectationMatches(expected)) {
-        return tokenController === controller && expected.generation === tokenGeneration
+        const result = tokenController === controller && expected.generation === tokenGeneration
           ? setResult(authStatus, false, '设置已变化，请重新获取 Token。')
           : { ok: false, message: '设置已变化，请重新获取 Token。' };
+        return { ...result, reason: 'cancelled' };
       }
       record = saved;
       applied.value = { ...applied.value, headers: merged, browserRevision: saved.revision };
       syncTokenDraft(token);
       headerDrafts.set(expected.environmentKey, cloneRows(headerRows.value));
       headerStatus.value = 'Token 已更新';
-      return setResult(authStatus, true, 'Token 已更新');
+      const prepared = preparedHeaders(expected, saved.revision, merged);
+      return { ...setResult(authStatus, true, 'Token 已更新'), prepared };
     } catch (error) {
       if (controller.signal.aborted || expected.generation !== tokenGeneration) {
-        return { ok: false, message: '设置已变化，请重新获取 Token。' };
+        return { ok: false, reason: 'cancelled', message: '设置已变化，请重新获取 Token。' };
       }
-      return setResult(authStatus, false, tokenMessage(error));
+      const result = setResult(authStatus, false, tokenMessage(error));
+      const reason = error instanceof DeveloperSettingsStorageError
+        || (error instanceof DeveloperSettingsApiError && error.code === 'DEV_AUTH_CONFIG_CHANGED')
+        ? 'configuration' : 'authentication';
+      return { ...result, reason };
     } finally {
       if (tokenController === controller) {
         tokenController = undefined;
+        tokenOwner = undefined;
         tokenPending.value = false;
       }
     }
@@ -439,6 +484,10 @@ export function createDeveloperSettingsController(options: ControllerOptions = {
     if (!status.accountConfigured || !status.passwordConfigured) return '请先配置认证账号和密码。';
     const tokenRows = headerRows.value.filter((row) => row.key.trim().toLowerCase() === 'access-token');
     if (tokenRows.length > 1) return '请先修正重复的 access-token。';
+    if (tokenHeaderFingerprint(headerRows.value) !== tokenHeaderFingerprint(applied.value.headers)) {
+      return 'access-token 有尚未保存的修改，请先保存或恢复已应用值。';
+    }
+    if (!validateDebugHeaders(applied.value.headers).valid) return '已应用请求头无效，请重新保存。';
     return '';
   }
 
@@ -478,6 +527,34 @@ export function createDeveloperSettingsController(options: ControllerOptions = {
       return;
     }
     headerRows.value.push(makeRow({ enabled: true, key: 'access-token', value: token, presetKey: 'access-token' }));
+  }
+
+  function preparedHeaders(
+    expected: ReturnType<typeof tokenExpectation>,
+    browserRevision: number,
+    headers: DebugHeaderInput[],
+  ): Extract<PrepareWriteResult, { ok: true }> {
+    const validation = validateDebugHeaders(headers);
+    if (!validation.valid) throw new DeveloperSettingsStorageError('corrupt', '已应用请求头无效，请重新保存。');
+    const frozenHeaders = new Headers(validation.headers);
+    const fingerprint = headerFingerprint(headers);
+    const tokenDraftFingerprint = tokenFingerprint(headerRows.value);
+    return {
+      ok: true,
+      headers: frozenHeaders,
+      isCurrent: () => expected.generation === tokenGeneration
+        && ready.value && applied.value.connectionAvailable
+        && expected.environmentKey === applied.value.environmentKey
+        && expected.ip === applied.value.authIp
+        && expected.authIpDraft === authIpDraft.value.trim()
+        && expected.account === accountDraft.value
+        && expected.password === passwordDraft.value
+        && expected.authVersion === applied.value.authVersion
+        && expected.authKey === applied.value.authKey
+        && browserRevision === applied.value.browserRevision
+        && fingerprint === headerFingerprint(applied.value.headers)
+        && tokenDraftFingerprint === tokenFingerprint(headerRows.value),
+    };
   }
 
   function snapshotHeaders(): Headers | null {
@@ -576,15 +653,14 @@ export function createDeveloperSettingsController(options: ControllerOptions = {
     headerStatus.value = '';
   }
 
-  function cancelToken(): void {
+  function cancelToken(owner?: TokenRequestOwner): void {
+    if (owner && tokenOwner !== owner) return;
     tokenGeneration += 1;
     tokenController?.abort();
-    tokenController = undefined;
-    tokenPending.value = false;
   }
 
   function close(): void {
-    cancelToken();
+    cancelToken('manual');
   }
 
   function storageChanged(event: StorageEvent): void {
@@ -641,8 +717,11 @@ export function createDeveloperSettingsController(options: ControllerOptions = {
     restoreHeaderPresets,
     appendHeader,
     deleteHeader,
+    authenticationDraftChanged,
+    headerDraftChanged,
     cancelToken,
     getToken,
+    prepareWrite,
     snapshotHeaders,
     close,
     dispose,
@@ -877,6 +956,15 @@ function mergeToken(rows: readonly DebugHeaderInput[], token: string): DebugHead
 function tokenFingerprint(rows: readonly DeveloperHeaderRow[]): string {
   return JSON.stringify(rows.filter((row) => row.key.trim().toLowerCase() === 'access-token')
     .map((row) => [row.id, row.key, row.value, row.enabled]));
+}
+
+function tokenHeaderFingerprint(rows: readonly DebugHeaderInput[]): string {
+  return JSON.stringify(rows.filter((row) => row.key.trim().toLowerCase() === 'access-token')
+    .map((row) => ({ ...toStoredRow(row), key: 'access-token' })));
+}
+
+function headerFingerprint(rows: readonly DebugHeaderInput[]): string {
+  return JSON.stringify(rows.map(toStoredRow));
 }
 
 function cloneRows(rows: readonly DeveloperHeaderRow[]): DeveloperHeaderRow[] {

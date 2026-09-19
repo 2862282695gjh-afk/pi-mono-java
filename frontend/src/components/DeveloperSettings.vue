@@ -81,13 +81,16 @@ function cancel(event: Event): void {
         <details open class="settings-group">
           <summary>认证</summary>
           <div class="group-body">
-            <label>认证中心 IP<input v-model="authIp" autocomplete="off" spellcheck="false" placeholder="192.0.2.10"></label>
+            <label>认证中心 IP<input v-model="authIp" autocomplete="off" spellcheck="false" placeholder="192.0.2.10"
+              @input="settings.authenticationDraftChanged"></label>
             <div class="configuration-state" aria-label="本地认证配置状态">
               <span>账号：{{ settings.localStatus.value?.accountConfigured ? '已配置' : '未配置' }}</span>
               <span>密码：{{ settings.localStatus.value?.passwordConfigured ? '已配置' : '未配置' }}</span>
             </div>
-            <label>认证账号<input v-model="account" type="text" autocomplete="off" spellcheck="false"></label>
-            <label>认证密码<input v-model="password" type="text" autocomplete="off" spellcheck="false"></label>
+            <label>认证账号<input v-model="account" type="text" autocomplete="off" spellcheck="false"
+              @input="settings.authenticationDraftChanged"></label>
+            <label>认证密码<input v-model="password" type="text" autocomplete="off" spellcheck="false"
+              @input="settings.authenticationDraftChanged"></label>
             <p>验证工作台会明文回显已保存凭据，请勿在截图或共享屏幕中暴露真实凭据。</p>
             <div class="authentication-actions">
               <button type="button" @click="settings.clearAuthentication">清除账号密码</button>

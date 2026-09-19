@@ -30,7 +30,7 @@ CampusClaw（`com.campusclaw`，原 `pi-mono-java`）是 JDK 21 + Spring Boot 3.
 
 直接依赖：ai → common；agent-core → ai；cron → agent-core；coding-agent-cli → common、ai、agent-core、cron。common 与 ai、agent、cron、codingagent 同级，不依赖业务模块；直接使用其常量的模块必须声明 common 依赖。
 
-- `BuiltInToolName` 仅允许 `Read`、`Find`、`Grep`、`Ls`、`Cron`、`ListMateTools`、`CallMateTool`、`Agent`。Runtime、Cron、Child profile 严格校验；`ToolExecutionMode` 只控制顺序/并行执行。
+- `BuiltInToolName` 仅允许 `Read`、`Find`、`Grep`、`Ls`、`Cron`、`ListMateTools`、`CallMateTool`、`Agent`、`ExitPlanMode`、`TodoUpdate`、`AskUserQuestion`。Runtime、Cron、Child profile 严格校验；`ToolExecutionMode` 只控制顺序/并行执行。
 - Runtime、Cron、Child 统一使用 `AgentSessionFactory`；持久化及生命周期由各 Host 管理。`ai` / `agent-core` 使用 Reactor `Mono/Flux`，事件流路径禁止 `.block()`。
 - 元数据默认在 `agent/{agentId}/.campusclaw/`，由 `AgentRuntimeManager` 准备。Skill 只读受管目录；不恢复 PackageManager 或本地 Skill 安装/导入。Mate 工具实时发现并按名称调用。
 - 模型凭据来自部署配置，不写入 Agent 目录。Provider 与模型以源码及 [README](README.md#模型供应商) 为准，不复制数量清单。

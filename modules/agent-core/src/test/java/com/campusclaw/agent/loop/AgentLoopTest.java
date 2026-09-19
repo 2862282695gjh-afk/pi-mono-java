@@ -31,7 +31,6 @@ import com.campusclaw.agent.tool.AgentToolUpdateCallback;
 import com.campusclaw.agent.tool.CancellationToken;
 import com.campusclaw.agent.tool.ToolExecutionPipeline;
 import com.campusclaw.ai.CampusClawAiService;
-import com.campusclaw.ai.model.ModelRegistry;
 import com.campusclaw.ai.provider.ApiProvider;
 import com.campusclaw.ai.provider.ApiProviderRegistry;
 import com.campusclaw.ai.stream.AssistantMessageEvent;
@@ -75,7 +74,7 @@ class AgentLoopTest {
         var context = new AgentContext(state);
 
         var loop = new AgentLoop(new AgentLoopConfig(
-                piAiService(model, new ScenarioProvider()),
+                piAiService(new ScenarioProvider()),
                 model,
                 new DefaultMessageConverter(),
                 transformer,
@@ -114,7 +113,7 @@ class AgentLoopTest {
         var context = new AgentContext(state);
 
         var loop = new AgentLoop(new AgentLoopConfig(
-                piAiService(model, new ScenarioProvider()),
+                piAiService(new ScenarioProvider()),
                 model,
                 new DefaultMessageConverter(),
                 null,
@@ -151,7 +150,7 @@ class AgentLoopTest {
         var state = new AgentState();
         var context = new AgentContext(state);
         var loop = new AgentLoop(new AgentLoopConfig(
-                piAiService(model, new ScenarioProvider()),
+                piAiService(new ScenarioProvider()),
                 model,
                 new DefaultMessageConverter(),
                 null,
@@ -178,7 +177,7 @@ class AgentLoopTest {
         state.setTools(List.of(new ResultTool("known-a"), new ResultTool("known-b")));
         var context = new AgentContext(state);
         var loop = new AgentLoop(new AgentLoopConfig(
-                piAiService(model, new ScenarioProvider()),
+                piAiService(new ScenarioProvider()),
                 model,
                 new DefaultMessageConverter(),
                 null,
@@ -198,11 +197,9 @@ class AgentLoopTest {
                         .toList());
     }
 
-    private CampusClawAiService piAiService(Model model, ApiProvider provider) {
+    private CampusClawAiService piAiService(ApiProvider provider) {
         var providerRegistry = new ApiProviderRegistry(List.of(provider));
-        var modelRegistry = new ModelRegistry();
-        modelRegistry.register(model);
-        return new CampusClawAiService(providerRegistry, modelRegistry);
+        return new CampusClawAiService(providerRegistry);
     }
 
     private Model sampleModel() {

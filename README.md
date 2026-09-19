@@ -70,10 +70,12 @@ java -jar modules/coding-agent-cli/target/campusclaw-agent.jar
 | `Agent` | 执行当前 Agent 直接绑定的 Child | SEQUENTIAL |
 | `ExitPlanMode` | Runtime 根执行提交完整计划并等待审核 | SEQUENTIAL |
 | `TodoUpdate` | 返回实施任务的完整进度快照 | SEQUENTIAL |
+| `AskUserQuestion` | Runtime 根执行提交结构化问题并等待整批回答 | SEQUENTIAL |
 
 `Read`、`Find`、`Grep` 和 `Ls` 的工作区固定为当前 `agent/{agentId}`。`Bash`、`Edit`、
 `Write`、`Loop`、`Glob`、`EditDiff`、`activate_skill`、`spawn_agent` 和 `invoke_agent` 不属于
-产品工具契约，也不会进入模型工具列表。
+产品工具契约，也不会进入模型工具列表。仓库不保留 `Bash`、`Edit`、`Write` 的工具本体、
+专用执行器、文件操作抽象、配置或兼容入口。
 
 三入口缺省配置位于
 [`application.yml`](modules/coding-agent-cli/src/main/resources/application.yml)：
@@ -81,7 +83,7 @@ java -jar modules/coding-agent-cli/target/campusclaw-agent.jar
 ```yaml
 campusclaw:
   tools:
-    runtime: [Read, Find, Grep, Ls, Cron, ListMateTools, CallMateTool, Agent, ExitPlanMode, TodoUpdate]
+    runtime: [Read, Find, Grep, Ls, Cron, ListMateTools, CallMateTool, Agent, ExitPlanMode, TodoUpdate, AskUserQuestion]
     cron: [Read, Find, Grep, Ls, ListMateTools, CallMateTool, Agent]
     child-agent: [Read, Find, Grep, Ls, ListMateTools, CallMateTool]
 ```
@@ -144,15 +146,18 @@ Session 更新要求强 `If-Match`，允许一次提交一个或多个字段；�
 
 <a id="模型供应商"></a>
 
-## 模型与 Provider
+## Model
 
 产品默认只装配 `CampusMateProvider`，Provider ID 为 `campusmate`。Runtime 使用同一受管 Agent
 快照中的 `defaultModel` 与 `bindingModels` 构造模型；CampusClaw 不保存第三方模型端点或凭据。
 
-`ModelRegistry` 不再提供内置模型。它保留运行时注册、查询、成本计算以及 classpath
-`/campusclaw-models.json`、用户 `~/.campusclaw/agent/models.json` 两级可选加载；没有外部 JSON
-时目录为空。`ApiProviderRegistry` 默认也可以为空，嵌入方仍可显式注册和注销自定义 API
-适配器。未知适配器会明确失败，不外联，也不自动转到 CampusMate。
+每次准备业务 Agent 时，以其已发布目录的 `.campusclaw/settings.json` 为唯一模型来源。
+`bindingModels` 必须非空、无空白和重复项，`defaultModel` 必须非空且属于绑定列表；无效设置
+明确失败，不查询 classpath、用户 Home、环境凭据或其他 Agent 的模型目录。目录缺失时仍经
+既有 Agent 发布链准备完整目录，不新增模型发现接口。
+
+AI 层只接收已解析的 Model。`ApiProviderRegistry` 默认可为空，保留显式协议适配器注册与注销，
+但不提供模型发现或允许列表。未知适配器明确失败，不外联，也不自动转到 CampusMate。
 
 ## 项目结构
 
@@ -160,7 +165,7 @@ Session 更新要求强 `If-Match`，允许一次提交一个或多个字段；�
 .
 ├── modules/
 │   ├── common/              # ClawConstants 共享业务常量，文件内按领域分组
-│   ├── ai/                  # LLM 抽象、供应商适配和模型注册
+│   ├── ai/                  # LLM 抽象、CampusMate 适配和模型事件
 │   ├── agent-core/          # Agent 循环、Session、事件和工具 Pipeline
 │   ├── cron/                # 定时任务模型、引擎、存储和 Agent 工具
 │   └── coding-agent-cli/    # Spring Boot 服务、Runtime Host 和工具实现（历史目录名）

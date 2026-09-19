@@ -16,7 +16,7 @@ function upstream(status = 200, cookies = ['access-token=synthetic-token; HttpOn
 }
 const config = { account: 'synthetic-account', password: 'synthetic-password' };
 describe('AuthCenter HTTPS client', () => {
-  it('uses the fixed TLS target and configured JSON without forwarded headers', async () => {
+  it('skips certificate verification only for the fixed dev auth request and sends configured JSON', async () => {
     const { response, req } = upstream();
     const signal = new AbortController().signal;
     const result = loginAuthCenter('192.0.2.10', config, signal);
@@ -25,6 +25,7 @@ describe('AuthCenter HTTPS client', () => {
     req.emit('close');
     const options = vi.mocked(request).mock.calls[0][0];
     expect(options).toEqual({ hostname: '192.0.2.10', port: 443, method: 'POST', path: '/service/AuthCenter/0.1.0/auth/login',
+      rejectUnauthorized: false,
       headers: { 'Content-Type': 'application/json', 'Content-Length': expect.any(Number), Accept: 'application/json' }, signal });
     expect(JSON.parse(req.end.mock.calls[0][0])).toEqual({ loginAccount: config.account, password: config.password });
   });

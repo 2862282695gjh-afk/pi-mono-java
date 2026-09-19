@@ -30,6 +30,10 @@ function restorePresets(): void {
   focusRow(0);
 }
 
+function headerDraftChanged(): void {
+  void nextTick(props.settings.headerDraftChanged);
+}
+
 async function save(): Promise<void> {
   const result = validation.value;
   if (!result.valid) {
@@ -71,7 +75,7 @@ function focusRow(index: number): void {
         data-debug-header-row
       >
         <label class="debug-header-enabled">
-          <input v-model="row.enabled" type="checkbox" aria-label="启用此请求头">
+          <input v-model="row.enabled" type="checkbox" aria-label="启用此请求头" @change="headerDraftChanged">
         </label>
         <label class="debug-header-field">
           <span class="sr-only">Header Key</span>
@@ -83,6 +87,7 @@ function focusRow(index: number): void {
             autocomplete="off"
             spellcheck="false"
             :aria-invalid="validation.errorFields[index] === 'key'"
+            @input="headerDraftChanged"
           >
         </label>
         <label class="debug-header-field">
@@ -95,6 +100,7 @@ function focusRow(index: number): void {
             autocomplete="off"
             spellcheck="false"
             :aria-invalid="validation.errorFields[index] === 'value'"
+            @input="headerDraftChanged"
           >
           <span v-if="validation.errors[index]" class="debug-header-error" role="alert">
             {{ validation.errors[index] }}
