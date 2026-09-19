@@ -1,10 +1,10 @@
 # CampusClaw 模块架构
 
-> 文档版本：2.7.0
+> 文档版本：2.8.0
 >
 > 状态：Implemented
 >
-> 更新日期：2026-09-15
+> 更新日期：2026-09-18
 >
 > 实现前源码基线：`d649866a6cae967ace18ceaeb9597edd47e5721e`
 >
@@ -21,7 +21,7 @@
 CampusClaw 是 JDK 21 + Spring Boot 3.4.5 的 ToB Agent Runtime 服务。Maven Reactor 只包含
 `common`、`ai`、`agent-core`、`cron` 和 `coding-agent-cli` 五个 Java 模块；CLI/TUI 产品入口和
 `modules/tui` 已删除。`coding-agent-cli` 只是历史目录名，当前职责是组装 Spring Boot HTTP
-服务、受管 Agent Session 和八个内置工具。
+服务、受管 Agent Session 和十一个内置工具。
 
 上述收敛相对源码基线属于产品约束和架构改造，不表示 pi 具备相同服务结构。规范性工具契约见
 [CampusClaw 受管 Agent 工具系统 v2](designs/tool-system-v2.md)。
@@ -109,7 +109,7 @@ Spring Boot 服务装配模块。目录名保留 `cli` 仅为避免当前构建�
 | `com.campusclaw.codingagent.session` | 三入口公共 AgentSessionFactory |
 | `com.campusclaw.codingagent.session.compaction` | 公共上下文压缩与 Read 文件追踪 |
 | `com.campusclaw.codingagent.runtime` | 受管目录 prepare/refresh 和 CampusMate 客户端 |
-| `com.campusclaw.codingagent.tool.builtin` | 八工具关闭枚举、严格配置和装配器 |
+| `com.campusclaw.codingagent.tool.builtin` | 十一工具关闭枚举、严格配置和装配器 |
 | `com.campusclaw.codingagent.tool.ops` | 不调用 shell 的只读文件操作 |
 | `com.campusclaw.codingagent.tool.mate` | Mate 实时发现、Session 缓存和名称调用 |
 | `com.campusclaw.codingagent.tool.agent` | 直接绑定 Child Execution |
@@ -163,6 +163,7 @@ Controller 仅依赖应用 Service 和 ResultBeanAdapter，不执行 Builtin 或
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 2.8.0 | 2026-09-18 | 删除 Bash、Edit、Write 及无消费者专用代码，并将活动工具清单更新为十一项。 |
 | 2.7.0 | 2026-09-15 | AI 默认调用收敛为 CampusMate Provider，移除第三方适配器和内置模型。 |
 | 2.6.0 | 2026-09-08 | 接通七Builtin JSON与Skill SSE的共享POST；复用已有服务，无新模块或依赖。 |
 | 2.5.0 | 2026-09-07 | 删除未注册的旧命令包与专属测试，保留现有 Runtime 命令及公共 Session 压缩。 |

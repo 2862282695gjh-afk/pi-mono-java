@@ -1,10 +1,10 @@
 # CampusClaw 受管 Agent 工具系统 v2
 
-> 文档版本：1.10.0
+> 文档版本：1.11.0
 >
 > 状态：Implemented
 >
-> 日期：2026-09-15
+> 日期：2026-09-18
 > 决策记录：[ADR-0022](../decisions/0022-managed-agent-tool-system-v2.html)、
 > [ADR-0032](../decisions/0032-tool-execution-credential-boundary.html)、
 > [ADR-0024](../decisions/0024-mate-tool-execution-credential-chain.html)、
@@ -20,7 +20,7 @@
 ## 1. 结论与源码基线
 
 CampusClaw 产品运行面通过固定枚举公开 PascalCase 内置工具：`Read`、`Find`、`Grep`、`Ls`、
-`Cron`、`ListMateTools`、`CallMateTool`、`Agent`、`ExitPlanMode`、`TodoUpdate`。Runtime、Cron 和 Child Agent 通过同一个
+`Cron`、`ListMateTools`、`CallMateTool`、`Agent`、`ExitPlanMode`、`TodoUpdate`、`AskUserQuestion`。Runtime、Cron 和 Child Agent 通过同一个
 `AgentSessionFactory` 创建相同类型、相同工具 Pipeline 和相同 hook/error/cancellation 语义的
 Session；各 Session 的消息、工作目录、工具实例、Mate 缓存和 Execution 上下文彼此隔离。
 
@@ -46,6 +46,7 @@ Session；各 Session 的消息、工作目录、工具实例、Mate 缓存和 E
 | CampusClaw Read 行数修复实现 | `0397d92f8ce17e9d00ce4904f147cba980377c6f` | 末尾换行、空文件、精确 limit 和截断元数据的审查实现证据 |
 | CampusClaw gitignore 根锚定修复前 | `94abd2abcb03943daef5118115e4b4a21f1c4d5f` | 观察根锚定规则去除前导斜杠后被无路径分隔符 glob 按任意深度匹配的行为 |
 | CampusClaw gitignore 根锚定修复实现 | `305c5a935f41498e252c83fe93d2201dbfc64218` | Find、Grep 根锚定匹配器及集成回归测试的审查实现证据 |
+| CampusClaw 写工具删除前 | `8c5fda1dde51675859bc9c07e145dbe253656dea` | 核验 Bash/Edit/Write 本体、专用操作层、无活动装配及剩余消费者边界 |
 | pi | `5cd93f688aaab89dbb6dfa4aca535f21796ae185` | Read、find、grep、ls、工具调度与上下文压缩对照 |
 | OpenCode | `849c2598abc7d2b40261e74b5826bc74ffc78308` | Task/Child Agent 对照 |
 | 设计仓 | `bb967eebe1f62553e92480b3ea3808a664fbe73e` | 2.2.0 工具设计、3.2.0 Runtime 设计和 HTTP 1.40 契约 |
@@ -95,7 +96,7 @@ Session；各 Session 的消息、工作目录、工具实例、Mate 缓存和 E
 | CLI | 服务入口可分发到 CLI/TUI，Loop 属于 CLI Session | 产品只保留服务入口；无 CLI profile、Loop 或 `/reload` | 产品约束：CampusClaw 是 ToB 服务 |
 | Session 压缩 | 压缩、文件追踪和溢出恢复耦合在旧 TUI/CLI 大型 Session | 压缩迁入 `ManagedAgentSession`；阈值、溢出和一次重试对三入口一致 | 架构改造：入口删除不能连带删除公共上下文能力 |
 | Slash Command（PR 167 时点） | 处理器位于 CLI/TUI 编排树，依赖旧 Session 与终端输出 | 当时保留核心、Registry 和四个处理器，首版无 Host 注册；该原型现已删除，见页首补记 | 架构改造：当时先解耦公共能力，后续按真实消费者清理原型 |
-| 写与命令 | Bash/Edit/Write 可作为模型工具 | 底层代码可保留，但不在枚举、配置、工厂或 Spring 工具发现链 | 安全加固：当前 Agent 只具备只读本地能力 |
+| 写与命令 | Bash/Edit/Write 可作为模型工具 | 删除工具本体、专用执行器、operations、DTO、配置与测试，不保留隐藏兼容入口 | 安全加固：当前 Agent 只具备只读本地能力；无消费者代码不再形成潜在执行面 |
 
 ## 3. 总体架构
 
@@ -113,7 +114,7 @@ Host 决定持久化与生命周期；Session 只拥有 Agent、消息、工具�
 ```yaml
 campusclaw:
   tools:
-    runtime: [Read, Find, Grep, Ls, Cron, ListMateTools, CallMateTool, Agent, ExitPlanMode, TodoUpdate]
+    runtime: [Read, Find, Grep, Ls, Cron, ListMateTools, CallMateTool, Agent, ExitPlanMode, TodoUpdate, AskUserQuestion]
     cron: [Read, Find, Grep, Ls, ListMateTools, CallMateTool, Agent]
     child-agent: [Read, Find, Grep, Ls, ListMateTools, CallMateTool]
 ```
@@ -133,6 +134,7 @@ campusclaw:
 | `Agent` | ✓ | ✓ |  | SEQUENTIAL |
 | `ExitPlanMode` | ✓ |  |  | SEQUENTIAL |
 | `TodoUpdate` | ✓ |  |  | SEQUENTIAL |
+| `AskUserQuestion` | ✓ |  |  | SEQUENTIAL |
 
 Runtime 的 plan/build 复用相同工具定义。ExitPlanMode 仅用于根执行计划审核；TodoUpdate 仅记录
 build 实施进度，由提示词约束调用时机。计划模式不会重写业务工具权限或记录调研清单。
@@ -325,7 +327,8 @@ CampusClaw 不恢复 pi 的 JSONL/tree/Extension、Bash/Edit/Write 文件追踪�
 - 动态 ToolCatalog/Extension、旧外部 SubAgent backend 不再由 Spring 自动发现。
 - TUI 产品模块、动态 ToolCatalog/Extension、旧 Child backend 和旧工具入口源码已删除；
   Slash Command 核心及四个处理器当时保留且未注册，现按 [ADR-0070](../decisions/0070-remove-legacy-command-prototype.html) 删除；
-  `Bash`、`Edit`、`Write` 的底层实现只作为未装配代码保留，且不是 Spring Bean。
+  `Bash`、`Edit`、`Write` 的工具本体、专用执行器、operations、DTO、配置、资源和专属测试均已删除。
+  通用文件读取、路径边界、文本截断、受管目录发布和系统部署脚本按现有消费者保留。
 - 本变更不提供旧名称别名、旧 Cron payload 或 CLI 兼容入口。
 
 ## 13. 验证
@@ -348,6 +351,7 @@ git diff --check
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 1.11.0 | 2026-09-18 | 删除 Bash、Edit、Write 工具本体和无消费者专用代码，明确十一项活动工具及无兼容入口边界。 |
 | 1.10.0 | 2026-09-15 | Runtime profile 增加计划审核与实施任务工具，关联固定提示词和 Session 模式实施说明。 |
 | 1.9.0 | 2026-09-07 | 标明 Slash 原型保留决定的历史范围，关联当前删除实现；工具与公共压缩不变。 |
 | 1.8.0 | 2026-09-01 | 对齐 CampusClaw 公司镜像的新目录、Java 包和同步入口；工具契约不变。 |
