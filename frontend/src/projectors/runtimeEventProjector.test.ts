@@ -30,6 +30,33 @@ describe('Runtime Events presentation', () => {
     expect(turns[1]).toMatchObject({ toolName: 'CallMateTool', status: 'completed', result: `${long}\n`, arguments: [{ key: 'tool', value: 'query' }, { key: 'args', value: '{\n  "area": "校园"\n}' }] });
     expect(turns[2]).toMatchObject({ kind: 'notice', text: '已完成' });
   });
+  it('keeps the display snapshot separate from the execution identity in every tool state', () => {
+    const call = eventFixture({ eventId: 'display-call', type: 'agent.tool_call', toolCallId: 'display-tool',
+      sourceEventId: 'root-a', toolName: 'Read', displayName: '读取安全配置', requiresConfirmation: true, arguments: { path: 'a.txt' } });
+    const confirming = projectRuntimeEvents([userFixture(), call, idleFixture('confirming')], true);
+    expect(confirming.find((turn) => turn.kind === 'activity')).toMatchObject({
+      toolName: 'Read', displayName: '读取安全配置', status: 'confirming',
+    });
+    const success = eventFixture({ eventId: 'display-result', type: 'agent.tool_result', toolCallId: 'display-tool',
+      sourceEventId: 'root-a', content: [{ type: 'text', text: 'ok' }], isError: false });
+    expect(projectRuntimeEvents([userFixture(), call, success]).find((turn) => turn.kind === 'activity')).toMatchObject({
+      toolName: 'Read', displayName: '读取安全配置', status: 'completed',
+    });
+    const failed = { ...success, eventId: 'display-failed', isError: true, errorCode: 'TOOL_FAILED' };
+    expect(projectRuntimeEvents([userFixture(), call, failed]).find((turn) => turn.kind === 'activity')).toMatchObject({
+      toolName: 'Read', displayName: '读取安全配置', status: 'error',
+    });
+  });
+  it('replaces a result-only placeholder when the matching call record becomes available', () => {
+    const result = eventFixture({ eventId: 'early-result', type: 'agent.tool_result', toolCallId: 'late-tool',
+      sourceEventId: 'root-a', content: [{ type: 'text', text: 'ok' }], isError: false });
+    expect(projectRuntimeEvents([result])[0]).toMatchObject({ toolName: '工具调用（调用记录尚未读到）' });
+    const call = eventFixture({ eventId: 'late-call', type: 'agent.tool_call', toolCallId: 'late-tool',
+      sourceEventId: 'root-a', toolName: 'CallMateTool', displayName: '查询工单',
+      arguments: { tool: 'query_ticket', args: {} }, requiresConfirmation: false });
+    const activities = projectRuntimeEvents([result, call]).filter((turn) => turn.kind === 'activity');
+    expect(activities).toEqual([expect.objectContaining({ key: 'late-call', displayName: '查询工单', status: 'completed' })]);
+  });
   it('marks a disconnected preview as unconfirmed rather than completed', () => {
     expect(projectRuntimeEvents([{ eventId: 'p', type: 'agent.message', phase: 'delta', sourceEventId: 'root-a', content: '半条' }])[0]).toMatchObject({ streaming: false, unconfirmed: true });
   });

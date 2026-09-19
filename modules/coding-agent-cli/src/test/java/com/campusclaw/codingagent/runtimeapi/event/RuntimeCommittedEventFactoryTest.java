@@ -115,7 +115,8 @@ class RuntimeCommittedEventFactoryTest {
     void shouldKeepToolArgumentsAndFallbackToStableError() {
         RuntimeEntryDTO callEntry = entry("entry_call", "assistant.message.completed");
         ToolCall call = new ToolCall("call-1", "CallMateTool", Map.of("tool", "inspect"));
-        var callFrame = encoder.committed(factory.agentToolCall(callEntry, "event_call", call, true, "event_user"));
+        var callFrame = encoder.committed(
+                factory.agentToolCall(callEntry, "event_call", call, true, "event_user", "  Inspect records  "));
         ToolResultMessage failed = new ToolResultMessage(
                 "call-1", "CallMateTool", List.of(new TextContent("private gateway failure")), null, true, 1L);
         var resultFrame = encoder.committed(factory.agentToolResult(
@@ -123,6 +124,7 @@ class RuntimeCommittedEventFactoryTest {
 
         assertThat(callFrame.getData())
                 .containsEntry("requiresConfirmation", true)
+                .containsEntry("displayName", "Inspect records")
                 .containsEntry("arguments", Map.of("tool", "inspect", "args", Map.of()));
         assertThat(resultFrame.getData())
                 .containsEntry("errorCode", "TOOL_EXECUTION_FAILED")
@@ -131,6 +133,17 @@ class RuntimeCommittedEventFactoryTest {
                         "content",
                         List.of(Map.of("type", "text", "text", "Tool execution failed. Check the execution outcome.")));
         assertThat(resultFrame.getData().toString()).doesNotContain("private gateway failure");
+        assertThat(resultFrame.getData()).doesNotContainKeys("displayName", "toolName");
+    }
+
+    @Test
+    void shouldOmitBlankToolDisplayName() {
+        ToolCall call = new ToolCall("call-1", "Read", Map.of("path", "input"));
+
+        var frame = encoder.committed(factory.agentToolCall(
+                entry("entry_call", "assistant.message.completed"), "event_call", call, false, "event_user", " \n "));
+
+        assertThat(frame.getData()).doesNotContainKey("displayName");
     }
 
     @Test

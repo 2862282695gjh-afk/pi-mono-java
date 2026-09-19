@@ -25,8 +25,13 @@
 .region-toggle span { color: var(--text-secondary); font-size: 12px; }
 .region-actions { justify-content: flex-end; margin-top: 8px; }
 .tool-confirmation { max-height: 32dvh; overflow-y: auto; border-style: dashed; }
+.tool-confirmation-title { display: flex; min-width: 0; align-items: baseline; gap: 5px; }
+.tool-confirmation-title > span { flex: 0 0 auto; }
+.tool-confirmation-title > strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tool-confirmation textarea { display: block; width: 100%; margin-top: 4px; padding: 8px; border: 1px solid var(--border-default); border-radius: 8px; background: var(--surface-primary); resize: vertical; }
 .tool-confirmation summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+.tool-confirmation .tool-identity { margin-bottom: 8px; }
+.tool-parameter-label { color: var(--text-secondary); font-size: 12px; }
 .plain-result { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; }
 .resource-summary { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 8px 16px; }
 .resource-summary dt { color: var(--text-secondary); }
@@ -73,6 +78,7 @@
   .command-result, .tool-confirmation { padding: 10px 12px; }
   .tool-detail { margin-left: 0; padding-left: 8px; }
   .tool-arguments { grid-template-columns: minmax(0, 1fr); }
+  .tool-identity { grid-template-columns: minmax(0, 1fr); }
   .agent-round { grid-template-columns: 28px minmax(0, 1fr); gap: 8px; }
   .agent-round .brand-mark { width: 28px; height: 28px; }
   .recovery-bar { gap: 4px; }

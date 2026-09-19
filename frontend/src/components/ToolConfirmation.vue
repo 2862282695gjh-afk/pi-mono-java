@@ -1,19 +1,32 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import { codePointLength } from '../runtime/protocol';
+import { toolDisplayIdentity } from '../runtime/toolDisplay';
 import type { RuntimeEvent } from '../types/runtime';
-defineProps<{ tool: Extract<RuntimeEvent, { type: 'agent.tool_call' }>; disabled: boolean }>();
+const props = defineProps<{ tool: Extract<RuntimeEvent, { type: 'agent.tool_call' }>; disabled: boolean }>();
 const emit = defineEmits<{ decide: [decision: 'allow' | 'deny', reason: string] }>();
 const reason = ref('');
 const tooLong = computed(() => codePointLength(reason.value) > 2048);
+const identity = computed(() => toolDisplayIdentity(props.tool));
 </script>
 
 <template>
   <section class="tool-confirmation" aria-label="工具调用确认">
-    <strong>需要你确认 · {{ tool.toolName }}</strong>
+    <div class="tool-confirmation-title"
+      :aria-label="`需要你确认，${identity.label}，技术名称 ${identity.technicalName ?? '未提供'}`">
+      <span>需要你确认 ·</span>
+      <strong>{{ identity.label }}</strong>
+    </div>
     <p>只授权这一次调用。拒绝后 Agent 将收到工具失败结果，并继续处理。</p>
     <details>
-      <summary>查看本次调用参数</summary>
+      <summary>查看本次调用详情</summary>
+      <dl class="tool-identity">
+        <dt>展示名称</dt>
+        <dd>{{ identity.displayName ?? '未提供' }}</dd>
+        <dt>技术名称</dt>
+        <dd>{{ identity.technicalName ?? '未提供' }}</dd>
+      </dl>
+      <p class="tool-parameter-label">调用参数</p>
       <pre class="plain-result">{{ JSON.stringify(tool.arguments, null, 2) }}</pre>
     </details>
     <label>拒绝说明（可选）<textarea v-model="reason" rows="2" :disabled="disabled" :aria-invalid="tooLong" /></label>

@@ -133,12 +133,20 @@ public class RuntimeCommittedEventFactory {
     }
 
     public CommittedEventDTO agentToolCall(
-            RuntimeEntryDTO entry, String eventId, ToolCall call, boolean requiresConfirmation, String sourceEventId) {
+            RuntimeEntryDTO entry,
+            String eventId,
+            ToolCall call,
+            boolean requiresConfirmation,
+            String sourceEventId,
+            String displayName) {
         ObjectNode payload = sourcePayload(sourceEventId);
         payload.put("toolCallId", call.id());
         payload.put("toolName", call.name());
         payload.set("arguments", objectMapper.valueToTree(publicToolArguments(call)));
         payload.put("requiresConfirmation", requiresConfirmation);
+        if (displayName != null && !displayName.isBlank()) {
+            payload.put("displayName", displayName.strip());
+        }
         return create(entry, eventId, CommittedEventType.AGENT_TOOL_CALL, payload);
     }
 

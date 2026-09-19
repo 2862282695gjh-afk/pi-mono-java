@@ -13,6 +13,7 @@ import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -36,6 +37,7 @@ import com.campusclaw.agent.event.MessageStartEvent;
 import com.campusclaw.agent.event.MessageUpdateEvent;
 import com.campusclaw.agent.event.ToolExecutionStartEvent;
 import com.campusclaw.agent.event.TurnEndEvent;
+import com.campusclaw.agent.tool.AgentTool;
 import com.campusclaw.agent.tool.BeforeToolCallContext;
 import com.campusclaw.agent.tool.BeforeToolCallResult;
 import com.campusclaw.ai.stream.AssistantMessageEvent;
@@ -47,6 +49,11 @@ import com.campusclaw.ai.types.ToolCall;
 import com.campusclaw.ai.types.ToolResultMessage;
 import com.campusclaw.ai.types.Usage;
 import com.campusclaw.ai.types.UserMessage;
+import com.campusclaw.codingagent.common.client.mate.MateCredentials;
+import com.campusclaw.codingagent.runtime.MateServiceClient.AgentRuntime;
+import com.campusclaw.codingagent.runtime.MateServiceClient.BoundTool;
+import com.campusclaw.codingagent.runtime.MateServiceClient.SkillInfo;
+import com.campusclaw.codingagent.runtime.PreparedAgentRuntime;
 import com.campusclaw.codingagent.runtimeapi.RuntimeMessageSourceConfiguration;
 import com.campusclaw.codingagent.runtimeapi.dto.CommittedEventDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.ExecutionTargetDTO;
@@ -55,12 +62,16 @@ import com.campusclaw.codingagent.runtimeapi.dto.ToolConfirmationDecisionDTO;
 import com.campusclaw.codingagent.runtimeapi.persistence.RuntimeExecutionPersistenceService;
 import com.campusclaw.codingagent.runtimeapi.persistence.RuntimeSessionRepository;
 import com.campusclaw.codingagent.runtimeapi.runtime.RuntimeActiveExecution;
+import com.campusclaw.codingagent.runtimeapi.runtime.RuntimeToolCallSnapshotResolver;
 import com.campusclaw.codingagent.runtimeapi.runtime.RuntimeToolPermissionPolicy;
 import com.campusclaw.codingagent.runtimeapi.session.ToolConfirmationResult;
 import com.campusclaw.codingagent.runtimeapi.vo.RuntimeSseEventVO;
 import com.campusclaw.codingagent.session.compaction.CompactionReason;
 import com.campusclaw.codingagent.session.compaction.SessionCompactionCompletedEvent;
 import com.campusclaw.codingagent.session.compaction.SessionCompactionResult;
+import com.campusclaw.codingagent.tool.mate.MateToolSessionState;
+import com.campusclaw.codingagent.tool.mate.MateToolsetFactory;
+import com.campusclaw.codingagent.tool.mate.MockMateToolClient;
 import com.campusclaw.codingagent.tool.plan.PlanReviewException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -349,6 +360,76 @@ class RuntimeEventProjectorTest {
     }
 
     @Test
+    void shouldSnapshotDisplayNameBeforeConfirmationAndReuseCommittedProjection() throws Exception {
+        Fixture fixture = fixture(false);
+        ToolCall call = new ToolCall("call-confirm", "Read", Map.of("path", "input"));
+        AgentTool tool = mock(AgentTool.class);
+        when(tool.name()).thenReturn("Read");
+        when(tool.label()).thenReturn("  Read file  ", "Renamed later");
+        fixture.execution.bindToolCallSnapshots(
+                RuntimeToolCallSnapshotResolver.from(runtime(List.of(), List.of()), List.of(tool)));
+        bindAskPermission(fixture.execution, call);
+        fixture.execution.installConfirmationHandler(fixture.projector::beforeToolCall);
+        AssistantMessage assistant = assistant(List.of(call));
+        fixture.projector.onEvent(new MessageStartEvent(assistant));
+        fixture.projector.onEvent(new MessageEndEvent(assistant));
+
+        CompletableFuture<BeforeToolCallResult> confirmation = runBeforeHook(fixture.execution, assistant, call);
+        assertThat(fixture.output.closed.await(1, TimeUnit.SECONDS)).isTrue();
+        CommittedEventDTO persisted = fixture.persistedEvents.get(1);
+        RuntimeSseEventVO live = fixture.output.committed.get(1);
+        var encoder = new RuntimeEventEncoder(new CommittedEventProjection(new ObjectMapper()), new ObjectMapper());
+
+        assertThat(persisted.getPayload()).contains("\"displayName\":\"Read file\"");
+        assertThat(live.getData()).isEqualTo(encoder.committed(persisted).getData());
+        CapturingOutput continuation = new CapturingOutput();
+        ExecutionTargetDTO resumed = new ExecutionTargetDTO("session-v2", "execution-v2", "event-root", "segment-2");
+        assertThat(fixture.execution.stageContinuationOutput(resumed, continuation))
+                .isTrue();
+        assertThat(fixture.execution.resumeToolConfirmation(decision(call.id(), resumed)))
+                .isTrue();
+        assertThat(confirmation.get(1, TimeUnit.SECONDS)).isEqualTo(BeforeToolCallResult.allow());
+        fixture.projector.onEvent(new ToolExecutionStartEvent(call.id(), call.name(), call.arguments()));
+        fixture.projector.onEvent(new ToolExecutionStartEvent(call.id(), call.name(), call.arguments()));
+        fixture.projector.onEvent(new TurnEndEvent(
+                assistant,
+                List.of(new ToolResultMessage(
+                        call.id(), call.name(), List.of(new TextContent("done")), null, false, 1L))));
+
+        verify(tool, times(1)).label();
+        assertThat(persisted.getPayload()).doesNotContain("Renamed later");
+    }
+
+    @Test
+    void mateDisplayNameShouldNotTriggerDiscoveryForAnyPermissionPath() throws Exception {
+        for (String permission : List.of("allow", "deny", "ask")) {
+            assertMateDisplayNameWithoutDiscovery(permission);
+        }
+    }
+
+    @Test
+    void missingMateDisplayMetadataShouldKeepCallAndResult() {
+        Fixture fixture = fixture(false);
+        BoundTool binding = new BoundTool(null, null, "tool-id", null, "Query", "allow", null, null);
+        fixture.execution.bindToolCallSnapshots(
+                RuntimeToolCallSnapshotResolver.from(runtime(List.of(binding), List.of()), List.of()));
+        ToolCall call = new ToolCall("call-failed", "CallMateTool", Map.of("tool", "Query"));
+        AssistantMessage assistant = assistant(List.of(call));
+        ToolResultMessage result =
+                new ToolResultMessage(call.id(), call.name(), List.of(new TextContent("failed")), null, true, 1L);
+
+        fixture.projector.onEvent(new MessageStartEvent(assistant));
+        fixture.projector.onEvent(new MessageEndEvent(assistant));
+        fixture.projector.onEvent(new TurnEndEvent(assistant, List.of(result)));
+
+        assertThat(fixture.persistedEvents)
+                .extracting(CommittedEventDTO::getType)
+                .containsExactly("agent.message", "agent.tool_call", "agent.tool_result");
+        assertThat(fixture.persistedEvents.get(1).getPayload()).doesNotContain("displayName");
+        assertThat(fixture.projector.failure()).isNull();
+    }
+
+    @Test
     void duplicateToolCallIdsDoNotSatisfyExclusivePlanReview() {
         Fixture fixture = fixture(false);
         fixture.execution.applyMode("plan");
@@ -480,6 +561,52 @@ class RuntimeEventProjectorTest {
                 Locale.US,
                 new RuntimeTodoEventMapper());
         return new Fixture(repository, persistence, codec, execution, projector, output, persistedEvents, aborts);
+    }
+
+    private static PreparedAgentRuntime runtime(List<BoundTool> agentTools, List<BoundTool> skillTools) {
+        PreparedAgentRuntime runtime = mock(PreparedAgentRuntime.class);
+        AgentRuntime metadata = mock(AgentRuntime.class);
+        SkillInfo skill = mock(SkillInfo.class);
+        when(metadata.bindingTools()).thenReturn(agentTools);
+        when(skill.bindingTools()).thenReturn(skillTools);
+        when(runtime.metadata()).thenReturn(metadata);
+        when(runtime.skills()).thenReturn(List.of(skill));
+        return runtime;
+    }
+
+    private static void assertMateDisplayNameWithoutDiscovery(String permission) throws Exception {
+        Fixture fixture = fixture(false);
+        MockMateToolClient client = new MockMateToolClient();
+        MateToolSessionState toolState =
+                new MateToolsetFactory(client).createSession("agent-1", Map.of(), MateCredentials.empty());
+        BoundTool binding = new BoundTool(null, "Business query", "tool-id", null, "Query", permission, null, null);
+        PreparedAgentRuntime runtime = runtime(List.of(binding), List.of());
+        fixture.execution.bindToolPermissions(RuntimeToolPermissionPolicy.from(runtime));
+        fixture.execution.bindToolCallSnapshots(
+                RuntimeToolCallSnapshotResolver.from(runtime, List.of(toolState.createCallTool())));
+        fixture.execution.installConfirmationHandler(fixture.projector::beforeToolCall);
+        ToolCall call = new ToolCall("call-" + permission, "CallMateTool", Map.of("tool", "Query"));
+        AssistantMessage assistant = assistant(List.of(call));
+
+        fixture.projector.onEvent(new MessageStartEvent(assistant));
+        fixture.projector.onEvent(new MessageEndEvent(assistant));
+        if ("ask".equals(permission)) {
+            CompletableFuture<BeforeToolCallResult> confirmation = runBeforeHook(fixture.execution, assistant, call);
+            assertThat(fixture.output.closed.await(1, TimeUnit.SECONDS)).isTrue();
+            fixture.execution.cancelToolConfirmation(new IllegalStateException("test complete"));
+            assertThat(confirmation.handle((value, failure) -> failure).get(1, TimeUnit.SECONDS))
+                    .isNotNull();
+        }
+
+        assertThat(fixture.persistedEvents.stream()
+                        .filter(event -> "agent.tool_call".equals(event.getType()))
+                        .map(CommittedEventDTO::getPayload))
+                .singleElement()
+                .asString()
+                .contains("\"displayName\":\"Business query\"");
+        assertThat(client.agentListCalls()).isZero();
+        assertThat(client.skillListCalls()).isZero();
+        assertThat(client.executeCalls()).isZero();
     }
 
     private static void configurePersistence(

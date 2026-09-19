@@ -1,25 +1,10 @@
 <script setup lang="ts">
 import { computed } from 'vue';
+import { toolDisplayIdentity } from '../runtime/toolDisplay';
 import type { ActivityTurn } from '../types/product';
 import StructuredValueView from './StructuredValueView.vue';
 
 const props = defineProps<{ turn: ActivityTurn }>();
-
-const BUILT_IN_TOOL_LABELS: Record<string, string> = {
-  Read: '读取文件',
-  Find: '查找文件',
-  Grep: '搜索内容',
-  Ls: '列出目录',
-  Cron: '管理定时任务',
-  ListMateTools: '查询可用工具',
-  CallMateTool: '调用业务工具',
-  Agent: '运行子 Agent',
-  AskUserQuestion: '向用户提问',
-};
-
-function toolLabel(name: string): string {
-  return BUILT_IN_TOOL_LABELS[name] || name.replace(/[_-]+/gu, ' ');
-}
 
 function statusLabel(status: ActivityTurn['status']): string {
   if (status === 'running') return '执行中';
@@ -44,31 +29,46 @@ const hasArguments = computed(() => props.turn.argumentValue
   : props.turn.arguments.length > 0);
 const resultBlocks = computed(() => props.turn.resultBlocks
   ?? ((props.turn.hasResult ?? Boolean(props.turn.result)) ? [props.turn.result] : []));
+const identity = computed(() => toolDisplayIdentity({
+  toolName: props.turn.toolName,
+  displayName: props.turn.displayName,
+  arguments: props.turn.argumentValue,
+}));
 </script>
 
 <template>
-  <div v-if="turn.statusMessage" class="tool-status-only" role="status">
+  <div v-if="turn.statusMessage" class="tool-status-only" role="status"
+    :aria-label="`${identity.label}，${turn.statusMessage}，技术名称 ${identity.technicalName ?? '未提供'}`">
     <span class="tool-state-icon" :class="turn.status" aria-hidden="true">
       <svg v-if="turn.status === 'error'" viewBox="0 0 24 24"><path d="m7 7 10 10M17 7 7 17" /></svg>
       <span v-else-if="turn.status === 'running'" class="spinner"></span>
       <span v-else>·</span>
     </span>
-    <strong>{{ toolLabel(turn.toolName) }}</strong>
-    <span>{{ turn.statusMessage }}</span>
+    <strong>{{ identity.label }}</strong>
+    <span class="tool-status">{{ turn.statusMessage }}</span>
   </div>
   <details v-else class="tool-activity" :open="turn.status !== 'completed'">
-    <summary>
+    <summary :aria-label="`${identity.label}，${statusLabel(turn.status)}，技术名称 ${identity.technicalName ?? '未提供'}`">
       <span class="tool-state-icon" :class="turn.status" aria-hidden="true">
         <svg v-if="turn.status === 'completed'" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6" /></svg>
         <svg v-else-if="turn.status === 'error'" viewBox="0 0 24 24"><path d="m7 7 10 10M17 7 7 17" /></svg>
         <span v-else-if="turn.status === 'running'" class="spinner"></span>
         <span v-else>·</span>
       </span>
-      <strong>{{ toolLabel(turn.toolName) }}</strong>
+      <strong>{{ identity.label }}</strong>
       <span class="tool-status">{{ statusLabel(turn.status) }}</span>
       <svg class="tool-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m8 10 4 4 4-4" /></svg>
     </summary>
     <div class="tool-detail">
+      <section>
+        <h4>工具名称</h4>
+        <dl class="tool-identity">
+          <dt>展示名称</dt>
+          <dd>{{ identity.displayName ?? '未提供' }}</dd>
+          <dt>技术名称</dt>
+          <dd>{{ identity.technicalName ?? '未提供' }}</dd>
+        </dl>
+      </section>
       <section v-if="hasArguments">
         <h4>调用参数</h4>
         <StructuredValueView v-if="turn.argumentValue" :value="turn.argumentValue" label="完整调用参数" />
@@ -99,7 +99,7 @@ const resultBlocks = computed(() => props.turn.resultBlocks
 <style scoped>
 .tool-status-only {
   display: grid;
-  grid-template-columns: 18px auto minmax(0, 1fr);
+  grid-template-columns: 18px minmax(0, 1fr) auto;
   align-items: center;
   min-height: 38px;
   gap: 9px;
@@ -107,8 +107,11 @@ const resultBlocks = computed(() => props.turn.resultBlocks
   font-size: 13px;
 }
 .tool-status-only strong {
+  overflow: hidden;
   color: var(--text-primary);
   font-weight: 590;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .tool-result-block + .tool-result-block {
   margin-top: 10px;

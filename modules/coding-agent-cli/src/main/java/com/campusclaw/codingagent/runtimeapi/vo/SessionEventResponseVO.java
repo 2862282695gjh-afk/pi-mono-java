@@ -194,6 +194,9 @@ public class SessionEventResponseVO {
 
         private final String toolName;
 
+        @JsonInclude(JsonInclude.Include.NON_NULL)
+        private final String displayName;
+
         private final Map<String, Object> arguments;
 
         private final boolean requiresConfirmation;

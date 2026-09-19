@@ -179,6 +179,7 @@ public class RuntimeSessionEngineRegistry {
                 createSession(snapshot, model, thinking, execution, credentials, runtimeValidator);
         try {
             execution.bindToolPermissions(RuntimeToolPermissionPolicy.from(session.runtime()));
+            execution.bindToolCallSnapshots(RuntimeToolCallSnapshotResolver.from(session.runtime(), session.tools()));
             session.agent().replaceMessages(messages);
             RuntimeSessionHolder holder = new RuntimeSessionHolder(sessionId, snapshot, session, thinking);
             execution.installModeApplier(

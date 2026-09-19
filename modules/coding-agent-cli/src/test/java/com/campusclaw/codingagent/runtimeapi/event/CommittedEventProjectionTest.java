@@ -136,6 +136,20 @@ class CommittedEventProjectionTest {
     }
 
     @Test
+    void invalidPersistedDisplayNamesShouldDegradeWithoutRejectingToolCall() throws Exception {
+        for (String value : new String[] {"null", "42", "false", "{}", "[]", "\"  \\n  \""}) {
+            String payload = "{\"toolCallId\":\"call_1\",\"toolName\":\"Read\",\"arguments\":{},"
+                    + "\"requiresConfirmation\":false,\"sourceEventId\":\"evt_root\",\"displayName\":"
+                    + value + "}";
+
+            JsonNode actual = serialize(project("agent.tool_call", payload));
+
+            assertThat(actual.path("toolName").textValue()).isEqualTo("Read");
+            assertThat(actual.has("displayName")).isFalse();
+        }
+    }
+
+    @Test
     void shouldRejectInvalidPublicUserContentAndDenyMessage() {
         String fiveFiles = "{\"content\":["
                 + "{\"type\":\"file\",\"fileId\":\"00000000000000000000000000000000\"},"

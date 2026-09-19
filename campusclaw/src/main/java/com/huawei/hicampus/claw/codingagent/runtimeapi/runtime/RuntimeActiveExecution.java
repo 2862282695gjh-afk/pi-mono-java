@@ -61,6 +61,8 @@ public class RuntimeActiveExecution implements PlanReviewPort, UserQuestionPort 
 
     private RuntimeToolPermissionPolicy toolPermissions = RuntimeToolPermissionPolicy.builtInsOnly();
 
+    private volatile RuntimeToolCallSnapshotResolver toolCallSnapshots = RuntimeToolCallSnapshotResolver.empty();
+
     private BeforeToolCallHandler confirmationHandler;
 
     private final RuntimePendingInteraction pending = new RuntimePendingInteraction();
@@ -136,6 +138,14 @@ public class RuntimeActiveExecution implements PlanReviewPort, UserQuestionPort 
 
     public synchronized RuntimeToolPermissionPolicy.Decision toolPermission(ToolCall call) {
         return toolPermissions.decide(call);
+    }
+
+    public void bindToolCallSnapshots(RuntimeToolCallSnapshotResolver value) {
+        toolCallSnapshots = Objects.requireNonNull(value, "value");
+    }
+
+    public String resolveToolDisplayName(ToolCall call) {
+        return toolCallSnapshots.resolveDisplayName(call);
     }
 
     public synchronized void installConfirmationHandler(BeforeToolCallHandler handler) {

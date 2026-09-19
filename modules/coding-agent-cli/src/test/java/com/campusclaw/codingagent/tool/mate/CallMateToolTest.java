@@ -6,6 +6,10 @@ package com.campusclaw.codingagent.tool.mate;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import java.util.List;
 import java.util.Map;
@@ -142,6 +146,28 @@ class CallMateToolTest {
         assertThat(client.agentListCalls()).isEqualTo(1);
         assertThat(client.skillListCalls()).isEqualTo(1);
         assertThat(client.executeCalls()).isEqualTo(1);
+    }
+
+    @Test
+    void discoveryFailureShouldBeRetriedForTheSameToolCall() throws Exception {
+        MateToolClient flakyClient = mock(MateToolClient.class);
+        MateToolMeta query = meta(QUERY_ID, "Query");
+        when(flakyClient.listAgentTools("agent-1"))
+                .thenThrow(new IllegalStateException("discovery failed"))
+                .thenReturn(List.of(query));
+        when(flakyClient.callTool(QUERY_ID, Map.of(), CREDENTIALS))
+                .thenReturn(new MateToolClient.ToolResult("ok", null, false));
+        MateToolSessionState flakyState =
+                new MateToolsetFactory(flakyClient).createSession("agent-1", Map.of(), CREDENTIALS);
+        CallMateTool tool = flakyState.createCallTool();
+
+        assertThatThrownBy(() -> tool.execute("call", Map.of("tool", "Query"), null, null))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("discovery failed");
+        tool.execute("call", Map.of("tool", "Query"), null, null);
+
+        verify(flakyClient, times(2)).listAgentTools("agent-1");
+        verify(flakyClient).callTool(QUERY_ID, Map.of(), CREDENTIALS);
     }
 
     private static MateToolMeta meta(String id, String name) {
