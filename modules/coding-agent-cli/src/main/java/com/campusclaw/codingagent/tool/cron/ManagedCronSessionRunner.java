@@ -73,9 +73,9 @@ public class ManagedCronSessionRunner implements CronAgentSessionRunner {
     }
 
     private Model resolveDefaultModel(PreparedAgentRuntime runtime) {
-        runtime.metadata()
-                .defaultModel()
-                .orElseThrow(() -> new IllegalStateException("Cron Agent has no default model"));
+        if (runtime.defaultModelId() == null || runtime.defaultModelId().isBlank()) {
+            throw new IllegalStateException("Cron Agent has no default model");
+        }
         return modelManager.resolveDefaultModel(AgentDirectorySnapshots.from(runtime));
     }
 

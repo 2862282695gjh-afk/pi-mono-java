@@ -290,7 +290,7 @@ class CommandCatalogServiceTest {
                 .map(name -> new SkillReference(skillId(name), version))
                 .toList();
         var metadata = new AgentRuntime(
-                List.of(),
+                List.of("model-a"),
                 bindings,
                 List.of(),
                 List.of(),
