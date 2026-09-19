@@ -38,7 +38,7 @@ const identity = computed(() => toolDisplayIdentity({
 
 <template>
   <div v-if="turn.statusMessage" class="tool-status-only" role="status"
-    :aria-label="`${identity.label}，${turn.statusMessage}，技术名称 ${identity.technicalName ?? '未提供'}`">
+    :aria-label="`${identity.label}，${turn.statusMessage}`">
     <span class="tool-state-icon" :class="turn.status" aria-hidden="true">
       <svg v-if="turn.status === 'error'" viewBox="0 0 24 24"><path d="m7 7 10 10M17 7 7 17" /></svg>
       <span v-else-if="turn.status === 'running'" class="spinner"></span>
@@ -48,7 +48,7 @@ const identity = computed(() => toolDisplayIdentity({
     <span class="tool-status">{{ turn.statusMessage }}</span>
   </div>
   <details v-else class="tool-activity" :open="turn.status !== 'completed'">
-    <summary :aria-label="`${identity.label}，${statusLabel(turn.status)}，技术名称 ${identity.technicalName ?? '未提供'}`">
+    <summary :aria-label="`${identity.label}，${statusLabel(turn.status)}`">
       <span class="tool-state-icon" :class="turn.status" aria-hidden="true">
         <svg v-if="turn.status === 'completed'" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6" /></svg>
         <svg v-else-if="turn.status === 'error'" viewBox="0 0 24 24"><path d="m7 7 10 10M17 7 7 17" /></svg>
@@ -60,15 +60,6 @@ const identity = computed(() => toolDisplayIdentity({
       <svg class="tool-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m8 10 4 4 4-4" /></svg>
     </summary>
     <div class="tool-detail">
-      <section>
-        <h4>工具名称</h4>
-        <dl class="tool-identity">
-          <dt>展示名称</dt>
-          <dd>{{ identity.displayName ?? '未提供' }}</dd>
-          <dt>技术名称</dt>
-          <dd>{{ identity.technicalName ?? '未提供' }}</dd>
-        </dl>
-      </section>
       <section v-if="hasArguments">
         <h4>调用参数</h4>
         <StructuredValueView v-if="turn.argumentValue" :value="turn.argumentValue" label="完整调用参数" />

@@ -13,19 +13,13 @@ const identity = computed(() => toolDisplayIdentity(props.tool));
 <template>
   <section class="tool-confirmation" aria-label="工具调用确认">
     <div class="tool-confirmation-title"
-      :aria-label="`需要你确认，${identity.label}，技术名称 ${identity.technicalName ?? '未提供'}`">
+      :aria-label="`需要你确认，${identity.label}`">
       <span>需要你确认 ·</span>
       <strong>{{ identity.label }}</strong>
     </div>
     <p>只授权这一次调用。拒绝后 Agent 将收到工具失败结果，并继续处理。</p>
     <details>
       <summary>查看本次调用详情</summary>
-      <dl class="tool-identity">
-        <dt>展示名称</dt>
-        <dd>{{ identity.displayName ?? '未提供' }}</dd>
-        <dt>技术名称</dt>
-        <dd>{{ identity.technicalName ?? '未提供' }}</dd>
-      </dl>
       <p class="tool-parameter-label">调用参数</p>
       <pre class="plain-result">{{ JSON.stringify(tool.arguments, null, 2) }}</pre>
     </details>

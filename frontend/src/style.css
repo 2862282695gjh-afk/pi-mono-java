@@ -1317,6 +1317,14 @@ svg {
   white-space: nowrap;
 }
 
+.tool-activity[open] > summary strong {
+  min-width: 0;
+  overflow: visible;
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+  white-space: normal;
+}
+
 .tool-state-icon {
   display: inline-grid;
   width: 18px;
@@ -1427,28 +1435,6 @@ svg {
   color: var(--text-tertiary);
   font-size: 11px;
   font-weight: 560;
-}
-
-.tool-identity {
-  display: grid;
-  grid-template-columns: max-content minmax(0, 1fr);
-  margin: 0;
-  padding: 9px 11px;
-  gap: 5px 14px;
-  border-radius: 7px;
-  background: var(--surface-tertiary);
-  font-size: 12px;
-  line-height: 1.5;
-}
-
-.tool-identity dt {
-  color: var(--text-tertiary);
-}
-
-.tool-identity dd {
-  min-width: 0;
-  margin: 0;
-  overflow-wrap: anywhere;
 }
 
 .tool-arguments {
