@@ -8,57 +8,30 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Map;
 
-import com.campusclaw.ai.model.ModelRegistry;
 import com.campusclaw.ai.provider.AiProvider;
-import com.campusclaw.ai.provider.AiProviderRegistry;
 import com.campusclaw.ai.provider.ApiProvider;
 import com.campusclaw.ai.provider.ApiProviderRegistry;
 import com.campusclaw.ai.provider.mate.CampusMateProvider;
-import com.campusclaw.common.constant.ClawConstants;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 import org.springframework.core.convert.support.DefaultConversionService;
 import org.springframework.core.env.MapPropertySource;
 
 class CampusMateAiWiringTest {
-    @TempDir
-    Path tempDir;
-
-    private String previousHome;
-
-    @AfterEach
-    void tearDown() {
-        if (previousHome == null) {
-            System.clearProperty(ClawConstants.Home.PROPERTY);
-        } else {
-            System.setProperty(ClawConstants.Home.PROPERTY, previousHome);
-        }
-    }
-
     @Test
     void startsWithOnlyCampusMateAndAnEmptyApiRegistry() {
-        previousHome = System.getProperty(ClawConstants.Home.PROPERTY);
-        System.setProperty(ClawConstants.Home.PROPERTY, tempDir.toString());
         try (var context = new AnnotationConfigApplicationContext()) {
             var conversionService = new DefaultConversionService();
             conversionService.addConverter(String.class, Duration.class, Duration::parse);
             context.getBeanFactory().setConversionService(conversionService);
             context.getEnvironment().getPropertySources().addFirst(new MapPropertySource("test", properties()));
             context.registerBean(ObjectMapper.class, () -> new ObjectMapper());
-            context.register(
-                    CampusMateProvider.class,
-                    AiProviderRegistry.class,
-                    ApiProviderRegistry.class,
-                    ModelRegistry.class,
-                    CampusClawAiService.class);
+            context.scan("com.campusclaw.ai");
             context.refresh();
 
             Map<String, AiProvider> aiProviders = context.getBeansOfType(AiProvider.class);
@@ -68,8 +41,20 @@ class CampusMateAiWiringTest {
                     aiProviders.values().iterator().next());
             assertTrue(context.getBeansOfType(ApiProvider.class).isEmpty());
             assertTrue(context.getBean(ApiProviderRegistry.class).getProviders().isEmpty());
-            assertTrue(context.getBean(ModelRegistry.class).getAllModels().isEmpty());
+            assertSame(
+                    context.getBean(ApiProviderRegistry.class),
+                    context.getBean(CampusClawAiService.class).getProviderRegistry());
+            assertTrue(java.util.Arrays.stream(context.getBeanDefinitionNames())
+                    .noneMatch(CampusMateAiWiringTest::isRemovedCatalogBean));
         }
+    }
+
+    private static boolean isRemovedCatalogBean(String beanName) {
+        return beanName.equals("modelRegistry")
+                || beanName.equals("modelCatalogService")
+                || beanName.equals("catalogRuntimeModelManager")
+                || beanName.equals("envApiKeyResolver")
+                || beanName.equals("envProviderConfigResolver");
     }
 
     private static Map<String, Object> properties() {

@@ -76,7 +76,7 @@ public class SubagentExecutionService {
         var request = new ManagedAgentSessionRequest(
                 binding.id(),
                 ToolEntryPoint.CHILD_AGENT,
-                runtime -> resolveAllowedChildModel(runtime, context.inheritedModel()),
+                this::resolveAllowedChildModel,
                 context.inheritedThinking(),
                 context.mateCredentials(),
                 null,
@@ -117,16 +117,12 @@ public class SubagentExecutionService {
         }
     }
 
-    private Model resolveChildModel(PreparedAgentRuntime childRuntime, Model inherited) {
-        var configured = childRuntime.metadata().defaultModel();
-        if (configured.isEmpty()) {
-            return inherited;
-        }
+    private Model resolveChildModel(PreparedAgentRuntime childRuntime) {
         return modelManager.resolveDefaultModel(AgentDirectorySnapshots.from(childRuntime));
     }
 
-    private Model resolveAllowedChildModel(PreparedAgentRuntime childRuntime, Model inherited) {
-        Model model = resolveChildModel(childRuntime, inherited);
+    private Model resolveAllowedChildModel(PreparedAgentRuntime childRuntime) {
+        Model model = resolveChildModel(childRuntime);
         requireModelAllowed(childRuntime, model);
         return model;
     }

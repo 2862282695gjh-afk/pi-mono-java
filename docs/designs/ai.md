@@ -2,18 +2,19 @@
 
 | 属性 | 值 |
 |---|---|
-| 文档版本 | 2.0.0 |
+| 文档版本 | 2.1.0 |
 | 状态 | Implemented |
-| 更新日期 | 2026-09-15 |
+| 更新日期 | 2026-09-19 |
 | 实施起点 | `29ebec6a8cad99896414211cda28c6fffec71bee` |
-| 已批准设计 | `pi-mono-java-design@0a74625e0dd4ea6387b6765c7cb0f9105970d05c`，`02-服务与接口/03-模型管理Provider契约/README.md` 2.7.0 |
+| 已批准设计 | `pi-mono-java-design@1fd29a535c7d1ba47bfb9c6413a10ff46f492643`，`02-服务与接口/03-Model/README.md` 2.8.2 |
+| 模型来源清理起点 | `840d04405d2bcc80a41b9d3b3f16606cc4845338` |
 | Java 设计基线 | `f61906b9` |
 | pi 参考基线 | `5cd93f688aaab89dbb6dfa4aca535f21796ae185` |
 | 决策记录 | [ADR-0109](../decisions/0109-use-campusmate-only-provider.md) |
 
 ## 1. 职责与边界
 
-`campusclaw-ai` 提供统一消息、工具、模型、流式事件、Provider SPI 和内存模型注册表。
+`campusclaw-ai` 提供统一消息、工具、模型、流式事件、Provider SPI 和用量成本计算。
 产品默认只装配 `CampusMateProvider`，其稳定身份为 `campusmate`。该 Provider 使用独立
 `WebClient` 调用 CampusMate Chat，不持有第三方模型端点或凭据。
 
@@ -85,20 +86,18 @@ HTTP 适配器。
 [CampusMate 客户端共享配置](campusmate-shared-config.md)和
 [CampusMate Chat Provider](model-manager-chat-v2.md)。
 
-## 4. 模型目录
+## 4. 唯一模型来源
 
-`ModelRegistry` 继续按 `(Provider, modelId)` 提供注册、批量注册、查询、按 Provider 清理、全量
-清理、成本计算、模型身份比较和 xhigh 能力判断。
+业务 Agent 已发布目录的 `.campusclaw/settings.json` 是唯一模型来源。`AgentRuntimeManager`
+加载并校验非空 `bindingModels`，拒绝空白、重复及不在列表内的默认模型；`defaultModel`
+必须非空。首次目录缺失时沿既有 prepare 发布链构建，发布前仍执行同一校验；已发布设置
+缺失或无效时明确失败，不静默重新拉取另一组模型，也不选择备用模型。
 
-启动加载顺序固定为：
+不再装配全局模型目录，也不探测 classpath、用户 Home 或环境凭据。模型选择与可用列表不依赖
+`Model.baseUrl/apiKey/headers`。原全局目录中的费用算法由无状态 `ModelCostCalculator` 承接，
+供 SSE 用量解析使用；没有消费者的模型身份和 xhigh 辅助方法不保留。
 
-1. 可选 classpath `/campusclaw-models.json`；
-2. 可选用户文件 `~/.campusclaw/agent/models.json`。
-
-后加载的用户文件覆盖相同身份的 classpath 定义。没有外部 JSON 时目录为空；代码不再内置任何
-Anthropic、OpenAI、Mistral 或其他第三方模型，也不虚构 CampusMate 模型。
-
-Runtime 模型不依赖这个默认目录。`MateRuntimeModelManager` 从同一受管 Agent 目录快照读取
+`MateRuntimeModelManager` 从同一受管 Agent 目录快照读取
 `defaultModelId/enabledModelIds`，按请求时选定的 Mate 模型 ID 构造 `Provider.CAMPUSMATE` 模型。
 `AgentDirectorySnapshots` 只把已经准备好的 `PreparedAgentRuntime` 转换成不可变快照，不再次准备
 Agent 或查询全局目录。Runtime、压缩、Child 和 Cron 注入同一个 `RuntimeModelManager`；Child
@@ -106,8 +105,10 @@ Agent 或查询全局目录。Runtime、压缩、Child 和 Cron 注入同一个 
 
 Mate 模型 ID 是不透明字符串，其中的 `/` 是原始字符，`MateRuntimeModelManager` 不拆分或改写。
 例如 `team/model-a` 仍是完整模型 ID；历史文本 `mate-model-manager/model-a` 也不会归一成
-`campusmate/model-a`。只有显式使用 `CatalogRuntimeModelManager` 的自定义部署把
-`provider/modelId` 作为目录限定语法解析，两条路径不能混用。
+`campusmate/model-a`。不存在按 `provider/modelId` 拆分后查询全局目录的备用路径。
+
+这一收敛属于产品约束与安全加固：默认值和允许列表来自同一发布快照，避免全局文件影响多个
+Agent。代价是模型变更必须经过业务 Agent 发布链，不支持进程级模型目录扩展。
 
 ## 5. 公共类型和扩展点
 
@@ -116,7 +117,6 @@ Mate 模型 ID 是不透明字符串，其中的 `/` 是原始字符，`MateRunt
 - `Message`、`ContentBlock`、`Context`、`Tool`、`Model`、`Usage`、`Cost` 等公共类型；
 - `AssistantMessageEvent` 与 `AssistantMessageEventStream` 的增量和终态聚合；
 - `MessageTransformer`、`ContextOverflowDetector` 和 `SurrogateSanitizer`；
-- `ProviderConfigResolver` 与环境配置解析类型，供显式自定义 Provider 使用；
 - `ApiProviderRegistry.register/unregister/clear` 的运行时扩展生命周期。
 
 ![AI 模块推荐目标类图](./ai/core-classes.svg)
@@ -130,7 +130,7 @@ Mate 模型 ID 是不透明字符串，其中的 `/` 是原始字符，`MateRunt
 ## 6. 依赖边界
 
 AI 模块不再直接依赖 `com.anthropic:anthropic-java` 或 `com.openai:openai-java`。CampusMate 客户端
-继续使用已有 Jackson、Spring WebFlux、Reactor Netty 和 Reactor Core；模型 JSON 与工具 Schema
+继续使用已有 Jackson、Spring WebFlux、Reactor Netty 和 Reactor Core；请求 JSON 与工具 Schema
 继续使用 Jackson 和 `json-schema-validator`；测试继续使用 MockWebServer。
 
 这次没有新增依赖。删除 SDK 时不得连带删除共享的 Jackson、Reactor、Netty、SLF4J 或测试依赖。
@@ -138,18 +138,20 @@ AI 模块不再直接依赖 `com.anthropic:anthropic-java` 或 `com.openai:opena
 
 ## 7. 源码证据
 
-| 结论 | `29ebec6a` 后实施路径与符号 |
+| 结论 | `840d0440` 与模型来源清理变更涉及的路径、符号 |
 |---|---|
 | 身份优先路由 | `modules/ai/src/main/java/com/campusclaw/ai/CampusClawAiService.java`：`resolveManagedProvider`、`resolveProvider` |
 | CampusMate 唯一默认 Provider | `modules/ai/src/main/java/com/campusclaw/ai/provider/mate/CampusMateProvider.java`：`PROVIDER_ID`、`streamSimple` |
 | 请求与 SSE 语义 | `modules/ai/src/main/java/com/campusclaw/ai/provider/mate/MateChatRequestMapper.java`：`map`；`modules/ai/src/main/java/com/campusclaw/ai/provider/mate/MateChatSseParser.java`：`accept`、`abort` |
 | 默认 API 注册表可为空 | `modules/ai/src/main/java/com/campusclaw/ai/provider/ApiProviderRegistry.java`：构造器、`register`、`unregister` |
-| 无内置模型目录 | `modules/ai/src/main/java/com/campusclaw/ai/model/ModelRegistry.java`：`init`、`loadFromJsonFile` |
+| 设置唯一模型来源 | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtime/AgentRuntimeManager.java`：`requireValidRuntime`、`validSettings`；删除全局 `ModelRegistry`、`ModelCatalogService`、`CatalogRuntimeModelManager` 及专属环境凭据解析 |
+| 费用计算不依赖目录 | `modules/ai/src/main/java/com/campusclaw/ai/model/ModelCostCalculator.java`：`calculate`；`provider/mate/MateChatSseParser.java`：`parseUsage` |
 | Runtime 快照模型 | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/agent/AgentDirectorySnapshots.java`：`from`；`modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/model/MateRuntimeModelManager.java`：`resolveModel` |
 | Child/Cron 默认模型 | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/tool/agent/SubagentExecutionService.java`：`resolveChildModel`；`tool/cron/ManagedCronSessionRunner.java`：`resolveDefaultModel` |
 | 历史 Provider 原值 | `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/event/RuntimeEntryCodec.java`：`assistantEntry`、`assistantMessage` |
 
-固定 pi 基线 `5cd93f688aaab89dbb6dfa4aca535f21796ae185` 的本次采用证据为：
+既有 Provider 设计的历史 pi 证据保留在固定基线 `5cd93f688aaab89dbb6dfa4aca535f21796ae185`，
+本次模型来源清理不升级或新增其行为比较：
 
 - `packages/ai/src/models.ts`：`Provider` 与 `createProvider` 维护 Provider 身份和创建入口；
 - `packages/ai/src/types.ts`：`Model` 与 `Usage` 定义模型身份、能力和用量公共结构；
@@ -161,22 +163,23 @@ pi 的厂商直连目录或 API Key 配置带入默认产品。
 
 ## 8. 验证
 
-实施验证覆盖：
+验收范围包括（实际执行结果随交付记录说明）：
 
-- 真实 Spring 装配只发现 CampusMate `AiProvider`，默认 API 注册表和模型目录为空；
+- 真实 Spring 装配只发现 CampusMate `AiProvider`，默认 API 注册表为空且没有模型目录 Bean；
 - 自定义 API Provider 注册、替换、注销、清理及未知适配器失败；
-- classpath 与用户 JSON 加载顺序、缺失/错误 JSON 和无外部 JSON；
+- 启动不探测外部模型 JSON 或打印目录加载日志；无效 Agent 设置失败，双 Agent 快照隔离；
 - CampusMate 文本、ToolCall、reasoning、Usage、HTTP/SSE 错误、取消与预检失败；
-- Runtime 默认/指定模型、Mate ID 中的斜杠、Catalog 限定语法、历史 Provider 原值、压缩溢出身份、
-  空全局目录下的 Child/Cron 默认选择及 Child 显式默认解析失败；
+- Runtime 默认/指定模型、Mate ID 中的斜杠、历史 Provider 原值、压缩溢出身份、
+  无全局目录下的 Child/Cron 默认选择及 Child 显式默认解析失败；
 - Maven 依赖树、公司镜像同步与编译、Java 规则和 `git diff --check`。
 
-真实 openGauss 集成测试不属于本次 Provider 身份与依赖删除的必要路径；若未提供数据库凭据，
-不得声称执行。
+模型来源清理不修改 Usage 持久化或数据库结构；若未提供专用测试数据库凭据，
+不得声称执行了真实 openGauss 集成测试。
 
 ## 9. 版本历史
 
 | 版本 | 日期 | 变化 |
 |---|---|---|
+| 2.1.0 | 2026-09-19 | 模型来源限定为业务 Agent 设置，删除全局目录与凭据探测，保留独立费用计算。 |
 | 2.0.0 | 2026-09-15 | 默认模型调用收敛为 CampusMate Provider，删除第三方适配器、内置模型和对应 SDK。 |
 | 1.2 | 2026-08-20 | 记录旧四家 Provider 与内置模型实现快照。 |
