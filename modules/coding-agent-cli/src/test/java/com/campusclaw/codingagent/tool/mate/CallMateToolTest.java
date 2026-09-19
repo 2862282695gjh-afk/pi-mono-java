@@ -94,16 +94,25 @@ class CallMateToolTest {
     }
 
     @Test
-    void missingCredentialsShouldFailBeforeExecutionRequest() {
+    void emptyCredentialsShouldStillResolveAndExecuteOnce() throws Exception {
         MateToolSessionState missingCredentials =
                 new MateToolsetFactory(client).createSession("agent-1", Map.of(), MateCredentials.empty());
 
-        assertThatThrownBy(
-                        () -> missingCredentials.createCallTool().execute("call", Map.of("tool", "Query"), null, null))
-                .isInstanceOf(CallMateTool.MateToolExecutionException.class)
-                .hasMessageContaining("credentials are unavailable");
-        assertThat(client.agentListCalls()).isZero();
-        assertThat(client.executeCalls()).isZero();
+        missingCredentials.createCallTool().execute("call", Map.of("tool", "Query"), null, null);
+
+        assertThat(client.agentListCalls()).isEqualTo(1);
+        assertThat(client.executeCalls()).isEqualTo(1);
+        assertThat(client.lastCallCredentials()).isSameAs(MateCredentials.empty());
+    }
+
+    @Test
+    void nullCredentialsShouldNormalizeToEmptySnapshot() throws Exception {
+        MateToolSessionState nullCredentials = new MateToolsetFactory(client).createSession("agent-1", Map.of(), null);
+
+        nullCredentials.createCallTool().execute("call", Map.of("tool", "Query"), null, null);
+
+        assertThat(client.executeCalls()).isEqualTo(1);
+        assertThat(client.lastCallCredentials()).isSameAs(MateCredentials.empty());
     }
 
     @Test

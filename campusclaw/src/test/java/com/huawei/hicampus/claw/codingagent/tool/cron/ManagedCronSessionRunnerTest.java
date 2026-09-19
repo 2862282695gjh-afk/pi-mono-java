@@ -26,6 +26,7 @@ import com.huawei.hicampus.claw.ai.types.Provider;
 import com.huawei.hicampus.claw.ai.types.StopReason;
 import com.huawei.hicampus.claw.ai.types.TextContent;
 import com.huawei.hicampus.claw.ai.types.Usage;
+import com.huawei.hicampus.claw.codingagent.common.client.mate.MateCredentials;
 import com.huawei.hicampus.claw.codingagent.runtime.MateServiceClient.AgentRuntime;
 import com.huawei.hicampus.claw.codingagent.runtime.PreparedAgentRuntime;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.model.MateModelManagerProperties;
@@ -76,7 +77,7 @@ class ManagedCronSessionRunnerTest {
         verify(sessionFactory).create(request.capture());
         assertThat(request.getValue().entryPoint()).isEqualTo(ToolEntryPoint.CRON);
         assertThat(request.getValue().agentId()).isEqualTo(AGENT_ID);
-        assertThat(request.getValue().mateCredentials().isComplete()).isFalse();
+        assertThat(request.getValue().mateCredentials()).isEqualTo(MateCredentials.empty());
         Model selected = request.getValue().modelResolver().apply(runtime());
         assertThat(selected.id()).isEqualTo("model-a");
         assertThat(selected.provider()).isEqualTo(Provider.CAMPUSMATE);

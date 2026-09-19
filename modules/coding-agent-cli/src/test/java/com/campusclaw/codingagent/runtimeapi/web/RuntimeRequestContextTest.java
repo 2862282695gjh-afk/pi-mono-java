@@ -52,19 +52,23 @@ class RuntimeRequestContextTest {
 
         assertThat(credentials)
                 .isEqualTo(new MateCredentials("caller-1", "app-key-1", "Bearer token-1", "access-token-1"));
-        assertThat(credentials.isComplete()).isTrue();
     }
 
     @Test
-    void missingAccessTokenIsCapturedWithoutLocalRejectionButIsIncompleteForExecution() {
+    void partialCredentialsAreCapturedWithoutLocalRejection() {
         MockHttpServletRequest request = new MockHttpServletRequest();
         request.addHeader(ClawConstants.Mate.X_HW_ID, "caller-1");
         request.addHeader(ClawConstants.Mate.X_HW_APPKEY, "app-key-1");
 
         MateCredentials credentials = RuntimeRequestContext.mateCredentials(request);
 
-        assertThat(credentials.accessToken()).isNull();
-        assertThat(credentials.isComplete()).isFalse();
+        assertThat(credentials).isEqualTo(new MateCredentials("caller-1", "app-key-1", null, null));
+    }
+
+    @Test
+    void missingCredentialsProduceEmptySnapshot() {
+        assertThat(RuntimeRequestContext.mateCredentials(new MockHttpServletRequest()))
+                .isEqualTo(MateCredentials.empty());
     }
 
     private static Locale resolve(String acceptLanguage) {

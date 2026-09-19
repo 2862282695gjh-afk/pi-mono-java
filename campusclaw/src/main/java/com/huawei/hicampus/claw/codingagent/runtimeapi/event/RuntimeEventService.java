@@ -57,11 +57,11 @@ public class RuntimeEventService {
 
     public RuntimeEventStream submit(
             String sessionId, SubmitSessionEventRequestVO request, Locale locale, MateCredentials credentials) {
-        requireCredentials(credentials);
+        MateCredentials snapshot = credentials == null ? MateCredentials.empty() : credentials;
         SessionUserEventRequestVO event =
                 Objects.requireNonNull(request, "request").getEvent();
         return switch (event) {
-            case UserMessageEventRequestVO message -> messages.submit(sessionId, message, locale, credentials);
+            case UserMessageEventRequestVO message -> messages.submit(sessionId, message, locale, snapshot);
             case UserInterruptEventRequestVO interrupt -> submitInterrupt(sessionId, interrupt);
             case UserToolConfirmationEventRequestVO confirmation -> submitConfirmation(sessionId, confirmation);
             case UserPlanConfirmationEventRequestVO confirmation -> submitPlanConfirmation(sessionId, confirmation);
@@ -128,11 +128,5 @@ public class RuntimeEventService {
             case "revise" -> PlanConfirmationResult.REVISE;
             default -> throw new RuntimeApiException(RuntimeErrorCode.INVALID_EVENT_REQUEST);
         };
-    }
-
-    private static void requireCredentials(MateCredentials credentials) {
-        if (credentials == null || !credentials.isComplete()) {
-            throw new RuntimeApiException(RuntimeErrorCode.INVALID_EVENT_REQUEST);
-        }
     }
 }

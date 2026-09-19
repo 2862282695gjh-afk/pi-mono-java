@@ -1,10 +1,10 @@
 # CampusClaw 受管 Agent 工具系统 v2
 
-> 文档版本：1.11.0
+> 文档版本：1.12.0
 >
 > 状态：Implemented
 >
-> 日期：2026-09-18
+> 日期：2026-09-19
 > 决策记录：[ADR-0022](../decisions/0022-managed-agent-tool-system-v2.html)、
 > [ADR-0032](../decisions/0032-tool-execution-credential-boundary.html)、
 > [ADR-0024](../decisions/0024-mate-tool-execution-credential-chain.html)、
@@ -40,6 +40,7 @@ Session；各 Session 的消息、工作目录、工具实例、Mate 缓存和 E
 | CampusClaw 凭据链修订前 | `934b5dd7d9e50b1d7359bea5f2dda71e3c4a34ac` | Mate HTTP 凭据链实现输入 |
 | CampusClaw execute-only 凭据边界修订前 | `320d790726a70aada6100052952d5494d2a378ac` | 三项 Header 同时由发现与执行请求携带的源码行为输入 |
 | CampusClaw execute-only 凭据边界实现 | `d03c08dbae870f19eee8d4fa79a707185f7a26b5` | POST Events 读取四项值、发现不携带这些值且只有 execute 携带的审查实现证据 |
+| CampusClaw Mate 凭据透传变更前 | `6a331d3477df23f8404582c3922b55c265530605` | 观察入口、工具与 HTTP 客户端的最低完整性检查及执行快照边界 |
 | CampusClaw Read 图片能力收敛前 | `3452bceb0be586c1c845cde589ecb7ee1e6c5908` | 观察 Read 的 MIME 分支、图片缩放、Base64 输出和 WebP 依赖 |
 | CampusClaw Read 纯文本实现 | `16fd9d2c5c1ffa99bab9535797a472484f2d5362` | 审查后的 UTF-8 文本契约、二进制拒绝、图片路径和依赖删除证据 |
 | CampusClaw Read 行数修复前 | `1b3b519419ca9bf9025ba2c88335382b9a5b3b02` | 观察末尾 LF 被保留分割结果误计为额外空行的行为 |
@@ -90,7 +91,7 @@ Session；各 Session 的消息、工作目录、工具实例、Mate 缓存和 E
 | Read 行边界 | 修复前的 `selectLines` 使用 `split("\n", -1)` 的数组长度判断总行数和剩余行，末尾 LF 会产生一个虚构空行 | 空文件按 0 行处理；末尾 LF 只终止最后一行，选择到文件末尾时仍原样保留该 LF | 实现缺陷修复：对齐既有 1-based `offset`/`limit` 契约，不改变产品或架构边界 |
 | gitignore 根锚定 | 解析器保留前导 `/` 的锚定标志，但去掉斜杠后的无分隔符 glob 仍进入 basename 任意深度匹配器，导致 `/dist` 错误忽略 `src/dist` | 锚定规则和含路径分隔符规则使用相对当前 `.gitignore` 目录根开始的 glob；普通无斜杠规则仍匹配任意目录层级 | 实现缺陷修复：恢复既有 Git ignore 根锚定语义，不改变产品、安全或架构边界 |
 | Mate 调用 | List 接受 Agent/Skill ID；Call 依赖预先 List 的缓存 | List 只接受可选 `skillName`；Call 按名称，miss 自动完整发现 | 产品约束：模型不感知内部 ID 或调用来源 |
-| Mate 凭据 | 执行客户端要求凭据，但只提供部署方 resolver 占位，Runtime Header 未进入工具链 | POST Events 读取四项值并在本次 Agent 执行和 Child 调用期间由内存对象持有；List 与 Call miss 的发现请求不携带，只有 Call execute 携带；Cron 无入站值时不发送 execute | 架构改造与安全加固：明确值的生命周期和携带请求，不持久化、不依赖线程上下文 |
+| Mate 凭据 | 执行客户端要求凭据，但只提供部署方 resolver 占位，Runtime Header 未进入工具链 | Runtime 读取四项可选值并在本次 Agent 执行和 Child 调用期间由内存对象持有；List 与 Call miss 的发现请求不携带，只有 Call execute 原值携带非空项；空或部分凭据仍调用 Mate 一次 | 架构改造与安全加固：Claw 不解释 Mate 凭据组合，由 Mate 在真实 execute 时判定，同时限制凭据生命周期和外发范围 |
 | Child | `spawn_agent`、`invoke_agent`、ACP/HTTP/A2A 与独立 runner 并存 | `Agent({agentName,task})` 只解析直接绑定，并通过公共 SessionFactory 执行 | 架构改造：统一父子执行语义并删除后端身份概念 |
 | Cron | payload 固化 model/system/tools，并由旧本地 Session 执行 | Job 只保存 agentId/prompt，触发时 prepare 并使用 cron profile | 架构改造：配置随 Agent 当前绑定生效 |
 | CLI | 服务入口可分发到 CLI/TUI，Loop 属于 CLI Session | 产品只保留服务入口；无 CLI profile、Loop 或 `/reload` | 产品约束：CampusClaw 是 ToB 服务 |
@@ -148,7 +149,7 @@ barrier。结果始终按模型原始 tool-call 顺序写回，包括已知与�
 
 ![Agent 工作区隔离](tool-system-v2/agent_workspace_boundary.svg)
 
-[PlantUML 源码](tool-system-v2/diagram.puml#L84)
+[PlantUML 源码](tool-system-v2/diagram.puml#L89)
 
 `Read`、`Find`、`Grep`、`Ls` 的根目录固定为 `agent/{agentId}`，而不是
 `.campusclaw` 子目录。`WorkspacePathResolver` 对输入执行：
@@ -217,7 +218,7 @@ refresh 成功不修改正在执行的 Session 快照。空闲数据库 Session 
 
 ![CallMateTool 缓存未命中流程](tool-system-v2/mate_call_refresh.svg)
 
-[PlantUML 源码](tool-system-v2/diagram.puml#L115)
+[PlantUML 源码](tool-system-v2/diagram.puml#L120)
 
 ![Mate 工具执行级凭据链](tool-system-v2/mate_credential_flow.svg)
 
@@ -237,13 +238,24 @@ refresh 成功不修改正在执行的 Session 快照。空闲数据库 Session 
 - 自动流程只重试发现，绝不重放已发出的 execute。
 
 并发 miss 共享同一轮成功或失败结果。List 只更新被查询来源的最近成功缓存，不清空其他
-来源。`POST Events` 读取 `X-HW-ID`、`X-HW-APPKEY`、`Authorization` 和 `access-token`；
+来源。Runtime Events 和 Command 入口读取可选的 `X-HW-ID`、`X-HW-APPKEY`、
+`Authorization` 和 `access-token`；
 这些值只在本次 Agent 执行及其 Child 调用期间由内存对象持有，不写入数据库、Event、Prompt、
-模型消息或日志，执行结束后 Runtime 不再主动持有。Agent binding、Skill binding 和 tool
-metadata 查询不携带这些值；只有 Call 的单次 execute 请求携带收到的非空值。发送 execute
-前必须具有 `access-token`、`X-HW-ID` 以及 AppKey/JWT 至少一种，否则不发送请求并返回工具
-执行失败，但 POST Events 本身不因此被拒绝。Runtime 不验证真实性或 AppKey/JWT 互斥性，
-Mate 继续负责最终授权和参数校验。Cron 没有入站调用方值，因此仍可发现但不能执行 Mate 工具。
+模型消息或日志，执行结束后 Runtime 不再主动持有。消息或命令开始执行时固定不可变快照；Child
+只读继承同一快照，停止、确认和问答等控制请求不替换它。缺少执行上下文与上下文中的空凭据
+仍是不同状态。
+
+Agent binding、Skill binding 和 tool metadata 查询不携带这些值；只有 Call 的单次 execute
+请求按原 Header 名和值携带本次快照中的非 null、非空字符串。Claw 不补值、不添加 Bearer、
+不借用其他请求凭据，也不校验最低完整性、组合或 AppKey/JWT 互斥性。工具解析、权限、确认和
+取消检查通过后，即使四项全缺也向 Mate execute 发送一次请求；Cron 的空快照遵循同一规则。
+Mate 负责最终认证、授权和参数校验。Mate 业务失败沿既有 ToolResult 错误路径返回，网络等异常
+沿既有通用工具失败路径返回；execute 均不自动重试，也不新增凭据公共错误码。上游公司认证和
+资源授权边界不变。
+
+Mate 的非零响应和畸形响应只对模型公开通用工具失败文本，避免上游正文或 `resMsg` 回显秘密。
+敏感 HTTP Header 构造异常和响应解析异常的日志保留 operation、toolId、异常类型及原始来源
+栈帧，但不记录原始异常 message、cause 或响应正文。
 
 ## 8. Child Execution
 
@@ -337,8 +349,9 @@ CampusClaw 不恢复 pi 的 JSONL/tree/Extension、Bash/Edit/Write 文件追踪�
 工作区越界/符号链接、根锚定 `.gitignore` 对根层命中和嵌套同名路径保留、Read 的 UTF-8
 分块/截断/二进制和图片拒绝、原子 prepare/refresh 回滚、
 无 `tools.json`、Mate 稳定 JSON、缓存隔离、
-single-flight 成功与失败、执行不重放、Runtime 四项凭据读取与执行期间内存传递、发现请求无凭据与 execute Header 携带、
-Child 凭据继承、Cron 缺少凭据时 Call fail closed、Child 直接绑定/版本/深度/循环/取消/进度、Cron Agent
+single-flight 成功与失败、执行不重放、Runtime 四项可选凭据读取与执行期间内存传递、发现请求无凭据、
+16 种 Header 子集和 null/空字符串的精确 execute 透传、Mate 失败与畸形响应仅调用一次且不泄露正文、
+敏感异常日志保留来源栈而不泄露值、Child 凭据继承、Cron 空凭据仍调用 Mate、Child 直接绑定/版本/深度/循环/取消/进度、Cron Agent
 隔离和 HTTP 冷目录创建。仓库交付前执行：
 
 ```text
@@ -351,6 +364,7 @@ git diff --check
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 1.12.0 | 2026-09-19 | Mate 四项凭据改为 execute-only 可选原值透传，由 Mate 在实际调用时判定完整性并收敛失败与日志泄密边界。 |
 | 1.11.0 | 2026-09-18 | 删除 Bash、Edit、Write 工具本体和无消费者专用代码，明确十一项活动工具及无兼容入口边界。 |
 | 1.10.0 | 2026-09-15 | Runtime profile 增加计划审核与实施任务工具，关联固定提示词和 Session 模式实施说明。 |
 | 1.9.0 | 2026-09-07 | 标明 Slash 原型保留决定的历史范围，关联当前删除实现；工具与公共压缩不变。 |

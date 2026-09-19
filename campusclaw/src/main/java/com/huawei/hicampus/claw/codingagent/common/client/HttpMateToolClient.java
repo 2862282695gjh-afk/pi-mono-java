@@ -31,8 +31,7 @@ import org.slf4j.LoggerFactory;
  * 通过 {@link MateRestUtil} 访问 CampusMate 服务的 {@link MateToolClient} HTTP 实现。
  *
  * <p>共享基础地址和出站接口路径均由配置注入。Agent、Skill 和工具元数据发现请求不携带
- * 执行凭据；只有工具执行请求使用当前 Agent 执行的不可变凭据快照，并在发出请求前校验最低
- * 完整性。
+ * 执行凭据；只有工具执行请求使用当前 Agent 执行的不可变凭据快照，并透传其中已提供的非空值。
  *
  * @version [br_eCampusCore 26.0.0, 2026/08/27]
  * @since [br_eCampusCore 26.0.0]
@@ -188,7 +187,7 @@ public class HttpMateToolClient implements MateToolClient {
         try {
             infos = mapper.convertValue(data, new TypeReference<List<ToolInfo>>() {});
         } catch (IllegalArgumentException e) {
-            throw new MateToolResponseException("result.data is not a tool metadata list", e);
+            throw safeResponseFailure("result.data is not a tool metadata list", e);
         }
         return toMeta(infos);
     }
@@ -251,7 +250,7 @@ public class HttpMateToolClient implements MateToolClient {
         try {
             return mapper.treeToValue(resultNode, type);
         } catch (IOException e) {
-            throw new MateToolResponseException("result does not match " + type.getSimpleName(), e);
+            throw safeResponseFailure("result does not match " + type.getSimpleName(), e);
         }
     }
 
@@ -260,7 +259,7 @@ public class HttpMateToolClient implements MateToolClient {
         try {
             root = mapper.readTree(raw);
         } catch (IOException e) {
-            throw new MateToolResponseException("response body is not valid JSON", e);
+            throw safeResponseFailure("response body is not valid JSON", e);
         }
         if (root == null || root.isMissingNode()) {
             throw new MateToolResponseException("response body is empty");
@@ -299,29 +298,15 @@ public class HttpMateToolClient implements MateToolClient {
      * Agent 执行快照补充 {@code X-HW-ID}、{@code X-HW-APPKEY}、
      * {@code Authorization} 和 {@code access-token}，空值由请求构建器忽略。
      *
-     * <p>凭据缺失时直接拒绝执行而非匿名调用，避免未认证请求发出。
-     *
      * @param toolId 待调用的工具标识
      * @param args 工具参数；按工具 inputSchema 作为请求体
-     * @param credentials Agent 下发并透传到服务端的凭据；null 时拒绝执行
-     * @return 工具执行结果；网关失败或凭据缺失时为 isError=true
+     * @param credentials Agent 下发并透传到服务端的凭据；null 归一化为空快照
+     * @return 工具执行结果；网关失败时为 isError=true
      * @throws IllegalArgumentException 工具标识不满足路径段约束时抛出
      */
     protected ToolResult invokeTool(String toolId, Map<String, Object> args, MateCredentials credentials) {
         if (toolId == null || !ClawConstants.Tool.ID_PATTERN.matcher(toolId).matches()) {
             throw new IllegalArgumentException("Invalid tool id for path segment");
-        }
-        if (credentials == null || !credentials.isComplete()) {
-            log.error(
-                    "invokeTool called without complete credentials: tool={}; wire"
-                            + " execution credentials to include access-token, X-HW-ID plus"
-                            + " X-HW-APPKEY or Authorization",
-                    toolId);
-            return new ToolResult(
-                    "invokeTool refused: incomplete credentials (need access-token, X-HW-ID plus"
-                            + " X-HW-APPKEY or Authorization)",
-                    null,
-                    true);
         }
         try {
             RequestHeaderInfo headerInfo = toHeaderInfo(credentials);
@@ -330,7 +315,7 @@ public class HttpMateToolClient implements MateToolClient {
             String body = mapper.writeValueAsString(Map.of("arguments", args != null ? args : Map.of()));
             String path = expandPathTemplate(toolExecutePathTemplate, toolId);
             String raw = mateRestUtil.executePostRawRequest(campusMateBaseUrl, path, headerInfo, body);
-            return toToolResult(mapper.readTree(raw));
+            return toToolResult(readRoot(raw));
         } catch (Exception e) {
             log.error("invokeTool failed: toolId={}", toolId, e);
             return new ToolResult("Mate tool execution request failed", null, true);
@@ -340,11 +325,7 @@ public class HttpMateToolClient implements MateToolClient {
     private static ToolResult toToolResult(JsonNode root) {
         String resCode = root.path("resCode").asText("");
         if (!"0".equals(resCode)) {
-            return new ToolResult(
-                    "tool execute failed: resCode=" + resCode + " resMsg="
-                            + root.path("resMsg").asText(""),
-                    null,
-                    true);
+            return new ToolResult("Mate tool execution request failed", null, true);
         }
         JsonNode resultNode = root.path("result");
         String content = toolResultContent(resultNode);
@@ -364,6 +345,12 @@ public class HttpMateToolClient implements MateToolClient {
             return (MateToolResponseException) exception;
         }
         return new IllegalStateException(operation + " failed", exception);
+    }
+
+    private static MateToolResponseException safeResponseFailure(String detail, Exception error) {
+        MateToolResponseException failure = new MateToolResponseException(detail);
+        failure.setStackTrace(error.getStackTrace());
+        return failure;
     }
 
     private static RequestHeaderInfo toHeaderInfo(MateCredentials credentials) {
