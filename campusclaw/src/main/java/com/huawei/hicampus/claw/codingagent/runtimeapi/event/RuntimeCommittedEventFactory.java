@@ -10,8 +10,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
-import com.huawei.hicampus.claw.ai.types.AssistantMessage;
-import com.huawei.hicampus.claw.ai.types.ContentBlock;
 import com.huawei.hicampus.claw.ai.types.Cost;
 import com.huawei.hicampus.claw.ai.types.TextContent;
 import com.huawei.hicampus.claw.ai.types.ToolCall;
@@ -98,6 +96,7 @@ public class RuntimeCommittedEventFactory {
     public CommittedEventDTO agentPlan(
             RuntimeEntryDTO entry, String eventId, String toolCallId, String content, String sourceEventId) {
         ObjectNode payload = sourcePayload(sourceEventId);
+        payload.put("phase", "completed");
         payload.put("toolCallId", toolCallId);
         payload.put("content", content);
         return create(entry, eventId, CommittedEventType.AGENT_PLAN, payload);
@@ -116,11 +115,11 @@ public class RuntimeCommittedEventFactory {
     }
 
     public CommittedEventDTO agentMessage(
-            RuntimeEntryDTO entry, String eventId, AssistantMessage message, String sourceEventId) {
+            RuntimeEntryDTO entry, String eventId, String content, Usage usage, String sourceEventId) {
         ObjectNode payload = sourcePayload(sourceEventId);
         payload.put("phase", "completed");
-        payload.put("content", textContent(message.content()));
-        appendUsage(payload, message.usage());
+        payload.put("content", content);
+        appendUsage(payload, usage);
         return create(entry, eventId, CommittedEventType.AGENT_MESSAGE, payload);
     }
 
@@ -254,14 +253,6 @@ public class RuntimeCommittedEventFactory {
         ObjectNode payload = objectMapper.createObjectNode();
         payload.put("sourceEventId", sourceEventId);
         return payload;
-    }
-
-    private String textContent(List<ContentBlock> content) {
-        return content.stream()
-                .filter(TextContent.class::isInstance)
-                .map(TextContent.class::cast)
-                .map(TextContent::text)
-                .reduce("", String::concat);
     }
 
     private void appendUsage(ObjectNode payload, Usage usage) {

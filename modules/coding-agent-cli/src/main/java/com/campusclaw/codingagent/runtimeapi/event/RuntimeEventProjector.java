@@ -32,6 +32,8 @@ import com.campusclaw.ai.types.ToolCall;
 import com.campusclaw.ai.types.ToolResultMessage;
 import com.campusclaw.ai.types.UserMessage;
 import com.campusclaw.codingagent.runtimeapi.dto.CommittedEventDTO;
+import com.campusclaw.codingagent.runtimeapi.dto.PlanProposalSnapshotDTO;
+import com.campusclaw.codingagent.runtimeapi.dto.PlanTextSnapshotDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.RuntimeEntryDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.RuntimeRecordDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.ToolConfirmationDecisionDTO;
@@ -44,6 +46,7 @@ import com.campusclaw.codingagent.runtimeapi.session.ToolConfirmationResult;
 import com.campusclaw.codingagent.runtimeapi.vo.RuntimeSseEventVO;
 import com.campusclaw.codingagent.runtimeapi.vo.SessionEventResponseVO;
 import com.campusclaw.codingagent.runtimeapi.vo.SessionEventResponseVO.AgentMessageResponseVO;
+import com.campusclaw.codingagent.runtimeapi.vo.SessionEventResponseVO.AgentPlanResponseVO;
 import com.campusclaw.codingagent.runtimeapi.vo.SessionEventResponseVO.AgentThinkingResponseVO;
 import com.campusclaw.codingagent.session.compaction.SessionCompactionCompletedEvent;
 import com.campusclaw.codingagent.session.compaction.SessionCompactionEvent;
@@ -101,6 +104,8 @@ public class RuntimeEventProjector {
 
     private final QuestionRequestParser questionParser;
 
+    private final PlanProposalBinder planBinder = new PlanProposalBinder();
+
     private final Map<Integer, String> thinkingEntryIds = new LinkedHashMap<>();
 
     private final Map<String, String> toolCallEntryIds = new LinkedHashMap<>();
@@ -110,6 +115,14 @@ public class RuntimeEventProjector {
     private final Map<String, String> toolDisplayNames = new LinkedHashMap<>();
 
     private String assistantEntryId;
+
+    private PlanTextParser planTextParser;
+
+    private String planEventId;
+
+    private boolean planPreviewDropped;
+
+    private StoredPlanCandidate planCandidate;
 
     private StopReason terminalReason = StopReason.STOP;
 
@@ -270,6 +283,12 @@ public class RuntimeEventProjector {
             assistantEntryId = ids.nextId();
             thinkingEntryIds.clear();
             finalizedToolCalls.clear();
+            planTextParser = ClawConstants.Agent.MODE_PLAN.equals(execution.mode())
+                    ? new PlanTextParser(ClawConstants.RuntimeApi.MAX_PLAN_CHARACTERS)
+                    : null;
+            planEventId = null;
+            planPreviewDropped = false;
+            planCandidate = null;
         }
     }
 
@@ -279,10 +298,18 @@ public class RuntimeEventProjector {
         }
         AssistantMessageEvent update = event.assistantMessageEvent();
         if (update instanceof AssistantMessageEvent.TextDeltaEvent delta) {
-            emitMessageDelta(delta.delta());
+            projectTextDelta(delta.delta());
         } else if (thinking) {
             projectThinking(update);
         }
+    }
+
+    private void projectTextDelta(String content) {
+        if (planTextParser == null) {
+            emitMessageDelta(content);
+            return;
+        }
+        planTextParser.accept(content, this::emitMessageDelta, this::allocatePlanEventId, this::emitPlanDelta);
     }
 
     private void emitMessageDelta(String content) {
@@ -295,6 +322,25 @@ public class RuntimeEventProjector {
                 null,
                 new AgentMessageResponseVO("delta", content, sourceEventId, null));
         execution.output().emitBestEffort(() -> encoder.response(response));
+    }
+
+    private void allocatePlanEventId() {
+        if (planEventId == null) {
+            planEventId = ids.nextId();
+        }
+    }
+
+    private void emitPlanDelta(String content) {
+        if (content == null || content.isEmpty() || planPreviewDropped) {
+            return;
+        }
+        allocatePlanEventId();
+        var response = new SessionEventResponseVO(
+                planEventId,
+                CommittedEventType.AGENT_PLAN.value(),
+                null,
+                new AgentPlanResponseVO("delta", content, sourceEventId, null));
+        planPreviewDropped = !execution.output().emitBestEffort(() -> encoder.response(response));
     }
 
     private void projectThinking(AssistantMessageEvent update) {
@@ -341,6 +387,7 @@ public class RuntimeEventProjector {
 
     private void persistAssistant(AssistantMessage message) {
         String entryId = assistantEntryId != null ? assistantEntryId : ids.nextId();
+        PlanTextSnapshotDTO planText = finalPlanText(message);
         RuntimeEntryDTO entry = codec.assistantEntry(sessionId, entryId, message, now());
         RuntimeRecordDTO record = codec.usageRecord(
                 sessionId,
@@ -352,15 +399,43 @@ public class RuntimeEventProjector {
                 message.stopReason(),
                 message.usage(),
                 entry.getTimestamp());
-        CommittedEventDTO committed = events.agentMessage(entry, entryId, message, sourceEventId);
+        CommittedEventDTO committed =
+                events.agentMessage(entry, entryId, planText.messageContent(), message.usage(), sourceEventId);
         RuntimeSseEventVO frame = requireCommittedFrame(committed);
         persistence.appendEntryWithUsage(execution.target(), entry, record, message.usage(), List.of(committed));
         execution.output().emit(() -> frame);
         persistFinalizedToolCalls(message);
+        rememberPlanCandidate(message, entryId, planText);
         terminalReason = message.stopReason();
         terminalErrorCode = message.errorCode();
         assistantEntryId = null;
         thinkingEntryIds.clear();
+        planTextParser = null;
+    }
+
+    private PlanTextSnapshotDTO finalPlanText(AssistantMessage message) {
+        if (planTextParser == null) {
+            return new PlanTextSnapshotDTO(textContent(message), "", false);
+        }
+        PlanTextSnapshotDTO result = PlanTextParser.parse(message, ClawConstants.RuntimeApi.MAX_PLAN_CHARACTERS);
+        if (result.valid()) {
+            allocatePlanEventId();
+        }
+        return result;
+    }
+
+    private void rememberPlanCandidate(AssistantMessage message, String entryId, PlanTextSnapshotDTO planText) {
+        if (planText.valid()) {
+            planCandidate = new StoredPlanCandidate(entryId, planEventId, planText, message);
+        }
+    }
+
+    private static String textContent(AssistantMessage message) {
+        return message.content().stream()
+                .filter(com.campusclaw.ai.types.TextContent.class::isInstance)
+                .map(com.campusclaw.ai.types.TextContent.class::cast)
+                .map(com.campusclaw.ai.types.TextContent::text)
+                .reduce("", String::concat);
     }
 
     private void persistQueuedUser(UserMessage message) {
@@ -505,31 +580,54 @@ public class RuntimeEventProjector {
         if (!ClawConstants.Agent.MODE_PLAN.equals(execution.mode())) {
             throw new com.campusclaw.codingagent.tool.plan.PlanReviewException("PLAN_MODE_INACTIVE");
         }
-        long toolCallCount = context.assistantMessage().content().stream()
-                .filter(ToolCall.class::isInstance)
-                .count();
-        if (toolCallCount != 1) {
-            throw new com.campusclaw.codingagent.tool.plan.PlanReviewException("PLAN_REVIEW_UNAVAILABLE");
-        }
-        String plan = requirePlanArgument(call);
+        requireEmptyPlanArguments(call);
+        PlanProposalSnapshotDTO proposal = bindPlanProposal(context);
         OffsetDateTime confirmingAt = now();
-        RuntimeEntryDTO planEntry = codec.planEntry(sessionId, ids.nextId(), call.id(), plan, confirmingAt);
-        CommittedEventDTO planEvent = events.agentPlan(planEntry, planEntry.getId(), call.id(), plan, sourceEventId);
+        RuntimeEntryDTO planEntry = codec.planEntry(
+                sessionId,
+                proposal.planEventId(),
+                proposal.assistantEntryId(),
+                call.id(),
+                proposal.content(),
+                confirmingAt);
+        CommittedEventDTO planEvent =
+                events.agentPlan(planEntry, proposal.planEventId(), call.id(), proposal.content(), sourceEventId);
         RuntimeEntryDTO idle =
                 codec.sessionIdleEntry(sessionId, ids.nextId(), "confirming", sourceEventId, null, confirmingAt);
         CommittedEventDTO idleEvent = events.sessionIdle(idle, idle.getId(), "confirming", sourceEventId, null, locale);
         RuntimeSseEventVO planFrame = requireCommittedFrame(planEvent);
         RuntimeSseEventVO idleFrame = requireCommittedFrame(idleEvent);
         RuntimeEventOutput output = execution.output();
-        execution.beginPlanReview(call.id(), planEvent.getEventId(), plan);
+        execution.beginPlanReview(proposal);
         try {
             persistence.markPlanConfirming(
-                    execution.target(), call.id(), planEntry, planEvent, idle, idleEvent, confirmingAt);
+                    execution.target(),
+                    proposal.assistantEntryId(),
+                    call.id(),
+                    planEntry,
+                    planEvent,
+                    idle,
+                    idleEvent,
+                    confirmingAt);
         } catch (RuntimeException error) {
             execution.cancelPlanReview(error);
             throw error;
         }
         finishConfirmingOutput(output, planFrame, idleFrame);
+    }
+
+    private PlanProposalSnapshotDTO bindPlanProposal(BeforeToolCallContext context) {
+        if (planCandidate == null) {
+            throw new com.campusclaw.codingagent.tool.plan.PlanReviewException("PLAN_REVIEW_UNAVAILABLE");
+        }
+        return planBinder.bind(
+                execution.target(),
+                sourceEventId,
+                planCandidate.assistantEntryId(),
+                planCandidate.planEventId(),
+                planCandidate.text(),
+                planCandidate.assistant(),
+                context);
     }
 
     private void beginQuestion(BeforeToolCallContext context) {
@@ -569,19 +667,10 @@ public class RuntimeEventProjector {
         return finalized;
     }
 
-    private static String requirePlanArgument(ToolCall call) {
-        if (call.arguments() == null
-                || !call.arguments().keySet().equals(java.util.Set.of("plan"))
-                || !(call.arguments().get("plan") instanceof String plan)
-                || plan.length() > ClawConstants.RuntimeApi.MAX_PLAN_CHARACTERS
-                || plan.lines()
-                        .filter(line -> !line.isBlank())
-                        .findFirst()
-                        .filter(line -> line.startsWith("# "))
-                        .isEmpty()) {
+    private static void requireEmptyPlanArguments(ToolCall call) {
+        if (call.arguments() == null || !call.arguments().isEmpty()) {
             throw new com.campusclaw.codingagent.tool.plan.PlanReviewException("TOOL_ARGUMENTS_INVALID");
         }
-        return plan;
     }
 
     private static void finishConfirmingOutput(
@@ -692,4 +781,7 @@ public class RuntimeEventProjector {
             abort.run();
         }
     }
+
+    private record StoredPlanCandidate(
+            String assistantEntryId, String planEventId, PlanTextSnapshotDTO text, AssistantMessage assistant) {}
 }

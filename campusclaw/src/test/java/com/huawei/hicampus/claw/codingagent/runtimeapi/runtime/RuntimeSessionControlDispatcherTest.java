@@ -21,6 +21,7 @@ import java.util.concurrent.CancellationException;
 import java.util.function.Supplier;
 
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.ExecutionTargetDTO;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.PlanProposalSnapshotDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.ToolConfirmationDecisionDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeEventOutput;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.persistence.RuntimeExecutionControlRepository;
@@ -77,7 +78,8 @@ class RuntimeSessionControlDispatcherTest {
     void shouldStopAuthoritativeContinuationBeforePlanDecisionIsClaimed() {
         Fixture fixture = fixture();
         fixture.execution.applyMode("plan");
-        var pending = fixture.execution.beginPlanReview("call-1", "plan-1", "# 方案\n正文");
+        var pending = fixture.execution.beginPlanReview(
+                new PlanProposalSnapshotDTO(fixture.original, "assistant-1", "plan-1", "root", "call-1", "# 方案\n正文"));
         RuntimeEventOutput continuation = mock(RuntimeEventOutput.class);
         assertThat(fixture.execution.stagePlanContinuationOutput(fixture.resumed, "plan-1", continuation))
                 .isTrue();

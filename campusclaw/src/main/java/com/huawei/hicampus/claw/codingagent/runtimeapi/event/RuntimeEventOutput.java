@@ -28,7 +28,7 @@ public interface RuntimeEventOutput {
 
     void emit(Supplier<RuntimeSseEventVO> event);
 
-    void emitBestEffort(Supplier<RuntimeSseEventVO> event);
+    boolean emitBestEffort(Supplier<RuntimeSseEventVO> event);
 
     void complete();
 

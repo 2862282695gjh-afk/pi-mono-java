@@ -97,7 +97,7 @@ class RuntimePlanModeOpenGaussIT {
 
     private static ModelStub scriptedModel(int port) throws Exception {
         var model = new ModelStub(port);
-        model.enqueueResponse(toolResponse("exit-call", "ExitPlanMode", Map.of("plan", PLAN)));
+        model.enqueueResponse(planResponse());
         model.enqueueResponse(toolResponse(
                 "todo-call",
                 "TodoUpdate",
@@ -233,10 +233,25 @@ class RuntimePlanModeOpenGaussIT {
         assertThat(types(frames))
                 .containsSubsequence("user.message", "agent.tool_call", "agent.plan", "session.status_idle");
         JsonNode toolCall = one(frames, "agent.tool_call");
-        JsonNode plan = one(frames, "agent.plan");
+        List<JsonNode> plans = frames.stream()
+                .filter(frame -> "agent.plan".equals(frame.path("type").asText()))
+                .toList();
+        JsonNode plan = plans.stream()
+                .filter(frame -> "completed".equals(frame.path("phase").asText()))
+                .findFirst()
+                .orElseThrow();
         JsonNode idle = one(frames, "session.status_idle");
-        assertThat(toolCall.path("arguments").path("plan").asText()).isEqualTo(PLAN);
-        assertThat(plan.path("content").asText()).isEqualTo(PLAN);
+        assertThat(toolCall.path("arguments").isEmpty()).isTrue();
+        assertThat(plans).anySatisfy(preview -> {
+            assertThat(preview.path("phase").asText()).isEqualTo("delta");
+            assertThat(preview.has("createdAt")).isFalse();
+            assertThat(preview.has("toolCallId")).isFalse();
+        });
+        assertThat(plans)
+                .extracting(frame -> frame.path("eventId").asText())
+                .containsOnly(plan.path("eventId").asText());
+        assertThat(plan.path("phase").asText()).isEqualTo("completed");
+        assertThat(plan.path("content").asText()).isEqualTo(PLAN + "\n");
         assertThat(plan.path("toolCallId").asText()).isEqualTo("exit-call");
         assertThat(plan.path("sourceEventId").asText()).isEqualTo(rootEventId);
         assertThat(idle.path("reason").asText()).isEqualTo("confirming");
@@ -279,11 +294,28 @@ class RuntimePlanModeOpenGaussIT {
         assertThat(planPrompt).contains("你当前处于计划模式。", "你负责调研、必要澄清和提交完整方案。");
         assertThat(buildPrompt).contains("你当前处于 build 模式。", "TodoUpdate 用于 build 阶段的实施进度。");
         assertThat(buildPrompt).doesNotContain("你当前处于计划模式。");
+        JsonNode proposal = null;
+        for (JsonNode message : model.request(1).path("messages")) {
+            if ("assistant".equals(message.path("role").asText())
+                    && message.path("content").asText().contains("<proposed_plan>")) {
+                proposal = message;
+            }
+        }
+        assertThat(proposal).isNotNull();
+        assertThat(proposal.path("content").asText()).contains("<proposed_plan>", PLAN, "</proposed_plan>");
+        JsonNode function = proposal.path("tool_calls").get(0).path("function");
+        assertThat(function.path("name").asText()).isEqualTo("ExitPlanMode");
+        assertThat(function.path("arguments").asText()).isEqualTo("{}");
     }
 
     private static void assertHistoryAndSession(int port, String sessionId, String rootEventId) throws Exception {
         List<JsonNode> events = history(port, sessionId);
         assertThat(types(events)).contains("agent.plan", "user.plan_confirmation", "agent.todo_updated");
+        assertThat(events.stream()
+                        .filter(event -> "agent.plan".equals(event.path("type").asText()))
+                        .toList())
+                .singleElement()
+                .satisfies(plan -> assertThat(plan.path("phase").asText()).isEqualTo("completed"));
         assertThat(one(events, "agent.todo_updated").path("sourceEventId").asText())
                 .isEqualTo(rootEventId);
         var session = getSession(port, sessionId).result();
@@ -330,6 +362,21 @@ class RuntimePlanModeOpenGaussIT {
         ObjectNode call = delta.putArray("tool_calls").addObject();
         call.put("index", 0).put("id", callId).put("type", "function");
         call.putObject("function").put("name", toolName).put("arguments", MAPPER.writeValueAsString(arguments));
+        ObjectNode last = chunk("tool_calls");
+        last.putObject("usage")
+                .put("prompt_tokens", 4)
+                .put("completion_tokens", 3)
+                .put("total_tokens", 7);
+        return data(first) + data(last) + "data: [DONE]\n\n";
+    }
+
+    private static String planResponse() throws Exception {
+        ObjectNode first = chunk(null);
+        ObjectNode delta = (ObjectNode) first.path("choices").get(0).path("delta");
+        delta.put("role", "assistant").put("content", "方案已整理。\n<proposed_plan>\n" + PLAN + "\n</proposed_plan>");
+        ObjectNode call = delta.putArray("tool_calls").addObject();
+        call.put("index", 0).put("id", "exit-call").put("type", "function");
+        call.putObject("function").put("name", "ExitPlanMode").put("arguments", "{}");
         ObjectNode last = chunk("tool_calls");
         last.putObject("usage")
                 .put("prompt_tokens", 4)

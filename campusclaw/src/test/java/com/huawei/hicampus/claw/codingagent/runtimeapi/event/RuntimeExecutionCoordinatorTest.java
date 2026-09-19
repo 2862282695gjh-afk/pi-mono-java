@@ -41,6 +41,7 @@ import com.huawei.hicampus.claw.ai.types.UserMessage;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.RuntimeMessageSourceConfiguration;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.CommittedEventDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.ExecutionTargetDTO;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.PlanProposalSnapshotDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeEntryDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.persistence.RuntimeExecutionPersistenceService;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.runtime.RuntimeActiveExecution;
@@ -321,7 +322,8 @@ class RuntimeExecutionCoordinatorTest {
         ExecutionTargetDTO original = fixture.execution.target();
         var resumed = new ExecutionTargetDTO("session-v2", "execution-v2", "event-root", "segment-approved");
         fixture.execution.applyMode("plan");
-        var pending = fixture.execution.beginPlanReview("call-plan", "event-plan", "# 方案\n正文");
+        var pending = fixture.execution.beginPlanReview(new PlanProposalSnapshotDTO(
+                original, "assistant-plan", "event-plan", "event-root", "call-plan", "# 方案\n正文"));
         when(fixture.persistence.findCurrentTarget(original)).thenReturn(Optional.of(resumed));
         fixture.coordinator.start(fixture.holder, fixture.execution, fixture.message, Locale.US);
         ArgumentCaptor<Runnable> timeoutAction = ArgumentCaptor.forClass(Runnable.class);

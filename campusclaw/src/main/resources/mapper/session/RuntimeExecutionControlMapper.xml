@@ -140,6 +140,24 @@
           AND pending_question_event_id IS NULL
     </update>
 
+    <select id="countPlanReviewSource" resultType="int">
+        SELECT COUNT(1)
+        FROM t_sessions session
+        JOIN t_session_entries tool_call
+          ON tool_call.session_id = session.id
+         AND tool_call.id = session.active_leaf_id
+        JOIN t_session_entries assistant
+          ON assistant.session_id = tool_call.session_id
+         AND assistant.id = tool_call.parent_id
+        WHERE session.id = #{sessionId}
+          AND assistant.id = #{assistantEntryId}
+          AND assistant.type = 'assistant.message.completed'
+          AND tool_call.type = 'tool.execution.started'
+          AND tool_call.payload -&gt;&gt; 'tool_call_id' = #{toolCallId}
+          AND tool_call.payload -&gt;&gt; 'tool_name' = 'ExitPlanMode'
+          AND tool_call.payload -&gt; 'arguments' = CAST('{}' AS JSONB)
+    </select>
+
     <update id="markQuestionConfirming">
         UPDATE t_session_executions
         SET state = 'CONFIRMING',

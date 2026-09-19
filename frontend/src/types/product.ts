@@ -69,6 +69,8 @@ export interface PlanTurn {
   eventId: string;
   sourceEventId: string;
   rawMarkdown: string;
+  streaming: boolean;
+  unconfirmed: boolean;
   decision?: 'approve' | 'revise';
   lifecycle?: 'stopping' | 'stopped' | 'failed' | 'ended';
 }

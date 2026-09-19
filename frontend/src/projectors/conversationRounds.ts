@@ -99,7 +99,8 @@ function groupAgentBlocks(turns: AgentTurn[]): Array<AgentMessageBlock | AgentAc
 }
 
 function isActiveTurn(turn: AgentTurn): boolean {
-  if (turn.kind === 'notice' || turn.kind === 'plan' || turn.kind === 'question') return false;
+  if (turn.kind === 'plan') return turn.streaming;
+  if (turn.kind === 'notice' || turn.kind === 'question') return false;
   if (turn.kind === 'assistant') return turn.streaming;
   return turn.status === 'running';
 }

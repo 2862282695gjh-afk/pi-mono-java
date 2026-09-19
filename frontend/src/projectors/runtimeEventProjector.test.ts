@@ -60,6 +60,24 @@ describe('Runtime Events presentation', () => {
   it('marks a disconnected preview as unconfirmed rather than completed', () => {
     expect(projectRuntimeEvents([{ eventId: 'p', type: 'agent.message', phase: 'delta', sourceEventId: 'root-a', content: '半条' }])[0]).toMatchObject({ streaming: false, unconfirmed: true });
   });
+  it('renders plan previews as read-only streaming drafts until completion replaces them', () => {
+    const preview = { eventId: 'plan', type: 'agent.plan', phase: 'delta', sourceEventId: 'root-a',
+      content: '# 方案' } as const;
+    expect(projectRuntimeEvents([preview], true)[0]).toMatchObject({
+      kind: 'plan', streaming: true, unconfirmed: true, rawMarkdown: '# 方案',
+    });
+    expect(projectRuntimeEvents([preview], false)[0]).toMatchObject({ streaming: false, unconfirmed: true });
+    const completed = eventFixture({ ...preview, phase: 'completed', toolCallId: 'exit' });
+    expect(projectRuntimeEvents([completed], true)[0]).toMatchObject({ streaming: false, unconfirmed: false });
+  });
+  it('does not close a later draft with an earlier confirming event from the same root', () => {
+    const confirming = idleFixture('confirming');
+    const preview = { eventId: 'plan', type: 'agent.plan', phase: 'delta', sourceEventId: 'root-a',
+      content: '# 新草稿' } as const;
+    expect(projectRuntimeEvents([confirming, preview], true)[0]).toMatchObject({
+      kind: 'plan', streaming: true, unconfirmed: true, lifecycle: undefined,
+    });
+  });
   it('does not apply an earlier confirmation to a later message with the same tool ID', () => {
     const call = eventFixture({ eventId: 'old-call', type: 'agent.tool_call', toolCallId: 'same-id', sourceEventId: 'old-root', toolName: 'CallMateTool', arguments: {}, requiresConfirmation: true });
     const receipt = eventFixture({ eventId: 'old-confirm', type: 'user.tool_confirmation', toolCallId: 'same-id', result: 'allow' });
@@ -69,7 +87,7 @@ describe('Runtime Events presentation', () => {
   });
   it('renders the authoritative plan once and never parses TodoUpdate text for progress', () => {
     const call = eventFixture({ eventId: 'exit-call', type: 'agent.tool_call', toolCallId: 'exit', sourceEventId: 'root-a',
-      toolName: 'ExitPlanMode', arguments: { plan: '# 方案' }, requiresConfirmation: false });
+      toolName: 'ExitPlanMode', arguments: {}, requiresConfirmation: false });
     const plan = eventFixture({ eventId: 'plan', type: 'agent.plan', sourceEventId: 'root-a', toolCallId: 'exit', content: '# 方案' });
     const result = eventFixture({ eventId: 'exit-result', type: 'agent.tool_result', sourceEventId: 'root-a', toolCallId: 'exit',
       content: [{ type: 'text', text: '{"result":"approved"}' }], isError: false });

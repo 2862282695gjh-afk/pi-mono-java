@@ -22,6 +22,7 @@ import com.huawei.hicampus.claw.ai.types.Provider;
 import com.huawei.hicampus.claw.ai.types.StopReason;
 import com.huawei.hicampus.claw.ai.types.TextContent;
 import com.huawei.hicampus.claw.ai.types.ThinkingContent;
+import com.huawei.hicampus.claw.ai.types.ToolCall;
 import com.huawei.hicampus.claw.ai.types.ToolResultMessage;
 import com.huawei.hicampus.claw.ai.types.Usage;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeEntryDTO;
@@ -114,6 +115,42 @@ class RuntimeEntryCodecTest {
         assertThat(assistant.api()).isEqualTo("openai-responses");
         assertThat(assistant.provider()).isEqualTo("openai");
         assertThat(assistant.model()).isEqualTo("old-model");
+    }
+
+    @Test
+    void preservesMarkedPlanAndEmptyExitCallInModelHistory() {
+        RuntimeEntryCodec codec = codec();
+        String marked = "<proposed_plan>\n# 方案\n步骤\n</proposed_plan>";
+        ToolCall call = new ToolCall("exit-1", "ExitPlanMode", Map.of());
+        AssistantMessage original = new AssistantMessage(
+                List.of(new TextContent(marked), call),
+                "openai-responses",
+                "openai",
+                "model",
+                null,
+                Usage.empty(),
+                StopReason.TOOL_USE,
+                null,
+                1L);
+
+        RuntimeEntryDTO entry = codec.assistantEntry("session", "assistant-entry", original, OffsetDateTime.now());
+        AssistantMessage restored = (AssistantMessage)
+                codec.toAgentMessages(List.of(entry), model()).getFirst();
+
+        assertThat(((TextContent) restored.content().getFirst()).text()).isEqualTo(marked);
+        assertThat((ToolCall) restored.content().get(1)).isEqualTo(call);
+        assertThat(entry.getPayload()).contains("proposed_plan", "\"arguments\":{}");
+    }
+
+    @Test
+    void storesPrivateAssistantBindingOnAuthoritativePlanEntry() {
+        RuntimeEntryDTO entry =
+                codec().planEntry("session", "plan-event", "assistant-entry", "exit-1", "# 方案", OffsetDateTime.now());
+
+        assertThat(entry.getPayload())
+                .contains("\"_assistant_entry_id\":\"assistant-entry\"")
+                .contains("\"tool_call_id\":\"exit-1\"")
+                .contains("\"content\":\"# 方案\"");
     }
 
     @Test

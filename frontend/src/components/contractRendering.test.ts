@@ -31,6 +31,7 @@ describe('literal command and tool content', () => {
   it('uses a distinct plan-copy action and keeps question protocol IDs out of DOM identities', async () => {
     const plan = await renderToString(createSSRApp({ render: () => h(PlanCard, { plan: {
       key: 'plan', kind: 'plan', eventId: 'plan-event', sourceEventId: 'root', rawMarkdown: '# 完整方案',
+      streaming: false, unconfirmed: false,
     }, actionable: false, pending: false, sessionId: 'session' }) }));
     expect(plan).toContain('复制计划');
     expect(plan).toContain('完整方案');
