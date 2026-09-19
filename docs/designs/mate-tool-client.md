@@ -1,6 +1,6 @@
 # Mate Tool Client 与 Session 发现设计
 
-> 文档版本：2.4.0
+> 文档版本：2.4.1
 >
 > 状态：Implemented
 >
@@ -20,11 +20,30 @@
 `access-token`，发现请求不携带这四项值，只有工具 execute 请求携带收到的值；这是接口契约
 变更与安全加固。
 
-本次 Mate 凭据透传的变更前源码基线为
-`6a331d3477df23f8404582c3922b55c265530605`，目标设计基线为
-`pi-mono-java-design@9e766a030aa4c777da96586db4c7778fc84c7995`。变更取消 Claw 入口、
-工具层和客户端的最低完整性判断；空或部分凭据也进入真实 Mate execute，由 Mate 返回认证或
-业务结果。
+Mate 凭据规则的目标设计基线为
+`pi-mono-java-design@9e766a030aa4c777da96586db4c7778fc84c7995`；变更前源码基线为
+`6a331d3477df23f8404582c3922b55c265530605`，已实现行为核验提交为
+`db990ab3358798743ce63668035ab98fc0554a32`（2026-09-19 核验）。Claw 入口、工具层和
+客户端不检查最低完整性；空或部分凭据也进入真实 Mate execute，由 Mate 返回认证或业务结果。
+
+<a id="credential-source-evidence"></a>
+
+### 1.1 Mate 凭据实现证据
+
+以下路径相对 `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/`，均核对
+`db990ab3358798743ce63668035ab98fc0554a32`；不将该提交扩展为其他工具和历史基线的重新验收。
+
+| 源码与符号 | 已核验行为 |
+|---|---|
+| `runtimeapi/event/RuntimeEventService.java#submit` | 不拒绝空或部分凭据；null 归一化为空快照，仅消息分支传递快照，控制分支不替换原值 |
+| `tool/mate/CallMateTool.java#execute` | 不检查凭据完整性；保留名称解析和取消检查，再调用 Mate |
+| `common/client/HttpMateToolClient.java#invokeTool/#toHeaderInfo/#toToolResult/#readRoot` | 校验工具 ID 后按快照调用 execute；Mate 非零响应映射工具失败，解析异常不回显响应正文 |
+| `common/util/MateRestUtil.java#newRequestBuilder/#logAndWrap` | 只省略 null 或空字符串 Header；敏感异常不保留原 message/cause，保留非敏感定位和来源栈 |
+| `common/client/mate/MateCredentials.java`、`common/dto/RequestHeaderInfo.java#toHeaders` | 不可变四项快照不再提供完整性判断；按原 Header 名映射且诊断字符串不输出凭据值 |
+
+同一提交的 129 项聚焦测试于 2026-09-19 通过，包括真实 HTTP 的 16 种 Header 子集、null/空值
+省略、失败请求次数和日志脱敏。真实 Mate 部署联调、不同凭据并行执行与完整控制续段端到端
+验证、公司父 POM 独立构建和全仓 `clean verify` 未完成，不属于该测试结论。
 
 | 层 | 当前类型 | 职责 |
 |---|---|---|
@@ -114,6 +133,7 @@ HTTP method、path 和请求响应保持不变；2.3.0 只改变哪些请求会�
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 2.4.1 | 2026-09-19 | 补齐 Mate 凭据已实现行为的源码提交、符号及测试验收范围。 |
 | 2.4.0 | 2026-09-19 | 取消 Claw 的 Mate 凭据完整性检查，按 execute 快照透传非空原值并收敛失败响应与敏感异常日志。 |
 | 2.3.1 | 2026-08-28 | 用读取时机、内存持有期限、携带请求和缺失值行为定义工具凭据边界。 |
 | 2.3.0 | 2026-08-27 | POST Events 读取 `access-token`；发现请求不携带四项值，只有 Tool execute 请求携带收到的值。 |

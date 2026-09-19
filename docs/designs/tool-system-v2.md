@@ -1,6 +1,6 @@
 # CampusClaw 受管 Agent 工具系统 v2
 
-> 文档版本：1.12.0
+> 文档版本：1.12.1
 >
 > 状态：Implemented
 >
@@ -41,6 +41,7 @@ Session；各 Session 的消息、工作目录、工具实例、Mate 缓存和 E
 | CampusClaw execute-only 凭据边界修订前 | `320d790726a70aada6100052952d5494d2a378ac` | 三项 Header 同时由发现与执行请求携带的源码行为输入 |
 | CampusClaw execute-only 凭据边界实现 | `d03c08dbae870f19eee8d4fa79a707185f7a26b5` | POST Events 读取四项值、发现不携带这些值且只有 execute 携带的审查实现证据 |
 | CampusClaw Mate 凭据透传变更前 | `6a331d3477df23f8404582c3922b55c265530605` | 观察入口、工具与 HTTP 客户端的最低完整性检查及执行快照边界 |
+| CampusClaw Mate 凭据规则实现核验 | `db990ab3358798743ce63668035ab98fc0554a32` | 2026-09-19 核验：三处完整性拦截已移除、execute 按原值发送非空项、失败与日志脱敏；[精确源码及测试范围](mate-tool-client.md#credential-source-evidence) |
 | CampusClaw Read 图片能力收敛前 | `3452bceb0be586c1c845cde589ecb7ee1e6c5908` | 观察 Read 的 MIME 分支、图片缩放、Base64 输出和 WebP 依赖 |
 | CampusClaw Read 纯文本实现 | `16fd9d2c5c1ffa99bab9535797a472484f2d5362` | 审查后的 UTF-8 文本契约、二进制拒绝、图片路径和依赖删除证据 |
 | CampusClaw Read 行数修复前 | `1b3b519419ca9bf9025ba2c88335382b9a5b3b02` | 观察末尾 LF 被保留分割结果误计为额外空行的行为 |
@@ -364,6 +365,7 @@ git diff --check
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 1.12.1 | 2026-09-19 | 补记 Mate 凭据规则的实现核验提交并关联专项证据。 |
 | 1.12.0 | 2026-09-19 | Mate 四项凭据改为 execute-only 可选原值透传，由 Mate 在实际调用时判定完整性并收敛失败与日志泄密边界。 |
 | 1.11.0 | 2026-09-18 | 删除 Bash、Edit、Write 工具本体和无消费者专用代码，明确十一项活动工具及无兼容入口边界。 |
 | 1.10.0 | 2026-09-15 | Runtime profile 增加计划审核与实施任务工具，关联固定提示词和 Session 模式实施说明。 |
