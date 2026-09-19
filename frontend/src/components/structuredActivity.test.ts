@@ -60,7 +60,7 @@ describe('structured tool activity', () => {
     expect(html).toContain('&quot;success&quot;');
   });
 
-  it('shows a literal event displayName and the exact Mate technical name in activity details', async () => {
+  it('shows the safe event displayName only in the title and preserves exact Mate arguments', async () => {
     const html = await renderToString(createSSRApp({ render: () => h(ToolActivity, { turn: {
       key: 'tool', kind: 'activity', toolCallId: 'call', toolName: 'CallMateTool',
       displayName: '  <script>查询教室</script>  ', status: 'running', arguments: [],
@@ -69,13 +69,15 @@ describe('structured tool activity', () => {
 
     expect(html).toContain('&lt;script&gt;查询教室&lt;/script&gt;');
     expect(html).toContain('query_classroom-v2');
-    expect(html).toContain('展示名称');
-    expect(html).toContain('技术名称');
+    expect(html).toContain('aria-label="&lt;script&gt;查询教室&lt;/script&gt;，执行中"');
+    expect(html).not.toContain('工具名称');
+    expect(html).not.toContain('展示名称');
+    expect(html).not.toContain('技术名称');
     expect(html).not.toContain('<script>');
     expect(html).not.toContain('调用业务工具');
   });
 
-  it('uses the same safe display identity in the confirmation title and expanded details', async () => {
+  it('uses the safe display identity only in the wrapping confirmation title', async () => {
     const html = await renderToString(createSSRApp({ render: () => h(ToolConfirmation, { tool: {
       eventId: 'call', createdAt: '2026-09-17T00:00:00.000Z', type: 'agent.tool_call', sourceEventId: 'root',
       toolCallId: 'tool', toolName: 'CallMateTool', displayName: '<b>查询工单</b>',
@@ -86,6 +88,9 @@ describe('structured tool activity', () => {
     expect(html).toContain('&lt;b&gt;查询工单&lt;/b&gt;');
     expect(html).toContain('query_ticket');
     expect(html).toContain('&quot;scope&quot;');
+    expect(html).toContain('aria-label="需要你确认，&lt;b&gt;查询工单&lt;/b&gt;"');
+    expect(html).not.toContain('展示名称');
+    expect(html).not.toContain('技术名称');
     expect(html).not.toContain('<b>');
     expect(html).not.toContain('伪造名称</strong>');
   });
