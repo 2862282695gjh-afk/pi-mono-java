@@ -128,6 +128,36 @@ class RuntimeEventRoutesTest {
     }
 
     @Test
+    void shouldAcceptMessageWithoutCredentialHeaders() throws Exception {
+        RuntimeEventStream stream = completedStream();
+        when(service.submit(
+                        eq(SESSION_ID),
+                        any(SubmitSessionEventRequestVO.class),
+                        eq(Locale.US),
+                        eq(MateCredentials.empty())))
+                .thenReturn(stream);
+
+        MvcResult initial = mvc.perform(
+                        post("/campusclaw-service/v1/sessions/{sessionId}/events", SESSION_ID)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .accept(MediaType.TEXT_EVENT_STREAM)
+                                .content(
+                                        "{\"event\":{\"type\":\"user.message\",\"content\":[{\"type\":\"text\",\"text\":\"hello\"}]}}"))
+                .andExpect(status().isOk())
+                .andExpect(request().asyncStarted())
+                .andReturn();
+        initial.getAsyncResult(1_000L);
+
+        mvc.perform(asyncDispatch(initial)).andExpect(status().isOk());
+        verify(service)
+                .submit(
+                        eq(SESSION_ID),
+                        any(SubmitSessionEventRequestVO.class),
+                        eq(Locale.US),
+                        eq(MateCredentials.empty()));
+    }
+
+    @Test
     void shouldRejectUnknownRequestFieldBeforeStartingStream() throws Exception {
         mvc.perform(authenticated(post("/campusclaw-service/v1/sessions/{sessionId}/events", SESSION_ID))
                         .contentType(MediaType.APPLICATION_JSON)

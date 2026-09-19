@@ -39,12 +39,14 @@ end note
 
 @startuml mate_credential_flow
 ' Pre-change implementation baseline: CampusClaw 320d790726a70aada6100052952d5494d2a378ac.
+' Credential-completeness pre-change baseline: CampusClaw 6a331d3477df23f8404582c3922b55c265530605.
 ' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/web/RuntimeEventController.java, submit
 ' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/runtimeapi/web/RuntimeRequestContext.java, mateCredentials
 ' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/tool/mate/MateToolDiscovery.java, listAgentTools
 ' Source evidence: modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/common/client/HttpMateToolClient.java, invokeTool
 ' Observed behavior: the pre-change client forwarded three execution credential headers to discovery and execute.
-' Security hardening: discovery receives no credentials; only execute receives the four header values.
+' Architecture change: Claw does not validate credential completeness; Mate validates the real execute request.
+' Security hardening: discovery receives no credentials; only execute receives provided non-empty header values.
 ' Java divergence: pi has no corresponding Mate credential flow.
 skinparam shadowing false
 title Mate Tool Execution Credential Flow
@@ -59,25 +61,28 @@ participant "CallMateTool" as Call
 participant "HttpMateToolClient" as Client
 participant "Child Session" as Child
 
-Caller -> Controller : POST Events\naccess-token and X-HW-ID\nplus AppKey or JWT
+Caller -> Controller : POST Events\nzero to four credential headers
 Controller -> Service : immutable MateCredentials
 Service -> Registry : values held for current execution
 Registry -> Factory : ManagedAgentSessionRequest
 Factory -> List : session-private tool
 Factory -> Call : session-private tool and values
 List -> Client : discovery without credentials
-Call -> Client : execute once with received header values
+Call -> Client : execute once with provided non-empty values
 Factory -> Child : use parent execution values
 note over Service,Child
   Values are held only during this Agent execution
   and its Child calls.
+  Command has a separate HTTP and service path
+  and follows the same snapshot rule.
   Never write to database, Event, Prompt,
   model messages, or logs.
   Runtime releases active references after execution.
 end note
 note over Call,Client
-  Missing access-token or identity credentials
-  fail before the execute HTTP request.
+  Empty and partial snapshots still call execute once.
+  Mate validates credentials and returns the result.
+  No defaults, Bearer prefix, borrowing, or retry.
 end note
 @enduml
 

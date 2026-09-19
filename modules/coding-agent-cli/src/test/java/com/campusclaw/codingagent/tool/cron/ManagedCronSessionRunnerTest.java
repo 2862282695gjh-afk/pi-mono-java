@@ -26,6 +26,7 @@ import com.campusclaw.ai.types.Provider;
 import com.campusclaw.ai.types.StopReason;
 import com.campusclaw.ai.types.TextContent;
 import com.campusclaw.ai.types.Usage;
+import com.campusclaw.codingagent.common.client.mate.MateCredentials;
 import com.campusclaw.codingagent.runtime.MateServiceClient.AgentRuntime;
 import com.campusclaw.codingagent.runtime.PreparedAgentRuntime;
 import com.campusclaw.codingagent.runtimeapi.model.MateModelManagerProperties;
@@ -76,7 +77,7 @@ class ManagedCronSessionRunnerTest {
         verify(sessionFactory).create(request.capture());
         assertThat(request.getValue().entryPoint()).isEqualTo(ToolEntryPoint.CRON);
         assertThat(request.getValue().agentId()).isEqualTo(AGENT_ID);
-        assertThat(request.getValue().mateCredentials().isComplete()).isFalse();
+        assertThat(request.getValue().mateCredentials()).isEqualTo(MateCredentials.empty());
         Model selected = request.getValue().modelResolver().apply(runtime());
         assertThat(selected.id()).isEqualTo("model-a");
         assertThat(selected.provider()).isEqualTo(Provider.CAMPUSMATE);

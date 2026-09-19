@@ -5,11 +5,9 @@
 package com.campusclaw.codingagent.runtimeapi.event;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -21,8 +19,6 @@ import com.campusclaw.codingagent.common.client.mate.MateCredentials;
 import com.campusclaw.codingagent.runtimeapi.dto.AcceptedControlDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.AcceptedControlStreamDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.ExecutionTargetDTO;
-import com.campusclaw.codingagent.runtimeapi.error.RuntimeApiException;
-import com.campusclaw.codingagent.runtimeapi.error.RuntimeErrorCode;
 import com.campusclaw.codingagent.runtimeapi.runtime.RuntimeSessionControlDispatcher;
 import com.campusclaw.codingagent.runtimeapi.session.ToolConfirmationResult;
 import com.campusclaw.codingagent.runtimeapi.vo.QuestionAnswerRequestVO;
@@ -123,16 +119,36 @@ class RuntimeEventServiceTest {
     }
 
     @Test
-    void shouldRejectIncompleteCredentialsBeforeAcceptingAnyEvent() {
+    void shouldAcceptControlEventWithEmptyCredentials() {
         Fixture fixture = fixture();
+        RuntimeEventStream stream = mock(RuntimeEventStream.class);
+        ExecutionTargetDTO target = target("segment-1");
         UserInterruptEventRequestVO interrupt = new UserInterruptEventRequestVO();
         interrupt.setTargetEventId("root");
+        when(fixture.controls.acceptInterrupt("session", "root"))
+                .thenReturn(new AcceptedControlStreamDTO(stream, new AcceptedControlDTO(null, target)));
 
-        assertThatThrownBy(() -> fixture.service.submit(
+        assertThat(fixture.service.submit(
                         "session", new SubmitSessionEventRequestVO(interrupt), Locale.US, MateCredentials.empty()))
-                .isInstanceOfSatisfying(RuntimeApiException.class, error -> assertThat(error.errorCode())
-                        .isEqualTo(RuntimeErrorCode.INVALID_EVENT_REQUEST));
-        verify(fixture.controls, never()).acceptInterrupt(any(), any());
+                .isSameAs(stream);
+
+        verify(fixture.controls).acceptInterrupt("session", "root");
+        verify(fixture.dispatcher).dispatchStop(target);
+    }
+
+    @Test
+    void shouldNormalizeNullCredentialsForMessage() {
+        Fixture fixture = fixture();
+        UserMessageEventRequestVO message = new UserMessageEventRequestVO();
+        UserMessageContentRequestVO.TextRequestVO text = new UserMessageContentRequestVO.TextRequestVO();
+        text.setText("question");
+        message.setContent(List.of(text));
+        RuntimeEventStream stream = mock(RuntimeEventStream.class);
+        when(fixture.messages.submit("session", message, Locale.US, MateCredentials.empty()))
+                .thenReturn(stream);
+
+        assertThat(fixture.service.submit("session", new SubmitSessionEventRequestVO(message), Locale.US, null))
+                .isSameAs(stream);
     }
 
     private static Fixture fixture() {

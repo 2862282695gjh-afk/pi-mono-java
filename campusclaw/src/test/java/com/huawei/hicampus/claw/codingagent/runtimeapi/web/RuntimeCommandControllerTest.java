@@ -16,6 +16,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.request;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -77,6 +78,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.CsvSource;
@@ -188,6 +190,19 @@ class RuntimeCommandControllerTest {
         verifyNoInteractions(events);
     }
 
+    @Test
+    void shouldExecuteCompactWithoutCredentialHeaders() throws Exception {
+        var call = mock(RuntimeCompactionCall.class);
+        when(call.result()).thenReturn(CompletableFuture.completedStage(new RuntimeCompactionResultDTO(false, null)));
+        when(runtime.start(SESSION_ID, MateCredentials.empty(), Locale.CHINA)).thenReturn(call);
+
+        mvc.perform(commandWithoutCredentials("{\"name\":\"compact\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.resCode").value("0"));
+
+        verify(runtime).start(SESSION_ID, MateCredentials.empty(), Locale.CHINA);
+    }
+
     @ParameterizedTest
     @ValueSource(strings = {"application/json", "text/event-stream", "application/json, text/event-stream"})
     void shouldExecuteNameOnlySkillThroughRealExpansionAndSse(String accept) throws Exception {
@@ -290,13 +305,17 @@ class RuntimeCommandControllerTest {
     }
 
     private static MockHttpServletRequestBuilder command(String body) {
+        return commandWithoutCredentials(body)
+                .header("X-HW-ID", "caller")
+                .header("X-HW-APPKEY", "private-key")
+                .header("access-token", "private-token");
+    }
+
+    private static MockHttpServletRequestBuilder commandWithoutCredentials(String body) {
         return post(ClawConstants.RuntimeApi.BASE_PATH + "/sessions/" + SESSION_ID + "/command")
                 .contentType(MediaType.APPLICATION_JSON)
                 .characterEncoding(StandardCharsets.UTF_8)
                 .header(HttpHeaders.ACCEPT_LANGUAGE, "zh-CN")
-                .header("X-HW-ID", "caller")
-                .header("X-HW-APPKEY", "private-key")
-                .header("access-token", "private-token")
                 .content(body);
     }
 

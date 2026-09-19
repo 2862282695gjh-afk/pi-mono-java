@@ -1,12 +1,18 @@
 # CampusClaw HTTP V1 实施记录
 
-> 版本：3.12.0；更新日期：2026-09-15。
+> 版本：3.13.1；更新日期：2026-09-19。
 >
 > Java 变更前源码基线：`29ebec6a8cad99896414211cda28c6fffec71bee`。
 >
-> 当前实现核验提交：`17dbb20ae998c58c2b3f5ae19c254922e9f93210`。
+> 计划模式与统一 Session 更新的实现核验提交：`17dbb20ae998c58c2b3f5ae19c254922e9f93210`，不作为后续 Mate 凭据规则的实现证据。
 >
 > 计划模式契约基线：`pi-mono-java-design@0233763eb846a297cd390eda1f2da05004c91dd7`。
+>
+> Mate 凭据透传变更前基线：`6a331d3477df23f8404582c3922b55c265530605`；目标设计基线：
+> `pi-mono-java-design@9e766a030aa4c777da96586db4c7778fc84c7995`。
+>
+> Mate 凭据规则的实现核验提交：`db990ab3358798743ce63668035ab98fc0554a32`（2026-09-19）；
+> 入口、工具、HTTP 客户端的精确符号及验证范围见[专项源码证据](../designs/mate-tool-client.md#credential-source-evidence)。
 >
 > 本文记录 Runtime 直接 HTTP 接口；企业 Mate 公共 Chat 的接入由外部工程维护。
 
@@ -68,6 +74,17 @@ Controller 位于 `modules/coding-agent-cli/src/main/java/com/campusclaw/codinga
 模式及其事件，revise 保留 plan 并让原工具返回修订结果。决定回执总在续段响应首位。
 运行时原执行仍使用最初接收的业务凭据，确认请求不会替换它们。
 
+Events 与 Command 的四项 Mate Header 均为可选调用上下文。入口不做必填、组合或最低完整性
+检查；消息或命令启动时原样捕获四项值并固定为不可变执行快照，Child 只读继承，后续停止、
+确认和问答请求不替换该快照。只有构造 Mate execute 出站请求时才省略 null 或空字符串；其余
+值保持原 Header 名和值。工具解析、权限、确认和取消检查通过后，即使四项全缺也向 Mate
+execute 实际发送一次请求，由 Mate 判定认证和授权；发现及其他出站请求不携带这些值，execute
+不重试。缺少 Host 执行上下文仍按既有错误处理，不与空凭据快照等同。
+
+Mate 业务失败继续投影为既有工具失败，网络等异常继续使用通用工具失败，不新增凭据公共错误
+码。面向模型和公共事件的失败文本不回显 Mate `resMsg` 或畸形响应正文；日志保留非敏感定位、
+异常类型和原始来源栈帧，但移除可能包含 Header value 或响应正文的 message 与 cause。
+
 批准后的正常模型、工具和答案事件与实施进度并存。后端从 `TodoUpdate` 经 after hook 处理的
 最终成功结果生成 `agent.todo_updated`，与同一 Tool Result Entry 的普通结果事件原子提交。
 失败结果不更新任务；前端按根消息和完整 todos 快照更新列表。
@@ -98,7 +115,8 @@ Schema、Owner 与授权头部；本仓不交付已有安装的增量升级脚�
 | 提示词区分 plan/build，保留业务工具集合 | 产品约束 | 调研和实施遵守不同提示策略，业务权限由已有工具权限机制承担 |
 | 审核决定、模式与续段原子提交 | 安全加固 | 避免客户端看到批准而执行仍按旧状态继续，防止重复确认和错目标确认 |
 | 后端显式投影任务快照 | 架构变更 | 前端不解析工具结果文本，实时和历史共用一份公共事件 |
-| Runtime 仅保存执行内凭据快照 | 安全加固 | POST 的调用上下文只用于原执行及 Child 的 Mate Tool execute，不进入数据库、Prompt 或日志 |
+| Runtime 仅保存执行内凭据快照 | 安全加固 | POST 的可选调用上下文只用于原执行及 Child 的 Mate Tool execute，不进入数据库、Prompt 或日志；控制请求不替换快照 |
+| Mate 在真实 execute 判定凭据 | 架构改造 | Claw 不理解 Mate 的凭据组合；空或部分快照也调用一次，仍保留工具权限、确认、取消和上游资源授权边界 |
 
 Runtime 通过 `ResultBeanAdapter` 保留公司 ResultBean 替换点。公司认证、租户隔离、动作授权和
 公共 Chat 适配由上游 Mate 工程承担；本仓没有该工程，不以 Runtime/工作台测试代替企业集成验收。
@@ -115,6 +133,8 @@ Runtime 通过 `ResultBeanAdapter` 保留公司 ResultBean 替换点。公司认
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 3.13.1 | 2026-09-19 | 分列计划模式与 Mate 凭据规则的实现核验提交，明确专项源码与验收范围。 |
+| 3.13.0 | 2026-09-19 | Events 与 Command 不再校验 Mate 凭据完整性，execute 透传非空原值并由 Mate 返回实际失败。 |
 | 3.12.0 | 2026-09-15 | 统一 Session POST 配置更新，接入计划审核与实施任务事件，并按当前九个 HTTP 操作校准实施记录。 |
 | 3.11.1 | 2026-09-08 | 明确首版数据库只交付全新安装与授权材料，不提供已有安装升级入口。 |
 | 3.11.0 | 2026-09-08 | 接通共享POST的Builtin JSON和Skill SSE，记录方法校验、日志及错误媒体类型边界；真实跨进程验收单独交付。 |

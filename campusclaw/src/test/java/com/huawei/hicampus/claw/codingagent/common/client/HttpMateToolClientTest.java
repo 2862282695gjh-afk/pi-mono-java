@@ -417,29 +417,39 @@ class HttpMateToolClientTest {
     }
 
     @Test
-    void invokeToolWithBlankCredentialsIsRefusedBeforeRequest() {
-        for (MateCredentials bad : new MateCredentials[] {
-            new MateCredentials(null, null, null, null),
-            new MateCredentials("", "", "", ""),
-            MateCredentials.appKey("hw-id-1", "", "access-token-1"),
-            MateCredentials.appKey("hw-id-1", "key-1", "")
-        }) {
+    void invokeToolForwardsEveryCredentialSubsetExactlyOnce() throws Exception {
+        for (int mask = 0; mask < 16; mask++) {
+            server.enqueue(json("{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":{}}"));
+            MateCredentials credentials = credentials(mask);
+
             MateToolClient.ToolResult result =
-                    client.callTool("tool-11111111111111111111111111111111", java.util.Map.of(), bad);
-            assertThat(result.isError()).isTrue();
-            assertThat(result.content()).contains("incomplete credentials");
+                    client.callTool("tool-11111111111111111111111111111111", java.util.Map.of(), credentials);
+
+            assertThat(result.isError()).isFalse();
+            var request = server.takeRequest();
+            assertThat(request.getHeader(ClawConstants.Mate.X_HW_ID)).isEqualTo(credentials.xHwId());
+            assertThat(request.getHeader(ClawConstants.Mate.X_HW_APPKEY)).isEqualTo(credentials.xHwAppKey());
+            assertThat(request.getHeader(ClawConstants.Mate.AUTHORIZATION)).isEqualTo(credentials.authorization());
+            assertThat(request.getHeader(ClawConstants.Mate.ACCESS_TOKEN)).isEqualTo(credentials.accessToken());
         }
-        assertThat(server.getRequestCount()).isZero();
+        assertThat(server.getRequestCount()).isEqualTo(16);
     }
 
     @Test
-    void invokeToolWithoutCredentialsIsRefusedBeforeRequest() {
-        MateToolClient.ToolResult result =
-                client.callTool("tool-11111111111111111111111111111111", java.util.Map.of(), null);
+    void invokeToolOmitsNullAndEmptyCredentialValues() throws Exception {
+        server.enqueue(json("{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":{}}"));
+        server.enqueue(json("{\"resCode\":\"0\",\"resMsg\":\"ok\",\"result\":{}}"));
 
-        assertThat(result.isError()).isTrue();
-        assertThat(result.content()).contains("incomplete credentials");
-        assertThat(server.getRequestCount()).isZero();
+        MateToolClient.ToolResult nullSnapshot =
+                client.callTool("tool-11111111111111111111111111111111", java.util.Map.of(), null);
+        MateToolClient.ToolResult emptyValues = client.callTool(
+                "tool-11111111111111111111111111111111", java.util.Map.of(), new MateCredentials("", "", "", ""));
+
+        assertThat(nullSnapshot.isError()).isFalse();
+        assertThat(emptyValues.isError()).isFalse();
+        assertNoCredentialHeaders(server.takeRequest());
+        assertNoCredentialHeaders(server.takeRequest());
+        assertThat(server.getRequestCount()).isEqualTo(2);
     }
 
     @Test
@@ -522,7 +532,8 @@ class HttpMateToolClientTest {
 
     @Test
     void invokeToolNonZeroResCodeReturnsErrorResult() throws Exception {
-        server.enqueue(json("{\"resCode\":\"430\",\"resMsg\":\"not authorized\",\"result\":null}"));
+        server.enqueue(json(
+                "{\"resCode\":\"synthetic-code-secret\",\"resMsg\":\"synthetic-message-secret\",\"result\":null}"));
 
         MateToolClient.ToolResult result = client.callTool(
                 "tool-11111111111111111111111111111111",
@@ -530,7 +541,24 @@ class HttpMateToolClientTest {
                 MateCredentials.appKey("hw-id-1", "key-1", "access-token-1"));
 
         assertThat(result.isError()).isTrue();
-        assertThat(result.content()).contains("430").contains("not authorized");
+        assertThat(result.content())
+                .isEqualTo("Mate tool execution request failed")
+                .doesNotContain("synthetic-code-secret", "synthetic-message-secret");
+        assertThat(server.getRequestCount()).isEqualTo(1);
+    }
+
+    @Test
+    void invokeToolMalformedResponseDoesNotExposeResponseBody() {
+        server.enqueue(json("{synthetic-response-secret"));
+
+        MateToolClient.ToolResult result =
+                client.callTool("tool-11111111111111111111111111111111", java.util.Map.of(), MateCredentials.empty());
+
+        assertThat(result.isError()).isTrue();
+        assertThat(result.content())
+                .isEqualTo("Mate tool execution request failed")
+                .doesNotContain("synthetic-response-secret");
+        assertThat(server.getRequestCount()).isEqualTo(1);
     }
 
     @Test
@@ -601,5 +629,13 @@ class HttpMateToolClientTest {
         assertThat(request.getHeader(ClawConstants.Mate.AUTHORIZATION)).isNull();
         assertThat(request.getHeader(ClawConstants.Mate.ACCESS_TOKEN)).isNull();
         assertThat(request.getHeader("X-Access-Token")).isNull();
+    }
+
+    private static MateCredentials credentials(int mask) {
+        return new MateCredentials(
+                (mask & 1) == 0 ? null : "synthetic-id",
+                (mask & 2) == 0 ? null : "synthetic-app-key",
+                (mask & 4) == 0 ? null : "synthetic-authorization",
+                (mask & 8) == 0 ? null : "synthetic-access-token");
     }
 }

@@ -79,7 +79,7 @@ public class MateRestUtil {
         } catch (MateToolResponseException e) {
             throw e;
         } catch (Exception e) {
-            throw logAndWrap(url, e);
+            throw logAndWrap("POST", url, e);
         }
     }
 
@@ -104,7 +104,7 @@ public class MateRestUtil {
         } catch (MateToolResponseException e) {
             throw e;
         } catch (Exception e) {
-            throw logAndWrap(url, e);
+            throw logAndWrap("GET", url, e);
         }
     }
 
@@ -132,9 +132,18 @@ public class MateRestUtil {
         return response.body();
     }
 
-    private IllegalStateException logAndWrap(String url, Exception e) {
-        log.error("CampusMate call failed: url={}", url, e);
-        return new IllegalStateException("CampusMate call failed: " + url, e);
+    private IllegalStateException logAndWrap(String operation, String url, Exception error) {
+        String exceptionType = error.getClass().getName();
+        IllegalStateException failure = new IllegalStateException(
+                "CampusMate call failed: operation=" + operation + ", url=" + url + ", exceptionType=" + exceptionType);
+        failure.setStackTrace(error.getStackTrace());
+        log.error(
+                "CampusMate call failed: operation={}, url={}, exceptionType={}",
+                operation,
+                url,
+                exceptionType,
+                failure);
+        return failure;
     }
 
     private static String joinUrl(String campusMateBaseUrl, String path) {
