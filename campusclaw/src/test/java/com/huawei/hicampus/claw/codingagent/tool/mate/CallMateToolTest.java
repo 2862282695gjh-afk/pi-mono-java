@@ -6,6 +6,10 @@ package com.huawei.hicampus.claw.codingagent.tool.mate;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import java.util.List;
 import java.util.Map;
@@ -145,28 +149,29 @@ class CallMateToolTest {
     }
 
     @Test
-    void boundInvocationShouldKeepIdentityAndDisplayNameAcrossDiscoveryRefresh() throws Exception {
-        CallMateTool tool = state.createCallTool();
-        client.addTool(meta(QUERY_ID, "Query", "Original query"));
+    void discoveryFailureShouldBeRetriedForTheSameToolCall() throws Exception {
+        MateToolClient flakyClient = mock(MateToolClient.class);
+        MateToolMeta query = meta(QUERY_ID, "Query");
+        when(flakyClient.listAgentTools("agent-1"))
+                .thenThrow(new IllegalStateException("discovery failed"))
+                .thenReturn(List.of(query));
+        when(flakyClient.callTool(QUERY_ID, Map.of(), CREDENTIALS))
+                .thenReturn(new MateToolClient.ToolResult("ok", null, false));
+        MateToolSessionState flakyState =
+                new MateToolsetFactory(flakyClient).createSession("agent-1", Map.of(), CREDENTIALS);
+        CallMateTool tool = flakyState.createCallTool();
 
-        assertThat(tool.bindInvocation("call", "Query")).isEqualTo("Original query");
-
-        String replacementId = "tool-22222222222222222222222222222222";
-        client.addTool(meta(replacementId, "Query", "Renamed query"));
-        client.bindAgent("agent-1", List.of(replacementId));
-        state.createListTool().execute("list", Map.of(), null, null);
+        assertThatThrownBy(() -> tool.execute("call", Map.of("tool", "Query"), null, null))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("discovery failed");
         tool.execute("call", Map.of("tool", "Query"), null, null);
 
-        assertThat(client.lastCalledTool()).isEqualTo(QUERY_ID);
-        assertThat(tool.bindInvocation("call", "Query")).isEqualTo("Original query");
+        verify(flakyClient, times(2)).listAgentTools("agent-1");
+        verify(flakyClient).callTool(QUERY_ID, Map.of(), CREDENTIALS);
     }
 
     private static MateToolMeta meta(String id, String name) {
-        return new MateToolMeta(id, name, null, "description", Map.of(), Map.of(), true, "allow");
-    }
-
-    private static MateToolMeta meta(String id, String name, String displayName) {
-        return new MateToolMeta(id, name, displayName, "description", Map.of(), Map.of(), true, "allow");
+        return new MateToolMeta(id, name, "description", Map.of(), Map.of(), true, "allow");
     }
 
     private static void call(MateToolSessionState state) {

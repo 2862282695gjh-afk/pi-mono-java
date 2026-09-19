@@ -1,6 +1,6 @@
 # Session Events 执行事件转换
 
-> 版本：1.2.0 · 日期：2026-09-18 · 状态：由执行协调器接入 Session Events HTTP
+> 版本：1.2.1 · 日期：2026-09-19 · 状态：由执行协调器接入 Session Events HTTP
 
 ## Context 与证据
 
@@ -41,24 +41,25 @@ AgentEnd 的取消标志补充实际退出证据；false 不代表成功，仍�
 
 ## 工具调用展示名称
 
-本增量依据设计仓 `3e5f1189987c425c9987cce2fc261a5d3c59f1c8` 的工具系统 §9.2.1、
-Session Events §2.3 与前端 §9.7，实现起点为 `19870445a3a8bd559919fe24580330be8227488f`；仅扩展工具元数据和公开调用事件字段，
-不改变上文历史 pi 证据、Agent 内核事件或模型工具参数。
+本增量依据设计仓工具系统 §9.2.1、Session Events §2.3 与前端 §9.7。
+源码核验基线为 `561d732ad591ba1f6aabbbc8590fc1d262c2c583`；仅扩展公开调用事件字段，
+不改变上文历史 pi 证据、Agent 内核事件、模型工具参数或业务工具执行流程。
 
-`RuntimeSessionEngineRegistry` 从本次装配的 `ManagedAgentSession.tools()` 创建
-`RuntimeToolCallSnapshotResolver`，按执行隔离并绑定至 `RuntimeActiveExecution`。
-普通工具的 `label()` 映射为可选 `displayName`；`CallMateTool` 使用具体业务工具的
-`MateToolResolutionDTO`，把 ID、技术名与展示名一并固定到本次调用。
-Mate 不可用或没有有效业务展示名时省略该字段，不能使用外层 `CallMateTool` 标签。
-`HttpMateToolClient` 保留网关 `display_name`，`MateToolSessionCache` 原子更新来源快照；
-同名不同 ID 仍拒绝，同名同 ID 的展示名冲突仅省略展示字段。
+`RuntimeSessionEngineRegistry#createHolder` 从本次 `ManagedAgentSession` 的
+`PreparedAgentRuntime` 和实际装配工具创建 `RuntimeToolCallSnapshotResolver`，按执行隔离并绑定至
+`RuntimeActiveExecution`。普通工具按实际装配实例的 `label()` 映射可选 `displayName`；业务工具按
+`arguments.tool` 从 `metadata().bindingTools()` 和直接 `skills().bindingTools()` 的可信快照查找。
+业务工具名称不使用外层 `CallMateTool` 标签，也不读取模型提供的展示字段。缺失、空白或冲突的
+绑定展示元数据只省略 `displayName`，不阻止原本可执行的调用。
 
 `RuntimeEventProjector.persistFinalizedToolCall` 在首次调用提交前解析快照，覆盖直接执行、
-拒绝与等待确认；网络发现不进入追加事务。调用与确认续跑共享已绑定工具 ID，目录刷新不改变
-本次执行对象。`RuntimeCommittedEventFactory.agentToolCall` 将规范化展示名写入现有 JSON payload，
+拒绝与等待确认；展示取名不调用 Mate discovery、不执行工具，也不提前解析工具 ID。
+Projector 保存本次调用的展示名，确认续跑和重复执行开始通知不重新取名。
+`RuntimeCommittedEventFactory.agentToolCall` 将规范化展示名写入现有 JSON payload，
 `CommittedEventProjection` 和 `AgentToolCallResponseVO` 供实时与历史共用；无有效值时省略字段。
 名称不进入模型上下文，不从模型 arguments 或结果文本取值，不参与执行授权。
-解析失败仍保存调用并由工具执行路径返回失败结果；执行凭据和现有权限检查保持。
+`CallMateTool` 仍在实际执行时通过 `MateToolDiscovery#resolveToolId` 解析标识，沿用已有名称到 ID
+缓存、唯一性检查、刷新失败语义、执行凭据和权限校验；展示功能不缓存发现异常或改变后续重试。
 
 前端 `runtime/toolDisplay.ts` 统一活动行和确认卡标题：有效 displayName、原始技术名、名称缺失提示。
 CallMateTool 的技术名来自 arguments.tool；普通工具来自 toolName。详情和可访问名称保留完整标题，
@@ -70,14 +71,15 @@ CallMateTool 的技术名来自 arguments.tool；普通工具来自 toolName。�
 转换按事件处理，保存当前 Assistant 和工具身份映射；压缩时按 500 条批量读取当前分支。
 不新增线程、数据库对象、依赖或升级流程。单次完整事件体积受配置上限限制，预览队列容量由输出实现控制。
 
-JDK 21 下相关后端测试合计 104 个通过，零失败、零跳过；覆盖网关元数据、缓存冲突与刷新、
-调用身份固定、框架标签映射、不可用 Mate、确认前快照、实时与历史投影一致性，以及装配和权限回归。
+JDK 21 下聚焦后端测试 63 个通过，绑定元数据来源回归测试 87 个通过，均为零失败、零跳过；
+覆盖框架标签、Agent 与直接 Skill 绑定、展示元数据降级、ASK/ALLOW/DENY 零发现调用、
+确认续跑、失败重试、实时与历史投影一致性。
 根 Reactor 的 Spotless、Checkstyle 通过；Java 方法长度、字段布局和新增类型文档经机械与人工检查。
-测试质量脚本在新增或修改的测试方法中无错误；对未修改方法报告的 7 个缺断言告警已核实为
-未识别 `assertThatThrownBy` 或辅助断言的误报。
+补充测试质量检查及人工核对通过，覆盖真实断言、失败路径与被测边界。
 
-前端 35 个文件、262 项测试通过，类型检查和构建通过。使用本地契约 fixture 在 390×844 与
-1440×1000 视口核验具体名称、长名称省略、完整详情与可访问名称、允许/拒绝及刷新恢复。
+本次前端 4 个相关测试文件、100 项测试通过，类型检查和构建通过。原提交 `9ea89f0` 曾使用本地模拟服务
+在 390×844 与 1440×1000 视口核验具体名称、长名称省略、完整详情与可访问名称、允许/拒绝及刷新恢复；
+本次未重跑浏览器验收。
 浏览器验收不代表真实 Mate 或 Java HTTP 端到端联调；本增量未运行真实 openGauss 集成测试。
 
 公司镜像已同步并逐文件核对生成内容；企业 `NativeParent:26.0.0-SNAPSHOT` 本机不可解析，
@@ -88,6 +90,7 @@ JDK 21 下相关后端测试合计 104 个通过，零失败、零跳过；覆�
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
-| 1.2.0 | 2026-09-18 | 工具调用保存 displayName 快照，贯通框架 label、业务元数据与前端展示。 |
+| 1.2.1 | 2026-09-19 | 业务展示名改从执行绑定快照读取，执行时保持原有名称到 ID 解析。 |
+| 1.2.0 | 2026-09-18 | 工具调用保存 displayName 快照，并在活动行、确认卡和历史中展示具体工具名称。 |
 | 1.1.0 | 2026-09-09 | 按执行开关展示原始推理，统一 Events 类名。 |
 | 1.0.0 | 2026-09-08 | 记录固定目标事件转换、确认段、安全投影和失败边界。 |

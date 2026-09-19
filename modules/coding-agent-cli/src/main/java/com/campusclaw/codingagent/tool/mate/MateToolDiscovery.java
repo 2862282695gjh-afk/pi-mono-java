@@ -55,7 +55,7 @@ public class MateToolDiscovery {
         return tools;
     }
 
-    public MateToolResolutionDTO resolveTool(String toolName) {
+    public String resolveToolId(String toolName) {
         return sessionCache.resolveOrRefresh(toolName, this::loadAllSources);
     }
 

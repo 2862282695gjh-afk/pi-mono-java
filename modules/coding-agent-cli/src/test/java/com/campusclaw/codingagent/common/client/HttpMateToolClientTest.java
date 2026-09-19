@@ -82,7 +82,6 @@ class HttpMateToolClientTest {
                 .extracting(MateToolMeta::toolId)
                 .containsExactly("tool-11111111111111111111111111111111", "tool-22222222222222222222222222222222");
         assertThat(tools.get(1).permission()).isEqualTo("deny");
-        assertThat(tools.getFirst().displayName()).isEqualTo("Query");
 
         var agentReq = server.takeRequest();
         assertThat(agentReq.getMethod()).isEqualTo("GET");
@@ -93,25 +92,6 @@ class HttpMateToolClientTest {
         assertThat(queryReq.getBody().readUtf8())
                 .contains("\"tool-11111111111111111111111111111111\"")
                 .contains("\"tool-22222222222222222222222222222222\"");
-    }
-
-    @Test
-    void nonStringDisplayNamesDegradeWithoutDiscardingToolMetadata() throws Exception {
-        server.enqueue(json("{\"resCode\":\"0\",\"result\":{\"bindingTools\":["
-                + "{\"toolId\":\"tool-11111111111111111111111111111111\"},"
-                + "{\"toolId\":\"tool-22222222222222222222222222222222\"},"
-                + "{\"toolId\":\"tool-33333333333333333333333333333333\"},"
-                + "{\"toolId\":\"tool-44444444444444444444444444444444\"}]}}"));
-        server.enqueue(json("{\"resCode\":\"0\",\"result\":{\"data\":["
-                + "{\"id\":\"tool-11111111111111111111111111111111\",\"name\":\"one\",\"display_name\":42},"
-                + "{\"id\":\"tool-22222222222222222222222222222222\",\"name\":\"two\",\"display_name\":false},"
-                + "{\"id\":\"tool-33333333333333333333333333333333\",\"name\":\"three\",\"display_name\":{}},"
-                + "{\"id\":\"tool-44444444444444444444444444444444\",\"name\":\"four\",\"display_name\":[]}]}}"));
-
-        List<MateToolMeta> tools = client.listAgentTools("agent-11111111111111111111111111111111");
-
-        assertThat(tools).extracting(MateToolMeta::toolName).containsExactly("one", "two", "three", "four");
-        assertThat(tools).extracting(MateToolMeta::displayName).containsOnlyNulls();
     }
 
     @Test

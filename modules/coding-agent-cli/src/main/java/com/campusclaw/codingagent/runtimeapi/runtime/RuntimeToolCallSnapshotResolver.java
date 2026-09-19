@@ -4,23 +4,26 @@
 
 package com.campusclaw.codingagent.runtimeapi.runtime;
 
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.Objects;
+import java.util.Set;
 
 import com.campusclaw.agent.tool.AgentTool;
 import com.campusclaw.ai.types.ToolCall;
+import com.campusclaw.codingagent.runtime.MateServiceClient.BoundTool;
+import com.campusclaw.codingagent.runtime.PreparedAgentRuntime;
 import com.campusclaw.codingagent.tool.builtin.BuiltInToolName;
-import com.campusclaw.codingagent.tool.mate.CallMateTool;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * 从本次实际装配的工具固定每个调用的可选展示名称。
+ * 从本次实际装配的工具和可信绑定快照解析可选展示名称。
  *
- * @version [br_eCampusCore 26.0.0, 2026/09/17]
+ * @version [br_eCampusCore 26.0.0, 2026/09/19]
  * @since [br_eCampusCore 26.0.0]
  */
 public final class RuntimeToolCallSnapshotResolver {
@@ -28,76 +31,116 @@ public final class RuntimeToolCallSnapshotResolver {
 
     private final Map<String, AgentTool> toolsByName;
 
-    private final Map<String, DisplayBinding> bindings = new ConcurrentHashMap<>();
+    private final Map<String, DisplayBinding> mateBindings;
 
-    private RuntimeToolCallSnapshotResolver(List<AgentTool> tools) {
-        Map<String, AgentTool> indexed = new LinkedHashMap<>();
-        tools.forEach(tool -> indexed.put(tool.name(), tool));
-        toolsByName = Map.copyOf(indexed);
+    private RuntimeToolCallSnapshotResolver(
+            List<AgentTool> tools, List<BoundTool> agentTools, List<BoundTool> skillTools) {
+        toolsByName = indexTools(tools);
+        mateBindings = indexMateBindings(agentTools, skillTools);
     }
 
-    public static RuntimeToolCallSnapshotResolver from(List<AgentTool> tools) {
-        return new RuntimeToolCallSnapshotResolver(List.copyOf(tools));
+    public static RuntimeToolCallSnapshotResolver from(PreparedAgentRuntime runtime, List<AgentTool> tools) {
+        List<BoundTool> skillTools = runtime.skills().stream()
+                .flatMap(skill -> skill.bindingTools().stream())
+                .toList();
+        return new RuntimeToolCallSnapshotResolver(tools, runtime.metadata().bindingTools(), skillTools);
     }
 
     public static RuntimeToolCallSnapshotResolver empty() {
-        return new RuntimeToolCallSnapshotResolver(List.of());
+        return new RuntimeToolCallSnapshotResolver(List.of(), List.of(), List.of());
     }
 
     /**
-     * 固定并返回该调用的可选展示名称。
+     * 返回该调用在当前执行快照中的可选展示名称。
      *
      * @param call 模型工具调用
-     * @return 规范化后的展示名称；无有效名称时为 null
+     * @return 规范化后的展示名称；元数据无效时为 null
      */
     public String resolveDisplayName(ToolCall call) {
-        DisplayBinding binding = bindings.computeIfAbsent(call.id(), ignored -> resolve(call));
-        if (!binding.toolName().equals(call.name())) {
-            LOGGER.atError()
-                    .addKeyValue("event", "campusclaw.failure")
-                    .addKeyValue("operation", "runtime.tool.snapshot")
-                    .addKeyValue("toolCallId", call.id())
-                    .log("CampusClaw failure: tool call id was rebound to a different tool name");
-            return null;
-        }
-        return binding.displayName();
-    }
-
-    private DisplayBinding resolve(ToolCall call) {
-        AgentTool tool = toolsByName.get(call.name());
-        if (tool == null) {
-            return new DisplayBinding(call.name(), null);
-        }
         try {
-            String displayName = resolveDisplayName(call, tool);
-            return new DisplayBinding(call.name(), displayName);
+            return resolve(call);
         } catch (RuntimeException failure) {
             LOGGER.atWarn()
                     .addKeyValue("event", "campusclaw.failure")
-                    .addKeyValue("operation", "runtime.tool.snapshot")
-                    .addKeyValue("toolCallId", call.id())
-                    .addKeyValue("toolName", call.name())
+                    .addKeyValue("operation", "runtime.tool.display-name")
+                    .addKeyValue("toolCallId", call == null ? null : call.id())
                     .setCause(failure)
-                    .log("Tool display name snapshot failed");
-            return new DisplayBinding(call.name(), null);
+                    .log("Tool display name resolution failed");
+            return null;
         }
     }
 
-    private static String resolveDisplayName(ToolCall call, AgentTool tool) {
-        if (!BuiltInToolName.CALL_MATE_TOOL.externalName().equals(call.name())) {
-            return normalize(tool.label());
+    private String resolve(ToolCall call) {
+        if (call == null || call.name() == null) {
+            return null;
         }
-        return tool instanceof CallMateTool mateTool ? resolveMateDisplayName(call, mateTool) : null;
+        if (BuiltInToolName.CALL_MATE_TOOL.externalName().equals(call.name())) {
+            return resolveMateDisplayName(call);
+        }
+        AgentTool tool = toolsByName.get(call.name());
+        return tool == null ? null : normalize(tool.label());
     }
 
-    private static String resolveMateDisplayName(ToolCall call, CallMateTool tool) {
+    private String resolveMateDisplayName(ToolCall call) {
         Object value = call.arguments() == null ? null : call.arguments().get("tool");
-        return value instanceof String toolName ? normalize(tool.bindInvocation(call.id(), toolName)) : null;
+        if (!(value instanceof String toolName)) {
+            return null;
+        }
+        DisplayBinding binding = mateBindings.get(toolName);
+        return binding == null || binding.conflicted() ? null : binding.displayName();
+    }
+
+    private static Map<String, AgentTool> indexTools(List<AgentTool> tools) {
+        Map<String, AgentTool> indexed = new LinkedHashMap<>();
+        Set<String> conflicts = new HashSet<>();
+        for (AgentTool tool : tools) {
+            String name = tool.name();
+            if (name == null || name.isBlank() || conflicts.contains(name)) {
+                continue;
+            }
+            if (indexed.putIfAbsent(name, tool) != null) {
+                indexed.remove(name);
+                conflicts.add(name);
+            }
+        }
+        return Map.copyOf(indexed);
+    }
+
+    private static Map<String, DisplayBinding> indexMateBindings(
+            List<BoundTool> agentTools, List<BoundTool> skillTools) {
+        Map<String, DisplayBinding> indexed = new LinkedHashMap<>();
+        mergeMateBindings(indexed, agentTools);
+        mergeMateBindings(indexed, skillTools);
+        return Map.copyOf(indexed);
+    }
+
+    private static void mergeMateBindings(Map<String, DisplayBinding> indexed, List<BoundTool> tools) {
+        for (BoundTool tool : tools) {
+            if (tool.name() == null || tool.name().isBlank()) {
+                continue;
+            }
+            DisplayBinding current = DisplayBinding.from(tool);
+            indexed.merge(tool.name(), current, DisplayBinding::merge);
+        }
     }
 
     private static String normalize(String value) {
         return value == null || value.isBlank() ? null : value.strip();
     }
 
-    private record DisplayBinding(String toolName, String displayName) {}
+    private record DisplayBinding(String toolId, String displayName, boolean conflicted) {
+        private static DisplayBinding from(BoundTool tool) {
+            String toolId = normalize(tool.id());
+            String displayName = normalize(tool.displayName());
+            return new DisplayBinding(toolId, displayName, toolId == null || displayName == null);
+        }
+
+        private DisplayBinding merge(DisplayBinding other) {
+            boolean hasConflict = conflicted
+                    || other.conflicted
+                    || !Objects.equals(toolId, other.toolId)
+                    || !Objects.equals(displayName, other.displayName);
+            return new DisplayBinding(toolId, displayName, hasConflict);
+        }
+    }
 }

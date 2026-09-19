@@ -6,6 +6,7 @@ package com.huawei.hicampus.claw.codingagent.runtimeapi.runtime;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import java.util.List;
@@ -14,21 +15,20 @@ import java.util.Map;
 import com.huawei.hicampus.claw.agent.tool.AgentTool;
 import com.huawei.hicampus.claw.ai.types.ToolCall;
 import com.huawei.hicampus.claw.codingagent.common.client.mate.MateCredentials;
-import com.huawei.hicampus.claw.codingagent.common.client.mate.MateToolMeta;
-import com.huawei.hicampus.claw.codingagent.tool.builtin.BuiltInToolName;
-import com.huawei.hicampus.claw.codingagent.tool.builtin.UnavailableBuiltInTool;
+import com.huawei.hicampus.claw.codingagent.common.client.mate.MateToolClient;
+import com.huawei.hicampus.claw.codingagent.runtime.MateServiceClient.AgentRuntime;
+import com.huawei.hicampus.claw.codingagent.runtime.MateServiceClient.BoundTool;
+import com.huawei.hicampus.claw.codingagent.runtime.MateServiceClient.SkillInfo;
+import com.huawei.hicampus.claw.codingagent.runtime.PreparedAgentRuntime;
 import com.huawei.hicampus.claw.codingagent.tool.mate.CallMateTool;
-import com.huawei.hicampus.claw.codingagent.tool.mate.MateToolSessionState;
-import com.huawei.hicampus.claw.codingagent.tool.mate.MateToolsetFactory;
-import com.huawei.hicampus.claw.codingagent.tool.mate.MockMateToolClient;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.huawei.hicampus.claw.codingagent.tool.mate.MateToolDiscovery;
 
 import org.junit.jupiter.api.Test;
 
 /**
- * {@link RuntimeToolCallSnapshotResolver} 的服务端名称映射与调用隔离测试。
+ * {@link RuntimeToolCallSnapshotResolver} 的可信名称映射与降级测试。
  *
- * @version [br_eCampusCore 26.0.0, 2026/09/17]
+ * @version [br_eCampusCore 26.0.0, 2026/09/19]
  * @since [br_eCampusCore 26.0.0]
  */
 class RuntimeToolCallSnapshotResolverTest {
@@ -36,11 +36,11 @@ class RuntimeToolCallSnapshotResolverTest {
     private static final String TOOL_ID = "tool-11111111111111111111111111111111";
 
     @Test
-    void ordinaryToolShouldUseNormalizedLabelInsteadOfTechnicalName() {
+    void ordinaryToolShouldUseNormalizedLabelFromAssembledInstance() {
         AgentTool tool = mock(AgentTool.class);
         when(tool.name()).thenReturn("Read");
         when(tool.label()).thenReturn("  Read file  ");
-        RuntimeToolCallSnapshotResolver resolver = RuntimeToolCallSnapshotResolver.from(List.of(tool));
+        RuntimeToolCallSnapshotResolver resolver = resolver(runtime(List.of(), List.of()), List.of(tool));
 
         String displayName = resolver.resolveDisplayName(new ToolCall("call-1", "Read", Map.of("path", "a")));
 
@@ -52,40 +52,93 @@ class RuntimeToolCallSnapshotResolverTest {
         AgentTool tool = mock(AgentTool.class);
         when(tool.name()).thenReturn("Read");
         when(tool.label()).thenReturn(" \n ");
-        RuntimeToolCallSnapshotResolver resolver = RuntimeToolCallSnapshotResolver.from(List.of(tool));
+        RuntimeToolCallSnapshotResolver resolver = resolver(runtime(List.of(), List.of()), List.of(tool));
 
         assertThat(resolver.resolveDisplayName(new ToolCall("call-1", "Read", Map.of())))
                 .isNull();
     }
 
     @Test
-    void mateToolShouldUseBusinessMetadataAndIgnoreForgedArgument() {
-        MockMateToolClient client = new MockMateToolClient();
-        client.addTool(
-                new MateToolMeta(TOOL_ID, "Query", "Business query", "description", Map.of(), Map.of(), true, "allow"));
-        client.bindAgent("agent-1", List.of(TOOL_ID));
-        MateToolSessionState state = new MateToolsetFactory(client)
-                .createSession("agent-1", Map.of(), MateCredentials.jwt("caller", "token", "access"));
-        CallMateTool tool = state.createCallTool();
-        RuntimeToolCallSnapshotResolver resolver = RuntimeToolCallSnapshotResolver.from(List.of(tool));
-        ToolCall call = new ToolCall("call-1", "CallMateTool", Map.of("tool", "Query", "displayName", "Forged name"));
+    void mateToolShouldUseBoundMetadataWithoutDiscoveryOrWrapperLabel() {
+        MateToolClient client = mock(MateToolClient.class);
+        MateToolDiscovery discovery = mock(MateToolDiscovery.class);
+        CallMateTool tool = new CallMateTool(client, MateCredentials.empty(), discovery);
+        PreparedAgentRuntime runtime = runtime(List.of(tool("Query", TOOL_ID, "  Business query  ")), List.of());
+        RuntimeToolCallSnapshotResolver resolver = resolver(runtime, List.of(tool));
+        ToolCall call = new ToolCall("call-1", "CallMateTool", Map.of("tool", "Query", "displayName", "Forged"));
 
         String displayName = resolver.resolveDisplayName(call);
 
         assertThat(displayName).isEqualTo("Business query");
         assertThat(displayName).isNotEqualTo(tool.label());
-        assertThat(client.agentListCalls()).isEqualTo(1);
+        verifyNoInteractions(client, discovery);
     }
 
     @Test
-    void unavailableMateToolShouldNotExposeWrapperLabel() {
-        AgentTool tool =
-                new UnavailableBuiltInTool(BuiltInToolName.CALL_MATE_TOOL, new ObjectMapper().createObjectNode());
-        RuntimeToolCallSnapshotResolver resolver = RuntimeToolCallSnapshotResolver.from(List.of(tool));
+    void missingBlankOrConflictingMateDisplayMetadataShouldRemainAbsent() {
+        List<BoundTool> agentTools = List.of(
+                tool("Missing", TOOL_ID, null),
+                tool("Blank", TOOL_ID, "  "),
+                tool("ConflictingName", TOOL_ID, "Agent name"),
+                tool("ConflictingId", TOOL_ID, "Shared name"));
+        List<BoundTool> skillTools = List.of(
+                tool("ConflictingName", TOOL_ID, "Skill name"),
+                tool("ConflictingId", "tool-22222222222222222222222222222222", "Shared name"));
+        RuntimeToolCallSnapshotResolver resolver = resolver(runtime(agentTools, skillTools), List.of());
 
-        String displayName =
-                resolver.resolveDisplayName(new ToolCall("call-1", "CallMateTool", Map.of("tool", "Query")));
+        assertThat(resolver.resolveDisplayName(mateCall("Missing"))).isNull();
+        assertThat(resolver.resolveDisplayName(mateCall("Blank"))).isNull();
+        assertThat(resolver.resolveDisplayName(mateCall("ConflictingName"))).isNull();
+        assertThat(resolver.resolveDisplayName(mateCall("ConflictingId"))).isNull();
+    }
 
-        assertThat(displayName).isNull();
+    @Test
+    void identicalMateMetadataAcrossSourcesShouldRemainAvailable() {
+        BoundTool binding = tool("Query", TOOL_ID, "Business query");
+        RuntimeToolCallSnapshotResolver resolver = resolver(runtime(List.of(binding), List.of(binding)), List.of());
+
+        assertThat(resolver.resolveDisplayName(mateCall("Query"))).isEqualTo("Business query");
+    }
+
+    @Test
+    void skillOnlyMateBindingShouldRemainAvailable() {
+        BoundTool binding = tool("Query", TOOL_ID, "Skill query");
+        RuntimeToolCallSnapshotResolver resolver = resolver(runtime(List.of(), List.of(binding)), List.of());
+
+        assertThat(resolver.resolveDisplayName(mateCall("Query"))).isEqualTo("Skill query");
+    }
+
+    @Test
+    void failedOrdinaryLabelShouldDegradeWithoutBlockingToolCall() {
+        AgentTool tool = mock(AgentTool.class);
+        when(tool.name()).thenReturn("Read");
+        when(tool.label()).thenThrow(new IllegalStateException("label unavailable"));
+        RuntimeToolCallSnapshotResolver resolver = resolver(runtime(List.of(), List.of()), List.of(tool));
+
+        assertThat(resolver.resolveDisplayName(new ToolCall("call-1", "Read", Map.of())))
+                .isNull();
+    }
+
+    private static RuntimeToolCallSnapshotResolver resolver(PreparedAgentRuntime runtime, List<AgentTool> tools) {
+        return RuntimeToolCallSnapshotResolver.from(runtime, tools);
+    }
+
+    private static PreparedAgentRuntime runtime(List<BoundTool> agentTools, List<BoundTool> skillTools) {
+        PreparedAgentRuntime runtime = mock(PreparedAgentRuntime.class);
+        AgentRuntime metadata = mock(AgentRuntime.class);
+        SkillInfo skill = mock(SkillInfo.class);
+        when(metadata.bindingTools()).thenReturn(agentTools);
+        when(skill.bindingTools()).thenReturn(skillTools);
+        when(runtime.metadata()).thenReturn(metadata);
+        when(runtime.skills()).thenReturn(List.of(skill));
+        return runtime;
+    }
+
+    private static BoundTool tool(String name, String id, String displayName) {
+        return new BoundTool(null, displayName, id, null, name, "allow", null, null);
+    }
+
+    private static ToolCall mateCall(String toolName) {
+        return new ToolCall("call-" + toolName, "CallMateTool", Map.of("tool", toolName));
     }
 }

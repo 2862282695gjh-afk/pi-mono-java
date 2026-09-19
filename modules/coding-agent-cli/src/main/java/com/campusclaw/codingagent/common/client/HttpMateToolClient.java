@@ -23,8 +23,6 @@ import com.campusclaw.common.constant.ClawConstants;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ArrayNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -188,32 +186,11 @@ public class HttpMateToolClient implements MateToolClient {
         }
         List<ToolInfo> infos;
         try {
-            infos = mapper.convertValue(sanitizeDisplayNames(data), new TypeReference<List<ToolInfo>>() {});
+            infos = mapper.convertValue(data, new TypeReference<List<ToolInfo>>() {});
         } catch (IllegalArgumentException e) {
             throw new MateToolResponseException("result.data is not a tool metadata list", e);
         }
         return toMeta(infos);
-    }
-
-    private static JsonNode sanitizeDisplayNames(JsonNode data) {
-        if (!data.isArray()) {
-            return data;
-        }
-        ArrayNode sanitized = data.deepCopy();
-        for (JsonNode item : sanitized) {
-            if (item instanceof ObjectNode object) {
-                removeInvalidDisplayName(object, "display_name");
-                removeInvalidDisplayName(object, "displayName");
-            }
-        }
-        return sanitized;
-    }
-
-    private static void removeInvalidDisplayName(ObjectNode object, String field) {
-        JsonNode value = object.get(field);
-        if (value != null && !value.isTextual()) {
-            object.remove(field);
-        }
     }
 
     private List<MateToolMeta> queryOrderedToolMeta(List<String> toolIds) throws Exception {
@@ -306,7 +283,6 @@ public class HttpMateToolClient implements MateToolClient {
             metas.add(new MateToolMeta(
                     info.getId(),
                     info.getName(),
-                    info.getDisplayName(),
                     info.getDescription(),
                     info.getInputSchema(),
                     info.getOutputSchema(),
