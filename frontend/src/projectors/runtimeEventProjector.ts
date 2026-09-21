@@ -39,7 +39,8 @@ export function projectRuntimeEvents(events: RuntimeEvent[], observing = false):
         let status: ActivityTurn['status'] = terminal || !observing ? 'unconfirmed' : 'running';
         if (event.requiresConfirmation && !confirmed && !terminal) status = 'confirming';
         if (result?.type === 'agent.tool_result') status = result.isError ? 'error' : 'completed';
-        turns.push({ key, kind: 'activity', toolCallId: event.toolCallId, toolName: event.toolName, status,
+        turns.push({ key, kind: 'activity', toolCallId: event.toolCallId, toolName: event.toolName,
+          ...(event.displayName ? { displayName: event.displayName } : {}), status,
           arguments: argumentRows(event.arguments), argumentValue: event.arguments,
           result: result?.type === 'agent.tool_result' ? result.content.map((block) => block.text).join('\n') : '',
           resultBlocks: result?.type === 'agent.tool_result' ? result.content.map((block) => block.text) : undefined,
@@ -48,7 +49,7 @@ export function projectRuntimeEvents(events: RuntimeEvent[], observing = false):
         break;
       }
       case 'agent.tool_result':
-        if (events.some((item) => item.type === 'agent.plan' && item.toolCallId === event.toolCallId
+        if (events.some((item) => item.type === 'agent.plan' && item.phase !== 'delta' && item.toolCallId === event.toolCallId
           && item.sourceEventId === event.sourceEventId)) break;
         if (events.some((item) => item.type === 'agent.question' && item.toolCallId === event.toolCallId
           && item.sourceEventId === event.sourceEventId)) break;
@@ -59,16 +60,24 @@ export function projectRuntimeEvents(events: RuntimeEvent[], observing = false):
         }
         break;
       case 'agent.plan': {
-        const decision = events.find((item) => item.type === 'user.plan_confirmation' && item.targetEventId === event.eventId);
-        const terminal = events.find((item) => item.type === 'session.status_idle'
+        const completed = event.phase !== 'delta' && Boolean(event.toolCallId);
+        const planIndex = events.indexOf(event);
+        const following = events.slice(planIndex + 1);
+        const decision = completed
+          ? events.find((item) => item.type === 'user.plan_confirmation' && item.targetEventId === event.eventId)
+          : undefined;
+        const terminal = following.find((item) => item.type === 'session.status_idle'
           && item.sourceEventId === event.sourceEventId && item.reason !== 'confirming');
-        const interrupted = events.some((item) => item.type === 'user.interrupt' && item.targetEventId === event.sourceEventId);
+        const confirming = following.find((item) => item.type === 'session.status_idle'
+          && item.sourceEventId === event.sourceEventId && item.reason === 'confirming');
+        const interrupted = following.some((item) => item.type === 'user.interrupt'
+          && item.targetEventId === event.sourceEventId);
         const lifecycle = terminal?.type === 'session.status_idle'
           ? terminal.reason === 'terminated' ? 'stopped' : terminal.reason === 'failed' ? 'failed' : 'ended'
-          : interrupted ? 'stopping' : undefined;
+          : interrupted ? 'stopping' : !completed && confirming ? 'ended' : undefined;
         turns.push({ key, kind: 'plan', eventId: event.eventId, sourceEventId: event.sourceEventId,
           rawMarkdown: event.content, decision: decision?.type === 'user.plan_confirmation' ? decision.result : undefined,
-          lifecycle });
+          streaming: !completed && observing && !lifecycle, unconfirmed: !completed, lifecycle });
         break;
       }
       case 'agent.todo_updated': break;
@@ -134,7 +143,7 @@ function isShowcaseQuestion(question: Extract<RuntimeEvent, { type: 'agent.quest
 }
 
 function matchingPlan(events: RuntimeEvent[], call: Extract<RuntimeEvent, { type: 'agent.tool_call' }>): boolean {
-  return events.some((item) => item.type === 'agent.plan' && item.toolCallId === call.toolCallId
+  return events.some((item) => item.type === 'agent.plan' && item.phase !== 'delta' && item.toolCallId === call.toolCallId
     && item.sourceEventId === call.sourceEventId);
 }
 
@@ -162,6 +171,7 @@ function questionToolStatus(call: Extract<RuntimeEvent, { type: 'agent.tool_call
     kind: 'activity',
     toolCallId: call.toolCallId,
     toolName: call.toolName,
+    ...(call.displayName ? { displayName: call.displayName } : {}),
     status: failed ? 'error' : completedWithoutQuestion || !observing ? 'unconfirmed' : 'running',
     arguments: [],
     result: '',

@@ -17,8 +17,6 @@ import java.util.concurrent.CompletableFuture;
 
 import com.huawei.hicampus.claw.agent.Agent;
 import com.huawei.hicampus.claw.agent.state.AgentState;
-import com.huawei.hicampus.claw.ai.env.ProviderConfigResolver;
-import com.huawei.hicampus.claw.ai.model.ModelRegistry;
 import com.huawei.hicampus.claw.ai.types.Api;
 import com.huawei.hicampus.claw.ai.types.AssistantMessage;
 import com.huawei.hicampus.claw.ai.types.InputModality;
@@ -28,7 +26,7 @@ import com.huawei.hicampus.claw.ai.types.Provider;
 import com.huawei.hicampus.claw.ai.types.StopReason;
 import com.huawei.hicampus.claw.ai.types.TextContent;
 import com.huawei.hicampus.claw.ai.types.Usage;
-import com.huawei.hicampus.claw.codingagent.model.ModelCatalogService;
+import com.huawei.hicampus.claw.codingagent.common.client.mate.MateCredentials;
 import com.huawei.hicampus.claw.codingagent.runtime.MateServiceClient.AgentRuntime;
 import com.huawei.hicampus.claw.codingagent.runtime.PreparedAgentRuntime;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.model.MateModelManagerProperties;
@@ -55,8 +53,6 @@ class ManagedCronSessionRunnerTest {
 
     private AgentSessionFactory sessionFactory;
 
-    private ModelCatalogService emptyModelCatalog;
-
     private ManagedCronSessionRunner runner;
 
     private Model model;
@@ -64,7 +60,6 @@ class ManagedCronSessionRunnerTest {
     @BeforeEach
     void setUp() {
         sessionFactory = mock(AgentSessionFactory.class);
-        emptyModelCatalog = new ModelCatalogService(new ModelRegistry(), mock(ProviderConfigResolver.class));
         model = model();
         runner = new ManagedCronSessionRunner(
                 sessionFactory,
@@ -82,8 +77,7 @@ class ManagedCronSessionRunnerTest {
         verify(sessionFactory).create(request.capture());
         assertThat(request.getValue().entryPoint()).isEqualTo(ToolEntryPoint.CRON);
         assertThat(request.getValue().agentId()).isEqualTo(AGENT_ID);
-        assertThat(request.getValue().mateCredentials().isComplete()).isFalse();
-        assertThat(emptyModelCatalog.getAvailableModels()).isEmpty();
+        assertThat(request.getValue().mateCredentials()).isEqualTo(MateCredentials.empty());
         Model selected = request.getValue().modelResolver().apply(runtime());
         assertThat(selected.id()).isEqualTo("model-a");
         assertThat(selected.provider()).isEqualTo(Provider.CAMPUSMATE);
@@ -99,6 +93,21 @@ class ManagedCronSessionRunnerTest {
         verify(sessionFactory).create(request.capture());
         assertThatThrownBy(() -> request.getValue().modelResolver().apply(runtime(List.of())))
                 .hasMessage("Cron Agent has no default model");
+    }
+
+    @Test
+    void usesPublishedDefaultWhenItIsNotFirstBinding() {
+        ManagedAgentSession session = completedSession("unused");
+        when(sessionFactory.create(any())).thenReturn(session);
+        runner.execute(AGENT_ID, "scheduled task");
+        ArgumentCaptor<ManagedAgentSessionRequest> request = ArgumentCaptor.forClass(ManagedAgentSessionRequest.class);
+        verify(sessionFactory).create(request.capture());
+        PreparedAgentRuntime runtime = runtime(List.of("model-a", "model-b"), "model-b");
+
+        Model selected = request.getValue().modelResolver().apply(runtime);
+
+        assertThat(selected.id()).isEqualTo("model-b");
+        assertThat(selected.provider()).isEqualTo(Provider.CAMPUSMATE);
     }
 
     @Test
@@ -145,6 +154,11 @@ class ManagedCronSessionRunnerTest {
     }
 
     private PreparedAgentRuntime runtime(List<String> configuredModels) {
+        String defaultModel = configuredModels.isEmpty() ? null : configuredModels.getFirst();
+        return runtime(configuredModels, defaultModel);
+    }
+
+    private PreparedAgentRuntime runtime(List<String> configuredModels, String defaultModel) {
         AgentRuntime metadata = new AgentRuntime(
                 configuredModels,
                 List.of(),
@@ -163,7 +177,8 @@ class ManagedCronSessionRunnerTest {
                 Path.of("agent", AGENT_ID),
                 metadata,
                 List.of(),
-                com.huawei.hicampus.claw.codingagent.runtimeapi.agent.AgentPromptTestFixtures.prompts("system"));
+                com.huawei.hicampus.claw.codingagent.runtimeapi.agent.AgentPromptTestFixtures.prompts("system"),
+                defaultModel);
     }
 
     private static Model model() {

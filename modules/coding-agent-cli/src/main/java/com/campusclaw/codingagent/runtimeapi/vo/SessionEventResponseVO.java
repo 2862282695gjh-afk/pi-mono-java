@@ -195,6 +195,9 @@ public class SessionEventResponseVO {
 
         private final String toolName;
 
+        @JsonInclude(JsonInclude.Include.NON_NULL)
+        private final String displayName;
+
         private final Map<String, Object> arguments;
 
         private final boolean requiresConfirmation;
@@ -232,16 +235,20 @@ public class SessionEventResponseVO {
     }
 
     /**
-     * Agent 待审核完整计划事件字段。
+     * Agent 计划预览或待审核完整计划事件字段。
      */
     @Getter
     @RequiredArgsConstructor
     public static final class AgentPlanResponseVO implements EventDetailsResponseVO {
-        private final String sourceEventId;
-
-        private final String toolCallId;
+        @JsonInclude(JsonInclude.Include.NON_NULL)
+        private final String phase;
 
         private final String content;
+
+        private final String sourceEventId;
+
+        @JsonInclude(JsonInclude.Include.NON_NULL)
+        private final String toolCallId;
     }
 
     /**

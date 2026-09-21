@@ -27,16 +27,37 @@ import com.huawei.hicampus.claw.common.constant.ClawConstants;
  * @param skills 从已生成的 SKILL.md frontmatter 重建的绑定 Skill 身份快照；
  *               {@code skills/} 子目录本身表示绑定关系
  * @param prompts 本次准备期间固定的基础与模式提示词快照
+ * @param defaultModelId 本次准备从 settings.json 固定的默认模型标识
  *
  * @version [br_eCampusCore 26.0.0, 2026/08/17]
  * @since [br_eCampusCore 26.0.0]
  */
 public record PreparedAgentRuntime(
-        String agentId, Path agentRoot, AgentRuntime metadata, List<SkillInfo> skills, AgentPromptSnapshotDTO prompts) {
+        String agentId,
+        Path agentRoot,
+        AgentRuntime metadata,
+        List<SkillInfo> skills,
+        AgentPromptSnapshotDTO prompts,
+        String defaultModelId) {
 
     public PreparedAgentRuntime {
         skills = skills == null ? List.of() : List.copyOf(skills);
         prompts = java.util.Objects.requireNonNull(prompts, "prompts");
+    }
+
+    public PreparedAgentRuntime(
+            String agentId,
+            Path agentRoot,
+            AgentRuntime metadata,
+            List<SkillInfo> skills,
+            AgentPromptSnapshotDTO prompts) {
+        this(
+                agentId,
+                agentRoot,
+                metadata,
+                skills,
+                prompts,
+                metadata == null ? null : metadata.defaultModel().orElse(null));
     }
 
     /**

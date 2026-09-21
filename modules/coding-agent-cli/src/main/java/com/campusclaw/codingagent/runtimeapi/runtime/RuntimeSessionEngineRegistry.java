@@ -181,6 +181,7 @@ public class RuntimeSessionEngineRegistry {
         try {
             RuntimeToolPermissionPolicy permissions = RuntimeToolPermissionPolicy.from(session.runtime());
             execution.bindToolPermissions(permissions);
+            execution.bindToolCallSnapshots(RuntimeToolCallSnapshotResolver.from(session.runtime(), session.tools()));
             var binding = RuntimeToolPermissionPolicy.diagnoseBinding(
                     session.runtime(),
                     com.campusclaw.common.constant.ClawConstants.RuntimeApi.SHOWCASE_CONFIRMATION_TOOL_NAME);

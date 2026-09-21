@@ -2,10 +2,11 @@
 
 | 属性 | 值 |
 |---|---|
-| 文档版本 | 1.3.0 |
+| 文档版本 | 1.4.0 |
 | 状态 | Implemented |
-| 更新日期 | 2026-09-15 |
-| 规范来源 | `pi-mono-java-design@0a74625e0dd4ea6387b6765c7cb0f9105970d05c`，`02-服务与接口/03-模型管理Provider契约/README.md` 2.7.0 |
+| 更新日期 | 2026-09-19 |
+| 规范来源 | `pi-mono-java-design@1fd29a535c7d1ba47bfb9c6413a10ff46f492643`，`02-服务与接口/03-Model/README.md` 2.8.2 |
+| 模型来源清理起点 | `840d04405d2bcc80a41b9d3b3f16606cc4845338` |
 | pi-mono 基线 | `5cd93f688aaab89dbb6dfa4aca535f21796ae185` |
 | 设计分析时 pi-mono-java 基线 | `d649866a6cae967ace18ceaeb9597edd47e5721e` |
 | 实施前 pi-mono-java 主线 | `0d7a12e1dd89eed52f6e12db717fd5703b6b2125` |
@@ -24,8 +25,8 @@ CampusClaw 的模型调用使用稳定身份 `campusmate` 和 `CampusMateProvide
 不发送 `agentId/sessionId/apiKey/baseUrl/providerId/upstreamModelId` 或身份头。CampusMate 负责
 私有上游路由、模型替换、凭据注入和字节透明 SSE 转发。
 
-本次只实现已经冻结的 Chat 调用协议。Model Manager 的模型目录、Agent 模型列表和模型解析
-三个候选接口未冻结，因此没有在 CampusClaw 或 CampusMate 中虚构实现。
+模型默认值和允许列表只来自业务 Agent 的 `.campusclaw/settings.json`，不新增远端模型目录、
+模型发现或模型解析接口。已冻结的 Chat 请求、响应和取消语义不因模型来源清理而改变。
 
 ![Mate Chat Provider 调用](model-manager-chat-v2/model_manager_chat_call.svg)
 
@@ -65,7 +66,7 @@ CampusClaw 的模型调用使用稳定身份 `campusmate` 和 `CampusMateProvide
 | 分类 | 决策 | 原因 |
 |---|---|---|
 | 架构改造 | `AiProviderRegistry` 按 `ProviderId=campusmate` 优先路由。 | 同一 `Api` 可由多个 Provider 实现，不能互相覆盖。 |
-| 产品约束 | CampusClaw→CampusMate 模型调用固定 `ProviderAuth.none()`。 | 五个 Model Manager 接口处于内部网关信任边界。 |
+| 产品约束 | CampusClaw→CampusMate 模型调用固定 `ProviderAuth.none()`。 | Chat 调用处于内部网关信任边界。 |
 | 安全加固 | CampusClaw 不持有或发送上游 endpoint、私有模型 ID和凭据。 | 上游秘密只存在于 CampusMate。 |
 | 产品约束 | 首版只支持文本和 function tool。 | 图片、音频、文件及 Tool 图片结果在发起 HTTP 前明确失败。 |
 | 架构改造 | Usage 从公开 Entry/Session 中拆为 Record + Stats。 | Usage 是运行事实，不应改变消息分支。 |
@@ -120,10 +121,10 @@ Provider 身份切换不改变以上 HTTP、请求、SSE、Usage、错误或取�
 `_provider` 原字符串保持原值；它与 `campusmate` 不构成相同模型身份。
 
 Runtime、Child 与 Cron 从同一次 `PreparedAgentRuntime` 构造 `AgentDirectorySnapshotDTO`，再交给
-同一个 `RuntimeModelManager` 解析默认模型，不经过允许为空的全局 `ModelRegistry`。Mate 模型 ID
-是不透明字符串，`/` 不触发 Provider 拆分；`CatalogRuntimeModelManager` 的
-`provider/modelId` 限定语法只用于显式自定义目录。Child 配置独立默认模型后，解析失败直接返回
-错误，不静默继承父模型。旧文本不会改写成新 Provider 身份。
+同一个 `RuntimeModelManager` 解析默认模型。全局模型目录、classpath/用户文件探测和
+专用环境凭据解析已删除；设置校验与错误边界见[Model 模型来源](ai.md#4-唯一模型来源)。
+Mate 模型 ID 是不透明字符串，`/` 不触发 Provider 拆分。Child 配置独立默认模型后，解析失败
+直接返回错误，不静默继承父模型。旧文本不会改写成新 Provider 身份。
 
 ## 4. Usage Record 与 Stats
 
@@ -180,6 +181,7 @@ cost_total      += usage.cost.total
 
 | 版本 | 日期 | 变化 |
 |---|---|---|
+| 1.4.0 | 2026-09-19 | 模型选择收敛到业务 Agent 设置快照，Chat 调用与 Usage 事务保持不变。 |
 | 1.3.0 | 2026-09-15 | Provider 身份切换为 `campusmate`，保留既有 Chat、Usage、错误和取消契约。 |
 | 1.2.0 | 2026-09-01 | 对齐 CampusClaw 公司镜像的新目录和公司构建边界；Mate Chat 契约不变。 |
 | 1.1.0 | 2026-08-26 | Model 配置从 `model-manager` 收敛为 `model`，并复用 CampusMate 单一 base URL 与共享 Endpoint 目录。 |

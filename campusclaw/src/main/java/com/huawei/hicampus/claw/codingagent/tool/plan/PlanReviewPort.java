@@ -4,6 +4,8 @@
 
 package com.huawei.hicampus.claw.codingagent.tool.plan;
 
+import com.huawei.hicampus.claw.agent.tool.CancellationToken;
+
 /**
  * ExitPlanMode 等待 Runtime 权威审核决定的窄端口。
  *
@@ -12,5 +14,5 @@ package com.huawei.hicampus.claw.codingagent.tool.plan;
  */
 @FunctionalInterface
 public interface PlanReviewPort {
-    PlanReviewResultDTO await(String toolCallId, String plan) throws Exception;
+    PlanReviewResultDTO review(String toolCallId, CancellationToken signal) throws Exception;
 }

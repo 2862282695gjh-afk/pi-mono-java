@@ -82,6 +82,20 @@ class RuntimeCommittedEventFactoryTest {
     }
 
     @Test
+    void shouldAlwaysWriteCompletedPhaseForNewPlanEvents() {
+        RuntimeEntryDTO entry = entry("event_plan", "agent.plan");
+
+        var frame = encoder.committed(factory.agentPlan(entry, "event_plan", "exit-1", "# 方案\n步骤", "event_user"));
+
+        assertThat(frame.getData())
+                .containsEntry("phase", "completed")
+                .containsEntry("content", "# 方案\n步骤")
+                .containsEntry("sourceEventId", "event_user")
+                .containsEntry("toolCallId", "exit-1")
+                .doesNotContainKey("usage");
+    }
+
+    @Test
     void shouldExposeTextAndUsageWithoutPrivateThinking() {
         RuntimeEntryDTO entry = entry("entry_assistant", "assistant.message.completed");
         AssistantMessage message = new AssistantMessage(
@@ -95,7 +109,8 @@ class RuntimeCommittedEventFactoryTest {
                 null,
                 1L);
 
-        var frame = encoder.committed(factory.agentMessage(entry, "event_message", message, "event_user"));
+        var frame = encoder.committed(
+                factory.agentMessage(entry, "event_message", "public answer", message.usage(), "event_user"));
 
         assertThat(frame.getData())
                 .containsEntry("phase", "completed")
@@ -115,7 +130,8 @@ class RuntimeCommittedEventFactoryTest {
     void shouldKeepToolArgumentsAndFallbackToStableError() {
         RuntimeEntryDTO callEntry = entry("entry_call", "assistant.message.completed");
         ToolCall call = new ToolCall("call-1", "CallMateTool", Map.of("tool", "inspect"));
-        var callFrame = encoder.committed(factory.agentToolCall(callEntry, "event_call", call, true, "event_user"));
+        var callFrame = encoder.committed(
+                factory.agentToolCall(callEntry, "event_call", call, true, "event_user", "  Inspect records  "));
         ToolResultMessage failed = new ToolResultMessage(
                 "call-1", "CallMateTool", List.of(new TextContent("private gateway failure")), null, true, 1L);
         var resultFrame = encoder.committed(factory.agentToolResult(
@@ -123,6 +139,7 @@ class RuntimeCommittedEventFactoryTest {
 
         assertThat(callFrame.getData())
                 .containsEntry("requiresConfirmation", true)
+                .containsEntry("displayName", "Inspect records")
                 .containsEntry("arguments", Map.of("tool", "inspect", "args", Map.of()));
         assertThat(resultFrame.getData())
                 .containsEntry("errorCode", "TOOL_EXECUTION_FAILED")
@@ -131,6 +148,17 @@ class RuntimeCommittedEventFactoryTest {
                         "content",
                         List.of(Map.of("type", "text", "text", "Tool execution failed. Check the execution outcome.")));
         assertThat(resultFrame.getData().toString()).doesNotContain("private gateway failure");
+        assertThat(resultFrame.getData()).doesNotContainKeys("displayName", "toolName");
+    }
+
+    @Test
+    void shouldOmitBlankToolDisplayName() {
+        ToolCall call = new ToolCall("call-1", "Read", Map.of("path", "input"));
+
+        var frame = encoder.committed(factory.agentToolCall(
+                entry("entry_call", "assistant.message.completed"), "event_call", call, false, "event_user", " \n "));
+
+        assertThat(frame.getData()).doesNotContainKey("displayName");
     }
 
     @Test
@@ -138,19 +166,22 @@ class RuntimeCommittedEventFactoryTest {
         var unknownUsage = encoder.committed(factory.agentMessage(
                 entry("entry_unknown", "assistant.message.completed"),
                 "event_unknown",
-                assistant(Usage.empty()),
+                "answer",
+                Usage.empty(),
                 "event_user"));
         Usage knownTokens = new Usage(4, 2, 0, 0, 6, Cost.empty());
         var unknownCost = encoder.committed(factory.agentMessage(
                 entry("entry_tokens", "assistant.message.completed"),
                 "event_tokens",
-                assistant(knownTokens),
+                "answer",
+                knownTokens,
                 "event_user"));
         Usage reportedZero = new Usage(0, 0, 0, 0, 0, Cost.empty());
         var knownZero = encoder.committed(factory.agentMessage(
                 entry("entry_zero", "assistant.message.completed"),
                 "event_zero",
-                assistant(reportedZero),
+                "answer",
+                reportedZero,
                 "event_user"));
 
         assertThat(unknownUsage.getData()).doesNotContainKey("usage");

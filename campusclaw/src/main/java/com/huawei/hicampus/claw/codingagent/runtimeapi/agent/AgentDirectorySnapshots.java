@@ -31,9 +31,10 @@ public final class AgentDirectorySnapshots {
         if (runtime == null || !Boolean.TRUE.equals(runtime.metadata().enabled())) {
             throw new RuntimeApiException(RuntimeErrorCode.AGENT_NOT_AVAILABLE);
         }
-        String defaultModel = runtime.metadata()
-                .defaultModel()
-                .orElseThrow(() -> new RuntimeApiException(RuntimeErrorCode.AGENT_MODEL_NOT_CONFIGURED));
+        String defaultModel = runtime.defaultModelId();
+        if (defaultModel == null || defaultModel.isBlank()) {
+            throw new RuntimeApiException(RuntimeErrorCode.AGENT_MODEL_NOT_CONFIGURED);
+        }
         List<String> models = validModels(runtime.metadata().bindingModels(), defaultModel);
         return new AgentDirectorySnapshotDTO(
                 runtime.agentId(),

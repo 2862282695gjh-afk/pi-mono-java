@@ -14,7 +14,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-import com.huawei.hicampus.claw.ai.model.ModelRegistry;
 import com.huawei.hicampus.claw.ai.provider.AiProvider;
 import com.huawei.hicampus.claw.ai.provider.AiProviderRegistry;
 import com.huawei.hicampus.claw.ai.provider.ApiProvider;
@@ -109,14 +108,12 @@ class CampusClawAiServiceTest {
             null);
 
     private ApiProviderRegistry providerRegistry;
-    private ModelRegistry modelRegistry;
     private CampusClawAiService service;
 
     @BeforeEach
     void setUp() {
         providerRegistry = new ApiProviderRegistry(null);
-        modelRegistry = new ModelRegistry();
-        service = new CampusClawAiService(providerRegistry, modelRegistry);
+        service = new CampusClawAiService(providerRegistry);
     }
 
     // --- 构造 ---
@@ -126,18 +123,17 @@ class CampusClawAiServiceTest {
 
         @Test
         void rejectsNullProviderRegistry() {
-            assertThrows(NullPointerException.class, () -> new CampusClawAiService(null, modelRegistry));
+            assertThrows(NullPointerException.class, () -> new CampusClawAiService(null));
         }
 
         @Test
-        void rejectsNullModelRegistry() {
+        void rejectsNullAiProviderRegistry() {
             assertThrows(NullPointerException.class, () -> new CampusClawAiService(providerRegistry, null));
         }
 
         @Test
-        void exposesRegistries() {
+        void exposesApiProviderRegistry() {
             assertSame(providerRegistry, service.getProviderRegistry());
-            assertSame(modelRegistry, service.getModelRegistry());
         }
     }
 
@@ -284,8 +280,7 @@ class CampusClawAiServiceTest {
             AiProvider managed = managedProvider(expected, managedCalled);
             ApiProvider fallback = fallbackProvider(fallbackCalled);
             providerRegistry.register(fallback, "test");
-            service =
-                    new CampusClawAiService(providerRegistry, modelRegistry, new AiProviderRegistry(List.of(managed)));
+            service = new CampusClawAiService(providerRegistry, new AiProviderRegistry(List.of(managed)));
             var context = new Context(null, List.of(new UserMessage("hi", 1L)), null);
 
             assertSame(expected, service.streamSimple(CAMPUSMATE_MODEL, context, null));
@@ -297,8 +292,7 @@ class CampusClawAiServiceTest {
         void unknownIdentityDoesNotFallThroughToCampusMateProvider() {
             var managedCalled = new AtomicBoolean();
             AiProvider campusMate = managedProvider(new AssistantMessageEventStream(), managedCalled);
-            service = new CampusClawAiService(
-                    providerRegistry, modelRegistry, new AiProviderRegistry(List.of(campusMate)));
+            service = new CampusClawAiService(providerRegistry, new AiProviderRegistry(List.of(campusMate)));
             var context = new Context(null, List.of(new UserMessage("hi", 1L)), null);
 
             assertThrows(

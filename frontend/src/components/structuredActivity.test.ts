@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { createSSRApp, h } from 'vue';
 import { renderToString } from 'vue/server-renderer';
 import ToolActivity from './ToolActivity.vue';
+import ToolConfirmation from './ToolConfirmation.vue';
 
 const activityStyles = readFileSync(new URL('../style.css', import.meta.url), 'utf8');
 
@@ -57,5 +58,40 @@ describe('structured tool activity', () => {
     expect(html).not.toContain('调用参数');
     expect(html).toContain('执行失败');
     expect(html).toContain('&quot;success&quot;');
+  });
+
+  it('shows the safe event displayName only in the title and preserves exact Mate arguments', async () => {
+    const html = await renderToString(createSSRApp({ render: () => h(ToolActivity, { turn: {
+      key: 'tool', kind: 'activity', toolCallId: 'call', toolName: 'CallMateTool',
+      displayName: '  <script>查询教室</script>  ', status: 'running', arguments: [],
+      argumentValue: { tool: 'query_classroom-v2', args: { displayName: '伪造参数' }, displayName: '伪造名称' }, result: '',
+    } }) }));
+
+    expect(html).toContain('&lt;script&gt;查询教室&lt;/script&gt;');
+    expect(html).toContain('query_classroom-v2');
+    expect(html).toContain('aria-label="&lt;script&gt;查询教室&lt;/script&gt;，执行中"');
+    expect(html).not.toContain('工具名称');
+    expect(html).not.toContain('展示名称');
+    expect(html).not.toContain('技术名称');
+    expect(html).not.toContain('<script>');
+    expect(html).not.toContain('调用业务工具');
+  });
+
+  it('uses the safe display identity only in the wrapping confirmation title', async () => {
+    const html = await renderToString(createSSRApp({ render: () => h(ToolConfirmation, { tool: {
+      eventId: 'call', createdAt: '2026-09-17T00:00:00.000Z', type: 'agent.tool_call', sourceEventId: 'root',
+      toolCallId: 'tool', toolName: 'CallMateTool', displayName: '<b>查询工单</b>',
+      arguments: { tool: 'query_ticket', args: { scope: '东区' }, displayName: '伪造名称' }, requiresConfirmation: true,
+    }, disabled: false }) }));
+
+    expect(html).toContain('需要你确认');
+    expect(html).toContain('&lt;b&gt;查询工单&lt;/b&gt;');
+    expect(html).toContain('query_ticket');
+    expect(html).toContain('&quot;scope&quot;');
+    expect(html).toContain('aria-label="需要你确认，&lt;b&gt;查询工单&lt;/b&gt;"');
+    expect(html).not.toContain('展示名称');
+    expect(html).not.toContain('技术名称');
+    expect(html).not.toContain('<b>');
+    expect(html).not.toContain('伪造名称</strong>');
   });
 });

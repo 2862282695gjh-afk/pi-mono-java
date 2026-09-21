@@ -38,9 +38,9 @@ export interface RuntimeTodo { content: string; status: TodoStatus }
 type EventIdentity = { eventId: string; createdAt?: string };
 export type RuntimeEvent = EventIdentity & (UserEvent
   | { type: 'agent.message' | 'agent.thinking'; sourceEventId: string; phase: 'delta' | 'completed'; content: string; usage?: Record<string, unknown> }
-  | { type: 'agent.tool_call'; sourceEventId: string; toolCallId: string; toolName: string; arguments: Record<string, unknown>; requiresConfirmation: boolean }
+  | { type: 'agent.tool_call'; sourceEventId: string; toolCallId: string; toolName: string; displayName?: string; arguments: Record<string, unknown>; requiresConfirmation: boolean }
   | { type: 'agent.tool_result'; sourceEventId: string; toolCallId: string; content: { type: 'text'; text: string }[]; isError: boolean; errorCode?: string }
-  | { type: 'agent.plan'; sourceEventId: string; toolCallId: string; content: string }
+  | { type: 'agent.plan'; sourceEventId: string; phase?: 'delta' | 'completed'; toolCallId?: string; content: string }
   | { type: 'agent.todo_updated'; sourceEventId: string; toolCallId: string; todos: RuntimeTodo[] }
   | ({ type: 'agent.question'; sourceEventId: string; toolCallId: string } & AgentQuestionPayload)
   | { type: 'session.status_idle'; sourceEventId: string; reason: 'done' | 'failed' | 'terminated' | 'confirming'; errorCode?: string; message?: string }

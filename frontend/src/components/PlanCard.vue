@@ -23,6 +23,10 @@ function statusLabel(): string {
   if (props.plan.decision === 'approve') return '已批准';
   if (props.plan.decision === 'revise') return '已退回修改';
   if (props.pending) return '提交中';
+  if (props.plan.unconfirmed && props.plan.lifecycle === 'stopping') return '停止中';
+  if (props.plan.unconfirmed && props.plan.lifecycle) return '未提交审核';
+  if (props.plan.streaming) return '计划生成中';
+  if (props.plan.unconfirmed) return '待核对';
   if (props.plan.lifecycle === 'stopping') return '停止中';
   if (props.plan.lifecycle === 'stopped') return '已停止';
   if (props.plan.lifecycle === 'failed') return '执行失败';
@@ -66,7 +70,7 @@ async function copyPlan(): Promise<void> {
       <button type="button" class="secondary-button plan-copy" @click="copyPlan">复制计划</button>
     </header>
     <p class="plan-copy-status" aria-live="polite">{{ copyStatus }}</p>
-    <div v-if="expanded" class="plan-content"><SafeRichText :source="plan.rawMarkdown" :streaming="false" /></div>
+    <div v-if="expanded" class="plan-content"><SafeRichText :source="plan.rawMarkdown" :streaming="plan.streaming" /></div>
     <div v-if="actionable || pending" class="plan-actions">
       <button class="primary-button" type="button" :disabled="pending" @click="approve">执行计划</button>
       <button ref="reviseButton" class="secondary-button" type="button" :disabled="pending" @click="openFeedback">修改计划</button>
@@ -82,6 +86,8 @@ async function copyPlan(): Promise<void> {
         <button class="secondary-button" type="button" :disabled="pending" @click="cancelFeedback">取消</button>
       </div>
     </div>
-    <p v-if="!actionable && !plan.decision && !plan.lifecycle && !pending" class="event-notice">计划尚未完整同步，暂不能审核。</p>
+    <p v-if="plan.unconfirmed && plan.lifecycle && plan.lifecycle !== 'stopping'" class="event-notice">计划未完整提交审核，不能批准。</p>
+    <p v-else-if="plan.unconfirmed && !plan.streaming && !plan.lifecycle" class="event-notice">计划预览尚未核对，请补读历史后再操作。</p>
+    <p v-else-if="!actionable && !plan.decision && !plan.lifecycle && !pending && !plan.streaming" class="event-notice">计划尚未完整同步，暂不能审核。</p>
   </section>
 </template>

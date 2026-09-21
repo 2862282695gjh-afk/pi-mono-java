@@ -34,6 +34,7 @@ import com.huawei.hicampus.claw.codingagent.runtime.MateServiceClient.BoundTool;
 import com.huawei.hicampus.claw.codingagent.runtime.MateServiceClient.SkillFile;
 import com.huawei.hicampus.claw.codingagent.runtime.MateServiceClient.SkillInfo;
 import com.huawei.hicampus.claw.codingagent.runtime.MateServiceClient.SkillReference;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.agent.AgentDirectorySnapshots;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.agent.AgentPromptSnapshotDTO.PromptSource;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.agent.RuntimeAgentPromptLoader;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.error.RuntimeApiException;
@@ -126,7 +127,91 @@ class AgentRuntimeManagerTest {
 
         settings.put("mode", "invalid");
         mapper.writeValue(settingsFile.toFile(), settings);
-        assertNull(manager.prepareCached(AGENT_ID));
+        assertThrows(AgentRuntimeException.class, () -> manager.prepareCached(AGENT_ID));
+    }
+
+    @Test
+    void missingPublishedSettingsFailsWithoutRemoteFallback() throws Exception {
+        stubRuntime("1.0.0", "prompt-v1");
+        PreparedAgentRuntime first = manager.prepare(AGENT_ID);
+        Files.delete(first.agentRoot().resolve(".campusclaw/settings.json"));
+        when(client.getAgentRuntime(AGENT_ID)).thenReturn(runtimeWithModels(AGENT_ID, List.of("model-b"), "prompt-v2"));
+
+        assertThrows(AgentRuntimeException.class, () -> manager.prepare(AGENT_ID));
+
+        verify(client).getAgentRuntime(AGENT_ID);
+    }
+
+    @ParameterizedTest
+    @ValueSource(
+            strings = {
+                "missing-default",
+                "blank-default",
+                "missing-bindings",
+                "empty-bindings",
+                "blank-binding",
+                "duplicate",
+                "outside"
+            })
+    void invalidPublishedModelSettingsFailWithoutRemoteFallback(String caseName) throws Exception {
+        stubRuntime("1.0.0", "prompt-v1");
+        Path settingsFile = manager.prepare(AGENT_ID).agentRoot().resolve(".campusclaw/settings.json");
+
+        mutateModelSettings(settingsFile, caseName);
+
+        assertThrows(AgentRuntimeException.class, () -> manager.prepare(AGENT_ID));
+        verify(client).getAgentRuntime(AGENT_ID);
+    }
+
+    @Test
+    void publishedDefaultModelIsPreservedWhenItIsNotFirstBinding() throws Exception {
+        stubRuntime("1.0.0", "prompt-v1");
+        Path settingsFile = manager.prepare(AGENT_ID).agentRoot().resolve(".campusclaw/settings.json");
+        ObjectMapper objectMapper = new ObjectMapper();
+        var settings = (com.fasterxml.jackson.databind.node.ObjectNode) objectMapper.readTree(settingsFile.toFile());
+        settings.put("defaultModel", "model-b");
+        settings.putArray("bindingModels").add("model-a").add("model-b");
+        objectMapper.writeValue(settingsFile.toFile(), settings);
+
+        PreparedAgentRuntime cached = manager.prepareCached(AGENT_ID);
+
+        assertEquals("model-b", cached.defaultModelId());
+        assertEquals("model-b", AgentDirectorySnapshots.from(cached).defaultModelId());
+    }
+
+    @Test
+    void rejectsRemoteAgentWithoutAnyModelBinding() {
+        when(client.getAgentRuntime(AGENT_ID)).thenReturn(runtimeWithModels(AGENT_ID, List.of(), "prompt-v1"));
+
+        assertThrows(AgentRuntimeException.class, () -> manager.prepare(AGENT_ID));
+        assertFalse(Files.exists(tempDir.resolve("agent").resolve(AGENT_ID).resolve(".campusclaw")));
+    }
+
+    @Test
+    void rejectsBlankOrDuplicateRemoteModelBindings() {
+        when(client.getAgentRuntime(AGENT_ID)).thenReturn(runtimeWithModels(AGENT_ID, List.of(" "), "prompt-v1"));
+        assertThrows(AgentRuntimeException.class, () -> manager.prepare(AGENT_ID));
+
+        when(client.getAgentRuntime(AGENT_ID))
+                .thenReturn(runtimeWithModels(AGENT_ID, List.of("model-a", "model-a"), "prompt-v1"));
+        assertThrows(AgentRuntimeException.class, () -> manager.prepare(AGENT_ID));
+        assertFalse(Files.exists(tempDir.resolve("agent").resolve(AGENT_ID).resolve(".campusclaw")));
+    }
+
+    @Test
+    void preparesIndependentModelSnapshotsForDifferentAgents() {
+        when(client.getAgentRuntime(AGENT_ID))
+                .thenReturn(runtimeWithModels(AGENT_ID, List.of("model-a", "model-b"), "prompt-a"));
+        when(client.getAgentRuntime(CHILD_ID)).thenReturn(runtimeWithModels(CHILD_ID, List.of("model-c"), "prompt-b"));
+
+        PreparedAgentRuntime first = manager.prepare(AGENT_ID);
+        PreparedAgentRuntime second = manager.prepare(CHILD_ID);
+
+        assertEquals("model-a", first.defaultModelId());
+        assertEquals(List.of("model-a", "model-b"), first.metadata().bindingModels());
+        assertEquals("model-c", second.defaultModelId());
+        assertEquals(List.of("model-c"), second.metadata().bindingModels());
+        assertFalse(first.agentRoot().equals(second.agentRoot()));
     }
 
     @Test
@@ -299,9 +384,9 @@ class AgentRuntimeManagerTest {
         Path settings = manager.prepare(AGENT_ID).agentRoot().resolve(".campusclaw/settings.json");
         removeJsonField(settings, "bindingTools");
 
-        assertNull(manager.prepareCached(AGENT_ID));
-        manager.prepare(AGENT_ID);
-        verify(client, times(2)).getAgentRuntime(AGENT_ID);
+        assertThrows(AgentRuntimeException.class, () -> manager.prepareCached(AGENT_ID));
+        assertThrows(AgentRuntimeException.class, () -> manager.prepare(AGENT_ID));
+        verify(client).getAgentRuntime(AGENT_ID);
     }
 
     @Test
@@ -373,6 +458,20 @@ class AgentRuntimeManagerTest {
 
         verify(client, times(2)).getAgentRuntime(AGENT_ID);
         assertFalse(Files.exists(link, java.nio.file.LinkOption.NOFOLLOW_LINKS));
+    }
+
+    @Test
+    void symbolicRuntimeDirectoryIsRejectedBeforeReadingExternalSettings() throws Exception {
+        Path agentRoot = Files.createDirectories(tempDir.resolve("agent").resolve(AGENT_ID));
+        Path external = Files.createDirectories(tempDir.resolve("external-runtime"));
+        Path externalSettings = external.resolve("settings.json");
+        Files.writeString(externalSettings, "{\"defaultModel\":\"external\"}", StandardCharsets.UTF_8);
+        Files.createSymbolicLink(agentRoot.resolve(".campusclaw"), external);
+
+        assertThrows(AgentRuntimeException.class, () -> manager.prepare(AGENT_ID));
+
+        assertEquals("{\"defaultModel\":\"external\"}", Files.readString(externalSettings, StandardCharsets.UTF_8));
+        verifyNoInteractions(client);
     }
 
     @Test
@@ -691,6 +790,22 @@ class AgentRuntimeManagerTest {
                 version);
     }
 
+    private static AgentRuntime runtimeWithModels(String agentId, List<String> models, String prompt) {
+        return new AgentRuntime(
+                models,
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of("description"),
+                "Agent",
+                true,
+                agentId,
+                agentId,
+                prompt,
+                List.of(),
+                "1.0.0");
+    }
+
     private static AgentReference child(String name, String id) {
         return new AgentReference(id, name, "Child", "Researches a task", "1.0.0");
     }
@@ -751,5 +866,22 @@ class AgentRuntimeManagerTest {
         var value = (com.fasterxml.jackson.databind.node.ObjectNode) objectMapper.readTree(file.toFile());
         value.remove(field);
         objectMapper.writeValue(file.toFile(), value);
+    }
+
+    private static void mutateModelSettings(Path file, String caseName) throws Exception {
+        ObjectMapper objectMapper = new ObjectMapper();
+        var settings = (com.fasterxml.jackson.databind.node.ObjectNode) objectMapper.readTree(file.toFile());
+        switch (caseName) {
+            case "missing-default" -> settings.remove("defaultModel");
+            case "blank-default" -> settings.put("defaultModel", " ");
+            case "missing-bindings" -> settings.remove("bindingModels");
+            case "empty-bindings" -> settings.putArray("bindingModels");
+            case "blank-binding" -> settings.putArray("bindingModels").add(" ");
+            case "duplicate" ->
+                settings.putArray("bindingModels").add("model-a").add("model-a");
+            case "outside" -> settings.put("defaultModel", "model-b");
+            default -> throw new IllegalArgumentException("Unknown case: " + caseName);
+        }
+        objectMapper.writeValue(file.toFile(), settings);
     }
 }

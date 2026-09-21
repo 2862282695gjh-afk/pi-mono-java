@@ -37,8 +37,8 @@ public final class RuntimeResultBackedEventOutput implements RuntimeEventOutput 
     }
 
     @Override
-    public void emitBestEffort(Supplier<RuntimeSseEventVO> event) {
-        stream.emitBestEffort(event);
+    public boolean emitBestEffort(Supplier<RuntimeSseEventVO> event) {
+        return stream.emitBestEffort(event);
     }
 
     @Override

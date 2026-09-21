@@ -83,17 +83,61 @@ class RuntimeToolPermissionPolicyTest {
     }
 
     @Test
+    void shouldAllowSameToolIdentityAcrossAgentAndSkill() {
+        PreparedAgentRuntime runtime = runtime(
+                List.of(tool("confirm_with_user", "confirm-id", "allow")),
+                List.of(tool("confirm_with_user", "confirm-id", "allow")));
+
+        assertThat(RuntimeToolPermissionPolicy.diagnoseBinding(runtime, "confirm_with_user"))
+                .satisfies(diagnosis -> {
+                    assertThat(diagnosis.status()).isEqualTo(BindingStatus.BOUND);
+                    assertThat(diagnosis.toolId()).isEqualTo("confirm-id");
+                    assertThat(diagnosis.matchingCount()).isEqualTo(2);
+                });
+        assertThat(RuntimeToolPermissionPolicy.uniqueAllowedToolId(runtime, "confirm_with_user"))
+                .contains("confirm-id");
+    }
+
+    @Test
+    void shouldAllowSameToolIdentityAcrossMultipleSkills() {
+        PreparedAgentRuntime runtime = runtimeWithSkills(
+                List.of(),
+                List.of(
+                        List.of(tool("confirm_with_user", "confirm-id", "allow")),
+                        List.of(tool("confirm_with_user", "confirm-id", "allow"))));
+
+        assertThat(RuntimeToolPermissionPolicy.diagnoseBinding(runtime, "confirm_with_user"))
+                .satisfies(diagnosis -> {
+                    assertThat(diagnosis.status()).isEqualTo(BindingStatus.BOUND);
+                    assertThat(diagnosis.toolId()).isEqualTo("confirm-id");
+                    assertThat(diagnosis.matchingCount()).isEqualTo(2);
+                });
+        assertThat(RuntimeToolPermissionPolicy.uniqueAllowedToolId(runtime, "confirm_with_user"))
+                .contains("confirm-id");
+    }
+
+    @Test
     void uniqueAllowedToolIdShouldRetainExistingAdmissionBehavior() {
         PreparedAgentRuntime allowed = runtime(List.of(tool("target", "target-id", "allow")), List.of());
         PreparedAgentRuntime denied = runtime(List.of(tool("target", "target-id", "deny")), List.of());
-        PreparedAgentRuntime conflicting =
-                runtime(List.of(tool("target", "target-id", "allow")), List.of(tool("target", "other-id", "ask")));
+        PreparedAgentRuntime asked = runtime(List.of(tool("target", "target-id", "ask")), List.of());
+        PreparedAgentRuntime conflictingPermissions =
+                runtime(List.of(tool("target", "target-id", "allow")), List.of(tool("target", "target-id", "ask")));
+        PreparedAgentRuntime conflictingIdentities =
+                runtime(List.of(tool("target", "target-id", "allow")), List.of(tool("target", "other-id", "allow")));
+        PreparedAgentRuntime missingId = runtime(List.of(tool("target", "", "allow")), List.of());
 
         assertThat(RuntimeToolPermissionPolicy.uniqueAllowedToolId(allowed, "target"))
                 .contains("target-id");
         assertThat(RuntimeToolPermissionPolicy.uniqueAllowedToolId(denied, "target"))
                 .isEmpty();
-        assertThat(RuntimeToolPermissionPolicy.uniqueAllowedToolId(conflicting, "target"))
+        assertThat(RuntimeToolPermissionPolicy.uniqueAllowedToolId(asked, "target"))
+                .isEmpty();
+        assertThat(RuntimeToolPermissionPolicy.uniqueAllowedToolId(conflictingPermissions, "target"))
+                .isEmpty();
+        assertThat(RuntimeToolPermissionPolicy.uniqueAllowedToolId(conflictingIdentities, "target"))
+                .isEmpty();
+        assertThat(RuntimeToolPermissionPolicy.uniqueAllowedToolId(missingId, "target"))
                 .isEmpty();
     }
 
@@ -105,6 +149,23 @@ class RuntimeToolPermissionPolicyTest {
         when(skill.bindingTools()).thenReturn(skillTools);
         when(runtime.metadata()).thenReturn(metadata);
         when(runtime.skills()).thenReturn(List.of(skill));
+        return runtime;
+    }
+
+    private static PreparedAgentRuntime runtimeWithSkills(
+            List<BoundTool> agentTools, List<List<BoundTool>> skillTools) {
+        PreparedAgentRuntime runtime = mock(PreparedAgentRuntime.class);
+        AgentRuntime metadata = mock(AgentRuntime.class);
+        List<SkillInfo> skills = skillTools.stream()
+                .map(tools -> {
+                    SkillInfo skill = mock(SkillInfo.class);
+                    when(skill.bindingTools()).thenReturn(tools);
+                    return skill;
+                })
+                .toList();
+        when(metadata.bindingTools()).thenReturn(agentTools);
+        when(runtime.metadata()).thenReturn(metadata);
+        when(runtime.skills()).thenReturn(skills);
         return runtime;
     }
 

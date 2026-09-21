@@ -121,6 +121,34 @@ class RuntimeQuestionAnswerOpenGaussIT {
     }
 
     @Test
+    void pollsPendingAnswerOnlyForOriginalExecutionTarget() {
+        QuestionFixture fixture = seedQuestion("polling");
+        assertThat(controls.findPendingControls(List.of(fixture.target()))).isEmpty();
+        var accepted = accept(fixture, List.of(new QuestionAnswerDTO("choice", List.of("B"), null)));
+        ExecutionTargetDTO target = fixture.target();
+        ExecutionTargetDTO wrongRoot =
+                new ExecutionTargetDTO(target.sessionId(), target.executionId(), "wrong-root", target.segmentId());
+        ExecutionTargetDTO wrongSegment =
+                new ExecutionTargetDTO(target.sessionId(), target.executionId(), target.rootEventId(), "wrong-segment");
+
+        var signals = controls.findPendingControls(List.of(target, target, accepted.target(), wrongRoot, wrongSegment));
+
+        assertThat(signals).singleElement().satisfies(signal -> {
+            assertThat(signal.target()).isEqualTo(target);
+            assertThat(signal.isStopRequested()).isFalse();
+            assertThat(signal.getQuestionEventId()).isEqualTo(fixture.questionEventId());
+            assertThat(signal.getToolCallId()).isNull();
+            assertThat(signal.getPlanEventId()).isNull();
+        });
+        var decision = controls.claimQuestionAnswer(target, fixture.questionEventId(), NOW.plusSeconds(3));
+        assertThat(decision).isPresent();
+        assertThat(controls.findPendingControls(List.of(target))).isEmpty();
+        assertThat(controls.acknowledgeQuestionAnswer(decision.orElseThrow(), NOW.plusSeconds(4)))
+                .isTrue();
+        assertThat(controls.findPendingControls(List.of(target))).isEmpty();
+    }
+
+    @Test
     void stopAndStaleTargetsRejectBeforeAnswerValidationCallback() {
         QuestionFixture stopped = seedQuestion("stopped");
         RuntimeEntryDTO interrupt = codec.userInterruptEntry(
@@ -254,7 +282,9 @@ class RuntimeQuestionAnswerOpenGaussIT {
         RuntimeEntryDTO tool = codec.toolCallEntry(
                 session.getId(), suffix + "-tool", call.id(), call.name(), call.arguments(), false, NOW.plusSeconds(1));
         persistence.appendEntry(
-                target, tool, List.of(events.agentToolCall(tool, tool.getId(), call, false, target.rootEventId())));
+                target,
+                tool,
+                List.of(events.agentToolCall(tool, tool.getId(), call, false, target.rootEventId(), null)));
         String questionEventId = suffix + "-question-event";
         RuntimeEntryDTO question =
                 codec.questionEntry(session.getId(), suffix + "-question", toolCallId, snapshot, NOW.plusSeconds(1));

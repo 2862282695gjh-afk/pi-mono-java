@@ -221,8 +221,10 @@ public class CommittedEventProjection {
         if (content.length() > ClawConstants.RuntimeApi.MAX_PLAN_CHARACTERS || !hasLevelOneHeading(content)) {
             throw invalid(null);
         }
+        JsonNode phaseNode = payload.get("phase");
+        String phase = phaseNode == null ? null : requiredExact(payload, "phase", "completed");
         return new AgentPlanResponseVO(
-                requiredText(payload, "sourceEventId"), requiredText(payload, "toolCallId"), content);
+                phase, content, requiredText(payload, "sourceEventId"), requiredText(payload, "toolCallId"));
     }
 
     private AgentQuestionResponseVO projectQuestion(JsonNode payload) {
@@ -295,9 +297,18 @@ public class CommittedEventProjection {
         return new AgentToolCallResponseVO(
                 requiredText(payload, "toolCallId"),
                 requiredText(payload, "toolName"),
+                optionalDisplayName(payload),
                 immutableMap(values),
                 requiredBoolean(payload, "requiresConfirmation"),
                 requiredText(payload, "sourceEventId"));
+    }
+
+    private static String optionalDisplayName(JsonNode payload) {
+        JsonNode value = payload.get("displayName");
+        if (value == null || !value.isTextual() || value.textValue().isBlank()) {
+            return null;
+        }
+        return value.textValue().strip();
     }
 
     private AgentToolResultResponseVO projectToolResult(JsonNode payload) {

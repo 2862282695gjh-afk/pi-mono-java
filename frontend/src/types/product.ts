@@ -46,6 +46,7 @@ export interface ActivityTurn {
   kind: 'activity';
   toolCallId: string;
   toolName: string;
+  displayName?: string;
   status: 'running' | 'completed' | 'error' | 'confirming' | 'waiting_answer' | 'unconfirmed';
   arguments: ToolArgumentRow[];
   result: string;
@@ -68,6 +69,8 @@ export interface PlanTurn {
   eventId: string;
   sourceEventId: string;
   rawMarkdown: string;
+  streaming: boolean;
+  unconfirmed: boolean;
   decision?: 'approve' | 'revise';
   lifecycle?: 'stopping' | 'stopped' | 'failed' | 'ended';
 }

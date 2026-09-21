@@ -54,7 +54,7 @@ public class CallMateTool implements AgentTool {
             MateToolDiscovery discovery,
             ShowcaseConfirmationAdapter confirmation) {
         this.client = client;
-        this.credentials = credentials;
+        this.credentials = credentials == null ? MateCredentials.empty() : credentials;
         this.discovery = discovery;
         this.confirmation = confirmation;
     }
@@ -112,9 +112,6 @@ public class CallMateTool implements AgentTool {
         String toolName = (String) params.get("tool");
         Map<String, Object> args =
                 params.get("args") instanceof Map<?, ?> value ? (Map<String, Object>) value : Map.of();
-        if (!credentials.isComplete()) {
-            throw new MateToolExecutionException(toolName, "Mate execution credentials are unavailable");
-        }
         String toolId = discovery.resolveToolId(toolName);
         if (toolId == null) {
             throw new MateToolExecutionException(toolName, "unknown Mate tool name");

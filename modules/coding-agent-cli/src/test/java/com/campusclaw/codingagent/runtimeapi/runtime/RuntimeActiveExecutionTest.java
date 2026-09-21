@@ -12,12 +12,14 @@ import static org.mockito.Mockito.when;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import com.campusclaw.agent.tool.BeforeToolCallContext;
 import com.campusclaw.agent.tool.BeforeToolCallResult;
 import com.campusclaw.ai.types.ToolCall;
 import com.campusclaw.codingagent.runtimeapi.dto.ExecutionTargetDTO;
+import com.campusclaw.codingagent.runtimeapi.dto.PlanProposalSnapshotDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.PlanReviewDecisionDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.QuestionAnswerDecisionDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.ToolConfirmationDecisionDTO;
@@ -120,7 +122,7 @@ class RuntimeActiveExecutionTest {
         RuntimeActiveExecution execution = planExecution();
         AtomicInteger applied = new AtomicInteger();
         execution.installModeApplier(applied::incrementAndGet);
-        execution.beginPlanReview("exit-1", "plan-1", "# 方案");
+        execution.beginPlanReview(planProposal(execution, "exit-1", "plan-1", "# 方案"));
         PlanReviewDecisionDTO decision = planDecision(PlanConfirmationResult.APPROVE);
 
         assertThat(execution.claimAndResumePlanReview(
@@ -129,7 +131,7 @@ class RuntimeActiveExecutionTest {
                         () -> Optional.of(decision)))
                 .contains(decision);
 
-        assertThat(execution.await("exit-1", "# 方案"))
+        assertThat(execution.review("exit-1", new com.campusclaw.agent.tool.CancellationToken()))
                 .extracting("approved", "feedback")
                 .containsExactly(true, null);
         assertThat(execution.mode()).isEqualTo(ClawConstants.Agent.MODE_BUILD);
@@ -139,7 +141,7 @@ class RuntimeActiveExecutionTest {
     @Test
     void shouldDeliverRevisionClaimedBeforeToolStartsWaiting() throws Exception {
         RuntimeActiveExecution execution = planExecution();
-        execution.beginPlanReview("exit-1", "plan-1", "# 方案");
+        execution.beginPlanReview(planProposal(execution, "exit-1", "plan-1", "# 方案"));
         PlanReviewDecisionDTO decision = planDecision(PlanConfirmationResult.REVISE);
         decision.setFeedback("补充回滚步骤");
 
@@ -148,10 +150,33 @@ class RuntimeActiveExecutionTest {
                 "plan-1",
                 () -> Optional.of(decision));
 
-        assertThat(execution.await("exit-1", "# 方案"))
+        assertThat(execution.review("exit-1", new com.campusclaw.agent.tool.CancellationToken()))
                 .extracting("approved", "feedback")
                 .containsExactly(false, "补充回滚步骤");
         assertThat(execution.mode()).isEqualTo(ClawConstants.Agent.MODE_PLAN);
+    }
+
+    @Test
+    void shouldRejectProposalFromAnotherExecutionTarget() {
+        RuntimeActiveExecution execution = planExecution();
+        var foreign = new ExecutionTargetDTO("session", "other", "root", "segment-1");
+        var proposal = new PlanProposalSnapshotDTO(foreign, "assistant-1", "plan-1", "root", "exit-1", "# 方案");
+
+        assertThatThrownBy(() -> execution.beginPlanReview(proposal))
+                .isInstanceOf(com.campusclaw.codingagent.tool.plan.PlanReviewException.class)
+                .hasMessage("PLAN_REVIEW_UNAVAILABLE");
+    }
+
+    @Test
+    void shouldCancelPlanWaitWithToolCancellationToken() {
+        RuntimeActiveExecution execution = planExecution();
+        execution.beginPlanReview(planProposal(execution, "exit-1", "plan-1", "# 方案"));
+        var signal = new com.campusclaw.agent.tool.CancellationToken();
+        signal.cancel();
+
+        assertThatThrownBy(() -> execution.review("exit-1", signal))
+                .isInstanceOf(CancellationException.class)
+                .hasMessage("Plan review was cancelled");
     }
 
     @Test
@@ -243,6 +268,11 @@ class RuntimeActiveExecutionTest {
         return decision;
     }
 
+    private static PlanProposalSnapshotDTO planProposal(
+            RuntimeActiveExecution execution, String toolCallId, String eventId, String content) {
+        return new PlanProposalSnapshotDTO(execution.target(), "assistant-1", eventId, "root", toolCallId, content);
+    }
+
     private static QuestionAnswerDecisionDTO questionDecision() {
         var decision = new QuestionAnswerDecisionDTO();
         decision.setSessionId("session");
@@ -262,8 +292,10 @@ class RuntimeActiveExecutionTest {
                 java.util.function.Supplier<com.campusclaw.codingagent.runtimeapi.vo.RuntimeSseEventVO> event) {}
 
         @Override
-        public void emitBestEffort(
-                java.util.function.Supplier<com.campusclaw.codingagent.runtimeapi.vo.RuntimeSseEventVO> event) {}
+        public boolean emitBestEffort(
+                java.util.function.Supplier<com.campusclaw.codingagent.runtimeapi.vo.RuntimeSseEventVO> event) {
+            return true;
+        }
 
         @Override
         public void complete() {}

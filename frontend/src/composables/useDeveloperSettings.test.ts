@@ -59,6 +59,8 @@ describe('developer settings controller', () => {
     const pending = settings.getToken();
     expect(fetcher).toHaveBeenCalledTimes(2);
     settings.authIpDraft.value = '192.0.2.2';
+    settings.authenticationDraftChanged();
+    expect(settings.tokenPending.value).toBe(true);
     token.resolve(json({ accessToken: 'late-token' }));
 
     await expect(pending).resolves.toMatchObject({ ok: false });
@@ -66,7 +68,7 @@ describe('developer settings controller', () => {
     expect(settings.tokenPending.value).toBe(false);
   });
 
-  it('does not let an older aborted token request clear or overwrite the newer request', async () => {
+  it('keeps the shared token lock until an aborted request exits and never applies its result', async () => {
     const first = deferredResponse();
     const second = deferredResponse();
     let tokenCalls = 0;
@@ -89,17 +91,140 @@ describe('developer settings controller', () => {
 
     const stale = settings.getToken();
     settings.cancelToken();
-    const current = settings.getToken();
+    await expect(settings.getToken()).resolves.toMatchObject({ ok: false, message: 'Token 正在获取。' });
+    expect(tokenCalls).toBe(1);
     first.resolve(json({ accessToken: 'stale-token' }));
-    await stale;
-    expect(settings.tokenPending.value).toBe(true);
-    expect(settings.authStatus.value).toBe('正在获取…');
+    await expect(stale).resolves.toMatchObject({ ok: false });
+    expect(settings.tokenPending.value).toBe(false);
 
+    const current = settings.getToken();
     second.resolve(json({ accessToken: 'current-token' }));
     await expect(current).resolves.toMatchObject({ ok: true });
     expect(settings.tokenPending.value).toBe(false);
     expect(settings.applied.value.headers.find((row) => row.key === 'access-token')?.value).toBe('current-token');
     expect(storage.getItem('campusclaw.developer-settings.v1')).not.toContain('stale-token');
+  });
+
+  it('does not cancel an automatic refresh when the settings panel closes', async () => {
+    const token = deferredResponse();
+    const storage = memoryStorage();
+    const fetcher = vi.fn((input: RequestInfo | URL) => String(input) === '/__debug/config'
+      ? Promise.resolve(json(status)) : token.promise);
+    const settings = createDeveloperSettingsController({ defaults, fetcher: fetcher as typeof fetch,
+      storage: () => storage, pageOrigin: 'http://localhost:4173', listenForStorage: false });
+    await settings.initialize();
+    settings.authIpDraft.value = '192.0.2.1';
+    await settings.saveAuthentication();
+
+    const pending = settings.prepareWrite();
+    settings.close();
+    expect(settings.tokenPending.value).toBe(true);
+    token.resolve(json({ accessToken: 'fresh-token' }));
+
+    const result = await pending;
+    expect(result).toMatchObject({ ok: true });
+    if (result.ok) expect(result.headers.get('access-token')).toBe('fresh-token');
+  });
+
+  it('cancels preparation when the token draft is edited without cancelling for unrelated drafts', async () => {
+    const token = deferredResponse();
+    const storage = memoryStorage();
+    const fetcher = vi.fn((input: RequestInfo | URL) => String(input) === '/__debug/config'
+      ? Promise.resolve(json(status)) : token.promise);
+    const settings = createDeveloperSettingsController({ defaults, fetcher: fetcher as typeof fetch,
+      storage: () => storage, pageOrigin: 'http://localhost:4173', listenForStorage: false });
+    await settings.initialize();
+    settings.authIpDraft.value = '192.0.2.1';
+    await settings.saveAuthentication();
+    const pending = settings.prepareWrite();
+
+    settings.appendHeader();
+    const unrelated = settings.headerRows.value.at(-1)!;
+    unrelated.key = 'X-Synthetic';
+    unrelated.value = 'draft';
+    settings.headerDraftChanged();
+    expect(settings.tokenPending.value).toBe(true);
+    const tokenRow = settings.headerRows.value.find((row) => row.key === 'access-token')!;
+    tokenRow.value = 'manual-token';
+    settings.headerDraftChanged();
+    token.resolve(json({ accessToken: 'late-token' }));
+
+    await expect(pending).resolves.toMatchObject({ ok: false, reason: 'cancelled' });
+    expect(settings.applied.value.headers.some((row) => row.value === 'late-token')).toBe(false);
+  });
+
+  it('rejects an unsaved token edit but creates a missing token row from the applied snapshot', async () => {
+    const storage = memoryStorage();
+    const fetcher = vi.fn((input: RequestInfo | URL) => String(input) === '/__debug/config'
+      ? Promise.resolve(json(status)) : Promise.resolve(json({ accessToken: 'fresh-token' })));
+    const settings = createDeveloperSettingsController({ defaults, fetcher: fetcher as typeof fetch,
+      storage: () => storage, pageOrigin: 'http://localhost:4173', listenForStorage: false });
+    await settings.initialize();
+    settings.authIpDraft.value = '192.0.2.1';
+    await settings.saveAuthentication();
+    await settings.clearHeaders();
+
+    await expect(settings.prepareWrite()).resolves.toMatchObject({ ok: true });
+    const tokenRow = settings.headerRows.value.find((row) => row.key === 'access-token')!;
+    tokenRow.value = 'unsaved-token';
+    const callsBeforeConflict = fetcher.mock.calls.length;
+
+    await expect(settings.prepareWrite()).resolves.toMatchObject({
+      ok: false,
+      reason: 'configuration',
+      message: expect.stringContaining('尚未保存'),
+    });
+    expect(fetcher).toHaveBeenCalledTimes(callsBeforeConflict);
+  });
+
+  it('returns the exact saved header snapshot and invalidates it after a later header save', async () => {
+    const storage = memoryStorage();
+    const fetcher = vi.fn((input: RequestInfo | URL) => String(input) === '/__debug/config'
+      ? Promise.resolve(json(status)) : Promise.resolve(json({ accessToken: 'fresh-token' })));
+    const settings = createDeveloperSettingsController({ defaults, fetcher: fetcher as typeof fetch,
+      storage: () => storage, pageOrigin: 'http://localhost:4173', listenForStorage: false });
+    await settings.initialize();
+    settings.authIpDraft.value = '192.0.2.1';
+    await settings.saveAuthentication();
+    const result = await settings.prepareWrite();
+    expect(result).toMatchObject({ ok: true });
+    if (!result.ok) throw new Error('Expected prepared headers');
+    expect(result.headers.get('access-token')).toBe('fresh-token');
+    expect(result.isCurrent()).toBe(true);
+
+    settings.appendHeader();
+    const extra = settings.headerRows.value.at(-1)!;
+    extra.key = 'X-Synthetic';
+    extra.value = 'new-value';
+    await settings.saveHeaders();
+
+    expect(result.headers.get('X-Synthetic')).toBeNull();
+    expect(result.isCurrent()).toBe(false);
+  });
+
+  it('cancels preparation when headers are saved and waits for the old login to exit', async () => {
+    const token = deferredResponse();
+    const storage = memoryStorage();
+    const fetcher = vi.fn((input: RequestInfo | URL) => String(input) === '/__debug/config'
+      ? Promise.resolve(json(status)) : token.promise);
+    const settings = createDeveloperSettingsController({ defaults, fetcher: fetcher as typeof fetch,
+      storage: () => storage, pageOrigin: 'http://localhost:4173', listenForStorage: false });
+    await settings.initialize();
+    settings.authIpDraft.value = '192.0.2.1';
+    await settings.saveAuthentication();
+
+    const pending = settings.prepareWrite();
+    settings.appendHeader();
+    const row = settings.headerRows.value.at(-1)!;
+    row.key = 'X-Synthetic';
+    row.value = 'saved-value';
+    await settings.saveHeaders();
+    await expect(settings.prepareWrite()).resolves.toMatchObject({ ok: false, reason: 'busy' });
+    token.resolve(json({ accessToken: 'late-token' }));
+
+    await expect(pending).resolves.toMatchObject({ ok: false, reason: 'cancelled' });
+    expect(settings.tokenPending.value).toBe(false);
+    expect(settings.applied.value.headers.some((header) => header.value === 'late-token')).toBe(false);
   });
 
   it('persists only the fetched token while preserving unrelated unsaved header drafts', async () => {

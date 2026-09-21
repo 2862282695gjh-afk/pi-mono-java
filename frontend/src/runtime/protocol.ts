@@ -120,9 +120,9 @@ export function decodeEvent(value: unknown, history = false): RuntimeEvent {
     'user.question_answer': ['targetEventId', 'answers'],
     'agent.message': ['phase', 'content', 'sourceEventId', 'usage'],
     'agent.thinking': ['phase', 'content', 'sourceEventId'],
-    'agent.tool_call': ['toolCallId', 'toolName', 'arguments', 'requiresConfirmation', 'sourceEventId'],
+    'agent.tool_call': ['toolCallId', 'toolName', 'displayName', 'arguments', 'requiresConfirmation', 'sourceEventId'],
     'agent.tool_result': ['toolCallId', 'content', 'isError', 'errorCode', 'sourceEventId'],
-    'agent.plan': ['toolCallId', 'content', 'sourceEventId'],
+    'agent.plan': ['phase', 'toolCallId', 'content', 'sourceEventId'],
     'agent.todo_updated': ['toolCallId', 'todos', 'sourceEventId'],
     'agent.question': ['toolCallId', 'questions', 'label', 'context', 'sourceEventId'],
     'session.status_idle': ['reason', 'sourceEventId', 'errorCode', 'message'],
@@ -179,6 +179,8 @@ export function decodeEvent(value: unknown, history = false): RuntimeEvent {
       break;
     case 'agent.tool_call':
       nonempty(data.toolCallId); nonempty(data.toolName); record(data.arguments); bool(data.requiresConfirmation);
+      if (typeof data.displayName === 'string' && data.displayName.trim()) data.displayName = data.displayName.trim();
+      else delete data.displayName;
       // 模型参数的业务错误由工具执行校验处理，失败调用仍是可展示的事件。
       break;
     case 'agent.tool_result':
@@ -192,9 +194,14 @@ export function decodeEvent(value: unknown, history = false): RuntimeEvent {
       else if (data.errorCode !== undefined) invalidResponse();
       break;
     case 'agent.plan': {
+      const plan = text(data.content);
+      if (data.phase === 'delta') {
+        if (!plan || data.toolCallId !== undefined) invalidResponse();
+        break;
+      }
+      if (data.phase !== undefined) oneOf(data.phase, ['completed']);
       nonempty(data.toolCallId);
-      const plan = nonempty(data.content);
-      const first = plan.split(/\r\n|[\r\n]/u).find((line) => javaStrip(line));
+      const first = nonempty(plan).split(/\r\n|[\r\n]/u).find((line) => javaStrip(line));
       if (plan.length > 262_144 || !first?.startsWith('# ')) invalidResponse();
       break;
     }

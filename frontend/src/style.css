@@ -1317,6 +1317,14 @@ svg {
   white-space: nowrap;
 }
 
+.tool-activity[open] > summary strong {
+  min-width: 0;
+  overflow: visible;
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+  white-space: normal;
+}
+
 .tool-state-icon {
   display: inline-grid;
   width: 18px;

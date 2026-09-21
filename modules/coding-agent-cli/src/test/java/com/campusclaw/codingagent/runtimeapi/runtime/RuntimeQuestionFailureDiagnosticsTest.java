@@ -11,6 +11,8 @@ import java.util.List;
 import java.util.Map;
 
 import com.campusclaw.agent.tool.CancellationToken;
+import com.campusclaw.codingagent.runtimeapi.dto.ExecutionTargetDTO;
+import com.campusclaw.codingagent.runtimeapi.dto.PlanProposalSnapshotDTO;
 import com.campusclaw.codingagent.test.Log4j2TestAppender;
 import com.campusclaw.codingagent.tool.builtin.BuiltInToolName;
 import com.campusclaw.codingagent.tool.builtin.UnavailableBuiltInTool;
@@ -37,7 +39,13 @@ class RuntimeQuestionFailureDiagnosticsTest {
     @Test
     void shouldDiagnosePendingInteractionConflictWithoutQuestionPayload() {
         RuntimePendingInteraction pending = new RuntimePendingInteraction();
-        pending.beginPlan("exit-1", "plan-event-1", "# Existing plan");
+        pending.beginPlan(new PlanProposalSnapshotDTO(
+                new ExecutionTargetDTO("session", "execution", "root", "segment"),
+                "assistant-1",
+                "plan-event-1",
+                "root",
+                "exit-1",
+                "# Existing plan"));
         QuestionRequestSnapshotDTO question = QuestionRequestSnapshotDTO.showcaseConfirmation(
                 "sensitive-label", MAPPER.valueToTree(Map.of("credential", "sensitive-value")));
 

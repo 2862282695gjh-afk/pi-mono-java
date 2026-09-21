@@ -140,6 +140,24 @@
           AND pending_question_event_id IS NULL
     </update>
 
+    <select id="countPlanReviewSource" resultType="int">
+        SELECT COUNT(1)
+        FROM t_sessions session
+        JOIN t_session_entries tool_call
+          ON tool_call.session_id = session.id
+         AND tool_call.id = session.active_leaf_id
+        JOIN t_session_entries assistant
+          ON assistant.session_id = tool_call.session_id
+         AND assistant.id = tool_call.parent_id
+        WHERE session.id = #{sessionId}
+          AND assistant.id = #{assistantEntryId}
+          AND assistant.type = 'assistant.message.completed'
+          AND tool_call.type = 'tool.execution.started'
+          AND tool_call.payload -&gt;&gt; 'tool_call_id' = #{toolCallId}
+          AND tool_call.payload -&gt;&gt; 'tool_name' = 'ExitPlanMode'
+          AND tool_call.payload -&gt; 'arguments' = CAST('{}' AS JSONB)
+    </select>
+
     <update id="markQuestionConfirming">
         UPDATE t_session_executions
         SET state = 'CONFIRMING',
@@ -420,45 +438,29 @@
                plan_confirmation.target_event_id AS plan_event_id,
                question_answer.target_event_id AS question_event_id
         FROM targets target
-        JOIN LATERAL (
-            SELECT current_segment_id, stop_event_id
-            FROM t_session_executions
-            WHERE session_id = target.session_id
-              AND execution_id = target.execution_id
-              AND root_event_id = target.root_event_id
-              AND state &lt;&gt; 'TERMINAL'
-            LIMIT 1
-        ) execution ON TRUE
-        LEFT JOIN LATERAL (
-            SELECT confirmation_event_id, tool_call_id
-            FROM t_session_tool_confirmations
-            WHERE session_id = target.session_id
-              AND execution_id = target.execution_id
-              AND previous_segment_id = target.segment_id
-              AND segment_id = execution.current_segment_id
-              AND state = 'PENDING'
-            LIMIT 1
-        ) confirmation ON TRUE
-        LEFT JOIN LATERAL (
-            SELECT confirmation_event_id, target_event_id
-            FROM t_session_plan_confirmations
-            WHERE session_id = target.session_id
-              AND execution_id = target.execution_id
-              AND previous_segment_id = target.segment_id
-              AND segment_id = execution.current_segment_id
-              AND state = 'PENDING'
-            LIMIT 1
-        ) plan_confirmation ON TRUE
-        LEFT JOIN LATERAL (
-            SELECT answer_event_id, target_event_id
-            FROM t_session_question_answers
-            WHERE session_id = target.session_id
-              AND execution_id = target.execution_id
-              AND previous_segment_id = target.segment_id
-              AND segment_id = execution.current_segment_id
-              AND state = 'PENDING'
-            LIMIT 1
-        ) question_answer ON TRUE
+        JOIN t_session_executions execution
+          ON execution.session_id = target.session_id
+         AND execution.execution_id = target.execution_id
+         AND execution.root_event_id = target.root_event_id
+         AND execution.state &lt;&gt; 'TERMINAL'
+        LEFT JOIN t_session_tool_confirmations confirmation
+          ON confirmation.session_id = target.session_id
+         AND confirmation.execution_id = target.execution_id
+         AND confirmation.previous_segment_id = target.segment_id
+         AND confirmation.segment_id = execution.current_segment_id
+         AND confirmation.state = 'PENDING'
+        LEFT JOIN t_session_plan_confirmations plan_confirmation
+          ON plan_confirmation.session_id = target.session_id
+         AND plan_confirmation.execution_id = target.execution_id
+         AND plan_confirmation.previous_segment_id = target.segment_id
+         AND plan_confirmation.segment_id = execution.current_segment_id
+         AND plan_confirmation.state = 'PENDING'
+        LEFT JOIN t_session_question_answers question_answer
+          ON question_answer.session_id = target.session_id
+         AND question_answer.execution_id = target.execution_id
+         AND question_answer.previous_segment_id = target.segment_id
+         AND question_answer.segment_id = execution.current_segment_id
+         AND question_answer.state = 'PENDING'
         WHERE execution.stop_event_id IS NOT NULL
            OR confirmation.confirmation_event_id IS NOT NULL
            OR plan_confirmation.confirmation_event_id IS NOT NULL

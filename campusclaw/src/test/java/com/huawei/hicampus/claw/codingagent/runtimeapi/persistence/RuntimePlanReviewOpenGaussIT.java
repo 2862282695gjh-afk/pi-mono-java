@@ -26,13 +26,18 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
 
+import com.huawei.hicampus.claw.ai.types.AssistantMessage;
+import com.huawei.hicampus.claw.ai.types.StopReason;
+import com.huawei.hicampus.claw.ai.types.TextContent;
 import com.huawei.hicampus.claw.ai.types.ToolCall;
+import com.huawei.hicampus.claw.ai.types.Usage;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.CommittedControlEventDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.CommittedEventDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.ExecutionTargetDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.PlanConfirmationAcceptanceDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.PlanConfirmationEventsDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.PlanModeEventDTO;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.PlanProposalSnapshotDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeEntryDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.RuntimeSessionDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.error.RuntimeApiException;
@@ -286,14 +291,43 @@ class RuntimePlanReviewOpenGaussIT {
         String toolCallId = suffix + "-exit-call";
         String planEventId = suffix + "-plan-event";
         String planText = "# 实施方案\n\n1. 修改\n2. 验证";
-        RuntimeEntryDTO plan = codec.planEntry(session.getId(), suffix + "-plan-entry", toolCallId, planText, NOW);
+        ToolCall call = new ToolCall(toolCallId, "ExitPlanMode", Map.of());
+        String assistantEntryId = persistPlanSource(session, target, suffix, planText, call);
+        RuntimeEntryDTO plan =
+                codec.planEntry(session.getId(), suffix + "-plan-entry", assistantEntryId, toolCallId, planText, NOW);
         CommittedEventDTO planEvent = events.agentPlan(plan, planEventId, toolCallId, planText, target.rootEventId());
         RuntimeEntryDTO idle = codec.sessionIdleEntry(
                 session.getId(), suffix + "-idle", "confirming", target.rootEventId(), null, NOW.plusSeconds(1));
         CommittedEventDTO idleEvent = events.sessionIdle(
                 idle, suffix + "-idle-event", "confirming", target.rootEventId(), null, java.util.Locale.CHINA);
-        persistence.markPlanConfirming(target, toolCallId, plan, planEvent, idle, idleEvent, NOW.plusSeconds(1));
+        persistence.markPlanConfirming(
+                target, assistantEntryId, toolCallId, plan, planEvent, idle, idleEvent, NOW.plusSeconds(1));
         return new PlanFixture(session, target, planEventId, toolCallId);
+    }
+
+    private String persistPlanSource(
+            RuntimeSessionDTO session, ExecutionTargetDTO target, String suffix, String planText, ToolCall call) {
+        String assistantEntryId = suffix + "-assistant-entry";
+        AssistantMessage assistant = new AssistantMessage(
+                List.of(new TextContent("<proposed_plan>\n" + planText + "\n</proposed_plan>"), call),
+                "api",
+                "provider",
+                "model",
+                null,
+                Usage.empty(),
+                StopReason.TOOL_USE,
+                null,
+                1L);
+        RuntimeEntryDTO assistantEntry = codec.assistantEntry(session.getId(), assistantEntryId, assistant, NOW);
+        CommittedEventDTO assistantEvent =
+                events.agentMessage(assistantEntry, assistantEntryId, "", assistant.usage(), target.rootEventId());
+        persistence.appendEntry(target, assistantEntry, List.of(assistantEvent));
+        RuntimeEntryDTO toolEntry = codec.toolCallEntry(
+                session.getId(), suffix + "-tool-entry", call.id(), call.name(), call.arguments(), false, NOW);
+        CommittedEventDTO toolEvent =
+                events.agentToolCall(toolEntry, suffix + "-tool-event", call, false, target.rootEventId(), null);
+        persistence.appendEntry(target, toolEntry, List.of(toolEvent));
+        return assistantEntryId;
     }
 
     private PlanFixture seedOrdinaryConfirmation(String suffix) {
@@ -309,7 +343,7 @@ class RuntimePlanReviewOpenGaussIT {
         RuntimeEntryDTO tool = codec.toolCallEntry(
                 session.getId(), suffix + "-tool-entry", call.id(), call.name(), call.arguments(), true, NOW);
         CommittedEventDTO toolEvent =
-                events.agentToolCall(tool, suffix + "-tool-event", call, true, target.rootEventId());
+                events.agentToolCall(tool, suffix + "-tool-event", call, true, target.rootEventId(), null);
         RuntimeEntryDTO idle = codec.sessionIdleEntry(
                 session.getId(), suffix + "-idle", "confirming", target.rootEventId(), null, NOW.plusSeconds(1));
         CommittedEventDTO idleEvent = events.sessionIdle(
@@ -540,7 +574,13 @@ class RuntimePlanReviewOpenGaussIT {
         var execution = new RuntimeActiveExecution(RuntimeEventOutput.persistenceOnly());
         execution.bindTarget(fixture.target());
         execution.applyMode("plan");
-        var decision = execution.beginPlanReview(fixture.toolCallId(), fixture.planEventId(), "# 实施方案\n\n1. 修改\n2. 验证");
+        var decision = execution.beginPlanReview(new PlanProposalSnapshotDTO(
+                fixture.target(),
+                "assistant-plan",
+                fixture.planEventId(),
+                fixture.target().rootEventId(),
+                fixture.toolCallId(),
+                "# 实施方案\n\n1. 修改\n2. 验证"));
         return new LocalPlan(execution, decision);
     }
 

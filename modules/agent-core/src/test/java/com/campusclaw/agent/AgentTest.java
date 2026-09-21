@@ -32,7 +32,6 @@ import com.campusclaw.agent.tool.AgentToolUpdateCallback;
 import com.campusclaw.agent.tool.CancellationToken;
 import com.campusclaw.agent.tool.ToolExecutionPipeline;
 import com.campusclaw.ai.CampusClawAiService;
-import com.campusclaw.ai.model.ModelRegistry;
 import com.campusclaw.ai.provider.ApiProvider;
 import com.campusclaw.ai.provider.ApiProviderRegistry;
 import com.campusclaw.ai.stream.AssistantMessageEvent;
@@ -60,7 +59,7 @@ class AgentTest {
     @Test
     void promptEmitsEventsAndCompletes() throws Exception {
         var agent = new Agent(
-                piAiService(sampleModel(), new TextResponseProvider("hello", "world")),
+                piAiService(new TextResponseProvider("hello", "world")),
                 new AgentState(),
                 new DefaultMessageConverter(),
                 null,
@@ -94,7 +93,7 @@ class AgentTest {
     void defaultsRequestOutputLimitToLargeModelLimit() throws Exception {
         Model model = sampleModel(64_000);
         OptionsCapturingProvider provider = new OptionsCapturingProvider();
-        Agent agent = new Agent(piAiService(model, provider));
+        Agent agent = new Agent(piAiService(provider));
         agent.setModel(model);
 
         agent.prompt("large output").get(2, TimeUnit.SECONDS);
@@ -106,7 +105,7 @@ class AgentTest {
     void abortCancelsRunningToolExecution() throws Exception {
         var tool = new BlockingAbortTool();
         var agent = new Agent(
-                piAiService(sampleModel(), new ToolCallProvider("abort", "blocking_tool", Map.of("query", "abort"))),
+                piAiService(new ToolCallProvider("abort", "blocking_tool", Map.of("query", "abort"))),
                 new AgentState(),
                 new DefaultMessageConverter(),
                 null,
@@ -137,7 +136,7 @@ class AgentTest {
     void steeringMessagesAreInjectedIntoNextTurn() throws Exception {
         var steeringQueue = new MessageQueue();
         var agent = new Agent(
-                piAiService(sampleModel(), new SteeringProvider()),
+                piAiService(new SteeringProvider()),
                 new AgentState(),
                 new DefaultMessageConverter(),
                 null,
@@ -169,7 +168,7 @@ class AgentTest {
     @Test
     void subscribeReturnsUnsubscribeRunnable() throws Exception {
         var agent = new Agent(
-                piAiService(sampleModel(), new TextResponseProvider("hello", "world")),
+                piAiService(new TextResponseProvider("hello", "world")),
                 new AgentState(),
                 new DefaultMessageConverter(),
                 null,
@@ -189,11 +188,9 @@ class AgentTest {
         assertTrue(events.isEmpty());
     }
 
-    private CampusClawAiService piAiService(Model model, ApiProvider provider) {
+    private CampusClawAiService piAiService(ApiProvider provider) {
         var providerRegistry = new ApiProviderRegistry(List.of(provider));
-        var modelRegistry = new ModelRegistry();
-        modelRegistry.register(model);
-        return new CampusClawAiService(providerRegistry, modelRegistry);
+        return new CampusClawAiService(providerRegistry);
     }
 
     private Model sampleModel() {

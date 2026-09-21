@@ -13,7 +13,7 @@ import java.util.Map;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-import com.campusclaw.ai.model.ModelRegistry;
+import com.campusclaw.ai.model.ModelCostCalculator;
 import com.campusclaw.ai.stream.AssistantMessageEvent;
 import com.campusclaw.ai.stream.AssistantMessageEventStream;
 import com.campusclaw.ai.types.Api;
@@ -286,7 +286,7 @@ final class MateChatSseParser {
         int output = value.path("completion_tokens").asInt(0);
         int total = value.path("total_tokens").asInt(input + output + cached);
         Usage tokens = new Usage(input, output, cached, 0, total, Cost.empty());
-        usage = new Usage(input, output, cached, 0, total, ModelRegistry.calculateCost(model, tokens));
+        usage = new Usage(input, output, cached, 0, total, ModelCostCalculator.calculate(model, tokens));
     }
 
     private void finish() {

@@ -13,8 +13,10 @@ import java.util.function.Supplier;
 import com.campusclaw.agent.tool.BeforeToolCallContext;
 import com.campusclaw.agent.tool.BeforeToolCallHandler;
 import com.campusclaw.agent.tool.BeforeToolCallResult;
+import com.campusclaw.agent.tool.CancellationToken;
 import com.campusclaw.ai.types.ToolCall;
 import com.campusclaw.codingagent.runtimeapi.dto.ExecutionTargetDTO;
+import com.campusclaw.codingagent.runtimeapi.dto.PlanProposalSnapshotDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.PlanReviewDecisionDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.QuestionAnswerDecisionDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.ToolConfirmationDecisionDTO;
@@ -62,6 +64,8 @@ public class RuntimeActiveExecution implements PlanReviewPort, UserQuestionPort 
 
     private RuntimeToolPermissionPolicy toolPermissions = RuntimeToolPermissionPolicy.builtInsOnly();
 
+    private volatile RuntimeToolCallSnapshotResolver toolCallSnapshots = RuntimeToolCallSnapshotResolver.empty();
+
     private BeforeToolCallHandler confirmationHandler;
 
     private final RuntimePendingInteraction pending = new RuntimePendingInteraction();
@@ -95,24 +99,33 @@ public class RuntimeActiveExecution implements PlanReviewPort, UserQuestionPort 
         modeApplier = Objects.requireNonNull(value, "modeApplier");
     }
 
-    public synchronized CompletableFuture<PlanReviewDecisionDTO> beginPlanReview(
-            String toolCallId, String planEventId, String plan) {
+    public synchronized CompletableFuture<PlanReviewDecisionDTO> beginPlanReview(PlanProposalSnapshotDTO proposal) {
         if (!ClawConstants.Agent.MODE_PLAN.equals(mode)) {
             throw new PlanReviewException("PLAN_MODE_INACTIVE");
         }
+        requireCurrentPlanProposal(proposal);
         try {
-            return pending.beginPlan(toolCallId, planEventId, plan);
+            return pending.beginPlan(proposal);
         } catch (UserQuestionException error) {
             String errorCode = "PLAN_REVIEW_UNAVAILABLE";
             LOGGER.atError()
                     .addKeyValue("event", "campusclaw.failure")
                     .addKeyValue("operation", "runtime.plan.review.begin")
                     .addKeyValue("errorCode", errorCode)
-                    .addKeyValue("toolCallId", toolCallId)
-                    .addKeyValue("planEventId", planEventId)
+                    .addKeyValue("toolCallId", proposal.toolCallId())
+                    .addKeyValue("planEventId", proposal.planEventId())
                     .setCause(error)
                     .log("CampusClaw failure: operation={}, errorCode={}", "runtime.plan.review.begin", errorCode);
             throw new PlanReviewException(errorCode);
+        }
+    }
+
+    private void requireCurrentPlanProposal(PlanProposalSnapshotDTO proposal) {
+        if (proposal == null
+                || target == null
+                || !target.equals(proposal.target())
+                || !target.rootEventId().equals(proposal.sourceEventId())) {
+            throw new PlanReviewException("PLAN_REVIEW_UNAVAILABLE");
         }
     }
 
@@ -122,8 +135,8 @@ public class RuntimeActiveExecution implements PlanReviewPort, UserQuestionPort 
     }
 
     @Override
-    public PlanReviewResultDTO await(String toolCallId, String plan) throws Exception {
-        PlanReviewDecisionDTO decision = pending.awaitPlan(toolCallId, plan);
+    public PlanReviewResultDTO review(String toolCallId, CancellationToken signal) throws Exception {
+        PlanReviewDecisionDTO decision = pending.awaitPlan(toolCallId, signal);
         return new PlanReviewResultDTO(decision.getResult().isApproved(), decision.getFeedback());
     }
 
@@ -139,6 +152,14 @@ public class RuntimeActiveExecution implements PlanReviewPort, UserQuestionPort 
 
     public synchronized RuntimeToolPermissionPolicy.Decision toolPermission(ToolCall call) {
         return toolPermissions.decide(call);
+    }
+
+    public void bindToolCallSnapshots(RuntimeToolCallSnapshotResolver value) {
+        toolCallSnapshots = Objects.requireNonNull(value, "value");
+    }
+
+    public String resolveToolDisplayName(ToolCall call) {
+        return toolCallSnapshots.resolveDisplayName(call);
     }
 
     public synchronized void installConfirmationHandler(BeforeToolCallHandler handler) {

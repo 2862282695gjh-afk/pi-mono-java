@@ -16,7 +16,7 @@ import lombok.ToString;
 /**
  * 每次请求 Mate 内网网关携带的 Header 信息。
  *
- * <p>敏感字段(token、凭据、cookie)以 {@link ToString.Exclude} 排除在
+ * <p>敏感字段（token、凭据、cookie）以 {@link ToString.Exclude} 排除在
  * {@link #toString()} 之外，不会泄漏进日志。Mate 工具发现请求不填充执行凭据，只有工具执行
  * 请求按本次 Agent 执行上下文填充凭据字段。
  *
@@ -30,17 +30,21 @@ public class RequestHeaderInfo {
     private String accessToken;
 
     private String clientIp;
+
     private String locale;
+
     private String xForward;
+
     private String appId;
 
     /**
-     * X-HW-ID 凭据 Header;由调用方(agent 下发)可选提供。
+     * X-HW-ID 凭据 Header，由调用方可选提供。
      */
+    @ToString.Exclude
     private String xHwId;
 
     /**
-     * X-HW-APPKEY 凭据 Header;AppKey 模式与 xHwId 成对提供。
+     * X-HW-APPKEY 凭据 Header，由调用方可选提供。
      */
     @ToString.Exclude
     private String xHwAppKey;
@@ -64,9 +68,13 @@ public class RequestHeaderInfo {
     private String roaRand;
 
     private String xAgentId;
+
     private String agentTenantId;
+
     private String agentUserId;
+
     private String a2aVersion;
+
     private String xPlaneType;
 
     @ToString.Exclude

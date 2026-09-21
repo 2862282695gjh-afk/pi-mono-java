@@ -1,6 +1,6 @@
 # Showcase 业务确认开发与演示
 
-版本：1.0.2；日期：2026-09-18。仅用于 `codex/showcase-confirm-with-user` 分支，不合入 main。
+版本：1.0.3；日期：2026-09-21。仅用于 `codex/showcase-confirm-with-user` 分支，不合入 main。
 
 实现起点为 `19870445a3a8bd559919fe24580330be8227488f`。设计依据为
 [showcase 业务确认设计](https://github.com/superheromeZzh/pi-mono-java-design/blob/106f9f5a79af78386717371e1ba52330d26013bf/01-总体架构/06-CampusClaw计划模式/showcase-confirm-with-user.md)；
@@ -8,8 +8,18 @@
 
 ## 分支行为
 
-该分支固化启用临时适配，不读取额外 Spring 参数或环境变量。后端与该分支前端必须配套发布；
-Runtime 默认与显式工具列表均移除 AskUserQuestion，保留旧问题历史读取。
+该分支启用业务确认适配，不增加 showcase 专属开关。后端与该分支前端必须配套发布。
+内置工具按 `campusclaw.tools.runtime` 清单装配；showcase 打包配置默认不含 AskUserQuestion，显式加入即可启用，装配器不再强制过滤。
+通用 Java 默认工具清单保留 AskUserQuestion；分支默认差异仅在 standalone `application.yml` 与公司 `application.properties` 中表达。
+AskUserQuestion 与已绑定的 confirm_with_user 可以并存，分别用于普通澄清和业务确认；业务工具绑定不决定内置提问是否装配。
+
+需要恢复内置提问时，在外部配置中提供完整 Runtime 工具清单（列表覆盖而非追加）：
+
+```properties
+campusclaw.tools.runtime=Read,Find,Grep,Ls,Cron,ListMateTools,CallMateTool,Agent,ExitPlanMode,TodoUpdate,AskUserQuestion
+```
+
+配置在部署启动时绑定，修改后重启。未配置 AskUserQuestion 且未绑定可用 confirm_with_user 的展示 Agent 没有问题卡入口；需要普通提问的部署应显式启用 AskUserQuestion。
 
 独立服务可用以下参数启动，数据库、模型及 Mate 连接仍使用已有部署配置：
 
@@ -19,7 +29,8 @@ java -jar modules/coding-agent-cli/target/campusclaw-agent.jar
 
 公司镜像不需要 showcase 专属配置，具体启动入口沿用公司部署流程。该分支没有新增数据库表、字段或 Maven/npm 依赖。
 
-在业务 Agent 的可信工具绑定中配置精确名称 `confirm_with_user`，权限必须为 allow，发现结果必须唯一。
+在业务 Agent 的可信工具绑定中配置精确名称 `confirm_with_user`，权限必须为 allow，工具 ID 必须明确。
+Agent 与多个 Skill 可以重复绑定同名同 ID 工具；不同 ID、缺失 ID 或真实权限冲突仍拒绝，不按绑定条数误判歧义。
 输入 label 为必填字符串，context 为可选对象；context 内部不约定字段。模型仍通过 CallMateTool 调用它。
 原始 label/context 在问题事件及界面保持 JSON 值与结构相同，省略 context 和空对象保持区别。
 确认只在 Runtime 根执行中等待用户回答；Child/Cron 不执行这个本地交互，也不降级远调。
@@ -27,7 +38,7 @@ java -jar modules/coding-agent-cli/target/campusclaw-agent.jar
 业务 Agent 的 BASE 和自定义 PLAN.md/BUILD.md 如有旧提问指令，应按以下行为更新，保留业务身份和其他模式约束：
 
 ```text
-需要用户提供信息或确认业务内容时，使用 CallMateTool 调用 confirm_with_user，传入 label 和可选 context。label/context 保留实际业务内容；不要调用 AskUserQuestion。提问时该次 Assistant 只发出这一项工具调用，等待工具返回真实 content 后再继续。Subagent 把需要用户回答的问题交给父 Agent；Cron 汇报缺失信息。
+需要用户提供信息时使用实际可用的提问能力。普通澄清可使用 AskUserQuestion；业务流程要求业务确认时使用 CallMateTool 调用已绑定的 confirm_with_user，传入原始 label 和可选 context。业务提问时该次 Assistant 只发出这一项工具调用，等待工具返回真实 content 后再继续。Subagent 把需要用户回答的问题交给父 Agent；Cron 汇报缺失信息。
 ```
 
 ## 源码接线
@@ -36,7 +47,7 @@ java -jar modules/coding-agent-cli/target/campusclaw-agent.jar
 
 | 职责 | 路径与符号 |
 |---|---|
-| 分支固定清单过滤 | `tool/builtin/DefaultConfiguredToolAssembler#assemble` |
+| 工具清单配置与直接装配 | `tool/builtin/DefaultConfiguredToolAssembler#assemble`、standalone `application.yml`、公司 `application.properties` |
 | 每执行适配器与可信绑定 | `runtimeapi/runtime/RuntimeSessionEngineRegistry#createSession`、`tool/question/ShowcaseConfirmationAdapter#prepare` |
 | 原问题等待与失败清理 | `runtimeapi/runtime/RuntimeActiveExecution#beforeToolCall`、`runtimeapi/event/RuntimeEventProjector#beginQuestion` |
 | 本地工具结果 | `tool/mate/CallMateTool#execute`、`ShowcaseConfirmationAdapter#await` |
@@ -46,7 +57,7 @@ java -jar modules/coding-agent-cli/target/campusclaw-agent.jar
 
 ## 人工验收步骤
 
-1. 新建执行，确认模型工具清单无 AskUserQuestion，其他业务工具仍可调用。
+1. 使用分支默认配置新建执行，确认模型工具清单无 AskUserQuestion；外部配置显式加入后重启，确认可调用 AskUserQuestion，其他业务工具和 confirm_with_user 仍按各自规则执行。
 2. 让模型调用 confirm_with_user，分别覆盖省略 context、空对象及嵌套数组/null/空白值。
 3. 核对 agent.question 与原工具 args 的 label/context 深相等；原 SSE 在 confirming 后结束，Session 仍为 running，界面显示等待回答。
 4. 核对界面只显示该问题的 label/context、回答框和确认按钮；普通 CallMateTool 仍显示。
@@ -59,7 +70,7 @@ java -jar modules/coding-agent-cli/target/campusclaw-agent.jar
 
 ## 失败诊断
 
-源码起点：`40fa05f99fe1b3bb4363e0918b1ab0a63d6939ae`。问答失败在 `ShowcaseConfirmationAdapter`、`RuntimeEventProjector#requireUniqueFinalizedCall` 和 `RuntimePendingInteraction` 的失败分支记录 ERROR 日志，并通过 `UserQuestionException` 携带独立错误码。`RuntimeToolPermissionPolicy#diagnoseBinding` 区分绑定缺失与多条绑定；已有准入规则保持不变。
+诊断实现起点：`40fa05f99fe1b3bb4363e0918b1ab0a63d6939ae`，诊断实现提交：`d8de4e195caba66c75eb31919f009dce76fbcb6c`。问答失败在 `ShowcaseConfirmationAdapter`、`RuntimeEventProjector#requireUniqueFinalizedCall` 和 `RuntimePendingInteraction` 的失败分支记录 ERROR 日志，并通过 `UserQuestionException` 携带独立错误码。`RuntimeToolPermissionPolicy#diagnoseBinding` 按工具 ID 识别真实歧义，同 ID 重复绑定不再拒绝。
 
 日志正文和结构化字段均包含 `errorCode`、`operation`、工具调用标识及可用的 sessionId/agentId。发现异常保留 cause；诊断字段不包含 label/context、答案或凭据。工具 Pipeline、实时 `agent.tool_result.errorCode`、持久化和历史查询保留具体码值；客户端显示对应的中英文安全文案。旧 `USER_QUESTION_UNAVAILABLE` 仅保留兼容历史。
 
@@ -69,7 +80,7 @@ java -jar modules/coding-agent-cli/target/campusclaw-agent.jar
 | `USER_QUESTION_PORT_MISSING` | 用户提问等待端口未就绪。 |
 | `USER_QUESTION_ADAPTER_UNBOUND` | 用户确认适配器尚未完成初始化。 |
 | `USER_QUESTION_BINDING_MISSING` | 当前 Agent 或 Skill 缺少有效的用户确认工具绑定。 |
-| `USER_QUESTION_BINDING_AMBIGUOUS` | 用户确认工具存在多个绑定，无法确定唯一绑定。 |
+| `USER_QUESTION_BINDING_AMBIGUOUS` | 用户确认工具的同名绑定指向不同 ID，无法确定唯一工具。 |
 | `USER_QUESTION_PERMISSION_DENIED` | 用户确认工具的绑定权限不允许调用。 |
 | `USER_QUESTION_PERMISSION_REQUIRED` | 用户确认工具配置为需审批，当前确认入口要求 allow 权限。 |
 | `USER_QUESTION_DISCOVERY_FAILED` | 查询用户确认工具失败，请根据工具调用标识检查服务端日志。 |
@@ -84,7 +95,7 @@ java -jar modules/coding-agent-cli/target/campusclaw-agent.jar
 | `USER_QUESTION_PENDING_CONFLICT` | 当前执行已有未完成的交互，无法创建新的用户问题。 |
 | `USER_QUESTION_WAIT_MISSING` | 找不到当前工具调用对应的用户问题等待。 |
 
-参数类型错误继续使用 `TOOL_ARGUMENTS_INVALID`，日志 `reason` 区分 `args_not_object`、`label_not_string`、`context_not_object`。
+确认适配层参数类型错误继续使用 `TOOL_ARGUMENTS_INVALID`，日志 `reason` 区分 `args_not_object`、`label_not_string`、`context_not_object`。通用工具 Schema 校验先于此层执行，其详细参数错误日志尚未补齐；不能用缺少上述 reason 推断参数正确。
 
 部署包含此改动的新构建后，可按失败时段检索实际日志目录：
 
@@ -100,6 +111,13 @@ rg -n -C 10 'User question failed:|USER_QUESTION_|runtime.user-question.confirma
 含 label/context 的历史继续要求联合载荷解码；不把新历史交给只认识 questions 的旧二进制，不清表回退。
 
 ## 验证记录
+
+2026-09-21：在 showcase `d8de4e195caba66c75eb31919f009dce76fbcb6c` 基础上合入 main `d1cdb708e3e124cae009b10b985f5832b6dbde01`，保留正文计划审核、工具展示名初始化和可选凭据透传。配置与重复绑定修复随本文件同一提交交付；核验范围为上述工具装配、`RuntimeToolPermissionPolicy#diagnoseBinding`、两个打包配置及模式提示词。
+
+- 合并后 20 个定向后端测试类共 176 项通过，涵盖打包默认禁用与外部配置启用、同 ID 跨来源重复绑定、不同 ID/权限冲突、两类问题、计划正文审核、展示名和错误投影。
+- Spotless、Checkstyle、package、修改 Java 类的 AST 方法长度与版权检查通过；数据载体 record 的布局已人工核对。测试质量扫描 errors=0，命名提示已人工核对。
+- 前端源码与此前核验的自动合并树 `9cae7bd5f27c4e49a55fe40ad3d9689d6419773f` 的 89 个源码/脚本文件逐字节一致，沿用其 186 项相关测试、类型检查和构建证据；未将受本地端口限制的 10 项认证代理测试记为通过。
+- 公司镜像已由模块源码同步；公司 NativeParent 构建与真实 Mate/openGauss 集成未在本次重跑。下表保留原展示闭环的历史证据，不代表本次合并后完整验收。
 
 2026-09-18 对最终代码完成以下验证。未新增或修改图源，沿用设计分支的目标结构与时序图。
 

@@ -31,12 +31,7 @@ public class DefaultConfiguredToolAssembler implements ConfiguredToolAssembler {
     @Override
     public List<AgentTool> assemble(ToolEntryPoint entryPoint, ToolAssemblyContext context) {
         return properties.toolsFor(entryPoint).stream()
-                .filter(name -> !disabledQuestion(name))
                 .map(name -> factory.create(name, context))
                 .toList();
-    }
-
-    private boolean disabledQuestion(BuiltInToolName name) {
-        return name == BuiltInToolName.ASK_USER_QUESTION;
     }
 }

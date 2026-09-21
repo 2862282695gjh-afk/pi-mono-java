@@ -38,7 +38,6 @@ import com.huawei.hicampus.claw.agent.tool.AgentToolUpdateCallback;
 import com.huawei.hicampus.claw.agent.tool.CancellationToken;
 import com.huawei.hicampus.claw.agent.tool.ToolExecutionPipeline;
 import com.huawei.hicampus.claw.ai.CampusClawAiService;
-import com.huawei.hicampus.claw.ai.model.ModelRegistry;
 import com.huawei.hicampus.claw.ai.provider.ApiProvider;
 import com.huawei.hicampus.claw.ai.provider.ApiProviderRegistry;
 import com.huawei.hicampus.claw.ai.stream.AssistantMessageEvent;
@@ -665,9 +664,7 @@ class AgentLoopIntegrationTest {
 
     private CampusClawAiService piAiService(ApiProvider provider) {
         var providerRegistry = new ApiProviderRegistry(List.of(provider));
-        var modelRegistry = new ModelRegistry();
-        modelRegistry.register(model);
-        return new CampusClawAiService(providerRegistry, modelRegistry);
+        return new CampusClawAiService(providerRegistry);
     }
 
     // -- Reply builders --

@@ -67,6 +67,12 @@ export interface SaveResult {
   message: string;
 }
 
+export type PrepareWriteFailure = 'busy' | 'configuration' | 'authentication' | 'cancelled';
+
+export type PrepareWriteResult =
+  | { ok: true; headers: Headers; isCurrent(): boolean }
+  | { ok: false; reason: PrepareWriteFailure; message: string };
+
 export interface DeveloperSettingsController extends RuntimeEnvironmentSource {
   connectionEpoch: Ref<number>;
   applied: Ref<AppliedDeveloperSettings>;
@@ -94,8 +100,11 @@ export interface DeveloperSettingsController extends RuntimeEnvironmentSource {
   restoreHeaderPresets(): void;
   appendHeader(): DeveloperHeaderRow;
   deleteHeader(id: number): void;
+  authenticationDraftChanged(): void;
+  headerDraftChanged(): void;
   cancelToken(): void;
   getToken(): Promise<SaveResult>;
+  prepareWrite(): Promise<PrepareWriteResult>;
   snapshotHeaders(): Headers | null;
   close(): void;
   dispose(): void;

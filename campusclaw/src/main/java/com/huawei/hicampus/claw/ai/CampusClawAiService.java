@@ -7,7 +7,6 @@ package com.huawei.hicampus.claw.ai;
 import java.util.List;
 import java.util.Objects;
 
-import com.huawei.hicampus.claw.ai.model.ModelRegistry;
 import com.huawei.hicampus.claw.ai.provider.AiProviderRegistry;
 import com.huawei.hicampus.claw.ai.provider.ApiProvider;
 import com.huawei.hicampus.claw.ai.provider.ApiProviderRegistry;
@@ -38,19 +37,16 @@ import reactor.core.publisher.Mono;
 public class CampusClawAiService {
 
     private final ApiProviderRegistry providerRegistry;
-    private final ModelRegistry modelRegistry;
     private final AiProviderRegistry aiProviderRegistry;
 
     @Autowired
-    public CampusClawAiService(
-            ApiProviderRegistry providerRegistry, ModelRegistry modelRegistry, AiProviderRegistry aiProviderRegistry) {
+    public CampusClawAiService(ApiProviderRegistry providerRegistry, AiProviderRegistry aiProviderRegistry) {
         this.providerRegistry = Objects.requireNonNull(providerRegistry, "providerRegistry must not be null");
-        this.modelRegistry = Objects.requireNonNull(modelRegistry, "modelRegistry must not be null");
         this.aiProviderRegistry = Objects.requireNonNull(aiProviderRegistry, "aiProviderRegistry must not be null");
     }
 
-    public CampusClawAiService(ApiProviderRegistry providerRegistry, ModelRegistry modelRegistry) {
-        this(providerRegistry, modelRegistry, new AiProviderRegistry(List.of()));
+    public CampusClawAiService(ApiProviderRegistry providerRegistry) {
+        this(providerRegistry, new AiProviderRegistry(List.of()));
     }
 
     /**
@@ -134,15 +130,6 @@ public class CampusClawAiService {
      */
     public ApiProviderRegistry getProviderRegistry() {
         return providerRegistry;
-    }
-
-    /**
-     * 获取模型注册表。
-     *
-     * @return 当前模型注册表
-     */
-    public ModelRegistry getModelRegistry() {
-        return modelRegistry;
     }
 
     private ApiProvider resolveProvider(Model model) {

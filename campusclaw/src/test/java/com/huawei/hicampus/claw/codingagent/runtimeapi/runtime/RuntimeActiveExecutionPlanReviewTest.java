@@ -9,6 +9,8 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.util.List;
 
+import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.ExecutionTargetDTO;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.PlanProposalSnapshotDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeEventOutput;
 import com.huawei.hicampus.claw.codingagent.test.Log4j2TestAppender;
 import com.huawei.hicampus.claw.codingagent.tool.plan.PlanReviewException;
@@ -28,6 +30,8 @@ class RuntimeActiveExecutionPlanReviewTest {
     void shouldLogQuestionConflictBeforeRejectingPlanReview() {
         RuntimeActiveExecution execution = new RuntimeActiveExecution(RuntimeEventOutput.persistenceOnly());
         execution.applyMode(ClawConstants.Agent.MODE_PLAN);
+        var target = new ExecutionTargetDTO("session", "execution", "root", "segment-1");
+        execution.bindTarget(target);
         var question = new QuestionRequestSnapshotDTO(
                 List.of(new QuestionDTO("question-1", "Question", null, List.of(), false)));
         execution.beginQuestion("ask-1", "question-event-1", question);
@@ -37,7 +41,9 @@ class RuntimeActiveExecutionPlanReviewTest {
         logger.addAppender(logs);
         try {
             PlanReviewException failure = assertThrows(
-                    PlanReviewException.class, () -> execution.beginPlanReview("exit-1", "plan-event-1", "# Plan"));
+                    PlanReviewException.class,
+                    () -> execution.beginPlanReview(new PlanProposalSnapshotDTO(
+                            target, "assistant-1", "plan-event-1", "root", "exit-1", "# Plan")));
 
             assertThat(failure.stableErrorCode()).isEqualTo("PLAN_REVIEW_UNAVAILABLE");
             assertThat(failure).hasNoCause();

@@ -27,6 +27,13 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import org.junit.jupiter.api.Test;
+import org.springframework.boot.context.properties.bind.Bindable;
+import org.springframework.boot.context.properties.bind.Binder;
+import org.springframework.boot.env.PropertiesPropertySourceLoader;
+import org.springframework.boot.env.YamlPropertySourceLoader;
+import org.springframework.core.env.MapPropertySource;
+import org.springframework.core.env.StandardEnvironment;
+import org.springframework.core.io.ClassPathResource;
 
 class DefaultConfiguredToolAssemblerTest {
 
@@ -60,8 +67,7 @@ class DefaultConfiguredToolAssemblerTest {
     }
 
     @Test
-    void showcaseBranchShouldFilterQuestionFromDefaultAndExplicitProfiles(
-            @org.junit.jupiter.api.io.TempDir Path agentRoot) {
+    void explicitProfilesShouldKeepConfiguredQuestionTool(@org.junit.jupiter.api.io.TempDir Path agentRoot) {
         var properties = new BuiltInToolProperties();
         properties.setRuntime(List.of("Read", "AskUserQuestion", "CallMateTool"));
         properties.setCron(List.of("AskUserQuestion", "Read"));
@@ -72,11 +78,51 @@ class DefaultConfiguredToolAssemblerTest {
         AgentWorkspaceBoundary workspace = AgentWorkspaceBoundary.create(runtime.agentId(), agentRoot);
 
         assertThat(names(assembler, context(runtime, workspace, ToolEntryPoint.RUNTIME)))
-                .containsExactly("Read", "CallMateTool");
+                .containsExactly("Read", "AskUserQuestion", "CallMateTool");
         assertThat(names(assembler, context(runtime, workspace, ToolEntryPoint.CRON)))
-                .containsExactly("Read");
+                .containsExactly("AskUserQuestion", "Read");
         assertThat(names(assembler, context(runtime, workspace, ToolEntryPoint.CHILD_AGENT)))
-                .containsExactly("Read");
+                .containsExactly("AskUserQuestion", "Read");
+    }
+
+    @Test
+    void bundledShowcaseProfileShouldDisableQuestionAndAllowConfigurationOverride(
+            @org.junit.jupiter.api.io.TempDir Path agentRoot) throws Exception {
+        StandardEnvironment environment = showcaseEnvironment();
+        PreparedAgentRuntime runtime = prepared(agentRoot);
+        AgentWorkspaceBoundary workspace = AgentWorkspaceBoundary.create(runtime.agentId(), agentRoot);
+        ToolAssemblyContext context = context(runtime, workspace, ToolEntryPoint.RUNTIME);
+
+        assertThat(names(configuredAssembler(environment), context))
+                .contains("CallMateTool")
+                .doesNotContain("AskUserQuestion");
+
+        environment
+                .getPropertySources()
+                .addFirst(new MapPropertySource(
+                        "external-override", Map.of("campusclaw.tools.runtime", "Read,AskUserQuestion,CallMateTool")));
+
+        assertThat(names(configuredAssembler(environment), context))
+                .containsExactly("Read", "AskUserQuestion", "CallMateTool");
+    }
+
+    private static StandardEnvironment showcaseEnvironment() throws Exception {
+        var environment = new StandardEnvironment();
+        var yaml = new ClassPathResource("application.yml");
+        var sources = yaml.exists()
+                ? new YamlPropertySourceLoader().load("showcase", yaml)
+                : new PropertiesPropertySourceLoader()
+                        .load("showcase", new ClassPathResource("application.properties"));
+        sources.forEach(source -> environment.getPropertySources().addFirst(source));
+        return environment;
+    }
+
+    private static DefaultConfiguredToolAssembler configuredAssembler(StandardEnvironment environment) {
+        BuiltInToolProperties properties = Binder.get(environment)
+                .bind("campusclaw.tools", Bindable.of(BuiltInToolProperties.class))
+                .get();
+        properties.afterPropertiesSet();
+        return new DefaultConfiguredToolAssembler(properties, StubTool::new);
     }
 
     private static ToolAssemblyContext context(

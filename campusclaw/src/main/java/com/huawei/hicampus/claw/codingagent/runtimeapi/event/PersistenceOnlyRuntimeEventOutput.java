@@ -26,8 +26,9 @@ enum PersistenceOnlyRuntimeEventOutput implements RuntimeEventOutput {
     }
 
     @Override
-    public void emitBestEffort(Supplier<RuntimeSseEventVO> event) {
+    public boolean emitBestEffort(Supplier<RuntimeSseEventVO> event) {
         // 无响应流，不构造流式预览。
+        return false;
     }
 
     @Override

@@ -57,8 +57,10 @@ class RuntimeAgentPromptLoaderTest {
 
         assertThat(snapshot.planSource()).isEqualTo(PromptSource.BUILTIN);
         assertThat(snapshot.buildSource()).isEqualTo(PromptSource.BUILTIN);
-        assertThat(snapshot.planPrompt()).startsWith("# Plan 模式").contains("## Main Agent", "## Subagent");
-        assertThat(snapshot.buildPrompt()).startsWith("# Build 模式").contains("获批方案");
+        assertThat(snapshot.planPrompt())
+                .startsWith("# Plan 模式")
+                .contains("## Main Agent", "## Subagent", "<proposed_plan>", "</proposed_plan>", "ExitPlanMode({})");
+        assertThat(snapshot.buildPrompt()).startsWith("# Build 模式").contains("获批方案", "<proposed_plan>", "空参数不是空方案");
     }
 
     @Test

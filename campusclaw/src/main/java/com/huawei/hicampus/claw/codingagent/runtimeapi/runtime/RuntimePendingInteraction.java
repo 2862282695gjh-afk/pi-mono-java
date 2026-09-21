@@ -11,6 +11,7 @@ import java.util.function.Supplier;
 
 import com.huawei.hicampus.claw.agent.tool.CancellationToken;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.ExecutionTargetDTO;
+import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.PlanProposalSnapshotDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.PlanReviewDecisionDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.QuestionAnswerDecisionDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.ToolConfirmationDecisionDTO;
@@ -55,7 +56,7 @@ public class RuntimePendingInteraction {
 
     private String targetEventId;
 
-    private String plan;
+    private PlanProposalSnapshotDTO plan;
 
     private QuestionRequestSnapshotDTO question;
 
@@ -76,13 +77,14 @@ public class RuntimePendingInteraction {
         return created;
     }
 
-    public synchronized CompletableFuture<PlanReviewDecisionDTO> beginPlan(
-            String callId, String eventId, String content) {
-        requireAvailable(Kind.PLAN_REVIEW, callId, eventId);
+    public synchronized CompletableFuture<PlanReviewDecisionDTO> beginPlan(PlanProposalSnapshotDTO proposal) {
+        java.util.Objects.requireNonNull(proposal, "proposal");
+        requireAvailable(Kind.PLAN_REVIEW, proposal.toolCallId(), proposal.planEventId());
         kind = Kind.PLAN_REVIEW;
-        toolCallId = requireText(callId, "toolCallId");
-        targetEventId = requireText(eventId, "planEventId");
-        plan = requireText(content, "plan");
+        toolCallId = requireText(proposal.toolCallId(), "toolCallId");
+        targetEventId = requireText(proposal.planEventId(), "planEventId");
+        plan = proposal;
+        waitingTarget = java.util.Objects.requireNonNull(proposal.target(), "target");
         var created = new CompletableFuture<PlanReviewDecisionDTO>();
         future = created;
         return created;
@@ -100,14 +102,16 @@ public class RuntimePendingInteraction {
         return created;
     }
 
-    public PlanReviewDecisionDTO awaitPlan(String callId, String content) throws Exception {
+    public PlanReviewDecisionDTO awaitPlan(String callId, CancellationToken signal) throws Exception {
         CompletableFuture<PlanReviewDecisionDTO> waiting;
         synchronized (this) {
-            if (!matchesCall(Kind.PLAN_REVIEW, callId) || !plan.equals(content)) {
+            if (!matchesCall(Kind.PLAN_REVIEW, callId) || plan == null) {
                 throw new com.huawei.hicampus.claw.codingagent.tool.plan.PlanReviewException("PLAN_REVIEW_UNAVAILABLE");
             }
             waiting = castFuture();
         }
+        signal.onCancel(() -> waiting.completeExceptionally(
+                new java.util.concurrent.CancellationException("Plan review was cancelled")));
         PlanReviewDecisionDTO decision = waiting.get();
         clearIfSame(waiting);
         return decision;
@@ -134,7 +138,9 @@ public class RuntimePendingInteraction {
             ExecutionTargetDTO resumed,
             String eventOrCallId,
             RuntimeEventOutput output) {
-        if (!matchesIdentity(expected, eventOrCallId) || !sameExecution(current, resumed)) {
+        if (!matchesIdentity(expected, eventOrCallId)
+                || !sameExecution(current, resumed)
+                || (waitingTarget != null && !waitingTarget.equals(current))) {
             return false;
         }
         waitingTarget = current;

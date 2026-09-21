@@ -72,15 +72,16 @@ public final class RuntimeToolPermissionPolicy {
                         runtime.skills().stream().flatMap(skill -> skill.bindingTools().stream()))
                 .filter(tool -> toolName.equals(tool.name()))
                 .toList();
-        if (matches.size() > 1) {
-            return new BindingDiagnosisDTO(BindingStatus.AMBIGUOUS, null, matches.size());
-        }
         if (matches.isEmpty()
-                || matches.getFirst().id() == null
-                || matches.getFirst().id().isBlank()) {
+                || matches.stream()
+                        .anyMatch(tool -> tool.id() == null || tool.id().isBlank())) {
             return new BindingDiagnosisDTO(BindingStatus.MISSING, null, matches.size());
         }
-        return new BindingDiagnosisDTO(BindingStatus.BOUND, matches.getFirst().id(), 1);
+        String toolId = matches.getFirst().id();
+        if (matches.stream().anyMatch(tool -> !toolId.equals(tool.id()))) {
+            return new BindingDiagnosisDTO(BindingStatus.AMBIGUOUS, null, matches.size());
+        }
+        return new BindingDiagnosisDTO(BindingStatus.BOUND, toolId, matches.size());
     }
 
     private static Decision parse(String value) {

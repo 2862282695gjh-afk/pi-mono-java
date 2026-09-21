@@ -9,6 +9,11 @@ const call = eventFixture({ eventId: 'call', type: 'agent.tool_call', sourceEven
 const result = eventFixture({ eventId: 'result', type: 'agent.tool_result', sourceEventId: 'root-a', toolCallId: 'tool-a', content: [{ type: 'text', text: '' }], isError: false });
 const preview = (content: string): RuntimeEvent => ({ eventId: 'answer', type: 'agent.message', phase: 'delta', content, sourceEventId: 'root-a' });
 const completed = eventFixture({ ...preview('完整正文'), phase: 'completed' });
+const planPreview = (content: string): Extract<RuntimeEvent, { type: 'agent.plan' }> => ({
+  eventId: 'plan-a', type: 'agent.plan', phase: 'delta', content, sourceEventId: 'root-a',
+});
+const planCompleted = eventFixture({ eventId: 'plan-a', type: 'agent.plan', phase: 'completed', sourceEventId: 'root-a',
+  toolCallId: 'exit-a', content: '# 权威方案\n\n步骤' });
 
 describe('Session Events protocol and authoritative store', () => {
   it.each([
@@ -40,6 +45,17 @@ describe('Session Events protocol and authoritative store', () => {
   it('accepts completed and preview shapes, text-only tool blocks including empty text', () => {
     [userFixture(), idleFixture(), call, result, preview('增量'), completed].forEach((event) => expect(decodeEvent(event)).toEqual(event));
     expect(decodeEvent({ ...result, content: [{ type: 'text', text: 'one' }, { type: 'text', text: '' }] })).toBeTruthy();
+  });
+  it('normalizes a valid tool displayName and degrades invalid optional values to absence', () => {
+    expect(decodeEvent({ ...call, displayName: '  查询教室  ' })).toMatchObject({ displayName: '查询教室' });
+    for (const displayName of [undefined, null, 42, {}, ' \t ']) {
+      expect(decodeEvent({ ...call, displayName })).not.toHaveProperty('displayName');
+    }
+    expect(() => decodeEvent({ ...call, displayLabel: '未知字段' })).toThrow();
+  });
+  it('keeps the first committed tool displayName when a duplicate event arrives', () => {
+    const original = { ...call, displayName: '原名称' };
+    expect(mergeEvent([original], { ...original, displayName: '后来的目录名称' })[0]).toEqual(original);
   });
   it('decodes complete questions and answers identically in SSE and history', async () => {
     const question = questionFixture();
@@ -182,6 +198,35 @@ describe('Session Events protocol and authoritative store', () => {
     expect(events[0]).toHaveProperty('content', '完整正文');
     const history = [userFixture(), completed, idleFixture()];
     expect(reconcileEvents([...events, idleFixture()], history)).toEqual(history);
+  });
+  it('merges plan deltas by event id and replaces them with the authoritative completion', () => {
+    let events = mergeEvent([], planPreview('# 权'));
+    events = mergeEvent(events, planPreview('威方案'));
+    expect(events).toEqual([expect.objectContaining({ content: '# 权威方案', phase: 'delta' })]);
+    events = mergeEvent(events, planCompleted);
+    events = mergeEvent(events, planPreview('迟到'));
+    expect(events).toEqual([planCompleted]);
+    expect(() => mergeEvent(events, { ...planPreview('错源'), sourceEventId: 'root-b' })).toThrow();
+  });
+  it('accepts completed-only and legacy plans but rejects preview-only history and invalid phases', () => {
+    expect(decodeEvent(planPreview('# 方'))).toEqual(planPreview('# 方'));
+    expect(decodeEvent(planCompleted)).toEqual(planCompleted);
+    const legacy = { ...planCompleted } as Record<string, unknown>;
+    delete legacy.phase;
+    expect(decodeEvent(legacy)).toEqual(legacy);
+    expect(() => decodeHistory({ events: [planPreview('# 方')], nextPage: null })).toThrow();
+    expect(() => decodeEvent({ ...planPreview('# 方'), phase: 'started' })).toThrow();
+    expect(() => decodeEvent({ ...planPreview('# 方'), toolCallId: 'exit-a' })).toThrow();
+    expect(() => decodeEvent(planPreview(''))).toThrow();
+    expect(() => decodeEvent({ ...planPreview('# 方'), createdAt: '2026-09-08T00:00:00.000Z' })).toThrow();
+    expect(executionState([userFixture(), planPreview('# 方'), idleFixture('confirming')]).pendingPlan).toBeUndefined();
+  });
+  it('does not let a newer draft reuse an older completed plan confirmation window', () => {
+    const oldPlan = { ...planCompleted, eventId: 'plan-old' };
+    const events = [userFixture(), oldPlan, idleFixture('confirming'),
+      eventFixture({ eventId: 'approve-old', type: 'user.plan_confirmation', targetEventId: 'plan-old', result: 'approve' }),
+      planPreview('# 新草稿'), { ...idleFixture('confirming'), eventId: 'confirm-new' }];
+    expect(executionState(events).pendingPlan).toBeUndefined();
   });
   it('keeps history order even when time goes backwards and retains unseen live tail', () => {
     const later = { ...userFixture('later'), createdAt: '2020-01-01T00:00:00.000Z' };

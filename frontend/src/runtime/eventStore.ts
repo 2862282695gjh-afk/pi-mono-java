@@ -50,7 +50,9 @@ export function executionState(events: RuntimeEvent[]) {
     && event.sourceEventId === rootId && event.requiresConfirmation
     && !events.some((item) => item.type === 'agent.tool_result' && item.sourceEventId === rootId && item.toolCallId === event.toolCallId)
     && !hasToolConfirmation(events, event));
-  const plan = latest.find((event) => event.type === 'agent.plan' && event.sourceEventId === rootId);
+  const idleIndex = idle ? events.indexOf(idle) : -1;
+  const plan = idleIndex < 0 ? undefined : [...events.slice(0, idleIndex)].reverse()
+    .find((event) => event.type === 'agent.plan' && event.sourceEventId === rootId);
   const question = latest.find((event) => event.type === 'agent.question' && event.sourceEventId === rootId
     && !questionAnswer(events, event.eventId));
   const interruptPending = !terminal && events.some((event) => event.type === 'user.interrupt' && event.targetEventId === rootId);
@@ -60,7 +62,8 @@ export function executionState(events: RuntimeEvent[]) {
     || event.type === 'user.interrupt' || ('sourceEventId' in event && event.sourceEventId === rootId));
   const confirming = !terminal && !continued && idle?.type === 'session.status_idle' && idle.reason === 'confirming';
   return { rootId, terminal, interruptPending, pendingTool: !terminal && pendingTool?.type === 'agent.tool_call' ? pendingTool : undefined,
-    pendingPlan: confirming && plan?.type === 'agent.plan' && !hasPlanConfirmation(events, plan.eventId) ? plan : undefined,
+    pendingPlan: confirming && plan?.type === 'agent.plan' && plan.phase !== 'delta' && Boolean(plan.toolCallId)
+      && !hasPlanConfirmation(events, plan.eventId) ? plan : undefined,
     pendingQuestion: confirming && question?.type === 'agent.question' ? question : undefined,
     confirming };
 }

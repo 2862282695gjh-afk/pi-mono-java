@@ -52,6 +52,7 @@ public interface RuntimeExecutionControlRepository {
 
     TransitionStatus markPlanConfirming(
             ExecutionTargetDTO target,
+            String assistantEntryId,
             String toolCallId,
             String planEventId,
             PlanConfirmingAppender appender,
