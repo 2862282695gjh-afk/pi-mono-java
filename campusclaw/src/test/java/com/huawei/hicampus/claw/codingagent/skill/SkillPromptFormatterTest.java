@@ -35,7 +35,9 @@ class SkillPromptFormatterTest {
             assertTrue(result.contains("<available_skills>"));
             assertTrue(result.contains("<name>commit</name>"));
             assertTrue(result.contains("<description>Create git commits</description>"));
-            assertTrue(result.contains("<location>/skills/commit/SKILL.md</location>"));
+            assertTrue(result.contains("Use Skill with the exact name"));
+            assertTrue(result.contains("Use Read for resource files returned by Skill"));
+            assertTrue(!result.contains("<location>"));
             assertTrue(result.contains("</available_skills>"));
         }
 

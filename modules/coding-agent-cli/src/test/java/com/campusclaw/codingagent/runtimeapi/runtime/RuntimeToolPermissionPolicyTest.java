@@ -27,25 +27,37 @@ import org.junit.jupiter.api.Test;
  */
 class RuntimeToolPermissionPolicyTest {
     @Test
-    void shouldResolveMateWrapperPermissionFromRuntimeSnapshot() {
+    void shouldResolveAgentAndSkillPermissionFromTheirOwnTrustedScopes() {
         PreparedAgentRuntime runtime = runtime(
                 List.of(tool("read_ports", "allow"), tool("isolate_port", "ask")),
                 List.of(tool("delete_route", "deny")));
         RuntimeToolPermissionPolicy policy = RuntimeToolPermissionPolicy.from(runtime);
 
-        assertThat(policy.decide(call("read_ports"))).isEqualTo(RuntimeToolPermissionPolicy.Decision.ALLOW);
-        assertThat(policy.decide(call("isolate_port"))).isEqualTo(RuntimeToolPermissionPolicy.Decision.ASK);
-        assertThat(policy.decide(call("delete_route"))).isEqualTo(RuntimeToolPermissionPolicy.Decision.DENY);
-        assertThat(policy.decide(call("unknown"))).isEqualTo(RuntimeToolPermissionPolicy.Decision.DENY);
+        assertThat(policy.decide(agentCall("read_ports"))).isEqualTo(RuntimeToolPermissionPolicy.Decision.ALLOW);
+        assertThat(policy.decide(agentCall("isolate_port"))).isEqualTo(RuntimeToolPermissionPolicy.Decision.ASK);
+        assertThat(policy.decide(callTool("delete_route"))).isEqualTo(RuntimeToolPermissionPolicy.Decision.DENY);
+        assertThat(policy.decide(callTool("read_ports"))).isEqualTo(RuntimeToolPermissionPolicy.Decision.DENY);
+        assertThat(policy.decide(agentCall("delete_route"))).isEqualTo(RuntimeToolPermissionPolicy.Decision.DENY);
+        assertThat(policy.decide(agentCall("unknown"))).isEqualTo(RuntimeToolPermissionPolicy.Decision.DENY);
         assertThat(policy.decide(new ToolCall("call-read", "Read", Map.of())))
                 .isEqualTo(RuntimeToolPermissionPolicy.Decision.ALLOW);
     }
 
     @Test
-    void shouldDenyConflictingPermissionsAcrossTrustedSources() {
+    void shouldKeepOverlappingAgentAndSkillPermissionsIndependent() {
         PreparedAgentRuntime runtime = runtime(List.of(tool("shared", "allow")), List.of(tool("shared", "ask")));
 
-        assertThat(RuntimeToolPermissionPolicy.from(runtime).decide(call("shared")))
+        RuntimeToolPermissionPolicy policy = RuntimeToolPermissionPolicy.from(runtime);
+
+        assertThat(policy.decide(agentCall("shared"))).isEqualTo(RuntimeToolPermissionPolicy.Decision.ALLOW);
+        assertThat(policy.decide(callTool("shared"))).isEqualTo(RuntimeToolPermissionPolicy.Decision.ASK);
+    }
+
+    @Test
+    void shouldDenyConflictingPermissionsWithinOneScope() {
+        PreparedAgentRuntime runtime = runtime(List.of(), List.of(tool("shared", "allow"), tool("shared", "ask")));
+
+        assertThat(RuntimeToolPermissionPolicy.from(runtime).decide(callTool("shared")))
                 .isEqualTo(RuntimeToolPermissionPolicy.Decision.DENY);
     }
 
@@ -61,10 +73,14 @@ class RuntimeToolPermissionPolicyTest {
     }
 
     private static BoundTool tool(String name, String permission) {
-        return new BoundTool(null, null, "tool-id", null, name, permission, null, null);
+        return new BoundTool(null, null, "tool-11111111111111111111111111111111", null, name, permission, null, null);
     }
 
-    private static ToolCall call(String tool) {
-        return new ToolCall("call-id", "CallMateTool", Map.of("tool", tool, "args", Map.of()));
+    private static ToolCall callTool(String tool) {
+        return new ToolCall("call-id", "CallTool", Map.of("tool", tool, "args", Map.of()));
+    }
+
+    private static ToolCall agentCall(String tool) {
+        return new ToolCall("call-id", tool, Map.of());
     }
 }

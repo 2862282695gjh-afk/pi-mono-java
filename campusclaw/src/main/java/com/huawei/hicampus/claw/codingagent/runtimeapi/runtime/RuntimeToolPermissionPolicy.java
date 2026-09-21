@@ -7,6 +7,7 @@ package com.huawei.hicampus.claw.codingagent.runtimeapi.runtime;
 import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 import com.huawei.hicampus.claw.ai.types.ToolCall;
 import com.huawei.hicampus.claw.codingagent.runtime.MateServiceClient.BoundTool;
@@ -21,38 +22,55 @@ import com.huawei.hicampus.claw.common.constant.ClawConstants;
  * @since [br_eCampusCore 26.0.0]
  */
 public final class RuntimeToolPermissionPolicy {
-    private final Map<String, Decision> decisions;
+    private static final Set<String> BUILT_IN_NAMES = java.util.Arrays.stream(BuiltInToolName.values())
+            .map(BuiltInToolName::externalName)
+            .collect(java.util.stream.Collectors.toUnmodifiableSet());
 
-    private RuntimeToolPermissionPolicy(Map<String, Decision> decisions) {
-        this.decisions = Map.copyOf(decisions);
+    private final Map<String, BindingDecision> agentDecisions;
+
+    private final Map<String, BindingDecision> skillDecisions;
+
+    private RuntimeToolPermissionPolicy(
+            Map<String, BindingDecision> agentDecisions, Map<String, BindingDecision> skillDecisions) {
+        this.agentDecisions = Map.copyOf(agentDecisions);
+        this.skillDecisions = Map.copyOf(skillDecisions);
     }
 
     public static RuntimeToolPermissionPolicy from(PreparedAgentRuntime runtime) {
-        Map<String, Decision> decisions = new LinkedHashMap<>();
-        merge(decisions, runtime.metadata().bindingTools());
-        runtime.skills().forEach(skill -> merge(decisions, skill.bindingTools()));
-        return new RuntimeToolPermissionPolicy(decisions);
+        Map<String, BindingDecision> agent = new LinkedHashMap<>();
+        Map<String, BindingDecision> skill = new LinkedHashMap<>();
+        merge(agent, runtime.metadata().bindingTools());
+        runtime.skills().forEach(boundSkill -> merge(skill, boundSkill.bindingTools()));
+        return new RuntimeToolPermissionPolicy(agent, skill);
     }
 
     public static RuntimeToolPermissionPolicy builtInsOnly() {
-        return new RuntimeToolPermissionPolicy(Map.of());
+        return new RuntimeToolPermissionPolicy(Map.of(), Map.of());
     }
 
     public Decision decide(ToolCall call) {
-        if (!BuiltInToolName.CALL_MATE_TOOL.externalName().equals(call.name())) {
+        if (BuiltInToolName.CALL_TOOL.externalName().equals(call.name())) {
+            Object value = call.arguments() == null ? null : call.arguments().get("tool");
+            return value instanceof String name ? decision(skillDecisions, name) : Decision.DENY;
+        }
+        if (BUILT_IN_NAMES.contains(call.name())) {
             return Decision.ALLOW;
         }
-        Object value = call.arguments() == null ? null : call.arguments().get("tool");
-        return value instanceof String name ? decisions.getOrDefault(name, Decision.DENY) : Decision.DENY;
+        return decision(agentDecisions, call.name());
     }
 
-    private static void merge(Map<String, Decision> decisions, java.util.List<BoundTool> tools) {
+    private static Decision decision(Map<String, BindingDecision> decisions, String name) {
+        BindingDecision binding = decisions.get(name);
+        return binding == null || binding.conflicted() ? Decision.DENY : binding.decision();
+    }
+
+    private static void merge(Map<String, BindingDecision> decisions, java.util.List<BoundTool> tools) {
         for (BoundTool tool : tools) {
             if (tool.name() == null || tool.name().isBlank()) {
                 continue;
             }
-            Decision decision = parse(tool.permission());
-            decisions.merge(tool.name(), decision, (left, right) -> left == right ? left : Decision.DENY);
+            BindingDecision current = new BindingDecision(tool.id(), parse(tool.permission()), false);
+            decisions.merge(tool.name(), current, BindingDecision::merge);
         }
     }
 
@@ -72,5 +90,16 @@ public final class RuntimeToolPermissionPolicy {
         ALLOW,
         ASK,
         DENY
+    }
+
+    private record BindingDecision(String id, Decision decision, boolean conflicted) {
+
+        private BindingDecision merge(BindingDecision other) {
+            boolean conflict = conflicted
+                    || other.conflicted
+                    || !java.util.Objects.equals(id, other.id)
+                    || decision != other.decision;
+            return new BindingDecision(id, conflict ? Decision.DENY : decision, conflict);
+        }
     }
 }

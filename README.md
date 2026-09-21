@@ -14,7 +14,7 @@ CampusClaw 不提供 CLI、TUI、RPC 或本地安装入口。`modules/coding-age
 - **固定工具集合**：按 Runtime、Cron、Child profile 装配 PascalCase 内置工具；
 - **计划模式**：先制作完整方案，审核批准后继续实施，并通过显式任务事件展示进度；
 - **工作区隔离**：本地文件工具只能读取当前 `agent/{agentId}`，拒绝符号链接和 realpath 越界；
-- **Mate 工具**：实时发现当前 Agent/Skill 的工具，按名称解析并执行；
+- **Mate 工具**：代理 Agent 直接绑定工具，并通过 Skill 渐进发现和调用业务工具；
 - **Cron 与 Child**：Cron Job 自动绑定当前 Agent，Child 只允许调用直接绑定身份；
 - **CampusMate 模型调用**：受管 Agent 快照提供模型 ID，统一通过 `campusmate` Provider 调用。
 
@@ -65,8 +65,8 @@ java -jar modules/coding-agent-cli/target/campusclaw-agent.jar
 | `Grep` | 按正则或字面量搜索文件内容 | PARALLEL |
 | `Ls` | 列出目录内容 | PARALLEL |
 | `Cron` | 管理当前 Agent 的定时任务 | SEQUENTIAL |
-| `ListMateTools` | 实时列出 Agent 或 Skill 的 Mate 工具 | PARALLEL |
-| `CallMateTool` | 按名称调用 Mate 工具 | SEQUENTIAL |
+| `Skill` | 加载当前 Agent 可见 Skill 的正文与资源路径 | PARALLEL |
+| `CallTool` | 调用直接 Skill 绑定的业务工具 | SEQUENTIAL |
 | `Agent` | 执行当前 Agent 直接绑定的 Child | SEQUENTIAL |
 | `ExitPlanMode` | Runtime 根执行提交完整计划并等待审核 | SEQUENTIAL |
 | `TodoUpdate` | 返回实施任务的完整进度快照 | SEQUENTIAL |
@@ -83,9 +83,9 @@ java -jar modules/coding-agent-cli/target/campusclaw-agent.jar
 ```yaml
 campusclaw:
   tools:
-    runtime: [Read, Find, Grep, Ls, Cron, ListMateTools, CallMateTool, Agent, ExitPlanMode, TodoUpdate, AskUserQuestion]
-    cron: [Read, Find, Grep, Ls, ListMateTools, CallMateTool, Agent]
-    child-agent: [Read, Find, Grep, Ls, ListMateTools, CallMateTool]
+    runtime: [Read, Find, Grep, Ls, Cron, Skill, CallTool, Agent, ExitPlanMode, TodoUpdate, AskUserQuestion]
+    cron: [Read, Find, Grep, Ls, Skill, CallTool, Agent]
+    child-agent: [Read, Find, Grep, Ls, Skill, CallTool]
 ```
 
 配置列表完全替换缺省值，显式空数组表示不装配工具；未知、重复、大小写错误或已禁用的名称

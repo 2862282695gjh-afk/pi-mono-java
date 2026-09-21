@@ -25,8 +25,13 @@ import com.huawei.hicampus.claw.ai.types.Provider;
 import com.huawei.hicampus.claw.ai.types.TextContent;
 import com.huawei.hicampus.claw.ai.types.ThinkingLevel;
 import com.huawei.hicampus.claw.ai.types.ToolCall;
+import com.huawei.hicampus.claw.codingagent.common.client.mate.MateCredentials;
+import com.huawei.hicampus.claw.codingagent.common.client.mate.MateToolMeta;
 import com.huawei.hicampus.claw.codingagent.runtime.MateServiceClient.AgentRuntime;
+import com.huawei.hicampus.claw.codingagent.runtime.MateServiceClient.BoundTool;
 import com.huawei.hicampus.claw.codingagent.runtime.PreparedAgentRuntime;
+import com.huawei.hicampus.claw.codingagent.tool.mate.MateToolsetFactory;
+import com.huawei.hicampus.claw.codingagent.tool.mate.MockMateToolClient;
 import com.huawei.hicampus.claw.codingagent.tool.ops.FindOperations;
 import com.huawei.hicampus.claw.codingagent.tool.ops.GrepOperations;
 import com.huawei.hicampus.claw.codingagent.tool.ops.LsOperations;
@@ -67,6 +72,51 @@ class DefaultConfiguredToolAssemblerTest {
         assertThat(second).extracting(AgentTool::name).containsExactly("Grep", "Read");
         assertThat(first.getFirst()).isNotSameAs(second.getFirst());
         assertThat(first.getLast()).isNotSameAs(second.getLast());
+    }
+
+    @Test
+    void nonemptyProfileShouldAppendAgentBusinessAdapters(@org.junit.jupiter.api.io.TempDir Path agentRoot) {
+        String toolId = "tool-11111111111111111111111111111111";
+        BoundTool binding = new BoundTool(null, "Business query", toolId, null, "Query", "allow", null, null);
+        PreparedAgentRuntime runtime = prepared(agentRoot, List.of(binding));
+        MockMateToolClient client = new MockMateToolClient();
+        client.addTool(
+                new MateToolMeta(toolId, "Query", "Query records", Map.of("type", "object"), Map.of(), false, "allow"));
+        client.bindAgent(runtime.agentId(), List.of(toolId));
+        var properties = new BuiltInToolProperties();
+        properties.setRuntime(List.of("Read"));
+        properties.afterPropertiesSet();
+        var assembler = new DefaultConfiguredToolAssembler(properties, StubTool::new);
+        var state = new MateToolsetFactory(client).createSession(runtime, MateCredentials.empty());
+        var context = context(agentRoot, runtime, state);
+
+        List<AgentTool> tools = assembler.assemble(ToolEntryPoint.RUNTIME, context);
+
+        assertThat(tools).extracting(AgentTool::name).containsExactly("Read", "Query");
+        assertThat(tools.getLast().description()).isEqualTo("Query records");
+        assertThat(client.agentListCalls()).isEqualTo(1);
+    }
+
+    @Test
+    void explicitEmptyProfileShouldSuppressFrameworkAndBusinessTools(@org.junit.jupiter.api.io.TempDir Path agentRoot) {
+        String firstId = "tool-11111111111111111111111111111111";
+        String secondId = "tool-22222222222222222222222222222222";
+        PreparedAgentRuntime runtime = prepared(
+                agentRoot,
+                List.of(
+                        new BoundTool(null, null, firstId, null, "Query", "allow", null, null),
+                        new BoundTool(null, null, secondId, null, "Query", "allow", null, null)));
+        MockMateToolClient client = new MockMateToolClient();
+        var properties = new BuiltInToolProperties();
+        properties.setRuntime(List.of());
+        properties.afterPropertiesSet();
+        var assembler = new DefaultConfiguredToolAssembler(properties, StubTool::new);
+        var state = new MateToolsetFactory(client).createSession(runtime, MateCredentials.empty());
+
+        List<AgentTool> tools = assembler.assemble(ToolEntryPoint.RUNTIME, context(agentRoot, runtime, state));
+
+        assertThat(tools).isEmpty();
+        assertThat(client.agentListCalls()).isZero();
     }
 
     @Test
@@ -118,11 +168,15 @@ class DefaultConfiguredToolAssemblerTest {
     }
 
     private static PreparedAgentRuntime prepared(Path agentRoot) {
+        return prepared(agentRoot, List.of());
+    }
+
+    private static PreparedAgentRuntime prepared(Path agentRoot, List<BoundTool> bindings) {
         String agentId = "agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
         AgentRuntime metadata = new AgentRuntime(
                 List.of("model-a"),
                 List.of(),
-                List.of(),
+                bindings,
                 List.of(),
                 List.of(),
                 "Agent",
@@ -138,6 +192,23 @@ class DefaultConfiguredToolAssemblerTest {
                 metadata,
                 List.of(),
                 com.huawei.hicampus.claw.codingagent.runtimeapi.agent.AgentPromptTestFixtures.prompts("system"));
+    }
+
+    private static ToolAssemblyContext context(
+            Path agentRoot,
+            PreparedAgentRuntime runtime,
+            com.huawei.hicampus.claw.codingagent.tool.mate.MateToolSessionState state) {
+        return new ToolAssemblyContext(
+                ToolEntryPoint.RUNTIME,
+                runtime,
+                model(),
+                ThinkingLevel.OFF,
+                AgentWorkspaceBoundary.create(runtime.agentId(), agentRoot),
+                Map.of(),
+                List.of(),
+                state,
+                null,
+                null);
     }
 
     private static Model model() {

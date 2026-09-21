@@ -30,8 +30,9 @@ final class BuiltInToolContracts {
             case GREP -> "Search file contents for a pattern.";
             case LS -> "List directory contents.";
             case CRON -> "Manage scheduled tasks bound to the current managed Agent.";
-            case LIST_MATE_TOOLS -> "List live Mate tools for the current Agent or one directly bound Skill.";
-            case CALL_MATE_TOOL -> "Call a Mate tool by name.";
+            case SKILL -> "Load instructions and resource paths for an available Skill by name.";
+            case CALL_TOOL ->
+                "Call a managed business tool available through a directly bound Skill. Read its definition when needed.";
             case AGENT -> "Run one directly bound child Agent and return its final answer.";
             case EXIT_PLAN_MODE -> "Submit the proposed plan block from this assistant response for user review.";
             case TODO_UPDATE -> "Track implementation progress in build mode.";
@@ -42,8 +43,8 @@ final class BuiltInToolContracts {
     static JsonNode parameters(BuiltInToolName name, List<String> childAgentNames) {
         return switch (name) {
             case CRON -> cronSchema();
-            case LIST_MATE_TOOLS -> listMateToolsSchema();
-            case CALL_MATE_TOOL -> callMateToolSchema();
+            case SKILL -> skillSchema();
+            case CALL_TOOL -> callToolSchema();
             case AGENT -> agentSchema(childAgentNames);
             case EXIT_PLAN_MODE -> exitPlanModeSchema();
             case TODO_UPDATE -> todoUpdateSchema();
@@ -65,20 +66,23 @@ final class BuiltInToolContracts {
                 .deepCopy();
     }
 
-    private static ObjectNode listMateToolsSchema() {
+    private static ObjectNode skillSchema() {
         ObjectNode properties = MAPPER.createObjectNode();
-        properties.set("skillName", stringProperty("Exact name of one Skill directly bound to the current Agent."));
-        return objectSchema(properties, List.of());
+        properties.set("name", stringProperty("Exact name of an available Skill directly bound to the current Agent."));
+        return objectSchema(properties, List.of("name"));
     }
 
-    private static ObjectNode callMateToolSchema() {
+    private static ObjectNode callToolSchema() {
         ObjectNode properties = MAPPER.createObjectNode();
-        properties.set("tool", stringProperty("Exact Mate tool name to call."));
+        properties.set(
+                "tool", stringProperty("Exact business tool name from a directly bound Skill's definition file."));
         properties.set(
                 "args",
                 MAPPER.createObjectNode()
                         .put("type", "object")
-                        .put("description", "Arguments passed unchanged to the selected Mate tool."));
+                        .put(
+                                "description",
+                                "Arguments for the selected business tool; omitted means an empty object."));
         return objectSchema(properties, List.of("tool"));
     }
 

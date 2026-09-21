@@ -10,7 +10,7 @@ const activityStyles = readFileSync(new URL('../style.css', import.meta.url), 'u
 describe('structured tool activity', () => {
   it('keeps the card header grid and marker rules off nested JSON summaries', async () => {
     const html = await renderToString(createSSRApp({ render: () => h(ToolActivity, { turn: {
-      key: 'tool', kind: 'activity', toolCallId: 'call', toolName: 'ListMateTools',
+      key: 'tool', kind: 'activity', toolCallId: 'call', toolName: 'Skill',
       status: 'completed', arguments: [], argumentValue: {},
       result: '{"scope":{"type":"agent"},"tools":[]}', hasResult: true,
     } }) }));
@@ -29,7 +29,7 @@ describe('structured tool activity', () => {
       key: 'tool',
       kind: 'activity',
       toolCallId: 'call',
-      toolName: 'CallMateTool',
+      toolName: 'CallTool',
       status: 'completed',
       arguments: [],
       argumentValue: { tool: 'lookup', scope: ['east', 'west'] },
@@ -62,7 +62,7 @@ describe('structured tool activity', () => {
 
   it('shows the safe event displayName only in the title and preserves exact Mate arguments', async () => {
     const html = await renderToString(createSSRApp({ render: () => h(ToolActivity, { turn: {
-      key: 'tool', kind: 'activity', toolCallId: 'call', toolName: 'CallMateTool',
+      key: 'tool', kind: 'activity', toolCallId: 'call', toolName: 'CallTool',
       displayName: '  <script>查询教室</script>  ', status: 'running', arguments: [],
       argumentValue: { tool: 'query_classroom-v2', args: { displayName: '伪造参数' }, displayName: '伪造名称' }, result: '',
     } }) }));
@@ -80,7 +80,7 @@ describe('structured tool activity', () => {
   it('uses the safe display identity only in the wrapping confirmation title', async () => {
     const html = await renderToString(createSSRApp({ render: () => h(ToolConfirmation, { tool: {
       eventId: 'call', createdAt: '2026-09-17T00:00:00.000Z', type: 'agent.tool_call', sourceEventId: 'root',
-      toolCallId: 'tool', toolName: 'CallMateTool', displayName: '<b>查询工单</b>',
+      toolCallId: 'tool', toolName: 'CallTool', displayName: '<b>查询工单</b>',
       arguments: { tool: 'query_ticket', args: { scope: '东区' }, displayName: '伪造名称' }, requiresConfirmation: true,
     }, disabled: false }) }));
 

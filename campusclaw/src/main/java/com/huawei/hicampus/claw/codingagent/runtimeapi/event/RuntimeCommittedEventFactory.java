@@ -308,7 +308,7 @@ public class RuntimeCommittedEventFactory {
 
     private static Map<String, Object> publicToolArguments(ToolCall call) {
         Map<String, Object> source = call.arguments() == null ? Map.of() : call.arguments();
-        if (!BuiltInToolName.CALL_MATE_TOOL.externalName().equals(call.name()) || source.containsKey("args")) {
+        if (!BuiltInToolName.CALL_TOOL.externalName().equals(call.name()) || source.containsKey("args")) {
             return source;
         }
         Map<String, Object> normalized = new LinkedHashMap<>(source);

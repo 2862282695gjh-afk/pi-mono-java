@@ -4,10 +4,9 @@
 
 package com.huawei.hicampus.claw.codingagent.tool.mate;
 
-import java.util.Map;
-
 import com.huawei.hicampus.claw.codingagent.common.client.mate.MateCredentials;
 import com.huawei.hicampus.claw.codingagent.common.client.mate.MateToolClient;
+import com.huawei.hicampus.claw.codingagent.runtime.PreparedAgentRuntime;
 
 /**
  * 为每个 Agent Session 创建隔离的 Mate 工具发现与缓存状态。
@@ -23,11 +22,9 @@ public class MateToolsetFactory {
         this.client = client;
     }
 
-    public MateToolSessionState createSession(
-            String agentId, Map<String, String> skillIdsByName, MateCredentials credentials) {
+    public MateToolSessionState createSession(PreparedAgentRuntime runtime, MateCredentials credentials) {
         MateCredentials snapshot = credentials == null ? MateCredentials.empty() : credentials;
-        MateToolSessionCache cache = new MateToolSessionCache();
-        MateToolDiscovery discovery = new MateToolDiscovery(client, agentId, skillIdsByName, cache);
-        return new MateToolSessionState(client, snapshot, discovery);
+        MateToolResolver resolver = new MateToolResolver(client, runtime);
+        return new MateToolSessionState(new MateToolExecutor(client, snapshot, resolver));
     }
 }

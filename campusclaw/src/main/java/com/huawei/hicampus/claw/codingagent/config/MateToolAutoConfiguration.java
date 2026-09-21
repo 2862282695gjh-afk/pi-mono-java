@@ -18,7 +18,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 /**
- * 装配 Mate Tool 客户端及两个 AgentTool，保持默认启用语义，并允许通过
+ * 装配 Mate Tool 客户端及 Session 级业务工具工厂，保持默认启用语义，并允许通过
  * {@code campusmate.tool.enabled=false} 显式关闭。
  *
  * @version [br_eCampusCore 26.0.0, 2026/08/19]
@@ -68,11 +68,10 @@ public class MateToolAutoConfiguration {
     }
 
     /**
-     * 创建 Mate 工具对工厂。工具名→标识缓存是会话私有状态（不同 agent
-     * 绑定的工具列表不同），因此两个工具与共享缓存必须按会话成组创建：
-     * 会话组装点每会话调用一次 {@link MateToolsetFactory#createSession(String, java.util.Map,
-     * com.huawei.hicampus.claw.codingagent.common.client.mate.MateCredentials)}，得到一组持有独立缓存、
-     * 但彼此共享该缓存和执行凭据快照的工具实例。
+     * 创建 Mate 工具工厂。可信绑定解析、元数据缓存与执行凭据是 Session 私有状态，
+     * 会话组装点每次调用 {@link MateToolsetFactory#createSession(
+     * com.huawei.hicampus.claw.codingagent.runtime.PreparedAgentRuntime,
+     * com.huawei.hicampus.claw.codingagent.common.client.mate.MateCredentials)} 创建独立状态。
      *
      * <p>不能把工具实例注册为 Spring 单例 Bean；公共 SessionFactory 必须
      * 为每个 Session 创建独立状态，避免跨 Agent 名称缓存相互覆盖。

@@ -44,8 +44,8 @@ campusclaw:
       - Grep
       - Ls
       - Cron
-      - ListMateTools
-      - CallMateTool
+      - Skill
+      - CallTool
       - Agent
       - ExitPlanMode
       - TodoUpdate
@@ -55,16 +55,16 @@ campusclaw:
       - Find
       - Grep
       - Ls
-      - ListMateTools
-      - CallMateTool
+      - Skill
+      - CallTool
       - Agent
     child-agent:
       - Read
       - Find
       - Grep
       - Ls
-      - ListMateTools
-      - CallMateTool
+      - Skill
+      - CallTool
   runtime:
     compaction:
       enabled: ${CAMPUSCLAW_COMPACTION_ENABLED:true}

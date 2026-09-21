@@ -6,7 +6,6 @@ package com.huawei.hicampus.claw.codingagent.runtimeapi.runtime;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import java.util.List;
@@ -14,14 +13,10 @@ import java.util.Map;
 
 import com.huawei.hicampus.claw.agent.tool.AgentTool;
 import com.huawei.hicampus.claw.ai.types.ToolCall;
-import com.huawei.hicampus.claw.codingagent.common.client.mate.MateCredentials;
-import com.huawei.hicampus.claw.codingagent.common.client.mate.MateToolClient;
 import com.huawei.hicampus.claw.codingagent.runtime.MateServiceClient.AgentRuntime;
 import com.huawei.hicampus.claw.codingagent.runtime.MateServiceClient.BoundTool;
 import com.huawei.hicampus.claw.codingagent.runtime.MateServiceClient.SkillInfo;
 import com.huawei.hicampus.claw.codingagent.runtime.PreparedAgentRuntime;
-import com.huawei.hicampus.claw.codingagent.tool.mate.CallMateTool;
-import com.huawei.hicampus.claw.codingagent.tool.mate.MateToolDiscovery;
 
 import org.junit.jupiter.api.Test;
 
@@ -59,32 +54,30 @@ class RuntimeToolCallSnapshotResolverTest {
     }
 
     @Test
-    void mateToolShouldUseBoundMetadataWithoutDiscoveryOrWrapperLabel() {
-        MateToolClient client = mock(MateToolClient.class);
-        MateToolDiscovery discovery = mock(MateToolDiscovery.class);
-        CallMateTool tool = new CallMateTool(client, MateCredentials.empty(), discovery);
-        PreparedAgentRuntime runtime = runtime(List.of(tool("Query", TOOL_ID, "  Business query  ")), List.of());
-        RuntimeToolCallSnapshotResolver resolver = resolver(runtime, List.of(tool));
-        ToolCall call = new ToolCall("call-1", "CallMateTool", Map.of("tool", "Query", "displayName", "Forged"));
+    void callToolShouldUseSkillMetadataWithoutWrapperLabelOrModelDisplayName() {
+        AgentTool wrapper = mock(AgentTool.class);
+        when(wrapper.name()).thenReturn("CallTool");
+        when(wrapper.label()).thenReturn("Call Tool");
+        PreparedAgentRuntime runtime = runtime(List.of(), List.of(tool("Query", TOOL_ID, "  Business query  ")));
+        RuntimeToolCallSnapshotResolver resolver = resolver(runtime, List.of(wrapper));
+        ToolCall call = new ToolCall("call-1", "CallTool", Map.of("tool", "Query", "displayName", "Forged"));
 
         String displayName = resolver.resolveDisplayName(call);
 
         assertThat(displayName).isEqualTo("Business query");
-        assertThat(displayName).isNotEqualTo(tool.label());
-        verifyNoInteractions(client, discovery);
+        assertThat(displayName).isNotEqualTo(wrapper.label());
     }
 
     @Test
     void missingBlankOrConflictingMateDisplayMetadataShouldRemainAbsent() {
-        List<BoundTool> agentTools = List.of(
+        List<BoundTool> skillTools = List.of(
                 tool("Missing", TOOL_ID, null),
                 tool("Blank", TOOL_ID, "  "),
                 tool("ConflictingName", TOOL_ID, "Agent name"),
-                tool("ConflictingId", TOOL_ID, "Shared name"));
-        List<BoundTool> skillTools = List.of(
                 tool("ConflictingName", TOOL_ID, "Skill name"),
+                tool("ConflictingId", TOOL_ID, "Shared name"),
                 tool("ConflictingId", "tool-22222222222222222222222222222222", "Shared name"));
-        RuntimeToolCallSnapshotResolver resolver = resolver(runtime(agentTools, skillTools), List.of());
+        RuntimeToolCallSnapshotResolver resolver = resolver(runtime(List.of(), skillTools), List.of());
 
         assertThat(resolver.resolveDisplayName(mateCall("Missing"))).isNull();
         assertThat(resolver.resolveDisplayName(mateCall("Blank"))).isNull();
@@ -93,9 +86,9 @@ class RuntimeToolCallSnapshotResolverTest {
     }
 
     @Test
-    void identicalMateMetadataAcrossSourcesShouldRemainAvailable() {
+    void identicalSkillMetadataShouldRemainAvailable() {
         BoundTool binding = tool("Query", TOOL_ID, "Business query");
-        RuntimeToolCallSnapshotResolver resolver = resolver(runtime(List.of(binding), List.of(binding)), List.of());
+        RuntimeToolCallSnapshotResolver resolver = resolver(runtime(List.of(), List.of(binding, binding)), List.of());
 
         assertThat(resolver.resolveDisplayName(mateCall("Query"))).isEqualTo("Business query");
     }
@@ -139,6 +132,6 @@ class RuntimeToolCallSnapshotResolverTest {
     }
 
     private static ToolCall mateCall(String toolName) {
-        return new ToolCall("call-" + toolName, "CallMateTool", Map.of("tool", toolName));
+        return new ToolCall("call-" + toolName, "CallTool", Map.of("tool", toolName));
     }
 }

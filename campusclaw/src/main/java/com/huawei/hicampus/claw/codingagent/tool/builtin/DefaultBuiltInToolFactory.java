@@ -15,13 +15,14 @@ import com.huawei.hicampus.claw.codingagent.tool.ops.GrepOperations;
 import com.huawei.hicampus.claw.codingagent.tool.ops.LsOperations;
 import com.huawei.hicampus.claw.codingagent.tool.ops.ReadOperations;
 import com.huawei.hicampus.claw.codingagent.tool.read.ReadTool;
+import com.huawei.hicampus.claw.codingagent.tool.skill.SkillTool;
 import com.huawei.hicampus.claw.codingagent.tool.todo.TodoUpdateTool;
 import com.huawei.hicampus.claw.codingagent.tool.workspace.WorkspacePathResolver;
 
 import org.springframework.stereotype.Component;
 
 /**
- * 使用关闭枚举和 Session 上下文创建八种活动内置工具。
+ * 使用关闭枚举和 Session 上下文创建框架工具。
  *
  * @version [br_eCampusCore 26.0.0, 2026/08/24]
  * @since [br_eCampusCore 26.0.0]
@@ -60,11 +61,8 @@ public class DefaultBuiltInToolFactory implements BuiltInToolFactory {
             case GREP -> new GrepTool(grepOperations, pathResolver, context.workspaceBoundary());
             case LS -> new LsTool(lsOperations, pathResolver, context.workspaceBoundary());
             case CRON -> contextualTool(name, context.cronToolFactory(), context);
-            case LIST_MATE_TOOLS ->
-                context.mateToolSessionState() == null
-                        ? unavailable(name, context)
-                        : context.mateToolSessionState().createListTool();
-            case CALL_MATE_TOOL ->
+            case SKILL -> new SkillTool(pathResolver, context.workspaceBoundary(), context.runtime());
+            case CALL_TOOL ->
                 context.mateToolSessionState() == null
                         ? unavailable(name, context)
                         : context.mateToolSessionState().createCallTool();

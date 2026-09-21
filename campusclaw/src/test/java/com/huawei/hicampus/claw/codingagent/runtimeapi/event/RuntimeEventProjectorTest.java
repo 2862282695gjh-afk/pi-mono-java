@@ -49,7 +49,6 @@ import com.huawei.hicampus.claw.ai.types.ToolCall;
 import com.huawei.hicampus.claw.ai.types.ToolResultMessage;
 import com.huawei.hicampus.claw.ai.types.Usage;
 import com.huawei.hicampus.claw.ai.types.UserMessage;
-import com.huawei.hicampus.claw.codingagent.common.client.mate.MateCredentials;
 import com.huawei.hicampus.claw.codingagent.runtime.MateServiceClient.AgentRuntime;
 import com.huawei.hicampus.claw.codingagent.runtime.MateServiceClient.BoundTool;
 import com.huawei.hicampus.claw.codingagent.runtime.MateServiceClient.SkillInfo;
@@ -69,9 +68,6 @@ import com.huawei.hicampus.claw.codingagent.runtimeapi.vo.RuntimeSseEventVO;
 import com.huawei.hicampus.claw.codingagent.session.compaction.CompactionReason;
 import com.huawei.hicampus.claw.codingagent.session.compaction.SessionCompactionCompletedEvent;
 import com.huawei.hicampus.claw.codingagent.session.compaction.SessionCompactionResult;
-import com.huawei.hicampus.claw.codingagent.tool.mate.MateToolSessionState;
-import com.huawei.hicampus.claw.codingagent.tool.mate.MateToolsetFactory;
-import com.huawei.hicampus.claw.codingagent.tool.mate.MockMateToolClient;
 import com.huawei.hicampus.claw.codingagent.tool.plan.PlanReviewException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -323,8 +319,8 @@ class RuntimeEventProjectorTest {
     @Test
     void shouldPauseAskedToolAndResumeSameExecutionInAcceptedSegment() throws Exception {
         Fixture fixture = fixture(false);
-        ToolCall call = new ToolCall(
-                "call-confirm", "CallMateTool", Map.of("tool", "isolate_port", "args", Map.of("port", 8080)));
+        ToolCall call =
+                new ToolCall("call-confirm", "CallTool", Map.of("tool", "isolate_port", "args", Map.of("port", 8080)));
         bindAskPermission(fixture.execution, call);
         fixture.execution.installConfirmationHandler(fixture.projector::beforeToolCall);
         AssistantMessage assistant = assistant(List.of(call));
@@ -402,9 +398,12 @@ class RuntimeEventProjectorTest {
 
     @Test
     void mateDisplayNameShouldNotTriggerDiscoveryForAnyPermissionPath() throws Exception {
+        List<String> payloads = new ArrayList<>();
         for (String permission : List.of("allow", "deny", "ask")) {
-            assertMateDisplayNameWithoutDiscovery(permission);
+            payloads.add(projectMateDisplayNameWithoutDiscovery(permission));
         }
+
+        assertThat(payloads).allSatisfy(payload -> assertThat(payload).contains("\"displayName\":\"Business query\""));
     }
 
     @Test
@@ -413,7 +412,7 @@ class RuntimeEventProjectorTest {
         BoundTool binding = new BoundTool(null, null, "tool-id", null, "Query", "allow", null, null);
         fixture.execution.bindToolCallSnapshots(
                 RuntimeToolCallSnapshotResolver.from(runtime(List.of(binding), List.of()), List.of()));
-        ToolCall call = new ToolCall("call-failed", "CallMateTool", Map.of("tool", "Query"));
+        ToolCall call = new ToolCall("call-failed", "CallTool", Map.of("tool", "Query"));
         AssistantMessage assistant = assistant(List.of(call));
         ToolResultMessage result =
                 new ToolResultMessage(call.id(), call.name(), List.of(new TextContent("failed")), null, true, 1L);
@@ -728,18 +727,15 @@ class RuntimeEventProjectorTest {
         return runtime;
     }
 
-    private static void assertMateDisplayNameWithoutDiscovery(String permission) throws Exception {
+    private static String projectMateDisplayNameWithoutDiscovery(String permission) throws Exception {
         Fixture fixture = fixture(false);
-        MockMateToolClient client = new MockMateToolClient();
-        MateToolSessionState toolState =
-                new MateToolsetFactory(client).createSession("agent-1", Map.of(), MateCredentials.empty());
-        BoundTool binding = new BoundTool(null, "Business query", "tool-id", null, "Query", permission, null, null);
-        PreparedAgentRuntime runtime = runtime(List.of(binding), List.of());
+        BoundTool binding = new BoundTool(
+                null, "Business query", "tool-11111111111111111111111111111111", null, "Query", permission, null, null);
+        PreparedAgentRuntime runtime = runtime(List.of(), List.of(binding));
         fixture.execution.bindToolPermissions(RuntimeToolPermissionPolicy.from(runtime));
-        fixture.execution.bindToolCallSnapshots(
-                RuntimeToolCallSnapshotResolver.from(runtime, List.of(toolState.createCallTool())));
+        fixture.execution.bindToolCallSnapshots(RuntimeToolCallSnapshotResolver.from(runtime, List.of()));
         fixture.execution.installConfirmationHandler(fixture.projector::beforeToolCall);
-        ToolCall call = new ToolCall("call-" + permission, "CallMateTool", Map.of("tool", "Query"));
+        ToolCall call = new ToolCall("call-" + permission, "CallTool", Map.of("tool", "Query"));
         AssistantMessage assistant = assistant(List.of(call));
 
         fixture.projector.onEvent(new MessageStartEvent(assistant));
@@ -752,15 +748,11 @@ class RuntimeEventProjectorTest {
                     .isNotNull();
         }
 
-        assertThat(fixture.persistedEvents.stream()
-                        .filter(event -> "agent.tool_call".equals(event.getType()))
-                        .map(CommittedEventDTO::getPayload))
-                .singleElement()
-                .asString()
-                .contains("\"displayName\":\"Business query\"");
-        assertThat(client.agentListCalls()).isZero();
-        assertThat(client.skillListCalls()).isZero();
-        assertThat(client.executeCalls()).isZero();
+        return fixture.persistedEvents.stream()
+                .filter(event -> "agent.tool_call".equals(event.getType()))
+                .map(CommittedEventDTO::getPayload)
+                .findFirst()
+                .orElseThrow();
     }
 
     private static void configurePersistence(

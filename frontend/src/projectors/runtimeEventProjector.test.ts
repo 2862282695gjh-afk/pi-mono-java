@@ -24,10 +24,10 @@ describe('Runtime Events presentation', () => {
   it('keeps full text blocks, explicit outcome and Runtime Mate argument wrapper', () => {
     const long = '文字'.repeat(5000);
     const turns = projectRuntimeEvents([
-      userFixture(), eventFixture({ eventId: 'c', type: 'agent.tool_call', toolCallId: 'tool', sourceEventId: 'root-a', toolName: 'CallMateTool', requiresConfirmation: false, arguments: { tool: 'query', args: { area: '校园' } } }),
+      userFixture(), eventFixture({ eventId: 'c', type: 'agent.tool_call', toolCallId: 'tool', sourceEventId: 'root-a', toolName: 'CallTool', requiresConfirmation: false, arguments: { tool: 'query', args: { area: '校园' } } }),
       eventFixture({ eventId: 'r', type: 'agent.tool_result', sourceEventId: 'root-a', toolCallId: 'tool', content: [{ type: 'text', text: long }, { type: 'text', text: '' }], isError: false }), idleFixture(),
     ]);
-    expect(turns[1]).toMatchObject({ toolName: 'CallMateTool', status: 'completed', result: `${long}\n`, arguments: [{ key: 'tool', value: 'query' }, { key: 'args', value: '{\n  "area": "校园"\n}' }] });
+    expect(turns[1]).toMatchObject({ toolName: 'CallTool', status: 'completed', result: `${long}\n`, arguments: [{ key: 'tool', value: 'query' }, { key: 'args', value: '{\n  "area": "校园"\n}' }] });
     expect(turns[2]).toMatchObject({ kind: 'notice', text: '已完成' });
   });
   it('keeps the display snapshot separate from the execution identity in every tool state', () => {
@@ -52,7 +52,7 @@ describe('Runtime Events presentation', () => {
       sourceEventId: 'root-a', content: [{ type: 'text', text: 'ok' }], isError: false });
     expect(projectRuntimeEvents([result])[0]).toMatchObject({ toolName: '工具调用（调用记录尚未读到）' });
     const call = eventFixture({ eventId: 'late-call', type: 'agent.tool_call', toolCallId: 'late-tool',
-      sourceEventId: 'root-a', toolName: 'CallMateTool', displayName: '查询工单',
+      sourceEventId: 'root-a', toolName: 'CallTool', displayName: '查询工单',
       arguments: { tool: 'query_ticket', args: {} }, requiresConfirmation: false });
     const activities = projectRuntimeEvents([result, call]).filter((turn) => turn.kind === 'activity');
     expect(activities).toEqual([expect.objectContaining({ key: 'late-call', displayName: '查询工单', status: 'completed' })]);
@@ -79,7 +79,7 @@ describe('Runtime Events presentation', () => {
     });
   });
   it('does not apply an earlier confirmation to a later message with the same tool ID', () => {
-    const call = eventFixture({ eventId: 'old-call', type: 'agent.tool_call', toolCallId: 'same-id', sourceEventId: 'old-root', toolName: 'CallMateTool', arguments: {}, requiresConfirmation: true });
+    const call = eventFixture({ eventId: 'old-call', type: 'agent.tool_call', toolCallId: 'same-id', sourceEventId: 'old-root', toolName: 'CallTool', arguments: {}, requiresConfirmation: true });
     const receipt = eventFixture({ eventId: 'old-confirm', type: 'user.tool_confirmation', toolCallId: 'same-id', result: 'allow' });
     const currentCall = { ...call, eventId: 'new-call', sourceEventId: 'root-a' };
     const turns = projectRuntimeEvents([userFixture('old-root'), call, receipt, userFixture(), currentCall, idleFixture('confirming')], true);

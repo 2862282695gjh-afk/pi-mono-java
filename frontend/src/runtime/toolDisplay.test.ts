@@ -10,13 +10,13 @@ describe('tool display identity', () => {
 
   it('uses the wrapped Mate tool as the technical fallback without trusting model displayName arguments', () => {
     expect(toolDisplayIdentity({
-      toolName: 'CallMateTool',
+      toolName: 'CallTool',
       arguments: { tool: 'query_classroom-v2', args: { displayName: '伪造参数' }, displayName: '伪造名称' },
     })).toEqual({ label: 'query_classroom-v2', technicalName: 'query_classroom-v2' });
   });
 
   it('falls back for invalid names and does not use the outer Mate wrapper', () => {
-    expect(toolDisplayIdentity({ toolName: 'CallMateTool', displayName: '  ', arguments: { tool: null } })).toEqual({
+    expect(toolDisplayIdentity({ toolName: 'CallTool', displayName: '  ', arguments: { tool: null } })).toEqual({
       label: MISSING_TOOL_NAME,
     });
     expect(toolDisplayIdentity({ toolName: 'Read', displayName: 42, arguments: {} })).toEqual({
@@ -25,9 +25,14 @@ describe('tool display identity', () => {
   });
 
   it('allows duplicate display names while retaining distinct technical identities', () => {
-    const first = toolDisplayIdentity({ toolName: 'CallMateTool', displayName: '查询', arguments: { tool: 'query_room' } });
-    const second = toolDisplayIdentity({ toolName: 'CallMateTool', displayName: '查询', arguments: { tool: 'query_device' } });
+    const first = toolDisplayIdentity({ toolName: 'CallTool', displayName: '查询', arguments: { tool: 'query_room' } });
+    const second = toolDisplayIdentity({ toolName: 'CallTool', displayName: '查询', arguments: { tool: 'query_device' } });
     expect(first.label).toBe(second.label);
     expect(first.technicalName).not.toBe(second.technicalName);
+  });
+
+  it('keeps the wrapped technical identity for historical CallMateTool events', () => {
+    expect(toolDisplayIdentity({ toolName: 'CallMateTool', arguments: { tool: 'legacy_query' } }))
+      .toEqual({ label: 'legacy_query', technicalName: 'legacy_query' });
   });
 });
