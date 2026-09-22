@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { projectRuntimeEvents } from './runtimeEventProjector';
-import { eventFixture, idleFixture, questionFixture, showcaseQuestionFixture, userFixture } from '../runtime/fixtures';
+import { businessConfirmationQuestionFixture, eventFixture, idleFixture, questionFixture, userFixture } from '../runtime/fixtures';
 
 describe('Runtime Events presentation', () => {
   it('replaces a stopping notice with its terminal result without affecting another root', () => {
@@ -186,37 +186,38 @@ describe('Runtime Events presentation', () => {
     });
   });
   it.each(['CallMateTool', 'CallTool', 'confirm_with_user'])('absorbs only the associated %s shell and keeps ordinary calls visible', (toolName) => {
-    const showcaseCall = eventFixture({ eventId: 'showcase-call-event', type: 'agent.tool_call', sourceEventId: 'root-a',
-      toolCallId: 'showcase-call', toolName, arguments: toolName === 'confirm_with_user'
+    const businessConfirmationCall = eventFixture({ eventId: 'business-confirmation-call-event', type: 'agent.tool_call',
+      sourceEventId: 'root-a', toolCallId: 'business-confirmation-call', toolName, arguments: toolName === 'confirm_with_user'
         ? { label: 'driver_design_confirm', context: { '问题': '不得从这里提取' } }
         : { tool: 'confirm_with_user', args: { label: 'driver_design_confirm', context: { '问题': '不得从这里提取' } } }, requiresConfirmation: false });
-    const question = showcaseQuestionFixture();
-    const result = eventFixture({ eventId: 'showcase-result', type: 'agent.tool_result', sourceEventId: 'root-a',
-      toolCallId: 'showcase-call', content: [{ type: 'text', text: '{"content":"继续"}' }], isError: false });
-    const turns = projectRuntimeEvents([userFixture(), showcaseCall, question, result]);
+    const question = businessConfirmationQuestionFixture();
+    const result = eventFixture({ eventId: 'business-confirmation-result', type: 'agent.tool_result', sourceEventId: 'root-a',
+      toolCallId: 'business-confirmation-call', content: [{ type: 'text', text: '{"content":"继续"}' }], isError: false });
+    const turns = projectRuntimeEvents([userFixture(), businessConfirmationCall, question, result]);
     expect(turns.filter((turn) => turn.kind === 'question')).toEqual([expect.objectContaining({
       eventId: question.eventId, label: 'driver_design_confirm', context: question.type === 'agent.question' ? question.context : undefined,
     })]);
     expect(turns.some((turn) => turn.kind === 'activity')).toBe(false);
 
-    const ordinaryCall = { ...showcaseCall, eventId: 'ordinary-call', toolCallId: 'ordinary', toolName: 'CallTool',
+    const ordinaryCall = { ...businessConfirmationCall, eventId: 'ordinary-call', toolCallId: 'ordinary', toolName: 'CallTool',
       arguments: { tool: 'query_inspections', args: { campus: '东区' } } };
     expect(projectRuntimeEvents([userFixture(), ordinaryCall], true)).toEqual(expect.arrayContaining([
       expect.objectContaining({ kind: 'activity', toolName: 'CallTool', toolCallId: 'ordinary', status: 'running' }),
     ]));
   });
   it.each(['CallMateTool', 'CallTool', 'confirm_with_user'])('uses %s only as a placeholder before its question event', (toolName) => {
-    const call = eventFixture({ eventId: 'showcase-call-event', type: 'agent.tool_call', sourceEventId: 'root-a',
-      toolCallId: 'showcase-call', toolName, arguments: toolName === 'confirm_with_user' ? {} : { tool: 'confirm_with_user', args: {} },
+    const call = eventFixture({ eventId: 'business-confirmation-call-event', type: 'agent.tool_call', sourceEventId: 'root-a',
+      toolCallId: 'business-confirmation-call', toolName,
+      arguments: toolName === 'confirm_with_user' ? {} : { tool: 'confirm_with_user', args: {} },
       requiresConfirmation: false });
-    const result = eventFixture({ eventId: 'showcase-result', type: 'agent.tool_result', sourceEventId: 'root-a',
-      toolCallId: 'showcase-call', content: [{ type: 'text', text: '{"content":"不得泄露"}' }], isError: false });
+    const result = eventFixture({ eventId: 'business-confirmation-result', type: 'agent.tool_result', sourceEventId: 'root-a',
+      toolCallId: 'business-confirmation-call', content: [{ type: 'text', text: '{"content":"不得泄露"}' }], isError: false });
     const turns = projectRuntimeEvents([userFixture(), call, result]);
     expect(turns.some((turn) => turn.kind === 'question')).toBe(false);
     expect(turns.find((turn) => turn.kind === 'activity')).toMatchObject({
-      toolCallId: 'showcase-call', arguments: [], result: '', statusMessage: '问题记录尚未完整，正在同步',
+      toolCallId: 'business-confirmation-call', arguments: [], result: '', statusMessage: '问题记录尚未完整，正在同步',
     });
-    const differentRoot = { ...showcaseQuestionFixture(), eventId: 'other-question', sourceEventId: 'root-b' };
+    const differentRoot = { ...businessConfirmationQuestionFixture(), eventId: 'other-question', sourceEventId: 'root-b' };
     expect(projectRuntimeEvents([userFixture(), call, differentRoot], true).find((turn) => turn.key === call.eventId))
       .toMatchObject({ kind: 'activity', statusMessage: '正在准备问题' });
   });

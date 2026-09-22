@@ -18,7 +18,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import com.huawei.hicampus.claw.agent.tool.BeforeToolCallContext;
 import com.huawei.hicampus.claw.agent.tool.BeforeToolCallResult;
-import com.huawei.hicampus.claw.agent.tool.PreparedToolInvocation;
 import com.huawei.hicampus.claw.ai.types.ToolCall;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.ExecutionTargetDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.PlanProposalSnapshotDTO;
@@ -27,12 +26,12 @@ import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.QuestionAnswerDecisio
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.ToolConfirmationDecisionDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.event.RuntimeEventOutput;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.session.PlanConfirmationResult;
-import com.huawei.hicampus.claw.codingagent.tool.builtin.ToolEntryPoint;
+import com.huawei.hicampus.claw.codingagent.tool.question.PreparedQuestionInvocation;
 import com.huawei.hicampus.claw.codingagent.tool.question.QuestionAnswerDTO;
 import com.huawei.hicampus.claw.codingagent.tool.question.QuestionAnswerResultDTO;
 import com.huawei.hicampus.claw.codingagent.tool.question.QuestionDTO;
 import com.huawei.hicampus.claw.codingagent.tool.question.QuestionRequestSnapshotDTO;
-import com.huawei.hicampus.claw.codingagent.tool.question.ShowcaseConfirmationAdapter;
+import com.huawei.hicampus.claw.codingagent.tool.question.UserQuestionException;
 import com.huawei.hicampus.claw.common.constant.ClawConstants;
 
 import org.junit.jupiter.api.Test;
@@ -60,27 +59,43 @@ class RuntimeActiveExecutionTest {
     }
 
     @Test
-    void failedShowcaseHookShouldReleasePreparedSnapshotForNextQuestion() throws Exception {
+    void shouldRouteAllowedPreparedQuestionToQuestionHandler() throws Exception {
         RuntimeActiveExecution execution = new RuntimeActiveExecution(RuntimeEventOutput.persistenceOnly());
         RuntimeToolPermissionPolicy permissions = mock(RuntimeToolPermissionPolicy.class);
         when(permissions.decide(org.mockito.ArgumentMatchers.any(BeforeToolCallContext.class)))
                 .thenReturn(RuntimeToolPermissionPolicy.Decision.ALLOW);
-        var adapter = new ShowcaseConfirmationAdapter(true, ToolEntryPoint.RUNTIME, execution);
-        adapter.bindPermissions(permissions, "tool-11111111111111111111111111111111");
-        execution.installShowcaseConfirmation(adapter);
+        execution.bindToolPermissions(permissions);
         AtomicInteger calls = new AtomicInteger();
         execution.installConfirmationHandler(context -> {
-            if (calls.getAndIncrement() == 0) {
-                throw new IllegalStateException("projection failed");
-            }
+            calls.incrementAndGet();
             return BeforeToolCallResult.allow();
         });
-        BeforeToolCallContext first = showcaseContext("call-1", "first");
-        BeforeToolCallContext second = showcaseContext("call-2", "second");
+        BeforeToolCallContext question = businessQuestionContext("call-1", "first");
 
-        assertThatThrownBy(() -> execution.beforeToolCall(first)).isInstanceOf(IllegalStateException.class);
-        assertThat(execution.beforeToolCall(second)).isEqualTo(BeforeToolCallResult.allow());
-        assertThat(execution.preparedShowcaseQuestion(second)).isPresent();
+        assertThat(execution.beforeToolCall(question)).isEqualTo(BeforeToolCallResult.allow());
+        assertThat(calls).hasValue(1);
+    }
+
+    @Test
+    void shouldRejectPreparedQuestionUnlessPermissionAllowsIt() {
+        RuntimeActiveExecution execution = new RuntimeActiveExecution(RuntimeEventOutput.persistenceOnly());
+        execution.bindAgentId("agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+        execution.bindTarget(new ExecutionTargetDTO("session", "execution", "root", "segment-1"));
+        RuntimeToolPermissionPolicy permissions = mock(RuntimeToolPermissionPolicy.class);
+        execution.bindToolPermissions(permissions);
+        BeforeToolCallContext question = businessQuestionContext("call-1", "first");
+
+        when(permissions.decide(question)).thenReturn(RuntimeToolPermissionPolicy.Decision.ASK);
+        UserQuestionException required =
+                assertThrows(UserQuestionException.class, () -> execution.beforeToolCall(question));
+        assertThat(required.stableErrorCode())
+                .isEqualTo(ClawConstants.RuntimeApi.USER_QUESTION_PERMISSION_REQUIRED_ERROR_CODE);
+
+        when(permissions.decide(question)).thenReturn(RuntimeToolPermissionPolicy.Decision.DENY);
+        UserQuestionException denied =
+                assertThrows(UserQuestionException.class, () -> execution.beforeToolCall(question));
+        assertThat(denied.stableErrorCode())
+                .isEqualTo(ClawConstants.RuntimeApi.USER_QUESTION_PERMISSION_DENIED_ERROR_CODE);
     }
 
     @Test
@@ -174,6 +189,8 @@ class RuntimeActiveExecutionTest {
 
         var failure = assertThrows(CancellationException.class, () -> execution.review("exit-1", signal));
         assertThat(failure).hasMessage("Plan review was cancelled");
+        assertThat(execution.beginPlanReview(planProposal(execution, "exit-2", "plan-2", "# 新方案")))
+                .isNotDone();
     }
 
     @Test
@@ -223,11 +240,11 @@ class RuntimeActiveExecutionTest {
         return new BeforeToolCallContext(null, call, call.arguments(), null);
     }
 
-    private static BeforeToolCallContext showcaseContext(String id, String label) {
-        String name = ClawConstants.RuntimeApi.SHOWCASE_CONFIRMATION_TOOL_NAME;
+    private static BeforeToolCallContext businessQuestionContext(String id, String label) {
+        String name = "confirm_access_change";
         Map<String, Object> arguments = Map.of("label", label);
         ToolCall call = new ToolCall(id, name, arguments);
-        PreparedToolInvocation invocation = new PreparedToolInvocation() {
+        PreparedQuestionInvocation invocation = new PreparedQuestionInvocation() {
             @Override
             public String toolCallId() {
                 return id;
@@ -246,6 +263,11 @@ class RuntimeActiveExecutionTest {
             @Override
             public String authorizationTargetId() {
                 return "tool-11111111111111111111111111111111";
+            }
+
+            @Override
+            public QuestionRequestSnapshotDTO questionRequest() {
+                return QuestionRequestSnapshotDTO.businessConfirmation(label, null);
             }
 
             @Override

@@ -19,7 +19,7 @@ export interface SingleQuestionDraftValidation {
   error?: string;
 }
 
-export const SHOWCASE_CONFIRMATION_ID = 'confirmation';
+export const BUSINESS_CONFIRMATION_ANSWER_ID = 'confirmation';
 
 export function emptyQuestionDrafts(questions: RuntimeQuestion[]): QuestionDrafts {
   const drafts = Object.create(null) as QuestionDrafts;
@@ -76,21 +76,21 @@ export function normalizeQuestionAnswers(questions: RuntimeQuestion[], answers: 
   return validation.answers;
 }
 
-export function validateShowcaseConfirmationDraft(draft: QuestionDraft | undefined): SingleQuestionDraftValidation {
+export function validateBusinessConfirmationDraft(draft: QuestionDraft | undefined): SingleQuestionDraftValidation {
   const custom = javaStrip(draft?.custom ?? '');
   if (custom.length > 4096) return { error: '回答最多 4096 个字符。' };
   if (!custom) return { error: '请输入回答。' };
-  return { answer: { id: SHOWCASE_CONFIRMATION_ID, selected: [], custom } };
+  return { answer: { id: BUSINESS_CONFIRMATION_ANSWER_ID, selected: [], custom } };
 }
 
 export function normalizeQuestionEventAnswers(payload: AgentQuestionPayload, answers: QuestionAnswer[]): QuestionAnswer[] {
   if ('questions' in payload && payload.questions) return normalizeQuestionAnswers(payload.questions, answers);
   if (answers.length !== 1) throw invalidQuestionAnswer();
   const answer = answers[0];
-  if (answer.id !== SHOWCASE_CONFIRMATION_ID || !Array.isArray(answer.selected) || answer.selected.length) {
+  if (answer.id !== BUSINESS_CONFIRMATION_ANSWER_ID || !Array.isArray(answer.selected) || answer.selected.length) {
     throw invalidQuestionAnswer();
   }
-  const validation = validateShowcaseConfirmationDraft({ selected: [], custom: answer.custom ?? '' });
+  const validation = validateBusinessConfirmationDraft({ selected: [], custom: answer.custom ?? '' });
   if (!validation.answer) throw invalidQuestionAnswer();
   return [validation.answer];
 }

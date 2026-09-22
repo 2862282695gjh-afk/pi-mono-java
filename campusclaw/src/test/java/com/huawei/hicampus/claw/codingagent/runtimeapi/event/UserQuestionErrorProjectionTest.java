@@ -41,7 +41,7 @@ class UserQuestionErrorProjectionTest {
     @ParameterizedTest
     @MethodSource("questionErrorCodes")
     void shouldPreserveSpecificCodeAndLocalizedTextAcrossPipelineAndHistory(String code) {
-        var call = new ToolCall("call-diagnostic", "CallTool", Map.of("tool", "confirm_with_user"));
+        var call = new ToolCall("call-diagnostic", "CallTool", Map.of("tool", "business_question"));
         var result = new ToolExecutionPipeline()
                 .execute(
                         new FailingTool(code),

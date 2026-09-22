@@ -26,7 +26,6 @@ import com.huawei.hicampus.claw.agent.tool.AgentTool;
 import com.huawei.hicampus.claw.agent.tool.AgentToolResult;
 import com.huawei.hicampus.claw.agent.tool.AgentToolUpdateCallback;
 import com.huawei.hicampus.claw.agent.tool.CancellationToken;
-import com.huawei.hicampus.claw.agent.tool.PreparedToolInvocation;
 import com.huawei.hicampus.claw.ai.CampusClawAiService;
 import com.huawei.hicampus.claw.ai.stream.AssistantMessageEventStream;
 import com.huawei.hicampus.claw.ai.types.Api;
@@ -58,8 +57,6 @@ import com.huawei.hicampus.claw.codingagent.tool.builtin.DefaultConfiguredToolAs
 import com.huawei.hicampus.claw.codingagent.tool.builtin.ToolEntryPoint;
 import com.huawei.hicampus.claw.codingagent.tool.mate.MateToolSessionState;
 import com.huawei.hicampus.claw.codingagent.tool.mate.MateToolsetFactory;
-import com.huawei.hicampus.claw.codingagent.tool.question.ShowcaseConfirmationAdapter;
-import com.huawei.hicampus.claw.codingagent.tool.question.UserQuestionException;
 import com.huawei.hicampus.claw.codingagent.tool.question.UserQuestionPort;
 import com.huawei.hicampus.claw.common.constant.ClawConstants;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -152,7 +149,7 @@ class AgentSessionFactoryTest {
         AgentRuntimeManager runtimes = mock(AgentRuntimeManager.class);
         when(runtimes.prepare(runtime.agentId())).thenReturn(runtime);
         MateToolSessionState mateState = mock(MateToolSessionState.class);
-        when(mateState.createAgentToolAdapters()).thenReturn(List.of(new StubTool("confirm_with_user")));
+        when(mateState.createAgentToolAdapters()).thenReturn(List.of(new StubTool("business_question")));
         MateToolsetFactory mateFactory = mock(MateToolsetFactory.class);
         when(mateFactory.createSession(eq(runtime), any())).thenReturn(mateState);
         @SuppressWarnings("unchecked")
@@ -163,7 +160,7 @@ class AgentSessionFactoryTest {
         properties.afterPropertiesSet();
         BuiltInToolFactory builtIns = mock(BuiltInToolFactory.class);
         when(builtIns.create(any(), any())).thenReturn(new StubTool("Read"));
-        var confirmation = new ShowcaseConfirmationAdapter(true, ToolEntryPoint.RUNTIME, mock(UserQuestionPort.class));
+        UserQuestionPort questionPort = mock(UserQuestionPort.class);
         AgentSessionFactory factory = new AgentSessionFactory(
                 mock(CampusClawAiService.class),
                 runtimes,
@@ -173,14 +170,14 @@ class AgentSessionFactoryTest {
                 new PlanPolicyPromptComposer());
 
         ManagedAgentSession session =
-                factory.create(confirmationRequest(runtime.agentId(), ToolEntryPoint.RUNTIME, confirmation));
+                factory.create(questionRequest(runtime.agentId(), ToolEntryPoint.RUNTIME, questionPort));
 
-        assertThat(session.tools()).extracting(AgentTool::name).containsExactly("Read", "confirm_with_user");
-        verify(mateState).bindShowcaseConfirmation(confirmation);
+        assertThat(session.tools()).extracting(AgentTool::name).containsExactly("Read", "business_question");
+        verify(mateState).bindBusinessConfirmation(ToolEntryPoint.RUNTIME, questionPort);
     }
 
     @Test
-    void nonRuntimeSessionsShouldBindRejectingConfirmationAdapters() throws Exception {
+    void nonRuntimeSessionsShouldBindLocalBusinessConfirmationHandlers() throws Exception {
         Path agentRoot = Files.createDirectory(temporaryDirectory.resolve("non-runtime-confirm"));
         PreparedAgentRuntime runtime = prepared(agentRoot, testPrompts());
         AgentRuntimeManager runtimes = mock(AgentRuntimeManager.class);
@@ -192,7 +189,7 @@ class AgentSessionFactoryTest {
         ObjectProvider<MateToolsetFactory> provider = mock(ObjectProvider.class);
         when(provider.getIfAvailable()).thenReturn(mateFactory);
         ConfiguredToolAssembler assembler = mock(ConfiguredToolAssembler.class);
-        when(assembler.assemble(any(), any())).thenReturn(List.of(new StubTool("confirm_with_user")));
+        when(assembler.assemble(any(), any())).thenReturn(List.of(new StubTool("business_question")));
         AgentSessionFactory factory = new AgentSessionFactory(
                 mock(CampusClawAiService.class),
                 runtimes,
@@ -201,19 +198,11 @@ class AgentSessionFactoryTest {
                 mock(SessionCompactor.class),
                 new PlanPolicyPromptComposer());
 
-        factory.create(confirmationRequest(runtime.agentId(), ToolEntryPoint.CHILD_AGENT, null));
-        factory.create(confirmationRequest(runtime.agentId(), ToolEntryPoint.CRON, null));
+        factory.create(questionRequest(runtime.agentId(), ToolEntryPoint.CHILD_AGENT, null));
+        factory.create(questionRequest(runtime.agentId(), ToolEntryPoint.CRON, null));
 
-        ArgumentCaptor<ShowcaseConfirmationAdapter> adapters =
-                ArgumentCaptor.forClass(ShowcaseConfirmationAdapter.class);
-        verify(mateState, org.mockito.Mockito.times(2)).bindShowcaseConfirmation(adapters.capture());
-        PreparedToolInvocation invocation = confirmationInvocation();
-        for (ShowcaseConfirmationAdapter adapter : adapters.getAllValues()) {
-            UserQuestionException failure =
-                    assertThrows(UserQuestionException.class, () -> adapter.await(invocation, new CancellationToken()));
-            assertThat(failure.stableErrorCode())
-                    .isEqualTo(ClawConstants.RuntimeApi.USER_QUESTION_ENTRY_UNSUPPORTED_ERROR_CODE);
-        }
+        verify(mateState).bindBusinessConfirmation(ToolEntryPoint.CHILD_AGENT, null);
+        verify(mateState).bindBusinessConfirmation(ToolEntryPoint.CRON, null);
     }
 
     @Test
@@ -347,8 +336,8 @@ class AgentSessionFactoryTest {
                 null);
     }
 
-    private static ManagedAgentSessionRequest confirmationRequest(
-            String agentId, ToolEntryPoint entryPoint, ShowcaseConfirmationAdapter confirmation) {
+    private static ManagedAgentSessionRequest questionRequest(
+            String agentId, ToolEntryPoint entryPoint, UserQuestionPort questionPort) {
         return new ManagedAgentSessionRequest(
                 agentId,
                 entryPoint,
@@ -363,21 +352,11 @@ class AgentSessionFactoryTest {
                 ClawConstants.Agent.MODE_BUILD,
                 null,
                 null,
-                confirmation);
+                questionPort);
     }
 
     private static AgentPromptSnapshotDTO testPrompts() {
         return new AgentPromptSnapshotDTO("prompt", "# Plan", "# Build", PromptSource.BUILTIN, PromptSource.BUILTIN);
-    }
-
-    private static PreparedToolInvocation confirmationInvocation() {
-        PreparedToolInvocation invocation = mock(PreparedToolInvocation.class);
-        when(invocation.toolCallId()).thenReturn("call-confirm");
-        when(invocation.toolName()).thenReturn("confirm_with_user");
-        when(invocation.authorizationTargetName()).thenReturn("confirm_with_user");
-        when(invocation.authorizationTargetId()).thenReturn("tool-confirm");
-        when(invocation.arguments()).thenReturn(Map.of("label", "Continue?"));
-        return invocation;
     }
 
     private static SessionCompactor successfulCompactor() {

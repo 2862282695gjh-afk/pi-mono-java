@@ -229,7 +229,7 @@ public class CommittedEventProjection {
 
     private AgentQuestionResponseVO projectQuestion(JsonNode payload) {
         if (payload.has("label")) {
-            return projectShowcaseQuestion(payload);
+            return projectBusinessConfirmationQuestion(payload);
         }
         requireFields(payload, Set.of("sourceEventId", "toolCallId", "questions"));
         Map<String, Object> arguments = Map.of(
@@ -242,7 +242,7 @@ public class CommittedEventProjection {
                 requiredText(payload, "sourceEventId"), requiredText(payload, "toolCallId"), questions, null, null);
     }
 
-    private AgentQuestionResponseVO projectShowcaseQuestion(JsonNode payload) {
+    private AgentQuestionResponseVO projectBusinessConfirmationQuestion(JsonNode payload) {
         Set<String> fields = payload.has("context")
                 ? Set.of("sourceEventId", "toolCallId", "label", "context")
                 : Set.of("sourceEventId", "toolCallId", "label");

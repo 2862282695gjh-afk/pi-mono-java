@@ -128,14 +128,14 @@ class RuntimeToolPermissionPolicyTest {
     @Test
     void shouldAllowSameToolIdentityAcrossAgentAndSkills() {
         PreparedAgentRuntime runtime = runtimeWithSkills(
-                List.of(tool("confirm_with_user", "confirm-id", "allow")),
+                List.of(tool("business_question", "confirm-id", "allow")),
                 List.of(
-                        List.of(tool("confirm_with_user", "confirm-id", "allow")),
-                        List.of(tool("confirm_with_user", "confirm-id", "allow"))));
+                        List.of(tool("business_question", "confirm-id", "allow")),
+                        List.of(tool("business_question", "confirm-id", "allow"))));
 
-        assertThat(RuntimeToolPermissionPolicy.diagnoseBinding(runtime, "confirm_with_user"))
+        assertThat(RuntimeToolPermissionPolicy.diagnoseBinding(runtime, "business_question"))
                 .isEqualTo(new RuntimeToolPermissionPolicy.BindingDiagnosisDTO(BindingStatus.BOUND, "confirm-id", 3));
-        assertThat(RuntimeToolPermissionPolicy.uniqueAllowedToolId(runtime, "confirm_with_user"))
+        assertThat(RuntimeToolPermissionPolicy.uniqueAllowedToolId(runtime, "business_question"))
                 .contains("confirm-id");
     }
 

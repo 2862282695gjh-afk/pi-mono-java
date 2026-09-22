@@ -7,7 +7,8 @@ package com.huawei.hicampus.claw.codingagent.tool.mate;
 import java.util.List;
 
 import com.huawei.hicampus.claw.agent.tool.AgentTool;
-import com.huawei.hicampus.claw.codingagent.tool.question.ShowcaseConfirmationAdapter;
+import com.huawei.hicampus.claw.codingagent.tool.builtin.ToolEntryPoint;
+import com.huawei.hicampus.claw.codingagent.tool.question.UserQuestionPort;
 
 /**
  * 保存单个 Session 共享的 Mate 执行器并按需创建工具实例。
@@ -23,8 +24,8 @@ public class MateToolSessionState {
         this.executor = executor;
     }
 
-    public void bindShowcaseConfirmation(ShowcaseConfirmationAdapter confirmation) {
-        executor.bindShowcaseConfirmation(confirmation);
+    public void bindBusinessConfirmation(ToolEntryPoint entryPoint, UserQuestionPort questions) {
+        executor.bindBusinessConfirmation(entryPoint, questions);
     }
 
     public List<AgentTool> createAgentToolAdapters() {

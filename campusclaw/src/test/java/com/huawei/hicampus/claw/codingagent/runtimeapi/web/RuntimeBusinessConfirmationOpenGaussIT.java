@@ -60,20 +60,21 @@ import org.junit.jupiter.api.io.TempDir;
  * @version [br_eCampusCore 26.0.0, 2026/09/17]
  * @since [br_eCampusCore 26.0.0]
  */
-class RuntimeShowcaseConfirmationOpenGaussIT {
+class RuntimeBusinessConfirmationOpenGaussIT {
     private static final String TOOL_ID = "tool-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
-    private static final String TOOL_CALL_ID = "showcase-confirm-call";
+    private static final String TOOL_CALL_ID = "businessConfirmation-confirm-call";
 
     @Test
     void answersConfirmationBeforeOriginalToolResultAndContinuesRoot(@TempDir Path directory) throws Exception {
         ProcessTestConfigDTO config = loadConfiguration();
-        prepareShowcaseRuntime(directory);
+        prepareBusinessConfirmationRuntime(directory);
         Map<String, Object> context = nestedContext();
         Map<String, Object> arguments = confirmationArguments("driver_design_confirm", context);
         int runtimePort = freePort();
-        try (ShowcaseMateStub mate = scriptedMate(freePort(), arguments, "已确认驱动配置");
-                RuntimeProcess runtime = startShowcaseRuntime(config, directory, runtimePort, mate.port())) {
+        try (BusinessConfirmationMateStub mate = scriptedMate(freePort(), arguments, "已确认驱动配置");
+                RuntimeProcess runtime =
+                        startBusinessConfirmationRuntime(config, directory, runtimePort, mate.port())) {
             mate.start();
             awaitHealth(runtime, runtimePort);
             String sessionId = createSession(runtimePort);
@@ -97,13 +98,13 @@ class RuntimeShowcaseConfirmationOpenGaussIT {
     @Test
     void preservesContextVariantsAndRejectsOversizedAnswer(@TempDir Path directory) throws Exception {
         ProcessTestConfigDTO config = loadConfiguration();
-        prepareShowcaseRuntime(directory);
+        prepareBusinessConfirmationRuntime(directory);
         Map<String, Object> omitted = confirmationArguments("   ", null);
         Map<String, Object> empty = confirmationArguments("empty_context", Map.of());
         int matePort = freePort();
         int runtimePort = freePort();
-        try (ShowcaseMateStub mate = new ShowcaseMateStub(matePort);
-                RuntimeProcess runtime = startShowcaseRuntime(config, directory, runtimePort, matePort)) {
+        try (BusinessConfirmationMateStub mate = new BusinessConfirmationMateStub(matePort);
+                RuntimeProcess runtime = startBusinessConfirmationRuntime(config, directory, runtimePort, matePort)) {
             mate.enqueueModel(toolResponse("omitted-call", omitted));
             mate.enqueueModel(textResponse("omitted complete"));
             mate.enqueueModel(toolResponse("empty-call", empty));
@@ -119,11 +120,12 @@ class RuntimeShowcaseConfirmationOpenGaussIT {
     @Test
     void interruptCancelsWaitingConfirmationWithoutToolSuccess(@TempDir Path directory) throws Exception {
         ProcessTestConfigDTO config = loadConfiguration();
-        prepareShowcaseRuntime(directory);
+        prepareBusinessConfirmationRuntime(directory);
         Map<String, Object> arguments = confirmationArguments("cancel_me", Map.of("value", 1));
         int runtimePort = freePort();
-        try (ShowcaseMateStub mate = new ShowcaseMateStub(freePort());
-                RuntimeProcess runtime = startShowcaseRuntime(config, directory, runtimePort, mate.port())) {
+        try (BusinessConfirmationMateStub mate = new BusinessConfirmationMateStub(freePort());
+                RuntimeProcess runtime =
+                        startBusinessConfirmationRuntime(config, directory, runtimePort, mate.port())) {
             mate.enqueueModel(toolResponse("cancel-call", arguments));
             mate.start();
             awaitHealth(runtime, runtimePort);
@@ -145,13 +147,13 @@ class RuntimeShowcaseConfirmationOpenGaussIT {
         }
     }
 
-    private static RuntimeProcess startShowcaseRuntime(
+    private static RuntimeProcess startBusinessConfirmationRuntime(
             ProcessTestConfigDTO config, Path directory, int runtimePort, int matePort) throws IOException {
         return startRuntime(
                 config, directory, runtimePort, matePort, "--campusclaw.runtime.events.heartbeat-interval=100ms");
     }
 
-    private static void prepareShowcaseRuntime(Path directory) throws Exception {
+    private static void prepareBusinessConfirmationRuntime(Path directory) throws Exception {
         prepareRuntimeFiles(directory);
         Path settings = directory.resolve("agent").resolve(AGENT_ID).resolve(".campusclaw/settings.json");
         ObjectNode root = (ObjectNode) MAPPER.readTree(settings.toFile());
@@ -167,9 +169,9 @@ class RuntimeShowcaseConfirmationOpenGaussIT {
         MAPPER.writeValue(settings.toFile(), root);
     }
 
-    private static ShowcaseMateStub scriptedMate(int port, Map<String, Object> arguments, String answer)
+    private static BusinessConfirmationMateStub scriptedMate(int port, Map<String, Object> arguments, String answer)
             throws Exception {
-        ShowcaseMateStub mate = new ShowcaseMateStub(port);
+        BusinessConfirmationMateStub mate = new BusinessConfirmationMateStub(port);
         mate.enqueueModel(toolResponse(TOOL_CALL_ID, arguments));
         mate.enqueueModel(textResponse("模型已使用用户答案：" + answer));
         return mate;
@@ -194,7 +196,7 @@ class RuntimeShowcaseConfirmationOpenGaussIT {
         return question;
     }
 
-    private static void assertWaitingWithoutNextModel(int port, String sessionId, ShowcaseMateStub mate)
+    private static void assertWaitingWithoutNextModel(int port, String sessionId, BusinessConfirmationMateStub mate)
             throws Exception {
         long deadline = System.nanoTime() + Duration.ofMillis(400).toNanos();
         do {
@@ -207,7 +209,8 @@ class RuntimeShowcaseConfirmationOpenGaussIT {
     }
 
     private static void assertContinuation(
-            List<JsonNode> frames, String rootEventId, String questionEventId, ShowcaseMateStub mate) throws Exception {
+            List<JsonNode> frames, String rootEventId, String questionEventId, BusinessConfirmationMateStub mate)
+            throws Exception {
         assertThat(frames.getFirst().path("type").asText()).isEqualTo("user.question_answer");
         assertThat(frames.getFirst().path("targetEventId").asText()).isEqualTo(questionEventId);
         assertThat(types(frames))
@@ -253,7 +256,7 @@ class RuntimeShowcaseConfirmationOpenGaussIT {
                 .isEqualTo(rootEventId);
     }
 
-    private static void verifyOmittedContext(int port, ShowcaseMateStub mate) throws Exception {
+    private static void verifyOmittedContext(int port, BusinessConfirmationMateStub mate) throws Exception {
         String sessionId = createSession(port);
         List<JsonNode> first = frames(requireSuccessfulStream(submitUserEventAsync(port, sessionId)));
         JsonNode question = one(first, "agent.question");
@@ -265,7 +268,7 @@ class RuntimeShowcaseConfirmationOpenGaussIT {
         assertThat(mate.modelRequestCount()).isEqualTo(2);
     }
 
-    private static void verifyEmptyContextAndAnswerBoundary(int port, ShowcaseMateStub mate, Path directory)
+    private static void verifyEmptyContextAndAnswerBoundary(int port, BusinessConfirmationMateStub mate, Path directory)
             throws Exception {
         String sessionId = createSession(port);
         List<JsonNode> first = frames(requireSuccessfulStream(submitUserEventAsync(port, sessionId)));
@@ -279,7 +282,7 @@ class RuntimeShowcaseConfirmationOpenGaussIT {
         if (rejected.statusCode() != 400) {
             Files.copy(
                     directory.resolve("runtime-process-" + port + ".log"),
-                    Path.of("/private/tmp/showcase-confirm-oversized-runtime.log"),
+                    Path.of("/private/tmp/businessConfirmation-confirm-oversized-runtime.log"),
                     StandardCopyOption.REPLACE_EXISTING);
         }
         assertThat(rejected.statusCode()).as(rejected.body()).isEqualTo(400);
@@ -430,7 +433,7 @@ class RuntimeShowcaseConfirmationOpenGaussIT {
 
     private static void saveSample(List<JsonNode> first, List<JsonNode> continuation, List<JsonNode> history)
             throws IOException {
-        String output = System.getProperty("showcase.it.sample", "");
+        String output = System.getProperty("businessConfirmation.it.sample", "");
         if (output.isBlank()) {
             return;
         }
@@ -473,7 +476,7 @@ class RuntimeShowcaseConfirmationOpenGaussIT {
 
     private static ObjectNode chunk(String finishReason) {
         ObjectNode root = MAPPER.createObjectNode();
-        root.put("id", "chatcmpl-showcase")
+        root.put("id", "chatcmpl-businessConfirmation")
                 .put("object", "chat.completion.chunk")
                 .put("created", 1786980000)
                 .put("model", "runtime-smoke-model");
@@ -491,7 +494,7 @@ class RuntimeShowcaseConfirmationOpenGaussIT {
         return "data: " + value + "\n\n";
     }
 
-    private static final class ShowcaseMateStub implements AutoCloseable {
+    private static final class BusinessConfirmationMateStub implements AutoCloseable {
         private final int port;
 
         private final HttpServer server;
@@ -506,7 +509,7 @@ class RuntimeShowcaseConfirmationOpenGaussIT {
 
         private final List<JsonNode> capturedModelRequests = new CopyOnWriteArrayList<>();
 
-        ShowcaseMateStub(int port) throws IOException {
+        BusinessConfirmationMateStub(int port) throws IOException {
             this.port = port;
             this.server = HttpServer.create(new InetSocketAddress("127.0.0.1", port), 0);
             server.setExecutor(executor);
@@ -606,7 +609,7 @@ class RuntimeShowcaseConfirmationOpenGaussIT {
                 assertThat(executor.awaitTermination(5, TimeUnit.SECONDS)).isTrue();
             } catch (InterruptedException error) {
                 Thread.currentThread().interrupt();
-                throw new IllegalStateException("showcase stub termination interrupted", error);
+                throw new IllegalStateException("businessConfirmation stub termination interrupted", error);
             }
         }
     }

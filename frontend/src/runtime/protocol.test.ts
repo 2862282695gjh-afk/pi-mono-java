@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { decodeEvent, decodeHistory, matchesReceipt, messageEvent, readEventStream } from './protocol';
 import { canAnswerQuestion, canReviewPlan, executionState, executionTodos, hasToolConfirmation, mergeEvent, reconcileEvents } from './eventStore';
 import { decodeCatalog, decodeCommandResult, filterCommands, freezeInvocation, parseCommand } from './commands';
-import { eventFixture, idleFixture, questionFixture, showcaseQuestionFixture, streamResponse, userFixture } from './fixtures';
+import { businessConfirmationQuestionFixture, eventFixture, idleFixture, questionFixture, streamResponse,
+  userFixture } from './fixtures';
 import type { RuntimeEvent } from '../types/runtime';
 
 const call = eventFixture({ eventId: 'call', type: 'agent.tool_call', sourceEventId: 'root-a', toolCallId: 'tool-a', toolName: 'CallTool', arguments: { tool: 'query', args: {} }, requiresConfirmation: true }) as Extract<RuntimeEvent, { type: 'agent.tool_call' }>;
@@ -66,26 +67,26 @@ describe('Session Events protocol and authoritative store', () => {
     await readEventStream(streamResponse([question, answer]), (event) => { received.push(event); }, new AbortController().signal);
     expect(received).toEqual([question, answer]);
   });
-  it('decodes the mutually exclusive showcase label/context payload without rewriting raw values', async () => {
-    const question = showcaseQuestionFixture();
-    const withoutContext = { ...question, eventId: 'showcase-empty', label: '' };
+  it('decodes the mutually exclusive business confirmation label/context payload without rewriting raw values', async () => {
+    const question = businessConfirmationQuestionFixture();
+    const withoutContext = { ...question, eventId: 'business-confirmation-empty', label: '' };
     delete (withoutContext as Record<string, unknown>).context;
     expect(decodeHistory({ events: [question, withoutContext], nextPage: null }).events).toEqual([question, withoutContext]);
     const received: RuntimeEvent[] = [];
     await readEventStream(streamResponse([question]), (event) => { received.push(event); }, new AbortController().signal);
     expect(received).toEqual([question]);
-    expect(decodeEvent({ ...question, eventId: 'showcase-whitespace', label: '  \n', context: {} })).toMatchObject({
+    expect(decodeEvent({ ...question, eventId: 'business-confirmation-whitespace', label: '  \n', context: {} })).toMatchObject({
       label: '  \n', context: {},
     });
   });
   it.each([
-    { ...showcaseQuestionFixture(), questions: [{ id: 'x', question: '重复载荷', multiSelect: false }] },
-    { ...showcaseQuestionFixture(), label: 42 },
-    { ...showcaseQuestionFixture(), context: null },
-    { ...showcaseQuestionFixture(), context: [] },
-    { ...showcaseQuestionFixture(), label: undefined },
+    { ...businessConfirmationQuestionFixture(), questions: [{ id: 'x', question: '重复载荷', multiSelect: false }] },
+    { ...businessConfirmationQuestionFixture(), label: 42 },
+    { ...businessConfirmationQuestionFixture(), context: null },
+    { ...businessConfirmationQuestionFixture(), context: [] },
+    { ...businessConfirmationQuestionFixture(), label: undefined },
     { ...questionFixture(), context: {} },
-  ])('rejects malformed showcase question payloads %j', (event) => expect(() => decodeEvent(event)).toThrow());
+  ])('rejects malformed business confirmation question payloads %j', (event) => expect(() => decodeEvent(event)).toThrow());
   it.each([
     { ...questionFixture(), questions: [{ id: 'scope', question: '问题', multiSelect: false, unknown: true }] },
     { ...questionFixture(), questions: [{ id: 'scope', question: ' 问题', multiSelect: false }] },
@@ -261,11 +262,11 @@ describe('Session Events protocol and authoritative store', () => {
     const currentAnswer = { ...oldAnswer, eventId: 'answer-current', targetEventId: 'question-current' };
     expect(executionState([...waiting, currentAnswer]).pendingQuestion).toBeUndefined();
   });
-  it('keeps the showcase question pending while the Session remains running', () => {
-    const question = showcaseQuestionFixture();
+  it('keeps the business confirmation question pending while the Session remains running', () => {
+    const question = businessConfirmationQuestionFixture();
     const waiting = [userFixture(), question, idleFixture('confirming')];
     expect(executionState(waiting)).toMatchObject({ confirming: true, pendingQuestion: question });
-    const answer = eventFixture({ eventId: 'showcase-answer', type: 'user.question_answer', targetEventId: question.eventId,
+    const answer = eventFixture({ eventId: 'business-confirmation-answer', type: 'user.question_answer', targetEventId: question.eventId,
       answers: [{ id: 'confirmation', selected: [], custom: '继续执行' }] });
     expect(executionState([...waiting, answer]).pendingQuestion).toBeUndefined();
   });

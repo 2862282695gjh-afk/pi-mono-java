@@ -71,6 +71,8 @@ import com.campusclaw.codingagent.session.compaction.SessionCompactionCompletedE
 import com.campusclaw.codingagent.session.compaction.SessionCompactionResult;
 import com.campusclaw.codingagent.test.Log4j2TestAppender;
 import com.campusclaw.codingagent.tool.plan.PlanReviewException;
+import com.campusclaw.codingagent.tool.question.PreparedQuestionInvocation;
+import com.campusclaw.codingagent.tool.question.QuestionRequestParser;
 import com.campusclaw.codingagent.tool.question.UserQuestionException;
 import com.campusclaw.common.constant.ClawConstants;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -661,8 +663,7 @@ class RuntimeEventProjectorTest {
         fixture.projector.onEvent(new MessageStartEvent(assistant));
         fixture.projector.onEvent(new MessageEndEvent(assistant));
 
-        BeforeToolCallResult result =
-                fixture.execution.beforeToolCall(new BeforeToolCallContext(assistant, call, call.arguments(), null));
+        BeforeToolCallResult result = fixture.execution.beforeToolCall(questionContext(assistant, call));
 
         assertThat(result).isEqualTo(BeforeToolCallResult.allow());
         assertThat(fixture.output.closed.await(1, TimeUnit.SECONDS)).isTrue();
@@ -693,8 +694,7 @@ class RuntimeEventProjectorTest {
         try {
             UserQuestionException failure = assertThrows(
                     UserQuestionException.class,
-                    () -> fixture.projector.beforeToolCall(
-                            new BeforeToolCallContext(assistant, question, question.arguments(), null)));
+                    () -> fixture.projector.beforeToolCall(questionContext(assistant, question)));
 
             assertThat(failure.stableErrorCode())
                     .isEqualTo(ClawConstants.RuntimeApi.USER_QUESTION_MULTIPLE_TOOL_CALLS_ERROR_CODE);
@@ -720,8 +720,7 @@ class RuntimeEventProjectorTest {
 
         UserQuestionException failure = assertThrows(
                 UserQuestionException.class,
-                () -> fixture.projector.beforeToolCall(
-                        new BeforeToolCallContext(assistant, question, question.arguments(), null)));
+                () -> fixture.projector.beforeToolCall(questionContext(assistant, question)));
 
         assertThat(failure.stableErrorCode())
                 .isEqualTo(ClawConstants.RuntimeApi.USER_QUESTION_CALL_NOT_FINALIZED_ERROR_CODE);
@@ -739,8 +738,7 @@ class RuntimeEventProjectorTest {
 
         UserQuestionException failure = assertThrows(
                 UserQuestionException.class,
-                () -> fixture.projector.beforeToolCall(
-                        new BeforeToolCallContext(changedAssistant, changed, changed.arguments(), null)));
+                () -> fixture.projector.beforeToolCall(questionContext(changedAssistant, changed)));
 
         assertThat(failure.stableErrorCode())
                 .isEqualTo(ClawConstants.RuntimeApi.USER_QUESTION_CALL_MISMATCH_ERROR_CODE);
@@ -755,6 +753,13 @@ class RuntimeEventProjectorTest {
     private static ToolCall questionCall(String id, String question) {
         return new ToolCall(
                 id, "AskUserQuestion", Map.of("questions", List.of(Map.of("id", "details", "question", question))));
+    }
+
+    private static BeforeToolCallContext questionContext(AssistantMessage assistant, ToolCall call) {
+        var snapshot = new QuestionRequestParser(new ObjectMapper()).parse(call);
+        PreparedQuestionInvocation invocation = mock(PreparedQuestionInvocation.class);
+        when(invocation.questionRequest()).thenReturn(snapshot);
+        return new BeforeToolCallContext(assistant, call, call.arguments(), null, invocation);
     }
 
     private static CompletableFuture<BeforeToolCallResult> runBeforeHook(

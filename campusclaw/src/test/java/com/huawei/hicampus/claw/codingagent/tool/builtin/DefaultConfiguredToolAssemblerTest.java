@@ -194,9 +194,9 @@ class DefaultConfiguredToolAssemblerTest {
     }
 
     @Test
-    void bundledShowcaseProfileShouldDisableQuestionAndAllowConfigurationOverride(
+    void bundledBusinessConfirmationProfileShouldDisableQuestionAndAllowConfigurationOverride(
             @org.junit.jupiter.api.io.TempDir Path agentRoot) throws Exception {
-        StandardEnvironment environment = showcaseEnvironment();
+        StandardEnvironment environment = businessConfirmationEnvironment();
         PreparedAgentRuntime runtime = prepared(agentRoot);
         AgentWorkspaceBoundary workspace = AgentWorkspaceBoundary.create(runtime.agentId(), agentRoot);
         ToolAssemblyContext context = context(runtime, workspace, ToolEntryPoint.RUNTIME);
@@ -214,13 +214,13 @@ class DefaultConfiguredToolAssemblerTest {
                 .containsExactly("Read", "AskUserQuestion", "CallTool");
     }
 
-    private static StandardEnvironment showcaseEnvironment() throws Exception {
+    private static StandardEnvironment businessConfirmationEnvironment() throws Exception {
         var environment = new StandardEnvironment();
         var yaml = new ClassPathResource("application.yml");
         var sources = yaml.exists()
-                ? new YamlPropertySourceLoader().load("showcase", yaml)
+                ? new YamlPropertySourceLoader().load("businessConfirmation", yaml)
                 : new PropertiesPropertySourceLoader()
-                        .load("showcase", new ClassPathResource("application.properties"));
+                        .load("businessConfirmation", new ClassPathResource("application.properties"));
         sources.forEach(source -> environment.getPropertySources().addFirst(source));
         return environment;
     }

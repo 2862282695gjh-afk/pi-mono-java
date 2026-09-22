@@ -32,6 +32,7 @@ import com.huawei.hicampus.claw.ai.types.ToolCall;
 import com.huawei.hicampus.claw.codingagent.common.client.mate.MateCredentials;
 import com.huawei.hicampus.claw.codingagent.runtime.PreparedAgentRuntime;
 import com.huawei.hicampus.claw.codingagent.test.Log4j2TestAppender;
+import com.huawei.hicampus.claw.common.constant.ClawConstants;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -272,8 +273,10 @@ class CallToolTest {
                 null);
 
         assertThat(result.isError()).isTrue();
-        assertThat(((TextContent) result.content().getFirst()).text()).doesNotContain("definitionComplete");
-        assertThat(result.details()).isNull();
+        assertThat(((TextContent) result.content().getFirst()).text())
+                .isEqualTo(ClawConstants.RuntimeApi.TOOL_NOT_FOUND_ERROR_CODE)
+                .doesNotContain("definitionComplete");
+        assertThat(result.details()).isEqualTo(Map.of("errorCode", ClawConstants.RuntimeApi.TOOL_NOT_FOUND_ERROR_CODE));
         assertThat(beforeCalls).hasValue(0);
         assertThat(client.executeCalls()).isZero();
     }
@@ -330,9 +333,10 @@ class CallToolTest {
 
         assertThat(result.isError()).isTrue();
         assertThat(((TextContent) result.content().getFirst()).text())
-                .isEqualTo("Managed business tool 'Query' failed: business input schema is invalid")
+                .isEqualTo(ClawConstants.RuntimeApi.TOOL_DEFINITION_INVALID_ERROR_CODE)
                 .doesNotContain("private-missing", "private-argument");
-        assertThat(result.details()).isNull();
+        assertThat(result.details())
+                .isEqualTo(Map.of("errorCode", ClawConstants.RuntimeApi.TOOL_DEFINITION_INVALID_ERROR_CODE));
         assertThat(beforeCalls).hasValue(0);
         assertThat(client.executeCalls()).isZero();
         assertThat(logs.events()).singleElement().satisfies(event -> {
@@ -342,7 +346,8 @@ class CallToolTest {
                     .hasMessageContaining("Reference /$defs/private-missing cannot be resolved");
             assertThat(event.getContextData().toMap())
                     .containsEntry("operation", "mate.tool.validateArguments")
-                    .containsEntry("errorCode", "INVALID_TOOL_SCHEMA")
+                    .containsEntry("errorCode", ClawConstants.RuntimeApi.TOOL_DEFINITION_INVALID_ERROR_CODE)
+                    .containsEntry("validationReason", "INVALID_TOOL_SCHEMA")
                     .containsEntry("toolId", QUERY_ID);
             assertThat(event.getMessage().getFormattedMessage())
                     .doesNotContain("private-argument", "token-1", "access-token-1");

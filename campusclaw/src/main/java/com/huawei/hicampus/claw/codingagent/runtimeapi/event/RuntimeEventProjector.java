@@ -51,7 +51,7 @@ import com.huawei.hicampus.claw.codingagent.runtimeapi.vo.SessionEventResponseVO
 import com.huawei.hicampus.claw.codingagent.session.compaction.SessionCompactionCompletedEvent;
 import com.huawei.hicampus.claw.codingagent.session.compaction.SessionCompactionEvent;
 import com.huawei.hicampus.claw.codingagent.tool.builtin.BuiltInToolName;
-import com.huawei.hicampus.claw.codingagent.tool.question.QuestionRequestParser;
+import com.huawei.hicampus.claw.codingagent.tool.question.PreparedQuestionInvocation;
 import com.huawei.hicampus.claw.codingagent.tool.question.UserQuestionException;
 import com.huawei.hicampus.claw.common.constant.ClawConstants;
 
@@ -103,8 +103,6 @@ public class RuntimeEventProjector {
 
     private final RuntimeTodoEventMapper todoMapper;
 
-    private final QuestionRequestParser questionParser;
-
     private final PlanProposalBinder planBinder = new PlanProposalBinder();
 
     private final Map<Integer, String> thinkingEntryIds = new LinkedHashMap<>();
@@ -148,44 +146,6 @@ public class RuntimeEventProjector {
             boolean thinking,
             Locale locale,
             RuntimeTodoEventMapper todoMapper) {
-        this(
-                sessionId,
-                sourceEventId,
-                repository,
-                persistence,
-                codec,
-                ids,
-                events,
-                encoder,
-                clock,
-                maxCommittedEventBytes,
-                abort,
-                execution,
-                initialUserMessage,
-                thinking,
-                locale,
-                todoMapper,
-                new QuestionRequestParser(new com.fasterxml.jackson.databind.ObjectMapper()));
-    }
-
-    public RuntimeEventProjector(
-            String sessionId,
-            String sourceEventId,
-            RuntimeSessionRepository repository,
-            RuntimeExecutionPersistenceService persistence,
-            RuntimeEntryCodec codec,
-            RuntimeEntryIdGenerator ids,
-            RuntimeCommittedEventFactory events,
-            RuntimeEventEncoder encoder,
-            Clock clock,
-            long maxCommittedEventBytes,
-            Runnable abort,
-            RuntimeActiveExecution execution,
-            UserMessage initialUserMessage,
-            boolean thinking,
-            Locale locale,
-            RuntimeTodoEventMapper todoMapper,
-            QuestionRequestParser questionParser) {
         this.sessionId = sessionId;
         this.sourceEventId = sourceEventId;
         this.repository = repository;
@@ -202,7 +162,6 @@ public class RuntimeEventProjector {
         this.thinking = thinking;
         this.locale = locale;
         this.todoMapper = todoMapper;
-        this.questionParser = questionParser;
     }
 
     public synchronized void onEvent(AgentEvent event) {
@@ -230,11 +189,6 @@ public class RuntimeEventProjector {
     }
 
     public BeforeToolCallResult beforeToolCall(BeforeToolCallContext context) throws Exception {
-        var showcaseQuestion = execution.preparedShowcaseQuestion(context);
-        if (showcaseQuestion.isPresent()) {
-            beginQuestion(context, showcaseQuestion.get());
-            return BeforeToolCallResult.allow();
-        }
         if (BuiltInToolName.EXIT_PLAN_MODE
                 .externalName()
                 .equals(context.toolCall().name())) {
@@ -244,7 +198,11 @@ public class RuntimeEventProjector {
         if (BuiltInToolName.ASK_USER_QUESTION
                 .externalName()
                 .equals(context.toolCall().name())) {
-            beginQuestion(context);
+            beginPreparedQuestion(context);
+            return BeforeToolCallResult.allow();
+        }
+        if (context.preparedInvocation() instanceof PreparedQuestionInvocation) {
+            beginPreparedQuestion(context);
             return BeforeToolCallResult.allow();
         }
         var pending = beginConfirmation(context.toolCall());
@@ -637,17 +595,12 @@ public class RuntimeEventProjector {
                 context);
     }
 
-    private void beginQuestion(BeforeToolCallContext context) {
+    private void beginPreparedQuestion(BeforeToolCallContext context) {
         ToolCall call = requireUniqueFinalizedCall(context);
-        var snapshot = questionParser.parse(call);
-        beginQuestion(call, snapshot);
-    }
-
-    private void beginQuestion(
-            BeforeToolCallContext context,
-            com.huawei.hicampus.claw.codingagent.tool.question.QuestionRequestSnapshotDTO snapshot) {
-        ToolCall call = requireUniqueFinalizedCall(context);
-        beginQuestion(call, snapshot);
+        if (!(context.preparedInvocation() instanceof PreparedQuestionInvocation question)) {
+            throw questionCallFailure(ClawConstants.RuntimeApi.USER_QUESTION_NOT_PREPARED_ERROR_CODE, call.id(), 1L);
+        }
+        beginQuestion(call, question.questionRequest());
     }
 
     private void beginQuestion(

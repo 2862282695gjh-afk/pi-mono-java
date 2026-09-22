@@ -62,6 +62,8 @@ public class RuntimePendingInteraction {
 
     private CompletableFuture<?> future;
 
+    private boolean claimed;
+
     private ExecutionTargetDTO continuationTarget;
 
     private RuntimeEventOutput continuationOutput;
@@ -110,11 +112,13 @@ public class RuntimePendingInteraction {
             }
             waiting = castFuture();
         }
-        signal.onCancel(() -> waiting.completeExceptionally(
-                new java.util.concurrent.CancellationException("Plan review was cancelled")));
-        PlanReviewDecisionDTO decision = waiting.get();
-        clearIfSame(waiting);
-        return decision;
+        signal.onCancel(() ->
+                cancelIfSame(waiting, new java.util.concurrent.CancellationException("Plan review was cancelled")));
+        try {
+            return waiting.get();
+        } finally {
+            clearIfSame(waiting);
+        }
     }
 
     public QuestionAnswerResultDTO awaitQuestion(String callId, CancellationToken signal) throws Exception {
@@ -125,11 +129,14 @@ public class RuntimePendingInteraction {
             }
             waiting = castFuture();
         }
-        signal.onCancel(() -> waiting.completeExceptionally(
-                new java.util.concurrent.CancellationException("User question was cancelled")));
-        QuestionAnswerDecisionDTO decision = waiting.get();
-        clearIfSame(waiting);
-        return java.util.Objects.requireNonNull(decision.getAnswers(), "question answers");
+        signal.onCancel(() ->
+                cancelIfSame(waiting, new java.util.concurrent.CancellationException("User question was cancelled")));
+        try {
+            QuestionAnswerDecisionDTO decision = waiting.get();
+            return java.util.Objects.requireNonNull(decision.getAnswers(), "question answers");
+        } finally {
+            clearIfSame(waiting);
+        }
     }
 
     public synchronized boolean stage(
@@ -215,15 +222,16 @@ public class RuntimePendingInteraction {
             if (!matchesTarget(current, expected, identity)) {
                 return Optional.empty();
             }
-            Optional<T> claimed = java.util.Objects.requireNonNull(supplier.get(), "claimed interaction");
-            if (claimed.isEmpty()) {
+            Optional<T> claimedDecision = java.util.Objects.requireNonNull(supplier.get(), "claimed interaction");
+            if (claimedDecision.isEmpty()) {
                 return Optional.empty();
             }
-            decision = claimed.get();
+            decision = claimedDecision.get();
             if (!validator.test(decision)) {
                 throw new IllegalStateException("claimed interaction does not match the pending target");
             }
             waiting = castFuture();
+            this.claimed = true;
         }
         return Optional.of(new Claimed<>(decision, waiting));
     }
@@ -267,7 +275,12 @@ public class RuntimePendingInteraction {
 
     private synchronized boolean matchesIdentity(Kind expected, String identity) {
         String pendingIdentity = expected == Kind.TOOL_PERMISSION ? toolCallId : targetEventId;
-        return kind == expected && future != null && pendingIdentity != null && pendingIdentity.equals(identity);
+        return kind == expected
+                && future != null
+                && !future.isDone()
+                && !claimed
+                && pendingIdentity != null
+                && pendingIdentity.equals(identity);
     }
 
     private synchronized boolean matchesCall(Kind expected, String callId) {
@@ -286,6 +299,14 @@ public class RuntimePendingInteraction {
         if (future == waiting) {
             clear();
         }
+    }
+
+    private synchronized void cancelIfSame(CompletableFuture<?> waiting, RuntimeException failure) {
+        if (future != waiting || claimed) {
+            return;
+        }
+        clear();
+        waiting.completeExceptionally(failure);
     }
 
     @SuppressWarnings("unchecked")
@@ -310,6 +331,7 @@ public class RuntimePendingInteraction {
         plan = null;
         question = null;
         future = null;
+        claimed = false;
         waitingTarget = null;
         clearContinuation();
     }

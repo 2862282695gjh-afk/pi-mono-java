@@ -46,7 +46,7 @@ class RuntimeQuestionFailureDiagnosticsTest {
                 "root",
                 "exit-1",
                 "# Existing plan"));
-        QuestionRequestSnapshotDTO question = QuestionRequestSnapshotDTO.showcaseConfirmation(
+        QuestionRequestSnapshotDTO question = QuestionRequestSnapshotDTO.businessConfirmation(
                 "sensitive-label", MAPPER.valueToTree(Map.of("credential", "sensitive-value")));
 
         CapturedFailureDTO captured = capture(() -> pending.beginQuestion("ask-1", "question-event-1", question));
@@ -77,7 +77,7 @@ class RuntimeQuestionFailureDiagnosticsTest {
     @Test
     void shouldDiagnoseMissingQuestionWaitWithRequestedAndExistingIdentity() {
         RuntimePendingInteraction pending = new RuntimePendingInteraction();
-        QuestionRequestSnapshotDTO question = QuestionRequestSnapshotDTO.showcaseConfirmation(
+        QuestionRequestSnapshotDTO question = QuestionRequestSnapshotDTO.businessConfirmation(
                 "sensitive-label", MAPPER.valueToTree(Map.of("credential", "sensitive-value")));
         pending.beginQuestion("ask-existing", "question-event-1", question);
 

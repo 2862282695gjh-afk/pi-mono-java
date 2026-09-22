@@ -5,8 +5,8 @@ let sequence = 0;
 let version = 1;
 let history = [];
 let rootId = '';
-let showcaseQuestionId = '';
-let showcaseToolCallId = '';
+let businessConfirmationQuestionId = '';
+let businessConfirmationToolCallId = '';
 const session = { sessionId: 'session-fixture', agentId: 'agent-fixture', displayName: null,
   modelId: 'model-primary', state: 'idle', thinking: true, mode: 'build', createdAt: new Date().toISOString() };
 const make = (type, data = {}) => ({ eventId: `fixture-${++sequence}`, type, createdAt: new Date().toISOString(), ...data });
@@ -26,7 +26,7 @@ function startMessage(response, input) {
   const receipt = make('user.message', { content: input.content });
   rootId = receipt.eventId; session.state = 'running'; version++;
   const text = input.content.find((block) => block.type === 'text')?.text.trim();
-  if (text === 'showcase确认') return startShowcaseConfirmation(response, receipt);
+  if (text === '业务确认') return startBusinessConfirmation(response, receipt);
   stream(response, [receipt,
     make('agent.thinking', { phase: 'completed', sourceEventId: rootId, content: '先核对巡检范围，再查询公开的园区记录。' }),
     make('agent.tool_call', { sourceEventId: rootId, toolCallId: `tool-${rootId}`, toolName: 'CallTool', displayName: '查询园区巡检记录',
@@ -34,16 +34,17 @@ function startMessage(response, input) {
     make('session.status_idle', { sourceEventId: rootId, reason: 'confirming' }),
   ]);
 }
-function startShowcaseConfirmation(response, receipt) {
-  showcaseToolCallId = `tool-${rootId}`;
-  const call = make('agent.tool_call', { sourceEventId: rootId, toolCallId: showcaseToolCallId, toolName: 'CallTool',
+function startBusinessConfirmation(response, receipt) {
+  businessConfirmationToolCallId = `tool-${rootId}`;
+  const call = make('agent.tool_call', { sourceEventId: rootId, toolCallId: businessConfirmationToolCallId,
+    toolName: 'CallTool',
     arguments: { tool: 'confirm_with_user', args: { label: 'driver_design_confirm', context: {
       '方案': '驱动配置方案', '超时秒数': 30, '补充说明': null,
       '影响范围': ['东区设备', '夜间巡检'], '回退': { '策略': '保留当前配置', '需人工确认': true },
     } } }, requiresConfirmation: false });
-  const question = make('agent.question', { sourceEventId: rootId, toolCallId: showcaseToolCallId,
+  const question = make('agent.question', { sourceEventId: rootId, toolCallId: businessConfirmationToolCallId,
     label: call.arguments.args.label, context: call.arguments.args.context });
-  showcaseQuestionId = question.eventId;
+  businessConfirmationQuestionId = question.eventId;
   stream(response, [receipt,
     make('agent.thinking', { phase: 'completed', sourceEventId: rootId, content: '需要用户确认驱动配置方案后再继续。' }),
     call, question, make('session.status_idle', { sourceEventId: rootId, reason: 'confirming' }),
@@ -56,7 +57,8 @@ const server = createServer(async (request, response) => {
     for await (const chunk of request) { raw += chunk; if (raw.length > 128 * 1024) throw new Error('too large'); }
     const body = raw ? JSON.parse(raw) : {};
     if (request.method === 'POST' && /\/agents\/[^/]+\/sessions$/u.test(url.pathname)) {
-      history = []; showcaseQuestionId = ''; showcaseToolCallId = ''; session.state = 'idle'; return json(response, session, 201);
+      history = []; businessConfirmationQuestionId = ''; businessConfirmationToolCallId = '';
+      session.state = 'idle'; return json(response, session, 201);
     }
     if (request.method === 'GET' && url.pathname.endsWith('/events')) {
       const offset = (Number(url.searchParams.get('page') || 1) - 1) * 200;
@@ -87,25 +89,27 @@ const server = createServer(async (request, response) => {
       if (input.type === 'user.message') return startMessage(response, input);
       if (input.type === 'user.question_answer') {
         const answer = input.answers?.[0];
-        if (input.targetEventId !== showcaseQuestionId || input.answers?.length !== 1
-          || answer?.id !== 'confirmation' || answer.selected?.length || !answer.custom?.trim()) throw new Error('invalid showcase answer');
+        if (input.targetEventId !== businessConfirmationQuestionId || input.answers?.length !== 1
+          || answer?.id !== 'confirmation' || answer.selected?.length || !answer.custom?.trim()) {
+          throw new Error('invalid business confirmation answer');
+        }
         const receipt = make(input.type, Object.fromEntries(Object.entries(input).filter(([key]) => key !== 'type')));
         session.state = 'idle'; version++;
         const content = answer.custom.trim();
         const events = [receipt,
-          make('agent.tool_result', { sourceEventId: rootId, toolCallId: showcaseToolCallId,
+          make('agent.tool_result', { sourceEventId: rootId, toolCallId: businessConfirmationToolCallId,
             content: [{ type: 'text', text: JSON.stringify({ content }) }], isError: false }),
           make('agent.message', { sourceEventId: rootId, phase: 'completed',
             content: `已收到确认：“${content}”。我会按该回答继续处理驱动配置。` }),
           make('session.status_idle', { sourceEventId: rootId, reason: 'done' }),
         ];
-        showcaseQuestionId = ''; showcaseToolCallId = '';
+        businessConfirmationQuestionId = ''; businessConfirmationToolCallId = '';
         return stream(response, events);
       }
       const receipt = make(input.type, Object.fromEntries(Object.entries(input).filter(([key]) => key !== 'type')));
       session.state = 'idle'; version++;
       if (input.type === 'user.interrupt') {
-        showcaseQuestionId = ''; showcaseToolCallId = '';
+        businessConfirmationQuestionId = ''; businessConfirmationToolCallId = '';
         return stream(response, [receipt, make('session.status_idle', { sourceEventId: rootId, reason: 'terminated' })]);
       }
       const denied = input.result === 'deny';

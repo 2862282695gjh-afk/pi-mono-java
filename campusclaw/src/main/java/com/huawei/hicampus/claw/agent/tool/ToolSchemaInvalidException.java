@@ -4,15 +4,23 @@
 
 package com.huawei.hicampus.claw.agent.tool;
 
+import com.huawei.hicampus.claw.agent.error.StableErrorCode;
+import com.huawei.hicampus.claw.common.constant.ClawConstants;
+
 /**
  * 可信工具输入 Schema 无法编译或执行校验时抛出的配置异常。
  *
  * @version [br_eCampusCore 26.0.0, 2026/09/22]
  * @since [br_eCampusCore 26.0.0]
  */
-public class ToolSchemaInvalidException extends IllegalStateException {
+public class ToolSchemaInvalidException extends IllegalStateException implements StableErrorCode {
 
     public ToolSchemaInvalidException(Throwable cause) {
         super("Tool input schema is invalid", cause);
+    }
+
+    @Override
+    public String stableErrorCode() {
+        return ClawConstants.RuntimeApi.TOOL_DEFINITION_INVALID_ERROR_CODE;
     }
 }

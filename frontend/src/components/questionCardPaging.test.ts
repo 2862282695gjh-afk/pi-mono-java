@@ -59,9 +59,9 @@ describe('QuestionCard paging', () => {
     expect(html).not.toContain('提交回答');
   });
 
-  it('renders the showcase label as text, preserves context JSON and exposes only textarea plus Confirm', async () => {
+  it('renders the business confirmation label as text, preserves context JSON and exposes only textarea plus Confirm', async () => {
     const html = await renderToString(createSSRApp({ render: () => h(QuestionCard, {
-      turn: { key: 'showcase', kind: 'question', eventId: 'showcase-question', sourceEventId: 'root-a',
+      turn: { key: 'business-confirmation', kind: 'question', eventId: 'business-confirmation-question', sourceEventId: 'root-a',
         label: '<b>driver_design_confirm</b>', context: { '问题': '不要提取我', '空值': null, '嵌套': [1, { ok: true }] } },
       sessionId: 'session-a', actionable: true, pending: false,
     }) }));
@@ -77,7 +77,7 @@ describe('QuestionCard paging', () => {
     expect(html.match(/等待回答/gu)).toHaveLength(1);
   });
 
-  it('distinguishes omitted and empty showcase context and keeps an answered value read-only', async () => {
+  it('distinguishes omitted and empty business confirmation context and keeps an answered value read-only', async () => {
     const omitted = await renderToString(createSSRApp({ render: () => h(QuestionCard, {
       turn: { key: 'omitted', kind: 'question', eventId: 'omitted', sourceEventId: 'root-a', label: '' },
       sessionId: 'session-a', actionable: true, pending: false,

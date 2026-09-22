@@ -20,23 +20,23 @@ public final class QuestionRequestSnapshotDTO {
 
     private final JsonNode context;
 
-    private final boolean showcaseConfirmation;
+    private final boolean businessConfirmation;
 
     public QuestionRequestSnapshotDTO(List<QuestionDTO> questions) {
         this.questions = List.copyOf(questions);
         this.label = null;
         this.context = null;
-        this.showcaseConfirmation = false;
+        this.businessConfirmation = false;
     }
 
     private QuestionRequestSnapshotDTO(String label, JsonNode context) {
         this.questions = List.of();
         this.label = java.util.Objects.requireNonNull(label, "label");
         this.context = context == null ? null : context.deepCopy();
-        this.showcaseConfirmation = true;
+        this.businessConfirmation = true;
     }
 
-    public static QuestionRequestSnapshotDTO showcaseConfirmation(String label, JsonNode context) {
+    public static QuestionRequestSnapshotDTO businessConfirmation(String label, JsonNode context) {
         return new QuestionRequestSnapshotDTO(label, context);
     }
 
@@ -44,8 +44,8 @@ public final class QuestionRequestSnapshotDTO {
         return questions;
     }
 
-    public boolean isShowcaseConfirmation() {
-        return showcaseConfirmation;
+    public boolean isBusinessConfirmation() {
+        return businessConfirmation;
     }
 
     public String label() {

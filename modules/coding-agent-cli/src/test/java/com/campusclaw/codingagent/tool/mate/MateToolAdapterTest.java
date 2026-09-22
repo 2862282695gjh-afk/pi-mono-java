@@ -178,6 +178,22 @@ class MateToolAdapterTest {
     }
 
     @Test
+    void duplicateTrustedBindingsWithSameNameAndIdShouldCollapseToOneAdapter() throws Exception {
+        MockMateToolClient client = clientWithQuery();
+        var duplicate = runtime(
+                List.of(binding(QUERY_ID, "Query", "业务查询", "allow"), binding(QUERY_ID, "Query", "业务查询", "allow")),
+                List.of());
+        MateToolSessionState state = new MateToolsetFactory(client).createSession(duplicate, MateCredentials.empty());
+
+        var adapters = state.createAgentToolAdapters();
+        adapters.getFirst().execute("call", Map.of("value", "x"), new CancellationToken(), partial -> {});
+
+        assertThat(adapters).singleElement().satisfies(tool -> assertThat(tool.name())
+                .isEqualTo("Query"));
+        assertThat(client.executeCalls()).isEqualTo(1);
+    }
+
+    @Test
     void shouldRejectFrameworkCollisionAndDifferentIdsWithoutSilentOverwrite() {
         MockMateToolClient client = clientWithQuery();
         String otherId = "tool-22222222222222222222222222222222";

@@ -18,7 +18,7 @@ import com.huawei.hicampus.claw.ai.types.ThinkingLevel;
 import com.huawei.hicampus.claw.codingagent.common.client.mate.MateCredentials;
 import com.huawei.hicampus.claw.codingagent.runtime.PreparedAgentRuntime;
 import com.huawei.hicampus.claw.codingagent.tool.builtin.ToolEntryPoint;
-import com.huawei.hicampus.claw.codingagent.tool.question.ShowcaseConfirmationAdapter;
+import com.huawei.hicampus.claw.codingagent.tool.question.UserQuestionPort;
 
 /**
  * 保存创建公共 Agent Session 所需的不可变参数。
@@ -36,7 +36,7 @@ import com.huawei.hicampus.claw.codingagent.tool.question.ShowcaseConfirmationAd
  * @param mode 当前执行模式快照
  * @param exitPlanModeToolFactory Runtime 计划审核工具工厂
  * @param askUserQuestionToolFactory Runtime 用户提问工具工厂
- * @param showcaseConfirmationAdapter Runtime 展示确认适配器
+ * @param userQuestionPort Runtime 用户问题等待端口
  * @version [br_eCampusCore 26.0.0, 2026/08/24]
  * @since [br_eCampusCore 26.0.0]
  */
@@ -54,7 +54,7 @@ public record ManagedAgentSessionRequest(
         String mode,
         BiFunction<PreparedAgentRuntime, Model, AgentTool> exitPlanModeToolFactory,
         BiFunction<PreparedAgentRuntime, Model, AgentTool> askUserQuestionToolFactory,
-        ShowcaseConfirmationAdapter showcaseConfirmationAdapter) {
+        UserQuestionPort userQuestionPort) {
 
     public ManagedAgentSessionRequest {
         if (agentId == null || agentId.isBlank()) {

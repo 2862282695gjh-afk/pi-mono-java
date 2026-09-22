@@ -115,7 +115,7 @@ public class RuntimeCommittedEventFactory {
     }
 
     private void appendQuestionPayload(ObjectNode payload, QuestionRequestSnapshotDTO snapshot) {
-        if (!snapshot.isShowcaseConfirmation()) {
+        if (!snapshot.isBusinessConfirmation()) {
             payload.set("questions", objectMapper.valueToTree(snapshot.questions()));
             return;
         }

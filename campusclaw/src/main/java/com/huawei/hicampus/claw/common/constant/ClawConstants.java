@@ -227,9 +227,9 @@ public final class ClawConstants {
 
         public static final String USER_QUESTION_WAIT_MISSING_ERROR_CODE = "USER_QUESTION_WAIT_MISSING";
 
-        public static final String SHOWCASE_CONFIRMATION_TOOL_NAME = "confirm_with_user";
+        public static final String BUSINESS_CONFIRMATION_TOOL_NAME = "confirm_with_user";
 
-        public static final String SHOWCASE_CONFIRMATION_ANSWER_ID = "confirmation";
+        public static final String BUSINESS_CONFIRMATION_ANSWER_ID = "confirmation";
 
         public static final Set<String> TOOL_ERROR_CODES = Set.of(
                 TOOL_CALL_DENIED_ERROR_CODE,

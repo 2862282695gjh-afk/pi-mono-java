@@ -29,8 +29,8 @@ export function projectRuntimeEvents(events: RuntimeEvent[], observing = false):
           turns.push(questionToolStatus(event, result, observing));
           break;
         }
-        if (isShowcaseConfirmationCall(event)) {
-          if (question?.type === 'agent.question' && isShowcaseQuestion(question)) break;
+        if (isBusinessConfirmationCall(event)) {
+          if (question?.type === 'agent.question' && isBusinessConfirmationQuestion(question)) break;
           turns.push(questionToolStatus(event, result, observing));
           break;
         }
@@ -90,7 +90,7 @@ export function projectRuntimeEvents(events: RuntimeEvent[], observing = false):
           && item.sourceEventId === event.sourceEventId && item.reason !== 'confirming');
         const interrupted = events.slice(index + 1).some((item) => item.type === 'user.interrupt'
           && item.targetEventId === event.sourceEventId);
-        const payload = isShowcaseQuestion(event)
+        const payload = isBusinessConfirmationQuestion(event)
           ? { label: event.label, ...(event.context === undefined ? {} : { context: event.context }) }
           : { questions: event.questions };
         turns.push({ key, kind: 'question', eventId: event.eventId, sourceEventId: event.sourceEventId,
@@ -157,13 +157,13 @@ function matchingQuestion(events: RuntimeEvent[], call: Extract<RuntimeEvent, { 
     && item.sourceEventId === call.sourceEventId);
 }
 
-function isShowcaseConfirmationCall(call: Extract<RuntimeEvent, { type: 'agent.tool_call' }>): boolean {
+function isBusinessConfirmationCall(call: Extract<RuntimeEvent, { type: 'agent.tool_call' }>): boolean {
   return call.toolName === 'confirm_with_user'
     || ((call.toolName === 'CallTool' || call.toolName === 'CallMateTool')
       && call.arguments.tool === 'confirm_with_user');
 }
 
-function isShowcaseQuestion(question: Extract<RuntimeEvent, { type: 'agent.question' }>): question is Extract<
+function isBusinessConfirmationQuestion(question: Extract<RuntimeEvent, { type: 'agent.question' }>): question is Extract<
   RuntimeEvent, { type: 'agent.question' }> & { label: string; context?: Record<string, unknown> } {
   return 'label' in question;
 }

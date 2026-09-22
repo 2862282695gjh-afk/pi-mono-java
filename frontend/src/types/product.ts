@@ -91,13 +91,13 @@ export type StructuredQuestionTurn = QuestionTurnBase & {
   context?: never;
 };
 
-export type ShowcaseQuestionTurn = QuestionTurnBase & {
+export type BusinessConfirmationQuestionTurn = QuestionTurnBase & {
   label: string;
   context?: Record<string, unknown>;
   questions?: never;
 };
 
-export type QuestionTurn = StructuredQuestionTurn | ShowcaseQuestionTurn;
+export type QuestionTurn = StructuredQuestionTurn | BusinessConfirmationQuestionTurn;
 
 export type ConversationTurn = UserTurn | ThinkingTurn | AssistantTurn | ActivityTurn | NoticeTurn | PlanTurn
   | QuestionTurn;

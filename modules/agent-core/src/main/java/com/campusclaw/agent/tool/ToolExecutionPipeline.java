@@ -24,6 +24,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.networknt.schema.JsonSchemaFactory;
 import com.networknt.schema.SpecVersion;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 /**
  * 负责工具调用校验、hook 处理、执行调度和事件投影。
  *
@@ -31,6 +34,8 @@ import com.networknt.schema.SpecVersion;
  * @since [br_eCampusCore 26.0.0]
  */
 public class ToolExecutionPipeline {
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(ToolExecutionPipeline.class);
 
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final JsonSchemaFactory schemaFactory = JsonSchemaFactory.getInstance(SpecVersion.VersionFlag.V202012);
@@ -257,6 +262,15 @@ public class ToolExecutionPipeline {
             ToolSchemaValidator.validate(
                     objectMapper, schemaFactory, tool.name(), tool.description(), tool.parameters(), validatedArgs);
             return null;
+        } catch (ToolSchemaInvalidException error) {
+            LOGGER.atError()
+                    .addKeyValue("operation", "tool.validateDefinition")
+                    .addKeyValue("errorCode", error.stableErrorCode())
+                    .addKeyValue("toolCallId", toolCall.id())
+                    .addKeyValue("toolName", toolName)
+                    .setCause(error.getCause())
+                    .log("Failed to validate tool input definition");
+            return toToolResultMessage(toolCall, toolName, failureResult(error), true);
         } catch (Exception error) {
             return toToolResultMessage(toolCall, toolName, failureResult(error), true);
         }

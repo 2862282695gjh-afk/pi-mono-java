@@ -30,7 +30,6 @@ import com.campusclaw.codingagent.tool.agent.SubagentExecutionContext;
 import com.campusclaw.codingagent.tool.agent.SubagentExecutionService;
 import com.campusclaw.codingagent.tool.builtin.ToolEntryPoint;
 import com.campusclaw.codingagent.tool.cron.AgentScopedCronToolFactory;
-import com.campusclaw.codingagent.tool.question.ShowcaseConfirmationAdapter;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -180,15 +179,9 @@ public class RuntimeSessionEngineRegistry {
                 createSession(snapshot, model, thinking, execution, credentials, runtimeValidator);
         try {
             RuntimeToolPermissionPolicy permissions = RuntimeToolPermissionPolicy.from(session.runtime());
+            execution.bindAgentId(snapshot.agentId());
             execution.bindToolPermissions(permissions);
             execution.bindToolCallSnapshots(RuntimeToolCallSnapshotResolver.from(session.runtime(), session.tools()));
-            var binding = RuntimeToolPermissionPolicy.diagnoseBinding(
-                    session.runtime(),
-                    com.campusclaw.common.constant.ClawConstants.RuntimeApi.SHOWCASE_CONFIRMATION_TOOL_NAME);
-            execution.showcaseConfirmation().ifPresent(adapter -> {
-                adapter.bindContext(sessionId, snapshot.agentId());
-                adapter.bindPermissions(permissions, binding);
-            });
             session.agent().replaceMessages(messages);
             RuntimeSessionHolder holder = new RuntimeSessionHolder(sessionId, snapshot, session, thinking);
             execution.installModeApplier(
@@ -217,8 +210,6 @@ public class RuntimeSessionEngineRegistry {
             MateCredentials credentials,
             Consumer<PreparedAgentRuntime> runtimeValidator) {
         ThinkingLevel level = thinking ? ThinkingLevel.MEDIUM : ThinkingLevel.OFF;
-        var confirmation = new ShowcaseConfirmationAdapter(true, ToolEntryPoint.RUNTIME, execution);
-        execution.installShowcaseConfirmation(confirmation);
         var request = new ManagedAgentSessionRequest(
                 snapshot.agentId(),
                 ToolEntryPoint.RUNTIME,
@@ -237,7 +228,7 @@ public class RuntimeSessionEngineRegistry {
                 execution.mode(),
                 (runtime, ignored) -> new com.campusclaw.codingagent.tool.plan.ExitPlanModeTool(execution),
                 (runtime, ignored) -> new com.campusclaw.codingagent.tool.question.AskUserQuestionTool(execution),
-                confirmation);
+                execution);
         return sessionFactory.create(request);
     }
 

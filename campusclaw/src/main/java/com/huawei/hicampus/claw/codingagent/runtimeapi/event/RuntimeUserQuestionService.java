@@ -32,9 +32,10 @@ import org.springframework.stereotype.Service;
 public class RuntimeUserQuestionService {
     private static final Set<String> QUESTION_EVENT_FIELDS = Set.of("sourceEventId", "toolCallId", "questions");
 
-    private static final Set<String> SHOWCASE_EVENT_FIELDS = Set.of("sourceEventId", "toolCallId", "label");
+    private static final Set<String> BUSINESS_CONFIRMATION_EVENT_FIELDS =
+            Set.of("sourceEventId", "toolCallId", "label");
 
-    private static final Set<String> SHOWCASE_CONTEXT_EVENT_FIELDS =
+    private static final Set<String> BUSINESS_CONFIRMATION_CONTEXT_EVENT_FIELDS =
             Set.of("sourceEventId", "toolCallId", "label", "context");
 
     private final RuntimeSessionRepository sessions;
@@ -70,8 +71,8 @@ public class RuntimeUserQuestionService {
         }
         try {
             JsonNode payload = objectMapper.readTree(event.get().getPayload());
-            if (isShowcasePayload(payload)) {
-                return normalizeShowcaseAnswers(answers);
+            if (isBusinessConfirmationPayload(payload)) {
+                return normalizeBusinessConfirmationAnswers(answers);
             }
             requireStructuredQuestionPayload(payload);
             Map<String, Object> arguments = Map.of(
@@ -85,16 +86,17 @@ public class RuntimeUserQuestionService {
         }
     }
 
-    private QuestionAnswerResultDTO normalizeShowcaseAnswers(List<QuestionAnswerDTO> answers) {
-        return parser.normalizeTextAnswer(ClawConstants.RuntimeApi.SHOWCASE_CONFIRMATION_ANSWER_ID, answers);
+    private QuestionAnswerResultDTO normalizeBusinessConfirmationAnswers(List<QuestionAnswerDTO> answers) {
+        return parser.normalizeTextAnswer(ClawConstants.RuntimeApi.BUSINESS_CONFIRMATION_ANSWER_ID, answers);
     }
 
-    private static boolean isShowcasePayload(JsonNode payload) {
+    private static boolean isBusinessConfirmationPayload(JsonNode payload) {
         if (payload == null || !payload.isObject()) {
             return false;
         }
         Set<String> names = fieldNames(payload);
-        if (!names.equals(SHOWCASE_EVENT_FIELDS) && !names.equals(SHOWCASE_CONTEXT_EVENT_FIELDS)) {
+        if (!names.equals(BUSINESS_CONFIRMATION_EVENT_FIELDS)
+                && !names.equals(BUSINESS_CONFIRMATION_CONTEXT_EVENT_FIELDS)) {
             return false;
         }
         boolean identityValid = payload.get("sourceEventId").isTextual()

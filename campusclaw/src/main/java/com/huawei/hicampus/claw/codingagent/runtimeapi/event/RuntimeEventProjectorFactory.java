@@ -12,9 +12,7 @@ import com.huawei.hicampus.claw.codingagent.runtimeapi.persistence.RuntimeExecut
 import com.huawei.hicampus.claw.codingagent.runtimeapi.persistence.RuntimeSessionRepository;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.runtime.RuntimeActiveExecution;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.runtime.RuntimeSessionHolder;
-import com.huawei.hicampus.claw.codingagent.tool.question.QuestionRequestParser;
 
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 /**
@@ -43,8 +41,6 @@ public class RuntimeEventProjectorFactory {
 
     private final RuntimeTodoEventMapper todoMapper;
 
-    private final QuestionRequestParser questionParser;
-
     public RuntimeEventProjectorFactory(
             RuntimeSessionRepository repository,
             RuntimeExecutionPersistenceService persistence,
@@ -55,31 +51,6 @@ public class RuntimeEventProjectorFactory {
             Clock clock,
             RuntimeEventProperties properties,
             RuntimeTodoEventMapper todoMapper) {
-        this(
-                repository,
-                persistence,
-                codec,
-                ids,
-                events,
-                encoder,
-                clock,
-                properties,
-                todoMapper,
-                new QuestionRequestParser(new com.fasterxml.jackson.databind.ObjectMapper()));
-    }
-
-    @Autowired
-    public RuntimeEventProjectorFactory(
-            RuntimeSessionRepository repository,
-            RuntimeExecutionPersistenceService persistence,
-            RuntimeEntryCodec codec,
-            RuntimeEntryIdGenerator ids,
-            RuntimeCommittedEventFactory events,
-            RuntimeEventEncoder encoder,
-            Clock clock,
-            RuntimeEventProperties properties,
-            RuntimeTodoEventMapper todoMapper,
-            QuestionRequestParser questionParser) {
         this.repository = repository;
         this.persistence = persistence;
         this.codec = codec;
@@ -89,7 +60,6 @@ public class RuntimeEventProjectorFactory {
         this.clock = clock;
         this.properties = properties;
         this.todoMapper = todoMapper;
-        this.questionParser = questionParser;
     }
 
     public RuntimeEventProjector create(
@@ -113,7 +83,6 @@ public class RuntimeEventProjectorFactory {
                 initialUserMessage,
                 holder.thinking(),
                 locale,
-                todoMapper,
-                questionParser);
+                todoMapper);
     }
 }

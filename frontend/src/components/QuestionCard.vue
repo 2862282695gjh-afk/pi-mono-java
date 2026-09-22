@@ -9,16 +9,16 @@ import { computed, nextTick, ref, useId, watch } from 'vue';
 import {
   copyQuestionDrafts,
   displayedCustomAnswer,
-  SHOWCASE_CONFIRMATION_ID,
+  BUSINESS_CONFIRMATION_ANSWER_ID,
   summarizeQuestionAnswers,
   validateQuestionDraft,
   validateQuestionDrafts,
-  validateShowcaseConfirmationDraft,
+  validateBusinessConfirmationDraft,
 } from '../runtime/questionInteraction';
 import type { QuestionDrafts } from '../runtime/questionInteraction';
 import { javaStrip } from '../runtime/protocol';
 import type { QuestionAnswer, RuntimeQuestion } from '../types/runtime';
-import type { QuestionTurn, ShowcaseQuestionTurn } from '../types/product';
+import type { BusinessConfirmationQuestionTurn, QuestionTurn } from '../types/product';
 
 const props = defineProps<{
   turn: QuestionTurn;
@@ -28,7 +28,7 @@ const props = defineProps<{
 }>();
 const emit = defineEmits<{ answer: [eventId: string, answers: QuestionAnswer[]] }>();
 const confirmationDraftQuestion: RuntimeQuestion = {
-  id: SHOWCASE_CONFIRMATION_ID,
+  id: BUSINESS_CONFIRMATION_ANSWER_ID,
   question: '用户确认',
   multiSelect: false,
 };
@@ -44,9 +44,9 @@ const localSubmitting = ref(false);
 const domId = 'question-card-' + useId();
 let submittedHere = false;
 
-const isShowcaseTurn = (turn: QuestionTurn): turn is ShowcaseQuestionTurn => typeof turn.label === 'string';
-const isShowcase = computed(() => isShowcaseTurn(props.turn));
-const showcaseTurn = computed(() => isShowcaseTurn(props.turn) ? props.turn : undefined);
+const isBusinessConfirmationTurn = (turn: QuestionTurn): turn is BusinessConfirmationQuestionTurn => typeof turn.label === 'string';
+const isBusinessConfirmation = computed(() => isBusinessConfirmationTurn(props.turn));
+const businessConfirmationTurn = computed(() => isBusinessConfirmationTurn(props.turn) ? props.turn : undefined);
 const questions = computed<RuntimeQuestion[]>(() => props.turn.questions ?? []);
 const pendingNow = computed(() => props.pending || localSubmitting.value);
 const state = computed(() => {
@@ -64,20 +64,20 @@ const statusLabel = computed(() => ({
 })[state.value]);
 const currentQuestion = computed(() => questions.value[currentIndex.value]);
 const cardTitle = computed(() => props.turn.answer ? '已回答'
-  : isShowcase.value ? '用户确认' : currentQuestion.value?.header || '等待回答');
+  : isBusinessConfirmation.value ? '用户确认' : currentQuestion.value?.header || '等待回答');
 const progressLabel = computed(() => {
-  if (props.turn.answer) return isShowcase.value ? statusLabel.value : `${questions.value.length} 个回答`;
+  if (props.turn.answer) return isBusinessConfirmation.value ? statusLabel.value : `${questions.value.length} 个回答`;
   if (questions.value.length > 1) return `${currentIndex.value + 1} / ${questions.value.length}`;
   return statusLabel.value;
 });
 const displayedQuestions = computed(() => props.turn.answer
   ? questions.value.map((question, index) => ({ question, index }))
   : currentQuestion.value ? [{ question: currentQuestion.value, index: currentIndex.value }] : []);
-const confirmationAnswer = computed(() => props.turn.answer?.find((answer) => answer.id === SHOWCASE_CONFIRMATION_ID));
-const answerSummary = computed(() => isShowcase.value
+const confirmationAnswer = computed(() => props.turn.answer?.find((answer) => answer.id === BUSINESS_CONFIRMATION_ANSWER_ID));
+const answerSummary = computed(() => isBusinessConfirmation.value
   ? confirmationAnswer.value?.custom ?? '' : summarizeQuestionAnswers(questions.value, props.turn.answer ?? []));
-const contextText = computed(() => showcaseTurn.value?.context !== undefined
-  ? JSON.stringify(showcaseTurn.value.context, null, 2) : '');
+const contextText = computed(() => businessConfirmationTurn.value?.context !== undefined
+  ? JSON.stringify(businessConfirmationTurn.value.context, null, 2) : '');
 const showControls = computed(() => (props.actionable || pendingNow.value) && !props.turn.answer);
 
 watch(drafts, (value) => {
@@ -134,11 +134,11 @@ function writeCustom(question: RuntimeQuestion, event: Event): void {
   if (!question.multiSelect && javaStrip(draft.custom)) draft.selected = [];
   delete errors.value[question.id];
 }
-function writeShowcaseCustom(event: Event): void {
-  const draft = drafts.value[SHOWCASE_CONFIRMATION_ID];
+function writeBusinessConfirmationCustom(event: Event): void {
+  const draft = drafts.value[BUSINESS_CONFIRMATION_ANSWER_ID];
   if (!draft || !props.actionable || pendingNow.value) return;
   draft.custom = (event.target as HTMLTextAreaElement).value;
-  delete errors.value[SHOWCASE_CONFIRMATION_ID];
+  delete errors.value[BUSINESS_CONFIRMATION_ANSWER_ID];
 }
 function inputId(questionIndex: number, optionIndex?: number): string {
   return `${domId}-question-${questionIndex}-${optionIndex === undefined ? 'custom' : `option-${optionIndex}`}`;
@@ -164,9 +164,9 @@ async function nextQuestion(): Promise<void> {
 }
 async function submit(): Promise<void> {
   if (!props.actionable || pendingNow.value) return;
-  if (isShowcase.value) {
-    const validation = validateShowcaseConfirmationDraft(drafts.value[SHOWCASE_CONFIRMATION_ID]);
-    errors.value = validation.error ? { [SHOWCASE_CONFIRMATION_ID]: validation.error } : {};
+  if (isBusinessConfirmation.value) {
+    const validation = validateBusinessConfirmationDraft(drafts.value[BUSINESS_CONFIRMATION_ANSWER_ID]);
+    errors.value = validation.error ? { [BUSINESS_CONFIRMATION_ANSWER_ID]: validation.error } : {};
     if (!validation.answer) { await focusQuestionInput(0); return; }
     submittedHere = true;
     localSubmitting.value = true;
@@ -198,7 +198,7 @@ async function focusQuestionInput(index: number): Promise<void> {
   root.value?.querySelector<HTMLElement>(`[data-question-input="${index}"]`)?.focus();
 }
 function collapseOnEscape(event: KeyboardEvent): void {
-  if (isShowcase.value || !expanded.value || event.isComposing || event.keyCode === 229) return;
+  if (isBusinessConfirmation.value || !expanded.value || event.isComposing || event.keyCode === 229) return;
   event.preventDefault();
   event.stopPropagation();
   expanded.value = false;
@@ -209,7 +209,7 @@ function collapseOnEscape(event: KeyboardEvent): void {
 <template>
   <section ref="root" class="question-card" :class="`question-${state}`" aria-label="Agent 提问" @keydown.esc="collapseOnEscape">
     <header>
-      <div v-if="isShowcase" class="question-toggle showcase-heading">
+      <div v-if="isBusinessConfirmation" class="question-toggle business-confirmation-heading">
         <span class="question-heading">
           <strong>{{ cardTitle }}</strong>
           <small v-if="cardTitle !== statusLabel">{{ statusLabel }}</small>
@@ -222,21 +222,21 @@ function collapseOnEscape(event: KeyboardEvent): void {
     </header>
     <p v-if="turn.answer && !expanded" class="question-summary">{{ answerSummary }}</p>
     <form v-if="expanded" @submit.prevent="submit">
-      <fieldset v-if="isShowcase" class="showcase-confirmation"
+      <fieldset v-if="isBusinessConfirmation" class="business-confirmation"
         :disabled="!actionable || pendingNow || Boolean(turn.answer)"
-        :aria-describedby="errors[SHOWCASE_CONFIRMATION_ID] ? errorId(0) : undefined">
+        :aria-describedby="errors[BUSINESS_CONFIRMATION_ANSWER_ID] ? errorId(0) : undefined">
         <legend data-question-title="0" tabindex="-1">
-          <span>{{ showcaseTurn && showcaseTurn.label.length ? showcaseTurn.label : '用户确认' }}</span>
+          <span>{{ businessConfirmationTurn && businessConfirmationTurn.label.length ? businessConfirmationTurn.label : '用户确认' }}</span>
         </legend>
-        <pre v-if="showcaseTurn?.context !== undefined" class="showcase-context" aria-label="确认上下文">{{ contextText }}</pre>
+        <pre v-if="businessConfirmationTurn?.context !== undefined" class="business-confirmation-context" aria-label="确认上下文">{{ contextText }}</pre>
         <label class="question-custom">
           <span>你的回答</span>
           <textarea :id="inputId(0)" data-question-input="0"
-            :value="confirmationAnswer?.custom ?? drafts[SHOWCASE_CONFIRMATION_ID]?.custom ?? ''" rows="4"
-            placeholder="请输入回答" @input="writeShowcaseCustom" />
+            :value="confirmationAnswer?.custom ?? drafts[BUSINESS_CONFIRMATION_ANSWER_ID]?.custom ?? ''" rows="4"
+            placeholder="请输入回答" @input="writeBusinessConfirmationCustom" />
         </label>
-        <p v-if="errors[SHOWCASE_CONFIRMATION_ID]" :id="errorId(0)" class="question-error" role="alert">
-          {{ errors[SHOWCASE_CONFIRMATION_ID] }}
+        <p v-if="errors[BUSINESS_CONFIRMATION_ANSWER_ID]" :id="errorId(0)" class="question-error" role="alert">
+          {{ errors[BUSINESS_CONFIRMATION_ANSWER_ID] }}
         </p>
       </fieldset>
       <template v-else>
@@ -266,7 +266,7 @@ function collapseOnEscape(event: KeyboardEvent): void {
           </p>
         </fieldset>
       </template>
-      <button v-if="showControls && isShowcase" class="primary-button question-submit" type="button"
+      <button v-if="showControls && isBusinessConfirmation" class="primary-button question-submit" type="button"
         :disabled="pendingNow" @click="submit">
         {{ pendingNow ? '提交中' : '确认' }}
       </button>
@@ -315,13 +315,13 @@ function collapseOnEscape(event: KeyboardEvent): void {
 .question-navigation button {
   flex: 1 1 0;
 }
-.showcase-confirmation legend span {
+.business-confirmation legend span {
   white-space: pre-wrap;
 }
-.showcase-heading {
+.business-confirmation-heading {
   cursor: default;
 }
-.showcase-context {
+.business-confirmation-context {
   max-height: 18rem;
   padding: 10px;
   overflow: auto;
