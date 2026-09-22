@@ -1,14 +1,14 @@
 # CampusClaw 前端调试工作台设计
 
-当前 v0.13.0 的 Session Events / Slash / 确认与恢复以
-[Claw Runtime 前端实现专题](frontend-events-v2/README.md) 为权威。
+当前 v0.14.0 的 Session Events / Slash / 确认与恢复以
+[Claw Runtime 前端实现专题](frontend-events/README.md) 为权威。
 下方第 1～17 节、旧评审稿和旧图保留为 v0.12.x 历史记录；其中旧队列/独立 Abort、
 原始 Thinking wire、同文历史确认和活动富文本不再代表当前代码。
 视觉 O1 暖灰基线、内部部署边界、Assistant 安全 Markdown 与整轮复制继续有效。
 
 | 属性 | 值 |
 |---|---|
-| 文档版本 | 0.13.0 |
+| 文档版本 | 0.14.0 |
 | 状态 | 内部工作台；当前实现见 Session Events 专题，下方旧版行为归档 |
 | 界面评审状态 | `debugHeaders`、`firstUse`、`idleConversation`、`runningConversation` 已实现；Headers 桌面 736 px 与移动 360 px 已通过本地浏览器验收 |
 | 主设计依据 | 本文件，维护源码证据、目标差异、设计理由、状态与 Design Token |
@@ -27,7 +27,8 @@
 | 流式预览术语修订基线 | `origin/main@28b3235e5cff0da2f768cbfc6b7b9ce5e2b51193` |
 | 实现源码 | `frontend/src/App.vue`、`frontend/src/debugHeaders.ts`、`frontend/src/components/DebugHeaders.vue`、`frontend/src/composables/useRuntimeApi.ts`、`frontend/src/assets/campusclaw-mark-o1.png`、`frontend/src/components/AgentRound.vue`、`frontend/src/components/SafeRichText.ts`、`frontend/src/components/ThinkingDisclosure.vue`、`frontend/src/components/ToolActivity.vue`、`frontend/src/markdown/richText.ts`、`frontend/src/projectors/conversationRounds.ts`、`frontend/src/projectors/runtimeEventProjector.ts`、`frontend/src/style.css` |
 | Postman 核对 | 2026-08-20；只读核对 `Agent Runtime` collection 及真实 SSE 响应 |
-| 更新日期 | 2026-09-08 |
+| 工具参数错误展示基线 | `pi-mono-java@8e4d9914106aab8745e6cba801047af816ce5132`；详细状态规则见 Session Events 前端实现专题 1.5.0 |
+| 更新日期 | 2026-09-22 |
 
 ## 1. 结论
 
@@ -117,7 +118,7 @@ O1 珊瑚色只承担品牌识别，少量绿色表达状态。界面不使用 O
 | `frontend/src/markdown/richText.ts:1-352` | `markdown-it` 15.0.0 只生成 token；自有 allowlist、URL policy、节点/字符预算和稳定尾块逻辑生成受控中间树。raw HTML、图片与不安全链接不能成为活动 DOM。 |
 | `frontend/src/components/SafeRichText.ts` | Assistant、Thinking 与 Tool result 共用固定 Vue VNode 语义渲染，提供表格/代码局部滚动、外链提示、动画帧节流和可配置完成播报；不使用 `v-html` 或 `innerHTML`。 |
 | `frontend/src/projectors/conversationRounds.ts`、`frontend/src/components/AgentRound.vue`、`ConversationTimeline.vue` | 以 User turn 为边界聚合整轮 Agent 活动；每个 Thinking/Tool 保持独立活动块和虚线框；一轮只显示一次 O1 和一个完成态复制图标，复制本轮 Assistant Markdown。 |
-| `frontend/src/components/ThinkingDisclosure.vue`、`ToolActivity.vue` | Thinking 始终使用原生可展开 disclosure 并标记“原始推理”；Tool 当前/失败展开、完成折叠。二者的正文/结果共用安全富文本，工具参数保持结构化纵向排列。 |
+| `frontend/src/components/ThinkingDisclosure.vue`、`ToolActivity.vue` | Thinking 始终使用原生可展开 disclosure 并标记“原始推理”；Tool 的普通失败展开，完成及参数校验失败的调整中/终态折叠。二者的正文/结果共用安全富文本，工具参数保持结构化纵向排列。 |
 | `frontend/src/components/BrandMark.vue`、`frontend/src/assets/campusclaw-mark-o1.png` | 组件直接引用权威透明 PNG，不使用 SVG 重绘、深色底板或裁剪；实现资产与设计资产 SHA-256 相同。 |
 | `frontend/src/composables/useRuntimeApi.test.ts`、`frontend/src/projectors/runtimeEventProjector.test.ts` | Vitest 契约测试覆盖 Session/Model/Control、多页 Events、SSE lowerCamelCase 投影与断流确认/不确定分支。 |
 | `frontend/src/markdown/richText.test.ts` | 覆盖支持语法、标题钳制、表格对齐、HTML/图片/链接安全边界、任务列表、流式稳定尾块和预算降级。 |
@@ -343,7 +344,7 @@ Chat 标题或用户会话列表接口。
 | `assistant.thinking.delta/completed` | 独立 Thinking disclosure | delta 顺序追加 `data.delta.text`；completed 用 `data.content.text` 权威全文替换。没有事件时不创建分析框，原始内容按受限 Markdown 渲染。 |
 | `tool.execution.started` | 独立 Tool disclosure running | 与此前 Assistant tool call 关联；这是工具首次成为可见活动的时刻。每个工具拥有自己的虚线框。 |
 | `tool.execution.completed` | Tool disclosure 状态 | 结束 spinner；失败默认展开，完成默认折叠，等待或合并 `tool.result`。 |
-| `tool.result` | Tool disclosure 结果 | 原始文本进入受限 Markdown 渲染；成功默认折叠，失败默认展开；不另起聊天气泡。 |
+| `tool.result` | Tool disclosure 结果 | 原始文本进入受限 Markdown 渲染；成功默认折叠，普通失败默认展开。`TOOL_ARGUMENTS_INVALID` 保留 `isError=true`，根执行活跃时显示“正在调整调用参数”，终止或断线后显示“参数校验未通过”，两者默认折叠。 |
 | `session.status.idle` | 顶部与 Composer idle | 关闭 running 控件，恢复普通发送。 |
 | `stream.end` | 本轮完成 | 根据 `completed/aborted` 展示轻量结束状态。 |
 | `stream.error` | 可恢复错误提示 | 保留已持久化 turn，提示重新读取历史，不生成伪 Assistant 消息。 |
@@ -510,7 +511,7 @@ spinner/进度文本和 check/“已完成”标签区分，不能只依赖颜�
 - `503`：读取 `Retry-After`，显示可重试状态；不要泄漏执行实例归属信息。
 - `OUTCOME_UNCERTAIN`：保留提交草稿，告知用户先刷新历史，不提供“重试”主动作。
 - `STREAM_INTERRUPTED`：表示 User Entry 已确认但本次流式预览中断；保留已持久化 turn，继续以 GET Events 为权威事实。
-- Tool error：活动 disclosure 默认展开；显示有页面预算的原始输入参数和安全富文本结果，不额外展开未建模的原始事件 payload。
+- Tool error：普通失败的活动 disclosure 默认展开；`TOOL_ARGUMENTS_INVALID` 保留真实失败语义但使用中性折叠状态，活跃根执行显示“正在调整调用参数”，终止或断线后显示“参数校验未通过”。显示有页面预算的原始输入参数和安全富文本结果，不额外展开未建模的原始事件 payload。
 - 长会话：历史虚拟化；分页向上加载；持久化 turn 与 streaming turn 使用稳定 key。
 - 大消息：输入区显示字符计数接近上限；附件最多 32 个，在选择阶段阻止超限。
 - 富文本解析失败或超出安全预算：回退为未截断纯文本并保留整轮复制；不得白屏或把原始
@@ -551,7 +552,7 @@ spinner/进度文本和 check/“已完成”标签区分，不能只依赖颜�
 - Header 编辑器测试：空白尾行、启停、HTTP token、非法值、Fetch 禁止名称+值算法、大小写不敏感重复校验，以及折叠面板展开后聚焦精确错误字段。
 - 请求边界测试：手工同名 Header 覆盖默认值，且临时值只出现在初始 Events POST，不进入
   Session、历史对账、配置或控制请求。
-- Event projector 测试：`entryId/fileIds/assistantEntryId/toolCallId/toolName/isError` 投影、Thinking delta 聚合、completed 权威替换、工具延迟显示、原始参数和 tool result 合并。
+- Event projector 测试：`entryId/fileIds/assistantEntryId/toolCallId/toolName/isError` 投影、Thinking delta 聚合、completed 权威替换、工具延迟显示、原始参数和 tool result 合并，以及参数错误的活跃调整态、停止/确认/断线终态和历史失败不被后续成功覆盖。
 - 富文本测试：段落、标题钳制、列表/任务、引用、强调、代码、GFM table 与显式列对齐。
 - 富文本安全测试：raw HTML、危险/相对 URL、带凭据 URL、远程图片、超深嵌套和预算超限；
   断言无活动 HTML/图片节点且能保留纯文本。
@@ -590,6 +591,7 @@ spinner/进度文本和 check/“已完成”标签区分，不能只依赖颜�
 
 | 版本 | 日期 | 变更 |
 |---|---|---|
+| 0.14.0 | 2026-09-22 | 区分工具参数校验失败的活跃调整态与终止态，并保留真实错误语义。 |
 | 0.13.0 | 2026-09-08 | 新增独立 Session Events 前端实现专题，旧行为和图明确归档；新增 Slash、确认/停止和可靠恢复，保留视觉基线。 |
 | 0.12.2 | 2026-08-28 | 统一 Runtime Event 术语：将只随当前 SSE 发送且不进入 GET Events 的 Assistant 和工具执行事件称为“流式预览事件”；同步断流提示文案，不改变前端代码或线上契约。 |
 | 0.12.1 | 2026-08-28 | 合并 `origin/main@a7a245b4079b53f79eacb96475a1b58a9c3713c7` 并响应 PR #184 评审：折叠 Headers 校验失败时先展开并聚焦精确 Key/Value；按 WHATWG Fetch 名称+值算法校验禁止请求 Header；补充初始实现与修正提交证据；因主分支编号冲突将本决策顺延为 ADR-0034。 |

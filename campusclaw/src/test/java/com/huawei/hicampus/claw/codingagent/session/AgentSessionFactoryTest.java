@@ -5,7 +5,7 @@
 package com.huawei.hicampus.claw.codingagent.session;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatIllegalStateException;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -83,9 +83,8 @@ class AgentSessionFactoryTest {
         ManagedAgentSessionRequest request = mock(ManagedAgentSessionRequest.class);
         when(request.agentId()).thenReturn("agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
 
-        assertThatIllegalStateException()
-                .isThrownBy(() -> factory.create(request))
-                .withMessage("Prepared Agent runtime is unavailable");
+        var failure = assertThrows(IllegalStateException.class, () -> factory.create(request));
+        assertThat(failure).hasMessage("Prepared Agent runtime is unavailable");
     }
 
     @Test
@@ -112,8 +111,7 @@ class AgentSessionFactoryTest {
                 mock(com.huawei.hicampus.claw.codingagent.session.compaction.SessionCompactor.class),
                 new PlanPolicyPromptComposer());
         MateCredentials credentials = MateCredentials.jwt("caller-1", "token-1", "access-token-1");
-        when(mateToolsetFactory.createSession(runtime.agentId(), Map.of(), credentials))
-                .thenReturn(mock(MateToolSessionState.class));
+        when(mateToolsetFactory.createSession(runtime, credentials)).thenReturn(mock(MateToolSessionState.class));
         ManagedAgentSessionRequest request = new ManagedAgentSessionRequest(
                 runtime.agentId(),
                 ToolEntryPoint.RUNTIME,
@@ -136,8 +134,7 @@ class AgentSessionFactoryTest {
         assertThat(first.agent().getState().getThinkingLevel()).isEqualTo(ThinkingLevel.MEDIUM);
         verify(assembler, org.mockito.Mockito.times(2)).assemble(eq(ToolEntryPoint.RUNTIME), any());
         verify(runtimeManager, org.mockito.Mockito.times(2)).prepare(runtime.agentId());
-        verify(mateToolsetFactory, org.mockito.Mockito.times(2))
-                .createSession(runtime.agentId(), Map.of(), credentials);
+        verify(mateToolsetFactory, org.mockito.Mockito.times(2)).createSession(runtime, credentials);
     }
 
     @Test

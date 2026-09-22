@@ -81,8 +81,7 @@ public class AgentSessionFactory {
         MateToolsetFactory mateToolsetFactory = mateToolsetFactoryProvider.getIfAvailable();
         MateToolSessionState mateState = mateToolsetFactory == null
                 ? null
-                : mateToolsetFactory.createSession(
-                        runtime.agentId(), runtime.skillIdsByName(), request.mateCredentials());
+                : mateToolsetFactory.createSession(runtime, request.mateCredentials());
         ToolAssemblyContext context = new ToolAssemblyContext(
                 request.entryPoint(),
                 runtime,

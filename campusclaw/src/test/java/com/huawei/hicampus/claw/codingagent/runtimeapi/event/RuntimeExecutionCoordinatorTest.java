@@ -260,7 +260,7 @@ class RuntimeExecutionCoordinatorTest {
     @Test
     void shouldInstallProjectorAsTrustedConfirmationHandlerBeforePrompt() throws Exception {
         Fixture fixture = fixture();
-        ToolCall call = new ToolCall("call-confirm", "CallMateTool", Map.of("tool", "ask-tool", "args", Map.of()));
+        ToolCall call = new ToolCall("call-confirm", "CallTool", Map.of("tool", "ask-tool", "args", Map.of()));
         RuntimeToolPermissionPolicy policy = mock(RuntimeToolPermissionPolicy.class);
         when(policy.decide(call)).thenReturn(RuntimeToolPermissionPolicy.Decision.ASK);
         fixture.execution.bindToolPermissions(policy);

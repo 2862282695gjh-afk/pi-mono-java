@@ -33,21 +33,20 @@ public final class RuntimeToolCallSnapshotResolver {
 
     private final Map<String, DisplayBinding> mateBindings;
 
-    private RuntimeToolCallSnapshotResolver(
-            List<AgentTool> tools, List<BoundTool> agentTools, List<BoundTool> skillTools) {
+    private RuntimeToolCallSnapshotResolver(List<AgentTool> tools, List<BoundTool> skillTools) {
         toolsByName = indexTools(tools);
-        mateBindings = indexMateBindings(agentTools, skillTools);
+        mateBindings = indexMateBindings(skillTools);
     }
 
     public static RuntimeToolCallSnapshotResolver from(PreparedAgentRuntime runtime, List<AgentTool> tools) {
         List<BoundTool> skillTools = runtime.skills().stream()
                 .flatMap(skill -> skill.bindingTools().stream())
                 .toList();
-        return new RuntimeToolCallSnapshotResolver(tools, runtime.metadata().bindingTools(), skillTools);
+        return new RuntimeToolCallSnapshotResolver(tools, skillTools);
     }
 
     public static RuntimeToolCallSnapshotResolver empty() {
-        return new RuntimeToolCallSnapshotResolver(List.of(), List.of(), List.of());
+        return new RuntimeToolCallSnapshotResolver(List.of(), List.of());
     }
 
     /**
@@ -74,7 +73,7 @@ public final class RuntimeToolCallSnapshotResolver {
         if (call == null || call.name() == null) {
             return null;
         }
-        if (BuiltInToolName.CALL_MATE_TOOL.externalName().equals(call.name())) {
+        if (BuiltInToolName.CALL_TOOL.externalName().equals(call.name())) {
             return resolveMateDisplayName(call);
         }
         AgentTool tool = toolsByName.get(call.name());
@@ -106,10 +105,8 @@ public final class RuntimeToolCallSnapshotResolver {
         return Map.copyOf(indexed);
     }
 
-    private static Map<String, DisplayBinding> indexMateBindings(
-            List<BoundTool> agentTools, List<BoundTool> skillTools) {
+    private static Map<String, DisplayBinding> indexMateBindings(List<BoundTool> skillTools) {
         Map<String, DisplayBinding> indexed = new LinkedHashMap<>();
-        mergeMateBindings(indexed, agentTools);
         mergeMateBindings(indexed, skillTools);
         return Map.copyOf(indexed);
     }

@@ -14,6 +14,7 @@ import com.huawei.hicampus.claw.agent.tool.AgentToolResult;
 import com.huawei.hicampus.claw.agent.tool.AgentToolUpdateCallback;
 import com.huawei.hicampus.claw.agent.tool.CancellationToken;
 import com.huawei.hicampus.claw.agent.tool.ToolExecutionMode;
+import com.huawei.hicampus.claw.agent.tool.ToolInputSchema;
 import com.huawei.hicampus.claw.ai.types.ContentBlock;
 import com.huawei.hicampus.claw.ai.types.TextContent;
 import com.huawei.hicampus.claw.codingagent.tool.ops.FindOperations;
@@ -21,7 +22,6 @@ import com.huawei.hicampus.claw.codingagent.tool.ops.FindOperations.FindResult;
 import com.huawei.hicampus.claw.codingagent.tool.workspace.AgentWorkspaceBoundary;
 import com.huawei.hicampus.claw.codingagent.tool.workspace.WorkspacePathResolver;
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
 /**
@@ -37,7 +37,28 @@ public class FindTool implements AgentTool {
     static final int MAX_BYTES = 50 * 1024;
     private static final String TRUNCATION_MARKER = "\n... (truncated)";
 
-    private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final ObjectNode INPUT_SCHEMA = ToolInputSchema.parse(
+            """
+            {
+              "type": "object",
+              "properties": {
+                "pattern": {
+                  "type": "string",
+                  "description": "Glob pattern to match files, for example '*.java' or '**/*.json'."
+                },
+                "path": {
+                  "type": "string",
+                  "description": "Directory to search in; omitted means the current Agent workspace root."
+                },
+                "limit": {
+                  "type": "number",
+                  "description": "Maximum number of results; omitted means 1000."
+                }
+              },
+              "required": ["pattern"],
+              "additionalProperties": false
+            }
+            """);
 
     private final FindOperations findOperations;
     private final WorkspacePathResolver pathResolver;
@@ -72,17 +93,7 @@ public class FindTool implements AgentTool {
 
     @Override
     public JsonNode parameters() {
-        ObjectNode properties = MAPPER.createObjectNode();
-        properties.set("pattern", stringProperty("Glob pattern to match files, for example '*.java' or '**/*.json'."));
-        properties.set(
-                "path", stringProperty("Directory to search in; omitted means the current Agent workspace root."));
-        properties.set("limit", numberProperty("Maximum number of results; omitted means 1000."));
-        ObjectNode schema = MAPPER.createObjectNode();
-        schema.put("type", "object");
-        schema.set("properties", properties);
-        schema.set("required", MAPPER.createArrayNode().add("pattern"));
-        schema.put("additionalProperties", false);
-        return schema;
+        return INPUT_SCHEMA.deepCopy();
     }
 
     @Override
@@ -130,14 +141,6 @@ public class FindTool implements AgentTool {
             throw new IllegalArgumentException("limit must be greater than zero");
         }
         return Math.min(limit, MAX_LIMIT);
-    }
-
-    private static ObjectNode stringProperty(String description) {
-        return MAPPER.createObjectNode().put("type", "string").put("description", description);
-    }
-
-    private static ObjectNode numberProperty(String description) {
-        return MAPPER.createObjectNode().put("type", "number").put("description", description);
     }
 
     private static AgentToolResult textResult(String text) {

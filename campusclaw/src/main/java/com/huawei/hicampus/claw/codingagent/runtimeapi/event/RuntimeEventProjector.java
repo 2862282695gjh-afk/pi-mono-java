@@ -532,8 +532,9 @@ public class RuntimeEventProjector {
         if (call == null) {
             throw new IllegalStateException("tool result has no finalized tool call");
         }
-        boolean requiresConfirmation = execution.toolPermission(call) == RuntimeToolPermissionPolicy.Decision.ASK;
-        persistToolCall(call, requiresConfirmation);
+
+        // before hook 未开始的调用不能投影为待确认；否则参数失败会生成虚假的确认卡片。
+        persistToolCall(call, false);
     }
 
     private synchronized java.util.concurrent.CompletableFuture<ToolConfirmationDecisionDTO> beginConfirmation(

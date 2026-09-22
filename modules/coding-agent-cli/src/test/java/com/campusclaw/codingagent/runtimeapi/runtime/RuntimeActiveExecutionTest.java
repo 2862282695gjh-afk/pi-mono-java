@@ -6,6 +6,7 @@ package com.campusclaw.codingagent.runtimeapi.runtime;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.util.List;
 import java.util.Map;
@@ -47,7 +48,7 @@ class RuntimeActiveExecutionTest {
             return BeforeToolCallResult.allow();
         });
         BeforeToolCallContext context =
-                context(new ToolCall("call-1", "CallMateTool", Map.of("tool", "unknown", "args", Map.of())));
+                context(new ToolCall("call-1", "CallTool", Map.of("tool", "unknown", "args", Map.of())));
 
         assertThatThrownBy(() -> execution.beforeToolCall(context)).isInstanceOf(RuntimeToolCallDeniedException.class);
         assertThat(handled).hasValue(0);
@@ -129,9 +130,10 @@ class RuntimeActiveExecutionTest {
         var foreign = new ExecutionTargetDTO("session", "other", "root", "segment-1");
         var proposal = new PlanProposalSnapshotDTO(foreign, "assistant-1", "plan-1", "root", "exit-1", "# 方案");
 
-        assertThatThrownBy(() -> execution.beginPlanReview(proposal))
-                .isInstanceOf(com.campusclaw.codingagent.tool.plan.PlanReviewException.class)
-                .hasMessage("PLAN_REVIEW_UNAVAILABLE");
+        var failure = assertThrows(
+                com.campusclaw.codingagent.tool.plan.PlanReviewException.class,
+                () -> execution.beginPlanReview(proposal));
+        assertThat(failure).hasMessage("PLAN_REVIEW_UNAVAILABLE");
     }
 
     @Test
@@ -141,9 +143,8 @@ class RuntimeActiveExecutionTest {
         var signal = new com.campusclaw.agent.tool.CancellationToken();
         signal.cancel();
 
-        assertThatThrownBy(() -> execution.review("exit-1", signal))
-                .isInstanceOf(CancellationException.class)
-                .hasMessage("Plan review was cancelled");
+        var failure = assertThrows(CancellationException.class, () -> execution.review("exit-1", signal));
+        assertThat(failure).hasMessage("Plan review was cancelled");
     }
 
     @Test

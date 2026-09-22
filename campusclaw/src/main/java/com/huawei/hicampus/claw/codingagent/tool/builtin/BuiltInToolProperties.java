@@ -26,8 +26,9 @@ public class BuiltInToolProperties implements InitializingBean {
             BuiltInToolName.GREP,
             BuiltInToolName.LS,
             BuiltInToolName.CRON,
-            BuiltInToolName.LIST_MATE_TOOLS,
-            BuiltInToolName.CALL_MATE_TOOL,
+            BuiltInToolName.SKILL,
+            BuiltInToolName.SEARCH_TOOLS,
+            BuiltInToolName.CALL_TOOL,
             BuiltInToolName.AGENT,
             BuiltInToolName.EXIT_PLAN_MODE,
             BuiltInToolName.TODO_UPDATE,
@@ -38,8 +39,9 @@ public class BuiltInToolProperties implements InitializingBean {
             BuiltInToolName.FIND,
             BuiltInToolName.GREP,
             BuiltInToolName.LS,
-            BuiltInToolName.LIST_MATE_TOOLS,
-            BuiltInToolName.CALL_MATE_TOOL,
+            BuiltInToolName.SKILL,
+            BuiltInToolName.SEARCH_TOOLS,
+            BuiltInToolName.CALL_TOOL,
             BuiltInToolName.AGENT));
 
     private List<String> childAgent = externalNames(List.of(
@@ -47,8 +49,9 @@ public class BuiltInToolProperties implements InitializingBean {
             BuiltInToolName.FIND,
             BuiltInToolName.GREP,
             BuiltInToolName.LS,
-            BuiltInToolName.LIST_MATE_TOOLS,
-            BuiltInToolName.CALL_MATE_TOOL));
+            BuiltInToolName.SKILL,
+            BuiltInToolName.SEARCH_TOOLS,
+            BuiltInToolName.CALL_TOOL));
 
     public List<String> getRuntime() {
         return runtime;

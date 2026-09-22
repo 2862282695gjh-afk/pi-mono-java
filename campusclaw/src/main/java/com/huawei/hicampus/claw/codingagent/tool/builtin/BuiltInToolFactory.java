@@ -7,7 +7,7 @@ package com.huawei.hicampus.claw.codingagent.tool.builtin;
 import com.huawei.hicampus.claw.agent.tool.AgentTool;
 
 /**
- * 按关闭枚举为单个 Session 创建内置工具实例。
+ * 按框架工具枚举为单个 Session 创建工具实例，业务代理由装配器追加。
  *
  * @version [br_eCampusCore 26.0.0, 2026/08/23]
  * @since [br_eCampusCore 26.0.0]

@@ -47,12 +47,13 @@ export interface ActivityTurn {
   toolCallId: string;
   toolName: string;
   displayName?: string;
-  status: 'running' | 'completed' | 'error' | 'confirming' | 'waiting_answer' | 'unconfirmed';
+  status: 'running' | 'completed' | 'error' | 'adjusting' | 'invalid_arguments' | 'confirming' | 'waiting_answer' | 'unconfirmed';
   arguments: ToolArgumentRow[];
   result: string;
   argumentValue?: Record<string, unknown>;
   resultBlocks?: string[];
   hasResult?: boolean;
+  isError?: boolean;
   statusMessage?: string;
   errorCode?: string;
 }

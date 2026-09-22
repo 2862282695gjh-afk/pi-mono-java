@@ -11,6 +11,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
@@ -30,6 +31,7 @@ import com.campusclaw.ai.types.TextContent;
 import com.campusclaw.ai.types.ToolCall;
 import com.campusclaw.ai.types.ToolResultMessage;
 import com.campusclaw.ai.types.Usage;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import org.junit.jupiter.api.Test;
@@ -186,11 +188,71 @@ class ToolExecutionPipelineTest {
                 tool, toolCall, Map.of("query", 1), sampleContext(), new CancellationToken(), events::add);
 
         assertTrue(result.isError());
-        assertEquals("TOOL_ARGUMENTS_INVALID", text(result.content().getFirst()));
+        JsonNode recovery = json(result.content().getFirst());
+        assertEquals("TOOL_ARGUMENTS_INVALID", recovery.path("code").asText());
+        assertEquals("search", recovery.path("tool").asText());
+        assertEquals("not_started", recovery.path("execution").asText());
+        assertEquals("/query", recovery.path("errors").get(0).path("path").asText());
+        assertTrue(recovery.path("definitionComplete").asBoolean());
+        assertEquals(
+                "string",
+                recovery.at("/definition/inputSchema/properties/query/type").asText());
         assertEquals(Map.of("errorCode", "TOOL_ARGUMENTS_INVALID"), result.details());
         assertFalse(beforeCalled.get());
         assertFalse(tool.executed.get());
         assertTrue(events.isEmpty());
+    }
+
+    @Test
+    void oversizedRecoveryShouldSuggestExactSearchOnlyForDisclosableDefinition() {
+        JsonNode recovery = executeRecoveryFailure(
+                true,
+                "Business tool",
+                "x".repeat(com.campusclaw.common.constant.ClawConstants.Tool.MAX_DEFINITION_RESULT_BYTES));
+
+        assertFalse(recovery.path("definitionComplete").asBoolean());
+        assertTrue(recovery.path("message").asText().contains("Use SearchTools with the exact tool name"));
+    }
+
+    @Test
+    void oversizedRecoveryShouldNotSuggestSearchForNonDisclosableDefinition() {
+        JsonNode recovery = executeRecoveryFailure(
+                false,
+                "Framework tool",
+                "x".repeat(com.campusclaw.common.constant.ClawConstants.Tool.MAX_DEFINITION_RESULT_BYTES));
+
+        assertFalse(recovery.path("definitionComplete").asBoolean());
+        assertFalse(recovery.path("message").asText().contains("SearchTools"));
+    }
+
+    @Test
+    void oversizedRecoveryShouldNotSuggestSearchWhenStandaloneDefinitionIsTooLarge() {
+        JsonNode recovery = executeRecoveryFailure(
+                true,
+                "x".repeat(com.campusclaw.common.constant.ClawConstants.Tool.MAX_DEFINITION_RESULT_BYTES),
+                "invalid");
+
+        assertFalse(recovery.path("definitionComplete").asBoolean());
+        assertFalse(recovery.path("message").asText().contains("SearchTools"));
+    }
+
+    @Test
+    void preparesImmutableArgumentsBeforeCallingHook() {
+        var pipeline = new ToolExecutionPipeline();
+        var tool = new MockAgentTool("search", false, false, 0L);
+        Map<String, Object> arguments = new HashMap<>();
+        arguments.put("query", "java");
+        var toolCall = new ToolCall("call-1", "search", arguments);
+        pipeline.setBeforeToolCall(context -> {
+            assertEquals("java", context.preparedInvocation().arguments().get("query"));
+            arguments.put("query", "changed");
+            return BeforeToolCallResult.allow();
+        });
+
+        var result = pipeline.execute(tool, toolCall, arguments, sampleContext(), new CancellationToken(), null);
+
+        assertFalse(result.isError());
+        assertEquals("final:java", text(result.content().getFirst()));
     }
 
     @Test
@@ -292,8 +354,27 @@ class ToolExecutionPipelineTest {
         return new AgentContext(assistantMessage, List.of(assistantMessage));
     }
 
+    private JsonNode executeRecoveryFailure(boolean searchable, String description, String errorMessage) {
+        var pipeline = new ToolExecutionPipeline();
+        var tool = new RecoveryFailingTool(description, errorMessage, searchable);
+        var call = new ToolCall("call-recovery", "recovery", Map.of());
+
+        var result = pipeline.execute(tool, call, Map.of(), sampleContext(), new CancellationToken(), null);
+
+        assertTrue(result.isError());
+        return json(result.content().getFirst());
+    }
+
     private String text(ContentBlock block) {
         return ((TextContent) block).text();
+    }
+
+    private JsonNode json(ContentBlock block) {
+        try {
+            return new ObjectMapper().readTree(text(block));
+        } catch (com.fasterxml.jackson.core.JsonProcessingException error) {
+            throw new AssertionError(error);
+        }
     }
 
     private static final class MockAgentTool implements AgentTool {
@@ -396,6 +477,61 @@ class ToolExecutionPipelineTest {
                     currentConcurrency.decrementAndGet();
                 }
             }
+        }
+    }
+
+    private static final class RecoveryFailingTool implements AgentTool {
+
+        private final String description;
+        private final String errorMessage;
+        private final boolean searchable;
+        private final ObjectMapper mapper = new ObjectMapper();
+
+        private RecoveryFailingTool(String description, String errorMessage, boolean searchable) {
+            this.description = description;
+            this.errorMessage = errorMessage;
+            this.searchable = searchable;
+        }
+
+        @Override
+        public String name() {
+            return "recovery";
+        }
+
+        @Override
+        public String label() {
+            return name();
+        }
+
+        @Override
+        public String description() {
+            return description;
+        }
+
+        @Override
+        public JsonNode parameters() {
+            return mapper.createObjectNode().put("type", "object");
+        }
+
+        @Override
+        public PreparedToolInvocation prepare(String toolCallId, Map<String, Object> params) {
+            var schema = mapper.createObjectNode().put("type", "object");
+            throw new ToolArgumentsInvalidException(
+                    "invalid",
+                    name(),
+                    description,
+                    schema,
+                    List.of(new ToolArgumentsInvalidException.ValidationError("/value", errorMessage)),
+                    searchable);
+        }
+
+        @Override
+        public AgentToolResult execute(
+                String toolCallId,
+                Map<String, Object> params,
+                CancellationToken signal,
+                AgentToolUpdateCallback onUpdate) {
+            throw new AssertionError("Recovery failure must stop before execution");
         }
     }
 

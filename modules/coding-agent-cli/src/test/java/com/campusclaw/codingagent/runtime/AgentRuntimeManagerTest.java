@@ -852,13 +852,18 @@ class AgentRuntimeManagerTest {
 
     private static void assertAskPermissions(PreparedAgentRuntime runtime) {
         RuntimeToolPermissionPolicy policy = RuntimeToolPermissionPolicy.from(runtime);
-        assertEquals(RuntimeToolPermissionPolicy.Decision.ASK, policy.decide(toolCall("isolate_port")));
-        assertEquals(RuntimeToolPermissionPolicy.Decision.ASK, policy.decide(toolCall("rotate_secret")));
-        assertEquals(RuntimeToolPermissionPolicy.Decision.DENY, policy.decide(toolCall("future_tool")));
+        assertEquals(RuntimeToolPermissionPolicy.Decision.ASK, policy.decide(agentToolCall("isolate_port")));
+        assertEquals(RuntimeToolPermissionPolicy.Decision.ASK, policy.decide(callTool("rotate_secret")));
+        assertEquals(RuntimeToolPermissionPolicy.Decision.DENY, policy.decide(agentToolCall("future_tool")));
+        assertEquals(RuntimeToolPermissionPolicy.Decision.DENY, policy.decide(callTool("isolate_port")));
     }
 
-    private static ToolCall toolCall(String toolName) {
-        return new ToolCall("call-1", "CallMateTool", Map.of("tool", toolName, "args", Map.of()));
+    private static ToolCall callTool(String toolName) {
+        return new ToolCall("call-1", "CallTool", Map.of("tool", toolName, "args", Map.of()));
+    }
+
+    private static ToolCall agentToolCall(String toolName) {
+        return new ToolCall("call-1", toolName, Map.of());
     }
 
     private static void removeJsonField(Path file, String field) throws Exception {

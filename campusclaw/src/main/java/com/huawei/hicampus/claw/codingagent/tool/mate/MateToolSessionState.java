@@ -4,34 +4,33 @@
 
 package com.huawei.hicampus.claw.codingagent.tool.mate;
 
-import com.huawei.hicampus.claw.codingagent.common.client.mate.MateCredentials;
-import com.huawei.hicampus.claw.codingagent.common.client.mate.MateToolClient;
+import java.util.List;
+
+import com.huawei.hicampus.claw.agent.tool.AgentTool;
 
 /**
- * 保存单个 Session 共享的 Mate 发现状态并按需创建工具实例。
+ * 保存单个 Session 共享的 Mate 执行器并按需创建工具实例。
  *
  * @version [br_eCampusCore 26.0.0, 2026/08/24]
  * @since [br_eCampusCore 26.0.0]
  */
 public class MateToolSessionState {
 
-    private final MateToolClient client;
+    private final MateToolExecutor executor;
 
-    private final MateCredentials credentials;
-
-    private final MateToolDiscovery discovery;
-
-    MateToolSessionState(MateToolClient client, MateCredentials credentials, MateToolDiscovery discovery) {
-        this.client = client;
-        this.credentials = credentials;
-        this.discovery = discovery;
+    MateToolSessionState(MateToolExecutor executor) {
+        this.executor = executor;
     }
 
-    public ListMateToolsTool createListTool() {
-        return new ListMateToolsTool(discovery);
+    public List<AgentTool> createAgentToolAdapters() {
+        return executor.createAgentToolAdapters();
     }
 
-    public CallMateTool createCallTool() {
-        return new CallMateTool(client, credentials, discovery);
+    public CallTool createCallTool() {
+        return new CallTool(executor);
+    }
+
+    public SearchTools createSearchTools() {
+        return new SearchTools(executor);
     }
 }

@@ -11,6 +11,11 @@ import static org.mockito.Mockito.when;
 import java.util.List;
 import java.util.Map;
 
+import com.huawei.hicampus.claw.agent.tool.AgentToolResult;
+import com.huawei.hicampus.claw.agent.tool.AgentToolUpdateCallback;
+import com.huawei.hicampus.claw.agent.tool.BeforeToolCallContext;
+import com.huawei.hicampus.claw.agent.tool.CancellationToken;
+import com.huawei.hicampus.claw.agent.tool.PreparedToolInvocation;
 import com.huawei.hicampus.claw.ai.types.ToolCall;
 import com.huawei.hicampus.claw.codingagent.runtime.MateServiceClient.AgentRuntime;
 import com.huawei.hicampus.claw.codingagent.runtime.MateServiceClient.BoundTool;
@@ -27,26 +32,53 @@ import org.junit.jupiter.api.Test;
  */
 class RuntimeToolPermissionPolicyTest {
     @Test
-    void shouldResolveMateWrapperPermissionFromRuntimeSnapshot() {
+    void shouldResolveAgentAndSkillPermissionFromTheirOwnTrustedScopes() {
         PreparedAgentRuntime runtime = runtime(
                 List.of(tool("read_ports", "allow"), tool("isolate_port", "ask")),
                 List.of(tool("delete_route", "deny")));
         RuntimeToolPermissionPolicy policy = RuntimeToolPermissionPolicy.from(runtime);
 
-        assertThat(policy.decide(call("read_ports"))).isEqualTo(RuntimeToolPermissionPolicy.Decision.ALLOW);
-        assertThat(policy.decide(call("isolate_port"))).isEqualTo(RuntimeToolPermissionPolicy.Decision.ASK);
-        assertThat(policy.decide(call("delete_route"))).isEqualTo(RuntimeToolPermissionPolicy.Decision.DENY);
-        assertThat(policy.decide(call("unknown"))).isEqualTo(RuntimeToolPermissionPolicy.Decision.DENY);
+        assertThat(policy.decide(agentCall("read_ports"))).isEqualTo(RuntimeToolPermissionPolicy.Decision.ALLOW);
+        assertThat(policy.decide(agentCall("isolate_port"))).isEqualTo(RuntimeToolPermissionPolicy.Decision.ASK);
+        assertThat(policy.decide(callTool("delete_route"))).isEqualTo(RuntimeToolPermissionPolicy.Decision.DENY);
+        assertThat(policy.decide(callTool("read_ports"))).isEqualTo(RuntimeToolPermissionPolicy.Decision.DENY);
+        assertThat(policy.decide(agentCall("delete_route"))).isEqualTo(RuntimeToolPermissionPolicy.Decision.DENY);
+        assertThat(policy.decide(agentCall("unknown"))).isEqualTo(RuntimeToolPermissionPolicy.Decision.DENY);
         assertThat(policy.decide(new ToolCall("call-read", "Read", Map.of())))
                 .isEqualTo(RuntimeToolPermissionPolicy.Decision.ALLOW);
     }
 
     @Test
-    void shouldDenyConflictingPermissionsAcrossTrustedSources() {
+    void shouldKeepOverlappingAgentAndSkillPermissionsIndependent() {
         PreparedAgentRuntime runtime = runtime(List.of(tool("shared", "allow")), List.of(tool("shared", "ask")));
 
-        assertThat(RuntimeToolPermissionPolicy.from(runtime).decide(call("shared")))
+        RuntimeToolPermissionPolicy policy = RuntimeToolPermissionPolicy.from(runtime);
+
+        assertThat(policy.decide(agentCall("shared"))).isEqualTo(RuntimeToolPermissionPolicy.Decision.ALLOW);
+        assertThat(policy.decide(callTool("shared"))).isEqualTo(RuntimeToolPermissionPolicy.Decision.ASK);
+    }
+
+    @Test
+    void shouldDenyConflictingPermissionsWithinOneScope() {
+        PreparedAgentRuntime runtime = runtime(List.of(), List.of(tool("shared", "allow"), tool("shared", "ask")));
+
+        assertThat(RuntimeToolPermissionPolicy.from(runtime).decide(callTool("shared")))
                 .isEqualTo(RuntimeToolPermissionPolicy.Decision.DENY);
+    }
+
+    @Test
+    void shouldAuthorizePreparedTargetIdentityInsteadOfMutableOuterArguments() {
+        PreparedAgentRuntime runtime = runtime(List.of(), List.of(tool("shared", "ask")));
+        RuntimeToolPermissionPolicy policy = RuntimeToolPermissionPolicy.from(runtime);
+        ToolCall outerCall = callTool("other");
+        String trustedId = "tool-11111111111111111111111111111111";
+        BeforeToolCallContext trusted = new BeforeToolCallContext(
+                null, outerCall, outerCall.arguments(), null, new PermissionInvocation("shared", trustedId));
+        BeforeToolCallContext wrongId = new BeforeToolCallContext(
+                null, outerCall, outerCall.arguments(), null, new PermissionInvocation("shared", "tool-wrong"));
+
+        assertThat(policy.decide(trusted)).isEqualTo(RuntimeToolPermissionPolicy.Decision.ASK);
+        assertThat(policy.decide(wrongId)).isEqualTo(RuntimeToolPermissionPolicy.Decision.DENY);
     }
 
     private static PreparedAgentRuntime runtime(List<BoundTool> agentTools, List<BoundTool> skillTools) {
@@ -61,10 +93,38 @@ class RuntimeToolPermissionPolicyTest {
     }
 
     private static BoundTool tool(String name, String permission) {
-        return new BoundTool(null, null, "tool-id", null, name, permission, null, null);
+        return new BoundTool(null, null, "tool-11111111111111111111111111111111", null, name, permission, null, null);
     }
 
-    private static ToolCall call(String tool) {
-        return new ToolCall("call-id", "CallMateTool", Map.of("tool", tool, "args", Map.of()));
+    private static ToolCall callTool(String tool) {
+        return new ToolCall("call-id", "CallTool", Map.of("tool", tool, "args", Map.of()));
+    }
+
+    private static ToolCall agentCall(String tool) {
+        return new ToolCall("call-id", tool, Map.of());
+    }
+
+    private record PermissionInvocation(String authorizationTargetName, String authorizationTargetId)
+            implements PreparedToolInvocation {
+
+        @Override
+        public String toolCallId() {
+            return "call-id";
+        }
+
+        @Override
+        public String toolName() {
+            return "CallTool";
+        }
+
+        @Override
+        public Map<String, Object> arguments() {
+            return Map.of("tool", authorizationTargetName, "args", Map.of());
+        }
+
+        @Override
+        public AgentToolResult execute(CancellationToken signal, AgentToolUpdateCallback onUpdate) {
+            throw new AssertionError("permission test must not execute the tool");
+        }
     }
 }

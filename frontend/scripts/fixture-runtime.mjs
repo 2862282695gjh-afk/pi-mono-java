@@ -25,7 +25,7 @@ function startMessage(response, input) {
   rootId = receipt.eventId; session.state = 'running'; version++;
   stream(response, [receipt,
     make('agent.thinking', { phase: 'completed', sourceEventId: rootId, content: '先核对巡检范围，再查询公开的园区记录。' }),
-    make('agent.tool_call', { sourceEventId: rootId, toolCallId: `tool-${rootId}`, toolName: 'CallMateTool', displayName: '查询园区巡检记录',
+    make('agent.tool_call', { sourceEventId: rootId, toolCallId: `tool-${rootId}`, toolName: 'CallTool', displayName: '查询园区巡检记录',
       arguments: { tool: 'query_inspections', args: { campus: '东区' } }, requiresConfirmation: true }),
     make('session.status_idle', { sourceEventId: rootId, reason: 'confirming' }),
   ]);

@@ -129,11 +129,11 @@ class RuntimeCommittedEventFactoryTest {
     @Test
     void shouldKeepToolArgumentsAndFallbackToStableError() {
         RuntimeEntryDTO callEntry = entry("entry_call", "assistant.message.completed");
-        ToolCall call = new ToolCall("call-1", "CallMateTool", Map.of("tool", "inspect"));
+        ToolCall call = new ToolCall("call-1", "CallTool", Map.of("tool", "inspect"));
         var callFrame = encoder.committed(
                 factory.agentToolCall(callEntry, "event_call", call, true, "event_user", "  Inspect records  "));
         ToolResultMessage failed = new ToolResultMessage(
-                "call-1", "CallMateTool", List.of(new TextContent("private gateway failure")), null, true, 1L);
+                "call-1", "CallTool", List.of(new TextContent("private gateway failure")), null, true, 1L);
         var resultFrame = encoder.committed(factory.agentToolResult(
                 entry("entry_result", "tool.result"), "event_result", failed, "event_user", java.util.Locale.US));
 

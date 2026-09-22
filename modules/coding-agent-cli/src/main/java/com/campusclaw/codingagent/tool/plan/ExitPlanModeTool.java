@@ -12,11 +12,13 @@ import com.campusclaw.agent.tool.AgentToolResult;
 import com.campusclaw.agent.tool.AgentToolUpdateCallback;
 import com.campusclaw.agent.tool.CancellationToken;
 import com.campusclaw.agent.tool.ToolArgumentsInvalidException;
+import com.campusclaw.agent.tool.ToolInputSchema;
 import com.campusclaw.ai.types.ContentBlock;
 import com.campusclaw.ai.types.TextContent;
 import com.campusclaw.codingagent.tool.builtin.BuiltInToolName;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 
 /**
  * 绑定当前响应中的完整计划并等待用户审核的 Runtime 根工具。
@@ -26,6 +28,15 @@ import com.fasterxml.jackson.databind.ObjectMapper;
  */
 public class ExitPlanModeTool implements AgentTool {
     private static final ObjectMapper MAPPER = new ObjectMapper();
+
+    private static final ObjectNode INPUT_SCHEMA = ToolInputSchema.parse(
+            """
+            {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": false
+            }
+            """);
 
     private static final String DESCRIPTION = "Submit the proposed plan for review while the Main Agent is in plan "
             + "mode. First write one complete Markdown plan, beginning with a level-one heading, inside "
@@ -65,9 +76,7 @@ public class ExitPlanModeTool implements AgentTool {
 
     @Override
     public JsonNode parameters() {
-        var schema = MAPPER.createObjectNode().put("type", "object");
-        schema.putObject("properties");
-        return schema.put("additionalProperties", false);
+        return INPUT_SCHEMA.deepCopy();
     }
 
     @Override
