@@ -32,7 +32,7 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 
 /**
- * Session Event 提交 SSE 与当前分支历史分页接口。
+ * Session Event 提交 SSE 与单条时间线历史分页接口。
  *
  * @version [br_eCampusCore 26.0.0, 2026/08/18]
  * @since [br_eCampusCore 26.0.0]

@@ -15,7 +15,7 @@ import com.campusclaw.codingagent.runtimeapi.persistence.RuntimeSessionRepositor
 import org.springframework.stereotype.Service;
 
 /**
- * 把当前 Session 分支的内部 Entry 恢复为 Agent 历史。
+ * 把 Session 单条时间线的内部 Entry 恢复为 Agent 历史。
  *
  * @version [br_eCampusCore 26.0.0, 2026/08/19]
  * @since [br_eCampusCore 26.0.0]
@@ -35,9 +35,11 @@ public class RuntimeContextHistoryService {
 
     public List<Message> restoreHistory(String sessionId, Model model) {
         List<RuntimeEntryDTO> entries = new ArrayList<>();
+        long upperBound = repository.findTimelineUpperBound(sessionId);
         long afterSeq = 0L;
         while (true) {
-            List<RuntimeEntryDTO> batch = repository.listCurrentBranchEntries(sessionId, afterSeq, RESTORE_BATCH_SIZE);
+            List<RuntimeEntryDTO> batch =
+                    repository.listTimelineEntries(sessionId, afterSeq, upperBound, RESTORE_BATCH_SIZE);
             entries.addAll(batch);
             if (batch.size() < RESTORE_BATCH_SIZE) {
                 break;

@@ -9,7 +9,7 @@ import java.util.List;
 import lombok.Getter;
 
 /**
- * Session 当前分支完整事件的整数分页响应。
+ * Session 单条时间线完整事件的整数分页响应。
  *
  * @version [br_eCampusCore 26.0.0, 2026/09/08]
  * @since [br_eCampusCore 26.0.0]

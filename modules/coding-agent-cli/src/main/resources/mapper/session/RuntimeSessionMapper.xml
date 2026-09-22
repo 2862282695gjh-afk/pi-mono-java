@@ -171,117 +171,78 @@
     </update>
 
 
-    <select id="listCurrentBranchEntries" resultType="com.campusclaw.codingagent.runtimeapi.dto.RuntimeEntryDTO">
-        WITH RECURSIVE current_path (
-            session_id, id, entry_seq, parent_id, type, timestamp, payload
-        ) AS (
-            SELECT entry.session_id, entry.id, entry.entry_seq, entry.parent_id,
-                   entry.type, entry.timestamp, entry.payload
-            FROM t_session_entries entry
-            JOIN t_sessions session
-              ON session.id = entry.session_id
-             AND session.active_leaf_id = entry.id
-            WHERE session.id = #{sessionId}
-            UNION ALL
-            SELECT parent.session_id, parent.id, parent.entry_seq, parent.parent_id,
-                   parent.type, parent.timestamp, parent.payload
-            FROM t_session_entries parent
-            JOIN current_path child
-              ON child.session_id = parent.session_id
-             AND child.parent_id = parent.id
-        )
+    <select id="findTimelineUpperBound" resultType="long">
+        SELECT COALESCE(MAX(entry_seq), 0)
+        FROM t_session_entries
+        WHERE session_id = #{sessionId}
+    </select>
+
+    <select id="listTimelineEntries" resultType="com.campusclaw.codingagent.runtimeapi.dto.RuntimeEntryDTO">
         SELECT session_id, id, entry_seq, parent_id, type, timestamp,
                payload::text AS payload
-        FROM current_path
-        WHERE entry_seq &gt; #{afterSeq}
+        FROM t_session_entries
+        WHERE session_id = #{sessionId}
+          AND entry_seq &gt; #{afterSeq}
+          AND entry_seq &lt;= #{upperBound}
         ORDER BY entry_seq
         LIMIT #{limit}
     </select>
 
     <select id="listCommittedEvents" resultType="com.campusclaw.codingagent.runtimeapi.dto.CommittedEventDTO">
-        WITH RECURSIVE current_path (session_id, id, parent_id) AS (
-            SELECT entry.session_id, entry.id, entry.parent_id
-            FROM t_session_entries entry
-            JOIN t_sessions session
-              ON session.id = entry.session_id
-             AND session.active_leaf_id = entry.id
-            WHERE session.id = #{sessionId}
-            UNION ALL
-            SELECT parent.session_id, parent.id, parent.parent_id
-            FROM t_session_entries parent
-            JOIN current_path child
-              ON child.session_id = parent.session_id
-             AND child.parent_id = parent.id
-        )
         SELECT event.session_id, event.event_id, event.event_seq, event.anchor_entry_id,
                event.type, event.created_at, event.payload::text AS payload
         FROM t_session_events event
-        JOIN current_path path
-          ON path.session_id = event.session_id
-         AND path.id = event.anchor_entry_id
         WHERE event.session_id = #{sessionId}
         ORDER BY event.event_seq
         OFFSET #{offset}
         LIMIT #{limit}
     </select>
 
-    <select id="countUnmappedCurrentBranchEntries" resultType="long">
-        WITH RECURSIVE current_path (session_id, id, parent_id, type) AS (
-            SELECT entry.session_id, entry.id, entry.parent_id, entry.type
-            FROM t_session_entries entry
-            JOIN t_sessions session
-              ON session.id = entry.session_id
-             AND session.active_leaf_id = entry.id
-            WHERE session.id = #{sessionId}
-            UNION ALL
-            SELECT parent.session_id, parent.id, parent.parent_id, parent.type
-            FROM t_session_entries parent
-            JOIN current_path child
-              ON child.session_id = parent.session_id
-             AND child.parent_id = parent.id
-        ), event_counts AS (
+    <select id="countUnmappedTimelineEntries" resultType="long">
+        WITH event_counts AS (
             SELECT event.session_id, event.anchor_entry_id, COUNT(1) AS event_count
             FROM t_session_events event
             WHERE event.session_id = #{sessionId}
             GROUP BY event.session_id, event.anchor_entry_id
         )
         SELECT COUNT(1)
-        FROM current_path entry
+        FROM t_session_entries entry
         LEFT JOIN t_session_event_projection projection
           ON projection.session_id = entry.session_id
          AND projection.anchor_entry_id = entry.id
         LEFT JOIN event_counts actual
           ON actual.session_id = entry.session_id
          AND actual.anchor_entry_id = entry.id
-        WHERE entry.type NOT IN (
-            'user.message', 'user.interrupt', 'user.tool_confirmation', 'user.plan_confirmation',
-            'user.question_answer',
-            'assistant.message.completed', 'assistant.thinking.completed',
-            'tool.execution.started', 'tool.result', 'agent.plan', 'agent.question',
-            'session.model.changed', 'session.thinking.changed', 'session.mode.changed', 'session.compaction.started',
-            'session.compaction.completed', 'session.compaction.failed', 'session.status.idle',
-            'leaf', 'branch_summary', 'label'
-        )
-        OR projection.anchor_entry_id IS NULL
-        OR projection.event_count != COALESCE(actual.event_count, 0)
-        OR (
-            entry.type IN (
+        WHERE entry.session_id = #{sessionId}
+          AND (
+            entry.type NOT IN (
                 'user.message', 'user.interrupt', 'user.tool_confirmation', 'user.plan_confirmation',
                 'user.question_answer',
-                'assistant.message.completed', 'tool.result', 'agent.plan', 'agent.question',
-                'tool.execution.started',
-                'session.model.changed', 'session.thinking.changed', 'session.mode.changed', 'session.compaction.completed',
-                'session.status.idle'
+                'assistant.message.completed', 'assistant.thinking.completed',
+                'tool.execution.started', 'tool.result', 'agent.plan', 'agent.question',
+                'session.model.changed', 'session.thinking.changed', 'session.mode.changed', 'session.compaction.started',
+                'session.compaction.completed', 'session.compaction.failed', 'session.status.idle'
             )
-            AND projection.event_count &lt; 1
-        )
-        OR (
-            entry.type IN (
-                'session.compaction.started', 'session.compaction.failed',
-                'leaf', 'branch_summary', 'label'
+            OR projection.anchor_entry_id IS NULL
+            OR projection.event_count != COALESCE(actual.event_count, 0)
+            OR (
+                entry.type IN (
+                    'user.message', 'user.interrupt', 'user.tool_confirmation', 'user.plan_confirmation',
+                    'user.question_answer',
+                    'assistant.message.completed', 'tool.result', 'agent.plan', 'agent.question',
+                    'tool.execution.started',
+                    'session.model.changed', 'session.thinking.changed', 'session.mode.changed',
+                    'session.compaction.completed', 'session.status.idle'
+                )
+                AND projection.event_count &lt; 1
             )
-            AND projection.event_count != 0
-        )
+            OR (
+                entry.type IN (
+                    'session.compaction.started', 'session.compaction.failed'
+                )
+                AND projection.event_count != 0
+            )
+          )
     </select>
 
     <select id="findCommittedEvent"

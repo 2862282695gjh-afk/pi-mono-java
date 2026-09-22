@@ -126,8 +126,7 @@ class RuntimeCompactionAdmissionOpenGaussIT {
         assertThat(current.getResourceVersion()).isEqualTo(version + 1);
         assertThat(current.getActiveLeafId()).isEqualTo(observed.session().getActiveLeafId());
         assertThat(persistentState().subList(1, before.size())).isEqualTo(before.subList(1, before.size()));
-        assertThat(repository.listCurrentBranchEntries(session.getId(), 0L, 500))
-                .isEqualTo(observed.entries());
+        assertThat(timelineEntries(repository, session.getId(), 0L, 500)).isEqualTo(observed.entries());
         assertThat(repository.observeCompaction(session.getId()).orElseThrow().entries())
                 .isEmpty();
         assertThat(repository.acceptCompaction(observed.session(), now)).isEqualTo(CompactionAcceptanceStatus.BUSY);
@@ -226,7 +225,7 @@ class RuntimeCompactionAdmissionOpenGaussIT {
             assertThat(child.exitValue()).isZero();
             assertThat(Files.readString(result, StandardCharsets.UTF_8))
                     .isEqualTo(contender.equals("observe") ? "running:0" : "BUSY");
-            assertThat(repository.listCurrentBranchEntries(session.getId(), 0L, 500))
+            assertThat(timelineEntries(repository, session.getId(), 0L, 500))
                     .hasSize(contender.equals("compact") ? 1 : 2);
         } finally {
             if (childReference.get() != null) {
@@ -268,6 +267,12 @@ class RuntimeCompactionAdmissionOpenGaussIT {
             Thread.currentThread().interrupt();
             throw new AssertionError(error);
         }
+    }
+
+    private static List<RuntimeEntryDTO> timelineEntries(
+            RuntimeSessionRepository repository, String sessionId, long afterSeq, int limit) {
+        long upperBound = repository.findTimelineUpperBound(sessionId);
+        return repository.listTimelineEntries(sessionId, afterSeq, upperBound, limit);
     }
 
     private void seedHistory() {

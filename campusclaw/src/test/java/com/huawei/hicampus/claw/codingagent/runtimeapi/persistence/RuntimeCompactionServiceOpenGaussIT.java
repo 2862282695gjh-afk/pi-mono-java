@@ -237,7 +237,7 @@ class RuntimeCompactionServiceOpenGaussIT {
         assertThat(summary.tryEmitValue(response(StopReason.STOP))).isEqualTo(Sinks.EmitResult.OK);
         assertThat(execution.result().toCompletableFuture().get(5, TimeUnit.SECONDS))
                 .isEqualTo(new RuntimeCompactionResultDTO(true, 3L));
-        var entries = repository.listCurrentBranchEntries(session.getId(), 0L, 500);
+        var entries = timelineEntries(repository, session.getId(), 0L, 500);
         assertThat(entries)
                 .extracting(RuntimeEntryDTO::getType)
                 .containsExactly("user.message", "user.message", "session.compaction.completed");
@@ -257,9 +257,7 @@ class RuntimeCompactionServiceOpenGaussIT {
                 .isEqualTo(12L);
         assertReleased(7L);
         try (var restarted = new AnnotationConfigApplicationContext(OpenGaussTestConfiguration.class)) {
-            var restored = restarted
-                    .getBean(RuntimeSessionRepository.class)
-                    .listCurrentBranchEntries(session.getId(), 0L, 500);
+            var restored = timelineEntries(restarted.getBean(RuntimeSessionRepository.class), session.getId(), 0L, 500);
             var messages = codec.toAgentMessages(restored, model());
             assertThat(messages).hasSize(2).allSatisfy(message -> assertThat(message)
                     .isInstanceOf(UserMessage.class));
@@ -277,8 +275,7 @@ class RuntimeCompactionServiceOpenGaussIT {
         assertThat(summary.tryEmitError(new IllegalStateException("model unavailable")))
                 .isEqualTo(Sinks.EmitResult.OK);
         assertThatThrownBy(result::join).hasRootCauseMessage("model unavailable");
-        assertThat(repository.listCurrentBranchEntries(session.getId(), 0L, 500))
-                .hasSize(2);
+        assertThat(timelineEntries(repository, session.getId(), 0L, 500)).hasSize(2);
         assertThat(jdbc.queryForList("SELECT * FROM t_session_records WHERE session_id=?", session.getId()))
                 .isEmpty();
         assertReleased(7L);
@@ -352,15 +349,14 @@ class RuntimeCompactionServiceOpenGaussIT {
             if (outcome.equals("interrupt")) {
                 assertThat(invocation.interrupt()).isTrue();
                 assertThatThrownBy(result::join).hasRootCauseMessage("COMMAND_EXECUTION_FAILED");
-                assertThat(repository.listCurrentBranchEntries(session.getId(), 0L, 500))
+                assertThat(timelineEntries(repository, session.getId(), 0L, 500))
                         .hasSize(2);
                 assertThat(jdbc.queryForList("SELECT * FROM t_session_records WHERE session_id=?", session.getId()))
                         .isEmpty();
             } else {
                 assertThat(summary.tryEmitValue(response(StopReason.STOP))).isEqualTo(Sinks.EmitResult.OK);
                 assertThat(result.get(5L, TimeUnit.SECONDS)).isEqualTo(new RuntimeCompactionResultDTO(true, 3L));
-                assertThat(repository
-                                .listCurrentBranchEntries(session.getId(), 0L, 500)
+                assertThat(timelineEntries(repository, session.getId(), 0L, 500)
                                 .getLast()
                                 .getType())
                         .isEqualTo("session.compaction.completed");
@@ -378,6 +374,12 @@ class RuntimeCompactionServiceOpenGaussIT {
                     .isEqualTo(UserEventAcceptance.Status.ACCEPTED);
             repository.finishExecution(session.getId(), now);
         }
+    }
+
+    private static List<RuntimeEntryDTO> timelineEntries(
+            RuntimeSessionRepository repository, String sessionId, long afterSeq, int limit) {
+        long upperBound = repository.findTimelineUpperBound(sessionId);
+        return repository.listTimelineEntries(sessionId, afterSeq, upperBound, limit);
     }
 
     private RuntimeEntryDTO user(String id) {
