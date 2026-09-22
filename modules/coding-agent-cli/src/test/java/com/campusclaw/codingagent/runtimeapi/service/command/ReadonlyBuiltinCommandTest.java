@@ -17,6 +17,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
 
+import com.campusclaw.codingagent.runtime.AgentRuntimeException;
 import com.campusclaw.codingagent.runtime.AgentRuntimeManager;
 import com.campusclaw.codingagent.runtime.MateServiceClient.AgentRuntime;
 import com.campusclaw.codingagent.runtime.PreparedAgentRuntime;
@@ -109,6 +110,23 @@ class ReadonlyBuiltinCommandTest {
                 });
         verify(manager).prepareCached("agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
         verifyNoMoreInteractions(manager);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"idle", "running"})
+    void shouldReportAgentUnavailableWhenPublishedCacheCannotBeRead(String state) {
+        var failure = new AgentRuntimeException("Published Agent settings are invalid");
+        when(manager.prepareCached("agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")).thenThrow(failure);
+
+        assertThatThrownBy(() -> execute(session(state), "help", ""))
+                .isInstanceOfSatisfying(RuntimeApiException.class, error -> {
+                    assertThat(error.errorCode()).isEqualTo(RuntimeErrorCode.AGENT_NOT_AVAILABLE);
+                    assertThat(error.status().value()).isEqualTo(422);
+                    assertThat(error.getCause()).isSameAs(failure);
+                });
+        verify(manager).prepareCached("agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+        verifyNoMoreInteractions(manager);
+        verifyNoInteractions(repository);
     }
 
     @ParameterizedTest

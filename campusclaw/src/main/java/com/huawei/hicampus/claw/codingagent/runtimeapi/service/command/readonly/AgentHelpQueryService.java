@@ -6,6 +6,7 @@ package com.huawei.hicampus.claw.codingagent.runtimeapi.service.command.readonly
 
 import java.util.List;
 
+import com.huawei.hicampus.claw.codingagent.runtime.AgentRuntimeException;
 import com.huawei.hicampus.claw.codingagent.runtime.AgentRuntimeManager;
 import com.huawei.hicampus.claw.codingagent.runtime.PreparedAgentRuntime;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.dto.command.CommandSessionSnapshotDTO;
@@ -33,7 +34,7 @@ public class AgentHelpQueryService {
         if (arguments != null && !arguments.isBlank()) {
             throw new RuntimeApiException(RuntimeErrorCode.INVALID_COMMAND_REQUEST);
         }
-        PreparedAgentRuntime prepared = agentRuntimeManager.prepareCached(session.agentId());
+        PreparedAgentRuntime prepared = loadCachedRuntime(session.agentId());
         if (prepared == null || prepared.metadata() == null) {
             throw new RuntimeApiException(RuntimeErrorCode.AGENT_NOT_AVAILABLE);
         }
@@ -47,6 +48,14 @@ public class AgentHelpQueryService {
         }
         return new HelpCommandResultDTO(
                 displayName.strip(), visibleText(metadata.description()), visibleText(metadata.useCases()));
+    }
+
+    private PreparedAgentRuntime loadCachedRuntime(String agentId) {
+        try {
+            return agentRuntimeManager.prepareCached(agentId);
+        } catch (AgentRuntimeException exception) {
+            throw new RuntimeApiException(RuntimeErrorCode.AGENT_NOT_AVAILABLE, exception);
+        }
     }
 
     private List<String> visibleText(List<String> values) {

@@ -17,11 +17,14 @@ defineEmits<{ close: []; 'update:expanded': [expanded: boolean] }>();
     <p class="event-notice">/{{ result.invocation.request.name }}</p>
     <template v-if="result.kind === 'agentGuide'">
       <h3>{{ result.value.displayName }}</h3>
-      <p v-for="(line, index) in result.value.description" :key="index" class="plain-result">{{ line }}</p>
-      <p v-if="!result.value.description.length">暂无介绍。</p>
-      <h4>典型使用场景</h4>
-      <ul v-if="result.value.useCases.length"><li v-for="(line, index) in result.value.useCases" :key="index">{{ line }}</li></ul>
-      <p v-else>暂无使用场景。</p>
+      <p v-if="!result.value.description.length && !result.value.useCases.length">维护者尚未填写 Agent 介绍和使用场景</p>
+      <template v-else>
+        <p v-for="(line, index) in result.value.description" :key="index" class="plain-result">{{ line }}</p>
+        <p v-if="!result.value.description.length">暂无介绍。</p>
+        <h4>典型使用场景</h4>
+        <ul v-if="result.value.useCases.length"><li v-for="(line, index) in result.value.useCases" :key="index" class="plain-result">{{ line }}</li></ul>
+        <p v-else>暂无使用场景。</p>
+      </template>
     </template>
     <template v-else-if="result.kind === 'session'">
       <h3>{{ result.value.displayName ?? '未命名会话' }}</h3>
