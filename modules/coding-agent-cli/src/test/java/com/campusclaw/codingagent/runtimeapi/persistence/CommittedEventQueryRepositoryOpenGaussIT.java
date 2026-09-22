@@ -24,7 +24,7 @@ import org.springframework.context.annotation.AnnotationConfigApplicationContext
 import org.springframework.jdbc.core.JdbcTemplate;
 
 /**
- * 使用真实 openGauss 验证公共事件当前分支分页查询。
+ * 使用真实 openGauss 验证公共事件单条时间线分页查询。
  *
  * @version [br_eCampusCore 26.0.0, 2026/09/08]
  * @since [br_eCampusCore 26.0.0]
@@ -61,37 +61,63 @@ class CommittedEventQueryRepositoryOpenGaussIT {
     }
 
     @Test
-    void shouldReadOnlyCurrentBranchWithNumericOffset() {
+    void shouldReadTimelineEventsWithNumericOffsetAndMultipleEvents() {
         RuntimeSessionDTO session = session();
         repository.create(session);
         insertEntry(session.getId(), "entry-root", 1L, null);
-        insertEntry(session.getId(), "entry-abandoned", 3L, "entry-root");
-        insertEntry(session.getId(), "entry-current", 5L, "entry-root");
-        insertEntry(session.getId(), "entry-private", 7L, "entry-current", "session.compaction.started");
+        insertEntry(session.getId(), "entry-second", 5L, "entry-root");
+        insertEntry(session.getId(), "entry-private", 9L, "entry-second", "session.compaction.started");
         insertEvent(session.getId(), "event-root", 2L, "entry-root");
-        insertEvent(session.getId(), "event-abandoned", 4L, "entry-abandoned");
-        insertEvent(session.getId(), "event-current", 6L, "entry-current");
-        insertProjection(session.getId(), "entry-root", 1);
-        insertProjection(session.getId(), "entry-abandoned", 1);
-        insertProjection(session.getId(), "entry-current", 1);
+        insertEvent(session.getId(), "event-root-followup", 3L, "entry-root");
+        insertEvent(session.getId(), "event-second", 7L, "entry-second");
+        insertProjection(session.getId(), "entry-root", 2);
+        insertProjection(session.getId(), "entry-second", 1);
         insertProjection(session.getId(), "entry-private", 0);
         jdbcTemplate.update("UPDATE t_sessions SET active_leaf_id = ? WHERE id = ?", "entry-private", session.getId());
 
-        var firstPage = repository.findEventPage(session.getId(), 0L, 1).orElseThrow();
-        var secondPage = repository.findEventPage(session.getId(), 1L, 2).orElseThrow();
+        var firstPage = repository.findEventPage(session.getId(), 0L, 2).orElseThrow();
+        var secondPage = repository.findEventPage(session.getId(), 2L, 2).orElseThrow();
 
-        assertThat(firstPage).extracting(CommittedEventDTO::getEventId).containsExactly("event-root");
-        assertThat(secondPage).extracting(CommittedEventDTO::getEventId).containsExactly("event-current");
+        assertThat(firstPage)
+                .extracting(CommittedEventDTO::getEventId)
+                .containsExactly("event-root", "event-root-followup");
+        assertThat(secondPage).extracting(CommittedEventDTO::getEventId).containsExactly("event-second");
         assertThat(repository.findEventPage("session-missing", 0L, 1)).isEmpty();
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"user.message", "assistant.thinking.completed", "future.unknown"})
-    void shouldFailClosedWhenCurrentBranchMappingIsUnsafe(String type) {
+    @ValueSource(ints = {200, 201, 1000, 10000})
+    void shouldReadLongTimelineWithoutRecursiveDepthLimit(int entryCount) {
+        RuntimeSessionDTO session = session();
+        repository.create(session);
+        insertLongTimeline(session.getId(), entryCount);
+
+        long upperBound = repository.findTimelineUpperBound(session.getId());
+        var entries = repository.listTimelineEntries(session.getId(), 0L, upperBound, entryCount + 1);
+        var tail = repository.findEventPage(session.getId(), entryCount - 2L, 3).orElseThrow();
+
+        assertThat(entries).hasSize(entryCount);
+        assertThat(entries.getLast().getEntrySeq()).isEqualTo(entryCount * 3L - 2L);
+        assertThat(tail)
+                .extracting(CommittedEventDTO::getEventId)
+                .containsExactly("event-" + (entryCount - 1), "event-" + entryCount);
+    }
+
+    @ParameterizedTest
+    @ValueSource(
+            strings = {
+                "user.message",
+                "assistant.thinking.completed",
+                "future.unknown",
+                "leaf",
+                "branch_summary",
+                "label"
+            })
+    void shouldFailClosedWhenTimelineMappingIsUnsafe(String type) {
         RuntimeSessionDTO session = session();
         repository.create(session);
         insertEntry(session.getId(), "entry-unmapped", 1L, null, type);
-        if ("future.unknown".equals(type)) {
+        if (!"user.message".equals(type) && !"assistant.thinking.completed".equals(type)) {
             insertProjection(session.getId(), "entry-unmapped", 0);
         }
         jdbcTemplate.update("UPDATE t_sessions SET active_leaf_id = ? WHERE id = ?", "entry-unmapped", session.getId());
@@ -99,7 +125,7 @@ class CommittedEventQueryRepositoryOpenGaussIT {
         IllegalStateException error =
                 assertThrows(IllegalStateException.class, () -> repository.findEventPage(session.getId(), 0L, 1));
 
-        assertThat(error).hasMessage("current branch event mapping is incomplete");
+        assertThat(error).hasMessage("session timeline event mapping is incomplete");
     }
 
     @ParameterizedTest
@@ -124,7 +150,7 @@ class CommittedEventQueryRepositoryOpenGaussIT {
         IllegalStateException error =
                 assertThrows(IllegalStateException.class, () -> repository.findEventPage(session.getId(), 0L, 1));
 
-        assertThat(error).hasMessage("current branch event mapping is incomplete");
+        assertThat(error).hasMessage("session timeline event mapping is incomplete");
     }
 
     @Test
@@ -140,7 +166,7 @@ class CommittedEventQueryRepositoryOpenGaussIT {
         IllegalStateException error =
                 assertThrows(IllegalStateException.class, () -> repository.findEventPage(session.getId(), 0L, 10));
 
-        assertThat(error).hasMessage("current branch event mapping is incomplete");
+        assertThat(error).hasMessage("session timeline event mapping is incomplete");
     }
 
     @ParameterizedTest
@@ -172,7 +198,34 @@ class CommittedEventQueryRepositoryOpenGaussIT {
         IllegalStateException error =
                 assertThrows(IllegalStateException.class, () -> repository.findEventPage(session.getId(), 0L, 10));
 
-        assertThat(error).hasMessage("current branch event mapping is incomplete");
+        assertThat(error).hasMessage("session timeline event mapping is incomplete");
+    }
+
+    private void insertLongTimeline(String sessionId, int entryCount) {
+        jdbcTemplate.update(
+                "INSERT INTO t_session_entries "
+                        + "(session_id,id,entry_seq,parent_id,type,timestamp,payload) "
+                        + "SELECT ?, 'entry-' || n, n * 3 - 2, "
+                        + "CASE WHEN n = 1 THEN NULL ELSE 'entry-' || (n - 1) END, "
+                        + "'user.message', ?, '{}'::jsonb FROM generate_series(1, ?) n",
+                sessionId,
+                NOW,
+                entryCount);
+        jdbcTemplate.update(
+                "INSERT INTO t_session_events "
+                        + "(session_id,event_id,event_seq,anchor_entry_id,type,created_at,payload) "
+                        + "SELECT ?, 'event-' || n, n * 3 - 1, 'entry-' || n, "
+                        + "'user.message', ?, '{\"content\":[{\"type\":\"text\",\"text\":\"hello\"}]}'::jsonb "
+                        + "FROM generate_series(1, ?) n",
+                sessionId,
+                NOW,
+                entryCount);
+        jdbcTemplate.update(
+                "INSERT INTO t_session_event_projection (session_id,anchor_entry_id,event_count) "
+                        + "SELECT ?, 'entry-' || n, 1 FROM generate_series(1, ?) n",
+                sessionId,
+                entryCount);
+        jdbcTemplate.update("UPDATE t_sessions SET active_leaf_id = ? WHERE id = ?", "entry-" + entryCount, sessionId);
     }
 
     private void insertEntry(String sessionId, String entryId, long sequence, String parentId) {

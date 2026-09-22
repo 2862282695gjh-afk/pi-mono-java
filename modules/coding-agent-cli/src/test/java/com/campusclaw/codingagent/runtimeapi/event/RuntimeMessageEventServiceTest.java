@@ -447,7 +447,8 @@ class RuntimeMessageEventServiceTest {
             AgentDirectorySnapshotDTO snapshot = snapshot("agent-v2");
             Model model = mock(Model.class);
             when(repository.find("session-v2")).thenReturn(java.util.Optional.of(session));
-            when(repository.listCurrentBranchEntries("session-v2", 0L, 500)).thenReturn(List.of());
+            when(repository.findTimelineUpperBound("session-v2")).thenReturn(0L);
+            when(repository.listTimelineEntries("session-v2", 0L, 0L, 500)).thenReturn(List.of());
             when(reconciler.reconcile(session))
                     .thenReturn(new ReconciledRuntimeSession(session, snapshot, model, List.of()));
             if (org.mockito.Mockito.mockingDetails(engines).isMock()) {

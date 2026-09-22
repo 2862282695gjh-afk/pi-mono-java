@@ -19,6 +19,26 @@ describe('literal command and tool content', () => {
     expect(html).not.toMatch(/<(script|img|a)\b/u);
     expect(html).toContain('仅当前页面');
   });
+  it.each([
+    { description: [], useCases: [], notice: '维护者尚未填写 Agent 介绍和使用场景', absent: ['暂无介绍。', '暂无使用场景。'] },
+    { description: [], useCases: ['排查连接异常'], notice: '暂无介绍。', absent: ['维护者尚未填写', '暂无使用场景。'] },
+    { description: ['网络分析助手'], useCases: [], notice: '暂无使用场景。', absent: ['维护者尚未填写', '暂无介绍。'] },
+  ])('shows the Help empty state for description=$description and useCases=$useCases', async ({ description, useCases, notice, absent }) => {
+    const result = decodeCommandResult(freezeInvocation({ name: 'help', kind: 'builtin', description: '' }, '/help'), {
+      displayName: 'Agent', description, useCases,
+    });
+    const html = await renderToString(createSSRApp({ render: () => h(CommandResultRegion, { result, expanded: true }) }));
+    expect(html).toContain(notice);
+    for (const text of absent) expect(html).not.toContain(text);
+    for (const text of [...description, ...useCases]) expect(html).toContain(text);
+  });
+  it('renders authored Help use cases with line-preserving text styling', async () => {
+    const result = decodeCommandResult(freezeInvocation({ name: 'help', kind: 'builtin', description: '' }, '/help'), {
+      displayName: 'Agent', description: ['介绍'], useCases: ['先检查连接\n再检查配置'],
+    });
+    const html = await renderToString(createSSRApp({ render: () => h(CommandResultRegion, { result, expanded: true }) }));
+    expect(html).toContain('<li class="plain-result">先检查连接\n再检查配置</li>');
+  });
   it('does not render Markdown actions or silently truncate tool results', async () => {
     const result = '[run](https://invalid.test)\n'.repeat(200);
     const html = await renderToString(createSSRApp({ render: () => h(ToolActivity, { turn: {

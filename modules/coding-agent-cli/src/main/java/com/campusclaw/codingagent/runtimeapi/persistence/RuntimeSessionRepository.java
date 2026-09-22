@@ -47,7 +47,7 @@ public interface RuntimeSessionRepository {
             OffsetDateTime acceptedAt);
 
     /**
-     * 行锁内观察当前 Session 与完整分支，不修改持久化状态，也不准备 Agent。
+     * 行锁内观察当前 Session 与完整时间线，不修改持久化状态，也不准备 Agent。
      *
      * @param sessionId Session 标识
      * @return 缺失时为空；忙状态只返回 Session，不查询历史
@@ -75,7 +75,9 @@ public interface RuntimeSessionRepository {
 
     void finishExecution(String sessionId, OffsetDateTime finishedAt);
 
-    List<RuntimeEntryDTO> listCurrentBranchEntries(String sessionId, long afterSeq, int limit);
+    long findTimelineUpperBound(String sessionId);
+
+    List<RuntimeEntryDTO> listTimelineEntries(String sessionId, long afterSeq, long upperBound, int limit);
 
     Optional<List<CommittedEventDTO>> findEventPage(String sessionId, long offset, int limit);
 

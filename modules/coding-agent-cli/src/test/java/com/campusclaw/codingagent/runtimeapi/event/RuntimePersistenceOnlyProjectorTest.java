@@ -6,6 +6,7 @@ package com.campusclaw.codingagent.runtimeapi.event;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -94,7 +95,10 @@ class RuntimePersistenceOnlyProjectorTest {
                 () -> "entry-" + ids.incrementAndGet(),
                 Clock.fixed(now.toInstant(), ZoneOffset.UTC));
         projector = factory.createForCompaction(holder, execution, Locale.US);
-        when(repository.listCurrentBranchEntries("session", 0L, 500)).thenAnswer(call -> List.copyOf(history));
+        when(repository.findTimelineUpperBound("session"))
+                .thenAnswer(call -> history.isEmpty() ? 0L : history.getLast().getEntrySeq());
+        when(repository.listTimelineEntries(eq("session"), eq(0L), any(Long.class), eq(500)))
+                .thenAnswer(call -> List.copyOf(history));
         when(repository.appendEntry(any())).thenAnswer(call -> saveEntry(call.getArgument(0)));
         when(repository.appendEntryWithUsage(any(), any(), any())).thenAnswer(call -> {
             RuntimeEntryDTO persisted = saveEntry(call.getArgument(0));
@@ -224,24 +228,24 @@ class RuntimePersistenceOnlyProjectorTest {
         assertThat(projector.failure()).isNull();
         verify(repository, never()).appendEntry(any());
         verify(repository, never()).appendEntryWithUsage(any(), any(), any(), any());
-        verify(repository, never()).listCurrentBranchEntries(any(), any(Long.class), any(Integer.class));
+        verify(repository, never()).listTimelineEntries(any(), any(Long.class), any(Long.class), any(Integer.class));
     }
 
     @Test
-    void shouldReadAllBranchBatchesBeforeMappingRetainedBoundary() {
+    void shouldReadAllTimelineBatchesBeforeMappingRetainedBoundary() {
         for (int index = 0; index < 501; index++) {
             addUser("user-" + index, "task-" + index);
             history.getLast().setEntrySeq(index + 1L);
         }
-        when(repository.listCurrentBranchEntries("session", 0L, 500)).thenReturn(List.copyOf(history.subList(0, 500)));
-        when(repository.listCurrentBranchEntries("session", 500L, 500)).thenReturn(List.of(history.getLast()));
+        when(repository.listTimelineEntries("session", 0L, 501L, 500)).thenReturn(List.copyOf(history.subList(0, 500)));
+        when(repository.listTimelineEntries("session", 500L, 501L, 500)).thenReturn(List.of(history.getLast()));
         sequence.set(502);
 
         complete(CompactionReason.MANUAL, 500, false);
 
         assertThat(projector.failure()).isNull();
         assertThat(history.getLast().getPayload()).contains("\"firstKeptEntryId\":\"user-500\"");
-        verify(repository).listCurrentBranchEntries("session", 500L, 500);
+        verify(repository).listTimelineEntries("session", 500L, 501L, 500);
     }
 
     @Test
