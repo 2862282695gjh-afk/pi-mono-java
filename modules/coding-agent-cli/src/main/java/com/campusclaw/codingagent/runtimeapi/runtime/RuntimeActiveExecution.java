@@ -173,8 +173,8 @@ public class RuntimeActiveExecution implements PlanReviewPort, UserQuestionPort 
         showcaseConfirmation = Objects.requireNonNull(adapter, "adapter");
     }
 
-    public synchronized Optional<QuestionRequestSnapshotDTO> preparedShowcaseQuestion(ToolCall call) {
-        return showcaseConfirmation == null ? Optional.empty() : showcaseConfirmation.prepared(call);
+    public synchronized Optional<QuestionRequestSnapshotDTO> preparedShowcaseQuestion(BeforeToolCallContext context) {
+        return showcaseConfirmation == null ? Optional.empty() : showcaseConfirmation.prepared(context);
     }
 
     public synchronized Optional<ShowcaseConfirmationAdapter> showcaseConfirmation() {
@@ -186,8 +186,8 @@ public class RuntimeActiveExecution implements PlanReviewPort, UserQuestionPort 
         synchronized (this) {
             adapter = showcaseConfirmation;
         }
-        if (adapter != null && adapter.matches(context.toolCall())) {
-            adapter.prepare(context.toolCall());
+        if (adapter != null && adapter.matches(context)) {
+            adapter.prepare(context);
             try {
                 return requireConfirmationHandler().handle(context);
             } catch (Exception error) {
@@ -203,7 +203,7 @@ public class RuntimeActiveExecution implements PlanReviewPort, UserQuestionPort 
                         .equals(context.toolCall().name())) {
             return requireConfirmationHandler().handle(context);
         }
-        RuntimeToolPermissionPolicy.Decision decision = toolPermission(context.toolCall());
+        RuntimeToolPermissionPolicy.Decision decision = toolPermissions.decide(context);
         if (decision == RuntimeToolPermissionPolicy.Decision.ALLOW) {
             return BeforeToolCallResult.allow();
         }

@@ -6,6 +6,7 @@ package com.campusclaw.codingagent.runtimeapi.runtime;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -17,6 +18,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import com.campusclaw.agent.tool.BeforeToolCallContext;
 import com.campusclaw.agent.tool.BeforeToolCallResult;
+import com.campusclaw.agent.tool.PreparedToolInvocation;
 import com.campusclaw.ai.types.ToolCall;
 import com.campusclaw.codingagent.runtimeapi.dto.ExecutionTargetDTO;
 import com.campusclaw.codingagent.runtimeapi.dto.PlanProposalSnapshotDTO;
@@ -26,7 +28,6 @@ import com.campusclaw.codingagent.runtimeapi.dto.ToolConfirmationDecisionDTO;
 import com.campusclaw.codingagent.runtimeapi.event.RuntimeEventOutput;
 import com.campusclaw.codingagent.runtimeapi.session.PlanConfirmationResult;
 import com.campusclaw.codingagent.tool.builtin.ToolEntryPoint;
-import com.campusclaw.codingagent.tool.mate.MateToolDiscovery;
 import com.campusclaw.codingagent.tool.question.QuestionAnswerDTO;
 import com.campusclaw.codingagent.tool.question.QuestionAnswerResultDTO;
 import com.campusclaw.codingagent.tool.question.QuestionDTO;
@@ -52,7 +53,7 @@ class RuntimeActiveExecutionTest {
             return BeforeToolCallResult.allow();
         });
         BeforeToolCallContext context =
-                context(new ToolCall("call-1", "CallMateTool", Map.of("tool", "unknown", "args", Map.of())));
+                context(new ToolCall("call-1", "CallTool", Map.of("tool", "unknown", "args", Map.of())));
 
         assertThatThrownBy(() -> execution.beforeToolCall(context)).isInstanceOf(RuntimeToolCallDeniedException.class);
         assertThat(handled).hasValue(0);
@@ -62,13 +63,9 @@ class RuntimeActiveExecutionTest {
     void failedShowcaseHookShouldReleasePreparedSnapshotForNextQuestion() throws Exception {
         RuntimeActiveExecution execution = new RuntimeActiveExecution(RuntimeEventOutput.persistenceOnly());
         RuntimeToolPermissionPolicy permissions = mock(RuntimeToolPermissionPolicy.class);
-        MateToolDiscovery discovery = mock(MateToolDiscovery.class);
-        when(permissions.decide(org.mockito.ArgumentMatchers.any()))
+        when(permissions.decide(org.mockito.ArgumentMatchers.any(BeforeToolCallContext.class)))
                 .thenReturn(RuntimeToolPermissionPolicy.Decision.ALLOW);
-        when(discovery.resolveToolId(ClawConstants.RuntimeApi.SHOWCASE_CONFIRMATION_TOOL_NAME))
-                .thenReturn("tool-11111111111111111111111111111111");
         var adapter = new ShowcaseConfirmationAdapter(true, ToolEntryPoint.RUNTIME, execution);
-        adapter.bindDiscovery(discovery);
         adapter.bindPermissions(permissions, "tool-11111111111111111111111111111111");
         execution.installShowcaseConfirmation(adapter);
         AtomicInteger calls = new AtomicInteger();
@@ -78,11 +75,11 @@ class RuntimeActiveExecutionTest {
             }
             return BeforeToolCallResult.allow();
         });
-        ToolCall first = showcaseCall("call-1", "first");
-        ToolCall second = showcaseCall("call-2", "second");
+        BeforeToolCallContext first = showcaseContext("call-1", "first");
+        BeforeToolCallContext second = showcaseContext("call-2", "second");
 
-        assertThatThrownBy(() -> execution.beforeToolCall(context(first))).isInstanceOf(IllegalStateException.class);
-        assertThat(execution.beforeToolCall(context(second))).isEqualTo(BeforeToolCallResult.allow());
+        assertThatThrownBy(() -> execution.beforeToolCall(first)).isInstanceOf(IllegalStateException.class);
+        assertThat(execution.beforeToolCall(second)).isEqualTo(BeforeToolCallResult.allow());
         assertThat(execution.preparedShowcaseQuestion(second)).isPresent();
     }
 
@@ -162,9 +159,10 @@ class RuntimeActiveExecutionTest {
         var foreign = new ExecutionTargetDTO("session", "other", "root", "segment-1");
         var proposal = new PlanProposalSnapshotDTO(foreign, "assistant-1", "plan-1", "root", "exit-1", "# 方案");
 
-        assertThatThrownBy(() -> execution.beginPlanReview(proposal))
-                .isInstanceOf(com.campusclaw.codingagent.tool.plan.PlanReviewException.class)
-                .hasMessage("PLAN_REVIEW_UNAVAILABLE");
+        var failure = assertThrows(
+                com.campusclaw.codingagent.tool.plan.PlanReviewException.class,
+                () -> execution.beginPlanReview(proposal));
+        assertThat(failure).hasMessage("PLAN_REVIEW_UNAVAILABLE");
     }
 
     @Test
@@ -174,9 +172,8 @@ class RuntimeActiveExecutionTest {
         var signal = new com.campusclaw.agent.tool.CancellationToken();
         signal.cancel();
 
-        assertThatThrownBy(() -> execution.review("exit-1", signal))
-                .isInstanceOf(CancellationException.class)
-                .hasMessage("Plan review was cancelled");
+        var failure = assertThrows(CancellationException.class, () -> execution.review("exit-1", signal));
+        assertThat(failure).hasMessage("Plan review was cancelled");
     }
 
     @Test
@@ -226,15 +223,39 @@ class RuntimeActiveExecutionTest {
         return new BeforeToolCallContext(null, call, call.arguments(), null);
     }
 
-    private static ToolCall showcaseCall(String id, String label) {
-        return new ToolCall(
-                id,
-                "CallMateTool",
-                Map.of(
-                        "tool",
-                        ClawConstants.RuntimeApi.SHOWCASE_CONFIRMATION_TOOL_NAME,
-                        "args",
-                        Map.of("label", label)));
+    private static BeforeToolCallContext showcaseContext(String id, String label) {
+        String name = ClawConstants.RuntimeApi.SHOWCASE_CONFIRMATION_TOOL_NAME;
+        Map<String, Object> arguments = Map.of("label", label);
+        ToolCall call = new ToolCall(id, name, arguments);
+        PreparedToolInvocation invocation = new PreparedToolInvocation() {
+            @Override
+            public String toolCallId() {
+                return id;
+            }
+
+            @Override
+            public String toolName() {
+                return name;
+            }
+
+            @Override
+            public Map<String, Object> arguments() {
+                return arguments;
+            }
+
+            @Override
+            public String authorizationTargetId() {
+                return "tool-11111111111111111111111111111111";
+            }
+
+            @Override
+            public com.campusclaw.agent.tool.AgentToolResult execute(
+                    com.campusclaw.agent.tool.CancellationToken signal,
+                    com.campusclaw.agent.tool.AgentToolUpdateCallback onUpdate) {
+                throw new AssertionError("test invocation must not execute");
+            }
+        };
+        return new BeforeToolCallContext(null, call, arguments, null, invocation);
     }
 
     private static ToolConfirmationDecisionDTO decision(String toolCallId, String previous, String segment) {

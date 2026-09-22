@@ -347,7 +347,7 @@ class RuntimeBuiltinCommandOpenGaussIT {
                 .isEqualTo(
                         MAPPER.readTree(
                                 """
-                        {"displayName":"跨进程测试助手","description":["分析订单并生成摘要"],"userCases":["请分析本次订单"]}
+                        {"displayName":"跨进程测试助手","description":["分析订单并生成摘要"],"useCases":["请分析本次订单"]}
                         """));
         assertThat(result(command(port, sessionId, "model", null, language)))
                 .isEqualTo(MAPPER.valueToTree(

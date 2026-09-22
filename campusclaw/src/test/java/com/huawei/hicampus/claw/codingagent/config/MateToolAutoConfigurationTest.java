@@ -5,6 +5,8 @@
 package com.huawei.hicampus.claw.codingagent.config;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import java.util.List;
 import java.util.Map;
@@ -17,8 +19,12 @@ import com.huawei.hicampus.claw.ai.types.ToolResultMessage;
 import com.huawei.hicampus.claw.codingagent.common.client.HttpMateToolClient;
 import com.huawei.hicampus.claw.codingagent.common.client.mate.MateToolClient;
 import com.huawei.hicampus.claw.codingagent.common.client.mate.MateToolMeta;
-import com.huawei.hicampus.claw.codingagent.tool.mate.CallMateTool;
-import com.huawei.hicampus.claw.codingagent.tool.mate.ListMateToolsTool;
+import com.huawei.hicampus.claw.codingagent.runtime.MateServiceClient.AgentRuntime;
+import com.huawei.hicampus.claw.codingagent.runtime.MateServiceClient.BoundTool;
+import com.huawei.hicampus.claw.codingagent.runtime.MateServiceClient.SkillInfo;
+import com.huawei.hicampus.claw.codingagent.runtime.PreparedAgentRuntime;
+import com.huawei.hicampus.claw.codingagent.tool.mate.CallTool;
+import com.huawei.hicampus.claw.codingagent.tool.mate.MateToolAdapter;
 import com.huawei.hicampus.claw.codingagent.tool.mate.MockMateToolClient;
 
 import org.junit.jupiter.api.Test;
@@ -56,37 +62,25 @@ class MateToolAutoConfigurationTest {
             assertThat(context).hasSingleBean(com.huawei.hicampus.claw.codingagent.tool.mate.MateToolsetFactory.class);
 
             // 工具不能是单例 Bean，否则 Session 缓存会跨 Session 泄漏。
-            assertThat(context).doesNotHaveBean(CallMateTool.class);
-            assertThat(context).doesNotHaveBean(ListMateToolsTool.class);
+            assertThat(context).doesNotHaveBean(CallTool.class);
+            assertThat(context).doesNotHaveBean(MateToolAdapter.class);
         });
     }
 
     @Test
-    void factoryPairsShareOneCachePerSessionAndIsolateAcrossSessions() {
+    void factoryCreatesSessionPrivateStateAndToolInstances() {
         runner.run(context -> {
             var factory = context.getBean(com.huawei.hicampus.claw.codingagent.tool.mate.MateToolsetFactory.class);
             var stateA = factory.createSession(
-                    "agent-1", Map.of(), com.huawei.hicampus.claw.codingagent.common.client.mate.MateCredentials.empty());
+                    runtime("agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", List.of(), List.of()),
+                    com.huawei.hicampus.claw.codingagent.common.client.mate.MateCredentials.empty());
             var stateB = factory.createSession(
-                    "agent-2", Map.of(), com.huawei.hicampus.claw.codingagent.common.client.mate.MateCredentials.empty());
-            var listA = stateA.createListTool();
-            var callA = stateA.createCallTool();
-            var listB = stateB.createListTool();
+                    runtime("agent-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", List.of(), List.of()),
+                    com.huawei.hicampus.claw.codingagent.common.client.mate.MateCredentials.empty());
 
-            assertThat(discoveryOf(listA)).isSameAs(discoveryOf(callA));
-            assertThat(discoveryOf(listA)).isNotSameAs(discoveryOf(listB));
-            assertThat(listA).isNotSameAs(listB);
+            assertThat(stateA).isNotSameAs(stateB);
+            assertThat(stateA.createCallTool()).isNotSameAs(stateA.createCallTool());
         });
-    }
-
-    private static com.huawei.hicampus.claw.codingagent.tool.mate.MateToolDiscovery discoveryOf(Object tool) {
-        try {
-            var field = tool.getClass().getDeclaredField("discovery");
-            field.setAccessible(true);
-            return (com.huawei.hicampus.claw.codingagent.tool.mate.MateToolDiscovery) field.get(tool);
-        } catch (ReflectiveOperationException e) {
-            throw new IllegalStateException("missing discovery field on " + tool.getClass(), e);
-        }
     }
 
     @Test
@@ -128,24 +122,48 @@ class MateToolAutoConfigurationTest {
         MockMateToolClient client = new MockMateToolClient();
         String toolId = "tool-44444444444444444444444444444444";
         client.addTool(new MateToolMeta(toolId, "Explode", "", Map.of(), Map.of(), false, "allow"));
-        client.bindAgent("agent-1", List.of(toolId));
+        String skillId = "skill-55555555555555555555555555555555";
+        client.bindSkill(skillId, List.of(toolId));
         client.overrideCallResult(new MateToolClient.ToolResult("mate exploded", null, true));
-        CallMateTool callMateTool = new com.huawei.hicampus.claw.codingagent.tool.mate.MateToolsetFactory(client)
+        BoundTool binding = new BoundTool(null, "Explode", toolId, null, "Explode", "allow", null, null);
+        SkillInfo skill = new SkillInfo(
+                "managed",
+                skillId,
+                "1.0.0",
+                "Managed",
+                null,
+                "---\nname: managed\ndescription: Managed\n---\nInstructions",
+                List.of(binding),
+                List.of(),
+                List.of(),
+                List.of());
+        CallTool callTool = new com.huawei.hicampus.claw.codingagent.tool.mate.MateToolsetFactory(client)
                 .createSession(
-                        "agent-1", Map.of(), com.huawei.hicampus.claw.codingagent.common.client.mate.MateCredentials.empty())
+                        runtime("agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", List.of(), List.of(skill)),
+                        com.huawei.hicampus.claw.codingagent.common.client.mate.MateCredentials.empty())
                 .createCallTool();
 
-        ToolCall toolCall = new ToolCall("call-1", "CallMateTool", Map.of("tool", "Explode"));
+        ToolCall toolCall = new ToolCall("call-1", "CallTool", Map.of("tool", "Explode"));
         ToolExecutionPipeline pipeline = new ToolExecutionPipeline();
 
         List<ToolResultMessage> results = pipeline.executeAll(
-                List.of(new ToolCallWithTool(toolCall, callMateTool, Map.of("tool", "Explode"))),
+                List.of(new ToolCallWithTool(toolCall, callTool, Map.of("tool", "Explode"))),
                 new com.huawei.hicampus.claw.agent.tool.AgentContext(),
                 new com.huawei.hicampus.claw.agent.tool.CancellationToken(),
                 event -> {});
 
         assertThat(results).hasSize(1);
         assertThat(results.get(0).isError()).isTrue();
+    }
+
+    private static PreparedAgentRuntime runtime(String agentId, List<BoundTool> agentTools, List<SkillInfo> skills) {
+        PreparedAgentRuntime runtime = mock(PreparedAgentRuntime.class);
+        AgentRuntime metadata = mock(AgentRuntime.class);
+        when(runtime.agentId()).thenReturn(agentId);
+        when(runtime.metadata()).thenReturn(metadata);
+        when(metadata.bindingTools()).thenReturn(agentTools);
+        when(runtime.skills()).thenReturn(skills);
+        return runtime;
     }
 
     /** 提供 Mock 客户端 Bean 并覆盖真实 HTTP 实现的测试配置。 */

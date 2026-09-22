@@ -32,8 +32,9 @@ class BuiltInToolPropertiesTest {
                         "Grep",
                         "Ls",
                         "Cron",
-                        "ListMateTools",
-                        "CallMateTool",
+                        "Skill",
+                        "SearchTools",
+                        "CallTool",
                         "Agent",
                         "ExitPlanMode",
                         "TodoUpdate",
@@ -45,8 +46,9 @@ class BuiltInToolPropertiesTest {
                         BuiltInToolName.FIND,
                         BuiltInToolName.GREP,
                         BuiltInToolName.LS,
-                        BuiltInToolName.LIST_MATE_TOOLS,
-                        BuiltInToolName.CALL_MATE_TOOL,
+                        BuiltInToolName.SKILL,
+                        BuiltInToolName.SEARCH_TOOLS,
+                        BuiltInToolName.CALL_TOOL,
                         BuiltInToolName.AGENT);
         assertThat(properties.toolsFor(ToolEntryPoint.CHILD_AGENT))
                 .containsExactly(
@@ -54,8 +56,9 @@ class BuiltInToolPropertiesTest {
                         BuiltInToolName.FIND,
                         BuiltInToolName.GREP,
                         BuiltInToolName.LS,
-                        BuiltInToolName.LIST_MATE_TOOLS,
-                        BuiltInToolName.CALL_MATE_TOOL);
+                        BuiltInToolName.SKILL,
+                        BuiltInToolName.SEARCH_TOOLS,
+                        BuiltInToolName.CALL_TOOL);
     }
 
     @Test
@@ -99,9 +102,9 @@ class BuiltInToolPropertiesTest {
     }
 
     private static Stream<Arguments> retiredProfileNames() {
-        return Stream.of(ToolEntryPoint.values())
-                .flatMap(entryPoint -> Stream.of("Bash", "Edit", "Write", "bash", "edit", "write")
-                        .map(name -> Arguments.of(entryPoint, name)));
+        return Stream.of(ToolEntryPoint.values()).flatMap(entryPoint -> Stream.of(
+                        "Bash", "Edit", "Write", "ListMateTools", "CallMateTool", "bash", "edit", "write")
+                .map(name -> Arguments.of(entryPoint, name)));
     }
 
     private static BuiltInToolProperties propertiesWith(ToolEntryPoint entryPoint, String name) {

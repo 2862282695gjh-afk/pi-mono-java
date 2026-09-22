@@ -27,9 +27,11 @@ public class SkillPromptFormatter {
 
         StringBuilder sb = new StringBuilder();
         sb.append("The following skills provide specialized instructions for specific tasks.\n");
-        sb.append("Use Read to load a skill's file when the task matches its description.\n");
-        sb.append("When a skill file references a relative path, resolve it against the skill directory ");
-        sb.append("(parent of SKILL.md / dirname of the path) and keep the path inside the Agent workspace.\n\n");
+        sb.append("Use Skill with the exact name to load instructions when the task matches its description.\n");
+        sb.append("Use Read for resource files returned by Skill, and keep every path inside the Agent workspace.\n\n");
+        sb.append("Use SearchTools with that exact tool name when Skill instructions name a business tool and its")
+                .append(" complete definition is needed, then call it through CallTool.\n")
+                .append("Do not guess tool names or arguments, and do not retry unchanged invalid arguments.\n\n");
         sb.append("<available_skills>\n");
 
         for (Skill skill : visibleSkills) {
@@ -38,9 +40,6 @@ public class SkillPromptFormatter {
             sb.append("    <description>")
                     .append(escapeXml(skill.description()))
                     .append("</description>\n");
-            sb.append("    <location>")
-                    .append(escapeXml(skill.filePath().toString()))
-                    .append("</location>\n");
             sb.append("  </skill>\n");
         }
 

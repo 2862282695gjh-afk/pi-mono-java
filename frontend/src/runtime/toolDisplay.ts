@@ -25,7 +25,8 @@ function validTechnicalName(value: unknown): string | undefined {
 /** 只消费调用快照与执行身份，不从模型参数的同名字段或结果推测展示名。 */
 export function toolDisplayIdentity(source: ToolDisplaySource): ToolDisplayIdentity {
   const displayName = validDisplayName(source.displayName);
-  const technicalName = source.toolName === 'CallMateTool'
+  const wrapsBusinessTool = source.toolName === 'CallTool' || source.toolName === 'CallMateTool';
+  const technicalName = wrapsBusinessTool
     ? validTechnicalName(source.arguments?.tool)
     : validTechnicalName(source.toolName);
   return {

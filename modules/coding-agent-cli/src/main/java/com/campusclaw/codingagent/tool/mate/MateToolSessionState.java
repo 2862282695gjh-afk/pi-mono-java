@@ -4,41 +4,38 @@
 
 package com.campusclaw.codingagent.tool.mate;
 
-import com.campusclaw.codingagent.common.client.mate.MateCredentials;
-import com.campusclaw.codingagent.common.client.mate.MateToolClient;
+import java.util.List;
+
+import com.campusclaw.agent.tool.AgentTool;
 import com.campusclaw.codingagent.tool.question.ShowcaseConfirmationAdapter;
 
 /**
- * 保存单个 Session 共享的 Mate 发现状态并按需创建工具实例。
+ * 保存单个 Session 共享的 Mate 执行器并按需创建工具实例。
  *
  * @version [br_eCampusCore 26.0.0, 2026/08/24]
  * @since [br_eCampusCore 26.0.0]
  */
 public class MateToolSessionState {
 
-    private final MateToolClient client;
+    private final MateToolExecutor executor;
 
-    private final MateCredentials credentials;
-
-    private final MateToolDiscovery discovery;
-
-    MateToolSessionState(MateToolClient client, MateCredentials credentials, MateToolDiscovery discovery) {
-        this.client = client;
-        this.credentials = credentials;
-        this.discovery = discovery;
+    MateToolSessionState(MateToolExecutor executor) {
+        this.executor = executor;
     }
 
-    public ListMateToolsTool createListTool() {
-        return new ListMateToolsTool(discovery);
+    public void bindShowcaseConfirmation(ShowcaseConfirmationAdapter confirmation) {
+        executor.bindShowcaseConfirmation(confirmation);
     }
 
-    public CallMateTool createCallTool() {
-        return createCallTool(new ShowcaseConfirmationAdapter(
-                false, com.campusclaw.codingagent.tool.builtin.ToolEntryPoint.RUNTIME, null));
+    public List<AgentTool> createAgentToolAdapters() {
+        return executor.createAgentToolAdapters();
     }
 
-    public CallMateTool createCallTool(ShowcaseConfirmationAdapter confirmation) {
-        confirmation.bindDiscovery(discovery);
-        return new CallMateTool(client, credentials, discovery, confirmation);
+    public CallTool createCallTool() {
+        return new CallTool(executor);
+    }
+
+    public SearchTools createSearchTools() {
+        return new SearchTools(executor);
     }
 }

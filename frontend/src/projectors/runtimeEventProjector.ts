@@ -38,13 +38,14 @@ export function projectRuntimeEvents(events: RuntimeEvent[], observing = false):
         const terminal = events.some((item) => item.type === 'session.status_idle' && item.sourceEventId === event.sourceEventId && item.reason !== 'confirming');
         let status: ActivityTurn['status'] = terminal || !observing ? 'unconfirmed' : 'running';
         if (event.requiresConfirmation && !confirmed && !terminal) status = 'confirming';
-        if (result?.type === 'agent.tool_result') status = result.isError ? 'error' : 'completed';
+        if (result?.type === 'agent.tool_result') status = toolResultStatus(events, result, observing);
         turns.push({ key, kind: 'activity', toolCallId: event.toolCallId, toolName: event.toolName,
           ...(event.displayName ? { displayName: event.displayName } : {}), status,
           arguments: argumentRows(event.arguments), argumentValue: event.arguments,
           result: result?.type === 'agent.tool_result' ? result.content.map((block) => block.text).join('\n') : '',
           resultBlocks: result?.type === 'agent.tool_result' ? result.content.map((block) => block.text) : undefined,
           hasResult: result?.type === 'agent.tool_result',
+          isError: result?.type === 'agent.tool_result' ? result.isError : undefined,
           errorCode: result?.type === 'agent.tool_result' ? result.errorCode : undefined });
         break;
       }
@@ -55,8 +56,9 @@ export function projectRuntimeEvents(events: RuntimeEvent[], observing = false):
           && item.sourceEventId === event.sourceEventId)) break;
         if (!events.some((item) => item.type === 'agent.tool_call' && item.toolCallId === event.toolCallId && item.sourceEventId === event.sourceEventId)) {
           turns.push({ key, kind: 'activity', toolCallId: event.toolCallId, toolName: '工具调用（调用记录尚未读到）',
-            status: event.isError ? 'error' : 'completed', arguments: [], result: event.content.map((block) => block.text).join('\n'),
-            resultBlocks: event.content.map((block) => block.text), hasResult: true, errorCode: event.errorCode });
+            status: toolResultStatus(events, event, observing), arguments: [], result: event.content.map((block) => block.text).join('\n'),
+            resultBlocks: event.content.map((block) => block.text), hasResult: true, isError: event.isError,
+            errorCode: event.errorCode });
         }
         break;
       case 'agent.plan': {
@@ -128,13 +130,37 @@ function matchingToolResult(events: RuntimeEvent[], call: Extract<RuntimeEvent, 
     && item.sourceEventId === call.sourceEventId);
 }
 
+function toolResultStatus(events: RuntimeEvent[], result: Extract<RuntimeEvent, { type: 'agent.tool_result' }>,
+  observing: boolean): ActivityTurn['status'] {
+  if (!result.isError) return 'completed';
+  if (result.errorCode !== 'TOOL_ARGUMENTS_INVALID') return 'error';
+  return isActivelyAdjusting(events, result.sourceEventId, observing) ? 'adjusting' : 'invalid_arguments';
+}
+
+function isActivelyAdjusting(events: RuntimeEvent[], sourceEventId: string, observing: boolean): boolean {
+  if (!observing || events.some((event) => event.type === 'user.interrupt' && event.targetEventId === sourceEventId)) {
+    return false;
+  }
+  const idle = [...events].reverse().find((event) => event.type === 'session.status_idle'
+    && event.sourceEventId === sourceEventId);
+  if (!idle || idle.type !== 'session.status_idle') return true;
+  if (idle.reason !== 'confirming') return false;
+  const later = events.slice(events.indexOf(idle) + 1);
+  return later.some((event) => event.type === 'user.tool_confirmation'
+    || event.type === 'user.plan_confirmation'
+    || event.type === 'user.question_answer'
+    || ('sourceEventId' in event && event.sourceEventId === sourceEventId));
+}
+
 function matchingQuestion(events: RuntimeEvent[], call: Extract<RuntimeEvent, { type: 'agent.tool_call' }>) {
   return events.find((item) => item.type === 'agent.question' && item.toolCallId === call.toolCallId
     && item.sourceEventId === call.sourceEventId);
 }
 
 function isShowcaseConfirmationCall(call: Extract<RuntimeEvent, { type: 'agent.tool_call' }>): boolean {
-  return call.toolName === 'CallMateTool' && call.arguments.tool === 'confirm_with_user';
+  return call.toolName === 'confirm_with_user'
+    || ((call.toolName === 'CallTool' || call.toolName === 'CallMateTool')
+      && call.arguments.tool === 'confirm_with_user');
 }
 
 function isShowcaseQuestion(question: Extract<RuntimeEvent, { type: 'agent.question' }>): question is Extract<

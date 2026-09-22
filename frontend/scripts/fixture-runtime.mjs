@@ -29,14 +29,14 @@ function startMessage(response, input) {
   if (text === 'showcase确认') return startShowcaseConfirmation(response, receipt);
   stream(response, [receipt,
     make('agent.thinking', { phase: 'completed', sourceEventId: rootId, content: '先核对巡检范围，再查询公开的园区记录。' }),
-    make('agent.tool_call', { sourceEventId: rootId, toolCallId: `tool-${rootId}`, toolName: 'CallMateTool', displayName: '查询园区巡检记录',
+    make('agent.tool_call', { sourceEventId: rootId, toolCallId: `tool-${rootId}`, toolName: 'CallTool', displayName: '查询园区巡检记录',
       arguments: { tool: 'query_inspections', args: { campus: '东区' } }, requiresConfirmation: true }),
     make('session.status_idle', { sourceEventId: rootId, reason: 'confirming' }),
   ]);
 }
 function startShowcaseConfirmation(response, receipt) {
   showcaseToolCallId = `tool-${rootId}`;
-  const call = make('agent.tool_call', { sourceEventId: rootId, toolCallId: showcaseToolCallId, toolName: 'CallMateTool',
+  const call = make('agent.tool_call', { sourceEventId: rootId, toolCallId: showcaseToolCallId, toolName: 'CallTool',
     arguments: { tool: 'confirm_with_user', args: { label: 'driver_design_confirm', context: {
       '方案': '驱动配置方案', '超时秒数': 30, '补充说明': null,
       '影响范围': ['东区设备', '夜间巡检'], '回退': { '策略': '保留当前配置', '需人工确认': true },
@@ -73,7 +73,7 @@ const server = createServer(async (request, response) => {
     }
     if (request.method === 'POST' && url.pathname.endsWith('/command')) {
       if (body.name.startsWith('skill:')) return startMessage(response, { content: [{ type: 'text', text: `/${body.name}${body.arguments ? ` ${body.arguments}` : ''}` }] });
-      if (body.name === 'help') return json(response, { displayName: '园区运维助手', description: ['协助梳理巡检、查询记录和整理处理建议。'], userCases: ['梳理明天的巡检重点', '检查东区的设备异常'] });
+      if (body.name === 'help') return json(response, { displayName: '园区运维助手', description: ['协助梳理巡检、查询记录和整理处理建议。'], useCases: ['梳理明天的巡检重点', '检查东区的设备异常'] });
       if (body.name === 'skills') return json(response, { skills: [{ name: 'inspect', description: '园区巡检' }] });
       if (body.name === 'compact') return json(response, { compacted: false });
       if (body.name === 'model' && !body.arguments?.trim()) return json(response, { currentModelId: session.modelId, models: ['model-primary', 'model-secondary'] });

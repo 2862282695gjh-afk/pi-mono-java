@@ -14,15 +14,15 @@ import com.campusclaw.codingagent.tool.ops.FindOperations;
 import com.campusclaw.codingagent.tool.ops.GrepOperations;
 import com.campusclaw.codingagent.tool.ops.LsOperations;
 import com.campusclaw.codingagent.tool.ops.ReadOperations;
-import com.campusclaw.codingagent.tool.question.ShowcaseConfirmationAdapter;
 import com.campusclaw.codingagent.tool.read.ReadTool;
+import com.campusclaw.codingagent.tool.skill.SkillTool;
 import com.campusclaw.codingagent.tool.todo.TodoUpdateTool;
 import com.campusclaw.codingagent.tool.workspace.WorkspacePathResolver;
 
 import org.springframework.stereotype.Component;
 
 /**
- * 使用关闭枚举和 Session 上下文创建八种活动内置工具。
+ * 使用框架工具枚举和 Session 上下文创建框架工具实例。
  *
  * @version [br_eCampusCore 26.0.0, 2026/08/24]
  * @since [br_eCampusCore 26.0.0]
@@ -61,26 +61,20 @@ public class DefaultBuiltInToolFactory implements BuiltInToolFactory {
             case GREP -> new GrepTool(grepOperations, pathResolver, context.workspaceBoundary());
             case LS -> new LsTool(lsOperations, pathResolver, context.workspaceBoundary());
             case CRON -> contextualTool(name, context.cronToolFactory(), context);
-            case LIST_MATE_TOOLS ->
+            case SKILL -> new SkillTool(pathResolver, context.workspaceBoundary(), context.runtime());
+            case SEARCH_TOOLS ->
                 context.mateToolSessionState() == null
                         ? unavailable(name, context)
-                        : context.mateToolSessionState().createListTool();
-            case CALL_MATE_TOOL ->
+                        : context.mateToolSessionState().createSearchTools();
+            case CALL_TOOL ->
                 context.mateToolSessionState() == null
                         ? unavailable(name, context)
-                        : context.mateToolSessionState().createCallTool(confirmationAdapter(context));
+                        : context.mateToolSessionState().createCallTool();
             case AGENT -> contextualTool(name, context.agentToolFactory(), context);
             case TODO_UPDATE -> new TodoUpdateTool();
             case EXIT_PLAN_MODE -> contextualTool(name, context.exitPlanModeToolFactory(), context);
             case ASK_USER_QUESTION -> contextualTool(name, context.askUserQuestionToolFactory(), context);
         };
-    }
-
-    private ShowcaseConfirmationAdapter confirmationAdapter(ToolAssemblyContext context) {
-        if (context.showcaseConfirmationAdapter() != null) {
-            return context.showcaseConfirmationAdapter();
-        }
-        return new ShowcaseConfirmationAdapter(true, context.entryPoint(), null);
     }
 
     private static AgentTool contextualTool(

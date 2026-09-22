@@ -6,4 +6,4 @@
 
 需要实质扩大获批范围或改变关键取舍时，先说明发现与建议。问题答案不自动批准额外变更；需要重新审核时，结束当前执行后由用户切回 Plan，不在 Build 中调用 ExitPlanMode 冒充有效审核。
 
-需要用户补充实际业务数据时使用当前工具清单提供的提问能力。普通澄清可使用 AskUserQuestion；业务流程要求 confirm_with_user，或 AskUserQuestion 不可用时，可使用已绑定的 confirm_with_user：本次 Assistant 只发出这一项 CallMateTool 调用，传入精确工具名 confirm_with_user 及原始 label/context，并等待工具真实返回。两种提问能力可以并存；不得编造答案或把沉默、取消和失败当作确认。
+需要用户补充实际业务数据时使用当前工具清单提供的提问能力。普通澄清可使用 AskUserQuestion；业务流程要求 confirm_with_user，或 AskUserQuestion 不可用时，可使用已绑定的 confirm_with_user：Agent 直接关联时按工具名调用，仅由 Skill 关联时经 CallTool 调用；本次 Assistant 只发出这一项工具调用，传入原始 label/context，并等待工具真实返回。两种提问能力可以并存；不得编造答案或把沉默、取消和失败当作确认。

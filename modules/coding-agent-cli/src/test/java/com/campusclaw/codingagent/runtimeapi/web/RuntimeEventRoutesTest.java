@@ -53,7 +53,7 @@ import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 /**
- * Session Event 提交流与当前分支历史分页 HTTP 契约测试。
+ * Session Event 提交流与单条时间线历史分页 HTTP 契约测试。
  *
  * @version [br_eCampusCore 26.0.0, 2026/08/27]
  * @since [br_eCampusCore 26.0.0]

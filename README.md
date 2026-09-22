@@ -11,10 +11,10 @@ CampusClaw 不提供 CLI、TUI、RPC 或本地安装入口。`modules/coding-age
 
 - **HTTP Runtime V1**：创建和管理 Agent Session，以请求范围 SSE 投影执行事件；
 - **受管 Agent 目录**：从 CampusMate 准备 Agent、Skill 和直接绑定 Child 的运行目录；
-- **固定工具集合**：按 Runtime、Cron、Child profile 装配 PascalCase 内置工具；
+- **工具装配**：按 Runtime、Cron、Child 配置选择框架工具，并追加 Agent 直接关联业务工具代理；
 - **计划模式**：先制作完整方案，审核批准后继续实施，并通过显式任务事件展示进度；
 - **工作区隔离**：本地文件工具只能读取当前 `agent/{agentId}`，拒绝符号链接和 realpath 越界；
-- **Mate 工具**：实时发现当前 Agent/Skill 的工具，按名称解析并执行；
+- **Mate 工具**：代理 Agent 直接关联的工具，并通过 Skill 渐进发现和调用业务工具；
 - **Cron 与 Child**：Cron Job 自动绑定当前 Agent，Child 只允许调用直接绑定身份；
 - **CampusMate 模型调用**：受管 Agent 快照提供模型 ID，统一通过 `campusmate` Provider 调用。
 
@@ -65,8 +65,9 @@ java -jar modules/coding-agent-cli/target/campusclaw-agent.jar
 | `Grep` | 按正则或字面量搜索文件内容 | PARALLEL |
 | `Ls` | 列出目录内容 | PARALLEL |
 | `Cron` | 管理当前 Agent 的定时任务 | SEQUENTIAL |
-| `ListMateTools` | 实时列出 Agent 或 Skill 的 Mate 工具 | PARALLEL |
-| `CallMateTool` | 按名称调用 Mate 工具 | SEQUENTIAL |
+| `Skill` | 加载当前 Agent 可见 Skill 的正文与资源路径 | PARALLEL |
+| `SearchTools` | 按精确技术名返回直接 Skill 关联的单个完整业务工具定义 | PARALLEL |
+| `CallTool` | 调用直接 Skill 绑定的业务工具 | SEQUENTIAL |
 | `Agent` | 执行当前 Agent 直接绑定的 Child | SEQUENTIAL |
 | `ExitPlanMode` | Runtime 根执行提交完整计划并等待审核 | SEQUENTIAL |
 | `TodoUpdate` | 返回实施任务的完整进度快照 | SEQUENTIAL |
@@ -83,9 +84,9 @@ java -jar modules/coding-agent-cli/target/campusclaw-agent.jar
 ```yaml
 campusclaw:
   tools:
-    runtime: [Read, Find, Grep, Ls, Cron, ListMateTools, CallMateTool, Agent, ExitPlanMode, TodoUpdate, AskUserQuestion]
-    cron: [Read, Find, Grep, Ls, ListMateTools, CallMateTool, Agent]
-    child-agent: [Read, Find, Grep, Ls, ListMateTools, CallMateTool]
+    runtime: [Read, Find, Grep, Ls, Cron, Skill, SearchTools, CallTool, Agent, ExitPlanMode, TodoUpdate, AskUserQuestion]
+    cron: [Read, Find, Grep, Ls, Skill, SearchTools, CallTool, Agent]
+    child-agent: [Read, Find, Grep, Ls, Skill, SearchTools, CallTool]
 ```
 
 配置列表完全替换缺省值，显式空数组表示不装配工具；未知、重复、大小写错误或已禁用的名称
@@ -118,7 +119,9 @@ agent/{agentId}/
 `PLAN.md` 和 `BUILD.md` 分别完整替换内置同名模式正文；单个文件不存在时只回退该模式的内置正文。
 每次执行准备时固定基础 SYSTEM、Skill 摘要和两种模式正文，批准续跑、修订与压缩都复用该快照。
 两个覆盖文件会随目录刷新保留；空白、目录、链接、非法 UTF-8、超限或不可读文件会使准备失败。
-目录不生成或读取 `tools.json`；Mate 工具列表始终实时查询。
+目录不生成或读取 `tools.json` 或业务工具定义 JSON；`Read` 只读取普通资源。模型需要 Skill
+正文引用的业务工具定义时，使用 `SearchTools({tool})` 精确查询，再以 `CallTool({tool,args?})`
+执行。当前 Session 复用可信解析缓存；远端数据加载、同步、刷新、失效和跨节点一致性另行设计。
 Agent 元数据的 `mode` 为 `build|plan` 字符串，缺省为 `build`；只用于初始化新 Session。
 已有 Session 独立维护模式，刷新 Agent 元数据不会覆盖会话模式。
 
@@ -220,7 +223,7 @@ coding-agent-cli → common、ai、agent-core、cron。common 不依赖业务模
 | [`tool-system-v2.md`](docs/designs/tool-system-v2.md) | 三入口、工作区和 Session 装配；计划工具增量见下项 |
 | [计划模式实施说明](docs/plans/campusclaw-plan-mode-implementation.md) | 模式、审核、实施进度和外部 Mate 接入边界 |
 | [`coding-agent-cli.md`](docs/designs/coding-agent-cli.md) | Runtime HTTP 与公共 Session 设计 |
-| [`mate-tool-client.md`](docs/designs/mate-tool-client.md) | Mate 实时发现、Session 缓存和名称调用 |
+| [`mate-tool-client.md`](docs/designs/mate-tool-client.md) | Agent 工具代理、Skill 渐进发现与 CallTool 执行 |
 | [`cron.md`](docs/designs/cron.md) | Runtime-only Cron 与 Agent 隔离 |
 | [`agent-delegation.md`](docs/designs/agent-delegation.md) | Child Execution 约束 |
 | [`frontend/README.md`](frontend/README.md) | HTTP/SSE 调试客户端 |

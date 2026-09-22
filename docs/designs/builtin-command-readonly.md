@@ -1,6 +1,6 @@
 # Builtin Command 只读命令切片
 
-> 版本：1.2.0 · 日期：2026-09-07 · 状态：Help / Status / Skills 已实现；未发布 Command HTTP 路由
+> 版本：1.2.1 · 日期：2026-09-22 · 状态：Help / Status / Skills 已实现；未发布 Command HTTP 路由
 
 响应方向已按设计仓 `88f4df16bc24bbfcd28e1ec374feb2de0db8be3b` Builtin 2.9.0 修订。
 旧“Status 裁剪字段、未来添加 command”的决定 superseded；当前完整结果通道见
@@ -34,8 +34,8 @@ Java 基线为 `6d7ba8483f69e8cccab04489a0111a27fde1315d`；初始只读切片�
 | Java 基线 | `runtimeapi/dto/command/CommandSessionSnapshotDTO.java:from` | 从已完成访问检查的持久化 Session DTO 复制状态、模型和 Thinking，不读取 Active Holder |
 | Java 基线 | `runtime/AgentRuntimeManager.java:prepareCached/loadSnapshot/loadSkills` | 仅读取本地目录；完整性失败返回 null；完整无绑定目录返回空列表；此入口不调用 Mate |
 | 本切片实现 | `runtimeapi/service/command/contributor/{Help,Status,Skills}CommandContributor.java:definition` | 各自提供元数据、只读准入与调用窄服务的 Handler lambda；没有中央名称分派 |
-| 新版 Help 实现 | `runtimeapi/service/command/readonly/AgentHelpQueryService.java:query` | 根据 Session Agent ID 读取一次完整缓存，投影 displayName、description 和 userCases；不刷新、不读取 Catalog |
-| 新版缓存前置 | `runtime/AgentRuntimeManager.java:prepareCached/toIdentity/toRuntime`、`MateServiceClient.AgentRuntime` | 缓存读取与刷新共用 Agent 锁；userCases 写入并恢复；旧缓存缺字段恢复为空列表；介绍数组拒绝非字符串项 |
+| 新版 Help 实现 | `runtimeapi/service/command/readonly/AgentHelpQueryService.java:query` | 根据 Session Agent ID 读取一次完整缓存，投影 displayName、description 和 useCases；不刷新、不读取 Catalog |
+| 新版缓存前置 | `runtime/AgentRuntimeManager.java:prepareCached/toIdentity/toRuntime`、`MateServiceClient.AgentRuntime` | 缓存读取与刷新共用 Agent 锁；useCases 写入并恢复；旧缓存缺字段恢复为空列表；介绍数组拒绝非字符串项 |
 | 本切片实现 | `runtimeapi/service/command/readonly/{RuntimeSessionStatusService,BoundSkillQueryService}.java:query` | 分别读取请求内持久化观察值和执行时完整绑定快照；返回内部 DTO |
 | 已确认设计输入 | `pi-mono-java-design@e2afc2632ecbf2a528daf266626eaff5aff9289b` · `04-命令与技能/01-内置命令/Help-Agent使用指南/README.md` | Help 是 Agent 使用指南而非命令目录；本实现仓只读取该决策，未修改设计仓 |
 | pi `4af9d21d3b4d664e4a29fcabfec85171077248e3` | `packages/coding-agent/src/core/agent-session.ts:1289` · `_tryExecuteExtensionCommand` | 扩展命令按名称查找并调用 `handler(args, ctx)`；不是 Java Builtin HTTP 实现 |
@@ -80,7 +80,7 @@ Contributor 只依赖窄服务和核心 SPI，窄服务不反向依赖 Contribut
   纯空白时读取一次最新完整本地缓存；其他参数返回 `INVALID_COMMAND_REQUEST`。显示名先对
   `displayName` 去除两端空白，空白时回退同样处理后的 Agent `name`；介绍和场景保持顺序及
   条目内部换行，只去除条目两端空白并过滤空项。缺少完整缓存返回 `AGENT_NOT_AVAILABLE`。
-- **缓存提供完整指南快照**：`agent.json` 在既有 schemaVersion 下保存 `userCases`，重启后恢复；
+- **缓存提供完整指南快照**：`agent.json` 在既有 schemaVersion 下保存 `useCases`，重启后恢复；
   旧缓存缺字段时返回空列表。缓存中的 null、数字、布尔或对象文本项使快照不可用，Mate 响应中的
   同类值映射为无效响应。显式刷新失败保留上一完整快照。
 - **Status 使用完整持久化资源**：不根据 Holder 推测状态、不补算 Token 或费用；同一次查询的
@@ -99,7 +99,7 @@ Contributor 只依赖窄服务和核心 SPI，窄服务不反向依赖 Contribut
 
 ## 5. 边界情况与性能（DFX）
 
-- Help 的完整缓存即使没有 description 或 userCases 也成功返回空列表；显示名同时缺少
+- Help 的完整缓存即使没有 description 或 useCases 也成功返回空列表；显示名同时缺少
   displayName 和 name 时按不可用处理。不返回 Agent ID、版本、路径、提示词、Skill 或工具细节。
 - Status 可保留 null 模型值，不因 Agent 快照缺失导致查询失败。
 - Skills 成功后若绑定刷新，下一次查询取得新快照；若目录随后不完整，不返回上一次列表。
@@ -118,7 +118,7 @@ Contributor 只依赖窄服务和核心 SPI，窄服务不反向依赖 Contribut
 ## 7. 测试与验证
 
 - 新版 Help 测试覆盖 idle/running、无参描述符、显示名回退、条目裁剪与空列表、缓存缺失、
-  非字符串元数据、userCases 发布/重载/重启、旧缓存、刷新失败保留旧值及并发读取互斥。
+  非字符串元数据、useCases 发布/重载/重启、旧缓存、刷新失败保留旧值及并发读取互斥。
 - Skills 使用真实 AgentRuntimeManager 和临时目录验证缺失、完整空列表、更新后的绑定及
   不完整目录；Mock Mate 在命令执行期间零调用。独立测试固定逆序输入，断言排序与最小字段。
 - 模块与依赖 `./mvnw -q -pl modules/coding-agent-cli -am -DskipITs test`：1399 项，0 失败、0 错误、0 跳过。
@@ -136,7 +136,8 @@ Contributor 只依赖窄服务和核心 SPI，窄服务不反向依赖 Contribut
 
 | 版本 | 日期 | 变更 |
 |---|---|---|
+| 1.2.1 | 2026-09-22 | 将 Agent 使用场景字段从错误的 `userCases` 统一为 `useCases`，同步 Runtime、Help 和前端投影。 |
 | 1.2.0 | 2026-09-07 | 依据 88f4df16 撤销公开命令回执与 Status 子集，改用完整 Session 通道；保留历史证据并链接 R06。 |
 | 1.1.1 | 2026-09-07 | 以 fd86049 的统一责任替代旧人员分工；区分历史只读切片证据与后续已合入进度。 |
-| 1.1.0 | 2026-09-05 | 按已确认的新设计将 Help 改为 Agent 使用指南，并记录 userCases 缓存、严格文本类型和并发快照一致性。 |
+| 1.1.0 | 2026-09-05 | 按已确认的新设计将 Help 改为 Agent 使用指南，并记录 useCases 缓存、严格文本类型和并发快照一致性。 |
 | 1.0.0 | 2026-09-04 | 记录 Help / Status / Skills 只读切片、DTO 边界、测试与串行 PR 行数预算；不改设计仓、不发布 HTTP。 |

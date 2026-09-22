@@ -18,6 +18,7 @@ import com.huawei.hicampus.claw.codingagent.tool.builtin.ToolAssemblyContext;
 import com.huawei.hicampus.claw.codingagent.tool.builtin.ToolEntryPoint;
 import com.huawei.hicampus.claw.codingagent.tool.mate.MateToolSessionState;
 import com.huawei.hicampus.claw.codingagent.tool.mate.MateToolsetFactory;
+import com.huawei.hicampus.claw.codingagent.tool.question.ShowcaseConfirmationAdapter;
 import com.huawei.hicampus.claw.codingagent.tool.workspace.AgentWorkspaceBoundary;
 
 import org.springframework.beans.factory.ObjectProvider;
@@ -78,11 +79,14 @@ public class AgentSessionFactory {
         com.huawei.hicampus.claw.ai.types.Model model =
                 java.util.Objects.requireNonNull(request.modelResolver().apply(runtime), "resolved model");
         AgentWorkspaceBoundary boundary = AgentWorkspaceBoundary.create(runtime.agentId(), runtime.agentRoot());
+        ShowcaseConfirmationAdapter confirmation = confirmationAdapter(request);
         MateToolsetFactory mateToolsetFactory = mateToolsetFactoryProvider.getIfAvailable();
         MateToolSessionState mateState = mateToolsetFactory == null
                 ? null
-                : mateToolsetFactory.createSession(
-                        runtime.agentId(), runtime.skillIdsByName(), request.mateCredentials());
+                : mateToolsetFactory.createSession(runtime, request.mateCredentials());
+        if (mateState != null) {
+            mateState.bindShowcaseConfirmation(confirmation);
+        }
         ToolAssemblyContext context = new ToolAssemblyContext(
                 request.entryPoint(),
                 runtime,
@@ -96,7 +100,7 @@ public class AgentSessionFactory {
                 contextualSupplier(request.agentToolFactory(), runtime, model),
                 contextualSupplier(request.exitPlanModeToolFactory(), runtime, model),
                 contextualSupplier(request.askUserQuestionToolFactory(), runtime, model),
-                request.showcaseConfirmationAdapter());
+                confirmation);
         List<AgentTool> tools = toolAssembler.assemble(request.entryPoint(), context);
         Agent agent = configureAgent(request, runtime, model, tools);
         applyPrompt(agent, runtime, request.entryPoint(), request.mode());
@@ -121,6 +125,13 @@ public class AgentSessionFactory {
 
     private void applyPrompt(Agent agent, PreparedAgentRuntime runtime, ToolEntryPoint entryPoint, String mode) {
         agent.setSystemPrompt(promptComposer.compose(runtime.prompts(), mode, entryPoint));
+    }
+
+    private static ShowcaseConfirmationAdapter confirmationAdapter(ManagedAgentSessionRequest request) {
+        if (request.showcaseConfirmationAdapter() != null) {
+            return request.showcaseConfirmationAdapter();
+        }
+        return new ShowcaseConfirmationAdapter(true, request.entryPoint(), null);
     }
 
     private static java.util.function.Supplier<AgentTool> contextualSupplier(

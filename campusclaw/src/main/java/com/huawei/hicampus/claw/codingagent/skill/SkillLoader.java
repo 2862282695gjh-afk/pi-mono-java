@@ -204,7 +204,7 @@ public class SkillLoader {
      * @param content 文件内容
      * @return 正文内容
      */
-    static String stripFrontmatter(String content) {
+    public static String stripFrontmatter(String content) {
         if (content == null || !content.startsWith(FRONTMATTER_DELIMITER)) {
             return content != null ? content : "";
         }

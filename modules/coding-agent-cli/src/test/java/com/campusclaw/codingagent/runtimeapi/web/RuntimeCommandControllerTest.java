@@ -289,7 +289,7 @@ class RuntimeCommandControllerTest {
     private JsonNode expected(String name) throws Exception {
         return json.readTree(
                 switch (name) {
-                    case "help" -> "{\"displayName\":\"Agent\",\"description\":[\"介绍\"],\"userCases\":[\"场景\"]}";
+                    case "help" -> "{\"displayName\":\"Agent\",\"description\":[\"介绍\"],\"useCases\":[\"场景\"]}";
                     case "model" -> "{\"currentModelId\":\"model\",\"models\":[\"model\"]}";
                     case "compact" -> "{\"compacted\":false}";
                     case "skills" -> "{\"skills\":[{\"name\":\"pdf\",\"description\":\"description\"}]}";

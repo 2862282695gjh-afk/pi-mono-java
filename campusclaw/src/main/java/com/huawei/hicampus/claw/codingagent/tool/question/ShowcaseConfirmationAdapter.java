@@ -7,15 +7,15 @@ package com.huawei.hicampus.claw.codingagent.tool.question;
 import java.util.Map;
 import java.util.Optional;
 
+import com.huawei.hicampus.claw.agent.tool.BeforeToolCallContext;
 import com.huawei.hicampus.claw.agent.tool.CancellationToken;
+import com.huawei.hicampus.claw.agent.tool.PreparedToolInvocation;
 import com.huawei.hicampus.claw.agent.tool.ToolArgumentsInvalidException;
-import com.huawei.hicampus.claw.ai.types.ToolCall;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.runtime.RuntimeToolPermissionPolicy;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.runtime.RuntimeToolPermissionPolicy.BindingDiagnosisDTO;
 import com.huawei.hicampus.claw.codingagent.runtimeapi.runtime.RuntimeToolPermissionPolicy.BindingStatus;
 import com.huawei.hicampus.claw.codingagent.tool.builtin.BuiltInToolName;
 import com.huawei.hicampus.claw.codingagent.tool.builtin.ToolEntryPoint;
-import com.huawei.hicampus.claw.codingagent.tool.mate.MateToolDiscovery;
 import com.huawei.hicampus.claw.common.constant.ClawConstants;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -24,53 +24,33 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * 在单个 Session 内把展示业务确认调用适配到既有用户问答等待。
+ * 在单个 Session 内把已可信解析的展示确认调用适配到既有用户问答等待。
  *
- * @version [br_eCampusCore 26.0.0, 2026/09/17]
+ * @version [br_eCampusCore 26.0.0, 2026/09/22]
  * @since [br_eCampusCore 26.0.0]
  */
 public final class ShowcaseConfirmationAdapter {
     private static final Logger LOGGER = LoggerFactory.getLogger(ShowcaseConfirmationAdapter.class);
-
     private static final ObjectMapper MAPPER = new ObjectMapper();
-
     private static final String PREPARE_OPERATION = "runtime.user-question.confirmation.prepare";
-
-    private static final String DISCOVERY_OPERATION = "runtime.user-question.confirmation.discovery";
-
     private static final String AWAIT_OPERATION = "runtime.user-question.confirmation.await";
-
     private static final String ANSWER_OPERATION = "runtime.user-question.confirmation.answer";
+    private static final String LEGACY_CALL_TOOL_NAME = "CallMateTool";
 
     private final boolean enabled;
-
     private final ToolEntryPoint entryPoint;
-
     private final UserQuestionPort questions;
 
-    private MateToolDiscovery discovery;
-
     private RuntimeToolPermissionPolicy permissions;
-
     private BindingDiagnosisDTO binding;
-
     private String sessionId;
-
     private String agentId;
-
     private PreparedCallDTO prepared;
 
     public ShowcaseConfirmationAdapter(boolean enabled, ToolEntryPoint entryPoint, UserQuestionPort questions) {
         this.enabled = enabled;
         this.entryPoint = java.util.Objects.requireNonNull(entryPoint, "entryPoint");
         this.questions = questions;
-    }
-
-    public synchronized void bindDiscovery(MateToolDiscovery value) {
-        if (discovery != null) {
-            throw new IllegalStateException("showcase confirmation discovery is already bound");
-        }
-        discovery = value;
     }
 
     public synchronized void bindPermissions(RuntimeToolPermissionPolicy value, String toolId) {
@@ -82,7 +62,7 @@ public final class ShowcaseConfirmationAdapter {
         if (permissions != null) {
             throw new IllegalStateException("showcase confirmation permissions are already bound");
         }
-        permissions = value;
+        permissions = java.util.Objects.requireNonNull(value, "value");
         binding = diagnosis;
     }
 
@@ -91,26 +71,24 @@ public final class ShowcaseConfirmationAdapter {
         agentId = valueAgentId;
     }
 
-    public boolean matches(ToolCall call) {
-        return enabled && isTarget(call == null ? null : call.name(), call == null ? null : call.arguments());
+    public boolean matches(BeforeToolCallContext context) {
+        return enabled && context != null && isTarget(context.preparedInvocation());
     }
 
-    public synchronized QuestionRequestSnapshotDTO prepare(ToolCall call) {
-        requireAvailable(call);
-        requireBinding(call.id());
-        requirePermission(call);
-        requireDiscoveredIdentity(call.id());
-        QuestionRequestSnapshotDTO snapshot = parseSnapshot(call.id(), call.arguments());
-        PreparedCallDTO next = new PreparedCallDTO(call.id(), MAPPER.valueToTree(call.arguments()), snapshot);
+    public synchronized QuestionRequestSnapshotDTO prepare(BeforeToolCallContext context) {
+        requireAvailable(context);
+        requirePermission(context);
+        PreparedToolInvocation invocation = context.preparedInvocation();
+        QuestionRequestSnapshotDTO snapshot = parseSnapshot(invocation.toolCallId(), businessArguments(invocation));
+        PreparedCallDTO next = PreparedCallDTO.from(invocation, snapshot);
         if (prepared != null) {
-            if (prepared.toolCallId().equals(next.toolCallId())
-                    && prepared.arguments().equals(next.arguments())) {
+            if (prepared.matches(invocation)) {
                 return prepared.snapshot();
             }
             throw failure(
                     ClawConstants.RuntimeApi.USER_QUESTION_PREPARATION_CONFLICT_ERROR_CODE,
                     PREPARE_OPERATION,
-                    call.id(),
+                    invocation.toolCallId(),
                     Map.of("preparedToolCallId", prepared.toolCallId()),
                     null);
         }
@@ -118,55 +96,36 @@ public final class ShowcaseConfirmationAdapter {
         return snapshot;
     }
 
-    public synchronized Optional<QuestionRequestSnapshotDTO> prepared(ToolCall call) {
-        if (!matches(call)) {
+    public synchronized Optional<QuestionRequestSnapshotDTO> prepared(BeforeToolCallContext context) {
+        if (!matches(context)) {
             return Optional.empty();
         }
+        PreparedToolInvocation invocation = context.preparedInvocation();
         if (prepared == null) {
             throw failure(
                     ClawConstants.RuntimeApi.USER_QUESTION_NOT_PREPARED_ERROR_CODE,
                     PREPARE_OPERATION,
-                    call.id(),
+                    invocation.toolCallId(),
                     Map.of(),
                     null);
         }
-        if (!prepared.toolCallId().equals(call.id())
-                || !prepared.arguments().equals(MAPPER.valueToTree(call.arguments()))) {
-            throw callMismatch(call.id(), PREPARE_OPERATION);
+        if (!prepared.matches(invocation)) {
+            throw callMismatch(invocation.toolCallId(), PREPARE_OPERATION);
         }
         return Optional.of(prepared.snapshot());
     }
 
-    public Optional<String> await(String toolCallId, Map<String, Object> arguments, CancellationToken signal)
-            throws Exception {
-        if (!enabled || !isTarget(BuiltInToolName.CALL_MATE_TOOL.externalName(), arguments)) {
+    public Optional<String> await(PreparedToolInvocation invocation, CancellationToken signal) throws Exception {
+        if (!enabled || !isTarget(invocation)) {
             return Optional.empty();
         }
-        PreparedCallDTO current;
-        synchronized (this) {
-            if (entryPoint != ToolEntryPoint.RUNTIME) {
-                throw entryUnsupported(toolCallId, AWAIT_OPERATION);
-            }
-            if (prepared == null) {
-                throw failure(
-                        ClawConstants.RuntimeApi.USER_QUESTION_NOT_PREPARED_ERROR_CODE,
-                        AWAIT_OPERATION,
-                        toolCallId,
-                        Map.of(),
-                        null);
-            }
-            if (!prepared.toolCallId().equals(toolCallId)
-                    || !prepared.arguments().equals(MAPPER.valueToTree(arguments))) {
-                throw callMismatch(toolCallId, AWAIT_OPERATION);
-            }
-            current = prepared;
-        }
+        PreparedCallDTO current = requirePrepared(invocation);
         try {
             if (signal == null || signal.isCancelled()) {
                 throw new java.util.concurrent.CancellationException("User confirmation was cancelled");
             }
-            QuestionAnswerResultDTO result = questions.await(toolCallId, signal);
-            return Optional.of(requireAnswer(toolCallId, result));
+            QuestionAnswerResultDTO result = questions.await(invocation.toolCallId(), signal);
+            return Optional.of(requireAnswer(invocation.toolCallId(), result));
         } finally {
             synchronized (this) {
                 if (prepared == current) {
@@ -176,24 +135,70 @@ public final class ShowcaseConfirmationAdapter {
         }
     }
 
-    private static boolean isTarget(String callName, Map<String, Object> arguments) {
-        return BuiltInToolName.CALL_MATE_TOOL.externalName().equals(callName)
-                && arguments != null
-                && ClawConstants.RuntimeApi.SHOWCASE_CONFIRMATION_TOOL_NAME.equals(arguments.get("tool"));
+    private synchronized PreparedCallDTO requirePrepared(PreparedToolInvocation invocation) {
+        if (entryPoint != ToolEntryPoint.RUNTIME) {
+            throw entryUnsupported(invocation.toolCallId(), AWAIT_OPERATION);
+        }
+        if (questions == null) {
+            throw failure(
+                    ClawConstants.RuntimeApi.USER_QUESTION_PORT_MISSING_ERROR_CODE,
+                    AWAIT_OPERATION,
+                    invocation.toolCallId(),
+                    Map.of(),
+                    null);
+        }
+        if (prepared == null) {
+            throw failure(
+                    ClawConstants.RuntimeApi.USER_QUESTION_NOT_PREPARED_ERROR_CODE,
+                    AWAIT_OPERATION,
+                    invocation.toolCallId(),
+                    Map.of(),
+                    null);
+        }
+        if (!prepared.matches(invocation)) {
+            throw callMismatch(invocation.toolCallId(), AWAIT_OPERATION);
+        }
+        return prepared;
+    }
+
+    private static boolean isTarget(PreparedToolInvocation invocation) {
+        if (invocation == null
+                || !ClawConstants.RuntimeApi.SHOWCASE_CONFIRMATION_TOOL_NAME.equals(
+                        invocation.authorizationTargetName())) {
+            return false;
+        }
+        String name = invocation.toolName();
+        return ClawConstants.RuntimeApi.SHOWCASE_CONFIRMATION_TOOL_NAME.equals(name)
+                || BuiltInToolName.CALL_TOOL.externalName().equals(name)
+                || LEGACY_CALL_TOOL_NAME.equals(name);
+    }
+
+    private static Map<String, Object> businessArguments(PreparedToolInvocation invocation) {
+        Map<String, Object> arguments = invocation.arguments();
+        if (ClawConstants.RuntimeApi.SHOWCASE_CONFIRMATION_TOOL_NAME.equals(invocation.toolName())) {
+            return arguments;
+        }
+        Object nested = arguments.get("args");
+        if (!(nested instanceof Map<?, ?> values)) {
+            throw new ToolArgumentsInvalidException("confirm_with_user args must be an object");
+        }
+        Map<String, Object> result = new java.util.LinkedHashMap<>();
+        values.forEach((name, value) -> {
+            if (name instanceof String text) {
+                result.put(text, value);
+            }
+        });
+        return PreparedToolInvocation.snapshotArguments(result);
     }
 
     private QuestionRequestSnapshotDTO parseSnapshot(String toolCallId, Map<String, Object> arguments) {
-        Object args = arguments.get("args");
-        if (!(args instanceof Map<?, ?> values)) {
-            throw invalid(toolCallId, "args_not_object", "confirm_with_user args must be an object");
-        }
-        Object label = values.get("label");
+        Object label = arguments.get("label");
         if (!(label instanceof String text)) {
             throw invalid(toolCallId, "label_not_string", "confirm_with_user label must be a string");
         }
         JsonNode context = null;
-        if (values.containsKey("context")) {
-            context = MAPPER.valueToTree(values.get("context"));
+        if (arguments.containsKey("context")) {
+            context = MAPPER.valueToTree(arguments.get("context"));
             if (!context.isObject()) {
                 throw invalid(toolCallId, "context_not_object", "confirm_with_user context must be an object");
             }
@@ -216,9 +221,11 @@ public final class ShowcaseConfirmationAdapter {
         return answer.custom();
     }
 
-    private void requireAvailable(ToolCall call) {
-        String toolCallId = call == null ? null : call.id();
-        if (!matches(call) || entryPoint != ToolEntryPoint.RUNTIME) {
+    private void requireAvailable(BeforeToolCallContext context) {
+        String toolCallId = context == null || context.toolCall() == null
+                ? null
+                : context.toolCall().id();
+        if (!matches(context) || entryPoint != ToolEntryPoint.RUNTIME) {
             throw entryUnsupported(toolCallId, PREPARE_OPERATION);
         }
         if (questions == null) {
@@ -229,7 +236,7 @@ public final class ShowcaseConfirmationAdapter {
                     Map.of(),
                     null);
         }
-        if (discovery == null || permissions == null || binding == null) {
+        if (permissions == null) {
             throw failure(
                     ClawConstants.RuntimeApi.USER_QUESTION_ADAPTER_UNBOUND_ERROR_CODE,
                     PREPARE_OPERATION,
@@ -239,68 +246,20 @@ public final class ShowcaseConfirmationAdapter {
         }
     }
 
-    private void requireBinding(String toolCallId) {
-        if (binding.status() == BindingStatus.MISSING) {
-            throw bindingFailure(ClawConstants.RuntimeApi.USER_QUESTION_BINDING_MISSING_ERROR_CODE, toolCallId);
+    private void requirePermission(BeforeToolCallContext context) {
+        RuntimeToolPermissionPolicy.Decision decision = permissions.decide(context);
+        if (decision == RuntimeToolPermissionPolicy.Decision.ALLOW) {
+            return;
         }
-        if (binding.status() == BindingStatus.AMBIGUOUS) {
-            throw bindingFailure(ClawConstants.RuntimeApi.USER_QUESTION_BINDING_AMBIGUOUS_ERROR_CODE, toolCallId);
-        }
-    }
-
-    private void requirePermission(ToolCall call) {
-        RuntimeToolPermissionPolicy.Decision decision = permissions.decide(call);
-        if (decision == RuntimeToolPermissionPolicy.Decision.ASK) {
-            throw failure(
-                    ClawConstants.RuntimeApi.USER_QUESTION_PERMISSION_REQUIRED_ERROR_CODE,
-                    PREPARE_OPERATION,
-                    call.id(),
-                    permissionContext(decision),
-                    null);
-        }
-        if (decision == RuntimeToolPermissionPolicy.Decision.DENY) {
-            throw failure(
-                    ClawConstants.RuntimeApi.USER_QUESTION_PERMISSION_DENIED_ERROR_CODE,
-                    PREPARE_OPERATION,
-                    call.id(),
-                    permissionContext(decision),
-                    null);
-        }
-    }
-
-    private void requireDiscoveredIdentity(String toolCallId) {
-        String discoveredToolId = resolveToolId(toolCallId);
-        if (discoveredToolId == null) {
-            throw failure(
-                    ClawConstants.RuntimeApi.USER_QUESTION_TOOL_NOT_FOUND_ERROR_CODE,
-                    DISCOVERY_OPERATION,
-                    toolCallId,
-                    bindingContext(),
-                    null);
-        }
-        if (!binding.toolId().equals(discoveredToolId)) {
-            Map<String, Object> context = new java.util.LinkedHashMap<>(bindingContext());
-            context.put("discoveredToolId", discoveredToolId);
-            throw failure(
-                    ClawConstants.RuntimeApi.USER_QUESTION_TOOL_ID_MISMATCH_ERROR_CODE,
-                    DISCOVERY_OPERATION,
-                    toolCallId,
-                    context,
-                    null);
-        }
-    }
-
-    private String resolveToolId(String toolCallId) {
-        try {
-            return discovery.resolveToolId(ClawConstants.RuntimeApi.SHOWCASE_CONFIRMATION_TOOL_NAME);
-        } catch (RuntimeException error) {
-            throw failure(
-                    ClawConstants.RuntimeApi.USER_QUESTION_DISCOVERY_FAILED_ERROR_CODE,
-                    DISCOVERY_OPERATION,
-                    toolCallId,
-                    bindingContext(),
-                    error);
-        }
+        String errorCode = decision == RuntimeToolPermissionPolicy.Decision.ASK
+                ? ClawConstants.RuntimeApi.USER_QUESTION_PERMISSION_REQUIRED_ERROR_CODE
+                : ClawConstants.RuntimeApi.USER_QUESTION_PERMISSION_DENIED_ERROR_CODE;
+        throw failure(
+                errorCode,
+                PREPARE_OPERATION,
+                context.preparedInvocation().toolCallId(),
+                permissionContext(context.preparedInvocation(), decision),
+                null);
     }
 
     private ToolArgumentsInvalidException invalid(String toolCallId, String reason, String message) {
@@ -328,10 +287,6 @@ public final class ShowcaseConfirmationAdapter {
                 null);
     }
 
-    private UserQuestionException bindingFailure(String errorCode, String toolCallId) {
-        return failure(errorCode, PREPARE_OPERATION, toolCallId, bindingContext(), null);
-    }
-
     private UserQuestionException callMismatch(String toolCallId, String operation) {
         return failure(
                 ClawConstants.RuntimeApi.USER_QUESTION_CALL_MISMATCH_ERROR_CODE,
@@ -350,19 +305,16 @@ public final class ShowcaseConfirmationAdapter {
                 null);
     }
 
-    private Map<String, Object> bindingContext() {
+    private Map<String, Object> permissionContext(
+            PreparedToolInvocation invocation, RuntimeToolPermissionPolicy.Decision decision) {
         Map<String, Object> context = new java.util.LinkedHashMap<>();
-        context.put("bindingCount", binding.matchingCount());
-        if (binding.toolId() != null && !binding.toolId().isBlank()) {
-            context.put("trustedToolId", binding.toolId());
-        }
-        return context;
-    }
-
-    private Map<String, Object> permissionContext(RuntimeToolPermissionPolicy.Decision decision) {
-        Map<String, Object> context = new java.util.LinkedHashMap<>(bindingContext());
         context.put("permissionDecision", decision.name());
-        return context;
+        context.put("trustedToolName", invocation.authorizationTargetName());
+        putIfPresent(context, "trustedToolId", invocation.authorizationTargetId());
+        if (binding != null) {
+            context.put("bindingCount", binding.matchingCount());
+        }
+        return Map.copyOf(context);
     }
 
     private UserQuestionException failure(
@@ -396,5 +348,30 @@ public final class ShowcaseConfirmationAdapter {
         prepared = null;
     }
 
-    private record PreparedCallDTO(String toolCallId, JsonNode arguments, QuestionRequestSnapshotDTO snapshot) {}
+    private record PreparedCallDTO(
+            String toolCallId,
+            String toolName,
+            String targetName,
+            String targetId,
+            JsonNode arguments,
+            QuestionRequestSnapshotDTO snapshot) {
+
+        private static PreparedCallDTO from(PreparedToolInvocation invocation, QuestionRequestSnapshotDTO snapshot) {
+            return new PreparedCallDTO(
+                    invocation.toolCallId(),
+                    invocation.toolName(),
+                    invocation.authorizationTargetName(),
+                    invocation.authorizationTargetId(),
+                    MAPPER.valueToTree(invocation.arguments()),
+                    snapshot);
+        }
+
+        private boolean matches(PreparedToolInvocation invocation) {
+            return toolCallId.equals(invocation.toolCallId())
+                    && toolName.equals(invocation.toolName())
+                    && java.util.Objects.equals(targetName, invocation.authorizationTargetName())
+                    && java.util.Objects.equals(targetId, invocation.authorizationTargetId())
+                    && arguments.equals(MAPPER.valueToTree(invocation.arguments()));
+        }
+    }
 }

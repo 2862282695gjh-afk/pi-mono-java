@@ -1,10 +1,10 @@
 # Mate Tool Client 与 Session 发现设计
 
-> 文档版本：2.4.1
+> 文档版本：3.1.0
 >
-> 状态：Implemented
+> 状态：精确发现、注册与调用已实现；数据加载、同步、刷新和跨节点一致性待实现
 >
-> 更新日期：2026-09-19
+> 更新日期：2026-09-22
 > 决策记录：[ADR-0032](../decisions/0032-tool-execution-credential-boundary.html)、
 > [ADR-0024](../decisions/0024-mate-tool-execution-credential-chain.html)、
 > [ADR-0022](../decisions/0022-managed-agent-tool-system-v2.html)、
@@ -12,19 +12,26 @@
 
 ## 1. 源码基线与分层
 
-历史分析基线为 `d649866a6cae967ace18ceaeb9597edd47e5721e`；凭据链实现分析基线为
-`934b5dd7d9e50b1d7359bea5f2dda71e3c4a34ac`。历史基线客户端已经具备 Agent/Skill
-绑定 ID 查询、批量元数据查询和执行 RPC，但工具层仍暴露 ID/scope，并要求 Call 前先 List。
-本轮分析的变更前实现基线为 `320d790726a70aada6100052952d5494d2a378ac`：该实现把三项
-执行凭据同时发送给发现和 execute。目标实现保留按名称调用：POST Events 额外读取
-`access-token`，发现请求不携带这四项值，只有工具 execute 请求携带收到的值；这是接口契约
-变更与安全加固。
+精确发现、注册与调用源码核验基线为 `8e4d9914106aab8745e6cba801047af816ce5132`，变更前基线为 `ae6645caaade3b9520220a34af940210850ef36a`，设计依据为
+`pi-mono-java-design@01c17dc9ee3dd1d847869066ba495ca42cfee658` 的工具主设计与内置工具契约。本次核验不扩大到数据加载、同步、
+刷新、失效、跨节点一致性或版本切换设计。
 
-Mate 凭据规则的目标设计基线为
-`pi-mono-java-design@9e766a030aa4c777da96586db4c7778fc84c7995`；变更前源码基线为
-`6a331d3477df23f8404582c3922b55c265530605`，已实现行为核验提交为
-`db990ab3358798743ce63668035ab98fc0554a32`（2026-09-19 核验）。Claw 入口、工具层和
-客户端不检查最低完整性；空或部分凭据也进入真实 Mate execute，由 Mate 返回认证或业务结果。
+以下路径相对 `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/`；标为仓库根的路径
+从仓库根开始：
+
+| 源码与符号 | 当前职责 |
+|---|---|
+| `tool/builtin/DefaultConfiguredToolAssembler#assemble` | 框架工具与 Agent 直接关联工具代理装配，空配置禁用全部工具 |
+| `tool/skill/SkillTool#execute` | 按可信可见性索引定位 Skill，调用时校验并读取正文，抽样列出资源路径 |
+| `tool/mate/MateToolsetFactory#createSession`、`MateToolSessionState` | 创建 Session 私有定义解析与执行状态 |
+| `tool/mate/MateToolResolver#resolveAgentTools/#resolveSkill/#resolveDisclosableSkill` | 分别解析 Agent、直接 Skill 与模型可披露 Skill 的工具关联，缓存可信定义，拒绝名称冲突 |
+| `tool/mate/SearchTools#execute` | 只接受精确技术名，返回单个完整 `name/description/inputSchema`，不注册或执行工具 |
+| `tool/mate/MateToolAdapter#execute`、`CallTool#prepare`、`MateToolExecutor` | 两种执行入口共用可信解析、业务 Schema 校验、不可变准备快照和单次 Mate execute |
+| （仓库根）`modules/agent-core/src/main/java/com/campusclaw/agent/tool/ToolDefinitionFormatter.java`、`ToolExecutionPipeline#invalidArgumentsResult` | 统一定义字段和超预算恢复提示边界 |
+| `runtimeapi/runtime/RuntimeToolPermissionPolicy#decide` | 按实际入口的可信关联权限执行 Host 授权规则 |
+
+关联定义候选工具范围，不等于调用授权。产品约束是保留 Mate 执行、租户及凭据边界；架构变更是
+Agent 直接工具使用代理、Skill 工具按精确技术名渐进披露，不提供批量或模糊发现工具。
 
 <a id="credential-source-evidence"></a>
 
@@ -45,48 +52,55 @@ Mate 凭据规则的目标设计基线为
 省略、失败请求次数和日志脱敏。真实 Mate 部署联调、不同凭据并行执行与完整控制续段端到端
 验证、公司父 POM 独立构建和全仓 `clean verify` 未完成，不属于该测试结论。
 
-| 层 | 当前类型 | 职责 |
-|---|---|---|
-| HTTP | `HttpMateToolClient` | 查询绑定 ID、批量元数据、恢复绑定顺序、执行 RPC |
-| 契约 | `MateToolClient` | 发现方法不接收凭据；`callTool` 接收 POST Events 为当前执行读取的凭据值 |
-| Session | `MateToolsetFactory` / `MateToolSessionState` | 每 Session 创建工具和私有缓存 |
-| 发现 | `MateToolDiscovery` / `MateToolSessionCache` | 来源快照、完整名称索引、single-flight |
-| 模型工具 | `ListMateToolsTool` / `CallMateTool` | 稳定 JSON 列表和按名称调用 |
+## 2. Agent 代理与 Skill 发现
 
-`MateToolClient` 是共享无状态客户端；`AgentTool` 和 `MateToolSessionCache` 从不作为 Spring
-单例跨 Session 复用。
+`MateToolClient` 是共享无状态 HTTP 客户端。`MateToolResolver`、`MateToolExecutor`、工具实例及
+定义缓存均由 `MateToolsetFactory` 为每个 Session 创建，不作为 Spring 单例复用。
 
-## 2. ListMateTools
+Agent 直接关联的业务工具通过 `MateToolAdapter` 将真实 `name/description/inputSchema` 加入
+初始模型工具集合。仅由 Skill 关联的工具不建立代理；二者重叠时保留 Agent 直接代理。
 
-`ListMateTools({skillName?})` 无参数查询当前 Agent，有参数时只接受当前 Agent 直接绑定 Skill
-名称。每次调用实时访问 Mate，不读取列表缓存。返回 JSON 只包含：
+模型先看到 Skill 名称和描述，按需调用 `Skill({name})` 取得去除 frontmatter 的正文、基础目录
+与最多 10 条抽样资源绝对路径。正文必须在调用时通过工作区边界校验并读取 UTF-8 文件；缺失、
+不可读、目录或符号链接均走统一工具错误路径。空资源清单仍然成功。
 
-```json
-{
-  "scope": {"type": "agent"},
-  "tools": [{"name": "Query", "description": "...", "inputSchema": {}}]
-}
-```
+正文引用业务工具技术名。模型需要定义时调用固定框架工具 `SearchTools({tool})`；它只在当前
+Agent 直接绑定且模型可见的 Skill 工具范围内按大小写敏感的完整名称匹配，成功只返回一个完整
+`name/description/inputSchema`。它不接收 Skill 名、查询词或分页参数，不解析 Markdown 猜名，
+也不注册、激活或执行工具。`Read` 只读取普通资源，不生成或读取工具定义 JSON。
 
-响应不包含 Agent/Skill/tool ID、permission、outputSchema 或并发属性。成功列表会更新该来源
-的名称到 ID 快照，但不清空其他来源。
+未知、未绑定、不可披露、绑定或元数据无效、同名冲突和无效 Schema 均明确失败。完整定义超过
+结果预算时返回 `TOOL_DEFINITION_TOO_LARGE`，不截断 Schema，也不提示重复查询。代理、
+`SearchTools` 和 `CallTool` 在当前 Session 复用同一可信名称解析和定义缓存，避免同次执行看到
+不同定义；这不等同于数据源同步能力。数据加载策略、同步、刷新、失效、跨节点一致性和版本切换
+仍待实现。
 
-## 3. CallMateTool
+## 3. CallTool 与统一执行
 
-![缓存未命中与自动发现](tool-system-v2/mate_call_refresh.svg)
+![CallTool 的权限检查与单次执行](tool-system-v2/mate_call_refresh.svg)
 
-[PlantUML 源码](tool-system-v2/diagram.puml#L120)
+[PlantUML 源码](tool-system-v2/diagram.puml#L128) · [原尺寸](tool-system-v2/mate_call_refresh.svg)
 
-`CallMateTool({tool,args?})` 先查当前 Session 的完整有效名称索引。miss 由
-`MateToolSessionCache.resolveOrRefresh` single-flight 加载当前 Agent 和全部直接 Skill：
+`CallTool({tool,args?})` 按名称调用当前 Agent 直接绑定 Skill 所关联的工具，`args` 缺省为 `{}`。
+模型不提交 scope、Skill、toolId 或 URL；仅与 Agent 直接关联的工具和框架工具不在其范围内。
+同名同 ID 可合并，同名不同 ID 或与框架重名必须明确失败；文件内容不扩大可信关联范围。
 
-- 同名同 ID 合并；同名不同 ID 使整轮刷新失败；
-- 所有来源成功后才原子替换完整快照；
-- 并发调用共享同一轮刷新结果，包括失败；
-- 刷新后仍无名称时返回 unknown；
-- 实际 execute 最多发送一次，连接或业务失败均不重放。
+两种入口均经过 Pipeline 和 Host before hook。代理使用完整业务 Schema；`CallTool` 先校验
+外层 `tool/args`，再按可信名称解析定义并校验业务参数，生成不可变 `PreparedToolInvocation`。
+Host 随后按解析出的真实工具检查 allow、ask、deny 和必要确认，通过后执行同一准备快照。
+顺序固定为“可信解析 → 参数校验 → 权限或必要确认 → 业务执行 → 结果回传”，Mate 仍是最终
+授权和执行权威。
 
-`args` 缺省为 `{}`。模型不提交 scope、Skill 或 toolId；Mate 服务仍是最终授权和执行权威。
+解析器以 Session 私有状态缓存 Agent 工具及已请求的 Skill 工具定义；按可信关联查询所需
+Skill 元数据，不把整个 Agent 与全部 Skill 的刷新作为 Call 的前置条件。后台元数据查询不
+向模型披露所有 Schema。实际 execute 只发送一次，超时、断线和业务失败不自动重放。
+
+参数错误返回真实 `isError=true`、字段错误和同次校验使用的完整可信定义，不确认、不执行、
+不猜参也不自动重放。若整份恢复结果超预算，只有当该业务工具属于 `SearchTools` 可披露范围且
+单个完整定义能独立放入预算时，才提示按精确名称调用 `SearchTools`；框架工具、Agent-only
+代理或单定义仍超限时只说明定义无法返回。无效业务 Schema 的底层异常由 `MateToolExecutor`
+记录一次，包含 operation、errorCode、toolId 和原始 throwable；对外仍返回稳定失败文本且
+不带 cause，不记录调用参数或执行凭据。
 
 ## 4. HTTP 契约与凭据链
 
@@ -105,7 +119,7 @@ Prompt、模型消息或日志。执行结束后 Runtime 不再主动持有这�
 Host 执行上下文仍按既有错误处理，不与空快照混为一谈。消息或命令启动时固定快照，Child
 只读继承，停止、确认和问答等控制请求不替换原执行快照。
 
-Agent binding、Skill binding 和 tool metadata 查询不携带上述值。只有 `CallMateTool` 最终发送
+Agent binding、Skill binding 和 tool metadata 查询不携带上述值。只有代理或 `CallTool` 经共享执行器最终发送
 `POST /mate-service/v1/runtime/tools/{toolId}/execute` 时，才把收到的非空值放入同名 Header；
 AppKey 与 JWT 同时存在时都发送。值保持调用方提供的原值；Claw 不补值、不添加 Bearer、不从
 其他请求借用凭据，也不校验必填项、组合、最低完整性或 AppKey/JWT 互斥性。工具合法、权限与
@@ -133,6 +147,8 @@ HTTP method、path 和请求响应保持不变；2.3.0 只改变哪些请求会�
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 3.1.0 | 2026-09-22 | 实现按精确技术名披露单个可信工具定义，并固定确认前校验、预算和参数恢复边界。 |
+| 3.0.0 | 2026-09-22 | 对齐 Agent 代理、Skill 文件渐进披露、CallTool 统一执行及正文读取错误契约。 |
 | 2.4.1 | 2026-09-19 | 补齐 Mate 凭据已实现行为的源码提交、符号及测试验收范围。 |
 | 2.4.0 | 2026-09-19 | 取消 Claw 的 Mate 凭据完整性检查，按 execute 快照透传非空原值并收敛失败响应与敏感异常日志。 |
 | 2.3.1 | 2026-08-28 | 用读取时机、内存持有期限、携带请求和缺失值行为定义工具凭据边界。 |

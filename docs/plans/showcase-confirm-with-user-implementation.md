@@ -1,6 +1,6 @@
 # Showcase 业务确认开发与演示
 
-版本：1.0.3；日期：2026-09-21。仅用于 `codex/showcase-confirm-with-user` 分支，不合入 main。
+版本：1.0.4；日期：2026-09-23。仅用于 `codex/showcase-confirm-with-user` 分支，不合入 main。
 
 实现起点为 `19870445a3a8bd559919fe24580330be8227488f`。设计依据为
 [showcase 业务确认设计](https://github.com/superheromeZzh/pi-mono-java-design/blob/106f9f5a79af78386717371e1ba52330d26013bf/01-总体架构/06-CampusClaw计划模式/showcase-confirm-with-user.md)；
@@ -16,7 +16,7 @@ AskUserQuestion 与已绑定的 confirm_with_user 可以并存，分别用于普
 需要恢复内置提问时，在外部配置中提供完整 Runtime 工具清单（列表覆盖而非追加）：
 
 ```properties
-campusclaw.tools.runtime=Read,Find,Grep,Ls,Cron,ListMateTools,CallMateTool,Agent,ExitPlanMode,TodoUpdate,AskUserQuestion
+campusclaw.tools.runtime=Read,Find,Grep,Ls,Cron,Skill,SearchTools,CallTool,Agent,ExitPlanMode,TodoUpdate,AskUserQuestion
 ```
 
 配置在部署启动时绑定，修改后重启。未配置 AskUserQuestion 且未绑定可用 confirm_with_user 的展示 Agent 没有问题卡入口；需要普通提问的部署应显式启用 AskUserQuestion。
@@ -30,18 +30,20 @@ java -jar modules/coding-agent-cli/target/campusclaw-agent.jar
 公司镜像不需要 showcase 专属配置，具体启动入口沿用公司部署流程。该分支没有新增数据库表、字段或 Maven/npm 依赖。
 
 在业务 Agent 的可信工具绑定中配置精确名称 `confirm_with_user`，权限必须为 allow，工具 ID 必须明确。
-Agent 与多个 Skill 可以重复绑定同名同 ID 工具；不同 ID、缺失 ID 或真实权限冲突仍拒绝，不按绑定条数误判歧义。
-输入 label 为必填字符串，context 为可选对象；context 内部不约定字段。模型仍通过 CallMateTool 调用它。
+Agent 与多个 Skill 可以重复绑定同名同 ID 工具，不按绑定条数误判歧义。可信解析拒绝不同 ID 或无效 ID；执行授权按入口分别检查 Agent 或 Skill 的绑定范围，同一授权范围内的权限冲突仍拒绝。
+输入 label 为必填字符串，context 为可选对象；context 内部不约定字段。Agent 直接关联时，模型直接调用 confirm_with_user；仅通过 Skill 关联时，经 CallTool 调用它。旧 CallMateTool 仅作为历史事件名称保留，不恢复为可配置工具。
 原始 label/context 在问题事件及界面保持 JSON 值与结构相同，省略 context 和空对象保持区别。
 确认只在 Runtime 根执行中等待用户回答；Child/Cron 不执行这个本地交互，也不降级远调。
 
 业务 Agent 的 BASE 和自定义 PLAN.md/BUILD.md 如有旧提问指令，应按以下行为更新，保留业务身份和其他模式约束：
 
 ```text
-需要用户提供信息时使用实际可用的提问能力。普通澄清可使用 AskUserQuestion；业务流程要求业务确认时使用 CallMateTool 调用已绑定的 confirm_with_user，传入原始 label 和可选 context。业务提问时该次 Assistant 只发出这一项工具调用，等待工具返回真实 content 后再继续。Subagent 把需要用户回答的问题交给父 Agent；Cron 汇报缺失信息。
+需要用户提供信息时使用实际可用的提问能力。普通澄清可使用 AskUserQuestion；业务流程要求业务确认时调用已绑定的 confirm_with_user：Agent 直接关联时直接调用，仅通过 Skill 关联时经 CallTool 调用，传入原始 label 和可选 context。业务提问时该次 Assistant 只发出这一项工具调用，等待工具返回真实 content 后再继续。Subagent 把需要用户回答的问题交给父 Agent；Cron 汇报缺失信息。
 ```
 
 ## 源码接线
+
+本次 main 同步基线为 `c04bbdc49b88fb12d0e5db68be84036c05730476`（2026-09-22）；只迁移现有确认能力到新工具入口，不实施讨论中的 BusinessConfirmationAdapter/Dispatcher 解耦方案。
 
 下列 Java 路径相对 `modules/coding-agent-cli/src/main/java/com/campusclaw/codingagent/`。
 
@@ -50,7 +52,7 @@ Agent 与多个 Skill 可以重复绑定同名同 ID 工具；不同 ID、缺失
 | 工具清单配置与直接装配 | `tool/builtin/DefaultConfiguredToolAssembler#assemble`、standalone `application.yml`、公司 `application.properties` |
 | 每执行适配器与可信绑定 | `runtimeapi/runtime/RuntimeSessionEngineRegistry#createSession`、`tool/question/ShowcaseConfirmationAdapter#prepare` |
 | 原问题等待与失败清理 | `runtimeapi/runtime/RuntimeActiveExecution#beforeToolCall`、`runtimeapi/event/RuntimeEventProjector#beginQuestion` |
-| 本地工具结果 | `tool/mate/CallMateTool#execute`、`ShowcaseConfirmationAdapter#await` |
+| 可信解析、参数校验与本地结果 | `tool/mate/MateToolResolver`、`MateToolAdapter#prepare`、`CallTool#prepare`、`MateToolExecutor#executePrepared`、`ShowcaseConfirmationAdapter#await` |
 | 原样事件及历史 | `runtimeapi/event/RuntimeEntryCodec`、`RuntimeCommittedEventFactory`、`CommittedEventProjection` |
 | 固定答案槽校验 | `runtimeapi/event/RuntimeUserQuestionService#normalizeCurrent`、`tool/question/QuestionRequestParser#normalizeTextAnswer` |
 | 前端卡片与提交 | `frontend/src/components/QuestionCard.vue`、`runtime/questionInteraction.ts`、`projectors/runtimeEventProjector.ts`（前端路径相对仓根） |
@@ -60,7 +62,7 @@ Agent 与多个 Skill 可以重复绑定同名同 ID 工具；不同 ID、缺失
 1. 使用分支默认配置新建执行，确认模型工具清单无 AskUserQuestion；外部配置显式加入后重启，确认可调用 AskUserQuestion，其他业务工具和 confirm_with_user 仍按各自规则执行。
 2. 让模型调用 confirm_with_user，分别覆盖省略 context、空对象及嵌套数组/null/空白值。
 3. 核对 agent.question 与原工具 args 的 label/context 深相等；原 SSE 在 confirming 后结束，Session 仍为 running，界面显示等待回答。
-4. 核对界面只显示该问题的 label/context、回答框和确认按钮；普通 CallMateTool 仍显示。
+4. 核对界面只显示该问题的 label/context、回答框和确认按钮；普通业务工具仍显示；直接 confirm_with_user、CallTool 与旧 CallMateTool 历史按关联问题汇聚。
 5. 输入具体业务数据并点击确认。核对 user.question_answer 回执先于原工具结果，结果 content 为规范化后的真实回答，原根继续执行。
 6. 覆盖空回答、重复点击、停止、断线恢复、其他客户端已回答和再次提问；旧题不可重复回答，草稿不串题，写请求不自动重放。
 7. 分别检查宽屏和窄屏布局；Enter 换行，输入法确认不触发提交，长 context 和按钮可滚动到达。
@@ -70,9 +72,11 @@ Agent 与多个 Skill 可以重复绑定同名同 ID 工具；不同 ID、缺失
 
 ## 失败诊断
 
-诊断实现起点：`40fa05f99fe1b3bb4363e0918b1ab0a63d6939ae`，诊断实现提交：`d8de4e195caba66c75eb31919f009dce76fbcb6c`。问答失败在 `ShowcaseConfirmationAdapter`、`RuntimeEventProjector#requireUniqueFinalizedCall` 和 `RuntimePendingInteraction` 的失败分支记录 ERROR 日志，并通过 `UserQuestionException` 携带独立错误码。`RuntimeToolPermissionPolicy#diagnoseBinding` 按工具 ID 识别真实歧义，同 ID 重复绑定不再拒绝。
+诊断实现起点：`40fa05f99fe1b3bb4363e0918b1ab0a63d6939ae`，诊断实现提交：`d8de4e195caba66c75eb31919f009dce76fbcb6c`。问答失败在 `ShowcaseConfirmationAdapter`、`RuntimeEventProjector#requireUniqueFinalizedCall` 和 `RuntimePendingInteraction` 的失败分支记录 ERROR 日志，并通过 `UserQuestionException` 携带独立错误码。`RuntimeToolPermissionPolicy#diagnoseBinding` 保留按工具 ID 聚合的诊断兼容接口，同 ID 重复绑定不再拒绝；新执行使用主线 `PreparedToolInvocation` 的可信目标和入口范围授权，不以聚合诊断代替授权。
 
 日志正文和结构化字段均包含 `errorCode`、`operation`、工具调用标识及可用的 sessionId/agentId。发现异常保留 cause；诊断字段不包含 label/context、答案或凭据。工具 Pipeline、实时 `agent.tool_result.errorCode`、持久化和历史查询保留具体码值；客户端显示对应的中英文安全文案。旧 `USER_QUESTION_UNAVAILABLE` 仅保留兼容历史。
+
+下表列出可读取的问答错误码，包含旧版本历史兼容。当前工具绑定解析、元数据查询和 Schema 校验已前移至主线通用准备阶段；适配器不再二次查询工具。旧 `BINDING_MISSING`、`BINDING_AMBIGUOUS`、`DISCOVERY_FAILED`、`TOOL_NOT_FOUND`、`TOOL_ID_MISMATCH` 不再保证由当前确认适配器产生，相应前置失败沿用主线工具解析异常。
 
 | 错误码 | 含义 |
 |---|---|
@@ -95,7 +99,7 @@ Agent 与多个 Skill 可以重复绑定同名同 ID 工具；不同 ID、缺失
 | `USER_QUESTION_PENDING_CONFLICT` | 当前执行已有未完成的交互，无法创建新的用户问题。 |
 | `USER_QUESTION_WAIT_MISSING` | 找不到当前工具调用对应的用户问题等待。 |
 
-确认适配层参数类型错误继续使用 `TOOL_ARGUMENTS_INVALID`，日志 `reason` 区分 `args_not_object`、`label_not_string`、`context_not_object`。通用工具 Schema 校验先于此层执行，其详细参数错误日志尚未补齐；不能用缺少上述 reason 推断参数正确。
+参数校验失败使用 `TOOL_ARGUMENTS_INVALID`，`isError=true`；主线 Pipeline 向模型反馈字段错误与本次校验使用的可信定义，公共用户事件只显示安全文案。适配层仍对 label/context 类型兜底，日志 `reason` 区分 `label_not_string`、`context_not_object`；通用 Schema 校验先于此层执行，不能用缺少适配层 reason 推断参数正确。
 
 部署包含此改动的新构建后，可按失败时段检索实际日志目录：
 
@@ -111,6 +115,13 @@ rg -n -C 10 'User question failed:|USER_QUESTION_|runtime.user-question.confirma
 含 label/context 的历史继续要求联合载荷解码；不把新历史交给只认识 questions 的旧二进制，不清表回退。
 
 ## 验证记录
+
+2026-09-23：showcase `c8f964b10af1b73018ce79cd4e6f060c43362344` 合入 main `c04bbdc49b88fb12d0e5db68be84036c05730476`，确认功能接入 Agent 直接代理和 Skill CallTool 的可信准备链，保留主线线性 Session 历史。
+
+- JDK 21 定向回归 27 类 228 项全部通过，无失败、错误或跳过；覆盖工具准备顺序、两入口本地回答与零远调、权限范围、配置覆盖、问答和历史投影、等待清理、计划审核及 Session 装配。
+- 前端相关 7 文件 182 项通过，typecheck、生产构建与 fixture 语法检查通过；未重新执行受监听端口限制的开发认证/代理测试。
+- Spotless、Checkstyle、主模块 package 与公司镜像同步/布局检查通过；Java AST 扫描无方法长度或版权问题，合并适配涉及的 record 布局已人工核对。测试质量扫描的 5 项无断言提示均已核实为断言 helper/AssertJ 识别误报，未改写主线测试以迎合扫描器。
+- 公司 NativeParent 构建、真实 Mate/openGauss 和浏览器端到端演示本次未重跑；以下闭环记录保留历史归属，不作为本次同步后的端到端验收。
 
 2026-09-21：在 showcase `d8de4e195caba66c75eb31919f009dce76fbcb6c` 基础上合入 main `d1cdb708e3e124cae009b10b985f5832b6dbde01`，保留正文计划审核、工具展示名初始化和可选凭据透传。配置与重复绑定修复随本文件同一提交交付；核验范围为上述工具装配、`RuntimeToolPermissionPolicy#diagnoseBinding`、两个打包配置及模式提示词。
 

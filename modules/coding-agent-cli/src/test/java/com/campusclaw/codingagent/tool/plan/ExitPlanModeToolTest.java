@@ -16,6 +16,7 @@ import com.campusclaw.ai.types.StopReason;
 import com.campusclaw.ai.types.TextContent;
 import com.campusclaw.ai.types.ToolCall;
 import com.campusclaw.ai.types.Usage;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 import org.junit.jupiter.api.Test;
 
@@ -64,15 +65,22 @@ class ExitPlanModeToolTest {
     }
 
     @Test
-    void semanticArgumentFailureUsesTheStablePublicCode() {
+    void schemaArgumentFailureIncludesTheTrustedRecoveryDefinition() throws Exception {
         var tool = new ExitPlanModeTool((toolCallId, signal) -> new PlanReviewResultDTO(true, null));
         ToolCall call = new ToolCall("exit-3", tool.name(), Map.of("plan", "# 重复方案"));
 
         var result = new ToolExecutionPipeline()
                 .execute(tool, call, call.arguments(), context(call), new CancellationToken(), ignored -> {});
+        var recovery =
+                new ObjectMapper().readTree(((TextContent) result.content().getFirst()).text());
 
         assertThat(result.isError()).isTrue();
-        assertThat(((TextContent) result.content().getFirst()).text()).isEqualTo("TOOL_ARGUMENTS_INVALID");
+        assertThat(recovery.path("code").asText()).isEqualTo("TOOL_ARGUMENTS_INVALID");
+        assertThat(recovery.path("execution").asText()).isEqualTo("not_started");
+        assertThat(recovery.at("/errors/0/path").asText()).isEmpty();
+        assertThat(recovery.at("/definition/name").asText()).isEqualTo("ExitPlanMode");
+        assertThat(recovery.at("/definition/inputSchema/additionalProperties").asBoolean())
+                .isFalse();
         assertThat(result.details()).isEqualTo(Map.of("errorCode", "TOOL_ARGUMENTS_INVALID"));
     }
 

@@ -11,10 +11,11 @@ import com.huawei.hicampus.claw.agent.tool.AgentToolResult;
 import com.huawei.hicampus.claw.agent.tool.AgentToolUpdateCallback;
 import com.huawei.hicampus.claw.agent.tool.CancellationToken;
 import com.huawei.hicampus.claw.agent.tool.ToolExecutionMode;
+import com.huawei.hicampus.claw.agent.tool.ToolInputSchema;
 import com.huawei.hicampus.claw.codingagent.runtime.PreparedAgentRuntime;
 import com.huawei.hicampus.claw.codingagent.tool.builtin.BuiltInToolName;
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 
 /**
  * 只允许按名称调用当前 Agent 直接绑定 Child 的内置 Agent 工具。
@@ -24,7 +25,24 @@ import com.fasterxml.jackson.databind.ObjectMapper;
  */
 public class BoundAgentTool implements AgentTool {
 
-    private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final ObjectNode INPUT_SCHEMA = ToolInputSchema.parse(
+            """
+            {
+              "type": "object",
+              "properties": {
+                "agentName": {
+                  "type": "string",
+                  "description": "Exact name of one directly bound child Agent."
+                },
+                "task": {
+                  "type": "string",
+                  "description": "Complete task for the child Agent."
+                }
+              },
+              "required": ["agentName", "task"],
+              "additionalProperties": false
+            }
+            """);
 
     private final PreparedAgentRuntime parentRuntime;
 
@@ -58,23 +76,13 @@ public class BoundAgentTool implements AgentTool {
 
     @Override
     public JsonNode parameters() {
-        var properties = MAPPER.createObjectNode();
-        var agentName = properties
-                .putObject("agentName")
-                .put("type", "string")
-                .put("description", "Exact name of one directly bound child Agent.");
+        var schema = INPUT_SCHEMA.deepCopy();
         var childNames = parentRuntime.childAgentsByName().keySet();
         if (!childNames.isEmpty()) {
-            var names = agentName.putArray("enum");
+            var names = schema.withObject("properties").withObject("agentName").putArray("enum");
             childNames.stream().sorted().forEach(names::add);
         }
-        properties.putObject("task").put("type", "string").put("description", "Complete task for the child Agent.");
-        return MAPPER.createObjectNode()
-                .put("type", "object")
-                .<com.fasterxml.jackson.databind.node.ObjectNode>set("properties", properties)
-                .<com.fasterxml.jackson.databind.node.ObjectNode>set(
-                        "required", MAPPER.createArrayNode().add("agentName").add("task"))
-                .put("additionalProperties", false);
+        return schema;
     }
 
     @Override

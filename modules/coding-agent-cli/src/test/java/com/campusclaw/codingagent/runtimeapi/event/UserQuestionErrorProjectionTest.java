@@ -41,7 +41,7 @@ class UserQuestionErrorProjectionTest {
     @ParameterizedTest
     @MethodSource("questionErrorCodes")
     void shouldPreserveSpecificCodeAndLocalizedTextAcrossPipelineAndHistory(String code) {
-        var call = new ToolCall("call-diagnostic", "CallMateTool", Map.of("tool", "confirm_with_user"));
+        var call = new ToolCall("call-diagnostic", "CallTool", Map.of("tool", "confirm_with_user"));
         var result = new ToolExecutionPipeline()
                 .execute(
                         new FailingTool(code),
@@ -102,12 +102,12 @@ class UserQuestionErrorProjectionTest {
     private record FailingTool(String code) implements AgentTool {
         @Override
         public String name() {
-            return "CallMateTool";
+            return "CallTool";
         }
 
         @Override
         public String label() {
-            return "Call Mate Tool";
+            return "Call Tool";
         }
 
         @Override

@@ -202,7 +202,7 @@ public class MateServiceClient {
             String id,
             String name,
             String systemPrompt,
-            @JsonDeserialize(contentUsing = AgentMetadataTextDeserializer.class) List<String> userCases,
+            @JsonDeserialize(contentUsing = AgentMetadataTextDeserializer.class) List<String> useCases,
             String version,
             @JsonDeserialize(using = AgentModeDeserializer.class) String mode) {
 
@@ -214,7 +214,7 @@ public class MateServiceClient {
             bindingTools = bindingTools == null ? List.of() : List.copyOf(bindingTools);
             bindingAgents = bindingAgents == null ? List.of() : List.copyOf(bindingAgents);
             description = description == null ? List.of() : List.copyOf(description);
-            userCases = userCases == null ? List.of() : List.copyOf(userCases);
+            useCases = useCases == null ? List.of() : List.copyOf(useCases);
             mode = mode == null ? ClawConstants.Agent.MODE_BUILD : mode;
         }
 
@@ -229,7 +229,7 @@ public class MateServiceClient {
                 String id,
                 String name,
                 String systemPrompt,
-                List<String> userCases,
+                List<String> useCases,
                 String version) {
             this(
                     bindingModels,
@@ -242,7 +242,7 @@ public class MateServiceClient {
                     id,
                     name,
                     systemPrompt,
-                    userCases,
+                    useCases,
                     version,
                     ClawConstants.Agent.MODE_BUILD);
         }

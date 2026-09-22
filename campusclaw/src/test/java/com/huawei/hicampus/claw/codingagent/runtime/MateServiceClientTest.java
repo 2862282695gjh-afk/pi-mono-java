@@ -95,7 +95,7 @@ class MateServiceClientTest {
                           "name": "Agent A",
                           "bindingModels": ["glm-5.2", "minimax-m2.5"],
                           "description": ["Diagnoses device faults", "Drafts reports"],
-                          "userCases": ["On-call diagnosis"]
+                          "useCases": ["On-call diagnosis"]
                         }}
 """));
 
@@ -103,14 +103,14 @@ class MateServiceClientTest {
 
         assertEquals(List.of("glm-5.2", "minimax-m2.5"), runtime.bindingModels());
         assertEquals(List.of("Diagnoses device faults", "Drafts reports"), runtime.description());
-        assertEquals(List.of("On-call diagnosis"), runtime.userCases());
+        assertEquals(List.of("On-call diagnosis"), runtime.useCases());
         assertEquals("glm-5.2", runtime.defaultModel().orElseThrow());
     }
 
     @ParameterizedTest
     @ValueSource(strings = {"null", "1", "true"})
     void rejectsNonStringAgentGuideEntries(String value) {
-        server.enqueue(json("{\"result\":{\"userCases\":[" + value + "]}}"));
+        server.enqueue(json("{\"result\":{\"useCases\":[" + value + "]}}"));
 
         AgentRuntimeException error = assertThrows(
                 AgentRuntimeException.class, () -> client.getAgentRuntime("agent-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"));

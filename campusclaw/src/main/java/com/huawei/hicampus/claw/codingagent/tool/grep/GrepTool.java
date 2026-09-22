@@ -14,6 +14,7 @@ import com.huawei.hicampus.claw.agent.tool.AgentToolResult;
 import com.huawei.hicampus.claw.agent.tool.AgentToolUpdateCallback;
 import com.huawei.hicampus.claw.agent.tool.CancellationToken;
 import com.huawei.hicampus.claw.agent.tool.ToolExecutionMode;
+import com.huawei.hicampus.claw.agent.tool.ToolInputSchema;
 import com.huawei.hicampus.claw.ai.types.ContentBlock;
 import com.huawei.hicampus.claw.ai.types.TextContent;
 import com.huawei.hicampus.claw.codingagent.tool.ops.GrepOperations;
@@ -22,7 +23,6 @@ import com.huawei.hicampus.claw.codingagent.tool.ops.GrepOperations.GrepResult;
 import com.huawei.hicampus.claw.codingagent.tool.workspace.AgentWorkspaceBoundary;
 import com.huawei.hicampus.claw.codingagent.tool.workspace.WorkspacePathResolver;
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
 /**
@@ -39,7 +39,44 @@ public class GrepTool implements AgentTool {
     static final int MAX_BYTES = 50 * 1024;
     private static final String TRUNCATION_MARKER = "\n... (truncated)";
 
-    private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final ObjectNode INPUT_SCHEMA = ToolInputSchema.parse(
+            """
+            {
+              "type": "object",
+              "properties": {
+                "pattern": {
+                  "type": "string",
+                  "description": "Search pattern, interpreted as a regular expression unless literal is true."
+                },
+                "path": {
+                  "type": "string",
+                  "description": "Directory or file to search; omitted means the current Agent workspace root."
+                },
+                "glob": {
+                  "type": "string",
+                  "description": "Optional glob filter for searched files."
+                },
+                "ignoreCase": {
+                  "type": "boolean",
+                  "description": "Whether matching is case-insensitive; omitted means false."
+                },
+                "literal": {
+                  "type": "boolean",
+                  "description": "Whether to treat pattern as a literal string; omitted means false."
+                },
+                "context": {
+                  "type": "number",
+                  "description": "Lines shown before and after a match; omitted means 0."
+                },
+                "limit": {
+                  "type": "number",
+                  "description": "Maximum matches to return; omitted means 100."
+                }
+              },
+              "required": ["pattern"],
+              "additionalProperties": false
+            }
+            """);
 
     private final GrepOperations grepOperations;
     private final WorkspacePathResolver pathResolver;
@@ -74,24 +111,7 @@ public class GrepTool implements AgentTool {
 
     @Override
     public JsonNode parameters() {
-        ObjectNode properties = MAPPER.createObjectNode();
-        properties.set(
-                "pattern",
-                stringProperty("Search pattern, interpreted as a regular expression unless literal is true."));
-        properties.set(
-                "path", stringProperty("Directory or file to search; omitted means the current Agent workspace root."));
-        properties.set("glob", stringProperty("Optional glob filter for searched files."));
-        properties.set("ignoreCase", booleanProperty("Whether matching is case-insensitive; omitted means false."));
-        properties.set(
-                "literal", booleanProperty("Whether to treat pattern as a literal string; omitted means false."));
-        properties.set("context", numberProperty("Lines shown before and after a match; omitted means 0."));
-        properties.set("limit", numberProperty("Maximum matches to return; omitted means 100."));
-        ObjectNode schema = MAPPER.createObjectNode();
-        schema.put("type", "object");
-        schema.set("properties", properties);
-        schema.set("required", MAPPER.createArrayNode().add("pattern"));
-        schema.put("additionalProperties", false);
-        return schema;
+        return INPUT_SCHEMA.deepCopy();
     }
 
     @Override
@@ -158,18 +178,6 @@ public class GrepTool implements AgentTool {
 
     private static String stringValue(Object value) {
         return value instanceof String string ? string : null;
-    }
-
-    private static ObjectNode stringProperty(String description) {
-        return MAPPER.createObjectNode().put("type", "string").put("description", description);
-    }
-
-    private static ObjectNode numberProperty(String description) {
-        return MAPPER.createObjectNode().put("type", "number").put("description", description);
-    }
-
-    private static ObjectNode booleanProperty(String description) {
-        return MAPPER.createObjectNode().put("type", "boolean").put("description", description);
     }
 
     private static AgentToolResult textResult(String text) {

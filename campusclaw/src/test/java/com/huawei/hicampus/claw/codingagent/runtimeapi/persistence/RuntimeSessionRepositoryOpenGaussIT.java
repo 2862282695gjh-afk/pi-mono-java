@@ -1087,7 +1087,7 @@ class RuntimeSessionRepositoryOpenGaussIT {
     }
 
     @Test
-    void acceptsAndAppendsStrictlyOrderedCurrentBranchEntries() {
+    void acceptsAndAppendsStrictlyOrderedTimelineEntries() {
         RuntimeSessionDTO session = newSession("session_db_events");
         repository.create(session);
         OffsetDateTime acceptedAt = session.getCreatedAt().plusSeconds(1);
@@ -1119,7 +1119,7 @@ class RuntimeSessionRepositoryOpenGaussIT {
         assertThat(thinking.getParentId()).isEqualTo(user.getId());
         assertThat(assistant.getEntrySeq()).isEqualTo(3L);
         assertThat(assistant.getParentId()).isEqualTo(thinking.getId());
-        assertThat(repository.listCurrentBranchEntries(session.getId(), 0, 10))
+        assertThat(timelineEntries(session.getId(), 0, 10))
                 .extracting(RuntimeEntryDTO::getId)
                 .containsExactly("entry_user", "entry_thinking", "entry_assistant");
         RuntimeSessionDTO finished = repository.find(session.getId()).orElseThrow();
@@ -1170,17 +1170,45 @@ class RuntimeSessionRepositoryOpenGaussIT {
     }
 
     @Test
-    void currentBranchQueryExcludesAbandonedBranch() {
-        RuntimeSessionDTO session = newSession("session_db_branch");
+    void concurrentAppendsPreserveOneOrderedTimeline() throws Exception {
+        RuntimeSessionDTO session = newSession("session_db_append_race");
+        repository.create(session);
+        OffsetDateTime acceptedAt = session.getCreatedAt().plusSeconds(1);
+        RuntimeEntryDTO root = newEntry(session.getId(), "entry_root", "user.message", acceptedAt, "{}");
+        assertThat(repository.acceptUserEvent(session.getId(), root, acceptedAt).status())
+                .isEqualTo(Status.ACCEPTED);
+        CountDownLatch start = new CountDownLatch(1);
+        try (var executor = Executors.newFixedThreadPool(2)) {
+            var first = executor.submit(() -> appendAfterLatch(
+                    start, newEntry(session.getId(), "entry_race_1", "assistant.message.completed", acceptedAt, "{}")));
+            var second = executor.submit(() -> appendAfterLatch(
+                    start, newEntry(session.getId(), "entry_race_2", "assistant.message.completed", acceptedAt, "{}")));
+            start.countDown();
+            assertThat(List.of(first.get(5, TimeUnit.SECONDS), second.get(5, TimeUnit.SECONDS)))
+                    .extracting(RuntimeEntryDTO::getId)
+                    .containsExactlyInAnyOrder("entry_race_1", "entry_race_2");
+        }
+
+        List<RuntimeEntryDTO> entries = timelineEntries(session.getId(), 0L, 10);
+        assertThat(entries).extracting(RuntimeEntryDTO::getEntrySeq).containsExactly(1L, 2L, 3L);
+        assertThat(entries.get(1).getParentId()).isEqualTo(root.getId());
+        assertThat(entries.get(2).getParentId()).isEqualTo(entries.get(1).getId());
+        assertThat(repository.find(session.getId()).orElseThrow().getActiveLeafId())
+                .isEqualTo(entries.getLast().getId());
+    }
+
+    @Test
+    void timelineQueryReadsEveryEntryAcrossSequenceGaps() {
+        RuntimeSessionDTO session = newSession("session_db_timeline_gaps");
         repository.create(session);
         insertBranchEntry(session.getId(), "entry_root", 1L, null);
-        insertBranchEntry(session.getId(), "entry_abandoned", 2L, "entry_root");
-        insertBranchEntry(session.getId(), "entry_current", 3L, "entry_root");
-        jdbcTemplate.update("UPDATE t_sessions SET active_leaf_id = ? WHERE id = ?", "entry_current", session.getId());
+        insertBranchEntry(session.getId(), "entry_middle", 3L, "entry_root");
+        insertBranchEntry(session.getId(), "entry_latest", 7L, "entry_middle");
+        jdbcTemplate.update("UPDATE t_sessions SET active_leaf_id = ? WHERE id = ?", "entry_latest", session.getId());
 
-        assertThat(repository.listCurrentBranchEntries(session.getId(), 0, 10))
+        assertThat(timelineEntries(session.getId(), 0, 10))
                 .extracting(RuntimeEntryDTO::getId)
-                .containsExactly("entry_root", "entry_current");
+                .containsExactly("entry_root", "entry_middle", "entry_latest");
     }
 
     @Test
@@ -1295,7 +1323,7 @@ class RuntimeSessionRepositoryOpenGaussIT {
             var second = executor.submit(() -> changeUnconditionally(start, session, secondModel));
             start.countDown();
             var updates = List.of(first.get(5, TimeUnit.SECONDS), second.get(5, TimeUnit.SECONDS));
-            var events = repository.listCurrentBranchEntries(session.getId(), 0L, 10);
+            var events = timelineEntries(session.getId(), 0L, 10);
             int expectedChanges = secondModel.equals("first") ? 1 : 2;
             assertThat(events).hasSize(expectedChanges);
             assertThat(updates.stream()
@@ -1350,7 +1378,7 @@ class RuntimeSessionRepositoryOpenGaussIT {
                 .usingRecursiveComparison()
                 .withComparatorForType(java.math.BigDecimal::compareTo, java.math.BigDecimal.class)
                 .isEqualTo(session);
-        assertThat(repository.listCurrentBranchEntries(session.getId(), 0L, 10)).isEmpty();
+        assertThat(timelineEntries(session.getId(), 0L, 10)).isEmpty();
         assertThat(changeUnconditionally(new CountDownLatch(0), session, "next").sourceEventSeq())
                 .isEqualTo(1L);
     }
@@ -1420,6 +1448,11 @@ class RuntimeSessionRepositoryOpenGaussIT {
                 observed.getCreatedAt().plusMinutes(1));
     }
 
+    private List<RuntimeEntryDTO> timelineEntries(String sessionId, long afterSeq, int limit) {
+        long upperBound = repository.findTimelineUpperBound(sessionId);
+        return repository.listTimelineEntries(sessionId, afterSeq, upperBound, limit);
+    }
+
     private int countSession(String sessionId) {
         Integer result =
                 jdbcTemplate.queryForObject("SELECT COUNT(1) FROM t_sessions WHERE id = ?", Integer.class, sessionId);
@@ -1452,7 +1485,7 @@ class RuntimeSessionRepositoryOpenGaussIT {
         }
         assertThat(repository.find(session.getId()).orElseThrow().getResourceVersion())
                 .isEqualTo(2L);
-        assertThat(repository.listCurrentBranchEntries(session.getId(), 0L, 10))
+        assertThat(timelineEntries(session.getId(), 0L, 10))
                 .extracting(RuntimeEntryDTO::getType)
                 .containsExactly("session.thinking.changed");
         context.close();
@@ -1464,7 +1497,7 @@ class RuntimeSessionRepositoryOpenGaussIT {
         assertThat(restored.session().isThinking()).isTrue();
         assertThat(restored.changed()).isFalse();
         assertThat(restored.sourceEventSeq()).isNull();
-        assertThat(repository.listCurrentBranchEntries(session.getId(), 0L, 10)).hasSize(1);
+        assertThat(timelineEntries(session.getId(), 0L, 10)).hasSize(1);
     }
 
     @Test
@@ -1506,8 +1539,7 @@ class RuntimeSessionRepositoryOpenGaussIT {
             assertThat(stored.getModelId()).isEqualTo("unsupported");
             assertThat(stored.isThinking()).isFalse();
             assertThat(stored.getResourceVersion()).isEqualTo(2L);
-            assertThat(repository.listCurrentBranchEntries(session.getId(), 0L, 10))
-                    .hasSize(1);
+            assertThat(timelineEntries(session.getId(), 0L, 10)).hasSize(1);
         } finally {
             release.countDown();
             executor.shutdownNow();
@@ -1525,7 +1557,7 @@ class RuntimeSessionRepositoryOpenGaussIT {
                 .isInstanceOfSatisfying(RuntimeApiException.class, error -> assertThat(error.errorCode())
                         .isEqualTo(RuntimeErrorCode.COMMAND_EXECUTION_FAILED));
         assertThat(repository.find(session.getId())).contains(before);
-        assertThat(repository.listCurrentBranchEntries(session.getId(), 0L, 10))
+        assertThat(timelineEntries(session.getId(), 0L, 10))
                 .extracting(RuntimeEntryDTO::getEntrySeq)
                 .containsExactly(1L);
         assertThat(changeUnconditionally(new CountDownLatch(0), session, "next").sourceEventSeq())
@@ -1609,6 +1641,11 @@ class RuntimeSessionRepositoryOpenGaussIT {
         return repository
                 .acceptUserEvent(session.getId(), entry, entry.getTimestamp())
                 .status();
+    }
+
+    private RuntimeEntryDTO appendAfterLatch(CountDownLatch start, RuntimeEntryDTO entry) throws InterruptedException {
+        assertThat(start.await(5, TimeUnit.SECONDS)).isTrue();
+        return repository.appendEntry(entry);
     }
 
     private SessionConfigurationUpdateDTO.Status updateModelAfterLatch(CountDownLatch start, RuntimeSessionDTO session)

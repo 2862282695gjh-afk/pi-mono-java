@@ -60,6 +60,8 @@ public final class ClawConstants {
 
         public static final Pattern ID_PATTERN = Pattern.compile(ID_REGEX);
 
+        public static final int MAX_DEFINITION_RESULT_BYTES = 50 * 1024;
+
         private Tool() {}
     }
 
@@ -173,6 +175,16 @@ public final class ClawConstants {
 
         public static final String TOOL_ARGUMENTS_INVALID_ERROR_CODE = "TOOL_ARGUMENTS_INVALID";
 
+        public static final String TOOL_NOT_FOUND_ERROR_CODE = "TOOL_NOT_FOUND";
+
+        public static final String TOOL_DEFINITION_CONFLICT_ERROR_CODE = "TOOL_DEFINITION_CONFLICT";
+
+        public static final String TOOL_DEFINITION_INVALID_ERROR_CODE = "TOOL_DEFINITION_INVALID";
+
+        public static final String TOOL_DEFINITION_TOO_LARGE_ERROR_CODE = "TOOL_DEFINITION_TOO_LARGE";
+
+        public static final String TOOL_DEFINITION_UNAVAILABLE_ERROR_CODE = "TOOL_DEFINITION_UNAVAILABLE";
+
         public static final String PLAN_MODE_INACTIVE_ERROR_CODE = "PLAN_MODE_INACTIVE";
 
         public static final String PLAN_REVIEW_UNAVAILABLE_ERROR_CODE = "PLAN_REVIEW_UNAVAILABLE";
@@ -222,7 +234,11 @@ public final class ClawConstants {
         public static final Set<String> TOOL_ERROR_CODES = Set.of(
                 TOOL_CALL_DENIED_ERROR_CODE,
                 TOOL_ARGUMENTS_INVALID_ERROR_CODE,
-                "TOOL_NOT_FOUND",
+                TOOL_DEFINITION_CONFLICT_ERROR_CODE,
+                TOOL_DEFINITION_INVALID_ERROR_CODE,
+                TOOL_DEFINITION_TOO_LARGE_ERROR_CODE,
+                TOOL_DEFINITION_UNAVAILABLE_ERROR_CODE,
+                TOOL_NOT_FOUND_ERROR_CODE,
                 "TOOL_EXECUTION_TIMEOUT",
                 PLAN_MODE_INACTIVE_ERROR_CODE,
                 PLAN_REVIEW_UNAVAILABLE_ERROR_CODE,

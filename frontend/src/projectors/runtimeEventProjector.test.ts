@@ -24,10 +24,10 @@ describe('Runtime Events presentation', () => {
   it('keeps full text blocks, explicit outcome and Runtime Mate argument wrapper', () => {
     const long = '文字'.repeat(5000);
     const turns = projectRuntimeEvents([
-      userFixture(), eventFixture({ eventId: 'c', type: 'agent.tool_call', toolCallId: 'tool', sourceEventId: 'root-a', toolName: 'CallMateTool', requiresConfirmation: false, arguments: { tool: 'query', args: { area: '校园' } } }),
+      userFixture(), eventFixture({ eventId: 'c', type: 'agent.tool_call', toolCallId: 'tool', sourceEventId: 'root-a', toolName: 'CallTool', requiresConfirmation: false, arguments: { tool: 'query', args: { area: '校园' } } }),
       eventFixture({ eventId: 'r', type: 'agent.tool_result', sourceEventId: 'root-a', toolCallId: 'tool', content: [{ type: 'text', text: long }, { type: 'text', text: '' }], isError: false }), idleFixture(),
     ]);
-    expect(turns[1]).toMatchObject({ toolName: 'CallMateTool', status: 'completed', result: `${long}\n`, arguments: [{ key: 'tool', value: 'query' }, { key: 'args', value: '{\n  "area": "校园"\n}' }] });
+    expect(turns[1]).toMatchObject({ toolName: 'CallTool', status: 'completed', result: `${long}\n`, arguments: [{ key: 'tool', value: 'query' }, { key: 'args', value: '{\n  "area": "校园"\n}' }] });
     expect(turns[2]).toMatchObject({ kind: 'notice', text: '已完成' });
   });
   it('keeps the display snapshot separate from the execution identity in every tool state', () => {
@@ -47,12 +47,49 @@ describe('Runtime Events presentation', () => {
       toolName: 'Read', displayName: '读取安全配置', status: 'error',
     });
   });
+  it('shows local argument failures as neutral history and only says adjusting for an observed active root', () => {
+    const call = eventFixture({ eventId: 'invalid-call', type: 'agent.tool_call', toolCallId: 'invalid-tool',
+      sourceEventId: 'root-a', toolName: 'CallTool', requiresConfirmation: false,
+      arguments: { tool: 'query-device-alarm', args: {} } });
+    const result = eventFixture({ eventId: 'invalid-result', type: 'agent.tool_result', toolCallId: 'invalid-tool',
+      sourceEventId: 'root-a', content: [{ type: 'text', text: '工具参数不符合约束，本次调用未执行。' }],
+      isError: true, errorCode: 'TOOL_ARGUMENTS_INVALID' });
+
+    expect(projectRuntimeEvents([userFixture(), call, result], true).find((turn) => turn.kind === 'activity'))
+      .toMatchObject({ status: 'adjusting', isError: true, errorCode: 'TOOL_ARGUMENTS_INVALID' });
+    expect(projectRuntimeEvents([userFixture(), call, result], false).find((turn) => turn.kind === 'activity'))
+      .toMatchObject({ status: 'invalid_arguments', isError: true });
+    expect(projectRuntimeEvents([userFixture(), call, result, idleFixture('confirming')], true)
+      .find((turn) => turn.kind === 'activity')).toMatchObject({ status: 'invalid_arguments' });
+    expect(projectRuntimeEvents([userFixture(), call, result, idleFixture('failed')], true)
+      .find((turn) => turn.kind === 'activity')).toMatchObject({ status: 'invalid_arguments' });
+  });
+  it('keeps real failures red and does not rewrite an earlier argument failure after a later success', () => {
+    const firstCall = eventFixture({ eventId: 'first-call', type: 'agent.tool_call', toolCallId: 'first',
+      sourceEventId: 'root-a', toolName: 'CallTool', requiresConfirmation: false,
+      arguments: { tool: 'query-device-alarm', args: {} } });
+    const invalid = eventFixture({ eventId: 'first-result', type: 'agent.tool_result', toolCallId: 'first',
+      sourceEventId: 'root-a', content: [{ type: 'text', text: 'invalid' }], isError: true,
+      errorCode: 'TOOL_ARGUMENTS_INVALID' });
+    const secondCall = { ...firstCall, eventId: 'second-call', toolCallId: 'second',
+      arguments: { tool: 'query-device-alarm', args: { deviceId: 'device-1' } } };
+    const success = eventFixture({ eventId: 'second-result', type: 'agent.tool_result', toolCallId: 'second',
+      sourceEventId: 'root-a', content: [{ type: 'text', text: 'ok' }], isError: false });
+    const businessFailure = { ...success, eventId: 'business-failure', toolCallId: 'third', isError: true,
+      errorCode: 'TOOL_EXECUTION_FAILED' };
+
+    const activities = projectRuntimeEvents([userFixture(), firstCall, invalid, secondCall, success, businessFailure], true)
+      .filter((turn) => turn.kind === 'activity');
+    expect(activities[0]).toMatchObject({ toolCallId: 'first', status: 'adjusting', isError: true });
+    expect(activities[1]).toMatchObject({ toolCallId: 'second', status: 'completed', isError: false });
+    expect(activities[2]).toMatchObject({ toolCallId: 'third', status: 'error', isError: true });
+  });
   it('replaces a result-only placeholder when the matching call record becomes available', () => {
     const result = eventFixture({ eventId: 'early-result', type: 'agent.tool_result', toolCallId: 'late-tool',
       sourceEventId: 'root-a', content: [{ type: 'text', text: 'ok' }], isError: false });
     expect(projectRuntimeEvents([result])[0]).toMatchObject({ toolName: '工具调用（调用记录尚未读到）' });
     const call = eventFixture({ eventId: 'late-call', type: 'agent.tool_call', toolCallId: 'late-tool',
-      sourceEventId: 'root-a', toolName: 'CallMateTool', displayName: '查询工单',
+      sourceEventId: 'root-a', toolName: 'CallTool', displayName: '查询工单',
       arguments: { tool: 'query_ticket', args: {} }, requiresConfirmation: false });
     const activities = projectRuntimeEvents([result, call]).filter((turn) => turn.kind === 'activity');
     expect(activities).toEqual([expect.objectContaining({ key: 'late-call', displayName: '查询工单', status: 'completed' })]);
@@ -79,7 +116,7 @@ describe('Runtime Events presentation', () => {
     });
   });
   it('does not apply an earlier confirmation to a later message with the same tool ID', () => {
-    const call = eventFixture({ eventId: 'old-call', type: 'agent.tool_call', toolCallId: 'same-id', sourceEventId: 'old-root', toolName: 'CallMateTool', arguments: {}, requiresConfirmation: true });
+    const call = eventFixture({ eventId: 'old-call', type: 'agent.tool_call', toolCallId: 'same-id', sourceEventId: 'old-root', toolName: 'CallTool', arguments: {}, requiresConfirmation: true });
     const receipt = eventFixture({ eventId: 'old-confirm', type: 'user.tool_confirmation', toolCallId: 'same-id', result: 'allow' });
     const currentCall = { ...call, eventId: 'new-call', sourceEventId: 'root-a' };
     const turns = projectRuntimeEvents([userFixture('old-root'), call, receipt, userFixture(), currentCall, idleFixture('confirming')], true);
@@ -103,7 +140,7 @@ describe('Runtime Events presentation', () => {
     const result = eventFixture({ eventId: 'exit-result', type: 'agent.tool_result', sourceEventId: 'root-a', toolCallId: 'exit',
       content: [{ type: 'text', text: '工具参数不符合约束，本次调用未执行。' }], isError: true, errorCode: 'TOOL_ARGUMENTS_INVALID' });
     expect(projectRuntimeEvents([userFixture(), call, result])).toEqual(expect.arrayContaining([
-      expect.objectContaining({ kind: 'activity', toolName: 'ExitPlanMode', status: 'error' }),
+      expect.objectContaining({ kind: 'activity', toolName: 'ExitPlanMode', status: 'invalid_arguments' }),
     ]));
   });
   it('marks an undecided plan as stopped after its root terminates', () => {
@@ -148,11 +185,11 @@ describe('Runtime Events presentation', () => {
       toolName: 'AskUserQuestion', status: 'unconfirmed', statusMessage: '问题记录尚未完整，正在同步', result: '',
     });
   });
-  it('absorbs only the exactly associated showcase CallMateTool shell and keeps ordinary Mate calls visible', () => {
+  it.each(['CallMateTool', 'CallTool', 'confirm_with_user'])('absorbs only the associated %s shell and keeps ordinary calls visible', (toolName) => {
     const showcaseCall = eventFixture({ eventId: 'showcase-call-event', type: 'agent.tool_call', sourceEventId: 'root-a',
-      toolCallId: 'showcase-call', toolName: 'CallMateTool', arguments: { tool: 'confirm_with_user', args: {
-        label: 'driver_design_confirm', context: { '问题': '不得从这里提取' },
-      } }, requiresConfirmation: false });
+      toolCallId: 'showcase-call', toolName, arguments: toolName === 'confirm_with_user'
+        ? { label: 'driver_design_confirm', context: { '问题': '不得从这里提取' } }
+        : { tool: 'confirm_with_user', args: { label: 'driver_design_confirm', context: { '问题': '不得从这里提取' } } }, requiresConfirmation: false });
     const question = showcaseQuestionFixture();
     const result = eventFixture({ eventId: 'showcase-result', type: 'agent.tool_result', sourceEventId: 'root-a',
       toolCallId: 'showcase-call', content: [{ type: 'text', text: '{"content":"继续"}' }], isError: false });
@@ -162,15 +199,15 @@ describe('Runtime Events presentation', () => {
     })]);
     expect(turns.some((turn) => turn.kind === 'activity')).toBe(false);
 
-    const ordinaryCall = { ...showcaseCall, eventId: 'ordinary-call', toolCallId: 'ordinary',
+    const ordinaryCall = { ...showcaseCall, eventId: 'ordinary-call', toolCallId: 'ordinary', toolName: 'CallTool',
       arguments: { tool: 'query_inspections', args: { campus: '东区' } } };
     expect(projectRuntimeEvents([userFixture(), ordinaryCall], true)).toEqual(expect.arrayContaining([
-      expect.objectContaining({ kind: 'activity', toolName: 'CallMateTool', toolCallId: 'ordinary', status: 'running' }),
+      expect.objectContaining({ kind: 'activity', toolName: 'CallTool', toolCallId: 'ordinary', status: 'running' }),
     ]));
   });
-  it('uses the confirm tool name only for a preparation/failure placeholder, never to invent a question card', () => {
+  it.each(['CallMateTool', 'CallTool', 'confirm_with_user'])('uses %s only as a placeholder before its question event', (toolName) => {
     const call = eventFixture({ eventId: 'showcase-call-event', type: 'agent.tool_call', sourceEventId: 'root-a',
-      toolCallId: 'showcase-call', toolName: 'CallMateTool', arguments: { tool: 'confirm_with_user', args: {} },
+      toolCallId: 'showcase-call', toolName, arguments: toolName === 'confirm_with_user' ? {} : { tool: 'confirm_with_user', args: {} },
       requiresConfirmation: false });
     const result = eventFixture({ eventId: 'showcase-result', type: 'agent.tool_result', sourceEventId: 'root-a',
       toolCallId: 'showcase-call', content: [{ type: 'text', text: '{"content":"不得泄露"}' }], isError: false });

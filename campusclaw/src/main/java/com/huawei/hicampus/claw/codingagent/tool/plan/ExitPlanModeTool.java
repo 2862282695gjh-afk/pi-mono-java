@@ -12,11 +12,13 @@ import com.huawei.hicampus.claw.agent.tool.AgentToolResult;
 import com.huawei.hicampus.claw.agent.tool.AgentToolUpdateCallback;
 import com.huawei.hicampus.claw.agent.tool.CancellationToken;
 import com.huawei.hicampus.claw.agent.tool.ToolArgumentsInvalidException;
+import com.huawei.hicampus.claw.agent.tool.ToolInputSchema;
 import com.huawei.hicampus.claw.ai.types.ContentBlock;
 import com.huawei.hicampus.claw.ai.types.TextContent;
 import com.huawei.hicampus.claw.codingagent.tool.builtin.BuiltInToolName;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 
 /**
  * 绑定当前响应中的完整计划并等待用户审核的 Runtime 根工具。
@@ -26,6 +28,15 @@ import com.fasterxml.jackson.databind.ObjectMapper;
  */
 public class ExitPlanModeTool implements AgentTool {
     private static final ObjectMapper MAPPER = new ObjectMapper();
+
+    private static final ObjectNode INPUT_SCHEMA = ToolInputSchema.parse(
+            """
+            {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": false
+            }
+            """);
 
     private static final String DESCRIPTION = "Submit the proposed plan for review while the Main Agent is in plan "
             + "mode. First write one complete Markdown plan, beginning with a level-one heading, inside "
@@ -65,9 +76,7 @@ public class ExitPlanModeTool implements AgentTool {
 
     @Override
     public JsonNode parameters() {
-        var schema = MAPPER.createObjectNode().put("type", "object");
-        schema.putObject("properties");
-        return schema.put("additionalProperties", false);
+        return INPUT_SCHEMA.deepCopy();
     }
 
     @Override

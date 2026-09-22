@@ -140,7 +140,7 @@ class CommittedEventProjectionTest {
     }
 
     @Test
-    void shouldReturnImmutableToolArguments() {
+    void shouldReadLegacyCallMateToolHistoryWithImmutableArguments() {
         String payload =
                 """
                 {"toolCallId":"call_1","toolName":"CallMateTool","arguments":{"tool":"query","args":{"x":1}},
@@ -149,6 +149,10 @@ class CommittedEventProjectionTest {
         var details = (SessionEventResponseVO.AgentToolCallResponseVO)
                 project("agent.tool_call", payload).getDetails();
 
+        assertThat(details.getToolName()).isEqualTo("CallMateTool");
+        assertThat(details.getToolCallId()).isEqualTo("call_1");
+        assertThat(details.getArguments()).containsEntry("tool", "query");
+        assertThat(details.isRequiresConfirmation()).isTrue();
         assertThrows(UnsupportedOperationException.class, () -> details.getArguments()
                 .put("new", true));
         @SuppressWarnings("unchecked")

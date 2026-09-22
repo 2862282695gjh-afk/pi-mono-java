@@ -14,6 +14,7 @@ import com.campusclaw.agent.tool.AgentToolResult;
 import com.campusclaw.agent.tool.AgentToolUpdateCallback;
 import com.campusclaw.agent.tool.CancellationToken;
 import com.campusclaw.agent.tool.ToolExecutionMode;
+import com.campusclaw.agent.tool.ToolInputSchema;
 import com.campusclaw.ai.types.ContentBlock;
 import com.campusclaw.ai.types.TextContent;
 import com.campusclaw.cron.CronService;
@@ -21,7 +22,6 @@ import com.campusclaw.cron.model.CronJob;
 import com.campusclaw.cron.model.CronPayload;
 import com.campusclaw.cron.model.CronSchedule;
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
 /**
@@ -32,7 +32,101 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
  */
 public class CronTool implements AgentTool {
 
-    private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final ObjectNode INPUT_SCHEMA = ToolInputSchema.parse(
+            """
+            {
+              "type": "object",
+              "properties": {
+                "action": {
+                  "type": "string",
+                  "enum": ["create", "list", "delete", "trigger", "status", "runs"]
+                },
+                "name": {
+                  "type": "string",
+                  "description": "Job name for create."
+                },
+                "description": {
+                  "type": "string",
+                  "description": "Optional Job description for create."
+                },
+                "prompt": {
+                  "type": "string",
+                  "description": "Prompt for create."
+                },
+                "schedule_type": {
+                  "type": "string",
+                  "enum": ["at", "every", "cron"]
+                },
+                "schedule_value": {
+                  "type": "string",
+                  "description": "ISO timestamp, interval milliseconds, or cron expression."
+                },
+                "timezone": {
+                  "type": "string",
+                  "description": "Optional timezone for a cron expression."
+                },
+                "job_id": {
+                  "type": "string",
+                  "description": "Job ID for delete, trigger, status, or runs."
+                },
+                "limit": {
+                  "type": "integer",
+                  "description": "Run count for runs; omitted means 10."
+                }
+              },
+              "required": ["action"],
+              "additionalProperties": false,
+              "oneOf": [
+                {
+                  "properties": {
+                    "action": {
+                      "const": "create"
+                    }
+                  },
+                  "required": ["name", "prompt", "schedule_type", "schedule_value"]
+                },
+                {
+                  "properties": {
+                    "action": {
+                      "const": "list"
+                    }
+                  }
+                },
+                {
+                  "properties": {
+                    "action": {
+                      "const": "delete"
+                    }
+                  },
+                  "required": ["job_id"]
+                },
+                {
+                  "properties": {
+                    "action": {
+                      "const": "trigger"
+                    }
+                  },
+                  "required": ["job_id"]
+                },
+                {
+                  "properties": {
+                    "action": {
+                      "const": "status"
+                    }
+                  },
+                  "required": ["job_id"]
+                },
+                {
+                  "properties": {
+                    "action": {
+                      "const": "runs"
+                    }
+                  },
+                  "required": ["job_id"]
+                }
+              ]
+            }
+            """);
 
     private final CronService cronService;
 
@@ -60,17 +154,7 @@ public class CronTool implements AgentTool {
 
     @Override
     public JsonNode parameters() {
-        ObjectNode properties = MAPPER.createObjectNode();
-        addAction(properties);
-        addCreateFields(properties);
-        addLookupFields(properties);
-        ObjectNode schema = MAPPER.createObjectNode();
-        schema.put("type", "object");
-        schema.set("properties", properties);
-        schema.set("required", MAPPER.createArrayNode().add("action"));
-        schema.put("additionalProperties", false);
-        schema.set("oneOf", actionRequirements());
-        return schema;
+        return INPUT_SCHEMA.deepCopy();
     }
 
     @Override
@@ -198,66 +282,6 @@ public class CronTool implements AgentTool {
             ZoneId.of(timezone);
         }
         return new CronSchedule.CronExpr(expression, timezone);
-    }
-
-    private static void addAction(ObjectNode properties) {
-        ObjectNode action = properties.putObject("action").put("type", "string");
-        action.set(
-                "enum",
-                MAPPER.createArrayNode()
-                        .add("create")
-                        .add("list")
-                        .add("delete")
-                        .add("trigger")
-                        .add("status")
-                        .add("runs"));
-    }
-
-    private static void addCreateFields(ObjectNode properties) {
-        addString(properties, "name", "Job name for create.");
-        addString(properties, "description", "Optional Job description for create.");
-        addString(properties, "prompt", "Prompt for create.");
-        ObjectNode type = properties.putObject("schedule_type").put("type", "string");
-        type.set("enum", MAPPER.createArrayNode().add("at").add("every").add("cron"));
-        addString(properties, "schedule_value", "ISO timestamp, interval milliseconds, or cron expression.");
-        addString(properties, "timezone", "Optional timezone for a cron expression.");
-    }
-
-    private static void addLookupFields(ObjectNode properties) {
-        addString(properties, "job_id", "Job ID for delete, trigger, status, or runs.");
-        properties
-                .putObject("limit")
-                .put("type", "integer")
-                .put("description", "Run count for runs; omitted means 10.");
-    }
-
-    private static com.fasterxml.jackson.databind.node.ArrayNode actionRequirements() {
-        var oneOf = MAPPER.createArrayNode();
-        oneOf.add(requiredFor("create", "name", "prompt", "schedule_type", "schedule_value"));
-        oneOf.add(requiredFor("list"));
-        for (String action : List.of("delete", "trigger", "status", "runs")) {
-            oneOf.add(requiredFor(action, "job_id"));
-        }
-        return oneOf;
-    }
-
-    private static ObjectNode requiredFor(String action, String... fields) {
-        ObjectNode branch = MAPPER.createObjectNode();
-        branch.set(
-                "properties",
-                MAPPER.createObjectNode()
-                        .set("action", MAPPER.createObjectNode().put("const", action)));
-        if (fields.length > 0) {
-            var required = branch.putArray("required");
-            for (String field : fields) {
-                required.add(field);
-            }
-        }
-        return branch;
-    }
-
-    private static void addString(ObjectNode properties, String name, String description) {
-        properties.putObject(name).put("type", "string").put("description", description);
     }
 
     private static String requireText(Map<String, Object> params, String name) {

@@ -9,6 +9,8 @@ const props = defineProps<{ turn: ActivityTurn }>();
 function statusLabel(status: ActivityTurn['status']): string {
   if (status === 'running') return '执行中';
   if (status === 'error') return '执行失败';
+  if (status === 'adjusting') return '正在调整调用参数';
+  if (status === 'invalid_arguments') return '参数校验未通过';
   if (status === 'confirming') return '等待确认';
   if (status === 'waiting_answer') return '等待回答';
   if (status === 'unconfirmed') return '结果待核对';
@@ -18,6 +20,8 @@ function statusLabel(status: ActivityTurn['status']): string {
 function emptyResult(status: ActivityTurn['status']): string {
   if (status === 'running') return '等待工具返回…';
   if (status === 'error') return '工具未返回错误详情。';
+  if (status === 'adjusting') return '模型正在根据字段约束重新构造调用参数。';
+  if (status === 'invalid_arguments') return '本次调用未通过本地参数校验。';
   if (status === 'confirming') return '请在输入框上方允许或拒绝本次调用。';
   if (status === 'waiting_answer') return '请在问题卡填写并提交回答。';
   if (status === 'unconfirmed') return '尚未收到完整结果，请重新核对历史。';
@@ -34,6 +38,7 @@ const identity = computed(() => toolDisplayIdentity({
   displayName: props.turn.displayName,
   arguments: props.turn.argumentValue,
 }));
+const detailsOpen = computed(() => !['completed', 'adjusting', 'invalid_arguments'].includes(props.turn.status));
 </script>
 
 <template>
@@ -47,7 +52,7 @@ const identity = computed(() => toolDisplayIdentity({
     <strong>{{ identity.label }}</strong>
     <span class="tool-status">{{ turn.statusMessage }}</span>
   </div>
-  <details v-else class="tool-activity" :open="turn.status !== 'completed'">
+  <details v-else class="tool-activity" :open="detailsOpen">
     <summary :aria-label="`${identity.label}，${statusLabel(turn.status)}`">
       <span class="tool-state-icon" :class="turn.status" aria-hidden="true">
         <svg v-if="turn.status === 'completed'" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6" /></svg>

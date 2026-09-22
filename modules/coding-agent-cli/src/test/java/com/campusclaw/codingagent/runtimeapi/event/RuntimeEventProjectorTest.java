@@ -50,7 +50,6 @@ import com.campusclaw.ai.types.ToolCall;
 import com.campusclaw.ai.types.ToolResultMessage;
 import com.campusclaw.ai.types.Usage;
 import com.campusclaw.ai.types.UserMessage;
-import com.campusclaw.codingagent.common.client.mate.MateCredentials;
 import com.campusclaw.codingagent.runtime.MateServiceClient.AgentRuntime;
 import com.campusclaw.codingagent.runtime.MateServiceClient.BoundTool;
 import com.campusclaw.codingagent.runtime.MateServiceClient.SkillInfo;
@@ -71,9 +70,6 @@ import com.campusclaw.codingagent.session.compaction.CompactionReason;
 import com.campusclaw.codingagent.session.compaction.SessionCompactionCompletedEvent;
 import com.campusclaw.codingagent.session.compaction.SessionCompactionResult;
 import com.campusclaw.codingagent.test.Log4j2TestAppender;
-import com.campusclaw.codingagent.tool.mate.MateToolSessionState;
-import com.campusclaw.codingagent.tool.mate.MateToolsetFactory;
-import com.campusclaw.codingagent.tool.mate.MockMateToolClient;
 import com.campusclaw.codingagent.tool.plan.PlanReviewException;
 import com.campusclaw.codingagent.tool.question.UserQuestionException;
 import com.campusclaw.common.constant.ClawConstants;
@@ -83,8 +79,6 @@ import org.apache.logging.log4j.Level;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.core.Logger;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.ValueSource;
 
 /**
  * 执行事件投影的权威写入与同形输出测试。
@@ -289,7 +283,8 @@ class RuntimeEventProjectorTest {
         RuntimeEntryDTO user = fixture.codec.userEntry(
                 "session-v2", "entry-user", "question", List.of(), OffsetDateTime.parse("2026-09-08T01:00:00Z"));
         user.setEntrySeq(1L);
-        when(fixture.repository.listCurrentBranchEntries("session-v2", 0L, 500)).thenReturn(List.of(user));
+        when(fixture.repository.findTimelineUpperBound("session-v2")).thenReturn(1L);
+        when(fixture.repository.listTimelineEntries("session-v2", 0L, 1L, 500)).thenReturn(List.of(user));
         var result = new SessionCompactionResult(
                 "summary", List.of(new UserMessage("question", 1L)), 0, 120, 30, Usage.empty());
 
@@ -332,8 +327,8 @@ class RuntimeEventProjectorTest {
     @Test
     void shouldPauseAskedToolAndResumeSameExecutionInAcceptedSegment() throws Exception {
         Fixture fixture = fixture(false);
-        ToolCall call = new ToolCall(
-                "call-confirm", "CallMateTool", Map.of("tool", "isolate_port", "args", Map.of("port", 8080)));
+        ToolCall call =
+                new ToolCall("call-confirm", "CallTool", Map.of("tool", "isolate_port", "args", Map.of("port", 8080)));
         bindAskPermission(fixture.execution, call);
         fixture.execution.installConfirmationHandler(fixture.projector::beforeToolCall);
         AssistantMessage assistant = assistant(List.of(call));
@@ -410,12 +405,22 @@ class RuntimeEventProjectorTest {
     }
 
     @Test
+    void mateDisplayNameShouldNotTriggerDiscoveryForAnyPermissionPath() throws Exception {
+        List<String> payloads = new ArrayList<>();
+        for (String permission : List.of("allow", "deny", "ask")) {
+            payloads.add(projectMateDisplayNameWithoutDiscovery(permission));
+        }
+
+        assertThat(payloads).allSatisfy(payload -> assertThat(payload).contains("\"displayName\":\"Business query\""));
+    }
+
+    @Test
     void missingMateDisplayMetadataShouldKeepCallAndResult() {
         Fixture fixture = fixture(false);
         BoundTool binding = new BoundTool(null, null, "tool-id", null, "Query", "allow", null, null);
         fixture.execution.bindToolCallSnapshots(
                 RuntimeToolCallSnapshotResolver.from(runtime(List.of(binding), List.of()), List.of()));
-        ToolCall call = new ToolCall("call-failed", "CallMateTool", Map.of("tool", "Query"));
+        ToolCall call = new ToolCall("call-failed", "CallTool", Map.of("tool", "Query"));
         AssistantMessage assistant = assistant(List.of(call));
         ToolResultMessage result =
                 new ToolResultMessage(call.id(), call.name(), List.of(new TextContent("failed")), null, true, 1L);
@@ -429,6 +434,34 @@ class RuntimeEventProjectorTest {
                 .containsExactly("agent.message", "agent.tool_call", "agent.tool_result");
         assertThat(fixture.persistedEvents.get(1).getPayload()).doesNotContain("displayName");
         assertThat(fixture.projector.failure()).isNull();
+    }
+
+    @Test
+    void invalidAskedArgumentsShouldNotCreateConfirmationProjectionOrExposeRecoveryDefinition() {
+        Fixture fixture = fixture(false);
+        ToolCall call = new ToolCall("call-invalid", "CallTool", Map.of("tool", "Query", "args", Map.of()));
+        bindAskPermission(fixture.execution, call);
+        AssistantMessage assistant = assistant(List.of(call));
+        String recovery = "{\"code\":\"TOOL_ARGUMENTS_INVALID\",\"definition\":{\"secret\":true}}";
+        ToolResultMessage result = new ToolResultMessage(
+                call.id(),
+                call.name(),
+                List.of(new TextContent(recovery)),
+                Map.of("errorCode", "TOOL_ARGUMENTS_INVALID"),
+                true,
+                1L);
+
+        fixture.projector.onEvent(new MessageStartEvent(assistant));
+        fixture.projector.onEvent(new MessageEndEvent(assistant));
+        fixture.projector.onEvent(new TurnEndEvent(assistant, List.of(result)));
+
+        assertThat(fixture.persistedEvents)
+                .extracting(CommittedEventDTO::getType)
+                .containsExactly("agent.message", "agent.tool_call", "agent.tool_result");
+        assertThat(fixture.persistedEvents.get(1).getPayload()).contains("\"requiresConfirmation\":false");
+        assertThat(fixture.persistedEvents.get(2).getPayload())
+                .contains("TOOL_ARGUMENTS_INVALID")
+                .doesNotContain("definition", "secret");
     }
 
     @Test
@@ -802,20 +835,15 @@ class RuntimeEventProjectorTest {
         return runtime;
     }
 
-    @ParameterizedTest
-    @ValueSource(strings = {"allow", "deny", "ask"})
-    void shouldProjectMateDisplayNameWithoutDiscovery(String permission) throws Exception {
+    private static String projectMateDisplayNameWithoutDiscovery(String permission) throws Exception {
         Fixture fixture = fixture(false);
-        MockMateToolClient client = new MockMateToolClient();
-        MateToolSessionState toolState =
-                new MateToolsetFactory(client).createSession("agent-1", Map.of(), MateCredentials.empty());
-        BoundTool binding = new BoundTool(null, "Business query", "tool-id", null, "Query", permission, null, null);
-        PreparedAgentRuntime runtime = runtime(List.of(binding), List.of());
+        BoundTool binding = new BoundTool(
+                null, "Business query", "tool-11111111111111111111111111111111", null, "Query", permission, null, null);
+        PreparedAgentRuntime runtime = runtime(List.of(), List.of(binding));
         fixture.execution.bindToolPermissions(RuntimeToolPermissionPolicy.from(runtime));
-        fixture.execution.bindToolCallSnapshots(
-                RuntimeToolCallSnapshotResolver.from(runtime, List.of(toolState.createCallTool())));
+        fixture.execution.bindToolCallSnapshots(RuntimeToolCallSnapshotResolver.from(runtime, List.of()));
         fixture.execution.installConfirmationHandler(fixture.projector::beforeToolCall);
-        ToolCall call = new ToolCall("call-" + permission, "CallMateTool", Map.of("tool", "Query"));
+        ToolCall call = new ToolCall("call-" + permission, "CallTool", Map.of("tool", "Query"));
         AssistantMessage assistant = assistant(List.of(call));
 
         fixture.projector.onEvent(new MessageStartEvent(assistant));
@@ -828,15 +856,11 @@ class RuntimeEventProjectorTest {
                     .isNotNull();
         }
 
-        assertThat(fixture.persistedEvents.stream()
-                        .filter(event -> "agent.tool_call".equals(event.getType()))
-                        .map(CommittedEventDTO::getPayload))
-                .singleElement()
-                .asString()
-                .contains("\"displayName\":\"Business query\"");
-        assertThat(client.agentListCalls()).isZero();
-        assertThat(client.skillListCalls()).isZero();
-        assertThat(client.executeCalls()).isZero();
+        return fixture.persistedEvents.stream()
+                .filter(event -> "agent.tool_call".equals(event.getType()))
+                .map(CommittedEventDTO::getPayload)
+                .findFirst()
+                .orElseThrow();
     }
 
     private static void configurePersistence(

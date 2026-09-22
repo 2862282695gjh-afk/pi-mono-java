@@ -5,7 +5,7 @@ import { decodeCatalog, decodeCommandResult, filterCommands, freezeInvocation, p
 import { eventFixture, idleFixture, questionFixture, showcaseQuestionFixture, streamResponse, userFixture } from './fixtures';
 import type { RuntimeEvent } from '../types/runtime';
 
-const call = eventFixture({ eventId: 'call', type: 'agent.tool_call', sourceEventId: 'root-a', toolCallId: 'tool-a', toolName: 'CallMateTool', arguments: { tool: 'query', args: {} }, requiresConfirmation: true }) as Extract<RuntimeEvent, { type: 'agent.tool_call' }>;
+const call = eventFixture({ eventId: 'call', type: 'agent.tool_call', sourceEventId: 'root-a', toolCallId: 'tool-a', toolName: 'CallTool', arguments: { tool: 'query', args: {} }, requiresConfirmation: true }) as Extract<RuntimeEvent, { type: 'agent.tool_call' }>;
 const result = eventFixture({ eventId: 'result', type: 'agent.tool_result', sourceEventId: 'root-a', toolCallId: 'tool-a', content: [{ type: 'text', text: '' }], isError: false });
 const preview = (content: string): RuntimeEvent => ({ eventId: 'answer', type: 'agent.message', phase: 'delta', content, sourceEventId: 'root-a' });
 const completed = eventFixture({ ...preview('完整正文'), phase: 'completed' });
@@ -359,7 +359,7 @@ describe('command snapshots', () => {
     const skill = freezeInvocation(catalog[2], '/skill:7-day 检查');
     expect(skill).toHaveProperty('executionMode', 'skillEvents');
     expect(() => decodeCommandResult(skill, {})).toThrow();
-    const value = { displayName: '<script>bad</script>', description: ['![x](https://invalid.test)'], userCases: [] };
+    const value = { displayName: '<script>bad</script>', description: ['![x](https://invalid.test)'], useCases: [] };
     expect(decodeCommandResult(freezeInvocation(catalog[1], '/help'), value)).toHaveProperty('value', value);
   });
 });

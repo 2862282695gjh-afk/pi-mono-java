@@ -313,7 +313,7 @@ describe('Claw Runtime Session Events coordinator', () => {
     const { runtime, fetcher } = setup();
     await Promise.all([runtime.listCommands(), runtime.listCommands()]);
     expect(fetcher).toHaveBeenCalledTimes(1);
-    fetcher.mockResolvedValueOnce(jsonResponse({ displayName: '<script>x</script>', description: [], userCases: [] }));
+    fetcher.mockResolvedValueOnce(jsonResponse({ displayName: '<script>x</script>', description: [], useCases: [] }));
     await runtime.executeCommand(freezeInvocation(runtime.commands.value[0], '/help'));
     expect(runtime.commandResult.value).toHaveProperty('kind', 'agentGuide');
     expect(runtime.events.value).toEqual([]);

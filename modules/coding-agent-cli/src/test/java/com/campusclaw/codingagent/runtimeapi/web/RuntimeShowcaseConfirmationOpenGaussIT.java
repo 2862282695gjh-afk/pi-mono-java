@@ -183,7 +183,7 @@ class RuntimeShowcaseConfirmationOpenGaussIT {
         JsonNode toolCall = one(frames, "agent.tool_call");
         JsonNode question = one(frames, "agent.question");
         assertThat(toolCall.path("toolCallId").asText()).isEqualTo(TOOL_CALL_ID);
-        assertThat(toolCall.path("toolName").asText()).isEqualTo("CallMateTool");
+        assertThat(toolCall.path("toolName").asText()).isEqualTo("confirm_with_user");
         assertThat(toolCall.path("arguments")).isEqualTo(MAPPER.valueToTree(arguments));
         assertThat(question.path("toolCallId").asText()).isEqualTo(TOOL_CALL_ID);
         assertThat(question.path("sourceEventId").asText()).isEqualTo(rootEventId);
@@ -384,7 +384,7 @@ class RuntimeShowcaseConfirmationOpenGaussIT {
         if (context != null) {
             args.put("context", context);
         }
-        return Map.of("tool", "confirm_with_user", "args", args);
+        return args;
     }
 
     private static List<JsonNode> frames(String body) throws Exception {
@@ -448,7 +448,9 @@ class RuntimeShowcaseConfirmationOpenGaussIT {
         delta.put("role", "assistant");
         ObjectNode call = delta.putArray("tool_calls").addObject();
         call.put("index", 0).put("id", callId).put("type", "function");
-        call.putObject("function").put("name", "CallMateTool").put("arguments", MAPPER.writeValueAsString(arguments));
+        call.putObject("function")
+                .put("name", "confirm_with_user")
+                .put("arguments", MAPPER.writeValueAsString(arguments));
         return data(first) + data(usageChunk("tool_calls")) + "data: [DONE]\n\n";
     }
 

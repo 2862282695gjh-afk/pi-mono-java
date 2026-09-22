@@ -13,7 +13,7 @@ v0.18.0，Vue 3 + TypeScript + Vite 的内部 Claw Runtime 联调工作台。
 - Composer 工具栏常驻 Build/Plan 模式菜单；模式、模型和思考通过统一 Session POST 更新并携带 ETag，900px 以下收纳模型与思考设置。
 - 完整计划卡、原始 Markdown 复制、批准并执行、修改意见；复制失败可见且不改变审核状态，草稿按 Session 和计划事件隔离。
 - 问题卡一次显示一题，支持前后导航，末题一次提交整批答案；已回答后显示摘要并可展开权威答案。回答不会批准计划。校验聚焦首个错误，提交与接受状态管理焦点和单次播报，客户端 DOM 身份不使用协议 question id。
-- Showcase 的 `agent.question` label/context 变体显示原始标签和格式化 JSON 上下文，只提供“你的回答”和“确认”；精确关联的 `confirm_with_user` CallMateTool 外壳由问题卡吸收，其他 CallMateTool 保持可见。
+- Showcase 的 `agent.question` label/context 变体显示原始标签和格式化 JSON 上下文，只提供“你的回答”和“确认”；精确关联的直接 `confirm_with_user`、`CallTool` 及旧 `CallMateTool` 历史调用外壳由问题卡吸收，其他业务工具保持可见。
 - 仅消费 `agent.todo_updated` 更新实施任务完整清单；新根消息重置，终态保留最终快照。任务清单和命令结果可分别折叠，Slash 清单打开时临时收起并在关闭后恢复选择。
 - 完整事件覆盖预览；无回执保留草稿并明确结果未知，断流只重读、不重发。
 - 空消息首字符 `/` 打开精简清单；名称不带前导斜杠，选中后显示可更换、删除的标签。
